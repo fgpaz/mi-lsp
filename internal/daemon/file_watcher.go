@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"log"
 	"os"
+	pathpkg "path"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -246,8 +247,8 @@ var skipDirs = map[string]struct{}{
 	".worktrees": {}, "vendor": {}, ".next": {}, "out": {},
 }
 
-func shouldSkipDir(path string) bool {
-	base := filepath.Base(path)
+func shouldSkipDir(dirPath string) bool {
+	base := pathpkg.Base(strings.ReplaceAll(dirPath, "\\", "/"))
 	_, ok := skipDirs[base]
 	return ok
 }
@@ -257,3 +258,5 @@ func computeHash(content []byte) string {
 	sum := sha1.Sum(content)
 	return hex.EncodeToString(sum[:])
 }
+
+
