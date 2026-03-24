@@ -1,0 +1,66 @@
+version: 2
+
+project_name: mi-lsp
+
+env:
+  - CGO_ENABLED=0
+
+before:
+  hooks:
+    - pwsh -NoProfile -File ./scripts/release/build-workers.ps1 -OutDir ./.goreleaser/workers -Clean
+
+builds:
+  - id: cli
+    binary: mi-lsp
+    main: ./cmd/mi-lsp
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w
+
+archives:
+  - id: bundled
+    ids:
+      - cli
+    name_template: >-
+      {{ .ProjectName }}_{{ .Version }}_{{ if eq .Os "windows" }}win{{ else }}{{ .Os }}{{ end }}-{{ if eq .Arch "amd64" }}x64{{ else }}{{ .Arch }}{{ end }}
+    formats:
+      - tar.gz
+    format_overrides:
+      - goos: windows
+        formats:
+          - zip
+    wrap_in_directory: true
+    files:
+      - LICENSE
+      - README.md
+      - CHANGELOG.md
+      - src: TROUBLESHOOTING.md
+        dst: docs
+      - src: ".goreleaser/workers/{{ if eq .Os \"windows\" }}win{{ else }}{{ .Os }}{{ end }}-{{ if eq .Arch \"amd64\" }}x64{{ else }}{{ .Arch }}{{ end }}/**/*"
+        dst: "workers/{{ if eq .Os \"windows\" }}win{{ else }}{{ .Os }}{{ end }}-{{ if eq .Arch \"amd64\" }}x64{{ else }}{{ .Arch }}{{ end }}"
+
+checksum:
+  name_template: "{{ .ProjectName }}_{{ .Version }}_checksums.txt"
+  algorithm: sha256
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^chore:"
+
+release:
+  draft: false
+  prerelease: auto
+  name_template: "{{ .ProjectName }} v{{ .Version }}"

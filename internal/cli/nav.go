@@ -1,0 +1,309 @@
+package cli
+
+import (
+	"fmt"
+	"io"
+	"os"
+	"strconv"
+
+	"github.com/spf13/cobra"
+)
+
+func newNavCommand(state *rootState) *cobra.Command {
+	command := &cobra.Command{
+		Use:   "nav",
+		Short: "Navigate indexed catalogs and semantic backends",
+		Long: `Query the indexed symbol catalog and semantic backends.
+Includes text search, symbol lookup, outline, references,
+context retrieval, dependency analysis, and service exploration.`,
+	}
+
+	symbolsCommand := &cobra.Command{
+		Use:   "symbols <file>",
+		Short: "List symbols for a file from the catalog",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := requireArgs(args, 1, "file"); err != nil {
+				return err
+			}
+			return state.executeOperation(cmd, "nav.symbols", map[string]any{"file": args[0]}, true)
+		},
+	}
+
+	var kind string
+	var exact bool
+	var allWorkspacesFind bool
+	findCommand := &cobra.Command{
+		Use:   "find <pattern>",
+		Short: "Find symbols by name",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := requireArgs(args, 1, "pattern"); err != nil {
+				return err
+			}
+			payload := map[string]any{"pattern": args[0], "kind": kind, "exact": exact}
+			if allWorkspacesFind {
+				payload["all_workspaces"] = true
+			}
+			return state.executeOperation(cmd, "nav.find", payload, true)
+		},
+	}
+	findCommand.Flags().StringVar(&kind, "kind", "", "Optional symbol kind filter")
+	findCommand.Flags().BoolVar(&exact, "exact", false, "Require exact symbol name match")
+	findCommand.Flags().BoolVar(&allWorkspacesFind, "all-workspaces", false, "Search across all registered workspaces")
+
+	var refsFile string
+	var refsLine int
+	var refsRepo string
+	var refsEntrypoint string
+	var refsSolution string
+	var refsProject string
+	refsCommand := &cobra.Command{
+		Use:   "refs <symbol>",
+		Short: "Find references via the semantic backend",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := requireArgs(args, 1, "symbol"); err != nil {
+				return err
+			}
+			payload := semanticPayload(refsRepo, refsEntrypoint, refsSolution, refsProject)
+			payload["symbol"] = args[0]
+			if refsFile != "" {
+				payload["file"] = refsFile
+			}
+			if refsLine > 0 {
+				payload["line"] = refsLine
+			}
+			return state.executeOperation(cmd, "nav.refs", payload, true)
+		},
+	}
+	refsCommand.Flags().StringVar(&refsFile, "file", "", "Anchor file for backends that resolve references by position")
+	refsCommand.Flags().IntVar(&refsLine, "line", 0, "Anchor line for backends that resolve references by position")
+	attachSemanticSelectorFlags(refsCommand, &refsRepo, &refsEntrypoint, &refsSolution, &refsProject)
+
+	overviewCommand := &cobra.Command{
+		Use:   "overview [dir]",
+		Short: "Summarize the catalog for a directory prefix",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			dir := "."
+			if len(args) > 0 {
+				dir = args[0]
+			}
+			return state.executeOperation(cmd, "nav.overview", map[string]any{"dir": dir}, true)
+		},
+	}
+
+	outlineCommand := &cobra.Command{
+		Use:   "outline <file>",
+		Short: "Alias of nav symbols for hierarchical use",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := requireArgs(args, 1, "file"); err != nil {
+				return err
+			}
+			return state.executeOperation(cmd, "nav.outline", map[string]any{"file": args[0]}, true)
+		},
+	}
+
+	var includeArchetype bool
+	serviceCommand := &cobra.Command{
+		Use:   "service <path>",
+		Short: "Summarize the implementation surface of a service path",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := requireArgs(args, 1, "path"); err != nil {
+				return err
+			}
+			return state.executeOperation(cmd, "nav.service", map[string]any{"path": args[0], "include_archetype": includeArchetype}, true)
+		},
+	}
+	serviceCommand.Flags().BoolVar(&includeArchetype, "include-archetype", false, "Include known archetype placeholders in the summary")
+
+	var useRegex bool
+	var includeContent bool
+	var contextLines int
+	var contextMode string
+	var allWorkspacesSearch bool
+	searchCommand := &cobra.Command{
+		Use:   "search <text>",
+		Short: "Full-text search with ripgrep",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := requireArgs(args, 1, "text"); err != nil {
+				return err
+			}
+			payload := map[string]any{"pattern": args[0], "regex": useRegex}
+			if includeContent {
+				payload["include_content"] = true
+				payload["context_lines"] = contextLines
+				payload["context_mode"] = contextMode
+			}
+			if allWorkspacesSearch {
+				payload["all_workspaces"] = true
+			}
+			return state.executeOperation(cmd, "nav.search", payload, true)
+		},
+	}
+	searchCommand.Flags().BoolVar(&useRegex, "regex", false, "Interpret the pattern as regex")
+	searchCommand.Flags().BoolVar(&includeContent, "include-content", false, "Include code content around each match")
+	searchCommand.Flags().IntVar(&contextLines, "context-lines", 20, "Number of context lines for line-based fallback")
+	searchCommand.Flags().StringVar(&contextMode, "context-mode", "hybrid", "Content mode: hybrid, symbol, or lines")
+	searchCommand.Flags().BoolVar(&allWorkspacesSearch, "all-workspaces", false, "Search across all registered workspaces")
+
+	var contextRepo string
+	var contextEntrypoint string
+	var contextSolution string
+	var contextProject string
+	contextCommand := &cobra.Command{
+		Use:   "context <file> <line>",
+		Short: "Get semantic context for a source line",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := requireArgs(args, 2, "file and line"); err != nil {
+				return err
+			}
+			lineNumber, err := strconv.Atoi(args[1])
+			if err != nil {
+				return err
+			}
+			payload := semanticPayload(contextRepo, contextEntrypoint, contextSolution, contextProject)
+			payload["file"] = args[0]
+			payload["line"] = lineNumber
+			return state.executeOperation(cmd, "nav.context", payload, true)
+		},
+	}
+	attachSemanticSelectorFlags(contextCommand, &contextRepo, &contextEntrypoint, &contextSolution, &contextProject)
+
+	var depsRepo string
+	var depsEntrypoint string
+	var depsSolution string
+	var depsProject string
+	depsCommand := &cobra.Command{
+		Use:   "deps [project]",
+		Short: "Get semantic dependencies for a project or solution",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			payload := semanticPayload(depsRepo, depsEntrypoint, depsSolution, depsProject)
+			if len(args) > 0 {
+				payload["project_hint"] = args[0]
+			}
+			return state.executeOperation(cmd, "nav.deps", payload, true)
+		},
+	}
+	attachSemanticSelectorFlags(depsCommand, &depsRepo, &depsEntrypoint, &depsSolution, &depsProject)
+
+	var multiReadStdin bool
+	multiReadCommand := &cobra.Command{
+		Use:   "multi-read [file:start-end ...]",
+		Short: "Batch-read multiple file ranges in one call",
+		Long: `Read multiple file ranges in a single invocation.
+Each argument should be in format: file:startLine-endLine
+Example: mi-lsp nav multi-read src/main.go:1-50 src/handler.go:100-200
+Use --stdin to read JSON array of ranges from stdin.`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			payload := map[string]any{}
+			if multiReadStdin {
+				payload["stdin"] = true
+			}
+			if len(args) > 0 {
+				argSlice := make([]any, len(args))
+				for i, arg := range args {
+					argSlice[i] = arg
+				}
+				payload["args"] = argSlice
+			}
+			return state.executeOperation(cmd, "nav.multi-read", payload, true)
+		},
+	}
+	multiReadCommand.Flags().BoolVar(&multiReadStdin, "stdin", false, "Read file ranges as JSON array from stdin")
+
+	var batchSequential bool
+	batchCommand := &cobra.Command{
+		Use:   "batch",
+		Short: "Execute multiple operations in one call via stdin JSON",
+		Long: `Execute multiple nav operations in a single process invocation.
+Read a JSON array of operations from stdin.
+Each operation: {"id":"...", "op":"nav.search", "params":{...}}
+Results are returned as an array of envelopes.`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			data, err := io.ReadAll(os.Stdin)
+			if err != nil {
+				return fmt.Errorf("reading stdin: %w", err)
+			}
+			payload := map[string]any{
+				"operations": string(data),
+				"sequential": batchSequential,
+			}
+			return state.executeOperation(cmd, "nav.batch", payload, true)
+		},
+	}
+	batchCommand.Flags().BoolVar(&batchSequential, "sequential", false, "Execute operations sequentially instead of in parallel")
+
+	var relatedDepthFlag string
+	var relatedRepo string
+	var relatedEntrypoint string
+	var relatedSolution string
+	var relatedProject string
+	relatedCommand := &cobra.Command{
+		Use:   "related <symbol>",
+		Short: "Show a symbol's neighborhood: definition, callers, implementors, tests",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := requireArgs(args, 1, "symbol"); err != nil {
+				return err
+			}
+			payload := semanticPayload(relatedRepo, relatedEntrypoint, relatedSolution, relatedProject)
+			payload["symbol"] = args[0]
+			if relatedDepthFlag != "" {
+				payload["depth"] = relatedDepthFlag
+			}
+			return state.executeOperation(cmd, "nav.related", payload, true)
+		},
+	}
+	relatedCommand.Flags().StringVar(&relatedDepthFlag, "depth", "", "Comma-separated neighborhoods: definition,callers,implementors,tests (default: all)")
+	attachSemanticSelectorFlags(relatedCommand, &relatedRepo, &relatedEntrypoint, &relatedSolution, &relatedProject)
+
+	workspaceMapCommand := &cobra.Command{
+		Use:   "workspace-map",
+		Short: "High-level map of services, endpoints, events, and dependencies",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return state.executeOperation(cmd, "nav.workspace-map", map[string]any{}, true)
+		},
+	}
+
+	var diffIncludeContent bool
+	diffContextCommand := &cobra.Command{
+		Use:   "diff-context [ref]",
+		Short: "Semantic context of changed symbols in a git diff",
+		Long: `Show changed symbols and their semantic context from a git diff.
+Compares the working tree against a git ref (default: HEAD).
+Use --include-content to embed symbol bodies in the output.`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			ref := ""
+			if len(args) > 0 {
+				ref = args[0]
+			}
+			payload := map[string]any{"ref": ref, "include_content": diffIncludeContent}
+			return state.executeOperation(cmd, "nav.diff-context", payload, true)
+		},
+	}
+	diffContextCommand.Flags().BoolVar(&diffIncludeContent, "include-content", false, "Include changed symbol bodies in output")
+
+	command.AddCommand(symbolsCommand, findCommand, refsCommand, overviewCommand, outlineCommand, serviceCommand, searchCommand, contextCommand, depsCommand, multiReadCommand, batchCommand, relatedCommand, workspaceMapCommand, diffContextCommand)
+	return command
+}
+
+func attachSemanticSelectorFlags(command *cobra.Command, repo *string, entrypoint *string, solution *string, project *string) {
+	command.Flags().StringVar(repo, "repo", "", "Repo child selector for container workspaces")
+	command.Flags().StringVar(entrypoint, "entrypoint", "", "Semantic entrypoint ID or path")
+	command.Flags().StringVar(solution, "solution", "", "Explicit solution path override")
+	command.Flags().StringVar(project, "project", "", "Explicit project path override")
+}
+
+func semanticPayload(repo string, entrypoint string, solution string, project string) map[string]any {
+	payload := map[string]any{}
+	if repo != "" {
+		payload["repo"] = repo
+	}
+	if entrypoint != "" {
+		payload["entrypoint"] = entrypoint
+	}
+	if solution != "" {
+		payload["solution"] = solution
+	}
+	if project != "" {
+		payload["project_path"] = project
+	}
+	return payload
+}

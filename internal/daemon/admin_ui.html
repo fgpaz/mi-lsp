@@ -1,0 +1,885 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>mi-lsp Governance</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --neo-bg: #eff0f4;
+      --neo-bg-alt: #eceef3;
+      --neo-surface: #eceef3;
+      --neo-panel: #f4f6fb;
+      --neo-ink: #0f172a;
+      --neo-muted: #64748b;
+      --neo-line: #d0d4dd;
+      --neo-accent: #475569;
+      --neo-accent-soft: #eceef3;
+      --neo-warning: #c07020;
+      --neo-warning-soft: #f4e0c8;
+      --neo-danger: #a0342a;
+      --neo-danger-soft: #f2d6d2;
+      --neo-shadow-light: rgba(255,255,255,0.90);
+      --neo-shadow-dark: rgba(175,187,207,0.22);
+      --radius-xl: 26px;
+      --radius-lg: 20px;
+      --radius-md: 16px;
+      --radius-pill: 999px;
+      --space-1: 6px;
+      --space-2: 10px;
+      --space-3: 14px;
+      --space-4: 18px;
+      --space-5: 24px;
+      --space-6: 32px;
+      --font-sans: "Aptos", "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+      --font-mono: "Cascadia Code", "Aptos Mono", "SFMono-Regular", Consolas, monospace;
+      --ease-soft: cubic-bezier(.2,.8,.2,1);
+      --motion-fast: 160ms;
+      --focus-ring: 0 0 0 3px rgba(71,85,105,0.20);
+    }
+
+    * { box-sizing: border-box; }
+    html { background: linear-gradient(145deg, var(--neo-bg), var(--neo-bg-alt)); }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: var(--font-sans);
+      color: var(--neo-ink);
+      background:
+        radial-gradient(circle at top left, rgba(255,255,255,0.55), transparent 32%),
+        radial-gradient(circle at bottom right, rgba(175,187,207,0.06), transparent 28%),
+        linear-gradient(145deg, var(--neo-bg), var(--neo-bg-alt));
+    }
+
+    button, input, select { font: inherit; color: inherit; }
+    button, .interactive { min-height: 36px; }
+
+    .skip-link {
+      position: absolute;
+      left: 16px;
+      top: -48px;
+      z-index: 1000;
+      background: var(--neo-accent);
+      color: #fff;
+      padding: 10px 14px;
+      border-radius: var(--radius-pill);
+      text-decoration: none;
+      transition: top var(--motion-fast) var(--ease-soft);
+    }
+    .skip-link:focus { top: 16px; }
+
+    .shell { max-width: 1480px; margin: 0 auto; padding: 8px 24px; }
+    .panel {
+      border: 1px solid rgba(255,255,255,0.28);
+      border-radius: var(--radius-lg);
+      background: linear-gradient(180deg, rgba(255,255,255,0.78), rgba(236,238,243,0.96));
+      box-shadow: 8px 8px 18px var(--neo-shadow-dark), -6px -6px 14px var(--neo-shadow-light);
+    }
+    .neo-inward {
+      background: linear-gradient(180deg, rgba(226,229,238,0.98), rgba(240,242,247,0.84));
+      box-shadow: inset 4px 4px 10px rgba(175,187,207,0.22), inset -4px -4px 10px rgba(255,255,255,0.90);
+    }
+    .panel-side {
+      background: color-mix(in srgb, var(--neo-surface) 97%, var(--neo-ink) 3%);
+    }
+    .panel-main { contain: layout style; }
+    .panel-side { contain: layout style; }
+
+    .topbar {
+      display: flex;
+      align-items: center;
+      gap: var(--space-4);
+      padding: 10px var(--space-5);
+      flex-wrap: wrap;
+    }
+    .eyebrow {
+      margin: 0 0 var(--space-2);
+      font-size: 12px;
+      letter-spacing: .12em;
+      text-transform: uppercase;
+      color: var(--neo-accent);
+      font-weight: 700;
+    }
+    .headline {
+      margin: 0;
+      font-size: 18px;
+      line-height: 1.2;
+      letter-spacing: -0.02em;
+      font-weight: 700;
+    }
+    .lede, .muted { color: var(--neo-muted); }
+    .lede { display: none; }
+
+    .meta-grid {
+      display: flex;
+      flex-wrap: wrap;
+      gap: var(--space-1) var(--space-4);
+      align-items: center;
+      margin-left: auto;
+    }
+    .meta-item {
+      display: flex;
+      flex-direction: row;
+      align-items: center;
+      gap: 5px;
+      padding: 0;
+      background: none;
+      box-shadow: none;
+      border-radius: 0;
+    }
+    .meta-label, .metric-label, .summary-label, .detail-term, .table th, .field span {
+      display: block;
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+      color: var(--neo-muted);
+    }
+    .meta-label { font-size: 11px; }
+    .meta-value { font-size: 13px; }
+    .meta-value, .metric-value, .mono, .table td.is-num, .summary-value { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+
+    .kpi-grid {
+      display: flex;
+      flex-wrap: wrap;
+      gap: var(--space-1) var(--space-3);
+      padding: 8px var(--space-5);
+      background: var(--neo-surface);
+      border-bottom: 1px solid var(--neo-line);
+      border-radius: var(--radius-lg);
+      margin-top: 8px;
+      box-shadow: none;
+      align-items: center;
+    }
+    .kpi-card {
+      display: flex;
+      align-items: baseline;
+      gap: 6px;
+      background: transparent;
+      box-shadow: none;
+      border: none;
+      padding: 2px 0;
+      min-width: 0;
+      flex-direction: row;
+    }
+    .kpi-card + .kpi-card::before {
+      content: "";
+      display: inline-block;
+      width: 1px;
+      height: 16px;
+      background: var(--neo-line);
+      margin-right: var(--space-3);
+      align-self: center;
+    }
+    .kpi-alert { background: transparent !important; border: none !important; }
+    .kpi-value--alert { color: var(--neo-warning); }
+    .metric-value { font-size: 20px; font-weight: 700; line-height: 1; letter-spacing: -0.02em; }
+    .metric-subtle { display: none; }
+
+    .toolbar { margin-top: 8px; padding: 10px var(--space-4); }
+    .toolbar-grid { display: flex; flex-direction: column; gap: 8px; }
+    .toolbar-filters {
+      display: grid;
+      grid-template-columns: minmax(220px, 1.2fr) repeat(2, minmax(160px, .6fr)) minmax(200px, 1fr);
+      gap: var(--space-3);
+      align-items: end;
+    }
+    .toolbar-grid > .action-stack { justify-content: flex-end; }
+    .field { display: grid; gap: 8px; min-width: 0; }
+    .field input, .field select, .action-button, .workspace-tab, .segmented button, .drawer-button {
+      border: 1px solid rgba(255,255,255,0.32);
+      border-radius: var(--radius-md);
+      background: linear-gradient(180deg, rgba(255,255,255,0.78), rgba(236,238,243,0.96));
+      box-shadow: 8px 8px 16px rgba(175,187,207,0.18), -6px -6px 12px rgba(255,255,255,0.90);
+      transition: transform var(--motion-fast) var(--ease-soft), box-shadow var(--motion-fast) var(--ease-soft), border-color var(--motion-fast) var(--ease-soft), background var(--motion-fast) var(--ease-soft);
+    }
+    .field input, .field select { width: 100%; padding: 0 14px; outline: none; }
+    .field input:focus-visible, .field select:focus-visible, .action-button:focus-visible, .workspace-tab:focus-visible, .segmented button:focus-visible, .row-button:focus-visible, .drawer-button:focus-visible {
+      outline: none;
+      box-shadow: var(--focus-ring), 8px 8px 16px rgba(175,187,207,0.18), -6px -6px 12px rgba(255,255,255,0.90);
+    }
+    .action-stack { display: flex; justify-content: flex-end; gap: var(--space-2); flex-wrap: wrap; }
+    .action-button, .workspace-tab, .segmented button, .drawer-button, .row-button {
+      cursor: pointer;
+      padding: 0 16px;
+      font-weight: 700;
+      color: var(--neo-ink);
+    }
+    .action-button:hover, .workspace-tab:hover, .segmented button:hover, .drawer-button:hover, .row-button:hover {
+      transform: translateY(-1px);
+      box-shadow: 10px 10px 18px rgba(175,187,207,0.24), -7px -7px 14px rgba(255,255,255,0.90);
+    }
+    .action-button:active, .workspace-tab:active, .segmented button:active, .drawer-button:active, .row-button:active {
+      transform: translateY(0);
+      box-shadow: inset 4px 4px 10px rgba(175,187,207,0.22), inset -4px -4px 10px rgba(255,255,255,0.90);
+    }
+    .segmented {
+      display: inline-flex;
+      gap: var(--space-2);
+      padding: 6px;
+      border-radius: var(--radius-pill);
+      background: linear-gradient(180deg, rgba(226,229,238,0.95), rgba(240,242,247,0.85));
+      box-shadow: inset 3px 3px 8px rgba(175,187,207,0.20), inset -3px -3px 8px rgba(255,255,255,0.90);
+    }
+    .segmented button[aria-pressed="true"], .workspace-tab[aria-selected="true"], .action-button.is-active {
+      background: linear-gradient(180deg, rgba(236,238,243,0.98), rgba(248,250,252,0.96));
+      border-color: rgba(71,85,105,0.22);
+      box-shadow: inset 4px 4px 10px rgba(175,187,207,0.22), inset -4px -4px 10px rgba(255,255,255,0.90);
+      color: var(--neo-ink);
+    }
+    .action-button.is-primary, .drawer-button.is-primary {
+      color: #fff;
+      background: linear-gradient(180deg, #334155, #1e293b);
+      border-color: rgba(30,41,59,0.4);
+      box-shadow: 10px 10px 18px rgba(30,41,59,0.18), -6px -6px 14px rgba(255,255,255,0.68);
+    }
+
+    .workspace-nav { margin-top: 8px; padding: var(--space-2) var(--space-3); }
+    .workspace-tabs { display: flex; gap: var(--space-2); flex-wrap: wrap; }
+    .workspace-tab { display: inline-flex; align-items: center; gap: 8px; padding: 4px 14px 4px 4px; font-size: 13px; border-radius: var(--radius-pill); }
+    .workspace-tab-count {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 28px;
+      min-height: 28px;
+      padding: 0 9px;
+      border-radius: var(--radius-pill);
+      font-family: var(--font-mono);
+      font-size: 12px;
+      background: rgba(24,33,43,0.08);
+    }
+
+    .content-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1.35fr) minmax(320px, .92fr) minmax(300px, .82fr);
+      gap: var(--space-3);
+      margin-top: 8px;
+      align-items: start;
+      contain: layout;
+    }
+    .panel-main, .panel-side, .drawer { padding: 14px var(--space-4); min-height: 320px; }
+    .panel-head { display: flex; justify-content: space-between; gap: var(--space-3); align-items: start; margin-bottom: 10px; }
+    .panel-title {
+      margin: 0;
+      font-size: 18px;
+      letter-spacing: -0.03em;
+      border-left: 3px solid var(--neo-accent);
+      padding-left: 10px;
+      color: var(--neo-ink);
+    }
+    .panel-copy { margin: 4px 0 0; color: var(--neo-muted); line-height: 1.4; font-size: 13px; }
+    .badge-row, .drawer-actions { display: flex; flex-wrap: wrap; gap: 10px; }
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      min-height: 32px;
+      padding: 0 12px;
+      border-radius: var(--radius-pill);
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: .04em;
+      text-transform: uppercase;
+    }
+    .badge-ok { background: #dcfce7; color: #16a34a; }
+    .badge-warn { background: var(--neo-warning-soft); color: var(--neo-warning); border: 1px solid var(--neo-warning); }
+    .badge-danger { background: var(--neo-danger-soft); color: var(--neo-danger); }
+    .badge-neutral { background: rgba(24,33,43,0.08); color: var(--neo-ink); }
+
+    .summary-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-2); margin-top: var(--space-2); }
+    .summary-item {
+      padding: 10px 14px;
+      border-radius: var(--radius-md);
+      background: linear-gradient(180deg, rgba(255,255,255,0.68), rgba(236,238,243,0.94));
+      box-shadow: inset 1px 1px 0 rgba(255,255,255,0.68), inset -1px -1px 0 rgba(208,212,221,0.42);
+    }
+    .summary-value { margin-top: 5px; font-size: 18px; font-weight: 800; }
+
+    .table-shell { overflow: hidden; border-radius: var(--radius-md); border: 1px solid rgba(208,212,221,0.74); background: rgba(248,250,252,0.72); }
+    .table-wrap { overflow: auto; max-width: 100%; }
+    .table { width: 100%; border-collapse: collapse; }
+    .table th, .table td { padding: 12px 14px; font-size: 13px; border-bottom: 1px solid rgba(208,212,221,0.66); vertical-align: top; }
+    .table th { position: sticky; top: 0; z-index: 1; background: rgba(236,238,243,0.98); font-size: 11px; }
+    .table--flat th { position: static !important; display: table-cell !important; background: rgba(236,238,243,0.98); }
+    .table tr:last-child td { border-bottom: none; }
+    .table tbody tr:hover { background: rgba(175,187,207,0.08); }
+    .metrics-side-grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-4); margin-top: var(--space-4); }
+    .metrics-section-title { font-size: 11px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--neo-accent); margin: 0 0 8px; }
+    .metrics-item { display: flex; align-items: baseline; gap: 8px; padding: 6px 0; border-bottom: 1px solid rgba(208,212,221,0.36); font-size: 13px; }
+    .metrics-item:last-child { border-bottom: none; }
+    .metrics-item-name { flex: 1; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .metrics-item-value { color: var(--neo-muted); font-size: 12px; white-space: nowrap; }
+    .row-button { width: 100%; min-height: 0; padding: 0; border: none; background: transparent; box-shadow: none; text-align: left; border-radius: 0; font-weight: inherit; }
+    .row-button:hover, .row-button:active { box-shadow: none; transform: none; }
+    .row-main { display: block; font-weight: 700; line-height: 1.45; }
+    .row-sub { display: block; margin-top: 4px; color: var(--neo-muted); line-height: 1.45; }
+
+    .drawer {
+      position: sticky;
+      top: 12px;
+      contain: layout style;
+      background: color-mix(in srgb, var(--neo-surface) 95%, var(--neo-ink) 5%);
+    }
+    .drawer-body, .detail-list { display: grid; gap: 8px; }
+    .detail-row {
+      padding: 7px 12px;
+      border-radius: var(--radius-md);
+      background: linear-gradient(180deg, rgba(255,255,255,0.64), rgba(236,238,243,0.90));
+      box-shadow: inset 1px 1px 0 rgba(255,255,255,0.64), inset -1px -1px 0 rgba(208,212,221,0.42);
+    }
+    .detail-value { display: block; line-height: 1.5; word-break: break-word; }
+
+    .empty-state, .log-state { display: grid; place-items: center; min-height: 140px; padding: var(--space-4); text-align: center; color: var(--neo-muted); }
+    .empty-state strong, .log-state strong { display: block; color: var(--neo-ink); font-size: 20px; margin-bottom: 8px; }
+    .log-shell {
+      padding: 14px;
+      border-radius: var(--radius-md);
+      background: #131a1f;
+      color: #d8e2ea;
+      border: 1px solid color-mix(in srgb, var(--neo-accent) 30%, var(--neo-line) 70%);
+      box-shadow: inset 0 0 0 1px rgba(255,255,255,0.05);
+    }
+    .log-lines { margin: 0; max-height: 340px; overflow-y: auto; overflow-x: hidden; font-family: var(--font-mono); font-size: 12px; line-height: 1.55; contain: content; }
+    .log-lines > div { display: flex; align-items: baseline; min-width: 0; }
+    .log-text { flex: 1; min-width: 0; word-break: break-word; overflow-wrap: break-word; white-space: pre-wrap; }
+    .log-line-number { flex-shrink: 0; display: inline-block; min-width: 54px; margin-right: 12px; color: #7fa0af; text-align: right; user-select: none; }
+
+    .statusbar { display: flex; justify-content: space-between; gap: var(--space-3); align-items: center; margin-top: 8px; padding: 0 4px; color: var(--neo-muted); font-size: 13px; }
+    .status-pill { display: inline-flex; align-items: center; gap: 8px; padding: 0 12px; min-height: 36px; border-radius: var(--radius-pill); background: rgba(255,255,255,0.40); box-shadow: inset 1px 1px 0 rgba(255,255,255,0.50), inset -1px -1px 0 rgba(208,212,221,0.42); }
+    .pulse { width: 10px; height: 10px; border-radius: 50%; background: var(--neo-accent); box-shadow: 0 0 0 0 rgba(71,85,105,0.40); animation: pulse 2s infinite; }
+    .toast {
+      position: fixed; right: 24px; bottom: 24px; max-width: 360px; padding: 14px 18px; border-radius: var(--radius-md); color: #fff;
+      background: linear-gradient(180deg, #334155, #1e293b); box-shadow: 12px 12px 24px rgba(15,23,42,0.18);
+      opacity: 0; transform: translateY(14px); pointer-events: none;
+      transition: opacity var(--motion-fast) var(--ease-soft), transform var(--motion-fast) var(--ease-soft);
+    }
+    .toast.is-visible { opacity: 1; transform: translateY(0); }
+    .toast.is-warning { background: linear-gradient(180deg, #c27420, #b06318); }
+    .toast.is-danger { background: linear-gradient(180deg, #b84438, #a0342a); }
+    .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+    @keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(71,85,105,0.30); } 70% { box-shadow: 0 0 0 10px rgba(71,85,105,0); } 100% { box-shadow: 0 0 0 0 rgba(71,85,105,0); } }
+    @media (max-width: 1260px) { .content-grid { grid-template-columns: minmax(0, 1fr) minmax(0, .95fr); } .drawer { grid-column: 1 / -1; position: static; min-height: 0; } }
+    @media (max-width: 980px) { .topbar, .content-grid, .toolbar-filters, .kpi-grid, .summary-grid, .meta-grid { grid-template-columns: 1fr; } .action-stack { justify-content: stretch; } .action-stack > * { flex: 1 1 180px; } .statusbar { flex-direction: column; align-items: flex-start; } }
+    @media (max-width: 768px) { .log-lines { font-size: 14px; } .table th, .table td { font-size: 14px; } }
+    @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; scroll-behavior: auto !important; } }
+  </style>
+</head>
+<body>
+  <a class="skip-link" href="#main-content">Skip to main content</a>
+  <div class="shell">
+    <header id="topbar" class="topbar panel" role="banner">
+      <section style="flex-shrink:0">
+        <p class="eyebrow" style="margin:0 0 2px">Local Governance</p>
+        <h1 class="headline">mi-lsp operational console</h1>
+      </section>
+      <section id="daemon-meta" class="meta-grid" aria-live="polite"></section>
+    </header>
+
+    <section id="kpi-grid" class="kpi-grid" aria-label="Key metrics"></section>
+
+    <section class="toolbar panel" aria-label="Filters and safe actions">
+      <div class="toolbar-grid">
+        <div class="toolbar-filters">
+          <label class="field"><span>Search</span><input id="search-input" class="interactive" type="search" placeholder="Filter workspaces, runtimes, operations, clients" autocomplete="off" /></label>
+          <label class="field"><span>Backend</span><select id="backend-filter" class="interactive"></select></label>
+          <label class="field"><span>Client</span><select id="client-filter" class="interactive"></select></label>
+          <label class="field"><span>Window</span><select id="window-filter" class="interactive"></select></label>
+          <div><div class="field"><span>Panel</span></div><div id="panel-switcher" class="segmented" role="tablist" aria-label="Primary panel"></div></div>
+        </div>
+        <div class="action-stack" aria-label="Safe actions">
+          <button type="button" class="action-button interactive" data-action="refresh">Refresh</button>
+          <button type="button" class="action-button interactive" data-action="warm-workspace">Warm workspace</button>
+          <button type="button" class="action-button interactive" data-action="open-logs">Open logs</button>
+          <button type="button" class="action-button is-primary interactive" data-action="copy-command">Copy CLI</button>
+        </div>
+      </div>
+    </section>
+
+    <nav class="workspace-nav panel" aria-label="Workspace tabs"><div id="workspace-tabs" class="workspace-tabs"></div></nav>
+    <main id="main-content" class="content-grid">
+      <section id="primary-panel" class="panel panel-main" aria-live="polite"></section>
+      <section id="secondary-panel" class="panel panel-side" aria-live="polite"></section>
+      <aside id="drawer-panel" class="panel drawer" aria-live="polite"></aside>
+    </main>
+    <footer class="statusbar"><div id="last-updated" class="status-pill mono">Waiting for first refresh…</div><div id="live-status" class="status-pill"><span class="pulse" aria-hidden="true"></span><span>Auto-refresh every 30s</span></div></footer>
+  </div>
+  <div id="toast" class="toast" role="status" aria-live="polite" aria-atomic="true"></div>
+
+  <script>
+    (function () {
+      var REFRESH_MS = 30000;
+      var state = { dashboard: null, detail: null, logs: null, metrics: null, drawer: null, selectedWorkspace: '', panel: 'overview', window: 'recent', filters: { search: '', backend: 'all', client: 'all' }, lastUpdated: null, toastTimer: null, refreshTimer: null };
+      function parseRoute() {
+        var params = new URLSearchParams(window.location.search);
+        state.selectedWorkspace = params.get('workspace') || '';
+        state.panel = params.get('panel') || 'overview';
+        state.window = params.get('window') || 'recent';
+        state.filters.backend = params.get('backend') || 'all';
+        state.filters.client = params.get('client') || 'all';
+        state.filters.search = params.get('q') || state.filters.search || '';
+      }
+      function updateRoute(changes, replace) {
+        var params = new URLSearchParams(window.location.search);
+        Object.keys(changes).forEach(function (key) {
+          var value = changes[key];
+          if (value === '' || value === null || typeof value === 'undefined') { params.delete(key); return; }
+          params.set(key, value);
+        });
+        var next = window.location.pathname + (params.toString() ? '?' + params.toString() : '');
+        window.history[replace ? 'replaceState' : 'pushState']({}, '', next);
+        parseRoute();
+      }
+      function escapeHtml(value) { return String(value || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;'); }
+      function formatDate(value) {
+        if (!value || String(value).indexOf('0001-') === 0) { return '-'; }
+        var date = new Date(value);
+        if (isNaN(date.getTime())) { return '-'; }
+        return new Intl.DateTimeFormat(undefined, { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' }).format(date);
+      }
+      function formatBytes(bytes) {
+        var value = Number(bytes || 0); if (!value) { return '0 B'; }
+        var units = ['B', 'KB', 'MB', 'GB']; var unitIndex = 0;
+        while (value >= 1024 && unitIndex < units.length - 1) { value = value / 1024; unitIndex += 1; }
+        return value.toFixed(value >= 100 || unitIndex === 0 ? 0 : 1) + ' ' + units[unitIndex];
+      }
+      function formatDurationMs(value) { var ms = Number(value || 0); if (!ms) { return '0 ms'; } return ms >= 1000 ? (ms / 1000).toFixed(ms >= 10000 ? 0 : 1) + ' s' : ms + ' ms'; }
+      function badge(label, tone) { return '<span class="badge badge-' + tone + '">' + escapeHtml(label) + '</span>'; }
+      function setHtml(id, html) { var node = document.getElementById(id); if (node) { node.innerHTML = html; } }
+      async function loadJSON(path, options) {
+        var controller = new AbortController();
+        var timeout = window.setTimeout(function () { controller.abort(); }, 5000);
+        try {
+          var response = await fetch(path, Object.assign({}, options || {}, { signal: controller.signal }));
+          if (!response.ok) { var body = await response.text(); throw new Error(body || ('Request failed: ' + response.status)); }
+          return await response.json();
+        } finally {
+          window.clearTimeout(timeout);
+        }
+      }
+      function selectedWorkspaceDetail() { return state.detail && state.detail.workspace === state.selectedWorkspace ? state.detail : null; }
+      function currentWorkspaces() { return (state.dashboard && state.dashboard.workspaces) || []; }
+      function currentMetrics() { return (state.dashboard && state.dashboard.metrics) || { active_runtimes: 0, tracked_accesses: 0, degraded_backends: 0, recent_cold_starts: 0 }; }
+      function currentProject() { var detail = selectedWorkspaceDetail(); return detail && detail.project ? detail.project : null; }
+      function currentRegistration() { var detail = selectedWorkspaceDetail(); return detail && detail.registration ? detail.registration : null; }
+      function workspaceKind(detail) {
+        if (!detail) { return 'single'; }
+        if (detail.registration && detail.registration.kind) { return detail.registration.kind; }
+        if (detail.project && detail.project.project && detail.project.project.kind) { return detail.project.project.kind; }
+        return 'single';
+      }
+      function workspaceRepoCount(detail) { return detail && detail.project && detail.project.repo ? detail.project.repo.length : 0; }
+      function workspaceEntrypointCount(detail) { return detail && detail.project && detail.project.entrypoint ? detail.project.entrypoint.length : 0; }
+      function runtimeRepoLabel(item) { return item.repo || item.repo_id || '-'; }
+      function runtimeEntrypointLabel(item) { return item.entrypoint_id || item.entrypoint_path || '-'; }
+      function filteredRuntimes() {
+        var detail = selectedWorkspaceDetail();
+        var items = detail && detail.runtimes ? detail.runtimes.slice() : [];
+        return items.filter(function (item) {
+          if (state.filters.backend !== 'all' && String(item.backend_type || '').toLowerCase() !== state.filters.backend) { return false; }
+          if (state.filters.search) {
+            var haystack = [item.workspace, item.backend_type, item.runtime_key, item.pid, item.repo, item.repo_root, item.entrypoint_id, item.entrypoint_path].join(' ').toLowerCase();
+            if (haystack.indexOf(state.filters.search.toLowerCase()) === -1) { return false; }
+          }
+          return true;
+        });
+      }
+      function filteredAccesses(limit) {
+        var source = state.detail && state.detail.accesses ? state.detail.accesses.slice() : ((state.dashboard && state.dashboard.recent_accesses) || []).slice();
+        var items = source.filter(function (item) {
+          if (state.selectedWorkspace && item.workspace && state.detail && item.workspace !== state.selectedWorkspace) { return false; }
+          if (state.filters.backend !== 'all' && String(item.backend || '').toLowerCase() !== state.filters.backend) { return false; }
+          if (state.filters.client !== 'all' && String(item.client_name || 'manual-cli').toLowerCase() !== state.filters.client.toLowerCase()) { return false; }
+          if (state.filters.search) {
+            var haystack = [item.operation, item.workspace, item.repo, item.backend, item.client_name, item.session_id, item.entrypoint_id, item.error].join(' ').toLowerCase();
+            if (haystack.indexOf(state.filters.search.toLowerCase()) === -1) { return false; }
+          }
+          return true;
+        });
+        return typeof limit === 'number' && limit > 0 ? items.slice(0, limit) : items;
+      }
+      function logItems() { return state.logs && state.logs.items ? state.logs.items : []; }
+      function currentCommand() {
+        if (state.panel === 'logs') { return 'mi-lsp daemon logs --tail 120'; }
+        if (!state.selectedWorkspace) { return state.window === 'recent' ? 'mi-lsp admin export --recent --format json' : 'mi-lsp admin export --since ' + state.window + ' --format json'; }
+        var detail = selectedWorkspaceDetail();
+        var base = 'mi-lsp workspace warm --workspace ' + state.selectedWorkspace + ' --format json';
+        if (detail && workspaceKind(detail) === 'container') {
+          var project = currentProject();
+          var defaultRepo = project && project.project ? project.project.default_repo : '';
+          if (defaultRepo) {
+            return 'mi-lsp nav refs <symbol> --workspace ' + state.selectedWorkspace + ' --repo ' + defaultRepo + ' --backend roslyn --format json';
+          }
+        }
+        if (state.panel === 'activity') { return 'mi-lsp admin export --workspace ' + state.selectedWorkspace + (state.window === 'recent' ? ' --recent' : ' --since ' + state.window) + ' --format json'; }
+        return base;
+      }
+      function showToast(message, tone) {
+        var node = document.getElementById('toast'); if (!node) { return; }
+        if (state.toastTimer) { window.clearTimeout(state.toastTimer); }
+        node.textContent = message;
+        node.className = 'toast is-visible' + (tone ? ' is-' + tone : '');
+        state.toastTimer = window.setTimeout(function () { node.className = 'toast'; }, 2400);
+      }
+      async function copyText(text) { await navigator.clipboard.writeText(text); showToast('CLI command copied', 'ok'); }
+      async function warmWorkspace() {
+        if (!state.selectedWorkspace) { showToast('Select a workspace before warming it', 'warning'); return; }
+        try {
+          var response = await loadJSON('/api/workspaces/' + encodeURIComponent(state.selectedWorkspace) + '/warm', { method: 'POST' });
+          var warnings = response.warnings || [];
+          showToast(warnings.length ? warnings[0] : 'Workspace warmed', warnings.length ? 'warning' : 'ok');
+          await loadData(true);
+        } catch (error) {
+          showToast(error.message || 'Warm failed', 'danger');
+        }
+      }
+      function renderMetaItem(label, value) { return '<div class="meta-item"><span class="meta-label">' + escapeHtml(label) + '</span><span class="meta-value mono">' + escapeHtml(value) + '</span></div>'; }
+      function renderMeta() {
+        var daemon = state.dashboard && state.dashboard.state;
+        if (!daemon) { return '<div class="meta-item"><span class="meta-label">Daemon</span><span class="meta-value">Loading…</span></div>'; }
+        return [
+          renderMetaItem('Endpoint', daemon.endpoint || '-'),
+          renderMetaItem('Admin URL', daemon.admin_url || '-'),
+          renderMetaItem('PID', daemon.pid || '-'),
+          renderMetaItem('Started', formatDate(daemon.started_at)),
+          renderMetaItem('Max workers', daemon.max_workers || '-'),
+          renderMetaItem('Idle timeout', daemon.idle_timeout || '-')
+        ].join('');
+      }
+      function renderKpis() {
+        if (state.panel === 'metrics' && state.metrics) {
+          var m = state.metrics;
+          var avgMs = 0;
+          if (m.operations && m.operations.length) {
+            var totalMsAll = 0, totalCountAll = 0;
+            m.operations.forEach(function (op) { totalMsAll += op.avg_ms * op.count; totalCountAll += op.count; });
+            avgMs = totalCountAll ? Math.round(totalMsAll / totalCountAll) : 0;
+          }
+          var mCards = [
+            { label: 'Total requests', value: String(m.total || 0), alert: false },
+            { label: 'Avg latency', value: formatDurationMs(avgMs), alert: false },
+            { label: 'Error rate', value: (m.error_rate || 0).toFixed(1) + '%', alert: (m.error_rate || 0) > 5 },
+            { label: 'Truncation rate', value: (m.trunc_rate || 0).toFixed(1) + '%', alert: (m.trunc_rate || 0) > 15 }
+          ];
+          return mCards.map(function (card) {
+            var valueClass = 'metric-value mono' + (card.alert ? ' kpi-value--alert' : '');
+            return '<article class="kpi-card"><span class="metric-label">' + escapeHtml(card.label) + '</span><span class="' + valueClass + '">' + escapeHtml(card.value) + '</span></article>';
+          }).join('');
+        }
+        var metrics = currentMetrics();
+        var cards = [
+          { label: 'Active runtimes', value: metrics.active_runtimes, subtitle: 'Warm runtimes currently held by the daemon' },
+          { label: 'Tracked accesses', value: metrics.tracked_accesses, subtitle: 'Recent requests recorded for governance' },
+          { label: 'Degraded backends', value: metrics.degraded_backends, subtitle: 'Recent warning or failure signals' },
+          { label: 'Recent cold starts', value: metrics.recent_cold_starts, subtitle: 'Slow requests detected in the last 15m' }
+        ];
+        return cards.map(function (card) {
+          var isAlert = (card.label.indexOf('Degraded') >= 0 && card.value > 0) || (card.label.indexOf('cold') >= 0 && card.value > 0);
+          var valueClass = 'metric-value mono' + (isAlert ? ' kpi-value--alert' : '');
+          return '<article class="kpi-card"><span class="metric-label">' + escapeHtml(card.label) + '</span><span class="' + valueClass + '">' + escapeHtml(card.value) + '</span></article>';
+        }).join('');
+      }
+      function renderTabs() {
+        var workspaces = currentWorkspaces();
+        if (!workspaces.length) { return '<div class="muted">No workspace is active yet. Warm one from the CLI to start sharing semantic runtimes.</div>'; }
+        return workspaces.map(function (workspace) {
+          var selected = workspace.workspace === state.selectedWorkspace;
+          var displayName = workspace.workspace;
+          if (!displayName || displayName === '.') { displayName = '(root)'; }
+          return '<button type="button" class="workspace-tab interactive" data-action="set-workspace" data-workspace="' + escapeHtml(workspace.workspace) + '" aria-selected="' + selected + '"><span>' + escapeHtml(displayName) + '</span><span class="workspace-tab-count">' + escapeHtml(workspace.runtime_count + '/' + workspace.access_count) + '</span></button>';
+        }).join('');
+      }
+      function renderPanelSwitcher() {
+        return ['overview', 'activity', 'logs', 'metrics'].map(function (key) {
+          var label = key.charAt(0).toUpperCase() + key.slice(1);
+          return '<button type="button" class="interactive" role="tab" aria-pressed="' + (key === state.panel) + '" data-action="set-panel" data-panel="' + key + '">' + escapeHtml(label) + '</button>';
+        }).join('');
+      }
+      function renderSelectOptions(values, selected, emptyLabel) {
+        var items = ['<option value="all">' + escapeHtml(emptyLabel) + '</option>'];
+        values.forEach(function (value) { items.push('<option value="' + escapeHtml(value) + '"' + (value === selected ? ' selected' : '') + '>' + escapeHtml(value) + '</option>'); });
+        return items.join('');
+      }
+      function renderWindowOptions() {
+        return [
+          { value: 'recent', label: 'Recent (24h)' },
+          { value: '7d', label: 'Last 7 days' },
+          { value: '30d', label: 'Last 30 days' },
+          { value: '90d', label: 'Last 90 days' }
+        ].map(function (item) {
+          return '<option value="' + escapeHtml(item.value) + '"' + (item.value === state.window ? ' selected' : '') + '>' + escapeHtml(item.label) + '</option>';
+        }).join('');
+      }
+      function currentWindowLabel() {
+        if (state.metrics && state.metrics.window_label) { return state.metrics.window_label; }
+        if (state.detail && state.detail.window_label) { return state.detail.window_label; }
+        if (state.dashboard && state.dashboard.window_label) { return state.dashboard.window_label; }
+        return state.window === 'recent' ? 'recent (24h)' : state.window;
+      }
+      function renderToolbar() {
+        var accesses = (state.dashboard && state.dashboard.recent_accesses) || [];
+        var runtimes = (state.dashboard && state.dashboard.active_runtimes) || [];
+        var backends = {}; var clients = {};
+        runtimes.forEach(function (item) { if (item.backend_type) { backends[String(item.backend_type).toLowerCase()] = true; } });
+        accesses.forEach(function (item) { if (item.backend) { backends[String(item.backend).toLowerCase()] = true; } clients[String(item.client_name || 'manual-cli')] = item.client_name || 'manual-cli'; });
+        document.getElementById('search-input').value = state.filters.search;
+        document.getElementById('backend-filter').innerHTML = renderSelectOptions(Object.keys(backends).sort(), state.filters.backend, 'All backends');
+        document.getElementById('client-filter').innerHTML = renderSelectOptions(Object.keys(clients).sort(), state.filters.client, 'All clients');
+        document.getElementById('window-filter').innerHTML = renderWindowOptions();
+        document.getElementById('panel-switcher').innerHTML = renderPanelSwitcher();
+        var logsButton = document.querySelector('[data-action="open-logs"]'); if (logsButton) { logsButton.classList.toggle('is-active', state.panel === 'logs'); }
+      }
+      function renderSummaryItem(label, value) { return '<div class="summary-item"><div class="summary-label">' + escapeHtml(label) + '</div><div class="summary-value mono">' + escapeHtml(value) + '</div></div>'; }
+      function renderDetailRow(label, value) { return '<div class="detail-row"><span class="detail-term">' + escapeHtml(label) + '</span><span class="detail-value mono">' + escapeHtml(value) + '</span></div>'; }
+      function renderEmptyState(title, copy) { return '<div class="empty-state"><div><strong>' + escapeHtml(title) + '</strong><div>' + escapeHtml(copy) + '</div></div></div>'; }
+      function renderLogState(title, copy) { return '<div class="log-state"><div><strong>' + escapeHtml(title) + '</strong><div>' + escapeHtml(copy) + '</div></div></div>'; }
+      function renderRuntimeTable(items) {
+        var rows = items.map(function (item) {
+          return '<tr><td><button type="button" class="row-button" data-action="open-runtime" data-runtime-key="' + escapeHtml(item.runtime_key || '') + '"><span class="row-main">' + escapeHtml(item.backend_type || '-') + '</span><span class="row-sub">' + escapeHtml(item.runtime_key || '-') + '</span></button></td><td>' + escapeHtml(runtimeRepoLabel(item)) + '</td><td><span class="row-main">' + escapeHtml(item.entrypoint_id || '-') + '</span><span class="row-sub">' + escapeHtml(item.entrypoint_path || '-') + '</span></td><td class="is-num mono">' + escapeHtml(item.pid || '-') + '</td><td class="is-num mono">' + escapeHtml(formatBytes(item.memory_bytes)) + '</td><td class="mono">' + escapeHtml(formatDate(item.last_used_at)) + '</td><td>' + badge('warm', 'ok') + '</td></tr>';
+        }).join('');
+        return '<div class="table-shell"><div class="table-wrap"><table class="table"><thead><tr><th>Runtime</th><th>Repo</th><th>Entrypoint</th><th>PID</th><th>Memory</th><th>Last used</th><th>Status</th></tr></thead><tbody>' + rows + '</tbody></table></div></div>';
+      }
+      function renderAccessTable(items) {
+        var rows = items.map(function (item) {
+          var tone = item.success && !(item.warnings && item.warnings.length) && !item.error ? 'ok' : (item.success ? 'warn' : 'danger');
+          var signal = item.success ? ((item.warnings && item.warnings.length) ? 'warning' : 'ok') : 'failed';
+          return '<tr><td><button type="button" class="row-button" data-action="open-access" data-access-id="' + escapeHtml(item.id || '') + '"><span class="row-main">' + escapeHtml(item.operation || '-') + '</span><span class="row-sub">' + escapeHtml(item.workspace || '-') + ' · ' + escapeHtml(item.client_name || 'manual-cli') + (item.session_id ? ' / ' + escapeHtml(item.session_id) : '') + '</span></button></td><td>' + escapeHtml(item.repo || '-') + '</td><td><span class="row-main">' + escapeHtml(item.backend || '-') + '</span><span class="row-sub">' + escapeHtml(item.entrypoint_id || '-') + '</span></td><td class="mono">' + escapeHtml(formatDurationMs(item.latency_ms)) + '</td><td class="mono">' + escapeHtml(formatDate(item.occurred_at)) + '</td><td>' + badge(signal, tone) + '</td></tr>';
+        }).join('');
+        return '<div class="table-shell"><div class="table-wrap"><table class="table"><thead><tr><th>Operation</th><th>Repo</th><th>Backend</th><th>Latency</th><th>When</th><th>Signal</th></tr></thead><tbody>' + rows + '</tbody></table></div></div>';
+      }
+      function renderQuickOps() {
+        var detail = selectedWorkspaceDetail();
+        return '<div class="panel-head"><div><h2 class="panel-title">Safe actions</h2><p class="panel-copy">The governance surface stays operational and low-risk: refresh state, warm a workspace, inspect logs, or copy the exact CLI needed to reproduce what you are seeing.</p></div></div>' + '<div class="detail-list">' + renderDetailRow('Current command', currentCommand()) + renderDetailRow('Selected workspace', state.selectedWorkspace || 'none') + renderDetailRow('Workspace kind', workspaceKind(detail)) + renderDetailRow('Window', currentWindowLabel()) + renderDetailRow('Backend filter', state.filters.backend) + renderDetailRow('Client filter', state.filters.client) + '</div>';
+      }
+      function renderOverviewPanel() {
+        var detail = selectedWorkspaceDetail();
+        if (!state.selectedWorkspace) { return renderEmptyState('Pick a workspace', 'Select a workspace tab to inspect its live runtimes and see how the daemon is sharing warm semantic state.'); }
+        if (!detail) { return renderEmptyState('Loading workspace', 'The workspace detail is still loading. The console will update automatically in a moment.'); }
+        var runtimes = filteredRuntimes();
+        var summary = detail.summary || { workspace: state.selectedWorkspace, runtime_count: 0, access_count: 0, warning_count: 0, backends: [] };
+        var kind = workspaceKind(detail);
+        var repoCount = workspaceRepoCount(detail);
+        var entrypointCount = workspaceEntrypointCount(detail);
+        var badges = [badge((summary.active ? 'Active' : 'Idle') + ' workspace', summary.active ? 'ok' : 'neutral'), badge((summary.runtime_count || 0) + ' runtime' + ((summary.runtime_count || 0) === 1 ? '' : 's'), summary.runtime_count ? 'ok' : 'neutral'), badge((summary.access_count || 0) + ' access event' + ((summary.access_count || 0) === 1 ? '' : 's'), 'neutral'), badge(kind, kind === 'container' ? 'warn' : 'neutral')];
+        if ((summary.warning_count || 0) > 0) { badges.push(badge((summary.warning_count || 0) + ' warning signal' + ((summary.warning_count || 0) === 1 ? '' : 's'), 'warn')); }
+        var table = runtimes.length ? renderRuntimeTable(runtimes) : renderEmptyState('No live runtime', 'This workspace has no warm runtime right now. Use the warm action to pre-load Roslyn or tsserver and share it across agents.');
+        return '<div class="panel-head"><div><h2 class="panel-title">Workspace overview</h2><p class="panel-copy">Live runtimes for <strong>' + escapeHtml(state.selectedWorkspace) + '</strong>. Warm state is keyed by workspace, backend, and semantic entrypoint so parent folders can route to the correct child repo without a monolithic solution.</p></div><div class="badge-row">' + badges.join('') + '</div></div>' + '<div class="summary-grid">' + renderSummaryItem('Kind', kind) + renderSummaryItem('Repos', String(repoCount || 1)) + renderSummaryItem('Entrypoints', String(entrypointCount || 1)) + renderSummaryItem('Backends', summary.backends && summary.backends.length ? summary.backends.join(', ') : 'none') + renderSummaryItem('Last activity', formatDate(summary.last_activity_at)) + renderSummaryItem('Runtime pressure', escapeHtml(String((currentMetrics().active_runtimes || 0) + '/' + ((state.dashboard && state.dashboard.state && state.dashboard.state.max_workers) || '-')))) + '</div><div style="margin-top:10px">' + table + '</div>';
+      }
+      function renderActivityPanel() {
+        var items = filteredAccesses();
+        if (!items.length) { return renderEmptyState('No recent activity', 'Once agents start querying the daemon, this panel will show latency, backend, warnings, and per-client session activity.'); }
+        return '<div class="panel-head"><div><h2 class="panel-title">Recent activity</h2><p class="panel-copy">Requests flowing through the daemon, filtered by workspace, backend, client, free-text search, and the active telemetry window.</p></div><div class="badge-row">' + badge(currentWindowLabel(), 'neutral') + badge(items.length + ' visible events', 'neutral') + '</div></div>' + renderAccessTable(items);
+      }
+      function renderLogsPanel() {
+        var items = logItems();
+        var warnings = state.logs && state.logs.warnings ? state.logs.warnings : [];
+        var tailCount = state.logs && state.logs.tail ? state.logs.tail : 0;
+        var truncated = state.logs && (state.logs.truncated || tailCount >= 120);
+        var badges = [badge(tailCount + ' lines', 'neutral')];
+        if (truncated && tailCount > 0) { badges.push(badge('Showing last ' + tailCount + ' lines', 'warn')); }
+        var heading = '<div class="panel-head"><div><h2 class="panel-title">Daemon logs</h2><p class="panel-copy">Tail of the daemon log file on disk, useful for warm failures, runtime startup issues, and supervision events.</p></div><div class="badge-row">' + badges.join('') + '</div></div>';
+        if (!items.length) {
+          var emptyMsg = warnings.length ? warnings.map(function (w) { return escapeHtml(w); }).join('<br>') : escapeHtml('The daemon has not written any log entries yet. Start the daemon or trigger a semantic query to generate supervision logs.');
+          return heading + '<div class="log-state"><div><strong>No log lines yet</strong><div>' + emptyMsg + '</div></div></div>';
+        }
+        var logPath = (state.logs && state.logs.path) || '';
+        var pathHtml = logPath ? '<code style="cursor:pointer;font-size:11px" title="Click to copy path" data-action="copy-command" data-command="' + escapeHtml(logPath) + '">' + escapeHtml(logPath) + '</code>' : '';
+        var lines = items.map(function (item) { return '<div><span class="log-line-number">' + escapeHtml(item.line) + '</span><span class="log-text">' + escapeHtml(item.text) + '</span></div>'; }).join('');
+        return heading + '<div class="log-shell"><div class="muted" style="margin-bottom:10px">' + pathHtml + '</div><div class="log-lines">' + lines + '</div></div>';
+      }
+      function renderMetricsPanel() {
+        var m = state.metrics;
+        if (!m) { return renderEmptyState('Loading metrics', 'Fetching aggregated metrics from the telemetry store.'); }
+        if (!m.total) { return renderEmptyState('No data yet', 'Run some semantic queries first. Metrics will appear here after the first queries are recorded.'); }
+        var windowLabel = m.window_label || ('Last ' + (m.window_days || 7) + ' days');
+        var opsRows = (m.operations || []).map(function (op) {
+          var errClass = op.error_rate > 5 ? ' kpi-value--alert' : '';
+          var truncClass = op.trunc_rate > 15 ? ' kpi-value--alert' : '';
+          return '<tr><td><span class="row-main">' + escapeHtml(op.operation) + '</span></td>' +
+            '<td class="is-num mono">' + escapeHtml(String(op.count)) + '</td>' +
+            '<td class="is-num mono">' + escapeHtml(formatDurationMs(op.p50_ms)) + '</td>' +
+            '<td class="is-num mono">' + escapeHtml(formatDurationMs(op.p95_ms)) + '</td>' +
+            '<td class="is-num mono' + errClass + '">' + escapeHtml(op.error_rate.toFixed(1) + '%') + '</td>' +
+            '<td class="is-num mono' + truncClass + '">' + escapeHtml(op.trunc_rate.toFixed(1) + '%') + '</td></tr>';
+        }).join('');
+        var opsTable = opsRows
+          ? '<div class="table-shell"><table class="table table--flat"><thead><tr><th>Operation</th><th>Count</th><th>P50</th><th>P95</th><th>Err%</th><th>Trunc%</th></tr></thead><tbody>' + opsRows + '</tbody></table></div>'
+          : renderEmptyState('No operations', 'No operations recorded in this window.');
+        var wsItems = (m.workspaces || []).map(function (ws) {
+          return '<div class="metrics-item"><span class="metrics-item-name">' + escapeHtml(ws.workspace || '-') + '</span><span class="metrics-item-value">' + escapeHtml(String(ws.count)) + ' req · ' + escapeHtml(formatDurationMs(ws.avg_ms)) + '</span></div>';
+        }).join('');
+        var clientItems = (m.clients || []).map(function (c) {
+          return '<div class="metrics-item"><span class="metrics-item-name">' + escapeHtml(c.client_name || 'unknown') + '</span><span class="metrics-item-value">' + escapeHtml(String(c.count)) + ' req</span></div>';
+        }).join('');
+        var sideGrid = '<div class="metrics-side-grid">' +
+          '<div><p class="metrics-section-title">Workspaces</p>' + (wsItems || '<span class="muted">No data</span>') + '</div>' +
+          '<div><p class="metrics-section-title">Clients</p>' + (clientItems || '<span class="muted">No data</span>') + '</div>' +
+          '</div>';
+        var alertBadges = '';
+        if ((m.error_rate || 0) > 5) { alertBadges += badge(m.error_rate.toFixed(1) + '% errors', 'warn'); }
+        return '<div class="panel-head"><div><h2 class="panel-title">Operations — ' + escapeHtml(windowLabel) + '</h2><p class="panel-copy">Aggregated p50/p95 latency, error rate, and truncation rate per operation. Computed from <strong>' + escapeHtml(String(m.total)) + '</strong> requests.</p></div><div class="badge-row">' + badge(m.total + ' requests', 'neutral') + alertBadges + '</div></div>' + opsTable + sideGrid;
+      }
+      function renderMetricsSecondary() {
+        var m = state.metrics;
+        if (!m) { return renderEmptyState('Metrics window', 'Loading metrics data.'); }
+        var avgLatency = m.operations && m.operations.length
+          ? (m.operations.reduce(function (s, o) { return s + o.avg_ms; }, 0) / m.operations.length)
+          : 0;
+        return '<div class="panel-head"><div><h2 class="panel-title">Window summary</h2><p class="panel-copy">' + escapeHtml(m.window_label || ('Last ' + String(m.window_days || 7) + ' days')) + '.</p></div></div>' +
+          '<div class="summary-grid">' +
+          renderSummaryItem('Total requests', String(m.total || 0)) +
+          renderSummaryItem('Avg latency', formatDurationMs(Math.round(avgLatency))) +
+          renderSummaryItem('Error rate', ((m.error_rate || 0).toFixed(1)) + '%') +
+          renderSummaryItem('Truncation rate', ((m.trunc_rate || 0).toFixed(1)) + '%') +
+          renderSummaryItem('Operations tracked', String((m.operations || []).length)) +
+          renderSummaryItem('Workspaces', String((m.workspaces || []).length)) +
+          '</div>';
+      }
+      function renderWorkspaceSnapshot() {
+        var detail = selectedWorkspaceDetail();
+        var summary = detail && detail.summary ? detail.summary : null;
+        var workspaceCount = currentWorkspaces().length;
+        return '<div class="panel-head"><div><h2 class="panel-title">Workspace snapshot</h2><p class="panel-copy">Fast summary of the currently selected workspace and the global daemon pressure envelope.</p></div><div class="badge-row">' + badge(workspaceCount + ' tracked workspaces', 'neutral') + '</div></div>' + '<div class="summary-grid">' + renderSummaryItem('Selected workspace', summary ? summary.workspace : state.selectedWorkspace || '-') + renderSummaryItem('Kind', workspaceKind(detail)) + renderSummaryItem('Repos', String(workspaceRepoCount(detail) || 1)) + renderSummaryItem('Entrypoints', String(workspaceEntrypointCount(detail) || 1)) + renderSummaryItem('Backends', summary && summary.backends && summary.backends.length ? summary.backends.join(', ') : 'none') + renderSummaryItem('Warnings', summary ? String(summary.warning_count || 0) : '0') + '</div><div style="margin-top:10px">' + renderQuickOps() + '</div>';
+      }
+      function renderSecondaryPanel() {
+        if (state.panel === 'metrics') { return renderMetricsSecondary(); }
+        if (state.panel === 'activity') { return renderWorkspaceSnapshot(); }
+        if (state.panel === 'logs') { return renderQuickOps(); }
+        var preview = filteredAccesses(8);
+        if (!preview.length) { return renderEmptyState('Activity preview', 'Recent daemon accesses will appear here as soon as clients begin using shared semantic runtimes.'); }
+        return '<div class="panel-head"><div><h2 class="panel-title">Activity preview</h2><p class="panel-copy">A quick slice of recent events so you can spot cold starts and warning patterns while staying in the workspace view.</p></div><div class="badge-row">' + badge(currentWindowLabel(), 'neutral') + badge(preview.length + ' events', 'neutral') + '</div></div>' + renderAccessTable(preview);
+      }
+      function renderRuntimeDrawer(item) {
+        return '<div class="panel-head"><div><h2 class="panel-title">Runtime detail</h2><p class="panel-copy">A live backend instance currently managed by the daemon for one workspace and semantic entrypoint.</p></div><div class="badge-row">' + badge((item.backend_type || 'backend') + ' runtime', 'ok') + '</div></div><div class="drawer-body"><div class="detail-list">' + renderDetailRow('Workspace', item.workspace || '-') + renderDetailRow('Workspace root', item.workspace_root || '-') + renderDetailRow('Repo', runtimeRepoLabel(item)) + renderDetailRow('Repo root', item.repo_root || '-') + renderDetailRow('Entrypoint', item.entrypoint_id || '-') + renderDetailRow('Entrypoint path', item.entrypoint_path || '-') + renderDetailRow('Entrypoint type', item.entrypoint_type || '-') + renderDetailRow('Backend', item.backend_type || '-') + renderDetailRow('PID', item.pid || '-') + renderDetailRow('Memory', formatBytes(item.memory_bytes)) + renderDetailRow('Started', formatDate(item.started_at)) + renderDetailRow('Last used', formatDate(item.last_used_at)) + renderDetailRow('Runtime key', item.runtime_key || '-') + '</div><div class="drawer-actions"><button type="button" class="drawer-button is-primary interactive" data-action="copy-command">Copy CLI</button><button type="button" class="drawer-button interactive" data-action="close-drawer">Close</button></div></div>';
+      }
+      function renderAccessDrawer(item) {
+        var warnings = item.warnings && item.warnings.length ? item.warnings.join('\n') : 'none';
+        return '<div class="panel-head"><div><h2 class="panel-title">Access detail</h2><p class="panel-copy">One daemon request observed from a local client or agent session.</p></div><div class="badge-row">' + badge(item.success ? 'success' : 'failure', item.success ? 'ok' : 'danger') + '</div></div><div class="drawer-body"><div class="detail-list">' + renderDetailRow('When', formatDate(item.occurred_at)) + renderDetailRow('Workspace', item.workspace || '-') + renderDetailRow('Workspace root', item.workspace_root || '-') + renderDetailRow('Workspace input', item.workspace_input || '-') + renderDetailRow('Repo', item.repo || '-') + renderDetailRow('Entrypoint', item.entrypoint_id || '-') + renderDetailRow('Operation', item.operation || '-') + renderDetailRow('Backend', item.backend || '-') + renderDetailRow('Error kind', item.error_kind || '-') + renderDetailRow('Error code', item.error_code || '-') + renderDetailRow('Client', item.client_name || 'manual-cli') + renderDetailRow('Session', item.session_id || '-') + renderDetailRow('Latency', formatDurationMs(item.latency_ms)) + renderDetailRow('Result count', String(item.result_count || 0)) + renderDetailRow('Truncated', item.truncated ? 'yes' : 'no') + renderDetailRow('Warnings', warnings) + renderDetailRow('Error', item.error || '-') + '</div><div class="drawer-actions"><button type="button" class="drawer-button is-primary interactive" data-action="copy-command">Copy CLI</button><button type="button" class="drawer-button interactive" data-action="close-drawer">Close</button></div></div>';
+      }
+      function renderDrawer() {
+        if (!state.drawer) {
+          var showOps = state.panel === 'overview';
+          return '<div class="panel-head"><div><h2 class="panel-title">Context drawer</h2><p class="panel-copy">Click any runtime or activity row to inspect details without leaving the dashboard. This keeps the hot path compact while deeper context stays one click away.</p></div></div>' + (showOps ? renderQuickOps() : '');
+        }
+        return state.drawer.type === 'runtime' ? renderRuntimeDrawer(state.drawer.item) : renderAccessDrawer(state.drawer.item);
+      }
+      function applyRenderedState(skipTopMatter) {
+        if (!skipTopMatter) {
+          setHtml('daemon-meta', renderMeta());
+          setHtml('kpi-grid', renderKpis());
+          setHtml('workspace-tabs', renderTabs());
+          setHtml('last-updated', '<span class="mono">Last refresh: ' + escapeHtml(formatDate(state.lastUpdated)) + '</span>');
+        }
+        renderToolbar();
+        setHtml('primary-panel', state.panel === 'activity' ? renderActivityPanel() : (state.panel === 'logs' ? renderLogsPanel() : (state.panel === 'metrics' ? renderMetricsPanel() : renderOverviewPanel())));
+        setHtml('secondary-panel', renderSecondaryPanel());
+        setHtml('drawer-panel', renderDrawer());
+      }
+      async function loadData(silent) {
+        try {
+          parseRoute();
+          state.dashboard = await loadJSON('/api/status?limit=160&window=' + encodeURIComponent(state.window));
+          var workspaces = currentWorkspaces();
+          if (!state.selectedWorkspace && workspaces.length) { updateRoute({ workspace: workspaces[0].workspace, panel: state.panel, window: state.window, backend: state.filters.backend, client: state.filters.client, q: state.filters.search || null }, true); }
+          state.detail = state.selectedWorkspace ? await loadJSON('/api/workspaces/' + encodeURIComponent(state.selectedWorkspace) + '?window=' + encodeURIComponent(state.window)) : null;
+          state.logs = state.panel === 'logs' ? await loadJSON('/api/logs?tail=120') : null;
+          state.metrics = state.panel === 'metrics' ? await loadJSON('/api/metrics?window=' + encodeURIComponent(state.window)) : null;
+          state.lastUpdated = new Date().toISOString();
+          applyRenderedState();
+          if (!silent) { showToast('Dashboard refreshed', 'ok'); }
+        } catch (error) {
+          showToast(error.message || 'Refresh failed', 'danger');
+        }
+      }
+      function findRuntime(runtimeKey) { var items = filteredRuntimes(); for (var i = 0; i < items.length; i += 1) { if ((items[i].runtime_key || '') === runtimeKey) { return items[i]; } } return null; }
+      function findAccess(accessID) { var items = filteredAccesses(); for (var i = 0; i < items.length; i += 1) { if (String(items[i].id || '') === String(accessID || '')) { return items[i]; } } return null; }
+      document.addEventListener('click', function (event) {
+        var actionNode = event.target.closest('[data-action]');
+        if (!actionNode) { return; }
+        var action = actionNode.getAttribute('data-action');
+        if (action === 'refresh') { loadData(true); return; }
+        if (action === 'set-workspace') {
+          updateRoute({ workspace: actionNode.getAttribute('data-workspace') || '', panel: state.panel, window: state.window, backend: state.filters.backend, client: state.filters.client, q: state.filters.search || null }, false);
+          state.drawer = null; loadData(true); return;
+        }
+        if (action === 'set-panel') {
+          updateRoute({ workspace: state.selectedWorkspace || null, panel: actionNode.getAttribute('data-panel') || 'overview', window: state.window, backend: state.filters.backend, client: state.filters.client, q: state.filters.search || null }, false);
+          if (state.panel === 'logs' || state.panel === 'metrics') { loadData(true); } else { applyRenderedState(); }
+          return;
+        }
+        if (action === 'open-logs') { updateRoute({ workspace: state.selectedWorkspace || null, panel: 'logs', window: state.window, backend: state.filters.backend, client: state.filters.client, q: state.filters.search || null }, false); loadData(true); return; }
+        if (action === 'warm-workspace') { warmWorkspace(); return; }
+        if (action === 'copy-command') { var cmd = actionNode.getAttribute('data-command'); copyText(cmd !== null ? cmd : currentCommand()); return; }
+        if (action === 'open-runtime') {
+          var runtime = findRuntime(actionNode.getAttribute('data-runtime-key'));
+          if (runtime) { state.drawer = { type: 'runtime', item: runtime }; setHtml('drawer-panel', renderDrawer()); }
+          return;
+        }
+        if (action === 'open-access') {
+          var access = findAccess(actionNode.getAttribute('data-access-id'));
+          if (access) { state.drawer = { type: 'access', item: access }; setHtml('drawer-panel', renderDrawer()); }
+          return;
+        }
+        if (action === 'close-drawer') { state.drawer = null; setHtml('drawer-panel', renderDrawer()); }
+      });
+      var searchDebounce;
+      document.addEventListener('input', function (event) {
+        if (event.target && event.target.id === 'search-input') {
+          state.filters.search = event.target.value || '';
+          updateRoute({ workspace: state.selectedWorkspace || null, panel: state.panel, window: state.window, backend: state.filters.backend, client: state.filters.client, q: state.filters.search || null }, true);
+          clearTimeout(searchDebounce);
+          searchDebounce = setTimeout(function () { applyRenderedState(true); }, 300);
+        }
+      });
+      document.addEventListener('change', function (event) {
+        if (event.target && event.target.id === 'backend-filter') {
+          state.filters.backend = event.target.value || 'all';
+          updateRoute({ workspace: state.selectedWorkspace || null, panel: state.panel, window: state.window, backend: state.filters.backend, client: state.filters.client, q: state.filters.search || null }, true);
+          applyRenderedState(true);
+          return;
+        }
+        if (event.target && event.target.id === 'client-filter') {
+          state.filters.client = event.target.value || 'all';
+          updateRoute({ workspace: state.selectedWorkspace || null, panel: state.panel, window: state.window, backend: state.filters.backend, client: state.filters.client, q: state.filters.search || null }, true);
+          applyRenderedState(true);
+          return;
+        }
+        if (event.target && event.target.id === 'window-filter') {
+          state.window = event.target.value || 'recent';
+          updateRoute({ workspace: state.selectedWorkspace || null, panel: state.panel, window: state.window, backend: state.filters.backend, client: state.filters.client, q: state.filters.search || null }, true);
+          state.drawer = null;
+          loadData(true);
+        }
+      });
+      window.addEventListener('popstate', function () { state.drawer = null; loadData(true); });
+      function scheduleRefresh() {
+        if (state.refreshTimer) { window.clearInterval(state.refreshTimer); }
+        state.refreshTimer = window.setInterval(function () { loadData(true); }, REFRESH_MS);
+      }
+      document.addEventListener('visibilitychange', function () {
+        if (document.hidden) {
+          if (state.refreshTimer) { window.clearInterval(state.refreshTimer); state.refreshTimer = null; }
+        } else {
+          scheduleRefresh();
+        }
+      });
+      parseRoute();
+      loadData(true);
+      scheduleRefresh();
+      window.addEventListener('beforeunload', function () { if (state.refreshTimer) { window.clearInterval(state.refreshTimer); } });
+    })();
+  </script>
+</body>
+</html>
+
+
+
+
+
+
+
+
+
+
+
