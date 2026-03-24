@@ -1,0 +1,5 @@
+interface:
+  display_name: "mi-lsp"
+  short_description: "Semantic CLI workflow for coding agents"
+  default_prompt: "Use $mi-lsp to orient in this workspace, choose the narrowest useful mi-lsp command, and summarize the results without dumping large blobs."
+

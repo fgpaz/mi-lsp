@@ -22,6 +22,44 @@ mi-lsp worker status --format compact
 
 If you want to move the binary somewhere else after extraction, run `mi-lsp worker install` once to copy the bundled worker into `~/.mi-lsp/workers/<rid>/`.
 
+## Use with Claude Code, Codex, and skill-based agents
+
+The repository ships a ready-to-install skill in [skills/mi-lsp](skills/mi-lsp).
+If your coding tool supports folder-based skills, copy or symlink that folder into the skill directory your tool scans.
+
+Typical installs:
+
+```powershell
+# Codex
+New-Item -ItemType Directory -Force $HOME\.codex\skills | Out-Null
+Copy-Item -Recurse .\skills\mi-lsp $HOME\.codex\skills\
+
+# Claude Code or any runner using a folder-based skills setup
+New-Item -ItemType Directory -Force $HOME\.agents\skills | Out-Null
+Copy-Item -Recurse .\skills\mi-lsp $HOME\.agents\skills\
+```
+
+If you prefer live updates while iterating on the skill, use a symlink instead of copying the folder.
+
+Once the skill is installed, the agent can start with prompts such as:
+
+```text
+Use $mi-lsp to orient in this repo and summarize the main services.
+Use $mi-lsp to find IOrderRepository and tell me which repo owns it.
+Use $mi-lsp to audit src/backend/orders and summarize endpoints, consumers, publishers, and entities.
+```
+
+The skill steers the agent toward `nav workspace-map`, `nav related`, `nav multi-read`, `nav search --include-content`, and `nav service` instead of slow grep-plus-read loops.
+
+For shared daemon attribution across several agents, set:
+
+```powershell
+$env:MI_LSP_CLIENT_NAME = "codex"
+$env:MI_LSP_SESSION_ID = "demo-session"
+```
+
+See the public wiki page [Agent Integration](https://github.com/fgpaz/mi-lsp/wiki/Agent-Integration) for a fuller walkthrough.
+
 ## Design goals
 
 - Reliable local execution without an MCP server dependency
@@ -251,3 +289,4 @@ Out of scope for v0.1.0:
 - Authenticated governance UI
 - Additional languages beyond the current C#/TS/Python focus
 - Strong completeness scoring for services
+
