@@ -1,5 +1,5 @@
 interface:
   display_name: "mi-lsp"
-  short_description: "Semantic CLI workflow for coding agents"
-  default_prompt: "Use $mi-lsp to orient in this workspace, choose the narrowest useful mi-lsp command, and summarize the results without dumping large blobs."
+  short_description: "Agent-first semantic CLI without MCP"
+  default_prompt: "Use $mi-lsp to explore this local codebase with mi-lsp, avoid grep-heavy loops, and summarize the strongest semantic evidence without requiring MCP."
 

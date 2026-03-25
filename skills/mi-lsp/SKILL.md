@@ -1,9 +1,11 @@
 ---
 name: mi-lsp
-description: Local semantic code navigation with the mi-lsp CLI for Codex, Claude Code, and any coding agent that supports folder-based skills. Use when you need fast workspace orientation, symbol search, semantic refs/context, service profiling, batched file reads, or repo-local noise control with .milspignore.
+description: Agent-first semantic code navigation with the mi-lsp CLI, without requiring an MCP server. Use for Codex, Claude Code, and any coding agent that supports folder-based skills when you need fast workspace orientation, symbol search, semantic refs/context, service profiling, batched file reads, or repo-local noise control with .milspignore.
 ---
 
 # mi-lsp
+
+Use this skill when `mi-lsp` is available and you want local semantic navigation without introducing an MCP dependency.
 
 Prefer `--format compact` and an explicit `--workspace <alias>`.
 Prefer compound commands over sequential greps and full-file reads.
