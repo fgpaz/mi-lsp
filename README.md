@@ -6,43 +6,20 @@
 
 > Semantic code navigation for coding agents, without requiring MCP.
 
-`mi-lsp` exists because large local codebases are painful to explore from plain grep alone, and many agent workflows add too much setup by depending on an MCP bridge or a long-lived server before the first useful answer appears.
+`mi-lsp` is a local CLI for exploring large `.NET/C# + TypeScript` codebases from the terminal.
+It keeps a lightweight repo-local index, supports optional warm state through a daemon, and now includes a docs-first entrypoint for onboarding a repo fast.
 
-`mi-lsp` takes a different path: a direct local CLI, an optional shared daemon, deep C# semantics through Roslyn, compact output built for agents, and a ready-to-install `$mi-lsp` skill shipped inside the repository.
+## Quick Start
 
-## Why We Built It
-
-We wanted a tool that:
-
-- works directly from the terminal, even when no MCP server is configured
-- gives coding agents compact, high-signal answers instead of grep-heavy loops
-- handles large `.NET/C# + TypeScript` workspaces without assuming a monorepo
-- lets multiple agents share warm local state without turning the CLI into a remote dependency
-- profiles services from observable evidence instead of overconfident completeness scores
-
-In short: `mi-lsp` was created to make local semantic navigation reliable, fast, and easy to adopt for both developers and agent-driven workflows.
-
-## Why It Feels Different
-
-| Workflow question | MCP-dependent workflow | `mi-lsp` |
-|---|---|---|
-| How do I get started? | Configure a bridge or server, then wire a client | Download the binary and run it |
-| What happens if warm infrastructure is unavailable? | The integration path may depend on that bridge | The CLI still works directly; the daemon is optional |
-| How do I use it with agents? | Tool-specific integration is usually required | The repo already ships a public skill in [`skills/mi-lsp`](skills/mi-lsp) |
-| How do I get the first useful answer fast? | Often search plus several manual reads | Use `workspace-map`, `related`, `multi-read`, `search --include-content`, or `service` |
-| Can several agents share warm state? | Sometimes, but often through extra infrastructure | Yes, through one optional local daemon per OS user |
-| Is the output agent-friendly? | Depends on the bridge or transport | Compact, deterministic CLI output designed for token budgets |
-
-This is a workflow-level comparison, not a claim about any specific named tool.
-
-## 60-Second Quickstart
+### 1. Install
 
 The recommended install path is a bundled release from GitHub Releases.
 
 1. Download the asset for your platform (`win-x64`, `win-arm64`, `linux-x64`, or `linux-arm64`) from the [Releases page](https://github.com/fgpaz/mi-lsp/releases).
-2. Extract the archive and keep the `workers/<rid>/` directory next to the `mi-lsp` binary.
+2. Extract it and keep `workers/<rid>/` next to the `mi-lsp` binary.
 3. Run the binary directly or add it to your `PATH`.
-4. Verify the install:
+
+Sanity check:
 
 ```powershell
 mi-lsp info
@@ -50,15 +27,75 @@ mi-lsp worker status --format compact
 ```
 
 If you move the binary after extraction, run `mi-lsp worker install` once to copy the bundled worker into `~/.mi-lsp/workers/<rid>/`.
+Regular C# queries resolve the Roslyn worker by layout presence in `bundle -> installed -> dev-local` order, while `mi-lsp worker status` is the explicit compatibility probe.
+`worker status` keeps the same visible diagnostic payload whether it is served directly or through the daemon; only `active_workers` changes with live state.
+On Windows, non-interactive child processes are started hidden so normal queries should not open extra console windows.
 
-Register a workspace and get the first useful answers:
+### 2. Initialize a workspace
+
+The shortest first-run path is:
+
+```powershell
+mi-lsp init . --name myapp
+```
+
+That command:
+- detects the workspace shape
+- registers it in `~/.mi-lsp/registry.toml`
+- writes `.mi-lsp/project.toml`
+- indexes code and docs by default
+- leaves you with a ready `--workspace myapp`
+
+If you prefer the explicit workflow, `workspace add` still exists:
 
 ```powershell
 mi-lsp workspace add C:\code\my-dotnet-app --name myapp
-mi-lsp nav workspace-map --workspace myapp --format compact
-mi-lsp nav related IOrderRepository --workspace myapp --format compact
-mi-lsp nav service src/backend/orders --workspace myapp --format compact
+mi-lsp workspace status myapp --format compact
 ```
+
+### 3. Ask one useful question first
+
+```powershell
+mi-lsp nav ask "how is this workspace organized?" --workspace myapp --format compact
+```
+
+`nav ask` is docs-first:
+- it prioritizes `.docs/wiki` when the repo has one
+- it uses explicit traceability links before text heuristics
+- it adds code evidence so you can jump into the implementation immediately
+
+### 4. Use the right command for the job
+
+| You want to... | Run this |
+|---|---|
+| Understand the repo quickly | `mi-lsp nav ask "how is this workspace organized?" --workspace myapp --format compact` |
+| See the high-level map of services | `mi-lsp nav workspace-map --workspace myapp --format compact` |
+| Understand one symbol deeply | `mi-lsp nav related MySymbol --workspace myapp --format compact` |
+| Read the code around one line | `mi-lsp nav context path/to/file.cs 42 --workspace myapp --format compact` |
+| Search text and see the matching code | `mi-lsp nav search billing retry --include-content --workspace myapp --format compact` |
+| Audit one backend/service path | `mi-lsp nav service src/backend/orders --workspace myapp --format compact` |
+| Read several files in one call | `mi-lsp nav multi-read file1.cs:1-80 file2.ts:20-80 --workspace myapp --format compact` |
+
+### 5. Parent folder with several repos
+
+Start broad, then narrow semantic queries:
+
+```powershell
+mi-lsp nav workspace-map --workspace myapp --format compact
+mi-lsp nav search OrderHandler --workspace myapp --format compact
+mi-lsp nav refs IOrderRepository --workspace myapp --repo Orders.Api --format compact
+```
+
+## Docs-First Search
+
+If the repo has `.docs/wiki`, `mi-lsp nav ask` uses it as the primary source of truth.
+The project can optionally add `.docs/wiki/_mi-lsp/read-model.toml` to teach `mi-lsp` how to rank:
+- functional docs (`01-06`)
+- technical docs (`07-09`)
+- UX/UI docs (`10-16`)
+- generic fallback docs (`README*`, `docs/`, `.docs/`)
+
+That gives you a local, explainable answer instead of a black-box summary.
 
 ## Use With Claude Code, Codex, and Skill-Based Agents
 
@@ -77,13 +114,11 @@ New-Item -ItemType Directory -Force $HOME\.agents\skills | Out-Null
 Copy-Item -Recurse .\skills\mi-lsp $HOME\.agents\skills\
 ```
 
-If you prefer live updates while iterating on the skill, use a symlink instead of copying the folder.
-
 Once the skill is installed, an agent can start with prompts such as:
 
 ```text
-Use $mi-lsp to orient in this repo and summarize the main services.
-Use $mi-lsp to find IOrderRepository and tell me which repo owns it.
+Use $mi-lsp to initialize this repo and explain how it is organized.
+Use $mi-lsp to answer where daemon routing is documented and which code backs it.
 Use $mi-lsp to audit src/backend/orders and summarize endpoints, consumers, publishers, and entities.
 Use $mi-lsp to read the relevant files for OrderHandler and show only the important slices.
 ```
@@ -95,47 +130,14 @@ $env:MI_LSP_CLIENT_NAME = "codex"
 $env:MI_LSP_SESSION_ID = "demo-session"
 ```
 
-The public connection guide lives in the wiki:
-
-- [Agent Integration](https://github.com/fgpaz/mi-lsp/wiki/Agent-Integration)
-
-## Why Agents Get Useful Answers Faster
-
-The shipped skill steers agents toward the commands that reduce round-trips the most:
-
-- `nav workspace-map` to orient in a repo or parent folder quickly
-- `nav related` to understand a symbol in one call
-- `nav multi-read` to read several relevant slices at once
-- `nav search --include-content` to search and see inline code immediately
-- `nav service` to audit a backend from observable evidence instead of guesswork
-
-That makes `mi-lsp` feel less like "grep, then read, then grep again" and more like a local semantic toolchain that can answer useful questions immediately.
-
-## What `mi-lsp` Is Good At
-
-- large local `.NET/C# + TypeScript` codebases
-- parent folders containing several independent repos
-- agent-driven code exploration with compact outputs
-- service-level audits and onboarding
-- environments where you want optional warm state but do not want a mandatory MCP dependency
-
-## What `mi-lsp` Is Not
-
-- not an MCP server
-- not a remote multi-host daemon platform
-- not a semantic editing or refactoring tool
-- not a strong service-completeness scoring engine
-
 ## Workspace Model
 
 `mi-lsp` supports two canonical workspace shapes:
-
 - `single`: one repo with one obvious semantic root
 - `container`: one parent folder that contains many independent repos without requiring a parent `.sln`
 
 Recommended operating pattern:
-
-- use the parent folder for broad discovery: `find`, `search`, `overview`, `symbols`
+- use the parent folder for broad discovery: `ask`, `find`, `search`, `overview`, `workspace-map`
 - use the child repo or explicit selectors for deep semantics: `refs`, `context`, `deps`
 - use `service` for evidence-first exploration of an implementation area
 
@@ -156,8 +158,9 @@ The daemon is a performance optimization, not a prerequisite for the CLI.
 ## Core Capabilities
 
 ```text
+mi-lsp init [path] [--name <alias>] [--no-index]
 mi-lsp workspace add|remove|scan|list|warm|status
-mi-lsp nav symbols|find|refs|overview|outline|service|search|context|deps|multi-read|batch|related|workspace-map|diff-context
+mi-lsp nav ask|symbols|find|refs|overview|outline|service|search|context|deps|multi-read|batch|related|workspace-map|diff-context
 mi-lsp index [path] [--clean]
 mi-lsp info
 mi-lsp daemon start|stop|restart|status|logs
@@ -177,17 +180,11 @@ Useful global flags:
 --compress
 ```
 
-Environment fallbacks:
-
-- `MI_LSP_CLIENT_NAME`
-- `MI_LSP_SESSION_ID`
-
 ## Build From Source
 
 Source builds are intended for contributors and maintainers.
 
 Prerequisites:
-
 - Go 1.24+
 - .NET 10 SDK
 
@@ -199,16 +196,12 @@ make test
 make lint
 ```
 
-`make test` uses `-race` when the local Go toolchain supports it and falls back to regular `go test -v ./...` on platforms where the race detector is not available.
-
 For release-like local validation on a specific RID:
 
 ```powershell
 pwsh ./scripts/release/build-dist.ps1 -Rids @('win-x64') -Clean
 pwsh ./scripts/release/install-local.ps1 -Rid win-x64 -InstallDir $HOME\bin
 ```
-
-This materializes `dist/<rid>/mi-lsp(.exe)` + `dist/<rid>/workers/<rid>/`.
 
 ## Troubleshooting
 
@@ -217,8 +210,14 @@ Common first checks:
 ```powershell
 mi-lsp info
 mi-lsp worker status --format compact
-mi-lsp daemon status
 mi-lsp workspace status myapp --format compact
+mi-lsp nav ask "how is this workspace organized?" --workspace myapp --format compact
+```
+
+If a repo changed heavily under `.docs/wiki`, rerun:
+
+```powershell
+mi-lsp index --workspace myapp --clean
 ```
 
 If a command fails before `mi-lsp` itself starts, treat it as a host incident first.
@@ -227,16 +226,16 @@ See the public runbook in [TROUBLESHOOTING.md](TROUBLESHOOTING.md).
 ## Current v0.1.0 Scope
 
 - Global daemon with governance UI and local telemetry
-- Repo-local lightweight catalog in SQLite with repo ownership
+- Repo-local lightweight catalog in SQLite with repo ownership and docs graph
 - Semantic C# queries via Roslyn worker
 - Container workspaces with explicit or inferred repo/entrypoint routing
 - TS/JS discovery index for symbols, routes, and overview
 - Optional TS semantic bridge through `tsserver`
 - Optional Python semantic bridge through `pyright-langserver`
 - Service exploration summaries via `nav service`
+- Docs-first repo questions via `nav ask`
 
 Out of scope for `v0.1.0`:
-
 - MCP transport
 - Semantic editing/refactors
 - Automatic semantic fanout across all child repos
@@ -244,18 +243,25 @@ Out of scope for `v0.1.0`:
 - Authenticated governance UI
 - Additional languages beyond the current C#/TS/Python focus
 - Strong completeness scoring for services
+- Embeddings or remote semantic search services
 
 ## Documentation
 
-Start here:
+The versioned documentation canon lives in `.docs/wiki/`.
+`README.md` is the public entrypoint; the repo wiki is the source of truth.
 
-- [Agent Integration](https://github.com/fgpaz/mi-lsp/wiki/Agent-Integration)
-- [Architecture](https://github.com/fgpaz/mi-lsp/wiki/Architecture)
-- [Workspace Model](https://github.com/fgpaz/mi-lsp/wiki/Workspace-Model)
-- [Command Reference](https://github.com/fgpaz/mi-lsp/wiki/Command-Reference)
-- [Worker Installation](https://github.com/fgpaz/mi-lsp/wiki/Worker-Installation)
-- [Troubleshooting](https://github.com/fgpaz/mi-lsp/wiki/Troubleshooting)
-- [Developer Guide](https://github.com/fgpaz/mi-lsp/wiki/Developer-Guide)
+Start here:
+- [Documentation Governance](.docs/wiki/00_gobierno_documental.md)
+- [Functional Scope](.docs/wiki/01_alcance_funcional.md)
+- [Architecture](.docs/wiki/02_arquitectura.md)
+- [Flow Index](.docs/wiki/03_FL.md)
+- [Requirements Index](.docs/wiki/04_RF.md)
+- [Data Model](.docs/wiki/05_modelo_datos.md)
+- [Test Matrix](.docs/wiki/06_matriz_pruebas_RF.md)
+- [Technical Baseline](.docs/wiki/07_baseline_tecnica.md)
+- [Physical Data Model](.docs/wiki/08_modelo_fisico_datos.md)
+- [Technical Contracts](.docs/wiki/09_contratos_tecnicos.md)
+- [Troubleshooting](TROUBLESHOOTING.md)
 
 ## License
 

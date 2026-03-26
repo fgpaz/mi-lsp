@@ -1,0 +1,55 @@
+# TP-QRY
+
+## Cobertura objetivo
+
+- RF-QRY-001
+- RF-QRY-002
+- RF-QRY-003
+- RF-QRY-004
+- RF-QRY-005
+- RF-QRY-006
+- RF-QRY-007
+- RF-QRY-008
+- RF-QRY-009
+- RF-QRY-010
+
+## Casos
+
+| Caso | Tipo | RF | Descripcion |
+|---|---|---|---|
+| TC-QRY-001 | positivo | RF-QRY-001 | emite envelope estable con campos obligatorios |
+| TC-QRY-002 | positivo | RF-QRY-001 | trunca de forma determinista con `next_hint` |
+| TC-QRY-003 | negativo | RF-QRY-001 | rechaza presupuestos invalidos |
+| TC-QRY-004 | positivo | RF-QRY-002 | usa daemon saludable cuando esta disponible para queries semanticas o compuestas |
+| TC-QRY-005 | positivo | RF-QRY-002 | hace fallback directo si el daemon no responde para una query daemon-aware |
+| TC-QRY-006 | negativo | RF-QRY-002 | falla cuando no existe backend ejecutable |
+| TC-QRY-007 | positivo | RF-QRY-002 | enruta `nav refs` sobre `.py` a pyright si esta disponible |
+| TC-QRY-008 | positivo | RF-QRY-002 | degrada a catalog/text con warning si pyright no esta instalado |
+| TC-QRY-009 | positivo | RF-QRY-003 | resume endpoints, consumers, publishers, entidades e infraestructura de un servicio con evidencia estructurada |
+| TC-QRY-010 | positivo | RF-QRY-003 | oculta placeholders de arquetipo por default y los incluye con `--include-archetype` |
+| TC-QRY-011 | negativo | RF-QRY-003 | devuelve warning accionable si no hay catalogo util o no se encuentra evidencia suficiente bajo el path |
+| TC-QRY-012 | positivo | RF-QRY-002 | `nav context` sobre `ts/tsx` devuelve `slice_text` y warning si `tsserver` no esta disponible |
+| TC-QRY-013 | positivo | RF-QRY-002 | `nav search` sin matches devuelve `ok=true` e insinua `--regex` cuando el patron parece regex |
+| TC-QRY-014 | positivo | RF-QRY-004 | lee multiples rangos en una sola invocacion con truncacion por presupuesto |
+| TC-QRY-015 | positivo | RF-QRY-004 | incluye numeros de linea en contenido leido |
+| TC-QRY-016 | negativo | RF-QRY-004 | rechaza path traversal (`../../../etc/passwd`) |
+| TC-QRY-017 | positivo | RF-QRY-005 | ejecuta batch con operaciones paralelas y retorna todos los resultados |
+| TC-QRY-018 | positivo | RF-QRY-005 | continua si una operacion batch falla, devuelve resultados parciales |
+| TC-QRY-019 | negativo | RF-QRY-005 | rechaza stdin > 10MB |
+| TC-QRY-020 | positivo | RF-QRY-006 | devuelve vecindario semantico con definicion, callers, implementors, tests |
+| TC-QRY-021 | positivo | RF-QRY-006 | degrada a sintactico con warning si backend semantico no disponible |
+| TC-QRY-022 | negativo | RF-QRY-006 | rechaza simbolo no encontrado con sugerencia de busqueda |
+| TC-QRY-023 | positivo | RF-QRY-007 | genera mapa de workspace con servicios, endpoints, eventos, dependencias |
+| TC-QRY-024 | positivo | RF-QRY-007 | devuelve mapa parcial con warning si catalogo incompleto |
+| TC-QRY-025 | negativo | RF-QRY-007 | rechaza workspace invalido |
+| TC-QRY-026 | positivo | RF-QRY-008 | devuelve archivos cambiados y simbolos afectados en diff |
+| TC-QRY-027 | positivo | RF-QRY-008 | incluye contenido modificado con --include-content |
+| TC-QRY-028 | negativo | RF-QRY-008 | warning si no hay cambios o git no disponible |
+| TC-QRY-029 | positivo | RF-QRY-009 | busca simbolos en todos los workspaces con --all-workspaces |
+| TC-QRY-030 | positivo | RF-QRY-009 | degrade si algunos workspaces fallan, devuelve resultados parciales |
+| TC-QRY-031 | negativo | RF-QRY-009 | rechaza cross-workspace sin --all-workspaces flag |
+| TC-QRY-032 | positivo | RF-QRY-010 | `nav ask` prioriza el documento canonico correcto y devuelve evidencia de codigo |
+| TC-QRY-033 | positivo | RF-QRY-010 | `nav ask` usa `.docs/wiki/_mi-lsp/read-model.toml` cuando existe |
+| TC-QRY-034 | negativo | RF-QRY-010 | `nav ask` degrada a fallback generico o textual cuando falta corpus fuerte |
+| TC-QRY-035 | positivo | RF-QRY-002 | `nav find` responde por catalogo aunque el daemon este caido o detenido |
+| TC-QRY-036 | positivo | RF-QRY-002 | `nav search`, `nav.symbols`, `nav.outline`, `nav.overview` y `nav.multi-read` no auto-inician daemon y mantienen salida estable |

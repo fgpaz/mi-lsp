@@ -10,7 +10,11 @@
 /worker-dotnet/**/obj/
 
 /.claude/
-/.docs/
+!/.docs/
+/.docs/*
+!/.docs/wiki/
+!/.docs/wiki/**
+/.docs/tmp/
 /CLAUDE.md
 /AGENTS.md
 /docs/plans/

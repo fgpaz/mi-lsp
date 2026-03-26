@@ -1,0 +1,44 @@
+version = 1
+
+[[family]]
+name = "functional"
+intent_keywords = ["scope", "flow", "feature", "behavior", "rf", "fl", "test", "workflow", "journey"]
+paths = [
+  ".docs/wiki/01_*.md",
+  ".docs/wiki/02_*.md",
+  ".docs/wiki/03_FL.md",
+  ".docs/wiki/03_FL/*.md",
+  ".docs/wiki/04_RF.md",
+  ".docs/wiki/04_RF/*.md",
+  ".docs/wiki/05_*.md",
+  ".docs/wiki/06_*.md",
+  ".docs/wiki/06_pruebas/*.md"
+]
+
+[[family]]
+name = "technical"
+intent_keywords = ["technical", "daemon", "worker", "runtime", "backend", "contract", "protocol", "search", "context", "refs", "service", "index", "routing", "ask", "init"]
+paths = [
+  ".docs/wiki/07_*.md",
+  ".docs/wiki/07_tech/*.md",
+  ".docs/wiki/08_*.md",
+  ".docs/wiki/08_db/*.md",
+  ".docs/wiki/09_*.md",
+  ".docs/wiki/09_contratos/*.md"
+]
+
+[[family]]
+name = "ux"
+intent_keywords = ["ux", "ui", "frontend", "visual", "design", "journey", "experience", "pattern", "interface"]
+paths = [
+  ".docs/wiki/10_*.md",
+  ".docs/wiki/11_*.md",
+  ".docs/wiki/12_*.md",
+  ".docs/wiki/13_*.md",
+  ".docs/wiki/14_*.md",
+  ".docs/wiki/15_*.md",
+  ".docs/wiki/16_*.md"
+]
+
+[generic_docs]
+paths = ["README.md", "README*.md", "docs/", ".docs/"]
