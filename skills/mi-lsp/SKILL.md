@@ -1,11 +1,12 @@
 ---
 name: mi-lsp
-description: Agent-first semantic code navigation with the mi-lsp CLI, without requiring an MCP server. Use for Codex, Claude Code, and any coding agent that supports folder-based skills when you need fast workspace orientation, docs-first repo Q&A, symbol search, semantic refs/context, service profiling, batched file reads, spec-to-code traceability, intent-based code search, or repo-local noise control with .milspignore.
+description: Use when a folder-based agent should navigate code with the mi-lsp CLI, or when the skill is installed but the mi-lsp binary still needs install/bootstrap on PATH before semantic navigation can begin.
 ---
 
 # mi-lsp
 
-Use this skill when `mi-lsp` is available and you want local semantic navigation without introducing an MCP dependency.
+Use this skill when you want local semantic navigation with `mi-lsp` without introducing an MCP dependency.
+If the skill is installed but the binary is missing, bootstrap the CLI first instead of abandoning the flow.
 
 Prefer `--format compact` and an explicit `--workspace <alias>`.
 Prefer compound commands over sequential greps and full-file reads.
@@ -20,6 +21,45 @@ Run `mi-lsp` through the host shell tool, not through a custom MCP tool:
 
 Do not wait for a dedicated `mi-lsp` MCP integration. `mi-lsp` is a CLI-first tool.
 
+## Install bootstrap
+
+If the skill folder exists but `mi-lsp` is not callable, do not stop at "tool unavailable".
+Install the CLI first, verify it, and only then continue with repo navigation.
+
+1. Download the release bundle for the user's platform from `https://github.com/fgpaz/mi-lsp/releases`.
+2. Choose the right bundle: `win-x64`, `win-arm64`, `linux-x64`, or `linux-arm64`.
+3. Extract it into a stable tools directory and keep `workers/<rid>/` next to the `mi-lsp` binary.
+4. Add that directory to the current session `PATH`, or invoke the binary by absolute path until `PATH` is fixed permanently.
+5. Verify the install:
+
+```powershell
+mi-lsp info
+mi-lsp worker status --format compact
+```
+
+6. If the binary was moved after extraction, run:
+
+```powershell
+mi-lsp worker install
+```
+
+Windows session example:
+
+```powershell
+$installDir = Join-Path $HOME "bin\mi-lsp"
+$env:PATH = "$installDir;$env:PATH"
+where.exe mi-lsp
+mi-lsp info
+```
+
+Linux session example:
+
+```bash
+export PATH="$HOME/.local/opt/mi-lsp:$PATH"
+command -v mi-lsp
+mi-lsp info
+```
+
 ## First-use check
 
 1. Confirm `mi-lsp` is callable in the current shell.
@@ -32,7 +72,7 @@ mi-lsp init . --name <alias>
 mi-lsp workspace status <alias> --format compact
 ```
 
-If `mi-lsp` is not on `PATH`, repair `PATH` for the current session before falling back to other tools.
+If `mi-lsp` is not on `PATH`, install it from Releases or repair `PATH` for the current session before falling back to other tools.
 
 ## Hot path
 
@@ -139,7 +179,7 @@ When you want clean governance and telemetry attribution, set:
 
 ## When to open references
 
-- Read [references/quickstart.md](references/quickstart.md) when you need a slightly longer onboarding or command chooser.
+- Read [references/quickstart.md](references/quickstart.md) when you need install help, a slightly longer onboarding, or a command chooser.
 - Read [references/compound-commands.md](references/compound-commands.md) when you want `multi-read`, `batch`, `related`, `workspace-map`, `diff-context`, or cross-workspace patterns.
 - Read [references/recipes.md](references/recipes.md) when auditing a service, reviewing completeness, or doing PR/impact analysis.
 - Read [references/runtime-drift.md](references/runtime-drift.md) when CLI/docs/daemon behavior disagree after rebuilds or reinstalls, especially to confirm `cli_path` and `protocol_version` from `worker status`.
@@ -159,4 +199,4 @@ Do not suggest `node_modules/`; it is already ignored by default.
 
 ## Fallback
 
-If `mi-lsp` remains unavailable after repairing `PATH`, fall back to `rg` and targeted file inspection.
+If `mi-lsp` remains unavailable after install and `PATH` repair, fall back to `rg` and targeted file inspection.

@@ -2,6 +2,22 @@
 
 Use this when `SKILL.md` is not enough and you need a slightly longer decision guide without loading the full recipe set.
 
+## If `mi-lsp` is missing
+
+If the skill is installed but the command is missing, install the CLI before doing anything else:
+
+1. Download the matching release bundle from `https://github.com/fgpaz/mi-lsp/releases`.
+2. Extract it into a stable directory and keep `workers/<rid>/` next to `mi-lsp(.exe)`.
+3. Add that directory to the current session `PATH`.
+4. Verify the binary before trying to initialize any workspace:
+
+```powershell
+mi-lsp info
+mi-lsp worker status --format compact
+```
+
+If the bundle was moved after extraction, run `mi-lsp worker install`.
+
 ## First-use bootstrap
 
 ```powershell
@@ -11,6 +27,7 @@ mi-lsp workspace status <alias> --format compact
 ```
 
 If the repo already exists in the registry, reuse that alias instead of creating a new one.
+If `mi-lsp workspace list` fails because the command is missing, return to the install steps above instead of falling back immediately.
 
 ## Preferred command order
 
