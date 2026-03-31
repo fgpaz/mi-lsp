@@ -60,7 +60,7 @@ flowchart LR
 
 ## Reglas de routing
 
-1. `find/search/overview/symbols` operan sobre el catalogo del workspace completo.
+1. `find/search/overview/symbols/intent` operan sobre el catalogo del workspace completo; en workspaces `container`, `find/search/intent` pueden acotar a un repo con `--repo` sin pasar por el routing semantico.
 2. `service` combina catalogo repo-local y busqueda textual scoped al path pedido.
 3. `refs/context/deps` resuelven un `semantic entrypoint` antes de tocar Roslyn.
 4. `ask` primero consulta `doc_records/doc_edges/doc_mentions`; si no hay corpus fuerte, degrada a texto.

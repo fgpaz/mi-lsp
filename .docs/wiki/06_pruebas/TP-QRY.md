@@ -12,6 +12,7 @@
 - RF-QRY-008
 - RF-QRY-009
 - RF-QRY-010
+- RF-QRY-011
 
 ## Casos
 
@@ -53,3 +54,8 @@
 | TC-QRY-034 | negativo | RF-QRY-010 | `nav ask` degrada a fallback generico o textual cuando falta corpus fuerte |
 | TC-QRY-035 | positivo | RF-QRY-002 | `nav find` responde por catalogo aunque el daemon este caido o detenido |
 | TC-QRY-036 | positivo | RF-QRY-002 | `nav search`, `nav.symbols`, `nav.outline`, `nav.overview` y `nav.multi-read` no auto-inician daemon y mantienen salida estable |
+| TC-QRY-037 | positivo | RF-QRY-002 | `nav find` y `nav search` aceptan `--repo` en workspaces `container` y acotan resultados sin depender del daemon |
+| TC-QRY-038 | negativo | RF-QRY-002 | `nav find/search/intent --repo` desconocido devuelve `backend=router`, candidatos y `next_hint` |
+| TC-QRY-039 | positivo | RF-QRY-010 | `nav ask` emite `next_queries` con `--repo` cuando la evidencia apunta a un repo unico del workspace `container` |
+| TC-QRY-040 | positivo | RF-QRY-011 | `nav intent --repo` acota candidatos al repo seleccionado y conserva output compacto |
+| TC-QRY-041 | negativo | RF-QRY-011 | `nav intent` rechaza pregunta vacia con error explicito |

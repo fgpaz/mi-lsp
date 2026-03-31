@@ -46,6 +46,13 @@ func renderText(env model.Envelope) string {
 		for _, item := range items {
 			lines = append(lines, fmt.Sprintf("service %s path=%s profile=%s endpoints=%d consumers=%d publishers=%d entities=%d", item.Service, item.Path, item.Profile, len(item.HTTPEndpoints), len(item.EventConsumers), len(item.EventPublishers), len(item.Entities)))
 		}
+	case []model.AskResult:
+		for _, item := range items {
+			lines = append(lines, fmt.Sprintf("ask summary=%s primary=%s", item.Summary, item.PrimaryDoc.Path))
+			for _, evidence := range item.CodeEvidence {
+				lines = append(lines, fmt.Sprintf("  code %s %s:%d %s", evidence.Type, evidence.File, evidence.Line, evidence.Name))
+			}
+		}
 	case []map[string]any:
 		for _, item := range items {
 			lines = append(lines, fmt.Sprintf("%v", item))
@@ -65,10 +72,10 @@ func compactItems(items any, compress bool) any {
 		compact := make([]map[string]any, 0, len(typed))
 		for _, item := range typed {
 			entry := map[string]any{
-				"n": item.Name,
-				"k": item.Kind,
-				"f": item.FilePath,
-				"l": item.StartLine,
+				"n":   item.Name,
+				"k":   item.Kind,
+				"f":   item.FilePath,
+				"l":   item.StartLine,
 				"sig": truncateSignature(item.Signature, 120),
 			}
 			// Only add optional fields if not in compress mode
@@ -95,6 +102,19 @@ func compactItems(items any, compress bool) any {
 				"infrastructure":    item.Infrastructure,
 				"archetype_matches": item.ArchetypeMatches,
 				"next_queries":      item.NextQueries,
+			})
+		}
+		return compact
+	case []model.AskResult:
+		compact := make([]map[string]any, 0, len(typed))
+		for _, item := range typed {
+			compact = append(compact, map[string]any{
+				"summary":       item.Summary,
+				"primary_doc":   item.PrimaryDoc,
+				"doc_evidence":  item.DocEvidence,
+				"code_evidence": item.CodeEvidence,
+				"why":           item.Why,
+				"next_queries":  item.NextQueries,
 			})
 		}
 		return compact

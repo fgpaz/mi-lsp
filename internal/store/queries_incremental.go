@@ -37,8 +37,8 @@ func ReplaceFileSymbols(ctx context.Context, db *sql.DB, filePath string, repoID
 	if len(symbols) > 0 {
 		stmt, err := tx.PrepareContext(ctx, `
 			INSERT OR REPLACE INTO symbols(
-				file_path, repo_id, repo_name, name, kind, start_line, end_line, parent, qualified_name, signature, signature_hash, scope, language, file_hash, implements
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+				file_path, repo_id, repo_name, name, kind, start_line, end_line, parent, qualified_name, signature, signature_hash, scope, language, file_hash, implements, search_text
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		`)
 		if err != nil {
 			return err
@@ -50,7 +50,7 @@ func ReplaceFileSymbols(ctx context.Context, db *sql.DB, filePath string, repoID
 				sym.FilePath, sym.RepoID, sym.RepoName, sym.Name, sym.Kind,
 				sym.StartLine, sym.EndLine, sym.Parent, sym.QualifiedName,
 				sym.Signature, sym.SignatureHash, sym.Scope, sym.Language,
-				sym.FileHash, sym.Implements,
+				sym.FileHash, sym.Implements, sym.SearchText,
 			); err != nil {
 				return err
 			}

@@ -585,3 +585,202 @@ func TestWorkspaceList_PreservesRegistryAliasesForSameRoot(t *testing.T) {
 		t.Fatalf("expected both aliases in workspace.list, got %#v", items)
 	}
 }
+
+func createContainerWorkspaceFixture(t *testing.T, alias string) string {
+	t.Helper()
+	root := t.TempDir()
+	writeWorkspaceFile(t, root, "frontend/src/Login.tsx", strings.Join([]string{
+		"export function LoginPage() {",
+		"  return <main>forgot password link</main>;",
+		"}",
+	}, "\n"))
+	writeWorkspaceFile(t, root, "backend/src/PasswordReset.cs", strings.Join([]string{
+		"namespace Demo;",
+		"// forgot password token pipeline",
+		"public class PasswordResetService",
+		"{",
+		"    public void ResetPassword() { }",
+		"}",
+	}, "\n"))
+
+	registration := model.WorkspaceRegistration{
+		Name:      alias,
+		Root:      root,
+		Languages: []string{"csharp", "typescript"},
+		Kind:      model.WorkspaceKindContainer,
+	}
+	if _, err := workspace.RegisterWorkspace(alias, registration); err != nil {
+		t.Fatalf("register workspace: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = workspace.RemoveWorkspace(alias)
+	})
+
+	project := model.ProjectFile{
+		Project: model.ProjectBlock{
+			Name:        alias,
+			Languages:   []string{"csharp", "typescript"},
+			Kind:        model.WorkspaceKindContainer,
+			DefaultRepo: "frontend",
+		},
+		Repos: []model.WorkspaceRepo{
+			{ID: "frontend", Name: "frontend", Root: "frontend", Languages: []string{"typescript"}},
+			{ID: "backend", Name: "backend", Root: "backend", Languages: []string{"csharp"}},
+		},
+	}
+	if err := workspace.SaveProjectFile(root, project); err != nil {
+		t.Fatalf("SaveProjectFile: %v", err)
+	}
+
+	db, err := store.Open(root)
+	if err != nil {
+		t.Fatalf("store.Open: %v", err)
+	}
+	defer db.Close()
+
+	files := []model.FileRecord{
+		{FilePath: "frontend/src/Login.tsx", RepoID: "frontend", RepoName: "frontend", Language: "typescript"},
+		{FilePath: "backend/src/PasswordReset.cs", RepoID: "backend", RepoName: "backend", Language: "csharp"},
+	}
+	symbols := []model.SymbolRecord{
+		{
+			FilePath:      "frontend/src/Login.tsx",
+			RepoID:        "frontend",
+			RepoName:      "frontend",
+			Name:          "LoginPage",
+			Kind:          "function",
+			StartLine:     1,
+			EndLine:       3,
+			QualifiedName: "frontend.LoginPage",
+			Language:      "typescript",
+			SearchText:    "login forgot password reset link",
+		},
+		{
+			FilePath:      "frontend/src/Login.tsx",
+			RepoID:        "frontend",
+			RepoName:      "frontend",
+			Name:          "PasswordResetView",
+			Kind:          "function",
+			StartLine:     1,
+			EndLine:       3,
+			QualifiedName: "frontend.PasswordResetView",
+			Language:      "typescript",
+			SearchText:    "password reset frontend view",
+		},
+		{
+			FilePath:      "backend/src/PasswordReset.cs",
+			RepoID:        "backend",
+			RepoName:      "backend",
+			Name:          "PasswordResetService",
+			Kind:          "class",
+			StartLine:     3,
+			EndLine:       6,
+			QualifiedName: "backend.PasswordResetService",
+			Language:      "csharp",
+			SearchText:    "password reset recovery token backend service",
+		},
+	}
+	if err := store.ReplaceCatalog(context.Background(), db, project, files, symbols); err != nil {
+		t.Fatalf("ReplaceCatalog: %v", err)
+	}
+	return root
+}
+
+func TestFind_RepoSelectorFiltersResults(t *testing.T) {
+	alias := "container-find-" + filepath.Base(t.TempDir())
+	root := createContainerWorkspaceFixture(t, alias)
+	app := New(root, nil)
+
+	env, err := app.Execute(context.Background(), model.CommandRequest{
+		Operation: "nav.find",
+		Context:   model.QueryOptions{Workspace: root, MaxItems: 10},
+		Payload:   map[string]any{"pattern": "PasswordReset", "repo": "backend"},
+	})
+	if err != nil {
+		t.Fatalf("nav.find: %v", err)
+	}
+	if !env.Ok {
+		t.Fatalf("expected ok=true, got warnings: %v", env.Warnings)
+	}
+	items, ok := env.Items.([]model.SymbolRecord)
+	if !ok || len(items) != 1 {
+		t.Fatalf("expected one symbol result, got %#v", env.Items)
+	}
+	if items[0].RepoName != "backend" {
+		t.Fatalf("repo = %q, want backend", items[0].RepoName)
+	}
+}
+
+func TestSearch_RepoSelectorFiltersResults(t *testing.T) {
+	alias := "container-search-" + filepath.Base(t.TempDir())
+	root := createContainerWorkspaceFixture(t, alias)
+	app := New(root, nil)
+
+	env, err := app.Execute(context.Background(), model.CommandRequest{
+		Operation: "nav.search",
+		Context:   model.QueryOptions{Workspace: root, MaxItems: 10},
+		Payload:   map[string]any{"pattern": "forgot password", "repo": "frontend"},
+	})
+	if err != nil {
+		t.Fatalf("nav.search: %v", err)
+	}
+	if !env.Ok {
+		t.Fatalf("expected ok=true, got warnings: %v", env.Warnings)
+	}
+	items, ok := env.Items.([]map[string]any)
+	if !ok || len(items) != 1 {
+		t.Fatalf("expected one search result, got %#v", env.Items)
+	}
+	if items[0]["repo"] != "frontend" {
+		t.Fatalf("repo = %#v, want frontend", items[0]["repo"])
+	}
+}
+
+func TestIntent_RepoSelectorFiltersResults(t *testing.T) {
+	alias := "container-intent-" + filepath.Base(t.TempDir())
+	root := createContainerWorkspaceFixture(t, alias)
+	app := New(root, nil)
+
+	env, err := app.Execute(context.Background(), model.CommandRequest{
+		Operation: "nav.intent",
+		Context:   model.QueryOptions{Workspace: root, MaxItems: 10},
+		Payload:   map[string]any{"question": "password reset backend", "top": 10, "repo": "backend"},
+	})
+	if err != nil {
+		t.Fatalf("nav.intent: %v", err)
+	}
+	if !env.Ok {
+		t.Fatalf("expected ok=true, got warnings: %v", env.Warnings)
+	}
+	items, ok := env.Items.([]map[string]any)
+	if !ok || len(items) != 1 {
+		t.Fatalf("expected one intent result, got %#v", env.Items)
+	}
+	if items[0]["file"] != "backend/src/PasswordReset.cs" {
+		t.Fatalf("unexpected intent result %#v", items[0])
+	}
+}
+
+func TestCatalogQueryUnknownRepoSelectorReturnsRouterEnvelope(t *testing.T) {
+	alias := "container-router-" + filepath.Base(t.TempDir())
+	root := createContainerWorkspaceFixture(t, alias)
+	app := New(root, nil)
+
+	env, err := app.Execute(context.Background(), model.CommandRequest{
+		Operation: "nav.find",
+		Context:   model.QueryOptions{Workspace: root, MaxItems: 10},
+		Payload:   map[string]any{"pattern": "PasswordResetService", "exact": true, "repo": "missing"},
+	})
+	if err != nil {
+		t.Fatalf("nav.find: %v", err)
+	}
+	if env.Ok {
+		t.Fatalf("expected ok=false for unknown repo selector, got %#v", env)
+	}
+	if env.Backend != "router" {
+		t.Fatalf("backend = %q, want router", env.Backend)
+	}
+	if env.NextHint == nil || !strings.Contains(*env.NextHint, "--repo <name>") {
+		t.Fatalf("expected rerun hint for repo selector, got %#v", env.NextHint)
+	}
+}

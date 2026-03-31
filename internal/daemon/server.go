@@ -186,7 +186,7 @@ func (s *Server) handleRequest(request model.CommandRequest) (model.Envelope, er
 		go s.Shutdown()
 		return model.Envelope{Ok: true, Backend: "daemon", Items: []string{"stopping daemon"}}, nil
 	case "worker.status":
-		return model.Envelope{Ok: true, Backend: "daemon", Items: s.manager.Status()}, nil
+		return s.app.Execute(context.Background(), request)
 	case "workspace.warm":
 		registration, err := s.app.ResolveWorkspace(request.Context.Workspace)
 		if err != nil {

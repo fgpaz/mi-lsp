@@ -42,6 +42,7 @@
 - Si existe `.docs/wiki/_mi-lsp/read-model.toml`, ese archivo manda sobre el default embebido.
 - El codigo no rankea por delante de la wiki; el codigo se usa como evidencia/verificacion.
 - En repos sin `.docs/wiki`, el sistema cae a fallback generico sobre `README*`, `docs/` y `.docs/`.
+- En workspaces `container`, si la evidencia de codigo converge en un repo hijo unico, `next_queries` debe sugerir reruns con `--repo` para mantener el scope directo.
 
 ## 6. Data Model Impact
 

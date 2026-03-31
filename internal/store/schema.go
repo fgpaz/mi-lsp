@@ -59,6 +59,40 @@ CREATE TABLE IF NOT EXISTS files (
 );
 `
 
+const docsDDL = `
+CREATE TABLE IF NOT EXISTS doc_records (
+    path TEXT PRIMARY KEY,
+    title TEXT,
+    doc_id TEXT,
+    layer TEXT,
+    family TEXT,
+    snippet TEXT,
+    search_text TEXT,
+    content_hash TEXT,
+    indexed_at INTEGER
+);
+`
+
+const docEdgesDDL = `
+CREATE TABLE IF NOT EXISTS doc_edges (
+    from_path TEXT NOT NULL,
+    to_path TEXT NOT NULL DEFAULT '',
+    to_doc_id TEXT NOT NULL DEFAULT '',
+    kind TEXT NOT NULL,
+    label TEXT,
+    UNIQUE(from_path, to_path, to_doc_id, kind, label)
+);
+`
+
+const docMentionsDDL = `
+CREATE TABLE IF NOT EXISTS doc_mentions (
+    doc_path TEXT NOT NULL,
+    mention_type TEXT NOT NULL,
+    mention_value TEXT NOT NULL,
+    UNIQUE(doc_path, mention_type, mention_value)
+);
+`
+
 const metaDDL = `
 CREATE TABLE IF NOT EXISTS workspace_meta (
     key TEXT PRIMARY KEY,
@@ -67,7 +101,7 @@ CREATE TABLE IF NOT EXISTS workspace_meta (
 `
 
 func EnsureSchema(db *sql.DB) error {
-	statements := []string{reposDDL, entrypointsDDL, symbolsDDL, filesDDL, metaDDL}
+	statements := []string{reposDDL, entrypointsDDL, symbolsDDL, filesDDL, docsDDL, docEdgesDDL, docMentionsDDL, metaDDL}
 	for _, stmt := range statements {
 		if _, err := db.Exec(stmt); err != nil {
 			return err
@@ -86,6 +120,9 @@ func EnsureSchema(db *sql.DB) error {
 	if err := ensureColumn(db, "files", "repo_name", "TEXT"); err != nil {
 		return err
 	}
+	if err := ensureColumn(db, "symbols", "search_text", "TEXT"); err != nil {
+		return err
+	}
 
 	indexes := []struct {
 		table     string
@@ -101,6 +138,10 @@ func EnsureSchema(db *sql.DB) error {
 		{table: "symbols", column: "repo_id", statement: `CREATE INDEX IF NOT EXISTS idx_symbols_repo_id ON symbols(repo_id);`, required: false},
 		{table: "files", column: "repo_id", statement: `CREATE INDEX IF NOT EXISTS idx_files_repo_id ON files(repo_id);`, required: false},
 		{table: "symbols", column: "file_path", statement: `CREATE INDEX IF NOT EXISTS idx_symbols_file_lines ON symbols(file_path, start_line, end_line);`, required: false},
+		{table: "doc_records", column: "family", statement: `CREATE INDEX IF NOT EXISTS idx_doc_records_family ON doc_records(family, layer);`, required: true},
+		{table: "doc_records", column: "doc_id", statement: `CREATE INDEX IF NOT EXISTS idx_doc_records_doc_id ON doc_records(doc_id);`, required: true},
+		{table: "doc_mentions", column: "mention_type", statement: `CREATE INDEX IF NOT EXISTS idx_doc_mentions_type ON doc_mentions(mention_type, mention_value);`, required: true},
+		{table: "doc_edges", column: "from_path", statement: `CREATE INDEX IF NOT EXISTS idx_doc_edges_from ON doc_edges(from_path);`, required: true},
 	}
 	for _, index := range indexes {
 		hasColumn, err := tableHasColumn(db, index.table, index.column)

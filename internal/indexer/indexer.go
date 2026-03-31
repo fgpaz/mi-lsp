@@ -6,6 +6,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/fgpaz/mi-lsp/internal/docgraph"
 	"github.com/fgpaz/mi-lsp/internal/model"
 	"github.com/fgpaz/mi-lsp/internal/store"
 	"github.com/fgpaz/mi-lsp/internal/workspace"
@@ -60,6 +61,12 @@ func IndexWorkspace(ctx context.Context, root string, clean bool) (Result, error
 		symbols = append(symbols, extractedSymbols...)
 	}
 
+	docs, docEdges, docMentions, docWarnings, err := docgraph.IndexWorkspaceDocs(root, matcher)
+	if err != nil {
+		return Result{}, err
+	}
+	warnings = append(warnings, docWarnings...)
+
 	db, err := store.Open(root)
 	if err != nil {
 		return Result{}, err
@@ -67,6 +74,9 @@ func IndexWorkspace(ctx context.Context, root string, clean bool) (Result, error
 	defer db.Close()
 
 	if err := store.ReplaceCatalog(ctx, db, projectFile, files, symbols); err != nil {
+		return Result{}, err
+	}
+	if err := store.ReplaceDocs(ctx, db, docs, docEdges, docMentions); err != nil {
 		return Result{}, err
 	}
 

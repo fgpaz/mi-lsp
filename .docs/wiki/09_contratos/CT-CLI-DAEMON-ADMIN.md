@@ -19,7 +19,7 @@ Define la frontera entre clientes locales y el runtime compartido: CLI publica, 
 Comandos canonicos:
 
 - `workspace add|scan|list|warm|status|remove`
-- `nav symbols|find|refs|overview|outline|service|search|context|deps`
+- `nav symbols|find|refs|overview|outline|service|search|context|deps|ask|batch|related|workspace-map|diff-context|trace|intent`
 - `index [path]|--clean`
 - `info`
 - `daemon start|stop|status|restart|open|logs [--tail N]`
@@ -40,6 +40,7 @@ Flags globales minimos:
 
 Flags especificos:
 
+- `nav find|search|intent --repo`
 - `nav search --regex`
 - `nav service --include-archetype`
 
@@ -113,7 +114,7 @@ Reglas:
 
 Reglas de routing:
 
-- `nav.find`, `nav.search`, `nav.symbols`, `nav.outline`, `nav.overview` y `nav.multi-read` no deben cruzar esta frontera en el hot path.
+- `nav.find`, `nav.search`, `nav.intent`, `nav.symbols`, `nav.outline`, `nav.overview` y `nav.multi-read` no deben cruzar esta frontera en el hot path.
 - `nav.refs`, `nav.context`, `nav.deps`, `nav.related`, `nav.service`, `nav.workspace-map`, `nav.diff-context` y `nav.batch` pueden preferir daemon cuando corresponda.
 - `workspace.warm` puede preferir daemon pero no debe auto-iniciarlo.
 
@@ -268,6 +269,8 @@ Respuesta exitosa (`items[0]`):
 - `rid`
 - `tool_root`
 - `tool_root_kind`
+- `cli_path`
+- `protocol_version`
 - `install_hint`
 - `active_workers`
 - `selected`

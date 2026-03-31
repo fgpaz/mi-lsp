@@ -91,6 +91,7 @@ La novedad canonica de v1.3 es distinguir workspaces `single` de workspaces `con
 | RF-QRY-008 | DiffContextResult, QueryEnvelope, SymbolRecord |
 | RF-QRY-009 | QueryEnvelope, SymbolRecord |
 | RF-QRY-010 | AskResult, DocRecord, DocEdge, DocMention, DocsReadProfile, QueryEnvelope |
+| RF-QRY-011 | SymbolRecord, QueryEnvelope |
 | RF-CS-001 | QueryEnvelope, RuntimeSnapshot, WorkspaceEntrypoint |
 | RF-DAE-001 | DaemonState |
 | RF-DAE-002 | RuntimeSnapshot, AccessEvent, DaemonState |

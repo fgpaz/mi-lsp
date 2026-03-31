@@ -16,20 +16,20 @@ import (
 )
 
 type rootState struct {
-	repoRoot      string
-	app           *service.App
-	workspace     string
-	format        string
-	tokenBudget   int
-	maxItems      int
-	maxChars      int
-	verbose       bool
-	clientName    string
-	sessionID     string
-	backendHint   string
-	telemetry     *CLITelemetry
-	noAutoDaemon  bool
-	compress      bool
+	repoRoot     string
+	app          *service.App
+	workspace    string
+	format       string
+	tokenBudget  int
+	maxItems     int
+	maxChars     int
+	verbose      bool
+	clientName   string
+	sessionID    string
+	backendHint  string
+	telemetry    *CLITelemetry
+	noAutoDaemon bool
+	compress     bool
 }
 
 func NewRootCommand() *cobra.Command {
@@ -97,6 +97,7 @@ func NewRootCommand() *cobra.Command {
 	root.PersistentFlags().BoolVar(&state.compress, "compress", false, "Aggressive compression: strips parent, scope, implements from compact output")
 
 	root.AddCommand(
+		newInitCommand(state),
 		newWorkspaceCommand(state),
 		newNavCommand(state),
 		newIndexCommand(state),
@@ -133,8 +134,10 @@ func (s *rootState) executeOperation(cmd *cobra.Command, operation string, paylo
 	ctx, cancel := context.WithTimeout(cmd.Context(), 2*time.Minute)
 	defer cancel()
 
-	// For semantic operations, attempt to ensure daemon is running unless --no-auto-daemon is set
-	if preferDaemon && !s.noAutoDaemon && isSemanticOperation(operation) {
+	useDaemon := shouldUseDaemon(operation, preferDaemon)
+
+	// Only heavy daemon-backed queries should auto-start the daemon.
+	if useDaemon && !s.noAutoDaemon && shouldAutoStartDaemon(operation) {
 		if err := daemon.EnsureDaemon(s.repoRoot); err != nil {
 			// Log warning but don't fail; fall back to direct mode
 			if s.verbose {
@@ -148,10 +151,10 @@ func (s *rootState) executeOperation(cmd *cobra.Command, operation string, paylo
 		envelope model.Envelope
 		err      error
 	)
-	if preferDaemon {
+	if useDaemon {
 		envelope, err = daemon.NewClient().Execute(ctx, request)
 	}
-	if !preferDaemon || err != nil {
+	if !useDaemon || err != nil {
 		envelope, err = s.app.Execute(ctx, request)
 	}
 	latency := time.Since(started)
@@ -167,10 +170,22 @@ func (s *rootState) executeOperation(cmd *cobra.Command, operation string, paylo
 	return s.printEnvelope(envelope)
 }
 
-// isSemanticOperation returns true for heavy semantic queries that benefit from daemon.
-func isSemanticOperation(operation string) bool {
+func shouldUseDaemon(operation string, requested bool) bool {
+	if !requested {
+		return false
+	}
 	switch operation {
-	case "nav.refs", "nav.context", "nav.deps", "nav.related":
+	case "nav.find", "nav.search", "nav.intent", "nav.symbols", "nav.outline", "nav.overview", "nav.multi-read", "nav.trace":
+		return false
+	default:
+		return true
+	}
+}
+
+// shouldAutoStartDaemon returns true for heavy operations that benefit from warm runtimes.
+func shouldAutoStartDaemon(operation string) bool {
+	switch operation {
+	case "nav.refs", "nav.context", "nav.deps", "nav.related", "nav.ask", "nav.service", "nav.workspace-map", "nav.diff-context", "nav.batch":
 		return true
 	}
 	return false

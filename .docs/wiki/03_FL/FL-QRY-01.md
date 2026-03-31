@@ -6,7 +6,7 @@ Resolver una consulta con salida compacta, truncacion determinista y fallback cu
 
 ## 2. Scope in/out
 
-- In: routing por backend, aplicacion de `--token-budget`, `--max-items`, `--max-chars`, warnings de degradacion, `nav service <path>`, `nav ask <question>` y la decision centralizada de ejecutar directo `nav.find`, `nav.search`, `nav.symbols`, `nav.outline`, `nav.overview` y `nav.multi-read`.
+- In: routing por backend, aplicacion de `--token-budget`, `--max-items`, `--max-chars`, warnings de degradacion, `nav service <path>`, `nav ask <question>`, `nav intent <question>` y la decision centralizada de ejecutar directo `nav.find`, `nav.search`, `nav.intent`, `nav.symbols`, `nav.outline`, `nav.overview` y `nav.multi-read`. En workspaces `container`, `find/search/intent` pueden acotar con `--repo`.
 - Out: edicion/refactor, respuestas con blobs de codigo completos y score fuerte de completitud.
 
 ## 3. Actors and ownership
@@ -70,7 +70,7 @@ sequenceDiagram
 | Caso | Resultado |
 |---|---|
 | Daemon caido | fallback directo para queries daemon-aware; las lecturas baratas siguen directas |
-| Operacion de catalogo/texto (`find/search/symbols/outline/overview/multi-read`) | ejecuta directo y no depende de health del daemon |
+| Operacion de catalogo/texto (`find/search/intent/symbols/outline/overview/multi-read`) | ejecuta directo y no depende de health del daemon |
 | Presupuesto agotado | `truncated=true` + `next_hint` |
 | Backend degradado (`tsserver` ausente, worker semantico no disponible) | `warnings` explicitos y backend alternativo |
 | Catalogo ausente para `nav service` | degradacion a evidencia textual con warning |
@@ -97,3 +97,4 @@ sequenceDiagram
 - RF-QRY-002 routing con fallback de daemon/backend y warnings explicitos
 - RF-QRY-003 resumen evidence-first de servicio sin score fuerte
 - RF-QRY-010 preguntas docs-first guiadas por wiki con evidencia de codigo
+- RF-QRY-011 busqueda de simbolos por intencion con scope opcional de repo

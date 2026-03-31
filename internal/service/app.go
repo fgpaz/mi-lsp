@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 
 	"github.com/fgpaz/mi-lsp/internal/indexer"
@@ -47,6 +49,8 @@ func (a *App) Execute(ctx context.Context, request model.CommandRequest) (model.
 	switch request.Operation {
 	case "workspace.add":
 		return a.workspaceAdd(ctx, request)
+	case "workspace.init":
+		return a.workspaceInit(ctx, request)
 	case "workspace.scan":
 		return a.workspaceScan()
 	case "workspace.list":
@@ -71,6 +75,8 @@ func (a *App) Execute(ctx context.Context, request model.CommandRequest) (model.
 		return a.symbols(ctx, request)
 	case "nav.search":
 		return a.search(ctx, request)
+	case "nav.ask":
+		return a.ask(ctx, request)
 	case "nav.service":
 		return a.serviceSummary(ctx, request)
 	case "nav.refs":
@@ -89,6 +95,10 @@ func (a *App) Execute(ctx context.Context, request model.CommandRequest) (model.
 		return a.workspaceMap(ctx, request)
 	case "nav.diff-context":
 		return a.diffContext(ctx, request)
+	case "nav.trace":
+		return a.trace(ctx, request)
+	case "nav.intent":
+		return a.intent(ctx, request)
 	case "worker.install":
 		return a.installWorker(request)
 	case "worker.status":
@@ -198,24 +208,39 @@ func (a *App) symbols(ctx context.Context, request model.CommandRequest) (model.
 func (a *App) find(ctx context.Context, request model.CommandRequest) (model.Envelope, error) {
 	allWorkspaces, _ := request.Payload["all_workspaces"].(bool)
 	if allWorkspaces {
+		if strings.TrimSpace(stringPayload(request.Payload, "repo")) != "" {
+			return model.Envelope{}, errors.New("--repo is not supported with --all-workspaces")
+		}
 		return a.findAllWorkspaces(ctx, request)
 	}
 
-	registration, _, err := a.resolveWorkspaceWithProject(request.Context.Workspace)
+	registration, project, err := a.resolveWorkspaceWithProject(request.Context.Workspace)
 	if err != nil {
 		return model.Envelope{}, err
 	}
 	pattern, _ := request.Payload["pattern"].(string)
 	kind, _ := request.Payload["kind"].(string)
 	exact, _ := request.Payload["exact"].(bool)
+	scopedRepo, scopeEnvelope := resolveCatalogRepoScope(registration, project, request.Payload)
+	if scopeEnvelope != nil {
+		return *scopeEnvelope, nil
+	}
 	db, err := store.Open(registration.Root)
 	if err != nil {
 		return model.Envelope{}, err
 	}
 	defer db.Close()
-	items, err := store.FindSymbols(ctx, db, pattern, kind, exact, request.Context.MaxItems)
+	queryLimit := request.Context.MaxItems
+	if scopedRepo != nil {
+		queryLimit = max(queryLimit*10, 100)
+	}
+	items, err := store.FindSymbols(ctx, db, pattern, kind, exact, queryLimit)
 	if err != nil {
 		return model.Envelope{}, err
+	}
+	items = filterSymbolsByRepo(items, scopedRepo)
+	if request.Context.MaxItems > 0 && len(items) > request.Context.MaxItems {
+		items = items[:request.Context.MaxItems]
 	}
 	return model.Envelope{Ok: true, Workspace: registration.Name, Backend: "catalog", Items: items, Stats: model.Stats{Symbols: len(items)}}, nil
 }
@@ -251,6 +276,9 @@ func (a *App) overview(ctx context.Context, request model.CommandRequest) (model
 func (a *App) search(ctx context.Context, request model.CommandRequest) (model.Envelope, error) {
 	allWorkspaces, _ := request.Payload["all_workspaces"].(bool)
 	if allWorkspaces {
+		if strings.TrimSpace(stringPayload(request.Payload, "repo")) != "" {
+			return model.Envelope{}, errors.New("--repo is not supported with --all-workspaces")
+		}
 		return a.searchAllWorkspaces(ctx, request)
 	}
 
@@ -263,7 +291,15 @@ func (a *App) search(ctx context.Context, request model.CommandRequest) (model.E
 	if pattern == "" {
 		return model.Envelope{}, errors.New("pattern is required")
 	}
-	items, err := searchPattern(ctx, registration.Root, project, pattern, useRegex, request.Context.MaxItems)
+	scopedRepo, scopeEnvelope := resolveCatalogRepoScope(registration, project, request.Payload)
+	if scopeEnvelope != nil {
+		return *scopeEnvelope, nil
+	}
+	searchRoot := registration.Root
+	if scopedRepo != nil {
+		searchRoot = filepath.Join(registration.Root, filepath.FromSlash(scopedRepo.Root))
+	}
+	items, err := searchPatternScoped(ctx, registration.Root, searchRoot, project, pattern, useRegex, request.Context.MaxItems)
 	if err != nil {
 		return model.Envelope{}, err
 	}
@@ -301,11 +337,17 @@ func (a *App) installWorker(request model.CommandRequest) (model.Envelope, error
 
 func (a *App) workerStatus() (model.Envelope, error) {
 	info := worker.InspectWorkerRuntime(a.RepoRoot, worker.ResolveRID())
+	cliPath, err := os.Executable()
+	if err != nil {
+		cliPath = ""
+	}
 	items := []map[string]any{{
 		"dotnet":               info.Dotnet,
 		"rid":                  info.RID,
 		"tool_root":            info.ToolRoot,
 		"tool_root_kind":       info.ToolRootKind,
+		"cli_path":             cliPath,
+		"protocol_version":     model.ProtocolVersion,
 		"install_hint":         info.InstallHint,
 		"active_workers":       a.Semantic.Status(),
 		"selected":             info.Selected,
@@ -323,6 +365,36 @@ func (a *App) workerStatus() (model.Envelope, error) {
 		"dev_local_error":      info.DevLocal.Error,
 	}}
 	return model.Envelope{Ok: true, Backend: "worker", Items: items}, nil
+}
+
+func resolveCatalogRepoScope(registration model.WorkspaceRegistration, project model.ProjectFile, payload map[string]any) (*model.WorkspaceRepo, *model.Envelope) {
+	repoSelector := strings.TrimSpace(stringPayload(payload, "repo"))
+	if repoSelector == "" {
+		return nil, nil
+	}
+	repo, ok := workspace.FindRepo(project, repoSelector)
+	if !ok {
+		return nil, ambiguityEnvelope(registration, fmt.Sprintf("unknown repo selector %q", repoSelector), repoCandidates(project.Repos), "--repo <name>")
+	}
+	return &repo, nil
+}
+
+func filterSymbolsByRepo(items []model.SymbolRecord, repo *model.WorkspaceRepo) []model.SymbolRecord {
+	if repo == nil {
+		return items
+	}
+	filtered := make([]model.SymbolRecord, 0, len(items))
+	for _, item := range items {
+		if strings.EqualFold(item.RepoName, repo.Name) || strings.EqualFold(item.RepoID, repo.ID) {
+			filtered = append(filtered, item)
+		}
+	}
+	return filtered
+}
+
+func stringPayload(payload map[string]any, key string) string {
+	value, _ := payload[key].(string)
+	return value
 }
 
 func clonePayload(payload map[string]any) map[string]any {

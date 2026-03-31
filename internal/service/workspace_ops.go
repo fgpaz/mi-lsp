@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"os"
+	"path/filepath"
 
 	"github.com/fgpaz/mi-lsp/internal/indexer"
 	"github.com/fgpaz/mi-lsp/internal/model"
@@ -12,10 +13,18 @@ import (
 )
 
 func (a *App) workspaceAdd(ctx context.Context, request model.CommandRequest) (model.Envelope, error) {
+	return a.registerWorkspace(ctx, request, "registry")
+}
+
+func (a *App) workspaceInit(ctx context.Context, request model.CommandRequest) (model.Envelope, error) {
+	return a.registerWorkspace(ctx, request, "init")
+}
+
+func (a *App) registerWorkspace(ctx context.Context, request model.CommandRequest, backend string) (model.Envelope, error) {
 	path, _ := request.Payload["path"].(string)
 	alias, _ := request.Payload["alias"].(string)
 	if path == "" {
-		return model.Envelope{}, errors.New("path is required")
+		path = "."
 	}
 	registration, project, err := workspace.DetectWorkspaceLayout(path, alias)
 	if err != nil {
@@ -36,13 +45,10 @@ func (a *App) workspaceAdd(ctx context.Context, request model.CommandRequest) (m
 
 	item := workspaceSummaryItem(registration, project)
 	warnings := []string{}
-
-	// Check for no_index flag (backward compatibility)
 	noIndex, _ := request.Payload["no_index"].(bool)
 	if !noIndex {
 		indexResult, indexErr := indexer.IndexWorkspace(ctx, registration.Root, false)
 		if indexErr != nil {
-			// Don't fail the add — just warn
 			warnings = append(warnings, "auto-index failed: "+indexErr.Error())
 		} else {
 			item["index_symbols"] = indexResult.Stats.Symbols
@@ -50,8 +56,13 @@ func (a *App) workspaceAdd(ctx context.Context, request model.CommandRequest) (m
 			item["index_ms"] = indexResult.Stats.Ms
 		}
 	}
-
-	return model.Envelope{Ok: true, Workspace: alias, Backend: "registry", Items: []map[string]any{item}, Warnings: warnings}, nil
+	if backend == "init" {
+		item["next_steps"] = []string{
+			"mi-lsp nav ask \"how is this workspace organized?\" --workspace " + alias + " --format compact",
+			"mi-lsp workspace status " + alias + " --format compact",
+		}
+	}
+	return model.Envelope{Ok: true, Workspace: alias, Backend: backend, Items: []map[string]any{item}, Warnings: warnings}, nil
 }
 
 func (a *App) workspaceScan() (model.Envelope, error) {
@@ -102,6 +113,7 @@ func (a *App) workspaceStatus(ctx context.Context, name string) (model.Envelope,
 	item := workspaceSummaryItem(registration, project)
 	item["repos"] = project.Repos
 	item["entrypoints"] = project.Entrypoints
+	item["docs_read_model"] = workspaceProfileHint(registration.Root)
 	db, err := store.Open(registration.Root)
 	if err != nil {
 		return model.Envelope{Ok: true, Workspace: registration.Name, Backend: "sqlite", Items: []any{item}, Warnings: []string{"workspace has no index yet"}}, nil
@@ -150,4 +162,11 @@ func workspaceSummaryItem(registration model.WorkspaceRegistration, project mode
 		"default_repo":       project.Project.DefaultRepo,
 		"default_entrypoint": project.Project.DefaultEntrypoint,
 	}
+}
+
+func workspaceProfileHint(root string) string {
+	if _, err := os.Stat(filepath.Join(root, ".docs", "wiki", "_mi-lsp", "read-model.toml")); err == nil {
+		return ".docs/wiki/_mi-lsp/read-model.toml"
+	}
+	return "builtin-default"
 }

@@ -25,9 +25,9 @@ type QueryOptions struct {
 }
 
 type Stats struct {
-	Symbols       int   `json:"symbols,omitempty"`
-	Files         int   `json:"files,omitempty"`
-	Ms            int64 `json:"ms,omitempty"`
+	Symbols        int   `json:"symbols,omitempty"`
+	Files          int   `json:"files,omitempty"`
+	Ms             int64 `json:"ms,omitempty"`
 	TokensEstimate int   `json:"tokens_est,omitempty"`
 }
 
@@ -78,6 +78,7 @@ type SymbolRecord struct {
 	Language      string `json:"language"`
 	FileHash      string `json:"file_hash,omitempty"`
 	Implements    string `json:"implements,omitempty"`
+	SearchText    string `json:"search_text,omitempty"`
 }
 
 type FileRecord struct {
@@ -87,6 +88,76 @@ type FileRecord struct {
 	ContentHash string `json:"content_hash,omitempty"`
 	IndexedAt   int64  `json:"indexed_at,omitempty"`
 	Language    string `json:"language"`
+}
+
+type DocRecord struct {
+	Path        string `json:"path"`
+	Title       string `json:"title,omitempty"`
+	DocID       string `json:"doc_id,omitempty"`
+	Layer       string `json:"layer,omitempty"`
+	Family      string `json:"family,omitempty"`
+	Snippet     string `json:"snippet,omitempty"`
+	SearchText  string `json:"search_text,omitempty"`
+	ContentHash string `json:"content_hash,omitempty"`
+	IndexedAt   int64  `json:"indexed_at,omitempty"`
+}
+
+type DocEdge struct {
+	FromPath string `json:"from_path"`
+	ToPath   string `json:"to_path,omitempty"`
+	ToDocID  string `json:"to_doc_id,omitempty"`
+	Kind     string `json:"kind"`
+	Label    string `json:"label,omitempty"`
+}
+
+type DocMention struct {
+	DocPath      string `json:"doc_path"`
+	MentionType  string `json:"mention_type"`
+	MentionValue string `json:"mention_value"`
+}
+
+type DocsReadProfile struct {
+	Version     int                 `toml:"version"`
+	Families    []DocsReadFamily    `toml:"family"`
+	GenericDocs DocsGenericFallback `toml:"generic_docs"`
+}
+
+type DocsReadFamily struct {
+	Name           string   `toml:"name"`
+	IntentKeywords []string `toml:"intent_keywords"`
+	Paths          []string `toml:"paths"`
+}
+
+type DocsGenericFallback struct {
+	Paths []string `toml:"paths"`
+}
+
+type AskDocEvidence struct {
+	Path    string `json:"path"`
+	Title   string `json:"title,omitempty"`
+	DocID   string `json:"doc_id,omitempty"`
+	Layer   string `json:"layer,omitempty"`
+	Family  string `json:"family,omitempty"`
+	Snippet string `json:"snippet,omitempty"`
+}
+
+type AskCodeEvidence struct {
+	Type    string `json:"type"`
+	File    string `json:"file,omitempty"`
+	Line    int    `json:"line,omitempty"`
+	Name    string `json:"name,omitempty"`
+	Kind    string `json:"kind,omitempty"`
+	Snippet string `json:"snippet,omitempty"`
+}
+
+type AskResult struct {
+	Question     string            `json:"question,omitempty"`
+	Summary      string            `json:"summary"`
+	PrimaryDoc   AskDocEvidence    `json:"primary_doc"`
+	DocEvidence  []AskDocEvidence  `json:"doc_evidence,omitempty"`
+	CodeEvidence []AskCodeEvidence `json:"code_evidence,omitempty"`
+	Why          []string          `json:"why,omitempty"`
+	NextQueries  []string          `json:"next_queries,omitempty"`
 }
 
 type WorkspaceRegistration struct {
@@ -225,6 +296,35 @@ type AccessEvent struct {
 	ErrorCode      string    `json:"error_code,omitempty"`
 	Truncated      bool      `json:"truncated,omitempty"`
 	ResultCount    int       `json:"result_count,omitempty"`
+}
+
+// TraceLink represents a spec-to-code link, either explicit (wiki marker) or inferred (heuristic).
+type TraceLink struct {
+	File       string  `json:"file"`
+	Symbol     string  `json:"symbol,omitempty"`
+	Kind       string  `json:"kind,omitempty"`
+	Source     string  `json:"source"`                // "wiki-marker" | "heuristic"
+	Verified   bool    `json:"verified"`
+	Confidence float64 `json:"confidence,omitempty"`
+}
+
+// TraceDrift represents a detected divergence between spec and code (v2 stub).
+type TraceDrift struct {
+	Rule     string `json:"rule"`
+	Actual   string `json:"actual"`
+	Severity string `json:"severity"` // "info" | "warn" | "error"
+}
+
+// TraceResult represents the traceability result for a single RF requirement.
+type TraceResult struct {
+	RF       string       `json:"rf"`
+	Title    string       `json:"title"`
+	Status   string       `json:"status"`   // "implemented" | "partial" | "missing"
+	Coverage float64      `json:"coverage"` // 0.0 - 1.0
+	Explicit []TraceLink  `json:"explicit"`
+	Inferred []TraceLink  `json:"inferred"`
+	Tests    []TraceLink  `json:"tests"`
+	Drift    []TraceDrift `json:"drift"`
 }
 
 // ProjectConfig is a semantic alias of ProjectFile for traceability with 05_modelo_datos.md.

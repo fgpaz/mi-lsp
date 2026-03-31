@@ -52,6 +52,8 @@ func extractTypeScript(repo model.WorkspaceRepo, relPath, hash string, lines []s
 			return
 		}
 		name := match[1]
+		docComment := ExtractDocComment(lines, lineNumber-1)
+		searchText := BuildSearchText(name, "", docComment, "", relPath, kind)
 		items = append(items, model.SymbolRecord{
 			FilePath:      relPath,
 			RepoID:        repo.ID,
@@ -64,6 +66,7 @@ func extractTypeScript(repo model.WorkspaceRepo, relPath, hash string, lines []s
 			SignatureHash: digest([]byte(relPath + ":" + name + ":" + kind)),
 			Language:      "typescript",
 			FileHash:      hash,
+			SearchText:    searchText,
 		})
 	}
 	for idx, line := range lines {
@@ -75,6 +78,7 @@ func extractTypeScript(repo model.WorkspaceRepo, relPath, hash string, lines []s
 		addIfMatch("const", tsConstPattern, line, lineNumber)
 	}
 	if routeName := nextRouteName(relPath); routeName != "" {
+		searchText := BuildSearchText(routeName, "", "", "", relPath, "route")
 		items = append(items, model.SymbolRecord{
 			FilePath:      relPath,
 			RepoID:        repo.ID,
@@ -87,6 +91,7 @@ func extractTypeScript(repo model.WorkspaceRepo, relPath, hash string, lines []s
 			SignatureHash: digest([]byte(relPath + ":route")),
 			Language:      "typescript",
 			FileHash:      hash,
+			SearchText:    searchText,
 		})
 	}
 	return items
@@ -99,6 +104,8 @@ func extractCSharp(repo model.WorkspaceRepo, relPath, hash string, lines []strin
 		lineNumber := idx + 1
 		if match := csTypePattern.FindStringSubmatch(line); len(match) == 3 {
 			currentType = match[2]
+			docComment := ExtractDocComment(lines, lineNumber-1)
+			searchText := BuildSearchText(match[2], "", docComment, "", relPath, strings.ToLower(match[1]))
 			items = append(items, model.SymbolRecord{
 				FilePath:      relPath,
 				RepoID:        repo.ID,
@@ -112,6 +119,7 @@ func extractCSharp(repo model.WorkspaceRepo, relPath, hash string, lines []strin
 				Scope:         inferScope(line),
 				Language:      "csharp",
 				FileHash:      hash,
+				SearchText:    searchText,
 			})
 			continue
 		}
@@ -121,6 +129,9 @@ func extractCSharp(repo model.WorkspaceRepo, relPath, hash string, lines []strin
 			if currentType != "" {
 				qualifiedName = relPath + "::" + currentType + "." + name
 			}
+			sig := strings.TrimSpace(line)
+			docComment := ExtractDocComment(lines, lineNumber-1)
+			searchText := BuildSearchText(name, sig, docComment, currentType, relPath, "method")
 			items = append(items, model.SymbolRecord{
 				FilePath:      relPath,
 				RepoID:        repo.ID,
@@ -131,11 +142,12 @@ func extractCSharp(repo model.WorkspaceRepo, relPath, hash string, lines []strin
 				EndLine:       lineNumber,
 				Parent:        currentType,
 				QualifiedName: qualifiedName,
-				Signature:     strings.TrimSpace(line),
-				SignatureHash: digest([]byte(relPath + ":" + strings.TrimSpace(line))),
+				Signature:     sig,
+				SignatureHash: digest([]byte(relPath + ":" + sig)),
 				Scope:         inferScope(line),
 				Language:      "csharp",
 				FileHash:      hash,
+				SearchText:    searchText,
 			})
 		}
 	}

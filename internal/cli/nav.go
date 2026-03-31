@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"strconv"
+	"strings"
 
 	"github.com/spf13/cobra"
 )
@@ -32,6 +33,7 @@ context retrieval, dependency analysis, and service exploration.`,
 	var kind string
 	var exact bool
 	var allWorkspacesFind bool
+	var findRepo string
 	findCommand := &cobra.Command{
 		Use:   "find <pattern>",
 		Short: "Find symbols by name",
@@ -40,6 +42,9 @@ context retrieval, dependency analysis, and service exploration.`,
 				return err
 			}
 			payload := map[string]any{"pattern": args[0], "kind": kind, "exact": exact}
+			if findRepo != "" {
+				payload["repo"] = findRepo
+			}
 			if allWorkspacesFind {
 				payload["all_workspaces"] = true
 			}
@@ -49,6 +54,7 @@ context retrieval, dependency analysis, and service exploration.`,
 	findCommand.Flags().StringVar(&kind, "kind", "", "Optional symbol kind filter")
 	findCommand.Flags().BoolVar(&exact, "exact", false, "Require exact symbol name match")
 	findCommand.Flags().BoolVar(&allWorkspacesFind, "all-workspaces", false, "Search across all registered workspaces")
+	attachCatalogRepoFlag(findCommand, &findRepo)
 
 	var refsFile string
 	var refsLine int
@@ -101,6 +107,18 @@ context retrieval, dependency analysis, and service exploration.`,
 		},
 	}
 
+	askCommand := &cobra.Command{
+		Use:   "ask <question>",
+		Short: "Ask a docs-first question across wiki and code evidence",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := requireArgs(args, 1, "question"); err != nil {
+				return err
+			}
+			question := strings.Join(args, " ")
+			return state.executeOperation(cmd, "nav.ask", map[string]any{"question": question}, true)
+		},
+	}
+
 	var includeArchetype bool
 	serviceCommand := &cobra.Command{
 		Use:   "service <path>",
@@ -119,6 +137,7 @@ context retrieval, dependency analysis, and service exploration.`,
 	var contextLines int
 	var contextMode string
 	var allWorkspacesSearch bool
+	var searchRepo string
 	searchCommand := &cobra.Command{
 		Use:   "search <text>",
 		Short: "Full-text search with ripgrep",
@@ -126,7 +145,11 @@ context retrieval, dependency analysis, and service exploration.`,
 			if err := requireArgs(args, 1, "text"); err != nil {
 				return err
 			}
-			payload := map[string]any{"pattern": args[0], "regex": useRegex}
+			pattern := strings.Join(args, " ")
+			payload := map[string]any{"pattern": pattern, "regex": useRegex}
+			if searchRepo != "" {
+				payload["repo"] = searchRepo
+			}
 			if includeContent {
 				payload["include_content"] = true
 				payload["context_lines"] = contextLines
@@ -143,6 +166,7 @@ context retrieval, dependency analysis, and service exploration.`,
 	searchCommand.Flags().IntVar(&contextLines, "context-lines", 20, "Number of context lines for line-based fallback")
 	searchCommand.Flags().StringVar(&contextMode, "context-mode", "hybrid", "Content mode: hybrid, symbol, or lines")
 	searchCommand.Flags().BoolVar(&allWorkspacesSearch, "all-workspaces", false, "Search across all registered workspaces")
+	attachCatalogRepoFlag(searchCommand, &searchRepo)
 
 	var contextRepo string
 	var contextEntrypoint string
@@ -280,8 +304,70 @@ Use --include-content to embed symbol bodies in the output.`,
 	}
 	diffContextCommand.Flags().BoolVar(&diffIncludeContent, "include-content", false, "Include changed symbol bodies in output")
 
-	command.AddCommand(symbolsCommand, findCommand, refsCommand, overviewCommand, outlineCommand, serviceCommand, searchCommand, contextCommand, depsCommand, multiReadCommand, batchCommand, relatedCommand, workspaceMapCommand, diffContextCommand)
+	var traceAll bool
+	var traceSummary bool
+	traceCommand := &cobra.Command{
+		Use:   "trace [RF-ID]",
+		Short: "Trace spec-to-code links for RF requirements",
+		Long: `Analyze implementation status of functional requirements (RF).
+Uses explicit markers from wiki frontmatter and heuristic inference.
+Use --all for all RFs, --summary for tabular view.`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			payload := map[string]any{}
+			if len(args) > 0 {
+				payload["rf"] = args[0]
+			}
+			if traceAll {
+				payload["all"] = true
+			}
+			if traceSummary {
+				payload["summary"] = true
+			}
+			if len(args) == 0 && !traceAll {
+				return fmt.Errorf("rf ID required or use --all")
+			}
+			return state.executeOperation(cmd, "nav.trace", payload, true)
+		},
+	}
+	traceCommand.Flags().BoolVar(&traceAll, "all", false, "Trace all RFs")
+	traceCommand.Flags().BoolVar(&traceSummary, "summary", false, "Summary table format (with --all)")
+
+	var intentTop int
+	var intentRepo string
+	intentCommand := &cobra.Command{
+		Use:   "intent <question>",
+		Short: "Search for symbols by intent or purpose",
+		Long: `Perform intent-based code search using BM25 scoring.
+Searches through enriched symbol metadata including names, signatures,
+documentation comments, and file paths.
+
+Examples:
+  mi-lsp nav intent "where do we handle workspace routing fallback?"
+  mi-lsp nav intent "error handling daemon" --top 20`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := requireArgs(args, 1, "question"); err != nil {
+				return err
+			}
+			question := strings.Join(args, " ")
+			payload := map[string]any{
+				"question": question,
+				"top":      intentTop,
+			}
+			if intentRepo != "" {
+				payload["repo"] = intentRepo
+			}
+			return state.executeOperation(cmd, "nav.intent", payload, true)
+		},
+	}
+	intentCommand.Flags().IntVar(&intentTop, "top", 10, "Maximum number of results")
+	attachCatalogRepoFlag(intentCommand, &intentRepo)
+
+	command.AddCommand(symbolsCommand, findCommand, refsCommand, overviewCommand, outlineCommand, askCommand, serviceCommand, searchCommand, contextCommand, depsCommand, multiReadCommand, batchCommand, relatedCommand, workspaceMapCommand, diffContextCommand, traceCommand, intentCommand)
 	return command
+}
+
+func attachCatalogRepoFlag(command *cobra.Command, repo *string) {
+	command.Flags().StringVar(repo, "repo", "", "Repo child selector for container workspaces")
 }
 
 func attachSemanticSelectorFlags(command *cobra.Command, repo *string, entrypoint *string, solution *string, project *string) {

@@ -59,7 +59,7 @@ flowchart TD
 # 5. Areas funcionales de alto nivel
 
 - Gestion de workspaces: alta, inicializacion corta, descubrimiento, aliases, estado y warmup.
-- Navegacion y discovery: simbolos, referencias, outline, overview, contexto, dependencias, preguntas docs-first y resumen de servicios.
+- Navegacion y discovery: simbolos, referencias, outline, overview, contexto, dependencias, preguntas docs-first, busqueda por intencion y resumen de servicios. En workspaces `container`, `find/search/intent` pueden acotar por `--repo` sin perder el modo directo.
 - Indexacion repo-local: catalogo liviano de simbolos, archivos, metadatos del workspace y grafo documental.
 - Enrutamiento semantico: derivacion a Roslyn para C#, a tree-sitter/ripgrep para TS/Next y texto, y a Pyright para Python cuando este disponible.
 - Formateo de salida: envelopes JSON compactos, truncacion determinista y warnings explicitos.

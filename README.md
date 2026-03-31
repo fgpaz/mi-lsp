@@ -28,7 +28,7 @@ mi-lsp worker status --format compact
 
 If you move the binary after extraction, run `mi-lsp worker install` once to copy the bundled worker into `~/.mi-lsp/workers/<rid>/`.
 Regular C# queries resolve the Roslyn worker by layout presence in `bundle -> installed -> dev-local` order, while `mi-lsp worker status` is the explicit compatibility probe.
-`worker status` keeps the same visible diagnostic payload whether it is served directly or through the daemon; only `active_workers` changes with live state.
+`worker status` keeps the same visible diagnostic payload whether it is served directly or through the daemon; only `active_workers` changes with live state. It now also surfaces `cli_path` and `protocol_version`, which makes stale or unexpected binaries on `PATH` easier to diagnose.
 On Windows, non-interactive child processes are started hidden so normal queries should not open extra console windows.
 
 ### 2. Initialize a workspace
@@ -73,6 +73,7 @@ mi-lsp nav ask "how is this workspace organized?" --workspace myapp --format com
 | Understand one symbol deeply | `mi-lsp nav related MySymbol --workspace myapp --format compact` |
 | Read the code around one line | `mi-lsp nav context path/to/file.cs 42 --workspace myapp --format compact` |
 | Search text and see the matching code | `mi-lsp nav search billing retry --include-content --workspace myapp --format compact` |
+| Search symbols by intent | `mi-lsp nav intent "password reset frontend" --workspace myapp --repo web --format compact` |
 | Audit one backend/service path | `mi-lsp nav service src/backend/orders --workspace myapp --format compact` |
 | Read several files in one call | `mi-lsp nav multi-read file1.cs:1-80 file2.ts:20-80 --workspace myapp --format compact` |
 
@@ -83,6 +84,7 @@ Start broad, then narrow semantic queries:
 ```powershell
 mi-lsp nav workspace-map --workspace myapp --format compact
 mi-lsp nav search OrderHandler --workspace myapp --format compact
+mi-lsp nav search "forgot password" --workspace myapp --repo web --format compact
 mi-lsp nav refs IOrderRepository --workspace myapp --repo Orders.Api --format compact
 ```
 

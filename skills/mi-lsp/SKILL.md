@@ -1,6 +1,6 @@
 ---
 name: mi-lsp
-description: Agent-first semantic code navigation with the mi-lsp CLI, without requiring an MCP server. Use for Codex, Claude Code, and any coding agent that supports folder-based skills when you need fast workspace orientation, docs-first repo Q&A, symbol search, semantic refs/context, service profiling, batched file reads, or repo-local noise control with .milspignore.
+description: Agent-first semantic code navigation with the mi-lsp CLI, without requiring an MCP server. Use for Codex, Claude Code, and any coding agent that supports folder-based skills when you need fast workspace orientation, docs-first repo Q&A, symbol search, semantic refs/context, service profiling, batched file reads, spec-to-code traceability, intent-based code search, or repo-local noise control with .milspignore.
 ---
 
 # mi-lsp
@@ -41,10 +41,13 @@ Use these commands first:
 - Ask the repo how it is organized: `mi-lsp nav ask "how is this workspace organized?" --workspace <alias> --format compact`
 - Read 2+ file slices: `mi-lsp nav multi-read file1:1-120 file2:40-160 --workspace <alias> --format compact`
 - Search and see code inline: `mi-lsp nav search billing retry --include-content --workspace <alias> --format compact`
+- Search inside one repo of a container workspace: `mi-lsp nav search "forgot password" --workspace <alias> --repo web --format compact`
 - Understand a symbol in one call: `mi-lsp nav related MySymbol --workspace <alias> --format compact`
 - Orient in a new repo or parent folder: `mi-lsp nav workspace-map --workspace <alias> --format compact`
 - Profile a service: `mi-lsp nav service <path> --workspace <alias> --format compact`
 - Batch mixed operations: `mi-lsp nav batch --workspace <alias> --format compact`
+- Trace spec-to-code links: `mi-lsp nav trace RF-QRY-003 --workspace <alias> --format compact`
+- Search by intent/purpose: `mi-lsp nav intent "where do we handle routing fallback?" --workspace <alias> --format compact`
 
 Prefer these over repeated `Get-Content`, plain `rg`, or one-file-at-a-time reads.
 
@@ -61,7 +64,7 @@ mi-lsp workspace status <alias> --format compact
 
 ```powershell
 mi-lsp nav ask "how is this workspace organized?" --workspace <alias> --format compact
-mi-lsp nav ask "where is daemon routing implemented?" --workspace <alias> --format compact
+mi-lsp nav intent "error handling for daemon connections" --workspace <alias> --format compact
 ```
 
 3. Move to broad discovery when you need structure.
@@ -86,30 +89,40 @@ mi-lsp nav related <symbol> --workspace <alias> --format compact
 mi-lsp nav service <service-path> --workspace <alias> --format compact
 ```
 
+6. Trace spec-to-code links when reviewing RF compliance.
+
+```powershell
+mi-lsp nav trace RF-QRY-003 --workspace <alias> --format compact
+mi-lsp nav trace --all --summary --workspace <alias> --format compact
+```
+
 ## Tool choice ladder
 
 Use `mi-lsp` first for repo navigation, docs-first Q&A, symbol lookup, service audits, and batch reads.
 
 - Start with `nav ask` for orientation or "where is X decided?" questions.
+- Use `nav intent` to find code by purpose when you don't know the symbol name.
+- Use `nav trace` to check which code implements a specific RF requirement.
 - Use `workspace-map`, `search --include-content`, and `multi-read` before broad raw file reads.
 - Use `related`, `context`, `refs`, and `deps` when you need semantic depth.
 - Use plain `rg` only when `mi-lsp` is unavailable or the request falls outside the CLI surface.
 
 ## Routing model
 
-- Cheap reads stay direct: `nav.find`, `nav.search`, `nav.symbols`, `nav.outline`, `nav.overview`, `nav.multi-read`
+- Cheap reads stay direct: `nav.find`, `nav.search`, `nav.symbols`, `nav.outline`, `nav.overview`, `nav.multi-read`, `nav.intent`, `nav.trace`
+- In workspaces `container`, prefer `--repo` for direct `nav.find`, `nav.search`, and `nav.intent` before escalating to semantic selectors.
 - Deep semantics may use the daemon: `nav.refs`, `nav.context`, `nav.deps`, `nav.related`, `nav.service`, `nav.workspace-map`, `nav.diff-context`, `nav.batch`, `nav.ask`
 - The daemon is optional. If it is unavailable, the CLI must still work in direct mode.
 
 ## Container workspaces
 
-If the workspace is a parent folder, use broad discovery on the container and rerun deep semantic queries with one selector:
-- `--repo`
-- `--entrypoint`
-- `--solution`
-- `--project`
+If the workspace is a parent folder, start broad on the container and then narrow with the selector that matches the query type:
 
-If a semantic query returns `backend=router`, do not guess. Re-run with a narrower selector.
+- Direct catalog reads: `--repo` on `nav.find`, `nav.search`, `nav.intent`
+- Semantic queries: `--repo`, `--entrypoint`, `--solution`, or `--project`
+
+If a direct query in a container workspace returns `backend=router`, do not guess. Re-run with `--repo`.
+If a semantic query returns `backend=router`, re-run with a narrower semantic selector.
 
 ## Shared daemon for multi-agent work
 
@@ -129,7 +142,7 @@ When you want clean governance and telemetry attribution, set:
 - Read [references/quickstart.md](references/quickstart.md) when you need a slightly longer onboarding or command chooser.
 - Read [references/compound-commands.md](references/compound-commands.md) when you want `multi-read`, `batch`, `related`, `workspace-map`, `diff-context`, or cross-workspace patterns.
 - Read [references/recipes.md](references/recipes.md) when auditing a service, reviewing completeness, or doing PR/impact analysis.
-- Read [references/runtime-drift.md](references/runtime-drift.md) when CLI/docs/daemon behavior disagree after rebuilds or reinstalls.
+- Read [references/runtime-drift.md](references/runtime-drift.md) when CLI/docs/daemon behavior disagree after rebuilds or reinstalls, especially to confirm `cli_path` and `protocol_version` from `worker status`.
 
 ## Noise control
 

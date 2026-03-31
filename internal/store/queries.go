@@ -58,8 +58,8 @@ func ReplaceCatalog(ctx context.Context, db *sql.DB, project model.ProjectFile, 
 
 	symbolStmt, err := tx.PrepareContext(ctx, `
 		INSERT OR REPLACE INTO symbols(
-			file_path, repo_id, repo_name, name, kind, start_line, end_line, parent, qualified_name, signature, signature_hash, scope, language, file_hash, implements
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			file_path, repo_id, repo_name, name, kind, start_line, end_line, parent, qualified_name, signature, signature_hash, scope, language, file_hash, implements, search_text
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`)
 	if err != nil {
 		return err
@@ -83,6 +83,7 @@ func ReplaceCatalog(ctx context.Context, db *sql.DB, project model.ProjectFile, 
 			symbol.Language,
 			symbol.FileHash,
 			symbol.Implements,
+			symbol.SearchText,
 		); err != nil {
 			return err
 		}
@@ -121,7 +122,7 @@ func SymbolsByFile(ctx context.Context, db *sql.DB, filePath string, limit int) 
 		limit = 200
 	}
 	rows, err := db.QueryContext(ctx, `
-		SELECT id, file_path, repo_id, repo_name, name, kind, start_line, end_line, parent, qualified_name, signature, signature_hash, scope, language, file_hash, implements
+		SELECT `+symbolColumns+`
 		FROM symbols
 		WHERE file_path = ?
 		ORDER BY start_line ASC
@@ -139,14 +140,14 @@ func FindSymbols(ctx context.Context, db *sql.DB, pattern string, kind string, e
 		limit = 50
 	}
 	query := `
-		SELECT id, file_path, repo_id, repo_name, name, kind, start_line, end_line, parent, qualified_name, signature, signature_hash, scope, language, file_hash, implements
+		SELECT ` + symbolColumns + `
 		FROM symbols
 		WHERE name LIKE ?
 	`
 	arg := "%" + pattern + "%"
 	if exact {
 		query = `
-			SELECT id, file_path, repo_id, repo_name, name, kind, start_line, end_line, parent, qualified_name, signature, signature_hash, scope, language, file_hash, implements
+			SELECT ` + symbolColumns + `
 			FROM symbols
 			WHERE name = ?
 		`
@@ -172,7 +173,7 @@ func OverviewByPrefix(ctx context.Context, db *sql.DB, prefix string, limit int)
 		limit = 100
 	}
 	rows, err := db.QueryContext(ctx, `
-		SELECT id, file_path, repo_id, repo_name, name, kind, start_line, end_line, parent, qualified_name, signature, signature_hash, scope, language, file_hash, implements
+		SELECT `+symbolColumns+`
 		FROM symbols
 		WHERE file_path LIKE ?
 		ORDER BY file_path ASC, start_line ASC
@@ -187,7 +188,7 @@ func OverviewByPrefix(ctx context.Context, db *sql.DB, prefix string, limit int)
 
 func SymbolContainingLine(ctx context.Context, db *sql.DB, filePath string, lineNum int) (model.SymbolRecord, bool, error) {
 	row := db.QueryRowContext(ctx, `
-		SELECT id, file_path, repo_id, repo_name, name, kind, start_line, end_line, parent, qualified_name, signature, signature_hash, scope, language, file_hash, implements
+		SELECT `+symbolColumns+`
 		FROM symbols
 		WHERE file_path = ? AND start_line <= ? AND end_line >= ?
 		ORDER BY (end_line - start_line) ASC
@@ -212,6 +213,7 @@ func SymbolContainingLine(ctx context.Context, db *sql.DB, filePath string, line
 		&item.Language,
 		&item.FileHash,
 		&item.Implements,
+		&item.SearchText,
 	)
 	if err != nil {
 		if err == sql.ErrNoRows {
@@ -260,6 +262,8 @@ func CandidateReposForSymbol(ctx context.Context, db *sql.DB, symbol string, exa
 	return items, rows.Err()
 }
 
+const symbolColumns = `id, file_path, repo_id, repo_name, name, kind, start_line, end_line, parent, qualified_name, signature, signature_hash, scope, language, file_hash, implements, search_text`
+
 func scanSymbols(rows *sql.Rows) ([]model.SymbolRecord, error) {
 	items := make([]model.SymbolRecord, 0)
 	for rows.Next() {
@@ -281,6 +285,7 @@ func scanSymbols(rows *sql.Rows) ([]model.SymbolRecord, error) {
 			&item.Language,
 			&item.FileHash,
 			&item.Implements,
+			&item.SearchText,
 		); err != nil {
 			return nil, err
 		}
@@ -294,4 +299,35 @@ func boolToInt(value bool) int {
 		return 1
 	}
 	return 0
+}
+
+// IntentSearch retrieves symbols whose search_text matches any of the given tokens.
+func IntentSearch(ctx context.Context, db *sql.DB, tokens []string, limit int) ([]model.SymbolRecord, error) {
+	if limit <= 0 {
+		limit = 50
+	}
+	if len(tokens) == 0 {
+		return []model.SymbolRecord{}, nil
+	}
+
+	var whereClauses []string
+	var args []any
+	for _, token := range tokens {
+		whereClauses = append(whereClauses, "search_text LIKE ?")
+		args = append(args, "%"+token+"%")
+	}
+	args = append(args, limit)
+
+	query := `
+		SELECT ` + symbolColumns + `
+		FROM symbols
+		WHERE search_text IS NOT NULL AND (` + strings.Join(whereClauses, " OR ") + `)
+		LIMIT ?
+	`
+	rows, err := db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return scanSymbols(rows)
 }

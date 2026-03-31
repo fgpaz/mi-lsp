@@ -25,12 +25,13 @@ El detalle por frontera vive en `09_contratos/`.
 - La UI/admin es una vista local del daemon; no es API publica remota.
 - El protocolo daemon-worker es interno, versionado y con envelope estable.
 - Cada contrato debe exponer `warnings`, fallas accionables y degradacion clara cuando aplique.
-- `worker status` forma parte de la CLI publica y debe exponer `tool_root`, `tool_root_kind`, origen del worker seleccionado y compatibilidad de candidatos.
+- `worker status` forma parte de la CLI publica y debe exponer `tool_root`, `tool_root_kind`, `cli_path`, `protocol_version`, origen del worker seleccionado y compatibilidad de candidatos.
 - `workspace status` forma parte de la CLI publica y debe exponer `docs_read_model` (`builtin-default` o path del proyecto).
 - `init` pertenece a la CLI publica como shortcut de onboarding; no reemplaza `workspace add`, pero reutiliza su semantica base.
 - `nav ask` pertenece a la CLI publica y usa un contrato docs-first explainable, no un blob opaco ni una respuesta puramente textual.
 - `nav service` pertenece a la CLI publica y usa un contrato evidence-first, no uno de scoring.
 - `nav context` pertenece a la CLI publica y su salida visible es slice-first; el backend profundo solo enriquece el mismo item.
+- `nav intent` pertenece a la CLI publica y usa ranking BM25 sobre `search_text`; en workspaces `container` puede acotar por `--repo` sin cambiar a un backend semantico.
 
 ## Versionado, auth y errores
 
@@ -46,7 +47,7 @@ El detalle por frontera vive en `09_contratos/`.
 
 - La presencia o ausencia del daemon no debe cambiar la semantica visible de los comandos.
 - `worker status` debe conservar el mismo payload visible con y sin daemon; el daemon no puede reemplazar `items` por `RuntimeSnapshot`/`WorkerStatus` crudos.
-- `nav.find`, `nav.search`, `nav.symbols`, `nav.outline`, `nav.overview` y `nav.multi-read` pertenecen a la superficie publica directa: no deben esperar daemon ni cambiar de comportamiento por su health.
+- `nav.find`, `nav.search`, `nav.intent`, `nav.symbols`, `nav.outline`, `nav.overview` y `nav.multi-read` pertenecen a la superficie publica directa: no deben esperar daemon ni cambiar de comportamiento por su health.
 - La politica comun de subprocessos no interactivos debe evitar UI extra; en Windows aplica `HideWindow + CREATE_NO_WINDOW`, y los procesos background del daemon agregan `DETACHED_PROCESS`.
 - La resolucion de bootstrap del worker usa el ejecutable/distribucion activa o, en desarrollo, el repo `mi-lsp`; nunca el `cwd` arbitrario del workspace consultado.
 - La distribucion publica canonica es un bundle por RID que incluye `mi-lsp(.exe)` y `workers/<rid>/`; una build desde source no redefine ese contrato de bootstrap.
@@ -72,9 +73,9 @@ El detalle por frontera vive en `09_contratos/`.
 - `nav ask <question>`: responde usando wiki + evidencia de codigo y fallback generico/textual cuando haga falta
 - `nav service`: resume evidencia observable de un servicio en un unico summary estructurado
 - `nav context`: devuelve `slice_text` y metadatos opcionales de catalogo o backend semantico para la linea pedida
-- `nav.find|search|symbols|outline|overview|multi-read`: lecturas directas repo-locales; conservan envelope estable sin dependencia funcional del daemon
+- `nav.find|search|intent|symbols|outline|overview|multi-read`: lecturas directas repo-locales; conservan envelope estable sin dependencia funcional del daemon. En workspaces `container`, `find/search/intent` aceptan `--repo` para narrowing directo.
 - `worker install`: instala o refresca el worker por RID desde un bundle adjunto o, en desarrollo, desde `worker-dotnet/`
-- `worker status`: diagnostica el estado de candidatos `bundle`, `installed` y `dev-local`
+- `worker status`: diagnostica el estado de candidatos `bundle`, `installed` y `dev-local`, e identifica el `cli_path` y `protocol_version` visibles para detectar binarios stale o inesperados en `PATH`
 - `nav multi-read`: lee N rangos de archivo en una sola invocacion, reduce round-trips de agentes AI
 - `nav search --include-content`: extiende search con contenido inline; modo hibrido (symbol body si indexado, +-N lineas fallback)
 - `nav batch`: meta-comando que acepta N operaciones heterogeneas via stdin JSON, ejecucion paralela por defecto

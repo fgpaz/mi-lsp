@@ -14,6 +14,7 @@ import (
 	"sync"
 
 	"github.com/fgpaz/mi-lsp/internal/model"
+	"github.com/fgpaz/mi-lsp/internal/processutil"
 	"github.com/fgpaz/mi-lsp/internal/workspace"
 )
 
@@ -85,6 +86,7 @@ func searchPatternRg(ctx context.Context, workspaceRoot string, searchRoot strin
 	}
 	args = append(args, pattern, searchRoot)
 	command := exec.CommandContext(ctx, rgBin, args...)
+	processutil.ConfigureNonInteractiveCommand(command)
 	output, err := command.CombinedOutput()
 	if err != nil {
 		var exitErr *exec.ExitError
