@@ -14,6 +14,7 @@ import (
 	"sync"
 
 	"github.com/fgpaz/mi-lsp/internal/model"
+	"github.com/fgpaz/mi-lsp/internal/processutil"
 )
 
 // LSPConfig configures a generic LSP backend.
@@ -75,6 +76,7 @@ func (c *LSPClient) Start() error {
 		return nil
 	}
 	cmd := exec.Command(c.config.ServerCmd, c.config.ServerArgs...)
+	processutil.ConfigureNonInteractiveCommand(cmd)
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		return err

@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/fgpaz/mi-lsp/internal/model"
+	"github.com/fgpaz/mi-lsp/internal/processutil"
 	"github.com/fgpaz/mi-lsp/internal/store"
 )
 
@@ -201,6 +202,7 @@ func getGitChangedFiles(ctx context.Context, workspaceRoot string, ref string) (
 	}
 
 	cmd := exec.CommandContext(ctx, "git", args...)
+	processutil.ConfigureNonInteractiveCommand(cmd)
 	cmd.Dir = workspaceRoot
 
 	output, err := cmd.Output()
@@ -227,6 +229,7 @@ func getGitDiffHunks(ctx context.Context, workspaceRoot string, ref string) (map
 	}
 
 	cmd := exec.CommandContext(ctx, "git", args...)
+	processutil.ConfigureNonInteractiveCommand(cmd)
 	cmd.Dir = workspaceRoot
 
 	output, err := cmd.Output()

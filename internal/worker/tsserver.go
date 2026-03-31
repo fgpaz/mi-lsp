@@ -15,6 +15,7 @@ import (
 	"sync"
 
 	"github.com/fgpaz/mi-lsp/internal/model"
+	"github.com/fgpaz/mi-lsp/internal/processutil"
 )
 
 type TsserverClient struct {
@@ -88,6 +89,7 @@ func (c *TsserverClient) Start() error {
 		return errors.New("node is required for tsserver backend")
 	}
 	cmd := exec.Command("node", c.tsserverJS, "--useSingleInferredProjectPerProjectRoot", "true")
+	processutil.ConfigureNonInteractiveCommand(cmd)
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		return err
@@ -328,6 +330,7 @@ func findTsserverPath(workspaceRoot string) (string, error) {
 
 func globalNpmRoot() (string, error) {
 	command := exec.Command("npm", "root", "-g")
+	processutil.ConfigureNonInteractiveCommand(command)
 	output, err := command.Output()
 	if err != nil {
 		return "", err

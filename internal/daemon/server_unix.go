@@ -8,8 +8,9 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"syscall"
 	"time"
+
+	"github.com/fgpaz/mi-lsp/internal/processutil"
 )
 
 func defaultEndpoint() string {
@@ -50,6 +51,7 @@ func daemonServeCommand(repoRoot string, maxWorkers int, idleTimeout time.Durati
 	}
 	commandName, args := daemonServeInvocation(executable, maxWorkers, idleTimeout)
 	command := exec.Command(commandName, args...)
+	processutil.ConfigureDetachedCommand(command)
 	command.Dir = repoRoot
 	logDir := filepath.Join(repoRoot, ".mi-lsp")
 	if err := os.MkdirAll(logDir, 0o755); err != nil {
@@ -66,6 +68,6 @@ func daemonServeCommand(repoRoot string, maxWorkers int, idleTimeout time.Durati
 
 // detachProcess configures the command to run detached on Unix-like systems.
 func detachProcess(cmd *exec.Cmd) error {
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	processutil.ConfigureDetachedCommand(cmd)
 	return nil
 }

@@ -8,6 +8,8 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+
+	"github.com/fgpaz/mi-lsp/internal/model"
 )
 
 func TestResolveToolRootUsesExecutableRepoWhenCallerIsDifferentRepo(t *testing.T) {
@@ -95,6 +97,34 @@ func TestResolveLaunchSpecUsesBundledWorkerBeforeInstalledWorker(t *testing.T) {
 	}
 	if spec.Command != bundledPath {
 		t.Fatalf("command = %q, want bundled worker %q (installed %q)", spec.Command, bundledPath, installedPath)
+	}
+}
+
+func TestResolveLaunchSpecDoesNotProbeCandidatesOnHotPath(t *testing.T) {
+	toolRoot := t.TempDir()
+	rid := ResolveRID()
+	bundledPath := writeWorkerBinary(t, filepath.Join(toolRoot, "workers", rid))
+
+	probeCalls := 0
+	restoreProbe := stubProbeWorker(t, func(path string) workerProbeResult {
+		probeCalls++
+		return workerProbeResult{ProtocolVersion: model.ProtocolVersion, Compatible: true}
+	})
+	defer restoreProbe()
+	restoreHome := stubHomeDir(t, t.TempDir())
+	defer restoreHome()
+	restoreLookPath := stubLookPath(t, exec.ErrNotFound)
+	defer restoreLookPath()
+
+	spec, err := ResolveLaunchSpec(toolRoot)
+	if err != nil {
+		t.Fatalf("ResolveLaunchSpec: %v", err)
+	}
+	if spec.Command != bundledPath {
+		t.Fatalf("command = %q, want bundled worker %q", spec.Command, bundledPath)
+	}
+	if probeCalls != 0 {
+		t.Fatalf("expected no worker probe calls on hot path, got %d", probeCalls)
 	}
 }
 

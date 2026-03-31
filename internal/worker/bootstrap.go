@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/fgpaz/mi-lsp/internal/model"
+	"github.com/fgpaz/mi-lsp/internal/processutil"
 )
 
 var (
@@ -23,9 +24,11 @@ var (
 )
 
 type LaunchSpec struct {
-	Command string
-	Args    []string
-	WorkDir string
+	Source        string
+	CandidatePath string
+	Command       string
+	Args          []string
+	WorkDir       string
 }
 
 type WorkerCandidateStatus struct {
@@ -149,6 +152,7 @@ func ResolveToolRoot(start string) (string, string) {
 	}
 	return start, "distribution"
 }
+
 func InstalledWorkerDir() (string, error) {
 	return InstalledWorkerDirForRID(ResolveRID())
 }
@@ -281,50 +285,63 @@ func inspectBinaryCandidate(source string, path string) WorkerCandidateStatus {
 	return status
 }
 
-func ResolveLaunchSpec(toolRoot string) (LaunchSpec, error) {
+func ResolveLaunchSpecs(toolRoot string) ([]LaunchSpec, error) {
 	if strings.TrimSpace(toolRoot) == "" {
 		toolRoot, _ = ResolveToolRoot(".")
 	}
-	runtimeInfo := InspectWorkerRuntime(toolRoot, ResolveRID())
-	switch runtimeInfo.Selected.Source {
-	case "bundle":
-		if runtimeInfo.Bundled.Compatible && runtimeInfo.Bundled.Path != "" {
-			return LaunchSpec{Command: runtimeInfo.Bundled.Path, WorkDir: toolRoot}, nil
-		}
-	case "installed":
-		if runtimeInfo.Installed.Compatible && runtimeInfo.Installed.Path != "" {
-			return LaunchSpec{Command: runtimeInfo.Installed.Path, WorkDir: toolRoot}, nil
-		}
-	case "dev-local":
-		if spec, _, err := resolveDevLocalLaunchSpec(toolRoot); err == nil {
-			return spec, nil
-		}
-	}
 
-	if runtimeInfo.Bundled.Compatible && runtimeInfo.Bundled.Path != "" {
-		return LaunchSpec{Command: runtimeInfo.Bundled.Path, WorkDir: toolRoot}, nil
-	}
-	if runtimeInfo.Installed.Compatible && runtimeInfo.Installed.Path != "" {
-		return LaunchSpec{Command: runtimeInfo.Installed.Path, WorkDir: toolRoot}, nil
-	}
-	if spec, _, err := resolveDevLocalLaunchSpec(toolRoot); err == nil {
-		return spec, nil
-	}
-
+	rid := ResolveRID()
+	specs := make([]LaunchSpec, 0, 3)
 	reasons := make([]string, 0, 3)
-	if runtimeInfo.Bundled.Error != "" {
-		reasons = append(reasons, "bundle: "+runtimeInfo.Bundled.Error)
+
+	if bundledPath, err := FindBundledWorkerBinaryForRID(toolRoot, rid); err == nil {
+		specs = append(specs, LaunchSpec{
+			Source:        "bundle",
+			CandidatePath: bundledPath,
+			Command:       bundledPath,
+			WorkDir:       toolRoot,
+		})
+	} else {
+		reasons = append(reasons, "bundle: "+err.Error())
 	}
-	if runtimeInfo.Installed.Error != "" {
-		reasons = append(reasons, "installed: "+runtimeInfo.Installed.Error)
+
+	if installedPath, err := FindInstalledWorkerBinaryForRID(rid); err == nil {
+		specs = append(specs, LaunchSpec{
+			Source:        "installed",
+			CandidatePath: installedPath,
+			Command:       installedPath,
+			WorkDir:       toolRoot,
+		})
+	} else {
+		reasons = append(reasons, "installed: "+err.Error())
 	}
-	if runtimeInfo.DevLocal.Error != "" {
-		reasons = append(reasons, "dev-local: "+runtimeInfo.DevLocal.Error)
+
+	if devSpec, candidatePath, err := resolveDevLocalLaunchSpec(toolRoot); err == nil {
+		devSpec.Source = "dev-local"
+		devSpec.CandidatePath = candidatePath
+		if strings.TrimSpace(devSpec.WorkDir) == "" {
+			devSpec.WorkDir = toolRoot
+		}
+		specs = append(specs, devSpec)
+	} else {
+		reasons = append(reasons, "dev-local: "+err.Error())
+	}
+
+	if len(specs) > 0 {
+		return specs, nil
 	}
 	if len(reasons) == 0 {
 		reasons = append(reasons, "no compatible worker candidate was found")
 	}
-	return LaunchSpec{}, fmt.Errorf("no compatible roslyn worker available (%s). Run `mi-lsp worker install` to refresh the bundled/global worker", strings.Join(reasons, "; "))
+	return nil, fmt.Errorf("no compatible roslyn worker available (%s). Run `mi-lsp worker install` to refresh the bundled/global worker", strings.Join(reasons, "; "))
+}
+
+func ResolveLaunchSpec(toolRoot string) (LaunchSpec, error) {
+	specs, err := ResolveLaunchSpecs(toolRoot)
+	if err != nil {
+		return LaunchSpec{}, err
+	}
+	return specs[0], nil
 }
 
 func resolveDevLocalLaunchSpec(toolRoot string) (LaunchSpec, string, error) {
@@ -384,6 +401,7 @@ func InstallWorker(toolRoot string, rid string) (string, error) {
 				"-o", targetDir,
 			)
 			command.Dir = toolRoot
+			processutil.ConfigureNonInteractiveCommand(command)
 			output, err := command.CombinedOutput()
 			if err != nil {
 				return "", fmt.Errorf("dotnet publish failed: %w: %s", err, string(output))
@@ -451,6 +469,7 @@ func probeWorkerBinary(path string) workerProbeResult {
 func probeWorkerBinaryOnce(path string) workerProbeResult {
 	command := exec.Command(path)
 	command.Dir = filepath.Dir(path)
+	processutil.ConfigureNonInteractiveCommand(command)
 	var stderr bytes.Buffer
 	command.Stderr = &stderr
 
@@ -521,4 +540,3 @@ func extractWorkerProtocolVersion(response model.WorkerResponse) string {
 	}
 	return ""
 }
-
