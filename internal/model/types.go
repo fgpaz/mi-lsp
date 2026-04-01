@@ -39,6 +39,7 @@ type Envelope struct {
 	Truncated bool     `json:"truncated"`
 	Stats     Stats    `json:"stats,omitempty"`
 	Warnings  []string `json:"warnings,omitempty"`
+	Hint      string   `json:"hint,omitempty"`
 	NextHint  *string  `json:"next_hint,omitempty"`
 }
 

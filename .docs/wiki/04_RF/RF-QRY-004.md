@@ -24,7 +24,7 @@
 | Campo | Tipo | Req. | Origen | Validacion | RN |
 |---|---|---|---|---|---|
 | `ranges` | array | si | stdin/CLI | N rangos `file:startLine-endLine` | RF-QRY-004 |
-| `format` | enum | no | CLI | `compact`, `json` o `text`; default `compact` | RF-QRY-004 |
+| `format` | enum | no | CLI | `compact`, `json`, `text`, `toon` o `yaml`; default `compact` | RF-QRY-004 |
 | `token_budget` | entero | no | CLI | mayor que cero | RF-QRY-004 |
 
 ## 4. Process Steps (Happy Path)
@@ -51,6 +51,7 @@
 | `QRY_PATH_TRAVERSAL` | path intenta salir del workspace | `../../../etc/passwd` | rechazar con error explicito |
 | `QRY_FILE_NOT_FOUND` | archivo no existe en workspace | rango valido pero archivo inexistente | warning en `warnings`, continuar con otros rangos |
 | `QRY_STDIN_TOO_LARGE` | stdin excede 10MB | payload > 10MB | abortar con error explicito |
+| `QRY_INVALID_PATH_CHARS` | path contiene caracteres invalidos | arg contiene `\n` o `\r` (ej: shell serializa args con newlines embebidos) | abortar con error descriptivo `"invalid path: contains newline in ..."` |
 
 ## 7. Special Cases and Variants
 

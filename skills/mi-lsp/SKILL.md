@@ -11,6 +11,119 @@ If the skill is installed but the binary is missing, bootstrap the CLI first ins
 Prefer `--format compact` and an explicit `--workspace <alias>`.
 Prefer compound commands over sequential greps and full-file reads.
 
+## Output formats
+
+| Format | Flag | Typical size | When to use |
+|--------|------|-------------|-------------|
+| compact JSON | `--format compact` (default) | baseline | Default for all queries; parse with `jq` or JSON tools |
+| TOON | `--format toon` | ~20-40% smaller | Token budget very tight; arrays compress the most |
+| YAML | `--format yaml` | ~similar to JSON | Human-readable; key per line, easy to scan |
+| JSON | `--format json` | largest | Debugging, full fidelity |
+
+### Reading compact JSON
+
+Standard JSON. Extract with `jq` or by parsing the string. Fields use short keys in compact mode:
+`f`=file, `l`=line, `k`=kind, `n`=name, `sig`=signature, `impl`=implements, `sc`=scope.
+
+```json
+{"ok":true,"workspace":"salud","backend":"text",
+ "items":[{"f":"internal/service/app.go","k":"func","l":276,"n":"search"}],
+ "stats":{"tokens_est":42}}
+```
+
+### Reading TOON
+
+TOON uses `key: value` for scalars and `key[N]{col1,col2,...}:` for arrays.
+Each array row is one indented line with comma-separated values in the declared column order.
+
+```
+backend: text
+items[2]{f,k,l,n}:
+  .docs/wiki/02_arquitectura.md,section,19,arquitectura
+  internal/service/app.go,func,276,search
+ok: true
+stats:
+  tokens_est: 42
+workspace: salud
+```
+
+**Parsing rules for TOON:**
+- Scalar field: `key: value` — read the value after `: `
+- Array header: `key[N]{col1,col2,...}:` — N rows follow, each comma-split in column order
+- Empty array: `key[0]:` — zero rows
+- Nested object: `key:` followed by indented `child: value` lines
+- Quoted strings: `"..."` when value contains spaces, commas, or special chars
+
+**Extracting a value from TOON output:**
+```
+# To get item file paths from items[N]{f,k,l,n}:
+# column index of "f" = 0 → split each row by comma, take index 0
+```
+
+### Reading YAML
+
+Standard YAML. Each key on its own line; arrays use `- ` prefix.
+
+```yaml
+backend: text
+items:
+    - f: .docs/wiki/02_arquitectura.md
+      k: section
+      l: 19
+      "n": arquitectura
+    - f: internal/service/app.go
+      k: func
+      l: 276
+      "n": search
+ok: true
+stats:
+    tokens_est: 42
+workspace: salud
+```
+
+Parse with any YAML library, or read field values directly from `key: value` lines.
+
+### Format when items is empty and hint is set
+
+```
+# TOON
+backend: text
+hint: "0 matches for \"chat\": checked 1243 files"
+items[0]:
+ok: true
+stats:
+  tokens_est: 8
+workspace: salud
+
+# YAML
+backend: text
+hint: '0 matches for "chat": checked 1243 files'
+items: []
+ok: true
+stats:
+    tokens_est: 8
+workspace: salud
+```
+
+### When to switch formats
+
+- Use `--format compact` (default) unless you have a specific reason to switch.
+- Use `--format toon` when: you are running many compound commands in a session and the context window is filling up; TOON saves the most on large `items` arrays.
+- Use `--format yaml` when: you need to read the output yourself line by line, or you are piping it to a YAML-aware tool.
+- Never mix formats in a single session — pick one and stay consistent.
+
+## Interpreting the `hint` field
+
+All envelopes may include a `hint` field with diagnostic context:
+
+- `"0 matches for X in workspace Y"` — pattern not found; try a different keyword or `--regex`
+- `"0 matches for X: pattern looks regex-like, rerun with --regex"` — literal search on a regex pattern
+- `"0 matches for X: search timed out"` — reduce scope or use a more specific pattern
+- `"daemon_unavailable; served from local text index"` — daemon not running; result is textual-only
+- `"invalid path: contains newline in ..."` — multi-read arg had embedded `\n`; fix the argument
+
+If `hint` is present and `items` is empty, act on the hint before retrying. Do not retry the same command unchanged.
+
 ## Tool binding
 
 Run `mi-lsp` through the host shell tool, not through a custom MCP tool:

@@ -151,11 +151,18 @@ func (s *rootState) executeOperation(cmd *cobra.Command, operation string, paylo
 		envelope model.Envelope
 		err      error
 	)
+	daemonFailed := false
 	if useDaemon {
 		envelope, err = daemon.NewClient().Execute(ctx, request)
+		if err != nil {
+			daemonFailed = true
+		}
 	}
-	if !useDaemon || err != nil {
+	if !useDaemon || daemonFailed {
 		envelope, err = s.app.Execute(ctx, request)
+		if err == nil && daemonFailed && envelope.Hint == "" {
+			envelope.Hint = "daemon_unavailable; served from local text index"
+		}
 	}
 	latency := time.Since(started)
 

@@ -5,6 +5,9 @@ import (
 	"fmt"
 	"strings"
 
+	toon "github.com/toon-format/toon-go"
+	"gopkg.in/yaml.v3"
+
 	"github.com/fgpaz/mi-lsp/internal/model"
 )
 
@@ -17,6 +20,14 @@ func Render(env model.Envelope, format string, compress bool) ([]byte, error) {
 		return json.MarshalIndent(env, "", "  ")
 	case "text":
 		return []byte(renderText(env)), nil
+	case "toon":
+		compact := env
+		compact.Items = compactItems(env.Items, compress)
+		return renderTOON(compact)
+	case "yaml":
+		compact := env
+		compact.Items = compactItems(env.Items, compress)
+		return renderYAML(compact)
 	default:
 		compact := env
 		compact.Items = compactItems(env.Items, compress)
@@ -31,6 +42,60 @@ func Render(env model.Envelope, format string, compress bool) ([]byte, error) {
 		compact.Stats.TokensEstimate = (len(rendered) + 3) / 4
 		return rendered, nil
 	}
+}
+
+// envelopeToMap converts an Envelope to map[string]any via JSON roundtrip.
+// This ensures consistent key naming (using json tags) regardless of Items type.
+func envelopeToMap(env model.Envelope) (map[string]any, error) {
+	raw, err := json.Marshal(env)
+	if err != nil {
+		return nil, err
+	}
+	var m map[string]any
+	if err := json.Unmarshal(raw, &m); err != nil {
+		return nil, err
+	}
+	return m, nil
+}
+
+func renderTOON(env model.Envelope) ([]byte, error) {
+	m, err := envelopeToMap(env)
+	if err != nil {
+		return nil, err
+	}
+	out, err := toon.Marshal(m)
+	if err != nil {
+		return nil, err
+	}
+	// Update token estimate in the map and re-marshal to include it
+	if stats, ok := m["stats"].(map[string]any); ok {
+		stats["tokens_est"] = (len(out) + 3) / 4
+		out, err = toon.Marshal(m)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return out, nil
+}
+
+func renderYAML(env model.Envelope) ([]byte, error) {
+	m, err := envelopeToMap(env)
+	if err != nil {
+		return nil, err
+	}
+	out, err := yaml.Marshal(m)
+	if err != nil {
+		return nil, err
+	}
+	// Update token estimate in the map and re-marshal to include it
+	if stats, ok := m["stats"].(map[string]any); ok {
+		stats["tokens_est"] = (len(out) + 3) / 4
+		out, err = yaml.Marshal(m)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return out, nil
 }
 
 func renderText(env model.Envelope) string {

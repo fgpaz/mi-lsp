@@ -281,6 +281,29 @@ mi-lsp nav find IExpenseRepository --all-workspaces --format compact
 - **Incremental indexing**: `mi-lsp index` uses git to only re-index changed files.
 - **Token compression**: `--compress` strips optional fields from compact output.
 
+### Output formats
+
+| Format | Flag | Token savings | When to use |
+|--------|------|--------------|-------------|
+| compact JSON | `--format compact` (default) | ~35% vs JSON | Default for all queries |
+| TOON | `--format toon` | ~40% vs JSON | Token budget very tight (Codex 32k context) |
+| YAML | `--format yaml` | ~25% vs JSON | Human-readable output, structured inspection |
+| JSON | `--format json` | — | Debugging, full fidelity |
+
+### `hint` field — diagnostic context
+
+Envelopes may include a `hint: string` field when there is actionable context:
+
+| hint value | Meaning | Action |
+|-----------|---------|--------|
+| `"0 matches for X in workspace Y"` | Literal search found nothing | Try different keyword or broader pattern |
+| `"pattern looks regex-like, rerun with --regex"` | Pattern has regex chars, used as literal | Add `--regex` flag |
+| `"0 matches: search timed out"` | Context cancelled before scan finished | Narrow scope or use more specific pattern |
+| `"daemon_unavailable; served from local text index"` | Daemon not running, result is text-only | Results valid but no semantic enrichment |
+| `"invalid path: contains newline in ..."` | multi-read arg had embedded `\n` | Fix argument construction in the calling code |
+
+If `hint` is present and `items` is empty: **act on the hint first — do not retry the same command blindly**.
+
 ### Decision guide
 - Need to read multiple known files? -> `nav multi-read`
 - Need to search and see the code? -> `nav search --include-content`

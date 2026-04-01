@@ -101,3 +101,25 @@ mi-lsp nav find IExpenseRepository --all-workspaces --format compact
 
 - Use only when the task genuinely spans all registered workspaces
 - Mention the workspace for each relevant result in your answer
+
+## Format selection guide
+
+```powershell
+# Default — compact JSON (best balance of size and parseability)
+mi-lsp nav search "pattern" --workspace <alias> --format compact
+
+# TOON — ~40% fewer tokens, ideal for tight context budgets (Codex 32k)
+mi-lsp nav search "pattern" --workspace <alias> --format toon
+
+# YAML — human-readable, ~25% fewer tokens
+mi-lsp nav workspace-map --workspace <alias> --format yaml
+```
+
+**Reading the `hint` field:**
+If a response returns `items: []` and includes a `hint`, act on it before retrying:
+```
+"0 matches for X in workspace Y"         → try different keyword
+"pattern looks regex-like, rerun --regex" → add --regex flag
+"0 matches: search timed out"            → narrow the search scope
+"daemon_unavailable; served from..."     → daemon not running, result is text-only
+```

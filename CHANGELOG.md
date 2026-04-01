@@ -7,6 +7,28 @@ and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-03-31
+
+### Added
+
+- `--format toon` output format: Token-Oriented Object Notation via `toon-format/toon-go`; ~20-40% fewer tokens vs JSON on large item arrays
+- `--format yaml` output format: standard YAML via `gopkg.in/yaml.v3`; human-readable alternative to compact JSON
+- `hint` field (omitempty) in all envelopes: diagnostic string present when `items=[]` (pattern not found, timeout, regex-like pattern) or when daemon is unavailable
+- `nav search` now returns actionable hint when results are empty: explains cause (no matches, pattern looks regex-like, search timeout)
+- Daemon fallback now visible: when daemon is unavailable and direct fallback is used, envelope includes `hint: "daemon_unavailable; served from local text index"`
+
+### Fixed
+
+- `nav multi-read` crashed with Windows OS error 123 (`ERROR_INVALID_NAME`) when path args contained embedded newlines (`\n`/`\r`) — now trims whitespace and returns descriptive error `"invalid path: contains newline in ..."`
+
+### Docs
+
+- `skills/mi-lsp/SKILL.md`: full format documentation with real TOON/YAML/compact examples, parsing rules, and when-to-switch guidance
+- `skills/mi-lsp/references/compound-commands.md`: format selection guide with hint interpretation table
+- `AGENTS.md`, `CLAUDE.md`: output formats table and hint field usage
+- Technical contracts synced: `CT-CLI-DAEMON-ADMIN`, `09_contratos_tecnicos`, `RF-QRY-001`, `RF-QRY-002`, `RF-QRY-004`
+- Companion skills updated with mi-lsp format guidance: `ps-contexto`, `ps-trazabilidad`, `ps-auditar-trazabilidad`, `ps-asistente-wiki`, `crear-capa-tecnica-wiki`, `crear-requerimiento`, `ps-gap-terminator`
+
 ## [0.1.0] - 2026-03-24
 
 ### Added

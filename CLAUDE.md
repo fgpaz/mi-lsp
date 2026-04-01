@@ -147,6 +147,8 @@ Compound commands to reduce agent round-trips from 7+ to 1-2:
 - Auto-index: `workspace add` automatically indexes after registration (use `--no-index` to skip)
 - `--compress` flag: aggressive token compression (strips parent, scope, implements from output)
 - Incremental indexing: `mi-lsp index` auto-detects git changes, only re-indexes modified files
+- Output formats: `--format compact` (default, ~35% savings), `--format toon` (~40%, tight budgets), `--format yaml` (~25%, readable)
+- `hint` field: envelopes may include a `hint` string when items=0 or daemon is unavailable — act on it before retrying
 
 ## Search Shortcuts
 

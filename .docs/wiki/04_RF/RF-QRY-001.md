@@ -23,7 +23,7 @@
 
 | Campo | Tipo | Req. | Origen | Validacion | RN |
 |---|---|---|---|---|---|
-| `format` | enum | no | CLI | `compact`, `json` o `text`; default `compact` | RF-QRY-001 |
+| `format` | enum | no | CLI | `compact`, `json`, `text`, `toon` o `yaml`; default `compact` | RF-QRY-001 |
 | `token_budget` | entero | no | CLI | mayor que cero | RF-QRY-001 |
 | `max_items` | entero | no | CLI | mayor que cero | RF-QRY-001 |
 | `max_chars` | entero | no | CLI | mayor que cero | RF-QRY-001 |
@@ -45,6 +45,7 @@
 | `items` | lista | usuario/skill | resultado truncado o completo |
 | `truncated` | bool | usuario/skill | explicita recorte |
 | `warnings` | lista | usuario/skill | contexto de degradacion o frescura |
+| `hint` | string/null | usuario/skill | diagnóstico cuando `items=[]` o daemon no disponible (omitempty) |
 | `next_hint` | string/null | usuario/skill | sugerencia para pedir mas detalle |
 
 ## 6. Typed Errors
@@ -60,6 +61,10 @@
 - Si `format` es invalido, la respuesta se normaliza a `compact`.
 - Si se alcanza un limite, `truncated=true` y `next_hint` debe indicar como pedir mas precision.
 - `compact` usa keys cortos y JSON sin whitespace innecesario.
+- `toon` serializa el envelope en TOON (Token-Oriented Object Notation); ~20-40% menos tokens que JSON en arrays grandes.
+- `yaml` serializa el envelope en YAML estándar; útil para lectura humana o parsers YAML.
+- Si `items=[]`, el envelope emite `hint` con diagnóstico de causa (patron no encontrado, timeout, regex-like sin `--regex`).
+- Si el daemon falla y el fallback directo responde, el envelope emite `hint: "daemon_unavailable; served from local text index"`.
 
 ## 8. Data Model Impact
 

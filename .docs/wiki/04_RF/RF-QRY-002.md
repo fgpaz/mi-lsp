@@ -26,7 +26,7 @@
 3. Para lecturas baratas de catalogo/texto (`nav.find`, `nav.search`, `nav.intent`, `nav.symbols`, `nav.outline`, `nav.overview`, `nav.multi-read`), la CLI ejecuta directo sin depender del daemon.
 4. Para queries semanticas o compuestas, la CLI intenta enviar la request al daemon global si esta disponible.
 5. Si el daemon responde, enruta al backend adecuado y devuelve el envelope.
-6. Si el daemon no responde o no aplica, la CLI ejecuta fallback directo.
+6. Si el daemon no responde o no aplica, la CLI ejecuta fallback directo y emite `hint: "daemon_unavailable; served from local text index"` en el envelope.
 7. Si el backend primario no esta disponible, el core usa un backend degradado y registra warnings.
 
 ## 4. Typed Errors

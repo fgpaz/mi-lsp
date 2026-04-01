@@ -201,6 +201,10 @@ func parseFileRangesFromSlice(items []any) ([]fileRange, error) {
 func parseFileRangeString(s string) (fileRange, error) {
 	// Format: file:startLine-endLine or file:startLine or file (whole file)
 	// Handles Windows paths like C:\path\file.go:10-20
+	s = strings.TrimSpace(s)
+	if strings.ContainsAny(s, "\n\r") {
+		return fileRange{}, fmt.Errorf("invalid path: contains newline in %q", s)
+	}
 	colonIdx := strings.LastIndex(s, ":")
 	if colonIdx == -1 || colonIdx == len(s)-1 {
 		// Whole file

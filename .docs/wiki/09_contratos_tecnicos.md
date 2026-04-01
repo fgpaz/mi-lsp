@@ -37,7 +37,7 @@ El detalle por frontera vive en `09_contratos/`.
 
 - El proyecto usa compatibilidad best-effort intra-version; cambios incompatibles deben reflejar `protocol_version`.
 - La governance UI es solo local (`127.0.0.1`) y no incorpora auth en esta fase; la ventana temporal visible se negocia via `window=recent|7d|30d|90d`.
-- Las respuestas del CLI deben seguir envelope estable y explicitar `backend`, `truncated`, `warnings` y `stats`.
+- Las respuestas del CLI deben seguir envelope estable y explicitar `backend`, `truncated`, `warnings`, `stats` y `hint` (omitempty, presente cuando `items=[]` o daemon no disponible).
 - Los errores de bootstrap deben ser accionables: por ejemplo `Run: mi-lsp worker install`.
 - Los contratos internos no deben transportar ASTs ni blobs completos salvo comando futuro explicito.
 - `nav ask` debe devolver una estructura explainable con `summary`, `primary_doc`, `doc_evidence`, `code_evidence`, `why` y `next_queries`.

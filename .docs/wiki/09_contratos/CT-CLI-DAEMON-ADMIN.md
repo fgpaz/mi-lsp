@@ -29,7 +29,7 @@ Comandos canonicos:
 Flags globales minimos:
 
 - `--workspace`
-- `--format compact|json|text`
+- `--format compact|json|text|toon|yaml`
 - `--token-budget`
 - `--max-items`
 - `--max-chars`
@@ -53,6 +53,7 @@ Envelope comun:
 - `truncated`
 - `stats`
 - `warnings`
+- `hint` (omitempty — diagnóstico cuando `items=[]` o daemon no disponible)
 - `next_hint`
 
 ### `nav service`
@@ -60,7 +61,7 @@ Envelope comun:
 Input:
 
 ```text
-mi-lsp nav service <path> --workspace <alias> [--include-archetype] [--format compact|json|text]
+mi-lsp nav service <path> --workspace <alias> [--include-archetype] [--format compact|json|text|toon|yaml]
 ```
 
 Output item (`items[0]`):
@@ -89,7 +90,7 @@ Reglas:
 Input:
 
 ```text
-mi-lsp nav context <file> <line> --workspace <alias> [--backend <hint>] [--format compact|json|text]
+mi-lsp nav context <file> <line> --workspace <alias> [--backend <hint>] [--format compact|json|text|toon|yaml]
 ```
 
 Output item (`items[0]`):
@@ -241,7 +242,7 @@ Errores comunes:
 Input:
 
 ```text
-mi-lsp worker install [--rid <rid>] [--format compact|json|text]
+mi-lsp worker install [--rid <rid>] [--format compact|json|text|toon|yaml]
 ```
 
 Reglas:
@@ -260,7 +261,7 @@ Respuesta exitosa (`items[0]`):
 Input:
 
 ```text
-mi-lsp worker status [--format compact|json|text]
+mi-lsp worker status [--format compact|json|text|toon|yaml]
 ```
 
 Respuesta exitosa (`items[0]`):
