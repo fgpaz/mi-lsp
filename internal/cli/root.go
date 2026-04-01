@@ -65,9 +65,9 @@ func NewRootCommand() *cobra.Command {
 		SilenceErrors: true,
 		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 			switch state.format {
-			case "compact", "json", "text":
+			case "compact", "json", "text", "toon", "yaml":
 			default:
-				return fmt.Errorf("invalid --format %q; valid options: compact, json, text", state.format)
+				return fmt.Errorf("invalid --format %q; valid options: compact, json, text, toon, yaml", state.format)
 			}
 			if cmd.Flags().Changed("token-budget") && state.tokenBudget <= 0 {
 				return fmt.Errorf("--token-budget must be > 0")
@@ -85,7 +85,7 @@ func NewRootCommand() *cobra.Command {
 	}
 
 	root.PersistentFlags().StringVar(&state.workspace, "workspace", "", "Workspace alias or path")
-	root.PersistentFlags().StringVar(&state.format, "format", "compact", "Output format: compact|json|text")
+	root.PersistentFlags().StringVar(&state.format, "format", "compact", "Output format: compact|json|text|toon|yaml")
 	root.PersistentFlags().IntVar(&state.tokenBudget, "token-budget", service.DefaultConfig().DefaultTokenBudget, "Approximate output token budget")
 	root.PersistentFlags().IntVar(&state.maxItems, "max-items", service.DefaultConfig().DefaultMaxItems, "Maximum items in response")
 	root.PersistentFlags().IntVar(&state.maxChars, "max-chars", 0, "Maximum output characters")
