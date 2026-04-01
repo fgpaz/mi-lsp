@@ -156,6 +156,33 @@ mi-lsp worker status --format toon
 mi-lsp worker install
 ```
 
+## Updating to a new version
+
+A new release publishes pre-built bundles for all platforms — no Go toolchain needed.
+
+1. Download the new bundle from `https://github.com/fgpaz/mi-lsp/releases` for your platform.
+2. Stop the daemon if running:
+
+```powershell
+mi-lsp daemon stop
+```
+
+3. Replace the `mi-lsp` binary in your install directory with the one from the new bundle.
+4. If the new release includes worker changes, replace `workers/<rid>/` too (or run `mi-lsp worker install`).
+5. Restart the daemon if you use it:
+
+```powershell
+mi-lsp daemon start
+```
+
+6. Verify:
+
+```powershell
+mi-lsp worker status --format toon
+```
+
+> The worker protocol is versioned. If the CLI and worker versions are incompatible, `worker status` will warn you.
+
 Windows session example:
 
 ```powershell
