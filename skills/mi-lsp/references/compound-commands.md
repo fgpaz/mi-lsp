@@ -5,7 +5,7 @@ Use this reference when a task would otherwise require several separate reads or
 ## `nav multi-read`
 
 ```powershell
-mi-lsp nav multi-read file1.cs:1-120 file2.cs:260-440 file3.tsx:1-80 --workspace <alias> --format compact
+mi-lsp nav multi-read file1.cs:1-120 file2.cs:260-440 file3.tsx:1-80 --workspace <alias> --format toon
 ```
 
 - Use for 2+ known files or ranges
@@ -15,9 +15,9 @@ mi-lsp nav multi-read file1.cs:1-120 file2.cs:260-440 file3.tsx:1-80 --workspace
 ## `nav search --include-content`
 
 ```powershell
-mi-lsp nav search "PublishAsync" --include-content --workspace <alias> --format compact
-mi-lsp nav search "MapPost" --include-content --context-mode symbol --workspace <alias> --format compact
-mi-lsp nav search "pattern" --include-content --context-lines 30 --context-mode lines --workspace <alias> --format compact
+mi-lsp nav search "PublishAsync" --include-content --workspace <alias> --format toon
+mi-lsp nav search "MapPost" --include-content --context-mode symbol --workspace <alias> --format toon
+mi-lsp nav search "pattern" --include-content --context-lines 30 --context-mode lines --workspace <alias> --format toon
 ```
 
 - `hybrid` is the default mode
@@ -31,7 +31,7 @@ echo '[
   {"id":"r1","op":"nav.multi-read","params":{"items":["src/Program.cs:1-50","src/Model.cs:1-80"]}},
   {"id":"f1","op":"nav.find","params":{"pattern":"IExpenseRepository","exact":true}},
   {"id":"c1","op":"nav.context","params":{"file":"src/Handler.cs","line":42}}
-]' | mi-lsp nav batch --workspace <alias> --format compact
+]' | mi-lsp nav batch --workspace <alias> --format toon
 ```
 
 - Use when you would otherwise do several heterogeneous `nav` commands in sequence
@@ -40,8 +40,8 @@ echo '[
 ## `nav related`
 
 ```powershell
-mi-lsp nav related IExpenseRepository --workspace <alias> --format compact
-mi-lsp nav related MyService --depth callers,tests --workspace <alias> --format compact
+mi-lsp nav related IExpenseRepository --workspace <alias> --format toon
+mi-lsp nav related MyService --depth callers,tests --workspace <alias> --format toon
 ```
 
 - Best one-call deep-dive for a symbol
@@ -50,7 +50,7 @@ mi-lsp nav related MyService --depth callers,tests --workspace <alias> --format 
 ## `nav workspace-map`
 
 ```powershell
-mi-lsp nav workspace-map --workspace <alias> --format compact
+mi-lsp nav workspace-map --workspace <alias> --format toon
 ```
 
 - Best first command on an unfamiliar parent folder or multi-repo workspace
@@ -58,9 +58,9 @@ mi-lsp nav workspace-map --workspace <alias> --format compact
 ## `nav diff-context`
 
 ```powershell
-mi-lsp nav diff-context HEAD~1 --workspace <alias> --format compact
-mi-lsp nav diff-context --include-content --workspace <alias> --format compact
-mi-lsp nav diff-context main --workspace <alias> --format compact
+mi-lsp nav diff-context HEAD~1 --workspace <alias> --format toon
+mi-lsp nav diff-context --include-content --workspace <alias> --format toon
+mi-lsp nav diff-context main --workspace <alias> --format toon
 ```
 
 - Use for PR review, impact analysis, or changed-symbol inspection
@@ -68,9 +68,9 @@ mi-lsp nav diff-context main --workspace <alias> --format compact
 ## `nav trace`
 
 ```powershell
-mi-lsp nav trace RF-QRY-003 --workspace <alias> --format compact
-mi-lsp nav trace --all --summary --workspace <alias> --format compact
-mi-lsp nav trace --all --workspace <alias> --format compact
+mi-lsp nav trace RF-QRY-003 --workspace <alias> --format toon
+mi-lsp nav trace --all --summary --workspace <alias> --format toon
+mi-lsp nav trace --all --workspace <alias> --format toon
 ```
 
 - Use to check which code implements a specific RF requirement
@@ -81,9 +81,9 @@ mi-lsp nav trace --all --workspace <alias> --format compact
 ## `nav intent`
 
 ```powershell
-mi-lsp nav intent "where do we handle workspace routing fallback?" --workspace <alias> --format compact
-mi-lsp nav intent "error handling daemon" --top 20 --workspace <alias> --format compact
-mi-lsp nav intent "forgot password frontend" --workspace <alias> --repo web --format compact
+mi-lsp nav intent "where do we handle workspace routing fallback?" --workspace <alias> --format toon
+mi-lsp nav intent "error handling daemon" --top 20 --workspace <alias> --format toon
+mi-lsp nav intent "forgot password frontend" --workspace <alias> --repo web --format toon
 ```
 
 - Use when you know what the code does but not the symbol name
@@ -95,8 +95,8 @@ mi-lsp nav intent "forgot password frontend" --workspace <alias> --repo web --fo
 ## Cross-workspace search
 
 ```powershell
-mi-lsp nav search "PublishAsync" --all-workspaces --format compact
-mi-lsp nav find IExpenseRepository --all-workspaces --format compact
+mi-lsp nav search "PublishAsync" --all-workspaces --format toon
+mi-lsp nav find IExpenseRepository --all-workspaces --format toon
 ```
 
 - Use only when the task genuinely spans all registered workspaces
@@ -105,14 +105,14 @@ mi-lsp nav find IExpenseRepository --all-workspaces --format compact
 ## Format selection guide
 
 ```powershell
-# Default — compact JSON (best balance of size and parseability)
-mi-lsp nav search "pattern" --workspace <alias> --format compact
-
-# TOON — ~40% fewer tokens, ideal for tight context budgets (Codex 32k)
+# TOON — recommended default, ~20-40% fewer tokens on large arrays
 mi-lsp nav search "pattern" --workspace <alias> --format toon
 
-# YAML — human-readable, ~25% fewer tokens
+# YAML — readable line-by-line, piping to YAML tools
 mi-lsp nav workspace-map --workspace <alias> --format yaml
+
+# compact JSON — backward compat, jq pipelines, strict JSON required
+mi-lsp nav search "pattern" --workspace <alias> --format compact
 ```
 
 **Reading the `hint` field:**
