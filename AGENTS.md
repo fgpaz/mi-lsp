@@ -182,14 +182,14 @@ rg -n "07_baseline_tecnica|08_modelo_fisico_datos|09_contratos_tecnicos" .docs/w
   - Claude Code: shell/Bash tool
   - Do not model `mi-lsp` as an MCP server or wait for a dedicated `mi-lsp` tool binding.
 - Default invocation shape:
-  - `mi-lsp <command> --workspace <alias> --format compact`
+  - `mi-lsp <command> --workspace <alias> --format toon`
 - Recommended ladder:
-  1. `mi-lsp workspace status <alias> --format compact` or `mi-lsp init . --name <alias>`
-  2. `mi-lsp nav ask "how is this workspace organized?" --workspace <alias> --format compact`
-  3. `mi-lsp nav workspace-map --workspace <alias> --format compact`
-  4. `mi-lsp nav search "<pattern>" --include-content --workspace <alias> --format compact` or `mi-lsp nav multi-read ...`
-  5. `mi-lsp nav related|context|refs ... --workspace <alias> --format compact`
-  6. `mi-lsp nav service <path> --workspace <alias> --format compact`
+  1. `mi-lsp workspace status <alias> --format toon` or `mi-lsp init . --name <alias>`
+  2. `mi-lsp nav ask "how is this workspace organized?" --workspace <alias> --format toon`
+  3. `mi-lsp nav workspace-map --workspace <alias> --format toon`
+  4. `mi-lsp nav search "<pattern>" --include-content --workspace <alias> --format toon` or `mi-lsp nav multi-read ...`
+  5. `mi-lsp nav related|context|refs ... --workspace <alias> --format toon`
+  6. `mi-lsp nav service <path> --workspace <alias> --format toon`
 - Query routing expectations:
   - cheap reads stay direct: `nav.find`, `nav.search`, `nav.symbols`, `nav.outline`, `nav.overview`, `nav.multi-read`
   - semantic/compound queries may use daemon warm state: `nav.ask`, `nav.related`, `nav.context`, `nav.refs`, `nav.deps`, `nav.service`, `nav.workspace-map`, `nav.diff-context`, `nav.batch`

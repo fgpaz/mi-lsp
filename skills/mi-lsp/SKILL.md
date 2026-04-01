@@ -8,16 +8,16 @@ description: Use when a folder-based agent should navigate code with the mi-lsp 
 Use this skill when you want local semantic navigation with `mi-lsp` without introducing an MCP dependency.
 If the skill is installed but the binary is missing, bootstrap the CLI first instead of abandoning the flow.
 
-Prefer `--format compact` and an explicit `--workspace <alias>`.
+Prefer `--format toon` and an explicit `--workspace <alias>`.
 Prefer compound commands over sequential greps and full-file reads.
 
 ## Output formats
 
 | Format | Flag | Typical size | When to use |
 |--------|------|-------------|-------------|
-| compact JSON | `--format compact` (default) | baseline | Default for all queries; parse with `jq` or JSON tools |
-| TOON | `--format toon` | ~20-40% smaller | Token budget very tight; arrays compress the most |
-| YAML | `--format yaml` | ~similar to JSON | Human-readable; key per line, easy to scan |
+| TOON | `--format toon` | ~20-40% smaller | **Recommended default** — best token savings, arrays compress most |
+| YAML | `--format yaml` | ~similar to JSON | Readable line-by-line; use when piping to YAML tooling |
+| compact JSON | `--format compact` | baseline | Backward compat, `jq` scripting, strict JSON required |
 | JSON | `--format json` | largest | Debugging, full fidelity |
 
 ### Reading compact JSON
@@ -107,10 +107,10 @@ workspace: salud
 
 ### When to switch formats
 
-- Use `--format compact` (default) unless you have a specific reason to switch.
-- Use `--format toon` when: you are running many compound commands in a session and the context window is filling up; TOON saves the most on large `items` arrays.
-- Use `--format yaml` when: you need to read the output yourself line by line, or you are piping it to a YAML-aware tool.
-- Never mix formats in a single session — pick one and stay consistent.
+- Use `--format toon` by default — it is the recommended format for agent use; saves the most tokens on large `items` arrays.
+- Use `--format yaml` when you need line-by-line readability or are piping to a YAML-aware tool.
+- Use `--format toon` only when strict JSON is required (e.g., `jq` pipelines, backward-compatible scripts).
+- Never mix formats in a single session — pick one at the start and stay consistent.
 
 ## Interpreting the `hint` field
 
@@ -147,7 +147,7 @@ Install the CLI first, verify it, and only then continue with repo navigation.
 
 ```powershell
 mi-lsp info
-mi-lsp worker status --format compact
+mi-lsp worker status --format toon
 ```
 
 6. If the binary was moved after extraction, run:
@@ -182,7 +182,7 @@ mi-lsp info
 ```powershell
 mi-lsp workspace list
 mi-lsp init . --name <alias>
-mi-lsp workspace status <alias> --format compact
+mi-lsp workspace status <alias> --format toon
 ```
 
 If `mi-lsp` is not on `PATH`, install it from Releases or repair `PATH` for the current session before falling back to other tools.
@@ -191,16 +191,16 @@ If `mi-lsp` is not on `PATH`, install it from Releases or repair `PATH` for the 
 
 Use these commands first:
 
-- Ask the repo how it is organized: `mi-lsp nav ask "how is this workspace organized?" --workspace <alias> --format compact`
-- Read 2+ file slices: `mi-lsp nav multi-read file1:1-120 file2:40-160 --workspace <alias> --format compact`
-- Search and see code inline: `mi-lsp nav search billing retry --include-content --workspace <alias> --format compact`
-- Search inside one repo of a container workspace: `mi-lsp nav search "forgot password" --workspace <alias> --repo web --format compact`
-- Understand a symbol in one call: `mi-lsp nav related MySymbol --workspace <alias> --format compact`
-- Orient in a new repo or parent folder: `mi-lsp nav workspace-map --workspace <alias> --format compact`
-- Profile a service: `mi-lsp nav service <path> --workspace <alias> --format compact`
-- Batch mixed operations: `mi-lsp nav batch --workspace <alias> --format compact`
-- Trace spec-to-code links: `mi-lsp nav trace RF-QRY-003 --workspace <alias> --format compact`
-- Search by intent/purpose: `mi-lsp nav intent "where do we handle routing fallback?" --workspace <alias> --format compact`
+- Ask the repo how it is organized: `mi-lsp nav ask "how is this workspace organized?" --workspace <alias> --format toon`
+- Read 2+ file slices: `mi-lsp nav multi-read file1:1-120 file2:40-160 --workspace <alias> --format toon`
+- Search and see code inline: `mi-lsp nav search billing retry --include-content --workspace <alias> --format toon`
+- Search inside one repo of a container workspace: `mi-lsp nav search "forgot password" --workspace <alias> --repo web --format toon`
+- Understand a symbol in one call: `mi-lsp nav related MySymbol --workspace <alias> --format toon`
+- Orient in a new repo or parent folder: `mi-lsp nav workspace-map --workspace <alias> --format toon`
+- Profile a service: `mi-lsp nav service <path> --workspace <alias> --format toon`
+- Batch mixed operations: `mi-lsp nav batch --workspace <alias> --format toon`
+- Trace spec-to-code links: `mi-lsp nav trace RF-QRY-003 --workspace <alias> --format toon`
+- Search by intent/purpose: `mi-lsp nav intent "where do we handle routing fallback?" --workspace <alias> --format toon`
 
 Prefer these over repeated `Get-Content`, plain `rg`, or one-file-at-a-time reads.
 
@@ -210,43 +210,43 @@ Prefer these over repeated `Get-Content`, plain `rg`, or one-file-at-a-time read
 
 ```powershell
 mi-lsp init . --name <alias>
-mi-lsp workspace status <alias> --format compact
+mi-lsp workspace status <alias> --format toon
 ```
 
 2. Start with intent, not grep.
 
 ```powershell
-mi-lsp nav ask "how is this workspace organized?" --workspace <alias> --format compact
-mi-lsp nav intent "error handling for daemon connections" --workspace <alias> --format compact
+mi-lsp nav ask "how is this workspace organized?" --workspace <alias> --format toon
+mi-lsp nav intent "error handling for daemon connections" --workspace <alias> --format toon
 ```
 
 3. Move to broad discovery when you need structure.
 
 ```powershell
-mi-lsp nav workspace-map --workspace <alias> --format compact
-mi-lsp nav find <symbol> --workspace <alias> --format compact
-mi-lsp nav search "<text>" --include-content --workspace <alias> --format compact
+mi-lsp nav workspace-map --workspace <alias> --format toon
+mi-lsp nav find <symbol> --workspace <alias> --format toon
+mi-lsp nav search "<text>" --include-content --workspace <alias> --format toon
 ```
 
 4. Move to deep semantics only when needed.
 
 ```powershell
-mi-lsp nav refs <symbol> --workspace <alias> --backend roslyn --format compact
-mi-lsp nav context <file> <line> --workspace <alias> --backend roslyn --format compact
-mi-lsp nav related <symbol> --workspace <alias> --format compact
+mi-lsp nav refs <symbol> --workspace <alias> --backend roslyn --format toon
+mi-lsp nav context <file> <line> --workspace <alias> --backend roslyn --format toon
+mi-lsp nav related <symbol> --workspace <alias> --format toon
 ```
 
 5. Use `nav service` before judging whether a backend service is only scaffolding.
 
 ```powershell
-mi-lsp nav service <service-path> --workspace <alias> --format compact
+mi-lsp nav service <service-path> --workspace <alias> --format toon
 ```
 
 6. Trace spec-to-code links when reviewing RF compliance.
 
 ```powershell
-mi-lsp nav trace RF-QRY-003 --workspace <alias> --format compact
-mi-lsp nav trace --all --summary --workspace <alias> --format compact
+mi-lsp nav trace RF-QRY-003 --workspace <alias> --format toon
+mi-lsp nav trace --all --summary --workspace <alias> --format toon
 ```
 
 ## Tool choice ladder
