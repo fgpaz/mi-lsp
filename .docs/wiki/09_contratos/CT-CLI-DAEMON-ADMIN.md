@@ -156,6 +156,7 @@ Metadata operativa que debe quedar observable en `access_events` y `admin export
 - `max_items`
 - `max_chars`
 - `compress`
+- si `route=daemon` y la ejecucion fue normal, el registro canonico lo escribe el daemon; la CLI no debe duplicar esa misma operacion en `access_events`
 
 ### Governance admin
 

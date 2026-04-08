@@ -135,17 +135,16 @@ func rankDocs(question string, family string, docs []model.DocRecord, ftsScores 
 			reasons = append(reasons, "doc_id="+doc.DocID)
 		}
 
-		// Manual token overlap - fallback when FTS5 is unavailable or as supplement
-		if ftsScores == nil {
-			searchText := strings.ToLower(doc.SearchText)
-			titleText := strings.ToLower(doc.Title)
-			for _, token := range tokens {
-				if strings.Contains(titleText, token) {
-					score += 10
-				}
-				if strings.Contains(searchText, token) {
-					score += 5
-				}
+		// Manual lexical overlap supplements FTS and rescues small corpora where
+		// FTS returns an empty set for an otherwise obvious title/text match.
+		searchText := strings.ToLower(doc.SearchText)
+		titleText := strings.ToLower(doc.Title)
+		for _, token := range tokens {
+			if strings.Contains(titleText, token) {
+				score += 10
+			}
+			if strings.Contains(searchText, token) {
+				score += 5
 			}
 		}
 

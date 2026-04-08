@@ -248,7 +248,7 @@ func (s *Server) recordAccess(request model.CommandRequest, response model.Envel
 	if maxItems <= 0 {
 		maxItems = 50
 	}
-	event.Truncated = count > 0 && count >= maxItems
+	event.Truncated = response.Truncated || (count > 0 && count >= maxItems)
 	_ = s.telemetry.RecordAccess(s.state.RunID, event)
 	_ = s.telemetry.ReplaceRuntimeSnapshots(s.state.RunID, s.manager.Status())
 }

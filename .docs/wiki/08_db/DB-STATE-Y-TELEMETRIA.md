@@ -116,6 +116,8 @@ Campos recomendados:
 - `index.db` soporta lecturas frecuentes y escrituras incrementales por indexacion.
 - `daemon.db` soporta escrituras append-heavy de telemetria local y replace liviano de `runtime_snapshots` por run activo.
 - No registrar payloads completos de requests ni paths sensibles innecesarios en access events.
+- Para `route=daemon`, el daemon es el writer canonico de `access_events`.
+- La CLI solo debe persistir filas de `access_events` para `direct`, `direct_fallback` o fallas previas a la ejecucion remota.
 
 ## Migracion, retencion y recovery
 
@@ -125,6 +127,7 @@ Campos recomendados:
 - `daemon.db` puede purgarse para troubleshooting sin romper el repo.
 - Access events deben tener retencion acotada configurable.
 - Filas legacy de `access_events` con `repo = NULL`, `workspace_root = NULL` o metadata parcial no deben romper `recent-accesses`, `admin export` ni `/api/metrics`; la lectura debe derivar `workspace_root` y error typing cuando sea posible.
+- Filas historicas duplicadas de requests daemonizadas pueden aparecer en ventanas recientes si fueron escritas antes del fix forward de ownership; deben interpretarse como legacy y no como comportamiento vigente del runtime.
 - `runtime_snapshots` representa el estado observado del run activo; no es historico infinito.
 
 ## Related docs

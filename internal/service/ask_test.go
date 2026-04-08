@@ -234,6 +234,55 @@ func TestNavAskFallsBackWhenDocsIndexIsEmpty(t *testing.T) {
 	}
 }
 
+func TestNavAskUsesBuiltinProfileForMinimalTechnicalDocs(t *testing.T) {
+	alias := "ask-minimal-" + filepath.Base(t.TempDir())
+	ensureWritableTestHome(t)
+	root := t.TempDir()
+	writeWorkspaceFile(t, root, "src/App.csproj", `<Project Sdk="Microsoft.NET.Sdk"></Project>`)
+	writeWorkspaceFile(t, root, "src/worker.cs", strings.Join([]string{
+		"namespace Demo;",
+		"public class WorkerProtocol",
+		"{",
+		"}",
+	}, "\n"))
+	writeWorkspaceFile(t, root, ".docs/wiki/07_baseline_tecnica.md", strings.Join([]string{
+		"# 07 Baseline tecnica",
+		"",
+		"Worker protocol overview for daemon routing and worker protocol diagnostics.",
+	}, "\n"))
+	app := New(root, nil)
+
+	if _, err := app.Execute(context.Background(), model.CommandRequest{
+		Operation: "workspace.init",
+		Context:   model.QueryOptions{},
+		Payload:   map[string]any{"path": root, "alias": alias},
+	}); err != nil {
+		t.Fatalf("workspace.init: %v", err)
+	}
+	defer func() { _ = workspace.RemoveWorkspace(alias) }()
+
+	env, err := app.Execute(context.Background(), model.CommandRequest{
+		Operation: "nav.ask",
+		Context:   model.QueryOptions{Workspace: alias, MaxItems: 5},
+		Payload:   map[string]any{"question": "worker protocol"},
+	})
+	if err != nil {
+		t.Fatalf("nav.ask: %v", err)
+	}
+	results := env.Items.([]model.AskResult)
+	if len(results) != 1 {
+		t.Fatalf("expected one ask result, got %#v", env.Items)
+	}
+	if results[0].PrimaryDoc.Path != ".docs/wiki/07_baseline_tecnica.md" {
+		t.Fatalf("primary doc = %q, want minimal technical baseline", results[0].PrimaryDoc.Path)
+	}
+	for _, warning := range env.Warnings {
+		if warning == "no wiki match found" {
+			t.Fatalf("unexpected no wiki match warning: %#v", env.Warnings)
+		}
+	}
+}
+
 func hasDocEvidence(items []model.AskDocEvidence, path string) bool {
 	for _, item := range items {
 		if item.Path == path {

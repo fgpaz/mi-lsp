@@ -70,6 +70,7 @@ flowchart LR
 - El estado semantico persistente del workspace vive repo-local; el estado global solo guarda registro, estado del daemon y telemetria local.
 - El estado documental persistente tambien vive repo-local: `doc_records`, `doc_edges` y `doc_mentions`.
 - `nav ask` es docs-first: primero rankea docs canonicos, luego deriva evidencia de codigo desde menciones y fallback textual.
+- Aun con `read_model=default`, un workspace inicializado con docs minimas utiles bajo `.docs/wiki/07_*.md`, `.docs/wiki/08_*.md` o `.docs/wiki/09_*.md` debe poder resolver una respuesta docs-first razonable sin requerir `read-model.toml` custom.
 - La UI de gobernanza es unica, local a loopback y debe abrirse enfocando workspace, sin duplicar instancias.
 - C# profundo se resuelve con Roslyn; TS/JS discovery sigue existiendo aunque no haya backend semantico.
 - Python se indexa con tree-sitter pure Go (`gotreesitter`); semantica profunda opcional via `pyright-langserver` cuando exista.
@@ -102,6 +103,7 @@ El struct `internal/service/config.go` centraliza todos los valores hardcodeados
 
 - Todas las operaciones (con y sin daemon) registran `access_events` en `~/.mi-lsp/daemon/daemon.db`.
 - CLI directo usa `daemon_run_id = NULL`; el daemon usa su `run_id`.
+- En requests servidos por daemon, el `access_event` canonico lo escribe el daemon; la CLI solo persiste eventos directos, `direct_fallback` o fallas previas a la ejecucion remota.
 - WAL mode habilitado para manejar escrituras concurrentes daemon + CLI.
 - Auto-purge de eventos > 30 dias (configurable via `MI_LSP_RETENTION_DAYS`) en startup de CLI y daemon.
 - `access_events` separa identidad analitica y diagnostica: `workspace_root` es la clave canonica de agrupacion; `workspace_alias` y `workspace_input` preservan display y forensics.

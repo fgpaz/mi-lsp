@@ -58,6 +58,7 @@
 - Si git no esta disponible, devolver error o empty context segun flag.
 - `--include-content` por defecto false para evitar payloads grandes.
 - Default a working tree si no se especifica ref.
+- El working tree por defecto incluye staged, unstaged y archivos untracked relevantes contra `HEAD`; renames/copies deben mapearse sobre la ruta destino.
 
 ## 8. Data Model Impact
 

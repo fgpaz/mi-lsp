@@ -181,8 +181,9 @@ func (s *rootState) executeOperation(cmd *cobra.Command, operation string, paylo
 	}
 	latency := time.Since(started)
 
-	// Best-effort telemetry: record the operation even if it failed.
-	if s.telemetry != nil {
+	// Best-effort telemetry: direct/direct_fallback record at the caller.
+	// Daemon-served requests are recorded canonically inside the daemon.
+	if s.telemetry != nil && shouldRecordCLITelemetry(route, err) {
 		s.telemetry.RecordOperation(request, envelope, err, latency, route)
 	}
 
@@ -211,6 +212,13 @@ func shouldAutoStartDaemon(operation string) bool {
 		return true
 	}
 	return false
+}
+
+func shouldRecordCLITelemetry(route string, opErr error) bool {
+	if route == "daemon" && opErr == nil {
+		return false
+	}
+	return true
 }
 
 func offsetFromPayload(payload map[string]any) (int, bool) {

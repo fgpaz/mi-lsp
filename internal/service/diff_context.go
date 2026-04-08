@@ -2,16 +2,20 @@ package service
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
 
+	"github.com/fgpaz/mi-lsp/internal/indexer"
 	"github.com/fgpaz/mi-lsp/internal/model"
 	"github.com/fgpaz/mi-lsp/internal/processutil"
 	"github.com/fgpaz/mi-lsp/internal/store"
+	"github.com/fgpaz/mi-lsp/internal/workspace"
 )
 
 type DiffSymbol struct {
@@ -38,7 +42,7 @@ type DiffImpact struct {
 
 func (a *App) diffContext(ctx context.Context, request model.CommandRequest) (model.Envelope, error) {
 	// 1. Resolve workspace
-	registration, _, err := a.resolveWorkspaceWithProject(request.Context.Workspace)
+	registration, project, err := a.resolveWorkspaceWithProject(request.Context.Workspace)
 	if err != nil {
 		return model.Envelope{}, err
 	}
@@ -90,8 +94,10 @@ func (a *App) diffContext(ctx context.Context, request model.CommandRequest) (mo
 	symbolMap := make(map[string]*DiffSymbol) // key: "file:line:name" for dedup
 	var changingFiles []string
 
-	for relFile, lineRanges := range changedMap {
+	for relFile, changeType := range fileChangeTypes {
 		changingFiles = append(changingFiles, relFile)
+		lineRanges := changedMap[relFile]
+		foundInFile := false
 
 		for _, lineNum := range lineRanges {
 			// Query for symbol containing this line
@@ -102,12 +108,6 @@ func (a *App) diffContext(ctx context.Context, request model.CommandRequest) (mo
 			if !found {
 				continue
 			}
-
-			changeType := fileChangeTypes[relFile]
-			if changeType == "" {
-				changeType = "modified"
-			}
-
 			key := fmt.Sprintf("%s:%d:%s", relFile, symbol.StartLine, symbol.Name)
 			if _, exists := symbolMap[key]; exists {
 				continue // Already added
@@ -135,6 +135,18 @@ func (a *App) diffContext(ctx context.Context, request model.CommandRequest) (mo
 			}
 
 			symbolMap[key] = diffSymbol
+			foundInFile = true
+		}
+
+		if len(lineRanges) == 0 || !foundInFile {
+			for _, diffSymbol := range fallbackDiffSymbols(ctx, db, registration.Root, project, relFile, changeType, includeContent) {
+				key := fmt.Sprintf("%s:%d:%s", diffSymbol.File, diffSymbol.Line, diffSymbol.Name)
+				if _, exists := symbolMap[key]; exists {
+					continue
+				}
+				copy := diffSymbol
+				symbolMap[key] = &copy
+			}
 		}
 	}
 
@@ -178,57 +190,45 @@ func (a *App) diffContext(ctx context.Context, request model.CommandRequest) (mo
 // If ref is empty, compares working tree against HEAD.
 // If ref is specified, compares ref against HEAD.
 func getGitDiffChanges(ctx context.Context, workspaceRoot string, ref string) (map[string][]int, error) {
-	// First, get list of changed files
-	changedFiles, err := getGitChangedFiles(ctx, workspaceRoot, ref)
-	if err != nil {
-		return nil, err
-	}
-
-	if len(changedFiles) == 0 {
-		return make(map[string][]int), nil
-	}
-
-	// Then get line-level changes via git diff --unified=0
-	lineMap, err := getGitDiffHunks(ctx, workspaceRoot, ref)
-	if err != nil {
-		return nil, err
-	}
-
-	// Filter to only files we know changed
-	result := make(map[string][]int)
-	for file, lines := range lineMap {
-		result[file] = lines
-	}
-
-	return result, nil
-}
-
-// getGitChangedFiles returns list of files changed between ref and HEAD (or working tree).
-func getGitChangedFiles(ctx context.Context, workspaceRoot string, ref string) ([]string, error) {
-	fileTypes, err := getGitFileChangeTypes(ctx, workspaceRoot, ref)
-	if err != nil {
-		return nil, err
-	}
-	files := make([]string, 0, len(fileTypes))
-	for f := range fileTypes {
-		files = append(files, f)
-	}
-	return files, nil
+	return getGitDiffHunks(ctx, workspaceRoot, ref)
 }
 
 // getGitFileChangeTypes returns a map of relative file path -> change type string
 // by running git diff --name-status.
 func getGitFileChangeTypes(ctx context.Context, workspaceRoot string, ref string) (map[string]string, error) {
+	if ref == "" {
+		result := make(map[string]string)
+		for _, args := range [][]string{
+			{"diff", "--name-status"},
+			{"diff", "--cached", "--name-status"},
+		} {
+			output, err := runGitCommand(ctx, workspaceRoot, args...)
+			if err != nil {
+				return nil, err
+			}
+			for file, changeType := range parseNameStatus(string(output)) {
+				result[file] = mergeChangeType(result[file], changeType)
+			}
+		}
+		output, err := runGitCommand(ctx, workspaceRoot, "ls-files", "--others", "--exclude-standard")
+		if err != nil {
+			return nil, err
+		}
+		for _, line := range strings.Split(string(output), "\n") {
+			line = filepath.ToSlash(strings.TrimSpace(line))
+			if line == "" {
+				continue
+			}
+			result[line] = "added"
+		}
+		return result, nil
+	}
+
 	args := []string{"diff", "--name-status"}
 	if ref != "" {
 		args = append(args, ref)
 	}
-
-	cmd := exec.CommandContext(ctx, "git", args...)
-	processutil.ConfigureNonInteractiveCommand(cmd)
-	cmd.Dir = workspaceRoot
-
-	output, err := cmd.Output()
+	output, err := runGitCommand(ctx, workspaceRoot, args...)
 	if err != nil {
 		return nil, fmt.Errorf("git diff --name-status failed: %w", err)
 	}
@@ -292,23 +292,37 @@ func parseNameStatus(output string) map[string]string {
 
 // getGitDiffHunks parses git diff --unified=0 output to extract changed line numbers.
 func getGitDiffHunks(ctx context.Context, workspaceRoot string, ref string) (map[string][]int, error) {
+	if ref == "" {
+		merged := make(map[string][]int)
+		for _, args := range [][]string{
+			{"diff", "--unified=0"},
+			{"diff", "--cached", "--unified=0"},
+		} {
+			output, err := runGitCommand(ctx, workspaceRoot, args...)
+			if err != nil {
+				return nil, fmt.Errorf("git diff --unified=0 failed: %w", err)
+			}
+			for file, lines := range parseGitDiffHunks(string(output)) {
+				merged[file] = append(merged[file], lines...)
+			}
+		}
+		return merged, nil
+	}
+
 	args := []string{"diff", "--unified=0"}
 	if ref != "" {
 		args = append(args, ref)
 	}
-
-	cmd := exec.CommandContext(ctx, "git", args...)
-	processutil.ConfigureNonInteractiveCommand(cmd)
-	cmd.Dir = workspaceRoot
-
-	output, err := cmd.Output()
+	output, err := runGitCommand(ctx, workspaceRoot, args...)
 	if err != nil {
 		return nil, fmt.Errorf("git diff --unified=0 failed: %w", err)
 	}
 
-	// Parse hunks: @@ -startA,countA +startB,countB @@
+	return parseGitDiffHunks(string(output)), nil
+}
+
+func parseGitDiffHunks(diffOutput string) map[string][]int {
 	lineMap := make(map[string][]int)
-	diffOutput := string(output)
 	lines := strings.Split(diffOutput, "\n")
 
 	var currentFile string
@@ -346,11 +360,85 @@ func getGitDiffHunks(ctx context.Context, workspaceRoot string, ref string) (map
 		}
 	}
 
-	return lineMap, nil
+	return lineMap
 }
 
 func parseLineNum(s string) int {
 	var num int
 	_, _ = fmt.Sscanf(s, "%d", &num)
 	return num
+}
+
+func runGitCommand(ctx context.Context, workspaceRoot string, args ...string) ([]byte, error) {
+	cmd := exec.CommandContext(ctx, "git", args...)
+	processutil.ConfigureNonInteractiveCommand(cmd)
+	cmd.Dir = workspaceRoot
+	return cmd.Output()
+}
+
+func mergeChangeType(current string, next string) string {
+	switch {
+	case next == "deleted":
+		return "deleted"
+	case next == "added":
+		return "added"
+	case current == "":
+		return next
+	default:
+		return current
+	}
+}
+
+func fallbackDiffSymbols(ctx context.Context, db *sql.DB, workspaceRoot string, project model.ProjectFile, relFile string, changeType string, includeContent bool) []DiffSymbol {
+	if changeType == "" {
+		changeType = "modified"
+	}
+	switch changeType {
+	case "deleted":
+		symbols, err := store.SymbolsByFile(ctx, db, relFile, 200, 0)
+		if err != nil {
+			return nil
+		}
+		items := make([]DiffSymbol, 0, len(symbols))
+		for _, symbol := range symbols {
+			items = append(items, DiffSymbol{
+				File:       relFile,
+				Name:       symbol.Name,
+				Kind:       symbol.Kind,
+				ChangeType: "deleted",
+				Line:       symbol.StartLine,
+				EndLine:    symbol.EndLine,
+			})
+		}
+		return items
+	default:
+		absFile := filepath.Join(workspaceRoot, filepath.FromSlash(relFile))
+		content, err := os.ReadFile(absFile)
+		if err != nil {
+			return nil
+		}
+		repo, ok := workspace.FindRepoByFile(project, workspaceRoot, absFile)
+		if !ok {
+			repo = model.WorkspaceRepo{ID: project.Project.DefaultRepo, Name: project.Project.DefaultRepo, Root: "."}
+		}
+		symbols, _ := indexer.ExtractCatalog(workspaceRoot, repo, absFile, content)
+		items := make([]DiffSymbol, 0, len(symbols))
+		for _, symbol := range symbols {
+			item := DiffSymbol{
+				File:       relFile,
+				Name:       symbol.Name,
+				Kind:       symbol.Kind,
+				ChangeType: changeType,
+				Line:       symbol.StartLine,
+				EndLine:    symbol.EndLine,
+			}
+			if includeContent {
+				if body, _, err := readFileLineRange(absFile, symbol.StartLine, symbol.EndLine); err == nil {
+					item.Content = body
+				}
+			}
+			items = append(items, item)
+		}
+		return items
+	}
 }

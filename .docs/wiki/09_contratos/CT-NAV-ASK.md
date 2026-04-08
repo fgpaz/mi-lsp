@@ -37,6 +37,7 @@ Cada item de `backend=ask` contiene:
 - `code_evidence` muestra archivos, simbolos o snippets derivados desde docs o fallback textual.
 - `why` explica por que la respuesta eligio ese camino.
 - `next_queries` deja comandos concretos para profundizar.
+- con `read_model=default`, una wiki minima util bajo `07/08/09` debe seguir pudiendo rankear un `primary_doc` razonable cuando la pregunta comparte terminos claros con titulo/contenido del doc
 
 ## Warnings esperables
 

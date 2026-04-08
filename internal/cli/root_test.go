@@ -85,3 +85,33 @@ func TestOffsetFromPayload(t *testing.T) {
 		})
 	}
 }
+
+func TestShouldRecordCLITelemetry(t *testing.T) {
+	tests := []struct {
+		name  string
+		route string
+		err   bool
+		want  bool
+	}{
+		{name: "direct records", route: "direct", want: true},
+		{name: "direct fallback records", route: "direct_fallback", want: true},
+		{name: "daemon success does not double record", route: "daemon", want: false},
+		{name: "daemon error still records", route: "daemon", err: true, want: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var err error
+			if tt.err {
+				err = assertErr{}
+			}
+			if got := shouldRecordCLITelemetry(tt.route, err); got != tt.want {
+				t.Fatalf("shouldRecordCLITelemetry(%q, %v) = %t, want %t", tt.route, err, got, tt.want)
+			}
+		})
+	}
+}
+
+type assertErr struct{}
+
+func (assertErr) Error() string { return "boom" }

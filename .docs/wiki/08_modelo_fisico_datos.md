@@ -45,7 +45,9 @@ La novedad de v1.3 es que el store repo-local persiste tambien el grafo document
 - `access_events` registran metadata y nunca payloads completos.
 - `daemon.db` usa WAL mode para manejar escrituras concurrentes (daemon + CLI directo).
 - Auto-purge elimina eventos y runs con mas de 30 dias en startup de CLI y daemon.
-- CLI directo graba `access_events` con `daemon_run_id = NULL`.
+- La fila canonica de una request `route=daemon` la escribe el daemon.
+- La CLI directa solo graba `access_events` cuando la request se sirve como `direct`, `direct_fallback` o falla antes de delegarse al daemon; esos eventos pueden llevar `daemon_run_id = NULL`.
+- Filas duplicadas historicas de requests daemonizadas pueden existir como artefactos previos al fix de ownership de telemetria y deben tratarse como legacy hasta que la retencion las purgue.
 
 ## Operaciones clave en `index.db`
 
