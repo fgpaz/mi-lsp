@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -83,6 +84,9 @@ func TestRecordAccessDirect(t *testing.T) {
 	}
 	if events[0].ErrorCode != "dotnet_sdk_missing" {
 		t.Errorf("ErrorCode = %q, want dotnet_sdk_missing", events[0].ErrorCode)
+	}
+	if events[0].Seq != 0 {
+		t.Errorf("Seq = %d, want 0 for event without session_id", events[0].Seq)
 	}
 }
 
@@ -205,6 +209,66 @@ func TestQueryAccessEvents(t *testing.T) {
 	}
 	if len(roslyn) != 2 {
 		t.Errorf("roslyn = %d, want 2", len(roslyn))
+	}
+}
+
+func TestRecordAccessDirect_AssignsSeqPerSession(t *testing.T) {
+	store := testStore(t)
+	defer store.Close()
+
+	first := model.AccessEvent{
+		OccurredAt: time.Now(),
+		ClientName: "test-cli",
+		SessionID:  "session-1",
+		Workspace:  "multi-tedi",
+		Operation:  "nav.find",
+		Backend:    "catalog",
+		Success:    true,
+	}
+	second := model.AccessEvent{
+		OccurredAt: time.Now().Add(time.Second),
+		ClientName: "test-cli",
+		SessionID:  "session-1",
+		Workspace:  "multi-tedi",
+		Operation:  "nav.search",
+		Backend:    "text",
+		Success:    true,
+	}
+	if err := store.RecordAccessDirect(first); err != nil {
+		t.Fatalf("RecordAccessDirect first: %v", err)
+	}
+	if err := store.RecordAccessDirect(second); err != nil {
+		t.Fatalf("RecordAccessDirect second: %v", err)
+	}
+
+	recent, err := store.RecentAccesses(10)
+	if err != nil {
+		t.Fatalf("RecentAccesses: %v", err)
+	}
+	if len(recent) != 2 {
+		t.Fatalf("len(recent) = %d, want 2", len(recent))
+	}
+	if recent[0].Seq != 2 || recent[1].Seq != 1 {
+		t.Fatalf("recent seqs = [%d %d], want [2 1]", recent[0].Seq, recent[1].Seq)
+	}
+
+	events, err := QueryAccessEvents(store, ExportQuery{Limit: 10})
+	if err != nil {
+		t.Fatalf("QueryAccessEvents: %v", err)
+	}
+	if len(events) != 2 {
+		t.Fatalf("len(events) = %d, want 2", len(events))
+	}
+	if events[0].Seq != 2 || events[1].Seq != 1 {
+		t.Fatalf("export seqs = [%d %d], want [2 1]", events[0].Seq, events[1].Seq)
+	}
+
+	csv := RenderCSV(events)
+	if !strings.Contains(csv, "session_id,seq,workspace") {
+		t.Fatalf("csv header missing seq: %q", csv)
+	}
+	if !strings.Contains(csv, ",session-1,2,") || !strings.Contains(csv, ",session-1,1,") {
+		t.Fatalf("csv rows missing seq values: %q", csv)
 	}
 }
 

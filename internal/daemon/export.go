@@ -83,7 +83,7 @@ func QueryAccessEvents(store *TelemetryStore, query ExportQuery) ([]model.Access
 		conditions = append(conditions, "(success = 0 OR error_text IS NOT NULL AND error_text != '' OR error_code IS NOT NULL AND error_code != '')")
 	}
 
-	sql := `SELECT id, occurred_at, COALESCE(client_name, ''), COALESCE(session_id, ''), COALESCE(workspace, ''), COALESCE(workspace_input, ''), COALESCE(workspace_root, ''), COALESCE(workspace_alias, ''), COALESCE(repo, ''), operation, COALESCE(backend, ''), success, latency_ms, COALESCE(warnings_json, '[]'), COALESCE(runtime_key, ''), COALESCE(entrypoint_id, ''), COALESCE(error_text, ''), COALESCE(error_kind, ''), COALESCE(error_code, ''), COALESCE(truncated, 0), COALESCE(result_count, 0) FROM access_events`
+	sql := `SELECT id, occurred_at, COALESCE(client_name, ''), COALESCE(session_id, ''), COALESCE(seq, 0), COALESCE(workspace, ''), COALESCE(workspace_input, ''), COALESCE(workspace_root, ''), COALESCE(workspace_alias, ''), COALESCE(repo, ''), operation, COALESCE(backend, ''), success, latency_ms, COALESCE(warnings_json, '[]'), COALESCE(runtime_key, ''), COALESCE(entrypoint_id, ''), COALESCE(error_text, ''), COALESCE(error_kind, ''), COALESCE(error_code, ''), COALESCE(truncated, 0), COALESCE(result_count, 0) FROM access_events`
 	if len(conditions) > 0 {
 		sql += " WHERE " + strings.Join(conditions, " AND ")
 	}
@@ -370,11 +370,11 @@ func renderStatsTable(builder *strings.Builder, title string, header string, sta
 
 func RenderCSV(events []model.AccessEvent) string {
 	var b strings.Builder
-	b.WriteString("id,occurred_at,client_name,session_id,workspace,workspace_input,workspace_root,workspace_alias,repo,operation,backend,success,latency_ms,error,error_kind,error_code,result_count,truncated\n")
+	b.WriteString("id,occurred_at,client_name,session_id,seq,workspace,workspace_input,workspace_root,workspace_alias,repo,operation,backend,success,latency_ms,error,error_kind,error_code,result_count,truncated\n")
 	for _, raw := range events {
 		e := telemetry.NormalizeAccessEvent(raw)
-		fmt.Fprintf(&b, "%d,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%t,%d,%s,%s,%s,%d,%t\n",
-			e.ID, e.OccurredAt.Format(time.RFC3339), e.ClientName, e.SessionID,
+		fmt.Fprintf(&b, "%d,%s,%s,%s,%d,%s,%s,%s,%s,%s,%s,%s,%t,%d,%s,%s,%s,%d,%t\n",
+			e.ID, e.OccurredAt.Format(time.RFC3339), e.ClientName, e.SessionID, e.Seq,
 			e.Workspace, csvEscape(e.WorkspaceInput), csvEscape(e.WorkspaceRoot), csvEscape(e.WorkspaceAlias), e.Repo, e.Operation, e.Backend,
 			e.Success, e.LatencyMs, csvEscape(e.Error), csvEscape(e.ErrorKind), csvEscape(e.ErrorCode), e.ResultCount, e.Truncated)
 	}

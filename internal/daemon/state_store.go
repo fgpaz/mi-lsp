@@ -267,6 +267,7 @@ func (s *TelemetryStore) initSchema() error {
 		`ALTER TABLE access_events ADD COLUMN error_code TEXT`,
 		`ALTER TABLE access_events ADD COLUMN truncated INTEGER DEFAULT 0`,
 		`ALTER TABLE access_events ADD COLUMN result_count INTEGER DEFAULT 0`,
+		`ALTER TABLE access_events ADD COLUMN seq INTEGER DEFAULT 0`,
 	} {
 		_, _ = s.db.Exec(migration)
 	}
@@ -339,7 +340,25 @@ func (s *TelemetryStore) ReplaceRuntimeSnapshots(runID int64, statuses []model.W
 	return tx.Commit()
 }
 
+// NextSeq returns the next sequence number for the given session_id.
+// Returns 0 if session_id is empty, 1 for the first event in a session.
+func (s *TelemetryStore) NextSeq(sessionID string) int {
+	if sessionID == "" {
+		return 0
+	}
+	var seq int
+	row := s.db.QueryRow(
+		`SELECT COALESCE(MAX(seq), 0) + 1 FROM access_events WHERE session_id = ?`,
+		sessionID,
+	)
+	_ = row.Scan(&seq)
+	return seq
+}
+
 func (s *TelemetryStore) RecordAccessDirect(event model.AccessEvent) error {
+	if event.Seq == 0 {
+		event.Seq = s.NextSeq(event.SessionID)
+	}
 	normalized := telemetry.NormalizeAccessEvent(event)
 	warningsJSON := "[]"
 	if len(normalized.Warnings) > 0 {
@@ -350,10 +369,11 @@ func (s *TelemetryStore) RecordAccessDirect(event model.AccessEvent) error {
 		warningsJSON = string(body)
 	}
 	_, err := s.db.Exec(
-		`INSERT INTO access_events(daemon_run_id, occurred_at, client_name, session_id, workspace, workspace_input, workspace_root, workspace_alias, repo, operation, backend, success, latency_ms, warnings_json, runtime_key, entrypoint_id, error_text, error_kind, error_code, truncated, result_count) VALUES (NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		`INSERT INTO access_events(daemon_run_id, occurred_at, client_name, session_id, seq, workspace, workspace_input, workspace_root, workspace_alias, repo, operation, backend, success, latency_ms, warnings_json, runtime_key, entrypoint_id, error_text, error_kind, error_code, truncated, result_count) VALUES (NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		normalized.OccurredAt.Unix(),
 		normalized.ClientName,
 		normalized.SessionID,
+		normalized.Seq,
 		normalized.Workspace,
 		normalized.WorkspaceInput,
 		normalized.WorkspaceRoot,
@@ -376,6 +396,9 @@ func (s *TelemetryStore) RecordAccessDirect(event model.AccessEvent) error {
 }
 
 func (s *TelemetryStore) RecordAccess(runID int64, event model.AccessEvent) error {
+	if event.Seq == 0 {
+		event.Seq = s.NextSeq(event.SessionID)
+	}
 	normalized := telemetry.NormalizeAccessEvent(event)
 	warningsJSON := "[]"
 	if len(normalized.Warnings) > 0 {
@@ -386,11 +409,12 @@ func (s *TelemetryStore) RecordAccess(runID int64, event model.AccessEvent) erro
 		warningsJSON = string(body)
 	}
 	_, err := s.db.Exec(
-		`INSERT INTO access_events(daemon_run_id, occurred_at, client_name, session_id, workspace, workspace_input, workspace_root, workspace_alias, repo, operation, backend, success, latency_ms, warnings_json, runtime_key, entrypoint_id, error_text, error_kind, error_code, truncated, result_count) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		`INSERT INTO access_events(daemon_run_id, occurred_at, client_name, session_id, seq, workspace, workspace_input, workspace_root, workspace_alias, repo, operation, backend, success, latency_ms, warnings_json, runtime_key, entrypoint_id, error_text, error_kind, error_code, truncated, result_count) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		runID,
 		normalized.OccurredAt.Unix(),
 		normalized.ClientName,
 		normalized.SessionID,
+		normalized.Seq,
 		normalized.Workspace,
 		normalized.WorkspaceInput,
 		normalized.WorkspaceRoot,
@@ -417,7 +441,7 @@ func (s *TelemetryStore) RecentAccesses(limit int) ([]model.AccessEvent, error) 
 		limit = 50
 	}
 	rows, err := s.db.Query(
-		`SELECT id, occurred_at, COALESCE(client_name, ''), COALESCE(session_id, ''), COALESCE(workspace, ''), COALESCE(workspace_input, ''), COALESCE(workspace_root, ''), COALESCE(workspace_alias, ''), COALESCE(repo, ''), operation, COALESCE(backend, ''), success, latency_ms, COALESCE(warnings_json, '[]'), COALESCE(runtime_key, ''), COALESCE(entrypoint_id, ''), COALESCE(error_text, ''), COALESCE(error_kind, ''), COALESCE(error_code, ''), COALESCE(truncated, 0), COALESCE(result_count, 0) FROM access_events ORDER BY occurred_at DESC, id DESC LIMIT ?`,
+		`SELECT id, occurred_at, COALESCE(client_name, ''), COALESCE(session_id, ''), COALESCE(seq, 0), COALESCE(workspace, ''), COALESCE(workspace_input, ''), COALESCE(workspace_root, ''), COALESCE(workspace_alias, ''), COALESCE(repo, ''), operation, COALESCE(backend, ''), success, latency_ms, COALESCE(warnings_json, '[]'), COALESCE(runtime_key, ''), COALESCE(entrypoint_id, ''), COALESCE(error_text, ''), COALESCE(error_kind, ''), COALESCE(error_code, ''), COALESCE(truncated, 0), COALESCE(result_count, 0) FROM access_events ORDER BY occurred_at DESC, id DESC LIMIT ?`,
 		limit,
 	)
 	if err != nil {
@@ -488,7 +512,7 @@ func scanAccessEvent(rows *sql.Rows) (model.AccessEvent, error) {
 		truncated    int
 		resultCount  int
 	)
-	if err := rows.Scan(&item.ID, &occurredAt, &item.ClientName, &item.SessionID, &item.Workspace, &item.WorkspaceInput, &item.WorkspaceRoot, &item.WorkspaceAlias, &item.Repo, &item.Operation, &item.Backend, &success, &item.LatencyMs, &warningsJSON, &item.RuntimeKey, &item.EntrypointID, &item.Error, &item.ErrorKind, &item.ErrorCode, &truncated, &resultCount); err != nil {
+	if err := rows.Scan(&item.ID, &occurredAt, &item.ClientName, &item.SessionID, &item.Seq, &item.Workspace, &item.WorkspaceInput, &item.WorkspaceRoot, &item.WorkspaceAlias, &item.Repo, &item.Operation, &item.Backend, &success, &item.LatencyMs, &warningsJSON, &item.RuntimeKey, &item.EntrypointID, &item.Error, &item.ErrorKind, &item.ErrorCode, &truncated, &resultCount); err != nil {
 		return model.AccessEvent{}, err
 	}
 	item.OccurredAt = time.Unix(occurredAt, 0)

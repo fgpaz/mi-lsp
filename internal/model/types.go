@@ -280,6 +280,7 @@ type AccessEvent struct {
 	OccurredAt     time.Time `json:"occurred_at"`
 	ClientName     string    `json:"client_name,omitempty"`
 	SessionID      string    `json:"session_id,omitempty"`
+	Seq            int       `json:"seq,omitempty"`
 	Workspace      string    `json:"workspace,omitempty"`
 	WorkspaceInput string    `json:"workspace_input,omitempty"`
 	WorkspaceRoot  string    `json:"workspace_root,omitempty"`
