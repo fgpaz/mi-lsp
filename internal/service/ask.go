@@ -7,10 +7,12 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 
 	"github.com/fgpaz/mi-lsp/internal/docgraph"
 	"github.com/fgpaz/mi-lsp/internal/model"
 	"github.com/fgpaz/mi-lsp/internal/store"
+	"github.com/fgpaz/mi-lsp/internal/workspace"
 )
 
 type scoredDoc struct {
@@ -20,6 +22,11 @@ type scoredDoc struct {
 }
 
 func (a *App) ask(ctx context.Context, request model.CommandRequest) (model.Envelope, error) {
+	allWorkspaces, _ := request.Payload["all_workspaces"].(bool)
+	if allWorkspaces {
+		return a.askAllWorkspaces(ctx, request)
+	}
+
 	registration, project, err := a.resolveWorkspaceWithProject(request.Context.Workspace)
 	if err != nil {
 		return model.Envelope{}, err
@@ -445,4 +452,105 @@ func askLimit(value int, fallback int, ceiling int) int {
 		return ceiling
 	}
 	return value
+}
+
+func (a *App) askAllWorkspaces(ctx context.Context, request model.CommandRequest) (model.Envelope, error) {
+	workspaces, err := workspace.ListWorkspaces()
+	if err != nil {
+		return model.Envelope{}, fmt.Errorf("failed to list workspaces: %w", err)
+	}
+	if len(workspaces) == 0 {
+		return model.Envelope{Ok: true, Backend: "ask", Items: []model.AskResult{}, Warnings: []string{"no workspaces registered"}}, nil
+	}
+
+	question, _ := request.Payload["question"].(string)
+	question = strings.TrimSpace(question)
+	if question == "" {
+		return model.Envelope{}, fmt.Errorf("question is required")
+	}
+
+	maxItems := request.Context.MaxItems
+	if maxItems <= 0 {
+		maxItems = 1
+	}
+
+	type askResult struct {
+		ws       model.WorkspaceRegistration
+		envelope model.Envelope
+		err      error
+	}
+
+	results := make(chan askResult, len(workspaces))
+	var wg sync.WaitGroup
+	const maxConcurrent = 4
+	semaphore := make(chan struct{}, maxConcurrent)
+
+	for _, ws := range workspaces {
+		wg.Add(1)
+		go func(wsReg model.WorkspaceRegistration) {
+			defer wg.Done()
+			semaphore <- struct{}{}
+			defer func() { <-semaphore }()
+
+			subRequest := model.CommandRequest{
+				Context: model.QueryOptions{
+					Workspace: wsReg.Name,
+					MaxItems:  request.Context.MaxItems,
+				},
+				Payload: clonePayload(request.Payload),
+			}
+			delete(subRequest.Payload, "all_workspaces")
+
+			env, err := a.ask(ctx, subRequest)
+			results <- askResult{ws: wsReg, envelope: env, err: err}
+		}(ws)
+	}
+
+	wg.Wait()
+	close(results)
+
+	type scoredResult struct {
+		result model.AskResult
+		score  int
+		wsName string
+	}
+
+	var scored []scoredResult
+	var allWarnings []string
+
+	for result := range results {
+		if result.err != nil {
+			allWarnings = append(allWarnings, fmt.Sprintf("%s: ask failed: %v", result.ws.Name, result.err))
+			continue
+		}
+		allWarnings = append(allWarnings, result.envelope.Warnings...)
+		if askItems, ok := result.envelope.Items.([]model.AskResult); ok {
+			for _, askItem := range askItems {
+				// Score by number of doc evidence + code evidence as proxy for confidence
+				score := len(askItem.DocEvidence)*10 + len(askItem.CodeEvidence)*5
+				if len(askItem.Why) > 0 {
+					score += 5
+				}
+				scored = append(scored, scoredResult{result: askItem, score: score, wsName: result.ws.Name})
+			}
+		}
+	}
+
+	// Sort by score descending, break ties by workspace name for determinism
+	sort.Slice(scored, func(i, j int) bool {
+		if scored[i].score == scored[j].score {
+			return scored[i].wsName < scored[j].wsName
+		}
+		return scored[i].score > scored[j].score
+	})
+
+	items := make([]model.AskResult, 0, len(scored))
+	for i, s := range scored {
+		if i >= maxItems {
+			break
+		}
+		items = append(items, s.result)
+	}
+
+	return model.Envelope{Ok: true, Backend: "ask", Items: items, Warnings: allWarnings, Stats: model.Stats{Files: len(items)}}, nil
 }

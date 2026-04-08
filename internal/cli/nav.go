@@ -107,6 +107,7 @@ context retrieval, dependency analysis, and service exploration.`,
 		},
 	}
 
+	var allWorkspacesAsk bool
 	askCommand := &cobra.Command{
 		Use:   "ask <question>",
 		Short: "Ask a docs-first question across wiki and code evidence",
@@ -115,9 +116,14 @@ context retrieval, dependency analysis, and service exploration.`,
 				return err
 			}
 			question := strings.Join(args, " ")
-			return state.executeOperation(cmd, "nav.ask", map[string]any{"question": question}, true)
+			payload := map[string]any{"question": question}
+			if allWorkspacesAsk {
+				payload["all_workspaces"] = true
+			}
+			return state.executeOperation(cmd, "nav.ask", payload, true)
 		},
 	}
+	askCommand.Flags().BoolVar(&allWorkspacesAsk, "all-workspaces", false, "Search docs across all registered workspaces")
 
 	var includeArchetype bool
 	serviceCommand := &cobra.Command{
