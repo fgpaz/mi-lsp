@@ -39,6 +39,9 @@ func NewRootCommand() *cobra.Command {
 		clientName = "manual-cli"
 	}
 	sessionID := os.Getenv("MI_LSP_SESSION_ID")
+	if sessionID == "" {
+		sessionID = fmt.Sprintf("cli-%d", os.Getpid())
+	}
 	state := &rootState{
 		repoRoot:    repoRoot,
 		app:         service.New(repoRoot, nil),
@@ -125,10 +128,14 @@ func (s *rootState) queryOptions() model.QueryOptions {
 }
 
 func (s *rootState) executeOperation(cmd *cobra.Command, operation string, payload map[string]any, preferDaemon bool) error {
+	opts := s.queryOptions()
+	if offset, ok := offsetFromPayload(payload); ok {
+		opts.Offset = offset
+	}
 	request := model.CommandRequest{
 		ProtocolVersion: model.ProtocolVersion,
 		Operation:       operation,
-		Context:         s.queryOptions(),
+		Context:         opts,
 		Payload:         payload,
 	}
 	ctx, cancel := context.WithTimeout(cmd.Context(), 2*time.Minute)
@@ -196,6 +203,28 @@ func shouldAutoStartDaemon(operation string) bool {
 		return true
 	}
 	return false
+}
+
+func offsetFromPayload(payload map[string]any) (int, bool) {
+	if len(payload) == 0 {
+		return 0, false
+	}
+	raw, ok := payload["offset"]
+	if !ok {
+		return 0, false
+	}
+	switch v := raw.(type) {
+	case int:
+		return v, true
+	case int32:
+		return int(v), true
+	case int64:
+		return int(v), true
+	case float64:
+		return int(v), true
+	default:
+		return 0, false
+	}
 }
 
 func (s *rootState) printEnvelope(envelope model.Envelope, opts model.QueryOptions) error {

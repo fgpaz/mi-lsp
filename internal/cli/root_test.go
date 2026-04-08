@@ -63,3 +63,25 @@ func TestShouldAutoStartDaemonPolicy(t *testing.T) {
 		})
 	}
 }
+
+func TestOffsetFromPayload(t *testing.T) {
+	tests := []struct {
+		name    string
+		payload map[string]any
+		want    int
+		ok      bool
+	}{
+		{name: "missing", payload: map[string]any{"pattern": "Foo"}, want: 0, ok: false},
+		{name: "int", payload: map[string]any{"offset": 3}, want: 3, ok: true},
+		{name: "float64", payload: map[string]any{"offset": float64(5)}, want: 5, ok: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, ok := offsetFromPayload(tt.payload)
+			if got != tt.want || ok != tt.ok {
+				t.Fatalf("offsetFromPayload(%v) = (%d, %t), want (%d, %t)", tt.payload, got, ok, tt.want, tt.ok)
+			}
+		})
+	}
+}
