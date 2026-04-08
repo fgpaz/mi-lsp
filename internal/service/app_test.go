@@ -17,6 +17,7 @@ import (
 
 func setupTestWorkspace(t *testing.T) (string, string) {
 	t.Helper()
+	ensureWritableTestHome(t)
 	root := t.TempDir()
 	name := "test-ws-" + filepath.Base(root)
 
@@ -41,6 +42,13 @@ func setupTestWorkspace(t *testing.T) (string, string) {
 		_ = workspace.RemoveWorkspace(name)
 	})
 	return root, name
+}
+
+func ensureWritableTestHome(t *testing.T) {
+	t.Helper()
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
 }
 
 type fakeSemanticCaller struct {
@@ -588,6 +596,7 @@ func TestWorkspaceList_PreservesRegistryAliasesForSameRoot(t *testing.T) {
 
 func createContainerWorkspaceFixture(t *testing.T, alias string) string {
 	t.Helper()
+	ensureWritableTestHome(t)
 	root := t.TempDir()
 	writeWorkspaceFile(t, root, "frontend/src/Login.tsx", strings.Join([]string{
 		"export function LoginPage() {",
@@ -679,6 +688,18 @@ func createContainerWorkspaceFixture(t *testing.T, alias string) string {
 			Language:      "csharp",
 			SearchText:    "password reset recovery token backend service",
 		},
+		{
+			FilePath:      "backend/src/PasswordReset.cs",
+			RepoID:        "backend",
+			RepoName:      "backend",
+			Name:          "PasswordResetTokenService",
+			Kind:          "class",
+			StartLine:     7,
+			EndLine:       10,
+			QualifiedName: "backend.PasswordResetTokenService",
+			Language:      "csharp",
+			SearchText:    "password reset token backend service",
+		},
 	}
 	if err := store.ReplaceCatalog(context.Background(), db, project, files, symbols); err != nil {
 		t.Fatalf("ReplaceCatalog: %v", err)
@@ -708,6 +729,65 @@ func TestFind_RepoSelectorFiltersResults(t *testing.T) {
 	}
 	if items[0].RepoName != "backend" {
 		t.Fatalf("repo = %q, want backend", items[0].RepoName)
+	}
+}
+
+func TestFind_RepoSelectorAppliesOffsetAfterFiltering(t *testing.T) {
+	alias := "container-find-offset-" + filepath.Base(t.TempDir())
+	root := createContainerWorkspaceFixture(t, alias)
+	app := New(root, nil)
+
+	env, err := app.Execute(context.Background(), model.CommandRequest{
+		Operation: "nav.find",
+		Context:   model.QueryOptions{Workspace: root, MaxItems: 1},
+		Payload:   map[string]any{"pattern": "PasswordReset", "repo": "backend", "offset": 1},
+	})
+	if err != nil {
+		t.Fatalf("nav.find offset: %v", err)
+	}
+	items, ok := env.Items.([]model.SymbolRecord)
+	if !ok || len(items) != 1 {
+		t.Fatalf("expected one symbol result, got %#v", env.Items)
+	}
+	if items[0].Name != "PasswordResetTokenService" {
+		t.Fatalf("name = %q, want PasswordResetTokenService", items[0].Name)
+	}
+}
+
+func TestSymbols_OffsetSkipsFirstSymbol(t *testing.T) {
+	root, name := setupTestWorkspace(t)
+	project := testProject(name)
+
+	db, err := store.Open(root)
+	if err != nil {
+		t.Fatalf("store.Open: %v", err)
+	}
+	defer db.Close()
+
+	files := []model.FileRecord{{FilePath: "src/Hello.cs", RepoID: "main", RepoName: "main", Language: "csharp"}}
+	symbols := []model.SymbolRecord{
+		{FilePath: "src/Hello.cs", RepoID: "main", RepoName: "main", Name: "HelloWorld", Kind: "class", StartLine: 2, EndLine: 4, QualifiedName: "Demo.HelloWorld", Language: "csharp"},
+		{FilePath: "src/Hello.cs", RepoID: "main", RepoName: "main", Name: "Greet", Kind: "method", StartLine: 3, EndLine: 3, QualifiedName: "Demo.HelloWorld.Greet", Language: "csharp"},
+	}
+	if err := store.ReplaceCatalog(context.Background(), db, project, files, symbols); err != nil {
+		t.Fatalf("ReplaceCatalog: %v", err)
+	}
+
+	app := New(root, nil)
+	env, err := app.Execute(context.Background(), model.CommandRequest{
+		Operation: "nav.symbols",
+		Context:   model.QueryOptions{Workspace: name, MaxItems: 1},
+		Payload:   map[string]any{"file": "src/Hello.cs", "offset": 1},
+	})
+	if err != nil {
+		t.Fatalf("nav.symbols offset: %v", err)
+	}
+	items, ok := env.Items.([]model.SymbolRecord)
+	if !ok || len(items) != 1 {
+		t.Fatalf("expected one symbol result, got %#v", env.Items)
+	}
+	if items[0].Name != "Greet" {
+		t.Fatalf("name = %q, want Greet", items[0].Name)
 	}
 }
 
@@ -753,11 +833,13 @@ func TestIntent_RepoSelectorFiltersResults(t *testing.T) {
 		t.Fatalf("expected ok=true, got warnings: %v", env.Warnings)
 	}
 	items, ok := env.Items.([]map[string]any)
-	if !ok || len(items) != 1 {
-		t.Fatalf("expected one intent result, got %#v", env.Items)
+	if !ok || len(items) == 0 {
+		t.Fatalf("expected intent results, got %#v", env.Items)
 	}
-	if items[0]["file"] != "backend/src/PasswordReset.cs" {
-		t.Fatalf("unexpected intent result %#v", items[0])
+	for _, item := range items {
+		if item["file"] != "backend/src/PasswordReset.cs" {
+			t.Fatalf("unexpected intent result %#v", item)
+		}
 	}
 }
 

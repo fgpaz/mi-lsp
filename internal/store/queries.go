@@ -117,17 +117,20 @@ func WorkspaceStats(ctx context.Context, db *sql.DB) (model.Stats, error) {
 	return stats, nil
 }
 
-func SymbolsByFile(ctx context.Context, db *sql.DB, filePath string, limit int) ([]model.SymbolRecord, error) {
+func SymbolsByFile(ctx context.Context, db *sql.DB, filePath string, limit int, offset int) ([]model.SymbolRecord, error) {
 	if limit <= 0 {
 		limit = 200
+	}
+	if offset < 0 {
+		offset = 0
 	}
 	rows, err := db.QueryContext(ctx, `
 		SELECT `+symbolColumns+`
 		FROM symbols
 		WHERE file_path = ?
 		ORDER BY start_line ASC
-		LIMIT ?
-	`, filePath, limit)
+		LIMIT ? OFFSET ?
+	`, filePath, limit, offset)
 	if err != nil {
 		return nil, err
 	}
@@ -135,9 +138,12 @@ func SymbolsByFile(ctx context.Context, db *sql.DB, filePath string, limit int) 
 	return scanSymbols(rows)
 }
 
-func FindSymbols(ctx context.Context, db *sql.DB, pattern string, kind string, exact bool, limit int) ([]model.SymbolRecord, error) {
+func FindSymbols(ctx context.Context, db *sql.DB, pattern string, kind string, exact bool, limit int, offset int) ([]model.SymbolRecord, error) {
 	if limit <= 0 {
 		limit = 50
+	}
+	if offset < 0 {
+		offset = 0
 	}
 	query := `
 		SELECT ` + symbolColumns + `
@@ -158,8 +164,8 @@ func FindSymbols(ctx context.Context, db *sql.DB, pattern string, kind string, e
 		query += " AND kind = ?"
 		args = append(args, kind)
 	}
-	query += " ORDER BY name ASC, file_path ASC LIMIT ?"
-	args = append(args, limit)
+	query += " ORDER BY name ASC, file_path ASC LIMIT ? OFFSET ?"
+	args = append(args, limit, offset)
 	rows, err := db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
@@ -168,17 +174,20 @@ func FindSymbols(ctx context.Context, db *sql.DB, pattern string, kind string, e
 	return scanSymbols(rows)
 }
 
-func OverviewByPrefix(ctx context.Context, db *sql.DB, prefix string, limit int) ([]model.SymbolRecord, error) {
+func OverviewByPrefix(ctx context.Context, db *sql.DB, prefix string, limit int, offset int) ([]model.SymbolRecord, error) {
 	if limit <= 0 {
 		limit = 100
+	}
+	if offset < 0 {
+		offset = 0
 	}
 	rows, err := db.QueryContext(ctx, `
 		SELECT `+symbolColumns+`
 		FROM symbols
 		WHERE file_path LIKE ?
 		ORDER BY file_path ASC, start_line ASC
-		LIMIT ?
-	`, prefix+"%", limit)
+		LIMIT ? OFFSET ?
+	`, prefix+"%", limit, offset)
 	if err != nil {
 		return nil, err
 	}
@@ -302,9 +311,12 @@ func boolToInt(value bool) int {
 }
 
 // IntentSearch retrieves symbols whose search_text matches any of the given tokens.
-func IntentSearch(ctx context.Context, db *sql.DB, tokens []string, limit int) ([]model.SymbolRecord, error) {
+func IntentSearch(ctx context.Context, db *sql.DB, tokens []string, limit int, offset int) ([]model.SymbolRecord, error) {
 	if limit <= 0 {
 		limit = 50
+	}
+	if offset < 0 {
+		offset = 0
 	}
 	if len(tokens) == 0 {
 		return []model.SymbolRecord{}, nil
@@ -316,13 +328,13 @@ func IntentSearch(ctx context.Context, db *sql.DB, tokens []string, limit int) (
 		whereClauses = append(whereClauses, "search_text LIKE ?")
 		args = append(args, "%"+token+"%")
 	}
-	args = append(args, limit)
+	args = append(args, limit, offset)
 
 	query := `
 		SELECT ` + symbolColumns + `
 		FROM symbols
 		WHERE search_text IS NOT NULL AND (` + strings.Join(whereClauses, " OR ") + `)
-		LIMIT ?
+		LIMIT ? OFFSET ?
 	`
 	rows, err := db.QueryContext(ctx, query, args...)
 	if err != nil {

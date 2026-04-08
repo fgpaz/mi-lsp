@@ -214,7 +214,7 @@ func mergeCatalogContextItem(ctx context.Context, registration model.WorkspaceRe
 	}
 	defer db.Close()
 
-	symbols, err := store.SymbolsByFile(ctx, db, relativeFile, DefaultConfig().DefaultSearchLimit)
+	symbols, err := store.SymbolsByFile(ctx, db, relativeFile, DefaultConfig().DefaultSearchLimit, 0)
 	if err != nil || len(symbols) == 0 {
 		return false
 	}

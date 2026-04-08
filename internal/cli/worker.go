@@ -36,7 +36,7 @@ context, and dependency analysis. Includes install and status.`,
 			defer cancel()
 			response, err := daemon.NewClient().Execute(ctx, model.CommandRequest{ProtocolVersion: model.ProtocolVersion, Operation: "worker.status", Context: state.queryOptions()})
 			if err == nil {
-				return state.printEnvelope(response)
+				return state.printEnvelope(response, state.queryOptions())
 			}
 			return state.executeOperation(cmd, "worker.status", nil, false)
 		},

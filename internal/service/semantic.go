@@ -203,7 +203,7 @@ func (a *App) catalogContextFallback(ctx context.Context, registration model.Wor
 		return model.Envelope{}, err
 	}
 	defer db.Close()
-	symbols, err := store.SymbolsByFile(ctx, db, relativeFile, DefaultConfig().DefaultSearchLimit)
+	symbols, err := store.SymbolsByFile(ctx, db, relativeFile, DefaultConfig().DefaultSearchLimit, 0)
 	if err != nil {
 		return model.Envelope{}, err
 	}

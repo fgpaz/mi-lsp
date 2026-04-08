@@ -198,7 +198,8 @@ func (a *App) symbols(ctx context.Context, request model.CommandRequest) (model.
 		return model.Envelope{}, err
 	}
 	defer db.Close()
-	items, err := store.SymbolsByFile(ctx, db, relativeFile, request.Context.MaxItems)
+	offset := intFromAny(request.Payload["offset"], 0)
+	items, err := store.SymbolsByFile(ctx, db, relativeFile, request.Context.MaxItems, offset)
 	if err != nil {
 		return model.Envelope{}, err
 	}
@@ -221,6 +222,7 @@ func (a *App) find(ctx context.Context, request model.CommandRequest) (model.Env
 	pattern, _ := request.Payload["pattern"].(string)
 	kind, _ := request.Payload["kind"].(string)
 	exact, _ := request.Payload["exact"].(bool)
+	offset := intFromAny(request.Payload["offset"], 0)
 	scopedRepo, scopeEnvelope := resolveCatalogRepoScope(registration, project, request.Payload)
 	if scopeEnvelope != nil {
 		return *scopeEnvelope, nil
@@ -231,14 +233,23 @@ func (a *App) find(ctx context.Context, request model.CommandRequest) (model.Env
 	}
 	defer db.Close()
 	queryLimit := request.Context.MaxItems
+	sqlOffset := offset
 	if scopedRepo != nil {
-		queryLimit = max(queryLimit*10, 100)
+		queryLimit = max((offset+request.Context.MaxItems)*10, 100)
+		sqlOffset = 0
 	}
-	items, err := store.FindSymbols(ctx, db, pattern, kind, exact, queryLimit)
+	items, err := store.FindSymbols(ctx, db, pattern, kind, exact, queryLimit, sqlOffset)
 	if err != nil {
 		return model.Envelope{}, err
 	}
 	items = filterSymbolsByRepo(items, scopedRepo)
+	if offset > 0 {
+		if offset >= len(items) {
+			items = []model.SymbolRecord{}
+		} else {
+			items = items[offset:]
+		}
+	}
 	if request.Context.MaxItems > 0 && len(items) > request.Context.MaxItems {
 		items = items[:request.Context.MaxItems]
 	}
@@ -266,7 +277,8 @@ func (a *App) overview(ctx context.Context, request model.CommandRequest) (model
 		return model.Envelope{}, err
 	}
 	defer db.Close()
-	items, err := store.OverviewByPrefix(ctx, db, prefix, request.Context.MaxItems)
+	offset := intFromAny(request.Payload["offset"], 0)
+	items, err := store.OverviewByPrefix(ctx, db, prefix, request.Context.MaxItems, offset)
 	if err != nil {
 		return model.Envelope{}, err
 	}
@@ -552,6 +564,7 @@ func (a *App) searchAllWorkspaces(ctx context.Context, request model.CommandRequ
 		}
 	}
 
+
 	return model.Envelope{Ok: true, Backend: "text", Items: allItems, Warnings: allWarnings, Stats: model.Stats{Files: len(allItems)}}, nil
 }
 
@@ -599,7 +612,7 @@ func (a *App) findAllWorkspaces(ctx context.Context, request model.CommandReques
 			}
 			defer db.Close()
 
-			items, err := store.FindSymbols(ctx, db, pattern, kind, exact, maxItems)
+			items, err := store.FindSymbols(ctx, db, pattern, kind, exact, maxItems, 0)
 			if err != nil {
 				results <- findResult{ws: wsReg, err: err}
 				return

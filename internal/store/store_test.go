@@ -53,7 +53,7 @@ func TestUpsertAndQuerySymbols(t *testing.T) {
 	}
 
 	// SymbolsByFile
-	got, err := SymbolsByFile(ctx, db, "src/Foo.cs", 100)
+	got, err := SymbolsByFile(ctx, db, "src/Foo.cs", 100, 0)
 	if err != nil {
 		t.Fatalf("SymbolsByFile: %v", err)
 	}
@@ -62,7 +62,7 @@ func TestUpsertAndQuerySymbols(t *testing.T) {
 	}
 
 	// FindSymbols exact
-	found, err := FindSymbols(ctx, db, "FooClass", "", true, 10)
+	found, err := FindSymbols(ctx, db, "FooClass", "", true, 10, 0)
 	if err != nil {
 		t.Fatalf("FindSymbols exact: %v", err)
 	}
@@ -71,7 +71,7 @@ func TestUpsertAndQuerySymbols(t *testing.T) {
 	}
 
 	// FindSymbols fuzzy
-	fuzzy, err := FindSymbols(ctx, db, "Foo", "", false, 10)
+	fuzzy, err := FindSymbols(ctx, db, "Foo", "", false, 10, 0)
 	if err != nil {
 		t.Fatalf("FindSymbols fuzzy: %v", err)
 	}
@@ -159,7 +159,7 @@ func TestOverviewByPrefix(t *testing.T) {
 	}
 
 	// Query by prefix "src/foo/"
-	results, err := OverviewByPrefix(ctx, db, "src/foo/", 100)
+	results, err := OverviewByPrefix(ctx, db, "src/foo/", 100, 0)
 	if err != nil {
 		t.Fatalf("OverviewByPrefix: %v", err)
 	}
@@ -190,7 +190,7 @@ func TestFindSymbols_WithKindFilter(t *testing.T) {
 	}
 
 	// Find all My*
-	allMy, err := FindSymbols(ctx, db, "My", "", false, 10)
+	allMy, err := FindSymbols(ctx, db, "My", "", false, 10, 0)
 	if err != nil {
 		t.Fatalf("FindSymbols all: %v", err)
 	}
@@ -199,7 +199,7 @@ func TestFindSymbols_WithKindFilter(t *testing.T) {
 	}
 
 	// Find only methods
-	onlyMethods, err := FindSymbols(ctx, db, "My", "method", false, 10)
+	onlyMethods, err := FindSymbols(ctx, db, "My", "method", false, 10, 0)
 	if err != nil {
 		t.Fatalf("FindSymbols method: %v", err)
 	}
@@ -247,7 +247,7 @@ func TestReplaceCatalog_ClearsOldData(t *testing.T) {
 	}
 
 	// Verify old symbol is gone
-	oldResults, _ := FindSymbols(ctx, db, "A", "", true, 10)
+	oldResults, _ := FindSymbols(ctx, db, "A", "", true, 10, 0)
 	if len(oldResults) != 0 {
 		t.Errorf("old symbol A should be gone, but found %d results", len(oldResults))
 	}
@@ -280,7 +280,7 @@ func TestSymbolsByFile_Limit(t *testing.T) {
 	}
 
 	// Query with limit
-	limited, err := SymbolsByFile(ctx, db, "test.cs", 3)
+	limited, err := SymbolsByFile(ctx, db, "test.cs", 3, 0)
 	if err != nil {
 		t.Fatalf("SymbolsByFile: %v", err)
 	}
@@ -289,7 +289,7 @@ func TestSymbolsByFile_Limit(t *testing.T) {
 	}
 
 	// Query with no limit (should get all)
-	all, err := SymbolsByFile(ctx, db, "test.cs", 0)
+	all, err := SymbolsByFile(ctx, db, "test.cs", 0, 0)
 	if err != nil {
 		t.Fatalf("SymbolsByFile unlimited: %v", err)
 	}
@@ -313,12 +313,61 @@ func TestFindSymbols_NoResults(t *testing.T) {
 	}
 
 	// Search for non-existent symbol
-	results, err := FindSymbols(ctx, db, "NonExistent", "", true, 10)
+	results, err := FindSymbols(ctx, db, "NonExistent", "", true, 10, 0)
 	if err != nil {
 		t.Fatalf("FindSymbols: %v", err)
 	}
 	if len(results) != 0 {
 		t.Errorf("want 0 results, got %d", len(results))
+	}
+}
+
+func TestCatalogQueries_WithOffset(t *testing.T) {
+	db, _ := seedTestDB(t)
+	ctx := context.Background()
+	project := model.ProjectFile{
+		Project: model.ProjectBlock{Name: "test", Kind: "single"},
+		Repos:   []model.WorkspaceRepo{{ID: "main", Name: "main", Root: "."}},
+	}
+	symbols := []model.SymbolRecord{
+		{FilePath: "src/a.cs", RepoID: "main", Name: "Alpha", Kind: "class", StartLine: 1, EndLine: 2, QualifiedName: "Alpha", Language: "csharp", SearchText: "alpha first"},
+		{FilePath: "src/b.cs", RepoID: "main", Name: "Beta", Kind: "class", StartLine: 3, EndLine: 4, QualifiedName: "Beta", Language: "csharp", SearchText: "beta second"},
+		{FilePath: "src/c.cs", RepoID: "main", Name: "Gamma", Kind: "class", StartLine: 5, EndLine: 6, QualifiedName: "Gamma", Language: "csharp", SearchText: "gamma third"},
+	}
+	if err := ReplaceCatalog(ctx, db, project, nil, symbols); err != nil {
+		t.Fatalf("ReplaceCatalog: %v", err)
+	}
+
+	byFile, err := SymbolsByFile(ctx, db, "src/c.cs", 10, 0)
+	if err != nil {
+		t.Fatalf("SymbolsByFile seed: %v", err)
+	}
+	if len(byFile) != 1 {
+		t.Fatalf("SymbolsByFile seed len = %d, want 1", len(byFile))
+	}
+
+	found, err := FindSymbols(ctx, db, "", "", false, 1, 1)
+	if err != nil {
+		t.Fatalf("FindSymbols offset: %v", err)
+	}
+	if len(found) != 1 || found[0].Name != "Beta" {
+		t.Fatalf("FindSymbols offset got %#v, want Beta", found)
+	}
+
+	overview, err := OverviewByPrefix(ctx, db, "src/", 1, 1)
+	if err != nil {
+		t.Fatalf("OverviewByPrefix offset: %v", err)
+	}
+	if len(overview) != 1 || overview[0].FilePath != "src/b.cs" {
+		t.Fatalf("OverviewByPrefix offset got %#v, want src/b.cs", overview)
+	}
+
+	intent, err := IntentSearch(ctx, db, []string{"second", "third"}, 1, 1)
+	if err != nil {
+		t.Fatalf("IntentSearch offset: %v", err)
+	}
+	if len(intent) != 1 || intent[0].Name != "Gamma" {
+		t.Fatalf("IntentSearch offset got %#v, want Gamma", intent)
 	}
 }
 

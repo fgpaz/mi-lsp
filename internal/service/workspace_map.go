@@ -154,7 +154,7 @@ func discoverServices(ctx context.Context, db *sql.DB, registration model.Worksp
 
 		// Get symbol count for this prefix
 		prefix := normalizedPrefix(epDir)
-		symbols, err := store.OverviewByPrefix(ctx, db, prefix, 500)
+		symbols, err := store.OverviewByPrefix(ctx, db, prefix, 500, 0)
 		if err != nil || len(symbols) == 0 {
 			continue
 		}

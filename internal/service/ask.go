@@ -311,7 +311,7 @@ func (a *App) buildAskCodeEvidence(ctx context.Context, db *sql.DB, registration
 	}
 
 	for _, path := range paths {
-		symbolsByFile, err := store.SymbolsByFile(ctx, db, path, 3)
+		symbolsByFile, err := store.SymbolsByFile(ctx, db, path, 3, 0)
 		if err == nil && len(symbolsByFile) > 0 {
 			for _, symbol := range symbolsByFile {
 				addEvidence(model.AskCodeEvidence{Type: "symbol", File: symbol.FilePath, Line: symbol.StartLine, Name: symbol.Name, Kind: symbol.Kind, Snippet: symbol.Signature})
@@ -326,7 +326,7 @@ func (a *App) buildAskCodeEvidence(ctx context.Context, db *sql.DB, registration
 	}
 
 	for _, symbolName := range symbols {
-		found, err := store.FindSymbols(ctx, db, symbolName, "", true, 3)
+		found, err := store.FindSymbols(ctx, db, symbolName, "", true, 3, 0)
 		if err != nil {
 			continue
 		}

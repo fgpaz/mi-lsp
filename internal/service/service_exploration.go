@@ -69,7 +69,7 @@ func (a *App) serviceSummary(ctx context.Context, request model.CommandRequest) 
 	db, err := store.Open(registration.Root)
 	if err == nil {
 		defer db.Close()
-		catalogSymbols, catalogErr := store.OverviewByPrefix(ctx, db, normalizedPrefix(relativePath), serviceCatalogLimit)
+		catalogSymbols, catalogErr := store.OverviewByPrefix(ctx, db, normalizedPrefix(relativePath), serviceCatalogLimit, 0)
 		if catalogErr != nil {
 			warnings = append(warnings, fmt.Sprintf("catalog lookup failed: %v", catalogErr))
 		} else {

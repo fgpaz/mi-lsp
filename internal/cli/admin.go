@@ -36,7 +36,7 @@ Provides runtime dashboards, access logs, and workspace status.`,
 			if err != nil {
 				return daemon.BuildStatusError()
 			}
-			return state.printEnvelope(response)
+			return state.printEnvelope(response, state.queryOptions())
 		},
 	}
 
@@ -61,7 +61,7 @@ Provides runtime dashboards, access logs, and workspace status.`,
 			if err := openURL(finalURL); err != nil {
 				return err
 			}
-			return state.printEnvelope(model.Envelope{Ok: true, Backend: "admin", Items: []map[string]any{{"admin_url": finalURL}}})
+			return state.printEnvelope(model.Envelope{Ok: true, Backend: "admin", Items: []map[string]any{{"admin_url": finalURL}}}, state.queryOptions())
 		},
 	}
 

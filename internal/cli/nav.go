@@ -26,9 +26,15 @@ context retrieval, dependency analysis, and service exploration.`,
 			if err := requireArgs(args, 1, "file"); err != nil {
 				return err
 			}
-			return state.executeOperation(cmd, "nav.symbols", map[string]any{"file": args[0]}, true)
+			payload := map[string]any{"file": args[0]}
+			offset, _ := cmd.Flags().GetInt("offset")
+			if offset > 0 {
+				payload["offset"] = offset
+			}
+			return state.executeOperation(cmd, "nav.symbols", payload, true)
 		},
 	}
+	symbolsCommand.Flags().Int("offset", 0, "Skip first N results (for pagination)")
 
 	var kind string
 	var exact bool
@@ -42,8 +48,12 @@ context retrieval, dependency analysis, and service exploration.`,
 				return err
 			}
 			payload := map[string]any{"pattern": args[0], "kind": kind, "exact": exact}
+			offset, _ := cmd.Flags().GetInt("offset")
 			if findRepo != "" {
 				payload["repo"] = findRepo
+			}
+			if offset > 0 {
+				payload["offset"] = offset
 			}
 			if allWorkspacesFind {
 				payload["all_workspaces"] = true
@@ -53,6 +63,7 @@ context retrieval, dependency analysis, and service exploration.`,
 	}
 	findCommand.Flags().StringVar(&kind, "kind", "", "Optional symbol kind filter")
 	findCommand.Flags().BoolVar(&exact, "exact", false, "Require exact symbol name match")
+	findCommand.Flags().Int("offset", 0, "Skip first N results (for pagination)")
 	findCommand.Flags().BoolVar(&allWorkspacesFind, "all-workspaces", false, "Search across all registered workspaces")
 	attachCatalogRepoFlag(findCommand, &findRepo)
 
@@ -92,9 +103,15 @@ context retrieval, dependency analysis, and service exploration.`,
 			if len(args) > 0 {
 				dir = args[0]
 			}
-			return state.executeOperation(cmd, "nav.overview", map[string]any{"dir": dir}, true)
+			payload := map[string]any{"dir": dir}
+			offset, _ := cmd.Flags().GetInt("offset")
+			if offset > 0 {
+				payload["offset"] = offset
+			}
+			return state.executeOperation(cmd, "nav.overview", payload, true)
 		},
 	}
+	overviewCommand.Flags().Int("offset", 0, "Skip first N results (for pagination)")
 
 	outlineCommand := &cobra.Command{
 		Use:   "outline <file>",
@@ -354,10 +371,14 @@ Examples:
 			if err := requireArgs(args, 1, "question"); err != nil {
 				return err
 			}
+			offset, _ := cmd.Flags().GetInt("offset")
 			question := strings.Join(args, " ")
 			payload := map[string]any{
 				"question": question,
 				"top":      intentTop,
+			}
+			if offset > 0 {
+				payload["offset"] = offset
 			}
 			if intentRepo != "" {
 				payload["repo"] = intentRepo
@@ -366,6 +387,7 @@ Examples:
 		},
 	}
 	intentCommand.Flags().IntVar(&intentTop, "top", 10, "Maximum number of results")
+	intentCommand.Flags().Int("offset", 0, "Skip first N results (for pagination)")
 	attachCatalogRepoFlag(intentCommand, &intentRepo)
 
 	command.AddCommand(symbolsCommand, findCommand, refsCommand, overviewCommand, outlineCommand, askCommand, serviceCommand, searchCommand, contextCommand, depsCommand, multiReadCommand, batchCommand, relatedCommand, workspaceMapCommand, diffContextCommand, traceCommand, intentCommand)

@@ -43,7 +43,7 @@ and tsserver processes, reducing cold-start latency.`,
 				"already_running": stateBody.AlreadyRunning,
 				"state":           stateBody,
 			}}
-			return state.printEnvelope(model.Envelope{Ok: true, Backend: "daemon", Items: items})
+			return state.printEnvelope(model.Envelope{Ok: true, Backend: "daemon", Items: items}, state.queryOptions())
 		},
 	}
 	startCommand.Flags().StringVar(&idleTimeout, "idle-timeout", "30m", "Worker idle eviction timeout")
@@ -59,7 +59,7 @@ and tsserver processes, reducing cold-start latency.`,
 			if err != nil {
 				return daemon.BuildStatusError()
 			}
-			return state.printEnvelope(response)
+			return state.printEnvelope(response, state.queryOptions())
 		},
 	}
 
@@ -73,7 +73,7 @@ and tsserver processes, reducing cold-start latency.`,
 			if err != nil {
 				return err
 			}
-			return state.printEnvelope(response)
+			return state.printEnvelope(response, state.queryOptions())
 		},
 	}
 
@@ -101,7 +101,7 @@ and tsserver processes, reducing cold-start latency.`,
 				"already_running": stateBody.AlreadyRunning,
 				"state":           stateBody,
 			}}
-			return state.printEnvelope(model.Envelope{Ok: true, Backend: "daemon", Items: items})
+			return state.printEnvelope(model.Envelope{Ok: true, Backend: "daemon", Items: items}, state.queryOptions())
 		},
 	}
 
@@ -173,7 +173,7 @@ and tsserver processes, reducing cold-start latency.`,
 			if err := openURL(finalURL); err != nil {
 				return err
 			}
-			return state.printEnvelope(model.Envelope{Ok: true, Backend: "admin", Items: []map[string]any{{"admin_url": finalURL}}})
+			return state.printEnvelope(model.Envelope{Ok: true, Backend: "admin", Items: []map[string]any{{"admin_url": finalURL}}}, state.queryOptions())
 		},
 	}
 

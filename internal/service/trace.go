@@ -98,7 +98,7 @@ func (a *App) traceRF(ctx context.Context, db *sql.DB, rfID string) (*model.Trac
 			}
 		} else {
 			// Just check if file exists in index
-			syms, _ := store.SymbolsByFile(ctx, db, file, 1)
+			syms, _ := store.SymbolsByFile(ctx, db, file, 1, 0)
 			link.Verified = len(syms) > 0
 			link.Kind = "file"
 		}
@@ -112,7 +112,7 @@ func (a *App) traceRF(ctx context.Context, db *sql.DB, rfID string) (*model.Trac
 			Source: "wiki-marker",
 			Kind:   "test",
 		}
-		syms, _ := store.SymbolsByFile(ctx, db, testFile, 1)
+		syms, _ := store.SymbolsByFile(ctx, db, testFile, 1, 0)
 		link.Verified = len(syms) > 0
 		tests = append(tests, link)
 	}
@@ -188,7 +188,7 @@ func (a *App) inferTraceLinks(ctx context.Context, db *sql.DB, doc *model.DocRec
 		if len(links) >= 5 {
 			break
 		}
-		symbols, err := store.FindSymbols(ctx, db, keyword, "", false, 3)
+		symbols, err := store.FindSymbols(ctx, db, keyword, "", false, 3, 0)
 		if err != nil {
 			continue
 		}

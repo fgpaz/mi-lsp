@@ -22,4 +22,14 @@ func TestNavCommandExposesRepoScopeFlags(t *testing.T) {
 			t.Fatalf("%s command should expose --repo", name)
 		}
 	}
+
+	for _, name := range []string{"symbols", "find", "overview", "intent"} {
+		subcommand, _, err := command.Find([]string{name})
+		if err != nil {
+			t.Fatalf("find %s command: %v", name, err)
+		}
+		if subcommand.Flags().Lookup("offset") == nil {
+			t.Fatalf("%s command should expose --offset", name)
+		}
+	}
 }

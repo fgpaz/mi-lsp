@@ -34,6 +34,7 @@ func (a *App) intent(ctx context.Context, request model.CommandRequest) (model.E
 	if topN <= 0 {
 		topN = 10
 	}
+	offset := intFromAny(request.Payload["offset"], 0)
 
 	scopedRepo, scopeEnvelope := resolveCatalogRepoScope(registration, project, request.Payload)
 	if scopeEnvelope != nil {
@@ -52,14 +53,23 @@ func (a *App) intent(ctx context.Context, request model.CommandRequest) (model.E
 	}
 
 	queryLimit := topN * 5
+	sqlOffset := offset
 	if scopedRepo != nil {
-		queryLimit = max(queryLimit*10, 100)
+		queryLimit = max((offset+topN)*10, 100)
+		sqlOffset = 0
 	}
-	candidates, err := store.IntentSearch(ctx, db, tokens, queryLimit)
+	candidates, err := store.IntentSearch(ctx, db, tokens, queryLimit, sqlOffset)
 	if err != nil {
 		return model.Envelope{}, err
 	}
 	candidates = filterSymbolsByRepo(candidates, scopedRepo)
+	if offset > 0 {
+		if offset >= len(candidates) {
+			candidates = []model.SymbolRecord{}
+		} else {
+			candidates = candidates[offset:]
+		}
+	}
 
 	if len(candidates) == 0 {
 		return model.Envelope{Ok: true, Workspace: registration.Name, Backend: "intent", Items: []map[string]any{}, Warnings: []string{"no symbols matched intent tokens"}}, nil

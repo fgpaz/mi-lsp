@@ -56,7 +56,7 @@ func (a *App) related(ctx context.Context, request model.CommandRequest) (model.
 	defer db.Close()
 
 	// 1. Find definition in catalog
-	symbols, err := store.FindSymbols(ctx, db, symbolName, "", true, 5)
+	symbols, err := store.FindSymbols(ctx, db, symbolName, "", true, 5, 0)
 	if err == nil && len(symbols) > 0 {
 		def := symbolToContent(registration.Root, symbols[0])
 		neighborhood.Definition = &def

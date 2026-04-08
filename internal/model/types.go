@@ -17,6 +17,7 @@ type QueryOptions struct {
 	TokenBudget int    `json:"token_budget,omitempty"`
 	MaxItems    int    `json:"max_items,omitempty"`
 	MaxChars    int    `json:"max_chars,omitempty"`
+	Offset      int    `json:"offset,omitempty"`
 	Verbose     bool   `json:"verbose,omitempty"`
 	ClientName  string `json:"client_name,omitempty"`
 	SessionID   string `json:"session_id,omitempty"`

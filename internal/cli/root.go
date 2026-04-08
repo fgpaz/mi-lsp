@@ -174,7 +174,7 @@ func (s *rootState) executeOperation(cmd *cobra.Command, operation string, paylo
 	if err != nil {
 		return err
 	}
-	return s.printEnvelope(envelope)
+	return s.printEnvelope(envelope, request.Context)
 }
 
 func shouldUseDaemon(operation string, requested bool) bool {
@@ -198,8 +198,8 @@ func shouldAutoStartDaemon(operation string) bool {
 	return false
 }
 
-func (s *rootState) printEnvelope(envelope model.Envelope) error {
-	envelope = output.ApplyEnvelopeLimits(envelope, s.queryOptions())
+func (s *rootState) printEnvelope(envelope model.Envelope, opts model.QueryOptions) error {
+	envelope = output.ApplyEnvelopeLimits(envelope, opts)
 	rendered, err := output.Render(envelope, s.format, s.compress)
 	if err != nil {
 		return err
