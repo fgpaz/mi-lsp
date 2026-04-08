@@ -93,6 +93,7 @@ Campos recomendados:
 - `latency_ms`
 - `client_name`
 - `session_id`
+- `seq` (INTEGER DEFAULT 0; secuencia monotona dentro de `session_id`)
 - `daemon_run_id`
 - `warning_count`
 - `error_kind`
@@ -101,6 +102,7 @@ Campos recomendados:
 - `result_count` (INTEGER DEFAULT 0) — numero de simbolos/items devueltos (de `Stats.Symbols`)
 - Nota: columnas agregadas via migration idempotente (`ALTER TABLE ... ADD COLUMN`); rows existentes quedan con DEFAULT 0 o `NULL` segun el schema de origen
 - Lectores y exportadores deben usar lectura null-safe para columnas opcionales legacy (`repo`, `client_name`, `session_id`, `backend`, `runtime_key`, `entrypoint_id`, `error_text`, `workspace_root`, `workspace_alias`, `error_kind`, `error_code`)
+- `seq` debe round-trip en `RecentAccesses`, `admin export`, y CSV para que el orden intra-sesion no dependa solo de `occurred_at`
 
 ## Access patterns y operaciones sensibles
 

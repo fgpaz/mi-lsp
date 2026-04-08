@@ -7,7 +7,7 @@ Usuario/agente -> CLI publica `mi-lsp nav ask`
 ## Forma de invocacion
 
 ```text
-mi-lsp nav ask <question> [--workspace <alias>] [--format compact|json|text]
+mi-lsp nav ask <question> [--workspace <alias>] [--all-workspaces] [--format compact|json|text]
 ```
 
 La CLI acepta una pregunta libre y produce un envelope `backend=ask`.
@@ -17,6 +17,7 @@ El daemon es opcional; si no responde, el core ejecuta el mismo contrato en modo
 
 - `question`: string requerido
 - `workspace`: alias o path resoluble
+- `all_workspaces`: bool opcional; si vale `true`, la CLI itera workspaces registrados y mergea resultados docs-first en un solo envelope
 - `max_items`, `token_budget`, `max_chars`: limites usuales del envelope
 
 ## Respuesta
@@ -43,6 +44,7 @@ Cada item de `backend=ask` contiene:
 - `read_model=default`
 - `documentation index is empty; using code fallback`
 - `code evidence came from text fallback`
+- `<workspace>: ask failed: ...` cuando un workspace puntual falla dentro del fan-out cross-workspace
 
 ## Errores
 

@@ -69,11 +69,12 @@ El detalle por frontera vive en `09_contratos/`.
 
 - `init [path] [--name alias] [--no-index]`: detecta, registra e indexa el workspace actual o el path pedido
 - `workspace.remove`: elimina un workspace registrado de `registry.toml`
-- `admin export`: exporta telemetria de `access_events` desde `daemon.db`
-- `nav ask <question>`: responde usando wiki + evidencia de codigo y fallback generico/textual cuando haga falta
+- `admin export`: exporta telemetria de `access_events` desde `daemon.db`; con `--summary` agrega sobre toda la ventana filtrada salvo que `--limit` se haya seteado explicitamente
+- `nav ask <question>`: responde usando wiki + evidencia de codigo y fallback generico/textual cuando haga falta; `--all-workspaces` habilita fan-out cross-workspace para el mismo contrato explainable
 - `nav service`: resume evidencia observable de un servicio en un unico summary estructurado
 - `nav context`: devuelve `slice_text` y metadatos opcionales de catalogo o backend semantico para la linea pedida
-- `nav.find|search|intent|symbols|outline|overview|multi-read`: lecturas directas repo-locales; conservan envelope estable sin dependencia funcional del daemon. En workspaces `container`, `find/search/intent` aceptan `--repo` para narrowing directo.
+- `nav.find|intent|symbols|overview`: lecturas SQL-backed repo-locales; aceptan `--offset` para pedir la pagina siguiente sin cambiar el envelope base. En workspaces `container`, `find/intent` aceptan `--repo` y el offset se aplica despues del filtro de repo.
+- `nav.search|outline|multi-read`: lecturas directas repo-locales sin contrato `--offset`; `search` sigue siendo text/rg-backed y puede exponer hints de refinamiento, pero no cursor SQL.
 - `worker install`: instala o refresca el worker por RID desde un bundle adjunto o, en desarrollo, desde `worker-dotnet/`
 - `worker status`: diagnostica el estado de candidatos `bundle`, `installed` y `dev-local`, e identifica el `cli_path` y `protocol_version` visibles para detectar binarios stale o inesperados en `PATH`
 - `nav multi-read`: lee N rangos de archivo en una sola invocacion, reduce round-trips de agentes AI
@@ -82,7 +83,7 @@ El detalle por frontera vive en `09_contratos/`.
 - `nav related`: devuelve vecindario de un simbolo (definicion, callers, implementors, tests) con contenido incluido
 - `nav workspace-map`: mapa de alto nivel del workspace con repos, servicios, endpoints, consumers, publishers y dependencias
 - `nav diff-context [ref] --include-content`: contexto semantico de simbolos cambiados en un git diff, con analisis de impacto
-- `nav search --all-workspaces` / `nav find --all-workspaces`: busqueda paralela cross-workspace
+- `nav ask --all-workspaces` / `nav search --all-workspaces` / `nav find --all-workspaces`: fan-out paralelo cross-workspace
 - `--no-auto-daemon` global flag: desactiva auto-start de daemon para queries semanticas
 - `workspace add --no-index`: agrega workspace sin indexar
 - `--compress` global flag: compresion agresiva de output

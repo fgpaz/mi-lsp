@@ -143,6 +143,10 @@ Metadata minima en `context`:
 - `backend_hint`
 - `verbose`
 
+Metadata opcional cuando aplica paginacion CLI:
+
+- `offset`
+
 ### Governance admin
 
 Endpoints minimos:

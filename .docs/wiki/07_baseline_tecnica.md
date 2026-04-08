@@ -105,8 +105,10 @@ El struct `internal/service/config.go` centraliza todos los valores hardcodeados
 - WAL mode habilitado para manejar escrituras concurrentes daemon + CLI.
 - Auto-purge de eventos > 30 dias (configurable via `MI_LSP_RETENTION_DAYS`) en startup de CLI y daemon.
 - `access_events` separa identidad analitica y diagnostica: `workspace_root` es la clave canonica de agrupacion; `workspace_alias` y `workspace_input` preservan display y forensics.
+- `access_events.seq` ordena eventos dentro de un `session_id`; vale `0` cuando la llamada no trae sesion y arranca en `1` para la primera operacion de una sesion trazable.
 - La taxonomia minima de errores tipados distingue al menos `sdk/*`, `worker_bootstrap/*` y `backend_runtime/*`.
 - Export: `mi-lsp admin export` soporta raw (json/csv/compact), `--summary` y el preset explicito `--recent` para la ultima ventana de 24h.
+- `admin export --summary` debe agregar sobre toda la ventana filtrada por defecto; `--limit` solo acota el summary si el usuario lo pide explicitamente.
 - Governance UI y admin HTTP comparten la misma semantica de ventana via `window=recent|7d|30d|90d`.
 
 ## Resumen operativo
@@ -123,6 +125,8 @@ El struct `internal/service/config.go` centraliza todos los valores hardcodeados
 - Si el candidato Roslyn elegido falla por bootstrap/arranque, el caller reintenta una sola vez con el siguiente candidato determinista antes de devolver error accionable.
 - Los cambios en `.docs/wiki`, `README*`, `docs/` o `read-model.toml` fuerzan full re-index del corpus documental; el incremental por git no intenta mezclar deltas parciales de docs.
 - `workspace status` debe exponer si el proyecto usa `read-model` propio o el default embebido.
+- `nav ask --all-workspaces` fan-out sobre workspaces registrados con un pool acotado de 4 workers y merge determinista por score.
+- `nav.find`, `nav.symbols`, `nav.overview` y `nav.intent` aceptan `--offset` para paginacion cursor-like sobre queries SQL; `nav.search` queda fuera de ese contrato porque sigue siendo rg/text-backed.
 - `nav service` debe funcionar sin Roslyn y seguir entregando evidencia util incluso cuando el catalogo es parcial.
 - `nav context` sobre archivos no semanticos no debe depender de Roslyn, `tsserver` ni Pyright.
 
