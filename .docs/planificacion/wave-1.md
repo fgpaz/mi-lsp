@@ -18,7 +18,7 @@
 - `ps-sdd-sync-gen` -- SDD sync between code and wiki
 
 **Initial Assumptions:**
-- SQLite FTS5 extension esta disponible en el build de Go SQLite usado por mi-lsp (mattn/go-sqlite3 con FTS5 enabled)
+- SQLite FTS5 extension esta disponible en el build de Go SQLite usado por mi-lsp (modernc.org/sqlite v1.37.1, FTS5 included by default)
 - `client_name` y `session_id` en access_events ya se populan parcialmente desde el CLI (a verificar)
 - Los cambios en schema.go son backward-compatible via ALTER TABLE / CREATE IF NOT EXISTS
 
@@ -27,7 +27,7 @@
 ## Risks & Assumptions
 
 **Assumptions needing validation:**
-- FTS5 disponible en mattn/go-sqlite3: verificar con `PRAGMA compile_options` que incluya `ENABLE_FTS5`
+- FTS5 disponible en modernc.org/sqlite: VERIFIED -- v1.37.1 includes FTS5 by default, `TestFTSSearchDocs_StemmerMatch` PASS
 - `session_id` ya llega al daemon: verificar en `internal/cli/root.go` si el CLI genera y envia session_id
 
 **Known risks:**
