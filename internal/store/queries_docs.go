@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"database/sql"
+	"strings"
 
 	"github.com/fgpaz/mi-lsp/internal/model"
 )
@@ -181,6 +182,69 @@ func GetMentionsByType(ctx context.Context, db *sql.DB, docPath string, mentionT
 		items = append(items, value)
 	}
 	return items, rows.Err()
+}
+
+// FTSSearchDocs uses the FTS5 virtual table to find doc_records matching the question.
+// Returns nil, nil, nil if the FTS5 table is unavailable (graceful degradation for old databases).
+func FTSSearchDocs(ctx context.Context, db *sql.DB, question string, limit int) ([]model.DocRecord, map[string]float64, error) {
+	if limit <= 0 {
+		limit = 20
+	}
+
+	// Build FTS5-safe query: split into words >= 2 chars, join with OR
+	words := strings.Fields(strings.ToLower(question))
+	terms := make([]string, 0, len(words))
+	for _, w := range words {
+		// Strip non-alphanumeric characters that break FTS5 syntax
+		clean := strings.Map(func(r rune) rune {
+			if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r > 127 {
+				return r
+			}
+			return -1
+		}, w)
+		if len(clean) >= 2 {
+			terms = append(terms, clean)
+		}
+	}
+	if len(terms) == 0 {
+		return nil, nil, nil
+	}
+	matchQuery := strings.Join(terms, " OR ")
+
+	rows, err := db.QueryContext(ctx, `
+		SELECT dr.path, dr.title, dr.doc_id, dr.layer, dr.family, dr.snippet, dr.search_text,
+		       -rank * 10 as fts_score
+		FROM doc_records_fts
+		JOIN doc_records dr ON dr.rowid = doc_records_fts.rowid
+		WHERE doc_records_fts MATCH ?
+		ORDER BY rank
+		LIMIT ?
+	`, matchQuery, limit)
+	if err != nil {
+		errStr := err.Error()
+		if strings.Contains(errStr, "no such table") || strings.Contains(errStr, "no such module") {
+			return nil, nil, nil
+		}
+		// FTS5 syntax error or other query error - fall back gracefully
+		return nil, nil, nil
+	}
+	defer rows.Close()
+
+	docs := make([]model.DocRecord, 0)
+	scores := make(map[string]float64)
+	for rows.Next() {
+		var item model.DocRecord
+		var ftsScore float64
+		if err := rows.Scan(&item.Path, &item.Title, &item.DocID, &item.Layer, &item.Family, &item.Snippet, &item.SearchText, &ftsScore); err != nil {
+			return nil, nil, err
+		}
+		docs = append(docs, item)
+		scores[item.Path] = ftsScore
+	}
+	if err := rows.Err(); err != nil {
+		return nil, nil, err
+	}
+	return docs, scores, nil
 }
 
 func VerifySymbolExists(ctx context.Context, db *sql.DB, filePath string, symbolName string) (model.SymbolRecord, bool, error) {

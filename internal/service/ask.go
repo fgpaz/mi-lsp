@@ -71,7 +71,11 @@ func (a *App) ask(ctx context.Context, request model.CommandRequest) (model.Enve
 	}
 
 	family := docgraph.MatchFamily(question, profile)
-	ranked := rankDocs(question, family, docs)
+
+	// FTS5 primary search - gracefully degrades to nil if table unavailable
+	_, ftsScores, _ := store.FTSSearchDocs(ctx, db, question, 20)
+
+	ranked := rankDocs(question, family, docs, ftsScores)
 	if len(ranked) == 0 {
 		warnings := append([]string{}, profileWarnings...)
 		warnings = append(warnings, "no wiki match found")
@@ -99,7 +103,7 @@ func (a *App) ask(ctx context.Context, request model.CommandRequest) (model.Enve
 	return model.Envelope{Ok: true, Workspace: registration.Name, Backend: "ask", Items: []model.AskResult{result}, Warnings: warnings, Stats: model.Stats{Files: len(codeEvidence)}}, nil
 }
 
-func rankDocs(question string, family string, docs []model.DocRecord) []scoredDoc {
+func rankDocs(question string, family string, docs []model.DocRecord, ftsScores map[string]float64) []scoredDoc {
 	tokens := docgraph.QuestionTokens(question)
 	items := make([]scoredDoc, 0, len(docs))
 	for _, doc := range docs {
@@ -112,16 +116,29 @@ func rankDocs(question string, family string, docs []model.DocRecord) []scoredDo
 		score += layerWeight(family, doc.Layer)
 		if doc.DocID != "" && strings.Contains(strings.ToLower(question), strings.ToLower(doc.DocID)) {
 			score += 40
+
+		// FTS5 BM25 score is the primary signal when available
+		if ftsScores != nil {
+			if ftsScore, ok := ftsScores[doc.Path]; ok {
+				score += int(ftsScore)
+				reasons = append(reasons, "fts5=match")
+			}
+		}
+
 			reasons = append(reasons, "doc_id="+doc.DocID)
 		}
-		searchText := strings.ToLower(doc.SearchText)
-		titleText := strings.ToLower(doc.Title)
-		for _, token := range tokens {
-			if strings.Contains(titleText, token) {
-				score += 10
-			}
-			if strings.Contains(searchText, token) {
-				score += 5
+
+		// Manual token overlap - fallback when FTS5 is unavailable or as supplement
+		if ftsScores == nil {
+			searchText := strings.ToLower(doc.SearchText)
+			titleText := strings.ToLower(doc.Title)
+			for _, token := range tokens {
+				if strings.Contains(titleText, token) {
+					score += 10
+				}
+				if strings.Contains(searchText, token) {
+					score += 5
+				}
 			}
 		}
 		if score > 0 {
@@ -131,6 +148,7 @@ func rankDocs(question string, family string, docs []model.DocRecord) []scoredDo
 	sort.Slice(items, func(i, j int) bool {
 		if items[i].score == items[j].score {
 			return items[i].record.Path < items[j].record.Path
+
 		}
 		return items[i].score > items[j].score
 	})

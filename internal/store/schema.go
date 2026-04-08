@@ -73,6 +73,18 @@ CREATE TABLE IF NOT EXISTS doc_records (
 );
 `
 
+const docsFtsDDL = `
+CREATE VIRTUAL TABLE IF NOT EXISTS doc_records_fts USING fts5(
+    title,
+    doc_id,
+    search_text,
+    content='doc_records',
+    content_rowid='rowid',
+    tokenize='porter unicode61'
+);
+`
+
+
 const docEdgesDDL = `
 CREATE TABLE IF NOT EXISTS doc_edges (
     from_path TEXT NOT NULL,
@@ -101,10 +113,31 @@ CREATE TABLE IF NOT EXISTS workspace_meta (
 `
 
 func EnsureSchema(db *sql.DB) error {
-	statements := []string{reposDDL, entrypointsDDL, symbolsDDL, filesDDL, docsDDL, docEdgesDDL, docMentionsDDL, metaDDL}
+	statements := []string{reposDDL, entrypointsDDL, symbolsDDL, filesDDL, docsDDL, docsFtsDDL, docEdgesDDL, docMentionsDDL, metaDDL}
 	for _, stmt := range statements {
 		if _, err := db.Exec(stmt); err != nil {
 			return err
+		}
+	}
+
+	for _, triggerDDL := range []string{
+		`CREATE TRIGGER IF NOT EXISTS doc_records_ai AFTER INSERT ON doc_records BEGIN
+    INSERT INTO doc_records_fts(rowid, title, doc_id, search_text)
+    VALUES (new.rowid, new.title, new.doc_id, new.search_text);
+END`,
+		`CREATE TRIGGER IF NOT EXISTS doc_records_ad AFTER DELETE ON doc_records BEGIN
+    INSERT INTO doc_records_fts(doc_records_fts, rowid, title, doc_id, search_text)
+    VALUES ('delete', old.rowid, old.title, old.doc_id, old.search_text);
+END`,
+		`CREATE TRIGGER IF NOT EXISTS doc_records_au AFTER UPDATE ON doc_records BEGIN
+    INSERT INTO doc_records_fts(doc_records_fts, rowid, title, doc_id, search_text)
+    VALUES ('delete', old.rowid, old.title, old.doc_id, old.search_text);
+    INSERT INTO doc_records_fts(rowid, title, doc_id, search_text)
+    VALUES (new.rowid, new.title, new.doc_id, new.search_text);
+END`,
+	} {
+		if _, err := db.Exec(triggerDDL); err != nil {
+			return fmt.Errorf("fts trigger: %w", err)
 		}
 	}
 
