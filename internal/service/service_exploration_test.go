@@ -114,6 +114,7 @@ func TestNavService_IncludeArchetypeOptIn(t *testing.T) {
 
 func setupServiceExplorationWorkspace(t *testing.T) (string, string) {
 	t.Helper()
+	ensureWritableTestHome(t)
 
 	root := t.TempDir()
 	name := "svc-ws-" + filepath.Base(root)

@@ -12,6 +12,7 @@ import (
 
 func createIndexedWorkspaceFixture(t *testing.T, alias string) string {
 	t.Helper()
+	ensureWritableTestHome(t)
 	root := t.TempDir()
 	writeWorkspaceFile(t, root, "src/App.csproj", `<Project Sdk="Microsoft.NET.Sdk"></Project>`)
 	writeWorkspaceFile(t, root, "src/daemon/router.cs", strings.Join([]string{
@@ -41,6 +42,7 @@ func createIndexedWorkspaceFixture(t *testing.T, alias string) string {
 
 func createLinkedDocsWorkspaceFixture(t *testing.T, alias string) string {
 	t.Helper()
+	ensureWritableTestHome(t)
 	root := t.TempDir()
 	writeWorkspaceFile(t, root, "src/App.csproj", `<Project Sdk="Microsoft.NET.Sdk"></Project>`)
 	writeWorkspaceFile(t, root, "internal/service/ask.go", "package service\n\nfunc docsFirst() {}\n")
@@ -197,6 +199,7 @@ func TestNavAskPrefersExplicitLinkedDocs(t *testing.T) {
 
 func TestNavAskFallsBackWhenDocsIndexIsEmpty(t *testing.T) {
 	alias := "ask-fallback-" + filepath.Base(t.TempDir())
+	ensureWritableTestHome(t)
 	root := t.TempDir()
 	writeWorkspaceFile(t, root, "src/App.csproj", `<Project Sdk="Microsoft.NET.Sdk"></Project>`)
 	writeWorkspaceFile(t, root, "src/Program.cs", "namespace Demo;\npublic class Program {}\n")
@@ -242,6 +245,7 @@ func hasDocEvidence(items []model.AskDocEvidence, path string) bool {
 
 func TestNavAskNextQueriesIncludeRepoForContainerEvidence(t *testing.T) {
 	alias := "ask-container-" + filepath.Base(t.TempDir())
+	ensureWritableTestHome(t)
 	root := t.TempDir()
 	writeWorkspaceFile(t, root, "frontend/src/Login.tsx", "export function LoginPage() {}\n")
 	writeWorkspaceFile(t, root, ".docs/wiki/07_baseline_tecnica.md", strings.Join([]string{

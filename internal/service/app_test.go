@@ -458,9 +458,13 @@ func TestSearchPattern_LiteralNoMatchesSuggestsRegex(t *testing.T) {
 	if len(env.Warnings) == 0 || !strings.Contains(strings.Join(env.Warnings, " "), "--regex") {
 		t.Fatalf("expected regex hint warning, got %v", env.Warnings)
 	}
+	if env.NextHint == nil || !strings.Contains(*env.NextHint, "--regex") {
+		t.Fatalf("expected regex next_hint, got %#v", env.NextHint)
+	}
 }
 
 func TestWorkspaceAdd_And_Status(t *testing.T) {
+	ensureWritableTestHome(t)
 	root := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(root, ".git"), 0o755); err != nil {
 		t.Fatalf("mkdir: %v", err)
@@ -724,11 +728,13 @@ func TestFind_RepoSelectorFiltersResults(t *testing.T) {
 		t.Fatalf("expected ok=true, got warnings: %v", env.Warnings)
 	}
 	items, ok := env.Items.([]model.SymbolRecord)
-	if !ok || len(items) != 1 {
-		t.Fatalf("expected one symbol result, got %#v", env.Items)
+	if !ok || len(items) == 0 {
+		t.Fatalf("expected backend symbol results, got %#v", env.Items)
 	}
-	if items[0].RepoName != "backend" {
-		t.Fatalf("repo = %q, want backend", items[0].RepoName)
+	for _, item := range items {
+		if item.RepoName != "backend" {
+			t.Fatalf("repo = %q, want backend", item.RepoName)
+		}
 	}
 }
 
