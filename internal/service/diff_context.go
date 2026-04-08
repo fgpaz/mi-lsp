@@ -53,6 +53,13 @@ func (a *App) diffContext(ctx context.Context, request model.CommandRequest) (mo
 		return model.Envelope{}, fmt.Errorf("git diff failed: %w", err)
 	}
 
+	// Also fetch per-file change types (added/modified/deleted)
+	fileChangeTypes, err := getGitFileChangeTypes(ctx, registration.Root, ref)
+	if err != nil {
+		// Non-fatal: fall back to all "modified"
+		fileChangeTypes = make(map[string]string)
+	}
+
 	if len(changedMap) == 0 {
 		// No changes
 		return model.Envelope{
@@ -96,8 +103,10 @@ func (a *App) diffContext(ctx context.Context, request model.CommandRequest) (mo
 				continue
 			}
 
-			// Determine change type (for now all are "modified")
-			changeType := "modified"
+			changeType := fileChangeTypes[relFile]
+			if changeType == "" {
+				changeType = "modified"
+			}
 
 			key := fmt.Sprintf("%s:%d:%s", relFile, symbol.StartLine, symbol.Name)
 			if _, exists := symbolMap[key]; exists {
@@ -196,7 +205,21 @@ func getGitDiffChanges(ctx context.Context, workspaceRoot string, ref string) (m
 
 // getGitChangedFiles returns list of files changed between ref and HEAD (or working tree).
 func getGitChangedFiles(ctx context.Context, workspaceRoot string, ref string) ([]string, error) {
-	args := []string{"diff", "--name-only"}
+	fileTypes, err := getGitFileChangeTypes(ctx, workspaceRoot, ref)
+	if err != nil {
+		return nil, err
+	}
+	files := make([]string, 0, len(fileTypes))
+	for f := range fileTypes {
+		files = append(files, f)
+	}
+	return files, nil
+}
+
+// getGitFileChangeTypes returns a map of relative file path -> change type string
+// by running git diff --name-status.
+func getGitFileChangeTypes(ctx context.Context, workspaceRoot string, ref string) (map[string]string, error) {
+	args := []string{"diff", "--name-status"}
 	if ref != "" {
 		args = append(args, ref)
 	}
@@ -207,18 +230,64 @@ func getGitChangedFiles(ctx context.Context, workspaceRoot string, ref string) (
 
 	output, err := cmd.Output()
 	if err != nil {
-		return nil, fmt.Errorf("git diff --name-only failed: %w", err)
+		return nil, fmt.Errorf("git diff --name-status failed: %w", err)
 	}
 
-	var files []string
-	for _, line := range strings.Split(string(output), "\n") {
+	return parseNameStatus(string(output)), nil
+}
+
+// parseNameStatus parses the output of git diff --name-status into a map of
+// relative file path -> change type ("modified", "added", "deleted").
+// For rename (R) and copy (C) entries the new path is used as the key.
+func parseNameStatus(output string) map[string]string {
+	result := make(map[string]string)
+	for _, line := range strings.Split(output, "\n") {
 		line = strings.TrimSpace(line)
-		if line != "" {
-			files = append(files, filepath.ToSlash(line))
+		if line == "" {
+			continue
+		}
+		fields := strings.Fields(line)
+		if len(fields) < 2 {
+			continue
+		}
+		statusCode := fields[0]
+		var changeType string
+		var filePath string
+
+		switch {
+		case statusCode == "A":
+			changeType = "added"
+			filePath = filepath.ToSlash(fields[1])
+		case statusCode == "D":
+			changeType = "deleted"
+			filePath = filepath.ToSlash(fields[1])
+		case strings.HasPrefix(statusCode, "R"):
+			// Rename: fields[1]=old, fields[2]=new
+			changeType = "modified"
+			if len(fields) >= 3 {
+				filePath = filepath.ToSlash(fields[2])
+			} else {
+				filePath = filepath.ToSlash(fields[1])
+			}
+		case strings.HasPrefix(statusCode, "C"):
+			// Copy: fields[1]=source, fields[2]=dest
+			changeType = "added"
+			if len(fields) >= 3 {
+				filePath = filepath.ToSlash(fields[2])
+			} else {
+				filePath = filepath.ToSlash(fields[1])
+			}
+		default:
+			// M, T, U, X, B and anything else -> modified
+			changeType = "modified"
+			filePath = filepath.ToSlash(fields[1])
+		}
+
+		if filePath != "" {
+			result[filePath] = changeType
 		}
 	}
-
-	return files, nil
+	return result
 }
 
 // getGitDiffHunks parses git diff --unified=0 output to extract changed line numbers.
