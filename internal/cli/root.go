@@ -157,12 +157,15 @@ func (s *rootState) executeOperation(cmd *cobra.Command, operation string, paylo
 	var (
 		envelope model.Envelope
 		err      error
+		route    string
 	)
 	daemonFailed := false
 	if useDaemon {
 		envelope, err = daemon.NewClient().Execute(ctx, request)
 		if err != nil {
 			daemonFailed = true
+		} else {
+			route = "daemon"
 		}
 	}
 	if !useDaemon || daemonFailed {
@@ -170,12 +173,17 @@ func (s *rootState) executeOperation(cmd *cobra.Command, operation string, paylo
 		if err == nil && daemonFailed && envelope.Hint == "" {
 			envelope.Hint = "daemon_unavailable; served from local text index"
 		}
+		if daemonFailed {
+			route = "direct_fallback"
+		} else {
+			route = "direct"
+		}
 	}
 	latency := time.Since(started)
 
 	// Best-effort telemetry: record the operation even if it failed.
 	if s.telemetry != nil {
-		s.telemetry.RecordOperation(request, envelope, err, latency)
+		s.telemetry.RecordOperation(request, envelope, err, latency, route)
 	}
 
 	if err != nil {

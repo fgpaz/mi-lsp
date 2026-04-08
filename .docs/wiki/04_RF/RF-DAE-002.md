@@ -28,6 +28,11 @@
 | `panel` | enum | no | query/admin UI | `overview`, `activity`, `logs` | RF-DAE-002 |
 | `client_name` | string | no | CLI/env | default `manual-cli` | RF-DAE-002 |
 | `session_id` | string | no | CLI/env | puede ser omitido | RF-DAE-002 |
+| `format` | enum | no | CLI | `compact`, `json`, `text`, `toon`, `yaml` | RF-DAE-002 |
+| `token_budget` | entero | no | CLI | > 0 cuando se explicita | RF-DAE-002 |
+| `max_items` | entero | no | CLI | > 0 cuando se explicita | RF-DAE-002 |
+| `max_chars` | entero | no | CLI | >= 0 | RF-DAE-002 |
+| `compress` | booleano | no | CLI | default `false` | RF-DAE-002 |
 | `backend_type` | enum | derivado | daemon | `roslyn`, `tsserver`, `text`, `tree-sitter`, `daemon` | RF-DAE-002 |
 | `tail` | entero | no | UI/CLI | > 0 y acotado | RF-DAE-002 |
 
@@ -36,9 +41,10 @@
 1. El daemon recibe consultas desde uno o varios clientes locales.
 2. El lifecycle manager reutiliza o crea runtimes por `(workspace_root, backend_type, entrypoint_id)`.
 3. El daemon registra `AccessEvent` y actualiza `RuntimeSnapshot`.
-4. La Admin UI expone el estado actual, KPIs, accesos recientes y tabs por workspace via loopback, sin perder la agrupacion canonica por `workspace_root`.
-5. Si el usuario ejecuta `warm workspace` desde la UI, se invoca `POST /api/workspaces/{workspace}/warm` sin reiniciar el daemon.
-6. Si se exceden `max_workers` o `idle_timeout`, el daemon aplica eviction LRU.
+4. La telemetria local preserva la ruta efectiva (`direct`, `daemon`, `direct_fallback`) y el presupuesto pedido por el cliente para diferenciar fallas de seleccion vs. fallas de truncacion.
+5. La Admin UI expone el estado actual, KPIs, accesos recientes y tabs por workspace via loopback, sin perder la agrupacion canonica por `workspace_root`.
+6. Si el usuario ejecuta `warm workspace` desde la UI, se invoca `POST /api/workspaces/{workspace}/warm` sin reiniciar el daemon.
+7. Si se exceden `max_workers` o `idle_timeout`, el daemon aplica eviction LRU.
 
 ## 5. Outputs
 

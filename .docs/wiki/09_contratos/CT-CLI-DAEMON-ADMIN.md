@@ -142,10 +142,20 @@ Metadata minima en `context`:
 - `session_id`
 - `backend_hint`
 - `verbose`
+- `compress`
 
 Metadata opcional cuando aplica paginacion CLI:
 
 - `offset`
+
+Metadata operativa que debe quedar observable en `access_events` y `admin export`:
+
+- `route` (`direct`, `daemon`, `direct_fallback`)
+- `format`
+- `token_budget`
+- `max_items`
+- `max_chars`
+- `compress`
 
 ### Governance admin
 

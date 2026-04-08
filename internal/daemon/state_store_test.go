@@ -303,6 +303,63 @@ func TestRecordAccessDirect_AssignsSeqPerSession(t *testing.T) {
 	}
 }
 
+func TestRecordAccessDirect_RoundTripsRouteAndBudgetMetadata(t *testing.T) {
+	store := testStore(t)
+	defer store.Close()
+
+	event := model.AccessEvent{
+		OccurredAt:   time.Now(),
+		ClientName:   "test-cli",
+		SessionID:    "session-budget",
+		Workspace:    "multi-tedi",
+		Operation:    "nav.ask",
+		Backend:      "ask",
+		Route:        "daemon",
+		Format:       "toon",
+		TokenBudget:  2048,
+		MaxItems:     5,
+		MaxChars:     800,
+		Compress:     true,
+		Success:      true,
+		LatencyMs:    12,
+		ResultCount:  2,
+		Truncated:    true,
+		EntrypointID: "worker-dotnet::default",
+	}
+	if err := store.RecordAccessDirect(event); err != nil {
+		t.Fatalf("RecordAccessDirect: %v", err)
+	}
+
+	events, err := QueryAccessEvents(store, ExportQuery{Limit: 10})
+	if err != nil {
+		t.Fatalf("QueryAccessEvents: %v", err)
+	}
+	if len(events) != 1 {
+		t.Fatalf("len(events) = %d, want 1", len(events))
+	}
+	got := events[0]
+	if got.Route != "daemon" {
+		t.Fatalf("route = %q, want daemon", got.Route)
+	}
+	if got.Format != "toon" {
+		t.Fatalf("format = %q, want toon", got.Format)
+	}
+	if got.TokenBudget != 2048 || got.MaxItems != 5 || got.MaxChars != 800 {
+		t.Fatalf("budget metadata = (%d,%d,%d), want (2048,5,800)", got.TokenBudget, got.MaxItems, got.MaxChars)
+	}
+	if !got.Compress {
+		t.Fatal("compress = false, want true")
+	}
+
+	csv := RenderCSV(events)
+	if !strings.Contains(csv, "route,format,token_budget,max_items,max_chars,compress") {
+		t.Fatalf("csv header missing telemetry metadata: %q", csv)
+	}
+	if !strings.Contains(csv, ",daemon,toon,2048,5,800,true,") {
+		t.Fatalf("csv row missing telemetry metadata: %q", csv)
+	}
+}
+
 func init() {
 	os.Setenv("HOME", os.TempDir())
 	os.Setenv("USERPROFILE", os.TempDir())

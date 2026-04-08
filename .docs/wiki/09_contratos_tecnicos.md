@@ -70,6 +70,7 @@ El detalle por frontera vive en `09_contratos/`.
 - `init [path] [--name alias] [--no-index]`: detecta, registra e indexa el workspace actual o el path pedido
 - `workspace.remove`: elimina un workspace registrado de `registry.toml`
 - `admin export`: exporta telemetria de `access_events` desde `daemon.db`; con `--summary` agrega sobre toda la ventana filtrada salvo que `--limit` se haya seteado explicitamente
+- el export raw de `access_events` preserva metadata operativa minima del request (`route`, `format`, `token_budget`, `max_items`, `max_chars`, `compress`) para diferenciar uso directo, daemonizado y truncacion por presupuesto
 - `nav ask <question>`: responde usando wiki + evidencia de codigo y fallback generico/textual cuando haga falta; `--all-workspaces` habilita fan-out cross-workspace para el mismo contrato explainable
 - `nav service`: resume evidencia observable de un servicio en un unico summary estructurado
 - `nav context`: devuelve `slice_text` y metadatos opcionales de catalogo o backend semantico para la linea pedida

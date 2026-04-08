@@ -33,22 +33,28 @@ func NewCLITelemetry(clientName, sessionID string, verbose bool) *CLITelemetry {
 	return &CLITelemetry{store: store, clientName: clientName, sessionID: sessionID, verbose: verbose}
 }
 
-func (t *CLITelemetry) RecordOperation(request model.CommandRequest, envelope model.Envelope, opErr error, latency time.Duration) {
+func (t *CLITelemetry) RecordOperation(request model.CommandRequest, envelope model.Envelope, opErr error, latency time.Duration, route string) {
 	if t == nil || t.store == nil {
 		return
 	}
 	backend := firstNonEmpty(envelope.Backend, inferTelemetryBackend(request))
 	event := model.AccessEvent{
-		OccurredAt: time.Now(),
-		ClientName: firstNonEmpty(t.clientName, request.Context.ClientName, "manual-cli"),
-		SessionID:  firstNonEmpty(t.sessionID, request.Context.SessionID),
-		Workspace:  request.Context.Workspace,
-		Repo:       payloadStr(request.Payload, "repo"),
-		Operation:  request.Operation,
-		Backend:    backend,
-		Success:    opErr == nil && envelope.Ok,
-		LatencyMs:  latency.Milliseconds(),
-		Warnings:   envelope.Warnings,
+		OccurredAt:  time.Now(),
+		ClientName:  firstNonEmpty(t.clientName, request.Context.ClientName, "manual-cli"),
+		SessionID:   firstNonEmpty(t.sessionID, request.Context.SessionID),
+		Workspace:   request.Context.Workspace,
+		Repo:        payloadStr(request.Payload, "repo"),
+		Operation:   request.Operation,
+		Backend:     backend,
+		Route:       route,
+		Format:      request.Context.Format,
+		TokenBudget: request.Context.TokenBudget,
+		MaxItems:    request.Context.MaxItems,
+		MaxChars:    request.Context.MaxChars,
+		Compress:    request.Context.Compress,
+		Success:     opErr == nil && envelope.Ok,
+		LatencyMs:   latency.Milliseconds(),
+		Warnings:    envelope.Warnings,
 	}
 	if opErr != nil {
 		event.Error = opErr.Error()
@@ -62,7 +68,7 @@ func (t *CLITelemetry) RecordOperation(request model.CommandRequest, envelope mo
 	if maxItems <= 0 {
 		maxItems = 50
 	}
-	event.Truncated = count > 0 && count >= maxItems
+	event.Truncated = envelope.Truncated || (count > 0 && count >= maxItems)
 
 	if err := t.store.RecordAccessDirect(event); err != nil && t.verbose {
 		fmt.Fprintf(os.Stderr, "mi-lsp: telemetry record failed: %v\n", err)

@@ -30,7 +30,7 @@ La novedad de v1.3 es que el store repo-local persiste tambien el grafo document
   - `workspace_meta` con `workspace_kind`, `default_repo`, `default_entrypoint`, `doc_count`
 - `daemon.db`
   - `runtime_snapshots` con `repo_name`, `repo_root`, `entrypoint_id`, `entrypoint_path`, `entrypoint_type`
-  - `access_events` con `client_name`, `session_id`, `seq INTEGER DEFAULT 0`, `workspace_input`, `workspace_root`, `workspace_alias`, `repo`, `entrypoint_id`, `error_kind`, `error_code`, `truncated`, `result_count`
+  - `access_events` con `client_name`, `session_id`, `seq INTEGER DEFAULT 0`, `workspace_input`, `workspace_root`, `workspace_alias`, `repo`, `entrypoint_id`, `route`, `format`, `token_budget`, `max_items`, `max_chars`, `compress`, `error_kind`, `error_code`, `truncated`, `result_count`
 
 ## Reglas de consistencia y retencion
 

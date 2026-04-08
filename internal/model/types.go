@@ -289,6 +289,12 @@ type AccessEvent struct {
 	Repo           string    `json:"repo,omitempty"`
 	Operation      string    `json:"operation"`
 	Backend        string    `json:"backend,omitempty"`
+	Route          string    `json:"route,omitempty"`
+	Format         string    `json:"format,omitempty"`
+	TokenBudget    int       `json:"token_budget,omitempty"`
+	MaxItems       int       `json:"max_items,omitempty"`
+	MaxChars       int       `json:"max_chars,omitempty"`
+	Compress       bool      `json:"compress,omitempty"`
 	Success        bool      `json:"success"`
 	LatencyMs      int64     `json:"latency_ms,omitempty"`
 	Warnings       []string  `json:"warnings,omitempty"`
