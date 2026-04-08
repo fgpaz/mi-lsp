@@ -306,7 +306,7 @@ type TraceLink struct {
 	File       string  `json:"file"`
 	Symbol     string  `json:"symbol,omitempty"`
 	Kind       string  `json:"kind,omitempty"`
-	Source     string  `json:"source"`                // "wiki-marker" | "heuristic"
+	Source     string  `json:"source"` // "wiki-marker" | "heuristic"
 	Verified   bool    `json:"verified"`
 	Confidence float64 `json:"confidence,omitempty"`
 }

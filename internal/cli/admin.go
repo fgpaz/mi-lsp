@@ -105,7 +105,7 @@ func newExportCommand(state *rootState) *cobra.Command {
 				Workspace:   workspaceFlag,
 				Backend:     backendFlag,
 				ErrorsOnly:  errorsOnly,
-				Limit:       limitFlag,
+				Limit:       exportQueryLimit(limitFlag, cmd.Flags().Changed("limit"), summaryFlag),
 				WindowLabel: window.Label,
 			}
 
@@ -172,6 +172,13 @@ func newExportCommand(state *rootState) *cobra.Command {
 	command.Flags().BoolVar(&byBackendFlag, "by-backend", false, "Show backend usage histogram (requires --summary)")
 
 	return command
+}
+
+func exportQueryLimit(limitFlag int, limitChanged bool, summaryFlag bool) int {
+	if summaryFlag && !limitChanged {
+		return 0
+	}
+	return limitFlag
 }
 
 func resolveExportWindow(cmd *cobra.Command, sinceFlag string, recentFlag bool) (telemetry.Window, error) {

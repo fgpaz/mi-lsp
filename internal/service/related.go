@@ -22,11 +22,11 @@ type symbolWithContent struct {
 }
 
 type symbolNeighborhood struct {
-	Symbol       string               `json:"symbol"`
-	Definition   *symbolWithContent   `json:"definition,omitempty"`
-	Implementors []symbolWithContent  `json:"implementors,omitempty"`
-	Callers      []symbolWithContent  `json:"callers,omitempty"`
-	Tests        []symbolWithContent  `json:"tests,omitempty"`
+	Symbol       string              `json:"symbol"`
+	Definition   *symbolWithContent  `json:"definition,omitempty"`
+	Implementors []symbolWithContent `json:"implementors,omitempty"`
+	Callers      []symbolWithContent `json:"callers,omitempty"`
+	Tests        []symbolWithContent `json:"tests,omitempty"`
 }
 
 func (a *App) related(ctx context.Context, request model.CommandRequest) (model.Envelope, error) {

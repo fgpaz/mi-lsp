@@ -90,6 +90,7 @@ Parse with any YAML library, or read field values directly from `key: value` lin
 backend: text
 hint: "0 matches for \"chat\": checked 1243 files"
 items[0]:
+next_hint: rerun with --regex
 ok: true
 stats:
   tokens_est: 8
@@ -99,6 +100,7 @@ workspace: salud
 backend: text
 hint: '0 matches for "chat": checked 1243 files'
 items: []
+next_hint: rerun with --regex
 ok: true
 stats:
     tokens_est: 8
@@ -109,12 +111,12 @@ workspace: salud
 
 - Use `--format toon` by default — it is the recommended format for agent use; saves the most tokens on large `items` arrays.
 - Use `--format yaml` when you need line-by-line readability or are piping to a YAML-aware tool.
-- Use `--format toon` only when strict JSON is required (e.g., `jq` pipelines, backward-compatible scripts).
+- Use `--format compact` only when strict JSON is required (e.g., `jq` pipelines, backward-compatible scripts).
 - Never mix formats in a single session — pick one at the start and stay consistent.
 
 ## Interpreting the `hint` field
 
-All envelopes may include a `hint` field with diagnostic context:
+All envelopes may include a `hint` field with diagnostic context, and some responses may also include `next_hint` with the recommended rerun:
 
 - `"0 matches for X in workspace Y"` — pattern not found; try a different keyword or `--regex`
 - `"0 matches for X: pattern looks regex-like, rerun with --regex"` — literal search on a regex pattern
@@ -122,7 +124,9 @@ All envelopes may include a `hint` field with diagnostic context:
 - `"daemon_unavailable; served from local text index"` — daemon not running; result is textual-only
 - `"invalid path: contains newline in ..."` — multi-read arg had embedded `\n`; fix the argument
 
-If `hint` is present and `items` is empty, act on the hint before retrying. Do not retry the same command unchanged.
+If `hint` is present and `items` is empty, act on the hint before retrying. If `next_hint` is present, prefer that rerun guidance over improvising. Do not retry the same command unchanged.
+
+In cross-workspace `nav find` / `nav search` results, structured formats may include a per-item `workspace` field so agents can preserve provenance without relying on array position alone.
 
 ## Tool binding
 
@@ -146,7 +150,7 @@ Install the CLI first, verify it, and only then continue with repo navigation.
 5. Verify the install:
 
 ```powershell
-mi-lsp info
+where.exe mi-lsp
 mi-lsp worker status --format toon
 ```
 
@@ -178,8 +182,14 @@ mi-lsp daemon start
 6. Verify:
 
 ```powershell
+where.exe mi-lsp
 mi-lsp worker status --format toon
 ```
+
+### Admin export note
+
+`mi-lsp admin export --summary` aggregates over the full filtered window by default.
+Only pass `--limit` when you intentionally want to summarize a partial sample.
 
 > The worker protocol is versioned. If the CLI and worker versions are incompatible, `worker status` will warn you.
 
@@ -189,7 +199,7 @@ Windows session example:
 $installDir = Join-Path $HOME "bin\mi-lsp"
 $env:PATH = "$installDir;$env:PATH"
 where.exe mi-lsp
-mi-lsp info
+mi-lsp worker status --format toon
 ```
 
 Linux session example:
@@ -197,7 +207,7 @@ Linux session example:
 ```bash
 export PATH="$HOME/.local/opt/mi-lsp:$PATH"
 command -v mi-lsp
-mi-lsp info
+mi-lsp worker status --format toon
 ```
 
 ## First-use check

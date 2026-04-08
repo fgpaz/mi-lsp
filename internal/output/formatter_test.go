@@ -144,3 +144,42 @@ func TestCompactItems_CompressionMode(t *testing.T) {
 		t.Fatalf("expected sig field even when compress=true")
 	}
 }
+
+func TestRenderStructuredFormats_PreserveSymbolWorkspace(t *testing.T) {
+	env := model.Envelope{
+		Ok:      true,
+		Backend: "catalog",
+		Items: []model.SymbolRecord{{
+			Name:      "IExpenseRepository",
+			Kind:      "interface",
+			FilePath:  "backend/Gastos.Domain/Interfaces/IExpenseRepository.cs",
+			StartLine: 24,
+			Scope:     "public",
+			Workspace: "gastos",
+		}},
+	}
+
+	tests := []struct {
+		format    string
+		contains  []string
+	}{
+		{format: "compact", contains: []string{`"workspace":"gastos"`}},
+		{format: "toon", contains: []string{"workspace", "gastos"}},
+		{format: "yaml", contains: []string{"workspace: gastos"}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.format, func(t *testing.T) {
+			rendered, err := Render(env, tt.format, false)
+			if err != nil {
+				t.Fatalf("Render(%s): %v", tt.format, err)
+			}
+			text := string(rendered)
+			for _, expected := range tt.contains {
+				if !strings.Contains(text, expected) {
+					t.Fatalf("Render(%s) should preserve symbol workspace, got %s", tt.format, text)
+				}
+			}
+		})
+	}
+}

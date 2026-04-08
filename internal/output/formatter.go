@@ -148,6 +148,9 @@ func compactItems(items any, compress bool) any {
 				entry["impl"] = item.Implements
 				entry["sc"] = item.Scope
 			}
+			if item.Workspace != "" {
+				entry["workspace"] = item.Workspace
+			}
 			compact = append(compact, entry)
 		}
 		return compact

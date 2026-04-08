@@ -212,6 +212,37 @@ func TestQueryAccessEvents(t *testing.T) {
 	}
 }
 
+func TestQueryAccessEvents_ZeroLimitReturnsAllRows(t *testing.T) {
+	store := testStore(t)
+	defer store.Close()
+
+	for i := 0; i < 505; i++ {
+		event := model.AccessEvent{
+			OccurredAt:     time.Now().Add(time.Duration(i) * time.Second),
+			ClientName:     "bulk",
+			Workspace:      "gastos",
+			WorkspaceInput: "gastos",
+			WorkspaceRoot:  "C:/repos/mios/gastos",
+			WorkspaceAlias: "gastos",
+			Operation:      "nav.search",
+			Backend:        "text",
+			Success:        true,
+			LatencyMs:      int64(i + 1),
+		}
+		if err := store.RecordAccessDirect(event); err != nil {
+			t.Fatalf("RecordAccessDirect(%d): %v", i, err)
+		}
+	}
+
+	events, err := QueryAccessEvents(store, ExportQuery{Limit: 0})
+	if err != nil {
+		t.Fatalf("QueryAccessEvents: %v", err)
+	}
+	if len(events) != 505 {
+		t.Fatalf("len(events) = %d, want 505", len(events))
+	}
+}
+
 func TestRecordAccessDirect_AssignsSeqPerSession(t *testing.T) {
 	store := testStore(t)
 	defer store.Close()

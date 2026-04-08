@@ -214,10 +214,12 @@ func (s *Server) recordAccess(request model.CommandRequest, response model.Envel
 	if s.telemetry == nil {
 		return
 	}
+	seq := s.telemetry.NextSeq(request.Context.SessionID)
 	event := model.AccessEvent{
 		OccurredAt:   time.Now(),
 		ClientName:   firstNonEmpty(request.Context.ClientName, "manual-cli"),
 		SessionID:    request.Context.SessionID,
+		Seq:          seq,
 		Workspace:    request.Context.Workspace,
 		Repo:         payloadString(request.Payload, "repo"),
 		Operation:    request.Operation,

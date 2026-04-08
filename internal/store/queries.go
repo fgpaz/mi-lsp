@@ -205,6 +205,7 @@ func SymbolContainingLine(ctx context.Context, db *sql.DB, filePath string, line
 	`, filePath, lineNum, lineNum)
 
 	var item model.SymbolRecord
+	var searchText sql.NullString
 	err := row.Scan(
 		&item.ID,
 		&item.FilePath,
@@ -222,7 +223,7 @@ func SymbolContainingLine(ctx context.Context, db *sql.DB, filePath string, line
 		&item.Language,
 		&item.FileHash,
 		&item.Implements,
-		&item.SearchText,
+		&searchText,
 	)
 	if err != nil {
 		if err == sql.ErrNoRows {
@@ -230,6 +231,7 @@ func SymbolContainingLine(ctx context.Context, db *sql.DB, filePath string, line
 		}
 		return model.SymbolRecord{}, false, err
 	}
+	item.SearchText = searchText.String
 	return item, true, nil
 }
 
@@ -277,6 +279,7 @@ func scanSymbols(rows *sql.Rows) ([]model.SymbolRecord, error) {
 	items := make([]model.SymbolRecord, 0)
 	for rows.Next() {
 		var item model.SymbolRecord
+		var searchText sql.NullString
 		if err := rows.Scan(
 			&item.ID,
 			&item.FilePath,
@@ -294,10 +297,11 @@ func scanSymbols(rows *sql.Rows) ([]model.SymbolRecord, error) {
 			&item.Language,
 			&item.FileHash,
 			&item.Implements,
-			&item.SearchText,
+			&searchText,
 		); err != nil {
 			return nil, err
 		}
+		item.SearchText = searchText.String
 		items = append(items, item)
 	}
 	return items, rows.Err()

@@ -60,7 +60,7 @@ type ExportSummary struct {
 }
 
 func QueryAccessEvents(store *TelemetryStore, query ExportQuery) ([]model.AccessEvent, error) {
-	if query.Limit <= 0 {
+	if query.Limit < 0 {
 		query.Limit = 500
 	}
 
@@ -87,8 +87,11 @@ func QueryAccessEvents(store *TelemetryStore, query ExportQuery) ([]model.Access
 	if len(conditions) > 0 {
 		sql += " WHERE " + strings.Join(conditions, " AND ")
 	}
-	sql += " ORDER BY occurred_at DESC, id DESC LIMIT ?"
-	args = append(args, query.Limit)
+	sql += " ORDER BY occurred_at DESC, id DESC"
+	if query.Limit > 0 {
+		sql += " LIMIT ?"
+		args = append(args, query.Limit)
+	}
 
 	rows, err := store.db.Query(sql, args...)
 	if err != nil {
@@ -96,7 +99,14 @@ func QueryAccessEvents(store *TelemetryStore, query ExportQuery) ([]model.Access
 	}
 	defer rows.Close()
 
-	items := make([]model.AccessEvent, 0, query.Limit)
+	capHint := query.Limit
+	switch {
+	case capHint <= 0:
+		capHint = 64
+	case capHint > 512:
+		capHint = 512
+	}
+	items := make([]model.AccessEvent, 0, capHint)
 	for rows.Next() {
 		item, err := scanAccessEvent(rows)
 		if err != nil {

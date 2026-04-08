@@ -116,13 +116,6 @@ func rankDocs(question string, family string, docs []model.DocRecord, ftsScores 
 	for _, doc := range docs {
 		score := 0
 		reasons := make([]string, 0, 4)
-		if doc.Family == family {
-			score += 30
-			reasons = append(reasons, "family="+family)
-		}
-		score += layerWeight(family, doc.Layer)
-		if doc.DocID != "" && strings.Contains(strings.ToLower(question), strings.ToLower(doc.DocID)) {
-			score += 40
 
 		// FTS5 BM25 score is the primary signal when available
 		if ftsScores != nil {
@@ -132,6 +125,13 @@ func rankDocs(question string, family string, docs []model.DocRecord, ftsScores 
 			}
 		}
 
+		if doc.Family == family {
+			score += 30
+			reasons = append(reasons, "family="+family)
+		}
+		score += layerWeight(family, doc.Layer)
+		if doc.DocID != "" && strings.Contains(strings.ToLower(question), strings.ToLower(doc.DocID)) {
+			score += 40
 			reasons = append(reasons, "doc_id="+doc.DocID)
 		}
 
@@ -148,6 +148,7 @@ func rankDocs(question string, family string, docs []model.DocRecord, ftsScores 
 				}
 			}
 		}
+
 		if score > 0 {
 			items = append(items, scoredDoc{record: doc, score: score, reason: reasons})
 		}
@@ -155,7 +156,6 @@ func rankDocs(question string, family string, docs []model.DocRecord, ftsScores 
 	sort.Slice(items, func(i, j int) bool {
 		if items[i].score == items[j].score {
 			return items[i].record.Path < items[j].record.Path
-
 		}
 		return items[i].score > items[j].score
 	})

@@ -371,6 +371,61 @@ func TestCatalogQueries_WithOffset(t *testing.T) {
 	}
 }
 
+func TestSymbolQueries_HandleNullSearchText(t *testing.T) {
+	db, _ := seedTestDB(t)
+	ctx := context.Background()
+
+	_, err := db.ExecContext(ctx, `
+		INSERT INTO symbols(
+			id, file_path, repo_id, repo_name, name, kind, start_line, end_line,
+			parent, qualified_name, signature, signature_hash, scope, language,
+			file_hash, implements, search_text
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)
+	`,
+		1,
+		".claude/scripts/ux_ui_exploration.py",
+		"main",
+		"main",
+		"log_errors",
+		"function",
+		33,
+		33,
+		"",
+		".claude/scripts/ux_ui_exploration.py::log_errors",
+		"",
+		"sig-hash",
+		"module",
+		"python",
+		"file-hash",
+		"",
+	)
+	if err != nil {
+		t.Fatalf("insert symbol: %v", err)
+	}
+
+	found, err := FindSymbols(ctx, db, "log_errors", "", true, 10, 0)
+	if err != nil {
+		t.Fatalf("FindSymbols exact with NULL search_text: %v", err)
+	}
+	if len(found) != 1 {
+		t.Fatalf("FindSymbols exact with NULL search_text: want 1 result, got %d", len(found))
+	}
+	if found[0].SearchText != "" {
+		t.Fatalf("FindSymbols exact with NULL search_text: SearchText = %q, want empty string", found[0].SearchText)
+	}
+
+	byFile, err := SymbolsByFile(ctx, db, ".claude/scripts/ux_ui_exploration.py", 10, 0)
+	if err != nil {
+		t.Fatalf("SymbolsByFile with NULL search_text: %v", err)
+	}
+	if len(byFile) != 1 {
+		t.Fatalf("SymbolsByFile with NULL search_text: want 1 result, got %d", len(byFile))
+	}
+	if byFile[0].SearchText != "" {
+		t.Fatalf("SymbolsByFile with NULL search_text: SearchText = %q, want empty string", byFile[0].SearchText)
+	}
+}
+
 func TestCandidateReposForSymbol_Fuzzy(t *testing.T) {
 	db, _ := seedTestDB(t)
 	ctx := context.Background()

@@ -332,17 +332,20 @@ func (a *App) search(ctx context.Context, request model.CommandRequest) (model.E
 	}
 
 	hint := ""
+	var nextHint *string
 	if len(items) == 0 {
 		if ctx.Err() != nil {
 			hint = fmt.Sprintf("0 matches for %q: search timed out (context cancelled)", pattern)
 		} else if !useRegex && looksRegexLikePattern(pattern) {
 			hint = fmt.Sprintf("0 matches for %q: pattern looks regex-like, rerun with --regex", pattern)
+			rerun := "rerun with --regex"
+			nextHint = &rerun
 		} else {
 			hint = fmt.Sprintf("0 matches for %q in workspace %s", pattern, registration.Name)
 		}
 	}
 
-	return model.Envelope{Ok: true, Workspace: registration.Name, Backend: "text", Items: items, Warnings: warnings, Hint: hint, Stats: model.Stats{Files: len(items)}}, nil
+	return model.Envelope{Ok: true, Workspace: registration.Name, Backend: "text", Items: items, Warnings: warnings, Hint: hint, NextHint: nextHint, Stats: model.Stats{Files: len(items)}}, nil
 }
 
 func (a *App) installWorker(request model.CommandRequest) (model.Envelope, error) {
@@ -564,8 +567,13 @@ func (a *App) searchAllWorkspaces(ctx context.Context, request model.CommandRequ
 		}
 	}
 
+	var nextHint *string
+	if len(allItems) == 0 && !useRegex && looksRegexLikePattern(pattern) {
+		rerun := "rerun with --regex"
+		nextHint = &rerun
+	}
 
-	return model.Envelope{Ok: true, Backend: "text", Items: allItems, Warnings: allWarnings, Stats: model.Stats{Files: len(allItems)}}, nil
+	return model.Envelope{Ok: true, Backend: "text", Items: allItems, Warnings: allWarnings, NextHint: nextHint, Stats: model.Stats{Files: len(allItems)}}, nil
 }
 
 func (a *App) findAllWorkspaces(ctx context.Context, request model.CommandRequest) (model.Envelope, error) {

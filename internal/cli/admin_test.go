@@ -22,3 +22,27 @@ func TestResolveExportWindowUsesRecentPreset(t *testing.T) {
 		t.Fatalf("Name = %q, want recent", window.Name)
 	}
 }
+
+func TestExportQueryLimit(t *testing.T) {
+	tests := []struct {
+		name         string
+		limitFlag    int
+		limitChanged bool
+		summary      bool
+		want         int
+	}{
+		{name: "raw export keeps default limit", limitFlag: 500, limitChanged: false, summary: false, want: 500},
+		{name: "raw export keeps explicit limit", limitFlag: 1000, limitChanged: true, summary: false, want: 1000},
+		{name: "summary ignores default limit", limitFlag: 500, limitChanged: false, summary: true, want: 0},
+		{name: "summary keeps explicit limit", limitFlag: 1000, limitChanged: true, summary: true, want: 1000},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := exportQueryLimit(tt.limitFlag, tt.limitChanged, tt.summary)
+			if got != tt.want {
+				t.Fatalf("exportQueryLimit(%d, %t, %t) = %d, want %d", tt.limitFlag, tt.limitChanged, tt.summary, got, tt.want)
+			}
+		})
+	}
+}

@@ -294,7 +294,8 @@ func detectDependencies(services []serviceMapEntry, serviceEvents []serviceEvent
 
 // extractEventType extracts the event type name from IConsumer<EventType> or Publish<EventType> patterns.
 // Examples: "IConsumer<OrderCreatedEvent>" -> "OrderCreatedEvent"
-//           "await publishEndpoint.Publish<OrderCreatedEvent>" -> "OrderCreatedEvent"
+//
+//	"await publishEndpoint.Publish<OrderCreatedEvent>" -> "OrderCreatedEvent"
 func extractEventType(text string) string {
 	// Match IConsumer<EventType>
 	matches := consumerEventRegex.FindStringSubmatch(text)
