@@ -14,6 +14,8 @@
 /.docs/*
 !/.docs/wiki/
 !/.docs/wiki/**
+!/.docs/planificacion/
+!/.docs/planificacion/**
 /.docs/tmp/
 /docs/plans/
 /docs/policies/
