@@ -26,10 +26,13 @@ Do not infer "not implemented" only because a guessed command or handler class i
 ## Workspace orientation
 
 ```powershell
+mi-lsp nav governance --workspace <alias> --format compact
 mi-lsp nav ask "how is this workspace organized?" --workspace <alias>
 mi-lsp nav workspace-map --workspace <alias> --axi --format compact
 mi-lsp nav related <important-symbol> --workspace <alias> --format compact
 ```
+
+If governance is blocked, stop normal exploration and repair the governance document/projection first.
 
 ## PR review / impact analysis
 

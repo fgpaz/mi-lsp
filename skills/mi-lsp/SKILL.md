@@ -12,7 +12,7 @@ Prefer the AXI-default surfaces for onboarding and discovery: `mi-lsp`, `init`, 
 Use `nav route` as the cheapest first orientation step — it resolves the canonical anchor doc from governance alone without touching the index.
 Use `nav ask` without `--axi` for richer orientation questions when you need evidence synthesis.
 Prefer `nav search --include-content` for implementation questions.
-Use `--classic` when you want the old CLI behavior on an AXI-default surface, and `--axi` only when you need to force AXI on a classic-default surface such as `nav workspace-map`.
+Use `--classic` when you want the old CLI behavior on an AXI-default surface, and `--axi` only when you need to force AXI on a classic-default surface such as `nav workspace-map`. Use `--axi=false` to suppress the AXI default for a single invocation without affecting `MI_LSP_AXI` or the session.
 Prefer an explicit `--workspace <alias>` once the repo is registered.
 Prefer compound commands over sequential greps and full-file reads.
 
@@ -125,6 +125,22 @@ workspace: salud
 - Use `--format yaml` when you need line-by-line readability or are piping to a YAML-aware tool.
 - Use `--format compact` only when strict JSON is required (e.g., `jq` pipelines, backward-compatible scripts).
 - Never mix formats in a single session — pick one at the start and stay consistent.
+
+> **AXI auto-format:** When AXI is active (`--axi`, `MI_LSP_AXI=1`, or an AXI-default surface) and you did not pass `--format` explicitly, the CLI selects TOON automatically. You do not need to add `--format toon` in those cases.
+
+## AXI mode
+
+| Precedence | Source |
+|---|---|
+| 1 (highest) | `--classic` explicit flag |
+| 2 | `MI_LSP_AXI=1` env var |
+| 3 | `--axi=false` surface override |
+| 4 | `--axi` explicit flag |
+| 5 (lowest) | per-surface default |
+
+- **`--axi=false`** disables the AXI default for a single invocation. Use it when you want classic output on an AXI-default surface without setting `--classic` for the whole command.
+- **`--axi` + `--classic` together are invalid** — the CLI errors immediately before running the operation. Do not combine them expecting a silent fallback.
+- **TOON is automatic under active AXI** — if AXI is effective and you did not pass `--format`, the CLI picks TOON. Explicit `--format` always wins.
 
 ## Interpreting the `hint` field
 
@@ -276,6 +292,8 @@ Use these commands first:
 
 - Open the discovery home: `mi-lsp`
 - Cheapest canonical orientation (no index needed): `mi-lsp nav route "how is this workspace organized?" --workspace <alias> --format toon`
+- Canonical reading pack for a task: `mi-lsp nav pack "understand authentication flow" --workspace <alias>`
+- Reading pack anchored to an RF spec: `mi-lsp nav pack "how does login work" --rf RF-AUTH-001 --workspace <alias>`
 - Richer orientation with evidence: `mi-lsp nav ask "how is this workspace organized?" --workspace <alias>`
 - Read 2+ file slices: `mi-lsp nav multi-read file1:1-120 file2:40-160 --workspace <alias> --format toon`
 - Search and see code inline: `mi-lsp nav search "billing retry" --include-content --workspace <alias>`
@@ -344,6 +362,7 @@ Use `mi-lsp` first for repo navigation, docs-first Q&A, symbol lookup, service a
 - Start with `mi-lsp`, `workspace status`, `nav route`, or `nav intent` for the first pass on a new repo.
 - Use `nav route` as the cheapest orientation step — it resolves the canonical anchor doc from governance without touching the index (Tier 1), then enriches from the index when available (Tier 2). AXI-default preview-first.
 - Use `nav ask` for richer orientation when you need full evidence synthesis and next queries.
+- Use `nav pack` to build a canonical reading pack docs-first for a task. It uses the same routing core as `nav route` and returns `mode=preview|full`, per-doc `stage` (`anchor|preview|discovery`), and `next_queries`. Anchor optionally with `--rf`, `--fl`, or `--doc`.
 - Use `nav search --include-content` before `nav ask` for literal implementation questions like "where is X implemented?".
 - Use `nav intent` to find code by purpose when you don't know the symbol name.
 - Use `nav trace` to check which code implements a specific RF requirement.
@@ -400,6 +419,7 @@ Do not suggest `node_modules/`; it is already ignored by default.
 - Mention the selected repo when answering from a container workspace.
 - If results are truncated, rerun narrower or explain how to narrow them.
 - For `nav ask`, include the primary doc, the strongest code evidence, and one or two follow-up commands.
+- For `nav route` and `nav pack`, each doc in the result carries a `stage` field: `anchor` (canonical anchor doc), `preview` (mini pack preview), or `discovery` (advisory, non-authoritative). Use this to distinguish source authority without relying on array position.
 - If AXI emits `next_hint` toward `--full`, prefer that rerun before inventing a broader command.
 - Do not append `--axi` to reruns on AXI-default surfaces unless you are crossing into a classic-default command.
 
