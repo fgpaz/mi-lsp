@@ -23,15 +23,15 @@ func ReplaceDocs(ctx context.Context, db *sql.DB, docs []model.DocRecord, edges 
 
 	if len(docs) > 0 {
 		stmt, err := tx.PrepareContext(ctx, `
-			INSERT INTO doc_records(path, title, doc_id, layer, family, snippet, search_text, content_hash, indexed_at)
-			VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)
+			INSERT INTO doc_records(path, title, doc_id, layer, family, snippet, search_text, content_hash, indexed_at, is_snapshot)
+			VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		`)
 		if err != nil {
 			return err
 		}
 		defer stmt.Close()
 		for _, doc := range docs {
-			if _, err := stmt.ExecContext(ctx, doc.Path, doc.Title, doc.DocID, doc.Layer, doc.Family, doc.Snippet, doc.SearchText, doc.ContentHash, doc.IndexedAt); err != nil {
+			if _, err := stmt.ExecContext(ctx, doc.Path, doc.Title, doc.DocID, doc.Layer, doc.Family, doc.Snippet, doc.SearchText, doc.ContentHash, doc.IndexedAt, doc.IsSnapshot); err != nil {
 				return err
 			}
 		}
@@ -77,7 +77,7 @@ func ReplaceDocs(ctx context.Context, db *sql.DB, docs []model.DocRecord, edges 
 
 func ListDocRecords(ctx context.Context, db *sql.DB) ([]model.DocRecord, error) {
 	rows, err := db.QueryContext(ctx, `
-		SELECT path, title, doc_id, layer, family, snippet, search_text, content_hash, indexed_at
+		SELECT path, title, doc_id, layer, family, snippet, search_text, content_hash, indexed_at, is_snapshot
 		FROM doc_records
 		ORDER BY family ASC, layer ASC, path ASC
 	`)
@@ -88,7 +88,7 @@ func ListDocRecords(ctx context.Context, db *sql.DB) ([]model.DocRecord, error) 
 	items := make([]model.DocRecord, 0)
 	for rows.Next() {
 		var item model.DocRecord
-		if err := rows.Scan(&item.Path, &item.Title, &item.DocID, &item.Layer, &item.Family, &item.Snippet, &item.SearchText, &item.ContentHash, &item.IndexedAt); err != nil {
+		if err := rows.Scan(&item.Path, &item.Title, &item.DocID, &item.Layer, &item.Family, &item.Snippet, &item.SearchText, &item.ContentHash, &item.IndexedAt, &item.IsSnapshot); err != nil {
 			return nil, err
 		}
 		items = append(items, item)
