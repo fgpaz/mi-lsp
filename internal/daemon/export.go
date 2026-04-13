@@ -12,12 +12,22 @@ import (
 )
 
 type ExportQuery struct {
-	Since       time.Time
-	Workspace   string
-	Backend     string
-	ErrorsOnly  bool
-	Limit       int
-	WindowLabel string
+	Since          time.Time
+	Workspace      string
+	Backend        string
+	Operation      string
+	SessionID      string
+	ClientName     string
+	Route          string
+	Format         string
+	Truncated      *bool
+	PatternMode    string
+	RoutingOutcome string
+	FailureStage   string
+	HintCode       string
+	ErrorsOnly     bool
+	Limit          int
+	WindowLabel    string
 }
 
 type WorkspaceStat struct {
@@ -54,6 +64,10 @@ type ExportSummary struct {
 	WindowLabel            string                   `json:"window_label,omitempty"`
 	ByWorkspace            map[string]WorkspaceStat `json:"by_workspace"`
 	ByOperation            map[string]WorkspaceStat `json:"by_operation,omitempty"`
+	ByRoute                map[string]WorkspaceStat `json:"by_route,omitempty"`
+	ByClient               map[string]WorkspaceStat `json:"by_client,omitempty"`
+	ByHintCode             map[string]WorkspaceStat `json:"by_hint_code,omitempty"`
+	ByFailureStage         map[string]WorkspaceStat `json:"by_failure_stage,omitempty"`
 	TopErrors              []ErrorFrequency         `json:"top_errors"`
 	ByBackend              []BackendHistogram       `json:"by_backend,omitempty"`
 	ByOperationPercentiles []OperationPercentiles   `json:"by_operation_percentiles,omitempty"`
@@ -79,11 +93,51 @@ func QueryAccessEvents(store *TelemetryStore, query ExportQuery) ([]model.Access
 		conditions = append(conditions, "backend = ?")
 		args = append(args, query.Backend)
 	}
+	if query.Operation != "" {
+		conditions = append(conditions, "operation = ?")
+		args = append(args, query.Operation)
+	}
+	if query.SessionID != "" {
+		conditions = append(conditions, "COALESCE(session_id, '') = ?")
+		args = append(args, query.SessionID)
+	}
+	if query.ClientName != "" {
+		conditions = append(conditions, "COALESCE(client_name, '') = ?")
+		args = append(args, query.ClientName)
+	}
+	if query.Route != "" {
+		conditions = append(conditions, "COALESCE(route, '') = ?")
+		args = append(args, query.Route)
+	}
+	if query.Format != "" {
+		conditions = append(conditions, "COALESCE(format, '') = ?")
+		args = append(args, query.Format)
+	}
+	if query.Truncated != nil {
+		conditions = append(conditions, "COALESCE(truncated, 0) = ?")
+		args = append(args, boolToInt(*query.Truncated))
+	}
+	if query.PatternMode != "" {
+		conditions = append(conditions, "COALESCE(NULLIF(pattern_mode, ''), 'none') = ?")
+		args = append(args, query.PatternMode)
+	}
+	if query.RoutingOutcome != "" {
+		conditions = append(conditions, "COALESCE(NULLIF(routing_outcome, ''), CASE WHEN COALESCE(route, '') = 'direct_fallback' THEN 'direct_fallback' WHEN COALESCE(backend, '') = 'router' THEN 'router_error' WHEN COALESCE(repo, '') != '' THEN 'narrowed_repo' ELSE 'direct' END) = ?")
+		args = append(args, query.RoutingOutcome)
+	}
+	if query.FailureStage != "" {
+		conditions = append(conditions, "COALESCE(NULLIF(failure_stage, ''), 'none') = ?")
+		args = append(args, query.FailureStage)
+	}
+	if query.HintCode != "" {
+		conditions = append(conditions, "COALESCE(hint_code, '') = ?")
+		args = append(args, query.HintCode)
+	}
 	if query.ErrorsOnly {
 		conditions = append(conditions, "(success = 0 OR error_text IS NOT NULL AND error_text != '' OR error_code IS NOT NULL AND error_code != '')")
 	}
 
-	sql := `SELECT id, occurred_at, COALESCE(client_name, ''), COALESCE(session_id, ''), COALESCE(seq, 0), COALESCE(workspace, ''), COALESCE(workspace_input, ''), COALESCE(workspace_root, ''), COALESCE(workspace_alias, ''), COALESCE(repo, ''), operation, COALESCE(backend, ''), COALESCE(route, ''), COALESCE(format, ''), COALESCE(token_budget, 0), COALESCE(max_items, 0), COALESCE(max_chars, 0), COALESCE(compress, 0), success, latency_ms, COALESCE(warnings_json, '[]'), COALESCE(runtime_key, ''), COALESCE(entrypoint_id, ''), COALESCE(error_text, ''), COALESCE(error_kind, ''), COALESCE(error_code, ''), COALESCE(truncated, 0), COALESCE(result_count, 0) FROM access_events`
+	sql := `SELECT id, occurred_at, COALESCE(client_name, ''), COALESCE(session_id, ''), COALESCE(seq, 0), COALESCE(workspace, ''), COALESCE(workspace_input, ''), COALESCE(workspace_root, ''), COALESCE(workspace_alias, ''), COALESCE(repo, ''), operation, COALESCE(backend, ''), COALESCE(route, ''), COALESCE(format, ''), COALESCE(token_budget, 0), COALESCE(max_items, 0), COALESCE(max_chars, 0), COALESCE(compress, 0), success, latency_ms, COALESCE(warnings_json, '[]'), COALESCE(runtime_key, ''), COALESCE(entrypoint_id, ''), COALESCE(error_text, ''), COALESCE(error_kind, ''), COALESCE(error_code, ''), COALESCE(truncated, 0), COALESCE(result_count, 0), COALESCE(warning_count, 0), COALESCE(pattern_mode, ''), COALESCE(routing_outcome, ''), COALESCE(failure_stage, ''), COALESCE(hint_code, ''), COALESCE(truncation_reason, ''), COALESCE(decision_json, '') FROM access_events`
 	if len(conditions) > 0 {
 		sql += " WHERE " + strings.Join(conditions, " AND ")
 	}
@@ -119,13 +173,21 @@ func QueryAccessEvents(store *TelemetryStore, query ExportQuery) ([]model.Access
 
 func ComputeExportSummary(events []model.AccessEvent) ExportSummary {
 	summary := ExportSummary{
-		TotalOps:    len(events),
-		ByWorkspace: map[string]WorkspaceStat{},
-		ByOperation: map[string]WorkspaceStat{},
+		TotalOps:       len(events),
+		ByWorkspace:    map[string]WorkspaceStat{},
+		ByOperation:    map[string]WorkspaceStat{},
+		ByRoute:        map[string]WorkspaceStat{},
+		ByClient:       map[string]WorkspaceStat{},
+		ByHintCode:     map[string]WorkspaceStat{},
+		ByFailureStage: map[string]WorkspaceStat{},
 	}
 
 	workspaceBuckets := map[string]*bucket{}
 	operationBuckets := map[string]*bucket{}
+	routeBuckets := map[string]*bucket{}
+	clientBuckets := map[string]*bucket{}
+	hintBuckets := map[string]*bucket{}
+	failureStageBuckets := map[string]*bucket{}
 	errorMap := map[string]*struct {
 		kind       string
 		code       string
@@ -138,6 +200,12 @@ func ComputeExportSummary(events []model.AccessEvent) ExportSummary {
 		event := telemetry.NormalizeAccessEvent(raw)
 		updateBucket(workspaceBuckets, safeKey(telemetry.WorkspaceAnalyticsKey(event), "unscoped"), event)
 		updateBucket(operationBuckets, safeKey(event.Operation, "unknown"), event)
+		updateBucket(routeBuckets, safeKey(event.Route, "unknown"), event)
+		updateBucket(clientBuckets, safeKey(event.ClientName, "unknown"), event)
+		if strings.TrimSpace(event.HintCode) != "" {
+			updateBucket(hintBuckets, event.HintCode, event)
+		}
+		updateBucket(failureStageBuckets, safeKey(event.FailureStage, "none"), event)
 
 		if event.Error != "" || event.ErrorCode != "" {
 			key := safeKey(event.ErrorCode, safeKey(event.Error, "unknown_error"))
@@ -170,6 +238,18 @@ func ComputeExportSummary(events []model.AccessEvent) ExportSummary {
 	}
 	for key, b := range operationBuckets {
 		summary.ByOperation[key] = summarizeBucket(b)
+	}
+	for key, b := range routeBuckets {
+		summary.ByRoute[key] = summarizeBucket(b)
+	}
+	for key, b := range clientBuckets {
+		summary.ByClient[key] = summarizeBucket(b)
+	}
+	for key, b := range hintBuckets {
+		summary.ByHintCode[key] = summarizeBucket(b)
+	}
+	for key, b := range failureStageBuckets {
+		summary.ByFailureStage[key] = summarizeBucket(b)
 	}
 
 	topErrors := make([]ErrorFrequency, 0, len(errorMap))
@@ -206,7 +286,9 @@ func updateBucket(buckets map[string]*bucket, key string, event model.AccessEven
 	if !event.Success {
 		b.errors++
 	}
-	if len(event.Warnings) > 0 {
+	if event.WarningCount > 0 {
+		b.warnings += event.WarningCount
+	} else if len(event.Warnings) > 0 {
 		b.warnings += len(event.Warnings)
 	}
 }
@@ -322,6 +404,22 @@ func RenderSummaryTable(summary ExportSummary) string {
 		b.WriteString("\n")
 		renderStatsTable(&b, "By operation", "Operation", summary.ByOperation)
 	}
+	if len(summary.ByRoute) > 0 {
+		b.WriteString("\n")
+		renderStatsTable(&b, "By route", "Route", summary.ByRoute)
+	}
+	if len(summary.ByClient) > 0 {
+		b.WriteString("\n")
+		renderStatsTable(&b, "By client", "Client", summary.ByClient)
+	}
+	if len(summary.ByHintCode) > 0 {
+		b.WriteString("\n")
+		renderStatsTable(&b, "By hint code", "Hint code", summary.ByHintCode)
+	}
+	if len(summary.ByFailureStage) > 0 {
+		b.WriteString("\n")
+		renderStatsTable(&b, "By failure stage", "Failure stage", summary.ByFailureStage)
+	}
 
 	if len(summary.ByBackend) > 0 {
 		fmt.Fprintf(&b, "\n By backend:\n")
@@ -380,14 +478,15 @@ func renderStatsTable(builder *strings.Builder, title string, header string, sta
 
 func RenderCSV(events []model.AccessEvent) string {
 	var b strings.Builder
-	b.WriteString("id,occurred_at,client_name,session_id,seq,workspace,workspace_input,workspace_root,workspace_alias,repo,operation,backend,route,format,token_budget,max_items,max_chars,compress,success,latency_ms,error,error_kind,error_code,result_count,truncated\n")
+	b.WriteString("id,occurred_at,client_name,session_id,seq,workspace,workspace_input,workspace_root,workspace_alias,repo,operation,backend,route,format,token_budget,max_items,max_chars,compress,success,latency_ms,error,error_kind,error_code,result_count,truncated,warning_count,pattern_mode,routing_outcome,failure_stage,hint_code,truncation_reason,decision_json\n")
 	for _, raw := range events {
 		e := telemetry.NormalizeAccessEvent(raw)
-		fmt.Fprintf(&b, "%d,%s,%s,%s,%d,%s,%s,%s,%s,%s,%s,%s,%s,%s,%d,%d,%d,%t,%t,%d,%s,%s,%s,%d,%t\n",
+		fmt.Fprintf(&b, "%d,%s,%s,%s,%d,%s,%s,%s,%s,%s,%s,%s,%s,%s,%d,%d,%d,%t,%t,%d,%s,%s,%s,%d,%t,%d,%s,%s,%s,%s,%s,%s\n",
 			e.ID, e.OccurredAt.Format(time.RFC3339), e.ClientName, e.SessionID, e.Seq,
 			e.Workspace, csvEscape(e.WorkspaceInput), csvEscape(e.WorkspaceRoot), csvEscape(e.WorkspaceAlias), e.Repo, e.Operation, e.Backend,
 			e.Route, e.Format, e.TokenBudget, e.MaxItems, e.MaxChars, e.Compress,
-			e.Success, e.LatencyMs, csvEscape(e.Error), csvEscape(e.ErrorKind), csvEscape(e.ErrorCode), e.ResultCount, e.Truncated)
+			e.Success, e.LatencyMs, csvEscape(e.Error), csvEscape(e.ErrorKind), csvEscape(e.ErrorCode), e.ResultCount, e.Truncated,
+			e.WarningCount, e.PatternMode, e.RoutingOutcome, e.FailureStage, e.HintCode, e.TruncationReason, csvEscape(e.DecisionJSON))
 	}
 	return b.String()
 }

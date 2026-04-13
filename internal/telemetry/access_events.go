@@ -55,6 +55,30 @@ func NormalizeAccessEvent(event model.AccessEvent) model.AccessEvent {
 			event.ErrorCode = info.Code
 		}
 	}
+	if event.WarningCount == 0 && len(event.Warnings) > 0 {
+		event.WarningCount = len(event.Warnings)
+	}
+	if strings.TrimSpace(event.PatternMode) == "" {
+		event.PatternMode = "none"
+	}
+	if strings.TrimSpace(event.RoutingOutcome) == "" {
+		switch {
+		case strings.EqualFold(strings.TrimSpace(event.Route), "direct_fallback"):
+			event.RoutingOutcome = "direct_fallback"
+		case strings.EqualFold(strings.TrimSpace(event.Backend), "router"):
+			event.RoutingOutcome = "router_error"
+		case strings.TrimSpace(event.Repo) != "":
+			event.RoutingOutcome = "narrowed_repo"
+		default:
+			event.RoutingOutcome = "direct"
+		}
+	}
+	if strings.TrimSpace(event.FailureStage) == "" {
+		event.FailureStage = "none"
+	}
+	if strings.TrimSpace(event.TruncationReason) == "" {
+		event.TruncationReason = "none"
+	}
 	return event
 }
 

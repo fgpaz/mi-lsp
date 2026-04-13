@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/fgpaz/mi-lsp/internal/docgraph"
 	"github.com/fgpaz/mi-lsp/internal/indexer"
 	"github.com/fgpaz/mi-lsp/internal/model"
 	"github.com/fgpaz/mi-lsp/internal/store"
@@ -57,9 +58,15 @@ func (a *App) registerWorkspace(ctx context.Context, request model.CommandReques
 		}
 	}
 	if backend == "init" {
-		item["next_steps"] = []string{
-			"mi-lsp nav ask \"how is this workspace organized?\" --workspace " + alias + " --format compact",
-			"mi-lsp workspace status " + alias + " --format compact",
+		if isAXIMode(request.Context) {
+			item["view"] = "preview"
+			item["next_steps"] = buildWorkspaceAXINextSteps(alias)
+		} else {
+			item["next_steps"] = []string{
+				"mi-lsp nav governance --workspace " + alias + " --format compact",
+				"mi-lsp nav ask \"how is this workspace organized?\" --workspace " + alias + " --format compact",
+				"mi-lsp workspace status " + alias + " --format compact",
+			}
 		}
 	}
 	return model.Envelope{Ok: true, Workspace: alias, Backend: backend, Items: []map[string]any{item}, Warnings: warnings}, nil
@@ -105,7 +112,7 @@ func (a *App) workspaceList() (model.Envelope, error) {
 	return model.Envelope{Ok: true, Backend: "registry", Items: items}, nil
 }
 
-func (a *App) workspaceStatus(ctx context.Context, name string) (model.Envelope, error) {
+func (a *App) workspaceStatus(ctx context.Context, name string, opts model.QueryOptions) (model.Envelope, error) {
 	registration, project, err := a.resolveWorkspaceWithProject(name)
 	if err != nil {
 		return model.Envelope{}, err
@@ -114,16 +121,57 @@ func (a *App) workspaceStatus(ctx context.Context, name string) (model.Envelope,
 	item["repos"] = project.Repos
 	item["entrypoints"] = project.Entrypoints
 	item["docs_read_model"] = workspaceProfileHint(registration.Root)
+	governance := docgraph.InspectGovernance(registration.Root, true)
+	item["governance_doc"] = governance.HumanDoc
+	item["governance_projection"] = governance.ProjectionDoc
+	item["governance_profile"] = governance.Profile
+	item["governance_extends"] = governance.Extends
+	item["governance_base"] = governance.EffectiveBase
+	item["governance_overlays"] = governance.EffectiveOverlays
+	item["governance_sync"] = governance.Sync
+	item["governance_index_sync"] = governance.IndexSync
+	item["governance_blocked"] = governance.Blocked
+	item["governance_summary"] = governance.Summary
 	db, err := store.Open(registration.Root)
 	if err != nil {
-		return model.Envelope{Ok: true, Workspace: registration.Name, Backend: "sqlite", Items: []any{item}, Warnings: []string{"workspace has no index yet"}}, nil
+		item["index_ready"] = false
+		item["docs_ready"] = item["docs_read_model"] != "builtin-default"
+		warnings := []string{"workspace has no index yet"}
+		warnings = append(warnings, governance.Warnings...)
+		if governance.Blocked {
+			warnings = append(warnings, governance.Issues...)
+		}
+		envelope := model.Envelope{Ok: true, Workspace: registration.Name, Backend: "sqlite", Items: []any{applyWorkspaceStatusAXIView(item, registration.Name, opts)}, Warnings: warnings}
+		return envelope, nil
 	}
 	defer db.Close()
 	stats, err := store.WorkspaceStats(ctx, db)
 	if err != nil {
 		return model.Envelope{}, err
 	}
-	return model.Envelope{Ok: true, Workspace: registration.Name, Backend: "sqlite", Items: []any{item}, Stats: stats}, nil
+	item["index_ready"] = stats.Files > 0 || stats.Symbols > 0
+	item["docs_ready"] = item["docs_read_model"] != "builtin-default"
+	item["index_files"] = stats.Files
+	item["index_symbols"] = stats.Symbols
+	warnings := append([]string{}, governance.Warnings...)
+	if governance.Blocked {
+		warnings = append(warnings, governance.Issues...)
+	}
+	return model.Envelope{Ok: true, Workspace: registration.Name, Backend: "sqlite", Items: []any{applyWorkspaceStatusAXIView(item, registration.Name, opts)}, Stats: stats, Warnings: warnings}, nil
+}
+
+func applyWorkspaceStatusAXIView(item map[string]any, alias string, opts model.QueryOptions) map[string]any {
+	if !isAXIMode(opts) {
+		return item
+	}
+	item["view"] = "full"
+	item["next_steps"] = buildWorkspaceAXINextSteps(alias)
+	if isAXIPreview(opts) {
+		item["view"] = "preview"
+		delete(item, "repos")
+		delete(item, "entrypoints")
+	}
+	return item
 }
 
 func (a *App) workspaceRemove(request model.CommandRequest) (model.Envelope, error) {

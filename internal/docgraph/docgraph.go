@@ -44,6 +44,7 @@ func DefaultProfile() model.DocsReadProfile {
 				Name:           "functional",
 				IntentKeywords: []string{"scope", "flow", "feature", "behavior", "rf", "fl", "test", "workflow", "journey"},
 				Paths: []string{
+					".docs/wiki/00_gobierno_documental.md",
 					".docs/wiki/01_*.md",
 					".docs/wiki/02_*.md",
 					".docs/wiki/03_FL.md",
@@ -78,11 +79,24 @@ func DefaultProfile() model.DocsReadProfile {
 					".docs/wiki/14_*.md",
 					".docs/wiki/15_*.md",
 					".docs/wiki/16_*.md",
+					".docs/wiki/17_*.md",
+					".docs/wiki/18_*.md",
+					".docs/wiki/19_*.md",
+					".docs/wiki/20_*.md",
+					".docs/wiki/21_*.md",
+					".docs/wiki/22_*.md",
+					".docs/wiki/23_uxui/",
 				},
 			},
 		},
 		GenericDocs: model.DocsGenericFallback{
 			Paths: []string{"README.md", "README*.md", "docs/", ".docs/"},
+		},
+		ReadingPack: model.DocsReadingPackProfile{
+			MaxDocs:              6,
+			FunctionalStageOrder: []string{"governance", "scope", "architecture", "flow", "requirements", "data", "tests"},
+			TechnicalStageOrder:  []string{"governance", "scope", "architecture", "technical_baseline", "technical_detail", "physical_data", "contracts"},
+			UXStageOrder:         []string{"governance", "scope", "architecture", "ux_global", "ux_research", "ux_spec", "ux_handoff"},
 		},
 	}
 }

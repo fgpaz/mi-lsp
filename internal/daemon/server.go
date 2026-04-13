@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"net"
 	"os"
-	"reflect"
 	"strconv"
 	"strings"
 	"sync"
@@ -15,6 +14,7 @@ import (
 
 	"github.com/fgpaz/mi-lsp/internal/model"
 	"github.com/fgpaz/mi-lsp/internal/service"
+	"github.com/fgpaz/mi-lsp/internal/telemetry"
 	"github.com/fgpaz/mi-lsp/internal/worker"
 	"github.com/fgpaz/mi-lsp/internal/workspace"
 )
@@ -239,16 +239,7 @@ func (s *Server) recordAccess(request model.CommandRequest, response model.Envel
 	if operationErr != nil {
 		event.Error = operationErr.Error()
 	}
-	count := 0
-	if rv := reflect.ValueOf(response.Items); rv.IsValid() && rv.Kind() == reflect.Slice {
-		count = rv.Len()
-	}
-	event.ResultCount = count
-	maxItems := request.Context.MaxItems
-	if maxItems <= 0 {
-		maxItems = 50
-	}
-	event.Truncated = response.Truncated || (count > 0 && count >= maxItems)
+	event = telemetry.EnrichAccessEvent(event, request, response, operationErr)
 	_ = s.telemetry.RecordAccess(s.state.RunID, event)
 	_ = s.telemetry.ReplaceRuntimeSnapshots(s.state.RunID, s.manager.Status())
 }

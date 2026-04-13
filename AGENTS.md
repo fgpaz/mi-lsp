@@ -5,14 +5,23 @@
 For every task in this repository:
 
 1. Run `$ps-contexto` first.
-2. After context load, run `$brainstorming` exactly once before planning or execution.
-3. Close critical context gaps before acting.
-4. Work in orchestrator mode by default.
-5. Prefer `dispatching-parallel-agents` when work is safely partitionable.
-6. Run `$ps-trazabilidad` before closing the task.
+2. Validate governance before planning or execution:
+   - `mi-lsp workspace status <alias> --format toon`
+   - `mi-lsp nav governance --workspace <alias> --format toon`
+3. If governance is blocked, only diagnosis and repair are allowed until the repo is valid again.
+4. After context load, run `$brainstorming` exactly once before planning or execution.
+5. Close critical context gaps before acting.
+6. Work in orchestrator mode by default.
+7. Prefer `dispatching-parallel-agents` when work is safely partitionable.
+8. Run `$ps-trazabilidad` before closing the task.
 
 Additional strict rules:
 
+- Spec-driven development is mandatory in ALL tasks.
+- `.docs/wiki/00_gobierno_documental.md` is the human authority for governance.
+- `.docs/wiki/_mi-lsp/read-model.toml` is the versioned executable projection of `00`.
+- If governance is ambiguous, incomplete, out of sync, or the workspace index is stale relative to governance sources, the repo is in `blocked mode`.
+- In `blocked mode`, only diagnosis and repair are allowed. Use `mi-lsp nav governance`, `$ps-asistente-wiki`, and `crear-gobierno-documental`.
 - Run `$ps-auditar-trazabilidad` for large, risky, cross-layer, or multi-module changes.
 - If editing `AGENTS.md` or `CLAUDE.md`, use `$ps-crear-agentsclaudemd`.
 - If updating any skill under `C:\Users\fgpaz\.agents\skills`, also update the mirrored copy under `C:\repos\buho\assets\skills` in the same task.
@@ -45,7 +54,15 @@ Technical source of truth:
 
 Implementation plan reference:
 
-- `docs/plans/2026-03-16-mi-lsp-v1.md`
+- `.docs/raw/plans/2026-04-12-governance-profile-hardening.md`
+
+## Governance Source of Truth
+
+- Human authority: `.docs/wiki/00_gobierno_documental.md`
+- Executable projection: `.docs/wiki/_mi-lsp/read-model.toml`
+- Primary diagnostic surface: `mi-lsp nav governance --workspace <alias> --format toon`
+- If `governance_blocked=true`, do not continue with normal docs-first work.
+- After repairing governance or auto-syncing the projection, rerun `mi-lsp index --workspace <alias>` before resuming `nav ask` or `nav pack`.
 
 ## Layering Rule
 
@@ -70,8 +87,11 @@ Implementation plan reference:
   - `RF-WKS-001`
   - `RF-WKS-002`
   - `RF-WKS-003`
+  - `RF-WKS-004`
+  - `RF-WKS-005`
   - `RF-IDX-001`
   - `RF-IDX-002`
+  - `RF-IDX-003`
   - `RF-QRY-001`
   - `RF-QRY-002`
   - `RF-QRY-003`
@@ -82,6 +102,9 @@ Implementation plan reference:
   - `RF-QRY-008`
   - `RF-QRY-009`
   - `RF-QRY-010`
+  - `RF-QRY-011`
+  - `RF-QRY-012`
+  - `RF-QRY-013`
   - `RF-CS-001`
   - `RF-DAE-001`
   - `RF-DAE-002`
@@ -185,11 +208,13 @@ rg -n "07_baseline_tecnica|08_modelo_fisico_datos|09_contratos_tecnicos" .docs/w
   - `mi-lsp <command> --workspace <alias> --format toon`
 - Recommended ladder:
   1. `mi-lsp workspace status <alias> --format toon` or `mi-lsp init . --name <alias>`
-  2. `mi-lsp nav ask "how is this workspace organized?" --workspace <alias> --format toon`
-  3. `mi-lsp nav workspace-map --workspace <alias> --format toon`
-  4. `mi-lsp nav search "<pattern>" --include-content --workspace <alias> --format toon` or `mi-lsp nav multi-read ...`
-  5. `mi-lsp nav related|context|refs ... --workspace <alias> --format toon`
-  6. `mi-lsp nav service <path> --workspace <alias> --format toon`
+  2. `mi-lsp nav governance --workspace <alias> --format toon`
+  3. `mi-lsp nav ask "how is this workspace organized?" --workspace <alias> --format toon`
+  4. `mi-lsp nav workspace-map --workspace <alias> --format toon`
+  5. `mi-lsp nav search "<pattern>" --include-content --workspace <alias> --format toon` or `mi-lsp nav multi-read ...`
+  6. `mi-lsp nav related|context|refs ... --workspace <alias> --format toon`
+  7. `mi-lsp nav service <path> --workspace <alias> --format toon`
+- If `workspace status` reports `governance_blocked=true`, stop normal execution and repair governance before any `nav ask`, `nav pack`, planning, or implementation.
 - Query routing expectations:
   - cheap reads stay direct: `nav.find`, `nav.search`, `nav.symbols`, `nav.outline`, `nav.overview`, `nav.multi-read`
   - semantic/compound queries may use daemon warm state: `nav.ask`, `nav.related`, `nav.context`, `nav.refs`, `nav.deps`, `nav.service`, `nav.workspace-map`, `nav.diff-context`, `nav.batch`
@@ -201,26 +226,89 @@ rg -n "07_baseline_tecnica|08_modelo_fisico_datos|09_contratos_tecnicos" .docs/w
 Standard task:
 
 1. `$ps-contexto`
-2. `$brainstorming`
-3. orchestrate and execute
-4. `$ps-trazabilidad`
+2. governance gate with `workspace status` + `nav governance`
+3. `$brainstorming`
+4. orchestrate and execute
+5. `$ps-trazabilidad`
 
 Large or risky task:
 
 1. `$ps-contexto`
-2. `$brainstorming`
-3. orchestrate, preferably with `dispatching-parallel-agents`
-4. update docs if needed
-5. `$ps-trazabilidad`
-6. `$ps-auditar-trazabilidad`
+2. governance gate with `workspace status` + `nav governance`
+3. `$brainstorming`
+4. orchestrate, preferably with `dispatching-parallel-agents`
+5. update docs if needed
+6. `$ps-trazabilidad`
+7. `$ps-auditar-trazabilidad`
 
 Policy-edit task:
 
 1. `$ps-contexto`
-2. `$brainstorming`
-3. `$ps-crear-agentsclaudemd`
-4. sync `AGENTS.md` and `CLAUDE.md`
-5. `$ps-trazabilidad`
+2. governance gate with `workspace status` + `nav governance`
+3. `$brainstorming`
+4. `$ps-crear-agentsclaudemd`
+5. sync `AGENTS.md` and `CLAUDE.md`
+6. `$ps-trazabilidad`
+
+Governance-repair task:
+
+1. `$ps-contexto`
+2. `mi-lsp workspace status <alias> --format toon`
+3. `mi-lsp nav governance --workspace <alias> --format toon`
+4. `$ps-asistente-wiki`
+5. `crear-gobierno-documental`
+6. `mi-lsp index --workspace <alias>`
+7. resume normal work only after `governance_blocked=false`
+
+## Workflow Catalog
+
+### A) Standard Task Flow
+1. `ps-contexto` — load project context
+2. governance gate — `workspace status` + `nav governance`
+3. `brainstorming` — challenge and lock design decisions
+4. orchestrate and execute
+5. documentation synchronization when needed
+6. `ps-trazabilidad` — closure
+
+### B) Large / Risky / Multi-Step Task Flow
+1. `ps-contexto` — load project context
+2. governance gate — `workspace status` + `nav governance`
+3. `brainstorming` — design and harden
+4. `writing-plans` — generate wave-dispatchable plan when the work benefits from formal waves
+5. wave execution and docs sync
+6. `ps-trazabilidad` — final closure
+7. `ps-auditar-trazabilidad` — read-only audit before marking done
+
+### C) Policy-Change Flow
+1. `ps-contexto`
+2. governance gate
+3. `brainstorming`
+4. `ps-crear-agentsclaudemd`
+5. update both policy files
+6. `ps-trazabilidad`
+
+### D) Governance-Repair Flow
+1. `ps-contexto`
+2. `mi-lsp workspace status <alias> --format toon`
+3. `mi-lsp nav governance --workspace <alias> --format toon`
+4. `ps-asistente-wiki`
+5. `crear-gobierno-documental`
+6. `mi-lsp index --workspace <alias>`
+7. verify `governance_blocked=false`
+
+## Skill Invocation Semantics
+
+| Skill | When | Mandatory |
+|-------|------|-----------|
+| `ps-contexto` | At the start of every task | Yes |
+| `mi-lsp` | Governance diagnostics, docs-first navigation, code exploration | Yes |
+| `brainstorming` | After context and governance gate, before non-trivial execution | Yes |
+| `ps-asistente-wiki` | Governance/documentation diagnosis and next-step routing | Yes when governance or wiki work is involved |
+| `crear-gobierno-documental` | Create, repair, or refactor `.docs/wiki/00_gobierno_documental.md` and its projection | Yes when governance is missing, invalid, or stale |
+| `writing-plans` | Large, risky, or multi-step work | Yes when a formal wave plan is needed |
+| `ps-crear-agentsclaudemd` | Editing `AGENTS.md` or `CLAUDE.md` | Yes |
+| `ps-trazabilidad` | Before closing any task | Yes |
+| `ps-auditar-trazabilidad` | Large, risky, multi-module, or cross-layer changes | Yes |
 
 ## Agent Acceleration Commands (v1.3)
 
@@ -316,7 +404,10 @@ If `hint` is present and `items` is empty: **act on the hint first — do not re
 ## Non-Negotiables
 
 - Do not skip `$ps-contexto`, even for documentation work.
+- Do not skip the governance gate at the start of every task.
 - Do not skip the single `$brainstorming` pass after context load.
 - Do not close tasks without `$ps-trazabilidad`.
+- Do not continue normal work when `governance_blocked=true`.
+- Do not treat `00_gobierno_documental.md` and `read-model.toml` as co-authorities; `00` always wins.
 - Do not treat the daemon, worker, TS backend, or governance UI as purely code concerns; keep `07/08/09` in sync.
 - Keep `AGENTS.md` and `CLAUDE.md` aligned.

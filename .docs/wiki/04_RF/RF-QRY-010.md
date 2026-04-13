@@ -27,6 +27,7 @@
 4. El core elige un documento primario y evidencia documental de soporte.
 5. El core deriva evidencia de codigo desde menciones explicitas o fallback textual.
 6. Devuelve un envelope con `summary`, `primary_doc`, `doc_evidence`, `code_evidence`, `why` y `next_queries`.
+7. En AXI preview efectivo, conserva el mismo contrato explainable pero puede condensar `doc_evidence`/`code_evidence` y delegar la expansion a `--full`.
 
 ## 4. Typed Errors
 
@@ -38,11 +39,14 @@
 
 ## 5. Special Cases and Variants
 
-- Si no hay documentos indexados, el sistema degrada a evidencia textual del workspace con warning.
+- Si no hay documentos indexados **y existe wiki canonica**, `nav ask` usa el fallback Tier 1 del route core para resolver un anchor canonico desde governance/read-model. No cae a README.md (ver RF-QRY-015).
+- Si no hay documentos indexados **y no existe wiki canonica**, el sistema degrada a evidencia textual del workspace con warning.
 - Si existe `.docs/wiki/_mi-lsp/read-model.toml`, ese archivo manda sobre el default embebido.
 - El codigo no rankea por delante de la wiki; el codigo se usa como evidencia/verificacion.
 - En repos sin `.docs/wiki`, el sistema cae a fallback generico sobre `README*`, `docs/` y `.docs/`.
 - En workspaces `container`, si la evidencia de codigo converge en un repo hijo unico, `next_queries` debe sugerir reruns con `--repo` para mantener el scope directo.
+- `nav ask` solo entra en AXI por default cuando la pregunta es claramente de onboarding/orientacion; preguntas con doc IDs, paths, simbolos o lenguaje de implementacion deben quedar clasicas salvo `--axi`.
+- En superficies AXI-default, `next_queries` no deben arrastrar `--axi` de forma redundante; la expansion mas profunda vive en `next_hint` hacia `--full`.
 
 ## 6. Data Model Impact
 
@@ -52,3 +56,4 @@
 - `DocsReadProfile`
 - `AskResult`
 - `QueryEnvelope`
+- `QueryOptions`

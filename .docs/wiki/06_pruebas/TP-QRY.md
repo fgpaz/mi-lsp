@@ -13,6 +13,10 @@
 - RF-QRY-009
 - RF-QRY-010
 - RF-QRY-011
+- RF-QRY-012
+- RF-QRY-013
+- RF-QRY-014
+- RF-QRY-015
 
 ## Casos
 
@@ -59,3 +63,19 @@
 | TC-QRY-039 | positivo | RF-QRY-010 | `nav ask` emite `next_queries` con `--repo` cuando la evidencia apunta a un repo unico del workspace `container` |
 | TC-QRY-040 | positivo | RF-QRY-011 | `nav intent --repo` acota candidatos al repo seleccionado y conserva output compacto |
 | TC-QRY-041 | negativo | RF-QRY-011 | `nav intent` rechaza pregunta vacia con error explicito |
+| TC-QRY-042 | positivo | RF-QRY-001 | `nav search` usa TOON por default en superficie AXI-default y agrega guidance de expansion con `--full` |
+| TC-QRY-043 | positivo | RF-QRY-010 | `nav ask` en pregunta de orientacion condensa evidencia inicial y evita `--axi` redundante en `next_queries` |
+| TC-QRY-044 | positivo | RF-QRY-011 | `nav intent` mantiene ranking base pero expone `next_hint` para `--full` por default |
+| TC-QRY-045 | positivo | RF-QRY-011 | `nav intent --classic` restaura la salida clasica y mantiene envelope estable |
+| TC-QRY-046 | positivo | RF-QRY-010 | `nav ask` con pregunta de implementacion queda clasico por default salvo `--axi` |
+| TC-QRY-047 | positivo | RF-QRY-007 | `nav workspace-map` sigue clasico por default y solo anuncia preview/full cuando se fuerza `--axi` |
+| TC-QRY-048 | positivo | RF-QRY-012 | `nav pack` construye un reading pack funcional en orden canonico desde tarea libre |
+| TC-QRY-049 | positivo | RF-QRY-012 | `nav pack --full` expande slices legibles del mismo pack sin cambiar el backend |
+| TC-QRY-050 | negativo | RF-QRY-012 | `nav pack` devuelve warning accionable cuando la wiki canonica existe pero el indice documental esta vacio o stale |
+| TC-QRY-051 | positivo | RF-QRY-013 | `nav governance` devuelve perfil efectivo, overlays, sync y siguientes pasos |
+| TC-QRY-052 | negativo | RF-QRY-013 | `nav ask` y `nav pack` bloquean y devuelven estado de gobernanza cuando `00` falta o el indice esta stale |
+| TC-QRY-053 | negativo | RF-QRY-014 | `TestNavRouteRequiresTask`: `nav route` sin argumento de tarea devuelve error explicito (`QRY_ROUTE_TASK_REQUIRED`) |
+| TC-QRY-054 | positivo | RF-QRY-014 | `TestNavRouteReturnsCanonicalDocFromGovernance`: `nav route <task>` resuelve `anchor_doc` desde governance/read-model (Tier 1) cuando el indice no esta disponible |
+| TC-QRY-055 | positivo | RF-QRY-014 | `TestNavRoutePreviewModeByDefault`: sin flags, el modo es `preview` y `discovery` puede estar ausente |
+| TC-QRY-056 | positivo | RF-QRY-014 | `TestNavRouteFullModeActivatesWithFlag`: `--full` expande canonical lane y activa discovery |
+| TC-QRY-057 | positivo | RF-QRY-015 | `TestNavRouteUsesTaskFallbackFromQuestion`: el route core extrae familia desde la pregunta cuando no hay anchor explicito |

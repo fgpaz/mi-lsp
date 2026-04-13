@@ -102,13 +102,21 @@ Campos recomendados:
 - `seq` (INTEGER DEFAULT 0; secuencia monotona dentro de `session_id`)
 - `daemon_run_id`
 - `warning_count`
+- `pattern_mode` (`literal`, `regex`, `none`)
+- `routing_outcome` (`direct`, `narrowed_repo`, `router_error`, `direct_fallback`)
+- `failure_stage` (`none`, `selector_validation`, `router`, `backend`, `transport`)
+- `hint_code`
+- `truncation_reason` (`none`, `max_items`, `max_chars`, `token_budget`)
+- `decision_json`
 - `error_kind`
 - `error_code`
 - `truncated` (INTEGER DEFAULT 0) — 1 si la respuesta fue truncada por token/item budget
-- `result_count` (INTEGER DEFAULT 0) — numero de simbolos/items devueltos (de `Stats.Symbols`)
+- `result_count` (INTEGER DEFAULT 0) — cantidad de items realmente emitidos en el envelope final
+- `warning_count` se persiste en write-time y no debe reconstruirse unicamente desde `warnings_json`
+- `decision_json` es un JSON compacto y sanitizado para debugging operacional; solo puede incluir longitud/patrones/hints/selectors/fallback/source y nunca `pattern`, argv ni payload completo
 - Nota: columnas agregadas via migration idempotente (`ALTER TABLE ... ADD COLUMN`); rows existentes quedan con DEFAULT 0 o `NULL` segun el schema de origen
 - Lectores y exportadores deben usar lectura null-safe para columnas opcionales legacy (`repo`, `client_name`, `session_id`, `backend`, `runtime_key`, `entrypoint_id`, `error_text`, `workspace_root`, `workspace_alias`, `error_kind`, `error_code`)
-- Lectores y exportadores deben usar lectura null-safe para columnas opcionales legacy (`route`, `format`, `token_budget`, `max_items`, `max_chars`, `compress`) ademas de los campos previos
+- Lectores y exportadores deben usar lectura null-safe para columnas opcionales legacy (`route`, `format`, `token_budget`, `max_items`, `max_chars`, `compress`, `pattern_mode`, `routing_outcome`, `failure_stage`, `hint_code`, `truncation_reason`, `decision_json`) ademas de los campos previos
 - `seq` debe round-trip en `RecentAccesses`, `admin export`, y CSV para que el orden intra-sesion no dependa solo de `occurred_at`
 
 ## Access patterns y operaciones sensibles
@@ -118,6 +126,7 @@ Campos recomendados:
 - No registrar payloads completos de requests ni paths sensibles innecesarios en access events.
 - Para `route=daemon`, el daemon es el writer canonico de `access_events`.
 - La CLI solo debe persistir filas de `access_events` para `direct`, `direct_fallback` o fallas previas a la ejecucion remota.
+- `admin export --summary` agrega sobre toda la ventana filtrada salvo `--limit` explicito; los breakdowns adicionales por route/client/hint/failure-stage son opcionales y no cambian esa base.
 
 ## Migracion, retencion y recovery
 

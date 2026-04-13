@@ -34,9 +34,9 @@ context, and dependency analysis. Includes install and status.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx, cancel := context.WithTimeout(cmd.Context(), 5*time.Second)
 			defer cancel()
-			response, err := daemon.NewClient().Execute(ctx, model.CommandRequest{ProtocolVersion: model.ProtocolVersion, Operation: "worker.status", Context: state.queryOptions()})
+			response, err := daemon.NewClient().Execute(ctx, model.CommandRequest{ProtocolVersion: model.ProtocolVersion, Operation: "worker.status", Context: state.queryOptions(cmd, "worker.status", nil)})
 			if err == nil {
-				return state.printEnvelope(response, state.queryOptions())
+				return state.printEnvelope(response, state.queryOptions(cmd, "worker.status", nil))
 			}
 			return state.executeOperation(cmd, "worker.status", nil, false)
 		},

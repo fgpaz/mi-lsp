@@ -4,6 +4,7 @@
 
 - RF-IDX-001
 - RF-IDX-002
+- RF-IDX-003
 
 ## Casos
 
@@ -18,3 +19,5 @@
 | TC-IDX-007 | positivo | RF-IDX-002 | index detecta archivos cambiados via git y solo re-indexa codigo |
 | TC-IDX-008 | positivo | RF-IDX-002 | index sin git disponible hace full re-index con warning |
 | TC-IDX-009 | positivo | RF-IDX-002 | index con cambios en docs o `read-model.toml` fuerza full re-index |
+| TC-IDX-010 | positivo | RF-IDX-003 | `00_gobierno_documental.md` proyecta automaticamente `.docs/wiki/_mi-lsp/read-model.toml` |
+| TC-IDX-011 | negativo | RF-IDX-003 | un bloque YAML de gobernanza invalido bloquea la proyeccion y obliga reparacion |

@@ -27,6 +27,7 @@
 4. Registra el workspace y lo deja como `last_workspace`.
 5. Por defecto indexa automaticamente.
 6. Devuelve un resultado resumido con `next_steps` centrados en `nav ask`.
+7. Como `init` pertenece a la superficie AXI-default, los `next_steps` deben privilegiar reruns utiles sin repetir `--axi`; solo los caminos hacia superficies classic-default deben agregar `--axi` explicitamente.
 
 ## 4. Typed Errors
 
@@ -40,9 +41,12 @@
 - `init` es una puerta corta; no redefine el contrato de `workspace add`.
 - `--no-index` conserva semantica equivalente a `workspace add --no-index`.
 - Si la indexacion falla, el registro sigue siendo exitoso con warning accionable.
+- `init` sigue haciendo el mismo bootstrap; el modo AXI/default solo cambia la disclosure de `next_steps`.
+- `--classic` restaura la salida clasica sin desactivar el bootstrap ni el indexing.
 
 ## 6. Data Model Impact
 
 - `WorkspaceRegistration`
 - `ProjectConfig`
 - `QueryEnvelope`
+- `QueryOptions`

@@ -360,6 +360,183 @@ func TestRecordAccessDirect_RoundTripsRouteAndBudgetMetadata(t *testing.T) {
 	}
 }
 
+func TestRecordAccess_RoundTripsSearchRoutingDiagnostics(t *testing.T) {
+	store := testStore(t)
+	defer store.Close()
+
+	runID, err := store.StartRun(model.DaemonState{
+		PID:       1234,
+		Endpoint:  "test-endpoint",
+		StartedAt: time.Now(),
+	})
+	if err != nil {
+		t.Fatalf("StartRun: %v", err)
+	}
+
+	event := model.AccessEvent{
+		OccurredAt:       time.Now(),
+		ClientName:       "daemon-cli",
+		SessionID:        "session-daemon",
+		Workspace:        "multi-tedi",
+		Operation:        "nav.search",
+		Backend:          "text",
+		Route:            "daemon",
+		Format:           "toon",
+		Success:          true,
+		LatencyMs:        12,
+		Warnings:         []string{"rerun with --regex"},
+		WarningCount:     1,
+		PatternMode:      "regex",
+		RoutingOutcome:   "direct",
+		FailureStage:     "none",
+		HintCode:         "search_timeout",
+		Truncated:        true,
+		ResultCount:      3,
+		TruncationReason: "token_budget",
+		DecisionJSON:     `{"pattern_len":14,"used_regex":true}`,
+		EntrypointID:     "worker-dotnet::default",
+	}
+	if err := store.RecordAccess(runID, event); err != nil {
+		t.Fatalf("RecordAccess: %v", err)
+	}
+
+	events, err := QueryAccessEvents(store, ExportQuery{SessionID: "session-daemon", Limit: 10})
+	if err != nil {
+		t.Fatalf("QueryAccessEvents: %v", err)
+	}
+	if len(events) != 1 {
+		t.Fatalf("len(events) = %d, want 1", len(events))
+	}
+
+	got := events[0]
+	if got.WarningCount != 1 {
+		t.Fatalf("warning_count = %d, want 1", got.WarningCount)
+	}
+	if got.PatternMode != "regex" {
+		t.Fatalf("pattern_mode = %q, want regex", got.PatternMode)
+	}
+	if got.RoutingOutcome != "direct" {
+		t.Fatalf("routing_outcome = %q, want direct", got.RoutingOutcome)
+	}
+	if got.FailureStage != "none" {
+		t.Fatalf("failure_stage = %q, want none", got.FailureStage)
+	}
+	if got.HintCode != "search_timeout" {
+		t.Fatalf("hint_code = %q, want search_timeout", got.HintCode)
+	}
+	if got.TruncationReason != "token_budget" {
+		t.Fatalf("truncation_reason = %q, want token_budget", got.TruncationReason)
+	}
+	if got.DecisionJSON != `{"pattern_len":14,"used_regex":true}` {
+		t.Fatalf("decision_json = %q, want exact round-trip", got.DecisionJSON)
+	}
+}
+
+func TestQueryAccessEvents_FiltersBySearchRoutingDiagnostics(t *testing.T) {
+	store := testStore(t)
+	defer store.Close()
+
+	events := []model.AccessEvent{
+		{
+			OccurredAt:       time.Now(),
+			ClientName:       "codex",
+			SessionID:        "session-search",
+			Workspace:        "multi-tedi",
+			Operation:        "nav.search",
+			Backend:          "text",
+			Route:            "direct",
+			Format:           "toon",
+			Success:          true,
+			LatencyMs:        30,
+			WarningCount:     1,
+			PatternMode:      "literal",
+			RoutingOutcome:   "narrowed_repo",
+			FailureStage:     "none",
+			HintCode:         "regex_suspected",
+			Truncated:        true,
+			ResultCount:      1,
+			TruncationReason: "max_items",
+		},
+		{
+			OccurredAt:       time.Now().Add(time.Second),
+			ClientName:       "claude",
+			SessionID:        "session-router",
+			Workspace:        "multi-tedi",
+			Operation:        "nav.find",
+			Backend:          "router",
+			Route:            "direct",
+			Format:           "compact",
+			Success:          false,
+			LatencyMs:        12,
+			WarningCount:     1,
+			PatternMode:      "none",
+			RoutingOutcome:   "router_error",
+			FailureStage:     "selector_validation",
+			HintCode:         "repo_selector_invalid",
+			Truncated:        false,
+			ResultCount:      0,
+			TruncationReason: "none",
+		},
+		{
+			OccurredAt:       time.Now().Add(2 * time.Second),
+			ClientName:       "codex",
+			SessionID:        "session-daemon",
+			Workspace:        "gastos",
+			Operation:        "nav.ask",
+			Backend:          "ask",
+			Route:            "daemon",
+			Format:           "json",
+			Success:          true,
+			LatencyMs:        80,
+			WarningCount:     0,
+			PatternMode:      "none",
+			RoutingOutcome:   "direct",
+			FailureStage:     "none",
+			HintCode:         "",
+			Truncated:        false,
+			ResultCount:      2,
+			TruncationReason: "none",
+		},
+	}
+	for _, event := range events {
+		if err := store.RecordAccessDirect(event); err != nil {
+			t.Fatalf("RecordAccessDirect(%s): %v", event.Operation, err)
+		}
+	}
+
+	testCases := []struct {
+		name  string
+		query ExportQuery
+		want  string
+	}{
+		{name: "operation", query: ExportQuery{Operation: "nav.search", Limit: 10}, want: "session-search"},
+		{name: "session", query: ExportQuery{SessionID: "session-router", Limit: 10}, want: "session-router"},
+		{name: "client", query: ExportQuery{ClientName: "claude", Limit: 10}, want: "session-router"},
+		{name: "route", query: ExportQuery{Route: "daemon", Limit: 10}, want: "session-daemon"},
+		{name: "format", query: ExportQuery{Format: "compact", Limit: 10}, want: "session-router"},
+		{name: "truncated", query: ExportQuery{Truncated: boolPtr(true), Limit: 10}, want: "session-search"},
+		{name: "pattern_mode", query: ExportQuery{PatternMode: "literal", Limit: 10}, want: "session-search"},
+		{name: "routing_outcome", query: ExportQuery{RoutingOutcome: "router_error", Limit: 10}, want: "session-router"},
+		{name: "failure_stage", query: ExportQuery{FailureStage: "selector_validation", Limit: 10}, want: "session-router"},
+		{name: "hint_code", query: ExportQuery{HintCode: "repo_selector_invalid", Limit: 10}, want: "session-router"},
+	}
+
+	for _, tt := range testCases {
+		t.Run(tt.name, func(t *testing.T) {
+			filtered, err := QueryAccessEvents(store, tt.query)
+			if err != nil {
+				t.Fatalf("QueryAccessEvents: %v", err)
+			}
+			if len(filtered) != 1 {
+				t.Fatalf("len(filtered) = %d, want 1", len(filtered))
+			}
+			if filtered[0].SessionID != tt.want {
+				t.Fatalf("SessionID = %q, want %q", filtered[0].SessionID, tt.want)
+			}
+		})
+	}
+}
+
 func init() {
 	os.Setenv("HOME", os.TempDir())
 	os.Setenv("USERPROFILE", os.TempDir())
@@ -415,4 +592,17 @@ func TestRecentAccesses_And_QueryAccessEvents_HandleLegacyNullFields(t *testing.
 	if events[0].Repo != "" {
 		t.Fatalf("events[0].Repo = %q, want empty string", events[0].Repo)
 	}
+	if recent[0].WarningCount != 0 {
+		t.Fatalf("recent[0].WarningCount = %d, want 0", recent[0].WarningCount)
+	}
+	if recent[0].PatternMode != "none" {
+		t.Fatalf("recent[0].PatternMode = %q, want none", recent[0].PatternMode)
+	}
+	if recent[0].FailureStage != "none" {
+		t.Fatalf("recent[0].FailureStage = %q, want none", recent[0].FailureStage)
+	}
+}
+
+func boolPtr(value bool) *bool {
+	return &value
 }

@@ -4,13 +4,13 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"reflect"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/fgpaz/mi-lsp/internal/daemon"
 	"github.com/fgpaz/mi-lsp/internal/model"
+	"github.com/fgpaz/mi-lsp/internal/telemetry"
 )
 
 // CLITelemetry records access events directly to daemon.db when the daemon is not running.
@@ -59,16 +59,7 @@ func (t *CLITelemetry) RecordOperation(request model.CommandRequest, envelope mo
 	if opErr != nil {
 		event.Error = opErr.Error()
 	}
-	count := 0
-	if rv := reflect.ValueOf(envelope.Items); rv.IsValid() && rv.Kind() == reflect.Slice {
-		count = rv.Len()
-	}
-	event.ResultCount = count
-	maxItems := request.Context.MaxItems
-	if maxItems <= 0 {
-		maxItems = 50
-	}
-	event.Truncated = envelope.Truncated || (count > 0 && count >= maxItems)
+	event = telemetry.EnrichAccessEvent(event, request, envelope, opErr)
 
 	if err := t.store.RecordAccessDirect(event); err != nil && t.verbose {
 		fmt.Fprintf(os.Stderr, "mi-lsp: telemetry record failed: %v\n", err)

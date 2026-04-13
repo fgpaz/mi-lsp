@@ -3,7 +3,7 @@
 ## Proposito y alcance
 
 Este documento resume los stores fisicos de `mi-lsp`, su ownership y el ciclo de vida de los datos.
-La novedad de v1.3 es que el store repo-local persiste tambien el grafo documental de `.docs/wiki` y el runtime considera cambios de docs o `read-model` como disparadores de full re-index.
+La novedad de v1.3 es que el store repo-local persiste tambien el grafo documental de `.docs/wiki` y el runtime considera cambios de docs, `00_gobierno_documental.md` o `read-model` como disparadores de full re-index.
 
 ## Inventario de stores
 
@@ -13,6 +13,7 @@ La novedad de v1.3 es que el store repo-local persiste tambien el grafo document
 | Workspace config | `<repo>/.mi-lsp/project.toml` | Workspace owner | Overrides locales, ignores y topologia `single|container` |
 | Workspace ignore file | `<repo>/.milspignore` | Workspace owner | Exclusiones repo-locales adicionales para el catalogo |
 | Docs read model | `<repo>/.docs/wiki/_mi-lsp/read-model.toml` | Maintainer de wiki | Perfil de lectura y ranking docs-first por proyecto |
+| Governance source | `<repo>/.docs/wiki/00_gobierno_documental.md` | Maintainer de wiki | Fuente humana del perfil y de la proyeccion ejecutable |
 | Global registry | `~/.mi-lsp/registry.toml` | Core runtime | Aliases registrados, roots conocidos y `kind` |
 | Daemon state | `~/.mi-lsp/daemon/state.json` | Runtime supervision | PID, pipe/socket, admin URL y protocolo |
 | Daemon telemetry DB | `~/.mi-lsp/daemon/daemon.db` | Runtime supervision | Runs, runtime snapshots y access events locales |
@@ -30,7 +31,7 @@ La novedad de v1.3 es que el store repo-local persiste tambien el grafo document
   - `workspace_meta` con `workspace_kind`, `default_repo`, `default_entrypoint`, `doc_count`
 - `daemon.db`
   - `runtime_snapshots` con `repo_name`, `repo_root`, `entrypoint_id`, `entrypoint_path`, `entrypoint_type`
-  - `access_events` con `client_name`, `session_id`, `seq INTEGER DEFAULT 0`, `workspace_input`, `workspace_root`, `workspace_alias`, `repo`, `entrypoint_id`, `route`, `format`, `token_budget`, `max_items`, `max_chars`, `compress`, `error_kind`, `error_code`, `truncated`, `result_count`
+  - `access_events` con `client_name`, `session_id`, `seq INTEGER DEFAULT 0`, `workspace_input`, `workspace_root`, `workspace_alias`, `repo`, `entrypoint_id`, `route`, `format`, `token_budget`, `max_items`, `max_chars`, `compress`, `error_kind`, `error_code`, `truncated`, `result_count`, `warning_count`, `pattern_mode`, `routing_outcome`, `failure_stage`, `hint_code`, `truncation_reason`, `decision_json`
 
 ## Reglas de consistencia y retencion
 
@@ -39,14 +40,17 @@ La novedad de v1.3 es que el store repo-local persiste tambien el grafo document
 - `doc_records`, `doc_edges` y `doc_mentions` deben refrescarse como un bloque consistente dentro de una sola transaccion.
 - `project.toml` debe poder reescribirse al volver a detectar topologia del workspace.
 - El `read-model.toml` no se copia a SQLite; se usa en lectura y sus cambios disparan re-index completo del corpus documental.
+- `00_gobierno_documental.md` tampoco se persiste dentro de SQLite; su estado gobierna bloqueo/sync e invalida el indice cuando cambia.
 - El store global del daemon no duplica el catalogo repo-local; solo guarda supervision y telemetria.
 - `registry.toml` puede contener multiples aliases para un mismo root; `workspace list` debe preservar el alias registrado.
 - `runtime_snapshots` representan solamente runtimes observables del `daemon_run_id` vigente.
 - `access_events` registran metadata y nunca payloads completos.
+- `decision_json` existe para debugging causal local y debe permanecer sanitizado: sin `pattern` crudo, sin argv y sin snapshot completo del request.
 - `daemon.db` usa WAL mode para manejar escrituras concurrentes (daemon + CLI directo).
 - Auto-purge elimina eventos y runs con mas de 30 dias en startup de CLI y daemon.
 - La fila canonica de una request `route=daemon` la escribe el daemon.
 - La CLI directa solo graba `access_events` cuando la request se sirve como `direct`, `direct_fallback` o falla antes de delegarse al daemon; esos eventos pueden llevar `daemon_run_id = NULL`.
+- `result_count` representa los items emitidos en el envelope final; `warning_count` se persiste como contador explicito para que summary/CSV no dependan de re-hidratar `warnings_json`.
 - Filas duplicadas historicas de requests daemonizadas pueden existir como artefactos previos al fix de ownership de telemetria y deben tratarse como legacy hasta que la retencion las purgue.
 
 ## Operaciones clave en `index.db`

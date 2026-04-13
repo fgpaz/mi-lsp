@@ -6,6 +6,7 @@ El exito del producto en v1.3 se mide por cinco resultados:
 - la CLI siempre responde aunque el daemon no este activo;
 - el primer uso puede resolverse con `mi-lsp init` sin onboarding largo;
 - `nav ask` responde preguntas de intencion usando wiki + evidencia de codigo;
+- `nav pack` entrega el orden de lectura canonico para una tarea con preview/full;
 - las consultas semanticas C# entregan contexto util y compacto en repos grandes;
 - la salida es estable, breve y apta para skills/LLMs sin arrastrar blobs innecesarios.
 
@@ -13,6 +14,7 @@ El exito del producto en v1.3 se mide por cinco resultados:
 
 - Reemplaza la dependencia de un servidor MCP persistente por una CLI directa con daemon opcional.
 - Mantiene una puerta de entrada corta para onboarding: `init -> nav ask`.
+- Agrega un reading pack canonico (`nav pack`) para reducir round-trips al estudiar la wiki en orden spec-driven.
 - Usa primero la documentacion canonica del repo cuando existe `.docs/wiki`, en vez de obligar al usuario a adivinar comandos o rutas.
 - Conecta wiki y codigo sin convertir el indice local en una base semantica pesada.
 - Opera bien en workspaces independientes y multiples repos abiertos al mismo tiempo.
@@ -37,6 +39,7 @@ flowchart TD
     C --> C4[Python basico con Pyright opcional]
     C --> C5[Service exploration evidence-first]
     C --> C6[nav ask docs-first]
+    C --> C7[nav pack canonico]
 
     D --> D1[Catalogo de simbolos]
     D --> D2[Metadatos de archivos]
@@ -59,7 +62,7 @@ flowchart TD
 # 5. Areas funcionales de alto nivel
 
 - Gestion de workspaces: alta, inicializacion corta, descubrimiento, aliases, estado y warmup.
-- Navegacion y discovery: simbolos, referencias, outline, overview, contexto, dependencias, preguntas docs-first, busqueda por intencion y resumen de servicios. En workspaces `container`, `find/search/intent` pueden acotar por `--repo` sin perder el modo directo.
+- Navegacion y discovery: simbolos, referencias, outline, overview, contexto, dependencias, preguntas docs-first, reading packs canonicos, busqueda por intencion y resumen de servicios. En workspaces `container`, `find/search/intent` pueden acotar por `--repo` sin perder el modo directo.
 - Indexacion repo-local: catalogo liviano de simbolos, archivos, metadatos del workspace y grafo documental.
 - Enrutamiento semantico: derivacion a Roslyn para C#, a tree-sitter/ripgrep para TS/Next y texto, y a Pyright para Python cuando este disponible.
 - Formateo de salida: envelopes JSON compactos, truncacion determinista y warnings explicitos.

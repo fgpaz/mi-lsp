@@ -431,6 +431,41 @@ func TestSearchPattern_RgNoMatchesReturnsEmptyResults(t *testing.T) {
 	}
 }
 
+func TestSearchPatternRg_RespectsLimitOnStreamedOutput(t *testing.T) {
+	root, name := setupTestWorkspace(t)
+	project := testProject(name)
+
+	scriptPath := filepath.Join(root, "fake-rg-limit")
+	scriptBody := "#!/bin/sh\n" +
+		"printf '%s:1:first match\\n' \"" + root + "/src/one.ts\"\n" +
+		"printf '%s:2:second match\\n' \"" + root + "/src/two.ts\"\n" +
+		"printf '%s:3:third match\\n' \"" + root + "/src/three.ts\"\n"
+	if runtime.GOOS == "windows" {
+		scriptPath += ".cmd"
+		scriptBody = "@echo off\r\n" +
+			"echo " + root + "\\src\\one.ts:1:first match\r\n" +
+			"echo " + root + "\\src\\two.ts:2:second match\r\n" +
+			"echo " + root + "\\src\\three.ts:3:third match\r\n"
+	}
+	if err := os.WriteFile(scriptPath, []byte(scriptBody), 0o755); err != nil {
+		t.Fatalf("write fake rg limit script: %v", err)
+	}
+
+	items, err := searchPatternRg(context.Background(), root, root, project, "match", false, 2, scriptPath)
+	if err != nil {
+		t.Fatalf("searchPatternRg: %v", err)
+	}
+	if len(items) != 2 {
+		t.Fatalf("expected 2 items, got %d", len(items))
+	}
+	if got, _ := items[0]["file"].(string); got != "src/one.ts" {
+		t.Fatalf("first item file = %q, want src/one.ts", got)
+	}
+	if got, _ := items[1]["file"].(string); got != "src/two.ts" {
+		t.Fatalf("second item file = %q, want src/two.ts", got)
+	}
+}
+
 func TestSearchPattern_LiteralNoMatchesSuggestsRegex(t *testing.T) {
 	root, name := setupTestWorkspace(t)
 	app := New(root, nil)

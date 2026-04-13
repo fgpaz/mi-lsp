@@ -18,6 +18,8 @@ var (
 )
 
 type workspaceMapEntry struct {
+	Mode         string              `json:"mode,omitempty"`
+	NextSteps    []string            `json:"next_steps,omitempty"`
 	Repos        []repoMapEntry      `json:"repos"`
 	Services     []serviceMapEntry   `json:"services"`
 	Dependencies []serviceDependency `json:"dependencies,omitempty"`
@@ -116,15 +118,32 @@ func (a *App) workspaceMap(ctx context.Context, request model.CommandRequest) (m
 		Dependencies: deps,
 		Stats:        stats,
 	}
+	previewExpanded := false
+	if isAXIMode(request.Context) {
+		mapEntry.Mode = "full"
+		mapEntry.NextSteps = buildWorkspaceAXINextSteps(registration.Name)
+		if isAXIPreview(request.Context) {
+			mapEntry.Mode = "preview"
+			trimmedServices := trimSlice(mapEntry.Services, 5)
+			trimmedDependencies := trimSlice(mapEntry.Dependencies, 5)
+			previewExpanded = len(trimmedServices) < len(mapEntry.Services) || len(trimmedDependencies) < len(mapEntry.Dependencies)
+			mapEntry.Services = trimmedServices
+			mapEntry.Dependencies = trimmedDependencies
+		}
+	}
 
-	return model.Envelope{
+	env := model.Envelope{
 		Ok:        true,
 		Workspace: registration.Name,
 		Backend:   "catalog+text",
 		Items:     []workspaceMapEntry{mapEntry},
 		Warnings:  warnings,
 		Stats:     model.Stats{Symbols: stats.TotalSymbols, Files: stats.ServiceCount, Ms: time.Since(started).Milliseconds()},
-	}, nil
+	}
+	if previewExpanded {
+		return applyAXIPreviewHints(env, request.Context, axiPreviewSummaryHint), nil
+	}
+	return env, nil
 }
 
 type serviceEventData struct {

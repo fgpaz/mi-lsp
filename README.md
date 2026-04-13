@@ -8,6 +8,7 @@
 
 `mi-lsp` is a local CLI for exploring large `.NET/C# + TypeScript` codebases from the terminal.
 It keeps a lightweight repo-local index, supports optional warm state through a daemon, and now includes a docs-first entrypoint for onboarding a repo fast.
+For onboarding and discovery, AXI is now selective by default on the surfaces where it saves the most tokens; use `--classic` when you want the old CLI behavior and `--axi` when you want to force AXI on a classic surface.
 
 ## Quick Start
 
@@ -53,10 +54,17 @@ mi-lsp workspace add C:\code\my-dotnet-app --name myapp
 mi-lsp workspace status myapp --format compact
 ```
 
+AXI discovery starts from the root command by default:
+
+```powershell
+mi-lsp
+mi-lsp workspace status myapp
+```
+
 ### 3. Ask one useful question first
 
 ```powershell
-mi-lsp nav ask "how is this workspace organized?" --workspace myapp --format compact
+mi-lsp nav ask "how is this workspace organized?" --workspace myapp
 ```
 
 `nav ask` is docs-first:
@@ -64,18 +72,33 @@ mi-lsp nav ask "how is this workspace organized?" --workspace myapp --format com
 - it uses explicit traceability links before text heuristics
 - it adds code evidence so you can jump into the implementation immediately
 
+When you want the reading order instead of a prose answer:
+
+```powershell
+mi-lsp nav pack "understand how this login flow works" --workspace myapp
+mi-lsp nav pack "understand how this login flow works" --workspace myapp --full
+```
+
 ### 4. Use the right command for the job
 
 | You want to... | Run this |
 |---|---|
-| Understand the repo quickly | `mi-lsp nav ask "how is this workspace organized?" --workspace myapp --format compact` |
-| See the high-level map of services | `mi-lsp nav workspace-map --workspace myapp --format compact` |
+| Understand the repo quickly | `mi-lsp nav ask "how is this workspace organized?" --workspace myapp` |
+| Get the canonical docs reading order for a task | `mi-lsp nav pack "understand how billing retry works" --workspace myapp` |
+| See the high-level map of services | `mi-lsp nav workspace-map --workspace myapp --axi` |
 | Understand one symbol deeply | `mi-lsp nav related MySymbol --workspace myapp --format compact` |
 | Read the code around one line | `mi-lsp nav context path/to/file.cs 42 --workspace myapp --format compact` |
-| Search text and see the matching code | `mi-lsp nav search billing retry --include-content --workspace myapp --format compact` |
-| Search symbols by intent | `mi-lsp nav intent "password reset frontend" --workspace myapp --repo web --format compact` |
+| Search text and see the matching code | `mi-lsp nav search "billing retry" --include-content --workspace myapp` |
+| Search symbols by intent | `mi-lsp nav intent "password reset frontend" --workspace myapp --repo web` |
 | Audit one backend/service path | `mi-lsp nav service src/backend/orders --workspace myapp --format compact` |
 | Read several files in one call | `mi-lsp nav multi-read file1.cs:1-80 file2.ts:20-80 --workspace myapp --format compact` |
+
+Use `--full` when an AXI preview asks you to expand detail:
+
+```powershell
+mi-lsp nav search "billing retry" --include-content --workspace myapp --full
+mi-lsp nav workspace-map --workspace myapp --axi --full
+```
 
 ### 5. Parent folder with several repos
 
@@ -125,6 +148,19 @@ Use $mi-lsp to audit src/backend/orders and summarize endpoints, consumers, publ
 Use $mi-lsp to read the relevant files for OrderHandler and show only the important slices.
 ```
 
+For session-wide AXI discovery defaults:
+
+```powershell
+$env:MI_LSP_AXI = "1"
+```
+
+To opt out on an AXI-default surface:
+
+```powershell
+mi-lsp --classic
+mi-lsp nav search "billing retry" --workspace myapp --classic --format compact
+```
+
 For shared daemon attribution across several agents, set:
 
 ```powershell
@@ -162,7 +198,7 @@ The daemon is a performance optimization, not a prerequisite for the CLI.
 ```text
 mi-lsp init [path] [--name <alias>] [--no-index]
 mi-lsp workspace add|remove|scan|list|warm|status
-mi-lsp nav ask|symbols|find|refs|overview|outline|service|search|context|deps|multi-read|batch|related|workspace-map|diff-context
+mi-lsp nav ask|pack|symbols|find|refs|overview|outline|service|search|context|deps|multi-read|batch|related|workspace-map|diff-context
 mi-lsp index [path] [--clean]
 mi-lsp info
 mi-lsp daemon start|stop|restart|status|logs
@@ -174,6 +210,9 @@ Useful global flags:
 
 ```text
 --workspace
+--axi
+--classic
+--full
 --format compact|json|text
 --client-name
 --session-id
@@ -213,7 +252,7 @@ Common first checks:
 mi-lsp info
 mi-lsp worker status --format compact
 mi-lsp workspace status myapp --format compact
-mi-lsp nav ask "how is this workspace organized?" --workspace myapp --format compact
+mi-lsp nav ask "how is this workspace organized?" --workspace myapp
 ```
 
 If a repo changed heavily under `.docs/wiki`, rerun:
@@ -236,6 +275,7 @@ See the public runbook in [TROUBLESHOOTING.md](TROUBLESHOOTING.md).
 - Optional Python semantic bridge through `pyright-langserver`
 - Service exploration summaries via `nav service`
 - Docs-first repo questions via `nav ask`
+- Canonical reading packs via `nav pack`
 
 Out of scope for `v0.1.0`:
 - MCP transport

@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"unicode"
 
 	"github.com/fgpaz/mi-lsp/internal/docgraph"
 	"github.com/fgpaz/mi-lsp/internal/model"
@@ -25,6 +26,11 @@ func (a *App) ask(ctx context.Context, request model.CommandRequest) (model.Enve
 	allWorkspaces, _ := request.Payload["all_workspaces"].(bool)
 	if allWorkspaces {
 		return a.askAllWorkspaces(ctx, request)
+	}
+	if blockedEnv, err := a.governanceGateEnvelope(ctx, request, "nav.ask"); err != nil {
+		return model.Envelope{}, err
+	} else if blockedEnv != nil {
+		return *blockedEnv, nil
 	}
 
 	registration, project, err := a.resolveWorkspaceWithProject(request.Context.Workspace)
@@ -53,23 +59,32 @@ func (a *App) ask(ctx context.Context, request model.CommandRequest) (model.Enve
 		if searchErr != nil {
 			return model.Envelope{}, searchErr
 		}
+		// Use Tier 1 canonical routing instead of hardcoded README.md
+		// when governance/wiki exists (RF-QRY-015).
+		canonical, tier1Why := docgraph.Tier1CanonicalRoute(question, profile, registration.Root)
+		anchor := canonical.AnchorDoc
 		fallback := model.AskResult{
 			Question: question,
-			Summary:  "No encontre documentacion indexada; devolvi evidencia textual del workspace como fallback.",
+			Summary:  "No encontre documentacion indexada; resolucion canonica tier1 + evidencia textual del workspace como fallback.",
 			PrimaryDoc: model.AskDocEvidence{
-				Path:   "README.md",
-				Title:  "Generic fallback",
-				Family: "generic",
-				Layer:  "generic",
+				Path:   anchor.Path,
+				Title:  anchor.Title,
+				DocID:  anchor.DocID,
+				Family: anchor.Family,
+				Layer:  anchor.Layer,
 			},
-			Why:          []string{"doc_index_empty", "fallback=text-search"},
+			Why:          append([]string{"doc_index_empty", "fallback=tier1_canonical"}, tier1Why...),
 			CodeEvidence: searchItemsToEvidence(items),
-			NextQueries:  []string{fmt.Sprintf("mi-lsp nav search %q --include-content --workspace %s --format compact", question, registration.Name)},
+			NextQueries:  []string{fmt.Sprintf("mi-lsp nav search %q --include-content --workspace %s", question, registration.Name)},
+		}
+		if isAXIPreview(request.Context) {
+			fallback = trimAskResultForAXIPreview(fallback)
 		}
 		warnings := append([]string{}, profileWarnings...)
 		warnings = append(warnings, "documentation index is empty; using code fallback")
 		warnings = append(warnings, fmt.Sprintf("read_model=%s", profileSource))
-		return model.Envelope{Ok: true, Workspace: registration.Name, Backend: "ask", Items: []model.AskResult{fallback}, Warnings: warnings}, nil
+		env := model.Envelope{Ok: true, Workspace: registration.Name, Backend: "ask", Items: []model.AskResult{fallback}, Warnings: warnings}
+		return applyAXIPreviewHints(env, request.Context, "preview mode: rerun with --full for more evidence"), nil
 	}
 
 	docByPath := make(map[string]model.DocRecord, len(docs))
@@ -105,9 +120,13 @@ func (a *App) ask(ctx context.Context, request model.CommandRequest) (model.Enve
 		DocEvidence:  docEvidence,
 		CodeEvidence: codeEvidence,
 		Why:          append(primary.reason, reasons...),
-		NextQueries:  buildAskNextQueries(registration.Name, project, primary.record, codeEvidence),
+		NextQueries:  buildAskNextQueries(registration.Name, project, primary.record, question, codeEvidence, request.Context),
 	}
-	return model.Envelope{Ok: true, Workspace: registration.Name, Backend: "ask", Items: []model.AskResult{result}, Warnings: warnings, Stats: model.Stats{Files: len(codeEvidence)}}, nil
+	if isAXIPreview(request.Context) {
+		result = trimAskResultForAXIPreview(result)
+	}
+	env := model.Envelope{Ok: true, Workspace: registration.Name, Backend: "ask", Items: []model.AskResult{result}, Warnings: warnings, Stats: model.Stats{Files: len(codeEvidence)}}
+	return applyAXIPreviewHints(env, request.Context, "preview mode: rerun with --full for more evidence"), nil
 }
 
 func rankDocs(question string, family string, docs []model.DocRecord, ftsScores map[string]float64) []scoredDoc {
@@ -386,28 +405,96 @@ func searchItemsToEvidence(items []map[string]any) []model.AskCodeEvidence {
 	return result
 }
 
-func buildAskNextQueries(workspaceName string, project model.ProjectFile, primary model.DocRecord, codeEvidence []model.AskCodeEvidence) []string {
+func buildAskNextQueries(workspaceName string, project model.ProjectFile, primary model.DocRecord, question string, codeEvidence []model.AskCodeEvidence, opts model.QueryOptions) []string {
 	queries := []string{}
 	repoFlag := ""
 	if repoName := askRepoScope(project, codeEvidence); repoName != "" && project.Project.Kind == model.WorkspaceKindContainer {
 		repoFlag = " --repo " + repoName
 	}
+	if primary.Family == "generic" || primary.Layer == "generic" || askCodeEvidenceIsTextOnly(codeEvidence) {
+		if searchPhrase := askSearchPhrase(question); searchPhrase != "" {
+			queries = appendUniqueQuery(queries, fmt.Sprintf("mi-lsp nav search %q --include-content --workspace %s%s", searchPhrase, workspaceName, repoFlag))
+		}
+	}
 	if primary.DocID != "" {
-		queries = append(queries, fmt.Sprintf("mi-lsp nav search %q --include-content --workspace %s%s --format compact", primary.DocID, workspaceName, repoFlag))
+		queries = appendUniqueQuery(queries, fmt.Sprintf("mi-lsp nav search %q --include-content --workspace %s%s", primary.DocID, workspaceName, repoFlag))
 	}
 	if len(codeEvidence) > 0 {
 		first := codeEvidence[0]
 		if first.File != "" && first.Line > 0 {
-			queries = append(queries, fmt.Sprintf("mi-lsp nav context %s %d --workspace %s%s --format compact", first.File, first.Line, workspaceName, repoFlag))
+			queries = appendUniqueQuery(queries, fmt.Sprintf("mi-lsp nav context %s %d --workspace %s%s", first.File, first.Line, workspaceName, repoFlag))
 		}
 		if first.Name != "" {
-			queries = append(queries, fmt.Sprintf("mi-lsp nav related %s --workspace %s%s --format compact", first.Name, workspaceName, repoFlag))
+			queries = appendUniqueQuery(queries, fmt.Sprintf("mi-lsp nav related %s --workspace %s%s", first.Name, workspaceName, repoFlag))
 		}
 	}
 	if len(queries) == 0 {
-		queries = append(queries, fmt.Sprintf("mi-lsp nav search %q --include-content --workspace %s%s --format compact", primary.Title, workspaceName, repoFlag))
+		queries = appendUniqueQuery(queries, fmt.Sprintf("mi-lsp nav search %q --include-content --workspace %s%s", primary.Title, workspaceName, repoFlag))
 	}
 	return queries
+}
+
+func askCodeEvidenceIsTextOnly(items []model.AskCodeEvidence) bool {
+	if len(items) == 0 {
+		return false
+	}
+	for _, item := range items {
+		if item.Type != "text" {
+			return false
+		}
+	}
+	return true
+}
+
+func askSearchPhrase(question string) string {
+	rawTokens := strings.FieldsFunc(question, func(r rune) bool {
+		return !(unicode.IsLetter(r) || unicode.IsDigit(r) || r == '_' || r == '-')
+	})
+	for _, token := range rawTokens {
+		if len(token) < 2 {
+			continue
+		}
+		hasLetter := false
+		for _, r := range token {
+			if unicode.IsLetter(r) {
+				hasLetter = true
+				break
+			}
+		}
+		if hasLetter && token == strings.ToUpper(token) {
+			return token
+		}
+	}
+
+	generic := map[string]struct{}{
+		"how": {}, "where": {}, "what": {}, "when": {}, "which": {},
+		"como": {}, "donde": {}, "que": {}, "cual": {},
+		"mode": {}, "implemented": {}, "implementation": {}, "works": {}, "work": {},
+		"details": {}, "detail": {}, "handle": {}, "handled": {}, "using": {},
+	}
+	best := ""
+	for _, token := range rawTokens {
+		token = strings.ToLower(token)
+		if len(token) < 3 {
+			continue
+		}
+		if _, ok := generic[token]; ok {
+			continue
+		}
+		if len(token) > len(best) {
+			best = token
+		}
+	}
+	return best
+}
+
+func appendUniqueQuery(queries []string, query string) []string {
+	for _, existing := range queries {
+		if existing == query {
+			return queries
+		}
+	}
+	return append(queries, query)
 }
 
 func askRepoScope(project model.ProjectFile, codeEvidence []model.AskCodeEvidence) string {
@@ -492,12 +579,10 @@ func (a *App) askAllWorkspaces(ctx context.Context, request model.CommandRequest
 			defer func() { <-semaphore }()
 
 			subRequest := model.CommandRequest{
-				Context: model.QueryOptions{
-					Workspace: wsReg.Name,
-					MaxItems:  request.Context.MaxItems,
-				},
+				Context: request.Context,
 				Payload: clonePayload(request.Payload),
 			}
+			subRequest.Context.Workspace = wsReg.Name
 			delete(subRequest.Payload, "all_workspaces")
 
 			env, err := a.ask(ctx, subRequest)

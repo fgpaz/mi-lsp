@@ -26,6 +26,7 @@
 3. Si el usuario envio `--repo`, el core acota el universo al repo hijo seleccionado del workspace `container`.
 4. El sistema rankea candidatos por BM25 y boosts por nombre/kind.
 5. Devuelve un envelope compacto con `file`, `line`, `symbol`, `kind`, `qualified_name`, `score`, `evidence` y `snippet`.
+6. Como `nav intent` pertenece a la superficie AXI-default, la primera page puede ser mas estrecha por default y debe incluir guidance de expansion via `--full` salvo `--classic`.
 
 ## 4. Typed Errors
 
@@ -41,8 +42,10 @@
 - Si no hay simbolos compatibles, responde `ok=true`, `items=[]` y warning.
 - La operacion es catalog-first y directa; no depende del daemon.
 - En workspaces `container`, `--repo` acota el resultado pero no cambia el backend a semantico.
+- En AXI efectivo, la semantica del ranking no cambia; solo cambia la disclosure inicial y el guidance de expansion.
 
 ## 6. Data Model Impact
 
 - `SymbolRecord`
 - `QueryEnvelope`
+- `QueryOptions`

@@ -2,11 +2,11 @@
 
 ## 1. Goal
 
-Resolver una consulta con salida compacta, truncacion determinista y fallback cuando el daemon o el backend semantico no estan disponibles. Tambien cubre `nav ask` como consulta docs-first guiada por wiki, la exploracion evidence-first de servicios y la regla de que las lecturas baratas de catalogo/texto no dependen del daemon.
+Resolver una consulta con salida compacta, truncacion determinista y fallback cuando el daemon o el backend semantico no estan disponibles. Incluye `nav route` como selector canonico de bajo token para obtener el documento de anclaje y un mini reading pack antes de expandir con `nav ask` o `nav pack`. Tambien cubre `nav ask` como consulta docs-first guiada por wiki, `nav pack` como reading pack canonico para tareas spec-driven, la exploracion evidence-first de servicios, la regla de que las lecturas baratas de catalogo/texto no dependen del daemon y la disclosure preview-first de las superficies que caen en AXI efectivo.
 
 ## 2. Scope in/out
 
-- In: routing por backend, aplicacion de `--token-budget`, `--max-items`, `--max-chars`, warnings de degradacion, `nav service <path>`, `nav ask <question>`, `nav intent <question>` y la decision centralizada de ejecutar directo `nav.find`, `nav.search`, `nav.intent`, `nav.symbols`, `nav.outline`, `nav.overview` y `nav.multi-read`. En workspaces `container`, `find/search/intent` pueden acotar con `--repo`.
+- In: routing por backend, aplicacion de `--token-budget`, `--max-items`, `--max-chars`, warnings de degradacion, `nav service <path>`, `nav ask <question>`, `nav pack <task>`, `nav intent <question>`, `--axi`, `--classic`, `MI_LSP_AXI=1`, `--full` cuando el modo efectivo es AXI y la decision centralizada de ejecutar directo `nav.find`, `nav.search`, `nav.intent`, `nav.symbols`, `nav.outline`, `nav.overview`, `nav.multi-read` y `nav pack`. En workspaces `container`, `find/search/intent` pueden acotar con `--repo`.
 - Out: edicion/refactor, respuestas con blobs de codigo completos y score fuerte de completitud.
 
 ## 3. Actors and ownership
@@ -30,6 +30,7 @@ Resolver una consulta con salida compacta, truncacion determinista y fallback cu
 - Si hubo truncacion o degradacion, queda explicitado en `warnings`/`next_hint`.
 - Si se uso `nav service`, la respuesta contiene evidencia estructurada y no un veredicto fuerte de completitud.
 - Si se uso `nav ask`, la respuesta deja visible documento primario, evidencia documental, evidencia de codigo y siguientes pasos.
+- Si se uso `nav pack`, la respuesta deja visible el reading pack canonico, sus stages y sus targets o slices segun preview/full.
 - Si se uso una lectura barata de catalogo/texto, la respuesta no queda bloqueada por health del daemon.
 
 ## 6. Main sequence
@@ -43,7 +44,7 @@ sequenceDiagram
     participant DG as Docgraph
     participant X as Service profile
 
-    A->>CLI: nav <comando> --token-budget N
+    A->>CLI: nav <comando> [--axi|--classic] [--full] --token-budget N
     alt lectura barata de catalogo/texto
         CLI->>C: ejecuta directo
     else query daemon-aware
@@ -57,9 +58,16 @@ sequenceDiagram
     alt nav ask
         C->>DG: rankea wiki y deriva evidencia de codigo
         DG-->>C: primary_doc + evidence
+    else nav pack
+        C->>DG: clasifica tarea, elige anchor y ordena reading pack canonico
+        DG-->>C: docs + stages + targets/slices
     else nav service
         C->>X: agrega catalogo + busqueda textual scoped
         X-->>C: evidence summary
+    end
+    alt superficie en AXI preview
+        CLI->>CLI: normaliza formato default a TOON si no hubo `--format`
+        CLI->>CLI: reduce primer page en discovery y agrega guidance de expansion
     end
     C-->>CLI: envelope + truncation metadata
     CLI-->>A: compact/json/text
@@ -70,12 +78,13 @@ sequenceDiagram
 | Caso | Resultado |
 |---|---|
 | Daemon caido | fallback directo para queries daemon-aware; las lecturas baratas siguen directas |
-| Operacion de catalogo/texto (`find/search/intent/symbols/outline/overview/multi-read`) | ejecuta directo y no depende de health del daemon |
+| Operacion de catalogo/texto (`find/search/intent/symbols/outline/overview/multi-read/pack`) | ejecuta directo y no depende de health del daemon |
 | Presupuesto agotado | `truncated=true` + `next_hint` |
 | Backend degradado (`tsserver` ausente, worker semantico no disponible) | `warnings` explicitos y backend alternativo |
 | Catalogo ausente para `nav service` | degradacion a evidencia textual con warning |
 | `nav ask` sin corpus documental fuerte | degradacion a fallback generico/textual con warning |
 | Formato no reconocido | el render cae al formato `compact` |
+| AXI preview efectivo | el envelope agrega guidance para `--full` sin cambiar la semantica base |
 
 ## 8. Architecture slice
 
@@ -89,6 +98,7 @@ sequenceDiagram
 - estados: warm, cold, truncated, degraded
 - `ServiceSurfaceSummary`
 - `AskResult`
+- `PackResult`
 - `DocRecord` / `DocEdge` / `DocMention`
 
 ## 10. Candidate RF references
@@ -98,3 +108,6 @@ sequenceDiagram
 - RF-QRY-003 resumen evidence-first de servicio sin score fuerte
 - RF-QRY-010 preguntas docs-first guiadas por wiki con evidencia de codigo
 - RF-QRY-011 busqueda de simbolos por intencion con scope opcional de repo
+- RF-QRY-012 reading pack canonico docs-first para una tarea
+- RF-QRY-014 comando publico nav route para resolver documento canonico minimo
+- RF-QRY-015 reutilizacion interna del route core desde ask y pack

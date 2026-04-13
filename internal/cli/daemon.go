@@ -43,7 +43,7 @@ and tsserver processes, reducing cold-start latency.`,
 				"already_running": stateBody.AlreadyRunning,
 				"state":           stateBody,
 			}}
-			return state.printEnvelope(model.Envelope{Ok: true, Backend: "daemon", Items: items}, state.queryOptions())
+			return state.printEnvelope(model.Envelope{Ok: true, Backend: "daemon", Items: items}, state.queryOptions(cmd, "daemon.start", nil))
 		},
 	}
 	startCommand.Flags().StringVar(&idleTimeout, "idle-timeout", "30m", "Worker idle eviction timeout")
@@ -55,11 +55,11 @@ and tsserver processes, reducing cold-start latency.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx, cancel := context.WithTimeout(cmd.Context(), 5*time.Second)
 			defer cancel()
-			response, err := daemon.NewClient().Execute(ctx, model.CommandRequest{ProtocolVersion: model.ProtocolVersion, Operation: "system.status", Context: state.queryOptions()})
+			response, err := daemon.NewClient().Execute(ctx, model.CommandRequest{ProtocolVersion: model.ProtocolVersion, Operation: "system.status", Context: state.queryOptions(cmd, "system.status", nil)})
 			if err != nil {
 				return daemon.BuildStatusError()
 			}
-			return state.printEnvelope(response, state.queryOptions())
+			return state.printEnvelope(response, state.queryOptions(cmd, "system.status", nil))
 		},
 	}
 
@@ -69,11 +69,11 @@ and tsserver processes, reducing cold-start latency.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx, cancel := context.WithTimeout(cmd.Context(), 5*time.Second)
 			defer cancel()
-			response, err := daemon.NewClient().Execute(ctx, model.CommandRequest{ProtocolVersion: model.ProtocolVersion, Operation: "system.stop", Context: state.queryOptions()})
+			response, err := daemon.NewClient().Execute(ctx, model.CommandRequest{ProtocolVersion: model.ProtocolVersion, Operation: "system.stop", Context: state.queryOptions(cmd, "system.stop", nil)})
 			if err != nil {
 				return err
 			}
-			return state.printEnvelope(response, state.queryOptions())
+			return state.printEnvelope(response, state.queryOptions(cmd, "system.stop", nil))
 		},
 	}
 
@@ -82,7 +82,7 @@ and tsserver processes, reducing cold-start latency.`,
 		Short: "Stop and restart the background daemon",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx, cancel := context.WithTimeout(cmd.Context(), 5*time.Second)
-			_, stopErr := daemon.NewClient().Execute(ctx, model.CommandRequest{ProtocolVersion: model.ProtocolVersion, Operation: "system.stop", Context: state.queryOptions()})
+			_, stopErr := daemon.NewClient().Execute(ctx, model.CommandRequest{ProtocolVersion: model.ProtocolVersion, Operation: "system.stop", Context: state.queryOptions(cmd, "system.stop", nil)})
 			cancel()
 			if stopErr == nil {
 				time.Sleep(500 * time.Millisecond)
@@ -101,7 +101,7 @@ and tsserver processes, reducing cold-start latency.`,
 				"already_running": stateBody.AlreadyRunning,
 				"state":           stateBody,
 			}}
-			return state.printEnvelope(model.Envelope{Ok: true, Backend: "daemon", Items: items}, state.queryOptions())
+			return state.printEnvelope(model.Envelope{Ok: true, Backend: "daemon", Items: items}, state.queryOptions(cmd, "daemon.restart", nil))
 		},
 	}
 
@@ -139,7 +139,7 @@ and tsserver processes, reducing cold-start latency.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx, cancel := context.WithTimeout(cmd.Context(), 5*time.Second)
 			defer cancel()
-			response, err := daemon.NewClient().Execute(ctx, model.CommandRequest{ProtocolVersion: model.ProtocolVersion, Operation: "system.status", Context: state.queryOptions()})
+			response, err := daemon.NewClient().Execute(ctx, model.CommandRequest{ProtocolVersion: model.ProtocolVersion, Operation: "system.status", Context: state.queryOptions(cmd, "system.status", nil)})
 			if err != nil {
 				return err
 			}
@@ -158,7 +158,7 @@ and tsserver processes, reducing cold-start latency.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx, cancel := context.WithTimeout(cmd.Context(), 5*time.Second)
 			defer cancel()
-			response, err := daemon.NewClient().Execute(ctx, model.CommandRequest{ProtocolVersion: model.ProtocolVersion, Operation: "system.status", Context: state.queryOptions()})
+			response, err := daemon.NewClient().Execute(ctx, model.CommandRequest{ProtocolVersion: model.ProtocolVersion, Operation: "system.status", Context: state.queryOptions(cmd, "system.status", nil)})
 			if err != nil {
 				return daemon.BuildStatusError()
 			}
@@ -173,7 +173,7 @@ and tsserver processes, reducing cold-start latency.`,
 			if err := openURL(finalURL); err != nil {
 				return err
 			}
-			return state.printEnvelope(model.Envelope{Ok: true, Backend: "admin", Items: []map[string]any{{"admin_url": finalURL}}}, state.queryOptions())
+			return state.printEnvelope(model.Envelope{Ok: true, Backend: "admin", Items: []map[string]any{{"admin_url": finalURL}}}, state.queryOptions(cmd, "daemon.admin", nil))
 		},
 	}
 

@@ -2,8 +2,10 @@ package service
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io/fs"
 	"os"
 	"os/exec"
@@ -80,30 +82,36 @@ func searchPatternScoped(ctx context.Context, workspaceRoot string, searchRoot s
 }
 
 func searchPatternRg(ctx context.Context, workspaceRoot string, searchRoot string, project model.ProjectFile, pattern string, useRegex bool, limit int, rgBin string) ([]map[string]any, error) {
-	args := []string{"--line-number", "--no-heading", "--color", "never"}
-	if !useRegex {
-		args = append(args, "-F")
-	}
-	args = append(args, pattern, searchRoot)
-	command := exec.CommandContext(ctx, rgBin, args...)
-	processutil.ConfigureNonInteractiveCommand(command)
-	output, err := command.CombinedOutput()
-	if err != nil {
-		var exitErr *exec.ExitError
-		if errors.As(err, &exitErr) && exitErr.ExitCode() == 1 && strings.TrimSpace(string(output)) == "" {
-			return []map[string]any{}, nil
-		}
-		if len(output) == 0 {
-			return nil, err
-		}
-	}
-	resultPattern := regexp.MustCompile(`^(.*):([0-9]+):(.*)$`)
-	lines := strings.Split(strings.TrimSpace(string(output)), "\n")
 	if limit <= 0 {
 		limit = DefaultConfig().DefaultSearchLimit
 	}
-	items := make([]map[string]any, 0, min(limit, len(lines)))
-	for _, line := range lines {
+
+	searchCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	command := exec.CommandContext(searchCtx, rgBin, buildRipgrepArgs(pattern, useRegex, searchRoot)...)
+	processutil.ConfigureNonInteractiveCommand(command)
+
+	stdout, err := command.StdoutPipe()
+	if err != nil {
+		return nil, err
+	}
+	var stderr bytes.Buffer
+	command.Stderr = &stderr
+
+	if err := command.Start(); err != nil {
+		return nil, err
+	}
+
+	resultPattern := regexp.MustCompile(`^(.*):([0-9]+):(.*)$`)
+
+	scanner := bufio.NewScanner(stdout)
+	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+
+	items := make([]map[string]any, 0, min(limit, 16))
+	reachedLimit := false
+	for scanner.Scan() {
+		line := scanner.Text()
 		if line == "" {
 			continue
 		}
@@ -126,10 +134,47 @@ func searchPatternRg(ctx context.Context, workspaceRoot string, searchRoot strin
 		}
 		items = append(items, item)
 		if len(items) >= limit {
+			reachedLimit = true
+			cancel()
 			break
 		}
 	}
+
+	scanErr := scanner.Err()
+	waitErr := command.Wait()
+
+	if reachedLimit {
+		return items, nil
+	}
+	if scanErr != nil {
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		return nil, scanErr
+	}
+	if waitErr != nil {
+		var exitErr *exec.ExitError
+		if errors.As(waitErr, &exitErr) && exitErr.ExitCode() == 1 && strings.TrimSpace(stderr.String()) == "" && len(items) == 0 {
+			return []map[string]any{}, nil
+		}
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		if msg := strings.TrimSpace(stderr.String()); msg != "" {
+			return nil, fmt.Errorf("%w: %s", waitErr, msg)
+		}
+		return nil, waitErr
+	}
 	return items, nil
+}
+
+func buildRipgrepArgs(pattern string, useRegex bool, searchRoot string) []string {
+	args := []string{"--line-number", "--no-heading", "--color", "never"}
+	if !useRegex {
+		args = append(args, "-F")
+	}
+	args = append(args, pattern, searchRoot)
+	return args
 }
 
 func searchPatternFallback(ctx context.Context, workspaceRoot string, searchRoot string, project model.ProjectFile, pattern string, useRegex bool, limit int) ([]map[string]any, error) {

@@ -20,6 +20,8 @@ mi-lsp nav search "MapPost" --include-content --context-mode symbol --workspace 
 mi-lsp nav search "pattern" --include-content --context-lines 30 --context-mode lines --workspace <alias> --format toon
 ```
 
+- `nav search` takes one positional `pattern`; quote it when it contains spaces.
+- If the pattern is regex-like, keep it quoted and add `--regex`.
 - `hybrid` is the default mode
 - Prefer this over `search` plus N file reads
 
@@ -50,7 +52,7 @@ mi-lsp nav related MyService --depth callers,tests --workspace <alias> --format 
 ## `nav workspace-map`
 
 ```powershell
-mi-lsp nav workspace-map --workspace <alias> --format toon
+mi-lsp nav workspace-map --workspace <alias> --axi --format toon
 ```
 
 - Best first command on an unfamiliar parent folder or multi-repo workspace

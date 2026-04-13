@@ -142,6 +142,68 @@ context retrieval, dependency analysis, and service exploration.`,
 	}
 	askCommand.Flags().BoolVar(&allWorkspacesAsk, "all-workspaces", false, "Search docs across all registered workspaces")
 
+	var packRF string
+	var packFL string
+	var packDoc string
+	packCommand := &cobra.Command{
+		Use:   "pack <task>",
+		Short: "Build a canonical reading pack for a task across the wiki",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := requireArgs(args, 1, "task"); err != nil {
+				return err
+			}
+			task := strings.Join(args, " ")
+			payload := map[string]any{"task": task}
+			if packRF != "" {
+				payload["rf"] = packRF
+			}
+			if packFL != "" {
+				payload["fl"] = packFL
+			}
+			if packDoc != "" {
+				payload["doc"] = packDoc
+			}
+			return state.executeOperation(cmd, "nav.pack", payload, true)
+		},
+	}
+	packCommand.Flags().StringVar(&packRF, "rf", "", "Requirement anchor to harden pack selection")
+	packCommand.Flags().StringVar(&packFL, "fl", "", "Flow anchor to harden pack selection")
+	packCommand.Flags().StringVar(&packDoc, "doc", "", "Document path anchor to harden pack selection")
+
+	var routeIncludeCodeDiscovery bool
+	routeCommand := &cobra.Command{
+		Use:   "route <task>",
+		Short: "Resolve the canonical document route for a spec-driven task (RF-QRY-014)",
+		Long: `Resolve the lowest-token canonical document route for a task.
+
+Tier 1: reads the governance profile to produce a canonical anchor doc and
+preview pack without touching the index. Tier 2 (when available) enriches
+from the indexed docs.
+
+Use --full to include discovery advisory and expanded route details.
+Use --include-code-discovery to add code-based discovery hints.`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := requireArgs(args, 1, "task"); err != nil {
+				return err
+			}
+			task := strings.Join(args, " ")
+			payload := map[string]any{"task": task}
+			if routeIncludeCodeDiscovery {
+				payload["include_code_discovery"] = true
+			}
+			return state.executeOperation(cmd, "nav.route", payload, true)
+		},
+	}
+	routeCommand.Flags().BoolVar(&routeIncludeCodeDiscovery, "include-code-discovery", false, "Include code-based discovery hints (only in full mode)")
+
+	governanceCommand := &cobra.Command{
+		Use:   "governance",
+		Short: "Explain the effective governance profile, sync status, and blockers",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return state.executeOperation(cmd, "nav.governance", map[string]any{}, true)
+		},
+	}
+
 	var includeArchetype bool
 	serviceCommand := &cobra.Command{
 		Use:   "service <path>",
@@ -390,7 +452,7 @@ Examples:
 	intentCommand.Flags().Int("offset", 0, "Skip first N results (for pagination)")
 	attachCatalogRepoFlag(intentCommand, &intentRepo)
 
-	command.AddCommand(symbolsCommand, findCommand, refsCommand, overviewCommand, outlineCommand, askCommand, serviceCommand, searchCommand, contextCommand, depsCommand, multiReadCommand, batchCommand, relatedCommand, workspaceMapCommand, diffContextCommand, traceCommand, intentCommand)
+	command.AddCommand(symbolsCommand, findCommand, refsCommand, overviewCommand, outlineCommand, askCommand, packCommand, routeCommand, governanceCommand, serviceCommand, searchCommand, contextCommand, depsCommand, multiReadCommand, batchCommand, relatedCommand, workspaceMapCommand, diffContextCommand, traceCommand, intentCommand)
 	return command
 }
 

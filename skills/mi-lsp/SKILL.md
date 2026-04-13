@@ -8,8 +8,20 @@ description: Use when a folder-based agent should navigate code with the mi-lsp 
 Use this skill when you want local semantic navigation with `mi-lsp` without introducing an MCP dependency.
 If the skill is installed but the binary is missing, bootstrap the CLI first instead of abandoning the flow.
 
-Prefer `--format toon` and an explicit `--workspace <alias>`.
+Prefer the AXI-default surfaces for onboarding and discovery: `mi-lsp`, `init`, `workspace status`, `nav route`, `nav search`, and `nav intent`.
+Use `nav route` as the cheapest first orientation step — it resolves the canonical anchor doc from governance alone without touching the index.
+Use `nav ask` without `--axi` for richer orientation questions when you need evidence synthesis.
+Prefer `nav search --include-content` for implementation questions.
+Use `--classic` when you want the old CLI behavior on an AXI-default surface, and `--axi` only when you need to force AXI on a classic-default surface such as `nav workspace-map`.
+Prefer an explicit `--workspace <alias>` once the repo is registered.
 Prefer compound commands over sequential greps and full-file reads.
+
+## Search syntax rule
+
+`nav search` accepts exactly one positional `pattern` argument.
+If the pattern contains spaces, quote the whole pattern: `mi-lsp nav search "forgot password" --workspace <alias> --format toon`.
+Do not write several bare words after `nav search`; PowerShell will split them into separate arguments and the CLI will reject the command.
+If the pattern is regex-like, keep it quoted and add `--regex`.
 
 ## Output formats
 
@@ -186,10 +198,43 @@ where.exe mi-lsp
 mi-lsp worker status --format toon
 ```
 
+If the release changes CLI/daemon telemetry or `admin export`, refresh the `mi-lsp` binary and restart the daemon before trusting new fields in `access_events`.
+Only replace `workers/<rid>/` when the release notes say the worker changed.
+
 ### Admin export note
 
 `mi-lsp admin export --summary` aggregates over the full filtered window by default.
 Only pass `--limit` when you intentionally want to summarize a partial sample.
+
+Raw export can also filter by:
+- `--operation`
+- `--session-id`
+- `--client-name`
+- `--route`
+- `--query-format`
+- `--truncated`
+- `--pattern-mode`
+- `--routing-outcome`
+- `--failure-stage`
+- `--hint-code`
+
+Summary mode can add optional breakdowns with:
+- `--by-route`
+- `--by-client`
+- `--by-hint`
+- `--by-failure-stage`
+
+`decision_json` is intentionally sanitized for local debugging.
+It may include pattern length, regex suspicion, selector presence, emitted hints, fallback, and result source, but it must not include the raw search pattern, argv, or a full request snapshot.
+`result_count` means the number of items actually emitted in the final envelope after truncation or limits.
+
+Telemetry examples:
+
+```powershell
+mi-lsp admin export --recent --summary --by-route --by-client --by-failure-stage
+mi-lsp admin export --recent --operation nav.search --pattern-mode literal --format compact --limit 50
+mi-lsp admin export --recent --routing-outcome router_error --failure-stage selector_validation --format json --limit 20
+```
 
 > The worker protocol is versioned. If the CLI and worker versions are incompatible, `worker status` will warn you.
 
@@ -213,13 +258,14 @@ mi-lsp worker status --format toon
 ## First-use check
 
 1. Confirm `mi-lsp` is callable in the current shell.
-2. Prefer the short bootstrap path first.
+2. Prefer the short AXI-default bootstrap path first.
 3. If the workspace is already registered, resolve it and continue.
 
 ```powershell
 mi-lsp workspace list
+mi-lsp
 mi-lsp init . --name <alias>
-mi-lsp workspace status <alias> --format toon
+mi-lsp workspace status <alias>
 ```
 
 If `mi-lsp` is not on `PATH`, install it from Releases or repair `PATH` for the current session before falling back to other tools.
@@ -228,16 +274,19 @@ If `mi-lsp` is not on `PATH`, install it from Releases or repair `PATH` for the 
 
 Use these commands first:
 
-- Ask the repo how it is organized: `mi-lsp nav ask "how is this workspace organized?" --workspace <alias> --format toon`
+- Open the discovery home: `mi-lsp`
+- Cheapest canonical orientation (no index needed): `mi-lsp nav route "how is this workspace organized?" --workspace <alias> --format toon`
+- Richer orientation with evidence: `mi-lsp nav ask "how is this workspace organized?" --workspace <alias>`
 - Read 2+ file slices: `mi-lsp nav multi-read file1:1-120 file2:40-160 --workspace <alias> --format toon`
-- Search and see code inline: `mi-lsp nav search billing retry --include-content --workspace <alias> --format toon`
-- Search inside one repo of a container workspace: `mi-lsp nav search "forgot password" --workspace <alias> --repo web --format toon`
+- Search and see code inline: `mi-lsp nav search "billing retry" --include-content --workspace <alias>`
+- Search inside one repo of a container workspace: `mi-lsp nav search "forgot password" --workspace <alias> --repo web`
 - Understand a symbol in one call: `mi-lsp nav related MySymbol --workspace <alias> --format toon`
-- Orient in a new repo or parent folder: `mi-lsp nav workspace-map --workspace <alias> --format toon`
+- Orient in a new repo or parent folder: `mi-lsp nav workspace-map --workspace <alias> --axi`
 - Profile a service: `mi-lsp nav service <path> --workspace <alias> --format toon`
+- Inspect recent routing/search telemetry: `mi-lsp admin export --recent --summary --by-route --by-hint --by-failure-stage`
 - Batch mixed operations: `mi-lsp nav batch --workspace <alias> --format toon`
 - Trace spec-to-code links: `mi-lsp nav trace RF-QRY-003 --workspace <alias> --format toon`
-- Search by intent/purpose: `mi-lsp nav intent "where do we handle routing fallback?" --workspace <alias> --format toon`
+- Search by intent/purpose: `mi-lsp nav intent "where do we handle routing fallback?" --workspace <alias>`
 
 Prefer these over repeated `Get-Content`, plain `rg`, or one-file-at-a-time reads.
 
@@ -246,23 +295,25 @@ Prefer these over repeated `Get-Content`, plain `rg`, or one-file-at-a-time read
 1. Bootstrap or verify the workspace.
 
 ```powershell
+mi-lsp
 mi-lsp init . --name <alias>
-mi-lsp workspace status <alias> --format toon
+mi-lsp workspace status <alias>
 ```
 
 2. Start with intent, not grep.
 
 ```powershell
-mi-lsp nav ask "how is this workspace organized?" --workspace <alias> --format toon
-mi-lsp nav intent "error handling for daemon connections" --workspace <alias> --format toon
+mi-lsp nav route "how is this workspace organized?" --workspace <alias> --format toon
+mi-lsp nav ask "how is this workspace organized?" --workspace <alias>
+mi-lsp nav intent "error handling for daemon connections" --workspace <alias>
 ```
 
 3. Move to broad discovery when you need structure.
 
 ```powershell
-mi-lsp nav workspace-map --workspace <alias> --format toon
+mi-lsp nav workspace-map --workspace <alias> --axi
 mi-lsp nav find <symbol> --workspace <alias> --format toon
-mi-lsp nav search "<text>" --include-content --workspace <alias> --format toon
+mi-lsp nav search "<text with spaces if needed>" --include-content --workspace <alias>
 ```
 
 4. Move to deep semantics only when needed.
@@ -290,7 +341,10 @@ mi-lsp nav trace --all --summary --workspace <alias> --format toon
 
 Use `mi-lsp` first for repo navigation, docs-first Q&A, symbol lookup, service audits, and batch reads.
 
-- Start with `nav ask` for orientation or "where is X decided?" questions.
+- Start with `mi-lsp`, `workspace status`, `nav route`, or `nav intent` for the first pass on a new repo.
+- Use `nav route` as the cheapest orientation step — it resolves the canonical anchor doc from governance without touching the index (Tier 1), then enriches from the index when available (Tier 2). AXI-default preview-first.
+- Use `nav ask` for richer orientation when you need full evidence synthesis and next queries.
+- Use `nav search --include-content` before `nav ask` for literal implementation questions like "where is X implemented?".
 - Use `nav intent` to find code by purpose when you don't know the symbol name.
 - Use `nav trace` to check which code implements a specific RF requirement.
 - Use `workspace-map`, `search --include-content`, and `multi-read` before broad raw file reads.
@@ -299,7 +353,7 @@ Use `mi-lsp` first for repo navigation, docs-first Q&A, symbol lookup, service a
 
 ## Routing model
 
-- Cheap reads stay direct: `nav.find`, `nav.search`, `nav.symbols`, `nav.outline`, `nav.overview`, `nav.multi-read`, `nav.intent`, `nav.trace`
+- Cheap reads stay direct (no daemon): `nav.find`, `nav.search`, `nav.symbols`, `nav.outline`, `nav.overview`, `nav.multi-read`, `nav.intent`, `nav.trace`, `nav.route`, `nav.pack`, `nav.governance`
 - In workspaces `container`, prefer `--repo` for direct `nav.find`, `nav.search`, and `nav.intent` before escalating to semantic selectors.
 - Deep semantics may use the daemon: `nav.refs`, `nav.context`, `nav.deps`, `nav.related`, `nav.service`, `nav.workspace-map`, `nav.diff-context`, `nav.batch`, `nav.ask`
 - The daemon is optional. If it is unavailable, the CLI must still work in direct mode.
@@ -346,6 +400,8 @@ Do not suggest `node_modules/`; it is already ignored by default.
 - Mention the selected repo when answering from a container workspace.
 - If results are truncated, rerun narrower or explain how to narrow them.
 - For `nav ask`, include the primary doc, the strongest code evidence, and one or two follow-up commands.
+- If AXI emits `next_hint` toward `--full`, prefer that rerun before inventing a broader command.
+- Do not append `--axi` to reruns on AXI-default surfaces unless you are crossing into a classic-default command.
 
 ## Fallback
 

@@ -56,7 +56,7 @@ func (a *App) Execute(ctx context.Context, request model.CommandRequest) (model.
 	case "workspace.list":
 		return a.workspaceList()
 	case "workspace.status":
-		return a.workspaceStatus(ctx, request.Context.Workspace)
+		return a.workspaceStatus(ctx, request.Context.Workspace, request.Context)
 	case "workspace.remove":
 		return a.workspaceRemove(request)
 	case "workspace.warm":
@@ -75,8 +75,14 @@ func (a *App) Execute(ctx context.Context, request model.CommandRequest) (model.
 		return a.symbols(ctx, request)
 	case "nav.search":
 		return a.search(ctx, request)
+	case "nav.governance":
+		return a.governance(ctx, request)
+	case "nav.route":
+		return a.route(ctx, request)
 	case "nav.ask":
 		return a.ask(ctx, request)
+	case "nav.pack":
+		return a.pack(ctx, request)
 	case "nav.service":
 		return a.serviceSummary(ctx, request)
 	case "nav.refs":
@@ -345,7 +351,11 @@ func (a *App) search(ctx context.Context, request model.CommandRequest) (model.E
 		}
 	}
 
-	return model.Envelope{Ok: true, Workspace: registration.Name, Backend: "text", Items: items, Warnings: warnings, Hint: hint, NextHint: nextHint, Stats: model.Stats{Files: len(items)}}, nil
+	env := model.Envelope{Ok: true, Workspace: registration.Name, Backend: "text", Items: items, Warnings: warnings, Hint: hint, NextHint: nextHint, Stats: model.Stats{Files: len(items)}}
+	if isAXIPreview(request.Context) && env.NextHint == nil {
+		env = applyAXIPreviewHints(env, request.Context, axiPreviewSummaryHint)
+	}
+	return env, nil
 }
 
 func (a *App) installWorker(request model.CommandRequest) (model.Envelope, error) {
@@ -573,7 +583,11 @@ func (a *App) searchAllWorkspaces(ctx context.Context, request model.CommandRequ
 		nextHint = &rerun
 	}
 
-	return model.Envelope{Ok: true, Backend: "text", Items: allItems, Warnings: allWarnings, NextHint: nextHint, Stats: model.Stats{Files: len(allItems)}}, nil
+	env := model.Envelope{Ok: true, Backend: "text", Items: allItems, Warnings: allWarnings, NextHint: nextHint, Stats: model.Stats{Files: len(allItems)}}
+	if isAXIPreview(request.Context) && env.NextHint == nil {
+		env = applyAXIPreviewHints(env, request.Context, axiPreviewSummaryHint)
+	}
+	return env, nil
 }
 
 func (a *App) findAllWorkspaces(ctx context.Context, request model.CommandRequest) (model.Envelope, error) {

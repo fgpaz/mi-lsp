@@ -9,6 +9,8 @@ import (
 	"os"
 	"os/exec"
 	"runtime"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -32,11 +34,11 @@ Provides runtime dashboards, access logs, and workspace status.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx, cancel := context.WithTimeout(cmd.Context(), 5*time.Second)
 			defer cancel()
-			response, err := daemon.NewClient().Execute(ctx, model.CommandRequest{ProtocolVersion: model.ProtocolVersion, Operation: "system.status", Context: state.queryOptions()})
+			response, err := daemon.NewClient().Execute(ctx, model.CommandRequest{ProtocolVersion: model.ProtocolVersion, Operation: "system.status", Context: state.queryOptions(cmd, "system.status", nil)})
 			if err != nil {
 				return daemon.BuildStatusError()
 			}
-			return state.printEnvelope(response, state.queryOptions())
+			return state.printEnvelope(response, state.queryOptions(cmd, "system.status", nil))
 		},
 	}
 
@@ -46,7 +48,7 @@ Provides runtime dashboards, access logs, and workspace status.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx, cancel := context.WithTimeout(cmd.Context(), 5*time.Second)
 			defer cancel()
-			response, err := daemon.NewClient().Execute(ctx, model.CommandRequest{ProtocolVersion: model.ProtocolVersion, Operation: "system.status", Context: state.queryOptions()})
+			response, err := daemon.NewClient().Execute(ctx, model.CommandRequest{ProtocolVersion: model.ProtocolVersion, Operation: "system.status", Context: state.queryOptions(cmd, "system.status", nil)})
 			if err != nil {
 				return daemon.BuildStatusError()
 			}
@@ -61,7 +63,7 @@ Provides runtime dashboards, access logs, and workspace status.`,
 			if err := openURL(finalURL); err != nil {
 				return err
 			}
-			return state.printEnvelope(model.Envelope{Ok: true, Backend: "admin", Items: []map[string]any{{"admin_url": finalURL}}}, state.queryOptions())
+			return state.printEnvelope(model.Envelope{Ok: true, Backend: "admin", Items: []map[string]any{{"admin_url": finalURL}}}, state.queryOptions(cmd, "admin.url", nil))
 		},
 	}
 
@@ -72,16 +74,30 @@ Provides runtime dashboards, access logs, and workspace status.`,
 
 func newExportCommand(state *rootState) *cobra.Command {
 	var (
-		sinceFlag      string
-		workspaceFlag  string
-		backendFlag    string
-		errorsOnly     bool
-		formatFlag     string
-		summaryFlag    bool
-		limitFlag      int
-		recentFlag     bool
-		percentileFlag bool
-		byBackendFlag  bool
+		sinceFlag          string
+		workspaceFlag      string
+		backendFlag        string
+		operationFlag      string
+		sessionIDFlag      string
+		clientNameFlag     string
+		routeFlag          string
+		filterFormatFlag   string
+		truncatedFlag      string
+		patternModeFlag    string
+		routingOutcomeFlag string
+		failureStageFlag   string
+		hintCodeFlag       string
+		errorsOnly         bool
+		formatFlag         string
+		summaryFlag        bool
+		limitFlag          int
+		recentFlag         bool
+		percentileFlag     bool
+		byBackendFlag      bool
+		byRouteFlag        bool
+		byClientFlag       bool
+		byHintFlag         bool
+		byFailureStageFlag bool
 	)
 
 	command := &cobra.Command{
@@ -99,14 +115,28 @@ func newExportCommand(state *rootState) *cobra.Command {
 			if err != nil {
 				return err
 			}
+			truncatedValue, err := parseOptionalBool(truncatedFlag)
+			if err != nil {
+				return fmt.Errorf("invalid --truncated %q: %w", truncatedFlag, err)
+			}
 
 			query := daemon.ExportQuery{
-				Since:       window.Since,
-				Workspace:   workspaceFlag,
-				Backend:     backendFlag,
-				ErrorsOnly:  errorsOnly,
-				Limit:       exportQueryLimit(limitFlag, cmd.Flags().Changed("limit"), summaryFlag),
-				WindowLabel: window.Label,
+				Since:          window.Since,
+				Workspace:      workspaceFlag,
+				Backend:        backendFlag,
+				Operation:      operationFlag,
+				SessionID:      sessionIDFlag,
+				ClientName:     clientNameFlag,
+				Route:          routeFlag,
+				Format:         filterFormatFlag,
+				Truncated:      truncatedValue,
+				PatternMode:    patternModeFlag,
+				RoutingOutcome: routingOutcomeFlag,
+				FailureStage:   failureStageFlag,
+				HintCode:       hintCodeFlag,
+				ErrorsOnly:     errorsOnly,
+				Limit:          exportQueryLimit(limitFlag, cmd.Flags().Changed("limit"), summaryFlag),
+				WindowLabel:    window.Label,
 			}
 
 			events, err := daemon.QueryAccessEvents(store, query)
@@ -119,6 +149,18 @@ func newExportCommand(state *rootState) *cobra.Command {
 				summary.WindowLabel = window.Label
 				if byBackendFlag {
 					summary.ByBackend = daemon.ComputeBackendHistogram(events)
+				}
+				if !byRouteFlag {
+					summary.ByRoute = nil
+				}
+				if !byClientFlag {
+					summary.ByClient = nil
+				}
+				if !byHintFlag {
+					summary.ByHintCode = nil
+				}
+				if !byFailureStageFlag {
+					summary.ByFailureStage = nil
 				}
 				if percentileFlag {
 					summary.ByOperationPercentiles = daemon.ComputeOperationPercentiles(events)
@@ -149,6 +191,18 @@ func newExportCommand(state *rootState) *cobra.Command {
 					if e.Error != "" {
 						extra += " err=" + e.Error
 					}
+					if e.RoutingOutcome != "" && e.RoutingOutcome != "direct" {
+						extra += " routing=" + e.RoutingOutcome
+					}
+					if e.FailureStage != "" && e.FailureStage != "none" {
+						extra += " stage=" + e.FailureStage
+					}
+					if e.HintCode != "" {
+						extra += " hint=" + e.HintCode
+					}
+					if e.TruncationReason != "" && e.TruncationReason != "none" {
+						extra += " trunc=" + e.TruncationReason
+					}
 					fmt.Fprintf(os.Stdout, "[%s] %s %s ws=%s backend=%s %dms%s\n",
 						status, e.OccurredAt.Format("2006-01-02T15:04"), e.Operation,
 						e.Workspace, e.Backend, e.LatencyMs, extra)
@@ -164,12 +218,26 @@ func newExportCommand(state *rootState) *cobra.Command {
 	command.Flags().BoolVar(&recentFlag, "recent", false, "Shortcut for the recent 24h telemetry window")
 	command.Flags().StringVar(&workspaceFlag, "workspace", "", "Filter by workspace name")
 	command.Flags().StringVar(&backendFlag, "backend", "", "Filter by backend type")
+	command.Flags().StringVar(&operationFlag, "operation", "", "Filter by operation name")
+	command.Flags().StringVar(&sessionIDFlag, "session-id", "", "Filter by session id")
+	command.Flags().StringVar(&clientNameFlag, "client-name", "", "Filter by client name")
+	command.Flags().StringVar(&routeFlag, "route", "", "Filter by execution route")
+	command.Flags().StringVar(&filterFormatFlag, "query-format", "", "Filter by query output format")
+	command.Flags().StringVar(&truncatedFlag, "truncated", "", "Filter by truncation state: true or false")
+	command.Flags().StringVar(&patternModeFlag, "pattern-mode", "", "Filter by search pattern mode: literal, regex, none")
+	command.Flags().StringVar(&routingOutcomeFlag, "routing-outcome", "", "Filter by routing outcome")
+	command.Flags().StringVar(&failureStageFlag, "failure-stage", "", "Filter by failure stage")
+	command.Flags().StringVar(&hintCodeFlag, "hint-code", "", "Filter by stable hint code")
 	command.Flags().BoolVar(&errorsOnly, "errors", false, "Show only failed operations")
 	command.Flags().StringVar(&formatFlag, "format", "json", "Output format: json, csv, compact")
 	command.Flags().BoolVar(&summaryFlag, "summary", false, "Show aggregated summary table instead of raw events")
 	command.Flags().IntVar(&limitFlag, "limit", 500, "Maximum number of events to return")
 	command.Flags().BoolVar(&percentileFlag, "percentile", false, "Show p50/p95/p99 latency breakdown by operation (requires --summary)")
 	command.Flags().BoolVar(&byBackendFlag, "by-backend", false, "Show backend usage histogram (requires --summary)")
+	command.Flags().BoolVar(&byRouteFlag, "by-route", false, "Show route breakdown (requires --summary)")
+	command.Flags().BoolVar(&byClientFlag, "by-client", false, "Show client breakdown (requires --summary)")
+	command.Flags().BoolVar(&byHintFlag, "by-hint", false, "Show hint-code breakdown (requires --summary)")
+	command.Flags().BoolVar(&byFailureStageFlag, "by-failure-stage", false, "Show failure-stage breakdown (requires --summary)")
 
 	return command
 }
@@ -201,6 +269,18 @@ func parseSinceDuration(s string) (time.Time, error) {
 		return time.Time{}, fmt.Errorf("unsupported duration format %q; use e.g. 7d, 24h, 30m", s)
 	}
 	return window.Since, nil
+}
+
+func parseOptionalBool(raw string) (*bool, error) {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return nil, nil
+	}
+	value, err := strconv.ParseBool(trimmed)
+	if err != nil {
+		return nil, err
+	}
+	return &value, nil
 }
 
 func adminURLFromEnvelope(response model.Envelope) (string, error) {

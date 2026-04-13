@@ -18,6 +18,8 @@ type QueryOptions struct {
 	MaxItems    int    `json:"max_items,omitempty"`
 	MaxChars    int    `json:"max_chars,omitempty"`
 	Offset      int    `json:"offset,omitempty"`
+	AXI         bool   `json:"axi,omitempty"`
+	Full        bool   `json:"full,omitempty"`
 	Verbose     bool   `json:"verbose,omitempty"`
 	ClientName  string `json:"client_name,omitempty"`
 	SessionID   string `json:"session_id,omitempty"`
@@ -119,9 +121,11 @@ type DocMention struct {
 }
 
 type DocsReadProfile struct {
-	Version     int                 `toml:"version"`
-	Families    []DocsReadFamily    `toml:"family"`
-	GenericDocs DocsGenericFallback `toml:"generic_docs"`
+	Version     int                    `toml:"version"`
+	Families    []DocsReadFamily       `toml:"family"`
+	GenericDocs DocsGenericFallback    `toml:"generic_docs"`
+	ReadingPack DocsReadingPackProfile `toml:"reading_pack"`
+	Governance  DocsGovernanceProfile  `toml:"governance"`
 }
 
 type DocsReadFamily struct {
@@ -132,6 +136,81 @@ type DocsReadFamily struct {
 
 type DocsGenericFallback struct {
 	Paths []string `toml:"paths"`
+}
+
+type DocsReadingPackProfile struct {
+	MaxDocs              int      `toml:"max_docs"`
+	FunctionalStageOrder []string `toml:"functional_stage_order"`
+	TechnicalStageOrder  []string `toml:"technical_stage_order"`
+	UXStageOrder         []string `toml:"ux_stage_order"`
+}
+
+type GovernanceSource struct {
+	Version              int                       `yaml:"version"`
+	Profile              string                    `yaml:"profile"`
+	Extends              string                    `yaml:"extends,omitempty"`
+	Overlays             []string                  `yaml:"overlays,omitempty"`
+	NumberingRecommended bool                      `yaml:"numbering_recommended,omitempty"`
+	Hierarchy            []GovernanceHierarchyItem `yaml:"hierarchy"`
+	ContextChain         []string                  `yaml:"context_chain"`
+	ClosureChain         []string                  `yaml:"closure_chain"`
+	AuditChain           []string                  `yaml:"audit_chain"`
+	BlockingRules        []string                  `yaml:"blocking_rules"`
+	Projection           GovernanceProjection      `yaml:"projection"`
+}
+
+type GovernanceHierarchyItem struct {
+	ID        string   `yaml:"id" toml:"id"`
+	Label     string   `yaml:"label,omitempty" toml:"label,omitempty"`
+	Layer     string   `yaml:"layer" toml:"layer"`
+	Family    string   `yaml:"family" toml:"family"`
+	PackStage string   `yaml:"pack_stage,omitempty" toml:"pack_stage,omitempty"`
+	Paths     []string `yaml:"paths" toml:"paths"`
+}
+
+type GovernanceProjection struct {
+	Output    string `yaml:"output,omitempty" toml:"output,omitempty"`
+	Format    string `yaml:"format,omitempty" toml:"format,omitempty"`
+	AutoSync  bool   `yaml:"auto_sync,omitempty" toml:"auto_sync,omitempty"`
+	Versioned bool   `yaml:"versioned,omitempty" toml:"versioned,omitempty"`
+}
+
+type DocsGovernanceProfile struct {
+	SourceDoc            string                    `toml:"source_doc,omitempty"`
+	SourceFormat         string                    `toml:"source_format,omitempty"`
+	Profile              string                    `toml:"profile,omitempty"`
+	Extends              string                    `toml:"extends,omitempty"`
+	EffectiveBase        string                    `toml:"effective_base,omitempty"`
+	EffectiveOverlays    []string                  `toml:"effective_overlays,omitempty"`
+	ContextChain         []string                  `toml:"context_chain,omitempty"`
+	ClosureChain         []string                  `toml:"closure_chain,omitempty"`
+	AuditChain           []string                  `toml:"audit_chain,omitempty"`
+	BlockingRules        []string                  `toml:"blocking_rules,omitempty"`
+	NumberingRecommended bool                      `toml:"numbering_recommended,omitempty"`
+	Projection           GovernanceProjection      `toml:"projection,omitempty"`
+	Hierarchy            []GovernanceHierarchyItem `toml:"hierarchy,omitempty"`
+}
+
+type GovernanceStatus struct {
+	HumanDoc             string   `json:"human_doc,omitempty"`
+	ProjectionDoc        string   `json:"projection_doc,omitempty"`
+	Profile              string   `json:"profile,omitempty"`
+	Extends              string   `json:"extends,omitempty"`
+	EffectiveBase        string   `json:"effective_base,omitempty"`
+	EffectiveOverlays    []string `json:"effective_overlays,omitempty"`
+	ContextChain         []string `json:"context_chain,omitempty"`
+	ClosureChain         []string `json:"closure_chain,omitempty"`
+	AuditChain           []string `json:"audit_chain,omitempty"`
+	BlockingRules        []string `json:"blocking_rules,omitempty"`
+	NumberingRecommended bool     `json:"numbering_recommended,omitempty"`
+	Sync                 string   `json:"sync,omitempty"`
+	IndexSync            string   `json:"index_sync,omitempty"`
+	Blocked              bool     `json:"blocked"`
+	Issues               []string `json:"issues,omitempty"`
+	Warnings             []string `json:"warnings,omitempty"`
+	AllowedActions       []string `json:"allowed_actions,omitempty"`
+	NextSteps            []string `json:"next_steps,omitempty"`
+	Summary              string   `json:"summary,omitempty"`
 }
 
 type AskDocEvidence struct {
@@ -160,6 +239,36 @@ type AskResult struct {
 	CodeEvidence []AskCodeEvidence `json:"code_evidence,omitempty"`
 	Why          []string          `json:"why,omitempty"`
 	NextQueries  []string          `json:"next_queries,omitempty"`
+}
+
+type PackTarget struct {
+	Heading string `json:"heading,omitempty"`
+	Line    int    `json:"line,omitempty"`
+	Reason  string `json:"reason,omitempty"`
+}
+
+type PackDoc struct {
+	Path       string       `json:"path"`
+	Title      string       `json:"title,omitempty"`
+	DocID      string       `json:"doc_id,omitempty"`
+	Layer      string       `json:"layer,omitempty"`
+	Family     string       `json:"family,omitempty"`
+	Stage      string       `json:"stage,omitempty"`
+	Why        []string     `json:"why,omitempty"`
+	Targets    []PackTarget `json:"targets,omitempty"`
+	SliceText  string       `json:"slice_text,omitempty"`
+	SliceStart int          `json:"slice_start_line,omitempty"`
+	SliceEnd   int          `json:"slice_end_line,omitempty"`
+}
+
+type PackResult struct {
+	Task        string    `json:"task,omitempty"`
+	Family      string    `json:"family,omitempty"`
+	Mode        string    `json:"mode,omitempty"`
+	PrimaryDoc  string    `json:"primary_doc,omitempty"`
+	Docs        []PackDoc `json:"docs,omitempty"`
+	Why         []string  `json:"why,omitempty"`
+	NextQueries []string  `json:"next_queries,omitempty"`
 }
 
 type WorkspaceRegistration struct {
@@ -277,34 +386,41 @@ type DaemonState struct {
 }
 
 type AccessEvent struct {
-	ID             int64     `json:"id,omitempty"`
-	OccurredAt     time.Time `json:"occurred_at"`
-	ClientName     string    `json:"client_name,omitempty"`
-	SessionID      string    `json:"session_id,omitempty"`
-	Seq            int       `json:"seq,omitempty"`
-	Workspace      string    `json:"workspace,omitempty"`
-	WorkspaceInput string    `json:"workspace_input,omitempty"`
-	WorkspaceRoot  string    `json:"workspace_root,omitempty"`
-	WorkspaceAlias string    `json:"workspace_alias,omitempty"`
-	Repo           string    `json:"repo,omitempty"`
-	Operation      string    `json:"operation"`
-	Backend        string    `json:"backend,omitempty"`
-	Route          string    `json:"route,omitempty"`
-	Format         string    `json:"format,omitempty"`
-	TokenBudget    int       `json:"token_budget,omitempty"`
-	MaxItems       int       `json:"max_items,omitempty"`
-	MaxChars       int       `json:"max_chars,omitempty"`
-	Compress       bool      `json:"compress,omitempty"`
-	Success        bool      `json:"success"`
-	LatencyMs      int64     `json:"latency_ms,omitempty"`
-	Warnings       []string  `json:"warnings,omitempty"`
-	RuntimeKey     string    `json:"runtime_key,omitempty"`
-	EntrypointID   string    `json:"entrypoint_id,omitempty"`
-	Error          string    `json:"error,omitempty"`
-	ErrorKind      string    `json:"error_kind,omitempty"`
-	ErrorCode      string    `json:"error_code,omitempty"`
-	Truncated      bool      `json:"truncated,omitempty"`
-	ResultCount    int       `json:"result_count,omitempty"`
+	ID               int64     `json:"id,omitempty"`
+	OccurredAt       time.Time `json:"occurred_at"`
+	ClientName       string    `json:"client_name,omitempty"`
+	SessionID        string    `json:"session_id,omitempty"`
+	Seq              int       `json:"seq,omitempty"`
+	Workspace        string    `json:"workspace,omitempty"`
+	WorkspaceInput   string    `json:"workspace_input,omitempty"`
+	WorkspaceRoot    string    `json:"workspace_root,omitempty"`
+	WorkspaceAlias   string    `json:"workspace_alias,omitempty"`
+	Repo             string    `json:"repo,omitempty"`
+	Operation        string    `json:"operation"`
+	Backend          string    `json:"backend,omitempty"`
+	Route            string    `json:"route,omitempty"`
+	Format           string    `json:"format,omitempty"`
+	TokenBudget      int       `json:"token_budget,omitempty"`
+	MaxItems         int       `json:"max_items,omitempty"`
+	MaxChars         int       `json:"max_chars,omitempty"`
+	Compress         bool      `json:"compress,omitempty"`
+	Success          bool      `json:"success"`
+	LatencyMs        int64     `json:"latency_ms,omitempty"`
+	Warnings         []string  `json:"warnings,omitempty"`
+	RuntimeKey       string    `json:"runtime_key,omitempty"`
+	EntrypointID     string    `json:"entrypoint_id,omitempty"`
+	Error            string    `json:"error,omitempty"`
+	ErrorKind        string    `json:"error_kind,omitempty"`
+	ErrorCode        string    `json:"error_code,omitempty"`
+	Truncated        bool      `json:"truncated,omitempty"`
+	ResultCount      int       `json:"result_count,omitempty"`
+	WarningCount     int       `json:"warning_count,omitempty"`
+	PatternMode      string    `json:"pattern_mode,omitempty"`
+	RoutingOutcome   string    `json:"routing_outcome,omitempty"`
+	FailureStage     string    `json:"failure_stage,omitempty"`
+	HintCode         string    `json:"hint_code,omitempty"`
+	TruncationReason string    `json:"truncation_reason,omitempty"`
+	DecisionJSON     string    `json:"decision_json,omitempty"`
 }
 
 // TraceLink represents a spec-to-code link, either explicit (wiki marker) or inferred (heuristic).
@@ -334,6 +450,44 @@ type TraceResult struct {
 	Inferred []TraceLink  `json:"inferred"`
 	Tests    []TraceLink  `json:"tests"`
 	Drift    []TraceDrift `json:"drift"`
+}
+
+// RouteDoc is a single document in a canonical or discovery route lane.
+type RouteDoc struct {
+	Path   string `json:"path"`
+	Title  string `json:"title,omitempty"`
+	DocID  string `json:"doc_id,omitempty"`
+	Layer  string `json:"layer,omitempty"`
+	Family string `json:"family,omitempty"`
+	Stage  string `json:"stage,omitempty"`
+	Why    string `json:"why,omitempty"`
+}
+
+// RouteCanonicalLane is the authoritative canonical routing lane.
+// It is always populated and is never overridden by discovery.
+type RouteCanonicalLane struct {
+	AnchorDoc     RouteDoc   `json:"anchor_doc"`
+	PreviewPack   []RouteDoc `json:"preview_pack,omitempty"`
+	Family        string     `json:"family,omitempty"`
+	Authoritative bool       `json:"authoritative"`
+}
+
+// RouteDiscoveryLane is the non-authoritative discovery advisory lane.
+// It never overrides the canonical lane and is docs-only by default.
+type RouteDiscoveryLane struct {
+	Source   string     `json:"source,omitempty"` // "indexed_docs" | "text_search"
+	Docs     []RouteDoc `json:"docs,omitempty"`
+	Advisory string     `json:"advisory,omitempty"`
+}
+
+// RouteResult is the output of nav.route and the shared route core.
+// Canonical lane is authoritative; discovery lane is advisory-only.
+type RouteResult struct {
+	Task      string              `json:"task,omitempty"`
+	Mode      string              `json:"mode,omitempty"` // "preview" | "full"
+	Canonical RouteCanonicalLane  `json:"canonical"`
+	Discovery *RouteDiscoveryLane `json:"discovery,omitempty"`
+	Why       []string            `json:"why,omitempty"`
 }
 
 // ProjectConfig is a semantic alias of ProjectFile for traceability with 05_modelo_datos.md.

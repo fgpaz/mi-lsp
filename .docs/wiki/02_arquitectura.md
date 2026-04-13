@@ -40,7 +40,7 @@ flowchart LR
 - El indice repo-local persiste ownership por repo (`repo_id`, `repo`) para archivos y simbolos.
 - El mismo indice repo-local persiste `DocRecord`, `DocEdge` y `DocMention` para `nav ask`.
 - El runtime pool del daemon se keyed por `(workspace_root, backend_type, entrypoint_id)`.
-- `nav ask` rankea docs primero y usa el codigo como evidencia; `nav service` agrega evidencia scoped a un path usando catalogo y busqueda textual.
+- `nav ask` rankea docs primero y usa el codigo como evidencia; `nav pack` usa la misma base para construir reading packs global -> especifico; `nav service` agrega evidencia scoped a un path usando catalogo y busqueda textual.
 
 ## Responsabilidades por modulo
 
@@ -49,8 +49,8 @@ flowchart LR
 | CLI | Parseo de comandos, flags globales, selectors semanticos y shortcut `init` |
 | Daemon global Go | Routing, health, telemetry, governance UI y sharing entre clientes |
 | Governance UI | Consola workspace-first con visibilidad de `kind`, repos y entrypoints |
-| Core Go | Discovery de workspace, indexacion repo-local, routing semantico, truncacion, `nav ask` y service exploration |
-| Docgraph/read-model | Clasificar preguntas, priorizar documentos canonicos y conectar docs con codigo |
+| Core Go | Discovery de workspace, indexacion repo-local, routing semantico, truncacion, `nav ask`, `nav pack` y service exploration |
+| Docgraph/read-model | Clasificar preguntas/tareas, priorizar documentos canonicos y conectar docs con codigo |
 | Service exploration profile | Agregar evidencia observable por path: endpoints, consumers, publishers, entidades e infraestructura |
 | Runtime pool | Mantener un runtime vivo por entrypoint semantico con LRU |
 | Worker .NET | Semantica profunda C# con Roslyn |
@@ -80,12 +80,13 @@ flowchart LR
 - `gastos` valido el modelo `single`: el detector prioriza `backend/Gastos.sln` y evita `.worktrees/`.
 - `interbancarizacion_coelsa` valido el modelo `container`: discovery global en la carpeta padre y semantica correcta al rerun con `--repo`.
 - `nav ask` reduce round-trips de onboarding cuando existe una wiki canonica util.
+- `nav pack` reduce tokens al devolver el orden de lectura canonico y solo materializar slices bajo `--full`.
 - El governance panel debe exponer repo y entrypoint de cada runtime para distinguir warm state real.
 
 ## Insumos para FL
 
 - `FL-BOOT-01`: alta de `single|container`, deteccion de repos hijos y entrypoints, y shortcut `init`.
 - `FL-IDX-01`: indexacion de codigo + docs con ownership por repo y sugerencias de `.milspignore` cuando hay ruido.
-- `FL-QRY-01`: queries compactas, `nav ask` docs-first y `nav service` evidence-first.
+- `FL-QRY-01`: queries compactas, `nav ask` docs-first, `nav pack` para reading packs y `nav service` evidence-first.
 - `FL-CS-01`: routing semantico por repo/entrypoint con error accionable ante ambiguedad.
 - `FL-DAE-01`: runtimes y telemetria por entrypoint, visibles en la governance UI.

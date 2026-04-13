@@ -1,44 +1,117 @@
 version = 1
 
 [[family]]
-name = "functional"
-intent_keywords = ["scope", "flow", "feature", "behavior", "rf", "fl", "test", "workflow", "journey"]
-paths = [
-  ".docs/wiki/01_*.md",
-  ".docs/wiki/02_*.md",
-  ".docs/wiki/03_FL.md",
-  ".docs/wiki/03_FL/*.md",
-  ".docs/wiki/04_RF.md",
-  ".docs/wiki/04_RF/*.md",
-  ".docs/wiki/05_*.md",
-  ".docs/wiki/06_*.md",
-  ".docs/wiki/06_pruebas/*.md"
-]
+  name = "functional"
+  intent_keywords = ["scope", "flow", "feature", "behavior", "rf", "fl", "test", "workflow", "governance", "ordered_wiki", "spec_core", "technical"]
+  paths = [".docs/wiki/00_gobierno_documental.md", ".docs/wiki/01_*.md", ".docs/wiki/02_*.md", ".docs/wiki/03_FL.md", ".docs/wiki/03_FL/*.md", ".docs/wiki/04_RF.md", ".docs/wiki/04_RF/*.md", ".docs/wiki/05_*.md", ".docs/wiki/06_*.md", ".docs/wiki/06_pruebas/*.md"]
 
 [[family]]
-name = "technical"
-intent_keywords = ["technical", "daemon", "worker", "runtime", "backend", "contract", "protocol", "search", "context", "refs", "service", "index", "routing", "ask", "init"]
-paths = [
-  ".docs/wiki/07_*.md",
-  ".docs/wiki/07_tech/*.md",
-  ".docs/wiki/08_*.md",
-  ".docs/wiki/08_db/*.md",
-  ".docs/wiki/09_*.md",
-  ".docs/wiki/09_contratos/*.md"
-]
-
-[[family]]
-name = "ux"
-intent_keywords = ["ux", "ui", "frontend", "visual", "design", "journey", "experience", "pattern", "interface"]
-paths = [
-  ".docs/wiki/10_*.md",
-  ".docs/wiki/11_*.md",
-  ".docs/wiki/12_*.md",
-  ".docs/wiki/13_*.md",
-  ".docs/wiki/14_*.md",
-  ".docs/wiki/15_*.md",
-  ".docs/wiki/16_*.md"
-]
+  name = "technical"
+  intent_keywords = ["technical", "governance", "runtime", "backend", "contract", "protocol", "search", "context", "refs", "service", "index", "routing", "ordered_wiki", "spec_core"]
+  paths = [".docs/wiki/07_*.md", ".docs/wiki/07_tech/*.md", ".docs/wiki/08_*.md", ".docs/wiki/08_db/*.md", ".docs/wiki/09_*.md", ".docs/wiki/09_contratos/*.md"]
 
 [generic_docs]
-paths = ["README.md", "README*.md", "docs/", ".docs/"]
+  paths = ["README.md", "README*.md", "docs/", ".docs/"]
+
+[reading_pack]
+  max_docs = 7
+  functional_stage_order = ["governance", "scope", "architecture", "flow", "requirements", "data", "tests"]
+  technical_stage_order = ["governance", "scope", "architecture", "technical_baseline", "technical_detail", "physical_data", "contracts"]
+  ux_stage_order = ["governance", "scope", "architecture", "ux_global", "ux_research", "ux_spec", "ux_handoff"]
+
+[governance]
+  source_doc = ".docs/wiki/00_gobierno_documental.md"
+  source_format = "markdown+yaml"
+  profile = "spec_backend"
+  effective_base = "ordered_wiki"
+  effective_overlays = ["spec_core", "technical"]
+  context_chain = ["governance", "scope", "architecture", "flow", "requirements", "technical_baseline", "contracts"]
+  closure_chain = ["governance", "flow", "requirements", "technical_baseline", "contracts", "tests"]
+  audit_chain = ["governance", "flow", "requirements", "technical_baseline", "physical_data", "contracts", "tests"]
+  blocking_rules = ["missing_human_governance_doc", "missing_governance_yaml", "invalid_governance_schema", "projection_out_of_sync", "workspace_index_stale"]
+  numbering_recommended = true
+  [governance.projection]
+    output = ".docs/wiki/_mi-lsp/read-model.toml"
+    format = "toml"
+    auto_sync = true
+    versioned = true
+
+  [[governance.hierarchy]]
+    id = "governance"
+    label = "Gobierno documental"
+    layer = "00"
+    family = "functional"
+    pack_stage = "governance"
+    paths = [".docs/wiki/00_gobierno_documental.md"]
+
+  [[governance.hierarchy]]
+    id = "scope"
+    label = "Alcance funcional"
+    layer = "01"
+    family = "functional"
+    pack_stage = "scope"
+    paths = [".docs/wiki/01_*.md"]
+
+  [[governance.hierarchy]]
+    id = "architecture"
+    label = "Arquitectura"
+    layer = "02"
+    family = "functional"
+    pack_stage = "architecture"
+    paths = [".docs/wiki/02_*.md"]
+
+  [[governance.hierarchy]]
+    id = "flow"
+    label = "Flujos"
+    layer = "03"
+    family = "functional"
+    pack_stage = "flow"
+    paths = [".docs/wiki/03_FL.md", ".docs/wiki/03_FL/*.md"]
+
+  [[governance.hierarchy]]
+    id = "requirements"
+    label = "Requerimientos"
+    layer = "04"
+    family = "functional"
+    pack_stage = "requirements"
+    paths = [".docs/wiki/04_RF.md", ".docs/wiki/04_RF/*.md"]
+
+  [[governance.hierarchy]]
+    id = "data"
+    label = "Modelo de datos"
+    layer = "05"
+    family = "functional"
+    pack_stage = "data"
+    paths = [".docs/wiki/05_*.md"]
+
+  [[governance.hierarchy]]
+    id = "tests"
+    label = "Pruebas"
+    layer = "06"
+    family = "functional"
+    pack_stage = "tests"
+    paths = [".docs/wiki/06_*.md", ".docs/wiki/06_pruebas/*.md"]
+
+  [[governance.hierarchy]]
+    id = "technical_baseline"
+    label = "Baseline tecnica"
+    layer = "07"
+    family = "technical"
+    pack_stage = "technical_baseline"
+    paths = [".docs/wiki/07_*.md", ".docs/wiki/07_tech/*.md"]
+
+  [[governance.hierarchy]]
+    id = "physical_data"
+    label = "Modelo fisico"
+    layer = "08"
+    family = "technical"
+    pack_stage = "physical_data"
+    paths = [".docs/wiki/08_*.md", ".docs/wiki/08_db/*.md"]
+
+  [[governance.hierarchy]]
+    id = "contracts"
+    label = "Contratos tecnicos"
+    layer = "09"
+    family = "technical"
+    pack_stage = "contracts"
+    paths = [".docs/wiki/09_*.md", ".docs/wiki/09_contratos/*.md"]

@@ -118,6 +118,13 @@ func renderText(env model.Envelope) string {
 				lines = append(lines, fmt.Sprintf("  code %s %s:%d %s", evidence.Type, evidence.File, evidence.Line, evidence.Name))
 			}
 		}
+	case []model.GovernanceStatus:
+		for _, item := range items {
+			lines = append(lines, fmt.Sprintf("governance profile=%s base=%s sync=%s index=%s blocked=%t", item.Profile, item.EffectiveBase, item.Sync, item.IndexSync, item.Blocked))
+			for _, issue := range item.Issues {
+				lines = append(lines, "  issue "+issue)
+			}
+		}
 	case []map[string]any:
 		for _, item := range items {
 			lines = append(lines, fmt.Sprintf("%v", item))
@@ -183,6 +190,29 @@ func compactItems(items any, compress bool) any {
 				"code_evidence": item.CodeEvidence,
 				"why":           item.Why,
 				"next_queries":  item.NextQueries,
+			})
+		}
+		return compact
+	case []model.GovernanceStatus:
+		compact := make([]map[string]any, 0, len(typed))
+		for _, item := range typed {
+			compact = append(compact, map[string]any{
+				"profile":               item.Profile,
+				"effective_base":        item.EffectiveBase,
+				"effective_overlays":    item.EffectiveOverlays,
+				"sync":                  item.Sync,
+				"index_sync":            item.IndexSync,
+				"blocked":               item.Blocked,
+				"issues":                item.Issues,
+				"warnings":              item.Warnings,
+				"human_doc":             item.HumanDoc,
+				"projection_doc":        item.ProjectionDoc,
+				"context_chain":         item.ContextChain,
+				"closure_chain":         item.ClosureChain,
+				"audit_chain":           item.AuditChain,
+				"numbering_recommended": item.NumberingRecommended,
+				"summary":               item.Summary,
+				"next_steps":            item.NextSteps,
 			})
 		}
 		return compact

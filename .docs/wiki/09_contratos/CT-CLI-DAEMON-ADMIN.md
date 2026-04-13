@@ -19,7 +19,7 @@ Define la frontera entre clientes locales y el runtime compartido: CLI publica, 
 Comandos canonicos:
 
 - `workspace add|scan|list|warm|status|remove`
-- `nav symbols|find|refs|overview|outline|service|search|context|deps|ask|batch|related|workspace-map|diff-context|trace|intent`
+- `nav symbols|find|refs|overview|outline|service|search|context|deps|ask|pack|batch|related|workspace-map|diff-context|trace|intent`
 - `index [path]|--clean`
 - `info`
 - `daemon start|stop|status|restart|open|logs [--tail N]`
@@ -29,6 +29,9 @@ Comandos canonicos:
 Flags globales minimos:
 
 - `--workspace`
+- `--axi`
+- `--classic`
+- `--full`
 - `--format compact|json|text|toon|yaml`
 - `--token-budget`
 - `--max-items`
@@ -41,6 +44,7 @@ Flags globales minimos:
 Flags especificos:
 
 - `nav find|search|intent --repo`
+- `nav pack --rf|--fl|--doc`
 - `nav search --regex`
 - `nav service --include-archetype`
 
@@ -115,7 +119,7 @@ Reglas:
 
 Reglas de routing:
 
-- `nav.find`, `nav.search`, `nav.intent`, `nav.symbols`, `nav.outline`, `nav.overview` y `nav.multi-read` no deben cruzar esta frontera en el hot path.
+- `nav.find`, `nav.search`, `nav.intent`, `nav.symbols`, `nav.outline`, `nav.overview`, `nav.multi-read` y `nav.pack` no deben cruzar esta frontera en el hot path.
 - `nav.refs`, `nav.context`, `nav.deps`, `nav.related`, `nav.service`, `nav.workspace-map`, `nav.diff-context` y `nav.batch` pueden preferir daemon cuando corresponda.
 - `workspace.warm` puede preferir daemon pero no debe auto-iniciarlo.
 
@@ -134,6 +138,8 @@ Request envelope actual:
 Metadata minima en `context`:
 
 - `workspace`
+- `axi`
+- `full`
 - `format`
 - `token_budget`
 - `max_items`
@@ -143,6 +149,8 @@ Metadata minima en `context`:
 - `backend_hint`
 - `verbose`
 - `compress`
+
+La CLI resuelve `--classic` en el borde y no lo transporta al daemon; el daemon solo recibe el resultado efectivo via `axi` y `full`.
 
 Metadata opcional cuando aplica paginacion CLI:
 
@@ -156,7 +164,23 @@ Metadata operativa que debe quedar observable en `access_events` y `admin export
 - `max_items`
 - `max_chars`
 - `compress`
+- `warning_count`
+- `pattern_mode`
+- `routing_outcome`
+- `failure_stage`
+- `hint_code`
+- `truncation_reason`
+- `decision_json` sanitizado; nunca `pattern` crudo ni argv
 - si `route=daemon` y la ejecucion fue normal, el registro canonico lo escribe el daemon; la CLI no debe duplicar esa misma operacion en `access_events`
+- `result_count` representa items emitidos en el envelope final, no `Stats.Symbols`
+
+`admin export` debe soportar:
+
+- raw `json|csv|compact`
+- ventana `--since`/`--recent`
+- filtros `--workspace`, `--backend`, `--operation`, `--session-id`, `--client-name`, `--route`, `--query-format`, `--truncated`, `--pattern-mode`, `--routing-outcome`, `--failure-stage`, `--hint-code`
+- `--summary` sobre toda la ventana filtrada salvo `--limit` explicito
+- breakdowns opcionales `--by-route`, `--by-client`, `--by-hint`, `--by-failure-stage`
 
 ### Governance admin
 

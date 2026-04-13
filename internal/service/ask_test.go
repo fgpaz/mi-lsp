@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/fgpaz/mi-lsp/internal/model"
+	"github.com/fgpaz/mi-lsp/internal/store"
 	"github.com/fgpaz/mi-lsp/internal/workspace"
 )
 
@@ -29,14 +30,7 @@ func createIndexedWorkspaceFixture(t *testing.T, alias string) string {
 		"",
 		"- backend: daemon",
 	}, "\n"))
-	writeWorkspaceFile(t, root, ".docs/wiki/_mi-lsp/read-model.toml", strings.Join([]string{
-		"version = 1",
-		"",
-		"[[family]]",
-		"name = \"technical\"",
-		"intent_keywords = [\"daemon\", \"routing\", \"backend\"]",
-		"paths = [\".docs/wiki/07_*.md\"]",
-	}, "\n"))
+	writeSpecBackendGovernanceFixture(t, root)
 	return root
 }
 
@@ -61,19 +55,28 @@ func createLinkedDocsWorkspaceFixture(t *testing.T, alias string) string {
 		"",
 		"Contrato de `nav ask` conectado con `internal/service/ask.go`.",
 	}, "\n"))
-	writeWorkspaceFile(t, root, ".docs/wiki/_mi-lsp/read-model.toml", strings.Join([]string{
-		"version = 1",
+	writeSpecBackendGovernanceFixture(t, root)
+	return root
+}
+
+func createGenericDocsWorkspaceFixture(t *testing.T, alias string) string {
+	t.Helper()
+	ensureWritableTestHome(t)
+	root := t.TempDir()
+	writeWorkspaceFile(t, root, "src/App.csproj", `<Project Sdk="Microsoft.NET.Sdk"></Project>`)
+	writeWorkspaceFile(t, root, "README.md", strings.Join([]string{
+		"# Demo workspace",
 		"",
-		"[[family]]",
-		"name = \"functional\"",
-		"intent_keywords = [\"rf\", \"feature\", \"flow\"]",
-		"paths = [\".docs/wiki/03_FL/*.md\", \".docs/wiki/04_RF/*.md\"]",
-		"",
-		"[[family]]",
-		"name = \"technical\"",
-		"intent_keywords = [\"contract\", \"ask\", \"backend\"]",
-		"paths = [\".docs/wiki/09_contratos/*.md\"]",
+		"Widget mode is opt-in and the implementation lives in `internal/widget/WidgetMode.cs`.",
 	}, "\n"))
+	writeWorkspaceFile(t, root, "internal/widget/WidgetMode.cs", strings.Join([]string{
+		"namespace Demo;",
+		"public class WidgetMode",
+		"{",
+		"    public void EnableWidgetMode() { }",
+		"}",
+	}, "\n"))
+	writeSpecBackendGovernanceFixture(t, root)
 	return root
 }
 
@@ -203,6 +206,57 @@ func TestNavAskFallsBackWhenDocsIndexIsEmpty(t *testing.T) {
 	root := t.TempDir()
 	writeWorkspaceFile(t, root, "src/App.csproj", `<Project Sdk="Microsoft.NET.Sdk"></Project>`)
 	writeWorkspaceFile(t, root, "src/Program.cs", "namespace Demo;\npublic class Program {}\n")
+	writeSpecBackendGovernanceFixture(t, root)
+	app := New(root, nil)
+
+	if _, err := app.Execute(context.Background(), model.CommandRequest{
+		Operation: "workspace.init",
+		Context:   model.QueryOptions{},
+		Payload:   map[string]any{"path": root, "alias": alias},
+	}); err != nil {
+		t.Fatalf("workspace.init: %v", err)
+	}
+	defer func() { _ = workspace.RemoveWorkspace(alias) }()
+
+	db, err := store.Open(root)
+	if err != nil {
+		t.Fatalf("store.Open: %v", err)
+	}
+	if err := store.ReplaceDocs(context.Background(), db, nil, nil, nil); err != nil {
+		db.Close()
+		t.Fatalf("ReplaceDocs: %v", err)
+	}
+	db.Close()
+
+	env, err := app.Execute(context.Background(), model.CommandRequest{
+		Operation: "nav.ask",
+		Context:   model.QueryOptions{Workspace: alias, MaxItems: 5},
+		Payload:   map[string]any{"question": "Program"},
+	})
+	if err != nil {
+		t.Fatalf("nav.ask: %v", err)
+	}
+	results := env.Items.([]model.AskResult)
+	if len(results) != 1 {
+		t.Fatalf("expected one ask result, got %#v", env.Items)
+	}
+	// With Tier 1 routing, the fallback anchors on the canonical governance doc
+	// instead of README.md when a valid wiki governance exists (RF-QRY-015).
+	primaryPath := results[0].PrimaryDoc.Path
+	if primaryPath == "README.md" || primaryPath == "" {
+		t.Fatalf("expected tier1 canonical anchor on wiki doc, not README.md; got %q", primaryPath)
+	}
+	if !strings.Contains(primaryPath, ".docs/wiki/") {
+		t.Fatalf("expected primary doc inside .docs/wiki/, got %q", primaryPath)
+	}
+	if len(results[0].CodeEvidence) == 0 {
+		t.Fatalf("expected textual code evidence in fallback, got %#v", results[0])
+	}
+}
+
+func TestNavAskGenericMatchPrefersLexicalSearchNextQuery(t *testing.T) {
+	alias := "ask-generic-" + filepath.Base(t.TempDir())
+	root := createGenericDocsWorkspaceFixture(t, alias)
 	app := New(root, nil)
 
 	if _, err := app.Execute(context.Background(), model.CommandRequest{
@@ -217,7 +271,7 @@ func TestNavAskFallsBackWhenDocsIndexIsEmpty(t *testing.T) {
 	env, err := app.Execute(context.Background(), model.CommandRequest{
 		Operation: "nav.ask",
 		Context:   model.QueryOptions{Workspace: alias, MaxItems: 5},
-		Payload:   map[string]any{"question": "Program"},
+		Payload:   map[string]any{"question": "how is widget mode implemented?"},
 	})
 	if err != nil {
 		t.Fatalf("nav.ask: %v", err)
@@ -226,11 +280,15 @@ func TestNavAskFallsBackWhenDocsIndexIsEmpty(t *testing.T) {
 	if len(results) != 1 {
 		t.Fatalf("expected one ask result, got %#v", env.Items)
 	}
-	if results[0].PrimaryDoc.Path != "README.md" {
-		t.Fatalf("fallback primary doc = %q", results[0].PrimaryDoc.Path)
+	if len(results[0].NextQueries) == 0 {
+		t.Fatalf("expected next queries, got %#v", results[0])
 	}
-	if len(results[0].CodeEvidence) == 0 {
-		t.Fatalf("expected textual code evidence in fallback, got %#v", results[0])
+	joinedQueries := strings.ToLower(strings.Join(results[0].NextQueries, " | "))
+	if !strings.Contains(joinedQueries, "widget") {
+		t.Fatalf("expected next queries to preserve the strongest keyword, got %#v", results[0].NextQueries)
+	}
+	if !strings.Contains(joinedQueries, "nav search") && !strings.Contains(joinedQueries, "nav context") {
+		t.Fatalf("expected discovery-friendly next queries, got %#v", results[0].NextQueries)
 	}
 }
 
@@ -250,6 +308,7 @@ func TestNavAskUsesBuiltinProfileForMinimalTechnicalDocs(t *testing.T) {
 		"",
 		"Worker protocol overview for daemon routing and worker protocol diagnostics.",
 	}, "\n"))
+	writeSpecBackendGovernanceFixture(t, root)
 	app := New(root, nil)
 
 	if _, err := app.Execute(context.Background(), model.CommandRequest{
@@ -302,14 +361,7 @@ func TestNavAskNextQueriesIncludeRepoForContainerEvidence(t *testing.T) {
 		"",
 		"El recovery del frontend se apoya en `frontend/src/Login.tsx` y `LoginPage`.",
 	}, "\n"))
-	writeWorkspaceFile(t, root, ".docs/wiki/_mi-lsp/read-model.toml", strings.Join([]string{
-		"version = 1",
-		"",
-		"[[family]]",
-		"name = \"technical\"",
-		"intent_keywords = [\"frontend\", \"recovery\", \"login\"]",
-		"paths = [\".docs/wiki/07_*.md\"]",
-	}, "\n"))
+	writeSpecBackendGovernanceFixture(t, root)
 
 	project := model.ProjectFile{
 		Project: model.ProjectBlock{

@@ -27,14 +27,18 @@
 | `token_budget` | entero | no | CLI | mayor que cero | RF-QRY-001 |
 | `max_items` | entero | no | CLI | mayor que cero | RF-QRY-001 |
 | `max_chars` | entero | no | CLI | mayor que cero | RF-QRY-001 |
+| `axi` | bool | no | CLI/env/default | modo AXI efectivo por default de superficie, `--axi` o `MI_LSP_AXI=1` | RF-QRY-001 |
+| `classic` | bool | no | CLI | `--classic`; fuerza salida clasica y gana sobre defaults/env | RF-QRY-001 |
+| `full` | bool | no | CLI | solo relevante cuando la superficie queda en AXI efectivo | RF-QRY-001 |
 
 ## 4. Process Steps (Happy Path)
 
 1. La CLI recibe una consulta `nav`.
 2. El core ejecuta la operacion y obtiene `items` normalizados.
 3. El truncador aplica `max_items`, `max_chars` y `token_budget` en orden determinista.
-4. El formatter emite un unico envelope estable.
-5. La CLI devuelve el resultado en el formato solicitado o normalizado.
+4. Si la superficie queda en AXI efectivo y no hubo `--format` explicito, el formatter usa TOON como default para superficies cubiertas.
+5. El formatter emite un unico envelope estable.
+6. La CLI devuelve el resultado en el formato solicitado o normalizado.
 
 ## 5. Outputs
 
@@ -60,11 +64,15 @@
 
 - Si `format` es invalido, la respuesta se normaliza a `compact`.
 - Si se alcanza un limite, `truncated=true` y `next_hint` debe indicar como pedir mas precision.
+- Si la superficie queda en AXI efectivo y soporta preview-first, `next_hint` puede sugerir `--full` aun sin truncation dura.
+- `--classic` prevalece sobre defaults por superficie y sobre `MI_LSP_AXI=1`.
+- `--axi` y `--classic` juntos deben rechazarse antes de ejecutar la query.
 - `compact` usa keys cortos y JSON sin whitespace innecesario.
 - `toon` serializa el envelope en TOON (Token-Oriented Object Notation); ~20-40% menos tokens que JSON en arrays grandes.
 - `yaml` serializa el envelope en YAML estándar; útil para lectura humana o parsers YAML.
 - Si `items=[]`, el envelope emite `hint` con diagnóstico de causa (patron no encontrado, timeout, regex-like sin `--regex`).
 - Si el daemon falla y el fallback directo responde, el envelope emite `hint: "daemon_unavailable; served from local text index"`.
+- `--format`, `--max-items`, `--max-chars` y `--token-budget` explicitos ganan sobre defaults AXI.
 
 ## 8. Data Model Impact
 
@@ -94,6 +102,7 @@ Scenario: Rechazar presupuestos invalidos
 
 - Positivo: `TP-QRY / TC-QRY-001`
 - Positivo: `TP-QRY / TC-QRY-002`
+- Positivo: `TP-QRY / TC-QRY-042`
 - Negativo: `TP-QRY / TC-QRY-003`
 
 ## 11. No Ambiguities Left

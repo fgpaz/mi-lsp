@@ -94,13 +94,14 @@ func (a *App) intent(ctx context.Context, request model.CommandRequest) (model.E
 		}
 	}
 
-	return model.Envelope{
+	env := model.Envelope{
 		Ok:        true,
 		Workspace: registration.Name,
 		Backend:   "intent",
 		Items:     items,
 		Stats:     model.Stats{Symbols: len(items)},
-	}, nil
+	}
+	return applyAXIPreviewHints(env, request.Context, axiPreviewSummaryHint), nil
 }
 
 func scoreBM25(symbols []model.SymbolRecord, tokens []string) []intentMatch {

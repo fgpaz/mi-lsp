@@ -154,4 +154,19 @@ For daemon-related issues, include:
 mi-lsp daemon status
 mi-lsp admin status
 mi-lsp admin export --recent --format compact --limit 50
+mi-lsp admin export --recent --summary --by-route --by-client --by-failure-stage
+mi-lsp admin export --recent --operation nav.search --hint-code repo_selector_invalid --format csv --limit 20
 ```
+
+If the problem looks tied to search/routing syntax or selector narrowing, prefer targeted exports:
+
+```powershell
+mi-lsp admin export --recent --operation nav.search --pattern-mode literal --format compact --limit 50
+mi-lsp admin export --recent --routing-outcome router_error --failure-stage selector_validation --format json --limit 20
+mi-lsp admin export --recent --session-id <session> --client-name <client> --format json --limit 100
+```
+
+Notes:
+
+- `decision_json` is intentionally sanitized: it keeps pattern length, regex suspicion, selector presence, emitted hints, fallback, and result source, but never the raw search pattern or full argv.
+- `result_count` is the number of items actually emitted after truncation/limits.

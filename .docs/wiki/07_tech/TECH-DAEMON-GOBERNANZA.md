@@ -72,6 +72,7 @@ Define el modelo canonico del daemon global, su governance UI workspace-first y 
 - `GET /api/accesses?window=<recent|7d|30d|90d>`
 - `GET /api/logs?tail=<n>`
 - `GET /api/metrics?window=<recent|7d|30d|90d>` — computa p50/p95, error rate y truncation rate por operacion/workspace/cliente desde `access_events`; mantiene compatibilidad legacy con `days=<n>`
+- `mi-lsp admin export --summary` reutiliza la misma ventana y agrega breakdowns opcionales por route/client/hint/failure-stage; el raw export prioriza CLI antes que UI para debugging operativo y es la primera superficie donde deben aparecer los campos causales nuevos.
 
 ## Dependencias e interacciones
 
@@ -99,4 +100,3 @@ Define el modelo canonico del daemon global, su governance UI workspace-first y 
 - [DB-STATE-Y-TELEMETRIA.md](../08_db/DB-STATE-Y-TELEMETRIA.md)
 - [CT-CLI-DAEMON-ADMIN.md](../09_contratos/CT-CLI-DAEMON-ADMIN.md)
 - [CT-DAEMON-WORKER.md](../09_contratos/CT-DAEMON-WORKER.md)
-
