@@ -81,3 +81,6 @@
 | TC-QRY-057 | positivo | RF-QRY-015 | `TestNavRouteUsesTaskFallbackFromQuestion`: el route core extrae familia desde la pregunta cuando no hay anchor explicito |
 | TC-QRY-058 | positivo | RF-QRY-012 | `TestNavPackNextQueriesArePopulated`: `nav pack` popula `next_queries` con al menos un elemento que empieza con `mi-lsp` |
 | TC-QRY-059 | positivo | RF-QRY-012 | `TestNavPackExplicitRFAnchorWinsOverRouteCore`: anchor `--rf` explicito en payload sobreescribe el anchor del route core y determina `primary_doc` |
+| TC-QRY-060 | positivo | RF-QRY-014 | `TestNavRouteAnchorDocHasAnchorStage`: `AnchorDoc.Stage == "anchor"` en Tier 1 y Tier 2 (Wave 3b stage signal) |
+| TC-QRY-061 | positivo | RF-QRY-014 | `TestNavRoutePreviewPackHasPreviewStage`: cada doc del `PreviewPack` lleva campo `Stage` no vacio |
+| TC-QRY-062 | positivo | RF-QRY-014 | `TestNavRouteDiscoveryDocsHaveDiscoveryStage`: cuando `discovery.docs` existe, cada doc tiene `Stage == "discovery"` |

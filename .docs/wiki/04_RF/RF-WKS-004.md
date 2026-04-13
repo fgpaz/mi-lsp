@@ -48,3 +48,16 @@
 
 - `QueryOptions`
 - `QueryEnvelope`
+
+## Estado
+
+`implemented`
+
+## Notas de implementación
+
+- Resolución del modo efectivo: `internal/cli/axi_mode.go` (`resolveAXIDecision`)
+- Seed desde env `MI_LSP_AXI`: `internal/cli/root.go:52-62`
+- TOON default en PersistentPreRunE: `internal/cli/root.go:103-106`
+- Mutual exclusion `--axi + --classic`: `internal/cli/root.go:101-103`
+- `--axi=false` hard disable: `internal/cli/axi_mode.go:65-69`
+- Cobertura de tests: TC-WKS-011, TC-WKS-012, TC-WKS-013, TC-WKS-016

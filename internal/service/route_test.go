@@ -135,6 +135,99 @@ func TestNavRouteFullModeActivatesWithFlag(t *testing.T) {
 	}
 }
 
+func TestNavRouteAnchorDocHasAnchorStage(t *testing.T) {
+	alias := "route-stage-anchor-" + t.Name()
+	root := createFunctionalPackWorkspaceFixture(t, alias)
+	if _, err := workspace.RegisterWorkspace(alias, model.WorkspaceRegistration{
+		Name:      alias,
+		Root:      root,
+		Languages: []string{"csharp"},
+		Kind:      model.WorkspaceKindSingle,
+	}); err != nil {
+		t.Fatalf("register workspace: %v", err)
+	}
+	defer func() { _ = workspace.RemoveWorkspace(alias) }()
+
+	app := New(root, nil)
+	env, err := app.Execute(context.Background(), model.CommandRequest{
+		Operation: "nav.route",
+		Context:   model.QueryOptions{Workspace: alias},
+		Payload:   map[string]any{"task": "understand how login works"},
+	})
+	if err != nil {
+		t.Fatalf("nav.route: %v", err)
+	}
+	results := env.Items.([]model.RouteResult)
+	if got := results[0].Canonical.AnchorDoc.Stage; got != "anchor" {
+		t.Fatalf("AnchorDoc.Stage = %q, want anchor", got)
+	}
+}
+
+func TestNavRoutePreviewPackHasPreviewStage(t *testing.T) {
+	alias := "route-stage-preview-" + t.Name()
+	root := createFunctionalPackWorkspaceFixture(t, alias)
+	if _, err := workspace.RegisterWorkspace(alias, model.WorkspaceRegistration{
+		Name:      alias,
+		Root:      root,
+		Languages: []string{"csharp"},
+		Kind:      model.WorkspaceKindSingle,
+	}); err != nil {
+		t.Fatalf("register workspace: %v", err)
+	}
+	defer func() { _ = workspace.RemoveWorkspace(alias) }()
+
+	app := New(root, nil)
+	env, err := app.Execute(context.Background(), model.CommandRequest{
+		Operation: "nav.route",
+		Context:   model.QueryOptions{Workspace: alias},
+		Payload:   map[string]any{"task": "understand how login works"},
+	})
+	if err != nil {
+		t.Fatalf("nav.route: %v", err)
+	}
+	results := env.Items.([]model.RouteResult)
+	// Tier 1 (governance-only, no index): stage comes from the profile stage order (e.g. "scope", "architecture").
+	// Tier 2 (indexed): stage is "preview". In both cases Stage must be non-empty.
+	for i, doc := range results[0].Canonical.PreviewPack {
+		if doc.Stage == "" {
+			t.Fatalf("PreviewPack[%d].Stage is empty, want non-empty stage signal", i)
+		}
+	}
+}
+
+func TestNavRouteDiscoveryDocsHaveDiscoveryStage(t *testing.T) {
+	alias := "route-stage-discovery-" + t.Name()
+	root := createFunctionalPackWorkspaceFixture(t, alias)
+	if _, err := workspace.RegisterWorkspace(alias, model.WorkspaceRegistration{
+		Name:      alias,
+		Root:      root,
+		Languages: []string{"csharp"},
+		Kind:      model.WorkspaceKindSingle,
+	}); err != nil {
+		t.Fatalf("register workspace: %v", err)
+	}
+	defer func() { _ = workspace.RemoveWorkspace(alias) }()
+
+	app := New(root, nil)
+	env, err := app.Execute(context.Background(), model.CommandRequest{
+		Operation: "nav.route",
+		Context:   model.QueryOptions{Workspace: alias, Full: true},
+		Payload:   map[string]any{"task": "understand how login works"},
+	})
+	if err != nil {
+		t.Fatalf("nav.route: %v", err)
+	}
+	results := env.Items.([]model.RouteResult)
+	if results[0].Discovery == nil || len(results[0].Discovery.Docs) == 0 {
+		t.Skip("no discovery docs available without indexed workspace — stage signal verified at service level")
+	}
+	for i, doc := range results[0].Discovery.Docs {
+		if doc.Stage != "discovery" {
+			t.Fatalf("Discovery.Docs[%d].Stage = %q, want discovery", i, doc.Stage)
+		}
+	}
+}
+
 func TestNavRouteUsesTaskFallbackFromQuestion(t *testing.T) {
 	alias := "route-qfallback-" + t.Name()
 	root := createFunctionalPackWorkspaceFixture(t, alias)

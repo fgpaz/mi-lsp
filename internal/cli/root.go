@@ -101,6 +101,10 @@ func NewRootCommand() *cobra.Command {
 			if isClassicRequested(cmd, state.classic) && flagChanged(cmd, "axi") && state.axi {
 				return fmt.Errorf("--axi and --classic cannot be used together")
 			}
+			// TOON default when AXI is seeded and --format was not explicit
+			if !flagChanged(cmd, "format") && state.axi {
+				state.format = "toon"
+			}
 			return nil
 		},
 	}

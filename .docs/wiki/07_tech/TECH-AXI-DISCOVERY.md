@@ -16,7 +16,7 @@ Su objetivo es mejorar el primer paso del agente sin alterar la semantica base d
 
 ## Superficies cubiertas en v1
 
-- AXI-default: root command sin subcomando, `init`, `workspace status`, `nav search`, `nav intent`
+- AXI-default: root command sin subcomando, `init`, `workspace status`, `nav search`, `nav intent`, `nav pack`
 - AXI-default condicional: `nav ask` solo para preguntas de onboarding/orientacion
 - Classic-default: `nav workspace-map` y el resto de la CLI
 
@@ -31,6 +31,17 @@ Su objetivo es mejorar el primer paso del agente sin alterar la semantica base d
 7. `init` y `workspace status` conservan el bootstrap/base summary actual; solo agregan `view` y `next_steps`.
 8. El home AXI resuelve contexto por `--workspace`, `cwd` o ultimo workspace registrado y agrega readiness barata de daemon/worker.
 9. Las `next_queries` o `next_steps` de superficies AXI-default no deben repetir `--axi` salvo cuando apunten a una superficie que sigue classic-default, como `nav workspace-map`.
+10. Cuando AXI esta en modo efectivo y el usuario no paso `--format` explicito, el format por defecto escala a `toon`. El override explicito `--format compact` siempre gana.
+11. `--axi=false` permite anular explicitamente el default AXI de una superficie cuando el usuario quiere salida clasica sin escribir `--classic`.
+
+## Stage signal en discovery lane
+
+Cada `RouteDoc` en la discovery lane lleva el campo `stage` con uno de:
+- `anchor` — doc canonico de anclaje (siempre el primero)
+- `preview` — doc del mini preview pack (Tier 1 canonical)
+- `discovery` — doc de discovery advisory (Tier 2, non-authoritative)
+
+El stage permite a los agentes distinguir la fuente de cada doc sin necesidad de session state.
 
 ## No objetivos de esta version
 

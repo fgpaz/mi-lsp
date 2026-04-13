@@ -168,3 +168,73 @@ func TestWorkspaceStatusIncludesGovernanceFields(t *testing.T) {
 		t.Fatalf("governance_sync = %#v, want in_sync", item["governance_sync"])
 	}
 }
+
+func TestNavPackBlockedWhenGovernanceIsInvalid(t *testing.T) {
+	alias := "gov-block-pack-" + filepath.Base(t.TempDir())
+	ensureWritableTestHome(t)
+	root := t.TempDir()
+	writeWorkspaceFile(t, root, "src/App.csproj", `<Project Sdk="Microsoft.NET.Sdk"></Project>`)
+	writeWorkspaceFile(t, root, ".docs/wiki/07_baseline_tecnica.md", "# 07. Baseline tecnica\n")
+	writeWorkspaceFile(t, root, ".docs/wiki/_mi-lsp/read-model.toml", "version = 1\n")
+
+	app := New(root, nil)
+	if _, err := app.Execute(context.Background(), model.CommandRequest{
+		Operation: "workspace.init",
+		Context:   model.QueryOptions{},
+		Payload:   map[string]any{"path": root, "alias": alias},
+	}); err != nil {
+		t.Fatalf("workspace.init: %v", err)
+	}
+	defer func() { _ = workspace.RemoveWorkspace(alias) }()
+
+	env, err := app.Execute(context.Background(), model.CommandRequest{
+		Operation: "nav.pack",
+		Context:   model.QueryOptions{Workspace: alias},
+		Payload:   map[string]any{"task": "understand how login works"},
+	})
+	if err != nil {
+		t.Fatalf("nav.pack: %v", err)
+	}
+	if env.Backend != "governance" {
+		t.Fatalf("backend = %q, want governance", env.Backend)
+	}
+	items := env.Items.([]model.GovernanceStatus)
+	if len(items) != 1 || !items[0].Blocked {
+		t.Fatalf("expected blocked governance status, got %#v", env.Items)
+	}
+}
+
+func TestNavRouteBlockedWhenGovernanceIsInvalid(t *testing.T) {
+	alias := "gov-block-route-" + filepath.Base(t.TempDir())
+	ensureWritableTestHome(t)
+	root := t.TempDir()
+	writeWorkspaceFile(t, root, "src/App.csproj", `<Project Sdk="Microsoft.NET.Sdk"></Project>`)
+	writeWorkspaceFile(t, root, ".docs/wiki/07_baseline_tecnica.md", "# 07. Baseline tecnica\n")
+	writeWorkspaceFile(t, root, ".docs/wiki/_mi-lsp/read-model.toml", "version = 1\n")
+
+	app := New(root, nil)
+	if _, err := app.Execute(context.Background(), model.CommandRequest{
+		Operation: "workspace.init",
+		Context:   model.QueryOptions{},
+		Payload:   map[string]any{"path": root, "alias": alias},
+	}); err != nil {
+		t.Fatalf("workspace.init: %v", err)
+	}
+	defer func() { _ = workspace.RemoveWorkspace(alias) }()
+
+	env, err := app.Execute(context.Background(), model.CommandRequest{
+		Operation: "nav.route",
+		Context:   model.QueryOptions{Workspace: alias},
+		Payload:   map[string]any{"task": "understand how login works"},
+	})
+	if err != nil {
+		t.Fatalf("nav.route: %v", err)
+	}
+	if env.Backend != "governance" {
+		t.Fatalf("backend = %q, want governance", env.Backend)
+	}
+	items := env.Items.([]model.GovernanceStatus)
+	if len(items) != 1 || !items[0].Blocked {
+		t.Fatalf("expected blocked governance status, got %#v", env.Items)
+	}
+}

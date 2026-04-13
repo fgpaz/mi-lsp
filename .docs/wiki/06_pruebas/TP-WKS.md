@@ -27,3 +27,4 @@
 | TC-WKS-013 | negativo | RF-WKS-004 | `--axi` y `--classic` juntos fallan con error claro |
 | TC-WKS-014 | positivo | RF-WKS-005 | `workspace status` expone `governance_profile`, `governance_sync`, `governance_index_sync` y `governance_blocked` |
 | TC-WKS-015 | negativo | RF-WKS-005 | si falta `00_gobierno_documental.md` o la gobernanza es invalida, el repo entra en `blocked mode` |
+| TC-WKS-016 | positivo | RF-WKS-004 | `TestAXIFalseDisablesDefaultAXISurface`: `--axi=false` explícito deshabilita AXI incluso en superficies AXI-default (Wave 3b hard disable) |

@@ -45,3 +45,15 @@
 - `GovernanceStatus`
 - `WorkspaceRegistration`
 - `QueryEnvelope`
+
+## Estado
+
+`implemented`
+
+## Notas de implementación
+
+- Gate de gobernanza: `internal/service/governance.go` (`governanceGateEnvelope`)
+- Gate activo en: `nav.ask`, `nav.pack`, `nav.route`
+- `nav.governance` y workspace ops (init/status/list/add/remove) excluidos del gate por diseño — operaciones de diagnóstico y bootstrap que deben sobrevivir blocked mode
+- Profile + projection: `internal/docgraph/governance.go` (`InspectGovernance`, `LoadProfile`)
+- Cobertura de tests: TC-WKS-014, TC-WKS-015, `TestNavPackBlockedWhenGovernanceIsInvalid`, `TestNavRouteBlockedWhenGovernanceIsInvalid`

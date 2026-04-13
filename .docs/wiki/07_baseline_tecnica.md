@@ -66,9 +66,10 @@ flowchart LR
 - Existe un unico daemon por usuario/host; no un daemon por workspace.
 - El daemon debe ser compartible entre Claude Code, Codex y subagentes del mismo usuario.
 - El daemon nunca es requisito funcional: toda consulta debe poder hacer fallback directo.
-- AXI se resuelve por superficie en el borde del CLI: root, `init`, `workspace status`, `nav search` y `nav intent` son AXI-default; `nav ask` solo lo es para preguntas claras de onboarding/orientacion.
+- AXI se resuelve por superficie en el borde del CLI: root, `init`, `workspace status`, `nav search`, `nav intent` y `nav pack` son AXI-default; `nav ask` solo lo es para preguntas claras de onboarding/orientacion.
 - `nav workspace-map` y el resto de la CLI conservan modo clasico por default; `--axi` o `MI_LSP_AXI=1` pueden forzar AXI sobre superficies soportadas.
 - `--classic` prevalece sobre defaults por superficie y sobre `MI_LSP_AXI=1`; `--axi` y `--classic` juntos son invalidos.
+- `--axi=false` explicito anula el default AXI de la superficie actual; equivalente a `--classic` para esa invocacion.
 - En AXI efectivo, el root command sin subcomando devuelve un home content-first; no hace side effects para resolver ese overview.
 - En AXI efectivo, `--format` explicito gana; si no existe, las superficies cubiertas usan TOON como default.
 - En AXI efectivo, `--full` solo expande disclosure sobre superficies cubiertas; no cambia semantica ni routing de la operacion.
@@ -82,7 +83,7 @@ flowchart LR
 - La gobernanza documental manda sobre toda tarea spec-driven: `00_gobierno_documental.md` es la autoridad humana y `read-model.toml` su proyeccion ejecutable.
 - Si `00`, su YAML embebido, la proyeccion o el indice quedan fuera de sync, el workspace entra en `blocked mode`.
 - `nav ask` es docs-first: primero rankea docs canonicos, luego deriva evidencia de codigo desde menciones y fallback textual.
-- `nav ask` y `nav pack` deben consultar el gate de gobernanza antes de seguir.
+- `nav ask`, `nav pack` y `nav route` deben consultar el gate de gobernanza antes de seguir.
 - `nav pack` es docs-first y pack-first: clasifica la tarea, elige un anchor y arma un reading pack ordenado de lo mas global a lo mas especifico, empezando por `00` cuando la gobernanza es valida.
 - `nav governance` es la superficie primaria de diagnostico del perfil efectivo, sync y blockers.
 - Aun con `read_model=default`, un workspace inicializado con docs minimas utiles bajo `.docs/wiki/07_*.md`, `.docs/wiki/08_*.md` o `.docs/wiki/09_*.md` debe poder resolver una respuesta docs-first razonable sin requerir `read-model.toml` custom.

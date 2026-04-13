@@ -61,6 +61,10 @@ func (s *rootState) resolveAXIDecision(cmd *cobra.Command, operation string, pay
 	if isClassicRequested(cmd, s.classic) {
 		return axiDecision{Supported: true, Enabled: false}
 	}
+	// --axi=false explicit flag forces AXI off regardless of surface defaults
+	if flagChanged(cmd, "axi") && !s.axi {
+		return axiDecision{Supported: true, Enabled: false}
+	}
 
 	defaultEnabled := defaultAXIForOperation(operation, payload)
 	if flagChanged(cmd, "axi") {

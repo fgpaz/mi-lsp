@@ -61,6 +61,7 @@ func (a *App) resolveCanonicalRoute(ctx context.Context, registration model.Work
 			Layer:  primary.record.Layer,
 			Family: primary.record.Family,
 			Why:    strings.Join(primary.reason, ","),
+			Stage:  "anchor",
 		}
 		result.Canonical.Family = family
 		result.Why = append(result.Why, "tier2=indexed_docs")
@@ -83,6 +84,7 @@ func (a *App) resolveCanonicalRoute(ctx context.Context, registration model.Work
 				Layer:  candidate.record.Layer,
 				Family: candidate.record.Family,
 				Why:    strings.Join(candidate.reason, ","),
+				Stage:  "preview",
 			})
 		}
 		result.Canonical.PreviewPack = preview
@@ -112,6 +114,7 @@ func buildDiscoveryAdvisory(ranked []scoredDoc, maxDocs int) *model.RouteDiscove
 			Layer:  candidate.record.Layer,
 			Family: candidate.record.Family,
 			Why:    strings.Join(candidate.reason, ","),
+			Stage:  "discovery",
 		})
 	}
 	return &model.RouteDiscoveryLane{

@@ -227,6 +227,22 @@ func TestRootRejectsAxiAndClassicTogether(t *testing.T) {
 	}
 }
 
+func TestAXIFalseDisablesDefaultAXISurface(t *testing.T) {
+	state := &rootState{axi: false}
+	cmd := testAXICommand()
+	if err := cmd.Flags().Set("axi", "false"); err != nil {
+		t.Fatalf("set axi=false: %v", err)
+	}
+
+	decision := state.resolveAXIDecision(cmd, "nav.search", nil)
+	if decision.Enabled {
+		t.Fatalf("expected AXI disabled when --axi=false on AXI-default surface, got Enabled=true")
+	}
+	if !decision.Supported {
+		t.Fatalf("expected Supported=true for nav.search, got false")
+	}
+}
+
 func testAXICommand() *cobra.Command {
 	cmd := &cobra.Command{Use: "test"}
 	cmd.Flags().String("format", "compact", "")

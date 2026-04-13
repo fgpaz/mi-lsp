@@ -13,6 +13,7 @@ Define el overlay selectivo por superficie de onboarding/discovery AXI sobre la 
 - `MI_LSP_AXI=1`: fuerza AXI por sesion en cualquier superficie soportada.
 - `--classic`: fuerza modo clasico y prevalece sobre defaults por superficie y sobre `MI_LSP_AXI=1`.
 - `--axi` y `--classic` juntos son invalidos.
+- `--axi=false`: anula el default AXI de la superficie actual; equivalente a `--classic` para esa invocacion.
 - `--full`: expande disclosure solo cuando la superficie quedo en AXI efectivo.
 - `--format`, `--max-items`, `--max-chars` y `--token-budget` explicitos ganan sobre defaults AXI.
 

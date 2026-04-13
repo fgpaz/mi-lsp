@@ -55,6 +55,7 @@ El detalle por frontera vive en `09_contratos/`.
 
 - La presencia o ausencia del daemon no debe cambiar la semantica visible de los comandos.
 - `MI_LSP_AXI=1` habilita AXI a nivel sesion; `--classic` prevalece sobre defaults/env y `--axi` fuerza AXI en superficies soportadas.
+- `--axi=false` explicito anula el default AXI de la superficie actual; equivalente a `--classic` para esa invocacion.
 - `--axi` y `--classic` juntos deben fallar antes de ejecutar la operacion.
 - `worker status` debe conservar el mismo payload visible con y sin daemon; el daemon no puede reemplazar `items` por `RuntimeSnapshot`/`WorkerStatus` crudos.
 - `nav.find`, `nav.search`, `nav.intent`, `nav.symbols`, `nav.outline`, `nav.overview` y `nav.multi-read` pertenecen a la superficie publica directa: no deben esperar daemon ni cambiar de comportamiento por su health.

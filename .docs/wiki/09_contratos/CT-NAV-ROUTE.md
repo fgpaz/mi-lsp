@@ -29,6 +29,7 @@ Retorna `RouteResult` con `canonical lane` (autoritativa) y `discovery` opcional
           "doc_id": "",
           "layer": "07",
           "family": "technical",
+          "stage": "anchor",
           "why": "fts5=match,family=technical"
         },
         "preview_pack": [

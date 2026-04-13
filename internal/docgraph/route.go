@@ -21,6 +21,7 @@ func Tier1CanonicalRoute(question string, profile model.DocsReadProfile, root st
 		Path:   anchorPath,
 		Family: family,
 		Why:    "canonical_anchor",
+		Stage:  "anchor",
 	}
 	if title := readDocTitle(filepath.Join(root, filepath.FromSlash(anchorPath))); title != "" {
 		anchorDoc.Title = title
