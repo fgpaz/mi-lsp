@@ -104,6 +104,7 @@ type DocRecord struct {
 	SearchText  string `json:"search_text,omitempty"`
 	ContentHash string `json:"content_hash,omitempty"`
 	IndexedAt   int64  `json:"indexed_at,omitempty"`
+	IsSnapshot  bool   `json:"is_snapshot,omitempty"`
 }
 
 type DocEdge struct {
