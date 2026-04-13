@@ -69,7 +69,8 @@ CREATE TABLE IF NOT EXISTS doc_records (
     snippet TEXT,
     search_text TEXT,
     content_hash TEXT,
-    indexed_at INTEGER
+    indexed_at INTEGER,
+    is_snapshot INTEGER NOT NULL DEFAULT 0
 );
 `
 
@@ -83,7 +84,6 @@ CREATE VIRTUAL TABLE IF NOT EXISTS doc_records_fts USING fts5(
     tokenize='porter unicode61'
 );
 `
-
 
 const docEdgesDDL = `
 CREATE TABLE IF NOT EXISTS doc_edges (
@@ -154,6 +154,9 @@ END`,
 		return err
 	}
 	if err := ensureColumn(db, "symbols", "search_text", "TEXT"); err != nil {
+		return err
+	}
+	if err := ensureColumn(db, "doc_records", "is_snapshot", "INTEGER NOT NULL DEFAULT 0"); err != nil {
 		return err
 	}
 
