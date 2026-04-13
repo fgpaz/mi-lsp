@@ -1,7 +1,10 @@
 package service
 
 import (
+	"context"
 	"testing"
+
+	"github.com/fgpaz/mi-lsp/internal/model"
 )
 
 func TestDetectDependencies_NilServices(t *testing.T) {
@@ -23,9 +26,9 @@ func TestDetectDependencies_EmptyServices(t *testing.T) {
 func TestDetectDependencies_NoEvents(t *testing.T) {
 	services := []serviceMapEntry{
 		{
-			Path:           "api",
-			Name:           "api",
-			SymbolCount:    100,
+			Path:          "api",
+			Name:          "api",
+			SymbolCount:   100,
 			EndpointCount: 5,
 		},
 	}
@@ -40,15 +43,15 @@ func TestDetectDependencies_NoEvents(t *testing.T) {
 func TestDetectDependencies_EmptyEvents(t *testing.T) {
 	services := []serviceMapEntry{
 		{
-			Path:           "api",
-			Name:           "api",
-			SymbolCount:    100,
+			Path:          "api",
+			Name:          "api",
+			SymbolCount:   100,
 			EndpointCount: 5,
 		},
 		{
-			Path:           "web",
-			Name:           "web",
-			SymbolCount:    80,
+			Path:          "web",
+			Name:          "web",
+			SymbolCount:   80,
 			EndpointCount: 3,
 		},
 	}
@@ -63,15 +66,15 @@ func TestDetectDependencies_EmptyEvents(t *testing.T) {
 func TestDetectDependencies_WithEvents(t *testing.T) {
 	services := []serviceMapEntry{
 		{
-			Path:           "api",
-			Name:           "api",
-			SymbolCount:    100,
+			Path:          "api",
+			Name:          "api",
+			SymbolCount:   100,
 			EndpointCount: 5,
 		},
 		{
-			Path:           "worker",
-			Name:           "worker",
-			SymbolCount:    50,
+			Path:          "worker",
+			Name:          "worker",
+			SymbolCount:   50,
 			EndpointCount: 1,
 		},
 	}
@@ -138,8 +141,8 @@ func TestServiceMapEntry_Fields(t *testing.T) {
 		Name:           "api",
 		Profile:        "release",
 		SymbolCount:    150,
-		EndpointCount: 10,
-		ConsumerCount: 5,
+		EndpointCount:  10,
+		ConsumerCount:  5,
 		PublisherCount: 3,
 		EntityCount:    20,
 	}
@@ -227,9 +230,9 @@ func TestWorkspaceMapEntry_WithValues(t *testing.T) {
 
 	services := []serviceMapEntry{
 		{
-			Path:           "api",
-			Name:           "api",
-			SymbolCount:    100,
+			Path:          "api",
+			Name:          "api",
+			SymbolCount:   100,
 			EndpointCount: 5,
 		},
 	}
@@ -332,7 +335,7 @@ func TestDetectDependencies_CurrentBehavior(t *testing.T) {
 	// Test with various inputs to ensure it returns nil or valid dependencies
 
 	tests := []struct {
-		name   string
+		name     string
 		services []serviceMapEntry
 		events   []serviceEventData
 	}{
@@ -362,8 +365,8 @@ func TestServiceMapEntry_Counts(t *testing.T) {
 		Path:           "services/payment",
 		Name:           "payment",
 		SymbolCount:    250,
-		EndpointCount: 15,
-		ConsumerCount: 8,
+		EndpointCount:  15,
+		ConsumerCount:  8,
 		PublisherCount: 6,
 		EntityCount:    20,
 	}
@@ -391,5 +394,153 @@ func TestWorkspaceMapEntry_Immutability(t *testing.T) {
 
 	if len(copy.Repos) != 2 {
 		t.Errorf("copy Repos should have 2 items")
+	}
+}
+
+func TestWorkspaceMapFrontendApps(t *testing.T) {
+	// Create a temp workspace root
+	root := t.TempDir()
+
+	// Create a project with a TypeScript repo and no entrypoints
+	// so discoverServices only exercises the frontend_apps path
+	project := model.ProjectFile{
+		Project: model.ProjectBlock{
+			Name:        "ts-project",
+			Kind:        model.WorkspaceKindSingle,
+			DefaultRepo: "main",
+		},
+		Repos: []model.WorkspaceRepo{
+			{
+				ID:        "ts-repo",
+				Name:      "my-next-app",
+				Root:      "frontend",
+				Languages: []string{"typescript"},
+			},
+		},
+		Entrypoints: []model.WorkspaceEntrypoint{}, // no .csproj entrypoints
+	}
+
+	registration := model.WorkspaceRegistration{
+		Name:      "test-ws",
+		Root:      root,
+		Languages: []string{"typescript"},
+		Kind:      model.WorkspaceKindSingle,
+	}
+
+	// Call discoverServices with nil db (no entrypoints means no DB needed)
+	_, frontendApps, _, _ := discoverServices(context.Background(), nil, registration, project)
+
+	if len(frontendApps) == 0 {
+		t.Fatal("expected at least one frontend app for TypeScript repo, got 0")
+	}
+
+	fa := frontendApps[0]
+	if fa.Language != "typescript" {
+		t.Errorf("Language = %q, want %q", fa.Language, "typescript")
+	}
+	if fa.Name != "my-next-app" {
+		t.Errorf("Name = %q, want %q", fa.Name, "my-next-app")
+	}
+	if fa.Path != "frontend" {
+		t.Errorf("Path = %q, want %q", fa.Path, "frontend")
+	}
+	if fa.PageCount < 0 {
+		t.Errorf("PageCount = %d, want >= 0", fa.PageCount)
+	}
+}
+
+func TestWorkspaceMapFrontendApps_MultipleTSRepos(t *testing.T) {
+	root := t.TempDir()
+
+	project := model.ProjectFile{
+		Project: model.ProjectBlock{
+			Name:        "multi-ts-project",
+			Kind:        model.WorkspaceKindContainer,
+			DefaultRepo: "frontend",
+		},
+		Repos: []model.WorkspaceRepo{
+			{
+				ID:        "repo1",
+				Name:      "next-app",
+				Root:      "apps/web",
+				Languages: []string{"typescript", "javascript"},
+			},
+			{
+				ID:        "repo2",
+				Name:      "react-lib",
+				Root:      "libs/ui",
+				Languages: []string{"typescript"},
+			},
+			{
+				ID:        "repo3",
+				Name:      "csharp-backend",
+				Root:      "backend",
+				Languages: []string{"csharp"},
+			},
+		},
+		Entrypoints: []model.WorkspaceEntrypoint{},
+	}
+
+	registration := model.WorkspaceRegistration{
+		Name:      "test-ws-multi",
+		Root:      root,
+		Languages: []string{"csharp", "typescript"},
+		Kind:      model.WorkspaceKindContainer,
+	}
+
+	_, frontendApps, _, _ := discoverServices(context.Background(), nil, registration, project)
+
+	if len(frontendApps) != 2 {
+		t.Fatalf("expected 2 frontend apps (only TypeScript repos), got %d", len(frontendApps))
+	}
+
+	// Verify both TypeScript repos are included
+	foundPaths := make(map[string]bool)
+	for _, fa := range frontendApps {
+		if fa.Language != "typescript" {
+			t.Errorf("Language = %q, want %q", fa.Language, "typescript")
+		}
+		foundPaths[fa.Path] = true
+	}
+
+	if !foundPaths["apps/web"] {
+		t.Errorf("expected frontend app with Path %q, got paths: %v", "apps/web", foundPaths)
+	}
+	if !foundPaths["libs/ui"] {
+		t.Errorf("expected frontend app with Path %q, got paths: %v", "libs/ui", foundPaths)
+	}
+}
+
+func TestWorkspaceMapFrontendApps_NoTSRepos(t *testing.T) {
+	root := t.TempDir()
+
+	project := model.ProjectFile{
+		Project: model.ProjectBlock{
+			Name:        "csharp-only",
+			Kind:        model.WorkspaceKindSingle,
+			DefaultRepo: "main",
+		},
+		Repos: []model.WorkspaceRepo{
+			{
+				ID:        "csharp-repo",
+				Name:      "api",
+				Root:      "src",
+				Languages: []string{"csharp"},
+			},
+		},
+		Entrypoints: []model.WorkspaceEntrypoint{},
+	}
+
+	registration := model.WorkspaceRegistration{
+		Name:      "csharp-ws",
+		Root:      root,
+		Languages: []string{"csharp"},
+		Kind:      model.WorkspaceKindSingle,
+	}
+
+	_, frontendApps, _, _ := discoverServices(context.Background(), nil, registration, project)
+
+	if len(frontendApps) != 0 {
+		t.Errorf("expected 0 frontend apps for CSharp-only repo, got %d", len(frontendApps))
 	}
 }
