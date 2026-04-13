@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"database/sql"
+	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -22,6 +23,7 @@ type workspaceMapEntry struct {
 	NextSteps    []string            `json:"next_steps,omitempty"`
 	Repos        []repoMapEntry      `json:"repos"`
 	Services     []serviceMapEntry   `json:"services"`
+	FrontendApps []frontendAppEntry  `json:"frontend_apps,omitempty"`
 	Dependencies []serviceDependency `json:"dependencies,omitempty"`
 	Stats        workspaceMapStats   `json:"stats"`
 }
@@ -49,6 +51,13 @@ type serviceDependency struct {
 	To       string `json:"to"`
 	Kind     string `json:"kind"`     // "event", "type"
 	Evidence string `json:"evidence"` // event type name or shared type
+}
+
+type frontendAppEntry struct {
+	Path      string `json:"path"`
+	Name      string `json:"name"`
+	Language  string `json:"language"`
+	PageCount int    `json:"page_count"`
 }
 
 type workspaceMapStats struct {
@@ -95,7 +104,7 @@ func (a *App) workspaceMap(ctx context.Context, request model.CommandRequest) (m
 	defer db.Close()
 
 	// Discover services by scanning for entrypoints
-	services, serviceEvents, svcWarnings := discoverServices(ctx, db, registration, project)
+	services, frontendApps, serviceEvents, svcWarnings := discoverServices(ctx, db, registration, project)
 	warnings = append(warnings, svcWarnings...)
 
 	// Detect inter-service dependencies
@@ -115,6 +124,7 @@ func (a *App) workspaceMap(ctx context.Context, request model.CommandRequest) (m
 	mapEntry := workspaceMapEntry{
 		Repos:        repos,
 		Services:     services,
+		FrontendApps: frontendApps,
 		Dependencies: deps,
 		Stats:        stats,
 	}
@@ -152,9 +162,10 @@ type serviceEventData struct {
 	Publishers  []map[string]any // Publish*/IPublishEndpoint hits
 }
 
-func discoverServices(ctx context.Context, db *sql.DB, registration model.WorkspaceRegistration, project model.ProjectFile) ([]serviceMapEntry, []serviceEventData, []string) {
+func discoverServices(ctx context.Context, db *sql.DB, registration model.WorkspaceRegistration, project model.ProjectFile) ([]serviceMapEntry, []frontendAppEntry, []serviceEventData, []string) {
 	warnings := []string{}
 	services := make([]serviceMapEntry, 0)
+	frontendApps := make([]frontendAppEntry, 0)
 	serviceEvents := make([]serviceEventData, 0)
 
 	// Use entrypoints as service discovery — each .csproj or .sln is a potential service
@@ -241,7 +252,62 @@ func discoverServices(ctx context.Context, db *sql.DB, registration model.Worksp
 		})
 	}
 
-	return services, serviceEvents, warnings
+	// Detect TypeScript/Next.js repos that have no entrypoints (not .csproj-based)
+	for _, repo := range project.Repos {
+		hasTS := false
+		for _, lang := range repo.Languages {
+			if lang == "typescript" {
+				hasTS = true
+				break
+			}
+		}
+		if !hasTS {
+			continue
+		}
+
+		// Count pages/ app directories for page_count
+		pageCount := 0
+		absRoot := registration.Root
+		if repo.Root != "" {
+			absRoot = filepath.Join(absRoot, filepath.FromSlash(repo.Root))
+		}
+		pagesDir := filepath.Join(absRoot, "pages")
+		appDir := filepath.Join(absRoot, "app")
+		if info, err := os.Stat(pagesDir); err == nil && info.IsDir() {
+			entries, _ := os.ReadDir(pagesDir)
+			for _, e := range entries {
+				if !e.IsDir() && !strings.HasPrefix(e.Name(), ".") {
+					pageCount++
+				} else if e.IsDir() && !strings.HasPrefix(e.Name(), ".") {
+					pageCount++
+				}
+			}
+		}
+		if info, err := os.Stat(appDir); err == nil && info.IsDir() {
+			entries, _ := os.ReadDir(appDir)
+			for _, e := range entries {
+				if !e.IsDir() && !strings.HasPrefix(e.Name(), ".") {
+					pageCount++
+				} else if e.IsDir() && !strings.HasPrefix(e.Name(), ".") {
+					pageCount++
+				}
+			}
+		}
+
+		name := repo.Name
+		if name == "" {
+			name = filepath.Base(repo.Root)
+		}
+
+		frontendApps = append(frontendApps, frontendAppEntry{
+			Path:      repo.Root,
+			Name:      name,
+			Language:  "typescript",
+			PageCount: pageCount,
+		})
+	}
+
+	return services, frontendApps, serviceEvents, warnings
 }
 
 func detectDependencies(services []serviceMapEntry, serviceEvents []serviceEventData) []serviceDependency {
