@@ -239,3 +239,67 @@ func TestNavPackTreatsGenericOnlyIndexAsStaleWhenCanonicalWikiExists(t *testing.
 		t.Fatalf("expected primary doc inside .docs/wiki/, got %q", primaryPath)
 	}
 }
+
+func TestNavPackNextQueriesArePopulated(t *testing.T) {
+	alias := "pack-nq-" + filepath.Base(t.TempDir())
+	root := createFunctionalPackWorkspaceFixture(t, alias)
+	app := New(root, nil)
+	if _, err := app.Execute(context.Background(), model.CommandRequest{
+		Operation: "workspace.init",
+		Context:   model.QueryOptions{},
+		Payload:   map[string]any{"path": root, "alias": alias},
+	}); err != nil {
+		t.Fatalf("workspace.init: %v", err)
+	}
+	defer func() { _ = workspace.RemoveWorkspace(alias) }()
+
+	env, err := app.Execute(context.Background(), model.CommandRequest{
+		Operation: "nav.pack",
+		Context:   model.QueryOptions{Workspace: alias, AXI: true, MaxItems: 6},
+		Payload:   map[string]any{"task": "understand how login works"},
+	})
+	if err != nil {
+		t.Fatalf("nav.pack: %v", err)
+	}
+	results := env.Items.([]model.PackResult)
+	if len(results) == 0 {
+		t.Fatalf("expected at least one pack result, got none")
+	}
+	if len(results[0].NextQueries) == 0 {
+		t.Fatalf("expected next_queries to be populated, got empty")
+	}
+	if !strings.HasPrefix(results[0].NextQueries[0], "mi-lsp") {
+		t.Fatalf("expected next query to start with mi-lsp, got %q", results[0].NextQueries[0])
+	}
+}
+
+func TestNavPackExplicitRFAnchorWinsOverRouteCore(t *testing.T) {
+	alias := "pack-rf-anchor-" + filepath.Base(t.TempDir())
+	root := createFunctionalPackWorkspaceFixture(t, alias)
+	app := New(root, nil)
+	if _, err := app.Execute(context.Background(), model.CommandRequest{
+		Operation: "workspace.init",
+		Context:   model.QueryOptions{},
+		Payload:   map[string]any{"path": root, "alias": alias},
+	}); err != nil {
+		t.Fatalf("workspace.init: %v", err)
+	}
+	defer func() { _ = workspace.RemoveWorkspace(alias) }()
+
+	env, err := app.Execute(context.Background(), model.CommandRequest{
+		Operation: "nav.pack",
+		Context:   model.QueryOptions{Workspace: alias, AXI: true, MaxItems: 6},
+		Payload:   map[string]any{"task": "understand login", "rf": "RF-AUTH-001"},
+	})
+	if err != nil {
+		t.Fatalf("nav.pack with rf anchor: %v", err)
+	}
+	results := env.Items.([]model.PackResult)
+	if len(results) == 0 {
+		t.Fatalf("expected at least one pack result, got none")
+	}
+	wantPrimary := ".docs/wiki/04_RF/RF-AUTH-001.md"
+	if results[0].PrimaryDoc != wantPrimary {
+		t.Fatalf("primary_doc = %q, want %q (explicit --rf anchor must win over route core)", results[0].PrimaryDoc, wantPrimary)
+	}
+}

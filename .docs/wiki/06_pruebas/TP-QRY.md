@@ -79,3 +79,5 @@
 | TC-QRY-055 | positivo | RF-QRY-014 | `TestNavRoutePreviewModeByDefault`: sin flags, el modo es `preview` y `discovery` puede estar ausente |
 | TC-QRY-056 | positivo | RF-QRY-014 | `TestNavRouteFullModeActivatesWithFlag`: `--full` expande canonical lane y activa discovery |
 | TC-QRY-057 | positivo | RF-QRY-015 | `TestNavRouteUsesTaskFallbackFromQuestion`: el route core extrae familia desde la pregunta cuando no hay anchor explicito |
+| TC-QRY-058 | positivo | RF-QRY-012 | `TestNavPackNextQueriesArePopulated`: `nav pack` popula `next_queries` con al menos un elemento que empieza con `mi-lsp` |
+| TC-QRY-059 | positivo | RF-QRY-012 | `TestNavPackExplicitRFAnchorWinsOverRouteCore`: anchor `--rf` explicito en payload sobreescribe el anchor del route core y determina `primary_doc` |

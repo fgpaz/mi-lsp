@@ -101,11 +101,24 @@ func (a *App) pack(ctx context.Context, request model.CommandRequest) (model.Env
 		docByPath[doc.Path] = doc
 	}
 
-	anchor, family := resolvePackAnchor(request.Payload, task, docs, docByPath, profile)
+	// Route core backbone (RF-QRY-015): resolve canonical anchor for this task
+	routeResult, _, routeWarnings, err := a.resolveCanonicalRoute(ctx, registration, task, request.Context, false)
+	if err != nil {
+		return model.Envelope{}, err
+	}
+	warnings = append(warnings, routeWarnings...)
+
+	hardAnchor, family := resolvePackAnchor(request.Payload, task, docs, docByPath, profile)
 	result.Family = family
 
+	// Inject route core anchor when no explicit override is present (--rf/--fl/--doc always wins)
+	if hardAnchor.DocPath == "" && hardAnchor.DocID == "" && routeResult.Canonical.AnchorDoc.Path != "" {
+		hardAnchor.DocPath = routeResult.Canonical.AnchorDoc.Path
+		result.Why = append(result.Why, "tier2=route_core")
+	}
+
 	_, ftsScores, _ := store.FTSSearchDocs(ctx, db, task, 20)
-	primary, ok := selectPackPrimary(task, family, anchor, docs, docByPath, ftsScores)
+	primary, ok := selectPackPrimary(task, family, hardAnchor, docs, docByPath, ftsScores)
 	if !ok {
 		warnings = appendStringIfMissing(warnings, "no documentation pack candidates matched the task")
 		return model.Envelope{

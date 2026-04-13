@@ -49,3 +49,16 @@ Cada `docs[]` contiene:
 - El orden del pack va de lo mas global a lo mas especifico segun familia documental y perfil local.
 - Cuando la wiki canonica existe pero el indice documental esta vacio, el contrato devuelve warnings/hint accionables para reindexar.
 - `--full` expande slices del mismo pack y no cambia `backend`.
+
+## Routing interno
+
+`nav pack` usa `resolveCanonicalRoute` (RF-QRY-015) como backbone para determinar el anchor documental cuando no hay override explicito.
+
+Precedencia de seleccion de anchor:
+
+1. `--doc <path>` — path explicito en el payload (maxima prioridad)
+2. `--rf <id>` — id de RF como anchor
+3. `--fl <id>` — id de FL como anchor
+4. Route core — `resolveCanonicalRoute` determina el anchor canonico segun la tarea y el perfil del workspace
+
+Cuando el route core determina el anchor, el campo `why` del resultado incluye `"tier2=route_core"`.
