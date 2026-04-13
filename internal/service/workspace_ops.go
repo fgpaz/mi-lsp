@@ -2,9 +2,12 @@ package service
 
 import (
 	"context"
+	"database/sql"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/fgpaz/mi-lsp/internal/docgraph"
 	"github.com/fgpaz/mi-lsp/internal/indexer"
@@ -157,7 +160,36 @@ func (a *App) workspaceStatus(ctx context.Context, name string, opts model.Query
 	if governance.Blocked {
 		warnings = append(warnings, governance.Issues...)
 	}
+	if w := entrypointLanguageMismatchWarning(ctx, db, project); w != "" {
+		warnings = append(warnings, w)
+	}
 	return model.Envelope{Ok: true, Workspace: registration.Name, Backend: "sqlite", Items: []any{applyWorkspaceStatusAXIView(item, registration.Name, opts)}, Stats: stats, Warnings: warnings}, nil
+}
+
+// entrypointLanguageMismatchWarning returns a warning when the default entrypoint is C#-only
+// but TypeScript files significantly outnumber C# files in the index (ratio > 2x).
+func entrypointLanguageMismatchWarning(ctx context.Context, db *sql.DB, project model.ProjectFile) string {
+	ep := project.Project.DefaultEntrypoint
+	if ep == "" {
+		return ""
+	}
+	ext := strings.ToLower(filepath.Ext(ep))
+	if ext != ".sln" && ext != ".csproj" {
+		return ""
+	}
+	counts, err := store.FilesCountByLanguage(ctx, db)
+	if err != nil || len(counts) == 0 {
+		return ""
+	}
+	tsCount := counts["typescript"]
+	csCount := counts["csharp"]
+	if tsCount == 0 || csCount*2 >= tsCount {
+		return ""
+	}
+	return fmt.Sprintf(
+		"typescript files (%d) outnumber csharp files (%d) 2x: default_entrypoint is C#-only — nav.ask and nav.pack may be biased toward backend docs; consider `mi-lsp workspace add <ts-root> --name <alias>-ts`",
+		tsCount, csCount,
+	)
 }
 
 func applyWorkspaceStatusAXIView(item map[string]any, alias string, opts model.QueryOptions) map[string]any {

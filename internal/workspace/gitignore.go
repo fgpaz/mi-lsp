@@ -13,6 +13,7 @@ type IgnoreMatcher struct {
 
 func DefaultIgnorePatterns() []string {
 	return []string{
+		".claude/",
 		".git/",
 		".idea/",
 		".mi-lsp/",

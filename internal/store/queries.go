@@ -117,6 +117,25 @@ func WorkspaceStats(ctx context.Context, db *sql.DB) (model.Stats, error) {
 	return stats, nil
 }
 
+// FilesCountByLanguage returns the number of indexed files per language ("csharp", "typescript", etc.).
+func FilesCountByLanguage(ctx context.Context, db *sql.DB) (map[string]int, error) {
+	rows, err := db.QueryContext(ctx, "SELECT language, COUNT(*) FROM files GROUP BY language")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	result := make(map[string]int)
+	for rows.Next() {
+		var lang string
+		var count int
+		if err := rows.Scan(&lang, &count); err != nil {
+			return nil, err
+		}
+		result[lang] = count
+	}
+	return result, rows.Err()
+}
+
 func SymbolsByFile(ctx context.Context, db *sql.DB, filePath string, limit int, offset int) ([]model.SymbolRecord, error) {
 	if limit <= 0 {
 		limit = 200
