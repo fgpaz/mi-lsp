@@ -25,6 +25,21 @@ var (
 	pascalSymbolPattern = regexp.MustCompile(`\b[A-Z][A-Za-z0-9_]+\b`)
 )
 
+func isSnapshotPath(path string) bool {
+	lower := strings.ToLower(path)
+	snapshots := []string{"/old/", "/archive/", "/deprecated/", "/historico/", "/legacy/"}
+	for _, seg := range snapshots {
+		if strings.Contains(lower, seg) {
+			return true
+		}
+		// Also check for segment at start of path (e.g., "old/foo.md")
+		if len(seg) > 1 && strings.HasPrefix(lower, seg[1:]) {
+			return true
+		}
+	}
+	return false
+}
+
 type RFFrontMatter struct {
 	ID         string   `yaml:"id"`
 	Title      string   `yaml:"title"`
@@ -149,6 +164,7 @@ func IndexWorkspaceDocs(root string, matcher *workspace.IgnoreMatcher) ([]model.
 			SearchText:  normalizeSearchText(title + "\n" + candidate.relativePath + "\n" + string(content)),
 			ContentHash: digest(content),
 			IndexedAt:   time.Now().Unix(),
+			IsSnapshot:  isSnapshotPath(candidate.relativePath),
 		}
 		docs = append(docs, doc)
 
