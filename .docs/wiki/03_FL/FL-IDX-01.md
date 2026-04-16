@@ -6,7 +6,7 @@ Construir o refrescar el indice repo-local del workspace de manera incremental, 
 
 ## 2. Scope in/out
 
-- In: scan de archivos, respeto de ignores por defaults + `.gitignore` + `.milspignore` + `project.toml`, escritura en SQLite, ownership por `repo_id`, actualizacion por `content_hash`, indexacion de docs `.md`, warnings de ruido evidente.
+- In: scan de archivos, respeto de ignores por defaults + `.gitignore` + `.milspignore` + `project.toml` honrando orden y re-includes negados, escritura en SQLite, ownership por `repo_id`, actualizacion por `content_hash`, indexacion de docs `.md`, warnings de ruido evidente.
 - Out: persistencia semantica completa de refs y jerarquias C#.
 
 ## 3. Main sequence
@@ -37,6 +37,7 @@ sequenceDiagram
 | Archivo fuera de repos detectados | warning y asignacion al root del workspace |
 | Indice contaminado por ruido | warning con sugerencia concreta para `.milspignore` |
 | Cambio en `.docs/wiki`, `README*`, `docs/` o `read-model.toml` | el incremental degrada a full re-index |
+| `index.db` previo sin docs canonicos aunque la wiki existe | `index` no responde `no changes detected`: degrada a full re-index para autocurar `doc_records` |
 | `--clean` activo | se recompone el indice desde cero |
 
 ## 5. Data touchpoints

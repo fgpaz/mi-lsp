@@ -2,7 +2,7 @@
 
 ## Descripcion
 
-`nav ask` y `nav pack` deben reutilizar el mismo motor de routing canonico que `nav route` para la seleccion docs-first del documento primario, en vez de duplicar la logica de ranking y seleccion.
+`nav ask` y `nav pack` deben reutilizar el mismo motor de routing canonico que `nav route` para la seleccion docs-first del documento primario, en vez de duplicar la logica de ranking y seleccion. Ese motor comparte tambien el scorer owner-aware y el override diagnostico `MI_LSP_DOC_RANKING=legacy`.
 
 ## Actor principal
 
@@ -29,6 +29,7 @@ TP-QRY
 ## Invariantes
 
 - El route core es la unica fuente de verdad para seleccion docs-first
+- El scorer owner-aware compartido es la unica fuente de verdad para priorizar docs canonicos positivos sobre `README`/generic
 - Si el indice de docs esta vacio pero existe wiki canonica, Tier 1 produce un governed anchor en vez de README.md
 - La governance gate se ejecuta una vez antes de cualquier routing
 - Discovery del route core nunca sobreescribe la canonical lane usada por ask o pack

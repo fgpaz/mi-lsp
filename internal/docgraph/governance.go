@@ -228,6 +228,17 @@ func validateAndResolveGovernance(source model.GovernanceSource) (resolvedGovern
 	if len(source.BlockingRules) == 0 {
 		issues = append(issues, "blocking_rules is required")
 	}
+	for idx, hint := range source.OwnerHints {
+		if len(dedupeStrings(hint.Terms)) == 0 {
+			issues = append(issues, fmt.Sprintf("owner_hints[%d].terms must include at least one term", idx))
+		}
+		if len(dedupeStrings(hint.PreferDocIDs)) == 0 &&
+			len(dedupeStrings(hint.PreferPaths)) == 0 &&
+			len(dedupeStrings(hint.PreferFamilies)) == 0 &&
+			len(dedupeStrings(hint.PreferLayers)) == 0 {
+			issues = append(issues, fmt.Sprintf("owner_hints[%d] must include at least one prefer_* target", idx))
+		}
+	}
 
 	for _, chain := range [][]string{source.ContextChain, source.ClosureChain, source.AuditChain} {
 		for _, id := range chain {
@@ -302,6 +313,7 @@ func buildDocsReadProfileFromGovernance(source model.GovernanceSource, resolved 
 			TechnicalStageOrder:  []string{"governance", "scope", "architecture", "technical_baseline", "technical_detail", "physical_data", "contracts"},
 			UXStageOrder:         []string{"governance", "scope", "architecture", "ux_global", "ux_research", "ux_spec", "ux_handoff"},
 		},
+		OwnerHints: normalizeOwnerHints(source.OwnerHints),
 		Governance: model.DocsGovernanceProfile{
 			SourceDoc:            filepath.ToSlash(filepath.Join(".docs", "wiki", "00_gobierno_documental.md")),
 			SourceFormat:         "markdown+yaml",
@@ -318,6 +330,33 @@ func buildDocsReadProfileFromGovernance(source model.GovernanceSource, resolved 
 			Hierarchy:            append([]model.GovernanceHierarchyItem(nil), source.Hierarchy...),
 		},
 	}
+}
+
+func normalizeOwnerHints(hints []model.DocsOwnerHint) []model.DocsOwnerHint {
+	if len(hints) == 0 {
+		return nil
+	}
+	normalized := make([]model.DocsOwnerHint, 0, len(hints))
+	for _, hint := range hints {
+		entry := model.DocsOwnerHint{
+			Terms:          dedupeStrings(hint.Terms),
+			PreferDocIDs:   dedupeStrings(hint.PreferDocIDs),
+			PreferPaths:    dedupeStrings(hint.PreferPaths),
+			PreferFamilies: dedupeStrings(hint.PreferFamilies),
+			PreferLayers:   dedupeStrings(hint.PreferLayers),
+		}
+		if len(entry.Terms) == 0 {
+			continue
+		}
+		if len(entry.PreferDocIDs) == 0 &&
+			len(entry.PreferPaths) == 0 &&
+			len(entry.PreferFamilies) == 0 &&
+			len(entry.PreferLayers) == 0 {
+			continue
+		}
+		normalized = append(normalized, entry)
+	}
+	return normalized
 }
 
 func hierarchyPathsForFamily(items []model.GovernanceHierarchyItem, family string) []string {

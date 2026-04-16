@@ -2,11 +2,11 @@
 
 ## 1. Goal
 
-Resolver una consulta con salida compacta, truncacion determinista y fallback cuando el daemon o el backend semantico no estan disponibles. Incluye `nav route` como selector canonico de bajo token para obtener el documento de anclaje y un mini reading pack antes de expandir con `nav ask` o `nav pack`. Tambien cubre `nav ask` como consulta docs-first guiada por wiki, `nav pack` como reading pack canonico para tareas spec-driven, la exploracion evidence-first de servicios, la regla de que las lecturas baratas de catalogo/texto no dependen del daemon y la disclosure preview-first de las superficies que caen en AXI efectivo.
+Resolver una consulta con salida compacta, truncacion determinista y fallback cuando el daemon o el backend semantico no estan disponibles. Incluye `nav route` como selector canonico de bajo token para obtener el documento de anclaje y un mini reading pack antes de expandir con `nav ask` o `nav pack`. Tambien cubre `nav ask` como consulta docs-first guiada por wiki, `nav pack` como reading pack canonico para tareas spec-driven, `nav.intent` como superficie hibrida `docs|code`, la exploracion evidence-first de servicios, la regla de que las lecturas baratas de catalogo/texto no dependen del daemon, la disclosure preview-first de las superficies que caen en AXI efectivo, un bloque opcional `coach` para reruns/refinamientos explicitos y una capa tiny de continuidad/reentrada (`continuation`, `memory_pointer`) para que skills y harnesses sepan como seguir buscando.
 
 ## 2. Scope in/out
 
-- In: routing por backend, aplicacion de `--token-budget`, `--max-items`, `--max-chars`, warnings de degradacion, `nav service <path>`, `nav ask <question>`, `nav pack <task>`, `nav intent <question>`, `--axi`, `--classic`, `MI_LSP_AXI=1`, `--full` cuando el modo efectivo es AXI y la decision centralizada de ejecutar directo `nav.find`, `nav.search`, `nav.intent`, `nav.symbols`, `nav.outline`, `nav.overview`, `nav.multi-read` y `nav pack`. En workspaces `container`, `find/search/intent` pueden acotar con `--repo`.
+- In: routing por backend, aplicacion de `--token-budget`, `--max-items`, `--max-chars`, warnings de degradacion, `nav service <path>`, `nav ask <question>`, `nav pack <task>`, `nav intent <question>`, `--axi`, `--classic`, `MI_LSP_AXI=1`, `--full` cuando el modo efectivo es AXI, el scorer owner-aware compartido para docs-first y la decision centralizada de ejecutar directo `nav.find`, `nav.search`, `nav.intent`, `nav.symbols`, `nav.outline`, `nav.overview`, `nav.multi-read` y `nav pack`. En workspaces `container`, `find/search/intent` pueden acotar con `--repo`; si `nav.intent` clasifica la consulta como `docs`, ese selector se valida pero no redefine la lane documental. Cuando el request omite `--workspace`, la query se resuelve usando `caller_cwd` antes de `last_workspace`.
 - Out: edicion/refactor, respuestas con blobs de codigo completos y score fuerte de completitud.
 
 ## 3. Actors and ownership
@@ -27,11 +27,14 @@ Resolver una consulta con salida compacta, truncacion determinista y fallback cu
 ## 5. Postconditions
 
 - El usuario recibe un envelope estable y compacto.
-- Si hubo truncacion o degradacion, queda explicitado en `warnings`/`next_hint`.
+- Si hubo truncacion o degradacion, queda explicitado en `warnings`/`next_hint`; cuando existe una accion de continuidad fuerte, el envelope puede agregar `coach`.
+- Las superficies calientes pueden agregar `continuation` machine-readable y `memory_pointer` wiki-aware para dejar un proximo paso o una pista de reentrada con muy bajo costo de tokens.
 - Si se uso `nav service`, la respuesta contiene evidencia estructurada y no un veredicto fuerte de completitud.
-- Si se uso `nav ask`, la respuesta deja visible documento primario, evidencia documental, evidencia de codigo y siguientes pasos.
+- Si se uso `nav ask`, la respuesta deja visible documento primario, evidencia documental, evidencia de codigo y siguientes pasos; si la evidencia es fina o cayo a fallback textual, puede agregar `coach`.
 - Si se uso `nav pack`, la respuesta deja visible el reading pack canonico, sus stages y sus targets o slices segun preview/full.
+- Si se uso `nav intent`, la respuesta deja visible `mode=docs|code`: capability-like -> docs canonicos owner-aware; symbol-like -> ranking BM25 de catalogo.
 - Si se uso una lectura barata de catalogo/texto, la respuesta no queda bloqueada por health del daemon.
+- Si el workspace se resolvio por fallback (`same-root alias ambiguity` o `last_workspace`), la respuesta deja warning visible con el alias seleccionado.
 
 ## 6. Main sequence
 
@@ -61,6 +64,13 @@ sequenceDiagram
     else nav pack
         C->>DG: clasifica tarea, elige anchor y ordena reading pack canonico
         DG-->>C: docs + stages + targets/slices
+    else nav intent
+        C->>DG: clasifica query en mode=docs|code
+        alt docs
+            DG-->>C: docs canonicos owner-aware + evidence
+        else code
+            DG-->>C: simbolos BM25 + evidence
+        end
     else nav service
         C->>X: agrega catalogo + busqueda textual scoped
         X-->>C: evidence summary
@@ -82,9 +92,13 @@ sequenceDiagram
 | Presupuesto agotado | `truncated=true` + `next_hint` |
 | Backend degradado (`tsserver` ausente, worker semantico no disponible) | `warnings` explicitos y backend alternativo |
 | Catalogo ausente para `nav service` | degradacion a evidencia textual con warning |
-| `nav ask` sin corpus documental fuerte | degradacion a fallback generico/textual con warning |
+| `nav ask` sin corpus documental fuerte | degradacion a fallback generico/textual con warning y `coach` de refinamiento |
+| query natural capability-like sobre docs nuevos | scorer owner-aware y `owner_hints` deben priorizar docs canonicos positivos por encima de `README` |
+| `workspace` omitido y sin match por `caller_cwd` | fallback a `last_workspace` con warning explicito |
+| multiples aliases para el mismo root | seleccion determinista con warning explicito |
 | Formato no reconocido | el render cae al formato `compact` |
-| AXI preview efectivo | el envelope agrega guidance para `--full` sin cambiar la semantica base |
+| AXI preview efectivo | el envelope agrega guidance para `--full` sin cambiar la semantica base y puede exponer `coach.trigger=preview_trimmed` |
+| Snapshot de reentrada stale | `memory_pointer.stale=true` y `continuation` puede redirigir a `workspace status --full` antes de seguir profundizando |
 
 ## 8. Architecture slice
 
@@ -99,6 +113,7 @@ sequenceDiagram
 - `ServiceSurfaceSummary`
 - `AskResult`
 - `PackResult`
+- `ReentryMemorySnapshot`
 - `DocRecord` / `DocEdge` / `DocMention`
 
 ## 10. Candidate RF references
@@ -108,6 +123,7 @@ sequenceDiagram
 - RF-QRY-003 resumen evidence-first de servicio sin score fuerte
 - RF-QRY-010 preguntas docs-first guiadas por wiki con evidencia de codigo
 - RF-QRY-011 busqueda de simbolos por intencion con scope opcional de repo
+- RF-QRY-011 busqueda hibrida por intencion con `mode=docs|code`
 - RF-QRY-012 reading pack canonico docs-first para una tarea
 - RF-QRY-014 comando publico nav route para resolver documento canonico minimo
 - RF-QRY-015 reutilizacion interna del route core desde ask y pack

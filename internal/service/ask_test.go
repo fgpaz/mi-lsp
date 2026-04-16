@@ -160,6 +160,9 @@ func TestNavAskUsesWikiAndCodeEvidence(t *testing.T) {
 	if len(result.NextQueries) == 0 {
 		t.Fatalf("expected next queries, got %#v", result)
 	}
+	if env.Coach != nil {
+		t.Fatalf("expected no coach for high-confidence ask, got %#v", env.Coach)
+	}
 }
 
 func TestNavAskPrefersExplicitLinkedDocs(t *testing.T) {
@@ -252,6 +255,21 @@ func TestNavAskFallsBackWhenDocsIndexIsEmpty(t *testing.T) {
 	if len(results[0].CodeEvidence) == 0 {
 		t.Fatalf("expected textual code evidence in fallback, got %#v", results[0])
 	}
+	if env.Coach == nil || env.Coach.Trigger != "text_fallback" {
+		t.Fatalf("expected text_fallback coach, got %#v", env.Coach)
+	}
+	if env.Coach.Confidence != "low" {
+		t.Fatalf("coach confidence = %q, want low", env.Coach.Confidence)
+	}
+	if len(env.Coach.Actions) != 1 || !strings.Contains(env.Coach.Actions[0].Command, "nav search") {
+		t.Fatalf("expected coach search action, got %#v", env.Coach)
+	}
+	if env.MemoryPointer == nil {
+		t.Fatalf("expected memory pointer, got %#v", env)
+	}
+	if env.Continuation == nil || env.Continuation.Reason != "low_evidence" || env.Continuation.Next.Op != "nav.search" {
+		t.Fatalf("expected low_evidence continuation, got %#v", env.Continuation)
+	}
 }
 
 func TestNavAskGenericMatchPrefersLexicalSearchNextQuery(t *testing.T) {
@@ -339,6 +357,55 @@ func TestNavAskUsesBuiltinProfileForMinimalTechnicalDocs(t *testing.T) {
 		if warning == "no wiki match found" {
 			t.Fatalf("unexpected no wiki match warning: %#v", env.Warnings)
 		}
+	}
+}
+
+func TestNavAskAXIPreviewEmitsPreviewTrimmedCoach(t *testing.T) {
+	alias := "ask-preview-" + filepath.Base(t.TempDir())
+	root := createLinkedDocsWorkspaceFixture(t, alias)
+	app := New(root, nil)
+
+	if _, err := app.Execute(context.Background(), model.CommandRequest{
+		Operation: "workspace.init",
+		Context:   model.QueryOptions{},
+		Payload:   map[string]any{"path": root, "alias": alias},
+	}); err != nil {
+		t.Fatalf("workspace.init: %v", err)
+	}
+	defer func() { _ = workspace.RemoveWorkspace(alias) }()
+
+	db, err := store.Open(root)
+	if err != nil {
+		t.Fatalf("store.Open: %v", err)
+	}
+	docs := []model.DocRecord{
+		{Path: ".docs/wiki/04_RF/RF-QRY-010.md", Title: "RF-QRY-010", DocID: "RF-QRY-010", Layer: "04", Family: "functional", SearchText: "RF-QRY-010 docs first ask"},
+		{Path: ".docs/wiki/03_FL/FL-QRY-01.md", Title: "FL-QRY-01", DocID: "FL-QRY-01", Layer: "03", Family: "functional", SearchText: "FL-QRY-01 query flow"},
+		{Path: ".docs/wiki/09_contratos/CT-NAV-ASK.md", Title: "CT-NAV-ASK", DocID: "CT-NAV-ASK", Layer: "09", Family: "technical", SearchText: "CT-NAV-ASK public contract"},
+	}
+	edges := []model.DocEdge{
+		{FromPath: ".docs/wiki/04_RF/RF-QRY-010.md", ToPath: ".docs/wiki/03_FL/FL-QRY-01.md", Kind: "references"},
+		{FromPath: ".docs/wiki/04_RF/RF-QRY-010.md", ToPath: ".docs/wiki/09_contratos/CT-NAV-ASK.md", Kind: "references"},
+	}
+	if err := store.ReplaceDocs(context.Background(), db, docs, edges, nil); err != nil {
+		db.Close()
+		t.Fatalf("ReplaceDocs: %v", err)
+	}
+	db.Close()
+
+	env, err := app.Execute(context.Background(), model.CommandRequest{
+		Operation: "nav.ask",
+		Context:   model.QueryOptions{Workspace: alias, MaxItems: 5, AXI: true},
+		Payload:   map[string]any{"question": "RF-QRY-010"},
+	})
+	if err != nil {
+		t.Fatalf("nav.ask: %v", err)
+	}
+	if env.Coach == nil || env.Coach.Trigger != "preview_trimmed" {
+		t.Fatalf("expected preview_trimmed coach, got %#v", env.Coach)
+	}
+	if len(env.Coach.Actions) != 1 || !strings.Contains(env.Coach.Actions[0].Command, "--full") {
+		t.Fatalf("expected one expansion action, got %#v", env.Coach)
 	}
 }
 

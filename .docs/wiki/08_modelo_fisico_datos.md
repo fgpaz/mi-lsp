@@ -28,7 +28,7 @@ La novedad de v1.3 es que el store repo-local persiste tambien el grafo document
   - `doc_records` con `path`, `doc_id`, `layer`, `family`, `search_text`, `content_hash`, `indexed_at`
   - `doc_edges` con `from_path`, `to_path`, `to_doc_id`, `kind`, `label`
   - `doc_mentions` con `doc_path`, `mention_type`, `mention_value`
-  - `workspace_meta` con `workspace_kind`, `default_repo`, `default_entrypoint`, `doc_count`
+  - `workspace_meta` con `workspace_kind`, `default_repo`, `default_entrypoint`, `doc_count`, `memory_snapshot_json`, `memory_snapshot_built_at`
 - `daemon.db`
   - `runtime_snapshots` con `repo_name`, `repo_root`, `entrypoint_id`, `entrypoint_path`, `entrypoint_type`
   - `access_events` con `client_name`, `session_id`, `seq INTEGER DEFAULT 0`, `workspace_input`, `workspace_root`, `workspace_alias`, `repo`, `entrypoint_id`, `route`, `format`, `token_budget`, `max_items`, `max_chars`, `compress`, `error_kind`, `error_code`, `truncated`, `result_count`, `warning_count`, `pattern_mode`, `routing_outcome`, `failure_stage`, `hint_code`, `truncation_reason`, `decision_json`
@@ -38,6 +38,7 @@ La novedad de v1.3 es que el store repo-local persiste tambien el grafo document
 - `index.db` debe tolerar reconstruccion completa con `mi-lsp index --clean`.
 - Las migraciones aditivas de `index.db` deben crear `repo_id` y `repo_name` en `files`/`symbols` antes de crear indices que dependan de esas columnas.
 - `doc_records`, `doc_edges` y `doc_mentions` deben refrescarse como un bloque consistente dentro de una sola transaccion.
+- El snapshot repo-local de reentrada (`memory_snapshot_json`) se reconstruye en `mi-lsp index`, no en cada query interactiva.
 - `project.toml` debe poder reescribirse al volver a detectar topologia del workspace.
 - El `read-model.toml` no se copia a SQLite; se usa en lectura y sus cambios disparan re-index completo del corpus documental.
 - `00_gobierno_documental.md` tampoco se persiste dentro de SQLite; su estado gobierna bloqueo/sync e invalida el indice cuando cambia.
@@ -45,11 +46,16 @@ La novedad de v1.3 es que el store repo-local persiste tambien el grafo document
 - `registry.toml` puede contener multiples aliases para un mismo root; `workspace list` debe preservar el alias registrado.
 - `runtime_snapshots` representan solamente runtimes observables del `daemon_run_id` vigente.
 - `access_events` registran metadata y nunca payloads completos.
-- `decision_json` existe para debugging causal local y debe permanecer sanitizado: sin `pattern` crudo, sin argv y sin snapshot completo del request.
+- `workspace_input` guarda el selector crudo recibido; `workspace`, `workspace_alias` y `workspace_root` representan la identidad resuelta del workspace y no deben degradarse a `unscoped` si la operacion eligio un alias real.
+- `decision_json` existe para debugging causal local y debe permanecer sanitizado: sin `pattern` crudo, sin argv, sin snapshot completo del request y sin el texto/comandos completos del bloque `coach`.
+- `decision_json` puede incluir solo derivaciones de `continuation` y `memory_pointer` (`continuation_present`, `continuation_reason`, `continuation_op`, `memory_pointer_present`, `memory_stale`) y metadatos diagnosticos como `doc_ranker` / `intent_mode`; nunca `why`, `query`, `handoff` ni el contenido completo del snapshot repo-local.
 - `daemon.db` usa WAL mode para manejar escrituras concurrentes (daemon + CLI directo).
+- `.mi-lsp/index.db` repo-local tambien usa WAL mode + `busy_timeout`, y las escrituras se serializan por workspace para evitar contencion entre watcher e index manual.
+- Ante corrupcion de `index.db`, el runtime debe cuarentenar el archivo previo y reconstruir uno nuevo en el mismo workspace.
 - Auto-purge elimina eventos y runs con mas de 30 dias en startup de CLI y daemon.
 - La fila canonica de una request `route=daemon` la escribe el daemon.
 - La CLI directa solo graba `access_events` cuando la request se sirve como `direct`, `direct_fallback` o falla antes de delegarse al daemon; esos eventos pueden llevar `daemon_run_id = NULL`.
+- `runtime_key` debe persistirse tambien en filas `route=direct` o `route=direct_fallback` para que `admin export` pueda atribuir uso de queries directas a un workspace/backend/entrypoint estable.
 - `result_count` representa los items emitidos en el envelope final; `warning_count` se persiste como contador explicito para que summary/CSV no dependan de re-hidratar `warnings_json`.
 - Filas duplicadas historicas de requests daemonizadas pueden existir como artefactos previos al fix de ownership de telemetria y deben tratarse como legacy hasta que la retencion las purgue.
 
@@ -67,6 +73,7 @@ La novedad de v1.3 es que el store repo-local persiste tambien el grafo document
 - `ReplaceFileSymbols(file_id, symbols)`: DELETE todos los simbolos del file, luego INSERT los nuevos. Usado para re-indexing incremental.
 - `DeleteFileSymbols(file_id)`: DELETE simbolos y file record para archivos eliminados. Respeta `content_hash` para dedup.
 - `ReplaceDocs(docs, edges, mentions)`: reemplaza el snapshot documental completo y actualiza `workspace_meta.doc_count`.
+- `SaveReentrySnapshot(snapshot)`: persiste `memory_snapshot_json` y `memory_snapshot_built_at` en `workspace_meta` al final de una indexacion exitosa.
 
 ## Riesgos operativos observados
 

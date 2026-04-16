@@ -428,7 +428,7 @@ func TestWorkspaceMapFrontendApps(t *testing.T) {
 	}
 
 	// Call discoverServices with nil db (no entrypoints means no DB needed)
-	_, frontendApps, _, _ := discoverServices(context.Background(), nil, registration, project)
+	_, frontendApps, _, _ := discoverServices(context.Background(), nil, registration, project, false)
 
 	if len(frontendApps) == 0 {
 		t.Fatal("expected at least one frontend app for TypeScript repo, got 0")
@@ -488,7 +488,7 @@ func TestWorkspaceMapFrontendApps_MultipleTSRepos(t *testing.T) {
 		Kind:      model.WorkspaceKindContainer,
 	}
 
-	_, frontendApps, _, _ := discoverServices(context.Background(), nil, registration, project)
+	_, frontendApps, _, _ := discoverServices(context.Background(), nil, registration, project, false)
 
 	if len(frontendApps) != 2 {
 		t.Fatalf("expected 2 frontend apps (only TypeScript repos), got %d", len(frontendApps))
@@ -538,7 +538,7 @@ func TestWorkspaceMapFrontendApps_NoTSRepos(t *testing.T) {
 		Kind:      model.WorkspaceKindSingle,
 	}
 
-	_, frontendApps, _, _ := discoverServices(context.Background(), nil, registration, project)
+	_, frontendApps, _, _ := discoverServices(context.Background(), nil, registration, project, false)
 
 	if len(frontendApps) != 0 {
 		t.Errorf("expected 0 frontend apps for CSharp-only repo, got %d", len(frontendApps))

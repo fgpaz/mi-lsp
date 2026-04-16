@@ -37,6 +37,7 @@ func (a *App) pack(ctx context.Context, request model.CommandRequest) (model.Env
 	if err != nil {
 		return model.Envelope{}, err
 	}
+	memory, _ := loadReentryMemory(ctx, registration.Root)
 
 	task, _ := request.Payload["task"].(string)
 	task = strings.TrimSpace(task)
@@ -48,18 +49,15 @@ func (a *App) pack(ctx context.Context, request model.CommandRequest) (model.Env
 		return model.Envelope{}, fmt.Errorf("task is required")
 	}
 
-	db, err := store.Open(registration.Root)
-	if err != nil {
-		return model.Envelope{}, err
+	query := loadDocQueryContext(ctx, registration, task)
+	defer query.Close()
+	if query.dbErr != nil {
+		return model.Envelope{}, query.dbErr
 	}
-	defer db.Close()
-
-	docs, err := store.ListDocRecords(ctx, db)
-	if err != nil {
-		return model.Envelope{}, err
-	}
-
-	profile, profileSource, profileWarnings := docgraph.LoadProfile(registration.Root)
+	docs := query.docs
+	profile := query.profile
+	profileSource := query.profileSource
+	profileWarnings := query.profileWarnings
 	mode := "preview"
 	if request.Context.Full {
 		mode = "full"
@@ -86,29 +84,22 @@ func (a *App) pack(ctx context.Context, request model.CommandRequest) (model.Env
 		}
 		hint := fmt.Sprintf("documentation index is empty; route resolved from governance. Rerun mi-lsp index --workspace %s for full pack", registration.Name)
 		warnings = appendStringIfMissing(warnings, hint)
-		return model.Envelope{
+		env := model.Envelope{
 			Ok:        true,
 			Workspace: registration.Name,
 			Backend:   "pack",
 			Items:     []model.PackResult{result},
 			Warnings:  warnings,
 			Hint:      hint,
-		}, nil
-	}
-
-	docByPath := make(map[string]model.DocRecord, len(docs))
-	for _, doc := range docs {
-		docByPath[doc.Path] = doc
+		}
+		env = attachMemoryPointer(env, memory)
+		env.Continuation = buildPackContinuation(task, result, request.Context, memory)
+		return applyCoachPolicy(env, request.Context), nil
 	}
 
 	// Route core backbone (RF-QRY-015): resolve canonical anchor for this task
-	routeResult, _, routeWarnings, err := a.resolveCanonicalRoute(ctx, registration, task, request.Context, false)
-	if err != nil {
-		return model.Envelope{}, err
-	}
-	warnings = append(warnings, routeWarnings...)
-
-	hardAnchor, family := resolvePackAnchor(request.Payload, task, docs, docByPath, profile)
+	routeResult := query.canonicalRoute(request.Context, false)
+	hardAnchor, family := resolvePackAnchor(request.Payload, task, docs, query.docByPath, profile)
 	result.Family = family
 
 	// Inject route core anchor when no explicit override is present (--rf/--fl/--doc always wins)
@@ -117,8 +108,7 @@ func (a *App) pack(ctx context.Context, request model.CommandRequest) (model.Env
 		result.Why = append(result.Why, "tier2=route_core")
 	}
 
-	_, ftsScores, _ := store.FTSSearchDocs(ctx, db, task, 20)
-	primary, ok := selectPackPrimary(task, family, hardAnchor, docs, docByPath, ftsScores)
+	primary, ok := selectPackPrimary(hardAnchor, docs, query.docByPath, query.ranked)
 	if !ok {
 		warnings = appendStringIfMissing(warnings, "no documentation pack candidates matched the task")
 		return model.Envelope{
@@ -132,7 +122,35 @@ func (a *App) pack(ctx context.Context, request model.CommandRequest) (model.Env
 	result.PrimaryDoc = primary.Path
 	result.Why = append(result.Why, "primary_doc="+primary.Path, "family="+family)
 
-	packDocs, packWhy, packWarnings := buildReadingPack(ctx, db, registration.Root, task, family, primary, docs, docByPath, ftsScores, profile, request.Context.Full, request.Context.MaxItems)
+	if isAXIPreview(request.Context) {
+		previewDocs := routeCanonicalToPackDocs(routeResult.Canonical)
+		if len(previewDocs) > 0 {
+			for i := range previewDocs {
+				if doc, ok := query.docByPath[previewDocs[i].Path]; ok {
+					targets, targetWarnings := packTargets(registration.Root, doc, task)
+					previewDocs[i].Targets = targets
+					warnings = append(warnings, targetWarnings...)
+				}
+			}
+			result.Docs = previewDocs
+			result.PrimaryDoc = routeResult.Canonical.AnchorDoc.Path
+			result.Why = append(result.Why, "preview=route_core")
+			result.NextQueries = buildPackNextQueries(registration.Name, task, request.Context.Full, result.Docs)
+			env := model.Envelope{
+				Ok:        true,
+				Workspace: registration.Name,
+				Backend:   "pack",
+				Items:     []model.PackResult{result},
+				Warnings:  warnings,
+				Stats:     model.Stats{Files: len(result.Docs)},
+			}
+			env = attachMemoryPointer(env, memory)
+			env.Continuation = buildPackContinuation(task, result, request.Context, memory)
+			return applyCoachPolicy(applyAXIPreviewHints(env, request.Context, "preview mode: rerun with --full for slices"), request.Context), nil
+		}
+	}
+
+	packDocs, packWhy, packWarnings := buildReadingPack(ctx, query.db, registration.Root, task, family, primary, docs, query.docByPath, query.ranked, profile, request.Context.Full, effectivePackDocsLimit(request.Context, profile))
 	result.Docs = packDocs
 	result.Why = append(result.Why, packWhy...)
 	result.NextQueries = buildPackNextQueries(registration.Name, task, request.Context.Full, result.Docs)
@@ -146,7 +164,9 @@ func (a *App) pack(ctx context.Context, request model.CommandRequest) (model.Env
 		Warnings:  warnings,
 		Stats:     model.Stats{Files: len(result.Docs)},
 	}
-	return applyAXIPreviewHints(env, request.Context, "preview mode: rerun with --full for slices"), nil
+	env = attachMemoryPointer(env, memory)
+	env.Continuation = buildPackContinuation(task, result, request.Context, memory)
+	return applyCoachPolicy(applyAXIPreviewHints(env, request.Context, "preview mode: rerun with --full for slices"), request.Context), nil
 }
 
 func resolvePackAnchor(payload map[string]any, task string, docs []model.DocRecord, docByPath map[string]model.DocRecord, profile model.DocsReadProfile) (packAnchor, string) {
@@ -171,7 +191,7 @@ func resolvePackAnchor(payload map[string]any, task string, docs []model.DocReco
 	return anchor, docgraph.MatchFamily(task, profile)
 }
 
-func selectPackPrimary(task string, family string, anchor packAnchor, docs []model.DocRecord, docByPath map[string]model.DocRecord, ftsScores map[string]float64) (model.DocRecord, bool) {
+func selectPackPrimary(anchor packAnchor, docs []model.DocRecord, docByPath map[string]model.DocRecord, ranked []scoredDoc) (model.DocRecord, bool) {
 	if anchor.DocPath != "" {
 		doc, ok := docByPath[anchor.DocPath]
 		return doc, ok
@@ -183,7 +203,6 @@ func selectPackPrimary(task string, family string, anchor packAnchor, docs []mod
 			}
 		}
 	}
-	ranked := rankDocs(task, family, docs, ftsScores)
 	for _, candidate := range ranked {
 		if candidate.record.Family != "generic" {
 			return candidate.record, true
@@ -204,7 +223,7 @@ func buildReadingPack(
 	primary model.DocRecord,
 	docs []model.DocRecord,
 	docByPath map[string]model.DocRecord,
-	ftsScores map[string]float64,
+	ranked []scoredDoc,
 	profile model.DocsReadProfile,
 	full bool,
 	maxDocs int,
@@ -217,7 +236,6 @@ func buildReadingPack(
 	}
 
 	stageSpecs := packStagesForFamily(family, profile.ReadingPack)
-	ranked := rankDocs(task, family, docs, ftsScores)
 	rankedByPath := make(map[string]scoredDoc, len(ranked))
 	for _, item := range ranked {
 		rankedByPath[item.record.Path] = item
@@ -272,6 +290,20 @@ func buildReadingPack(
 	}
 
 	return items, reasons, warnings
+}
+
+func effectivePackDocsLimit(opts model.QueryOptions, profile model.DocsReadProfile) int {
+	maxDocs := opts.MaxItems
+	if maxDocs <= 0 {
+		maxDocs = profile.ReadingPack.MaxDocs
+	}
+	if maxDocs <= 0 {
+		maxDocs = 6
+	}
+	if isAXIPreview(opts) && maxDocs > 3 {
+		return 3
+	}
+	return maxDocs
 }
 
 func packStagesForFamily(family string, profile model.DocsReadingPackProfile) []packStage {

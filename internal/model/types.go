@@ -13,6 +13,7 @@ const (
 
 type QueryOptions struct {
 	Workspace   string `json:"workspace,omitempty"`
+	CallerCWD   string `json:"caller_cwd,omitempty"`
 	Format      string `json:"format,omitempty"`
 	TokenBudget int    `json:"token_budget,omitempty"`
 	MaxItems    int    `json:"max_items,omitempty"`
@@ -34,16 +35,57 @@ type Stats struct {
 	TokensEstimate int   `json:"tokens_est,omitempty"`
 }
 
+type CoachAction struct {
+	Kind    string `json:"kind"`
+	Label   string `json:"label"`
+	Command string `json:"command"`
+}
+
+type Coach struct {
+	Trigger    string        `json:"trigger"`
+	Message    string        `json:"message"`
+	Confidence string        `json:"confidence,omitempty"`
+	Actions    []CoachAction `json:"actions,omitempty"`
+}
+
+type ContinuationTarget struct {
+	Op     string `json:"op"`
+	Query  string `json:"query,omitempty"`
+	Repo   string `json:"repo,omitempty"`
+	Path   string `json:"path,omitempty"`
+	Symbol string `json:"symbol,omitempty"`
+	DocID  string `json:"doc_id,omitempty"`
+	Full   bool   `json:"full,omitempty"`
+}
+
+type Continuation struct {
+	Reason    string              `json:"reason"`
+	Next      ContinuationTarget  `json:"next"`
+	Alternate *ContinuationTarget `json:"alternate,omitempty"`
+}
+
+type MemoryPointer struct {
+	DocID     string `json:"doc_id,omitempty"`
+	Why       string `json:"why,omitempty"`
+	ReentryOp string `json:"reentry_op,omitempty"`
+	Handoff   string `json:"handoff,omitempty"`
+	Stale     bool   `json:"stale,omitempty"`
+}
+
 type Envelope struct {
-	Ok        bool     `json:"ok"`
-	Workspace string   `json:"workspace,omitempty"`
-	Backend   string   `json:"backend,omitempty"`
-	Items     any      `json:"items"`
-	Truncated bool     `json:"truncated"`
-	Stats     Stats    `json:"stats,omitempty"`
-	Warnings  []string `json:"warnings,omitempty"`
-	Hint      string   `json:"hint,omitempty"`
-	NextHint  *string  `json:"next_hint,omitempty"`
+	Ok            bool           `json:"ok"`
+	Workspace     string         `json:"workspace,omitempty"`
+	Backend       string         `json:"backend,omitempty"`
+	Mode          string         `json:"mode,omitempty"`
+	Items         any            `json:"items"`
+	Truncated     bool           `json:"truncated"`
+	Stats         Stats          `json:"stats,omitempty"`
+	Warnings      []string       `json:"warnings,omitempty"`
+	Hint          string         `json:"hint,omitempty"`
+	NextHint      *string        `json:"next_hint,omitempty"`
+	Coach         *Coach         `json:"coach,omitempty"`
+	Continuation  *Continuation  `json:"continuation,omitempty"`
+	MemoryPointer *MemoryPointer `json:"memory_pointer,omitempty"`
 }
 
 // QueryEnvelope is a semantic alias of Envelope for traceability with 05_modelo_datos.md.
@@ -126,6 +168,7 @@ type DocsReadProfile struct {
 	Families    []DocsReadFamily       `toml:"family"`
 	GenericDocs DocsGenericFallback    `toml:"generic_docs"`
 	ReadingPack DocsReadingPackProfile `toml:"reading_pack"`
+	OwnerHints  []DocsOwnerHint        `toml:"owner_hint"`
 	Governance  DocsGovernanceProfile  `toml:"governance"`
 }
 
@@ -146,12 +189,21 @@ type DocsReadingPackProfile struct {
 	UXStageOrder         []string `toml:"ux_stage_order"`
 }
 
+type DocsOwnerHint struct {
+	Terms          []string `yaml:"terms,omitempty" toml:"terms"`
+	PreferDocIDs   []string `yaml:"prefer_doc_ids,omitempty" toml:"prefer_doc_ids,omitempty"`
+	PreferPaths    []string `yaml:"prefer_paths,omitempty" toml:"prefer_paths,omitempty"`
+	PreferFamilies []string `yaml:"prefer_families,omitempty" toml:"prefer_families,omitempty"`
+	PreferLayers   []string `yaml:"prefer_layers,omitempty" toml:"prefer_layers,omitempty"`
+}
+
 type GovernanceSource struct {
 	Version              int                       `yaml:"version"`
 	Profile              string                    `yaml:"profile"`
 	Extends              string                    `yaml:"extends,omitempty"`
 	Overlays             []string                  `yaml:"overlays,omitempty"`
 	NumberingRecommended bool                      `yaml:"numbering_recommended,omitempty"`
+	OwnerHints           []DocsOwnerHint           `yaml:"owner_hints,omitempty"`
 	Hierarchy            []GovernanceHierarchyItem `yaml:"hierarchy"`
 	ContextChain         []string                  `yaml:"context_chain"`
 	ClosureChain         []string                  `yaml:"closure_chain"`
@@ -500,6 +552,30 @@ type WorkspaceMeta struct {
 	TotalFiles   int    `json:"total_files"`
 	LastIndexed  int64  `json:"last_indexed,omitempty"`
 	SchemaVer    string `json:"schema_version,omitempty"`
+}
+
+type ReentryMemoryChange struct {
+	Path      string             `json:"path"`
+	Title     string             `json:"title,omitempty"`
+	DocID     string             `json:"doc_id,omitempty"`
+	Why       string             `json:"why,omitempty"`
+	UpdatedAt time.Time          `json:"updated_at,omitempty"`
+	Reentry   ContinuationTarget `json:"reentry,omitempty"`
+}
+
+type ReentryMemorySnapshot struct {
+	SnapshotBuiltAt        time.Time             `json:"snapshot_built_at,omitempty"`
+	RecentCanonicalChanges []ReentryMemoryChange `json:"recent_canonical_changes,omitempty"`
+	Handoff                string                `json:"handoff,omitempty"`
+	BestReentry            ContinuationTarget    `json:"best_reentry,omitempty"`
+}
+
+type WorkspaceStatusMemory struct {
+	SnapshotBuiltAt        time.Time             `json:"snapshot_built_at,omitempty"`
+	Stale                  bool                  `json:"stale,omitempty"`
+	RecentCanonicalChanges []ReentryMemoryChange `json:"recent_canonical_changes,omitempty"`
+	Handoff                string                `json:"handoff,omitempty"`
+	BestReentry            ContinuationTarget    `json:"best_reentry,omitempty"`
 }
 
 // DaemonRun represents a historical daemon run for telemetry.

@@ -37,23 +37,22 @@ func (a *App) ask(ctx context.Context, request model.CommandRequest) (model.Enve
 	if err != nil {
 		return model.Envelope{}, err
 	}
+	memory, _ := loadReentryMemory(ctx, registration.Root)
 	question, _ := request.Payload["question"].(string)
 	question = strings.TrimSpace(question)
 	if question == "" {
 		return model.Envelope{}, fmt.Errorf("question is required")
 	}
 
-	db, err := store.Open(registration.Root)
-	if err != nil {
-		return model.Envelope{}, err
+	query := loadDocQueryContext(ctx, registration, question)
+	defer query.Close()
+	if query.dbErr != nil {
+		return model.Envelope{}, query.dbErr
 	}
-	defer db.Close()
-
-	docs, err := store.ListDocRecords(ctx, db)
-	if err != nil {
-		return model.Envelope{}, err
-	}
-	profile, profileSource, profileWarnings := docgraph.LoadProfile(registration.Root)
+	profile := query.profile
+	profileSource := query.profileSource
+	profileWarnings := query.profileWarnings
+	docs := query.docs
 	if len(docs) == 0 {
 		items, searchErr := searchPattern(ctx, registration.Root, project, question, false, askLimit(request.Context.MaxItems, 5, 5))
 		if searchErr != nil {
@@ -77,6 +76,7 @@ func (a *App) ask(ctx context.Context, request model.CommandRequest) (model.Enve
 			CodeEvidence: searchItemsToEvidence(items),
 			NextQueries:  []string{fmt.Sprintf("mi-lsp nav search %q --include-content --workspace %s", question, registration.Name)},
 		}
+		previewTrimmed := askResultWouldTrimForAXIPreview(fallback)
 		if isAXIPreview(request.Context) {
 			fallback = trimAskResultForAXIPreview(fallback)
 		}
@@ -84,30 +84,29 @@ func (a *App) ask(ctx context.Context, request model.CommandRequest) (model.Enve
 		warnings = append(warnings, "documentation index is empty; using code fallback")
 		warnings = append(warnings, fmt.Sprintf("read_model=%s", profileSource))
 		env := model.Envelope{Ok: true, Workspace: registration.Name, Backend: "ask", Items: []model.AskResult{fallback}, Warnings: warnings}
-		return applyAXIPreviewHints(env, request.Context, "preview mode: rerun with --full for more evidence"), nil
+		env.Coach = buildAskCoach(registration.Name, project, question, fallback, warnings, request.Context, previewTrimmed)
+		env = attachMemoryPointer(env, memory)
+		env.Continuation = buildAskContinuation(question, project, fallback, warnings, request.Context, previewTrimmed, memory)
+		env = applyAXIPreviewHints(env, request.Context, "preview mode: rerun with --full for more evidence")
+		return applyCoachPolicy(env, request.Context), nil
 	}
 
-	docByPath := make(map[string]model.DocRecord, len(docs))
-	for _, doc := range docs {
-		docByPath[doc.Path] = doc
-	}
-
-	family := docgraph.MatchFamily(question, profile)
-
-	// FTS5 primary search - gracefully degrades to nil if table unavailable
-	_, ftsScores, _ := store.FTSSearchDocs(ctx, db, question, 20)
-
-	ranked := rankDocs(question, family, docs, ftsScores)
-	if len(ranked) == 0 {
+	routeResult := query.canonicalRoute(request.Context, false)
+	ranked := query.ranked
+	primary, ok := query.primaryDoc(routeResult)
+	if !ok {
 		warnings := append([]string{}, profileWarnings...)
 		warnings = append(warnings, "no wiki match found")
 		warnings = append(warnings, fmt.Sprintf("read_model=%s", profileSource))
-		return model.Envelope{Ok: true, Workspace: registration.Name, Backend: "ask", Items: []model.AskResult{{Question: question, Summary: "No encontre una pista fuerte en la wiki para esta pregunta.", Why: []string{"no_doc_match"}}}, Warnings: warnings}, nil
+		result := model.AskResult{Question: question, Summary: "No encontre una pista fuerte en la wiki para esta pregunta.", Why: []string{"no_doc_match"}}
+		env := model.Envelope{Ok: true, Workspace: registration.Name, Backend: "ask", Items: []model.AskResult{result}, Warnings: warnings}
+		env.Coach = buildAskCoach(registration.Name, project, question, result, warnings, request.Context, false)
+		env = attachMemoryPointer(env, memory)
+		env.Continuation = buildAskContinuation(question, project, result, warnings, request.Context, false, memory)
+		return applyCoachPolicy(env, request.Context), nil
 	}
-
-	primary := ranked[0]
-	docEvidence, reasons, docWarnings := buildDocEvidence(ctx, db, primary, ranked, docByPath)
-	codeEvidence, codeWarnings := a.buildAskCodeEvidence(ctx, db, registration, project, primary.record, docEvidence, question, request.Context.MaxItems)
+	docEvidence, reasons, docWarnings := buildDocEvidence(ctx, query.db, primary, ranked, query.docByPath, askDocEvidenceLimit(request.Context))
+	codeEvidence, codeWarnings := a.buildAskCodeEvidence(ctx, query.db, registration, project, primary.record, docEvidence, question, askCodeEvidenceLimit(request.Context))
 	warnings := append([]string{}, profileWarnings...)
 	warnings = append(warnings, docWarnings...)
 	warnings = append(warnings, codeWarnings...)
@@ -119,119 +118,25 @@ func (a *App) ask(ctx context.Context, request model.CommandRequest) (model.Enve
 		PrimaryDoc:   docRecordToEvidence(primary.record),
 		DocEvidence:  docEvidence,
 		CodeEvidence: codeEvidence,
-		Why:          append(primary.reason, reasons...),
+		Why:          append(append([]string{}, routeResult.Why...), append(primary.reason, reasons...)...),
 		NextQueries:  buildAskNextQueries(registration.Name, project, primary.record, question, codeEvidence, request.Context),
 	}
+	previewTrimmed := askResultWouldTrimForAXIPreview(result)
 	if isAXIPreview(request.Context) {
 		result = trimAskResultForAXIPreview(result)
 	}
 	env := model.Envelope{Ok: true, Workspace: registration.Name, Backend: "ask", Items: []model.AskResult{result}, Warnings: warnings, Stats: model.Stats{Files: len(codeEvidence)}}
-	return applyAXIPreviewHints(env, request.Context, "preview mode: rerun with --full for more evidence"), nil
+	env.Coach = buildAskCoach(registration.Name, project, question, result, warnings, request.Context, previewTrimmed)
+	env = attachMemoryPointer(env, memory)
+	env.Continuation = buildAskContinuation(question, project, result, warnings, request.Context, previewTrimmed, memory)
+	env = applyAXIPreviewHints(env, request.Context, "preview mode: rerun with --full for more evidence")
+	return applyCoachPolicy(env, request.Context), nil
 }
 
-func rankDocs(question string, family string, docs []model.DocRecord, ftsScores map[string]float64) []scoredDoc {
-	tokens := docgraph.QuestionTokens(question)
-	items := make([]scoredDoc, 0, len(docs))
-	for _, doc := range docs {
-		score := 0
-		reasons := make([]string, 0, 4)
-
-		// FTS5 BM25 score is the primary signal when available
-		if ftsScores != nil {
-			if ftsScore, ok := ftsScores[doc.Path]; ok {
-				score += int(ftsScore)
-				reasons = append(reasons, "fts5=match")
-			}
-		}
-
-		if doc.Family == family {
-			score += 30
-			reasons = append(reasons, "family="+family)
-		}
-		score += layerWeight(family, doc.Layer)
-		if doc.DocID != "" && strings.Contains(strings.ToLower(question), strings.ToLower(doc.DocID)) {
-			score += 40
-			reasons = append(reasons, "doc_id="+doc.DocID)
-		}
-
-		// Manual lexical overlap supplements FTS and rescues small corpora where
-		// FTS returns an empty set for an otherwise obvious title/text match.
-		searchText := strings.ToLower(doc.SearchText)
-		titleText := strings.ToLower(doc.Title)
-		for _, token := range tokens {
-			if strings.Contains(titleText, token) {
-				score += 10
-			}
-			if strings.Contains(searchText, token) {
-				score += 5
-			}
-		}
-
-		if score > 0 {
-			items = append(items, scoredDoc{record: doc, score: score, reason: reasons})
-		}
+func buildDocEvidence(ctx context.Context, db *sql.DB, primary scoredDoc, ranked []scoredDoc, docByPath map[string]model.DocRecord, maxDocs int) ([]model.AskDocEvidence, []string, []string) {
+	if maxDocs <= 0 {
+		maxDocs = 4
 	}
-	sort.Slice(items, func(i, j int) bool {
-		if items[i].score == items[j].score {
-			return items[i].record.Path < items[j].record.Path
-		}
-		return items[i].score > items[j].score
-	})
-	return items
-}
-
-func layerWeight(family string, layer string) int {
-	switch family {
-	case "functional":
-		switch layer {
-		case "01":
-			return 18
-		case "02":
-			return 16
-		case "03":
-			return 14
-		case "04":
-			return 12
-		case "05":
-			return 10
-		case "06":
-			return 8
-		}
-	case "technical":
-		switch layer {
-		case "07":
-			return 18
-		case "08":
-			return 14
-		case "09":
-			return 12
-		}
-	case "ux":
-		switch layer {
-		case "10":
-			return 18
-		case "11":
-			return 16
-		case "12":
-			return 14
-		case "13":
-			return 12
-		case "14":
-			return 10
-		case "15":
-			return 8
-		case "16":
-			return 6
-		}
-	}
-	if layer == "generic" {
-		return 2
-	}
-	return 0
-}
-
-func buildDocEvidence(ctx context.Context, db *sql.DB, primary scoredDoc, ranked []scoredDoc, docByPath map[string]model.DocRecord) ([]model.AskDocEvidence, []string, []string) {
-	const maxDocs = 4
 	seen := map[string]struct{}{primary.record.Path: {}}
 	items := []model.AskDocEvidence{docRecordToEvidence(primary.record)}
 	reasons := []string{"primary_doc=" + primary.record.Path}
@@ -540,6 +445,20 @@ func askLimit(value int, fallback int, ceiling int) int {
 	return value
 }
 
+func askDocEvidenceLimit(opts model.QueryOptions) int {
+	if isAXIPreview(opts) {
+		return 2
+	}
+	return 4
+}
+
+func askCodeEvidenceLimit(opts model.QueryOptions) int {
+	if isAXIPreview(opts) {
+		return 1
+	}
+	return askLimit(opts.MaxItems, 6, 6)
+}
+
 func (a *App) askAllWorkspaces(ctx context.Context, request model.CommandRequest) (model.Envelope, error) {
 	workspaces, err := workspace.ListWorkspaces()
 	if err != nil {
@@ -635,6 +554,9 @@ func (a *App) askAllWorkspaces(ctx context.Context, request model.CommandRequest
 		}
 		items = append(items, s.result)
 	}
-
-	return model.Envelope{Ok: true, Backend: "ask", Items: items, Warnings: allWarnings, Stats: model.Stats{Files: len(items)}}, nil
+	env := model.Envelope{Ok: true, Backend: "ask", Items: items, Warnings: allWarnings, Stats: model.Stats{Files: len(items)}}
+	if len(scored) > 0 && (len(scored) == 1 || scored[0].score > scored[1].score) {
+		env.Coach = buildAskAllWorkspacesCoach(question, scored[0].wsName, request.Context)
+	}
+	return applyCoachPolicy(env, request.Context), nil
 }

@@ -168,6 +168,21 @@ func searchPatternRg(ctx context.Context, workspaceRoot string, searchRoot strin
 	return items, nil
 }
 
+func isRegexParseError(err error) bool {
+	if err == nil {
+		return false
+	}
+	message := strings.ToLower(strings.TrimSpace(err.Error()))
+	return strings.Contains(message, "regex parse error") ||
+		strings.Contains(message, "error parsing regexp") ||
+		strings.Contains(message, "missing closing") ||
+		strings.Contains(message, "missing terminating") ||
+		strings.Contains(message, "invalid escape") ||
+		strings.Contains(message, "invalid repeat") ||
+		strings.Contains(message, "unexpected )") ||
+		strings.Contains(message, "unexpected ]")
+}
+
 func buildRipgrepArgs(pattern string, useRegex bool, searchRoot string) []string {
 	args := []string{"--line-number", "--no-heading", "--color", "never"}
 	if !useRegex {

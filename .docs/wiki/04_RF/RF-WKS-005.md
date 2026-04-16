@@ -22,7 +22,7 @@
 ## 3. Process Steps (Happy Path)
 
 1. Toda tarea consulta el estado de gobernanza del workspace antes de continuar.
-2. `workspace status` expone perfil, sync, index sync y estado bloqueado.
+2. `workspace status` expone perfil, sync, index sync y estado bloqueado; cuando existe snapshot repo-local de reentrada, puede exponer `memory_pointer` en preview y `memory` completo bajo expansion.
 3. Si la gobernanza es valida, el workflow normal puede seguir.
 4. Si la gobernanza es invalida, el repo entra en `blocked mode`.
 5. En `blocked mode` solo quedan permitidos diagnostico y reparacion de gobernanza.

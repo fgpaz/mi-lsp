@@ -99,9 +99,11 @@ func renderYAML(env model.Envelope) ([]byte, error) {
 }
 
 func renderText(env model.Envelope) string {
-	lines := []string{
-		fmt.Sprintf("ok=%t backend=%s workspace=%s", env.Ok, env.Backend, env.Workspace),
+	header := fmt.Sprintf("ok=%t backend=%s workspace=%s", env.Ok, env.Backend, env.Workspace)
+	if strings.TrimSpace(env.Mode) != "" {
+		header = fmt.Sprintf("ok=%t backend=%s mode=%s workspace=%s", env.Ok, env.Backend, env.Mode, env.Workspace)
 	}
+	lines := []string{header}
 	switch items := env.Items.(type) {
 	case []model.SymbolRecord:
 		for _, item := range items {
@@ -135,7 +137,75 @@ func renderText(env model.Envelope) string {
 	if len(env.Warnings) > 0 {
 		lines = append(lines, "warnings: "+strings.Join(env.Warnings, "; "))
 	}
+	if env.Hint != "" {
+		lines = append(lines, "hint: "+env.Hint)
+	}
+	if env.NextHint != nil && strings.TrimSpace(*env.NextHint) != "" {
+		lines = append(lines, "next_hint: "+strings.TrimSpace(*env.NextHint))
+	}
+	if env.Coach != nil {
+		header := "coach: trigger=" + env.Coach.Trigger
+		if env.Coach.Confidence != "" {
+			header += " confidence=" + env.Coach.Confidence
+		}
+		lines = append(lines, header)
+		if strings.TrimSpace(env.Coach.Message) != "" {
+			lines = append(lines, "  "+strings.TrimSpace(env.Coach.Message))
+		}
+		for _, action := range env.Coach.Actions {
+			lines = append(lines, fmt.Sprintf("  action %s %s -> %s", action.Kind, action.Label, action.Command))
+		}
+	}
+	if env.Continuation != nil {
+		lines = append(lines, "continuation: reason="+env.Continuation.Reason)
+		lines = append(lines, "  next "+renderContinuationTarget(env.Continuation.Next))
+		if env.Continuation.Alternate != nil {
+			lines = append(lines, "  alternate "+renderContinuationTarget(*env.Continuation.Alternate))
+		}
+	}
+	if env.MemoryPointer != nil {
+		pointer := "memory_pointer:"
+		if env.MemoryPointer.DocID != "" {
+			pointer += " doc_id=" + env.MemoryPointer.DocID
+		}
+		if env.MemoryPointer.ReentryOp != "" {
+			pointer += " reentry_op=" + env.MemoryPointer.ReentryOp
+		}
+		if env.MemoryPointer.Stale {
+			pointer += " stale=true"
+		}
+		lines = append(lines, pointer)
+		if strings.TrimSpace(env.MemoryPointer.Why) != "" {
+			lines = append(lines, "  "+strings.TrimSpace(env.MemoryPointer.Why))
+		}
+		if strings.TrimSpace(env.MemoryPointer.Handoff) != "" {
+			lines = append(lines, "  handoff "+strings.TrimSpace(env.MemoryPointer.Handoff))
+		}
+	}
 	return strings.Join(lines, "\n")
+}
+
+func renderContinuationTarget(target model.ContinuationTarget) string {
+	parts := []string{target.Op}
+	if target.Query != "" {
+		parts = append(parts, "query="+target.Query)
+	}
+	if target.DocID != "" {
+		parts = append(parts, "doc_id="+target.DocID)
+	}
+	if target.Repo != "" {
+		parts = append(parts, "repo="+target.Repo)
+	}
+	if target.Path != "" {
+		parts = append(parts, "path="+target.Path)
+	}
+	if target.Symbol != "" {
+		parts = append(parts, "symbol="+target.Symbol)
+	}
+	if target.Full {
+		parts = append(parts, "full=true")
+	}
+	return strings.Join(parts, " ")
 }
 
 func compactItems(items any, compress bool) any {

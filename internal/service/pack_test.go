@@ -47,7 +47,7 @@ func createFunctionalPackWorkspaceFixture(t *testing.T, alias string) string {
 	return root
 }
 
-func TestNavPackBuildsFunctionalReadingPackInCanonicalOrder(t *testing.T) {
+func TestNavPackPreviewUsesRouteCoreAnchorAndShortPack(t *testing.T) {
 	alias := "pack-func-" + filepath.Base(t.TempDir())
 	root := createFunctionalPackWorkspaceFixture(t, alias)
 	app := New(root, nil)
@@ -80,24 +80,23 @@ func TestNavPackBuildsFunctionalReadingPackInCanonicalOrder(t *testing.T) {
 	if result.Mode != "preview" {
 		t.Fatalf("mode = %q, want preview", result.Mode)
 	}
-	if len(result.Docs) < 5 {
-		t.Fatalf("expected canonical pack docs, got %#v", result.Docs)
+	if len(result.Docs) == 0 || len(result.Docs) > 3 {
+		t.Fatalf("expected short preview pack, got %#v", result.Docs)
 	}
-	got := []string{result.Docs[0].Path, result.Docs[1].Path, result.Docs[2].Path, result.Docs[3].Path, result.Docs[4].Path}
-	want := []string{
-		".docs/wiki/00_gobierno_documental.md",
-		".docs/wiki/01_alcance_funcional.md",
-		".docs/wiki/02_arquitectura.md",
-		".docs/wiki/03_FL/FL-AUTH-01.md",
-		".docs/wiki/04_RF/RF-AUTH-001.md",
+	if result.Docs[0].Stage != "anchor" {
+		t.Fatalf("expected first preview doc to be anchor, got %#v", result.Docs[0])
 	}
-	for i := range want {
-		if got[i] != want[i] {
-			t.Fatalf("doc[%d] = %q, want %q (full docs: %#v)", i, got[i], want[i], result.Docs)
-		}
+	if result.PrimaryDoc == "" || result.PrimaryDoc != result.Docs[0].Path {
+		t.Fatalf("primary doc = %q, want first preview anchor %#v", result.PrimaryDoc, result.Docs)
 	}
 	if len(result.Docs[0].Targets) == 0 {
 		t.Fatalf("expected preview targets, got %#v", result.Docs[0])
+	}
+	if env.MemoryPointer == nil {
+		t.Fatalf("expected memory pointer, got %#v", env)
+	}
+	if env.Continuation == nil || env.Continuation.Reason != "expand_preview" || env.Continuation.Next.Op != "nav.pack" || !env.Continuation.Next.Full {
+		t.Fatalf("expected pack expansion continuation, got %#v", env.Continuation)
 	}
 }
 

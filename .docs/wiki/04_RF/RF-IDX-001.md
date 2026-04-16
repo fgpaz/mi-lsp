@@ -22,7 +22,7 @@
 ## 3. Process Steps (Happy Path)
 
 1. La CLI resuelve el workspace objetivo y carga `project.toml`.
-2. El indexer obtiene ignores desde defaults internos, `.gitignore`, `.milspignore` y `[ignore].extra_patterns`.
+2. El indexer obtiene ignores desde defaults internos, `.gitignore`, `.milspignore` y `[ignore].extra_patterns`, respetando el orden del archivo y los re-includes negados (`!pattern`) sobre paths normalizados con `/`.
 3. Si `--clean` esta activo, elimina y recrea el estado derivado del indice.
 4. El walker enumera archivos y asigna ownership por `repo_id`.
 5. El extractor persiste `workspace_repos`, `workspace_entrypoints`, `FileRecord`, `SymbolRecord` y `WorkspaceMeta`.
@@ -50,6 +50,7 @@
 
 - El indice guarda ownership por repo incluso en `container`.
 - Si el indice detecta ruido en `.docs`, `old/`, `temp/` u otros paths no ignorados, debe sugerir `.milspignore`.
+- Si la wiki canonica existe en disco pero `doc_records` quedo solo con docs `generic`, un `index` incremental sin cambios detectados debe degradar a full re-index en vez de responder `no changes detected`.
 - Los entrypoints auxiliares bajo `.docs/` o `template(s)` no deben convertirse en el default semantico solo por estar presentes en el repo.
 - El indice documental resuelve primero links markdown y doc IDs explicitos; las heuristicas solo completan contexto, no reemplazan trazabilidad explicita.
 - El indice nunca persiste refs profundas ni ASTs.

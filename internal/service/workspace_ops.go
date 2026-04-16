@@ -104,7 +104,7 @@ func (a *App) workspaceList() (model.Envelope, error) {
 	}
 	items := make([]map[string]any, 0, len(workspaces))
 	for _, registration := range workspaces {
-		project, loadErr := workspace.LoadProjectTopology(registration.Root, registration)
+		project, loadErr := workspace.LoadProjectSummary(registration.Root, registration)
 		if loadErr != nil {
 			items = append(items, map[string]any{"name": registration.Name, "root": registration.Root, "kind": registration.Kind, "languages": registration.Languages})
 			continue
@@ -135,6 +135,7 @@ func (a *App) workspaceStatus(ctx context.Context, name string, opts model.Query
 	item["governance_index_sync"] = governance.IndexSync
 	item["governance_blocked"] = governance.Blocked
 	item["governance_summary"] = governance.Summary
+	memory, _ := loadReentryMemory(ctx, registration.Root)
 	db, err := store.Open(registration.Root)
 	if err != nil {
 		item["index_ready"] = false
@@ -144,8 +145,13 @@ func (a *App) workspaceStatus(ctx context.Context, name string, opts model.Query
 		if governance.Blocked {
 			warnings = append(warnings, governance.Issues...)
 		}
+		if memory != nil && (!isAXIMode(opts) || opts.Full) {
+			item["memory"] = buildWorkspaceStatusMemory(memory.Snapshot, memory.Stale)
+		}
 		envelope := model.Envelope{Ok: true, Workspace: registration.Name, Backend: "sqlite", Items: []any{applyWorkspaceStatusAXIView(item, registration.Name, opts)}, Warnings: warnings}
-		return envelope, nil
+		envelope = attachMemoryPointer(envelope, memory)
+		envelope.Continuation = buildStatusContinuation(opts, memory)
+		return applyCoachPolicy(envelope, opts), nil
 	}
 	defer db.Close()
 	stats, err := store.WorkspaceStats(ctx, db)
@@ -163,7 +169,16 @@ func (a *App) workspaceStatus(ctx context.Context, name string, opts model.Query
 	if w := entrypointLanguageMismatchWarning(ctx, db, project); w != "" {
 		warnings = append(warnings, w)
 	}
-	return model.Envelope{Ok: true, Workspace: registration.Name, Backend: "sqlite", Items: []any{applyWorkspaceStatusAXIView(item, registration.Name, opts)}, Stats: stats, Warnings: warnings}, nil
+	if memory != nil && (!isAXIMode(opts) || opts.Full) {
+		item["memory"] = buildWorkspaceStatusMemory(memory.Snapshot, memory.Stale)
+	}
+	if memory == nil {
+		warnings = append(warnings, fmt.Sprintf("reentry memory snapshot absent; rerun 'mi-lsp index --workspace %s' to rebuild memory and memory_pointer", registration.Name))
+	}
+	envelope := model.Envelope{Ok: true, Workspace: registration.Name, Backend: "sqlite", Items: []any{applyWorkspaceStatusAXIView(item, registration.Name, opts)}, Stats: stats, Warnings: warnings}
+	envelope = attachMemoryPointer(envelope, memory)
+	envelope.Continuation = buildStatusContinuation(opts, memory)
+	return applyCoachPolicy(envelope, opts), nil
 }
 
 // entrypointLanguageMismatchWarning returns a warning when the default entrypoint is C#-only

@@ -2,6 +2,7 @@ package telemetry
 
 import (
 	"encoding/json"
+	"os"
 	"reflect"
 	"strings"
 
@@ -14,17 +15,27 @@ type batchTelemetryOperation struct {
 }
 
 type accessDecision struct {
-	SelectorType      string `json:"selector_type,omitempty"`
-	SelectorPresent   bool   `json:"selector_present"`
-	RepoSelectorValid bool   `json:"repo_selector_valid"`
-	PatternLen        int    `json:"pattern_len"`
-	PatternHasSpaces  bool   `json:"pattern_has_spaces"`
-	PatternRegexLike  bool   `json:"pattern_regex_like"`
-	UsedRegex         bool   `json:"used_regex"`
-	HintEmitted       bool   `json:"hint_emitted"`
-	NextHintEmitted   bool   `json:"next_hint_emitted"`
-	FallbackTaken     bool   `json:"fallback_taken"`
-	ResultSource      string `json:"result_source,omitempty"`
+	SelectorType         string `json:"selector_type,omitempty"`
+	SelectorPresent      bool   `json:"selector_present"`
+	RepoSelectorValid    bool   `json:"repo_selector_valid"`
+	PatternLen           int    `json:"pattern_len"`
+	PatternHasSpaces     bool   `json:"pattern_has_spaces"`
+	PatternRegexLike     bool   `json:"pattern_regex_like"`
+	UsedRegex            bool   `json:"used_regex"`
+	HintEmitted          bool   `json:"hint_emitted"`
+	NextHintEmitted      bool   `json:"next_hint_emitted"`
+	FallbackTaken        bool   `json:"fallback_taken"`
+	ResultSource         string `json:"result_source,omitempty"`
+	CoachPresent         bool   `json:"coach_present"`
+	CoachTrigger         string `json:"coach_trigger,omitempty"`
+	CoachActionCount     int    `json:"coach_action_count,omitempty"`
+	ContinuationPresent  bool   `json:"continuation_present"`
+	ContinuationReason   string `json:"continuation_reason,omitempty"`
+	ContinuationOp       string `json:"continuation_op,omitempty"`
+	MemoryPointerPresent bool   `json:"memory_pointer_present"`
+	MemoryStale          bool   `json:"memory_stale,omitempty"`
+	DocRanker            string `json:"doc_ranker,omitempty"`
+	IntentMode           string `json:"intent_mode,omitempty"`
 }
 
 func EnrichAccessEvent(event model.AccessEvent, request model.CommandRequest, envelope model.Envelope, opErr error) model.AccessEvent {
@@ -157,6 +168,9 @@ func deriveHintCode(envelope model.Envelope) string {
 	case strings.Contains(message, "0 matches"):
 		return "no_matches"
 	default:
+		if envelope.Coach != nil {
+			return strings.TrimSpace(envelope.Coach.Trigger)
+		}
 		return ""
 	}
 }
@@ -192,12 +206,39 @@ func buildDecisionJSON(route string, payload map[string]any, envelope model.Enve
 		NextHintEmitted:   envelope.NextHint != nil && strings.TrimSpace(*envelope.NextHint) != "",
 		FallbackTaken:     strings.EqualFold(strings.TrimSpace(route), "direct_fallback"),
 		ResultSource:      firstNonEmpty(strings.TrimSpace(envelope.Backend), "unknown"),
+		DocRanker:         currentDocRankerMode(),
+	}
+	if strings.EqualFold(strings.TrimSpace(envelope.Backend), "intent") && strings.TrimSpace(envelope.Mode) != "" {
+		decision.IntentMode = strings.TrimSpace(envelope.Mode)
+	}
+	if envelope.Coach != nil {
+		decision.CoachPresent = true
+		decision.CoachTrigger = strings.TrimSpace(envelope.Coach.Trigger)
+		decision.CoachActionCount = len(envelope.Coach.Actions)
+	}
+	if envelope.Continuation != nil {
+		decision.ContinuationPresent = true
+		decision.ContinuationReason = strings.TrimSpace(envelope.Continuation.Reason)
+		decision.ContinuationOp = strings.TrimSpace(envelope.Continuation.Next.Op)
+	}
+	if envelope.MemoryPointer != nil {
+		decision.MemoryPointerPresent = true
+		decision.MemoryStale = envelope.MemoryPointer.Stale
 	}
 	body, err := json.Marshal(decision)
 	if err != nil {
 		return ""
 	}
 	return string(body)
+}
+
+func currentDocRankerMode() string {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv("MI_LSP_DOC_RANKING"))) {
+	case "legacy":
+		return "legacy"
+	default:
+		return "owner"
+	}
 }
 
 func selectorType(payload map[string]any) string {

@@ -31,6 +31,7 @@ Define el modelo canonico del daemon global, su governance UI workspace-first y 
 - El daemon vive fuera de la terminal que lo lanza.
 - Claude Code, Codex y subagentes deben poder conectarse al mismo daemon bajo el mismo usuario.
 - No todo `nav` debe pasar por el daemon: las lecturas baratas de catalogo/texto se resuelven directo en la CLI y reservan el daemon para queries semanticas o compuestas.
+- `nav.ask` tambien pertenece a ese camino directo por default; el daemon no debe convertirse en dependencia accidental de onboarding docs-first.
 - Cuando el daemon atiende diagnosticos administrativos como `worker status`, debe delegar al contrato canonico del core y no reinterpretar el payload como una lista cruda de runtimes.
 - Cada request debe incluir cuando esta disponible:
   - `client_name`
@@ -94,6 +95,7 @@ Define el modelo canonico del daemon global, su governance UI workspace-first y 
 | UI duplicada | cada cliente abre una vista separada | admin URL unica + deep link por query |
 | Cliente antiguo | errores sutiles de protocolo | handshake con version explicita |
 | Warm fallido | runtime no queda disponible | warning visible + logs locales |
+| `tsserver` frio roto | cada request vuelve a intentar bootstrap y falla | cooldown corto + degradacion sticky a catalog/text |
 
 ## Related docs
 

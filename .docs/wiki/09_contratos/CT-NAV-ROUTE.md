@@ -10,6 +10,8 @@ mi-lsp nav route <task> [--workspace <alias>] [--full] [--include-code-discovery
 
 Resuelve el documento canonico de anclaje y un mini reading pack previo para una tarea spec-driven.
 Retorna `RouteResult` con `canonical lane` (autoritativa) y `discovery` opcional (advisory-only).
+El envelope puede agregar `continuation` y `memory_pointer` como guidance de bajo costo para la siguiente consulta.
+La canonical lane usa el scorer owner-aware compartido: FTS + overlap lexico + `doc_id` + stem/path + `owner_hints` opcionales; `README` solo puede ganar si no existe un candidato canonico positivo.
 
 ## Envelope de respuesta
 
@@ -43,6 +45,21 @@ Retorna `RouteResult` con `canonical lane` (autoritativa) y `discovery` opcional
     }
   ],
   "warnings": [],
+  "continuation": {
+    "reason": "expand_preview",
+    "next": {
+      "op": "nav.pack",
+      "query": "understand daemon routing",
+      "full": true
+    }
+  },
+  "memory_pointer": {
+    "doc_id": "TECH-DAEMON-GOBERNANZA",
+    "why": "Documento tecnico cambiado recientemente y util para reentrar.",
+    "reentry_op": "workspace.status",
+    "handoff": "continuation-v1",
+    "stale": false
+  },
   "stats": {"files": 2},
   "truncated": false
 }
@@ -62,6 +79,7 @@ Retorna `RouteResult` con `canonical lane` (autoritativa) y `discovery` opcional
 ## AXI
 
 `nav route` es AXI-default preview-first. En modo preview: `canonical.preview_pack` puede estar truncado, `discovery` puede ser omitida. Con `--full`: canonical lane expandida y discovery incluida.
+En preview, `continuation` puede sugerir el salto directo a `nav.pack --full`; `memory_pointer` puede aparecer cuando existe snapshot repo-local util.
 
 ## Errores
 

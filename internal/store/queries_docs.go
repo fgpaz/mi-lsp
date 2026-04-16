@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"database/sql"
+	"strconv"
 	"strings"
 
 	"github.com/fgpaz/mi-lsp/internal/model"
@@ -69,7 +70,7 @@ func ReplaceDocs(ctx context.Context, db *sql.DB, docs []model.DocRecord, edges 
 		}
 	}
 
-	if _, err := tx.ExecContext(ctx, `INSERT OR REPLACE INTO workspace_meta(key, value) VALUES('doc_count', ?)`, len(docs)); err != nil {
+	if err := UpsertWorkspaceMeta(ctx, tx, "doc_count", strconv.Itoa(len(docs))); err != nil {
 		return err
 	}
 	return tx.Commit()

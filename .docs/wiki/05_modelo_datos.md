@@ -21,6 +21,7 @@ La novedad canonica de v1.3 es distinguir workspaces `single` de workspaces `con
 | GovernanceSource | Operativa local | Maintainer de wiki | `<repo>/.docs/wiki/00_gobierno_documental.md` | Bloque YAML fuente que define perfil, jerarquia, cadenas y reglas de bloqueo |
 | GovernanceStatus | Derivada | CLI/Core | Respuesta en memoria | Estado efectivo de gobernanza: perfil, sync, bloqueos, overlays y pasos de reparacion |
 | DocsReadProfile | Operativa local | Maintainer de wiki | `<repo>/.docs/wiki/_mi-lsp/read-model.toml` | Perfil opcional que clasifica familias, paths y fallback documental |
+| DocsOwnerHint | Operativa local | Maintainer de wiki | `<repo>/.docs/wiki/00_gobierno_documental.md` -> `read-model.toml` | Hint opcional repo-especifico para ownership documental de capabilities nuevas |
 | DocsGovernanceProfile | Operativa derivada | CLI/Core | `<repo>/.docs/wiki/_mi-lsp/read-model.toml` | Proyeccion ejecutable de la gobernanza humana: perfil efectivo, base, overlays y cadenas |
 | WorkspaceMeta | Derivada | Indexer | `<repo>/.mi-lsp/index.db` | Totales, defaults y metadata del indice |
 | DaemonState | Operativa | Runtime supervision | `~/.mi-lsp/daemon/state.json` | PID, endpoint, admin URL y version/protocolo |
@@ -46,6 +47,7 @@ La novedad canonica de v1.3 es distinguir workspaces `single` de workspaces `con
 - Cada `FileRecord` y `SymbolRecord` pertenece a un `repo_id`.
 - Cada `DocRecord` puede tener muchos `DocEdge` y `DocMention`.
 - Un `GovernanceSource` manda sobre el `DocsReadProfile`; la proyeccion ejecutable no redefine la autoridad humana.
+- Un `DocsOwnerHint` vive en `GovernanceSource` y se proyecta al `DocsReadProfile`; no redefine la gobernanza, solo refina ranking documental repo-especifico.
 - Un `DocsReadProfile` gobierna como se interpreta la wiki del repo, pero no reemplaza el corpus indexado.
 - Un `RuntimeSnapshot` pertenece a una combinacion `daemon_run_id + runtime_key`, donde `runtime_key` incluye `workspace_root` y `entrypoint_id`.
 - Un `AccessEvent` puede guardar `workspace` visible, identidad canonica del workspace, `repo` y `entrypoint_id` para explicar routing y ambiguedad.
@@ -78,6 +80,7 @@ La novedad canonica de v1.3 es distinguir workspaces `single` de workspaces `con
 - `SymbolRecord`, `FileRecord` y `DocRecord` son reconstruibles y nunca persisten ASTs ni refs profundas.
 - `RuntimeSnapshot` y `AccessEvent` deben ser suficientes para explicar por que un acceso fue warm, cold o ambiguo.
 - `QueryEnvelope` siempre incluye `backend`, `warnings`, `stats` y `truncated`; si hay ambiguedad, el `backend` canonico es `router`.
+- `QueryEnvelope` puede agregar `mode` cuando la superficie publica distingue variantes estables (`nav.intent docs|code`).
 - `AskResult` nunca debe invertir prioridad: la wiki rankea primero y el codigo actua como evidencia o verificacion.
 - `PackResult` debe preservar el orden canonico global -> especifico y no degradar silenciosamente a docs genericos cuando la wiki canonica existe pero el indice documental esta vacio.
 - `ServiceSurfaceSummary` no persiste score de completitud ni conclusion final de auditoria.
@@ -103,7 +106,7 @@ La novedad canonica de v1.3 es distinguir workspaces `single` de workspaces `con
 | RF-QRY-008 | DiffContextResult, QueryEnvelope, SymbolRecord |
 | RF-QRY-009 | QueryEnvelope, SymbolRecord |
 | RF-QRY-010 | AskResult, DocRecord, DocEdge, DocMention, DocsReadProfile, QueryEnvelope |
-| RF-QRY-011 | SymbolRecord, QueryEnvelope |
+| RF-QRY-011 | SymbolRecord, DocRecord, DocsOwnerHint, QueryEnvelope |
 | RF-QRY-012 | PackResult, PackDoc, PackTarget, DocRecord, DocEdge, DocsReadProfile, QueryEnvelope |
 | RF-QRY-013 | GovernanceStatus, DocsReadProfile, QueryEnvelope |
 | RF-CS-001 | QueryEnvelope, RuntimeSnapshot, WorkspaceEntrypoint |

@@ -16,6 +16,35 @@ overlays:
   - spec_core
   - technical
 numbering_recommended: true
+owner_hints:
+  - terms:
+      - continuation
+      - memory pointer
+      - memory_pointer
+      - handoff reentry
+    prefer_doc_ids:
+      - FL-QRY-01
+      - RF-QRY-010
+      - CT-NAV-ASK
+      - CT-NAV-ROUTE
+      - CT-NAV-INTENT
+    prefer_layers:
+      - "03"
+      - "04"
+      - "09"
+  - terms:
+      - workspace status
+      - stale
+      - preview full
+      - docs code mode
+    prefer_doc_ids:
+      - RF-WKS-005
+      - RF-QRY-011
+      - CT-CLI-AXI-MODE
+      - CT-NAV-INTENT
+    prefer_layers:
+      - "04"
+      - "09"
 hierarchy:
   - id: governance
     label: Gobierno documental
@@ -173,6 +202,7 @@ projection:
 
 - Cambios en `00` deben proyectarse a `.docs/wiki/_mi-lsp/read-model.toml` y quedar versionados en el mismo repo.
 - Cambios en `00` o en `read-model.toml` obligan a reindexar el workspace antes de continuar con consultas docs-first.
+- `owner_hints` es opcional y sirve para declarar ownership documental de capabilities nuevas sin hardcodearlo por repo en el binario; la proyeccion los materializa en `read-model.toml`.
 - `workspace status` debe exponer perfil, sync de gobernanza y estado bloqueado.
 - `nav ask` y `nav pack` no deben continuar si la gobernanza no es valida.
 

@@ -3,12 +3,19 @@ package workspace
 import (
 	"bufio"
 	"os"
+	pathpkg "path"
 	"path/filepath"
+	"regexp"
 	"strings"
 )
 
 type IgnoreMatcher struct {
-	patterns []string
+	rules []ignoreRule
+}
+
+type ignoreRule struct {
+	pattern string
+	negated bool
 }
 
 func DefaultIgnorePatterns() []string {
@@ -27,11 +34,20 @@ func DefaultIgnorePatterns() []string {
 }
 
 func LoadIgnoreMatcher(root string, extraPatterns []string) (*IgnoreMatcher, error) {
-	patterns := append([]string{}, DefaultIgnorePatterns()...)
-	patterns = append(patterns, loadPatternsFromFile(filepath.Join(root, ".gitignore"))...)
-	patterns = append(patterns, loadPatternsFromFile(filepath.Join(root, ".milspignore"))...)
-	patterns = append(patterns, extraPatterns...)
-	return &IgnoreMatcher{patterns: dedupePatterns(patterns)}, nil
+	rawPatterns := append([]string{}, DefaultIgnorePatterns()...)
+	rawPatterns = append(rawPatterns, loadPatternsFromFile(filepath.Join(root, ".gitignore"))...)
+	rawPatterns = append(rawPatterns, loadPatternsFromFile(filepath.Join(root, ".milspignore"))...)
+	rawPatterns = append(rawPatterns, extraPatterns...)
+
+	rules := make([]ignoreRule, 0, len(rawPatterns))
+	for _, raw := range rawPatterns {
+		rule, ok := normalizeIgnoreRule(raw)
+		if !ok {
+			continue
+		}
+		rules = append(rules, rule)
+	}
+	return &IgnoreMatcher{rules: rules}, nil
 }
 
 func (m *IgnoreMatcher) ShouldIgnore(root, path string) bool {
@@ -46,16 +62,13 @@ func (m *IgnoreMatcher) ShouldIgnore(root, path string) bool {
 	if normalized == "." {
 		return false
 	}
-	for _, rawPattern := range m.patterns {
-		pattern := normalizeIgnorePattern(rawPattern)
-		if pattern == "" || strings.HasPrefix(pattern, "!") {
-			continue
-		}
-		if ignorePatternMatches(normalized, pattern) {
-			return true
+	ignored := false
+	for _, rule := range m.rules {
+		if ignorePatternMatches(normalized, rule.pattern) {
+			ignored = !rule.negated
 		}
 	}
-	return false
+	return ignored
 }
 
 func loadPatternsFromFile(path string) []string {
@@ -77,28 +90,23 @@ func loadPatternsFromFile(path string) []string {
 	return patterns
 }
 
-func dedupePatterns(items []string) []string {
-	seen := map[string]struct{}{}
-	result := make([]string, 0, len(items))
-	for _, item := range items {
-		normalized := normalizeIgnorePattern(item)
-		if normalized == "" {
-			continue
-		}
-		if _, ok := seen[normalized]; ok {
-			continue
-		}
-		seen[normalized] = struct{}{}
-		result = append(result, normalized)
-	}
-	return result
-}
-
-func normalizeIgnorePattern(pattern string) string {
+func normalizeIgnoreRule(pattern string) (ignoreRule, bool) {
 	normalized := strings.TrimSpace(filepath.ToSlash(pattern))
+	if normalized == "" {
+		return ignoreRule{}, false
+	}
+	rule := ignoreRule{negated: strings.HasPrefix(normalized, "!")}
+	if rule.negated {
+		normalized = strings.TrimSpace(strings.TrimPrefix(normalized, "!"))
+	}
 	normalized = strings.TrimPrefix(normalized, "./")
 	normalized = strings.TrimPrefix(normalized, "/")
-	return normalized
+	normalized = strings.TrimSpace(normalized)
+	if normalized == "" {
+		return ignoreRule{}, false
+	}
+	rule.pattern = normalized
+	return rule, true
 }
 
 func ignorePatternMatches(path string, pattern string) bool {
@@ -114,16 +122,13 @@ func ignorePatternMatches(path string, pattern string) bool {
 		return hasPathSegment(path, dirPattern)
 	}
 
-	if strings.HasPrefix(dirPattern, "**/") {
-		needle := strings.Trim(strings.TrimPrefix(dirPattern, "**/"), "/")
-		return hasPathSegment(path, needle)
+	for _, candidate := range pathWithAncestors(path) {
+		if globPatternMatches(candidate, dirPattern) {
+			return true
+		}
 	}
-
-	if ok, _ := filepath.Match(dirPattern, path); ok {
-		return true
-	}
-	if ok, _ := filepath.Match(pattern, path); ok {
-		return true
+	if !strings.Contains(dirPattern, "/") {
+		return hasSegmentGlob(path, dirPattern)
 	}
 	return false
 }
@@ -132,4 +137,74 @@ func hasPathSegment(path string, segment string) bool {
 	needle := "/" + strings.Trim(segment, "/") + "/"
 	haystack := "/" + strings.Trim(path, "/") + "/"
 	return strings.Contains(haystack, needle)
+}
+
+func pathWithAncestors(path string) []string {
+	normalized := strings.Trim(path, "/")
+	if normalized == "" {
+		return nil
+	}
+	items := []string{normalized}
+	current := normalized
+	for {
+		idx := strings.LastIndex(current, "/")
+		if idx < 0 {
+			break
+		}
+		current = current[:idx]
+		if current == "" {
+			break
+		}
+		items = append(items, current)
+	}
+	return items
+}
+
+func hasSegmentGlob(path string, pattern string) bool {
+	for _, segment := range strings.Split(strings.Trim(path, "/"), "/") {
+		if ok, _ := pathpkg.Match(pattern, segment); ok {
+			return true
+		}
+	}
+	return false
+}
+
+func globPatternMatches(path string, pattern string) bool {
+	if strings.Contains(pattern, "**") {
+		return doubleStarPatternMatches(path, pattern)
+	}
+	ok, err := pathpkg.Match(pattern, path)
+	return err == nil && ok
+}
+
+func doubleStarPatternMatches(path string, pattern string) bool {
+	regexPattern := doubleStarPatternToRegexp(pattern)
+	matched, err := regexp.MatchString(regexPattern, path)
+	return err == nil && matched
+}
+
+func doubleStarPatternToRegexp(pattern string) string {
+	var builder strings.Builder
+	builder.WriteString("^")
+	for i := 0; i < len(pattern); i++ {
+		ch := pattern[i]
+		switch ch {
+		case '*':
+			if i+1 < len(pattern) && pattern[i+1] == '*' {
+				builder.WriteString(".*")
+				i++
+				continue
+			}
+			builder.WriteString("[^/]*")
+		case '?':
+			builder.WriteString("[^/]")
+		case '.', '+', '(', ')', '|', '^', '$', '{', '}', '\\', '[', ']':
+			builder.WriteByte('\\')
+			builder.WriteByte(ch)
+		default:
+			builder.WriteByte(ch)
+		}
+	}
+	builder.WriteString("$")
+	return builder.String()
 }

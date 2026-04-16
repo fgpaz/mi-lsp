@@ -3,6 +3,7 @@ package workspace
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -33,6 +34,35 @@ func TestIgnoreMatcherMatchesNestedSegments(t *testing.T) {
 	assertIgnored(t, matcher, "C:/repo", "C:/repo/src/temp/file.cs")
 	assertIgnored(t, matcher, "C:/repo", "C:/repo/packages/app/.docs/template/seed.md")
 	assertNotIgnored(t, matcher, "C:/repo", "C:/repo/packages/app/templates/seed.md")
+}
+
+func TestIgnoreMatcherHonorsNegatedReincludesInOrder(t *testing.T) {
+	root := t.TempDir()
+	mustWriteFile(t, filepath.Join(root, ".gitignore"), strings.Join([]string{
+		"/.docs/*",
+		"!/.docs/wiki/",
+		"!/.docs/wiki/**",
+		"/.docs/tmp/",
+	}, "\n"))
+
+	matcher, err := LoadIgnoreMatcher(root, nil)
+	if err != nil {
+		t.Fatalf("LoadIgnoreMatcher returned error: %v", err)
+	}
+
+	assertNotIgnored(t, matcher, root, filepath.Join(root, ".docs", "wiki", "09_contratos", "CT-NAV-ASK.md"))
+	assertIgnored(t, matcher, root, filepath.Join(root, ".docs", "tmp", "draft.md"))
+}
+
+func TestIgnoreMatcherSupportsDoubleStarDirectoryPatterns(t *testing.T) {
+	matcher, err := LoadIgnoreMatcher(t.TempDir(), []string{"worker-dotnet/**/bin/", "worker-dotnet/**/obj/"})
+	if err != nil {
+		t.Fatalf("LoadIgnoreMatcher returned error: %v", err)
+	}
+
+	assertIgnored(t, matcher, "C:/repo", "C:/repo/worker-dotnet/MiLsp.Worker/bin/Debug/net10.0/output.dll")
+	assertIgnored(t, matcher, "C:/repo", "C:/repo/worker-dotnet/src/Nested/obj/Debug/net10.0/cache.json")
+	assertNotIgnored(t, matcher, "C:/repo", "C:/repo/worker-dotnet/MiLsp.Worker/Program.cs")
 }
 
 func assertIgnored(t *testing.T, matcher *IgnoreMatcher, root, path string) {

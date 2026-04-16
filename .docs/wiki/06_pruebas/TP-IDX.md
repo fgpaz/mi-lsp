@@ -21,3 +21,5 @@
 | TC-IDX-009 | positivo | RF-IDX-002 | index con cambios en docs o `read-model.toml` fuerza full re-index |
 | TC-IDX-010 | positivo | RF-IDX-003 | `00_gobierno_documental.md` proyecta automaticamente `.docs/wiki/_mi-lsp/read-model.toml` |
 | TC-IDX-011 | negativo | RF-IDX-003 | un bloque YAML de gobernanza invalido bloquea la proyeccion y obliga reparacion |
+| TC-IDX-012 | positivo | RF-IDX-001 | el indexador documental honra re-includes negados de `.gitignore`/`.milspignore` y no excluye `.docs/wiki/**` cuando fue re-habilitada |
+| TC-IDX-013 | positivo | RF-IDX-002 | si `doc_records` quedo solo con docs `generic` aunque la wiki canonica existe, `index` degrada a full re-index y reconstruye el corpus documental |

@@ -140,8 +140,13 @@ func NewRootCommand() *cobra.Command {
 func (s *rootState) queryOptions(cmd *cobra.Command, operation string, payload map[string]any) model.QueryOptions {
 	axiEnabled := s.effectiveAXI(cmd, operation, payload)
 	fullEnabled := axiEnabled && s.full
+	callerCWD := ""
+	if cwd, err := os.Getwd(); err == nil {
+		callerCWD = cwd
+	}
 	return model.QueryOptions{
 		Workspace:   s.workspace,
+		CallerCWD:   callerCWD,
 		Format:      s.effectiveFormat(cmd, operation, payload, axiEnabled),
 		TokenBudget: s.tokenBudget,
 		MaxItems:    s.effectiveMaxItems(cmd, operation, axiEnabled, fullEnabled),
@@ -167,7 +172,7 @@ func (s *rootState) executeOperation(cmd *cobra.Command, operation string, paylo
 		Context:         opts,
 		Payload:         payload,
 	}
-	ctx, cancel := context.WithTimeout(cmd.Context(), 2*time.Minute)
+	ctx, cancel := context.WithTimeout(cmd.Context(), timeoutForOperation(operation))
 	defer cancel()
 
 	useDaemon := shouldUseDaemon(operation, preferDaemon)
@@ -252,7 +257,7 @@ func shouldUseDaemon(operation string, requested bool) bool {
 		return false
 	}
 	switch operation {
-	case "nav.find", "nav.search", "nav.intent", "nav.symbols", "nav.outline", "nav.overview", "nav.multi-read", "nav.trace", "nav.pack", "nav.route", "nav.governance":
+	case "nav.find", "nav.search", "nav.intent", "nav.symbols", "nav.outline", "nav.overview", "nav.multi-read", "nav.trace", "nav.pack", "nav.route", "nav.governance", "nav.ask":
 		return false
 	default:
 		return true
@@ -262,10 +267,21 @@ func shouldUseDaemon(operation string, requested bool) bool {
 // shouldAutoStartDaemon returns true for heavy operations that benefit from warm runtimes.
 func shouldAutoStartDaemon(operation string) bool {
 	switch operation {
-	case "nav.refs", "nav.context", "nav.deps", "nav.related", "nav.ask", "nav.service", "nav.workspace-map", "nav.diff-context", "nav.batch":
+	case "nav.refs", "nav.context", "nav.deps", "nav.related", "nav.service", "nav.workspace-map", "nav.diff-context", "nav.batch":
 		return true
 	}
 	return false
+}
+
+func timeoutForOperation(operation string) time.Duration {
+	switch operation {
+	case "index.run":
+		return 15 * time.Minute
+	case "workspace.add", "workspace.init":
+		return 5 * time.Minute
+	default:
+		return 2 * time.Minute
+	}
 }
 
 func shouldRecordCLITelemetry(route string, opErr error) bool {
@@ -428,27 +444,17 @@ func (s *rootState) resolveHomeWorkspace(registrations []model.WorkspaceRegistra
 }
 
 func resolveRegisteredWorkspaceByRoot(cwd string, registrations []model.WorkspaceRegistration) (model.WorkspaceRegistration, model.ProjectFile, bool) {
-	absoluteCWD, err := filepath.Abs(cwd)
+	_ = registrations
+	resolution, err := workspace.ResolveWorkspaceSelection("", cwd)
+	if err != nil || resolution.Source != workspace.ResolutionSourceCallerCWD {
+		return model.WorkspaceRegistration{}, model.ProjectFile{}, false
+	}
+	registration := resolution.Registration
+	project, err := workspace.LoadProjectTopology(registration.Root, registration)
 	if err != nil {
 		return model.WorkspaceRegistration{}, model.ProjectFile{}, false
 	}
-	for _, registration := range registrations {
-		root, err := filepath.Abs(registration.Root)
-		if err != nil {
-			continue
-		}
-		normalizedRoot := strings.ToLower(filepath.Clean(root))
-		normalizedCWD := strings.ToLower(filepath.Clean(absoluteCWD))
-		if normalizedCWD != normalizedRoot && !strings.HasPrefix(normalizedCWD, normalizedRoot+string(os.PathSeparator)) {
-			continue
-		}
-		project, err := workspace.LoadProjectTopology(registration.Root, registration)
-		if err != nil {
-			return model.WorkspaceRegistration{}, model.ProjectFile{}, false
-		}
-		return workspace.ApplyProjectTopology(registration, project), project, true
-	}
-	return model.WorkspaceRegistration{}, model.ProjectFile{}, false
+	return workspace.ApplyProjectTopology(registration, project), project, true
 }
 
 func probeDaemonHome(parent context.Context) (model.DaemonState, bool) {

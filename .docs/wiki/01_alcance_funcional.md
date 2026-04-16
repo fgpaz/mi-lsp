@@ -7,6 +7,8 @@ El exito del producto en v1.3 se mide por cinco resultados:
 - el primer uso puede resolverse con `mi-lsp init` sin onboarding largo;
 - `nav ask` responde preguntas de intencion usando wiki + evidencia de codigo;
 - `nav pack` entrega el orden de lectura canonico para una tarea con preview/full;
+- las superficies calientes de navegacion pueden devolver guidance tiny (`continuation`) y memoria de reentrada (`memory_pointer`) para ayudar a un harness a seguir explorando sin gastar muchos tokens;
+- `nav intent` agrega un modo hibrido `docs|code`: las consultas capability-like deben devolver docs canonicos owner-aware y las consultas symbol-like deben seguir devolviendo matches de catalogo/codigo;
 - las consultas semanticas C# entregan contexto util y compacto en repos grandes;
 - la salida es estable, breve y apta para skills/LLMs sin arrastrar blobs innecesarios.
 
@@ -18,6 +20,10 @@ El exito del producto en v1.3 se mide por cinco resultados:
 - Usa primero la documentacion canonica del repo cuando existe `.docs/wiki`, en vez de obligar al usuario a adivinar comandos o rutas.
 - Conecta wiki y codigo sin convertir el indice local en una base semantica pesada.
 - Opera bien en workspaces independientes y multiples repos abiertos al mismo tiempo.
+- Cuando el usuario omite `--workspace`, prioriza el workspace registrado que contiene el `cwd` real del caller antes de caer al `last_workspace` global.
+- `nav.search` debe tolerar patrones "regex-like" copiados tal cual y reintentar como literal cuando el regex es invalido.
+- `nav.ask` debe resolver una primera respuesta util por camino directo, sin depender del daemon como hot path por default.
+- `workspace list` y `nav workspace-map` deben arrancar en modo summary-first y reservar scans pesados para expansiones explicitas.
 - Devuelve envelopes JSON compactos, deterministas y orientados a presupuesto de tokens.
 - Resume la superficie observable de un servicio (`nav service`) sin colapsar en un score fuerte de completitud.
 - Mantiene el estado operativo dentro del repo y solo usa un registro global minimo para aliases.

@@ -6,7 +6,7 @@ Registrar o inicializar un workspace `single` o `container` y dejar lista su top
 
 ## 2. Scope in/out
 
-- In: deteccion de root, alias opcional, clasificacion `single|container`, deteccion de repos hijos y `entrypoints`, creacion de `.mi-lsp/`, persistencia de `project.toml`, alta en registry global minimo, `init` como happy path corto, resolucion centralizada del modo efectivo AXI/classic via defaults por superficie + `--axi` + `--classic` + `MI_LSP_AXI=1`, home content-first cuando se invoca `mi-lsp` sin subcomando salvo `--classic`.
+- In: deteccion de root, alias opcional, clasificacion `single|container`, deteccion de repos hijos y `entrypoints`, creacion de `.mi-lsp/`, persistencia de `project.toml`, alta en registry global minimo, `init` como happy path corto, resolucion centralizada del modo efectivo AXI/classic via defaults por superficie + `--axi` + `--classic` + `MI_LSP_AXI=1`, home content-first cuando se invoca `mi-lsp` sin subcomando salvo `--classic`, y la precedencia `workspace explicito > workspace por caller_cwd > last_workspace`.
 - Out: descarga automatica de worker y setup remoto.
 
 ## 3. Main sequence
@@ -40,6 +40,7 @@ sequenceDiagram
 | Path invalido | error explicito sin side effects |
 | No se detecta stack compatible | warning + rechazo |
 | Layout ambiguo | se persiste la topologia minima y se exponen defaults claros |
+| Multiples aliases registrados para el mismo root | la seleccion automatica prioriza `project.name`, luego basename del root y deja warning visible |
 | Paths auxiliares (`.worktrees/`, ignores) | se omiten del bootstrap |
 | Entrypoints bajo `.docs/` o `template(s)` | permanecen visibles en topologia, pero no deben quedar como default semantico si existe una opcion real del repo |
 | Indexacion falla | registro exitoso con warning no fatal |

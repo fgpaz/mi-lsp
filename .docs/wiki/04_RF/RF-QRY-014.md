@@ -32,6 +32,8 @@ TP-QRY
 
 - **canonical lane**: autoritativa, derivada de governance/read-model y raiz canonica del workspace. Nunca puede ser sobreescrita por discovery. Peso al menos 2x el de discovery.
 - **discovery lane**: no autoritativa, advisory-only. Solo docs por default; codigo solo bajo `--full` o `--include-code-discovery`.
+- El scorer Tier 2 es owner-aware: combina FTS, overlap lexico, `doc_id`, stem/path, `owner_hints` opcionales desde `00` y penalizacion a `generic/README` cuando ya existe un candidato canonico positivo.
+- La recencia documental solo puede actuar como `weak tie-break` entre candidatos ya positivos; nunca rescata un doc irrelevante.
 
 ## Tier 1 - resolucion canonica sin indice
 
@@ -39,7 +41,7 @@ Cuando el indice de docs esta vacio o incompleto, Tier 1 puede producir `anchor_
 
 ## Tier 2 - enriquecimiento con indice
 
-Si el indice esta disponible, Tier 2 enriquece la canonical lane con FTS+ranking y construye una discovery summary basada en los docs indexados.
+Si el indice esta disponible, Tier 2 enriquece la canonical lane con FTS + scorer owner-aware compartido y construye una discovery summary basada en los docs indexados.
 
 ## Semantica fail-closed
 

@@ -28,6 +28,7 @@ Define el overlay selectivo por superficie de onboarding/discovery AXI sobre la 
 - Por default, `mi-lsp` sin subcomando devuelve un home content-first; `--classic` restaura help generica.
 - En AXI efectivo y sin `--format` explicito, la salida por defecto de discovery es TOON.
 - En AXI preview, la respuesta puede anunciar expansion con `next_hint: rerun with --full for expanded detail`.
+- En AXI preview, el envelope puede incluir `continuation.next`, pero `continuation.alternate` debe omitirse para no inflar la salida.
 - `--full` no cambia routing, backend ni estructura base del envelope; solo expande disclosure.
 - `nav ask` solo entra en AXI por default cuando la pregunta es claramente de orientacion; preguntas con paths, doc IDs, simbolos, comandos o lenguaje de implementacion deben quedar clasicas salvo `--axi`.
 - Las `next_queries` y `next_steps` de superficies AXI-default no deben repetir `--axi` salvo cuando apunten a una superficie classic-default.
@@ -47,8 +48,9 @@ El item principal del home puede incluir:
 
 ## Discovery preview/full
 
-- `workspace status`: `view=preview|full`, `docs_read_model`, `index_ready`, `next_steps`
+- `workspace status`: `view=preview|full`, `docs_read_model`, `index_ready`, `next_steps`; en preview puede incluir `memory_pointer` y en `--full` expande `memory`
 - `nav ask`: conserva `AskResult`, puede condensar evidencia en preview y usar `next_hint` para `--full` cuando la heuristica lo deja en AXI
 - `nav pack`: conserva `PackResult`, entrega `mode=preview|full` y usa `--full` para materializar slices del mismo pack
 - `nav workspace-map`: agrega `mode=preview|full` y `next_steps` solo cuando se fuerza AXI
-- `nav search` / `nav intent`: mantienen envelope estable y agregan guidance de expansion via `next_hint`
+- `nav search`: mantiene envelope estable y agrega guidance de expansion via `next_hint`; puede ademas exponer `continuation`/`memory_pointer` cuando ayudan a reentrar con pocos tokens
+- `nav intent`: mantiene `backend=intent`, agrega `mode=docs|code`, usa preview/full sin mezclar docs y simbolos en la misma lista y anuncia `--full` via `next_hint`

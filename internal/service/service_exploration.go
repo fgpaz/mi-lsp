@@ -28,6 +28,7 @@ func (a *App) serviceSummary(ctx context.Context, request model.CommandRequest) 
 	if err != nil {
 		return model.Envelope{}, err
 	}
+	memory, _ := loadReentryMemory(ctx, registration.Root)
 
 	rawPath, _ := request.Payload["path"].(string)
 	if strings.TrimSpace(rawPath) == "" {
@@ -122,7 +123,7 @@ func (a *App) serviceSummary(ctx context.Context, request model.CommandRequest) 
 		backend = "text"
 	}
 
-	return model.Envelope{
+	env := model.Envelope{
 		Ok:        true,
 		Workspace: registration.Name,
 		Backend:   backend,
@@ -132,7 +133,10 @@ func (a *App) serviceSummary(ctx context.Context, request model.CommandRequest) 
 			Symbols: totalSymbolCount(summary.Symbols),
 			Files:   serviceFileCount(summary),
 		},
-	}, nil
+	}
+	env = attachMemoryPointer(env, memory)
+	env.Continuation = buildServiceContinuation(memory)
+	return applyCoachPolicy(env, request.Context), nil
 }
 
 func fillServiceSummaryFromCatalog(summary *model.ServiceSurfaceSummary, symbols []model.SymbolRecord, includeArchetype bool) {

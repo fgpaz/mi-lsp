@@ -105,6 +105,9 @@ func TestNavRoutePreviewModeByDefault(t *testing.T) {
 	if results[0].Mode != "preview" {
 		t.Fatalf("mode = %q, want preview", results[0].Mode)
 	}
+	if env.Continuation == nil || env.Continuation.Reason != "expand_preview" || env.Continuation.Next.Op != "nav.pack" {
+		t.Fatalf("expected route continuation toward nav.pack, got %#v", env.Continuation)
+	}
 }
 
 func TestNavRouteFullModeActivatesWithFlag(t *testing.T) {

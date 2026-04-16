@@ -496,6 +496,12 @@ func TestSearchPattern_LiteralNoMatchesSuggestsRegex(t *testing.T) {
 	if env.NextHint == nil || !strings.Contains(*env.NextHint, "--regex") {
 		t.Fatalf("expected regex next_hint, got %#v", env.NextHint)
 	}
+	if env.Coach == nil || env.Coach.Trigger != "no_matches_refinable" {
+		t.Fatalf("expected no_matches_refinable coach, got %#v", env.Coach)
+	}
+	if len(env.Coach.Actions) == 0 || !strings.Contains(env.Coach.Actions[0].Command, "nav search") {
+		t.Fatalf("expected coach action with rerun command, got %#v", env.Coach)
+	}
 }
 
 func TestWorkspaceAdd_And_Status(t *testing.T) {
@@ -857,6 +863,34 @@ func TestSearch_RepoSelectorFiltersResults(t *testing.T) {
 	}
 }
 
+func TestSearch_RepoSelectorAutoResolvesUniquePrefix(t *testing.T) {
+	alias := "container-search-prefix-" + filepath.Base(t.TempDir())
+	root := createContainerWorkspaceFixture(t, alias)
+	app := New(root, nil)
+
+	env, err := app.Execute(context.Background(), model.CommandRequest{
+		Operation: "nav.search",
+		Context:   model.QueryOptions{Workspace: root, MaxItems: 10},
+		Payload:   map[string]any{"pattern": "forgot password", "repo": "front"},
+	})
+	if err != nil {
+		t.Fatalf("nav.search: %v", err)
+	}
+	if !env.Ok {
+		t.Fatalf("expected ok=true, got warnings: %v", env.Warnings)
+	}
+	items, ok := env.Items.([]map[string]any)
+	if !ok || len(items) != 1 {
+		t.Fatalf("expected one search result, got %#v", env.Items)
+	}
+	if items[0]["repo"] != "frontend" {
+		t.Fatalf("repo = %#v, want frontend", items[0]["repo"])
+	}
+	if !strings.Contains(strings.Join(env.Warnings, " "), `resolved automatically to "frontend"`) {
+		t.Fatalf("expected auto-resolve warning, got %v", env.Warnings)
+	}
+}
+
 func TestIntent_RepoSelectorFiltersResults(t *testing.T) {
 	alias := "container-intent-" + filepath.Base(t.TempDir())
 	root := createContainerWorkspaceFixture(t, alias)
@@ -872,6 +906,9 @@ func TestIntent_RepoSelectorFiltersResults(t *testing.T) {
 	}
 	if !env.Ok {
 		t.Fatalf("expected ok=true, got warnings: %v", env.Warnings)
+	}
+	if env.Mode != "code" {
+		t.Fatalf("mode = %q, want code", env.Mode)
 	}
 	items, ok := env.Items.([]map[string]any)
 	if !ok || len(items) == 0 {
@@ -903,7 +940,144 @@ func TestCatalogQueryUnknownRepoSelectorReturnsRouterEnvelope(t *testing.T) {
 	if env.Backend != "router" {
 		t.Fatalf("backend = %q, want router", env.Backend)
 	}
-	if env.NextHint == nil || !strings.Contains(*env.NextHint, "--repo <name>") {
+	if env.NextHint == nil || !strings.Contains(*env.NextHint, "--repo") {
 		t.Fatalf("expected rerun hint for repo selector, got %#v", env.NextHint)
+	}
+}
+
+func TestSearchInvalidRegexFallsBackToLiteral(t *testing.T) {
+	root, alias := setupTestWorkspace(t)
+	writeWorkspaceFile(t, root, "src/Routes.cs", `app.Map(Get|Post`)
+	app := New(root, nil)
+
+	env, err := app.Execute(context.Background(), model.CommandRequest{
+		Operation: "nav.search",
+		Context:   model.QueryOptions{Workspace: alias, MaxItems: 10},
+		Payload:   map[string]any{"pattern": "Map(Get|Post", "regex": true},
+	})
+	if err != nil {
+		t.Fatalf("nav.search: %v", err)
+	}
+	items, ok := env.Items.([]map[string]any)
+	if !ok || len(items) != 1 {
+		t.Fatalf("expected literal fallback result, got %#v", env.Items)
+	}
+	if !strings.Contains(strings.Join(env.Warnings, " "), "retried automatically as literal search") {
+		t.Fatalf("expected literal fallback warning, got %v", env.Warnings)
+	}
+	if env.Coach == nil || env.Coach.Trigger != "regex_auto_healed" {
+		t.Fatalf("expected regex_auto_healed coach, got %#v", env.Coach)
+	}
+	if len(env.Coach.Actions) != 1 || strings.Contains(env.Coach.Actions[0].Command, "--regex") {
+		t.Fatalf("expected literal rerun action, got %#v", env.Coach)
+	}
+}
+
+func TestSearchCoachSuggestsRepoNarrowingWhenResultsShareRepo(t *testing.T) {
+	project := model.ProjectFile{
+		Project: model.ProjectBlock{Name: "container", Kind: model.WorkspaceKindContainer},
+		Repos: []model.WorkspaceRepo{
+			{ID: "frontend", Name: "frontend", Root: "frontend"},
+			{ID: "backend", Name: "backend", Root: "backend"},
+		},
+	}
+	items := []map[string]any{{"file": "frontend/src/Login.tsx", "repo": "frontend", "line": 1}}
+
+	coach := buildSearchCoach("container", project, "forgot password", false, "", false, false, items, model.QueryOptions{MaxItems: 10})
+	if coach == nil || coach.Trigger != "scope_narrowing_available" {
+		t.Fatalf("expected scope_narrowing_available coach, got %#v", coach)
+	}
+	if len(coach.Actions) != 1 || !strings.Contains(coach.Actions[0].Command, "--repo frontend") {
+		t.Fatalf("expected repo narrowing action, got %#v", coach)
+	}
+}
+
+func TestSearchUnknownRepoSelectorEmitsCoach(t *testing.T) {
+	alias := "container-search-coach-" + filepath.Base(t.TempDir())
+	root := createContainerWorkspaceFixture(t, alias)
+	app := New(root, nil)
+
+	env, err := app.Execute(context.Background(), model.CommandRequest{
+		Operation: "nav.search",
+		Context:   model.QueryOptions{Workspace: alias, MaxItems: 10},
+		Payload:   map[string]any{"pattern": "forgot password", "repo": "missing"},
+	})
+	if err != nil {
+		t.Fatalf("nav.search: %v", err)
+	}
+	if env.Ok {
+		t.Fatalf("expected ok=false for unknown repo selector, got %#v", env)
+	}
+	if env.Coach == nil || env.Coach.Trigger != "repo_selector_invalid" {
+		t.Fatalf("expected repo_selector_invalid coach, got %#v", env.Coach)
+	}
+	if len(env.Coach.Actions) != 1 || !strings.Contains(env.Coach.Actions[0].Command, "--repo") {
+		t.Fatalf("expected rerun action for repo selector, got %#v", env.Coach)
+	}
+}
+
+func TestSemanticTsserverCooldownSkipsRepeatedFailedStarts(t *testing.T) {
+	ensureWritableTestHome(t)
+	root := t.TempDir()
+	alias := "tsserver-cooldown-" + filepath.Base(root)
+	writeWorkspaceFile(t, root, "src/app.ts", "export function LoginPage() {}\n")
+	if err := workspace.SaveProjectFile(root, model.ProjectFile{
+		Project: model.ProjectBlock{
+			Name:        alias,
+			Languages:   []string{"typescript"},
+			Kind:        model.WorkspaceKindSingle,
+			DefaultRepo: "main",
+		},
+		Repos: []model.WorkspaceRepo{
+			{ID: "main", Name: "main", Root: ".", Languages: []string{"typescript"}},
+		},
+	}); err != nil {
+		t.Fatalf("SaveProjectFile: %v", err)
+	}
+	if _, err := workspace.RegisterWorkspace(alias, model.WorkspaceRegistration{
+		Name:      alias,
+		Root:      root,
+		Languages: []string{"typescript"},
+		Kind:      model.WorkspaceKindSingle,
+	}); err != nil {
+		t.Fatalf("register workspace: %v", err)
+	}
+	defer func() { _ = workspace.RemoveWorkspace(alias) }()
+
+	fake := &fakeSemanticCaller{
+		callFn: func(context.Context, model.WorkspaceRegistration, model.WorkerRequest) (model.WorkerResponse, error) {
+			return model.WorkerResponse{}, errors.New("tsserver is unavailable")
+		},
+	}
+	app := New(root, fake)
+	request := model.CommandRequest{
+		Operation: "nav.refs",
+		Context:   model.QueryOptions{Workspace: alias, MaxItems: 5},
+		Payload:   map[string]any{"symbol": "LoginPage", "file": "src/app.ts"},
+	}
+
+	env, err := app.Execute(context.Background(), request)
+	if err != nil {
+		t.Fatalf("first nav.refs: %v", err)
+	}
+	if env.Backend != "text" {
+		t.Fatalf("first backend = %q, want text fallback", env.Backend)
+	}
+	if len(fake.calls) != 1 {
+		t.Fatalf("first call count = %d, want 1", len(fake.calls))
+	}
+
+	env, err = app.Execute(context.Background(), request)
+	if err != nil {
+		t.Fatalf("second nav.refs: %v", err)
+	}
+	if env.Backend != "catalog" && env.Backend != "text" {
+		t.Fatalf("second backend = %q, want fallback backend", env.Backend)
+	}
+	if len(fake.calls) != 1 {
+		t.Fatalf("cooldown should skip repeated tsserver start, call count = %d, want 1", len(fake.calls))
+	}
+	if !strings.Contains(strings.Join(env.Warnings, " "), "cooldown") {
+		t.Fatalf("expected cooldown warning, got %v", env.Warnings)
 	}
 }

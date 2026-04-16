@@ -37,9 +37,15 @@ flowchart LR
 - `Workspace container`: carpeta padre con muchos repos independientes. Ejemplo: `interbancarizacion_coelsa` sin depender de una `.sln` agregadora.
 - El `registry.toml` global sigue siendo liviano: alias, root, languages y `kind`.
 - La topologia detallada vive en `<repo>/.mi-lsp/project.toml` con `repo[]`, `entrypoint[]`, `default_repo` y `default_entrypoint`.
+- El contexto de query incluye `caller_cwd`; si `--workspace` se omite, la resolucion efectiva sigue `selector explicito > workspace registrado cuyo root contiene caller_cwd > last_workspace`.
 - El indice repo-local persiste ownership por repo (`repo_id`, `repo`) para archivos y simbolos.
 - El mismo indice repo-local persiste `DocRecord`, `DocEdge` y `DocMention` para `nav ask`.
+- `workspace_meta` tambien puede persistir un snapshot repo-local de reentrada (`memory_snapshot_*`) construido en `index` a partir de la wiki canonica y del handoff reciente.
 - El runtime pool del daemon se keyed por `(workspace_root, backend_type, entrypoint_id)`.
+- `nav ask`, `nav pack` y `nav route` comparten un contexto request-local de docs/profile/ranking para evitar recomputacion dentro de una misma request.
+- El envelope de query puede agregar un bloque opcional `coach` query-level para guidance explicito cuando hay rerun/refinement claro.
+- El mismo envelope puede agregar `continuation` y `memory_pointer` con costo bajo para orientar al harness en la siguiente busqueda o reentrada.
+- El doc router comparte un scorer owner-aware para `nav route`, `nav ask` y `nav pack`, y `nav.intent` clasifica primero `mode=docs|code` antes de elegir entre docs canonicos o BM25 de simbolos.
 - `nav ask` rankea docs primero y usa el codigo como evidencia; `nav pack` usa la misma base para construir reading packs global -> especifico; `nav service` agrega evidencia scoped a un path usando catalogo y busqueda textual.
 
 ## Responsabilidades por modulo
@@ -64,6 +70,8 @@ flowchart LR
 2. `service` combina catalogo repo-local y busqueda textual scoped al path pedido.
 3. `refs/context/deps` resuelven un `semantic entrypoint` antes de tocar Roslyn.
 4. `ask` primero consulta `doc_records/doc_edges/doc_mentions`; si no hay corpus fuerte, degrada a texto.
+5. Cuando `workspace` llega vacio, el core intenta resolverlo contra el `caller_cwd` real del proceso invocador; si varios aliases comparten root, prioriza `project.name`, luego basename del root, luego `last_workspace` solo como desempate de ese mismo root.
+6. `find/search/intent` aceptan `--repo` con resolucion smart: exacto primero, luego prefix/fuzzy deterministico cuando el match es unico, y error accionable con candidatos concretos cuando no lo es.
 5. Orden de resolucion semantica:
    - `--entrypoint`
    - `--solution` / `--project`
@@ -71,8 +79,11 @@ flowchart LR
    - ownership por `--file`
    - match unico por catalogo
    - default del workspace si es `single`
-6. Si la consulta es ambigua en un workspace `container`, el sistema falla con `backend=router`, candidatos concretos y `next_hint`.
-7. No hay fanout semantico automatico sobre todos los repos hijos en v1.3.
+7. Si la consulta es ambigua en un workspace `container`, el sistema falla con `backend=router`, candidatos concretos y `next_hint`.
+8. Si `workspace` se omitio y no hubo match por `caller_cwd`, el sistema puede caer al `last_workspace`, pero debe dejar warning visible con el alias elegido.
+9. `workspace list` usa summary-first desde registry + `project.toml`; la reconstruccion pesada de topologia queda para `workspace status`.
+10. `nav.workspace-map` hace scan profundo solo bajo expansion explicita (`--full` / AXI full); el modo base devuelve un mapa corto y rapido.
+11. No hay fanout semantico automatico sobre todos los repos hijos en v1.3.
 
 ## Implicancias operativas
 

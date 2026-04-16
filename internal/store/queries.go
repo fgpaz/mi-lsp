@@ -98,10 +98,8 @@ func ReplaceCatalog(ctx context.Context, db *sql.DB, project model.ProjectFile, 
 		"default_entrypoint": project.Project.DefaultEntrypoint,
 		"repo_count":         fmt.Sprintf("%d", len(project.Repos)),
 	}
-	for key, value := range metadata {
-		if _, err := tx.ExecContext(ctx, "INSERT OR REPLACE INTO workspace_meta(key, value) VALUES(?, ?)", key, value); err != nil {
-			return err
-		}
+	if err := UpsertWorkspaceMetaMap(ctx, tx, metadata); err != nil {
+		return err
 	}
 	return tx.Commit()
 }

@@ -188,11 +188,13 @@ func (s *Server) handleRequest(request model.CommandRequest) (model.Envelope, er
 	case "worker.status":
 		return s.app.Execute(context.Background(), request)
 	case "workspace.warm":
-		registration, err := s.app.ResolveWorkspace(request.Context.Workspace)
+		resolution, err := workspace.ResolveWorkspaceSelection(request.Context.Workspace, request.Context.CallerCWD)
 		if err != nil {
 			return model.Envelope{}, err
 		}
-		warnings := s.manager.Warm(registration)
+		registration := resolution.Registration
+		warnings := append([]string{}, resolution.Warnings...)
+		warnings = append(warnings, s.manager.Warm(registration)...)
 		statuses := make([]model.WorkerStatus, 0)
 		for _, status := range s.manager.Status() {
 			if status.Workspace == registration.Name {
@@ -216,25 +218,26 @@ func (s *Server) recordAccess(request model.CommandRequest, response model.Envel
 	}
 	seq := s.telemetry.NextSeq(request.Context.SessionID)
 	event := model.AccessEvent{
-		OccurredAt:   time.Now(),
-		ClientName:   firstNonEmpty(request.Context.ClientName, "manual-cli"),
-		SessionID:    request.Context.SessionID,
-		Seq:          seq,
-		Workspace:    request.Context.Workspace,
-		Repo:         payloadString(request.Payload, "repo"),
-		Operation:    request.Operation,
-		Backend:      response.Backend,
-		Route:        "daemon",
-		Format:       request.Context.Format,
-		TokenBudget:  request.Context.TokenBudget,
-		MaxItems:     request.Context.MaxItems,
-		MaxChars:     request.Context.MaxChars,
-		Compress:     request.Context.Compress,
-		Success:      operationErr == nil && response.Ok,
-		LatencyMs:    latency.Milliseconds(),
-		Warnings:     response.Warnings,
-		RuntimeKey:   runtimeKeyFromEnvelope(request, response),
-		EntrypointID: firstNonEmpty(payloadString(request.Payload, "entrypoint"), payloadString(request.Payload, "solution"), payloadString(request.Payload, "project_path")),
+		OccurredAt:     time.Now(),
+		ClientName:     firstNonEmpty(request.Context.ClientName, "manual-cli"),
+		SessionID:      request.Context.SessionID,
+		Seq:            seq,
+		Repo:           payloadString(request.Payload, "repo"),
+		Operation:      request.Operation,
+		Backend:        response.Backend,
+		Route:          "daemon",
+		Format:         request.Context.Format,
+		TokenBudget:    request.Context.TokenBudget,
+		MaxItems:       request.Context.MaxItems,
+		MaxChars:       request.Context.MaxChars,
+		Compress:       request.Context.Compress,
+		Success:        operationErr == nil && response.Ok,
+		LatencyMs:      latency.Milliseconds(),
+		Warnings:       response.Warnings,
+		WorkspaceInput: request.Context.Workspace,
+		Workspace:      firstNonEmpty(response.Workspace, request.Context.Workspace),
+		RuntimeKey:     telemetry.RuntimeKeyForOperation(request, response),
+		EntrypointID:   firstNonEmpty(payloadString(request.Payload, "entrypoint"), payloadString(request.Payload, "solution"), payloadString(request.Payload, "project_path")),
 	}
 	if operationErr != nil {
 		event.Error = operationErr.Error()
@@ -322,16 +325,6 @@ func probeDaemon(ctx context.Context) (model.DaemonState, error) {
 		return model.DaemonState{}, err
 	}
 	return state, nil
-}
-
-func runtimeKeyFromEnvelope(request model.CommandRequest, response model.Envelope) string {
-	backendType := firstNonEmpty(response.Backend, request.Context.BackendHint, payloadString(request.Payload, "backend_type"))
-	if backendType == "" {
-		backendType = "catalog"
-	}
-	workspaceName := firstNonEmpty(request.Context.Workspace, response.Workspace, "-")
-	entrypoint := firstNonEmpty(payloadString(request.Payload, "entrypoint"), payloadString(request.Payload, "solution"), payloadString(request.Payload, "project_path"), payloadString(request.Payload, "repo"), "default")
-	return backendType + "::" + workspaceName + "::" + entrypoint
 }
 
 func payloadString(payload map[string]any, key string) string {

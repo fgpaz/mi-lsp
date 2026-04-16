@@ -109,6 +109,13 @@ func IncrementalIndex(ctx context.Context, workspaceRoot string) (Result, error)
 	if _, err := os.Stat(indexPath); err != nil {
 		return Result{}, fmt.Errorf("index.db not found; fallback to full index")
 	}
+	needsRecovery, err := docIndexNeedsRecovery(ctx, workspaceRoot)
+	if err != nil {
+		return Result{}, err
+	}
+	if needsRecovery {
+		return Result{}, fmt.Errorf("canonical docs missing from index; fallback to full index")
+	}
 
 	changedFiles, deletedFiles := gitChangedFiles(ctx, workspaceRoot)
 	if len(changedFiles) == 0 && len(deletedFiles) == 0 {
@@ -131,55 +138,59 @@ func IncrementalIndex(ctx context.Context, workspaceRoot string) (Result, error)
 		return Result{}, fmt.Errorf("load ignore matcher: %w", err)
 	}
 
-	db, err := store.Open(workspaceRoot)
-	if err != nil {
-		return Result{}, fmt.Errorf("open database: %w", err)
-	}
-	defer db.Close()
-
 	processedFiles := 0
 	skippedFiles := 0
 	var allSymbols []model.SymbolRecord
-
-	for _, relPath := range changedFiles {
-		absPath := filepath.Join(workspaceRoot, filepath.FromSlash(relPath))
-		if matcher.ShouldIgnore(workspaceRoot, absPath) {
-			skippedFiles++
-			continue
-		}
-		if languageFromExt(strings.ToLower(filepath.Ext(relPath))) == "" {
-			skippedFiles++
-			continue
-		}
-		content, err := os.ReadFile(absPath)
+	if err := store.WithWorkspaceWriteLock(workspaceRoot, func() error {
+		db, err := store.Open(workspaceRoot)
 		if err != nil {
+			return fmt.Errorf("open database: %w", err)
+		}
+		defer db.Close()
+
+		for _, relPath := range changedFiles {
+			absPath := filepath.Join(workspaceRoot, filepath.FromSlash(relPath))
+			if matcher.ShouldIgnore(workspaceRoot, absPath) {
+				skippedFiles++
+				continue
+			}
+			if languageFromExt(strings.ToLower(filepath.Ext(relPath))) == "" {
+				skippedFiles++
+				continue
+			}
+			content, err := os.ReadFile(absPath)
+			if err != nil {
+				if err := store.DeleteFileSymbols(ctx, db, relPath); err != nil {
+					return fmt.Errorf("delete symbols for %s: %w", relPath, err)
+				}
+				processedFiles++
+				continue
+			}
+			symbols, language, err := ExtractFileSymbols(workspaceRoot, relPath, "", "")
+			if err != nil {
+				return fmt.Errorf("extract symbols for %s: %w", relPath, err)
+			}
+			repoID, repoName := ResolveRepoFromProjectFile(workspaceRoot, projectFile, relPath)
+			contentHash := fmt.Sprintf("%x", md5.Sum(content))
+			if err := store.ReplaceFileSymbols(ctx, db, relPath, repoID, repoName, language, contentHash, symbols); err != nil {
+				return fmt.Errorf("replace symbols for %s: %w", relPath, err)
+			}
+			allSymbols = append(allSymbols, symbols...)
+			processedFiles++
+		}
+
+		for _, relPath := range deletedFiles {
+			if languageFromExt(strings.ToLower(filepath.Ext(relPath))) == "" {
+				continue
+			}
 			if err := store.DeleteFileSymbols(ctx, db, relPath); err != nil {
-				return Result{}, fmt.Errorf("delete symbols for %s: %w", relPath, err)
+				return fmt.Errorf("delete symbols for %s: %w", relPath, err)
 			}
 			processedFiles++
-			continue
 		}
-		symbols, language, err := ExtractFileSymbols(workspaceRoot, relPath, "", "")
-		if err != nil {
-			return Result{}, fmt.Errorf("extract symbols for %s: %w", relPath, err)
-		}
-		repoID, repoName := ResolveRepoFromProjectFile(workspaceRoot, projectFile, relPath)
-		contentHash := fmt.Sprintf("%x", md5.Sum(content))
-		if err := store.ReplaceFileSymbols(ctx, db, relPath, repoID, repoName, language, contentHash, symbols); err != nil {
-			return Result{}, fmt.Errorf("replace symbols for %s: %w", relPath, err)
-		}
-		allSymbols = append(allSymbols, symbols...)
-		processedFiles++
-	}
-
-	for _, relPath := range deletedFiles {
-		if languageFromExt(strings.ToLower(filepath.Ext(relPath))) == "" {
-			continue
-		}
-		if err := store.DeleteFileSymbols(ctx, db, relPath); err != nil {
-			return Result{}, fmt.Errorf("delete symbols for %s: %w", relPath, err)
-		}
-		processedFiles++
+		return nil
+	}); err != nil {
+		return Result{}, err
 	}
 
 	return Result{
@@ -201,6 +212,51 @@ func requiresFullReindex(paths []string) bool {
 			return true
 		}
 		if base == "read-model.toml" && strings.Contains(normalized, ".docs/wiki/_mi-lsp/") {
+			return true
+		}
+	}
+	return false
+}
+
+func docIndexNeedsRecovery(ctx context.Context, workspaceRoot string) (bool, error) {
+	if !canonicalDocsExistOnDisk(workspaceRoot) {
+		return false, nil
+	}
+
+	db, err := store.Open(workspaceRoot)
+	if err != nil {
+		return false, err
+	}
+	defer db.Close()
+
+	docs, err := store.ListDocRecords(ctx, db)
+	if err != nil {
+		return false, err
+	}
+	if len(docs) == 0 {
+		return true, nil
+	}
+	for _, doc := range docs {
+		if doc.IsSnapshot {
+			continue
+		}
+		if doc.Family != "" && doc.Family != "generic" {
+			return false, nil
+		}
+	}
+	return true, nil
+}
+
+func canonicalDocsExistOnDisk(workspaceRoot string) bool {
+	for _, relativePath := range []string{
+		".docs/wiki/00_gobierno_documental.md",
+		".docs/wiki/_mi-lsp/read-model.toml",
+		".docs/wiki/03_FL.md",
+		".docs/wiki/04_RF.md",
+		".docs/wiki/07_baseline_tecnica.md",
+		".docs/wiki/09_contratos_tecnicos.md",
+	} {
+		if _, err := os.Stat(filepath.Join(workspaceRoot, filepath.FromSlash(relativePath))); err == nil {
 			return true
 		}
 	}

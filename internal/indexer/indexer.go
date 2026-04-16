@@ -8,6 +8,7 @@ import (
 
 	"github.com/fgpaz/mi-lsp/internal/docgraph"
 	"github.com/fgpaz/mi-lsp/internal/model"
+	"github.com/fgpaz/mi-lsp/internal/reentry"
 	"github.com/fgpaz/mi-lsp/internal/store"
 	"github.com/fgpaz/mi-lsp/internal/workspace"
 )
@@ -66,17 +67,26 @@ func IndexWorkspace(ctx context.Context, root string, clean bool) (Result, error
 		return Result{}, err
 	}
 	warnings = append(warnings, docWarnings...)
+	snapshot := reentry.BuildSnapshot(root, docs, time.Now())
 
-	db, err := store.Open(root)
-	if err != nil {
-		return Result{}, err
-	}
-	defer db.Close()
+	if err := store.WithWorkspaceWriteLock(root, func() error {
+		db, err := store.Open(root)
+		if err != nil {
+			return err
+		}
+		defer db.Close()
 
-	if err := store.ReplaceCatalog(ctx, db, projectFile, files, symbols); err != nil {
-		return Result{}, err
-	}
-	if err := store.ReplaceDocs(ctx, db, docs, docEdges, docMentions); err != nil {
+		if err := store.ReplaceCatalog(ctx, db, projectFile, files, symbols); err != nil {
+			return err
+		}
+		if err := store.ReplaceDocs(ctx, db, docs, docEdges, docMentions); err != nil {
+			return err
+		}
+		if err := store.SaveReentrySnapshot(ctx, db, snapshot); err != nil {
+			return err
+		}
+		return nil
+	}); err != nil {
 		return Result{}, err
 	}
 

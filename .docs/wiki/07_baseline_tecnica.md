@@ -75,16 +75,28 @@ flowchart LR
 - En AXI efectivo, `--full` solo expande disclosure sobre superficies cubiertas; no cambia semantica ni routing de la operacion.
 - La version actual de AXI no instala hooks ni mantiene contexto ambiente persistente fuera del proceso CLI.
 - Las lecturas baratas de catalogo/texto (`nav.find`, `nav.search`, `nav.symbols`, `nav.outline`, `nav.overview`, `nav.multi-read`) deben ejecutarse directas y no depender del health del daemon.
+- `nav.ask` tambien usa el camino directo por default; el daemon no es el hot path obligatorio para respuestas docs-first.
 - Todo subprocesso no interactivo debe usar la politica comun de proceso; en Windows eso implica `HideWindow + CREATE_NO_WINDOW`, y los procesos background del daemon agregan `DETACHED_PROCESS`.
 - El `tool_root` del worker se resuelve contra el ejecutable/distribucion activa o, en desarrollo, contra el repo `mi-lsp`; nunca contra el `cwd` arbitrario del workspace consultado.
 - La unidad de warm state es un runtime por `(workspace_root, backend_type)`.
+- La resolucion efectiva de workspace para queries usa la precedencia `--workspace explicito > workspace registrado cuyo root contiene caller_cwd > last_workspace`.
+- Si varios aliases registrados comparten root, la seleccion automatica usa `project.name`, luego basename del root, luego `last_workspace` solo si apunta a ese mismo root, y deja warning visible.
 - El estado semantico persistente del workspace vive repo-local; el estado global solo guarda registro, estado del daemon y telemetria local.
 - El estado documental persistente tambien vive repo-local: `doc_records`, `doc_edges` y `doc_mentions`.
 - La gobernanza documental manda sobre toda tarea spec-driven: `00_gobierno_documental.md` es la autoridad humana y `read-model.toml` su proyeccion ejecutable.
+- `owner_hints` vive en `00_gobierno_documental.md`, se proyecta al `read-model.toml` y solo refina ownership documental repo-especifico; no reemplaza las heuristicas generales del binario.
 - Si `00`, su YAML embebido, la proyeccion o el indice quedan fuera de sync, el workspace entra en `blocked mode`.
 - `nav ask` es docs-first: primero rankea docs canonicos, luego deriva evidencia de codigo desde menciones y fallback textual.
+- `nav route`, `nav ask` y `nav pack` comparten un scorer owner-aware: FTS + overlap lexico + `doc_id` + stem/path + hints opcionales + penalizacion a `generic/README` cuando hay un candidato canonico positivo.
+- La recencia documental solo opera como `weak tie-break`; no rescata docs irrelevantes ni pisa un match canonico fuerte.
+- El envelope de query puede agregar un bloque opcional `coach` query-level para guidance explicito (`rerun|refine|narrow|expand`) cuando existe una accion de continuidad clara.
+- El envelope de query puede agregar un bloque opcional `continuation`, tiny y machine-readable, para sugerir el mejor siguiente paso del harness sin requerir parsing de comandos raw.
+- El envelope de query puede agregar un bloque opcional `memory_pointer`, wiki-anchored, para reentrar rapido sobre cambios canonicos recientes y handoff relevante del workspace.
+- La memoria de reentrada repo-local se construye durante `mi-lsp index`, se persiste en `workspace_meta` y no se recompone completa en cada query del hot path.
+- `nav ask`, `nav pack` y `nav route` deben compartir `profile + docs + ranking + route core` dentro de la misma request; no se acepta recomputacion duplicada del mismo corpus en el hot path.
 - `nav ask`, `nav pack` y `nav route` deben consultar el gate de gobernanza antes de seguir.
 - `nav pack` es docs-first y pack-first: clasifica la tarea, elige un anchor y arma un reading pack ordenado de lo mas global a lo mas especifico, empezando por `00` cuando la gobernanza es valida.
+- En AXI preview, `nav ask` reduce compute y salida a `primary_doc + 1 linked doc + 1 code evidence`; `nav pack` reduce a `anchor + 2 docs`.
 - `nav governance` es la superficie primaria de diagnostico del perfil efectivo, sync y blockers.
 - Aun con `read_model=default`, un workspace inicializado con docs minimas utiles bajo `.docs/wiki/07_*.md`, `.docs/wiki/08_*.md` o `.docs/wiki/09_*.md` debe poder resolver una respuesta docs-first razonable sin requerir `read-model.toml` custom.
 - La UI de gobernanza es unica, local a loopback y debe abrirse enfocando workspace, sin duplicar instancias.
@@ -93,6 +105,7 @@ flowchart LR
 - `nav context` es slice-first: el core arma un bloque legible por lineas y luego superpone enriquecimiento semantico o de catalogo cuando exista.
 - `nav service` usa evidencia observable, no score fuerte de completitud.
 - `nav route` es la superficie publica de routing de bajo token: resuelve `anchor_doc + mini_pack_preview` con semantica fail-closed y canonical lane autoritativa. `nav ask` y `nav pack` reutilizan este motor internamente.
+- `nav.intent` es hibrido router-first: clasifica `mode=docs|code`, usa el scorer owner-aware en `docs` y conserva BM25 de simbolos en `code` sin mezclar ambos lanes en la misma lista.
 
 ## Busqueda: cadena de fallback
 
@@ -104,6 +117,7 @@ La busqueda textual implementa una cadena de fallback robusta:
 
 La cadena garantiza que la busqueda siempre funciona sin dependencias externas obligatorias.
 Si `rg` devuelve exit code `1` por ausencia de matches, el core lo normaliza a `items=[]` en vez de exponerlo como error.
+Si el usuario forza `--regex` y el patron es invalido, el core reintenta automaticamente como literal y devuelve warning visible.
 La exploracion de servicios y el fallback de `nav ask` reutilizan la misma cadena.
 
 ## Config y valores por defecto
@@ -114,6 +128,7 @@ El struct `internal/service/config.go` centraliza todos los valores hardcodeados
 - Incluye rutas de workers, timeouts, limites de memoria, ignoreslists por defecto
 - Permite override via flags CLI y variables de entorno
 - El `read-model` por defecto se embebe en `docgraph.DefaultProfile()` y puede ser sobreescrito por el proyecto
+- La capa de ignores del indexer normaliza paths con `/`, honra el orden de `.gitignore`/`.milspignore` y soporta re-includes negados para no expulsar la wiki canonica por accidente
 - Separacion clara entre valores de compilacion vs runtime
 
 ## Telemetria universal
@@ -122,11 +137,19 @@ El struct `internal/service/config.go` centraliza todos los valores hardcodeados
 - CLI directo usa `daemon_run_id = NULL`; el daemon usa su `run_id`.
 - En requests servidos por daemon, el `access_event` canonico lo escribe el daemon; la CLI solo persiste eventos directos, `direct_fallback` o fallas previas a la ejecucion remota.
 - WAL mode habilitado para manejar escrituras concurrentes daemon + CLI.
+- `index.db` repo-local tambien debe usar `WAL + busy_timeout`, y las escrituras de indexacion/watcher se serializan por workspace para evitar `SQLITE_BUSY`.
+- Cuando `index.db` esta corrupta, `index.run` debe cuarentenarla, reconstruir y dejar warning visible con la ruta respaldada.
+- Si el incremental detecta `doc_records` sin docs canonicos aunque la wiki existe en disco, `index.run` debe degradar a full rebuild en vez de devolver `no changes detected`.
 - Auto-purge de eventos > 30 dias (configurable via `MI_LSP_RETENTION_DAYS`) en startup de CLI y daemon.
 - `access_events` separa identidad analitica y diagnostica: `workspace_root` es la clave canonica de agrupacion; `workspace_alias` y `workspace_input` preservan display y forensics.
+- `workspace_input` preserva el selector crudo recibido, incluso cuando viene vacio; `workspace`, `workspace_alias` y `workspace_root` deben reflejar el workspace resuelto efectivamente.
+- Tanto CLI directo como daemon deben persistir `runtime_key` determinista; en modo directo puede ser pseudo-runtime y sigue siendo valido para attribution/export.
 - `access_events.seq` ordena eventos dentro de un `session_id`; vale `0` cuando la llamada no trae sesion y arranca en `1` para la primera operacion de una sesion trazable.
 - `access_events` tambien preserva metadata minima del llamado para analitica local: `route` (`direct`, `daemon`, `direct_fallback`), `format`, presupuestos (`token_budget`, `max_items`, `max_chars`) y `compress`.
 - La ola actual de telemetria operativa agrega causalidad tipada para search/routing sin guardar payloads crudos: `warning_count`, `pattern_mode`, `routing_outcome`, `failure_stage`, `hint_code`, `truncation_reason` y `decision_json`.
+- El bloque `coach` no se persiste crudo; solo puede derivar metadata sanitizada como `coach_present`, `coach_trigger` y `coach_action_count` dentro de `decision_json`.
+- `decision_json` puede incluir solo metadata derivada de `continuation` y `memory_pointer` (`continuation_present`, `continuation_reason`, `continuation_op`, `memory_pointer_present`, `memory_stale`) y nunca el `why`, `query`, `handoff` ni comandos raw.
+- `decision_json` puede incluir ademas `doc_ranker` e `intent_mode` como metadata derivada de routing; nunca persiste el texto de la query, hints o comandos completos.
 - `decision_json` es compacto y sanitizado: solo guarda metadatos estructurados de debug (`pattern_len`, `pattern_has_spaces`, `pattern_regex_like`, `used_regex`, presencia/validez de selector, hints emitidos, fallback, source backend) y nunca persiste `pattern`, argv ni payload completo.
 - `result_count` cuenta los items realmente emitidos en el envelope final luego de truncation/limits; no debe leerse como alias de `Stats.Symbols`.
 - La taxonomia minima de errores tipados distingue al menos `sdk/*`, `worker_bootstrap/*` y `backend_runtime/*`.
@@ -141,6 +164,8 @@ El struct `internal/service/config.go` centraliza todos los valores hardcodeados
 - `daemon start` debe ser idempotente y resolver si ya existe una instancia saludable.
 - Queries semanticas y compuestas seleccionadas inician automaticamente el daemon si no esta corriendo (desactivar con `--no-auto-daemon`).
 - `nav.find`, `nav.search`, `nav.intent`, `nav.symbols`, `nav.outline`, `nav.overview` y `nav.multi-read` no deben auto-iniciar ni enrutar por daemon en builds actuales; en workspaces `container`, `find/search/intent` pueden acotar con `--repo`.
+- `workspace list` debe salir desde registry + `project.toml` normalizado, sin redescubrir child repos en el hot path.
+- `nav.workspace-map` debe arrancar con summary-first y reservar scans de endpoints/eventos/dependencias para `--full`.
 - En AXI efectivo, `init`, `workspace status`, `nav search`, `nav intent` y `nav pack` arrancan en preview-first por default; `nav ask` lo hace solo cuando la heuristica detecta orientacion, y `nav workspace-map` solo cuando se fuerza AXI.
 - `init` registra, persiste proyecto e indexa por defecto sin requerir `workspace add` previo.
 - `worker install` es explicito; no hay descargas silenciosas durante consultas.
@@ -151,10 +176,12 @@ El struct `internal/service/config.go` centraliza todos los valores hardcodeados
 - Si el candidato Roslyn elegido falla por bootstrap/arranque, el caller reintenta una sola vez con el siguiente candidato determinista antes de devolver error accionable.
 - Los cambios en `.docs/wiki`, `README*`, `docs/`, `00_gobierno_documental.md` o `read-model.toml` fuerzan full re-index del corpus documental; el incremental por git no intenta mezclar deltas parciales de docs.
 - `workspace status` debe exponer perfil, sync de gobernanza, estado bloqueado y estado del indice respecto de `00`/`read-model`.
+- `workspace status --full` debe exponer ademas el digest expandido de memoria de reentrada (`recent_canonical_changes`, `handoff`, `best_reentry`, `stale`) sin recalcularlo en caliente.
 - `nav ask --all-workspaces` fan-out sobre workspaces registrados con un pool acotado de 4 workers y merge determinista por score.
 - `nav.find`, `nav.symbols`, `nav.overview` y `nav.intent` aceptan `--offset` para paginacion cursor-like sobre queries SQL; `nav.search` queda fuera de ese contrato porque sigue siendo rg/text-backed.
 - `nav service` debe funcionar sin Roslyn y seguir entregando evidencia util incluso cuando el catalogo es parcial.
 - `nav context` sobre archivos no semanticos no debe depender de Roslyn, `tsserver` ni Pyright.
+- Si `tsserver` o `pyright` ya fallaron por indisponibilidad en la misma sesion/runtime, el core puede entrar en cooldown corto y degradar directamente a catalog/text.
 
 ## Documentos detalle
 

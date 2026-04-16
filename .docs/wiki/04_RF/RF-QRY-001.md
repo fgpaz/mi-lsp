@@ -51,6 +51,10 @@
 | `warnings` | lista | usuario/skill | contexto de degradacion o frescura |
 | `hint` | string/null | usuario/skill | diagnóstico cuando `items=[]` o daemon no disponible (omitempty) |
 | `next_hint` | string/null | usuario/skill | sugerencia para pedir mas detalle |
+| `coach` | objeto/null | usuario/skill | guidance explicito y machine-readable para rerun, refine, narrow o expand |
+| `continuation` | objeto/null | usuario/skill | siguiente paso tiny y machine-readable para el harness |
+| `memory_pointer` | objeto/null | usuario/skill | puntero de reentrada wiki-aware con costo minimo |
+| `mode` | string/null | usuario/skill | subtipo publico de la respuesta cuando la superficie expone variantes como `nav.intent (docs|code)` |
 
 ## 6. Typed Errors
 
@@ -65,6 +69,10 @@
 - Si `format` es invalido, la respuesta se normaliza a `compact`.
 - Si se alcanza un limite, `truncated=true` y `next_hint` debe indicar como pedir mas precision.
 - Si la superficie queda en AXI efectivo y soporta preview-first, `next_hint` puede sugerir `--full` aun sin truncation dura.
+- `coach` es aditivo y opcional: no reemplaza `warnings`, `hint` ni `next_hint`.
+- En AXI preview, `coach.actions` se reduce a una sola accion para limitar costo de salida.
+- `continuation` es aditivo y opcional: no reemplaza `coach`, `next_hint` ni `next_queries`.
+- `memory_pointer` es aditivo y opcional: nunca persiste texto largo ni reemplaza `workspace status --full`.
 - `--classic` prevalece sobre defaults por superficie y sobre `MI_LSP_AXI=1`.
 - `--axi` y `--classic` juntos deben rechazarse antes de ejecutar la query.
 - `compact` usa keys cortos y JSON sin whitespace innecesario.

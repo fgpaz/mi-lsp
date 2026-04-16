@@ -35,6 +35,7 @@ func (a *App) related(ctx context.Context, request model.CommandRequest) (model.
 	if err != nil {
 		return model.Envelope{}, err
 	}
+	memory, _ := loadReentryMemory(ctx, registration.Root)
 
 	symbolName, _ := request.Payload["symbol"].(string)
 	if symbolName == "" {
@@ -58,7 +59,7 @@ func (a *App) related(ctx context.Context, request model.CommandRequest) (model.
 	// 1. Find definition in catalog
 	symbols, err := store.FindSymbols(ctx, db, symbolName, "", true, 5, 0)
 	if err == nil && len(symbols) > 0 {
-		def := symbolToContent(registration.Root, symbols[0])
+		def := symbolToContent(registration.Root, symbols[0], request.Context.Full)
 		neighborhood.Definition = &def
 	}
 
@@ -71,10 +72,10 @@ func (a *App) related(ctx context.Context, request model.CommandRequest) (model.
 		}
 
 		if depth.callers {
-			neighborhood.Callers = filterRefsByRole(refsItems, registration.Root, "caller")
+			neighborhood.Callers = filterRefsByRole(refsItems, registration.Root, "caller", request.Context.Full)
 		}
 		if depth.implementors {
-			neighborhood.Implementors = filterRefsByRole(refsItems, registration.Root, "implementor")
+			neighborhood.Implementors = filterRefsByRole(refsItems, registration.Root, "implementor", request.Context.Full)
 		}
 	}
 
@@ -84,14 +85,17 @@ func (a *App) related(ctx context.Context, request model.CommandRequest) (model.
 		neighborhood.Tests = testItems
 	}
 
-	return model.Envelope{
+	env := model.Envelope{
 		Ok:        true,
 		Workspace: registration.Name,
 		Backend:   backend,
 		Items:     []symbolNeighborhood{neighborhood},
 		Warnings:  warnings,
 		Stats:     model.Stats{Ms: time.Since(started).Milliseconds()},
-	}, nil
+	}
+	env = attachMemoryPointer(env, memory)
+	env.Continuation = buildRelatedContinuation(symbolName, request.Context, memory)
+	return applyCoachPolicy(env, request.Context), nil
 }
 
 type relatedDepth struct {
@@ -121,7 +125,7 @@ func parseDepth(s string) relatedDepth {
 	return d
 }
 
-func symbolToContent(workspaceRoot string, sym model.SymbolRecord) symbolWithContent {
+func symbolToContent(workspaceRoot string, sym model.SymbolRecord, includeContent bool) symbolWithContent {
 	sc := symbolWithContent{
 		File:    sym.FilePath,
 		Name:    sym.Name,
@@ -131,7 +135,7 @@ func symbolToContent(workspaceRoot string, sym model.SymbolRecord) symbolWithCon
 	}
 
 	// Try to read the symbol body
-	if sym.StartLine > 0 && sym.EndLine > 0 {
+	if includeContent && sym.StartLine > 0 && sym.EndLine > 0 {
 		absFile := sym.FilePath
 		if !filepath.IsAbs(absFile) {
 			absFile = filepath.Join(workspaceRoot, filepath.FromSlash(sym.FilePath))
@@ -180,7 +184,7 @@ func (a *App) findRefsForRelated(ctx context.Context, registration model.Workspa
 	return items, envelope.Backend, envelope.Warnings
 }
 
-func filterRefsByRole(items []map[string]any, workspaceRoot string, role string) []symbolWithContent {
+func filterRefsByRole(items []map[string]any, workspaceRoot string, role string, includeContent bool) []symbolWithContent {
 	// Without semantic classification, all refs are treated as callers
 	// Implementors would need type hierarchy info from Roslyn
 	result := make([]symbolWithContent, 0)
@@ -207,7 +211,7 @@ func filterRefsByRole(items []map[string]any, workspaceRoot string, role string)
 		}
 
 		// Read content for the ref
-		if line > 0 {
+		if includeContent && line > 0 {
 			absFile := file
 			if !filepath.IsAbs(absFile) {
 				absFile = filepath.Join(workspaceRoot, filepath.FromSlash(file))

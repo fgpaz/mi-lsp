@@ -35,6 +35,7 @@
 | TC-QRY-011 | negativo | RF-QRY-003 | devuelve warning accionable si no hay catalogo util o no se encuentra evidencia suficiente bajo el path |
 | TC-QRY-012 | positivo | RF-QRY-002 | `nav context` sobre `ts/tsx` devuelve `slice_text` y warning si `tsserver` no esta disponible |
 | TC-QRY-013 | positivo | RF-QRY-002 | `nav search` sin matches devuelve `ok=true` e insinua `--regex` cuando el patron parece regex |
+| TC-QRY-013A | positivo | RF-QRY-001 | `nav.search` agrega `coach.trigger=no_matches_refinable` cuando la query no matchea pero tiene rerun accionable |
 | TC-QRY-014 | positivo | RF-QRY-004 | lee multiples rangos en una sola invocacion con truncacion por presupuesto |
 | TC-QRY-015 | positivo | RF-QRY-004 | incluye numeros de linea en contenido leido |
 | TC-QRY-016 | negativo | RF-QRY-004 | rechaza path traversal (`../../../etc/passwd`) |
@@ -56,6 +57,7 @@
 | TC-QRY-032 | positivo | RF-QRY-010 | `nav ask` prioriza el documento canonico correcto y devuelve evidencia de codigo |
 | TC-QRY-033 | positivo | RF-QRY-010 | `nav ask` usa `.docs/wiki/_mi-lsp/read-model.toml` cuando existe |
 | TC-QRY-034 | negativo | RF-QRY-010 | `nav ask` degrada a fallback generico o textual cuando falta corpus fuerte |
+| TC-QRY-034A | positivo | RF-QRY-010 | `nav ask` fallback textual emite `coach.trigger=text_fallback` con `confidence=low` |
 | TC-QRY-035 | positivo | RF-QRY-002 | `nav find` responde por catalogo aunque el daemon este caido o detenido |
 | TC-QRY-036 | positivo | RF-QRY-002 | `nav search`, `nav.symbols`, `nav.outline`, `nav.overview` y `nav.multi-read` no auto-inician daemon y mantienen salida estable |
 | TC-QRY-037 | positivo | RF-QRY-002 | `nav find` y `nav search` aceptan `--repo` en workspaces `container` y acotan resultados sin depender del daemon |
@@ -65,6 +67,7 @@
 | TC-QRY-041 | negativo | RF-QRY-011 | `nav intent` rechaza pregunta vacia con error explicito |
 | TC-QRY-042 | positivo | RF-QRY-001 | `nav search` usa TOON por default en superficie AXI-default y agrega guidance de expansion con `--full` |
 | TC-QRY-043 | positivo | RF-QRY-010 | `nav ask` en pregunta de orientacion condensa evidencia inicial y evita `--axi` redundante en `next_queries` |
+| TC-QRY-043A | positivo | RF-QRY-010 | `nav ask` en AXI preview con evidencia condensada puede emitir `coach.trigger=preview_trimmed` con una sola accion |
 | TC-QRY-044 | positivo | RF-QRY-011 | `nav intent` mantiene ranking base pero expone `next_hint` para `--full` por default |
 | TC-QRY-045 | positivo | RF-QRY-011 | `nav intent --classic` restaura la salida clasica y mantiene envelope estable |
 | TC-QRY-046 | positivo | RF-QRY-010 | `nav ask` con pregunta de implementacion queda clasico por default salvo `--axi` |
@@ -84,3 +87,8 @@
 | TC-QRY-060 | positivo | RF-QRY-014 | `TestNavRouteAnchorDocHasAnchorStage`: `AnchorDoc.Stage == "anchor"` en Tier 1 y Tier 2 (Wave 3b stage signal) |
 | TC-QRY-061 | positivo | RF-QRY-014 | `TestNavRoutePreviewPackHasPreviewStage`: cada doc del `PreviewPack` lleva campo `Stage` no vacio |
 | TC-QRY-062 | positivo | RF-QRY-014 | `TestNavRouteDiscoveryDocsHaveDiscoveryStage`: cuando `discovery.docs` existe, cada doc tiene `Stage == "discovery"` |
+| TC-QRY-063 | positivo | RF-QRY-014, RF-QRY-015 | queries naturales sobre capabilities nuevas (`continuation`, `memory_pointer`) priorizan docs owner-aware del slice y no `README` cuando existe match canonico positivo |
+| TC-QRY-064 | positivo | RF-QRY-011 | `nav intent` clasifica `mode=docs` para consultas capability-like y devuelve items documentales con `doc_path/doc_id/title/family/layer/score/evidence/next_queries` |
+| TC-QRY-065 | positivo | RF-QRY-011 | `nav intent` clasifica `mode=code` para consultas symbol-like y conserva ranking BM25 de catalogo |
+| TC-QRY-066 | positivo | RF-QRY-014, RF-QRY-015 | `MI_LSP_DOC_RANKING=legacy` deja un override diagnostico reversible y no persiste hints/queries crudas en telemetria |
+| TC-QRY-067 | positivo | RF-QRY-010, RF-QRY-012 | `continuation`, `memory_pointer` y `memory_pointer.stale` siguen visibles en las superficies docs-first despues del reranking owner-aware |

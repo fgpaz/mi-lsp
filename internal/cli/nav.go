@@ -421,13 +421,15 @@ Use --all for all RFs, --summary for tabular view.`,
 	var intentRepo string
 	intentCommand := &cobra.Command{
 		Use:   "intent <question>",
-		Short: "Search for symbols by intent or purpose",
-		Long: `Perform intent-based code search using BM25 scoring.
-Searches through enriched symbol metadata including names, signatures,
-documentation comments, and file paths.
+		Short: "Resolve intent in docs-or-code mode",
+		Long: `Perform intent-based navigation in hybrid docs|code mode.
+Capability-like questions route to owner-aware canonical docs.
+Symbol-like questions keep BM25 ranking over enriched symbol metadata
+including names, signatures, documentation comments, and file paths.
 
 Examples:
-  mi-lsp nav intent "where do we handle workspace routing fallback?"
+  mi-lsp nav intent "how do continuation and memory pointer work?"
+  mi-lsp nav intent "where do we handle workspace routing fallback?" --repo backend
   mi-lsp nav intent "error handling daemon" --top 20`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if err := requireArgs(args, 1, "question"); err != nil {

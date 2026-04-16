@@ -117,6 +117,14 @@ func LoadProjectTopology(root string, registration model.WorkspaceRegistration) 
 	return normalizeProjectFile(root, registration, project), nil
 }
 
+func LoadProjectSummary(root string, registration model.WorkspaceRegistration) (model.ProjectFile, error) {
+	project, err := LoadProjectFile(root)
+	if err != nil {
+		return model.ProjectFile{}, err
+	}
+	return normalizeProjectFile(root, registration, project), nil
+}
+
 func mergeProjectFile(existing model.ProjectFile, detected model.ProjectFile) model.ProjectFile {
 	merged := existing
 	if merged.Project.Name == "" {

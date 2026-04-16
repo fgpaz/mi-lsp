@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 
 	"github.com/BurntSushi/toml"
 
@@ -13,6 +14,21 @@ import (
 )
 
 const registryDirName = ".mi-lsp"
+
+type ResolutionSource string
+
+const (
+	ResolutionSourceExplicit      ResolutionSource = "explicit"
+	ResolutionSourcePath          ResolutionSource = "path"
+	ResolutionSourceCallerCWD     ResolutionSource = "caller_cwd"
+	ResolutionSourceLastWorkspace ResolutionSource = "last_workspace"
+)
+
+type WorkspaceResolution struct {
+	Registration model.WorkspaceRegistration
+	Source       ResolutionSource
+	Warnings     []string
+}
 
 func GlobalDir() (string, error) {
 	home, err := os.UserHomeDir()
@@ -104,31 +120,54 @@ func RemoveWorkspace(name string) error {
 }
 
 func ResolveWorkspace(nameOrPath string) (model.WorkspaceRegistration, error) {
-	if nameOrPath == "" {
-		registry, err := LoadRegistry()
-		if err != nil {
-			return model.WorkspaceRegistration{}, err
-		}
-		if registry.Defaults.LastWorkspace != "" {
-			if ws, ok := registry.Workspaces[registry.Defaults.LastWorkspace]; ok {
-				ws.Name = registry.Defaults.LastWorkspace
-				return ws, nil
-			}
-		}
-		return model.WorkspaceRegistration{}, errors.New("no workspace specified and no default workspace configured")
-	}
-	registry, err := LoadRegistry()
+	resolution, err := ResolveWorkspaceSelection(nameOrPath, "")
 	if err != nil {
 		return model.WorkspaceRegistration{}, err
 	}
-	if ws, ok := registry.Workspaces[nameOrPath]; ok {
-		ws.Name = nameOrPath
-		return ws, nil
+	return resolution.Registration, nil
+}
+
+func ResolveWorkspaceSelection(nameOrPath string, callerCWD string) (WorkspaceResolution, error) {
+	registry, err := LoadRegistry()
+	if err != nil {
+		return WorkspaceResolution{}, err
 	}
-	if _, err := os.Stat(nameOrPath); err == nil {
-		return DetectWorkspace(nameOrPath)
+
+	selector := strings.TrimSpace(nameOrPath)
+	if selector != "" {
+		if ws, ok := registry.Workspaces[selector]; ok {
+			ws.Name = selector
+			return WorkspaceResolution{Registration: ws, Source: ResolutionSourceExplicit}, nil
+		}
+		if resolvedPath, ok := resolveSelectorPath(selector, callerCWD); ok {
+			registration, err := DetectWorkspace(resolvedPath)
+			if err != nil {
+				return WorkspaceResolution{}, err
+			}
+			return WorkspaceResolution{Registration: registration, Source: ResolutionSourcePath}, nil
+		}
+		return WorkspaceResolution{}, errors.New("workspace not found in registry and path does not exist")
 	}
-	return model.WorkspaceRegistration{}, errors.New("workspace not found in registry and path does not exist")
+
+	if resolution, ok := resolveWorkspaceFromCallerCWD(callerCWD, registry); ok {
+		return resolution, nil
+	}
+
+	if registry.Defaults.LastWorkspace != "" {
+		if ws, ok := registry.Workspaces[registry.Defaults.LastWorkspace]; ok {
+			ws.Name = registry.Defaults.LastWorkspace
+			warnings := []string{
+				fmt.Sprintf("workspace omitted; no registered workspace matched caller cwd %q; falling back to last_workspace=%q", strings.TrimSpace(callerCWD), ws.Name),
+			}
+			return WorkspaceResolution{
+				Registration: ws,
+				Source:       ResolutionSourceLastWorkspace,
+				Warnings:     warnings,
+			}, nil
+		}
+	}
+
+	return WorkspaceResolution{}, errors.New("no workspace specified and no default workspace configured")
 }
 
 func ListWorkspaces() ([]model.WorkspaceRegistration, error) {
@@ -178,4 +217,139 @@ func SaveProjectFile(root string, project model.ProjectFile) error {
 	}
 	defer file.Close()
 	return toml.NewEncoder(file).Encode(project)
+}
+
+func resolveWorkspaceFromCallerCWD(callerCWD string, registry model.RegistryFile) (WorkspaceResolution, bool) {
+	normalizedCWD, ok := normalizeComparablePath(callerCWD)
+	if !ok {
+		return WorkspaceResolution{}, false
+	}
+
+	grouped := map[string][]model.WorkspaceRegistration{}
+	longestRootLen := -1
+	for alias, registration := range registry.Workspaces {
+		registration.Name = alias
+		normalizedRoot, ok := normalizeComparablePath(registration.Root)
+		if !ok || !pathContains(normalizedCWD, normalizedRoot) {
+			continue
+		}
+		grouped[normalizedRoot] = append(grouped[normalizedRoot], registration)
+		if len(normalizedRoot) > longestRootLen {
+			longestRootLen = len(normalizedRoot)
+		}
+	}
+	if longestRootLen < 0 {
+		return WorkspaceResolution{}, false
+	}
+
+	bestRoots := make([]string, 0, len(grouped))
+	for root := range grouped {
+		if len(root) == longestRootLen {
+			bestRoots = append(bestRoots, root)
+		}
+	}
+	sort.Strings(bestRoots)
+	bestRoot := bestRoots[0]
+	selection := selectAliasForRoot(grouped[bestRoot], registry.Defaults.LastWorkspace)
+	return WorkspaceResolution{
+		Registration: selection.Registration,
+		Source:       ResolutionSourceCallerCWD,
+		Warnings:     selection.Warnings,
+	}, true
+}
+
+type aliasSelection struct {
+	Registration model.WorkspaceRegistration
+	Warnings     []string
+}
+
+func selectAliasForRoot(registrations []model.WorkspaceRegistration, lastWorkspace string) aliasSelection {
+	sorted := append([]model.WorkspaceRegistration(nil), registrations...)
+	sort.Slice(sorted, func(i, j int) bool {
+		return strings.ToLower(sorted[i].Name) < strings.ToLower(sorted[j].Name)
+	})
+	if len(sorted) == 1 {
+		return aliasSelection{Registration: sorted[0]}
+	}
+
+	root := sorted[0].Root
+	reason := "lexicographic fallback"
+	chosen := sorted[0]
+
+	if projectName := loadProjectName(root); projectName != "" {
+		if candidate, ok := findRegistrationByAlias(sorted, projectName); ok {
+			chosen = candidate
+			reason = "project.name"
+		}
+	}
+
+	if reason == "lexicographic fallback" {
+		if candidate, ok := findRegistrationByAlias(sorted, filepath.Base(root)); ok {
+			chosen = candidate
+			reason = "root basename"
+		}
+	}
+
+	if reason == "lexicographic fallback" && strings.TrimSpace(lastWorkspace) != "" {
+		if candidate, ok := findRegistrationByAlias(sorted, lastWorkspace); ok {
+			chosen = candidate
+			reason = "same-root last_workspace"
+		}
+	}
+
+	warnings := []string{
+		fmt.Sprintf("workspace omitted; multiple registry aliases share root %q; selected %q using %s", root, chosen.Name, reason),
+	}
+	return aliasSelection{Registration: chosen, Warnings: warnings}
+}
+
+func findRegistrationByAlias(registrations []model.WorkspaceRegistration, alias string) (model.WorkspaceRegistration, bool) {
+	for _, registration := range registrations {
+		if strings.EqualFold(strings.TrimSpace(registration.Name), strings.TrimSpace(alias)) {
+			return registration, true
+		}
+	}
+	return model.WorkspaceRegistration{}, false
+}
+
+func loadProjectName(root string) string {
+	project, err := LoadProjectFile(root)
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(project.Project.Name)
+}
+
+func resolveSelectorPath(selector string, callerCWD string) (string, bool) {
+	candidates := []string{selector}
+	if strings.TrimSpace(callerCWD) != "" && !filepath.IsAbs(selector) {
+		candidates = append([]string{filepath.Join(callerCWD, selector)}, candidates...)
+	}
+	for _, candidate := range candidates {
+		if _, err := os.Stat(candidate); err != nil {
+			continue
+		}
+		absolute, err := filepath.Abs(candidate)
+		if err != nil {
+			continue
+		}
+		return absolute, true
+	}
+	return "", false
+}
+
+func normalizeComparablePath(path string) (string, bool) {
+	trimmed := strings.TrimSpace(path)
+	if trimmed == "" {
+		return "", false
+	}
+	absolute, err := filepath.Abs(trimmed)
+	if err != nil {
+		return "", false
+	}
+	return strings.ToLower(filepath.Clean(absolute)), true
+}
+
+func pathContains(cwd string, root string) bool {
+	return cwd == root || strings.HasPrefix(cwd, root+string(os.PathSeparator))
 }

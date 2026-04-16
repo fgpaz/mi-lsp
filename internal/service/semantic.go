@@ -35,6 +35,15 @@ func (a *App) semantic(ctx context.Context, request model.CommandRequest, method
 		env.Stats.Ms = time.Since(started).Milliseconds()
 		return env, err
 	}
+	if request.Context.BackendHint == "" {
+		if reason, ok := a.activeBackendCooldown(registration.Root, filepath.Join(registration.Root, filepath.FromSlash(target.Repo.Root)), backendType); ok {
+			warnings := append([]string{}, target.Warnings...)
+			warnings = append(warnings, reason)
+			env, fallbackErr := a.semanticFallback(ctx, registration, request, method, "catalog", warnings)
+			env.Stats.Ms = time.Since(started).Milliseconds()
+			return env, fallbackErr
+		}
+	}
 
 	payload := clonePayload(request.Payload)
 	if target.Entrypoint.Path != "" {
@@ -64,6 +73,9 @@ func (a *App) semantic(ctx context.Context, request model.CommandRequest, method
 		if backendType == "tsserver" && request.Context.BackendHint == "" {
 			warnings := append([]string{}, target.Warnings...)
 			warnings = append(warnings, semanticBackendWarning("tsserver", err))
+			if shouldCooldownSemanticBackend("tsserver", err) {
+				a.markBackendCooldown(registration.Root, workerRequest.RepoRoot, "tsserver", "tsserver unavailable recently; using catalog fallback for this repo until cooldown expires", 5*time.Minute)
+			}
 			env, fallbackErr := a.semanticFallback(ctx, registration, request, method, "catalog", warnings)
 			env.Stats.Ms = time.Since(started).Milliseconds()
 			return env, fallbackErr
@@ -71,12 +83,16 @@ func (a *App) semantic(ctx context.Context, request model.CommandRequest, method
 		if backendType == "pyright" && request.Context.BackendHint == "" {
 			warnings := append([]string{}, target.Warnings...)
 			warnings = append(warnings, semanticBackendWarning("pyright", err))
+			if shouldCooldownSemanticBackend("pyright", err) {
+				a.markBackendCooldown(registration.Root, workerRequest.RepoRoot, "pyright", "pyright unavailable recently; using catalog fallback for this repo until cooldown expires", 5*time.Minute)
+			}
 			env, fallbackErr := a.semanticFallback(ctx, registration, request, method, "catalog", warnings)
 			env.Stats.Ms = time.Since(started).Milliseconds()
 			return env, fallbackErr
 		}
 		return model.Envelope{}, semanticBackendError(backendType, err)
 	}
+	a.clearBackendCooldown(registration.Root, workerRequest.RepoRoot, backendType)
 	response.Stats.Ms = time.Since(started).Milliseconds()
 	if target.Repo.Name != "" {
 		for _, item := range response.Items {
@@ -125,11 +141,17 @@ func (a *App) resolveSemanticTarget(ctx context.Context, registration model.Work
 		return semanticTarget{Repo: repo, Entrypoint: explicitEntrypoint(repo, explicitProject, model.EntrypointKindProject), Synthetic: true}, nil, nil
 	}
 	if repoSelector, _ := payload["repo"].(string); strings.TrimSpace(repoSelector) != "" {
-		repo, ok := workspace.FindRepo(project, repoSelector)
-		if !ok {
-			return semanticTarget{}, ambiguityEnvelope(registration, fmt.Sprintf("unknown repo selector %q", repoSelector), repoCandidates(project.Repos), "--repo <name>"), nil
+		resolution := resolveRepoSelector(project, repoSelector)
+		if resolution.Envelope != nil {
+			envelope := *resolution.Envelope
+			envelope.Workspace = registration.Name
+			return semanticTarget{}, &envelope, nil
 		}
-		return targetForRepo(project, repo, backendType, method)
+		repo := resolution.Repo
+		warnings := append([]string{}, resolution.Warnings...)
+		target, envelope, err := targetForRepo(project, repo, backendType, method)
+		target.Warnings = append(target.Warnings, warnings...)
+		return target, envelope, err
 	}
 	if file, _ := payload["file"].(string); strings.TrimSpace(file) != "" {
 		repo, ok := workspace.FindRepoByFile(project, registration.Root, file)

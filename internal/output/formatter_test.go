@@ -60,12 +60,12 @@ func TestRenderCompact_SignatureTruncation(t *testing.T) {
 		Ok:      true,
 		Backend: "roslyn",
 		Items: []model.SymbolRecord{{
-			Name:      "DoSomething",
-			Kind:      "method",
-			FilePath:  "src/Program.cs",
-			StartLine: 42,
-			Signature: longSig,
-			Scope:     "public",
+			Name:       "DoSomething",
+			Kind:       "method",
+			FilePath:   "src/Program.cs",
+			StartLine:  42,
+			Signature:  longSig,
+			Scope:      "public",
 			Implements: "",
 		}},
 	}
@@ -160,8 +160,8 @@ func TestRenderStructuredFormats_PreserveSymbolWorkspace(t *testing.T) {
 	}
 
 	tests := []struct {
-		format    string
-		contains  []string
+		format   string
+		contains []string
 	}{
 		{format: "compact", contains: []string{`"workspace":"gastos"`}},
 		{format: "toon", contains: []string{"workspace", "gastos"}},
@@ -181,5 +181,74 @@ func TestRenderStructuredFormats_PreserveSymbolWorkspace(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestRenderFormats_IncludeCoachBlock(t *testing.T) {
+	env := model.Envelope{
+		Ok:        true,
+		Backend:   "ask",
+		Workspace: "mi-lsp",
+		Items: []model.AskResult{{
+			Summary:    "Fallback answer",
+			PrimaryDoc: model.AskDocEvidence{Path: ".docs/wiki/07_baseline_tecnica.md"},
+		}},
+		Coach: &model.Coach{
+			Trigger:    "text_fallback",
+			Message:    "This answer relied on textual fallback.",
+			Confidence: "low",
+			Actions: []model.CoachAction{{
+				Kind:    "refine",
+				Label:   "Inspect supporting code",
+				Command: `mi-lsp nav search "Program" --workspace mi-lsp --include-content`,
+			}},
+		},
+		Continuation: &model.Continuation{
+			Reason: "low_evidence",
+			Next: model.ContinuationTarget{
+				Op:    "nav.search",
+				Query: "Program",
+				DocID: "RF-QRY-010",
+			},
+		},
+		MemoryPointer: &model.MemoryPointer{
+			DocID:     "RF-QRY-010",
+			Why:       "RF-QRY-010 changed recently.",
+			ReentryOp: "nav.search",
+			Handoff:   "plans/2026-04-16-reentry-wave",
+			Stale:     true,
+		},
+	}
+
+	compactRendered, err := Render(env, "compact", false)
+	if err != nil {
+		t.Fatalf("render compact: %v", err)
+	}
+	if !strings.Contains(string(compactRendered), `"coach":{"trigger":"text_fallback"`) {
+		t.Fatalf("expected compact render to include coach block, got %s", string(compactRendered))
+	}
+	if !strings.Contains(string(compactRendered), `"continuation":{"reason":"low_evidence"`) {
+		t.Fatalf("expected compact render to include continuation block, got %s", string(compactRendered))
+	}
+	if !strings.Contains(string(compactRendered), `"memory_pointer":{"doc_id":"RF-QRY-010"`) {
+		t.Fatalf("expected compact render to include memory pointer, got %s", string(compactRendered))
+	}
+
+	textRendered, err := Render(env, "text", false)
+	if err != nil {
+		t.Fatalf("render text: %v", err)
+	}
+	text := string(textRendered)
+	if !strings.Contains(text, "coach: trigger=text_fallback confidence=low") {
+		t.Fatalf("expected text render to include coach header, got %s", text)
+	}
+	if !strings.Contains(text, "action refine Inspect supporting code") {
+		t.Fatalf("expected text render to include coach action, got %s", text)
+	}
+	if !strings.Contains(text, "continuation: reason=low_evidence") {
+		t.Fatalf("expected text render to include continuation, got %s", text)
+	}
+	if !strings.Contains(text, "memory_pointer: doc_id=RF-QRY-010 reentry_op=nav.search stale=true") {
+		t.Fatalf("expected text render to include memory pointer, got %s", text)
 	}
 }

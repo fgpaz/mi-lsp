@@ -74,6 +74,7 @@ func (a *App) workspaceMap(ctx context.Context, request model.CommandRequest) (m
 	if err != nil {
 		return model.Envelope{}, err
 	}
+	memory, _ := loadReentryMemory(ctx, registration.Root)
 
 	warnings := []string{}
 
@@ -103,12 +104,16 @@ func (a *App) workspaceMap(ctx context.Context, request model.CommandRequest) (m
 	}
 	defer db.Close()
 
-	// Discover services by scanning for entrypoints
-	services, frontendApps, serviceEvents, svcWarnings := discoverServices(ctx, db, registration, project)
+	deepScan := request.Context.Full
+	// Summary-first by default: deeper endpoint/event scans only in full mode.
+	services, frontendApps, serviceEvents, svcWarnings := discoverServices(ctx, db, registration, project, deepScan)
 	warnings = append(warnings, svcWarnings...)
 
 	// Detect inter-service dependencies
-	deps := detectDependencies(services, serviceEvents)
+	deps := []serviceDependency{}
+	if deepScan {
+		deps = detectDependencies(services, serviceEvents)
+	}
 
 	// Build stats
 	stats := workspaceMapStats{
@@ -150,10 +155,15 @@ func (a *App) workspaceMap(ctx context.Context, request model.CommandRequest) (m
 		Warnings:  warnings,
 		Stats:     model.Stats{Symbols: stats.TotalSymbols, Files: stats.ServiceCount, Ms: time.Since(started).Milliseconds()},
 	}
-	if previewExpanded {
-		return applyAXIPreviewHints(env, request.Context, axiPreviewSummaryHint), nil
+	env = attachMemoryPointer(env, memory)
+	env.Continuation = buildWorkspaceMapContinuation(request.Context, memory)
+	if !deepScan && !isAXIMode(request.Context) && strings.TrimSpace(env.Hint) == "" {
+		env.Hint = "summary-first workspace map; rerun with --axi --full for endpoint, event, and dependency scans"
 	}
-	return env, nil
+	if previewExpanded {
+		return applyCoachPolicy(applyAXIPreviewHints(env, request.Context, axiPreviewSummaryHint), request.Context), nil
+	}
+	return applyCoachPolicy(env, request.Context), nil
 }
 
 type serviceEventData struct {
@@ -162,7 +172,7 @@ type serviceEventData struct {
 	Publishers  []map[string]any // Publish*/IPublishEndpoint hits
 }
 
-func discoverServices(ctx context.Context, db *sql.DB, registration model.WorkspaceRegistration, project model.ProjectFile) ([]serviceMapEntry, []frontendAppEntry, []serviceEventData, []string) {
+func discoverServices(ctx context.Context, db *sql.DB, registration model.WorkspaceRegistration, project model.ProjectFile, deepScan bool) ([]serviceMapEntry, []frontendAppEntry, []serviceEventData, []string) {
 	warnings := []string{}
 	services := make([]serviceMapEntry, 0)
 	frontendApps := make([]frontendAppEntry, 0)
@@ -207,26 +217,27 @@ func discoverServices(ctx context.Context, db *sql.DB, registration model.Worksp
 			}
 		}
 
-		// Detect HTTP endpoints via text search
-		absolutePath := registration.Root
-		if epDir != "" {
-			absolutePath = filepath.Join(registration.Root, filepath.FromSlash(epDir))
-		}
-		httpHits, _ := searchPatternScoped(ctx, registration.Root, absolutePath, project, `Map(Get|Post|Put|Delete|Patch)\s*\(`, true, 100)
-		if len(httpHits) > endpointCount {
-			endpointCount = len(httpHits)
-		}
+		consumerHits := []map[string]any{}
+		publisherHits := []map[string]any{}
+		if deepScan {
+			absolutePath := registration.Root
+			if epDir != "" {
+				absolutePath = filepath.Join(registration.Root, filepath.FromSlash(epDir))
+			}
+			httpHits, _ := searchPatternScoped(ctx, registration.Root, absolutePath, project, `Map(Get|Post|Put|Delete|Patch)\s*\(`, true, 50)
+			if len(httpHits) > endpointCount {
+				endpointCount = len(httpHits)
+			}
 
-		// Detect event consumers
-		consumerHits, _ := searchPatternScoped(ctx, registration.Root, absolutePath, project, `IConsumer<`, true, 100)
-		if len(consumerHits) > consumerCount {
-			consumerCount = len(consumerHits)
-		}
+			consumerHits, _ = searchPatternScoped(ctx, registration.Root, absolutePath, project, `IConsumer<`, true, 50)
+			if len(consumerHits) > consumerCount {
+				consumerCount = len(consumerHits)
+			}
 
-		// Detect event publishers
-		publisherHits, _ := searchPatternScoped(ctx, registration.Root, absolutePath, project, `Publish(?:Async)?<|IPublishEndpoint`, true, 100)
-		if len(publisherHits) > publisherCount {
-			publisherCount = len(publisherHits)
+			publisherHits, _ = searchPatternScoped(ctx, registration.Root, absolutePath, project, `Publish(?:Async)?<|IPublishEndpoint`, true, 50)
+			if len(publisherHits) > publisherCount {
+				publisherCount = len(publisherHits)
+			}
 		}
 
 		name := filepath.Base(epDir)

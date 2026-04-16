@@ -32,17 +32,15 @@ type Window struct {
 }
 
 func NormalizeAccessEvent(event model.AccessEvent) model.AccessEvent {
-	identity := ResolveWorkspaceIdentity(firstNonEmpty(event.WorkspaceInput, event.Workspace))
-	if strings.TrimSpace(event.WorkspaceInput) == "" {
-		event.WorkspaceInput = identity.Input
-	}
+	resolvedIdentity := ResolveWorkspaceIdentity(strings.TrimSpace(event.Workspace))
+	inputIdentity := ResolveWorkspaceIdentity(strings.TrimSpace(event.WorkspaceInput))
 	if strings.TrimSpace(event.WorkspaceRoot) == "" {
-		event.WorkspaceRoot = firstNonEmpty(identity.Root, event.Workspace, event.WorkspaceInput)
+		event.WorkspaceRoot = firstNonEmpty(resolvedIdentity.Root, inputIdentity.Root, event.Workspace, event.WorkspaceInput)
 	}
 	if strings.TrimSpace(event.WorkspaceAlias) == "" {
-		event.WorkspaceAlias = identity.Alias
+		event.WorkspaceAlias = firstNonEmpty(resolvedIdentity.Alias, inputIdentity.Alias)
 	}
-	event.Workspace = firstNonEmpty(event.WorkspaceAlias, identity.Display, event.Workspace, event.WorkspaceInput, event.WorkspaceRoot)
+	event.Workspace = firstNonEmpty(event.WorkspaceAlias, resolvedIdentity.Display, event.Workspace, inputIdentity.Display, event.WorkspaceRoot, "unscoped")
 	if strings.TrimSpace(event.WorkspaceRoot) == "" {
 		event.WorkspaceRoot = firstNonEmpty(event.Workspace, event.WorkspaceInput)
 	}

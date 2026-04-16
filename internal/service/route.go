@@ -5,9 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/fgpaz/mi-lsp/internal/docgraph"
 	"github.com/fgpaz/mi-lsp/internal/model"
-	"github.com/fgpaz/mi-lsp/internal/store"
 )
 
 // resolveCanonicalRoute is the shared routing core used by nav.route, nav.ask, and nav.pack.
@@ -18,85 +16,9 @@ import (
 //
 // Discovery is docs-only by default; code discovery only with includeDiscovery=true and Full mode.
 func (a *App) resolveCanonicalRoute(ctx context.Context, registration model.WorkspaceRegistration, task string, opts model.QueryOptions, includeDiscovery bool) (model.RouteResult, string, []string, error) {
-	profile, profileSource, profileWarnings := docgraph.LoadProfile(registration.Root)
-
-	// Tier 1: canonical resolution from governance/profile (works without full docs index)
-	canonical, tier1Why := docgraph.Tier1CanonicalRoute(task, profile, registration.Root)
-
-	result := model.RouteResult{
-		Task:      task,
-		Mode:      "preview",
-		Canonical: canonical,
-		Why:       append([]string{fmt.Sprintf("read_model=%s", profileSource)}, tier1Why...),
-	}
-	if opts.Full {
-		result.Mode = "full"
-	}
-
-	// Tier 2: enrichment from index (optional, index-backed)
-	db, err := store.Open(registration.Root)
-	if err != nil {
-		// Tier 1 is sufficient when the index is unavailable
-		return result, profileSource, profileWarnings, nil
-	}
-	defer db.Close()
-
-	docs, err := store.ListDocRecords(ctx, db)
-	if err != nil || len(docs) == 0 {
-		// Docs index empty; Tier 1 canonical is still valid
-		return result, profileSource, profileWarnings, nil
-	}
-
-	// Enrich canonical lane from index when available
-	family := docgraph.MatchFamily(task, profile)
-	_, ftsScores, _ := store.FTSSearchDocs(ctx, db, task, 20)
-	ranked := rankDocs(task, family, docs, ftsScores)
-
-	if len(ranked) > 0 {
-		primary := ranked[0]
-		result.Canonical.AnchorDoc = model.RouteDoc{
-			Path:   primary.record.Path,
-			Title:  primary.record.Title,
-			DocID:  primary.record.DocID,
-			Layer:  primary.record.Layer,
-			Family: primary.record.Family,
-			Why:    strings.Join(primary.reason, ","),
-			Stage:  "anchor",
-		}
-		result.Canonical.Family = family
-		result.Why = append(result.Why, "tier2=indexed_docs")
-
-		// Build mini preview pack from top ranked docs (max 2)
-		preview := make([]model.RouteDoc, 0, 2)
-		seen := map[string]struct{}{primary.record.Path: {}}
-		for _, candidate := range ranked[1:] {
-			if len(preview) >= 2 {
-				break
-			}
-			if _, exists := seen[candidate.record.Path]; exists {
-				continue
-			}
-			seen[candidate.record.Path] = struct{}{}
-			preview = append(preview, model.RouteDoc{
-				Path:   candidate.record.Path,
-				Title:  candidate.record.Title,
-				DocID:  candidate.record.DocID,
-				Layer:  candidate.record.Layer,
-				Family: candidate.record.Family,
-				Why:    strings.Join(candidate.reason, ","),
-				Stage:  "preview",
-			})
-		}
-		result.Canonical.PreviewPack = preview
-	}
-
-	// Optional: build docs-only discovery advisory
-	// Discovery is never authoritative and never overrides canonical (RF-QRY-014)
-	if includeDiscovery && len(ranked) > 0 {
-		result.Discovery = buildDiscoveryAdvisory(ranked, 3)
-	}
-
-	return result, profileSource, profileWarnings, nil
+	query := loadDocQueryContext(ctx, registration, task)
+	defer query.Close()
+	return query.canonicalRoute(opts, includeDiscovery), query.profileSource, append([]string{}, query.profileWarnings...), nil
 }
 
 // buildDiscoveryAdvisory builds a non-authoritative discovery summary.
@@ -170,6 +92,7 @@ func (a *App) route(ctx context.Context, request model.CommandRequest) (model.En
 	if err != nil {
 		return model.Envelope{}, err
 	}
+	memory, _ := loadReentryMemory(ctx, registration.Root)
 
 	task, _ := request.Payload["task"].(string)
 	task = strings.TrimSpace(task)
@@ -185,10 +108,10 @@ func (a *App) route(ctx context.Context, request model.CommandRequest) (model.En
 	includeCodeDiscovery, _ := request.Payload["include_code_discovery"].(bool)
 	includeDiscovery := includeCodeDiscovery || request.Context.Full
 
-	result, _, warnings, err := a.resolveCanonicalRoute(ctx, registration, task, request.Context, includeDiscovery)
-	if err != nil {
-		return model.Envelope{}, err
-	}
+	query := loadDocQueryContext(ctx, registration, task)
+	defer query.Close()
+	result := query.canonicalRoute(request.Context, includeDiscovery)
+	warnings := append([]string{}, query.profileWarnings...)
 
 	env := model.Envelope{
 		Ok:        true,
@@ -198,5 +121,7 @@ func (a *App) route(ctx context.Context, request model.CommandRequest) (model.En
 		Warnings:  warnings,
 		Stats:     model.Stats{Files: 1 + len(result.Canonical.PreviewPack)},
 	}
-	return applyAXIPreviewHints(env, request.Context, "preview mode: rerun with --full for expanded route and discovery"), nil
+	env = attachMemoryPointer(env, memory)
+	env.Continuation = buildRouteContinuation(task, result, request.Context, memory)
+	return applyCoachPolicy(applyAXIPreviewHints(env, request.Context, "preview mode: rerun with --full for expanded route and discovery"), request.Context), nil
 }

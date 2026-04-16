@@ -12,11 +12,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/fsnotify/fsnotify"
 	"github.com/fgpaz/mi-lsp/internal/indexer"
 	"github.com/fgpaz/mi-lsp/internal/model"
 	"github.com/fgpaz/mi-lsp/internal/store"
 	"github.com/fgpaz/mi-lsp/internal/workspace"
+	"github.com/fsnotify/fsnotify"
 )
 
 type FileWatcher struct {
@@ -182,27 +182,20 @@ func (fw *FileWatcher) reindexFile(absPath string) {
 		return
 	}
 
-	// Update DB
-	db, err := store.Open(fw.workspaceRoot)
-	if err != nil {
-		if fw.verbose {
-			log.Printf("[mi-lsp:watcher] db open error for %s: %v", relPath, err)
+	if err := store.WithWorkspaceWriteLock(fw.workspaceRoot, func() error {
+		db, err := store.Open(fw.workspaceRoot)
+		if err != nil {
+			return err
 		}
-		return
-	}
-	defer db.Close()
+		defer db.Close()
 
-	// Compute a simple content hash
-	content, err := os.ReadFile(absPath)
-	if err != nil {
-		if fw.verbose {
-			log.Printf("[mi-lsp:watcher] read error for %s: %v", relPath, err)
+		content, err := os.ReadFile(absPath)
+		if err != nil {
+			return err
 		}
-		return
-	}
-	contentHash := computeHash(content)
-
-	if err := store.ReplaceFileSymbols(context.Background(), db, relPath, repoID, repoName, language, contentHash, symbols); err != nil {
+		contentHash := computeHash(content)
+		return store.ReplaceFileSymbols(context.Background(), db, relPath, repoID, repoName, language, contentHash, symbols)
+	}); err != nil {
 		if fw.verbose {
 			log.Printf("[mi-lsp:watcher] db update error for %s: %v", relPath, err)
 		}
@@ -258,5 +251,3 @@ func computeHash(content []byte) string {
 	sum := sha1.Sum(content)
 	return hex.EncodeToString(sum[:])
 }
-
-

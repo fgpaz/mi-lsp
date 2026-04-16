@@ -4,8 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 
@@ -22,9 +24,10 @@ type SemanticCaller interface {
 }
 
 type App struct {
-	RepoRoot string
-	Semantic SemanticCaller
-	Config   Config
+	RepoRoot        string
+	Semantic        SemanticCaller
+	Config          Config
+	backendCooldown sync.Map
 }
 
 type semanticTarget struct {
@@ -46,71 +49,116 @@ func (a *App) ResolveWorkspace(nameOrPath string) (model.WorkspaceRegistration, 
 }
 
 func (a *App) Execute(ctx context.Context, request model.CommandRequest) (model.Envelope, error) {
+	normalizedRequest, resolutionWarnings, err := a.normalizeWorkspaceRequest(request)
+	if err != nil {
+		return model.Envelope{}, err
+	}
+	request = normalizedRequest
+
+	var envelope model.Envelope
 	switch request.Operation {
 	case "workspace.add":
-		return a.workspaceAdd(ctx, request)
+		envelope, err = a.workspaceAdd(ctx, request)
 	case "workspace.init":
-		return a.workspaceInit(ctx, request)
+		envelope, err = a.workspaceInit(ctx, request)
 	case "workspace.scan":
-		return a.workspaceScan()
+		envelope, err = a.workspaceScan()
 	case "workspace.list":
-		return a.workspaceList()
+		envelope, err = a.workspaceList()
 	case "workspace.status":
-		return a.workspaceStatus(ctx, request.Context.Workspace, request.Context)
+		envelope, err = a.workspaceStatus(ctx, request.Context.Workspace, request.Context)
 	case "workspace.remove":
-		return a.workspaceRemove(request)
+		envelope, err = a.workspaceRemove(request)
 	case "workspace.warm":
-		return model.Envelope{Ok: true, Backend: "daemon", Items: []string{}, Warnings: []string{"daemon is not running; warm is a no-op in direct mode"}}, nil
+		envelope = model.Envelope{Ok: true, Backend: "daemon", Items: []string{}, Warnings: []string{"daemon is not running; warm is a no-op in direct mode"}}
 	case "index.run":
-		return a.indexWorkspace(ctx, request)
+		envelope, err = a.indexWorkspace(ctx, request)
 	case "info":
-		return a.info(ctx, request.Context.Workspace)
+		envelope, err = a.info(ctx, request.Context.Workspace)
 	case "nav.symbols":
-		return a.symbols(ctx, request)
+		envelope, err = a.symbols(ctx, request)
 	case "nav.find":
-		return a.find(ctx, request)
+		envelope, err = a.find(ctx, request)
 	case "nav.overview":
-		return a.overview(ctx, request)
+		envelope, err = a.overview(ctx, request)
 	case "nav.outline":
-		return a.symbols(ctx, request)
+		envelope, err = a.symbols(ctx, request)
 	case "nav.search":
-		return a.search(ctx, request)
+		envelope, err = a.search(ctx, request)
 	case "nav.governance":
-		return a.governance(ctx, request)
+		envelope, err = a.governance(ctx, request)
 	case "nav.route":
-		return a.route(ctx, request)
+		envelope, err = a.route(ctx, request)
 	case "nav.ask":
-		return a.ask(ctx, request)
+		envelope, err = a.ask(ctx, request)
 	case "nav.pack":
-		return a.pack(ctx, request)
+		envelope, err = a.pack(ctx, request)
 	case "nav.service":
-		return a.serviceSummary(ctx, request)
+		envelope, err = a.serviceSummary(ctx, request)
 	case "nav.refs":
-		return a.semantic(ctx, request, "find_refs")
+		envelope, err = a.semantic(ctx, request, "find_refs")
 	case "nav.context":
-		return a.contextQuery(ctx, request)
+		envelope, err = a.contextQuery(ctx, request)
 	case "nav.deps":
-		return a.semantic(ctx, request, "get_deps")
+		envelope, err = a.semantic(ctx, request, "get_deps")
 	case "nav.multi-read":
-		return a.multiRead(ctx, request)
+		envelope, err = a.multiRead(ctx, request)
 	case "nav.batch":
-		return a.batch(ctx, request)
+		envelope, err = a.batch(ctx, request)
 	case "nav.related":
-		return a.related(ctx, request)
+		envelope, err = a.related(ctx, request)
 	case "nav.workspace-map":
-		return a.workspaceMap(ctx, request)
+		envelope, err = a.workspaceMap(ctx, request)
 	case "nav.diff-context":
-		return a.diffContext(ctx, request)
+		envelope, err = a.diffContext(ctx, request)
 	case "nav.trace":
-		return a.trace(ctx, request)
+		envelope, err = a.trace(ctx, request)
 	case "nav.intent":
-		return a.intent(ctx, request)
+		envelope, err = a.intent(ctx, request)
 	case "worker.install":
-		return a.installWorker(request)
+		envelope, err = a.installWorker(request)
 	case "worker.status":
-		return a.workerStatus()
+		envelope, err = a.workerStatus()
 	default:
-		return model.Envelope{}, fmt.Errorf("unknown operation %q; run mi-lsp --help for available commands", request.Operation)
+		err = fmt.Errorf("unknown operation %q; run mi-lsp --help for available commands", request.Operation)
+	}
+	if err != nil {
+		return model.Envelope{}, err
+	}
+	for _, warning := range resolutionWarnings {
+		envelope.Warnings = appendStringIfMissing(envelope.Warnings, warning)
+	}
+	return envelope, nil
+}
+
+func (a *App) normalizeWorkspaceRequest(request model.CommandRequest) (model.CommandRequest, []string, error) {
+	if !operationRequiresWorkspaceResolution(request) {
+		return request, nil, nil
+	}
+	if strings.TrimSpace(request.Context.Workspace) != "" {
+		return request, nil, nil
+	}
+	resolution, err := workspace.ResolveWorkspaceSelection(request.Context.Workspace, request.Context.CallerCWD)
+	if err != nil {
+		return request, nil, err
+	}
+	request.Context.Workspace = resolution.Registration.Name
+	return request, resolution.Warnings, nil
+}
+
+func operationRequiresWorkspaceResolution(request model.CommandRequest) bool {
+	switch request.Operation {
+	case "workspace.add", "workspace.init", "workspace.scan", "workspace.list", "workspace.remove", "workspace.warm", "worker.install", "worker.status":
+		return false
+	case "nav.find", "nav.search":
+		allWorkspaces, _ := request.Payload["all_workspaces"].(bool)
+		return !allWorkspaces
+	case "index.run":
+		return strings.TrimSpace(stringPayload(request.Payload, "path")) == ""
+	case "workspace.status", "info", "nav.symbols", "nav.overview", "nav.outline", "nav.governance", "nav.route", "nav.ask", "nav.pack", "nav.service", "nav.refs", "nav.context", "nav.deps", "nav.multi-read", "nav.batch", "nav.related", "nav.workspace-map", "nav.diff-context", "nav.trace", "nav.intent":
+		return true
+	default:
+		return false
 	}
 }
 
@@ -144,7 +192,20 @@ func (a *App) indexWorkspace(ctx context.Context, request model.CommandRequest) 
 	if !incremental {
 		result, err = indexer.IndexWorkspace(ctx, registration.Root, clean)
 		if err != nil {
-			return model.Envelope{}, err
+			if store.IsCorruptionError(err) {
+				backupPath, backupErr := store.QuarantineCorruptDB(registration.Root)
+				if backupErr != nil {
+					return model.Envelope{}, fmt.Errorf("%w; corrupt db quarantine failed: %v", err, backupErr)
+				}
+				result, err = indexer.IndexWorkspace(ctx, registration.Root, true)
+				if err != nil {
+					return model.Envelope{}, fmt.Errorf("%w; rebuild after quarantining %s also failed: %v", err, backupPath, err)
+				}
+				result.Warnings = appendStringIfMissing(result.Warnings, "corrupt index database was quarantined to "+backupPath)
+				result.Warnings = appendStringIfMissing(result.Warnings, "full rebuild completed after corruption recovery")
+			} else {
+				return model.Envelope{}, err
+			}
 		}
 	}
 
@@ -229,7 +290,7 @@ func (a *App) find(ctx context.Context, request model.CommandRequest) (model.Env
 	kind, _ := request.Payload["kind"].(string)
 	exact, _ := request.Payload["exact"].(bool)
 	offset := intFromAny(request.Payload["offset"], 0)
-	scopedRepo, scopeEnvelope := resolveCatalogRepoScope(registration, project, request.Payload)
+	scopedRepo, scopeWarnings, scopeEnvelope := resolveCatalogRepoScope(registration, project, request.Payload)
 	if scopeEnvelope != nil {
 		return *scopeEnvelope, nil
 	}
@@ -259,7 +320,7 @@ func (a *App) find(ctx context.Context, request model.CommandRequest) (model.Env
 	if request.Context.MaxItems > 0 && len(items) > request.Context.MaxItems {
 		items = items[:request.Context.MaxItems]
 	}
-	return model.Envelope{Ok: true, Workspace: registration.Name, Backend: "catalog", Items: items, Stats: model.Stats{Symbols: len(items)}}, nil
+	return model.Envelope{Ok: true, Workspace: registration.Name, Backend: "catalog", Items: items, Stats: model.Stats{Symbols: len(items)}, Warnings: scopeWarnings}, nil
 }
 
 func (a *App) overview(ctx context.Context, request model.CommandRequest) (model.Envelope, error) {
@@ -304,29 +365,46 @@ func (a *App) search(ctx context.Context, request model.CommandRequest) (model.E
 	if err != nil {
 		return model.Envelope{}, err
 	}
+	memory, _ := loadReentryMemory(ctx, registration.Root)
 	pattern, _ := request.Payload["pattern"].(string)
 	useRegex, _ := request.Payload["regex"].(bool)
+	includeContent, _ := request.Payload["include_content"].(bool)
 	if pattern == "" {
 		return model.Envelope{}, errors.New("pattern is required")
 	}
-	scopedRepo, scopeEnvelope := resolveCatalogRepoScope(registration, project, request.Payload)
+	scopedRepo, scopeWarnings, scopeEnvelope := resolveCatalogRepoScope(registration, project, request.Payload)
 	if scopeEnvelope != nil {
-		return *scopeEnvelope, nil
+		envelope := *scopeEnvelope
+		envelope.Coach = buildSearchScopeCoach(registration.Name, pattern, includeContent, useRegex, envelope)
+		envelope = attachMemoryPointer(envelope, memory)
+		envelope.Continuation = buildSearchContinuation(pattern, project, stringPayload(request.Payload, "repo"), nil, memory)
+		return applyCoachPolicy(envelope, request.Context), nil
 	}
 	searchRoot := registration.Root
 	if scopedRepo != nil {
 		searchRoot = filepath.Join(registration.Root, filepath.FromSlash(scopedRepo.Root))
 	}
 	items, err := searchPatternScoped(ctx, registration.Root, searchRoot, project, pattern, useRegex, request.Context.MaxItems)
-	if err != nil {
-		return model.Envelope{}, err
-	}
 	warnings := []string{}
+	regexAutoHealed := false
+	if err != nil {
+		if useRegex && isRegexParseError(err) {
+			items, err = searchPatternScoped(ctx, registration.Root, searchRoot, project, pattern, false, request.Context.MaxItems)
+			if err != nil {
+				return model.Envelope{}, err
+			}
+			warnings = append(warnings, "invalid regex detected; retried automatically as literal search")
+			useRegex = false
+			regexAutoHealed = true
+		} else {
+			return model.Envelope{}, err
+		}
+	}
 	if len(items) == 0 && !useRegex && looksRegexLikePattern(pattern) {
 		warnings = append(warnings, "no literal matches; pattern looks regex-like, rerun with --regex")
 	}
+	warnings = append(warnings, scopeWarnings...)
 
-	includeContent, _ := request.Payload["include_content"].(bool)
 	if includeContent && len(items) > 0 {
 		contextLines := intFromAny(request.Payload["context_lines"], 20)
 		contextMode, _ := request.Payload["context_mode"].(string)
@@ -352,10 +430,13 @@ func (a *App) search(ctx context.Context, request model.CommandRequest) (model.E
 	}
 
 	env := model.Envelope{Ok: true, Workspace: registration.Name, Backend: "text", Items: items, Warnings: warnings, Hint: hint, NextHint: nextHint, Stats: model.Stats{Files: len(items)}}
+	env.Coach = buildSearchCoach(registration.Name, project, pattern, includeContent, stringPayload(request.Payload, "repo"), useRegex, regexAutoHealed, items, request.Context)
+	env = attachMemoryPointer(env, memory)
+	env.Continuation = buildSearchContinuation(pattern, project, stringPayload(request.Payload, "repo"), items, memory)
 	if isAXIPreview(request.Context) && env.NextHint == nil {
 		env = applyAXIPreviewHints(env, request.Context, axiPreviewSummaryHint)
 	}
-	return env, nil
+	return applyCoachPolicy(env, request.Context), nil
 }
 
 func (a *App) installWorker(request model.CommandRequest) (model.Envelope, error) {
@@ -403,16 +484,18 @@ func (a *App) workerStatus() (model.Envelope, error) {
 	return model.Envelope{Ok: true, Backend: "worker", Items: items}, nil
 }
 
-func resolveCatalogRepoScope(registration model.WorkspaceRegistration, project model.ProjectFile, payload map[string]any) (*model.WorkspaceRepo, *model.Envelope) {
+func resolveCatalogRepoScope(registration model.WorkspaceRegistration, project model.ProjectFile, payload map[string]any) (*model.WorkspaceRepo, []string, *model.Envelope) {
 	repoSelector := strings.TrimSpace(stringPayload(payload, "repo"))
 	if repoSelector == "" {
-		return nil, nil
+		return nil, nil, nil
 	}
-	repo, ok := workspace.FindRepo(project, repoSelector)
-	if !ok {
-		return nil, ambiguityEnvelope(registration, fmt.Sprintf("unknown repo selector %q", repoSelector), repoCandidates(project.Repos), "--repo <name>")
+	resolution := resolveRepoSelector(project, repoSelector)
+	if resolution.Envelope != nil {
+		envelope := *resolution.Envelope
+		envelope.Workspace = registration.Name
+		return nil, nil, &envelope
 	}
-	return &repo, nil
+	return &resolution.Repo, append([]string{}, resolution.Warnings...), nil
 }
 
 func filterSymbolsByRepo(items []model.SymbolRecord, repo *model.WorkspaceRepo) []model.SymbolRecord {
@@ -431,6 +514,178 @@ func filterSymbolsByRepo(items []model.SymbolRecord, repo *model.WorkspaceRepo) 
 func stringPayload(payload map[string]any, key string) string {
 	value, _ := payload[key].(string)
 	return value
+}
+
+type repoSelectorResolution struct {
+	Repo     model.WorkspaceRepo
+	Warnings []string
+	Envelope *model.Envelope
+}
+
+func resolveRepoSelector(project model.ProjectFile, selector string) repoSelectorResolution {
+	if repo, ok := workspace.FindRepo(project, selector); ok {
+		return repoSelectorResolution{Repo: repo}
+	}
+	candidates := rankRepoCandidates(project, selector)
+	if len(candidates) == 1 && candidates[0].Score >= 100 {
+		return repoSelectorResolution{
+			Repo:     candidates[0].Repo,
+			Warnings: []string{fmt.Sprintf("repo selector %q resolved automatically to %q", selector, candidates[0].Repo.Name)},
+		}
+	}
+	if len(candidates) > 0 {
+		items := make([]map[string]any, 0, len(candidates))
+		labels := make([]string, 0, len(candidates))
+		for _, candidate := range candidates {
+			items = append(items, map[string]any{
+				"repo":               candidate.Repo.Name,
+				"repo_id":            candidate.Repo.ID,
+				"root":               candidate.Repo.Root,
+				"default_entrypoint": candidate.Repo.DefaultEntrypoint,
+				"match_reason":       candidate.Reason,
+			})
+			labels = append(labels, candidate.Repo.Name)
+		}
+		warning := fmt.Sprintf("unknown repo selector %q; closest matches: %s", selector, strings.Join(labels, ", "))
+		next := "rerun with --repo " + candidates[0].Repo.Name
+		return repoSelectorResolution{
+			Envelope: &model.Envelope{
+				Ok:       false,
+				Backend:  "router",
+				Items:    items,
+				Warnings: []string{warning},
+				NextHint: &next,
+			},
+		}
+	}
+	return repoSelectorResolution{
+		Envelope: ambiguityEnvelope(projectRegistrationHint(project), fmt.Sprintf("unknown repo selector %q", selector), repoCandidates(project.Repos), "--repo <name>"),
+	}
+}
+
+type repoCandidate struct {
+	Repo   model.WorkspaceRepo
+	Reason string
+	Score  int
+}
+
+func rankRepoCandidates(project model.ProjectFile, selector string) []repoCandidate {
+	needle := normalizeRepoSelector(selector)
+	if needle == "" {
+		return nil
+	}
+	candidates := make([]repoCandidate, 0, len(project.Repos))
+	for _, repo := range project.Repos {
+		score, reason := scoreRepoCandidate(repo, needle)
+		if score <= 0 {
+			continue
+		}
+		candidates = append(candidates, repoCandidate{Repo: repo, Reason: reason, Score: score})
+	}
+	sort.Slice(candidates, func(i, j int) bool {
+		if candidates[i].Score == candidates[j].Score {
+			return strings.ToLower(candidates[i].Repo.Name) < strings.ToLower(candidates[j].Repo.Name)
+		}
+		return candidates[i].Score > candidates[j].Score
+	})
+	if len(candidates) > 3 {
+		candidates = candidates[:3]
+	}
+	return candidates
+}
+
+func scoreRepoCandidate(repo model.WorkspaceRepo, needle string) (int, string) {
+	fields := []struct {
+		Value  string
+		Reason string
+		Base   int
+	}{
+		{Value: repo.Name, Reason: "name", Base: 130},
+		{Value: repo.ID, Reason: "id", Base: 120},
+		{Value: repo.Root, Reason: "root", Base: 100},
+		{Value: filepath.Base(filepath.Clean(repo.Root)), Reason: "root_basename", Base: 95},
+	}
+	bestScore := 0
+	bestReason := ""
+	for _, field := range fields {
+		value := normalizeRepoSelector(field.Value)
+		if value == "" {
+			continue
+		}
+		switch {
+		case value == needle:
+			return field.Base + 40, field.Reason + "_exact"
+		case strings.HasPrefix(value, needle):
+			score := field.Base + 20 - (len(value) - len(needle))
+			if score > bestScore {
+				bestScore = score
+				bestReason = field.Reason + "_prefix"
+			}
+		case strings.Contains(value, needle) && len(needle) >= 3:
+			score := field.Base + 5
+			if score > bestScore {
+				bestScore = score
+				bestReason = field.Reason + "_contains"
+			}
+		default:
+			distance := levenshteinDistance(needle, value)
+			if distance <= 2 {
+				score := field.Base - (distance * 10)
+				if score > bestScore {
+					bestScore = score
+					bestReason = field.Reason + "_fuzzy"
+				}
+			}
+		}
+	}
+	return bestScore, bestReason
+}
+
+func normalizeRepoSelector(value string) string {
+	trimmed := strings.ToLower(strings.TrimSpace(value))
+	replacer := strings.NewReplacer("\\", "", "/", "", "-", "", "_", "", ".", "", " ", "")
+	return replacer.Replace(trimmed)
+}
+
+func levenshteinDistance(left string, right string) int {
+	if left == right {
+		return 0
+	}
+	if left == "" {
+		return len(right)
+	}
+	if right == "" {
+		return len(left)
+	}
+	prev := make([]int, len(right)+1)
+	for j := 0; j <= len(right); j++ {
+		prev[j] = j
+	}
+	for i := 1; i <= len(left); i++ {
+		current := make([]int, len(right)+1)
+		current[0] = i
+		for j := 1; j <= len(right); j++ {
+			cost := 0
+			if left[i-1] != right[j-1] {
+				cost = 1
+			}
+			current[j] = minInt3(
+				current[j-1]+1,
+				prev[j]+1,
+				prev[j-1]+cost,
+			)
+		}
+		prev = current
+	}
+	return prev[len(right)]
+}
+
+func minInt3(a int, b int, c int) int {
+	return int(math.Min(float64(a), math.Min(float64(b), float64(c))))
+}
+
+func projectRegistrationHint(project model.ProjectFile) model.WorkspaceRegistration {
+	return model.WorkspaceRegistration{Name: project.Project.Name}
 }
 
 func clonePayload(payload map[string]any) map[string]any {

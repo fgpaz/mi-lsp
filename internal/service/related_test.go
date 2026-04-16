@@ -48,11 +48,11 @@ func TestParseDepth_SingleValue(t *testing.T) {
 
 func TestParseDepth_MultipleValues(t *testing.T) {
 	tests := []struct {
-		input       string
-		expectDef   bool
+		input         string
+		expectDef     bool
 		expectCallers bool
-		expectImpls bool
-		expectTests bool
+		expectImpls   bool
+		expectTests   bool
 	}{
 		{"definition,callers", true, true, false, false},
 		{"callers,tests", false, true, false, true},
@@ -284,7 +284,7 @@ func TestSymbolToContent_WithLines(t *testing.T) {
 		EndLine:   5,
 	}
 
-	got := symbolToContent(root, sym)
+	got := symbolToContent(root, sym, true)
 
 	if got.Name != "Hello" {
 		t.Errorf("symbolToContent Name = %q, want Hello", got.Name)
@@ -320,7 +320,7 @@ func TestSymbolToContent_WithoutLines(t *testing.T) {
 		EndLine:   0,
 	}
 
-	got := symbolToContent(root, sym)
+	got := symbolToContent(root, sym, true)
 
 	if got.Name != "Hello" {
 		t.Errorf("symbolToContent Name = %q, want Hello", got.Name)
@@ -347,7 +347,7 @@ func TestSymbolToContent_FileNotFound(t *testing.T) {
 		EndLine:   5,
 	}
 
-	got := symbolToContent(root, sym)
+	got := symbolToContent(root, sym, true)
 
 	if got.Name != "Hello" {
 		t.Errorf("symbolToContent Name = %q, want Hello", got.Name)

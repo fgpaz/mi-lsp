@@ -29,7 +29,7 @@ Tier 2 enriquece la canonical lane con el indice de docs indexado.
 
 **Fuentes de Tier 2**:
 1. FTS5 BM25 sobre `doc_records`
-2. `rankDocs(question, family, docs, ftsScores)`
+2. `rankDocs(question, family, docs, ftsScores, profile, recentChanges)` owner-aware
 3. `doc_edges` para traversal de evidencia
 
 **Flujo**:
@@ -93,6 +93,7 @@ type RouteResult struct {
 `nav ask` llama al route core para obtener `anchor_doc`, luego agrega `CodeEvidence` sobre el resultado.
 `nav pack` llama al route core para obtener el `primary_doc`, luego construye el reading pack completo.
 `nav route` llama al route core directamente y devuelve el `RouteResult` al usuario.
+`nav.intent` reutiliza la misma logica documental cuando clasifica la query como `mode=docs`.
 
 ## Superficies AXI
 
@@ -112,6 +113,7 @@ type RouteResult struct {
 ## Notas de implementacion
 
 - El router esta implementado y en produccion desde Wave 2.
+- El scorer owner-aware queda `default-on`; `MI_LSP_DOC_RANKING=legacy` existe solo como override temporal de diagnostico.
 - `Tier1CanonicalRoute` en `internal/docgraph/route.go` omite entradas de tipo glob pattern en el read-model; solo verifica paths concretos contra el filesystem antes de anclar.
 - `shouldUseDaemon` en el router de dispatch excluye `nav.route` — es liviano y no requiere daemon caliente.
 - El fallback a `README.md` esta bloqueado cuando governance y wiki existen; solo aplica en repos sin `.docs/wiki`.
