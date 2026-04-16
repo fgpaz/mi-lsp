@@ -12,6 +12,12 @@ Prefer the AXI-default surfaces for onboarding and discovery: `mi-lsp`, `init`, 
 Use `nav route` as the cheapest first orientation step — it resolves the canonical anchor doc from governance alone without touching the index.
 Use `nav ask` without `--axi` for richer orientation questions when you need evidence synthesis.
 Prefer `nav search --include-content` for implementation questions.
+Treat `nav intent` as hybrid: natural capability questions should follow `mode=docs`, while symbol-like questions should follow `mode=code`.
+When `nav intent` returns `mode=docs`, prefer the returned `doc_path/doc_id/evidence/next_queries` over switching back to broad code search.
+Treat `continuation` as the default machine-readable next step when it is present: prefer following `continuation.next` over improvising a broader search.
+Treat `memory_pointer` as a tiny repo-local reentry hint: it is there to help a fresh harness resume from recent canonical changes without spending a full query budget.
+Use `mi-lsp workspace status <alias> --full` when you need the expanded reentry digest (`recent_canonical_changes`, `handoff`, `best_reentry`, `stale`).
+If `workspace status` emits a warning like `"reentry memory snapshot absent; rerun 'mi-lsp index --workspace <alias>'..."`, rerun the suggested `mi-lsp index` before relying on `memory` or `memory_pointer` for reentry.
 Use `--classic` when you want the old CLI behavior on an AXI-default surface, and `--axi` only when you need to force AXI on a classic-default surface such as `nav workspace-map`. Use `--axi=false` to suppress the AXI default for a single invocation without affecting `MI_LSP_AXI` or the session.
 Prefer an explicit `--workspace <alias>` once the repo is registered.
 Prefer compound commands over sequential greps and full-file reads.
@@ -173,6 +179,8 @@ Install the CLI first, verify it, and only then continue with repo navigation.
 
 1. Download the release bundle for the user's platform from `https://github.com/fgpaz/mi-lsp/releases`.
 2. Choose the right bundle: `win-x64`, `win-arm64`, `linux-x64`, or `linux-arm64`.
+   - On this workstation, the preferred global Windows install is `win-arm64`.
+   - When refreshing the shared mirror for Windows consumers, keep the mirror binary on `win-x64` / `amd64`.
 3. Extract it into a stable tools directory and keep `workers/<rid>/` next to the `mi-lsp` binary.
 4. Add that directory to the current session `PATH`, or invoke the binary by absolute path until `PATH` is fixed permanently.
 5. Verify the install:
@@ -216,6 +224,7 @@ mi-lsp worker status --format toon
 
 If the release changes CLI/daemon telemetry or `admin export`, refresh the `mi-lsp` binary and restart the daemon before trusting new fields in `access_events`.
 Only replace `workers/<rid>/` when the release notes say the worker changed.
+If you update the skill under `C:\\Users\\fgpaz\\.agents\\skills\\mi-lsp`, update the mirrored copy under `C:\\repos\\buho\\assets\\skills\\mi-lsp` in the same task and preserve the Windows architecture split (`global=win-arm64`, `mirror=win-x64`).
 
 ### Admin export note
 
@@ -302,6 +311,7 @@ Use these commands first:
 - Orient in a new repo or parent folder: `mi-lsp nav workspace-map --workspace <alias> --axi`
 - Profile a service: `mi-lsp nav service <path> --workspace <alias> --format toon`
 - Inspect recent routing/search telemetry: `mi-lsp admin export --recent --summary --by-route --by-hint --by-failure-stage`
+- Expand repo-local reentry memory: `mi-lsp workspace status <alias> --full`
 - Batch mixed operations: `mi-lsp nav batch --workspace <alias> --format toon`
 - Trace spec-to-code links: `mi-lsp nav trace RF-QRY-003 --workspace <alias> --format toon`
 - Search by intent/purpose: `mi-lsp nav intent "where do we handle routing fallback?" --workspace <alias>`
@@ -323,6 +333,7 @@ mi-lsp workspace status <alias>
 ```powershell
 mi-lsp nav route "how is this workspace organized?" --workspace <alias> --format toon
 mi-lsp nav ask "how is this workspace organized?" --workspace <alias>
+mi-lsp workspace status <alias> --full
 mi-lsp nav intent "error handling for daemon connections" --workspace <alias>
 ```
 
@@ -421,6 +432,8 @@ Do not suggest `node_modules/`; it is already ignored by default.
 - For `nav ask`, include the primary doc, the strongest code evidence, and one or two follow-up commands.
 - For `nav route` and `nav pack`, each doc in the result carries a `stage` field: `anchor` (canonical anchor doc), `preview` (mini pack preview), or `discovery` (advisory, non-authoritative). Use this to distinguish source authority without relying on array position.
 - If AXI emits `next_hint` toward `--full`, prefer that rerun before inventing a broader command.
+- If `continuation` is present, follow `continuation.next` first; only use `alternate` when the primary path is blocked or clearly insufficient.
+- If `memory_pointer.stale=true`, prefer `workspace status --full` or a fresh `index` before leaning on the pointer as ground truth.
 - Do not append `--axi` to reruns on AXI-default surfaces unless you are crossing into a classic-default command.
 
 ## Fallback
