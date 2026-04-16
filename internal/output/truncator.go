@@ -9,10 +9,13 @@ import (
 )
 
 func ApplyEnvelopeLimits(env model.Envelope, opts model.QueryOptions) model.Envelope {
+	paginated := false
+
 	itemsValue := reflect.ValueOf(env.Items)
 	if itemsValue.IsValid() && itemsValue.Kind() == reflect.Slice && opts.MaxItems > 0 && itemsValue.Len() > opts.MaxItems {
 		env.Items = sliceToLimit(itemsValue, opts.MaxItems)
 		env.Truncated = true
+		paginated = true
 		if env.NextHint == nil {
 			env.NextHint = paginationHint(opts)
 		}
@@ -29,18 +32,15 @@ func ApplyEnvelopeLimits(env model.Envelope, opts model.QueryOptions) model.Enve
 	for {
 		payload, _ := json.Marshal(env)
 		if len(payload) <= maxChars {
-			if env.Truncated && env.NextHint == nil {
-				env.NextHint = paginationHint(opts)
-			}
 			return env
 		}
 		itemsValue = reflect.ValueOf(env.Items)
-		if !itemsValue.IsValid() || itemsValue.Kind() != reflect.Slice || itemsValue.Len() == 0 {
-			if env.NextHint == nil {
-				hint := fmt.Sprintf("response exceeded %d chars; narrow the query or raise the limits", maxChars)
+		if !itemsValue.IsValid() || itemsValue.Kind() != reflect.Slice || itemsValue.Len() <= 1 {
+			env.Truncated = true
+			if !paginated && env.NextHint == nil {
+				hint := fmt.Sprintf("response exceeded %d chars; raise --token-budget or --max-chars, or use --format compact", maxChars)
 				env.NextHint = &hint
 			}
-			env.Truncated = true
 			return env
 		}
 		env.Items = sliceToLimit(itemsValue, itemsValue.Len()-1)
