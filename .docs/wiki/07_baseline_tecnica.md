@@ -78,7 +78,12 @@ flowchart LR
 - `nav.ask` tambien usa el camino directo por default; el daemon no es el hot path obligatorio para respuestas docs-first.
 - Todo subprocesso no interactivo debe usar la politica comun de proceso; en Windows eso implica `HideWindow + CREATE_NO_WINDOW`, y los procesos background del daemon agregan `DETACHED_PROCESS`.
 - El `tool_root` del worker se resuelve contra el ejecutable/distribucion activa o, en desarrollo, contra el repo `mi-lsp`; nunca contra el `cwd` arbitrario del workspace consultado.
+- `index.run` debe estar protegido por un lock interproceso repo-local (`.mi-lsp/index.lock`) durante toda la indexacion, no solo durante el commit SQLite.
 - La unidad de warm state es un runtime por `(workspace_root, backend_type)`.
+- La unidad de file watching es `workspace_root` canonico; aliases duplicados no crean watchers adicionales.
+- `watch_mode=lazy` es el default para proteger memoria/handles; `off` deshabilita watchers y `eager` es opt-in via CLI/env.
+- El daemon expone `daemon_process` y `watchers` en status/admin para presupuestos operativos (`working_set`, `private_bytes`, handles, threads, roots/dirs/eventos).
+- Requests pesadas daemon-aware se limitan con `MI_LSP_DAEMON_MAX_INFLIGHT` y devuelven `daemon/backpressure_busy` cuando se supera el limite.
 - La resolucion efectiva de workspace para queries usa la precedencia `--workspace explicito > workspace registrado cuyo root contiene caller_cwd > last_workspace`.
 - Si varios aliases registrados comparten root, la seleccion automatica usa `project.name`, luego basename del root, luego `last_workspace` solo si apunta a ese mismo root, y deja warning visible.
 - El estado semantico persistente del workspace vive repo-local; el estado global solo guarda registro, estado del daemon y telemetria local.
@@ -93,6 +98,7 @@ flowchart LR
 - El envelope de query puede agregar un bloque opcional `continuation`, tiny y machine-readable, para sugerir el mejor siguiente paso del harness sin requerir parsing de comandos raw.
 - El envelope de query puede agregar un bloque opcional `memory_pointer`, wiki-anchored, para reentrar rapido sobre cambios canonicos recientes y handoff relevante del workspace.
 - La memoria de reentrada repo-local se construye durante `mi-lsp index`, se persiste en `workspace_meta` y no se recompone completa en cada query del hot path.
+- `mi-lsp index --docs-only` reconstruye `doc_records`, `doc_edges`, `doc_mentions` y `memory_pointer` sin reemplazar `files` ni `symbols`; se usa para recuperar corpus documental vacio sin pagar el costo de reindexar codigo.
 - `nav ask`, `nav pack` y `nav route` deben compartir `profile + docs + ranking + route core` dentro de la misma request; no se acepta recomputacion duplicada del mismo corpus en el hot path.
 - `nav ask`, `nav pack` y `nav route` deben consultar el gate de gobernanza antes de seguir.
 - `nav pack` es docs-first y pack-first: clasifica la tarea, elige un anchor y arma un reading pack ordenado de lo mas global a lo mas especifico, empezando por `00` cuando la gobernanza es valida.
@@ -128,7 +134,7 @@ El struct `internal/service/config.go` centraliza todos los valores hardcodeados
 - Incluye rutas de workers, timeouts, limites de memoria, ignoreslists por defecto
 - Permite override via flags CLI y variables de entorno
 - El `read-model` por defecto se embebe en `docgraph.DefaultProfile()` y puede ser sobreescrito por el proyecto
-- La capa de ignores del indexer normaliza paths con `/`, honra el orden de `.gitignore`/`.milspignore` y soporta re-includes negados para no expulsar la wiki canonica por accidente
+- La capa de ignores del indexer normaliza paths con `/`, honra el orden de `.gitignore`/`.milspignore`, excluye caches/dependencias generadas (`node_modules`, `.next`, `.turbo`, `.venv`, `venv`, `__pycache__`, `.pytest_cache`) y soporta re-includes negados para no expulsar la wiki canonica por accidente
 - Separacion clara entre valores de compilacion vs runtime
 
 ## Telemetria universal
@@ -139,6 +145,7 @@ El struct `internal/service/config.go` centraliza todos los valores hardcodeados
 - WAL mode habilitado para manejar escrituras concurrentes daemon + CLI.
 - `index.db` repo-local tambien debe usar `WAL + busy_timeout`, y las escrituras de indexacion/watcher se serializan por workspace para evitar `SQLITE_BUSY`.
 - Cuando `index.db` esta corrupta, `index.run` debe cuarentenarla, reconstruir y dejar warning visible con la ruta respaldada.
+- `index.run` debe chequear `context.Context` durante walk, lectura de candidatos y parseo documental para que un timeout operativo corte el trabajo en curso.
 - Si el incremental detecta `doc_records` sin docs canonicos aunque la wiki existe en disco, `index.run` debe degradar a full rebuild en vez de devolver `no changes detected`.
 - Auto-purge de eventos > 30 dias (configurable via `MI_LSP_RETENTION_DAYS`) en startup de CLI y daemon.
 - `access_events` separa identidad analitica y diagnostica: `workspace_root` es la clave canonica de agrupacion; `workspace_alias` y `workspace_input` preservan display y forensics.
@@ -165,7 +172,7 @@ El struct `internal/service/config.go` centraliza todos los valores hardcodeados
 - Queries semanticas y compuestas seleccionadas inician automaticamente el daemon si no esta corriendo (desactivar con `--no-auto-daemon`).
 - `nav.find`, `nav.search`, `nav.intent`, `nav.symbols`, `nav.outline`, `nav.overview` y `nav.multi-read` no deben auto-iniciar ni enrutar por daemon en builds actuales; en workspaces `container`, `find/search/intent` pueden acotar con `--repo`.
 - `workspace list` debe salir desde registry + `project.toml` normalizado, sin redescubrir child repos en el hot path.
-- `nav.workspace-map` debe arrancar con summary-first y reservar scans de endpoints/eventos/dependencias para `--full`.
+- `nav.workspace-map` debe arrancar con summary-first directo, no auto-iniciar daemon, y reservar scans de endpoints/eventos/dependencias para `--full`.
 - En AXI efectivo, `init`, `workspace status`, `nav search`, `nav intent` y `nav pack` arrancan en preview-first por default; `nav ask` lo hace solo cuando la heuristica detecta orientacion, y `nav workspace-map` solo cuando se fuerza AXI.
 - `init` registra, persiste proyecto e indexa por defecto sin requerir `workspace add` previo.
 - `worker install` es explicito; no hay descargas silenciosas durante consultas.
@@ -175,7 +182,7 @@ El struct `internal/service/config.go` centraliza todos los valores hardcodeados
 - Si `worker status` se sirve a traves del daemon, la respuesta visible debe seguir siendo el mismo envelope canonico de `backend=worker`; el estado vivo del daemon solo entra via `active_workers`.
 - Si el candidato Roslyn elegido falla por bootstrap/arranque, el caller reintenta una sola vez con el siguiente candidato determinista antes de devolver error accionable.
 - Los cambios en `.docs/wiki`, `README*`, `docs/`, `00_gobierno_documental.md` o `read-model.toml` fuerzan full re-index del corpus documental; el incremental por git no intenta mezclar deltas parciales de docs.
-- `workspace status` debe exponer perfil, sync de gobernanza, estado bloqueado y estado del indice respecto de `00`/`read-model`.
+- `workspace status` debe exponer perfil, sync de gobernanza, estado bloqueado, `doc_count`, `docs_index_ready` y estado del indice respecto de `00`/`read-model`; si la wiki existe pero `doc_count=0`, debe sugerir `mi-lsp index --docs-only`.
 - `workspace status --full` debe exponer ademas el digest expandido de memoria de reentrada (`recent_canonical_changes`, `handoff`, `best_reentry`, `stale`) sin recalcularlo en caliente.
 - `nav ask --all-workspaces` fan-out sobre workspaces registrados con un pool acotado de 4 workers y merge determinista por score.
 - `nav.find`, `nav.symbols`, `nav.overview` y `nav.intent` aceptan `--offset` para paginacion cursor-like sobre queries SQL; `nav.search` queda fuera de ese contrato porque sigue siendo rg/text-backed.

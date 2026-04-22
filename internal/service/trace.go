@@ -4,6 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/fgpaz/mi-lsp/internal/docgraph"
@@ -27,7 +29,7 @@ func (a *App) trace(ctx context.Context, request model.CommandRequest) (model.En
 	summary, _ := request.Payload["summary"].(bool)
 
 	if rfID != "" {
-		result, err := a.traceRF(ctx, db, rfID)
+		result, err := a.traceRF(ctx, registration.Root, db, rfID)
 		if err != nil {
 			return model.Envelope{}, err
 		}
@@ -38,7 +40,7 @@ func (a *App) trace(ctx context.Context, request model.CommandRequest) (model.En
 	}
 
 	if allRFs {
-		results, err := a.traceAllRFs(ctx, db)
+		results, err := a.traceAllRFs(ctx, registration.Root, db)
 		if err != nil {
 			return model.Envelope{}, err
 		}
@@ -51,7 +53,7 @@ func (a *App) trace(ctx context.Context, request model.CommandRequest) (model.En
 	return model.Envelope{}, fmt.Errorf("rf ID required or use --all")
 }
 
-func (a *App) traceRF(ctx context.Context, db *sql.DB, rfID string) (*model.TraceResult, error) {
+func (a *App) traceRF(ctx context.Context, root string, db *sql.DB, rfID string) (*model.TraceResult, error) {
 	// Find the RF doc
 	rfDocs, err := store.GetRFDocRecords(ctx, db)
 	if err != nil {
@@ -61,13 +63,56 @@ func (a *App) traceRF(ctx context.Context, db *sql.DB, rfID string) (*model.Trac
 	var doc *model.DocRecord
 	rfIDUpper := strings.ToUpper(rfID)
 	for i := range rfDocs {
+		if !isSpecificRFDocPath(rfDocs[i].Path) {
+			continue
+		}
 		if strings.EqualFold(rfDocs[i].DocID, rfIDUpper) || strings.EqualFold(rfDocs[i].DocID, rfID) {
 			doc = &rfDocs[i]
 			break
 		}
 	}
 	if doc == nil {
-		return nil, nil
+		for i := range rfDocs {
+			if isRFIndexPath(rfDocs[i].Path) {
+				continue
+			}
+			if strings.EqualFold(rfDocs[i].DocID, rfIDUpper) || strings.EqualFold(rfDocs[i].DocID, rfID) {
+				doc = &rfDocs[i]
+				break
+			}
+		}
+	}
+	if doc == nil {
+		embeddedDocs, err := store.FindDocRecordsByMention(ctx, db, "doc_id", rfIDUpper)
+		if err != nil {
+			return nil, err
+		}
+		for i := range embeddedDocs {
+			if isSpecificRFDocPath(embeddedDocs[i].Path) {
+				doc = &embeddedDocs[i]
+				break
+			}
+		}
+		if doc == nil {
+			for i := range embeddedDocs {
+				if embeddedDocs[i].Layer == "04" && !isRFIndexPath(embeddedDocs[i].Path) {
+					doc = &embeddedDocs[i]
+					break
+				}
+			}
+		}
+		if doc == nil && len(embeddedDocs) > 0 {
+			doc = &embeddedDocs[0]
+		}
+		if doc == nil {
+			return nil, nil
+		}
+		virtualDoc := *doc
+		virtualDoc.DocID = rfIDUpper
+		if title := embeddedRFTitle(root, virtualDoc.Path, rfIDUpper); title != "" {
+			virtualDoc.Title = title
+		}
+		doc = &virtualDoc
 	}
 
 	// Get explicit implements links
@@ -97,9 +142,10 @@ func (a *App) traceRF(ctx context.Context, db *sql.DB, rfID string) (*model.Trac
 				link.Kind = "symbol"
 			}
 		} else {
-			// Just check if file exists in index
+			// Prefer the symbol catalog, then fall back to workspace file existence for
+			// file-only links in repos whose implementation language is not indexed.
 			syms, _ := store.SymbolsByFile(ctx, db, file, 1, 0)
-			link.Verified = len(syms) > 0
+			link.Verified = len(syms) > 0 || traceFileExists(root, file)
 			link.Kind = "file"
 		}
 		explicit = append(explicit, link)
@@ -113,7 +159,7 @@ func (a *App) traceRF(ctx context.Context, db *sql.DB, rfID string) (*model.Trac
 			Kind:   "test",
 		}
 		syms, _ := store.SymbolsByFile(ctx, db, testFile, 1, 0)
-		link.Verified = len(syms) > 0
+		link.Verified = len(syms) > 0 || traceFileExists(root, testFile)
 		tests = append(tests, link)
 	}
 
@@ -138,7 +184,7 @@ func (a *App) traceRF(ctx context.Context, db *sql.DB, rfID string) (*model.Trac
 	}, nil
 }
 
-func (a *App) traceAllRFs(ctx context.Context, db *sql.DB) ([]model.TraceResult, error) {
+func (a *App) traceAllRFs(ctx context.Context, root string, db *sql.DB) ([]model.TraceResult, error) {
 	rfDocs, err := store.GetRFDocRecords(ctx, db)
 	if err != nil {
 		return nil, err
@@ -148,7 +194,7 @@ func (a *App) traceAllRFs(ctx context.Context, db *sql.DB) ([]model.TraceResult,
 		if doc.DocID == "" {
 			continue
 		}
-		result, err := a.traceRF(ctx, db, doc.DocID)
+		result, err := a.traceRF(ctx, root, db, doc.DocID)
 		if err != nil {
 			continue
 		}
@@ -157,6 +203,19 @@ func (a *App) traceAllRFs(ctx context.Context, db *sql.DB) ([]model.TraceResult,
 		}
 	}
 	return results, nil
+}
+
+func traceFileExists(root string, file string) bool {
+	if strings.TrimSpace(root) == "" || strings.TrimSpace(file) == "" {
+		return false
+	}
+	clean := filepath.Clean(filepath.FromSlash(file))
+	if filepath.IsAbs(clean) {
+		return false
+	}
+	path := filepath.Join(root, clean)
+	info, err := os.Stat(path)
+	return err == nil && !info.IsDir()
 }
 
 func (a *App) traceSummary(workspaceName string, results []model.TraceResult) model.Envelope {
@@ -173,6 +232,61 @@ func (a *App) traceSummary(workspaceName string, results []model.TraceResult) mo
 		})
 	}
 	return model.Envelope{Ok: true, Workspace: workspaceName, Backend: "trace", Items: items, Stats: model.Stats{Files: len(results)}}
+}
+
+func isSpecificRFDocPath(path string) bool {
+	normalized := filepath.ToSlash(path)
+	return strings.Contains(normalized, "/04_RF/")
+}
+
+func isRFIndexPath(path string) bool {
+	normalized := filepath.ToSlash(path)
+	return normalized == ".docs/wiki/04_RF.md" || strings.HasSuffix(normalized, "/04_RF.md")
+}
+
+func embeddedRFTitle(root string, relativePath string, rfID string) string {
+	if root == "" || relativePath == "" || rfID == "" {
+		return ""
+	}
+	content, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(relativePath)))
+	if err != nil {
+		return ""
+	}
+	rfIDUpper := strings.ToUpper(rfID)
+	for _, line := range strings.Split(string(content), "\n") {
+		if !strings.Contains(strings.ToUpper(line), rfIDUpper) {
+			continue
+		}
+		if title := rfTableTitle(line, rfID); title != "" {
+			return title
+		}
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "#") {
+			return strings.TrimSpace(strings.TrimLeft(trimmed, "#"))
+		}
+	}
+	return ""
+}
+
+func rfTableTitle(line string, rfID string) string {
+	trimmed := strings.TrimSpace(line)
+	if !strings.HasPrefix(trimmed, "|") {
+		return ""
+	}
+	cells := strings.Split(trimmed, "|")
+	values := make([]string, 0, len(cells))
+	for _, cell := range cells {
+		value := strings.TrimSpace(cell)
+		if value != "" {
+			values = append(values, value)
+		}
+	}
+	for i, value := range values {
+		if strings.EqualFold(value, rfID) && i+1 < len(values) {
+			return values[i+1]
+		}
+	}
+	return ""
 }
 
 func (a *App) inferTraceLinks(ctx context.Context, db *sql.DB, doc *model.DocRecord) []model.TraceLink {

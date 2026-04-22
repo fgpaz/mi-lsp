@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 	"sync"
@@ -25,31 +26,41 @@ type managedRuntime struct {
 }
 
 type Manager struct {
-	repoRoot    string
-	maxWorkers  int
-	idleTimeout time.Duration
-	mu          sync.Mutex
-	runtimes    map[string]*managedRuntime
-	stopCh      chan struct{}
-	watchers    []*FileWatcher
-	watcherCtx  context.Context
-	watcherCancel context.CancelFunc
+	repoRoot        string
+	maxWorkers      int
+	idleTimeout     time.Duration
+	options         StartOptions
+	mu              sync.Mutex
+	runtimes        map[string]*managedRuntime
+	stopCh          chan struct{}
+	watchers        map[string]*FileWatcher
+	watcherRoots    []string
+	skippedWatchers int
+	watcherCtx      context.Context
+	watcherCancel   context.CancelFunc
 }
 
 func NewManager(repoRoot string, maxWorkers int, idleTimeout time.Duration) *Manager {
+	return NewManagerWithOptions(repoRoot, maxWorkers, idleTimeout, DefaultStartOptions())
+}
+
+func NewManagerWithOptions(repoRoot string, maxWorkers int, idleTimeout time.Duration, options StartOptions) *Manager {
 	if maxWorkers <= 0 {
 		maxWorkers = 3
 	}
 	if idleTimeout <= 0 {
 		idleTimeout = 30 * time.Minute
 	}
+	options = NormalizeStartOptions(options)
 	watcherCtx, watcherCancel := context.WithCancel(context.Background())
 	manager := &Manager{
 		repoRoot:      repoRoot,
 		maxWorkers:    maxWorkers,
 		idleTimeout:   idleTimeout,
+		options:       options,
 		runtimes:      map[string]*managedRuntime{},
 		stopCh:        make(chan struct{}),
+		watchers:      map[string]*FileWatcher{},
 		watcherCtx:    watcherCtx,
 		watcherCancel: watcherCancel,
 	}
@@ -59,6 +70,7 @@ func NewManager(repoRoot string, maxWorkers int, idleTimeout time.Duration) *Man
 
 func (m *Manager) Call(ctx context.Context, workspace model.WorkspaceRegistration, request model.WorkerRequest) (model.WorkerResponse, error) {
 	request.BackendType = normalizeBackendType(request.BackendType)
+	m.EnsureFileWatcher(workspace)
 	managed, err := m.getOrCreate(workspace, request)
 	if err != nil {
 		return model.WorkerResponse{}, err
@@ -70,6 +82,7 @@ func (m *Manager) Call(ctx context.Context, workspace model.WorkspaceRegistratio
 
 func (m *Manager) Warm(workspace model.WorkspaceRegistration) []string {
 	warnings := make([]string, 0)
+	m.EnsureFileWatcher(workspace)
 	for _, backendType := range backendsForWorkspace(workspace) {
 		request := defaultWarmRequest(workspace, backendType)
 		if _, err := m.getOrCreate(workspace, request); err != nil {
@@ -118,31 +131,120 @@ func (m *Manager) Shutdown() {
 
 // StartFileWatchers initializes and starts file watchers for registered workspaces.
 func (m *Manager) StartFileWatchers(registrations []model.WorkspaceRegistration) {
-	for _, reg := range registrations {
-		fw, err := NewFileWatcher(reg, 500*time.Millisecond)
-		if err != nil {
-			if os.Getenv("MI_LSP_VERBOSE") != "" {
-				fmt.Printf("[mi-lsp:watcher] failed to create watcher for %s: %v\n", reg.Root, err)
-			}
-			continue
-		}
-		if err := fw.Start(m.watcherCtx); err != nil {
-			fw.Stop()
-			if os.Getenv("MI_LSP_VERBOSE") != "" {
-				fmt.Printf("[mi-lsp:watcher] failed to start watcher for %s: %v\n", reg.Root, err)
-			}
-			continue
-		}
-		m.watchers = append(m.watchers, fw)
+	if m.options.WatchMode == WatchModeOff {
+		return
 	}
+	for _, reg := range registrations {
+		m.EnsureFileWatcher(reg)
+	}
+}
+
+func (m *Manager) EnsureFileWatcher(registration model.WorkspaceRegistration) {
+	if m.options.WatchMode == WatchModeOff {
+		return
+	}
+	key := canonicalWatcherRootKey(registration.Root)
+	if key == "" {
+		return
+	}
+
+	m.mu.Lock()
+	if _, ok := m.watchers[key]; ok {
+		m.touchWatcherLocked(key)
+		m.mu.Unlock()
+		return
+	}
+	if len(m.watchers) >= m.options.MaxWatchedRoots {
+		m.evictWatcherLocked()
+	}
+	m.mu.Unlock()
+
+	fw, err := NewFileWatcher(registration, 500*time.Millisecond)
+	if err != nil {
+		if os.Getenv("MI_LSP_VERBOSE") != "" {
+			fmt.Printf("[mi-lsp:watcher] failed to create watcher for %s: %v\n", registration.Root, err)
+		}
+		return
+	}
+	if err := fw.Start(m.watcherCtx); err != nil {
+		fw.Stop()
+		if os.Getenv("MI_LSP_VERBOSE") != "" {
+			fmt.Printf("[mi-lsp:watcher] failed to start watcher for %s: %v\n", registration.Root, err)
+		}
+		return
+	}
+
+	m.mu.Lock()
+	if existing, ok := m.watchers[key]; ok {
+		m.touchWatcherLocked(key)
+		m.mu.Unlock()
+		fw.Stop()
+		_ = existing
+		return
+	}
+	if len(m.watchers) >= m.options.MaxWatchedRoots {
+		m.evictWatcherLocked()
+	}
+	m.watchers[key] = fw
+	m.watcherRoots = append(m.watcherRoots, key)
+	m.mu.Unlock()
 }
 
 // StopWatchers stops all running file watchers.
 func (m *Manager) StopWatchers() {
+	m.mu.Lock()
+	watchers := make([]*FileWatcher, 0, len(m.watchers))
 	for _, fw := range m.watchers {
+		watchers = append(watchers, fw)
+	}
+	m.watchers = map[string]*FileWatcher{}
+	m.watcherRoots = nil
+	m.mu.Unlock()
+
+	for _, fw := range watchers {
 		fw.Stop()
 	}
-	m.watchers = nil
+}
+
+func (m *Manager) WatcherStats() model.DaemonWatcherStats {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	stats := model.DaemonWatcherStats{
+		Mode:             m.options.WatchMode,
+		MaxWatchedRoots:  m.options.MaxWatchedRoots,
+		WatchedRoots:     len(m.watchers),
+		ActiveRootKeys:   append([]string(nil), m.watcherRoots...),
+		SkippedRootCount: m.skippedWatchers,
+	}
+	for _, fw := range m.watchers {
+		stats.WatchedDirs += fw.WatchedDirCount()
+		stats.PendingEvents += fw.PendingEvents()
+	}
+	return stats
+}
+
+func (m *Manager) touchWatcherLocked(key string) {
+	for i, candidate := range m.watcherRoots {
+		if candidate == key {
+			copy(m.watcherRoots[i:], m.watcherRoots[i+1:])
+			m.watcherRoots[len(m.watcherRoots)-1] = key
+			return
+		}
+	}
+	m.watcherRoots = append(m.watcherRoots, key)
+}
+
+func (m *Manager) evictWatcherLocked() {
+	if len(m.watcherRoots) == 0 {
+		return
+	}
+	victimKey := m.watcherRoots[0]
+	m.watcherRoots = append([]string(nil), m.watcherRoots[1:]...)
+	if victim := m.watchers[victimKey]; victim != nil {
+		delete(m.watchers, victimKey)
+		m.skippedWatchers++
+		go victim.Stop()
+	}
 }
 
 func (m *Manager) reapLoop() {
@@ -260,6 +362,28 @@ func runtimeKey(workspace model.WorkspaceRegistration, request model.WorkerReque
 		workspaceScope = strings.TrimSpace(workspace.Root)
 	}
 	return normalizeBackendType(request.BackendType) + "::" + workspaceScope + "::" + entrypoint
+}
+
+func canonicalWatcherRootKey(root string) string {
+	trimmed := strings.TrimSpace(root)
+	if trimmed == "" {
+		return ""
+	}
+	abs, err := filepath.Abs(trimmed)
+	if err == nil {
+		trimmed = abs
+	}
+	if evaluated, err := filepath.EvalSymlinks(trimmed); err == nil {
+		trimmed = evaluated
+	}
+	cleaned := filepath.Clean(trimmed)
+	if cleaned == "." || cleaned == string(filepath.Separator) {
+		return cleaned
+	}
+	if runtime.GOOS == "windows" {
+		return strings.ToLower(cleaned)
+	}
+	return cleaned
 }
 
 func normalizeBackendType(backendType string) string {

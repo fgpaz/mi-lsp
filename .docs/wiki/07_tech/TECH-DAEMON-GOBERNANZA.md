@@ -24,6 +24,9 @@ Define el modelo canonico del daemon global, su governance UI workspace-first y 
 - Politica por defecto:
   - `max_workers = 3`
   - `idle_timeout = 30m`
+  - `watch_mode = lazy`
+  - `max_watched_roots = 8`
+  - `max_inflight = 16`
   - eviction `LRU`
 
 ### Acceso compartido
@@ -40,6 +43,10 @@ Define el modelo canonico del daemon global, su governance UI workspace-first y 
   - chequear health primero
   - devolver metadatos de la instancia existente si ya corre
   - crear nueva instancia solo bajo lock global
+- `EnsureDaemon` debe usar el mismo lock global y health recheck que `daemon start`; el estado persistido no basta si el pipe/socket no responde.
+- El watcher no arranca recursivamente sobre todos los aliases por default: `lazy` activa por root canonico, `eager` es opt-in y `off` deshabilita watchers.
+- Los watchers se deduplican por `workspace_root` canonico y se acotan por LRU con `max_watched_roots`.
+- Requests pesadas daemon-aware se acotan con `max_inflight`; saturacion devuelve `daemon/backpressure_busy`.
 
 ### Governance UI
 
@@ -74,6 +81,7 @@ Define el modelo canonico del daemon global, su governance UI workspace-first y 
 - `GET /api/logs?tail=<n>`
 - `GET /api/metrics?window=<recent|7d|30d|90d>` — computa p50/p95, error rate y truncation rate por operacion/workspace/cliente desde `access_events`; mantiene compatibilidad legacy con `days=<n>`
 - `mi-lsp admin export --summary` reutiliza la misma ventana y agrega breakdowns opcionales por route/client/hint/failure-stage; el raw export prioriza CLI antes que UI para debugging operativo y es la primera superficie donde deben aparecer los campos causales nuevos.
+- `GET /api/status` tambien expone `daemon_process` y `watchers`, equivalentes a `daemon status`, para validar presupuestos de agentes sin inspeccion externa.
 
 ## Dependencias e interacciones
 
@@ -90,6 +98,9 @@ Define el modelo canonico del daemon global, su governance UI workspace-first y 
 | Riesgo | Sintoma | Mitigacion canonica |
 |---|---|---|
 | Doble daemon | dos `start` simultaneos | lock + health recheck |
+| Auto-start concurrente | N agentes arrancan N procesos | `EnsureDaemon` comparte lock y no confia en state sin health |
+| Explosion de handles por watchers | aliases duplicados o registry grande | `watch_mode=lazy`, dedupe por root canonico, cap LRU |
+| Saturacion de requests | latencia/memoria crecen sin limite | backpressure `daemon/backpressure_busy` y env `MI_LSP_DAEMON_MAX_INFLIGHT` |
 | Socket/pipe huerfano | connect falla pero state existe | purge + restart controlado |
 | RAM excesiva | demasiados runtimes vivos | `max_workers` + LRU eviction |
 | UI duplicada | cada cliente abre una vista separada | admin URL unica + deep link por query |

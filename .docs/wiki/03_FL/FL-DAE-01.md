@@ -29,6 +29,7 @@ Mantener un daemon global opcional por usuario que reduzca latencia warm, compar
 - Admin URL disponible por `daemon status` / `admin status`.
 - La UI local puede mostrar estado, activity, logs y ejecutar `warm workspace` sin salir del navegador, preservando alias/path visibles y agrupando internamente por `workspace_root`.
 - Diagnosticos administrativos como `worker status` mantienen el mismo envelope visible con y sin daemon; solo cambia el estado vivo observado.
+- El daemon expone diagnostico de performance suficiente para presupuestos de agentes: proceso (`working_set_bytes`, `private_bytes`, `handle_count`, `thread_count`), watchers (`mode`, roots/dirs activos, eventos pendientes) y backpressure de requests pesadas.
 
 ## 6. Main sequence
 
@@ -63,6 +64,8 @@ sequenceDiagram
 | Segundo `daemon start` | devuelve la instancia ya viva |
 | Limite de runtimes alcanzado | eviction LRU |
 | Runtime idle > timeout | runtime liberado |
+| Presion de requests pesadas > `max_inflight` | envelope `ok=false` con warning `daemon/backpressure_busy` y retry accionable |
+| Watchers deshabilitados o lazy | el daemon sigue operativo; el re-index incremental por watcher queda apagado o se activa solo al tocar un workspace |
 | alias/path ambiguo para un mismo root | el daemon conserva el foco visible y normaliza a `workspace_root` para runtime/telemetria |
 | `tsserver` ausente | warning y fallback semantico/textual |
 | `admin_url` no responde | error explicito para `admin` y `daemon open` |
@@ -92,6 +95,10 @@ sequenceDiagram
 - Mitigacion: bypass automatico y contrato CLI independiente.
 - Riesgo: demasiados runtimes vivos.
 - Mitigacion: `max_workers`, LRU e `idle_timeout`.
+- Riesgo: demasiados watchers o aliases duplicados consumen handles/RAM.
+- Mitigacion: `watch_mode=lazy` por defecto, dedupe por root canonico y cap LRU con `max_watched_roots`.
+- Riesgo: concurrencia de agentes satura el daemon.
+- Mitigacion: lock global de auto-start, health recheck, y backpressure `MI_LSP_DAEMON_MAX_INFLIGHT`.
 - Riesgo: drift entre clientes o aliases distintos del mismo repo.
 - Mitigacion: metadata `client_name/session_id` + telemetry local con identidad canonica por `workspace_root`.
 - Riesgo: UI poco accionable.

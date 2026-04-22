@@ -3,6 +3,9 @@ package daemon
 import (
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/fgpaz/mi-lsp/internal/model"
 )
 
 func TestIsWatchableFile_ValidExtensions(t *testing.T) {
@@ -325,9 +328,9 @@ func TestShouldSkipDir_NestedPathBaseExtraction(t *testing.T) {
 		want bool
 	}{
 		{"/home/project/node_modules/package", false}, // base is "package", not skip
-		{"/home/project/node_modules", true},           // base is "node_modules", skip
-		{"src/bin", true},                              // base is "bin", skip
-		{"src/bins", false},                            // base is "bins", not skip
+		{"/home/project/node_modules", true},          // base is "node_modules", skip
+		{"src/bin", true},                             // base is "bin", skip
+		{"src/bins", false},                           // base is "bins", not skip
 	}
 
 	for _, tt := range tests {
@@ -345,11 +348,11 @@ func TestIsWatchableFile_MultipleDotsInFilename(t *testing.T) {
 		filename string
 		want     bool
 	}{
-		{"file.min.js", true},       // last extension is .js
-		{"file.test.ts", true},      // last extension is .ts
-		{"file.spec.go", false},     // last extension is .go
-		{"file.tar.gz", false},      // last extension is .gz
-		{"file.min.css", false},     // last extension is .css
+		{"file.min.js", true},   // last extension is .js
+		{"file.test.ts", true},  // last extension is .ts
+		{"file.spec.go", false}, // last extension is .go
+		{"file.tar.gz", false},  // last extension is .gz
+		{"file.min.css", false}, // last extension is .css
 	}
 
 	for _, tt := range tests {
@@ -491,5 +494,38 @@ func TestComputeHash_Format(t *testing.T) {
 		if !strings.ContainsRune("0123456789abcdef", ch) {
 			t.Errorf("hash contains non-hex character: %q", ch)
 		}
+	}
+}
+
+func TestFileWatcherStopIsIdempotent(t *testing.T) {
+	registration := model.WorkspaceRegistration{Root: t.TempDir(), Name: "test"}
+	watcher, err := NewFileWatcher(registration, time.Millisecond)
+	if err != nil {
+		t.Fatalf("NewFileWatcher: %v", err)
+	}
+	watcher.Stop()
+	watcher.Stop()
+}
+
+func TestManagerLazyWatchersDedupeAndCapRoots(t *testing.T) {
+	rootA := t.TempDir()
+	rootB := t.TempDir()
+	manager := NewManagerWithOptions(t.TempDir(), 1, time.Minute, StartOptions{WatchMode: WatchModeLazy, MaxWatchedRoots: 1})
+	defer manager.Shutdown()
+
+	manager.EnsureFileWatcher(model.WorkspaceRegistration{Name: "alias-a", Root: rootA})
+	manager.EnsureFileWatcher(model.WorkspaceRegistration{Name: "alias-b", Root: rootA})
+	stats := manager.WatcherStats()
+	if stats.WatchedRoots != 1 {
+		t.Fatalf("WatchedRoots after duplicate aliases = %d, want 1", stats.WatchedRoots)
+	}
+
+	manager.EnsureFileWatcher(model.WorkspaceRegistration{Name: "other", Root: rootB})
+	stats = manager.WatcherStats()
+	if stats.WatchedRoots != 1 {
+		t.Fatalf("WatchedRoots after cap = %d, want 1", stats.WatchedRoots)
+	}
+	if stats.SkippedRootCount == 0 {
+		t.Fatalf("SkippedRootCount = %d, want eviction/skipped signal", stats.SkippedRootCount)
 	}
 }

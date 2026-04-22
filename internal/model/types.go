@@ -424,6 +424,24 @@ type WorkerStatus struct {
 	LastUsedAt     time.Time `json:"last_used_at,omitempty"`
 }
 
+type DaemonProcessStats struct {
+	PID             int    `json:"pid"`
+	WorkingSetBytes uint64 `json:"working_set_bytes,omitempty"`
+	PrivateBytes    uint64 `json:"private_bytes,omitempty"`
+	HandleCount     uint64 `json:"handle_count,omitempty"`
+	ThreadCount     uint64 `json:"thread_count,omitempty"`
+}
+
+type DaemonWatcherStats struct {
+	Mode             string   `json:"mode"`
+	MaxWatchedRoots  int      `json:"max_watched_roots,omitempty"`
+	WatchedRoots     int      `json:"watched_roots"`
+	WatchedDirs      int      `json:"watched_dirs"`
+	PendingEvents    int      `json:"pending_events"`
+	ActiveRootKeys   []string `json:"active_root_keys,omitempty"`
+	SkippedRootCount int      `json:"skipped_root_count,omitempty"`
+}
+
 type DaemonState struct {
 	RunID           int64     `json:"run_id,omitempty"`
 	PID             int       `json:"pid"`
@@ -435,6 +453,9 @@ type DaemonState struct {
 	ProtocolVersion string    `json:"protocol_version,omitempty"`
 	MaxWorkers      int       `json:"max_workers,omitempty"`
 	IdleTimeout     string    `json:"idle_timeout,omitempty"`
+	WatchMode       string    `json:"watch_mode,omitempty"`
+	MaxWatchedRoots int       `json:"max_watched_roots,omitempty"`
+	MaxInflight     int       `json:"max_inflight,omitempty"`
 	AlreadyRunning  bool      `json:"already_running,omitempty"`
 }
 

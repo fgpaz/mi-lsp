@@ -28,7 +28,7 @@ El detalle por frontera vive en `09_contratos/`.
 - El protocolo daemon-worker es interno, versionado y con envelope estable.
 - Cada contrato debe exponer `warnings`, fallas accionables y degradacion clara cuando aplique.
 - `worker status` forma parte de la CLI publica y debe exponer `tool_root`, `tool_root_kind`, `cli_path`, `protocol_version`, origen del worker seleccionado y compatibilidad de candidatos.
-- `workspace status` forma parte de la CLI publica y debe exponer `docs_read_model`, `governance_profile`, `governance_sync`, `governance_index_sync` y `governance_blocked`; en `--full` puede expandir el digest repo-local de memoria de reentrada.
+- `workspace status` forma parte de la CLI publica y debe exponer `docs_read_model`, `doc_count`, `docs_index_ready`, `governance_profile`, `governance_sync`, `governance_index_sync` y `governance_blocked`; en `--full` puede expandir el digest repo-local de memoria de reentrada.
 - En AXI efectivo, `workspace status`, `nav search`, `nav intent` y `nav pack` pertenecen a la superficie preview/full por default; `nav ask` solo lo hace para preguntas de orientacion y `nav workspace-map` solo cuando se fuerza AXI.
 - `init` pertenece a la CLI publica como shortcut de onboarding; no reemplaza `workspace add`, pero reutiliza su semantica base.
 - `nav ask` pertenece a la CLI publica y usa un contrato docs-first explainable, no un blob opaco ni una respuesta puramente textual.
@@ -62,14 +62,17 @@ El detalle por frontera vive en `09_contratos/`.
 ## Compatibilidad y migracion
 
 - La presencia o ausencia del daemon no debe cambiar la semantica visible de los comandos.
+- `daemon start` acepta `--watch-mode off|lazy|eager`, `--max-watched-roots` y `--max-inflight`; el hidden `daemon serve` recibe los mismos valores.
+- `MI_LSP_WATCH_MODE`, `MI_LSP_WATCH_MAX_ROOTS` y `MI_LSP_DAEMON_MAX_INFLIGHT` son overrides runtime equivalentes cuando el flag no se pasa.
 - Si `--workspace` se omite y el runtime cae a `last_workspace` o resuelve una ambiguedad de aliases sobre el mismo root, el contrato visible debe incluir warning explicito con el alias elegido.
 - `MI_LSP_AXI=1` habilita AXI a nivel sesion; `--classic` prevalece sobre defaults/env y `--axi` fuerza AXI en superficies soportadas.
 - `--axi=false` explicito anula el default AXI de la superficie actual; equivalente a `--classic` para esa invocacion.
 - `--axi` y `--classic` juntos deben fallar antes de ejecutar la operacion.
 - `worker status` debe conservar el mismo payload visible con y sin daemon; el daemon no puede reemplazar `items` por `RuntimeSnapshot`/`WorkerStatus` crudos.
-- `nav.find`, `nav.search`, `nav.intent`, `nav.symbols`, `nav.outline`, `nav.overview` y `nav.multi-read` pertenecen a la superficie publica directa: no deben esperar daemon ni cambiar de comportamiento por su health.
+- `nav.find`, `nav.search`, `nav.intent`, `nav.symbols`, `nav.outline`, `nav.overview`, `nav.multi-read` y `nav.workspace-map` summary-first pertenecen a la superficie publica directa: no deben esperar daemon ni cambiar de comportamiento por su health.
 - `nav.ask` tambien pertenece al hot path directo por default; la presencia del daemon no debe ser requisito para una primera respuesta docs-first util.
 - `index` puede degradar a full rebuild aun sin cambios git detectados cuando el runtime observa que `doc_records` no contiene docs canonicos pese a que la wiki existe en disco; el contrato visible no debe quedar en `no changes detected` en ese caso.
+- `index --docs-only` es un modo publico de recuperacion: reconstruye el corpus documental y la memoria de reentrada sin reemplazar el catalogo de codigo.
 - La politica comun de subprocessos no interactivos debe evitar UI extra; en Windows aplica `HideWindow + CREATE_NO_WINDOW`, y los procesos background del daemon agregan `DETACHED_PROCESS`.
 - La resolucion de bootstrap del worker usa el ejecutable/distribucion activa o, en desarrollo, el repo `mi-lsp`; nunca el `cwd` arbitrario del workspace consultado.
 - La distribucion publica canonica es un bundle por RID que incluye `mi-lsp(.exe)` y `workers/<rid>/`; una build desde source no redefine ese contrato de bootstrap.
@@ -102,7 +105,8 @@ El detalle por frontera vive en `09_contratos/`.
 - `admin export` filtra raw por `--operation`, `--session-id`, `--client-name`, `--route`, `--query-format`, `--truncated`, `--pattern-mode`, `--routing-outcome`, `--failure-stage` y `--hint-code`
 - `admin export --summary` agrega breakdowns opcionales `--by-route`, `--by-client`, `--by-hint`, `--by-failure-stage`, ademas de los histogramas/percentiles existentes
 - el export raw de `access_events` preserva metadata operativa minima del request (`route`, `format`, `token_budget`, `max_items`, `max_chars`, `compress`) y diagnosticos causales sanitizados (`warning_count`, `pattern_mode`, `routing_outcome`, `failure_stage`, `hint_code`, `truncation_reason`, `decision_json`) para diferenciar uso directo, daemonizado, routing errors y truncacion; `decision_json` puede agregar solo metadata derivada como `doc_ranker` e `intent_mode`, nunca texto libre; en operaciones daemonizadas normales debe existir una sola fila canonica por request
-- `nav route <task>`: resuelve el documento canonico de anclaje y un mini reading pack con minimos tokens; `--include-code-discovery` agrega discovery de codigo; `--full` expande canonical lane y discovery
+- `index [path] [--clean] [--docs-only]`: indexa codigo + docs, o solo docs cuando `--docs-only` esta presente
+- `nav route <task>`: resuelve el documento canonico de anclaje y un mini reading pack con minimos tokens; si la tarea trae un `RF-*` embebido en un doc agregado, Tier 1 ancla el contenedor canonico; `--include-code-discovery` agrega discovery de codigo; `--full` expande canonical lane y discovery
 - `nav ask <question>`: responde usando wiki + evidencia de codigo y fallback generico/textual cuando haga falta; `--all-workspaces` habilita fan-out cross-workspace para el mismo contrato explainable
 - `nav pack <task>`: construye un reading pack canonico con preview/full y anchors opcionales `--rf`, `--fl`, `--doc`
 - `nav search <pattern>`: si `--regex` lleva un patron invalido, el runtime puede reintentar como literal y devolver warning explicito en vez de error duro
@@ -121,8 +125,10 @@ El detalle por frontera vive en `09_contratos/`.
 - `nav related`: devuelve vecindario de un simbolo (definicion, callers, implementors, tests); el contenido expandido queda reservado para `--full`
 - `nav workspace-map`: mapa de alto nivel del workspace; el modo base es summary-first y `--full` habilita scans profundos de endpoints, eventos y dependencias
 - `nav diff-context [ref] --include-content`: contexto semantico de simbolos cambiados en un git diff, con analisis de impacto
+- `nav trace <RF-ID>`: si el RF no existe como `doc_records.doc_id` primario, puede resolverlo por `doc_mentions(doc_id)` dentro de un documento RF agregado y devolver `RF=<RF-ID>` en el resultado visible; los marcadores file-only verifican contra el catalogo de simbolos o contra existencia de archivo en el workspace cuando el lenguaje no esta indexado semanticamente
 - `nav ask --all-workspaces` / `nav search --all-workspaces` / `nav find --all-workspaces`: fan-out paralelo cross-workspace
 - `--no-auto-daemon` global flag: desactiva auto-start de daemon para queries semanticas
+- `daemon perf-smoke`: valida presupuesto de daemon y callers paralelos; falla el envelope si supera working set, private bytes o handles configurados
 - `--axi` global flag / `MI_LSP_AXI=1`: fuerzan overlay AXI en superficies soportadas
 - `--classic` global flag: restaura modo clasico en superficies AXI-default y prevalece sobre el env
 - `--full` global flag: expande surfaces AXI efectivas sin cambiar routing ni semantica base

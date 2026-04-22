@@ -1,8 +1,10 @@
 package service
 
 import (
+	"bufio"
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -144,34 +146,10 @@ func buildContextSliceItem(workspaceRoot string, project model.ProjectFile, file
 	if !filepath.IsAbs(absoluteFile) {
 		absoluteFile = filepath.Join(workspaceRoot, filepath.FromSlash(file))
 	}
-	body, err := os.ReadFile(absoluteFile)
+	focusLine, startLine, endLine, sliceText, err := readContextWindow(absoluteFile, line, defaultContextRadius)
 	if err != nil {
 		return nil, nil, err
 	}
-
-	content := strings.ReplaceAll(string(body), "\r\n", "\n")
-	lines := strings.Split(content, "\n")
-	if len(lines) == 0 {
-		lines = []string{""}
-	}
-	focusLine := line
-	if focusLine < 1 {
-		focusLine = 1
-	}
-	if focusLine > len(lines) {
-		focusLine = len(lines)
-	}
-
-	startLine := focusLine - defaultContextRadius
-	if startLine < 1 {
-		startLine = 1
-	}
-	endLine := focusLine + defaultContextRadius
-	if endLine > len(lines) {
-		endLine = len(lines)
-	}
-
-	sliceText := strings.Join(lines[startLine-1:endLine], "\n")
 	warnings := []string{}
 	if maxChars <= 0 {
 		maxChars = defaultContextMaxChars
@@ -201,6 +179,77 @@ func buildContextSliceItem(workspaceRoot string, project model.ProjectFile, file
 		item["repo"] = repo.Name
 	}
 	return item, warnings, nil
+}
+
+func readContextWindow(path string, targetLine int, radius int) (int, int, int, string, error) {
+	if targetLine < 1 {
+		targetLine = 1
+	}
+	if radius < 0 {
+		radius = 0
+	}
+	file, err := os.Open(path)
+	if err != nil {
+		return 0, 0, 0, "", err
+	}
+	defer file.Close()
+
+	startTarget := targetLine - radius
+	if startTarget < 1 {
+		startTarget = 1
+	}
+	endTarget := targetLine + radius
+	reader := bufio.NewReaderSize(file, 64*1024)
+	var window []string
+	var tail []string
+	lineNo := 0
+	for {
+		line, readErr := reader.ReadString('\n')
+		if len(line) > 0 {
+			lineNo++
+			line = strings.TrimRight(strings.ReplaceAll(line, "\r\n", "\n"), "\n")
+			line = strings.TrimRight(line, "\r")
+			if lineNo >= startTarget && lineNo <= endTarget {
+				window = append(window, line)
+			}
+			tail = append(tail, line)
+			if maxTail := radius*2 + 1; len(tail) > maxTail {
+				tail = tail[1:]
+			}
+			if lineNo > endTarget {
+				break
+			}
+		}
+		if readErr != nil {
+			if readErr == io.EOF {
+				break
+			}
+			return 0, 0, 0, "", readErr
+		}
+	}
+	if lineNo == 0 {
+		return 1, 1, 1, "", nil
+	}
+	focusLine := targetLine
+	if focusLine > lineNo {
+		focusLine = lineNo
+		window = tail
+	}
+	startLine := focusLine - radius
+	if startLine < 1 {
+		startLine = 1
+	}
+	endLine := focusLine + radius
+	if endLine > lineNo {
+		endLine = lineNo
+	}
+	if targetLine > lineNo {
+		startLine = endLine - len(window) + 1
+		if startLine < 1 {
+			startLine = 1
+		}
+	}
+	return focusLine, startLine, endLine, strings.Join(window, "\n"), nil
 }
 
 func mergeCatalogContextItem(ctx context.Context, registration model.WorkspaceRegistration, file string, line int, item map[string]any) bool {

@@ -20,9 +20,10 @@ Comandos canonicos:
 
 - `workspace add|scan|list|warm|status|remove`
 - `nav symbols|find|refs|overview|outline|service|search|context|deps|ask|pack|batch|related|workspace-map|diff-context|trace|intent`
-- `index [path]|--clean`
+- `index [path] [--clean] [--docs-only]`
 - `info`
 - `daemon start|stop|status|restart|open|logs [--tail N]`
+- `daemon perf-smoke [--callers N] [--max-working-set-mb N] [--max-private-mb N] [--max-handles N]`
 - `worker install|status`
 - `admin open|status`
 
@@ -47,6 +48,36 @@ Flags especificos:
 - `nav pack --rf|--fl|--doc`
 - `nav search --regex`
 - `nav service --include-archetype`
+- `index --docs-only`
+- `daemon start|restart|serve --watch-mode off|lazy|eager --max-watched-roots N --max-inflight N`
+
+### `index`
+
+Input:
+
+```text
+mi-lsp index [path] [--workspace <alias>] [--clean] [--docs-only]
+```
+
+Reglas:
+
+- sin `--docs-only`, indexa catalogo de codigo y grafo documental, con incremental git-aware cuando corresponde
+- con `--docs-only`, reconstruye `doc_records`, `doc_edges`, `doc_mentions` y `memory_pointer` sin reemplazar `files` ni `symbols`
+- toda indexacion toma `.mi-lsp/index.lock`; si ya existe, la operacion debe fallar con mensaje accionable que incluya el lock owner cuando este disponible
+- el indexador debe respetar cancelacion de contexto durante el walk y el parseo documental
+- la lista interna de ignores excluye dependencias/caches generadas como `.venv`, `venv`, `__pycache__`, `.pytest_cache`, `.turbo`, `.next` y `node_modules`
+
+Respuesta docs-only exitosa:
+
+```json
+{
+  "ok": true,
+  "workspace": "<alias>",
+  "backend": "docgraph",
+  "warnings": ["docs_only=true"],
+  "stats": {"files": 42}
+}
+```
 
 Envelope comun:
 
@@ -120,7 +151,8 @@ Reglas:
 Reglas de routing:
 
 - `nav.find`, `nav.search`, `nav.intent`, `nav.symbols`, `nav.outline`, `nav.overview`, `nav.multi-read` y `nav.pack` no deben cruzar esta frontera en el hot path.
-- `nav.refs`, `nav.context`, `nav.deps`, `nav.related`, `nav.service`, `nav.workspace-map`, `nav.diff-context` y `nav.batch` pueden preferir daemon cuando corresponda.
+- `nav.refs`, `nav.context`, `nav.deps`, `nav.related`, `nav.service`, `nav.diff-context` y `nav.batch` pueden preferir daemon cuando corresponda.
+- `nav.workspace-map` summary-first queda directo por default; `--full` puede seguir siendo una operacion pesada pero no debe autostartear daemon en el contrato base.
 - `workspace.warm` puede preferir daemon pero no debe auto-iniciarlo.
 
 Canal:
@@ -200,6 +232,8 @@ Payload clave en `GET /api/status`:
 - `state`
 - `metrics`
 - `active_runtimes`
+- `daemon_process`
+- `watchers`
 - `recent_accesses`
 - `workspaces`
 - `generated_at`
@@ -217,6 +251,7 @@ Reglas:
 - acciones seguras solamente
 - query params, no hash-state
 - el resumen agregado debe distinguir cortes por workspace y por operacion
+- `GET /api/logs?tail=n` lee el tail con memoria acotada y puede devolver warning si el archivo se capeo por bytes.
 
 ### Comandos del workspace
 
@@ -337,6 +372,8 @@ Reglas:
 ## Payload, error y compatibilidad
 
 - `daemon start` debe devolver la instancia existente si ya corre.
+- `daemon status` debe exponer `state`, `daemon_process`, `watchers`, `active_runtimes` y `recent_accesses`.
+- Si una operacion daemon-aware excede `max_inflight`, devuelve envelope `ok=false`, item con `error_kind=daemon`, `error_code=backpressure_busy`, y warning `daemon/backpressure_busy`.
 - Si no hay daemon, el CLI debe poder ejecutar directo.
 - Si falta un backend opcional, devolver warning accionable, no fallo ambiguo.
 - `backend` debe reflejar el backend realmente usado.

@@ -1,6 +1,8 @@
 package worker
 
 import (
+	"bufio"
+	"io"
 	"os"
 	"regexp"
 	"strings"
@@ -36,24 +38,61 @@ var skippedIdentifierKeywords = map[string]struct{}{
 }
 
 func inferLineAndOffset(filePath string, lineNumber int, symbol string) (int, int) {
-	content, err := os.ReadFile(filePath)
+	file, err := os.Open(filePath)
 	if err != nil {
 		return normalizeLineNumber(lineNumber, 0), 1
 	}
+	defer file.Close()
 
-	lines := strings.Split(string(content), "\n")
-	normalizedLine := normalizeLineNumber(lineNumber, len(lines))
-
-	if symbol != "" {
-		if foundLine, foundOffset, ok := findSymbolLocation(lines, normalizedLine, symbol); ok {
-			return foundLine, foundOffset
+	preferredLine := lineNumber
+	if preferredLine <= 0 {
+		preferredLine = 1
+	}
+	reader := bufio.NewReaderSize(file, 64*1024)
+	lineNo := 0
+	preferredText := ""
+	fallbackLine := 0
+	fallbackOffset := 0
+	lastText := ""
+	for {
+		line, readErr := reader.ReadString('\n')
+		if len(line) > 0 {
+			lineNo++
+			line = strings.TrimRight(strings.ReplaceAll(line, "\r\n", "\n"), "\n")
+			line = strings.TrimRight(line, "\r")
+			lastText = line
+			if lineNo == preferredLine {
+				preferredText = line
+				if offset := exactIdentifierColumn(line, symbol); offset > 0 {
+					return lineNo, offset
+				}
+			}
+			if symbol != "" && fallbackOffset == 0 {
+				if offset := exactIdentifierColumn(line, symbol); offset > 0 {
+					fallbackLine = lineNo
+					fallbackOffset = offset
+				}
+			}
+		}
+		if readErr != nil {
+			if readErr == io.EOF {
+				break
+			}
+			return normalizeLineNumber(lineNumber, lineNo), 1
 		}
 	}
 
-	if len(lines) == 0 {
+	if fallbackOffset > 0 {
+		return fallbackLine, fallbackOffset
+	}
+	if lineNo == 0 {
 		return 1, 1
 	}
-	return normalizedLine, inferOffsetFromLine(lines[normalizedLine-1], symbol)
+	normalizedLine := normalizeLineNumber(lineNumber, lineNo)
+	if preferredText == "" && normalizedLine == lineNo {
+		preferredText = lastText
+	}
+	return normalizedLine, inferOffsetFromLine(preferredText, symbol)
 }
 
 func findSymbolLocation(lines []string, preferredLine int, symbol string) (int, int, bool) {

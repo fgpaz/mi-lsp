@@ -4,6 +4,7 @@ package daemon
 
 import (
 	"context"
+	"fmt"
 	"net"
 	"os"
 	"os/exec"
@@ -23,7 +24,13 @@ func defaultEndpoint() string {
 
 func listenDaemon() (net.Listener, error) {
 	endpoint := defaultEndpoint()
-	_ = os.Remove(endpoint)
+	if _, err := os.Stat(endpoint); err == nil {
+		if conn, dialErr := net.DialTimeout("unix", endpoint, 250*time.Millisecond); dialErr == nil {
+			_ = conn.Close()
+			return nil, fmt.Errorf("daemon endpoint already active at %s", endpoint)
+		}
+		_ = os.Remove(endpoint)
+	}
 	if err := os.MkdirAll(filepath.Dir(endpoint), 0o755); err != nil {
 		return nil, err
 	}
@@ -44,12 +51,12 @@ func dialDaemon(ctx context.Context) (net.Conn, error) {
 	return dialer.DialContext(ctx, "unix", defaultEndpoint())
 }
 
-func daemonServeCommand(repoRoot string, maxWorkers int, idleTimeout time.Duration) (*exec.Cmd, error) {
+func daemonServeCommand(repoRoot string, maxWorkers int, idleTimeout time.Duration, options StartOptions) (*exec.Cmd, error) {
 	executable, err := os.Executable()
 	if err != nil {
 		return nil, err
 	}
-	commandName, args := daemonServeInvocation(executable, maxWorkers, idleTimeout)
+	commandName, args := daemonServeInvocation(executable, maxWorkers, idleTimeout, options)
 	command := exec.Command(commandName, args...)
 	processutil.ConfigureDetachedCommand(command)
 	command.Dir = repoRoot

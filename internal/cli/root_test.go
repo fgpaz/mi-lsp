@@ -23,7 +23,7 @@ func TestShouldUseDaemonPolicy(t *testing.T) {
 		{name: "context keeps daemon", operation: "nav.context", requested: true, want: true},
 		{name: "refs keeps daemon", operation: "nav.refs", requested: true, want: true},
 		{name: "service keeps daemon", operation: "nav.service", requested: true, want: true},
-		{name: "workspace-map keeps daemon", operation: "nav.workspace-map", requested: true, want: true},
+		{name: "workspace-map stays direct by default", operation: "nav.workspace-map", requested: true, want: false},
 		{name: "batch keeps daemon", operation: "nav.batch", requested: true, want: true},
 		{name: "warm keeps daemon", operation: "workspace.warm", requested: true, want: true},
 		{name: "explicit direct stays direct", operation: "nav.context", requested: false, want: false},
@@ -54,7 +54,7 @@ func TestShouldAutoStartDaemonPolicy(t *testing.T) {
 		{operation: "nav.deps", want: true},
 		{operation: "nav.ask", want: false},
 		{operation: "nav.service", want: true},
-		{operation: "nav.workspace-map", want: true},
+		{operation: "nav.workspace-map", want: false},
 		{operation: "nav.diff-context", want: true},
 		{operation: "nav.batch", want: true},
 		{operation: "workspace.warm", want: false},
@@ -66,6 +66,34 @@ func TestShouldAutoStartDaemonPolicy(t *testing.T) {
 				t.Fatalf("shouldAutoStartDaemon(%q) = %t, want %t", tt.operation, got, tt.want)
 			}
 		})
+	}
+}
+
+func TestDaemonOptionsHonorsEnvironmentDefaults(t *testing.T) {
+	t.Setenv("MI_LSP_WATCH_MODE", "off")
+	t.Setenv("MI_LSP_WATCH_MAX_ROOTS", "3")
+	t.Setenv("MI_LSP_DAEMON_MAX_INFLIGHT", "7")
+
+	options, err := daemonOptions("", 0, 0)
+	if err != nil {
+		t.Fatalf("daemonOptions: %v", err)
+	}
+	if options.WatchMode != "off" {
+		t.Fatalf("WatchMode = %q, want off", options.WatchMode)
+	}
+	if options.MaxWatchedRoots != 3 {
+		t.Fatalf("MaxWatchedRoots = %d, want 3", options.MaxWatchedRoots)
+	}
+	if options.MaxInflight != 7 {
+		t.Fatalf("MaxInflight = %d, want 7", options.MaxInflight)
+	}
+
+	options, err = daemonOptions("eager", 5, 9)
+	if err != nil {
+		t.Fatalf("daemonOptions explicit: %v", err)
+	}
+	if options.WatchMode != "eager" || options.MaxWatchedRoots != 5 || options.MaxInflight != 9 {
+		t.Fatalf("explicit daemonOptions = %+v, want eager/5/9", options)
 	}
 }
 

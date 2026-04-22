@@ -32,12 +32,12 @@ func dialDaemon(ctx context.Context) (net.Conn, error) {
 	return winio.DialPipeContext(ctx, defaultEndpoint())
 }
 
-func daemonServeCommand(repoRoot string, maxWorkers int, idleTimeout time.Duration) (*exec.Cmd, error) {
+func daemonServeCommand(repoRoot string, maxWorkers int, idleTimeout time.Duration, options StartOptions) (*exec.Cmd, error) {
 	executable, err := os.Executable()
 	if err != nil {
 		return nil, err
 	}
-	commandName, args := daemonServeInvocation(executable, maxWorkers, idleTimeout)
+	commandName, args := daemonServeInvocation(executable, maxWorkers, idleTimeout, options)
 	command := exec.Command(commandName, args...)
 	processutil.ConfigureDetachedCommand(command)
 	command.Dir = repoRoot

@@ -27,3 +27,7 @@
 | TC-DAE-014 | positivo | RF-DAE-004 | file watcher respeta debounce 500ms |
 | TC-DAE-015 | positivo | RF-DAE-004 | file watcher ignora archivos en node_modules |
 | TC-DAE-016 | positivo | RF-DAE-002 | `worker status` servido por daemon conserva el contrato canonico del core y expone `active_workers` dentro del item diagnostico |
+| TC-DAE-017 | positivo | RF-DAE-004 | watcher lazy deduplica aliases del mismo root y respeta `max_watched_roots` con eviction LRU |
+| TC-DAE-018 | positivo | RF-DAE-002, RF-DAE-004 | `daemon status` y `/api/status` exponen `daemon_process` y `watchers` |
+| TC-DAE-019 | negativo | RF-DAE-002 | saturacion de requests daemon-aware devuelve `daemon/backpressure_busy` tipado sin bloquear `system.status` |
+| TC-DAE-020 | positivo | RF-DAE-002 | `daemon perf-smoke --callers 16` valida una instancia alcanzable y presupuestos de memoria/handles |

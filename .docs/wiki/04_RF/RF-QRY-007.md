@@ -1,3 +1,14 @@
+---
+id: RF-QRY-007
+title: Generar mapa de workspace con servicios, endpoints, eventos y dependencias
+implements:
+  - internal/service/workspace_map.go
+  - internal/cli/root.go
+tests:
+  - internal/service/workspace_map_test.go
+  - internal/cli/root_test.go
+---
+
 # RF-QRY-007 - Generar mapa de workspace con servicios, endpoints, eventos y dependencias
 
 ## 1. Execution Sheet

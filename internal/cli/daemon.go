@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -26,6 +25,9 @@ and tsserver processes, reducing cold-start latency.`,
 
 	var idleTimeout string
 	var maxWorkers int
+	var watchMode string
+	var maxWatchedRoots int
+	var maxInflight int
 	startCommand := &cobra.Command{
 		Use:   "start",
 		Short: "Start the background daemon",
@@ -34,7 +36,11 @@ and tsserver processes, reducing cold-start latency.`,
 			if err != nil {
 				return err
 			}
-			stateBody, started, err := daemon.SpawnBackground(state.repoRoot, maxWorkers, timeout)
+			options, err := daemonOptions(watchMode, maxWatchedRoots, maxInflight)
+			if err != nil {
+				return err
+			}
+			stateBody, started, err := daemon.SpawnBackgroundWithOptions(state.repoRoot, maxWorkers, timeout, options)
 			if err != nil {
 				return err
 			}
@@ -48,6 +54,9 @@ and tsserver processes, reducing cold-start latency.`,
 	}
 	startCommand.Flags().StringVar(&idleTimeout, "idle-timeout", "30m", "Worker idle eviction timeout")
 	startCommand.Flags().IntVar(&maxWorkers, "max-workers", 3, "Maximum active semantic workers")
+	startCommand.Flags().StringVar(&watchMode, "watch-mode", "", "File watcher mode: off|lazy|eager (default: env or lazy)")
+	startCommand.Flags().IntVar(&maxWatchedRoots, "max-watched-roots", 0, "Maximum active watched roots (default: env or 8)")
+	startCommand.Flags().IntVar(&maxInflight, "max-inflight", 0, "Maximum concurrent daemon-served heavy requests (default: env or 16)")
 
 	statusCommand := &cobra.Command{
 		Use:   "status",
@@ -91,7 +100,11 @@ and tsserver processes, reducing cold-start latency.`,
 			if err != nil {
 				return err
 			}
-			stateBody, started, err := daemon.SpawnBackground(state.repoRoot, maxWorkers, timeout)
+			options, err := daemonOptions(watchMode, maxWatchedRoots, maxInflight)
+			if err != nil {
+				return err
+			}
+			stateBody, started, err := daemon.SpawnBackgroundWithOptions(state.repoRoot, maxWorkers, timeout, options)
 			if err != nil {
 				return err
 			}
@@ -113,7 +126,11 @@ and tsserver processes, reducing cold-start latency.`,
 			if err != nil {
 				return err
 			}
-			server, err := daemon.NewServer(state.repoRoot, maxWorkers, timeout)
+			options, err := daemonOptions(watchMode, maxWatchedRoots, maxInflight)
+			if err != nil {
+				return err
+			}
+			server, err := daemon.NewServerWithOptions(state.repoRoot, maxWorkers, timeout, options)
 			if err != nil {
 				return err
 			}
@@ -132,6 +149,9 @@ and tsserver processes, reducing cold-start latency.`,
 	}
 	serveCommand.Flags().StringVar(&idleTimeout, "idle-timeout", "30m", "Worker idle eviction timeout")
 	serveCommand.Flags().IntVar(&maxWorkers, "max-workers", 3, "Maximum active semantic workers")
+	serveCommand.Flags().StringVar(&watchMode, "watch-mode", "", "File watcher mode: off|lazy|eager")
+	serveCommand.Flags().IntVar(&maxWatchedRoots, "max-watched-roots", 0, "Maximum active watched roots")
+	serveCommand.Flags().IntVar(&maxInflight, "max-inflight", 0, "Maximum concurrent daemon-served heavy requests")
 
 	debugStateCommand := &cobra.Command{
 		Use:    "print-state",
@@ -183,27 +203,81 @@ and tsserver processes, reducing cold-start latency.`,
 		Short: "Show daemon log tail (RF-DAE-002)",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			logPath := filepath.Join(state.repoRoot, ".mi-lsp", "daemon.log")
-			data, err := os.ReadFile(logPath)
+			lines, _, err := daemon.ReadLogTailFile(logPath, tailLines, 1<<20)
 			if err != nil {
 				if os.IsNotExist(err) {
 					return fmt.Errorf("daemon log not found at %s; has the daemon ever started?", logPath)
 				}
 				return err
 			}
-			lines := strings.Split(strings.TrimRight(string(data), "\n"), "\n")
-			n := tailLines
-			if n <= 0 || n > len(lines) {
-				n = len(lines)
+			if len(lines) == 0 {
+				return fmt.Errorf("daemon log not found or empty at %s", logPath)
 			}
-			start := len(lines) - n
-			for _, line := range lines[start:] {
-				fmt.Println(line)
+			for _, line := range lines {
+				fmt.Println(line.Text)
 			}
 			return nil
 		},
 	}
 	logsCommand.Flags().IntVar(&tailLines, "tail", 50, "Number of lines to show")
 
-	command.AddCommand(startCommand, statusCommand, stopCommand, restartCommand, serveCommand, debugStateCommand, openCommand, logsCommand)
+	var smokeCallers int
+	var smokeMaxWorkingSetMB int
+	var smokeMaxPrivateMB int
+	var smokeMaxHandles int
+	perfSmokeCommand := &cobra.Command{
+		Use:   "perf-smoke",
+		Short: "Run daemon memory and parallel-caller smoke checks",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			options, err := daemonOptions(watchMode, maxWatchedRoots, maxInflight)
+			if err != nil {
+				return err
+			}
+			timeout, err := time.ParseDuration(idleTimeout)
+			if err != nil {
+				return err
+			}
+			result, err := daemon.RunPerfSmoke(cmd.Context(), state.repoRoot, daemon.PerfSmokeOptions{
+				Callers:       smokeCallers,
+				MaxWorkingSet: uint64(smokeMaxWorkingSetMB) * 1024 * 1024,
+				MaxPrivate:    uint64(smokeMaxPrivateMB) * 1024 * 1024,
+				MaxHandles:    uint64(smokeMaxHandles),
+				StartOptions:  options,
+				MaxWorkers:    maxWorkers,
+				IdleTimeout:   timeout,
+			})
+			if err != nil {
+				return err
+			}
+			env := model.Envelope{Ok: result.Passed, Backend: "daemon", Items: []daemon.PerfSmokeResult{result}, Warnings: result.Warnings}
+			return state.printEnvelope(env, state.queryOptions(cmd, "daemon.perf-smoke", nil))
+		},
+	}
+	perfSmokeCommand.Flags().IntVar(&smokeCallers, "callers", 16, "Parallel status callers")
+	perfSmokeCommand.Flags().IntVar(&smokeMaxWorkingSetMB, "max-working-set-mb", 250, "Maximum daemon working set in MB")
+	perfSmokeCommand.Flags().IntVar(&smokeMaxPrivateMB, "max-private-mb", 300, "Maximum daemon private bytes in MB")
+	perfSmokeCommand.Flags().IntVar(&smokeMaxHandles, "max-handles", 5000, "Maximum daemon handle/fd count")
+	perfSmokeCommand.Flags().StringVar(&watchMode, "watch-mode", "", "File watcher mode: off|lazy|eager")
+	perfSmokeCommand.Flags().IntVar(&maxWatchedRoots, "max-watched-roots", 0, "Maximum active watched roots")
+	perfSmokeCommand.Flags().IntVar(&maxInflight, "max-inflight", 0, "Maximum concurrent daemon-served heavy requests")
+
+	command.AddCommand(startCommand, statusCommand, stopCommand, restartCommand, serveCommand, debugStateCommand, openCommand, logsCommand, perfSmokeCommand)
 	return command
+}
+
+func daemonOptions(watchMode string, maxWatchedRoots int, maxInflight int) (daemon.StartOptions, error) {
+	if err := daemon.ValidateWatchMode(watchMode); err != nil {
+		return daemon.StartOptions{}, err
+	}
+	options := daemon.DefaultStartOptions()
+	if watchMode != "" {
+		options.WatchMode = watchMode
+	}
+	if maxWatchedRoots > 0 {
+		options.MaxWatchedRoots = maxWatchedRoots
+	}
+	if maxInflight > 0 {
+		options.MaxInflight = maxInflight
+	}
+	return daemon.NormalizeStartOptions(options), nil
 }

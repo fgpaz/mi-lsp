@@ -97,6 +97,37 @@ func ListDocRecords(ctx context.Context, db *sql.DB) ([]model.DocRecord, error) 
 	return items, rows.Err()
 }
 
+func CountDocRecords(ctx context.Context, db *sql.DB) (int, error) {
+	var count int
+	if err := db.QueryRowContext(ctx, "SELECT COUNT(*) FROM doc_records").Scan(&count); err != nil {
+		return 0, err
+	}
+	return count, nil
+}
+
+func FindDocRecordsByMention(ctx context.Context, db *sql.DB, mentionType string, mentionValue string) ([]model.DocRecord, error) {
+	rows, err := db.QueryContext(ctx, `
+		SELECT dr.path, dr.title, dr.doc_id, dr.layer, dr.family, dr.snippet, dr.search_text, dr.content_hash, dr.indexed_at, dr.is_snapshot
+		FROM doc_records dr
+		JOIN doc_mentions dm ON dm.doc_path = dr.path
+		WHERE dm.mention_type = ? AND UPPER(dm.mention_value) = UPPER(?)
+		ORDER BY dr.layer ASC, dr.path ASC
+	`, mentionType, mentionValue)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := make([]model.DocRecord, 0)
+	for rows.Next() {
+		var item model.DocRecord
+		if err := rows.Scan(&item.Path, &item.Title, &item.DocID, &item.Layer, &item.Family, &item.Snippet, &item.SearchText, &item.ContentHash, &item.IndexedAt, &item.IsSnapshot); err != nil {
+			return nil, err
+		}
+		items = append(items, item)
+	}
+	return items, rows.Err()
+}
+
 func DocEdgesFrom(ctx context.Context, db *sql.DB, docPath string) ([]model.DocEdge, error) {
 	rows, err := db.QueryContext(ctx, `
 		SELECT from_path, to_path, to_doc_id, kind, label

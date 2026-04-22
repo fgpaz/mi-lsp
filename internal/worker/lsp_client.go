@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/fgpaz/mi-lsp/internal/model"
 	"github.com/fgpaz/mi-lsp/internal/processutil"
@@ -34,6 +35,18 @@ type LSPClient struct {
 	mu        sync.Mutex
 	seqID     int
 	started   bool
+	openDocs  map[string]openedDocument
+	openOrder []string
+}
+
+const (
+	maxLSPDocumentBytes = 2 << 20
+	maxLSPOpenDocuments = 32
+)
+
+type openedDocument struct {
+	modTime time.Time
+	size    int64
 }
 
 // NewLSPClient creates a new generic LSP client.
@@ -281,6 +294,21 @@ func (c *LSPClient) resolveLocation(request model.WorkerRequest) (string, int, i
 }
 
 func (c *LSPClient) openDocument(filePath string) error {
+	info, err := os.Stat(filePath)
+	if err != nil {
+		return fmt.Errorf("cannot stat file for didOpen: %w", err)
+	}
+	if info.Size() > maxLSPDocumentBytes {
+		return fmt.Errorf("file too large for LSP didOpen: %d bytes exceeds %d", info.Size(), maxLSPDocumentBytes)
+	}
+	if c.openDocs == nil {
+		c.openDocs = map[string]openedDocument{}
+	}
+	key := filepath.Clean(filePath)
+	if cached, ok := c.openDocs[key]; ok && cached.size == info.Size() && cached.modTime.Equal(info.ModTime()) {
+		c.touchOpenDocument(key)
+		return nil
+	}
 	content, err := os.ReadFile(filePath)
 	if err != nil {
 		return fmt.Errorf("cannot read file for didOpen: %w", err)
@@ -293,7 +321,32 @@ func (c *LSPClient) openDocument(filePath string) error {
 			"text":       string(content),
 		},
 	}
-	return c.sendNotification("textDocument/didOpen", params)
+	if err := c.sendNotification("textDocument/didOpen", params); err != nil {
+		return err
+	}
+	c.openDocs[key] = openedDocument{modTime: info.ModTime(), size: info.Size()}
+	c.touchOpenDocument(key)
+	c.evictOpenDocuments()
+	return nil
+}
+
+func (c *LSPClient) touchOpenDocument(key string) {
+	for i, existing := range c.openOrder {
+		if existing == key {
+			copy(c.openOrder[i:], c.openOrder[i+1:])
+			c.openOrder[len(c.openOrder)-1] = key
+			return
+		}
+	}
+	c.openOrder = append(c.openOrder, key)
+}
+
+func (c *LSPClient) evictOpenDocuments() {
+	for len(c.openOrder) > maxLSPOpenDocuments {
+		victim := c.openOrder[0]
+		c.openOrder = append([]string(nil), c.openOrder[1:]...)
+		delete(c.openDocs, victim)
+	}
 }
 
 func languageIDForPath(path string) string {

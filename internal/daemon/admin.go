@@ -251,9 +251,16 @@ func (a *AdminServer) syncSnapshots() {
 
 func (a *AdminServer) dashboardPayload(accessLimit int, window telemetry.Window) map[string]any {
 	accesses, _ := QueryAccessEvents(a.store, ExportQuery{Since: window.Since, Limit: accessLimit})
-	runtimes := a.manager.Status()
+	runtimes := []model.WorkerStatus{}
+	watchers := model.DaemonWatcherStats{}
+	if a.manager != nil {
+		runtimes = a.manager.Status()
+		watchers = a.manager.WatcherStats()
+	}
 	return map[string]any{
 		"state":           a.stateFn(),
+		"daemon_process":  processStats(os.Getpid()),
+		"watchers":        watchers,
 		"metrics":         buildDashboardMetrics(runtimes, accesses),
 		"active_runtimes": runtimes,
 		"recent_accesses": accesses,
@@ -371,27 +378,25 @@ func summarizeWorkspaces(runtimes []model.WorkerStatus, accesses []model.AccessE
 func (a *AdminServer) readLogTail(tail int) (string, []map[string]any, string, error) {
 	state := a.stateFn()
 	path := filepath.Join(state.RepoRoot, ".mi-lsp", "daemon.log")
-	data, err := os.ReadFile(path)
+	lines, truncated, err := ReadLogTailFile(path, tail, 1<<20)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return path, []map[string]any{}, "no daemon log file has been written yet", nil
 		}
 		return path, nil, "", err
 	}
-	content := strings.TrimRight(string(data), "\r\n")
-	if strings.TrimSpace(content) == "" {
+	if len(lines) == 0 {
 		return path, []map[string]any{}, "daemon log is empty", nil
 	}
-	rows := strings.Split(content, "\n")
-	if tail > len(rows) {
-		tail = len(rows)
+	items := make([]map[string]any, 0, len(lines))
+	for _, line := range lines {
+		items = append(items, map[string]any{"line": line.Line, "text": line.Text})
 	}
-	start := len(rows) - tail
-	items := make([]map[string]any, 0, tail)
-	for idx, line := range rows[start:] {
-		items = append(items, map[string]any{"line": start + idx + 1, "text": strings.TrimRight(line, "\r")})
+	warning := ""
+	if truncated {
+		warning = "daemon log tail read was capped to 1048576 bytes"
 	}
-	return path, items, "", nil
+	return path, items, warning, nil
 }
 
 func (a *AdminServer) parseCount(request *http.Request, key string, defaultValue int, maxValue int) int {

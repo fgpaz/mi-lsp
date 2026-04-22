@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -73,5 +75,34 @@ func TestHandleMetricsRecentWindowFiltersHistoricalEvents(t *testing.T) {
 	}
 	if payload.Total != 1 {
 		t.Fatalf("Total = %d, want 1", payload.Total)
+	}
+}
+
+func TestReadLogTailUsesBoundedTail(t *testing.T) {
+	root := t.TempDir()
+	logDir := filepath.Join(root, ".mi-lsp")
+	if err := os.MkdirAll(logDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	logPath := filepath.Join(logDir, "daemon.log")
+	if err := os.WriteFile(logPath, []byte("one\ntwo\nthree\nfour\n"), 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	admin := &AdminServer{stateFn: func() model.DaemonState { return model.DaemonState{RepoRoot: root} }}
+	path, items, warning, err := admin.readLogTail(2)
+	if err != nil {
+		t.Fatalf("readLogTail: %v", err)
+	}
+	if path != logPath {
+		t.Fatalf("path = %q, want %q", path, logPath)
+	}
+	if warning != "" {
+		t.Fatalf("warning = %q, want empty", warning)
+	}
+	if len(items) != 2 {
+		t.Fatalf("len(items) = %d, want 2", len(items))
+	}
+	if items[0]["text"] != "three" || items[1]["text"] != "four" {
+		t.Fatalf("items = %#v, want last two lines", items)
 	}
 }

@@ -72,6 +72,7 @@
 | TC-QRY-045 | positivo | RF-QRY-011 | `nav intent --classic` restaura la salida clasica y mantiene envelope estable |
 | TC-QRY-046 | positivo | RF-QRY-010 | `nav ask` con pregunta de implementacion queda clasico por default salvo `--axi` |
 | TC-QRY-047 | positivo | RF-QRY-007 | `nav workspace-map` sigue clasico por default y solo anuncia preview/full cuando se fuerza `--axi` |
+| TC-QRY-047A | positivo | RF-QRY-002, RF-QRY-007 | `nav workspace-map` no auto-inicia ni enruta por daemon en el modo summary-first por default |
 | TC-QRY-048 | positivo | RF-QRY-012 | `nav pack` construye un reading pack funcional en orden canonico desde tarea libre |
 | TC-QRY-049 | positivo | RF-QRY-012 | `nav pack --full` expande slices legibles del mismo pack sin cambiar el backend |
 | TC-QRY-050 | negativo | RF-QRY-012 | `nav pack` devuelve warning accionable cuando la wiki canonica existe pero el indice documental esta vacio o stale |
@@ -92,3 +93,8 @@
 | TC-QRY-065 | positivo | RF-QRY-011 | `nav intent` clasifica `mode=code` para consultas symbol-like y conserva ranking BM25 de catalogo |
 | TC-QRY-066 | positivo | RF-QRY-014, RF-QRY-015 | `MI_LSP_DOC_RANKING=legacy` deja un override diagnostico reversible y no persiste hints/queries crudas en telemetria |
 | TC-QRY-067 | positivo | RF-QRY-010, RF-QRY-012 | `continuation`, `memory_pointer` y `memory_pointer.stale` siguen visibles en las superficies docs-first despues del reranking owner-aware |
+| TC-QRY-068 | positivo | RF-QRY-014 | `TestNavRouteExplicitEmbeddedRFUsesContainingRFDocWhenDocsIndexEmpty`: `nav route RF-*` ancla el documento RF agregado aunque el indice documental este vacio |
+| TC-QRY-069 | positivo | RF-QRY-013 | `TestNavTraceFindsRFEmbeddedInAggregateDoc`: `nav trace RF-*` resuelve IDs mencionados dentro de documentos agregados via `doc_mentions` |
+| TC-QRY-070 | positivo | RF-QRY-014 | `TestNavRoutePreservesExplicitEmbeddedRFWhenDocsIndexExists`: Tier 2 no reemplaza el RF explicito por el indice general `04_RF.md` |
+| TC-QRY-071 | positivo | RF-QRY-013 | `TestNavTracePrefersAggregateRFDocOverRFIndexDoc`: `nav trace` prioriza el doc bajo `04_RF/` sobre el indice general cuando ambos mencionan el RF |
+| TC-QRY-072 | negativo | RF-QRY-014 | `TestNavRouteDoesNotAttachMissingExplicitRFToGovernanceFallback`: un `RF-*` inexistente no se pega como `doc_id` al fallback de gobernanza |

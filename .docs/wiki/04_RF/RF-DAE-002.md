@@ -1,3 +1,16 @@
+---
+id: RF-DAE-002
+title: Compartir runtimes, governance UI y telemetria local
+implements:
+  - internal/daemon/server.go
+  - internal/daemon/admin.go
+  - internal/daemon/perf_smoke.go
+  - internal/daemon/log_tail.go
+tests:
+  - internal/daemon/server_test.go
+  - internal/daemon/admin_test.go
+---
+
 # RF-DAE-002 - Compartir runtimes, governance UI y telemetria local
 
 ## 1. Execution Sheet

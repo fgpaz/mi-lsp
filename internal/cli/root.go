@@ -257,7 +257,7 @@ func shouldUseDaemon(operation string, requested bool) bool {
 		return false
 	}
 	switch operation {
-	case "nav.find", "nav.search", "nav.intent", "nav.symbols", "nav.outline", "nav.overview", "nav.multi-read", "nav.trace", "nav.pack", "nav.route", "nav.governance", "nav.ask":
+	case "nav.find", "nav.search", "nav.intent", "nav.symbols", "nav.outline", "nav.overview", "nav.multi-read", "nav.trace", "nav.pack", "nav.route", "nav.governance", "nav.ask", "nav.workspace-map":
 		return false
 	default:
 		return true
@@ -267,8 +267,10 @@ func shouldUseDaemon(operation string, requested bool) bool {
 // shouldAutoStartDaemon returns true for heavy operations that benefit from warm runtimes.
 func shouldAutoStartDaemon(operation string) bool {
 	switch operation {
-	case "nav.refs", "nav.context", "nav.deps", "nav.related", "nav.service", "nav.workspace-map", "nav.diff-context", "nav.batch":
+	case "nav.refs", "nav.context", "nav.deps", "nav.related", "nav.service", "nav.diff-context", "nav.batch":
 		return true
+	case "nav.workspace-map":
+		return false
 	}
 	return false
 }

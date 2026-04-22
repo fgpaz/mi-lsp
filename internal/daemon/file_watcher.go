@@ -27,8 +27,10 @@ type FileWatcher struct {
 	debounceDur   time.Duration
 	mu            sync.Mutex
 	stopCh        chan struct{}
+	stopOnce      sync.Once
 	wg            sync.WaitGroup
 	verbose       bool
+	watchedDirs   int
 }
 
 // NewFileWatcher creates a new file watcher for a workspace.
@@ -70,7 +72,9 @@ func (fw *FileWatcher) Start(ctx context.Context) error {
 
 // Stop closes the watcher and stops the watch loop.
 func (fw *FileWatcher) Stop() {
-	close(fw.stopCh)
+	fw.stopOnce.Do(func() {
+		close(fw.stopCh)
+	})
 
 	// Cancel all pending debounce timers
 	fw.mu.Lock()
@@ -84,7 +88,7 @@ func (fw *FileWatcher) Stop() {
 	fw.wg.Wait()
 
 	// Close watcher last
-	fw.watcher.Close()
+	_ = fw.watcher.Close()
 }
 
 func (fw *FileWatcher) watchLoop(ctx context.Context) {
@@ -107,7 +111,11 @@ func (fw *FileWatcher) watchLoop(ctx context.Context) {
 			if event.Op&fsnotify.Create != 0 {
 				// Watch new directories
 				if info, err := os.Stat(event.Name); err == nil && info.IsDir() && !shouldSkipDir(event.Name) {
-					fw.watcher.Add(event.Name)
+					if err := fw.watcher.Add(event.Name); err == nil {
+						fw.mu.Lock()
+						fw.watchedDirs++
+						fw.mu.Unlock()
+					}
 				}
 			}
 		case err, ok := <-fw.watcher.Errors:
@@ -119,6 +127,18 @@ func (fw *FileWatcher) watchLoop(ctx context.Context) {
 			}
 		}
 	}
+}
+
+func (fw *FileWatcher) PendingEvents() int {
+	fw.mu.Lock()
+	defer fw.mu.Unlock()
+	return len(fw.debounce)
+}
+
+func (fw *FileWatcher) WatchedDirCount() int {
+	fw.mu.Lock()
+	defer fw.mu.Unlock()
+	return fw.watchedDirs
 }
 
 func (fw *FileWatcher) scheduleReindex(filePath string) {
@@ -218,6 +238,10 @@ func (fw *FileWatcher) addWatchRecursive(root string) error {
 				if fw.verbose {
 					log.Printf("[mi-lsp:watcher] skip dir %s: %v", path, watchErr)
 				}
+			} else {
+				fw.mu.Lock()
+				fw.watchedDirs++
+				fw.mu.Unlock()
 			}
 		}
 		return nil

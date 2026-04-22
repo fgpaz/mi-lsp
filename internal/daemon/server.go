@@ -26,11 +26,18 @@ type Server struct {
 	telemetry *TelemetryStore
 	admin     *AdminServer
 	state     model.DaemonState
+	options   StartOptions
+	inflight  chan struct{}
 	stopped   chan struct{}
 	stopOnce  sync.Once
 }
 
 func NewServer(repoRoot string, maxWorkers int, idleTimeout time.Duration) (*Server, error) {
+	return NewServerWithOptions(repoRoot, maxWorkers, idleTimeout, DefaultStartOptions())
+}
+
+func NewServerWithOptions(repoRoot string, maxWorkers int, idleTimeout time.Duration, options StartOptions) (*Server, error) {
+	options = NormalizeStartOptions(options)
 	listener, err := listenDaemon()
 	if err != nil {
 		return nil, err
@@ -40,11 +47,13 @@ func NewServer(repoRoot string, maxWorkers int, idleTimeout time.Duration) (*Ser
 		_ = listener.Close()
 		return nil, err
 	}
-	manager := NewManager(repoRoot, maxWorkers, idleTimeout)
+	manager := NewManagerWithOptions(repoRoot, maxWorkers, idleTimeout, options)
 	server := &Server{
 		listener:  listener,
 		manager:   manager,
 		telemetry: telemetry,
+		options:   options,
+		inflight:  make(chan struct{}, options.MaxInflight),
 		stopped:   make(chan struct{}),
 		state: model.DaemonState{
 			PID:             os.Getpid(),
@@ -55,6 +64,9 @@ func NewServer(repoRoot string, maxWorkers int, idleTimeout time.Duration) (*Ser
 			ProtocolVersion: model.ProtocolVersion,
 			MaxWorkers:      maxWorkers,
 			IdleTimeout:     idleTimeout.String(),
+			WatchMode:       options.WatchMode,
+			MaxWatchedRoots: options.MaxWatchedRoots,
+			MaxInflight:     options.MaxInflight,
 		},
 	}
 	server.app = service.New(repoRoot, manager)
@@ -88,8 +100,9 @@ func NewServer(repoRoot string, maxWorkers int, idleTimeout time.Duration) (*Ser
 		return nil, err
 	}
 
-	// Start file watchers for registered workspaces
-	server.startFileWatchers()
+	if options.WatchMode == WatchModeEager {
+		server.startFileWatchers()
+	}
 
 	return server, nil
 }
@@ -157,6 +170,15 @@ func (s *Server) handleConnection(conn net.Conn) {
 		return
 	}
 	started := time.Now()
+	if s.isBackpressureLimited(request) && !s.tryAcquireInflight() {
+		response := s.backpressureEnvelope(request)
+		s.recordAccess(request, response, nil, time.Since(started))
+		_ = worker.WriteFrame(conn, response)
+		return
+	}
+	if s.isBackpressureLimited(request) {
+		defer s.releaseInflight()
+	}
 	response, err := s.handleRequest(request)
 	if err != nil {
 		response = model.Envelope{Ok: false, Backend: "daemon", Items: []string{}, Warnings: []string{err.Error()}}
@@ -178,6 +200,8 @@ func (s *Server) handleRequest(request model.CommandRequest) (model.Envelope, er
 			Backend: "daemon",
 			Items: []map[string]any{{
 				"state":           s.state,
+				"daemon_process":  processStats(os.Getpid()),
+				"watchers":        s.manager.WatcherStats(),
 				"active_runtimes": s.manager.Status(),
 				"recent_accesses": accesses,
 			}},
@@ -242,6 +266,11 @@ func (s *Server) recordAccess(request model.CommandRequest, response model.Envel
 	if operationErr != nil {
 		event.Error = operationErr.Error()
 	}
+	if isBackpressureEnvelope(response) {
+		event.ErrorKind = "daemon"
+		event.ErrorCode = "backpressure_busy"
+		event.Error = firstNonEmpty(event.Error, "daemon/backpressure_busy")
+	}
 	event = telemetry.EnrichAccessEvent(event, request, response, operationErr)
 	_ = s.telemetry.RecordAccess(s.state.RunID, event)
 	_ = s.telemetry.ReplaceRuntimeSnapshots(s.state.RunID, s.manager.Status())
@@ -255,6 +284,11 @@ func (s *Server) syncRuntimeSnapshots() {
 }
 
 func SpawnBackground(repoRoot string, maxWorkers int, idleTimeout time.Duration) (model.DaemonState, bool, error) {
+	return SpawnBackgroundWithOptions(repoRoot, maxWorkers, idleTimeout, DefaultStartOptions())
+}
+
+func SpawnBackgroundWithOptions(repoRoot string, maxWorkers int, idleTimeout time.Duration, options StartOptions) (model.DaemonState, bool, error) {
+	options = NormalizeStartOptions(options)
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	if state, err := probeDaemon(ctx); err == nil {
@@ -275,13 +309,14 @@ func SpawnBackground(repoRoot string, maxWorkers int, idleTimeout time.Duration)
 		return state, false, nil
 	}
 
-	command, err := daemonServeCommand(repoRoot, maxWorkers, idleTimeout)
+	command, err := daemonServeCommand(repoRoot, maxWorkers, idleTimeout, options)
 	if err != nil {
 		return model.DaemonState{}, false, err
 	}
 	if err := command.Start(); err != nil {
 		return model.DaemonState{}, false, err
 	}
+	releaseStartedCommand(command)
 
 	deadline := time.Now().Add(10 * time.Second)
 	for time.Now().Before(deadline) {
@@ -295,9 +330,53 @@ func SpawnBackground(repoRoot string, maxWorkers int, idleTimeout time.Duration)
 	}
 	state, loadErr := loadDaemonState()
 	if loadErr == nil {
-		return state, true, nil
+		return state, true, fmt.Errorf("daemon start timed out before health check succeeded; stale state pid=%d endpoint=%s", state.PID, state.Endpoint)
 	}
 	return model.DaemonState{}, false, errors.New("daemon start timed out before health check succeeded")
+}
+
+func (s *Server) tryAcquireInflight() bool {
+	select {
+	case s.inflight <- struct{}{}:
+		return true
+	default:
+		return false
+	}
+}
+
+func (s *Server) releaseInflight() {
+	select {
+	case <-s.inflight:
+	default:
+	}
+}
+
+func (s *Server) isBackpressureLimited(request model.CommandRequest) bool {
+	switch request.Operation {
+	case "nav.refs", "nav.context", "nav.deps", "nav.related", "nav.service", "nav.diff-context", "nav.batch", "workspace.warm":
+		return true
+	case "nav.workspace-map":
+		return request.Context.Full
+	default:
+		return false
+	}
+}
+
+func (s *Server) backpressureEnvelope(request model.CommandRequest) model.Envelope {
+	message := fmt.Sprintf("daemon/backpressure_busy: %s exceeds max inflight %d", request.Operation, s.options.MaxInflight)
+	hint := "retry later or raise MI_LSP_DAEMON_MAX_INFLIGHT for this machine"
+	return model.Envelope{
+		Ok:      false,
+		Backend: "daemon",
+		Items: []map[string]any{{
+			"error_kind":   "daemon",
+			"error_code":   "backpressure_busy",
+			"operation":    request.Operation,
+			"max_inflight": s.options.MaxInflight,
+		}},
+		Warnings: []string{message},
+		Hint:     hint,
+	}
 }
 
 func probeDaemon(ctx context.Context) (model.DaemonState, error) {
@@ -342,6 +421,18 @@ func firstNonEmpty(values ...string) string {
 		}
 	}
 	return ""
+}
+
+func isBackpressureEnvelope(response model.Envelope) bool {
+	if response.Ok {
+		return false
+	}
+	for _, warning := range response.Warnings {
+		if strings.Contains(warning, "daemon/backpressure_busy") {
+			return true
+		}
+	}
+	return false
 }
 
 func isRetryableAcceptError(err error) bool {

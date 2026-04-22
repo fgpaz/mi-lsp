@@ -133,8 +133,10 @@ Campos recomendados:
 
 - `index.db` soporta lecturas frecuentes y escrituras incrementales por indexacion.
 - `daemon.db` soporta escrituras append-heavy de telemetria local y replace liviano de `runtime_snapshots` por run activo.
+- `daemon_process` y `watchers` son diagnostico runtime derivado en `daemon status`/`/api/status`; no requieren schema nuevo mientras `access_events.latency_ms`, `error_kind` y `error_code` cubran backpressure y latencia.
 - No registrar payloads completos de requests ni paths sensibles innecesarios en access events.
 - Para `route=daemon`, el daemon es el writer canonico de `access_events`.
+- Saturacion de requests daemon-aware debe persistirse como `error_kind=daemon`, `error_code=backpressure_busy` y warning tipado `daemon/backpressure_busy`.
 - La CLI solo debe persistir filas de `access_events` para `direct`, `direct_fallback` o fallas previas a la ejecucion remota.
 - `admin export --summary` agrega sobre toda la ventana filtrada salvo `--limit` explicito; los breakdowns adicionales por route/client/hint/failure-stage son opcionales y no cambian esa base.
 

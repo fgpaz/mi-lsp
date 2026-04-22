@@ -1,3 +1,16 @@
+---
+id: RF-QRY-002
+title: Resolver routing con fallback de daemon y backend
+implements:
+  - internal/cli/root.go
+  - internal/daemon/server.go
+  - internal/service/context.go
+tests:
+  - internal/cli/root_test.go
+  - internal/daemon/server_test.go
+  - internal/service/context_test.go
+---
+
 # RF-QRY-002 - Resolver routing con fallback de daemon y backend
 
 ## 1. Execution Sheet
