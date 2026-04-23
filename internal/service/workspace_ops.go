@@ -192,6 +192,9 @@ func (a *App) workspaceStatus(ctx context.Context, name string, opts model.Query
 	if canonicalWikiExists(registration.Root) && !docsIndexReady {
 		warnings = appendStringIfMissing(warnings, fmt.Sprintf("documentation index is empty; rerun 'mi-lsp index --workspace %s --docs-only' to rebuild docgraph and memory_pointer", registration.Name))
 	}
+	if docsIndexReady && !item["index_ready"].(bool) {
+		warnings = appendStringIfMissing(warnings, fmt.Sprintf("code catalog is empty while documentation is ready; docs-only recovery rebuilt governed docs and memory_pointer, but nav.find/nav.symbols/semantic code features still need 'mi-lsp index --workspace %s'", registration.Name))
+	}
 	envelope := model.Envelope{Ok: true, Workspace: registration.Name, Backend: "sqlite", Items: []any{applyWorkspaceStatusAXIView(item, registration.Name, opts)}, Stats: stats, Warnings: warnings}
 	envelope = attachMemoryPointer(envelope, memory)
 	envelope.Continuation = buildStatusContinuation(opts, memory)

@@ -77,6 +77,7 @@ flowchart LR
 - La version actual de AXI no instala hooks ni mantiene contexto ambiente persistente fuera del proceso CLI.
 - Las lecturas baratas de catalogo/texto (`nav.find`, `nav.search`, `nav.symbols`, `nav.outline`, `nav.overview`, `nav.multi-read`) deben ejecutarse directas y no depender del health del daemon.
 - `nav.ask` tambien usa el camino directo por default; el daemon no es el hot path obligatorio para respuestas docs-first.
+- `nav trace` sigue siendo una lectura directa del repo-local y debe resolver IDs `RF-*` y `TP-*` desde `doc_records/doc_mentions`; para `RF-*`, los docs TP del layer `06` cuentan como evidencia documental de cobertura y evitan falsos `missing` despues de `index --docs-only`.
 - Todo subprocesso no interactivo debe usar la politica comun de proceso; en Windows eso implica `HideWindow + CREATE_NO_WINDOW`, y los procesos background del daemon agregan `DETACHED_PROCESS`.
 - El `tool_root` del worker se resuelve contra el ejecutable/distribucion activa o, en desarrollo, contra el repo `mi-lsp`; nunca contra el `cwd` arbitrario del workspace consultado.
 - `index`, `index start` y `index run-job` deben estar protegidos por un lock interproceso repo-local (`.mi-lsp/index.lock`) durante toda la indexacion, no solo durante el commit SQLite.
@@ -98,7 +99,7 @@ flowchart LR
 - `owner_hints` vive en `00_gobierno_documental.md`, se proyecta al `read-model.toml` y solo refina ownership documental repo-especifico; no reemplaza las heuristicas generales del binario.
 - Si `00`, su YAML embebido, la proyeccion o el indice quedan fuera de sync, el workspace entra en `blocked mode`.
 - `nav ask` es docs-first: primero rankea docs canonicos, luego deriva evidencia de codigo desde menciones y fallback textual.
-- `nav route`, `nav ask`, `nav pack` y `nav.intent` comparten el scorer owner-aware del lane documental: FTS + overlap lexico + `doc_id` + stem/path + hints opcionales + penalizacion a `generic/README` y a artefactos de soporte bajo `.docs/raw/` cuando hay un candidato canonico positivo en `.docs/wiki/`.
+- `nav route`, `nav ask`, `nav pack` y `nav.intent` comparten el scorer owner-aware del lane documental: FTS + overlap lexico + `doc_id` + stem/path + hints opcionales + penalizacion a `generic/README` y a artefactos de soporte bajo `.docs/raw/` cuando hay un candidato canonico positivo dentro del corpus documental gobernado por `00`/`read-model`.
 - La recencia documental solo opera como `weak tie-break`; no rescata docs irrelevantes ni pisa un match canonico fuerte.
 - El envelope de query puede agregar un bloque opcional `coach` query-level para guidance explicito (`rerun|refine|narrow|expand`) cuando existe una accion de continuidad clara.
 - El envelope de query puede agregar un bloque opcional `continuation`, tiny y machine-readable, para sugerir el mejor siguiente paso del harness sin requerir parsing de comandos raw.
@@ -123,7 +124,7 @@ flowchart LR
 
 La busqueda textual implementa una cadena de fallback robusta:
 
-1. `rg` binario: si existe y es accesible, usa `ripgrep` nativo
+1. `rg` binario: si existe y es accesible, usa `ripgrep` nativo con `--hidden` para no perder docs gobernados ni artefactos repo-locales ocultos cuando la consulta apunta ahi
 2. Go native: fallback a `searchPatternGo` nativo que respeta `.milspignore` y filtra binarios
 3. `MI_LSP_RG` env var: permite override de la ruta de `rg`
 
@@ -189,6 +190,7 @@ El struct `internal/service/config.go` centraliza todos los valores hardcodeados
 - Si el candidato Roslyn elegido falla por bootstrap/arranque, el caller reintenta una sola vez con el siguiente candidato determinista antes de devolver error accionable.
 - Los cambios en `.docs/wiki`, `README*`, `docs/`, `00_gobierno_documental.md` o `read-model.toml` fuerzan full re-index del corpus documental; el incremental por git no intenta mezclar deltas parciales de docs.
 - `workspace status` debe exponer perfil, sync de gobernanza, estado bloqueado, `doc_count`, `docs_index_ready` y estado del indice respecto de `00`/`read-model`; si la wiki existe pero `doc_count=0`, debe sugerir `mi-lsp index --docs-only`.
+- Si `docs_index_ready=true` pero `index_ready=false`, `workspace status` debe dejar visible que el repo quedo en modo "docs-only listo": el corpus gobernado y `memory_pointer` estan disponibles, pero el catalogo de codigo y las superficies code-first siguen ausentes hasta un `mi-lsp index` full/catalog.
 - `workspace status --full` debe exponer ademas el digest expandido de memoria de reentrada (`recent_canonical_changes`, `handoff`, `best_reentry`, `stale`) sin recalcularlo en caliente.
 - `nav ask --all-workspaces` fan-out sobre workspaces registrados con un pool acotado de 4 workers y merge determinista por score.
 - `nav.find`, `nav.symbols`, `nav.overview` y `nav.intent` aceptan `--offset` para paginacion cursor-like sobre queries SQL; `nav.search` queda fuera de ese contrato porque sigue siendo rg/text-backed.

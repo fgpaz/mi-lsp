@@ -466,6 +466,41 @@ func TestSearchPatternRg_RespectsLimitOnStreamedOutput(t *testing.T) {
 	}
 }
 
+func TestSearchPatternRg_IncludesHiddenDocsPaths(t *testing.T) {
+	root, name := setupTestWorkspace(t)
+	project := testProject(name)
+
+	scriptPath := filepath.Join(root, "fake-rg-hidden")
+	scriptBody := "#!/bin/sh\n" +
+		"args=\"$*\"\n" +
+		"case \"$args\" in\n" +
+		"  *--hidden*) printf '%s:7:RF-GAS-10 match\\n' \"" + root + "/.docs/wiki/04_RF/RF-GAS.md\" ;;\n" +
+		"  *) exit 1 ;;\n" +
+		"esac\n"
+	if runtime.GOOS == "windows" {
+		scriptPath += ".cmd"
+		scriptBody = "@echo off\r\n" +
+			"set args=%*\r\n" +
+			"echo %args% | findstr /C:\"--hidden\" >nul\r\n" +
+			"if errorlevel 1 exit /b 1\r\n" +
+			"echo " + root + "\\.docs\\wiki\\04_RF\\RF-GAS.md:7:RF-GAS-10 match\r\n"
+	}
+	if err := os.WriteFile(scriptPath, []byte(scriptBody), 0o755); err != nil {
+		t.Fatalf("write fake rg hidden script: %v", err)
+	}
+
+	items, err := searchPatternRg(context.Background(), root, root, project, "RF-GAS-10", false, 10, scriptPath)
+	if err != nil {
+		t.Fatalf("searchPatternRg: %v", err)
+	}
+	if len(items) != 1 {
+		t.Fatalf("expected 1 item, got %d", len(items))
+	}
+	if got, _ := items[0]["file"].(string); got != ".docs/wiki/04_RF/RF-GAS.md" {
+		t.Fatalf("file = %q, want .docs/wiki/04_RF/RF-GAS.md", got)
+	}
+}
+
 func TestSearchPattern_LiteralNoMatchesSuggestsRegex(t *testing.T) {
 	root, name := setupTestWorkspace(t)
 	app := New(root, nil)
@@ -646,6 +681,63 @@ func TestIndexStartWaitCreatesSucceededJobAndGeneration(t *testing.T) {
 	}
 	if !ok || activeCatalog != jobs[0].GenerationID {
 		t.Fatalf("active catalog generation = %q ok=%v, want %q", activeCatalog, ok, jobs[0].GenerationID)
+	}
+}
+
+func TestWorkspaceStatusWarnsWhenDocsOnlyRecoveryLeavesCodeCatalogAbsent(t *testing.T) {
+	ensureWritableTestHome(t)
+	root := t.TempDir()
+	alias := "docs-only-status-" + filepath.Base(root)
+	project := testProject(alias)
+	if err := workspace.SaveProjectFile(root, project); err != nil {
+		t.Fatalf("SaveProjectFile: %v", err)
+	}
+	writeWorkspaceFile(t, root, "src/App.csproj", `<Project Sdk="Microsoft.NET.Sdk"></Project>`)
+	writeSpecBackendGovernanceFixture(t, root)
+	writeWorkspaceFile(t, root, ".docs/wiki/04_RF/RF-IDX-010.md", "# RF-IDX-010\n\nDocs-only recovery should warn when code catalog is absent.\n")
+
+	if _, err := workspace.RegisterWorkspace(alias, model.WorkspaceRegistration{
+		Name:      alias,
+		Root:      root,
+		Languages: []string{"csharp"},
+		Kind:      model.WorkspaceKindSingle,
+	}); err != nil {
+		t.Fatalf("register workspace: %v", err)
+	}
+	defer func() { _ = workspace.RemoveWorkspace(alias) }()
+
+	app := New(root, nil)
+	if _, err := app.Execute(context.Background(), model.CommandRequest{
+		Operation: "index.run",
+		Context:   model.QueryOptions{Workspace: alias},
+		Payload:   map[string]any{"docs_only": true},
+	}); err != nil {
+		t.Fatalf("index.run --docs-only: %v", err)
+	}
+
+	env, err := app.Execute(context.Background(), model.CommandRequest{
+		Operation: "workspace.status",
+		Context:   model.QueryOptions{Workspace: alias},
+	})
+	if err != nil {
+		t.Fatalf("workspace.status: %v", err)
+	}
+	items, ok := env.Items.([]any)
+	if !ok || len(items) != 1 {
+		t.Fatalf("items = %#v, want one workspace status item", env.Items)
+	}
+	item, ok := items[0].(map[string]any)
+	if !ok {
+		t.Fatalf("workspace status item = %#v, want map", items[0])
+	}
+	if item["docs_index_ready"] != true || item["docs_ready"] != true {
+		t.Fatalf("docs readiness = %#v/%#v, want true/true", item["docs_index_ready"], item["docs_ready"])
+	}
+	if item["index_ready"] != false {
+		t.Fatalf("index_ready = %#v, want false", item["index_ready"])
+	}
+	if !strings.Contains(strings.Join(env.Warnings, " "), "code catalog is empty while documentation is ready") {
+		t.Fatalf("warnings = %v, want docs-only split-state warning", env.Warnings)
 	}
 }
 

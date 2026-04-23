@@ -528,7 +528,7 @@ type TraceDrift struct {
 	Severity string `json:"severity"` // "info" | "warn" | "error"
 }
 
-// TraceResult represents the traceability result for a single RF requirement.
+// TraceResult represents the traceability result for a single RF/TP doc ID.
 type TraceResult struct {
 	RF       string       `json:"rf"`
 	Title    string       `json:"title"`

@@ -2,6 +2,19 @@
 
 Use this reference when the task is goal-shaped instead of command-shaped.
 
+## Canonical wiki / traceability discovery
+
+```powershell
+mi-lsp nav route "how does login work?" --workspace <alias> --format compact
+mi-lsp nav wiki search "RF-AUTH login" --workspace <alias> --layer RF,TP,CT --format compact
+mi-lsp nav wiki pack "how does login work?" --workspace <alias> --format compact
+mi-lsp nav wiki trace RF-AUTH-001 --workspace <alias> --format compact
+```
+
+Use this when the task is about canonical docs, requirements, tests, contracts, or traceability.
+If AXI preview is trimmed, rerun the same wiki command with `--full` before broadening the search.
+If a later `nav search` returns prompts, audits, `.docs/raw`, or other support artifacts, treat that as non-canonical evidence and keep the wiki lane as the source of truth.
+
 ## Service audit
 
 ```powershell

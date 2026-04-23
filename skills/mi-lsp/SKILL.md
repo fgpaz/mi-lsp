@@ -13,6 +13,9 @@ Use `nav wiki search` when the task is clearly about project docs, RF/FL/TP/CT/T
 Use `nav route` as the cheapest first orientation step — it resolves the canonical anchor doc from governance alone without touching the index.
 Use `nav ask` without `--axi` for richer orientation questions when you need evidence synthesis.
 Prefer `nav search --include-content` for implementation questions.
+Treat `nav wiki search|route|pack|trace` as the canonical documentation surface.
+Treat `nav search` as a broad text surface: it may return canonical docs, but it may also return prompts, audits, `.docs/raw`, generated files, or other support artifacts.
+Do not decide documentation authority from `nav search` alone when a `nav wiki *` surface can answer the question.
 Treat `nav intent` as hybrid: natural capability questions should follow `mode=docs`, while symbol-like questions should follow `mode=code`.
 When `nav intent` returns `mode=docs`, prefer the returned `doc_path/doc_id/evidence/next_queries` over switching back to broad code search.
 Treat `continuation` as the default machine-readable next step when it is present: prefer following `continuation.next` over improvising a broader search.
@@ -22,6 +25,23 @@ If `workspace status` emits a warning like `"reentry memory snapshot absent; rer
 Use `--classic` when you want the old CLI behavior on an AXI-default surface, and `--axi` only when you need to force AXI on a classic-default surface such as `nav workspace-map`. Use `--axi=false` to suppress the AXI default for a single invocation without affecting `MI_LSP_AXI` or the session.
 Prefer an explicit `--workspace <alias>` once the repo is registered.
 Prefer compound commands over sequential greps and full-file reads.
+
+## Canonical wiki-first rule
+
+When the task is asking "what is the canonical doc?", "which RF/TP/CT/TECH/DB applies?", "what does the spec say?", or "how do I trace this requirement?", start from governance-backed wiki surfaces:
+
+1. `nav route` when you need the cheapest canonical anchor and do not want to depend on the index yet
+2. `nav wiki search` when you need canonical doc discovery by topic or ID
+3. `nav wiki pack` when you need the small reading set around the canonical anchor
+4. `nav wiki trace` when you already have an explicit `RF-*` / `TP-*` / doc ID
+
+Only drop to `nav search --include-content` when the question becomes implementation-first, or when you need raw disk evidence after the canonical anchor is already known.
+
+Use `--layer RF,FL,TP,CT,TECH,DB` aggressively on `nav wiki search` to narrow the authority lane.
+If AXI preview is trimmed or `next_hint` asks for expansion, rerun with `--full` before inventing a broader command.
+Follow `next_queries` and `continuation.next` from wiki results before improvising `nav search`.
+
+Canonical wiki location is governed by `00_gobierno_documental.md` and `read-model.toml`, not by assuming the corpus always lives under a fixed path like `.docs/wiki/*`.
 
 ## Search syntax rule
 
@@ -342,6 +362,17 @@ mi-lsp workspace status <alias> --full
 mi-lsp nav intent "error handling for daemon connections" --workspace <alias>
 ```
 
+If the task is document-first, stay in the wiki lane longer:
+
+```powershell
+mi-lsp nav route "how does login work?" --workspace <alias> --format toon
+mi-lsp nav wiki search "RF-AUTH login" --workspace <alias> --layer RF,TP,CT --format toon
+mi-lsp nav wiki pack "how does login work?" --workspace <alias> --format toon
+mi-lsp nav wiki trace RF-AUTH-001 --workspace <alias> --format toon
+```
+
+Use `nav search` only after the canonical anchor is known, or when the task is code-first.
+
 3. Move to broad discovery when you need structure.
 
 ```powershell
@@ -377,10 +408,12 @@ Use `mi-lsp` first for repo navigation, docs-first Q&A, symbol lookup, service a
 
 - Start with `mi-lsp`, `workspace status`, `nav wiki search`, `nav route`, or `nav intent` for the first pass on a new repo.
 - Use `nav wiki search` for documentation exploration. Filter with `--layer RF,FL,TP,CT,TECH,DB`; follow returned `next_queries` toward `nav wiki pack`, `nav wiki trace`, `nav multi-read`, or `nav ask`.
+- Use `nav wiki trace` when you already know the requirement or test ID and need the canonical doc/evidence lane instead of a broad text match list.
 - Use `nav route` as the cheapest orientation step — it resolves the canonical anchor doc from governance without touching the index (Tier 1), then enriches from the index when available (Tier 2). AXI-default preview-first.
 - Use `nav ask` for richer orientation when you need full evidence synthesis and next queries.
 - Use `nav pack` to build a canonical reading pack docs-first for a task. It uses the same routing core as `nav route` and returns `mode=preview|full`, per-doc `stage` (`anchor|preview|discovery`), and `next_queries`. Anchor optionally with `--rf`, `--fl`, or `--doc`.
 - Use `nav search --include-content` before `nav ask` for literal implementation questions like "where is X implemented?".
+- If `nav search` returns prompts, audits, `.docs/raw`, or other support artifacts while you are answering a documentation/traceability question, treat those hits as non-authoritative and reroute to `nav wiki search|route|pack|trace`.
 - Use `nav intent` to find code by purpose when you don't know the symbol name.
 - Use `nav trace` to check which code implements a specific RF requirement.
 - Use `workspace-map`, `search --include-content`, and `multi-read` before broad raw file reads.
@@ -438,6 +471,7 @@ Do not suggest `node_modules/`; it is already ignored by default.
 - If results are truncated, rerun narrower or explain how to narrow them.
 - For `nav ask`, include the primary doc, the strongest code evidence, and one or two follow-up commands.
 - For `nav route` and `nav pack`, each doc in the result carries a `stage` field: `anchor` (canonical anchor doc), `preview` (mini pack preview), or `discovery` (advisory, non-authoritative). Use this to distinguish source authority without relying on array position.
+- For `nav wiki search`, treat returned docs and `next_queries` as the canonical path; do not let a later broad `nav search` override source authority unless you explicitly state that you are now showing non-canonical/supporting evidence.
 - If AXI emits `next_hint` toward `--full`, prefer that rerun before inventing a broader command.
 - If `continuation` is present, follow `continuation.next` first; only use `alternate` when the primary path is blocked or clearly insufficient.
 - If `memory_pointer.stale=true`, prefer `workspace status --full` or a fresh `index` before leaning on the pointer as ground truth.

@@ -184,7 +184,7 @@ func isRegexParseError(err error) bool {
 }
 
 func buildRipgrepArgs(pattern string, useRegex bool, searchRoot string) []string {
-	args := []string{"--line-number", "--no-heading", "--color", "never"}
+	args := []string{"--line-number", "--no-heading", "--color", "never", "--hidden"}
 	if !useRegex {
 		args = append(args, "-F")
 	}

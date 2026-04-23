@@ -6,12 +6,12 @@
 mi-lsp nav wiki search <query> --workspace <alias> [--layer RF,FL,TP,CT,TECH,DB] [--top N] [--offset N] [--include-content] [--format toon|compact|yaml]
 mi-lsp nav wiki route <task> --workspace <alias> [--full] [--format toon|compact|yaml]
 mi-lsp nav wiki pack <task> --workspace <alias> [--rf RF-*] [--fl FL-*] [--doc <path>] [--full] [--format toon|compact|yaml]
-mi-lsp nav wiki trace <RF-ID|--all> --workspace <alias> [--summary] [--format toon|compact|yaml]
+mi-lsp nav wiki trace <DOC-ID|--all> --workspace <alias> [--summary] [--format toon|compact|yaml]
 ```
 
 ## Semantica
 
-`nav wiki` es la puerta documental explicita para agentes. `wiki search` usa el docgraph repo-local y el scorer owner-aware para devolver candidatos wiki, mientras `wiki route`, `wiki pack` y `wiki trace` reutilizan la semantica y el shape de `nav route`, `nav pack` y `nav trace`.
+`nav wiki` es la puerta documental explicita para agentes. `wiki search` usa el docgraph repo-local y el scorer owner-aware para devolver candidatos wiki, mientras `wiki route`, `wiki pack` y `wiki trace` reutilizan la semantica y el shape de `nav route`, `nav pack` y `nav trace`. `wiki trace` acepta `RF-*` y `TP-*`; `--all` sigue recorriendo el set RF canonico, y cuando necesita fallback a disco debe priorizar las rutas gobernadas por `00`/`read-model` antes de caer a layouts legacy.
 
 ## Envelope `wiki search`
 

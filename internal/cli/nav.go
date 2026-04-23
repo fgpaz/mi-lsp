@@ -407,10 +407,11 @@ Use --include-content to embed symbol bodies in the output.`,
 	var traceAll bool
 	var traceSummary bool
 	traceCommand := &cobra.Command{
-		Use:   "trace [RF-ID]",
-		Short: "Trace spec-to-code links for RF requirements",
-		Long: `Analyze implementation status of functional requirements (RF).
-Uses explicit markers from wiki frontmatter and heuristic inference.
+		Use:   "trace [DOC-ID]",
+		Short: "Trace spec-to-code links for RF/TP docs",
+		Long: `Analyze implementation status of functional RF/TP IDs.
+RF docs can contribute implementation links, and TP docs can contribute
+documented test coverage even after a docs-only rebuild.
 Use --all for all RFs, --summary for tabular view.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			payload := map[string]any{}
@@ -595,8 +596,8 @@ pack for a reading pack, and trace for RF implementation links.`,
 	var traceAll bool
 	var traceSummary bool
 	traceCommand := &cobra.Command{
-		Use:   "trace <RF-ID|--all>",
-		Short: "Trace wiki RF requirements to implementation links",
+		Use:   "trace <DOC-ID|--all>",
+		Short: "Trace wiki RF/TP docs to implementation links",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			payload := map[string]any{}
 			if len(args) > 0 {

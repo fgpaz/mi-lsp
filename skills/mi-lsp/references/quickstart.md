@@ -43,12 +43,36 @@ If `mi-lsp workspace list` fails because the command is missing, return to the i
 9. `nav intent` when you know what the code does but not the symbol name
 10. `nav multi-read` or `nav batch` when you already know the targets
 
+## Canonical wiki-first loop
+
+Use this loop when the question is document-first instead of code-first:
+
+1. `nav route` to get the canonical anchor from governance
+2. `nav wiki search` with `--layer` to discover the right RF/FL/TP/CT/TECH/DB docs
+3. `nav wiki pack` to read the minimal canonical set
+4. `nav wiki trace` when you already have an explicit ID
+5. `nav search --include-content` only after the canonical anchor is known, or when you need raw implementation evidence
+
+Example:
+
+```powershell
+mi-lsp nav route "how does login work?" --workspace <alias> --format toon
+mi-lsp nav wiki search "RF-AUTH login" --workspace <alias> --layer RF,TP,CT --format toon
+mi-lsp nav wiki pack "how does login work?" --workspace <alias> --format toon
+mi-lsp nav wiki trace RF-AUTH-001 --workspace <alias> --format toon
+```
+
+If AXI preview is trimmed or `next_hint` asks for expansion, rerun the same wiki command with `--full` before switching to a broader surface.
+If a broad `nav search` returns `.docs/raw`, audits, prompts, or generated/support files, treat them as non-canonical evidence and go back to the wiki lane for source authority.
+Canonical doc location follows governance and `read-model`, not a fixed path assumption.
+
 ## Choose the right command
 
 | Need | Prefer |
 |---|---|
 | Find wiki RF/FL/TP/CT/TECH/DB docs | `nav wiki search "workflow masterformularios" --layer RF,FL,CT,TP` |
 | Build a pack from wiki anchors | `nav wiki pack "workflow con masterformularios"` |
+| Trace one requirement/test ID through the canonical wiki surface | `nav wiki trace RF-QRY-003` |
 | Cheapest canonical orientation (no index needed) | `nav route "how is this workspace organized?"` |
 | Understand the repo with full evidence | `nav ask "how is this workspace organized?"` |
 | Find the right repo/entrypoint in a parent folder | `nav workspace-map --axi` |
@@ -74,3 +98,4 @@ If `mi-lsp workspace list` fails because the command is missing, return to the i
 If a cheap read is slow, suspect stale binary, stale index, or wrong PATH before suspecting daemon health.
 In container workspaces, prefer `--repo` for direct `find`, `search`, or `intent` before reaching for semantic selectors.
 Do not use `--repo docs` as a wiki selector. Use `nav wiki search|route|pack`; `nav ask|route|pack --repo` is compatibility-only and will be ignored for docs.
+Do not use `nav search` to decide which documentation source is canonical when `nav wiki search|route|pack|trace` can answer that question.

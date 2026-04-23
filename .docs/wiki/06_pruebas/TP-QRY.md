@@ -36,6 +36,7 @@
 | TC-QRY-011 | negativo | RF-QRY-003 | devuelve warning accionable si no hay catalogo util o no se encuentra evidencia suficiente bajo el path |
 | TC-QRY-012 | positivo | RF-QRY-002 | `nav context` sobre `ts/tsx` devuelve `slice_text` y warning si `tsserver` no esta disponible |
 | TC-QRY-013 | positivo | RF-QRY-002 | `nav search` sin matches devuelve `ok=true` e insinua `--regex` cuando el patron parece regex |
+| TC-QRY-013B | positivo | RF-QRY-002 | `nav search` incluye docs gobernados y artefactos repo-locales ocultos aun cuando el repo use directorios hidden, para que un `index --docs-only` deje visibles IDs `RF-*` y `TP-*` en la superficie textual directa |
 | TC-QRY-013A | positivo | RF-QRY-001 | `nav.search` agrega `coach.trigger=no_matches_refinable` cuando la query no matchea pero tiene rerun accionable |
 | TC-QRY-014 | positivo | RF-QRY-004 | lee multiples rangos en una sola invocacion con truncacion por presupuesto |
 | TC-QRY-015 | positivo | RF-QRY-004 | incluye numeros de linea en contenido leido |
@@ -102,6 +103,9 @@
 | TC-QRY-071A | positivo | RF-QRY-013 | `nav trace RF-*` hace fallback a `.docs/wiki/04_RF*.md` cuando el RF existe en disco pero todavia no figura en `doc_records`/`doc_mentions` |
 | TC-QRY-071B | positivo | RF-QRY-013 | `nav trace RF-*` hace fallback al layout legacy `.docs/wiki/RF/*.md` cuando el RF existe en disco pero el indice documental aun no lo publico |
 | TC-QRY-071C | positivo | RF-QRY-013 | `nav trace RF-*` hace fallback al indice root legacy `.docs/wiki/RF.md` cuando el RF existe en disco pero el indice documental aun no lo publico |
+| TC-QRY-071D | positivo | RF-QRY-013 | `nav trace RF-*` usa docs TP del layer `06` como evidencia documental de cobertura y no devuelve `missing` cuando existe un caso de prueba canonico que referencia el RF |
+| TC-QRY-071E | positivo | RF-QRY-013 | `nav trace TP-*` resuelve el titulo embebido del caso en `06_pruebas/*.md` y devuelve al menos `partial` cuando el caso canonico existe en el docgraph |
+| TC-QRY-071F | positivo | RF-QRY-013 | `nav trace RF-*` puede hacer fallback a disco usando las rutas documentales definidas por `read-model` aunque el corpus no viva bajo `.docs/wiki/*` |
 | TC-QRY-072 | negativo | RF-QRY-014 | `TestNavRouteDoesNotAttachMissingExplicitRFToGovernanceFallback`: un `RF-*` inexistente no se pega como `doc_id` al fallback de gobernanza |
 | TC-QRY-073 | positivo | RF-QRY-016 | `TestNavWikiSearchReturnsLayerFilteredDocs`: `nav wiki search` devuelve candidatos filtrados por capa con `next_queries` hacia pack/trace/multi-read |
 | TC-QRY-074 | negativo | RF-QRY-016 | `TestNavWikiSearchDocIndexEmptyReturnsDiagnostic`: docgraph vacio devuelve diagnostico accionable de `index --docs-only` |
