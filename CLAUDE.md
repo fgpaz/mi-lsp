@@ -20,6 +20,7 @@ Escalation rules:
 - Spec-driven development is mandatory in ALL tasks.
 - `.docs/wiki/00_gobierno_documental.md` is the human governance authority.
 - `.docs/wiki/_mi-lsp/read-model.toml` is the versioned executable projection of `00`.
+- Do not push directly to `main`; create a branch, open a pull request, and merge through the PR flow unless the user explicitly asks to bypass that repository rule.
 - Invalid, ambiguous, incomplete, or stale governance puts the repo in `blocked mode`.
 - In `blocked mode`, use `mi-lsp nav governance`, `$ps-asistente-wiki`, and `crear-gobierno-documental`; normal work must stop.
 - Run `$ps-auditar-trazabilidad` for large, risky, multi-module, or cross-layer changes.
