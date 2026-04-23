@@ -1,6 +1,7 @@
 package docgraph
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -66,7 +67,7 @@ func TestIndexWorkspaceDocsHonorsGitignoreReincludeForWiki(t *testing.T) {
 		t.Fatalf("LoadIgnoreMatcher returned error: %v", err)
 	}
 
-	docs, _, _, warnings, err := IndexWorkspaceDocs(root, matcher)
+	docs, _, _, warnings, err := IndexWorkspaceDocs(context.Background(), root, matcher)
 	if err != nil {
 		t.Fatalf("IndexWorkspaceDocs returned error: %v", err)
 	}

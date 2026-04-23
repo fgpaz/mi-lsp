@@ -36,6 +36,27 @@ func TestIgnoreMatcherMatchesNestedSegments(t *testing.T) {
 	assertNotIgnored(t, matcher, "C:/repo", "C:/repo/packages/app/templates/seed.md")
 }
 
+func TestDefaultIgnoreMatcherSkipsGeneratedDependencyCaches(t *testing.T) {
+	matcher, err := LoadIgnoreMatcher(t.TempDir(), nil)
+	if err != nil {
+		t.Fatalf("LoadIgnoreMatcher returned error: %v", err)
+	}
+
+	for _, path := range []string{
+		"C:/repo/src/backend/runtime/orchestrator/.venv/Lib/site-packages/pydantic/main.py",
+		"C:/repo/tools/venv/Lib/site-packages/click/core.py",
+		"C:/repo/src/__pycache__/module.cpython-313.pyc",
+		"C:/repo/src/.pytest_cache/v/cache/nodeids",
+		"C:/repo/frontend/.turbo/cache/state.json",
+		"C:/repo/frontend/.next/server/app/page.js",
+		"C:/repo/frontend/node_modules/pkg/index.js",
+	} {
+		assertIgnored(t, matcher, "C:/repo", path)
+	}
+
+	assertNotIgnored(t, matcher, "C:/repo", "C:/repo/src/runtime/orchestrator/main.py")
+}
+
 func TestIgnoreMatcherHonorsNegatedReincludesInOrder(t *testing.T) {
 	root := t.TempDir()
 	mustWriteFile(t, filepath.Join(root, ".gitignore"), strings.Join([]string{

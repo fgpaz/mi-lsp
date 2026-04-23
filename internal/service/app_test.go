@@ -542,6 +542,113 @@ func TestWorkspaceAdd_And_Status(t *testing.T) {
 	}
 }
 
+func TestIndexRunDocsOnlyRebuildsDocsWithoutReplacingCatalog(t *testing.T) {
+	ensureWritableTestHome(t)
+	root := t.TempDir()
+	alias := "docs-only-" + filepath.Base(root)
+	project := testProject(alias)
+	if err := workspace.SaveProjectFile(root, project); err != nil {
+		t.Fatalf("SaveProjectFile: %v", err)
+	}
+	writeWorkspaceFile(t, root, "src/App.csproj", `<Project Sdk="Microsoft.NET.Sdk"></Project>`)
+	writeSpecBackendGovernanceFixture(t, root)
+	writeWorkspaceFile(t, root, ".docs/wiki/04_RF/RF-IDX-009.md", "# RF-IDX-009\n\nRebuild docs without touching code catalog.\n")
+
+	if _, err := workspace.RegisterWorkspace(alias, model.WorkspaceRegistration{
+		Name:      alias,
+		Root:      root,
+		Languages: []string{"csharp"},
+		Kind:      model.WorkspaceKindSingle,
+	}); err != nil {
+		t.Fatalf("register workspace: %v", err)
+	}
+	defer func() { _ = workspace.RemoveWorkspace(alias) }()
+
+	seedCatalogSymbol(t, root, project, "virtual/ManualOnly.cs", 1, "ManualOnly", "class")
+
+	app := New(root, nil)
+	env, err := app.Execute(context.Background(), model.CommandRequest{
+		Operation: "index.run",
+		Context:   model.QueryOptions{Workspace: alias},
+		Payload:   map[string]any{"docs_only": true},
+	})
+	if err != nil {
+		t.Fatalf("index.run --docs-only: %v", err)
+	}
+	if !env.Ok {
+		t.Fatalf("expected ok=true, got %#v", env)
+	}
+
+	db, err := store.Open(root)
+	if err != nil {
+		t.Fatalf("store.Open: %v", err)
+	}
+	defer db.Close()
+	if _, found, err := store.VerifySymbolExists(context.Background(), db, "virtual/ManualOnly.cs", "ManualOnly"); err != nil || !found {
+		t.Fatalf("manual catalog symbol lost after docs-only index, found=%v err=%v", found, err)
+	}
+	docs, err := store.ListDocRecords(context.Background(), db)
+	if err != nil {
+		t.Fatalf("ListDocRecords: %v", err)
+	}
+	if len(docs) == 0 {
+		t.Fatalf("expected docs to be rebuilt")
+	}
+}
+
+func TestIndexStartWaitCreatesSucceededJobAndGeneration(t *testing.T) {
+	ensureWritableTestHome(t)
+	root := t.TempDir()
+	alias := "index-job-" + filepath.Base(root)
+	project := testProject(alias)
+	if err := workspace.SaveProjectFile(root, project); err != nil {
+		t.Fatalf("SaveProjectFile: %v", err)
+	}
+	writeWorkspaceFile(t, root, "src/App.csproj", `<Project Sdk="Microsoft.NET.Sdk"></Project>`)
+	writeWorkspaceFile(t, root, "src/App.cs", "namespace Demo; public class App { public void Run() {} }\n")
+	writeSpecBackendGovernanceFixture(t, root)
+
+	if _, err := workspace.RegisterWorkspace(alias, model.WorkspaceRegistration{
+		Name:      alias,
+		Root:      root,
+		Languages: []string{"csharp"},
+		Kind:      model.WorkspaceKindSingle,
+	}); err != nil {
+		t.Fatalf("register workspace: %v", err)
+	}
+	defer func() { _ = workspace.RemoveWorkspace(alias) }()
+
+	app := New(root, nil)
+	env, err := app.Execute(context.Background(), model.CommandRequest{
+		Operation: "index.start",
+		Context:   model.QueryOptions{Workspace: alias},
+		Payload:   map[string]any{"mode": "full", "wait": true},
+	})
+	if err != nil {
+		t.Fatalf("index.start --wait: %v", err)
+	}
+	jobs, ok := env.Items.([]store.IndexJob)
+	if !ok || len(jobs) != 1 {
+		t.Fatalf("items = %#v, want one IndexJob", env.Items)
+	}
+	if jobs[0].Status != store.IndexJobSucceeded {
+		t.Fatalf("job status = %q, want succeeded", jobs[0].Status)
+	}
+
+	db, err := store.Open(root)
+	if err != nil {
+		t.Fatalf("store.Open: %v", err)
+	}
+	defer db.Close()
+	activeCatalog, ok, err := store.WorkspaceMetaValue(context.Background(), db, store.WorkspaceMetaActiveCatalogGeneration)
+	if err != nil {
+		t.Fatalf("WorkspaceMetaValue: %v", err)
+	}
+	if !ok || activeCatalog != jobs[0].GenerationID {
+		t.Fatalf("active catalog generation = %q ok=%v, want %q", activeCatalog, ok, jobs[0].GenerationID)
+	}
+}
+
 func TestFind_Symbol(t *testing.T) {
 	root, name := setupTestWorkspace(t)
 	ctx := context.Background()

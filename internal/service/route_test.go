@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/fgpaz/mi-lsp/internal/model"
+	"github.com/fgpaz/mi-lsp/internal/store"
 	"github.com/fgpaz/mi-lsp/internal/workspace"
 )
 
@@ -76,6 +77,154 @@ func TestNavRouteReturnsCanonicalDocFromGovernance(t *testing.T) {
 	}
 	if !strings.Contains(result.Canonical.AnchorDoc.Path, ".docs/wiki/") {
 		t.Fatalf("expected anchor inside .docs/wiki/, got %q", result.Canonical.AnchorDoc.Path)
+	}
+}
+
+func TestNavRouteExplicitEmbeddedRFUsesContainingRFDocWhenDocsIndexEmpty(t *testing.T) {
+	alias := "route-embedded-rf-" + t.Name()
+	root := createFunctionalPackWorkspaceFixture(t, alias)
+	writeWorkspaceFile(t, root, ".docs/wiki/04_RF/RF-IDN.md", strings.Join([]string{
+		"# RF-IDN",
+		"",
+		"| ID | Titulo |",
+		"| --- | --- |",
+		"| RF-IDN-07 | OAuth device authorization sanitizado |",
+		"| RF-IDN-08 | Reindexado documental observable |",
+	}, "\n"))
+	if _, err := workspace.RegisterWorkspace(alias, model.WorkspaceRegistration{
+		Name:      alias,
+		Root:      root,
+		Languages: []string{"csharp"},
+		Kind:      model.WorkspaceKindSingle,
+	}); err != nil {
+		t.Fatalf("register workspace: %v", err)
+	}
+	defer func() { _ = workspace.RemoveWorkspace(alias) }()
+
+	app := New(root, nil)
+	env, err := app.Execute(context.Background(), model.CommandRequest{
+		Operation: "nav.route",
+		Context:   model.QueryOptions{Workspace: alias},
+		Payload:   map[string]any{"task": "RF-IDN-08"},
+	})
+	if err != nil {
+		t.Fatalf("nav.route: %v", err)
+	}
+	results := env.Items.([]model.RouteResult)
+	if got := results[0].Canonical.AnchorDoc.Path; got != ".docs/wiki/04_RF/RF-IDN.md" {
+		t.Fatalf("anchor path = %q, want aggregate RF doc", got)
+	}
+	if got := results[0].Canonical.AnchorDoc.DocID; got != "RF-IDN-08" {
+		t.Fatalf("anchor doc_id = %q, want RF-IDN-08", got)
+	}
+}
+
+func TestNavRoutePreservesExplicitEmbeddedRFWhenDocsIndexExists(t *testing.T) {
+	alias := "route-indexed-embedded-rf-" + t.Name()
+	root := createFunctionalPackWorkspaceFixture(t, alias)
+	writeWorkspaceFile(t, root, ".docs/wiki/04_RF.md", "# 04 Requerimientos Funcionales (RF)\n\nRF-IDN-08 listado general.\n")
+	writeWorkspaceFile(t, root, ".docs/wiki/04_RF/RF-IDN.md", strings.Join([]string{
+		"# RF-IDN",
+		"",
+		"| ID | Titulo |",
+		"| --- | --- |",
+		"| RF-IDN-08 | Reindexado documental observable |",
+	}, "\n"))
+	if _, err := workspace.RegisterWorkspace(alias, model.WorkspaceRegistration{
+		Name:      alias,
+		Root:      root,
+		Languages: []string{"csharp"},
+		Kind:      model.WorkspaceKindSingle,
+	}); err != nil {
+		t.Fatalf("register workspace: %v", err)
+	}
+	defer func() { _ = workspace.RemoveWorkspace(alias) }()
+
+	db, err := store.Open(root)
+	if err != nil {
+		t.Fatalf("store.Open: %v", err)
+	}
+	if err := store.ReplaceDocs(context.Background(), db, []model.DocRecord{
+		{
+			Path:       ".docs/wiki/04_RF.md",
+			Title:      "04 Requerimientos Funcionales (RF)",
+			DocID:      "RF-IDN-08",
+			Layer:      "04",
+			Family:     "functional",
+			SearchText: "rf idn 08 requerimientos funcionales",
+			IndexedAt:  1,
+		},
+		{
+			Path:       ".docs/wiki/04_RF/RF-IDN.md",
+			Title:      "RF-IDN",
+			DocID:      "RF-IDN",
+			Layer:      "04",
+			Family:     "functional",
+			SearchText: "rf idn 08 reindexado documental observable",
+			IndexedAt:  1,
+		},
+	}, nil, []model.DocMention{{
+		DocPath:      ".docs/wiki/04_RF/RF-IDN.md",
+		MentionType:  "doc_id",
+		MentionValue: "RF-IDN-08",
+	}}); err != nil {
+		t.Fatalf("ReplaceDocs: %v", err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatalf("db.Close: %v", err)
+	}
+
+	app := New(root, nil)
+	env, err := app.Execute(context.Background(), model.CommandRequest{
+		Operation: "nav.route",
+		Context:   model.QueryOptions{Workspace: alias},
+		Payload:   map[string]any{"task": "RF-IDN-08"},
+	})
+	if err != nil {
+		t.Fatalf("nav.route: %v", err)
+	}
+	results := env.Items.([]model.RouteResult)
+	anchor := results[0].Canonical.AnchorDoc
+	if anchor.Path != ".docs/wiki/04_RF/RF-IDN.md" {
+		t.Fatalf("anchor path = %q, want aggregate RF doc", anchor.Path)
+	}
+	if anchor.DocID != "RF-IDN-08" {
+		t.Fatalf("anchor doc_id = %q, want RF-IDN-08", anchor.DocID)
+	}
+	if !strings.Contains(anchor.Title, "Reindexado documental") {
+		t.Fatalf("anchor title = %q, want embedded RF title", anchor.Title)
+	}
+}
+
+func TestNavRouteDoesNotAttachMissingExplicitRFToGovernanceFallback(t *testing.T) {
+	alias := "route-missing-explicit-rf-" + t.Name()
+	root := createFunctionalPackWorkspaceFixture(t, alias)
+	if _, err := workspace.RegisterWorkspace(alias, model.WorkspaceRegistration{
+		Name:      alias,
+		Root:      root,
+		Languages: []string{"csharp"},
+		Kind:      model.WorkspaceKindSingle,
+	}); err != nil {
+		t.Fatalf("register workspace: %v", err)
+	}
+	defer func() { _ = workspace.RemoveWorkspace(alias) }()
+
+	app := New(root, nil)
+	env, err := app.Execute(context.Background(), model.CommandRequest{
+		Operation: "nav.route",
+		Context:   model.QueryOptions{Workspace: alias},
+		Payload:   map[string]any{"task": "RF-MISSING-999"},
+	})
+	if err != nil {
+		t.Fatalf("nav.route: %v", err)
+	}
+	results := env.Items.([]model.RouteResult)
+	anchor := results[0].Canonical.AnchorDoc
+	if anchor.DocID == "RF-MISSING-999" {
+		t.Fatalf("missing RF should not be attached to fallback anchor: %#v", anchor)
+	}
+	if anchor.Path == "" {
+		t.Fatalf("expected a safe fallback anchor path")
 	}
 }
 

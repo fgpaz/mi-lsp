@@ -71,6 +71,14 @@ func (a *App) Execute(ctx context.Context, request model.CommandRequest) (model.
 		envelope, err = a.workspaceRemove(request)
 	case "workspace.warm":
 		envelope = model.Envelope{Ok: true, Backend: "daemon", Items: []string{}, Warnings: []string{"daemon is not running; warm is a no-op in direct mode"}}
+	case "index.start":
+		envelope, err = a.indexStart(ctx, request)
+	case "index.status":
+		envelope, err = a.indexStatus(ctx, request)
+	case "index.cancel":
+		envelope, err = a.indexCancel(ctx, request)
+	case "index.run-job":
+		envelope, err = a.indexRunJob(ctx, request)
 	case "index.run":
 		envelope, err = a.indexWorkspace(ctx, request)
 	case "info":
@@ -161,9 +169,9 @@ func operationRequiresWorkspaceResolution(request model.CommandRequest) bool {
 	case "nav.find", "nav.search":
 		allWorkspaces, _ := request.Payload["all_workspaces"].(bool)
 		return !allWorkspaces
-	case "index.run":
+	case "index.run", "index.start":
 		return strings.TrimSpace(stringPayload(request.Payload, "path")) == ""
-	case "workspace.status", "info", "nav.symbols", "nav.overview", "nav.outline", "nav.governance", "nav.route", "nav.wiki.route", "nav.ask", "nav.pack", "nav.wiki.pack", "nav.wiki.search", "nav.service", "nav.refs", "nav.context", "nav.deps", "nav.multi-read", "nav.batch", "nav.related", "nav.workspace-map", "nav.diff-context", "nav.trace", "nav.wiki.trace", "nav.intent":
+	case "index.status", "index.cancel", "index.run-job", "workspace.status", "info", "nav.symbols", "nav.overview", "nav.outline", "nav.governance", "nav.route", "nav.wiki.route", "nav.ask", "nav.pack", "nav.wiki.pack", "nav.wiki.search", "nav.service", "nav.refs", "nav.context", "nav.deps", "nav.multi-read", "nav.batch", "nav.related", "nav.workspace-map", "nav.diff-context", "nav.trace", "nav.wiki.trace", "nav.intent":
 		return true
 	default:
 		return false
@@ -180,50 +188,71 @@ func (a *App) indexWorkspace(ctx context.Context, request model.CommandRequest) 
 		return model.Envelope{}, err
 	}
 	clean, _ := request.Payload["clean"].(bool)
+	docsOnly, _ := request.Payload["docs_only"].(bool)
 
-	// Try incremental index if clean=false and index.db exists
-	var result indexer.Result
-	incremental := false
-	if !clean {
-		result, err = indexer.IncrementalIndex(ctx, registration.Root)
-		if err == nil && result.Stats.Files > 0 {
-			// Incremental succeeded and found changes
-			incremental = true
-		} else if err == nil && result.Stats.Files == 0 {
-			// No changes detected
-			return model.Envelope{Ok: true, Workspace: registration.Name, Backend: "catalog", Items: []model.SymbolRecord{}, Stats: result.Stats, Warnings: []string{"no changes detected"}}, nil
+	var envelope model.Envelope
+	err = store.WithWorkspaceIndexLock(registration.Root, "index.run", func() error {
+		if docsOnly {
+			result, err := indexer.IndexWorkspaceDocsOnly(ctx, registration.Root)
+			if err != nil {
+				return err
+			}
+			envelope = model.Envelope{Ok: true, Workspace: registration.Name, Backend: "docgraph", Items: []model.DocRecord{}, Stats: result.Stats, Warnings: result.Warnings}
+			return nil
 		}
-		// If incremental failed, fall through to full index
-	}
 
-	// Fall back to full index if incremental didn't succeed
-	if !incremental {
-		result, err = indexer.IndexWorkspace(ctx, registration.Root, clean)
-		if err != nil {
-			if store.IsCorruptionError(err) {
-				backupPath, backupErr := store.QuarantineCorruptDB(registration.Root)
-				if backupErr != nil {
-					return model.Envelope{}, fmt.Errorf("%w; corrupt db quarantine failed: %v", err, backupErr)
+		// Try incremental index if clean=false and index.db exists
+		var result indexer.Result
+		incremental := false
+		if !clean {
+			result, err = indexer.IncrementalIndex(ctx, registration.Root)
+			if err == nil && result.Stats.Files > 0 {
+				// Incremental succeeded and found changes
+				incremental = true
+			} else if err == nil && result.Stats.Files == 0 {
+				// No changes detected
+				envelope = model.Envelope{Ok: true, Workspace: registration.Name, Backend: "catalog", Items: []model.SymbolRecord{}, Stats: result.Stats, Warnings: []string{"no changes detected"}}
+				return nil
+			}
+			// If incremental failed, fall through to full index
+		}
+
+		// Fall back to full index if incremental didn't succeed
+		if !incremental {
+			result, err = indexer.IndexWorkspace(ctx, registration.Root, clean)
+			if err != nil {
+				if store.IsCorruptionError(err) {
+					backupPath, backupErr := store.QuarantineCorruptDB(registration.Root)
+					if backupErr != nil {
+						return fmt.Errorf("%w; corrupt db quarantine failed: %v", err, backupErr)
+					}
+					result, err = indexer.IndexWorkspace(ctx, registration.Root, true)
+					if err != nil {
+						return fmt.Errorf("%w; rebuild after quarantining %s also failed: %v", err, backupPath, err)
+					}
+					result.Warnings = appendStringIfMissing(result.Warnings, "corrupt index database was quarantined to "+backupPath)
+					result.Warnings = appendStringIfMissing(result.Warnings, "full rebuild completed after corruption recovery")
+				} else {
+					return err
 				}
-				result, err = indexer.IndexWorkspace(ctx, registration.Root, true)
-				if err != nil {
-					return model.Envelope{}, fmt.Errorf("%w; rebuild after quarantining %s also failed: %v", err, backupPath, err)
-				}
-				result.Warnings = appendStringIfMissing(result.Warnings, "corrupt index database was quarantined to "+backupPath)
-				result.Warnings = appendStringIfMissing(result.Warnings, "full rebuild completed after corruption recovery")
-			} else {
-				return model.Envelope{}, err
 			}
 		}
-	}
 
-	// Add incremental flag to warnings if successful
-	warnings := result.Warnings
-	if incremental {
-		warnings = appendStringIfMissing(warnings, "incremental=true")
+		// Add incremental flag to warnings if successful
+		warnings := result.Warnings
+		if incremental {
+			warnings = appendStringIfMissing(warnings, "incremental=true")
+		}
+		envelope = model.Envelope{Ok: true, Workspace: registration.Name, Backend: "catalog", Items: result.Symbols, Stats: result.Stats, Warnings: warnings}
+		return nil
+	})
+	if err != nil {
+		if lockErr, ok := err.(*store.IndexLockError); ok {
+			return model.Envelope{}, fmt.Errorf("index already running for workspace %s: %w", registration.Name, lockErr)
+		}
+		return model.Envelope{}, err
 	}
-
-	return model.Envelope{Ok: true, Workspace: registration.Name, Backend: "catalog", Items: result.Symbols, Stats: result.Stats, Warnings: warnings}, nil
+	return envelope, nil
 }
 
 func appendStringIfMissing(items []string, value string) []string {

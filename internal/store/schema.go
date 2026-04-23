@@ -112,8 +112,48 @@ CREATE TABLE IF NOT EXISTS workspace_meta (
 );
 `
 
+const indexJobsDDL = `
+CREATE TABLE IF NOT EXISTS index_jobs (
+    job_id TEXT PRIMARY KEY,
+    generation_id TEXT NOT NULL,
+    workspace_name TEXT NOT NULL,
+    workspace_root TEXT NOT NULL,
+    mode TEXT NOT NULL,
+    clean INTEGER NOT NULL DEFAULT 0,
+    status TEXT NOT NULL,
+    phase TEXT NOT NULL DEFAULT '',
+    pid INTEGER NOT NULL DEFAULT 0,
+    requested_cancel INTEGER NOT NULL DEFAULT 0,
+    error TEXT,
+    files INTEGER NOT NULL DEFAULT 0,
+    symbols INTEGER NOT NULL DEFAULT 0,
+    docs INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL,
+    started_at TEXT,
+    finished_at TEXT,
+    updated_at TEXT NOT NULL
+);
+`
+
+const indexGenerationsDDL = `
+CREATE TABLE IF NOT EXISTS index_generations (
+    generation_id TEXT PRIMARY KEY,
+    job_id TEXT NOT NULL,
+    workspace_name TEXT NOT NULL,
+    workspace_root TEXT NOT NULL,
+    mode TEXT NOT NULL,
+    status TEXT NOT NULL,
+    files INTEGER NOT NULL DEFAULT 0,
+    symbols INTEGER NOT NULL DEFAULT 0,
+    docs INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL,
+    published_at TEXT,
+    error TEXT
+);
+`
+
 func EnsureSchema(db *sql.DB) error {
-	statements := []string{reposDDL, entrypointsDDL, symbolsDDL, filesDDL, docsDDL, docsFtsDDL, docEdgesDDL, docMentionsDDL, metaDDL}
+	statements := []string{reposDDL, entrypointsDDL, symbolsDDL, filesDDL, docsDDL, docsFtsDDL, docEdgesDDL, docMentionsDDL, metaDDL, indexJobsDDL, indexGenerationsDDL}
 	for _, stmt := range statements {
 		if _, err := db.Exec(stmt); err != nil {
 			return err
@@ -159,6 +199,9 @@ END`,
 	if err := ensureColumn(db, "doc_records", "is_snapshot", "INTEGER NOT NULL DEFAULT 0"); err != nil {
 		return err
 	}
+	if err := ensureColumn(db, "index_jobs", "clean", "INTEGER NOT NULL DEFAULT 0"); err != nil {
+		return err
+	}
 
 	indexes := []struct {
 		table     string
@@ -178,6 +221,8 @@ END`,
 		{table: "doc_records", column: "doc_id", statement: `CREATE INDEX IF NOT EXISTS idx_doc_records_doc_id ON doc_records(doc_id);`, required: true},
 		{table: "doc_mentions", column: "mention_type", statement: `CREATE INDEX IF NOT EXISTS idx_doc_mentions_type ON doc_mentions(mention_type, mention_value);`, required: true},
 		{table: "doc_edges", column: "from_path", statement: `CREATE INDEX IF NOT EXISTS idx_doc_edges_from ON doc_edges(from_path);`, required: true},
+		{table: "index_jobs", column: "workspace_root", statement: `CREATE INDEX IF NOT EXISTS idx_index_jobs_workspace_status ON index_jobs(workspace_root, status, updated_at);`, required: true},
+		{table: "index_generations", column: "workspace_root", statement: `CREATE INDEX IF NOT EXISTS idx_index_generations_workspace ON index_generations(workspace_root, status, published_at);`, required: true},
 	}
 	for _, index := range indexes {
 		hasColumn, err := tableHasColumn(db, index.table, index.column)

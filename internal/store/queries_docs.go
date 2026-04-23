@@ -16,6 +16,13 @@ func ReplaceDocs(ctx context.Context, db *sql.DB, docs []model.DocRecord, edges 
 	}
 	defer func() { _ = tx.Rollback() }()
 
+	if err := replaceDocsTx(ctx, tx, docs, edges, mentions); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+func replaceDocsTx(ctx context.Context, tx *sql.Tx, docs []model.DocRecord, edges []model.DocEdge, mentions []model.DocMention) error {
 	for _, table := range []string{"doc_mentions", "doc_edges", "doc_records"} {
 		if _, err := tx.ExecContext(ctx, "DELETE FROM "+table); err != nil {
 			return err
@@ -73,7 +80,7 @@ func ReplaceDocs(ctx context.Context, db *sql.DB, docs []model.DocRecord, edges 
 	if err := UpsertWorkspaceMeta(ctx, tx, "doc_count", strconv.Itoa(len(docs))); err != nil {
 		return err
 	}
-	return tx.Commit()
+	return nil
 }
 
 func ListDocRecords(ctx context.Context, db *sql.DB) ([]model.DocRecord, error) {

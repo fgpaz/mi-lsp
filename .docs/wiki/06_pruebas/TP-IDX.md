@@ -23,3 +23,9 @@
 | TC-IDX-011 | negativo | RF-IDX-003 | un bloque YAML de gobernanza invalido bloquea la proyeccion y obliga reparacion |
 | TC-IDX-012 | positivo | RF-IDX-001 | el indexador documental honra re-includes negados de `.gitignore`/`.milspignore` y no excluye `.docs/wiki/**` cuando fue re-habilitada |
 | TC-IDX-013 | positivo | RF-IDX-002 | si `doc_records` quedo solo con docs `generic` aunque la wiki canonica existe, `index` degrada a full re-index y reconstruye el corpus documental |
+| TC-IDX-014 | positivo | RF-IDX-001 | `TestIndexRunDocsOnlyRebuildsDocsWithoutReplacingCatalog`: `index --docs-only` reconstruye docs/memory sin borrar simbolos ya catalogados |
+| TC-IDX-015 | negativo | RF-IDX-001 | `TestWithWorkspaceIndexLockRejectsConcurrentIndexRun`: dos indexaciones simultaneas del mismo workspace quedan bloqueadas por `.mi-lsp/index.lock` |
+| TC-IDX-016 | positivo | RF-IDX-001 | `TestDefaultIgnoreMatcherSkipsGeneratedDependencyCaches`: el indexador ignora `.venv`, `venv`, `__pycache__`, `.pytest_cache`, `.turbo`, `.next` y `node_modules` |
+| TC-IDX-017 | positivo | RF-IDX-001 | `TestReplaceWorkspaceIndexPublishesGenerationMetadata`: publica punteros `active_*_generation_id` solo tras commit exitoso |
+| TC-IDX-018 | positivo | RF-IDX-001 | `TestWithWorkspaceIndexLockRemovesStaleLock`: un lock con PID inexistente se recupera antes de ejecutar |
+| TC-IDX-019 | positivo | RF-IDX-001 | `TestIndexStartWaitCreatesSucceededJobAndGeneration`: `index.start --wait` crea job, publica generacion y deja status `succeeded` |

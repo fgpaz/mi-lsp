@@ -91,7 +91,7 @@ func (q *docQueryContext) canonicalRoute(opts model.QueryOptions, includeDiscove
 		return result
 	}
 	primary := q.ranked[0]
-	result.Canonical.AnchorDoc = model.RouteDoc{
+	anchorDoc := model.RouteDoc{
 		Path:   primary.record.Path,
 		Title:  primary.record.Title,
 		DocID:  primary.record.DocID,
@@ -100,6 +100,28 @@ func (q *docQueryContext) canonicalRoute(opts model.QueryOptions, includeDiscove
 		Why:    strings.Join(primary.reason, ","),
 		Stage:  "anchor",
 	}
+	if canonical.AnchorDoc.DocID != "" && canonical.AnchorDoc.Path != "" {
+		if doc, ok := q.docByPath[canonical.AnchorDoc.Path]; ok {
+			primary = scoredDoc{
+				record: doc,
+				score:  primary.score,
+				reason: []string{"explicit_doc_id=" + canonical.AnchorDoc.DocID, "tier1_anchor_preserved"},
+			}
+			anchorDoc = canonical.AnchorDoc
+			if anchorDoc.Title == "" {
+				anchorDoc.Title = doc.Title
+			}
+			if anchorDoc.Layer == "" {
+				anchorDoc.Layer = doc.Layer
+			}
+			if anchorDoc.Family == "" {
+				anchorDoc.Family = doc.Family
+			}
+			anchorDoc.Stage = "anchor"
+			result.Why = append(result.Why, "tier2=explicit_anchor_preserved")
+		}
+	}
+	result.Canonical.AnchorDoc = anchorDoc
 	result.Canonical.Family = q.family
 	result.Why = append(result.Why, "tier2=indexed_docs")
 

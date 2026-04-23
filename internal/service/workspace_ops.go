@@ -51,7 +51,12 @@ func (a *App) registerWorkspace(ctx context.Context, request model.CommandReques
 	warnings := []string{}
 	noIndex, _ := request.Payload["no_index"].(bool)
 	if !noIndex {
-		indexResult, indexErr := indexer.IndexWorkspace(ctx, registration.Root, false)
+		var indexResult indexer.Result
+		indexErr := store.WithWorkspaceIndexLock(registration.Root, "workspace.auto-index", func() error {
+			var err error
+			indexResult, err = indexer.IndexWorkspace(ctx, registration.Root, false)
+			return err
+		})
 		if indexErr != nil {
 			warnings = append(warnings, "auto-index failed: "+indexErr.Error())
 		} else {
@@ -139,7 +144,9 @@ func (a *App) workspaceStatus(ctx context.Context, name string, opts model.Query
 	db, err := store.Open(registration.Root)
 	if err != nil {
 		item["index_ready"] = false
-		item["docs_ready"] = item["docs_read_model"] != "builtin-default"
+		item["docs_ready"] = false
+		item["docs_index_ready"] = false
+		item["doc_count"] = 0
 		warnings := []string{"workspace has no index yet"}
 		warnings = append(warnings, governance.Warnings...)
 		if governance.Blocked {
@@ -158,8 +165,15 @@ func (a *App) workspaceStatus(ctx context.Context, name string, opts model.Query
 	if err != nil {
 		return model.Envelope{}, err
 	}
+	docCount, err := store.CountDocRecords(ctx, db)
+	if err != nil {
+		return model.Envelope{}, err
+	}
+	docsIndexReady := docCount > 0
 	item["index_ready"] = stats.Files > 0 || stats.Symbols > 0
-	item["docs_ready"] = item["docs_read_model"] != "builtin-default"
+	item["docs_ready"] = docsIndexReady
+	item["docs_index_ready"] = docsIndexReady
+	item["doc_count"] = docCount
 	item["index_files"] = stats.Files
 	item["index_symbols"] = stats.Symbols
 	warnings := append([]string{}, governance.Warnings...)
@@ -174,6 +188,9 @@ func (a *App) workspaceStatus(ctx context.Context, name string, opts model.Query
 	}
 	if memory == nil {
 		warnings = append(warnings, fmt.Sprintf("reentry memory snapshot absent; rerun 'mi-lsp index --workspace %s' to rebuild memory and memory_pointer", registration.Name))
+	}
+	if canonicalWikiExists(registration.Root) && !docsIndexReady {
+		warnings = appendStringIfMissing(warnings, fmt.Sprintf("documentation index is empty; rerun 'mi-lsp index --workspace %s --docs-only' to rebuild docgraph and memory_pointer", registration.Name))
 	}
 	envelope := model.Envelope{Ok: true, Workspace: registration.Name, Backend: "sqlite", Items: []any{applyWorkspaceStatusAXIView(item, registration.Name, opts)}, Stats: stats, Warnings: warnings}
 	envelope = attachMemoryPointer(envelope, memory)

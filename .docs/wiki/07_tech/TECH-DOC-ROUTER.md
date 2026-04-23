@@ -12,13 +12,15 @@ Tier 1 puede producir `anchor_doc + mini_pack_preview` sin requerir un indice de
 
 **Fuentes de Tier 1** (en orden de prioridad):
 1. `governance/read-model.toml`: perfil efectivo, familia por defecto, jerarquia de capas
-2. Filesystem de docs raiz: verifica que los docs existan fisicamente antes de anclar
-3. Doc de gobernanza (`00_gobierno_documental.md`) como fallback seguro
-4. Solo como ultimo recurso si no hay wiki: `README.md`
+2. Doc ID explicito en la tarea (`RF-*`, `FL-*`, etc.) resuelto contra docs canonicos del filesystem
+3. Filesystem de docs raiz: verifica que los docs existan fisicamente antes de anclar
+4. Doc de gobernanza (`00_gobierno_documental.md`) como fallback seguro
+5. Solo como ultimo recurso si no hay wiki: `README.md`
 
 **Flujo**:
 ```
-question/task -> MatchFamily(profile) -> canonicalAnchorForFamily(family, profile, root)
+question/task -> MatchFamily(profile) -> containingDocForExplicitID(root, profile, doc_id?)
+                                       -> canonicalAnchorForFamily(family, profile, root)
                                        -> buildTier1PreviewPack(family, profile, root)
                                        -> RouteCanonicalLane{authoritative: true}
 ```
@@ -115,6 +117,7 @@ type RouteResult struct {
 - El router esta implementado y en produccion desde Wave 2.
 - El scorer owner-aware queda `default-on`; `MI_LSP_DOC_RANKING=legacy` existe solo como override temporal de diagnostico.
 - `Tier1CanonicalRoute` en `internal/docgraph/route.go` omite entradas de tipo glob pattern en el read-model; solo verifica paths concretos contra el filesystem antes de anclar.
+- Cuando la tarea trae un RF concreto y el archivo canonico es agregado bajo `04_RF/`, `Tier1CanonicalRoute` devuelve ese path como `anchor_doc` y conserva el `doc_id` pedido.
 - `shouldUseDaemon` en el router de dispatch excluye `nav.route` — es liviano y no requiere daemon caliente.
 - El fallback a `README.md` esta bloqueado cuando governance y wiki existen; solo aplica en repos sin `.docs/wiki`.
 

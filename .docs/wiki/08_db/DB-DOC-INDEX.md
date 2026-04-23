@@ -18,6 +18,7 @@ Campos canonicos:
 - `search_text`
 - `content_hash`
 - `indexed_at`
+- `is_snapshot`
 
 Uso:
 - corpus base para ranking
@@ -59,8 +60,16 @@ Uso:
 ## Estrategia de refresco
 
 - `ReplaceDocs()` reemplaza el snapshot documental completo en una sola transaccion.
+- `ReplaceWorkspaceDocs()` reemplaza el snapshot documental y `memory_snapshot_json` en una sola transaccion; actualiza `active_docs_generation_id` y `active_memory_generation_id` cuando hay job/generacion.
+- `index --docs-only` y `index start --mode docs` ejecutan esa publicacion sin modificar el catalogo de codigo.
+- `ReplaceWorkspaceIndex()` publica catalogo, docs y memoria juntos para evitar estados mixtos tras un crash o cancelacion.
 - Cambios en docs o en `read-model.toml` fuerzan full re-index.
 - `workspace_meta.doc_count` guarda un agregado simple para diagnostico.
+
+## Operaciones de lectura
+
+- `CountDocRecords()` alimenta `workspace status.doc_count` y `docs_index_ready`.
+- `FindDocRecordsByMention("doc_id", value)` resuelve documentos agregados que mencionan un RF/FL sin tener ese ID como `doc_records.doc_id` primario.
 
 ## No objetivos
 

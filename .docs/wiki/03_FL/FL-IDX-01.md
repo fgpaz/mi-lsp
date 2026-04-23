@@ -18,15 +18,15 @@ sequenceDiagram
     participant W as Walker
     participant DB as SQLite
 
-    U->>C: index [workspace]
+    U->>C: index [workspace] / index start
+    C->>DB: create index_jobs + index_generations
     C->>W: enumera archivos validos
     W-->>C: lista + ownership por repo
     C->>C: extrae catalogo TS/C# liviano
     C->>C: indexa docs y read-model del repo
-    C->>DB: replace files/symbols/repos/entrypoints/meta
-    C->>DB: replace doc_records/doc_edges/doc_mentions
+    C->>DB: publish generacion all-or-nothing
     DB-->>C: ok
-    C-->>U: stats del indice + warnings
+    C-->>U: job status + stats + warnings
 ```
 
 ## 4. Alternative/error path
@@ -39,12 +39,14 @@ sequenceDiagram
 | Cambio en `.docs/wiki`, `README*`, `docs/` o `read-model.toml` | el incremental degrada a full re-index |
 | `index.db` previo sin docs canonicos aunque la wiki existe | `index` no responde `no changes detected`: degrada a full re-index para autocurar `doc_records` |
 | `--clean` activo | se recompone el indice desde cero |
+| Proceso muere antes de publicar | la transaccion SQLite revierte y queda activa la generacion previa |
+| Lock con PID inexistente | se recupera automaticamente antes de iniciar el nuevo job |
 
 ## 5. Data touchpoints
 
 - `.mi-lsp/index.db`
-- tablas `workspace_repos`, `workspace_entrypoints`, `symbols`, `files`, `doc_records`, `doc_edges`, `doc_mentions`, `workspace_meta`
-- estados: sin indice, indice actualizado, indice con warnings de ruido
+- tablas `workspace_repos`, `workspace_entrypoints`, `symbols`, `files`, `doc_records`, `doc_edges`, `doc_mentions`, `index_jobs`, `index_generations`, `workspace_meta`
+- estados: sin indice, job queued/running/publishing/succeeded/failed/canceled, generacion activa, indice con warnings de ruido
 
 ## 6. Candidate RF references
 

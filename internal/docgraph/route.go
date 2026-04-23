@@ -1,6 +1,7 @@
 package docgraph
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -17,13 +18,26 @@ func Tier1CanonicalRoute(question string, profile model.DocsReadProfile, root st
 	why := []string{"tier1=governance_profile", "family=" + family}
 
 	anchorPath := canonicalAnchorForFamily(family, profile, root)
+	explicitDocID := firstDocID(question)
+	explicitAnchorID := ""
+	if explicitDocID != "" {
+		if explicitPath := containingDocForExplicitID(root, profile, explicitDocID); explicitPath != "" {
+			anchorPath = explicitPath
+			family = "functional"
+			explicitAnchorID = explicitDocID
+			why = append(why, "explicit_doc_id="+explicitDocID, "anchor=containing_doc")
+		}
+	}
 	anchorDoc := model.RouteDoc{
 		Path:   anchorPath,
 		Family: family,
 		Why:    "canonical_anchor",
 		Stage:  "anchor",
 	}
-	if title := readDocTitle(filepath.Join(root, filepath.FromSlash(anchorPath))); title != "" {
+	if explicitAnchorID != "" {
+		anchorDoc.DocID = explicitAnchorID
+	}
+	if title := embeddedDocTitle(filepath.Join(root, filepath.FromSlash(anchorPath)), explicitAnchorID); title != "" {
 		anchorDoc.Title = title
 	}
 	// Fill layer from path prefix
@@ -37,6 +51,66 @@ func Tier1CanonicalRoute(question string, profile model.DocsReadProfile, root st
 		Family:        family,
 		Authoritative: true,
 	}, why
+}
+
+func containingDocForExplicitID(root string, profile model.DocsReadProfile, docID string) string {
+	if docID == "" {
+		return ""
+	}
+	searchPaths := make([]string, 0)
+	indexPaths := make([]string, 0)
+	for _, family := range profile.Families {
+		if family.Name != "functional" {
+			continue
+		}
+		for _, path := range family.Paths {
+			normalized := filepath.ToSlash(path)
+			if strings.Contains(normalized, "/04_RF/") {
+				searchPaths = append(searchPaths, path)
+				continue
+			}
+			if strings.Contains(normalized, "04_RF") {
+				indexPaths = append(indexPaths, path)
+			}
+		}
+	}
+	searchPaths = append(searchPaths, indexPaths...)
+	if len(searchPaths) == 0 {
+		searchPaths = []string{".docs/wiki/04_RF/*.md", ".docs/wiki/04_RF.md"}
+	}
+	for _, pattern := range searchPaths {
+		var found string
+		_ = expandPattern(context.Background(), root, pattern, func(absPath string) {
+			if found != "" {
+				return
+			}
+			content, err := os.ReadFile(absPath)
+			if err != nil {
+				return
+			}
+			if !docContainsExplicitID(string(content), docID) {
+				return
+			}
+			rel, err := filepath.Rel(root, absPath)
+			if err != nil {
+				return
+			}
+			found = filepath.ToSlash(rel)
+		})
+		if found != "" {
+			return found
+		}
+	}
+	return ""
+}
+
+func docContainsExplicitID(content string, docID string) bool {
+	for _, match := range docIDPattern.FindAllString(content, -1) {
+		if strings.EqualFold(match, docID) {
+			return true
+		}
+	}
+	return false
 }
 
 // canonicalAnchorForFamily returns the best canonical anchor path for a family.
@@ -143,14 +217,54 @@ func canonicalPathsForStage(stage string) []string {
 // readDocTitle reads the first H1 heading from a markdown file.
 // Returns empty string on any error.
 func readDocTitle(absPath string) string {
+	return embeddedDocTitle(absPath, "")
+}
+
+func embeddedDocTitle(absPath string, docID string) string {
 	content, err := os.ReadFile(absPath)
 	if err != nil {
 		return ""
 	}
-	for _, line := range strings.SplitN(string(content), "\n", 20) {
+	lines := strings.Split(string(content), "\n")
+	if docID != "" {
+		for _, line := range lines {
+			if !strings.Contains(strings.ToUpper(line), strings.ToUpper(docID)) {
+				continue
+			}
+			if title := markdownTableTitleForDocID(line, docID); title != "" {
+				return title
+			}
+			trimmed := strings.TrimSpace(line)
+			if strings.HasPrefix(trimmed, "#") {
+				return strings.TrimSpace(strings.TrimLeft(trimmed, "#"))
+			}
+		}
+	}
+	for _, line := range lines {
 		line = strings.TrimSpace(line)
 		if strings.HasPrefix(line, "# ") {
 			return strings.TrimPrefix(line, "# ")
+		}
+	}
+	return ""
+}
+
+func markdownTableTitleForDocID(line string, docID string) string {
+	trimmed := strings.TrimSpace(line)
+	if !strings.HasPrefix(trimmed, "|") {
+		return ""
+	}
+	cells := strings.Split(trimmed, "|")
+	values := make([]string, 0, len(cells))
+	for _, cell := range cells {
+		value := strings.TrimSpace(cell)
+		if value != "" {
+			values = append(values, value)
+		}
+	}
+	for i, value := range values {
+		if strings.EqualFold(value, docID) && i+1 < len(values) {
+			return values[i+1]
 		}
 	}
 	return ""

@@ -1,3 +1,18 @@
+---
+id: RF-IDX-001
+title: Construir y refrescar el indice repo-local
+implements:
+  - internal/cli/index.go
+  - internal/service/index_jobs.go
+  - internal/indexer/indexer.go
+  - internal/store/index_jobs.go
+  - internal/store/index_publish.go
+tests:
+  - internal/service/app_test.go
+  - internal/store/store_test.go
+  - internal/store/index_lock_test.go
+---
+
 # RF-IDX-001 - Construir y refrescar el indice repo-local
 
 ## 1. Execution Sheet
@@ -23,11 +38,13 @@
 
 1. La CLI resuelve el workspace objetivo y carga `project.toml`.
 2. El indexer obtiene ignores desde defaults internos, `.gitignore`, `.milspignore` y `[ignore].extra_patterns`, respetando el orden del archivo y los re-includes negados (`!pattern`) sobre paths normalizados con `/`.
-3. Si `--clean` esta activo, elimina y recrea el estado derivado del indice.
-4. El walker enumera archivos y asigna ownership por `repo_id`.
-5. El extractor persiste `workspace_repos`, `workspace_entrypoints`, `FileRecord`, `SymbolRecord` y `WorkspaceMeta`.
-6. El indexador documental persiste `DocRecord`, `DocEdge` y `DocMention` a partir de `.docs/wiki`, `README*`, `docs/` y `.docs/`.
-7. La CLI devuelve stats y warnings no fatales si encontro ruido, archivos sin match de repo o problemas de docs.
+3. La CLI crea un job durable y una generacion candidata en `index.db`.
+4. Si `--clean` esta activo, fuerza recomposicion completa del modo elegido, sin borrar `index.db` antes de construir el nuevo resultado.
+5. El walker enumera archivos y asigna ownership por `repo_id`.
+6. El extractor prepara `workspace_repos`, `workspace_entrypoints`, `FileRecord`, `SymbolRecord` y `WorkspaceMeta`.
+7. El indexador documental prepara `DocRecord`, `DocEdge` y `DocMention` a partir de `.docs/wiki`, `README*`, `docs/` y `.docs/`.
+8. El runtime publica catalogo, docs y memoria de reentrada en una unica transaccion SQLite para `mode=full`.
+9. La CLI devuelve job status, stats y warnings no fatales si encontro ruido, archivos sin match de repo o problemas de docs.
 
 ## 4. Outputs
 
@@ -37,6 +54,8 @@
 | `stats.files` | numero | usuario/skill | total procesado |
 | `stats.symbols` | numero | usuario/skill | total persistido |
 | `warnings` | lista | usuario/skill | sugerencias de limpieza, ownership dudoso o problemas de docs |
+| `job_id` | string | usuario/skill | identificador durable para status/cancel |
+| `generation_id` | string | workspace_meta | generacion publicada o candidata |
 
 ## 5. Typed Errors
 
@@ -51,6 +70,7 @@
 - El indice guarda ownership por repo incluso en `container`.
 - Si el indice detecta ruido en `.docs`, `old/`, `temp/` u otros paths no ignorados, debe sugerir `.milspignore`.
 - Si la wiki canonica existe en disco pero `doc_records` quedo solo con docs `generic`, un `index` incremental sin cambios detectados debe degradar a full re-index en vez de responder `no changes detected`.
+- Si el proceso cae antes del commit de publicacion, SQLite debe conservar el estado previo y el job queda diagnosticable como stale/failed en la siguiente inspeccion.
 - Los entrypoints auxiliares bajo `.docs/` o `template(s)` no deben convertirse en el default semantico solo por estar presentes en el repo.
 - El indice documental resuelve primero links markdown y doc IDs explicitos; las heuristicas solo completan contexto, no reemplazan trazabilidad explicita.
 - El indice nunca persiste refs profundas ni ASTs.
@@ -66,3 +86,5 @@
 - `DocEdge`
 - `DocMention`
 - `WorkspaceMeta`
+- `IndexJob`
+- `IndexGeneration`

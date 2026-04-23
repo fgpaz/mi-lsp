@@ -25,11 +25,16 @@ func DefaultIgnorePatterns() []string {
 		".idea/",
 		".mi-lsp/",
 		".next/",
+		".pytest_cache/",
+		".turbo/",
+		".venv/",
 		".worktrees/",
+		"__pycache__/",
 		"bin/",
 		"dist/",
 		"node_modules/",
 		"obj/",
+		"venv/",
 	}
 }
 

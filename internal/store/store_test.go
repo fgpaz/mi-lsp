@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/fgpaz/mi-lsp/internal/model"
 )
@@ -24,13 +25,50 @@ func seedTestDB(t *testing.T) (*sql.DB, string) {
 func TestOpen_CreatesSchema(t *testing.T) {
 	db, _ := seedTestDB(t)
 	// verify tables exist
-	tables := []string{"symbols", "files", "workspace_repos", "workspace_entrypoints", "workspace_meta"}
+	tables := []string{"symbols", "files", "workspace_repos", "workspace_entrypoints", "workspace_meta", "index_jobs", "index_generations"}
 	for _, table := range tables {
 		var name string
 		err := db.QueryRow("SELECT name FROM sqlite_master WHERE type='table' AND name=?", table).Scan(&name)
 		if err != nil {
 			t.Errorf("table %q not found: %v", table, err)
 		}
+	}
+}
+
+func TestReplaceWorkspaceIndexPublishesGenerationMetadata(t *testing.T) {
+	db, root := seedTestDB(t)
+	ctx := context.Background()
+	job, err := CreateIndexJob(ctx, db, "test", root, IndexModeFull, false)
+	if err != nil {
+		t.Fatalf("CreateIndexJob: %v", err)
+	}
+	project := model.ProjectFile{
+		Project: model.ProjectBlock{Name: "test", Kind: "single"},
+		Repos:   []model.WorkspaceRepo{{ID: "main", Name: "main", Root: "."}},
+	}
+	files := []model.FileRecord{{FilePath: "src/Foo.cs", RepoID: "main", RepoName: "main", Language: "csharp"}}
+	symbols := []model.SymbolRecord{{FilePath: "src/Foo.cs", RepoID: "main", RepoName: "main", Name: "Foo", Kind: "class", StartLine: 1, EndLine: 2, QualifiedName: "Foo", Language: "csharp"}}
+	docs := []model.DocRecord{{Path: ".docs/wiki/04_RF/RF-IDX-001.md", Title: "RF-IDX-001", DocID: "RF-IDX-001", Layer: "04", Family: "functional", SearchText: "indexing"}}
+	snapshot := model.ReentryMemorySnapshot{SnapshotBuiltAt: time.Now()}
+
+	if err := ReplaceWorkspaceIndex(ctx, db, job.GenerationID, project, files, symbols, docs, nil, nil, snapshot); err != nil {
+		t.Fatalf("ReplaceWorkspaceIndex: %v", err)
+	}
+	for _, key := range []string{WorkspaceMetaActiveCatalogGeneration, WorkspaceMetaActiveDocsGeneration, WorkspaceMetaActiveMemoryGeneration, WorkspaceMetaLastIndexGeneration} {
+		value, ok, err := WorkspaceMetaValue(ctx, db, key)
+		if err != nil {
+			t.Fatalf("WorkspaceMetaValue(%s): %v", key, err)
+		}
+		if !ok || value != job.GenerationID {
+			t.Fatalf("metadata %s = %q ok=%v, want %q", key, value, ok, job.GenerationID)
+		}
+	}
+	var status string
+	if err := db.QueryRowContext(ctx, "SELECT status FROM index_generations WHERE generation_id = ?", job.GenerationID).Scan(&status); err != nil {
+		t.Fatalf("generation status query: %v", err)
+	}
+	if status != "published" {
+		t.Fatalf("generation status = %q, want published", status)
 	}
 }
 

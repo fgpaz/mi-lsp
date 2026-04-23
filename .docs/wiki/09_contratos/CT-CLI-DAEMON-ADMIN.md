@@ -21,6 +21,7 @@ Comandos canonicos:
 - `workspace add|scan|list|warm|status|remove`
 - `nav symbols|find|refs|overview|outline|service|search|context|deps|ask|pack|batch|related|workspace-map|diff-context|trace|intent`
 - `index [path] [--clean] [--docs-only]`
+- `index start|status|cancel`
 - `info`
 - `daemon start|stop|status|restart|open|logs [--tail N]`
 - `daemon perf-smoke [--callers N] [--max-working-set-mb N] [--max-private-mb N] [--max-handles N]`
@@ -49,6 +50,7 @@ Flags especificos:
 - `nav search --regex`
 - `nav service --include-archetype`
 - `index --docs-only`
+- `index start --mode full|docs|catalog --wait`
 - `daemon start|restart|serve --watch-mode off|lazy|eager --max-watched-roots N --max-inflight N`
 
 ### `index`
@@ -57,23 +59,44 @@ Input:
 
 ```text
 mi-lsp index [path] [--workspace <alias>] [--clean] [--docs-only]
+mi-lsp index start [path] [--workspace <alias>] [--mode full|docs|catalog] [--clean] [--wait]
+mi-lsp index status [job-id] [--workspace <alias>]
+mi-lsp index cancel <job-id> [--workspace <alias>]
 ```
 
 Reglas:
 
+- `index [path]` es wrapper de compatibilidad que ejecuta `index start --mode full --wait`; con `--docs-only`, ejecuta `--mode docs --wait`
+- `index start` crea un registro durable en `index_jobs`; sin `--wait` lanza un proceso detached y retorna el `job_id`
+- `index status` consulta el ultimo job del workspace si no se pasa `job-id`
+- `index cancel` marca cancelacion solicitada; la cancelacion es cooperativa y puede no interrumpir una publicacion que ya llego al commit
 - sin `--docs-only`, indexa catalogo de codigo y grafo documental, con incremental git-aware cuando corresponde
 - con `--docs-only`, reconstruye `doc_records`, `doc_edges`, `doc_mentions` y `memory_pointer` sin reemplazar `files` ni `symbols`
 - toda indexacion toma `.mi-lsp/index.lock`; si ya existe, la operacion debe fallar con mensaje accionable que incluya el lock owner cuando este disponible
+- locks con PID inexistente se consideran stale y pueden recuperarse automaticamente
+- la publicacion full de catalogo + docs + memoria es all-or-nothing dentro de SQLite
 - el indexador debe respetar cancelacion de contexto durante el walk y el parseo documental
 - la lista interna de ignores excluye dependencias/caches generadas como `.venv`, `venv`, `__pycache__`, `.pytest_cache`, `.turbo`, `.next` y `node_modules`
 
-Respuesta docs-only exitosa:
+Respuesta `index start --wait` exitosa:
 
 ```json
 {
   "ok": true,
   "workspace": "<alias>",
-  "backend": "docgraph",
+  "backend": "index-job",
+  "mode": "docs",
+  "items": [
+    {
+      "job_id": "idxjob-...",
+      "generation_id": "idxgen-...",
+      "status": "succeeded",
+      "phase": "done",
+      "files": 42,
+      "symbols": 0,
+      "docs": 42
+    }
+  ],
   "warnings": ["docs_only=true"],
   "stats": {"files": 42}
 }

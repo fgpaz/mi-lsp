@@ -15,6 +15,10 @@ const (
 )
 
 func SaveReentrySnapshot(ctx context.Context, db *sql.DB, snapshot model.ReentryMemorySnapshot) error {
+	return saveReentrySnapshot(ctx, db, snapshot)
+}
+
+func saveReentrySnapshot(ctx context.Context, exec metaExecutor, snapshot model.ReentryMemorySnapshot) error {
 	body, err := json.Marshal(snapshot)
 	if err != nil {
 		return err
@@ -23,7 +27,7 @@ func SaveReentrySnapshot(ctx context.Context, db *sql.DB, snapshot model.Reentry
 		workspaceMetaReentrySnapshotJSON:    string(body),
 		workspaceMetaReentrySnapshotBuiltAt: snapshot.SnapshotBuiltAt.UTC().Format(time.RFC3339Nano),
 	}
-	return UpsertWorkspaceMetaMap(ctx, db, metadata)
+	return UpsertWorkspaceMetaMap(ctx, exec, metadata)
 }
 
 func LoadReentrySnapshot(ctx context.Context, db *sql.DB) (model.ReentryMemorySnapshot, bool, error) {

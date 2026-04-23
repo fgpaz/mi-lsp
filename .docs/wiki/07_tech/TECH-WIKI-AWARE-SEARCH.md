@@ -22,6 +22,7 @@ Esta capa existe para que la respuesta docs-first y los reading packs canonicos 
 - Links y doc IDs explicitos tienen prioridad sobre similitud textual.
 - El `read-model` solo gobierna seleccion y orden; no persiste dentro de SQLite.
 - Si no hay docs indexados pero existe wiki canonica, `nav ask` y `nav pack` usan el fallback Tier 1 del route core (anchor canonico desde governance/read-model), no README.md.
+- Si la tarea incluye un `RF-*` explicito que vive dentro de un documento agregado, Tier 1 debe anclar el documento contenedor en `.docs/wiki/04_RF/` aunque el indice documental este vacio.
 - Si no hay docs indexados y no existe wiki canonica, `nav ask` degrada a search textual del workspace.
 - Si existen docs pero el match es debil, la respuesta igual debe ser explainable con `why` y `next_queries`.
 - `nav wiki search` debe cortar por governance bloqueada y por docgraph vacio antes de ofrecer candidatos.

@@ -1,6 +1,7 @@
 package indexer
 
 import (
+	"context"
 	"io/fs"
 	"path/filepath"
 	"strings"
@@ -18,9 +19,12 @@ var supportedExtensions = map[string]struct{}{
 	".pyi": {},
 }
 
-func WalkWorkspace(root string, matcher *workspace.IgnoreMatcher) ([]string, error) {
+func WalkWorkspace(ctx context.Context, root string, matcher *workspace.IgnoreMatcher) ([]string, error) {
 	files := make([]string, 0, 256)
 	err := filepath.WalkDir(root, func(path string, entry fs.DirEntry, walkErr error) error {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		if walkErr != nil {
 			return walkErr
 		}

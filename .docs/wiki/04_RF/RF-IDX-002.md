@@ -25,6 +25,7 @@
 |---|---|---|---|---|---|
 | `workspace` | string | si | CLI | nombre o path | RF-IDX-002 |
 | `--clean` | booleano | no | CLI | si true, fuerza full re-index | RF-IDX-002 |
+| `--mode` | enum | no | CLI | `full`, `docs`, `catalog` en `index start` | RF-IDX-002 |
 
 ## 4. Process Steps (Happy Path)
 
@@ -34,7 +35,7 @@
 4. Si el delta toca `.docs/wiki`, `README*`, `docs/`, `.docs/` o `.docs/wiki/_mi-lsp/read-model.toml`, aborta el modo incremental y hace full re-index.
 5. Si no, re-indexa solo archivos de codigo en la lista de cambios.
 6. Archivos deletados se eliminan del indice.
-7. Actualiza `index.db` y devuelve stats de cambios.
+7. Actualiza `index.db`, cierra el job y devuelve stats de cambios.
 
 ## 5. Outputs
 
@@ -60,6 +61,9 @@
 - Archivos nuevos se indexan normalmente.
 - Archivos deletados en git se eliminan del indice.
 - Cambios en docs o en el `read-model` no intentan incremental parcial; fuerzan full re-index para evitar grafo inconsistente.
+- `index start --mode full` puede usar incremental si no hay `--clean`; si no publica generacion full, marca la generacion candidata como `skipped` y conserva los punteros activos previos.
+- `index start --mode catalog` recompone solo catalogo y publica `active_catalog_generation_id`.
+- `index start --mode docs` recompone solo docs + memoria y publica `active_docs_generation_id` / `active_memory_generation_id`.
 
 ## 8. Data Model Impact
 

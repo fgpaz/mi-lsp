@@ -9,8 +9,9 @@ La novedad de v1.3 es que el store repo-local persiste tambien el grafo document
 
 | Store | Ubicacion | Owner logico | Proposito |
 |---|---|---|---|
-| Workspace index DB | `<repo>/.mi-lsp/index.db` | Workspace owner | Catalogo repo-local de simbolos, archivos, repos, entrypoints y docs |
-| Workspace index lock | `<repo>/.mi-lsp/index.lock` | Workspace owner | Lock interproceso para evitar dos indexaciones simultaneas |
+| Workspace index DB | `<repo>/.mi-lsp/index.db` | Workspace owner | Catalogo repo-local de simbolos, archivos, repos, entrypoints, docs, jobs y generaciones |
+| Workspace index lock | `<repo>/.mi-lsp/index.lock` | Workspace owner | Lock interproceso con PID owner para evitar dos indexaciones simultaneas y recuperar locks stale |
+| Workspace index job logs | `<repo>/.mi-lsp/index-jobs/*.log` | Workspace owner | stdout/stderr de procesos detached de `index start` |
 | Workspace config | `<repo>/.mi-lsp/project.toml` | Workspace owner | Overrides locales, ignores y topologia `single|container` |
 | Workspace ignore file | `<repo>/.milspignore` | Workspace owner | Exclusiones repo-locales adicionales para el catalogo |
 | Docs read model | `<repo>/.docs/wiki/_mi-lsp/read-model.toml` | Maintainer de wiki | Perfil de lectura y ranking docs-first por proyecto |
@@ -29,7 +30,9 @@ La novedad de v1.3 es que el store repo-local persiste tambien el grafo document
   - `doc_records` con `path`, `doc_id`, `layer`, `family`, `search_text`, `content_hash`, `indexed_at`
   - `doc_edges` con `from_path`, `to_path`, `to_doc_id`, `kind`, `label`
   - `doc_mentions` con `doc_path`, `mention_type`, `mention_value`
-  - `workspace_meta` con `workspace_kind`, `default_repo`, `default_entrypoint`, `doc_count`, `memory_snapshot_json`, `memory_snapshot_built_at`
+  - `index_jobs` con `job_id`, `generation_id`, workspace, `mode`, `status`, `phase`, `pid`, `requested_cancel`, `error`, contadores y timestamps
+  - `index_generations` con `generation_id`, `job_id`, workspace, `mode`, `status`, contadores, `created_at`, `published_at` y `error`
+  - `workspace_meta` con `workspace_kind`, `default_repo`, `default_entrypoint`, `doc_count`, `memory_snapshot_json`, `memory_snapshot_built_at`, `active_*_generation_id`
 - `index.lock`
   - JSON efimero con `pid`, `operation`, `started_at`; se crea con semantica exclusiva y se elimina al terminar la indexacion
 - `daemon.db`
@@ -40,11 +43,17 @@ La novedad de v1.3 es que el store repo-local persiste tambien el grafo document
 
 ## Reglas de consistencia y retencion
 
-- `index.db` debe tolerar reconstruccion completa con `mi-lsp index --clean`.
-- `index.run` y el auto-index de `init/add` deben tomar `.mi-lsp/index.lock` antes de caminar archivos, para cubrir tambien trabajos colgados antes de la transaccion SQLite.
+- `index.db` debe tolerar reconstruccion completa con `mi-lsp index --clean` sin borrar el DB antes del publish.
+- `index`, `index start`, `index run-job` y el auto-index de `init/add` deben tomar `.mi-lsp/index.lock` antes de caminar archivos, para cubrir tambien trabajos colgados antes de la transaccion SQLite.
+- Si `index.lock` apunta a un PID inexistente, el siguiente index puede removerlo y continuar; si el PID sigue vivo, la operacion falla con owner visible.
+- `index_jobs` es durable para observabilidad operacional; solo puede existir un job activo por workspace (`queued`, `running`, `publishing`, `cancel_requested`).
+- `index_generations` registra el candidato de publish. Los punteros activos viven en `workspace_meta`: `active_catalog_generation_id`, `active_docs_generation_id`, `active_memory_generation_id` y `last_index_generation_id`.
+- La publicacion `full` reemplaza catalogo, grafo documental y memoria de reentrada en una unica transaccion SQLite. Un crash antes del commit conserva la generacion activa previa.
+- La publicacion `docs` reemplaza docs + memoria en una unica transaccion y no toca `files`, `symbols`, `workspace_repos` ni `workspace_entrypoints`.
+- La publicacion `catalog` reemplaza solo catalogo de codigo y no toca docs ni memoria.
 - Las migraciones aditivas de `index.db` deben crear `repo_id` y `repo_name` en `files`/`symbols` antes de crear indices que dependan de esas columnas.
 - `doc_records`, `doc_edges` y `doc_mentions` deben refrescarse como un bloque consistente dentro de una sola transaccion.
-- `mi-lsp index --docs-only` puede ejecutar `ReplaceDocs` y `SaveReentrySnapshot` sin tocar `files`, `symbols`, `workspace_repos` ni `workspace_entrypoints`.
+- `mi-lsp index --docs-only` puede ejecutar `ReplaceWorkspaceDocs` sin tocar `files`, `symbols`, `workspace_repos` ni `workspace_entrypoints`.
 - El snapshot repo-local de reentrada (`memory_snapshot_json`) se reconstruye en `mi-lsp index`, no en cada query interactiva.
 - `project.toml` debe poder reescribirse al volver a detectar topologia del workspace.
 - El `read-model.toml` no se copia a SQLite; se usa en lectura y sus cambios disparan re-index completo del corpus documental.
@@ -84,6 +93,10 @@ La novedad de v1.3 es que el store repo-local persiste tambien el grafo document
 - `DeleteFileSymbols(file_id)`: DELETE simbolos y file record para archivos eliminados. Respeta `content_hash` para dedup.
 - `ReplaceDocs(docs, edges, mentions)`: reemplaza el snapshot documental completo y actualiza `workspace_meta.doc_count`.
 - `SaveReentrySnapshot(snapshot)`: persiste `memory_snapshot_json` y `memory_snapshot_built_at` en `workspace_meta` al final de una indexacion exitosa.
+- `ReplaceWorkspaceIndex(generation_id, ...)`: publica catalogo, docs, memoria y punteros de generacion en una unica transaccion.
+- `ReplaceWorkspaceDocs(generation_id, ...)`: publica docs, memoria y punteros docs/memory en una unica transaccion.
+- `ReplaceWorkspaceCatalog(generation_id, ...)`: publica solo catalogo y puntero catalog.
+- `index_jobs`: `CreateIndexJob`, `MarkIndexJobRunning`, `MarkIndexJobSucceeded`, `MarkIndexJobFailed`, `RequestIndexJobCancel`.
 
 ## Riesgos operativos observados
 

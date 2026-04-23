@@ -2,6 +2,7 @@ package docgraph
 
 import (
 	"bufio"
+	"context"
 	"crypto/sha1"
 	"encoding/hex"
 	"fmt"
@@ -131,9 +132,9 @@ func LoadProfile(root string) (model.DocsReadProfile, string, []string) {
 	return profile, "default", nil
 }
 
-func IndexWorkspaceDocs(root string, matcher *workspace.IgnoreMatcher) ([]model.DocRecord, []model.DocEdge, []model.DocMention, []string, error) {
+func IndexWorkspaceDocs(ctx context.Context, root string, matcher *workspace.IgnoreMatcher) ([]model.DocRecord, []model.DocEdge, []model.DocMention, []string, error) {
 	profile, _, warnings := LoadProfile(root)
-	candidates, err := collectDocCandidates(root, profile, matcher)
+	candidates, err := collectDocCandidates(ctx, root, profile, matcher)
 	if err != nil {
 		return nil, nil, nil, warnings, err
 	}
@@ -144,6 +145,9 @@ func IndexWorkspaceDocs(root string, matcher *workspace.IgnoreMatcher) ([]model.
 	pendingDocIDEdges := make([]model.DocEdge, 0)
 
 	for _, candidate := range candidates {
+		if err := ctx.Err(); err != nil {
+			return nil, nil, nil, warnings, err
+		}
 		content, err := os.ReadFile(candidate.path)
 		if err != nil {
 			warnings = append(warnings, fmt.Sprintf("doc read failed for %s: %v", candidate.relativePath, err))
@@ -232,7 +236,7 @@ type docCandidate struct {
 	priority     int
 }
 
-func collectDocCandidates(root string, profile model.DocsReadProfile, matcher *workspace.IgnoreMatcher) ([]docCandidate, error) {
+func collectDocCandidates(ctx context.Context, root string, profile model.DocsReadProfile, matcher *workspace.IgnoreMatcher) ([]docCandidate, error) {
 	seen := map[string]docCandidate{}
 	addCandidate := func(absPath string, family string, priority int) {
 		if matcher != nil && matcher.ShouldIgnore(root, absPath) {
@@ -261,7 +265,7 @@ func collectDocCandidates(root string, profile model.DocsReadProfile, matcher *w
 
 	for familyIdx, family := range profile.Families {
 		for _, pattern := range family.Paths {
-			if err := expandPattern(root, pattern, func(absPath string) {
+			if err := expandPattern(ctx, root, pattern, func(absPath string) {
 				addCandidate(absPath, family.Name, familyIdx)
 			}); err != nil {
 				return nil, err
@@ -269,7 +273,7 @@ func collectDocCandidates(root string, profile model.DocsReadProfile, matcher *w
 		}
 	}
 	for _, pattern := range profile.GenericDocs.Paths {
-		if err := expandPattern(root, pattern, func(absPath string) {
+		if err := expandPattern(ctx, root, pattern, func(absPath string) {
 			addCandidate(absPath, "generic", len(profile.Families)+10)
 		}); err != nil {
 			return nil, err
@@ -289,7 +293,7 @@ func collectDocCandidates(root string, profile model.DocsReadProfile, matcher *w
 	return items, nil
 }
 
-func expandPattern(root string, pattern string, visit func(string)) error {
+func expandPattern(ctx context.Context, root string, pattern string, visit func(string)) error {
 	trimmed := filepath.ToSlash(strings.TrimSpace(pattern))
 	if trimmed == "" {
 		return nil
@@ -298,6 +302,9 @@ func expandPattern(root string, pattern string, visit func(string)) error {
 		dir := filepath.Join(root, filepath.FromSlash(strings.TrimSuffix(trimmed, "/")))
 		if info, err := os.Stat(dir); err == nil && info.IsDir() {
 			return filepath.WalkDir(dir, func(path string, entry os.DirEntry, walkErr error) error {
+				if err := ctx.Err(); err != nil {
+					return err
+				}
 				if walkErr != nil {
 					return walkErr
 				}
@@ -318,9 +325,15 @@ func expandPattern(root string, pattern string, visit func(string)) error {
 			return err
 		}
 		for _, match := range matches {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
 			visit(match)
 		}
 		return nil
+	}
+	if err := ctx.Err(); err != nil {
+		return err
 	}
 	absPath := filepath.Join(root, filepath.FromSlash(trimmed))
 	visit(absPath)

@@ -27,6 +27,7 @@ El detalle operativo y de subsistemas vive en `07_tech/`.
 | File watcher (fsnotify) | Subsistema daemon | Pre-fetch | Re-indexa archivos modificados en background |
 | Agent acceleration CLI | Subsistema Go | Compound commands | `multi-read`, `batch`, `related`, `workspace-map`, `search --include-content`, `nav ask`, `nav pack` |
 | Store repo-local | SQLite | Workspace owner | Catalogo de codigo, indice documental y metadata del repo |
+| Index job runner | CLI + SQLite repo-local | Workspace owner | Jobs de indexacion `queued/running/published`, generacion de indice y cancelacion cooperativa |
 | Store global daemon | SQLite + state file | Runtime supervision | Estado global del daemon y telemetria local |
 | Cross-platform detach | Modulos Go | Runtime supervision | `server_windows.go` para named pipes, `server_unix.go` para unix sockets |
 | Git integration | Subsistema Go | Query/indexing | Soporte incremental git-aware para re-indexing de archivos modificados |
@@ -78,7 +79,10 @@ flowchart LR
 - `nav.ask` tambien usa el camino directo por default; el daemon no es el hot path obligatorio para respuestas docs-first.
 - Todo subprocesso no interactivo debe usar la politica comun de proceso; en Windows eso implica `HideWindow + CREATE_NO_WINDOW`, y los procesos background del daemon agregan `DETACHED_PROCESS`.
 - El `tool_root` del worker se resuelve contra el ejecutable/distribucion activa o, en desarrollo, contra el repo `mi-lsp`; nunca contra el `cwd` arbitrario del workspace consultado.
-- `index.run` debe estar protegido por un lock interproceso repo-local (`.mi-lsp/index.lock`) durante toda la indexacion, no solo durante el commit SQLite.
+- `index`, `index start` y `index run-job` deben estar protegidos por un lock interproceso repo-local (`.mi-lsp/index.lock`) durante toda la indexacion, no solo durante el commit SQLite.
+- `index start` crea un job durable en `index_jobs`; sin `--wait` lanza un proceso hijo detached y devuelve `job_id`, con `--wait` ejecuta el job en el proceso actual.
+- La publicacion full debe ser all-or-nothing: catalogo, docgraph y memoria de reentrada se reemplazan en una unica transaccion SQLite y solo entonces se publica la generacion activa.
+- `--clean` fuerza recomposicion/publicacion completa del modo elegido, pero no debe borrar `index.db` antes de caminar archivos; si el proceso muere antes del commit, la generacion activa anterior sigue disponible.
 - La unidad de warm state es un runtime por `(workspace_root, backend_type)`.
 - La unidad de file watching es `workspace_root` canonico; aliases duplicados no crean watchers adicionales.
 - `watch_mode=lazy` es el default para proteger memoria/handles; `off` deshabilita watchers y `eager` es opt-in via CLI/env.
@@ -98,7 +102,7 @@ flowchart LR
 - El envelope de query puede agregar un bloque opcional `continuation`, tiny y machine-readable, para sugerir el mejor siguiente paso del harness sin requerir parsing de comandos raw.
 - El envelope de query puede agregar un bloque opcional `memory_pointer`, wiki-anchored, para reentrar rapido sobre cambios canonicos recientes y handoff relevante del workspace.
 - La memoria de reentrada repo-local se construye durante `mi-lsp index`, se persiste en `workspace_meta` y no se recompone completa en cada query del hot path.
-- `mi-lsp index --docs-only` reconstruye `doc_records`, `doc_edges`, `doc_mentions` y `memory_pointer` sin reemplazar `files` ni `symbols`; se usa para recuperar corpus documental vacio sin pagar el costo de reindexar codigo.
+- `mi-lsp index --docs-only` y `mi-lsp index start --mode docs` reconstruyen `doc_records`, `doc_edges`, `doc_mentions` y `memory_pointer` sin reemplazar `files` ni `symbols`; se usan para recuperar corpus documental vacio sin pagar el costo de reindexar codigo.
 - `nav ask`, `nav pack` y `nav route` deben compartir `profile + docs + ranking + route core` dentro de la misma request; no se acepta recomputacion duplicada del mismo corpus en el hot path.
 - `nav ask`, `nav pack` y `nav route` deben consultar el gate de gobernanza antes de seguir.
 - `nav pack` es docs-first y pack-first: clasifica la tarea, elige un anchor y arma un reading pack ordenado de lo mas global a lo mas especifico, empezando por `00` cuando la gobernanza es valida.
@@ -144,7 +148,7 @@ El struct `internal/service/config.go` centraliza todos los valores hardcodeados
 - En requests servidos por daemon, el `access_event` canonico lo escribe el daemon; la CLI solo persiste eventos directos, `direct_fallback` o fallas previas a la ejecucion remota.
 - WAL mode habilitado para manejar escrituras concurrentes daemon + CLI.
 - `index.db` repo-local tambien debe usar `WAL + busy_timeout`, y las escrituras de indexacion/watcher se serializan por workspace para evitar `SQLITE_BUSY`.
-- Cuando `index.db` esta corrupta, `index.run` debe cuarentenarla, reconstruir y dejar warning visible con la ruta respaldada.
+- Cuando `index.db` esta corrupta, el comando legacy `index` debe cuarentenarla, reconstruir y dejar warning visible con la ruta respaldada.
 - `index.run` debe chequear `context.Context` durante walk, lectura de candidatos y parseo documental para que un timeout operativo corte el trabajo en curso.
 - Si el incremental detecta `doc_records` sin docs canonicos aunque la wiki existe en disco, `index.run` debe degradar a full rebuild en vez de devolver `no changes detected`.
 - Auto-purge de eventos > 30 dias (configurable via `MI_LSP_RETENTION_DAYS`) en startup de CLI y daemon.

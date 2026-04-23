@@ -12,6 +12,7 @@ Resuelve el documento canonico de anclaje y un mini reading pack previo para una
 Retorna `RouteResult` con `canonical lane` (autoritativa) y `discovery` opcional (advisory-only).
 El envelope puede agregar `continuation` y `memory_pointer` como guidance de bajo costo para la siguiente consulta.
 La canonical lane usa el scorer owner-aware compartido: FTS + overlap lexico + `doc_id` + stem/path + `owner_hints` opcionales; `README` solo puede ganar si no existe un candidato canonico positivo.
+Si la tarea incluye un RF explicito y ese ID vive dentro de un documento agregado, Tier 1 debe anclar el documento contenedor aunque el indice documental este vacio. La respuesta conserva el `doc_id` pedido en `anchor_doc.doc_id`.
 
 ## Envelope de respuesta
 
@@ -88,6 +89,12 @@ En preview, `continuation` puede sugerir el salto directo a `nav.pack --full`; `
 | `QRY_ROUTE_TASK_REQUIRED` | task/question vacio |
 | `QRY_ROUTE_WORKSPACE_NOT_FOUND` | workspace no resolucionable |
 | `QRY_ROUTE_GOVERNANCE_BLOCKED` | governance bloqueada |
+
+## Casos de RF agregados
+
+- El router no exige que cada RF tenga un archivo propio.
+- Cuando el read-model apunta a `.docs/wiki/04_RF/*.md`, Tier 1 puede leer esos markdown y buscar el `RF-*` explicito en headings o tablas.
+- El `title` del anchor puede tomarse de la celda siguiente al RF en una tabla markdown cuando exista; si no, usa el primer heading del documento.
 
 ## Diferencia con nav ask y nav pack
 

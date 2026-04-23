@@ -17,6 +17,13 @@ func ReplaceCatalog(ctx context.Context, db *sql.DB, project model.ProjectFile, 
 	}
 	defer func() { _ = tx.Rollback() }()
 
+	if err := replaceCatalogTx(ctx, tx, project, files, symbols); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+func replaceCatalogTx(ctx context.Context, tx *sql.Tx, project model.ProjectFile, files []model.FileRecord, symbols []model.SymbolRecord) error {
 	for _, table := range []string{"files", "symbols", "workspace_repos", "workspace_entrypoints"} {
 		if _, err := tx.ExecContext(ctx, "DELETE FROM "+table); err != nil {
 			return err
@@ -101,7 +108,7 @@ func ReplaceCatalog(ctx context.Context, db *sql.DB, project model.ProjectFile, 
 	if err := UpsertWorkspaceMetaMap(ctx, tx, metadata); err != nil {
 		return err
 	}
-	return tx.Commit()
+	return nil
 }
 
 func WorkspaceStats(ctx context.Context, db *sql.DB) (model.Stats, error) {

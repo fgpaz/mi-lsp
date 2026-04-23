@@ -277,7 +277,7 @@ func shouldAutoStartDaemon(operation string) bool {
 
 func timeoutForOperation(operation string) time.Duration {
 	switch operation {
-	case "index.run":
+	case "index.run", "index.start", "index.run-job":
 		return 15 * time.Minute
 	case "workspace.add", "workspace.init":
 		return 5 * time.Minute
