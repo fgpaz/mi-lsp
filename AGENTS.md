@@ -20,6 +20,7 @@ Additional strict rules:
 - Spec-driven development is mandatory in ALL tasks.
 - `.docs/wiki/00_gobierno_documental.md` is the human authority for governance.
 - `.docs/wiki/_mi-lsp/read-model.toml` is the versioned executable projection of `00`.
+- Do not push directly to `main`; create a branch, open a pull request, and merge through the PR flow unless the user explicitly asks to bypass that repository rule.
 - If governance is ambiguous, incomplete, out of sync, or the workspace index is stale relative to governance sources, the repo is in `blocked mode`.
 - In `blocked mode`, only diagnosis and repair are allowed. Use `mi-lsp nav governance`, `$ps-asistente-wiki`, and `crear-gobierno-documental`.
 - Run `$ps-auditar-trazabilidad` for large, risky, cross-layer, or multi-module changes.
