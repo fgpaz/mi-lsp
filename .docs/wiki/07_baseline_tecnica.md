@@ -81,6 +81,8 @@ flowchart LR
 - El `tool_root` del worker se resuelve contra el ejecutable/distribucion activa o, en desarrollo, contra el repo `mi-lsp`; nunca contra el `cwd` arbitrario del workspace consultado.
 - `index`, `index start` y `index run-job` deben estar protegidos por un lock interproceso repo-local (`.mi-lsp/index.lock`) durante toda la indexacion, no solo durante el commit SQLite.
 - `index start` crea un job durable en `index_jobs`; sin `--wait` lanza un proceso hijo detached y devuelve `job_id`, con `--wait` ejecuta el job en el proceso actual.
+- `index cancel --force` puede terminar el PID vivo asociado al job y marcarlo `canceled`; se reserva para jobs colgados o publicaciones que no progresan.
+- `index status.phase` mantiene `indexing` durante el trabajo pesado y reserva `publishing` para el cierre/publicacion final, para no confundir jobs largos con commit ya iniciado.
 - La publicacion full debe ser all-or-nothing: catalogo, docgraph y memoria de reentrada se reemplazan en una unica transaccion SQLite y solo entonces se publica la generacion activa.
 - `--clean` fuerza recomposicion/publicacion completa del modo elegido, pero no debe borrar `index.db` antes de caminar archivos; si el proceso muere antes del commit, la generacion activa anterior sigue disponible.
 - La unidad de warm state es un runtime por `(workspace_root, backend_type)`.
@@ -96,7 +98,7 @@ flowchart LR
 - `owner_hints` vive en `00_gobierno_documental.md`, se proyecta al `read-model.toml` y solo refina ownership documental repo-especifico; no reemplaza las heuristicas generales del binario.
 - Si `00`, su YAML embebido, la proyeccion o el indice quedan fuera de sync, el workspace entra en `blocked mode`.
 - `nav ask` es docs-first: primero rankea docs canonicos, luego deriva evidencia de codigo desde menciones y fallback textual.
-- `nav route`, `nav ask` y `nav pack` comparten un scorer owner-aware: FTS + overlap lexico + `doc_id` + stem/path + hints opcionales + penalizacion a `generic/README` cuando hay un candidato canonico positivo.
+- `nav route`, `nav ask`, `nav pack` y `nav.intent` comparten el scorer owner-aware del lane documental: FTS + overlap lexico + `doc_id` + stem/path + hints opcionales + penalizacion a `generic/README` y a artefactos de soporte bajo `.docs/raw/` cuando hay un candidato canonico positivo en `.docs/wiki/`.
 - La recencia documental solo opera como `weak tie-break`; no rescata docs irrelevantes ni pisa un match canonico fuerte.
 - El envelope de query puede agregar un bloque opcional `coach` query-level para guidance explicito (`rerun|refine|narrow|expand`) cuando existe una accion de continuidad clara.
 - El envelope de query puede agregar un bloque opcional `continuation`, tiny y machine-readable, para sugerir el mejor siguiente paso del harness sin requerir parsing de comandos raw.

@@ -178,6 +178,59 @@ func TestRankDocsMatchesNormalizedDocIDQuery(t *testing.T) {
 	}
 }
 
+func TestQuestionTokensKeepsCanonicalShortLayerTerms(t *testing.T) {
+	tokens := docgraph.QuestionTokens("Which RF, FL, CT, TECH, DB and TP docs matter most?")
+	for _, token := range []string{"rf", "fl", "ct", "tech", "db", "tp"} {
+		if !containsString(tokens, token) {
+			t.Fatalf("expected token %q in %#v", token, tokens)
+		}
+	}
+}
+
+func TestRankDocsOwnerAwarePrefersCanonicalWikiOverRawSupportArtifacts(t *testing.T) {
+	t.Setenv("MI_LSP_DOC_RANKING", "owner")
+
+	docs := []model.DocRecord{
+		{
+			Path:       ".docs/raw/prompts/2026-04-09-wiki-hardening-full.md",
+			Title:      "MAX-PRESSURE: Wiki Full-Hardening to Code Parity",
+			DocID:      "TECH-DEMO",
+			Family:     "generic",
+			Layer:      "20",
+			SearchText: "rf fl ct tech db tp docs parity audit across all microservices",
+		},
+		{
+			Path:       ".docs/wiki/03_FL.md",
+			Title:      "03_FL",
+			Family:     "functional",
+			Layer:      "03",
+			SearchText: "fl flow inventory docs across all microservices",
+		},
+		{
+			Path:       ".docs/wiki/04_RF.md",
+			Title:      "04_RF",
+			Family:     "functional",
+			Layer:      "04",
+			SearchText: "rf module index docs across all microservices",
+		},
+		{
+			Path:       ".docs/wiki/09_contratos_tecnicos.md",
+			Title:      "09 Contratos Tecnicos",
+			Family:     "technical",
+			Layer:      "09",
+			SearchText: "ct contracts api parity audit",
+		},
+	}
+
+	ranked := rankDocs("Which RF, FL, CT, TECH, DB and TP docs are most relevant for a full wiki-to-code parity audit across all microservices?", "technical", docs, nil, model.DocsReadProfile{}, nil)
+	if len(ranked) == 0 {
+		t.Fatalf("expected ranked docs, got none")
+	}
+	if ranked[0].record.Path == ".docs/raw/prompts/2026-04-09-wiki-hardening-full.md" {
+		t.Fatalf("expected canonical wiki doc before raw support artifact, got %#v", ranked)
+	}
+}
+
 func TestNavIntentDocsModeReturnsCanonicalDocs(t *testing.T) {
 	alias := "intent-docs-" + filepath.Base(t.TempDir())
 	root := createOwnerAwareDocsWorkspaceFixture(t)
@@ -329,6 +382,134 @@ func TestNavPackOwnerAwareAvoidsREADMEForContinuationQuery(t *testing.T) {
 	}
 	if !hasAnyContinuationOwnerPath(results[0].PrimaryDoc) {
 		t.Fatalf("expected owner doc path in pack, got %#v", results[0])
+	}
+}
+
+func TestNavAskOwnerAwarePrefersCanonicalWikiOverRawSupportArtifacts(t *testing.T) {
+	alias := "ask-raw-penalty-" + filepath.Base(t.TempDir())
+	root := createRawSupportArtifactWorkspaceFixture(t)
+	app := New(root, nil)
+
+	if _, err := app.Execute(context.Background(), model.CommandRequest{
+		Operation: "workspace.init",
+		Context:   model.QueryOptions{},
+		Payload:   map[string]any{"path": root, "alias": alias},
+	}); err != nil {
+		t.Fatalf("workspace.init: %v", err)
+	}
+	defer func() { _ = workspace.RemoveWorkspace(alias) }()
+
+	env, err := app.Execute(context.Background(), model.CommandRequest{
+		Operation: "nav.ask",
+		Context:   model.QueryOptions{Workspace: alias, MaxItems: 5},
+		Payload:   map[string]any{"question": "Which RF, FL, CT, TECH, DB and TP docs are most relevant for a full wiki-to-code parity audit across all microservices?"},
+	})
+	if err != nil {
+		t.Fatalf("nav.ask: %v", err)
+	}
+	results := env.Items.([]model.AskResult)
+	if len(results) != 1 {
+		t.Fatalf("expected one ask result, got %#v", env.Items)
+	}
+	if strings.HasPrefix(results[0].PrimaryDoc.Path, ".docs/raw/") {
+		t.Fatalf("expected canonical wiki primary doc, got %#v", results[0].PrimaryDoc)
+	}
+}
+
+func TestNavRouteOwnerAwarePrefersCanonicalWikiOverRawSupportArtifacts(t *testing.T) {
+	alias := "route-raw-penalty-" + filepath.Base(t.TempDir())
+	root := createRawSupportArtifactWorkspaceFixture(t)
+	app := New(root, nil)
+
+	if _, err := app.Execute(context.Background(), model.CommandRequest{
+		Operation: "workspace.init",
+		Context:   model.QueryOptions{},
+		Payload:   map[string]any{"path": root, "alias": alias},
+	}); err != nil {
+		t.Fatalf("workspace.init: %v", err)
+	}
+	defer func() { _ = workspace.RemoveWorkspace(alias) }()
+
+	env, err := app.Execute(context.Background(), model.CommandRequest{
+		Operation: "nav.route",
+		Context:   model.QueryOptions{Workspace: alias},
+		Payload:   map[string]any{"task": "Which RF, FL, CT, TECH, DB and TP docs are most relevant for a full wiki-to-code parity audit across all microservices?"},
+	})
+	if err != nil {
+		t.Fatalf("nav.route: %v", err)
+	}
+	results := env.Items.([]model.RouteResult)
+	if len(results) != 1 {
+		t.Fatalf("expected one route result, got %#v", env.Items)
+	}
+	if strings.HasPrefix(results[0].Canonical.AnchorDoc.Path, ".docs/raw/") {
+		t.Fatalf("expected canonical wiki anchor doc, got %#v", results[0].Canonical.AnchorDoc)
+	}
+}
+
+func TestNavPackOwnerAwarePrefersCanonicalWikiOverRawSupportArtifacts(t *testing.T) {
+	alias := "pack-raw-penalty-" + filepath.Base(t.TempDir())
+	root := createRawSupportArtifactWorkspaceFixture(t)
+	app := New(root, nil)
+
+	if _, err := app.Execute(context.Background(), model.CommandRequest{
+		Operation: "workspace.init",
+		Context:   model.QueryOptions{},
+		Payload:   map[string]any{"path": root, "alias": alias},
+	}); err != nil {
+		t.Fatalf("workspace.init: %v", err)
+	}
+	defer func() { _ = workspace.RemoveWorkspace(alias) }()
+
+	env, err := app.Execute(context.Background(), model.CommandRequest{
+		Operation: "nav.pack",
+		Context:   model.QueryOptions{Workspace: alias, AXI: true, MaxItems: 5},
+		Payload:   map[string]any{"task": "Which RF, FL, CT, TECH, DB and TP docs are most relevant for a full wiki-to-code parity audit across all microservices?"},
+	})
+	if err != nil {
+		t.Fatalf("nav.pack: %v", err)
+	}
+	results := env.Items.([]model.PackResult)
+	if len(results) != 1 {
+		t.Fatalf("expected one pack result, got %#v", env.Items)
+	}
+	if strings.HasPrefix(results[0].PrimaryDoc, ".docs/raw/") {
+		t.Fatalf("expected canonical wiki pack primary doc, got %#v", results[0])
+	}
+}
+
+func TestNavIntentDocsModePrefersCanonicalWikiOverRawSupportArtifacts(t *testing.T) {
+	alias := "intent-raw-penalty-" + filepath.Base(t.TempDir())
+	root := createRawSupportArtifactWorkspaceFixture(t)
+	app := New(root, nil)
+
+	if _, err := app.Execute(context.Background(), model.CommandRequest{
+		Operation: "workspace.init",
+		Context:   model.QueryOptions{},
+		Payload:   map[string]any{"path": root, "alias": alias},
+	}); err != nil {
+		t.Fatalf("workspace.init: %v", err)
+	}
+	defer func() { _ = workspace.RemoveWorkspace(alias) }()
+
+	env, err := app.Execute(context.Background(), model.CommandRequest{
+		Operation: "nav.intent",
+		Context:   model.QueryOptions{Workspace: alias, MaxItems: 5},
+		Payload:   map[string]any{"question": "Which RF, FL, CT, TECH, DB and TP docs are most relevant for a full wiki-to-code parity audit across all microservices?"},
+	})
+	if err != nil {
+		t.Fatalf("nav.intent: %v", err)
+	}
+	if env.Mode != "docs" {
+		t.Fatalf("mode = %q, want docs", env.Mode)
+	}
+	items, ok := env.Items.([]map[string]any)
+	if !ok || len(items) == 0 {
+		t.Fatalf("expected docs intent items, got %#v", env.Items)
+	}
+	docPath, _ := items[0]["doc_path"].(string)
+	if strings.HasPrefix(docPath, ".docs/raw/") {
+		t.Fatalf("expected canonical wiki intent doc, got %#v", items[0])
 	}
 }
 
@@ -559,6 +740,59 @@ func writeOwnerAwareGovernanceFixture(t *testing.T, root string) {
 	if status.Blocked {
 		t.Fatalf("expected governance fixture to be valid, got blocked status: %#v", status)
 	}
+}
+
+func createRawSupportArtifactWorkspaceFixture(t *testing.T) string {
+	t.Helper()
+	ensureWritableTestHome(t)
+	root := t.TempDir()
+	writeWorkspaceFile(t, root, "src/App.csproj", `<Project Sdk="Microsoft.NET.Sdk"></Project>`)
+	writeWorkspaceFile(t, root, ".docs/wiki/03_FL.md", strings.Join([]string{
+		"# 03_FL",
+		"",
+		"Flow inventory and FL docs across all microservices.",
+	}, "\n"))
+	writeWorkspaceFile(t, root, ".docs/wiki/04_RF.md", strings.Join([]string{
+		"# 04_RF",
+		"",
+		"RF module index for full parity audit.",
+	}, "\n"))
+	writeWorkspaceFile(t, root, ".docs/wiki/07_baseline_tecnica.md", strings.Join([]string{
+		"# 07_baseline_tecnica",
+		"",
+		"TECH baseline for cross-service parity audit.",
+	}, "\n"))
+	writeWorkspaceFile(t, root, ".docs/wiki/08_modelo_fisico_datos.md", strings.Join([]string{
+		"# 08_modelo_fisico_datos",
+		"",
+		"DB baseline for runtime persistence and audit coverage.",
+	}, "\n"))
+	writeWorkspaceFile(t, root, ".docs/wiki/09_contratos_tecnicos.md", strings.Join([]string{
+		"# 09_contratos_tecnicos",
+		"",
+		"CT contract index for APIs, envelopes, and protocol parity.",
+	}, "\n"))
+	writeWorkspaceFile(t, root, ".docs/wiki/06_matriz_pruebas_RF.md", strings.Join([]string{
+		"# 06_matriz_pruebas_RF",
+		"",
+		"TP matrix for validating RF coverage.",
+	}, "\n"))
+	writeWorkspaceFile(t, root, ".docs/raw/prompts/2026-04-09-wiki-hardening-full.md", strings.Join([]string{
+		"# MAX-PRESSURE: Wiki Full-Hardening to Code Parity",
+		"",
+		"Prompt de soporte para hardening full wiki-to-code parity across all microservices.",
+	}, "\n"))
+	writeSpecBackendGovernanceFixture(t, root)
+	return root
+}
+
+func containsString(items []string, want string) bool {
+	for _, item := range items {
+		if item == want {
+			return true
+		}
+	}
+	return false
 }
 
 func isContinuationOwnerDoc(docID string) bool {

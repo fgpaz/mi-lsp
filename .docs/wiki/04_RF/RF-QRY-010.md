@@ -23,7 +23,7 @@
 
 1. La CLI recibe `mi-lsp nav ask <question>`.
 2. El core resuelve el workspace y carga el `read-model` del proyecto o el default embebido.
-3. El core rankea documentos canonicos por familia e intensidad de match usando el scorer owner-aware compartido.
+3. El core rankea documentos canonicos por familia e intensidad de match usando el scorer owner-aware compartido por `nav route`, `nav ask`, `nav pack` y `nav.intent`.
 4. El core elige un documento primario y evidencia documental de soporte.
 5. El core deriva evidencia de codigo desde menciones explicitas o fallback textual.
 6. Devuelve un envelope con `summary`, `primary_doc`, `doc_evidence`, `code_evidence`, `why` y `next_queries`.
@@ -42,7 +42,7 @@
 ## 5. Special Cases and Variants
 
 - Si no hay documentos indexados **y existe wiki canonica**, `nav ask` usa el fallback Tier 1 del route core para resolver un anchor canonico desde governance/read-model. No cae a README.md (ver RF-QRY-015).
-- El scorer owner-aware aplica FTS, overlap lexico, `doc_id`, stem/path, penalizacion a `generic/README` cuando ya existe un candidato canonico positivo y `owner_hints` opcionales proyectados desde `00_gobierno_documental.md`.
+- El scorer owner-aware aplica FTS, overlap lexico, `doc_id`, stem/path, penalizacion a `generic/README` y a artefactos de soporte en `.docs/raw/` cuando ya existe un candidato canonico positivo, y `owner_hints` opcionales proyectados desde `00_gobierno_documental.md`.
 - La recencia documental solo opera como `weak tie-break` y nunca rescata un doc irrelevante ni sobreescribe un match canonico fuerte.
 - Si la respuesta docs-first depende de texto fallback o queda con evidencia debil, `coach.confidence` debe bajar a `low` y sugerir un rerun/refinement concreto sin reemplazar `next_queries`.
 - Si la respuesta docs-first queda con evidencia debil, `continuation.reason=low_evidence` debe sugerir una siguiente busqueda estructurada sin transportar command strings raw.

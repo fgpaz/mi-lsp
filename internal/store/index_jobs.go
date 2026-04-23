@@ -280,6 +280,34 @@ func RequestIndexJobCancel(ctx context.Context, db *sql.DB, jobID string) (Index
 	return job, err
 }
 
+func CancelIndexJob(ctx context.Context, db *sql.DB, jobID string, force bool) (IndexJob, error) {
+	if !force {
+		return RequestIndexJobCancel(ctx, db, jobID)
+	}
+
+	job, ok, err := GetIndexJob(ctx, db, jobID)
+	if err != nil {
+		return IndexJob{}, err
+	}
+	if !ok {
+		return IndexJob{}, sql.ErrNoRows
+	}
+	if job.Status == IndexJobSucceeded || job.Status == IndexJobFailed || job.Status == IndexJobCanceled {
+		return job, nil
+	}
+
+	if job.PID > 0 && processExists(job.PID) {
+		if err := terminateProcess(job.PID); err != nil && processExists(job.PID) {
+			return IndexJob{}, fmt.Errorf("terminate index job pid %d: %w", job.PID, err)
+		}
+	}
+	if err := MarkIndexJobCanceled(ctx, db, jobID); err != nil {
+		return IndexJob{}, err
+	}
+	job, _, err = GetIndexJob(ctx, db, jobID)
+	return job, err
+}
+
 func IsIndexJobCancelRequested(ctx context.Context, db *sql.DB, jobID string) (bool, error) {
 	var requested int
 	var status string

@@ -148,3 +148,129 @@ func TestNavTracePrefersAggregateRFDocOverRFIndexDoc(t *testing.T) {
 		t.Fatalf("trace title = %q, want aggregate RF row title", results[0].Title)
 	}
 }
+
+func TestNavTraceFallsBackToDiskWhenRFIsMissingFromDocIndex(t *testing.T) {
+	alias := "trace-disk-fallback-" + filepath.Base(t.TempDir())
+	root := createFunctionalPackWorkspaceFixture(t, alias)
+	writeWorkspaceFile(t, root, ".docs/wiki/04_RF/RF-GAS.md", strings.Join([]string{
+		"# RF-GAS",
+		"",
+		"| ID | Titulo |",
+		"| --- | --- |",
+		"| RF-GAS-09 | Projection de reminders de gastos |",
+		"| RF-GAS-10 | Confirmacion requerida para handoff a gastos |",
+	}, "\n"))
+	if _, err := workspace.RegisterWorkspace(alias, model.WorkspaceRegistration{
+		Name:      alias,
+		Root:      root,
+		Languages: []string{"csharp"},
+		Kind:      model.WorkspaceKindSingle,
+	}); err != nil {
+		t.Fatalf("register workspace: %v", err)
+	}
+	defer func() { _ = workspace.RemoveWorkspace(alias) }()
+
+	app := New(root, nil)
+	env, err := app.Execute(context.Background(), model.CommandRequest{
+		Operation: "nav.trace",
+		Context:   model.QueryOptions{Workspace: alias},
+		Payload:   map[string]any{"rf": "RF-GAS-10"},
+	})
+	if err != nil {
+		t.Fatalf("nav.trace: %v", err)
+	}
+	results, ok := env.Items.([]model.TraceResult)
+	if !ok || len(results) != 1 {
+		t.Fatalf("expected one trace result, got %#v", env.Items)
+	}
+	if results[0].RF != "RF-GAS-10" {
+		t.Fatalf("trace RF = %q, want RF-GAS-10", results[0].RF)
+	}
+	if !strings.Contains(results[0].Title, "Confirmacion requerida") {
+		t.Fatalf("trace title = %q, want disk fallback embedded title", results[0].Title)
+	}
+}
+
+func TestNavTraceFallsBackToLegacyRFDirectoryWhenDocIndexIsMissing(t *testing.T) {
+	alias := "trace-legacy-rf-fallback-" + filepath.Base(t.TempDir())
+	root := createFunctionalPackWorkspaceFixture(t, alias)
+	writeWorkspaceFile(t, root, ".docs/wiki/RF/RF-GAS.md", strings.Join([]string{
+		"# RF-GAS",
+		"",
+		"| ID | Titulo |",
+		"| --- | --- |",
+		"| RF-GAS-09 | Projection de reminders de gastos |",
+		"| RF-GAS-10 | Confirmacion requerida para handoff a gastos |",
+	}, "\n"))
+	if _, err := workspace.RegisterWorkspace(alias, model.WorkspaceRegistration{
+		Name:      alias,
+		Root:      root,
+		Languages: []string{"csharp"},
+		Kind:      model.WorkspaceKindSingle,
+	}); err != nil {
+		t.Fatalf("register workspace: %v", err)
+	}
+	defer func() { _ = workspace.RemoveWorkspace(alias) }()
+
+	app := New(root, nil)
+	env, err := app.Execute(context.Background(), model.CommandRequest{
+		Operation: "nav.trace",
+		Context:   model.QueryOptions{Workspace: alias},
+		Payload:   map[string]any{"rf": "RF-GAS-10"},
+	})
+	if err != nil {
+		t.Fatalf("nav.trace: %v", err)
+	}
+	results, ok := env.Items.([]model.TraceResult)
+	if !ok || len(results) != 1 {
+		t.Fatalf("expected one trace result, got %#v", env.Items)
+	}
+	if results[0].RF != "RF-GAS-10" {
+		t.Fatalf("trace RF = %q, want RF-GAS-10", results[0].RF)
+	}
+	if !strings.Contains(results[0].Title, "Confirmacion requerida") {
+		t.Fatalf("trace title = %q, want legacy RF fallback embedded title", results[0].Title)
+	}
+}
+
+func TestNavTraceFallsBackToLegacyRFRootIndexWhenDocIndexIsMissing(t *testing.T) {
+	alias := "trace-legacy-rf-root-fallback-" + filepath.Base(t.TempDir())
+	root := createFunctionalPackWorkspaceFixture(t, alias)
+	writeWorkspaceFile(t, root, ".docs/wiki/RF.md", strings.Join([]string{
+		"# RF",
+		"",
+		"| ID | Titulo |",
+		"| --- | --- |",
+		"| RF-GAS-09 | Projection de reminders de gastos |",
+		"| RF-GAS-10 | Confirmacion requerida para handoff a gastos |",
+	}, "\n"))
+	if _, err := workspace.RegisterWorkspace(alias, model.WorkspaceRegistration{
+		Name:      alias,
+		Root:      root,
+		Languages: []string{"csharp"},
+		Kind:      model.WorkspaceKindSingle,
+	}); err != nil {
+		t.Fatalf("register workspace: %v", err)
+	}
+	defer func() { _ = workspace.RemoveWorkspace(alias) }()
+
+	app := New(root, nil)
+	env, err := app.Execute(context.Background(), model.CommandRequest{
+		Operation: "nav.trace",
+		Context:   model.QueryOptions{Workspace: alias},
+		Payload:   map[string]any{"rf": "RF-GAS-10"},
+	})
+	if err != nil {
+		t.Fatalf("nav.trace: %v", err)
+	}
+	results, ok := env.Items.([]model.TraceResult)
+	if !ok || len(results) != 1 {
+		t.Fatalf("expected one trace result, got %#v", env.Items)
+	}
+	if results[0].RF != "RF-GAS-10" {
+		t.Fatalf("trace RF = %q, want RF-GAS-10", results[0].RF)
+	}
+	if !strings.Contains(results[0].Title, "Confirmacion requerida") {
+		t.Fatalf("trace title = %q, want legacy RF root fallback embedded title", results[0].Title)
+	}
+}

@@ -46,7 +46,7 @@ sequenceDiagram
 
 - `.mi-lsp/index.db`
 - tablas `workspace_repos`, `workspace_entrypoints`, `symbols`, `files`, `doc_records`, `doc_edges`, `doc_mentions`, `index_jobs`, `index_generations`, `workspace_meta`
-- estados: sin indice, job queued/running/publishing/succeeded/failed/canceled, generacion activa, indice con warnings de ruido
+- estados: sin indice, job queued/running/publishing/succeeded/failed/canceled, generacion activa, indice con warnings de ruido; `index cancel --force` puede cortar un job colgado y liberar el workspace para reintento, y `publishing` debe quedar reservado al cierre final del job
 
 ## 6. Candidate RF references
 

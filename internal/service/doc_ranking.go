@@ -103,6 +103,7 @@ func ownerAwareRankDocs(question string, family string, docs []model.DocRecord, 
 
 	provisional := make([]provisionalDoc, 0, len(docs))
 	hasCanonicalPositive := false
+	hasCanonicalWikiPositive := false
 	for _, doc := range docs {
 		if doc.IsSnapshot {
 			continue
@@ -110,6 +111,9 @@ func ownerAwareRankDocs(question string, family string, docs []model.DocRecord, 
 		score, reasons, positive := scoreOwnerAwareDoc(doc, family, normalizedQuestion, tokens, ftsScores, hints, recentRank)
 		if positive && doc.Family != "generic" {
 			hasCanonicalPositive = true
+		}
+		if positive && isCanonicalWikiDoc(doc.Path) {
+			hasCanonicalWikiPositive = true
 		}
 		provisional = append(provisional, provisionalDoc{
 			doc:      doc,
@@ -126,6 +130,10 @@ func ownerAwareRankDocs(question string, family string, docs []model.DocRecord, 
 		if hasCanonicalPositive && candidate.doc.Family == "generic" && candidate.positive {
 			score -= 60
 			reasons = append(reasons, "generic_penalty")
+		}
+		if hasCanonicalWikiPositive && candidate.positive && isSupportArtifactDoc(candidate.doc.Path) {
+			score -= 90
+			reasons = append(reasons, "support_artifact_penalty")
 		}
 		if score <= 0 {
 			continue
@@ -349,6 +357,16 @@ func rankingPathTokens(path string) map[string]struct{} {
 		items[token] = struct{}{}
 	}
 	return items
+}
+
+func isCanonicalWikiDoc(path string) bool {
+	normalized := filepath.ToSlash(strings.TrimSpace(path))
+	return strings.HasPrefix(normalized, ".docs/wiki/")
+}
+
+func isSupportArtifactDoc(path string) bool {
+	normalized := filepath.ToSlash(strings.TrimSpace(path))
+	return strings.HasPrefix(normalized, ".docs/raw/")
 }
 
 func pathMatchesAnyHint(path string, patterns []string) bool {

@@ -105,14 +105,19 @@ func (a *App) traceRF(ctx context.Context, root string, db *sql.DB, rfID string)
 			doc = &embeddedDocs[0]
 		}
 		if doc == nil {
-			return nil, nil
+			fallbackDoc, ok := traceRFDocFromDisk(root, rfIDUpper)
+			if !ok {
+				return nil, nil
+			}
+			doc = &fallbackDoc
+		} else {
+			virtualDoc := *doc
+			virtualDoc.DocID = rfIDUpper
+			if title := embeddedRFTitle(root, virtualDoc.Path, rfIDUpper); title != "" {
+				virtualDoc.Title = title
+			}
+			doc = &virtualDoc
 		}
-		virtualDoc := *doc
-		virtualDoc.DocID = rfIDUpper
-		if title := embeddedRFTitle(root, virtualDoc.Path, rfIDUpper); title != "" {
-			virtualDoc.Title = title
-		}
-		doc = &virtualDoc
 	}
 
 	// Get explicit implements links
@@ -184,6 +189,75 @@ func (a *App) traceRF(ctx context.Context, root string, db *sql.DB, rfID string)
 	}, nil
 }
 
+func traceRFDocFromDisk(root string, rfID string) (model.DocRecord, bool) {
+	if strings.TrimSpace(root) == "" || strings.TrimSpace(rfID) == "" {
+		return model.DocRecord{}, false
+	}
+	candidates := []string{}
+	indexPath := filepath.Join(root, ".docs", "wiki", "04_RF.md")
+	if _, err := os.Stat(indexPath); err == nil {
+		candidates = append(candidates, filepath.ToSlash(filepath.Clean(".docs/wiki/04_RF.md")))
+	}
+	rfDir := filepath.Join(root, ".docs", "wiki", "04_RF")
+	entries, err := os.ReadDir(rfDir)
+	if err == nil {
+		for _, entry := range entries {
+			if entry.IsDir() || !strings.HasSuffix(strings.ToLower(entry.Name()), ".md") {
+				continue
+			}
+			candidates = append(candidates, filepath.ToSlash(filepath.Join(".docs", "wiki", "04_RF", entry.Name())))
+		}
+	}
+	legacyIndexPath := filepath.Join(root, ".docs", "wiki", "RF.md")
+	if _, err := os.Stat(legacyIndexPath); err == nil {
+		candidates = append(candidates, filepath.ToSlash(filepath.Clean(".docs/wiki/RF.md")))
+	}
+	legacyDir := filepath.Join(root, ".docs", "wiki", "RF")
+	legacyEntries, err := os.ReadDir(legacyDir)
+	if err == nil {
+		for _, entry := range legacyEntries {
+			if entry.IsDir() || !strings.HasSuffix(strings.ToLower(entry.Name()), ".md") {
+				continue
+			}
+			candidates = append(candidates, filepath.ToSlash(filepath.Join(".docs", "wiki", "RF", entry.Name())))
+		}
+	}
+	best := model.DocRecord{}
+	bestScore := -1
+	for _, relativePath := range candidates {
+		absolutePath := filepath.Join(root, filepath.FromSlash(relativePath))
+		content, err := os.ReadFile(absolutePath)
+		if err != nil {
+			continue
+		}
+		if !strings.Contains(strings.ToUpper(string(content)), strings.ToUpper(rfID)) {
+			continue
+		}
+		score := 1
+		if isSpecificRFDocPath(relativePath) {
+			score += 10
+		}
+		if !isRFIndexPath(relativePath) {
+			score += 5
+		}
+		title := embeddedRFTitle(root, relativePath, rfID)
+		if title == "" {
+			title = rfID
+		}
+		if score > bestScore {
+			bestScore = score
+			best = model.DocRecord{
+				Path:   relativePath,
+				Title:  title,
+				DocID:  strings.ToUpper(rfID),
+				Layer:  "04",
+				Family: "functional",
+			}
+		}
+	}
+	return best, bestScore >= 0
+}
+
 func (a *App) traceAllRFs(ctx context.Context, root string, db *sql.DB) ([]model.TraceResult, error) {
 	rfDocs, err := store.GetRFDocRecords(ctx, db)
 	if err != nil {
@@ -236,12 +310,15 @@ func (a *App) traceSummary(workspaceName string, results []model.TraceResult) mo
 
 func isSpecificRFDocPath(path string) bool {
 	normalized := filepath.ToSlash(path)
-	return strings.Contains(normalized, "/04_RF/")
+	return strings.Contains(normalized, "/04_RF/") || strings.Contains(normalized, "/RF/")
 }
 
 func isRFIndexPath(path string) bool {
 	normalized := filepath.ToSlash(path)
-	return normalized == ".docs/wiki/04_RF.md" || strings.HasSuffix(normalized, "/04_RF.md")
+	return normalized == ".docs/wiki/04_RF.md" ||
+		normalized == ".docs/wiki/RF.md" ||
+		strings.HasSuffix(normalized, "/04_RF.md") ||
+		strings.HasSuffix(normalized, "/RF.md")
 }
 
 func embeddedRFTitle(root string, relativePath string, rfID string) string {

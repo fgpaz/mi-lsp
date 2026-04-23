@@ -90,6 +90,7 @@
 | TC-QRY-061 | positivo | RF-QRY-014 | `TestNavRoutePreviewPackHasPreviewStage`: cada doc del `PreviewPack` lleva campo `Stage` no vacio |
 | TC-QRY-062 | positivo | RF-QRY-014 | `TestNavRouteDiscoveryDocsHaveDiscoveryStage`: cuando `discovery.docs` existe, cada doc tiene `Stage == "discovery"` |
 | TC-QRY-063 | positivo | RF-QRY-014, RF-QRY-015 | queries naturales sobre capabilities nuevas (`continuation`, `memory_pointer`) priorizan docs owner-aware del slice y no `README` cuando existe match canonico positivo |
+| TC-QRY-063A | positivo | RF-QRY-010, RF-QRY-011, RF-QRY-014, RF-QRY-015 | superficies docs-first (`nav ask`, `nav route`, `nav pack`, `nav intent`) orientadas a auditoria/wiki-to-code parity priorizan `.docs/wiki/*` y no dejan que `.docs/raw/*` gane el documento primario cuando existe match canonico positivo |
 | TC-QRY-064 | positivo | RF-QRY-011 | `nav intent` clasifica `mode=docs` para consultas capability-like y devuelve items documentales con `doc_path/doc_id/title/family/layer/score/evidence/next_queries` |
 | TC-QRY-065 | positivo | RF-QRY-011 | `nav intent` clasifica `mode=code` para consultas symbol-like y conserva ranking BM25 de catalogo |
 | TC-QRY-066 | positivo | RF-QRY-014, RF-QRY-015 | `MI_LSP_DOC_RANKING=legacy` deja un override diagnostico reversible y no persiste hints/queries crudas en telemetria |
@@ -98,6 +99,9 @@
 | TC-QRY-069 | positivo | RF-QRY-013 | `TestNavTraceFindsRFEmbeddedInAggregateDoc`: `nav trace RF-*` resuelve IDs mencionados dentro de documentos agregados via `doc_mentions` |
 | TC-QRY-070 | positivo | RF-QRY-014 | `TestNavRoutePreservesExplicitEmbeddedRFWhenDocsIndexExists`: Tier 2 no reemplaza el RF explicito por el indice general `04_RF.md` |
 | TC-QRY-071 | positivo | RF-QRY-013 | `TestNavTracePrefersAggregateRFDocOverRFIndexDoc`: `nav trace` prioriza el doc bajo `04_RF/` sobre el indice general cuando ambos mencionan el RF |
+| TC-QRY-071A | positivo | RF-QRY-013 | `nav trace RF-*` hace fallback a `.docs/wiki/04_RF*.md` cuando el RF existe en disco pero todavia no figura en `doc_records`/`doc_mentions` |
+| TC-QRY-071B | positivo | RF-QRY-013 | `nav trace RF-*` hace fallback al layout legacy `.docs/wiki/RF/*.md` cuando el RF existe en disco pero el indice documental aun no lo publico |
+| TC-QRY-071C | positivo | RF-QRY-013 | `nav trace RF-*` hace fallback al indice root legacy `.docs/wiki/RF.md` cuando el RF existe en disco pero el indice documental aun no lo publico |
 | TC-QRY-072 | negativo | RF-QRY-014 | `TestNavRouteDoesNotAttachMissingExplicitRFToGovernanceFallback`: un `RF-*` inexistente no se pega como `doc_id` al fallback de gobernanza |
 | TC-QRY-073 | positivo | RF-QRY-016 | `TestNavWikiSearchReturnsLayerFilteredDocs`: `nav wiki search` devuelve candidatos filtrados por capa con `next_queries` hacia pack/trace/multi-read |
 | TC-QRY-074 | negativo | RF-QRY-016 | `TestNavWikiSearchDocIndexEmptyReturnsDiagnostic`: docgraph vacio devuelve diagnostico accionable de `index --docs-only` |
