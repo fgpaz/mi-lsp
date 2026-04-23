@@ -531,14 +531,32 @@ func QuestionTokens(question string) []string {
 		"como": {}, "para": {}, "donde": {}, "porque": {}, "sobre": {}, "desde": {},
 		"una": {}, "uno": {}, "que": {}, "del": {}, "las": {}, "los": {}, "con": {},
 	}
+	shortCanonicalTokens := map[string]struct{}{
+		"rf":   {},
+		"fl":   {},
+		"tp":   {},
+		"ct":   {},
+		"db":   {},
+		"api":  {},
+		"sdk":  {},
+		"ux":   {},
+		"ui":   {},
+		"oidc": {},
+	}
 	seen := map[string]struct{}{}
 	result := make([]string, 0, len(parts))
 	for _, part := range parts {
-		if len(part) < 3 {
+		part = strings.Trim(part, ".,;:!?()[]{}\"'")
+		if part == "" {
 			continue
 		}
 		if _, ok := stopwords[part]; ok {
 			continue
+		}
+		if len(part) < 3 {
+			if _, ok := shortCanonicalTokens[part]; !ok {
+				continue
+			}
 		}
 		if _, ok := seen[part]; ok {
 			continue

@@ -64,14 +64,17 @@ func newIndexStatusCommand(state *rootState) *cobra.Command {
 }
 
 func newIndexCancelCommand(state *rootState) *cobra.Command {
-	return &cobra.Command{
+	var force bool
+	command := &cobra.Command{
 		Use:   "cancel <job-id>",
 		Short: "Request cancellation for an index job",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return state.executeOperation(cmd, "index.cancel", map[string]any{"job_id": args[0]}, false)
+			return state.executeOperation(cmd, "index.cancel", map[string]any{"job_id": args[0], "force": force}, false)
 		},
 	}
+	command.Flags().BoolVar(&force, "force", false, "Terminate the live index job process immediately when present")
+	return command
 }
 
 func newIndexRunJobCommand(state *rootState) *cobra.Command {

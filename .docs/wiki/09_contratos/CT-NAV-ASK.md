@@ -52,7 +52,7 @@ El envelope puede contener ademas:
 ## Semantica observable
 
 - `primary_doc` es el documento canonico elegido.
-- El documento primario sale del scorer owner-aware compartido con `nav route` y `nav pack`; `owner_hints` opcionales desde `00` pueden sesgar ownership repo-especifico sin reemplazar la gobernanza.
+- El documento primario sale del scorer owner-aware compartido con `nav route` y `nav pack`; `owner_hints` opcionales desde `00` pueden sesgar ownership repo-especifico sin reemplazar la gobernanza. Si existe un match canonico positivo en `.docs/wiki/`, el scorer debe degradar `README`/generic y tambien artefactos de soporte en `.docs/raw/` para no usarlos como documento primario.
 - `doc_evidence` agrega supporting docs, priorizando links y doc IDs explicitos.
 - `code_evidence` muestra archivos, simbolos o snippets derivados desde docs o fallback textual.
 - `why` explica por que la respuesta eligio ese camino.

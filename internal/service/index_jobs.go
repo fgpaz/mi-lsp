@@ -143,14 +143,19 @@ func (a *App) indexCancel(ctx context.Context, request model.CommandRequest) (mo
 		return model.Envelope{}, err
 	}
 	defer db.Close()
-	job, err := store.RequestIndexJobCancel(ctx, db, jobID)
+	force, _ := request.Payload["force"].(bool)
+	job, err := store.CancelIndexJob(ctx, db, jobID, force)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return model.Envelope{}, fmt.Errorf("index job %s not found", jobID)
 		}
 		return model.Envelope{}, err
 	}
-	return model.Envelope{Ok: true, Workspace: registration.Name, Backend: "index-job", Mode: job.Mode, Items: []store.IndexJob{job}}, nil
+	warnings := []string{}
+	if force {
+		warnings = append(warnings, "index job force-canceled; a live PID was terminated when present")
+	}
+	return model.Envelope{Ok: true, Workspace: registration.Name, Backend: "index-job", Mode: job.Mode, Items: []store.IndexJob{job}, Warnings: warnings}, nil
 }
 
 func (a *App) runIndexJob(ctx context.Context, registration model.WorkspaceRegistration, jobID string) (store.IndexJob, indexer.Result, error) {
@@ -184,9 +189,6 @@ func (a *App) runIndexJob(ctx context.Context, registration model.WorkspaceRegis
 		} else if canceled {
 			return store.MarkIndexJobCanceled(ctx, db, jobID)
 		}
-		if err := store.MarkIndexJobPhase(ctx, db, jobID, store.IndexJobPublishing, "publishing"); err != nil {
-			return err
-		}
 		switch job.Mode {
 		case store.IndexModeDocs:
 			result, err = indexer.IndexWorkspaceDocsOnlyWithGeneration(ctx, registration.Root, job.GenerationID)
@@ -214,6 +216,9 @@ func (a *App) runIndexJob(ctx context.Context, registration model.WorkspaceRegis
 			result, err = indexer.IndexWorkspaceWithGeneration(ctx, registration.Root, job.Clean, job.GenerationID)
 		}
 		if err != nil {
+			return err
+		}
+		if err := store.MarkIndexJobPhase(ctx, db, jobID, store.IndexJobPublishing, "publishing"); err != nil {
 			return err
 		}
 		return store.MarkIndexJobSucceeded(ctx, db, jobID, result.Stats.Files, result.Stats.Symbols, result.Docs)
