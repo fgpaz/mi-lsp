@@ -149,6 +149,20 @@ type DocRecord struct {
 	IsSnapshot  bool   `json:"is_snapshot,omitempty"`
 }
 
+type WikiSearchResult struct {
+	DocID       string   `json:"doc_id,omitempty"`
+	Path        string   `json:"path"`
+	Title       string   `json:"title,omitempty"`
+	Layer       string   `json:"layer,omitempty"`
+	Family      string   `json:"family,omitempty"`
+	Stage       string   `json:"stage,omitempty"`
+	Score       int      `json:"score,omitempty"`
+	Why         []string `json:"why,omitempty"`
+	Snippet     string   `json:"snippet,omitempty"`
+	Content     string   `json:"content,omitempty"`
+	NextQueries []string `json:"next_queries,omitempty"`
+}
+
 type DocEdge struct {
 	FromPath string `json:"from_path"`
 	ToPath   string `json:"to_path,omitempty"`

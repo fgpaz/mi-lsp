@@ -92,6 +92,7 @@ func (a *App) pack(ctx context.Context, request model.CommandRequest) (model.Env
 			Warnings:  warnings,
 			Hint:      hint,
 		}
+		env = applyWikiRepoCompatHint(env, request, "nav.pack", registration.Name, task)
 		env = attachMemoryPointer(env, memory)
 		env.Continuation = buildPackContinuation(task, result, request.Context, memory)
 		return applyCoachPolicy(env, request.Context), nil
@@ -111,13 +112,14 @@ func (a *App) pack(ctx context.Context, request model.CommandRequest) (model.Env
 	primary, ok := selectPackPrimary(hardAnchor, docs, query.docByPath, query.ranked)
 	if !ok {
 		warnings = appendStringIfMissing(warnings, "no documentation pack candidates matched the task")
-		return model.Envelope{
+		env := model.Envelope{
 			Ok:        true,
 			Workspace: registration.Name,
 			Backend:   "pack",
 			Items:     []model.PackResult{result},
 			Warnings:  warnings,
-		}, nil
+		}
+		return applyWikiRepoCompatHint(env, request, "nav.pack", registration.Name, task), nil
 	}
 	result.PrimaryDoc = primary.Path
 	result.Why = append(result.Why, "primary_doc="+primary.Path, "family="+family)
@@ -144,6 +146,7 @@ func (a *App) pack(ctx context.Context, request model.CommandRequest) (model.Env
 				Warnings:  warnings,
 				Stats:     model.Stats{Files: len(result.Docs)},
 			}
+			env = applyWikiRepoCompatHint(env, request, "nav.pack", registration.Name, task)
 			env = attachMemoryPointer(env, memory)
 			env.Continuation = buildPackContinuation(task, result, request.Context, memory)
 			return applyCoachPolicy(applyAXIPreviewHints(env, request.Context, "preview mode: rerun with --full for slices"), request.Context), nil
@@ -164,6 +167,7 @@ func (a *App) pack(ctx context.Context, request model.CommandRequest) (model.Env
 		Warnings:  warnings,
 		Stats:     model.Stats{Files: len(result.Docs)},
 	}
+	env = applyWikiRepoCompatHint(env, request, "nav.pack", registration.Name, task)
 	env = attachMemoryPointer(env, memory)
 	env.Continuation = buildPackContinuation(task, result, request.Context, memory)
 	return applyCoachPolicy(applyAXIPreviewHints(env, request.Context, "preview mode: rerun with --full for slices"), request.Context), nil

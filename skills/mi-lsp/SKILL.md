@@ -8,7 +8,8 @@ description: Use when a folder-based agent should navigate code with the mi-lsp 
 Use this skill when you want local semantic navigation with `mi-lsp` without introducing an MCP dependency.
 If the skill is installed but the binary is missing, bootstrap the CLI first instead of abandoning the flow.
 
-Prefer the AXI-default surfaces for onboarding and discovery: `mi-lsp`, `init`, `workspace status`, `nav route`, `nav search`, and `nav intent`.
+Prefer the AXI-default surfaces for onboarding and discovery: `mi-lsp`, `init`, `workspace status`, `nav wiki search`, `nav route`, `nav search`, and `nav intent`.
+Use `nav wiki search` when the task is clearly about project docs, RF/FL/TP/CT/TECH/DB, contracts, tests, or traceability.
 Use `nav route` as the cheapest first orientation step — it resolves the canonical anchor doc from governance alone without touching the index.
 Use `nav ask` without `--axi` for richer orientation questions when you need evidence synthesis.
 Prefer `nav search --include-content` for implementation questions.
@@ -300,6 +301,8 @@ If `mi-lsp` is not on `PATH`, install it from Releases or repair `PATH` for the 
 Use these commands first:
 
 - Open the discovery home: `mi-lsp`
+- Wiki-first doc search: `mi-lsp nav wiki search "workflow masterformularios" --workspace <alias> --layer RF,FL,CT,TP --format toon`
+- Wiki reading pack: `mi-lsp nav wiki pack "workflow con masterformularios" --workspace <alias> --format toon`
 - Cheapest canonical orientation (no index needed): `mi-lsp nav route "how is this workspace organized?" --workspace <alias> --format toon`
 - Canonical reading pack for a task: `mi-lsp nav pack "understand authentication flow" --workspace <alias>`
 - Reading pack anchored to an RF spec: `mi-lsp nav pack "how does login work" --rf RF-AUTH-001 --workspace <alias>`
@@ -314,6 +317,7 @@ Use these commands first:
 - Expand repo-local reentry memory: `mi-lsp workspace status <alias> --full`
 - Batch mixed operations: `mi-lsp nav batch --workspace <alias> --format toon`
 - Trace spec-to-code links: `mi-lsp nav trace RF-QRY-003 --workspace <alias> --format toon`
+- Trace from the wiki surface: `mi-lsp nav wiki trace RF-QRY-003 --workspace <alias> --format toon`
 - Search by intent/purpose: `mi-lsp nav intent "where do we handle routing fallback?" --workspace <alias>`
 
 Prefer these over repeated `Get-Content`, plain `rg`, or one-file-at-a-time reads.
@@ -332,6 +336,7 @@ mi-lsp workspace status <alias>
 
 ```powershell
 mi-lsp nav route "how is this workspace organized?" --workspace <alias> --format toon
+mi-lsp nav wiki search "RF IDX" --workspace <alias> --layer RF,TP,CT --format toon
 mi-lsp nav ask "how is this workspace organized?" --workspace <alias>
 mi-lsp workspace status <alias> --full
 mi-lsp nav intent "error handling for daemon connections" --workspace <alias>
@@ -370,7 +375,8 @@ mi-lsp nav trace --all --summary --workspace <alias> --format toon
 
 Use `mi-lsp` first for repo navigation, docs-first Q&A, symbol lookup, service audits, and batch reads.
 
-- Start with `mi-lsp`, `workspace status`, `nav route`, or `nav intent` for the first pass on a new repo.
+- Start with `mi-lsp`, `workspace status`, `nav wiki search`, `nav route`, or `nav intent` for the first pass on a new repo.
+- Use `nav wiki search` for documentation exploration. Filter with `--layer RF,FL,TP,CT,TECH,DB`; follow returned `next_queries` toward `nav wiki pack`, `nav wiki trace`, `nav multi-read`, or `nav ask`.
 - Use `nav route` as the cheapest orientation step — it resolves the canonical anchor doc from governance without touching the index (Tier 1), then enriches from the index when available (Tier 2). AXI-default preview-first.
 - Use `nav ask` for richer orientation when you need full evidence synthesis and next queries.
 - Use `nav pack` to build a canonical reading pack docs-first for a task. It uses the same routing core as `nav route` and returns `mode=preview|full`, per-doc `stage` (`anchor|preview|discovery`), and `next_queries`. Anchor optionally with `--rf`, `--fl`, or `--doc`.
@@ -383,7 +389,7 @@ Use `mi-lsp` first for repo navigation, docs-first Q&A, symbol lookup, service a
 
 ## Routing model
 
-- Cheap reads stay direct (no daemon): `nav.find`, `nav.search`, `nav.symbols`, `nav.outline`, `nav.overview`, `nav.multi-read`, `nav.intent`, `nav.trace`, `nav.route`, `nav.pack`, `nav.governance`
+- Cheap reads stay direct (no daemon): `nav.find`, `nav.search`, `nav.wiki.search`, `nav.symbols`, `nav.outline`, `nav.overview`, `nav.multi-read`, `nav.intent`, `nav.trace`, `nav.route`, `nav.pack`, `nav.governance`
 - In workspaces `container`, prefer `--repo` for direct `nav.find`, `nav.search`, and `nav.intent` before escalating to semantic selectors.
 - Deep semantics may use the daemon: `nav.refs`, `nav.context`, `nav.deps`, `nav.related`, `nav.service`, `nav.workspace-map`, `nav.diff-context`, `nav.batch`, `nav.ask`
 - The daemon is optional. If it is unavailable, the CLI must still work in direct mode.
@@ -394,6 +400,7 @@ If the workspace is a parent folder, start broad on the container and then narro
 
 - Direct catalog reads: `--repo` on `nav.find`, `nav.search`, `nav.intent`
 - Semantic queries: `--repo`, `--entrypoint`, `--solution`, or `--project`
+- Wiki/docs queries: do not use `--repo` as a docs selector. If an old prompt says `nav ask --repo docs`, rerun through `nav wiki search|route|pack`; the CLI accepts the flag only as compatibility guidance.
 
 If a direct query in a container workspace returns `backend=router`, do not guess. Re-run with `--repo`.
 If a semantic query returns `backend=router`, re-run with a narrower semantic selector.

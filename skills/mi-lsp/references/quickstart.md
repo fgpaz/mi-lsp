@@ -33,19 +33,22 @@ If `mi-lsp workspace list` fails because the command is missing, return to the i
 ## Preferred command order
 
 1. `mi-lsp` or `workspace status` when you need the first onboarding/discovery pass
-2. `nav route` when you need the cheapest canonical orientation (no index needed, governance-first)
-3. `nav ask` when you need richer orientation, ownership, or docs-first evidence synthesis
-4. `nav search --include-content` when you need literal implementation evidence
-5. `nav workspace-map --axi` when you need structure across repos or services
-6. `nav related` when you need one symbol's neighborhood in one call
-7. `nav service` when you need evidence-first understanding of a backend area
-8. `nav intent` when you know what the code does but not the symbol name
-9. `nav multi-read` or `nav batch` when you already know the targets
+2. `nav wiki search` when you need RF/FL/TP/CT/TECH/DB docs or traceability anchors
+3. `nav route` when you need the cheapest canonical orientation (no index needed, governance-first)
+4. `nav ask` when you need richer orientation, ownership, or docs-first evidence synthesis
+5. `nav search --include-content` when you need literal implementation evidence
+6. `nav workspace-map --axi` when you need structure across repos or services
+7. `nav related` when you need one symbol's neighborhood in one call
+8. `nav service` when you need evidence-first understanding of a backend area
+9. `nav intent` when you know what the code does but not the symbol name
+10. `nav multi-read` or `nav batch` when you already know the targets
 
 ## Choose the right command
 
 | Need | Prefer |
 |---|---|
+| Find wiki RF/FL/TP/CT/TECH/DB docs | `nav wiki search "workflow masterformularios" --layer RF,FL,CT,TP` |
+| Build a pack from wiki anchors | `nav wiki pack "workflow con masterformularios"` |
 | Cheapest canonical orientation (no index needed) | `nav route "how is this workspace organized?"` |
 | Understand the repo with full evidence | `nav ask "how is this workspace organized?"` |
 | Find the right repo/entrypoint in a parent folder | `nav workspace-map --axi` |
@@ -65,8 +68,9 @@ If `mi-lsp workspace list` fails because the command is missing, return to the i
 
 ## Routing reminder
 
-- Direct and daemon-insensitive: `find`, `search`, `intent`, `symbols`, `outline`, `overview`, `multi-read`
+- Direct and daemon-insensitive: `find`, `search`, `wiki search`, `intent`, `symbols`, `outline`, `overview`, `multi-read`
 - Potentially daemon-backed: `refs`, `context`, `deps`, `related`, `service`, `workspace-map`, `diff-context`, `batch`, `ask`
 
 If a cheap read is slow, suspect stale binary, stale index, or wrong PATH before suspecting daemon health.
 In container workspaces, prefer `--repo` for direct `find`, `search`, or `intent` before reaching for semantic selectors.
+Do not use `--repo docs` as a wiki selector. Use `nav wiki search|route|pack`; `nav ask|route|pack --repo` is compatibility-only and will be ignored for docs.

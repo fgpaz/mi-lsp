@@ -2,11 +2,11 @@
 
 ## 1. Goal
 
-Resolver una consulta con salida compacta, truncacion determinista y fallback cuando el daemon o el backend semantico no estan disponibles. Incluye `nav route` como selector canonico de bajo token para obtener el documento de anclaje y un mini reading pack antes de expandir con `nav ask` o `nav pack`. Tambien cubre `nav ask` como consulta docs-first guiada por wiki, `nav pack` como reading pack canonico para tareas spec-driven, `nav.intent` como superficie hibrida `docs|code`, la exploracion evidence-first de servicios, la regla de que las lecturas baratas de catalogo/texto no dependen del daemon, la disclosure preview-first de las superficies que caen en AXI efectivo, un bloque opcional `coach` para reruns/refinamientos explicitos y una capa tiny de continuidad/reentrada (`continuation`, `memory_pointer`) para que skills y harnesses sepan como seguir buscando.
+Resolver una consulta con salida compacta, truncacion determinista y fallback cuando el daemon o el backend semantico no estan disponibles. Incluye `nav wiki` como superficie dedicada para explorar RF/FL/TP/CT/TECH/DB, `nav route` como selector canonico de bajo token para obtener el documento de anclaje y un mini reading pack antes de expandir con `nav ask` o `nav pack`. Tambien cubre `nav ask` como consulta docs-first guiada por wiki, `nav pack` como reading pack canonico para tareas spec-driven, `nav.intent` como superficie hibrida `docs|code`, la exploracion evidence-first de servicios, la regla de que las lecturas baratas de catalogo/texto no dependen del daemon, la disclosure preview-first de las superficies que caen en AXI efectivo, un bloque opcional `coach` para reruns/refinamientos explicitos y una capa tiny de continuidad/reentrada (`continuation`, `memory_pointer`) para que skills y harnesses sepan como seguir buscando.
 
 ## 2. Scope in/out
 
-- In: routing por backend, aplicacion de `--token-budget`, `--max-items`, `--max-chars`, warnings de degradacion, `nav service <path>`, `nav ask <question>`, `nav pack <task>`, `nav intent <question>`, `--axi`, `--classic`, `MI_LSP_AXI=1`, `--full` cuando el modo efectivo es AXI, el scorer owner-aware compartido para docs-first y la decision centralizada de ejecutar directo `nav.find`, `nav.search`, `nav.intent`, `nav.symbols`, `nav.outline`, `nav.overview`, `nav.multi-read` y `nav pack`. En workspaces `container`, `find/search/intent` pueden acotar con `--repo`; si `nav.intent` clasifica la consulta como `docs`, ese selector se valida pero no redefine la lane documental. Cuando el request omite `--workspace`, la query se resuelve usando `caller_cwd` antes de `last_workspace`.
+- In: routing por backend, aplicacion de `--token-budget`, `--max-items`, `--max-chars`, warnings de degradacion, `nav wiki search|route|pack|trace`, `nav service <path>`, `nav ask <question>`, `nav pack <task>`, `nav intent <question>`, `--axi`, `--classic`, `MI_LSP_AXI=1`, `--full` cuando el modo efectivo es AXI, el scorer owner-aware compartido para docs-first y la decision centralizada de ejecutar directo `nav.find`, `nav.search`, `nav.wiki.search`, `nav.intent`, `nav.symbols`, `nav.outline`, `nav.overview`, `nav.multi-read` y `nav pack`. En workspaces `container`, `find/search/intent` pueden acotar con `--repo`; si `nav.intent` clasifica la consulta como `docs`, ese selector se valida pero no redefine la lane documental. `nav ask|route|pack --repo` existe solo como compatibilidad guiada y no crea scope documental por repo. Cuando el request omite `--workspace`, la query se resuelve usando `caller_cwd` antes de `last_workspace`.
 - Out: edicion/refactor, respuestas con blobs de codigo completos y score fuerte de completitud.
 
 ## 3. Actors and ownership
@@ -32,6 +32,7 @@ Resolver una consulta con salida compacta, truncacion determinista y fallback cu
 - Si se uso `nav service`, la respuesta contiene evidencia estructurada y no un veredicto fuerte de completitud.
 - Si se uso `nav ask`, la respuesta deja visible documento primario, evidencia documental, evidencia de codigo y siguientes pasos; si la evidencia es fina o cayo a fallback textual, puede agregar `coach`.
 - Si se uso `nav pack`, la respuesta deja visible el reading pack canonico, sus stages y sus targets o slices segun preview/full.
+- Si se uso `nav wiki search`, la respuesta deja visible candidatos documentales por capa y `next_queries` concretos para pack/trace/multi-read/ask.
 - Si se uso `nav intent`, la respuesta deja visible `mode=docs|code`: capability-like -> docs canonicos owner-aware; symbol-like -> ranking BM25 de catalogo.
 - Si se uso una lectura barata de catalogo/texto, la respuesta no queda bloqueada por health del daemon.
 - Si el workspace se resolvio por fallback (`same-root alias ambiguity` o `last_workspace`), la respuesta deja warning visible con el alias seleccionado.
@@ -58,7 +59,10 @@ sequenceDiagram
             CLI->>C: fallback directo
         end
     end
-    alt nav ask
+    alt nav wiki search
+        C->>DG: rankea doc_records y filtra RF/FL/TP/CT/TECH/DB
+        DG-->>C: candidatos documentales + next_queries
+    else nav ask
         C->>DG: rankea wiki y deriva evidencia de codigo
         DG-->>C: primary_doc + evidence
     else nav pack
@@ -93,6 +97,8 @@ sequenceDiagram
 | Backend degradado (`tsserver` ausente, worker semantico no disponible) | `warnings` explicitos y backend alternativo |
 | Catalogo ausente para `nav service` | degradacion a evidencia textual con warning |
 | `nav ask` sin corpus documental fuerte | degradacion a fallback generico/textual con warning y `coach` de refinamiento |
+| `nav wiki search` con docgraph vacio | `backend=wiki.search`, `items=[]` y hint hacia `index --docs-only` |
+| `nav ask|route|pack --repo docs` | el flag se acepta por compatibilidad, se ignora para docs y se emite warning/hint hacia `nav wiki` |
 | query natural capability-like sobre docs nuevos | scorer owner-aware y `owner_hints` deben priorizar docs canonicos positivos por encima de `README` |
 | `workspace` omitido y sin match por `caller_cwd` | fallback a `last_workspace` con warning explicito |
 | multiples aliases para el mismo root | seleccion determinista con warning explicito |
@@ -113,6 +119,7 @@ sequenceDiagram
 - `ServiceSurfaceSummary`
 - `AskResult`
 - `PackResult`
+- `WikiSearchResult`
 - `ReentryMemorySnapshot`
 - `DocRecord` / `DocEdge` / `DocMention`
 
@@ -127,3 +134,4 @@ sequenceDiagram
 - RF-QRY-012 reading pack canonico docs-first para una tarea
 - RF-QRY-014 comando publico nav route para resolver documento canonico minimo
 - RF-QRY-015 reutilizacion interna del route core desde ask y pack
+- RF-QRY-016 exploracion wiki-first para agentes y compatibilidad `--repo`

@@ -121,6 +121,7 @@ func (a *App) route(ctx context.Context, request model.CommandRequest) (model.En
 		Warnings:  warnings,
 		Stats:     model.Stats{Files: 1 + len(result.Canonical.PreviewPack)},
 	}
+	env = applyWikiRepoCompatHint(env, request, "nav.route", registration.Name, task)
 	env = attachMemoryPointer(env, memory)
 	env.Continuation = buildRouteContinuation(task, result, request.Context, memory)
 	return applyCoachPolicy(applyAXIPreviewHints(env, request.Context, "preview mode: rerun with --full for expanded route and discovery"), request.Context), nil

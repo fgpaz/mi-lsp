@@ -29,10 +29,11 @@ El detalle por frontera vive en `09_contratos/`.
 - Cada contrato debe exponer `warnings`, fallas accionables y degradacion clara cuando aplique.
 - `worker status` forma parte de la CLI publica y debe exponer `tool_root`, `tool_root_kind`, `cli_path`, `protocol_version`, origen del worker seleccionado y compatibilidad de candidatos.
 - `workspace status` forma parte de la CLI publica y debe exponer `docs_read_model`, `doc_count`, `docs_index_ready`, `governance_profile`, `governance_sync`, `governance_index_sync` y `governance_blocked`; en `--full` puede expandir el digest repo-local de memoria de reentrada.
-- En AXI efectivo, `workspace status`, `nav search`, `nav intent` y `nav pack` pertenecen a la superficie preview/full por default; `nav ask` solo lo hace para preguntas de orientacion y `nav workspace-map` solo cuando se fuerza AXI.
+- En AXI efectivo, `workspace status`, `nav search`, `nav wiki search`, `nav intent`, `nav route`, `nav wiki route`, `nav pack` y `nav wiki pack` pertenecen a la superficie preview/full por default; `nav ask` solo lo hace para preguntas de orientacion y `nav workspace-map` solo cuando se fuerza AXI.
 - `init` pertenece a la CLI publica como shortcut de onboarding; no reemplaza `workspace add`, pero reutiliza su semantica base.
 - `nav ask` pertenece a la CLI publica y usa un contrato docs-first explainable, no un blob opaco ni una respuesta puramente textual.
 - `nav pack` pertenece a la CLI publica y usa un contrato de reading pack canonico, no una respuesta textual libre.
+- `nav wiki` pertenece a la CLI publica como superficie documental explicita para agentes; `search` devuelve candidatos wiki y `route|pack|trace` reutilizan las superficies canonicas existentes.
 - `nav governance` pertenece a la CLI publica y devuelve el estado efectivo de gobernanza del workspace.
 - `nav service` pertenece a la CLI publica y usa un contrato evidence-first, no uno de scoring.
 - `nav context` pertenece a la CLI publica y su salida visible es slice-first; el backend profundo solo enriquece el mismo item.
@@ -45,6 +46,7 @@ El detalle por frontera vive en `09_contratos/`.
 - Las respuestas del CLI deben seguir envelope estable y explicitar `backend`, `truncated`, `warnings`, `stats` y `hint` (omitempty, presente cuando `items=[]` o daemon no disponible).
 - El contexto interno de la request puede incluir `caller_cwd`; si el usuario omite `--workspace`, la resolucion observable sigue `selector explicito > caller_cwd > last_workspace`.
 - `nav.find`, `nav.search` y `nav.intent` con `--repo` deben aceptar resolucion smart cuando el selector humano tiene un match unico y, si no, devolver candidatos concretos en `items` + `next_hint`.
+- `nav ask`, `nav route` y `nav pack` aceptan `--repo` solo por compatibilidad guiada; el flag se ignora para routing documental y el envelope debe incluir warning/hint hacia `nav wiki`.
 - En AXI, las respuestas preview-first pueden anunciar expansion via `next_hint` hacia `--full` sin cambiar el envelope base.
 - El envelope estable puede agregar `coach` como bloque opcional, query-level y machine-readable; es aditivo y no reemplaza `warnings`, `hint`, `next_hint` ni `next_queries`.
 - El envelope estable puede agregar `continuation` como bloque opcional, tiny y machine-readable; su `next` y `alternate` usan campos estructurados (`op`, `query`, `repo`, `path`, `symbol`, `doc_id`, `full`) y no comandos raw.
@@ -56,6 +58,7 @@ El detalle por frontera vive en `09_contratos/`.
 - `nav search` y `nav ask` pueden agregar `coach.trigger` en casos balanceados (`repo_selector_invalid`, `regex_auto_healed`, `no_matches_refinable`, `preview_trimmed`, `text_fallback`, `low_confidence`, `scope_narrowing_available`).
 - `nav search`, `nav ask`, `nav pack`, `nav route`, `nav.related`, `nav.service` y `nav workspace-map` pueden agregar `continuation.reason` (`recent_change`, `narrow_scope`, `follow_doc`, `expand_preview`, `low_evidence`, `handoff_reentry`) cuando existe un siguiente paso mejor que repetir la misma consulta.
 - `nav pack` debe devolver una estructura estable con `task`, `family`, `mode`, `primary_doc`, `docs`, `why` y `next_queries`.
+- `nav wiki search` debe devolver `WikiSearchResult` con `doc_id`, `path`, `title`, `layer`, `family`, `stage`, `score`, `why`, `snippet/content` y `next_queries`.
 - `nav governance` debe devolver una estructura estable con perfil, base efectiva, overlays, sync, blockers y siguientes pasos.
 - `nav service` puede usar `backend=catalog`, `backend=text` o `backend=catalog+text`.
 
@@ -70,6 +73,7 @@ El detalle por frontera vive en `09_contratos/`.
 - `--axi` y `--classic` juntos deben fallar antes de ejecutar la operacion.
 - `worker status` debe conservar el mismo payload visible con y sin daemon; el daemon no puede reemplazar `items` por `RuntimeSnapshot`/`WorkerStatus` crudos.
 - `nav.find`, `nav.search`, `nav.intent`, `nav.symbols`, `nav.outline`, `nav.overview`, `nav.multi-read` y `nav.workspace-map` summary-first pertenecen a la superficie publica directa: no deben esperar daemon ni cambiar de comportamiento por su health.
+- `nav.wiki.search`, `nav.wiki.route`, `nav.wiki.pack` y `nav.wiki.trace` pertenecen a la superficie publica directa y no deben esperar daemon.
 - `nav.ask` tambien pertenece al hot path directo por default; la presencia del daemon no debe ser requisito para una primera respuesta docs-first util.
 - `index` puede degradar a full rebuild aun sin cambios git detectados cuando el runtime observa que `doc_records` no contiene docs canonicos pese a que la wiki existe en disco; el contrato visible no debe quedar en `no changes detected` en ese caso.
 - `index --docs-only` es un modo publico de recuperacion: reconstruye el corpus documental y la memoria de reentrada sin reemplazar el catalogo de codigo.
@@ -95,6 +99,7 @@ El detalle por frontera vive en `09_contratos/`.
 - [CT-NAV-PACK.md](09_contratos/CT-NAV-PACK.md)
 - [CT-NAV-GOVERNANCE.md](09_contratos/CT-NAV-GOVERNANCE.md)
 - [CT-NAV-ROUTE.md](09_contratos/CT-NAV-ROUTE.md)
+- [CT-NAV-WIKI.md](09_contratos/CT-NAV-WIKI.md)
 
 ## Operaciones adicionales
 
@@ -107,6 +112,8 @@ El detalle por frontera vive en `09_contratos/`.
 - el export raw de `access_events` preserva metadata operativa minima del request (`route`, `format`, `token_budget`, `max_items`, `max_chars`, `compress`) y diagnosticos causales sanitizados (`warning_count`, `pattern_mode`, `routing_outcome`, `failure_stage`, `hint_code`, `truncation_reason`, `decision_json`) para diferenciar uso directo, daemonizado, routing errors y truncacion; `decision_json` puede agregar solo metadata derivada como `doc_ranker` e `intent_mode`, nunca texto libre; en operaciones daemonizadas normales debe existir una sola fila canonica por request
 - `index [path] [--clean] [--docs-only]`: indexa codigo + docs, o solo docs cuando `--docs-only` esta presente
 - `nav route <task>`: resuelve el documento canonico de anclaje y un mini reading pack con minimos tokens; si la tarea trae un `RF-*` embebido en un doc agregado, Tier 1 ancla el contenedor canonico; `--include-code-discovery` agrega discovery de codigo; `--full` expande canonical lane y discovery
+- `nav wiki search <query>`: busca en el docgraph gobernado con filtros `--layer RF,FL,TP,CT,TECH,DB`, paginacion `--top/--offset` y contenido opcional `--include-content`
+- `nav wiki route|pack|trace`: aliases documentales para agentes que reutilizan `nav route`, `nav pack` y `nav trace`
 - `nav ask <question>`: responde usando wiki + evidencia de codigo y fallback generico/textual cuando haga falta; `--all-workspaces` habilita fan-out cross-workspace para el mismo contrato explainable
 - `nav pack <task>`: construye un reading pack canonico con preview/full y anchors opcionales `--rf`, `--fl`, `--doc`
 - `nav search <pattern>`: si `--regex` lleva un patron invalido, el runtime puede reintentar como literal y devolver warning explicito en vez de error duro

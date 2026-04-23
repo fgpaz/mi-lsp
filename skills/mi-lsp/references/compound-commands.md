@@ -25,6 +25,18 @@ mi-lsp nav search "pattern" --include-content --context-lines 30 --context-mode 
 - `hybrid` is the default mode
 - Prefer this over `search` plus N file reads
 
+## `nav wiki`
+
+```powershell
+mi-lsp nav wiki search "workflow masterformularios" --workspace <alias> --layer RF,FL,CT,TP --format toon
+mi-lsp nav wiki pack "workflow con masterformularios" --workspace <alias> --format toon
+mi-lsp nav wiki trace RF-QRY-003 --workspace <alias> --format toon
+```
+
+- Use for docs-first exploration across RF/FL/TP/CT/TECH/DB.
+- Follow returned `next_queries` before broadening to raw search.
+- If an old prompt says `nav ask --repo docs`, treat `--repo` as compatibility-only and rerun through `nav wiki`.
+
 ## `nav batch`
 
 ```powershell

@@ -85,13 +85,19 @@ func (a *App) Execute(ctx context.Context, request model.CommandRequest) (model.
 		envelope, err = a.symbols(ctx, request)
 	case "nav.search":
 		envelope, err = a.search(ctx, request)
+	case "nav.wiki.search":
+		envelope, err = a.wikiSearch(ctx, request)
 	case "nav.governance":
 		envelope, err = a.governance(ctx, request)
 	case "nav.route":
 		envelope, err = a.route(ctx, request)
+	case "nav.wiki.route":
+		envelope, err = a.route(ctx, request)
 	case "nav.ask":
 		envelope, err = a.ask(ctx, request)
 	case "nav.pack":
+		envelope, err = a.pack(ctx, request)
+	case "nav.wiki.pack":
 		envelope, err = a.pack(ctx, request)
 	case "nav.service":
 		envelope, err = a.serviceSummary(ctx, request)
@@ -112,6 +118,8 @@ func (a *App) Execute(ctx context.Context, request model.CommandRequest) (model.
 	case "nav.diff-context":
 		envelope, err = a.diffContext(ctx, request)
 	case "nav.trace":
+		envelope, err = a.trace(ctx, request)
+	case "nav.wiki.trace":
 		envelope, err = a.trace(ctx, request)
 	case "nav.intent":
 		envelope, err = a.intent(ctx, request)
@@ -155,7 +163,7 @@ func operationRequiresWorkspaceResolution(request model.CommandRequest) bool {
 		return !allWorkspaces
 	case "index.run":
 		return strings.TrimSpace(stringPayload(request.Payload, "path")) == ""
-	case "workspace.status", "info", "nav.symbols", "nav.overview", "nav.outline", "nav.governance", "nav.route", "nav.ask", "nav.pack", "nav.service", "nav.refs", "nav.context", "nav.deps", "nav.multi-read", "nav.batch", "nav.related", "nav.workspace-map", "nav.diff-context", "nav.trace", "nav.intent":
+	case "workspace.status", "info", "nav.symbols", "nav.overview", "nav.outline", "nav.governance", "nav.route", "nav.wiki.route", "nav.ask", "nav.pack", "nav.wiki.pack", "nav.wiki.search", "nav.service", "nav.refs", "nav.context", "nav.deps", "nav.multi-read", "nav.batch", "nav.related", "nav.workspace-map", "nav.diff-context", "nav.trace", "nav.wiki.trace", "nav.intent":
 		return true
 	default:
 		return false

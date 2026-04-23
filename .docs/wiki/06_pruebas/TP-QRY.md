@@ -17,6 +17,7 @@
 - RF-QRY-013
 - RF-QRY-014
 - RF-QRY-015
+- RF-QRY-016
 
 ## Casos
 
@@ -98,3 +99,7 @@
 | TC-QRY-070 | positivo | RF-QRY-014 | `TestNavRoutePreservesExplicitEmbeddedRFWhenDocsIndexExists`: Tier 2 no reemplaza el RF explicito por el indice general `04_RF.md` |
 | TC-QRY-071 | positivo | RF-QRY-013 | `TestNavTracePrefersAggregateRFDocOverRFIndexDoc`: `nav trace` prioriza el doc bajo `04_RF/` sobre el indice general cuando ambos mencionan el RF |
 | TC-QRY-072 | negativo | RF-QRY-014 | `TestNavRouteDoesNotAttachMissingExplicitRFToGovernanceFallback`: un `RF-*` inexistente no se pega como `doc_id` al fallback de gobernanza |
+| TC-QRY-073 | positivo | RF-QRY-016 | `TestNavWikiSearchReturnsLayerFilteredDocs`: `nav wiki search` devuelve candidatos filtrados por capa con `next_queries` hacia pack/trace/multi-read |
+| TC-QRY-074 | negativo | RF-QRY-016 | `TestNavWikiSearchDocIndexEmptyReturnsDiagnostic`: docgraph vacio devuelve diagnostico accionable de `index --docs-only` |
+| TC-QRY-075 | negativo | RF-QRY-016 | `TestNavWikiSearchBlocksWhenGovernanceBlocked`: governance bloqueada corta `nav wiki search` |
+| TC-QRY-076 | positivo | RF-QRY-016 | `TestNavAskRoutePackRepoCompatWarnings`: `nav ask|route|pack --repo docs` no falla y orienta a `nav wiki` |

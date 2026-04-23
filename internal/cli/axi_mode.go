@@ -17,32 +17,32 @@ var (
 )
 
 var askOrientationQuestions = map[string]struct{}{
-	"how is this workspace organized":  {},
-	"how is this repo organized":       {},
-	"how is this repository organized": {},
-	"where do i start":                 {},
-	"where should i start":             {},
-	"what should i read first":         {},
-	"what do i read first":             {},
-	"what are the main services":       {},
-	"what are the main repos":          {},
-	"what are the main repositories":   {},
-	"where is the documentation":       {},
-	"where are the docs":               {},
-	"how is this documented":           {},
-	"como se organiza este workspace":  {},
-	"como se organiza este repo":       {},
-	"como se organiza este repositorio": {},
-	"por donde empiezo":                 {},
-	"por donde deberia empezar":         {},
-	"que deberia leer primero":          {},
-	"que leo primero":                   {},
-	"cuales son los servicios principales":   {},
-	"cuales son los repos principales":       {},
+	"how is this workspace organized":         {},
+	"how is this repo organized":              {},
+	"how is this repository organized":        {},
+	"where do i start":                        {},
+	"where should i start":                    {},
+	"what should i read first":                {},
+	"what do i read first":                    {},
+	"what are the main services":              {},
+	"what are the main repos":                 {},
+	"what are the main repositories":          {},
+	"where is the documentation":              {},
+	"where are the docs":                      {},
+	"how is this documented":                  {},
+	"como se organiza este workspace":         {},
+	"como se organiza este repo":              {},
+	"como se organiza este repositorio":       {},
+	"por donde empiezo":                       {},
+	"por donde deberia empezar":               {},
+	"que deberia leer primero":                {},
+	"que leo primero":                         {},
+	"cuales son los servicios principales":    {},
+	"cuales son los repos principales":        {},
 	"cuales son los repositorios principales": {},
-	"donde esta la documentacion":            {},
-	"donde estan los docs":                   {},
-	"como esta documentado esto":             {},
+	"donde esta la documentacion":             {},
+	"donde estan los docs":                    {},
+	"como esta documentado esto":              {},
 }
 
 type axiDecision struct {
@@ -81,7 +81,7 @@ func (s *rootState) resolveAXIDecision(cmd *cobra.Command, operation string, pay
 
 func supportsAXISurface(operation string) bool {
 	switch operation {
-	case "root.home", "workspace.init", "workspace.status", "nav.ask", "nav.pack", "nav.route", "nav.workspace-map", "nav.search", "nav.intent":
+	case "root.home", "workspace.init", "workspace.status", "nav.ask", "nav.pack", "nav.wiki.pack", "nav.route", "nav.wiki.route", "nav.workspace-map", "nav.search", "nav.wiki.search", "nav.intent":
 		return true
 	default:
 		return false
@@ -90,7 +90,7 @@ func supportsAXISurface(operation string) bool {
 
 func defaultAXIForOperation(operation string, payload map[string]any) bool {
 	switch operation {
-	case "root.home", "workspace.init", "workspace.status", "nav.search", "nav.intent", "nav.pack", "nav.route":
+	case "root.home", "workspace.init", "workspace.status", "nav.search", "nav.wiki.search", "nav.intent", "nav.pack", "nav.wiki.pack", "nav.route", "nav.wiki.route":
 		return true
 	case "nav.ask":
 		return shouldDefaultAXIAsk(questionFromPayload(payload))

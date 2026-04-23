@@ -85,6 +85,7 @@ func (a *App) ask(ctx context.Context, request model.CommandRequest) (model.Enve
 		warnings = append(warnings, fmt.Sprintf("read_model=%s", profileSource))
 		env := model.Envelope{Ok: true, Workspace: registration.Name, Backend: "ask", Items: []model.AskResult{fallback}, Warnings: warnings}
 		env.Coach = buildAskCoach(registration.Name, project, question, fallback, warnings, request.Context, previewTrimmed)
+		env = applyWikiRepoCompatHint(env, request, "nav.ask", registration.Name, question)
 		env = attachMemoryPointer(env, memory)
 		env.Continuation = buildAskContinuation(question, project, fallback, warnings, request.Context, previewTrimmed, memory)
 		env = applyAXIPreviewHints(env, request.Context, "preview mode: rerun with --full for more evidence")
@@ -101,6 +102,7 @@ func (a *App) ask(ctx context.Context, request model.CommandRequest) (model.Enve
 		result := model.AskResult{Question: question, Summary: "No encontre una pista fuerte en la wiki para esta pregunta.", Why: []string{"no_doc_match"}}
 		env := model.Envelope{Ok: true, Workspace: registration.Name, Backend: "ask", Items: []model.AskResult{result}, Warnings: warnings}
 		env.Coach = buildAskCoach(registration.Name, project, question, result, warnings, request.Context, false)
+		env = applyWikiRepoCompatHint(env, request, "nav.ask", registration.Name, question)
 		env = attachMemoryPointer(env, memory)
 		env.Continuation = buildAskContinuation(question, project, result, warnings, request.Context, false, memory)
 		return applyCoachPolicy(env, request.Context), nil
@@ -127,6 +129,7 @@ func (a *App) ask(ctx context.Context, request model.CommandRequest) (model.Enve
 	}
 	env := model.Envelope{Ok: true, Workspace: registration.Name, Backend: "ask", Items: []model.AskResult{result}, Warnings: warnings, Stats: model.Stats{Files: len(codeEvidence)}}
 	env.Coach = buildAskCoach(registration.Name, project, question, result, warnings, request.Context, previewTrimmed)
+	env = applyWikiRepoCompatHint(env, request, "nav.ask", registration.Name, question)
 	env = attachMemoryPointer(env, memory)
 	env.Continuation = buildAskContinuation(question, project, result, warnings, request.Context, previewTrimmed, memory)
 	env = applyAXIPreviewHints(env, request.Context, "preview mode: rerun with --full for more evidence")
@@ -558,5 +561,6 @@ func (a *App) askAllWorkspaces(ctx context.Context, request model.CommandRequest
 	if len(scored) > 0 && (len(scored) == 1 || scored[0].score > scored[1].score) {
 		env.Coach = buildAskAllWorkspacesCoach(question, scored[0].wsName, request.Context)
 	}
+	env = applyWikiRepoCompatHint(env, request, "nav.ask", request.Context.Workspace, question)
 	return applyCoachPolicy(env, request.Context), nil
 }

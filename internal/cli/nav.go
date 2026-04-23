@@ -125,6 +125,7 @@ context retrieval, dependency analysis, and service exploration.`,
 	}
 
 	var allWorkspacesAsk bool
+	var askRepo string
 	askCommand := &cobra.Command{
 		Use:   "ask <question>",
 		Short: "Ask a docs-first question across wiki and code evidence",
@@ -134,6 +135,9 @@ context retrieval, dependency analysis, and service exploration.`,
 			}
 			question := strings.Join(args, " ")
 			payload := map[string]any{"question": question}
+			if askRepo != "" {
+				payload["repo"] = askRepo
+			}
 			if allWorkspacesAsk {
 				payload["all_workspaces"] = true
 			}
@@ -141,10 +145,12 @@ context retrieval, dependency analysis, and service exploration.`,
 		},
 	}
 	askCommand.Flags().BoolVar(&allWorkspacesAsk, "all-workspaces", false, "Search docs across all registered workspaces")
+	attachWikiCompatRepoFlag(askCommand, &askRepo)
 
 	var packRF string
 	var packFL string
 	var packDoc string
+	var packRepo string
 	packCommand := &cobra.Command{
 		Use:   "pack <task>",
 		Short: "Build a canonical reading pack for a task across the wiki",
@@ -163,14 +169,19 @@ context retrieval, dependency analysis, and service exploration.`,
 			if packDoc != "" {
 				payload["doc"] = packDoc
 			}
+			if packRepo != "" {
+				payload["repo"] = packRepo
+			}
 			return state.executeOperation(cmd, "nav.pack", payload, true)
 		},
 	}
 	packCommand.Flags().StringVar(&packRF, "rf", "", "Requirement anchor to harden pack selection")
 	packCommand.Flags().StringVar(&packFL, "fl", "", "Flow anchor to harden pack selection")
 	packCommand.Flags().StringVar(&packDoc, "doc", "", "Document path anchor to harden pack selection")
+	attachWikiCompatRepoFlag(packCommand, &packRepo)
 
 	var routeIncludeCodeDiscovery bool
+	var routeRepo string
 	routeCommand := &cobra.Command{
 		Use:   "route <task>",
 		Short: "Resolve the canonical document route for a spec-driven task (RF-QRY-014)",
@@ -191,10 +202,14 @@ Use --include-code-discovery to add code-based discovery hints.`,
 			if routeIncludeCodeDiscovery {
 				payload["include_code_discovery"] = true
 			}
+			if routeRepo != "" {
+				payload["repo"] = routeRepo
+			}
 			return state.executeOperation(cmd, "nav.route", payload, true)
 		},
 	}
 	routeCommand.Flags().BoolVar(&routeIncludeCodeDiscovery, "include-code-discovery", false, "Include code-based discovery hints (only in full mode)")
+	attachWikiCompatRepoFlag(routeCommand, &routeRepo)
 
 	governanceCommand := &cobra.Command{
 		Use:   "governance",
@@ -454,12 +469,18 @@ Examples:
 	intentCommand.Flags().Int("offset", 0, "Skip first N results (for pagination)")
 	attachCatalogRepoFlag(intentCommand, &intentRepo)
 
-	command.AddCommand(symbolsCommand, findCommand, refsCommand, overviewCommand, outlineCommand, askCommand, packCommand, routeCommand, governanceCommand, serviceCommand, searchCommand, contextCommand, depsCommand, multiReadCommand, batchCommand, relatedCommand, workspaceMapCommand, diffContextCommand, traceCommand, intentCommand)
+	wikiCommand := newNavWikiCommand(state)
+
+	command.AddCommand(symbolsCommand, findCommand, refsCommand, overviewCommand, outlineCommand, askCommand, packCommand, routeCommand, wikiCommand, governanceCommand, serviceCommand, searchCommand, contextCommand, depsCommand, multiReadCommand, batchCommand, relatedCommand, workspaceMapCommand, diffContextCommand, traceCommand, intentCommand)
 	return command
 }
 
 func attachCatalogRepoFlag(command *cobra.Command, repo *string) {
 	command.Flags().StringVar(repo, "repo", "", "Repo child selector for container workspaces")
+}
+
+func attachWikiCompatRepoFlag(command *cobra.Command, repo *string) {
+	command.Flags().StringVar(repo, "repo", "", "Compatibility only: ignored for wiki/docs routing; use nav wiki search|route|pack")
 }
 
 func attachSemanticSelectorFlags(command *cobra.Command, repo *string, entrypoint *string, solution *string, project *string) {
@@ -484,4 +505,118 @@ func semanticPayload(repo string, entrypoint string, solution string, project st
 		payload["project_path"] = project
 	}
 	return payload
+}
+
+func newNavWikiCommand(state *rootState) *cobra.Command {
+	command := &cobra.Command{
+		Use:   "wiki",
+		Short: "Explore governed wiki documentation",
+		Long: `Explore the governed wiki as a first-class documentation surface.
+
+Use search to find RF/FL/TP/CT/TECH/DB docs, route for the canonical anchor,
+pack for a reading pack, and trace for RF implementation links.`,
+	}
+
+	var searchLayer string
+	var searchTop int
+	var searchOffset int
+	var searchIncludeContent bool
+	searchCommand := &cobra.Command{
+		Use:   "search <query>",
+		Short: "Search governed wiki docs by query and layer",
+		Example: `  mi-lsp nav wiki search "workflow masterformularios" --workspace idp --layer RF,FL,CT,TP --format toon
+  mi-lsp nav wiki search "RF IDX" --workspace mi-lsp --include-content --format toon`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := requireArgs(args, 1, "query"); err != nil {
+				return err
+			}
+			payload := map[string]any{"query": strings.Join(args, " ")}
+			if searchLayer != "" {
+				payload["layer"] = searchLayer
+			}
+			if searchTop > 0 {
+				payload["top"] = searchTop
+			}
+			if searchOffset > 0 {
+				payload["offset"] = searchOffset
+			}
+			if searchIncludeContent {
+				payload["include_content"] = true
+			}
+			return state.executeOperation(cmd, "nav.wiki.search", payload, true)
+		},
+	}
+	searchCommand.Flags().StringVar(&searchLayer, "layer", "", "Comma-separated wiki layers: RF,FL,TP,CT,TECH,DB")
+	searchCommand.Flags().IntVar(&searchTop, "top", 10, "Maximum number of wiki docs to return")
+	searchCommand.Flags().IntVar(&searchOffset, "offset", 0, "Skip first N wiki docs")
+	searchCommand.Flags().BoolVar(&searchIncludeContent, "include-content", false, "Include markdown content for each wiki candidate")
+
+	routeCommand := &cobra.Command{
+		Use:     "route <task>",
+		Short:   "Resolve the canonical wiki route for a task",
+		Example: `  mi-lsp nav wiki route "workflow con masterformularios" --workspace idp --format toon`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := requireArgs(args, 1, "task"); err != nil {
+				return err
+			}
+			return state.executeOperation(cmd, "nav.route", map[string]any{"task": strings.Join(args, " ")}, true)
+		},
+	}
+
+	var packRF string
+	var packFL string
+	var packDoc string
+	packCommand := &cobra.Command{
+		Use:   "pack <task>",
+		Short: "Build a governed wiki reading pack for a task",
+		Example: `  mi-lsp nav wiki pack "workflow con masterformularios" --workspace idp --format toon
+  mi-lsp nav wiki pack "indexing docs" --workspace mi-lsp --rf RF-IDX-001 --format toon`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := requireArgs(args, 1, "task"); err != nil {
+				return err
+			}
+			payload := map[string]any{"task": strings.Join(args, " ")}
+			if packRF != "" {
+				payload["rf"] = packRF
+			}
+			if packFL != "" {
+				payload["fl"] = packFL
+			}
+			if packDoc != "" {
+				payload["doc"] = packDoc
+			}
+			return state.executeOperation(cmd, "nav.pack", payload, true)
+		},
+	}
+	packCommand.Flags().StringVar(&packRF, "rf", "", "Requirement anchor to harden pack selection")
+	packCommand.Flags().StringVar(&packFL, "fl", "", "Flow anchor to harden pack selection")
+	packCommand.Flags().StringVar(&packDoc, "doc", "", "Document path anchor to harden pack selection")
+
+	var traceAll bool
+	var traceSummary bool
+	traceCommand := &cobra.Command{
+		Use:   "trace <RF-ID|--all>",
+		Short: "Trace wiki RF requirements to implementation links",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			payload := map[string]any{}
+			if len(args) > 0 {
+				payload["rf"] = args[0]
+			}
+			if traceAll {
+				payload["all"] = true
+			}
+			if traceSummary {
+				payload["summary"] = true
+			}
+			if len(args) == 0 && !traceAll {
+				return fmt.Errorf("rf ID required or use --all")
+			}
+			return state.executeOperation(cmd, "nav.trace", payload, true)
+		},
+	}
+	traceCommand.Flags().BoolVar(&traceAll, "all", false, "Trace all RFs")
+	traceCommand.Flags().BoolVar(&traceSummary, "summary", false, "Summary table format (with --all)")
+
+	command.AddCommand(searchCommand, routeCommand, packCommand, traceCommand)
+	return command
 }
