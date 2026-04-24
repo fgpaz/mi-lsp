@@ -2,11 +2,11 @@
 
 ## 1. Goal
 
-Resolver una consulta con salida compacta, truncacion determinista y fallback cuando el daemon o el backend semantico no estan disponibles. Incluye `nav wiki` como superficie dedicada para explorar RF/FL/TP/CT/TECH/DB, `nav route` como selector canonico de bajo token para obtener el documento de anclaje y un mini reading pack antes de expandir con `nav ask` o `nav pack`. Tambien cubre `nav ask` como consulta docs-first guiada por wiki, `nav pack` como reading pack canonico para tareas spec-driven, `nav.intent` como superficie hibrida `docs|code`, la exploracion evidence-first de servicios, la regla de que las lecturas baratas de catalogo/texto no dependen del daemon, la disclosure preview-first de las superficies que caen en AXI efectivo, un bloque opcional `coach` para reruns/refinamientos explicitos y una capa tiny de continuidad/reentrada (`continuation`, `memory_pointer`) para que skills y harnesses sepan como seguir buscando.
+Resolver una consulta con salida compacta, truncacion determinista y fallback cuando el daemon o el backend semantico no estan disponibles. Incluye `nav wiki` como superficie dedicada para explorar RS/RF/FL/TP/CT/TECH/DB, `nav route` como selector canonico de bajo token para obtener el documento de anclaje y un mini reading pack antes de expandir con `nav ask` o `nav pack`. Tambien cubre `nav ask` como consulta docs-first guiada por wiki, `nav pack` como reading pack canonico para tareas spec-driven, `nav.intent` como superficie hibrida `docs|code`, la exploracion evidence-first de servicios, la regla de que las lecturas baratas de catalogo/texto no dependen del daemon, la disclosure preview-first de las superficies que caen en AXI efectivo, un bloque opcional `coach` para reruns/refinamientos explicitos y una capa tiny de continuidad/reentrada (`continuation`, `memory_pointer`) para que skills y harnesses sepan como seguir buscando.
 
 ## 2. Scope in/out
 
-- In: routing por backend, aplicacion de `--token-budget`, `--max-items`, `--max-chars`, warnings de degradacion, `nav wiki search|route|pack|trace`, `nav service <path>`, `nav ask <question>`, `nav pack <task>`, `nav intent <question>`, `--axi`, `--classic`, `MI_LSP_AXI=1`, `--full` cuando el modo efectivo es AXI, el scorer owner-aware compartido para docs-first y la decision centralizada de ejecutar directo `nav.find`, `nav.search`, `nav.wiki.search`, `nav.intent`, `nav.symbols`, `nav.outline`, `nav.overview`, `nav.multi-read` y `nav pack`. En workspaces `container`, `find/search/intent` pueden acotar con `--repo`; si `nav.intent` clasifica la consulta como `docs`, ese selector se valida pero no redefine la lane documental. `nav ask|route|pack --repo` existe solo como compatibilidad guiada y no crea scope documental por repo. Cuando el request omite `--workspace`, la query se resuelve usando `caller_cwd` antes de `last_workspace`.
+- In: routing por backend, aplicacion de `--token-budget`, `--max-items`, `--max-chars`, warnings de degradacion, `nav wiki search|route|pack|trace`, `nav service <path>`, `nav ask <question>`, `nav pack <task>`, `nav intent <question>`, `--axi`, `--classic`, `MI_LSP_AXI=1`, `--full` cuando el modo efectivo es AXI, el scorer owner-aware compartido para docs-first y la decision centralizada de ejecutar directo `nav.find`, `nav.search`, `nav.wiki.search`, `nav.intent`, `nav.symbols`, `nav.outline`, `nav.overview`, `nav.multi-read` y `nav pack`. En workspaces `container`, `find/search/intent` pueden acotar con `--repo`; si `nav.intent` clasifica la consulta como `docs`, ese selector se valida pero no redefine la lane documental. `nav ask|route|pack --repo` existe solo como compatibilidad guiada y no crea scope documental por repo. Cuando el request omite `--workspace`, la query se resuelve usando `caller_cwd` antes de `last_workspace`. Los docs outcome `RS-*` participan como layer `RS` y stage `outcome` entre `scope` y `architecture` cuando la gobernanza lo declara.
 - Out: edicion/refactor, respuestas con blobs de codigo completos y score fuerte de completitud.
 
 ## 3. Actors and ownership
@@ -60,7 +60,7 @@ sequenceDiagram
         end
     end
     alt nav wiki search
-        C->>DG: rankea doc_records y filtra RF/FL/TP/CT/TECH/DB
+        C->>DG: rankea doc_records y filtra RS/RF/FL/TP/CT/TECH/DB
         DG-->>C: candidatos documentales + next_queries
     else nav ask
         C->>DG: rankea wiki y deriva evidencia de codigo

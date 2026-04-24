@@ -257,7 +257,7 @@ func mergeCatalogContextItem(ctx context.Context, registration model.WorkspaceRe
 	if err != nil {
 		return false
 	}
-	db, err := store.Open(registration.Root)
+	db, err := openWorkspaceDB(registration, "nav.context")
 	if err != nil {
 		return false
 	}

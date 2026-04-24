@@ -53,6 +53,7 @@ with an optional .mi-lsp/project.toml topology file.`,
 		},
 	}
 
+	var statusNoAutoSync bool
 	statusCommand := &cobra.Command{
 		Use:   "status [workspace]",
 		Short: "Show workspace registration and index status",
@@ -60,9 +61,14 @@ with an optional .mi-lsp/project.toml topology file.`,
 			if len(args) > 0 {
 				state.workspace = args[0]
 			}
-			return state.executeOperation(cmd, "workspace.status", nil, false)
+			payload := map[string]any{}
+			if statusNoAutoSync {
+				payload["auto_sync"] = false
+			}
+			return state.executeOperation(cmd, "workspace.status", payload, false)
 		},
 	}
+	statusCommand.Flags().BoolVar(&statusNoAutoSync, "no-auto-sync", false, "Do not write read-model.toml while checking governance status")
 
 	removeCommand := &cobra.Command{
 		Use:   "remove <name>",

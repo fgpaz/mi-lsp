@@ -120,8 +120,9 @@ func (a *App) workspaceList() (model.Envelope, error) {
 	return model.Envelope{Ok: true, Backend: "registry", Items: items}, nil
 }
 
-func (a *App) workspaceStatus(ctx context.Context, name string, opts model.QueryOptions) (model.Envelope, error) {
-	registration, project, err := a.resolveWorkspaceWithProject(name)
+func (a *App) workspaceStatus(ctx context.Context, request model.CommandRequest) (model.Envelope, error) {
+	opts := request.Context
+	registration, project, err := a.resolveWorkspaceWithProject(request.Context.Workspace)
 	if err != nil {
 		return model.Envelope{}, err
 	}
@@ -129,7 +130,11 @@ func (a *App) workspaceStatus(ctx context.Context, name string, opts model.Query
 	item["repos"] = project.Repos
 	item["entrypoints"] = project.Entrypoints
 	item["docs_read_model"] = workspaceProfileHint(registration.Root)
-	governance := docgraph.InspectGovernance(registration.Root, true)
+	autoSync := true
+	if value, ok := request.Payload["auto_sync"].(bool); ok {
+		autoSync = value
+	}
+	governance := docgraph.InspectGovernance(registration.Root, autoSync)
 	item["governance_doc"] = governance.HumanDoc
 	item["governance_projection"] = governance.ProjectionDoc
 	item["governance_profile"] = governance.Profile
@@ -141,7 +146,7 @@ func (a *App) workspaceStatus(ctx context.Context, name string, opts model.Query
 	item["governance_blocked"] = governance.Blocked
 	item["governance_summary"] = governance.Summary
 	memory, _ := loadReentryMemory(ctx, registration.Root)
-	db, err := store.Open(registration.Root)
+	db, err := openWorkspaceDB(registration, "workspace.status")
 	if err != nil {
 		item["index_ready"] = false
 		item["docs_ready"] = false

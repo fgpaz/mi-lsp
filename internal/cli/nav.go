@@ -408,11 +408,12 @@ Use --include-content to embed symbol bodies in the output.`,
 	var traceSummary bool
 	traceCommand := &cobra.Command{
 		Use:   "trace [DOC-ID]",
-		Short: "Trace spec-to-code links for RF/TP docs",
-		Long: `Analyze implementation status of functional RF/TP IDs.
-RF docs can contribute implementation links, and TP docs can contribute
-documented test coverage even after a docs-only rebuild.
-Use --all for all RFs, --summary for tabular view.`,
+		Short: "Trace spec-to-code links for RS/RF/TP docs",
+		Long: `Analyze document and implementation status of RS/RF/TP IDs.
+RS docs resolve as outcome documents, RF docs can contribute implementation
+links, and TP docs can contribute documented test coverage even after a
+docs-only rebuild.
+Use --all for the RF set only, --summary for tabular view.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			payload := map[string]any{}
 			if len(args) > 0 {
@@ -425,12 +426,12 @@ Use --all for all RFs, --summary for tabular view.`,
 				payload["summary"] = true
 			}
 			if len(args) == 0 && !traceAll {
-				return fmt.Errorf("rf ID required or use --all")
+				return fmt.Errorf("DOC-ID required or use --all")
 			}
 			return state.executeOperation(cmd, "nav.trace", payload, true)
 		},
 	}
-	traceCommand.Flags().BoolVar(&traceAll, "all", false, "Trace all RFs")
+	traceCommand.Flags().BoolVar(&traceAll, "all", false, "Trace all RFs (RF-only)")
 	traceCommand.Flags().BoolVar(&traceSummary, "summary", false, "Summary table format (with --all)")
 
 	var intentTop int
@@ -514,8 +515,8 @@ func newNavWikiCommand(state *rootState) *cobra.Command {
 		Short: "Explore governed wiki documentation",
 		Long: `Explore the governed wiki as a first-class documentation surface.
 
-Use search to find RF/FL/TP/CT/TECH/DB docs, route for the canonical anchor,
-pack for a reading pack, and trace for RF implementation links.`,
+Use search to find RS/RF/FL/TP/CT/TECH/DB docs, route for the canonical anchor,
+pack for a reading pack, and trace for RS/RF/TP evidence links.`,
 	}
 
 	var searchLayer string
@@ -525,7 +526,7 @@ pack for a reading pack, and trace for RF implementation links.`,
 	searchCommand := &cobra.Command{
 		Use:   "search <query>",
 		Short: "Search governed wiki docs by query and layer",
-		Example: `  mi-lsp nav wiki search "workflow masterformularios" --workspace idp --layer RF,FL,CT,TP --format toon
+		Example: `  mi-lsp nav wiki search "workflow masterformularios" --workspace idp --layer RS,RF,FL,CT,TP --format toon
   mi-lsp nav wiki search "RF IDX" --workspace mi-lsp --include-content --format toon`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if err := requireArgs(args, 1, "query"); err != nil {
@@ -547,7 +548,7 @@ pack for a reading pack, and trace for RF implementation links.`,
 			return state.executeOperation(cmd, "nav.wiki.search", payload, true)
 		},
 	}
-	searchCommand.Flags().StringVar(&searchLayer, "layer", "", "Comma-separated wiki layers: RF,FL,TP,CT,TECH,DB")
+	searchCommand.Flags().StringVar(&searchLayer, "layer", "", "Comma-separated wiki layers: RS,RF,FL,TP,CT,TECH,DB")
 	searchCommand.Flags().IntVar(&searchTop, "top", 10, "Maximum number of wiki docs to return")
 	searchCommand.Flags().IntVar(&searchOffset, "offset", 0, "Skip first N wiki docs")
 	searchCommand.Flags().BoolVar(&searchIncludeContent, "include-content", false, "Include markdown content for each wiki candidate")
@@ -597,7 +598,7 @@ pack for a reading pack, and trace for RF implementation links.`,
 	var traceSummary bool
 	traceCommand := &cobra.Command{
 		Use:   "trace <DOC-ID|--all>",
-		Short: "Trace wiki RF/TP docs to implementation links",
+		Short: "Trace wiki RS/RF/TP docs to evidence links",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			payload := map[string]any{}
 			if len(args) > 0 {
@@ -610,12 +611,12 @@ pack for a reading pack, and trace for RF implementation links.`,
 				payload["summary"] = true
 			}
 			if len(args) == 0 && !traceAll {
-				return fmt.Errorf("rf ID required or use --all")
+				return fmt.Errorf("DOC-ID required or use --all")
 			}
 			return state.executeOperation(cmd, "nav.trace", payload, true)
 		},
 	}
-	traceCommand.Flags().BoolVar(&traceAll, "all", false, "Trace all RFs")
+	traceCommand.Flags().BoolVar(&traceAll, "all", false, "Trace all RFs (RF-only)")
 	traceCommand.Flags().BoolVar(&traceSummary, "summary", false, "Summary table format (with --all)")
 
 	command.AddCommand(searchCommand, routeCommand, packCommand, traceCommand)

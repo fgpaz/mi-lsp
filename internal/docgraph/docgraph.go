@@ -20,7 +20,7 @@ import (
 )
 
 var (
-	docIDPattern        = regexp.MustCompile(`\b(?:FL|RF|TP|TECH|CT|DB)-[A-Z0-9-]+\b`)
+	docIDPattern        = regexp.MustCompile(`\b(?:FL|RS|RF|TP|TECH|CT|DB)-[A-Z0-9-]+\b`)
 	markdownLinkPattern = regexp.MustCompile(`\[[^\]]+\]\(([^)]+)\)`)
 	inlineCodePattern   = regexp.MustCompile("`([^`]+)`")
 	pascalSymbolPattern = regexp.MustCompile(`\b[A-Z][A-Za-z0-9_]+\b`)
@@ -68,10 +68,12 @@ func DefaultProfile() model.DocsReadProfile {
 		Families: []model.DocsReadFamily{
 			{
 				Name:           "functional",
-				IntentKeywords: []string{"scope", "flow", "feature", "behavior", "rf", "fl", "test", "workflow", "journey"},
+				IntentKeywords: []string{"scope", "outcome", "result", "resultado", "solucion", "solution", "flow", "feature", "behavior", "rs", "rf", "fl", "test", "workflow", "journey"},
 				Paths: []string{
 					".docs/wiki/00_gobierno_documental.md",
 					".docs/wiki/01_*.md",
+					".docs/wiki/02_resultados_soluciones_usuario.md",
+					".docs/wiki/02_resultados/*.md",
 					".docs/wiki/02_*.md",
 					".docs/wiki/03_FL.md",
 					".docs/wiki/03_FL/*.md",
@@ -120,7 +122,7 @@ func DefaultProfile() model.DocsReadProfile {
 		},
 		ReadingPack: model.DocsReadingPackProfile{
 			MaxDocs:              6,
-			FunctionalStageOrder: []string{"governance", "scope", "architecture", "flow", "requirements", "data", "tests"},
+			FunctionalStageOrder: []string{"governance", "scope", "outcome", "architecture", "flow", "requirements", "data", "tests"},
 			TechnicalStageOrder:  []string{"governance", "scope", "architecture", "technical_baseline", "technical_detail", "physical_data", "contracts"},
 			UXStageOrder:         []string{"governance", "scope", "architecture", "ux_global", "ux_research", "ux_spec", "ux_handoff"},
 		},
@@ -291,7 +293,7 @@ func collectDocCandidates(ctx context.Context, root string, profile model.DocsRe
 			path:         absPath,
 			relativePath: rel,
 			family:       family,
-			layer:        detectLayer(rel),
+			layer:        DetectLayerForPath(profile, rel),
 			priority:     priority,
 		}
 		if existing, ok := seen[rel]; !ok || priority < existing.priority {
@@ -467,9 +469,92 @@ func likelyCodePath(value string) bool {
 	}
 }
 
+func DetectLayerForPath(profile model.DocsReadProfile, path string) string {
+	if layer := governanceLayerForPath(profile, path); layer != "" {
+		return layer
+	}
+	return detectLayer(path)
+}
+
+func governanceLayerForPath(profile model.DocsReadProfile, path string) string {
+	normalized := filepath.ToSlash(strings.TrimPrefix(strings.TrimSpace(path), "./"))
+	if normalized == "" {
+		return ""
+	}
+	type candidate struct {
+		layer string
+		score int
+	}
+	best := candidate{}
+	for _, item := range profile.Governance.Hierarchy {
+		layer := strings.TrimSpace(item.Layer)
+		if layer == "" {
+			continue
+		}
+		for _, pattern := range item.Paths {
+			if score := governancePathMatchScore(normalized, pattern); score > best.score {
+				best = candidate{layer: normalizeGovernanceLayer(item), score: score}
+			}
+		}
+	}
+	return best.layer
+}
+
+func normalizeGovernanceLayer(item model.GovernanceHierarchyItem) string {
+	stage := strings.ToLower(strings.TrimSpace(item.PackStage))
+	id := strings.ToLower(strings.TrimSpace(item.ID))
+	if stage == "outcome" || id == "outcome" || id == "resultados" {
+		return "RS"
+	}
+	return strings.TrimSpace(item.Layer)
+}
+
+func governancePathMatchScore(path string, pattern string) int {
+	pattern = filepath.ToSlash(strings.TrimPrefix(strings.TrimSpace(pattern), "./"))
+	if pattern == "" {
+		return 0
+	}
+	if strings.EqualFold(path, pattern) {
+		return 10000 + len(pattern)
+	}
+	if strings.HasSuffix(pattern, "/") {
+		prefix := strings.TrimSuffix(pattern, "/") + "/"
+		if strings.HasPrefix(path, prefix) {
+			return 8000 + len(prefix)
+		}
+		return 0
+	}
+	if strings.ContainsAny(pattern, "*?[") {
+		if matched, err := filepath.Match(filepath.FromSlash(pattern), filepath.FromSlash(path)); err == nil && matched {
+			return 6000 + literalPatternLength(pattern)
+		}
+	}
+	return 0
+}
+
+func literalPatternLength(pattern string) int {
+	count := 0
+	for _, r := range pattern {
+		switch r {
+		case '*', '?', '[', ']':
+			continue
+		default:
+			count++
+		}
+	}
+	return count
+}
+
 func detectLayer(path string) string {
 	path = filepath.ToSlash(path)
 	base := filepath.Base(path)
+	lower := strings.ToLower(path)
+	lowerBase := strings.ToLower(base)
+	if strings.HasPrefix(strings.ToUpper(base), "RS-") ||
+		lowerBase == "02_resultados_soluciones_usuario.md" ||
+		strings.Contains(lower, "/02_resultados/") {
+		return "RS"
+	}
 	if len(base) >= 2 && base[0] >= '0' && base[0] <= '9' && base[1] >= '0' && base[1] <= '9' {
 		return base[:2]
 	}

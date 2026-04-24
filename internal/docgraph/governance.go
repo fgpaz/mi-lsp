@@ -309,7 +309,7 @@ func buildDocsReadProfileFromGovernance(source model.GovernanceSource, resolved 
 		},
 		ReadingPack: model.DocsReadingPackProfile{
 			MaxDocs:              7,
-			FunctionalStageOrder: []string{"governance", "scope", "architecture", "flow", "requirements", "data", "tests"},
+			FunctionalStageOrder: stageOrderForFamily(source.Hierarchy, "functional", []string{"governance", "scope", "outcome", "architecture", "flow", "requirements", "data", "tests"}),
 			TechnicalStageOrder:  []string{"governance", "scope", "architecture", "technical_baseline", "technical_detail", "physical_data", "contracts"},
 			UXStageOrder:         []string{"governance", "scope", "architecture", "ux_global", "ux_research", "ux_spec", "ux_handoff"},
 		},
@@ -330,6 +330,32 @@ func buildDocsReadProfileFromGovernance(source model.GovernanceSource, resolved 
 			Hierarchy:            append([]model.GovernanceHierarchyItem(nil), source.Hierarchy...),
 		},
 	}
+}
+
+func stageOrderForFamily(items []model.GovernanceHierarchyItem, family string, fallback []string) []string {
+	stages := make([]string, 0, len(items))
+	seen := map[string]struct{}{}
+	for _, item := range items {
+		if strings.TrimSpace(item.Family) != family {
+			continue
+		}
+		stage := strings.TrimSpace(item.PackStage)
+		if stage == "" {
+			stage = strings.TrimSpace(item.ID)
+		}
+		if stage == "" {
+			continue
+		}
+		if _, exists := seen[stage]; exists {
+			continue
+		}
+		seen[stage] = struct{}{}
+		stages = append(stages, stage)
+	}
+	if len(stages) == 0 {
+		return append([]string{}, fallback...)
+	}
+	return stages
 }
 
 func normalizeOwnerHints(hints []model.DocsOwnerHint) []model.DocsOwnerHint {
@@ -389,7 +415,7 @@ func defaultIntentKeywords(family string, resolved resolvedGovernanceProfile) []
 	case "ux":
 		return []string{"ux", "ui", "frontend", "visual", "design", "journey", "experience", "pattern", "interface", "governance"}
 	default:
-		keywords := []string{"scope", "flow", "feature", "behavior", "rf", "fl", "test", "workflow", "governance", resolved.Base}
+		keywords := []string{"scope", "outcome", "result", "resultado", "solucion", "solution", "flow", "feature", "behavior", "rs", "rf", "fl", "test", "workflow", "governance", resolved.Base}
 		return dedupeStrings(append(keywords, resolved.Overlays...))
 	}
 }

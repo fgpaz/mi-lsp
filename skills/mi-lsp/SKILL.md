@@ -9,7 +9,7 @@ Use this skill when you want local semantic navigation with `mi-lsp` without int
 If the skill is installed but the binary is missing, bootstrap the CLI first instead of abandoning the flow.
 
 Prefer the AXI-default surfaces for onboarding and discovery: `mi-lsp`, `init`, `workspace status`, `nav wiki search`, `nav route`, `nav search`, and `nav intent`.
-Use `nav wiki search` when the task is clearly about project docs, RF/FL/TP/CT/TECH/DB, contracts, tests, or traceability.
+Use `nav wiki search` when the task is clearly about project docs, RS/RF/FL/TP/CT/TECH/DB, outcomes, contracts, tests, or traceability.
 Use `nav route` as the cheapest first orientation step — it resolves the canonical anchor doc from governance alone without touching the index.
 Use `nav ask` without `--axi` for richer orientation questions when you need evidence synthesis.
 Prefer `nav search --include-content` for implementation questions.
@@ -28,16 +28,16 @@ Prefer compound commands over sequential greps and full-file reads.
 
 ## Canonical wiki-first rule
 
-When the task is asking "what is the canonical doc?", "which RF/TP/CT/TECH/DB applies?", "what does the spec say?", or "how do I trace this requirement?", start from governance-backed wiki surfaces:
+When the task is asking "what is the canonical doc?", "which RS/RF/TP/CT/TECH/DB applies?", "what does the spec say?", or "how do I trace this requirement?", start from governance-backed wiki surfaces:
 
 1. `nav route` when you need the cheapest canonical anchor and do not want to depend on the index yet
 2. `nav wiki search` when you need canonical doc discovery by topic or ID
 3. `nav wiki pack` when you need the small reading set around the canonical anchor
-4. `nav wiki trace` when you already have an explicit `RF-*` / `TP-*` / doc ID
+4. `nav wiki trace` when you already have an explicit `RS-*` / `RF-*` / `TP-*` / doc ID
 
 Only drop to `nav search --include-content` when the question becomes implementation-first, or when you need raw disk evidence after the canonical anchor is already known.
 
-Use `--layer RF,FL,TP,CT,TECH,DB` aggressively on `nav wiki search` to narrow the authority lane.
+Use `--layer RS,RF,FL,TP,CT,TECH,DB` aggressively on `nav wiki search` to narrow the authority lane.
 If AXI preview is trimmed or `next_hint` asks for expansion, rerun with `--full` before inventing a broader command.
 Follow `next_queries` and `continuation.next` from wiki results before improvising `nav search`.
 
@@ -321,7 +321,7 @@ If `mi-lsp` is not on `PATH`, install it from Releases or repair `PATH` for the 
 Use these commands first:
 
 - Open the discovery home: `mi-lsp`
-- Wiki-first doc search: `mi-lsp nav wiki search "workflow masterformularios" --workspace <alias> --layer RF,FL,CT,TP --format toon`
+- Wiki-first doc search: `mi-lsp nav wiki search "workflow masterformularios" --workspace <alias> --layer RS,RF,FL,CT,TP --format toon`
 - Wiki reading pack: `mi-lsp nav wiki pack "workflow con masterformularios" --workspace <alias> --format toon`
 - Cheapest canonical orientation (no index needed): `mi-lsp nav route "how is this workspace organized?" --workspace <alias> --format toon`
 - Canonical reading pack for a task: `mi-lsp nav pack "understand authentication flow" --workspace <alias>`
@@ -336,8 +336,8 @@ Use these commands first:
 - Inspect recent routing/search telemetry: `mi-lsp admin export --recent --summary --by-route --by-hint --by-failure-stage`
 - Expand repo-local reentry memory: `mi-lsp workspace status <alias> --full`
 - Batch mixed operations: `mi-lsp nav batch --workspace <alias> --format toon`
-- Trace spec-to-code links: `mi-lsp nav trace RF-QRY-003 --workspace <alias> --format toon`
-- Trace from the wiki surface: `mi-lsp nav wiki trace RF-QRY-003 --workspace <alias> --format toon`
+- Trace spec-to-code/doc links: `mi-lsp nav trace RF-QRY-003 --workspace <alias> --format toon`
+- Trace from the wiki surface: `mi-lsp nav wiki trace RS-EXAMPLE-001 --workspace <alias> --format toon`
 - Search by intent/purpose: `mi-lsp nav intent "where do we handle routing fallback?" --workspace <alias>`
 
 Prefer these over repeated `Get-Content`, plain `rg`, or one-file-at-a-time reads.
@@ -356,7 +356,7 @@ mi-lsp workspace status <alias>
 
 ```powershell
 mi-lsp nav route "how is this workspace organized?" --workspace <alias> --format toon
-mi-lsp nav wiki search "RF IDX" --workspace <alias> --layer RF,TP,CT --format toon
+mi-lsp nav wiki search "RF IDX" --workspace <alias> --layer RS,RF,TP,CT --format toon
 mi-lsp nav ask "how is this workspace organized?" --workspace <alias>
 mi-lsp workspace status <alias> --full
 mi-lsp nav intent "error handling for daemon connections" --workspace <alias>
@@ -366,7 +366,7 @@ If the task is document-first, stay in the wiki lane longer:
 
 ```powershell
 mi-lsp nav route "how does login work?" --workspace <alias> --format toon
-mi-lsp nav wiki search "RF-AUTH login" --workspace <alias> --layer RF,TP,CT --format toon
+mi-lsp nav wiki search "RF-AUTH login" --workspace <alias> --layer RS,RF,TP,CT --format toon
 mi-lsp nav wiki pack "how does login work?" --workspace <alias> --format toon
 mi-lsp nav wiki trace RF-AUTH-001 --workspace <alias> --format toon
 ```
@@ -395,7 +395,7 @@ mi-lsp nav related <symbol> --workspace <alias> --format toon
 mi-lsp nav service <service-path> --workspace <alias> --format toon
 ```
 
-6. Trace spec-to-code links when reviewing RF compliance.
+6. Trace spec-to-code/doc links when reviewing RS/RF/TP compliance.
 
 ```powershell
 mi-lsp nav trace RF-QRY-003 --workspace <alias> --format toon
@@ -407,7 +407,7 @@ mi-lsp nav trace --all --summary --workspace <alias> --format toon
 Use `mi-lsp` first for repo navigation, docs-first Q&A, symbol lookup, service audits, and batch reads.
 
 - Start with `mi-lsp`, `workspace status`, `nav wiki search`, `nav route`, or `nav intent` for the first pass on a new repo.
-- Use `nav wiki search` for documentation exploration. Filter with `--layer RF,FL,TP,CT,TECH,DB`; follow returned `next_queries` toward `nav wiki pack`, `nav wiki trace`, `nav multi-read`, or `nav ask`.
+- Use `nav wiki search` for documentation exploration. Filter with `--layer RS,RF,FL,TP,CT,TECH,DB`; follow returned `next_queries` toward `nav wiki pack`, `nav wiki trace`, `nav multi-read`, or `nav ask`.
 - Use `nav wiki trace` when you already know the requirement or test ID and need the canonical doc/evidence lane instead of a broad text match list.
 - Use `nav route` as the cheapest orientation step — it resolves the canonical anchor doc from governance without touching the index (Tier 1), then enriches from the index when available (Tier 2). AXI-default preview-first.
 - Use `nav ask` for richer orientation when you need full evidence synthesis and next queries.
@@ -415,7 +415,7 @@ Use `mi-lsp` first for repo navigation, docs-first Q&A, symbol lookup, service a
 - Use `nav search --include-content` before `nav ask` for literal implementation questions like "where is X implemented?".
 - If `nav search` returns prompts, audits, `.docs/raw`, or other support artifacts while you are answering a documentation/traceability question, treat those hits as non-authoritative and reroute to `nav wiki search|route|pack|trace`.
 - Use `nav intent` to find code by purpose when you don't know the symbol name.
-- Use `nav trace` to check which code implements a specific RF requirement.
+- Use `nav trace` to inspect RS/RF/TP evidence; RF remains the implementation-link path, while RS returns the outcome document identity.
 - Use `workspace-map`, `search --include-content`, and `multi-read` before broad raw file reads.
 - Use `related`, `context`, `refs`, and `deps` when you need semantic depth.
 - Use plain `rg` only when `mi-lsp` is unavailable or the request falls outside the CLI surface.

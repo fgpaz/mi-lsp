@@ -56,7 +56,7 @@ func (a *App) wikiSearch(ctx context.Context, request model.CommandRequest) (mod
 
 	layerFilter, unknownLayers := parseWikiLayerFilter(stringPayload(request.Payload, "layer"))
 	for _, layer := range unknownLayers {
-		warnings = appendStringIfMissing(warnings, fmt.Sprintf("unknown wiki layer %q ignored; valid layers: RF, FL, TP, CT, TECH, DB", layer))
+		warnings = appendStringIfMissing(warnings, fmt.Sprintf("unknown wiki layer %q ignored; valid layers: RS, RF, FL, TP, CT, TECH, DB", layer))
 	}
 
 	top := intFromAny(request.Payload["top"], 0)
@@ -94,7 +94,7 @@ func (a *App) wikiSearch(ctx context.Context, request model.CommandRequest) (mod
 		if len(layerFilter) > 0 {
 			hint = "0 wiki matches for selected layers; broaden --layer or try nav wiki route"
 		} else {
-			hint = "0 wiki matches; try a doc id like RF-*, FL-*, CT-*, TECH-*, DB-* or run nav wiki route"
+			hint = "0 wiki matches; try a doc id like RS-*, RF-*, FL-*, CT-*, TECH-*, DB-* or run nav wiki route"
 		}
 	}
 
@@ -141,7 +141,7 @@ func parseWikiLayerFilter(raw string) (map[string]struct{}, []string) {
 			continue
 		}
 		switch layer {
-		case "RF", "FL", "TP", "CT", "TECH", "DB":
+		case "RS", "RF", "FL", "TP", "CT", "TECH", "DB":
 			filter[layer] = struct{}{}
 		default:
 			unknown = append(unknown, layer)
@@ -157,6 +157,8 @@ func wikiLayerForDoc(doc model.DocRecord) string {
 	docID := strings.ToUpper(strings.TrimSpace(doc.DocID))
 	path := filepath.ToSlash(doc.Path)
 	switch {
+	case strings.HasPrefix(docID, "RS-") || doc.Layer == "RS" || strings.Contains(path, "/02_resultados/") || strings.HasSuffix(path, "/02_resultados_soluciones_usuario.md"):
+		return "RS"
 	case strings.HasPrefix(docID, "FL-") || doc.Layer == "03" || strings.Contains(path, "/03_FL/"):
 		return "FL"
 	case strings.HasPrefix(docID, "RF-") || doc.Layer == "04" || strings.Contains(path, "/04_RF/"):
@@ -177,6 +179,8 @@ func wikiLayerForDoc(doc model.DocRecord) string {
 func wikiStageForDoc(doc model.DocRecord) string {
 	path := filepath.ToSlash(doc.Path)
 	switch {
+	case strings.Contains(path, "/02_resultados/") || strings.HasSuffix(path, "/02_resultados_soluciones_usuario.md") || doc.Layer == "RS":
+		return "outcome"
 	case strings.Contains(path, "/03_FL/") || doc.Layer == "03":
 		return "flow"
 	case strings.Contains(path, "/04_RF/") || doc.Layer == "04":
@@ -203,7 +207,8 @@ func wikiStageForDoc(doc model.DocRecord) string {
 func buildWikiSearchNextQueries(workspaceName string, queryText string, doc model.DocRecord, layer string) []string {
 	queries := make([]string, 0, 4)
 	queries = appendUniqueQuery(queries, fmt.Sprintf("mi-lsp nav wiki pack %q --workspace %s --doc %s --format toon", queryText, workspaceName, doc.Path))
-	if layer == "RF" && strings.HasPrefix(strings.ToUpper(doc.DocID), "RF-") {
+	if (layer == "RS" && strings.HasPrefix(strings.ToUpper(doc.DocID), "RS-")) ||
+		(layer == "RF" && strings.HasPrefix(strings.ToUpper(doc.DocID), "RF-")) {
 		queries = appendUniqueQuery(queries, fmt.Sprintf("mi-lsp nav wiki trace %s --workspace %s --format toon", doc.DocID, workspaceName))
 	}
 	if doc.DocID != "" {

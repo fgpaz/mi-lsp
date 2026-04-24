@@ -270,6 +270,10 @@ func ownerPrefixBoost(normalizedQuestion string, doc model.DocRecord) (string, i
 		if hasAnyTerm(normalizedQuestion, "requirement", "requirements", "requerimiento", "requerimientos", "behavior", "comportamiento") {
 			return "owner_prefix=RF", 22
 		}
+	case "RS":
+		if hasAnyTerm(normalizedQuestion, "outcome", "outcomes", "resultado", "resultados", "solution", "solutions", "solucion", "soluciones") {
+			return "owner_prefix=RS", 22
+		}
 	case "TECH":
 		if hasAnyTerm(normalizedQuestion, "technical", "tecnica", "tecnico", "baseline", "architecture", "arquitectura") {
 			return "owner_prefix=TECH", 20
@@ -457,6 +461,8 @@ func layerWeight(family string, layer string) int {
 		switch layer {
 		case "01":
 			return 18
+		case "RS":
+			return 17
 		case "02":
 			return 16
 		case "03":

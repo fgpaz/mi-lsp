@@ -528,9 +528,12 @@ type TraceDrift struct {
 	Severity string `json:"severity"` // "info" | "warn" | "error"
 }
 
-// TraceResult represents the traceability result for a single RF/TP doc ID.
+// TraceResult represents the traceability result for a single RS/RF/TP doc ID.
 type TraceResult struct {
-	RF       string       `json:"rf"`
+	DocID    string       `json:"doc_id,omitempty"`
+	Layer    string       `json:"layer,omitempty"`
+	Stage    string       `json:"stage,omitempty"`
+	RF       string       `json:"rf,omitempty"`
 	Title    string       `json:"title"`
 	Status   string       `json:"status"`   // "implemented" | "partial" | "missing"
 	Coverage float64      `json:"coverage"` // 0.0 - 1.0

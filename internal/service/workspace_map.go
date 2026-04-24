@@ -90,7 +90,7 @@ func (a *App) workspaceMap(ctx context.Context, request model.CommandRequest) (m
 	}
 
 	// Open catalog DB
-	db, err := store.Open(registration.Root)
+	db, err := openWorkspaceDB(registration, "nav.workspace-map")
 	if err != nil {
 		warnings = append(warnings, "catalog unavailable: "+err.Error())
 		return model.Envelope{

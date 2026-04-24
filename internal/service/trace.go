@@ -13,12 +13,21 @@ import (
 	"github.com/fgpaz/mi-lsp/internal/store"
 )
 
+type traceDocKind string
+
+const (
+	traceKindRS      traceDocKind = "RS"
+	traceKindRF      traceDocKind = "RF"
+	traceKindTP      traceDocKind = "TP"
+	traceKindUnknown traceDocKind = ""
+)
+
 func (a *App) trace(ctx context.Context, request model.CommandRequest) (model.Envelope, error) {
 	registration, _, err := a.resolveWorkspaceWithProject(request.Context.Workspace)
 	if err != nil {
 		return model.Envelope{}, err
 	}
-	db, err := store.Open(registration.Root)
+	db, err := openWorkspaceDB(registration, "nav.trace")
 	if err != nil {
 		return model.Envelope{}, err
 	}
@@ -70,7 +79,8 @@ func (a *App) traceRF(ctx context.Context, root string, db *sql.DB, rfID string)
 		return nil, err
 	}
 
-	doc, err := resolveTraceDoc(ctx, root, db, traceID, mentioningDocs)
+	kind := classifyTraceID(traceID)
+	doc, err := resolveTraceDoc(ctx, root, db, traceID, kind, mentioningDocs)
 	if err != nil {
 		return nil, err
 	}
@@ -124,14 +134,16 @@ func (a *App) traceRF(ctx context.Context, root string, db *sql.DB, rfID string)
 	tests = dedupeTraceLinks(tests)
 
 	inferred := make([]model.TraceLink, 0)
-	if len(explicit) == 0 && !isTPDocID(traceID) {
+	if len(explicit) == 0 && kind == traceKindRF {
 		inferred = a.inferTraceLinks(ctx, db, doc)
 	}
 
 	status, coverage := computeTraceStatus(explicit, inferred, tests)
 
-	return &model.TraceResult{
-		RF:       doc.DocID,
+	result := &model.TraceResult{
+		DocID:    doc.DocID,
+		Layer:    traceLayerForDoc(kind, doc),
+		Stage:    traceStageForDoc(kind, doc),
 		Title:    doc.Title,
 		Status:   status,
 		Coverage: coverage,
@@ -139,14 +151,23 @@ func (a *App) traceRF(ctx context.Context, root string, db *sql.DB, rfID string)
 		Inferred: inferred,
 		Tests:    tests,
 		Drift:    []model.TraceDrift{},
-	}, nil
+	}
+	if kind != traceKindRS {
+		// Backward compatibility: historical clients read RF for RF and TP traces.
+		result.RF = doc.DocID
+	}
+	return result, nil
 }
 
-func resolveTraceDoc(ctx context.Context, root string, db *sql.DB, traceID string, mentioningDocs []model.DocRecord) (*model.DocRecord, error) {
-	if isTPDocID(traceID) {
+func resolveTraceDoc(ctx context.Context, root string, db *sql.DB, traceID string, kind traceDocKind, mentioningDocs []model.DocRecord) (*model.DocRecord, error) {
+	switch kind {
+	case traceKindRS:
+		return resolveTraceRSDoc(root, traceID, mentioningDocs), nil
+	case traceKindTP:
 		return resolveTraceTPDoc(root, traceID, mentioningDocs), nil
+	default:
+		return resolveTraceRFDoc(ctx, root, db, traceID, mentioningDocs)
 	}
-	return resolveTraceRFDoc(ctx, root, db, traceID, mentioningDocs)
 }
 
 func resolveTraceRFDoc(ctx context.Context, root string, db *sql.DB, traceID string, mentioningDocs []model.DocRecord) (*model.DocRecord, error) {
@@ -237,6 +258,42 @@ func resolveTraceTPDoc(root string, traceID string, mentioningDocs []model.DocRe
 
 	virtualDoc := *doc
 	virtualDoc.DocID = traceID
+	if title := embeddedDocIDTitle(root, virtualDoc.Path, traceID); title != "" {
+		virtualDoc.Title = title
+	}
+	return &virtualDoc
+}
+
+func resolveTraceRSDoc(root string, traceID string, mentioningDocs []model.DocRecord) *model.DocRecord {
+	var doc *model.DocRecord
+	for i := range mentioningDocs {
+		if isSpecificRSDocPath(mentioningDocs[i].Path) {
+			doc = &mentioningDocs[i]
+			break
+		}
+	}
+	if doc == nil {
+		for i := range mentioningDocs {
+			if isRSDocRecord(mentioningDocs[i]) {
+				doc = &mentioningDocs[i]
+				break
+			}
+		}
+	}
+	if doc == nil {
+		fallbackDoc, ok := traceRSDocFromDisk(root, traceID)
+		if !ok {
+			return nil
+		}
+		doc = &fallbackDoc
+	}
+
+	virtualDoc := *doc
+	virtualDoc.DocID = traceID
+	virtualDoc.Layer = "RS"
+	if virtualDoc.Family == "" {
+		virtualDoc.Family = "functional"
+	}
 	if title := embeddedDocIDTitle(root, virtualDoc.Path, traceID); title != "" {
 		virtualDoc.Title = title
 	}
@@ -381,6 +438,61 @@ func traceTPDocFromDisk(root string, traceID string) (model.DocRecord, bool) {
 	return best, bestScore >= 0
 }
 
+func traceRSDocFromDisk(root string, traceID string) (model.DocRecord, bool) {
+	if strings.TrimSpace(root) == "" || strings.TrimSpace(traceID) == "" {
+		return model.DocRecord{}, false
+	}
+	candidates := traceGovernedDocCandidates(root, "functional")
+	indexPath := filepath.Join(root, ".docs", "wiki", "02_resultados_soluciones_usuario.md")
+	if _, err := os.Stat(indexPath); err == nil {
+		candidates = appendUniqueTraceCandidate(candidates, filepath.ToSlash(filepath.Clean(".docs/wiki/02_resultados_soluciones_usuario.md")))
+	}
+	rsDir := filepath.Join(root, ".docs", "wiki", "02_resultados")
+	entries, err := os.ReadDir(rsDir)
+	if err == nil {
+		for _, entry := range entries {
+			if entry.IsDir() || !strings.HasSuffix(strings.ToLower(entry.Name()), ".md") {
+				continue
+			}
+			candidates = appendUniqueTraceCandidate(candidates, filepath.ToSlash(filepath.Join(".docs", "wiki", "02_resultados", entry.Name())))
+		}
+	}
+	best := model.DocRecord{}
+	bestScore := -1
+	for _, relativePath := range candidates {
+		absolutePath := filepath.Join(root, filepath.FromSlash(relativePath))
+		content, err := os.ReadFile(absolutePath)
+		if err != nil {
+			continue
+		}
+		if !strings.Contains(strings.ToUpper(string(content)), strings.ToUpper(traceID)) {
+			continue
+		}
+		score := 1
+		if isSpecificRSDocPath(relativePath) {
+			score += 10
+		}
+		if !isRSIndexPath(relativePath) {
+			score += 5
+		}
+		title := embeddedDocIDTitle(root, relativePath, traceID)
+		if title == "" {
+			title = traceID
+		}
+		if score > bestScore {
+			bestScore = score
+			best = model.DocRecord{
+				Path:   relativePath,
+				Title:  title,
+				DocID:  strings.ToUpper(traceID),
+				Layer:  "RS",
+				Family: "functional",
+			}
+		}
+	}
+	return best, bestScore >= 0
+}
+
 func (a *App) traceAllRFs(ctx context.Context, root string, db *sql.DB) ([]model.TraceResult, error) {
 	rfDocs, err := store.GetRFDocRecords(ctx, db)
 	if err != nil {
@@ -419,6 +531,9 @@ func (a *App) traceSummary(workspaceName string, results []model.TraceResult) mo
 	items := make([]map[string]any, 0, len(results))
 	for _, r := range results {
 		items = append(items, map[string]any{
+			"doc_id":   r.DocID,
+			"layer":    r.Layer,
+			"stage":    r.Stage,
 			"rf":       r.RF,
 			"title":    r.Title,
 			"status":   r.Status,
@@ -449,6 +564,17 @@ func isSpecificTPDocPath(path string) bool {
 	return strings.Contains(normalized, "/06_pruebas/") || strings.Contains(normalized, "/TP/")
 }
 
+func isSpecificRSDocPath(path string) bool {
+	normalized := filepath.ToSlash(path)
+	return strings.Contains(normalized, "/02_resultados/")
+}
+
+func isRSIndexPath(path string) bool {
+	normalized := filepath.ToSlash(path)
+	return normalized == ".docs/wiki/02_resultados_soluciones_usuario.md" ||
+		strings.HasSuffix(normalized, "/02_resultados_soluciones_usuario.md")
+}
+
 func isTPIndexPath(path string) bool {
 	normalized := filepath.ToSlash(path)
 	return normalized == ".docs/wiki/06_matriz_pruebas_RF.md" ||
@@ -461,8 +587,61 @@ func isTPDocID(docID string) bool {
 	return strings.HasPrefix(strings.ToUpper(strings.TrimSpace(docID)), "TP-")
 }
 
+func isRSDocID(docID string) bool {
+	return strings.HasPrefix(strings.ToUpper(strings.TrimSpace(docID)), "RS-")
+}
+
+func classifyTraceID(docID string) traceDocKind {
+	switch {
+	case isRSDocID(docID):
+		return traceKindRS
+	case isTPDocID(docID):
+		return traceKindTP
+	case strings.HasPrefix(strings.ToUpper(strings.TrimSpace(docID)), "RF-"):
+		return traceKindRF
+	default:
+		return traceKindUnknown
+	}
+}
+
 func isTPDocRecord(doc model.DocRecord) bool {
 	return isTPDocID(doc.DocID) || doc.Layer == "06" || isSpecificTPDocPath(doc.Path) || isTPIndexPath(doc.Path)
+}
+
+func isRSDocRecord(doc model.DocRecord) bool {
+	return isRSDocID(doc.DocID) || doc.Layer == "RS" || isSpecificRSDocPath(doc.Path) || isRSIndexPath(doc.Path)
+}
+
+func traceLayerForDoc(kind traceDocKind, doc *model.DocRecord) string {
+	if doc != nil && strings.TrimSpace(doc.Layer) != "" {
+		return doc.Layer
+	}
+	switch kind {
+	case traceKindRS:
+		return "RS"
+	case traceKindTP:
+		return "TP"
+	case traceKindRF:
+		return "RF"
+	default:
+		return ""
+	}
+}
+
+func traceStageForDoc(kind traceDocKind, doc *model.DocRecord) string {
+	switch kind {
+	case traceKindRS:
+		return "outcome"
+	case traceKindTP:
+		return "tests"
+	case traceKindRF:
+		return "requirements"
+	default:
+		if doc != nil && doc.Layer == "RS" {
+			return "outcome"
+		}
+		return ""
+	}
 }
 
 func embeddedDocIDTitle(root string, relativePath string, docID string) string {

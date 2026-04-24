@@ -169,6 +169,56 @@ func TestWorkspaceStatusIncludesGovernanceFields(t *testing.T) {
 	}
 }
 
+func TestWorkspaceStatusCanSkipReadModelAutoSync(t *testing.T) {
+	alias := "gov-status-readonly-" + filepath.Base(t.TempDir())
+	ensureWritableTestHome(t)
+	root := t.TempDir()
+	writeWorkspaceFile(t, root, "src/App.csproj", `<Project Sdk="Microsoft.NET.Sdk"></Project>`)
+	writeWorkspaceFile(t, root, ".docs/wiki/07_baseline_tecnica.md", "# 07. Baseline tecnica\n")
+	writeSpecBackendGovernanceFixture(t, root)
+	projectionPath := filepath.Join(root, ".docs", "wiki", "_mi-lsp", "read-model.toml")
+	if err := os.Remove(projectionPath); err != nil {
+		t.Fatalf("remove read-model: %v", err)
+	}
+
+	app := New(root, nil)
+	if _, err := workspace.RegisterWorkspace(alias, model.WorkspaceRegistration{
+		Name:      alias,
+		Root:      root,
+		Languages: []string{"csharp"},
+		Kind:      model.WorkspaceKindSingle,
+	}); err != nil {
+		t.Fatalf("RegisterWorkspace: %v", err)
+	}
+	if err := workspace.SaveProjectFile(root, model.ProjectFile{
+		Project: model.ProjectBlock{Name: alias, Kind: model.WorkspaceKindSingle, DefaultRepo: "main"},
+		Repos:   []model.WorkspaceRepo{{ID: "main", Name: "main", Root: "."}},
+	}); err != nil {
+		t.Fatalf("SaveProjectFile: %v", err)
+	}
+	defer func() { _ = workspace.RemoveWorkspace(alias) }()
+
+	env, err := app.Execute(context.Background(), model.CommandRequest{
+		Operation: "workspace.status",
+		Context:   model.QueryOptions{Workspace: alias},
+		Payload:   map[string]any{"auto_sync": false},
+	})
+	if err != nil {
+		t.Fatalf("workspace.status: %v", err)
+	}
+	items := env.Items.([]any)
+	item := items[0].(map[string]any)
+	if item["governance_sync"] != "stale" {
+		t.Fatalf("governance_sync = %#v, want stale", item["governance_sync"])
+	}
+	if item["governance_blocked"] != true {
+		t.Fatalf("governance_blocked = %#v, want true", item["governance_blocked"])
+	}
+	if _, err := os.Stat(projectionPath); !os.IsNotExist(err) {
+		t.Fatalf("read-model should not be auto-synced, stat err=%v", err)
+	}
+}
+
 func TestNavPackBlockedWhenGovernanceIsInvalid(t *testing.T) {
 	alias := "gov-block-pack-" + filepath.Base(t.TempDir())
 	ensureWritableTestHome(t)

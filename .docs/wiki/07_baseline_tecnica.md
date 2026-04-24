@@ -77,7 +77,7 @@ flowchart LR
 - La version actual de AXI no instala hooks ni mantiene contexto ambiente persistente fuera del proceso CLI.
 - Las lecturas baratas de catalogo/texto (`nav.find`, `nav.search`, `nav.symbols`, `nav.outline`, `nav.overview`, `nav.multi-read`) deben ejecutarse directas y no depender del health del daemon.
 - `nav.ask` tambien usa el camino directo por default; el daemon no es el hot path obligatorio para respuestas docs-first.
-- `nav trace` sigue siendo una lectura directa del repo-local y debe resolver IDs `RF-*` y `TP-*` desde `doc_records/doc_mentions`; para `RF-*`, los docs TP del layer `06` cuentan como evidencia documental de cobertura y evitan falsos `missing` despues de `index --docs-only`.
+- `nav trace` sigue siendo una lectura directa del repo-local y debe resolver IDs `RS-*`, `RF-*` y `TP-*` desde `doc_records/doc_mentions`; para `RS-*` devuelve identidad documental (`doc_id`, `layer=RS`, `stage=outcome`) sin poblar el campo legacy `rf`, y para `RF-*` los docs TP del layer `06` cuentan como evidencia documental de cobertura y evitan falsos `missing` despues de `index --docs-only`.
 - Todo subprocesso no interactivo debe usar la politica comun de proceso; en Windows eso implica `HideWindow + CREATE_NO_WINDOW`, y los procesos background del daemon agregan `DETACHED_PROCESS`.
 - El `tool_root` del worker se resuelve contra el ejecutable/distribucion activa o, en desarrollo, contra el repo `mi-lsp`; nunca contra el `cwd` arbitrario del workspace consultado.
 - `index`, `index start` y `index run-job` deben estar protegidos por un lock interproceso repo-local (`.mi-lsp/index.lock`) durante toda la indexacion, no solo durante el commit SQLite.
@@ -97,6 +97,7 @@ flowchart LR
 - El estado semantico persistente del workspace vive repo-local; el estado global solo guarda registro, estado del daemon y telemetria local.
 - El estado documental persistente tambien vive repo-local: `doc_records`, `doc_edges` y `doc_mentions`.
 - La gobernanza documental manda sobre toda tarea spec-driven: `00_gobierno_documental.md` es la autoridad humana y `read-model.toml` su proyeccion ejecutable.
+- El orden funcional del reading pack se deriva primero de `governance.hierarchy[*].pack_stage`; cuando la gobernanza declara `outcome`, esa etapa queda entre `scope` y `architecture` y los docs `RS-*`, `02_resultados_soluciones_usuario.md` y `02_resultados/*.md` se clasifican como `layer=RS`.
 - `owner_hints` vive en `00_gobierno_documental.md`, se proyecta al `read-model.toml` y solo refina ownership documental repo-especifico; no reemplaza las heuristicas generales del binario.
 - Si `00`, su YAML embebido, la proyeccion o el indice quedan fuera de sync, el workspace entra en `blocked mode`.
 - `nav ask` es docs-first: primero rankea docs canonicos, luego deriva evidencia de codigo desde menciones y fallback textual.
@@ -180,6 +181,7 @@ El struct `internal/service/config.go` centraliza todos los valores hardcodeados
 - Queries semanticas y compuestas seleccionadas inician automaticamente el daemon si no esta corriendo (desactivar con `--no-auto-daemon`).
 - `nav.find`, `nav.search`, `nav.intent`, `nav.symbols`, `nav.outline`, `nav.overview` y `nav.multi-read` no deben auto-iniciar ni enrutar por daemon en builds actuales; en workspaces `container`, `find/search/intent` pueden acotar con `--repo`.
 - `workspace list` debe salir desde registry + `project.toml` normalizado, sin redescubrir child repos en el hot path.
+- `workspace status --no-auto-sync` permite diagnostico read-only para smokes cross-workspace: reporta la proyeccion stale/bloqueada sin escribir `read-model.toml` en repos externos.
 - `nav.workspace-map` debe arrancar con summary-first directo, no auto-iniciar daemon, y reservar scans de endpoints/eventos/dependencias para `--full`.
 - En AXI efectivo, `init`, `workspace status`, `nav search`, `nav intent` y `nav pack` arrancan en preview-first por default; `nav ask` lo hace solo cuando la heuristica detecta orientacion, y `nav workspace-map` solo cuando se fuerza AXI.
 - `init` registra, persiste proyecto e indexa por defecto sin requerir `workspace add` previo.

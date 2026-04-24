@@ -4,7 +4,7 @@ Volver a [07_baseline_tecnica.md](../07_baseline_tecnica.md).
 
 ## Summary
 
-Documenta la postura de hardening de dependencias y bootstrap del worker .NET, incluyendo el tratamiento canonico del advisory `GHSA-h4j7-5rxr-p4wc` y la estrategia de resolucion/instalacion del worker Roslyn desde cualquier `cwd`.
+Documenta la postura de hardening de dependencias y bootstrap del worker .NET, incluyendo el tratamiento canonico de advisories NuGet del worker Roslyn y la estrategia de resolucion/instalacion desde cualquier `cwd`.
 
 ## Owner and scope
 
@@ -20,6 +20,7 @@ Documenta la postura de hardening de dependencias y bootstrap del worker .NET, i
 - Preferir upgrade del paquete raiz que arrastra la dependencia vulnerable.
 - Mantener alineadas las versiones Roslyn/MSBuild con el minimo override necesario.
 - Si se agregan referencias directas `Microsoft.Build.*` en un proyecto con `MSBuildLocator`, deben declararse con `ExcludeAssets="runtime"`.
+- Si un advisory transitorio no queda cubierto por el upgrade raiz, se permite un pin directo del paquete vulnerable a la version parcheada minima publicada por Microsoft.
 
 ### Bootstrap y empaquetado canonico
 
@@ -48,7 +49,8 @@ Documenta la postura de hardening de dependencias y bootstrap del worker .NET, i
    - `Microsoft.Build.Utilities.Core`
    en `17.14.28`
 4. Declarar `ExcludeAssets="runtime"` en esas referencias para respetar la carga via `Microsoft.Build.Locator`.
-5. Resultado esperado: `dotnet build worker-dotnet/MiLsp.Worker.sln` sin `NU1903`.
+5. Para `GHSA-37gx-xxp4-5rgx` y `GHSA-w3x6-4m5h-cxqf`, fijar `System.Security.Cryptography.Xml` en `10.0.6`, version parcheada para la linea .NET 10.
+6. Resultado esperado: `dotnet list worker-dotnet/MiLsp.Worker/MiLsp.Worker.csproj package --vulnerable --include-transitive` sin paquetes vulnerables y build release sin `NU1903`.
 
 ### Cierres no aceptados
 
@@ -72,6 +74,7 @@ Documenta la postura de hardening de dependencias y bootstrap del worker .NET, i
 | Riesgo | Sintoma | Mitigacion canonica |
 |---|---|---|
 | Advisory persistente | `dotnet build` emite `NU1903` | pin directo Microsoft.Build* en version corregida |
+| Advisory transitorio en `System.Security.Cryptography.Xml` | restore/build alerta `GHSA-37gx-xxp4-5rgx` o `GHSA-w3x6-4m5h-cxqf` | pin directo a `System.Security.Cryptography.Xml` `10.0.6` o version superior parcheada |
 | Incompatibilidad Roslyn/MSBuild | fallas al cargar workspace | subir versions en bloque controlado |
 | Error de MSBuildLocator | assemblies MSBuild copiados al output | `ExcludeAssets="runtime"` |
 | “Solucion” por suppression | build verde pero inseguro | prohibido por politica |
@@ -82,6 +85,5 @@ Documenta la postura de hardening de dependencias y bootstrap del worker .NET, i
 ## Related docs
 
 - [CT-DAEMON-WORKER.md](../09_contratos/CT-DAEMON-WORKER.md)
-
 
 

@@ -21,7 +21,7 @@ type intentMatch struct {
 }
 
 var (
-	intentDocIDPattern  = regexp.MustCompile(`\b(?:FL|RF|TP|TECH|CT|DB)-[A-Z0-9-]+\b`)
+	intentDocIDPattern  = regexp.MustCompile(`\b(?:FL|RS|RF|TP|TECH|CT|DB)-[A-Z0-9-]+\b`)
 	intentSymbolPattern = regexp.MustCompile(`\b[A-Z][A-Za-z0-9_]{2,}\b`)
 )
 
@@ -54,7 +54,7 @@ func (a *App) intent(ctx context.Context, request model.CommandRequest) (model.E
 		return a.intentDocs(ctx, request, registration, question, topN, offset, scopedRepo, scopeWarnings)
 	}
 
-	db, err := store.Open(registration.Root)
+	db, err := openWorkspaceDB(registration, "nav.intent")
 	if err != nil {
 		return model.Envelope{}, err
 	}

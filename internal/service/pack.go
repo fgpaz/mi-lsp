@@ -325,7 +325,7 @@ func packStagesForFamily(family string, profile model.DocsReadingPackProfile) []
 		case "ux":
 			stageOrder = []string{"scope", "architecture", "ux_global", "ux_research", "ux_spec", "ux_handoff"}
 		default:
-			stageOrder = []string{"scope", "architecture", "flow", "requirements", "data", "tests"}
+			stageOrder = []string{"scope", "outcome", "architecture", "flow", "requirements", "data", "tests"}
 		}
 	}
 
@@ -344,6 +344,14 @@ func makePackStage(name string) (packStage, bool) {
 		return packStage{Name: name, Required: true, Match: func(doc model.DocRecord) bool { return doc.Layer == "00" }}, true
 	case "scope":
 		return packStage{Name: name, Required: true, Match: func(doc model.DocRecord) bool { return doc.Layer == "01" }}, true
+	case "outcome":
+		return packStage{Name: name, Match: func(doc model.DocRecord) bool {
+			normalized := filepath.ToSlash(doc.Path)
+			return doc.Layer == "RS" ||
+				strings.HasPrefix(strings.ToUpper(doc.DocID), "RS-") ||
+				strings.Contains(normalized, "/02_resultados/") ||
+				strings.HasSuffix(normalized, "/02_resultados_soluciones_usuario.md")
+		}}, true
 	case "architecture":
 		return packStage{Name: name, Required: true, Match: func(doc model.DocRecord) bool { return doc.Layer == "02" }}, true
 	case "flow":

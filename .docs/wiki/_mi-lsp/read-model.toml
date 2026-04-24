@@ -2,7 +2,7 @@ version = 1
 
 [[family]]
   name = "functional"
-  intent_keywords = ["scope", "flow", "feature", "behavior", "rf", "fl", "test", "workflow", "governance", "ordered_wiki", "spec_core", "technical"]
+  intent_keywords = ["scope", "outcome", "result", "resultado", "solucion", "solution", "flow", "feature", "behavior", "rs", "rf", "fl", "test", "workflow", "governance", "ordered_wiki", "spec_core", "technical"]
   paths = [".docs/wiki/00_gobierno_documental.md", ".docs/wiki/01_*.md", ".docs/wiki/02_*.md", ".docs/wiki/03_FL.md", ".docs/wiki/03_FL/*.md", ".docs/wiki/04_RF.md", ".docs/wiki/04_RF/*.md", ".docs/wiki/05_*.md", ".docs/wiki/06_*.md", ".docs/wiki/06_pruebas/*.md"]
 
 [[family]]

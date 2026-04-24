@@ -70,6 +70,19 @@ func TestCatalogIndexProgressReportsAndCanCancel(t *testing.T) {
 	}
 }
 
+func TestDocsOnlyIndexDoesNotRequireCodeProjectMarkers(t *testing.T) {
+	root := t.TempDir()
+	writeProgressTestFile(t, root, ".docs/wiki/00_gobierno_documental.md", "# Gobierno documental\n")
+
+	result, err := IndexWorkspaceDocsOnlyWithProgress(context.Background(), root, "", nil)
+	if err != nil {
+		t.Fatalf("IndexWorkspaceDocsOnlyWithProgress returned error: %v", err)
+	}
+	if result.Docs == 0 {
+		t.Fatal("expected docs-only index to publish documentation records")
+	}
+}
+
 func writeProgressTestFile(t *testing.T, root string, relativePath string, content string) {
 	t.Helper()
 	path := filepath.Join(root, filepath.FromSlash(relativePath))

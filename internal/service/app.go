@@ -66,7 +66,7 @@ func (a *App) Execute(ctx context.Context, request model.CommandRequest) (model.
 	case "workspace.list":
 		envelope, err = a.workspaceList()
 	case "workspace.status":
-		envelope, err = a.workspaceStatus(ctx, request.Context.Workspace, request.Context)
+		envelope, err = a.workspaceStatus(ctx, request)
 	case "workspace.remove":
 		envelope, err = a.workspaceRemove(request)
 	case "workspace.warm":
@@ -269,7 +269,7 @@ func (a *App) info(ctx context.Context, name string) (model.Envelope, error) {
 	if err != nil {
 		return model.Envelope{}, err
 	}
-	db, err := store.Open(registration.Root)
+	db, err := openWorkspaceDB(registration, "info")
 	if err != nil {
 		return model.Envelope{}, err
 	}
@@ -297,7 +297,7 @@ func (a *App) symbols(ctx context.Context, request model.CommandRequest) (model.
 	if err != nil {
 		return model.Envelope{}, err
 	}
-	db, err := store.Open(registration.Root)
+	db, err := openWorkspaceDB(registration, "nav.symbols")
 	if err != nil {
 		return model.Envelope{}, err
 	}
@@ -331,7 +331,7 @@ func (a *App) find(ctx context.Context, request model.CommandRequest) (model.Env
 	if scopeEnvelope != nil {
 		return *scopeEnvelope, nil
 	}
-	db, err := store.Open(registration.Root)
+	db, err := openWorkspaceDB(registration, "nav.find")
 	if err != nil {
 		return model.Envelope{}, err
 	}
@@ -376,7 +376,7 @@ func (a *App) overview(ctx context.Context, request model.CommandRequest) (model
 			prefix = ""
 		}
 	}
-	db, err := store.Open(registration.Root)
+	db, err := openWorkspaceDB(registration, "nav.overview")
 	if err != nil {
 		return model.Envelope{}, err
 	}
@@ -919,7 +919,7 @@ func (a *App) findAllWorkspaces(ctx context.Context, request model.CommandReques
 			semaphore <- struct{}{}
 			defer func() { <-semaphore }()
 
-			db, err := store.Open(wsReg.Root)
+			db, err := openWorkspaceDB(wsReg, "nav.find --all-workspaces")
 			if err != nil {
 				results <- findResult{ws: wsReg, err: err}
 				return

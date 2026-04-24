@@ -67,7 +67,7 @@ func (a *App) serviceSummary(ctx context.Context, request model.CommandRequest) 
 		NextQueries:      []string{},
 	}
 
-	db, err := store.Open(registration.Root)
+	db, err := openWorkspaceDB(registration, "nav.service")
 	if err == nil {
 		defer db.Close()
 		catalogSymbols, catalogErr := store.OverviewByPrefix(ctx, db, normalizedPrefix(relativePath), serviceCatalogLimit, 0)

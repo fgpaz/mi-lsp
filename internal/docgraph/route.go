@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/fgpaz/mi-lsp/internal/model"
@@ -41,7 +42,7 @@ func Tier1CanonicalRoute(question string, profile model.DocsReadProfile, root st
 		anchorDoc.Title = title
 	}
 	// Fill layer from path prefix
-	anchorDoc.Layer = detectLayer(anchorPath)
+	anchorDoc.Layer = DetectLayerForPath(profile, anchorPath)
 
 	previewPack := buildTier1PreviewPack(family, profile, root, anchorPath)
 
@@ -57,26 +58,9 @@ func containingDocForExplicitID(root string, profile model.DocsReadProfile, docI
 	if docID == "" {
 		return ""
 	}
-	searchPaths := make([]string, 0)
-	indexPaths := make([]string, 0)
-	for _, family := range profile.Families {
-		if family.Name != "functional" {
-			continue
-		}
-		for _, path := range family.Paths {
-			normalized := filepath.ToSlash(path)
-			if strings.Contains(normalized, "/04_RF/") {
-				searchPaths = append(searchPaths, path)
-				continue
-			}
-			if strings.Contains(normalized, "04_RF") {
-				indexPaths = append(indexPaths, path)
-			}
-		}
-	}
-	searchPaths = append(searchPaths, indexPaths...)
+	searchPaths := explicitDocSearchPaths(profile, docID)
 	if len(searchPaths) == 0 {
-		searchPaths = []string{".docs/wiki/04_RF/*.md", ".docs/wiki/04_RF.md"}
+		searchPaths = fallbackExplicitDocSearchPaths(docID)
 	}
 	for _, pattern := range searchPaths {
 		var found string
@@ -100,6 +84,133 @@ func containingDocForExplicitID(root string, profile model.DocsReadProfile, docI
 		if found != "" {
 			return found
 		}
+	}
+	return ""
+}
+
+func explicitDocSearchPaths(profile model.DocsReadProfile, docID string) []string {
+	prefix := docIDPrefix(docID)
+	if prefix == "" {
+		return nil
+	}
+	seen := map[string]struct{}{}
+	paths := make([]string, 0)
+	add := func(path string) {
+		path = filepath.ToSlash(strings.TrimSpace(path))
+		if path == "" {
+			return
+		}
+		if _, exists := seen[path]; exists {
+			return
+		}
+		seen[path] = struct{}{}
+		paths = append(paths, path)
+	}
+
+	for _, item := range profile.Governance.Hierarchy {
+		if strings.TrimSpace(item.Family) != "functional" {
+			continue
+		}
+		if !governanceItemMatchesDocPrefix(item, prefix) {
+			continue
+		}
+		for _, path := range item.Paths {
+			add(path)
+		}
+	}
+	for _, family := range profile.Families {
+		if family.Name != "functional" {
+			continue
+		}
+		for _, path := range family.Paths {
+			if pathMatchesDocPrefix(path, prefix) {
+				add(path)
+			}
+		}
+	}
+	for _, path := range fallbackExplicitDocSearchPaths(docID) {
+		add(path)
+	}
+	sort.SliceStable(paths, func(i, j int) bool {
+		leftSpecific := isSpecificDocPatternForPrefix(paths[i], prefix)
+		rightSpecific := isSpecificDocPatternForPrefix(paths[j], prefix)
+		if leftSpecific != rightSpecific {
+			return leftSpecific
+		}
+		return false
+	})
+	return paths
+}
+
+func governanceItemMatchesDocPrefix(item model.GovernanceHierarchyItem, prefix string) bool {
+	layer := strings.ToUpper(strings.TrimSpace(item.Layer))
+	stage := strings.ToLower(strings.TrimSpace(item.PackStage))
+	id := strings.ToLower(strings.TrimSpace(item.ID))
+	switch prefix {
+	case "RS":
+		return layer == "RS" || stage == "outcome" || id == "outcome" || id == "resultados"
+	case "RF":
+		return layer == "RF" || layer == "04" || stage == "requirements" || id == "requirements"
+	case "TP":
+		return layer == "TP" || layer == "06" || stage == "tests" || id == "tests"
+	case "FL":
+		return layer == "FL" || layer == "03" || stage == "flow" || id == "flow"
+	default:
+		return layer == prefix
+	}
+}
+
+func pathMatchesDocPrefix(path string, prefix string) bool {
+	normalized := filepath.ToSlash(strings.ToLower(strings.TrimSpace(path)))
+	switch prefix {
+	case "RS":
+		return strings.Contains(normalized, "02_resultados") || strings.Contains(normalized, "/rs")
+	case "RF":
+		return strings.Contains(normalized, "04_rf") || strings.Contains(normalized, "/rf")
+	case "TP":
+		return strings.Contains(normalized, "06_pruebas") || strings.Contains(normalized, "/tp")
+	case "FL":
+		return strings.Contains(normalized, "03_fl") || strings.Contains(normalized, "/fl")
+	default:
+		return strings.Contains(normalized, strings.ToLower(prefix)+"-")
+	}
+}
+
+func isSpecificDocPatternForPrefix(path string, prefix string) bool {
+	normalized := filepath.ToSlash(strings.ToLower(strings.TrimSpace(path)))
+	switch prefix {
+	case "RS":
+		return strings.Contains(normalized, "/02_resultados/")
+	case "RF":
+		return strings.Contains(normalized, "/04_rf/") || strings.Contains(normalized, "/rf/")
+	case "TP":
+		return strings.Contains(normalized, "/06_pruebas/") || strings.Contains(normalized, "/tp/")
+	case "FL":
+		return strings.Contains(normalized, "/03_fl/") || strings.Contains(normalized, "/fl/")
+	default:
+		return false
+	}
+}
+
+func fallbackExplicitDocSearchPaths(docID string) []string {
+	switch docIDPrefix(docID) {
+	case "RS":
+		return []string{".docs/wiki/02_resultados/*.md", ".docs/wiki/02_resultados_soluciones_usuario.md"}
+	case "RF":
+		return []string{".docs/wiki/04_RF/*.md", ".docs/wiki/04_RF.md"}
+	case "TP":
+		return []string{".docs/wiki/06_pruebas/*.md", ".docs/wiki/06_matriz_pruebas_RF.md"}
+	case "FL":
+		return []string{".docs/wiki/03_FL/*.md", ".docs/wiki/03_FL.md"}
+	default:
+		return nil
+	}
+}
+
+func docIDPrefix(docID string) string {
+	docID = strings.ToUpper(strings.TrimSpace(docID))
+	if idx := strings.Index(docID, "-"); idx > 0 {
+		return docID[:idx]
 	}
 	return ""
 }
@@ -169,7 +280,7 @@ func buildTier1PreviewPack(family string, profile model.DocsReadProfile, root st
 				doc := model.RouteDoc{
 					Path:   path,
 					Stage:  stage,
-					Layer:  detectLayer(path),
+					Layer:  DetectLayerForPath(profile, path),
 					Family: family,
 					Why:    "canonical_preview",
 				}
@@ -194,6 +305,8 @@ func canonicalPathsForStage(stage string) []string {
 		return []string{".docs/wiki/00_gobierno_documental.md"}
 	case "scope":
 		return []string{".docs/wiki/01_alcance_funcional.md"}
+	case "outcome":
+		return []string{".docs/wiki/02_resultados_soluciones_usuario.md", ".docs/wiki/02_resultados/"}
 	case "architecture":
 		return []string{".docs/wiki/02_arquitectura.md"}
 	case "flow":

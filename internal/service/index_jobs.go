@@ -30,7 +30,7 @@ func (a *App) indexStart(ctx context.Context, request model.CommandRequest) (mod
 	wait, _ := request.Payload["wait"].(bool)
 	clean, _ := request.Payload["clean"].(bool)
 
-	db, err := store.Open(registration.Root)
+	db, err := openWorkspaceDB(registration, "index.start")
 	if err != nil {
 		return model.Envelope{}, err
 	}
@@ -107,7 +107,7 @@ func (a *App) indexStatus(ctx context.Context, request model.CommandRequest) (mo
 	if err != nil {
 		return model.Envelope{}, err
 	}
-	db, err := store.Open(registration.Root)
+	db, err := openWorkspaceDB(registration, "index.status")
 	if err != nil {
 		return model.Envelope{}, err
 	}
@@ -141,7 +141,7 @@ func (a *App) indexCancel(ctx context.Context, request model.CommandRequest) (mo
 	if jobID == "" {
 		return model.Envelope{}, errors.New("job_id is required")
 	}
-	db, err := store.Open(registration.Root)
+	db, err := openWorkspaceDB(registration, "index.cancel")
 	if err != nil {
 		return model.Envelope{}, err
 	}
@@ -162,7 +162,7 @@ func (a *App) indexCancel(ctx context.Context, request model.CommandRequest) (mo
 }
 
 func (a *App) runIndexJob(ctx context.Context, registration model.WorkspaceRegistration, jobID string) (store.IndexJob, indexer.Result, error) {
-	db, err := store.Open(registration.Root)
+	db, err := openWorkspaceDB(registration, "index.run-job")
 	if err != nil {
 		return store.IndexJob{}, indexer.Result{}, err
 	}

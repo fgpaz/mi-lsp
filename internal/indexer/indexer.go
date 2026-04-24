@@ -214,11 +214,11 @@ func IndexWorkspaceDocsOnlyWithProgress(ctx context.Context, root string, genera
 	if err := reportProgress(ctx, progress, Progress{Stage: "docs.detect", Force: true}); err != nil {
 		return Result{}, err
 	}
-	registration, err := workspace.DetectWorkspace(root)
+	root, err := filepath.Abs(root)
 	if err != nil {
 		return Result{}, err
 	}
-	projectFile, err := workspace.LoadProjectTopology(root, registration)
+	projectFile, err := docsOnlyProjectFile(root)
 	if err != nil {
 		return Result{}, err
 	}
@@ -265,6 +265,15 @@ func IndexWorkspaceDocsOnlyWithProgress(ctx context.Context, root string, genera
 			Ms:    time.Since(started).Milliseconds(),
 		},
 	}, nil
+}
+
+func docsOnlyProjectFile(root string) (model.ProjectFile, error) {
+	registration := model.WorkspaceRegistration{
+		Name: filepath.Base(root),
+		Root: root,
+		Kind: model.WorkspaceKindSingle,
+	}
+	return workspace.LoadProjectSummary(root, registration)
 }
 
 func reportProgress(ctx context.Context, progress ProgressFunc, value Progress) error {

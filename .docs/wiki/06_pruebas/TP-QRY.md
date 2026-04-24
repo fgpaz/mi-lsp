@@ -111,3 +111,10 @@
 | TC-QRY-074 | negativo | RF-QRY-016 | `TestNavWikiSearchDocIndexEmptyReturnsDiagnostic`: docgraph vacio devuelve diagnostico accionable de `index --docs-only` |
 | TC-QRY-075 | negativo | RF-QRY-016 | `TestNavWikiSearchBlocksWhenGovernanceBlocked`: governance bloqueada corta `nav wiki search` |
 | TC-QRY-076 | positivo | RF-QRY-016 | `TestNavAskRoutePackRepoCompatWarnings`: `nav ask|route|pack --repo docs` no falla y orienta a `nav wiki` |
+| TC-QRY-077 | positivo | RF-QRY-016 | `TestDefaultProfileIndexesOutcomeDocsAsRS`: el perfil embebido reconoce `.docs/wiki/02_resultados_soluciones_usuario.md` y `.docs/wiki/02_resultados/*.md` como `layer=RS`, `stage=outcome` |
+| TC-QRY-078 | positivo | RF-QRY-016 | `TestGovernanceProjectionDerivesFunctionalStageOrder`: `reading_pack.functional_stage_order` deriva `outcome` desde `governance.hierarchy[*].pack_stage` entre `scope` y `architecture` |
+| TC-QRY-079 | positivo | RF-QRY-016 | `TestNavWikiSearchAcceptsRSLayer`: `nav wiki search --layer RS` devuelve docs outcome sin warnings de capa desconocida |
+| TC-QRY-080 | positivo | RF-QRY-014, RF-QRY-016 | `TestNavRouteExplicitRSUsesOutcomeDoc`: `nav route RS-*` ancla el documento RS/outcome gobernado antes de usar heuristicas legacy |
+| TC-QRY-081 | positivo | RF-QRY-012, RF-QRY-016 | `TestNavPackIncludesOutcomeStage`: `nav pack` incluye la etapa `outcome` en el pack funcional cuando el read-model la declara |
+| TC-QRY-082 | positivo | RF-QRY-013, RF-QRY-016 | `TestNavTraceRSTraceUsesDocIDLayerStageWithoutRF`: `nav trace RS-*` devuelve `doc_id`, `layer=RS`, `stage=outcome` y no rellena el campo legacy `rf` |
+| TC-QRY-083 | positivo | RF-QRY-016 | `scripts/release/regression-smoke.ps1`: recorre aliases registrados con `workspace status --no-auto-sync`, `nav wiki search`, `nav wiki pack`, `nav wiki trace` cuando hay ID trazable, y registra diagnostico de workspace/root/db_path por operacion sin mutar repos smokeados |
