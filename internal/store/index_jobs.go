@@ -34,6 +34,9 @@ type IndexJob struct {
 	Clean           bool   `json:"clean,omitempty"`
 	Status          string `json:"status"`
 	Phase           string `json:"phase,omitempty"`
+	CurrentStage    string `json:"current_stage,omitempty"`
+	CurrentPath     string `json:"current_path,omitempty"`
+	FilesTotal      int    `json:"files_total,omitempty"`
 	PID             int    `json:"pid,omitempty"`
 	RequestedCancel bool   `json:"requested_cancel,omitempty"`
 	Error           string `json:"error,omitempty"`
@@ -44,6 +47,15 @@ type IndexJob struct {
 	StartedAt       string `json:"started_at,omitempty"`
 	FinishedAt      string `json:"finished_at,omitempty"`
 	UpdatedAt       string `json:"updated_at"`
+}
+
+type IndexJobProgress struct {
+	CurrentStage string
+	CurrentPath  string
+	Files        int
+	Symbols      int
+	Docs         int
+	FilesTotal   int
 }
 
 type ActiveIndexJobError struct {
@@ -119,6 +131,7 @@ func CreateIndexJob(ctx context.Context, db *sql.DB, workspaceName string, works
 func ActiveIndexJob(ctx context.Context, db *sql.DB, workspaceRoot string) (IndexJob, bool, error) {
 	rows, err := db.QueryContext(ctx, `
 		SELECT job_id, generation_id, workspace_name, workspace_root, mode, clean, status, phase, pid, requested_cancel, COALESCE(error, ''),
+		       COALESCE(current_stage, ''), COALESCE(current_path, ''), files_total,
 		       files, symbols, docs, created_at, COALESCE(started_at, ''), COALESCE(finished_at, ''), updated_at
 		FROM index_jobs
 		WHERE workspace_root = ?
@@ -150,6 +163,7 @@ func ActiveIndexJob(ctx context.Context, db *sql.DB, workspaceRoot string) (Inde
 func GetIndexJob(ctx context.Context, db *sql.DB, jobID string) (IndexJob, bool, error) {
 	row := db.QueryRowContext(ctx, `
 		SELECT job_id, generation_id, workspace_name, workspace_root, mode, clean, status, phase, pid, requested_cancel, COALESCE(error, ''),
+		       COALESCE(current_stage, ''), COALESCE(current_path, ''), files_total,
 		       files, symbols, docs, created_at, COALESCE(started_at, ''), COALESCE(finished_at, ''), updated_at
 		FROM index_jobs
 		WHERE job_id = ?
@@ -167,6 +181,7 @@ func GetIndexJob(ctx context.Context, db *sql.DB, jobID string) (IndexJob, bool,
 func LatestIndexJob(ctx context.Context, db *sql.DB) (IndexJob, bool, error) {
 	row := db.QueryRowContext(ctx, `
 		SELECT job_id, generation_id, workspace_name, workspace_root, mode, clean, status, phase, pid, requested_cancel, COALESCE(error, ''),
+		       COALESCE(current_stage, ''), COALESCE(current_path, ''), files_total,
 		       files, symbols, docs, created_at, COALESCE(started_at, ''), COALESCE(finished_at, ''), updated_at
 		FROM index_jobs
 		ORDER BY created_at DESC
@@ -191,9 +206,10 @@ func MarkIndexJobRunning(ctx context.Context, db *sql.DB, jobID string, pid int,
 	now := time.Now().UTC().Format(time.RFC3339Nano)
 	_, err := db.ExecContext(ctx, `
 		UPDATE index_jobs
-		SET status = 'running', phase = ?, pid = ?, started_at = COALESCE(started_at, ?), updated_at = ?
+		SET status = 'running', phase = ?, current_stage = ?, current_path = '', files_total = 0,
+		    pid = ?, started_at = COALESCE(started_at, ?), updated_at = ?
 		WHERE job_id = ?
-	`, phase, pid, now, now, jobID)
+	`, phase, phase, pid, now, now, jobID)
 	return err
 }
 
@@ -201,9 +217,28 @@ func MarkIndexJobPhase(ctx context.Context, db *sql.DB, jobID string, status str
 	now := time.Now().UTC().Format(time.RFC3339Nano)
 	_, err := db.ExecContext(ctx, `
 		UPDATE index_jobs
-		SET status = ?, phase = ?, updated_at = ?
+		SET status = ?, phase = ?, current_stage = ?, current_path = '', updated_at = ?
 		WHERE job_id = ?
-	`, status, phase, now, jobID)
+	`, status, phase, phase, now, jobID)
+	return err
+}
+
+func MarkIndexJobProgress(ctx context.Context, db *sql.DB, jobID string, progress IndexJobProgress) error {
+	now := time.Now().UTC().Format(time.RFC3339Nano)
+	_, err := db.ExecContext(ctx, `
+		UPDATE index_jobs
+		SET status = 'running',
+		    current_stage = ?,
+		    current_path = ?,
+		    files = ?,
+		    symbols = ?,
+		    docs = ?,
+		    files_total = ?,
+		    updated_at = ?
+		WHERE job_id = ?
+		  AND requested_cancel = 0
+		  AND status IN ('queued', 'running', 'publishing')
+	`, progress.CurrentStage, progress.CurrentPath, progress.Files, progress.Symbols, progress.Docs, progress.FilesTotal, now, jobID)
 	return err
 }
 
@@ -211,9 +246,12 @@ func MarkIndexJobSucceeded(ctx context.Context, db *sql.DB, jobID string, files 
 	now := time.Now().UTC().Format(time.RFC3339Nano)
 	_, err := db.ExecContext(ctx, `
 		UPDATE index_jobs
-		SET status = 'succeeded', phase = 'done', files = ?, symbols = ?, docs = ?, error = NULL, finished_at = ?, updated_at = ?
+		SET status = 'succeeded', phase = 'done', current_stage = 'done', current_path = '',
+		    files = ?, symbols = ?, docs = ?,
+		    files_total = CASE WHEN files_total > ? THEN files_total ELSE ? END,
+		    error = NULL, finished_at = ?, updated_at = ?
 		WHERE job_id = ?
-	`, files, symbols, docs, now, now, jobID)
+	`, files, symbols, docs, files, files, now, now, jobID)
 	return err
 }
 
@@ -235,7 +273,7 @@ func MarkIndexJobFailed(ctx context.Context, db *sql.DB, jobID string, message s
 	defer func() { _ = tx.Rollback() }()
 	if _, err := tx.ExecContext(ctx, `
 		UPDATE index_jobs
-		SET status = 'failed', phase = 'failed', error = ?, finished_at = ?, updated_at = ?
+		SET status = 'failed', phase = 'failed', current_stage = 'failed', error = ?, finished_at = ?, updated_at = ?
 		WHERE job_id = ?
 	`, message, now, now, jobID); err != nil {
 		return err
@@ -270,9 +308,10 @@ func RequestIndexJobCancel(ctx context.Context, db *sql.DB, jobID string) (Index
 	}
 	_, err = db.ExecContext(ctx, `
 		UPDATE index_jobs
-		SET requested_cancel = 1, status = ?, phase = ?, finished_at = CASE WHEN ? = 'canceled' THEN ? ELSE finished_at END, updated_at = ?
+		SET requested_cancel = 1, status = ?, phase = ?, current_stage = ?,
+		    finished_at = CASE WHEN ? = 'canceled' THEN ? ELSE finished_at END, updated_at = ?
 		WHERE job_id = ?
-	`, status, phase, status, now, now, jobID)
+	`, status, phase, status, status, now, now, jobID)
 	if err != nil {
 		return IndexJob{}, err
 	}
@@ -300,9 +339,15 @@ func CancelIndexJob(ctx context.Context, db *sql.DB, jobID string, force bool) (
 		if err := terminateProcess(job.PID); err != nil && processExists(job.PID) {
 			return IndexJob{}, fmt.Errorf("terminate index job pid %d: %w", job.PID, err)
 		}
+		waitForProcessExit(job.PID, 2*time.Second)
 	}
 	if err := MarkIndexJobCanceled(ctx, db, jobID); err != nil {
 		return IndexJob{}, err
+	}
+	if job.PID > 0 {
+		if _, err := RemoveWorkspaceIndexLockForPID(job.WorkspaceRoot, job.PID); err != nil {
+			return IndexJob{}, err
+		}
 	}
 	job, _, err = GetIndexJob(ctx, db, jobID)
 	return job, err
@@ -326,7 +371,8 @@ func MarkIndexJobCanceled(ctx context.Context, db *sql.DB, jobID string) error {
 	defer func() { _ = tx.Rollback() }()
 	if _, err := tx.ExecContext(ctx, `
 		UPDATE index_jobs
-		SET status = 'canceled', phase = 'canceled', requested_cancel = 1, finished_at = ?, updated_at = ?
+		SET status = 'canceled', phase = 'canceled', current_stage = 'canceled', current_path = '',
+		    requested_cancel = 1, finished_at = ?, updated_at = ?
 		WHERE job_id = ?
 	`, now, now, jobID); err != nil {
 		return err
@@ -361,6 +407,9 @@ func scanIndexJob(scanner indexJobScanner) (IndexJob, error) {
 		&job.PID,
 		&requested,
 		&job.Error,
+		&job.CurrentStage,
+		&job.CurrentPath,
+		&job.FilesTotal,
 		&job.Files,
 		&job.Symbols,
 		&job.Docs,
@@ -374,6 +423,17 @@ func scanIndexJob(scanner indexJobScanner) (IndexJob, error) {
 	job.Clean = clean != 0
 	job.RequestedCancel = requested != 0
 	return job, nil
+}
+
+func waitForProcessExit(pid int, timeout time.Duration) bool {
+	deadline := time.Now().Add(timeout)
+	for processExists(pid) {
+		if timeout <= 0 || time.Now().After(deadline) {
+			return false
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
+	return true
 }
 
 func staleIndexJob(job IndexJob) bool {

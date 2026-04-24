@@ -70,8 +70,9 @@ Reglas:
 - `index start` crea un registro durable en `index_jobs`; sin `--wait` lanza un proceso detached y retorna el `job_id`
 - `index status` consulta el ultimo job del workspace si no se pasa `job-id`
 - `index status.phase` conserva `indexing` durante el trabajo pesado y solo pasa a `publishing` en el cierre/publicacion final
+- `index status` expone progreso vivo en `current_stage`, `current_path`, `files_total`, `files`, `symbols`, `docs` y `updated_at`; esos campos deben refrescarse durante catalogo/docs antes de publicar
 - `index cancel` marca cancelacion solicitada; la cancelacion es cooperativa y puede no interrumpir una publicacion que ya llego al commit
-- `index cancel --force` puede terminar el PID vivo del job y marcarlo `canceled`; se reserva para jobs colgados
+- `index cancel --force` puede terminar el PID vivo del job, marcarlo `canceled` y remover el `.mi-lsp/index.lock` si pertenece a ese PID ya muerto; se reserva para jobs colgados
 - sin `--docs-only`, indexa catalogo de codigo y grafo documental, con incremental git-aware cuando corresponde
 - con `--docs-only`, reconstruye `doc_records`, `doc_edges`, `doc_mentions` y `memory_pointer` sin reemplazar `files` ni `symbols`
 - toda indexacion toma `.mi-lsp/index.lock`; si ya existe, la operacion debe fallar con mensaje accionable que incluya el lock owner cuando este disponible
@@ -94,6 +95,7 @@ Respuesta `index start --wait` exitosa:
       "generation_id": "idxgen-...",
       "status": "succeeded",
       "phase": "done",
+      "current_stage": "done",
       "files": 42,
       "symbols": 0,
       "docs": 42

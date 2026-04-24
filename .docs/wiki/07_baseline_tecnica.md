@@ -21,7 +21,7 @@ El detalle operativo y de subsistemas vive en `07_tech/`.
 | TS catalog/indexer | Subsistema Go | Discovery backend | Discovery estructural TS/JS/Next repo-local |
 | Service exploration profile | Subsistema Go | Query/runtime | Agregar evidencia observable por path de servicio usando catalogo + texto |
 | TS semantic backend | Runtime opcional | TS semantic backend | Semantica TS/JS via `tsserver` cuando exista |
-| Python indexer | Subsistema Go | Discovery backend | Indexacion Python via tree-sitter pure Go (`gotreesitter`) |
+| Python indexer | Subsistema Go | Discovery backend | Indexacion Python lexical acotada para catalogo repo-local |
 | Pyright semantic backend | Runtime opcional | Python semantic backend | Semantica Python via `pyright-langserver` |
 | Governance UI | HTTP loopback local | Runtime supervision | Estado, accesos, memoria y diagnostico |
 | File watcher (fsnotify) | Subsistema daemon | Pre-fetch | Re-indexa archivos modificados en background |
@@ -82,8 +82,9 @@ flowchart LR
 - El `tool_root` del worker se resuelve contra el ejecutable/distribucion activa o, en desarrollo, contra el repo `mi-lsp`; nunca contra el `cwd` arbitrario del workspace consultado.
 - `index`, `index start` y `index run-job` deben estar protegidos por un lock interproceso repo-local (`.mi-lsp/index.lock`) durante toda la indexacion, no solo durante el commit SQLite.
 - `index start` crea un job durable en `index_jobs`; sin `--wait` lanza un proceso hijo detached y devuelve `job_id`, con `--wait` ejecuta el job en el proceso actual.
-- `index cancel --force` puede terminar el PID vivo asociado al job y marcarlo `canceled`; se reserva para jobs colgados o publicaciones que no progresan.
+- `index cancel` sin `--force` debe detener cooperativamente loops largos de catalogo/docs mediante polling de `requested_cancel`; `index cancel --force` puede terminar el PID vivo asociado al job, marcarlo `canceled` y limpiar el lock asociado cuando el PID ya no existe.
 - `index status.phase` mantiene `indexing` durante el trabajo pesado y reserva `publishing` para el cierre/publicacion final, para no confundir jobs largos con commit ya iniciado.
+- `index status` debe refrescar `updated_at` durante trabajos largos y exponer progreso vivo mediante `current_stage`, `current_path`, `files_total` y los contadores `files/symbols/docs`.
 - La publicacion full debe ser all-or-nothing: catalogo, docgraph y memoria de reentrada se reemplazan en una unica transaccion SQLite y solo entonces se publica la generacion activa.
 - `--clean` fuerza recomposicion/publicacion completa del modo elegido, pero no debe borrar `index.db` antes de caminar archivos; si el proceso muere antes del commit, la generacion activa anterior sigue disponible.
 - La unidad de warm state es un runtime por `(workspace_root, backend_type)`.
@@ -114,7 +115,7 @@ flowchart LR
 - Aun con `read_model=default`, un workspace inicializado con docs minimas utiles bajo `.docs/wiki/07_*.md`, `.docs/wiki/08_*.md` o `.docs/wiki/09_*.md` debe poder resolver una respuesta docs-first razonable sin requerir `read-model.toml` custom.
 - La UI de gobernanza es unica, local a loopback y debe abrirse enfocando workspace, sin duplicar instancias.
 - C# profundo se resuelve con Roslyn; TS/JS discovery sigue existiendo aunque no haya backend semantico.
-- Python se indexa con tree-sitter pure Go (`gotreesitter`); semantica profunda opcional via `pyright-langserver` cuando exista.
+- Python se indexa con un extractor lexical acotado por lineas para mantener el catalogo repo-local cancelable; semantica profunda opcional via `pyright-langserver` cuando exista.
 - `nav context` es slice-first: el core arma un bloque legible por lineas y luego superpone enriquecimiento semantico o de catalogo cuando exista.
 - `nav service` usa evidencia observable, no score fuerte de completitud.
 - `nav route` es la superficie publica de routing de bajo token: resuelve `anchor_doc + mini_pack_preview` con semantica fail-closed y canonical lane autoritativa. `nav ask` y `nav pack` reutilizan este motor internamente.

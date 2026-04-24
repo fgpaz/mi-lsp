@@ -22,7 +22,7 @@ sequenceDiagram
     C->>DB: create index_jobs + index_generations
     C->>W: enumera archivos validos
     W-->>C: lista + ownership por repo
-    C->>C: extrae catalogo TS/C# liviano
+    C->>C: extrae catalogo TS/C#/Python liviano
     C->>C: indexa docs y read-model del repo
     C->>DB: publish generacion all-or-nothing
     DB-->>C: ok
@@ -41,12 +41,14 @@ sequenceDiagram
 | `--clean` activo | se recompone el indice desde cero |
 | Proceso muere antes de publicar | la transaccion SQLite revierte y queda activa la generacion previa |
 | Lock con PID inexistente | se recupera automaticamente antes de iniciar el nuevo job |
+| Job largo en catalogo/docs | `index status` refresca `updated_at`, stage/path y contadores parciales |
+| `index cancel` sin `--force` | marca cancelacion solicitada y el worker la respeta al volver al loop de indexacion |
 
 ## 5. Data touchpoints
 
 - `.mi-lsp/index.db`
 - tablas `workspace_repos`, `workspace_entrypoints`, `symbols`, `files`, `doc_records`, `doc_edges`, `doc_mentions`, `index_jobs`, `index_generations`, `workspace_meta`
-- estados: sin indice, job queued/running/publishing/succeeded/failed/canceled, generacion activa, indice con warnings de ruido; `index cancel --force` puede cortar un job colgado y liberar el workspace para reintento, y `publishing` debe quedar reservado al cierre final del job
+- estados: sin indice, job queued/running/publishing/succeeded/failed/canceled, generacion activa, indice con warnings de ruido; `index status` expone progreso vivo (`current_stage`, `current_path`, `files_total`, contadores), `index cancel --force` puede cortar un job colgado y liberar el workspace para reintento, y `publishing` debe quedar reservado al cierre final del job
 
 ## 6. Candidate RF references
 

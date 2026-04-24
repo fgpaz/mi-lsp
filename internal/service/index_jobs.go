@@ -8,12 +8,15 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"time"
 
 	"github.com/fgpaz/mi-lsp/internal/indexer"
 	"github.com/fgpaz/mi-lsp/internal/model"
 	"github.com/fgpaz/mi-lsp/internal/processutil"
 	"github.com/fgpaz/mi-lsp/internal/store"
 )
+
+var errIndexJobCanceled = errors.New("index job canceled")
 
 func (a *App) indexStart(ctx context.Context, request model.CommandRequest) (model.Envelope, error) {
 	registration, err := a.resolveIndexWorkspace(request)
@@ -184,16 +187,15 @@ func (a *App) runIndexJob(ctx context.Context, registration model.WorkspaceRegis
 		if err := store.MarkIndexJobRunning(ctx, db, jobID, os.Getpid(), "indexing"); err != nil {
 			return err
 		}
-		if canceled, err := store.IsIndexJobCancelRequested(ctx, db, jobID); err != nil {
+		progress := newIndexJobProgressReporter(db, jobID)
+		if err := progress.report(ctx, indexer.Progress{Stage: "indexing", Force: true}); err != nil {
 			return err
-		} else if canceled {
-			return store.MarkIndexJobCanceled(ctx, db, jobID)
 		}
 		switch job.Mode {
 		case store.IndexModeDocs:
-			result, err = indexer.IndexWorkspaceDocsOnlyWithGeneration(ctx, registration.Root, job.GenerationID)
+			result, err = indexer.IndexWorkspaceDocsOnlyWithProgress(ctx, registration.Root, job.GenerationID, progress.report)
 		case store.IndexModeCatalog:
-			result, err = indexer.IndexWorkspaceCatalogOnlyWithGeneration(ctx, registration.Root, job.Clean, job.GenerationID)
+			result, err = indexer.IndexWorkspaceCatalogOnlyWithProgress(ctx, registration.Root, job.Clean, job.GenerationID, progress.report)
 		default:
 			hasExistingCatalog := false
 			if stats, statsErr := store.WorkspaceStats(ctx, db); statsErr == nil {
@@ -210,12 +212,18 @@ func (a *App) runIndexJob(ctx context.Context, registration model.WorkspaceRegis
 					if genErr := store.MarkIndexGenerationSkipped(ctx, db, jobID, "incremental update did not publish a full generation"); genErr != nil {
 						return genErr
 					}
+					if err := progress.report(ctx, indexer.Progress{Stage: "done", Files: result.Stats.Files, Symbols: result.Stats.Symbols, Docs: result.Docs, Force: true}); err != nil {
+						return err
+					}
 					return store.MarkIndexJobSucceeded(ctx, db, jobID, result.Stats.Files, result.Stats.Symbols, result.Docs)
 				}
 			}
-			result, err = indexer.IndexWorkspaceWithGeneration(ctx, registration.Root, job.Clean, job.GenerationID)
+			result, err = indexer.IndexWorkspaceWithProgress(ctx, registration.Root, job.Clean, job.GenerationID, progress.report)
 		}
 		if err != nil {
+			return err
+		}
+		if err := progress.report(ctx, indexer.Progress{Stage: "publishing", Files: result.Stats.Files, Symbols: result.Stats.Symbols, Docs: result.Docs, Force: true}); err != nil {
 			return err
 		}
 		if err := store.MarkIndexJobPhase(ctx, db, jobID, store.IndexJobPublishing, "publishing"); err != nil {
@@ -224,11 +232,75 @@ func (a *App) runIndexJob(ctx context.Context, registration model.WorkspaceRegis
 		return store.MarkIndexJobSucceeded(ctx, db, jobID, result.Stats.Files, result.Stats.Symbols, result.Docs)
 	})
 	if err != nil {
+		if errors.Is(err, errIndexJobCanceled) {
+			job, _, getErr := store.GetIndexJob(ctx, db, jobID)
+			if getErr != nil {
+				return store.IndexJob{}, indexer.Result{}, getErr
+			}
+			result.Warnings = appendStringIfMissing(result.Warnings, "index job canceled")
+			return job, result, nil
+		}
 		_ = store.MarkIndexJobFailed(ctx, db, jobID, err.Error())
 		return store.IndexJob{}, indexer.Result{}, err
 	}
 	job, _, err = store.GetIndexJob(ctx, db, jobID)
 	return job, result, err
+}
+
+type indexJobProgressReporter struct {
+	db              *sql.DB
+	jobID           string
+	interval        time.Duration
+	cancelInterval  time.Duration
+	lastProgressAt  time.Time
+	lastCancelCheck time.Time
+	lastStage       string
+}
+
+func newIndexJobProgressReporter(db *sql.DB, jobID string) *indexJobProgressReporter {
+	return &indexJobProgressReporter{
+		db:             db,
+		jobID:          jobID,
+		interval:       time.Second,
+		cancelInterval: 100 * time.Millisecond,
+	}
+}
+
+func (r *indexJobProgressReporter) report(ctx context.Context, progress indexer.Progress) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	now := time.Now()
+	if progress.Force || r.lastCancelCheck.IsZero() || now.Sub(r.lastCancelCheck) >= r.cancelInterval {
+		r.lastCancelCheck = now
+		canceled, err := store.IsIndexJobCancelRequested(ctx, r.db, r.jobID)
+		if err != nil {
+			return err
+		}
+		if canceled {
+			if err := store.MarkIndexJobCanceled(ctx, r.db, r.jobID); err != nil {
+				return err
+			}
+			return errIndexJobCanceled
+		}
+	}
+
+	if !progress.Force && !r.lastProgressAt.IsZero() && now.Sub(r.lastProgressAt) < r.interval && progress.Stage == r.lastStage {
+		return nil
+	}
+	if err := store.MarkIndexJobProgress(ctx, r.db, r.jobID, store.IndexJobProgress{
+		CurrentStage: progress.Stage,
+		CurrentPath:  progress.Path,
+		Files:        progress.Files,
+		Symbols:      progress.Symbols,
+		Docs:         progress.Docs,
+		FilesTotal:   progress.FilesTotal,
+	}); err != nil {
+		return err
+	}
+	r.lastProgressAt = now
+	r.lastStage = progress.Stage
+	return nil
 }
 
 func (a *App) spawnIndexJob(ctx context.Context, db *sql.DB, registration model.WorkspaceRegistration, jobID string) (int, error) {

@@ -684,6 +684,46 @@ func TestIndexStartWaitCreatesSucceededJobAndGeneration(t *testing.T) {
 	}
 }
 
+func TestRunIndexJobHonorsCooperativeCancelRequest(t *testing.T) {
+	ensureWritableTestHome(t)
+	root := t.TempDir()
+	alias := "index-cancel-" + filepath.Base(root)
+	project := testProject(alias)
+	if err := workspace.SaveProjectFile(root, project); err != nil {
+		t.Fatalf("SaveProjectFile: %v", err)
+	}
+	writeWorkspaceFile(t, root, "src/App.csproj", `<Project Sdk="Microsoft.NET.Sdk"></Project>`)
+	writeWorkspaceFile(t, root, "src/App.cs", "namespace Demo; public class App { }\n")
+
+	registration := model.WorkspaceRegistration{
+		Name:      alias,
+		Root:      root,
+		Languages: []string{"csharp"},
+		Kind:      model.WorkspaceKindSingle,
+	}
+	db, err := store.Open(root)
+	if err != nil {
+		t.Fatalf("store.Open: %v", err)
+	}
+	defer db.Close()
+	job, err := store.CreateIndexJob(context.Background(), db, alias, root, store.IndexModeCatalog, false)
+	if err != nil {
+		t.Fatalf("CreateIndexJob: %v", err)
+	}
+	if _, err := store.RequestIndexJobCancel(context.Background(), db, job.JobID); err != nil {
+		t.Fatalf("RequestIndexJobCancel: %v", err)
+	}
+
+	app := New(root, nil)
+	resultJob, _, err := app.runIndexJob(context.Background(), registration, job.JobID)
+	if err != nil {
+		t.Fatalf("runIndexJob: %v", err)
+	}
+	if resultJob.Status != store.IndexJobCanceled {
+		t.Fatalf("job status = %q, want canceled", resultJob.Status)
+	}
+}
+
 func TestWorkspaceStatusWarnsWhenDocsOnlyRecoveryLeavesCodeCatalogAbsent(t *testing.T) {
 	ensureWritableTestHome(t)
 	root := t.TempDir()

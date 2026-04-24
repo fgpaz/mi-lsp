@@ -4,12 +4,12 @@ Volver a [07_baseline_tecnica.md](../07_baseline_tecnica.md).
 
 ## Summary
 
-Define la estrategia tecnica del backend Python en `mi-lsp`: indexacion repo-local con tree-sitter pure Go y backend semantico opcional via `pyright-langserver` (cliente LSP generico reutilizable).
+Define la estrategia tecnica del backend Python en `mi-lsp`: indexacion repo-local lexical acotada y backend semantico opcional via `pyright-langserver` (cliente LSP generico reutilizable).
 
 ## Owner and scope
 
 - Owner logico: Python semantic backend
-- Scope: Python discovery, indexacion AST, semantica opcional, reglas de routing
+- Scope: Python discovery, indexacion lexical de catalogo, semantica opcional, reglas de routing
 - Non-goals: soporte completo de type checking o virtual environments en v1.1
 
 ## Runtime o subsistema
@@ -17,17 +17,16 @@ Define la estrategia tecnica del backend Python en `mi-lsp`: indexacion repo-loc
 ### Capa siempre-on (indexacion)
 
 - `walker` + ignores (extensiones `.py`, `.pyi`)
-- extractor Python via tree-sitter pure Go (`github.com/odvcencio/gotreesitter`)
-- simbolos extraidos: `class`, `function`, `method`, `decorated_definition`
+- extractor Python lexical por lineas en `indexer/extractor_python.go`
+- simbolos extraidos: `class`, `function`, `method`; decoradores se toleran y se asocian al `def` siguiente por indentacion
 - catalogo liviano en `index.db` con `language: "python"`
 - busqueda textual con cadena de fallback robusta (igual que TS)
 
-### Tree-sitter
+### Extraccion lexical
 
-- Dependencia: `github.com/odvcencio/gotreesitter v0.9.2`
-- Pure Go, zero CGO, cross-compila a Windows ARM64
-- Incluye gramatica Python con external scanner para indentation
-- Si el parsing falla, el extractor retorna `nil` (degradacion graceful)
+- Sin parser AST en el hot path de catalogo: el extractor usa regex + indentacion para evitar bloqueos de parser por archivo.
+- La salida prioriza simbolos navegables y cancelabilidad operativa sobre fidelidad AST completa.
+- Si una forma Python no se reconoce, el archivo conserva `FileRecord` y puede seguir cubierto por `nav search` textual o Pyright cuando este disponible.
 
 ### Capa semantica opcional
 
@@ -69,7 +68,7 @@ El backend Python usa un cliente LSP generico (`LSPClient`) que es reutilizable 
 
 ## Dependencias e interacciones
 
-- `indexer/extractor_python.go` (tree-sitter)
+- `indexer/extractor_python.go` (extraccion lexical acotada)
 - `indexer/walker.go` (extensiones `.py`, `.pyi`)
 - `worker/lsp_protocol.go` (framing JSON-RPC 2.0)
 - `worker/lsp_client.go` (cliente LSP generico)
@@ -88,10 +87,10 @@ El backend Python usa un cliente LSP generico (`LSPClient`) que es reutilizable 
 
 | Riesgo | Sintoma | Mitigacion canonica |
 |---|---|---|
-| gotreesitter parse failure | extractor retorna nil | degradacion graceful, archivo se indexa sin simbolos |
+| Forma Python no reconocida por el extractor lexical | simbolo ausente en catalogo | fallback textual y Pyright opcional; el archivo conserva `FileRecord` |
 | Pyright no instalado | backend no inicia | fallback con warning accionable |
 | Python no instalado | `pythonPath` default a "python" | warning pero Pyright puede funcionar sin |
-| Repos grandes Python | indexacion lenta | gotreesitter es ~3.9x mas lento que C pero aceptable para indexing |
+| Repos grandes Python | indexacion larga | extractor lexical acotado por lineas y cancelacion cooperativa por archivo |
 
 ## Related docs
 

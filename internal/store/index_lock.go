@@ -33,6 +33,27 @@ func WithWorkspaceIndexLock(root string, operation string, fn func() error) erro
 	return withWorkspaceIndexLock(root, operation, fn, true)
 }
 
+func RemoveWorkspaceIndexLockForPID(root string, pid int) (bool, error) {
+	if pid <= 0 {
+		return false, nil
+	}
+	lockPath := filepath.Join(root, ".mi-lsp", "index.lock")
+	info := readIndexLockInfo(lockPath)
+	if info.PID != pid {
+		return false, nil
+	}
+	if processExists(info.PID) {
+		return false, nil
+	}
+	if err := os.Remove(lockPath); err != nil {
+		if os.IsNotExist(err) {
+			return false, nil
+		}
+		return false, err
+	}
+	return true, nil
+}
+
 func withWorkspaceIndexLock(root string, operation string, fn func() error, allowStaleCleanup bool) error {
 	lockDir := filepath.Join(root, ".mi-lsp")
 	if err := os.MkdirAll(lockDir, 0o755); err != nil {

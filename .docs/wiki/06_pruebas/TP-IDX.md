@@ -13,7 +13,7 @@
 | TC-IDX-001 | positivo | RF-IDX-001 | crea `index.db` repo-local y reporta stats |
 | TC-IDX-002 | positivo | RF-IDX-001 | reindexa con `--clean` reconstruyendo datos derivados |
 | TC-IDX-003 | negativo | RF-IDX-001 | falla con workspace no resoluble o error de escritura SQLite |
-| TC-IDX-004 | positivo | RF-IDX-001 | indexa clases, funciones y metodos Python con tree-sitter |
+| TC-IDX-004 | positivo | RF-IDX-001 | indexa clases, funciones y metodos Python con extractor lexical acotado |
 | TC-IDX-005 | positivo | RF-IDX-001 | persiste `doc_records`, `doc_edges` y `doc_mentions` a partir de la wiki |
 | TC-IDX-006 | positivo | RF-IDX-001 | usa el fallback documental generico (`README*`, `docs/`, `.docs/`) cuando no existe `.docs/wiki` |
 | TC-IDX-007 | positivo | RF-IDX-002 | index detecta archivos cambiados via git y solo re-indexa codigo |
@@ -29,3 +29,7 @@
 | TC-IDX-017 | positivo | RF-IDX-001 | `TestReplaceWorkspaceIndexPublishesGenerationMetadata`: publica punteros `active_*_generation_id` solo tras commit exitoso |
 | TC-IDX-018 | positivo | RF-IDX-001 | `TestWithWorkspaceIndexLockRemovesStaleLock`: un lock con PID inexistente se recupera antes de ejecutar |
 | TC-IDX-019 | positivo | RF-IDX-001 | `TestIndexStartWaitCreatesSucceededJobAndGeneration`: `index.start --wait` crea job, publica generacion y deja status `succeeded` |
+| TC-IDX-020 | positivo | RF-IDX-001 | `TestMarkIndexJobProgressUpdatesCountersStageAndTimestamp`: progreso vivo refresca counters, stage/path y `updated_at` |
+| TC-IDX-021 | negativo | RF-IDX-001 | `TestRunIndexJobHonorsCooperativeCancelRequest`: cancelacion cooperativa marca el job como `canceled` |
+| TC-IDX-022 | positivo | RF-IDX-001 | `TestCancelIndexJobForceRemovesMatchingDeadPIDLock`: `cancel --force` mata PID vivo y limpia lock matching |
+| TC-IDX-023 | positivo | RF-IDX-001 | `TestExtractPython_EmotionalRubricFixtureDoesNotHang`: fixture Python que antes colgaba se indexa lexicalmente |

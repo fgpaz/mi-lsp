@@ -79,8 +79,9 @@ El detalle por frontera vive en `09_contratos/`.
 - `index --docs-only` es un modo publico de recuperacion: reconstruye el corpus documental y la memoria de reentrada sin reemplazar el catalogo de codigo.
 - `index [path]` es wrapper compatible de `index start --mode full --wait`; `--docs-only` equivale a `index start --mode docs --wait`.
 - `index start [path] --mode full|docs|catalog` crea un job durable. Por default retorna sin esperar; con `--wait` bloquea hasta completar.
-- `index status [job-id]` devuelve el ultimo job del workspace o el job pedido; `index cancel <job-id> [--force]` solicita cancelacion cooperativa y, con `--force`, puede terminar el PID vivo del job.
-- Los envelopes de jobs usan `backend=index-job`, `mode=<full|docs|catalog>` e `items[0]` con `job_id`, `generation_id`, `status`, `phase`, `pid`, contadores, timestamps y `error` cuando existe; `phase=indexing` cubre el trabajo pesado y `phase=publishing` queda reservado para el cierre/publicacion final.
+- `index status [job-id]` devuelve el ultimo job del workspace o el job pedido; mientras un job largo corre, `updated_at`, `current_stage`, `current_path`, `files_total` y los contadores deben reflejar progreso vivo.
+- `index cancel <job-id> [--force]` solicita cancelacion cooperativa y, con `--force`, puede terminar el PID vivo del job; la variante force tambien debe remover el `index.lock` si pertenece al PID cancelado y ya no esta vivo.
+- Los envelopes de jobs usan `backend=index-job`, `mode=<full|docs|catalog>` e `items[0]` con `job_id`, `generation_id`, `status`, `phase`, `current_stage`, `current_path`, `files_total`, `pid`, contadores, timestamps y `error` cuando existe; `phase=indexing` cubre el trabajo pesado y `phase=publishing` queda reservado para el cierre/publicacion final.
 - La politica comun de subprocessos no interactivos debe evitar UI extra; en Windows aplica `HideWindow + CREATE_NO_WINDOW`, y los procesos background del daemon agregan `DETACHED_PROCESS`.
 - La resolucion de bootstrap del worker usa el ejecutable/distribucion activa o, en desarrollo, el repo `mi-lsp`; nunca el `cwd` arbitrario del workspace consultado.
 - La distribucion publica canonica es un bundle por RID que incluye `mi-lsp(.exe)` y `workers/<rid>/`; una build desde source no redefine ese contrato de bootstrap.
@@ -117,7 +118,7 @@ El detalle por frontera vive en `09_contratos/`.
 - `index [path] [--clean] [--docs-only]`: wrapper compatible que espera a completar; indexa codigo + docs, o solo docs cuando `--docs-only` esta presente
 - `index start [path] [--mode full|docs|catalog] [--clean] [--wait]`: crea un job de indexacion; sin `--wait` lanza proceso detached y devuelve `job_id`
 - `index status [job-id]`: inspecciona el ultimo job o el job indicado
-- `index cancel <job-id> [--force]`: solicita cancelacion cooperativa; con `--force` termina el proceso vivo del job cuando existe
+- `index cancel <job-id> [--force]`: solicita cancelacion cooperativa; con `--force` termina el proceso vivo del job cuando existe y limpia el lock matching cuando el PID ya no esta vivo
 - `nav route <task>`: resuelve el documento canonico de anclaje y un mini reading pack con minimos tokens; si la tarea trae un `RF-*` embebido en un doc agregado, Tier 1 ancla el contenedor canonico; `--include-code-discovery` agrega discovery de codigo; `--full` expande canonical lane y discovery
 - `nav wiki search <query>`: busca en el docgraph gobernado con filtros `--layer RF,FL,TP,CT,TECH,DB`, paginacion `--top/--offset` y contenido opcional `--include-content`; la superficie textual directa `nav search` debe incluir docs gobernados y artefactos repo-locales ocultos cuando el repo use directorios hidden
 - `nav wiki route|pack|trace`: aliases documentales para agentes que reutilizan `nav route`, `nav pack` y `nav trace`

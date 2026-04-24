@@ -10,7 +10,10 @@ implements:
 tests:
   - internal/service/app_test.go
   - internal/store/store_test.go
+  - internal/store/index_jobs_test.go
   - internal/store/index_lock_test.go
+  - internal/indexer/indexer_progress_test.go
+  - internal/indexer/extractor_python_test.go
 ---
 
 # RF-IDX-001 - Construir y refrescar el indice repo-local
@@ -41,7 +44,7 @@ tests:
 3. La CLI crea un job durable y una generacion candidata en `index.db`.
 4. Si `--clean` esta activo, fuerza recomposicion completa del modo elegido, sin borrar `index.db` antes de construir el nuevo resultado.
 5. El walker enumera archivos y asigna ownership por `repo_id`.
-6. El extractor prepara `workspace_repos`, `workspace_entrypoints`, `FileRecord`, `SymbolRecord` y `WorkspaceMeta`.
+6. El extractor prepara `workspace_repos`, `workspace_entrypoints`, `FileRecord`, `SymbolRecord` y `WorkspaceMeta`, reportando progreso vivo durante loops largos de catalogo/docs.
 7. El indexador documental prepara `DocRecord`, `DocEdge` y `DocMention` a partir de `.docs/wiki`, `README*`, `docs/` y `.docs/`.
 8. El runtime publica catalogo, docs y memoria de reentrada en una unica transaccion SQLite para `mode=full`.
 9. La CLI devuelve job status, stats y warnings no fatales si encontro ruido, archivos sin match de repo o problemas de docs.
@@ -56,6 +59,7 @@ tests:
 | `warnings` | lista | usuario/skill | sugerencias de limpieza, ownership dudoso o problemas de docs |
 | `job_id` | string | usuario/skill | identificador durable para status/cancel |
 | `generation_id` | string | workspace_meta | generacion publicada o candidata |
+| `current_stage` / `current_path` / `files_total` | campos de job | usuario/skill | progreso vivo mientras el job corre |
 
 ## 5. Typed Errors
 
@@ -74,7 +78,8 @@ tests:
 - Los entrypoints auxiliares bajo `.docs/` o `template(s)` no deben convertirse en el default semantico solo por estar presentes en el repo.
 - El indice documental resuelve primero links markdown y doc IDs explicitos; las heuristicas solo completan contexto, no reemplazan trazabilidad explicita.
 - El indice nunca persiste refs profundas ni ASTs.
-- Para Python (`.py`, `.pyi`), el extractor usa tree-sitter pure Go (`gotreesitter`) en lugar de regex. Si el parsing falla, el archivo se omite sin error fatal.
+- Para Python (`.py`, `.pyi`), el extractor usa una pasada lexical acotada por lineas e indentacion. Prioriza catalogo navegable y cancelabilidad por archivo; formas no reconocidas quedan cubiertas por `nav search` textual o Pyright opcional.
+- `index cancel` sin `--force` marca `requested_cancel`; el worker debe detenerse cooperativamente al volver al loop de indexacion. `--force` queda como escape para procesos colgados y debe limpiar el lock asociado si el PID ya no vive.
 
 ## 7. Data Model Impact
 

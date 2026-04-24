@@ -48,6 +48,16 @@ type RFFrontMatter struct {
 	Tests      []string `yaml:"tests"`
 }
 
+type Progress struct {
+	Stage      string
+	Path       string
+	Docs       int
+	FilesTotal int
+	Force      bool
+}
+
+type ProgressFunc func(context.Context, Progress) error
+
 func ProfilePath(root string) string {
 	return filepath.Join(root, ".docs", "wiki", "_mi-lsp", "read-model.toml")
 }
@@ -133,9 +143,19 @@ func LoadProfile(root string) (model.DocsReadProfile, string, []string) {
 }
 
 func IndexWorkspaceDocs(ctx context.Context, root string, matcher *workspace.IgnoreMatcher) ([]model.DocRecord, []model.DocEdge, []model.DocMention, []string, error) {
+	return IndexWorkspaceDocsWithProgress(ctx, root, matcher, nil)
+}
+
+func IndexWorkspaceDocsWithProgress(ctx context.Context, root string, matcher *workspace.IgnoreMatcher, progress ProgressFunc) ([]model.DocRecord, []model.DocEdge, []model.DocMention, []string, error) {
 	profile, _, warnings := LoadProfile(root)
+	if err := reportProgress(ctx, progress, Progress{Stage: "docs.collect", Force: true}); err != nil {
+		return nil, nil, nil, warnings, err
+	}
 	candidates, err := collectDocCandidates(ctx, root, profile, matcher)
 	if err != nil {
+		return nil, nil, nil, warnings, err
+	}
+	if err := reportProgress(ctx, progress, Progress{Stage: "docs.read", FilesTotal: len(candidates), Force: true}); err != nil {
 		return nil, nil, nil, warnings, err
 	}
 	docs := make([]model.DocRecord, 0, len(candidates))
@@ -146,6 +166,9 @@ func IndexWorkspaceDocs(ctx context.Context, root string, matcher *workspace.Ign
 
 	for _, candidate := range candidates {
 		if err := ctx.Err(); err != nil {
+			return nil, nil, nil, warnings, err
+		}
+		if err := reportProgress(ctx, progress, Progress{Stage: "docs.read", Path: candidate.relativePath, Docs: len(docs), FilesTotal: len(candidates)}); err != nil {
 			return nil, nil, nil, warnings, err
 		}
 		content, err := os.ReadFile(candidate.path)
@@ -208,6 +231,9 @@ func IndexWorkspaceDocs(ctx context.Context, root string, matcher *workspace.Ign
 			edges = append(edges, edge)
 		}
 	}
+	if err := reportProgress(ctx, progress, Progress{Stage: "docs.read", Docs: len(docs), FilesTotal: len(candidates), Force: true}); err != nil {
+		return nil, nil, nil, warnings, err
+	}
 
 	for _, edge := range pendingDocIDEdges {
 		if path := seenDocID[edge.ToDocID]; path != "" {
@@ -226,6 +252,16 @@ func IndexWorkspaceDocs(ctx context.Context, root string, matcher *workspace.Ign
 		return docs[i].Family < docs[j].Family
 	})
 	return docs, edges, mentions, warnings, nil
+}
+
+func reportProgress(ctx context.Context, progress ProgressFunc, value Progress) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if progress == nil {
+		return nil
+	}
+	return progress(ctx, value)
 }
 
 type docCandidate struct {

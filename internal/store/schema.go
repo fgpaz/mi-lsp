@@ -122,6 +122,9 @@ CREATE TABLE IF NOT EXISTS index_jobs (
     clean INTEGER NOT NULL DEFAULT 0,
     status TEXT NOT NULL,
     phase TEXT NOT NULL DEFAULT '',
+    current_stage TEXT NOT NULL DEFAULT '',
+    current_path TEXT NOT NULL DEFAULT '',
+    files_total INTEGER NOT NULL DEFAULT 0,
     pid INTEGER NOT NULL DEFAULT 0,
     requested_cancel INTEGER NOT NULL DEFAULT 0,
     error TEXT,
@@ -200,6 +203,15 @@ END`,
 		return err
 	}
 	if err := ensureColumn(db, "index_jobs", "clean", "INTEGER NOT NULL DEFAULT 0"); err != nil {
+		return err
+	}
+	if err := ensureColumn(db, "index_jobs", "current_stage", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return err
+	}
+	if err := ensureColumn(db, "index_jobs", "current_path", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return err
+	}
+	if err := ensureColumn(db, "index_jobs", "files_total", "INTEGER NOT NULL DEFAULT 0"); err != nil {
 		return err
 	}
 

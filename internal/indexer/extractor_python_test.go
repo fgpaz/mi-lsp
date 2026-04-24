@@ -268,3 +268,57 @@ class Foo
 	}
 	t.Logf("Invalid syntax returned %d items", len(items))
 }
+
+func TestExtractPython_EmotionalRubricFixtureDoesNotHang(t *testing.T) {
+	repo := model.WorkspaceRepo{ID: "test", Name: "test-repo"}
+	content := []byte(`
+import logging
+import pytest
+from scripts.emotional_rubric import RUBRIC_VERSION, _BASE_PROMPT, _parse_layer3_fields
+
+
+def test_rubric_version_matches():
+    assert RUBRIC_VERSION == "v2.1-wave-t-26-iter2"
+
+
+def test_base_prompt_contains_antipatterns():
+    required = [
+        "EXCLAMACIONES",
+        "CHE_OPENER",
+        "CELEBRACION_UNILATERAL",
+        "QUESTIONS_CAP",
+        "OVER_ENTHUSIASM",
+        "EMOJIS_UNILATERAL",
+    ]
+    for name in required:
+        assert name in _BASE_PROMPT, f"anti-pattern {name} ausente"
+
+
+def test_parse_fail_global_voz_tono_defaults_to_fail(caplog):
+    caplog.set_level(logging.WARNING)
+    out = _parse_layer3_fields({"voseo_adherence": 1}, turn_id="t1")
+    assert out["global_voz_tono"] == 0
+`)
+
+	items := extractPython(repo, "tests/test_emotional_rubric.py", "testhash", content)
+
+	if len(items) != 3 {
+		t.Fatalf("expected 3 test functions, got %d: %#v", len(items), items)
+	}
+	for _, want := range []string{
+		"test_rubric_version_matches",
+		"test_base_prompt_contains_antipatterns",
+		"test_parse_fail_global_voz_tono_defaults_to_fail",
+	} {
+		found := false
+		for _, item := range items {
+			if item.Name == want && item.Kind == "function" {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Fatalf("function %s not found in %#v", want, items)
+		}
+	}
+}
