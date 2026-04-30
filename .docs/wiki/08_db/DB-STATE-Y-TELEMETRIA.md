@@ -79,6 +79,7 @@ Campos recomendados:
 - `started_at`
 - `last_used_at`
 - `status`
+- `runtime_key` se calcula como `backend_type::workspace_root::entrypoint_id`; no debe usar alias como identidad canonica porque multiples aliases pueden representar el mismo root.
 
 `access_events`
 - `id`
@@ -121,7 +122,7 @@ Campos recomendados:
 - `hint_code` puede caer al `coach.trigger` cuando no hubo `hint`/`next_hint` explicitos pero si existe guidance estructurado
 - `workspace_input` no debe reescribirse con el alias resuelto; el export tiene que distinguir input vacio de alias/path explicito
 - `workspace`, `workspace_alias` y `workspace_root` deben normalizarse desde el workspace resuelto, no desde el selector crudo
-- `runtime_key` debe existir tanto en filas daemonizadas como en filas directas/direct_fallback para mantener attribution consistente
+- `runtime_key` debe existir tanto en filas daemonizadas como en filas directas/direct_fallback para mantener attribution consistente por root/backend/entrypoint; `workspace_input` y `workspace_alias` preservan forensics de la invocacion.
 - `index.db` repo-local debe inicializarse con `PRAGMA journal_mode=WAL` y `PRAGMA busy_timeout`
 - la escritura catalog/docs/file-symbols debe quedar serializada por workspace para que watcher e index manual no peleen la misma DB
 - Nota: columnas agregadas via migration idempotente (`ALTER TABLE ... ADD COLUMN`); rows existentes quedan con DEFAULT 0 o `NULL` segun el schema de origen

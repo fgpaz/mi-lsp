@@ -59,8 +59,8 @@ La novedad de v1.3 es que el store repo-local persiste tambien el grafo document
 - El `read-model.toml` no se copia a SQLite; se usa en lectura y sus cambios disparan re-index completo del corpus documental.
 - `00_gobierno_documental.md` tampoco se persiste dentro de SQLite; su estado gobierna bloqueo/sync e invalida el indice cuando cambia.
 - El store global del daemon no duplica el catalogo repo-local; solo guarda supervision y telemetria.
-- `registry.toml` puede contener multiples aliases para un mismo root; `workspace list` debe preservar el alias registrado.
-- `runtime_snapshots` representan solamente runtimes observables del `daemon_run_id` vigente.
+- `registry.toml` puede contener multiples aliases para un mismo root; `workspace list` debe preservar el alias registrado y `workspace list --group-by-root` solo agrega una vista diagnostica.
+- `runtime_snapshots` representan solamente runtimes observables del `daemon_run_id` vigente y usan `runtime_key` canonico por `workspace_root + backend_type + entrypoint_id`.
 - `access_events` registran metadata y nunca payloads completos.
 - `workspace_input` guarda el selector crudo recibido; `workspace`, `workspace_alias` y `workspace_root` representan la identidad resuelta del workspace y no deben degradarse a `unscoped` si la operacion eligio un alias real.
 - `decision_json` existe para debugging causal local y debe permanecer sanitizado: sin `pattern` crudo, sin argv, sin snapshot completo del request y sin el texto/comandos completos del bloque `coach`.
@@ -72,7 +72,7 @@ La novedad de v1.3 es que el store repo-local persiste tambien el grafo document
 - La fila canonica de una request `route=daemon` la escribe el daemon.
 - Backpressure daemon-aware usa la telemetria existente: `error_kind=daemon`, `error_code=backpressure_busy`, `success=false` y warning `daemon/backpressure_busy`.
 - La CLI directa solo graba `access_events` cuando la request se sirve como `direct`, `direct_fallback` o falla antes de delegarse al daemon; esos eventos pueden llevar `daemon_run_id = NULL`.
-- `runtime_key` debe persistirse tambien en filas `route=direct` o `route=direct_fallback` para que `admin export` pueda atribuir uso de queries directas a un workspace/backend/entrypoint estable.
+- `runtime_key` debe persistirse tambien en filas `route=direct` o `route=direct_fallback` para que `admin export` pueda atribuir uso de queries directas a un workspace/backend/entrypoint estable, sin fragmentar por alias.
 - `result_count` representa los items emitidos en el envelope final; `warning_count` se persiste como contador explicito para que summary/CSV no dependan de re-hidratar `warnings_json`.
 - Filas duplicadas historicas de requests daemonizadas pueden existir como artefactos previos al fix de ownership de telemetria y deben tratarse como legacy hasta que la retencion las purgue.
 

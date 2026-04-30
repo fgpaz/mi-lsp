@@ -127,6 +127,8 @@ El detalle por frontera vive en `09_contratos/`.
 - `nav pack <task>`: construye un reading pack canonico con preview/full y anchors opcionales `--rf`, `--fl`, `--doc`
 - `nav search <pattern>`: si `--regex` lleva un patron invalido, el runtime puede reintentar como literal y devolver warning explicito en vez de error duro
 - `workspace status [--full] [--no-auto-sync]`: muestra estado de gobernanza/index y, en `--full`, el digest repo-local de memoria (`recent_canonical_changes`, `handoff`, `best_reentry`, `stale`); `--no-auto-sync` conserva la consulta read-only y reporta `governance_sync=stale` sin escribir `read-model.toml`; si `docs_index_ready=true` pero `index_ready=false`, debe explicitar que el corpus docs-only quedo util pero el catalogo de codigo sigue ausente
+- `workspace list`: conserva un item por alias registrado; `--group-by-root` cambia a modo diagnostico por root con `root`, `alias_count`, `aliases`, `canonical_alias`, `selection_reason`, `kind` y warnings, sin mutar registry.
+- `workspace doctor`: diagnostico read-only de registry/binario; reporta duplicate roots, stale paths, governance skips y shadowing potencial de `mi-lsp.exe`, y solo emite sugerencias.
 - cuando `--workspace` se omite, `nav ask`, `nav pack`, `nav governance`, `workspace status` y las queries directas equivalentes resuelven primero contra `caller_cwd`; si no hay match, pueden usar `last_workspace` con warning visible
 - `nav governance`: diagnostica perfil efectivo, sync, stale index y pasos de reparacion de gobernanza
 - `nav service`: resume evidencia observable de un servicio en un unico summary estructurado
@@ -145,6 +147,7 @@ El detalle por frontera vive en `09_contratos/`.
 - `nav ask --all-workspaces` / `nav search --all-workspaces` / `nav find --all-workspaces`: fan-out paralelo cross-workspace
 - `--no-auto-daemon` global flag: desactiva auto-start de daemon para queries semanticas
 - `daemon perf-smoke`: valida presupuesto de daemon y callers paralelos; falla el envelope si supera working set, private bytes o handles configurados
+- `scripts/release/regression-smoke.ps1`: ejecuta por alias, reporta por `status -> root -> alias`, separa `skipped` de `failed`, e incluye `unique_root_count`, `duplicate_root_count` y `aliases_per_root`.
 - `--axi` global flag / `MI_LSP_AXI=1`: fuerzan overlay AXI en superficies soportadas
 - `--classic` global flag: restaura modo clasico en superficies AXI-default y prevalece sobre el env
 - `--full` global flag: expande surfaces AXI efectivas sin cambiar routing ni semantica base

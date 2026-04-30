@@ -282,6 +282,32 @@ Reglas:
 
 ### Comandos del workspace
 
+#### `workspace list`
+
+Por default devuelve un item por alias registrado y conserva compatibilidad historica.
+
+`workspace list --group-by-root` devuelve grupos read-only:
+
+- `root`
+- `alias_count`
+- `aliases`
+- `canonical_alias`
+- `selection_reason`
+- `kind`
+- `warnings`
+
+La seleccion canonica es diagnostica; no elimina ni reescribe aliases.
+
+#### `workspace doctor`
+
+Diagnostico no mutante del registry y del binario activo:
+
+- duplicate roots
+- paths inaccesibles
+- governance skips
+- `path_first`, `current_executable` y posible `repo_root_binary`
+- comandos sugeridos solo como texto; nunca ejecuta `workspace remove`
+
 #### `workspace remove`
 
 Elimina un workspace registrado y limpia su estado:

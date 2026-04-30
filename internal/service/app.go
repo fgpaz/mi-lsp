@@ -64,7 +64,9 @@ func (a *App) Execute(ctx context.Context, request model.CommandRequest) (model.
 	case "workspace.scan":
 		envelope, err = a.workspaceScan()
 	case "workspace.list":
-		envelope, err = a.workspaceList()
+		envelope, err = a.workspaceList(request)
+	case "workspace.doctor":
+		envelope, err = a.workspaceDoctor()
 	case "workspace.status":
 		envelope, err = a.workspaceStatus(ctx, request)
 	case "workspace.remove":
@@ -164,7 +166,7 @@ func (a *App) normalizeWorkspaceRequest(request model.CommandRequest) (model.Com
 
 func operationRequiresWorkspaceResolution(request model.CommandRequest) bool {
 	switch request.Operation {
-	case "workspace.add", "workspace.init", "workspace.scan", "workspace.list", "workspace.remove", "workspace.warm", "worker.install", "worker.status":
+	case "workspace.add", "workspace.init", "workspace.scan", "workspace.list", "workspace.doctor", "workspace.remove", "workspace.warm", "worker.install", "worker.status":
 		return false
 	case "nav.find", "nav.search":
 		allWorkspaces, _ := request.Payload["all_workspaces"].(bool)

@@ -14,7 +14,7 @@ El detalle operativo y de subsistemas vive en `07_tech/`.
 | Shortcut `init` | Surface CLI | Core runtime | Detectar, registrar e indexar rapido el workspace actual |
 | AXI selective discovery mode | Overlay CLI | CLI surface | Home content-first, TOON default y disclosure preview/full solo en superficies donde reduce round-trips |
 | Daemon global | Proceso Go opcional | Runtime supervision | Compartir warm state entre terminales/agentes |
-| Runtime pool | Subsistema daemon | Runtime supervision | Mantener un runtime vivo por `(workspace, backend)` |
+| Runtime pool | Subsistema daemon | Runtime supervision | Mantener un runtime vivo por `(workspace_root, backend_type, entrypoint_id)` |
 | Worker Roslyn | Proceso .NET hijo | C# semantic backend | Semantica profunda C# |
 | Governance resolver | Subsistema Go | Query/runtime | Validar `00_gobierno_documental.md`, compilar perfil efectivo y proyectar `read-model.toml` |
 | Docgraph/read-model | Subsistema Go | Query/runtime | Rankear wiki, clasificar preguntas y conectar docs con codigo |
@@ -55,7 +55,7 @@ flowchart LR
     G --> CAT[TS catalog + ripgrep]
     G --> ASK[ask pipeline]
     G --> SV[Service exploration profile]
-    D --> RP[Runtime pool por workspace/backend]
+    D --> RP[Runtime pool por root/backend/entrypoint]
     RP --> RW[Roslyn worker]
     RP --> TW[tsserver opcional]
     RP --> PW[Pyright opcional]
@@ -87,8 +87,10 @@ flowchart LR
 - `index status` debe refrescar `updated_at` durante trabajos largos y exponer progreso vivo mediante `current_stage`, `current_path`, `files_total` y los contadores `files/symbols/docs`.
 - La publicacion full debe ser all-or-nothing: catalogo, docgraph y memoria de reentrada se reemplazan en una unica transaccion SQLite y solo entonces se publica la generacion activa.
 - `--clean` fuerza recomposicion/publicacion completa del modo elegido, pero no debe borrar `index.db` antes de caminar archivos; si el proceso muere antes del commit, la generacion activa anterior sigue disponible.
-- La unidad de warm state es un runtime por `(workspace_root, backend_type)`.
+- La unidad de warm state es un runtime por `(workspace_root, backend_type, entrypoint_id)`: aliases distintos del mismo root comparten runtime si apuntan al mismo backend/entrypoint, pero entrypoints distintos nunca se colapsan.
 - La unidad de file watching es `workspace_root` canonico; aliases duplicados no crean watchers adicionales.
+- `workspace list` conserva aliases como registros de primer nivel; `workspace list --group-by-root` agrega una vista diagnostica por root sin mutar `registry.toml`.
+- `workspace doctor` es read-only y solo sugiere limpieza: reporta duplicate roots, paths inaccesibles, governance skips y posible shadowing de binarios locales.
 - `watch_mode=lazy` es el default para proteger memoria/handles; `off` deshabilita watchers y `eager` es opt-in via CLI/env.
 - El daemon expone `daemon_process` y `watchers` en status/admin para presupuestos operativos (`working_set`, `private_bytes`, handles, threads, roots/dirs/eventos).
 - Requests pesadas daemon-aware se limitan con `MI_LSP_DAEMON_MAX_INFLIGHT` y devuelven `daemon/backpressure_busy` cuando se supera el limite.

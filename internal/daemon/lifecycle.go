@@ -357,9 +357,12 @@ func runtimeKey(workspace model.WorkspaceRegistration, request model.WorkerReque
 	if entrypoint == "" {
 		entrypoint = filepath.Base(strings.TrimSpace(workspace.Root))
 	}
-	workspaceScope := strings.TrimSpace(workspace.Name)
+	workspaceScope := canonicalWatcherRootKey(workspace.Root)
 	if workspaceScope == "" {
 		workspaceScope = strings.TrimSpace(workspace.Root)
+	}
+	if workspaceScope == "" {
+		workspaceScope = strings.TrimSpace(workspace.Name)
 	}
 	return normalizeBackendType(request.BackendType) + "::" + workspaceScope + "::" + entrypoint
 }

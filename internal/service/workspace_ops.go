@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -102,7 +103,11 @@ func (a *App) workspaceScan() (model.Envelope, error) {
 	return model.Envelope{Ok: true, Backend: "scanner", Items: items}, nil
 }
 
-func (a *App) workspaceList() (model.Envelope, error) {
+func (a *App) workspaceList(request model.CommandRequest) (model.Envelope, error) {
+	groupByRoot, _ := request.Payload["group_by_root"].(bool)
+	if groupByRoot {
+		return a.workspaceListGroupedByRoot()
+	}
 	workspaces, err := workspace.ListWorkspaces()
 	if err != nil {
 		return model.Envelope{}, err
@@ -118,6 +123,81 @@ func (a *App) workspaceList() (model.Envelope, error) {
 		items = append(items, workspaceSummaryItem(registration, project))
 	}
 	return model.Envelope{Ok: true, Backend: "registry", Items: items}, nil
+}
+
+func (a *App) workspaceListGroupedByRoot() (model.Envelope, error) {
+	groups, err := workspace.GroupWorkspacesByRoot()
+	if err != nil {
+		return model.Envelope{}, err
+	}
+	items := make([]map[string]any, 0, len(groups))
+	for _, group := range groups {
+		item := map[string]any{
+			"root":             group.Root,
+			"alias_count":      group.AliasCount,
+			"aliases":          group.Aliases,
+			"canonical_alias":  group.CanonicalAlias,
+			"selection_reason": group.SelectionReason,
+			"kind":             group.Kind,
+		}
+		if len(group.Warnings) > 0 {
+			item["warnings"] = group.Warnings
+		}
+		items = append(items, item)
+	}
+	return model.Envelope{Ok: true, Backend: "registry", Mode: "group-by-root", Items: items}, nil
+}
+
+func (a *App) workspaceDoctor() (model.Envelope, error) {
+	groups, err := workspace.GroupWorkspacesByRoot()
+	if err != nil {
+		return model.Envelope{}, err
+	}
+	items := make([]map[string]any, 0, len(groups)+1)
+	duplicateRootCount := 0
+	stalePathCount := 0
+	for _, group := range groups {
+		issues := append([]string{}, group.Warnings...)
+		suggestions := []string{}
+		if group.AliasCount > 1 {
+			duplicateRootCount++
+			suggestions = append(suggestions, "review aliases; remove only obsolete aliases explicitly with `mi-lsp workspace remove <alias>`")
+		}
+		if _, err := os.Stat(group.Root); err != nil {
+			stalePathCount++
+			suggestions = append(suggestions, "path is not accessible; verify mount/worktree before removing aliases")
+		}
+		governanceSkip := false
+		if governanceDoc := filepath.Join(group.Root, ".docs", "wiki", "00_gobierno_documental.md"); group.Root != "" {
+			if _, err := os.Stat(governanceDoc); err != nil {
+				governanceSkip = true
+				issues = appendStringIfMissing(issues, "governance skip: canonical governance doc not found")
+			}
+		}
+		items = append(items, map[string]any{
+			"root":             group.Root,
+			"alias_count":      group.AliasCount,
+			"aliases":          group.Aliases,
+			"canonical_alias":  group.CanonicalAlias,
+			"selection_reason": group.SelectionReason,
+			"kind":             group.Kind,
+			"governance_skip":  governanceSkip,
+			"issues":           issues,
+			"suggestions":      suggestions,
+		})
+	}
+	items = append(items, workspaceDoctorBinaryItem())
+	return model.Envelope{
+		Ok:      true,
+		Backend: "registry",
+		Mode:    "doctor",
+		Items:   items,
+		Stats: model.Stats{
+			Files:   len(groups),
+			Symbols: duplicateRootCount,
+			Ms:      int64(stalePathCount),
+		},
+	}, nil
 }
 
 func (a *App) workspaceStatus(ctx context.Context, request model.CommandRequest) (model.Envelope, error) {
@@ -289,4 +369,25 @@ func workspaceProfileHint(root string) string {
 		return ".docs/wiki/_mi-lsp/read-model.toml"
 	}
 	return "builtin-default"
+}
+
+func workspaceDoctorBinaryItem() map[string]any {
+	item := map[string]any{"kind": "binary_provenance"}
+	if exe, err := os.Executable(); err == nil {
+		item["current_executable"] = exe
+	}
+	if lookedUp, err := exec.LookPath("mi-lsp"); err == nil {
+		if abs, absErr := filepath.Abs(lookedUp); absErr == nil {
+			lookedUp = abs
+		}
+		item["path_first"] = lookedUp
+	}
+	if cwd, err := os.Getwd(); err == nil {
+		local := filepath.Join(cwd, "mi-lsp.exe")
+		if _, statErr := os.Stat(local); statErr == nil {
+			item["repo_root_binary"] = local
+			item["warning"] = "repo-root mi-lsp.exe exists and can shadow the installed CLI when the current directory is first on PATH"
+		}
+	}
+	return item
 }

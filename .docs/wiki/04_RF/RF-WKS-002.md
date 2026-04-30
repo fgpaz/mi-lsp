@@ -50,7 +50,8 @@
 | Codigo | Causa | Trigger | Respuesta esperada |
 |---|---|---|---|
 | `WKS_INVALID_PATH` | path no existe o no es directorio | path invalido | rechazar sin modificar registry |
-| `WKS_ALREADY_REGISTERED` | workspace ya registrado | alias conflicto | rechazar o sugerir --alias |
+| `WKS_ALREADY_REGISTERED` | mismo alias ya registrado con root incompatible | alias conflicto | rechazar o sugerir otro alias |
+| `WKS_DUPLICATE_ROOT_ALIAS` | multiples aliases apuntan al mismo root | alias distinto para root existente | permitir; `workspace list` preserva aliases y `workspace list --group-by-root`/`workspace doctor` diagnostican |
 | `WKS_INDEX_FAILED` | indexacion falla | IO error en index.db | registrar con warning, ok=true |
 
 ## 7. Special Cases and Variants
@@ -93,9 +94,19 @@ Scenario: Continuar si indexacion falla
 
 - Positivo: `TP-WKS / TC-WKS-006`
 - Positivo: `TP-WKS / TC-WKS-007`
+- Positivo: `TP-WKS / TC-WKS-017`
+- Positivo: `TP-WKS / TC-WKS-018`
+- Positivo: `TP-WKS / TC-WKS-019`
 - Negativo: `TP-WKS / TC-WKS-008`
 
-## 11. No Ambiguities Left
+## 11. Implementation Evidence
+
+- `internal/workspace/registry.go`: group-by-root read model over aliases without registry mutation.
+- `internal/service/workspace_ops.go`: `workspace list --group-by-root` and `workspace doctor` service behavior.
+- `internal/cli/workspace.go`: CLI flags and doctor command surface.
+- `internal/service/app_test.go`: grouped list and non-mutating doctor tests.
+
+## 12. No Ambiguities Left
 
 - Supuestos prohibidos:
   - no fallar globalmente si indexacion falla

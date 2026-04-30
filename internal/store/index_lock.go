@@ -34,6 +34,10 @@ func WithWorkspaceIndexLock(root string, operation string, fn func() error) erro
 }
 
 func RemoveWorkspaceIndexLockForPID(root string, pid int) (bool, error) {
+	return removeWorkspaceIndexLockForPID(root, pid, false)
+}
+
+func removeWorkspaceIndexLockForPID(root string, pid int, allowRunningProcess bool) (bool, error) {
 	if pid <= 0 {
 		return false, nil
 	}
@@ -42,7 +46,7 @@ func RemoveWorkspaceIndexLockForPID(root string, pid int) (bool, error) {
 	if info.PID != pid {
 		return false, nil
 	}
-	if processExists(info.PID) {
+	if !allowRunningProcess && processExists(info.PID) {
 		return false, nil
 	}
 	if err := os.Remove(lockPath); err != nil {

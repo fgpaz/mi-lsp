@@ -345,7 +345,10 @@ func CancelIndexJob(ctx context.Context, db *sql.DB, jobID string, force bool) (
 		return IndexJob{}, err
 	}
 	if job.PID > 0 {
-		if _, err := RemoveWorkspaceIndexLockForPID(job.WorkspaceRoot, job.PID); err != nil {
+		// On Unix, a killed child can remain visible as a zombie until its parent
+		// waits. Force-cancel already signaled the indexed PID, so remove the
+		// matching lock even if process probes still see that transient state.
+		if _, err := removeWorkspaceIndexLockForPID(job.WorkspaceRoot, job.PID, true); err != nil {
 			return IndexJob{}, err
 		}
 	}
