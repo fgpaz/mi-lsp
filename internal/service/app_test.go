@@ -878,6 +878,50 @@ func TestWorkspaceList_PreservesRegistryAliasesForSameRoot(t *testing.T) {
 	}
 }
 
+func TestWorkspaceListGroupByRootReportsDuplicateAliases(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+
+	root := t.TempDir()
+	if err := workspace.SaveProjectFile(root, model.ProjectFile{
+		Project: model.ProjectBlock{
+			Name:      "alias-two",
+			Languages: []string{"csharp"},
+			Kind:      model.WorkspaceKindSingle,
+		},
+	}); err != nil {
+		t.Fatalf("SaveProjectFile: %v", err)
+	}
+	for _, alias := range []string{"alias-one", "alias-two"} {
+		if _, err := workspace.RegisterWorkspace(alias, model.WorkspaceRegistration{Name: alias, Root: root, Languages: []string{"csharp"}, Kind: model.WorkspaceKindSingle}); err != nil {
+			t.Fatalf("RegisterWorkspace(%s): %v", alias, err)
+		}
+	}
+
+	app := New(root, nil)
+	env, err := app.Execute(context.Background(), model.CommandRequest{
+		Operation: "workspace.list",
+		Payload:   map[string]any{"group_by_root": true},
+	})
+	if err != nil {
+		t.Fatalf("workspace.list --group-by-root: %v", err)
+	}
+	items, ok := env.Items.([]map[string]any)
+	if !ok || len(items) != 1 {
+		t.Fatalf("items = %#v, want one root group", env.Items)
+	}
+	if items[0]["alias_count"] != 2 {
+		t.Fatalf("alias_count = %#v, want 2", items[0]["alias_count"])
+	}
+	if items[0]["canonical_alias"] != "alias-two" {
+		t.Fatalf("canonical_alias = %#v, want alias-two", items[0]["canonical_alias"])
+	}
+	if items[0]["selection_reason"] != "project.name" {
+		t.Fatalf("selection_reason = %#v, want project.name", items[0]["selection_reason"])
+	}
+}
+
 func createContainerWorkspaceFixture(t *testing.T, alias string) string {
 	t.Helper()
 	ensureWritableTestHome(t)

@@ -1,5 +1,32 @@
 # RF-QRY-015 - Reutilizar el motor de routing canonico internamente desde nav ask y nav pack
 
+```yaml
+harness_protocol: SDD-HARNESS-v1
+id: "RF-QRY-015"
+kind: "support-doc"
+audience: "llm-first"
+imports:
+  - '[[00_gobierno_documental]]'
+  - '[[RF-QRY-015]]'
+exports:
+  - 'RF-QRY-015'
+agent_must_read:
+  - .docs/wiki/00_gobierno_documental.md
+  - .docs/wiki/04_RF/RF-QRY-015.md
+agent_may_edit:
+  - .docs/wiki/04_RF/RF-QRY-015.md
+agent_must_not_edit:
+  - .docs/wiki/_mi-lsp/read-model.toml
+verify:
+  - mi-lsp nav governance --workspace mi-lsp --format toon
+  - mi-lsp nav wiki validate-harness --workspace mi-lsp --format toon
+stop_if:
+  - governance_blocked=true
+  - harness_verdict=BLOCKED
+evidence:
+  - .docs/wiki/04_RF/RF-QRY-015.md
+```
+
 ## Descripcion
 
 `nav ask` y `nav pack` deben reutilizar el mismo motor de routing canonico que `nav route` para la seleccion docs-first del documento primario, en vez de duplicar la logica de ranking y seleccion. Ese motor comparte tambien el scorer owner-aware y el override diagnostico `MI_LSP_DOC_RANKING=legacy`.

@@ -1,0 +1,50 @@
+[
+  {
+    "workspace": "ai-proxy",
+    "root": "C:\\repos\\buho\\ai-proxy",
+    "exit_code": 0,
+    "output": "{\r\n  \"ok\": true,\r\n  \"workspace\": \"ai-proxy\",\r\n  \"backend\": \"index-job\",\r\n  \"mode\": \"docs\",\r\n  \"items\": [\r\n    {\r\n      \"job_id\": \"idxjob-df5988c1298e5912\",\r\n      \"generation_id\": \"idxgen-6db5f0069715bbf1\",\r\n      \"workspace\": \"ai-proxy\",\r\n      \"workspace_root\": \"C:\\\\repos\\\\buho\\\\ai-proxy\",\r\n      \"mode\": \"docs\",\r\n      \"status\": \"succeeded\",\r\n      \"phase\": \"done\",\r\n      \"current_stage\": \"done\",\r\n      \"files_total\": 109,\r\n      \"pid\": 35924,\r\n      \"files\": 109,\r\n      \"docs\": 109,\r\n      \"created_at\": \"2026-04-24T16:50:14.9845463Z\",\r\n      \"started_at\": \"2026-04-24T16:50:15.0008139Z\",\r\n      \"finished_at\": \"2026-04-24T16:50:16.2151665Z\",\r\n      \"updated_at\": \"2026-04-24T16:50:16.2151665Z\"\r\n    }\r\n  ],\r\n  \"truncated\": false,\r\n  \"stats\": {\r\n    \"files\": 109,\r\n    \"ms\": 1213\r\n  },\r\n  \"warnings\": [\r\n    \"docs_only=true\"\r\n  ]\r\n}"
+  },
+  {
+    "workspace": "buho-digitalizacion",
+    "root": "C:\\repos\\buho\\digitalizacion",
+    "exit_code": 0,
+    "output": "{\r\n  \"ok\": true,\r\n  \"workspace\": \"buho-digitalizacion\",\r\n  \"backend\": \"index-job\",\r\n  \"mode\": \"docs\",\r\n  \"items\": [\r\n    {\r\n      \"job_id\": \"idxjob-0e71e9505fb43da0\",\r\n      \"generation_id\": \"idxgen-1304b713cd8cdb4f\",\r\n      \"workspace\": \"buho-digitalizacion\",\r\n      \"workspace_root\": \"C:\\\\repos\\\\buho\\\\digitalizacion\",\r\n      \"mode\": \"docs\",\r\n      \"status\": \"succeeded\",\r\n      \"phase\": \"done\",\r\n      \"current_stage\": \"done\",\r\n      \"files_total\": 400,\r\n      \"pid\": 25780,\r\n      \"files\": 400,\r\n      \"docs\": 400,\r\n      \"created_at\": \"2026-04-24T16:50:16.344658Z\",\r\n      \"started_at\": \"2026-04-24T16:50:16.3578415Z\",\r\n      \"finished_at\": \"2026-04-24T16:50:21.4464698Z\",\r\n      \"updated_at\": \"2026-04-24T16:50:21.4464698Z\"\r\n    }\r\n  ],\r\n  \"truncated\": false,\r\n  \"stats\": {\r\n    \"files\": 400,\r\n    \"ms\": 5086\r\n  },\r\n  \"warnings\": [\r\n    \"docs_only=true\"\r\n  ]\r\n}"
+  },
+  {
+    "workspace": "bootstrap-dev",
+    "root": "C:\\repos\\buho\\salud",
+    "exit_code": 0,
+    "output": "{\r\n  \"ok\": true,\r\n  \"workspace\": \"bootstrap-dev\",\r\n  \"backend\": \"index-job\",\r\n  \"mode\": \"docs\",\r\n  \"items\": [\r\n    {\r\n      \"job_id\": \"idxjob-b006d4e442396dc4\",\r\n      \"generation_id\": \"idxgen-19d401dfcf45ad7d\",\r\n      \"workspace\": \"bootstrap-dev\",\r\n      \"workspace_root\": \"C:\\\\repos\\\\buho\\\\salud\",\r\n      \"mode\": \"docs\",\r\n      \"status\": \"succeeded\",\r\n      \"phase\": \"done\",\r\n      \"current_stage\": \"done\",\r\n      \"files_total\": 2553,\r\n      \"pid\": 27332,\r\n      \"files\": 2553,\r\n      \"docs\": 2553,\r\n      \"created_at\": \"2026-04-24T16:50:21.6008668Z\",\r\n      \"started_at\": \"2026-04-24T16:50:21.6175973Z\",\r\n      \"finished_at\": \"2026-04-24T16:51:19.0474232Z\",\r\n      \"updated_at\": \"2026-04-24T16:51:19.0474232Z\"\r\n    }\r\n  ],\r\n  \"truncated\": false,\r\n  \"stats\": {\r\n    \"files\": 2553,\r\n    \"ms\": 57424\r\n  },\r\n  \"warnings\": [\r\n    \"docs_only=true\"\r\n  ]\r\n}"
+  },
+  {
+    "workspace": "gastos",
+    "root": "C:\\repos\\mios\\gastos",
+    "exit_code": 0,
+    "output": "{\r\n  \"ok\": true,\r\n  \"workspace\": \"gastos\",\r\n  \"backend\": \"index-job\",\r\n  \"mode\": \"docs\",\r\n  \"items\": [\r\n    {\r\n      \"job_id\": \"idxjob-2a63ef9a9c410881\",\r\n      \"generation_id\": \"idxgen-3f26c998875d3601\",\r\n      \"workspace\": \"gastos\",\r\n      \"workspace_root\": \"C:\\\\repos\\\\mios\\\\gastos\",\r\n      \"mode\": \"docs\",\r\n      \"status\": \"succeeded\",\r\n      \"phase\": \"done\",\r\n      \"current_stage\": \"done\",\r\n      \"files_total\": 567,\r\n      \"pid\": 24836,\r\n      \"files\": 567,\r\n      \"docs\": 567,\r\n      \"created_at\": \"2026-04-24T16:51:19.2143866Z\",\r\n      \"started_at\": \"2026-04-24T16:51:19.2331922Z\",\r\n      \"finished_at\": \"2026-04-24T16:51:27.532443Z\",\r\n      \"updated_at\": \"2026-04-24T16:51:27.532443Z\"\r\n    }\r\n  ],\r\n  \"truncated\": false,\r\n  \"stats\": {\r\n    \"files\": 567,\r\n    \"ms\": 8294\r\n  },\r\n  \"warnings\": [\r\n    \"docs_only=true\"\r\n  ]\r\n}"
+  },
+  {
+    "workspace": "bitacora",
+    "root": "C:\\repos\\mios\\humor",
+    "exit_code": 0,
+    "output": "{\r\n  \"ok\": true,\r\n  \"workspace\": \"bitacora\",\r\n  \"backend\": \"index-job\",\r\n  \"mode\": \"docs\",\r\n  \"items\": [\r\n    {\r\n      \"job_id\": \"idxjob-1e968030123911a8\",\r\n      \"generation_id\": \"idxgen-b0f9ac96eadf96b0\",\r\n      \"workspace\": \"bitacora\",\r\n      \"workspace_root\": \"C:\\\\repos\\\\mios\\\\humor\",\r\n      \"mode\": \"docs\",\r\n      \"status\": \"succeeded\",\r\n      \"phase\": \"done\",\r\n      \"current_stage\": \"done\",\r\n      \"files_total\": 513,\r\n      \"pid\": 34948,\r\n      \"files\": 513,\r\n      \"docs\": 513,\r\n      \"created_at\": \"2026-04-24T16:51:27.6786128Z\",\r\n      \"started_at\": \"2026-04-24T16:51:27.697044Z\",\r\n      \"finished_at\": \"2026-04-24T16:51:34.2032313Z\",\r\n      \"updated_at\": \"2026-04-24T16:51:34.2032313Z\"\r\n    }\r\n  ],\r\n  \"truncated\": false,\r\n  \"stats\": {\r\n    \"files\": 513,\r\n    \"ms\": 6502\r\n  },\r\n  \"warnings\": [\r\n    \"docs_only=true\"\r\n  ]\r\n}"
+  },
+  {
+    "workspace": "idp",
+    "root": "C:\\repos\\mios\\idp",
+    "exit_code": 0,
+    "output": "{\r\n  \"ok\": true,\r\n  \"workspace\": \"idp\",\r\n  \"backend\": \"index-job\",\r\n  \"mode\": \"docs\",\r\n  \"items\": [\r\n    {\r\n      \"job_id\": \"idxjob-8f1f0c72d8e774ed\",\r\n      \"generation_id\": \"idxgen-3d0e00f9b04125ee\",\r\n      \"workspace\": \"idp\",\r\n      \"workspace_root\": \"C:\\\\repos\\\\mios\\\\idp\",\r\n      \"mode\": \"docs\",\r\n      \"status\": \"succeeded\",\r\n      \"phase\": \"done\",\r\n      \"current_stage\": \"done\",\r\n      \"files_total\": 78,\r\n      \"pid\": 34996,\r\n      \"files\": 78,\r\n      \"docs\": 78,\r\n      \"created_at\": \"2026-04-24T16:51:34.3360582Z\",\r\n      \"started_at\": \"2026-04-24T16:51:34.3522675Z\",\r\n      \"finished_at\": \"2026-04-24T16:51:35.5136339Z\",\r\n      \"updated_at\": \"2026-04-24T16:51:35.5136339Z\"\r\n    }\r\n  ],\r\n  \"truncated\": false,\r\n  \"stats\": {\r\n    \"files\": 78,\r\n    \"ms\": 1158\r\n  },\r\n  \"warnings\": [\r\n    \"docs_only=true\"\r\n  ]\r\n}"
+  },
+  {
+    "workspace": "mi-key-cli",
+    "root": "C:\\repos\\mios\\mi-key-cli",
+    "exit_code": 0,
+    "output": "{\r\n  \"ok\": true,\r\n  \"workspace\": \"mi-key-cli\",\r\n  \"backend\": \"index-job\",\r\n  \"mode\": \"docs\",\r\n  \"items\": [\r\n    {\r\n      \"job_id\": \"idxjob-1820f7c6d74b0069\",\r\n      \"generation_id\": \"idxgen-457a1af7ef32f111\",\r\n      \"workspace\": \"mi-key-cli\",\r\n      \"workspace_root\": \"C:\\\\repos\\\\mios\\\\mi-key-cli\",\r\n      \"mode\": \"docs\",\r\n      \"status\": \"succeeded\",\r\n      \"phase\": \"done\",\r\n      \"current_stage\": \"done\",\r\n      \"files_total\": 111,\r\n      \"pid\": 5732,\r\n      \"files\": 111,\r\n      \"docs\": 111,\r\n      \"created_at\": \"2026-04-24T16:51:35.6867377Z\",\r\n      \"started_at\": \"2026-04-24T16:51:35.7064982Z\",\r\n      \"finished_at\": \"2026-04-24T16:51:36.9002842Z\",\r\n      \"updated_at\": \"2026-04-24T16:51:36.9002842Z\"\r\n    }\r\n  ],\r\n  \"truncated\": false,\r\n  \"stats\": {\r\n    \"files\": 111,\r\n    \"ms\": 1193\r\n  },\r\n  \"warnings\": [\r\n    \"docs_only=true\"\r\n  ]\r\n}"
+  },
+  {
+    "workspace": "coelsa",
+    "root": "C:\\repos\\sandinas\\interbancarizacion_coelsa",
+    "exit_code": 0,
+    "output": "{\r\n  \"ok\": true,\r\n  \"workspace\": \"coelsa\",\r\n  \"backend\": \"index-job\",\r\n  \"mode\": \"docs\",\r\n  \"items\": [\r\n    {\r\n      \"job_id\": \"idxjob-b3c1162ba9c0ef21\",\r\n      \"generation_id\": \"idxgen-602484f129912f60\",\r\n      \"workspace\": \"coelsa\",\r\n      \"workspace_root\": \"C:\\\\repos\\\\sandinas\\\\interbancarizacion_coelsa\",\r\n      \"mode\": \"docs\",\r\n      \"status\": \"succeeded\",\r\n      \"phase\": \"done\",\r\n      \"current_stage\": \"done\",\r\n      \"files_total\": 707,\r\n      \"pid\": 30140,\r\n      \"files\": 707,\r\n      \"docs\": 707,\r\n      \"created_at\": \"2026-04-24T16:51:37.0426038Z\",\r\n      \"started_at\": \"2026-04-24T16:51:37.0695099Z\",\r\n      \"finished_at\": \"2026-04-24T16:51:50.8011683Z\",\r\n      \"updated_at\": \"2026-04-24T16:51:50.8011683Z\"\r\n    }\r\n  ],\r\n  \"truncated\": false,\r\n  \"stats\": {\r\n    \"files\": 707,\r\n    \"ms\": 13728\r\n  },\r\n  \"warnings\": [\r\n    \"docs_only=true\"\r\n  ]\r\n}"
+  }
+]

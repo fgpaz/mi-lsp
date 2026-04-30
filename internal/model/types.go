@@ -12,20 +12,21 @@ const (
 )
 
 type QueryOptions struct {
-	Workspace   string `json:"workspace,omitempty"`
-	CallerCWD   string `json:"caller_cwd,omitempty"`
-	Format      string `json:"format,omitempty"`
-	TokenBudget int    `json:"token_budget,omitempty"`
-	MaxItems    int    `json:"max_items,omitempty"`
-	MaxChars    int    `json:"max_chars,omitempty"`
-	Offset      int    `json:"offset,omitempty"`
-	AXI         bool   `json:"axi,omitempty"`
-	Full        bool   `json:"full,omitempty"`
-	Verbose     bool   `json:"verbose,omitempty"`
-	ClientName  string `json:"client_name,omitempty"`
-	SessionID   string `json:"session_id,omitempty"`
-	BackendHint string `json:"backend_hint,omitempty"`
-	Compress    bool   `json:"compress,omitempty"`
+	Workspace       string `json:"workspace,omitempty"`
+	WorkspaceSource string `json:"workspace_source,omitempty"`
+	CallerCWD       string `json:"caller_cwd,omitempty"`
+	Format          string `json:"format,omitempty"`
+	TokenBudget     int    `json:"token_budget,omitempty"`
+	MaxItems        int    `json:"max_items,omitempty"`
+	MaxChars        int    `json:"max_chars,omitempty"`
+	Offset          int    `json:"offset,omitempty"`
+	AXI             bool   `json:"axi,omitempty"`
+	Full            bool   `json:"full,omitempty"`
+	Verbose         bool   `json:"verbose,omitempty"`
+	ClientName      string `json:"client_name,omitempty"`
+	SessionID       string `json:"session_id,omitempty"`
+	BackendHint     string `json:"backend_hint,omitempty"`
+	Compress        bool   `json:"compress,omitempty"`
 }
 
 type Stats struct {
@@ -149,18 +150,111 @@ type DocRecord struct {
 	IsSnapshot  bool   `json:"is_snapshot,omitempty"`
 }
 
+type WikiLookupStatus struct {
+	Query          string `json:"query,omitempty"`
+	Workspace      string `json:"workspace,omitempty"`
+	IndexFreshness string `json:"index_freshness,omitempty"`
+	GovernanceSync string `json:"governance_sync,omitempty"`
+	MatchKind      string `json:"match_kind,omitempty"`
+	DocID          string `json:"doc_id,omitempty"`
+	BlockID        string `json:"block_id,omitempty"`
+	RecordID       string `json:"record_id,omitempty"`
+	Path           string `json:"path,omitempty"`
+	Layer          string `json:"layer,omitempty"`
+	Stage          string `json:"stage,omitempty"`
+	RankReason     string `json:"rank_reason,omitempty"`
+	TotalMatches   int    `json:"total_matches,omitempty"`
+	ShownMatches   int    `json:"shown_matches,omitempty"`
+	Reason         string `json:"reason,omitempty"`
+	NextHint       string `json:"next_hint,omitempty"`
+}
+
 type WikiSearchResult struct {
-	DocID       string   `json:"doc_id,omitempty"`
-	Path        string   `json:"path"`
-	Title       string   `json:"title,omitempty"`
-	Layer       string   `json:"layer,omitempty"`
-	Family      string   `json:"family,omitempty"`
-	Stage       string   `json:"stage,omitempty"`
-	Score       int      `json:"score,omitempty"`
-	Why         []string `json:"why,omitempty"`
-	Snippet     string   `json:"snippet,omitempty"`
-	Content     string   `json:"content,omitempty"`
-	NextQueries []string `json:"next_queries,omitempty"`
+	DocID        string            `json:"doc_id,omitempty"`
+	Path         string            `json:"path"`
+	Title        string            `json:"title,omitempty"`
+	Layer        string            `json:"layer,omitempty"`
+	Family       string            `json:"family,omitempty"`
+	Stage        string            `json:"stage,omitempty"`
+	Score        int               `json:"score,omitempty"`
+	Why          []string          `json:"why,omitempty"`
+	Snippet      string            `json:"snippet,omitempty"`
+	Content      string            `json:"content,omitempty"`
+	NextQueries  []string          `json:"next_queries,omitempty"`
+	LookupStatus *WikiLookupStatus `json:"lookup_status,omitempty"`
+}
+
+type HarnessValidationResult struct {
+	HarnessProtocol            string   `json:"harness_protocol"`
+	HarnessReadiness           string   `json:"harness_readiness"`
+	HarnessVerdict             string   `json:"harness_verdict"`
+	HarnessBlockers            []string `json:"harness_blockers,omitempty"`
+	HarnessWarnings            []string `json:"harness_warnings,omitempty"`
+	HarnessContractsReviewed   int      `json:"harness_contracts_reviewed"`
+	HarnessLinksReviewed       int      `json:"harness_links_reviewed"`
+	HarnessEvidenceRequired    []string `json:"harness_evidence_required,omitempty"`
+	HarnessEvidenceFound       []string `json:"harness_evidence_found,omitempty"`
+	HarnessDocsMissingContract []string `json:"harness_docs_missing_contract,omitempty"`
+	HarnessDocsUnknownAudience []string `json:"harness_docs_unknown_audience,omitempty"`
+}
+
+type WikiSourceValidationResult struct {
+	WikiSourceProtocol          string                         `json:"wiki_source_protocol"`
+	IndexFreshness              string                         `json:"index_freshness,omitempty"`
+	GovernanceSync              string                         `json:"governance_sync,omitempty"`
+	WikiSourceReadiness         string                         `json:"wiki_source_readiness"`
+	WikiSourceVerdict           string                         `json:"wiki_source_verdict"`
+	WikiSourceBlockers          []string                       `json:"wiki_source_blockers,omitempty"`
+	WikiSourceWarnings          []string                       `json:"wiki_source_warnings,omitempty"`
+	WikiSourceArtifactsReviewed int                            `json:"wiki_source_artifacts_reviewed"`
+	WikiSourceBlocksReviewed    int                            `json:"wiki_source_blocks_reviewed"`
+	WikiSourceRecordsReviewed   int                            `json:"wiki_source_records_reviewed"`
+	WikiSourceTablesReviewed    int                            `json:"wiki_source_tables_reviewed"`
+	NavigationReadiness         string                         `json:"navigation_readiness"`
+	NavigationBlockers          []string                       `json:"navigation_blockers,omitempty"`
+	Documents                   []WikiSourceDocumentValidation `json:"documents,omitempty"`
+}
+
+type WikiSourceDocumentValidation struct {
+	DocID              string                       `json:"doc_id,omitempty"`
+	Path               string                       `json:"path"`
+	SourceProtocol     string                       `json:"source_protocol,omitempty"`
+	HarnessProtocol    string                       `json:"harness_protocol,omitempty"`
+	Audience           string                       `json:"audience,omitempty"`
+	Imports            []string                     `json:"imports,omitempty"`
+	Exports            []string                     `json:"exports,omitempty"`
+	TablesReviewed     int                          `json:"tables_reviewed"`
+	Exceptions         []string                     `json:"exceptions,omitempty"`
+	Severity           string                       `json:"severity,omitempty"`
+	Verdict            string                       `json:"verdict"`
+	Evidence           []string                     `json:"evidence,omitempty"`
+	Blocks             []WikiSourceBlockValidation  `json:"blocks,omitempty"`
+	Records            []WikiSourceRecordValidation `json:"records,omitempty"`
+	Blockers           []string                     `json:"blockers,omitempty"`
+	Warnings           []string                     `json:"warnings,omitempty"`
+	NavigationBlockers []string                     `json:"navigation_blockers,omitempty"`
+}
+
+type WikiSourceBlockValidation struct {
+	BlockID       string   `json:"block_id,omitempty"`
+	Kind          string   `json:"kind,omitempty"`
+	SourceOfTruth string   `json:"source_of_truth,omitempty"`
+	Verify        []string `json:"verify,omitempty"`
+	Evidence      []string `json:"evidence,omitempty"`
+	Severity      string   `json:"severity,omitempty"`
+	Verdict       string   `json:"verdict,omitempty"`
+	StartLine     int      `json:"start_line,omitempty"`
+	EndLine       int      `json:"end_line,omitempty"`
+}
+
+type WikiSourceRecordValidation struct {
+	ID        string `json:"id,omitempty"`
+	Type      string `json:"type,omitempty"`
+	BlockID   string `json:"block_id,omitempty"`
+	Severity  string `json:"severity,omitempty"`
+	Verdict   string `json:"verdict,omitempty"`
+	StartLine int    `json:"start_line,omitempty"`
+	EndLine   int    `json:"end_line,omitempty"`
 }
 
 type DocEdge struct {
@@ -175,6 +269,31 @@ type DocMention struct {
 	DocPath      string `json:"doc_path"`
 	MentionType  string `json:"mention_type"`
 	MentionValue string `json:"mention_value"`
+}
+
+type DocSourceBlock struct {
+	DocPath      string `json:"doc_path"`
+	BlockID      string `json:"block_id"`
+	DocID        string `json:"doc_id,omitempty"`
+	Kind         string `json:"kind,omitempty"`
+	SourceFormat string `json:"source_format"`
+	Ordinal      int    `json:"ordinal"`
+	StartLine    int    `json:"start_line"`
+	EndLine      int    `json:"end_line"`
+	ContentHash  string `json:"content_hash,omitempty"`
+	IndexedAt    int64  `json:"indexed_at,omitempty"`
+}
+
+type DocSourceRecord struct {
+	DocPath     string `json:"doc_path"`
+	BlockID     string `json:"block_id"`
+	RecordID    string `json:"record_id"`
+	RecordType  string `json:"record_type,omitempty"`
+	Ordinal     int    `json:"ordinal"`
+	StartLine   int    `json:"start_line"`
+	EndLine     int    `json:"end_line"`
+	ContentHash string `json:"content_hash,omitempty"`
+	IndexedAt   int64  `json:"indexed_at,omitempty"`
 }
 
 type DocsReadProfile struct {
@@ -329,13 +448,14 @@ type PackDoc struct {
 }
 
 type PackResult struct {
-	Task        string    `json:"task,omitempty"`
-	Family      string    `json:"family,omitempty"`
-	Mode        string    `json:"mode,omitempty"`
-	PrimaryDoc  string    `json:"primary_doc,omitempty"`
-	Docs        []PackDoc `json:"docs,omitempty"`
-	Why         []string  `json:"why,omitempty"`
-	NextQueries []string  `json:"next_queries,omitempty"`
+	Task         string            `json:"task,omitempty"`
+	Family       string            `json:"family,omitempty"`
+	Mode         string            `json:"mode,omitempty"`
+	PrimaryDoc   string            `json:"primary_doc,omitempty"`
+	Docs         []PackDoc         `json:"docs,omitempty"`
+	Why          []string          `json:"why,omitempty"`
+	NextQueries  []string          `json:"next_queries,omitempty"`
+	LookupStatus *WikiLookupStatus `json:"lookup_status,omitempty"`
 }
 
 type WorkspaceRegistration struct {
@@ -530,17 +650,18 @@ type TraceDrift struct {
 
 // TraceResult represents the traceability result for a single RS/RF/TP doc ID.
 type TraceResult struct {
-	DocID    string       `json:"doc_id,omitempty"`
-	Layer    string       `json:"layer,omitempty"`
-	Stage    string       `json:"stage,omitempty"`
-	RF       string       `json:"rf,omitempty"`
-	Title    string       `json:"title"`
-	Status   string       `json:"status"`   // "implemented" | "partial" | "missing"
-	Coverage float64      `json:"coverage"` // 0.0 - 1.0
-	Explicit []TraceLink  `json:"explicit"`
-	Inferred []TraceLink  `json:"inferred"`
-	Tests    []TraceLink  `json:"tests"`
-	Drift    []TraceDrift `json:"drift"`
+	DocID        string            `json:"doc_id,omitempty"`
+	Layer        string            `json:"layer,omitempty"`
+	Stage        string            `json:"stage,omitempty"`
+	RF           string            `json:"rf,omitempty"`
+	Title        string            `json:"title"`
+	Status       string            `json:"status"`   // "implemented" | "partial" | "missing"
+	Coverage     float64           `json:"coverage"` // 0.0 - 1.0
+	Explicit     []TraceLink       `json:"explicit"`
+	Inferred     []TraceLink       `json:"inferred"`
+	Tests        []TraceLink       `json:"tests"`
+	Drift        []TraceDrift      `json:"drift"`
+	LookupStatus *WikiLookupStatus `json:"lookup_status,omitempty"`
 }
 
 // RouteDoc is a single document in a canonical or discovery route lane.
@@ -574,11 +695,12 @@ type RouteDiscoveryLane struct {
 // RouteResult is the output of nav.route and the shared route core.
 // Canonical lane is authoritative; discovery lane is advisory-only.
 type RouteResult struct {
-	Task      string              `json:"task,omitempty"`
-	Mode      string              `json:"mode,omitempty"` // "preview" | "full"
-	Canonical RouteCanonicalLane  `json:"canonical"`
-	Discovery *RouteDiscoveryLane `json:"discovery,omitempty"`
-	Why       []string            `json:"why,omitempty"`
+	Task         string              `json:"task,omitempty"`
+	Mode         string              `json:"mode,omitempty"` // "preview" | "full"
+	Canonical    RouteCanonicalLane  `json:"canonical"`
+	Discovery    *RouteDiscoveryLane `json:"discovery,omitempty"`
+	Why          []string            `json:"why,omitempty"`
+	LookupStatus *WikiLookupStatus   `json:"lookup_status,omitempty"`
 }
 
 // ProjectConfig is a semantic alias of ProjectFile for traceability with 05_modelo_datos.md.

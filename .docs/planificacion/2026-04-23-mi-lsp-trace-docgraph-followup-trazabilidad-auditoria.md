@@ -1,5 +1,32 @@
 # mi-lsp trace/docgraph follow-up - Trazabilidad y auditoria
 
+```yaml
+harness_protocol: SDD-HARNESS-v1
+id: "2026-04-23-mi-lsp-trace-docgraph-followup-trazabilidad-auditoria"
+kind: "support-doc"
+audience: "dual"
+imports:
+  - '[[00_gobierno_documental]]'
+  - '.docs/planificacion/2026-04-23-mi-lsp-trace-docgraph-followup-trazabilidad-auditoria.md'
+exports:
+  - '2026-04-23-mi-lsp-trace-docgraph-followup-trazabilidad-auditoria'
+agent_must_read:
+  - .docs/wiki/00_gobierno_documental.md
+  - .docs/planificacion/2026-04-23-mi-lsp-trace-docgraph-followup-trazabilidad-auditoria.md
+agent_may_edit:
+  - .docs/planificacion/2026-04-23-mi-lsp-trace-docgraph-followup-trazabilidad-auditoria.md
+agent_must_not_edit:
+  - .docs/wiki/_mi-lsp/read-model.toml
+verify:
+  - mi-lsp nav governance --workspace mi-lsp --format toon
+  - mi-lsp nav wiki validate-harness --workspace mi-lsp --format toon
+stop_if:
+  - governance_blocked=true
+  - harness_verdict=BLOCKED
+evidence:
+  - .docs/planificacion/2026-04-23-mi-lsp-trace-docgraph-followup-trazabilidad-auditoria.md
+```
+
 Fecha de ejecucion: `2026-04-23`
 
 ## Contexto y criterio de cierre

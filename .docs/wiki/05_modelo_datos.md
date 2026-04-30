@@ -1,5 +1,32 @@
 # 5. Modelo de datos
 
+```yaml
+harness_protocol: SDD-HARNESS-v1
+id: "05_modelo_datos"
+kind: "support-doc"
+audience: "dual"
+imports:
+  - '[[00_gobierno_documental]]'
+  - '.docs/wiki/05_modelo_datos.md'
+exports:
+  - '05_modelo_datos'
+agent_must_read:
+  - .docs/wiki/00_gobierno_documental.md
+  - .docs/wiki/05_modelo_datos.md
+agent_may_edit:
+  - .docs/wiki/05_modelo_datos.md
+agent_must_not_edit:
+  - .docs/wiki/_mi-lsp/read-model.toml
+verify:
+  - mi-lsp nav governance --workspace mi-lsp --format toon
+  - mi-lsp nav wiki validate-harness --workspace mi-lsp --format toon
+stop_if:
+  - governance_blocked=true
+  - harness_verdict=BLOCKED
+evidence:
+  - .docs/wiki/05_modelo_datos.md
+```
+
 ## Proposito
 
 `mi-lsp` modela estado operativo local, no un dominio de negocio tradicional.
@@ -18,6 +45,8 @@ La novedad canonica de v1.3 es distinguir workspaces `single` de workspaces `con
 | DocRecord | Derivada | Doc indexer | `<repo>/.mi-lsp/index.db` | Documento indexado con `path`, `doc_id`, `layer`, `family` y texto de ranking |
 | DocEdge | Derivada | Doc indexer | `<repo>/.mi-lsp/index.db` | Relacion explicita documento -> documento por doc ID o link markdown |
 | DocMention | Derivada | Doc indexer | `<repo>/.mi-lsp/index.db` | Menciones explicitas desde docs hacia paths, simbolos o comandos |
+| DocSourceBlock | Derivada | Doc indexer | `<repo>/.mi-lsp/index.db` | Bloque `toon` normativo de un artefacto `SDD-WIKI-SOURCE-v1`, con `block_id`, `doc_id`, lineas y hash |
+| DocSourceRecord | Derivada | Doc indexer | `<repo>/.mi-lsp/index.db` | Record referenciable dentro de un bloque fuente, con `record_id`, `record_type`, lineas y hash |
 | GovernanceSource | Operativa local | Maintainer de wiki | `<repo>/.docs/wiki/00_gobierno_documental.md` | Bloque YAML fuente que define perfil, jerarquia, cadenas y reglas de bloqueo |
 | GovernanceStatus | Derivada | CLI/Core | Respuesta en memoria | Estado efectivo de gobernanza: perfil, sync, bloqueos, overlays y pasos de reparacion |
 | DocsReadProfile | Operativa local | Maintainer de wiki | `<repo>/.docs/wiki/_mi-lsp/read-model.toml` | Perfil opcional que clasifica familias, paths y fallback documental |
@@ -45,7 +74,7 @@ La novedad canonica de v1.3 es distinguir workspaces `single` de workspaces `con
 - Un `WorkspaceRegistration` referencia un workspace `single` o `container`.
 - Un `ProjectConfig` puede contener muchos `WorkspaceRepo` y muchos `WorkspaceEntrypoint`.
 - Cada `FileRecord` y `SymbolRecord` pertenece a un `repo_id`.
-- Cada `DocRecord` puede tener muchos `DocEdge` y `DocMention`.
+- Cada `DocRecord` puede tener muchos `DocEdge`, `DocMention`, `DocSourceBlock` y `DocSourceRecord`.
 - Un `GovernanceSource` manda sobre el `DocsReadProfile`; la proyeccion ejecutable no redefine la autoridad humana.
 - Un `DocsOwnerHint` vive en `GovernanceSource` y se proyecta al `DocsReadProfile`; no redefine la gobernanza, solo refina ranking documental repo-especifico.
 - Un `DocsReadProfile` gobierna como se interpreta la wiki del repo, pero no reemplaza el corpus indexado.
@@ -93,8 +122,8 @@ La novedad canonica de v1.3 es distinguir workspaces `single` de workspaces `con
 | RF-WKS-002 | WorkspaceRegistration, ProjectConfig, SymbolRecord, FileRecord |
 | RF-WKS-003 | WorkspaceRegistration, ProjectConfig, QueryEnvelope |
 | RF-WKS-005 | GovernanceSource, GovernanceStatus, WorkspaceRegistration, QueryEnvelope |
-| RF-IDX-001 | SymbolRecord, FileRecord, DocRecord, DocEdge, DocMention, WorkspaceMeta |
-| RF-IDX-002 | SymbolRecord, FileRecord, DocRecord, DocEdge, DocMention, WorkspaceMeta |
+| RF-IDX-001 | SymbolRecord, FileRecord, DocRecord, DocEdge, DocMention, DocSourceBlock, DocSourceRecord, WorkspaceMeta |
+| RF-IDX-002 | SymbolRecord, FileRecord, DocRecord, DocEdge, DocMention, DocSourceBlock, DocSourceRecord, WorkspaceMeta |
 | RF-IDX-003 | GovernanceSource, DocsGovernanceProfile, DocsReadProfile, WorkspaceMeta |
 | RF-QRY-001 | QueryEnvelope |
 | RF-QRY-002 | QueryEnvelope, AccessEvent, WorkspaceEntrypoint |
@@ -109,6 +138,7 @@ La novedad canonica de v1.3 es distinguir workspaces `single` de workspaces `con
 | RF-QRY-011 | SymbolRecord, DocRecord, DocsOwnerHint, QueryEnvelope |
 | RF-QRY-012 | PackResult, PackDoc, PackTarget, DocRecord, DocEdge, DocsReadProfile, QueryEnvelope |
 | RF-QRY-013 | GovernanceStatus, DocsReadProfile, QueryEnvelope |
+| RF-QRY-016 | WikiSearchResult, HarnessValidationResult, WikiSourceValidationResult, DocRecord, DocSourceBlock, DocSourceRecord, QueryEnvelope |
 | RF-CS-001 | QueryEnvelope, RuntimeSnapshot, WorkspaceEntrypoint |
 | RF-DAE-001 | DaemonState |
 | RF-DAE-002 | RuntimeSnapshot, AccessEvent, DaemonState |

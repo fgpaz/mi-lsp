@@ -4,7 +4,9 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 
@@ -28,6 +30,43 @@ type WorkspaceResolution struct {
 	Registration model.WorkspaceRegistration
 	Source       ResolutionSource
 	Warnings     []string
+}
+
+type WorkspaceRootGroup struct {
+	Root            string   `json:"root"`
+	AliasCount      int      `json:"alias_count"`
+	Aliases         []string `json:"aliases"`
+	CanonicalAlias  string   `json:"canonical_alias"`
+	SelectionReason string   `json:"selection_reason"`
+	Kind            string   `json:"kind,omitempty"`
+	Warnings        []string `json:"warnings,omitempty"`
+}
+
+type WorkspaceDoctorReport struct {
+	AliasesSharingRoot []WorkspaceRootGroup      `json:"aliases_sharing_root,omitempty"`
+	WorktreeFamilies   []WorkspaceWorktreeFamily `json:"worktree_families,omitempty"`
+	StalePaths         []WorkspaceStalePath      `json:"stale_paths,omitempty"`
+	BinaryShadowing    []BinaryCandidate         `json:"binary_shadowing,omitempty"`
+	Suggestions        []string                  `json:"suggestions,omitempty"`
+}
+
+type WorkspaceWorktreeFamily struct {
+	GitCommonDir string   `json:"git_common_dir"`
+	Roots        []string `json:"roots"`
+	Aliases      []string `json:"aliases"`
+	Warnings     []string `json:"warnings,omitempty"`
+}
+
+type WorkspaceStalePath struct {
+	Alias string `json:"alias"`
+	Root  string `json:"root"`
+	Error string `json:"error"`
+}
+
+type BinaryCandidate struct {
+	Path    string `json:"path"`
+	Active  bool   `json:"active,omitempty"`
+	Warning string `json:"warning,omitempty"`
 }
 
 func GlobalDir() (string, error) {
@@ -186,6 +225,131 @@ func ListWorkspaces() ([]model.WorkspaceRegistration, error) {
 	return items, nil
 }
 
+func GroupWorkspacesByRoot() ([]WorkspaceRootGroup, error) {
+	workspaces, err := ListWorkspaces()
+	if err != nil {
+		return nil, err
+	}
+	grouped := map[string][]model.WorkspaceRegistration{}
+	displayRoot := map[string]string{}
+	for _, ws := range workspaces {
+		key, ok := normalizeComparablePath(ws.Root)
+		if !ok {
+			key = strings.ToLower(strings.TrimSpace(ws.Root))
+		}
+		grouped[key] = append(grouped[key], ws)
+		if displayRoot[key] == "" {
+			displayRoot[key] = ws.Root
+		}
+	}
+	keys := make([]string, 0, len(grouped))
+	for key := range grouped {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	groups := make([]WorkspaceRootGroup, 0, len(keys))
+	for _, key := range keys {
+		registrations := grouped[key]
+		selection := selectAliasForRoot(registrations, "")
+		aliases := make([]string, 0, len(registrations))
+		kind := ""
+		for _, registration := range registrations {
+			aliases = append(aliases, registration.Name)
+			if kind == "" {
+				kind = registration.Kind
+			} else if registration.Kind != "" && registration.Kind != kind {
+				kind = "mixed"
+			}
+		}
+		sort.Strings(aliases)
+		warnings := append([]string{}, selection.Warnings...)
+		if len(aliases) > 1 {
+			warnings = appendStringIfMissing(warnings, "multiple aliases share the same workspace root; keep aliases explicit in agent sessions")
+		}
+		groups = append(groups, WorkspaceRootGroup{
+			Root:            displayRoot[key],
+			AliasCount:      len(aliases),
+			Aliases:         aliases,
+			CanonicalAlias:  selection.Registration.Name,
+			SelectionReason: selection.Reason,
+			Kind:            kind,
+			Warnings:        warnings,
+		})
+	}
+	return groups, nil
+}
+
+func DoctorWorkspaces() (WorkspaceDoctorReport, error) {
+	workspaces, err := ListWorkspaces()
+	if err != nil {
+		return WorkspaceDoctorReport{}, err
+	}
+	groups, err := GroupWorkspacesByRoot()
+	if err != nil {
+		return WorkspaceDoctorReport{}, err
+	}
+	report := WorkspaceDoctorReport{}
+	for _, group := range groups {
+		if group.AliasCount > 1 {
+			report.AliasesSharingRoot = append(report.AliasesSharingRoot, group)
+		}
+	}
+
+	commonDirGroups := map[string][]model.WorkspaceRegistration{}
+	commonDirDisplay := map[string]string{}
+	for _, ws := range workspaces {
+		if _, err := os.Stat(ws.Root); err != nil {
+			report.StalePaths = append(report.StalePaths, WorkspaceStalePath{Alias: ws.Name, Root: ws.Root, Error: err.Error()})
+			continue
+		}
+		commonDir, ok := gitCommonDir(ws.Root)
+		if !ok {
+			continue
+		}
+		key, ok := normalizeComparablePath(commonDir)
+		if !ok {
+			key = strings.ToLower(strings.TrimSpace(commonDir))
+		}
+		commonDirGroups[key] = append(commonDirGroups[key], ws)
+		if commonDirDisplay[key] == "" {
+			commonDirDisplay[key] = commonDir
+		}
+	}
+	commonKeys := make([]string, 0, len(commonDirGroups))
+	for key := range commonDirGroups {
+		commonKeys = append(commonKeys, key)
+	}
+	sort.Strings(commonKeys)
+	for _, key := range commonKeys {
+		registrations := commonDirGroups[key]
+		rootSet := map[string]bool{}
+		aliasSet := map[string]bool{}
+		for _, registration := range registrations {
+			rootSet[filepath.Clean(registration.Root)] = true
+			aliasSet[registration.Name] = true
+		}
+		if len(rootSet) <= 1 {
+			continue
+		}
+		roots := sortedKeys(rootSet)
+		aliases := sortedKeys(aliasSet)
+		report.WorktreeFamilies = append(report.WorktreeFamilies, WorkspaceWorktreeFamily{
+			GitCommonDir: commonDirDisplay[key],
+			Roots:        roots,
+			Aliases:      aliases,
+			Warnings:     []string{"registered worktrees share a git common dir but must keep separate aliases, indexes, watchers, and runtimes"},
+		})
+	}
+
+	report.BinaryShadowing = inspectBinaryShadowing()
+	report.Suggestions = append(report.Suggestions,
+		"Use one explicit alias per worktree: mi-lsp init . --name <alias>",
+		"Run queries with the active worktree alias: mi-lsp nav search <pattern> --workspace <alias>",
+		"Use mi-lsp workspace list --group-by-root to inspect duplicate aliases without mutating registry",
+	)
+	return report, nil
+}
+
 func WorkspaceStateDir(root string) string {
 	return filepath.Join(root, registryDirName)
 }
@@ -261,6 +425,7 @@ func resolveWorkspaceFromCallerCWD(callerCWD string, registry model.RegistryFile
 type aliasSelection struct {
 	Registration model.WorkspaceRegistration
 	Warnings     []string
+	Reason       string
 }
 
 func selectAliasForRoot(registrations []model.WorkspaceRegistration, lastWorkspace string) aliasSelection {
@@ -269,7 +434,7 @@ func selectAliasForRoot(registrations []model.WorkspaceRegistration, lastWorkspa
 		return strings.ToLower(sorted[i].Name) < strings.ToLower(sorted[j].Name)
 	})
 	if len(sorted) == 1 {
-		return aliasSelection{Registration: sorted[0]}
+		return aliasSelection{Registration: sorted[0], Reason: "single alias"}
 	}
 
 	root := sorted[0].Root
@@ -300,7 +465,38 @@ func selectAliasForRoot(registrations []model.WorkspaceRegistration, lastWorkspa
 	warnings := []string{
 		fmt.Sprintf("workspace omitted; multiple registry aliases share root %q; selected %q using %s", root, chosen.Name, reason),
 	}
-	return aliasSelection{Registration: chosen, Warnings: warnings}
+	return aliasSelection{Registration: chosen, Warnings: warnings, Reason: reason}
+}
+
+func ExplicitWorkspaceCWDWarnings(selector string, callerCWD string) []string {
+	selector = strings.TrimSpace(selector)
+	if selector == "" || strings.TrimSpace(callerCWD) == "" {
+		return nil
+	}
+	selected, err := ResolveWorkspaceSelection(selector, callerCWD)
+	if err != nil {
+		return nil
+	}
+	cwdResolution, ok := resolveWorkspaceFromCallerCWD(callerCWD, mustLoadRegistry())
+	if !ok {
+		return nil
+	}
+	selectedRoot, selectedOK := normalizeComparablePath(selected.Registration.Root)
+	cwdRoot, cwdOK := normalizeComparablePath(cwdResolution.Registration.Root)
+	if !selectedOK || !cwdOK || selectedRoot == cwdRoot {
+		return nil
+	}
+	return []string{
+		fmt.Sprintf("explicit workspace %q resolves to root %q, but caller cwd %q is inside registered workspace %q at %q; explicit workspace wins", selector, selected.Registration.Root, callerCWD, cwdResolution.Registration.Name, cwdResolution.Registration.Root),
+	}
+}
+
+func mustLoadRegistry() model.RegistryFile {
+	registry, err := LoadRegistry()
+	if err != nil {
+		return model.RegistryFile{Workspaces: map[string]model.WorkspaceRegistration{}}
+	}
+	return registry
 }
 
 func findRegistrationByAlias(registrations []model.WorkspaceRegistration, alias string) (model.WorkspaceRegistration, bool) {
@@ -352,4 +548,101 @@ func normalizeComparablePath(path string) (string, bool) {
 
 func pathContains(cwd string, root string) bool {
 	return cwd == root || strings.HasPrefix(cwd, root+string(os.PathSeparator))
+}
+
+func gitCommonDir(root string) (string, bool) {
+	ctxRoot := strings.TrimSpace(root)
+	if ctxRoot == "" {
+		return "", false
+	}
+	command := exec.Command("git", "-C", ctxRoot, "rev-parse", "--git-common-dir")
+	output, err := command.Output()
+	if err != nil {
+		return "", false
+	}
+	common := strings.TrimSpace(string(output))
+	if common == "" {
+		return "", false
+	}
+	if !filepath.IsAbs(common) {
+		common = filepath.Join(ctxRoot, common)
+	}
+	if evaluated, err := filepath.EvalSymlinks(common); err == nil {
+		common = evaluated
+	}
+	return filepath.Clean(common), true
+}
+
+func inspectBinaryShadowing() []BinaryCandidate {
+	pathValue := os.Getenv("PATH")
+	if pathValue == "" {
+		return nil
+	}
+	active, _ := os.Executable()
+	active = filepath.Clean(active)
+	seen := map[string]bool{}
+	candidates := make([]BinaryCandidate, 0)
+	for _, dir := range filepath.SplitList(pathValue) {
+		for _, name := range binaryNames() {
+			candidate := filepath.Join(dir, name)
+			info, err := os.Stat(candidate)
+			if err != nil || info.IsDir() {
+				continue
+			}
+			cleaned := filepath.Clean(candidate)
+			key := cleaned
+			if runtime.GOOS == "windows" {
+				key = strings.ToLower(key)
+			}
+			if seen[key] {
+				continue
+			}
+			seen[key] = true
+			item := BinaryCandidate{Path: cleaned}
+			if samePath(cleaned, active) {
+				item.Active = true
+			}
+			candidates = append(candidates, item)
+		}
+	}
+	if len(candidates) > 1 {
+		for i := range candidates {
+			if !candidates[i].Active {
+				candidates[i].Warning = "another mi-lsp binary is visible on PATH; verify which binary your shell resolves"
+			}
+		}
+	}
+	return candidates
+}
+
+func binaryNames() []string {
+	if runtime.GOOS == "windows" {
+		return []string{"mi-lsp.exe", "mi-lsp"}
+	}
+	return []string{"mi-lsp"}
+}
+
+func samePath(left string, right string) bool {
+	if runtime.GOOS == "windows" {
+		return strings.EqualFold(filepath.Clean(left), filepath.Clean(right))
+	}
+	return filepath.Clean(left) == filepath.Clean(right)
+}
+
+func sortedKeys(items map[string]bool) []string {
+	keys := make([]string, 0, len(items))
+	for key := range items {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+func appendStringIfMissing(items []string, value string) []string {
+	for _, item := range items {
+		if item == value {
+			return items
+		}
+	}
+	return append(items, value)
 }

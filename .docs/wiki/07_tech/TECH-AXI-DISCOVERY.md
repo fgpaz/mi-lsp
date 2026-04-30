@@ -1,5 +1,32 @@
 # TECH-AXI-DISCOVERY
 
+```yaml
+harness_protocol: SDD-HARNESS-v1
+id: "TECH-AXI-DISCOVERY"
+kind: "support-doc"
+audience: "llm-first"
+imports:
+  - '[[00_gobierno_documental]]'
+  - '[[TECH-AXI-DISCOVERY]]'
+exports:
+  - 'TECH-AXI-DISCOVERY'
+agent_must_read:
+  - .docs/wiki/00_gobierno_documental.md
+  - .docs/wiki/07_tech/TECH-AXI-DISCOVERY.md
+agent_may_edit:
+  - .docs/wiki/07_tech/TECH-AXI-DISCOVERY.md
+agent_must_not_edit:
+  - .docs/wiki/_mi-lsp/read-model.toml
+verify:
+  - mi-lsp nav governance --workspace mi-lsp --format toon
+  - mi-lsp nav wiki validate-harness --workspace mi-lsp --format toon
+stop_if:
+  - governance_blocked=true
+  - harness_verdict=BLOCKED
+evidence:
+  - .docs/wiki/07_tech/TECH-AXI-DISCOVERY.md
+```
+
 ## Proposito
 
 Describir la capa tecnica del modo AXI selectivo por superficie para onboarding y discovery del CLI.

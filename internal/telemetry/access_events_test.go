@@ -50,6 +50,35 @@ func TestClassifyErrorInfo_DetectsGlobalJSONMismatch(t *testing.T) {
 	}
 }
 
+func TestRuntimeKeyForOperationUsesResolvedWorkspaceRoot(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+
+	root := t.TempDir()
+	if _, err := workspace.RegisterWorkspace("alias-one", model.WorkspaceRegistration{Name: "alias-one", Root: root}); err != nil {
+		t.Fatalf("RegisterWorkspace(alias-one): %v", err)
+	}
+	if _, err := workspace.RegisterWorkspace("alias-two", model.WorkspaceRegistration{Name: "alias-two", Root: root}); err != nil {
+		t.Fatalf("RegisterWorkspace(alias-two): %v", err)
+	}
+
+	left := RuntimeKeyForOperation(
+		model.CommandRequest{Operation: "nav.refs", Context: model.QueryOptions{Workspace: "alias-one"}, Payload: map[string]any{"entrypoint": "default"}},
+		model.Envelope{Workspace: "alias-one", Backend: "roslyn"},
+	)
+	right := RuntimeKeyForOperation(
+		model.CommandRequest{Operation: "nav.refs", Context: model.QueryOptions{Workspace: "alias-two"}, Payload: map[string]any{"entrypoint": "default"}},
+		model.Envelope{Workspace: "alias-two", Backend: "roslyn"},
+	)
+	if left != right {
+		t.Fatalf("runtime key should collapse aliases for same root: %q vs %q", left, right)
+	}
+	if !strings.Contains(left, root) {
+		t.Fatalf("runtime key = %q, want root %q", left, root)
+	}
+}
+
 func TestClassifyErrorInfo_DetectsDotnetSDKMissing(t *testing.T) {
 	info := ClassifyErrorInfo("roslyn", "It was not possible to find any installed .NET SDKs", nil)
 

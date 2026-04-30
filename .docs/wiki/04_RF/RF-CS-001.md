@@ -1,5 +1,32 @@
 # RF-CS-001 - Ejecutar consulta semantica C# via Roslyn worker
 
+```yaml
+harness_protocol: SDD-HARNESS-v1
+id: "RF-CS-001"
+kind: "support-doc"
+audience: "llm-first"
+imports:
+  - '[[00_gobierno_documental]]'
+  - '[[RF-CS-001]]'
+exports:
+  - 'RF-CS-001'
+agent_must_read:
+  - .docs/wiki/00_gobierno_documental.md
+  - .docs/wiki/04_RF/RF-CS-001.md
+agent_may_edit:
+  - .docs/wiki/04_RF/RF-CS-001.md
+agent_must_not_edit:
+  - .docs/wiki/_mi-lsp/read-model.toml
+verify:
+  - mi-lsp nav governance --workspace mi-lsp --format toon
+  - mi-lsp nav wiki validate-harness --workspace mi-lsp --format toon
+stop_if:
+  - governance_blocked=true
+  - harness_verdict=BLOCKED
+evidence:
+  - .docs/wiki/04_RF/RF-CS-001.md
+```
+
 ## 1. Execution Sheet
 
 | Campo | Valor |

@@ -11,7 +11,8 @@ func RuntimeKeyForOperation(request model.CommandRequest, response model.Envelop
 	if backendType == "" {
 		backendType = "catalog"
 	}
-	workspaceName := firstNonEmpty(response.Workspace, request.Context.Workspace, "-")
+	workspaceIdentity := ResolveWorkspaceIdentity(firstNonEmpty(response.Workspace, request.Context.Workspace))
+	workspaceRoot := firstNonEmpty(workspaceIdentity.Root, response.Workspace, request.Context.Workspace, "-")
 	entrypoint := firstNonEmpty(
 		payloadString(request.Payload, "entrypoint"),
 		payloadString(request.Payload, "solution"),
@@ -19,7 +20,7 @@ func RuntimeKeyForOperation(request model.CommandRequest, response model.Envelop
 		payloadString(request.Payload, "repo"),
 		"default",
 	)
-	return backendType + "::" + workspaceName + "::" + entrypoint
+	return backendType + "::" + workspaceRoot + "::" + entrypoint
 }
 
 func payloadString(payload map[string]any, key string) string {

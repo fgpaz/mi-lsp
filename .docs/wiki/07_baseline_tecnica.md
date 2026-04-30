@@ -1,5 +1,32 @@
 # 07. Baseline tecnica
 
+```yaml
+harness_protocol: SDD-HARNESS-v1
+id: "07_baseline_tecnica"
+kind: "support-doc"
+audience: "dual"
+imports:
+  - '[[00_gobierno_documental]]'
+  - '.docs/wiki/07_baseline_tecnica.md'
+exports:
+  - '07_baseline_tecnica'
+agent_must_read:
+  - .docs/wiki/00_gobierno_documental.md
+  - .docs/wiki/07_baseline_tecnica.md
+agent_may_edit:
+  - .docs/wiki/07_baseline_tecnica.md
+agent_must_not_edit:
+  - .docs/wiki/_mi-lsp/read-model.toml
+verify:
+  - mi-lsp nav governance --workspace mi-lsp --format toon
+  - mi-lsp nav wiki validate-harness --workspace mi-lsp --format toon
+stop_if:
+  - governance_blocked=true
+  - harness_verdict=BLOCKED
+evidence:
+  - .docs/wiki/07_baseline_tecnica.md
+```
+
 ## Proposito y alcance
 
 Este documento resume la base tecnica operativa de `mi-lsp` en su fase `v1.3 hardening`.
@@ -17,7 +44,7 @@ El detalle operativo y de subsistemas vive en `07_tech/`.
 | Runtime pool | Subsistema daemon | Runtime supervision | Mantener un runtime vivo por `(workspace, backend)` |
 | Worker Roslyn | Proceso .NET hijo | C# semantic backend | Semantica profunda C# |
 | Governance resolver | Subsistema Go | Query/runtime | Validar `00_gobierno_documental.md`, compilar perfil efectivo y proyectar `read-model.toml` |
-| Docgraph/read-model | Subsistema Go | Query/runtime | Rankear wiki, clasificar preguntas y conectar docs con codigo |
+| Docgraph/read-model | Subsistema Go | Query/runtime | Rankear wiki, clasificar preguntas, compilar source blocks `SDD-WIKI-SOURCE-v1` y conectar docs con codigo |
 | TS catalog/indexer | Subsistema Go | Discovery backend | Discovery estructural TS/JS/Next repo-local |
 | Service exploration profile | Subsistema Go | Query/runtime | Agregar evidencia observable por path de servicio usando catalogo + texto |
 | TS semantic backend | Runtime opcional | TS semantic backend | Semantica TS/JS via `tsserver` cuando exista |
@@ -85,9 +112,9 @@ flowchart LR
 - `index cancel` sin `--force` debe detener cooperativamente loops largos de catalogo/docs mediante polling de `requested_cancel`; `index cancel --force` puede terminar el PID vivo asociado al job, marcarlo `canceled` y limpiar el lock asociado cuando el PID ya no existe.
 - `index status.phase` mantiene `indexing` durante el trabajo pesado y reserva `publishing` para el cierre/publicacion final, para no confundir jobs largos con commit ya iniciado.
 - `index status` debe refrescar `updated_at` durante trabajos largos y exponer progreso vivo mediante `current_stage`, `current_path`, `files_total` y los contadores `files/symbols/docs`.
-- La publicacion full debe ser all-or-nothing: catalogo, docgraph y memoria de reentrada se reemplazan en una unica transaccion SQLite y solo entonces se publica la generacion activa.
+- La publicacion full debe ser all-or-nothing: catalogo, docgraph, source blocks/records y memoria de reentrada se reemplazan en una unica transaccion SQLite y solo entonces se publica la generacion activa.
 - `--clean` fuerza recomposicion/publicacion completa del modo elegido, pero no debe borrar `index.db` antes de caminar archivos; si el proceso muere antes del commit, la generacion activa anterior sigue disponible.
-- La unidad de warm state es un runtime por `(workspace_root, backend_type)`.
+- La unidad de warm state es un runtime por `(workspace_root, backend_type, entrypoint_id)`.
 - La unidad de file watching es `workspace_root` canonico; aliases duplicados no crean watchers adicionales.
 - `watch_mode=lazy` es el default para proteger memoria/handles; `off` deshabilita watchers y `eager` es opt-in via CLI/env.
 - El daemon expone `daemon_process` y `watchers` en status/admin para presupuestos operativos (`working_set`, `private_bytes`, handles, threads, roots/dirs/eventos).
@@ -180,7 +207,12 @@ El struct `internal/service/config.go` centraliza todos los valores hardcodeados
 - `daemon start` debe ser idempotente y resolver si ya existe una instancia saludable.
 - Queries semanticas y compuestas seleccionadas inician automaticamente el daemon si no esta corriendo (desactivar con `--no-auto-daemon`).
 - `nav.find`, `nav.search`, `nav.intent`, `nav.symbols`, `nav.outline`, `nav.overview` y `nav.multi-read` no deben auto-iniciar ni enrutar por daemon en builds actuales; en workspaces `container`, `find/search/intent` pueden acotar con `--repo`.
-- `workspace list` debe salir desde registry + `project.toml` normalizado, sin redescubrir child repos en el hot path.
+- `nav.wiki.validate-harness` es una lectura directa del docgraph y markdown gobernado: no debe auto-iniciar daemon ni crear un indexador documental paralelo.
+- `nav.wiki.validate-source` es una lectura directa del docgraph typed y markdown gobernado: valida solo artefactos que declaran `wiki_source_protocol: SDD-WIKI-SOURCE-v1`, no auto-inicia daemon y no bloquea documentos no migrados.
+- El docgraph del workspace activo debe ignorar `.docs/temp/worktrees/` para no mezclar canon de worktrees vecinos ni bloquear harness con artefactos auxiliares.
+- `workspace list` debe salir desde registry + `project.toml` normalizado, sin redescubrir child repos en el hot path; preserva todos los aliases registrados aunque compartan root fisico.
+- `workspace list --group-by-root` agrupa aliases por root exacto y expone `root`, `alias_count`, `aliases`, `canonical_alias`, `selection_reason`, `kind` y warnings sin mutar registry.
+- `workspace doctor` es no mutante y diagnostica aliases que comparten root exacto, familias de worktrees por `git common dir`, paths stale, shadowing de binario y comandos sugeridos.
 - `workspace status --no-auto-sync` permite diagnostico read-only para smokes cross-workspace: reporta la proyeccion stale/bloqueada sin escribir `read-model.toml` en repos externos.
 - `nav.workspace-map` debe arrancar con summary-first directo, no auto-iniciar daemon, y reservar scans de endpoints/eventos/dependencias para `--full`.
 - En AXI efectivo, `init`, `workspace status`, `nav search`, `nav intent` y `nav pack` arrancan en preview-first por default; `nav ask` lo hace solo cuando la heuristica detecta orientacion, y `nav workspace-map` solo cuando se fuerza AXI.
@@ -192,7 +224,8 @@ El struct `internal/service/config.go` centraliza todos los valores hardcodeados
 - Si `worker status` se sirve a traves del daemon, la respuesta visible debe seguir siendo el mismo envelope canonico de `backend=worker`; el estado vivo del daemon solo entra via `active_workers`.
 - Si el candidato Roslyn elegido falla por bootstrap/arranque, el caller reintenta una sola vez con el siguiente candidato determinista antes de devolver error accionable.
 - Los cambios en `.docs/wiki`, `README*`, `docs/`, `00_gobierno_documental.md` o `read-model.toml` fuerzan full re-index del corpus documental; el incremental por git no intenta mezclar deltas parciales de docs.
-- `workspace status` debe exponer perfil, sync de gobernanza, estado bloqueado, `doc_count`, `docs_index_ready` y estado del indice respecto de `00`/`read-model`; si la wiki existe pero `doc_count=0`, debe sugerir `mi-lsp index --docs-only`.
+- `workspace status` debe exponer `workspace_root`, `workspace_source`, perfil, sync de gobernanza, estado bloqueado, `doc_count`, `docs_index_ready` y estado del indice respecto de `00`/`read-model`; si la wiki existe pero `doc_count=0`, debe sugerir `mi-lsp index --docs-only`.
+- Si el CWD esta dentro de un workspace/worktree registrado pero `--workspace <alias>` apunta a otro root, el alias explicito gana y el status debe emitir warning visible con ambos roots.
 - Si `docs_index_ready=true` pero `index_ready=false`, `workspace status` debe dejar visible que el repo quedo en modo "docs-only listo": el corpus gobernado y `memory_pointer` estan disponibles, pero el catalogo de codigo y las superficies code-first siguen ausentes hasta un `mi-lsp index` full/catalog.
 - `workspace status --full` debe exponer ademas el digest expandido de memoria de reentrada (`recent_canonical_changes`, `handoff`, `best_reentry`, `stale`) sin recalcularlo en caliente.
 - `nav ask --all-workspaces` fan-out sobre workspaces registrados con un pool acotado de 4 workers y merge determinista por score.

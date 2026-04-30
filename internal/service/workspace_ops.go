@@ -102,7 +102,27 @@ func (a *App) workspaceScan() (model.Envelope, error) {
 	return model.Envelope{Ok: true, Backend: "scanner", Items: items}, nil
 }
 
-func (a *App) workspaceList() (model.Envelope, error) {
+func (a *App) workspaceList(request model.CommandRequest) (model.Envelope, error) {
+	groupByRoot, _ := request.Payload["group_by_root"].(bool)
+	if groupByRoot {
+		groups, err := workspace.GroupWorkspacesByRoot()
+		if err != nil {
+			return model.Envelope{}, err
+		}
+		items := make([]map[string]any, 0, len(groups))
+		for _, group := range groups {
+			items = append(items, map[string]any{
+				"root":             group.Root,
+				"alias_count":      group.AliasCount,
+				"aliases":          group.Aliases,
+				"canonical_alias":  group.CanonicalAlias,
+				"selection_reason": group.SelectionReason,
+				"kind":             group.Kind,
+				"warnings":         group.Warnings,
+			})
+		}
+		return model.Envelope{Ok: true, Backend: "registry", Items: items}, nil
+	}
 	workspaces, err := workspace.ListWorkspaces()
 	if err != nil {
 		return model.Envelope{}, err
@@ -120,6 +140,69 @@ func (a *App) workspaceList() (model.Envelope, error) {
 	return model.Envelope{Ok: true, Backend: "registry", Items: items}, nil
 }
 
+func (a *App) workspaceDoctor() (model.Envelope, error) {
+	report, err := workspace.DoctorWorkspaces()
+	if err != nil {
+		return model.Envelope{}, err
+	}
+	item := map[string]any{
+		"aliases_sharing_root": nonNilRootGroups(report.AliasesSharingRoot),
+		"worktree_families":    nonNilWorktreeFamilies(report.WorktreeFamilies),
+		"stale_paths":          nonNilStalePaths(report.StalePaths),
+		"binary_shadowing":     nonNilBinaryCandidates(report.BinaryShadowing),
+		"suggestions":          nonNilStrings(report.Suggestions),
+	}
+	warnings := []string{}
+	if len(report.AliasesSharingRoot) > 0 {
+		warnings = append(warnings, "aliases share exact workspace roots; workspace list remains alias-preserving")
+	}
+	if len(report.WorktreeFamilies) > 0 {
+		warnings = append(warnings, "registered worktrees share git common dirs; keep aliases, indexes, watchers, and runtimes separate per physical root")
+	}
+	if len(report.StalePaths) > 0 {
+		warnings = append(warnings, "registry contains stale workspace roots")
+	}
+	if len(report.BinaryShadowing) > 1 {
+		warnings = append(warnings, "multiple mi-lsp binaries are visible on PATH")
+	}
+	return model.Envelope{Ok: true, Backend: "registry-doctor", Items: []map[string]any{item}, Warnings: warnings}, nil
+}
+
+func nonNilRootGroups(items []workspace.WorkspaceRootGroup) []workspace.WorkspaceRootGroup {
+	if items == nil {
+		return []workspace.WorkspaceRootGroup{}
+	}
+	return items
+}
+
+func nonNilWorktreeFamilies(items []workspace.WorkspaceWorktreeFamily) []workspace.WorkspaceWorktreeFamily {
+	if items == nil {
+		return []workspace.WorkspaceWorktreeFamily{}
+	}
+	return items
+}
+
+func nonNilStalePaths(items []workspace.WorkspaceStalePath) []workspace.WorkspaceStalePath {
+	if items == nil {
+		return []workspace.WorkspaceStalePath{}
+	}
+	return items
+}
+
+func nonNilBinaryCandidates(items []workspace.BinaryCandidate) []workspace.BinaryCandidate {
+	if items == nil {
+		return []workspace.BinaryCandidate{}
+	}
+	return items
+}
+
+func nonNilStrings(items []string) []string {
+	if items == nil {
+		return []string{}
+	}
+	return items
+}
+
 func (a *App) workspaceStatus(ctx context.Context, request model.CommandRequest) (model.Envelope, error) {
 	opts := request.Context
 	registration, project, err := a.resolveWorkspaceWithProject(request.Context.Workspace)
@@ -127,6 +210,8 @@ func (a *App) workspaceStatus(ctx context.Context, request model.CommandRequest)
 		return model.Envelope{}, err
 	}
 	item := workspaceSummaryItem(registration, project)
+	item["workspace_root"] = registration.Root
+	item["workspace_source"] = firstNonEmpty(request.Context.WorkspaceSource, string(workspace.ResolutionSourceExplicit))
 	item["repos"] = project.Repos
 	item["entrypoints"] = project.Entrypoints
 	item["docs_read_model"] = workspaceProfileHint(registration.Root)

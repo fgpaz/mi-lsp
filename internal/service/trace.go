@@ -43,19 +43,22 @@ func (a *App) trace(ctx context.Context, request model.CommandRequest) (model.En
 			return model.Envelope{}, err
 		}
 		if result == nil {
+			status := traceLookupStatus(ctx, db, registration.Name, docID, nil)
 			return model.Envelope{
 				Ok:        true,
 				Workspace: registration.Name,
 				Backend:   "trace",
 				Items:     []model.TraceResult{},
 				Warnings:  []string{fmt.Sprintf("Trace target %q not found in doc index", docID)},
+				Hint:      status.Reason,
 			}, nil
 		}
+		result.LookupStatus = traceLookupStatus(ctx, db, registration.Name, docID, result)
 		return model.Envelope{Ok: true, Workspace: registration.Name, Backend: "trace", Items: []model.TraceResult{*result}}, nil
 	}
 
 	if allRFs {
-		results, err := a.traceAllRFs(ctx, registration.Root, db)
+		results, err := a.traceAllRFs(ctx, registration.Name, registration.Root, db)
 		if err != nil {
 			return model.Envelope{}, err
 		}
@@ -85,6 +88,11 @@ func (a *App) traceRF(ctx context.Context, root string, db *sql.DB, rfID string)
 		return nil, err
 	}
 	if doc == nil {
+		if sourceResult, err := traceSourceID(ctx, db, traceID); err != nil {
+			return nil, err
+		} else if sourceResult != nil {
+			return sourceResult, nil
+		}
 		return nil, nil
 	}
 
@@ -157,6 +165,32 @@ func (a *App) traceRF(ctx context.Context, root string, db *sql.DB, rfID string)
 		result.RF = doc.DocID
 	}
 	return result, nil
+}
+
+func traceSourceID(ctx context.Context, db *sql.DB, traceID string) (*model.TraceResult, error) {
+	docs, err := store.FindDocRecordsBySourceID(ctx, db, traceID)
+	if err != nil {
+		return nil, err
+	}
+	if len(docs) == 0 {
+		return nil, nil
+	}
+	doc := docs[0]
+	return &model.TraceResult{
+		DocID:    traceID,
+		Layer:    doc.Layer,
+		Stage:    wikiStageForDoc(doc),
+		Title:    doc.Title,
+		Status:   "indexed",
+		Coverage: 1,
+		Explicit: []model.TraceLink{{
+			File:     doc.Path,
+			Kind:     "wiki-source",
+			Source:   "doc_source",
+			Verified: true,
+		}},
+		Drift: []model.TraceDrift{},
+	}, nil
 }
 
 func resolveTraceDoc(ctx context.Context, root string, db *sql.DB, traceID string, kind traceDocKind, mentioningDocs []model.DocRecord) (*model.DocRecord, error) {
@@ -309,6 +343,10 @@ func traceRFDocFromDisk(root string, rfID string) (model.DocRecord, bool) {
 	if _, err := os.Stat(indexPath); err == nil {
 		candidates = appendUniqueTraceCandidate(candidates, filepath.ToSlash(filepath.Clean(".docs/wiki/04_RF.md")))
 	}
+	indexPathV2 := filepath.Join(root, ".docs", "wiki", "05_RF.md")
+	if _, err := os.Stat(indexPathV2); err == nil {
+		candidates = appendUniqueTraceCandidate(candidates, filepath.ToSlash(filepath.Clean(".docs/wiki/05_RF.md")))
+	}
 	rfDir := filepath.Join(root, ".docs", "wiki", "04_RF")
 	entries, err := os.ReadDir(rfDir)
 	if err == nil {
@@ -317,6 +355,16 @@ func traceRFDocFromDisk(root string, rfID string) (model.DocRecord, bool) {
 				continue
 			}
 			candidates = appendUniqueTraceCandidate(candidates, filepath.ToSlash(filepath.Join(".docs", "wiki", "04_RF", entry.Name())))
+		}
+	}
+	rfDirV2 := filepath.Join(root, ".docs", "wiki", "05_RF")
+	entriesV2, err := os.ReadDir(rfDirV2)
+	if err == nil {
+		for _, entry := range entriesV2 {
+			if entry.IsDir() || !strings.HasSuffix(strings.ToLower(entry.Name()), ".md") {
+				continue
+			}
+			candidates = appendUniqueTraceCandidate(candidates, filepath.ToSlash(filepath.Join(".docs", "wiki", "05_RF", entry.Name())))
 		}
 	}
 	legacyIndexPath := filepath.Join(root, ".docs", "wiki", "RF.md")
@@ -378,6 +426,10 @@ func traceTPDocFromDisk(root string, traceID string) (model.DocRecord, bool) {
 	if _, err := os.Stat(indexPath); err == nil {
 		candidates = appendUniqueTraceCandidate(candidates, filepath.ToSlash(filepath.Clean(".docs/wiki/06_matriz_pruebas_RF.md")))
 	}
+	indexPathV2 := filepath.Join(root, ".docs", "wiki", "07_matriz_pruebas_RF.md")
+	if _, err := os.Stat(indexPathV2); err == nil {
+		candidates = appendUniqueTraceCandidate(candidates, filepath.ToSlash(filepath.Clean(".docs/wiki/07_matriz_pruebas_RF.md")))
+	}
 	tpDir := filepath.Join(root, ".docs", "wiki", "06_pruebas")
 	entries, err := os.ReadDir(tpDir)
 	if err == nil {
@@ -386,6 +438,16 @@ func traceTPDocFromDisk(root string, traceID string) (model.DocRecord, bool) {
 				continue
 			}
 			candidates = appendUniqueTraceCandidate(candidates, filepath.ToSlash(filepath.Join(".docs", "wiki", "06_pruebas", entry.Name())))
+		}
+	}
+	tpDirV2 := filepath.Join(root, ".docs", "wiki", "07_pruebas")
+	entriesV2, err := os.ReadDir(tpDirV2)
+	if err == nil {
+		for _, entry := range entriesV2 {
+			if entry.IsDir() || !strings.HasSuffix(strings.ToLower(entry.Name()), ".md") {
+				continue
+			}
+			candidates = appendUniqueTraceCandidate(candidates, filepath.ToSlash(filepath.Join(".docs", "wiki", "07_pruebas", entry.Name())))
 		}
 	}
 	legacyIndexPath := filepath.Join(root, ".docs", "wiki", "TP.md")
@@ -493,7 +555,7 @@ func traceRSDocFromDisk(root string, traceID string) (model.DocRecord, bool) {
 	return best, bestScore >= 0
 }
 
-func (a *App) traceAllRFs(ctx context.Context, root string, db *sql.DB) ([]model.TraceResult, error) {
+func (a *App) traceAllRFs(ctx context.Context, workspaceName string, root string, db *sql.DB) ([]model.TraceResult, error) {
 	rfDocs, err := store.GetRFDocRecords(ctx, db)
 	if err != nil {
 		return nil, err
@@ -508,6 +570,7 @@ func (a *App) traceAllRFs(ctx context.Context, root string, db *sql.DB) ([]model
 			continue
 		}
 		if result != nil {
+			result.LookupStatus = traceLookupStatus(ctx, db, workspaceName, doc.DocID, result)
 			results = append(results, *result)
 		}
 	}
@@ -548,20 +611,26 @@ func (a *App) traceSummary(workspaceName string, results []model.TraceResult) mo
 
 func isSpecificRFDocPath(path string) bool {
 	normalized := filepath.ToSlash(path)
-	return strings.Contains(normalized, "/04_RF/") || strings.Contains(normalized, "/RF/")
+	return strings.Contains(normalized, "/04_RF/") ||
+		strings.Contains(normalized, "/05_RF/") ||
+		strings.Contains(normalized, "/RF/")
 }
 
 func isRFIndexPath(path string) bool {
 	normalized := filepath.ToSlash(path)
 	return normalized == ".docs/wiki/04_RF.md" ||
+		normalized == ".docs/wiki/05_RF.md" ||
 		normalized == ".docs/wiki/RF.md" ||
 		strings.HasSuffix(normalized, "/04_RF.md") ||
+		strings.HasSuffix(normalized, "/05_RF.md") ||
 		strings.HasSuffix(normalized, "/RF.md")
 }
 
 func isSpecificTPDocPath(path string) bool {
 	normalized := filepath.ToSlash(path)
-	return strings.Contains(normalized, "/06_pruebas/") || strings.Contains(normalized, "/TP/")
+	return strings.Contains(normalized, "/06_pruebas/") ||
+		strings.Contains(normalized, "/07_pruebas/") ||
+		strings.Contains(normalized, "/TP/")
 }
 
 func isSpecificRSDocPath(path string) bool {
@@ -578,8 +647,10 @@ func isRSIndexPath(path string) bool {
 func isTPIndexPath(path string) bool {
 	normalized := filepath.ToSlash(path)
 	return normalized == ".docs/wiki/06_matriz_pruebas_RF.md" ||
+		normalized == ".docs/wiki/07_matriz_pruebas_RF.md" ||
 		normalized == ".docs/wiki/TP.md" ||
 		strings.HasSuffix(normalized, "/06_matriz_pruebas_RF.md") ||
+		strings.HasSuffix(normalized, "/07_matriz_pruebas_RF.md") ||
 		strings.HasSuffix(normalized, "/TP.md")
 }
 
@@ -605,7 +676,7 @@ func classifyTraceID(docID string) traceDocKind {
 }
 
 func isTPDocRecord(doc model.DocRecord) bool {
-	return isTPDocID(doc.DocID) || doc.Layer == "06" || isSpecificTPDocPath(doc.Path) || isTPIndexPath(doc.Path)
+	return isTPDocID(doc.DocID) || doc.Layer == "06" || doc.Layer == "07" || isSpecificTPDocPath(doc.Path) || isTPIndexPath(doc.Path)
 }
 
 func isRSDocRecord(doc model.DocRecord) bool {
@@ -955,7 +1026,7 @@ func computeTraceStatus(explicit []model.TraceLink, inferred []model.TraceLink, 
 		if verifiedTests > 0 {
 			return "partial", 0.5
 		}
-		return "missing", 0.0
+		return "found_but_trace_incomplete", 0.0
 	}
 
 	if len(explicit) > 0 {

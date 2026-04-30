@@ -10,20 +10,28 @@ import (
 )
 
 func ReplaceDocs(ctx context.Context, db *sql.DB, docs []model.DocRecord, edges []model.DocEdge, mentions []model.DocMention) error {
+	return ReplaceDocsWithSources(ctx, db, docs, edges, mentions, nil, nil)
+}
+
+func ReplaceDocsWithSources(ctx context.Context, db *sql.DB, docs []model.DocRecord, edges []model.DocEdge, mentions []model.DocMention, sourceBlocks []model.DocSourceBlock, sourceRecords []model.DocSourceRecord) error {
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	if err := replaceDocsTx(ctx, tx, docs, edges, mentions); err != nil {
+	if err := replaceDocsWithSourcesTx(ctx, tx, docs, edges, mentions, sourceBlocks, sourceRecords); err != nil {
 		return err
 	}
 	return tx.Commit()
 }
 
 func replaceDocsTx(ctx context.Context, tx *sql.Tx, docs []model.DocRecord, edges []model.DocEdge, mentions []model.DocMention) error {
-	for _, table := range []string{"doc_mentions", "doc_edges", "doc_records"} {
+	return replaceDocsWithSourcesTx(ctx, tx, docs, edges, mentions, nil, nil)
+}
+
+func replaceDocsWithSourcesTx(ctx context.Context, tx *sql.Tx, docs []model.DocRecord, edges []model.DocEdge, mentions []model.DocMention, sourceBlocks []model.DocSourceBlock, sourceRecords []model.DocSourceRecord) error {
+	for _, table := range []string{"doc_source_records", "doc_source_blocks", "doc_mentions", "doc_edges", "doc_records"} {
 		if _, err := tx.ExecContext(ctx, "DELETE FROM "+table); err != nil {
 			return err
 		}
@@ -77,10 +85,114 @@ func replaceDocsTx(ctx context.Context, tx *sql.Tx, docs []model.DocRecord, edge
 		}
 	}
 
+	if len(sourceBlocks) > 0 {
+		stmt, err := tx.PrepareContext(ctx, `
+			INSERT OR REPLACE INTO doc_source_blocks(doc_path, block_id, doc_id, kind, source_format, ordinal, start_line, end_line, content_hash, indexed_at)
+			VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		`)
+		if err != nil {
+			return err
+		}
+		defer stmt.Close()
+		for _, block := range sourceBlocks {
+			if _, err := stmt.ExecContext(ctx, block.DocPath, block.BlockID, block.DocID, block.Kind, block.SourceFormat, block.Ordinal, block.StartLine, block.EndLine, block.ContentHash, block.IndexedAt); err != nil {
+				return err
+			}
+		}
+	}
+
+	if len(sourceRecords) > 0 {
+		stmt, err := tx.PrepareContext(ctx, `
+			INSERT OR REPLACE INTO doc_source_records(doc_path, block_id, record_id, record_type, ordinal, start_line, end_line, content_hash, indexed_at)
+			VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)
+		`)
+		if err != nil {
+			return err
+		}
+		defer stmt.Close()
+		for _, record := range sourceRecords {
+			if _, err := stmt.ExecContext(ctx, record.DocPath, record.BlockID, record.RecordID, record.RecordType, record.Ordinal, record.StartLine, record.EndLine, record.ContentHash, record.IndexedAt); err != nil {
+				return err
+			}
+		}
+	}
+
 	if err := UpsertWorkspaceMeta(ctx, tx, "doc_count", strconv.Itoa(len(docs))); err != nil {
 		return err
 	}
 	return nil
+}
+
+func ListDocSourceBlocks(ctx context.Context, db *sql.DB) ([]model.DocSourceBlock, error) {
+	rows, err := db.QueryContext(ctx, `
+		SELECT doc_path, block_id, doc_id, kind, source_format, ordinal, start_line, end_line, content_hash, indexed_at
+		FROM doc_source_blocks
+		ORDER BY doc_path ASC, ordinal ASC, block_id ASC
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := make([]model.DocSourceBlock, 0)
+	for rows.Next() {
+		var item model.DocSourceBlock
+		if err := rows.Scan(&item.DocPath, &item.BlockID, &item.DocID, &item.Kind, &item.SourceFormat, &item.Ordinal, &item.StartLine, &item.EndLine, &item.ContentHash, &item.IndexedAt); err != nil {
+			return nil, err
+		}
+		items = append(items, item)
+	}
+	return items, rows.Err()
+}
+
+func ListDocSourceRecords(ctx context.Context, db *sql.DB) ([]model.DocSourceRecord, error) {
+	rows, err := db.QueryContext(ctx, `
+		SELECT doc_path, block_id, record_id, record_type, ordinal, start_line, end_line, content_hash, indexed_at
+		FROM doc_source_records
+		ORDER BY doc_path ASC, ordinal ASC, record_id ASC
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := make([]model.DocSourceRecord, 0)
+	for rows.Next() {
+		var item model.DocSourceRecord
+		if err := rows.Scan(&item.DocPath, &item.BlockID, &item.RecordID, &item.RecordType, &item.Ordinal, &item.StartLine, &item.EndLine, &item.ContentHash, &item.IndexedAt); err != nil {
+			return nil, err
+		}
+		items = append(items, item)
+	}
+	return items, rows.Err()
+}
+
+func FindDocRecordsBySourceID(ctx context.Context, db *sql.DB, id string) ([]model.DocRecord, error) {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return nil, nil
+	}
+	rows, err := db.QueryContext(ctx, `
+		SELECT DISTINCT dr.path, dr.title, dr.doc_id, dr.layer, dr.family, dr.snippet, dr.search_text, dr.content_hash, dr.indexed_at, dr.is_snapshot
+		FROM doc_records dr
+		LEFT JOIN doc_source_blocks dsb ON dsb.doc_path = dr.path
+		LEFT JOIN doc_source_records dsr ON dsr.doc_path = dr.path
+		WHERE UPPER(dsb.doc_id) = UPPER(?)
+		   OR UPPER(dsb.block_id) = UPPER(?)
+		   OR UPPER(dsr.record_id) = UPPER(?)
+		ORDER BY dr.layer ASC, dr.path ASC
+	`, id, id, id)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := make([]model.DocRecord, 0)
+	for rows.Next() {
+		var item model.DocRecord
+		if err := rows.Scan(&item.Path, &item.Title, &item.DocID, &item.Layer, &item.Family, &item.Snippet, &item.SearchText, &item.ContentHash, &item.IndexedAt, &item.IsSnapshot); err != nil {
+			return nil, err
+		}
+		items = append(items, item)
+	}
+	return items, rows.Err()
 }
 
 func ListDocRecords(ctx context.Context, db *sql.DB) ([]model.DocRecord, error) {

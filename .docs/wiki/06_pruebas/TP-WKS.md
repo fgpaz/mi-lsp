@@ -1,5 +1,32 @@
 # TP-WKS
 
+```yaml
+harness_protocol: SDD-HARNESS-v1
+id: "TP-WKS"
+kind: "support-doc"
+audience: "llm-first"
+imports:
+  - '[[00_gobierno_documental]]'
+  - '[[TP-WKS]]'
+exports:
+  - 'TP-WKS'
+agent_must_read:
+  - .docs/wiki/00_gobierno_documental.md
+  - .docs/wiki/06_pruebas/TP-WKS.md
+agent_may_edit:
+  - .docs/wiki/06_pruebas/TP-WKS.md
+agent_must_not_edit:
+  - .docs/wiki/_mi-lsp/read-model.toml
+verify:
+  - mi-lsp nav governance --workspace mi-lsp --format toon
+  - mi-lsp nav wiki validate-harness --workspace mi-lsp --format toon
+stop_if:
+  - governance_blocked=true
+  - harness_verdict=BLOCKED
+evidence:
+  - .docs/wiki/06_pruebas/TP-WKS.md
+```
+
 ## Cobertura objetivo
 
 - RF-WKS-001
@@ -28,3 +55,9 @@
 | TC-WKS-014 | positivo | RF-WKS-005 | `workspace status` expone `governance_profile`, `governance_sync`, `governance_index_sync` y `governance_blocked` |
 | TC-WKS-015 | negativo | RF-WKS-005 | si falta `00_gobierno_documental.md` o la gobernanza es invalida, el repo entra en `blocked mode` |
 | TC-WKS-016 | positivo | RF-WKS-004 | `TestAXIFalseDisablesDefaultAXISurface`: `--axi=false` explícito deshabilita AXI incluso en superficies AXI-default (Wave 3b hard disable) |
+| TC-WKS-017 | positivo | RF-WKS-004 | `workspace list` preserva aliases duplicados del mismo root sin deduplicar ni borrar registros |
+| TC-WKS-018 | positivo | RF-WKS-004 | `workspace list --group-by-root` agrupa por root y expone `alias_count`, `aliases`, `canonical_alias`, `selection_reason`, `kind` y warnings |
+| TC-WKS-019 | positivo | RF-WKS-005 | `workspace status` sin `--workspace` resuelve por `caller_cwd` dentro del worktree/workspace registrado y expone `workspace_source=caller_cwd` |
+| TC-WKS-020 | positivo | RF-WKS-005 | `workspace status --workspace <alias>` explicito gana sobre `caller_cwd`, pero emite warning si el CWD pertenece a otro root registrado |
+| TC-WKS-021 | positivo | RF-WKS-004 | `workspace doctor` reporta aliases que comparten root exacto sin mutar `registry.toml` |
+| TC-WKS-022 | positivo | RF-WKS-004 | `workspace doctor` reporta familias de worktrees que comparten `git common dir` pero tienen roots fisicos distintos |

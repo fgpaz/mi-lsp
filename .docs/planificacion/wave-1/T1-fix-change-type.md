@@ -1,5 +1,32 @@
 # Task T1: Fix change-type Hardcode in diff_context.go
 
+```yaml
+harness_protocol: SDD-HARNESS-v1
+id: "T1"
+kind: "support-doc"
+audience: "dual"
+imports:
+  - '[[00_gobierno_documental]]'
+  - '.docs/planificacion/wave-1/T1-fix-change-type.md'
+exports:
+  - 'T1'
+agent_must_read:
+  - .docs/wiki/00_gobierno_documental.md
+  - .docs/planificacion/wave-1/T1-fix-change-type.md
+agent_may_edit:
+  - .docs/planificacion/wave-1/T1-fix-change-type.md
+agent_must_not_edit:
+  - .docs/wiki/_mi-lsp/read-model.toml
+verify:
+  - mi-lsp nav governance --workspace mi-lsp --format toon
+  - mi-lsp nav wiki validate-harness --workspace mi-lsp --format toon
+stop_if:
+  - governance_blocked=true
+  - harness_verdict=BLOCKED
+evidence:
+  - .docs/planificacion/wave-1/T1-fix-change-type.md
+```
+
 ## Shared Context
 **Goal:** Parsear el tipo de cambio real (added/modified/deleted) desde git diff en vez de hardcodear "modified".
 **Stack:** Go, os/exec (git commands), internal/service

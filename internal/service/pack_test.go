@@ -302,3 +302,37 @@ func TestNavPackExplicitRFAnchorWinsOverRouteCore(t *testing.T) {
 		t.Fatalf("primary_doc = %q, want %q (explicit --rf anchor must win over route core)", results[0].PrimaryDoc, wantPrimary)
 	}
 }
+
+func TestNavPackLookupStatusUsesPrimaryDocForExactRF(t *testing.T) {
+	alias := "pack-lookup-rf-" + filepath.Base(t.TempDir())
+	root := createFunctionalPackWorkspaceFixture(t, alias)
+	app := New(root, nil)
+	if _, err := app.Execute(context.Background(), model.CommandRequest{
+		Operation: "workspace.init",
+		Context:   model.QueryOptions{},
+		Payload:   map[string]any{"path": root, "alias": alias},
+	}); err != nil {
+		t.Fatalf("workspace.init: %v", err)
+	}
+	defer func() { _ = workspace.RemoveWorkspace(alias) }()
+
+	env, err := app.Execute(context.Background(), model.CommandRequest{
+		Operation: "nav.pack",
+		Context:   model.QueryOptions{Workspace: alias, AXI: true, Full: true, MaxItems: 8},
+		Payload:   map[string]any{"task": "RF-AUTH-001"},
+	})
+	if err != nil {
+		t.Fatalf("nav.pack exact rf: %v", err)
+	}
+	results := env.Items.([]model.PackResult)
+	if len(results) == 0 {
+		t.Fatalf("expected at least one pack result, got none")
+	}
+	status := results[0].LookupStatus
+	if status == nil {
+		t.Fatalf("expected lookup status, got nil")
+	}
+	if status.DocID != "RF-AUTH-001" || status.Path != ".docs/wiki/04_RF/RF-AUTH-001.md" || status.MatchKind != "canonical_indexed_id" {
+		t.Fatalf("unexpected pack lookup status: %#v", status)
+	}
+}

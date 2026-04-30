@@ -57,6 +57,12 @@ func TestExecuteWorkspaceStatusResolvesWorkspaceFromCallerCWD(t *testing.T) {
 	if item["root"] != callerRoot {
 		t.Fatalf("item[root] = %#v, want %q", item["root"], callerRoot)
 	}
+	if item["workspace_root"] != callerRoot {
+		t.Fatalf("item[workspace_root] = %#v, want %q", item["workspace_root"], callerRoot)
+	}
+	if item["workspace_source"] != "caller_cwd" {
+		t.Fatalf("item[workspace_source] = %#v, want caller_cwd", item["workspace_source"])
+	}
 }
 
 func TestExecuteWorkspaceStatusAppendsSameRootAliasWarning(t *testing.T) {
@@ -95,6 +101,49 @@ func TestExecuteWorkspaceStatusAppendsSameRootAliasWarning(t *testing.T) {
 	}
 	if !strings.Contains(strings.Join(env.Warnings, " "), "multiple registry aliases") {
 		t.Fatalf("Warnings = %v, want ambiguity warning", env.Warnings)
+	}
+}
+
+func TestExecuteWorkspaceStatusExplicitAliasWinsOverCallerCWDWithWarning(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+
+	mainRoot := t.TempDir()
+	worktreeRoot := t.TempDir()
+	writeWorkspaceFile(t, mainRoot, "src/Main.cs", "class Main {}")
+	writeWorkspaceFile(t, worktreeRoot, "src/Feature.cs", "class Feature {}")
+
+	registerServiceWorkspace(t, "mi-lsp-main", mainRoot)
+	registerServiceWorkspace(t, "mi-lsp-feature", worktreeRoot)
+
+	app := New(mainRoot, nil)
+	env, err := app.Execute(context.Background(), model.CommandRequest{
+		Operation: "workspace.status",
+		Context: model.QueryOptions{
+			Workspace: "mi-lsp-main",
+			CallerCWD: filepath.Join(worktreeRoot, "src"),
+		},
+	})
+	if err != nil {
+		t.Fatalf("Execute(workspace.status): %v", err)
+	}
+	if env.Workspace != "mi-lsp-main" {
+		t.Fatalf("env.Workspace = %q, want mi-lsp-main", env.Workspace)
+	}
+	if !strings.Contains(strings.Join(env.Warnings, " "), "explicit workspace") {
+		t.Fatalf("Warnings = %v, want explicit workspace mismatch warning", env.Warnings)
+	}
+	items, ok := env.Items.([]any)
+	if !ok || len(items) != 1 {
+		t.Fatalf("Items = %#v, want one workspace status item", env.Items)
+	}
+	item, ok := items[0].(map[string]any)
+	if !ok {
+		t.Fatalf("item type = %T, want map[string]any", items[0])
+	}
+	if item["workspace_source"] != "explicit" {
+		t.Fatalf("item[workspace_source] = %#v, want explicit", item["workspace_source"])
 	}
 }
 

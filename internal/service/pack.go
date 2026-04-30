@@ -82,6 +82,7 @@ func (a *App) pack(ctx context.Context, request model.CommandRequest) (model.Env
 			result.Why = append(result.Why, tier1Why...)
 			result.Why = append(result.Why, "tier1=canonical_fallback")
 		}
+		result.LookupStatus = packLookupStatus(ctx, query, registration.Name, task, result)
 		hint := fmt.Sprintf("documentation index is empty; route resolved from governance. Rerun mi-lsp index --workspace %s for full pack", registration.Name)
 		warnings = appendStringIfMissing(warnings, hint)
 		env := model.Envelope{
@@ -112,6 +113,7 @@ func (a *App) pack(ctx context.Context, request model.CommandRequest) (model.Env
 	primary, ok := selectPackPrimary(hardAnchor, docs, query.docByPath, query.ranked)
 	if !ok {
 		warnings = appendStringIfMissing(warnings, "no documentation pack candidates matched the task")
+		result.LookupStatus = packLookupStatus(ctx, query, registration.Name, task, result)
 		env := model.Envelope{
 			Ok:        true,
 			Workspace: registration.Name,
@@ -138,6 +140,7 @@ func (a *App) pack(ctx context.Context, request model.CommandRequest) (model.Env
 			result.PrimaryDoc = routeResult.Canonical.AnchorDoc.Path
 			result.Why = append(result.Why, "preview=route_core")
 			result.NextQueries = buildPackNextQueries(registration.Name, task, request.Context.Full, result.Docs)
+			result.LookupStatus = packLookupStatus(ctx, query, registration.Name, task, result)
 			env := model.Envelope{
 				Ok:        true,
 				Workspace: registration.Name,
@@ -157,6 +160,7 @@ func (a *App) pack(ctx context.Context, request model.CommandRequest) (model.Env
 	result.Docs = packDocs
 	result.Why = append(result.Why, packWhy...)
 	result.NextQueries = buildPackNextQueries(registration.Name, task, request.Context.Full, result.Docs)
+	result.LookupStatus = packLookupStatus(ctx, query, registration.Name, task, result)
 	warnings = append(warnings, packWarnings...)
 
 	env := model.Envelope{

@@ -16,6 +16,7 @@ import (
 	"github.com/BurntSushi/toml"
 
 	"github.com/fgpaz/mi-lsp/internal/model"
+	"github.com/fgpaz/mi-lsp/internal/wikisource"
 	"github.com/fgpaz/mi-lsp/internal/workspace"
 )
 
@@ -145,33 +146,41 @@ func LoadProfile(root string) (model.DocsReadProfile, string, []string) {
 }
 
 func IndexWorkspaceDocs(ctx context.Context, root string, matcher *workspace.IgnoreMatcher) ([]model.DocRecord, []model.DocEdge, []model.DocMention, []string, error) {
-	return IndexWorkspaceDocsWithProgress(ctx, root, matcher, nil)
+	docs, edges, mentions, _, _, warnings, err := IndexWorkspaceDocsWithSourcesWithProgress(ctx, root, matcher, nil)
+	return docs, edges, mentions, warnings, err
 }
 
 func IndexWorkspaceDocsWithProgress(ctx context.Context, root string, matcher *workspace.IgnoreMatcher, progress ProgressFunc) ([]model.DocRecord, []model.DocEdge, []model.DocMention, []string, error) {
+	docs, edges, mentions, _, _, warnings, err := IndexWorkspaceDocsWithSourcesWithProgress(ctx, root, matcher, progress)
+	return docs, edges, mentions, warnings, err
+}
+
+func IndexWorkspaceDocsWithSourcesWithProgress(ctx context.Context, root string, matcher *workspace.IgnoreMatcher, progress ProgressFunc) ([]model.DocRecord, []model.DocEdge, []model.DocMention, []model.DocSourceBlock, []model.DocSourceRecord, []string, error) {
 	profile, _, warnings := LoadProfile(root)
 	if err := reportProgress(ctx, progress, Progress{Stage: "docs.collect", Force: true}); err != nil {
-		return nil, nil, nil, warnings, err
+		return nil, nil, nil, nil, nil, warnings, err
 	}
 	candidates, err := collectDocCandidates(ctx, root, profile, matcher)
 	if err != nil {
-		return nil, nil, nil, warnings, err
+		return nil, nil, nil, nil, nil, warnings, err
 	}
 	if err := reportProgress(ctx, progress, Progress{Stage: "docs.read", FilesTotal: len(candidates), Force: true}); err != nil {
-		return nil, nil, nil, warnings, err
+		return nil, nil, nil, nil, nil, warnings, err
 	}
 	docs := make([]model.DocRecord, 0, len(candidates))
 	edges := make([]model.DocEdge, 0)
 	mentions := make([]model.DocMention, 0)
+	sourceBlocks := make([]model.DocSourceBlock, 0)
+	sourceRecords := make([]model.DocSourceRecord, 0)
 	seenDocID := map[string]string{}
 	pendingDocIDEdges := make([]model.DocEdge, 0)
 
 	for _, candidate := range candidates {
 		if err := ctx.Err(); err != nil {
-			return nil, nil, nil, warnings, err
+			return nil, nil, nil, nil, nil, warnings, err
 		}
 		if err := reportProgress(ctx, progress, Progress{Stage: "docs.read", Path: candidate.relativePath, Docs: len(docs), FilesTotal: len(candidates)}); err != nil {
-			return nil, nil, nil, warnings, err
+			return nil, nil, nil, nil, nil, warnings, err
 		}
 		content, err := os.ReadFile(candidate.path)
 		if err != nil {
@@ -199,6 +208,10 @@ func IndexWorkspaceDocsWithProgress(ctx context.Context, root string, matcher *w
 
 		docMentions, docEdges := extractReferences(root, candidate.relativePath, string(content))
 		mentions = append(mentions, docMentions...)
+		sourceDoc := wikisource.Parse(candidate.relativePath, string(content), time.Now().Unix())
+		mentions = append(mentions, sourceDoc.Mentions...)
+		sourceBlocks = append(sourceBlocks, wikisource.SourceBlocks(sourceDoc, time.Now().Unix())...)
+		sourceRecords = append(sourceRecords, wikisource.SourceRecords(sourceDoc, time.Now().Unix())...)
 
 		if candidate.layer == "04" || strings.HasPrefix(doc.DocID, "RF-") {
 			if fm := extractFrontMatter(content); fm != nil {
@@ -234,7 +247,7 @@ func IndexWorkspaceDocsWithProgress(ctx context.Context, root string, matcher *w
 		}
 	}
 	if err := reportProgress(ctx, progress, Progress{Stage: "docs.read", Docs: len(docs), FilesTotal: len(candidates), Force: true}); err != nil {
-		return nil, nil, nil, warnings, err
+		return nil, nil, nil, nil, nil, warnings, err
 	}
 
 	for _, edge := range pendingDocIDEdges {
@@ -253,7 +266,7 @@ func IndexWorkspaceDocsWithProgress(ctx context.Context, root string, matcher *w
 		}
 		return docs[i].Family < docs[j].Family
 	})
-	return docs, edges, mentions, warnings, nil
+	return docs, edges, mentions, sourceBlocks, sourceRecords, warnings, nil
 }
 
 func reportProgress(ctx context.Context, progress ProgressFunc, value Progress) error {

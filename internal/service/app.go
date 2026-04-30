@@ -64,7 +64,9 @@ func (a *App) Execute(ctx context.Context, request model.CommandRequest) (model.
 	case "workspace.scan":
 		envelope, err = a.workspaceScan()
 	case "workspace.list":
-		envelope, err = a.workspaceList()
+		envelope, err = a.workspaceList(request)
+	case "workspace.doctor":
+		envelope, err = a.workspaceDoctor()
 	case "workspace.status":
 		envelope, err = a.workspaceStatus(ctx, request)
 	case "workspace.remove":
@@ -95,6 +97,10 @@ func (a *App) Execute(ctx context.Context, request model.CommandRequest) (model.
 		envelope, err = a.search(ctx, request)
 	case "nav.wiki.search":
 		envelope, err = a.wikiSearch(ctx, request)
+	case "nav.wiki.validate-harness":
+		envelope, err = a.validateHarness(ctx, request)
+	case "nav.wiki.validate-source":
+		envelope, err = a.validateSource(ctx, request)
 	case "nav.governance":
 		envelope, err = a.governance(ctx, request)
 	case "nav.route":
@@ -152,26 +158,35 @@ func (a *App) normalizeWorkspaceRequest(request model.CommandRequest) (model.Com
 		return request, nil, nil
 	}
 	if strings.TrimSpace(request.Context.Workspace) != "" {
-		return request, nil, nil
+		warnings := workspace.ExplicitWorkspaceCWDWarnings(request.Context.Workspace, request.Context.CallerCWD)
+		if strings.TrimSpace(request.Context.WorkspaceSource) == "" {
+			if resolution, err := workspace.ResolveWorkspaceSelection(request.Context.Workspace, request.Context.CallerCWD); err == nil {
+				request.Context.WorkspaceSource = string(resolution.Source)
+			} else {
+				request.Context.WorkspaceSource = string(workspace.ResolutionSourceExplicit)
+			}
+		}
+		return request, warnings, nil
 	}
 	resolution, err := workspace.ResolveWorkspaceSelection(request.Context.Workspace, request.Context.CallerCWD)
 	if err != nil {
 		return request, nil, err
 	}
 	request.Context.Workspace = resolution.Registration.Name
+	request.Context.WorkspaceSource = string(resolution.Source)
 	return request, resolution.Warnings, nil
 }
 
 func operationRequiresWorkspaceResolution(request model.CommandRequest) bool {
 	switch request.Operation {
-	case "workspace.add", "workspace.init", "workspace.scan", "workspace.list", "workspace.remove", "workspace.warm", "worker.install", "worker.status":
+	case "workspace.add", "workspace.init", "workspace.scan", "workspace.list", "workspace.doctor", "workspace.remove", "workspace.warm", "worker.install", "worker.status":
 		return false
 	case "nav.find", "nav.search":
 		allWorkspaces, _ := request.Payload["all_workspaces"].(bool)
 		return !allWorkspaces
 	case "index.run", "index.start":
 		return strings.TrimSpace(stringPayload(request.Payload, "path")) == ""
-	case "index.status", "index.cancel", "index.run-job", "workspace.status", "info", "nav.symbols", "nav.overview", "nav.outline", "nav.governance", "nav.route", "nav.wiki.route", "nav.ask", "nav.pack", "nav.wiki.pack", "nav.wiki.search", "nav.service", "nav.refs", "nav.context", "nav.deps", "nav.multi-read", "nav.batch", "nav.related", "nav.workspace-map", "nav.diff-context", "nav.trace", "nav.wiki.trace", "nav.intent":
+	case "index.status", "index.cancel", "index.run-job", "workspace.status", "info", "nav.symbols", "nav.overview", "nav.outline", "nav.governance", "nav.route", "nav.wiki.route", "nav.ask", "nav.pack", "nav.wiki.pack", "nav.wiki.search", "nav.wiki.validate-harness", "nav.wiki.validate-source", "nav.service", "nav.refs", "nav.context", "nav.deps", "nav.multi-read", "nav.batch", "nav.related", "nav.workspace-map", "nav.diff-context", "nav.trace", "nav.wiki.trace", "nav.intent":
 		return true
 	default:
 		return false

@@ -549,7 +549,7 @@ pack for a reading pack, and trace for RS/RF/TP evidence links.`,
 		},
 	}
 	searchCommand.Flags().StringVar(&searchLayer, "layer", "", "Comma-separated wiki layers: RS,RF,FL,TP,CT,TECH,DB")
-	searchCommand.Flags().IntVar(&searchTop, "top", 10, "Maximum number of wiki docs to return")
+	searchCommand.Flags().IntVar(&searchTop, "top", 0, "Maximum number of wiki docs to return")
 	searchCommand.Flags().IntVar(&searchOffset, "offset", 0, "Skip first N wiki docs")
 	searchCommand.Flags().BoolVar(&searchIncludeContent, "include-content", false, "Include markdown content for each wiki candidate")
 
@@ -619,6 +619,37 @@ pack for a reading pack, and trace for RS/RF/TP evidence links.`,
 	traceCommand.Flags().BoolVar(&traceAll, "all", false, "Trace all RFs (RF-only)")
 	traceCommand.Flags().BoolVar(&traceSummary, "summary", false, "Summary table format (with --all)")
 
-	command.AddCommand(searchCommand, routeCommand, packCommand, traceCommand)
+	var validateHarnessIDs string
+	var validateHarnessPaths string
+	validateHarnessCommand := &cobra.Command{
+		Use:   "validate-harness",
+		Short: "Validate SDD-HARNESS-v1 contracts in governed wiki docs",
+		Example: `  mi-lsp nav wiki validate-harness --workspace mi-lsp --format toon
+  mi-lsp nav wiki validate-harness --workspace multi-tedi --ids RS-TEDI-HOGAR-01,RF-GAS-12
+  mi-lsp nav wiki validate-harness --workspace multi-tedi --paths .docs/wiki/02_resultados/RS-TEDI-HOGAR-01.md`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			payload := map[string]any{}
+			if strings.TrimSpace(validateHarnessIDs) != "" {
+				payload["ids"] = validateHarnessIDs
+			}
+			if strings.TrimSpace(validateHarnessPaths) != "" {
+				payload["paths"] = validateHarnessPaths
+			}
+			return state.executeOperation(cmd, "nav.wiki.validate-harness", payload, true)
+		},
+	}
+	validateHarnessCommand.Flags().StringVar(&validateHarnessIDs, "ids", "", "Comma-separated doc IDs/titles/basenames to validate")
+	validateHarnessCommand.Flags().StringVar(&validateHarnessPaths, "paths", "", "Comma-separated doc paths or basenames to validate")
+
+	validateSourceCommand := &cobra.Command{
+		Use:     "validate-source",
+		Short:   "Validate SDD-WIKI-SOURCE-v1 source blocks in governed wiki docs",
+		Example: `  mi-lsp nav wiki validate-source --workspace mi-lsp --format toon`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return state.executeOperation(cmd, "nav.wiki.validate-source", map[string]any{}, true)
+		},
+	}
+
+	command.AddCommand(searchCommand, routeCommand, packCommand, traceCommand, validateHarnessCommand, validateSourceCommand)
 	return command
 }

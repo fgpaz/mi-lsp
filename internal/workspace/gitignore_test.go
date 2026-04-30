@@ -50,6 +50,7 @@ func TestDefaultIgnoreMatcherSkipsGeneratedDependencyCaches(t *testing.T) {
 		"C:/repo/frontend/.turbo/cache/state.json",
 		"C:/repo/frontend/.next/server/app/page.js",
 		"C:/repo/frontend/node_modules/pkg/index.js",
+		"C:/repo/.docs/temp/worktrees/feature/.docs/wiki/04_RF/RF-WKS-005.md",
 	} {
 		assertIgnored(t, matcher, "C:/repo", path)
 	}
@@ -73,6 +74,22 @@ func TestIgnoreMatcherHonorsNegatedReincludesInOrder(t *testing.T) {
 
 	assertNotIgnored(t, matcher, root, filepath.Join(root, ".docs", "wiki", "09_contratos", "CT-NAV-ASK.md"))
 	assertIgnored(t, matcher, root, filepath.Join(root, ".docs", "tmp", "draft.md"))
+}
+
+func TestHardIgnoreMatcherKeepsWorktreesIgnoredAfterNegatedReinclude(t *testing.T) {
+	root := t.TempDir()
+	mustWriteFile(t, filepath.Join(root, ".gitignore"), strings.Join([]string{
+		"/.docs/*",
+		"!/.docs/**",
+	}, "\n"))
+
+	matcher, err := LoadIgnoreMatcher(root, nil)
+	if err != nil {
+		t.Fatalf("LoadIgnoreMatcher returned error: %v", err)
+	}
+
+	assertNotIgnored(t, matcher, root, filepath.Join(root, ".docs", "wiki", "04_RF", "RF-WKS-005.md"))
+	assertIgnored(t, matcher, root, filepath.Join(root, ".docs", "temp", "worktrees", "feature-a", ".docs", "wiki", "04_RF", "RF-WKS-005.md"))
 }
 
 func TestIgnoreMatcherSupportsDoubleStarDirectoryPatterns(t *testing.T) {

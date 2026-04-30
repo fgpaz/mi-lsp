@@ -81,7 +81,7 @@ func (s *rootState) resolveAXIDecision(cmd *cobra.Command, operation string, pay
 
 func supportsAXISurface(operation string) bool {
 	switch operation {
-	case "root.home", "workspace.init", "workspace.status", "nav.ask", "nav.pack", "nav.wiki.pack", "nav.route", "nav.wiki.route", "nav.workspace-map", "nav.search", "nav.wiki.search", "nav.intent":
+	case "root.home", "workspace.init", "workspace.status", "nav.ask", "nav.pack", "nav.wiki.pack", "nav.route", "nav.wiki.route", "nav.workspace-map", "nav.search", "nav.wiki.search", "nav.wiki.validate-harness", "nav.wiki.validate-source", "nav.intent":
 		return true
 	default:
 		return false
@@ -90,7 +90,7 @@ func supportsAXISurface(operation string) bool {
 
 func defaultAXIForOperation(operation string, payload map[string]any) bool {
 	switch operation {
-	case "root.home", "workspace.init", "workspace.status", "nav.search", "nav.wiki.search", "nav.intent", "nav.pack", "nav.wiki.pack", "nav.route", "nav.wiki.route":
+	case "root.home", "workspace.init", "workspace.status", "nav.search", "nav.wiki.search", "nav.wiki.validate-harness", "nav.wiki.validate-source", "nav.intent", "nav.pack", "nav.wiki.pack", "nav.route", "nav.wiki.route":
 		return true
 	case "nav.ask":
 		return shouldDefaultAXIAsk(questionFromPayload(payload))

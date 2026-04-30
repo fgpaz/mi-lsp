@@ -1,5 +1,32 @@
 # TECH-WIKI-AWARE-SEARCH
 
+```yaml
+harness_protocol: SDD-HARNESS-v1
+id: "TECH-WIKI-AWARE-SEARCH"
+kind: "support-doc"
+audience: "llm-first"
+imports:
+  - '[[00_gobierno_documental]]'
+  - '[[TECH-WIKI-AWARE-SEARCH]]'
+exports:
+  - 'TECH-WIKI-AWARE-SEARCH'
+agent_must_read:
+  - .docs/wiki/00_gobierno_documental.md
+  - .docs/wiki/07_tech/TECH-WIKI-AWARE-SEARCH.md
+agent_may_edit:
+  - .docs/wiki/07_tech/TECH-WIKI-AWARE-SEARCH.md
+agent_must_not_edit:
+  - .docs/wiki/_mi-lsp/read-model.toml
+verify:
+  - mi-lsp nav governance --workspace mi-lsp --format toon
+  - mi-lsp nav wiki validate-harness --workspace mi-lsp --format toon
+stop_if:
+  - governance_blocked=true
+  - harness_verdict=BLOCKED
+evidence:
+  - .docs/wiki/07_tech/TECH-WIKI-AWARE-SEARCH.md
+```
+
 ## Proposito
 
 Describir el pipeline tecnico de `nav wiki`, `nav ask`, `nav pack` y del indice documental repo-local.
@@ -7,14 +34,15 @@ Esta capa existe para que la respuesta docs-first y los reading packs canonicos 
 
 ## Pipeline
 
-1. `workspace init` o `index` construye `doc_records`, `doc_edges` y `doc_mentions`; `index --docs-only` reconstruye solo esas tablas y la memoria de reentrada.
+1. `workspace init` o `index` construye `doc_records`, `doc_edges`, `doc_mentions`, `doc_source_blocks` y `doc_source_records`; `index --docs-only` reconstruye solo esas tablas y la memoria de reentrada.
 2. `docgraph.LoadProfile()` carga `.docs/wiki/_mi-lsp/read-model.toml` si existe; si no, usa el perfil embebido.
-3. `nav wiki search` rankea `doc_records` y filtra por capas documentales explicitas (`RF`, `FL`, `TP`, `CT`, `TECH`, `DB`).
+3. `nav wiki search` rankea `doc_records` y filtra por capas documentales explicitas (`RS`, `RF`, `FL`, `TP`, `CT`, `TECH`, `DB`).
 4. `nav ask` clasifica la pregunta por familia (`functional`, `technical`, `ux` o fallback generico).
 5. El ranker pondera familia, capa (`01-09`/`10-16`), `doc_id` explicito y tokens de pregunta.
 6. El documento primario se completa con supporting docs via `doc_edges` antes de volver al ranking textual.
 7. La evidencia de codigo se deriva desde `doc_mentions` (`file_path`, `symbol`) y solo despues usa fallback textual.
 8. `nav pack` reutiliza familia, capas, `doc_edges` y el bloque `reading_pack` del perfil para construir un reading pack ordenado con stages y slices on-demand.
+9. `nav wiki validate-source` abre los Markdown que declaran `wiki_source_protocol: SDD-WIKI-SOURCE-v1`, valida `doc_id`, fences `toon`, `block_id`, records referenciables y excepciones de tablas, y compara contra las filas typed publicadas.
 
 ## Reglas clave
 
@@ -26,6 +54,9 @@ Esta capa existe para que la respuesta docs-first y los reading packs canonicos 
 - Si no hay docs indexados y no existe wiki canonica, `nav ask` degrada a search textual del workspace.
 - Si existen docs pero el match es debil, la respuesta igual debe ser explainable con `why` y `next_queries`.
 - `nav wiki search` debe cortar por governance bloqueada y por docgraph vacio antes de ofrecer candidatos.
+- `nav wiki search` debe resolver coincidencias exactas de `doc_id`, `block_id` y `record_id` fuente antes de aplicar ranking textual.
+- `nav wiki search|route|pack|trace` debe adjuntar `lookup_status` para que un agente distinga identidad canonica indexada, alias/read-model, fallback por menciones/contenido, preview truncada, indice vacio/stale, filtros, ambiguedad y ausencia real.
+- Los documentos no migrados a `SDD-WIKI-SOURCE-v1` no bloquean `validate-source`; solo bloquean los artefactos que declaran el protocolo y fallan su shape.
 - `nav ask|route|pack --repo docs` es compatibilidad para agentes: se acepta, se ignora como filtro documental y se guia a `nav wiki`.
 
 ## nav wiki como primer paso recomendado

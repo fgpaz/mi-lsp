@@ -1,5 +1,32 @@
 # FL-DAE-01
 
+```yaml
+harness_protocol: SDD-HARNESS-v1
+id: "FL-DAE-01"
+kind: "support-doc"
+audience: "llm-first"
+imports:
+  - '[[00_gobierno_documental]]'
+  - '[[FL-DAE-01]]'
+exports:
+  - 'FL-DAE-01'
+agent_must_read:
+  - .docs/wiki/00_gobierno_documental.md
+  - .docs/wiki/03_FL/FL-DAE-01.md
+agent_may_edit:
+  - .docs/wiki/03_FL/FL-DAE-01.md
+agent_must_not_edit:
+  - .docs/wiki/_mi-lsp/read-model.toml
+verify:
+  - mi-lsp nav governance --workspace mi-lsp --format toon
+  - mi-lsp nav wiki validate-harness --workspace mi-lsp --format toon
+stop_if:
+  - governance_blocked=true
+  - harness_verdict=BLOCKED
+evidence:
+  - .docs/wiki/03_FL/FL-DAE-01.md
+```
+
 ## 1. Goal
 
 Mantener un daemon global opcional por usuario que reduzca latencia warm, comparta estado entre clientes locales y exponga una vista de gobernanza workspace-first sin convertirse en requisito operativo para la CLI. El input visible sigue siendo `workspace` (alias/path), mientras que la identidad canonica de runtime y analytics es `workspace_root`.

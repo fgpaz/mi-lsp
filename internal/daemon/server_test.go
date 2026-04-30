@@ -137,3 +137,28 @@ func TestBackpressureBusyEnvelopeIsTyped(t *testing.T) {
 		t.Fatalf("error_code = %v, want backpressure_busy", items[0]["error_code"])
 	}
 }
+
+func TestRuntimeKeyUsesWorkspaceRootNotAlias(t *testing.T) {
+	root := t.TempDir()
+	left := model.WorkspaceRegistration{Name: "alias-left", Root: root}
+	right := model.WorkspaceRegistration{Name: "alias-right", Root: root}
+	request := model.WorkerRequest{BackendType: "roslyn", EntrypointID: "default"}
+
+	leftKey := runtimeKey(left, request)
+	rightKey := runtimeKey(right, request)
+	if leftKey != rightKey {
+		t.Fatalf("runtime keys for same root aliases differ: %q vs %q", leftKey, rightKey)
+	}
+}
+
+func TestRuntimeKeySeparatesDifferentWorktreeRoots(t *testing.T) {
+	left := model.WorkspaceRegistration{Name: "mi-lsp-main", Root: t.TempDir()}
+	right := model.WorkspaceRegistration{Name: "mi-lsp-feature", Root: t.TempDir()}
+	request := model.WorkerRequest{BackendType: "roslyn", EntrypointID: "default"}
+
+	leftKey := runtimeKey(left, request)
+	rightKey := runtimeKey(right, request)
+	if leftKey == rightKey {
+		t.Fatalf("runtime keys for different roots should differ: %q", leftKey)
+	}
+}

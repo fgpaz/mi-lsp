@@ -1,5 +1,32 @@
 # TECH-DAEMON-GOBERNANZA
 
+```yaml
+harness_protocol: SDD-HARNESS-v1
+id: "TECH-DAEMON-GOBERNANZA"
+kind: "support-doc"
+audience: "llm-first"
+imports:
+  - '[[00_gobierno_documental]]'
+  - '[[TECH-DAEMON-GOBERNANZA]]'
+exports:
+  - 'TECH-DAEMON-GOBERNANZA'
+agent_must_read:
+  - .docs/wiki/00_gobierno_documental.md
+  - .docs/wiki/07_tech/TECH-DAEMON-GOBERNANZA.md
+agent_may_edit:
+  - .docs/wiki/07_tech/TECH-DAEMON-GOBERNANZA.md
+agent_must_not_edit:
+  - .docs/wiki/_mi-lsp/read-model.toml
+verify:
+  - mi-lsp nav governance --workspace mi-lsp --format toon
+  - mi-lsp nav wiki validate-harness --workspace mi-lsp --format toon
+stop_if:
+  - governance_blocked=true
+  - harness_verdict=BLOCKED
+evidence:
+  - .docs/wiki/07_tech/TECH-DAEMON-GOBERNANZA.md
+```
+
 Volver a [07_baseline_tecnica.md](../07_baseline_tecnica.md).
 
 ## Summary
@@ -17,7 +44,9 @@ Define el modelo canonico del daemon global, su governance UI workspace-first y 
 ### Topologia canonica
 
 - Un daemon por usuario/host.
-- Un runtime vivo por `(workspace_root, backend_type)`.
+- Un runtime vivo por `(workspace_root, backend_type, entrypoint_id)`.
+- Aliases duplicados del mismo `workspace_root` pueden compartir runtime si backend y entrypoint coinciden.
+- Worktrees distintos del mismo repositorio no comparten runtime porque su `workspace_root` fisico es distinto aunque compartan `git common dir`.
 - Pools separados por backend:
   - `roslyn`
   - `tsserver`
@@ -45,7 +74,7 @@ Define el modelo canonico del daemon global, su governance UI workspace-first y 
   - crear nueva instancia solo bajo lock global
 - `EnsureDaemon` debe usar el mismo lock global y health recheck que `daemon start`; el estado persistido no basta si el pipe/socket no responde.
 - El watcher no arranca recursivamente sobre todos los aliases por default: `lazy` activa por root canonico, `eager` es opt-in y `off` deshabilita watchers.
-- Los watchers se deduplican por `workspace_root` canonico y se acotan por LRU con `max_watched_roots`.
+- Los watchers se deduplican por `workspace_root` canonico y se acotan por LRU con `max_watched_roots`; worktrees con roots distintos se observan por separado.
 - Requests pesadas daemon-aware se acotan con `max_inflight`; saturacion devuelve `daemon/backpressure_busy`.
 
 ### Governance UI

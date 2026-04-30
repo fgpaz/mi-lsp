@@ -1,5 +1,32 @@
 # TECH-PYTHON-BACKEND
 
+```yaml
+harness_protocol: SDD-HARNESS-v1
+id: "TECH-PYTHON-BACKEND"
+kind: "support-doc"
+audience: "llm-first"
+imports:
+  - '[[00_gobierno_documental]]'
+  - '[[TECH-PYTHON-BACKEND]]'
+exports:
+  - 'TECH-PYTHON-BACKEND'
+agent_must_read:
+  - .docs/wiki/00_gobierno_documental.md
+  - .docs/wiki/07_tech/TECH-PYTHON-BACKEND.md
+agent_may_edit:
+  - .docs/wiki/07_tech/TECH-PYTHON-BACKEND.md
+agent_must_not_edit:
+  - .docs/wiki/_mi-lsp/read-model.toml
+verify:
+  - mi-lsp nav governance --workspace mi-lsp --format toon
+  - mi-lsp nav wiki validate-harness --workspace mi-lsp --format toon
+stop_if:
+  - governance_blocked=true
+  - harness_verdict=BLOCKED
+evidence:
+  - .docs/wiki/07_tech/TECH-PYTHON-BACKEND.md
+```
+
 Volver a [07_baseline_tecnica.md](../07_baseline_tecnica.md).
 
 ## Summary

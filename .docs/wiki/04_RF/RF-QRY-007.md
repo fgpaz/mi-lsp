@@ -9,6 +9,33 @@ tests:
   - internal/cli/root_test.go
 ---
 
+```yaml
+harness_protocol: SDD-HARNESS-v1
+id: "RF-QRY-007"
+kind: "support-doc"
+audience: "llm-first"
+imports:
+  - '[[00_gobierno_documental]]'
+  - '[[RF-QRY-007]]'
+exports:
+  - 'RF-QRY-007'
+agent_must_read:
+  - .docs/wiki/00_gobierno_documental.md
+  - .docs/wiki/04_RF/RF-QRY-007.md
+agent_may_edit:
+  - .docs/wiki/04_RF/RF-QRY-007.md
+agent_must_not_edit:
+  - .docs/wiki/_mi-lsp/read-model.toml
+verify:
+  - mi-lsp nav governance --workspace mi-lsp --format toon
+  - mi-lsp nav wiki validate-harness --workspace mi-lsp --format toon
+stop_if:
+  - governance_blocked=true
+  - harness_verdict=BLOCKED
+evidence:
+  - .docs/wiki/04_RF/RF-QRY-007.md
+```
+
 # RF-QRY-007 - Generar mapa de workspace con servicios, endpoints, eventos y dependencias
 
 ## 1. Execution Sheet
