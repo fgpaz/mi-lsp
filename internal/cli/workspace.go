@@ -34,11 +34,25 @@ with an optional .mi-lsp/project.toml topology file.`,
 		},
 	}
 
+	var listGroupByRoot bool
 	listCommand := &cobra.Command{
 		Use:   "list",
 		Short: "List registered workspaces",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return state.executeOperation(cmd, "workspace.list", nil, false)
+			payload := map[string]any{}
+			if listGroupByRoot {
+				payload["group_by_root"] = true
+			}
+			return state.executeOperation(cmd, "workspace.list", payload, false)
+		},
+	}
+	listCommand.Flags().BoolVar(&listGroupByRoot, "group-by-root", false, "Group registered aliases by canonical root without mutating the registry")
+
+	doctorCommand := &cobra.Command{
+		Use:   "doctor",
+		Short: "Diagnose registry hygiene without mutating aliases",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return state.executeOperation(cmd, "workspace.doctor", nil, false)
 		},
 	}
 
@@ -81,6 +95,6 @@ with an optional .mi-lsp/project.toml topology file.`,
 		},
 	}
 
-	command.AddCommand(addCommand, scanCommand, listCommand, warmCommand, statusCommand, removeCommand)
+	command.AddCommand(addCommand, scanCommand, listCommand, doctorCommand, warmCommand, statusCommand, removeCommand)
 	return command
 }

@@ -126,6 +126,45 @@ function Get-FirstTraceableDocId {
     return ""
 }
 
+function Test-OperationSkipped {
+    param($Result)
+
+    if ($null -eq $Result) {
+        return $false
+    }
+    $property = $Result.PSObject.Properties["skipped"]
+    return ($null -ne $property -and [bool]$property.Value)
+}
+
+function Test-OperationFailed {
+    param($Result)
+
+    if ($null -eq $Result) {
+        return $false
+    }
+    $okProperty = $Result.PSObject.Properties["ok"]
+    $ok = ($null -ne $okProperty -and [bool]$okProperty.Value)
+    return (-not $ok -and -not (Test-OperationSkipped -Result $Result))
+}
+
+function Get-WorkspaceSmokeStatus {
+    param($WorkspaceReport)
+
+    if ((Test-OperationFailed -Result $WorkspaceReport.status) -or
+        (Test-OperationFailed -Result $WorkspaceReport.wiki_search) -or
+        (Test-OperationFailed -Result $WorkspaceReport.wiki_pack) -or
+        (Test-OperationFailed -Result $WorkspaceReport.wiki_trace)) {
+        return "failed"
+    }
+    if ((Test-OperationSkipped -Result $WorkspaceReport.status) -or
+        (Test-OperationSkipped -Result $WorkspaceReport.wiki_search) -or
+        (Test-OperationSkipped -Result $WorkspaceReport.wiki_pack) -or
+        (Test-OperationSkipped -Result $WorkspaceReport.wiki_trace)) {
+        return "skipped"
+    }
+    return "passed"
+}
+
 function Get-GoVersionMetadata {
     param(
         [string]$Name,
@@ -167,6 +206,8 @@ $workspaceReports = New-Object System.Collections.Generic.List[object]
 foreach ($workspace in @($workspaceList.result.items)) {
     $alias = [string]$workspace.name
     $root = [string]$workspace.root
+    $kind = [string]$workspace.kind
+    $family = if ($root) { Split-Path -Leaf $root } else { "" }
     if (-not $alias) {
         continue
     }
@@ -195,6 +236,8 @@ foreach ($workspace in @($workspaceList.result.items)) {
     $workspaceReports.Add([pscustomobject]@{
         workspace = $alias
         root = $root
+        kind = $kind
+        family = $family
         status = $status
         wiki_search = $search
         wiki_pack = $pack
@@ -215,12 +258,21 @@ try {
     $metadata += [pscustomobject]@{ name = "wsl-global"; path = "wsl:mi-lsp"; ok = $false; output = $_.Exception.Message }
 }
 
+$rootGroups = @($workspaceReports | Group-Object -Property root)
+$aliasesPerRoot = @{}
+foreach ($group in $rootGroups) {
+    $aliasesPerRoot[$group.Name] = @($group.Group | ForEach-Object { $_.workspace })
+}
+
 $report = [pscustomobject]@{
     generated_at = (Get-Date).ToString("o")
     cli = $Cli
     query = $Query
     allow_status_auto_sync = [bool]$AllowStatusAutoSync
     workspace_count = $workspaceReports.Count
+    unique_root_count = $rootGroups.Count
+    duplicate_root_count = @($rootGroups | Where-Object { $_.Count -gt 1 }).Count
+    aliases_per_root = $aliasesPerRoot
     workspaces = $workspaceReports.ToArray()
     go_version_m = $metadata
 }
@@ -229,9 +281,8 @@ $jsonPath = Join-Path $targetDir "report.json"
 $mdPath = Join-Path $targetDir "report.md"
 $report | ConvertTo-Json -Depth 40 | Set-Content -LiteralPath $jsonPath -Encoding utf8
 
-$failed = @($workspaceReports | Where-Object {
-    -not $_.status.ok -or -not $_.wiki_search.ok -or -not $_.wiki_pack.ok -or ($null -ne $_.wiki_trace -and -not $_.wiki_trace.ok)
-})
+$failed = @($workspaceReports | Where-Object { (Get-WorkspaceSmokeStatus -WorkspaceReport $_) -eq "failed" })
+$skipped = @($workspaceReports | Where-Object { (Get-WorkspaceSmokeStatus -WorkspaceReport $_) -eq "skipped" })
 
 $lines = New-Object System.Collections.Generic.List[string]
 $lines.Add("# Release Regression Smoke")
@@ -239,6 +290,9 @@ $lines.Add("")
 $lines.Add("- generated_at: $($report.generated_at)")
 $lines.Add("- cli: ``$Cli``")
 $lines.Add("- workspaces: $($workspaceReports.Count)")
+$lines.Add("- unique_roots: $($report.unique_root_count)")
+$lines.Add("- duplicate_roots: $($report.duplicate_root_count)")
+$lines.Add("- skipped_workspaces: $($skipped.Count)")
 $lines.Add("- failed_workspaces: $($failed.Count)")
 $lines.Add("")
 $lines.Add("## Binary Metadata")
@@ -246,11 +300,20 @@ foreach ($item in $metadata) {
     $lines.Add("- $($item.name): ok=$($item.ok) path=$($item.path)")
 }
 $lines.Add("")
-$lines.Add("## Workspace Results")
-foreach ($item in $workspaceReports) {
-    $trace = if ($item.trace_id) { $item.trace_id } else { "n/a" }
-    $ok = $item.status.ok -and $item.wiki_search.ok -and $item.wiki_pack.ok -and (($null -eq $item.wiki_trace) -or $item.wiki_trace.ok)
-    $lines.Add("- $($item.workspace): ok=$ok trace=$trace root=$($item.root)")
+$lines.Add("## Workspace Results By Status")
+$statusGroups = @($workspaceReports | Group-Object -Property @{ Expression = {
+    Get-WorkspaceSmokeStatus -WorkspaceReport $_
+} })
+foreach ($statusGroup in $statusGroups | Sort-Object Name) {
+    $lines.Add("")
+    $lines.Add("### $($statusGroup.Name)")
+    foreach ($rootGroup in @($statusGroup.Group | Group-Object -Property root | Sort-Object Name)) {
+        $lines.Add("- root: $($rootGroup.Name)")
+        foreach ($item in @($rootGroup.Group | Sort-Object workspace)) {
+            $trace = if ($item.trace_id) { $item.trace_id } else { "n/a" }
+            $lines.Add("  - alias: $($item.workspace) kind=$($item.kind) family=$($item.family) trace=$trace")
+        }
+    }
 }
 
 $lines | Set-Content -LiteralPath $mdPath -Encoding utf8

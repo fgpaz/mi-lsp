@@ -31,3 +31,6 @@
 | TC-DAE-018 | positivo | RF-DAE-002, RF-DAE-004 | `daemon status` y `/api/status` exponen `daemon_process` y `watchers` |
 | TC-DAE-019 | negativo | RF-DAE-002 | saturacion de requests daemon-aware devuelve `daemon/backpressure_busy` tipado sin bloquear `system.status` |
 | TC-DAE-020 | positivo | RF-DAE-002 | `daemon perf-smoke --callers 16` valida una instancia alcanzable y presupuestos de memoria/handles |
+| TC-DAE-021 | positivo | RF-DAE-002 | aliases distintos con mismo root/backend/entrypoint comparten `runtime_key` canonico |
+| TC-DAE-022 | positivo | RF-DAE-002 | entrypoints distintos del mismo root generan runtimes separados |
+| TC-DAE-023 | positivo | RF-DAE-002 | release smoke separa skipped de failed y reporta `unique_root_count`, `duplicate_root_count`, `aliases_per_root` |

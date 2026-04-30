@@ -5,7 +5,7 @@
 | RF | FL origen | TP | Casos positivos minimos | Casos negativos minimos | Estado |
 |---|---|---|---|---|---|
 | RF-WKS-001 | FL-BOOT-01 | TP-WKS | TC-WKS-001, TC-WKS-002, TC-WKS-004, TC-WKS-005 | TC-WKS-003 | ready |
-| RF-WKS-002 | FL-BOOT-01 | TP-WKS | TC-WKS-006, TC-WKS-007 | TC-WKS-008 | ready |
+| RF-WKS-002 | FL-BOOT-01 | TP-WKS | TC-WKS-006, TC-WKS-007, TC-WKS-017, TC-WKS-018, TC-WKS-019 | TC-WKS-008 | implemented |
 | RF-WKS-003 | FL-BOOT-01 | TP-WKS | TC-WKS-009 | TC-WKS-010 | ready |
 | RF-WKS-004 | FL-BOOT-01 | TP-WKS | TC-WKS-011, TC-WKS-012, TC-WKS-016 | TC-WKS-013 | implemented |
 | RF-WKS-005 | FL-BOOT-01 | TP-WKS | TC-WKS-014 | TC-WKS-015 | implemented |

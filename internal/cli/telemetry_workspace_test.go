@@ -76,7 +76,8 @@ func TestRecordOperationPersistsResolvedWorkspaceWhenSelectorIsEmpty(t *testing.
 	if got.WorkspaceRoot != root {
 		t.Fatalf("workspace_root = %q, want %q", got.WorkspaceRoot, root)
 	}
-	if got.RuntimeKey != "ask::interbancarizacion_coelsa::default" {
-		t.Fatalf("runtime_key = %q, want ask::interbancarizacion_coelsa::default", got.RuntimeKey)
+	wantRuntimeKey := "ask::" + root + "::default"
+	if got.RuntimeKey != wantRuntimeKey {
+		t.Fatalf("runtime_key = %q, want %q", got.RuntimeKey, wantRuntimeKey)
 	}
 }

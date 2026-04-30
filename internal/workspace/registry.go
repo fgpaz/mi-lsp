@@ -30,6 +30,17 @@ type WorkspaceResolution struct {
 	Warnings     []string
 }
 
+type RootGroup struct {
+	Root            string
+	AliasCount      int
+	Aliases         []string
+	CanonicalAlias  string
+	SelectionReason string
+	Kind            string
+	Registrations   []model.WorkspaceRegistration
+	Warnings        []string
+}
+
 func GlobalDir() (string, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
@@ -186,6 +197,74 @@ func ListWorkspaces() ([]model.WorkspaceRegistration, error) {
 	return items, nil
 }
 
+func GroupWorkspacesByRoot() ([]RootGroup, error) {
+	registry, err := LoadRegistry()
+	if err != nil {
+		return nil, err
+	}
+	grouped := map[string][]model.WorkspaceRegistration{}
+	displayRoots := map[string]string{}
+	for alias, ws := range registry.Workspaces {
+		ws.Name = alias
+		key, ok := normalizeComparablePath(ws.Root)
+		if !ok {
+			key = strings.ToLower(strings.TrimSpace(ws.Root))
+		}
+		if key == "" {
+			key = "<missing-root>"
+		}
+		grouped[key] = append(grouped[key], ws)
+		if displayRoots[key] == "" {
+			displayRoots[key] = cleanDisplayRoot(ws.Root)
+		}
+	}
+
+	keys := make([]string, 0, len(grouped))
+	for key := range grouped {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+
+	groups := make([]RootGroup, 0, len(keys))
+	for _, key := range keys {
+		registrations := grouped[key]
+		sort.Slice(registrations, func(i, j int) bool {
+			return strings.ToLower(registrations[i].Name) < strings.ToLower(registrations[j].Name)
+		})
+		selection := selectAliasForRoot(registrations, registry.Defaults.LastWorkspace)
+		aliases := make([]string, 0, len(registrations))
+		kinds := map[string]struct{}{}
+		warnings := []string{}
+		for _, registration := range registrations {
+			aliases = append(aliases, registration.Name)
+			if strings.TrimSpace(string(registration.Kind)) != "" {
+				kinds[string(registration.Kind)] = struct{}{}
+			}
+		}
+		root := displayRoots[key]
+		if root == "" {
+			root = registrations[0].Root
+		}
+		if _, err := os.Stat(root); err != nil {
+			warnings = append(warnings, fmt.Sprintf("root path is not accessible: %v", err))
+		}
+		if len(registrations) > 1 {
+			warnings = append(warnings, "multiple aliases share this root; aliases are preserved")
+		}
+		groups = append(groups, RootGroup{
+			Root:            root,
+			AliasCount:      len(registrations),
+			Aliases:         aliases,
+			CanonicalAlias:  selection.Registration.Name,
+			SelectionReason: selection.Reason,
+			Kind:            summarizeKinds(kinds),
+			Registrations:   registrations,
+			Warnings:        warnings,
+		})
+	}
+	return groups, nil
+}
+
 func WorkspaceStateDir(root string) string {
 	return filepath.Join(root, registryDirName)
 }
@@ -261,6 +340,7 @@ func resolveWorkspaceFromCallerCWD(callerCWD string, registry model.RegistryFile
 type aliasSelection struct {
 	Registration model.WorkspaceRegistration
 	Warnings     []string
+	Reason       string
 }
 
 func selectAliasForRoot(registrations []model.WorkspaceRegistration, lastWorkspace string) aliasSelection {
@@ -269,7 +349,7 @@ func selectAliasForRoot(registrations []model.WorkspaceRegistration, lastWorkspa
 		return strings.ToLower(sorted[i].Name) < strings.ToLower(sorted[j].Name)
 	})
 	if len(sorted) == 1 {
-		return aliasSelection{Registration: sorted[0]}
+		return aliasSelection{Registration: sorted[0], Reason: "single alias"}
 	}
 
 	root := sorted[0].Root
@@ -300,7 +380,7 @@ func selectAliasForRoot(registrations []model.WorkspaceRegistration, lastWorkspa
 	warnings := []string{
 		fmt.Sprintf("workspace omitted; multiple registry aliases share root %q; selected %q using %s", root, chosen.Name, reason),
 	}
-	return aliasSelection{Registration: chosen, Warnings: warnings}
+	return aliasSelection{Registration: chosen, Warnings: warnings, Reason: reason}
 }
 
 func findRegistrationByAlias(registrations []model.WorkspaceRegistration, alias string) (model.WorkspaceRegistration, bool) {
@@ -352,4 +432,27 @@ func normalizeComparablePath(path string) (string, bool) {
 
 func pathContains(cwd string, root string) bool {
 	return cwd == root || strings.HasPrefix(cwd, root+string(os.PathSeparator))
+}
+
+func cleanDisplayRoot(root string) string {
+	trimmed := strings.TrimSpace(root)
+	if trimmed == "" {
+		return ""
+	}
+	if abs, err := filepath.Abs(trimmed); err == nil {
+		trimmed = abs
+	}
+	return filepath.Clean(trimmed)
+}
+
+func summarizeKinds(kinds map[string]struct{}) string {
+	if len(kinds) == 0 {
+		return ""
+	}
+	items := make([]string, 0, len(kinds))
+	for kind := range kinds {
+		items = append(items, kind)
+	}
+	sort.Strings(items)
+	return strings.Join(items, ",")
 }

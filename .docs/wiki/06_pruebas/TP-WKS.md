@@ -28,3 +28,6 @@
 | TC-WKS-014 | positivo | RF-WKS-005 | `workspace status` expone `governance_profile`, `governance_sync`, `governance_index_sync` y `governance_blocked` |
 | TC-WKS-015 | negativo | RF-WKS-005 | si falta `00_gobierno_documental.md` o la gobernanza es invalida, el repo entra en `blocked mode` |
 | TC-WKS-016 | positivo | RF-WKS-004 | `TestAXIFalseDisablesDefaultAXISurface`: `--axi=false` explícito deshabilita AXI incluso en superficies AXI-default (Wave 3b hard disable) |
+| TC-WKS-017 | positivo | RF-WKS-002 | multiples aliases del mismo root se conservan en `workspace list` |
+| TC-WKS-018 | positivo | RF-WKS-002 | `workspace list --group-by-root` agrupa por root con alias_count/canonical_alias sin mutar registry |
+| TC-WKS-019 | positivo | RF-WKS-002 | `workspace doctor` reporta duplicate roots/stale paths/binario shadowed como diagnostico no mutante |
