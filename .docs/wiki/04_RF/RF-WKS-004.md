@@ -1,4 +1,43 @@
+---
+id: RF-WKS-004
+title: Exponer AXI selectivo por superficie para onboarding y discovery del CLI
+implements:
+  - internal/cli/workspace.go
+  - internal/service/workspace_ops.go
+  - internal/workspace/registry.go
+tests:
+  - internal/service/app_test.go
+  - internal/workspace/registry_test.go
+---
+
 # RF-WKS-004 - Exponer AXI selectivo por superficie para onboarding y discovery del CLI
+
+```yaml
+harness_protocol: SDD-HARNESS-v1
+id: "RF-WKS-004"
+kind: "support-doc"
+audience: "llm-first"
+imports:
+  - '[[00_gobierno_documental]]'
+  - '[[RF-WKS-004]]'
+exports:
+  - 'RF-WKS-004'
+agent_must_read:
+  - .docs/wiki/00_gobierno_documental.md
+  - .docs/wiki/04_RF/RF-WKS-004.md
+agent_may_edit:
+  - .docs/wiki/04_RF/RF-WKS-004.md
+agent_must_not_edit:
+  - .docs/wiki/_mi-lsp/read-model.toml
+verify:
+  - mi-lsp nav governance --workspace mi-lsp --format toon
+  - mi-lsp nav wiki validate-harness --workspace mi-lsp --format toon
+stop_if:
+  - governance_blocked=true
+  - harness_verdict=BLOCKED
+evidence:
+  - .docs/wiki/04_RF/RF-WKS-004.md
+```
 
 ## 1. Execution Sheet
 
@@ -43,6 +82,9 @@
 - `--axi` y `--classic` juntos deben fallar con error claro.
 - La version actual no usa hooks ni contexto ambiente fuera del proceso CLI.
 - El home AXI puede mostrar readiness barata (daemon/worker) pero no debe mutar runtime solo para renderizar el overview.
+- `workspace list` sin flags sigue preservando todos los aliases registrados.
+- `workspace list --group-by-root` solo agrega una vista diagnostica por root exacto; no deduplica ni modifica el registry.
+- `workspace doctor` es diagnostico no mutante para aliases duplicados, familias de worktrees, paths stale y shadowing de binario.
 
 ## 6. Data Model Impact
 
@@ -60,4 +102,4 @@
 - TOON default en PersistentPreRunE: `internal/cli/root.go:103-106`
 - Mutual exclusion `--axi + --classic`: `internal/cli/root.go:101-103`
 - `--axi=false` hard disable: `internal/cli/axi_mode.go:65-69`
-- Cobertura de tests: TC-WKS-011, TC-WKS-012, TC-WKS-013, TC-WKS-016
+- Cobertura de tests: TC-WKS-011, TC-WKS-012, TC-WKS-013, TC-WKS-016, TC-WKS-017, TC-WKS-018, TC-WKS-021, TC-WKS-022

@@ -1,5 +1,32 @@
 # Task T3: Telemetria Enrichment -- seq Column
 
+```yaml
+harness_protocol: SDD-HARNESS-v1
+id: "T3"
+kind: "support-doc"
+audience: "dual"
+imports:
+  - '[[00_gobierno_documental]]'
+  - '.docs/planificacion/wave-1/T3-telemetria-seq.md'
+exports:
+  - 'T3'
+agent_must_read:
+  - .docs/wiki/00_gobierno_documental.md
+  - .docs/planificacion/wave-1/T3-telemetria-seq.md
+agent_may_edit:
+  - .docs/planificacion/wave-1/T3-telemetria-seq.md
+agent_must_not_edit:
+  - .docs/wiki/_mi-lsp/read-model.toml
+verify:
+  - mi-lsp nav governance --workspace mi-lsp --format toon
+  - mi-lsp nav wiki validate-harness --workspace mi-lsp --format toon
+stop_if:
+  - governance_blocked=true
+  - harness_verdict=BLOCKED
+evidence:
+  - .docs/planificacion/wave-1/T3-telemetria-seq.md
+```
+
 ## Shared Context
 **Goal:** Agregar columna `seq` a access_events para registrar el orden de operaciones dentro de una sesion, habilitando session replay para context-pack adaptativo.
 **Stack:** Go, SQLite, internal/daemon

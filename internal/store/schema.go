@@ -105,6 +105,37 @@ CREATE TABLE IF NOT EXISTS doc_mentions (
 );
 `
 
+const docSourceBlocksDDL = `
+CREATE TABLE IF NOT EXISTS doc_source_blocks (
+    doc_path TEXT NOT NULL,
+    block_id TEXT NOT NULL,
+    doc_id TEXT NOT NULL DEFAULT '',
+    kind TEXT NOT NULL DEFAULT '',
+    source_format TEXT NOT NULL,
+    ordinal INTEGER NOT NULL,
+    start_line INTEGER NOT NULL,
+    end_line INTEGER NOT NULL,
+    content_hash TEXT,
+    indexed_at INTEGER,
+    UNIQUE(doc_path, block_id)
+);
+`
+
+const docSourceRecordsDDL = `
+CREATE TABLE IF NOT EXISTS doc_source_records (
+    doc_path TEXT NOT NULL,
+    block_id TEXT NOT NULL,
+    record_id TEXT NOT NULL,
+    record_type TEXT NOT NULL DEFAULT '',
+    ordinal INTEGER NOT NULL,
+    start_line INTEGER NOT NULL,
+    end_line INTEGER NOT NULL,
+    content_hash TEXT,
+    indexed_at INTEGER,
+    UNIQUE(doc_path, block_id, record_id)
+);
+`
+
 const metaDDL = `
 CREATE TABLE IF NOT EXISTS workspace_meta (
     key TEXT PRIMARY KEY,
@@ -156,7 +187,7 @@ CREATE TABLE IF NOT EXISTS index_generations (
 `
 
 func EnsureSchema(db *sql.DB) error {
-	statements := []string{reposDDL, entrypointsDDL, symbolsDDL, filesDDL, docsDDL, docsFtsDDL, docEdgesDDL, docMentionsDDL, metaDDL, indexJobsDDL, indexGenerationsDDL}
+	statements := []string{reposDDL, entrypointsDDL, symbolsDDL, filesDDL, docsDDL, docsFtsDDL, docEdgesDDL, docMentionsDDL, docSourceBlocksDDL, docSourceRecordsDDL, metaDDL, indexJobsDDL, indexGenerationsDDL}
 	for _, stmt := range statements {
 		if _, err := db.Exec(stmt); err != nil {
 			return err
@@ -233,6 +264,9 @@ END`,
 		{table: "doc_records", column: "doc_id", statement: `CREATE INDEX IF NOT EXISTS idx_doc_records_doc_id ON doc_records(doc_id);`, required: true},
 		{table: "doc_mentions", column: "mention_type", statement: `CREATE INDEX IF NOT EXISTS idx_doc_mentions_type ON doc_mentions(mention_type, mention_value);`, required: true},
 		{table: "doc_edges", column: "from_path", statement: `CREATE INDEX IF NOT EXISTS idx_doc_edges_from ON doc_edges(from_path);`, required: true},
+		{table: "doc_source_blocks", column: "block_id", statement: `CREATE INDEX IF NOT EXISTS idx_doc_source_blocks_block_id ON doc_source_blocks(block_id);`, required: true},
+		{table: "doc_source_blocks", column: "doc_id", statement: `CREATE INDEX IF NOT EXISTS idx_doc_source_blocks_doc_id ON doc_source_blocks(doc_id);`, required: true},
+		{table: "doc_source_records", column: "record_id", statement: `CREATE INDEX IF NOT EXISTS idx_doc_source_records_record_id ON doc_source_records(record_id);`, required: true},
 		{table: "index_jobs", column: "workspace_root", statement: `CREATE INDEX IF NOT EXISTS idx_index_jobs_workspace_status ON index_jobs(workspace_root, status, updated_at);`, required: true},
 		{table: "index_generations", column: "workspace_root", statement: `CREATE INDEX IF NOT EXISTS idx_index_generations_workspace ON index_generations(workspace_root, status, published_at);`, required: true},
 	}

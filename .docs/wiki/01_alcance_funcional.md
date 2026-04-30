@@ -1,5 +1,32 @@
 # 1. Objetivo del producto
 
+```yaml
+harness_protocol: SDD-HARNESS-v1
+id: "01_alcance_funcional"
+kind: "support-doc"
+audience: "dual"
+imports:
+  - '[[00_gobierno_documental]]'
+  - '.docs/wiki/01_alcance_funcional.md'
+exports:
+  - '01_alcance_funcional'
+agent_must_read:
+  - .docs/wiki/00_gobierno_documental.md
+  - .docs/wiki/01_alcance_funcional.md
+agent_may_edit:
+  - .docs/wiki/01_alcance_funcional.md
+agent_must_not_edit:
+  - .docs/wiki/_mi-lsp/read-model.toml
+verify:
+  - mi-lsp nav governance --workspace mi-lsp --format toon
+  - mi-lsp nav wiki validate-harness --workspace mi-lsp --format toon
+stop_if:
+  - governance_blocked=true
+  - harness_verdict=BLOCKED
+evidence:
+  - .docs/wiki/01_alcance_funcional.md
+```
+
 `mi-lsp` es una CLI semantica local para proyectos no-monorepo, orientada a agentes y desarrolladores que necesitan navegar codigo con alta confiabilidad y bajo consumo de tokens. Resuelve el problema de depender de un MCP persistente para discovery semantico en repos .NET/C# y TypeScript grandes, heterogeneos y abiertos en paralelo.
 
 El exito del producto en v1.3 se mide por cinco resultados:

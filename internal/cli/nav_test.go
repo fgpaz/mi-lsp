@@ -72,4 +72,25 @@ func TestNavCommandExposesWikiGroup(t *testing.T) {
 	if trace.Flags().Lookup("all") == nil {
 		t.Fatalf("wiki trace should expose --all")
 	}
+
+	validateHarness, _, err := command.Find([]string{"wiki", "validate-harness"})
+	if err != nil {
+		t.Fatalf("find wiki validate-harness command: %v", err)
+	}
+	if validateHarness.Name() != "validate-harness" {
+		t.Fatalf("wiki validate command name = %q, want validate-harness", validateHarness.Name())
+	}
+	for _, flag := range []string{"ids", "paths"} {
+		if validateHarness.Flags().Lookup(flag) == nil {
+			t.Fatalf("wiki validate-harness should expose --%s", flag)
+		}
+	}
+
+	validateSource, _, err := command.Find([]string{"wiki", "validate-source"})
+	if err != nil {
+		t.Fatalf("find wiki validate-source command: %v", err)
+	}
+	if validateSource.Name() != "validate-source" {
+		t.Fatalf("wiki validate-source command name = %q, want validate-source", validateSource.Name())
+	}
 }

@@ -90,6 +90,123 @@ func TestIndexWorkspaceDocsHonorsGitignoreReincludeForWiki(t *testing.T) {
 	}
 }
 
+func TestIndexWorkspaceDocsExtractsWikiSourceBlocksAndRecords(t *testing.T) {
+	root := t.TempDir()
+	mustWriteDocgraphFile(t, filepath.Join(root, ".docs", "wiki", "_mi-lsp", "read-model.toml"), strings.Join([]string{
+		"version = 1",
+		"",
+		"[[family]]",
+		"  name = \"technical\"",
+		"  intent_keywords = [\"contract\"]",
+		"  paths = [\".docs/wiki/09_contratos/*.md\"]",
+	}, "\n"))
+	mustWriteDocgraphFile(t, filepath.Join(root, ".docs", "wiki", "09_contratos", "CT-SOURCE.md"), strings.Join([]string{
+		"# CT-SOURCE",
+		"",
+		"wiki_source_protocol: SDD-WIKI-SOURCE-v1",
+		"doc_id: CT-SOURCE",
+		"audience: llm-first",
+		"imports:",
+		"  - '[[00_gobierno_documental]]'",
+		"exports:",
+		"  - CT-SOURCE",
+		"",
+		"```toon",
+		"block_id: CT-SOURCE.contract",
+		"kind: contract",
+		"id: RF-QRY-016",
+		"title: Validate source",
+		"```",
+	}, "\n"))
+
+	docs, _, mentions, blocks, records, warnings, err := IndexWorkspaceDocsWithSourcesWithProgress(context.Background(), root, nil, nil)
+	if err != nil {
+		t.Fatalf("IndexWorkspaceDocsWithSourcesWithProgress: %v", err)
+	}
+	if len(warnings) != 0 {
+		t.Fatalf("warnings = %#v", warnings)
+	}
+	if len(docs) != 1 {
+		t.Fatalf("docs = %#v", docs)
+	}
+	if len(blocks) != 1 || blocks[0].BlockID != "CT-SOURCE.contract" || blocks[0].DocID != "CT-SOURCE" {
+		t.Fatalf("blocks = %#v", blocks)
+	}
+	if len(records) != 1 || records[0].RecordID != "RF-QRY-016" || records[0].BlockID != "CT-SOURCE.contract" {
+		t.Fatalf("records = %#v", records)
+	}
+	seen := map[string]bool{}
+	for _, mention := range mentions {
+		seen[mention.MentionType+"="+mention.MentionValue] = true
+	}
+	for _, expected := range []string{"source_protocol=SDD-WIKI-SOURCE-v1", "block_id=CT-SOURCE.contract", "record_id=RF-QRY-016", "source_export=CT-SOURCE"} {
+		if !seen[expected] {
+			t.Fatalf("missing source mention %s in %#v", expected, mentions)
+		}
+	}
+}
+
+func TestIndexWorkspaceDocsExtractsCanonicalWikiSourceShape(t *testing.T) {
+	root := t.TempDir()
+	mustWriteDocgraphFile(t, filepath.Join(root, ".docs", "wiki", "_mi-lsp", "read-model.toml"), strings.Join([]string{
+		"version = 1",
+		"",
+		"[[family]]",
+		"  name = \"technical\"",
+		"  intent_keywords = [\"contract\"]",
+		"  paths = [\".docs/wiki/09_contratos/*.md\"]",
+	}, "\n"))
+	mustWriteDocgraphFile(t, filepath.Join(root, ".docs", "wiki", "09_contratos", "CT-SOURCE.md"), strings.Join([]string{
+		"# CT-SOURCE",
+		"",
+		"wiki_source_protocol: SDD-WIKI-SOURCE-v1",
+		"harness_protocol: SDD-HARNESS-v1",
+		"doc_id: CT-SOURCE",
+		"audience: llm-first",
+		"links:",
+		"  imports:",
+		"    - '[[00_gobierno_documental]]'",
+		"  exports:",
+		"    - CT-SOURCE",
+		"",
+		"```toon",
+		"block_id: CT-SOURCE.contract",
+		"kind: contract",
+		"source_of_truth: CT-SOURCE",
+		"verify:",
+		"  - go test ./internal/docgraph",
+		"evidence:",
+		"  - .docs/wiki/09_contratos/CT-SOURCE.md",
+		"records:",
+		"  - type: RF",
+		"    id: RF-QRY-016",
+		"```",
+	}, "\n"))
+
+	_, _, mentions, blocks, records, warnings, err := IndexWorkspaceDocsWithSourcesWithProgress(context.Background(), root, nil, nil)
+	if err != nil {
+		t.Fatalf("IndexWorkspaceDocsWithSourcesWithProgress: %v", err)
+	}
+	if len(warnings) != 0 {
+		t.Fatalf("warnings = %#v", warnings)
+	}
+	if len(blocks) != 1 || blocks[0].BlockID != "CT-SOURCE.contract" || blocks[0].Kind != "contract" {
+		t.Fatalf("blocks = %#v", blocks)
+	}
+	if len(records) != 1 || records[0].RecordID != "RF-QRY-016" || records[0].RecordType != "RF" {
+		t.Fatalf("records = %#v", records)
+	}
+	seen := map[string]bool{}
+	for _, mention := range mentions {
+		seen[mention.MentionType+"="+mention.MentionValue] = true
+	}
+	for _, expected := range []string{"source_import=[[00_gobierno_documental]]", "source_export=CT-SOURCE", "record_id=RF-QRY-016"} {
+		if !seen[expected] {
+			t.Fatalf("missing source mention %s in %#v", expected, mentions)
+		}
+	}
+}
+
 func mustWriteDocgraphFile(t *testing.T, path string, content string) {
 	t.Helper()
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {

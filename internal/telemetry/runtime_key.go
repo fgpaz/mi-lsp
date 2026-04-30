@@ -11,9 +11,8 @@ func RuntimeKeyForOperation(request model.CommandRequest, response model.Envelop
 	if backendType == "" {
 		backendType = "catalog"
 	}
-	workspaceInput := firstNonEmpty(response.Workspace, request.Context.Workspace)
-	identity := ResolveWorkspaceIdentity(workspaceInput)
-	workspaceRoot := firstNonEmpty(identity.Root, workspaceInput, "-")
+	workspaceIdentity := ResolveWorkspaceIdentity(firstNonEmpty(response.Workspace, request.Context.Workspace))
+	workspaceRoot := firstNonEmpty(workspaceIdentity.Root, response.Workspace, request.Context.Workspace, "-")
 	entrypoint := firstNonEmpty(
 		payloadString(request.Payload, "entrypoint"),
 		payloadString(request.Payload, "solution"),

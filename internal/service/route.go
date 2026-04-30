@@ -111,6 +111,7 @@ func (a *App) route(ctx context.Context, request model.CommandRequest) (model.En
 	query := loadDocQueryContext(ctx, registration, task)
 	defer query.Close()
 	result := query.canonicalRoute(request.Context, includeDiscovery)
+	result.LookupStatus = routeLookupStatus(ctx, query, registration.Name, task, result, "nav.wiki.route")
 	warnings := append([]string{}, query.profileWarnings...)
 
 	env := model.Envelope{
@@ -125,4 +126,34 @@ func (a *App) route(ctx context.Context, request model.CommandRequest) (model.En
 	env = attachMemoryPointer(env, memory)
 	env.Continuation = buildRouteContinuation(task, result, request.Context, memory)
 	return applyCoachPolicy(applyAXIPreviewHints(env, request.Context, "preview mode: rerun with --full for expanded route and discovery"), request.Context), nil
+}
+
+func routeLookupStatus(ctx context.Context, query *docQueryContext, workspaceName string, task string, result model.RouteResult, operation string) *model.WikiLookupStatus {
+	shown := 0
+	if result.Canonical.AnchorDoc.Path != "" {
+		shown++
+	}
+	shown += len(result.Canonical.PreviewPack)
+	total := len(query.ranked)
+	nextHint := wikiExpansionHint(operation, workspaceName, task, shown, total)
+	doc := model.DocRecord{
+		Path:   result.Canonical.AnchorDoc.Path,
+		Title:  result.Canonical.AnchorDoc.Title,
+		DocID:  result.Canonical.AnchorDoc.DocID,
+		Layer:  result.Canonical.AnchorDoc.Layer,
+		Family: result.Canonical.AnchorDoc.Family,
+	}
+	reasons := []string{}
+	if result.Canonical.AnchorDoc.Why != "" {
+		reasons = strings.Split(result.Canonical.AnchorDoc.Why, ",")
+	}
+	status := wikiLookupStatusForDoc(workspaceName, task, doc, reasons, total, shown, nextHint)
+	if len(query.docs) == 0 {
+		status.IndexFreshness = "empty_index"
+		status.Reason = "empty_index"
+	}
+	if identity, ok, _ := sourceIdentityForQuery(ctx, query.db, task); ok {
+		applySourceIdentity(&status, identity)
+	}
+	return &status
 }

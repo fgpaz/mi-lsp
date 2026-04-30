@@ -52,7 +52,7 @@ func IndexWorkspaceWithProgress(ctx context.Context, root string, clean bool, ge
 		warnings = appendIfMissing(warnings, "clean=true")
 	}
 
-	docs, docEdges, docMentions, docWarnings, err := docgraph.IndexWorkspaceDocsWithProgress(ctx, root, matcher, func(ctx context.Context, progressValue docgraph.Progress) error {
+	docs, docEdges, docMentions, sourceBlocks, sourceRecords, docWarnings, err := docgraph.IndexWorkspaceDocsWithSourcesWithProgress(ctx, root, matcher, func(ctx context.Context, progressValue docgraph.Progress) error {
 		return reportProgress(ctx, progress, Progress{
 			Stage:      progressValue.Stage,
 			Path:       progressValue.Path,
@@ -79,7 +79,7 @@ func IndexWorkspaceWithProgress(ctx context.Context, root string, clean bool, ge
 		}
 		defer db.Close()
 
-		return store.ReplaceWorkspaceIndex(ctx, db, generationID, projectFile, files, symbols, docs, docEdges, docMentions, snapshot)
+		return store.ReplaceWorkspaceIndex(ctx, db, generationID, projectFile, files, symbols, docs, docEdges, docMentions, sourceBlocks, sourceRecords, snapshot)
 	}); err != nil {
 		return Result{}, err
 	}
@@ -227,7 +227,7 @@ func IndexWorkspaceDocsOnlyWithProgress(ctx context.Context, root string, genera
 		return Result{}, err
 	}
 
-	docs, docEdges, docMentions, warnings, err := docgraph.IndexWorkspaceDocsWithProgress(ctx, root, matcher, func(ctx context.Context, progressValue docgraph.Progress) error {
+	docs, docEdges, docMentions, sourceBlocks, sourceRecords, warnings, err := docgraph.IndexWorkspaceDocsWithSourcesWithProgress(ctx, root, matcher, func(ctx context.Context, progressValue docgraph.Progress) error {
 		return reportProgress(ctx, progress, Progress{
 			Stage:      progressValue.Stage,
 			Path:       progressValue.Path,
@@ -251,7 +251,7 @@ func IndexWorkspaceDocsOnlyWithProgress(ctx context.Context, root string, genera
 		}
 		defer db.Close()
 
-		return store.ReplaceWorkspaceDocs(ctx, db, generationID, docs, docEdges, docMentions, snapshot)
+		return store.ReplaceWorkspaceDocs(ctx, db, generationID, docs, docEdges, docMentions, sourceBlocks, sourceRecords, snapshot)
 	}); err != nil {
 		return Result{}, err
 	}

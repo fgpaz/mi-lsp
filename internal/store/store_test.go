@@ -51,7 +51,7 @@ func TestReplaceWorkspaceIndexPublishesGenerationMetadata(t *testing.T) {
 	docs := []model.DocRecord{{Path: ".docs/wiki/04_RF/RF-IDX-001.md", Title: "RF-IDX-001", DocID: "RF-IDX-001", Layer: "04", Family: "functional", SearchText: "indexing"}}
 	snapshot := model.ReentryMemorySnapshot{SnapshotBuiltAt: time.Now()}
 
-	if err := ReplaceWorkspaceIndex(ctx, db, job.GenerationID, project, files, symbols, docs, nil, nil, snapshot); err != nil {
+	if err := ReplaceWorkspaceIndex(ctx, db, job.GenerationID, project, files, symbols, docs, nil, nil, nil, nil, snapshot); err != nil {
 		t.Fatalf("ReplaceWorkspaceIndex: %v", err)
 	}
 	for _, key := range []string{WorkspaceMetaActiveCatalogGeneration, WorkspaceMetaActiveDocsGeneration, WorkspaceMetaActiveMemoryGeneration, WorkspaceMetaLastIndexGeneration} {

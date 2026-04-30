@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -106,7 +105,23 @@ func (a *App) workspaceScan() (model.Envelope, error) {
 func (a *App) workspaceList(request model.CommandRequest) (model.Envelope, error) {
 	groupByRoot, _ := request.Payload["group_by_root"].(bool)
 	if groupByRoot {
-		return a.workspaceListGroupedByRoot()
+		groups, err := workspace.GroupWorkspacesByRoot()
+		if err != nil {
+			return model.Envelope{}, err
+		}
+		items := make([]map[string]any, 0, len(groups))
+		for _, group := range groups {
+			items = append(items, map[string]any{
+				"root":             group.Root,
+				"alias_count":      group.AliasCount,
+				"aliases":          group.Aliases,
+				"canonical_alias":  group.CanonicalAlias,
+				"selection_reason": group.SelectionReason,
+				"kind":             group.Kind,
+				"warnings":         group.Warnings,
+			})
+		}
+		return model.Envelope{Ok: true, Backend: "registry", Items: items}, nil
 	}
 	workspaces, err := workspace.ListWorkspaces()
 	if err != nil {
@@ -125,79 +140,67 @@ func (a *App) workspaceList(request model.CommandRequest) (model.Envelope, error
 	return model.Envelope{Ok: true, Backend: "registry", Items: items}, nil
 }
 
-func (a *App) workspaceListGroupedByRoot() (model.Envelope, error) {
-	groups, err := workspace.GroupWorkspacesByRoot()
+func (a *App) workspaceDoctor() (model.Envelope, error) {
+	report, err := workspace.DoctorWorkspaces()
 	if err != nil {
 		return model.Envelope{}, err
 	}
-	items := make([]map[string]any, 0, len(groups))
-	for _, group := range groups {
-		item := map[string]any{
-			"root":             group.Root,
-			"alias_count":      group.AliasCount,
-			"aliases":          group.Aliases,
-			"canonical_alias":  group.CanonicalAlias,
-			"selection_reason": group.SelectionReason,
-			"kind":             group.Kind,
-		}
-		if len(group.Warnings) > 0 {
-			item["warnings"] = group.Warnings
-		}
-		items = append(items, item)
+	item := map[string]any{
+		"aliases_sharing_root": nonNilRootGroups(report.AliasesSharingRoot),
+		"worktree_families":    nonNilWorktreeFamilies(report.WorktreeFamilies),
+		"stale_paths":          nonNilStalePaths(report.StalePaths),
+		"binary_shadowing":     nonNilBinaryCandidates(report.BinaryShadowing),
+		"suggestions":          nonNilStrings(report.Suggestions),
 	}
-	return model.Envelope{Ok: true, Backend: "registry", Mode: "group-by-root", Items: items}, nil
+	warnings := []string{}
+	if len(report.AliasesSharingRoot) > 0 {
+		warnings = append(warnings, "aliases share exact workspace roots; workspace list remains alias-preserving")
+	}
+	if len(report.WorktreeFamilies) > 0 {
+		warnings = append(warnings, "registered worktrees share git common dirs; keep aliases, indexes, watchers, and runtimes separate per physical root")
+	}
+	if len(report.StalePaths) > 0 {
+		warnings = append(warnings, "registry contains stale workspace roots")
+	}
+	if len(report.BinaryShadowing) > 1 {
+		warnings = append(warnings, "multiple mi-lsp binaries are visible on PATH")
+	}
+	return model.Envelope{Ok: true, Backend: "registry-doctor", Items: []map[string]any{item}, Warnings: warnings}, nil
 }
 
-func (a *App) workspaceDoctor() (model.Envelope, error) {
-	groups, err := workspace.GroupWorkspacesByRoot()
-	if err != nil {
-		return model.Envelope{}, err
+func nonNilRootGroups(items []workspace.WorkspaceRootGroup) []workspace.WorkspaceRootGroup {
+	if items == nil {
+		return []workspace.WorkspaceRootGroup{}
 	}
-	items := make([]map[string]any, 0, len(groups)+1)
-	duplicateRootCount := 0
-	stalePathCount := 0
-	for _, group := range groups {
-		issues := append([]string{}, group.Warnings...)
-		suggestions := []string{}
-		if group.AliasCount > 1 {
-			duplicateRootCount++
-			suggestions = append(suggestions, "review aliases; remove only obsolete aliases explicitly with `mi-lsp workspace remove <alias>`")
-		}
-		if _, err := os.Stat(group.Root); err != nil {
-			stalePathCount++
-			suggestions = append(suggestions, "path is not accessible; verify mount/worktree before removing aliases")
-		}
-		governanceSkip := false
-		if governanceDoc := filepath.Join(group.Root, ".docs", "wiki", "00_gobierno_documental.md"); group.Root != "" {
-			if _, err := os.Stat(governanceDoc); err != nil {
-				governanceSkip = true
-				issues = appendStringIfMissing(issues, "governance skip: canonical governance doc not found")
-			}
-		}
-		items = append(items, map[string]any{
-			"root":             group.Root,
-			"alias_count":      group.AliasCount,
-			"aliases":          group.Aliases,
-			"canonical_alias":  group.CanonicalAlias,
-			"selection_reason": group.SelectionReason,
-			"kind":             group.Kind,
-			"governance_skip":  governanceSkip,
-			"issues":           issues,
-			"suggestions":      suggestions,
-		})
+	return items
+}
+
+func nonNilWorktreeFamilies(items []workspace.WorkspaceWorktreeFamily) []workspace.WorkspaceWorktreeFamily {
+	if items == nil {
+		return []workspace.WorkspaceWorktreeFamily{}
 	}
-	items = append(items, workspaceDoctorBinaryItem())
-	return model.Envelope{
-		Ok:      true,
-		Backend: "registry",
-		Mode:    "doctor",
-		Items:   items,
-		Stats: model.Stats{
-			Files:   len(groups),
-			Symbols: duplicateRootCount,
-			Ms:      int64(stalePathCount),
-		},
-	}, nil
+	return items
+}
+
+func nonNilStalePaths(items []workspace.WorkspaceStalePath) []workspace.WorkspaceStalePath {
+	if items == nil {
+		return []workspace.WorkspaceStalePath{}
+	}
+	return items
+}
+
+func nonNilBinaryCandidates(items []workspace.BinaryCandidate) []workspace.BinaryCandidate {
+	if items == nil {
+		return []workspace.BinaryCandidate{}
+	}
+	return items
+}
+
+func nonNilStrings(items []string) []string {
+	if items == nil {
+		return []string{}
+	}
+	return items
 }
 
 func (a *App) workspaceStatus(ctx context.Context, request model.CommandRequest) (model.Envelope, error) {
@@ -207,6 +210,8 @@ func (a *App) workspaceStatus(ctx context.Context, request model.CommandRequest)
 		return model.Envelope{}, err
 	}
 	item := workspaceSummaryItem(registration, project)
+	item["workspace_root"] = registration.Root
+	item["workspace_source"] = firstNonEmpty(request.Context.WorkspaceSource, string(workspace.ResolutionSourceExplicit))
 	item["repos"] = project.Repos
 	item["entrypoints"] = project.Entrypoints
 	item["docs_read_model"] = workspaceProfileHint(registration.Root)
@@ -369,25 +374,4 @@ func workspaceProfileHint(root string) string {
 		return ".docs/wiki/_mi-lsp/read-model.toml"
 	}
 	return "builtin-default"
-}
-
-func workspaceDoctorBinaryItem() map[string]any {
-	item := map[string]any{"kind": "binary_provenance"}
-	if exe, err := os.Executable(); err == nil {
-		item["current_executable"] = exe
-	}
-	if lookedUp, err := exec.LookPath("mi-lsp"); err == nil {
-		if abs, absErr := filepath.Abs(lookedUp); absErr == nil {
-			lookedUp = abs
-		}
-		item["path_first"] = lookedUp
-	}
-	if cwd, err := os.Getwd(); err == nil {
-		local := filepath.Join(cwd, "mi-lsp.exe")
-		if _, statErr := os.Stat(local); statErr == nil {
-			item["repo_root_binary"] = local
-			item["warning"] = "repo-root mi-lsp.exe exists and can shadow the installed CLI when the current directory is first on PATH"
-		}
-	}
-	return item
 }

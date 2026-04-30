@@ -26,6 +26,7 @@ func DefaultIgnorePatterns() []string {
 		".mi-lsp/",
 		".next/",
 		".pytest_cache/",
+		".docs/temp/worktrees/",
 		".turbo/",
 		".venv/",
 		".worktrees/",
@@ -38,11 +39,19 @@ func DefaultIgnorePatterns() []string {
 	}
 }
 
+func hardIgnorePatterns() []string {
+	return []string{
+		".docs/temp/worktrees/",
+		".worktrees/",
+	}
+}
+
 func LoadIgnoreMatcher(root string, extraPatterns []string) (*IgnoreMatcher, error) {
 	rawPatterns := append([]string{}, DefaultIgnorePatterns()...)
 	rawPatterns = append(rawPatterns, loadPatternsFromFile(filepath.Join(root, ".gitignore"))...)
 	rawPatterns = append(rawPatterns, loadPatternsFromFile(filepath.Join(root, ".milspignore"))...)
 	rawPatterns = append(rawPatterns, extraPatterns...)
+	rawPatterns = append(rawPatterns, hardIgnorePatterns()...)
 
 	rules := make([]ignoreRule, 0, len(rawPatterns))
 	for _, raw := range rawPatterns {

@@ -1,5 +1,32 @@
 # TP-QRY
 
+```yaml
+harness_protocol: SDD-HARNESS-v1
+id: "TP-QRY"
+kind: "support-doc"
+audience: "llm-first"
+imports:
+  - '[[00_gobierno_documental]]'
+  - '[[TP-QRY]]'
+exports:
+  - 'TP-QRY'
+agent_must_read:
+  - .docs/wiki/00_gobierno_documental.md
+  - .docs/wiki/06_pruebas/TP-QRY.md
+agent_may_edit:
+  - .docs/wiki/06_pruebas/TP-QRY.md
+agent_must_not_edit:
+  - .docs/wiki/_mi-lsp/read-model.toml
+verify:
+  - mi-lsp nav governance --workspace mi-lsp --format toon
+  - mi-lsp nav wiki validate-harness --workspace mi-lsp --format toon
+stop_if:
+  - governance_blocked=true
+  - harness_verdict=BLOCKED
+evidence:
+  - .docs/wiki/06_pruebas/TP-QRY.md
+```
+
 ## Cobertura objetivo
 
 - RF-QRY-001
@@ -111,10 +138,30 @@
 | TC-QRY-074 | negativo | RF-QRY-016 | `TestNavWikiSearchDocIndexEmptyReturnsDiagnostic`: docgraph vacio devuelve diagnostico accionable de `index --docs-only` |
 | TC-QRY-075 | negativo | RF-QRY-016 | `TestNavWikiSearchBlocksWhenGovernanceBlocked`: governance bloqueada corta `nav wiki search` |
 | TC-QRY-076 | positivo | RF-QRY-016 | `TestNavAskRoutePackRepoCompatWarnings`: `nav ask|route|pack --repo docs` no falla y orienta a `nav wiki` |
-| TC-QRY-077 | positivo | RF-QRY-016 | `TestDefaultProfileIndexesOutcomeDocsAsRS`: el perfil embebido reconoce `.docs/wiki/02_resultados_soluciones_usuario.md` y `.docs/wiki/02_resultados/*.md` como `layer=RS`, `stage=outcome` |
-| TC-QRY-078 | positivo | RF-QRY-016 | `TestGovernanceProjectionDerivesFunctionalStageOrder`: `reading_pack.functional_stage_order` deriva `outcome` desde `governance.hierarchy[*].pack_stage` entre `scope` y `architecture` |
-| TC-QRY-079 | positivo | RF-QRY-016 | `TestNavWikiSearchAcceptsRSLayer`: `nav wiki search --layer RS` devuelve docs outcome sin warnings de capa desconocida |
-| TC-QRY-080 | positivo | RF-QRY-014, RF-QRY-016 | `TestNavRouteExplicitRSUsesOutcomeDoc`: `nav route RS-*` ancla el documento RS/outcome gobernado antes de usar heuristicas legacy |
-| TC-QRY-081 | positivo | RF-QRY-012, RF-QRY-016 | `TestNavPackIncludesOutcomeStage`: `nav pack` incluye la etapa `outcome` en el pack funcional cuando el read-model la declara |
-| TC-QRY-082 | positivo | RF-QRY-013, RF-QRY-016 | `TestNavTraceRSTraceUsesDocIDLayerStageWithoutRF`: `nav trace RS-*` devuelve `doc_id`, `layer=RS`, `stage=outcome` y no rellena el campo legacy `rf` |
-| TC-QRY-083 | positivo | RF-QRY-016 | `scripts/release/regression-smoke.ps1`: recorre aliases registrados con `workspace status --no-auto-sync`, `nav wiki search`, `nav wiki pack`, `nav wiki trace` cuando hay ID trazable, y registra diagnostico de workspace/root/db_path por operacion sin mutar repos smokeados |
+| TC-QRY-077 | positivo | RF-QRY-016 | `TestIndexWorkspaceDocsExtractsWikiSourceBlocksAndRecords`: docgraph extrae `doc_source_blocks`, `doc_source_records` y menciones compatibles desde fences `toon` declarados con `SDD-WIKI-SOURCE-v1` |
+| TC-QRY-078 | positivo | RF-QRY-016 | `TestReplaceDocsWithSources_RoundTrip`: SQLite persiste y resuelve source blocks/source records junto con `doc_records` |
+| TC-QRY-079 | positivo | RF-QRY-016 | `TestValidateSourceValidArtifact`: `nav wiki validate-source` devuelve `PASS` para artefacto fuente valido |
+| TC-QRY-080 | negativo | RF-QRY-016 | `TestValidateSourceMissingBlockIDBlocks`: `validate-source` bloquea fences `toon` normativos sin `block_id` |
+| TC-QRY-081 | negativo | RF-QRY-016 | `TestValidateSourceNormativeTableWithoutExceptionBlocks`: `validate-source` bloquea tablas Markdown normativas sin excepcion |
+| TC-QRY-082 | positivo | RF-QRY-016 | `TestNavWikiSearchFindsExactSourceRecordID`: `nav wiki search` resuelve `record_id` fuente exacto antes del ranking textual y expone `lookup_status` con `record_id`, `block_id`, totales y `match_kind` |
+| TC-QRY-083 | positivo | RF-QRY-016 | `TestNavTraceFindsSourceBlockID`: `nav trace` devuelve evidencia `wiki-source` para source IDs exactos y conserva `lookup_status.match_kind=canonical_indexed_id` |
+| TC-QRY-084 | positivo | RF-QRY-016 | `TestDefaultProfileIndexesOutcomeDocsAsRS`: el perfil embebido reconoce `.docs/wiki/02_resultados_soluciones_usuario.md` y `.docs/wiki/02_resultados/*.md` como `layer=RS`, `stage=outcome` |
+| TC-QRY-085 | positivo | RF-QRY-016 | `TestGovernanceProjectionDerivesFunctionalStageOrder`: `reading_pack.functional_stage_order` deriva `outcome` desde `governance.hierarchy[*].pack_stage` entre `scope` y `architecture` |
+| TC-QRY-086 | negativo | RF-QRY-016 | `TestValidateSourceMissingDocIDBlocks`: `validate-source` bloquea artefactos fuente declarados sin `doc_id` |
+| TC-QRY-087 | negativo | RF-QRY-016 | `TestValidateSourceMissingKindAndSourceOfTruthBlocks`: `validate-source` bloquea bloques fuente sin `kind` o `source_of_truth` |
+| TC-QRY-088 | negativo | RF-QRY-016 | `TestValidateSourceRecordWithoutIDBlocks`: `validate-source` bloquea records referenciables sin `id` |
+| TC-QRY-089 | negativo | RF-QRY-016 | `TestValidateSourceBrokenImportAndExportBlocks`: `validate-source` bloquea imports rotos y exports no indexados |
+| TC-QRY-090 | positivo | RF-QRY-016 | `TestRenderStructuredFormats_PreserveWikiSourceFields`: los formatos `compact`, `toon` y `yaml` preservan campos agregados de `WikiSourceValidationResult` |
+| TC-QRY-091 | positivo | RF-QRY-016 | `TestValidateSourceTableExceptionWithToonSourcePasses`: una excepcion explicita de tabla con fuente `toon` equivalente no bloquea |
+| TC-QRY-092 | negativo | RF-QRY-016 | `TestValidateHarnessMissingContractBlocks`: docs gobernados sin contrato `SDD-HARNESS-v1` devuelven `BLOCKED` y `harness_docs_missing_contract` |
+| TC-QRY-093 | negativo | RF-QRY-016 | `TestValidateHarnessBrokenObsidianImportBlocks`: imports o links Obsidian links Obsidian de ejemplo rotos bloquean readiness |
+| TC-QRY-094 | negativo | RF-QRY-016 | `TestValidateHarnessEditAllowDenyConflictBlocks`: conflictos `agent_may_edit` vs `agent_must_not_edit` bloquean readiness |
+| TC-QRY-095 | positivo | RF-QRY-016 | `TestValidateHarnessHumanAndDualContractsMaySkipStrictRuntimeGates`: contratos `human` y `dual` pueden omitir gates estrictos como warning no bloqueante |
+| TC-QRY-096 | positivo | RF-QRY-016 | `TestValidateSourceUnmigratedDocsIgnored`: documentos no migrados a `SDD-WIKI-SOURCE-v1` no bloquean `validate-source` |
+| TC-QRY-097 | positivo | RF-QRY-016 | `TestValidateHarnessValidLLMFirstContract`: `nav wiki validate-harness` devuelve `PASS` para contrato `llm-first` completo con evidencia existente |
+| TC-QRY-098 | negativo | RF-QRY-016 | `TestValidateHarnessUnknownAudienceBlocksAndToonExposesFields`: audience desconocida bloquea y los campos Harness son visibles en TOON |
+| TC-QRY-099 | positivo | RF-QRY-016 | `TestNavWikiSearchAcceptsRSLayer`: `nav wiki search --layer RS` devuelve docs outcome sin warnings de capa desconocida |
+| TC-QRY-100 | positivo | RF-QRY-014, RF-QRY-016 | `TestNavRouteExplicitRSUsesOutcomeDoc`: `nav route RS-*` ancla el documento RS/outcome gobernado antes de usar heuristicas legacy |
+| TC-QRY-101 | positivo | RF-QRY-012, RF-QRY-016 | `TestNavPackIncludesOutcomeStage`: `nav pack` incluye la etapa `outcome` en el pack funcional cuando el read-model la declara |
+| TC-QRY-102 | positivo | RF-QRY-013, RF-QRY-016 | `TestNavTraceRSTraceUsesDocIDLayerStageWithoutRF`: `nav trace RS-*` devuelve `doc_id`, `layer=RS`, `stage=outcome` y no rellena el campo legacy `rf` |
+| TC-QRY-103 | positivo | RF-QRY-016 | `scripts/release/regression-smoke.ps1`: recorre aliases registrados con `workspace status --no-auto-sync`, `nav wiki search`, `nav wiki pack`, `nav wiki trace` cuando hay ID trazable, y registra diagnostico de workspace/root/db_path por operacion sin mutar repos smokeados |

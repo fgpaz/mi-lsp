@@ -1,5 +1,32 @@
 # 08. Modelo fisico de datos
 
+```yaml
+harness_protocol: SDD-HARNESS-v1
+id: "08_modelo_fisico_datos"
+kind: "support-doc"
+audience: "dual"
+imports:
+  - '[[00_gobierno_documental]]'
+  - '.docs/wiki/08_modelo_fisico_datos.md'
+exports:
+  - '08_modelo_fisico_datos'
+agent_must_read:
+  - .docs/wiki/00_gobierno_documental.md
+  - .docs/wiki/08_modelo_fisico_datos.md
+agent_may_edit:
+  - .docs/wiki/08_modelo_fisico_datos.md
+agent_must_not_edit:
+  - .docs/wiki/_mi-lsp/read-model.toml
+verify:
+  - mi-lsp nav governance --workspace mi-lsp --format toon
+  - mi-lsp nav wiki validate-harness --workspace mi-lsp --format toon
+stop_if:
+  - governance_blocked=true
+  - harness_verdict=BLOCKED
+evidence:
+  - .docs/wiki/08_modelo_fisico_datos.md
+```
+
 ## Proposito y alcance
 
 Este documento resume los stores fisicos de `mi-lsp`, su ownership y el ciclo de vida de los datos.
@@ -30,6 +57,8 @@ La novedad de v1.3 es que el store repo-local persiste tambien el grafo document
   - `doc_records` con `path`, `doc_id`, `layer`, `family`, `search_text`, `content_hash`, `indexed_at`
   - `doc_edges` con `from_path`, `to_path`, `to_doc_id`, `kind`, `label`
   - `doc_mentions` con `doc_path`, `mention_type`, `mention_value`
+  - `doc_source_blocks` con `doc_path`, `block_id`, `doc_id`, `kind`, `source_format`, `ordinal`, `start_line`, `end_line`, `content_hash`, `indexed_at`
+  - `doc_source_records` con `doc_path`, `block_id`, `record_id`, `record_type`, `ordinal`, `start_line`, `end_line`, `content_hash`, `indexed_at`
   - `index_jobs` con `job_id`, `generation_id`, workspace, `mode`, `status`, `phase`, `current_stage`, `current_path`, `files_total`, `pid`, `requested_cancel`, `error`, contadores y timestamps
   - `index_generations` con `generation_id`, `job_id`, workspace, `mode`, `status`, contadores, `created_at`, `published_at` y `error`
   - `workspace_meta` con `workspace_kind`, `default_repo`, `default_entrypoint`, `doc_count`, `memory_snapshot_json`, `memory_snapshot_built_at`, `active_*_generation_id`
@@ -52,15 +81,17 @@ La novedad de v1.3 es que el store repo-local persiste tambien el grafo document
 - La publicacion `docs` reemplaza docs + memoria en una unica transaccion y no toca `files`, `symbols`, `workspace_repos` ni `workspace_entrypoints`.
 - La publicacion `catalog` reemplaza solo catalogo de codigo y no toca docs ni memoria.
 - Las migraciones aditivas de `index.db` deben crear `repo_id` y `repo_name` en `files`/`symbols` antes de crear indices que dependan de esas columnas.
-- `doc_records`, `doc_edges` y `doc_mentions` deben refrescarse como un bloque consistente dentro de una sola transaccion.
+- `doc_records`, `doc_edges`, `doc_mentions`, `doc_source_blocks` y `doc_source_records` deben refrescarse como un bloque consistente dentro de una sola transaccion.
 - `mi-lsp index --docs-only` puede ejecutar `ReplaceWorkspaceDocs` sin tocar `files`, `symbols`, `workspace_repos` ni `workspace_entrypoints`.
+- Las tablas `doc_source_*` son aditivas y reconstruibles; no requieren migracion destructiva ni `PRAGMA user_version`.
 - El snapshot repo-local de reentrada (`memory_snapshot_json`) se reconstruye en `mi-lsp index`, no en cada query interactiva.
 - `project.toml` debe poder reescribirse al volver a detectar topologia del workspace.
 - El `read-model.toml` no se copia a SQLite; se usa en lectura y sus cambios disparan re-index completo del corpus documental.
 - `00_gobierno_documental.md` tampoco se persiste dentro de SQLite; su estado gobierna bloqueo/sync e invalida el indice cuando cambia.
 - El store global del daemon no duplica el catalogo repo-local; solo guarda supervision y telemetria.
-- `registry.toml` puede contener multiples aliases para un mismo root; `workspace list` debe preservar el alias registrado y `workspace list --group-by-root` solo agrega una vista diagnostica.
-- `runtime_snapshots` representan solamente runtimes observables del `daemon_run_id` vigente y usan `runtime_key` canonico por `workspace_root + backend_type + entrypoint_id`.
+- `registry.toml` puede contener multiples aliases para un mismo root; `workspace list` debe preservar el alias registrado y `workspace list --group-by-root` solo debe agruparlos para diagnostico.
+- Worktrees de un mismo repositorio comparten `git common dir` pero tienen `workspace_root` fisico distinto; cada worktree mantiene su propio `.mi-lsp/index.db`, watcher y runtime identity.
+- `runtime_snapshots` representan solamente runtimes observables del `daemon_run_id` vigente.
 - `access_events` registran metadata y nunca payloads completos.
 - `workspace_input` guarda el selector crudo recibido; `workspace`, `workspace_alias` y `workspace_root` representan la identidad resuelta del workspace y no deben degradarse a `unscoped` si la operacion eligio un alias real.
 - `decision_json` existe para debugging causal local y debe permanecer sanitizado: sin `pattern` crudo, sin argv, sin snapshot completo del request y sin el texto/comandos completos del bloque `coach`.
@@ -72,7 +103,7 @@ La novedad de v1.3 es que el store repo-local persiste tambien el grafo document
 - La fila canonica de una request `route=daemon` la escribe el daemon.
 - Backpressure daemon-aware usa la telemetria existente: `error_kind=daemon`, `error_code=backpressure_busy`, `success=false` y warning `daemon/backpressure_busy`.
 - La CLI directa solo graba `access_events` cuando la request se sirve como `direct`, `direct_fallback` o falla antes de delegarse al daemon; esos eventos pueden llevar `daemon_run_id = NULL`.
-- `runtime_key` debe persistirse tambien en filas `route=direct` o `route=direct_fallback` para que `admin export` pueda atribuir uso de queries directas a un workspace/backend/entrypoint estable, sin fragmentar por alias.
+- `runtime_key` debe persistirse tambien en filas `route=direct` o `route=direct_fallback` para que `admin export` pueda atribuir uso de queries directas a un workspace/backend/entrypoint estable; la clave usa `(workspace_root, backend_type, entrypoint_id)` y preserva alias/input en campos separados para display y forensics.
 - `result_count` representa los items emitidos en el envelope final; `warning_count` se persiste como contador explicito para que summary/CSV no dependan de re-hidratar `warnings_json`.
 - Filas duplicadas historicas de requests daemonizadas pueden existir como artefactos previos al fix de ownership de telemetria y deben tratarse como legacy hasta que la retencion las purgue.
 
@@ -103,7 +134,7 @@ La novedad de v1.3 es que el store repo-local persiste tambien el grafo document
 - Repos con `.docs` o templates que incluyen `.csproj` pueden aparecer como entrypoints visibles si no estan ignorados.
 - La heuristica de bootstrap no debe elegir esos entrypoints auxiliares como `default_entrypoint` si existe una solucion o proyecto real fuera de `.docs/template(s)`.
 - El mecanismo recomendado para ese ruido sigue siendo `.milspignore` o `[ignore].extra_patterns`.
-- `.worktrees/` ya forma parte de los ignores internos y no debe volver a elegirse como entrypoint por defecto.
+- `.worktrees/` y `.docs/temp/worktrees/` ya forman parte de los ignores internos y no deben volver a elegirse como entrypoint ni corpus documental del workspace activo.
 - Cambios parciales en docs pueden dejar ranking inconsistente si se mezclan con incremental por archivo; por eso el cambio de docs/profile fuerza full re-index.
 - Si `doc_count=0` pero existe `.docs/wiki`, las consultas docs-first pueden anclarse por Tier 1, pero el workspace debe considerarse documentalmente incompleto hasta ejecutar `index --docs-only` o un full index exitoso.
 

@@ -17,7 +17,7 @@ const (
 	WorkspaceMetaLastIndexGeneration     = "last_index_generation_id"
 )
 
-func ReplaceWorkspaceIndex(ctx context.Context, db *sql.DB, generationID string, project model.ProjectFile, files []model.FileRecord, symbols []model.SymbolRecord, docs []model.DocRecord, edges []model.DocEdge, mentions []model.DocMention, snapshot model.ReentryMemorySnapshot) error {
+func ReplaceWorkspaceIndex(ctx context.Context, db *sql.DB, generationID string, project model.ProjectFile, files []model.FileRecord, symbols []model.SymbolRecord, docs []model.DocRecord, edges []model.DocEdge, mentions []model.DocMention, sourceBlocks []model.DocSourceBlock, sourceRecords []model.DocSourceRecord, snapshot model.ReentryMemorySnapshot) error {
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
@@ -27,7 +27,7 @@ func ReplaceWorkspaceIndex(ctx context.Context, db *sql.DB, generationID string,
 	if err := replaceCatalogTx(ctx, tx, project, files, symbols); err != nil {
 		return err
 	}
-	if err := replaceDocsTx(ctx, tx, docs, edges, mentions); err != nil {
+	if err := replaceDocsWithSourcesTx(ctx, tx, docs, edges, mentions, sourceBlocks, sourceRecords); err != nil {
 		return err
 	}
 	if err := saveReentrySnapshot(ctx, tx, snapshot); err != nil {
@@ -39,14 +39,14 @@ func ReplaceWorkspaceIndex(ctx context.Context, db *sql.DB, generationID string,
 	return tx.Commit()
 }
 
-func ReplaceWorkspaceDocs(ctx context.Context, db *sql.DB, generationID string, docs []model.DocRecord, edges []model.DocEdge, mentions []model.DocMention, snapshot model.ReentryMemorySnapshot) error {
+func ReplaceWorkspaceDocs(ctx context.Context, db *sql.DB, generationID string, docs []model.DocRecord, edges []model.DocEdge, mentions []model.DocMention, sourceBlocks []model.DocSourceBlock, sourceRecords []model.DocSourceRecord, snapshot model.ReentryMemorySnapshot) error {
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	if err := replaceDocsTx(ctx, tx, docs, edges, mentions); err != nil {
+	if err := replaceDocsWithSourcesTx(ctx, tx, docs, edges, mentions, sourceBlocks, sourceRecords); err != nil {
 		return err
 	}
 	if err := saveReentrySnapshot(ctx, tx, snapshot); err != nil {

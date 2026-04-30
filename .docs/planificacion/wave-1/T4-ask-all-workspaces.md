@@ -1,5 +1,32 @@
 # Task T4: --all-workspaces Flag for nav ask
 
+```yaml
+harness_protocol: SDD-HARNESS-v1
+id: "T4"
+kind: "support-doc"
+audience: "dual"
+imports:
+  - '[[00_gobierno_documental]]'
+  - '.docs/planificacion/wave-1/T4-ask-all-workspaces.md'
+exports:
+  - 'T4'
+agent_must_read:
+  - .docs/wiki/00_gobierno_documental.md
+  - .docs/planificacion/wave-1/T4-ask-all-workspaces.md
+agent_may_edit:
+  - .docs/planificacion/wave-1/T4-ask-all-workspaces.md
+agent_must_not_edit:
+  - .docs/wiki/_mi-lsp/read-model.toml
+verify:
+  - mi-lsp nav governance --workspace mi-lsp --format toon
+  - mi-lsp nav wiki validate-harness --workspace mi-lsp --format toon
+stop_if:
+  - governance_blocked=true
+  - harness_verdict=BLOCKED
+evidence:
+  - .docs/planificacion/wave-1/T4-ask-all-workspaces.md
+```
+
 ## Shared Context
 **Goal:** Agregar flag `--all-workspaces` a `nav ask` para buscar docs en todos los workspaces registrados, no solo el actual.
 **Stack:** Go, Cobra CLI, internal/service + internal/cli

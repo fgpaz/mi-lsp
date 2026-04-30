@@ -184,6 +184,105 @@ func TestRenderStructuredFormats_PreserveSymbolWorkspace(t *testing.T) {
 	}
 }
 
+func TestRenderStructuredFormats_PreserveHarnessFields(t *testing.T) {
+	env := model.Envelope{
+		Ok:        true,
+		Backend:   "harness",
+		Workspace: "mi-lsp",
+		Items: []model.HarnessValidationResult{{
+			HarnessProtocol:          "SDD-HARNESS-v1",
+			HarnessReadiness:         "ready",
+			HarnessVerdict:           "PASS",
+			HarnessContractsReviewed: 1,
+			HarnessLinksReviewed:     2,
+			HarnessEvidenceRequired:  []string{"artifacts/harness/evidence.md"},
+			HarnessEvidenceFound:     []string{"artifacts/harness/evidence.md"},
+		}},
+	}
+
+	tests := []struct {
+		format   string
+		contains []string
+	}{
+		{format: "compact", contains: []string{`"harness_protocol":"SDD-HARNESS-v1"`, `"harness_verdict":"PASS"`}},
+		{format: "toon", contains: []string{"harness_protocol", "harness_verdict", "SDD-HARNESS-v1"}},
+		{format: "yaml", contains: []string{"harness_protocol: SDD-HARNESS-v1", "harness_verdict: PASS"}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.format, func(t *testing.T) {
+			rendered, err := Render(env, tt.format, false)
+			if err != nil {
+				t.Fatalf("Render(%s): %v", tt.format, err)
+			}
+			text := string(rendered)
+			for _, expected := range tt.contains {
+				if !strings.Contains(text, expected) {
+					t.Fatalf("Render(%s) should preserve harness field %q, got %s", tt.format, expected, text)
+				}
+			}
+		})
+	}
+}
+
+func TestRenderStructuredFormats_PreserveWikiSourceFields(t *testing.T) {
+	env := model.Envelope{
+		Ok:        true,
+		Backend:   "wiki.source",
+		Workspace: "mi-lsp",
+		Items: []model.WikiSourceValidationResult{{
+			WikiSourceProtocol:          "SDD-WIKI-SOURCE-v1",
+			WikiSourceReadiness:         "ready",
+			WikiSourceVerdict:           "PASS",
+			WikiSourceArtifactsReviewed: 1,
+			WikiSourceBlocksReviewed:    1,
+			WikiSourceRecordsReviewed:   1,
+			NavigationReadiness:         "ready",
+			Documents: []model.WikiSourceDocumentValidation{{
+				DocID:          "CT-SOURCE",
+				Path:           ".docs/wiki/09_contratos/CT-SOURCE.md",
+				SourceProtocol: "SDD-WIKI-SOURCE-v1",
+				Verdict:        "PASS",
+				Blocks: []model.WikiSourceBlockValidation{{
+					BlockID: "CT-SOURCE.contract",
+					Kind:    "contract",
+					Verdict: "PASS",
+				}},
+				Records: []model.WikiSourceRecordValidation{{
+					ID:      "RF-QRY-016",
+					Type:    "RF",
+					BlockID: "CT-SOURCE.contract",
+					Verdict: "PASS",
+				}},
+			}},
+		}},
+	}
+
+	tests := []struct {
+		format   string
+		contains []string
+	}{
+		{format: "compact", contains: []string{`"wiki_source_protocol":"SDD-WIKI-SOURCE-v1"`, `"documents":[`}},
+		{format: "toon", contains: []string{"wiki_source_protocol", "documents", "RF-QRY-016"}},
+		{format: "yaml", contains: []string{"wiki_source_protocol: SDD-WIKI-SOURCE-v1", "documents:"}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.format, func(t *testing.T) {
+			rendered, err := Render(env, tt.format, false)
+			if err != nil {
+				t.Fatalf("Render(%s): %v", tt.format, err)
+			}
+			text := string(rendered)
+			for _, expected := range tt.contains {
+				if !strings.Contains(text, expected) {
+					t.Fatalf("Render(%s) should preserve wiki source field %q, got %s", tt.format, expected, text)
+				}
+			}
+		})
+	}
+}
+
 func TestRenderFormats_IncludeCoachBlock(t *testing.T) {
 	env := model.Envelope{
 		Ok:        true,

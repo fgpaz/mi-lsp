@@ -1,5 +1,32 @@
 # FL-CS-01
 
+```yaml
+harness_protocol: SDD-HARNESS-v1
+id: "FL-CS-01"
+kind: "support-doc"
+audience: "llm-first"
+imports:
+  - '[[00_gobierno_documental]]'
+  - '[[FL-CS-01]]'
+exports:
+  - 'FL-CS-01'
+agent_must_read:
+  - .docs/wiki/00_gobierno_documental.md
+  - .docs/wiki/03_FL/FL-CS-01.md
+agent_may_edit:
+  - .docs/wiki/03_FL/FL-CS-01.md
+agent_must_not_edit:
+  - .docs/wiki/_mi-lsp/read-model.toml
+verify:
+  - mi-lsp nav governance --workspace mi-lsp --format toon
+  - mi-lsp nav wiki validate-harness --workspace mi-lsp --format toon
+stop_if:
+  - governance_blocked=true
+  - harness_verdict=BLOCKED
+evidence:
+  - .docs/wiki/03_FL/FL-CS-01.md
+```
+
 ## 1. Goal
 
 Resolver una consulta semantica profunda C# usando un worker Roslyn enrutable al repo hijo y entrypoint correctos.

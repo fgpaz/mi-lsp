@@ -30,9 +30,9 @@ func TestRuntimeKeyKeepsDistinctEntrypointsSeparate(t *testing.T) {
 	}
 }
 
-func TestRuntimeKeyFallsBackToAliasWhenRootMissing(t *testing.T) {
+func TestRuntimeKeyUsesRootSentinelWhenRootMissing(t *testing.T) {
 	key := runtimeKey(model.WorkspaceRegistration{Name: "alias-one"}, model.WorkerRequest{BackendType: "roslyn"})
-	if key != "roslyn::alias-one::." {
-		t.Fatalf("runtime key = %q, want alias fallback", key)
+	if key != "roslyn::-::." {
+		t.Fatalf("runtime key = %q, want root sentinel fallback", key)
 	}
 }

@@ -1,5 +1,32 @@
 # FL-IDX-01
 
+```yaml
+harness_protocol: SDD-HARNESS-v1
+id: "FL-IDX-01"
+kind: "support-doc"
+audience: "llm-first"
+imports:
+  - '[[00_gobierno_documental]]'
+  - '[[FL-IDX-01]]'
+exports:
+  - 'FL-IDX-01'
+agent_must_read:
+  - .docs/wiki/00_gobierno_documental.md
+  - .docs/wiki/03_FL/FL-IDX-01.md
+agent_may_edit:
+  - .docs/wiki/03_FL/FL-IDX-01.md
+agent_must_not_edit:
+  - .docs/wiki/_mi-lsp/read-model.toml
+verify:
+  - mi-lsp nav governance --workspace mi-lsp --format toon
+  - mi-lsp nav wiki validate-harness --workspace mi-lsp --format toon
+stop_if:
+  - governance_blocked=true
+  - harness_verdict=BLOCKED
+evidence:
+  - .docs/wiki/03_FL/FL-IDX-01.md
+```
+
 ## 1. Goal
 
 Construir o refrescar el indice repo-local del workspace de manera incremental, determinista y con ownership por repo, incluyendo el corpus documental necesario para `nav ask`.

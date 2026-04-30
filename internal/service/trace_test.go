@@ -76,6 +76,62 @@ func TestNavTraceFindsRFEmbeddedInAggregateDoc(t *testing.T) {
 	}
 }
 
+func TestNavTraceFindsSourceBlockID(t *testing.T) {
+	alias := "trace-source-" + filepath.Base(t.TempDir())
+	root := createFunctionalPackWorkspaceFixture(t, alias)
+	path := ".docs/wiki/09_contratos/CT-SOURCE.md"
+	writeWorkspaceFile(t, root, path, validSourceDoc("CT-SOURCE", "CT-SOURCE.contract", "RF-QRY-016", "llm-first", ""))
+	if _, err := workspace.RegisterWorkspace(alias, model.WorkspaceRegistration{
+		Name:      alias,
+		Root:      root,
+		Languages: []string{"csharp"},
+		Kind:      model.WorkspaceKindSingle,
+	}); err != nil {
+		t.Fatalf("register workspace: %v", err)
+	}
+	defer func() { _ = workspace.RemoveWorkspace(alias) }()
+
+	db, err := store.Open(root)
+	if err != nil {
+		t.Fatalf("store.Open: %v", err)
+	}
+	if err := store.ReplaceDocsWithSources(context.Background(), db,
+		[]model.DocRecord{sourceDocRecord(path, "CT-SOURCE")},
+		nil,
+		nil,
+		[]model.DocSourceBlock{sourceBlockRecord(path, "CT-SOURCE", "CT-SOURCE.contract")},
+		[]model.DocSourceRecord{sourceRecord(path, "CT-SOURCE.contract", "RF-QRY-016")},
+	); err != nil {
+		t.Fatalf("ReplaceDocsWithSources: %v", err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatalf("db.Close: %v", err)
+	}
+
+	app := New(root, nil)
+	env, err := app.Execute(context.Background(), model.CommandRequest{
+		Operation: "nav.trace",
+		Context:   model.QueryOptions{Workspace: alias},
+		Payload:   map[string]any{"rf": "CT-SOURCE.contract"},
+	})
+	if err != nil {
+		t.Fatalf("nav.trace: %v", err)
+	}
+	results, ok := env.Items.([]model.TraceResult)
+	if !ok || len(results) != 1 {
+		t.Fatalf("expected one source trace result, got %#v", env.Items)
+	}
+	if results[0].DocID != "CT-SOURCE.CONTRACT" || results[0].Status != "indexed" {
+		t.Fatalf("unexpected source trace: %#v", results[0])
+	}
+	if results[0].LookupStatus == nil {
+		t.Fatalf("expected lookup status on source trace")
+	}
+	if results[0].LookupStatus.MatchKind != "canonical_indexed_id" || results[0].LookupStatus.BlockID != "CT-SOURCE.contract" {
+		t.Fatalf("unexpected source trace lookup status: %#v", results[0].LookupStatus)
+	}
+}
+
 func TestNavTracePrefersAggregateRFDocOverRFIndexDoc(t *testing.T) {
 	alias := "trace-embedded-rf-specific-" + filepath.Base(t.TempDir())
 	root := createFunctionalPackWorkspaceFixture(t, alias)
@@ -188,6 +244,134 @@ func TestNavTraceFallsBackToDiskWhenRFIsMissingFromDocIndex(t *testing.T) {
 	}
 	if !strings.Contains(results[0].Title, "Confirmacion requerida") {
 		t.Fatalf("trace title = %q, want disk fallback embedded title", results[0].Title)
+	}
+}
+
+func TestNavTraceFallsBackToCurrentRFAndTPLayoutWhenDocIndexIsMissing(t *testing.T) {
+	alias := "trace-current-layout-fallback-" + filepath.Base(t.TempDir())
+	root := createFunctionalPackWorkspaceFixture(t, alias)
+	writeWorkspaceFile(t, root, ".docs/wiki/05_RF/RF-AI.md", strings.Join([]string{
+		"# RF-AI",
+		"",
+		"| ID | Titulo |",
+		"| --- | --- |",
+		"| RF-AI-13 | Global Judge Protocol |",
+	}, "\n"))
+	writeWorkspaceFile(t, root, ".docs/wiki/07_pruebas/TP-AI.md", strings.Join([]string{
+		"# TP-AI",
+		"",
+		"| TP ID | RF | Tipo | Objetivo | Given | When | Then |",
+		"| --- | --- | --- | --- | --- | --- | --- |",
+		"| TP-AI-41 | RF-AI-13 | Positivo | Decision Global Judge tipada | request valido | AI Gateway ejecuta | decision normalizada |",
+	}, "\n"))
+	if _, err := workspace.RegisterWorkspace(alias, model.WorkspaceRegistration{
+		Name:      alias,
+		Root:      root,
+		Languages: []string{"csharp"},
+		Kind:      model.WorkspaceKindSingle,
+	}); err != nil {
+		t.Fatalf("register workspace: %v", err)
+	}
+	defer func() { _ = workspace.RemoveWorkspace(alias) }()
+
+	app := New(root, nil)
+	env, err := app.Execute(context.Background(), model.CommandRequest{
+		Operation: "nav.trace",
+		Context:   model.QueryOptions{Workspace: alias},
+		Payload:   map[string]any{"rf": "RF-AI-13"},
+	})
+	if err != nil {
+		t.Fatalf("nav.trace RF-AI-13: %v", err)
+	}
+	results, ok := env.Items.([]model.TraceResult)
+	if !ok || len(results) != 1 {
+		t.Fatalf("expected one trace result, got %#v", env.Items)
+	}
+	if got := results[0].Title; got != "Global Judge Protocol" {
+		t.Fatalf("trace title = %q, want Global Judge Protocol", got)
+	}
+
+	env, err = app.Execute(context.Background(), model.CommandRequest{
+		Operation: "nav.trace",
+		Context:   model.QueryOptions{Workspace: alias},
+		Payload:   map[string]any{"rf": "TP-AI-41"},
+	})
+	if err != nil {
+		t.Fatalf("nav.trace TP-AI-41: %v", err)
+	}
+	results, ok = env.Items.([]model.TraceResult)
+	if !ok || len(results) != 1 {
+		t.Fatalf("expected one TP trace result, got %#v", env.Items)
+	}
+	if got := results[0].Title; got != "Decision Global Judge tipada" {
+		t.Fatalf("TP trace title = %q, want current TP objective", got)
+	}
+}
+
+func TestNavTraceUsesSourceBlockCodeAndTestLinks(t *testing.T) {
+	alias := "trace-source-links-" + filepath.Base(t.TempDir())
+	root := createFunctionalPackWorkspaceFixture(t, alias)
+	writeWorkspaceFile(t, root, "src/backend/MultiTedi.Contracts/InternalApi/AI/AiContracts.cs", "namespace Demo;\npublic sealed class GlobalJudgeDecision { }\n")
+	writeWorkspaceFile(t, root, "src/backend/tests/MultiTedi.ControlPlane.Tests/Services/GlobalJudgeValidatorTests.cs", "namespace Demo.Tests;\npublic sealed class GlobalJudgeValidatorTests { }\n")
+	writeWorkspaceFile(t, root, ".docs/wiki/05_RF/RF-AI.md", strings.Join([]string{
+		"# RF-AI",
+		"",
+		"wiki_source_protocol: SDD-WIKI-SOURCE-v1",
+		"doc_id: RF-AI",
+		"",
+		"```toon",
+		"block_id: RF-AI-13.source",
+		"kind: RF",
+		"source_of_truth: RF-AI",
+		"code_links:",
+		"  - src/backend/MultiTedi.Contracts/InternalApi/AI/AiContracts.cs",
+		"test_links:",
+		"  - src/backend/tests/MultiTedi.ControlPlane.Tests/Services/GlobalJudgeValidatorTests.cs",
+		"records:",
+		"  - id: RF-AI-13",
+		"    type: RF",
+		"    title: Global Judge Protocol",
+		"```",
+	}, "\n"))
+	if _, err := workspace.RegisterWorkspace(alias, model.WorkspaceRegistration{
+		Name:      alias,
+		Root:      root,
+		Languages: []string{"csharp"},
+		Kind:      model.WorkspaceKindSingle,
+	}); err != nil {
+		t.Fatalf("register workspace: %v", err)
+	}
+	defer func() { _ = workspace.RemoveWorkspace(alias) }()
+
+	app := New(root, nil)
+	if _, err := app.Execute(context.Background(), model.CommandRequest{
+		Operation: "index.run",
+		Context:   model.QueryOptions{Workspace: alias},
+		Payload:   map[string]any{"docs_only": true},
+	}); err != nil {
+		t.Fatalf("index.run --docs-only: %v", err)
+	}
+
+	env, err := app.Execute(context.Background(), model.CommandRequest{
+		Operation: "nav.trace",
+		Context:   model.QueryOptions{Workspace: alias},
+		Payload:   map[string]any{"rf": "RF-AI-13"},
+	})
+	if err != nil {
+		t.Fatalf("nav.trace RF-AI-13: %v", err)
+	}
+	results, ok := env.Items.([]model.TraceResult)
+	if !ok || len(results) != 1 {
+		t.Fatalf("expected one trace result, got %#v", env.Items)
+	}
+	if results[0].Status != "implemented" || results[0].Coverage != 1 {
+		t.Fatalf("trace status = %s %.2f, want implemented 1.00: %#v", results[0].Status, results[0].Coverage, results[0])
+	}
+	if len(results[0].Explicit) != 1 || !results[0].Explicit[0].Verified {
+		t.Fatalf("explicit source links = %#v, want verified code link", results[0].Explicit)
+	}
+	if len(results[0].Tests) != 1 || !results[0].Tests[0].Verified {
+		t.Fatalf("test source links = %#v, want verified test link", results[0].Tests)
 	}
 }
 

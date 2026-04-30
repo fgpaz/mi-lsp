@@ -46,11 +46,11 @@ with an optional .mi-lsp/project.toml topology file.`,
 			return state.executeOperation(cmd, "workspace.list", payload, false)
 		},
 	}
-	listCommand.Flags().BoolVar(&listGroupByRoot, "group-by-root", false, "Group registered aliases by canonical root without mutating the registry")
+	listCommand.Flags().BoolVar(&listGroupByRoot, "group-by-root", false, "Group aliases by exact workspace root without mutating the registry")
 
 	doctorCommand := &cobra.Command{
 		Use:   "doctor",
-		Short: "Diagnose registry hygiene without mutating aliases",
+		Short: "Diagnose workspace aliases, worktrees, stale paths, and binary shadowing",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return state.executeOperation(cmd, "workspace.doctor", nil, false)
 		},

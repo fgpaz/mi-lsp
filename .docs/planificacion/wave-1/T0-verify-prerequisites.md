@@ -1,5 +1,32 @@
 # Task T0: Verify Prerequisites (FTS5 + Session Tracking)
 
+```yaml
+harness_protocol: SDD-HARNESS-v1
+id: "T0"
+kind: "support-doc"
+audience: "dual"
+imports:
+  - '[[00_gobierno_documental]]'
+  - '.docs/planificacion/wave-1/T0-verify-prerequisites.md'
+exports:
+  - 'T0'
+agent_must_read:
+  - .docs/wiki/00_gobierno_documental.md
+  - .docs/planificacion/wave-1/T0-verify-prerequisites.md
+agent_may_edit:
+  - .docs/planificacion/wave-1/T0-verify-prerequisites.md
+agent_must_not_edit:
+  - .docs/wiki/_mi-lsp/read-model.toml
+verify:
+  - mi-lsp nav governance --workspace mi-lsp --format toon
+  - mi-lsp nav wiki validate-harness --workspace mi-lsp --format toon
+stop_if:
+  - governance_blocked=true
+  - harness_verdict=BLOCKED
+evidence:
+  - .docs/planificacion/wave-1/T0-verify-prerequisites.md
+```
+
 ## Shared Context
 **Goal:** Confirmar que FTS5 esta disponible en el build de SQLite y trazar como fluye session_id desde el CLI al daemon.
 **Stack:** Go, mattn/go-sqlite3, Cobra CLI

@@ -1,5 +1,32 @@
 # 09. Contratos tecnicos
 
+```yaml
+harness_protocol: SDD-HARNESS-v1
+id: "09_contratos_tecnicos"
+kind: "support-doc"
+audience: "dual"
+imports:
+  - '[[00_gobierno_documental]]'
+  - '.docs/wiki/09_contratos_tecnicos.md'
+exports:
+  - '09_contratos_tecnicos'
+agent_must_read:
+  - .docs/wiki/00_gobierno_documental.md
+  - .docs/wiki/09_contratos_tecnicos.md
+agent_may_edit:
+  - .docs/wiki/09_contratos_tecnicos.md
+agent_must_not_edit:
+  - .docs/wiki/_mi-lsp/read-model.toml
+verify:
+  - mi-lsp nav governance --workspace mi-lsp --format toon
+  - mi-lsp nav wiki validate-harness --workspace mi-lsp --format toon
+stop_if:
+  - governance_blocked=true
+  - harness_verdict=BLOCKED
+evidence:
+  - .docs/wiki/09_contratos_tecnicos.md
+```
+
 ## Proposito y alcance
 
 Este documento resume la superficie de contratos tecnicos de `mi-lsp`: CLI publica, canal CLI-daemon-admin y protocolo daemon-worker.
@@ -29,11 +56,11 @@ El detalle por frontera vive en `09_contratos/`.
 - Cada contrato debe exponer `warnings`, fallas accionables y degradacion clara cuando aplique.
 - `worker status` forma parte de la CLI publica y debe exponer `tool_root`, `tool_root_kind`, `cli_path`, `protocol_version`, origen del worker seleccionado y compatibilidad de candidatos.
 - `workspace status` forma parte de la CLI publica y debe exponer `docs_read_model`, `doc_count`, `docs_index_ready`, `governance_profile`, `governance_sync`, `governance_index_sync` y `governance_blocked`; en `--full` puede expandir el digest repo-local de memoria de reentrada.
-- En AXI efectivo, `workspace status`, `nav search`, `nav wiki search`, `nav intent`, `nav route`, `nav wiki route`, `nav pack` y `nav wiki pack` pertenecen a la superficie preview/full por default; `nav ask` solo lo hace para preguntas de orientacion y `nav workspace-map` solo cuando se fuerza AXI.
+- En AXI efectivo, `workspace status`, `nav search`, `nav wiki search`, `nav wiki validate-harness`, `nav wiki validate-source`, `nav intent`, `nav route`, `nav wiki route`, `nav pack` y `nav wiki pack` pertenecen a la superficie preview/full por default; `nav ask` solo lo hace para preguntas de orientacion y `nav workspace-map` solo cuando se fuerza AXI.
 - `init` pertenece a la CLI publica como shortcut de onboarding; no reemplaza `workspace add`, pero reutiliza su semantica base.
 - `nav ask` pertenece a la CLI publica y usa un contrato docs-first explainable, no un blob opaco ni una respuesta puramente textual.
 - `nav pack` pertenece a la CLI publica y usa un contrato de reading pack canonico, no una respuesta textual libre.
-- `nav wiki` pertenece a la CLI publica como superficie documental explicita para agentes; `search` devuelve candidatos wiki y `route|pack|trace` reutilizan las superficies canonicas existentes.
+- `nav wiki` pertenece a la CLI publica como superficie documental explicita para agentes; `search` devuelve candidatos wiki, `route|pack|trace` reutilizan las superficies canonicas existentes, `validate-harness` compila readiness de contratos `SDD-HARNESS-v1` y `validate-source` compila readiness de artefactos `SDD-WIKI-SOURCE-v1`.
 - `nav governance` pertenece a la CLI publica y devuelve el estado efectivo de gobernanza del workspace.
 - `nav service` pertenece a la CLI publica y usa un contrato evidence-first, no uno de scoring.
 - `nav context` pertenece a la CLI publica y su salida visible es slice-first; el backend profundo solo enriquece el mismo item.
@@ -59,7 +86,10 @@ El detalle por frontera vive en `09_contratos/`.
 - `nav search`, `nav ask`, `nav pack`, `nav route`, `nav.related`, `nav.service` y `nav workspace-map` pueden agregar `continuation.reason` (`recent_change`, `narrow_scope`, `follow_doc`, `expand_preview`, `low_evidence`, `handoff_reentry`) cuando existe un siguiente paso mejor que repetir la misma consulta.
 - `nav pack` debe devolver una estructura estable con `task`, `family`, `mode`, `primary_doc`, `docs`, `why` y `next_queries`.
 - `nav wiki search` debe devolver `WikiSearchResult` con `doc_id`, `path`, `title`, `layer`, `family`, `stage`, `score`, `why`, `snippet/content` y `next_queries`; `RS-*` y las rutas `02_resultados*` pertenecen a `layer=RS`, `stage=outcome`.
+- `nav wiki validate-harness` debe devolver `HarnessValidationResult` con `harness_protocol`, `harness_readiness`, `harness_verdict`, blockers/warnings, conteos de contratos/links revisados, evidencia requerida/encontrada y docs sin contrato/audience.
+- `nav wiki validate-source` debe devolver `WikiSourceValidationResult` con `wiki_source_protocol`, `wiki_source_readiness`, `wiki_source_verdict`, blockers/warnings, conteos de artefactos/bloques/records/tablas revisados, `navigation_readiness` y `navigation_blockers`.
 - `nav trace <DOC-ID>` debe clasificar explicitamente `RS|RF|TP`: `RS-*` devuelve `doc_id`, `layer=RS`, `stage=outcome` sin poblar el campo legacy `rf`; `RF-*` conserva evidencia spec-to-code y `TP-*` conserva evidencia de cobertura documental.
+- `nav trace <DOC-ID>` tambien puede resolver `block_id` o `record_id` fuente exacto desde `doc_source_blocks`/`doc_source_records` y devolver evidencia `wiki-source`.
 - `nav governance` debe devolver una estructura estable con perfil, base efectiva, overlays, sync, blockers y siguientes pasos.
 - `nav service` puede usar `backend=catalog`, `backend=text` o `backend=catalog+text`.
 
@@ -74,7 +104,7 @@ El detalle por frontera vive en `09_contratos/`.
 - `--axi` y `--classic` juntos deben fallar antes de ejecutar la operacion.
 - `worker status` debe conservar el mismo payload visible con y sin daemon; el daemon no puede reemplazar `items` por `RuntimeSnapshot`/`WorkerStatus` crudos.
 - `nav.find`, `nav.search`, `nav.intent`, `nav.symbols`, `nav.outline`, `nav.overview`, `nav.multi-read` y `nav.workspace-map` summary-first pertenecen a la superficie publica directa: no deben esperar daemon ni cambiar de comportamiento por su health.
-- `nav.wiki.search`, `nav.wiki.route`, `nav.wiki.pack` y `nav.wiki.trace` pertenecen a la superficie publica directa y no deben esperar daemon.
+- `nav.wiki.search`, `nav.wiki.route`, `nav.wiki.pack`, `nav.wiki.trace`, `nav.wiki.validate-harness` y `nav.wiki.validate-source` pertenecen a la superficie publica directa y no deben esperar daemon.
 - `nav.ask` tambien pertenece al hot path directo por default; la presencia del daemon no debe ser requisito para una primera respuesta docs-first util.
 - `index` puede degradar a full rebuild aun sin cambios git detectados cuando el runtime observa que `doc_records` no contiene docs canonicos pese a que la wiki existe en disco; el contrato visible no debe quedar en `no changes detected` en ese caso.
 - `index --docs-only` es un modo publico de recuperacion: reconstruye el corpus documental y la memoria de reentrada sin reemplazar el catalogo de codigo.
@@ -123,13 +153,14 @@ El detalle por frontera vive en `09_contratos/`.
 - `nav route <task>`: resuelve el documento canonico de anclaje y un mini reading pack con minimos tokens; si la tarea trae un `RF-*` embebido en un doc agregado, Tier 1 ancla el contenedor canonico; `--include-code-discovery` agrega discovery de codigo; `--full` expande canonical lane y discovery
 - `nav wiki search <query>`: busca en el docgraph gobernado con filtros `--layer RS,RF,FL,TP,CT,TECH,DB`, paginacion `--top/--offset` y contenido opcional `--include-content`; la superficie textual directa `nav search` debe incluir docs gobernados y artefactos repo-locales ocultos cuando el repo use directorios hidden
 - `nav wiki route|pack|trace`: aliases documentales para agentes que reutilizan `nav route`, `nav pack` y `nav trace`
+- `nav wiki validate-harness`: valida contratos `SDD-HARNESS-v1` en docs gobernados y emite `PASS|WARN|BLOCKED` sin crear un parser documental paralelo
 - `nav ask <question>`: responde usando wiki + evidencia de codigo y fallback generico/textual cuando haga falta; `--all-workspaces` habilita fan-out cross-workspace para el mismo contrato explainable
 - `nav pack <task>`: construye un reading pack canonico con preview/full y anchors opcionales `--rf`, `--fl`, `--doc`
 - `nav search <pattern>`: si `--regex` lleva un patron invalido, el runtime puede reintentar como literal y devolver warning explicito en vez de error duro
-- `workspace status [--full] [--no-auto-sync]`: muestra estado de gobernanza/index y, en `--full`, el digest repo-local de memoria (`recent_canonical_changes`, `handoff`, `best_reentry`, `stale`); `--no-auto-sync` conserva la consulta read-only y reporta `governance_sync=stale` sin escribir `read-model.toml`; si `docs_index_ready=true` pero `index_ready=false`, debe explicitar que el corpus docs-only quedo util pero el catalogo de codigo sigue ausente
-- `workspace list`: conserva un item por alias registrado; `--group-by-root` cambia a modo diagnostico por root con `root`, `alias_count`, `aliases`, `canonical_alias`, `selection_reason`, `kind` y warnings, sin mutar registry.
-- `workspace doctor`: diagnostico read-only de registry/binario; reporta duplicate roots, stale paths, governance skips y shadowing potencial de `mi-lsp.exe`, y solo emite sugerencias.
-- cuando `--workspace` se omite, `nav ask`, `nav pack`, `nav governance`, `workspace status` y las queries directas equivalentes resuelven primero contra `caller_cwd`; si no hay match, pueden usar `last_workspace` con warning visible
+- `workspace status [--full] [--no-auto-sync]`: muestra `workspace_root`, `workspace_source`, estado de gobernanza/index y, en `--full`, el digest repo-local de memoria (`recent_canonical_changes`, `handoff`, `best_reentry`, `stale`); `--no-auto-sync` conserva la consulta read-only y reporta `governance_sync=stale` sin escribir `read-model.toml`; si `docs_index_ready=true` pero `index_ready=false`, debe explicitar que el corpus docs-only quedo util pero el catalogo de codigo sigue ausente
+- `workspace list --group-by-root`: agrupa aliases por root exacto con `root`, `alias_count`, `aliases`, `canonical_alias`, `selection_reason`, `kind` y warnings; `workspace list` sin flag sigue alias-preserving.
+- `workspace doctor`: diagnostico no mutante de aliases con root compartido, worktrees con mismo `git common dir`, paths stale, shadowing de binario y sugerencias de comandos.
+- cuando `--workspace` se omite, `nav ask`, `nav pack`, `nav governance`, `workspace status` y las queries directas equivalentes resuelven primero contra `caller_cwd`; si no hay match, pueden usar `last_workspace` con warning visible. Si `--workspace <alias>` esta presente y el `caller_cwd` cae dentro de otro workspace registrado, el alias explicito gana y debe quedar warning visible.
 - `nav governance`: diagnostica perfil efectivo, sync, stale index y pasos de reparacion de gobernanza
 - `nav service`: resume evidencia observable de un servicio en un unico summary estructurado
 - `nav context`: devuelve `slice_text` y metadatos opcionales de catalogo o backend semantico para la linea pedida
@@ -147,7 +178,6 @@ El detalle por frontera vive en `09_contratos/`.
 - `nav ask --all-workspaces` / `nav search --all-workspaces` / `nav find --all-workspaces`: fan-out paralelo cross-workspace
 - `--no-auto-daemon` global flag: desactiva auto-start de daemon para queries semanticas
 - `daemon perf-smoke`: valida presupuesto de daemon y callers paralelos; falla el envelope si supera working set, private bytes o handles configurados
-- `scripts/release/regression-smoke.ps1`: ejecuta por alias, reporta por `status -> root -> alias`, separa `skipped` de `failed`, e incluye `unique_root_count`, `duplicate_root_count` y `aliases_per_root`.
 - `--axi` global flag / `MI_LSP_AXI=1`: fuerzan overlay AXI en superficies soportadas
 - `--classic` global flag: restaura modo clasico en superficies AXI-default y prevalece sobre el env
 - `--full` global flag: expande surfaces AXI efectivas sin cambiar routing ni semantica base

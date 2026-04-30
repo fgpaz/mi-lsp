@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/fgpaz/mi-lsp/internal/model"
+	"github.com/fgpaz/mi-lsp/internal/store"
 )
 
 func (a *App) wikiSearch(ctx context.Context, request model.CommandRequest) (model.Envelope, error) {
@@ -59,9 +60,17 @@ func (a *App) wikiSearch(ctx context.Context, request model.CommandRequest) (mod
 		warnings = appendStringIfMissing(warnings, fmt.Sprintf("unknown wiki layer %q ignored; valid layers: RS, RF, FL, TP, CT, TECH, DB", layer))
 	}
 
-	top := intFromAny(request.Payload["top"], 0)
+	topFromPayload := intFromAny(request.Payload["top"], 0)
+	top := topFromPayload
 	if top <= 0 {
-		top = request.Context.MaxItems
+		if request.Context.Full {
+			top = len(query.ranked)
+			if exactDocs, err := store.FindDocRecordsBySourceID(ctx, query.db, queryText); err == nil && len(exactDocs) > top {
+				top = len(exactDocs)
+			}
+		} else {
+			top = request.Context.MaxItems
+		}
 	}
 	if top <= 0 {
 		top = 10
@@ -70,8 +79,30 @@ func (a *App) wikiSearch(ctx context.Context, request model.CommandRequest) (mod
 	includeContent, _ := request.Payload["include_content"].(bool)
 
 	candidates := make([]model.WikiSearchResult, 0, min(top, len(query.ranked)))
+	seenPaths := map[string]struct{}{}
+	exactDocPaths := map[string]struct{}{}
+	if exactDocs, err := store.FindDocRecordsBySourceID(ctx, query.db, queryText); err == nil {
+		for _, doc := range exactDocs {
+			layer := wikiLayerForDoc(doc)
+			if len(layerFilter) > 0 {
+				if _, ok := layerFilter[layer]; !ok {
+					continue
+				}
+			}
+			item := wikiSearchResult(registration.Name, registration.Root, queryText, scoredDoc{record: doc, score: 1000, reason: []string{"source_id_exact"}}, layer, includeContent, request.Context.MaxChars)
+			candidates = append(candidates, item)
+			seenPaths[doc.Path] = struct{}{}
+			exactDocPaths[doc.Path] = struct{}{}
+			if len(candidates) >= top {
+				break
+			}
+		}
+	}
 	skipped := 0
 	for _, candidate := range query.ranked {
+		if _, seen := seenPaths[candidate.record.Path]; seen {
+			continue
+		}
 		layer := wikiLayerForDoc(candidate.record)
 		if len(layerFilter) > 0 {
 			if _, ok := layerFilter[layer]; !ok {
@@ -87,6 +118,22 @@ func (a *App) wikiSearch(ctx context.Context, request model.CommandRequest) (mod
 		if len(candidates) >= top {
 			break
 		}
+	}
+	totalMatches := countWikiSearchMatches(query.ranked, layerFilter, exactDocPaths)
+	nextHint := wikiExpansionHint("nav.wiki.search", registration.Name, queryText, len(candidates), totalMatches)
+	sourceIdentity, hasSourceIdentity, _ := sourceIdentityForQuery(ctx, query.db, queryText)
+	for i := range candidates {
+		status := wikiLookupStatusForDoc(registration.Name, queryText, model.DocRecord{
+			Path:   candidates[i].Path,
+			Title:  candidates[i].Title,
+			DocID:  candidates[i].DocID,
+			Layer:  candidates[i].Layer,
+			Family: candidates[i].Family,
+		}, candidates[i].Why, totalMatches, len(candidates), nextHint)
+		if hasSourceIdentity && candidates[i].Path == sourceIdentity.path {
+			applySourceIdentity(&status, sourceIdentity)
+		}
+		candidates[i].LookupStatus = &status
 	}
 
 	hint := ""
@@ -107,7 +154,27 @@ func (a *App) wikiSearch(ctx context.Context, request model.CommandRequest) (mod
 		Hint:      hint,
 		Stats:     model.Stats{Files: len(candidates)},
 	}
+	if nextHint != "" {
+		env.NextHint = &nextHint
+	}
 	return applyCoachPolicy(attachMemoryPointer(env, memory), request.Context), nil
+}
+
+func countWikiSearchMatches(ranked []scoredDoc, layerFilter map[string]struct{}, exactDocPaths map[string]struct{}) int {
+	total := len(exactDocPaths)
+	for _, candidate := range ranked {
+		if _, seen := exactDocPaths[candidate.record.Path]; seen {
+			continue
+		}
+		layer := wikiLayerForDoc(candidate.record)
+		if len(layerFilter) > 0 {
+			if _, ok := layerFilter[layer]; !ok {
+				continue
+			}
+		}
+		total++
+	}
+	return total
 }
 
 func wikiSearchResult(workspaceName string, root string, queryText string, candidate scoredDoc, layer string, includeContent bool, maxChars int) model.WikiSearchResult {

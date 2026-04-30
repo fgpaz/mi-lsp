@@ -1,5 +1,32 @@
 # RF-QRY-005 - Ejecutar N operaciones heterogeneas en batch con dispatch paralelo
 
+```yaml
+harness_protocol: SDD-HARNESS-v1
+id: "RF-QRY-005"
+kind: "support-doc"
+audience: "llm-first"
+imports:
+  - '[[00_gobierno_documental]]'
+  - '[[RF-QRY-005]]'
+exports:
+  - 'RF-QRY-005'
+agent_must_read:
+  - .docs/wiki/00_gobierno_documental.md
+  - .docs/wiki/04_RF/RF-QRY-005.md
+agent_may_edit:
+  - .docs/wiki/04_RF/RF-QRY-005.md
+agent_must_not_edit:
+  - .docs/wiki/_mi-lsp/read-model.toml
+verify:
+  - mi-lsp nav governance --workspace mi-lsp --format toon
+  - mi-lsp nav wiki validate-harness --workspace mi-lsp --format toon
+stop_if:
+  - governance_blocked=true
+  - harness_verdict=BLOCKED
+evidence:
+  - .docs/wiki/04_RF/RF-QRY-005.md
+```
+
 ## 1. Execution Sheet
 
 | Campo | Valor |

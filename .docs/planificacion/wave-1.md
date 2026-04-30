@@ -1,5 +1,32 @@
 # Wave 1: Quick Wins + Foundation Telemetrica
 
+```yaml
+harness_protocol: SDD-HARNESS-v1
+id: "wave-1"
+kind: "support-doc"
+audience: "dual"
+imports:
+  - '[[00_gobierno_documental]]'
+  - '.docs/planificacion/wave-1.md'
+exports:
+  - 'wave-1'
+agent_must_read:
+  - .docs/wiki/00_gobierno_documental.md
+  - .docs/planificacion/wave-1.md
+agent_may_edit:
+  - .docs/planificacion/wave-1.md
+agent_must_not_edit:
+  - .docs/wiki/_mi-lsp/read-model.toml
+verify:
+  - mi-lsp nav governance --workspace mi-lsp --format toon
+  - mi-lsp nav wiki validate-harness --workspace mi-lsp --format toon
+stop_if:
+  - governance_blocked=true
+  - harness_verdict=BLOCKED
+evidence:
+  - .docs/planificacion/wave-1.md
+```
+
 **Goal:** Entregar 3 mejoras inmediatas al ahorro de tokens (FTS5 en ask, pagination, change-type fix) y preparar la foundation telemetrica para context-pack adaptativo en Wave 2+.
 
 **Architecture:** mi-lsp es un CLI Go con SQLite repo-local (`index.db`), daemon global con SQLite (`daemon.db`), y patron catalog-first/daemon-optional. Wave 1 no altera la arquitectura -- agrega FTS5 virtual table, OFFSET a queries existentes, flags a comandos existentes, y enriquece telemetria existente.

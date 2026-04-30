@@ -123,6 +123,65 @@ func TestNavWikiSearchDocIndexEmptyReturnsDiagnostic(t *testing.T) {
 	}
 }
 
+func TestNavWikiSearchFindsExactSourceRecordID(t *testing.T) {
+	alias := "wiki-source-search-" + filepath.Base(t.TempDir())
+	root := createFunctionalPackWorkspaceFixture(t, alias)
+	path := ".docs/wiki/09_contratos/CT-SOURCE.md"
+	writeWorkspaceFile(t, root, path, validSourceDoc("CT-SOURCE", "CT-SOURCE.contract", "RF-QRY-016", "llm-first", ""))
+	if _, err := workspace.RegisterWorkspace(alias, model.WorkspaceRegistration{
+		Name:      alias,
+		Root:      root,
+		Languages: []string{"csharp"},
+		Kind:      model.WorkspaceKindSingle,
+	}); err != nil {
+		t.Fatalf("register workspace: %v", err)
+	}
+	defer func() { _ = workspace.RemoveWorkspace(alias) }()
+
+	db, err := store.Open(root)
+	if err != nil {
+		t.Fatalf("store.Open: %v", err)
+	}
+	if err := store.ReplaceDocsWithSources(context.Background(), db,
+		[]model.DocRecord{sourceDocRecord(path, "CT-SOURCE")},
+		nil,
+		nil,
+		[]model.DocSourceBlock{sourceBlockRecord(path, "CT-SOURCE", "CT-SOURCE.contract")},
+		[]model.DocSourceRecord{sourceRecord(path, "CT-SOURCE.contract", "RF-QRY-016")},
+	); err != nil {
+		t.Fatalf("ReplaceDocsWithSources: %v", err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatalf("db.Close: %v", err)
+	}
+
+	app := New(root, nil)
+	env, err := app.Execute(context.Background(), model.CommandRequest{
+		Operation: "nav.wiki.search",
+		Context:   model.QueryOptions{Workspace: alias, MaxItems: 10},
+		Payload:   map[string]any{"query": "RF-QRY-016", "top": 5},
+	})
+	if err != nil {
+		t.Fatalf("nav.wiki.search: %v", err)
+	}
+	results, ok := env.Items.([]model.WikiSearchResult)
+	if !ok || len(results) == 0 {
+		t.Fatalf("expected source wiki search result, got %#v", env.Items)
+	}
+	if results[0].DocID != "CT-SOURCE" || !strings.Contains(strings.Join(results[0].Why, " | "), "source_id_exact") {
+		t.Fatalf("unexpected source result: %#v", results[0])
+	}
+	if results[0].LookupStatus == nil {
+		t.Fatalf("expected lookup status on exact source result")
+	}
+	if results[0].LookupStatus.MatchKind != "canonical_indexed_id" || results[0].LookupStatus.RecordID != "RF-QRY-016" || results[0].LookupStatus.BlockID != "CT-SOURCE.contract" {
+		t.Fatalf("unexpected lookup status: %#v", results[0].LookupStatus)
+	}
+	if results[0].LookupStatus.TotalMatches == 0 || results[0].LookupStatus.ShownMatches == 0 {
+		t.Fatalf("expected match totals in lookup status: %#v", results[0].LookupStatus)
+	}
+}
+
 func TestNavWikiSearchBlocksWhenGovernanceBlocked(t *testing.T) {
 	alias := "wiki-gov-block-" + filepath.Base(t.TempDir())
 	ensureWritableTestHome(t)

@@ -1,5 +1,32 @@
 # mi-lsp
 
+```yaml
+harness_protocol: SDD-HARNESS-v1
+id: "README"
+kind: "support-doc"
+audience: "dual"
+imports:
+  - '[[00_gobierno_documental]]'
+  - '[[README]]'
+exports:
+  - 'README'
+agent_must_read:
+  - .docs/wiki/00_gobierno_documental.md
+  - README.md
+agent_may_edit:
+  - README.md
+agent_must_not_edit:
+  - .docs/wiki/_mi-lsp/read-model.toml
+verify:
+  - mi-lsp nav governance --workspace mi-lsp --format toon
+  - mi-lsp nav wiki validate-harness --workspace mi-lsp --format toon
+stop_if:
+  - governance_blocked=true
+  - harness_verdict=BLOCKED
+evidence:
+  - README.md
+```
+
 ![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)
 ![Go Version](https://img.shields.io/badge/go-1.24+-00ADD8?logo=go)
 ![CI](https://github.com/fgpaz/mi-lsp/actions/workflows/test.yml/badge.svg)
@@ -213,7 +240,7 @@ Useful global flags:
 --axi
 --classic
 --full
---format compact|json|text
+--format compact|json|text|toon|yaml
 --client-name
 --session-id
 --backend roslyn|tsserver|catalog|text
