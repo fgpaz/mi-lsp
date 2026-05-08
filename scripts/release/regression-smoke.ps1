@@ -202,6 +202,12 @@ if (-not $workspaceList.ok) {
     throw "workspace list failed: $($workspaceList.error)"
 }
 
+$pathStatusArgs = @("workspace", "status", ".")
+if (-not $AllowStatusAutoSync) {
+    $pathStatusArgs += "--no-auto-sync"
+}
+$pathStatus = Invoke-MiLspJson -Arguments $pathStatusArgs -Workspace "." -Root (Get-Location).Path
+
 $workspaceReports = New-Object System.Collections.Generic.List[object]
 foreach ($workspace in @($workspaceList.result.items)) {
     $alias = [string]$workspace.name
@@ -263,6 +269,7 @@ $aliasesPerRoot = @{}
 foreach ($group in $rootGroups) {
     $aliasesPerRoot[$group.Name] = @($group.Group | ForEach-Object { $_.workspace })
 }
+$pathStatusFailed = Test-OperationFailed -Result $pathStatus
 
 $report = [pscustomobject]@{
     generated_at = (Get-Date).ToString("o")
@@ -272,6 +279,8 @@ $report = [pscustomobject]@{
     workspace_count = $workspaceReports.Count
     unique_root_count = $rootGroups.Count
     duplicate_root_count = @($rootGroups | Where-Object { $_.Count -gt 1 }).Count
+    path_status = $pathStatus
+    path_status_ok = (-not $pathStatusFailed)
     aliases_per_root = $aliasesPerRoot
     workspaces = $workspaceReports.ToArray()
     go_version_m = $metadata
@@ -294,6 +303,7 @@ $lines.Add("- unique_roots: $($report.unique_root_count)")
 $lines.Add("- duplicate_roots: $($report.duplicate_root_count)")
 $lines.Add("- skipped_workspaces: $($skipped.Count)")
 $lines.Add("- failed_workspaces: $($failed.Count)")
+$lines.Add("- path_status_dot_ok: $($report.path_status_ok)")
 $lines.Add("")
 $lines.Add("## Binary Metadata")
 foreach ($item in $metadata) {
@@ -319,9 +329,10 @@ foreach ($statusGroup in $statusGroups | Sort-Object Name) {
 $lines | Set-Content -LiteralPath $mdPath -Encoding utf8
 
 [pscustomobject]@{
-    ok = ($failed.Count -eq 0)
+    ok = ($failed.Count -eq 0 -and -not $pathStatusFailed)
     report_json = $jsonPath
     report_md = $mdPath
     workspace_count = $workspaceReports.Count
     failed_workspace_count = $failed.Count
+    path_status_dot_ok = (-not $pathStatusFailed)
 }

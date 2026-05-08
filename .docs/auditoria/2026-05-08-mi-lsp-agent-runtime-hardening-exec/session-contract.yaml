@@ -1,0 +1,73 @@
+task_slug: mi-lsp-agent-runtime-hardening-exec
+issue_or_waiver: no tracker card requested; explicit execution waiver from user request
+base_ref: main
+base_sha: 2f94f64592623ce4b7ca72d8aafff65ce5aa4c9f
+intended_branch: mi-lsp-agent-runtime-hardening
+worktree_path: C:\repos\mios\mi-lsp
+expected_scope:
+  - execute .docs/raw/plans/2026-05-08-mi-lsp-agent-runtime-hardening.md
+  - improve structured errors, search fallback, wiki evidence, truncation continuations, workspace UX, telemetry, and runtime memory observability
+  - repair harness readiness blockers uncovered by final validation
+allowed_paths:
+  - .docs/auditoria/2026-05-08-mi-lsp-agent-runtime-hardening-exec/**
+  - .docs/planificacion/**
+  - .docs/wiki/**
+  - cmd/**
+  - internal/**
+  - worker-dotnet/**
+  - scripts/release/**
+  - skills/mi-lsp/**
+forbidden_paths:
+  - AGENTS.md
+  - CLAUDE.md
+  - C:\Users\fgpaz\.agents\skills/**
+  - C:\repos\buho\assets\skills/**
+sdd_anchors:
+  fl:
+    - FL-QRY-01
+    - FL-IDX-01
+    - FL-DAE-01
+    - FL-CS-01
+  rf:
+    - RF-WKS-005
+    - RF-IDX-001
+    - RF-IDX-003
+    - RF-QRY-001
+    - RF-QRY-002
+    - RF-QRY-010
+    - RF-QRY-012
+    - RF-QRY-013
+    - RF-QRY-014
+    - RF-QRY-015
+    - RF-QRY-016
+    - RF-CS-001
+    - RF-DAE-002
+  technical:
+    - TECH-WIKI-AWARE-SEARCH
+    - TECH-DOC-ROUTER
+    - TECH-DAEMON-GOBERNANZA
+    - DB-STATE-Y-TELEMETRIA
+    - CT-CLI-DAEMON-ADMIN
+    - CT-NAV-WIKI
+    - CT-NAV-PACK
+    - CT-NAV-ASK
+    - CT-DAEMON-WORKER
+  tests:
+    - TP-QRY
+    - TP-IDX
+    - TP-DAE
+    - TP-CS
+required_evidence:
+  - mi-lsp workspace status . --format toon
+  - mi-lsp nav governance --workspace . --format toon
+  - mi-lsp index --workspace . --docs-only
+  - go test ./...
+  - dotnet test worker-dotnet/MiLsp.Worker.sln
+  - ps-trazabilidad
+  - ps-auditar-trazabilidad
+touched_cards: not_applicable
+explicit_waivers:
+  - no tracker card exists for this repository/task; user explicitly requested execution
+  - plan files under .docs/raw and audit files are ignored by git unless force-added later
+branch_disposition: integrated
+cleanup_policy: already-clean

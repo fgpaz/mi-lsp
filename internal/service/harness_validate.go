@@ -578,8 +578,12 @@ func intersectStrings(left []string, right []string) []string {
 }
 
 func harnessDocLabel(record model.DocRecord) string {
-	if strings.TrimSpace(record.DocID) != "" {
-		return record.DocID
+	if docID := strings.TrimSpace(record.DocID); docID != "" {
+		base := strings.TrimSuffix(filepath.Base(filepath.ToSlash(record.Path)), ".md")
+		if base == "" || strings.EqualFold(docID, base) {
+			return docID
+		}
+		return docID + " (" + record.Path + ")"
 	}
 	return record.Path
 }

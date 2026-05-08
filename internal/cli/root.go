@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -15,6 +16,7 @@ import (
 	"github.com/fgpaz/mi-lsp/internal/model"
 	"github.com/fgpaz/mi-lsp/internal/output"
 	"github.com/fgpaz/mi-lsp/internal/service"
+	"github.com/fgpaz/mi-lsp/internal/telemetry"
 	"github.com/fgpaz/mi-lsp/internal/worker"
 	"github.com/fgpaz/mi-lsp/internal/workspace"
 )
@@ -37,6 +39,24 @@ type rootState struct {
 	telemetry    *CLITelemetry
 	noAutoDaemon bool
 	compress     bool
+}
+
+type envelopePrintedError struct {
+	err error
+}
+
+func (e envelopePrintedError) Error() string {
+	if e.err == nil {
+		return ""
+	}
+	return e.err.Error()
+}
+
+func (e envelopePrintedError) Unwrap() error { return e.err }
+
+func IsEnvelopePrintedError(err error) bool {
+	var printed envelopePrintedError
+	return errors.As(err, &printed)
 }
 
 func NewRootCommand() *cobra.Command {
@@ -214,6 +234,9 @@ func (s *rootState) executeOperation(cmd *cobra.Command, operation string, paylo
 		}
 	}
 	latency := time.Since(started)
+	if err != nil {
+		envelope = buildCLIErrorEnvelope(request, route, err)
+	}
 
 	// Best-effort telemetry: direct/direct_fallback record at the caller.
 	// Daemon-served requests are recorded canonically inside the daemon.
@@ -222,9 +245,125 @@ func (s *rootState) executeOperation(cmd *cobra.Command, operation string, paylo
 	}
 
 	if err != nil {
-		return err
+		if printErr := s.printEnvelope(envelope, request.Context); printErr != nil {
+			return printErr
+		}
+		return envelopePrintedError{err: err}
 	}
 	return s.printEnvelope(envelope, request.Context)
+}
+
+func buildCLIErrorEnvelope(request model.CommandRequest, route string, err error) model.Envelope {
+	backend := inferErrorBackend(request, route)
+	envErr := classifyEnvelopeError(request, backend, route, err)
+	return model.Envelope{
+		Ok:        false,
+		Workspace: request.Context.Workspace,
+		Backend:   backend,
+		Items:     []map[string]any{},
+		Error:     &envErr,
+		Warnings:  errorWarnings(envErr),
+	}
+}
+
+func inferErrorBackend(request model.CommandRequest, route string) string {
+	if strings.EqualFold(strings.TrimSpace(route), "daemon") {
+		return "daemon"
+	}
+	if backend := inferTelemetryBackend(request); strings.TrimSpace(backend) != "" {
+		return backend
+	}
+	operation := strings.TrimSpace(request.Operation)
+	switch {
+	case strings.HasPrefix(operation, "workspace."):
+		return "workspace"
+	case strings.HasPrefix(operation, "index."):
+		return "index"
+	case strings.HasPrefix(operation, "worker."):
+		return "worker"
+	case strings.HasPrefix(operation, "nav.wiki."):
+		return "wiki"
+	case strings.HasPrefix(operation, "nav."):
+		return "nav"
+	default:
+		return "cli"
+	}
+}
+
+func classifyEnvelopeError(request model.CommandRequest, backend string, route string, err error) model.EnvelopeError {
+	message := safeErrorMessage(err)
+	lower := strings.ToLower(message)
+	result := model.EnvelopeError{Kind: "backend_runtime", Code: "operation_failed", Message: message, Stage: "backend"}
+
+	if strings.TrimSpace(backend) != "" {
+		info := telemetry.ClassifyErrorInfo(backend, message, nil)
+		if strings.TrimSpace(info.Kind) != "" {
+			result.Kind = info.Kind
+		}
+		if strings.TrimSpace(info.Code) != "" && info.Code != "_generic" {
+			result.Code = info.Code
+		}
+	}
+
+	switch {
+	case isWorkspaceErrorMessage(lower):
+		result.Kind = "workspace"
+		result.Code = "workspace_resolution_failed"
+		result.Stage = "selector_validation"
+		result.HintCode = "workspace_resolution_failed"
+	case isTransportErrorMessage(lower) || strings.EqualFold(strings.TrimSpace(route), "direct_fallback") && strings.Contains(lower, "daemon"):
+		result.Kind = "transport"
+		result.Code = "daemon_transport_failed"
+		result.Stage = "transport"
+		result.HintCode = "daemon_unavailable"
+		result.Retryable = true
+	case isValidationErrorMessage(lower):
+		result.Kind = "validation"
+		result.Code = "validation_failed"
+		result.Stage = "selector_validation"
+		result.HintCode = "validation_failed"
+	}
+
+	if request.Operation == "" {
+		result.Kind = "validation"
+		result.Code = "operation_required"
+		result.Stage = "selector_validation"
+		result.HintCode = "validation_failed"
+	}
+	return result
+}
+
+func errorWarnings(err model.EnvelopeError) []string {
+	if strings.TrimSpace(err.Code) == "" {
+		return nil
+	}
+	return []string{strings.TrimSpace(err.Kind) + "/" + strings.TrimSpace(err.Code)}
+}
+
+func safeErrorMessage(err error) string {
+	if err == nil {
+		return "operation failed"
+	}
+	message := strings.TrimSpace(err.Error())
+	if message == "" {
+		return "operation failed"
+	}
+	if len(message) > 500 {
+		return strings.TrimSpace(message[:500])
+	}
+	return message
+}
+
+func isWorkspaceErrorMessage(message string) bool {
+	return strings.Contains(message, "workspace") && (strings.Contains(message, "not registered") || strings.Contains(message, "not found") || strings.Contains(message, "resolve")) || strings.Contains(message, "is not registered")
+}
+
+func isTransportErrorMessage(message string) bool {
+	return strings.Contains(message, "dial") || strings.Contains(message, "connect") || strings.Contains(message, "connection") || strings.Contains(message, "transport") || strings.Contains(message, "daemon is not running") || strings.Contains(message, "broken pipe") || strings.Contains(message, "pipe has been ended")
+}
+
+func isValidationErrorMessage(message string) bool {
+	return strings.Contains(message, " is required") || strings.Contains(message, "invalid ") || strings.Contains(message, "unknown operation") || strings.Contains(message, "must be")
 }
 
 func (s *rootState) effectiveFormat(cmd *cobra.Command, operation string, payload map[string]any, axiEnabled bool) string {

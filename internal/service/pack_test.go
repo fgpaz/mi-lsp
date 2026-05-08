@@ -129,11 +129,11 @@ func TestNavPackFullIncludesReadableSlices(t *testing.T) {
 	if results[0].Mode != "full" {
 		t.Fatalf("mode = %q, want full", results[0].Mode)
 	}
-	if len(results[0].Docs) == 0 || results[0].Docs[0].SliceText == "" {
+	if len(results[0].Docs) == 0 || results[0].Docs[0].Stage != "anchor" || results[0].Docs[0].SliceText == "" {
 		t.Fatalf("expected full slice text, got %#v", results[0].Docs)
 	}
-	if !strings.Contains(results[0].Docs[4].SliceText, "LoginHandler") {
-		t.Fatalf("expected RF slice to include relevant snippet, got %#v", results[0].Docs[4])
+	if !strings.Contains(results[0].Docs[0].SliceText, "LoginHandler") {
+		t.Fatalf("expected anchor RF slice to include relevant snippet, got %#v", results[0].Docs[0])
 	}
 }
 
@@ -300,6 +300,46 @@ func TestNavPackExplicitRFAnchorWinsOverRouteCore(t *testing.T) {
 	wantPrimary := ".docs/wiki/04_RF/RF-AUTH-001.md"
 	if results[0].PrimaryDoc != wantPrimary {
 		t.Fatalf("primary_doc = %q, want %q (explicit --rf anchor must win over route core)", results[0].PrimaryDoc, wantPrimary)
+	}
+	if len(results[0].Docs) == 0 || results[0].Docs[0].Path != wantPrimary || results[0].Docs[0].Stage != "anchor" {
+		t.Fatalf("expected explicit RF anchor first, got %#v", results[0].Docs)
+	}
+}
+
+func TestNavPackFullExplicitDocIsAnchorFirstAndPreserved(t *testing.T) {
+	alias := "pack-doc-anchor-full-" + filepath.Base(t.TempDir())
+	root := createFunctionalPackWorkspaceFixture(t, alias)
+	app := New(root, nil)
+	if _, err := app.Execute(context.Background(), model.CommandRequest{
+		Operation: "workspace.init",
+		Context:   model.QueryOptions{},
+		Payload:   map[string]any{"path": root, "alias": alias},
+	}); err != nil {
+		t.Fatalf("workspace.init: %v", err)
+	}
+	defer func() { _ = workspace.RemoveWorkspace(alias) }()
+
+	wantPrimary := ".docs/wiki/04_RF/RF-AUTH-001.md"
+	env, err := app.Execute(context.Background(), model.CommandRequest{
+		Operation: "nav.pack",
+		Context:   model.QueryOptions{Workspace: alias, AXI: true, Full: true, MaxItems: 2},
+		Payload:   map[string]any{"task": "understand login", "doc": wantPrimary},
+	})
+	if err != nil {
+		t.Fatalf("nav.pack with explicit doc: %v", err)
+	}
+	results := env.Items.([]model.PackResult)
+	if len(results) != 1 {
+		t.Fatalf("expected one pack result, got %#v", env.Items)
+	}
+	if results[0].PrimaryDoc != wantPrimary {
+		t.Fatalf("primary_doc = %q, want %q", results[0].PrimaryDoc, wantPrimary)
+	}
+	if len(results[0].Docs) == 0 || results[0].Docs[0].Path != wantPrimary || results[0].Docs[0].Stage != "anchor" {
+		t.Fatalf("expected explicit doc anchor first and preserved, got %#v", results[0].Docs)
+	}
+	if results[0].Docs[0].SliceText == "" || results[0].Docs[0].SliceStart == 0 || results[0].Docs[0].SliceEnd == 0 {
+		t.Fatalf("expected full anchor slice evidence, got %#v", results[0].Docs[0])
 	}
 }
 

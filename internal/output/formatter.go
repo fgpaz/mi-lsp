@@ -137,6 +137,12 @@ func renderText(env model.Envelope) string {
 	if len(env.Warnings) > 0 {
 		lines = append(lines, "warnings: "+strings.Join(env.Warnings, "; "))
 	}
+	if env.Error != nil {
+		lines = append(lines, renderEnvelopeError(*env.Error))
+	}
+	for _, omission := range env.Omissions {
+		lines = append(lines, renderEnvelopeOmission(omission))
+	}
 	if env.Hint != "" {
 		lines = append(lines, "hint: "+env.Hint)
 	}
@@ -183,6 +189,49 @@ func renderText(env model.Envelope) string {
 		}
 	}
 	return strings.Join(lines, "\n")
+}
+
+func renderEnvelopeError(err model.EnvelopeError) string {
+	parts := []string{"error:"}
+	if err.Kind != "" {
+		parts = append(parts, "kind="+err.Kind)
+	}
+	if err.Code != "" {
+		parts = append(parts, "code="+err.Code)
+	}
+	if err.Stage != "" {
+		parts = append(parts, "stage="+err.Stage)
+	}
+	if err.HintCode != "" {
+		parts = append(parts, "hint_code="+err.HintCode)
+	}
+	if err.Retryable {
+		parts = append(parts, "retryable=true")
+	}
+	if strings.TrimSpace(err.Message) != "" {
+		parts = append(parts, "message="+strings.TrimSpace(err.Message))
+	}
+	return strings.Join(parts, " ")
+}
+
+func renderEnvelopeOmission(omission model.EnvelopeOmission) string {
+	parts := []string{"omission:"}
+	if omission.Input != "" {
+		parts = append(parts, "input="+omission.Input)
+	}
+	if omission.Path != "" {
+		parts = append(parts, "path="+omission.Path)
+	}
+	if omission.Reason != "" {
+		parts = append(parts, "reason="+omission.Reason)
+	}
+	if omission.ErrorCode != "" {
+		parts = append(parts, "error_code="+omission.ErrorCode)
+	}
+	if omission.RequestedRange != "" {
+		parts = append(parts, "requested_range="+omission.RequestedRange)
+	}
+	return strings.Join(parts, " ")
 }
 
 func renderContinuationTarget(target model.ContinuationTarget) string {

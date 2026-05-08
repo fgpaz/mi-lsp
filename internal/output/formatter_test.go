@@ -109,6 +109,53 @@ func TestRenderCompact_TokenEstimate(t *testing.T) {
 	}
 }
 
+func TestRenderEnvelopeDiagnostics(t *testing.T) {
+	env := model.Envelope{
+		Ok:        false,
+		Backend:   "direct",
+		Workspace: "mi-lsp",
+		Items:     []any{},
+		Error: &model.EnvelopeError{
+			Kind:     "workspace",
+			Code:     "workspace_unresolved",
+			Message:  "workspace not found",
+			Stage:    "selector_validation",
+			HintCode: "workspace_unresolved",
+		},
+		Omissions: []model.EnvelopeOmission{{
+			Input:          "missing.md:1-20",
+			Path:           "missing.md",
+			Reason:         "not_found",
+			ErrorCode:      "file_not_found",
+			RequestedRange: "1-20",
+		}},
+		Metrics: &model.EnvelopeMetrics{ResponseBytes: 42, FormatMs: 7},
+	}
+
+	compactRendered, err := Render(env, "compact", false)
+	if err != nil {
+		t.Fatalf("render compact: %v", err)
+	}
+	compact := string(compactRendered)
+	for _, want := range []string{`"error":{"kind":"workspace"`, `"code":"workspace_unresolved"`, `"omissions":[{"input":"missing.md:1-20"`, `"metrics":{"response_bytes":42`} {
+		if !strings.Contains(compact, want) {
+			t.Fatalf("expected compact render to contain %s, got %s", want, compact)
+		}
+	}
+
+	textRendered, err := Render(env, "text", false)
+	if err != nil {
+		t.Fatalf("render text: %v", err)
+	}
+	text := string(textRendered)
+	if !strings.Contains(text, "error: kind=workspace code=workspace_unresolved stage=selector_validation") {
+		t.Fatalf("expected text render to include error diagnostics, got %s", text)
+	}
+	if !strings.Contains(text, "omission: input=missing.md:1-20 path=missing.md reason=not_found") {
+		t.Fatalf("expected text render to include omissions, got %s", text)
+	}
+}
+
 func TestCompactItems_CompressionMode(t *testing.T) {
 	items := []model.SymbolRecord{{
 		Name:       "CompressTest",

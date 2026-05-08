@@ -71,6 +71,7 @@ El detalle por frontera vive en `09_contratos/`.
 - El proyecto usa compatibilidad best-effort intra-version; cambios incompatibles deben reflejar `protocol_version`.
 - La governance UI es solo local (`127.0.0.1`) y no incorpora auth en esta fase; la ventana temporal visible se negocia via `window=recent|7d|30d|90d`.
 - Las respuestas del CLI deben seguir envelope estable y explicitar `backend`, `truncated`, `warnings`, `stats` y `hint` (omitempty, presente cuando `items=[]` o daemon no disponible).
+- Las fallas deben usar envelope estructurado `ok=false`: conservar `backend`, `warnings`, `stats`, `truncated=false` cuando aplique, y exponer `error {kind, code, message, stage?, retryable?, hint?}` sin texto libre no tipado como unica evidencia.
 - El contexto interno de la request puede incluir `caller_cwd`; si el usuario omite `--workspace`, la resolucion observable sigue `selector explicito > caller_cwd > last_workspace`.
 - `nav.find`, `nav.search` y `nav.intent` con `--repo` deben aceptar resolucion smart cuando el selector humano tiene un match unico y, si no, devolver candidatos concretos en `items` + `next_hint`.
 - `nav ask`, `nav route` y `nav pack` aceptan `--repo` solo por compatibilidad guiada; el flag se ignora para routing documental y el envelope debe incluir warning/hint hacia `nav wiki`.

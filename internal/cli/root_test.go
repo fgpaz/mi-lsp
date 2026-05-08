@@ -1,6 +1,11 @@
 package cli
 
-import "testing"
+import (
+	"errors"
+	"testing"
+
+	"github.com/fgpaz/mi-lsp/internal/model"
+)
 
 func TestShouldUseDaemonPolicy(t *testing.T) {
 	tests := []struct {
@@ -149,6 +154,33 @@ func TestShouldRecordCLITelemetry(t *testing.T) {
 				t.Fatalf("shouldRecordCLITelemetry(%q, %v) = %t, want %t", tt.route, err, got, tt.want)
 			}
 		})
+	}
+}
+
+func TestBuildCLIErrorEnvelopeTypesWorkspaceFailure(t *testing.T) {
+	env := buildCLIErrorEnvelope(model.CommandRequest{
+		Operation: "nav.search",
+		Context:   model.QueryOptions{Workspace: "missing-workspace"},
+	}, "direct", errors.New("workspace \"missing-workspace\" is not registered"))
+
+	if env.Ok {
+		t.Fatal("error envelope Ok = true, want false")
+	}
+	if env.Error == nil {
+		t.Fatal("error envelope missing Error")
+	}
+	if env.Error.Kind != "workspace" || env.Error.Code != "workspace_resolution_failed" {
+		t.Fatalf("error = %+v, want workspace/workspace_resolution_failed", *env.Error)
+	}
+	if env.Error.Stage != "selector_validation" {
+		t.Fatalf("stage = %q, want selector_validation", env.Error.Stage)
+	}
+}
+
+func TestEnvelopePrintedErrorIsDetectable(t *testing.T) {
+	err := envelopePrintedError{err: errors.New("boom")}
+	if !IsEnvelopePrintedError(err) {
+		t.Fatal("IsEnvelopePrintedError = false, want true")
 	}
 }
 

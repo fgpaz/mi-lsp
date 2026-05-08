@@ -7,7 +7,7 @@ Use this reference when source, docs, daemon, and installed binary appear out of
 ```powershell
 where.exe mi-lsp
 mi-lsp nav --help
-mi-lsp daemon status
+mi-lsp daemon status --format toon
 mi-lsp worker status --format compact
 ```
 
@@ -16,13 +16,17 @@ mi-lsp worker status --format compact
 - If docs mention a command that `mi-lsp nav --help` does not show, suspect a stale installed binary first.
 - If `worker status` does not expose `cli_path` and `protocol_version`, suspect a stale installed binary first.
 - If a daemon-backed command behaves older than the current source tree, suspect a stale daemon and restart it.
+- If `daemon status` lacks `daemon_process` or `watchers`, suspect a stale installed binary or stale daemon.
+- If watcher/memory pressure is suspected, run `mi-lsp daemon perf-smoke --callers 16 --watch-mode off --format toon` after updating the binary.
 - If `nav.find`, `nav.search`, or `nav.intent` are slow or inconsistent, suspect wrong PATH, stale `.mi-lsp/index.db`, or a stale binary before blaming daemon health.
+- `nav.ask` and summary-first `nav.workspace-map` should stay direct and should not auto-start the daemon.
 - If a direct query in a container workspace returns `backend=router`, suspect missing scope before suspecting runtime drift and rerun with `--repo`.
 
 ## After rebuild or reinstall
 
 ```powershell
 mi-lsp daemon restart
+mi-lsp daemon status --format toon
 mi-lsp worker status --format compact
 mi-lsp workspace status <alias> --format compact
 ```

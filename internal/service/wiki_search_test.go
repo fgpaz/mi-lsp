@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"fmt"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -10,6 +11,74 @@ import (
 	"github.com/fgpaz/mi-lsp/internal/store"
 	"github.com/fgpaz/mi-lsp/internal/workspace"
 )
+
+func wikiSearchItems(t *testing.T, items any) []map[string]any {
+	t.Helper()
+	switch results := items.(type) {
+	case []map[string]any:
+		return results
+	case []model.WikiSearchResult:
+		mapped := make([]map[string]any, 0, len(results))
+		for _, result := range results {
+			item := map[string]any{
+				"path":          result.Path,
+				"doc_id":        result.DocID,
+				"title":         result.Title,
+				"layer":         result.Layer,
+				"family":        result.Family,
+				"stage":         result.Stage,
+				"line":          result.Line,
+				"start_line":    result.StartLine,
+				"end_line":      result.EndLine,
+				"score":         result.Score,
+				"why":           result.Why,
+				"evidence":      result.Evidence,
+				"snippet":       result.Snippet,
+				"content":       result.Content,
+				"next_queries":  result.NextQueries,
+				"lookup_status": result.LookupStatus,
+			}
+			mapped = append(mapped, item)
+		}
+		return mapped
+	default:
+		t.Fatalf("expected wiki search items, got %T %#v", items, items)
+	}
+	return nil
+}
+
+func wikiSearchString(item map[string]any, key string) string {
+	value, _ := item[key].(string)
+	return value
+}
+
+func wikiSearchInt(item map[string]any, key string) int {
+	switch value := item[key].(type) {
+	case int:
+		return value
+	case int64:
+		return int(value)
+	case float64:
+		return int(value)
+	default:
+		return 0
+	}
+}
+
+func wikiSearchStrings(item map[string]any, key string) []string {
+	switch value := item[key].(type) {
+	case []string:
+		return value
+	case []any:
+		items := make([]string, 0, len(value))
+		for _, part := range value {
+			items = append(items, fmt.Sprint(part))
+		}
+		return items
+	default:
+		return nil
+	}
+}
 
 func TestNavWikiSearchReturnsLayerFilteredDocs(t *testing.T) {
 	alias := "wiki-search-" + filepath.Base(t.TempDir())
@@ -75,20 +144,23 @@ func TestNavWikiSearchReturnsLayerFilteredDocs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("nav.wiki.search: %v", err)
 	}
-	results, ok := env.Items.([]model.WikiSearchResult)
-	if !ok || len(results) != 1 {
+	results := wikiSearchItems(t, env.Items)
+	if len(results) != 1 {
 		t.Fatalf("expected one RF wiki search result, got %#v", env.Items)
 	}
 	result := results[0]
-	if result.Layer != "RF" || result.DocID != "RF-AUTH-001" {
+	if wikiSearchString(result, "layer") != "RF" || wikiSearchString(result, "doc_id") != "RF-AUTH-001" {
 		t.Fatalf("unexpected wiki result: %#v", result)
 	}
-	if !strings.Contains(result.Content, "RF-AUTH-001") {
-		t.Fatalf("expected included markdown content, got %q", result.Content)
+	if !strings.Contains(wikiSearchString(result, "content"), "RF-AUTH-001") {
+		t.Fatalf("expected included markdown content, got %q", wikiSearchString(result, "content"))
 	}
-	joined := strings.Join(result.NextQueries, " | ")
+	if wikiSearchInt(result, "line") == 0 || wikiSearchInt(result, "start_line") == 0 || wikiSearchInt(result, "end_line") == 0 || !strings.Contains(wikiSearchString(result, "evidence"), "RF-AUTH-001") {
+		t.Fatalf("expected line evidence fields, got %#v", result)
+	}
+	joined := strings.Join(wikiSearchStrings(result, "next_queries"), " | ")
 	if !strings.Contains(joined, "nav wiki pack") || !strings.Contains(joined, "nav wiki trace RF-AUTH-001") || !strings.Contains(joined, "nav multi-read") {
-		t.Fatalf("expected guided next queries, got %#v", result.NextQueries)
+		t.Fatalf("expected guided next queries, got %#v", result["next_queries"])
 	}
 }
 
@@ -117,7 +189,7 @@ func TestNavWikiSearchDocIndexEmptyReturnsDiagnostic(t *testing.T) {
 	if env.Backend != "wiki.search" || env.Hint == "" || !strings.Contains(env.Hint, "--docs-only") {
 		t.Fatalf("expected docgraph diagnostic hint, got %#v", env)
 	}
-	results := env.Items.([]model.WikiSearchResult)
+	results := wikiSearchItems(t, env.Items)
 	if len(results) != 0 {
 		t.Fatalf("expected no results with empty doc index, got %#v", results)
 	}
@@ -164,21 +236,25 @@ func TestNavWikiSearchFindsExactSourceRecordID(t *testing.T) {
 	if err != nil {
 		t.Fatalf("nav.wiki.search: %v", err)
 	}
-	results, ok := env.Items.([]model.WikiSearchResult)
-	if !ok || len(results) == 0 {
+	results := wikiSearchItems(t, env.Items)
+	if len(results) == 0 {
 		t.Fatalf("expected source wiki search result, got %#v", env.Items)
 	}
-	if results[0].DocID != "CT-SOURCE" || !strings.Contains(strings.Join(results[0].Why, " | "), "source_id_exact") {
+	if wikiSearchString(results[0], "doc_id") != "CT-SOURCE" || !strings.Contains(strings.Join(wikiSearchStrings(results[0], "why"), " | "), "source_id_exact") {
 		t.Fatalf("unexpected source result: %#v", results[0])
 	}
-	if results[0].LookupStatus == nil {
+	status, _ := results[0]["lookup_status"].(*model.WikiLookupStatus)
+	if status == nil {
 		t.Fatalf("expected lookup status on exact source result")
 	}
-	if results[0].LookupStatus.MatchKind != "canonical_indexed_id" || results[0].LookupStatus.RecordID != "RF-QRY-016" || results[0].LookupStatus.BlockID != "CT-SOURCE.contract" {
-		t.Fatalf("unexpected lookup status: %#v", results[0].LookupStatus)
+	if status.MatchKind != "canonical_indexed_id" || status.RecordID != "RF-QRY-016" || status.BlockID != "CT-SOURCE.contract" {
+		t.Fatalf("unexpected lookup status: %#v", status)
 	}
-	if results[0].LookupStatus.TotalMatches == 0 || results[0].LookupStatus.ShownMatches == 0 {
-		t.Fatalf("expected match totals in lookup status: %#v", results[0].LookupStatus)
+	if status.TotalMatches == 0 || status.ShownMatches == 0 {
+		t.Fatalf("expected match totals in lookup status: %#v", status)
+	}
+	if wikiSearchInt(results[0], "line") == 0 || wikiSearchString(results[0], "evidence") == "" {
+		t.Fatalf("expected line evidence on exact source result, got %#v", results[0])
 	}
 }
 

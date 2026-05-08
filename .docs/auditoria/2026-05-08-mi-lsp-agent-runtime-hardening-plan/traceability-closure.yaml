@@ -1,0 +1,94 @@
+session_contract_path: .docs/auditoria/2026-05-08-mi-lsp-agent-runtime-hardening-plan/session-contract.yaml
+task_slug: mi-lsp-agent-runtime-hardening-plan
+closure_type: planning_only
+git_before:
+  branch: main
+  head_sha: 2f94f64592623ce4b7ca72d8aafff65ce5aa4c9f
+  upstream: origin/main
+git_after:
+  branch: main
+  head_sha: 2f94f64592623ce4b7ca72d8aafff65ce5aa4c9f
+  upstream: origin/main
+changed_paths:
+  tracked: []
+  untracked: []
+  ignored_local:
+    - .docs/auditoria/2026-05-08-mi-lsp-agent-runtime-hardening-plan/session-contract.yaml
+    - .docs/auditoria/2026-05-08-mi-lsp-agent-runtime-hardening-plan/traceability-closure.yaml
+    - .docs/raw/plans/2026-05-08-mi-lsp-agent-runtime-hardening.md
+  forbidden_hits: []
+scope_verdict: PASS
+traceability_chains:
+  reviewed_anchors:
+    - FL-QRY-01
+    - FL-IDX-01
+    - FL-DAE-01
+    - FL-CS-01
+    - RF-WKS-005
+    - RF-IDX-001
+    - RF-IDX-003
+    - RF-QRY-001
+    - RF-QRY-002
+    - RF-QRY-010
+    - RF-QRY-012
+    - RF-QRY-013
+    - RF-QRY-014
+    - RF-QRY-015
+    - RF-QRY-016
+    - RF-CS-001
+    - RF-DAE-002
+    - TECH-WIKI-AWARE-SEARCH
+    - TECH-DOC-ROUTER
+    - TECH-DAEMON-GOBERNANZA
+    - DB-STATE-Y-TELEMETRIA
+    - CT-CLI-DAEMON-ADMIN
+    - CT-NAV-WIKI
+    - CT-NAV-PACK
+    - CT-NAV-ASK
+    - CT-DAEMON-WORKER
+    - TP-QRY
+    - TP-IDX
+    - TP-DAE
+    - TP-CS
+  missing_anchors:
+    - RF-QRY-016 is missing from .docs/wiki/03_FL.md FL-QRY-01 row and is planned as Wave 1 Task 1A
+  updated_paths:
+    - .docs/raw/plans/2026-05-08-mi-lsp-agent-runtime-hardening.md
+runtime_sensitive: true
+runtime_evidence:
+  - read-only telemetry summary from C:\Users\fgpaz\.mi-lsp\daemon\daemon.db
+  - nav.search p95 18569ms, p99 48548ms, max 113558ms
+  - 140 rg access denied failures
+  - Roslyn runtime snapshot about 431MB
+data_or_contract_sensitive: true
+authoring_skill_evidence:
+  crear_capa_tecnica_wiki: not_applicable_for_planning_only; implementation plan requires contract/docs tasks before code changes
+  crear_modelo_de_datos: not_applicable; no semantic or physical schema changed in this task
+harness_verdict: not_run_due_to_planning_only_and_docs_index_empty
+wiki_source_verdict: not_run_due_to_planning_only_and_docs_index_empty
+board_sync:
+  provider: not_configured_for_this_task
+  touched_cards: []
+pre_push_inputs:
+  push_bound: false
+  issue_or_card: waiver_planning_only_no_tracker_card_requested
+  evidence_path: .docs/auditoria/2026-05-08-mi-lsp-agent-runtime-hardening-plan/traceability-closure.yaml
+  expected_scope: planning document only
+  session_contract_path: .docs/auditoria/2026-05-08-mi-lsp-agent-runtime-hardening-plan/session-contract.yaml
+no_drift_snapshot:
+  commands:
+    - mi-lsp workspace status . --format toon
+    - mi-lsp nav governance --workspace . --format toon
+    - git diff --check
+    - git status --short --branch
+    - git status --short --untracked-files=all
+  result: PASS for tracked worktree; created docs/auditoria/raw files are ignored by repo gitignore
+completion_handoff:
+  target_skill: subagent-driven-development
+  executable_disposition: hold_until_user_requests_implementation
+  cleanup_policy: already-clean
+  blockers:
+    - docs_index_ready=false must be repaired before implementation lanes
+    - RF-QRY-016 FL map drift must be repaired in Wave 1
+    - plan files live under gitignored .docs paths unless explicitly force-added later
+final_verdict: APPROVED_WITH_FOLLOWUPS

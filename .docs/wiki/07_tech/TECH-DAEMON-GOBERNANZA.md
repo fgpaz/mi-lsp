@@ -76,6 +76,7 @@ Define el modelo canonico del daemon global, su governance UI workspace-first y 
 - El watcher no arranca recursivamente sobre todos los aliases por default: `lazy` activa por root canonico, `eager` es opt-in y `off` deshabilita watchers.
 - Los watchers se deduplican por `workspace_root` canonico y se acotan por LRU con `max_watched_roots`; worktrees con roots distintos se observan por separado.
 - Requests pesadas daemon-aware se acotan con `max_inflight`; saturacion devuelve `daemon/backpressure_busy`.
+- Presupuesto SLO local: `daemon perf-smoke` valida callers paralelos contra working set, private bytes y handles; cualquier excedente debe devolver envelope `ok=false` tipado y dejar warning accionable, no un pass degradado.
 
 ### Governance UI
 
@@ -132,6 +133,7 @@ Define el modelo canonico del daemon global, su governance UI workspace-first y 
 | Saturacion de requests | latencia/memoria crecen sin limite | backpressure `daemon/backpressure_busy` y env `MI_LSP_DAEMON_MAX_INFLIGHT` |
 | Socket/pipe huerfano | connect falla pero state existe | purge + restart controlado |
 | RAM excesiva | demasiados runtimes vivos | `max_workers` + LRU eviction |
+| SLO de memoria/proceso excedido | `perf-smoke` supera working set/private bytes/handles | envelope `ok=false` tipado + ajustar `max_workers`, watchers o backpressure |
 | UI duplicada | cada cliente abre una vista separada | admin URL unica + deep link por query |
 | Cliente antiguo | errores sutiles de protocolo | handshake con version explicita |
 | Warm fallido | runtime no queda disponible | warning visible + logs locales |

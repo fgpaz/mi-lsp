@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -23,6 +24,7 @@ type managedRuntime struct {
 	client      worker.RuntimeClient
 	status      model.WorkerStatus
 	memCachedAt time.Time
+	activeCalls int
 }
 
 type Manager struct {
@@ -71,10 +73,11 @@ func NewManagerWithOptions(repoRoot string, maxWorkers int, idleTimeout time.Dur
 func (m *Manager) Call(ctx context.Context, workspace model.WorkspaceRegistration, request model.WorkerRequest) (model.WorkerResponse, error) {
 	request.BackendType = normalizeBackendType(request.BackendType)
 	m.EnsureFileWatcher(workspace)
-	managed, err := m.getOrCreate(workspace, request)
+	managed, err := m.getOrCreate(workspace, request, true)
 	if err != nil {
 		return model.WorkerResponse{}, err
 	}
+	defer m.releaseRuntime(managed)
 	response, err := managed.client.Call(ctx, request)
 	m.updateStatus(managed)
 	return response, err
@@ -85,7 +88,7 @@ func (m *Manager) Warm(workspace model.WorkspaceRegistration) []string {
 	m.EnsureFileWatcher(workspace)
 	for _, backendType := range backendsForWorkspace(workspace) {
 		request := defaultWarmRequest(workspace, backendType)
-		if _, err := m.getOrCreate(workspace, request); err != nil {
+		if _, err := m.getOrCreate(workspace, request, false); err != nil {
 			warnings = append(warnings, fmt.Sprintf("%s warm skipped: %v", backendType, err))
 		}
 	}
@@ -265,20 +268,24 @@ func (m *Manager) reapIdle() {
 	defer m.mu.Unlock()
 	now := time.Now()
 	for key, managed := range m.runtimes {
-		if now.Sub(managed.status.LastUsedAt) > m.idleTimeout {
+		if managed.activeCalls == 0 && now.Sub(managed.status.LastUsedAt) > m.idleTimeout {
 			_ = managed.client.Close()
 			delete(m.runtimes, key)
 		}
 	}
+	m.enforceIdleMemoryBoundsLocked(now)
 }
 
-func (m *Manager) getOrCreate(workspace model.WorkspaceRegistration, request model.WorkerRequest) (*managedRuntime, error) {
+func (m *Manager) getOrCreate(workspace model.WorkspaceRegistration, request model.WorkerRequest, markActive bool) (*managedRuntime, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
 	key := runtimeKey(workspace, request)
 	if managed, ok := m.runtimes[key]; ok {
 		managed.status.LastUsedAt = time.Now()
+		if markActive {
+			managed.activeCalls++
+		}
 		return managed, nil
 	}
 
@@ -319,19 +326,16 @@ func (m *Manager) getOrCreate(workspace model.WorkspaceRegistration, request mod
 	managed.status.PID = client.PID()
 	managed.status.MemoryBytes = processMemoryBytes(managed.status.PID)
 	managed.memCachedAt = time.Now()
+	if markActive {
+		managed.activeCalls++
+	}
 	m.runtimes[key] = managed
+	m.enforceIdleMemoryBoundsLocked(time.Now())
 	return managed, nil
 }
 
 func (m *Manager) evictLeastRecentlyUsed() {
-	var victimKey string
-	var victim *managedRuntime
-	for key, candidate := range m.runtimes {
-		if victim == nil || candidate.status.LastUsedAt.Before(victim.status.LastUsedAt) {
-			victim = candidate
-			victimKey = key
-		}
-	}
+	victimKey, victim := leastRecentlyUsedIdleRuntime(m.runtimes)
 	if victim != nil {
 		_ = victim.client.Close()
 		delete(m.runtimes, victimKey)
@@ -347,6 +351,85 @@ func (m *Manager) updateStatus(managed *managedRuntime) {
 		managed.status.MemoryBytes = processMemoryBytes(managed.status.PID)
 		managed.memCachedAt = now
 	}
+}
+
+func (m *Manager) releaseRuntime(managed *managedRuntime) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if managed.activeCalls > 0 {
+		managed.activeCalls--
+	}
+}
+
+func (m *Manager) enforceIdleMemoryBoundsLocked(now time.Time) {
+	maxRuntimeBytes := runtimeMemoryLimitBytes("MI_LSP_DAEMON_MAX_RUNTIME_MEMORY_MB")
+	totalRuntimeBytes := runtimeMemoryLimitBytes("MI_LSP_DAEMON_TOTAL_RUNTIME_MEMORY_MB")
+	if maxRuntimeBytes == 0 && totalRuntimeBytes == 0 {
+		return
+	}
+
+	for key, managed := range m.runtimes {
+		refreshManagedMemory(managed, now)
+		if maxRuntimeBytes > 0 && managed.activeCalls == 0 && managed.status.MemoryBytes > maxRuntimeBytes {
+			_ = managed.client.Close()
+			delete(m.runtimes, key)
+		}
+	}
+
+	if totalRuntimeBytes == 0 {
+		return
+	}
+	for runtimeMemoryTotalLocked(m.runtimes, now) > totalRuntimeBytes {
+		victimKey, victim := leastRecentlyUsedIdleRuntime(m.runtimes)
+		if victim == nil {
+			return
+		}
+		_ = victim.client.Close()
+		delete(m.runtimes, victimKey)
+	}
+}
+
+func refreshManagedMemory(managed *managedRuntime, now time.Time) {
+	if now.Sub(managed.memCachedAt) > memCacheTTL {
+		managed.status.MemoryBytes = processMemoryBytes(managed.status.PID)
+		managed.memCachedAt = now
+	}
+}
+
+func runtimeMemoryTotalLocked(runtimes map[string]*managedRuntime, now time.Time) uint64 {
+	var total uint64
+	for _, managed := range runtimes {
+		refreshManagedMemory(managed, now)
+		total += managed.status.MemoryBytes
+	}
+	return total
+}
+
+func leastRecentlyUsedIdleRuntime(runtimes map[string]*managedRuntime) (string, *managedRuntime) {
+	var victimKey string
+	var victim *managedRuntime
+	for key, candidate := range runtimes {
+		if candidate.activeCalls > 0 {
+			continue
+		}
+		if victim == nil || candidate.status.LastUsedAt.Before(victim.status.LastUsedAt) {
+			victim = candidate
+			victimKey = key
+		}
+	}
+	return victimKey, victim
+}
+
+func runtimeMemoryLimitBytes(envName string) uint64 {
+	raw := strings.TrimSpace(os.Getenv(envName))
+	if raw == "" {
+		return 0
+	}
+	value, err := strconv.ParseUint(raw, 10, 64)
+	if err != nil || value == 0 {
+		return 0
+	}
+	return value * 1024 * 1024
 }
 
 func runtimeKey(workspace model.WorkspaceRegistration, request model.WorkerRequest) string {

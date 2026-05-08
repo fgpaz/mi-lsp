@@ -26,6 +26,49 @@ Use `--classic` when you want the old CLI behavior on an AXI-default surface, an
 Prefer an explicit `--workspace <alias>` once the repo is registered.
 Prefer compound commands over sequential greps and full-file reads.
 
+## Worktree operating rule
+
+Treat every Git worktree as a distinct workspace because each worktree has its own physical `workspace_root`.
+Register one explicit alias per worktree, index that exact root, and always query with the alias for the active worktree.
+
+On Windows, when creating or entering a new worktree, prefer a short external worktree path such as `C:\wt\<repo-short>-<task-short>` before `.worktrees\<branch>`. Repos with deep `.docs/auditoria`, `.docs/raw`, generated evidence, browser profile, or fixture paths can fail checkout with `Filename too long` when the worktree is nested inside the repo.
+
+Use this post-worktree bootstrap before any semantic navigation:
+
+```powershell
+git worktree add C:\wt\<short-name> -b <branch-name> <base-ref>
+Set-Location C:\wt\<short-name>
+mi-lsp init . --name <worktree-alias>
+mi-lsp index --workspace <worktree-alias>
+mi-lsp workspace status <worktree-alias> --format toon
+mi-lsp nav governance --workspace <worktree-alias> --format toon
+```
+
+Do not use an alias that points to the main checkout while the current task is running inside another worktree.
+An explicit `--workspace <alias>` wins over caller CWD; if it points to a different registered root than the CWD, treat the warning as a signal to confirm the intended alias before continuing.
+When no `--workspace` is provided, `caller_cwd` resolution may select the registered worktree containing the current directory, but agents should still prefer explicit aliases for repeatability.
+If `git worktree add` fails with `Filename too long`, retry from a short external root such as `C:\wt\<short-name>`, then rerun the `mi-lsp init` and `mi-lsp index` steps for that exact root. Do not fall back to the main checkout alias as if it represented the failed worktree.
+
+## Workspace registry hygiene
+
+`workspace list` is alias-preserving by default. Multiple aliases for the same root are valid when they represent roles, smokes, legacy names, or worktrees. Do not dedupe or prune global registry entries unless the user explicitly approves a mutating cleanup.
+
+Use these non-mutating diagnostics before changing registry state:
+
+```powershell
+mi-lsp workspace list --group-by-root --format toon
+mi-lsp workspace doctor --format toon
+```
+
+Interpretation:
+
+- `workspace list`: every alias remains a first-class record.
+- `workspace list --group-by-root`: groups aliases by canonical root and reports `alias_count`, `aliases`, `canonical_alias`, `selection_reason`, `kind`, and warnings.
+- `workspace doctor`: reports duplicate roots, stale paths, binary provenance/shadowing, governance skips, and suggested cleanup commands only. It must not mutate `~/.mi-lsp/registry.toml`.
+
+Daemon runtime identity is canonical by `workspace_root + backend_type + entrypoint_id`. Alias-specific fields such as `workspace_alias`, `workspace_input`, and human-facing `workspace` are preserved for display and forensics, but duplicate aliases for the same root/backend/entrypoint should share warm runtime state. Different `entrypoint_id` values remain separate runtimes.
+Different worktree roots must not share runtime, watcher, or index state even when they share the same Git common directory.
+
 ## Canonical wiki-first rule
 
 When the task is asking "what is the canonical doc?", "which RS/RF/TP/CT/TECH/DB applies?", "what does the spec say?", or "how do I trace this requirement?", start from governance-backed wiki surfaces:
@@ -201,6 +244,7 @@ Install the CLI first, verify it, and only then continue with repo navigation.
 1. Download the release bundle for the user's platform from `https://github.com/fgpaz/mi-lsp/releases`.
 2. Choose the right bundle: `win-x64`, `win-arm64`, `linux-x64`, or `linux-arm64`.
    - On this workstation, the preferred global Windows install is `win-arm64`.
+   - The global skill repository may also carry `bin/mi-lsp-win-x64.exe` for Windows amd64 machines; on those machines, put that binary directory on `PATH` or copy it to the local tools directory as `mi-lsp.exe`.
    - When refreshing the shared mirror for Windows consumers, keep the mirror binary on `win-x64` / `amd64`.
 3. Extract it into a stable tools directory and keep `workers/<rid>/` next to the `mi-lsp` binary.
 4. Add that directory to the current session `PATH`, or invoke the binary by absolute path until `PATH` is fixed permanently.
@@ -241,6 +285,8 @@ mi-lsp daemon start
 ```powershell
 where.exe mi-lsp
 mi-lsp worker status --format toon
+mi-lsp workspace list --group-by-root --format toon
+mi-lsp workspace doctor --format toon
 ```
 
 If the release changes CLI/daemon telemetry or `admin export`, refresh the `mi-lsp` binary and restart the daemon before trusting new fields in `access_events`.

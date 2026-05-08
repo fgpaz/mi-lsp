@@ -165,3 +165,5 @@ evidence:
 | TC-QRY-101 | positivo | RF-QRY-012, RF-QRY-016 | `TestNavPackIncludesOutcomeStage`: `nav pack` incluye la etapa `outcome` en el pack funcional cuando el read-model la declara |
 | TC-QRY-102 | positivo | RF-QRY-013, RF-QRY-016 | `TestNavTraceRSTraceUsesDocIDLayerStageWithoutRF`: `nav trace RS-*` devuelve `doc_id`, `layer=RS`, `stage=outcome` y no rellena el campo legacy `rf` |
 | TC-QRY-103 | positivo | RF-QRY-016 | `scripts/release/regression-smoke.ps1`: recorre aliases registrados con `workspace status --no-auto-sync`, `nav wiki search`, `nav wiki pack`, `nav wiki trace` cuando hay ID trazable, y registra diagnostico de workspace/root/db_path por operacion sin mutar repos smokeados |
+| TC-QRY-104 | positivo | RF-QRY-016 | `nav wiki search RF-QRY-016 --include-content` expone evidencia de linea (`line_start`/`line_end` o rango equivalente) consistente con el markdown canonico |
+| TC-QRY-105 | positivo | RF-QRY-012, RF-QRY-016 | `nav wiki pack --rf RF-QRY-016` conserva el anchor como `primary_doc` aunque existan README/docs genericos con mayor recencia |

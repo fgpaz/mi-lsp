@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	"github.com/fgpaz/mi-lsp/internal/docgraph"
@@ -205,13 +206,13 @@ func nonNilStrings(items []string) []string {
 
 func (a *App) workspaceStatus(ctx context.Context, request model.CommandRequest) (model.Envelope, error) {
 	opts := request.Context
-	registration, project, err := a.resolveWorkspaceWithProject(request.Context.Workspace)
+	registration, project, selector, source, resolutionWarnings, resolutionHint, err := a.resolveWorkspaceStatusTarget(request)
 	if err != nil {
 		return model.Envelope{}, err
 	}
 	item := workspaceSummaryItem(registration, project)
 	item["workspace_root"] = registration.Root
-	item["workspace_source"] = firstNonEmpty(request.Context.WorkspaceSource, string(workspace.ResolutionSourceExplicit))
+	item["workspace_source"] = source
 	item["repos"] = project.Repos
 	item["entrypoints"] = project.Entrypoints
 	item["docs_read_model"] = workspaceProfileHint(registration.Root)
@@ -237,7 +238,8 @@ func (a *App) workspaceStatus(ctx context.Context, request model.CommandRequest)
 		item["docs_ready"] = false
 		item["docs_index_ready"] = false
 		item["doc_count"] = 0
-		warnings := []string{"workspace has no index yet"}
+		warnings := append([]string{}, resolutionWarnings...)
+		warnings = append(warnings, "workspace has no index yet")
 		warnings = append(warnings, governance.Warnings...)
 		if governance.Blocked {
 			warnings = append(warnings, governance.Issues...)
@@ -245,7 +247,7 @@ func (a *App) workspaceStatus(ctx context.Context, request model.CommandRequest)
 		if memory != nil && (!isAXIMode(opts) || opts.Full) {
 			item["memory"] = buildWorkspaceStatusMemory(memory.Snapshot, memory.Stale)
 		}
-		envelope := model.Envelope{Ok: true, Workspace: registration.Name, Backend: "sqlite", Items: []any{applyWorkspaceStatusAXIView(item, registration.Name, opts)}, Warnings: warnings}
+		envelope := model.Envelope{Ok: true, Workspace: registration.Name, Backend: "sqlite", Items: []any{applyWorkspaceStatusAXIView(item, selector, opts)}, Warnings: warnings, Hint: resolutionHint}
 		envelope = attachMemoryPointer(envelope, memory)
 		envelope.Continuation = buildStatusContinuation(opts, memory)
 		return applyCoachPolicy(envelope, opts), nil
@@ -266,7 +268,8 @@ func (a *App) workspaceStatus(ctx context.Context, request model.CommandRequest)
 	item["doc_count"] = docCount
 	item["index_files"] = stats.Files
 	item["index_symbols"] = stats.Symbols
-	warnings := append([]string{}, governance.Warnings...)
+	warnings := append([]string{}, resolutionWarnings...)
+	warnings = append(warnings, governance.Warnings...)
 	if governance.Blocked {
 		warnings = append(warnings, governance.Issues...)
 	}
@@ -285,10 +288,136 @@ func (a *App) workspaceStatus(ctx context.Context, request model.CommandRequest)
 	if docsIndexReady && !item["index_ready"].(bool) {
 		warnings = appendStringIfMissing(warnings, fmt.Sprintf("code catalog is empty while documentation is ready; docs-only recovery rebuilt governed docs and memory_pointer, but nav.find/nav.symbols/semantic code features still need 'mi-lsp index --workspace %s'", registration.Name))
 	}
-	envelope := model.Envelope{Ok: true, Workspace: registration.Name, Backend: "sqlite", Items: []any{applyWorkspaceStatusAXIView(item, registration.Name, opts)}, Stats: stats, Warnings: warnings}
+	envelope := model.Envelope{Ok: true, Workspace: registration.Name, Backend: "sqlite", Items: []any{applyWorkspaceStatusAXIView(item, selector, opts)}, Stats: stats, Warnings: warnings, Hint: resolutionHint}
 	envelope = attachMemoryPointer(envelope, memory)
 	envelope.Continuation = buildStatusContinuation(opts, memory)
 	return applyCoachPolicy(envelope, opts), nil
+}
+
+func (a *App) resolveWorkspaceStatusTarget(request model.CommandRequest) (model.WorkspaceRegistration, model.ProjectFile, string, string, []string, string, error) {
+	resolution, err := workspace.ResolveWorkspaceSelection(request.Context.Workspace, request.Context.CallerCWD)
+	if err != nil {
+		return model.WorkspaceRegistration{}, model.ProjectFile{}, "", "", nil, "", err
+	}
+	registration := resolution.Registration
+	source := firstNonEmpty(request.Context.WorkspaceSource, string(resolution.Source))
+	selector := registration.Name
+	warnings := []string{}
+	hint := ""
+	var project model.ProjectFile
+
+	if source == string(workspace.ResolutionSourceLastWorkspace) {
+		if root, ok := callerWorkspaceRoot(request.Context.CallerCWD); ok && !sameWorkspaceStatusPath(root, registration.Root) {
+			detected, detectedProject, detectErr := workspace.DetectWorkspaceLayout(root, "")
+			if detectErr == nil {
+				detected = workspace.ApplyProjectTopology(detected, detectedProject)
+				warnings = append(warnings, fmt.Sprintf("workspace omitted; caller cwd contains unregistered workspace %q; ignored unrelated last_workspace=%q", root, registration.Name))
+				registration = detected
+				project = detectedProject
+				source = string(workspace.ResolutionSourceCallerCWD)
+				selector = "."
+				hint = workspacePathHint(registration.Name)
+			}
+		}
+	}
+
+	if project.Project.Name == "" && len(project.Repos) == 0 {
+		project, err = workspace.LoadProjectTopology(registration.Root, registration)
+		if err != nil {
+			return model.WorkspaceRegistration{}, model.ProjectFile{}, "", "", nil, "", err
+		}
+		registration = workspace.ApplyProjectTopology(registration, project)
+	}
+
+	if source == string(workspace.ResolutionSourcePath) {
+		selector = strings.TrimSpace(request.Context.Workspace)
+		if selector == "" {
+			selector = "."
+		}
+		if !workspaceAliasRegistered(registration.Name) {
+			warnings = append(warnings, fmt.Sprintf("workspace resolved from path %q; generated alias %q is not registered", selector, registration.Name))
+			hint = workspacePathHint(registration.Name)
+		}
+	}
+
+	return registration, project, selector, source, warnings, hint, nil
+}
+
+func workspacePathHint(alias string) string {
+	return fmt.Sprintf("Use --workspace . from this repo, or register a stable alias with `mi-lsp workspace add . --name %s`.", alias)
+}
+
+func callerWorkspaceRoot(callerCWD string) (string, bool) {
+	current := strings.TrimSpace(callerCWD)
+	if current == "" {
+		return "", false
+	}
+	abs, err := filepath.Abs(current)
+	if err != nil {
+		return "", false
+	}
+	info, err := os.Stat(abs)
+	if err != nil {
+		return "", false
+	}
+	if !info.IsDir() {
+		abs = filepath.Dir(abs)
+	}
+
+	for {
+		if workspaceStatusRootMarker(abs) {
+			return abs, true
+		}
+		parent := filepath.Dir(abs)
+		if parent == abs {
+			return "", false
+		}
+		abs = parent
+	}
+}
+
+func workspaceStatusRootMarker(root string) bool {
+	markers := []string{
+		workspace.ProjectConfigPath(root),
+		filepath.Join(root, ".docs", "wiki", "00_gobierno_documental.md"),
+		filepath.Join(root, ".git"),
+	}
+	for _, marker := range markers {
+		if _, err := os.Stat(marker); err == nil {
+			return true
+		}
+	}
+	return false
+}
+
+func workspaceAliasRegistered(alias string) bool {
+	registrations, err := workspace.ListWorkspaces()
+	if err != nil {
+		return false
+	}
+	for _, registration := range registrations {
+		if registration.Name == alias {
+			return true
+		}
+	}
+	return false
+}
+
+func sameWorkspaceStatusPath(left string, right string) bool {
+	leftAbs, leftErr := filepath.Abs(left)
+	rightAbs, rightErr := filepath.Abs(right)
+	if leftErr == nil {
+		left = leftAbs
+	}
+	if rightErr == nil {
+		right = rightAbs
+	}
+	left = filepath.Clean(left)
+	right = filepath.Clean(right)
+	if runtime.GOOS == "windows" {
+		return strings.EqualFold(left, right)
+	}
+	return left == right
 }
 
 // entrypointLanguageMismatchWarning returns a warning when the default entrypoint is C#-only

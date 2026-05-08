@@ -40,8 +40,9 @@ public sealed class RoslynService
         }
     }
 
-    private static WorkerResponse GetStatus(WorkerRequest request, long elapsedMs)
+    private WorkerResponse GetStatus(WorkerRequest request, long elapsedMs)
     {
+        var cachedWorkspaces = _workspaceCache.Values.ToList();
         var items = new List<Dictionary<string, object?>>
         {
             new()
@@ -52,6 +53,8 @@ public sealed class RoslynService
                 ["repo"] = request.RepoName,
                 ["entrypoint_id"] = request.EntrypointId,
                 ["entrypoint_path"] = request.EntrypointPath,
+                ["workspace_cache_count"] = _workspaceCache.Count,
+                ["project_count"] = cachedWorkspaces.Sum(workspace => workspace.CurrentSolution.ProjectIds.Count),
             }
         };
         return new WorkerResponse(true, "roslyn", items, Stats: new WorkerStats(Files: 1, Ms: elapsedMs));

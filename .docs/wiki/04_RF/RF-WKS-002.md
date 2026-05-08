@@ -1,4 +1,14 @@
-# RF-WKS-002 - Indexar automaticamente al registrar un workspace nuevo
+---
+id: RF-WKS-002
+title: Indexar automaticamente al registrar un workspace nuevo
+implements:
+  - internal/service/workspace_ops.go
+  - internal/cli/workspace.go
+  - internal/workspace/registry.go
+tests:
+  - internal/service/app_test.go
+  - internal/service/workspace_resolution_test.go
+---
 
 ```yaml
 harness_protocol: SDD-HARNESS-v1
@@ -26,6 +36,8 @@ stop_if:
 evidence:
   - .docs/wiki/04_RF/RF-WKS-002.md
 ```
+
+# RF-WKS-002 - Indexar automaticamente al registrar un workspace nuevo
 
 ## 1. Execution Sheet
 

@@ -149,6 +149,10 @@ Campos recomendados:
 - `workspace_input` no debe reescribirse con el alias resuelto; el export tiene que distinguir input vacio de alias/path explicito
 - `workspace`, `workspace_alias` y `workspace_root` deben normalizarse desde el workspace resuelto, no desde el selector crudo
 - `runtime_key` debe existir tanto en filas daemonizadas como en filas directas/direct_fallback para mantener attribution consistente
+- `error_kind` y `error_code` deben mapearse desde `error.kind`/`error.code` del envelope `ok=false`; si el fallo fue degradado a warning, el codigo puede entrar en `hint_code` sin marcar `success=0`
+- `failure_stage` debe tomar el stage tipado del envelope o del router (`selector_validation`, `router`, `backend`, `transport`); nunca debe inferirse desde el texto del mensaje
+- `/api/metrics` y `admin export --summary` derivan `request_count`, `success_count`, `error_count`, `error_rate`, `truncation_rate`, `p50_latency_ms`, `p95_latency_ms`, `backpressure_count`, `hint_count` y breakdowns por `route`, `client_name`, `hint_code` y `failure_stage`
+- Los SLOs de memoria/proceso no se calculan desde `access_events`: salen de `daemon_process`, `runtime_snapshots` y `watchers` en status/admin
 - `index.db` repo-local debe inicializarse con `PRAGMA journal_mode=WAL` y `PRAGMA busy_timeout`
 - la escritura catalog/docs/file-symbols debe quedar serializada por workspace para que watcher e index manual no peleen la misma DB
 - Nota: columnas agregadas via migration idempotente (`ALTER TABLE ... ADD COLUMN`); rows existentes quedan con DEFAULT 0 o `NULL` segun el schema de origen

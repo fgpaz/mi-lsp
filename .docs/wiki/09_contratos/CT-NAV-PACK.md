@@ -94,6 +94,7 @@ El envelope puede contener ademas:
 - en AXI preview, el contrato puede resumirse a `anchor + 2 docs` reutilizando `route core` para bajar latencia y tokens
 - en AXI preview, `continuation` puede sugerir la expansion a `--full` y omite `alternate`
 - Si ya existe un doc canonico positivo para la tarea, `README` y otros docs `generic` no pueden convertirse en `primary_doc`.
+- Invariante anchor-first: si existe anchor explicito (`--doc`, `--rf`, `--fl`) o route core encontro un doc canonico positivo, `primary_doc` debe ser ese anchor o su contenedor canonico; el resto del pack se ordena alrededor de ese anchor y no puede desplazarlo por recencia, README ni soporte generico.
 
 ## Routing interno
 

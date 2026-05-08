@@ -136,8 +136,13 @@ func (a *App) pack(ctx context.Context, request model.CommandRequest) (model.Env
 					warnings = append(warnings, targetWarnings...)
 				}
 			}
+			if hardAnchor.DocPath != "" || hardAnchor.DocID != "" {
+				var previewWarnings []string
+				previewDocs, previewWarnings = ensurePackAnchorFirst(registration.Root, task, primary, previewDocs, request.Context.Full)
+				warnings = append(warnings, previewWarnings...)
+			}
 			result.Docs = previewDocs
-			result.PrimaryDoc = routeResult.Canonical.AnchorDoc.Path
+			result.PrimaryDoc = primary.Path
 			result.Why = append(result.Why, "preview=route_core")
 			result.NextQueries = buildPackNextQueries(registration.Name, task, request.Context.Full, result.Docs)
 			result.LookupStatus = packLookupStatus(ctx, query, registration.Name, task, result)
@@ -157,11 +162,13 @@ func (a *App) pack(ctx context.Context, request model.CommandRequest) (model.Env
 	}
 
 	packDocs, packWhy, packWarnings := buildReadingPack(ctx, query.db, registration.Root, task, family, primary, docs, query.docByPath, query.ranked, profile, request.Context.Full, effectivePackDocsLimit(request.Context, profile))
+	packDocs, anchorWarnings := ensurePackAnchorFirst(registration.Root, task, primary, packDocs, request.Context.Full)
 	result.Docs = packDocs
 	result.Why = append(result.Why, packWhy...)
 	result.NextQueries = buildPackNextQueries(registration.Name, task, request.Context.Full, result.Docs)
 	result.LookupStatus = packLookupStatus(ctx, query, registration.Name, task, result)
 	warnings = append(warnings, packWarnings...)
+	warnings = append(warnings, anchorWarnings...)
 
 	env := model.Envelope{
 		Ok:        true,
@@ -175,6 +182,52 @@ func (a *App) pack(ctx context.Context, request model.CommandRequest) (model.Env
 	env = attachMemoryPointer(env, memory)
 	env.Continuation = buildPackContinuation(task, result, request.Context, memory)
 	return applyCoachPolicy(applyAXIPreviewHints(env, request.Context, "preview mode: rerun with --full for slices"), request.Context), nil
+}
+
+func ensurePackAnchorFirst(root string, task string, primary model.DocRecord, docs []model.PackDoc, full bool) ([]model.PackDoc, []string) {
+	if primary.Path == "" {
+		return docs, nil
+	}
+	warnings := []string{}
+	anchor := model.PackDoc{}
+	remaining := make([]model.PackDoc, 0, len(docs))
+	for _, doc := range docs {
+		if doc.Path == primary.Path {
+			anchor = doc
+			continue
+		}
+		remaining = append(remaining, doc)
+	}
+	if anchor.Path == "" {
+		targets, targetWarnings := packTargets(root, primary, task)
+		warnings = append(warnings, targetWarnings...)
+		anchor = model.PackDoc{
+			Path:    primary.Path,
+			Title:   primary.Title,
+			DocID:   primary.DocID,
+			Layer:   primary.Layer,
+			Family:  primary.Family,
+			Targets: targets,
+		}
+	}
+	anchor.Stage = "anchor"
+	anchor.Why = appendStringIfMissing(anchor.Why, "primary_doc")
+	if full && anchor.SliceText == "" {
+		if len(anchor.Targets) == 0 {
+			targets, targetWarnings := packTargets(root, primary, task)
+			anchor.Targets = targets
+			warnings = append(warnings, targetWarnings...)
+		}
+		sliceText, startLine, endLine, err := packSlice(root, primary, anchor.Targets)
+		if err != nil {
+			warnings = appendStringIfMissing(warnings, fmt.Sprintf("slice unavailable for %s", primary.Path))
+		} else {
+			anchor.SliceText = sliceText
+			anchor.SliceStart = startLine
+			anchor.SliceEnd = endLine
+		}
+	}
+	return append([]model.PackDoc{anchor}, remaining...), warnings
 }
 
 func resolvePackAnchor(payload map[string]any, task string, docs []model.DocRecord, docByPath map[string]model.DocRecord, profile model.DocsReadProfile) (packAnchor, string) {
