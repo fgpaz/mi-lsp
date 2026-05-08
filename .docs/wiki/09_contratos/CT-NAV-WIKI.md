@@ -58,6 +58,8 @@ mi-lsp nav wiki validate-source --workspace <alias> [--format compact|json|text|
       "family": "functional",
       "stage": "requirements",
       "score": 120,
+      "line_start": 1,
+      "line_end": 40,
       "why": ["doc_id=RF-QRY-016", "canonical_match"],
       "lookup_status": {
         "query": "RF-QRY-016",
@@ -168,6 +170,7 @@ Veredictos:
 - `nav wiki validate-harness` resuelve imports, evidencia y links Obsidian links Obsidian de ejemplo contra `DocRecord`, `doc_id`, exports y paths del workspace.
 - `nav wiki validate-source` aplica el gate de gobernanza, lee `doc_source_blocks`/`doc_source_records`, abre solo markdowns que declaran `SDD-WIKI-SOURCE-v1` y no bloquea el resto del corpus.
 - `nav wiki search <id>` resuelve coincidencias exactas en `doc_source_blocks.doc_id`, `doc_source_blocks.block_id` y `doc_source_records.record_id` antes del ranking textual.
+- `nav wiki search` debe exponer evidencia de linea cuando esta disponible: `line_start`/`line_end` en el item o rangos equivalentes dentro de `snippet/content`; los rangos deben apuntar al markdown canonico devuelto en `path`.
 - `nav wiki trace <id>` puede devolver evidencia `wiki-source` para source IDs exactos aunque no sean `RS-*`, `RF-*` o `TP-*`.
 - `nav wiki search|route|pack|trace` expone `lookup_status` de forma aditiva con `query`, `workspace`, `index_freshness`, `governance_sync`, `match_kind`, IDs exactos (`doc_id`, `block_id`, `record_id`), `path`, `layer`, `stage`, `rank_reason`, totales, razon y `next_hint` valido cuando la preview no muestra todo.
 - `match_kind` distingue `canonical_indexed_id`, `alias_read_model_routing`, `mentions_content_fallback`, `content_fallback` y `true_absence`; no debe reportar ausencia si encontro identidad canonica pero la traza downstream queda incompleta.

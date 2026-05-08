@@ -24,6 +24,7 @@ var (
 	rgPath     string
 	rgResolved bool
 	rgOnce     sync.Once
+	rgCommand  = exec.CommandContext
 )
 
 func resolveRgBinary() string {
@@ -89,7 +90,7 @@ func searchPatternRg(ctx context.Context, workspaceRoot string, searchRoot strin
 	searchCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	command := exec.CommandContext(searchCtx, rgBin, buildRipgrepArgs(pattern, useRegex, searchRoot)...)
+	command := rgCommand(searchCtx, rgBin, buildRipgrepArgs(pattern, useRegex, searchRoot)...)
 	processutil.ConfigureNonInteractiveCommand(command)
 
 	stdout, err := command.StdoutPipe()
@@ -100,6 +101,9 @@ func searchPatternRg(ctx context.Context, workspaceRoot string, searchRoot strin
 	command.Stderr = &stderr
 
 	if err := command.Start(); err != nil {
+		if isTransientRipgrepAccessError(err) {
+			return searchPatternFallback(ctx, workspaceRoot, searchRoot, project, pattern, useRegex, limit)
+		}
 		return nil, err
 	}
 
@@ -161,11 +165,33 @@ func searchPatternRg(ctx context.Context, workspaceRoot string, searchRoot strin
 			return nil, ctx.Err()
 		}
 		if msg := strings.TrimSpace(stderr.String()); msg != "" {
+			if isTransientRipgrepAccessError(fmt.Errorf("%w: %s", waitErr, msg)) {
+				return searchPatternFallback(ctx, workspaceRoot, searchRoot, project, pattern, useRegex, limit)
+			}
 			return nil, fmt.Errorf("%w: %s", waitErr, msg)
+		}
+		if isTransientRipgrepAccessError(waitErr) {
+			return searchPatternFallback(ctx, workspaceRoot, searchRoot, project, pattern, useRegex, limit)
 		}
 		return nil, waitErr
 	}
 	return items, nil
+}
+
+func isTransientRipgrepAccessError(err error) bool {
+	if err == nil {
+		return false
+	}
+	message := strings.ToLower(err.Error())
+	return strings.Contains(message, "access is denied") ||
+		strings.Contains(message, "access denied") ||
+		strings.Contains(message, "permission denied") ||
+		strings.Contains(message, "temporarily unavailable") ||
+		strings.Contains(message, "resource busy") ||
+		strings.Contains(message, "database is locked") ||
+		strings.Contains(message, "file is locked") ||
+		strings.Contains(message, "sharing violation") ||
+		strings.Contains(message, "used by another process")
 }
 
 func isRegexParseError(err error) bool {
@@ -184,7 +210,12 @@ func isRegexParseError(err error) bool {
 }
 
 func buildRipgrepArgs(pattern string, useRegex bool, searchRoot string) []string {
-	args := []string{"--line-number", "--no-heading", "--color", "never", "--hidden"}
+	args := []string{
+		"--line-number", "--no-heading", "--color", "never", "--hidden",
+		"--glob", "!.mi-lsp/index.db",
+		"--glob", "!.mi-lsp/index.db-wal",
+		"--glob", "!.mi-lsp/index.db-shm",
+	}
 	if !useRegex {
 		args = append(args, "-F")
 	}

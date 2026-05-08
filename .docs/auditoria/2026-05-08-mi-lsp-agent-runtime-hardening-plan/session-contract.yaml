@@ -1,0 +1,66 @@
+task_slug: mi-lsp-agent-runtime-hardening-plan
+issue_or_waiver: no tracker card requested; planning-only task
+base_ref: main
+base_sha: 2f94f64592623ce4b7ca72d8aafff65ce5aa4c9f
+intended_branch: main
+worktree_path: C:\repos\mios\mi-lsp
+expected_scope:
+  - create an implementation plan for mi-lsp agent/runtime hardening
+  - do not implement code changes in this task
+  - do not run mutating index/build commands except directory creation for audit evidence
+allowed_paths:
+  - .docs/auditoria/2026-05-08-mi-lsp-agent-runtime-hardening-plan/session-contract.yaml
+  - .docs/auditoria/2026-05-08-mi-lsp-agent-runtime-hardening-plan/traceability-closure.yaml
+  - .docs/raw/plans/2026-05-08-mi-lsp-agent-runtime-hardening.md
+forbidden_paths:
+  - cmd/**
+  - internal/**
+  - worker-dotnet/**
+  - .docs/wiki/**
+  - AGENTS.md
+  - CLAUDE.md
+sdd_anchors:
+  fl:
+    - FL-QRY-01
+    - FL-IDX-01
+    - FL-DAE-01
+    - FL-CS-01
+  rf:
+    - RF-WKS-005
+    - RF-IDX-001
+    - RF-IDX-003
+    - RF-QRY-001
+    - RF-QRY-002
+    - RF-QRY-010
+    - RF-QRY-012
+    - RF-QRY-013
+    - RF-QRY-014
+    - RF-QRY-015
+    - RF-QRY-016
+    - RF-CS-001
+    - RF-DAE-002
+  technical:
+    - TECH-WIKI-AWARE-SEARCH
+    - TECH-DOC-ROUTER
+    - TECH-DAEMON-GOBERNANZA
+    - DB-STATE-Y-TELEMETRIA
+    - CT-CLI-DAEMON-ADMIN
+    - CT-NAV-WIKI
+    - CT-NAV-PACK
+    - CT-NAV-ASK
+    - CT-DAEMON-WORKER
+  tests:
+    - TP-QRY
+    - TP-IDX
+    - TP-DAE
+    - TP-CS
+required_evidence:
+  - mi-lsp workspace status . --format toon
+  - mi-lsp nav governance --workspace . --format toon
+  - plan file created under .docs/raw/plans
+touched_cards: not_applicable
+explicit_waivers:
+  - no durable implementation evidence is required because this task only prepares a plan
+  - docs_index_ready=false is recorded as a blocker for future implementation readiness, not for writing this plan
+branch_disposition: hold
+cleanup_policy: already-clean

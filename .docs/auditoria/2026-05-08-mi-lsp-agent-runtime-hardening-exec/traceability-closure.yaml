@@ -1,0 +1,214 @@
+session_contract_path: .docs/auditoria/2026-05-08-mi-lsp-agent-runtime-hardening-exec/session-contract.yaml
+task_slug: mi-lsp-agent-runtime-hardening-exec
+closure_created_at: 2026-05-08T18:00:00Z
+git_before:
+  branch: mi-lsp-agent-runtime-hardening
+  head_sha: 2f94f64592623ce4b7ca72d8aafff65ce5aa4c9f
+  upstream: none
+  ahead_behind: not_applicable_no_upstream
+git_after:
+  branch: mi-lsp-agent-runtime-hardening
+  head_sha: 2f94f64592623ce4b7ca72d8aafff65ce5aa4c9f
+  upstream: none
+  ahead_behind: not_applicable_no_upstream
+changed_paths:
+  tracked:
+    - .docs/planificacion/2026-04-30-workspace-execution-review-trazabilidad-auditoria.md
+    - .docs/wiki/03_FL.md
+    - .docs/wiki/04_RF/RF-QRY-016.md
+    - .docs/wiki/04_RF/RF-WKS-002.md
+    - .docs/wiki/06_pruebas/TP-DAE.md
+    - .docs/wiki/06_pruebas/TP-QRY.md
+    - .docs/wiki/07_baseline_tecnica.md
+    - .docs/wiki/07_tech/TECH-DAEMON-GOBERNANZA.md
+    - .docs/wiki/08_db/DB-STATE-Y-TELEMETRIA.md
+    - .docs/wiki/09_contratos/CT-CLI-DAEMON-ADMIN.md
+    - .docs/wiki/09_contratos/CT-DAEMON-WORKER.md
+    - .docs/wiki/09_contratos/CT-NAV-PACK.md
+    - .docs/wiki/09_contratos/CT-NAV-WIKI.md
+    - .docs/wiki/09_contratos_tecnicos.md
+    - cmd/mi-lsp/main.go
+    - internal/cli/root.go
+    - internal/cli/root_test.go
+    - internal/daemon/lifecycle.go
+    - internal/daemon/lifecycle_runtime_key_test.go
+    - internal/daemon/server.go
+    - internal/daemon/server_test.go
+    - internal/model/types.go
+    - internal/output/formatter.go
+    - internal/output/formatter_test.go
+    - internal/output/truncator.go
+    - internal/output/truncator_test.go
+    - internal/service/harness_validate.go
+    - internal/service/multi_read.go
+    - internal/service/multi_read_test.go
+    - internal/service/pack.go
+    - internal/service/pack_test.go
+    - internal/service/search.go
+    - internal/service/search_content.go
+    - internal/service/wiki_search.go
+    - internal/service/wiki_search_test.go
+    - internal/service/workspace_ops.go
+    - internal/service/workspace_resolution_test.go
+    - internal/telemetry/access_diagnostics.go
+    - internal/telemetry/access_events_test.go
+    - scripts/release/regression-smoke.ps1
+    - worker-dotnet/MiLsp.Worker/RoslynService.cs
+  untracked:
+    - internal/daemon/telemetry_bench_test.go
+    - internal/service/nav_bench_test.go
+    - internal/service/search_wave3b_test.go
+  raw_paths:
+    - .docs/raw/plans/2026-05-08-mi-lsp-agent-runtime-hardening.md
+  forbidden_hits: []
+scope_verdict: PASS
+traceability_chains:
+  reviewed_anchors:
+    fl:
+      - FL-QRY-01
+      - FL-IDX-01
+      - FL-DAE-01
+      - FL-CS-01
+    rf:
+      - RF-WKS-005
+      - RF-IDX-001
+      - RF-IDX-003
+      - RF-QRY-001
+      - RF-QRY-002
+      - RF-QRY-010
+      - RF-QRY-012
+      - RF-QRY-013
+      - RF-QRY-014
+      - RF-QRY-015
+      - RF-QRY-016
+      - RF-CS-001
+      - RF-DAE-002
+    technical:
+      - TECH-WIKI-AWARE-SEARCH
+      - TECH-DOC-ROUTER
+      - TECH-DAEMON-GOBERNANZA
+      - DB-STATE-Y-TELEMETRIA
+      - CT-CLI-DAEMON-ADMIN
+      - CT-NAV-WIKI
+      - CT-NAV-PACK
+      - CT-NAV-ASK
+      - CT-DAEMON-WORKER
+    tests:
+      - TP-QRY
+      - TP-IDX
+      - TP-DAE
+      - TP-CS
+  missing_anchors: []
+  updated_paths:
+    - .docs/wiki/03_FL.md
+    - .docs/wiki/04_RF/RF-QRY-016.md
+    - .docs/wiki/04_RF/RF-WKS-002.md
+    - .docs/wiki/06_pruebas/TP-QRY.md
+    - .docs/wiki/06_pruebas/TP-DAE.md
+    - .docs/wiki/07_baseline_tecnica.md
+    - .docs/wiki/07_tech/TECH-DAEMON-GOBERNANZA.md
+    - .docs/wiki/08_db/DB-STATE-Y-TELEMETRIA.md
+    - .docs/wiki/09_contratos/CT-CLI-DAEMON-ADMIN.md
+    - .docs/wiki/09_contratos/CT-DAEMON-WORKER.md
+    - .docs/wiki/09_contratos/CT-NAV-PACK.md
+    - .docs/wiki/09_contratos/CT-NAV-WIKI.md
+    - .docs/wiki/09_contratos_tecnicos.md
+runtime_sensitive:
+  value: true
+  evidence_paths:
+    - internal/daemon/lifecycle.go
+    - internal/daemon/server.go
+    - worker-dotnet/MiLsp.Worker/RoslynService.cs
+    - .docs/wiki/07_tech/TECH-DAEMON-GOBERNANZA.md
+    - .docs/wiki/09_contratos/CT-DAEMON-WORKER.md
+data_or_contract_sensitive:
+  value: true
+  evidence_paths:
+    - internal/model/types.go
+    - internal/output/formatter.go
+    - internal/telemetry/access_diagnostics.go
+    - .docs/wiki/08_db/DB-STATE-Y-TELEMETRIA.md
+    - .docs/wiki/09_contratos/CT-CLI-DAEMON-ADMIN.md
+    - .docs/wiki/09_contratos/CT-NAV-WIKI.md
+    - .docs/wiki/09_contratos/CT-NAV-PACK.md
+harness_verdict:
+  command: mi-lsp nav wiki validate-harness --workspace . --format toon
+  result: PASS
+  harness_contracts_reviewed: 83
+  harness_links_reviewed: 321
+wiki_source_verdict:
+  command: mi-lsp nav wiki validate-source --workspace . --format toon
+  result: PASS
+  readiness: not_declared
+board_sync:
+  touched_cards: not_applicable
+  rationale: no tracker card requested; explicit execution waiver in session contract
+pre_push_inputs:
+  issue_or_waiver: no tracker card requested; explicit execution waiver from user request
+  evidence_path: .docs/auditoria/2026-05-08-mi-lsp-agent-runtime-hardening-exec/traceability-closure.yaml
+  expected_scope: execute mi-lsp agent runtime hardening plan
+  session_contract_path: .docs/auditoria/2026-05-08-mi-lsp-agent-runtime-hardening-exec/session-contract.yaml
+no_drift_snapshot:
+  commands:
+    - mi-lsp workspace status . --format toon
+    - mi-lsp nav governance --workspace . --format toon
+    - mi-lsp nav wiki validate-source --workspace . --format toon
+    - mi-lsp nav wiki validate-harness --workspace . --format toon
+    - go test ./...
+    - dotnet test worker-dotnet/MiLsp.Worker.sln --no-restore --verbosity minimal
+    - git diff --check
+  result: PASS
+  notes:
+    - dotnet test exited successfully with no visible test summary; solution appears to contain only the worker project.
+    - git diff --check emitted expected LF-to-CRLF warnings only.
+completion_handoff:
+  target_skill: finishing-a-development-branch
+  executable_disposition: true
+  branch_disposition: integrate-main
+  cleanup_policy: auto-after-successful-integration
+  blockers:
+    - branch has uncommitted working tree changes until integration commit is created
+branch_inventory:
+  worktrees:
+    - path: C:/repos/mios/mi-lsp
+      branch: mi-lsp-agent-runtime-hardening
+      head: 2f94f64592623ce4b7ca72d8aafff65ce5aa4c9f
+  merged_main:
+    - main
+    - mi-lsp-agent-runtime-hardening
+  no_merged_main: []
+technical_drift_summary:
+  verdict: PASS
+  reviewed:
+    - 07_baseline_tecnica
+    - TECH-DAEMON-GOBERNANZA
+    - DB-STATE-Y-TELEMETRIA
+    - CT-CLI-DAEMON-ADMIN
+    - CT-DAEMON-WORKER
+    - CT-NAV-WIKI
+    - CT-NAV-PACK
+caller_callee_alignment:
+  verdict: PASS
+  notes:
+    - CLI direct and daemon routes now use typed error envelopes.
+    - Telemetry maps envelope error kind/code/stage/hint_code into access_events.
+audit_verdict:
+  skill: ps-auditar-trazabilidad
+  result: Approved with follow-ups
+  findings:
+    - no governance blockers
+    - no harness blockers
+    - no wiki source blockers
+    - no tracker sync required
+    - user requested local integration to main after closure
+trace_evidence:
+  commands:
+    - mi-lsp nav wiki trace RF-QRY-016 --workspace . --format toon
+    - mi-lsp nav wiki trace RF-DAE-002 --workspace . --format toon
+    - mi-lsp nav wiki trace RF-WKS-002 --workspace . --format toon
+  result: PASS
+  notes:
+    - RF-QRY-016 coverage=1 status=implemented
+    - RF-DAE-002 coverage=1 status=implemented
+    - RF-WKS-002 coverage=1 status=implemented
+final_closure_verdict: READY_FOR_LOCAL_MAIN_INTEGRATION

@@ -83,6 +83,7 @@ TP-QRY
 2. Aplicar gate de gobernanza antes de buscar en la wiki
 3. Si el docgraph esta vacio, devolver `backend=wiki.search`, `items=[]`, warning/hint de reindexado documental y no sugerir resultados inventados
 4. Si hay docgraph, devolver candidatos con `doc_id`, `path`, `title`, `layer`, `family`, `stage`, `score`, `why`, `snippet/content` y `next_queries`
+4.a. Cuando exista evidencia de ubicacion, incluir `line_start`/`line_end` o rangos equivalentes dentro de `snippet/content`, apuntando al `path` canonico del item
 5. Ejecutar `nav wiki route`, `nav wiki pack` y `nav wiki trace` reutilizando la semantica de `nav route`, `nav pack` y `nav trace`
 6. Aceptar `--repo` en `nav ask`, `nav route` y `nav pack` como compatibilidad guiada: se ignora para la lane documental y emite warning/hint hacia `nav wiki`
 7. Clasificar `RS-*`, `.docs/wiki/02_resultados_soluciones_usuario.md` y `.docs/wiki/02_resultados/*.md` como `layer=RS`, `stage=outcome`, sin tratarlos como RF
@@ -99,6 +100,7 @@ TP-QRY
 - `RS/outcome` debe resolverse desde `governance.hierarchy[*].pack_stage` antes de caer a heuristicas por numero de archivo.
 - `--repo docs` no crea un repositorio documental virtual.
 - La salida debe ser util para agentes: cada candidato expone proximos comandos concretos.
+- La evidencia de linea es parte del contrato de navegacion: no debe inventarse y debe omitirse antes que apuntar a un rango incorrecto.
 - `governance_blocked=true` corta la busqueda normal.
 - `validate-harness` no crea un parser Markdown paralelo: reusa docgraph para inventario y abre los markdown gobernados solo para compilar contratos YAML.
 - `human` y `dual` pueden declarar `verify`, `stop_if` o `evidence` vacios como warning no bloqueante; `llm-first` y `unknown` no pueden pasar sin esos campos.

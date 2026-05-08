@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/fgpaz/mi-lsp/internal/docgraph"
 	"github.com/fgpaz/mi-lsp/internal/model"
 	"github.com/fgpaz/mi-lsp/internal/store"
 )
@@ -48,7 +49,7 @@ func (a *App) wikiSearch(ctx context.Context, request model.CommandRequest) (mod
 			Ok:        true,
 			Workspace: registration.Name,
 			Backend:   "wiki.search",
-			Items:     []model.WikiSearchResult{},
+			Items:     []map[string]any{},
 			Warnings:  warnings,
 			Hint:      hint,
 		}
@@ -160,6 +161,51 @@ func (a *App) wikiSearch(ctx context.Context, request model.CommandRequest) (mod
 	return applyCoachPolicy(attachMemoryPointer(env, memory), request.Context), nil
 }
 
+type wikiSearchEvidence struct {
+	line      int
+	startLine int
+	endLine   int
+	text      string
+}
+
+func wikiSearchLineEvidence(root string, relPath string, queryText string) (wikiSearchEvidence, bool) {
+	relPath = filepath.ToSlash(strings.TrimSpace(relPath))
+	if relPath == "" || strings.Contains(relPath, "..") {
+		return wikiSearchEvidence{}, false
+	}
+	content, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(relPath)))
+	if err != nil {
+		return wikiSearchEvidence{}, false
+	}
+	lines := strings.Split(string(content), "\n")
+	if len(lines) == 0 {
+		return wikiSearchEvidence{}, false
+	}
+	tokens := docgraph.QuestionTokens(queryText)
+	queryLower := strings.ToLower(strings.TrimSpace(queryText))
+	lineNo := 1
+	for i, line := range lines {
+		lineLower := strings.ToLower(line)
+		if queryLower != "" && strings.Contains(lineLower, queryLower) {
+			lineNo = i + 1
+			break
+		}
+		if len(tokens) > 0 && containsAnyToken(lineLower, tokens) {
+			lineNo = i + 1
+			break
+		}
+	}
+	text := strings.TrimSpace(lines[lineNo-1])
+	if text == "" {
+		text = strings.TrimSpace(lines[0])
+		lineNo = 1
+	}
+	if len(text) > 240 {
+		text = text[:240]
+	}
+	return wikiSearchEvidence{line: lineNo, startLine: lineNo, endLine: lineNo, text: text}, true
+}
+
 func countWikiSearchMatches(ranked []scoredDoc, layerFilter map[string]struct{}, exactDocPaths map[string]struct{}) int {
 	total := len(exactDocPaths)
 	for _, candidate := range ranked {
@@ -193,6 +239,12 @@ func wikiSearchResult(workspaceName string, root string, queryText string, candi
 	}
 	if includeContent {
 		item.Content = readWikiSearchContent(root, doc.Path, maxChars)
+	}
+	if evidence, ok := wikiSearchLineEvidence(root, doc.Path, queryText); ok {
+		item.Line = evidence.line
+		item.StartLine = evidence.startLine
+		item.EndLine = evidence.endLine
+		item.Evidence = evidence.text
 	}
 	return item
 }

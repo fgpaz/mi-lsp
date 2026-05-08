@@ -119,6 +119,7 @@ flowchart LR
 - `watch_mode=lazy` es el default para proteger memoria/handles; `off` deshabilita watchers y `eager` es opt-in via CLI/env.
 - El daemon expone `daemon_process` y `watchers` en status/admin para presupuestos operativos (`working_set`, `private_bytes`, handles, threads, roots/dirs/eventos).
 - Requests pesadas daemon-aware se limitan con `MI_LSP_DAEMON_MAX_INFLIGHT` y devuelven `daemon/backpressure_busy` cuando se supera el limite.
+- SLO operativo local: `daemon perf-smoke` debe fallar con `ok=false` si working set, private bytes o handles superan los umbrales configurados; los defaults pueden ser conservadores y deben aparecer como presupuesto visible en el resultado.
 - La resolucion efectiva de workspace para queries usa la precedencia `--workspace explicito > workspace registrado cuyo root contiene caller_cwd > last_workspace`.
 - Si varios aliases registrados comparten root, la seleccion automatica usa `project.name`, luego basename del root, luego `last_workspace` solo si apunta a ese mismo root, y deja warning visible.
 - El estado semantico persistente del workspace vive repo-local; el estado global solo guarda registro, estado del daemon y telemetria local.

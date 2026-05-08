@@ -1,5 +1,34 @@
 # Trazabilidad y auditoria - workspace execution review
 
+```yaml
+harness_protocol: SDD-HARNESS-v1
+id: "2026-04-30-workspace-execution-review-trazabilidad-auditoria"
+kind: "traceability-evidence"
+audience: "dual"
+imports:
+  - '[[00_gobierno_documental]]'
+  - '[[RF-WKS-002]]'
+  - '[[RF-DAE-002]]'
+  - '[[RF-DAE-004]]'
+exports:
+  - '2026-04-30-workspace-execution-review-trazabilidad-auditoria'
+agent_must_read:
+  - .docs/wiki/00_gobierno_documental.md
+  - .docs/planificacion/2026-04-30-workspace-execution-review-trazabilidad-auditoria.md
+agent_may_edit:
+  - .docs/planificacion/2026-04-30-workspace-execution-review-trazabilidad-auditoria.md
+agent_must_not_edit:
+  - .docs/wiki/_mi-lsp/read-model.toml
+verify:
+  - mi-lsp nav governance --workspace mi-lsp --format toon
+  - mi-lsp nav wiki validate-harness --workspace mi-lsp --format toon
+stop_if:
+  - governance_blocked=true
+  - harness_verdict=BLOCKED
+evidence:
+  - .docs/planificacion/2026-04-30-workspace-execution-review-trazabilidad-auditoria.md
+```
+
 Fecha: 2026-04-30
 Worktree: `.docs/temp/worktrees/workspace-execution-review`
 Branch: `feature/workspace-execution-review`

@@ -101,6 +101,7 @@ Pyright LSP bridge:
 - Compatibilidad minima se valida mediante probe `status` y comparacion de `protocol_version`; ese probe vive en `worker status` y diagnostico explicito.
 - Si el primer candidato Roslyn falla por bootstrap/arranque, el caller puede reintentar una sola vez con el siguiente candidato determinista antes de devolver error accionable.
 - Los procesos hijo no interactivos del worker y del bridge semantico deben usar la politica comun de proceso; en Windows eso significa `HideWindow + CREATE_NO_WINDOW`, y los procesos detached agregan `DETACHED_PROCESS`.
+- El runtime pool debe respetar presupuesto de memoria/proceso observable por daemon: working set, private bytes, handles y cantidad de runtimes activos son parte del contrato de `daemon status`/`perf-smoke`.
 - El worker instalado por RID vive en `~/.mi-lsp/workers/<rid>/`.
 - Un repo de desarrollo no debe tratar `bin/workers/<rid>` como bundle de distribucion canonico para consultas regulares.
 
@@ -116,6 +117,7 @@ Pyright LSP bridge:
 - Si `pyright` falla o no existe, el caller debe poder degradar a catalog/text con warning.
 - Si Roslyn falla en `get_context` y el archivo existe, el caller debe preservar `slice_text` y degradar a `catalog` o `text` con warning accionable.
 - Si Roslyn falla en operaciones sin fallback util, como `find_refs` o `get_deps`, el caller debe devolver error tipado y accionable.
+- Si el SLO de memoria/proceso se excede durante `perf-smoke`, el envelope debe ser `ok=false` con `error.kind=daemon` o `backend_runtime`, `error.code` estable y warning accionable; no debe esconderse como warning benigno.
 
 ## Versioning y deprecacion
 

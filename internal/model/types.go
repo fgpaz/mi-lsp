@@ -73,20 +73,50 @@ type MemoryPointer struct {
 	Stale     bool   `json:"stale,omitempty"`
 }
 
+type EnvelopeError struct {
+	Kind      string `json:"kind,omitempty"`
+	Code      string `json:"code,omitempty"`
+	Message   string `json:"message,omitempty"`
+	Stage     string `json:"stage,omitempty"`
+	HintCode  string `json:"hint_code,omitempty"`
+	Retryable bool   `json:"retryable,omitempty"`
+}
+
+type EnvelopeOmission struct {
+	Input          string `json:"input,omitempty"`
+	Path           string `json:"path,omitempty"`
+	Reason         string `json:"reason,omitempty"`
+	ErrorCode      string `json:"error_code,omitempty"`
+	RequestedRange string `json:"requested_range,omitempty"`
+}
+
+type EnvelopeMetrics struct {
+	ResponseBytes      int   `json:"response_bytes,omitempty"`
+	SerializeMs        int64 `json:"serialize_ms,omitempty"`
+	FormatMs           int64 `json:"format_ms,omitempty"`
+	RuntimeMemoryBytes int64 `json:"runtime_memory_bytes,omitempty"`
+	RuntimeCreated     bool  `json:"runtime_created,omitempty"`
+	RuntimeColdStartMs int64 `json:"runtime_cold_start_ms,omitempty"`
+	SQLiteWriteMs      int64 `json:"sqlite_write_ms,omitempty"`
+}
+
 type Envelope struct {
-	Ok            bool           `json:"ok"`
-	Workspace     string         `json:"workspace,omitempty"`
-	Backend       string         `json:"backend,omitempty"`
-	Mode          string         `json:"mode,omitempty"`
-	Items         any            `json:"items"`
-	Truncated     bool           `json:"truncated"`
-	Stats         Stats          `json:"stats,omitempty"`
-	Warnings      []string       `json:"warnings,omitempty"`
-	Hint          string         `json:"hint,omitempty"`
-	NextHint      *string        `json:"next_hint,omitempty"`
-	Coach         *Coach         `json:"coach,omitempty"`
-	Continuation  *Continuation  `json:"continuation,omitempty"`
-	MemoryPointer *MemoryPointer `json:"memory_pointer,omitempty"`
+	Ok            bool               `json:"ok"`
+	Workspace     string             `json:"workspace,omitempty"`
+	Backend       string             `json:"backend,omitempty"`
+	Mode          string             `json:"mode,omitempty"`
+	Items         any                `json:"items"`
+	Error         *EnvelopeError     `json:"error,omitempty"`
+	Omissions     []EnvelopeOmission `json:"omissions,omitempty"`
+	Metrics       *EnvelopeMetrics   `json:"metrics,omitempty"`
+	Truncated     bool               `json:"truncated"`
+	Stats         Stats              `json:"stats,omitempty"`
+	Warnings      []string           `json:"warnings,omitempty"`
+	Hint          string             `json:"hint,omitempty"`
+	NextHint      *string            `json:"next_hint,omitempty"`
+	Coach         *Coach             `json:"coach,omitempty"`
+	Continuation  *Continuation      `json:"continuation,omitempty"`
+	MemoryPointer *MemoryPointer     `json:"memory_pointer,omitempty"`
 }
 
 // QueryEnvelope is a semantic alias of Envelope for traceability with 05_modelo_datos.md.
@@ -176,8 +206,12 @@ type WikiSearchResult struct {
 	Layer        string            `json:"layer,omitempty"`
 	Family       string            `json:"family,omitempty"`
 	Stage        string            `json:"stage,omitempty"`
+	Line         int               `json:"line,omitempty"`
+	StartLine    int               `json:"start_line,omitempty"`
+	EndLine      int               `json:"end_line,omitempty"`
 	Score        int               `json:"score,omitempty"`
 	Why          []string          `json:"why,omitempty"`
+	Evidence     string            `json:"evidence,omitempty"`
 	Snippet      string            `json:"snippet,omitempty"`
 	Content      string            `json:"content,omitempty"`
 	NextQueries  []string          `json:"next_queries,omitempty"`

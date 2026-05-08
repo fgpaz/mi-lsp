@@ -1,10 +1,13 @@
 package service
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/fgpaz/mi-lsp/internal/model"
 )
 
 func TestParseFileRangeString_WholeFile(t *testing.T) {
@@ -292,7 +295,7 @@ func TestReadFileRange_LargeFile(t *testing.T) {
 	// Create file with 1000 lines
 	var buf strings.Builder
 	for i := 1; i <= 1000; i++ {
-		buf.WriteString("line " + string(rune('0' + (i % 10))) + "\n")
+		buf.WriteString("line " + string(rune('0'+(i%10))) + "\n")
 	}
 
 	if err := os.WriteFile(filePath, []byte(buf.String()), 0o644); err != nil {
@@ -314,5 +317,95 @@ func TestReadFileRange_LargeFile(t *testing.T) {
 
 	if !strings.Contains(gotContent, "line 0") {
 		t.Errorf("readFileRange content does not match expected pattern")
+	}
+}
+
+func TestMultiReadReportsOmissionsForMaxItemsExcludedRanges(t *testing.T) {
+	root, name := setupTestWorkspace(t)
+	writeWorkspaceFile(t, root, "a.txt", "a1\na2\n")
+	writeWorkspaceFile(t, root, "b.txt", "b1\nb2\n")
+	app := New(root, nil)
+
+	env, err := app.Execute(context.Background(), model.CommandRequest{
+		Operation: "nav.multi-read",
+		Context:   model.QueryOptions{Workspace: name, MaxItems: 1},
+		Payload: map[string]any{
+			"args": []string{"a.txt:1-1", "b.txt:1-1"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("multi-read: %v", err)
+	}
+	items, ok := env.Items.([]multiReadItem)
+	if !ok || len(items) != 1 {
+		t.Fatalf("expected one read item, got %#v", env.Items)
+	}
+	if len(env.Omissions) != 1 {
+		t.Fatalf("expected one omission, got %#v", env.Omissions)
+	}
+	omission := env.Omissions[0]
+	if omission.ErrorCode != "max_items" || omission.Path != "b.txt" || omission.RequestedRange != "1" {
+		t.Fatalf("unexpected omission: %#v", omission)
+	}
+	if env.NextHint == nil || env.Continuation == nil {
+		t.Fatalf("expected next_hint and continuation for omitted range")
+	}
+}
+
+func TestMultiReadReportsOmissionsForBudgetOmittedRanges(t *testing.T) {
+	root, name := setupTestWorkspace(t)
+	writeWorkspaceFile(t, root, "a.txt", "abcdef\n")
+	writeWorkspaceFile(t, root, "b.txt", "second\n")
+	app := New(root, nil)
+
+	env, err := app.Execute(context.Background(), model.CommandRequest{
+		Operation: "nav.multi-read",
+		Context:   model.QueryOptions{Workspace: name, MaxChars: 5, MaxItems: 10},
+		Payload: map[string]any{
+			"args": []string{"a.txt:1-1", "b.txt:1-1"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("multi-read: %v", err)
+	}
+	if len(env.Omissions) != 1 {
+		t.Fatalf("expected one budget omission, got %#v", env.Omissions)
+	}
+	omission := env.Omissions[0]
+	if omission.ErrorCode != "budget_omitted" || omission.Path != "b.txt" {
+		t.Fatalf("unexpected budget omission: %#v", omission)
+	}
+}
+
+func TestMultiReadReportsMissingAndInvalidOmissionsWithoutUnsafePathLeak(t *testing.T) {
+	root, name := setupTestWorkspace(t)
+	outsidePath := filepath.Join(t.TempDir(), "secret.txt")
+	app := New(root, nil)
+
+	env, err := app.Execute(context.Background(), model.CommandRequest{
+		Operation: "nav.multi-read",
+		Context:   model.QueryOptions{Workspace: name, MaxItems: 10},
+		Payload: map[string]any{
+			"args": []string{"missing.txt:1-2", outsidePath + ":1-1", "bad\npath.go:1-1"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("multi-read: %v", err)
+	}
+	if len(env.Omissions) != 3 {
+		t.Fatalf("expected missing, outside, and invalid omissions, got %#v", env.Omissions)
+	}
+	found := map[string]bool{}
+	for _, omission := range env.Omissions {
+		found[omission.ErrorCode] = true
+		joined := omission.Input + omission.Path + omission.Reason
+		if strings.Contains(joined, outsidePath) || strings.Contains(joined, "bad\npath.go") {
+			t.Fatalf("omission leaked unsafe input: %#v", omission)
+		}
+	}
+	for _, code := range []string{"read_error", "outside_workspace", "invalid_range"} {
+		if !found[code] {
+			t.Fatalf("missing omission code %q in %#v", code, env.Omissions)
+		}
 	}
 }

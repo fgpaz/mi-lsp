@@ -93,3 +93,39 @@ func TestApplyEnvelopeLimits_PaginatedTruncationKeepsOffsetHint(t *testing.T) {
 		t.Fatalf("paginated truncation must preserve offset hint; got %#v", got.NextHint)
 	}
 }
+
+func TestApplyEnvelopeLimits_TruncationRecordsOmissions(t *testing.T) {
+	env := model.Envelope{
+		Ok:    true,
+		Items: []string{"a", "b", "c"},
+	}
+
+	got := ApplyEnvelopeLimits(env, model.QueryOptions{MaxItems: 1})
+	if len(got.Omissions) == 0 {
+		t.Fatalf("expected omission metadata for max_items truncation")
+	}
+	if got.Omissions[0].ErrorCode != "max_items" {
+		t.Fatalf("omission error_code = %q, want max_items", got.Omissions[0].ErrorCode)
+	}
+}
+
+func TestApplyEnvelopeLimits_CharBudgetRecordsOmission(t *testing.T) {
+	env := model.Envelope{
+		Ok:    true,
+		Items: []string{strings.Repeat("a", 80), strings.Repeat("b", 80)},
+	}
+
+	got := ApplyEnvelopeLimits(env, model.QueryOptions{MaxChars: 80})
+	if !got.Truncated {
+		t.Fatalf("expected truncated=true")
+	}
+	found := false
+	for _, omission := range got.Omissions {
+		if omission.ErrorCode == "char_budget" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("expected char_budget omission, got %#v", got.Omissions)
+	}
+}

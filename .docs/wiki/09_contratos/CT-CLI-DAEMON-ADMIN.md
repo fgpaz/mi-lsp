@@ -145,6 +145,20 @@ Envelope comun:
 - `hint` (omitempty — diagnóstico cuando `items=[]` o daemon no disponible)
 - `next_hint`
 
+Envelope de error estructurado (`ok=false`):
+
+- `ok=false`
+- `backend` con el subsistema que intento responder
+- `items=[]` salvo diagnostico seguro y tipado
+- `warnings` con codigos accionables cuando existan
+- `error.kind` (`daemon`, `workspace`, `worker_bootstrap`, `sdk`, `backend_runtime`, `validation`, `transport`)
+- `error.code` estable y grep-friendly
+- `error.message` breve, sin stack trace ni payload crudo
+- `error.stage` opcional (`selector_validation`, `router`, `backend`, `transport`)
+- `error.retryable` opcional
+- `error.hint` opcional con remediacion concreta
+- `stats` y `truncated=false` cuando el fallo ocurre antes de emitir items
+
 ### `nav service`
 
 Input:
@@ -428,6 +442,7 @@ Reglas:
 - `daemon start` debe devolver la instancia existente si ya corre.
 - `daemon status` debe exponer `state`, `daemon_process`, `watchers`, `active_runtimes` y `recent_accesses`.
 - Si una operacion daemon-aware excede `max_inflight`, devuelve envelope `ok=false`, item con `error_kind=daemon`, `error_code=backpressure_busy`, y warning `daemon/backpressure_busy`.
+- Ese mismo caso debe mapear `error.kind=daemon`, `error.code=backpressure_busy`, `error.stage=backend`, `error.retryable=true` y persistir `failure_stage=backend` en telemetria.
 - Si no hay daemon, el CLI debe poder ejecutar directo.
 - Si falta un backend opcional, devolver warning accionable, no fallo ambiguo.
 - `backend` debe reflejar el backend realmente usado.

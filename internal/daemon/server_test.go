@@ -136,6 +136,9 @@ func TestBackpressureBusyEnvelopeIsTyped(t *testing.T) {
 	if items[0]["error_code"] != "backpressure_busy" {
 		t.Fatalf("error_code = %v, want backpressure_busy", items[0]["error_code"])
 	}
+	if response.Error == nil || response.Error.Kind != "daemon" || response.Error.Code != "backpressure_busy" || response.Error.Stage != "backend" {
+		t.Fatalf("error = %+v, want daemon/backpressure_busy at backend", response.Error)
+	}
 }
 
 func TestRuntimeKeyUsesWorkspaceRootNotAlias(t *testing.T) {

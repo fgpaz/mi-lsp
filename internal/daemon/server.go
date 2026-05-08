@@ -166,7 +166,7 @@ func (s *Server) handleConnection(conn net.Conn) {
 
 	var request model.CommandRequest
 	if err := worker.ReadFrame(conn, &request); err != nil {
-		_ = worker.WriteFrame(conn, model.Envelope{Ok: false, Backend: "daemon", Items: []string{}, Warnings: []string{err.Error()}})
+		_ = worker.WriteFrame(conn, daemonErrorEnvelope(request, err, "transport"))
 		return
 	}
 	started := time.Now()
@@ -181,7 +181,7 @@ func (s *Server) handleConnection(conn net.Conn) {
 	}
 	response, err := s.handleRequest(request)
 	if err != nil {
-		response = model.Envelope{Ok: false, Backend: "daemon", Items: []string{}, Warnings: []string{err.Error()}}
+		response = daemonErrorEnvelope(request, err, "daemon")
 	}
 	s.recordAccess(request, response, err, time.Since(started))
 	_ = worker.WriteFrame(conn, response)
@@ -376,6 +376,59 @@ func (s *Server) backpressureEnvelope(request model.CommandRequest) model.Envelo
 		}},
 		Warnings: []string{message},
 		Hint:     hint,
+		Error: &model.EnvelopeError{
+			Kind:      "daemon",
+			Code:      "backpressure_busy",
+			Message:   message,
+			Stage:     "backend",
+			HintCode:  "backpressure_busy",
+			Retryable: true,
+		},
+	}
+}
+
+func daemonErrorEnvelope(request model.CommandRequest, err error, fallbackKind string) model.Envelope {
+	message := strings.TrimSpace(err.Error())
+	if message == "" {
+		message = "daemon request failed"
+	}
+	backend := "daemon"
+	if request.Operation != "" && !strings.EqualFold(strings.TrimSpace(fallbackKind), "transport") {
+		switch {
+		case strings.HasPrefix(request.Operation, "workspace."):
+			backend = "workspace"
+		case strings.HasPrefix(request.Operation, "index."):
+			backend = "index"
+		case strings.HasPrefix(request.Operation, "worker."):
+			backend = "worker"
+		case strings.HasPrefix(request.Operation, "nav.wiki."):
+			backend = "wiki"
+		case strings.HasPrefix(request.Operation, "nav."):
+			backend = "nav"
+		}
+	}
+	envErr := model.EnvelopeError{Kind: "backend_runtime", Code: "daemon_request_failed", Message: message, Stage: "backend"}
+	if strings.EqualFold(strings.TrimSpace(fallbackKind), "transport") {
+		envErr.Kind = "transport"
+		envErr.Code = "daemon_transport_failed"
+		envErr.Stage = "transport"
+		envErr.HintCode = "daemon_transport_failed"
+		envErr.Retryable = true
+	} else if info := telemetry.ClassifyErrorInfo(backend, message, nil); strings.TrimSpace(info.Kind) != "" || strings.TrimSpace(info.Code) != "" {
+		if strings.TrimSpace(info.Kind) != "" {
+			envErr.Kind = info.Kind
+		}
+		if strings.TrimSpace(info.Code) != "" && info.Code != "_generic" {
+			envErr.Code = info.Code
+		}
+	}
+	return model.Envelope{
+		Ok:        false,
+		Workspace: request.Context.Workspace,
+		Backend:   backend,
+		Items:     []map[string]any{},
+		Warnings:  []string{envErr.Kind + "/" + envErr.Code},
+		Error:     &envErr,
 	}
 }
 

@@ -79,6 +79,40 @@ func TestRuntimeKeyForOperationUsesResolvedWorkspaceRoot(t *testing.T) {
 	}
 }
 
+func TestEnrichAccessEventUsesEnvelopeErrorTyping(t *testing.T) {
+	event := EnrichAccessEvent(model.AccessEvent{
+		OccurredAt: time.Now(),
+		Operation:  "nav.search",
+		Backend:    "text",
+		Route:      "direct",
+	}, model.CommandRequest{
+		Operation: "nav.search",
+		Context:   model.QueryOptions{MaxItems: 50},
+		Payload:   map[string]any{"pattern": "missing"},
+	}, model.Envelope{
+		Ok:      false,
+		Backend: "text",
+		Items:   []map[string]any{},
+		Error: &model.EnvelopeError{
+			Kind:     "workspace",
+			Code:     "workspace_resolution_failed",
+			Message:  "workspace missing is not registered",
+			Stage:    "selector_validation",
+			HintCode: "workspace_resolution_failed",
+		},
+	}, nil)
+
+	if event.ErrorKind != "workspace" || event.ErrorCode != "workspace_resolution_failed" {
+		t.Fatalf("error typing = %q/%q, want workspace/workspace_resolution_failed", event.ErrorKind, event.ErrorCode)
+	}
+	if event.FailureStage != "selector_validation" {
+		t.Fatalf("failure_stage = %q, want selector_validation", event.FailureStage)
+	}
+	if event.HintCode != "workspace_resolution_failed" {
+		t.Fatalf("hint_code = %q, want workspace_resolution_failed", event.HintCode)
+	}
+}
+
 func TestClassifyErrorInfo_DetectsDotnetSDKMissing(t *testing.T) {
 	info := ClassifyErrorInfo("roslyn", "It was not possible to find any installed .NET SDKs", nil)
 

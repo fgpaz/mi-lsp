@@ -10,7 +10,9 @@ import (
 func main() {
 	root := cli.NewRootCommand()
 	if err := root.Execute(); err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		if !cli.IsEnvelopePrintedError(err) {
+			fmt.Fprintln(os.Stderr, err)
+		}
 		os.Exit(1)
 	}
 }

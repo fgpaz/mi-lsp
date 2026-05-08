@@ -41,6 +41,23 @@ type accessDecision struct {
 func EnrichAccessEvent(event model.AccessEvent, request model.CommandRequest, envelope model.Envelope, opErr error) model.AccessEvent {
 	focusOp, focusPayload := telemetryFocus(request)
 	count := envelopeItemCount(envelope.Items)
+	if envelope.Error != nil {
+		if strings.TrimSpace(event.Error) == "" {
+			event.Error = strings.TrimSpace(envelope.Error.Message)
+		}
+		if strings.TrimSpace(event.ErrorKind) == "" {
+			event.ErrorKind = strings.TrimSpace(envelope.Error.Kind)
+		}
+		if strings.TrimSpace(event.ErrorCode) == "" {
+			event.ErrorCode = strings.TrimSpace(envelope.Error.Code)
+		}
+		if strings.TrimSpace(event.FailureStage) == "" {
+			event.FailureStage = strings.TrimSpace(envelope.Error.Stage)
+		}
+		if strings.TrimSpace(event.HintCode) == "" {
+			event.HintCode = strings.TrimSpace(envelope.Error.HintCode)
+		}
+	}
 
 	event.ResultCount = count
 	maxItems := request.Context.MaxItems
@@ -125,6 +142,20 @@ func deriveRoutingOutcome(route string, payload map[string]any, envelope model.E
 }
 
 func deriveFailureStage(route string, payload map[string]any, envelope model.Envelope, opErr error) string {
+	if envelope.Error != nil {
+		if stage := strings.TrimSpace(envelope.Error.Stage); stage != "" {
+			return stage
+		}
+		switch strings.TrimSpace(envelope.Error.Kind) {
+		case "transport":
+			return "transport"
+		case "workspace", "validation":
+			return "selector_validation"
+		}
+		if !envelope.Ok {
+			return "backend"
+		}
+	}
 	if strings.EqualFold(strings.TrimSpace(envelope.Backend), "router") {
 		if strings.TrimSpace(payloadStr(payload, "repo")) != "" {
 			return "selector_validation"
@@ -149,6 +180,9 @@ func deriveFailureStage(route string, payload map[string]any, envelope model.Env
 }
 
 func deriveHintCode(envelope model.Envelope) string {
+	if envelope.Error != nil && strings.TrimSpace(envelope.Error.HintCode) != "" {
+		return strings.TrimSpace(envelope.Error.HintCode)
+	}
 	parts := make([]string, 0, len(envelope.Warnings)+2)
 	if strings.TrimSpace(envelope.Hint) != "" {
 		parts = append(parts, envelope.Hint)

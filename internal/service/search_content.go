@@ -28,20 +28,36 @@ func enrichSearchResultsWithContent(ctx context.Context, registration model.Work
 		}
 	}
 
+	lineItems := make([]map[string]any, 0, len(items))
 	for _, item := range items {
 		if ctx.Err() != nil {
 			break
 		}
-		enrichSingleSearchResult(ctx, registration.Root, sqlDB, item, contextLines, contextMode)
+		if tryEnrichSearchResultWithSymbol(ctx, registration.Root, sqlDB, item, contextMode) {
+			continue
+		}
+		if contextMode != "symbol" {
+			lineItems = append(lineItems, item)
+		}
+	}
+	if len(lineItems) > 0 && ctx.Err() == nil {
+		enrichLineSearchResultsWithContent(registration.Root, lineItems, contextLines)
 	}
 	return warnings
 }
 
 func enrichSingleSearchResult(ctx context.Context, workspaceRoot string, db *sql.DB, item map[string]any, contextLines int, contextMode string) {
+	if tryEnrichSearchResultWithSymbol(ctx, workspaceRoot, db, item, contextMode) || contextMode == "symbol" {
+		return
+	}
+	enrichLineSearchResultsWithContent(workspaceRoot, []map[string]any{item}, contextLines)
+}
+
+func tryEnrichSearchResultWithSymbol(ctx context.Context, workspaceRoot string, db *sql.DB, item map[string]any, contextMode string) bool {
 	fileRel, _ := item["file"].(string)
 	lineNum, _ := item["line"].(int)
 	if fileRel == "" || lineNum == 0 {
-		return
+		return true
 	}
 
 	absFile := fileRel
@@ -63,34 +79,104 @@ func enrichSingleSearchResult(ctx context.Context, workspaceRoot string, db *sql
 					item["content_start_line"] = symbol.StartLine
 					item["content_end_line"] = symbol.EndLine
 					item["content_line_count"] = lineCount
-					return
+					return true
 				}
 			}
 		}
-		// If symbol mode only and no symbol found, skip content
-		if contextMode == "symbol" {
-			return
+	}
+	return false
+}
+
+type searchContentRequest struct {
+	item      map[string]any
+	startLine int
+	endLine   int
+}
+
+func enrichLineSearchResultsWithContent(workspaceRoot string, items []map[string]any, contextLines int) {
+	requestsByFile := map[string][]searchContentRequest{}
+	for _, item := range items {
+		fileRel, _ := item["file"].(string)
+		lineNum, _ := item["line"].(int)
+		if fileRel == "" || lineNum == 0 {
+			continue
 		}
+		absFile := fileRel
+		if !filepath.IsAbs(absFile) {
+			absFile = filepath.Join(workspaceRoot, filepath.FromSlash(fileRel))
+		}
+		startLine := lineNum - contextLines
+		if startLine < 1 {
+			startLine = 1
+		}
+		requestsByFile[absFile] = append(requestsByFile[absFile], searchContentRequest{
+			item:      item,
+			startLine: startLine,
+			endLine:   lineNum + contextLines,
+		})
 	}
 
-	// Fallback to line-based context
-	startLine := lineNum - contextLines
-	if startLine < 1 {
-		startLine = 1
+	for absFile, requests := range requestsByFile {
+		enrichFileLineRanges(absFile, requests, contextLines)
 	}
-	endLine := lineNum + contextLines
+}
 
-	content, lineCount, err := readFileLineRange(absFile, startLine, endLine)
+func enrichFileLineRanges(absFile string, requests []searchContentRequest, contextLines int) {
+	if len(requests) == 0 {
+		return
+	}
+	file, err := os.Open(absFile)
 	if err != nil {
 		return
 	}
+	defer file.Close()
 
-	item["content"] = content
-	item["content_mode"] = "lines"
-	item["context_lines"] = contextLines
-	item["content_start_line"] = startLine
-	item["content_end_line"] = startLine + lineCount - 1
-	item["content_line_count"] = lineCount
+	maxEndLine := 0
+	for _, request := range requests {
+		if request.endLine > maxEndLine {
+			maxEndLine = request.endLine
+		}
+	}
+
+	scanner := bufio.NewScanner(file)
+	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+	lines := map[int]string{}
+	currentLine := 0
+	for scanner.Scan() {
+		currentLine++
+		if currentLine > maxEndLine {
+			break
+		}
+		lines[currentLine] = scanner.Text()
+	}
+	if scanner.Err() != nil {
+		return
+	}
+
+	for _, request := range requests {
+		var builder strings.Builder
+		lineCount := 0
+		for line := request.startLine; line <= request.endLine; line++ {
+			text, ok := lines[line]
+			if !ok {
+				continue
+			}
+			if lineCount > 0 {
+				builder.WriteByte('\n')
+			}
+			builder.WriteString(text)
+			lineCount++
+		}
+		if lineCount == 0 {
+			continue
+		}
+		request.item["content"] = builder.String()
+		request.item["content_mode"] = "lines"
+		request.item["context_lines"] = contextLines
+		request.item["content_start_line"] = request.startLine
+		request.item["content_end_line"] = request.startLine + lineCount - 1
+		request.item["content_line_count"] = lineCount
+	}
 }
 
 func readFileLineRange(absPath string, startLine, endLine int) (string, int, error) {

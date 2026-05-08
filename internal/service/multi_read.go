@@ -38,11 +38,11 @@ func (a *App) multiRead(ctx context.Context, request model.CommandRequest) (mode
 		return model.Envelope{}, err
 	}
 
-	ranges, err := parseMultiReadPayload(request)
+	ranges, omissions, err := parseMultiReadPayload(request)
 	if err != nil {
 		return model.Envelope{}, err
 	}
-	if len(ranges) == 0 {
+	if len(ranges) == 0 && len(omissions) == 0 {
 		return model.Envelope{}, errors.New("at least one file range is required")
 	}
 
@@ -65,6 +65,7 @@ func (a *App) multiRead(ctx context.Context, request model.CommandRequest) (mode
 	for i, fr := range ranges {
 		if i >= maxItems {
 			truncated = true
+			omissions = appendRangeOmissions(omissions, registration.Root, ranges[i:], "max_items omitted requested range", "max_items")
 			break
 		}
 		if ctx.Err() != nil {
@@ -77,18 +78,29 @@ func (a *App) multiRead(ctx context.Context, request model.CommandRequest) (mode
 		}
 		absFile = filepath.Clean(absFile)
 		if !strings.HasPrefix(absFile, filepath.Clean(registration.Root)+string(os.PathSeparator)) && absFile != filepath.Clean(registration.Root) {
-			items = append(items, multiReadItem{File: fr.File, Content: "error: path outside workspace root", StartLine: fr.StartLine, EndLine: fr.EndLine})
+			omissions = append(omissions, model.EnvelopeOmission{
+				Input:          "<outside-workspace>",
+				Reason:         "path outside workspace root",
+				ErrorCode:      "outside_workspace",
+				RequestedRange: requestedRange(fr),
+			})
 			continue
 		}
 
 		content, lineCount, itemTruncated, readErr := readFileRange(absFile, fr.StartLine, fr.EndLine, maxChars-totalChars)
 		if readErr != nil {
+			omissions = append(omissions, model.EnvelopeOmission{
+				Path:           safeWorkspacePath(registration.Root, absFile),
+				Reason:         "missing or unreadable file",
+				ErrorCode:      "read_error",
+				RequestedRange: requestedRange(fr),
+			})
 			// Include error as content so caller knows which file failed
 			items = append(items, multiReadItem{
-				File:      fr.File,
+				File:      safeWorkspacePath(registration.Root, absFile),
 				StartLine: fr.StartLine,
 				EndLine:   fr.EndLine,
-				Content:   fmt.Sprintf("error: %s", readErr),
+				Content:   "error: missing or unreadable file",
 				LineCount: 0,
 			})
 			continue
@@ -96,7 +108,7 @@ func (a *App) multiRead(ctx context.Context, request model.CommandRequest) (mode
 
 		totalChars += len(content)
 		items = append(items, multiReadItem{
-			File:      fr.File,
+			File:      safeWorkspacePath(registration.Root, absFile),
 			StartLine: fr.StartLine,
 			EndLine:   fr.EndLine,
 			Content:   content,
@@ -106,41 +118,43 @@ func (a *App) multiRead(ctx context.Context, request model.CommandRequest) (mode
 
 		if totalChars >= maxChars {
 			truncated = true
+			if i+1 < len(ranges) {
+				omissions = appendRangeOmissions(omissions, registration.Root, ranges[i+1:], "char budget omitted requested range", "budget_omitted")
+			}
 			break
 		}
 	}
+	if len(omissions) > 0 {
+		truncated = true
+	}
+	nextHint := multiReadNextHint(omissions, maxItems, maxChars)
 
 	return model.Envelope{
-		Ok:        true,
-		Workspace: registration.Name,
-		Backend:   "text",
-		Items:     items,
-		Truncated: truncated,
-		Stats:     model.Stats{Files: len(items), Ms: time.Since(started).Milliseconds()},
+		Ok:           true,
+		Workspace:    registration.Name,
+		Backend:      "text",
+		Items:        items,
+		Omissions:    omissions,
+		Truncated:    truncated,
+		NextHint:     nextHint,
+		Continuation: multiReadContinuation(omissions),
+		Stats:        model.Stats{Files: len(items), Ms: time.Since(started).Milliseconds()},
 	}, nil
 }
 
-func parseMultiReadPayload(request model.CommandRequest) ([]fileRange, error) {
+func parseMultiReadPayload(request model.CommandRequest) ([]fileRange, []model.EnvelopeOmission, error) {
 	// Support stdin reading
 	if stdinFlag, _ := request.Payload["stdin"].(bool); stdinFlag {
 		limReader := io.LimitReader(os.Stdin, 10*1024*1024) // 10MB max
 		data, err := io.ReadAll(limReader)
 		if err != nil {
-			return nil, fmt.Errorf("reading stdin: %w", err)
+			return nil, nil, fmt.Errorf("reading stdin: %w", err)
 		}
 		var items []string
 		if err := json.Unmarshal(data, &items); err != nil {
-			return nil, fmt.Errorf("parsing stdin JSON array: %w", err)
+			return nil, nil, fmt.Errorf("parsing stdin JSON array: %w", err)
 		}
-		ranges := make([]fileRange, 0, len(items))
-		for _, s := range items {
-			fr, err := parseFileRangeString(s)
-			if err != nil {
-				return nil, err
-			}
-			ranges = append(ranges, fr)
-		}
-		return ranges, nil
+		return parseFileRangesFromStrings(items)
 	}
 
 	// Support items as JSON array in payload
@@ -149,15 +163,7 @@ func parseMultiReadPayload(request model.CommandRequest) ([]fileRange, error) {
 		case []any:
 			return parseFileRangesFromSlice(v)
 		case []string:
-			ranges := make([]fileRange, 0, len(v))
-			for _, s := range v {
-				fr, err := parseFileRangeString(s)
-				if err != nil {
-					return nil, err
-				}
-				ranges = append(ranges, fr)
-			}
-			return ranges, nil
+			return parseFileRangesFromStrings(v)
 		}
 	}
 
@@ -167,35 +173,41 @@ func parseMultiReadPayload(request model.CommandRequest) ([]fileRange, error) {
 		case []any:
 			return parseFileRangesFromSlice(v)
 		case []string:
-			ranges := make([]fileRange, 0, len(v))
-			for _, s := range v {
-				fr, err := parseFileRangeString(s)
-				if err != nil {
-					return nil, err
-				}
-				ranges = append(ranges, fr)
-			}
-			return ranges, nil
+			return parseFileRangesFromStrings(v)
 		}
 	}
 
-	return nil, errors.New("items or args required: provide file ranges as file:startLine-endLine")
+	return nil, nil, errors.New("items or args required: provide file ranges as file:startLine-endLine")
 }
 
-func parseFileRangesFromSlice(items []any) ([]fileRange, error) {
-	ranges := make([]fileRange, 0, len(items))
+func parseFileRangesFromSlice(items []any) ([]fileRange, []model.EnvelopeOmission, error) {
+	stringsItems := make([]string, 0, len(items))
+	omissions := make([]model.EnvelopeOmission, 0)
 	for _, item := range items {
 		s, ok := item.(string)
 		if !ok {
-			return nil, fmt.Errorf("expected string file range, got %T", item)
+			omissions = append(omissions, model.EnvelopeOmission{Input: "<non-string>", Reason: fmt.Sprintf("expected string file range, got %T", item), ErrorCode: "invalid_range"})
+			continue
 		}
-		fr, err := parseFileRangeString(s)
+		stringsItems = append(stringsItems, s)
+	}
+	ranges, parsedOmissions, err := parseFileRangesFromStrings(stringsItems)
+	omissions = append(omissions, parsedOmissions...)
+	return ranges, omissions, err
+}
+
+func parseFileRangesFromStrings(items []string) ([]fileRange, []model.EnvelopeOmission, error) {
+	ranges := make([]fileRange, 0, len(items))
+	omissions := make([]model.EnvelopeOmission, 0)
+	for _, item := range items {
+		fr, err := parseFileRangeString(item)
 		if err != nil {
-			return nil, err
+			omissions = append(omissions, model.EnvelopeOmission{Input: "<invalid-range>", Reason: "invalid file range", ErrorCode: "invalid_range"})
+			continue
 		}
 		ranges = append(ranges, fr)
 	}
-	return ranges, nil
+	return ranges, omissions, nil
 }
 
 func parseFileRangeString(s string) (fileRange, error) {
@@ -307,4 +319,70 @@ func readFileRange(absPath string, startLine int, endLine int, charBudget int) (
 	}
 
 	return builder.String(), collectedLines, false, nil
+}
+
+func appendRangeOmissions(omissions []model.EnvelopeOmission, workspaceRoot string, ranges []fileRange, reason string, code string) []model.EnvelopeOmission {
+	for _, fr := range ranges {
+		absFile := fr.File
+		if !filepath.IsAbs(absFile) {
+			absFile = filepath.Join(workspaceRoot, filepath.FromSlash(fr.File))
+		}
+		absFile = filepath.Clean(absFile)
+		omission := model.EnvelopeOmission{
+			Reason:         reason,
+			ErrorCode:      code,
+			RequestedRange: requestedRange(fr),
+		}
+		if path := safeWorkspacePath(workspaceRoot, absFile); path != "" {
+			omission.Path = path
+		} else {
+			omission.Input = "<outside-workspace>"
+		}
+		omissions = append(omissions, omission)
+	}
+	return omissions
+}
+
+func requestedRange(fr fileRange) string {
+	if fr.EndLine <= 0 {
+		return fmt.Sprintf("%d-end", fr.StartLine)
+	}
+	if fr.StartLine == fr.EndLine {
+		return strconv.Itoa(fr.StartLine)
+	}
+	return fmt.Sprintf("%d-%d", fr.StartLine, fr.EndLine)
+}
+
+func safeWorkspacePath(workspaceRoot string, absFile string) string {
+	root := filepath.Clean(workspaceRoot)
+	absFile = filepath.Clean(absFile)
+	if absFile != root && !strings.HasPrefix(absFile, root+string(os.PathSeparator)) {
+		return ""
+	}
+	rel, err := filepath.Rel(root, absFile)
+	if err != nil || rel == "." || strings.HasPrefix(rel, "..") {
+		return ""
+	}
+	return filepath.ToSlash(rel)
+}
+
+func multiReadNextHint(omissions []model.EnvelopeOmission, maxItems int, maxChars int) *string {
+	if len(omissions) == 0 {
+		return nil
+	}
+	hint := fmt.Sprintf("review omissions; rerun with fewer ranges or raise --max-items above %d / --max-chars above %d", maxItems, maxChars)
+	return &hint
+}
+
+func multiReadContinuation(omissions []model.EnvelopeOmission) *model.Continuation {
+	if len(omissions) == 0 {
+		return nil
+	}
+	return &model.Continuation{
+		Reason: "omitted_ranges",
+		Next: model.ContinuationTarget{
+			Op:   "nav.multi-read",
+			Full: true,
+		},
+	}
 }
