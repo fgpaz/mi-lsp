@@ -1,16 +1,17 @@
 session_contract_path: .docs/auditoria/2026-05-08-mi-lsp-agent-runtime-hardening-exec/session-contract.yaml
 task_slug: mi-lsp-agent-runtime-hardening-exec
 closure_created_at: 2026-05-08T18:00:00Z
+closure_updated_at: 2026-05-08T18:40:00Z
 git_before:
   branch: mi-lsp-agent-runtime-hardening
   head_sha: 2f94f64592623ce4b7ca72d8aafff65ce5aa4c9f
   upstream: none
   ahead_behind: not_applicable_no_upstream
 git_after:
-  branch: mi-lsp-agent-runtime-hardening
-  head_sha: 2f94f64592623ce4b7ca72d8aafff65ce5aa4c9f
-  upstream: none
-  ahead_behind: not_applicable_no_upstream
+  branch: main
+  head_sha: 746aa47d40b08bcb8474ab433ecead6a371cf20e
+  upstream: origin/main
+  ahead_behind: ahead 1 before audit-only closure update
 changed_paths:
   tracked:
     - .docs/planificacion/2026-04-30-workspace-execution-review-trazabilidad-auditoria.md
@@ -160,19 +161,19 @@ no_drift_snapshot:
   result: PASS
   notes:
     - dotnet test exited successfully with no visible test summary; solution appears to contain only the worker project.
-    - git diff --check emitted expected LF-to-CRLF warnings only.
+    - git diff --check emitted no errors.
+    - main was fast-forwarded locally from 2f94f64592623ce4b7ca72d8aafff65ce5aa4c9f to 746aa47d40b08bcb8474ab433ecead6a371cf20e.
 completion_handoff:
   target_skill: finishing-a-development-branch
-  executable_disposition: true
-  branch_disposition: integrate-main
-  cleanup_policy: auto-after-successful-integration
-  blockers:
-    - branch has uncommitted working tree changes until integration commit is created
+  executable_disposition: false
+  branch_disposition: integrated
+  cleanup_policy: already-clean
+  blockers: []
 branch_inventory:
   worktrees:
     - path: C:/repos/mios/mi-lsp
-      branch: mi-lsp-agent-runtime-hardening
-      head: 2f94f64592623ce4b7ca72d8aafff65ce5aa4c9f
+      branch: main
+      head: 746aa47d40b08bcb8474ab433ecead6a371cf20e
   merged_main:
     - main
     - mi-lsp-agent-runtime-hardening
@@ -201,6 +202,7 @@ audit_verdict:
     - no wiki source blockers
     - no tracker sync required
     - user requested local integration to main after closure
+    - local main integration completed by fast-forward merge
 trace_evidence:
   commands:
     - mi-lsp nav wiki trace RF-QRY-016 --workspace . --format toon
@@ -211,4 +213,10 @@ trace_evidence:
     - RF-QRY-016 coverage=1 status=implemented
     - RF-DAE-002 coverage=1 status=implemented
     - RF-WKS-002 coverage=1 status=implemented
-final_closure_verdict: READY_FOR_LOCAL_MAIN_INTEGRATION
+local_integration:
+  result: completed
+  main_commit: 746aa47d40b08bcb8474ab433ecead6a371cf20e
+  merge_mode: fast-forward
+  remote_push: not_requested
+  branch_cleanup: local task branch eligible for safe deletion after final fast-forward of this audit-only closure update
+final_closure_verdict: INTEGRATED_ON_LOCAL_MAIN

@@ -69,5 +69,5 @@ touched_cards: not_applicable
 explicit_waivers:
   - no tracker card exists for this repository/task; user explicitly requested execution
   - plan files under .docs/raw and audit files are ignored by git unless force-added later
-branch_disposition: integrate-main
-cleanup_policy: auto-after-successful-integration
+branch_disposition: integrated
+cleanup_policy: already-clean
