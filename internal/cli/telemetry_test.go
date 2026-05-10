@@ -421,3 +421,73 @@ func TestRecordOperationCapturesCoachMetadataWithoutLeakingCoachContent(t *testi
 		t.Fatalf("memory_stale = %#v, want true", decision["memory_stale"])
 	}
 }
+
+func TestRecordOperationClassifiesBackendRuntimeWarningWithoutLeakingPayload(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+
+	telemetry := NewCLITelemetry("test-cli", "session-spawn", false)
+	if telemetry == nil {
+		t.Fatal("expected telemetry instance")
+	}
+	defer telemetry.Close()
+
+	request := model.CommandRequest{
+		Operation: "nav.context",
+		Context:   model.QueryOptions{Workspace: "mi-lsp", BackendHint: "roslyn"},
+		Payload: map[string]any{
+			"file": "src/SecretPayload.cs",
+			"line": 7,
+		},
+	}
+	envelope := model.Envelope{
+		Ok:        true,
+		Backend:   "catalog",
+		Workspace: "mi-lsp",
+		Items:     []map[string]any{{"file": "src/SecretPayload.cs", "slice_text": "token=SHOULD_NOT_LEAK"}},
+		Warnings:  []string{"roslyn backend failure (backend_runtime/process_spawn_access_denied): CreateProcess C:\\tools\\dotnet.exe: Access is denied; preserving slice_text fallback"},
+	}
+
+	telemetry.RecordOperation(request, envelope, nil, 18*time.Millisecond, "direct")
+
+	store, err := daemon.OpenTelemetryStore()
+	if err != nil {
+		t.Fatalf("OpenTelemetryStore: %v", err)
+	}
+	defer store.Close()
+
+	events, err := daemon.QueryAccessEvents(store, daemon.ExportQuery{SessionID: "session-spawn", Limit: 10})
+	if err != nil {
+		t.Fatalf("QueryAccessEvents: %v", err)
+	}
+	if len(events) != 1 {
+		t.Fatalf("expected 1 event, got %d", len(events))
+	}
+	got := events[0]
+	if got.HintCode != "process_spawn_access_denied" {
+		t.Fatalf("hint_code = %q, want process_spawn_access_denied", got.HintCode)
+	}
+	if got.FailureStage != "backend_runtime" {
+		t.Fatalf("failure_stage = %q, want backend_runtime", got.FailureStage)
+	}
+	if strings.Contains(got.DecisionJSON, "SecretPayload") || strings.Contains(got.DecisionJSON, "SHOULD_NOT_LEAK") || strings.Contains(got.DecisionJSON, "CreateProcess") {
+		t.Fatalf("decision_json leaked raw payload or error content: %s", got.DecisionJSON)
+	}
+	var decision map[string]any
+	if err := json.Unmarshal([]byte(got.DecisionJSON), &decision); err != nil {
+		t.Fatalf("Unmarshal(decision_json): %v", err)
+	}
+	if decision["requested_backend"] != "roslyn" {
+		t.Fatalf("requested_backend = %#v, want roslyn", decision["requested_backend"])
+	}
+	if decision["result_backend"] != "catalog" {
+		t.Fatalf("result_backend = %#v, want catalog", decision["result_backend"])
+	}
+	if decision["backend_fallback_taken"] != true {
+		t.Fatalf("backend_fallback_taken = %#v, want true", decision["backend_fallback_taken"])
+	}
+	if decision["runtime_error_code"] != "process_spawn_access_denied" {
+		t.Fatalf("runtime_error_code = %#v, want process_spawn_access_denied", decision["runtime_error_code"])
+	}
+}

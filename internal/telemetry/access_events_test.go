@@ -90,6 +90,17 @@ func TestClassifyErrorInfo_DetectsDotnetSDKMissing(t *testing.T) {
 	}
 }
 
+func TestClassifyErrorInfo_DetectsProcessSpawnAccessDenied(t *testing.T) {
+	info := ClassifyErrorInfo("roslyn", "CreateProcess C:\\tools\\dotnet.exe: Access is denied", nil)
+
+	if info.Kind != "backend_runtime" {
+		t.Fatalf("Kind = %q, want backend_runtime", info.Kind)
+	}
+	if info.Code != "process_spawn_access_denied" {
+		t.Fatalf("Code = %q, want process_spawn_access_denied", info.Code)
+	}
+}
+
 func TestResolveWindowPresetRecent(t *testing.T) {
 	now := time.Date(2026, 3, 21, 12, 0, 0, 0, time.UTC)
 	window, err := ResolveWindow("recent", now)

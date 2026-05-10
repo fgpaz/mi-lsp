@@ -36,6 +36,12 @@ type accessDecision struct {
 	MemoryStale          bool   `json:"memory_stale,omitempty"`
 	DocRanker            string `json:"doc_ranker,omitempty"`
 	IntentMode           string `json:"intent_mode,omitempty"`
+	RequestedBackend     string `json:"requested_backend,omitempty"`
+	ResultBackend        string `json:"result_backend,omitempty"`
+	BackendFallbackTaken bool   `json:"backend_fallback_taken,omitempty"`
+	FallbackFrom         string `json:"fallback_from,omitempty"`
+	FallbackTo           string `json:"fallback_to,omitempty"`
+	RuntimeErrorCode     string `json:"runtime_error_code,omitempty"`
 }
 
 func EnrichAccessEvent(event model.AccessEvent, request model.CommandRequest, envelope model.Envelope, opErr error) model.AccessEvent {
@@ -65,7 +71,7 @@ func EnrichAccessEvent(event model.AccessEvent, request model.CommandRequest, en
 		event.TruncationReason = deriveTruncationReason(event.Truncated, count, request.Context)
 	}
 	if strings.TrimSpace(event.DecisionJSON) == "" {
-		event.DecisionJSON = buildDecisionJSON(event.Route, focusPayload, envelope)
+		event.DecisionJSON = buildDecisionJSON(event.Route, request, focusOp, focusPayload, envelope)
 	}
 	return NormalizeAccessEvent(event)
 }
@@ -131,6 +137,9 @@ func deriveFailureStage(route string, payload map[string]any, envelope model.Env
 		}
 		return "router"
 	}
+	if info := ClassifyErrorInfo(envelope.Backend, "", envelope.Warnings); info.Kind == "backend_runtime" {
+		return "backend_runtime"
+	}
 	if opErr == nil {
 		return "none"
 	}
@@ -157,6 +166,9 @@ func deriveHintCode(envelope model.Envelope) string {
 		parts = append(parts, *envelope.NextHint)
 	}
 	parts = append(parts, envelope.Warnings...)
+	if info := ClassifyErrorInfo(envelope.Backend, "", envelope.Warnings); info.Code != "" {
+		return info.Code
+	}
 	message := strings.ToLower(strings.Join(parts, "\n"))
 	switch {
 	case strings.Contains(message, "unknown repo selector") || strings.Contains(message, "--repo <name>"):
@@ -191,9 +203,12 @@ func deriveTruncationReason(truncated bool, count int, opts model.QueryOptions) 
 	}
 }
 
-func buildDecisionJSON(route string, payload map[string]any, envelope model.Envelope) string {
+func buildDecisionJSON(route string, request model.CommandRequest, focusOp string, payload map[string]any, envelope model.Envelope) string {
 	pattern := payloadStr(payload, "pattern")
 	selectorPresent := strings.TrimSpace(payloadStr(payload, "repo")) != ""
+	requestedBackend := deriveRequestedBackend(request, focusOp, payload)
+	resultBackend := strings.TrimSpace(envelope.Backend)
+	runtimeError := ClassifyErrorInfo(resultBackend, "", envelope.Warnings)
 	decision := accessDecision{
 		SelectorType:      selectorType(payload),
 		SelectorPresent:   selectorPresent,
@@ -207,6 +222,17 @@ func buildDecisionJSON(route string, payload map[string]any, envelope model.Enve
 		FallbackTaken:     strings.EqualFold(strings.TrimSpace(route), "direct_fallback"),
 		ResultSource:      firstNonEmpty(strings.TrimSpace(envelope.Backend), "unknown"),
 		DocRanker:         currentDocRankerMode(),
+		RequestedBackend:  requestedBackend,
+		ResultBackend:     resultBackend,
+		RuntimeErrorCode:  runtimeError.Code,
+	}
+	if requestedBackend != "" && resultBackend != "" && !strings.EqualFold(requestedBackend, resultBackend) {
+		decision.BackendFallbackTaken = true
+		decision.FallbackFrom = requestedBackend
+		decision.FallbackTo = resultBackend
+	} else if runtimeError.Code != "" && resultBackend != "" {
+		decision.BackendFallbackTaken = true
+		decision.FallbackTo = resultBackend
 	}
 	if strings.EqualFold(strings.TrimSpace(envelope.Backend), "intent") && strings.TrimSpace(envelope.Mode) != "" {
 		decision.IntentMode = strings.TrimSpace(envelope.Mode)
@@ -230,6 +256,26 @@ func buildDecisionJSON(route string, payload map[string]any, envelope model.Enve
 		return ""
 	}
 	return string(body)
+}
+
+func deriveRequestedBackend(request model.CommandRequest, focusOp string, payload map[string]any) string {
+	if explicit := strings.TrimSpace(request.Context.BackendHint); explicit != "" {
+		return explicit
+	}
+	switch focusOp {
+	case "nav.context", "nav.refs":
+		file := payloadStr(payload, "file")
+		lower := strings.ToLower(file)
+		switch {
+		case strings.HasSuffix(lower, ".ts") || strings.HasSuffix(lower, ".tsx") || strings.HasSuffix(lower, ".js") || strings.HasSuffix(lower, ".jsx") || strings.HasSuffix(lower, ".mts") || strings.HasSuffix(lower, ".cts"):
+			return "tsserver"
+		case strings.HasSuffix(lower, ".py") || strings.HasSuffix(lower, ".pyi"):
+			return "pyright"
+		case strings.HasSuffix(lower, ".cs"):
+			return "roslyn"
+		}
+	}
+	return ""
 }
 
 func currentDocRankerMode() string {

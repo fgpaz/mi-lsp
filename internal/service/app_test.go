@@ -156,6 +156,125 @@ func TestSearchPattern_GoFallback(t *testing.T) {
 	}
 }
 
+func TestSearchIdentifierQueryAddsSymbolCoach(t *testing.T) {
+	root, name := setupTestWorkspace(t)
+	writeWorkspaceFile(t, root, "src/IViajeService.cs", "namespace Demo;\npublic interface IViajeService { }\n")
+	app := New(root, nil)
+
+	env, err := app.Execute(context.Background(), model.CommandRequest{
+		Operation: "nav.search",
+		Context:   model.QueryOptions{Workspace: name, MaxItems: 10},
+		Payload:   map[string]any{"pattern": "IViajeService"},
+	})
+	if err != nil {
+		t.Fatalf("nav.search: %v", err)
+	}
+	if env.Coach == nil || env.Coach.Trigger != "symbol_query_detected" {
+		t.Fatalf("expected symbol_query_detected coach, got %#v", env.Coach)
+	}
+	if len(env.Coach.Actions) != 2 {
+		t.Fatalf("expected two coach actions, got %#v", env.Coach.Actions)
+	}
+	commands := env.Coach.Actions[0].Command + "\n" + env.Coach.Actions[1].Command
+	if !strings.Contains(commands, "nav find") || !strings.Contains(commands, "--exact") || !strings.Contains(commands, "nav related") {
+		t.Fatalf("coach commands do not expose symbol ladder: %s", commands)
+	}
+}
+
+func TestSearchIdentifierRankingPrefersSourceDeclarations(t *testing.T) {
+	items := []map[string]any{
+		{"file": ".docs/wiki/04_RF/RF-QRY-999.md", "line": 12, "text": "IViajeService is documented here"},
+		{"file": "turismo-back/TurismoAPI.Business.Tests/IViajeServiceTests.cs", "line": 4, "text": "public class IViajeServiceTests"},
+		{"file": "turismo-back/TurismoAPI.Business/Interfaces/IViajeService.cs", "line": 3, "text": "public interface IViajeService"},
+		{"file": "turismo-back/backup/IViajeService.generated.cs", "line": 1, "text": "public interface IViajeService"},
+	}
+
+	rankIdentifierSearchItems("IViajeService", items)
+
+	if got := items[0]["file"]; got != "turismo-back/TurismoAPI.Business/Interfaces/IViajeService.cs" {
+		t.Fatalf("first ranked file = %#v", got)
+	}
+	if got := items[len(items)-1]["file"]; got != "turismo-back/backup/IViajeService.generated.cs" {
+		t.Fatalf("last ranked file = %#v", got)
+	}
+}
+
+func TestNavSearchIdentifierPreviewRanksSourceDeclarationAfterExpandedCollection(t *testing.T) {
+	root, name := setupTestWorkspace(t)
+	for _, file := range []string{
+		"docs/a1.md",
+		"docs/a2.md",
+		"docs/a3.md",
+		"docs/a4.md",
+		"docs/a5.md",
+		"docs/a6.md",
+	} {
+		writeWorkspaceFile(t, root, file, "IViajeService appears in supporting docs.\n")
+	}
+	writeWorkspaceFile(t, root, "zzsrc/IViajeService.cs", "namespace Demo;\npublic interface IViajeService { }\n")
+
+	rgPath = ""
+	rgResolved = false
+	rgOnce = sync.Once{}
+	t.Cleanup(func() {
+		rgPath = ""
+		rgResolved = false
+		rgOnce = sync.Once{}
+	})
+
+	scriptPath := filepath.Join(root, "fake-rg-denied-preview")
+	scriptBody := "#!/bin/sh\necho 'rg: Access is denied' 1>&2\nexit 2\n"
+	if runtime.GOOS == "windows" {
+		scriptPath += ".cmd"
+		scriptBody = "@echo off\r\necho rg: Access is denied 1>&2\r\nexit /b 2\r\n"
+	}
+	if err := os.WriteFile(scriptPath, []byte(scriptBody), 0o755); err != nil {
+		t.Fatalf("write fake rg denied script: %v", err)
+	}
+	t.Setenv("MI_LSP_RG", scriptPath)
+
+	app := New(root, nil)
+	env, err := app.Execute(context.Background(), model.CommandRequest{
+		Operation: "nav.search",
+		Context:   model.QueryOptions{Workspace: name, MaxItems: 5, AXI: true},
+		Payload:   map[string]any{"pattern": "IViajeService"},
+	})
+	if err != nil {
+		t.Fatalf("nav.search: %v", err)
+	}
+	items, ok := env.Items.([]map[string]any)
+	if !ok || len(items) != 5 {
+		t.Fatalf("expected preview-sized results, got %#v", env.Items)
+	}
+	if got := items[0]["file"]; got != "zzsrc/IViajeService.cs" {
+		t.Fatalf("first preview result = %#v, want source declaration", got)
+	}
+	if env.Coach == nil || len(env.Coach.Actions) != 2 {
+		t.Fatalf("expected full symbol ladder in preview coach, got %#v", env.Coach)
+	}
+}
+
+func TestSearchIdentifierDetection(t *testing.T) {
+	tests := []struct {
+		query string
+		want  bool
+	}{
+		{query: "IViajeService", want: true},
+		{query: "ViajeService", want: true},
+		{query: "Namespace.Type", want: true},
+		{query: "forgot password", want: false},
+		{query: "foo/bar", want: false},
+		{query: "Map(Get|Post", want: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.query, func(t *testing.T) {
+			if got := isIdentifierLikeQuery(tt.query); got != tt.want {
+				t.Fatalf("isIdentifierLikeQuery(%q) = %t, want %t", tt.query, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestSearchPattern_Regex(t *testing.T) {
 	root, name := setupTestWorkspace(t)
 	app := New(root, nil)
@@ -404,6 +523,66 @@ func TestNavContext_RoslynBootstrapErrorAddsInstallHint(t *testing.T) {
 	}
 }
 
+func TestNavContext_RoslynSpawnAccessDeniedReturnsTypedFallback(t *testing.T) {
+	root, name := setupTestWorkspace(t)
+	writeWorkspaceFile(t, root, "src/Context.cs", strings.Join([]string{
+		"namespace Demo;",
+		"public class ContextType",
+		"{",
+		"    public void Run() { }",
+		"}",
+	}, "\n"))
+
+	project := testProject(name)
+	if err := workspace.SaveProjectFile(root, project); err != nil {
+		t.Fatalf("SaveProjectFile: %v", err)
+	}
+	seedCatalogSymbol(t, root, project, "src/Context.cs", 2, "ContextType", "class")
+
+	semantic := &fakeSemanticCaller{
+		callFn: func(_ context.Context, _ model.WorkspaceRegistration, request model.WorkerRequest) (model.WorkerResponse, error) {
+			if request.BackendType != "roslyn" {
+				t.Fatalf("backend type = %q, want roslyn", request.BackendType)
+			}
+			return model.WorkerResponse{}, errors.New("CreateProcess C:\\tools\\dotnet.exe: Access is denied")
+		},
+	}
+
+	app := New(root, semantic)
+	env, err := app.Execute(context.Background(), model.CommandRequest{
+		Operation: "nav.context",
+		Context:   model.QueryOptions{Workspace: name},
+		Payload:   map[string]any{"file": "src/Context.cs", "line": 2},
+	})
+	if err != nil {
+		t.Fatalf("nav.context should degrade to slice, got error: %v", err)
+	}
+	if !env.Ok {
+		t.Fatalf("expected ok=true, got warnings: %v", env.Warnings)
+	}
+	if env.Backend != "catalog" {
+		t.Fatalf("backend = %q, want catalog fallback", env.Backend)
+	}
+	warnings := strings.Join(env.Warnings, " ")
+	if !strings.Contains(warnings, "backend_runtime/process_spawn_access_denied") {
+		t.Fatalf("expected typed backend runtime warning, got %v", env.Warnings)
+	}
+	if !strings.Contains(warnings, "preserving slice_text fallback") {
+		t.Fatalf("expected fallback evidence warning, got %v", env.Warnings)
+	}
+	items, ok := env.Items.([]map[string]any)
+	if !ok || len(items) != 1 {
+		t.Fatalf("expected one context item, got %#v", env.Items)
+	}
+	sliceText, _ := items[0]["slice_text"].(string)
+	if !strings.Contains(sliceText, "ContextType") {
+		t.Fatalf("slice_text = %q, want ContextType evidence", sliceText)
+	}
+	if items[0]["name"] != "ContextType" {
+		t.Fatalf("catalog fallback did not merge symbol evidence: %#v", items[0])
+	}
+}
+
 func TestSearchPattern_RgNoMatchesReturnsEmptyResults(t *testing.T) {
 	root, name := setupTestWorkspace(t)
 	project := testProject(name)
@@ -411,6 +590,11 @@ func TestSearchPattern_RgNoMatchesReturnsEmptyResults(t *testing.T) {
 	rgPath = ""
 	rgResolved = false
 	rgOnce = sync.Once{}
+	t.Cleanup(func() {
+		rgPath = ""
+		rgResolved = false
+		rgOnce = sync.Once{}
+	})
 
 	scriptPath := filepath.Join(root, "fake-rg")
 	scriptBody := "#!/bin/sh\nexit 1\n"
@@ -428,6 +612,49 @@ func TestSearchPattern_RgNoMatchesReturnsEmptyResults(t *testing.T) {
 	}
 	if len(items) != 0 {
 		t.Fatalf("expected zero items, got %d", len(items))
+	}
+}
+
+func TestNavSearch_RgAccessDeniedFallsBackToGoSearch(t *testing.T) {
+	root, name := setupTestWorkspace(t)
+	writeWorkspaceFile(t, root, "src/Needle.cs", "namespace Demo;\npublic class SearchNeedle { }\n")
+
+	rgPath = ""
+	rgResolved = false
+	rgOnce = sync.Once{}
+	t.Cleanup(func() {
+		rgPath = ""
+		rgResolved = false
+		rgOnce = sync.Once{}
+	})
+
+	scriptPath := filepath.Join(root, "fake-rg-denied")
+	scriptBody := "#!/bin/sh\necho 'rg: Access is denied' 1>&2\nexit 2\n"
+	if runtime.GOOS == "windows" {
+		scriptPath += ".cmd"
+		scriptBody = "@echo off\r\necho rg: Access is denied 1>&2\r\nexit /b 2\r\n"
+	}
+	if err := os.WriteFile(scriptPath, []byte(scriptBody), 0o755); err != nil {
+		t.Fatalf("write fake rg denied script: %v", err)
+	}
+	t.Setenv("MI_LSP_RG", scriptPath)
+
+	app := New(root, nil)
+	env, err := app.Execute(context.Background(), model.CommandRequest{
+		Operation: "nav.search",
+		Context:   model.QueryOptions{Workspace: name, MaxItems: 10},
+		Payload:   map[string]any{"pattern": "SearchNeedle"},
+	})
+	if err != nil {
+		t.Fatalf("nav.search should fall back to go search, got error: %v", err)
+	}
+	items, ok := env.Items.([]map[string]any)
+	if !ok || len(items) != 1 {
+		t.Fatalf("expected fallback match, got %#v", env.Items)
+	}
+	warnings := strings.Join(env.Warnings, " ")
+	if !strings.Contains(warnings, "backend_runtime/process_spawn_access_denied") || !strings.Contains(warnings, "go text fallback") {
+		t.Fatalf("expected safe rg fallback warning, got %v", env.Warnings)
 	}
 }
 

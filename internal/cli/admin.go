@@ -165,6 +165,14 @@ func newExportCommand(state *rootState) *cobra.Command {
 				if percentileFlag {
 					summary.ByOperationPercentiles = daemon.ComputeOperationPercentiles(events)
 				}
+				if formatFlag == "toon" {
+					body, err := daemon.RenderSummaryTOON(summary)
+					if err != nil {
+						return err
+					}
+					fmt.Fprint(os.Stdout, body)
+					return nil
+				}
 				fmt.Fprint(os.Stdout, daemon.RenderSummaryTable(summary))
 				return nil
 			}
@@ -207,8 +215,14 @@ func newExportCommand(state *rootState) *cobra.Command {
 						status, e.OccurredAt.Format("2006-01-02T15:04"), e.Operation,
 						e.Workspace, e.Backend, e.LatencyMs, extra)
 				}
+			case "toon":
+				body, err := daemon.RenderTOON(events)
+				if err != nil {
+					return err
+				}
+				fmt.Fprint(os.Stdout, body)
 			default:
-				return fmt.Errorf("invalid --format %q; valid options: json, csv, compact", formatFlag)
+				return fmt.Errorf("invalid --format %q; valid options: json, csv, compact, toon", formatFlag)
 			}
 			return nil
 		},
@@ -229,7 +243,7 @@ func newExportCommand(state *rootState) *cobra.Command {
 	command.Flags().StringVar(&failureStageFlag, "failure-stage", "", "Filter by failure stage")
 	command.Flags().StringVar(&hintCodeFlag, "hint-code", "", "Filter by stable hint code")
 	command.Flags().BoolVar(&errorsOnly, "errors", false, "Show only failed operations")
-	command.Flags().StringVar(&formatFlag, "format", "json", "Output format: json, csv, compact")
+	command.Flags().StringVar(&formatFlag, "format", "json", "Output format: json, csv, compact, toon")
 	command.Flags().BoolVar(&summaryFlag, "summary", false, "Show aggregated summary table instead of raw events")
 	command.Flags().IntVar(&limitFlag, "limit", 500, "Maximum number of events to return")
 	command.Flags().BoolVar(&percentileFlag, "percentile", false, "Show p50/p95/p99 latency breakdown by operation (requires --summary)")

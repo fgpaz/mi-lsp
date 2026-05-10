@@ -309,6 +309,7 @@ func compileHarnessValidation(root string, docs []harnessDoc) model.HarnessValid
 		HarnessVerdict:  "PASS",
 	}
 	docIndex := buildHarnessDocIndex(docs)
+	contractCoverage := buildHarnessContractCoverage(docs)
 	seenRequired := map[string]struct{}{}
 	seenFound := map[string]struct{}{}
 
@@ -319,6 +320,9 @@ func compileHarnessValidation(root string, docs []harnessDoc) model.HarnessValid
 			continue
 		}
 		if doc.contract == nil {
+			if _, covered := contractCoverage[normalizeHarnessRef(docLabel)]; covered {
+				continue
+			}
 			result.HarnessDocsMissingContract = append(result.HarnessDocsMissingContract, docLabel)
 			result.HarnessBlockers = append(result.HarnessBlockers, docLabel+": missing SDD-HARNESS-v1 contract")
 			continue
@@ -461,6 +465,21 @@ func buildHarnessDocIndex(docs []harnessDoc) map[string]struct{} {
 		}
 	}
 	return index
+}
+
+func buildHarnessContractCoverage(docs []harnessDoc) map[string]struct{} {
+	covered := map[string]struct{}{}
+	for _, doc := range docs {
+		if doc.contract == nil {
+			continue
+		}
+		addHarnessIndexKey(covered, doc.record.DocID)
+		addHarnessIndexKey(covered, doc.contract.ID)
+		for _, exported := range doc.contract.Exports {
+			addHarnessIndexKey(covered, exported)
+		}
+	}
+	return covered
 }
 
 func addHarnessIndexKey(index map[string]struct{}, value string) {

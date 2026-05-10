@@ -153,6 +153,24 @@ func TestValidateHarnessScopedIDsPreferCanonicalPathOverAggregateRecord(t *testi
 	}
 }
 
+func TestValidateHarnessUnscopedPrefersCanonicalPathOverAggregateRecord(t *testing.T) {
+	alias, root := createHarnessWorkspace(t)
+	writeHarnessDoc(t, root, ".docs/wiki/09_contratos/CT-PILOT.md", validHarnessContract("llm-first", "CT-PILOT", "artifacts/harness/evidence.md", ""))
+	writeWorkspaceFile(t, root, ".docs/wiki/09_contratos_tecnicos.md", "# Index\n\nMentions CT-PILOT without owning its harness contract.\n")
+	writeWorkspaceFile(t, root, "artifacts/harness/evidence.md", "verified")
+	aggregate := harnessDocRecord(".docs/wiki/09_contratos_tecnicos.md", "CT-PILOT")
+	aggregate.Title = "CT-PILOT"
+	replaceHarnessDocs(t, root, []model.DocRecord{
+		aggregate,
+		harnessDocRecord(".docs/wiki/09_contratos/CT-PILOT.md", "CT-PILOT"),
+	})
+
+	result := executeHarnessValidation(t, root, alias)
+	if result.HarnessVerdict != "PASS" || result.HarnessContractsReviewed != 1 {
+		t.Fatalf("unscoped verdict = %#v, want only canonical passing contract", result)
+	}
+}
+
 func TestValidateHarnessScopedPathsFilterByBasename(t *testing.T) {
 	alias, root := createHarnessWorkspace(t)
 	writeHarnessDoc(t, root, ".docs/wiki/09_contratos/CT-PILOT.md", validHarnessContract("llm-first", "CT-PILOT", "artifacts/harness/evidence.md", ""))
