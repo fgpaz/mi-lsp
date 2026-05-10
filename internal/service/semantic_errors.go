@@ -11,7 +11,15 @@ func semanticBackendWarning(backendType string, err error) string {
 	if err == nil {
 		return fmt.Sprintf("%s unavailable", backendType)
 	}
+	info := telemetry.ClassifyErrorInfo(backendType, err.Error(), nil)
 	warning := fmt.Sprintf("%s unavailable: %v", backendType, err)
+	if info.Kind != "" || info.Code != "" {
+		warning = fmt.Sprintf("%s backend failure", backendType)
+		if info.Kind != "" || info.Code != "" {
+			warning += fmt.Sprintf(" (%s/%s)", info.Kind, info.Code)
+		}
+		warning += fmt.Sprintf(": %v; preserving slice_text fallback", err)
+	}
 	if strings.EqualFold(backendType, "roslyn") && shouldSuggestWorkerInstall(err) {
 		return warning + ". Run `mi-lsp worker install` to refresh the bundled/global worker."
 	}

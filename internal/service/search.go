@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -329,4 +330,168 @@ func searchPatternGo(ctx context.Context, root string, pattern string, useRegex 
 
 func looksRegexLikePattern(pattern string) bool {
 	return strings.ContainsAny(pattern, "|()[]{}+?^\\")
+}
+
+func classifySearchRuntimeFailure(err error) string {
+	if err == nil {
+		return ""
+	}
+	message := strings.ToLower(strings.TrimSpace(err.Error()))
+	switch {
+	case strings.Contains(message, "access is denied") ||
+		strings.Contains(message, "acceso denegado") ||
+		strings.Contains(message, "permission denied"):
+		return "process_spawn_access_denied"
+	case strings.Contains(message, "createprocess") ||
+		strings.Contains(message, "fork/exec") ||
+		strings.Contains(message, "exec:") ||
+		strings.Contains(message, "failed to start") ||
+		strings.Contains(message, "invalid image"):
+		return "process_spawn_failed"
+	default:
+		return ""
+	}
+}
+
+var searchIdentifierPattern = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)?$`)
+
+func isIdentifierLikeQuery(pattern string) bool {
+	trimmed := strings.TrimSpace(pattern)
+	if len(trimmed) < 3 || strings.ContainsAny(trimmed, " \t\r\n/-") {
+		return false
+	}
+	if !searchIdentifierPattern.MatchString(trimmed) {
+		return false
+	}
+	if intentSymbolPattern.MatchString(trimmed) {
+		return true
+	}
+	return strings.Contains(trimmed, "_") || strings.Contains(trimmed, ".") || hasCamelHump(trimmed)
+}
+
+func hasCamelHump(value string) bool {
+	prevLower := false
+	for _, r := range value {
+		if r >= 'a' && r <= 'z' {
+			prevLower = true
+			continue
+		}
+		if prevLower && r >= 'A' && r <= 'Z' {
+			return true
+		}
+		prevLower = false
+	}
+	return false
+}
+
+func rankIdentifierSearchItems(pattern string, items []map[string]any) {
+	type rankedItem struct {
+		item  map[string]any
+		score int
+		index int
+	}
+	ranked := make([]rankedItem, len(items))
+	for i, item := range items {
+		ranked[i] = rankedItem{item: item, score: identifierSearchScore(pattern, item), index: i}
+	}
+	sort.SliceStable(ranked, func(i, j int) bool {
+		if ranked[i].score == ranked[j].score {
+			return ranked[i].index < ranked[j].index
+		}
+		return ranked[i].score > ranked[j].score
+	})
+	for i, rankedItem := range ranked {
+		items[i] = rankedItem.item
+	}
+}
+
+func identifierSearchScore(pattern string, item map[string]any) int {
+	file := strings.ToLower(filepath.ToSlash(stringFromMap(item, "file")))
+	text := strings.TrimSpace(stringFromMap(item, "text"))
+	textLower := strings.ToLower(text)
+	patternLower := strings.ToLower(pattern)
+	score := 0
+
+	if isSourceSearchPath(file) {
+		score += 200
+	}
+	if isIdentifierDeclaration(pattern, text) {
+		score += 300
+	}
+	base := strings.TrimSuffix(strings.ToLower(filepath.Base(file)), strings.ToLower(filepath.Ext(file)))
+	if base == patternLower {
+		score += 240
+	}
+	if strings.Contains(textLower, patternLower) {
+		score += 80
+	}
+	if strings.Contains(file, patternLower) {
+		score += 40
+	}
+	if isDocumentationSearchPath(file) {
+		score -= 180
+	}
+	if isTestSearchPath(file) {
+		score -= 90
+	}
+	if isBackupOrGeneratedSearchPath(file) {
+		score -= 800
+	}
+	return score
+}
+
+func stringFromMap(item map[string]any, key string) string {
+	value, _ := item[key].(string)
+	return strings.TrimSpace(value)
+}
+
+func isIdentifierDeclaration(pattern string, text string) bool {
+	quoted := regexp.QuoteMeta(pattern)
+	declaration := regexp.MustCompile(`(?i)\b(interface|class|struct|record|enum|type|func|function|const|let|var)\s+` + quoted + `\b`)
+	if declaration.MatchString(text) {
+		return true
+	}
+	implementation := regexp.MustCompile(`(?i)\b(class|struct|record|type)\s+[A-Za-z_][A-Za-z0-9_]*\s*[:=]\s*.*\b` + quoted + `\b`)
+	return implementation.MatchString(text)
+}
+
+func isSourceSearchPath(path string) bool {
+	switch strings.ToLower(filepath.Ext(path)) {
+	case ".cs", ".ts", ".tsx", ".js", ".jsx", ".mts", ".cts", ".py", ".pyi", ".go":
+		return true
+	default:
+		return false
+	}
+}
+
+func isDocumentationSearchPath(path string) bool {
+	return strings.HasPrefix(path, ".docs/") ||
+		strings.HasPrefix(path, "docs/") ||
+		strings.HasSuffix(path, ".md") ||
+		strings.Contains(path, "/docs/")
+}
+
+func isTestSearchPath(path string) bool {
+	base := strings.ToLower(filepath.Base(path))
+	return strings.Contains(path, "/test/") ||
+		strings.Contains(path, "/tests/") ||
+		strings.Contains(path, ".tests/") ||
+		strings.Contains(base, "_test.") ||
+		strings.Contains(base, ".test.") ||
+		strings.Contains(base, "test")
+}
+
+func isBackupOrGeneratedSearchPath(path string) bool {
+	base := strings.ToLower(filepath.Base(path))
+	return strings.Contains(path, "/bin/") ||
+		strings.Contains(path, "/obj/") ||
+		strings.Contains(path, "/dist/") ||
+		strings.Contains(path, "/build/") ||
+		strings.Contains(path, "/generated/") ||
+		strings.Contains(path, "/node_modules/") ||
+		strings.Contains(path, "/.next/") ||
+		strings.Contains(base, ".generated.") ||
+		strings.Contains(base, ".g.") ||
+		strings.Contains(base, ".bak") ||
+		strings.Contains(base, "backup")
 }

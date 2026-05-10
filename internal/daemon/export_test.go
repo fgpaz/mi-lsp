@@ -179,6 +179,37 @@ func TestRenderCSV(t *testing.T) {
 	}
 }
 
+func TestRenderTOON(t *testing.T) {
+	events := []model.AccessEvent{
+		{ID: 1, OccurredAt: time.Date(2026, 3, 18, 10, 0, 0, 0, time.UTC), Workspace: "test", WorkspaceRoot: "C:/repos/mios/test", WorkspaceAlias: "test", WorkspaceInput: "test", Operation: "nav.search", Backend: "text", Route: "direct", Format: "toon", Success: true, LatencyMs: 42, WarningCount: 1, PatternMode: "literal", RoutingOutcome: "direct", FailureStage: "none", HintCode: "symbol_query_detected", DecisionJSON: `{"pattern_len":13}`},
+	}
+	rendered, err := RenderTOON(events)
+	if err != nil {
+		t.Fatalf("RenderTOON: %v", err)
+	}
+	for _, expected := range []string{"backend: admin-export", "items[1]", "operation", "nav.search", "hint_code", "symbol_query_detected", "decision_json"} {
+		if !strings.Contains(rendered, expected) {
+			t.Fatalf("TOON export missing %q:\n%s", expected, rendered)
+		}
+	}
+}
+
+func TestRenderSummaryTOON(t *testing.T) {
+	summary := ComputeExportSummary([]model.AccessEvent{
+		{ID: 1, OccurredAt: time.Date(2026, 3, 18, 10, 0, 0, 0, time.UTC), Workspace: "test", WorkspaceRoot: "C:/repos/mios/test", WorkspaceAlias: "test", Operation: "nav.context", Backend: "catalog", Success: true, LatencyMs: 25, FailureStage: "backend_runtime", HintCode: "process_spawn_access_denied"},
+	})
+	summary.WindowLabel = "recent (24h)"
+	rendered, err := RenderSummaryTOON(summary)
+	if err != nil {
+		t.Fatalf("RenderSummaryTOON: %v", err)
+	}
+	for _, expected := range []string{"backend: admin-export-summary", "total_ops: 1", "recent (24h)", "process_spawn_access_denied"} {
+		if !strings.Contains(rendered, expected) {
+			t.Fatalf("TOON summary missing %q:\n%s", expected, rendered)
+		}
+	}
+}
+
 func TestPercentile(t *testing.T) {
 	sorted := []int64{10, 20, 30, 40, 50, 60, 70, 80, 90, 100}
 	p50 := percentile(sorted, 0.50)

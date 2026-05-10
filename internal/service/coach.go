@@ -17,6 +17,7 @@ const (
 	coachTriggerLowConfidence          = "low_confidence"
 	coachTriggerTextFallback           = "text_fallback"
 	coachTriggerScopeNarrowingAvailabe = "scope_narrowing_available"
+	coachTriggerSymbolQueryDetected    = "symbol_query_detected"
 )
 
 var coachSearchStopwords = map[string]struct{}{
@@ -30,7 +31,7 @@ func applyCoachPolicy(env model.Envelope, opts model.QueryOptions) model.Envelop
 	}
 	coach := *env.Coach
 	coach.Actions = trimSlice(coach.Actions, 2)
-	if isAXIPreview(opts) {
+	if isAXIPreview(opts) && coach.Trigger != coachTriggerSymbolQueryDetected {
 		coach.Actions = trimSlice(coach.Actions, 1)
 	}
 	if len(coach.Actions) == 0 {
@@ -77,6 +78,22 @@ func searchCommand(alias string, pattern string, includeContent bool, repo strin
 	return strings.Join(parts, " ")
 }
 
+func findExactCommand(alias string, pattern string, repo string) string {
+	parts := []string{"mi-lsp", "nav", "find", fmt.Sprintf("%q", pattern), "--workspace", alias, "--exact"}
+	if repo != "" {
+		parts = append(parts, "--repo", repo)
+	}
+	return strings.Join(parts, " ")
+}
+
+func relatedCommand(alias string, symbol string, repo string) string {
+	parts := []string{"mi-lsp", "nav", "related", fmt.Sprintf("%q", symbol), "--workspace", alias}
+	if repo != "" {
+		parts = append(parts, "--repo", repo)
+	}
+	return strings.Join(parts, " ")
+}
+
 func askCommand(alias string, question string, full bool) string {
 	parts := []string{"mi-lsp", "nav", "ask", fmt.Sprintf("%q", question), "--workspace", alias}
 	if full {
@@ -106,6 +123,18 @@ func buildSearchCoach(alias string, project model.ProjectFile, pattern string, i
 			Message: "The supplied regex was invalid, so mi-lsp retried the query as a literal search.",
 			Actions: []model.CoachAction{
 				coachAction("rerun", "Run as literal search", searchCommand(alias, pattern, includeContent, repoSelector, false, false)),
+			},
+		}
+	}
+
+	if !useRegex && isIdentifierLikeQuery(pattern) {
+		return &model.Coach{
+			Trigger:    coachTriggerSymbolQueryDetected,
+			Message:    "This looks like a symbol query; use catalog and semantic navigation before falling back to broad text search.",
+			Confidence: "high",
+			Actions: []model.CoachAction{
+				coachAction("rerun", "Find exact symbol", findExactCommand(alias, pattern, repoSelector)),
+				coachAction("related", "Inspect symbol neighborhood", relatedCommand(alias, pattern, repoSelector)),
 			},
 		}
 	}

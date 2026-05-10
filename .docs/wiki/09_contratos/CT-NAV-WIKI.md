@@ -168,6 +168,7 @@ Veredictos:
 - `nav wiki trace RS-*` devuelve identidad documental (`doc_id`, `layer=RS`, `stage=outcome`) y no rellena el campo legacy `rf`; `nav wiki trace --all` permanece RF-only.
 - `nav wiki validate-harness` aplica el gate de gobernanza, lee el docgraph existente, abre los markdown gobernados y valida YAML frontmatter o fenced YAML con `harness_protocol: SDD-HARNESS-v1`.
 - `nav wiki validate-harness` resuelve imports, evidencia y links Obsidian links Obsidian de ejemplo contra `DocRecord`, `doc_id`, exports y paths del workspace.
+- `nav wiki validate-harness` debe usar todo el docgraph gobernado para resolver referencias, aunque la validacion este acotada a contratos `SDD-HARNESS-v1`; si un record agregado apunta al mismo ID que un contrato canonico, el agregado no debe generar falso `missing contract`.
 - `nav wiki validate-source` aplica el gate de gobernanza, lee `doc_source_blocks`/`doc_source_records`, abre solo markdowns que declaran `SDD-WIKI-SOURCE-v1` y no bloquea el resto del corpus.
 - `nav wiki search <id>` resuelve coincidencias exactas en `doc_source_blocks.doc_id`, `doc_source_blocks.block_id` y `doc_source_records.record_id` antes del ranking textual.
 - `nav wiki search` debe exponer evidencia de linea cuando esta disponible: `line_start`/`line_end` en el item o rangos equivalentes dentro de `snippet/content`; los rangos deben apuntar al markdown canonico devuelto en `path`.

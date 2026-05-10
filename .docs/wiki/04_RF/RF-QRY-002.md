@@ -5,10 +5,17 @@ implements:
   - internal/cli/root.go
   - internal/daemon/server.go
   - internal/service/context.go
+  - internal/service/search.go
+  - internal/service/coach.go
+  - internal/service/semantic_errors.go
+  - internal/telemetry/access_events.go
+  - internal/telemetry/access_diagnostics.go
 tests:
   - internal/cli/root_test.go
   - internal/daemon/server_test.go
-  - internal/service/context_test.go
+  - internal/service/app_test.go
+  - internal/telemetry/access_events_test.go
+  - internal/cli/telemetry_test.go
 ---
 
 ```yaml
@@ -77,6 +84,8 @@ evidence:
 | `QRY_BACKEND_UNAVAILABLE` | no hay backend ejecutable | sin daemon y sin backend directo utilizable | abortar con warning/error explicito |
 | `QRY_PROTOCOL_MISMATCH` | handshake incompatible | CLI y daemon/worker difieren en protocolo | abortar con mensaje accionable |
 | `QRY_ROUTING_AMBIGUOUS` | selector insuficiente en `container` | simbolo o target coincide con varios repos | devolver candidatos y `next_hint` |
+| `process_spawn_access_denied` | runtime o herramienta externa no arranca por permisos | `CreateProcess`, `Access is denied`, `permission denied` | preservar fallback posible y registrar `backend_runtime` |
+| `process_spawn_failed` | runtime o herramienta externa no arranca por error de proceso | `fork/exec`, `failed to start`, imagen invalida | preservar fallback posible y registrar `backend_runtime` |
 
 ## 5. Special Cases and Variants
 
@@ -87,6 +96,9 @@ evidence:
 - Para archivos `.py`/`.pyi`, el routing resuelve a `pyright` si esta disponible; si no, degrada a `catalog`/`text` con warning explicito. El valor `--backend pyright` fuerza el uso de Pyright sin fallback automatico.
 - Para `nav context` sobre archivos no semanticos, el routing salta directo a `backend=text` y conserva el mismo envelope.
 - Para `nav context` sobre `ts/js`, el core prioriza `tsserver` pero debe conservar `slice_text` y degradar a `catalog` o `text` cuando `tsserver` no exista.
+- Para `nav context` sobre C#/TS/Python, el core es slice-first: si Roslyn/tsserver/Pyright fallan al arrancar por permisos o proceso bloqueado, devuelve `ok=true`, conserva `slice_text`, agrega warning tipado `backend_runtime/<code>` y registra `requested_backend`, `result_backend`, `backend_fallback_taken` y `runtime_error_code` en telemetria sanitizada.
+- Para `nav search`, si `rg` existe pero falla por permisos o arranque de proceso, el runtime debe degradar a busqueda Go nativa, emitir warning tipado `backend_runtime/<code>` y no exponer argv, payload ni contenido de archivos en `decision_json`.
+- Para queries symbol-like en `nav search` literal, el envelope puede emitir `coach.trigger=symbol_query_detected` con acciones hacia `nav find --exact` y `nav related`; esta guia complementa, no reemplaza, el resultado textual.
 
 ## 6. Data Model Impact
 

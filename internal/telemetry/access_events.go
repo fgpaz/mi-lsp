@@ -144,6 +144,18 @@ func ClassifyErrorInfo(backend string, errorText string, warnings []string) Erro
 	if message == "" {
 		return ErrorInfo{}
 	}
+	if strings.Contains(message, "process_spawn_access_denied") {
+		return ErrorInfo{Kind: "backend_runtime", Code: "process_spawn_access_denied"}
+	}
+	if strings.Contains(message, "process_spawn_failed") {
+		return ErrorInfo{Kind: "backend_runtime", Code: "process_spawn_failed"}
+	}
+	if isProcessSpawnAccessDeniedText(message) {
+		return ErrorInfo{Kind: "backend_runtime", Code: "process_spawn_access_denied"}
+	}
+	if isProcessSpawnFailureText(message) {
+		return ErrorInfo{Kind: "backend_runtime", Code: "process_spawn_failed"}
+	}
 	if backend == "roslyn" {
 		switch {
 		case strings.Contains(message, "global.json") || strings.Contains(message, "requested sdk version"):
@@ -162,6 +174,27 @@ func ClassifyErrorInfo(backend string, errorText string, warnings []string) Erro
 		return ErrorInfo{Kind: "backend_runtime", Code: backend + "_generic"}
 	}
 	return ErrorInfo{}
+}
+
+func isProcessSpawnAccessDeniedText(message string) bool {
+	if !strings.Contains(message, "access is denied") &&
+		!strings.Contains(message, "acceso denegado") &&
+		!strings.Contains(message, "permission denied") {
+		return false
+	}
+	return isProcessSpawnFailureText(message) ||
+		strings.Contains(message, "createprocess") ||
+		strings.Contains(message, "worker binary")
+}
+
+func isProcessSpawnFailureText(message string) bool {
+	return strings.Contains(message, "createprocess") ||
+		strings.Contains(message, "fork/exec") ||
+		strings.Contains(message, "exec:") ||
+		strings.Contains(message, "start process") ||
+		strings.Contains(message, "starting process") ||
+		strings.Contains(message, "failed to start") ||
+		strings.Contains(message, "worker binary")
 }
 
 func IsRoslynWorkerBootstrapText(text string) bool {

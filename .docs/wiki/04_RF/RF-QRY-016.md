@@ -7,6 +7,8 @@ implements:
   - internal/cli/axi_mode.go
   - internal/model/types.go
   - internal/service/app.go
+  - internal/service/coach.go
+  - internal/service/search.go
   - internal/service/harness_validate.go
   - internal/service/source_validate.go
   - internal/service/wiki_search.go
@@ -21,6 +23,7 @@ tests:
   - internal/cli/nav_test.go
   - internal/cli/root_test.go
   - internal/output/formatter_test.go
+  - internal/service/app_test.go
   - internal/service/harness_validate_test.go
   - internal/service/source_validate_test.go
   - internal/service/wiki_search_test.go
@@ -92,6 +95,8 @@ TP-QRY
 10. Ejecutar `mi-lsp nav wiki validate-source --workspace <alias>` como lectura directa que valida solo artefactos que declaran `wiki_source_protocol: SDD-WIKI-SOURCE-v1`
 11. Indexar bloques `toon` normativos y records referenciables en tablas typed (`doc_source_blocks`, `doc_source_records`) y emitir menciones compatibles para `source_protocol`, `doc_id`, `block_id`, `record_id`, imports y exports
 12. Resolver busquedas exactas por `doc_id`, `block_id` y `record_id` desde las tablas typed antes del ranking textual normal
+13. Para harnesses que consultan identificadores C#/TS/Python, la guia agent-first de busqueda debe recomendar `nav find --exact`, luego `nav related`, y recien despues `nav context` o `nav search` textual segun la evidencia disponible.
+14. Si `nav search` recibe un literal symbol-like, debe emitir `coach.trigger=symbol_query_detected` y priorizar declaraciones/implementaciones fuente antes que docs, tests, backups o generados, sin ocultar esos matches secundarios.
 
 ## Invariantes
 
@@ -101,6 +106,7 @@ TP-QRY
 - `--repo docs` no crea un repositorio documental virtual.
 - La salida debe ser util para agentes: cada candidato expone proximos comandos concretos.
 - La evidencia de linea es parte del contrato de navegacion: no debe inventarse y debe omitirse antes que apuntar a un rango incorrecto.
+- La guia para agentes no debe convertir `nav search` en unico siguiente paso cuando la query parece un identificador de codigo.
 - `governance_blocked=true` corta la busqueda normal.
 - `validate-harness` no crea un parser Markdown paralelo: reusa docgraph para inventario y abre los markdown gobernados solo para compilar contratos YAML.
 - `human` y `dual` pueden declarar `verify`, `stop_if` o `evidence` vacios como warning no bloqueante; `llm-first` y `unknown` no pueden pasar sin esos campos.

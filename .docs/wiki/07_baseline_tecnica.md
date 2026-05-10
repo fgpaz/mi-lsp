@@ -149,6 +149,7 @@ flowchart LR
 - `nav service` usa evidencia observable, no score fuerte de completitud.
 - `nav route` es la superficie publica de routing de bajo token: resuelve `anchor_doc + mini_pack_preview` con semantica fail-closed y canonical lane autoritativa. `nav ask` y `nav pack` reutilizan este motor internamente.
 - `nav.intent` es hibrido router-first: clasifica `mode=docs|code`, usa el scorer owner-aware en `docs` y conserva BM25 de simbolos en `code` sin mezclar ambos lanes en la misma lista.
+- Para harnesses/agentes, las consultas literal symbol-like deben seguir una escalera agent-first: `nav find --exact`, luego `nav related`, luego `nav context` con fallback `catalog`/`text --no-auto-daemon` si los backends semanticos son riesgosos. `nav search` queda disponible como evidencia textual, pero no debe ser el unico proximo paso cuando el input parece identificador de codigo.
 
 ## Busqueda: cadena de fallback
 
@@ -161,6 +162,8 @@ La busqueda textual implementa una cadena de fallback robusta:
 La cadena garantiza que la busqueda siempre funciona sin dependencias externas obligatorias.
 Si `rg` devuelve exit code `1` por ausencia de matches, el core lo normaliza a `items=[]` en vez de exponerlo como error.
 Si el usuario forza `--regex` y el patron es invalido, el core reintenta automaticamente como literal y devuelve warning visible.
+Si `rg` existe pero falla por permisos o arranque de proceso, el core cae a `searchPatternGo` y agrega warning tipado `backend_runtime/process_spawn_access_denied` o `backend_runtime/process_spawn_failed`; la telemetria solo guarda el codigo causal, no argv ni payloads crudos.
+Para patrones literal symbol-like, `nav search` emite `coach.trigger=symbol_query_detected` con acciones estructuradas hacia `nav find --exact` y `nav related`, y prioriza declaraciones/implementaciones fuente por encima de docs, tests, backups y generados.
 La exploracion de servicios y el fallback de `nav ask` reutilizan la misma cadena.
 
 ## Config y valores por defecto
@@ -195,9 +198,10 @@ El struct `internal/service/config.go` centraliza todos los valores hardcodeados
 - `decision_json` puede incluir solo metadata derivada de `continuation` y `memory_pointer` (`continuation_present`, `continuation_reason`, `continuation_op`, `memory_pointer_present`, `memory_stale`) y nunca el `why`, `query`, `handoff` ni comandos raw.
 - `decision_json` puede incluir ademas `doc_ranker` e `intent_mode` como metadata derivada de routing; nunca persiste el texto de la query, hints o comandos completos.
 - `decision_json` es compacto y sanitizado: solo guarda metadatos estructurados de debug (`pattern_len`, `pattern_has_spaces`, `pattern_regex_like`, `used_regex`, presencia/validez de selector, hints emitidos, fallback, source backend) y nunca persiste `pattern`, argv ni payload completo.
+- Para degradaciones de backend/runtime, `decision_json` puede incluir solo campos derivados (`requested_backend`, `result_backend`, `backend_fallback_taken`, `fallback_from`, `fallback_to`, `runtime_error_code`) y nunca paths, slices, errores raw ni contenido de archivos.
 - `result_count` cuenta los items realmente emitidos en el envelope final luego de truncation/limits; no debe leerse como alias de `Stats.Symbols`.
-- La taxonomia minima de errores tipados distingue al menos `sdk/*`, `worker_bootstrap/*` y `backend_runtime/*`.
-- Export: `mi-lsp admin export` soporta raw (json/csv/compact), `--summary` y el preset explicito `--recent` para la ultima ventana de 24h.
+- La taxonomia minima de errores tipados distingue al menos `sdk/*`, `worker_bootstrap/*` y `backend_runtime/*`, incluyendo `process_spawn_access_denied` y `process_spawn_failed`.
+- Export: `mi-lsp admin export` soporta raw (json/csv/compact/toon), `--summary` en formatos compact/json/toon y el preset explicito `--recent` para la ultima ventana de 24h.
 - Export raw filtra por `--operation`, `--session-id`, `--client-name`, `--route`, `--query-format`, `--truncated`, `--pattern-mode`, `--routing-outcome`, `--failure-stage` y `--hint-code` ademas de `--workspace`/`--backend`.
 - Export summary puede agregar breakdowns opcionales por `--by-route`, `--by-client`, `--by-hint` y `--by-failure-stage` sin cambiar la semantica base de la ventana.
 - `admin export --summary` debe agregar sobre toda la ventana filtrada por defecto; `--limit` solo acota el summary si el usuario lo pide explicitamente.

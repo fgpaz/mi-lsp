@@ -62,3 +62,4 @@ evidence:
 | TC-DAE-022 | positivo | RF-DAE-002 | entrypoints distintos del mismo root generan runtimes separados |
 | TC-DAE-023 | positivo | RF-DAE-002 | release smoke separa skipped de failed y reporta `unique_root_count`, `duplicate_root_count`, `aliases_per_root` |
 | TC-DAE-024 | negativo | RF-DAE-002 | `daemon perf-smoke` devuelve `ok=false` tipado si working set, private bytes o handles superan el umbral configurado |
+| TC-DAE-025 | positivo | RF-DAE-002 | `admin export --format toon` y `admin export --summary --format toon` serializan telemetria agent-readable sin payloads crudos |
