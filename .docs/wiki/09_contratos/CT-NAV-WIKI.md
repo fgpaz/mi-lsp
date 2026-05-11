@@ -8,6 +8,11 @@ audience: "llm-first"
 imports:
   - '[[00_gobierno_documental]]'
   - '[[CT-NAV-WIKI]]'
+  - '[[RF-WIKI-001]]'
+  - '[[RF-WIKI-002]]'
+  - '[[RF-WIKI-003]]'
+  - '[[RF-WIKI-004]]'
+  - '[[RF-WIKI-005]]'
 exports:
   - 'CT-NAV-WIKI'
 agent_must_read:
@@ -30,10 +35,11 @@ evidence:
 ## Invocacion
 
 ```
-mi-lsp nav wiki search <query> --workspace <alias> [--layer RS,RF,FL,TP,CT,TECH,DB] [--top N] [--offset N] [--include-content] [--format compact|json|text|toon|yaml]
-mi-lsp nav wiki route <task> --workspace <alias> [--full] [--format compact|json|text|toon|yaml]
-mi-lsp nav wiki pack <task> --workspace <alias> [--rf RF-*] [--fl FL-*] [--doc <path>] [--full] [--format compact|json|text|toon|yaml]
-mi-lsp nav wiki trace <DOC-ID|--all> --workspace <alias> [--summary] [--format compact|json|text|toon|yaml]
+mi-lsp nav wiki search <query> [--all-workspaces] --workspace <alias> [--layer RS,RF,FL,TP,CT,TECH,DB] [--top N] [--offset N] [--include-content] [--format compact|json|text|toon|yaml]
+mi-lsp nav wiki route <task> [--all-workspaces] --workspace <alias> [--full] [--format compact|json|text|toon|yaml]
+mi-lsp nav wiki pack <task> [--all-workspaces] --workspace <alias> [--rf RF-*] [--fl FL-*] [--doc <path>] [--full] [--format compact|json|text|toon|yaml]
+mi-lsp nav wiki trace <DOC-ID|--all> [--all-workspaces] --workspace <alias> [--summary] [--format compact|json|text|toon|yaml]
+mi-lsp nav wiki inventory [--all-workspaces] --workspace <alias> [--with-layer-counts] [--format compact|json|text|toon|yaml]
 mi-lsp nav wiki validate-harness --workspace <alias> [--format compact|json|text|toon|yaml]
 mi-lsp nav wiki validate-source --workspace <alias> [--format compact|json|text|toon|yaml]
 ```
@@ -41,6 +47,28 @@ mi-lsp nav wiki validate-source --workspace <alias> [--format compact|json|text|
 ## Semantica
 
 `nav wiki` es la puerta documental explicita para agentes. `wiki search` usa el docgraph repo-local y el scorer owner-aware para devolver candidatos wiki, mientras `wiki route`, `wiki pack` y `wiki trace` reutilizan la semantica y el shape de `nav route`, `nav pack` y `nav trace`. `wiki validate-harness` compila readiness de contratos `SDD-HARNESS-v1` sobre los docs gobernados. `wiki validate-source` compila readiness de artefactos que declaran `wiki_source_protocol: SDD-WIKI-SOURCE-v1`; los docs no migrados no son bloqueantes. `wiki search` acepta `RS` como layer outcome y `wiki trace` acepta `RS-*`, `RF-*`, `TP-*` y source IDs exactos; `--all` sigue recorriendo el set RF canonico, y cuando necesita fallback a disco debe priorizar las rutas gobernadas por `00`/`read-model` antes de caer a layouts legacy.
+
+## Envelope `--all-workspaces`
+
+```toon
+block_id: ct-nav-wiki-envelope-all-workspaces
+description: "Extensión envelope para queries cross-workspace"
+extra_item_fields:
+  workspace: "alias del workspace de origen (registry)"
+  host: "opcional vacío; Hermes lo setea al mergear cross-host"
+extra_stats:
+  workspaces_queried: "int >= 1; número total de workspaces iterados"
+  workspaces_failed: "array de {alias, reason}; workspaces que fallaron"
+  workspaces_count: "int; total aliases procesados exitosamente"
+  truncated_per_workspace: "bool; si al menos uno fue truncado"
+backward_compat: |
+  Cuando --all-workspaces=false (default), el envelope es idéntico al actual.
+  Los clientes legacy que ignoren los nuevos campos siguen recibiendo respuesta válida.
+semantics:
+  mergeable: true
+  precedence: "workspace-local primero; Hermes puede mergear order cross-host"
+  item_deduplication: "por doc_id + workspace; linaje preservado en why"
+```
 
 ## Envelope `wiki search`
 
@@ -88,6 +116,25 @@ mi-lsp nav wiki validate-source --workspace <alias> [--format compact|json|text|
 }
 ```
 
+## Contract `wiki search`
+
+```toon
+block_id: ct-nav-wiki-search-contract
+subcommand: "nav wiki search"
+flag_all_workspaces: optional, default false
+flags_preserved:
+  - "--layer RS,RF,FL,TP,CT,TECH,DB"
+  - "--top N"
+  - "--offset N"
+  - "--include-content"
+  - "--format compact|json|text|toon|yaml"
+envelope_extension: "ct-nav-wiki-envelope-all-workspaces"
+semantics: |
+  Sin --all-workspaces: busca en workspace específico (default actual).
+  Con --all-workspaces: itera todos los aliases registrados, ejecuta query en paralelo,
+  agrega workspace a cada item, mergea items, mantiene truncated_per_workspace.
+```
+
 ## Filtros de capa
 
 | Layer | Docs incluidos |
@@ -99,6 +146,60 @@ mi-lsp nav wiki validate-source --workspace <alias> [--format compact|json|text|
 | `TECH` | `07_*`, `07_tech/*`, `doc_id=TECH-*` |
 | `DB` | `08_*`, `08_db/*`, `doc_id=DB-*` |
 | `CT` | `09_*`, `09_contratos/*`, `doc_id=CT-*` |
+
+## Contract `wiki route`
+
+```toon
+block_id: ct-nav-wiki-route-contract
+subcommand: "nav wiki route"
+flag_all_workspaces: optional, default false
+flags_preserved:
+  - "--full"
+  - "--format compact|json|text|toon|yaml"
+envelope_extension: "ct-nav-wiki-envelope-all-workspaces"
+result_shape: "N mini-routes, uno por workspace; NO super-route mergeado"
+semantics: |
+  Con --all-workspaces, devuelve array de rutas documentales, cada una
+  con su workspace origen. No hay consolidación de campos; cada item preserva
+  su doc_id y layer originales.
+```
+
+## Contract `wiki pack`
+
+```toon
+block_id: ct-nav-wiki-pack-contract
+subcommand: "nav wiki pack"
+flag_all_workspaces: optional, default false
+flags_preserved:
+  - "--rf RF-*"
+  - "--fl FL-*"
+  - "--doc <path>"
+  - "--full"
+  - "--format compact|json|text|toon|yaml"
+envelope_extension: "ct-nav-wiki-envelope-all-workspaces"
+result_shape: "N mini-packs, uno por workspace; NO super-pack mergeado"
+semantics: |
+  Con --all-workspaces, devuelve array de reading packs, cada uno con su
+  workspace origen. Preserva independencia por workspace; cliente es responsable
+  de mergear si necesario.
+```
+
+## Contract `wiki trace`
+
+```toon
+block_id: ct-nav-wiki-trace-contract
+subcommand: "nav wiki trace"
+flag_all_workspaces: optional, default false
+flags_preserved:
+  - "--summary"
+  - "--format compact|json|text|toon|yaml"
+envelope_extension: "ct-nav-wiki-envelope-all-workspaces"
+semantics: |
+  Sin --all-workspaces: busca DOC-ID en workspace específico.
+  Con --all-workspaces: busca DOC-ID en todos los workspaces, agrega
+  workspace a cada resultado. Si DOC-ID existe en múltiples workspaces,
+  devuelve uno por workspace.
+```
 
 ## Envelope `wiki validate-harness`
 
@@ -176,9 +277,36 @@ Veredictos:
 - `nav wiki search|route|pack|trace` expone `lookup_status` de forma aditiva con `query`, `workspace`, `index_freshness`, `governance_sync`, `match_kind`, IDs exactos (`doc_id`, `block_id`, `record_id`), `path`, `layer`, `stage`, `rank_reason`, totales, razon y `next_hint` valido cuando la preview no muestra todo.
 - `match_kind` distingue `canonical_indexed_id`, `alias_read_model_routing`, `mentions_content_fallback`, `content_fallback` y `true_absence`; no debe reportar ausencia si encontro identidad canonica pero la traza downstream queda incompleta.
 
+## Contract `wiki inventory`
+
+```toon
+block_id: ct-nav-wiki-inventory-contract
+subcommand: "nav wiki inventory"
+flag_all_workspaces: optional, default true
+default_mode: light
+light_item_shape:
+  - alias
+  - root
+  - wiki_root
+  - governance_blocked
+  - docs_ready
+  - doc_count
+  - last_indexed_at
+extended_flag: "--with-layer-counts"
+extended_item_shape_adds:
+  - layers: "{RS, FL, RF, TP, TECH, DB, CT} con counts"
+envelope_extension: "ct-nav-wiki-envelope-all-workspaces"
+semantics: |
+  Subcomando NUEVO. Sin argumentos requeridos, por defecto itera --all-workspaces.
+  Light mode: listado simple de alias + metadata básica.
+  Con --with-layer-counts: expande cada item con layer-specific doc counts.
+  Úsease para auditoría de cobertura documental cross-workspace.
+```
+
 ## Estado
 
-implemented
+implemented (search, route, pack, trace, validate-harness, validate-source)
+new (inventory)
 
 ## RF asociado
 

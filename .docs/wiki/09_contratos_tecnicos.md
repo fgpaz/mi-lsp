@@ -136,7 +136,7 @@ El detalle por frontera vive en `09_contratos/`.
 - [CT-NAV-PACK.md](09_contratos/CT-NAV-PACK.md)
 - [CT-NAV-GOVERNANCE.md](09_contratos/CT-NAV-GOVERNANCE.md)
 - [CT-NAV-ROUTE.md](09_contratos/CT-NAV-ROUTE.md)
-- [CT-NAV-WIKI.md](09_contratos/CT-NAV-WIKI.md)
+- [CT-NAV-WIKI.md](09_contratos/CT-NAV-WIKI.md) — `search|route|pack|trace` con `--all-workspaces` e nuevo subcomando `inventory`
 
 ## Operaciones adicionales
 
