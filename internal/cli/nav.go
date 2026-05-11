@@ -620,11 +620,13 @@ pack for a reading pack, and trace for RS/RF/TP evidence links.`,
 	var packRF string
 	var packFL string
 	var packDoc string
+	var packAllWorkspaces bool
 	packCommand := &cobra.Command{
 		Use:   "pack <task>",
 		Short: "Build a governed wiki reading pack for a task",
 		Example: `  mi-lsp nav wiki pack "workflow con masterformularios" --workspace idp --format toon
-  mi-lsp nav wiki pack "indexing docs" --workspace mi-lsp --rf RF-IDX-001 --format toon`,
+  mi-lsp nav wiki pack "indexing docs" --workspace mi-lsp --rf RF-IDX-001 --format toon
+  mi-lsp nav wiki pack "governance" --all-workspaces --format toon`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if err := requireArgs(args, 1, "task"); err != nil {
 				return err
@@ -639,12 +641,16 @@ pack for a reading pack, and trace for RS/RF/TP evidence links.`,
 			if packDoc != "" {
 				payload["doc"] = packDoc
 			}
+			if packAllWorkspaces {
+				payload["all_workspaces"] = true
+			}
 			return state.executeOperation(cmd, "nav.pack", payload, true)
 		},
 	}
 	packCommand.Flags().StringVar(&packRF, "rf", "", "Requirement anchor to harden pack selection")
 	packCommand.Flags().StringVar(&packFL, "fl", "", "Flow anchor to harden pack selection")
 	packCommand.Flags().StringVar(&packDoc, "doc", "", "Document path anchor to harden pack selection")
+	packCommand.Flags().BoolVar(&packAllWorkspaces, "all-workspaces", false, "Build pack across all registered workspaces")
 
 	var traceAll bool
 	var traceSummary bool

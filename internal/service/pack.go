@@ -12,6 +12,7 @@ import (
 
 	"github.com/fgpaz/mi-lsp/internal/docgraph"
 	"github.com/fgpaz/mi-lsp/internal/model"
+	"github.com/fgpaz/mi-lsp/internal/nav"
 	"github.com/fgpaz/mi-lsp/internal/store"
 )
 
@@ -31,6 +32,12 @@ func (a *App) pack(ctx context.Context, request model.CommandRequest) (model.Env
 		return model.Envelope{}, err
 	} else if blockedEnv != nil {
 		return *blockedEnv, nil
+	}
+
+	// Check if --all-workspaces mode is requested
+	allWorkspaces, _ := request.Payload["all_workspaces"].(bool)
+	if allWorkspaces {
+		return a.wikiPackAllWorkspaces(ctx, request)
 	}
 
 	registration, _, err := a.resolveWorkspaceWithProject(request.Context.Workspace)
@@ -618,4 +625,221 @@ func containsAnyToken(value string, tokens []string) bool {
 		}
 	}
 	return false
+}
+
+// wikiPackAllWorkspaces handles --all-workspaces fan-out using FanOutWiki.
+func (a *App) wikiPackAllWorkspaces(ctx context.Context, request model.CommandRequest) (model.Envelope, error) {
+	task := strings.TrimSpace(firstNonEmpty(
+		stringPayload(request.Payload, "task"),
+		stringPayload(request.Payload, "question"),
+	))
+	if task == "" {
+		return model.Envelope{}, fmt.Errorf("task is required")
+	}
+
+	// Fan-out across workspaces
+	fanOutOpts := nav.WikiFanOutOptions{
+		Timeout: 0, // Use default (30s)
+		Parallel: 0, // Use default (4)
+	}
+
+	fanOutResult, err := nav.FanOutWiki(ctx, fanOutOpts, func(subCtx context.Context, ws model.WorkspaceRegistration) ([]any, map[string]any, error) {
+		// Query the doc index for this workspace
+		query := loadDocQueryContext(subCtx, ws, task)
+		defer query.Close()
+		if query.dbErr != nil {
+			return nil, map[string]any{}, query.dbErr
+		}
+
+		docs := query.docs
+		profile := query.profile
+		profileSource := query.profileSource
+		profileWarnings := query.profileWarnings
+
+		mode := "preview"
+		if request.Context.Full {
+			mode = "full"
+		}
+		result := model.PackResult{
+			Task:   task,
+			Mode:   mode,
+			Why:    []string{fmt.Sprintf("read_model=%s", profileSource)},
+			Docs:   []model.PackDoc{},
+			Family: "technical",
+			Workspace: ws.Name, // Add workspace label
+			Host:      "", // Add host label
+		}
+
+		warnings := append([]string{}, profileWarnings...)
+
+		if canonicalWikiExists(ws.Root) && !hasIndexedCanonicalDocs(docs) {
+			// Use Tier 1 canonical routing to produce a governed pack preview
+			canonical, tier1Why := docgraph.Tier1CanonicalRoute(task, profile, ws.Root)
+			tier1Docs := routeCanonicalToPackDocs(canonical)
+			if len(tier1Docs) > 0 {
+				result.Docs = tier1Docs
+				result.PrimaryDoc = canonical.AnchorDoc.Path
+				result.Why = append(result.Why, tier1Why...)
+				result.Why = append(result.Why, "tier1=canonical_fallback")
+			}
+			result.LookupStatus = packLookupStatus(subCtx, query, ws.Name, task, result)
+			hint := fmt.Sprintf("documentation index is empty; route resolved from governance. Rerun mi-lsp index --workspace %s for full pack", ws.Name)
+			warnings = appendStringIfMissing(warnings, hint)
+
+			itemsAny := []any{result}
+			stats := map[string]any{
+				"doc_count": len(result.Docs),
+				"tokens_est": estimatePackTokens(result),
+			}
+			return itemsAny, stats, nil
+		}
+
+		// Route core backbone (RF-QRY-015): resolve canonical anchor for this task
+		routeResult := query.canonicalRoute(request.Context, false)
+		hardAnchor, family := resolvePackAnchor(request.Payload, task, docs, query.docByPath, profile)
+		result.Family = family
+
+		// Inject route core anchor when no explicit override is present (--rf/--fl/--doc always wins)
+		if hardAnchor.DocPath == "" && hardAnchor.DocID == "" && routeResult.Canonical.AnchorDoc.Path != "" {
+			hardAnchor.DocPath = routeResult.Canonical.AnchorDoc.Path
+			result.Why = append(result.Why, "tier2=route_core")
+		}
+
+		primary, ok := selectPackPrimary(hardAnchor, docs, query.docByPath, query.ranked)
+		if !ok {
+			warnings = appendStringIfMissing(warnings, "no documentation pack candidates matched the task")
+			result.LookupStatus = packLookupStatus(subCtx, query, ws.Name, task, result)
+
+			itemsAny := []any{result}
+			stats := map[string]any{
+				"doc_count": len(result.Docs),
+				"tokens_est": estimatePackTokens(result),
+			}
+			return itemsAny, stats, nil
+		}
+		result.PrimaryDoc = primary.Path
+		result.Why = append(result.Why, "primary_doc="+primary.Path, "family="+family)
+
+		if isAXIPreview(request.Context) {
+			previewDocs := routeCanonicalToPackDocs(routeResult.Canonical)
+			if len(previewDocs) > 0 {
+				for i := range previewDocs {
+					if doc, ok := query.docByPath[previewDocs[i].Path]; ok {
+						targets, targetWarnings := packTargets(ws.Root, doc, task)
+						previewDocs[i].Targets = targets
+						warnings = append(warnings, targetWarnings...)
+					}
+				}
+				if hardAnchor.DocPath != "" || hardAnchor.DocID != "" {
+					var previewWarnings []string
+					previewDocs, previewWarnings = ensurePackAnchorFirst(ws.Root, task, primary, previewDocs, request.Context.Full)
+					warnings = append(warnings, previewWarnings...)
+				}
+				result.Docs = previewDocs
+				result.PrimaryDoc = primary.Path
+				result.Why = append(result.Why, "preview=route_core")
+				result.NextQueries = buildPackNextQueries(ws.Name, task, request.Context.Full, result.Docs)
+				result.LookupStatus = packLookupStatus(subCtx, query, ws.Name, task, result)
+
+				itemsAny := []any{result}
+				stats := map[string]any{
+					"doc_count": len(result.Docs),
+					"tokens_est": estimatePackTokens(result),
+				}
+				return itemsAny, stats, nil
+			}
+		}
+
+		packDocs, packWhy, packWarnings := buildReadingPack(subCtx, query.db, ws.Root, task, family, primary, docs, query.docByPath, query.ranked, profile, request.Context.Full, effectivePackDocsLimit(request.Context, profile))
+		packDocs, anchorWarnings := ensurePackAnchorFirst(ws.Root, task, primary, packDocs, request.Context.Full)
+		result.Docs = packDocs
+		result.Why = append(result.Why, packWhy...)
+		result.NextQueries = buildPackNextQueries(ws.Name, task, request.Context.Full, result.Docs)
+		result.LookupStatus = packLookupStatus(subCtx, query, ws.Name, task, result)
+		warnings = append(warnings, packWarnings...)
+		warnings = append(warnings, anchorWarnings...)
+
+		itemsAny := []any{result}
+		stats := map[string]any{
+			"doc_count": len(result.Docs),
+			"tokens_est": estimatePackTokens(result),
+		}
+		return itemsAny, stats, nil
+	})
+
+	if err != nil {
+		return model.Envelope{}, err
+	}
+
+	// Aggregate results from all workspaces
+	var allResults []model.PackResult
+	for _, wsResult := range fanOutResult.Items {
+		if wsResult.Err != nil {
+			// Skip workspaces with errors but continue with others
+			continue
+		}
+		for _, item := range wsResult.Items {
+			if packItem, ok := item.(model.PackResult); ok {
+				allResults = append(allResults, packItem)
+			}
+		}
+	}
+
+	// Build envelope with federated stats
+	warnings := []string{}
+	failureStrs := []string{}
+	if len(fanOutResult.WorkspacesFailed) > 0 {
+		for _, f := range fanOutResult.WorkspacesFailed {
+			failureStrs = append(failureStrs, fmt.Sprintf("%s: %s", f.Alias, f.Reason))
+		}
+		warnings = append(warnings, fmt.Sprintf("%d workspace(s) failed during pack", len(fanOutResult.WorkspacesFailed)))
+	}
+
+	totalTokens := 0
+	for _, result := range allResults {
+		totalTokens += estimatePackTokens(result)
+	}
+
+	stats := model.Stats{
+		Files:                 len(allResults),
+		WorkspacesQueried:     fanOutResult.WorkspacesQueried,
+		WorkspacesFailed:      failureStrs,
+		TruncatedPerWorkspace: fanOutResult.TruncatedPerWS,
+	}
+
+	hint := ""
+	if len(allResults) == 0 {
+		hint = "0 packs produced across workspaces; no matching documentation found or index unavailable"
+	}
+
+	// Convert results to []any for envelope
+	itemsAny := make([]any, len(allResults))
+	for i := range allResults {
+		itemsAny[i] = allResults[i]
+	}
+
+	env := model.Envelope{
+		Ok:        true,
+		Workspace: "all",
+		Backend:   "pack",
+		Items:     itemsAny,
+		Warnings:  warnings,
+		Hint:      hint,
+		Stats:     stats,
+	}
+	return env, nil
+}
+
+// estimatePackTokens estimates the token count for a pack result.
+func estimatePackTokens(result model.PackResult) int {
+	tokens := 0
+	// Task + family + why = ~50 tokens baseline
+	tokens += 50
+	// Each doc: title + doc_id + path + targets + slice ~200 tokens per doc
+	tokens += len(result.Docs) * 200
+	// Adjust for full vs preview mode
+	if result.Mode == "full" {
+		tokens += len(result.Docs) * 100
+	}
+	return tokens
 }

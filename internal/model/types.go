@@ -495,6 +495,8 @@ type PackResult struct {
 	Why          []string          `json:"why,omitempty"`
 	NextQueries  []string          `json:"next_queries,omitempty"`
 	LookupStatus *WikiLookupStatus `json:"lookup_status,omitempty"`
+	Workspace    string            `json:"workspace,omitempty"`
+	Host         string            `json:"host,omitempty"`
 }
 
 type WorkspaceRegistration struct {
