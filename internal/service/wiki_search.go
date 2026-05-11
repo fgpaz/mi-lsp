@@ -5,10 +5,12 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/fgpaz/mi-lsp/internal/docgraph"
 	"github.com/fgpaz/mi-lsp/internal/model"
+	"github.com/fgpaz/mi-lsp/internal/nav"
 	"github.com/fgpaz/mi-lsp/internal/store"
 )
 
@@ -17,6 +19,12 @@ func (a *App) wikiSearch(ctx context.Context, request model.CommandRequest) (mod
 		return model.Envelope{}, err
 	} else if blockedEnv != nil {
 		return *blockedEnv, nil
+	}
+
+	// Check if --all-workspaces mode is requested
+	allWorkspaces, _ := request.Payload["all_workspaces"].(bool)
+	if allWorkspaces {
+		return a.wikiSearchAllWorkspaces(ctx, request)
 	}
 
 	registration, _, err := a.resolveWorkspaceWithProject(request.Context.Workspace)
@@ -361,4 +369,184 @@ func readWikiSearchContent(root string, relPath string, maxChars int) string {
 		return text[:limit]
 	}
 	return text
+}
+
+// wikiSearchAllWorkspaces handles --all-workspaces fan-out using FanOutWiki.
+func (a *App) wikiSearchAllWorkspaces(ctx context.Context, request model.CommandRequest) (model.Envelope, error) {
+	queryText := strings.TrimSpace(firstNonEmpty(
+		stringPayload(request.Payload, "query"),
+		stringPayload(request.Payload, "pattern"),
+		stringPayload(request.Payload, "task"),
+	))
+	if queryText == "" {
+		return model.Envelope{}, fmt.Errorf("query is required")
+	}
+
+	// Extract search parameters from payload
+	layerFilterRaw := stringPayload(request.Payload, "layer")
+	layerFilter, _ := parseWikiLayerFilter(layerFilterRaw)
+	topGlobalFromPayload := intFromAny(request.Payload["top_global"], 50)
+	topGlobal := topGlobalFromPayload
+	if topGlobal <= 0 {
+		topGlobal = 50
+	}
+	searchTop := intFromAny(request.Payload["top"], 0)
+	searchOffset := intFromAny(request.Payload["offset"], 0)
+	includeContent, _ := request.Payload["include_content"].(bool)
+
+	// Fan-out across workspaces
+	fanOutOpts := nav.WikiFanOutOptions{
+		Timeout: 0, // Use default (30s)
+		Parallel: 0, // Use default (4)
+	}
+
+	fanOutResult, err := nav.FanOutWiki(ctx, fanOutOpts, func(subCtx context.Context, ws model.WorkspaceRegistration) ([]any, map[string]any, error) {
+		// Query the doc index for this workspace
+		query := loadDocQueryContext(subCtx, ws, queryText)
+		defer query.Close()
+		if query.dbErr != nil {
+			return nil, map[string]any{}, query.dbErr
+		}
+
+		if len(query.docs) == 0 {
+			return []any{}, map[string]any{}, nil
+		}
+
+		// Collect candidates for this workspace (reuse single-workspace logic)
+		candidates := make([]model.WikiSearchResult, 0)
+		seenPaths := map[string]struct{}{}
+		exactDocPaths := map[string]struct{}{}
+
+		// Exact matches
+		if exactDocs, err := store.FindDocRecordsBySourceID(subCtx, query.db, queryText); err == nil {
+			for _, doc := range exactDocs {
+				layer := wikiLayerForDoc(doc)
+				if len(layerFilter) > 0 {
+					if _, ok := layerFilter[layer]; !ok {
+						continue
+					}
+				}
+				item := wikiSearchResult(ws.Name, ws.Root, queryText, scoredDoc{record: doc, score: 1000, reason: []string{"source_id_exact"}}, layer, includeContent, request.Context.MaxChars)
+				item.Workspace = ws.Name // Add workspace label
+				item.Host = ""
+				candidates = append(candidates, item)
+				seenPaths[doc.Path] = struct{}{}
+				exactDocPaths[doc.Path] = struct{}{}
+				if len(candidates) >= searchTop || searchTop <= 0 && len(candidates) >= 10 {
+					break
+				}
+			}
+		}
+
+		// Ranked matches
+		skipped := 0
+		for _, candidate := range query.ranked {
+			if _, seen := seenPaths[candidate.record.Path]; seen {
+				continue
+			}
+			layer := wikiLayerForDoc(candidate.record)
+			if len(layerFilter) > 0 {
+				if _, ok := layerFilter[layer]; !ok {
+					continue
+				}
+			}
+			if skipped < searchOffset {
+				skipped++
+				continue
+			}
+			item := wikiSearchResult(ws.Name, ws.Root, queryText, candidate, layer, includeContent, request.Context.MaxChars)
+			item.Workspace = ws.Name // Add workspace label
+			item.Host = ""
+			candidates = append(candidates, item)
+			if (searchTop > 0 && len(candidates) >= searchTop) || (searchTop <= 0 && len(candidates) >= 10) {
+				break
+			}
+		}
+
+		// Convert candidates to []any
+		itemsAny := make([]any, len(candidates))
+		for i := range candidates {
+			itemsAny[i] = candidates[i]
+		}
+
+		stats := map[string]any{}
+		return itemsAny, stats, nil
+	})
+
+	if err != nil {
+		return model.Envelope{}, err
+	}
+
+	// Aggregate results from all workspaces
+	var allResults []model.WikiSearchResult
+	for _, wsResult := range fanOutResult.Items {
+		if wsResult.Err != nil {
+			// Skip workspaces with errors but continue with others
+			continue
+		}
+		for _, item := range wsResult.Items {
+			if wsItem, ok := item.(model.WikiSearchResult); ok {
+				allResults = append(allResults, wsItem)
+			}
+		}
+	}
+
+	// Sort by (score DESC, workspace ASC, doc_id ASC)
+	sort.Slice(allResults, func(i, j int) bool {
+		if allResults[i].Score != allResults[j].Score {
+			return allResults[i].Score > allResults[j].Score
+		}
+		if allResults[i].Workspace != allResults[j].Workspace {
+			return allResults[i].Workspace < allResults[j].Workspace
+		}
+		return allResults[i].DocID < allResults[j].DocID
+	})
+
+	// Truncate to topGlobal
+	if len(allResults) > topGlobal {
+		allResults = allResults[:topGlobal]
+	}
+
+	// Build envelope with federated stats
+	warnings := []string{}
+	failureStrs := []string{}
+	if len(fanOutResult.WorkspacesFailed) > 0 {
+		for _, f := range fanOutResult.WorkspacesFailed {
+			failureStrs = append(failureStrs, fmt.Sprintf("%s: %s", f.Alias, f.Reason))
+		}
+		warnings = append(warnings, fmt.Sprintf("%d workspace(s) failed during query", len(fanOutResult.WorkspacesFailed)))
+	}
+
+	stats := model.Stats{
+		Files:                 len(allResults),
+		WorkspacesQueried:     fanOutResult.WorkspacesQueried,
+		WorkspacesFailed:      failureStrs,
+		TruncatedPerWorkspace: fanOutResult.TruncatedPerWS,
+	}
+
+	hint := ""
+	if len(allResults) == 0 {
+		if len(layerFilter) > 0 {
+			hint = "0 wiki matches across workspaces for selected layers; broaden --layer or try nav wiki route"
+		} else {
+			hint = "0 wiki matches across workspaces; try a doc id like RS-*, RF-*, FL-*, CT-*, TECH-*, DB-*"
+		}
+	}
+
+	// Convert results to []any for envelope
+	itemsAny := make([]any, len(allResults))
+	for i := range allResults {
+		itemsAny[i] = allResults[i]
+	}
+
+	env := model.Envelope{
+		Ok:        true,
+		Workspace: "all",
+		Backend:   "wiki.search",
+		Items:     itemsAny,
+		Warnings:  warnings,
+		Hint:      hint,
+		Stats:     stats,
+	}
+	return env, nil
 }

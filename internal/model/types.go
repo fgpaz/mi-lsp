@@ -30,10 +30,13 @@ type QueryOptions struct {
 }
 
 type Stats struct {
-	Symbols        int   `json:"symbols,omitempty"`
-	Files          int   `json:"files,omitempty"`
-	Ms             int64 `json:"ms,omitempty"`
-	TokensEstimate int   `json:"tokens_est,omitempty"`
+	Symbols               int      `json:"symbols,omitempty"`
+	Files                 int      `json:"files,omitempty"`
+	Ms                    int64    `json:"ms,omitempty"`
+	TokensEstimate        int      `json:"tokens_est,omitempty"`
+	WorkspacesQueried     int      `json:"workspaces_queried,omitempty"`
+	WorkspacesFailed      []string `json:"workspaces_failed,omitempty"`
+	TruncatedPerWorkspace bool     `json:"truncated_per_workspace,omitempty"`
 }
 
 type CoachAction struct {
@@ -216,6 +219,8 @@ type WikiSearchResult struct {
 	Content      string            `json:"content,omitempty"`
 	NextQueries  []string          `json:"next_queries,omitempty"`
 	LookupStatus *WikiLookupStatus `json:"lookup_status,omitempty"`
+	Workspace    string            `json:"workspace,omitempty"`
+	Host         string            `json:"host,omitempty"`
 }
 
 type HarnessValidationResult struct {

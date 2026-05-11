@@ -557,11 +557,14 @@ pack for a reading pack, and trace for RS/RF/TP evidence links.`,
 	var searchTop int
 	var searchOffset int
 	var searchIncludeContent bool
+	var searchAllWorkspaces bool
+	var searchTopGlobal int
 	searchCommand := &cobra.Command{
 		Use:   "search <query>",
 		Short: "Search governed wiki docs by query and layer",
 		Example: `  mi-lsp nav wiki search "workflow masterformularios" --workspace idp --layer RS,RF,FL,CT,TP --format toon
-  mi-lsp nav wiki search "RF IDX" --workspace mi-lsp --include-content --format toon`,
+  mi-lsp nav wiki search "RF IDX" --workspace mi-lsp --include-content --format toon
+  mi-lsp nav wiki search "governance" --all-workspaces --format toon`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if err := requireArgs(args, 1, "query"); err != nil {
 				return err
@@ -579,6 +582,12 @@ pack for a reading pack, and trace for RS/RF/TP evidence links.`,
 			if searchIncludeContent {
 				payload["include_content"] = true
 			}
+			if searchAllWorkspaces {
+				payload["all_workspaces"] = true
+				if searchTopGlobal > 0 {
+					payload["top_global"] = searchTopGlobal
+				}
+			}
 			return state.executeOperation(cmd, "nav.wiki.search", payload, true)
 		},
 	}
@@ -586,6 +595,8 @@ pack for a reading pack, and trace for RS/RF/TP evidence links.`,
 	searchCommand.Flags().IntVar(&searchTop, "top", 0, "Maximum number of wiki docs to return")
 	searchCommand.Flags().IntVar(&searchOffset, "offset", 0, "Skip first N wiki docs")
 	searchCommand.Flags().BoolVar(&searchIncludeContent, "include-content", false, "Include markdown content for each wiki candidate")
+	searchCommand.Flags().BoolVar(&searchAllWorkspaces, "all-workspaces", false, "Search across all registered workspaces")
+	searchCommand.Flags().IntVar(&searchTopGlobal, "top-global", 50, "Maximum number of wiki docs to return globally when --all-workspaces is true")
 
 	routeCommand := &cobra.Command{
 		Use:     "route <task>",
