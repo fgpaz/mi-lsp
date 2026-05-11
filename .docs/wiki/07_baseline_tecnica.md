@@ -118,6 +118,7 @@ flowchart LR
 - La unidad de file watching es `workspace_root` canonico; aliases duplicados no crean watchers adicionales.
 - `watch_mode=lazy` es el default para proteger memoria/handles; `off` deshabilita watchers y `eager` es opt-in via CLI/env.
 - El daemon expone `daemon_process` y `watchers` en status/admin para presupuestos operativos (`working_set`, `private_bytes`, handles, threads, roots/dirs/eventos).
+- `daemon status` compara la metadata del ejecutable del daemon contra el CLI invocante (`path`, `size`, `mtime`, `sha256`) y advierte con `daemon restart` cuando la huella prueba build stale; el hash prevalece sobre diferencias de path para evitar falsos positivos en `go run`.
 - Requests pesadas daemon-aware se limitan con `MI_LSP_DAEMON_MAX_INFLIGHT` y devuelven `daemon/backpressure_busy` cuando se supera el limite.
 - SLO operativo local: `daemon perf-smoke` debe fallar con `ok=false` si working set, private bytes o handles superan los umbrales configurados; los defaults pueden ser conservadores y deben aparecer como presupuesto visible en el resultado.
 - La resolucion efectiva de workspace para queries usa la precedencia `--workspace explicito > workspace registrado cuyo root contiene caller_cwd > last_workspace`.
@@ -143,11 +144,11 @@ flowchart LR
 - `nav governance` es la superficie primaria de diagnostico del perfil efectivo, sync y blockers.
 - Aun con `read_model=default`, un workspace inicializado con docs minimas utiles bajo `.docs/wiki/07_*.md`, `.docs/wiki/08_*.md` o `.docs/wiki/09_*.md` debe poder resolver una respuesta docs-first razonable sin requerir `read-model.toml` custom.
 - La UI de gobernanza es unica, local a loopback y debe abrirse enfocando workspace, sin duplicar instancias.
-- C# profundo se resuelve con Roslyn; TS/JS discovery sigue existiendo aunque no haya backend semantico.
-- Go se detecta e indexa con un extractor AST nativo para que `mi-lsp` pueda navegar su propio codigo Go desde el catalogo repo-local, aun sin backend semantico externo.
+- C# profundo se resuelve con Roslyn; TS/JS, Python y Go tienen backends semanticos opcionales (`tsserver`, `pyright`, `gopls`) con fallback catalog/text.
+- Go se detecta e indexa con un extractor AST nativo para que `mi-lsp` pueda navegar su propio codigo Go desde el catalogo repo-local, aun sin `gopls`; cuando `gopls` existe, `nav context` y `nav refs` pueden enriquecer la respuesta via LSP.
 - Python se indexa con un extractor lexical acotado por lineas para mantener el catalogo repo-local cancelable; semantica profunda opcional via `pyright-langserver` cuando exista.
 - `nav context` es slice-first: el core arma un bloque legible por lineas y luego superpone enriquecimiento semantico o de catalogo cuando exista.
-- `nav service` usa evidencia observable, no score fuerte de completitud; cuando el catalogo bajo el path es mayoritariamente Go, perfila `go-package` y evita scans .NET que producirian falsos positivos desde fixtures o strings.
+- `nav service` usa evidencia observable, no score fuerte de completitud; cuando el catalogo bajo el path es mayoritariamente Go, perfila `go-package`, evita scans .NET y detecta evidencia Go acotada (`net/http`, routers tipo chi/gin/fiber, Cobra y workers) filtrando falsos positivos obvios de tests, fixtures y literales string/raw.
 - `nav route` es la superficie publica de routing de bajo token: resuelve `anchor_doc + mini_pack_preview` con semantica fail-closed y canonical lane autoritativa. `nav ask` y `nav pack` reutilizan este motor internamente.
 - `nav.intent` es hibrido router-first: clasifica `mode=docs|code`, usa el scorer owner-aware en `docs` y conserva BM25 de simbolos en `code` sin mezclar ambos lanes en la misma lista.
 - Para harnesses/agentes, las consultas literal symbol-like deben seguir una escalera agent-first: `nav find --exact`, luego `nav related`, luego `nav context` con fallback `catalog`/`text --no-auto-daemon` si los backends semanticos son riesgosos. `nav search` queda disponible como evidencia textual, pero no debe ser el unico proximo paso cuando el input parece identificador de codigo.
@@ -239,9 +240,9 @@ El struct `internal/service/config.go` centraliza todos los valores hardcodeados
 - `nav ask --all-workspaces` fan-out sobre workspaces registrados con un pool acotado de 4 workers y merge determinista por score.
 - `nav ask/search/find --all-workspaces` deben ignorar aliases stale con root inexistente y emitir un warning agregado que apunte a `workspace prune --stale --dry-run`, en vez de degradar cada fan-out con ruido repetido.
 - `nav.find`, `nav.symbols`, `nav.overview` y `nav.intent` aceptan `--offset` para paginacion cursor-like sobre queries SQL; `nav.search` queda fuera de ese contrato porque sigue siendo rg/text-backed.
-- `nav service` debe funcionar sin Roslyn y seguir entregando evidencia util incluso cuando el catalogo es parcial; para paquetes Go debe apoyarse en catalogo antes que en patrones textuales .NET.
-- `nav context` sobre archivos no semanticos no debe depender de Roslyn, `tsserver` ni Pyright.
-- Si `tsserver` o `pyright` ya fallaron por indisponibilidad en la misma sesion/runtime, el core puede entrar en cooldown corto y degradar directamente a catalog/text.
+- `nav service` debe funcionar sin Roslyn y seguir entregando evidencia util incluso cuando el catalogo es parcial; para paquetes Go debe apoyarse en catalogo antes que en patrones textuales .NET y solo luego sumar patrones Go language-aware.
+- `nav context` acepta `file line` y `file:line`; sobre archivos no semanticos no debe depender de Roslyn, `tsserver`, Pyright ni `gopls`.
+- Si `tsserver`, `pyright` o `gopls` ya fallaron por indisponibilidad en la misma sesion/runtime, el core puede entrar en cooldown corto y degradar directamente a catalog/text.
 
 ## Documentos detalle
 

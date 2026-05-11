@@ -1,0 +1,105 @@
+schema: mi-lsp-traceability-closure-v1
+task_slug: mi-lsp-next-wave
+closed_at: 2026-05-11T11:45:00-03:00
+session_contract_path: .docs/auditoria/2026-05-11-mi-lsp-next-wave/session-contract.yaml
+git_before:
+  branch: feature/daemon-go-ergonomics-wave
+  head_sha: b63b17493e54eee7fea41553360a7defc9dbda86
+  upstream: none
+  ahead_behind: not_applicable_no_upstream
+git_after:
+  branch: feature/daemon-go-ergonomics-wave
+  head_sha: b63b17493e54eee7fea41553360a7defc9dbda86
+  upstream: none
+  ahead_behind: not_applicable_no_upstream
+changed_paths:
+  tracked_scope:
+    - .docs/wiki/06_pruebas/TP-DAE.md
+    - .docs/wiki/06_pruebas/TP-QRY.md
+    - .docs/wiki/07_baseline_tecnica.md
+    - .docs/wiki/07_tech/TECH-SERVICE-EXPLORATION.md
+    - .docs/wiki/08_modelo_fisico_datos.md
+    - .docs/wiki/09_contratos/CT-CLI-DAEMON-ADMIN.md
+    - .docs/wiki/09_contratos_tecnicos.md
+    - internal/cli/**
+    - internal/daemon/server.go
+    - internal/model/**
+    - internal/service/**
+    - internal/store/**
+    - internal/worker/**
+    - skills/mi-lsp/**
+  untracked_scope:
+    - .docs/planificacion/2026-05-11-mi-lsp-next-wave-trazabilidad-auditoria.md
+    - .docs/auditoria/2026-05-11-mi-lsp-next-wave/**
+    - internal/model/runtime_info.go
+    - internal/model/runtime_info_test.go
+    - internal/worker/gopls.go
+    - internal/worker/gopls_test.go
+  forbidden_hits: []
+scope_verdict: PASS
+traceability_chains:
+  reviewed_anchors:
+    - RF-DAE-001
+    - RF-DAE-002
+    - RF-DAE-003
+    - RF-DAE-004
+    - RF-QRY-004
+    - RF-QRY-006
+    - RF-QRY-007
+    - RF-QRY-009
+    - TP-DAE
+    - TP-QRY
+    - TECH-SERVICE-EXPLORATION
+    - CT-CLI-DAEMON-ADMIN
+  updated_paths:
+    - .docs/wiki/06_pruebas/TP-DAE.md
+    - .docs/wiki/06_pruebas/TP-QRY.md
+    - .docs/wiki/07_baseline_tecnica.md
+    - .docs/wiki/07_tech/TECH-SERVICE-EXPLORATION.md
+    - .docs/wiki/08_modelo_fisico_datos.md
+    - .docs/wiki/09_contratos/CT-CLI-DAEMON-ADMIN.md
+    - .docs/wiki/09_contratos_tecnicos.md
+  missing_anchors: []
+runtime_sensitive:
+  value: true
+  evidence:
+    - C:\Users\fgpaz\bin\mi-lsp.exe daemon status --format toon
+    - C:\Users\fgpaz\bin\mi-lsp.exe worker status --format toon
+    - C:\Users\fgpaz\bin\mi-lsp.exe nav context internal/service/context.go:42 --workspace mi-lsp --format toon
+data_or_contract_sensitive:
+  value: true
+  rationale: "Daemon status envelope, runtime metadata, Go semantic fallback, CLI parsing, and SQLite access behavior changed."
+harness_verdict: PASS
+wiki_source_verdict: PASS
+board_sync:
+  touched_cards: not_applicable
+  sync: not_applicable
+pre_push_inputs:
+  issue_or_card: waiver_not_applicable
+  evidence_path: .docs/auditoria/2026-05-11-mi-lsp-next-wave/traceability-closure.yaml
+  expected_scope: daemon_go_ergonomics_skill_binary_distribution
+  session_contract_path: .docs/auditoria/2026-05-11-mi-lsp-next-wave/session-contract.yaml
+no_drift_snapshot:
+  commands:
+    - git -C C:\repos\mios\mi-lsp status --short --branch --untracked-files=all
+    - git -C C:\repos\buho\assets status --short --branch --untracked-files=all
+    - C:\Users\fgpaz\bin\mi-lsp.exe nav governance --workspace mi-lsp --format toon --max-chars 1600
+    - C:\Users\fgpaz\bin\mi-lsp.exe daemon status --format toon --max-chars 1600
+  result: "PASS after file write; governance sync remained in_sync, daemon status remained healthy, git diff --check returned only CRLF conversion warnings, and git status scope remained limited to the local work plus mirror skill changes. Note: .docs/auditoria/2026-05-11-mi-lsp-next-wave is ignored by /.docs/* unless force-added."
+external_distribution:
+  skill_global_sync: PASS
+  skill_mirror_sync: PASS
+  global_win_arm64_binary: C:\Users\fgpaz\bin\mi-lsp.exe
+  global_worker_win_arm64: C:\Users\fgpaz\.mi-lsp\workers\win-arm64\MiLsp.Worker.exe
+  mirror_win_x64_binary: C:\repos\buho\assets\skills\mi-lsp\bin\mi-lsp-win-x64.exe
+  mirror_linux_x64_binary: C:\repos\buho\assets\skills\mi-lsp\bin\mi-lsp-linux-x64
+  daemon_executable_sha256: 3628bc536b7af29946b2e46633d1cde78dc65ff9a76e00d486d1d0903e98d78f
+completion_handoff:
+  target_skill: finishing-a-development-branch
+  executable_disposition: hold
+  cleanup_policy: active-followup
+  blockers:
+    - work is local dirty and not committed
+    - no upstream configured for feature/daemon-go-ergonomics-wave
+    - C:\repos\buho\assets mirror has related dirty skill and binary changes
+final_closure_verdict: PASS_LOCAL_HOLD

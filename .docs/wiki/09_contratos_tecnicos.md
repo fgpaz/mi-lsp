@@ -120,8 +120,8 @@ El detalle por frontera vive en `09_contratos/`.
 - Las queries Roslyn deben resolver candidatos en orden `bundle -> installed -> dev-local` por presencia de archivos; el probe `status` queda reservado para `worker status` y diagnostico explicito.
 - Si el primer candidato Roslyn falla por bootstrap al arrancar, el caller puede reintentar una sola vez con el siguiente candidato determinista antes de devolver error accionable.
 - Si `tsserver` no existe, el sistema debe degradar a catalog/text con warning explicito.
-- Si `tsserver` o `pyright` estan en cooldown por fallas recientes de bootstrap, el contrato visible puede degradar directamente a catalog/text con warning explicito.
-- Si `pyright-langserver` no existe, el sistema debe degradar a catalog/text con warning explicito.
+- Si `tsserver`, `pyright` o `gopls` estan en cooldown por fallas recientes de bootstrap, el contrato visible puede degradar directamente a catalog/text con warning explicito.
+- Si `pyright-langserver` o `gopls` no existen, el sistema debe degradar a catalog/text con warning explicito.
 - Si `nav context` se ejecuta sobre un archivo no semantico, el sistema debe responder con `backend=text` sin pasar por workers.
 - Si `nav context` encuentra una falla de bootstrap Roslyn o de arranque de proceso/worker y el archivo existe, el sistema debe preservar `slice_text`, degradar a catalog/text cuando aplique y agregar warning accionable `backend_runtime/<code>` o el codigo bootstrap correspondiente.
 - El protocolo CLI-daemon debe rechazar versiones incompatibles tempranamente.
@@ -164,8 +164,8 @@ El detalle por frontera vive en `09_contratos/`.
 - `workspace doctor`: diagnostico no mutante de aliases con root compartido, worktrees con mismo `git common dir`, paths stale, shadowing de binario y sugerencias de comandos.
 - cuando `--workspace` se omite, `nav ask`, `nav pack`, `nav governance`, `workspace status` y las queries directas equivalentes resuelven primero contra `caller_cwd`; si no hay match, pueden usar `last_workspace` con warning visible. Si `--workspace <alias>` esta presente y el `caller_cwd` cae dentro de otro workspace registrado, el alias explicito gana y debe quedar warning visible.
 - `nav governance`: diagnostica perfil efectivo, sync, stale index y pasos de reparacion de gobernanza
-- `nav service`: resume evidencia observable de un servicio en un unico summary estructurado; si el catalogo del path es Go, devuelve `profile=go-package` y no ejecuta scans .NET de endpoints/event bus.
-- `nav context`: devuelve `slice_text` y metadatos opcionales de catalogo o backend semantico para la linea pedida; ante fallas runtime de worker/proceso conserva `slice_text`, degrada a catalog/text cuando sea posible y emite warning `backend_runtime/<code>`
+- `nav service`: resume evidencia observable de un servicio en un unico summary estructurado; si el catalogo del path es Go, devuelve `profile=go-package`, no ejecuta scans .NET de endpoints/event bus y puede detectar rutas Go (`net/http`, chi/gin/fiber-style), Cobra y workers.
+- `nav context`: acepta `nav context <file> <line>` y `nav context <file>:<line>`; devuelve `slice_text` y metadatos opcionales de catalogo o backend semantico para la linea pedida; ante fallas runtime de worker/proceso conserva `slice_text`, degrada a catalog/text cuando sea posible y emite warning `backend_runtime/<code>`
 - `nav.find|intent|symbols|overview`: lecturas SQL-backed repo-locales; aceptan `--offset` para pedir la pagina siguiente sin cambiar el envelope base. En workspaces `container`, `find/intent` aceptan `--repo` y el offset se aplica despues del filtro de repo.
 - `nav.search|outline|multi-read`: lecturas directas repo-locales sin contrato `--offset`; `search` sigue siendo text/rg-backed y puede exponer hints de refinamiento, pero no cursor SQL.
 - `worker install`: instala o refresca el worker por RID desde un bundle adjunto o, en desarrollo, desde `worker-dotnet/`

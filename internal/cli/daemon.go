@@ -49,7 +49,11 @@ and tsserver processes, reducing cold-start latency.`,
 				"already_running": stateBody.AlreadyRunning,
 				"state":           stateBody,
 			}}
-			return state.printEnvelope(model.Envelope{Ok: true, Backend: "daemon", Items: items}, state.queryOptions(cmd, "daemon.start", nil))
+			envelope := model.Envelope{Ok: true, Backend: "daemon", Items: items}
+			if warning := daemonRuntimeDriftWarning(stateBody); warning != "" {
+				envelope.Warnings = append(envelope.Warnings, warning)
+			}
+			return state.printEnvelope(envelope, state.queryOptions(cmd, "daemon.start", nil))
 		},
 	}
 	startCommand.Flags().StringVar(&idleTimeout, "idle-timeout", "30m", "Worker idle eviction timeout")
@@ -68,6 +72,7 @@ and tsserver processes, reducing cold-start latency.`,
 			if err != nil {
 				return daemon.BuildStatusError()
 			}
+			response = annotateDaemonRuntimeDrift(response)
 			return state.printEnvelope(response, state.queryOptions(cmd, "system.status", nil))
 		},
 	}
@@ -114,7 +119,11 @@ and tsserver processes, reducing cold-start latency.`,
 				"already_running": stateBody.AlreadyRunning,
 				"state":           stateBody,
 			}}
-			return state.printEnvelope(model.Envelope{Ok: true, Backend: "daemon", Items: items}, state.queryOptions(cmd, "daemon.restart", nil))
+			envelope := model.Envelope{Ok: true, Backend: "daemon", Items: items}
+			if warning := daemonRuntimeDriftWarning(stateBody); warning != "" {
+				envelope.Warnings = append(envelope.Warnings, warning)
+			}
+			return state.printEnvelope(envelope, state.queryOptions(cmd, "daemon.restart", nil))
 		},
 	}
 
@@ -263,6 +272,41 @@ and tsserver processes, reducing cold-start latency.`,
 
 	command.AddCommand(startCommand, statusCommand, stopCommand, restartCommand, serveCommand, debugStateCommand, openCommand, logsCommand, perfSmokeCommand)
 	return command
+}
+
+func annotateDaemonRuntimeDrift(envelope model.Envelope) model.Envelope {
+	state, ok := daemonStateFromEnvelope(envelope)
+	if !ok {
+		return envelope
+	}
+	if warning := daemonRuntimeDriftWarning(state); warning != "" {
+		envelope.Warnings = append(envelope.Warnings, warning)
+	}
+	return envelope
+}
+
+func daemonRuntimeDriftWarning(state model.DaemonState) string {
+	return model.DaemonStaleWarning(state, model.CurrentExecutableSnapshot())
+}
+
+func daemonStateFromEnvelope(envelope model.Envelope) (model.DaemonState, bool) {
+	body, err := json.Marshal(envelope.Items)
+	if err != nil {
+		return model.DaemonState{}, false
+	}
+	var decoded []map[string]any
+	if err := json.Unmarshal(body, &decoded); err != nil || len(decoded) == 0 {
+		return model.DaemonState{}, false
+	}
+	stateBody, err := json.Marshal(decoded[0]["state"])
+	if err != nil {
+		return model.DaemonState{}, false
+	}
+	var state model.DaemonState
+	if err := json.Unmarshal(stateBody, &state); err != nil {
+		return model.DaemonState{}, false
+	}
+	return state, true
 }
 
 func daemonOptions(watchMode string, maxWatchedRoots int, maxInflight int) (daemon.StartOptions, error) {

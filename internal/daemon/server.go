@@ -69,6 +69,7 @@ func NewServerWithOptions(repoRoot string, maxWorkers int, idleTimeout time.Dura
 			MaxInflight:     options.MaxInflight,
 		},
 	}
+	model.CurrentExecutableSnapshot().ApplyToDaemonState(&server.state)
 	server.app = service.New(repoRoot, manager)
 	admin, err := NewAdminServer(manager, telemetry, server.app, func() model.DaemonState { return server.state })
 	if err != nil {

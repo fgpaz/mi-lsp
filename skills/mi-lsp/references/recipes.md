@@ -19,18 +19,19 @@ If a later `nav search` returns prompts, audits, `.docs/raw`, or other support a
 
 ```powershell
 mi-lsp nav service <service-path> --workspace <alias> --format compact
-mi-lsp nav context <file> <line> --workspace <alias> --format compact
+mi-lsp nav context <file>:<line> --workspace <alias> --format compact
 mi-lsp nav search "IConsumer<|PublishAsync<" --workspace <alias> --format compact
 mi-lsp nav overview <service-path> --workspace <alias> --format compact
 ```
 
 Use this before claiming a service is incomplete.
+For Go packages, `nav service` reports `profile=go-package` and uses Go-aware evidence (`net/http`, router-style calls, Cobra, worker signals) instead of .NET-only endpoint/event patterns.
 
 ## Completeness check for `.NET` minimal APIs
 
 ```powershell
 mi-lsp nav service src/backend/<service> --workspace <alias> --format compact
-mi-lsp nav context src/backend/<service>/Program.cs <line> --workspace <alias> --format compact
+mi-lsp nav context src/backend/<service>/Program.cs:<line> --workspace <alias> --format compact
 mi-lsp nav search "Map(Get|Post|Put|Delete|Patch)" --workspace <alias> --format compact
 ```
 

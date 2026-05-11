@@ -147,6 +147,110 @@ func TestNavServiceGoPackageUsesCatalogProfile(t *testing.T) {
 	}
 }
 
+func TestNavServiceGoPackageDetectsGoHTTPAndCLIInfra(t *testing.T) {
+	ensureWritableTestHome(t)
+	root := t.TempDir()
+	name := "go-rich-service-" + filepath.Base(root)
+	writeWorkspaceFile(t, root, "cmd/api/main.go", strings.Join([]string{
+		"package main",
+		`import "net/http"`,
+		"func main() {",
+		`  http.HandleFunc("/health", health)`,
+		`  r.Get("/v1/things", listThings)`,
+		`  fake := ` + "`" + `r.Post("/not-real", ignored)` + "`",
+		`  _ = fake`,
+		`  http.ListenAndServe(":8080", nil)`,
+		"}",
+		"func health(w http.ResponseWriter, r *http.Request) {}",
+		"func listThings(w http.ResponseWriter, r *http.Request) {}",
+	}, "\n"))
+	writeWorkspaceFile(t, root, "cmd/admin/root.go", "package main\n\nvar rootCmd = &cobra.Command{Use: \"admin\"}\n")
+	writeWorkspaceFile(t, root, "cmd/api/routes_test.go", "package main\n\nfunc TestRoutes(t *testing.T) { r.Post(\"/fixture\", ignored) }\n")
+	writeWorkspaceFile(t, root, "cmd/api/detector_literals.go", strings.Join([]string{
+		"package main",
+		`var detectorRegex = ` + "`" + `fiber.New|cobra.Command|http.ListenAndServe` + "`",
+		`var detectorQuoted = "gin.Default chi.NewRouter go func for {"`,
+	}, "\n"))
+
+	project := model.ProjectFile{
+		Project: model.ProjectBlock{
+			Name:        name,
+			Kind:        model.WorkspaceKindSingle,
+			DefaultRepo: "main",
+			Languages:   []string{"go"},
+		},
+		Repos: []model.WorkspaceRepo{{
+			ID:        "main",
+			Name:      "main",
+			Root:      ".",
+			Languages: []string{"go"},
+		}},
+	}
+	if err := workspace.SaveProjectFile(root, project); err != nil {
+		t.Fatalf("SaveProjectFile: %v", err)
+	}
+	_, err := workspace.RegisterWorkspace(name, model.WorkspaceRegistration{
+		Name:      name,
+		Root:      root,
+		Languages: []string{"go"},
+		Kind:      model.WorkspaceKindSingle,
+	})
+	if err != nil {
+		t.Fatalf("RegisterWorkspace: %v", err)
+	}
+	t.Cleanup(func() { _ = workspace.RemoveWorkspace(name) })
+
+	db, err := store.Open(root)
+	if err != nil {
+		t.Fatalf("store.Open: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	files := []model.FileRecord{
+		{FilePath: "cmd/api/main.go", RepoID: "main", RepoName: "main", Language: "go"},
+		{FilePath: "cmd/admin/root.go", RepoID: "main", RepoName: "main", Language: "go"},
+		{FilePath: "cmd/api/routes_test.go", RepoID: "main", RepoName: "main", Language: "go"},
+	}
+	symbols := []model.SymbolRecord{
+		{FilePath: "cmd/api/main.go", RepoID: "main", RepoName: "main", Name: "main", Kind: "function", StartLine: 3, Language: "go"},
+		{FilePath: "cmd/api/main.go", RepoID: "main", RepoName: "main", Name: "health", Kind: "function", StartLine: 10, Language: "go"},
+		{FilePath: "cmd/api/main.go", RepoID: "main", RepoName: "main", Name: "listThings", Kind: "function", StartLine: 11, Language: "go"},
+		{FilePath: "cmd/admin/root.go", RepoID: "main", RepoName: "main", Name: "rootCmd", Kind: "var", StartLine: 3, Language: "go"},
+	}
+	if err := store.ReplaceCatalog(context.Background(), db, project, files, symbols); err != nil {
+		t.Fatalf("ReplaceCatalog: %v", err)
+	}
+
+	app := New(root, nil)
+	env, err := app.Execute(context.Background(), model.CommandRequest{
+		Operation: "nav.service",
+		Context:   model.QueryOptions{Workspace: name},
+		Payload:   map[string]any{"path": "cmd"},
+	})
+	if err != nil {
+		t.Fatalf("nav.service: %v", err)
+	}
+	items, ok := env.Items.([]model.ServiceSurfaceSummary)
+	if !ok || len(items) != 1 {
+		t.Fatalf("expected one service summary, got %#v", env.Items)
+	}
+	summary := items[0]
+	if summary.Profile != "go-package" {
+		t.Fatalf("Profile = %q, want go-package", summary.Profile)
+	}
+	if len(summary.HTTPEndpoints) != 2 {
+		t.Fatalf("expected two real Go endpoints, got %#v", summary.HTTPEndpoints)
+	}
+	if summary.Infrastructure["http_server"] != true {
+		t.Fatalf("expected http_server=true, got %#v", summary.Infrastructure)
+	}
+	if summary.Infrastructure["cli"] != "cobra" {
+		t.Fatalf("expected cobra CLI evidence, got %#v", summary.Infrastructure)
+	}
+	if _, ok := summary.Infrastructure["router"]; ok {
+		t.Fatalf("expected detector literals to be ignored as router evidence, got %#v", summary.Infrastructure)
+	}
+}
+
 func TestNavService_RejectsPathsOutsideWorkspace(t *testing.T) {
 	root, name := setupServiceExplorationWorkspace(t)
 	app := New(root, nil)

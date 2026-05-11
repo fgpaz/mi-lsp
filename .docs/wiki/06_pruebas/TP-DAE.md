@@ -56,6 +56,7 @@ evidence:
 | TC-DAE-016 | positivo | RF-DAE-002 | `worker status` servido por daemon conserva el contrato canonico del core y expone `active_workers` dentro del item diagnostico |
 | TC-DAE-017 | positivo | RF-DAE-004 | watcher lazy deduplica aliases del mismo root y respeta `max_watched_roots` con eviction LRU |
 | TC-DAE-018 | positivo | RF-DAE-002, RF-DAE-004 | `daemon status` y `/api/status` exponen `daemon_process` y `watchers` |
+| TC-DAE-018A | positivo | RF-DAE-002 | `TestDaemonStaleWarningWhenMetadataMissing` / `TestDaemonStaleWarningWhenExecutableHashDiffers` / `TestDaemonStaleWarningIgnoresDifferentPathForSameExecutableHash` / `TestDaemonStaleWarningWhenExecutableMTimeDiffers`: `daemon status` advierte cuando el daemon no reporta metadata de ejecutable o parece correr una build anterior al CLI, priorizando hash para no marcar stale por paths temporales equivalentes |
 | TC-DAE-019 | negativo | RF-DAE-002 | saturacion de requests daemon-aware devuelve `daemon/backpressure_busy` tipado sin bloquear `system.status` |
 | TC-DAE-020 | positivo | RF-DAE-002 | `daemon perf-smoke --callers 16` valida una instancia alcanzable y presupuestos de memoria/handles |
 | TC-DAE-021 | positivo | RF-DAE-002 | aliases distintos con mismo root/backend/entrypoint comparten `runtime_key` canonico |

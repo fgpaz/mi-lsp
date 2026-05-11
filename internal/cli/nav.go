@@ -273,18 +273,15 @@ Use --include-code-discovery to add code-based discovery hints.`,
 	var contextSolution string
 	var contextProject string
 	contextCommand := &cobra.Command{
-		Use:   "context <file> <line>",
+		Use:   "context <file> <line>|<file>:<line>",
 		Short: "Get semantic context for a source line",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if err := requireArgs(args, 2, "file and line"); err != nil {
-				return err
-			}
-			lineNumber, err := strconv.Atoi(args[1])
+			file, lineNumber, err := parseContextTarget(args)
 			if err != nil {
 				return err
 			}
 			payload := semanticPayload(contextRepo, contextEntrypoint, contextSolution, contextProject)
-			payload["file"] = args[0]
+			payload["file"] = file
 			payload["line"] = lineNumber
 			return state.executeOperation(cmd, "nav.context", payload, true)
 		},
@@ -507,6 +504,43 @@ func semanticPayload(repo string, entrypoint string, solution string, project st
 		payload["project_path"] = project
 	}
 	return payload
+}
+
+func parseContextTarget(args []string) (string, int, error) {
+	switch len(args) {
+	case 1:
+		file, lineText, ok := splitFileLineArg(args[0])
+		if !ok {
+			return "", 0, fmt.Errorf("file and line required; use `mi-lsp nav context <file> <line>` or `mi-lsp nav context <file>:<line>`")
+		}
+		line, err := strconv.Atoi(lineText)
+		if err != nil || line <= 0 {
+			return "", 0, fmt.Errorf("invalid file:line target %q; corrected form: `mi-lsp nav context %s <line>`", args[0], file)
+		}
+		return file, line, nil
+	case 2:
+		line, err := strconv.Atoi(args[1])
+		if err != nil || line <= 0 {
+			return "", 0, fmt.Errorf("invalid line %q; corrected form: `mi-lsp nav context %s <line>` or `mi-lsp nav context %s:<line>`", args[1], args[0], args[0])
+		}
+		return args[0], line, nil
+	default:
+		return "", 0, fmt.Errorf("file and line required; use `mi-lsp nav context <file> <line>` or `mi-lsp nav context <file>:<line>`")
+	}
+}
+
+func splitFileLineArg(arg string) (string, string, bool) {
+	trimmed := strings.TrimSpace(arg)
+	idx := strings.LastIndex(trimmed, ":")
+	if idx <= 0 || idx == len(trimmed)-1 {
+		return "", "", false
+	}
+	file := strings.TrimSpace(trimmed[:idx])
+	line := strings.TrimSpace(trimmed[idx+1:])
+	if file == "" || line == "" {
+		return "", "", false
+	}
+	return file, line, true
 }
 
 func newNavWikiCommand(state *rootState) *cobra.Command {

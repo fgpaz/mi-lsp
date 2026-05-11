@@ -58,6 +58,8 @@ func shouldCooldownSemanticBackend(backendType string, err error) bool {
 			strings.Contains(message, "no such file or directory")
 	case "pyright":
 		return strings.Contains(message, "pyright") && strings.Contains(message, "unavailable")
+	case "gopls":
+		return strings.Contains(message, "gopls") && strings.Contains(message, "unavailable")
 	default:
 		return false
 	}

@@ -100,6 +100,7 @@ La novedad de v1.3 es que el store repo-local persiste tambien el grafo document
 - `decision_json` puede incluir campos backend/fallback derivados (`requested_backend`, `result_backend`, `backend_fallback_taken`, `fallback_from`, `fallback_to`, `runtime_error_code`) para diagnostico de harnesses, pero nunca paths crudos, `slice_text`, errores raw de worker, query ni payload completo.
 - `daemon.db` usa WAL mode para manejar escrituras concurrentes (daemon + CLI directo).
 - `.mi-lsp/index.db` repo-local tambien usa WAL mode + `busy_timeout`, y las escrituras se serializan por workspace para evitar contencion entre watcher e index manual.
+- Las lecturas documentales criticas (`ListDocRecords`, `FindDocRecordsBySourceID`, `ListDocSourceBlocks`, `ListDocSourceRecords`, FTS doc search y helpers relacionados) aplican retry/backoff breve ante `database is locked` / `SQLITE_BUSY`; si el lock persiste, el error sigue visible.
 - Ante corrupcion de `index.db`, el runtime debe cuarentenar el archivo previo y reconstruir uno nuevo en el mismo workspace.
 - Auto-purge elimina eventos y runs con mas de 30 dias en startup de CLI y daemon.
 - La fila canonica de una request `route=daemon` la escribe el daemon.
@@ -119,6 +120,7 @@ La novedad de v1.3 es que el store repo-local persiste tambien el grafo document
 - `DocMentionsForPath(path)`: devuelve menciones a codigo o comandos derivadas de un documento.
 - `CountDocRecords()`: expone `doc_count` para `workspace status`.
 - `FindDocRecordsByMention(type, value)`: permite resolver IDs embebidos dentro de documentos agregados bajo `04_RF/`.
+- Las queries documentales anteriores deben preservar fallo visible si agotan el retry de lock; no deben ocultar corrupcion, SQL invalido ni errores permanentes como si fueran contencion transitoria.
 
 ### Transacciones
 

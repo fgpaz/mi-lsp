@@ -13,6 +13,8 @@ Use `nav wiki search` when the task is clearly about project docs, RS/RF/FL/TP/C
 Use `nav route` as the cheapest first orientation step — it resolves the canonical anchor doc from governance alone without touching the index.
 Use `nav ask` without `--axi` for richer orientation questions when you need evidence synthesis.
 Prefer `nav search --include-content` for implementation questions.
+Use `nav context <file>:<line>` when you already have a line target; the older `nav context <file> <line>` form remains valid.
+For Go files, `nav context` / `nav refs` may use optional `gopls`; if `gopls` is missing, treat the catalog/text fallback with install guidance as valid partial evidence.
 Treat `nav wiki search|route|pack|trace` as the canonical documentation surface.
 Treat `nav search` as a broad text surface: it may return canonical docs, but it may also return prompts, audits, `.docs/raw`, generated files, or other support artifacts.
 Do not decide documentation authority from `nav search` alone when a `nav wiki *` surface can answer the question.
@@ -290,6 +292,7 @@ mi-lsp workspace doctor --format toon
 ```
 
 If the release changes CLI/daemon telemetry or `admin export`, refresh the `mi-lsp` binary and restart the daemon before trusting new fields in `access_events`.
+If `daemon status` reports missing executable metadata, an `executable_sha256` mismatch, or stale-daemon guidance, rebuild/install the CLI and run `mi-lsp daemon restart` before trusting daemon-backed results.
 Only replace `workers/<rid>/` when the release notes say the worker changed.
 If you update the skill under `C:\\Users\\fgpaz\\.agents\\skills\\mi-lsp`, update the mirrored copy under `C:\\repos\\buho\\assets\\skills\\mi-lsp` in the same task and preserve the Windows architecture split (`global=win-arm64`, `mirror=win-x64`).
 
@@ -378,7 +381,7 @@ Use these commands first:
 - Search inside one repo of a container workspace: `mi-lsp nav search "forgot password" --workspace <alias> --repo web`
 - Understand a symbol in one call: `mi-lsp nav related MySymbol --workspace <alias> --format toon`
 - Orient in a new repo or parent folder: `mi-lsp nav workspace-map --workspace <alias> --axi`
-- Profile a service: `mi-lsp nav service <path> --workspace <alias> --format toon`
+- Profile a service: `mi-lsp nav service <path> --workspace <alias> --format toon` (`go-package` is language-aware Go evidence, not .NET evidence)
 - Inspect recent routing/search telemetry: `mi-lsp admin export --recent --summary --by-route --by-hint --by-failure-stage`
 - Expand repo-local reentry memory: `mi-lsp workspace status <alias> --full`
 - Batch mixed operations: `mi-lsp nav batch --workspace <alias> --format toon`
@@ -431,6 +434,7 @@ mi-lsp nav search "<text with spaces if needed>" --include-content --workspace <
 
 ```powershell
 mi-lsp nav refs <symbol> --workspace <alias> --backend roslyn --format toon
+mi-lsp nav context <file>:<line> --workspace <alias> --format toon
 mi-lsp nav context <file> <line> --workspace <alias> --backend roslyn --format toon
 mi-lsp nav related <symbol> --workspace <alias> --format toon
 ```

@@ -1,6 +1,9 @@
 package cli
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestNavCommandExposesRepoScopeFlags(t *testing.T) {
 	command := newNavCommand(&rootState{})
@@ -92,5 +95,35 @@ func TestNavCommandExposesWikiGroup(t *testing.T) {
 	}
 	if validateSource.Name() != "validate-source" {
 		t.Fatalf("wiki validate-source command name = %q, want validate-source", validateSource.Name())
+	}
+}
+
+func TestParseContextTargetAcceptsFileLineShorthand(t *testing.T) {
+	file, line, err := parseContextTarget([]string{"internal/service/context.go:42"})
+	if err != nil {
+		t.Fatalf("parseContextTarget: %v", err)
+	}
+	if file != "internal/service/context.go" || line != 42 {
+		t.Fatalf("got file=%q line=%d", file, line)
+	}
+}
+
+func TestParseContextTargetAcceptsWindowsFileLineShorthand(t *testing.T) {
+	file, line, err := parseContextTarget([]string{`C:\repos\mios\mi-lsp\internal\service\context.go:42`})
+	if err != nil {
+		t.Fatalf("parseContextTarget: %v", err)
+	}
+	if !strings.HasSuffix(file, `context.go`) || line != 42 {
+		t.Fatalf("got file=%q line=%d", file, line)
+	}
+}
+
+func TestParseContextTargetReturnsCorrectedCommandOnBadLine(t *testing.T) {
+	_, _, err := parseContextTarget([]string{"internal/service/context.go:not-a-line"})
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !strings.Contains(err.Error(), "corrected form") {
+		t.Fatalf("error = %q, want corrected command guidance", err.Error())
 	}
 }

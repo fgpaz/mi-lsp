@@ -116,6 +116,9 @@ func inferTelemetryBackend(request model.CommandRequest) string {
 		if isPythonTelemetryFile(file) {
 			return "pyright"
 		}
+		if isGoTelemetryFile(file) {
+			return "gopls"
+		}
 		if request.Operation == "nav.context" && !isSemanticTelemetryFile(file) {
 			return "text"
 		}
@@ -127,7 +130,7 @@ func inferTelemetryBackend(request model.CommandRequest) string {
 
 func isSemanticTelemetryFile(path string) bool {
 	switch strings.ToLower(filepath.Ext(path)) {
-	case ".cs", ".ts", ".tsx", ".js", ".jsx", ".mts", ".cts", ".py", ".pyi":
+	case ".cs", ".ts", ".tsx", ".js", ".jsx", ".mts", ".cts", ".py", ".pyi", ".go":
 		return true
 	default:
 		return false
@@ -146,6 +149,10 @@ func isTypeScriptTelemetryFile(path string) bool {
 func isPythonTelemetryFile(path string) bool {
 	ext := strings.ToLower(filepath.Ext(path))
 	return ext == ".py" || ext == ".pyi"
+}
+
+func isGoTelemetryFile(path string) bool {
+	return strings.EqualFold(filepath.Ext(path), ".go")
 }
 
 func firstNonEmpty(values ...string) string {

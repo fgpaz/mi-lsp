@@ -58,8 +58,11 @@ evidence:
 | TC-QRY-006 | negativo | RF-QRY-002 | falla cuando no existe backend ejecutable |
 | TC-QRY-007 | positivo | RF-QRY-002 | enruta `nav refs` sobre `.py` a pyright si esta disponible |
 | TC-QRY-008 | positivo | RF-QRY-002 | degrada a catalog/text con warning si pyright no esta instalado |
+| TC-QRY-008A | positivo | RF-QRY-002 | `TestNavContext_GoFileUsesGoplsBackend`: `nav context` sobre `.go` pide backend `gopls` y conserva `slice_text` enriquecido |
+| TC-QRY-008B | positivo | RF-QRY-002 | `TestNavContext_GoplsUnavailableFallsBackToSlice`: si `gopls` falta, `nav context` degrada a catalog/text con warning accionable |
 | TC-QRY-009 | positivo | RF-QRY-003 | resume endpoints, consumers, publishers, entidades e infraestructura de un servicio con evidencia estructurada |
 | TC-QRY-009A | positivo | RF-QRY-003 | `TestNavServiceGoPackageUsesCatalogProfile`: `nav service` perfila paquetes Go como `go-package` y evita falsos endpoints .NET desde fixtures o strings |
+| TC-QRY-009B | positivo | RF-QRY-003 | `TestNavServiceGoPackageDetectsGoHTTPAndCLIInfra`: `nav service` detecta endpoints Go reales, `http.ListenAndServe` y Cobra sin contar rutas dentro de raw strings |
 | TC-QRY-010 | positivo | RF-QRY-003 | oculta placeholders de arquetipo por default y los incluye con `--include-archetype` |
 | TC-QRY-011 | negativo | RF-QRY-003 | devuelve warning accionable si no hay catalogo util o no se encuentra evidencia suficiente bajo el path |
 | TC-QRY-012 | positivo | RF-QRY-002 | `nav context` sobre `ts/tsx` devuelve `slice_text` y warning si `tsserver` no esta disponible |
@@ -69,6 +72,7 @@ evidence:
 | TC-QRY-013D | positivo | RF-QRY-002, RF-QRY-016 | `nav search` symbol-like ordena declaraciones/implementaciones fuente antes que docs, tests, backups y generados |
 | TC-QRY-013E | positivo | RF-QRY-002 | `nav context` sobre C# conserva `slice_text` y degrada a catalog/text con warning `backend_runtime/process_spawn_access_denied` si Roslyn no arranca |
 | TC-QRY-013F | positivo | RF-QRY-002 | `nav search` cae a Go search con warning tipado si `rg` falla por permisos o arranque de proceso |
+| TC-QRY-013G | positivo | RF-QRY-002 | `TestParseContextTargetAcceptsFileLineShorthand`: `nav context` acepta `file.go:123` y devuelve guidance corregida si la linea es invalida |
 | TC-QRY-013A | positivo | RF-QRY-001 | `nav.search` agrega `coach.trigger=no_matches_refinable` cuando la query no matchea pero tiene rerun accionable |
 | TC-QRY-014 | positivo | RF-QRY-004 | lee multiples rangos en una sola invocacion con truncacion por presupuesto |
 | TC-QRY-015 | positivo | RF-QRY-004 | incluye numeros de linea en contenido leido |
@@ -146,6 +150,7 @@ evidence:
 | TC-QRY-076 | positivo | RF-QRY-016 | `TestNavAskRoutePackRepoCompatWarnings`: `nav ask|route|pack --repo docs` no falla y orienta a `nav wiki` |
 | TC-QRY-077 | positivo | RF-QRY-016 | `TestIndexWorkspaceDocsExtractsWikiSourceBlocksAndRecords`: docgraph extrae `doc_source_blocks`, `doc_source_records` y menciones compatibles desde fences `toon` declarados con `SDD-WIKI-SOURCE-v1` |
 | TC-QRY-078 | positivo | RF-QRY-016 | `TestReplaceDocsWithSources_RoundTrip`: SQLite persiste y resuelve source blocks/source records junto con `doc_records` |
+| TC-QRY-078A | positivo | RF-QRY-016 | `TestWithSQLiteReadRetryRetriesLockedErrors`: lecturas documentales reintentan locks SQLite breves y no reintentan errores permanentes |
 | TC-QRY-079 | positivo | RF-QRY-016 | `TestValidateSourceValidArtifact`: `nav wiki validate-source` devuelve `PASS` para artefacto fuente valido |
 | TC-QRY-080 | negativo | RF-QRY-016 | `TestValidateSourceMissingBlockIDBlocks`: `validate-source` bloquea fences `toon` normativos sin `block_id` |
 | TC-QRY-081 | negativo | RF-QRY-016 | `TestValidateSourceNormativeTableWithoutExceptionBlocks`: `validate-source` bloquea tablas Markdown normativas sin excepcion |

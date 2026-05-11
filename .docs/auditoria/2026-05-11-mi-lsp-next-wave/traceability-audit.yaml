@@ -1,0 +1,63 @@
+schema: mi-lsp-traceability-audit-v1
+task_slug: mi-lsp-next-wave
+audited_at: 2026-05-11T11:45:00-03:00
+session_contract_reviewed: .docs/auditoria/2026-05-11-mi-lsp-next-wave/session-contract.yaml
+closure_packet_reviewed: .docs/auditoria/2026-05-11-mi-lsp-next-wave/traceability-closure.yaml
+scope_audited:
+  - daemon stale detection
+  - optional Go semantic backend and fallback
+  - Go service exploration
+  - file:line context parsing
+  - SQLite retry/backoff
+  - skill and binary distribution
+findings: []
+harness_findings: []
+wiki_source_findings: []
+governance:
+  verdict: PASS
+  evidence: "nav governance reported blocked=false and sync=in_sync."
+technical_drift:
+  verdict: PASS
+  docs_reviewed:
+    - .docs/wiki/07_baseline_tecnica.md
+    - .docs/wiki/07_tech/TECH-SERVICE-EXPLORATION.md
+    - .docs/wiki/08_modelo_fisico_datos.md
+    - .docs/wiki/09_contratos_tecnicos.md
+    - .docs/wiki/09_contratos/CT-CLI-DAEMON-ADMIN.md
+  code_config_evidence:
+    - internal/cli/daemon.go
+    - internal/cli/nav.go
+    - internal/model/runtime_info.go
+    - internal/service/service_exploration.go
+    - internal/store/db.go
+    - internal/worker/gopls.go
+  runtime_evidence:
+    - daemon status from C:\Users\fgpaz\bin\mi-lsp.exe
+    - worker status from C:\Users\fgpaz\bin\mi-lsp.exe
+    - nav context file:line smoke from C:\Users\fgpaz\bin\mi-lsp.exe
+source_mirror_sync:
+  verdict: PASS
+  paths:
+    - C:\Users\fgpaz\.agents\skills\mi-lsp
+    - C:\repos\buho\assets\skills\mi-lsp
+  note: "Skill docs were copied from repo source and binary parity was verified for refreshed artifacts."
+branch_worktree_inventory:
+  current_branch: feature/daemon-go-ergonomics-wave
+  upstream: none
+  same_scope_unknown: []
+  other_worktrees:
+    - branch: feature/release-log-audit-hardening
+      path: C:\repos\mios\mi-lsp\.docs\temp\worktrees\release-log-audit-hardening
+      classification: hold
+    - branch: detached
+      path: C:\repos\mios\mi-lsp\.docs\temp\worktrees\workspace-execution-review
+      classification: hold
+post_audit_no_drift_gate: "PASS after file write; no governance, daemon, or scope drift detected. Audit files live under an ignored .docs/auditoria path unless force-added."
+pre_push_guard_readiness:
+  verdict: HOLD
+  reason: "Local update is verified, but no commit, no upstream branch, and no PR were created in this step."
+branch_disposition:
+  verdict: active-followup
+  cleanup_policy: active-followup
+  automatic_cleanup_handoff: held
+final_verdict: Approved with follow-ups

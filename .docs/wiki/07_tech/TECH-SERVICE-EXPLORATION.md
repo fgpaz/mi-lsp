@@ -36,7 +36,7 @@ Define el perfil tecnico de `nav service`: un agregador evidence-first que combi
 ## Owner and scope
 
 - Owner logico: Core runtime / Query layer
-- Scope: agregacion de evidencia, deteccion de placeholders, perfilado generico vs `.NET microservice`
+- Scope: agregacion de evidencia, deteccion de placeholders, perfilado generico vs `.NET microservice` vs `go-package`
 - Non-goals: score fuerte de completitud, auditoria funcional completa, dependencia de Roslyn
 
 ## Runtime contract
@@ -53,17 +53,18 @@ Define el perfil tecnico de `nav service`: un agregador evidence-first que combi
 ## Evidence families
 
 - `symbols`: conteo por kind observado en catalogo
-- `http_endpoints`: `MapGet|MapPost|MapPut|MapDelete|MapPatch`
+- `http_endpoints`: `.NET` `MapGet|MapPost|MapPut|MapDelete|MapPatch`; Go `net/http HandleFunc` y llamadas router-style `Get|Post|Put|Delete|Patch|HEAD|OPTIONS`
 - `event_consumers`: ocurrencias `IConsumer<...>`
 - `event_publishers`: ocurrencias `PublishAsync<...>` o `IPublishEndpoint`
 - `entities`: clases/records bajo `Domain/Entities` o `Domain/Models`
-- `infrastructure`: wiring como EventBus, Redis, Npgsql, SqlServer o InMemory
+- `infrastructure`: wiring como EventBus, Redis, Npgsql, SqlServer o InMemory; en Go, indicios acotados de router (`chi`, `gin`, `fiber`), `http.ListenAndServe`, `cobra.Command` y worker loops/goroutines
 - `archetype_matches`: placeholders detectados y filtrados por default
 
 ## Reliability posture
 
 - El output debe ser accionable pero no autoritativo sobre completitud.
 - Cuando el catalogo es insuficiente, el comando degrada a texto y emite warning.
+- Cuando el catalogo bajo el path es mayoritariamente Go, el comando evita patrones .NET y solo suma patrones Go language-aware; las coincidencias dentro de tests, fixtures y literales string/raw se filtran para reducir falsos positivos.
 - Cuando se detectan placeholders conocidos, deben quedar trazados en `archetype_matches`.
 - `--include-archetype` habilita reinsertar esa evidencia filtrada, no cambia el resto del contrato.
 

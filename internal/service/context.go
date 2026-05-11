@@ -129,12 +129,15 @@ func resolveContextBackendType(request model.CommandRequest) string {
 	if isPythonFile(file) {
 		return "pyright"
 	}
+	if isGoFile(file) {
+		return "gopls"
+	}
 	return "roslyn"
 }
 
 func isSemanticContextFile(path string) bool {
 	switch strings.ToLower(filepath.Ext(path)) {
-	case ".cs", ".ts", ".tsx", ".js", ".jsx", ".mts", ".cts", ".py", ".pyi":
+	case ".cs", ".ts", ".tsx", ".js", ".jsx", ".mts", ".cts", ".py", ".pyi", ".go":
 		return true
 	default:
 		return false

@@ -21,6 +21,8 @@ var (
 	endpointPattern  = regexp.MustCompile(`Map(Get|Post|Put|Delete|Patch)\s*\(\s*"([^"]+)"`)
 	consumerPattern  = regexp.MustCompile(`IConsumer<\s*([A-Za-z0-9_\.]+)\s*>`)
 	publisherPattern = regexp.MustCompile(`Publish(?:Async)?<\s*([A-Za-z0-9_\.]+)\s*>`)
+	goHandlePattern  = regexp.MustCompile(`\b(?:http\.)?HandleFunc\s*\(\s*"([^"]+)"`)
+	goMethodPattern  = regexp.MustCompile(`\.(GET|POST|PUT|DELETE|PATCH|HEAD|OPTIONS|Get|Post|Put|Delete|Patch|Head|Options)\s*\(\s*"([^"]+)"`)
 )
 
 func (a *App) serviceSummary(ctx context.Context, request model.CommandRequest) (model.Envelope, error) {
@@ -91,6 +93,8 @@ func (a *App) serviceSummary(ctx context.Context, request model.CommandRequest) 
 	consumerMatches := []map[string]any{}
 	publisherMatches := []map[string]any{}
 	infrastructureMatches := []map[string]any{}
+	goEndpointMatches := []map[string]any{}
+	goInfrastructureMatches := []map[string]any{}
 	if catalogLanguage != "go" {
 		var endpointErr error
 		endpointMatches, endpointErr = searchPatternScoped(ctx, registration.Root, absolutePath, project, `Map(Get|Post|Put|Delete|Patch)\s*\(`, true, serviceSearchLimit)
@@ -112,16 +116,32 @@ func (a *App) serviceSummary(ctx context.Context, request model.CommandRequest) 
 		if infraErr != nil {
 			warnings = append(warnings, fmt.Sprintf("infrastructure search failed: %v", infraErr))
 		}
+	} else {
+		var endpointErr error
+		goEndpointMatches, endpointErr = searchPatternScoped(ctx, registration.Root, absolutePath, project, `(?i)(http\.)?HandleFunc\s*\(|\.(GET|POST|PUT|DELETE|PATCH|HEAD|OPTIONS|Get|Post|Put|Delete|Patch|Head|Options)\s*\(`, true, serviceSearchLimit)
+		if endpointErr != nil {
+			warnings = append(warnings, fmt.Sprintf("go endpoint search failed: %v", endpointErr))
+		}
+		var infraErr error
+		goInfrastructureMatches, infraErr = searchPatternScoped(ctx, registration.Root, absolutePath, project, `chi\.NewRouter|gin\.Default|fiber\.New|cobra\.Command|http\.ListenAndServe|go func|for\s*\{`, true, serviceSearchLimit)
+		if infraErr != nil {
+			warnings = append(warnings, fmt.Sprintf("go infrastructure search failed: %v", infraErr))
+		}
 	}
 
-	if len(endpointMatches) > 0 || len(consumerMatches) > 0 || len(publisherMatches) > 0 || len(infrastructureMatches) > 0 {
+	if len(endpointMatches) > 0 || len(consumerMatches) > 0 || len(publisherMatches) > 0 || len(infrastructureMatches) > 0 || len(goEndpointMatches) > 0 || len(goInfrastructureMatches) > 0 {
 		sources = appendUnique(sources, "text")
 	}
 
-	summary.HTTPEndpoints = parseEndpointMatches(endpointMatches)
-	summary.EventConsumers = parseConsumerMatches(consumerMatches, includeArchetype, &summary.ArchetypeMatches)
-	summary.EventPublishers = parsePublisherMatches(publisherMatches)
-	summary.Infrastructure = detectInfrastructure(infrastructureMatches)
+	if catalogLanguage == "go" {
+		summary.HTTPEndpoints = parseGoEndpointMatches(goEndpointMatches)
+		summary.Infrastructure = detectGoInfrastructure(goInfrastructureMatches)
+	} else {
+		summary.HTTPEndpoints = parseEndpointMatches(endpointMatches)
+		summary.EventConsumers = parseConsumerMatches(consumerMatches, includeArchetype, &summary.ArchetypeMatches)
+		summary.EventPublishers = parsePublisherMatches(publisherMatches)
+		summary.Infrastructure = detectInfrastructure(infrastructureMatches)
+	}
 	summary.Profile = detectServiceProfile(summary, registration)
 	if catalogLanguage == "go" {
 		summary.Profile = "go-package"
@@ -228,6 +248,74 @@ func parseEndpointMatches(matches []map[string]any) []map[string]any {
 	return items
 }
 
+func parseGoEndpointMatches(matches []map[string]any) []map[string]any {
+	items := make([]map[string]any, 0, len(matches))
+	for _, match := range matches {
+		if serviceMatchFromTestFixture(match) {
+			continue
+		}
+		text, _ := match["text"].(string)
+		trimmed := strings.TrimSpace(text)
+		if strings.HasPrefix(trimmed, "//") || strings.HasPrefix(trimmed, "/*") {
+			continue
+		}
+		item := map[string]any{
+			"file": serviceMatchFile(match),
+			"line": match["line"],
+			"text": trimmed,
+		}
+		if parsed := goHandlePattern.FindStringSubmatch(text); len(parsed) == 2 {
+			if goMatchInsideLiteral(text, parsed[0]) {
+				continue
+			}
+			item["method"] = "ANY"
+			item["route"] = parsed[1]
+			item["framework"] = "net/http"
+			items = append(items, item)
+			continue
+		}
+		if parsed := goMethodPattern.FindStringSubmatch(text); len(parsed) == 3 {
+			if goMatchInsideLiteral(text, parsed[0]) {
+				continue
+			}
+			item["method"] = strings.ToUpper(parsed[1])
+			item["route"] = parsed[2]
+			item["framework"] = "go-router"
+			items = append(items, item)
+		}
+	}
+	sortMaps(items)
+	return items
+}
+
+func goMatchInsideLiteral(text string, match string) bool {
+	idx := strings.Index(text, match)
+	if idx <= 0 {
+		return false
+	}
+	prefix := text[:idx]
+	return strings.Count(prefix, "`")%2 == 1 || countUnescapedDoubleQuotes(prefix)%2 == 1
+}
+
+func countUnescapedDoubleQuotes(text string) int {
+	count := 0
+	escaped := false
+	for _, char := range text {
+		if escaped {
+			escaped = false
+			continue
+		}
+		if char == '\\' {
+			escaped = true
+			continue
+		}
+		if char == '"' {
+			count++
+		}
+	}
+	return count
+}
+
 func parseConsumerMatches(matches []map[string]any, includeArchetype bool, archetypeMatches *[]string) []map[string]any {
 	items := make([]map[string]any, 0, len(matches))
 	for _, match := range matches {
@@ -293,6 +381,48 @@ func detectInfrastructure(matches []map[string]any) map[string]any {
 		}
 	}
 	return infrastructure
+}
+
+func detectGoInfrastructure(matches []map[string]any) map[string]any {
+	infrastructure := map[string]any{}
+	for _, match := range matches {
+		if serviceMatchFromTestFixture(match) {
+			continue
+		}
+		text, _ := match["text"].(string)
+		switch {
+		case strings.Contains(text, "chi.NewRouter") && !goMatchInsideLiteral(text, "chi.NewRouter"):
+			infrastructure["router"] = "chi"
+		case strings.Contains(text, "gin.Default") && !goMatchInsideLiteral(text, "gin.Default"):
+			infrastructure["router"] = "gin"
+		case strings.Contains(text, "fiber.New") && !goMatchInsideLiteral(text, "fiber.New"):
+			infrastructure["router"] = "fiber"
+		case strings.Contains(text, "http.ListenAndServe") && !goMatchInsideLiteral(text, "http.ListenAndServe"):
+			infrastructure["http_server"] = true
+		case strings.Contains(text, "cobra.Command") && !goMatchInsideLiteral(text, "cobra.Command"):
+			infrastructure["cli"] = "cobra"
+		case (strings.Contains(text, "go func") && !goMatchInsideLiteral(text, "go func")) ||
+			(strings.Contains(text, "for {") && !goMatchInsideLiteral(text, "for {")):
+			infrastructure["worker"] = true
+		}
+	}
+	return infrastructure
+}
+
+func serviceMatchFromTestFixture(match map[string]any) bool {
+	normalized := filepath.ToSlash(serviceMatchFile(match))
+	return strings.HasSuffix(normalized, "_test.go") ||
+		strings.Contains(normalized, "/testdata/") ||
+		strings.Contains(normalized, "/fixtures/")
+}
+
+func serviceMatchFile(match map[string]any) string {
+	for _, key := range []string{"file", "path", "f"} {
+		if value, ok := match[key].(string); ok && strings.TrimSpace(value) != "" {
+			return value
+		}
+	}
+	return ""
 }
 
 func detectServiceProfile(summary model.ServiceSurfaceSummary, registration model.WorkspaceRegistration) string {
