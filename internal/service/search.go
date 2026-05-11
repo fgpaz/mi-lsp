@@ -71,19 +71,31 @@ type searchMatch struct {
 	Text string
 }
 
+type searchPatternDiagnostics struct {
+	RipgrepFallbackCode string
+}
+
 func searchPattern(ctx context.Context, root string, project model.ProjectFile, pattern string, useRegex bool, limit int) ([]map[string]any, error) {
 	return searchPatternScoped(ctx, root, root, project, pattern, useRegex, limit)
 }
 
 func searchPatternScoped(ctx context.Context, workspaceRoot string, searchRoot string, project model.ProjectFile, pattern string, useRegex bool, limit int) ([]map[string]any, error) {
+	return searchPatternScopedWithDiagnostics(ctx, workspaceRoot, searchRoot, project, pattern, useRegex, limit, nil)
+}
+
+func searchPatternScopedWithDiagnostics(ctx context.Context, workspaceRoot string, searchRoot string, project model.ProjectFile, pattern string, useRegex bool, limit int, diagnostics *searchPatternDiagnostics) ([]map[string]any, error) {
 	rgBin := resolveRgBinary()
 	if rgBin != "" {
-		return searchPatternRg(ctx, workspaceRoot, searchRoot, project, pattern, useRegex, limit, rgBin)
+		return searchPatternRgWithDiagnostics(ctx, workspaceRoot, searchRoot, project, pattern, useRegex, limit, rgBin, diagnostics)
 	}
 	return searchPatternFallback(ctx, workspaceRoot, searchRoot, project, pattern, useRegex, limit)
 }
 
 func searchPatternRg(ctx context.Context, workspaceRoot string, searchRoot string, project model.ProjectFile, pattern string, useRegex bool, limit int, rgBin string) ([]map[string]any, error) {
+	return searchPatternRgWithDiagnostics(ctx, workspaceRoot, searchRoot, project, pattern, useRegex, limit, rgBin, nil)
+}
+
+func searchPatternRgWithDiagnostics(ctx context.Context, workspaceRoot string, searchRoot string, project model.ProjectFile, pattern string, useRegex bool, limit int, rgBin string, diagnostics *searchPatternDiagnostics) ([]map[string]any, error) {
 	if limit <= 0 {
 		limit = DefaultConfig().DefaultSearchLimit
 	}
@@ -103,6 +115,7 @@ func searchPatternRg(ctx context.Context, workspaceRoot string, searchRoot strin
 
 	if err := command.Start(); err != nil {
 		if isTransientRipgrepAccessError(err) {
+			recordRipgrepFallback(diagnostics, err)
 			return searchPatternFallback(ctx, workspaceRoot, searchRoot, project, pattern, useRegex, limit)
 		}
 		return nil, err
@@ -166,17 +179,31 @@ func searchPatternRg(ctx context.Context, workspaceRoot string, searchRoot strin
 			return nil, ctx.Err()
 		}
 		if msg := strings.TrimSpace(stderr.String()); msg != "" {
-			if isTransientRipgrepAccessError(fmt.Errorf("%w: %s", waitErr, msg)) {
+			combinedErr := fmt.Errorf("%w: %s", waitErr, msg)
+			if isTransientRipgrepAccessError(combinedErr) {
+				recordRipgrepFallback(diagnostics, combinedErr)
 				return searchPatternFallback(ctx, workspaceRoot, searchRoot, project, pattern, useRegex, limit)
 			}
 			return nil, fmt.Errorf("%w: %s", waitErr, msg)
 		}
 		if isTransientRipgrepAccessError(waitErr) {
+			recordRipgrepFallback(diagnostics, waitErr)
 			return searchPatternFallback(ctx, workspaceRoot, searchRoot, project, pattern, useRegex, limit)
 		}
 		return nil, waitErr
 	}
 	return items, nil
+}
+
+func recordRipgrepFallback(diagnostics *searchPatternDiagnostics, err error) {
+	if diagnostics == nil || diagnostics.RipgrepFallbackCode != "" {
+		return
+	}
+	if code := classifySearchRuntimeFailure(err); code != "" {
+		diagnostics.RipgrepFallbackCode = code
+		return
+	}
+	diagnostics.RipgrepFallbackCode = "process_spawn_failed"
 }
 
 func isTransientRipgrepAccessError(err error) bool {

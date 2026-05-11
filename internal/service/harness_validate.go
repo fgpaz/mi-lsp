@@ -122,6 +122,55 @@ func filterHarnessDocRecords(records []model.DocRecord, payload map[string]any) 
 	return uniqueHarnessDocRecords(filtered)
 }
 
+func preferCanonicalHarnessDocRecords(records []model.DocRecord) []model.DocRecord {
+	canonicalIDs := map[string]struct{}{}
+	for _, record := range records {
+		for _, id := range harnessRecordIdentityCandidates(record) {
+			if harnessRecordHasCanonicalIDPath(record, id) {
+				canonicalIDs[strings.ToLower(id)] = struct{}{}
+			}
+		}
+	}
+
+	filtered := make([]model.DocRecord, 0, len(records))
+	for _, record := range records {
+		skip := false
+		for _, id := range harnessRecordIdentityCandidates(record) {
+			if _, ok := canonicalIDs[strings.ToLower(id)]; ok && !harnessRecordHasCanonicalIDPath(record, id) {
+				skip = true
+				break
+			}
+		}
+		if !skip {
+			filtered = append(filtered, record)
+		}
+	}
+	return uniqueHarnessDocRecords(filtered)
+}
+
+func harnessRecordIdentityCandidates(record model.DocRecord) []string {
+	candidates := []string{
+		record.DocID,
+		record.Title,
+		strings.TrimSuffix(filepath.Base(filepath.ToSlash(record.Path)), ".md"),
+	}
+	seen := map[string]struct{}{}
+	filtered := make([]string, 0, len(candidates))
+	for _, candidate := range candidates {
+		candidate = strings.TrimSpace(candidate)
+		if candidate == "" {
+			continue
+		}
+		key := strings.ToLower(candidate)
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		filtered = append(filtered, candidate)
+	}
+	return filtered
+}
+
 func splitHarnessScopeValues(raw string) []string {
 	if strings.TrimSpace(raw) == "" {
 		return nil
@@ -320,7 +369,7 @@ func compileHarnessValidation(root string, docs []harnessDoc) model.HarnessValid
 			continue
 		}
 		if doc.contract == nil {
-			if _, covered := contractCoverage[normalizeHarnessRef(docLabel)]; covered {
+			if harnessDocCoveredByContractCoverage(doc.record, contractCoverage) {
 				continue
 			}
 			result.HarnessDocsMissingContract = append(result.HarnessDocsMissingContract, docLabel)
@@ -480,6 +529,15 @@ func buildHarnessContractCoverage(docs []harnessDoc) map[string]struct{} {
 		}
 	}
 	return covered
+}
+
+func harnessDocCoveredByContractCoverage(record model.DocRecord, coverage map[string]struct{}) bool {
+	for _, candidate := range harnessRecordIdentityCandidates(record) {
+		if _, covered := coverage[normalizeHarnessRef(candidate)]; covered {
+			return true
+		}
+	}
+	return false
 }
 
 func addHarnessIndexKey(index map[string]struct{}, value string) {

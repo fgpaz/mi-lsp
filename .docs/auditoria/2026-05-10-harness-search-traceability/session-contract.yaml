@@ -1,0 +1,89 @@
+task_slug: harness-search-traceability
+updated_at: "2026-05-11"
+mode: integrate-main
+repository:
+  path: C:\repos\mios\mi-lsp
+  workspace_alias: mi-lsp
+skills:
+  ps_contexto: executed
+  governance_gate: executed
+  brainstorming: executed_once
+  ps_trazabilidad: executed
+  ps_auditar_trazabilidad: executed
+issue_or_waiver:
+  type: waiver
+  reason: "No issue/card was provided; user explicitly requested closing drift and integrating to origin/main."
+base:
+  ref: origin/main
+  sha: 862212f9663e0f911c955ef029f4cc269054ba87
+branch:
+  name: closure/harness-search-traceability
+  pre_artifact_sha: 666c8dc05b47456fb0360e64be9913d265c08929
+  final_commit_sha: "self-referential; verify with `git rev-parse HEAD` after commit/amend"
+  upstream: none
+worktree:
+  path: C:\repos\mios\mi-lsp
+expected_scope:
+  summary: "Agent-first nav search, rg fallback diagnostics, harness canonical-record validation, daemon/admin telemetry export, and closure evidence."
+  integration_target: origin/main
+  non_goals:
+    - "No direct push to main unless final repository policy/PR tooling forces a documented fallback."
+    - "No shared skill edits."
+    - "No .docs/raw changes."
+sdd_anchors:
+  flows: [FL-QRY-01, FL-DAE-01]
+  requirements: [RF-QRY-002, RF-QRY-016, RF-DAE-002]
+  tests: [TP-QRY, TP-DAE]
+  technical: [TECH-WIKI-AWARE-SEARCH, TECH-DAEMON-GOBERNANZA]
+  data: [DB-STATE-Y-TELEMETRIA]
+  contracts: [CT-NAV-WIKI, CT-CLI-DAEMON-ADMIN]
+allowed_paths:
+  - .docs/wiki/04_RF/RF-DAE-002.md
+  - .docs/wiki/04_RF/RF-QRY-002.md
+  - .docs/wiki/04_RF/RF-QRY-016.md
+  - .docs/wiki/06_pruebas/TP-DAE.md
+  - .docs/wiki/06_pruebas/TP-QRY.md
+  - .docs/wiki/07_baseline_tecnica.md
+  - .docs/wiki/07_tech/TECH-DAEMON-GOBERNANZA.md
+  - .docs/wiki/08_db/DB-STATE-Y-TELEMETRIA.md
+  - .docs/wiki/08_modelo_fisico_datos.md
+  - .docs/wiki/09_contratos/CT-CLI-DAEMON-ADMIN.md
+  - .docs/wiki/09_contratos/CT-NAV-WIKI.md
+  - .docs/wiki/09_contratos_tecnicos.md
+  - internal/cli/admin.go
+  - internal/cli/telemetry_test.go
+  - internal/daemon/export.go
+  - internal/daemon/export_test.go
+  - internal/service/app.go
+  - internal/service/app_test.go
+  - internal/service/coach.go
+  - internal/service/harness_validate.go
+  - internal/service/harness_validate_test.go
+  - internal/service/search.go
+  - internal/service/semantic_errors.go
+  - internal/telemetry/access_diagnostics.go
+  - internal/telemetry/access_events.go
+  - internal/telemetry/access_events_test.go
+  - .docs/auditoria/2026-05-10-harness-search-traceability/**
+forbidden_paths:
+  - .docs/raw/**
+  - C:\Users\fgpaz\.agents\skills/**
+  - C:\repos\buho\assets\skills/**
+  - .mi-lsp/**
+  - secrets
+  - credentials
+required_evidence:
+  - "mi-lsp workspace status mi-lsp --format toon => PASS"
+  - "mi-lsp nav governance --workspace mi-lsp --format toon => PASS"
+  - "mi-lsp index --workspace mi-lsp --format toon => PASS"
+  - "go test ./... => PASS"
+  - "go run ./cmd/mi-lsp nav wiki validate-harness --workspace mi-lsp --format toon => PASS"
+  - "go run ./cmd/mi-lsp nav wiki validate-source --workspace mi-lsp --format toon --full --max-chars 12000 => PASS"
+  - "go run ./cmd/mi-lsp nav search \"searchPatternRg\" --workspace mi-lsp --format toon --include-content => PASS"
+touched_cards:
+  status: not_applicable
+  reason: "No tracker/card id was provided."
+branch_disposition: integrate-main
+cleanup_policy: auto-after-successful-integration
+explicit_waivers:
+  - "No card sync: no card identifier/config was part of the request."

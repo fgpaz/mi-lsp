@@ -441,12 +441,16 @@ func (a *App) search(ctx context.Context, request model.CommandRequest) (model.E
 	if identifierQuery {
 		searchLimit = max(searchLimit, DefaultConfig().DefaultSearchLimit)
 	}
-	items, err := searchPatternScoped(ctx, registration.Root, searchRoot, project, pattern, useRegex, searchLimit)
+	searchDiagnostics := &searchPatternDiagnostics{}
+	items, err := searchPatternScopedWithDiagnostics(ctx, registration.Root, searchRoot, project, pattern, useRegex, searchLimit, searchDiagnostics)
 	warnings := []string{}
+	if searchDiagnostics.RipgrepFallbackCode != "" {
+		warnings = append(warnings, fmt.Sprintf("text search backend failure (backend_runtime/%s): rg unavailable; served from go text fallback; verify MI_LSP_RG/PATH permissions", searchDiagnostics.RipgrepFallbackCode))
+	}
 	regexAutoHealed := false
 	if err != nil {
 		if useRegex && isRegexParseError(err) {
-			items, err = searchPatternScoped(ctx, registration.Root, searchRoot, project, pattern, false, searchLimit)
+			items, err = searchPatternScopedWithDiagnostics(ctx, registration.Root, searchRoot, project, pattern, false, searchLimit, searchDiagnostics)
 			if err != nil {
 				return model.Envelope{}, err
 			}
