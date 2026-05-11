@@ -705,6 +705,8 @@ type TraceResult struct {
 	Tests        []TraceLink       `json:"tests"`
 	Drift        []TraceDrift      `json:"drift"`
 	LookupStatus *WikiLookupStatus `json:"lookup_status,omitempty"`
+	Workspace    string            `json:"workspace,omitempty"`
+	Host         string            `json:"host,omitempty"`
 }
 
 // RouteDoc is a single document in a canonical or discovery route lane.

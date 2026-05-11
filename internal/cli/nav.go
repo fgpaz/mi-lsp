@@ -648,6 +648,7 @@ pack for a reading pack, and trace for RS/RF/TP evidence links.`,
 
 	var traceAll bool
 	var traceSummary bool
+	var traceAllWorkspaces bool
 	traceCommand := &cobra.Command{
 		Use:   "trace <DOC-ID|--all>",
 		Short: "Trace wiki RS/RF/TP docs to evidence links",
@@ -662,14 +663,18 @@ pack for a reading pack, and trace for RS/RF/TP evidence links.`,
 			if traceSummary {
 				payload["summary"] = true
 			}
-			if len(args) == 0 && !traceAll {
-				return fmt.Errorf("DOC-ID required or use --all")
+			if traceAllWorkspaces {
+				payload["all_workspaces"] = true
+			}
+			if len(args) == 0 && !traceAll && !traceAllWorkspaces {
+				return fmt.Errorf("DOC-ID required or use --all or --all-workspaces")
 			}
 			return state.executeOperation(cmd, "nav.trace", payload, true)
 		},
 	}
 	traceCommand.Flags().BoolVar(&traceAll, "all", false, "Trace all RFs (RF-only)")
 	traceCommand.Flags().BoolVar(&traceSummary, "summary", false, "Summary table format (with --all)")
+	traceCommand.Flags().BoolVar(&traceAllWorkspaces, "all-workspaces", false, "Trace across all registered workspaces")
 
 	var validateHarnessIDs string
 	var validateHarnessPaths string
