@@ -713,6 +713,33 @@ pack for a reading pack, and trace for RS/RF/TP evidence links.`,
 		},
 	}
 
-	command.AddCommand(searchCommand, routeCommand, packCommand, traceCommand, validateHarnessCommand, validateSourceCommand)
+	var invAllWorkspaces bool
+	var invWithLayerCounts bool
+	var invWorkspace string
+	inventoryCommand := &cobra.Command{
+		Use:   "inventory",
+		Short: "List registered wikis with metadata (alias, root, governance, doc_count)",
+		Long: `List all registered wikis with metadata including governance status, documentation readiness, and last indexed timestamp.
+Default behavior lists all workspaces (--all-workspaces=true).
+Use --with-layer-counts to include per-layer documentation counts (RS, FL, RF, TP, TECH, DB, CT).`,
+		Example: `  mi-lsp nav wiki inventory --format toon
+  mi-lsp nav wiki inventory --with-layer-counts --format toon
+  mi-lsp nav wiki inventory --all-workspaces=false --workspace mi-lsp --format toon`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			payload := map[string]any{"all_workspaces": invAllWorkspaces}
+			if invWithLayerCounts {
+				payload["with_layer_counts"] = true
+			}
+			if invWorkspace != "" {
+				payload["workspace"] = invWorkspace
+			}
+			return state.executeOperation(cmd, "nav.wiki.inventory", payload, true)
+		},
+	}
+	inventoryCommand.Flags().BoolVar(&invAllWorkspaces, "all-workspaces", true, "List every registered workspace (default true)")
+	inventoryCommand.Flags().BoolVar(&invWithLayerCounts, "with-layer-counts", false, "Include doc counts per layer (RS, FL, RF, TP, TECH, DB, CT)")
+	inventoryCommand.Flags().StringVar(&invWorkspace, "workspace", "", "Limit to a single workspace alias (only valid when --all-workspaces=false)")
+
+	command.AddCommand(searchCommand, routeCommand, packCommand, traceCommand, validateHarnessCommand, validateSourceCommand, inventoryCommand)
 	return command
 }

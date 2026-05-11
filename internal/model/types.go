@@ -39,6 +39,18 @@ type Stats struct {
 	TruncatedPerWorkspace bool     `json:"truncated_per_workspace,omitempty"`
 }
 
+// WikiInventoryItem represents a single workspace in the wiki inventory.
+type WikiInventoryItem struct {
+	Alias             string         `json:"alias"`
+	Root              string         `json:"root"`
+	WikiRoot          string         `json:"wiki_root"`
+	GovernanceBlocked bool           `json:"governance_blocked"`
+	DocsReady         bool           `json:"docs_ready"`
+	DocCount          int            `json:"doc_count"`
+	LastIndexedAt     int64          `json:"last_indexed_at,omitempty"`
+	Layers            map[string]int `json:"layers,omitempty"`
+}
+
 type CoachAction struct {
 	Kind    string `json:"kind"`
 	Label   string `json:"label"`

@@ -103,6 +103,8 @@ func (a *App) Execute(ctx context.Context, request model.CommandRequest) (model.
 		envelope, err = a.validateHarness(ctx, request)
 	case "nav.wiki.validate-source":
 		envelope, err = a.validateSource(ctx, request)
+	case "nav.wiki.inventory":
+		envelope, err = a.wikiInventory(ctx, request)
 	case "nav.governance":
 		envelope, err = a.governance(ctx, request)
 	case "nav.route":
@@ -188,7 +190,7 @@ func operationRequiresWorkspaceResolution(request model.CommandRequest) bool {
 		return !allWorkspaces
 	case "index.run", "index.start":
 		return strings.TrimSpace(stringPayload(request.Payload, "path")) == ""
-	case "index.status", "index.cancel", "index.run-job", "workspace.status", "info", "nav.symbols", "nav.overview", "nav.outline", "nav.governance", "nav.route", "nav.wiki.route", "nav.ask", "nav.pack", "nav.wiki.pack", "nav.wiki.search", "nav.wiki.validate-harness", "nav.wiki.validate-source", "nav.service", "nav.refs", "nav.context", "nav.deps", "nav.multi-read", "nav.batch", "nav.related", "nav.workspace-map", "nav.diff-context", "nav.trace", "nav.wiki.trace", "nav.intent":
+	case "index.status", "index.cancel", "index.run-job", "workspace.status", "info", "nav.symbols", "nav.overview", "nav.outline", "nav.governance", "nav.route", "nav.wiki.route", "nav.ask", "nav.pack", "nav.wiki.pack", "nav.wiki.search", "nav.wiki.validate-harness", "nav.wiki.validate-source", "nav.wiki.inventory", "nav.service", "nav.refs", "nav.context", "nav.deps", "nav.multi-read", "nav.batch", "nav.related", "nav.workspace-map", "nav.diff-context", "nav.trace", "nav.wiki.trace", "nav.intent":
 		return true
 	default:
 		return false
