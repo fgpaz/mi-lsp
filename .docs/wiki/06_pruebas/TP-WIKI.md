@@ -14,7 +14,7 @@ imports:
   - '[[RF-WIKI-004]]'
   - '[[RF-WIKI-005]]'
 exports:
-  - '[[CT-NAV-WIKI]]'
+  - 'TP-WIKI'
 agent_must_read:
   - .docs/wiki/00_gobierno_documental.md
   - .docs/wiki/04_RF/RF-WIKI-001.md
@@ -51,8 +51,12 @@ evidence:
 
 ```toon
 block_id: tp-wiki-rf-001-cases
+kind: test-cases
 rf: RF-WIKI-001
 title: "Test cases para RF-WIKI-001 (search --all-workspaces)"
+source_of_truth: this
+verify: "mi-lsp nav wiki validate-source --workspace mi-lsp --format toon"
+evidence: ".docs/wiki/06_pruebas/TP-WIKI.md"
 cases:
   - id: TC-WIKI-001
     type: positivo
@@ -81,8 +85,12 @@ cases:
 
 ```toon
 block_id: tp-wiki-rf-002-cases
+kind: test-cases
 rf: RF-WIKI-002
 title: "Test cases para RF-WIKI-002 (inventory --all-workspaces)"
+source_of_truth: this
+verify: "mi-lsp nav wiki validate-source --workspace mi-lsp --format toon"
+evidence: ".docs/wiki/06_pruebas/TP-WIKI.md"
 cases:
   - id: TC-WIKI-005
     type: positivo
@@ -111,8 +119,12 @@ cases:
 
 ```toon
 block_id: tp-wiki-rf-003-cases
+kind: test-cases
 rf: RF-WIKI-003
 title: "Test cases para RF-WIKI-003 (route --all-workspaces)"
+source_of_truth: this
+verify: "mi-lsp nav wiki validate-source --workspace mi-lsp --format toon"
+evidence: ".docs/wiki/06_pruebas/TP-WIKI.md"
 cases:
   - id: TC-WIKI-009
     type: positivo
@@ -141,8 +153,12 @@ cases:
 
 ```toon
 block_id: tp-wiki-rf-004-cases
+kind: test-cases
 rf: RF-WIKI-004
 title: "Test cases para RF-WIKI-004 (trace --all-workspaces)"
+source_of_truth: this
+verify: "mi-lsp nav wiki validate-source --workspace mi-lsp --format toon"
+evidence: ".docs/wiki/06_pruebas/TP-WIKI.md"
 cases:
   - id: TC-WIKI-013
     type: positivo
@@ -171,8 +187,12 @@ cases:
 
 ```toon
 block_id: tp-wiki-rf-005-cases
+kind: test-cases
 rf: RF-WIKI-005
 title: "Test cases para RF-WIKI-005 (pack --all-workspaces)"
+source_of_truth: this
+verify: "mi-lsp nav wiki validate-source --workspace mi-lsp --format toon"
+evidence: ".docs/wiki/06_pruebas/TP-WIKI.md"
 cases:
   - id: TC-WIKI-017
     type: positivo
