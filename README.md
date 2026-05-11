@@ -310,7 +310,7 @@ Out of scope for `v0.1.0`:
 - Automatic semantic fanout across all child repos
 - Remote or multi-host daemon sharing
 - Authenticated governance UI
-- Additional languages beyond the current C#/TS/Python focus
+- Additional languages beyond the current C#/TS/Python/Go catalog focus
 - Strong completeness scoring for services
 - Embeddings or remote semantic search services
 

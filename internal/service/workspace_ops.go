@@ -169,6 +169,37 @@ func (a *App) workspaceDoctor() (model.Envelope, error) {
 	return model.Envelope{Ok: true, Backend: "registry-doctor", Items: []map[string]any{item}, Warnings: warnings}, nil
 }
 
+func (a *App) workspacePrune(request model.CommandRequest) (model.Envelope, error) {
+	staleOnly, _ := request.Payload["stale"].(bool)
+	if !staleOnly {
+		return model.Envelope{}, errors.New("workspace prune requires --stale")
+	}
+	apply, _ := request.Payload["apply"].(bool)
+	report, err := workspace.PruneStaleWorkspaces(apply)
+	if err != nil {
+		return model.Envelope{}, err
+	}
+	item := map[string]any{
+		"dry_run":       report.DryRun,
+		"registry":      report.Registry,
+		"candidates":    nonNilStalePaths(report.Candidates),
+		"removed":       nonNilStalePaths(report.Removed),
+		"removed_count": report.RemovedCount,
+		"skipped":       nonNilStalePaths(report.Skipped),
+	}
+	warnings := []string{}
+	if report.DryRun && len(report.Candidates) > 0 {
+		warnings = append(warnings, "dry-run only; rerun with --apply to remove stale aliases from registry")
+	}
+	if !report.DryRun && len(report.Removed) > 0 {
+		warnings = append(warnings, "registry aliases removed; no files or git worktrees were deleted")
+	}
+	if len(report.Skipped) > 0 {
+		warnings = append(warnings, "some aliases were skipped because their roots could not be safely classified as missing")
+	}
+	return model.Envelope{Ok: true, Backend: "registry-prune", Items: []map[string]any{item}, Warnings: warnings}, nil
+}
+
 func nonNilRootGroups(items []workspace.WorkspaceRootGroup) []workspace.WorkspaceRootGroup {
 	if items == nil {
 		return []workspace.WorkspaceRootGroup{}
@@ -231,7 +262,7 @@ func (a *App) workspaceStatus(ctx context.Context, request model.CommandRequest)
 	item["governance_index_sync"] = governance.IndexSync
 	item["governance_blocked"] = governance.Blocked
 	item["governance_summary"] = governance.Summary
-	memory, _ := loadReentryMemory(ctx, registration.Root)
+	memory, memoryWarnings := a.statusMemory(ctx, registration, opts, autoSync, governance.Blocked)
 	db, err := openWorkspaceDB(registration, "workspace.status")
 	if err != nil {
 		item["index_ready"] = false
@@ -239,6 +270,7 @@ func (a *App) workspaceStatus(ctx context.Context, request model.CommandRequest)
 		item["docs_index_ready"] = false
 		item["doc_count"] = 0
 		warnings := append([]string{}, resolutionWarnings...)
+		warnings = append(warnings, memoryWarnings...)
 		warnings = append(warnings, "workspace has no index yet")
 		warnings = append(warnings, governance.Warnings...)
 		if governance.Blocked {
@@ -269,6 +301,7 @@ func (a *App) workspaceStatus(ctx context.Context, request model.CommandRequest)
 	item["index_files"] = stats.Files
 	item["index_symbols"] = stats.Symbols
 	warnings := append([]string{}, resolutionWarnings...)
+	warnings = append(warnings, memoryWarnings...)
 	warnings = append(warnings, governance.Warnings...)
 	if governance.Blocked {
 		warnings = append(warnings, governance.Issues...)
@@ -341,6 +374,27 @@ func (a *App) resolveWorkspaceStatusTarget(request model.CommandRequest) (model.
 	}
 
 	return registration, project, selector, source, warnings, hint, nil
+}
+
+func (a *App) statusMemory(ctx context.Context, registration model.WorkspaceRegistration, opts model.QueryOptions, autoSync bool, governanceBlocked bool) (*loadedReentryMemory, []string) {
+	memory, _ := loadReentryMemory(ctx, registration.Root)
+	if memory == nil || !memory.Stale || !autoSync || !opts.Full || governanceBlocked {
+		return memory, nil
+	}
+	warnings := []string{}
+	err := store.WithWorkspaceIndexLock(registration.Root, "workspace.status.memory-refresh", func() error {
+		_, err := indexer.IndexWorkspaceDocsOnly(ctx, registration.Root)
+		return err
+	})
+	if err != nil {
+		return memory, []string{"stale reentry memory refresh failed: " + err.Error()}
+	}
+	refreshed, _ := loadReentryMemory(ctx, registration.Root)
+	if refreshed != nil {
+		memory = refreshed
+	}
+	warnings = append(warnings, "refreshed stale reentry memory snapshot from docs index")
+	return memory, warnings
 }
 
 func workspacePathHint(alias string) string {

@@ -144,9 +144,10 @@ flowchart LR
 - Aun con `read_model=default`, un workspace inicializado con docs minimas utiles bajo `.docs/wiki/07_*.md`, `.docs/wiki/08_*.md` o `.docs/wiki/09_*.md` debe poder resolver una respuesta docs-first razonable sin requerir `read-model.toml` custom.
 - La UI de gobernanza es unica, local a loopback y debe abrirse enfocando workspace, sin duplicar instancias.
 - C# profundo se resuelve con Roslyn; TS/JS discovery sigue existiendo aunque no haya backend semantico.
+- Go se detecta e indexa con un extractor AST nativo para que `mi-lsp` pueda navegar su propio codigo Go desde el catalogo repo-local, aun sin backend semantico externo.
 - Python se indexa con un extractor lexical acotado por lineas para mantener el catalogo repo-local cancelable; semantica profunda opcional via `pyright-langserver` cuando exista.
 - `nav context` es slice-first: el core arma un bloque legible por lineas y luego superpone enriquecimiento semantico o de catalogo cuando exista.
-- `nav service` usa evidencia observable, no score fuerte de completitud.
+- `nav service` usa evidencia observable, no score fuerte de completitud; cuando el catalogo bajo el path es mayoritariamente Go, perfila `go-package` y evita scans .NET que producirian falsos positivos desde fixtures o strings.
 - `nav route` es la superficie publica de routing de bajo token: resuelve `anchor_doc + mini_pack_preview` con semantica fail-closed y canonical lane autoritativa. `nav ask` y `nav pack` reutilizan este motor internamente.
 - `nav.intent` es hibrido router-first: clasifica `mode=docs|code`, usa el scorer owner-aware en `docs` y conserva BM25 de simbolos en `code` sin mezclar ambos lanes en la misma lista.
 - Para harnesses/agentes, las consultas literal symbol-like deben seguir una escalera agent-first: `nav find --exact`, luego `nav related`, luego `nav context` con fallback `catalog`/`text --no-auto-daemon` si los backends semanticos son riesgosos. `nav search` queda disponible como evidencia textual, pero no debe ser el unico proximo paso cuando el input parece identificador de codigo.
@@ -218,8 +219,10 @@ El struct `internal/service/config.go` centraliza todos los valores hardcodeados
 - `workspace list` debe salir desde registry + `project.toml` normalizado, sin redescubrir child repos en el hot path; preserva todos los aliases registrados aunque compartan root fisico.
 - `workspace list --group-by-root` agrupa aliases por root exacto y expone `root`, `alias_count`, `aliases`, `canonical_alias`, `selection_reason`, `kind` y warnings sin mutar registry.
 - `workspace doctor` es no mutante y diagnostica aliases que comparten root exacto, familias de worktrees por `git common dir`, paths stale, shadowing de binario y comandos sugeridos.
+- `workspace prune --stale --dry-run|--apply` limpia solamente entradas del `registry.toml` cuyo root ya no existe; nunca borra worktrees, directorios ni indices repo-locales.
 - `workspace status --no-auto-sync` permite diagnostico read-only para smokes cross-workspace: reporta la proyeccion stale/bloqueada sin escribir `read-model.toml` en repos externos.
 - `nav.workspace-map` debe arrancar con summary-first directo, no auto-iniciar daemon, y reservar scans de endpoints/eventos/dependencias para `--full`.
+- En workspaces Go, `nav.workspace-map` agrega paquetes `cmd/*`, `internal/*` y `pkg/*` como servicios `go-package` desde el catalogo para que el mapa de self-dogfood no dependa de entrypoints C#.
 - En AXI efectivo, `init`, `workspace status`, `nav search`, `nav intent` y `nav pack` arrancan en preview-first por default; `nav ask` lo hace solo cuando la heuristica detecta orientacion, y `nav workspace-map` solo cuando se fuerza AXI.
 - `init` registra, persiste proyecto e indexa por defecto sin requerir `workspace add` previo.
 - `worker install` es explicito; no hay descargas silenciosas durante consultas.
@@ -232,10 +235,11 @@ El struct `internal/service/config.go` centraliza todos los valores hardcodeados
 - `workspace status` debe exponer `workspace_root`, `workspace_source`, perfil, sync de gobernanza, estado bloqueado, `doc_count`, `docs_index_ready` y estado del indice respecto de `00`/`read-model`; si la wiki existe pero `doc_count=0`, debe sugerir `mi-lsp index --docs-only`.
 - Si el CWD esta dentro de un workspace/worktree registrado pero `--workspace <alias>` apunta a otro root, el alias explicito gana y el status debe emitir warning visible con ambos roots.
 - Si `docs_index_ready=true` pero `index_ready=false`, `workspace status` debe dejar visible que el repo quedo en modo "docs-only listo": el corpus gobernado y `memory_pointer` estan disponibles, pero el catalogo de codigo y las superficies code-first siguen ausentes hasta un `mi-lsp index` full/catalog.
-- `workspace status --full` debe exponer ademas el digest expandido de memoria de reentrada (`recent_canonical_changes`, `handoff`, `best_reentry`, `stale`) sin recalcularlo en caliente.
+- `workspace status --full` debe exponer ademas el digest expandido de memoria de reentrada (`recent_canonical_changes`, `handoff`, `best_reentry`, `stale`). Si el snapshot esta stale, `auto_sync` esta habilitado y la gobernanza no esta bloqueada, puede refrescar docs/memoria en una pasada `docs-only`; `--no-auto-sync` conserva la lectura estrictamente read-only.
 - `nav ask --all-workspaces` fan-out sobre workspaces registrados con un pool acotado de 4 workers y merge determinista por score.
+- `nav ask/search/find --all-workspaces` deben ignorar aliases stale con root inexistente y emitir un warning agregado que apunte a `workspace prune --stale --dry-run`, en vez de degradar cada fan-out con ruido repetido.
 - `nav.find`, `nav.symbols`, `nav.overview` y `nav.intent` aceptan `--offset` para paginacion cursor-like sobre queries SQL; `nav.search` queda fuera de ese contrato porque sigue siendo rg/text-backed.
-- `nav service` debe funcionar sin Roslyn y seguir entregando evidencia util incluso cuando el catalogo es parcial.
+- `nav service` debe funcionar sin Roslyn y seguir entregando evidencia util incluso cuando el catalogo es parcial; para paquetes Go debe apoyarse en catalogo antes que en patrones textuales .NET.
 - `nav context` sobre archivos no semanticos no debe depender de Roslyn, `tsserver` ni Pyright.
 - Si `tsserver` o `pyright` ya fallaron por indisponibilidad en la misma sesion/runtime, el core puede entrar en cooldown corto y degradar directamente a catalog/text.
 

@@ -62,6 +62,7 @@ evidence:
 
 1. Toda tarea consulta el estado de gobernanza del workspace antes de continuar.
 2. `workspace status` expone `workspace_root`, `workspace_source`, perfil, sync, index sync y estado bloqueado; cuando existe snapshot repo-local de reentrada, puede exponer `memory_pointer` en preview y `memory` completo bajo expansion.
+3. Bajo `--full`, si la memoria esta stale, `auto_sync` esta habilitado y la gobernanza no esta bloqueada, puede refrescar docs/memoria antes de responder. `--no-auto-sync` conserva el diagnostico read-only y deja visible el stale.
 3. Si la gobernanza es valida, el workflow normal puede seguir.
 4. Si la gobernanza es invalida, el repo entra en `blocked mode`.
 5. En `blocked mode` solo quedan permitidos diagnostico y reparacion de gobernanza.
@@ -96,4 +97,4 @@ evidence:
 - Gate activo en: `nav.ask`, `nav.pack`, `nav.route`
 - `nav.governance` y workspace ops (init/status/list/add/remove) excluidos del gate por diseño — operaciones de diagnóstico y bootstrap que deben sobrevivir blocked mode
 - Profile + projection: `internal/docgraph/governance.go` (`InspectGovernance`, `LoadProfile`)
-- Cobertura de tests: TC-WKS-014, TC-WKS-015, TC-WKS-019, TC-WKS-020, `TestNavPackBlockedWhenGovernanceIsInvalid`, `TestNavRouteBlockedWhenGovernanceIsInvalid`
+- Cobertura de tests: TC-WKS-014, TC-WKS-015, TC-WKS-019, TC-WKS-020, TC-WKS-025, `TestNavPackBlockedWhenGovernanceIsInvalid`, `TestNavRouteBlockedWhenGovernanceIsInvalid`

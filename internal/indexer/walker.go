@@ -11,6 +11,7 @@ import (
 
 var supportedExtensions = map[string]struct{}{
 	".cs":  {},
+	".go":  {},
 	".js":  {},
 	".jsx": {},
 	".ts":  {},

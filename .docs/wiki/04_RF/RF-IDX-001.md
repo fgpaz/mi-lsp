@@ -105,6 +105,7 @@ evidence:
 - Los entrypoints auxiliares bajo `.docs/` o `template(s)` no deben convertirse en el default semantico solo por estar presentes en el repo.
 - El indice documental resuelve primero links markdown y doc IDs explicitos; las heuristicas solo completan contexto, no reemplazan trazabilidad explicita.
 - El indice nunca persiste refs profundas ni ASTs.
+- Para Go (`.go`), el extractor usa `go/parser`/AST nativo para catalogar funciones, metodos, tipos, structs, interfaces, consts y vars. Prioriza self-dogfood navegable del repo `mi-lsp` sin requerir backend semantico externo.
 - Para Python (`.py`, `.pyi`), el extractor usa una pasada lexical acotada por lineas e indentacion. Prioriza catalogo navegable y cancelabilidad por archivo; formas no reconocidas quedan cubiertas por `nav search` textual o Pyright opcional.
 - `index cancel` sin `--force` marca `requested_cancel`; el worker debe detenerse cooperativamente al volver al loop de indexacion. `--force` queda como escape para procesos colgados y debe limpiar el lock asociado si el PID ya no vive.
 

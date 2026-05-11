@@ -61,3 +61,6 @@ evidence:
 | TC-WKS-020 | positivo | RF-WKS-005 | `workspace status --workspace <alias>` explicito gana sobre `caller_cwd`, pero emite warning si el CWD pertenece a otro root registrado |
 | TC-WKS-021 | positivo | RF-WKS-004 | `workspace doctor` reporta aliases que comparten root exacto sin mutar `registry.toml` |
 | TC-WKS-022 | positivo | RF-WKS-004 | `workspace doctor` reporta familias de worktrees que comparten `git common dir` pero tienen roots fisicos distintos |
+| TC-WKS-023 | positivo | RF-WKS-004 | `workspace prune --stale --dry-run` lista aliases con root inexistente sin modificar `registry.toml` |
+| TC-WKS-024 | positivo | RF-WKS-004 | `workspace prune --stale --apply` remueve solo aliases con root inexistente y no borra worktrees ni indices |
+| TC-WKS-025 | positivo | RF-WKS-005 | `workspace status --full` refresca memoria stale cuando `auto_sync` esta habilitado y la conserva stale con `--no-auto-sync` |

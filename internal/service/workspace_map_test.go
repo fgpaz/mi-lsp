@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/fgpaz/mi-lsp/internal/model"
+	"github.com/fgpaz/mi-lsp/internal/store"
 )
 
 func TestDetectDependencies_NilServices(t *testing.T) {
@@ -542,5 +543,83 @@ func TestWorkspaceMapFrontendApps_NoTSRepos(t *testing.T) {
 
 	if len(frontendApps) != 0 {
 		t.Errorf("expected 0 frontend apps for CSharp-only repo, got %d", len(frontendApps))
+	}
+}
+
+func TestWorkspaceMapGoPackageServices(t *testing.T) {
+	root := t.TempDir()
+	project := model.ProjectFile{
+		Project: model.ProjectBlock{
+			Name:        "go-selfdogfood",
+			Kind:        model.WorkspaceKindSingle,
+			DefaultRepo: "main",
+			Languages:   []string{"go"},
+		},
+		Repos: []model.WorkspaceRepo{{
+			ID:        "main",
+			Name:      "main",
+			Root:      ".",
+			Languages: []string{"go"},
+		}},
+		Entrypoints: []model.WorkspaceEntrypoint{},
+	}
+	registration := model.WorkspaceRegistration{
+		Name:      "go-ws",
+		Root:      root,
+		Languages: []string{"go"},
+		Kind:      model.WorkspaceKindSingle,
+	}
+
+	db, err := store.Open(root)
+	if err != nil {
+		t.Fatalf("store.Open: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+
+	files := []model.FileRecord{
+		{FilePath: "internal/service/app.go", RepoID: "main", RepoName: "main", Language: "go"},
+		{FilePath: "internal/indexer/extractor_go.go", RepoID: "main", RepoName: "main", Language: "go"},
+		{FilePath: "cmd/mi-lsp/main.go", RepoID: "main", RepoName: "main", Language: "go"},
+		{FilePath: "worker-dotnet/MiLsp.Worker/Program.cs", RepoID: "main", RepoName: "main", Language: "csharp"},
+	}
+	symbols := []model.SymbolRecord{
+		{FilePath: "internal/service/app.go", RepoID: "main", RepoName: "main", Name: "App", Kind: "struct", StartLine: 10, Language: "go"},
+		{FilePath: "internal/service/app.go", RepoID: "main", RepoName: "main", Name: "New", Kind: "function", StartLine: 20, Language: "go"},
+		{FilePath: "internal/indexer/extractor_go.go", RepoID: "main", RepoName: "main", Name: "extractGo", Kind: "function", StartLine: 12, Language: "go"},
+		{FilePath: "cmd/mi-lsp/main.go", RepoID: "main", RepoName: "main", Name: "main", Kind: "function", StartLine: 8, Language: "go"},
+		{FilePath: "worker-dotnet/MiLsp.Worker/Program.cs", RepoID: "main", RepoName: "main", Name: "Program", Kind: "class", StartLine: 1, Language: "csharp"},
+	}
+	if err := store.ReplaceCatalog(context.Background(), db, project, files, symbols); err != nil {
+		t.Fatalf("ReplaceCatalog: %v", err)
+	}
+
+	services, frontendApps, _, warnings := discoverServices(context.Background(), db, registration, project, false)
+	if len(warnings) != 0 {
+		t.Fatalf("unexpected warnings: %v", warnings)
+	}
+	if len(frontendApps) != 0 {
+		t.Fatalf("expected no frontend apps, got %d", len(frontendApps))
+	}
+
+	byPath := map[string]serviceMapEntry{}
+	for _, svc := range services {
+		byPath[svc.Path] = svc
+	}
+	for _, path := range []string{"cmd/mi-lsp", "internal/indexer", "internal/service"} {
+		if _, ok := byPath[path]; !ok {
+			t.Fatalf("expected Go package service %q, got %#v", path, byPath)
+		}
+		if byPath[path].Profile != "go-package" {
+			t.Fatalf("service %q profile = %q, want go-package", path, byPath[path].Profile)
+		}
+	}
+	if got := byPath["internal/service"].SymbolCount; got != 2 {
+		t.Fatalf("internal/service SymbolCount = %d, want 2", got)
+	}
+	if got := byPath["internal/service"].EntityCount; got != 1 {
+		t.Fatalf("internal/service EntityCount = %d, want 1", got)
+	}
+	if _, ok := byPath["worker-dotnet"]; ok {
+		t.Fatalf("did not expect csharp path to be discovered as Go package service")
 	}
 }

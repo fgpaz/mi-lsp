@@ -59,6 +59,7 @@ evidence:
 | TC-QRY-007 | positivo | RF-QRY-002 | enruta `nav refs` sobre `.py` a pyright si esta disponible |
 | TC-QRY-008 | positivo | RF-QRY-002 | degrada a catalog/text con warning si pyright no esta instalado |
 | TC-QRY-009 | positivo | RF-QRY-003 | resume endpoints, consumers, publishers, entidades e infraestructura de un servicio con evidencia estructurada |
+| TC-QRY-009A | positivo | RF-QRY-003 | `TestNavServiceGoPackageUsesCatalogProfile`: `nav service` perfila paquetes Go como `go-package` y evita falsos endpoints .NET desde fixtures o strings |
 | TC-QRY-010 | positivo | RF-QRY-003 | oculta placeholders de arquetipo por default y los incluye con `--include-archetype` |
 | TC-QRY-011 | negativo | RF-QRY-003 | devuelve warning accionable si no hay catalogo util o no se encuentra evidencia suficiente bajo el path |
 | TC-QRY-012 | positivo | RF-QRY-002 | `nav context` sobre `ts/tsx` devuelve `slice_text` y warning si `tsserver` no esta disponible |
@@ -106,6 +107,7 @@ evidence:
 | TC-QRY-046 | positivo | RF-QRY-010 | `nav ask` con pregunta de implementacion queda clasico por default salvo `--axi` |
 | TC-QRY-047 | positivo | RF-QRY-007 | `nav workspace-map` sigue clasico por default y solo anuncia preview/full cuando se fuerza `--axi` |
 | TC-QRY-047A | positivo | RF-QRY-002, RF-QRY-007 | `nav workspace-map` no auto-inicia ni enruta por daemon en el modo summary-first por default |
+| TC-QRY-047B | positivo | RF-QRY-007 | `TestWorkspaceMapGoPackageServices`: `nav workspace-map` expone paquetes Go `cmd/*`, `internal/*` y `pkg/*` como servicios `go-package` desde el catalogo |
 | TC-QRY-048 | positivo | RF-QRY-012 | `nav pack` construye un reading pack funcional en orden canonico desde tarea libre |
 | TC-QRY-049 | positivo | RF-QRY-012 | `nav pack --full` expande slices legibles del mismo pack sin cambiar el backend |
 | TC-QRY-050 | negativo | RF-QRY-012 | `nav pack` devuelve warning accionable cuando la wiki canonica existe pero el indice documental esta vacio o stale |

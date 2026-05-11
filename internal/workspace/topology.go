@@ -108,11 +108,9 @@ func LoadProjectTopology(root string, registration model.WorkspaceRegistration) 
 	if err != nil {
 		return model.ProjectFile{}, err
 	}
-	if project.Project.Name == "" || len(project.Repos) == 0 {
-		_, detected, detectErr := DetectWorkspaceLayout(root, registration.Name)
-		if detectErr == nil {
-			project = mergeProjectFile(project, detected)
-		}
+	_, detected, detectErr := DetectWorkspaceLayout(root, registration.Name)
+	if detectErr == nil {
+		project = mergeProjectFile(project, detected)
 	}
 	return normalizeProjectFile(root, registration, project), nil
 }
@@ -130,9 +128,7 @@ func mergeProjectFile(existing model.ProjectFile, detected model.ProjectFile) mo
 	if merged.Project.Name == "" {
 		merged.Project.Name = detected.Project.Name
 	}
-	if len(merged.Project.Languages) == 0 {
-		merged.Project.Languages = detected.Project.Languages
-	}
+	merged.Project.Languages = mergeStrings(merged.Project.Languages, detected.Project.Languages)
 	if merged.Project.Kind == "" {
 		merged.Project.Kind = detected.Project.Kind
 	}
@@ -144,11 +140,52 @@ func mergeProjectFile(existing model.ProjectFile, detected model.ProjectFile) mo
 	}
 	if len(merged.Repos) == 0 {
 		merged.Repos = detected.Repos
+	} else {
+		merged.Repos = mergeRepoLanguages(merged.Repos, detected.Repos)
 	}
 	if len(merged.Entrypoints) == 0 {
 		merged.Entrypoints = detected.Entrypoints
 	}
 	return merged
+}
+
+func mergeRepoLanguages(existing []model.WorkspaceRepo, detected []model.WorkspaceRepo) []model.WorkspaceRepo {
+	merged := append([]model.WorkspaceRepo(nil), existing...)
+	byID := map[string]int{}
+	byRoot := map[string]int{}
+	for idx, repo := range merged {
+		byID[strings.ToLower(repo.ID)] = idx
+		byRoot[strings.ToLower(filepath.ToSlash(strings.TrimSpace(repo.Root)))] = idx
+	}
+	for _, repo := range detected {
+		if idx, ok := byID[strings.ToLower(repo.ID)]; ok {
+			merged[idx].Languages = mergeStrings(merged[idx].Languages, repo.Languages)
+			continue
+		}
+		if idx, ok := byRoot[strings.ToLower(filepath.ToSlash(strings.TrimSpace(repo.Root)))]; ok {
+			merged[idx].Languages = mergeStrings(merged[idx].Languages, repo.Languages)
+		}
+	}
+	return merged
+}
+
+func mergeStrings(existing []string, detected []string) []string {
+	seen := map[string]struct{}{}
+	result := make([]string, 0, len(existing)+len(detected))
+	for _, value := range append(append([]string{}, existing...), detected...) {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+		key := strings.ToLower(value)
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		result = append(result, value)
+	}
+	slices.Sort(result)
+	return result
 }
 
 func normalizeProjectFile(root string, registration model.WorkspaceRegistration, project model.ProjectFile) model.ProjectFile {
@@ -382,12 +419,16 @@ func detectRepo(workspaceRoot string, repoRoot string) (repoDetection, error) {
 		case ".csproj":
 			projects = append(projects, relPath)
 			languages["csharp"] = struct{}{}
+		case ".go":
+			languages["go"] = struct{}{}
 		case ".ts", ".tsx", ".js", ".jsx":
 			languages["typescript"] = struct{}{}
 		case ".py", ".pyi":
 			languages["python"] = struct{}{}
 		}
 		switch strings.ToLower(entry.Name()) {
+		case "go.mod", "go.work":
+			languages["go"] = struct{}{}
 		case "package.json", "tsconfig.json", "next.config.js", "next.config.ts", "vite.config.ts":
 			languages["typescript"] = struct{}{}
 		case "pyproject.toml", "setup.py", "setup.cfg", "requirements.txt", "poetry.lock", "pipfile", "pipfile.lock":

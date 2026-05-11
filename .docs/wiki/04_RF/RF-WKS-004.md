@@ -85,6 +85,7 @@ evidence:
 - `workspace list` sin flags sigue preservando todos los aliases registrados.
 - `workspace list --group-by-root` solo agrega una vista diagnostica por root exacto; no deduplica ni modifica el registry.
 - `workspace doctor` es diagnostico no mutante para aliases duplicados, familias de worktrees, paths stale y shadowing de binario.
+- `workspace prune --stale` es la unica operacion de limpieza de registry cubierta por este RF: en dry-run no muta; con `--apply` remueve solo aliases con root inexistente y no toca archivos ni worktrees.
 
 ## 6. Data Model Impact
 
@@ -102,4 +103,4 @@ evidence:
 - TOON default en PersistentPreRunE: `internal/cli/root.go:103-106`
 - Mutual exclusion `--axi + --classic`: `internal/cli/root.go:101-103`
 - `--axi=false` hard disable: `internal/cli/axi_mode.go:65-69`
-- Cobertura de tests: TC-WKS-011, TC-WKS-012, TC-WKS-013, TC-WKS-016, TC-WKS-017, TC-WKS-018, TC-WKS-021, TC-WKS-022
+- Cobertura de tests: TC-WKS-011, TC-WKS-012, TC-WKS-013, TC-WKS-016, TC-WKS-017, TC-WKS-018, TC-WKS-021, TC-WKS-022, TC-WKS-023, TC-WKS-024

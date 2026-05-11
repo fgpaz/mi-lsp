@@ -53,6 +53,7 @@ func (a *App) serviceSummary(ctx context.Context, request model.CommandRequest) 
 
 	warnings := []string{}
 	sources := []string{}
+	catalogLanguage := ""
 	summary := model.ServiceSurfaceSummary{
 		Service:          serviceNameFromPath(relativePath, registration.Root),
 		Path:             normalizedServicePath(relativePath),
@@ -76,6 +77,7 @@ func (a *App) serviceSummary(ctx context.Context, request model.CommandRequest) 
 		} else {
 			if len(catalogSymbols) > 0 {
 				sources = appendUnique(sources, "catalog")
+				catalogLanguage = dominantSymbolLanguage(catalogSymbols)
 			} else {
 				warnings = append(warnings, "catalog has no symbols under service path; run mi-lsp index --workspace <alias> for richer service summaries")
 			}
@@ -85,21 +87,31 @@ func (a *App) serviceSummary(ctx context.Context, request model.CommandRequest) 
 		warnings = append(warnings, fmt.Sprintf("catalog unavailable: %v", err))
 	}
 
-	endpointMatches, endpointErr := searchPatternScoped(ctx, registration.Root, absolutePath, project, `Map(Get|Post|Put|Delete|Patch)\s*\(`, true, serviceSearchLimit)
-	if endpointErr != nil {
-		warnings = append(warnings, fmt.Sprintf("endpoint search failed: %v", endpointErr))
-	}
-	consumerMatches, consumerErr := searchPatternScoped(ctx, registration.Root, absolutePath, project, `IConsumer<`, true, serviceSearchLimit)
-	if consumerErr != nil {
-		warnings = append(warnings, fmt.Sprintf("consumer search failed: %v", consumerErr))
-	}
-	publisherMatches, publisherErr := searchPatternScoped(ctx, registration.Root, absolutePath, project, `Publish(?:Async)?<|IPublishEndpoint`, true, serviceSearchLimit)
-	if publisherErr != nil {
-		warnings = append(warnings, fmt.Sprintf("publisher search failed: %v", publisherErr))
-	}
-	infrastructureMatches, infraErr := searchPatternScoped(ctx, registration.Root, absolutePath, project, `AddSetupEventBus|UseNpgsql|UseSqlServer|UseInMemoryDatabase|AddStackExchangeRedis`, true, serviceSearchLimit)
-	if infraErr != nil {
-		warnings = append(warnings, fmt.Sprintf("infrastructure search failed: %v", infraErr))
+	endpointMatches := []map[string]any{}
+	consumerMatches := []map[string]any{}
+	publisherMatches := []map[string]any{}
+	infrastructureMatches := []map[string]any{}
+	if catalogLanguage != "go" {
+		var endpointErr error
+		endpointMatches, endpointErr = searchPatternScoped(ctx, registration.Root, absolutePath, project, `Map(Get|Post|Put|Delete|Patch)\s*\(`, true, serviceSearchLimit)
+		if endpointErr != nil {
+			warnings = append(warnings, fmt.Sprintf("endpoint search failed: %v", endpointErr))
+		}
+		var consumerErr error
+		consumerMatches, consumerErr = searchPatternScoped(ctx, registration.Root, absolutePath, project, `IConsumer<`, true, serviceSearchLimit)
+		if consumerErr != nil {
+			warnings = append(warnings, fmt.Sprintf("consumer search failed: %v", consumerErr))
+		}
+		var publisherErr error
+		publisherMatches, publisherErr = searchPatternScoped(ctx, registration.Root, absolutePath, project, `Publish(?:Async)?<|IPublishEndpoint`, true, serviceSearchLimit)
+		if publisherErr != nil {
+			warnings = append(warnings, fmt.Sprintf("publisher search failed: %v", publisherErr))
+		}
+		var infraErr error
+		infrastructureMatches, infraErr = searchPatternScoped(ctx, registration.Root, absolutePath, project, `AddSetupEventBus|UseNpgsql|UseSqlServer|UseInMemoryDatabase|AddStackExchangeRedis`, true, serviceSearchLimit)
+		if infraErr != nil {
+			warnings = append(warnings, fmt.Sprintf("infrastructure search failed: %v", infraErr))
+		}
 	}
 
 	if len(endpointMatches) > 0 || len(consumerMatches) > 0 || len(publisherMatches) > 0 || len(infrastructureMatches) > 0 {
@@ -111,6 +123,9 @@ func (a *App) serviceSummary(ctx context.Context, request model.CommandRequest) 
 	summary.EventPublishers = parsePublisherMatches(publisherMatches)
 	summary.Infrastructure = detectInfrastructure(infrastructureMatches)
 	summary.Profile = detectServiceProfile(summary, registration)
+	if catalogLanguage == "go" {
+		summary.Profile = "go-package"
+	}
 	summary.Sources = sources
 	summary.NextQueries = buildNextQueries(registration.Name, summary.Path, summary)
 
@@ -165,6 +180,32 @@ func fillServiceSummaryFromCatalog(summary *model.ServiceSurfaceSummary, symbols
 		})
 	}
 	sortMaps(summary.Entities)
+}
+
+func dominantSymbolLanguage(symbols []model.SymbolRecord) string {
+	if len(symbols) == 0 {
+		return ""
+	}
+	counts := map[string]int{}
+	for _, symbol := range symbols {
+		language := strings.ToLower(strings.TrimSpace(symbol.Language))
+		if language == "" {
+			continue
+		}
+		counts[language]++
+	}
+	dominant := ""
+	dominantCount := 0
+	for language, count := range counts {
+		if count > dominantCount || (count == dominantCount && language < dominant) {
+			dominant = language
+			dominantCount = count
+		}
+	}
+	if dominantCount*2 < len(symbols) {
+		return ""
+	}
+	return dominant
 }
 
 func parseEndpointMatches(matches []map[string]any) []map[string]any {
@@ -269,6 +310,13 @@ func detectServiceProfile(summary model.ServiceSurfaceSummary, registration mode
 }
 
 func buildNextQueries(workspaceName string, servicePath string, summary model.ServiceSurfaceSummary) []string {
+	if summary.Profile == "go-package" {
+		return []string{
+			fmt.Sprintf("mi-lsp nav overview %s --workspace %s --format compact", servicePath, workspaceName),
+			fmt.Sprintf("mi-lsp nav search \"func \" --workspace %s --include-content --format compact", workspaceName),
+			fmt.Sprintf("mi-lsp nav find %s --workspace %s --format compact", summary.Service, workspaceName),
+		}
+	}
 	queries := []string{
 		fmt.Sprintf("mi-lsp nav overview %s --workspace %s --format compact", servicePath, workspaceName),
 		fmt.Sprintf("mi-lsp nav search \"Map(Get|Post|Put|Delete|Patch)\" --workspace %s --format compact", workspaceName),

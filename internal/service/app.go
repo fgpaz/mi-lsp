@@ -67,6 +67,8 @@ func (a *App) Execute(ctx context.Context, request model.CommandRequest) (model.
 		envelope, err = a.workspaceList(request)
 	case "workspace.doctor":
 		envelope, err = a.workspaceDoctor()
+	case "workspace.prune":
+		envelope, err = a.workspacePrune(request)
 	case "workspace.status":
 		envelope, err = a.workspaceStatus(ctx, request)
 	case "workspace.remove":
@@ -179,7 +181,7 @@ func (a *App) normalizeWorkspaceRequest(request model.CommandRequest) (model.Com
 
 func operationRequiresWorkspaceResolution(request model.CommandRequest) bool {
 	switch request.Operation {
-	case "workspace.add", "workspace.init", "workspace.scan", "workspace.list", "workspace.doctor", "workspace.remove", "workspace.warm", "worker.install", "worker.status":
+	case "workspace.add", "workspace.init", "workspace.scan", "workspace.list", "workspace.doctor", "workspace.prune", "workspace.remove", "workspace.warm", "worker.install", "worker.status":
 		return false
 	case "nav.find", "nav.search":
 		allWorkspaces, _ := request.Payload["all_workspaces"].(bool)
@@ -815,6 +817,11 @@ func (a *App) searchAllWorkspaces(ctx context.Context, request model.CommandRequ
 	if len(workspaces) == 0 {
 		return model.Envelope{Ok: true, Backend: "text", Items: []map[string]any{}, Warnings: []string{"no workspaces registered"}}, nil
 	}
+	var staleWarnings []string
+	workspaces, staleWarnings = filterExistingWorkspaceRoots(workspaces)
+	if len(workspaces) == 0 {
+		return model.Envelope{Ok: true, Backend: "text", Items: []map[string]any{}, Warnings: append([]string{"no existing workspace roots registered"}, staleWarnings...)}, nil
+	}
 
 	pattern, _ := request.Payload["pattern"].(string)
 	useRegex, _ := request.Payload["regex"].(bool)
@@ -872,7 +879,7 @@ func (a *App) searchAllWorkspaces(ctx context.Context, request model.CommandRequ
 	close(results)
 
 	var allItems []map[string]any
-	var allWarnings []string
+	allWarnings := append([]string{}, staleWarnings...)
 
 	for result := range results {
 		if result.err != nil {
@@ -926,6 +933,11 @@ func (a *App) findAllWorkspaces(ctx context.Context, request model.CommandReques
 	}
 	if len(workspaces) == 0 {
 		return model.Envelope{Ok: true, Backend: "catalog", Items: []model.SymbolRecord{}, Warnings: []string{"no workspaces registered"}}, nil
+	}
+	var staleWarnings []string
+	workspaces, staleWarnings = filterExistingWorkspaceRoots(workspaces)
+	if len(workspaces) == 0 {
+		return model.Envelope{Ok: true, Backend: "catalog", Items: []model.SymbolRecord{}, Warnings: append([]string{"no existing workspace roots registered"}, staleWarnings...)}, nil
 	}
 
 	pattern, _ := request.Payload["pattern"].(string)
@@ -993,5 +1005,33 @@ func (a *App) findAllWorkspaces(ctx context.Context, request model.CommandReques
 		allItems = allItems[:maxItems]
 	}
 
-	return model.Envelope{Ok: true, Backend: "catalog", Items: allItems, Stats: model.Stats{Symbols: len(allItems)}}, nil
+	return model.Envelope{Ok: true, Backend: "catalog", Items: allItems, Warnings: staleWarnings, Stats: model.Stats{Symbols: len(allItems)}}, nil
+}
+
+func filterExistingWorkspaceRoots(workspaces []model.WorkspaceRegistration) ([]model.WorkspaceRegistration, []string) {
+	filtered := make([]model.WorkspaceRegistration, 0, len(workspaces))
+	skipped := make([]string, 0)
+	for _, ws := range workspaces {
+		if _, err := os.Stat(ws.Root); err != nil {
+			skipped = append(skipped, fmt.Sprintf("%s=%s", ws.Name, ws.Root))
+			continue
+		}
+		filtered = append(filtered, ws)
+	}
+	if len(skipped) == 0 {
+		return filtered, nil
+	}
+	const maxExamples = 5
+	examples := skipped
+	if len(examples) > maxExamples {
+		examples = examples[:maxExamples]
+	}
+	warning := fmt.Sprintf("skipped %d registered workspace(s) with missing roots; run `mi-lsp workspace prune --stale --dry-run` to inspect", len(skipped))
+	if len(examples) > 0 {
+		warning += ": " + strings.Join(examples, ", ")
+		if len(skipped) > len(examples) {
+			warning += fmt.Sprintf(", +%d more", len(skipped)-len(examples))
+		}
+	}
+	return filtered, []string{warning}
 }

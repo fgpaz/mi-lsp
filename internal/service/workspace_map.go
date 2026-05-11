@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 	"time"
 
@@ -318,7 +319,110 @@ func discoverServices(ctx context.Context, db *sql.DB, registration model.Worksp
 		})
 	}
 
+	goServices, goWarnings := discoverGoPackageServices(ctx, db, project, services)
+	services = append(services, goServices...)
+	warnings = append(warnings, goWarnings...)
+
 	return services, frontendApps, serviceEvents, warnings
+}
+
+func discoverGoPackageServices(ctx context.Context, db *sql.DB, project model.ProjectFile, existing []serviceMapEntry) ([]serviceMapEntry, []string) {
+	if db == nil || !projectHasLanguage(project, "go") {
+		return nil, nil
+	}
+	symbols, err := store.OverviewByPrefix(ctx, db, "", 5000, 0)
+	if err != nil {
+		return nil, []string{"go package discovery failed: " + err.Error()}
+	}
+
+	existingPaths := make(map[string]struct{}, len(existing))
+	for _, svc := range existing {
+		existingPaths[svc.Path] = struct{}{}
+	}
+
+	grouped := make(map[string]*serviceMapEntry)
+	for _, sym := range symbols {
+		if ctx.Err() != nil {
+			break
+		}
+		if sym.Language != "go" {
+			continue
+		}
+		path := goPackageServicePath(sym.FilePath)
+		if path == "" {
+			continue
+		}
+		if _, found := existingPaths[path]; found {
+			continue
+		}
+		entry := grouped[path]
+		if entry == nil {
+			entry = &serviceMapEntry{
+				Path:    path,
+				Name:    goPackageServiceName(path),
+				Profile: "go-package",
+			}
+			grouped[path] = entry
+		}
+		entry.SymbolCount++
+		switch sym.Kind {
+		case "struct", "interface", "type":
+			entry.EntityCount++
+		}
+	}
+	if len(grouped) == 0 {
+		return nil, nil
+	}
+
+	paths := make([]string, 0, len(grouped))
+	for path := range grouped {
+		paths = append(paths, path)
+	}
+	sort.Strings(paths)
+
+	services := make([]serviceMapEntry, 0, len(paths))
+	for _, path := range paths {
+		services = append(services, *grouped[path])
+	}
+	return services, nil
+}
+
+func projectHasLanguage(project model.ProjectFile, language string) bool {
+	for _, candidate := range project.Project.Languages {
+		if candidate == language {
+			return true
+		}
+	}
+	for _, repo := range project.Repos {
+		for _, candidate := range repo.Languages {
+			if candidate == language {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func goPackageServicePath(filePath string) string {
+	dir := filepath.ToSlash(filepath.Dir(filePath))
+	if dir == "." || dir == "/" {
+		return "."
+	}
+	parts := strings.Split(dir, "/")
+	if len(parts) >= 2 {
+		switch parts[0] {
+		case "cmd", "internal", "pkg":
+			return parts[0] + "/" + parts[1]
+		}
+	}
+	return parts[0]
+}
+
+func goPackageServiceName(path string) string {
+	if path == "." {
+		return "root"
+	}
+	return filepath.Base(filepath.FromSlash(path))
 }
 
 func detectDependencies(services []serviceMapEntry, serviceEvents []serviceEventData) []serviceDependency {

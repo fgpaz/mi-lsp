@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/fgpaz/mi-lsp/internal/model"
@@ -67,6 +68,82 @@ func TestNavService_ReturnsEvidenceFirstSummary(t *testing.T) {
 	}
 	if len(summary.NextQueries) == 0 {
 		t.Fatalf("expected next queries to be suggested")
+	}
+}
+
+func TestNavServiceGoPackageUsesCatalogProfile(t *testing.T) {
+	ensureWritableTestHome(t)
+	root := t.TempDir()
+	name := "go-service-" + filepath.Base(root)
+	writeWorkspaceFile(t, root, "internal/service/app.go", "package service\n\n// fixture mentions app.MapPost(\"/fake\", nil) but is still Go\nfunc New() {}\ntype App struct{}\n")
+
+	project := model.ProjectFile{
+		Project: model.ProjectBlock{
+			Name:        name,
+			Kind:        model.WorkspaceKindSingle,
+			DefaultRepo: "main",
+			Languages:   []string{"go"},
+		},
+		Repos: []model.WorkspaceRepo{{
+			ID:        "main",
+			Name:      "main",
+			Root:      ".",
+			Languages: []string{"go"},
+		}},
+	}
+	if err := workspace.SaveProjectFile(root, project); err != nil {
+		t.Fatalf("SaveProjectFile: %v", err)
+	}
+	_, err := workspace.RegisterWorkspace(name, model.WorkspaceRegistration{
+		Name:      name,
+		Root:      root,
+		Languages: []string{"go"},
+		Kind:      model.WorkspaceKindSingle,
+	})
+	if err != nil {
+		t.Fatalf("RegisterWorkspace: %v", err)
+	}
+	t.Cleanup(func() { _ = workspace.RemoveWorkspace(name) })
+
+	db, err := store.Open(root)
+	if err != nil {
+		t.Fatalf("store.Open: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	files := []model.FileRecord{{FilePath: "internal/service/app.go", RepoID: "main", RepoName: "main", Language: "go"}}
+	symbols := []model.SymbolRecord{
+		{FilePath: "internal/service/app.go", RepoID: "main", RepoName: "main", Name: "New", Kind: "function", StartLine: 4, Language: "go"},
+		{FilePath: "internal/service/app.go", RepoID: "main", RepoName: "main", Name: "App", Kind: "struct", StartLine: 5, Language: "go"},
+	}
+	if err := store.ReplaceCatalog(context.Background(), db, project, files, symbols); err != nil {
+		t.Fatalf("ReplaceCatalog: %v", err)
+	}
+
+	app := New(root, nil)
+	env, err := app.Execute(context.Background(), model.CommandRequest{
+		Operation: "nav.service",
+		Context:   model.QueryOptions{Workspace: name},
+		Payload:   map[string]any{"path": "internal/service"},
+	})
+	if err != nil {
+		t.Fatalf("nav.service: %v", err)
+	}
+	items, ok := env.Items.([]model.ServiceSurfaceSummary)
+	if !ok || len(items) != 1 {
+		t.Fatalf("expected one service summary, got %#v", env.Items)
+	}
+	summary := items[0]
+	if summary.Profile != "go-package" {
+		t.Fatalf("Profile = %q, want go-package", summary.Profile)
+	}
+	if len(summary.HTTPEndpoints) != 0 {
+		t.Fatalf("expected no .NET endpoint false positives, got %#v", summary.HTTPEndpoints)
+	}
+	if summary.Symbols["function"] != 1 || summary.Symbols["struct"] != 1 {
+		t.Fatalf("unexpected symbols: %#v", summary.Symbols)
+	}
+	if len(summary.NextQueries) == 0 || !strings.Contains(summary.NextQueries[1], "func ") {
+		t.Fatalf("expected Go-oriented next queries, got %#v", summary.NextQueries)
 	}
 }
 

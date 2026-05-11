@@ -67,7 +67,7 @@ evidence:
 | Campo | Tipo | Destino | Efecto observable |
 |---|---|---|---|
 | `items[0].service` | string | usuario/skill | nombre derivado del path |
-| `items[0].profile` | string | usuario/skill | perfil heuristico no autoritativo (`dotnet-microservice`, `generic`) |
+| `items[0].profile` | string | usuario/skill | perfil heuristico no autoritativo (`dotnet-microservice`, `go-package`, `generic`) |
 | `items[0].http_endpoints` | lista | usuario/skill | endpoints observados por evidencia textual |
 | `items[0].event_consumers` | lista | usuario/skill | consumidores observados |
 | `items[0].event_publishers` | lista | usuario/skill | publishers observados |
@@ -87,6 +87,7 @@ evidence:
 
 - Si el catalogo no tiene simbolos bajo el path, la operacion degrada a evidencia textual y emite warning accionable.
 - Si `include_archetype=false`, placeholders conocidos no se incluyen en `entities` ni `event_consumers`, pero siguen apareciendo en `archetype_matches`.
+- Si el catalogo bajo el path es mayoritariamente Go, `nav service` usa perfil `go-package` y no ejecuta scans textuales especificos de .NET para evitar falsos positivos en fixtures o strings.
 - El comando no devuelve porcentaje de completitud, ni `low|medium|high`, ni conclusion final de auditoria.
 
 ## 8. Data Model Impact
@@ -113,12 +114,19 @@ Scenario: Incluir placeholders al pedirlo explicitamente
   Given un servicio con placeholders conocidos
   When ejecuto "mi-lsp nav service <path> --workspace salud --include-archetype"
   Then los placeholders aparecen dentro de la evidencia retornada
+
+Scenario: Resumir paquete Go sin falsos positivos .NET
+  Given un workspace Go indexado y un path `internal/service`
+  When ejecuto "mi-lsp nav service internal/service --workspace mi-lsp"
+  Then `profile` es `go-package`
+  And no aparecen endpoints .NET derivados de strings o fixtures
 ```
 
 ## 10. Test Traceability
 
 - Positivo: `TP-QRY / TC-QRY-009`
 - Positivo: `TP-QRY / TC-QRY-010`
+- Positivo: `TP-QRY / TC-QRY-009A`
 - Negativo: `TP-QRY / TC-QRY-011`
 
 ## 11. No Ambiguities Left
