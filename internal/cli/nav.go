@@ -598,17 +598,24 @@ pack for a reading pack, and trace for RS/RF/TP evidence links.`,
 	searchCommand.Flags().BoolVar(&searchAllWorkspaces, "all-workspaces", false, "Search across all registered workspaces")
 	searchCommand.Flags().IntVar(&searchTopGlobal, "top-global", 50, "Maximum number of wiki docs to return globally when --all-workspaces is true")
 
+	var routeAllWorkspaces bool
 	routeCommand := &cobra.Command{
 		Use:     "route <task>",
 		Short:   "Resolve the canonical wiki route for a task",
-		Example: `  mi-lsp nav wiki route "workflow con masterformularios" --workspace idp --format toon`,
+		Example: `  mi-lsp nav wiki route "workflow con masterformularios" --workspace idp --format toon
+  mi-lsp nav wiki route "governance" --all-workspaces --format toon`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if err := requireArgs(args, 1, "task"); err != nil {
 				return err
 			}
-			return state.executeOperation(cmd, "nav.route", map[string]any{"task": strings.Join(args, " ")}, true)
+			payload := map[string]any{"task": strings.Join(args, " ")}
+			if routeAllWorkspaces {
+				payload["all_workspaces"] = true
+			}
+			return state.executeOperation(cmd, "nav.route", payload, true)
 		},
 	}
+	routeCommand.Flags().BoolVar(&routeAllWorkspaces, "all-workspaces", false, "Route across all registered workspaces")
 
 	var packRF string
 	var packFL string

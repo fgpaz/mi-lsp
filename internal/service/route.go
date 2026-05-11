@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/fgpaz/mi-lsp/internal/model"
+	"github.com/fgpaz/mi-lsp/internal/nav"
 )
 
 // resolveCanonicalRoute is the shared routing core used by nav.route, nav.ask, and nav.pack.
@@ -88,6 +89,12 @@ func (a *App) route(ctx context.Context, request model.CommandRequest) (model.En
 		return *blockedEnv, nil
 	}
 
+	// Check if --all-workspaces mode is requested
+	allWorkspaces, _ := request.Payload["all_workspaces"].(bool)
+	if allWorkspaces {
+		return a.routeAllWorkspaces(ctx, request)
+	}
+
 	registration, _, err := a.resolveWorkspaceWithProject(request.Context.Workspace)
 	if err != nil {
 		return model.Envelope{}, err
@@ -156,4 +163,104 @@ func routeLookupStatus(ctx context.Context, query *docQueryContext, workspaceNam
 		applySourceIdentity(&status, identity)
 	}
 	return &status
+}
+
+// routeAllWorkspaces handles --all-workspaces fan-out using FanOutWiki.
+func (a *App) routeAllWorkspaces(ctx context.Context, request model.CommandRequest) (model.Envelope, error) {
+	task, _ := request.Payload["task"].(string)
+	task = strings.TrimSpace(task)
+	if task == "" {
+		task, _ = request.Payload["question"].(string)
+		task = strings.TrimSpace(task)
+	}
+	if task == "" {
+		return model.Envelope{}, fmt.Errorf("task is required")
+	}
+
+	// Code discovery only with --full or --include-code-discovery flag
+	includeCodeDiscovery, _ := request.Payload["include_code_discovery"].(bool)
+	includeDiscovery := includeCodeDiscovery || request.Context.Full
+
+	// Fan-out across workspaces
+	fanOutOpts := nav.WikiFanOutOptions{
+		Timeout:  0, // Use default (30s)
+		Parallel: 0, // Use default (4)
+	}
+
+	fanOutResult, err := nav.FanOutWiki(ctx, fanOutOpts, func(subCtx context.Context, ws model.WorkspaceRegistration) ([]any, map[string]any, error) {
+		// Query the doc index for this workspace
+		query := loadDocQueryContext(subCtx, ws, task)
+		defer query.Close()
+		if query.dbErr != nil {
+			return nil, map[string]any{}, query.dbErr
+		}
+
+		// Resolve canonical route for this workspace
+		result := query.canonicalRoute(request.Context, includeDiscovery)
+		result.Workspace = ws.Name // Add workspace label
+		result.Host = ""
+
+		// Convert to []any
+		itemsAny := []any{result}
+
+		stats := map[string]any{}
+		return itemsAny, stats, nil
+	})
+
+	if err != nil {
+		return model.Envelope{}, err
+	}
+
+	// Aggregate results from all workspaces
+	var allResults []model.RouteResult
+	for _, wsResult := range fanOutResult.Items {
+		if wsResult.Err != nil {
+			// Skip workspaces with errors but continue with others
+			continue
+		}
+		for _, item := range wsResult.Items {
+			if wsItem, ok := item.(model.RouteResult); ok {
+				allResults = append(allResults, wsItem)
+			}
+		}
+	}
+
+	// Build envelope with federated stats
+	warnings := []string{}
+	failureStrs := []string{}
+	if len(fanOutResult.WorkspacesFailed) > 0 {
+		for _, f := range fanOutResult.WorkspacesFailed {
+			failureStrs = append(failureStrs, fmt.Sprintf("%s: %s", f.Alias, f.Reason))
+		}
+		warnings = append(warnings, fmt.Sprintf("%d workspace(s) failed during query", len(fanOutResult.WorkspacesFailed)))
+	}
+
+	stats := model.Stats{
+		Files:                 len(allResults),
+		WorkspacesQueried:     fanOutResult.WorkspacesQueried,
+		WorkspacesFailed:      failureStrs,
+		TruncatedPerWorkspace: fanOutResult.TruncatedPerWS,
+	}
+
+	hint := ""
+	if len(allResults) == 0 {
+		hint = "0 route matches across workspaces; try a different task description or check workspace governance"
+	}
+
+	// Convert results to []any for envelope
+	itemsAny := make([]any, len(allResults))
+	for i := range allResults {
+		itemsAny[i] = allResults[i]
+	}
+
+	env := model.Envelope{
+		Ok:        true,
+		Workspace: "all",
+		Backend:   "route.all",
+		Items:     itemsAny,
+		Warnings:  warnings,
+		Hint:      hint,
+		Stats:     stats,
+	}
+	return env, nil
 }

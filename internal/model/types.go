@@ -744,6 +744,8 @@ type RouteResult struct {
 	Discovery    *RouteDiscoveryLane `json:"discovery,omitempty"`
 	Why          []string            `json:"why,omitempty"`
 	LookupStatus *WikiLookupStatus   `json:"lookup_status,omitempty"`
+	Workspace    string              `json:"workspace,omitempty"`
+	Host         string              `json:"host,omitempty"`
 }
 
 // ProjectConfig is a semantic alias of ProjectFile for traceability with 05_modelo_datos.md.
