@@ -611,20 +611,24 @@ type DaemonWatcherStats struct {
 }
 
 type DaemonState struct {
-	RunID           int64     `json:"run_id,omitempty"`
-	PID             int       `json:"pid"`
-	Endpoint        string    `json:"endpoint"`
-	AdminURL        string    `json:"admin_url,omitempty"`
-	RepoRoot        string    `json:"repo_root,omitempty"`
-	StartedAt       time.Time `json:"started_at,omitempty"`
-	Version         string    `json:"version,omitempty"`
-	ProtocolVersion string    `json:"protocol_version,omitempty"`
-	MaxWorkers      int       `json:"max_workers,omitempty"`
-	IdleTimeout     string    `json:"idle_timeout,omitempty"`
-	WatchMode       string    `json:"watch_mode,omitempty"`
-	MaxWatchedRoots int       `json:"max_watched_roots,omitempty"`
-	MaxInflight     int       `json:"max_inflight,omitempty"`
-	AlreadyRunning  bool      `json:"already_running,omitempty"`
+	RunID            int64     `json:"run_id,omitempty"`
+	PID              int       `json:"pid"`
+	Endpoint         string    `json:"endpoint"`
+	AdminURL         string    `json:"admin_url,omitempty"`
+	RepoRoot         string    `json:"repo_root,omitempty"`
+	ExecutablePath   string    `json:"executable_path,omitempty"`
+	ExecutableSize   int64     `json:"executable_size,omitempty"`
+	ExecutableMTime  time.Time `json:"executable_mtime,omitempty"`
+	ExecutableSHA256 string    `json:"executable_sha256,omitempty"`
+	StartedAt        time.Time `json:"started_at,omitempty"`
+	Version          string    `json:"version,omitempty"`
+	ProtocolVersion  string    `json:"protocol_version,omitempty"`
+	MaxWorkers       int       `json:"max_workers,omitempty"`
+	IdleTimeout      string    `json:"idle_timeout,omitempty"`
+	WatchMode        string    `json:"watch_mode,omitempty"`
+	MaxWatchedRoots  int       `json:"max_watched_roots,omitempty"`
+	MaxInflight      int       `json:"max_inflight,omitempty"`
+	AlreadyRunning   bool      `json:"already_running,omitempty"`
 }
 
 type AccessEvent struct {

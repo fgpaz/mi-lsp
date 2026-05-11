@@ -35,6 +35,42 @@ func TestOpen_CreatesSchema(t *testing.T) {
 	}
 }
 
+func TestWithSQLiteReadRetryRetriesLockedErrors(t *testing.T) {
+	ctx := context.Background()
+	calls := 0
+	err := WithSQLiteReadRetry(ctx, func() error {
+		calls++
+		return os.ErrInvalid
+	})
+	if err == nil {
+		t.Fatal("expected permanent error")
+	}
+	if calls != 1 {
+		t.Fatalf("calls = %d, want no retry for permanent error", calls)
+	}
+
+	calls = 0
+	err = WithSQLiteReadRetry(ctx, func() error {
+		calls++
+		if calls < 3 {
+			return storeTestError("database is locked")
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("WithSQLiteReadRetry locked: %v", err)
+	}
+	if calls != 3 {
+		t.Fatalf("calls = %d, want retry until success", calls)
+	}
+}
+
+type storeTestError string
+
+func (e storeTestError) Error() string {
+	return string(e)
+}
+
 func TestReplaceWorkspaceIndexPublishesGenerationMetadata(t *testing.T) {
 	db, root := seedTestDB(t)
 	ctx := context.Background()

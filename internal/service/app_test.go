@@ -475,6 +475,106 @@ func TestNavContext_TsserverErrorFallsBackToSlice(t *testing.T) {
 	}
 }
 
+func TestNavContext_GoFileUsesGoplsBackend(t *testing.T) {
+	ensureWritableTestHome(t)
+	root := t.TempDir()
+	name := "go-context-" + filepath.Base(root)
+	writeWorkspaceFile(t, root, "internal/app/app.go", strings.Join([]string{
+		"package app",
+		"type Server struct{}",
+		"func (s Server) Run() {}",
+	}, "\n"))
+	project := model.ProjectFile{
+		Project: model.ProjectBlock{Name: name, Languages: []string{"go"}, Kind: model.WorkspaceKindSingle, DefaultRepo: "main"},
+		Repos:   []model.WorkspaceRepo{{ID: "main", Name: "main", Root: ".", Languages: []string{"go"}}},
+	}
+	if err := workspace.SaveProjectFile(root, project); err != nil {
+		t.Fatalf("SaveProjectFile: %v", err)
+	}
+	if _, err := workspace.RegisterWorkspace(name, model.WorkspaceRegistration{Name: name, Root: root, Languages: []string{"go"}, Kind: model.WorkspaceKindSingle}); err != nil {
+		t.Fatalf("RegisterWorkspace: %v", err)
+	}
+	t.Cleanup(func() { _ = workspace.RemoveWorkspace(name) })
+
+	semantic := &fakeSemanticCaller{
+		callFn: func(_ context.Context, _ model.WorkspaceRegistration, request model.WorkerRequest) (model.WorkerResponse, error) {
+			if request.BackendType != "gopls" {
+				t.Fatalf("backend type = %q, want gopls", request.BackendType)
+			}
+			return model.WorkerResponse{
+				Ok:      true,
+				Backend: "gopls",
+				Items: []map[string]any{{
+					"name":      "Server.Run",
+					"kind":      "method",
+					"signature": "func (Server) Run()",
+				}},
+				Stats: model.Stats{Symbols: 1},
+			}, nil
+		},
+	}
+
+	app := New(root, semantic)
+	env, err := app.Execute(context.Background(), model.CommandRequest{
+		Operation: "nav.context",
+		Context:   model.QueryOptions{Workspace: name},
+		Payload:   map[string]any{"file": "internal/app/app.go", "line": 3},
+	})
+	if err != nil {
+		t.Fatalf("nav.context: %v", err)
+	}
+	if env.Backend != "gopls" {
+		t.Fatalf("backend = %q, want gopls", env.Backend)
+	}
+}
+
+func TestNavContext_GoplsUnavailableFallsBackToSlice(t *testing.T) {
+	ensureWritableTestHome(t)
+	root := t.TempDir()
+	name := "go-context-fallback-" + filepath.Base(root)
+	writeWorkspaceFile(t, root, "internal/app/app.go", strings.Join([]string{
+		"package app",
+		"type Server struct{}",
+		"func (s Server) Run() {}",
+	}, "\n"))
+	project := model.ProjectFile{
+		Project: model.ProjectBlock{Name: name, Languages: []string{"go"}, Kind: model.WorkspaceKindSingle, DefaultRepo: "main"},
+		Repos:   []model.WorkspaceRepo{{ID: "main", Name: "main", Root: ".", Languages: []string{"go"}}},
+	}
+	if err := workspace.SaveProjectFile(root, project); err != nil {
+		t.Fatalf("SaveProjectFile: %v", err)
+	}
+	if _, err := workspace.RegisterWorkspace(name, model.WorkspaceRegistration{Name: name, Root: root, Languages: []string{"go"}, Kind: model.WorkspaceKindSingle}); err != nil {
+		t.Fatalf("RegisterWorkspace: %v", err)
+	}
+	t.Cleanup(func() { _ = workspace.RemoveWorkspace(name) })
+
+	semantic := &fakeSemanticCaller{
+		callFn: func(_ context.Context, _ model.WorkspaceRegistration, request model.WorkerRequest) (model.WorkerResponse, error) {
+			if request.BackendType != "gopls" {
+				t.Fatalf("backend type = %q, want gopls", request.BackendType)
+			}
+			return model.WorkerResponse{}, errors.New("gopls is unavailable")
+		},
+	}
+
+	app := New(root, semantic)
+	env, err := app.Execute(context.Background(), model.CommandRequest{
+		Operation: "nav.context",
+		Context:   model.QueryOptions{Workspace: name},
+		Payload:   map[string]any{"file": "internal/app/app.go", "line": 3},
+	})
+	if err != nil {
+		t.Fatalf("nav.context should degrade to slice, got error: %v", err)
+	}
+	if env.Backend != "text" && env.Backend != "catalog" {
+		t.Fatalf("backend = %q, want text/catalog fallback", env.Backend)
+	}
+	if !strings.Contains(strings.Join(env.Warnings, " "), "gopls") {
+		t.Fatalf("expected gopls warning, got %v", env.Warnings)
+	}
+}
+
 func TestNavContext_RoslynBootstrapErrorAddsInstallHint(t *testing.T) {
 	root, name := setupTestWorkspace(t)
 	writeWorkspaceFile(t, root, "src/Context.cs", strings.Join([]string{

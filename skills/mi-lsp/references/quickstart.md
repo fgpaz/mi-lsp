@@ -78,7 +78,7 @@ Canonical doc location follows governance and `read-model`, not a fixed path ass
 | Find the right repo/entrypoint in a parent folder | `nav workspace-map --axi` |
 | Understand one symbol fully | `nav related MySymbol` |
 | Find code by purpose | `nav intent "password reset frontend"` |
-| Read code around a known line | `nav context path/to/file.cs 42` |
+| Read code around a known line | `nav context path/to/file.cs:42` or `nav context path/to/file.cs 42` |
 | Search text and see the matching code | `nav search "pattern" --include-content` |
 | Read several files/ranges together | `nav multi-read ...` |
 | Do mixed search + read + context in one shot | `nav batch` |
@@ -99,3 +99,4 @@ If a cheap read is slow, suspect stale binary, stale index, or wrong PATH before
 In container workspaces, prefer `--repo` for direct `find`, `search`, or `intent` before reaching for semantic selectors.
 Do not use `--repo docs` as a wiki selector. Use `nav wiki search|route|pack`; `nav ask|route|pack --repo` is compatibility-only and will be ignored for docs.
 Do not use `nav search` to decide which documentation source is canonical when `nav wiki search|route|pack|trace` can answer that question.
+For Go files, `nav context` / `nav refs` may use `gopls` when it is installed. If `gopls` is unavailable, the command should degrade to catalog/text with a visible install hint; do not treat that fallback as a hard failure unless the task explicitly requires live Go LSP semantics.

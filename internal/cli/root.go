@@ -114,9 +114,9 @@ func NewRootCommand() *cobra.Command {
 				return fmt.Errorf("--max-items must be > 0")
 			}
 			switch state.backendHint {
-			case "", "roslyn", "tsserver", "pyright", "catalog", "text":
+			case "", "roslyn", "tsserver", "pyright", "gopls", "catalog", "text":
 			default:
-				return fmt.Errorf("invalid --backend %q; valid options: roslyn, tsserver, pyright, catalog, text", state.backendHint)
+				return fmt.Errorf("invalid --backend %q; valid options: roslyn, tsserver, pyright, gopls, catalog, text", state.backendHint)
 			}
 			if isClassicRequested(cmd, state.classic) && flagChanged(cmd, "axi") && state.axi {
 				return fmt.Errorf("--axi and --classic cannot be used together")
@@ -137,7 +137,7 @@ func NewRootCommand() *cobra.Command {
 	root.PersistentFlags().BoolVar(&state.verbose, "verbose", false, "Verbose debug output")
 	root.PersistentFlags().StringVar(&state.clientName, "client-name", state.clientName, "Logical client name for governance and telemetry")
 	root.PersistentFlags().StringVar(&state.sessionID, "session-id", state.sessionID, "Logical client session identifier for governance and telemetry")
-	root.PersistentFlags().StringVar(&state.backendHint, "backend", "", "Force a backend hint: roslyn|tsserver|pyright|catalog")
+	root.PersistentFlags().StringVar(&state.backendHint, "backend", "", "Force a backend hint: roslyn|tsserver|pyright|gopls|catalog|text")
 	root.PersistentFlags().BoolVar(&state.axi, "axi", axiEnabled, "Enable AXI discovery and preview mode")
 	root.PersistentFlags().BoolVar(&state.classic, "classic", false, "Force classic CLI behavior on AXI-default surfaces")
 	root.PersistentFlags().BoolVar(&state.full, "full", false, "Expand AXI preview responses to fuller detail")

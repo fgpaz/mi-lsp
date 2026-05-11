@@ -70,21 +70,11 @@ func (a *App) semantic(ctx context.Context, request model.CommandRequest, method
 	}
 	response, err := a.Semantic.Call(ctx, registration, workerRequest)
 	if err != nil {
-		if backendType == "tsserver" && request.Context.BackendHint == "" {
+		if isOptionalSemanticBackend(backendType) && request.Context.BackendHint == "" {
 			warnings := append([]string{}, target.Warnings...)
-			warnings = append(warnings, semanticBackendWarning("tsserver", err))
-			if shouldCooldownSemanticBackend("tsserver", err) {
-				a.markBackendCooldown(registration.Root, workerRequest.RepoRoot, "tsserver", "tsserver unavailable recently; using catalog fallback for this repo until cooldown expires", 5*time.Minute)
-			}
-			env, fallbackErr := a.semanticFallback(ctx, registration, request, method, "catalog", warnings)
-			env.Stats.Ms = time.Since(started).Milliseconds()
-			return env, fallbackErr
-		}
-		if backendType == "pyright" && request.Context.BackendHint == "" {
-			warnings := append([]string{}, target.Warnings...)
-			warnings = append(warnings, semanticBackendWarning("pyright", err))
-			if shouldCooldownSemanticBackend("pyright", err) {
-				a.markBackendCooldown(registration.Root, workerRequest.RepoRoot, "pyright", "pyright unavailable recently; using catalog fallback for this repo until cooldown expires", 5*time.Minute)
+			warnings = append(warnings, semanticBackendWarning(backendType, err))
+			if shouldCooldownSemanticBackend(backendType, err) {
+				a.markBackendCooldown(registration.Root, workerRequest.RepoRoot, backendType, fmt.Sprintf("%s unavailable recently; using catalog fallback for this repo until cooldown expires", backendType), 5*time.Minute)
 			}
 			env, fallbackErr := a.semanticFallback(ctx, registration, request, method, "catalog", warnings)
 			env.Stats.Ms = time.Since(started).Milliseconds()
@@ -284,20 +274,23 @@ func resolveBackendType(registration model.WorkspaceRegistration, request model.
 	if isPythonFile(file) {
 		return "pyright"
 	}
+	if isGoFile(file) {
+		return "gopls"
+	}
 	if method == "find_refs" && !hasLanguage(registration, "csharp") && hasLanguage(registration, "typescript") {
 		return "tsserver"
 	}
 	if method == "find_refs" && hasLanguage(registration, "python") && !hasLanguage(registration, "csharp") && !hasLanguage(registration, "typescript") {
 		return "pyright"
 	}
+	if method == "find_refs" && hasLanguage(registration, "go") && !hasLanguage(registration, "csharp") && !hasLanguage(registration, "typescript") && !hasLanguage(registration, "python") {
+		return "gopls"
+	}
 	return "roslyn"
 }
 
 func targetForRepo(project model.ProjectFile, repo model.WorkspaceRepo, backendType string, method string) (semanticTarget, *model.Envelope, error) {
-	if backendType == "tsserver" {
-		return semanticTarget{Repo: repo, Entrypoint: explicitEntrypoint(repo, repo.Root, "repo"), Synthetic: true}, nil, nil
-	}
-	if backendType == "pyright" {
+	if backendType == "tsserver" || backendType == "pyright" || backendType == "gopls" {
 		return semanticTarget{Repo: repo, Entrypoint: explicitEntrypoint(repo, repo.Root, "repo"), Synthetic: true}, nil, nil
 	}
 	entrypoint, ok := workspace.DefaultEntrypointForRepo(project, repo.ID)
@@ -395,4 +388,17 @@ func isTypeScriptFile(path string) bool {
 func isPythonFile(path string) bool {
 	ext := strings.ToLower(filepath.Ext(path))
 	return ext == ".py" || ext == ".pyi"
+}
+
+func isGoFile(path string) bool {
+	return strings.EqualFold(filepath.Ext(path), ".go")
+}
+
+func isOptionalSemanticBackend(backendType string) bool {
+	switch backendType {
+	case "tsserver", "pyright", "gopls":
+		return true
+	default:
+		return false
+	}
 }

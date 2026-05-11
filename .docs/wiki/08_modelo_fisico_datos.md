@@ -84,12 +84,13 @@ La novedad de v1.3 es que el store repo-local persiste tambien el grafo document
 - `doc_records`, `doc_edges`, `doc_mentions`, `doc_source_blocks` y `doc_source_records` deben refrescarse como un bloque consistente dentro de una sola transaccion.
 - `mi-lsp index --docs-only` puede ejecutar `ReplaceWorkspaceDocs` sin tocar `files`, `symbols`, `workspace_repos` ni `workspace_entrypoints`.
 - Las tablas `doc_source_*` son aditivas y reconstruibles; no requieren migracion destructiva ni `PRAGMA user_version`.
-- El snapshot repo-local de reentrada (`memory_snapshot_json`) se reconstruye en `mi-lsp index`, no en cada query interactiva.
+- El snapshot repo-local de reentrada (`memory_snapshot_json`) se reconstruye en `mi-lsp index`; `workspace status --full` puede refrescarlo con una pasada docs-only solamente cuando el snapshot esta stale, `auto_sync` esta habilitado y la gobernanza no esta bloqueada.
 - `project.toml` debe poder reescribirse al volver a detectar topologia del workspace.
 - El `read-model.toml` no se copia a SQLite; se usa en lectura y sus cambios disparan re-index completo del corpus documental.
 - `00_gobierno_documental.md` tampoco se persiste dentro de SQLite; su estado gobierna bloqueo/sync e invalida el indice cuando cambia.
 - El store global del daemon no duplica el catalogo repo-local; solo guarda supervision y telemetria.
 - `registry.toml` puede contener multiples aliases para un mismo root; `workspace list` debe preservar el alias registrado y `workspace list --group-by-root` solo debe agruparlos para diagnostico.
+- `workspace prune --stale --apply` puede remover del `registry.toml` solo aliases cuyo `root` ya no existe en disco; si el alias removido era `defaults.last_workspace`, tambien limpia ese puntero. La operacion no elimina worktrees, carpetas, `.mi-lsp/index.db` ni otros archivos repo-locales.
 - Worktrees de un mismo repositorio comparten `git common dir` pero tienen `workspace_root` fisico distinto; cada worktree mantiene su propio `.mi-lsp/index.db`, watcher y runtime identity.
 - `runtime_snapshots` representan solamente runtimes observables del `daemon_run_id` vigente.
 - `access_events` registran metadata y nunca payloads completos.
@@ -99,6 +100,7 @@ La novedad de v1.3 es que el store repo-local persiste tambien el grafo document
 - `decision_json` puede incluir campos backend/fallback derivados (`requested_backend`, `result_backend`, `backend_fallback_taken`, `fallback_from`, `fallback_to`, `runtime_error_code`) para diagnostico de harnesses, pero nunca paths crudos, `slice_text`, errores raw de worker, query ni payload completo.
 - `daemon.db` usa WAL mode para manejar escrituras concurrentes (daemon + CLI directo).
 - `.mi-lsp/index.db` repo-local tambien usa WAL mode + `busy_timeout`, y las escrituras se serializan por workspace para evitar contencion entre watcher e index manual.
+- Las lecturas documentales criticas (`ListDocRecords`, `FindDocRecordsBySourceID`, `ListDocSourceBlocks`, `ListDocSourceRecords`, FTS doc search y helpers relacionados) aplican retry/backoff breve ante `database is locked` / `SQLITE_BUSY`; si el lock persiste, el error sigue visible.
 - Ante corrupcion de `index.db`, el runtime debe cuarentenar el archivo previo y reconstruir uno nuevo en el mismo workspace.
 - Auto-purge elimina eventos y runs con mas de 30 dias en startup de CLI y daemon.
 - La fila canonica de una request `route=daemon` la escribe el daemon.
@@ -118,6 +120,7 @@ La novedad de v1.3 es que el store repo-local persiste tambien el grafo document
 - `DocMentionsForPath(path)`: devuelve menciones a codigo o comandos derivadas de un documento.
 - `CountDocRecords()`: expone `doc_count` para `workspace status`.
 - `FindDocRecordsByMention(type, value)`: permite resolver IDs embebidos dentro de documentos agregados bajo `04_RF/`.
+- Las queries documentales anteriores deben preservar fallo visible si agotan el retry de lock; no deben ocultar corrupcion, SQL invalido ni errores permanentes como si fueran contencion transitoria.
 
 ### Transacciones
 

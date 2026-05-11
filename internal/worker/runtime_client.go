@@ -19,30 +19,27 @@ func NewRuntimeClient(repoRoot string, workspace model.WorkspaceRegistration, re
 	case "", "roslyn":
 		return NewClient(repoRoot, workspace)
 	case "tsserver":
-		runtimeWorkspace := workspace
-		if request.RepoRoot != "" {
-			runtimeWorkspace.Root = request.RepoRoot
-		}
-		if request.RepoName != "" {
-			runtimeWorkspace.Name = request.RepoName
-		} else if request.RepoRoot != "" {
-			runtimeWorkspace.Name = filepath.Base(request.RepoRoot)
-		}
-		return NewTsserverClient(runtimeWorkspace)
+		return NewTsserverClient(runtimeWorkspaceForRequest(workspace, request))
 	case "pyright":
-		runtimeWorkspace := workspace
-		if request.RepoRoot != "" {
-			runtimeWorkspace.Root = request.RepoRoot
-		}
-		if request.RepoName != "" {
-			runtimeWorkspace.Name = request.RepoName
-		} else if request.RepoRoot != "" {
-			runtimeWorkspace.Name = filepath.Base(request.RepoRoot)
-		}
-		return NewPyrightClient(runtimeWorkspace)
+		return NewPyrightClient(runtimeWorkspaceForRequest(workspace, request))
+	case "gopls":
+		return NewGoplsClient(runtimeWorkspaceForRequest(workspace, request))
 	default:
 		return nil, ErrUnsupportedBackend(backendType)
 	}
+}
+
+func runtimeWorkspaceForRequest(workspace model.WorkspaceRegistration, request model.WorkerRequest) model.WorkspaceRegistration {
+	runtimeWorkspace := workspace
+	if request.RepoRoot != "" {
+		runtimeWorkspace.Root = request.RepoRoot
+	}
+	if request.RepoName != "" {
+		runtimeWorkspace.Name = request.RepoName
+	} else if request.RepoRoot != "" {
+		runtimeWorkspace.Name = filepath.Base(request.RepoRoot)
+	}
+	return runtimeWorkspace
 }
 
 type unsupportedBackendError string

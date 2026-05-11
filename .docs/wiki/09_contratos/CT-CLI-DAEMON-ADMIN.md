@@ -194,6 +194,7 @@ Input:
 
 ```text
 mi-lsp nav context <file> <line> --workspace <alias> [--backend <hint>] [--format compact|json|text|toon|yaml]
+mi-lsp nav context <file>:<line> --workspace <alias> [--backend <hint>] [--format compact|json|text|toon|yaml]
 ```
 
 Output item (`items[0]`):
@@ -442,6 +443,7 @@ Reglas:
 
 - `daemon start` debe devolver la instancia existente si ya corre.
 - `daemon status` debe exponer `state`, `daemon_process`, `watchers`, `active_runtimes` y `recent_accesses`.
+- `state` debe incluir metadata del ejecutable del daemon (`executable_path`, `executable_size`, `executable_mtime`, `executable_sha256`) cuando el daemon corre una build actual; si falta o si el hash/tamano/mtime prueban que difiere del CLI que invoca `daemon status`, el CLI debe emitir warning accionable con `mi-lsp daemon restart`. El hash tiene prioridad para evitar falsos positivos cuando `go run` usa paths temporales distintos para el mismo contenido.
 - Si una operacion daemon-aware excede `max_inflight`, devuelve envelope `ok=false`, item con `error_kind=daemon`, `error_code=backpressure_busy`, y warning `daemon/backpressure_busy`.
 - Ese mismo caso debe mapear `error.kind=daemon`, `error.code=backpressure_busy`, `error.stage=backend`, `error.retryable=true` y persistir `failure_stage=backend` en telemetria.
 - Si no hay daemon, el CLI debe poder ejecutar directo.

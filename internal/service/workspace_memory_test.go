@@ -2,9 +2,11 @@ package service
 
 import (
 	"context"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/fgpaz/mi-lsp/internal/indexer"
 	"github.com/fgpaz/mi-lsp/internal/model"
@@ -159,5 +161,76 @@ func TestWorkspaceStatusWarnsWhenSnapshotAbsentAfterIndex(t *testing.T) {
 	}
 	if env.MemoryPointer != nil {
 		t.Fatalf("memory_pointer must be nil when snapshot is missing; got %#v", env.MemoryPointer)
+	}
+}
+
+func TestWorkspaceStatusFullRefreshesStaleMemoryWhenAutoSyncEnabled(t *testing.T) {
+	alias := "status-refresh-memory-" + filepath.Base(t.TempDir())
+	root := createWorkspaceMemoryFixture(t, alias)
+	app := New(root, nil)
+
+	if _, err := app.Execute(context.Background(), model.CommandRequest{
+		Operation: "workspace.init",
+		Context:   model.QueryOptions{},
+		Payload:   map[string]any{"path": root, "alias": alias},
+	}); err != nil {
+		t.Fatalf("workspace.init: %v", err)
+	}
+	defer func() { _ = workspace.RemoveWorkspace(alias) }()
+
+	time.Sleep(1100 * time.Millisecond)
+	writeWorkspaceFile(t, root, ".docs/wiki/07_baseline_tecnica.md", "# 07 Baseline tecnica\n\nCambio posterior para refrescar memoria.\n")
+
+	env, err := app.Execute(context.Background(), model.CommandRequest{
+		Operation: "workspace.status",
+		Context:   model.QueryOptions{Workspace: alias, AXI: true, Full: true},
+	})
+	if err != nil {
+		t.Fatalf("workspace.status: %v", err)
+	}
+	if env.MemoryPointer == nil {
+		t.Fatalf("expected refreshed memory pointer, got %#v", env)
+	}
+	if env.MemoryPointer.Stale {
+		t.Fatalf("memory pointer should no longer be stale after auto refresh: %#v", env.MemoryPointer)
+	}
+	if !strings.Contains(strings.Join(env.Warnings, " "), "refreshed stale reentry memory snapshot") {
+		t.Fatalf("expected refresh warning, got %v", env.Warnings)
+	}
+}
+
+func TestWorkspaceStatusFullDoesNotRefreshStaleMemoryWhenAutoSyncDisabled(t *testing.T) {
+	alias := "status-no-refresh-memory-" + filepath.Base(t.TempDir())
+	root := createWorkspaceMemoryFixture(t, alias)
+	app := New(root, nil)
+
+	if _, err := app.Execute(context.Background(), model.CommandRequest{
+		Operation: "workspace.init",
+		Context:   model.QueryOptions{},
+		Payload:   map[string]any{"path": root, "alias": alias},
+	}); err != nil {
+		t.Fatalf("workspace.init: %v", err)
+	}
+	defer func() { _ = workspace.RemoveWorkspace(alias) }()
+
+	time.Sleep(1100 * time.Millisecond)
+	path := filepath.Join(root, ".docs", "wiki", "07_baseline_tecnica.md")
+	if err := os.WriteFile(path, []byte("# 07 Baseline tecnica\n\nCambio posterior sin auto sync.\n"), 0o644); err != nil {
+		t.Fatalf("write stale doc: %v", err)
+	}
+
+	env, err := app.Execute(context.Background(), model.CommandRequest{
+		Operation: "workspace.status",
+		Context:   model.QueryOptions{Workspace: alias, AXI: true, Full: true},
+		Payload:   map[string]any{"auto_sync": false},
+	})
+	if err != nil {
+		t.Fatalf("workspace.status: %v", err)
+	}
+	if env.MemoryPointer == nil || !env.MemoryPointer.Stale {
+		t.Fatalf("expected stale memory pointer with auto sync disabled, got %#v", env.MemoryPointer)
+	}
+	if strings.Contains(strings.Join(env.Warnings, " "), "refreshed stale reentry memory snapshot") {
+		t.Fatalf("did not expect refresh warning, got %v", env.Warnings)
 	}
 }

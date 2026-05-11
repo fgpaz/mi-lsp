@@ -38,6 +38,9 @@ func ExtractCatalog(root string, repo model.WorkspaceRepo, absolutePath string, 
 	if language == "csharp" {
 		return extractCSharp(repo, relPath, hash, lines), fileRecord
 	}
+	if language == "go" {
+		return extractGo(repo, relPath, hash, content), fileRecord
+	}
 	if language == "python" {
 		return extractPython(repo, relPath, hash, content), fileRecord
 	}
@@ -185,6 +188,8 @@ func languageForPath(path string) string {
 	switch strings.ToLower(filepath.Ext(path)) {
 	case ".cs":
 		return "csharp"
+	case ".go":
+		return "go"
 	case ".py", ".pyi":
 		return "python"
 	default:

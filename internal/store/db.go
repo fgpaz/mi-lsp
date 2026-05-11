@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"os"
@@ -12,6 +13,11 @@ import (
 )
 
 const driverName = "sqlite"
+
+const (
+	sqliteRetryAttempts = 4
+	sqliteRetryDelay    = 25 * time.Millisecond
+)
 
 func WorkspaceDBPath(root string) string {
 	return filepath.Join(root, ".mi-lsp", "index.db")
@@ -36,6 +42,34 @@ func Open(root string) (*sql.DB, error) {
 		return nil, err
 	}
 	return db, nil
+}
+
+func WithSQLiteReadRetry(ctx context.Context, fn func() error) error {
+	var err error
+	delay := sqliteRetryDelay
+	for attempt := 0; attempt < sqliteRetryAttempts; attempt++ {
+		err = fn()
+		if !IsLockedError(err) {
+			return err
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(delay):
+		}
+		delay *= 2
+	}
+	return err
+}
+
+func QueryContextWithRetry(ctx context.Context, db *sql.DB, query string, args ...any) (*sql.Rows, error) {
+	var rows *sql.Rows
+	err := WithSQLiteReadRetry(ctx, func() error {
+		var queryErr error
+		rows, queryErr = db.QueryContext(ctx, query, args...)
+		return queryErr
+	})
+	return rows, err
 }
 
 func Reset(root string) error {
@@ -68,6 +102,19 @@ func IsCorruptionError(err error) bool {
 		strings.Contains(message, "database or disk is full") ||
 		strings.Contains(message, "file is not a database") ||
 		strings.Contains(message, "malformed")
+}
+
+func IsLockedError(err error) bool {
+	if err == nil {
+		return false
+	}
+	message := strings.ToLower(strings.TrimSpace(err.Error()))
+	return strings.Contains(message, "database is locked") ||
+		strings.Contains(message, "database table is locked") ||
+		strings.Contains(message, "database is busy") ||
+		strings.Contains(message, "sqlite_busy") ||
+		strings.Contains(message, "sqlite_locked") ||
+		strings.Contains(message, "sql logic error: database is locked")
 }
 
 func QuarantineCorruptDB(root string) (string, error) {

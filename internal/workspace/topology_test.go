@@ -80,3 +80,70 @@ func TestDetectWorkspaceLayoutDetectsPython(t *testing.T) {
 		t.Fatalf("expected python in languages, got %v", registration.Languages)
 	}
 }
+
+func TestDetectWorkspaceLayoutDetectsGo(t *testing.T) {
+	root := t.TempDir()
+	mustCreateDir(t, filepath.Join(root, ".git"))
+	mustWriteFile(t, filepath.Join(root, "go.mod"), "module example.com/app\n")
+	mustWriteFile(t, filepath.Join(root, "main.go"), "package main\n\nfunc main() {}\n")
+
+	registration, project, err := DetectWorkspaceLayout(root, "gotest")
+	if err != nil {
+		t.Fatalf("DetectWorkspaceLayout returned error: %v", err)
+	}
+	if !hasLanguage(registration.Languages, "go") {
+		t.Fatalf("expected go in registration languages, got %v", registration.Languages)
+	}
+	if !hasLanguage(project.Project.Languages, "go") {
+		t.Fatalf("expected go in project languages, got %v", project.Project.Languages)
+	}
+}
+
+func TestLoadProjectTopologyMergesDetectedGoIntoExistingProjectFile(t *testing.T) {
+	root := t.TempDir()
+	mustCreateDir(t, filepath.Join(root, ".git"))
+	mustWriteFile(t, filepath.Join(root, "go.mod"), "module example.com/app\n")
+	mustWriteFile(t, filepath.Join(root, "main.go"), "package main\n\nfunc main() {}\n")
+	registration := model.WorkspaceRegistration{
+		Name:      "mi-lsp",
+		Root:      root,
+		Languages: []string{"csharp"},
+		Kind:      model.WorkspaceKindSingle,
+	}
+	if err := SaveProjectFile(root, model.ProjectFile{
+		Project: model.ProjectBlock{
+			Name:        "mi-lsp",
+			Languages:   []string{"csharp"},
+			Kind:        model.WorkspaceKindSingle,
+			DefaultRepo: "mi-lsp",
+		},
+		Repos: []model.WorkspaceRepo{{
+			ID:        "mi-lsp",
+			Name:      "mi-lsp",
+			Root:      ".",
+			Languages: []string{"csharp"},
+		}},
+	}); err != nil {
+		t.Fatalf("SaveProjectFile: %v", err)
+	}
+
+	project, err := LoadProjectTopology(root, registration)
+	if err != nil {
+		t.Fatalf("LoadProjectTopology: %v", err)
+	}
+	if !hasLanguage(project.Project.Languages, "go") {
+		t.Fatalf("expected merged go project language, got %v", project.Project.Languages)
+	}
+	if len(project.Repos) != 1 || !hasLanguage(project.Repos[0].Languages, "go") {
+		t.Fatalf("expected merged go repo language, got %#v", project.Repos)
+	}
+}
+
+func hasLanguage(languages []string, expected string) bool {
+	for _, language := range languages {
+		if language == expected {
+			return true
+		}
+	}
+	return false
+}

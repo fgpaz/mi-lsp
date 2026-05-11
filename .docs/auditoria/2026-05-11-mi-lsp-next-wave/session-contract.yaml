@@ -1,0 +1,66 @@
+schema: mi-lsp-session-contract-v1
+task_slug: mi-lsp-next-wave
+created_at: 2026-05-11T11:45:00-03:00
+created_posthoc: true
+posthoc_reason: "The execution started from a prior-agent plan and the closure contract was materialized before final verification."
+worktree_path: C:\repos\mios\mi-lsp
+branch: feature/daemon-go-ergonomics-wave
+base_ref: main
+base_sha: b63b17493e54eee7fea41553360a7defc9dbda86
+upstream: none
+expected_scope:
+  - daemon stale executable detection
+  - optional Go gopls semantic backend with catalog fallback
+  - Go-aware service exploration
+  - nav context file:line ergonomics
+  - SQLite read retry/backoff
+  - mi-lsp skill and binary distribution refresh
+allowed_paths:
+  - .docs/wiki/**
+  - .docs/planificacion/2026-05-11-mi-lsp-next-wave-trazabilidad-auditoria.md
+  - .docs/auditoria/2026-05-11-mi-lsp-next-wave/**
+  - internal/cli/**
+  - internal/daemon/**
+  - internal/model/**
+  - internal/service/**
+  - internal/store/**
+  - internal/worker/**
+  - skills/mi-lsp/**
+external_allowed_paths:
+  - C:\Users\fgpaz\.agents\skills\mi-lsp/**
+  - C:\repos\buho\assets\skills\mi-lsp/**
+  - C:\Users\fgpaz\bin\mi-lsp.exe
+  - C:\Users\fgpaz\.mi-lsp\workers\win-arm64\MiLsp.Worker.exe
+forbidden_paths:
+  - AGENTS.md
+  - CLAUDE.md
+  - .docs/raw/**
+  - C:\repos\buho\assets\agents/**
+  - C:\repos\buho\assets\compound-commands.md
+sdd_anchors:
+  - RF-DAE-001
+  - RF-DAE-002
+  - RF-DAE-003
+  - RF-DAE-004
+  - RF-QRY-004
+  - RF-QRY-006
+  - RF-QRY-007
+  - RF-QRY-009
+  - TP-DAE
+  - TP-QRY
+  - TECH-SERVICE-EXPLORATION
+  - CT-CLI-DAEMON-ADMIN
+evidence_required:
+  - go test ./...
+  - C:\Users\fgpaz\bin\mi-lsp.exe index --workspace mi-lsp --clean --format toon
+  - C:\Users\fgpaz\bin\mi-lsp.exe workspace status mi-lsp --format toon
+  - C:\Users\fgpaz\bin\mi-lsp.exe nav wiki validate-harness --workspace mi-lsp --format toon
+  - C:\Users\fgpaz\bin\mi-lsp.exe nav wiki validate-source --workspace mi-lsp --format toon --full
+  - C:\Users\fgpaz\bin\mi-lsp.exe daemon status --format toon
+  - binary hash/version parity checks
+  - skill mirror parity checks
+touched_cards: not_applicable
+board_sync: not_applicable
+branch_disposition: hold
+cleanup_policy: active-followup
+push_policy: "Do not push directly to main. Commit/push/PR are explicit follow-up actions."

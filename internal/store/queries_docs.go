@@ -124,7 +124,7 @@ func replaceDocsWithSourcesTx(ctx context.Context, tx *sql.Tx, docs []model.DocR
 }
 
 func ListDocSourceBlocks(ctx context.Context, db *sql.DB) ([]model.DocSourceBlock, error) {
-	rows, err := db.QueryContext(ctx, `
+	rows, err := QueryContextWithRetry(ctx, db, `
 		SELECT doc_path, block_id, doc_id, kind, source_format, ordinal, start_line, end_line, content_hash, indexed_at
 		FROM doc_source_blocks
 		ORDER BY doc_path ASC, ordinal ASC, block_id ASC
@@ -145,7 +145,7 @@ func ListDocSourceBlocks(ctx context.Context, db *sql.DB) ([]model.DocSourceBloc
 }
 
 func ListDocSourceRecords(ctx context.Context, db *sql.DB) ([]model.DocSourceRecord, error) {
-	rows, err := db.QueryContext(ctx, `
+	rows, err := QueryContextWithRetry(ctx, db, `
 		SELECT doc_path, block_id, record_id, record_type, ordinal, start_line, end_line, content_hash, indexed_at
 		FROM doc_source_records
 		ORDER BY doc_path ASC, ordinal ASC, record_id ASC
@@ -170,7 +170,7 @@ func FindDocRecordsBySourceID(ctx context.Context, db *sql.DB, id string) ([]mod
 	if id == "" {
 		return nil, nil
 	}
-	rows, err := db.QueryContext(ctx, `
+	rows, err := QueryContextWithRetry(ctx, db, `
 		SELECT DISTINCT dr.path, dr.title, dr.doc_id, dr.layer, dr.family, dr.snippet, dr.search_text, dr.content_hash, dr.indexed_at, dr.is_snapshot
 		FROM doc_records dr
 		LEFT JOIN doc_source_blocks dsb ON dsb.doc_path = dr.path
@@ -196,7 +196,7 @@ func FindDocRecordsBySourceID(ctx context.Context, db *sql.DB, id string) ([]mod
 }
 
 func ListDocRecords(ctx context.Context, db *sql.DB) ([]model.DocRecord, error) {
-	rows, err := db.QueryContext(ctx, `
+	rows, err := QueryContextWithRetry(ctx, db, `
 		SELECT path, title, doc_id, layer, family, snippet, search_text, content_hash, indexed_at, is_snapshot
 		FROM doc_records
 		ORDER BY family ASC, layer ASC, path ASC
@@ -218,14 +218,16 @@ func ListDocRecords(ctx context.Context, db *sql.DB) ([]model.DocRecord, error) 
 
 func CountDocRecords(ctx context.Context, db *sql.DB) (int, error) {
 	var count int
-	if err := db.QueryRowContext(ctx, "SELECT COUNT(*) FROM doc_records").Scan(&count); err != nil {
+	if err := WithSQLiteReadRetry(ctx, func() error {
+		return db.QueryRowContext(ctx, "SELECT COUNT(*) FROM doc_records").Scan(&count)
+	}); err != nil {
 		return 0, err
 	}
 	return count, nil
 }
 
 func FindDocRecordsByMention(ctx context.Context, db *sql.DB, mentionType string, mentionValue string) ([]model.DocRecord, error) {
-	rows, err := db.QueryContext(ctx, `
+	rows, err := QueryContextWithRetry(ctx, db, `
 		SELECT dr.path, dr.title, dr.doc_id, dr.layer, dr.family, dr.snippet, dr.search_text, dr.content_hash, dr.indexed_at, dr.is_snapshot
 		FROM doc_records dr
 		JOIN doc_mentions dm ON dm.doc_path = dr.path
@@ -248,7 +250,7 @@ func FindDocRecordsByMention(ctx context.Context, db *sql.DB, mentionType string
 }
 
 func DocEdgesFrom(ctx context.Context, db *sql.DB, docPath string) ([]model.DocEdge, error) {
-	rows, err := db.QueryContext(ctx, `
+	rows, err := QueryContextWithRetry(ctx, db, `
 		SELECT from_path, to_path, to_doc_id, kind, label
 		FROM doc_edges
 		WHERE from_path = ?
@@ -270,7 +272,7 @@ func DocEdgesFrom(ctx context.Context, db *sql.DB, docPath string) ([]model.DocE
 }
 
 func DocMentionsForPath(ctx context.Context, db *sql.DB, docPath string) ([]model.DocMention, error) {
-	rows, err := db.QueryContext(ctx, `
+	rows, err := QueryContextWithRetry(ctx, db, `
 		SELECT doc_path, mention_type, mention_value
 		FROM doc_mentions
 		WHERE doc_path = ?
@@ -292,7 +294,7 @@ func DocMentionsForPath(ctx context.Context, db *sql.DB, docPath string) ([]mode
 }
 
 func GetRFDocRecords(ctx context.Context, db *sql.DB) ([]model.DocRecord, error) {
-	rows, err := db.QueryContext(ctx, `
+	rows, err := QueryContextWithRetry(ctx, db, `
 		SELECT path, title, doc_id, layer, family, snippet, search_text, content_hash, indexed_at
 		FROM doc_records
 		WHERE layer = '04' OR doc_id LIKE 'RF-%'
@@ -314,7 +316,7 @@ func GetRFDocRecords(ctx context.Context, db *sql.DB) ([]model.DocRecord, error)
 }
 
 func GetMentionsByType(ctx context.Context, db *sql.DB, docPath string, mentionType string) ([]string, error) {
-	rows, err := db.QueryContext(ctx, `
+	rows, err := QueryContextWithRetry(ctx, db, `
 		SELECT mention_value
 		FROM doc_mentions
 		WHERE doc_path = ? AND mention_type = ?
@@ -362,7 +364,7 @@ func FTSSearchDocs(ctx context.Context, db *sql.DB, question string, limit int) 
 	}
 	matchQuery := strings.Join(terms, " OR ")
 
-	rows, err := db.QueryContext(ctx, `
+	rows, err := QueryContextWithRetry(ctx, db, `
 		SELECT dr.path, dr.title, dr.doc_id, dr.layer, dr.family, dr.snippet, dr.search_text,
 		       -rank * 10 as fts_score
 		FROM doc_records_fts
@@ -399,21 +401,22 @@ func FTSSearchDocs(ctx context.Context, db *sql.DB, question string, limit int) 
 }
 
 func VerifySymbolExists(ctx context.Context, db *sql.DB, filePath string, symbolName string) (model.SymbolRecord, bool, error) {
-	row := db.QueryRowContext(ctx, `
-		SELECT `+symbolColumns+`
-		FROM symbols
-		WHERE file_path = ? AND name = ?
-		LIMIT 1
-	`, filePath, symbolName)
-
 	var item model.SymbolRecord
-	err := row.Scan(
-		&item.ID, &item.FilePath, &item.RepoID, &item.RepoName,
-		&item.Name, &item.Kind, &item.StartLine, &item.EndLine,
-		&item.Parent, &item.QualifiedName, &item.Signature,
-		&item.SignatureHash, &item.Scope, &item.Language,
-		&item.FileHash, &item.Implements, &item.SearchText,
-	)
+	err := WithSQLiteReadRetry(ctx, func() error {
+		row := db.QueryRowContext(ctx, `
+			SELECT `+symbolColumns+`
+			FROM symbols
+			WHERE file_path = ? AND name = ?
+			LIMIT 1
+		`, filePath, symbolName)
+		return row.Scan(
+			&item.ID, &item.FilePath, &item.RepoID, &item.RepoName,
+			&item.Name, &item.Kind, &item.StartLine, &item.EndLine,
+			&item.Parent, &item.QualifiedName, &item.Signature,
+			&item.SignatureHash, &item.Scope, &item.Language,
+			&item.FileHash, &item.Implements, &item.SearchText,
+		)
+	})
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return model.SymbolRecord{}, false, nil

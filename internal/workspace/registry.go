@@ -50,6 +50,15 @@ type WorkspaceDoctorReport struct {
 	Suggestions        []string                  `json:"suggestions,omitempty"`
 }
 
+type WorkspacePruneReport struct {
+	DryRun       bool                 `json:"dry_run"`
+	Registry     string               `json:"registry,omitempty"`
+	Candidates   []WorkspaceStalePath `json:"candidates,omitempty"`
+	Removed      []WorkspaceStalePath `json:"removed,omitempty"`
+	Skipped      []WorkspaceStalePath `json:"skipped,omitempty"`
+	RemovedCount int                  `json:"removed_count"`
+}
+
 type WorkspaceWorktreeFamily struct {
 	GitCommonDir string   `json:"git_common_dir"`
 	Roots        []string `json:"roots"`
@@ -156,6 +165,63 @@ func RemoveWorkspace(name string) error {
 		registry.Defaults.LastWorkspace = ""
 	}
 	return SaveRegistry(registry)
+}
+
+func PruneStaleWorkspaces(apply bool) (WorkspacePruneReport, error) {
+	registry, err := LoadRegistry()
+	if err != nil {
+		return WorkspacePruneReport{}, err
+	}
+	registryPath, err := RegistryPath()
+	if err != nil {
+		return WorkspacePruneReport{}, err
+	}
+	report := WorkspacePruneReport{
+		DryRun:   !apply,
+		Registry: filepath.Clean(registryPath),
+	}
+	if registry.Workspaces == nil {
+		return report, nil
+	}
+	names := make([]string, 0, len(registry.Workspaces))
+	for name := range registry.Workspaces {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		ws := registry.Workspaces[name]
+		if strings.TrimSpace(ws.Root) == "" {
+			report.Skipped = append(report.Skipped, WorkspaceStalePath{Alias: name, Root: ws.Root, Error: "empty root; skipped"})
+			continue
+		}
+		if _, statErr := os.Stat(ws.Root); statErr == nil {
+			continue
+		} else if errors.Is(statErr, os.ErrNotExist) {
+			candidate := WorkspaceStalePath{Alias: name, Root: ws.Root, Error: statErr.Error()}
+			report.Candidates = append(report.Candidates, candidate)
+			if apply {
+				delete(registry.Workspaces, name)
+				report.Removed = append(report.Removed, candidate)
+			}
+		} else {
+			report.Skipped = append(report.Skipped, WorkspaceStalePath{Alias: name, Root: ws.Root, Error: statErr.Error()})
+		}
+	}
+	report.RemovedCount = len(report.Removed)
+	if apply && len(report.Removed) > 0 {
+		if registry.Defaults.LastWorkspace != "" {
+			for _, removed := range report.Removed {
+				if removed.Alias == registry.Defaults.LastWorkspace {
+					registry.Defaults.LastWorkspace = ""
+					break
+				}
+			}
+		}
+		if err := SaveRegistry(registry); err != nil {
+			return WorkspacePruneReport{}, err
+		}
+	}
+	return report, nil
 }
 
 func ResolveWorkspace(nameOrPath string) (model.WorkspaceRegistration, error) {

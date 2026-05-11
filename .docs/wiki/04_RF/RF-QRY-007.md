@@ -95,6 +95,7 @@ evidence:
 - Si catalogo no esta disponible, devolver error con instruccion de indexar.
 - `--include-internals` expande la lista de simbolos pero no cambia la estructura.
 - Dependencias se detectan por imports/require statements en el dialecto.
+- En workspaces Go, el mapa incluye paquetes `cmd/*`, `internal/*` y `pkg/*` como servicios `go-package` con `symbol_count` y `entity_count` derivados del catalogo.
 
 ## 8. Data Model Impact
 
@@ -126,6 +127,7 @@ Scenario: Rechazar workspace invalido
 
 - Positivo: `TP-QRY / TC-QRY-023`
 - Positivo: `TP-QRY / TC-QRY-024`
+- Positivo: `TP-QRY / TC-QRY-047B`
 - Negativo: `TP-QRY / TC-QRY-025`
 
 ## 11. No Ambiguities Left

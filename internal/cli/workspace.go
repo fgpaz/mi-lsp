@@ -1,6 +1,10 @@
 package cli
 
-import "github.com/spf13/cobra"
+import (
+	"fmt"
+
+	"github.com/spf13/cobra"
+)
 
 func newWorkspaceCommand(state *rootState) *cobra.Command {
 	command := &cobra.Command{
@@ -56,6 +60,30 @@ with an optional .mi-lsp/project.toml topology file.`,
 		},
 	}
 
+	var pruneStale bool
+	var pruneApply bool
+	var pruneDryRun bool
+	pruneCommand := &cobra.Command{
+		Use:   "prune",
+		Short: "Prune stale workspace aliases from the registry",
+		Long: `Prune stale workspace aliases from the global registry.
+
+By default this command is a dry run. Use --apply to remove only aliases whose
+		registered root no longer exists. It never deletes files or Git worktrees.`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if !pruneStale {
+				return fmt.Errorf("workspace prune requires --stale")
+			}
+			if pruneApply && cmd.Flags().Changed("dry-run") && pruneDryRun {
+				return fmt.Errorf("--apply cannot be combined with --dry-run")
+			}
+			return state.executeOperation(cmd, "workspace.prune", map[string]any{"stale": pruneStale, "apply": pruneApply}, false)
+		},
+	}
+	pruneCommand.Flags().BoolVar(&pruneStale, "stale", false, "Prune aliases whose registered root no longer exists")
+	pruneCommand.Flags().BoolVar(&pruneApply, "apply", false, "Apply the prune instead of previewing it")
+	pruneCommand.Flags().BoolVar(&pruneDryRun, "dry-run", true, "Preview prune candidates without mutating the registry")
+
 	warmCommand := &cobra.Command{
 		Use:   "warm [workspace]",
 		Short: "Warm a workspace in the daemon pool",
@@ -95,6 +123,6 @@ with an optional .mi-lsp/project.toml topology file.`,
 		},
 	}
 
-	command.AddCommand(addCommand, scanCommand, listCommand, doctorCommand, warmCommand, statusCommand, removeCommand)
+	command.AddCommand(addCommand, scanCommand, listCommand, doctorCommand, pruneCommand, warmCommand, statusCommand, removeCommand)
 	return command
 }

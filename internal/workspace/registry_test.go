@@ -153,6 +153,48 @@ func TestDoctorWorkspacesReportsWorktreeFamiliesWithoutCollapsingAliases(t *test
 	}
 }
 
+func TestPruneStaleWorkspacesDryRunAndApply(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+
+	liveRoot := t.TempDir()
+	missingRoot := filepath.Join(t.TempDir(), "missing-worktree")
+	registerTestWorkspace(t, "live", liveRoot)
+	registerTestWorkspace(t, "stale", missingRoot)
+
+	dryRun, err := PruneStaleWorkspaces(false)
+	if err != nil {
+		t.Fatalf("PruneStaleWorkspaces(false): %v", err)
+	}
+	if !dryRun.DryRun {
+		t.Fatal("dry run report should have DryRun=true")
+	}
+	if len(dryRun.Candidates) != 1 || dryRun.Candidates[0].Alias != "stale" {
+		t.Fatalf("dry run candidates = %#v, want stale", dryRun.Candidates)
+	}
+	if _, err := ResolveWorkspace("stale"); err != nil {
+		t.Fatalf("dry run removed stale alias: %v", err)
+	}
+
+	applied, err := PruneStaleWorkspaces(true)
+	if err != nil {
+		t.Fatalf("PruneStaleWorkspaces(true): %v", err)
+	}
+	if applied.DryRun {
+		t.Fatal("apply report should have DryRun=false")
+	}
+	if applied.RemovedCount != 1 || len(applied.Removed) != 1 || applied.Removed[0].Alias != "stale" {
+		t.Fatalf("applied removed = %#v count=%d, want stale", applied.Removed, applied.RemovedCount)
+	}
+	if _, err := ResolveWorkspace("stale"); err == nil {
+		t.Fatal("stale alias should be removed after apply")
+	}
+	if _, err := ResolveWorkspace("live"); err != nil {
+		t.Fatalf("live alias should remain: %v", err)
+	}
+}
+
 func registerTestWorkspace(t *testing.T, alias string, root string) {
 	t.Helper()
 	if _, err := RegisterWorkspace(alias, model.WorkspaceRegistration{
