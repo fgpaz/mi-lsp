@@ -127,3 +127,81 @@ func TestParseContextTargetReturnsCorrectedCommandOnBadLine(t *testing.T) {
 		t.Fatalf("error = %q, want corrected command guidance", err.Error())
 	}
 }
+
+// TestNavWikiSearch_ExposesFederatedFlags verifies that wiki search command exposes --all-workspaces
+func TestNavWikiSearch_ExposesFederatedFlags(t *testing.T) {
+	command := newNavCommand(&rootState{})
+
+	search, _, err := command.Find([]string{"wiki", "search"})
+	if err != nil {
+		t.Fatalf("find wiki search command: %v", err)
+	}
+	if search.Flags().Lookup("all-workspaces") == nil {
+		t.Fatalf("wiki search should expose --all-workspaces")
+	}
+}
+
+// TestNavWikiRoute_ExposesFederatedFlags verifies that wiki route command exposes --all-workspaces
+func TestNavWikiRoute_ExposesFederatedFlags(t *testing.T) {
+	command := newNavCommand(&rootState{})
+
+	route, _, err := command.Find([]string{"wiki", "route"})
+	if err != nil {
+		t.Fatalf("find wiki route command: %v", err)
+	}
+	if route.Flags().Lookup("all-workspaces") == nil {
+		t.Fatalf("wiki route should expose --all-workspaces")
+	}
+}
+
+// TestNavWikiTrace_ExposesFederatedFlags verifies that wiki trace command exposes --all-workspaces
+func TestNavWikiTrace_ExposesFederatedFlags(t *testing.T) {
+	command := newNavCommand(&rootState{})
+
+	trace, _, err := command.Find([]string{"wiki", "trace"})
+	if err != nil {
+		t.Fatalf("find wiki trace command: %v", err)
+	}
+	if trace.Flags().Lookup("all-workspaces") == nil {
+		t.Fatalf("wiki trace should expose --all-workspaces")
+	}
+}
+
+// TestNavWikiPack_ExposesFederatedFlags verifies that wiki pack command exposes --all-workspaces
+func TestNavWikiPack_ExposesFederatedFlags(t *testing.T) {
+	command := newNavCommand(&rootState{})
+
+	pack, _, err := command.Find([]string{"wiki", "pack"})
+	if err != nil {
+		t.Fatalf("find wiki pack command: %v", err)
+	}
+	if pack.Flags().Lookup("all-workspaces") == nil {
+		t.Fatalf("wiki pack should expose --all-workspaces")
+	}
+}
+
+// TestNavWikiInventory_ExposesFederatedFlags verifies that wiki inventory command exposes --all-workspaces
+func TestNavWikiInventory_ExposesFederatedFlags(t *testing.T) {
+	command := newNavCommand(&rootState{})
+
+	inventory, _, err := command.Find([]string{"wiki", "inventory"})
+	if err != nil {
+		t.Fatalf("find wiki inventory command: %v", err)
+	}
+	if inventory.Flags().Lookup("all-workspaces") == nil {
+		t.Fatalf("wiki inventory should expose --all-workspaces")
+	}
+}
+
+// TestNavWikiInventory_ExposesWithLayerCountsFlag verifies that wiki inventory command exposes --with-layer-counts
+func TestNavWikiInventory_ExposesWithLayerCountsFlag(t *testing.T) {
+	command := newNavCommand(&rootState{})
+
+	inventory, _, err := command.Find([]string{"wiki", "inventory"})
+	if err != nil {
+		t.Fatalf("find wiki inventory command: %v", err)
+	}
+	if inventory.Flags().Lookup("with-layer-counts") == nil {
+		t.Fatalf("wiki inventory should expose --with-layer-counts")
+	}
+}

@@ -286,6 +286,52 @@ $report = [pscustomobject]@{
     go_version_m = $metadata
 }
 
+Write-Host "=== Federated wiki smoke (--all-workspaces) ===" -ForegroundColor Cyan
+
+$federatedCmds = @(
+    @{ Name = "search";    Args = @("nav", "wiki", "search", "governance", "--all-workspaces", "--format", "toon") },
+    @{ Name = "route";     Args = @("nav", "wiki", "route", "governance", "--all-workspaces", "--format", "toon") },
+    @{ Name = "trace";     Args = @("nav", "wiki", "trace", "--all", "--all-workspaces", "--format", "toon") },
+    @{ Name = "pack";      Args = @("nav", "wiki", "pack", "indexing", "--all-workspaces", "--format", "toon") },
+    @{ Name = "inventory"; Args = @("nav", "wiki", "inventory", "--format", "toon") }
+)
+
+$federatedResults = New-Object System.Collections.Generic.List[object]
+foreach ($cmd in $federatedCmds) {
+    $output = & $Cli @($cmd.Args) 2>&1 | Out-String
+    $exitCode = $LASTEXITCODE
+
+    $passed = $false
+    $reason = ""
+
+    if ($exitCode -ne 0) {
+        $reason = "exit code $exitCode"
+    } elseif ($output -notmatch "ok:\s*true") {
+        $reason = "envelope missing ok=true"
+    } elseif ($output -notmatch "workspaces_queried") {
+        $reason = "missing workspaces_queried in stats"
+    } else {
+        $passed = $true
+    }
+
+    if ($passed) {
+        Write-Host "[PASS] nav wiki $($cmd.Name) --all-workspaces" -ForegroundColor Green
+    } else {
+        Write-Host "[FAIL] nav wiki $($cmd.Name) --all-workspaces ($reason)" -ForegroundColor Red
+        Write-Host $output.Substring(0, [Math]::Min(500, $output.Length)) -ForegroundColor Yellow
+        exit 1
+    }
+
+    $federatedResults.Add([pscustomobject]@{
+        name = $cmd.Name
+        exit_code = $exitCode
+        ok = $passed
+        reason = $reason
+    })
+}
+
+Write-Host "=== Federated wiki smoke complete ===" -ForegroundColor Cyan
+
 $jsonPath = Join-Path $targetDir "report.json"
 $mdPath = Join-Path $targetDir "report.md"
 $report | ConvertTo-Json -Depth 40 | Set-Content -LiteralPath $jsonPath -Encoding utf8
