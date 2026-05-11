@@ -83,7 +83,7 @@ El detalle por frontera vive en `09_contratos/`.
 - Los errores de bootstrap deben ser accionables: por ejemplo `Run: mi-lsp worker install`.
 - Los contratos internos no deben transportar ASTs ni blobs completos salvo comando futuro explicito.
 - `nav ask` debe devolver una estructura explainable con `summary`, `primary_doc`, `doc_evidence`, `code_evidence`, `why` y `next_queries`.
-- `nav search` y `nav ask` pueden agregar `coach.trigger` en casos balanceados (`repo_selector_invalid`, `regex_auto_healed`, `no_matches_refinable`, `preview_trimmed`, `text_fallback`, `low_confidence`, `scope_narrowing_available`).
+- `nav search` y `nav ask` pueden agregar `coach.trigger` en casos balanceados (`repo_selector_invalid`, `regex_auto_healed`, `no_matches_refinable`, `preview_trimmed`, `text_fallback`, `low_confidence`, `scope_narrowing_available`, `symbol_query_detected`).
 - `nav search`, `nav ask`, `nav pack`, `nav route`, `nav.related`, `nav.service` y `nav workspace-map` pueden agregar `continuation.reason` (`recent_change`, `narrow_scope`, `follow_doc`, `expand_preview`, `low_evidence`, `handoff_reentry`) cuando existe un siguiente paso mejor que repetir la misma consulta.
 - `nav pack` debe devolver una estructura estable con `task`, `family`, `mode`, `primary_doc`, `docs`, `why` y `next_queries`.
 - `nav wiki search` debe devolver `WikiSearchResult` con `doc_id`, `path`, `title`, `layer`, `family`, `stage`, `score`, `why`, `snippet/content` y `next_queries`; `RS-*` y las rutas `02_resultados*` pertenecen a `layer=RS`, `stage=outcome`.
@@ -123,7 +123,7 @@ El detalle por frontera vive en `09_contratos/`.
 - Si `tsserver` o `pyright` estan en cooldown por fallas recientes de bootstrap, el contrato visible puede degradar directamente a catalog/text con warning explicito.
 - Si `pyright-langserver` no existe, el sistema debe degradar a catalog/text con warning explicito.
 - Si `nav context` se ejecuta sobre un archivo no semantico, el sistema debe responder con `backend=text` sin pasar por workers.
-- Si `nav context` encuentra una falla de bootstrap Roslyn y el archivo existe, el sistema debe preservar `slice_text` y agregar warning accionable.
+- Si `nav context` encuentra una falla de bootstrap Roslyn o de arranque de proceso/worker y el archivo existe, el sistema debe preservar `slice_text`, degradar a catalog/text cuando aplique y agregar warning accionable `backend_runtime/<code>` o el codigo bootstrap correspondiente.
 - El protocolo CLI-daemon debe rechazar versiones incompatibles tempranamente.
 
 ## Documentos detalle
@@ -143,10 +143,10 @@ El detalle por frontera vive en `09_contratos/`.
 - `init [path] [--name alias] [--no-index]`: detecta, registra e indexa el workspace actual o el path pedido
 - `mi-lsp [--classic] [--axi] [--full]`: por default devuelve home content-first; `--classic` restaura help generica
 - `workspace.remove`: elimina un workspace registrado de `registry.toml`
-- `admin export`: exporta telemetria de `access_events` desde `daemon.db`; con `--summary` agrega sobre toda la ventana filtrada salvo que `--limit` se haya seteado explicitamente
+- `admin export`: exporta telemetria de `access_events` desde `daemon.db`; raw soporta `--format json|csv|compact|toon` y con `--summary` agrega sobre toda la ventana filtrada salvo que `--limit` se haya seteado explicitamente
 - `admin export` filtra raw por `--operation`, `--session-id`, `--client-name`, `--route`, `--query-format`, `--truncated`, `--pattern-mode`, `--routing-outcome`, `--failure-stage` y `--hint-code`
 - `admin export --summary` agrega breakdowns opcionales `--by-route`, `--by-client`, `--by-hint`, `--by-failure-stage`, ademas de los histogramas/percentiles existentes
-- el export raw de `access_events` preserva metadata operativa minima del request (`route`, `format`, `token_budget`, `max_items`, `max_chars`, `compress`) y diagnosticos causales sanitizados (`warning_count`, `pattern_mode`, `routing_outcome`, `failure_stage`, `hint_code`, `truncation_reason`, `decision_json`) para diferenciar uso directo, daemonizado, routing errors y truncacion; `decision_json` puede agregar solo metadata derivada como `doc_ranker` e `intent_mode`, nunca texto libre; en operaciones daemonizadas normales debe existir una sola fila canonica por request
+- el export raw de `access_events` preserva metadata operativa minima del request (`route`, `format`, `token_budget`, `max_items`, `max_chars`, `compress`) y diagnosticos causales sanitizados (`warning_count`, `pattern_mode`, `routing_outcome`, `failure_stage`, `hint_code`, `truncation_reason`, `decision_json`) para diferenciar uso directo, daemonizado, routing errors, backend runtime failures y truncacion; `decision_json` puede agregar solo metadata derivada como `doc_ranker`, `intent_mode`, `requested_backend`, `result_backend`, `backend_fallback_taken`, `fallback_from`, `fallback_to` y `runtime_error_code`, nunca texto libre, query, argv, payloads ni contenido de archivos; en operaciones daemonizadas normales debe existir una sola fila canonica por request
 - `index [path] [--clean] [--docs-only]`: wrapper compatible que espera a completar; indexa codigo + docs, o solo docs cuando `--docs-only` esta presente
 - `index start [path] [--mode full|docs|catalog] [--clean] [--wait]`: crea un job de indexacion; sin `--wait` lanza proceso detached y devuelve `job_id`
 - `index status [job-id]`: inspecciona el ultimo job o el job indicado
@@ -154,17 +154,17 @@ El detalle por frontera vive en `09_contratos/`.
 - `nav route <task>`: resuelve el documento canonico de anclaje y un mini reading pack con minimos tokens; si la tarea trae un `RF-*` embebido en un doc agregado, Tier 1 ancla el contenedor canonico; `--include-code-discovery` agrega discovery de codigo; `--full` expande canonical lane y discovery
 - `nav wiki search <query>`: busca en el docgraph gobernado con filtros `--layer RS,RF,FL,TP,CT,TECH,DB`, paginacion `--top/--offset` y contenido opcional `--include-content`; la superficie textual directa `nav search` debe incluir docs gobernados y artefactos repo-locales ocultos cuando el repo use directorios hidden
 - `nav wiki route|pack|trace`: aliases documentales para agentes que reutilizan `nav route`, `nav pack` y `nav trace`
-- `nav wiki validate-harness`: valida contratos `SDD-HARNESS-v1` en docs gobernados y emite `PASS|WARN|BLOCKED` sin crear un parser documental paralelo
+- `nav wiki validate-harness`: valida contratos `SDD-HARNESS-v1` en docs gobernados, resuelve referencias contra todo el docgraph gobernado para evitar falsos links rotos en imports globales y emite `PASS|WARN|BLOCKED` sin crear un parser documental paralelo
 - `nav ask <question>`: responde usando wiki + evidencia de codigo y fallback generico/textual cuando haga falta; `--all-workspaces` habilita fan-out cross-workspace para el mismo contrato explainable
 - `nav pack <task>`: construye un reading pack canonico con preview/full y anchors opcionales `--rf`, `--fl`, `--doc`
-- `nav search <pattern>`: si `--regex` lleva un patron invalido, el runtime puede reintentar como literal y devolver warning explicito en vez de error duro
+- `nav search <pattern>`: si `--regex` lleva un patron invalido, el runtime puede reintentar como literal y devolver warning explicito en vez de error duro; si el patron literal parece identificador de codigo, debe emitir guidance agent-first hacia `nav find --exact`/`nav related` y rankear fuentes antes que docs/tests/backups/generados; si `rg` falla por permisos/arranque, debe caer a Go search con warning `backend_runtime/<code>`
 - `workspace status [--full] [--no-auto-sync]`: muestra `workspace_root`, `workspace_source`, estado de gobernanza/index y, en `--full`, el digest repo-local de memoria (`recent_canonical_changes`, `handoff`, `best_reentry`, `stale`); `--no-auto-sync` conserva la consulta read-only y reporta `governance_sync=stale` sin escribir `read-model.toml`; si `docs_index_ready=true` pero `index_ready=false`, debe explicitar que el corpus docs-only quedo util pero el catalogo de codigo sigue ausente
 - `workspace list --group-by-root`: agrupa aliases por root exacto con `root`, `alias_count`, `aliases`, `canonical_alias`, `selection_reason`, `kind` y warnings; `workspace list` sin flag sigue alias-preserving.
 - `workspace doctor`: diagnostico no mutante de aliases con root compartido, worktrees con mismo `git common dir`, paths stale, shadowing de binario y sugerencias de comandos.
 - cuando `--workspace` se omite, `nav ask`, `nav pack`, `nav governance`, `workspace status` y las queries directas equivalentes resuelven primero contra `caller_cwd`; si no hay match, pueden usar `last_workspace` con warning visible. Si `--workspace <alias>` esta presente y el `caller_cwd` cae dentro de otro workspace registrado, el alias explicito gana y debe quedar warning visible.
 - `nav governance`: diagnostica perfil efectivo, sync, stale index y pasos de reparacion de gobernanza
 - `nav service`: resume evidencia observable de un servicio en un unico summary estructurado
-- `nav context`: devuelve `slice_text` y metadatos opcionales de catalogo o backend semantico para la linea pedida
+- `nav context`: devuelve `slice_text` y metadatos opcionales de catalogo o backend semantico para la linea pedida; ante fallas runtime de worker/proceso conserva `slice_text`, degrada a catalog/text cuando sea posible y emite warning `backend_runtime/<code>`
 - `nav.find|intent|symbols|overview`: lecturas SQL-backed repo-locales; aceptan `--offset` para pedir la pagina siguiente sin cambiar el envelope base. En workspaces `container`, `find/intent` aceptan `--repo` y el offset se aplica despues del filtro de repo.
 - `nav.search|outline|multi-read`: lecturas directas repo-locales sin contrato `--offset`; `search` sigue siendo text/rg-backed y puede exponer hints de refinamiento, pero no cursor SQL.
 - `worker install`: instala o refresca el worker por RID desde un bundle adjunto o, en desarrollo, desde `worker-dotnet/`

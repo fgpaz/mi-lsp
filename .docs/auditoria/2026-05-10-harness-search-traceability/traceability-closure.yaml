@@ -1,0 +1,122 @@
+task_slug: harness-search-traceability
+updated_at: "2026-05-11"
+closure_type: ps-trazabilidad
+session_contract_path: .docs/auditoria/2026-05-10-harness-search-traceability/session-contract.yaml
+git_before:
+  branch: closure/harness-search-traceability
+  base_ref: origin/main
+  base_sha: 862212f9663e0f911c955ef029f4cc269054ba87
+  pre_artifact_sha: 666c8dc05b47456fb0360e64be9913d265c08929
+  ahead_behind_origin_main: "origin/main-only=0 / branch-only=1"
+git_after:
+  branch: closure/harness-search-traceability
+  final_commit_sha: "self-referential; verify with `git rev-parse HEAD` after commit/amend"
+  upstream: none
+  ahead_behind_origin_main: "origin/main-only=0 / branch-only=2"
+changed_paths:
+  tracked_against_origin_main:
+    - .docs/wiki/04_RF/RF-DAE-002.md
+    - .docs/wiki/04_RF/RF-QRY-002.md
+    - .docs/wiki/04_RF/RF-QRY-016.md
+    - .docs/wiki/06_pruebas/TP-DAE.md
+    - .docs/wiki/06_pruebas/TP-QRY.md
+    - .docs/wiki/07_baseline_tecnica.md
+    - .docs/wiki/07_tech/TECH-DAEMON-GOBERNANZA.md
+    - .docs/wiki/08_db/DB-STATE-Y-TELEMETRIA.md
+    - .docs/wiki/08_modelo_fisico_datos.md
+    - .docs/wiki/09_contratos/CT-CLI-DAEMON-ADMIN.md
+    - .docs/wiki/09_contratos/CT-NAV-WIKI.md
+    - .docs/wiki/09_contratos_tecnicos.md
+    - internal/cli/admin.go
+    - internal/cli/telemetry_test.go
+    - internal/daemon/export.go
+    - internal/daemon/export_test.go
+    - internal/service/app.go
+    - internal/service/app_test.go
+    - internal/service/coach.go
+    - internal/service/harness_validate.go
+    - internal/service/harness_validate_test.go
+    - internal/service/search.go
+    - internal/service/semantic_errors.go
+    - internal/telemetry/access_diagnostics.go
+    - internal/telemetry/access_events.go
+    - internal/telemetry/access_events_test.go
+  drift_fix_paths:
+    - internal/service/app.go
+    - internal/service/harness_validate.go
+    - internal/service/search.go
+  closure_artifacts:
+    - .docs/auditoria/2026-05-10-harness-search-traceability/session-contract.yaml
+    - .docs/auditoria/2026-05-10-harness-search-traceability/traceability-closure.yaml
+    - .docs/auditoria/2026-05-10-harness-search-traceability/traceability-audit.yaml
+  raw_paths: []
+  forbidden_hits: []
+scope_verdict: PASS
+traceability_chains:
+  reviewed:
+    - chain: "00 -> FL-QRY-01 -> RF-QRY-002 -> TECH-WIKI-AWARE-SEARCH -> CT-NAV-WIKI -> TP-QRY -> internal/service/search.go"
+      verdict: PASS
+      notes: "nav.search degrades from rg to Go text fallback with typed backend_runtime warning and agent-first coach guidance."
+    - chain: "00 -> FL-QRY-01 -> RF-QRY-016 -> TECH-WIKI-AWARE-SEARCH -> CT-NAV-WIKI -> TP-QRY -> internal/service/coach.go"
+      verdict: PASS
+      notes: "Symbol-like search emits coach.trigger=symbol_query_detected and points to nav find --exact / nav related."
+    - chain: "00 -> FL-DAE-01 -> RF-DAE-002 -> TECH-DAEMON-GOBERNANZA -> DB-STATE-Y-TELEMETRIA -> CT-CLI-DAEMON-ADMIN -> TP-DAE"
+      verdict: PASS
+      notes: "admin export and diagnostics expose agent-readable telemetry without raw payloads."
+    - chain: "00 -> RF-QRY-016 -> validate-harness -> internal/service/harness_validate.go"
+      verdict: PASS
+      notes: "Unscoped harness validation keeps full corpus for links and skips only aggregate docs covered by a canonical contract."
+  missing_anchors: []
+runtime_sensitive:
+  value: true
+  evidence:
+    - "go test ./... => PASS"
+    - "go run ./cmd/mi-lsp nav search \"searchPatternRg\" --workspace mi-lsp --format toon --include-content => PASS"
+data_or_contract_sensitive:
+  value: true
+  evidence:
+    - ".docs/wiki/08_modelo_fisico_datos.md"
+    - ".docs/wiki/08_db/DB-STATE-Y-TELEMETRIA.md"
+    - ".docs/wiki/09_contratos/CT-CLI-DAEMON-ADMIN.md"
+    - ".docs/wiki/09_contratos/CT-NAV-WIKI.md"
+authoring_skill_evidence:
+  crear_capa_tecnica_wiki: "Applied as closure gate; branch already updates 07/08/09 root and detail docs, and validators pass after drift fixes."
+harness_verdict:
+  command: "go run ./cmd/mi-lsp nav wiki validate-harness --workspace mi-lsp --format toon"
+  result: PASS
+  readiness: ready
+  contracts_reviewed: 82
+  links_reviewed: 313
+wiki_source_verdict:
+  command: "go run ./cmd/mi-lsp nav wiki validate-source --workspace mi-lsp --format toon --full --max-chars 12000"
+  result: PASS
+  readiness: not_declared
+  navigation_readiness: ready
+governance_sync:
+  workspace_status: PASS
+  nav_governance: PASS
+  governance_blocked: false
+  governance_sync: in_sync
+  governance_index_sync: current
+board_sync:
+  status: not_applicable
+  reason: "No issue/card provided."
+pre_push_inputs:
+  issue_or_waiver: "waiver: no issue/card provided"
+  traceability_evidence: .docs/auditoria/2026-05-10-harness-search-traceability/traceability-closure.yaml
+  session_contract: .docs/auditoria/2026-05-10-harness-search-traceability/session-contract.yaml
+  expected_scope:
+    - backend
+    - canon-docs
+    - evidence-docs
+no_drift_snapshot:
+  commands:
+    - "git status --short --branch"
+    - "git diff --check"
+    - "git rev-list --left-right --count origin/main...HEAD"
+completion_handoff:
+  target_skill: finishing-a-development-branch
+  executable_disposition: true
+  branch_disposition: integrate-main
+  cleanup_policy: auto-after-successful-integration
+final_closure_verdict: PASS

@@ -85,6 +85,8 @@ evidence:
 5. La Admin UI expone el estado actual, KPIs, accesos recientes y tabs por workspace via loopback, sin perder la agrupacion canonica por `workspace_root`.
 6. Si el usuario ejecuta `warm workspace` desde la UI, se invoca `POST /api/workspaces/{workspace}/warm` sin reiniciar el daemon.
 7. Si se exceden `max_workers` o `idle_timeout`, el daemon aplica eviction LRU.
+8. `admin export --format toon` y `admin export --summary --format toon` serializan telemetria local en formato agent-readable sin cambiar el origen canonico (`daemon.db`).
+9. Cuando una query degrada de backend por falla runtime, la telemetria guarda solo metadata causal sanitizada (`requested_backend`, `result_backend`, `backend_fallback_taken`, `fallback_from`, `fallback_to`, `runtime_error_code`).
 
 ## 5. Outputs
 
@@ -114,6 +116,8 @@ evidence:
 - `worker status` puede servirse via daemon, pero debe conservar el mismo envelope canonico del core; `active_workers` vive dentro del item diagnostico y nunca reemplaza `items` por snapshots crudos.
 - `daemon logs [--tail N]` y `GET /api/logs?tail=<n>` muestran el tail de `{repoRoot}/.mi-lsp/daemon.log`; warning accionable si no existe aun.
 - La telemetria persiste metadata operativa, nunca payloads completos, y distingue foco visible (`workspace`) de identidad canonica (`workspace_root`).
+- `decision_json` puede exponer evidencia de fallback runtime/backend, pero no query cruda, argv, payloads, paths sensibles ni contenido de archivos.
+- `admin export` raw y summary soportan `--format toon` para revision de logs por harnesses/agentes sin postproceso ad hoc.
 - La UI solo expone acciones seguras: `refresh`, `warm workspace`, `open logs` y `copy CLI command`.
 
 ## 8. Data Model Impact
@@ -153,6 +157,12 @@ Scenario: Ver log tail del daemon
   Given que el daemon ya corrio al menos una vez
   When consulto `GET /api/logs?tail=20`
   Then obtengo las ultimas lineas del log local o un warning no fatal si aun no existe
+
+Scenario: Exportar telemetria para un harness agente
+  Given que existen `access_events` recientes
+  When ejecuto "mi-lsp admin export --format toon"
+  Then obtengo una salida agent-readable con metadata operativa sanitizada
+  And no contiene payloads crudos, argv, queries ni contenido de archivos
 ```
 
 ## 10. Test Traceability
@@ -161,6 +171,7 @@ Scenario: Ver log tail del daemon
 - Positivo: `TP-DAE / TC-DAE-005`
 - Negativo: `TP-DAE / TC-DAE-006`
 - Positivo: `TP-DAE / TC-DAE-007`
+- Positivo: `TP-DAE / TC-DAE-024`
 
 ## 11. No Ambiguities Left
 

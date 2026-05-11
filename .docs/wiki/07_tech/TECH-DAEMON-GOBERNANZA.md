@@ -110,7 +110,7 @@ Define el modelo canonico del daemon global, su governance UI workspace-first y 
 - `GET /api/accesses?window=<recent|7d|30d|90d>`
 - `GET /api/logs?tail=<n>`
 - `GET /api/metrics?window=<recent|7d|30d|90d>` — computa p50/p95, error rate y truncation rate por operacion/workspace/cliente desde `access_events`; mantiene compatibilidad legacy con `days=<n>`
-- `mi-lsp admin export --summary` reutiliza la misma ventana y agrega breakdowns opcionales por route/client/hint/failure-stage; el raw export prioriza CLI antes que UI para debugging operativo y es la primera superficie donde deben aparecer los campos causales nuevos.
+- `mi-lsp admin export --summary` reutiliza la misma ventana y agrega breakdowns opcionales por route/client/hint/failure-stage; raw y summary soportan `--format toon` para revision agent-friendly, y el raw export prioriza CLI antes que UI para debugging operativo y es la primera superficie donde deben aparecer los campos causales nuevos.
 - `GET /api/status` tambien expone `daemon_process` y `watchers`, equivalentes a `daemon status`, para validar presupuestos de agentes sin inspeccion externa.
 
 ## Dependencias e interacciones
@@ -138,6 +138,7 @@ Define el modelo canonico del daemon global, su governance UI workspace-first y 
 | Cliente antiguo | errores sutiles de protocolo | handshake con version explicita |
 | Warm fallido | runtime no queda disponible | warning visible + logs locales |
 | `tsserver` frio roto | cada request vuelve a intentar bootstrap y falla | cooldown corto + degradacion sticky a catalog/text |
+| Worker/proceso bloqueado por permisos | `nav context` o `nav search` devuelve warning `backend_runtime/process_spawn_access_denied` | fallback slice/catalog/text o Go search + evidencia exportable via `admin export --format toon` |
 
 ## Related docs
 

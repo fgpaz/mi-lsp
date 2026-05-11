@@ -1,11 +1,14 @@
 package daemon
 
 import (
+	"encoding/json"
 	"fmt"
 	"math"
 	"sort"
 	"strings"
 	"time"
+
+	toon "github.com/toon-format/toon-go"
 
 	"github.com/fgpaz/mi-lsp/internal/model"
 	"github.com/fgpaz/mi-lsp/internal/telemetry"
@@ -489,6 +492,48 @@ func RenderCSV(events []model.AccessEvent) string {
 			e.WarningCount, e.PatternMode, e.RoutingOutcome, e.FailureStage, e.HintCode, e.TruncationReason, csvEscape(e.DecisionJSON))
 	}
 	return b.String()
+}
+
+func RenderTOON(events []model.AccessEvent) (string, error) {
+	normalized := make([]model.AccessEvent, len(events))
+	for i, event := range events {
+		normalized[i] = telemetry.NormalizeAccessEvent(event)
+	}
+	return renderTOONMap(map[string]any{
+		"ok":      true,
+		"backend": "admin-export",
+		"items":   normalized,
+		"stats": map[string]any{
+			"events": len(normalized),
+		},
+	})
+}
+
+func RenderSummaryTOON(summary ExportSummary) (string, error) {
+	return renderTOONMap(map[string]any{
+		"ok":      true,
+		"backend": "admin-export-summary",
+		"items":   []ExportSummary{summary},
+		"stats": map[string]any{
+			"events": summary.TotalOps,
+		},
+	})
+}
+
+func renderTOONMap(payload map[string]any) (string, error) {
+	raw, err := json.Marshal(payload)
+	if err != nil {
+		return "", err
+	}
+	var generic map[string]any
+	if err := json.Unmarshal(raw, &generic); err != nil {
+		return "", err
+	}
+	rendered, err := toon.Marshal(generic)
+	if err != nil {
+		return "", err
+	}
+	return string(rendered) + "\n", nil
 }
 
 func csvEscape(s string) string {

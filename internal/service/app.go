@@ -436,18 +436,33 @@ func (a *App) search(ctx context.Context, request model.CommandRequest) (model.E
 	if scopedRepo != nil {
 		searchRoot = filepath.Join(registration.Root, filepath.FromSlash(scopedRepo.Root))
 	}
-	items, err := searchPatternScoped(ctx, registration.Root, searchRoot, project, pattern, useRegex, request.Context.MaxItems)
+	identifierQuery := !useRegex && isIdentifierLikeQuery(pattern)
+	searchLimit := request.Context.MaxItems
+	if identifierQuery {
+		searchLimit = max(searchLimit, DefaultConfig().DefaultSearchLimit)
+	}
+	searchDiagnostics := &searchPatternDiagnostics{}
+	items, err := searchPatternScopedWithDiagnostics(ctx, registration.Root, searchRoot, project, pattern, useRegex, searchLimit, searchDiagnostics)
 	warnings := []string{}
+	if searchDiagnostics.RipgrepFallbackCode != "" {
+		warnings = append(warnings, fmt.Sprintf("text search backend failure (backend_runtime/%s): rg unavailable; served from go text fallback; verify MI_LSP_RG/PATH permissions", searchDiagnostics.RipgrepFallbackCode))
+	}
 	regexAutoHealed := false
 	if err != nil {
 		if useRegex && isRegexParseError(err) {
-			items, err = searchPatternScoped(ctx, registration.Root, searchRoot, project, pattern, false, request.Context.MaxItems)
+			items, err = searchPatternScopedWithDiagnostics(ctx, registration.Root, searchRoot, project, pattern, false, searchLimit, searchDiagnostics)
 			if err != nil {
 				return model.Envelope{}, err
 			}
 			warnings = append(warnings, "invalid regex detected; retried automatically as literal search")
 			useRegex = false
 			regexAutoHealed = true
+		} else if code := classifySearchRuntimeFailure(err); code != "" {
+			items, err = searchPatternFallback(ctx, registration.Root, searchRoot, project, pattern, useRegex, searchLimit)
+			if err != nil {
+				return model.Envelope{}, err
+			}
+			warnings = append(warnings, fmt.Sprintf("text search backend failure (backend_runtime/%s): rg unavailable; served from go text fallback; verify MI_LSP_RG/PATH permissions", code))
 		} else {
 			return model.Envelope{}, err
 		}
@@ -456,6 +471,13 @@ func (a *App) search(ctx context.Context, request model.CommandRequest) (model.E
 		warnings = append(warnings, "no literal matches; pattern looks regex-like, rerun with --regex")
 	}
 	warnings = append(warnings, scopeWarnings...)
+
+	if !useRegex && isIdentifierLikeQuery(pattern) {
+		rankIdentifierSearchItems(pattern, items)
+		if request.Context.MaxItems > 0 && len(items) > request.Context.MaxItems {
+			items = items[:request.Context.MaxItems]
+		}
+	}
 
 	if includeContent && len(items) > 0 {
 		contextLines := intFromAny(request.Payload["context_lines"], 20)

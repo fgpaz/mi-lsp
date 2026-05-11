@@ -1,0 +1,88 @@
+task_slug: harness-search-traceability
+updated_at: "2026-05-11"
+audit_type: ps-auditar-trazabilidad
+session_contract_reviewed: .docs/auditoria/2026-05-10-harness-search-traceability/session-contract.yaml
+traceability_closure_reviewed: .docs/auditoria/2026-05-10-harness-search-traceability/traceability-closure.yaml
+scope_audited: "Agent-first nav search, rg fallback diagnostics, harness canonical-record validation, daemon/admin telemetry export, docs sync, and integration readiness."
+findings:
+  critical: []
+  high: []
+  medium: []
+  low: []
+drifts_closed:
+  - id: DRIFT-001
+    status: closed
+    summary: "Resolved rebase conflicts in RF-QRY-016, TP-DAE, and DB-STATE-Y-TELEMETRIA by preserving both origin/main runtime hardening and search telemetry changes."
+  - id: DRIFT-002
+    status: closed
+    summary: "Restored typed nav.search warning when rg falls back silently to Go scanner."
+  - id: DRIFT-003
+    status: closed
+    summary: "Adjusted validate-harness unscoped handling so aggregate records covered by canonical docs do not block while corpus links remain resolvable."
+  - id: DRIFT-004
+    status: closed
+    summary: "Closure YAMLs are force-add candidates because .docs/* is ignored by default."
+governance_findings:
+  verdict: PASS
+  workspace_status: "governance_blocked=false; governance_sync=in_sync; governance_index_sync=current"
+  nav_governance: "blocked=false; sync=in_sync; index_sync=current"
+harness_findings:
+  verdict: PASS
+  command: "go run ./cmd/mi-lsp nav wiki validate-harness --workspace mi-lsp --format toon"
+  readiness: ready
+  contracts_reviewed: 82
+  links_reviewed: 313
+wiki_source_findings:
+  verdict: PASS
+  command: "go run ./cmd/mi-lsp nav wiki validate-source --workspace mi-lsp --format toon --full --max-chars 12000"
+  readiness: not_declared
+  navigation_readiness: ready
+technical_drift_signals_reviewed:
+  process_spawn_failure: PASS
+  sanitized_runtime_diagnostics: PASS
+  daemon_admin_export_contract: PASS
+  technical_docs_sync_07_08_09: PASS
+live_runtime_evidence_reviewed:
+  required: false
+  rationale: "No deployed daemon/runtime change requested; source-run CLI and unit/integration tests validate local behavior."
+  evidence:
+    - "go test ./... => PASS"
+    - "go run ./cmd/mi-lsp nav search \"searchPatternRg\" --workspace mi-lsp --format toon --include-content => PASS"
+caller_callee_boundary_ownership:
+  verdict: PASS
+  notes: "CLI/admin export, daemon export, service search, harness validation, and telemetry diagnostics are aligned."
+card_provider_reviewed:
+  provider: not_applicable
+  tracker_sync: not_needed
+expected_scope_review:
+  verdict: PASS
+  forbidden_paths_hit: false
+  raw_paths_hit: false
+closure_packet_freshness:
+  verdict: PASS
+  note: "Final commit SHA recorded; freshness rechecked before push."
+branch_worktree_inventory:
+  verdict: PASS
+  classifications:
+    - branch: closure/harness-search-traceability
+      classification: integrate-main
+    - branch: feature/harness-search-redesign
+      classification: superseded_by_closure_branch
+    - worktree: C:\wt\mi-lsp-harness-search
+      classification: hold
+source_mirror_sync:
+  required: false
+  reason: "No shared skills changed."
+branch_disposition_and_cleanup:
+  verdict: approved
+  branch_disposition: integrate-main
+  cleanup_policy: auto-after-successful-integration
+pre_push_guard_readiness:
+  required_before_push_to_main: true
+  current_verdict: ready_to_run
+  evidence_path: .docs/auditoria/2026-05-10-harness-search-traceability/traceability-closure.yaml
+  session_contract_path: .docs/auditoria/2026-05-10-harness-search-traceability/session-contract.yaml
+blocking_conclusion:
+  blocked: false
+  required_remediations_before_closure: []
+final_verdict: Approved

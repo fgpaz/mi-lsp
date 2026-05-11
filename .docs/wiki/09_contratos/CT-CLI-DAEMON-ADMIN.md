@@ -211,8 +211,8 @@ Reglas:
 - contrato slice-first: el core devuelve primero el bloque legible alrededor de la linea
 - `backend=text` para archivos no semanticos
 - `backend=roslyn`, `backend=tsserver` o `backend=catalog` cuando hay enriquecimiento correspondiente
-- si el backend semantico falla pero el archivo existe, la operacion sigue con `slice_text` y warning accionable
-- si el warning proviene de bootstrap Roslyn, debe sugerir `mi-lsp worker install`; si proviene de SDK/global.json, la telemetria debe clasificarlo como `sdk/*`
+- si el backend semantico falla pero el archivo existe, la operacion sigue con `slice_text`, degrada a catalog/text cuando sea posible y agrega warning accionable
+- si el warning proviene de bootstrap Roslyn, debe sugerir `mi-lsp worker install`; si proviene de SDK/global.json, la telemetria debe clasificarlo como `sdk/*`; si proviene de permisos/arranque de proceso, debe clasificarlo como `backend_runtime/process_spawn_access_denied` o `backend_runtime/process_spawn_failed`
 
 ### CLI -> daemon
 
@@ -270,16 +270,17 @@ Metadata operativa que debe quedar observable en `access_events` y `admin export
 - `failure_stage`
 - `hint_code`
 - `truncation_reason`
+- `requested_backend`, `result_backend`, `backend_fallback_taken`, `fallback_from`, `fallback_to`, `runtime_error_code` dentro de `decision_json` cuando hay fallback backend/runtime
 - `decision_json` sanitizado; nunca `pattern` crudo ni argv
 - si `route=daemon` y la ejecucion fue normal, el registro canonico lo escribe el daemon; la CLI no debe duplicar esa misma operacion en `access_events`
 - `result_count` representa items emitidos en el envelope final, no `Stats.Symbols`
 
 `admin export` debe soportar:
 
-- raw `json|csv|compact`
+- raw `json|csv|compact|toon`
 - ventana `--since`/`--recent`
 - filtros `--workspace`, `--backend`, `--operation`, `--session-id`, `--client-name`, `--route`, `--query-format`, `--truncated`, `--pattern-mode`, `--routing-outcome`, `--failure-stage`, `--hint-code`
-- `--summary` sobre toda la ventana filtrada salvo `--limit` explicito
+- `--summary` sobre toda la ventana filtrada salvo `--limit` explicito, incluyendo salida `toon`
 - breakdowns opcionales `--by-route`, `--by-client`, `--by-hint`, `--by-failure-stage`
 
 ### Governance admin

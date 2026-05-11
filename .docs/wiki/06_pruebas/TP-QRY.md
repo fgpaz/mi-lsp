@@ -64,6 +64,10 @@ evidence:
 | TC-QRY-012 | positivo | RF-QRY-002 | `nav context` sobre `ts/tsx` devuelve `slice_text` y warning si `tsserver` no esta disponible |
 | TC-QRY-013 | positivo | RF-QRY-002 | `nav search` sin matches devuelve `ok=true` e insinua `--regex` cuando el patron parece regex |
 | TC-QRY-013B | positivo | RF-QRY-002 | `nav search` incluye docs gobernados y artefactos repo-locales ocultos aun cuando el repo use directorios hidden, para que un `index --docs-only` deje visibles IDs `RF-*` y `TP-*` en la superficie textual directa |
+| TC-QRY-013C | positivo | RF-QRY-002, RF-QRY-016 | `nav search` literal symbol-like emite `coach.trigger=symbol_query_detected` con acciones `nav find --exact` y `nav related` |
+| TC-QRY-013D | positivo | RF-QRY-002, RF-QRY-016 | `nav search` symbol-like ordena declaraciones/implementaciones fuente antes que docs, tests, backups y generados |
+| TC-QRY-013E | positivo | RF-QRY-002 | `nav context` sobre C# conserva `slice_text` y degrada a catalog/text con warning `backend_runtime/process_spawn_access_denied` si Roslyn no arranca |
+| TC-QRY-013F | positivo | RF-QRY-002 | `nav search` cae a Go search con warning tipado si `rg` falla por permisos o arranque de proceso |
 | TC-QRY-013A | positivo | RF-QRY-001 | `nav.search` agrega `coach.trigger=no_matches_refinable` cuando la query no matchea pero tiene rerun accionable |
 | TC-QRY-014 | positivo | RF-QRY-004 | lee multiples rangos en una sola invocacion con truncacion por presupuesto |
 | TC-QRY-015 | positivo | RF-QRY-004 | incluye numeros de linea en contenido leido |
