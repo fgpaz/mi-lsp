@@ -30,10 +30,25 @@ type QueryOptions struct {
 }
 
 type Stats struct {
-	Symbols        int   `json:"symbols,omitempty"`
-	Files          int   `json:"files,omitempty"`
-	Ms             int64 `json:"ms,omitempty"`
-	TokensEstimate int   `json:"tokens_est,omitempty"`
+	Symbols               int      `json:"symbols,omitempty"`
+	Files                 int      `json:"files,omitempty"`
+	Ms                    int64    `json:"ms,omitempty"`
+	TokensEstimate        int      `json:"tokens_est,omitempty"`
+	WorkspacesQueried     int      `json:"workspaces_queried,omitempty"`
+	WorkspacesFailed      []string `json:"workspaces_failed,omitempty"`
+	TruncatedPerWorkspace bool     `json:"truncated_per_workspace,omitempty"`
+}
+
+// WikiInventoryItem represents a single workspace in the wiki inventory.
+type WikiInventoryItem struct {
+	Alias             string         `json:"alias"`
+	Root              string         `json:"root"`
+	WikiRoot          string         `json:"wiki_root"`
+	GovernanceBlocked bool           `json:"governance_blocked"`
+	DocsReady         bool           `json:"docs_ready"`
+	DocCount          int            `json:"doc_count"`
+	LastIndexedAt     int64          `json:"last_indexed_at,omitempty"`
+	Layers            map[string]int `json:"layers,omitempty"`
 }
 
 type CoachAction struct {
@@ -216,6 +231,8 @@ type WikiSearchResult struct {
 	Content      string            `json:"content,omitempty"`
 	NextQueries  []string          `json:"next_queries,omitempty"`
 	LookupStatus *WikiLookupStatus `json:"lookup_status,omitempty"`
+	Workspace    string            `json:"workspace,omitempty"`
+	Host         string            `json:"host,omitempty"`
 }
 
 type HarnessValidationResult struct {
@@ -490,6 +507,8 @@ type PackResult struct {
 	Why          []string          `json:"why,omitempty"`
 	NextQueries  []string          `json:"next_queries,omitempty"`
 	LookupStatus *WikiLookupStatus `json:"lookup_status,omitempty"`
+	Workspace    string            `json:"workspace,omitempty"`
+	Host         string            `json:"host,omitempty"`
 }
 
 type WorkspaceRegistration struct {
@@ -700,6 +719,8 @@ type TraceResult struct {
 	Tests        []TraceLink       `json:"tests"`
 	Drift        []TraceDrift      `json:"drift"`
 	LookupStatus *WikiLookupStatus `json:"lookup_status,omitempty"`
+	Workspace    string            `json:"workspace,omitempty"`
+	Host         string            `json:"host,omitempty"`
 }
 
 // RouteDoc is a single document in a canonical or discovery route lane.
@@ -739,6 +760,8 @@ type RouteResult struct {
 	Discovery    *RouteDiscoveryLane `json:"discovery,omitempty"`
 	Why          []string            `json:"why,omitempty"`
 	LookupStatus *WikiLookupStatus   `json:"lookup_status,omitempty"`
+	Workspace    string              `json:"workspace,omitempty"`
+	Host         string              `json:"host,omitempty"`
 }
 
 // ProjectConfig is a semantic alias of ProjectFile for traceability with 05_modelo_datos.md.

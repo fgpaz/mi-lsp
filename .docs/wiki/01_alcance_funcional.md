@@ -76,6 +76,7 @@ flowchart TD
     C --> C6[nav ask docs-first]
     C --> C7[nav pack canonico]
     C --> C8[nav wiki documental]
+    C --> C9[Federacion wiki cross-workspace]
 
     D --> D1[Catalogo de simbolos]
     D --> D2[Metadatos de archivos]
@@ -98,7 +99,7 @@ flowchart TD
 # 5. Areas funcionales de alto nivel
 
 - Gestion de workspaces: alta, inicializacion corta, descubrimiento, aliases, estado y warmup.
-- Navegacion y discovery: simbolos, referencias, outline, overview, contexto, dependencias, exploracion `nav wiki`, preguntas docs-first, reading packs canonicos, busqueda por intencion y resumen de servicios. En workspaces `container`, `find/search/intent` pueden acotar por `--repo` sin perder el modo directo.
+- Navegacion y discovery: simbolos, referencias, outline, overview, contexto, dependencias, exploracion `nav wiki`, preguntas docs-first, reading packs canonicos, busqueda por intencion y resumen de servicios. En workspaces `container`, `find/search/intent` pueden acotar por `--repo` sin perder el modo directo. Federacion wiki cross-workspace: explorar wikis de multiples espacios de trabajo en una sola máquina con `--all-workspaces` y fan-out controlado. Ver [[FL-WIKI-01]].
 - Indexacion repo-local: catalogo liviano de simbolos, archivos, metadatos del workspace y grafo documental.
 - Enrutamiento semantico: derivacion a Roslyn para C#, a tree-sitter/ripgrep para TS/Next y texto, y a Pyright para Python cuando este disponible.
 - Formateo de salida: envelopes JSON compactos, truncacion determinista y warnings explicitos.

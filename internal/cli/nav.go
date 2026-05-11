@@ -557,11 +557,14 @@ pack for a reading pack, and trace for RS/RF/TP evidence links.`,
 	var searchTop int
 	var searchOffset int
 	var searchIncludeContent bool
+	var searchAllWorkspaces bool
+	var searchTopGlobal int
 	searchCommand := &cobra.Command{
 		Use:   "search <query>",
 		Short: "Search governed wiki docs by query and layer",
 		Example: `  mi-lsp nav wiki search "workflow masterformularios" --workspace idp --layer RS,RF,FL,CT,TP --format toon
-  mi-lsp nav wiki search "RF IDX" --workspace mi-lsp --include-content --format toon`,
+  mi-lsp nav wiki search "RF IDX" --workspace mi-lsp --include-content --format toon
+  mi-lsp nav wiki search "governance" --all-workspaces --format toon`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if err := requireArgs(args, 1, "query"); err != nil {
 				return err
@@ -579,6 +582,12 @@ pack for a reading pack, and trace for RS/RF/TP evidence links.`,
 			if searchIncludeContent {
 				payload["include_content"] = true
 			}
+			if searchAllWorkspaces {
+				payload["all_workspaces"] = true
+				if searchTopGlobal > 0 {
+					payload["top_global"] = searchTopGlobal
+				}
+			}
 			return state.executeOperation(cmd, "nav.wiki.search", payload, true)
 		},
 	}
@@ -586,27 +595,38 @@ pack for a reading pack, and trace for RS/RF/TP evidence links.`,
 	searchCommand.Flags().IntVar(&searchTop, "top", 0, "Maximum number of wiki docs to return")
 	searchCommand.Flags().IntVar(&searchOffset, "offset", 0, "Skip first N wiki docs")
 	searchCommand.Flags().BoolVar(&searchIncludeContent, "include-content", false, "Include markdown content for each wiki candidate")
+	searchCommand.Flags().BoolVar(&searchAllWorkspaces, "all-workspaces", false, "Search across all registered workspaces")
+	searchCommand.Flags().IntVar(&searchTopGlobal, "top-global", 50, "Maximum number of wiki docs to return globally when --all-workspaces is true")
 
+	var routeAllWorkspaces bool
 	routeCommand := &cobra.Command{
 		Use:     "route <task>",
 		Short:   "Resolve the canonical wiki route for a task",
-		Example: `  mi-lsp nav wiki route "workflow con masterformularios" --workspace idp --format toon`,
+		Example: `  mi-lsp nav wiki route "workflow con masterformularios" --workspace idp --format toon
+  mi-lsp nav wiki route "governance" --all-workspaces --format toon`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if err := requireArgs(args, 1, "task"); err != nil {
 				return err
 			}
-			return state.executeOperation(cmd, "nav.route", map[string]any{"task": strings.Join(args, " ")}, true)
+			payload := map[string]any{"task": strings.Join(args, " ")}
+			if routeAllWorkspaces {
+				payload["all_workspaces"] = true
+			}
+			return state.executeOperation(cmd, "nav.route", payload, true)
 		},
 	}
+	routeCommand.Flags().BoolVar(&routeAllWorkspaces, "all-workspaces", false, "Route across all registered workspaces")
 
 	var packRF string
 	var packFL string
 	var packDoc string
+	var packAllWorkspaces bool
 	packCommand := &cobra.Command{
 		Use:   "pack <task>",
 		Short: "Build a governed wiki reading pack for a task",
 		Example: `  mi-lsp nav wiki pack "workflow con masterformularios" --workspace idp --format toon
-  mi-lsp nav wiki pack "indexing docs" --workspace mi-lsp --rf RF-IDX-001 --format toon`,
+  mi-lsp nav wiki pack "indexing docs" --workspace mi-lsp --rf RF-IDX-001 --format toon
+  mi-lsp nav wiki pack "governance" --all-workspaces --format toon`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if err := requireArgs(args, 1, "task"); err != nil {
 				return err
@@ -621,15 +641,20 @@ pack for a reading pack, and trace for RS/RF/TP evidence links.`,
 			if packDoc != "" {
 				payload["doc"] = packDoc
 			}
+			if packAllWorkspaces {
+				payload["all_workspaces"] = true
+			}
 			return state.executeOperation(cmd, "nav.pack", payload, true)
 		},
 	}
 	packCommand.Flags().StringVar(&packRF, "rf", "", "Requirement anchor to harden pack selection")
 	packCommand.Flags().StringVar(&packFL, "fl", "", "Flow anchor to harden pack selection")
 	packCommand.Flags().StringVar(&packDoc, "doc", "", "Document path anchor to harden pack selection")
+	packCommand.Flags().BoolVar(&packAllWorkspaces, "all-workspaces", false, "Build pack across all registered workspaces")
 
 	var traceAll bool
 	var traceSummary bool
+	var traceAllWorkspaces bool
 	traceCommand := &cobra.Command{
 		Use:   "trace <DOC-ID|--all>",
 		Short: "Trace wiki RS/RF/TP docs to evidence links",
@@ -644,14 +669,18 @@ pack for a reading pack, and trace for RS/RF/TP evidence links.`,
 			if traceSummary {
 				payload["summary"] = true
 			}
-			if len(args) == 0 && !traceAll {
-				return fmt.Errorf("DOC-ID required or use --all")
+			if traceAllWorkspaces {
+				payload["all_workspaces"] = true
+			}
+			if len(args) == 0 && !traceAll && !traceAllWorkspaces {
+				return fmt.Errorf("DOC-ID required or use --all or --all-workspaces")
 			}
 			return state.executeOperation(cmd, "nav.trace", payload, true)
 		},
 	}
 	traceCommand.Flags().BoolVar(&traceAll, "all", false, "Trace all RFs (RF-only)")
 	traceCommand.Flags().BoolVar(&traceSummary, "summary", false, "Summary table format (with --all)")
+	traceCommand.Flags().BoolVar(&traceAllWorkspaces, "all-workspaces", false, "Trace across all registered workspaces")
 
 	var validateHarnessIDs string
 	var validateHarnessPaths string
@@ -684,6 +713,33 @@ pack for a reading pack, and trace for RS/RF/TP evidence links.`,
 		},
 	}
 
-	command.AddCommand(searchCommand, routeCommand, packCommand, traceCommand, validateHarnessCommand, validateSourceCommand)
+	var invAllWorkspaces bool
+	var invWithLayerCounts bool
+	var invWorkspace string
+	inventoryCommand := &cobra.Command{
+		Use:   "inventory",
+		Short: "List registered wikis with metadata (alias, root, governance, doc_count)",
+		Long: `List all registered wikis with metadata including governance status, documentation readiness, and last indexed timestamp.
+Default behavior lists all workspaces (--all-workspaces=true).
+Use --with-layer-counts to include per-layer documentation counts (RS, FL, RF, TP, TECH, DB, CT).`,
+		Example: `  mi-lsp nav wiki inventory --format toon
+  mi-lsp nav wiki inventory --with-layer-counts --format toon
+  mi-lsp nav wiki inventory --all-workspaces=false --workspace mi-lsp --format toon`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			payload := map[string]any{"all_workspaces": invAllWorkspaces}
+			if invWithLayerCounts {
+				payload["with_layer_counts"] = true
+			}
+			if invWorkspace != "" {
+				payload["workspace"] = invWorkspace
+			}
+			return state.executeOperation(cmd, "nav.wiki.inventory", payload, true)
+		},
+	}
+	inventoryCommand.Flags().BoolVar(&invAllWorkspaces, "all-workspaces", true, "List every registered workspace (default true)")
+	inventoryCommand.Flags().BoolVar(&invWithLayerCounts, "with-layer-counts", false, "Include doc counts per layer (RS, FL, RF, TP, TECH, DB, CT)")
+	inventoryCommand.Flags().StringVar(&invWorkspace, "workspace", "", "Limit to a single workspace alias (only valid when --all-workspaces=false)")
+
+	command.AddCommand(searchCommand, routeCommand, packCommand, traceCommand, validateHarnessCommand, validateSourceCommand, inventoryCommand)
 	return command
 }

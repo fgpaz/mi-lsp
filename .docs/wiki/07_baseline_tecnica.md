@@ -244,10 +244,15 @@ El struct `internal/service/config.go` centraliza todos los valores hardcodeados
 - `nav context` acepta `file line` y `file:line`; sobre archivos no semanticos no debe depender de Roslyn, `tsserver`, Pyright ni `gopls`.
 - Si `tsserver`, `pyright` o `gopls` ya fallaron por indisponibilidad en la misma sesion/runtime, el core puede entrar en cooldown corto y degradar directamente a catalog/text.
 
+## Fan-out de comandos wiki
+
+Los comandos `nav ask/search/find --all-workspaces` implementan un patrón de paralelismo bounded sobre multiples workspaces registrados con semaforo de 4 goroutines, timeout por workspace heredado del contexto padre (default 30s), y merge determinista por score. El fan-out no aborta en fallo parcial; los errores se acumulan como warnings y se retorna `ok=true` con stats de workspaces consultados/fallidos. Reutiliza el patron nativo de `internal/service/ask.go:465-564` sin duplicar logica. Ver [[TECH-WIKI-FANOUT]] para detalles de arquitectura.
+
 ## Documentos detalle
 
 - [TECH-DAEMON-GOBERNANZA.md](07_tech/TECH-DAEMON-GOBERNANZA.md)
 - [TECH-AXI-DISCOVERY.md](07_tech/TECH-AXI-DISCOVERY.md)
+- [TECH-WIKI-FANOUT.md](07_tech/TECH-WIKI-FANOUT.md)
 - [TECH-TS-BACKEND.md](07_tech/TECH-TS-BACKEND.md)
 - [TECH-DEPENDENCY-HARDENING.md](07_tech/TECH-DEPENDENCY-HARDENING.md)
 - [TECH-PYTHON-BACKEND.md](07_tech/TECH-PYTHON-BACKEND.md)

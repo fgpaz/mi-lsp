@@ -10,6 +10,7 @@ import (
 
 	"github.com/fgpaz/mi-lsp/internal/docgraph"
 	"github.com/fgpaz/mi-lsp/internal/model"
+	"github.com/fgpaz/mi-lsp/internal/nav"
 	"github.com/fgpaz/mi-lsp/internal/store"
 )
 
@@ -23,6 +24,11 @@ const (
 )
 
 func (a *App) trace(ctx context.Context, request model.CommandRequest) (model.Envelope, error) {
+	allWorkspaces, _ := request.Payload["all_workspaces"].(bool)
+	if allWorkspaces {
+		return a.traceAllWorkspaces(ctx, request)
+	}
+
 	registration, _, err := a.resolveWorkspaceWithProject(request.Context.Workspace)
 	if err != nil {
 		return model.Envelope{}, err
@@ -1060,4 +1066,94 @@ func parseImplementsRef(ref string) (file string, symbol string) {
 		}
 	}
 	return ref, ""
+}
+
+// traceAllWorkspaces handles --all-workspaces fan-out using FanOutWiki.
+func (a *App) traceAllWorkspaces(ctx context.Context, request model.CommandRequest) (model.Envelope, error) {
+	docID, _ := request.Payload["rf"].(string)
+	allRFs, _ := request.Payload["all"].(bool)
+	_ = request.Payload["summary"] // Reserved for future multi-workspace summary aggregation
+
+	// Fan-out across all workspaces
+	fanOutResult, err := nav.FanOutWiki(ctx, nav.WikiFanOutOptions{}, func(ctx context.Context, ws model.WorkspaceRegistration) (items []any, stats map[string]any, err error) {
+		// Open this workspace's DB
+		db, err := openWorkspaceDB(ws, "nav.trace")
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to open DB for workspace %s: %w", ws.Name, err)
+		}
+		defer db.Close()
+
+		var results []model.TraceResult
+
+		if docID != "" {
+			// Single doc trace
+			result, err := a.traceRF(ctx, ws.Root, db, docID)
+			if err != nil {
+				return nil, nil, fmt.Errorf("traceRF failed: %w", err)
+			}
+			if result != nil {
+				result.LookupStatus = traceLookupStatus(ctx, db, ws.Name, docID, result)
+				results = append(results, *result)
+			}
+		} else if allRFs {
+			// Trace all RFs for this workspace
+			traceResults, err := a.traceAllRFs(ctx, ws.Name, ws.Root, db)
+			if err != nil {
+				return nil, nil, fmt.Errorf("traceAllRFs failed: %w", err)
+			}
+			results = traceResults
+		}
+
+		// Convert to []any with workspace field
+		allItems := make([]any, 0, len(results))
+		for i := range results {
+			results[i].Workspace = ws.Name
+			results[i].Host = ""
+			allItems = append(allItems, results[i])
+		}
+
+		return allItems, map[string]any{"rf_count": len(results)}, nil
+	})
+	if err != nil {
+		return model.Envelope{}, fmt.Errorf("FanOutWiki failed: %w", err)
+	}
+
+	// Aggregate all items
+	var allResults []any
+	wsFailures := make([]string, 0)
+	for _, wsItem := range fanOutResult.Items {
+		if wsItem.Err != nil {
+			wsFailures = append(wsFailures, fmt.Sprintf("%s: %v", wsItem.Workspace, wsItem.Err))
+		} else {
+			allResults = append(allResults, wsItem.Items...)
+		}
+	}
+
+	// Build warnings for any workspace failures
+	var warnings []string
+	if len(wsFailures) > 0 {
+		warnings = append(warnings, fmt.Sprintf("workspaces failed: %s", strings.Join(wsFailures, "; ")))
+	}
+
+	// Build stats
+	stats := model.Stats{
+		Files: fanOutResult.WorkspacesQueried,
+	}
+	stats.WorkspacesQueried = fanOutResult.WorkspacesQueried
+	stats.WorkspacesFailed = make([]string, 0)
+	for _, f := range fanOutResult.WorkspacesFailed {
+		stats.WorkspacesFailed = append(stats.WorkspacesFailed, fmt.Sprintf("%s: %s", f.Alias, f.Reason))
+	}
+
+	// If summary is requested, we would need to aggregate summaries; for now, return items
+	// (summary aggregation is single-workspace-oriented, so skip for all-workspaces mode)
+	env := model.Envelope{
+		Ok:       true,
+		Backend:  "trace",
+		Items:    allResults,
+		Stats:    stats,
+		Warnings: warnings,
+	}
+
+	return env, nil
 }
