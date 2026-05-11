@@ -1,0 +1,28 @@
+# ~/.hermes/hosts.yaml.example
+#
+# Inventario de hosts que Hermes consulta cuando recibe el comando
+# global de navegación wiki. Cada host se invoca via CLI puro:
+#  - transport: local           -> mi-lsp directo en este host
+#  - transport: tailscale-ssh   -> tailscale ssh <ssh_target> -- mi-lsp ...
+#
+# mi-lsp permanece CLI puro per-máquina; el merge cross-host vive en Hermes.
+
+hosts:
+  - name: local
+    transport: local
+    # mi_lsp_bin: mi-lsp           # opcional; default = "mi-lsp" en PATH
+
+  - name: tesla-desktop
+    transport: tailscale-ssh
+    ssh_target: tesla-desktop      # nombre Tailscale del peer
+    # mi_lsp_bin: mi-lsp           # opcional; override si en la otra máquina vive en otro path
+
+defaults:
+  timeout_seconds: 5               # tiempo máximo por host antes de marcarlo como failed
+  semaphore_hosts: 2               # paralelismo entre hosts (con 2 hosts, default 2)
+
+# Notas:
+# - Hermes no aborta si un host está apagado o tarda más que timeout_seconds.
+#   El host queda en stats.hosts_failed[] y el resto sigue.
+# - Para agregar máquinas, agregar entradas bajo `hosts:` sin tocar defaults.
+# - mi-lsp NO conoce este archivo — vive enteramente del lado de Hermes.
