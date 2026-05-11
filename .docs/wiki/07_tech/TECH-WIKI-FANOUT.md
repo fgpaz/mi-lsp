@@ -147,7 +147,7 @@ type: scope-boundary
 - **Cache distribuido**: No hay estado distribuido entre instancias; cada workspace query es independiente.
 - **Orquestacion de Hermes**: El wrapper Hermes que coordina fan-out entre multiples maquinas es un concern separado fuera de este documento.
 - **Contratos CLI**: Los flags exactos, formatos de salida y handshake viven en `[[CT-NAV-WIKI]]`.
-- **Test cases**: Los procedimientos QA de fan-out viven en `[[TP-WIKI-FANOUT]]` o similar.
+- **Test cases**: Los procedimientos QA de fan-out viven en `[[TP-WIKI]]`.
 
 ## Invariantes
 

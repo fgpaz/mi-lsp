@@ -6,8 +6,6 @@ id: "CT-NAV-WIKI"
 kind: "wiki-doc"
 audience: "llm-first"
 imports:
-  - '[[00_gobierno_documental]]'
-  - '[[CT-NAV-WIKI]]'
   - '[[RF-WIKI-001]]'
   - '[[RF-WIKI-002]]'
   - '[[RF-WIKI-003]]'

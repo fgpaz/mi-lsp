@@ -13,7 +13,6 @@ imports:
   - '[[RF-WIKI-003]]'
   - '[[RF-WIKI-004]]'
   - '[[RF-WIKI-005]]'
-  - '[[00_gobierno_documental]]'
 exports:
   - '[[CT-NAV-WIKI]]'
 agent_must_read:

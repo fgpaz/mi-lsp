@@ -7,7 +7,6 @@ kind: "requirement"
 audience: "llm-first"
 imports:
   - '[[FL-WIKI-01]]'
-  - '[[00_gobierno_documental]]'
 exports:
   - '[[TP-WIKI]]'
   - '[[CT-NAV-WIKI]]'
