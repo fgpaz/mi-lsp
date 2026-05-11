@@ -91,6 +91,12 @@ flowchart LR
 | TS discovery | Discovery TS/Next basico y busqueda textual; incluye fallback nativo en Go (`searchPatternGo`) cuando `rg` no esta disponible, respetando `.milspignore` y filtrando binarios |
 | SQLite repo-local | Catalogo liviano, ownership por repo y grafo documental |
 
+## Fan-out intra-máquina y limites de federacion
+
+Mi-lsp soporta navegacion de wikis cross-workspace dentro de una misma máquina mediante `--all-workspaces`, con control de concurrencia (semaphore=4) para fan-out paralelo sobre el indice local de cada workspace. Esta capacidad permite a clients locales (CLI directo o skills) explorar documentación y simbolos en contexto multi-repo sin pasar por una capa de orquestación remota.
+
+El límite explícito: mi-lsp **NO maneja** cross-máquina. La federación wiki entre máquinas distintas (ej: agents en Codex + SDK local, Hermes agregando wikis de multiples máquinas) es responsabilidad de clientes externos que orquestan conexiones SSH/Tailscale, almacenan snapshots locales del read-model, y cumplen su propio patrón de fan-out. Ver [[TECH-WIKI-FANOUT]] para detalles técnicos del patrón intra-máquina.
+
 ## Reglas de routing
 
 1. `find/search/overview/symbols/intent` operan sobre el catalogo del workspace completo; en workspaces `container`, `find/search/intent` pueden acotar a un repo con `--repo` sin pasar por el routing semantico.
