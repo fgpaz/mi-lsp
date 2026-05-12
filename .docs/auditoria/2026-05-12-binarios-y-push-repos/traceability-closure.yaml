@@ -30,7 +30,7 @@ published_repositories:
     branch: main
     upstream: origin/main
     closure_packet: .docs/auditoria/2026-05-12-binarios-y-push-repos/traceability-closure.yaml
-    final_disposition: commit_and_push_this_packet_after_creation
+    final_disposition: integrated_direct_push_by_user_instruction
   buho_assets:
     path: C:\repos\buho\assets
     branch: main
@@ -129,6 +129,10 @@ no_drift_snapshot:
     - C:\Users\fgpaz\.agents: status clean, ahead_behind 0 0
     - C:\Users\fgpaz\.agents\skills: status clean, ahead_behind 0 0
   after_packet_commit:
-    required: commit and push this closure packet, then verify mi-lsp is 0 0
+    status: same_commit_external_snapshot
+    rationale: >-
+      This packet is committed by the closure commit itself. Final no-drift
+      status is verified externally after push with git status and
+      upstream ahead/behind commands.
 remaining_gaps: []
 final_closure_verdict: PASS
