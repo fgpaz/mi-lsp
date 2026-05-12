@@ -1,0 +1,134 @@
+session_contract_path: waived
+task_slug: 2026-05-12-binarios-y-push-repos
+closure_created_at: 2026-05-12
+session_contract_waiver: >-
+  Operational user-requested closure: refresh architecture-specific mi-lsp
+  binaries and push all pending changes in the related local repositories.
+  No pre-existing session-contract.yaml was found or provided for this
+  cross-repository push task.
+
+governance:
+  workspace_alias: mi-lsp
+  status_command: mi-lsp workspace status mi-lsp --format toon
+  governance_command: mi-lsp nav governance --workspace mi-lsp --format toon
+  governance_blocked: false
+  governance_sync: in_sync
+  index_ready: true
+  note: Governance was verified before the binary distribution and push work.
+
+git_before:
+  mi_lsp:
+    worktree_path: C:\repos\mios\mi-lsp
+    branch: main
+    head_sha: d48aa2ef963a63163ee6eedb6f20f6da1bb8dae7
+    upstream: origin/main
+    ahead_behind_before_packet: "0 0"
+
+published_repositories:
+  mi_lsp:
+    path: C:\repos\mios\mi-lsp
+    branch: main
+    upstream: origin/main
+    closure_packet: .docs/auditoria/2026-05-12-binarios-y-push-repos/traceability-closure.yaml
+    final_disposition: commit_and_push_this_packet_after_creation
+  buho_assets:
+    path: C:\repos\buho\assets
+    branch: main
+    upstream: origin/main
+    commits_pushed:
+      - 8e8849c chore(mi-lsp): refresh distributed amd64 binaries
+      - 164f717 chore(skills): sync pending skill updates
+    final_ahead_behind: "0 0"
+    final_status: clean
+  agents:
+    path: C:\Users\fgpaz\.agents
+    branch: master
+    upstream: origin/master
+    commits_pushed:
+      - 1b69616 chore(agents): sync pending skill updates
+    final_ahead_behind: "0 0"
+    final_status: clean
+  agents_skills:
+    path: C:\Users\fgpaz\.agents\skills
+    branch: main
+    upstream: origin/main
+    commits_pushed_or_verified_remote:
+      - fec2719 chore(skills): sync pending local updates
+    remote_head_verified: fec2719693f105af43ac7fa040406ee94b71ee3f
+    final_ahead_behind: "0 0"
+    final_status: clean
+
+binary_distribution:
+  source_head: d48aa2ef963a63163ee6eedb6f20f6da1bb8dae7
+  build_command: >-
+    pwsh -NoProfile -Command "& .\scripts\release\build-dist.ps1 -Rids
+    @('win-arm64','win-x64','linux-arm64','linux-x64') -Clean"
+  verified_vcs_modified: false
+  local_machine:
+    win_arm64:
+      path: C:\Users\fgpaz\bin\mi-lsp.exe
+      sha256: 9B22685757BDE69643A494D8207B95DCCB0AD32FB2C218217367E37900056A14
+      worker_status: compatible
+    linux_arm64:
+      windows_copy: C:\Users\fgpaz\bin\mi-lsp-linux-arm64
+      wsl_path: ~/.local/bin/mi-lsp
+      sha256: B5D0554E8DE659B152C21338D0BD19CDAFE571FE3B54EB605D2315976D2C4CF7
+      worker_status: compatible
+  distributed_amd64:
+    win_x64_sha256: C7CC196A491C1AF1AD4EE34F8201508AF1A058D77B591BB43D15630FF5908C74
+    linux_x64_sha256: 9E34E871904ADA0FEC8584E6648A819304BC573E3D52BE1B45DCA084949775E6
+    mirrors:
+      - C:\Users\fgpaz\bin
+      - C:\Users\fgpaz\.agents\skills\mi-lsp\bin
+      - C:\repos\buho\assets\skills\mi-lsp\bin
+
+secret_scan:
+  changed_files_scan: PASS
+  staged_added_lines_scan: PASS
+  blockers: []
+  note: >-
+    Sensitive-looking patterns were reviewed with redacted output only. Staged
+    additions were classified as placeholders, environment references, or
+    derived vault reads; no literal credential blocker was found.
+
+scope_verdict: PASS
+traceability_chains:
+  reviewed_anchors:
+    - AGENTS.md orchestration policy for mi-lsp
+    - shared skill mirror rule for C:\Users\fgpaz\.agents\skills and C:\repos\buho\assets\skills
+    - binary distribution parity for local arm64 and mirror/global amd64 targets
+  missing_anchors: []
+  updated_paths:
+    - .docs/auditoria/2026-05-12-binarios-y-push-repos/traceability-closure.yaml
+
+runtime_sensitive:
+  value: true
+  rationale: mi-lsp executable and worker binaries were rebuilt and redistributed.
+data_or_contract_sensitive:
+  value: false
+  rationale: No repository schema, persistence model, API contract, or protocol shape was changed in mi-lsp source.
+harness_verdict: PASS_WITH_WAIVER
+wiki_source_verdict: PASS_WITH_WAIVER
+board_sync:
+  touched_cards: not_applicable
+  rationale: User requested direct local repository publication, not board synchronization.
+pre_push_inputs:
+  issue_or_card: waived
+  expected_scope: publish all pending changes in the involved repositories
+  evidence_path: .docs/auditoria/2026-05-12-binarios-y-push-repos/traceability-closure.yaml
+  shared_skill_mirror_sync: PASS
+completion_handoff:
+  target_skill: finishing-a-development-branch
+  branch_disposition: integrated
+  cleanup_policy: already-clean
+  blockers: []
+no_drift_snapshot:
+  before_packet_commit:
+    - C:\repos\mios\mi-lsp: status clean, ahead_behind 0 0
+    - C:\repos\buho\assets: status clean, ahead_behind 0 0
+    - C:\Users\fgpaz\.agents: status clean, ahead_behind 0 0
+    - C:\Users\fgpaz\.agents\skills: status clean, ahead_behind 0 0
+  after_packet_commit:
+    required: commit and push this closure packet, then verify mi-lsp is 0 0
+remaining_gaps: []
+final_closure_verdict: PASS
