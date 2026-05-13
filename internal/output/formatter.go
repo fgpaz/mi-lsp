@@ -63,6 +63,9 @@ func renderTOON(env model.Envelope) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+	if sanitizeTOONMap(m) {
+		appendTOONWarning(m, "toon output sanitized unsafe control characters")
+	}
 	out, err := toon.Marshal(m)
 	if err != nil {
 		return nil, err
@@ -76,6 +79,94 @@ func renderTOON(env model.Envelope) ([]byte, error) {
 		}
 	}
 	return out, nil
+}
+
+func sanitizeTOONMap(m map[string]any) bool {
+	_, changed := sanitizeTOONValue(m)
+	return changed
+}
+
+func sanitizeTOONValue(value any) (any, bool) {
+	switch typed := value.(type) {
+	case map[string]any:
+		changed := false
+		for key, child := range typed {
+			sanitized, childChanged := sanitizeTOONValue(child)
+			if childChanged {
+				typed[key] = sanitized
+				changed = true
+			}
+		}
+		return typed, changed
+	case []any:
+		changed := false
+		for index, child := range typed {
+			sanitized, childChanged := sanitizeTOONValue(child)
+			if childChanged {
+				typed[index] = sanitized
+				changed = true
+			}
+		}
+		return typed, changed
+	case string:
+		sanitized := escapeUnsafeTOONControls(typed)
+		return sanitized, sanitized != typed
+	default:
+		return value, false
+	}
+}
+
+func escapeUnsafeTOONControls(value string) string {
+	var builder strings.Builder
+	changed := false
+	for _, r := range value {
+		if isUnsafeTOONControl(r) {
+			if !changed {
+				builder.Grow(len(value) + 6)
+				changed = true
+			}
+			_, _ = fmt.Fprintf(&builder, "\\u%04x", r)
+			continue
+		}
+		if changed {
+			builder.WriteRune(r)
+		}
+	}
+	if !changed {
+		return value
+	}
+	return builder.String()
+}
+
+func isUnsafeTOONControl(r rune) bool {
+	if r == '\t' || r == '\n' || r == '\r' {
+		return false
+	}
+	return (r >= 0x00 && r < 0x20) || (r >= 0x7f && r <= 0x9f)
+}
+
+func appendTOONWarning(m map[string]any, warning string) {
+	if existing, ok := m["warnings"]; ok {
+		switch warnings := existing.(type) {
+		case []any:
+			for _, item := range warnings {
+				if item == warning {
+					return
+				}
+			}
+			m["warnings"] = append(warnings, warning)
+			return
+		case []string:
+			for _, item := range warnings {
+				if item == warning {
+					return
+				}
+			}
+			m["warnings"] = append(warnings, warning)
+			return
+		}
+	}
+	m["warnings"] = []any{warning}
 }
 
 func renderYAML(env model.Envelope) ([]byte, error) {

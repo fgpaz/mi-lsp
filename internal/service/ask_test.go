@@ -165,6 +165,54 @@ func TestNavAskUsesWikiAndCodeEvidence(t *testing.T) {
 	}
 }
 
+func TestBuildAskCodeEvidenceSkipsOperationalAndBinaryPaths(t *testing.T) {
+	ensureWritableTestHome(t)
+	root := t.TempDir()
+	docPath := ".docs/wiki/04_RF/RF-QRY-010.md"
+	writeWorkspaceFile(t, root, docPath, "# RF-QRY-010\n")
+	writeWorkspaceFile(t, root, "nested/.mi-lsp/index.db", "SQLite format 3\x00Needle\n")
+	writeWorkspaceFile(t, root, "data/cache.sqlite", "Needle\n")
+	writeWorkspaceFile(t, root, "src/safe.go", "package safe\nconst EvidenceNeedle = true\n")
+
+	db, err := store.Open(root)
+	if err != nil {
+		t.Fatalf("store.Open: %v", err)
+	}
+	defer db.Close()
+
+	doc := model.DocRecord{Path: docPath, Title: "RF-QRY-010", DocID: "RF-QRY-010", Layer: "04", Family: "functional", SearchText: "RF-QRY-010"}
+	mentions := []model.DocMention{
+		{DocPath: docPath, MentionType: "file_path", MentionValue: ".mi-lsp/index.db"},
+		{DocPath: docPath, MentionType: "file_path", MentionValue: "nested/.mi-lsp/index.db"},
+		{DocPath: docPath, MentionType: "file_path", MentionValue: "data/cache.sqlite"},
+		{DocPath: docPath, MentionType: "file_path", MentionValue: "src/safe.go"},
+	}
+	if err := store.ReplaceDocs(context.Background(), db, []model.DocRecord{doc}, nil, mentions); err != nil {
+		t.Fatalf("ReplaceDocs: %v", err)
+	}
+
+	app := New(root, nil)
+	evidence, warnings := app.buildAskCodeEvidence(
+		context.Background(),
+		db,
+		model.WorkspaceRegistration{Name: "ask-evidence-filter", Root: root},
+		model.ProjectFile{},
+		doc,
+		[]model.AskDocEvidence{{Path: docPath}},
+		"RF-QRY-010",
+		10,
+	)
+	if len(warnings) != 0 {
+		t.Fatalf("unexpected warnings: %#v", warnings)
+	}
+	if len(evidence) != 1 {
+		t.Fatalf("expected only safe source evidence, got %#v", evidence)
+	}
+	if evidence[0].File != "src/safe.go" {
+		t.Fatalf("evidence file = %q, want src/safe.go", evidence[0].File)
+	}
+}
+
 func TestNavAskPrefersExplicitLinkedDocs(t *testing.T) {
 	alias := "ask-links-" + filepath.Base(t.TempDir())
 	root := createLinkedDocsWorkspaceFixture(t, alias)

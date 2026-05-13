@@ -8,7 +8,7 @@ description: Use when a folder-based agent should navigate code with the mi-lsp 
 Use this skill when you want local semantic navigation with `mi-lsp` without introducing an MCP dependency.
 If the skill is installed but the binary is missing, bootstrap the CLI first instead of abandoning the flow.
 
-Prefer the AXI-default surfaces for onboarding and discovery: `mi-lsp`, `init`, `workspace status`, `nav wiki search`, `nav route`, `nav search`, and `nav intent`.
+Prefer the AXI-default surfaces for onboarding and discovery: `mi-lsp`, `init`, `workspace status`, `nav wiki inventory`, `nav wiki search`, `nav route`, `nav search`, and `nav intent`.
 Use `nav wiki search` when the task is clearly about project docs, RS/RF/FL/TP/CT/TECH/DB, outcomes, contracts, tests, or traceability.
 Use `nav route` as the cheapest first orientation step — it resolves the canonical anchor doc from governance alone without touching the index.
 Use `nav ask` without `--axi` for richer orientation questions when you need evidence synthesis.
@@ -75,14 +75,17 @@ Different worktree roots must not share runtime, watcher, or index state even wh
 
 When the task is asking "what is the canonical doc?", "which RS/RF/TP/CT/TECH/DB applies?", "what does the spec say?", or "how do I trace this requirement?", start from governance-backed wiki surfaces:
 
-1. `nav route` when you need the cheapest canonical anchor and do not want to depend on the index yet
-2. `nav wiki search` when you need canonical doc discovery by topic or ID
-3. `nav wiki pack` when you need the small reading set around the canonical anchor
-4. `nav wiki trace` when you already have an explicit `RS-*` / `RF-*` / `TP-*` / doc ID
+1. `nav wiki inventory` when you do not yet know which workspace owns the question — it returns a light per-workspace catalog (alias, root, wiki_root, governance_blocked, docs_ready, doc_count, last_indexed_at). Add `--with-layer-counts` to see RS/FL/RF/TP/TECH/DB/CT counts per workspace before targeting one.
+2. `nav route` when you need the cheapest canonical anchor and do not want to depend on the index yet
+3. `nav wiki search` when you need canonical doc discovery by topic or ID
+4. `nav wiki pack` when you need the small reading set around the canonical anchor
+5. `nav wiki trace` when you already have an explicit `RS-*` / `RF-*` / `TP-*` / doc ID
 
 Only drop to `nav search --include-content` when the question becomes implementation-first, or when you need raw disk evidence after the canonical anchor is already known.
 
 Use `--layer RS,RF,FL,TP,CT,TECH,DB` aggressively on `nav wiki search` to narrow the authority lane.
+
+The five `nav wiki *` subcommands (`search`, `route`, `trace`, `pack`, `inventory`) all accept `--all-workspaces` for fan-out across every registered workspace; items in the response carry `workspace:<alias>` and `stats` gains `workspaces_queried` / `workspaces_failed[]`. Use it when the question is "which workspaces talk about X?" before targeting one with `--workspace <alias>`. Cross-machine federation lives outside `mi-lsp` (see Hermes-side wrappers); the CLI stays per-host.
 If AXI preview is trimmed or `next_hint` asks for expansion, rerun with `--full` before inventing a broader command.
 Follow `next_queries` and `continuation.next` from wiki results before improvising `nav search`.
 
@@ -119,6 +122,8 @@ Standard JSON. Extract with `jq` or by parsing the string. Fields use short keys
 
 TOON uses `key: value` for scalars and `key[N]{col1,col2,...}:` for arrays.
 Each array row is one indented line with comma-separated values in the declared column order.
+
+TOON output is sanitized for unsafe control bytes before serialization: tabs, newlines, and carriage returns remain real whitespace, while other control characters are rendered as visible escapes such as `\u0000`. When this happens the envelope includes a warning. Compact JSON keeps backward-compatible raw string behavior; do not assume a TOON escape means the underlying compact JSON value was changed.
 
 ```
 backend: text
@@ -509,6 +514,10 @@ When you want clean governance and telemetry attribution, set:
 - Read [references/runtime-drift.md](references/runtime-drift.md) when CLI/docs/daemon behavior disagree after rebuilds or reinstalls, especially to confirm `cli_path` and `protocol_version` from `worker status`.
 
 ## Noise control
+
+`.mi-lsp/` is operational state and is hard-ignored recursively by index/search/evidence collection. Do not ask users to add `.mi-lsp/` to `.milspignore`, and do not treat nested `.mi-lsp/index.db` hits as valid code evidence.
+
+`nav ask` code evidence skips operational paths and binary sidecars such as `.db`, `.sqlite`, `.exe`, and `.dll` before snippets are added. If you need to diagnose those files, do it as an explicit operational/debug step, not as normal answer evidence.
 
 If index or search results are polluted by generated folders, browser profiles, logs, extracted artifacts, or docs templates, suggest exact repo-local entries in `.milspignore`.
 

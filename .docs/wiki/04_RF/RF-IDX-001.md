@@ -13,6 +13,7 @@ tests:
   - internal/store/index_jobs_test.go
   - internal/store/index_lock_test.go
   - internal/indexer/indexer_progress_test.go
+  - internal/workspace/gitignore_test.go
   - internal/indexer/extractor_python_test.go
 ---
 
@@ -68,6 +69,7 @@ evidence:
 
 1. La CLI resuelve el workspace objetivo y carga `project.toml`.
 2. El indexer obtiene ignores desde defaults internos, `.gitignore`, `.milspignore` y `[ignore].extra_patterns`, respetando el orden del archivo y los re-includes negados (`!pattern`) sobre paths normalizados con `/`.
+   Los ignores operacionales hard-coded, incluyendo `.mi-lsp/` y `**/.mi-lsp/**`, se aplican al final y no pueden ser re-habilitados por negaciones del repo.
 3. La CLI crea un job durable y una generacion candidata en `index.db`.
 4. Si `--clean` esta activo, fuerza recomposicion completa del modo elegido, sin borrar `index.db` antes de construir el nuevo resultado.
 5. El walker enumera archivos y asigna ownership por `repo_id`.
@@ -108,6 +110,7 @@ evidence:
 - Para Go (`.go`), el extractor usa `go/parser`/AST nativo para catalogar funciones, metodos, tipos, structs, interfaces, consts y vars. Prioriza self-dogfood navegable del repo `mi-lsp` sin requerir backend semantico externo.
 - Para Python (`.py`, `.pyi`), el extractor usa una pasada lexical acotada por lineas e indentacion. Prioriza catalogo navegable y cancelabilidad por archivo; formas no reconocidas quedan cubiertas por `nav search` textual o Pyright opcional.
 - `index cancel` sin `--force` marca `requested_cancel`; el worker debe detenerse cooperativamente al volver al loop de indexacion. `--force` queda como escape para procesos colgados y debe limpiar el lock asociado si el PID ya no vive.
+- `.mi-lsp/**` es estado operacional del workspace, no input indexable. El walker y los matchers deben excluirlo tambien cuando aparece anidado dentro de repos hijos o cuando `.gitignore` intenta re-incluirlo con `!`.
 
 ## 7. Data Model Impact
 
@@ -121,3 +124,10 @@ evidence:
 - `WorkspaceMeta`
 - `IndexJob`
 - `IndexGeneration`
+
+## 8. Test Traceability
+
+- Positivo: `TP-IDX / TC-IDX-001`
+- Positivo: `TP-IDX / TC-IDX-012`
+- Positivo: `TP-IDX / TC-IDX-025`
+- Negativo: `TP-IDX / TC-IDX-003`

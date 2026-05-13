@@ -244,6 +244,7 @@ Actualizar `09` y/o `CT-*` cuando cambie cualquiera de estos puntos:
 - overlay AXI (`--axi`, `--classic`, `MI_LSP_AXI=1`, `--full`) y semantica de preview/full
 - handshake/version del daemon
 - envelope JSON de salida
+- politica de sanitizacion y compatibilidad por formato (`compact|json|text|toon|yaml`)
 - endpoints/admin URL o payloads de gobernanza
 - protocolo con Roslyn worker o bridge con `tsserver` o `pyright`
 - politica de bootstrap, instalacion o compatibilidad del worker por RID

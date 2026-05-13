@@ -178,3 +178,5 @@ evidence:
 | TC-QRY-103 | positivo | RF-QRY-016 | `scripts/release/regression-smoke.ps1`: recorre aliases registrados con `workspace status --no-auto-sync`, `nav wiki search`, `nav wiki pack`, `nav wiki trace` cuando hay ID trazable, y registra diagnostico de workspace/root/db_path por operacion sin mutar repos smokeados |
 | TC-QRY-104 | positivo | RF-QRY-016 | `nav wiki search RF-QRY-016 --include-content` expone evidencia de linea (`line_start`/`line_end` o rango equivalente) consistente con el markdown canonico |
 | TC-QRY-105 | positivo | RF-QRY-012, RF-QRY-016 | `nav wiki pack --rf RF-QRY-016` conserva el anchor como `primary_doc` aunque existan README/docs genericos con mayor recencia |
+| TC-QRY-106 | positivo | RF-QRY-001 | `TestRenderTOONEscapesUnsafeControlCharacters`: TOON escapa controles no imprimibles como `\u0000`, no emite NUL crudo y agrega warning unico de sanitizacion |
+| TC-QRY-107 | positivo | RF-QRY-010 | `TestBuildAskCodeEvidenceSkipsOperationalAndBinaryPaths` + `TestSearchPatternFallbackIgnoresNestedMiLspState`: `nav ask`/fallback textual descartan `.mi-lsp/**`, `.db`, `.sqlite` y otros sidecars antes de emitir `code_evidence` |

@@ -52,7 +52,7 @@ evidence:
 2. El core resuelve el workspace y carga el `read-model` del proyecto o el default embebido.
 3. El core rankea documentos canonicos por familia e intensidad de match usando el scorer owner-aware compartido por `nav route`, `nav ask`, `nav pack` y `nav.intent`.
 4. El core elige un documento primario y evidencia documental de soporte.
-5. El core deriva evidencia de codigo desde menciones explicitas o fallback textual.
+5. El core deriva evidencia de codigo desde menciones explicitas o fallback textual, filtrando antes de emitir snippets los paths operacionales `.mi-lsp/**` y archivos binarios/sidecars (`.db`, `.sqlite`, `.exe`, `.dll`, etc.).
 6. Devuelve un envelope con `summary`, `primary_doc`, `doc_evidence`, `code_evidence`, `why` y `next_queries`.
 7. Cuando la respuesta cae a fallback textual, queda con evidencia fina o deja un next step muy fuerte, el envelope puede agregar `coach` query-level con `trigger`, `message`, `confidence` y `actions`.
 8. Puede agregar `continuation` para dejar una siguiente busqueda estructurada (`expand_preview`, `low_evidence`, `follow_doc`) y `memory_pointer` para reentrada wiki-aware cuando existe snapshot repo-local util.
@@ -80,6 +80,7 @@ evidence:
 - En workspaces `container`, si la evidencia de codigo converge en un repo hijo unico, `next_queries` debe sugerir reruns con `--repo` para mantener el scope directo.
 - `nav ask` solo entra en AXI por default cuando la pregunta es claramente de onboarding/orientacion; preguntas con doc IDs, paths, simbolos o lenguaje de implementacion deben quedar clasicas salvo `--axi`.
 - En superficies AXI-default, `next_queries` no deben arrastrar `--axi` de forma redundante; la expansion mas profunda vive en `next_hint` hacia `--full`.
+- `code_evidence` nunca debe usar estado operacional repo-local como prueba de codigo. Si una mencion documental o fallback textual apunta a `.mi-lsp/index.db`, sidecars SQLite o binarios, esa evidencia se descarta y se continua con la siguiente fuente segura.
 
 ## 6. Data Model Impact
 
@@ -90,3 +91,21 @@ evidence:
 - `AskResult`
 - `QueryEnvelope`
 - `QueryOptions`
+
+## 7. Expanded Acceptance Criteria (Gherkin)
+
+```gherkin
+Scenario: Filtrar evidencia operacional y binaria antes de nav ask
+  Given un documento canonico menciona ".mi-lsp/index.db", un sidecar ".sqlite" y un archivo fuente real
+  When ejecuto "nav ask" o su constructor de evidencia
+  Then "code_evidence" incluye el archivo fuente real
+  And "code_evidence" no incluye ".mi-lsp/**"
+  And "code_evidence" no incluye extensiones binarias como ".db" o ".sqlite"
+```
+
+## 8. Test Traceability
+
+- Positivo: `TP-QRY / TC-QRY-032`
+- Positivo: `TP-QRY / TC-QRY-039`
+- Positivo: `TP-QRY / TC-QRY-107`
+- Negativo: `TP-QRY / TC-QRY-034`

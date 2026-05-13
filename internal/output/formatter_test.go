@@ -156,6 +156,37 @@ func TestRenderEnvelopeDiagnostics(t *testing.T) {
 	}
 }
 
+func TestRenderTOONEscapesUnsafeControlCharacters(t *testing.T) {
+	env := model.Envelope{
+		Ok:        true,
+		Backend:   "ask",
+		Workspace: "mi-lsp",
+		Items: []model.AskResult{{
+			Summary:    "binary evidence regression",
+			PrimaryDoc: model.AskDocEvidence{Path: ".docs/wiki/04_RF/RF-QRY-010.md"},
+			CodeEvidence: []model.AskCodeEvidence{{
+				Type:    "file",
+				File:    "repo/.mi-lsp/index.db",
+				Snippet: "SQLite format 3\x00with unit separator\x1fand allowed whitespace\t\n\r",
+			}},
+		}},
+	}
+
+	rendered, err := Render(env, "toon", false)
+	if err != nil {
+		t.Fatalf("render toon: %v", err)
+	}
+	text := string(rendered)
+	if strings.ContainsRune(text, '\x00') {
+		t.Fatalf("TOON output contains raw NUL: %#v", text)
+	}
+	for _, want := range []string{`\\u0000`, `\\u001f`, "toon output sanitized unsafe control characters"} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("expected TOON output to contain %q, got %s", want, text)
+		}
+	}
+}
+
 func TestCompactItems_CompressionMode(t *testing.T) {
 	items := []model.SymbolRecord{{
 		Name:       "CompressTest",
