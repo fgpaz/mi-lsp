@@ -1,0 +1,88 @@
+session_contract_path: .docs/auditoria/2026-05-13-mi-lsp-binary-distribution-policy/session-contract.yaml
+task_slug: mi-lsp-binary-distribution-policy
+git_before:
+  mi_lsp:
+    base_ref: origin/main
+    base_sha: 05e3ed5455356542437f84c65ddcff55b395fa87
+    branch: codex/mi-lsp-binary-distribution-policy
+  agents_skills:
+    branch: main
+  assets:
+    branch: main
+changed_paths:
+  mi_lsp:
+    - skills/mi-lsp/SKILL.md
+    - .docs/auditoria/2026-05-13-mi-lsp-binary-distribution-policy/session-contract.yaml
+    - .docs/auditoria/2026-05-13-mi-lsp-binary-distribution-policy/traceability-closure.yaml
+  agents_skills:
+    - .gitignore
+    - mi-lsp/SKILL.md
+    - ps-trazabilidad/SKILL.md
+    - ps-auditar-trazabilidad/SKILL.md
+    - finishing-a-development-branch/SKILL.md
+  assets:
+    - .gitignore
+    - skills/mi-lsp/SKILL.md
+    - skills/ps-trazabilidad/SKILL.md
+    - skills/ps-auditar-trazabilidad/SKILL.md
+    - skills/finishing-a-development-branch/SKILL.md
+scope_verdict: PASS
+traceability_chains:
+  reviewed_anchors:
+    - mi-lsp skill install/update policy
+    - ps-trazabilidad closure shared-skill evidence gate
+    - ps-auditar-trazabilidad shared-skill audit gate
+    - finishing-a-development-branch pre-integration gate
+  missing_anchors: []
+runtime_sensitive: false
+data_or_contract_sensitive: false
+harness_verdict:
+  command: mi-lsp nav wiki validate-harness --workspace mi-lsp --format toon
+  result: PASS
+wiki_source_verdict:
+  command: mi-lsp nav wiki validate-source --workspace mi-lsp --format toon
+  result: PASS
+binary_distribution_policy:
+  local_only_arm64:
+    windows: C:\Users\fgpaz\bin\mi-lsp.exe
+    linux_wsl: /home/fgpaz/.local/bin/mi-lsp
+  shared_versioned_amd64:
+    agents:
+      - C:\Users\fgpaz\.agents\skills\mi-lsp\bin\mi-lsp-win-x64.exe
+      - C:\Users\fgpaz\.agents\skills\mi-lsp\bin\mi-lsp-linux-x64
+    assets:
+      - C:\repos\buho\assets\skills\mi-lsp\bin\mi-lsp-win-x64.exe
+      - C:\repos\buho\assets\skills\mi-lsp\bin\mi-lsp-linux-x64
+  mechanical_guards:
+    - C:\Users\fgpaz\.agents\skills\.gitignore ignores mi-lsp/bin/* and re-allows only win-x64/linux-x64
+    - C:\repos\buho\assets\.gitignore ignores skills/mi-lsp/bin/* and re-allows only win-x64/linux-x64
+mirror_sync:
+  commands:
+    - scripts/compare-skill-mirrors.ps1 -Skill mi-lsp -IncludeIdentical -AsJson
+    - scripts/compare-skill-mirrors.ps1 -Skill ps-trazabilidad -IncludeIdentical -AsJson
+    - scripts/compare-skill-mirrors.ps1 -Skill ps-auditar-trazabilidad -IncludeIdentical -AsJson
+    - scripts/compare-skill-mirrors.ps1 -Skill finishing-a-development-branch -IncludeIdentical -AsJson
+  result: PASS
+shared_skill_validators:
+  commands:
+    - C:\Users\fgpaz\.agents\skills\_shared\Assert-SddHarness.ps1
+    - C:\Users\fgpaz\.agents\skills\_shared\Assert-SddWikiSource.ps1
+    - C:\repos\buho\assets\skills\_shared\Assert-SddHarness.ps1
+    - C:\repos\buho\assets\skills\_shared\Assert-SddWikiSource.ps1
+  result: PASS
+board_sync: not_applicable
+pre_push_inputs:
+  issue_or_waiver: no external issue; user-requested policy hardening
+  expected_scope: policy-only skill distribution hardening
+  session_contract_path: .docs/auditoria/2026-05-13-mi-lsp-binary-distribution-policy/session-contract.yaml
+completion_handoff:
+  target_skill: finishing-a-development-branch
+  branch_disposition: integrate-main
+  cleanup_policy: auto-after-successful-integration
+post_audit_repair_loop:
+  required: false
+final_verdict:
+  status: PASS
+  notes:
+    - ARM64 is codified as local-only for this workstation.
+    - AMD64 Windows and Linux binaries are codified as the only repository-distributed skill binaries.
