@@ -468,11 +468,18 @@ func workspaceDoctorNextActions(report WorkspaceDoctorReport) []WorkspaceDoctorA
 		actions = append(actions, WorkspaceDoctorAction{
 			ID:       "review_binary_shadowing",
 			Severity: "medium",
-			Command:  "where mi-lsp",
+			Command:  binaryShadowingLookupCommand(),
 			Reason:   "multiple mi-lsp binaries are visible on PATH; agents may execute a different build than expected",
 		})
 	}
 	return actions
+}
+
+func binaryShadowingLookupCommand() string {
+	if runtime.GOOS == "windows" {
+		return "where.exe mi-lsp"
+	}
+	return "which -a mi-lsp"
 }
 
 func WorkspaceStateDir(root string) string {

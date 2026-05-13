@@ -79,6 +79,7 @@ scope_verdict:
     - "Workspace doctor still reports health=action_required because stale registry/workspace hygiene next_actions are emitted."
     - "RF-QRY-001 remains low-confidence/inferred-only in nav trace even though the command succeeds and emits confidence/status_reason."
     - ".docs/auditoria/** remains ignored; PR durability requires force-adding the session contract and closure packet before commit."
+    - "Branch protection still requires PR review approval before integration; review conversations are expected to be resolvable only after the PR review fixes are pushed."
   blockers: []
 
 traceability_chains:
@@ -353,6 +354,42 @@ post_harness_blocker_repair:
     - RF-QRY-001_low_confidence_inferred_only
     - docs_auditoria_force_add_required_before_commit_for_pr_durability
 
+post_pr_review_fixes:
+  final_qa_result: PASS_WITH_PR_REVIEW_FIXES_RECORDED
+  summary: "P1 and P2 PR review conversations were resolved in code after the previous closure refresh; conversations should be resolvable after these fixes are pushed."
+  resolved_review_conversations:
+    - review_id: P1-SEARCH-TIMEOUT-DEADLINE-PRESERVATION
+      status: resolved_in_code
+      changed_files:
+        - internal/service/search.go
+        - internal/service/search_wave3b_test.go
+      behavior:
+        direct_no_diagnostics_search_timeout: "preserves context.DeadlineExceeded"
+        partial_success_scope: "diagnostics-aware nav search path only"
+        non_diagnostics_scope: "does not convert direct/no-diagnostics timeout into partial success"
+    - review_id: P2-BINARY-SHADOWING-HOST-AWARE-NEXT-ACTION
+      status: resolved_in_code
+      changed_files:
+        - internal/workspace/registry.go
+        - internal/workspace/registry_test.go
+      behavior:
+        windows_next_action_command: "where.exe mi-lsp"
+        non_windows_next_action_command: "which -a mi-lsp"
+        rationale: "binary shadowing guidance is host-aware instead of emitting a Unix-only command on Windows"
+  focused_tests_passed:
+    - command: "go test ./internal/service -run 'SearchPattern.*Deadline|NavSearchTimeout|Fallback'"
+      result: PASS
+    - command: go test ./internal/workspace -run DoctorWorkspaces
+      result: PASS
+  full_suite_status:
+    worker_reported:
+      command: go test ./...
+      result: PASS
+    orchestrator_followup: "Orchestrator will rerun full go test ./... before commit/push."
+  pr_review_state:
+    conversations_after_push: expected_resolvable
+    branch_protection_review_required: external_integration_blocker_until_approval_exists
+
 no_drift_snapshot:
   after_closure_written: PASS_WITH_WARNINGS
   commands:
@@ -424,7 +461,8 @@ completion_handoff:
     - "Workspace doctor reports action_required for stale registry/workspace hygiene next_actions."
     - "RF-QRY-001 remains low-confidence/inferred-only."
     - ".docs/auditoria/** remains ignored until force-added before commit."
+    - "Branch protection review approval is still required before integration even though PR review conversations should be resolvable after push."
 
 final_verdict:
   status: PASS_WITH_WARNINGS
-  summary: "Scoped closure packet refreshed after harness blocker repair; TECH-WIKI-FANOUT is repaired in code and global harness/source validators pass. Remaining items are warnings/action-before-commit, not unresolved blockers."
+  summary: "Scoped closure packet refreshed after PR review fixes: P1 search timeout semantics preserve context.DeadlineExceeded outside diagnostics-aware nav search partial success, and P2 binary shadowing guidance is host-aware. TECH-WIKI-FANOUT remains repaired in code and global harness/source validators pass. Review conversations should be resolvable after push; branch protection review approval remains an external integration blocker."

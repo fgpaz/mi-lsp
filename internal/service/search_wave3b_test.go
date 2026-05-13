@@ -124,6 +124,26 @@ func TestSearchPatternRgReturnsPartialResultsOnTimeout(t *testing.T) {
 	}
 }
 
+func TestSearchPatternRgReturnsDeadlineErrorWithoutDiagnostics(t *testing.T) {
+	root, name := setupTestWorkspace(t)
+	project := testProject(name)
+	writeWorkspaceFile(t, root, "src/Partial.cs", "namespace Demo; public class PartialNeedle { }\n")
+
+	ctx := newManualDeadlineContext(context.Background())
+	originalCommand := rgCommand
+	rgCommand = fakeSlowRgCommand(t, root, func() {
+		time.Sleep(200 * time.Millisecond)
+		ctx.expire()
+	})
+	t.Cleanup(func() { rgCommand = originalCommand })
+	t.Cleanup(ctx.cancel)
+
+	items, err := searchPatternRg(ctx, root, root, project, "PartialNeedle", false, 10, "rg")
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("expected deadline error without diagnostics, got items=%#v err=%v", items, err)
+	}
+}
+
 func TestNavSearchTimeoutReturnsUsefulEnvelope(t *testing.T) {
 	root, name := setupTestWorkspace(t)
 	writeWorkspaceFile(t, root, "src/Partial.cs", "namespace Demo; public class PartialNeedle { }\n")
@@ -209,6 +229,25 @@ func TestSearchPatternFallbackReturnsPartialResultsOnDeadline(t *testing.T) {
 	}
 	if !diagnostics.TimedOut || diagnostics.PartialCount != 1 {
 		t.Fatalf("timeout diagnostics = %#v, want timed out with one partial", diagnostics)
+	}
+}
+
+func TestSearchPatternFallbackReturnsDeadlineErrorWithoutDiagnostics(t *testing.T) {
+	root, name := setupTestWorkspace(t)
+	project := testProject(name)
+	writeWorkspaceFile(t, root, "src/Partial.cs", "namespace Demo; public class PartialNeedle { }\n")
+
+	ctx := newManualDeadlineContext(context.Background())
+	originalHook := searchPatternGoAfterMatch
+	searchPatternGoAfterMatch = ctx.expire
+	t.Cleanup(func() {
+		searchPatternGoAfterMatch = originalHook
+		ctx.cancel()
+	})
+
+	items, err := searchPatternFallback(ctx, root, root, project, "PartialNeedle", false, 10)
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("expected deadline error without diagnostics, got items=%#v err=%v", items, err)
 	}
 }
 

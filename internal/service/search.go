@@ -187,8 +187,7 @@ func searchPatternRgWithDiagnostics(ctx context.Context, workspaceRoot string, s
 			if !errors.Is(ctx.Err(), context.DeadlineExceeded) {
 				return nil, ctx.Err()
 			}
-			recordSearchTimeout(diagnostics, len(items))
-			return items, nil
+			return searchTimeoutResult(diagnostics, items)
 		}
 		return nil, scanErr
 	}
@@ -197,8 +196,7 @@ func searchPatternRgWithDiagnostics(ctx context.Context, workspaceRoot string, s
 			if !errors.Is(ctx.Err(), context.DeadlineExceeded) {
 				return nil, ctx.Err()
 			}
-			recordSearchTimeout(diagnostics, len(items))
-			return items, nil
+			return searchTimeoutResult(diagnostics, items)
 		}
 		var exitErr *exec.ExitError
 		if errors.As(waitErr, &exitErr) && exitErr.ExitCode() == 1 && strings.TrimSpace(stderr.String()) == "" && len(items) == 0 {
@@ -227,6 +225,14 @@ func recordSearchTimeout(diagnostics *searchPatternDiagnostics, partialCount int
 	}
 	diagnostics.TimedOut = true
 	diagnostics.PartialCount = partialCount
+}
+
+func searchTimeoutResult(diagnostics *searchPatternDiagnostics, items []map[string]any) ([]map[string]any, error) {
+	if diagnostics == nil {
+		return nil, context.DeadlineExceeded
+	}
+	recordSearchTimeout(diagnostics, len(items))
+	return items, nil
 }
 
 func recordRipgrepFallback(diagnostics *searchPatternDiagnostics, err error) {
@@ -316,7 +322,7 @@ func searchPatternFallbackWithDiagnostics(ctx context.Context, workspaceRoot str
 		items = append(items, item)
 	}
 	if err != nil {
-		recordSearchTimeout(diagnostics, len(items))
+		return searchTimeoutResult(diagnostics, items)
 	}
 	return items, nil
 }

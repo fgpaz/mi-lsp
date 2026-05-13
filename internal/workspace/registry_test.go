@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -220,6 +221,34 @@ func TestDoctorWorkspacesReportsActionRequiredForStaleAliases(t *testing.T) {
 	}
 	if !doctorActionsContain(report.NextActions, "prune_stale_aliases") {
 		t.Fatalf("NextActions = %#v, want prune_stale_aliases", report.NextActions)
+	}
+}
+
+func TestDoctorWorkspacesBinaryShadowingActionUsesHostCommand(t *testing.T) {
+	report := WorkspaceDoctorReport{
+		BinaryShadowing: []BinaryCandidate{
+			{Path: "/tmp/mi-lsp", Active: true},
+			{Path: "/usr/bin/mi-lsp"},
+		},
+	}
+
+	actions := workspaceDoctorNextActions(report)
+	var command string
+	for _, action := range actions {
+		if action.ID == "review_binary_shadowing" {
+			command = action.Command
+			break
+		}
+	}
+	if command == "" {
+		t.Fatalf("NextActions = %#v, want review_binary_shadowing", actions)
+	}
+	want := "which -a mi-lsp"
+	if runtime.GOOS == "windows" {
+		want = "where.exe mi-lsp"
+	}
+	if command != want {
+		t.Fatalf("binary shadowing command = %q, want %q", command, want)
 	}
 }
 
