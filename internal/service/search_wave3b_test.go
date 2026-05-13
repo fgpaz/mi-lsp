@@ -127,6 +127,7 @@ func TestSearchPatternRgReturnsPartialResultsOnTimeout(t *testing.T) {
 func TestNavSearchTimeoutReturnsUsefulEnvelope(t *testing.T) {
 	root, name := setupTestWorkspace(t)
 	writeWorkspaceFile(t, root, "src/Partial.cs", "namespace Demo; public class PartialNeedle { }\n")
+	forceTestRipgrepPath(t, root)
 
 	ctx := newManualDeadlineContext(context.Background())
 	originalCommand := rgCommand
@@ -209,6 +210,28 @@ func TestSearchPatternFallbackReturnsPartialResultsOnDeadline(t *testing.T) {
 	if !diagnostics.TimedOut || diagnostics.PartialCount != 1 {
 		t.Fatalf("timeout diagnostics = %#v, want timed out with one partial", diagnostics)
 	}
+}
+
+func forceTestRipgrepPath(t *testing.T, root string) {
+	t.Helper()
+
+	rgPath = ""
+	rgResolved = false
+	rgOnce = sync.Once{}
+	t.Cleanup(func() {
+		rgPath = ""
+		rgResolved = false
+		rgOnce = sync.Once{}
+	})
+
+	placeholder := filepath.Join(root, "fake-rg")
+	if runtime.GOOS == "windows" {
+		placeholder += ".cmd"
+	}
+	if err := os.WriteFile(placeholder, []byte("placeholder\n"), 0o755); err != nil {
+		t.Fatalf("write fake rg placeholder: %v", err)
+	}
+	t.Setenv("MI_LSP_RG", placeholder)
 }
 
 func fakeSlowRgCommand(t *testing.T, root string, afterPartial func()) func(context.Context, string, ...string) *exec.Cmd {
