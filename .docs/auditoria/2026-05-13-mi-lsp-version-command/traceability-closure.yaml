@@ -1,0 +1,164 @@
+closure_id: 2026-05-13-mi-lsp-version-command
+closed_at: 2026-05-13
+branch: codex/mi-lsp-version-command
+source_commit: a267774931040e73d902d1f9b12686818f379bd5
+base_commit: 17c850d
+session_contract: .docs/auditoria/2026-05-13-mi-lsp-version-command/session-contract.yaml
+
+scope:
+  request: "Add `mi-lsp version` and publish the updated skill/binaries."
+  outcome: PASS
+  notes:
+    - "`mi-lsp version` is a top-level command that does not require workspace resolution or daemon state."
+    - "Default output is human-readable text unless `--format` is explicitly provided."
+    - "Structured formats emit a stable envelope with executable provenance."
+
+implementation:
+  code:
+    - cmd/mi-lsp/main.go
+    - internal/cli/root.go
+    - internal/cli/root_test.go
+    - internal/cli/version.go
+    - internal/model/types.go
+    - internal/output/formatter.go
+    - internal/output/formatter_test.go
+  docs:
+    - README.md
+    - .docs/wiki/03_FL.md
+    - .docs/wiki/03_FL/FL-BOOT-01.md
+    - .docs/wiki/04_RF.md
+    - .docs/wiki/04_RF/RF-QRY-001.md
+    - .docs/wiki/04_RF/RF-WKS-006.md
+    - .docs/wiki/06_matriz_pruebas_RF.md
+    - .docs/wiki/06_pruebas/TP-QRY.md
+    - .docs/wiki/06_pruebas/TP-WKS.md
+    - .docs/wiki/09_contratos/CT-CLI-DAEMON-ADMIN.md
+    - .docs/wiki/09_contratos_tecnicos.md
+    - skills/mi-lsp/SKILL.md
+
+traceability:
+  rf_wks_006:
+    status: implemented
+    coverage: 1
+    evidence:
+      - .docs/wiki/04_RF/RF-WKS-006.md
+      - internal/cli/version.go
+      - internal/cli/root_test.go
+      - internal/output/formatter_test.go
+  rf_qry_001:
+    status: implemented
+    coverage: 1
+    evidence:
+      - .docs/wiki/04_RF/RF-QRY-001.md
+      - internal/model/types.go
+      - internal/output/formatter.go
+      - internal/output/formatter_test.go
+  contracts:
+    - CT-CLI-DAEMON-ADMIN
+    - 09_contratos_tecnicos
+  test_plans:
+    - TP-WKS
+    - TP-QRY
+
+verification:
+  governance_gate:
+    workspace_status: PASS
+    nav_governance: PASS
+    governance_blocked: false
+    governance_sync: in_sync
+  tests:
+    - command: go test ./internal/cli ./internal/output
+      result: PASS
+    - command: go test ./...
+      result: PASS
+  wiki:
+    - command: mi-lsp nav wiki trace RF-WKS-006 --workspace mi-lsp --format toon
+      result: PASS
+      status: implemented
+      coverage: 1
+    - command: mi-lsp nav wiki trace RF-QRY-001 --workspace mi-lsp --format toon
+      result: PASS
+      status: implemented
+      coverage: 1
+    - command: mi-lsp nav wiki validate-harness --workspace mi-lsp --format toon
+      result: PASS
+      verdict: PASS
+    - command: mi-lsp nav wiki validate-source --workspace mi-lsp --format toon
+      result: PASS
+      verdict: PASS
+  runtime_smoke:
+    - command: go run ./cmd/mi-lsp version
+      result: PASS
+    - command: go run ./cmd/mi-lsp version --format toon
+      result: PASS
+    - command: dist/win-arm64/mi-lsp.exe version --format toon
+      result: PASS
+    - command: C:/Users/fgpaz/bin/mi-lsp.exe version --format toon
+      result: PASS
+    - command: /home/fgpaz/.local/bin/mi-lsp version --format toon
+      result: PASS
+
+distribution:
+  release_build:
+    command: scripts/release/build-dist.ps1 -Rids @('win-arm64','linux-arm64','win-x64','linux-x64') -Clean
+    result: PASS
+    vcs_revision: a267774931040e73d902d1f9b12686818f379bd5
+    vcs_modified: false
+  local_arm64:
+    windows:
+      path: C:/Users/fgpaz/bin/mi-lsp.exe
+      goos: windows
+      goarch: arm64
+      worker_rid: win-arm64
+      sha256: dda747662415d57289dc5629d1df1cdef33d8b2ee36c1701fb788877cfeba4e1
+      verification:
+        - C:/Users/fgpaz/bin/mi-lsp.exe version --format toon
+        - go version -m C:/Users/fgpaz/bin/mi-lsp.exe
+    linux_wsl:
+      path: /home/fgpaz/.local/bin/mi-lsp
+      goos: linux
+      goarch: arm64
+      worker_rid: linux-arm64
+      sha256: bb38cbfa1583a9ccbd23459d8595ca009f0aa5119cd68ec224e516eacc41a64c
+      verification:
+        - /home/fgpaz/.local/bin/mi-lsp version --format toon
+        - go version -m /home/fgpaz/.local/bin/mi-lsp
+  shared_amd64:
+    policy: "Only AMD64/x64 binaries are versioned in shared skill repositories; ARM64 is local-only."
+    windows_x64_sha256: f1cd7471266be94dc6d68339b61a431b97a9bc46ad40b281124d47d6c2ce4054
+    linux_x64_sha256: 67f7a5bd458a7e1dea3facac6598766816aef3b22a3dd4c367fb54fb4b865828
+    go_version_m:
+      - "win-x64: GOOS=windows GOARCH=amd64 vcs.revision=a267774931040e73d902d1f9b12686818f379bd5 vcs.modified=false"
+      - "linux-x64: GOOS=linux GOARCH=amd64 vcs.revision=a267774931040e73d902d1f9b12686818f379bd5 vcs.modified=false"
+    mirrors:
+      agents_skills:
+        repo: C:/Users/fgpaz/.agents/skills
+        commit: 74669efacda4273146f558c8d2dc99cc0fad9503
+        pushed_to_origin_main: true
+        files:
+          - mi-lsp/SKILL.md
+          - mi-lsp/bin/mi-lsp-win-x64.exe
+          - mi-lsp/bin/mi-lsp-linux-x64
+      buho_assets:
+        repo: C:/repos/buho/assets
+        commit: a34f475760727080f4da3bd8eec6bb99ab52bc00
+        pushed_to_origin_main: true
+        unrelated_dirty_preserved:
+          - skills/mi-telegram-cli/bin/mi-telegram-cli.exe
+        files:
+          - skills/mi-lsp/SKILL.md
+          - skills/mi-lsp/bin/mi-lsp-win-x64.exe
+          - skills/mi-lsp/bin/mi-lsp-linux-x64
+    mirror_parity:
+      command: scripts/compare-skill-mirrors.ps1 -Skill mi-lsp
+      result: PASS
+    ignored_arm64_shared_bins:
+      agents_skills: PASS
+      buho_assets: PASS
+
+closure:
+  ps_trazabilidad: PASS
+  ps_auditar_trazabilidad: PASS
+  audit_agent: ps-gap-terminator
+  audit_summary: "PASS for implementation/spec/distribution; only pre-commit warning was that this closure artifact had not yet been committed."
+  ready_for_pr: true
