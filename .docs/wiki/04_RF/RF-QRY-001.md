@@ -1,3 +1,15 @@
+---
+id: RF-QRY-001
+title: Emitir envelope estable y truncacion determinista
+implements:
+  - internal/model/types.go
+  - internal/output/formatter.go
+  - internal/output/truncator.go
+tests:
+  - internal/output/formatter_test.go
+  - internal/output/truncator_test.go
+---
+
 # RF-QRY-001 - Emitir envelope estable y truncacion determinista
 
 ```yaml
@@ -111,6 +123,7 @@ evidence:
 - Si `nav search` agota presupuesto o timeout interno despues de encontrar resultados parciales seguros, debe devolver `ok=true`, preservar los `items` parciales, agregar warning tipado de timeout, `next_hint` accionable para acotar/reintentar y `coach.trigger=search_timeout`.
 - Si el daemon falla y el fallback directo responde, el envelope emite `hint: "daemon_unavailable; served from local text index"`.
 - `--format`, `--max-items`, `--max-chars` y `--token-budget` explicitos ganan sobre defaults AXI.
+- `mi-lsp version` usa el mismo envelope estable cuando se pasa `--format compact|json|toon|yaml`; sin `--format` explicito usa `text` legible y no requiere workspace ni daemon.
 
 ## 8. Data Model Impact
 
@@ -142,6 +155,13 @@ Scenario: Escapar controles inseguros en TOON
   And la salida contiene escapes visibles como "\u0000"
   And la salida no contiene bytes NUL crudos
   And "warnings" incluye una sola advertencia de sanitizacion TOON
+
+Scenario: Exponer provenance del binario
+  Given un binario mi-lsp instalado
+  When ejecuto "mi-lsp version --format toon"
+  Then la respuesta incluye "backend=version"
+  And "items[0]" incluye "goos", "goarch", "protocol_version", "worker_rid", "cli_path", "executable_sha256" y metadata VCS cuando esta disponible
+  And no requiere workspace registrado ni daemon activo
 ```
 
 ## 10. Test Traceability
@@ -151,6 +171,7 @@ Scenario: Escapar controles inseguros en TOON
 - Positivo: `TP-QRY / TC-QRY-042`
 - Positivo: `TP-QRY / TC-QRY-106`
 - Positivo: `TP-QRY / TC-QRY-108`
+- Positivo: `TP-QRY / TC-QRY-109`
 - Negativo: `TP-QRY / TC-QRY-003`
 
 ## 11. No Ambiguities Left

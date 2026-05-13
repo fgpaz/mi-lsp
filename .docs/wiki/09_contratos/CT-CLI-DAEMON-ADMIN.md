@@ -54,6 +54,7 @@ Comandos canonicos:
 - `daemon perf-smoke [--callers N] [--max-working-set-mb N] [--max-private-mb N] [--max-handles N]`
 - `worker install|status`
 - `admin open|status`
+- `version`
 
 Flags globales minimos:
 
@@ -154,6 +155,23 @@ Reglas de formato:
 - La sanitizacion TOON reemplaza controles no imprimibles, excepto tab/newline/carriage-return, por escapes ASCII visibles (`\u0000`, `\u001f`, etc.).
 - Cuando la sanitizacion cambia al menos un string, `warnings` debe agregar una unica entrada `toon output sanitized unsafe control characters`.
 - `--format compact`/JSON mantiene su comportamiento compatible existente y no debe depender de la sanitizacion TOON.
+
+### `version`
+
+Input:
+
+```text
+mi-lsp version [--format text|compact|json|toon|yaml]
+```
+
+Reglas:
+
+- `version` es una operacion local, read-only y sin dependencia de workspace, registry, daemon o workers vivos.
+- Sin `--format` explicito, emite salida `text` legible para humanos.
+- Con `--format` explicito, respeta el envelope comun y devuelve `backend=version`.
+- El item expone `command`, `version`, `module_path`, `go_version`, `goos`, `goarch`, `protocol_version`, `worker_rid`, `tool_root`, `cli_path`, `executable_sha256`, `vcs_revision`, `vcs_time` y `vcs_modified` cuando Go build info los provee.
+- `vcs_modified=false` es la prueba operativa de que el binario fue construido desde un arbol limpio; si falta metadata VCS, los campos se omiten o se exponen como desconocidos en `text`.
+- El comando no reemplaza `worker status`: `version` prueba provenance del ejecutable; `worker status` diagnostica candidatos de worker y compatibilidad.
 
 ### `admin export --summary`
 

@@ -259,6 +259,7 @@ Install the CLI first, verify it, and only then continue with repo navigation.
 
 ```powershell
 where.exe mi-lsp
+mi-lsp version --format toon
 mi-lsp worker status --format toon
 ```
 
@@ -291,6 +292,7 @@ mi-lsp daemon start
 
 ```powershell
 where.exe mi-lsp
+mi-lsp version --format toon
 mi-lsp worker status --format toon
 mi-lsp workspace list --group-by-root --format toon
 mi-lsp workspace doctor --format toon
@@ -304,6 +306,7 @@ If a `mi-lsp` code update changes CLI-visible behavior, daemon/runtime behavior,
 - Build the four release RIDs from the clean source revision: `win-arm64`, `linux-arm64`, `win-x64`, and `linux-x64`.
 - Install ARM64 only on this workstation: `C:\Users\fgpaz\bin\mi-lsp.exe` for Windows and `/home/fgpaz/.local/bin/mi-lsp` for WSL/Linux.
 - Commit/distribute AMD64 only in skill repositories: `mi-lsp-win-x64.exe` and `mi-lsp-linux-x64` under both `C:\Users\fgpaz\.agents\skills\mi-lsp\bin` and `C:\repos\buho\assets\skills\mi-lsp\bin`.
+- Verify installed local binaries with `mi-lsp version --format toon` plus `go version -m` on the exact Windows and WSL paths.
 - Verify `compare-skill-mirrors.ps1 -Skill mi-lsp` returns no drift, hashes match across both skill repos, and `go version -m` reports `GOARCH=amd64`, `vcs.revision=<source revision>`, `vcs.modified=false` for both committed binaries.
 
 If you update the skill under `C:\Users\fgpaz\.agents\skills\mi-lsp`, update the mirrored copy under `C:\repos\buho\assets\skills\mi-lsp` in the same task and preserve the architecture split: ARM64 local-only, AMD64 versioned in both skill repositories.

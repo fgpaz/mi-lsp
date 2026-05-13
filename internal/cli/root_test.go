@@ -2,6 +2,7 @@ package cli
 
 import (
 	"errors"
+	"runtime"
 	"testing"
 
 	"github.com/fgpaz/mi-lsp/internal/model"
@@ -181,6 +182,44 @@ func TestEnvelopePrintedErrorIsDetectable(t *testing.T) {
 	err := envelopePrintedError{err: errors.New("boom")}
 	if !IsEnvelopePrintedError(err) {
 		t.Fatal("IsEnvelopePrintedError = false, want true")
+	}
+}
+
+func TestRootCommandExposesVersionCommand(t *testing.T) {
+	command := NewRootCommand()
+
+	version, _, err := command.Find([]string{"version"})
+	if err != nil {
+		t.Fatalf("find version command: %v", err)
+	}
+	if version.Name() != "version" {
+		t.Fatalf("version command name = %q, want version", version.Name())
+	}
+}
+
+func TestBuildVersionInfoUsesRuntimeProvenance(t *testing.T) {
+	info := buildVersionInfo("C:/repos/mios/mi-lsp")
+
+	if info.Command != "mi-lsp" {
+		t.Fatalf("Command = %q, want mi-lsp", info.Command)
+	}
+	if info.ProtocolVersion != model.ProtocolVersion {
+		t.Fatalf("ProtocolVersion = %q, want %q", info.ProtocolVersion, model.ProtocolVersion)
+	}
+	if info.GOOS != runtime.GOOS || info.GOARCH != runtime.GOARCH {
+		t.Fatalf("runtime = %s/%s, want %s/%s", info.GOOS, info.GOARCH, runtime.GOOS, runtime.GOARCH)
+	}
+	if info.GoVersion == "" {
+		t.Fatal("GoVersion is empty")
+	}
+	if info.WorkerRID == "" {
+		t.Fatal("WorkerRID is empty")
+	}
+	if info.CLIPath == "" {
+		t.Fatal("CLIPath is empty")
+	}
+	if info.ExecutableSHA256 == "" {
+		t.Fatal("ExecutableSHA256 is empty")
 	}
 }
 

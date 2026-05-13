@@ -137,6 +137,23 @@ type Envelope struct {
 // QueryEnvelope is a semantic alias of Envelope for traceability with 05_modelo_datos.md.
 type QueryEnvelope = Envelope
 
+type VersionInfo struct {
+	Command          string `json:"command"`
+	Version          string `json:"version"`
+	ModulePath       string `json:"module_path"`
+	GoVersion        string `json:"go_version"`
+	GOOS             string `json:"goos"`
+	GOARCH           string `json:"goarch"`
+	ProtocolVersion  string `json:"protocol_version"`
+	WorkerRID        string `json:"worker_rid"`
+	ToolRoot         string `json:"tool_root,omitempty"`
+	CLIPath          string `json:"cli_path,omitempty"`
+	ExecutableSHA256 string `json:"executable_sha256,omitempty"`
+	VCSRevision      string `json:"vcs_revision,omitempty"`
+	VCSTime          string `json:"vcs_time,omitempty"`
+	VCSModified      string `json:"vcs_modified,omitempty"`
+}
+
 type ServiceSurfaceSummary struct {
 	Service          string           `json:"service"`
 	Path             string           `json:"path"`

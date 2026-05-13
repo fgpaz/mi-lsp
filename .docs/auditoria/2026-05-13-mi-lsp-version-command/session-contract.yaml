@@ -1,0 +1,53 @@
+session_contract:
+  schema: sdd-session-contract-v1
+  task_slug: mi-lsp-version-command
+  created_at: "2026-05-13"
+  objective: "Add a top-level mi-lsp version command and refresh affected docs, skills, and binaries."
+  issue_or_waiver: "User-requested CLI ergonomics improvement; no external issue."
+  base_ref: "origin/main"
+  base_sha: "17c850d53c2fd87fa4fc8e807c5cb1614186864e"
+  branch: "codex/mi-lsp-version-command"
+  worktree_path: "C:\\repos\\mios\\mi-lsp"
+  expected_scope:
+    - "Add a read-only top-level version command."
+    - "Expose Go build provenance, protocol version, runtime OS/architecture, RID, and tool root."
+    - "Update command contract/test docs and mi-lsp skill guidance."
+    - "Refresh local ARM64 binaries and shared AMD64 skill binaries if code changes pass validation."
+  allowed_paths:
+    - "cmd/**"
+    - "internal/**"
+    - "scripts/**"
+    - "skills/mi-lsp/**"
+    - "README.md"
+    - ".docs/wiki/**"
+    - ".docs/auditoria/2026-05-13-mi-lsp-version-command/**"
+    - "dist/**"
+  forbidden_paths:
+    - ".git/**"
+    - ".mi-lsp/**"
+    - "worker-dotnet/**"
+    - "C:\\repos\\sandinas\\interbancarizacion_coelsa/**"
+  sdd_anchors:
+    rf:
+      - "RF-WKS-006"
+      - "RF-QRY-001"
+    ct:
+      - "CT-CLI-DAEMON-ADMIN"
+    tp:
+      - "TP-WKS"
+      - "TP-QRY"
+  required_evidence:
+    - "go test ./internal/cli ./internal/output"
+    - "go test ./..."
+    - "mi-lsp version in text, compact/json, toon, and yaml formats"
+    - "go version -m on installed Windows ARM64 and WSL/Linux ARM64 binaries"
+    - "go version -m plus SHA256 parity for shared AMD64 Windows/Linux skill binaries in .agents and assets"
+    - "mi-lsp workspace status mi-lsp --format toon"
+    - "mi-lsp nav governance --workspace mi-lsp --format toon"
+    - "validate-harness and validate-source after docs sync"
+  touched_cards:
+    - "not_applicable"
+  explicit_waivers:
+    - "No external ticket required for this small CLI ergonomics command."
+  branch_disposition: "integrate-main"
+  cleanup_policy: "auto-after-successful-integration"
