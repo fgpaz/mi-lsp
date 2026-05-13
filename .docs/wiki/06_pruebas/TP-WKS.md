@@ -34,6 +34,7 @@ evidence:
 - RF-WKS-003
 - RF-WKS-004
 - RF-WKS-005
+- RF-WKS-006
 
 ## Casos
 
@@ -65,3 +66,5 @@ evidence:
 | TC-WKS-024 | positivo | RF-WKS-004 | `workspace prune --stale --apply` remueve solo aliases con root inexistente y no borra worktrees ni indices |
 | TC-WKS-025 | positivo | RF-WKS-005 | `workspace status --full` refresca memoria stale cuando `auto_sync` esta habilitado y la conserva stale con `--no-auto-sync` |
 | TC-WKS-026 | positivo | RF-WKS-001, RF-WKS-002 | `workspace doctor` agrega `health` y `next_actions` accionables sin mutar registry, worktrees ni indices |
+| TC-WKS-027 | positivo | RF-WKS-006 | `TestRootCommandExposesVersionCommand` + `TestBuildVersionInfoUsesRuntimeProvenance`: `mi-lsp version` existe, no requiere workspace/daemon y expone Go/runtime/protocol/RID/path/hash provenance |
+| TC-WKS-028 | positivo | RF-WKS-006 | `TestRenderTextVersionInfo`: la salida `text` de version es legible y los formatos estructurados conservan el envelope `backend=version` |

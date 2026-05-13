@@ -153,6 +153,7 @@ func NewRootCommand() *cobra.Command {
 		newDaemonCommand(state),
 		newAdminCommand(state),
 		newWorkerCommand(state),
+		newVersionCommand(state),
 	)
 	return root
 }

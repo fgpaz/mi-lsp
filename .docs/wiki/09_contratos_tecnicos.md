@@ -55,6 +55,7 @@ El detalle por frontera vive en `09_contratos/`.
 - El protocolo daemon-worker es interno, versionado y con envelope estable.
 - Cada contrato debe exponer `warnings`, fallas accionables y degradacion clara cuando aplique.
 - `worker status` forma parte de la CLI publica y debe exponer `tool_root`, `tool_root_kind`, `cli_path`, `protocol_version`, origen del worker seleccionado y compatibilidad de candidatos.
+- `version` forma parte de la CLI publica y debe exponer provenance del ejecutable (`version`, `module_path`, `go_version`, `goos`, `goarch`, `protocol_version`, `worker_rid`, `tool_root`, `cli_path`, `executable_sha256`, `vcs_revision`, `vcs_time`, `vcs_modified`) sin depender de workspace, daemon ni workers vivos.
 - `workspace status` forma parte de la CLI publica y debe exponer `docs_read_model`, `doc_count`, `docs_index_ready`, `governance_profile`, `governance_sync`, `governance_index_sync` y `governance_blocked`; en `--full` puede expandir el digest repo-local de memoria de reentrada.
 - En AXI efectivo, `workspace status`, `nav search`, `nav wiki search`, `nav wiki validate-harness`, `nav wiki validate-source`, `nav intent`, `nav route`, `nav wiki route`, `nav pack` y `nav wiki pack` pertenecen a la superficie preview/full por default; `nav ask` solo lo hace para preguntas de orientacion y `nav workspace-map` solo cuando se fuerza AXI.
 - `init` pertenece a la CLI publica como shortcut de onboarding; no reemplaza `workspace add`, pero reutiliza su semantica base.
@@ -172,6 +173,7 @@ El detalle por frontera vive en `09_contratos/`.
 - `nav.search|outline|multi-read`: lecturas directas repo-locales sin contrato `--offset`; `search` sigue siendo text/rg-backed y puede exponer hints de refinamiento, pero no cursor SQL.
 - `worker install`: instala o refresca el worker por RID desde un bundle adjunto o, en desarrollo, desde `worker-dotnet/`
 - `worker status`: diagnostica el estado de candidatos `bundle`, `installed` y `dev-local`, e identifica el `cli_path` y `protocol_version` visibles para detectar binarios stale o inesperados en `PATH`
+- `version`: muestra provenance del ejecutable local; por default usa salida `text` legible y con `--format compact|json|toon|yaml` emite envelope estructurado `backend=version`
 - `nav multi-read`: lee N rangos de archivo en una sola invocacion, reduce round-trips de agentes AI
 - `nav search --include-content`: extiende search con contenido inline; modo hibrido (symbol body si indexado, +-N lineas fallback)
 - `nav batch`: meta-comando que acepta N operaciones heterogeneas via stdin JSON, ejecucion paralela por defecto

@@ -218,6 +218,21 @@ func renderText(env model.Envelope) string {
 				lines = append(lines, "  issue "+issue)
 			}
 		}
+	case []model.VersionInfo:
+		for _, item := range items {
+			revision := item.VCSRevision
+			if len(revision) > 12 {
+				revision = revision[:12]
+			}
+			if revision == "" {
+				revision = "unknown"
+			}
+			modified := item.VCSModified
+			if modified == "" {
+				modified = "unknown"
+			}
+			lines = append(lines, fmt.Sprintf("%s version=%s revision=%s modified=%s go=%s os=%s arch=%s protocol=%s rid=%s", item.Command, item.Version, revision, modified, item.GoVersion, item.GOOS, item.GOARCH, item.ProtocolVersion, item.WorkerRID))
+		}
 	case []map[string]any:
 		for _, item := range items {
 			lines = append(lines, fmt.Sprintf("%v", item))

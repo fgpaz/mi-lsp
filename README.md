@@ -50,12 +50,14 @@ The recommended install path is a bundled release from GitHub Releases.
 Sanity check:
 
 ```powershell
+mi-lsp version
 mi-lsp info
 mi-lsp worker status --format compact
 ```
 
 If you move the binary after extraction, run `mi-lsp worker install` once to copy the bundled worker into `~/.mi-lsp/workers/<rid>/`.
 Regular C# queries resolve the Roslyn worker by layout presence in `bundle -> installed -> dev-local` order, while `mi-lsp worker status` is the explicit compatibility probe.
+`mi-lsp version --format toon` exposes the exact executable path, SHA256, Go runtime, OS/architecture, protocol version, RID, and VCS metadata without needing a registered workspace or daemon.
 `worker status` keeps the same visible diagnostic payload whether it is served directly or through the daemon; only `active_workers` changes with live state. It now also surfaces `cli_path` and `protocol_version`, which makes stale or unexpected binaries on `PATH` easier to diagnose.
 On Windows, non-interactive child processes are started hidden so normal queries should not open extra console windows.
 

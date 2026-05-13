@@ -29,11 +29,11 @@ evidence:
 
 ## 1. Goal
 
-Registrar o inicializar un workspace `single` o `container` y dejar lista su topologia repo-local para indexacion, `nav ask` y consultas posteriores. Tambien cubre el home content-first del root command y la guia preview-first de onboarding/discovery cuando la superficie entra en AXI efectivo por default o por override explicito.
+Registrar o inicializar un workspace `single` o `container` y dejar lista su topologia repo-local para indexacion, `nav ask` y consultas posteriores. Tambien cubre el home content-first del root command, la guia preview-first de onboarding/discovery cuando la superficie entra en AXI efectivo por default o por override explicito, y la comprobacion local de provenance del binario con `mi-lsp version`.
 
 ## 2. Scope in/out
 
-- In: deteccion de root, alias opcional, clasificacion `single|container`, deteccion de repos hijos y `entrypoints`, creacion de `.mi-lsp/`, persistencia de `project.toml`, alta en registry global minimo, `init` como happy path corto, resolucion centralizada del modo efectivo AXI/classic via defaults por superficie + `--axi` + `--classic` + `MI_LSP_AXI=1`, home content-first cuando se invoca `mi-lsp` sin subcomando salvo `--classic`, y la precedencia `workspace explicito > workspace por caller_cwd > last_workspace`.
+- In: deteccion de root, alias opcional, clasificacion `single|container`, deteccion de repos hijos y `entrypoints`, creacion de `.mi-lsp/`, persistencia de `project.toml`, alta en registry global minimo, `init` como happy path corto, resolucion centralizada del modo efectivo AXI/classic via defaults por superficie + `--axi` + `--classic` + `MI_LSP_AXI=1`, home content-first cuando se invoca `mi-lsp` sin subcomando salvo `--classic`, comando `version` sin workspace para provenance del ejecutable, y la precedencia `workspace explicito > workspace por caller_cwd > last_workspace`.
 - Out: descarga automatica de worker y setup remoto.
 
 ## 3. Main sequence
@@ -49,6 +49,9 @@ sequenceDiagram
     alt root sin subcomando en superficie AXI efectiva
         CLI->>C: resuelve workspace actual/default
         CLI-->>U: home content-first + next_steps
+    else version
+        CLI->>CLI: lee build info + runtime + hash ejecutable
+        CLI-->>U: provenance local sin workspace/daemon
     else add/init
         CLI->>C: detect workspace layout
         C->>C: clasifica single|container
@@ -86,3 +89,5 @@ sequenceDiagram
 - RF-WKS-002 indexar automaticamente al registrar un workspace nuevo
 - RF-WKS-003 inicializar el workspace actual y dejarlo listo para `nav ask`
 - RF-WKS-004 exponer AXI selectivo por superficie para onboarding y discovery del CLI
+- RF-WKS-005 aplicar gate de gobernanza al inicio de toda tarea
+- RF-WKS-006 exponer provenance del binario con `mi-lsp version`

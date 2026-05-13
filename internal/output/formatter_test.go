@@ -54,6 +54,35 @@ func TestRenderText_ServiceSurfaceSummary(t *testing.T) {
 	}
 }
 
+func TestRenderTextVersionInfo(t *testing.T) {
+	env := model.Envelope{
+		Ok:      true,
+		Backend: "version",
+		Items: []model.VersionInfo{{
+			Command:         "mi-lsp",
+			Version:         "v0.2.1",
+			GoVersion:       "go1.24.4",
+			GOOS:            "windows",
+			GOARCH:          "arm64",
+			ProtocolVersion: "mi-lsp-v1.1",
+			WorkerRID:       "win-arm64",
+			VCSRevision:     "1234567890abcdef",
+			VCSModified:     "false",
+		}},
+	}
+
+	rendered, err := Render(env, "text", false)
+	if err != nil {
+		t.Fatalf("render text: %v", err)
+	}
+	text := string(rendered)
+	for _, want := range []string{"mi-lsp version=v0.2.1", "revision=1234567890ab", "arch=arm64", "protocol=mi-lsp-v1.1", "rid=win-arm64"} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("expected version text to contain %q, got %s", want, text)
+		}
+	}
+}
+
 func TestRenderCompact_SignatureTruncation(t *testing.T) {
 	longSig := "public static Task<IEnumerable<IAsyncEnumerable<Dictionary<string, Tuple<int, int, string>>>>> DoSomethingVeryComplicated(string param1, int param2, object param3) async"
 	env := model.Envelope{
