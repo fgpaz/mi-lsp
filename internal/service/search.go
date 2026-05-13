@@ -65,6 +65,19 @@ func isBinaryFile(path string) bool {
 	return ok
 }
 
+func isOperationalStatePath(path string) bool {
+	for _, segment := range strings.Split(filepath.ToSlash(path), "/") {
+		if segment == ".mi-lsp" {
+			return true
+		}
+	}
+	return false
+}
+
+func shouldSkipSearchResultPath(path string) bool {
+	return isOperationalStatePath(path) || isBinaryFile(path)
+}
+
 type searchMatch struct {
 	File string
 	Line int
@@ -141,6 +154,9 @@ func searchPatternRgWithDiagnostics(ctx context.Context, workspaceRoot string, s
 		relativeFile, relErr := makeRelative(workspaceRoot, match[1])
 		if relErr != nil {
 			relativeFile = filepath.ToSlash(match[1])
+		}
+		if shouldSkipSearchResultPath(relativeFile) {
+			continue
 		}
 		item := map[string]any{
 			"file": relativeFile,
@@ -240,6 +256,8 @@ func isRegexParseError(err error) bool {
 func buildRipgrepArgs(pattern string, useRegex bool, searchRoot string) []string {
 	args := []string{
 		"--line-number", "--no-heading", "--color", "never", "--hidden",
+		"--glob", "!.mi-lsp/**",
+		"--glob", "!**/.mi-lsp/**",
 		"--glob", "!.mi-lsp/index.db",
 		"--glob", "!.mi-lsp/index.db-wal",
 		"--glob", "!.mi-lsp/index.db-shm",
@@ -261,6 +279,9 @@ func searchPatternFallback(ctx context.Context, workspaceRoot string, searchRoot
 		relativeFile, relErr := makeRelative(workspaceRoot, m.File)
 		if relErr != nil {
 			relativeFile = filepath.ToSlash(m.File)
+		}
+		if shouldSkipSearchResultPath(relativeFile) {
+			continue
 		}
 		item := map[string]any{
 			"file": relativeFile,

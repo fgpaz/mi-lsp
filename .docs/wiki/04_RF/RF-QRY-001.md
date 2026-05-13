@@ -64,8 +64,9 @@ evidence:
 2. El core ejecuta la operacion y obtiene `items` normalizados.
 3. El truncador aplica `max_items`, `max_chars` y `token_budget` en orden determinista.
 4. Si la superficie queda en AXI efectivo y no hubo `--format` explicito, el formatter usa TOON como default para superficies cubiertas.
-5. El formatter emite un unico envelope estable.
-6. La CLI devuelve el resultado en el formato solicitado o normalizado.
+5. Cuando el formato efectivo es TOON, el formatter sanitiza recursivamente los strings del envelope despues de `envelopeToMap` y antes de `toon.Marshal`.
+6. El formatter emite un unico envelope estable.
+7. La CLI devuelve el resultado en el formato solicitado o normalizado.
 
 ## 5. Outputs
 
@@ -104,6 +105,7 @@ evidence:
 - `--axi` y `--classic` juntos deben rechazarse antes de ejecutar la query.
 - `compact` usa keys cortos y JSON sin whitespace innecesario.
 - `toon` serializa el envelope en TOON (Token-Oriented Object Notation); ~20-40% menos tokens que JSON en arrays grandes.
+- `toon` no debe fallar por controles no imprimibles dentro de strings: reemplaza todo control excepto tab, newline y carriage-return por escapes ASCII visibles (`\u0000`, `\u001f`, etc.) y agrega una unica advertencia `toon output sanitized unsafe control characters` cuando ocurre. El comportamiento `compact`/JSON queda compatible y no comparte esta sanitizacion.
 - `yaml` serializa el envelope en YAML estándar; útil para lectura humana o parsers YAML.
 - Si `items=[]`, el envelope emite `hint` con diagnóstico de causa (patron no encontrado, timeout, regex-like sin `--regex`).
 - Si el daemon falla y el fallback directo responde, el envelope emite `hint: "daemon_unavailable; served from local text index"`.
@@ -131,6 +133,14 @@ Scenario: Rechazar presupuestos invalidos
   Given un "token_budget" igual a cero
   When ejecuto una consulta "nav"
   Then la operacion falla con "QRY_INVALID_BUDGET"
+
+Scenario: Escapar controles inseguros en TOON
+  Given un envelope con "code_evidence.snippet" que contiene NUL u otros controles no imprimibles
+  When renderizo la respuesta con "--format toon"
+  Then la operacion no falla por serializacion
+  And la salida contiene escapes visibles como "\u0000"
+  And la salida no contiene bytes NUL crudos
+  And "warnings" incluye una sola advertencia de sanitizacion TOON
 ```
 
 ## 10. Test Traceability
@@ -138,6 +148,7 @@ Scenario: Rechazar presupuestos invalidos
 - Positivo: `TP-QRY / TC-QRY-001`
 - Positivo: `TP-QRY / TC-QRY-002`
 - Positivo: `TP-QRY / TC-QRY-042`
+- Positivo: `TP-QRY / TC-QRY-106`
 - Negativo: `TP-QRY / TC-QRY-003`
 
 ## 11. No Ambiguities Left

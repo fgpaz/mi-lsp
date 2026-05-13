@@ -204,12 +204,18 @@ func buildDocEvidence(ctx context.Context, db *sql.DB, primary scoredDoc, ranked
 }
 
 func (a *App) buildAskCodeEvidence(ctx context.Context, db *sql.DB, registration model.WorkspaceRegistration, project model.ProjectFile, primary model.DocRecord, docs []model.AskDocEvidence, question string, limit int) ([]model.AskCodeEvidence, []string) {
-	_ = project
 	limit = askLimit(limit, 6, 6)
 	warnings := make([]string, 0)
 	items := make([]model.AskCodeEvidence, 0, limit)
 	seen := map[string]struct{}{}
+	matcher, err := workspace.LoadIgnoreMatcher(registration.Root, project.Ignore.ExtraPatterns)
+	if err != nil {
+		warnings = appendStringIfMissing(warnings, fmt.Sprintf("ask code evidence ignore matcher unavailable: %v", err))
+	}
 	addEvidence := func(item model.AskCodeEvidence) {
+		if shouldSkipAskCodeEvidencePath(registration.Root, matcher, item.File) {
+			return
+		}
 		key := fmt.Sprintf("%s|%s|%s|%d", item.Type, item.File, item.Name, item.Line)
 		if _, ok := seen[key]; ok || len(items) >= limit {
 			return
@@ -237,6 +243,9 @@ func (a *App) buildAskCodeEvidence(ctx context.Context, db *sql.DB, registration
 	}
 
 	for _, path := range paths {
+		if shouldSkipAskCodeEvidencePath(registration.Root, matcher, path) {
+			continue
+		}
 		symbolsByFile, err := store.SymbolsByFile(ctx, db, path, 3, 0)
 		if err == nil && len(symbolsByFile) > 0 {
 			for _, symbol := range symbolsByFile {
@@ -284,6 +293,24 @@ func (a *App) buildAskCodeEvidence(ctx context.Context, db *sql.DB, registration
 	}
 
 	return items, warnings
+}
+
+func shouldSkipAskCodeEvidencePath(root string, matcher *workspace.IgnoreMatcher, path string) bool {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return false
+	}
+	if shouldSkipSearchResultPath(path) {
+		return true
+	}
+	if matcher == nil {
+		return false
+	}
+	absPath := filepath.Clean(filepath.FromSlash(path))
+	if !filepath.IsAbs(absPath) {
+		absPath = filepath.Join(root, absPath)
+	}
+	return matcher.ShouldIgnore(root, absPath)
 }
 
 func buildAskSummary(primary model.DocRecord, codeEvidence []model.AskCodeEvidence) string {

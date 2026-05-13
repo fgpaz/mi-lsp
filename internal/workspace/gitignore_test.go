@@ -76,6 +76,22 @@ func TestIgnoreMatcherHonorsNegatedReincludesInOrder(t *testing.T) {
 	assertIgnored(t, matcher, root, filepath.Join(root, ".docs", "tmp", "draft.md"))
 }
 
+func TestHardIgnoreMatcherKeepsMiLspIgnoredAfterNegatedReinclude(t *testing.T) {
+	root := t.TempDir()
+	mustWriteFile(t, filepath.Join(root, ".gitignore"), strings.Join([]string{
+		"!/.mi-lsp/**",
+		"!**/.mi-lsp/**",
+	}, "\n"))
+
+	matcher, err := LoadIgnoreMatcher(root, nil)
+	if err != nil {
+		t.Fatalf("LoadIgnoreMatcher returned error: %v", err)
+	}
+
+	assertIgnored(t, matcher, root, filepath.Join(root, ".mi-lsp", "index.db"))
+	assertIgnored(t, matcher, root, filepath.Join(root, "repo", ".mi-lsp", "index.db"))
+}
+
 func TestHardIgnoreMatcherKeepsWorktreesIgnoredAfterNegatedReinclude(t *testing.T) {
 	root := t.TempDir()
 	mustWriteFile(t, filepath.Join(root, ".gitignore"), strings.Join([]string{

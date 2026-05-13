@@ -41,6 +41,8 @@ func DefaultIgnorePatterns() []string {
 
 func hardIgnorePatterns() []string {
 	return []string{
+		".mi-lsp/",
+		"**/.mi-lsp/**",
 		".docs/temp/worktrees/",
 		".worktrees/",
 	}

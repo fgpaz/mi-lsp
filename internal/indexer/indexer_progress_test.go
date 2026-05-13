@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/fgpaz/mi-lsp/internal/model"
@@ -80,6 +81,27 @@ func TestDocsOnlyIndexDoesNotRequireCodeProjectMarkers(t *testing.T) {
 	}
 	if result.Docs == 0 {
 		t.Fatal("expected docs-only index to publish documentation records")
+	}
+}
+
+func TestWalkWorkspaceIgnoresNestedMiLspState(t *testing.T) {
+	root := t.TempDir()
+	writeProgressTestFile(t, root, "src/App.cs", "namespace Demo; public class App { }\n")
+	writeProgressTestFile(t, root, "repo/.mi-lsp/generated.cs", "namespace Operational; public class Generated { }\n")
+
+	matcher, err := workspace.LoadIgnoreMatcher(root, nil)
+	if err != nil {
+		t.Fatalf("LoadIgnoreMatcher: %v", err)
+	}
+	files, err := WalkWorkspace(context.Background(), root, matcher)
+	if err != nil {
+		t.Fatalf("WalkWorkspace: %v", err)
+	}
+	if len(files) != 1 {
+		t.Fatalf("expected one indexed source file, got %#v", files)
+	}
+	if strings.Contains(filepath.ToSlash(files[0]), "/.mi-lsp/") {
+		t.Fatalf("WalkWorkspace returned operational state: %#v", files)
 	}
 }
 

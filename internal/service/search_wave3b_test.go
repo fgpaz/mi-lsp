@@ -65,10 +65,32 @@ func TestSearchPatternRg_WaitPermissionDeniedFallsBackToGoScanner(t *testing.T) 
 
 func TestSearchPatternRg_IgnoresMiLspIndexSidecars(t *testing.T) {
 	args := strings.Join(buildRipgrepArgs("needle", false, "."), "\x00")
-	for _, ignored := range []string{"!.mi-lsp/index.db", "!.mi-lsp/index.db-wal", "!.mi-lsp/index.db-shm"} {
+	for _, ignored := range []string{"!.mi-lsp/**", "!**/.mi-lsp/**", "!.mi-lsp/index.db", "!.mi-lsp/index.db-wal", "!.mi-lsp/index.db-shm"} {
 		if !strings.Contains(args, ignored) {
 			t.Fatalf("buildRipgrepArgs missing ignore glob %q in %#v", ignored, args)
 		}
+	}
+}
+
+func TestSearchPatternFallbackIgnoresNestedMiLspState(t *testing.T) {
+	root, name := setupTestWorkspace(t)
+	project := testProject(name)
+	writeWorkspaceFile(t, root, "repo/.mi-lsp/index.db", "NestedNeedle should never be returned\n")
+	writeWorkspaceFile(t, root, "repo/src/Visible.cs", "namespace Demo; public class Visible { const string Value = \"NestedNeedle\"; }\n")
+
+	items, err := searchPatternFallback(context.Background(), root, root, project, "NestedNeedle", false, 10)
+	if err != nil {
+		t.Fatalf("searchPatternFallback: %v", err)
+	}
+	if len(items) != 1 {
+		t.Fatalf("expected only visible source match, got %#v", items)
+	}
+	file, _ := items[0]["file"].(string)
+	if strings.Contains(filepath.ToSlash(file), ".mi-lsp") {
+		t.Fatalf("fallback search returned operational state: %#v", items)
+	}
+	if file != "repo/src/Visible.cs" {
+		t.Fatalf("file = %q, want repo/src/Visible.cs", file)
 	}
 }
 

@@ -145,6 +145,13 @@ Envelope comun:
 - `hint` (omitempty — diagnóstico cuando `items=[]` o daemon no disponible)
 - `next_hint`
 
+Reglas de formato:
+
+- `--format toon` debe recibir el envelope como mapa JSON-compatible y sanitizado recursivamente justo antes de `toon.Marshal`.
+- La sanitizacion TOON reemplaza controles no imprimibles, excepto tab/newline/carriage-return, por escapes ASCII visibles (`\u0000`, `\u001f`, etc.).
+- Cuando la sanitizacion cambia al menos un string, `warnings` debe agregar una unica entrada `toon output sanitized unsafe control characters`.
+- `--format compact`/JSON mantiene su comportamiento compatible existente y no debe depender de la sanitizacion TOON.
+
 Envelope de error estructurado (`ok=false`):
 
 - `ok=false`
