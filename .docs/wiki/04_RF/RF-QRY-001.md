@@ -108,6 +108,7 @@ evidence:
 - `toon` no debe fallar por controles no imprimibles dentro de strings: reemplaza todo control excepto tab, newline y carriage-return por escapes ASCII visibles (`\u0000`, `\u001f`, etc.) y agrega una unica advertencia `toon output sanitized unsafe control characters` cuando ocurre. El comportamiento `compact`/JSON queda compatible y no comparte esta sanitizacion.
 - `yaml` serializa el envelope en YAML estándar; útil para lectura humana o parsers YAML.
 - Si `items=[]`, el envelope emite `hint` con diagnóstico de causa (patron no encontrado, timeout, regex-like sin `--regex`).
+- Si `nav search` agota presupuesto o timeout interno despues de encontrar resultados parciales seguros, debe devolver `ok=true`, preservar los `items` parciales, agregar warning tipado de timeout, `next_hint` accionable para acotar/reintentar y `coach.trigger=search_timeout`.
 - Si el daemon falla y el fallback directo responde, el envelope emite `hint: "daemon_unavailable; served from local text index"`.
 - `--format`, `--max-items`, `--max-chars` y `--token-budget` explicitos ganan sobre defaults AXI.
 
@@ -149,6 +150,7 @@ Scenario: Escapar controles inseguros en TOON
 - Positivo: `TP-QRY / TC-QRY-002`
 - Positivo: `TP-QRY / TC-QRY-042`
 - Positivo: `TP-QRY / TC-QRY-106`
+- Positivo: `TP-QRY / TC-QRY-108`
 - Negativo: `TP-QRY / TC-QRY-003`
 
 ## 11. No Ambiguities Left

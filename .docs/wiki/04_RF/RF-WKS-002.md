@@ -98,6 +98,7 @@ evidence:
 - `--no-index` salta indexacion completamente.
 - Si indexacion falla, el registro sigue siendo exitoso (warning no-fatal).
 - Si indexacion excede timeout (default 30s), log warning y continua.
+- `workspace doctor` enriquece cada hallazgo con `health` (`ok|attention|action_required`) y `next_actions` ordenadas para reparar alias duplicados, roots stale, worktrees ambiguos o shadowing de binario sin mutar `registry.toml`.
 
 ## 8. Data Model Impact
 
@@ -136,6 +137,7 @@ Scenario: Continuar si indexacion falla
 - Positivo: `TP-WKS / TC-WKS-017`
 - Positivo: `TP-WKS / TC-WKS-018`
 - Positivo: `TP-WKS / TC-WKS-019`
+- Positivo: `TP-WKS / TC-WKS-026`
 - Negativo: `TP-WKS / TC-WKS-008`
 
 ## 11. Implementation Evidence

@@ -219,12 +219,13 @@ El struct `internal/service/config.go` centraliza todos los valores hardcodeados
 - El docgraph del workspace activo debe ignorar `.docs/temp/worktrees/` para no mezclar canon de worktrees vecinos ni bloquear harness con artefactos auxiliares.
 - `workspace list` debe salir desde registry + `project.toml` normalizado, sin redescubrir child repos en el hot path; preserva todos los aliases registrados aunque compartan root fisico.
 - `workspace list --group-by-root` agrupa aliases por root exacto y expone `root`, `alias_count`, `aliases`, `canonical_alias`, `selection_reason`, `kind` y warnings sin mutar registry.
-- `workspace doctor` es no mutante y diagnostica aliases que comparten root exacto, familias de worktrees por `git common dir`, paths stale, shadowing de binario y comandos sugeridos.
+- `workspace doctor` es no mutante y diagnostica aliases que comparten root exacto, familias de worktrees por `git common dir`, paths stale, shadowing de binario, `health`, `next_actions` y comandos sugeridos.
 - `workspace prune --stale --dry-run|--apply` limpia solamente entradas del `registry.toml` cuyo root ya no existe; nunca borra worktrees, directorios ni indices repo-locales.
 - `workspace status --no-auto-sync` permite diagnostico read-only para smokes cross-workspace: reporta la proyeccion stale/bloqueada sin escribir `read-model.toml` en repos externos.
 - `nav.workspace-map` debe arrancar con summary-first directo, no auto-iniciar daemon, y reservar scans de endpoints/eventos/dependencias para `--full`.
 - En workspaces Go, `nav.workspace-map` agrega paquetes `cmd/*`, `internal/*` y `pkg/*` como servicios `go-package` desde el catalogo para que el mapa de self-dogfood no dependa de entrypoints C#.
 - En AXI efectivo, `init`, `workspace status`, `nav search`, `nav intent` y `nav pack` arrancan en preview-first por default; `nav ask` lo hace solo cuando la heuristica detecta orientacion, y `nav workspace-map` solo cuando se fuerza AXI.
+- `nav search` debe ser resiliente a timeout: si existen resultados parciales seguros, responde `ok=true` con warning `search_timeout`, `next_hint` y coach accionable; no convierte el timeout en ausencia falsa.
 - `init` registra, persiste proyecto e indexa por defecto sin requerir `workspace add` previo.
 - `worker install` es explicito; no hay descargas silenciosas durante consultas.
 - `worker install` copia un worker bundled por RID cuando la distribucion lo trae adjunto; si la CLI corre dentro del repo `mi-lsp` y no existe bundle adjunto, publica el worker desde `worker-dotnet/` con `dotnet publish`.

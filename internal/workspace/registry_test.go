@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -151,6 +152,12 @@ func TestDoctorWorkspacesReportsWorktreeFamiliesWithoutCollapsingAliases(t *test
 	if !containsString(family.Aliases, "mi-lsp-main") || !containsString(family.Aliases, "mi-lsp-feature") {
 		t.Fatalf("family.Aliases = %#v, want both worktree aliases", family.Aliases)
 	}
+	if report.Health != "attention" {
+		t.Fatalf("Health = %q, want attention", report.Health)
+	}
+	if !doctorActionsContain(report.NextActions, "verify_worktree_aliases") {
+		t.Fatalf("NextActions = %#v, want verify_worktree_aliases", report.NextActions)
+	}
 }
 
 func TestPruneStaleWorkspacesDryRunAndApply(t *testing.T) {
@@ -195,6 +202,56 @@ func TestPruneStaleWorkspacesDryRunAndApply(t *testing.T) {
 	}
 }
 
+func TestDoctorWorkspacesReportsActionRequiredForStaleAliases(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+
+	liveRoot := t.TempDir()
+	missingRoot := filepath.Join(t.TempDir(), "missing-worktree")
+	registerTestWorkspace(t, "live", liveRoot)
+	registerTestWorkspace(t, "stale", missingRoot)
+
+	report, err := DoctorWorkspaces()
+	if err != nil {
+		t.Fatalf("DoctorWorkspaces: %v", err)
+	}
+	if report.Health != "action_required" {
+		t.Fatalf("Health = %q, want action_required", report.Health)
+	}
+	if !doctorActionsContain(report.NextActions, "prune_stale_aliases") {
+		t.Fatalf("NextActions = %#v, want prune_stale_aliases", report.NextActions)
+	}
+}
+
+func TestDoctorWorkspacesBinaryShadowingActionUsesHostCommand(t *testing.T) {
+	report := WorkspaceDoctorReport{
+		BinaryShadowing: []BinaryCandidate{
+			{Path: "/tmp/mi-lsp", Active: true},
+			{Path: "/usr/bin/mi-lsp"},
+		},
+	}
+
+	actions := workspaceDoctorNextActions(report)
+	var command string
+	for _, action := range actions {
+		if action.ID == "review_binary_shadowing" {
+			command = action.Command
+			break
+		}
+	}
+	if command == "" {
+		t.Fatalf("NextActions = %#v, want review_binary_shadowing", actions)
+	}
+	want := "which -a mi-lsp"
+	if runtime.GOOS == "windows" {
+		want = "where.exe mi-lsp"
+	}
+	if command != want {
+		t.Fatalf("binary shadowing command = %q, want %q", command, want)
+	}
+}
+
 func registerTestWorkspace(t *testing.T, alias string, root string) {
 	t.Helper()
 	if _, err := RegisterWorkspace(alias, model.WorkspaceRegistration{
@@ -229,6 +286,15 @@ func writeRegistryTestFile(t *testing.T, path string, contents string) {
 func containsString(items []string, value string) bool {
 	for _, item := range items {
 		if item == value {
+			return true
+		}
+	}
+	return false
+}
+
+func doctorActionsContain(actions []WorkspaceDoctorAction, id string) bool {
+	for _, action := range actions {
+		if action.ID == id {
 			return true
 		}
 	}

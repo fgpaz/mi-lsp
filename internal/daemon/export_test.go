@@ -156,6 +156,19 @@ func TestRenderSummaryTable(t *testing.T) {
 	}
 }
 
+func TestComputeUsageRecommendations(t *testing.T) {
+	now := time.Now()
+	summary := ComputeExportSummary([]model.AccessEvent{
+		{ID: 1, OccurredAt: now, Workspace: "multi-tedi", WorkspaceRoot: "C:/repos/mios/multi-tedi", Operation: "nav.search", Backend: "text", Success: false, LatencyMs: 120000, Error: "context deadline exceeded", ErrorKind: "backend_runtime", ErrorCode: "text_generic", FailureStage: "backend", HintCode: "search_timeout"},
+		{ID: 2, OccurredAt: now, Workspace: "buhosalud", Operation: "workspace.status", Success: false, LatencyMs: 2, Error: "workspace not found in registry and path does not exist", ErrorCode: "workspace_resolution_failed", FailureStage: "selector_validation", HintCode: "workspace_resolution_failed"},
+	})
+	for _, id := range []string{"search_errors", "search_timeout", "workspace_resolution_failed", "prune_stale_workspaces"} {
+		if !recommendationsContain(summary.Recommendations, id) {
+			t.Fatalf("recommendations missing %q: %#v", id, summary.Recommendations)
+		}
+	}
+}
+
 func TestRenderCSV(t *testing.T) {
 	events := []model.AccessEvent{
 		{ID: 1, OccurredAt: time.Date(2026, 3, 18, 10, 0, 0, 0, time.UTC), Workspace: "test", WorkspaceRoot: "C:/repos/mios/test", WorkspaceAlias: "test", WorkspaceInput: "test", Operation: "nav.find", Backend: "catalog", Success: true, LatencyMs: 42, ErrorKind: "sdk", ErrorCode: "dotnet_sdk_missing", WarningCount: 1, PatternMode: "literal", RoutingOutcome: "router_error", FailureStage: "selector_validation", HintCode: "repo_selector_invalid", TruncationReason: "max_items", DecisionJSON: `{"pattern_len":7}`},
@@ -177,6 +190,15 @@ func TestRenderCSV(t *testing.T) {
 	if !strings.Contains(lines[0], "warning_count") || !strings.Contains(lines[0], "decision_json") {
 		t.Error("CSV header should include search/routing telemetry fields")
 	}
+}
+
+func recommendationsContain(recommendations []UsageRecommendation, id string) bool {
+	for _, recommendation := range recommendations {
+		if recommendation.ID == id {
+			return true
+		}
+	}
+	return false
 }
 
 func TestRenderTOON(t *testing.T) {

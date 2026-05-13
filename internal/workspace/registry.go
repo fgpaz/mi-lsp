@@ -47,6 +47,8 @@ type WorkspaceDoctorReport struct {
 	WorktreeFamilies   []WorkspaceWorktreeFamily `json:"worktree_families,omitempty"`
 	StalePaths         []WorkspaceStalePath      `json:"stale_paths,omitempty"`
 	BinaryShadowing    []BinaryCandidate         `json:"binary_shadowing,omitempty"`
+	Health             string                    `json:"health,omitempty"`
+	NextActions        []WorkspaceDoctorAction   `json:"next_actions,omitempty"`
 	Suggestions        []string                  `json:"suggestions,omitempty"`
 }
 
@@ -76,6 +78,13 @@ type BinaryCandidate struct {
 	Path    string `json:"path"`
 	Active  bool   `json:"active,omitempty"`
 	Warning string `json:"warning,omitempty"`
+}
+
+type WorkspaceDoctorAction struct {
+	ID       string `json:"id"`
+	Severity string `json:"severity"`
+	Command  string `json:"command"`
+	Reason   string `json:"reason"`
 }
 
 func GlobalDir() (string, error) {
@@ -408,12 +417,69 @@ func DoctorWorkspaces() (WorkspaceDoctorReport, error) {
 	}
 
 	report.BinaryShadowing = inspectBinaryShadowing()
+	report.Health = workspaceDoctorHealth(report)
+	report.NextActions = workspaceDoctorNextActions(report)
 	report.Suggestions = append(report.Suggestions,
 		"Use one explicit alias per worktree: mi-lsp init . --name <alias>",
 		"Run queries with the active worktree alias: mi-lsp nav search <pattern> --workspace <alias>",
 		"Use mi-lsp workspace list --group-by-root to inspect duplicate aliases without mutating registry",
 	)
 	return report, nil
+}
+
+func workspaceDoctorHealth(report WorkspaceDoctorReport) string {
+	switch {
+	case len(report.StalePaths) > 0:
+		return "action_required"
+	case len(report.BinaryShadowing) > 1 || len(report.WorktreeFamilies) > 0 || len(report.AliasesSharingRoot) > 0:
+		return "attention"
+	default:
+		return "ok"
+	}
+}
+
+func workspaceDoctorNextActions(report WorkspaceDoctorReport) []WorkspaceDoctorAction {
+	var actions []WorkspaceDoctorAction
+	if len(report.StalePaths) > 0 {
+		actions = append(actions, WorkspaceDoctorAction{
+			ID:       "prune_stale_aliases",
+			Severity: "high",
+			Command:  "mi-lsp workspace prune --stale --dry-run",
+			Reason:   "registry contains aliases whose roots no longer exist; dry-run lists the cleanup plan without deleting files",
+		})
+	}
+	if len(report.WorktreeFamilies) > 0 {
+		actions = append(actions, WorkspaceDoctorAction{
+			ID:       "verify_worktree_aliases",
+			Severity: "medium",
+			Command:  "mi-lsp workspace list --group-by-root",
+			Reason:   "registered worktrees share git common dirs; agents should use the physical worktree alias they are operating in",
+		})
+	}
+	if len(report.AliasesSharingRoot) > 0 {
+		actions = append(actions, WorkspaceDoctorAction{
+			ID:       "review_duplicate_root_aliases",
+			Severity: "low",
+			Command:  "mi-lsp workspace list --group-by-root",
+			Reason:   "multiple aliases point at the same root; this is allowed but can confuse handoffs unless aliases are explicit",
+		})
+	}
+	if len(report.BinaryShadowing) > 1 {
+		actions = append(actions, WorkspaceDoctorAction{
+			ID:       "review_binary_shadowing",
+			Severity: "medium",
+			Command:  binaryShadowingLookupCommand(),
+			Reason:   "multiple mi-lsp binaries are visible on PATH; agents may execute a different build than expected",
+		})
+	}
+	return actions
+}
+
+func binaryShadowingLookupCommand() string {
+	if runtime.GOOS == "windows" {
+		return "where.exe mi-lsp"
+	}
+	return "which -a mi-lsp"
 }
 
 func WorkspaceStateDir(root string) string {

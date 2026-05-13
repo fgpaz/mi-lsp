@@ -54,7 +54,7 @@ Resolver una consulta con salida compacta, truncacion determinista y fallback cu
 ## 5. Postconditions
 
 - El usuario recibe un envelope estable y compacto.
-- Si hubo truncacion o degradacion, queda explicitado en `warnings`/`next_hint`; cuando existe una accion de continuidad fuerte, el envelope puede agregar `coach`.
+- Si hubo truncacion, timeout con parciales o degradacion, queda explicitado en `warnings`/`next_hint`; cuando existe una accion de continuidad fuerte, el envelope puede agregar `coach` (por ejemplo `search_timeout`).
 - Las superficies calientes pueden agregar `continuation` machine-readable y `memory_pointer` wiki-aware para dejar un proximo paso o una pista de reentrada con muy bajo costo de tokens.
 - Si se uso `nav service`, la respuesta contiene evidencia estructurada y no un veredicto fuerte de completitud.
 - Si se uso `nav ask`, la respuesta deja visible documento primario, evidencia documental, evidencia de codigo y siguientes pasos; si la evidencia es fina o cayo a fallback textual, puede agregar `coach`.

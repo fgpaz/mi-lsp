@@ -124,6 +124,9 @@ func TestNavTraceFindsSourceBlockID(t *testing.T) {
 	if results[0].DocID != "CT-SOURCE.CONTRACT" || results[0].Status != "indexed" {
 		t.Fatalf("unexpected source trace: %#v", results[0])
 	}
+	if results[0].Confidence != "high" || !strings.Contains(results[0].StatusReason, "source block exists") {
+		t.Fatalf("unexpected source confidence/status reason: %#v", results[0])
+	}
 	if results[0].LookupStatus == nil {
 		t.Fatalf("expected lookup status on source trace")
 	}
@@ -512,6 +515,9 @@ func TestNavTraceUsesTPDocsAsCoverageEvidenceForRFAndTPIDs(t *testing.T) {
 	}
 	if results[0].Status != "partial" {
 		t.Fatalf("RF-GAS-10 status = %q, want partial", results[0].Status)
+	}
+	if results[0].Confidence != "medium" || !strings.Contains(results[0].StatusReason, "tests reference") {
+		t.Fatalf("RF-GAS-10 confidence/status reason = %q/%q, want test-only explanation", results[0].Confidence, results[0].StatusReason)
 	}
 	if len(results[0].Tests) == 0 || results[0].Tests[0].File != ".docs/wiki/06_pruebas/TP-GAS.md" {
 		t.Fatalf("RF-GAS-10 tests = %#v, want TP-GAS doc evidence", results[0].Tests)

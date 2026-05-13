@@ -153,18 +153,22 @@ func (a *App) traceRF(ctx context.Context, root string, db *sql.DB, rfID string)
 	}
 
 	status, coverage := computeTraceStatus(explicit, inferred, tests)
+	confidence, confidenceReason, statusReason := explainTraceStatus(status, coverage, explicit, inferred, tests)
 
 	result := &model.TraceResult{
-		DocID:    doc.DocID,
-		Layer:    traceLayerForDoc(kind, doc),
-		Stage:    traceStageForDoc(kind, doc),
-		Title:    doc.Title,
-		Status:   status,
-		Coverage: coverage,
-		Explicit: explicit,
-		Inferred: inferred,
-		Tests:    tests,
-		Drift:    []model.TraceDrift{},
+		DocID:            doc.DocID,
+		Layer:            traceLayerForDoc(kind, doc),
+		Stage:            traceStageForDoc(kind, doc),
+		Title:            doc.Title,
+		Status:           status,
+		Coverage:         coverage,
+		Confidence:       confidence,
+		ConfidenceReason: confidenceReason,
+		StatusReason:     statusReason,
+		Explicit:         explicit,
+		Inferred:         inferred,
+		Tests:            tests,
+		Drift:            []model.TraceDrift{},
 	}
 	if kind != traceKindRS {
 		// Backward compatibility: historical clients read RF for RF and TP traces.
@@ -183,12 +187,15 @@ func traceSourceID(ctx context.Context, db *sql.DB, traceID string) (*model.Trac
 	}
 	doc := docs[0]
 	return &model.TraceResult{
-		DocID:    traceID,
-		Layer:    doc.Layer,
-		Stage:    wikiStageForDoc(doc),
-		Title:    doc.Title,
-		Status:   "indexed",
-		Coverage: 1,
+		DocID:            traceID,
+		Layer:            doc.Layer,
+		Stage:            wikiStageForDoc(doc),
+		Title:            doc.Title,
+		Status:           "indexed",
+		Coverage:         1,
+		Confidence:       "high",
+		ConfidenceReason: "source block id resolved from indexed wiki-source records",
+		StatusReason:     "source block exists in the indexed documentation graph",
 		Explicit: []model.TraceLink{{
 			File:     doc.Path,
 			Kind:     "wiki-source",
@@ -600,16 +607,19 @@ func (a *App) traceSummary(workspaceName string, results []model.TraceResult) mo
 	items := make([]map[string]any, 0, len(results))
 	for _, r := range results {
 		items = append(items, map[string]any{
-			"doc_id":   r.DocID,
-			"layer":    r.Layer,
-			"stage":    r.Stage,
-			"rf":       r.RF,
-			"title":    r.Title,
-			"status":   r.Status,
-			"coverage": fmt.Sprintf("%.2f", r.Coverage),
-			"explicit": len(r.Explicit),
-			"inferred": len(r.Inferred),
-			"tests":    len(r.Tests),
+			"doc_id":            r.DocID,
+			"layer":             r.Layer,
+			"stage":             r.Stage,
+			"rf":                r.RF,
+			"title":             r.Title,
+			"status":            r.Status,
+			"coverage":          fmt.Sprintf("%.2f", r.Coverage),
+			"confidence":        r.Confidence,
+			"confidence_reason": r.ConfidenceReason,
+			"status_reason":     r.StatusReason,
+			"explicit":          len(r.Explicit),
+			"inferred":          len(r.Inferred),
+			"tests":             len(r.Tests),
 		})
 	}
 	return model.Envelope{Ok: true, Workspace: workspaceName, Backend: "trace", Items: items, Stats: model.Stats{Files: len(results)}}
@@ -1056,6 +1066,41 @@ func computeTraceStatus(explicit []model.TraceLink, inferred []model.TraceLink, 
 	}
 
 	return "partial", 0.5
+}
+
+func explainTraceStatus(status string, coverage float64, explicit []model.TraceLink, inferred []model.TraceLink, tests []model.TraceLink) (confidence string, confidenceReason string, statusReason string) {
+	verifiedExplicit := countVerifiedTraceLinks(explicit)
+	verifiedTests := countVerifiedTraceLinks(tests)
+	verifiedInferred := countVerifiedTraceLinks(inferred)
+
+	switch {
+	case len(explicit) > 0 && verifiedExplicit == len(explicit):
+		return "high", "all explicit implementation links are verified", "implemented because every explicit implementation link resolved"
+	case len(explicit) > 0 && verifiedExplicit > 0:
+		return "medium", "some explicit implementation links are verified", fmt.Sprintf("%s because %.0f%% of explicit implementation links resolved", status, coverage*100)
+	case len(explicit) > 0 && verifiedTests > 0:
+		return "medium", "explicit implementation links did not resolve, but verified tests reference the trace target", "partial because test evidence exists while implementation links need repair"
+	case len(explicit) > 0:
+		return "low", "explicit implementation links exist but none resolved", "missing because no explicit implementation or test evidence resolved"
+	case len(inferred) > 0 && verifiedInferred > 0:
+		return "low", "implementation evidence is inferred heuristically; no explicit implementation links were found", "partial because inferred implementation evidence exists but should be promoted to explicit wiki links"
+	case verifiedTests > 0:
+		return "medium", "verified test evidence exists without implementation links", "partial because tests reference the target but implementation evidence is not explicit"
+	case status == "found_but_trace_incomplete":
+		return "low", "the document exists, but trace links are absent", "found but trace incomplete because no implementation or test evidence resolved"
+	default:
+		return "low", "no verified trace evidence resolved", status
+	}
+}
+
+func countVerifiedTraceLinks(links []model.TraceLink) int {
+	count := 0
+	for _, link := range links {
+		if link.Verified {
+			count++
+		}
+	}
+	return count
 }
 
 func parseImplementsRef(ref string) (file string, symbol string) {

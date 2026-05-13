@@ -19,6 +19,7 @@ const harnessProtocolV1 = "SDD-HARNESS-v1"
 var (
 	fencedYAMLBlockPattern = regexp.MustCompile("(?s)```(?:yaml|yml)\\s*(.*?)\\s*```")
 	obsidianLinkPattern    = regexp.MustCompile(`\[\[([^\]]+)\]\]`)
+	harnessLineRefPattern  = regexp.MustCompile(`^\d+(?:-\d+)?$`)
 )
 
 type harnessContract struct {
@@ -567,10 +568,11 @@ func harnessRefExists(root string, index map[string]struct{}, fromPath string, r
 		return true
 	}
 	path := filepath.ToSlash(ref)
+	path = stripHarnessLineSuffix(path)
 	if strings.HasPrefix(path, "./") || strings.HasPrefix(path, "../") {
 		path = filepath.ToSlash(filepath.Clean(filepath.Join(filepath.Dir(filepath.ToSlash(fromPath)), filepath.FromSlash(path))))
 	}
-	if !strings.HasSuffix(strings.ToLower(path), ".md") && strings.Contains(path, "/") {
+	if filepath.Ext(path) == "" && strings.Contains(path, "/") {
 		path += ".md"
 	}
 	if _, ok := index[normalizeHarnessRef(path)]; ok {
@@ -582,6 +584,18 @@ func harnessRefExists(root string, index map[string]struct{}, fromPath string, r
 		}
 	}
 	return false
+}
+
+func stripHarnessLineSuffix(path string) string {
+	colon := strings.LastIndex(path, ":")
+	if colon < 0 {
+		return path
+	}
+	suffix := path[colon+1:]
+	if harnessLineRefPattern.MatchString(suffix) {
+		return path[:colon]
+	}
+	return path
 }
 
 func normalizeHarnessRef(value string) string {

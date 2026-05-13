@@ -64,3 +64,4 @@ evidence:
 | TC-WKS-023 | positivo | RF-WKS-004 | `workspace prune --stale --dry-run` lista aliases con root inexistente sin modificar `registry.toml` |
 | TC-WKS-024 | positivo | RF-WKS-004 | `workspace prune --stale --apply` remueve solo aliases con root inexistente y no borra worktrees ni indices |
 | TC-WKS-025 | positivo | RF-WKS-005 | `workspace status --full` refresca memoria stale cuando `auto_sync` esta habilitado y la conserva stale con `--no-auto-sync` |
+| TC-WKS-026 | positivo | RF-WKS-001, RF-WKS-002 | `workspace doctor` agrega `health` y `next_actions` accionables sin mutar registry, worktrees ni indices |

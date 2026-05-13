@@ -707,20 +707,23 @@ type TraceDrift struct {
 
 // TraceResult represents the traceability result for a single RS/RF/TP doc ID.
 type TraceResult struct {
-	DocID        string            `json:"doc_id,omitempty"`
-	Layer        string            `json:"layer,omitempty"`
-	Stage        string            `json:"stage,omitempty"`
-	RF           string            `json:"rf,omitempty"`
-	Title        string            `json:"title"`
-	Status       string            `json:"status"`   // "implemented" | "partial" | "missing"
-	Coverage     float64           `json:"coverage"` // 0.0 - 1.0
-	Explicit     []TraceLink       `json:"explicit"`
-	Inferred     []TraceLink       `json:"inferred"`
-	Tests        []TraceLink       `json:"tests"`
-	Drift        []TraceDrift      `json:"drift"`
-	LookupStatus *WikiLookupStatus `json:"lookup_status,omitempty"`
-	Workspace    string            `json:"workspace,omitempty"`
-	Host         string            `json:"host,omitempty"`
+	DocID            string            `json:"doc_id,omitempty"`
+	Layer            string            `json:"layer,omitempty"`
+	Stage            string            `json:"stage,omitempty"`
+	RF               string            `json:"rf,omitempty"`
+	Title            string            `json:"title"`
+	Status           string            `json:"status"`   // "implemented" | "partial" | "missing" | "indexed" | "found_but_trace_incomplete"
+	Coverage         float64           `json:"coverage"` // 0.0 - 1.0
+	Confidence       string            `json:"confidence,omitempty"`
+	ConfidenceReason string            `json:"confidence_reason,omitempty"`
+	StatusReason     string            `json:"status_reason,omitempty"`
+	Explicit         []TraceLink       `json:"explicit"`
+	Inferred         []TraceLink       `json:"inferred"`
+	Tests            []TraceLink       `json:"tests"`
+	Drift            []TraceDrift      `json:"drift"`
+	LookupStatus     *WikiLookupStatus `json:"lookup_status,omitempty"`
+	Workspace        string            `json:"workspace,omitempty"`
+	Host             string            `json:"host,omitempty"`
 }
 
 // RouteDoc is a single document in a canonical or discovery route lane.

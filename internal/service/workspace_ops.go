@@ -151,6 +151,8 @@ func (a *App) workspaceDoctor() (model.Envelope, error) {
 		"worktree_families":    nonNilWorktreeFamilies(report.WorktreeFamilies),
 		"stale_paths":          nonNilStalePaths(report.StalePaths),
 		"binary_shadowing":     nonNilBinaryCandidates(report.BinaryShadowing),
+		"health":               report.Health,
+		"next_actions":         nonNilDoctorActions(report.NextActions),
 		"suggestions":          nonNilStrings(report.Suggestions),
 	}
 	warnings := []string{}
@@ -224,6 +226,13 @@ func nonNilStalePaths(items []workspace.WorkspaceStalePath) []workspace.Workspac
 func nonNilBinaryCandidates(items []workspace.BinaryCandidate) []workspace.BinaryCandidate {
 	if items == nil {
 		return []workspace.BinaryCandidate{}
+	}
+	return items
+}
+
+func nonNilDoctorActions(items []workspace.WorkspaceDoctorAction) []workspace.WorkspaceDoctorAction {
+	if items == nil {
+		return []workspace.WorkspaceDoctorAction{}
 	}
 	return items
 }

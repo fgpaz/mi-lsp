@@ -118,6 +118,7 @@ evidence:
 - La telemetria persiste metadata operativa, nunca payloads completos, y distingue foco visible (`workspace`) de identidad canonica (`workspace_root`).
 - `decision_json` puede exponer evidencia de fallback runtime/backend, pero no query cruda, argv, payloads, paths sensibles ni contenido de archivos.
 - `admin export` raw y summary soportan `--format toon` para revision de logs por harnesses/agentes sin postproceso ad hoc.
+- `admin export --summary` puede agregar `recommendations` derivadas de telemetria local y usage-doctor actions; son aditivas, no cambian agregados existentes y nunca incluyen query cruda, argv, payloads ni contenido de archivos.
 - La UI solo expone acciones seguras: `refresh`, `warm workspace`, `open logs` y `copy CLI command`.
 
 ## 8. Data Model Impact

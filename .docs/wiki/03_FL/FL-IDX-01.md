@@ -70,6 +70,7 @@ sequenceDiagram
 | Lock con PID inexistente | se recupera automaticamente antes de iniciar el nuevo job |
 | Job largo en catalogo/docs | `index status` refresca `updated_at`, stage/path y contadores parciales |
 | `index cancel` sin `--force` | marca cancelacion solicitada y el worker la respeta al volver al loop de indexacion |
+| Diagnostico de workspace/index | `workspace doctor` puede consumir estado de indice para emitir `health` y `next_actions` sin modificar registry ni DB |
 
 ## 5. Data touchpoints
 
