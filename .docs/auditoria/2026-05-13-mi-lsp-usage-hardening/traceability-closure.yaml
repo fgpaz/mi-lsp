@@ -1,0 +1,430 @@
+session_contract_path: .docs/auditoria/2026-05-13-mi-lsp-usage-hardening/session-contract.yaml
+task_slug: mi-lsp-usage-hardening
+generated_at: 2026-05-13
+worktree_path: C:\repos\mios\mi-lsp
+
+git_before:
+  branch: feature/usage-hardening-search-workspace-trace-doctor
+  head_sha: d9f3307894b6a294eaf9a631bba458a207bc300b
+  base_ref: origin/main
+  base_sha: d9f3307894b6a294eaf9a631bba458a207bc300b
+  upstream: null
+  ahead: null
+  behind: null
+  upstream_note: "git rev-parse '@{u}' failed: no upstream configured"
+
+git_after:
+  branch: feature/usage-hardening-search-workspace-trace-doctor
+  head_sha: d9f3307894b6a294eaf9a631bba458a207bc300b
+  base_ref: origin/main
+  base_sha: d9f3307894b6a294eaf9a631bba458a207bc300b
+  upstream: null
+  ahead: null
+  behind: null
+  upstream_note: "No commit/stage/push performed by this closure authoring step"
+
+changed_paths:
+  tracked:
+    - .docs/wiki/03_FL/FL-DAE-01.md
+    - .docs/wiki/03_FL/FL-IDX-01.md
+    - .docs/wiki/03_FL/FL-QRY-01.md
+    - .docs/wiki/04_RF/RF-DAE-002.md
+    - .docs/wiki/04_RF/RF-QRY-001.md
+    - .docs/wiki/04_RF/RF-QRY-002.md
+    - .docs/wiki/04_RF/RF-WKS-001.md
+    - .docs/wiki/04_RF/RF-WKS-002.md
+    - .docs/wiki/06_matriz_pruebas_RF.md
+    - .docs/wiki/06_pruebas/TP-DAE.md
+    - .docs/wiki/06_pruebas/TP-QRY.md
+    - .docs/wiki/06_pruebas/TP-WKS.md
+    - .docs/wiki/07_baseline_tecnica.md
+    - .docs/wiki/08_db/DB-STATE-Y-TELEMETRIA.md
+    - .docs/wiki/09_contratos/CT-CLI-DAEMON-ADMIN.md
+    - .docs/wiki/09_contratos/CT-NAV-WIKI.md
+    - .docs/wiki/09_contratos_tecnicos.md
+    - internal/daemon/export.go
+    - internal/daemon/export_test.go
+    - internal/model/types.go
+    - internal/service/app.go
+    - internal/service/app_test.go
+    - internal/service/coach.go
+    - internal/service/harness_validate.go
+    - internal/service/harness_validate_test.go
+    - internal/service/search.go
+    - internal/service/search_wave3b_test.go
+    - internal/service/trace.go
+    - internal/service/trace_test.go
+    - internal/service/workspace_ops.go
+    - internal/workspace/registry.go
+    - internal/workspace/registry_test.go
+  untracked:
+    - none
+  ignored:
+    - .docs/auditoria/2026-05-13-mi-lsp-usage-hardening/
+  raw_paths:
+    - .docs/auditoria/2026-05-13-mi-lsp-usage-hardening/traceability-closure.yaml
+  forbidden_hits: []
+  closure_authoring_scope:
+    allowed_only:
+      - .docs/auditoria/2026-05-13-mi-lsp-usage-hardening/traceability-closure.yaml
+    edited_by_this_step:
+      - .docs/auditoria/2026-05-13-mi-lsp-usage-hardening/traceability-closure.yaml
+    staged: false
+    git_visibility: "ignored by .gitignore rule /.docs/*"
+
+scope_verdict:
+  verdict: PASS_WITH_WARNINGS
+  summary: "Implemented WIP stays inside session-contract allowed paths; TECH-WIKI-FANOUT global harness blocker was repaired in code, not waived; this step edited only the closure packet."
+  warnings:
+    - "Workspace doctor still reports health=action_required because stale registry/workspace hygiene next_actions are emitted."
+    - "RF-QRY-001 remains low-confidence/inferred-only in nav trace even though the command succeeds and emits confidence/status_reason."
+    - ".docs/auditoria/** remains ignored; PR durability requires force-adding the session contract and closure packet before commit."
+  blockers: []
+
+traceability_chains:
+  reviewed_anchors:
+    flows:
+      - FL-QRY-01
+      - FL-IDX-01
+      - FL-DAE-01
+    requirements:
+      - RF-QRY-001
+      - RF-QRY-002
+      - RF-QRY-010
+      - RF-WKS-001
+      - RF-WKS-002
+      - RF-DAE-002
+    technical:
+      - TECH-GOVERNANCE-PROFILES
+      - TECH-WIKI-FANOUT
+      - DB-STATE-Y-TELEMETRIA
+      - CT-CLI-DAEMON-ADMIN
+      - CT-NAV-ASK
+      - CT-NAV-GOVERNANCE
+      - CT-NAV-WIKI
+    tests:
+      - TP-QRY
+      - TP-WKS
+      - TP-DAE
+  missing_anchors: []
+  repaired_harness_blockers:
+    - anchor: TECH-WIKI-FANOUT
+      previous_classification: global_harness_blocker
+      repair_status: repaired_in_code_not_waived
+      changed_files:
+        - internal/service/harness_validate.go
+        - internal/service/harness_validate_test.go
+      behavior:
+        - "harnessRefExists now supports non-md code evidence paths."
+        - "harnessRefExists strips file:line and file:start-end suffixes before filesystem stat."
+        - "harnessRefExists only appends .md to extensionless path refs."
+      evidence_found:
+        - internal/nav/fanout_wiki.go
+        - internal/service/ask.go:465-564
+  updated_paths:
+    docs_by_docs_agent:
+      - .docs/wiki/03_FL/FL-DAE-01.md
+      - .docs/wiki/03_FL/FL-IDX-01.md
+      - .docs/wiki/03_FL/FL-QRY-01.md
+      - .docs/wiki/04_RF/RF-DAE-002.md
+      - .docs/wiki/04_RF/RF-QRY-001.md
+      - .docs/wiki/04_RF/RF-QRY-002.md
+      - .docs/wiki/04_RF/RF-WKS-001.md
+      - .docs/wiki/04_RF/RF-WKS-002.md
+      - .docs/wiki/06_matriz_pruebas_RF.md
+      - .docs/wiki/06_pruebas/TP-DAE.md
+      - .docs/wiki/06_pruebas/TP-QRY.md
+      - .docs/wiki/06_pruebas/TP-WKS.md
+      - .docs/wiki/07_baseline_tecnica.md
+      - .docs/wiki/08_db/DB-STATE-Y-TELEMETRIA.md
+      - .docs/wiki/09_contratos/CT-CLI-DAEMON-ADMIN.md
+      - .docs/wiki/09_contratos/CT-NAV-WIKI.md
+      - .docs/wiki/09_contratos_tecnicos.md
+    code_by_workers:
+      - internal/daemon/export.go
+      - internal/daemon/export_test.go
+      - internal/model/types.go
+      - internal/service/app.go
+      - internal/service/app_test.go
+      - internal/service/coach.go
+      - internal/service/harness_validate.go
+      - internal/service/harness_validate_test.go
+      - internal/service/search.go
+      - internal/service/search_wave3b_test.go
+      - internal/service/trace.go
+      - internal/service/trace_test.go
+      - internal/service/workspace_ops.go
+      - internal/workspace/registry.go
+      - internal/workspace/registry_test.go
+  implemented_scope:
+    - A-search-resilience
+    - B-workspace-worktree-hygiene
+    - D-trace-sdd-confidence
+    - C-usage-doctor-recommendations
+
+runtime_sensitive:
+  sensitive: true
+  rationale: "Changes affect CLI diagnostics, daemon admin export summaries, workspace resolution, search cancellation behavior, and trace confidence output."
+  evidence:
+    - command: go run ./cmd/mi-lsp workspace doctor --format toon
+      result: PASS
+      observed: "health=action_required and next_actions emitted for stale paths, worktree families, duplicate aliases"
+    - command: go run ./cmd/mi-lsp admin export --since 7d --summary --by-route --by-backend --by-client --by-hint --by-failure-stage --percentile --format toon
+      result: PASS
+      observed: "recommendations emitted: search_errors, workspace_resolution_failed, prune_stale_workspaces, repo_selector_invalid, backend_failures"
+    - command: go run ./cmd/mi-lsp nav search "search_timeout" --workspace mi-lsp --repo mi-lsp --format toon
+      result: PASS
+    - command: go run ./cmd/mi-lsp nav search "search_timeout" --workspace mi-lsp --repo internal --format toon
+      result: DIAGNOSTIC_PASS
+      observed: "Intentional negative smoke: ok=false with repo_selector_invalid coach; diagnostic evidence, not failure."
+
+data_or_contract_sensitive:
+  sensitive: true
+  rationale: "Output contracts gained additive diagnostics/recommendations/confidence fields; no physical data schema or migration changed."
+  authoring_evidence:
+    docs_updated_by_docs_agent:
+      - .docs/wiki/09_contratos_tecnicos.md
+      - .docs/wiki/09_contratos/CT-CLI-DAEMON-ADMIN.md
+      - .docs/wiki/09_contratos/CT-NAV-WIKI.md
+      - .docs/wiki/08_db/DB-STATE-Y-TELEMETRIA.md
+  waivers:
+    - "No data schema/migration changed."
+    - "crear-modelo-de-datos not applicable: no semantic or physical schema ownership changed."
+
+harness_verdict:
+  verdict: PASS_WITH_WARNINGS
+  readiness: global_harness_blocker_repaired_with_known_warnings
+  reviewed:
+    - session-contract.yaml
+    - governance status
+    - nav governance
+    - RF/FL/TP/07/08/09 changed by docs agent
+  blockers: []
+  warnings:
+    - "Workspace doctor still reports action_required because stale registry/workspace hygiene next_actions are emitted."
+    - "RF-QRY-001 remains low-confidence/inferred-only in nav trace."
+    - ".docs/auditoria/** evidence remains ignored until force-added for PR durability."
+
+wiki_source_verdict:
+  verdict: PASS_WITH_WARNINGS
+  readiness: scoped_ready
+  governance:
+    workspace_status: PASS
+    governance_blocked: false
+    governance_sync: in_sync
+    governance_index_sync: current
+    nav_governance: PASS
+    blocked: false
+    sync: in_sync
+    index_sync: current
+  blockers: []
+  warnings:
+    - "Global harness/wiki-source validation now passes after harness blocker repair, with workspace doctor and RF-QRY-001 residual warnings retained."
+
+board_sync:
+  touched_cards:
+    - not_applicable
+  waiver: "No external issue/card was provided or touched."
+  sync_command: not_applicable
+  evidence: "Session contract explicit waiver: no tracker issue/card provided."
+
+pre_push_inputs:
+  issue_or_card: not_applicable
+  issue_or_card_waiver: "No issue/card touched; local waiver accepted in session-contract.yaml."
+  evidence_path: .docs/auditoria/2026-05-13-mi-lsp-usage-hardening/traceability-closure.yaml
+  expected_scope: "Telemetry-driven hardening for search resilience, workspace/worktree hygiene, trace confidence, and usage diagnostics."
+  session_contract_path: .docs/auditoria/2026-05-13-mi-lsp-usage-hardening/session-contract.yaml
+  branch_disposition: pr-open
+  cleanup_policy: pr-open
+  shared_skill_sync: not_applicable
+  shared_skill_sync_waiver: "No shared skills under C:\\Users\\fgpaz\\.agents\\skills or C:\\repos\\buho\\assets\\skills changed."
+
+validation_summary:
+  after_harness_blocker_repair:
+    - command: go test ./internal/service -run Harness
+      result: PASS
+    - command: go test ./...
+      result: PASS
+    - command: go run ./cmd/mi-lsp index --workspace mi-lsp
+      result: PASS
+      observed: "files=185 symbols=2124 docs=93"
+    - command: go run ./cmd/mi-lsp workspace status mi-lsp --format toon
+      result: PASS
+      observed: "governance_blocked=false governance_sync=in_sync index_sync=current symbols=2124"
+    - command: go run ./cmd/mi-lsp nav governance --workspace mi-lsp --format toon
+      result: PASS
+      observed: "blocked=false sync=in_sync index_sync=current"
+    - command: go run ./cmd/mi-lsp nav wiki validate-harness --workspace mi-lsp --format toon --max-chars 12000
+      result: PASS
+      observed: "harness_verdict=PASS; evidence_found includes internal/nav/fanout_wiki.go and internal/service/ask.go:465-564"
+    - command: go run ./cmd/mi-lsp nav wiki validate-source --workspace mi-lsp --format toon --max-chars 12000
+      result: PASS
+    - command: go run ./cmd/mi-lsp workspace doctor --format toon --max-chars 12000
+      result: PASS
+      observed: "health=action_required and next_actions emitted"
+    - command: go run ./cmd/mi-lsp nav trace RF-QRY-001 --workspace mi-lsp --format toon --max-chars 12000
+      result: PASS
+      observed: "confidence/status_reason emitted; RF-QRY-001 remains low-confidence/inferred-only warning"
+    - command: go run ./cmd/mi-lsp nav search "search_timeout" --workspace mi-lsp --repo mi-lsp --format toon
+      result: PASS
+    - command: go run ./cmd/mi-lsp admin export --since 7d --summary --by-route --by-backend --by-client --by-hint --by-failure-stage --percentile --format toon --max-chars 20000
+      result: PASS
+      observed: "recommendations emitted"
+  orchestrator_reported:
+    - command: go test ./internal/output ./internal/service ./internal/workspace ./internal/indexer ./internal/daemon
+      result: PASS
+    - command: go test ./...
+      result: PASS
+    - command: go run ./cmd/mi-lsp index --workspace mi-lsp
+      result: PASS
+      observed: "files=185 symbols=2124 docs=93"
+    - command: go run ./cmd/mi-lsp workspace status mi-lsp --format toon
+      result: PASS
+      observed: "governance_blocked=false governance_sync=in_sync index_sync=current"
+    - command: go run ./cmd/mi-lsp nav governance --workspace mi-lsp --format toon
+      result: PASS
+      observed: "blocked=false sync=in_sync index_sync=current"
+    - command: go run ./cmd/mi-lsp workspace doctor --format toon
+      result: PASS
+      observed: "health=action_required next_actions emitted"
+    - command: go run ./cmd/mi-lsp nav trace RF-QRY-001 --workspace mi-lsp --format toon
+      result: PASS
+      observed: "confidence/status_reason emitted; RF-QRY-001 low confidence because evidence is inferred only"
+    - command: go run ./cmd/mi-lsp admin export --since 7d --summary --by-route --by-backend --by-client --by-hint --by-failure-stage --percentile --format toon
+      result: PASS
+      observed: "recommendations emitted"
+    - command: go run ./cmd/mi-lsp nav search "search_timeout" --workspace mi-lsp --repo mi-lsp --format toon
+      result: PASS
+  closure_author_reran:
+    - command: go run ./cmd/mi-lsp workspace status mi-lsp --format toon
+      result: PASS
+      observed: "governance_blocked=false governance_sync=in_sync index_sync=current"
+    - command: go run ./cmd/mi-lsp nav governance --workspace mi-lsp --format toon
+      result: PASS
+      observed: "blocked=false sync=in_sync index_sync=current"
+
+post_qa_doc_fix:
+  final_qa_result: PASS_WITH_RESOLVED_P2_DOC_DRIFTS
+  summary: "Final QA found two P2 documentation drifts after the original closure packet was authored; both were resolved in the wiki docs before this packet refresh."
+  resolved_drifts:
+    - drift_id: P2-RF-WKS-002-WORKSPACE-DOCTOR-HEALTH-STATES
+      path: .docs/wiki/04_RF/RF-WKS-002.md
+      status: resolved
+      now_documents:
+        workspace_doctor_health_states:
+          - ok
+          - attention
+          - action_required
+    - drift_id: P2-RF-QRY-002-PARTIAL-SEARCH-TIMEOUT-CONTRACT
+      path: .docs/wiki/04_RF/RF-QRY-002.md
+      status: resolved
+      now_documents:
+        partial_successful_nav_search_timeout:
+          ok: true
+          human_warning: timeout warning
+          hint_code: search_timeout
+          coach_trigger: search_timeout
+          failure_stage: none
+  closure_packet_refresh:
+    edited_path: .docs/auditoria/2026-05-13-mi-lsp-usage-hardening/traceability-closure.yaml
+    staged: false
+    scope: "Refresh ignored local traceability closure evidence only; no code, wiki, .gitignore, or staging changes performed by this step."
+  durable_evidence_warning:
+    gitignore_rule: ".gitignore:14:/.docs/*"
+    affected_path: .docs/auditoria/2026-05-13-mi-lsp-usage-hardening/traceability-closure.yaml
+    implication: ".docs/auditoria/** is ignored local closure evidence and will not appear in normal git status or normal git add."
+    durable_pr_evidence_options:
+      - "Force-add the specific evidence path with git add -f when repo policy requires PR-durable closure evidence."
+      - "Or explicitly accept ignored local closure evidence as non-PR-durable evidence for this task."
+    this_step: "Did not stage or force-add evidence."
+
+post_harness_blocker_repair:
+  final_qa_result: PASS_WITH_WARNINGS
+  summary: "TECH-WIKI-FANOUT global harness blocker is now recorded as repaired in code rather than waived."
+  changed_files:
+    - internal/service/harness_validate.go
+    - internal/service/harness_validate_test.go
+  behavior:
+    non_md_code_evidence_paths: supported
+    file_line_suffixes: "file:line and file:start-end suffixes are stripped before filesystem stat"
+    md_extension_append: "only extensionless path refs receive .md fallback"
+  residual_warnings:
+    - registry_stale_paths_and_workspace_doctor_action_required
+    - RF-QRY-001_low_confidence_inferred_only
+    - docs_auditoria_force_add_required_before_commit_for_pr_durability
+
+no_drift_snapshot:
+  after_closure_written: PASS_WITH_WARNINGS
+  commands:
+    - command: git status --short --branch
+      result: PASS
+      observed: "Only known tracked WIP paths; closure packet not shown because .docs/auditoria is ignored."
+    - command: git diff --name-only
+      result: PASS
+      observed: "Only known tracked WIP paths."
+    - command: git ls-files --others --exclude-standard
+      result: PASS
+      observed: "No untracked non-ignored files."
+    - command: git check-ignore -v .docs/auditoria/2026-05-13-mi-lsp-usage-hardening/traceability-closure.yaml
+      result: PASS
+      observed: ".gitignore:14:/.docs/*"
+    - command: go run ./cmd/mi-lsp workspace status mi-lsp --format toon
+      result: PASS
+      observed: "governance_blocked=false governance_sync=in_sync governance_index_sync=current index_files=185 index_symbols=2124 doc_count=93"
+    - command: go run ./cmd/mi-lsp nav governance --workspace mi-lsp --format toon
+      result: PASS
+      observed: "blocked=false sync=in_sync index_sync=current"
+  drift: false
+  docs_drift: false
+  caveat: "After the final QA docs fixes and harness blocker repair, scoped docs/harness drift is not currently asserted; this closure packet remains local ignored evidence because .gitignore:14:/.docs/* ignores .docs/auditoria/** until a later step force-adds the session contract and closure packet with git add -f before commit."
+
+worktree_and_branch_inventory:
+  worktrees:
+    - path: C:/repos/mios/mi-lsp
+      head: d9f3307894b6a294eaf9a631bba458a207bc300b
+      branch: feature/usage-hardening-search-workspace-trace-doctor
+      classification: pr-open
+    - path: C:/repos/mios/mi-lsp/.docs/temp/worktrees/release-log-audit-hardening
+      head: 9a3c9bd87f207fbd725bcbcadb84959f139053d5
+      branch: feature/release-log-audit-hardening
+      classification: integrated_or_separate_scope
+    - path: C:/repos/mios/mi-lsp/.docs/temp/worktrees/workspace-execution-review
+      head: d50bdbe3a823cb74687fbffdee533daed5917d7b
+      branch: detached
+      classification: hold
+  branch_merged_main:
+    - feature/outcome-first-sdd-rs-release-regression
+    - feature/registry-memory-go-selfdogfood
+    - feature/release-log-audit-hardening
+    - feature/sdd-harness-compiler-v1
+    - feature/usage-hardening-search-workspace-trace-doctor
+    - hardening/close-remaining-doc-ranking-index-trace
+    - main
+  branch_no_merged_main: []
+
+waivers:
+  - "No issue/card touched."
+  - "No shared skills changed; no source/mirror skill sync required."
+  - "No data schema/migration changed."
+  - "No direct push to main; branch disposition is PR-open per repo policy."
+  - "No staging performed by closure authoring step."
+
+completion_handoff:
+  target_skill: finishing-a-development-branch
+  executable_disposition: pr-open
+  cleanup_policy: pr-open
+  next_steps:
+    - "Run ps-auditar-trazabilidad if repo policy treats this as large/risky or push-bound."
+    - "Before commit, force-add .docs/auditoria/2026-05-13-mi-lsp-usage-hardening/session-contract.yaml and .docs/auditoria/2026-05-13-mi-lsp-usage-hardening/traceability-closure.yaml with git add -f so ignored evidence becomes PR-durable."
+    - "Open PR from feature/usage-hardening-search-workspace-trace-doctor; do not push directly to main."
+    - "After PR merge, clean worktree/branch only through guarded finishing-a-development-branch flow."
+  blockers: []
+  warnings:
+    - "No upstream configured for current branch."
+    - "Workspace doctor reports action_required for stale registry/workspace hygiene next_actions."
+    - "RF-QRY-001 remains low-confidence/inferred-only."
+    - ".docs/auditoria/** remains ignored until force-added before commit."
+
+final_verdict:
+  status: PASS_WITH_WARNINGS
+  summary: "Scoped closure packet refreshed after harness blocker repair; TECH-WIKI-FANOUT is repaired in code and global harness/source validators pass. Remaining items are warnings/action-before-commit, not unresolved blockers."

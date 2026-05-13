@@ -448,9 +448,6 @@ func (a *App) search(ctx context.Context, request model.CommandRequest) (model.E
 	searchDiagnostics := &searchPatternDiagnostics{}
 	items, err := searchPatternScopedWithDiagnostics(ctx, registration.Root, searchRoot, project, pattern, useRegex, searchLimit, searchDiagnostics)
 	warnings := []string{}
-	if searchDiagnostics.RipgrepFallbackCode != "" {
-		warnings = append(warnings, fmt.Sprintf("text search backend failure (backend_runtime/%s): rg unavailable; served from go text fallback; verify MI_LSP_RG/PATH permissions", searchDiagnostics.RipgrepFallbackCode))
-	}
 	regexAutoHealed := false
 	if err != nil {
 		if useRegex && isRegexParseError(err) {
@@ -462,15 +459,18 @@ func (a *App) search(ctx context.Context, request model.CommandRequest) (model.E
 			useRegex = false
 			regexAutoHealed = true
 		} else if code := classifySearchRuntimeFailure(err); code != "" {
-			items, err = searchPatternFallback(ctx, registration.Root, searchRoot, project, pattern, useRegex, searchLimit)
+			if searchDiagnostics.RipgrepFallbackCode == "" {
+				searchDiagnostics.RipgrepFallbackCode = code
+			}
+			items, err = searchPatternFallbackWithDiagnostics(ctx, registration.Root, searchRoot, project, pattern, useRegex, searchLimit, searchDiagnostics)
 			if err != nil {
 				return model.Envelope{}, err
 			}
-			warnings = append(warnings, fmt.Sprintf("text search backend failure (backend_runtime/%s): rg unavailable; served from go text fallback; verify MI_LSP_RG/PATH permissions", code))
 		} else {
 			return model.Envelope{}, err
 		}
 	}
+	warnings = appendSearchDiagnosticsWarnings(warnings, searchDiagnostics)
 	if len(items) == 0 && !useRegex && looksRegexLikePattern(pattern) {
 		warnings = append(warnings, "no literal matches; pattern looks regex-like, rerun with --regex")
 	}
@@ -495,7 +495,15 @@ func (a *App) search(ctx context.Context, request model.CommandRequest) (model.E
 
 	hint := ""
 	var nextHint *string
-	if len(items) == 0 {
+	if searchDiagnostics.TimedOut {
+		if len(items) > 0 {
+			hint = fmt.Sprintf("search timed out after returning %d partial result(s) for %q", len(items), pattern)
+		} else {
+			hint = fmt.Sprintf("0 matches for %q: search timed out before matches", pattern)
+		}
+		rerun := "narrow with --repo or a more specific pattern"
+		nextHint = &rerun
+	} else if len(items) == 0 {
 		if ctx.Err() != nil {
 			hint = fmt.Sprintf("0 matches for %q: search timed out (context cancelled)", pattern)
 		} else if !useRegex && looksRegexLikePattern(pattern) {
@@ -508,13 +516,30 @@ func (a *App) search(ctx context.Context, request model.CommandRequest) (model.E
 	}
 
 	env := model.Envelope{Ok: true, Workspace: registration.Name, Backend: "text", Items: items, Warnings: warnings, Hint: hint, NextHint: nextHint, Stats: model.Stats{Files: len(items)}}
-	env.Coach = buildSearchCoach(registration.Name, project, pattern, includeContent, stringPayload(request.Payload, "repo"), useRegex, regexAutoHealed, items, request.Context)
+	env.Coach = buildSearchCoach(registration.Name, project, pattern, includeContent, stringPayload(request.Payload, "repo"), useRegex, regexAutoHealed, searchDiagnostics.TimedOut, items, request.Context)
 	env = attachMemoryPointer(env, memory)
 	env.Continuation = buildSearchContinuation(pattern, project, stringPayload(request.Payload, "repo"), items, memory)
 	if isAXIPreview(request.Context) && env.NextHint == nil {
 		env = applyAXIPreviewHints(env, request.Context, axiPreviewSummaryHint)
 	}
 	return applyCoachPolicy(env, request.Context), nil
+}
+
+func appendSearchDiagnosticsWarnings(warnings []string, diagnostics *searchPatternDiagnostics) []string {
+	if diagnostics == nil {
+		return warnings
+	}
+	if diagnostics.RipgrepFallbackCode != "" {
+		warnings = append(warnings, fmt.Sprintf("text search backend failure (backend_runtime/%s): rg unavailable; served from go text fallback; verify MI_LSP_RG/PATH permissions", diagnostics.RipgrepFallbackCode))
+	}
+	if diagnostics.TimedOut {
+		if diagnostics.PartialCount > 0 {
+			warnings = append(warnings, fmt.Sprintf("search timed out; returned %d partial result(s); narrow with --repo or a more specific pattern", diagnostics.PartialCount))
+		} else {
+			warnings = append(warnings, "search timed out before matches; narrow with --repo or a more specific pattern")
+		}
+	}
+	return warnings
 }
 
 func (a *App) installWorker(request model.CommandRequest) (model.Envelope, error) {

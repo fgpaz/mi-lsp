@@ -1,0 +1,70 @@
+task_slug: mi-lsp-usage-hardening
+issue_or_waiver: no external tracker card provided; explicit local waiver for telemetry-driven hardening
+base_ref: origin/main
+base_sha: d9f3307894b6a294eaf9a631bba458a207bc300b
+intended_branch: feature/usage-hardening-search-workspace-trace-doctor
+worktree_path: C:\repos\mios\mi-lsp
+execution_order:
+  - A-search-resilience
+  - B-workspace-worktree-hygiene
+  - D-trace-sdd-confidence
+  - C-usage-doctor-telemetry-coach
+parallelism_limit:
+  max_subagents: 2
+  source: user_request
+expected_scope:
+  summary: Telemetry-driven hardening for search resilience, workspace/worktree hygiene, trace confidence, and usage diagnostics.
+  notes:
+    - Preserve compact/json compatibility unless a contract doc explicitly changes it.
+    - Prefer additive diagnostics and fallbacks over breaking CLI behavior.
+allowed_paths:
+  - internal/**
+  - cmd/**
+  - worker-dotnet/**
+  - .docs/wiki/**
+  - .docs/auditoria/2026-05-13-mi-lsp-usage-hardening/**
+  - README.md
+  - AGENTS.md
+forbidden_paths:
+  - C:\Users\fgpaz\.agents\skills/**
+  - C:\repos\buho\assets\skills/**
+  - .docs/raw/**
+  - C:\repos\sandinas\interbancarizacion_coelsa/**
+  - C:\repos\buho/**
+  - C:\repos\mios\multi-tedi/**
+sdd_anchors:
+  functional:
+    - RF-QRY-001
+    - RF-QRY-002
+    - RF-QRY-010
+    - RF-WKS-001
+    - RF-WKS-002
+    - RF-DAE-002
+  flows:
+    - FL-QRY-01
+    - FL-IDX-01
+    - FL-DAE-01
+  technical:
+    - TECH-GOVERNANCE-PROFILES
+    - TECH-WIKI-FANOUT
+    - DB-STATE-Y-TELEMETRIA
+    - CT-CLI-DAEMON-ADMIN
+    - CT-NAV-ASK
+    - CT-NAV-GOVERNANCE
+    - CT-NAV-WIKI
+required_evidence:
+  commands:
+    - go test ./internal/output ./internal/service ./internal/workspace ./internal/indexer ./internal/daemon
+    - go test ./...
+    - mi-lsp workspace status mi-lsp --format toon
+    - mi-lsp nav governance --workspace mi-lsp --format toon
+    - mi-lsp admin export --since 7d --summary --by-route --by-backend --by-client --by-hint --by-failure-stage --percentile --format toon
+  artifacts:
+    - .docs/auditoria/2026-05-13-mi-lsp-usage-hardening/traceability-closure.yaml
+touched_cards:
+  - not_applicable
+explicit_waivers:
+  - no tracker issue/card was provided by the user
+  - no skill sync unless shared skills are edited
+branch_disposition: pr-open
+cleanup_policy: pr-open

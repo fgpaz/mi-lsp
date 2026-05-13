@@ -147,12 +147,14 @@ Campos recomendados:
 - `decision_json` puede incluir metadata derivada de `continuation` y `memory_pointer` (`continuation_present`, `continuation_reason`, `continuation_op`, `memory_pointer_present`, `memory_stale`) y flags diagnosticos como `doc_ranker` / `intent_mode`, pero nunca `why`, `query`, `handoff` ni el snapshot repo-local completo
 - `decision_json` puede incluir metadata backend/fallback derivada (`requested_backend`, `result_backend`, `backend_fallback_taken`, `fallback_from`, `fallback_to`, `runtime_error_code`) y nunca paths crudos, `slice_text`, errores raw de worker ni contenido de archivos
 - `hint_code` puede caer al `coach.trigger` cuando no hubo `hint`/`next_hint` explicitos pero si existe guidance estructurado
+- `hint_code=search_timeout` representa timeout de busqueda con respuesta parcial exitosa; debe permitir recomendaciones de narrowing sin marcar la request como fallo duro cuando `success=1`
 - `workspace_input` no debe reescribirse con el alias resuelto; el export tiene que distinguir input vacio de alias/path explicito
 - `workspace`, `workspace_alias` y `workspace_root` deben normalizarse desde el workspace resuelto, no desde el selector crudo
 - `runtime_key` debe existir tanto en filas daemonizadas como en filas directas/direct_fallback para mantener attribution consistente
 - `error_kind` y `error_code` deben mapearse desde `error.kind`/`error.code` del envelope `ok=false`; si el fallo fue degradado a warning, el codigo puede entrar en `hint_code` sin marcar `success=0`
 - `failure_stage` debe tomar el stage tipado del envelope o del router (`selector_validation`, `router`, `backend`, `transport`); nunca debe inferirse desde el texto del mensaje
 - `/api/metrics` y `admin export --summary` derivan `request_count`, `success_count`, `error_count`, `error_rate`, `truncation_rate`, `p50_latency_ms`, `p95_latency_ms`, `backpressure_count`, `hint_count` y breakdowns por `route`, `client_name`, `hint_code` y `failure_stage`
+- `admin export --summary` puede derivar `recommendations` desde agregados sanitizados y usage-doctor actions; no agrega columnas obligatorias nuevas y no persiste recomendaciones por fila
 - Los SLOs de memoria/proceso no se calculan desde `access_events`: salen de `daemon_process`, `runtime_snapshots` y `watchers` en status/admin
 - `index.db` repo-local debe inicializarse con `PRAGMA journal_mode=WAL` y `PRAGMA busy_timeout`
 - la escritura catalog/docs/file-symbols debe quedar serializada por workspace para que watcher e index manual no peleen la misma DB

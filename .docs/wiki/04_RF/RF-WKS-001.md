@@ -89,6 +89,7 @@ evidence:
 - Paths auxiliares como `.worktrees/` nunca deben ser elegidos como default.
 - Entrypoints ubicados bajo `.docs/` o `template(s)` pueden seguir visibles en la topologia, pero no deben quedar como `default_entrypoint` si existe una alternativa real del repo.
 - Si el alias ya existe, el comportamiento es `upsert`.
+- `workspace doctor` puede derivar estado `health` y `next_actions` desde el registro existente para diagnostico humano/agente; no modifica `WorkspaceRegistration`, no elige alias por el usuario y no borra worktrees.
 
 ## 8. Data Model Impact
 
@@ -96,4 +97,3 @@ evidence:
 - `ProjectConfig`
 - `WorkspaceRepo`
 - `WorkspaceEntrypoint`
-

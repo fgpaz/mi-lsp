@@ -62,6 +62,14 @@ type OperationPercentiles struct {
 	P99Ms     int64  `json:"p99_ms"`
 }
 
+type UsageRecommendation struct {
+	ID       string   `json:"id"`
+	Severity string   `json:"severity"`
+	Reason   string   `json:"reason"`
+	Command  string   `json:"command,omitempty"`
+	Evidence []string `json:"evidence,omitempty"`
+}
+
 type ExportSummary struct {
 	TotalOps               int                      `json:"total_ops"`
 	WindowLabel            string                   `json:"window_label,omitempty"`
@@ -74,6 +82,7 @@ type ExportSummary struct {
 	TopErrors              []ErrorFrequency         `json:"top_errors"`
 	ByBackend              []BackendHistogram       `json:"by_backend,omitempty"`
 	ByOperationPercentiles []OperationPercentiles   `json:"by_operation_percentiles,omitempty"`
+	Recommendations        []UsageRecommendation    `json:"recommendations,omitempty"`
 }
 
 func QueryAccessEvents(store *TelemetryStore, query ExportQuery) ([]model.AccessEvent, error) {
@@ -269,7 +278,124 @@ func ComputeExportSummary(events []model.AccessEvent) ExportSummary {
 		topErrors = topErrors[:10]
 	}
 	summary.TopErrors = topErrors
+	summary.Recommendations = ComputeUsageRecommendations(summary)
 	return summary
+}
+
+func ComputeUsageRecommendations(summary ExportSummary) []UsageRecommendation {
+	var recommendations []UsageRecommendation
+	add := func(rec UsageRecommendation) {
+		for _, existing := range recommendations {
+			if existing.ID == rec.ID {
+				return
+			}
+		}
+		recommendations = append(recommendations, rec)
+	}
+
+	if stat, ok := summary.ByOperation["nav.search"]; ok {
+		if stat.Errors > 0 {
+			add(UsageRecommendation{
+				ID:       "search_errors",
+				Severity: "high",
+				Reason:   "nav.search has backend/runtime errors in this window; inspect failed searches before broad agent use",
+				Command:  "mi-lsp admin export --since 7d --operation nav.search --errors --format toon",
+				Evidence: []string{fmt.Sprintf("nav.search errors=%d ops=%d", stat.Errors, stat.Ops)},
+			})
+		}
+		if stat.P50Ms >= 5000 {
+			add(UsageRecommendation{
+				ID:       "search_latency",
+				Severity: "medium",
+				Reason:   "nav.search median latency is high; prefer narrower patterns or --repo for follow-up queries",
+				Command:  "mi-lsp admin export --since 7d --operation nav.search --summary --by-hint --percentile --format toon",
+				Evidence: []string{fmt.Sprintf("nav.search p50_ms=%d ops=%d", stat.P50Ms, stat.Ops)},
+			})
+		}
+	}
+
+	if stat, ok := summary.ByHintCode["search_timeout"]; ok && stat.Ops > 0 {
+		add(UsageRecommendation{
+			ID:       "search_timeout",
+			Severity: "high",
+			Reason:   "search timeouts were observed; use repo narrowing or more specific patterns before retrying",
+			Command:  "mi-lsp admin export --since 7d --hint-code search_timeout --format toon",
+			Evidence: []string{fmt.Sprintf("search_timeout ops=%d", stat.Ops)},
+		})
+	}
+
+	if stat, ok := summary.ByHintCode["workspace_resolution_failed"]; ok && stat.Ops > 0 {
+		add(UsageRecommendation{
+			ID:       "workspace_resolution_failed",
+			Severity: "high",
+			Reason:   "workspace selectors failed to resolve; run doctor before handing aliases to agents",
+			Command:  "mi-lsp workspace doctor --format toon",
+			Evidence: []string{fmt.Sprintf("workspace_resolution_failed ops=%d", stat.Ops)},
+		})
+	}
+
+	if stat, ok := summary.ByHintCode["repo_selector_invalid"]; ok && stat.Ops > 0 {
+		add(UsageRecommendation{
+			ID:       "repo_selector_invalid",
+			Severity: "medium",
+			Reason:   "repo selectors were invalid; use workspace-map or list concrete repos before scoped search",
+			Command:  "mi-lsp nav workspace-map --workspace <alias> --format toon",
+			Evidence: []string{fmt.Sprintf("repo_selector_invalid ops=%d", stat.Ops)},
+		})
+	}
+
+	if stat, ok := summary.ByFailureStage["backend"]; ok && stat.Errors > 0 {
+		add(UsageRecommendation{
+			ID:       "backend_failures",
+			Severity: "medium",
+			Reason:   "backend-stage failures were observed; inspect top errors and runtime/tool availability",
+			Command:  "mi-lsp admin export --since 7d --errors --summary --by-failure-stage --format toon",
+			Evidence: []string{fmt.Sprintf("backend errors=%d ops=%d", stat.Errors, stat.Ops)},
+		})
+	}
+
+	for _, top := range summary.TopErrors {
+		message := strings.ToLower(top.ErrorText + " " + top.ErrorCode)
+		if strings.Contains(message, "workspace not found") || strings.Contains(message, "path does not exist") {
+			add(UsageRecommendation{
+				ID:       "prune_stale_workspaces",
+				Severity: "high",
+				Reason:   "telemetry includes missing workspace roots or aliases; stale registry entries are likely",
+				Command:  "mi-lsp workspace prune --stale --dry-run",
+				Evidence: []string{fmt.Sprintf("%dx %s", top.Count, safeKey(top.ErrorCode, top.ErrorText))},
+			})
+		}
+		if strings.Contains(message, "access is denied") || strings.Contains(message, "permission denied") || strings.Contains(message, "process_spawn_access_denied") {
+			add(UsageRecommendation{
+				ID:       "process_spawn_access_denied",
+				Severity: "high",
+				Reason:   "a local backend/tool process hit permission errors; verify PATH/MI_LSP_RG or rely on fallback evidence",
+				Command:  "mi-lsp admin export --since 7d --errors --format toon",
+				Evidence: []string{fmt.Sprintf("%dx %s", top.Count, safeKey(top.ErrorCode, top.ErrorText))},
+			})
+		}
+	}
+
+	sort.SliceStable(recommendations, func(i, j int) bool {
+		return recommendationRank(recommendations[i].Severity) > recommendationRank(recommendations[j].Severity)
+	})
+	if len(recommendations) > 8 {
+		recommendations = recommendations[:8]
+	}
+	return recommendations
+}
+
+func recommendationRank(severity string) int {
+	switch strings.ToLower(strings.TrimSpace(severity)) {
+	case "high":
+		return 3
+	case "medium":
+		return 2
+	case "low":
+		return 1
+	default:
+		return 0
+	}
 }
 
 type bucket struct {
@@ -450,6 +576,15 @@ func RenderSummaryTable(summary ExportSummary) string {
 				label = e.ErrorKind + "/" + label
 			}
 			fmt.Fprintf(&b, "  %dx %q (%s)\n", e.Count, label, strings.Join(e.Workspaces, ", "))
+		}
+	}
+	if len(summary.Recommendations) > 0 {
+		fmt.Fprintf(&b, "\n Recommendations:\n")
+		for _, rec := range summary.Recommendations {
+			fmt.Fprintf(&b, "  [%s] %s: %s\n", rec.Severity, rec.ID, rec.Reason)
+			if rec.Command != "" {
+				fmt.Fprintf(&b, "      %s\n", rec.Command)
+			}
 		}
 	}
 	return b.String()

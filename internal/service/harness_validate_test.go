@@ -30,6 +30,33 @@ func TestValidateHarnessValidLLMFirstContract(t *testing.T) {
 	}
 }
 
+func TestHarnessRefExistsSupportsCodeEvidencePath(t *testing.T) {
+	root := t.TempDir()
+	writeWorkspaceFile(t, root, "internal/nav/fanout_wiki.go", "package nav\n")
+
+	if !harnessRefExists(root, map[string]struct{}{}, ".docs/wiki/07_tech/TECH-WIKI-FANOUT.md", "internal/nav/fanout_wiki.go") {
+		t.Fatalf("expected existing .go evidence path to resolve without appending .md")
+	}
+}
+
+func TestHarnessRefExistsStripsCodeEvidenceLineRange(t *testing.T) {
+	root := t.TempDir()
+	writeWorkspaceFile(t, root, "internal/service/ask.go", "package service\n")
+
+	if !harnessRefExists(root, map[string]struct{}{}, ".docs/wiki/07_tech/TECH-WIKI-FANOUT.md", "internal/service/ask.go:465-564") {
+		t.Fatalf("expected existing .go evidence path with line range to resolve")
+	}
+}
+
+func TestHarnessRefExistsKeepsExtensionlessDocRefs(t *testing.T) {
+	root := t.TempDir()
+	writeWorkspaceFile(t, root, ".docs/wiki/09_contratos/CT-HARNESS.md", "# CT-HARNESS\n")
+
+	if !harnessRefExists(root, map[string]struct{}{}, ".docs/wiki/09_contratos/CT-INDEX.md", ".docs/wiki/09_contratos/CT-HARNESS") {
+		t.Fatalf("expected extensionless wiki path to keep resolving through .md fallback")
+	}
+}
+
 func TestValidateHarnessMissingContractBlocks(t *testing.T) {
 	alias, root := createHarnessWorkspace(t)
 	writeWorkspaceFile(t, root, ".docs/wiki/09_contratos/CT-HARNESS.md", "# CT-HARNESS\n\nNo contract yet.\n")

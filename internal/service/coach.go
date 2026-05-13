@@ -12,6 +12,7 @@ import (
 const (
 	coachTriggerRepoSelectorInvalid    = "repo_selector_invalid"
 	coachTriggerRegexAutoHealed        = "regex_auto_healed"
+	coachTriggerSearchTimeout          = "search_timeout"
 	coachTriggerNoMatchesRefinable     = "no_matches_refinable"
 	coachTriggerPreviewTrimmed         = "preview_trimmed"
 	coachTriggerLowConfidence          = "low_confidence"
@@ -116,7 +117,7 @@ func buildSearchScopeCoach(alias string, pattern string, includeContent bool, us
 	}
 }
 
-func buildSearchCoach(alias string, project model.ProjectFile, pattern string, includeContent bool, repoSelector string, useRegex bool, regexAutoHealed bool, items []map[string]any, opts model.QueryOptions) *model.Coach {
+func buildSearchCoach(alias string, project model.ProjectFile, pattern string, includeContent bool, repoSelector string, useRegex bool, regexAutoHealed bool, searchTimedOut bool, items []map[string]any, opts model.QueryOptions) *model.Coach {
 	if regexAutoHealed {
 		return &model.Coach{
 			Trigger: coachTriggerRegexAutoHealed,
@@ -124,6 +125,24 @@ func buildSearchCoach(alias string, project model.ProjectFile, pattern string, i
 			Actions: []model.CoachAction{
 				coachAction("rerun", "Run as literal search", searchCommand(alias, pattern, includeContent, repoSelector, false, false)),
 			},
+		}
+	}
+
+	if searchTimedOut {
+		actions := make([]model.CoachAction, 0, 2)
+		if repoSelector == "" {
+			if repo := searchSingleVisibleRepo(project, items); repo != "" {
+				actions = append(actions, coachAction("narrow", "Scope to repo "+repo, searchCommand(alias, pattern, includeContent, repo, useRegex, false)))
+			}
+		}
+		if keyword := strongestSearchCoachToken(pattern); keyword != "" && !strings.EqualFold(keyword, pattern) {
+			actions = append(actions, coachAction("refine", "Retry with "+keyword, searchCommand(alias, keyword, includeContent, repoSelector, false, false)))
+		}
+		return &model.Coach{
+			Trigger:    coachTriggerSearchTimeout,
+			Message:    "Search timed out before the full result set was available; narrow the query before retrying.",
+			Confidence: "medium",
+			Actions:    actions,
 		}
 	}
 

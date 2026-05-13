@@ -1593,7 +1593,7 @@ func TestSearchCoachSuggestsRepoNarrowingWhenResultsShareRepo(t *testing.T) {
 	}
 	items := []map[string]any{{"file": "frontend/src/Login.tsx", "repo": "frontend", "line": 1}}
 
-	coach := buildSearchCoach("container", project, "forgot password", false, "", false, false, items, model.QueryOptions{MaxItems: 10})
+	coach := buildSearchCoach("container", project, "forgot password", false, "", false, false, false, items, model.QueryOptions{MaxItems: 10})
 	if coach == nil || coach.Trigger != "scope_narrowing_available" {
 		t.Fatalf("expected scope_narrowing_available coach, got %#v", coach)
 	}

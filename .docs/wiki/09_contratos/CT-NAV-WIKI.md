@@ -274,6 +274,7 @@ Veredictos:
 - `nav wiki trace <id>` puede devolver evidencia `wiki-source` para source IDs exactos aunque no sean `RS-*`, `RF-*` o `TP-*`.
 - `nav wiki search|route|pack|trace` expone `lookup_status` de forma aditiva con `query`, `workspace`, `index_freshness`, `governance_sync`, `match_kind`, IDs exactos (`doc_id`, `block_id`, `record_id`), `path`, `layer`, `stage`, `rank_reason`, totales, razon y `next_hint` valido cuando la preview no muestra todo.
 - `match_kind` distingue `canonical_indexed_id`, `alias_read_model_routing`, `mentions_content_fallback`, `content_fallback` y `true_absence`; no debe reportar ausencia si encontro identidad canonica pero la traza downstream queda incompleta.
+- `TraceResult` puede agregar `confidence`, `confidence_reason` y `status_reason` de forma aditiva para diferenciar evidencia fuerte, fallback a disco, cobertura parcial y ausencia real; estos campos explican el veredicto pero no reemplazan `status`, `lookup_status` ni la evidencia `wiki-source`.
 
 ## Contract `wiki inventory`
 

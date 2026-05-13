@@ -33,7 +33,7 @@ Mantener un daemon global opcional por usuario que reduzca latencia warm, compar
 
 ## 2. Scope in/out
 
-- In: start/stop/status, named pipe/unix socket, runtime pool por `(workspace_root, backend_type, entrypoint_id)`, LRU, idle eviction, governance UI loopback, telemetry local, warm seguro via admin API, logs locales.
+- In: start/stop/status, named pipe/unix socket, runtime pool por `(workspace_root, backend_type, entrypoint_id)`, LRU, idle eviction, governance UI loopback, telemetry local, warm seguro via admin API, logs locales, export summary con recomendaciones sanitizadas.
 - Out: auth remota, cluster multi-host, observabilidad externa, acciones destructivas desde la UI.
 
 ## 3. Actors and ownership
