@@ -1,0 +1,40 @@
+task_slug: mi-lsp-binary-distribution-policy
+issue_or_waiver: no external issue; user-requested policy hardening
+base_ref: origin/main
+base_sha: 05e3ed5455356542437f84c65ddcff55b395fa87
+branch: codex/mi-lsp-binary-distribution-policy
+worktree_path: C:\repos\mios\mi-lsp
+expected_scope:
+  - codify mi-lsp binary distribution architecture policy in the mi-lsp skill
+  - require closure/audit/finish gates to verify AMD64 shared binaries and reject shared ARM64 binaries
+  - add gitignore guards so shared skill repos only version mi-lsp AMD64 Windows/Linux binaries
+allowed_paths:
+  - C:\repos\mios\mi-lsp\skills\mi-lsp\SKILL.md
+  - C:\repos\mios\mi-lsp\.docs\auditoria\2026-05-13-mi-lsp-binary-distribution-policy\*
+  - C:\Users\fgpaz\.agents\skills\.gitignore
+  - C:\Users\fgpaz\.agents\skills\mi-lsp\SKILL.md
+  - C:\Users\fgpaz\.agents\skills\ps-trazabilidad\SKILL.md
+  - C:\Users\fgpaz\.agents\skills\ps-auditar-trazabilidad\SKILL.md
+  - C:\Users\fgpaz\.agents\skills\finishing-a-development-branch\SKILL.md
+  - C:\Users\fgpaz\.codex\skills\mi-lsp\SKILL.md
+  - C:\repos\buho\assets\.gitignore
+  - C:\repos\buho\assets\skills\mi-lsp\SKILL.md
+  - C:\repos\buho\assets\skills\ps-trazabilidad\SKILL.md
+  - C:\repos\buho\assets\skills\ps-auditar-trazabilidad\SKILL.md
+  - C:\repos\buho\assets\skills\finishing-a-development-branch\SKILL.md
+forbidden_paths:
+  - C:\Users\fgpaz\bin\mi-lsp.exe
+  - /home/fgpaz/.local/bin/mi-lsp
+  - C:\repos\mios\mi-lsp\internal\**
+  - C:\repos\mios\mi-lsp\cmd\**
+  - C:\repos\mios\mi-lsp\dist\**
+required_evidence:
+  - mi-lsp workspace status and governance stay unblocked
+  - compare-skill-mirrors.ps1 -Skill mi-lsp reports no drift between .agents and assets
+  - shared skill repositories contain only mi-lsp-win-x64.exe and mi-lsp-linux-x64 under mi-lsp/bin
+  - git status clean and HEAD equals origin/main for pushed shared skill repos
+touched_cards: not_applicable
+explicit_waivers:
+  - docs-only/policy-only change; no code rebuild required
+branch_disposition: integrate-main
+cleanup_policy: auto-after-successful-integration

@@ -250,9 +250,9 @@ Install the CLI first, verify it, and only then continue with repo navigation.
 
 1. Download the release bundle for the user's platform from `https://github.com/fgpaz/mi-lsp/releases`.
 2. Choose the right bundle: `win-x64`, `win-arm64`, `linux-x64`, or `linux-arm64`.
-   - On this workstation, the preferred global Windows install is `win-arm64`.
-   - The global skill repository may also carry `bin/mi-lsp-win-x64.exe` for Windows amd64 machines; on those machines, put that binary directory on `PATH` or copy it to the local tools directory as `mi-lsp.exe`.
-   - When refreshing the shared mirror for Windows consumers, keep the mirror binary on `win-x64` / `amd64`.
+   - On this workstation, the local Windows install is `win-arm64` at `C:\Users\fgpaz\bin\mi-lsp.exe`; the local WSL/Linux install is `linux-arm64` at `/home/fgpaz/.local/bin/mi-lsp`. These ARM64 binaries are machine-local only and must not be committed to shared skill repositories.
+   - The versioned skill distribution is AMD64-only: `bin/mi-lsp-win-x64.exe` and `bin/mi-lsp-linux-x64`.
+   - When refreshing skills/binaries after a code change, publish those same AMD64 bytes to both `C:\Users\fgpaz\.agents\skills\mi-lsp\bin` and `C:\repos\buho\assets\skills\mi-lsp\bin`, then verify hash parity and `go version -m` (`GOARCH=amd64`, `vcs.modified=false`).
 3. Extract it into a stable tools directory and keep `workers/<rid>/` next to the `mi-lsp` binary.
 4. Add that directory to the current session `PATH`, or invoke the binary by absolute path until `PATH` is fixed permanently.
 5. Verify the install:
@@ -299,7 +299,14 @@ mi-lsp workspace doctor --format toon
 If the release changes CLI/daemon telemetry or `admin export`, refresh the `mi-lsp` binary and restart the daemon before trusting new fields in `access_events`.
 If `daemon status` reports missing executable metadata, an `executable_sha256` mismatch, or stale-daemon guidance, rebuild/install the CLI and run `mi-lsp daemon restart` before trusting daemon-backed results.
 Only replace `workers/<rid>/` when the release notes say the worker changed.
-If you update the skill under `C:\\Users\\fgpaz\\.agents\\skills\\mi-lsp`, update the mirrored copy under `C:\\repos\\buho\\assets\\skills\\mi-lsp` in the same task and preserve the Windows architecture split (`global=win-arm64`, `mirror=win-x64`).
+If a `mi-lsp` code update changes CLI-visible behavior, daemon/runtime behavior, query envelopes, telemetry, or anything else that makes the skill/binaries stale, refresh all distribution surfaces in the same task:
+
+- Build the four release RIDs from the clean source revision: `win-arm64`, `linux-arm64`, `win-x64`, and `linux-x64`.
+- Install ARM64 only on this workstation: `C:\Users\fgpaz\bin\mi-lsp.exe` for Windows and `/home/fgpaz/.local/bin/mi-lsp` for WSL/Linux.
+- Commit/distribute AMD64 only in skill repositories: `mi-lsp-win-x64.exe` and `mi-lsp-linux-x64` under both `C:\Users\fgpaz\.agents\skills\mi-lsp\bin` and `C:\repos\buho\assets\skills\mi-lsp\bin`.
+- Verify `compare-skill-mirrors.ps1 -Skill mi-lsp` returns no drift, hashes match across both skill repos, and `go version -m` reports `GOARCH=amd64`, `vcs.revision=<source revision>`, `vcs.modified=false` for both committed binaries.
+
+If you update the skill under `C:\Users\fgpaz\.agents\skills\mi-lsp`, update the mirrored copy under `C:\repos\buho\assets\skills\mi-lsp` in the same task and preserve the architecture split: ARM64 local-only, AMD64 versioned in both skill repositories.
 
 ### Admin export note
 
