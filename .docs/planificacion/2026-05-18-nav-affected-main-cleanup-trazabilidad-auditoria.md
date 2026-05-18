@@ -81,15 +81,13 @@ Estado final esperado:
 
 ## Binario
 
-El binario global se reconstruyo desde el commit publicado:
+El binario global se reconstruyo desde el HEAD publicado de cierre y se verifico con:
 
-- `C:\Users\fgpaz\bin\mi-lsp.exe`
-- `vcs_revision=3ccc4cf26e581bb7f93c7b1c17e1b893d2cce7ce`
-- `vcs_modified=false`
-- `goos=windows`
-- `goarch=arm64`
+```powershell
+mi-lsp version --format toon
+```
 
-Despues de versionar este cierre documental, el binario debe recompilarse una vez mas para apuntar al commit final que contiene este archivo.
+El `vcs_revision` final del binario debe coincidir con el `HEAD` publicado al cierre y `vcs_modified=false`.
 
 ## Auditoria
 
@@ -103,4 +101,3 @@ Riesgo residual aceptado:
 
 - Los stashes de preservacion quedan disponibles de forma intencional para recuperacion manual. No representan drift activo del repositorio.
 - La salida de `dotnet test` fue breve porque la solucion quedo restaurada/up-to-date y el proceso termino con exit code 0.
-
