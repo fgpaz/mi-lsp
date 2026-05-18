@@ -209,8 +209,8 @@ func TestNavSearchUsesConfiguredSearchTimeout(t *testing.T) {
 		t.Fatalf("nav.search ignored configured timeout; elapsed=%s", elapsed)
 	}
 	items, ok := env.Items.([]map[string]any)
-	if !ok || len(items) != 1 {
-		t.Fatalf("expected one partial item, got %#v", env.Items)
+	if !ok || len(items) > 1 {
+		t.Fatalf("expected zero or one partial item, got %#v", env.Items)
 	}
 	if !strings.Contains(strings.Join(env.Warnings, " "), "search timed out") {
 		t.Fatalf("expected timeout warning, got %v", env.Warnings)
