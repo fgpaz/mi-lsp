@@ -166,6 +166,7 @@ Si `rg` devuelve exit code `1` por ausencia de matches, el core lo normaliza a `
 Si el usuario forza `--regex` y el patron es invalido, el core reintenta automaticamente como literal y devuelve warning visible.
 Si `rg` existe pero falla por permisos o arranque de proceso, el core cae a `searchPatternGo` y agrega warning tipado `backend_runtime/process_spawn_access_denied` o `backend_runtime/process_spawn_failed`; la telemetria solo guarda el codigo causal, no argv ni payloads crudos.
 Para patrones literal symbol-like, `nav search` emite `coach.trigger=symbol_query_detected` con acciones estructuradas hacia `nav find --exact` y `nav related`, y prioriza declaraciones/implementaciones fuente por encima de docs, tests, backups y generados.
+En AXI preview, el sobre-muestreo para rankear identificadores es acotado: recolecta mas que `MaxItems` para no esconder declaraciones fuente, pero evita el limite amplio de modo full/clasico para proteger latencia en repos grandes y escenarios concurrentes.
 La exploracion de servicios y el fallback de `nav ask` reutilizan la misma cadena.
 
 ## Config y valores por defecto
@@ -225,7 +226,7 @@ El struct `internal/service/config.go` centraliza todos los valores hardcodeados
 - `nav.workspace-map` debe arrancar con summary-first directo, no auto-iniciar daemon, y reservar scans de endpoints/eventos/dependencias para `--full`.
 - En workspaces Go, `nav.workspace-map` agrega paquetes `cmd/*`, `internal/*` y `pkg/*` como servicios `go-package` desde el catalogo para que el mapa de self-dogfood no dependa de entrypoints C#.
 - En AXI efectivo, `init`, `workspace status`, `nav search`, `nav intent` y `nav pack` arrancan en preview-first por default; `nav ask` lo hace solo cuando la heuristica detecta orientacion, y `nav workspace-map` solo cuando se fuerza AXI.
-- `nav search` debe ser resiliente a timeout: cada busqueda textual directa aplica un presupuesto interactivo corto (5s por workspace), excluye caches/dependencias generadas aun con `--hidden`, y, si existen resultados parciales seguros, responde `ok=true` con warning `search_timeout`, `next_hint` y coach accionable; no convierte el timeout en ausencia falsa.
+- `nav search` debe ser resiliente a timeout: cada busqueda textual directa aplica un presupuesto interactivo corto (5s por workspace), excluye caches/dependencias generadas aun con `--hidden`, limita el sobre-muestreo de identificadores en AXI preview, y, si existen resultados parciales seguros, responde `ok=true` con warning `search_timeout`, `next_hint` y coach accionable; no convierte el timeout en ausencia falsa.
 - `init` registra, persiste proyecto e indexa por defecto sin requerir `workspace add` previo.
 - `worker install` es explicito; no hay descargas silenciosas durante consultas.
 - `worker install` copia un worker bundled por RID cuando la distribucion lo trae adjunto; si la CLI corre dentro del repo `mi-lsp` y no existe bundle adjunto, publica el worker desde `worker-dotnet/` con `dotnet publish`.

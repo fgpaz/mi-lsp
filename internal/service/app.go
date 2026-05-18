@@ -442,11 +442,7 @@ func (a *App) search(ctx context.Context, request model.CommandRequest) (model.E
 	if scopedRepo != nil {
 		searchRoot = filepath.Join(registration.Root, filepath.FromSlash(scopedRepo.Root))
 	}
-	identifierQuery := !useRegex && isIdentifierLikeQuery(pattern)
-	searchLimit := request.Context.MaxItems
-	if identifierQuery {
-		searchLimit = max(searchLimit, DefaultConfig().DefaultSearchLimit)
-	}
+	searchLimit := searchTextLimit(request.Context, pattern, useRegex)
 	searchDiagnostics := &searchPatternDiagnostics{}
 	searchCtx, searchCancel := withSearchTimeout(ctx, a.Config.SearchTimeout)
 	defer searchCancel()
@@ -527,6 +523,20 @@ func (a *App) search(ctx context.Context, request model.CommandRequest) (model.E
 		env = applyAXIPreviewHints(env, request.Context, axiPreviewSummaryHint)
 	}
 	return applyCoachPolicy(env, request.Context), nil
+}
+
+func searchTextLimit(opts model.QueryOptions, pattern string, useRegex bool) int {
+	limit := opts.MaxItems
+	if limit <= 0 {
+		limit = DefaultConfig().DefaultMaxItems
+	}
+	if useRegex || !isIdentifierLikeQuery(pattern) {
+		return limit
+	}
+	if isAXIPreview(opts) {
+		return max(limit, min(DefaultConfig().DefaultSearchLimit, max(limit*10, 50)))
+	}
+	return max(limit, DefaultConfig().DefaultSearchLimit)
 }
 
 func appendSearchDiagnosticsWarnings(warnings []string, diagnostics *searchPatternDiagnostics) []string {

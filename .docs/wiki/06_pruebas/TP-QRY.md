@@ -74,6 +74,7 @@ evidence:
 | TC-QRY-013E | positivo | RF-QRY-002 | `nav context` sobre C# conserva `slice_text` y degrada a catalog/text con warning `backend_runtime/process_spawn_access_denied` si Roslyn no arranca |
 | TC-QRY-013F | positivo | RF-QRY-002 | `nav search` cae a Go search con warning tipado si `rg` falla por permisos o arranque de proceso |
 | TC-QRY-013H | positivo | RF-QRY-002 | `nav search` con `rg --hidden` preserva `.docs` pero excluye caches/dependencias generadas (`.git`, `.next`, `.turbo`, `node_modules`, `bin/obj`, venvs, worktrees temporales) para evitar latencia espuria |
+| TC-QRY-013I | positivo | RF-QRY-002, RF-QRY-016 | `nav search` symbol-like en AXI preview acota el sobre-muestreo usado para ranking, manteniendo `--full`/clasico con el limite amplio |
 | TC-QRY-013G | positivo | RF-QRY-002 | `TestParseContextTargetAcceptsFileLineShorthand`: `nav context` acepta `file.go:123` y devuelve guidance corregida si la linea es invalida |
 | TC-QRY-013A | positivo | RF-QRY-001 | `nav.search` agrega `coach.trigger=no_matches_refinable` cuando la query no matchea pero tiene rerun accionable |
 | TC-QRY-014 | positivo | RF-QRY-004 | lee multiples rangos en una sola invocacion con truncacion por presupuesto |
