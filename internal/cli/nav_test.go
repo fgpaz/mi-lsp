@@ -37,6 +37,23 @@ func TestNavCommandExposesRepoScopeFlags(t *testing.T) {
 	}
 }
 
+func TestNavCommandExposesAffectedFlags(t *testing.T) {
+	command := newNavCommand(&rootState{})
+
+	affected, _, err := command.Find([]string{"affected"})
+	if err != nil {
+		t.Fatalf("find affected command: %v", err)
+	}
+	if affected.Name() != "affected" {
+		t.Fatalf("affected command name = %q, want affected", affected.Name())
+	}
+	for _, flag := range []string{"from-git-diff", "changed-ref", "stdin", "include-tests", "include-docs", "quiet", "test-command"} {
+		if affected.Flags().Lookup(flag) == nil {
+			t.Fatalf("affected command should expose --%s", flag)
+		}
+	}
+}
+
 func TestNavCommandExposesWikiGroup(t *testing.T) {
 	command := newNavCommand(&rootState{})
 

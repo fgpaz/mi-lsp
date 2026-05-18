@@ -62,6 +62,7 @@ El detalle por frontera vive en `09_contratos/`.
 - `nav ask` pertenece a la CLI publica y usa un contrato docs-first explainable, no un blob opaco ni una respuesta puramente textual.
 - `nav pack` pertenece a la CLI publica y usa un contrato de reading pack canonico, no una respuesta textual libre.
 - `nav wiki` pertenece a la CLI publica como superficie documental explicita para agentes; `search` devuelve candidatos wiki, `route|pack|trace` reutilizan las superficies canonicas existentes, `validate-harness` compila readiness de contratos `SDD-HARNESS-v1` y `validate-source` compila readiness de artefactos `SDD-WIKI-SOURCE-v1`.
+- `nav affected` pertenece a la CLI publica como selector conservador de impacto git-aware; no reemplaza `nav diff-context` ni declara completitud semantica fuerte.
 - `nav governance` pertenece a la CLI publica y devuelve el estado efectivo de gobernanza del workspace.
 - `nav service` pertenece a la CLI publica y usa un contrato evidence-first, no uno de scoring.
 - `nav context` pertenece a la CLI publica y su salida visible es slice-first; el backend profundo solo enriquece el mismo item.
@@ -93,6 +94,7 @@ El detalle por frontera vive en `09_contratos/`.
 - `nav trace <DOC-ID>` debe clasificar explicitamente `RS|RF|TP`: `RS-*` devuelve `doc_id`, `layer=RS`, `stage=outcome` sin poblar el campo legacy `rf`; `RF-*` conserva evidencia spec-to-code y `TP-*` conserva evidencia de cobertura documental.
 - `nav trace <DOC-ID>` tambien puede resolver `block_id` o `record_id` fuente exacto desde `doc_source_blocks`/`doc_source_records` y devolver evidencia `wiki-source`.
 - `TraceResult` puede agregar campos aditivos `confidence`, `confidence_reason` y `status_reason` para explicar cobertura parcial, ausencia real o evidencia fuerte sin cambiar `status`, `doc_id`, `layer`, `stage` ni el campo legacy `rf`.
+- `nav affected` debe devolver items estables con `kind`, `path`, `reason`, `confidence`, `suggested_command` y `evidence`; cuando usa heuristicas debe emitir warning explicito y no afirmar ausencia total de impacto mas alla de los inputs revisados.
 - `nav governance` debe devolver una estructura estable con perfil, base efectiva, overlays, sync, blockers y siguientes pasos.
 - `nav service` puede usar `backend=catalog`, `backend=text` o `backend=catalog+text`.
 
@@ -106,7 +108,7 @@ El detalle por frontera vive en `09_contratos/`.
 - `--axi=false` explicito anula el default AXI de la superficie actual; equivalente a `--classic` para esa invocacion.
 - `--axi` y `--classic` juntos deben fallar antes de ejecutar la operacion.
 - `worker status` debe conservar el mismo payload visible con y sin daemon; el daemon no puede reemplazar `items` por `RuntimeSnapshot`/`WorkerStatus` crudos.
-- `nav.find`, `nav.search`, `nav.intent`, `nav.symbols`, `nav.outline`, `nav.overview`, `nav.multi-read` y `nav.workspace-map` summary-first pertenecen a la superficie publica directa: no deben esperar daemon ni cambiar de comportamiento por su health.
+- `nav.find`, `nav.search`, `nav.intent`, `nav.symbols`, `nav.outline`, `nav.overview`, `nav.multi-read`, `nav.affected` y `nav.workspace-map` summary-first pertenecen a la superficie publica directa: no deben esperar daemon ni cambiar de comportamiento por su health.
 - `nav.wiki.search`, `nav.wiki.route`, `nav.wiki.pack`, `nav.wiki.trace`, `nav.wiki.validate-harness` y `nav.wiki.validate-source` pertenecen a la superficie publica directa y no deben esperar daemon.
 - `nav.ask` tambien pertenece al hot path directo por default; la presencia del daemon no debe ser requisito para una primera respuesta docs-first util.
 - `index` puede degradar a full rebuild aun sin cambios git detectados cuando el runtime observa que `doc_records` no contiene docs canonicos pese a que la wiki existe en disco; el contrato visible no debe quedar en `no changes detected` en ese caso.
@@ -180,6 +182,7 @@ El detalle por frontera vive en `09_contratos/`.
 - `nav related`: devuelve vecindario de un simbolo (definicion, callers, implementors, tests); el contenido expandido queda reservado para `--full`
 - `nav workspace-map`: mapa de alto nivel del workspace; el modo base es summary-first y `--full` habilita scans profundos de endpoints, eventos y dependencias. Para Go, expone paquetes `cmd/*`, `internal/*` y `pkg/*` como servicios `go-package` derivados del catalogo.
 - `nav diff-context [ref] --include-content`: contexto semantico de simbolos cambiados en un git diff, con analisis de impacto
+- `nav affected [paths...] [--from-git-diff] [--changed-ref <ref>] [--stdin] [--include-tests] [--include-docs] [--quiet] [--test-command <cmd>]`: selecciona impacto conservador de cambios, con evidencia git/catalogo/docs y comandos sugeridos cuando se piden tests o docs
 - `nav trace <DOC-ID>`: acepta IDs `RS-*`, `RF-*` y `TP-*`; para `RS-*` resuelve docs outcome gobernados o fallbacks embebidos (`.docs/wiki/02_resultados_soluciones_usuario.md`, `.docs/wiki/02_resultados/*.md`) y devuelve `doc_id`, `layer=RS`, `stage=outcome` sin `rf`; si un `RF-*` no existe como `doc_records.doc_id` primario, puede resolverlo por `doc_mentions(doc_id)` dentro de un documento RF agregado y devolver `RF=<RF-ID>` en el resultado visible; los docs TP del layer `06` que mencionan ese `RF-*` cuentan como evidencia documental de cobertura y deben evitar falsos `missing` despues de `index --docs-only`; si el doc index todavia no publico ese ID, el fallback a disco debe recorrer primero las rutas documentales gobernadas por `00`/`read-model` y solo despues los layouts legacy conocidos (`.docs/wiki/04_RF*.md`, `.docs/wiki/RF/*.md`, `.docs/wiki/RF.md`, equivalentes TP); para `TP-*` puede resolver el caso dentro de docs agregados `06_pruebas/*.md` y usar el titulo del caso embebido; `--all` sigue siendo RF-only hasta que el contrato declare otro universo; los marcadores file-only verifican contra el catalogo de simbolos o contra existencia de archivo en el workspace cuando el lenguaje no esta indexado semanticamente; `confidence`, `confidence_reason` y `status_reason` son campos opcionales aditivos para explicar el veredicto.
 - `nav ask --all-workspaces` / `nav search --all-workspaces` / `nav find --all-workspaces`: fan-out paralelo cross-workspace; los aliases cuyo root ya no existe se omiten con warning agregado y sugerencia hacia `workspace prune --stale --dry-run`.
 - `--no-auto-daemon` global flag: desactiva auto-start de daemon para queries semanticas

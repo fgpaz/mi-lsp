@@ -162,3 +162,4 @@ sequenceDiagram
 - RF-QRY-014 comando publico nav route para resolver documento canonico minimo
 - RF-QRY-015 reutilizacion interna del route core desde ask y pack
 - RF-QRY-016 exploracion wiki-first para agentes y compatibilidad `--repo`
+- RF-QRY-017 seleccion conservadora de impacto de cambios con `nav affected`

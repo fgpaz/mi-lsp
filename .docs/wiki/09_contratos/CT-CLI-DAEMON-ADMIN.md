@@ -46,7 +46,7 @@ Define la frontera entre clientes locales y el runtime compartido: CLI publica, 
 Comandos canonicos:
 
 - `workspace add|scan|list|warm|status|remove`
-- `nav symbols|find|refs|overview|outline|service|search|context|deps|ask|pack|batch|related|workspace-map|diff-context|trace|intent`
+- `nav symbols|find|refs|overview|outline|service|search|context|deps|ask|pack|batch|related|workspace-map|diff-context|affected|trace|intent`
 - `index [path] [--clean] [--docs-only]`
 - `index start|status|cancel`
 - `info`
@@ -76,6 +76,7 @@ Flags especificos:
 - `nav find|search|intent --repo`
 - `nav pack --rf|--fl|--doc`
 - `nav search --regex`
+- `nav affected --from-git-diff --changed-ref <ref> --stdin --include-tests --include-docs --quiet --test-command <cmd>`
 - `nav service --include-archetype`
 - `index --docs-only`
 - `index start --mode full|docs|catalog --wait`
@@ -247,11 +248,38 @@ Reglas:
 - si el backend semantico falla pero el archivo existe, la operacion sigue con `slice_text`, degrada a catalog/text cuando sea posible y agrega warning accionable
 - si el warning proviene de bootstrap Roslyn, debe sugerir `mi-lsp worker install`; si proviene de SDK/global.json, la telemetria debe clasificarlo como `sdk/*`; si proviene de permisos/arranque de proceso, debe clasificarlo como `backend_runtime/process_spawn_access_denied` o `backend_runtime/process_spawn_failed`
 
+### `nav affected`
+
+Input:
+
+```text
+mi-lsp nav affected [paths...] --workspace <alias> [--from-git-diff] [--changed-ref <ref>] [--stdin] [--include-tests] [--include-docs] [--quiet] [--test-command <cmd>] [--format compact|json|text|toon|yaml]
+```
+
+Output item:
+
+- `kind` (`code`, `test`, `doc`)
+- `path`
+- `reason`
+- `confidence` numerico entre 0 y 1
+- `suggested_command` cuando aplica
+- `evidence` con `source`, `input_path`, `change_type`, `symbol` y/o `trigger_path`
+
+Reglas:
+
+- contrato conservador: los items son candidatos accionables, no prueba de impacto completo
+- si no hay paths explicitos ni stdin, puede usar git diff del workspace como input por default
+- `--from-git-diff` debe considerar cambios staged, unstaged y untracked cuando `--changed-ref` queda en `HEAD`
+- `--include-tests` agrega comandos sugeridos de prueba por familia de path y respeta `--test-command` como override literal del usuario
+- `--include-docs` agrega docs canonicos por familias de paths gobernadas, sin editar ni validar esos docs
+- debe ignorar sidecars operativos `.mi-lsp/**`, `.docs/raw/**`, `.docs/auditoria/**` y `.git/**`
+- toda respuesta heuristica debe incluir warning visible y conservar `confidence` como dato advisory
+
 ### CLI -> daemon
 
 Reglas de routing:
 
-- `nav.find`, `nav.search`, `nav.intent`, `nav.symbols`, `nav.outline`, `nav.overview`, `nav.multi-read` y `nav.pack` no deben cruzar esta frontera en el hot path.
+- `nav.find`, `nav.search`, `nav.intent`, `nav.symbols`, `nav.outline`, `nav.overview`, `nav.multi-read`, `nav.affected` y `nav.pack` no deben cruzar esta frontera en el hot path.
 - `nav.refs`, `nav.context`, `nav.deps`, `nav.related`, `nav.service`, `nav.diff-context` y `nav.batch` pueden preferir daemon cuando corresponda.
 - `nav.workspace-map` summary-first queda directo por default; `--full` puede seguir siendo una operacion pesada pero no debe autostartear daemon en el contrato base.
 - `workspace.warm` puede preferir daemon pero no debe auto-iniciarlo.

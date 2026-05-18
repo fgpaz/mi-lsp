@@ -45,6 +45,7 @@ evidence:
 - RF-QRY-014
 - RF-QRY-015
 - RF-QRY-016
+- RF-QRY-017
 
 ## Casos
 
@@ -182,3 +183,10 @@ evidence:
 | TC-QRY-107 | positivo | RF-QRY-010 | `TestBuildAskCodeEvidenceSkipsOperationalAndBinaryPaths` + `TestSearchPatternFallbackIgnoresNestedMiLspState`: `nav ask`/fallback textual descartan `.mi-lsp/**`, `.db`, `.sqlite` y otros sidecars antes de emitir `code_evidence` |
 | TC-QRY-108 | positivo | RF-QRY-001, RF-QRY-002 | `nav search` que agota timeout devuelve `ok=true` con resultados parciales seguros, warning `search_timeout`, `next_hint` de narrowing y `coach.trigger=search_timeout` |
 | TC-QRY-109 | positivo | RF-QRY-001 | `mi-lsp version --format compact|json|toon|yaml` conserva envelope estable con `backend=version`, `items[0]` estructurado y sin dependencia de workspace/daemon |
+| TC-QRY-110 | positivo | RF-QRY-017 | `nav affected` con paths explicitos o stdin emite items estables `kind`, `path`, `reason`, `confidence`, `suggested_command` y `evidence` sin depender del daemon |
+| TC-QRY-111 | positivo | RF-QRY-017 | `nav affected --from-git-diff` descubre cambios staged, unstaged y untracked desde el workspace git y preserva `change_type` en evidencia |
+| TC-QRY-112 | positivo | RF-QRY-017 | `nav affected --include-tests` sugiere comandos de prueba conservadores por familia de path y respeta `--test-command` como override explicito |
+| TC-QRY-113 | positivo | RF-QRY-017 | `nav affected --include-docs` mapea cambios en CLI, store, service, daemon, worker y wiki hacia docs canonicos de RF, TP, CT, DB o TECH |
+| TC-QRY-114 | negativo | RF-QRY-017 | `nav affected --from-git-diff --quiet` sin cambios devuelve `ok=true`, `items=[]` y warning de no afectados sin hint ruidoso |
+| TC-QRY-115 | negativo | RF-QRY-017 | `nav affected` siempre declara warning de heuristica/confidence y no afirma impacto completo hasta existir grafo persistido |
+| TC-QRY-116 | positivo | RF-QRY-017 | `nav affected` ignora sidecars operativos `.mi-lsp/**`, `.docs/raw/**`, `.docs/auditoria/**` y `.git/**` al seleccionar impacto |
