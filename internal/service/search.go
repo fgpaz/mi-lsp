@@ -15,6 +15,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/fgpaz/mi-lsp/internal/model"
 	"github.com/fgpaz/mi-lsp/internal/processutil"
@@ -104,6 +105,13 @@ func searchPatternScopedWithDiagnostics(ctx context.Context, workspaceRoot strin
 		return searchPatternRgWithDiagnostics(ctx, workspaceRoot, searchRoot, project, pattern, useRegex, limit, rgBin, diagnostics)
 	}
 	return searchPatternFallbackWithDiagnostics(ctx, workspaceRoot, searchRoot, project, pattern, useRegex, limit, diagnostics)
+}
+
+func withSearchTimeout(ctx context.Context, timeout time.Duration) (context.Context, context.CancelFunc) {
+	if timeout <= 0 {
+		return ctx, func() {}
+	}
+	return context.WithTimeout(ctx, timeout)
 }
 
 func searchPatternRg(ctx context.Context, workspaceRoot string, searchRoot string, project model.ProjectFile, pattern string, useRegex bool, limit int, rgBin string) ([]map[string]any, error) {
@@ -286,10 +294,29 @@ func buildRipgrepArgs(pattern string, useRegex bool, searchRoot string) []string
 		"--glob", "!.mi-lsp/index.db-wal",
 		"--glob", "!.mi-lsp/index.db-shm",
 	}
+	args = appendRipgrepDefaultIgnoreGlobs(args)
 	if !useRegex {
 		args = append(args, "-F")
 	}
 	args = append(args, pattern, searchRoot)
+	return args
+}
+
+func appendRipgrepDefaultIgnoreGlobs(args []string) []string {
+	for _, pattern := range workspace.DefaultIgnorePatterns() {
+		normalized := strings.TrimSpace(filepath.ToSlash(pattern))
+		if normalized == "" || strings.HasPrefix(normalized, "!") {
+			continue
+		}
+		normalized = strings.TrimSuffix(normalized, "/")
+		if normalized == "" || strings.ContainsAny(normalized, "*?[]") {
+			continue
+		}
+		args = append(args,
+			"--glob", "!"+normalized+"/**",
+			"--glob", "!**/"+normalized+"/**",
+		)
+	}
 	return args
 }
 

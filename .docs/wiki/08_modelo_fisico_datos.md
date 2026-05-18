@@ -54,6 +54,7 @@ La novedad de v1.3 es que el store repo-local persiste tambien el grafo document
   - `workspace_entrypoints`
   - `files` con `repo_id`, `repo_name`, `content_hash`
   - `symbols` con `repo_id`, `repo_name`
+  - `symbol_edges` (propuesta futura; no creada por este PR) con `from_symbol_id`, `to_symbol_id`, `from_file_path`, `to_file_path`, `edge_kind`, `source_backend`, `confidence`, `evidence`, `created_at`
   - `doc_records` con `path`, `doc_id`, `layer`, `family`, `search_text`, `content_hash`, `indexed_at`
   - `doc_edges` con `from_path`, `to_path`, `to_doc_id`, `kind`, `label`
   - `doc_mentions` con `doc_path`, `mention_type`, `mention_value`
@@ -115,6 +116,7 @@ La novedad de v1.3 es que el store repo-local persiste tambien el grafo document
 ### Queries
 
 - `SymbolContainingLine(file, line)`: devuelve el simbolo mas chico que encierra un archivo + linea dados. Usado por `nav context` y `nav diff-context`.
+- `symbol_edges`: tabla futura para grafo codigo+wiki. Debe modelarse separada de `symbols`, no como columnas adicionales, y solo debe publicarse cuando exista extraccion incremental con edge kinds versionados.
 - `ListDocRecords()`: devuelve el corpus documental ordenado por familia/capa.
 - `DocEdgesFrom(path)`: devuelve relaciones explicitas salientes para priorizar supporting docs.
 - `DocMentionsForPath(path)`: devuelve menciones a codigo o comandos derivadas de un documento.
@@ -146,3 +148,4 @@ La novedad de v1.3 es que el store repo-local persiste tambien el grafo document
 
 - [DB-STATE-Y-TELEMETRIA.md](08_db/DB-STATE-Y-TELEMETRIA.md)
 - [DB-DOC-INDEX.md](08_db/DB-DOC-INDEX.md)
+- [DB-SYMBOL-EDGE-GRAPH.md](08_db/DB-SYMBOL-EDGE-GRAPH.md)

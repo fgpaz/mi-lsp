@@ -139,6 +139,58 @@ func TestLoadProjectTopologyMergesDetectedGoIntoExistingProjectFile(t *testing.T
 	}
 }
 
+func TestLoadProjectTopologyUsesCompleteProjectFileWithoutRedetecting(t *testing.T) {
+	root := t.TempDir()
+	mustCreateDir(t, filepath.Join(root, ".git"))
+	mustWriteFile(t, filepath.Join(root, "go.mod"), "module example.com/app\n")
+	mustWriteFile(t, filepath.Join(root, "main.go"), "package main\n\nfunc main() {}\n")
+	registration := model.WorkspaceRegistration{
+		Name:      "cached",
+		Root:      root,
+		Languages: []string{"csharp"},
+		Kind:      model.WorkspaceKindSingle,
+	}
+	if err := SaveProjectFile(root, model.ProjectFile{
+		Project: model.ProjectBlock{
+			Name:              "cached",
+			Languages:         []string{"csharp"},
+			Kind:              model.WorkspaceKindSingle,
+			DefaultRepo:       "cached",
+			DefaultEntrypoint: "cached::app-sln",
+		},
+		Repos: []model.WorkspaceRepo{{
+			ID:                "cached",
+			Name:              "cached",
+			Root:              ".",
+			Languages:         []string{"csharp"},
+			DefaultEntrypoint: "cached::app-sln",
+		}},
+		Entrypoints: []model.WorkspaceEntrypoint{{
+			ID:      "cached::app-sln",
+			RepoID:  "cached",
+			Path:    "App.sln",
+			Kind:    model.EntrypointKindSolution,
+			Default: true,
+		}},
+	}); err != nil {
+		t.Fatalf("SaveProjectFile: %v", err)
+	}
+
+	project, err := LoadProjectTopology(root, registration)
+	if err != nil {
+		t.Fatalf("LoadProjectTopology: %v", err)
+	}
+	if hasLanguage(project.Project.Languages, "go") {
+		t.Fatalf("complete project file should be authoritative and avoid redetecting go, got %v", project.Project.Languages)
+	}
+	if len(project.Repos) != 1 || hasLanguage(project.Repos[0].Languages, "go") {
+		t.Fatalf("complete project file should preserve cached repo languages, got %#v", project.Repos)
+	}
+	if len(project.Entrypoints) != 1 || project.Entrypoints[0].ID != "cached::app-sln" {
+		t.Fatalf("complete project file should preserve cached entrypoints, got %#v", project.Entrypoints)
+	}
+}
+
 func hasLanguage(languages []string, expected string) bool {
 	for _, language := range languages {
 		if language == expected {

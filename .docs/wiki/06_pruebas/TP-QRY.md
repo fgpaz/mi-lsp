@@ -45,6 +45,7 @@ evidence:
 - RF-QRY-014
 - RF-QRY-015
 - RF-QRY-016
+- RF-QRY-017
 
 ## Casos
 
@@ -72,6 +73,8 @@ evidence:
 | TC-QRY-013D | positivo | RF-QRY-002, RF-QRY-016 | `nav search` symbol-like ordena declaraciones/implementaciones fuente antes que docs, tests, backups y generados |
 | TC-QRY-013E | positivo | RF-QRY-002 | `nav context` sobre C# conserva `slice_text` y degrada a catalog/text con warning `backend_runtime/process_spawn_access_denied` si Roslyn no arranca |
 | TC-QRY-013F | positivo | RF-QRY-002 | `nav search` cae a Go search con warning tipado si `rg` falla por permisos o arranque de proceso |
+| TC-QRY-013H | positivo | RF-QRY-002 | `nav search` con `rg --hidden` preserva `.docs` pero excluye caches/dependencias generadas (`.git`, `.next`, `.turbo`, `node_modules`, `bin/obj`, venvs, worktrees temporales) para evitar latencia espuria |
+| TC-QRY-013I | positivo | RF-QRY-002, RF-QRY-016 | `nav search` symbol-like en AXI preview acota el sobre-muestreo usado para ranking, manteniendo `--full`/clasico con el limite amplio |
 | TC-QRY-013G | positivo | RF-QRY-002 | `TestParseContextTargetAcceptsFileLineShorthand`: `nav context` acepta `file.go:123` y devuelve guidance corregida si la linea es invalida |
 | TC-QRY-013A | positivo | RF-QRY-001 | `nav.search` agrega `coach.trigger=no_matches_refinable` cuando la query no matchea pero tiene rerun accionable |
 | TC-QRY-014 | positivo | RF-QRY-004 | lee multiples rangos en una sola invocacion con truncacion por presupuesto |
@@ -180,5 +183,12 @@ evidence:
 | TC-QRY-105 | positivo | RF-QRY-012, RF-QRY-016 | `nav wiki pack --rf RF-QRY-016` conserva el anchor como `primary_doc` aunque existan README/docs genericos con mayor recencia |
 | TC-QRY-106 | positivo | RF-QRY-001 | `TestRenderTOONEscapesUnsafeControlCharacters`: TOON escapa controles no imprimibles como `\u0000`, no emite NUL crudo y agrega warning unico de sanitizacion |
 | TC-QRY-107 | positivo | RF-QRY-010 | `TestBuildAskCodeEvidenceSkipsOperationalAndBinaryPaths` + `TestSearchPatternFallbackIgnoresNestedMiLspState`: `nav ask`/fallback textual descartan `.mi-lsp/**`, `.db`, `.sqlite` y otros sidecars antes de emitir `code_evidence` |
-| TC-QRY-108 | positivo | RF-QRY-001, RF-QRY-002 | `nav search` que agota timeout devuelve `ok=true` con resultados parciales seguros, warning `search_timeout`, `next_hint` de narrowing y `coach.trigger=search_timeout` |
+| TC-QRY-108 | positivo | RF-QRY-001, RF-QRY-002 | `nav search` que agota timeout, incluido el presupuesto interactivo configurado de busqueda textual, devuelve `ok=true` con resultados parciales seguros, warning `search_timeout`, `next_hint` de narrowing y `coach.trigger=search_timeout` |
 | TC-QRY-109 | positivo | RF-QRY-001 | `mi-lsp version --format compact|json|toon|yaml` conserva envelope estable con `backend=version`, `items[0]` estructurado y sin dependencia de workspace/daemon |
+| TC-QRY-110 | positivo | RF-QRY-017 | `nav affected` con paths explicitos o stdin emite items estables `kind`, `path`, `reason`, `confidence`, `suggested_command` y `evidence` sin depender del daemon |
+| TC-QRY-111 | positivo | RF-QRY-017 | `nav affected --from-git-diff` descubre cambios staged, unstaged y untracked desde el workspace git y preserva `change_type` en evidencia |
+| TC-QRY-112 | positivo | RF-QRY-017 | `nav affected --include-tests` sugiere comandos de prueba conservadores por familia de path y respeta `--test-command` como override explicito |
+| TC-QRY-113 | positivo | RF-QRY-017 | `nav affected --include-docs` mapea cambios en CLI, store, service, daemon, worker y wiki hacia docs canonicos de RF, TP, CT, DB o TECH |
+| TC-QRY-114 | negativo | RF-QRY-017 | `nav affected --from-git-diff --quiet` sin cambios devuelve `ok=true`, `items=[]` y warning de no afectados sin hint ruidoso |
+| TC-QRY-115 | negativo | RF-QRY-017 | `nav affected` siempre declara warning de heuristica/confidence y no afirma impacto completo hasta existir grafo persistido |
+| TC-QRY-116 | positivo | RF-QRY-017 | `nav affected` ignora sidecars operativos `.mi-lsp/**`, `.docs/raw/**`, `.docs/auditoria/**` y `.git/**` al seleccionar impacto |

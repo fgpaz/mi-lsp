@@ -135,6 +135,8 @@ func (a *App) Execute(ctx context.Context, request model.CommandRequest) (model.
 		envelope, err = a.workspaceMap(ctx, request)
 	case "nav.diff-context":
 		envelope, err = a.diffContext(ctx, request)
+	case "nav.affected":
+		envelope, err = a.affected(ctx, request)
 	case "nav.trace":
 		envelope, err = a.trace(ctx, request)
 	case "nav.wiki.trace":
@@ -190,7 +192,7 @@ func operationRequiresWorkspaceResolution(request model.CommandRequest) bool {
 		return !allWorkspaces
 	case "index.run", "index.start":
 		return strings.TrimSpace(stringPayload(request.Payload, "path")) == ""
-	case "index.status", "index.cancel", "index.run-job", "workspace.status", "info", "nav.symbols", "nav.overview", "nav.outline", "nav.governance", "nav.route", "nav.wiki.route", "nav.ask", "nav.pack", "nav.wiki.pack", "nav.wiki.search", "nav.wiki.validate-harness", "nav.wiki.validate-source", "nav.wiki.inventory", "nav.service", "nav.refs", "nav.context", "nav.deps", "nav.multi-read", "nav.batch", "nav.related", "nav.workspace-map", "nav.diff-context", "nav.trace", "nav.wiki.trace", "nav.intent":
+	case "index.status", "index.cancel", "index.run-job", "workspace.status", "info", "nav.symbols", "nav.overview", "nav.outline", "nav.governance", "nav.route", "nav.wiki.route", "nav.ask", "nav.pack", "nav.wiki.pack", "nav.wiki.search", "nav.wiki.validate-harness", "nav.wiki.validate-source", "nav.wiki.inventory", "nav.service", "nav.refs", "nav.context", "nav.deps", "nav.multi-read", "nav.batch", "nav.related", "nav.workspace-map", "nav.diff-context", "nav.affected", "nav.trace", "nav.wiki.trace", "nav.intent":
 		return true
 	default:
 		return false
@@ -440,18 +442,16 @@ func (a *App) search(ctx context.Context, request model.CommandRequest) (model.E
 	if scopedRepo != nil {
 		searchRoot = filepath.Join(registration.Root, filepath.FromSlash(scopedRepo.Root))
 	}
-	identifierQuery := !useRegex && isIdentifierLikeQuery(pattern)
-	searchLimit := request.Context.MaxItems
-	if identifierQuery {
-		searchLimit = max(searchLimit, DefaultConfig().DefaultSearchLimit)
-	}
+	searchLimit := searchTextLimit(request.Context, pattern, useRegex)
 	searchDiagnostics := &searchPatternDiagnostics{}
-	items, err := searchPatternScopedWithDiagnostics(ctx, registration.Root, searchRoot, project, pattern, useRegex, searchLimit, searchDiagnostics)
+	searchCtx, searchCancel := withSearchTimeout(ctx, a.Config.SearchTimeout)
+	defer searchCancel()
+	items, err := searchPatternScopedWithDiagnostics(searchCtx, registration.Root, searchRoot, project, pattern, useRegex, searchLimit, searchDiagnostics)
 	warnings := []string{}
 	regexAutoHealed := false
 	if err != nil {
 		if useRegex && isRegexParseError(err) {
-			items, err = searchPatternScopedWithDiagnostics(ctx, registration.Root, searchRoot, project, pattern, false, searchLimit, searchDiagnostics)
+			items, err = searchPatternScopedWithDiagnostics(searchCtx, registration.Root, searchRoot, project, pattern, false, searchLimit, searchDiagnostics)
 			if err != nil {
 				return model.Envelope{}, err
 			}
@@ -462,7 +462,7 @@ func (a *App) search(ctx context.Context, request model.CommandRequest) (model.E
 			if searchDiagnostics.RipgrepFallbackCode == "" {
 				searchDiagnostics.RipgrepFallbackCode = code
 			}
-			items, err = searchPatternFallbackWithDiagnostics(ctx, registration.Root, searchRoot, project, pattern, useRegex, searchLimit, searchDiagnostics)
+			items, err = searchPatternFallbackWithDiagnostics(searchCtx, registration.Root, searchRoot, project, pattern, useRegex, searchLimit, searchDiagnostics)
 			if err != nil {
 				return model.Envelope{}, err
 			}
@@ -523,6 +523,20 @@ func (a *App) search(ctx context.Context, request model.CommandRequest) (model.E
 		env = applyAXIPreviewHints(env, request.Context, axiPreviewSummaryHint)
 	}
 	return applyCoachPolicy(env, request.Context), nil
+}
+
+func searchTextLimit(opts model.QueryOptions, pattern string, useRegex bool) int {
+	limit := opts.MaxItems
+	if limit <= 0 {
+		limit = DefaultConfig().DefaultMaxItems
+	}
+	if useRegex || !isIdentifierLikeQuery(pattern) {
+		return limit
+	}
+	if isAXIPreview(opts) {
+		return max(limit, min(DefaultConfig().DefaultSearchLimit, max(limit*10, 50)))
+	}
+	return max(limit, DefaultConfig().DefaultSearchLimit)
 }
 
 func appendSearchDiagnosticsWarnings(warnings []string, diagnostics *searchPatternDiagnostics) []string {
@@ -883,7 +897,10 @@ func (a *App) searchAllWorkspaces(ctx context.Context, request model.CommandRequ
 
 			project, _ := workspace.LoadProjectFile(wsReg.Root)
 
-			items, err := searchPattern(ctx, wsReg.Root, project, pattern, useRegex, maxItems)
+			searchCtx, cancel := withSearchTimeout(ctx, a.Config.SearchTimeout)
+			defer cancel()
+			diagnostics := &searchPatternDiagnostics{}
+			items, err := searchPatternScopedWithDiagnostics(searchCtx, wsReg.Root, wsReg.Root, project, pattern, useRegex, maxItems, diagnostics)
 			if err != nil {
 				results <- searchResult{ws: wsReg, err: err}
 				return
@@ -893,7 +910,7 @@ func (a *App) searchAllWorkspaces(ctx context.Context, request model.CommandRequ
 				item["workspace"] = wsReg.Name
 			}
 
-			warnings := []string{}
+			warnings := appendSearchDiagnosticsWarnings(nil, diagnostics)
 			if len(items) == 0 && !useRegex && looksRegexLikePattern(pattern) {
 				warnings = append(warnings, fmt.Sprintf("%s: no literal matches; pattern looks regex-like, rerun with --regex", wsReg.Name))
 			}

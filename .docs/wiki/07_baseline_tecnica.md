@@ -157,7 +157,7 @@ flowchart LR
 
 La busqueda textual implementa una cadena de fallback robusta:
 
-1. `rg` binario: si existe y es accesible, usa `ripgrep` nativo con `--hidden` para no perder docs gobernados ni artefactos repo-locales ocultos cuando la consulta apunta ahi
+1. `rg` binario: si existe y es accesible, usa `ripgrep` nativo con `--hidden` para no perder docs gobernados ni artefactos repo-locales ocultos cuando la consulta apunta ahi; mantiene excludes explicitos alineados con `DefaultIgnorePatterns` (`.git`, `.next`, `.turbo`, `node_modules`, `bin/obj`, venvs, worktrees temporales, etc.) para que repos grandes no conviertan caches ocultos en latencia de busqueda
 2. Go native: fallback a `searchPatternGo` nativo que respeta `.milspignore` y filtra binarios
 3. `MI_LSP_RG` env var: permite override de la ruta de `rg`
 
@@ -166,6 +166,7 @@ Si `rg` devuelve exit code `1` por ausencia de matches, el core lo normaliza a `
 Si el usuario forza `--regex` y el patron es invalido, el core reintenta automaticamente como literal y devuelve warning visible.
 Si `rg` existe pero falla por permisos o arranque de proceso, el core cae a `searchPatternGo` y agrega warning tipado `backend_runtime/process_spawn_access_denied` o `backend_runtime/process_spawn_failed`; la telemetria solo guarda el codigo causal, no argv ni payloads crudos.
 Para patrones literal symbol-like, `nav search` emite `coach.trigger=symbol_query_detected` con acciones estructuradas hacia `nav find --exact` y `nav related`, y prioriza declaraciones/implementaciones fuente por encima de docs, tests, backups y generados.
+En AXI preview, el sobre-muestreo para rankear identificadores es acotado: recolecta mas que `MaxItems` para no esconder declaraciones fuente, pero evita el limite amplio de modo full/clasico para proteger latencia en repos grandes y escenarios concurrentes.
 La exploracion de servicios y el fallback de `nav ask` reutilizan la misma cadena.
 
 ## Config y valores por defecto
@@ -217,7 +218,7 @@ El struct `internal/service/config.go` centraliza todos los valores hardcodeados
 - `nav.wiki.validate-harness` es una lectura directa del docgraph y markdown gobernado: no debe auto-iniciar daemon ni crear un indexador documental paralelo.
 - `nav.wiki.validate-source` es una lectura directa del docgraph typed y markdown gobernado: valida solo artefactos que declaran `wiki_source_protocol: SDD-WIKI-SOURCE-v1`, no auto-inicia daemon y no bloquea documentos no migrados.
 - El docgraph del workspace activo debe ignorar `.docs/temp/worktrees/` para no mezclar canon de worktrees vecinos ni bloquear harness con artefactos auxiliares.
-- `workspace list` debe salir desde registry + `project.toml` normalizado, sin redescubrir child repos en el hot path; preserva todos los aliases registrados aunque compartan root fisico.
+- `workspace list` y `workspace status` deben salir desde registry + `project.toml` normalizado cuando la topologia cacheada ya tiene `repo[]` y `entrypoint[]`, sin redescubrir child repos en el hot path; preservan todos los aliases registrados aunque compartan root fisico. La redeteccion pesada queda como fallback para bootstrap o `project.toml` incompleto.
 - `workspace list --group-by-root` agrupa aliases por root exacto y expone `root`, `alias_count`, `aliases`, `canonical_alias`, `selection_reason`, `kind` y warnings sin mutar registry.
 - `workspace doctor` es no mutante y diagnostica aliases que comparten root exacto, familias de worktrees por `git common dir`, paths stale, shadowing de binario, `health`, `next_actions` y comandos sugeridos.
 - `workspace prune --stale --dry-run|--apply` limpia solamente entradas del `registry.toml` cuyo root ya no existe; nunca borra worktrees, directorios ni indices repo-locales.
@@ -225,7 +226,7 @@ El struct `internal/service/config.go` centraliza todos los valores hardcodeados
 - `nav.workspace-map` debe arrancar con summary-first directo, no auto-iniciar daemon, y reservar scans de endpoints/eventos/dependencias para `--full`.
 - En workspaces Go, `nav.workspace-map` agrega paquetes `cmd/*`, `internal/*` y `pkg/*` como servicios `go-package` desde el catalogo para que el mapa de self-dogfood no dependa de entrypoints C#.
 - En AXI efectivo, `init`, `workspace status`, `nav search`, `nav intent` y `nav pack` arrancan en preview-first por default; `nav ask` lo hace solo cuando la heuristica detecta orientacion, y `nav workspace-map` solo cuando se fuerza AXI.
-- `nav search` debe ser resiliente a timeout: si existen resultados parciales seguros, responde `ok=true` con warning `search_timeout`, `next_hint` y coach accionable; no convierte el timeout en ausencia falsa.
+- `nav search` debe ser resiliente a timeout: cada busqueda textual directa aplica un presupuesto interactivo corto (5s por workspace), excluye caches/dependencias generadas aun con `--hidden`, limita el sobre-muestreo de identificadores en AXI preview, y, si existen resultados parciales seguros, responde `ok=true` con warning `search_timeout`, `next_hint` y coach accionable; no convierte el timeout en ausencia falsa.
 - `init` registra, persiste proyecto e indexa por defecto sin requerir `workspace add` previo.
 - `worker install` es explicito; no hay descargas silenciosas durante consultas.
 - `worker install` copia un worker bundled por RID cuando la distribucion lo trae adjunto; si la CLI corre dentro del repo `mi-lsp` y no existe bundle adjunto, publica el worker desde `worker-dotnet/` con `dotnet publish`.
@@ -247,7 +248,7 @@ El struct `internal/service/config.go` centraliza todos los valores hardcodeados
 
 ## Fan-out de comandos wiki
 
-Los comandos `nav ask/search/find --all-workspaces` implementan un patrón de paralelismo bounded sobre multiples workspaces registrados con semaforo de 4 goroutines, timeout por workspace heredado del contexto padre (default 30s), y merge determinista por score. El fan-out no aborta en fallo parcial; los errores se acumulan como warnings y se retorna `ok=true` con stats de workspaces consultados/fallidos. Reutiliza el patron nativo de `internal/service/ask.go:465-564` sin duplicar logica. Ver [[TECH-WIKI-FANOUT]] para detalles de arquitectura.
+Los comandos `nav ask/search/find --all-workspaces` implementan un patrón de paralelismo bounded sobre multiples workspaces registrados con semaforo de 4 goroutines y merge determinista por score. `nav ask` hereda el timeout por workspace del fan-out documental (default 30s); `nav search` usa su presupuesto textual interactivo de 5s por workspace. El fan-out no aborta en fallo parcial; los errores se acumulan como warnings y se retorna `ok=true` con stats de workspaces consultados/fallidos. Reutiliza el patron nativo de `internal/service/ask.go:465-564` sin duplicar logica. Ver [[TECH-WIKI-FANOUT]] para detalles de arquitectura.
 
 ## Documentos detalle
 

@@ -401,6 +401,47 @@ Use --include-content to embed symbol bodies in the output.`,
 	}
 	diffContextCommand.Flags().BoolVar(&diffIncludeContent, "include-content", false, "Include changed symbol bodies in output")
 
+	var affectedFromGitDiff bool
+	var affectedChangedRef string
+	var affectedStdin bool
+	var affectedIncludeTests bool
+	var affectedIncludeDocs bool
+	var affectedQuiet bool
+	var affectedTestCommand string
+	affectedCommand := &cobra.Command{
+		Use:   "affected [paths...]",
+		Short: "Conservative git-aware impact selector",
+		Long: `Select likely affected code, tests, and canonical docs from paths or git diff.
+The selector is conservative: it emits heuristic warnings and confidence scores
+instead of claiming complete graph precision.`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			payload := map[string]any{
+				"paths":         args,
+				"from_git_diff": affectedFromGitDiff,
+				"changed_ref":   affectedChangedRef,
+				"include_tests": affectedIncludeTests,
+				"include_docs":  affectedIncludeDocs,
+				"quiet":         affectedQuiet,
+				"test_command":  affectedTestCommand,
+			}
+			if affectedStdin {
+				data, err := io.ReadAll(os.Stdin)
+				if err != nil {
+					return fmt.Errorf("reading stdin: %w", err)
+				}
+				payload["stdin"] = string(data)
+			}
+			return state.executeOperation(cmd, "nav.affected", payload, true)
+		},
+	}
+	affectedCommand.Flags().BoolVar(&affectedFromGitDiff, "from-git-diff", false, "Read changed paths from git diff in addition to explicit paths")
+	affectedCommand.Flags().StringVar(&affectedChangedRef, "changed-ref", "HEAD", "Git ref used as the diff base")
+	affectedCommand.Flags().BoolVar(&affectedStdin, "stdin", false, "Read changed paths from stdin as JSON array, comma list, or newline list")
+	affectedCommand.Flags().BoolVar(&affectedIncludeTests, "include-tests", false, "Suggest focused test commands for affected paths")
+	affectedCommand.Flags().BoolVar(&affectedIncludeDocs, "include-docs", false, "Suggest canonical docs likely affected by changed paths")
+	affectedCommand.Flags().BoolVar(&affectedQuiet, "quiet", false, "Suppress non-essential hints while preserving stable item fields")
+	affectedCommand.Flags().StringVar(&affectedTestCommand, "test-command", "", "Override inferred test command for suggested test items")
+
 	var traceAll bool
 	var traceSummary bool
 	traceCommand := &cobra.Command{
@@ -470,7 +511,7 @@ Examples:
 
 	wikiCommand := newNavWikiCommand(state)
 
-	command.AddCommand(symbolsCommand, findCommand, refsCommand, overviewCommand, outlineCommand, askCommand, packCommand, routeCommand, wikiCommand, governanceCommand, serviceCommand, searchCommand, contextCommand, depsCommand, multiReadCommand, batchCommand, relatedCommand, workspaceMapCommand, diffContextCommand, traceCommand, intentCommand)
+	command.AddCommand(symbolsCommand, findCommand, refsCommand, overviewCommand, outlineCommand, askCommand, packCommand, routeCommand, wikiCommand, governanceCommand, serviceCommand, searchCommand, contextCommand, depsCommand, multiReadCommand, batchCommand, relatedCommand, workspaceMapCommand, diffContextCommand, affectedCommand, traceCommand, intentCommand)
 	return command
 }
 
@@ -600,8 +641,8 @@ pack for a reading pack, and trace for RS/RF/TP evidence links.`,
 
 	var routeAllWorkspaces bool
 	routeCommand := &cobra.Command{
-		Use:     "route <task>",
-		Short:   "Resolve the canonical wiki route for a task",
+		Use:   "route <task>",
+		Short: "Resolve the canonical wiki route for a task",
 		Example: `  mi-lsp nav wiki route "workflow con masterformularios" --workspace idp --format toon
   mi-lsp nav wiki route "governance" --all-workspaces --format toon`,
 		RunE: func(cmd *cobra.Command, args []string) error {

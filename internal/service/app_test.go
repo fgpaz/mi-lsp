@@ -275,6 +275,21 @@ func TestSearchIdentifierDetection(t *testing.T) {
 	}
 }
 
+func TestSearchTextLimitCapsAXIPreviewIdentifierOversampling(t *testing.T) {
+	if got := searchTextLimit(model.QueryOptions{AXI: true, MaxItems: 5}, "IViajeService", false); got != 50 {
+		t.Fatalf("AXI preview identifier search limit = %d, want 50", got)
+	}
+	if got := searchTextLimit(model.QueryOptions{AXI: true, Full: true, MaxItems: 5}, "IViajeService", false); got != DefaultConfig().DefaultSearchLimit {
+		t.Fatalf("AXI full identifier search limit = %d, want %d", got, DefaultConfig().DefaultSearchLimit)
+	}
+	if got := searchTextLimit(model.QueryOptions{AXI: true, MaxItems: 5}, "not an identifier", false); got != 5 {
+		t.Fatalf("non-identifier search limit = %d, want 5", got)
+	}
+	if got := searchTextLimit(model.QueryOptions{AXI: true, MaxItems: 5}, "IViajeService", true); got != 5 {
+		t.Fatalf("regex search limit = %d, want 5", got)
+	}
+}
+
 func TestSearchPattern_Regex(t *testing.T) {
 	root, name := setupTestWorkspace(t)
 	app := New(root, nil)

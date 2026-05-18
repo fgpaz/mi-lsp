@@ -9,9 +9,10 @@ type Config struct {
 	DefaultMaxItems     int
 	OperationTimeout    time.Duration
 	DaemonClientTimeout time.Duration
+	SearchTimeout       time.Duration
 }
 
-// DefaultConfig returns the default configuration matching prior hardcoded values.
+// DefaultConfig returns conservative operational defaults for interactive CLI use.
 func DefaultConfig() Config {
 	return Config{
 		DefaultSearchLimit:  200,
@@ -19,5 +20,6 @@ func DefaultConfig() Config {
 		DefaultMaxItems:     50,
 		OperationTimeout:    2 * time.Minute,
 		DaemonClientTimeout: 5 * time.Second,
+		SearchTimeout:       5 * time.Second,
 	}
 }
