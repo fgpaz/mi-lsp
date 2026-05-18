@@ -114,7 +114,7 @@ El límite explícito: mi-lsp **NO maneja** cross-máquina. La federación wiki 
    - default del workspace si es `single`
 7. Si la consulta es ambigua en un workspace `container`, el sistema falla con `backend=router`, candidatos concretos y `next_hint`.
 8. Si `workspace` se omitio y no hubo match por `caller_cwd`, el sistema puede caer al `last_workspace`, pero debe dejar warning visible con el alias elegido.
-9. `workspace list` usa summary-first desde registry + `project.toml`; la reconstruccion pesada de topologia queda para `workspace status`.
+9. `workspace list` y `workspace status` usan summary-first desde registry + `project.toml` cuando la topologia cacheada ya tiene `repo[]` y `entrypoint[]`; la reconstruccion pesada queda como fallback de bootstrap o proyecto incompleto.
 10. `nav.workspace-map` hace scan profundo solo bajo expansion explicita (`--full` / AXI full); el modo base devuelve un mapa corto y rapido.
 11. No hay fanout semantico automatico sobre todos los repos hijos en v1.3.
 

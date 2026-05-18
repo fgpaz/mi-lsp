@@ -217,7 +217,7 @@ El struct `internal/service/config.go` centraliza todos los valores hardcodeados
 - `nav.wiki.validate-harness` es una lectura directa del docgraph y markdown gobernado: no debe auto-iniciar daemon ni crear un indexador documental paralelo.
 - `nav.wiki.validate-source` es una lectura directa del docgraph typed y markdown gobernado: valida solo artefactos que declaran `wiki_source_protocol: SDD-WIKI-SOURCE-v1`, no auto-inicia daemon y no bloquea documentos no migrados.
 - El docgraph del workspace activo debe ignorar `.docs/temp/worktrees/` para no mezclar canon de worktrees vecinos ni bloquear harness con artefactos auxiliares.
-- `workspace list` debe salir desde registry + `project.toml` normalizado, sin redescubrir child repos en el hot path; preserva todos los aliases registrados aunque compartan root fisico.
+- `workspace list` y `workspace status` deben salir desde registry + `project.toml` normalizado cuando la topologia cacheada ya tiene `repo[]` y `entrypoint[]`, sin redescubrir child repos en el hot path; preservan todos los aliases registrados aunque compartan root fisico. La redeteccion pesada queda como fallback para bootstrap o `project.toml` incompleto.
 - `workspace list --group-by-root` agrupa aliases por root exacto y expone `root`, `alias_count`, `aliases`, `canonical_alias`, `selection_reason`, `kind` y warnings sin mutar registry.
 - `workspace doctor` es no mutante y diagnostica aliases que comparten root exacto, familias de worktrees por `git common dir`, paths stale, shadowing de binario, `health`, `next_actions` y comandos sugeridos.
 - `workspace prune --stale --dry-run|--apply` limpia solamente entradas del `registry.toml` cuyo root ya no existe; nunca borra worktrees, directorios ni indices repo-locales.

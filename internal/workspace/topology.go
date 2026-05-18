@@ -108,6 +108,9 @@ func LoadProjectTopology(root string, registration model.WorkspaceRegistration) 
 	if err != nil {
 		return model.ProjectFile{}, err
 	}
+	if projectHasCachedTopology(project) {
+		return normalizeProjectFile(root, registration, project), nil
+	}
 	_, detected, detectErr := DetectWorkspaceLayout(root, registration.Name)
 	if detectErr == nil {
 		project = mergeProjectFile(project, detected)
@@ -121,6 +124,10 @@ func LoadProjectSummary(root string, registration model.WorkspaceRegistration) (
 		return model.ProjectFile{}, err
 	}
 	return normalizeProjectFile(root, registration, project), nil
+}
+
+func projectHasCachedTopology(project model.ProjectFile) bool {
+	return len(project.Repos) > 0 && len(project.Entrypoints) > 0
 }
 
 func mergeProjectFile(existing model.ProjectFile, detected model.ProjectFile) model.ProjectFile {
