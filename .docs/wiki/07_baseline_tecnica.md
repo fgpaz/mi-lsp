@@ -225,7 +225,7 @@ El struct `internal/service/config.go` centraliza todos los valores hardcodeados
 - `nav.workspace-map` debe arrancar con summary-first directo, no auto-iniciar daemon, y reservar scans de endpoints/eventos/dependencias para `--full`.
 - En workspaces Go, `nav.workspace-map` agrega paquetes `cmd/*`, `internal/*` y `pkg/*` como servicios `go-package` desde el catalogo para que el mapa de self-dogfood no dependa de entrypoints C#.
 - En AXI efectivo, `init`, `workspace status`, `nav search`, `nav intent` y `nav pack` arrancan en preview-first por default; `nav ask` lo hace solo cuando la heuristica detecta orientacion, y `nav workspace-map` solo cuando se fuerza AXI.
-- `nav search` debe ser resiliente a timeout: si existen resultados parciales seguros, responde `ok=true` con warning `search_timeout`, `next_hint` y coach accionable; no convierte el timeout en ausencia falsa.
+- `nav search` debe ser resiliente a timeout: cada busqueda textual directa aplica un presupuesto interactivo corto (5s por workspace) y, si existen resultados parciales seguros, responde `ok=true` con warning `search_timeout`, `next_hint` y coach accionable; no convierte el timeout en ausencia falsa.
 - `init` registra, persiste proyecto e indexa por defecto sin requerir `workspace add` previo.
 - `worker install` es explicito; no hay descargas silenciosas durante consultas.
 - `worker install` copia un worker bundled por RID cuando la distribucion lo trae adjunto; si la CLI corre dentro del repo `mi-lsp` y no existe bundle adjunto, publica el worker desde `worker-dotnet/` con `dotnet publish`.
@@ -247,7 +247,7 @@ El struct `internal/service/config.go` centraliza todos los valores hardcodeados
 
 ## Fan-out de comandos wiki
 
-Los comandos `nav ask/search/find --all-workspaces` implementan un patrón de paralelismo bounded sobre multiples workspaces registrados con semaforo de 4 goroutines, timeout por workspace heredado del contexto padre (default 30s), y merge determinista por score. El fan-out no aborta en fallo parcial; los errores se acumulan como warnings y se retorna `ok=true` con stats de workspaces consultados/fallidos. Reutiliza el patron nativo de `internal/service/ask.go:465-564` sin duplicar logica. Ver [[TECH-WIKI-FANOUT]] para detalles de arquitectura.
+Los comandos `nav ask/search/find --all-workspaces` implementan un patrón de paralelismo bounded sobre multiples workspaces registrados con semaforo de 4 goroutines y merge determinista por score. `nav ask` hereda el timeout por workspace del fan-out documental (default 30s); `nav search` usa su presupuesto textual interactivo de 5s por workspace. El fan-out no aborta en fallo parcial; los errores se acumulan como warnings y se retorna `ok=true` con stats de workspaces consultados/fallidos. Reutiliza el patron nativo de `internal/service/ask.go:465-564` sin duplicar logica. Ver [[TECH-WIKI-FANOUT]] para detalles de arquitectura.
 
 ## Documentos detalle
 

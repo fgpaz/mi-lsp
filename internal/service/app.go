@@ -448,12 +448,14 @@ func (a *App) search(ctx context.Context, request model.CommandRequest) (model.E
 		searchLimit = max(searchLimit, DefaultConfig().DefaultSearchLimit)
 	}
 	searchDiagnostics := &searchPatternDiagnostics{}
-	items, err := searchPatternScopedWithDiagnostics(ctx, registration.Root, searchRoot, project, pattern, useRegex, searchLimit, searchDiagnostics)
+	searchCtx, searchCancel := withSearchTimeout(ctx, a.Config.SearchTimeout)
+	defer searchCancel()
+	items, err := searchPatternScopedWithDiagnostics(searchCtx, registration.Root, searchRoot, project, pattern, useRegex, searchLimit, searchDiagnostics)
 	warnings := []string{}
 	regexAutoHealed := false
 	if err != nil {
 		if useRegex && isRegexParseError(err) {
-			items, err = searchPatternScopedWithDiagnostics(ctx, registration.Root, searchRoot, project, pattern, false, searchLimit, searchDiagnostics)
+			items, err = searchPatternScopedWithDiagnostics(searchCtx, registration.Root, searchRoot, project, pattern, false, searchLimit, searchDiagnostics)
 			if err != nil {
 				return model.Envelope{}, err
 			}
@@ -464,7 +466,7 @@ func (a *App) search(ctx context.Context, request model.CommandRequest) (model.E
 			if searchDiagnostics.RipgrepFallbackCode == "" {
 				searchDiagnostics.RipgrepFallbackCode = code
 			}
-			items, err = searchPatternFallbackWithDiagnostics(ctx, registration.Root, searchRoot, project, pattern, useRegex, searchLimit, searchDiagnostics)
+			items, err = searchPatternFallbackWithDiagnostics(searchCtx, registration.Root, searchRoot, project, pattern, useRegex, searchLimit, searchDiagnostics)
 			if err != nil {
 				return model.Envelope{}, err
 			}
@@ -885,7 +887,10 @@ func (a *App) searchAllWorkspaces(ctx context.Context, request model.CommandRequ
 
 			project, _ := workspace.LoadProjectFile(wsReg.Root)
 
-			items, err := searchPattern(ctx, wsReg.Root, project, pattern, useRegex, maxItems)
+			searchCtx, cancel := withSearchTimeout(ctx, a.Config.SearchTimeout)
+			defer cancel()
+			diagnostics := &searchPatternDiagnostics{}
+			items, err := searchPatternScopedWithDiagnostics(searchCtx, wsReg.Root, wsReg.Root, project, pattern, useRegex, maxItems, diagnostics)
 			if err != nil {
 				results <- searchResult{ws: wsReg, err: err}
 				return
@@ -895,7 +900,7 @@ func (a *App) searchAllWorkspaces(ctx context.Context, request model.CommandRequ
 				item["workspace"] = wsReg.Name
 			}
 
-			warnings := []string{}
+			warnings := appendSearchDiagnosticsWarnings(nil, diagnostics)
 			if len(items) == 0 && !useRegex && looksRegexLikePattern(pattern) {
 				warnings = append(warnings, fmt.Sprintf("%s: no literal matches; pattern looks regex-like, rerun with --regex", wsReg.Name))
 			}

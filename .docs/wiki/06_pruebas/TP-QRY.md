@@ -181,7 +181,7 @@ evidence:
 | TC-QRY-105 | positivo | RF-QRY-012, RF-QRY-016 | `nav wiki pack --rf RF-QRY-016` conserva el anchor como `primary_doc` aunque existan README/docs genericos con mayor recencia |
 | TC-QRY-106 | positivo | RF-QRY-001 | `TestRenderTOONEscapesUnsafeControlCharacters`: TOON escapa controles no imprimibles como `\u0000`, no emite NUL crudo y agrega warning unico de sanitizacion |
 | TC-QRY-107 | positivo | RF-QRY-010 | `TestBuildAskCodeEvidenceSkipsOperationalAndBinaryPaths` + `TestSearchPatternFallbackIgnoresNestedMiLspState`: `nav ask`/fallback textual descartan `.mi-lsp/**`, `.db`, `.sqlite` y otros sidecars antes de emitir `code_evidence` |
-| TC-QRY-108 | positivo | RF-QRY-001, RF-QRY-002 | `nav search` que agota timeout devuelve `ok=true` con resultados parciales seguros, warning `search_timeout`, `next_hint` de narrowing y `coach.trigger=search_timeout` |
+| TC-QRY-108 | positivo | RF-QRY-001, RF-QRY-002 | `nav search` que agota timeout, incluido el presupuesto interactivo configurado de busqueda textual, devuelve `ok=true` con resultados parciales seguros, warning `search_timeout`, `next_hint` de narrowing y `coach.trigger=search_timeout` |
 | TC-QRY-109 | positivo | RF-QRY-001 | `mi-lsp version --format compact|json|toon|yaml` conserva envelope estable con `backend=version`, `items[0]` estructurado y sin dependencia de workspace/daemon |
 | TC-QRY-110 | positivo | RF-QRY-017 | `nav affected` con paths explicitos o stdin emite items estables `kind`, `path`, `reason`, `confidence`, `suggested_command` y `evidence` sin depender del daemon |
 | TC-QRY-111 | positivo | RF-QRY-017 | `nav affected --from-git-diff` descubre cambios staged, unstaged y untracked desde el workspace git y preserva `change_type` en evidencia |

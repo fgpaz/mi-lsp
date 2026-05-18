@@ -15,6 +15,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/fgpaz/mi-lsp/internal/model"
 	"github.com/fgpaz/mi-lsp/internal/processutil"
@@ -104,6 +105,13 @@ func searchPatternScopedWithDiagnostics(ctx context.Context, workspaceRoot strin
 		return searchPatternRgWithDiagnostics(ctx, workspaceRoot, searchRoot, project, pattern, useRegex, limit, rgBin, diagnostics)
 	}
 	return searchPatternFallbackWithDiagnostics(ctx, workspaceRoot, searchRoot, project, pattern, useRegex, limit, diagnostics)
+}
+
+func withSearchTimeout(ctx context.Context, timeout time.Duration) (context.Context, context.CancelFunc) {
+	if timeout <= 0 {
+		return ctx, func() {}
+	}
+	return context.WithTimeout(ctx, timeout)
 }
 
 func searchPatternRg(ctx context.Context, workspaceRoot string, searchRoot string, project model.ProjectFile, pattern string, useRegex bool, limit int, rgBin string) ([]map[string]any, error) {

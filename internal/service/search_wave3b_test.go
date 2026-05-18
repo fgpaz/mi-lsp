@@ -183,6 +183,43 @@ func TestNavSearchTimeoutReturnsUsefulEnvelope(t *testing.T) {
 	}
 }
 
+func TestNavSearchUsesConfiguredSearchTimeout(t *testing.T) {
+	root, name := setupTestWorkspace(t)
+	writeWorkspaceFile(t, root, "src/Partial.cs", "namespace Demo; public class PartialNeedle { }\n")
+	forceTestRipgrepPath(t, root)
+
+	originalCommand := rgCommand
+	rgCommand = fakeSlowRgCommand(t, root, func() {})
+	t.Cleanup(func() { rgCommand = originalCommand })
+
+	app := New(root, nil)
+	app.Config.SearchTimeout = 50 * time.Millisecond
+
+	started := time.Now()
+	env, err := app.Execute(context.Background(), model.CommandRequest{
+		Operation: "nav.search",
+		Context:   model.QueryOptions{Workspace: name, MaxItems: 10},
+		Payload:   map[string]any{"pattern": "PartialNeedle"},
+	})
+	elapsed := time.Since(started)
+	if err != nil {
+		t.Fatalf("nav.search should return partial timeout envelope, got error: %v", err)
+	}
+	if elapsed > time.Second {
+		t.Fatalf("nav.search ignored configured timeout; elapsed=%s", elapsed)
+	}
+	items, ok := env.Items.([]map[string]any)
+	if !ok || len(items) != 1 {
+		t.Fatalf("expected one partial item, got %#v", env.Items)
+	}
+	if !strings.Contains(strings.Join(env.Warnings, " "), "search timed out") {
+		t.Fatalf("expected timeout warning, got %v", env.Warnings)
+	}
+	if env.Coach == nil || env.Coach.Trigger != coachTriggerSearchTimeout {
+		t.Fatalf("expected search_timeout coach, got %#v", env.Coach)
+	}
+}
+
 func TestSearchPatternFallbackReturnsErrorOnExternalCancellation(t *testing.T) {
 	root, name := setupTestWorkspace(t)
 	project := testProject(name)
