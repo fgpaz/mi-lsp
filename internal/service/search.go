@@ -294,10 +294,29 @@ func buildRipgrepArgs(pattern string, useRegex bool, searchRoot string) []string
 		"--glob", "!.mi-lsp/index.db-wal",
 		"--glob", "!.mi-lsp/index.db-shm",
 	}
+	args = appendRipgrepDefaultIgnoreGlobs(args)
 	if !useRegex {
 		args = append(args, "-F")
 	}
 	args = append(args, pattern, searchRoot)
+	return args
+}
+
+func appendRipgrepDefaultIgnoreGlobs(args []string) []string {
+	for _, pattern := range workspace.DefaultIgnorePatterns() {
+		normalized := strings.TrimSpace(filepath.ToSlash(pattern))
+		if normalized == "" || strings.HasPrefix(normalized, "!") {
+			continue
+		}
+		normalized = strings.TrimSuffix(normalized, "/")
+		if normalized == "" || strings.ContainsAny(normalized, "*?[]") {
+			continue
+		}
+		args = append(args,
+			"--glob", "!"+normalized+"/**",
+			"--glob", "!**/"+normalized+"/**",
+		)
+	}
 	return args
 }
 

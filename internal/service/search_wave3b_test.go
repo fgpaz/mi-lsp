@@ -75,6 +75,26 @@ func TestSearchPatternRg_IgnoresMiLspIndexSidecars(t *testing.T) {
 	}
 }
 
+func TestSearchPatternRg_UsesDefaultIgnoreGlobs(t *testing.T) {
+	args := strings.Join(buildRipgrepArgs("needle", false, "."), "\x00")
+	for _, ignored := range []string{
+		"!.git/**",
+		"!**/.git/**",
+		"!.next/**",
+		"!**/.next/**",
+		"!node_modules/**",
+		"!**/node_modules/**",
+		"!.docs/temp/worktrees/**",
+	} {
+		if !strings.Contains(args, ignored) {
+			t.Fatalf("buildRipgrepArgs missing default ignore glob %q in %#v", ignored, args)
+		}
+	}
+	if strings.Contains(args, "!.docs/**") {
+		t.Fatalf("buildRipgrepArgs must not exclude canonical .docs content: %#v", args)
+	}
+}
+
 func TestSearchPatternFallbackIgnoresNestedMiLspState(t *testing.T) {
 	root, name := setupTestWorkspace(t)
 	project := testProject(name)

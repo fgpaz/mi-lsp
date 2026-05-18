@@ -157,7 +157,7 @@ flowchart LR
 
 La busqueda textual implementa una cadena de fallback robusta:
 
-1. `rg` binario: si existe y es accesible, usa `ripgrep` nativo con `--hidden` para no perder docs gobernados ni artefactos repo-locales ocultos cuando la consulta apunta ahi
+1. `rg` binario: si existe y es accesible, usa `ripgrep` nativo con `--hidden` para no perder docs gobernados ni artefactos repo-locales ocultos cuando la consulta apunta ahi; mantiene excludes explicitos alineados con `DefaultIgnorePatterns` (`.git`, `.next`, `.turbo`, `node_modules`, `bin/obj`, venvs, worktrees temporales, etc.) para que repos grandes no conviertan caches ocultos en latencia de busqueda
 2. Go native: fallback a `searchPatternGo` nativo que respeta `.milspignore` y filtra binarios
 3. `MI_LSP_RG` env var: permite override de la ruta de `rg`
 
@@ -225,7 +225,7 @@ El struct `internal/service/config.go` centraliza todos los valores hardcodeados
 - `nav.workspace-map` debe arrancar con summary-first directo, no auto-iniciar daemon, y reservar scans de endpoints/eventos/dependencias para `--full`.
 - En workspaces Go, `nav.workspace-map` agrega paquetes `cmd/*`, `internal/*` y `pkg/*` como servicios `go-package` desde el catalogo para que el mapa de self-dogfood no dependa de entrypoints C#.
 - En AXI efectivo, `init`, `workspace status`, `nav search`, `nav intent` y `nav pack` arrancan en preview-first por default; `nav ask` lo hace solo cuando la heuristica detecta orientacion, y `nav workspace-map` solo cuando se fuerza AXI.
-- `nav search` debe ser resiliente a timeout: cada busqueda textual directa aplica un presupuesto interactivo corto (5s por workspace) y, si existen resultados parciales seguros, responde `ok=true` con warning `search_timeout`, `next_hint` y coach accionable; no convierte el timeout en ausencia falsa.
+- `nav search` debe ser resiliente a timeout: cada busqueda textual directa aplica un presupuesto interactivo corto (5s por workspace), excluye caches/dependencias generadas aun con `--hidden`, y, si existen resultados parciales seguros, responde `ok=true` con warning `search_timeout`, `next_hint` y coach accionable; no convierte el timeout en ausencia falsa.
 - `init` registra, persiste proyecto e indexa por defecto sin requerir `workspace add` previo.
 - `worker install` es explicito; no hay descargas silenciosas durante consultas.
 - `worker install` copia un worker bundled por RID cuando la distribucion lo trae adjunto; si la CLI corre dentro del repo `mi-lsp` y no existe bundle adjunto, publica el worker desde `worker-dotnet/` con `dotnet publish`.
