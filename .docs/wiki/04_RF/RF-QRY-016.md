@@ -11,6 +11,7 @@ implements:
   - internal/service/search.go
   - internal/service/harness_validate.go
   - internal/service/source_validate.go
+  - internal/service/trace.go
   - internal/service/wiki_search.go
   - internal/service/wiki_compat.go
   - internal/service/ask.go
@@ -26,6 +27,7 @@ tests:
   - internal/service/app_test.go
   - internal/service/harness_validate_test.go
   - internal/service/source_validate_test.go
+  - internal/service/trace_filesystem_test.go
   - internal/service/wiki_search_test.go
   - internal/docgraph/docgraph_test.go
   - internal/store/docs_test.go
