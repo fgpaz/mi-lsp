@@ -93,6 +93,43 @@ func TestComputeExportSummary(t *testing.T) {
 	}
 }
 
+func TestQueryAccessSummaryStreamsFilteredWindow(t *testing.T) {
+	store := testStore(t)
+	defer store.Close()
+
+	now := time.Now()
+	events := []model.AccessEvent{
+		{OccurredAt: now.Add(-2 * time.Hour), ClientName: "codex", Workspace: "multi-tedi", WorkspaceRoot: "C:/repos/mios/multi-tedi", WorkspaceAlias: "multi-tedi", Operation: "nav.search", Backend: "text", Route: "direct", Success: false, LatencyMs: 120, ErrorCode: "text_generic", ErrorKind: "backend_runtime", FailureStage: "backend"},
+		{OccurredAt: now.Add(-time.Hour), ClientName: "codex", Workspace: "multi-tedi", WorkspaceRoot: "C:/repos/mios/multi-tedi", WorkspaceAlias: "multi-tedi", Operation: "nav.find", Backend: "catalog", Route: "direct", Success: true, LatencyMs: 20, HintCode: "repo_selector_invalid", FailureStage: "selector_validation"},
+		{OccurredAt: now.Add(-72 * time.Hour), ClientName: "old", Workspace: "gastos", WorkspaceRoot: "C:/repos/mios/gastos", WorkspaceAlias: "gastos", Operation: "nav.ask", Backend: "ask", Route: "direct", Success: true, LatencyMs: 30},
+	}
+	for _, event := range events {
+		if err := store.RecordAccessDirect(event); err != nil {
+			t.Fatalf("RecordAccessDirect: %v", err)
+		}
+	}
+
+	summary, err := QueryAccessSummary(store, ExportQuery{Since: now.Add(-24 * time.Hour), Workspace: "multi-tedi", Limit: 0})
+	if err != nil {
+		t.Fatalf("QueryAccessSummary: %v", err)
+	}
+	if summary.TotalOps != 2 {
+		t.Fatalf("TotalOps = %d, want 2", summary.TotalOps)
+	}
+	if summary.ByWorkspace["C:/repos/mios/multi-tedi"].Errors != 1 {
+		t.Fatalf("multi-tedi errors = %d, want 1", summary.ByWorkspace["C:/repos/mios/multi-tedi"].Errors)
+	}
+	if summary.ByHintCode["repo_selector_invalid"].Ops != 1 {
+		t.Fatalf("repo_selector_invalid ops = %d, want 1", summary.ByHintCode["repo_selector_invalid"].Ops)
+	}
+	if len(summary.TopErrors) != 1 || summary.TopErrors[0].ErrorCode != "text_generic" {
+		t.Fatalf("TopErrors = %#v, want text_generic", summary.TopErrors)
+	}
+	if !recommendationsContain(summary.Recommendations, "search_errors") {
+		t.Fatalf("Recommendations missing search_errors: %#v", summary.Recommendations)
+	}
+}
+
 func TestRenderSummaryTable(t *testing.T) {
 	summary := ExportSummary{
 		TotalOps:    5,

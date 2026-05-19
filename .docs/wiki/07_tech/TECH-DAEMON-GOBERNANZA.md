@@ -1,3 +1,20 @@
+---
+doc_id: TECH-DAEMON-GOBERNANZA
+title: Daemon, gobernanza local y runtime compartido
+layer: TECH
+family: DAEMON
+status: implemented
+implements:
+  - internal/cli/daemon.go
+  - internal/daemon/admin.go
+  - internal/daemon/export.go
+  - internal/daemon/log_tail.go
+  - internal/daemon/state_store.go
+tests:
+  - internal/daemon/export_test.go
+  - internal/daemon/log_tail_test.go
+---
+
 # TECH-DAEMON-GOBERNANZA
 
 ```yaml
@@ -110,7 +127,7 @@ Define el modelo canonico del daemon global, su governance UI workspace-first y 
 - `GET /api/accesses?window=<recent|7d|30d|90d>`
 - `GET /api/logs?tail=<n>`
 - `GET /api/metrics?window=<recent|7d|30d|90d>` — computa p50/p95, error rate y truncation rate por operacion/workspace/cliente desde `access_events`; mantiene compatibilidad legacy con `days=<n>`
-- `mi-lsp admin export --summary` reutiliza la misma ventana y agrega breakdowns opcionales por route/client/hint/failure-stage; raw y summary soportan `--format toon` para revision agent-friendly, y el raw export prioriza CLI antes que UI para debugging operativo y es la primera superficie donde deben aparecer los campos causales nuevos.
+- `mi-lsp admin export --summary` reutiliza la misma ventana y agrega breakdowns opcionales por route/client/hint/failure-stage; raw y summary soportan `--format toon` para revision agent-friendly, el summary sin `--limit` debe agregarse en streaming desde `daemon.db`, y el raw export prioriza CLI antes que UI para debugging operativo y es la primera superficie donde deben aparecer los campos causales nuevos.
 - `GET /api/status` tambien expone `daemon_process` y `watchers`, equivalentes a `daemon status`, para validar presupuestos de agentes sin inspeccion externa.
 
 ## Dependencias e interacciones
@@ -137,6 +154,7 @@ Define el modelo canonico del daemon global, su governance UI workspace-first y 
 | UI duplicada | cada cliente abre una vista separada | admin URL unica + deep link por query |
 | Cliente antiguo | errores sutiles de protocolo | handshake con version explicita |
 | Warm fallido | runtime no queda disponible | warning visible + logs locales |
+| Tail ruidoso al apagar | lineas benignas de socket/pipe cerrado mas bloque `Usage` | filtro de ruido benigno en `daemon logs` y `/api/logs` sin ocultar lineas no benignas |
 | `tsserver` frio roto | cada request vuelve a intentar bootstrap y falla | cooldown corto + degradacion sticky a catalog/text |
 | Worker/proceso bloqueado por permisos | `nav context` o `nav search` devuelve warning `backend_runtime/process_spawn_access_denied` | fallback slice/catalog/text o Go search + evidencia exportable via `admin export --format toon` |
 

@@ -143,6 +143,7 @@ La novedad de v1.3 es que el store repo-local persiste tambien el grafo document
 - `.worktrees/` y `.docs/temp/worktrees/` ya forman parte de los ignores internos y no deben volver a elegirse como entrypoint ni corpus documental del workspace activo.
 - Cambios parciales en docs pueden dejar ranking inconsistente si se mezclan con incremental por archivo; por eso el cambio de docs/profile fuerza full re-index.
 - Si `doc_count=0` pero existe `.docs/wiki`, las consultas docs-first pueden anclarse por Tier 1, pero el workspace debe considerarse documentalmente incompleto hasta ejecutar `index --docs-only` o un full index exitoso.
+- `daemon.db` es append-heavy y de lectura diagnostica; debe sostener exports de ventanas completas con indices y agregacion streaming, evitando materializar todos los eventos cuando el usuario pide summary sin `--limit`.
 
 ## Documentos detalle
 

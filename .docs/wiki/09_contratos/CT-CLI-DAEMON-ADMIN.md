@@ -1,3 +1,21 @@
+---
+doc_id: CT-CLI-DAEMON-ADMIN
+title: CLI daemon admin y export de telemetria
+layer: CT
+family: CLI-DAEMON-ADMIN
+status: implemented
+implements:
+  - internal/cli/admin.go
+  - internal/cli/daemon.go
+  - internal/daemon/admin.go
+  - internal/daemon/export.go
+  - internal/daemon/log_tail.go
+  - internal/daemon/state_store.go
+tests:
+  - internal/daemon/export_test.go
+  - internal/daemon/log_tail_test.go
+---
+
 # CT-CLI-DAEMON-ADMIN
 
 ```yaml
@@ -177,6 +195,12 @@ Reglas:
 ### `admin export --summary`
 
 El summary puede incluir un bloque aditivo `recommendations` para usage-doctor. Cada item debe derivarse de telemetria agregada y sanitizada (`hint_code`, `failure_stage`, `truncation_rate`, latencias, breakdowns y conteos), incluir accion sugerida y razon breve, y nunca copiar query cruda, argv, payloads, paths sensibles ni contenido de archivos.
+
+Sin `--limit` explicito, el summary agrega toda la ventana filtrada mediante acumulacion streaming desde `daemon.db`; no debe cargar todos los eventos crudos en memoria. Si el usuario pasa `--limit`, el summary conserva la semantica de muestra acotada. `--by-backend`, `--percentile`, `--by-route`, `--by-client`, `--by-hint` y `--by-failure-stage` siguen siendo opt-in de visualizacion.
+
+### `daemon logs`
+
+`daemon logs --tail N` muestra el tail del log local del daemon. Puede omitir lineas benignas de cierre normal de sockets/pipes (`use of closed network connection`, pipe cerrado, reset/broken pipe) junto con el bloque de ayuda generado por Cobra, para que el tail diagnostico no parezca fallo accionable cuando solo refleja shutdown.
 
 Envelope de error estructurado (`ok=false`):
 

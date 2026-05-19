@@ -139,16 +139,26 @@ func newExportCommand(state *rootState) *cobra.Command {
 				WindowLabel:    window.Label,
 			}
 
-			events, err := daemon.QueryAccessEvents(store, query)
-			if err != nil {
-				return fmt.Errorf("query failed: %w", err)
-			}
-
 			if summaryFlag {
-				summary := daemon.ComputeExportSummary(events)
+				var summary daemon.ExportSummary
+				var events []model.AccessEvent
+				if query.Limit == 0 {
+					summary, err = daemon.QueryAccessSummary(store, query)
+					if err != nil {
+						return fmt.Errorf("summary query failed: %w", err)
+					}
+				} else {
+					events, err = daemon.QueryAccessEvents(store, query)
+					if err != nil {
+						return fmt.Errorf("query failed: %w", err)
+					}
+					summary = daemon.ComputeExportSummary(events)
+				}
 				summary.WindowLabel = window.Label
-				if byBackendFlag {
+				if byBackendFlag && events != nil {
 					summary.ByBackend = daemon.ComputeBackendHistogram(events)
+				} else if !byBackendFlag {
+					summary.ByBackend = nil
 				}
 				if !byRouteFlag {
 					summary.ByRoute = nil
@@ -162,8 +172,10 @@ func newExportCommand(state *rootState) *cobra.Command {
 				if !byFailureStageFlag {
 					summary.ByFailureStage = nil
 				}
-				if percentileFlag {
+				if percentileFlag && events != nil {
 					summary.ByOperationPercentiles = daemon.ComputeOperationPercentiles(events)
+				} else if !percentileFlag {
+					summary.ByOperationPercentiles = nil
 				}
 				if formatFlag == "toon" {
 					body, err := daemon.RenderSummaryTOON(summary)
@@ -175,6 +187,11 @@ func newExportCommand(state *rootState) *cobra.Command {
 				}
 				fmt.Fprint(os.Stdout, daemon.RenderSummaryTable(summary))
 				return nil
+			}
+
+			events, err := daemon.QueryAccessEvents(store, query)
+			if err != nil {
+				return fmt.Errorf("query failed: %w", err)
 			}
 
 			switch formatFlag {

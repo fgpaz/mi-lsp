@@ -71,6 +71,37 @@ func ReadLogTailFile(path string, tail int, maxBytes int64) ([]LogTailLine, bool
 	return items, truncated, nil
 }
 
+func FilterBenignDaemonLogNoise(lines []LogTailLine) []LogTailLine {
+	filtered := make([]LogTailLine, 0, len(lines))
+	skipHelpBlock := false
+	for _, line := range lines {
+		raw := strings.TrimRight(line.Text, "\r")
+		text := strings.TrimSpace(raw)
+		lower := strings.ToLower(text)
+		if isBenignClosedConnectionLine(lower) {
+			skipHelpBlock = true
+			continue
+		}
+		if skipHelpBlock {
+			if text == "" || strings.HasPrefix(text, "Usage:") || strings.HasPrefix(text, "Flags:") ||
+				strings.HasPrefix(text, "Global Flags:") ||
+				strings.HasPrefix(raw, "  ") || strings.HasPrefix(raw, "\t") {
+				continue
+			}
+			skipHelpBlock = false
+		}
+		filtered = append(filtered, line)
+	}
+	return filtered
+}
+
+func isBenignClosedConnectionLine(lower string) bool {
+	return strings.Contains(lower, "use of closed network connection") ||
+		strings.Contains(lower, "pipe has been ended") ||
+		strings.Contains(lower, "connection reset by peer") ||
+		strings.Contains(lower, "broken pipe")
+}
+
 func countFileLines(path string) (int, error) {
 	file, err := os.Open(path)
 	if err != nil {
