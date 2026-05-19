@@ -213,27 +213,25 @@ func IndexWorkspaceDocsWithSourcesWithProgress(ctx context.Context, root string,
 		sourceBlocks = append(sourceBlocks, wikisource.SourceBlocks(sourceDoc, time.Now().Unix())...)
 		sourceRecords = append(sourceRecords, wikisource.SourceRecords(sourceDoc, time.Now().Unix())...)
 
-		if candidate.layer == "04" || strings.HasPrefix(doc.DocID, "RF-") {
-			if fm := extractFrontMatter(content); fm != nil {
-				for _, impl := range fm.Implements {
-					impl = strings.TrimSpace(impl)
-					if impl != "" {
-						mentions = append(mentions, model.DocMention{
-							DocPath:      candidate.relativePath,
-							MentionType:  "implements",
-							MentionValue: impl,
-						})
-					}
+		if fm := extractFrontMatter(content); fm != nil {
+			for _, impl := range fm.Implements {
+				impl = strings.TrimSpace(impl)
+				if impl != "" {
+					mentions = append(mentions, model.DocMention{
+						DocPath:      candidate.relativePath,
+						MentionType:  "implements",
+						MentionValue: impl,
+					})
 				}
-				for _, test := range fm.Tests {
-					test = strings.TrimSpace(test)
-					if test != "" {
-						mentions = append(mentions, model.DocMention{
-							DocPath:      candidate.relativePath,
-							MentionType:  "test_file",
-							MentionValue: test,
-						})
-					}
+			}
+			for _, test := range fm.Tests {
+				test = strings.TrimSpace(test)
+				if test != "" {
+					mentions = append(mentions, model.DocMention{
+						DocPath:      candidate.relativePath,
+						MentionType:  "test_file",
+						MentionValue: test,
+					})
 				}
 			}
 		}

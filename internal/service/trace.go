@@ -212,9 +212,25 @@ func resolveTraceDoc(ctx context.Context, root string, db *sql.DB, traceID strin
 		return resolveTraceRSDoc(root, traceID, mentioningDocs), nil
 	case traceKindTP:
 		return resolveTraceTPDoc(root, traceID, mentioningDocs), nil
+	case traceKindUnknown:
+		return resolveTraceUnknownDoc(root, traceID, mentioningDocs), nil
 	default:
 		return resolveTraceRFDoc(ctx, root, db, traceID, mentioningDocs)
 	}
+}
+
+func resolveTraceUnknownDoc(root string, traceID string, mentioningDocs []model.DocRecord) *model.DocRecord {
+	for i := range mentioningDocs {
+		if strings.EqualFold(mentioningDocs[i].DocID, traceID) {
+			virtualDoc := mentioningDocs[i]
+			virtualDoc.DocID = traceID
+			if title := embeddedDocIDTitle(root, virtualDoc.Path, traceID); title != "" {
+				virtualDoc.Title = title
+			}
+			return &virtualDoc
+		}
+	}
+	return nil
 }
 
 func resolveTraceRFDoc(ctx context.Context, root string, db *sql.DB, traceID string, mentioningDocs []model.DocRecord) (*model.DocRecord, error) {

@@ -146,6 +146,48 @@ func TestIndexWorkspaceDocsExtractsWikiSourceBlocksAndRecords(t *testing.T) {
 	}
 }
 
+func TestIndexWorkspaceDocsExtractsFrontMatterTraceLinksForTechnicalDocs(t *testing.T) {
+	root := t.TempDir()
+	mustWriteDocgraphFile(t, filepath.Join(root, ".docs", "wiki", "_mi-lsp", "read-model.toml"), strings.Join([]string{
+		"version = 1",
+		"",
+		"[[family]]",
+		"  name = \"technical\"",
+		"  intent_keywords = [\"contract\"]",
+		"  paths = [\".docs/wiki/09_contratos/*.md\"]",
+	}, "\n"))
+	mustWriteDocgraphFile(t, filepath.Join(root, ".docs", "wiki", "09_contratos", "CT-TRACE.md"), strings.Join([]string{
+		"---",
+		"doc_id: CT-TRACE",
+		"title: Traceable technical contract",
+		"layer: CT",
+		"implements:",
+		"  - internal/service/trace.go",
+		"tests:",
+		"  - internal/service/trace_filesystem_test.go",
+		"---",
+		"",
+		"# CT-TRACE",
+	}, "\n"))
+
+	_, _, mentions, _, _, warnings, err := IndexWorkspaceDocsWithSourcesWithProgress(context.Background(), root, nil, nil)
+	if err != nil {
+		t.Fatalf("IndexWorkspaceDocsWithSourcesWithProgress: %v", err)
+	}
+	if len(warnings) != 0 {
+		t.Fatalf("warnings = %#v", warnings)
+	}
+	seen := map[string]bool{}
+	for _, mention := range mentions {
+		seen[mention.MentionType+"="+mention.MentionValue] = true
+	}
+	for _, expected := range []string{"implements=internal/service/trace.go", "test_file=internal/service/trace_filesystem_test.go"} {
+		if !seen[expected] {
+			t.Fatalf("missing frontmatter mention %s in %#v", expected, mentions)
+		}
+	}
+}
+
 func TestIndexWorkspaceDocsExtractsCanonicalWikiSourceShape(t *testing.T) {
 	root := t.TempDir()
 	mustWriteDocgraphFile(t, filepath.Join(root, ".docs", "wiki", "_mi-lsp", "read-model.toml"), strings.Join([]string{
