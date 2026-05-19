@@ -222,6 +222,10 @@ and tsserver processes, reducing cold-start latency.`,
 			if len(lines) == 0 {
 				return fmt.Errorf("daemon log not found or empty at %s", logPath)
 			}
+			lines = daemon.FilterBenignDaemonLogNoise(lines)
+			if len(lines) == 0 {
+				return fmt.Errorf("daemon log contains only benign closed-connection noise at %s", logPath)
+			}
 			for _, line := range lines {
 				fmt.Println(line.Text)
 			}

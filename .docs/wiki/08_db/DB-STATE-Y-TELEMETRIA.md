@@ -1,3 +1,18 @@
+---
+doc_id: DB-STATE-Y-TELEMETRIA
+title: Estado local y telemetria del daemon
+layer: DB
+family: STATE-TELEMETRY
+status: implemented
+implements:
+  - internal/daemon/state_store.go
+  - internal/daemon/export.go
+  - internal/daemon/admin.go
+tests:
+  - internal/daemon/export_test.go
+  - internal/daemon/state_store_test.go
+---
+
 # DB-STATE-Y-TELEMETRIA
 
 ```yaml
@@ -157,11 +172,13 @@ Campos recomendados:
 - `admin export --summary` puede derivar `recommendations` desde agregados sanitizados y usage-doctor actions; no agrega columnas obligatorias nuevas y no persiste recomendaciones por fila
 - Los SLOs de memoria/proceso no se calculan desde `access_events`: salen de `daemon_process`, `runtime_snapshots` y `watchers` en status/admin
 - `index.db` repo-local debe inicializarse con `PRAGMA journal_mode=WAL` y `PRAGMA busy_timeout`
+- `daemon.db` debe abrirse con una conexion SQLite serializada (`SetMaxOpenConns(1)`), `busy_timeout`, `synchronous=NORMAL` y WAL para proteger escrituras append-heavy y exports concurrentes.
 - la escritura catalog/docs/file-symbols debe quedar serializada por workspace para que watcher e index manual no peleen la misma DB
 - Nota: columnas agregadas via migration idempotente (`ALTER TABLE ... ADD COLUMN`); rows existentes quedan con DEFAULT 0 o `NULL` segun el schema de origen
 - Lectores y exportadores deben usar lectura null-safe para columnas opcionales legacy (`repo`, `client_name`, `session_id`, `backend`, `runtime_key`, `entrypoint_id`, `error_text`, `workspace_root`, `workspace_alias`, `error_kind`, `error_code`)
 - Lectores y exportadores deben usar lectura null-safe para columnas opcionales legacy (`route`, `format`, `token_budget`, `max_items`, `max_chars`, `compress`, `pattern_mode`, `routing_outcome`, `failure_stage`, `hint_code`, `truncation_reason`, `decision_json`) ademas de los campos previos
 - `seq` debe round-trip en `RecentAccesses`, `admin export`, y CSV para que el orden intra-sesion no dependa solo de `occurred_at`
+- `access_events` debe crear indices idempotentes para filtros calientes de export: `occurred_at`, `workspace_root/workspace_alias/workspace`, `operation`, `backend`, `session_id`, `route`, `failure_stage` y `hint_code`.
 
 ## Access patterns y operaciones sensibles
 
@@ -173,6 +190,7 @@ Campos recomendados:
 - Saturacion de requests daemon-aware debe persistirse como `error_kind=daemon`, `error_code=backpressure_busy` y warning tipado `daemon/backpressure_busy`.
 - La CLI solo debe persistir filas de `access_events` para `direct`, `direct_fallback` o fallas previas a la ejecucion remota.
 - `admin export` raw y summary soportan `--format toon`; `admin export --summary` agrega sobre toda la ventana filtrada salvo `--limit` explicito y los breakdowns adicionales por route/client/hint/failure-stage no cambian esa base.
+- `admin export --summary` sin `--limit` explicito debe usar acumulacion streaming desde `daemon.db`; los breakdowns opcionales salen del mismo acumulador y no requieren cargar filas completas en memoria.
 
 ## Migracion, retencion y recovery
 

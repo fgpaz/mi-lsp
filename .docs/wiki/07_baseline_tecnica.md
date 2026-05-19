@@ -208,11 +208,13 @@ El struct `internal/service/config.go` centraliza todos los valores hardcodeados
 - Export raw filtra por `--operation`, `--session-id`, `--client-name`, `--route`, `--query-format`, `--truncated`, `--pattern-mode`, `--routing-outcome`, `--failure-stage` y `--hint-code` ademas de `--workspace`/`--backend`.
 - Export summary puede agregar breakdowns opcionales por `--by-route`, `--by-client`, `--by-hint` y `--by-failure-stage` sin cambiar la semantica base de la ventana.
 - `admin export --summary` debe agregar sobre toda la ventana filtrada por defecto; `--limit` solo acota el summary si el usuario lo pide explicitamente.
+- Para evitar picos de memoria, `admin export --summary` sin `--limit` explicito debe calcular agregados en streaming sobre SQLite y no materializar todos los `access_events` en memoria; `--limit` explicito conserva la semantica de resumen acotado.
 - Governance UI y admin HTTP comparten la misma semantica de ventana via `window=recent|7d|30d|90d`.
 
 ## Resumen operativo
 
 - `daemon start` debe ser idempotente y resolver si ya existe una instancia saludable.
+- `daemon logs` y la UI admin pueden filtrar ruido benigno de cierre de sockets/pipes y el bloque de ayuda asociado cuando el tail solo refleja apagado normal de listeners.
 - Queries semanticas y compuestas seleccionadas inician automaticamente el daemon si no esta corriendo (desactivar con `--no-auto-daemon`).
 - `nav.find`, `nav.search`, `nav.intent`, `nav.symbols`, `nav.outline`, `nav.overview` y `nav.multi-read` no deben auto-iniciar ni enrutar por daemon en builds actuales; en workspaces `container`, `find/search/intent` pueden acotar con `--repo`.
 - `nav.wiki.validate-harness` es una lectura directa del docgraph y markdown gobernado: no debe auto-iniciar daemon ni crear un indexador documental paralelo.

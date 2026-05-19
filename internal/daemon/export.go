@@ -90,6 +90,57 @@ func QueryAccessEvents(store *TelemetryStore, query ExportQuery) ([]model.Access
 		query.Limit = 500
 	}
 
+	sql, args := buildAccessEventsSQL(query, true)
+	rows, err := store.db.Query(sql, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	capHint := query.Limit
+	switch {
+	case capHint <= 0:
+		capHint = 64
+	case capHint > 512:
+		capHint = 512
+	}
+	items := make([]model.AccessEvent, 0, capHint)
+	for rows.Next() {
+		item, err := scanAccessEvent(rows)
+		if err != nil {
+			return nil, err
+		}
+		items = append(items, item)
+	}
+	return items, rows.Err()
+}
+
+func QueryAccessSummary(store *TelemetryStore, query ExportQuery) (ExportSummary, error) {
+	if query.Limit < 0 {
+		query.Limit = 500
+	}
+	sql, args := buildAccessEventsSQL(query, false)
+	rows, err := store.db.Query(sql, args...)
+	if err != nil {
+		return ExportSummary{}, err
+	}
+	defer rows.Close()
+
+	acc := newSummaryAccumulator()
+	for rows.Next() {
+		item, err := scanAccessEvent(rows)
+		if err != nil {
+			return ExportSummary{}, err
+		}
+		acc.add(item)
+	}
+	if err := rows.Err(); err != nil {
+		return ExportSummary{}, err
+	}
+	return acc.summary(), nil
+}
+
+func buildAccessEventsSQL(query ExportQuery, ordered bool) (string, []any) {
 	var conditions []string
 	var args []any
 
@@ -153,39 +204,94 @@ func QueryAccessEvents(store *TelemetryStore, query ExportQuery) ([]model.Access
 	if len(conditions) > 0 {
 		sql += " WHERE " + strings.Join(conditions, " AND ")
 	}
-	sql += " ORDER BY occurred_at DESC, id DESC"
+	if ordered {
+		sql += " ORDER BY occurred_at DESC, id DESC"
+	}
 	if query.Limit > 0 {
 		sql += " LIMIT ?"
 		args = append(args, query.Limit)
 	}
-
-	rows, err := store.db.Query(sql, args...)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	capHint := query.Limit
-	switch {
-	case capHint <= 0:
-		capHint = 64
-	case capHint > 512:
-		capHint = 512
-	}
-	items := make([]model.AccessEvent, 0, capHint)
-	for rows.Next() {
-		item, err := scanAccessEvent(rows)
-		if err != nil {
-			return nil, err
-		}
-		items = append(items, item)
-	}
-	return items, rows.Err()
+	return sql, args
 }
 
 func ComputeExportSummary(events []model.AccessEvent) ExportSummary {
+	acc := newSummaryAccumulator()
+	for _, raw := range events {
+		acc.add(raw)
+	}
+	return acc.summary()
+}
+
+type summaryAccumulator struct {
+	total               int
+	workspaceBuckets    map[string]*bucket
+	operationBuckets    map[string]*bucket
+	backendBuckets      map[string]*bucket
+	routeBuckets        map[string]*bucket
+	clientBuckets       map[string]*bucket
+	hintBuckets         map[string]*bucket
+	failureStageBuckets map[string]*bucket
+	errorMap            map[string]*errorBucket
+}
+
+type errorBucket struct {
+	kind       string
+	code       string
+	text       string
+	count      int
+	workspaces map[string]struct{}
+}
+
+func newSummaryAccumulator() *summaryAccumulator {
+	return &summaryAccumulator{
+		workspaceBuckets:    map[string]*bucket{},
+		operationBuckets:    map[string]*bucket{},
+		backendBuckets:      map[string]*bucket{},
+		routeBuckets:        map[string]*bucket{},
+		clientBuckets:       map[string]*bucket{},
+		hintBuckets:         map[string]*bucket{},
+		failureStageBuckets: map[string]*bucket{},
+		errorMap:            map[string]*errorBucket{},
+	}
+}
+
+func (a *summaryAccumulator) add(raw model.AccessEvent) {
+	event := telemetry.NormalizeAccessEvent(raw)
+	a.total++
+	updateBucket(a.workspaceBuckets, safeKey(telemetry.WorkspaceAnalyticsKey(event), "unscoped"), event)
+	updateBucket(a.operationBuckets, safeKey(event.Operation, "unknown"), event)
+	updateBucket(a.backendBuckets, safeKey(strings.TrimSpace(event.Backend), "unknown"), event)
+	updateBucket(a.routeBuckets, safeKey(event.Route, "unknown"), event)
+	updateBucket(a.clientBuckets, safeKey(event.ClientName, "unknown"), event)
+	if strings.TrimSpace(event.HintCode) != "" {
+		updateBucket(a.hintBuckets, event.HintCode, event)
+	}
+	updateBucket(a.failureStageBuckets, safeKey(event.FailureStage, "none"), event)
+
+	if event.Error == "" && event.ErrorCode == "" {
+		return
+	}
+	key := safeKey(event.ErrorCode, safeKey(event.Error, "unknown_error"))
+	if _, ok := a.errorMap[key]; !ok {
+		a.errorMap[key] = &errorBucket{kind: event.ErrorKind, code: event.ErrorCode, text: event.Error, workspaces: map[string]struct{}{}}
+	}
+	entry := a.errorMap[key]
+	entry.count++
+	if entry.kind == "" {
+		entry.kind = event.ErrorKind
+	}
+	if entry.code == "" {
+		entry.code = event.ErrorCode
+	}
+	if entry.text == "" {
+		entry.text = event.Error
+	}
+	entry.workspaces[safeKey(telemetry.WorkspaceAnalyticsKey(event), "unscoped")] = struct{}{}
+}
+
+func (a *summaryAccumulator) summary() ExportSummary {
 	summary := ExportSummary{
-		TotalOps:       len(events),
+		TotalOps:       a.total,
 		ByWorkspace:    map[string]WorkspaceStat{},
 		ByOperation:    map[string]WorkspaceStat{},
 		ByRoute:        map[string]WorkspaceStat{},
@@ -193,79 +299,29 @@ func ComputeExportSummary(events []model.AccessEvent) ExportSummary {
 		ByHintCode:     map[string]WorkspaceStat{},
 		ByFailureStage: map[string]WorkspaceStat{},
 	}
-
-	workspaceBuckets := map[string]*bucket{}
-	operationBuckets := map[string]*bucket{}
-	routeBuckets := map[string]*bucket{}
-	clientBuckets := map[string]*bucket{}
-	hintBuckets := map[string]*bucket{}
-	failureStageBuckets := map[string]*bucket{}
-	errorMap := map[string]*struct {
-		kind       string
-		code       string
-		text       string
-		count      int
-		workspaces map[string]struct{}
-	}{}
-
-	for _, raw := range events {
-		event := telemetry.NormalizeAccessEvent(raw)
-		updateBucket(workspaceBuckets, safeKey(telemetry.WorkspaceAnalyticsKey(event), "unscoped"), event)
-		updateBucket(operationBuckets, safeKey(event.Operation, "unknown"), event)
-		updateBucket(routeBuckets, safeKey(event.Route, "unknown"), event)
-		updateBucket(clientBuckets, safeKey(event.ClientName, "unknown"), event)
-		if strings.TrimSpace(event.HintCode) != "" {
-			updateBucket(hintBuckets, event.HintCode, event)
-		}
-		updateBucket(failureStageBuckets, safeKey(event.FailureStage, "none"), event)
-
-		if event.Error != "" || event.ErrorCode != "" {
-			key := safeKey(event.ErrorCode, safeKey(event.Error, "unknown_error"))
-			if _, ok := errorMap[key]; !ok {
-				errorMap[key] = &struct {
-					kind       string
-					code       string
-					text       string
-					count      int
-					workspaces map[string]struct{}
-				}{kind: event.ErrorKind, code: event.ErrorCode, text: event.Error, workspaces: map[string]struct{}{}}
-			}
-			entry := errorMap[key]
-			entry.count++
-			if entry.kind == "" {
-				entry.kind = event.ErrorKind
-			}
-			if entry.code == "" {
-				entry.code = event.ErrorCode
-			}
-			if entry.text == "" {
-				entry.text = event.Error
-			}
-			entry.workspaces[safeKey(telemetry.WorkspaceAnalyticsKey(event), "unscoped")] = struct{}{}
-		}
-	}
-
-	for key, b := range workspaceBuckets {
+	for key, b := range a.workspaceBuckets {
 		summary.ByWorkspace[key] = summarizeBucket(b)
 	}
-	for key, b := range operationBuckets {
+	for key, b := range a.operationBuckets {
 		summary.ByOperation[key] = summarizeBucket(b)
 	}
-	for key, b := range routeBuckets {
+	summary.ByBackend = backendHistogramFromBuckets(a.backendBuckets)
+	summary.ByOperationPercentiles = operationPercentilesFromBuckets(a.operationBuckets)
+	for key, b := range a.routeBuckets {
 		summary.ByRoute[key] = summarizeBucket(b)
 	}
-	for key, b := range clientBuckets {
+	for key, b := range a.clientBuckets {
 		summary.ByClient[key] = summarizeBucket(b)
 	}
-	for key, b := range hintBuckets {
+	for key, b := range a.hintBuckets {
 		summary.ByHintCode[key] = summarizeBucket(b)
 	}
-	for key, b := range failureStageBuckets {
+	for key, b := range a.failureStageBuckets {
 		summary.ByFailureStage[key] = summarizeBucket(b)
 	}
 
-	topErrors := make([]ErrorFrequency, 0, len(errorMap))
-	for _, entry := range errorMap {
+	topErrors := make([]ErrorFrequency, 0, len(a.errorMap))
+	for _, entry := range a.errorMap {
 		wsList := make([]string, 0, len(entry.workspaces))
 		for ws := range entry.workspaces {
 			wsList = append(wsList, ws)
@@ -454,6 +510,45 @@ func percentile(sorted []int64, pct float64) int64 {
 	}
 	idx := int(math.Floor(float64(len(sorted)-1) * pct))
 	return sorted[idx]
+}
+
+func backendHistogramFromBuckets(buckets map[string]*bucket) []BackendHistogram {
+	result := make([]BackendHistogram, 0, len(buckets))
+	for backend, bucket := range buckets {
+		result = append(result, BackendHistogram{Backend: backend, Count: bucket.ops})
+	}
+
+	sort.Slice(result, func(i, j int) bool {
+		if result[i].Count == result[j].Count {
+			return result[i].Backend < result[j].Backend
+		}
+		return result[i].Count > result[j].Count
+	})
+
+	return result
+}
+
+func operationPercentilesFromBuckets(buckets map[string]*bucket) []OperationPercentiles {
+	result := make([]OperationPercentiles, 0, len(buckets))
+	for op, b := range buckets {
+		sort.Slice(b.latencies, func(i, j int) bool { return b.latencies[i] < b.latencies[j] })
+		result = append(result, OperationPercentiles{
+			Operation: op,
+			Count:     b.ops,
+			P50Ms:     percentile(b.latencies, 0.50),
+			P95Ms:     percentile(b.latencies, 0.95),
+			P99Ms:     percentile(b.latencies, 0.99),
+		})
+	}
+
+	sort.Slice(result, func(i, j int) bool {
+		if result[i].Count == result[j].Count {
+			return result[i].Operation < result[j].Operation
+		}
+		return result[i].Count > result[j].Count
+	})
+
+	return result
 }
 
 // ComputeBackendHistogram groups events by backend and counts occurrences

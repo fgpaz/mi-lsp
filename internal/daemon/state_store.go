@@ -147,8 +147,9 @@ func openTelemetryStore() (*TelemetryStore, error) {
 	if err != nil {
 		return nil, err
 	}
+	db.SetMaxOpenConns(1)
 	store := &TelemetryStore{db: db}
-	if err := store.enableWALMode(); err != nil {
+	if err := store.configureConnection(); err != nil {
 		_ = db.Close()
 		return nil, err
 	}
@@ -164,8 +165,20 @@ func OpenTelemetryStore() (*TelemetryStore, error) {
 }
 
 func (s *TelemetryStore) enableWALMode() error {
-	_, err := s.db.Exec("PRAGMA journal_mode=WAL")
-	return err
+	var mode string
+	return s.db.QueryRow("PRAGMA journal_mode=WAL").Scan(&mode)
+}
+
+func (s *TelemetryStore) configureConnection() error {
+	for _, pragma := range []string{
+		"PRAGMA busy_timeout=5000",
+		"PRAGMA synchronous=NORMAL",
+	} {
+		if _, err := s.db.Exec(pragma); err != nil {
+			return err
+		}
+	}
+	return s.enableWALMode()
 }
 
 func (s *TelemetryStore) PurgeOldEvents(olderThan time.Time) (int64, error) {
@@ -296,6 +309,20 @@ func (s *TelemetryStore) initSchema() error {
 		`ALTER TABLE access_events ADD COLUMN decision_json TEXT`,
 	} {
 		_, _ = s.db.Exec(migration)
+	}
+	for _, index := range []string{
+		`CREATE INDEX IF NOT EXISTS idx_access_events_occurred_at ON access_events(occurred_at DESC)`,
+		`CREATE INDEX IF NOT EXISTS idx_access_events_workspace_time ON access_events(workspace_root, workspace_alias, workspace, occurred_at DESC)`,
+		`CREATE INDEX IF NOT EXISTS idx_access_events_operation_time ON access_events(operation, occurred_at DESC)`,
+		`CREATE INDEX IF NOT EXISTS idx_access_events_backend_time ON access_events(backend, occurred_at DESC)`,
+		`CREATE INDEX IF NOT EXISTS idx_access_events_session_time ON access_events(session_id, occurred_at DESC)`,
+		`CREATE INDEX IF NOT EXISTS idx_access_events_route_time ON access_events(route, occurred_at DESC)`,
+		`CREATE INDEX IF NOT EXISTS idx_access_events_failure_stage_time ON access_events(failure_stage, occurred_at DESC)`,
+		`CREATE INDEX IF NOT EXISTS idx_access_events_hint_time ON access_events(hint_code, occurred_at DESC)`,
+	} {
+		if _, err := s.db.Exec(index); err != nil {
+			return err
+		}
 	}
 	return nil
 }

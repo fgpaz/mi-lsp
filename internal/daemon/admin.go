@@ -388,6 +388,10 @@ func (a *AdminServer) readLogTail(tail int) (string, []map[string]any, string, e
 	if len(lines) == 0 {
 		return path, []map[string]any{}, "daemon log is empty", nil
 	}
+	lines = FilterBenignDaemonLogNoise(lines)
+	if len(lines) == 0 {
+		return path, []map[string]any{}, "daemon log contains only benign closed-connection noise", nil
+	}
 	items := make([]map[string]any, 0, len(lines))
 	for _, line := range lines {
 		items = append(items, map[string]any{"line": line.Line, "text": line.Text})
