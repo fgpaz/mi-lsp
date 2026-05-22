@@ -1,0 +1,125 @@
+schema: sdd-traceability-closure-v1
+task_slug: "2026-05-21-ae-release-distribution"
+closed_at: "2026-05-22T00:56:00Z"
+verdict: PASS
+skills:
+  ps_contexto: PASS
+  brainstorming: PASS
+  ae_orquestador: PASS
+  ps_trazabilidad: PASS
+  ps_auditar_trazabilidad: PASS
+governance:
+  workspace_status: PASS
+  nav_governance: PASS
+  sync: in_sync
+  index_sync: current
+anchors:
+  primary:
+    - AE-HARNESS-MANIFEST
+    - AE-RELEASE-DISTRIBUTION
+    - AE-EVIDENCE-POLICY
+    - AE-WORK-MODES
+  supporting:
+    - TECH-DEPENDENCY-HARDENING
+    - "09_contratos_tecnicos"
+    - TP-WKS
+implementation:
+  ae_layer:
+    docs:
+      - .docs/wiki/ae/README.md
+      - .docs/wiki/ae/AE-HARNESS-MANIFEST.md
+      - .docs/wiki/ae/AE-WORK-MODES.md
+      - .docs/wiki/ae/AE-RELEASE-DISTRIBUTION.md
+      - .docs/wiki/ae/AE-EVIDENCE-POLICY.md
+  release_gate:
+    script: scripts/release/ae-release-binaries.ps1
+    install_helper: scripts/release/install-local.ps1
+    rids:
+      - win-arm64
+      - win-x64
+      - linux-arm64
+      - linux-x64
+    host_arch_detection: "Windows ARM64 is detected from ARMv8/Qualcomm/ARM64 host hints even when PowerShell/.NET report x64 under emulation."
+external_distribution:
+  global_skill_repo:
+    path: "C:/Users/fgpaz/.agents/skills"
+    branch: main
+    changed_paths:
+      - ae-orquestador/SKILL.md
+      - agentic-engineering/ae-orquestador/SKILL.md
+    sha256: "0A81E1FF23F9BC81BDBEDEA6609C7BFC66F3A2E3E0F67C595F3B0ECB58A754D9"
+  buho_assets_mirror:
+    path: "C:/repos/buho/assets"
+    branch: main
+    skill_dirs_synced:
+      - skills/ae-aprendizaje
+      - skills/ae-contrato-operativo
+      - skills/ae-crear-politicas
+      - skills/ae-crear-politicas-microservicios
+      - skills/ae-decision-lock
+      - skills/ae-discovery-manual
+      - skills/ae-harness-manifest
+      - skills/ae-orquestador
+      - skills/ae-pre-push
+      - skills/ae-projection-audit
+      - skills/ae-validacion-evidencia
+    ae_orquestador_sha256: "0A81E1FF23F9BC81BDBEDEA6609C7BFC66F3A2E3E0F67C595F3B0ECB58A754D9"
+evidence:
+  tests:
+    - command: "go test ./..."
+      verdict: PASS
+    - command: "git diff --check"
+      verdict: PASS
+      note: "Only line-ending conversion warnings were emitted."
+  index_and_governance:
+    - command: "go run ./cmd/mi-lsp index --workspace mi-lsp"
+      verdict: PASS
+      docs: 104
+      symbols: 2206
+    - command: "go run ./cmd/mi-lsp workspace status mi-lsp --format toon"
+      verdict: PASS
+      governance_blocked: false
+    - command: "go run ./cmd/mi-lsp nav governance --workspace mi-lsp --format toon"
+      verdict: PASS
+      sync: in_sync
+      index_sync: current
+  wiki_harness:
+    - command: "go run ./cmd/mi-lsp nav wiki validate-harness --workspace mi-lsp --format toon"
+      verdict: PASS
+    - command: "go run ./cmd/mi-lsp nav wiki validate-source --workspace mi-lsp --format toon"
+      verdict: PASS
+      docs_reviewed: 6
+      blocks_reviewed: 12
+  navigation:
+    - command: "go run ./cmd/mi-lsp nav pack \"actualizar y publicar binarios windows linux arm64 amd64\" --workspace mi-lsp --format toon"
+      verdict: PASS
+      primary_doc: .docs/wiki/ae/AE-RELEASE-DISTRIBUTION.md
+    - command: "go run ./cmd/mi-lsp nav route \"actualizar binarios linux windows arm64 amd64\" --workspace mi-lsp --format toon"
+      verdict: PASS
+      anchor_doc: AE-RELEASE-DISTRIBUTION
+  binary_refresh:
+    - target: "C:/Users/fgpaz/bin/mi-lsp.exe"
+      rid: win-arm64
+      sha256: "727e659abe8e9c5b1d2ee019713c300ce198091fd4a126df5f5aeb0fb09daec9"
+      worker_status: PASS
+    - target: "/home/fgpaz/.local/bin/mi-lsp"
+      rid: linux-arm64
+      sha256: "0e1d01b583b07d8b5e5cfb6d73bc2379c41aebb00c1ed1c6c9dfc0758640094d"
+      worker_status: PASS
+    - target: "/home/fgpaz/bin/mi-lsp"
+      rid: linux-arm64
+      sha256: "0e1d01b583b07d8b5e5cfb6d73bc2379c41aebb00c1ed1c6c9dfc0758640094d"
+      worker_status: PASS
+  shared_skill_sync:
+    - command: "hash parity over C:/Users/fgpaz/.agents/skills/ae-* and C:/repos/buho/assets/skills/ae-*"
+      verdict: PASS
+      ae_orquestador_sha256: "0A81E1FF23F9BC81BDBEDEA6609C7BFC66F3A2E3E0F67C595F3B0ECB58A754D9"
+  pre_push:
+    - command: "infra/git/Invoke-PrePushGuard.ps1"
+      verdict: "Approved with waiver"
+      shared_skill_mirror_check: PASS
+waivers:
+  - "Publish was not run because this session has an intentionally dirty worktree and no clean release tag."
+  - "External mirror was not written; scripts/release/ae-release-binaries.ps1 supports -MirrorRoot for the future release gate."
+  - "Combined local+WSL install was validated as split operations in this sandbox because elevated Windows execution could not access the WSL default distro."
+  - "Tracker/board issue was waived by direct user instruction to close and integrate this operational hardening."

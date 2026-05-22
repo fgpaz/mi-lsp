@@ -7,8 +7,8 @@ version = 1
 
 [[family]]
   name = "technical"
-  intent_keywords = ["technical", "governance", "runtime", "backend", "contract", "protocol", "search", "context", "refs", "service", "index", "routing", "ordered_wiki", "spec_core"]
-  paths = [".docs/wiki/07_*.md", ".docs/wiki/07_tech/*.md", ".docs/wiki/08_*.md", ".docs/wiki/08_db/*.md", ".docs/wiki/09_*.md", ".docs/wiki/09_contratos/*.md"]
+  intent_keywords = ["technical", "governance", "runtime", "backend", "contract", "protocol", "search", "context", "refs", "service", "index", "routing", "ae", "agent engineering", "release", "distribution", "binary", "install", "ordered_wiki", "spec_core"]
+  paths = [".docs/wiki/07_*.md", ".docs/wiki/07_tech/*.md", ".docs/wiki/08_*.md", ".docs/wiki/08_db/*.md", ".docs/wiki/09_*.md", ".docs/wiki/09_contratos/*.md", ".docs/wiki/ae/*.md"]
 
 [generic_docs]
   paths = ["README.md", "README*.md", "docs/", ".docs/"]
@@ -29,15 +29,20 @@ version = 1
   prefer_doc_ids = ["RF-WKS-005", "RF-QRY-011", "CT-CLI-AXI-MODE", "CT-NAV-INTENT"]
   prefer_layers = ["04", "09"]
 
+[[owner_hint]]
+  terms = ["ae", "agent engineering", "ae-orquestador", "release distribution", "actualizar binarios", "publicar binarios", "subir binarios", "mirror binaries"]
+  prefer_doc_ids = ["AE-README", "AE-HARNESS-MANIFEST", "AE-WORK-MODES", "AE-RELEASE-DISTRIBUTION", "AE-EVIDENCE-POLICY"]
+  prefer_layers = ["AE"]
+
 [governance]
   source_doc = ".docs/wiki/00_gobierno_documental.md"
   source_format = "markdown+yaml"
   profile = "spec_backend"
   effective_base = "ordered_wiki"
   effective_overlays = ["spec_core", "technical"]
-  context_chain = ["governance", "scope", "architecture", "flow", "requirements", "technical_baseline", "contracts"]
-  closure_chain = ["governance", "flow", "requirements", "technical_baseline", "contracts", "tests"]
-  audit_chain = ["governance", "flow", "requirements", "technical_baseline", "physical_data", "contracts", "tests"]
+  context_chain = ["governance", "scope", "architecture", "flow", "requirements", "technical_baseline", "agent_engineering", "contracts"]
+  closure_chain = ["governance", "flow", "requirements", "technical_baseline", "agent_engineering", "contracts", "tests"]
+  audit_chain = ["governance", "flow", "requirements", "technical_baseline", "agent_engineering", "physical_data", "contracts", "tests"]
   blocking_rules = ["missing_human_governance_doc", "missing_governance_yaml", "invalid_governance_schema", "projection_out_of_sync", "workspace_index_stale"]
   numbering_recommended = true
   [governance.projection]
@@ -125,3 +130,11 @@ version = 1
     family = "technical"
     pack_stage = "contracts"
     paths = [".docs/wiki/09_*.md", ".docs/wiki/09_contratos/*.md"]
+
+  [[governance.hierarchy]]
+    id = "agent_engineering"
+    label = "Agent Engineering"
+    layer = "AE"
+    family = "technical"
+    pack_stage = "technical_detail"
+    paths = [".docs/wiki/ae/*.md"]

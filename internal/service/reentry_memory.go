@@ -111,6 +111,18 @@ func buildAskContinuation(question string, project model.ProjectFile, result mod
 		}
 	}
 	if askCoachConfidence(result, warnings) == "low" {
+		if containsWarning(warnings, askWarningAnchorDrift) {
+			return &model.Continuation{
+				Reason: "low_evidence",
+				Next: model.ContinuationTarget{
+					Op:    "nav.pack",
+					Query: question,
+					DocID: strings.TrimSpace(result.PrimaryDoc.DocID),
+					Path:  strings.TrimSpace(result.PrimaryDoc.Path),
+					Full:  true,
+				},
+			}
+		}
 		return &model.Continuation{
 			Reason: "low_evidence",
 			Next: model.ContinuationTarget{

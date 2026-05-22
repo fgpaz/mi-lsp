@@ -21,6 +21,41 @@ function Get-CliName {
     return 'mi-lsp'
 }
 
+function Invoke-WithRetry {
+    param(
+        [Parameter(Mandatory = $true)][scriptblock]$Action,
+        [Parameter(Mandatory = $true)][string]$Description,
+        [int]$Attempts = 6
+    )
+
+    for ($attempt = 1; $attempt -le $Attempts; $attempt++) {
+        try {
+            & $Action
+            return
+        }
+        catch {
+            if ($attempt -ge $Attempts) {
+                throw
+            }
+            Start-Sleep -Milliseconds (250 * $attempt)
+        }
+    }
+}
+
+function Stop-ExistingDaemon {
+    param([Parameter(Mandatory = $true)][string]$CliPath)
+    if (-not (Test-Path $CliPath)) {
+        return
+    }
+    try {
+        & $CliPath daemon stop --format compact | Out-Null
+        Start-Sleep -Milliseconds 500
+    }
+    catch {
+        Write-Warning "Could not stop existing mi-lsp daemon before install: $($_.Exception.Message)"
+    }
+}
+
 if (-not $SkipBuild) {
     & $buildScript -Rids @($Rid) -OutDir $OutDir -Clean
     if ($LASTEXITCODE -ne 0) {
@@ -45,13 +80,20 @@ $targetWorkerDir = Join-Path $targetWorkersRoot $Rid
 
 New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
 New-Item -ItemType Directory -Force -Path $targetWorkersRoot | Out-Null
+Stop-ExistingDaemon -CliPath $targetCli
 if (Test-Path $targetWorkerDir) {
-    Remove-Item -Recurse -Force $targetWorkerDir
+    Invoke-WithRetry -Description "remove existing worker dir" -Action {
+        Remove-Item -Recurse -Force $targetWorkerDir
+    }
 }
 New-Item -ItemType Directory -Force -Path $targetWorkerDir | Out-Null
 
-Copy-Item -Force $sourceCli $targetCli
-Copy-Item -Recurse -Force (Join-Path $sourceWorkerDir '*') $targetWorkerDir
+Invoke-WithRetry -Description "copy CLI" -Action {
+    Copy-Item -Force $sourceCli $targetCli
+}
+Invoke-WithRetry -Description "copy worker bundle" -Action {
+    Copy-Item -Recurse -Force (Join-Path $sourceWorkerDir '*') $targetWorkerDir
+}
 
 if (-not $SkipWorkerRefresh) {
     & $targetCli worker install --rid $Rid --format compact

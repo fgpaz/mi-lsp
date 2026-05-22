@@ -252,6 +252,20 @@ func TestDoctorWorkspacesBinaryShadowingActionUsesHostCommand(t *testing.T) {
 	}
 }
 
+func TestDoctorWorkspacesBinaryRevisionDriftAction(t *testing.T) {
+	report := WorkspaceDoctorReport{
+		BinaryShadowing: []BinaryCandidate{
+			{Path: "/tmp/mi-lsp", Active: true, Revision: "aaa"},
+			{Path: "/usr/bin/mi-lsp", Revision: "bbb"},
+		},
+	}
+
+	actions := workspaceDoctorNextActions(report)
+	if !doctorActionsContain(actions, "review_binary_version_drift") {
+		t.Fatalf("NextActions = %#v, want review_binary_version_drift", actions)
+	}
+}
+
 func registerTestWorkspace(t *testing.T, alias string, root string) {
 	t.Helper()
 	if _, err := RegisterWorkspace(alias, model.WorkspaceRegistration{

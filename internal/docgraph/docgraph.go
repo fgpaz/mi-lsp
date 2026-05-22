@@ -21,7 +21,7 @@ import (
 )
 
 var (
-	docIDPattern        = regexp.MustCompile(`\b(?:FL|RS|RF|TP|TECH|CT|DB)-[A-Z0-9-]+\b`)
+	docIDPattern        = regexp.MustCompile(`\b(?:FL|RS|RF|TP|TECH|CT|DB|AE)-[A-Z0-9-]+\b`)
 	markdownLinkPattern = regexp.MustCompile(`\[[^\]]+\]\(([^)]+)\)`)
 	inlineCodePattern   = regexp.MustCompile("`([^`]+)`")
 	pascalSymbolPattern = regexp.MustCompile(`\b[A-Z][A-Za-z0-9_]+\b`)
@@ -87,7 +87,7 @@ func DefaultProfile() model.DocsReadProfile {
 			},
 			{
 				Name:           "technical",
-				IntentKeywords: []string{"technical", "daemon", "worker", "runtime", "backend", "contract", "protocol", "search", "context", "refs", "service", "index", "routing"},
+				IntentKeywords: []string{"technical", "daemon", "worker", "runtime", "backend", "contract", "protocol", "search", "context", "refs", "service", "index", "routing", "ae", "agent engineering", "release", "distribution", "binary", "install"},
 				Paths: []string{
 					".docs/wiki/07_*.md",
 					".docs/wiki/07_tech/*.md",
@@ -95,6 +95,7 @@ func DefaultProfile() model.DocsReadProfile {
 					".docs/wiki/08_db/*.md",
 					".docs/wiki/09_*.md",
 					".docs/wiki/09_contratos/*.md",
+					".docs/wiki/ae/*.md",
 				},
 			},
 			{
@@ -582,6 +583,8 @@ func detectLayer(path string) string {
 		return "08"
 	case strings.Contains(path, "/09_contratos/"):
 		return "09"
+	case strings.Contains(path, "/ae/"):
+		return "AE"
 	default:
 		return "generic"
 	}

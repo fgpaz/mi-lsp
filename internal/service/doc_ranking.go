@@ -370,7 +370,8 @@ func isCanonicalWikiDoc(path string) bool {
 
 func isSupportArtifactDoc(path string) bool {
 	normalized := filepath.ToSlash(strings.TrimSpace(path))
-	return strings.HasPrefix(normalized, ".docs/raw/")
+	return strings.HasPrefix(normalized, ".docs/raw/") ||
+		strings.HasPrefix(normalized, ".docs/auditoria/")
 }
 
 func pathMatchesAnyHint(path string, patterns []string) bool {
@@ -429,6 +430,12 @@ func normalizeRankingText(value string) string {
 		"\\", " ",
 		".", " ",
 		":", " ",
+		",", " ",
+		";", " ",
+		"?", " ",
+		"!", " ",
+		"(", " ",
+		")", " ",
 	)
 	value = replacer.Replace(value)
 	return strings.Join(strings.Fields(value), " ")

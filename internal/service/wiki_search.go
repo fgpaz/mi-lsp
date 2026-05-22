@@ -150,7 +150,7 @@ func (a *App) wikiSearch(ctx context.Context, request model.CommandRequest) (mod
 		if len(layerFilter) > 0 {
 			hint = "0 wiki matches for selected layers; broaden --layer or try nav wiki route"
 		} else {
-			hint = "0 wiki matches; try a doc id like RS-*, RF-*, FL-*, CT-*, TECH-*, DB-* or run nav wiki route"
+			hint = "0 wiki matches; try a doc id like RS-*, RF-*, FL-*, CT-*, TECH-*, DB-*, AE-* or run nav wiki route"
 		}
 	}
 
@@ -268,7 +268,7 @@ func parseWikiLayerFilter(raw string) (map[string]struct{}, []string) {
 			continue
 		}
 		switch layer {
-		case "RS", "RF", "FL", "TP", "CT", "TECH", "DB":
+		case "RS", "RF", "FL", "TP", "CT", "TECH", "DB", "AE":
 			filter[layer] = struct{}{}
 		default:
 			unknown = append(unknown, layer)
@@ -298,6 +298,8 @@ func wikiLayerForDoc(doc model.DocRecord) string {
 		return "TECH"
 	case strings.HasPrefix(docID, "DB-") || doc.Layer == "08" || strings.Contains(path, "/08_db/"):
 		return "DB"
+	case strings.HasPrefix(docID, "AE-") || doc.Layer == "AE" || strings.Contains(path, "/ae/"):
+		return "AE"
 	default:
 		return strings.ToUpper(strings.TrimSpace(doc.Layer))
 	}
@@ -322,6 +324,8 @@ func wikiStageForDoc(doc model.DocRecord) string {
 		return "physical_data"
 	case strings.Contains(path, "/09_contratos/") || doc.Layer == "09":
 		return "contracts"
+	case strings.Contains(path, "/ae/") || doc.Layer == "AE":
+		return "technical_detail"
 	case doc.Layer == "01":
 		return "scope"
 	case doc.Layer == "02":
@@ -396,7 +400,7 @@ func (a *App) wikiSearchAllWorkspaces(ctx context.Context, request model.Command
 
 	// Fan-out across workspaces
 	fanOutOpts := nav.WikiFanOutOptions{
-		Timeout: 0, // Use default (30s)
+		Timeout:  0, // Use default (30s)
 		Parallel: 0, // Use default (4)
 	}
 
@@ -529,7 +533,7 @@ func (a *App) wikiSearchAllWorkspaces(ctx context.Context, request model.Command
 		if len(layerFilter) > 0 {
 			hint = "0 wiki matches across workspaces for selected layers; broaden --layer or try nav wiki route"
 		} else {
-			hint = "0 wiki matches across workspaces; try a doc id like RS-*, RF-*, FL-*, CT-*, TECH-*, DB-*"
+			hint = "0 wiki matches across workspaces; try a doc id like RS-*, RF-*, FL-*, CT-*, TECH-*, DB-*, AE-*"
 		}
 	}
 

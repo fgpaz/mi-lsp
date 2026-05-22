@@ -10,6 +10,7 @@ How was this tested?
 - [ ] `make test`
 - [ ] `make lint`
 - [ ] Worker build / release packaging smoke check when relevant
+- [ ] AE release distribution gate or waiver when binaries/install/release behavior changed
 
 ## Checklist
 

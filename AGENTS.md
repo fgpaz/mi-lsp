@@ -25,6 +25,7 @@ Additional strict rules:
 - In `blocked mode`, only diagnosis and repair are allowed. Use `mi-lsp nav governance`, `$ps-asistente-wiki`, and `crear-gobierno-documental`.
 - Run `$ps-auditar-trazabilidad` for large, risky, cross-layer, or multi-module changes.
 - If editing `AGENTS.md` or `CLAUDE.md`, use `$ps-crear-agentsclaudemd`.
+- Use `.docs/wiki/ae/` as the Agent Engineering layer. For workflow, policy, release, binary, worker, install, or publication work, load `AE-HARNESS-MANIFEST` and close through `AE-RELEASE-DISTRIBUTION` when binaries can drift.
 - If updating any skill under `C:\Users\fgpaz\.agents\skills`, also update the mirrored copy under `C:\repos\buho\assets\skills` in the same task.
 - If creating or refactoring technical wiki docs under `07/08/09`, use `$crear-capa-tecnica-wiki`.
 - If changing scope, architecture, or flows, use `crear-alcance`, `crear-arquitectura`, and `crear-flujo` in that order when applicable.
@@ -52,6 +53,14 @@ Technical source of truth:
 - `.docs/wiki/07_tech/`
 - `.docs/wiki/08_db/`
 - `.docs/wiki/09_contratos/`
+
+Agent Engineering source of truth:
+
+- `.docs/wiki/ae/`
+- `.docs/wiki/ae/AE-HARNESS-MANIFEST.md`
+- `.docs/wiki/ae/AE-WORK-MODES.md`
+- `.docs/wiki/ae/AE-RELEASE-DISTRIBUTION.md`
+- `.docs/wiki/ae/AE-EVIDENCE-POLICY.md`
 
 Implementation plan reference:
 
@@ -165,6 +174,7 @@ Implementation plan reference:
 - Technical detail docs: `.docs/wiki/07_tech/`
 - Physical detail docs: `.docs/wiki/08_db/`
 - Contract detail docs: `.docs/wiki/09_contratos/`
+- Agent Engineering: `.docs/wiki/ae/`
 
 ## Documentation Sync Rule
 
@@ -186,6 +196,12 @@ When the change affects commands, flags, envelopes, protocol versioning, admin e
 When visible behavior, states, or flows change:
 
 - also review `.docs/wiki/01_alcance_funcional.md`, `.docs/wiki/02_arquitectura.md`, and `.docs/wiki/03_FL*`
+
+When release, binary refresh, worker bootstrap, install, publication, or cross-OS distribution behavior changes:
+
+- review/update `.docs/wiki/ae/AE-RELEASE-DISTRIBUTION.md`
+- run or explicitly waive `scripts/release/ae-release-binaries.ps1`
+- record provenance, install paths, worker status, and publish/mirror evidence under `.docs/auditoria/<task>/`
 
 ## Search Commands
 
@@ -249,7 +265,8 @@ Policy-edit task:
 3. `$brainstorming`
 4. `$ps-crear-agentsclaudemd`
 5. sync `AGENTS.md` and `CLAUDE.md`
-6. `$ps-trazabilidad`
+6. verify `.docs/wiki/ae/` still matches policy when the change touches agent execution
+7. `$ps-trazabilidad`
 
 Governance-repair task:
 
@@ -308,6 +325,7 @@ Governance-repair task:
 | `crear-gobierno-documental` | Create, repair, or refactor `.docs/wiki/00_gobierno_documental.md` and its projection | Yes when governance is missing, invalid, or stale |
 | `writing-plans` | Large, risky, or multi-step work | Yes when a formal wave plan is needed |
 | `ps-crear-agentsclaudemd` | Editing `AGENTS.md` or `CLAUDE.md` | Yes |
+| `ae-orquestador` | Agent Engineering, workflow, policy, release, binary, install, or publication work | Yes |
 | `ps-trazabilidad` | Before closing any task | Yes |
 | `ps-auditar-trazabilidad` | Large, risky, multi-module, or cross-layer changes | Yes |
 
@@ -411,4 +429,5 @@ If `hint` is present and `items` is empty: **act on the hint first — do not re
 - Do not continue normal work when `governance_blocked=true`.
 - Do not treat `00_gobierno_documental.md` and `read-model.toml` as co-authorities; `00` always wins.
 - Do not treat the daemon, worker, TS backend, or governance UI as purely code concerns; keep `07/08/09` in sync.
+- Do not close binary-affecting work without `AE-RELEASE-DISTRIBUTION` evidence or an explicit recorded waiver.
 - Keep `AGENTS.md` and `CLAUDE.md` aligned.

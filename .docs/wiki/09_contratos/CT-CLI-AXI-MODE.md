@@ -76,7 +76,7 @@ El item principal del home puede incluir:
 ## Discovery preview/full
 
 - `workspace status`: `view=preview|full`, `docs_read_model`, `index_ready`, `next_steps`; en preview puede incluir `memory_pointer` y en `--full` expande `memory`
-- `nav ask`: conserva `AskResult`, puede condensar evidencia en preview y usar `next_hint` para `--full` cuando la heuristica lo deja en AXI
+- `nav ask`: conserva `AskResult`, puede condensar evidencia en preview y usar `next_hint` para `--full` cuando la heuristica lo deja en AXI; `coach.trigger=anchor_drift` es aditivo y debe conservar al menos una accion hacia `nav pack --full`
 - `nav pack`: conserva `PackResult`, entrega `mode=preview|full` y usa `--full` para materializar slices del mismo pack
 - `nav workspace-map`: agrega `mode=preview|full` y `next_steps` solo cuando se fuerza AXI
 - `nav search`: mantiene envelope estable y agrega guidance de expansion via `next_hint`; puede ademas exponer `continuation`/`memory_pointer` cuando ayudan a reentrar con pocos tokens

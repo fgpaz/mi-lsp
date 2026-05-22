@@ -1,0 +1,57 @@
+schema: sdd-traceability-audit-v1
+task_slug: "2026-05-21-ae-release-distribution"
+audited_at: "2026-05-22T00:56:00Z"
+verdict: Approved
+scope_audited:
+  - mi-lsp AE wiki layer and navigation hardening
+  - release-distribution script and installer hardening
+  - Windows/WSL binary refresh
+  - global AE skill and Buho assets mirror sync
+findings: []
+governance:
+  workspace_status: PASS
+  nav_governance: PASS
+  governance_blocked: false
+  sync: in_sync
+  index_sync: current
+harness:
+  validate_harness: PASS
+  validate_source: PASS
+  wiki_source_artifacts_reviewed: 6
+  wiki_source_blocks_reviewed: 12
+technical_drift:
+  anchor_drift_guard: PASS
+  ae_navigation_layer: PASS
+  support_artifact_filtering: PASS
+  release_distribution_contract: PASS
+binary_drift:
+  windows_global:
+    path: "C:/Users/fgpaz/bin/mi-lsp.exe"
+    rid: win-arm64
+    worker_status: PASS
+  wsl_global:
+    paths:
+      - /home/fgpaz/.local/bin/mi-lsp
+      - /home/fgpaz/bin/mi-lsp
+    rid: linux-arm64
+    worker_status: PASS
+skill_mirror_drift:
+  verdict: PASS
+  ae_orquestador_global_nested_and_assets_sha256: "0A81E1FF23F9BC81BDBEDEA6609C7BFC66F3A2E3E0F67C595F3B0ECB58A754D9"
+pre_push:
+  status: "Approved with waiver"
+  waiver_reason: "No board card: direct user request to close drifts, publish skills/binaries, and integrate to origin main."
+  expected_scope:
+    - backend
+    - canon-docs
+    - evidence-docs
+    - git-tooling
+    - shared-skill
+branch_disposition:
+  mi_lsp: integrate-main
+  global_skills: push-main
+  buho_assets: push-main
+cleanup_policy:
+  mi_lsp_branch: cleanup_after_successful_integration
+  external_repos: keep_main
+blocking_remediations: []

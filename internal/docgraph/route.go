@@ -108,9 +108,6 @@ func explicitDocSearchPaths(profile model.DocsReadProfile, docID string) []strin
 	}
 
 	for _, item := range profile.Governance.Hierarchy {
-		if strings.TrimSpace(item.Family) != "functional" {
-			continue
-		}
 		if !governanceItemMatchesDocPrefix(item, prefix) {
 			continue
 		}
@@ -119,9 +116,6 @@ func explicitDocSearchPaths(profile model.DocsReadProfile, docID string) []strin
 		}
 	}
 	for _, family := range profile.Families {
-		if family.Name != "functional" {
-			continue
-		}
 		for _, path := range family.Paths {
 			if pathMatchesDocPrefix(path, prefix) {
 				add(path)
@@ -171,6 +165,8 @@ func pathMatchesDocPrefix(path string, prefix string) bool {
 		return strings.Contains(normalized, "06_pruebas") || strings.Contains(normalized, "/tp")
 	case "FL":
 		return strings.Contains(normalized, "03_fl") || strings.Contains(normalized, "/fl")
+	case "AE":
+		return strings.Contains(normalized, "/ae/") || strings.Contains(normalized, "ae-")
 	default:
 		return strings.Contains(normalized, strings.ToLower(prefix)+"-")
 	}
@@ -187,6 +183,8 @@ func isSpecificDocPatternForPrefix(path string, prefix string) bool {
 		return strings.Contains(normalized, "/06_pruebas/") || strings.Contains(normalized, "/tp/")
 	case "FL":
 		return strings.Contains(normalized, "/03_fl/") || strings.Contains(normalized, "/fl/")
+	case "AE":
+		return strings.Contains(normalized, "/ae/")
 	default:
 		return false
 	}
@@ -202,6 +200,8 @@ func fallbackExplicitDocSearchPaths(docID string) []string {
 		return []string{".docs/wiki/06_pruebas/*.md", ".docs/wiki/06_matriz_pruebas_RF.md"}
 	case "FL":
 		return []string{".docs/wiki/03_FL/*.md", ".docs/wiki/03_FL.md"}
+	case "AE":
+		return []string{".docs/wiki/ae/*.md"}
 	default:
 		return nil
 	}

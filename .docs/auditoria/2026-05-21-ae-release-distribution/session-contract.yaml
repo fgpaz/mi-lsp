@@ -1,0 +1,126 @@
+schema: sdd-session-contract-v1
+task_slug: "2026-05-21-ae-release-distribution"
+created_at: "2026-05-21T19:29:28-03:00"
+issue_or_waiver: "waiver: user requested direct repo hardening without Linear issue in this session"
+base_ref: "HEAD"
+base_sha: "92442035e43d6d27217ff74bbe27686a052ba19d"
+worktree_path: "C:/repos/mios/mi-lsp"
+branch: "codex/agent-nav-wsl-hardening"
+remote_branch: null
+anchors:
+  rs: []
+  fl:
+    - FL-BOOT-01
+  rf:
+    - RF-WKS-006
+  ct:
+    - "09_contratos_tecnicos"
+  tech:
+    - TECH-DEPENDENCY-HARDENING
+  ae:
+    - AE-README
+    - AE-HARNESS-MANIFEST
+    - AE-WORK-MODES
+    - AE-RELEASE-DISTRIBUTION
+    - AE-EVIDENCE-POLICY
+ae_contract:
+  entry_skill: ae-orquestador
+  selected_mode: manifest_repair
+  decision_lock: "Create governed AE layer and release-distribution gate; do not publish binaries in this implementation session."
+  release_distribution_required: true
+  release_distribution_execution: "script implemented; built win-arm64/win-x64/linux-arm64/linux-x64; installed Windows host win-arm64; installed WSL linux-arm64 to both configured paths; publish intentionally waived until a clean tagged release"
+  binary_targets:
+    - win-arm64
+    - win-x64
+    - linux-arm64
+    - linux-x64
+  local_install_targets:
+    - "C:/Users/fgpaz/bin/mi-lsp.exe"
+    - "/home/fgpaz/.local/bin/mi-lsp"
+    - "/home/fgpaz/bin/mi-lsp"
+  mirror_targets:
+    - "C:/repos/buho/assets/skills/mi-lsp/bin/mi-lsp-win-x64.exe"
+    - "C:/repos/buho/assets/skills/mi-lsp/bin/mi-lsp-linux-x64"
+  publish_strategy: "GitHub release workflow triggered by clean tag via scripts/release/ae-release-binaries.ps1 -Publish -Tag <tag>"
+expected_scope:
+  - "Add governed .docs/wiki/ae layer."
+  - "Add release distribution script for all supported RIDs."
+  - "Project AE rules into AGENTS.md and CLAUDE.md."
+  - "Sync 07/09/TP/README/PR docs for release distribution behavior."
+allowed_paths:
+  - ".docs/wiki/00_gobierno_documental.md"
+  - ".docs/wiki/_mi-lsp/read-model.toml"
+  - ".docs/wiki/ae/**"
+  - ".docs/wiki/06_pruebas/TP-WKS.md"
+  - ".docs/wiki/07_baseline_tecnica.md"
+  - ".docs/wiki/07_tech/TECH-DEPENDENCY-HARDENING.md"
+  - ".docs/wiki/09_contratos_tecnicos.md"
+  - "AGENTS.md"
+  - "CLAUDE.md"
+  - "README.md"
+  - ".github/pull_request_template.md"
+  - "scripts/release/ae-release-binaries.ps1"
+  - "scripts/release/install-local.ps1"
+  - "internal/docgraph/**"
+  - "internal/service/wiki_search.go"
+  - ".docs/auditoria/2026-05-21-ae-release-distribution/**"
+forbidden_paths:
+  - ".docs/raw/**"
+  - "worker-dotnet/**"
+  - "skills/**"
+required_evidence:
+  - "PowerShell syntax parse for scripts/release/ae-release-binaries.ps1"
+  - "AE release script dry/smoke path without publish"
+  - "mi-lsp nav governance --workspace mi-lsp --format toon"
+  - "mi-lsp index --workspace mi-lsp"
+  - "mi-lsp nav wiki validate-harness --workspace mi-lsp --format toon"
+  - "mi-lsp nav wiki validate-source --workspace mi-lsp --format toon"
+  - "ps-trazabilidad closure summary"
+touched_linear_issues: []
+linear_parent_issue: "waiver"
+linear_agent_issues: []
+linear_claim:
+  issue: "waiver"
+  assignee: "waiver"
+  workflow_state: "waiver"
+  checked_existing_claims_at: "waiver"
+  claim_comment_url: "waiver"
+  claimed_at: "waiver"
+ticket_frontier:
+  write_scope:
+    - ".docs/wiki/ae/**"
+    - "scripts/release/ae-release-binaries.ps1"
+    - "scripts/release/install-local.ps1"
+    - "AGENTS.md"
+    - "CLAUDE.md"
+    - "README.md"
+    - ".docs/wiki/00_gobierno_documental.md"
+    - ".docs/wiki/_mi-lsp/read-model.toml"
+    - ".docs/wiki/06_pruebas/TP-WKS.md"
+    - ".docs/wiki/07_baseline_tecnica.md"
+    - ".docs/wiki/07_tech/TECH-DEPENDENCY-HARDENING.md"
+    - ".docs/wiki/09_contratos_tecnicos.md"
+    - ".github/pull_request_template.md"
+    - "internal/docgraph/**"
+    - "internal/service/wiki_search.go"
+  read_review_scope:
+    - "scripts/release/build-dist.ps1"
+    - "scripts/release/install-local.ps1"
+    - ".goreleaser.yaml"
+    - ".github/workflows/release.yml"
+  exclusive_paths:
+    - ".docs/wiki/ae/**"
+    - "scripts/release/ae-release-binaries.ps1"
+  forbidden_paths:
+    - ".docs/raw/**"
+    - "worker-dotnet/**"
+  integration_owner: "codex"
+  parking_lot: []
+waivers:
+  - "No publish/tag push in this implementation session; future clean release uses -Publish -Tag."
+  - "No external mirror write in this sandboxed session; script supports -MirrorRoot for the future gate."
+  - "The sandbox required splitting Windows local install and WSL install because elevated Windows token could not access the WSL default distro; both target sets were verified separately."
+cleanup_policy:
+  remove_worktree: false
+  delete_branch: false
+  delete_remote_branch: false

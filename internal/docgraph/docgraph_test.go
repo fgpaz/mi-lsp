@@ -90,6 +90,68 @@ func TestIndexWorkspaceDocsHonorsGitignoreReincludeForWiki(t *testing.T) {
 	}
 }
 
+func TestIndexWorkspaceDocsExtractsAEDocID(t *testing.T) {
+	root := t.TempDir()
+	mustWriteDocgraphFile(t, filepath.Join(root, ".docs", "wiki", "_mi-lsp", "read-model.toml"), strings.Join([]string{
+		"version = 1",
+		"",
+		"[[family]]",
+		"  name = \"technical\"",
+		"  intent_keywords = [\"ae\", \"release\", \"binary\"]",
+		"  paths = [\".docs/wiki/ae/*.md\"]",
+	}, "\n"))
+	mustWriteDocgraphFile(t, filepath.Join(root, ".docs", "wiki", "ae", "AE-RELEASE-DISTRIBUTION.md"), strings.Join([]string{
+		"# AE-RELEASE-DISTRIBUTION",
+		"",
+		"source_protocol: SDD-WIKI-SOURCE-v1",
+		"harness_protocol: SDD-HARNESS-v1",
+		"doc_id: AE-RELEASE-DISTRIBUTION",
+		"audience: llm-first",
+		"imports:",
+		"  - '[[00_gobierno_documental]]'",
+		"exports:",
+		"  - AE-RELEASE-DISTRIBUTION",
+		"",
+		"```toon",
+		"doc_id: AE-RELEASE-DISTRIBUTION",
+		"block_id: AE-RELEASE-DISTRIBUTION.gate",
+		"kind: policy",
+		"source_of_truth: this",
+		"verify:",
+		"  - mi-lsp nav governance --workspace mi-lsp --format toon",
+		"evidence:",
+		"  - .docs/wiki/ae/AE-RELEASE-DISTRIBUTION.md",
+		"```",
+	}, "\n"))
+
+	docs, _, mentions, blocks, _, warnings, err := IndexWorkspaceDocsWithSourcesWithProgress(context.Background(), root, nil, nil)
+	if err != nil {
+		t.Fatalf("IndexWorkspaceDocsWithSourcesWithProgress: %v", err)
+	}
+	if len(warnings) != 0 {
+		t.Fatalf("warnings = %#v", warnings)
+	}
+	if len(docs) != 1 {
+		t.Fatalf("docs = %#v", docs)
+	}
+	if docs[0].DocID != "AE-RELEASE-DISTRIBUTION" || docs[0].Layer != "AE" || docs[0].Family != "technical" {
+		t.Fatalf("AE doc = %#v", docs[0])
+	}
+	if len(blocks) != 1 || blocks[0].DocID != "AE-RELEASE-DISTRIBUTION" || blocks[0].BlockID != "AE-RELEASE-DISTRIBUTION.gate" {
+		t.Fatalf("source blocks = %#v", blocks)
+	}
+	found := false
+	for _, mention := range mentions {
+		if mention.MentionType == "doc_id" && mention.MentionValue == "AE-RELEASE-DISTRIBUTION" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("missing AE doc_id mention in %#v", mentions)
+	}
+}
+
 func TestIndexWorkspaceDocsExtractsWikiSourceBlocksAndRecords(t *testing.T) {
 	root := t.TempDir()
 	mustWriteDocgraphFile(t, filepath.Join(root, ".docs", "wiki", "_mi-lsp", "read-model.toml"), strings.Join([]string{

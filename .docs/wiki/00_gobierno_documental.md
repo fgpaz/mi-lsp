@@ -45,6 +45,23 @@ owner_hints:
     prefer_layers:
       - "04"
       - "09"
+  - terms:
+      - ae
+      - agent engineering
+      - ae-orquestador
+      - release distribution
+      - actualizar binarios
+      - publicar binarios
+      - subir binarios
+      - mirror binaries
+    prefer_doc_ids:
+      - AE-README
+      - AE-HARNESS-MANIFEST
+      - AE-WORK-MODES
+      - AE-RELEASE-DISTRIBUTION
+      - AE-EVIDENCE-POLICY
+    prefer_layers:
+      - "AE"
 hierarchy:
   - id: governance
     label: Gobierno documental
@@ -122,6 +139,13 @@ hierarchy:
     paths:
       - .docs/wiki/09_*.md
       - .docs/wiki/09_contratos/*.md
+  - id: agent_engineering
+    label: Agent Engineering
+    layer: "AE"
+    family: technical
+    pack_stage: technical_detail
+    paths:
+      - .docs/wiki/ae/*.md
 context_chain:
   - governance
   - scope
@@ -129,12 +153,14 @@ context_chain:
   - flow
   - requirements
   - technical_baseline
+  - agent_engineering
   - contracts
 closure_chain:
   - governance
   - flow
   - requirements
   - technical_baseline
+  - agent_engineering
   - contracts
   - tests
 audit_chain:
@@ -142,6 +168,7 @@ audit_chain:
   - flow
   - requirements
   - technical_baseline
+  - agent_engineering
   - physical_data
   - contracts
   - tests
@@ -220,12 +247,13 @@ evidence:
 8. `07_baseline_tecnica.md` y `07_tech/`
 9. `08_modelo_fisico_datos.md` y `08_db/`
 10. `09_contratos_tecnicos.md` y `09_contratos/`
+11. `ae/`
 
 ## Cadenas canonicas
 
-- Contexto: `00 -> 01 -> 02 -> 03 -> 04 -> 07 -> 09`
-- Cierre: `00 -> 03 -> 04 -> 07 -> 09 -> 06`
-- Auditoria: `00 -> 03 -> 04 -> 07 -> 08 -> 09 -> 06`
+- Contexto: `00 -> 01 -> 02 -> 03 -> 04 -> 07 -> AE -> 09`
+- Cierre: `00 -> 03 -> 04 -> 07 -> AE -> 09 -> 06`
+- Auditoria: `00 -> 03 -> 04 -> 07 -> AE -> 08 -> 09 -> 06`
 
 ## Politica de sincronizacion
 
@@ -241,6 +269,7 @@ evidence:
 - `ps-asistente-wiki` debe recomendar obligatoriamente `crear-gobierno-documental` cuando `00` falte, este incompleto o haya drift.
 - `ps-trazabilidad` y `ps-auditar-trazabilidad` deben verificar que `00` este completo y que la proyeccion este sincronizada.
 - `ps-crear-agentsclaudemd` debe codificar este gate en `AGENTS.md` y `CLAUDE.md`.
+- La capa `ae/` gobierna la ejecucion agentica; cuando una tarea puede afectar binarios, workers, instalacion o publicacion, el cierre debe pasar por `AE-RELEASE-DISTRIBUTION` y registrar evidencia de provenance.
 
 ## Criterios de calidad
 

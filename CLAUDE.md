@@ -26,6 +26,7 @@ Escalation rules:
 - Run `$ps-auditar-trazabilidad` for large, risky, multi-module, or cross-layer changes.
 - Use `$ps-crear-agentsclaudemd` when editing `AGENTS.md` or `CLAUDE.md`.
 - Use `$crear-capa-tecnica-wiki` when creating or restructuring docs under `07/08/09`.
+- Use `.docs/wiki/ae/` as the Agent Engineering layer. For workflow, policy, release, binary, worker, install, or publication work, load `AE-HARNESS-MANIFEST` and close through `AE-RELEASE-DISTRIBUTION` when binaries can drift.
 
 ## Canonical Project Paths
 
@@ -50,6 +51,14 @@ Technical docs:
 - `.docs/wiki/07_tech/`
 - `.docs/wiki/08_db/`
 - `.docs/wiki/09_contratos/`
+
+Agent Engineering docs:
+
+- `.docs/wiki/ae/`
+- `.docs/wiki/ae/AE-HARNESS-MANIFEST.md`
+- `.docs/wiki/ae/AE-WORK-MODES.md`
+- `.docs/wiki/ae/AE-RELEASE-DISTRIBUTION.md`
+- `.docs/wiki/ae/AE-EVIDENCE-POLICY.md`
 
 Plan reference:
 
@@ -122,6 +131,11 @@ Plan reference:
   - also review `.docs/wiki/01_alcance_funcional.md`
   - also review `.docs/wiki/02_arquitectura.md`
   - also review `.docs/wiki/03_FL.md` and `.docs/wiki/03_FL/`
+
+- Release, binary refresh, worker bootstrap, install, publication, or cross-OS distribution changes:
+  - sync `.docs/wiki/ae/AE-RELEASE-DISTRIBUTION.md`
+  - run or explicitly waive `scripts/release/ae-release-binaries.ps1`
+  - record provenance, install paths, worker status, and publish/mirror evidence under `.docs/auditoria/<task>/`
 
 ## `$mi-lsp` Usage Policy
 
@@ -225,6 +239,7 @@ rg --files .docs/wiki
 | `crear-gobierno-documental` | Create, repair, or refactor `.docs/wiki/00_gobierno_documental.md` and its projection | Yes when governance is missing, invalid, or stale |
 | `writing-plans` | Large, risky, or multi-step work | Yes when a formal wave plan is needed |
 | `ps-crear-agentsclaudemd` | Editing `AGENTS.md` or `CLAUDE.md` | Yes |
+| `ae-orquestador` | Agent Engineering, workflow, policy, release, binary, install, or publication work | Yes |
 | `ps-trazabilidad` | Before closing any task | Yes |
 | `ps-auditar-trazabilidad` | Large, risky, multi-module, or cross-layer changes | Yes |
 
@@ -237,5 +252,6 @@ rg --files .docs/wiki
 - Do not continue normal work when `governance_blocked=true`.
 - Do not treat `00_gobierno_documental.md` and `read-model.toml` as co-authorities; `00` always wins.
 - Do not leave cross-layer documentation drift behind.
+- Do not close binary-affecting work without `AE-RELEASE-DISTRIBUTION` evidence or an explicit recorded waiver.
 - Keep `AGENTS.md` and `CLAUDE.md` synchronized.
 - If updating any skill under `C:\Users\fgpaz\.agents\skills`, also update the mirrored copy under `C:\repos\buho\assets\skills` in the same task.
