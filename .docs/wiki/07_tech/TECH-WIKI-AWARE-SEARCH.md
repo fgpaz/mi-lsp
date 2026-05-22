@@ -37,12 +37,13 @@ Esta capa existe para que la respuesta docs-first y los reading packs canonicos 
 1. `workspace init` o `index` construye `doc_records`, `doc_edges`, `doc_mentions`, `doc_source_blocks` y `doc_source_records`; `index --docs-only` reconstruye solo esas tablas y la memoria de reentrada.
 2. `docgraph.LoadProfile()` carga `.docs/wiki/_mi-lsp/read-model.toml` si existe; si no, usa el perfil embebido.
 3. `nav wiki search` rankea `doc_records` y filtra por capas documentales explicitas (`RS`, `RF`, `FL`, `TP`, `CT`, `TECH`, `DB`).
-4. `nav ask` clasifica la pregunta por familia (`functional`, `technical`, `ux` o fallback generico).
-5. El ranker pondera familia, capa (`01-09`/`10-16`), `doc_id` explicito y tokens de pregunta.
-6. El documento primario se completa con supporting docs via `doc_edges` antes de volver al ranking textual.
-7. La evidencia de codigo se deriva desde `doc_mentions` (`file_path`, `symbol`) y solo despues usa fallback textual.
-8. `nav pack` reutiliza familia, capas, `doc_edges` y el bloque `reading_pack` del perfil para construir un reading pack ordenado con stages y slices on-demand.
-9. `nav wiki validate-source` abre los Markdown que declaran `wiki_source_protocol: SDD-WIKI-SOURCE-v1`, valida `doc_id`, fences `toon`, `block_id`, records referenciables y excepciones de tablas, y compara contra las filas typed publicadas.
+4. `nav ask`, `nav route` y `nav pack` normalizan preguntas de inventario de anclas para quitar meta-terminos SDD (`RS`, `RF`, `FL`, `CT`, `TECH`, `DB`, `TP`) del ranking cuando esos tokens expresan formato/capa y no dominio funcional.
+5. `nav ask` clasifica la pregunta por familia (`functional`, `technical`, `ux` o fallback generico).
+6. El ranker pondera familia, capa (`01-09`/`10-16`), `doc_id` explicito y tokens de pregunta.
+7. El documento primario se completa con supporting docs via `doc_edges` antes de volver al ranking textual.
+8. La evidencia de codigo se deriva desde `doc_mentions` (`file_path`, `symbol`) y solo despues usa fallback textual.
+9. `nav pack` reutiliza familia, capas, `doc_edges` y el bloque `reading_pack` del perfil para construir un reading pack ordenado con stages y slices on-demand.
+10. `nav wiki validate-source` abre los Markdown que declaran `wiki_source_protocol: SDD-WIKI-SOURCE-v1`, valida `doc_id`, fences `toon`, `block_id`, records referenciables y excepciones de tablas, y compara contra las filas typed publicadas.
 
 ## Reglas clave
 
@@ -53,11 +54,13 @@ Esta capa existe para que la respuesta docs-first y los reading packs canonicos 
 - Si la tarea incluye un `RF-*` explicito que vive dentro de un documento agregado, Tier 1 debe anclar el documento contenedor en `.docs/wiki/04_RF/` aunque el indice documental este vacio.
 - Si no hay docs indexados y no existe wiki canonica, `nav ask` degrada a search textual del workspace.
 - Si existen docs pero el match es debil, la respuesta igual debe ser explainable con `why` y `next_queries`.
+- Si la pregunta de `nav ask` necesito normalizar meta-terminos de anclas, el resultado puede emitir `anchor_drift` como coach/why preventivo y orientar la continuacion a `nav pack` para que el agente confirme el pack canonico.
 - `nav wiki search` debe cortar por governance bloqueada y por docgraph vacio antes de ofrecer candidatos.
 - `nav wiki search` debe resolver coincidencias exactas de `doc_id`, `block_id` y `record_id` fuente antes de aplicar ranking textual.
 - `nav wiki search|route|pack|trace` debe adjuntar `lookup_status` para que un agente distinga identidad canonica indexada, alias/read-model, fallback por menciones/contenido, preview truncada, indice vacio/stale, filtros, ambiguedad y ausencia real.
 - Los documentos no migrados a `SDD-WIKI-SOURCE-v1` no bloquean `validate-source`; solo bloquean los artefactos que declaran el protocolo y fallan su shape.
 - `nav ask|route|pack --repo docs` es compatibilidad para agentes: se acepta, se ignora como filtro documental y se guia a `nav wiki`.
+- `.docs/raw/**`, `.docs/auditoria/**`, matrices, indices y cualquier `.docs/**` no deben emitirse como `code_evidence`; siguen participando como documentos secundarios o soporte documental cuando corresponda.
 
 ## nav wiki como primer paso recomendado
 

@@ -12,33 +12,38 @@ import (
 )
 
 type docQueryContext struct {
-	registration    model.WorkspaceRegistration
-	task            string
-	profile         model.DocsReadProfile
-	profileSource   string
-	profileWarnings []string
-	family          string
-	recentChanges   []model.ReentryMemoryChange
-	db              *sql.DB
-	dbErr           error
-	docs            []model.DocRecord
-	docByPath       map[string]model.DocRecord
-	ftsScores       map[string]float64
-	ranked          []scoredDoc
-	rankedByPath    map[string]scoredDoc
+	registration      model.WorkspaceRegistration
+	task              string
+	rankingTask       string
+	rankingNormalized bool
+	profile           model.DocsReadProfile
+	profileSource     string
+	profileWarnings   []string
+	family            string
+	recentChanges     []model.ReentryMemoryChange
+	db                *sql.DB
+	dbErr             error
+	docs              []model.DocRecord
+	docByPath         map[string]model.DocRecord
+	ftsScores         map[string]float64
+	ranked            []scoredDoc
+	rankedByPath      map[string]scoredDoc
 }
 
 func loadDocQueryContext(ctx context.Context, registration model.WorkspaceRegistration, task string) *docQueryContext {
 	profile, profileSource, profileWarnings := docgraph.LoadProfile(registration.Root)
+	rankingTask, rankingNormalized := queryRankingTask(task)
 	query := &docQueryContext{
-		registration:    registration,
-		task:            task,
-		profile:         profile,
-		profileSource:   profileSource,
-		profileWarnings: append([]string{}, profileWarnings...),
-		family:          docgraph.MatchFamily(task, profile),
-		docByPath:       map[string]model.DocRecord{},
-		rankedByPath:    map[string]scoredDoc{},
+		registration:      registration,
+		task:              task,
+		rankingTask:       rankingTask,
+		rankingNormalized: rankingNormalized,
+		profile:           profile,
+		profileSource:     profileSource,
+		profileWarnings:   append([]string{}, profileWarnings...),
+		family:            docgraph.MatchFamily(rankingTask, profile),
+		docByPath:         map[string]model.DocRecord{},
+		rankedByPath:      map[string]scoredDoc{},
 	}
 	db, err := openWorkspaceDB(registration, "doc.query")
 	if err != nil {
@@ -61,8 +66,8 @@ func loadDocQueryContext(ctx context.Context, registration model.WorkspaceRegist
 	if len(docs) == 0 {
 		return query
 	}
-	_, query.ftsScores, _ = store.FTSSearchDocs(ctx, db, task, 20)
-	query.ranked = rankDocs(task, query.family, docs, query.ftsScores, query.profile, query.recentChanges)
+	_, query.ftsScores, _ = store.FTSSearchDocs(ctx, db, rankingTask, 20)
+	query.ranked = rankDocs(rankingTask, query.family, docs, query.ftsScores, query.profile, query.recentChanges)
 	for _, item := range query.ranked {
 		query.rankedByPath[item.record.Path] = item
 	}
@@ -76,13 +81,26 @@ func (q *docQueryContext) Close() error {
 	return q.db.Close()
 }
 
+func (q *docQueryContext) routeTask() string {
+	if q == nil {
+		return ""
+	}
+	if strings.TrimSpace(q.rankingTask) != "" {
+		return q.rankingTask
+	}
+	return q.task
+}
+
 func (q *docQueryContext) canonicalRoute(opts model.QueryOptions, includeDiscovery bool) model.RouteResult {
-	canonical, tier1Why := docgraph.Tier1CanonicalRoute(q.task, q.profile, q.registration.Root)
+	canonical, tier1Why := docgraph.Tier1CanonicalRoute(q.routeTask(), q.profile, q.registration.Root)
 	result := model.RouteResult{
 		Task:      q.task,
 		Mode:      "preview",
 		Canonical: canonical,
 		Why:       append([]string{fmt.Sprintf("read_model=%s", q.profileSource)}, tier1Why...),
+	}
+	if q.rankingNormalized {
+		result.Why = append(result.Why, "ranking_query=meta_terms_normalized")
 	}
 	if opts.Full {
 		result.Mode = "full"

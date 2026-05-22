@@ -10,6 +10,19 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
+function ConvertFrom-JsonCompat {
+    param([string]$Text)
+
+    if (-not $Text) {
+        return $null
+    }
+    try {
+        return $Text | ConvertFrom-Json -Depth 20
+    } catch [System.Management.Automation.ParameterBindingException] {
+        return $Text | ConvertFrom-Json
+    }
+}
+
 function Invoke-MiLspJson {
     param(
         [Parameter(Mandatory = $true)][string[]]$Arguments,
@@ -19,9 +32,11 @@ function Invoke-MiLspJson {
 
     $operation = ($Arguments -join " ")
     $dbPath = if ($Root) { Join-Path $Root ".mi-lsp/index.db" } else { "" }
+    $timer = [System.Diagnostics.Stopwatch]::StartNew()
     try {
         $output = & $Cli @Arguments --format json 2>&1
         $exitCode = $LASTEXITCODE
+        $timer.Stop()
         $text = ($output | Out-String).Trim()
         if ($exitCode -ne 0) {
             return [pscustomobject]@{
@@ -30,25 +45,29 @@ function Invoke-MiLspJson {
                 workspace = $Workspace
                 root = $Root
                 db_path = $dbPath
+                duration_ms = [int64]$timer.Elapsed.TotalMilliseconds
                 error = $text
             }
         }
-        $parsed = if ($text) { $text | ConvertFrom-Json -Depth 20 } else { $null }
+        $parsed = ConvertFrom-JsonCompat -Text $text
         return [pscustomobject]@{
             ok = $true
             operation = $operation
             workspace = $Workspace
             root = $Root
             db_path = $dbPath
+            duration_ms = [int64]$timer.Elapsed.TotalMilliseconds
             result = $parsed
         }
     } catch {
+        $timer.Stop()
         return [pscustomobject]@{
             ok = $false
             operation = $operation
             workspace = $Workspace
             root = $Root
             db_path = $dbPath
+            duration_ms = [int64]$timer.Elapsed.TotalMilliseconds
             error = $_.Exception.Message
         }
     }
@@ -172,24 +191,110 @@ function Get-GoVersionMetadata {
     )
 
     if (-not $Path -or -not (Test-Path -LiteralPath $Path)) {
-        return [pscustomobject]@{ name = $Name; path = $Path; ok = $false; output = "missing" }
+        return New-GoVersionMetadata -Name $Name -Path $Path -Ok $false -Output "missing"
     }
     $output = & go version -m $Path 2>&1
-    return [pscustomobject]@{
-        name = $Name
-        path = $Path
-        ok = ($LASTEXITCODE -eq 0)
-        output = ($output | Out-String).Trim()
-    }
+    return New-GoVersionMetadata -Name $Name -Path $Path -Ok ($LASTEXITCODE -eq 0) -Output (($output | Out-String).Trim())
 }
 
 function Get-WslGoVersionMetadata {
-    $output = & wsl sh -lc 'p="\$(command -v mi-lsp 2>/dev/null || true)"; if [ -z "\$p" ] && [ -x "\$HOME/.local/bin/mi-lsp" ]; then p="\$HOME/.local/bin/mi-lsp"; fi; if [ -z "\$p" ]; then echo missing; exit 3; fi; go version -m "\$p"' 2>&1
+    $script = @'
+p="$(command -v mi-lsp 2>/dev/null || true)"
+if [ -z "$p" ] && [ -x "$HOME/.local/bin/mi-lsp" ]; then
+  p="$HOME/.local/bin/mi-lsp"
+fi
+if [ -z "$p" ]; then
+  echo "path=missing"
+  exit 3
+fi
+echo "path=$p"
+go version -m "$p"
+'@
+    $encoded = [Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($script))
+    $output = & wsl sh -lc "printf %s $encoded | base64 -d | sh" 2>&1
+    $text = ($output | Out-String).Trim()
+    $path = "wsl:mi-lsp"
+    foreach ($line in ($text -split "`r?`n")) {
+        if ($line -like "path=*") {
+            $path = "wsl:" + $line.Substring(5)
+            break
+        }
+    }
+    return New-GoVersionMetadata -Name "wsl-global" -Path $path -Ok ($LASTEXITCODE -eq 0) -Output $text
+}
+
+function New-GoVersionMetadata {
+    param(
+        [string]$Name,
+        [string]$Path,
+        [bool]$Ok,
+        [string]$Output
+    )
+
+    $revision = ""
+    $modified = ""
+    $goos = ""
+    $goarch = ""
+    foreach ($line in ($Output -split "`r?`n")) {
+        $trimmed = $line.Trim()
+        if ($trimmed -like "build`tGOOS=*") { $goos = $trimmed.Substring("build`tGOOS=".Length) }
+        if ($trimmed -like "build`tGOARCH=*") { $goarch = $trimmed.Substring("build`tGOARCH=".Length) }
+        if ($trimmed -like "build`tvcs.revision=*") { $revision = $trimmed.Substring("build`tvcs.revision=".Length) }
+        if ($trimmed -like "build`tvcs.modified=*") { $modified = $trimmed.Substring("build`tvcs.modified=".Length) }
+    }
+
+    $rid = ""
+    if ($goos -and $goarch) {
+        $rid = "$goos-$goarch"
+    }
+
     return [pscustomobject]@{
-        name = "wsl-global"
-        path = "wsl:mi-lsp"
-        ok = ($LASTEXITCODE -eq 0)
-        output = ($output | Out-String).Trim()
+        name = $Name
+        path = $Path
+        ok = $Ok
+        revision = $revision
+        modified = $modified
+        goos = $goos
+        goarch = $goarch
+        rid = $rid
+        output = $Output
+    }
+}
+
+function Get-VersionDrift {
+    param($Metadata)
+
+    $windows = @($Metadata | Where-Object { $_.name -eq "windows-global" }) | Select-Object -First 1
+    $wsl = @($Metadata | Where-Object { $_.name -eq "wsl-global" }) | Select-Object -First 1
+    $revisionMismatch = $false
+    if ($windows -and $wsl -and $windows.ok -and $wsl.ok -and $windows.revision -and $wsl.revision) {
+        $revisionMismatch = ($windows.revision -ne $wsl.revision)
+    }
+    $windowsPath = ""
+    $windowsRevision = ""
+    $windowsRid = ""
+    if ($windows) {
+        $windowsPath = $windows.path
+        $windowsRevision = $windows.revision
+        $windowsRid = $windows.rid
+    }
+    $wslPath = ""
+    $wslRevision = ""
+    $wslRid = ""
+    if ($wsl) {
+        $wslPath = $wsl.path
+        $wslRevision = $wsl.revision
+        $wslRid = $wsl.rid
+    }
+    return [pscustomobject]@{
+        checked = [bool]($windows -and $wsl)
+        windows_path = $windowsPath
+        windows_revision = $windowsRevision
+        windows_rid = $windowsRid
+        wsl_path = $wslPath
+        wsl_revision = $wslRevision
+        wsl_rid = $wslRid
+        revision_mismatch = $revisionMismatch
     }
 }
 
@@ -261,8 +366,9 @@ $metadata = @(
 try {
     $metadata += Get-WslGoVersionMetadata
 } catch {
-    $metadata += [pscustomobject]@{ name = "wsl-global"; path = "wsl:mi-lsp"; ok = $false; output = $_.Exception.Message }
+    $metadata += New-GoVersionMetadata -Name "wsl-global" -Path "wsl:mi-lsp" -Ok $false -Output $_.Exception.Message
 }
+$versionDrift = Get-VersionDrift -Metadata $metadata
 
 $rootGroups = @($workspaceReports | Group-Object -Property root)
 $aliasesPerRoot = @{}
@@ -270,6 +376,19 @@ foreach ($group in $rootGroups) {
     $aliasesPerRoot[$group.Name] = @($group.Group | ForEach-Object { $_.workspace })
 }
 $pathStatusFailed = Test-OperationFailed -Result $pathStatus
+$slowOperations = New-Object System.Collections.Generic.List[object]
+foreach ($workspaceReport in $workspaceReports) {
+    foreach ($operationName in @("status", "wiki_search", "wiki_pack", "wiki_trace")) {
+        $operationResult = $workspaceReport.$operationName
+        if ($operationResult -and $operationResult.PSObject.Properties["duration_ms"] -and $operationResult.duration_ms -ge 15000) {
+            $slowOperations.Add([pscustomobject]@{
+                workspace = $workspaceReport.workspace
+                operation = $operationName
+                duration_ms = $operationResult.duration_ms
+            })
+        }
+    }
+}
 
 $report = [pscustomobject]@{
     generated_at = (Get-Date).ToString("o")
@@ -284,6 +403,8 @@ $report = [pscustomobject]@{
     aliases_per_root = $aliasesPerRoot
     workspaces = $workspaceReports.ToArray()
     go_version_m = $metadata
+    cross_environment_version = $versionDrift
+    slow_operations = $slowOperations.ToArray()
 }
 
 Write-Host "=== Federated wiki smoke (--all-workspaces) ===" -ForegroundColor Cyan
@@ -353,7 +474,17 @@ $lines.Add("- path_status_dot_ok: $($report.path_status_ok)")
 $lines.Add("")
 $lines.Add("## Binary Metadata")
 foreach ($item in $metadata) {
-    $lines.Add("- $($item.name): ok=$($item.ok) path=$($item.path)")
+    $lines.Add("- $($item.name): ok=$($item.ok) path=$($item.path) revision=$($item.revision) rid=$($item.rid)")
+}
+$lines.Add("- windows_wsl_revision_mismatch: $($versionDrift.revision_mismatch)")
+$lines.Add("")
+$lines.Add("## Slow Operations")
+if ($slowOperations.Count -eq 0) {
+    $lines.Add("- none over 15000ms")
+} else {
+    foreach ($item in @($slowOperations | Sort-Object duration_ms -Descending)) {
+        $lines.Add("- $($item.workspace) $($item.operation): $($item.duration_ms)ms")
+    }
 }
 $lines.Add("")
 $lines.Add("## Workspace Results By Status")

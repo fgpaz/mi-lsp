@@ -81,7 +81,7 @@ El envelope puede contener ademas:
 - `primary_doc` es el documento canonico elegido.
 - El documento primario sale del scorer owner-aware compartido con `nav route` y `nav pack`; `owner_hints` opcionales desde `00` pueden sesgar ownership repo-especifico sin reemplazar la gobernanza. Si existe un match canonico positivo en `.docs/wiki/`, el scorer debe degradar `README`/generic y tambien artefactos de soporte en `.docs/raw/` para no usarlos como documento primario.
 - `doc_evidence` agrega supporting docs, priorizando links y doc IDs explicitos.
-- `code_evidence` muestra archivos, simbolos o snippets derivados desde docs o fallback textual.
+- `code_evidence` muestra archivos, simbolos o snippets derivados desde docs o fallback textual, pero descarta `.docs/**`, `.mi-lsp/**`, sidecars SQLite y binarios. La wiki, `.docs/raw/**`, `.docs/auditoria/**`, matrices e indices documentales solo pueden quedar como `doc_evidence` o documentos secundarios, nunca como evidencia de codigo.
 - `why` explica por que la respuesta eligio ese camino.
 - `next_queries` deja comandos concretos para profundizar.
 - `coach` no reemplaza `next_queries`: es guidance query-level para la siguiente accion mas util cuando hay fallback textual, evidencia fina, preview recortado o un narrowing obvio.
@@ -93,6 +93,7 @@ El envelope puede contener ademas:
 - en AXI preview, el contrato reduce compute y salida a `primary_doc + 1 linked doc + 1 code evidence`
 - en AXI preview, `coach.actions` se reduce a una sola accion para no inflar la respuesta
 - en AXI preview, `continuation` conserva solo `next` y omite `alternate`
+- si la pregunta pide inventario de anclas y mezcla meta-terminos SDD (`RS`, `RF`, `FL`, `CT`, `TECH`, `DB`, `TP`), esos tokens se normalizan como intencion de capa/salida. Si el guard considera que la query pudo derivar hacia evidencia secundaria, el envelope puede emitir `coach.trigger=anchor_drift`, `coach.confidence=low` y `continuation.next.op=nav.pack`.
 
 ## Warnings esperables
 
@@ -100,6 +101,7 @@ El envelope puede contener ademas:
 - `read_model=default`
 - `documentation index is empty; using code fallback`
 - `code evidence came from text fallback`
+- `anchor drift detected: ...`
 - `workspace omitted; multiple registry aliases share root ...`
 - `workspace omitted; no registered workspace matched caller cwd ...; falling back to last_workspace=...`
 - `<workspace>: ask failed: ...` cuando un workspace puntual falla dentro del fan-out cross-workspace

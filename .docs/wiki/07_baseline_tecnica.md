@@ -126,6 +126,7 @@ flowchart LR
 - El estado semantico persistente del workspace vive repo-local; el estado global solo guarda registro, estado del daemon y telemetria local.
 - El estado documental persistente tambien vive repo-local: `doc_records`, `doc_edges` y `doc_mentions`.
 - La gobernanza documental manda sobre toda tarea spec-driven: `00_gobierno_documental.md` es la autoridad humana y `read-model.toml` su proyeccion ejecutable.
+- `.docs/wiki/ae/` es un anexo tecnico gobernado por `00` para contratos de ejecucion agentica, decision lock, evidencia y release-distribution; no redefine RF/FL/CT, pero si agrega cierre obligatorio para trabajo que pueda dejar binarios o installs en drift.
 - El orden funcional del reading pack se deriva primero de `governance.hierarchy[*].pack_stage`; cuando la gobernanza declara `outcome`, esa etapa queda entre `scope` y `architecture` y los docs `RS-*`, `02_resultados_soluciones_usuario.md` y `02_resultados/*.md` se clasifican como `layer=RS`.
 - `owner_hints` vive en `00_gobierno_documental.md`, se proyecta al `read-model.toml` y solo refina ownership documental repo-especifico; no reemplaza las heuristicas generales del binario.
 - Si `00`, su YAML embebido, la proyeccion o el indice quedan fuera de sync, el workspace entra en `blocked mode`.

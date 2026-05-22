@@ -75,9 +75,13 @@ type WorkspaceStalePath struct {
 }
 
 type BinaryCandidate struct {
-	Path    string `json:"path"`
-	Active  bool   `json:"active,omitempty"`
-	Warning string `json:"warning,omitempty"`
+	Path     string `json:"path"`
+	Active   bool   `json:"active,omitempty"`
+	Revision string `json:"revision,omitempty"`
+	Modified string `json:"modified,omitempty"`
+	GOOS     string `json:"goos,omitempty"`
+	GOARCH   string `json:"goarch,omitempty"`
+	Warning  string `json:"warning,omitempty"`
 }
 
 type WorkspaceDoctorAction struct {
@@ -431,7 +435,7 @@ func workspaceDoctorHealth(report WorkspaceDoctorReport) string {
 	switch {
 	case len(report.StalePaths) > 0:
 		return "action_required"
-	case len(report.BinaryShadowing) > 1 || len(report.WorktreeFamilies) > 0 || len(report.AliasesSharingRoot) > 0:
+	case len(report.BinaryShadowing) > 1 || hasBinaryVersionDrift(report.BinaryShadowing) || len(report.WorktreeFamilies) > 0 || len(report.AliasesSharingRoot) > 0:
 		return "attention"
 	default:
 		return "ok"
@@ -470,6 +474,14 @@ func workspaceDoctorNextActions(report WorkspaceDoctorReport) []WorkspaceDoctorA
 			Severity: "medium",
 			Command:  binaryShadowingLookupCommand(),
 			Reason:   "multiple mi-lsp binaries are visible on PATH; agents may execute a different build than expected",
+		})
+	}
+	if hasBinaryVersionDrift(report.BinaryShadowing) {
+		actions = append(actions, WorkspaceDoctorAction{
+			ID:       "review_binary_version_drift",
+			Severity: "medium",
+			Command:  binaryShadowingLookupCommand(),
+			Reason:   "one or more visible mi-lsp binaries report a different revision than the active binary",
 		})
 	}
 	return actions
@@ -734,17 +746,98 @@ func inspectBinaryShadowing() []BinaryCandidate {
 			if samePath(cleaned, active) {
 				item.Active = true
 			}
+			applyBinaryMetadata(&item)
 			candidates = append(candidates, item)
 		}
 	}
+	if active != "." && active != "" {
+		key := active
+		if runtime.GOOS == "windows" {
+			key = strings.ToLower(key)
+		}
+		if !seen[key] {
+			item := BinaryCandidate{Path: active, Active: true}
+			applyBinaryMetadata(&item)
+			candidates = append([]BinaryCandidate{item}, candidates...)
+		}
+	}
 	if len(candidates) > 1 {
+		activeRevision := activeBinaryRevision(candidates)
 		for i := range candidates {
 			if !candidates[i].Active {
-				candidates[i].Warning = "another mi-lsp binary is visible on PATH; verify which binary your shell resolves"
+				candidates[i].Warning = appendBinaryWarning(candidates[i].Warning, "another mi-lsp binary is visible on PATH; verify which binary your shell resolves")
+			}
+			if activeRevision != "" && candidates[i].Revision != "" && candidates[i].Revision != activeRevision {
+				candidates[i].Warning = appendBinaryWarning(candidates[i].Warning, "binary revision differs from active mi-lsp binary")
 			}
 		}
 	}
 	return candidates
+}
+
+func applyBinaryMetadata(item *BinaryCandidate) {
+	if item == nil || strings.TrimSpace(item.Path) == "" {
+		return
+	}
+	output, err := exec.Command("go", "version", "-m", item.Path).CombinedOutput()
+	if err != nil {
+		detail := strings.TrimSpace(string(output))
+		if detail == "" {
+			detail = err.Error()
+		}
+		item.Warning = appendBinaryWarning(item.Warning, "binary metadata unavailable: "+detail)
+		return
+	}
+	for _, line := range strings.Split(string(output), "\n") {
+		line = strings.TrimSpace(line)
+		switch {
+		case strings.HasPrefix(line, "build\tGOOS="):
+			item.GOOS = strings.TrimPrefix(line, "build\tGOOS=")
+		case strings.HasPrefix(line, "build\tGOARCH="):
+			item.GOARCH = strings.TrimPrefix(line, "build\tGOARCH=")
+		case strings.HasPrefix(line, "build\tvcs.revision="):
+			item.Revision = strings.TrimPrefix(line, "build\tvcs.revision=")
+		case strings.HasPrefix(line, "build\tvcs.modified="):
+			item.Modified = strings.TrimPrefix(line, "build\tvcs.modified=")
+		}
+	}
+}
+
+func activeBinaryRevision(candidates []BinaryCandidate) string {
+	for _, candidate := range candidates {
+		if candidate.Active && strings.TrimSpace(candidate.Revision) != "" {
+			return candidate.Revision
+		}
+	}
+	return ""
+}
+
+func hasBinaryVersionDrift(candidates []BinaryCandidate) bool {
+	activeRevision := activeBinaryRevision(candidates)
+	if activeRevision == "" {
+		return false
+	}
+	for _, candidate := range candidates {
+		if candidate.Revision != "" && candidate.Revision != activeRevision {
+			return true
+		}
+	}
+	return false
+}
+
+func appendBinaryWarning(existing string, next string) string {
+	existing = strings.TrimSpace(existing)
+	next = strings.TrimSpace(next)
+	if next == "" {
+		return existing
+	}
+	if existing == "" {
+		return next
+	}
+	if strings.Contains(existing, next) {
+		return existing
+	}
+	return existing + "; " + next
 }
 
 func binaryNames() []string {

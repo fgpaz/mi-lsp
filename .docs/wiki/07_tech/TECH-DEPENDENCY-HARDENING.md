@@ -93,8 +93,9 @@ Documenta la postura de hardening de dependencias y bootstrap del worker .NET, i
 - compatibilidad con Roslyn Workspace API
 - `Microsoft.Build.Locator`
 - layout de distribucion canonico `dist/<rid>/mi-lsp(.exe)` + `dist/<rid>/workers/<rid>/`
-- scripts operativos `scripts/release/build-dist.ps1`, `scripts/release/build-workers.ps1` e `scripts/release/install-local.ps1` para build/install reproducible
+- scripts operativos `scripts/release/build-dist.ps1`, `scripts/release/build-workers.ps1`, `scripts/release/install-local.ps1` y `scripts/release/ae-release-binaries.ps1` para build/install/release-distribution reproducible
 - `.goreleaser.yaml` y `.github/workflows/release.yml` como pipeline publica canonica de empaquetado por RID
+- la capa [[AE-RELEASE-DISTRIBUTION]] exige cerrar cambios release-visible con build de `win-arm64`, `win-x64`, `linux-arm64`, `linux-x64`, refresh local/WSL cuando aplique, evidencia de SHA/provenance y publicacion por tag limpio o waiver explicito
 
 ## Failure modes y notas operativas
 
@@ -108,9 +109,9 @@ Documenta la postura de hardening de dependencias y bootstrap del worker .NET, i
 | Worker instalado stale o incompatible | `Dll was not found.`, `Unknown method 'status'` o mismatch de protocolo | `worker install` y seleccion de candidato compatible por RID |
 | CLI ejecutada desde otro repo | el worker se resuelve contra el workspace ajeno | resolver `tool_root` desde ejecutable/distribucion o repo `mi-lsp`, no desde el `cwd` |
 | Artefacto local `bin/workers` viejo | probe superficial verde pero consultas Roslyn fallan | en source repo preferir `dev-local`; no tratar `bin/workers/<rid>` como bundle canonico |
+| Release parcial por RID | una maquina ARM64 o x64 sigue ejecutando revision vieja | `ae-release-binaries.ps1` debe construir todos los RIDs, refrescar local/WSL y publicar tag limpio para que GitHub Releases entregue assets nuevos |
+| Binario Windows lockeado por daemon | `Copy-Item` falla sobre `C:\Users\fgpaz\bin\mi-lsp.exe` | `install-local.ps1` detiene el daemon existente antes de copiar y reintenta reemplazo/remocion |
 
 ## Related docs
 
 - [CT-DAEMON-WORKER.md](../09_contratos/CT-DAEMON-WORKER.md)
-
-

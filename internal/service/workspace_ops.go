@@ -168,7 +168,19 @@ func (a *App) workspaceDoctor() (model.Envelope, error) {
 	if len(report.BinaryShadowing) > 1 {
 		warnings = append(warnings, "multiple mi-lsp binaries are visible on PATH")
 	}
+	if doctorActionsContain(report.NextActions, "review_binary_version_drift") {
+		warnings = append(warnings, "visible mi-lsp binaries report different revisions")
+	}
 	return model.Envelope{Ok: true, Backend: "registry-doctor", Items: []map[string]any{item}, Warnings: warnings}, nil
+}
+
+func doctorActionsContain(actions []workspace.WorkspaceDoctorAction, id string) bool {
+	for _, action := range actions {
+		if action.ID == id {
+			return true
+		}
+	}
+	return false
 }
 
 func (a *App) workspacePrune(request model.CommandRequest) (model.Envelope, error) {

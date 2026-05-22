@@ -410,7 +410,7 @@ func hierarchyPathsForFamily(items []model.GovernanceHierarchyItem, family strin
 func defaultIntentKeywords(family string, resolved resolvedGovernanceProfile) []string {
 	switch family {
 	case "technical":
-		keywords := []string{"technical", "governance", "runtime", "backend", "contract", "protocol", "search", "context", "refs", "service", "index", "routing", resolved.Base}
+		keywords := []string{"technical", "governance", "runtime", "backend", "contract", "protocol", "search", "context", "refs", "service", "index", "routing", "ae", "agent engineering", "release", "distribution", "binary", "install", resolved.Base}
 		return dedupeStrings(append(keywords, resolved.Overlays...))
 	case "ux":
 		return []string{"ux", "ui", "frontend", "visual", "design", "journey", "experience", "pattern", "interface", "governance"}

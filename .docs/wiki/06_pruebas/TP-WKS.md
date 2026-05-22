@@ -68,3 +68,5 @@ evidence:
 | TC-WKS-026 | positivo | RF-WKS-001, RF-WKS-002 | `workspace doctor` agrega `health` y `next_actions` accionables sin mutar registry, worktrees ni indices |
 | TC-WKS-027 | positivo | RF-WKS-006 | `TestRootCommandExposesVersionCommand` + `TestBuildVersionInfoUsesRuntimeProvenance`: `mi-lsp version` existe, no requiere workspace/daemon y expone Go/runtime/protocol/RID/path/hash provenance |
 | TC-WKS-028 | positivo | RF-WKS-006 | `TestRenderTextVersionInfo`: la salida `text` de version es legible y los formatos estructurados conservan el envelope `backend=version` |
+| TC-WKS-029 | positivo | RF-WKS-001, RF-WKS-002 | `TestDoctorWorkspacesBinaryRevisionDriftAction`: `workspace doctor` detecta drift de revision entre binarios `mi-lsp` visibles y agrega `review_binary_version_drift` sin podar ni modificar PATH |
+| TC-WKS-030 | positivo | RF-WKS-006 | `scripts/release/ae-release-binaries.ps1 -SkipBuild -SkipLocalInstall -SkipWslInstall -SkipMirror` valida el gate AE sin publicar, exige artefactos por RID cuando no se salta build y reporta paths/SHA para provenance |

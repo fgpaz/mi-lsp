@@ -81,13 +81,16 @@ func (a *App) pack(ctx context.Context, request model.CommandRequest) (model.Env
 	if canonicalWikiExists(registration.Root) && !hasIndexedCanonicalDocs(docs) {
 		// Use Tier 1 canonical routing to produce a governed pack preview
 		// instead of stalling with empty docs (RF-QRY-015).
-		canonical, tier1Why := docgraph.Tier1CanonicalRoute(task, profile, registration.Root)
+		canonical, tier1Why := docgraph.Tier1CanonicalRoute(query.routeTask(), profile, registration.Root)
 		tier1Docs := routeCanonicalToPackDocs(canonical)
 		if len(tier1Docs) > 0 {
 			result.Docs = tier1Docs
 			result.PrimaryDoc = canonical.AnchorDoc.Path
 			result.Why = append(result.Why, tier1Why...)
 			result.Why = append(result.Why, "tier1=canonical_fallback")
+			if query.rankingNormalized {
+				result.Why = append(result.Why, "ranking_query=meta_terms_normalized")
+			}
 		}
 		result.LookupStatus = packLookupStatus(ctx, query, registration.Name, task, result)
 		hint := fmt.Sprintf("documentation index is empty; route resolved from governance. Rerun mi-lsp index --workspace %s for full pack", registration.Name)
@@ -639,7 +642,7 @@ func (a *App) wikiPackAllWorkspaces(ctx context.Context, request model.CommandRe
 
 	// Fan-out across workspaces
 	fanOutOpts := nav.WikiFanOutOptions{
-		Timeout: 0, // Use default (30s)
+		Timeout:  0, // Use default (30s)
 		Parallel: 0, // Use default (4)
 	}
 
@@ -661,13 +664,13 @@ func (a *App) wikiPackAllWorkspaces(ctx context.Context, request model.CommandRe
 			mode = "full"
 		}
 		result := model.PackResult{
-			Task:   task,
-			Mode:   mode,
-			Why:    []string{fmt.Sprintf("read_model=%s", profileSource)},
-			Docs:   []model.PackDoc{},
-			Family: "technical",
+			Task:      task,
+			Mode:      mode,
+			Why:       []string{fmt.Sprintf("read_model=%s", profileSource)},
+			Docs:      []model.PackDoc{},
+			Family:    "technical",
 			Workspace: ws.Name, // Add workspace label
-			Host:      "", // Add host label
+			Host:      "",      // Add host label
 		}
 
 		warnings := append([]string{}, profileWarnings...)
@@ -688,7 +691,7 @@ func (a *App) wikiPackAllWorkspaces(ctx context.Context, request model.CommandRe
 
 			itemsAny := []any{result}
 			stats := map[string]any{
-				"doc_count": len(result.Docs),
+				"doc_count":  len(result.Docs),
 				"tokens_est": estimatePackTokens(result),
 			}
 			return itemsAny, stats, nil
@@ -712,7 +715,7 @@ func (a *App) wikiPackAllWorkspaces(ctx context.Context, request model.CommandRe
 
 			itemsAny := []any{result}
 			stats := map[string]any{
-				"doc_count": len(result.Docs),
+				"doc_count":  len(result.Docs),
 				"tokens_est": estimatePackTokens(result),
 			}
 			return itemsAny, stats, nil
@@ -743,7 +746,7 @@ func (a *App) wikiPackAllWorkspaces(ctx context.Context, request model.CommandRe
 
 				itemsAny := []any{result}
 				stats := map[string]any{
-					"doc_count": len(result.Docs),
+					"doc_count":  len(result.Docs),
 					"tokens_est": estimatePackTokens(result),
 				}
 				return itemsAny, stats, nil
@@ -761,7 +764,7 @@ func (a *App) wikiPackAllWorkspaces(ctx context.Context, request model.CommandRe
 
 		itemsAny := []any{result}
 		stats := map[string]any{
-			"doc_count": len(result.Docs),
+			"doc_count":  len(result.Docs),
 			"tokens_est": estimatePackTokens(result),
 		}
 		return itemsAny, stats, nil

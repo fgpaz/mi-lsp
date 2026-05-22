@@ -19,6 +19,7 @@ const (
 	coachTriggerTextFallback           = "text_fallback"
 	coachTriggerScopeNarrowingAvailabe = "scope_narrowing_available"
 	coachTriggerSymbolQueryDetected    = "symbol_query_detected"
+	coachTriggerAnchorDrift            = "anchor_drift"
 )
 
 var coachSearchStopwords = map[string]struct{}{
@@ -97,6 +98,14 @@ func relatedCommand(alias string, symbol string, repo string) string {
 
 func askCommand(alias string, question string, full bool) string {
 	parts := []string{"mi-lsp", "nav", "ask", fmt.Sprintf("%q", question), "--workspace", alias}
+	if full {
+		parts = append(parts, "--full")
+	}
+	return strings.Join(parts, " ")
+}
+
+func packCommand(alias string, task string, full bool) string {
+	parts := []string{"mi-lsp", "nav", "pack", fmt.Sprintf("%q", task), "--workspace", alias}
 	if full {
 		parts = append(parts, "--full")
 	}
@@ -217,6 +226,18 @@ func buildAskCoach(alias string, project model.ProjectFile, question string, res
 		}
 	}
 
+	if containsWarning(warnings, askWarningAnchorDrift) {
+		return &model.Coach{
+			Trigger:    coachTriggerAnchorDrift,
+			Message:    "The answer was routed through canonical wiki anchors because the question terms could drift toward secondary evidence.",
+			Confidence: "low",
+			Actions: []model.CoachAction{
+				coachAction("route", "Build canonical reading pack", packCommand(alias, question, true)),
+				coachAction("refine", "Inspect supporting code", searchCmd),
+			},
+		}
+	}
+
 	if previewTrimmed && isAXIPreview(opts) {
 		return &model.Coach{
 			Trigger:    coachTriggerPreviewTrimmed,
@@ -245,6 +266,7 @@ func buildAskCoach(alias string, project model.ProjectFile, question string, res
 func askCoachConfidence(result model.AskResult, warnings []string) string {
 	if containsWarning(warnings, "documentation index is empty; using code fallback") ||
 		containsWarning(warnings, "code evidence came from text fallback") ||
+		containsWarning(warnings, askWarningAnchorDrift) ||
 		result.PrimaryDoc.Path == "" ||
 		len(result.DocEvidence) == 0 {
 		return "low"

@@ -170,6 +170,9 @@ func TestBuildAskCodeEvidenceSkipsOperationalAndBinaryPaths(t *testing.T) {
 	root := t.TempDir()
 	docPath := ".docs/wiki/04_RF/RF-QRY-010.md"
 	writeWorkspaceFile(t, root, docPath, "# RF-QRY-010\n")
+	writeWorkspaceFile(t, root, ".docs/raw/prompts/task.md", "Needle\n")
+	writeWorkspaceFile(t, root, ".docs/auditoria/evidence.md", "Needle\n")
+	writeWorkspaceFile(t, root, ".docs/wiki/06_matriz_pruebas_RF.md", "Needle\n")
 	writeWorkspaceFile(t, root, "nested/.mi-lsp/index.db", "SQLite format 3\x00Needle\n")
 	writeWorkspaceFile(t, root, "data/cache.sqlite", "Needle\n")
 	writeWorkspaceFile(t, root, "src/safe.go", "package safe\nconst EvidenceNeedle = true\n")
@@ -185,6 +188,9 @@ func TestBuildAskCodeEvidenceSkipsOperationalAndBinaryPaths(t *testing.T) {
 		{DocPath: docPath, MentionType: "file_path", MentionValue: ".mi-lsp/index.db"},
 		{DocPath: docPath, MentionType: "file_path", MentionValue: "nested/.mi-lsp/index.db"},
 		{DocPath: docPath, MentionType: "file_path", MentionValue: "data/cache.sqlite"},
+		{DocPath: docPath, MentionType: "file_path", MentionValue: ".docs/raw/prompts/task.md"},
+		{DocPath: docPath, MentionType: "file_path", MentionValue: ".docs/auditoria/evidence.md"},
+		{DocPath: docPath, MentionType: "file_path", MentionValue: ".docs/wiki/06_matriz_pruebas_RF.md"},
 		{DocPath: docPath, MentionType: "file_path", MentionValue: "src/safe.go"},
 	}
 	if err := store.ReplaceDocs(context.Background(), db, []model.DocRecord{doc}, nil, mentions); err != nil {
@@ -210,6 +216,80 @@ func TestBuildAskCodeEvidenceSkipsOperationalAndBinaryPaths(t *testing.T) {
 	}
 	if evidence[0].File != "src/safe.go" {
 		t.Fatalf("evidence file = %q, want src/safe.go", evidence[0].File)
+	}
+}
+
+func TestQueryRankingTaskNormalizesSDDAnchorMetaTerms(t *testing.T) {
+	ranking, ok := queryRankingTask("Que anclas RS RF FL CT TECH aplican a validar los datos de entrada de un workflow con servicios configurados?")
+	if !ok {
+		t.Fatalf("expected meta-term normalization")
+	}
+	for _, meta := range []string{"rs", "rf", "fl", "ct", "tech", "anclas", "aplican"} {
+		if strings.Contains(" "+ranking+" ", " "+meta+" ") {
+			t.Fatalf("ranking query %q still contains meta token %q", ranking, meta)
+		}
+	}
+	for _, domain := range []string{"validar", "datos", "entrada", "workflow", "servicios", "configurados"} {
+		if !strings.Contains(" "+ranking+" ", " "+domain+" ") {
+			t.Fatalf("ranking query %q lost domain token %q", ranking, domain)
+		}
+	}
+}
+
+func TestNavAskNormalizesAnchorIntentAndWarnsOnRawDrift(t *testing.T) {
+	alias := "ask-anchor-drift-" + filepath.Base(t.TempDir())
+	ensureWritableTestHome(t)
+	root := t.TempDir()
+	writeWorkspaceFile(t, root, "src/App.csproj", `<Project Sdk="Microsoft.NET.Sdk"></Project>`)
+	writeWorkspaceFile(t, root, "src/workflow/ValidationService.cs", "namespace Demo;\npublic class ValidationService {}\n")
+	writeWorkspaceFile(t, root, ".docs/wiki/03_FL/FL-VALIDATION-01.md", "# FL-VALIDATION-01\n")
+	writeWorkspaceFile(t, root, ".docs/wiki/03_FL/FL-AUDI-PII-01.md", "# FL-AUDI-PII-01\n")
+	writeSpecBackendGovernanceFixture(t, root)
+
+	app := New(root, nil)
+	if _, err := app.Execute(context.Background(), model.CommandRequest{
+		Operation: "workspace.init",
+		Context:   model.QueryOptions{},
+		Payload:   map[string]any{"path": root, "alias": alias},
+	}); err != nil {
+		t.Fatalf("workspace.init: %v", err)
+	}
+	defer func() { _ = workspace.RemoveWorkspace(alias) }()
+
+	db, err := store.Open(root)
+	if err != nil {
+		t.Fatalf("store.Open: %v", err)
+	}
+	docs := []model.DocRecord{
+		{Path: ".docs/wiki/03_FL/FL-VALIDATION-01.md", Title: "FL-VALIDATION-01", DocID: "FL-VALIDATION-01", Layer: "03", Family: "functional", SearchText: "validar datos entrada workflow servicios configurados validacion workflow"},
+		{Path: ".docs/wiki/03_FL/FL-AUDI-PII-01.md", Title: "FL-AUDI-PII-01", DocID: "FL-AUDI-PII-01", Layer: "03", Family: "functional", SearchText: "RS RF FL CT TECH anclas auditoria pii auditoria pii"},
+	}
+	mentions := []model.DocMention{
+		{DocPath: ".docs/wiki/03_FL/FL-VALIDATION-01.md", MentionType: "file_path", MentionValue: "src/workflow/ValidationService.cs"},
+	}
+	if err := store.ReplaceDocs(context.Background(), db, docs, nil, mentions); err != nil {
+		db.Close()
+		t.Fatalf("ReplaceDocs: %v", err)
+	}
+	db.Close()
+
+	env, err := app.Execute(context.Background(), model.CommandRequest{
+		Operation: "nav.ask",
+		Context:   model.QueryOptions{Workspace: alias, MaxItems: 5},
+		Payload:   map[string]any{"question": "Que anclas RS RF FL CT TECH aplican a validar los datos de entrada de un workflow con servicios configurados?"},
+	})
+	if err != nil {
+		t.Fatalf("nav.ask: %v", err)
+	}
+	results := env.Items.([]model.AskResult)
+	if results[0].PrimaryDoc.DocID != "FL-VALIDATION-01" {
+		t.Fatalf("primary doc id = %q, want FL-VALIDATION-01; result=%#v warnings=%#v", results[0].PrimaryDoc.DocID, results[0], env.Warnings)
+	}
+	if env.Coach == nil || env.Coach.Trigger != coachTriggerAnchorDrift {
+		t.Fatalf("expected anchor_drift coach, got %#v warnings=%#v", env.Coach, env.Warnings)
+	}
+	if env.Continuation == nil || env.Continuation.Next.Op != "nav.pack" {
+		t.Fatalf("expected nav.pack continuation, got %#v", env.Continuation)
 	}
 }
 

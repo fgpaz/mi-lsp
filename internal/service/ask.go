@@ -22,6 +22,8 @@ type scoredDoc struct {
 	reason []string
 }
 
+const askWarningAnchorDrift = "anchor drift detected"
+
 func (a *App) ask(ctx context.Context, request model.CommandRequest) (model.Envelope, error) {
 	allWorkspaces, _ := request.Payload["all_workspaces"].(bool)
 	if allWorkspaces {
@@ -60,8 +62,12 @@ func (a *App) ask(ctx context.Context, request model.CommandRequest) (model.Enve
 		}
 		// Use Tier 1 canonical routing instead of hardcoded README.md
 		// when governance/wiki exists (RF-QRY-015).
-		canonical, tier1Why := docgraph.Tier1CanonicalRoute(question, profile, registration.Root)
+		canonical, tier1Why := docgraph.Tier1CanonicalRoute(query.routeTask(), profile, registration.Root)
 		anchor := canonical.AnchorDoc
+		why := append([]string{"doc_index_empty", "fallback=tier1_canonical"}, tier1Why...)
+		if query.rankingNormalized {
+			why = append(why, "ranking_query=meta_terms_normalized")
+		}
 		fallback := model.AskResult{
 			Question: question,
 			Summary:  "No encontre documentacion indexada; resolucion canonica tier1 + evidencia textual del workspace como fallback.",
@@ -72,7 +78,7 @@ func (a *App) ask(ctx context.Context, request model.CommandRequest) (model.Enve
 				Family: anchor.Family,
 				Layer:  anchor.Layer,
 			},
-			Why:          append([]string{"doc_index_empty", "fallback=tier1_canonical"}, tier1Why...),
+			Why:          why,
 			CodeEvidence: searchItemsToEvidence(items),
 			NextQueries:  []string{fmt.Sprintf("mi-lsp nav search %q --include-content --workspace %s", question, registration.Name)},
 		}
@@ -123,6 +129,9 @@ func (a *App) ask(ctx context.Context, request model.CommandRequest) (model.Enve
 		Why:          append(append([]string{}, routeResult.Why...), append(primary.reason, reasons...)...),
 		NextQueries:  buildAskNextQueries(registration.Name, project, primary.record, question, codeEvidence, request.Context),
 	}
+	driftWarnings, driftWhy := query.askAnchorDriftWarnings(routeResult, result)
+	warnings = append(warnings, driftWarnings...)
+	result.Why = append(result.Why, driftWhy...)
 	previewTrimmed := askResultWouldTrimForAXIPreview(result)
 	if isAXIPreview(request.Context) {
 		result = trimAskResultForAXIPreview(result)
@@ -300,7 +309,7 @@ func shouldSkipAskCodeEvidencePath(root string, matcher *workspace.IgnoreMatcher
 	if path == "" {
 		return false
 	}
-	if shouldSkipSearchResultPath(path) {
+	if shouldSkipSearchResultPath(path) || isAskCodeEvidenceSupportPath(path) {
 		return true
 	}
 	if matcher == nil {
@@ -311,6 +320,17 @@ func shouldSkipAskCodeEvidencePath(root string, matcher *workspace.IgnoreMatcher
 		absPath = filepath.Join(root, absPath)
 	}
 	return matcher.ShouldIgnore(root, absPath)
+}
+
+func isAskCodeEvidenceSupportPath(path string) bool {
+	normalized := filepath.ToSlash(strings.TrimSpace(path))
+	if normalized == "" {
+		return false
+	}
+	if strings.HasPrefix(normalized, ".docs/") {
+		return true
+	}
+	return isSupportArtifactDoc(normalized)
 }
 
 func buildAskSummary(primary model.DocRecord, codeEvidence []model.AskCodeEvidence) string {
@@ -335,9 +355,64 @@ func docRecordToEvidence(doc model.DocRecord) model.AskDocEvidence {
 func searchItemsToEvidence(items []map[string]any) []model.AskCodeEvidence {
 	result := make([]model.AskCodeEvidence, 0, len(items))
 	for _, item := range items {
-		result = append(result, model.AskCodeEvidence{Type: "text", File: fmt.Sprintf("%v", item["file"]), Line: intFromAny(item["line"], 0), Snippet: fmt.Sprintf("%v", item["text"])})
+		file := fmt.Sprintf("%v", item["file"])
+		if isAskCodeEvidenceSupportPath(file) {
+			continue
+		}
+		result = append(result, model.AskCodeEvidence{Type: "text", File: file, Line: intFromAny(item["line"], 0), Snippet: fmt.Sprintf("%v", item["text"])})
 	}
 	return result
+}
+
+func (q *docQueryContext) askAnchorDriftWarnings(routeResult model.RouteResult, result model.AskResult) ([]string, []string) {
+	if q == nil {
+		return nil, nil
+	}
+	warnings := []string{}
+	why := []string{}
+	routeAnchor := strings.TrimSpace(routeResult.Canonical.AnchorDoc.Path)
+	primaryPath := strings.TrimSpace(result.PrimaryDoc.Path)
+	if materiallyDifferentDocPaths(routeAnchor, primaryPath) {
+		warnings = append(warnings, fmt.Sprintf("%s: primary_doc=%s route_anchor=%s", askWarningAnchorDrift, primaryPath, routeAnchor))
+		why = append(why, "anchor_drift=primary_doc_diverged")
+	}
+	for _, evidence := range result.CodeEvidence {
+		if isAskCodeEvidenceSupportPath(evidence.File) {
+			warnings = append(warnings, fmt.Sprintf("%s: code_evidence_support_artifact=%s", askWarningAnchorDrift, evidence.File))
+			why = append(why, "anchor_drift=support_artifact_evidence")
+			break
+		}
+	}
+	if q.rankingNormalized {
+		if rawTop, ok := q.rawTopDoc(); ok && materiallyDifferentDocPaths(rawTop.Path, primaryPath) {
+			warnings = append(warnings, fmt.Sprintf("%s: meta terms normalized raw_top_doc=%s route_anchor=%s", askWarningAnchorDrift, rawTop.Path, routeAnchor))
+		} else {
+			warnings = append(warnings, fmt.Sprintf("%s: meta terms normalized route_anchor=%s", askWarningAnchorDrift, routeAnchor))
+		}
+		why = append(why, "anchor_drift=meta_terms_normalized")
+	}
+	return dedupeStrings(warnings), dedupeStrings(why)
+}
+
+func (q *docQueryContext) rawTopDoc() (model.DocRecord, bool) {
+	if q == nil || !q.rankingNormalized || len(q.docs) == 0 {
+		return model.DocRecord{}, false
+	}
+	rawFamily := docgraph.MatchFamily(q.task, q.profile)
+	rawRanked := rankDocs(q.task, rawFamily, q.docs, nil, q.profile, q.recentChanges)
+	if len(rawRanked) == 0 {
+		return model.DocRecord{}, false
+	}
+	return rawRanked[0].record, true
+}
+
+func materiallyDifferentDocPaths(left string, right string) bool {
+	left = filepath.ToSlash(strings.TrimSpace(left))
+	right = filepath.ToSlash(strings.TrimSpace(right))
+	if left == "" || right == "" {
+		return false
+	}
+	return !strings.EqualFold(left, right)
 }
 
 func buildAskNextQueries(workspaceName string, project model.ProjectFile, primary model.DocRecord, question string, codeEvidence []model.AskCodeEvidence, opts model.QueryOptions) []string {

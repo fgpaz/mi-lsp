@@ -60,6 +60,7 @@ Regular C# queries resolve the Roslyn worker by layout presence in `bundle -> in
 `mi-lsp version --format toon` exposes the exact executable path, SHA256, Go runtime, OS/architecture, protocol version, RID, and VCS metadata without needing a registered workspace or daemon.
 `worker status` keeps the same visible diagnostic payload whether it is served directly or through the daemon; only `active_workers` changes with live state. It now also surfaces `cli_path` and `protocol_version`, which makes stale or unexpected binaries on `PATH` easier to diagnose.
 On Windows, non-interactive child processes are started hidden so normal queries should not open extra console windows.
+Maintainers use the AE release distribution gate for binary refreshes: `pwsh ./scripts/release/ae-release-binaries.ps1 -Clean` builds all four RIDs and refreshes the current host install; add `-Publish -Tag <vX.Y.Z>` only after the clean release tag is ready.
 
 ### 2. Initialize a workspace
 
@@ -272,6 +273,16 @@ For release-like local validation on a specific RID:
 pwsh ./scripts/release/build-dist.ps1 -Rids @('win-x64') -Clean
 pwsh ./scripts/release/install-local.ps1 -Rid win-x64 -InstallDir $HOME\bin
 ```
+
+For AE-managed release distribution across Windows/Linux and ARM64/x64:
+
+```powershell
+pwsh ./scripts/release/ae-release-binaries.ps1 -Clean
+pwsh ./scripts/release/ae-release-binaries.ps1 -Clean -MirrorRoot C:\repos\buho\assets\skills\mi-lsp
+pwsh ./scripts/release/ae-release-binaries.ps1 -Clean -Publish -Tag vX.Y.Z
+```
+
+The `-Publish` mode requires a clean worktree and a tag that points at `HEAD`; pushing the tag triggers the GitHub release workflow that uploads all platform assets.
 
 ## Troubleshooting
 
