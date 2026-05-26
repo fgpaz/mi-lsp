@@ -1,0 +1,63 @@
+task_slug: 2026-05-26-mi-lsp-agent-first-hygiene
+issue_or_waiver: "No external issue/card linked; user requested implementation directly."
+base_ref: main
+base_sha: 7d031a9babbfc619281fe8e36168c3911a6fd5c4
+intended_branch: codex/mi-lsp-agent-first-hygiene-reliability
+worktree_path: C:\repos\mios\mi-lsp-agent-first-hygiene-reliability
+expected_scope: "Add agent-first workspace hygiene command and reliability diagnostics for stale registry, stale index, telemetry recommendations, search timeouts, missing indexed paths, and SQLite locks."
+allowed_paths:
+  - .docs/raw/plans/2026-05-26-mi-lsp-agent-first-hygiene-reliability.md
+  - .docs/raw/plans/2026-05-26-mi-lsp-agent-first-hygiene-reliability/**
+  - .docs/auditoria/2026-05-26-mi-lsp-agent-first-hygiene/**
+  - .docs/wiki/**
+  - internal/**
+  - cmd/**
+  - scripts/release/ae-release-binaries.ps1
+forbidden_paths:
+  - .docs/wiki/_mi-lsp/read-model.toml
+  - .env*
+  - secrets/**
+anchors:
+  rs: []
+  fl:
+    - FL-BOOT-01
+    - FL-QRY-01
+    - FL-IDX-01
+    - FL-DAE-01
+  rf:
+    - RF-WKS-004
+    - RF-WKS-005
+    - RF-QRY-002
+    - RF-IDX-003
+    - RF-DAE-002
+  ct:
+    - CT-CLI-DAEMON-ADMIN
+    - CT-NAV-GOVERNANCE
+    - CT-NAV-WIKI
+required_evidence:
+  - mi-lsp nav governance --workspace mi-lsp --format toon
+  - go test ./internal/workspace ./internal/service ./internal/daemon ./internal/docgraph ./internal/store
+  - pwsh ./scripts/release/ae-release-binaries.ps1 -SkipBuild -SkipLocalInstall -SkipWslInstall -SkipMirror
+touched_cards: []
+explicit_waivers:
+  - "No Linear/GitHub issue linked."
+branch_disposition: pr-open
+cleanup_policy: pr-open
+ae_contract:
+  selected_mode: orquestado_deterministico
+  why: "Plan decisions are locked and work is partitioned into explicit waves."
+  ae_docs:
+    - .docs/wiki/ae/AE-HARNESS-MANIFEST.md
+    - .docs/wiki/ae/AE-WORK-MODES.md
+    - .docs/wiki/ae/AE-EVIDENCE-POLICY.md
+    - .docs/wiki/ae/AE-RELEASE-DISTRIBUTION.md
+  release_distribution_required: true
+  binary_targets:
+    - local_current_machine
+    - release_assets
+  publish_strategy: "No publish in implementation branch; run dry release gate and record waiver/provenance."
+  local_install_targets:
+    - C:/Users/fgpaz/bin/mi-lsp.exe
+  mirror_targets: []
+  waivers:
+    - "Actual binary install/publish deferred unless user explicitly requests release."
