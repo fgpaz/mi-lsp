@@ -199,7 +199,7 @@ func TestComputeUsageRecommendations(t *testing.T) {
 		{ID: 1, OccurredAt: now, Workspace: "multi-tedi", WorkspaceRoot: "C:/repos/mios/multi-tedi", Operation: "nav.search", Backend: "text", Success: false, LatencyMs: 120000, Error: "context deadline exceeded", ErrorKind: "backend_runtime", ErrorCode: "text_generic", FailureStage: "backend", HintCode: "search_timeout"},
 		{ID: 2, OccurredAt: now, Workspace: "buhosalud", Operation: "workspace.status", Success: false, LatencyMs: 2, Error: "workspace not found in registry and path does not exist", ErrorCode: "workspace_resolution_failed", FailureStage: "selector_validation", HintCode: "workspace_resolution_failed"},
 	})
-	for _, id := range []string{"search_errors", "search_timeout", "workspace_resolution_failed", "prune_stale_workspaces"} {
+	for _, id := range []string{"search_errors", "search_timeout", "workspace_resolution_failed", "workspace_hygiene"} {
 		if !recommendationsContain(summary.Recommendations, id) {
 			t.Fatalf("recommendations missing %q: %#v", id, summary.Recommendations)
 		}

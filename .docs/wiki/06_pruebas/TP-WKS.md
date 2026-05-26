@@ -70,3 +70,6 @@ evidence:
 | TC-WKS-028 | positivo | RF-WKS-006 | `TestRenderTextVersionInfo`: la salida `text` de version es legible y los formatos estructurados conservan el envelope `backend=version` |
 | TC-WKS-029 | positivo | RF-WKS-001, RF-WKS-002 | `TestDoctorWorkspacesBinaryRevisionDriftAction`: `workspace doctor` detecta drift de revision entre binarios `mi-lsp` visibles y agrega `review_binary_version_drift` sin podar ni modificar PATH |
 | TC-WKS-030 | positivo | RF-WKS-006 | `scripts/release/ae-release-binaries.ps1 -SkipBuild -SkipLocalInstall -SkipWslInstall -SkipMirror` valida el gate AE sin publicar, exige artefactos por RID cuando no se salta build y reporta paths/SHA para provenance |
+| TC-WKS-031 | positivo | RF-WKS-004 | `workspace hygiene` reporta `backend=registry-hygiene`, aliases stale, familias de worktrees y acciones seguras sin mutar registry por default |
+| TC-WKS-032 | positivo | RF-WKS-004 | `workspace hygiene --apply-safe` remueve solo aliases con root inexistente via la logica existente de poda segura y conserva aliases vivos, roots, worktrees e indices |
+| TC-WKS-033 | positivo | RF-WKS-005, RF-QRY-013 | `workspace status`/`nav governance` exponen detalles de stale index con timestamps comparados y comando de reindex accionable |

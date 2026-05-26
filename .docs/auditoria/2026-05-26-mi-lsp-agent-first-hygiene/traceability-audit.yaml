@@ -1,0 +1,54 @@
+session_contract_path: .docs/auditoria/2026-05-26-mi-lsp-agent-first-hygiene/session-contract.yaml
+traceability_closure_path: .docs/auditoria/2026-05-26-mi-lsp-agent-first-hygiene/traceability-closure.yaml
+audit_date: 2026-05-26
+scope_audited:
+  - workspace hygiene CLI/service
+  - governance stale-index diagnostics
+  - telemetry recommendations
+  - search missing-indexed-path warning
+  - wiki RF/TP/TECH/CT sync
+  - AE release evidence
+governance:
+  verdict: PASS
+  evidence:
+    - mi-lsp workspace status mi-lsp --format toon
+    - mi-lsp nav governance --workspace mi-lsp --format toon
+harness:
+  verdict: PASS
+  evidence:
+    - go run ./cmd/mi-lsp nav wiki validate-harness --workspace mi-lsp --format toon
+wiki_source:
+  verdict: WARN
+  note: Existing canonical docs remain dual/human markdown format; no new LLM-first toon artifact was introduced beyond closure evidence.
+technical_drift:
+  verdict: PASS
+  reviewed:
+    - .docs/wiki/04_RF/RF-WKS-004.md
+    - .docs/wiki/04_RF/RF-WKS-005.md
+    - .docs/wiki/04_RF/RF-QRY-002.md
+    - .docs/wiki/04_RF/RF-QRY-013.md
+    - .docs/wiki/06_pruebas/TP-WKS.md
+    - .docs/wiki/07_baseline_tecnica.md
+    - .docs/wiki/09_contratos_tecnicos.md
+implementation:
+  verdict: PASS
+  evidence:
+    - internal/cli/workspace.go
+    - internal/service/workspace_ops.go
+    - internal/docgraph/governance.go
+    - internal/service/search_content.go
+    - internal/daemon/export.go
+tests:
+  verdict: PASS
+  commands:
+    - go test ./internal/workspace ./internal/service ./internal/daemon ./internal/docgraph ./internal/store ./internal/cli
+    - go run ./cmd/mi-lsp workspace hygiene --format toon
+    - go run ./cmd/mi-lsp workspace status mi-lsp --format toon --no-auto-sync
+    - go run ./cmd/mi-lsp nav governance --workspace mi-lsp --format toon
+    - go run ./cmd/mi-lsp nav wiki validate-harness --workspace mi-lsp --format toon
+    - .\scripts\release\ae-release-binaries.ps1 -SkipLocalInstall -SkipWslInstall -SkipMirror
+findings: []
+residual_risks:
+  - Release install/publish intentionally skipped for PR branch.
+  - `workspace hygiene --apply-safe` was tested via service fixture; live registry smoke was read-only only.
+verdict: PASS

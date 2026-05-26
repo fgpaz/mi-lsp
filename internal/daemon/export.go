@@ -384,8 +384,8 @@ func ComputeUsageRecommendations(summary ExportSummary) []UsageRecommendation {
 		add(UsageRecommendation{
 			ID:       "workspace_resolution_failed",
 			Severity: "high",
-			Reason:   "workspace selectors failed to resolve; run doctor before handing aliases to agents",
-			Command:  "mi-lsp workspace doctor --format toon",
+			Reason:   "workspace selectors failed to resolve; run hygiene before handing aliases to agents",
+			Command:  "mi-lsp workspace hygiene --format toon",
 			Evidence: []string{fmt.Sprintf("workspace_resolution_failed ops=%d", stat.Ops)},
 		})
 	}
@@ -397,6 +397,16 @@ func ComputeUsageRecommendations(summary ExportSummary) []UsageRecommendation {
 			Reason:   "repo selectors were invalid; use workspace-map or list concrete repos before scoped search",
 			Command:  "mi-lsp nav workspace-map --workspace <alias> --format toon",
 			Evidence: []string{fmt.Sprintf("repo_selector_invalid ops=%d", stat.Ops)},
+		})
+	}
+
+	if stat, ok := summary.ByHintCode["stale_registry"]; ok && stat.Ops > 0 {
+		add(UsageRecommendation{
+			ID:       "workspace_hygiene",
+			Severity: "high",
+			Reason:   "stale registry signals were observed; inspect safe registry repairs before agents reuse aliases",
+			Command:  "mi-lsp workspace hygiene --format toon",
+			Evidence: []string{fmt.Sprintf("stale_registry ops=%d", stat.Ops)},
 		})
 	}
 
@@ -414,10 +424,10 @@ func ComputeUsageRecommendations(summary ExportSummary) []UsageRecommendation {
 		message := strings.ToLower(top.ErrorText + " " + top.ErrorCode)
 		if strings.Contains(message, "workspace not found") || strings.Contains(message, "path does not exist") {
 			add(UsageRecommendation{
-				ID:       "prune_stale_workspaces",
+				ID:       "workspace_hygiene",
 				Severity: "high",
 				Reason:   "telemetry includes missing workspace roots or aliases; stale registry entries are likely",
-				Command:  "mi-lsp workspace prune --stale --dry-run",
+				Command:  "mi-lsp workspace hygiene --format toon",
 				Evidence: []string{fmt.Sprintf("%dx %s", top.Count, safeKey(top.ErrorCode, top.ErrorText))},
 			})
 		}

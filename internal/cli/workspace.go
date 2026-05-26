@@ -60,6 +60,21 @@ with an optional .mi-lsp/project.toml topology file.`,
 		},
 	}
 
+	var hygieneApplySafe bool
+	hygieneCommand := &cobra.Command{
+		Use:   "hygiene",
+		Short: "Summarize and safely repair workspace registry hygiene",
+		Long: `Summarize workspace registry hygiene for agents and humans.
+
+By default this command is read-only. Use --apply-safe to remove only registry
+aliases whose roots no longer exist. It never deletes files, Git worktrees,
+branches, indexes, or running processes.`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return state.executeOperation(cmd, "workspace.hygiene", map[string]any{"apply_safe": hygieneApplySafe}, false)
+		},
+	}
+	hygieneCommand.Flags().BoolVar(&hygieneApplySafe, "apply-safe", false, "Apply only safe registry repairs; never delete files or Git worktrees")
+
 	var pruneStale bool
 	var pruneApply bool
 	var pruneDryRun bool
@@ -123,6 +138,6 @@ By default this command is a dry run. Use --apply to remove only aliases whose
 		},
 	}
 
-	command.AddCommand(addCommand, scanCommand, listCommand, doctorCommand, pruneCommand, warmCommand, statusCommand, removeCommand)
+	command.AddCommand(addCommand, scanCommand, listCommand, doctorCommand, hygieneCommand, pruneCommand, warmCommand, statusCommand, removeCommand)
 	return command
 }

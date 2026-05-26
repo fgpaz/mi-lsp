@@ -99,6 +99,7 @@ evidence:
 - Para `nav context` sobre C#/TS/Python, el core es slice-first: si Roslyn/tsserver/Pyright fallan al arrancar por permisos o proceso bloqueado, devuelve `ok=true`, conserva `slice_text`, agrega warning tipado `backend_runtime/<code>` y registra `requested_backend`, `result_backend`, `backend_fallback_taken` y `runtime_error_code` en telemetria sanitizada.
 - Para `nav search`, si `rg` existe pero falla por permisos o arranque de proceso, el runtime debe degradar a busqueda Go nativa, emitir warning tipado `backend_runtime/<code>` y no exponer argv, payload ni contenido de archivos en `decision_json`.
 - Para `nav search`, si la busqueda agota timeout durante el scan despues de materializar resultados parciales seguros, el runtime debe conservar esos resultados, responder `ok=true`, emitir warning humano de timeout, registrar `hint_code=search_timeout`, `coach.trigger=search_timeout` y `failure_stage=none`, y proponer un `next_hint` de narrowing sin repetir ciegamente la misma consulta.
+- Para `nav search --include-content`, si un match viene del indice pero el archivo ya no existe en disco, el runtime debe conservar el item y emitir stale-index warning accionable hacia reindexado, no fallar toda la busqueda.
 - Para queries symbol-like en `nav search` literal, el envelope puede emitir `coach.trigger=symbol_query_detected` con acciones hacia `nav find --exact` y `nav related`; esta guia complementa, no reemplaza, el resultado textual.
 
 ## 6. Data Model Impact
