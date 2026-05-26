@@ -323,8 +323,14 @@ func resolveEditPlanPath(root string, requested string, denyPaths []string) (str
 	if !editPlanPathInsideRoot(root, absPath) {
 		return "", "", errors.New("path outside workspace root")
 	}
-	if evaluated, err := filepath.EvalSymlinks(absPath); err == nil && !editPlanPathInsideRoot(root, evaluated) {
-		return "", "", errors.New("symlink resolves outside workspace root")
+	if evaluated, err := filepath.EvalSymlinks(absPath); err == nil {
+		evaluatedRoot := root
+		if resolvedRoot, rootErr := filepath.EvalSymlinks(root); rootErr == nil {
+			evaluatedRoot = resolvedRoot
+		}
+		if !editPlanPathInsideRoot(evaluatedRoot, evaluated) {
+			return "", "", errors.New("symlink resolves outside workspace root")
+		}
 	}
 	rel, err := filepath.Rel(root, absPath)
 	if err != nil || rel == "." || strings.HasPrefix(rel, "..") {
@@ -340,6 +346,10 @@ func resolveEditPlanPath(root string, requested string, denyPaths []string) (str
 func editPlanPathInsideRoot(root string, absPath string) bool {
 	root = filepath.Clean(root)
 	absPath = filepath.Clean(absPath)
+	if runtime.GOOS == "windows" {
+		root = strings.ToLower(root)
+		absPath = strings.ToLower(absPath)
+	}
 	return absPath == root || strings.HasPrefix(absPath, root+string(os.PathSeparator))
 }
 
