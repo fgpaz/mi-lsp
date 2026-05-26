@@ -11,6 +11,8 @@ git_after:
   worktree_path: C:\repos\mios\mi-lsp-agent-first-hygiene-reliability
   upstream: null
   final_commit: see_current_branch_head_after_final_amend
+  integration_target: origin/main
+  pr_url: https://github.com/fgpaz/mi-lsp/pull/19
 changed_paths:
   tracked:
     - .docs/wiki/04_RF/RF-QRY-002.md
@@ -111,6 +113,11 @@ no_drift_snapshot:
     - git branch --no-merged main
 completion_handoff:
   target_skill: finishing-a-development-branch
-  branch_disposition: pr-open
-  cleanup_policy: pr-open
+  branch_disposition: integrate-main
+  cleanup_policy: auto-after-successful-integration
   blockers: []
+  final_done_gate:
+    - PR merged into origin/main
+    - local main updated to origin/main
+    - task worktree removed
+    - task branches sanitized locally/remotely

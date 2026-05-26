@@ -51,4 +51,11 @@ findings: []
 residual_risks:
   - Release install/publish intentionally skipped for PR branch.
   - `workspace hygiene --apply-safe` was tested via service fixture; live registry smoke was read-only only.
+integration_gate:
+  required: true
+  pr_url: https://github.com/fgpaz/mi-lsp/pull/19
+  final_means_done_only_after:
+    - origin/main contains the PR merge
+    - local main contains origin/main
+    - task worktree and branches are cleaned up
 verdict: PASS

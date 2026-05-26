@@ -41,8 +41,8 @@ required_evidence:
 touched_cards: []
 explicit_waivers:
   - "No Linear/GitHub issue linked."
-branch_disposition: pr-open
-cleanup_policy: pr-open
+branch_disposition: integrate-main
+cleanup_policy: auto-after-successful-integration
 ae_contract:
   selected_mode: orquestado_deterministico
   why: "Plan decisions are locked and work is partitioned into explicit waves."
@@ -61,3 +61,11 @@ ae_contract:
   mirror_targets: []
   waivers:
     - "Actual binary install/publish deferred unless user explicitly requests release."
+completion_contract:
+  final_means_done_only_after:
+    - PR merged into origin/main
+    - local main fast-forwarded to origin/main
+    - task worktree removed
+    - local task branch removed
+    - remote task branch removed or confirmed removed by PR merge
+    - ps-trazabilidad and ps-auditar-trazabilidad rerun after any closure drift
