@@ -13,11 +13,13 @@ git_before:
 
 git_after:
   branch: codex/mi-lsp-nav-edit-plan
-  head_sha: 4866fda91520021556e64158214ce9c6e64f0be9
+  head_sha: a6a2c3e174ce35fa0210ef628157c3cf789b3862
   upstream: none
   ahead_of_main_commits:
     - 753cf7d docs(plan): add nav edit-plan implementation plan
     - 4866fda feat(nav): add edit-plan diff and apply gate
+    - 9a64495 docs(audit): close nav edit-plan traceability
+    - a6a2c3e fix(nav): normalize edit-plan symlink paths on windows
   status_short_branch: "## codex/mi-lsp-nav-edit-plan"
 
 changed_paths:
@@ -132,6 +134,8 @@ verification:
       result: PASS
     - command: go test ./...
       result: PASS
+    - command: go test ./internal/service ./internal/cli ./internal/model ./internal/telemetry
+      result: PASS after Windows symlink normalization fix
     - command: go run ./cmd/mi-lsp nav edit-plan --packet <temp> --workspace . --format toon
       result: PASS backend=edit-plan mode=dry_run files_changed=1 no_write=true
     - command: go run ./cmd/mi-lsp index --docs-only --workspace . --format toon
@@ -145,12 +149,12 @@ release_distribution:
   local_install:
     path: C:\Users\fgpaz\bin\mi-lsp.exe
     rid: win-arm64
-    sha256: 91471307c7748cb9c7aff4aefb3c6ed83a5744714e7f9b9278ce714c8f6e09e1
+    sha256: 0e9596b5562e01a0d04f2b54e39f59051f39d6a3166f13b864d457ea0b5dd0d8
   dist_checksums:
-    win-arm64: 91471307c7748cb9c7aff4aefb3c6ed83a5744714e7f9b9278ce714c8f6e09e1
-    win-x64: b5723e520bc81d8807c57a573eff8d597394200f7ca0c29ce1f68f100c667a8c
-    linux-arm64: de48c7b0682a3d3ebd30a3928b2e9b062e1785c5267d5e9ae61de409941c6d85
-    linux-x64: 3e88c21fe7371512772e2f24be8d9d6e71c336bc37fe6a8d063ee656502a7928
+    win-arm64: 0e9596b5562e01a0d04f2b54e39f59051f39d6a3166f13b864d457ea0b5dd0d8
+    win-x64: 9cd45de50ab6f4221a1b4c9feb5e1bf52917c836249e4e97d579bc91e53a0944
+    linux-arm64: 479625ffe1abe7f7e9877fd7dfa5ff67ffc87e44614cadcb450ff3f13a127973
+    linux-x64: 5a01d8c7225e242bc6534bb814a816231323d652e81f29377a699e4c096c565e
   skipped:
     wsl_install: SkipWslInstall
     mirror: SkipMirror

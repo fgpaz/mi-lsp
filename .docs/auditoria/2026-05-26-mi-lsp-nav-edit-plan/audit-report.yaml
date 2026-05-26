@@ -11,7 +11,7 @@ scope_audited:
   branch: codex/mi-lsp-nav-edit-plan
   worktree: C:\repos\mios\mi-lsp-nav-edit-plan
   base_sha: fc929ab453ac88d1a54b5d5373b648014f45ad8a
-  implementation_sha: 4866fda91520021556e64158214ce9c6e64f0be9
+  implementation_sha: a6a2c3e174ce35fa0210ef628157c3cf789b3862
 
 findings:
   critical: []
@@ -60,7 +60,9 @@ runtime_evidence:
     - command: go run ./cmd/mi-lsp nav edit-plan --packet <temp> --workspace . --format toon
       result: PASS backend=edit-plan mode=dry_run no_write=true
     - command: .\scripts\release\ae-release-binaries.ps1 -SkipWslInstall -SkipMirror
-      result: PASS local_install=C:\Users\fgpaz\bin\mi-lsp.exe sha256=91471307c7748cb9c7aff4aefb3c6ed83a5744714e7f9b9278ce714c8f6e09e1
+      result: PASS local_install=C:\Users\fgpaz\bin\mi-lsp.exe sha256=0e9596b5562e01a0d04f2b54e39f59051f39d6a3166f13b864d457ea0b5dd0d8
+    - command: go test ./...
+      result: PASS after Windows symlink normalization fix
 
 contract_audit:
   verdict: PASS
@@ -76,6 +78,10 @@ contract_audit:
     overlapping_range_ops_blocked: PASS
     no_stage_commit_formatter_or_delete: PASS
   telemetry_error_typing: PASS
+  ci_remediation:
+    issue: Windows CI resolved symlink target paths differently than the workspace root.
+    fix: internal/service/edit_plan.go now resolves both root and target before containment checks and compares case-insensitively on Windows.
+    local_verification: PASS
 
 tests_audited:
   unit_and_service:
