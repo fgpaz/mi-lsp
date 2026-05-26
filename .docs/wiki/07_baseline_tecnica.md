@@ -52,7 +52,7 @@ El detalle operativo y de subsistemas vive en `07_tech/`.
 | Pyright semantic backend | Runtime opcional | Python semantic backend | Semantica Python via `pyright-langserver` |
 | Governance UI | HTTP loopback local | Runtime supervision | Estado, accesos, memoria y diagnostico |
 | File watcher (fsnotify) | Subsistema daemon | Pre-fetch | Re-indexa archivos modificados en background |
-| Agent acceleration CLI | Subsistema Go | Compound commands | `multi-read`, `batch`, `related`, `workspace-map`, `search --include-content`, `nav ask`, `nav pack` |
+| Agent acceleration CLI | Subsistema Go | Compound commands | `multi-read`, `batch`, `related`, `workspace-map`, `search --include-content`, `nav ask`, `nav pack`, `nav edit-plan` |
 | Store repo-local | SQLite | Workspace owner | Catalogo de codigo, indice documental y metadata del repo |
 | Index job runner | CLI + SQLite repo-local | Workspace owner | Jobs de indexacion `queued/running/published`, generacion de indice y cancelacion cooperativa |
 | Store global daemon | SQLite + state file | Runtime supervision | Estado global del daemon y telemetria local |
@@ -102,7 +102,8 @@ flowchart LR
 - En AXI efectivo, `--format` explicito gana; si no existe, las superficies cubiertas usan TOON como default.
 - En AXI efectivo, `--full` solo expande disclosure sobre superficies cubiertas; no cambia semantica ni routing de la operacion.
 - La version actual de AXI no instala hooks ni mantiene contexto ambiente persistente fuera del proceso CLI.
-- Las lecturas baratas de catalogo/texto (`nav.find`, `nav.search`, `nav.symbols`, `nav.outline`, `nav.overview`, `nav.multi-read`) deben ejecutarse directas y no depender del health del daemon.
+- Las lecturas baratas de catalogo/texto (`nav.find`, `nav.search`, `nav.symbols`, `nav.outline`, `nav.overview`, `nav.multi-read`, `nav.edit-plan`) deben ejecutarse directas y no depender del health del daemon.
+- `nav edit-plan` es dry-run por default: genera diff determinista desde un packet `edit-plan-v1` y solo escribe archivos con `--apply --experimental-apply`, git limpio, hashes esperados, paths seguros y operaciones sin solapamiento.
 - `nav.ask` tambien usa el camino directo por default; el daemon no es el hot path obligatorio para respuestas docs-first.
 - `nav trace` sigue siendo una lectura directa del repo-local y debe resolver IDs `RS-*`, `RF-*` y `TP-*` desde `doc_records/doc_mentions`; para `RS-*` devuelve identidad documental (`doc_id`, `layer=RS`, `stage=outcome`) sin poblar el campo legacy `rf`, y para `RF-*` los docs TP del layer `06` cuentan como evidencia documental de cobertura y evitan falsos `missing` despues de `index --docs-only`.
 - Todo subprocesso no interactivo debe usar la politica comun de proceso; en Windows eso implica `HideWindow + CREATE_NO_WINDOW`, y los procesos background del daemon agregan `DETACHED_PROCESS`.
@@ -219,7 +220,7 @@ El struct `internal/service/config.go` centraliza todos los valores hardcodeados
 - `daemon start` debe ser idempotente y resolver si ya existe una instancia saludable.
 - `daemon logs` y la UI admin pueden filtrar ruido benigno de cierre de sockets/pipes y el bloque de ayuda asociado cuando el tail solo refleja apagado normal de listeners.
 - Queries semanticas y compuestas seleccionadas inician automaticamente el daemon si no esta corriendo (desactivar con `--no-auto-daemon`).
-- `nav.find`, `nav.search`, `nav.intent`, `nav.symbols`, `nav.outline`, `nav.overview` y `nav.multi-read` no deben auto-iniciar ni enrutar por daemon en builds actuales; en workspaces `container`, `find/search/intent` pueden acotar con `--repo`.
+- `nav.find`, `nav.search`, `nav.intent`, `nav.symbols`, `nav.outline`, `nav.overview`, `nav.multi-read` y `nav.edit-plan` no deben auto-iniciar ni enrutar por daemon en builds actuales; en workspaces `container`, `find/search/intent` pueden acotar con `--repo`.
 - `nav.wiki.validate-harness` es una lectura directa del docgraph y markdown gobernado: no debe auto-iniciar daemon ni crear un indexador documental paralelo.
 - `nav.wiki.validate-source` es una lectura directa del docgraph typed y markdown gobernado: valida solo artefactos que declaran `wiki_source_protocol: SDD-WIKI-SOURCE-v1`, no auto-inicia daemon y no bloquea documentos no migrados.
 - El docgraph del workspace activo debe ignorar `.docs/temp/worktrees/` para no mezclar canon de worktrees vecinos ni bloquear harness con artefactos auxiliares.

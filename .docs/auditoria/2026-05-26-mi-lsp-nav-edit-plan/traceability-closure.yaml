@@ -1,0 +1,212 @@
+traceability_closure:
+  task_slug: 2026-05-26-mi-lsp-nav-edit-plan
+  session_contract_path: .docs/auditoria/2026-05-26-mi-lsp-nav-edit-plan/session-contract.yaml
+  verdict: PASS
+  produced_by: ps-trazabilidad
+  timestamp_local: 2026-05-26T19:45:00-03:00
+
+git_before:
+  base_ref: main
+  base_sha: fc929ab453ac88d1a54b5d5373b648014f45ad8a
+  branch: codex/mi-lsp-nav-edit-plan
+  upstream: none
+
+git_after:
+  branch: codex/mi-lsp-nav-edit-plan
+  head_sha: a6a2c3e174ce35fa0210ef628157c3cf789b3862
+  upstream: none
+  ahead_of_main_commits:
+    - 753cf7d docs(plan): add nav edit-plan implementation plan
+    - 4866fda feat(nav): add edit-plan diff and apply gate
+    - 9a64495 docs(audit): close nav edit-plan traceability
+    - a6a2c3e fix(nav): normalize edit-plan symlink paths on windows
+  status_short_branch: "## codex/mi-lsp-nav-edit-plan"
+
+changed_paths:
+  forbidden_hits: []
+  allowed_verdict: PASS
+  tracked:
+    - .docs/auditoria/2026-05-26-mi-lsp-nav-edit-plan/session-contract.yaml
+    - .docs/raw/plans/2026-05-26-mi-lsp-nav-edit-plan.md
+    - .docs/raw/plans/2026-05-26-mi-lsp-nav-edit-plan/T0-plan-contract-decision-lock.md
+    - .docs/raw/plans/2026-05-26-mi-lsp-nav-edit-plan/T1-canon-sync.md
+    - .docs/raw/plans/2026-05-26-mi-lsp-nav-edit-plan/T2-model-validation.md
+    - .docs/raw/plans/2026-05-26-mi-lsp-nav-edit-plan/T3-dry-run-diff-engine.md
+    - .docs/raw/plans/2026-05-26-mi-lsp-nav-edit-plan/T4-cli-service-dispatch.md
+    - .docs/raw/plans/2026-05-26-mi-lsp-nav-edit-plan/T5-experimental-apply.md
+    - .docs/raw/plans/2026-05-26-mi-lsp-nav-edit-plan/T6-tests-dogfood.md
+    - .docs/raw/plans/2026-05-26-mi-lsp-nav-edit-plan/T7-ae-release-distribution.md
+    - .docs/raw/plans/2026-05-26-mi-lsp-nav-edit-plan/T8-ps-trazabilidad-audit.md
+    - .docs/raw/plans/2026-05-26-mi-lsp-nav-edit-plan/T9-integrate-main-cleanup.md
+    - .docs/wiki/04_RF.md
+    - .docs/wiki/04_RF/RF-QRY-018.md
+    - .docs/wiki/06_matriz_pruebas_RF.md
+    - .docs/wiki/06_pruebas/TP-QRY.md
+    - .docs/wiki/07_baseline_tecnica.md
+    - .docs/wiki/09_contratos/CT-NAV-EDIT-PLAN.md
+    - .docs/wiki/09_contratos_tecnicos.md
+    - internal/cli/axi_mode.go
+    - internal/cli/nav.go
+    - internal/cli/nav_test.go
+    - internal/cli/root.go
+    - internal/cli/root_test.go
+    - internal/cli/telemetry.go
+    - internal/model/edit_plan.go
+    - internal/service/app.go
+    - internal/service/edit_plan.go
+    - internal/service/edit_plan_test.go
+    - internal/telemetry/access_events.go
+    - internal/telemetry/access_events_test.go
+  untracked_before_closure_packet: []
+
+scope_verdict: PASS
+expected_scope: Implement mi-lsp nav edit-plan with dry-run patch packets, deterministic diff, and guarded experimental apply.
+allowed_paths_reviewed:
+  - .docs/raw/plans/2026-05-26-mi-lsp-nav-edit-plan.md
+  - .docs/raw/plans/2026-05-26-mi-lsp-nav-edit-plan/**
+  - .docs/auditoria/2026-05-26-mi-lsp-nav-edit-plan/**
+  - .docs/wiki/**
+  - internal/**
+  - cmd/**
+forbidden_paths_reviewed:
+  - .docs/wiki/_mi-lsp/read-model.toml
+  - .git/**
+  - .mi-lsp/**
+  - .env*
+  - secrets/**
+
+traceability_chains:
+  reviewed_anchors:
+    fl:
+      - FL-QRY-01
+    rf:
+      - RF-QRY-018
+      - RF-QRY-017
+      - RF-QRY-001
+      - RF-QRY-002
+    ct:
+      - CT-NAV-EDIT-PLAN
+    tp:
+      - TP-QRY
+    tech:
+      - 07_baseline_tecnica
+      - 09_contratos_tecnicos
+  updated_paths:
+    - .docs/wiki/04_RF.md
+    - .docs/wiki/04_RF/RF-QRY-018.md
+    - .docs/wiki/06_matriz_pruebas_RF.md
+    - .docs/wiki/06_pruebas/TP-QRY.md
+    - .docs/wiki/07_baseline_tecnica.md
+    - .docs/wiki/09_contratos/CT-NAV-EDIT-PLAN.md
+    - .docs/wiki/09_contratos_tecnicos.md
+  missing_anchors: []
+
+runtime_sensitive:
+  value: true
+  rationale: Public CLI surface and local installable binary behavior changed.
+  evidence:
+    - internal/cli/nav.go
+    - internal/service/edit_plan.go
+    - internal/model/edit_plan.go
+    - scripts/release/ae-release-binaries.ps1 output captured in release_distribution
+
+data_or_contract_sensitive:
+  value: true
+  rationale: New public command contract and envelope shape.
+  evidence:
+    - .docs/wiki/09_contratos/CT-NAV-EDIT-PLAN.md
+    - .docs/wiki/09_contratos_tecnicos.md
+
+harness:
+  governance_verdict: PASS
+  harness_verdict: PASS
+  wiki_source_verdict: WARN
+  wiki_source_rationale: In-scope RF/CT docs use SDD-HARNESS-v1; repo-wide SDD-WIKI-SOURCE-v1 migration is not required for this command wave.
+  commands:
+    - command: go run ./cmd/mi-lsp nav governance --workspace . --format toon
+      result: PASS blocked=false index_sync=current
+    - command: go run ./cmd/mi-lsp nav wiki validate-harness --workspace . --format toon
+      result: PASS harness_verdict=PASS contracts_reviewed=103
+
+verification:
+  commands:
+    - command: go test ./internal/service ./internal/cli ./internal/model ./internal/telemetry
+      result: PASS
+    - command: go test ./...
+      result: PASS
+    - command: go test ./internal/service ./internal/cli ./internal/model ./internal/telemetry
+      result: PASS after Windows symlink normalization fix
+    - command: go run ./cmd/mi-lsp nav edit-plan --packet <temp> --workspace . --format toon
+      result: PASS backend=edit-plan mode=dry_run files_changed=1 no_write=true
+    - command: go run ./cmd/mi-lsp index --docs-only --workspace . --format toon
+      result: PASS docs=106 status=succeeded
+    - command: .\scripts\release\ae-release-binaries.ps1 -SkipWslInstall -SkipMirror
+      result: PASS
+
+release_distribution:
+  required: true
+  result: PASS
+  local_install:
+    path: C:\Users\fgpaz\bin\mi-lsp.exe
+    rid: win-arm64
+    sha256: 0e9596b5562e01a0d04f2b54e39f59051f39d6a3166f13b864d457ea0b5dd0d8
+  dist_checksums:
+    win-arm64: 0e9596b5562e01a0d04f2b54e39f59051f39d6a3166f13b864d457ea0b5dd0d8
+    win-x64: 9cd45de50ab6f4221a1b4c9feb5e1bf52917c836249e4e97d579bc91e53a0944
+    linux-arm64: 479625ffe1abe7f7e9877fd7dfa5ff67ffc87e44614cadcb450ff3f13a127973
+    linux-x64: 5a01d8c7225e242bc6534bb814a816231323d652e81f29377a699e4c096c565e
+  skipped:
+    wsl_install: SkipWslInstall
+    mirror: SkipMirror
+    publish: Publish switch not set
+
+board_sync:
+  touched_cards: []
+  verdict: NOT_APPLICABLE
+  rationale: No Linear/GitHub issue linked in session contract.
+
+branch_worktree_inventory:
+  worktrees:
+    - path: C:/repos/mios/mi-lsp
+      branch: main
+      head: fc929ab453ac88d1a54b5d5373b648014f45ad8a
+    - path: C:/repos/mios/mi-lsp-nav-edit-plan
+      branch: codex/mi-lsp-nav-edit-plan
+      head: 4866fda91520021556e64158214ce9c6e64f0be9
+  same_scope_unknown: []
+  no_merged_main:
+    - codex/mi-lsp-nav-edit-plan
+
+pre_push_inputs:
+  issue_or_waiver: No external issue/card linked; user requested implementation directly.
+  evidence_path: .docs/auditoria/2026-05-26-mi-lsp-nav-edit-plan/traceability-closure.yaml
+  expected_scope: Implement mi-lsp nav edit-plan with dry-run patch packets, deterministic diff, and guarded experimental apply.
+  session_contract_path: .docs/auditoria/2026-05-26-mi-lsp-nav-edit-plan/session-contract.yaml
+
+completion_handoff:
+  target_skill: finishing-a-development-branch
+  branch_disposition: integrate-main
+  cleanup_policy: auto-after-successful-integration
+  required_steps:
+    - open PR from codex/mi-lsp-nav-edit-plan
+    - merge PR to origin/main after checks
+    - fast-forward local main
+    - rerun release binary refresh after final integration if needed
+    - reindex mi-lsp docs/memory
+    - run workspace hygiene
+    - remove task worktree
+    - delete local and remote task branch after merged and non-default/protected checks
+  blockers: []
+
+no_drift_snapshot:
+  before_packet_write:
+    git_status: "## codex/mi-lsp-nav-edit-plan"
+    governance: PASS
+    harness: PASS
+  after_packet_write:
+    expected_dirty_paths:
+      - .docs/auditoria/2026-05-26-mi-lsp-nav-edit-plan/traceability-closure.yaml
+      - .docs/auditoria/2026-05-26-mi-lsp-nav-edit-plan/audit-report.yaml
+    rerun_required_after_commit: true
+
+remaining_gaps: []

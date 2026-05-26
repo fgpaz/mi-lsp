@@ -135,6 +135,30 @@ func TestClassifyErrorInfo_DetectsProcessSpawnAccessDenied(t *testing.T) {
 	}
 }
 
+func TestClassifyErrorInfo_DetectsEditPlanErrors(t *testing.T) {
+	tests := []struct {
+		name    string
+		message string
+		code    string
+	}{
+		{name: "invalid packet", message: "invalid edit-plan packet JSON: unexpected EOF", code: "qry_edit_plan_invalid_packet"},
+		{name: "unsafe path", message: "target target-main: path denied by .git/**", code: "qry_edit_plan_unsafe_path"},
+		{name: "hash mismatch", message: "target target-main: expected_hash mismatch", code: "qry_edit_plan_hash_mismatch"},
+		{name: "overlap", message: "operation op-b overlaps target range already used by operation op-a", code: "qry_edit_plan_overlap"},
+		{name: "experimental", message: "--apply requires --experimental-apply", code: "qry_edit_plan_apply_requires_experimental"},
+		{name: "dirty git", message: "apply requires a clean git workspace; commit or stash changes first", code: "qry_edit_plan_dirty_git"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			info := ClassifyErrorInfo("edit-plan", tt.message, nil)
+			if info.Kind != "validation" || info.Code != tt.code {
+				t.Fatalf("ClassifyErrorInfo = %q/%q, want validation/%s", info.Kind, info.Code, tt.code)
+			}
+		})
+	}
+}
+
 func TestResolveWindowPresetRecent(t *testing.T) {
 	now := time.Date(2026, 3, 21, 12, 0, 0, 0, time.UTC)
 	window, err := ResolveWindow("recent", now)

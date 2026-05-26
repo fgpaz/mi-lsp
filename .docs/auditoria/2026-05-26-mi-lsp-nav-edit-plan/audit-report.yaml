@@ -1,0 +1,141 @@
+audit_report:
+  task_slug: 2026-05-26-mi-lsp-nav-edit-plan
+  produced_by: ps-auditar-trazabilidad
+  timestamp_local: 2026-05-26T19:46:00-03:00
+  verdict: Approved
+  session_contract_path: .docs/auditoria/2026-05-26-mi-lsp-nav-edit-plan/session-contract.yaml
+  traceability_closure_path: .docs/auditoria/2026-05-26-mi-lsp-nav-edit-plan/traceability-closure.yaml
+
+scope_audited:
+  summary: Public CLI command `mi-lsp nav edit-plan` with packet validation, deterministic dry-run diff, and guarded experimental apply.
+  branch: codex/mi-lsp-nav-edit-plan
+  worktree: C:\repos\mios\mi-lsp-nav-edit-plan
+  base_sha: fc929ab453ac88d1a54b5d5373b648014f45ad8a
+  implementation_sha: a6a2c3e174ce35fa0210ef628157c3cf789b3862
+
+findings:
+  critical: []
+  high: []
+  medium: []
+  low: []
+
+governance:
+  verdict: PASS
+  evidence:
+    - command: go run ./cmd/mi-lsp nav governance --workspace . --format toon
+      result: blocked=false sync=in_sync index_sync=current
+    - command: go run ./cmd/mi-lsp nav wiki validate-harness --workspace . --format toon
+      result: harness_verdict=PASS harness_contracts_reviewed=103
+
+harness_findings:
+  critical: []
+  high: []
+  medium: []
+  low:
+    - Repo-wide SDD-WIKI-SOURCE-v1 migration remains partial; this wave did not require converting RF/CT docs to source blocks.
+
+technical_drift:
+  verdict: PASS
+  docs_reviewed:
+    - .docs/wiki/07_baseline_tecnica.md
+    - .docs/wiki/09_contratos_tecnicos.md
+    - .docs/wiki/09_contratos/CT-NAV-EDIT-PLAN.md
+    - .docs/wiki/04_RF/RF-QRY-018.md
+    - .docs/wiki/06_pruebas/TP-QRY.md
+  code_reviewed:
+    - internal/model/edit_plan.go
+    - internal/service/edit_plan.go
+    - internal/service/app.go
+    - internal/cli/nav.go
+    - internal/cli/root.go
+    - internal/cli/telemetry.go
+    - internal/telemetry/access_events.go
+  mismatches_found: []
+
+runtime_evidence:
+  verdict: PASS
+  checks:
+    - command: go test ./...
+      result: PASS
+    - command: go run ./cmd/mi-lsp nav edit-plan --packet <temp> --workspace . --format toon
+      result: PASS backend=edit-plan mode=dry_run no_write=true
+    - command: .\scripts\release\ae-release-binaries.ps1 -SkipWslInstall -SkipMirror
+      result: PASS local_install=C:\Users\fgpaz\bin\mi-lsp.exe sha256=0e9596b5562e01a0d04f2b54e39f59051f39d6a3166f13b864d457ea0b5dd0d8
+    - command: go test ./...
+      result: PASS after Windows symlink normalization fix
+
+contract_audit:
+  verdict: PASS
+  packet_schema: edit-plan-v1
+  apply_guardrails:
+    dry_run_default: PASS
+    apply_requires_experimental_apply: PASS
+    git_clean_required: PASS
+    expected_hash_required_for_apply: PASS
+    forbidden_paths_blocked: PASS
+    binary_paths_blocked: PASS
+    path_traversal_blocked: PASS
+    overlapping_range_ops_blocked: PASS
+    no_stage_commit_formatter_or_delete: PASS
+  telemetry_error_typing: PASS
+  ci_remediation:
+    issue: Windows CI resolved symlink target paths differently than the workspace root.
+    fix: internal/service/edit_plan.go now resolves both root and target before containment checks and compares case-insensitively on Windows.
+    local_verification: PASS
+
+tests_audited:
+  unit_and_service:
+    - TestEditPlanDryRunDoesNotWrite
+    - TestEditPlanApplyWritesOnlyWithExperimentalGate
+    - TestEditPlanApplyRequiresCleanGit
+    - TestEditPlanRejectsUnsafePackets
+  cli:
+    - TestNavCommandExposesEditPlanFlags
+    - TestShouldUseDaemonPolicy
+    - TestShouldAutoStartDaemonPolicy
+  telemetry:
+    - TestClassifyErrorInfo_DetectsEditPlanErrors
+  full_suite:
+    - go test ./...
+
+session_contract_audit:
+  verdict: PASS
+  allowed_path_hits_only: true
+  forbidden_path_hits: []
+  issue_or_card_waiver: No external issue/card linked; user requested implementation directly.
+  release_distribution_required: true
+  release_distribution_result: PASS
+
+branch_worktree_audit:
+  verdict: PASS
+  inventory:
+    - main at C:/repos/mios/mi-lsp
+    - codex/mi-lsp-nav-edit-plan at C:/repos/mios/mi-lsp-nav-edit-plan
+  unknown_same_scope_worktrees: []
+  branch_disposition: integrate-main
+  cleanup_policy: auto-after-successful-integration
+  cleanup_handoff: approved_after_successful_pr_merge
+
+pre_push_guard_readiness:
+  verdict: READY_WITH_WAIVER
+  issue_or_card: waived_no_external_issue
+  evidence_path: .docs/auditoria/2026-05-26-mi-lsp-nav-edit-plan/traceability-closure.yaml
+  session_contract_path: .docs/auditoria/2026-05-26-mi-lsp-nav-edit-plan/session-contract.yaml
+  raw_paths_pending:
+    allowed_by_contract:
+      - .docs/raw/plans/2026-05-26-mi-lsp-nav-edit-plan.md
+      - .docs/raw/plans/2026-05-26-mi-lsp-nav-edit-plan/**
+    blocking: false
+
+post_audit_no_drift_gate:
+  status: pending_rerun_after_audit_commit
+  expected_dirty_paths:
+    - .docs/auditoria/2026-05-26-mi-lsp-nav-edit-plan/traceability-closure.yaml
+    - .docs/auditoria/2026-05-26-mi-lsp-nav-edit-plan/audit-report.yaml
+  required_after_commit:
+    - git status --short --branch
+    - go run ./cmd/mi-lsp nav governance --workspace . --format toon
+    - go run ./cmd/mi-lsp nav wiki validate-harness --workspace . --format toon
+
+required_remediations_before_closure: []
+final_verdict: Approved

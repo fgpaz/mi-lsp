@@ -1,0 +1,46 @@
+task_slug: 2026-05-26-mi-lsp-nav-edit-plan
+issue_or_waiver: "No external issue/card linked; user requested implementation directly."
+base_ref: main
+base_sha: fc929ab453ac88d1a54b5d5373b648014f45ad8a
+intended_branch: codex/mi-lsp-nav-edit-plan
+worktree_path: C:\repos\mios\mi-lsp-nav-edit-plan
+expected_scope: "Implement mi-lsp nav edit-plan with dry-run patch packets, deterministic diff, and guarded experimental apply."
+allowed_paths:
+  - .docs/raw/plans/2026-05-26-mi-lsp-nav-edit-plan.md
+  - .docs/raw/plans/2026-05-26-mi-lsp-nav-edit-plan/**
+  - .docs/auditoria/2026-05-26-mi-lsp-nav-edit-plan/**
+  - .docs/wiki/**
+  - internal/**
+  - cmd/**
+forbidden_paths:
+  - .docs/wiki/_mi-lsp/read-model.toml
+  - .git/**
+  - .mi-lsp/**
+  - .env*
+  - secrets/**
+anchors:
+  fl: [FL-QRY-01]
+  rf: [RF-QRY-001, RF-QRY-002, RF-QRY-017, RF-QRY-018]
+  ct: [CT-NAV-EDIT-PLAN]
+required_evidence:
+  - mi-lsp nav governance --workspace mi-lsp --format toon
+  - mi-lsp nav wiki validate-harness --workspace mi-lsp --format toon
+  - go test ./internal/service ./internal/cli ./internal/model
+  - .\scripts\release\ae-release-binaries.ps1 -SkipWslInstall -SkipMirror
+touched_cards: []
+explicit_waivers:
+  - "No Linear/GitHub issue linked."
+  - "No AST implementation in this wave."
+branch_disposition: integrate-main
+cleanup_policy: auto-after-successful-integration
+ae_contract:
+  selected_mode: orquestado_deterministico
+  release_distribution_required: true
+  final_means_done_only_after:
+    - PR merged into origin/main
+    - local main fast-forwarded to origin/main
+    - local binary refreshed when CLI changed
+    - workspace index/memory refreshed when docs changed
+    - task worktree removed
+    - local and remote task branches removed
+    - ps-trazabilidad and ps-auditar-trazabilidad rerun after closure drift

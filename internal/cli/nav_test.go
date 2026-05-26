@@ -54,6 +54,23 @@ func TestNavCommandExposesAffectedFlags(t *testing.T) {
 	}
 }
 
+func TestNavCommandExposesEditPlanFlags(t *testing.T) {
+	command := newNavCommand(&rootState{})
+
+	editPlan, _, err := command.Find([]string{"edit-plan"})
+	if err != nil {
+		t.Fatalf("find edit-plan command: %v", err)
+	}
+	if editPlan.Name() != "edit-plan" {
+		t.Fatalf("edit-plan command name = %q, want edit-plan", editPlan.Name())
+	}
+	for _, flag := range []string{"stdin", "packet", "strict", "include-content", "apply", "experimental-apply"} {
+		if editPlan.Flags().Lookup(flag) == nil {
+			t.Fatalf("edit-plan command should expose --%s", flag)
+		}
+	}
+}
+
 func TestNavCommandExposesWikiGroup(t *testing.T) {
 	command := newNavCommand(&rootState{})
 

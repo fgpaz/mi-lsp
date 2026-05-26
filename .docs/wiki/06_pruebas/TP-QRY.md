@@ -193,3 +193,11 @@ evidence:
 | TC-QRY-115 | negativo | RF-QRY-017 | `nav affected` siempre declara warning de heuristica/confidence y no afirma impacto completo hasta existir grafo persistido |
 | TC-QRY-116 | positivo | RF-QRY-017 | `nav affected` ignora sidecars operativos `.mi-lsp/**`, `.docs/raw/**`, `.docs/auditoria/**` y `.git/**` al seleccionar impacto |
 | TC-QRY-117 | positivo | RF-QRY-010 | `TestQueryRankingTaskNormalizesSDDAnchorMetaTerms` + `TestNavAskNormalizesAnchorIntentAndWarnsOnRawDrift`: `nav ask` trata `RS/RF/FL/CT/TECH` como intencion de capa en preguntas de anclas, conserva terminos de dominio y emite `coach.trigger=anchor_drift` con continuacion a `nav.pack` cuando aplica |
+| TC-QRY-118 | positivo | RF-QRY-018 | `TestEditPlanDryRunDoesNotWrite`: `nav edit-plan` genera diff determinista con `backend=edit-plan`, `mode=dry_run` y no escribe archivos |
+| TC-QRY-119 | positivo | RF-QRY-018 | `TestEditPlanApplyWritesOnlyWithExperimentalGate`: apply exitoso requiere `--apply --experimental-apply`, git limpio y hashes esperados |
+| TC-QRY-120 | positivo | RF-QRY-018 | `TestNavCommandExposesEditPlanFlags`: CLI expone `--stdin`, `--packet`, `--strict`, `--include-content`, `--apply` y `--experimental-apply` |
+| TC-QRY-121 | negativo | RF-QRY-018 | `TestEditPlanApplyRequiresCleanGit`: apply se bloquea cuando el workspace git esta dirty |
+| TC-QRY-122 | negativo | RF-QRY-018 | `TestEditPlanRejectsUnsafePackets/hash mismatch`: packet con `expected_hash` invalido se rechaza |
+| TC-QRY-123 | negativo | RF-QRY-018 | `TestEditPlanRejectsUnsafePackets/path traversal/read model/binary`: paths fuera del workspace, `read-model.toml` y binarios se bloquean |
+| TC-QRY-124 | negativo | RF-QRY-018 | `TestEditPlanRejectsUnsafePackets/regex needs limit`: `replace_regex_limited` sin `max_replacements` se rechaza |
+| TC-QRY-125 | negativo | RF-QRY-018 | `TestEditPlanRejectsUnsafePackets/overlapping range ops`: operaciones solapadas sobre el mismo target range se rechazan |
