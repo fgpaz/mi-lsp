@@ -1264,6 +1264,79 @@ func TestWorkspaceListGroupByRootReportsDuplicateAliases(t *testing.T) {
 	}
 }
 
+func TestWorkspaceHygieneReportsSafeActionsWithoutMutation(t *testing.T) {
+	ensureWritableTestHome(t)
+	liveRoot := t.TempDir()
+	missingRoot := filepath.Join(t.TempDir(), "missing-worktree")
+	if _, err := workspace.RegisterWorkspace("live", model.WorkspaceRegistration{Name: "live", Root: liveRoot, Languages: []string{"go"}, Kind: model.WorkspaceKindSingle}); err != nil {
+		t.Fatalf("RegisterWorkspace(live): %v", err)
+	}
+	if _, err := workspace.RegisterWorkspace("stale", model.WorkspaceRegistration{Name: "stale", Root: missingRoot, Languages: []string{"go"}, Kind: model.WorkspaceKindSingle}); err != nil {
+		t.Fatalf("RegisterWorkspace(stale): %v", err)
+	}
+
+	app := New(liveRoot, nil)
+	env, err := app.Execute(context.Background(), model.CommandRequest{Operation: "workspace.hygiene"})
+	if err != nil {
+		t.Fatalf("workspace.hygiene: %v", err)
+	}
+	if env.Backend != "registry-hygiene" {
+		t.Fatalf("Backend = %q, want registry-hygiene", env.Backend)
+	}
+	items, ok := env.Items.([]map[string]any)
+	if !ok || len(items) != 1 {
+		t.Fatalf("Items = %#v, want one hygiene item", env.Items)
+	}
+	if items[0]["health"] != "action_required" {
+		t.Fatalf("health = %#v, want action_required", items[0]["health"])
+	}
+	safeActions, ok := items[0]["safe_actions"].([]map[string]any)
+	if !ok || len(safeActions) != 1 || safeActions[0]["id"] != "prune_stale_aliases" {
+		t.Fatalf("safe_actions = %#v, want prune_stale_aliases", items[0]["safe_actions"])
+	}
+	if _, err := workspace.ResolveWorkspace("stale"); err != nil {
+		t.Fatalf("dry-run hygiene removed stale alias: %v", err)
+	}
+}
+
+func TestWorkspaceHygieneApplySafePrunesOnlyStaleAliases(t *testing.T) {
+	ensureWritableTestHome(t)
+	liveRoot := t.TempDir()
+	missingRoot := filepath.Join(t.TempDir(), "missing-worktree")
+	if _, err := workspace.RegisterWorkspace("live", model.WorkspaceRegistration{Name: "live", Root: liveRoot, Languages: []string{"go"}, Kind: model.WorkspaceKindSingle}); err != nil {
+		t.Fatalf("RegisterWorkspace(live): %v", err)
+	}
+	if _, err := workspace.RegisterWorkspace("stale", model.WorkspaceRegistration{Name: "stale", Root: missingRoot, Languages: []string{"go"}, Kind: model.WorkspaceKindSingle}); err != nil {
+		t.Fatalf("RegisterWorkspace(stale): %v", err)
+	}
+
+	app := New(liveRoot, nil)
+	env, err := app.Execute(context.Background(), model.CommandRequest{
+		Operation: "workspace.hygiene",
+		Payload:   map[string]any{"apply_safe": true},
+	})
+	if err != nil {
+		t.Fatalf("workspace.hygiene --apply-safe: %v", err)
+	}
+	items, ok := env.Items.([]map[string]any)
+	if !ok || len(items) != 1 {
+		t.Fatalf("Items = %#v, want one hygiene item", env.Items)
+	}
+	applied, ok := items[0]["applied_actions"].([]map[string]any)
+	if !ok || len(applied) != 1 || applied[0]["id"] != "prune_stale_aliases" {
+		t.Fatalf("applied_actions = %#v, want prune_stale_aliases", items[0]["applied_actions"])
+	}
+	if _, err := workspace.ResolveWorkspace("stale"); err == nil {
+		t.Fatal("stale alias should be removed after apply-safe")
+	}
+	if _, err := workspace.ResolveWorkspace("live"); err != nil {
+		t.Fatalf("live alias should remain after apply-safe: %v", err)
+	}
+	if _, err := os.Stat(liveRoot); err != nil {
+		t.Fatalf("live root should not be deleted: %v", err)
+	}
+}
+
 func createContainerWorkspaceFixture(t *testing.T, alias string) string {
 	t.Helper()
 	ensureWritableTestHome(t)

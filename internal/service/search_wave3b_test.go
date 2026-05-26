@@ -454,3 +454,18 @@ func TestEnrichSearchResultsWithContent_BatchesLineContentByFile(t *testing.T) {
 		t.Fatalf("content modes = %#v %#v", items[0]["content_mode"], items[1]["content_mode"])
 	}
 }
+
+func TestEnrichSearchResultsWithContent_WarnsOnMissingIndexedFile(t *testing.T) {
+	root, name := setupTestWorkspace(t)
+	items := []map[string]any{
+		{"file": "src/Deleted.ts", "line": 2, "text": "stale"},
+	}
+
+	warnings := enrichSearchResultsWithContent(context.Background(), model.WorkspaceRegistration{Name: name, Root: root}, items, 1, "lines")
+	if len(warnings) == 0 || !strings.Contains(warnings[0], "stale-index warning") {
+		t.Fatalf("expected stale-index warning, got %v", warnings)
+	}
+	if got := items[0]["content_warning"]; got != "stale_index_file_missing" {
+		t.Fatalf("content_warning = %#v, want stale_index_file_missing", got)
+	}
+}

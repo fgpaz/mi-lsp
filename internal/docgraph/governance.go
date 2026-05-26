@@ -8,6 +8,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/BurntSushi/toml"
 	"gopkg.in/yaml.v3"
@@ -40,7 +41,7 @@ func InspectGovernance(root string, autoSync bool) model.GovernanceStatus {
 	content, err := os.ReadFile(docPath)
 	if err != nil {
 		status.Sync = "missing"
-		status.IndexSync = indexSyncState(root)
+		status.IndexSync, status.IndexSyncDetails = inspectIndexSync(root)
 		status.Issues = []string{"missing .docs/wiki/00_gobierno_documental.md"}
 		status.Blocked = true
 		status.NextSteps = governanceRepairSteps(status.ProjectionDoc)
@@ -51,7 +52,7 @@ func InspectGovernance(root string, autoSync bool) model.GovernanceStatus {
 	block, err := extractGovernanceYAMLBlock(content)
 	if err != nil {
 		status.Sync = "invalid"
-		status.IndexSync = indexSyncState(root)
+		status.IndexSync, status.IndexSyncDetails = inspectIndexSync(root)
 		status.Issues = []string{"missing fenced YAML governance block in 00_gobierno_documental.md"}
 		status.Blocked = true
 		status.NextSteps = governanceRepairSteps(status.ProjectionDoc)
@@ -62,7 +63,7 @@ func InspectGovernance(root string, autoSync bool) model.GovernanceStatus {
 	var source model.GovernanceSource
 	if err := yaml.Unmarshal([]byte(block), &source); err != nil {
 		status.Sync = "invalid"
-		status.IndexSync = indexSyncState(root)
+		status.IndexSync, status.IndexSyncDetails = inspectIndexSync(root)
 		status.Issues = []string{fmt.Sprintf("invalid governance YAML: %v", err)}
 		status.Blocked = true
 		status.NextSteps = governanceRepairSteps(status.ProjectionDoc)
@@ -92,7 +93,7 @@ func InspectGovernance(root string, autoSync bool) model.GovernanceStatus {
 
 	if len(issues) > 0 {
 		status.Sync = "invalid"
-		status.IndexSync = indexSyncState(root)
+		status.IndexSync, status.IndexSyncDetails = inspectIndexSync(root)
 		status.Issues = issues
 		status.Blocked = true
 		status.NextSteps = governanceRepairSteps(status.ProjectionDoc)
@@ -104,7 +105,7 @@ func InspectGovernance(root string, autoSync bool) model.GovernanceStatus {
 	rendered, err := encodeDocsReadProfile(profile)
 	if err != nil {
 		status.Sync = "invalid"
-		status.IndexSync = indexSyncState(root)
+		status.IndexSync, status.IndexSyncDetails = inspectIndexSync(root)
 		status.Issues = []string{fmt.Sprintf("failed to render read-model projection: %v", err)}
 		status.Blocked = true
 		status.NextSteps = governanceRepairSteps(status.ProjectionDoc)
@@ -120,7 +121,7 @@ func InspectGovernance(root string, autoSync bool) model.GovernanceStatus {
 	case autoSync:
 		if err := os.MkdirAll(filepath.Dir(projectionAbs), 0o755); err != nil {
 			status.Sync = "invalid"
-			status.IndexSync = indexSyncState(root)
+			status.IndexSync, status.IndexSyncDetails = inspectIndexSync(root)
 			status.Issues = []string{fmt.Sprintf("failed to create read-model directory: %v", err)}
 			status.Blocked = true
 			status.NextSteps = governanceRepairSteps(status.ProjectionDoc)
@@ -129,7 +130,7 @@ func InspectGovernance(root string, autoSync bool) model.GovernanceStatus {
 		}
 		if err := os.WriteFile(projectionAbs, rendered, 0o644); err != nil {
 			status.Sync = "invalid"
-			status.IndexSync = indexSyncState(root)
+			status.IndexSync, status.IndexSyncDetails = inspectIndexSync(root)
 			status.Issues = []string{fmt.Sprintf("failed to write read-model projection: %v", err)}
 			status.Blocked = true
 			status.NextSteps = governanceRepairSteps(status.ProjectionDoc)
@@ -143,7 +144,7 @@ func InspectGovernance(root string, autoSync bool) model.GovernanceStatus {
 		status.Issues = append(status.Issues, "read-model.toml is out of sync with 00_gobierno_documental.md")
 	}
 
-	status.IndexSync = indexSyncState(root)
+	status.IndexSync, status.IndexSyncDetails = inspectIndexSync(root)
 	if status.IndexSync == "stale" {
 		status.Issues = append(status.Issues, "workspace index is stale relative to governance sources; rerun mi-lsp index")
 	}
@@ -460,22 +461,60 @@ func governanceRepairSteps(projectionPath string) []string {
 }
 
 func indexSyncState(root string) string {
+	state, _ := inspectIndexSync(root)
+	return state
+}
+
+func inspectIndexSync(root string) (string, *model.GovernanceIndexSyncDetails) {
 	indexPath := filepath.Join(root, ".mi-lsp", "index.db")
+	details := &model.GovernanceIndexSyncDetails{
+		IndexPath: displayPath(root, indexPath),
+	}
 	indexInfo, err := os.Stat(indexPath)
 	if err != nil {
-		return "missing"
+		details.Reason = "index database is missing"
+		for _, path := range []string{GovernanceDocPath(root), ProfilePath(root)} {
+			details.ComparedPaths = append(details.ComparedPaths, governanceComparedPath(root, path, time.Time{}))
+		}
+		return "missing", details
 	}
 	latest := indexInfo.ModTime()
+	details.IndexModTime = latest.UTC().Format(time.RFC3339Nano)
+	state := "current"
 	for _, path := range []string{GovernanceDocPath(root), ProfilePath(root)} {
-		info, err := os.Stat(path)
-		if err != nil {
-			continue
-		}
-		if info.ModTime().After(latest) {
-			return "stale"
+		compared := governanceComparedPath(root, path, latest)
+		details.ComparedPaths = append(details.ComparedPaths, compared)
+		if compared.NewerThanIndex {
+			state = "stale"
 		}
 	}
-	return "current"
+	if state == "stale" {
+		details.Reason = "governance source is newer than workspace index"
+	} else {
+		details.Reason = "workspace index is current relative to governance sources"
+	}
+	return state, details
+}
+
+func governanceComparedPath(root string, path string, indexModTime time.Time) model.GovernanceIndexComparedPath {
+	item := model.GovernanceIndexComparedPath{Path: displayPath(root, path)}
+	info, err := os.Stat(path)
+	if err != nil {
+		item.Missing = true
+		return item
+	}
+	item.ModTime = info.ModTime().UTC().Format(time.RFC3339Nano)
+	if !indexModTime.IsZero() && info.ModTime().After(indexModTime) {
+		item.NewerThanIndex = true
+	}
+	return item
+}
+
+func displayPath(root string, path string) string {
+	if rel, err := filepath.Rel(root, path); err == nil && rel != "." && !strings.HasPrefix(rel, "..") {
+		return filepath.ToSlash(rel)
+	}
+	return filepath.Clean(path)
 }
 
 func GovernanceReadinessSummary(status model.GovernanceStatus) string {

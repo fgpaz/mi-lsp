@@ -85,7 +85,8 @@ evidence:
 - `workspace list` sin flags sigue preservando todos los aliases registrados.
 - `workspace list --group-by-root` solo agrega una vista diagnostica por root exacto; no deduplica ni modifica el registry.
 - `workspace doctor` es diagnostico no mutante para aliases duplicados, familias de worktrees, paths stale y shadowing de binario.
-- `workspace prune --stale` es la unica operacion de limpieza de registry cubierta por este RF: en dry-run no muta; con `--apply` remueve solo aliases con root inexistente y no toca archivos ni worktrees.
+- `workspace hygiene` es la superficie agent-first de higiene del registry: por default diagnostica sin mutar; con `--apply-safe` solo delega en la poda segura de aliases con root inexistente y limpia defaults invalidos. No borra directorios, worktrees, indices, ramas ni procesos.
+- `workspace prune --stale` conserva el contrato de limpieza puntual de registry: en dry-run no muta; con `--apply` remueve solo aliases con root inexistente y no toca archivos ni worktrees.
 
 ## 6. Data Model Impact
 

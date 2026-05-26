@@ -174,6 +174,105 @@ func (a *App) workspaceDoctor() (model.Envelope, error) {
 	return model.Envelope{Ok: true, Backend: "registry-doctor", Items: []map[string]any{item}, Warnings: warnings}, nil
 }
 
+func (a *App) workspaceHygiene(request model.CommandRequest) (model.Envelope, error) {
+	report, err := workspace.DoctorWorkspaces()
+	if err != nil {
+		return model.Envelope{}, err
+	}
+	applySafe, _ := request.Payload["apply_safe"].(bool)
+	item := map[string]any{
+		"health":               report.Health,
+		"aliases_sharing_root": nonNilRootGroups(report.AliasesSharingRoot),
+		"worktree_families":    nonNilWorktreeFamilies(report.WorktreeFamilies),
+		"stale_paths":          nonNilStalePaths(report.StalePaths),
+		"binary_shadowing":     nonNilBinaryCandidates(report.BinaryShadowing),
+		"safe_actions":         hygieneSafeActions(report),
+		"manual_actions":       hygieneManualActions(report),
+		"applied_actions":      []map[string]any{},
+		"apply_safe":           applySafe,
+	}
+	warnings := workspaceHygieneWarnings(report)
+	if applySafe {
+		pruneReport, pruneErr := workspace.PruneStaleWorkspaces(true)
+		if pruneErr != nil {
+			return model.Envelope{}, pruneErr
+		}
+		item["prune"] = map[string]any{
+			"registry":      pruneReport.Registry,
+			"removed":       nonNilStalePaths(pruneReport.Removed),
+			"removed_count": pruneReport.RemovedCount,
+			"skipped":       nonNilStalePaths(pruneReport.Skipped),
+		}
+		if pruneReport.RemovedCount > 0 {
+			item["applied_actions"] = []map[string]any{{
+				"id":      "prune_stale_aliases",
+				"summary": fmt.Sprintf("removed %d stale workspace alias(es) from registry", pruneReport.RemovedCount),
+			}}
+			warnings = append(warnings, "registry aliases removed; no files or git worktrees were deleted")
+		}
+		if len(pruneReport.Skipped) > 0 {
+			warnings = append(warnings, "some aliases were skipped because their roots could not be safely classified as missing")
+		}
+	}
+	return model.Envelope{Ok: true, Backend: "registry-hygiene", Items: []map[string]any{item}, Warnings: warnings}, nil
+}
+
+func hygieneSafeActions(report workspace.WorkspaceDoctorReport) []map[string]any {
+	actions := []map[string]any{}
+	if len(report.StalePaths) > 0 {
+		actions = append(actions, map[string]any{
+			"id":      "prune_stale_aliases",
+			"command": "mi-lsp workspace hygiene --apply-safe",
+			"reason":  "remove registry aliases whose roots no longer exist; does not delete files or git worktrees",
+			"count":   len(report.StalePaths),
+		})
+	}
+	return actions
+}
+
+func hygieneManualActions(report workspace.WorkspaceDoctorReport) []map[string]any {
+	actions := []map[string]any{}
+	if len(report.WorktreeFamilies) > 0 {
+		actions = append(actions, map[string]any{
+			"id":      "verify_worktree_aliases",
+			"command": "mi-lsp workspace list --group-by-root",
+			"reason":  "registered worktrees share git common dirs; keep one explicit alias per physical worktree",
+			"count":   len(report.WorktreeFamilies),
+		})
+	}
+	if len(report.AliasesSharingRoot) > 0 {
+		actions = append(actions, map[string]any{
+			"id":      "review_duplicate_root_aliases",
+			"command": "mi-lsp workspace list --group-by-root",
+			"reason":  "multiple aliases point at the same root; allowed but can confuse handoffs",
+			"count":   len(report.AliasesSharingRoot),
+		})
+	}
+	if len(report.BinaryShadowing) > 1 || doctorActionsContain(report.NextActions, "review_binary_version_drift") {
+		actions = append(actions, map[string]any{
+			"id":      "review_binary_shadowing",
+			"command": "mi-lsp workspace doctor --format toon",
+			"reason":  "visible mi-lsp binaries may shadow each other or report different revisions",
+			"count":   len(report.BinaryShadowing),
+		})
+	}
+	return actions
+}
+
+func workspaceHygieneWarnings(report workspace.WorkspaceDoctorReport) []string {
+	warnings := []string{}
+	if len(report.StalePaths) > 0 {
+		warnings = append(warnings, "registry contains stale workspace roots; run mi-lsp workspace hygiene --apply-safe to remove only stale aliases")
+	}
+	if len(report.WorktreeFamilies) > 0 {
+		warnings = append(warnings, "registered worktrees share git common dirs; keep aliases, indexes, watchers, and runtimes separate per physical root")
+	}
+	if len(report.AliasesSharingRoot) > 0 {
+		warnings = append(warnings, "aliases share exact workspace roots; workspace list remains alias-preserving")
+	}
+	return warnings
+}
+
 func doctorActionsContain(actions []workspace.WorkspaceDoctorAction, id string) bool {
 	for _, action := range actions {
 		if action.ID == id {
@@ -281,6 +380,7 @@ func (a *App) workspaceStatus(ctx context.Context, request model.CommandRequest)
 	item["governance_overlays"] = governance.EffectiveOverlays
 	item["governance_sync"] = governance.Sync
 	item["governance_index_sync"] = governance.IndexSync
+	item["governance_index_sync_details"] = governance.IndexSyncDetails
 	item["governance_blocked"] = governance.Blocked
 	item["governance_summary"] = governance.Summary
 	memory, memoryWarnings := a.statusMemory(ctx, registration, opts, autoSync, governance.Blocked)

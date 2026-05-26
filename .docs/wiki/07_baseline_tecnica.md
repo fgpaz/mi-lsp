@@ -142,7 +142,7 @@ flowchart LR
 - `nav ask`, `nav pack` y `nav route` deben consultar el gate de gobernanza antes de seguir.
 - `nav pack` es docs-first y pack-first: clasifica la tarea, elige un anchor y arma un reading pack ordenado de lo mas global a lo mas especifico, empezando por `00` cuando la gobernanza es valida.
 - En AXI preview, `nav ask` reduce compute y salida a `primary_doc + 1 linked doc + 1 code evidence`; `nav pack` reduce a `anchor + 2 docs`.
-- `nav governance` es la superficie primaria de diagnostico del perfil efectivo, sync y blockers.
+- `nav governance` es la superficie primaria de diagnostico del perfil efectivo, sync, blockers y stale index; cuando compara `00`/`read-model` contra `index.db`, expone timestamps y razon para que el agente no tenga que inferir el bloqueo.
 - Aun con `read_model=default`, un workspace inicializado con docs minimas utiles bajo `.docs/wiki/07_*.md`, `.docs/wiki/08_*.md` o `.docs/wiki/09_*.md` debe poder resolver una respuesta docs-first razonable sin requerir `read-model.toml` custom.
 - La UI de gobernanza es unica, local a loopback y debe abrirse enfocando workspace, sin duplicar instancias.
 - C# profundo se resuelve con Roslyn; TS/JS, Python y Go tienen backends semanticos opcionales (`tsserver`, `pyright`, `gopls`) con fallback catalog/text.
@@ -168,6 +168,7 @@ Si el usuario forza `--regex` y el patron es invalido, el core reintenta automat
 Si `rg` existe pero falla por permisos o arranque de proceso, el core cae a `searchPatternGo` y agrega warning tipado `backend_runtime/process_spawn_access_denied` o `backend_runtime/process_spawn_failed`; la telemetria solo guarda el codigo causal, no argv ni payloads crudos.
 Para patrones literal symbol-like, `nav search` emite `coach.trigger=symbol_query_detected` con acciones estructuradas hacia `nav find --exact` y `nav related`, y prioriza declaraciones/implementaciones fuente por encima de docs, tests, backups y generados.
 En AXI preview, el sobre-muestreo para rankear identificadores es acotado: recolecta mas que `MaxItems` para no esconder declaraciones fuente, pero evita el limite amplio de modo full/clasico para proteger latencia en repos grandes y escenarios concurrentes.
+Cuando `nav search --include-content` intenta enriquecer un resultado cuyo archivo indexado ya no existe, conserva el resultado y agrega stale-index warning accionable hacia `mi-lsp index --workspace <alias>`.
 La exploracion de servicios y el fallback de `nav ask` reutilizan la misma cadena.
 
 ## Config y valores por defecto
@@ -208,6 +209,7 @@ El struct `internal/service/config.go` centraliza todos los valores hardcodeados
 - Export: `mi-lsp admin export` soporta raw (json/csv/compact/toon), `--summary` en formatos compact/json/toon y el preset explicito `--recent` para la ultima ventana de 24h.
 - Export raw filtra por `--operation`, `--session-id`, `--client-name`, `--route`, `--query-format`, `--truncated`, `--pattern-mode`, `--routing-outcome`, `--failure-stage` y `--hint-code` ademas de `--workspace`/`--backend`.
 - Export summary puede agregar breakdowns opcionales por `--by-route`, `--by-client`, `--by-hint` y `--by-failure-stage` sin cambiar la semantica base de la ventana.
+- Export summary puede agregar recomendaciones sanitizadas hacia `workspace hygiene`, `workspace-map` o narrowing de busqueda cuando los contadores/hints agregados indican registry stale, workspace resolution failure, repo selector invalid o search timeout; nunca deriva recomendaciones desde payloads/query raw.
 - `admin export --summary` debe agregar sobre toda la ventana filtrada por defecto; `--limit` solo acota el summary si el usuario lo pide explicitamente.
 - Para evitar picos de memoria, `admin export --summary` sin `--limit` explicito debe calcular agregados en streaming sobre SQLite y no materializar todos los `access_events` en memoria; `--limit` explicito conserva la semantica de resumen acotado.
 - Governance UI y admin HTTP comparten la misma semantica de ventana via `window=recent|7d|30d|90d`.
@@ -224,6 +226,7 @@ El struct `internal/service/config.go` centraliza todos los valores hardcodeados
 - `workspace list` y `workspace status` deben salir desde registry + `project.toml` normalizado cuando la topologia cacheada ya tiene `repo[]` y `entrypoint[]`, sin redescubrir child repos en el hot path; preservan todos los aliases registrados aunque compartan root fisico. La redeteccion pesada queda como fallback para bootstrap o `project.toml` incompleto.
 - `workspace list --group-by-root` agrupa aliases por root exacto y expone `root`, `alias_count`, `aliases`, `canonical_alias`, `selection_reason`, `kind` y warnings sin mutar registry.
 - `workspace doctor` es no mutante y diagnostica aliases que comparten root exacto, familias de worktrees por `git common dir`, paths stale, shadowing de binario, `health`, `next_actions` y comandos sugeridos.
+- `workspace hygiene` reutiliza diagnosticos de doctor y la poda segura existente para una superficie agent-first: por default no muta; con `--apply-safe` solo limpia aliases stale/defaults invalidos del registry. Nunca borra worktrees, roots, indices, ramas ni procesos.
 - `workspace prune --stale --dry-run|--apply` limpia solamente entradas del `registry.toml` cuyo root ya no existe; nunca borra worktrees, directorios ni indices repo-locales.
 - `workspace status --no-auto-sync` permite diagnostico read-only para smokes cross-workspace: reporta la proyeccion stale/bloqueada sin escribir `read-model.toml` en repos externos.
 - `nav.workspace-map` debe arrancar con summary-first directo, no auto-iniciar daemon, y reservar scans de endpoints/eventos/dependencias para `--full`.
@@ -238,12 +241,12 @@ El struct `internal/service/config.go` centraliza todos los valores hardcodeados
 - Si `worker status` se sirve a traves del daemon, la respuesta visible debe seguir siendo el mismo envelope canonico de `backend=worker`; el estado vivo del daemon solo entra via `active_workers`.
 - Si el candidato Roslyn elegido falla por bootstrap/arranque, el caller reintenta una sola vez con el siguiente candidato determinista antes de devolver error accionable.
 - Los cambios en `.docs/wiki`, `README*`, `docs/`, `00_gobierno_documental.md` o `read-model.toml` fuerzan full re-index del corpus documental; el incremental por git no intenta mezclar deltas parciales de docs.
-- `workspace status` debe exponer `workspace_root`, `workspace_source`, perfil, sync de gobernanza, estado bloqueado, `doc_count`, `docs_index_ready` y estado del indice respecto de `00`/`read-model`; si la wiki existe pero `doc_count=0`, debe sugerir `mi-lsp index --docs-only`.
+- `workspace status` debe exponer `workspace_root`, `workspace_source`, perfil, sync de gobernanza, estado bloqueado, `doc_count`, `docs_index_ready` y estado del indice respecto de `00`/`read-model` con detalles de timestamps comparados; si la wiki existe pero `doc_count=0`, debe sugerir `mi-lsp index --docs-only`.
 - Si el CWD esta dentro de un workspace/worktree registrado pero `--workspace <alias>` apunta a otro root, el alias explicito gana y el status debe emitir warning visible con ambos roots.
 - Si `docs_index_ready=true` pero `index_ready=false`, `workspace status` debe dejar visible que el repo quedo en modo "docs-only listo": el corpus gobernado y `memory_pointer` estan disponibles, pero el catalogo de codigo y las superficies code-first siguen ausentes hasta un `mi-lsp index` full/catalog.
 - `workspace status --full` debe exponer ademas el digest expandido de memoria de reentrada (`recent_canonical_changes`, `handoff`, `best_reentry`, `stale`). Si el snapshot esta stale, `auto_sync` esta habilitado y la gobernanza no esta bloqueada, puede refrescar docs/memoria en una pasada `docs-only`; `--no-auto-sync` conserva la lectura estrictamente read-only.
 - `nav ask --all-workspaces` fan-out sobre workspaces registrados con un pool acotado de 4 workers y merge determinista por score.
-- `nav ask/search/find --all-workspaces` deben ignorar aliases stale con root inexistente y emitir un warning agregado que apunte a `workspace prune --stale --dry-run`, en vez de degradar cada fan-out con ruido repetido.
+- `nav ask/search/find --all-workspaces` deben ignorar aliases stale con root inexistente y emitir un warning agregado que apunte a `workspace hygiene --format toon`, en vez de degradar cada fan-out con ruido repetido.
 - `nav.find`, `nav.symbols`, `nav.overview` y `nav.intent` aceptan `--offset` para paginacion cursor-like sobre queries SQL; `nav.search` queda fuera de ese contrato porque sigue siendo rg/text-backed.
 - `nav service` debe funcionar sin Roslyn y seguir entregando evidencia util incluso cuando el catalogo es parcial; para paquetes Go debe apoyarse en catalogo antes que en patrones textuales .NET y solo luego sumar patrones Go language-aware.
 - `nav context` acepta `file line` y `file:line`; sobre archivos no semanticos no debe depender de Roslyn, `tsserver`, Pyright ni `gopls`.

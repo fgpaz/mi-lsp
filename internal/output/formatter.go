@@ -214,6 +214,9 @@ func renderText(env model.Envelope) string {
 	case []model.GovernanceStatus:
 		for _, item := range items {
 			lines = append(lines, fmt.Sprintf("governance profile=%s base=%s sync=%s index=%s blocked=%t", item.Profile, item.EffectiveBase, item.Sync, item.IndexSync, item.Blocked))
+			if item.IndexSyncDetails != nil && item.IndexSyncDetails.Reason != "" {
+				lines = append(lines, "  index_reason "+item.IndexSyncDetails.Reason)
+			}
 			for _, issue := range item.Issues {
 				lines = append(lines, "  issue "+issue)
 			}
@@ -427,6 +430,7 @@ func compactItems(items any, compress bool) any {
 				"effective_overlays":    item.EffectiveOverlays,
 				"sync":                  item.Sync,
 				"index_sync":            item.IndexSync,
+				"index_sync_details":    item.IndexSyncDetails,
 				"blocked":               item.Blocked,
 				"issues":                item.Issues,
 				"warnings":              item.Warnings,

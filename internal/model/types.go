@@ -446,25 +446,40 @@ type DocsGovernanceProfile struct {
 }
 
 type GovernanceStatus struct {
-	HumanDoc             string   `json:"human_doc,omitempty"`
-	ProjectionDoc        string   `json:"projection_doc,omitempty"`
-	Profile              string   `json:"profile,omitempty"`
-	Extends              string   `json:"extends,omitempty"`
-	EffectiveBase        string   `json:"effective_base,omitempty"`
-	EffectiveOverlays    []string `json:"effective_overlays,omitempty"`
-	ContextChain         []string `json:"context_chain,omitempty"`
-	ClosureChain         []string `json:"closure_chain,omitempty"`
-	AuditChain           []string `json:"audit_chain,omitempty"`
-	BlockingRules        []string `json:"blocking_rules,omitempty"`
-	NumberingRecommended bool     `json:"numbering_recommended,omitempty"`
-	Sync                 string   `json:"sync,omitempty"`
-	IndexSync            string   `json:"index_sync,omitempty"`
-	Blocked              bool     `json:"blocked"`
-	Issues               []string `json:"issues,omitempty"`
-	Warnings             []string `json:"warnings,omitempty"`
-	AllowedActions       []string `json:"allowed_actions,omitempty"`
-	NextSteps            []string `json:"next_steps,omitempty"`
-	Summary              string   `json:"summary,omitempty"`
+	HumanDoc             string                      `json:"human_doc,omitempty"`
+	ProjectionDoc        string                      `json:"projection_doc,omitempty"`
+	Profile              string                      `json:"profile,omitempty"`
+	Extends              string                      `json:"extends,omitempty"`
+	EffectiveBase        string                      `json:"effective_base,omitempty"`
+	EffectiveOverlays    []string                    `json:"effective_overlays,omitempty"`
+	ContextChain         []string                    `json:"context_chain,omitempty"`
+	ClosureChain         []string                    `json:"closure_chain,omitempty"`
+	AuditChain           []string                    `json:"audit_chain,omitempty"`
+	BlockingRules        []string                    `json:"blocking_rules,omitempty"`
+	NumberingRecommended bool                        `json:"numbering_recommended,omitempty"`
+	Sync                 string                      `json:"sync,omitempty"`
+	IndexSync            string                      `json:"index_sync,omitempty"`
+	IndexSyncDetails     *GovernanceIndexSyncDetails `json:"index_sync_details,omitempty"`
+	Blocked              bool                        `json:"blocked"`
+	Issues               []string                    `json:"issues,omitempty"`
+	Warnings             []string                    `json:"warnings,omitempty"`
+	AllowedActions       []string                    `json:"allowed_actions,omitempty"`
+	NextSteps            []string                    `json:"next_steps,omitempty"`
+	Summary              string                      `json:"summary,omitempty"`
+}
+
+type GovernanceIndexSyncDetails struct {
+	IndexPath     string                        `json:"index_path,omitempty"`
+	IndexModTime  string                        `json:"index_mod_time,omitempty"`
+	ComparedPaths []GovernanceIndexComparedPath `json:"compared_paths,omitempty"`
+	Reason        string                        `json:"reason,omitempty"`
+}
+
+type GovernanceIndexComparedPath struct {
+	Path           string `json:"path,omitempty"`
+	ModTime        string `json:"mod_time,omitempty"`
+	NewerThanIndex bool   `json:"newer_than_index,omitempty"`
+	Missing        bool   `json:"missing,omitempty"`
 }
 
 type AskDocEvidence struct {

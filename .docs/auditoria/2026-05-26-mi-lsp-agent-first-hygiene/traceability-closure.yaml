@@ -1,0 +1,123 @@
+session_contract_path: .docs/auditoria/2026-05-26-mi-lsp-agent-first-hygiene/session-contract.yaml
+task_slug: 2026-05-26-mi-lsp-agent-first-hygiene
+git_before:
+  base_ref: main
+  base_sha: 7d031a9babbfc619281fe8e36168c3911a6fd5c4
+  branch: codex/mi-lsp-agent-first-hygiene-reliability
+  head_sha_before_implementation: 225aa1e44a8d4a5bb8238c1d61c251ff2136c018
+  upstream: null
+git_after:
+  branch: codex/mi-lsp-agent-first-hygiene-reliability
+  worktree_path: C:\repos\mios\mi-lsp-agent-first-hygiene-reliability
+  upstream: null
+  final_commit: see_current_branch_head_after_final_amend
+  integration_target: origin/main
+  pr_url: https://github.com/fgpaz/mi-lsp/pull/19
+changed_paths:
+  tracked:
+    - .docs/wiki/04_RF/RF-QRY-002.md
+    - .docs/wiki/04_RF/RF-QRY-013.md
+    - .docs/wiki/04_RF/RF-WKS-004.md
+    - .docs/wiki/06_pruebas/TP-WKS.md
+    - .docs/wiki/07_baseline_tecnica.md
+    - .docs/wiki/09_contratos_tecnicos.md
+    - internal/cli/workspace.go
+    - internal/daemon/export.go
+    - internal/daemon/export_test.go
+    - internal/docgraph/governance.go
+    - internal/model/types.go
+    - internal/output/formatter.go
+    - internal/service/app.go
+    - internal/service/app_test.go
+    - internal/service/search_content.go
+    - internal/service/search_wave3b_test.go
+    - internal/service/workspace_ops.go
+  untracked_or_force_added_evidence:
+    - .docs/auditoria/2026-05-26-mi-lsp-agent-first-hygiene/ae-release-evidence.md
+    - .docs/auditoria/2026-05-26-mi-lsp-agent-first-hygiene/traceability-closure.yaml
+    - .docs/auditoria/2026-05-26-mi-lsp-agent-first-hygiene/traceability-audit.yaml
+  raw_paths:
+    - .docs/raw/plans/2026-05-26-mi-lsp-agent-first-hygiene-reliability.md
+    - .docs/raw/plans/2026-05-26-mi-lsp-agent-first-hygiene-reliability/
+  forbidden_hits: []
+scope_verdict: PASS
+traceability_chains:
+  reviewed_anchors:
+    fl:
+      - FL-BOOT-01
+      - FL-QRY-01
+      - FL-IDX-01
+      - FL-DAE-01
+    rf:
+      - RF-WKS-004
+      - RF-WKS-005
+      - RF-QRY-002
+      - RF-QRY-013
+    tech:
+      - .docs/wiki/07_baseline_tecnica.md
+    ct:
+      - .docs/wiki/09_contratos_tecnicos.md
+    tp:
+      - .docs/wiki/06_pruebas/TP-WKS.md
+  missing_anchors: []
+  updated_paths:
+    - .docs/wiki/04_RF/RF-QRY-002.md
+    - .docs/wiki/04_RF/RF-QRY-013.md
+    - .docs/wiki/04_RF/RF-WKS-004.md
+    - .docs/wiki/06_pruebas/TP-WKS.md
+    - .docs/wiki/07_baseline_tecnica.md
+    - .docs/wiki/09_contratos_tecnicos.md
+runtime_sensitive:
+  value: true
+  why: CLI public surface, search timeout/stale-index behavior, registry mutation safety, telemetry recommendations, and release-distribution gate changed or were validated.
+  evidence:
+    - .docs/auditoria/2026-05-26-mi-lsp-agent-first-hygiene/ae-release-evidence.md
+data_or_contract_sensitive:
+  value: true
+  why: Public CLI contracts and envelope fields changed; wiki CT/RF/TP/TECH updated. No SQLite schema migration was introduced.
+harness_verdict: PASS
+wiki_source_verdict: WARN
+wiki_source_note: Existing wiki docs use human/dual markdown-table style; this task preserved local convention and did not migrate to full SDD-WIKI-SOURCE-v1 toon blocks.
+board_sync:
+  touched_cards: []
+  status: not_applicable
+  rationale: No Linear/GitHub issue linked in plan or session contract.
+pre_push_inputs:
+  issue_or_card: waived_no_external_issue
+  evidence_path: .docs/auditoria/2026-05-26-mi-lsp-agent-first-hygiene/traceability-closure.yaml
+  expected_scope: Add agent-first workspace hygiene command and reliability diagnostics.
+  session_contract_path: .docs/auditoria/2026-05-26-mi-lsp-agent-first-hygiene/session-contract.yaml
+verification:
+  commands:
+    - command: mi-lsp workspace status mi-lsp --format toon
+      result: PASS
+    - command: mi-lsp nav governance --workspace mi-lsp --format toon
+      result: PASS
+    - command: go test ./internal/workspace ./internal/service ./internal/daemon ./internal/docgraph ./internal/store ./internal/cli
+      result: PASS
+    - command: go run ./cmd/mi-lsp workspace hygiene --format toon
+      result: PASS
+    - command: go run ./cmd/mi-lsp workspace status mi-lsp --format toon --no-auto-sync
+      result: PASS
+    - command: go run ./cmd/mi-lsp nav governance --workspace mi-lsp --format toon
+      result: PASS
+    - command: go run ./cmd/mi-lsp nav wiki validate-harness --workspace mi-lsp --format toon
+      result: PASS
+    - command: .\scripts\release\ae-release-binaries.ps1 -SkipLocalInstall -SkipWslInstall -SkipMirror
+      result: PASS
+no_drift_snapshot:
+  status: PASS
+  commands:
+    - git status --short --branch
+    - git branch --merged main
+    - git branch --no-merged main
+completion_handoff:
+  target_skill: finishing-a-development-branch
+  branch_disposition: integrate-main
+  cleanup_policy: auto-after-successful-integration
+  blockers: []
+  final_done_gate:
+    - PR merged into origin/main
+    - local main updated to origin/main
+    - task worktree removed
+    - task branches sanitized locally/remotely

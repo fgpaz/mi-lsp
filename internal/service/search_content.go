@@ -41,7 +41,7 @@ func enrichSearchResultsWithContent(ctx context.Context, registration model.Work
 		}
 	}
 	if len(lineItems) > 0 && ctx.Err() == nil {
-		enrichLineSearchResultsWithContent(registration.Root, lineItems, contextLines)
+		warnings = append(warnings, enrichLineSearchResultsWithContent(registration.Root, lineItems, contextLines)...)
 	}
 	return warnings
 }
@@ -93,7 +93,7 @@ type searchContentRequest struct {
 	endLine   int
 }
 
-func enrichLineSearchResultsWithContent(workspaceRoot string, items []map[string]any, contextLines int) {
+func enrichLineSearchResultsWithContent(workspaceRoot string, items []map[string]any, contextLines int) []string {
 	requestsByFile := map[string][]searchContentRequest{}
 	for _, item := range items {
 		fileRel, _ := item["file"].(string)
@@ -116,18 +116,26 @@ func enrichLineSearchResultsWithContent(workspaceRoot string, items []map[string
 		})
 	}
 
+	var warnings []string
 	for absFile, requests := range requestsByFile {
-		enrichFileLineRanges(absFile, requests, contextLines)
+		warnings = append(warnings, enrichFileLineRanges(absFile, requests, contextLines)...)
 	}
+	return warnings
 }
 
-func enrichFileLineRanges(absFile string, requests []searchContentRequest, contextLines int) {
+func enrichFileLineRanges(absFile string, requests []searchContentRequest, contextLines int) []string {
 	if len(requests) == 0 {
-		return
+		return nil
 	}
 	file, err := os.Open(absFile)
 	if err != nil {
-		return
+		if os.IsNotExist(err) {
+			for _, request := range requests {
+				request.item["content_warning"] = "stale_index_file_missing"
+			}
+			return []string{"stale-index warning: indexed file no longer exists; rerun `mi-lsp index --workspace <alias>`"}
+		}
+		return nil
 	}
 	defer file.Close()
 
@@ -150,7 +158,7 @@ func enrichFileLineRanges(absFile string, requests []searchContentRequest, conte
 		lines[currentLine] = scanner.Text()
 	}
 	if scanner.Err() != nil {
-		return
+		return nil
 	}
 
 	for _, request := range requests {
@@ -177,6 +185,7 @@ func enrichFileLineRanges(absFile string, requests []searchContentRequest, conte
 		request.item["content_end_line"] = request.startLine + lineCount - 1
 		request.item["content_line_count"] = lineCount
 	}
+	return nil
 }
 
 func readFileLineRange(absPath string, startLine, endLine int) (string, int, error) {
