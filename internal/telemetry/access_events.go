@@ -170,6 +170,26 @@ func ClassifyErrorInfo(backend string, errorText string, warnings []string) Erro
 			return ErrorInfo{}
 		}
 	}
+	if backend == "edit-plan" {
+		switch {
+		case strings.Contains(message, "invalid edit-plan packet json") || strings.Contains(message, "unsupported edit-plan version"):
+			return ErrorInfo{Kind: "validation", Code: "qry_edit_plan_invalid_packet"}
+		case strings.Contains(message, "path denied") || strings.Contains(message, "outside workspace") || strings.Contains(message, "binary files are blocked") || strings.Contains(message, "symlink resolves outside"):
+			return ErrorInfo{Kind: "validation", Code: "qry_edit_plan_unsafe_path"}
+		case strings.Contains(message, "expected_hash mismatch") || strings.Contains(message, "hash changed before apply"):
+			return ErrorInfo{Kind: "validation", Code: "qry_edit_plan_hash_mismatch"}
+		case strings.Contains(message, "overlaps target range"):
+			return ErrorInfo{Kind: "validation", Code: "qry_edit_plan_overlap"}
+		case strings.Contains(message, "--apply requires --experimental-apply"):
+			return ErrorInfo{Kind: "validation", Code: "qry_edit_plan_apply_requires_experimental"}
+		case strings.Contains(message, "clean git workspace"):
+			return ErrorInfo{Kind: "validation", Code: "qry_edit_plan_dirty_git"}
+		case strings.TrimSpace(errorText) != "":
+			return ErrorInfo{Kind: "validation", Code: "qry_edit_plan_generic"}
+		default:
+			return ErrorInfo{}
+		}
+	}
 	if strings.TrimSpace(errorText) != "" {
 		return ErrorInfo{Kind: "backend_runtime", Code: backend + "_generic"}
 	}

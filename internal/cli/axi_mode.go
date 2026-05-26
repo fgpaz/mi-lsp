@@ -11,7 +11,7 @@ import (
 var (
 	askDocIDPattern     = regexp.MustCompile(`(?i)\b(?:rf|fl|ct|tech|db|tp)-[a-z0-9-]+\b`)
 	askPathPattern      = regexp.MustCompile(`(?i)(?:[a-z]:\\|[/\\])|\b[a-z0-9_-]+\.[a-z0-9]{1,5}\b`)
-	askCommandPattern   = regexp.MustCompile(`(?i)\b(?:mi-lsp|nav\s+(?:search|context|related|intent|refs|workspace-map|service|find|trace|multi-read|batch|symbols|outline|overview))\b`)
+	askCommandPattern   = regexp.MustCompile(`(?i)\b(?:mi-lsp|nav\s+(?:search|context|related|intent|refs|workspace-map|service|find|trace|edit-plan|multi-read|batch|symbols|outline|overview))\b`)
 	askNamespacePattern = regexp.MustCompile(`\b[A-Za-z_][A-Za-z0-9_]*\.[A-Za-z_][A-Za-z0-9_.]*\b`)
 	askCamelCasePattern = regexp.MustCompile(`\b[A-Z][a-z0-9]+[A-Z][A-Za-z0-9]*\b`)
 )

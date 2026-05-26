@@ -442,6 +442,55 @@ instead of claiming complete graph precision.`,
 	affectedCommand.Flags().BoolVar(&affectedQuiet, "quiet", false, "Suppress non-essential hints while preserving stable item fields")
 	affectedCommand.Flags().StringVar(&affectedTestCommand, "test-command", "", "Override inferred test command for suggested test items")
 
+	var editPlanStdin bool
+	var editPlanPacket string
+	var editPlanStrict bool
+	var editPlanIncludeContent bool
+	var editPlanApply bool
+	var editPlanExperimentalApply bool
+	editPlanCommand := &cobra.Command{
+		Use:   "edit-plan",
+		Short: "Preview or experimentally apply a guarded patch packet",
+		Long: `Build a deterministic diff from an edit-plan-v1 packet.
+Dry-run is the default. File writes require both --apply and
+--experimental-apply, a clean git workspace, safe paths, and matching hashes.`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if len(args) > 0 {
+				return fmt.Errorf("edit-plan does not accept positional arguments; pass --stdin or --packet <file>")
+			}
+			if editPlanStdin == (editPlanPacket != "") {
+				return fmt.Errorf("pass exactly one of --stdin or --packet <file>")
+			}
+			var data []byte
+			var err error
+			if editPlanStdin {
+				data, err = io.ReadAll(os.Stdin)
+				if err != nil {
+					return fmt.Errorf("reading stdin: %w", err)
+				}
+			} else {
+				data, err = os.ReadFile(editPlanPacket)
+				if err != nil {
+					return fmt.Errorf("reading packet %s: %w", editPlanPacket, err)
+				}
+			}
+			payload := map[string]any{
+				"packet":             string(data),
+				"strict":             editPlanStrict,
+				"include_content":    editPlanIncludeContent,
+				"apply":              editPlanApply,
+				"experimental_apply": editPlanExperimentalApply,
+			}
+			return state.executeOperation(cmd, "nav.edit-plan", payload, true)
+		},
+	}
+	editPlanCommand.Flags().BoolVar(&editPlanStdin, "stdin", false, "Read an edit-plan-v1 packet from stdin")
+	editPlanCommand.Flags().StringVar(&editPlanPacket, "packet", "", "Read an edit-plan-v1 packet from a JSON file")
+	editPlanCommand.Flags().BoolVar(&editPlanStrict, "strict", false, "Reject unknown packet fields and require target hashes")
+	editPlanCommand.Flags().BoolVar(&editPlanIncludeContent, "include-content", false, "Include target content evidence in the response")
+	editPlanCommand.Flags().BoolVar(&editPlanApply, "apply", false, "Write the generated diff to files when all guardrails pass")
+	editPlanCommand.Flags().BoolVar(&editPlanExperimentalApply, "experimental-apply", false, "Required companion flag for --apply")
+
 	var traceAll bool
 	var traceSummary bool
 	traceCommand := &cobra.Command{
@@ -511,7 +560,7 @@ Examples:
 
 	wikiCommand := newNavWikiCommand(state)
 
-	command.AddCommand(symbolsCommand, findCommand, refsCommand, overviewCommand, outlineCommand, askCommand, packCommand, routeCommand, wikiCommand, governanceCommand, serviceCommand, searchCommand, contextCommand, depsCommand, multiReadCommand, batchCommand, relatedCommand, workspaceMapCommand, diffContextCommand, affectedCommand, traceCommand, intentCommand)
+	command.AddCommand(symbolsCommand, findCommand, refsCommand, overviewCommand, outlineCommand, askCommand, packCommand, routeCommand, wikiCommand, governanceCommand, serviceCommand, searchCommand, contextCommand, depsCommand, multiReadCommand, batchCommand, relatedCommand, workspaceMapCommand, diffContextCommand, affectedCommand, editPlanCommand, traceCommand, intentCommand)
 	return command
 }
 
