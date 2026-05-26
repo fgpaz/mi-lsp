@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"path/filepath"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -211,7 +210,7 @@ and tsserver processes, reducing cold-start latency.`,
 		Use:   "logs",
 		Short: "Show daemon log tail (RF-DAE-002)",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			logPath := filepath.Join(state.repoRoot, ".mi-lsp", "daemon.log")
+			logPath := daemon.ResolveDaemonLogPath(state.repoRoot)
 			lines, _, err := daemon.ReadLogTailFile(logPath, tailLines, 1<<20)
 			if err != nil {
 				if os.IsNotExist(err) {

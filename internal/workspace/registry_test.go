@@ -160,6 +160,45 @@ func TestDoctorWorkspacesReportsWorktreeFamiliesWithoutCollapsingAliases(t *test
 	}
 }
 
+func TestDoctorWorkspacesReportsGitCaseCollisions(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not available")
+	}
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+
+	parent := t.TempDir()
+	root := filepath.Join(parent, "repo")
+	mustRunGit(t, parent, "init", "repo")
+	mustRunGit(t, root, "config", "user.email", "test@example.com")
+	mustRunGit(t, root, "config", "user.name", "Test User")
+	blob := mustRunGitInput(t, root, "case collision\n", "hash-object", "-w", "--stdin")
+	mustRunGit(t, root, "update-index", "--add", "--cacheinfo", "100644,"+blob+",Docs/API.md")
+	mustRunGit(t, root, "update-index", "--add", "--cacheinfo", "100644,"+blob+",docs/api.md")
+	mustRunGit(t, root, "commit", "-m", "case collision")
+
+	registerTestWorkspace(t, "case-collision", root)
+
+	report, err := DoctorWorkspaces()
+	if err != nil {
+		t.Fatalf("DoctorWorkspaces: %v", err)
+	}
+	if report.Health != "action_required" {
+		t.Fatalf("Health = %q, want action_required", report.Health)
+	}
+	if len(report.GitCaseCollisions) != 1 {
+		t.Fatalf("GitCaseCollisions = %#v, want one collision", report.GitCaseCollisions)
+	}
+	paths := report.GitCaseCollisions[0].Paths
+	if !containsString(paths, "Docs/API.md") || !containsString(paths, "docs/api.md") {
+		t.Fatalf("collision paths = %#v, want both casings", paths)
+	}
+	if !doctorActionsContain(report.NextActions, "fix_git_case_collisions") {
+		t.Fatalf("NextActions = %#v, want fix_git_case_collisions", report.NextActions)
+	}
+}
+
 func TestPruneStaleWorkspacesDryRunAndApply(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
@@ -288,6 +327,18 @@ func mustRunGit(t *testing.T, dir string, args ...string) {
 	if output, err := command.CombinedOutput(); err != nil {
 		t.Fatalf("git %v failed: %v\n%s", args, err, string(output))
 	}
+}
+
+func mustRunGitInput(t *testing.T, dir string, input string, args ...string) string {
+	t.Helper()
+	command := exec.Command("git", args...)
+	command.Dir = dir
+	command.Stdin = strings.NewReader(input)
+	output, err := command.CombinedOutput()
+	if err != nil {
+		t.Fatalf("git %v failed: %v\n%s", args, err, string(output))
+	}
+	return strings.TrimSpace(string(output))
 }
 
 func writeRegistryTestFile(t *testing.T, path string, contents string) {

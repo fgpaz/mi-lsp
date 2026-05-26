@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"database/sql"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -41,6 +42,38 @@ func TestWALMode(t *testing.T) {
 	}
 	if mode != "wal" {
 		t.Errorf("journal_mode = %q, want 'wal'", mode)
+	}
+}
+
+func TestTelemetrySQLiteRetryRetriesLockedError(t *testing.T) {
+	attempts := 0
+	err := retryTelemetrySQLite(func() error {
+		attempts++
+		if attempts < 3 {
+			return errors.New("database is locked (5) (SQLITE_BUSY)")
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("retryTelemetrySQLite returned error: %v", err)
+	}
+	if attempts != 3 {
+		t.Fatalf("attempts = %d, want 3", attempts)
+	}
+}
+
+func TestTelemetrySQLiteRetryStopsOnNonLockedError(t *testing.T) {
+	attempts := 0
+	want := errors.New("permission denied")
+	err := retryTelemetrySQLite(func() error {
+		attempts++
+		return want
+	})
+	if !errors.Is(err, want) {
+		t.Fatalf("retryTelemetrySQLite error = %v, want %v", err, want)
+	}
+	if attempts != 1 {
+		t.Fatalf("attempts = %d, want 1", attempts)
 	}
 }
 

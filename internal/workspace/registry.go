@@ -1,6 +1,7 @@
 package workspace
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -9,6 +10,7 @@ import (
 	"runtime"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/BurntSushi/toml"
 
@@ -45,6 +47,7 @@ type WorkspaceRootGroup struct {
 type WorkspaceDoctorReport struct {
 	AliasesSharingRoot []WorkspaceRootGroup      `json:"aliases_sharing_root,omitempty"`
 	WorktreeFamilies   []WorkspaceWorktreeFamily `json:"worktree_families,omitempty"`
+	GitCaseCollisions  []GitCaseCollision        `json:"git_case_collisions,omitempty"`
 	StalePaths         []WorkspaceStalePath      `json:"stale_paths,omitempty"`
 	BinaryShadowing    []BinaryCandidate         `json:"binary_shadowing,omitempty"`
 	Health             string                    `json:"health,omitempty"`
@@ -65,6 +68,14 @@ type WorkspaceWorktreeFamily struct {
 	GitCommonDir string   `json:"git_common_dir"`
 	Roots        []string `json:"roots"`
 	Aliases      []string `json:"aliases"`
+	Warnings     []string `json:"warnings,omitempty"`
+}
+
+type GitCaseCollision struct {
+	Root         string   `json:"root"`
+	Aliases      []string `json:"aliases"`
+	GitCommonDir string   `json:"git_common_dir,omitempty"`
+	Paths        []string `json:"paths"`
 	Warnings     []string `json:"warnings,omitempty"`
 }
 
@@ -376,11 +387,22 @@ func DoctorWorkspaces() (WorkspaceDoctorReport, error) {
 
 	commonDirGroups := map[string][]model.WorkspaceRegistration{}
 	commonDirDisplay := map[string]string{}
+	registrationsByRoot := map[string][]model.WorkspaceRegistration{}
+	rootDisplay := map[string]string{}
 	for _, ws := range workspaces {
 		if _, err := os.Stat(ws.Root); err != nil {
 			report.StalePaths = append(report.StalePaths, WorkspaceStalePath{Alias: ws.Name, Root: ws.Root, Error: err.Error()})
 			continue
 		}
+		rootKey, ok := normalizeComparablePath(ws.Root)
+		if !ok {
+			rootKey = strings.ToLower(strings.TrimSpace(ws.Root))
+		}
+		registrationsByRoot[rootKey] = append(registrationsByRoot[rootKey], ws)
+		if rootDisplay[rootKey] == "" {
+			rootDisplay[rootKey] = ws.Root
+		}
+
 		commonDir, ok := gitCommonDir(ws.Root)
 		if !ok {
 			continue
@@ -420,6 +442,34 @@ func DoctorWorkspaces() (WorkspaceDoctorReport, error) {
 		})
 	}
 
+	rootKeys := make([]string, 0, len(registrationsByRoot))
+	for key := range registrationsByRoot {
+		rootKeys = append(rootKeys, key)
+	}
+	sort.Strings(rootKeys)
+	for _, key := range rootKeys {
+		root := rootDisplay[key]
+		collisions := gitTreeCaseCollisions(root)
+		if len(collisions) == 0 {
+			continue
+		}
+		aliases := make([]string, 0, len(registrationsByRoot[key]))
+		for _, registration := range registrationsByRoot[key] {
+			aliases = append(aliases, registration.Name)
+		}
+		sort.Strings(aliases)
+		commonDir, _ := gitCommonDir(root)
+		for _, paths := range collisions {
+			report.GitCaseCollisions = append(report.GitCaseCollisions, GitCaseCollision{
+				Root:         root,
+				Aliases:      aliases,
+				GitCommonDir: commonDir,
+				Paths:        paths,
+				Warnings:     []string{"git tree contains paths that differ only by casing; Windows checkouts may materialize one path and hide or overwrite the other"},
+			})
+		}
+	}
+
 	report.BinaryShadowing = inspectBinaryShadowing()
 	report.Health = workspaceDoctorHealth(report)
 	report.NextActions = workspaceDoctorNextActions(report)
@@ -433,7 +483,7 @@ func DoctorWorkspaces() (WorkspaceDoctorReport, error) {
 
 func workspaceDoctorHealth(report WorkspaceDoctorReport) string {
 	switch {
-	case len(report.StalePaths) > 0:
+	case len(report.StalePaths) > 0 || len(report.GitCaseCollisions) > 0:
 		return "action_required"
 	case len(report.BinaryShadowing) > 1 || hasBinaryVersionDrift(report.BinaryShadowing) || len(report.WorktreeFamilies) > 0 || len(report.AliasesSharingRoot) > 0:
 		return "attention"
@@ -450,6 +500,14 @@ func workspaceDoctorNextActions(report WorkspaceDoctorReport) []WorkspaceDoctorA
 			Severity: "high",
 			Command:  "mi-lsp workspace prune --stale --dry-run",
 			Reason:   "registry contains aliases whose roots no longer exist; dry-run lists the cleanup plan without deleting files",
+		})
+	}
+	if len(report.GitCaseCollisions) > 0 {
+		actions = append(actions, WorkspaceDoctorAction{
+			ID:       "fix_git_case_collisions",
+			Severity: "high",
+			Command:  "git -C <root> ls-tree -r HEAD --name-only",
+			Reason:   "one or more registered Git trees contain paths that differ only by casing; repair the repo tree with a dedicated git rm/mv commit before using Windows worktrees",
 		})
 	}
 	if len(report.WorktreeFamilies) > 0 {
@@ -485,6 +543,40 @@ func workspaceDoctorNextActions(report WorkspaceDoctorReport) []WorkspaceDoctorA
 		})
 	}
 	return actions
+}
+
+func gitTreeCaseCollisions(root string) [][]string {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	command := exec.CommandContext(ctx, "git", "-C", root, "ls-tree", "-r", "HEAD", "--name-only")
+	output, err := command.Output()
+	if err != nil {
+		return nil
+	}
+	byFoldedPath := map[string]map[string]bool{}
+	for _, raw := range strings.Split(string(output), "\n") {
+		path := strings.TrimSpace(raw)
+		if path == "" {
+			continue
+		}
+		key := strings.ToLower(strings.ReplaceAll(path, "\\", "/"))
+		if byFoldedPath[key] == nil {
+			byFoldedPath[key] = map[string]bool{}
+		}
+		byFoldedPath[key][path] = true
+	}
+	keys := make([]string, 0, len(byFoldedPath))
+	for key, paths := range byFoldedPath {
+		if len(paths) > 1 {
+			keys = append(keys, key)
+		}
+	}
+	sort.Strings(keys)
+	collisions := make([][]string, 0, len(keys))
+	for _, key := range keys {
+		collisions = append(collisions, sortedKeys(byFoldedPath[key]))
+	}
+	return collisions
 }
 
 func binaryShadowingLookupCommand() string {

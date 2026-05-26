@@ -188,7 +188,7 @@ El struct `internal/service/config.go` centraliza todos los valores hardcodeados
 - Todas las operaciones (con y sin daemon) registran `access_events` en `~/.mi-lsp/daemon/daemon.db`.
 - CLI directo usa `daemon_run_id = NULL`; el daemon usa su `run_id`.
 - En requests servidos por daemon, el `access_event` canonico lo escribe el daemon; la CLI solo persiste eventos directos, `direct_fallback` o fallas previas a la ejecucion remota.
-- WAL mode habilitado para manejar escrituras concurrentes daemon + CLI.
+- WAL mode, `busy_timeout` y retry/backoff breve en escrituras de telemetria manejan contencion transitoria entre daemon y CLI directo sin ocultar locks persistentes.
 - `index.db` repo-local tambien debe usar `WAL + busy_timeout`, y las escrituras de indexacion/watcher se serializan por workspace para evitar `SQLITE_BUSY`.
 - Cuando `index.db` esta corrupta, el comando legacy `index` debe cuarentenarla, reconstruir y dejar warning visible con la ruta respaldada.
 - `index.run` debe chequear `context.Context` durante walk, lectura de candidatos y parseo documental para que un timeout operativo corte el trabajo en curso.
@@ -226,7 +226,7 @@ El struct `internal/service/config.go` centraliza todos los valores hardcodeados
 - El docgraph del workspace activo debe ignorar `.docs/temp/worktrees/` para no mezclar canon de worktrees vecinos ni bloquear harness con artefactos auxiliares.
 - `workspace list` y `workspace status` deben salir desde registry + `project.toml` normalizado cuando la topologia cacheada ya tiene `repo[]` y `entrypoint[]`, sin redescubrir child repos en el hot path; preservan todos los aliases registrados aunque compartan root fisico. La redeteccion pesada queda como fallback para bootstrap o `project.toml` incompleto.
 - `workspace list --group-by-root` agrupa aliases por root exacto y expone `root`, `alias_count`, `aliases`, `canonical_alias`, `selection_reason`, `kind` y warnings sin mutar registry.
-- `workspace doctor` es no mutante y diagnostica aliases que comparten root exacto, familias de worktrees por `git common dir`, paths stale, shadowing de binario, `health`, `next_actions` y comandos sugeridos.
+- `workspace doctor` es no mutante y diagnostica aliases que comparten root exacto, familias de worktrees por `git common dir`, paths stale, colisiones case-insensitive en el tree Git, shadowing de binario, `health`, `next_actions` y comandos sugeridos.
 - `workspace hygiene` reutiliza diagnosticos de doctor y la poda segura existente para una superficie agent-first: por default no muta; con `--apply-safe` solo limpia aliases stale/defaults invalidos del registry. Nunca borra worktrees, roots, indices, ramas ni procesos.
 - `workspace prune --stale --dry-run|--apply` limpia solamente entradas del `registry.toml` cuyo root ya no existe; nunca borra worktrees, directorios ni indices repo-locales.
 - `workspace status --no-auto-sync` permite diagnostico read-only para smokes cross-workspace: reporta la proyeccion stale/bloqueada sin escribir `read-model.toml` en repos externos.

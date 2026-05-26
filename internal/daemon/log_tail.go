@@ -5,12 +5,44 @@ import (
 	"bytes"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 )
 
 type LogTailLine struct {
 	Line int    `json:"line"`
 	Text string `json:"text"`
+}
+
+func ResolveDaemonLogPath(fallbackRepoRoot string) string {
+	roots := make([]string, 0, 2)
+	if state, err := loadDaemonState(); err == nil {
+		if root := strings.TrimSpace(state.RepoRoot); root != "" {
+			roots = append(roots, root)
+		}
+	}
+	if root := strings.TrimSpace(fallbackRepoRoot); root != "" {
+		duplicate := false
+		for _, existing := range roots {
+			if strings.EqualFold(existing, root) {
+				duplicate = true
+				break
+			}
+		}
+		if !duplicate {
+			roots = append(roots, root)
+		}
+	}
+	if len(roots) == 0 {
+		return filepath.Join(".mi-lsp", "daemon.log")
+	}
+	for _, root := range roots {
+		path := filepath.Join(root, ".mi-lsp", "daemon.log")
+		if info, err := os.Stat(path); err == nil && !info.IsDir() {
+			return path
+		}
+	}
+	return filepath.Join(roots[0], ".mi-lsp", "daemon.log")
 }
 
 func ReadLogTailFile(path string, tail int, maxBytes int64) ([]LogTailLine, bool, error) {
