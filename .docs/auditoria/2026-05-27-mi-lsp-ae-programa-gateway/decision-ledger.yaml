@@ -1,0 +1,27 @@
+session: 2026-05-27-mi-lsp-ae-programa-gateway
+decisions:
+  - id: DEC-AE-GATEWAY
+    status: locked
+    statement: "ae-programa is the mandatory gateway before non-trivial, mutating, policy, harness, shared-skill, or multi-step work."
+    source: "User request plus C:/Users/fgpaz/.agents/skills/ae-programa/SKILL.md"
+    changes_execution: true
+  - id: DEC-AE-INSTALL-FIRST
+    status: locked
+    statement: "If required AE canon is missing, install and validate it before functional work."
+    source: "User request"
+    changes_execution: true
+  - id: DEC-WORKTREE
+    status: locked
+    statement: "Use an isolated worktree from origin/main because the main checkout has unrelated README.md work."
+    source: "git status and repo policy"
+    changes_execution: true
+  - id: DEC-SUBAGENT-RULE
+    status: locked
+    statement: "Repo policy must require subagents/worker lanes for future non-trivial work, with v0_shadow recursion as current depth."
+    source: "User request and ae-programa recursion gate"
+    changes_execution: true
+open_decisions: []
+contradictions: []
+execution_gate:
+  manifest_repair_allowed: true
+  functional_work_allowed: false

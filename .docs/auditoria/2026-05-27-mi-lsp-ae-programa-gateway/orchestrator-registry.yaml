@@ -1,0 +1,25 @@
+session: 2026-05-27-mi-lsp-ae-programa-gateway
+orchestrators:
+  - id: director-ae
+    role: meta_orchestrator
+    adapter: codex
+    state: active
+    owns:
+      - ae_programa_gateway
+      - session_contract
+      - evidence_closure
+    evidence_dir: .docs/auditoria/2026-05-27-mi-lsp-ae-programa-gateway
+  - id: policy-repair-lane
+    role: adapter_or_lane_orchestrator
+    adapter: codex
+    state: active
+    parent: director-ae
+    owns:
+      - .docs/wiki/ae/**
+      - AGENTS.md
+      - CLAUDE.md
+      - PATHS.md
+      - scripts/ae/**
+    evidence_dir: .docs/auditoria/2026-05-27-mi-lsp-ae-programa-gateway
+exclusive_path_overlaps: []
+verdict: in_progress

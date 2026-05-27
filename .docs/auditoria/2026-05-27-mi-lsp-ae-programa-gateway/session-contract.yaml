@@ -1,0 +1,109 @@
+schema: sdd-session-contract-v1
+task_slug: 2026-05-27-mi-lsp-ae-programa-gateway
+issue_or_waiver: "Bootstrap/policy repair requested by user; no external Linear/GitHub issue linked."
+base_ref: origin/main
+base_sha: 672fa485f3a3018534ca4a5a050854377c85f428
+branch: codex/mi-lsp-ae-programa-gateway
+worktree_path: C:\repos\mios\mi-lsp-ae-programa-gateway
+ae_contract:
+  gateway_skill: ae-programa
+  selected_mode: manifest_repair
+  decision_lock: locked
+  harness_adapter: codex
+  orchestration_depth: v0_shadow
+  ledgers_required: true
+  runtime_target:
+    environment: none
+    volatility: none
+    verification_policy: not_deployable
+  recursion_policy:
+    active_levels: 2
+    level_3_task_orchestrators: shadow_only
+    child_launch_allowed: false
+  stop_before_functional_work: true
+anchors:
+  rs: []
+  fl: []
+  rf: []
+  ct: []
+  ae:
+    - AE-README
+    - AE-HARNESS-MANIFEST
+    - AE-WORK-MODES
+    - AE-EVIDENCE-POLICY
+    - AE-PHASES
+    - AE-HARNESS-ORCHESTRATION
+    - AE-SESSION-CONTRACT
+    - AE-PROJECTION-POLICY
+expected_scope:
+  - "Install missing ae-programa required AE canon for mi-lsp."
+  - "Project AE rules into AGENTS.md, CLAUDE.md, and PATHS.md."
+  - "Add a repo-local pre-push guard script and durable traceability/audit evidence."
+  - "Do not execute any unrelated functional mi-lsp feature work in this session."
+allowed_paths:
+  - .docs/wiki/ae/**
+  - AGENTS.md
+  - CLAUDE.md
+  - PATHS.md
+  - scripts/ae/**
+  - .docs/auditoria/2026-05-27-mi-lsp-ae-programa-gateway/**
+forbidden_paths:
+  - .git/**
+  - .mi-lsp/**
+  - .docs/wiki/_mi-lsp/read-model.toml
+  - .env
+  - .env.*
+  - "**/*.pem"
+  - "**/*.key"
+  - "**/*.pfx"
+  - "**/*.exe"
+  - "**/*.dll"
+  - dist/**
+required_evidence:
+  - "mi-lsp workspace status mi-lsp --format toon"
+  - "mi-lsp nav governance --workspace mi-lsp --format toon"
+  - "mi-lsp nav wiki validate-harness --workspace . --format toon"
+  - "mi-lsp nav wiki validate-source --workspace . --format toon"
+  - "powershell -NoProfile -File scripts/ae/pre-push-guard.ps1 -SessionContract .docs/auditoria/2026-05-27-mi-lsp-ae-programa-gateway/session-contract.yaml -AllowDirty"
+  - "ps-trazabilidad closure packet"
+  - "ps-auditar-trazabilidad audit report"
+touched_linear_issues: []
+linear_parent_issue: waiver
+linear_agent_issues: []
+linear_claim:
+  issue: waiver
+  assignee: waiver
+  workflow_state: waiver
+  claim_comment_url: waiver
+ticket_frontier:
+  write_scope:
+    - .docs/wiki/ae/**
+    - AGENTS.md
+    - CLAUDE.md
+    - PATHS.md
+    - scripts/ae/**
+    - .docs/auditoria/2026-05-27-mi-lsp-ae-programa-gateway/**
+  read_review_scope:
+    - .docs/wiki/00_gobierno_documental.md
+    - .docs/wiki/ae/**
+    - AGENTS.md
+    - CLAUDE.md
+  exclusive_paths:
+    - .docs/wiki/ae/**
+    - AGENTS.md
+    - CLAUDE.md
+    - PATHS.md
+    - scripts/ae/**
+  forbidden_paths:
+    - .docs/wiki/_mi-lsp/read-model.toml
+    - .mi-lsp/**
+  integration_owner: codex
+  parking_lot: []
+waivers:
+  - "No external tracker issue because this is an AE bootstrap/gateway repair requested directly by the user."
+  - "No child task orchestrators launched; v0_shadow records recursion policy and requires subagents prospectively through the repo policy."
+branch_disposition: integrate-main
+cleanup_policy:
+  remove_worktree: true
+  delete_branch: true
+  delete_remote_branch: true
