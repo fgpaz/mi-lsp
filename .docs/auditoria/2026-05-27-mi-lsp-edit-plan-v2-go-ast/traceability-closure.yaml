@@ -1,0 +1,147 @@
+task_slug: 2026-05-27-mi-lsp-edit-plan-v2-go-ast
+session_contract_path: .docs/auditoria/2026-05-27-mi-lsp-edit-plan-v2-go-ast/session-contract.yaml
+traceability_skill: ps-trazabilidad
+closure_verdict: PASS
+issue_or_card:
+  github_issues: []
+  touched_cards: []
+  waiver: "No external Linear/GitHub issue linked for this local AE wave."
+git_before:
+  base_ref: main
+  base_sha: 3bd4680f8611862d6f0e8645a7190906871e3ca1
+  branch: codex/mi-lsp-edit-plan-v2-go-ast
+git_after:
+  branch: codex/mi-lsp-edit-plan-v2-go-ast
+  head_sha_before_closure_packet: aa667ec91ad1312d8e80feefeb6f5cd1e4e29940
+  upstream: none
+  status_before_closure_packet: clean
+changed_paths:
+  tracked:
+    - .docs/auditoria/2026-05-27-mi-lsp-edit-plan-v2-go-ast/session-contract.yaml
+    - .docs/raw/plans/2026-05-27-mi-lsp-edit-plan-v2-go-ast.md
+    - .docs/raw/plans/2026-05-27-mi-lsp-edit-plan-v2-go-ast/T0-plan-contract-decision-lock.md
+    - .docs/raw/plans/2026-05-27-mi-lsp-edit-plan-v2-go-ast/T1-canon-sync.md
+    - .docs/raw/plans/2026-05-27-mi-lsp-edit-plan-v2-go-ast/T2-model-contract-v2.md
+    - .docs/raw/plans/2026-05-27-mi-lsp-edit-plan-v2-go-ast/T3-go-ast-engine.md
+    - .docs/raw/plans/2026-05-27-mi-lsp-edit-plan-v2-go-ast/T4-service-dispatch-output.md
+    - .docs/raw/plans/2026-05-27-mi-lsp-edit-plan-v2-go-ast/T5-tests-dogfood.md
+    - .docs/raw/plans/2026-05-27-mi-lsp-edit-plan-v2-go-ast/T6-release-trace-audit.md
+    - .docs/raw/plans/2026-05-27-mi-lsp-edit-plan-v2-go-ast/T7-integrate-main-cleanup.md
+    - .docs/wiki/04_RF/RF-QRY-018.md
+    - .docs/wiki/06_matriz_pruebas_RF.md
+    - .docs/wiki/06_pruebas/TP-QRY.md
+    - .docs/wiki/07_baseline_tecnica.md
+    - .docs/wiki/09_contratos/CT-NAV-EDIT-PLAN.md
+    - .docs/wiki/09_contratos_tecnicos.md
+    - internal/cli/nav.go
+    - internal/model/edit_plan.go
+    - internal/service/edit_plan.go
+    - internal/service/edit_plan_go_ast.go
+    - internal/service/edit_plan_test.go
+    - internal/telemetry/access_events.go
+    - internal/telemetry/access_events_test.go
+  closure_evidence_pending_commit:
+    - .docs/auditoria/2026-05-27-mi-lsp-edit-plan-v2-go-ast/traceability-closure.yaml
+    - .docs/auditoria/2026-05-27-mi-lsp-edit-plan-v2-go-ast/audit-report.yaml
+  forbidden_hits: []
+scope_verdict: PASS
+scope_notes:
+  - "Actual changes stayed inside session-contract allowed paths."
+  - "Forbidden paths were not modified or committed: .git/**, .mi-lsp/**, read-model.toml, secrets, binaries, dist/**."
+  - "Raw plan docs are local planning artifacts; durable closure evidence lives in .docs/auditoria."
+traceability_chains:
+  reviewed_anchors:
+    - 00_gobierno_documental
+    - FL-QRY-01
+    - RF-QRY-018
+    - CT-NAV-EDIT-PLAN
+    - TP-QRY
+    - 07_baseline_tecnica
+    - 09_contratos_tecnicos
+  updated_paths:
+    - .docs/wiki/04_RF/RF-QRY-018.md
+    - .docs/wiki/06_matriz_pruebas_RF.md
+    - .docs/wiki/06_pruebas/TP-QRY.md
+    - .docs/wiki/07_baseline_tecnica.md
+    - .docs/wiki/09_contratos/CT-NAV-EDIT-PLAN.md
+    - .docs/wiki/09_contratos_tecnicos.md
+  missing_anchors: []
+implementation_summary:
+  - "Added edit-plan-v2 packet support while preserving edit-plan-v1 textual behavior."
+  - "Added Go AST operations: replace_go_function, replace_go_function_body, insert_go_function_after, ensure_go_import, remove_go_import."
+  - "Added multi-language recognition for go, csharp, typescript, python; non-Go AST v2 fails with language_not_supported."
+  - "Reused v1 guardrails for dry-run default, experimental apply, clean git, safe paths, hashes, deny paths, no stage/commit/formatter/rename/chmod/delete."
+runtime_sensitive: true
+runtime_evidence:
+  - command: "go test ./internal/model ./internal/service ./internal/cli ./internal/indexer ./internal/telemetry"
+    result: PASS
+  - command: "go test ./..."
+    result: PASS
+  - command: "go run ./cmd/mi-lsp nav governance --workspace . --format toon"
+    result: PASS
+  - command: "go run ./cmd/mi-lsp index --docs-only --workspace . --format toon"
+    result: PASS
+    note: "Rebuilt worktree docgraph before harness validation."
+  - command: "go run ./cmd/mi-lsp nav wiki validate-harness --workspace . --format toon"
+    result: PASS
+    harness_contracts_reviewed: 103
+    harness_links_reviewed: 454
+  - command: "Go AST dogfood: dry-run/apply fixture, then go test ./... inside fixture"
+    result: PASS
+  - command: "edit-plan-v1 textual smoke on C#, TypeScript, Python fixtures"
+    result: PASS
+data_or_contract_sensitive: true
+contract_evidence:
+  - .docs/wiki/04_RF/RF-QRY-018.md
+  - .docs/wiki/06_pruebas/TP-QRY.md
+  - .docs/wiki/09_contratos/CT-NAV-EDIT-PLAN.md
+  - .docs/wiki/09_contratos_tecnicos.md
+  - internal/model/edit_plan.go
+  - internal/service/edit_plan.go
+  - internal/service/edit_plan_go_ast.go
+release_gate:
+  required: true
+  command: "./scripts/release/ae-release-binaries.ps1 -SkipWslInstall -SkipMirror"
+  result: PASS
+  local_install:
+    cli_path: C:\Users\fgpaz\bin\mi-lsp.exe
+    rid: win-arm64
+    sha256: 49539074bd5281186546ef093185763ab79ade8a77947ba3337b6351ece1b9bb
+  checksums:
+    win-arm64: 49539074bd5281186546ef093185763ab79ade8a77947ba3337b6351ece1b9bb
+    win-x64: 7f19af91455694cdb4e65f3f2b62ca99ff4ffe851e8941a90c5a6c49f5ca83f0
+    linux-arm64: 26c627d5490042a9c733d0605e9bff928d13a9ebdc40c7de1e3bd9ddf7dcfb59
+    linux-x64: b0360d2a45aaf356e14f82b8eb969a53f5bd737db2cca7ee36139a150b683b3a
+  publish: skipped
+  wsl_install: skipped
+  mirror: skipped
+harness_verdict: PASS
+wiki_source_verdict: PASS
+board_sync:
+  provider: not_applicable
+  reason: "No cards or issues linked; touched_cards and github_issues are empty."
+pre_push_inputs:
+  issue_or_card: waiver
+  evidence_path: .docs/auditoria/2026-05-27-mi-lsp-edit-plan-v2-go-ast/traceability-closure.yaml
+  expected_scope: "edit-plan-v2 multi-language contract with Go AST backend only."
+  session_contract_path: .docs/auditoria/2026-05-27-mi-lsp-edit-plan-v2-go-ast/session-contract.yaml
+no_drift_snapshot:
+  before_closure_packet:
+    - command: "git status --short --branch"
+      result: "## codex/mi-lsp-edit-plan-v2-go-ast"
+    - command: "git diff --check"
+      result: PASS
+  after_closure_packet:
+    expected: "Only traceability-closure.yaml and audit-report.yaml are new until closure evidence commit."
+completion_handoff:
+  target_skill: finishing-a-development-branch
+  branch_disposition: integrate-main
+  cleanup_policy: auto-after-successful-integration
+  required_steps:
+    - "Push branch and open PR."
+    - "Merge PR to origin/main after checks."
+    - "Fast-forward local main."
+    - "Refresh local binary from main because CLI behavior changed."
+    - "Reindex mi-lsp and run workspace hygiene."
+    - "Remove completed worktree and delete local/remote task branch after merge."
+  blockers: []
