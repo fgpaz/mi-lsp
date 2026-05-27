@@ -1,0 +1,58 @@
+task_slug: 2026-05-27-mi-lsp-edit-plan-v2-go-ast
+issue_or_waiver: "No external Linear/GitHub issue linked; github_issues: []"
+selected_mode: orquestado_deterministico
+base_ref: main
+base_sha: 3bd4680f8611862d6f0e8645a7190906871e3ca1
+intended_branch: codex/mi-lsp-edit-plan-v2-go-ast
+worktree_path: C:\repos\mios\mi-lsp-edit-plan-v2-go-ast
+expected_scope: "Implement edit-plan-v2 multi-language contract with Go AST backend and unsupported-language rejection for C#/TypeScript/Python."
+sdd_anchors:
+  - RF-QRY-018
+  - CT-NAV-EDIT-PLAN
+  - TP-QRY
+allowed_paths:
+  - .docs/raw/plans/2026-05-27-mi-lsp-edit-plan-v2-go-ast.md
+  - .docs/raw/plans/2026-05-27-mi-lsp-edit-plan-v2-go-ast/**
+  - .docs/auditoria/2026-05-27-mi-lsp-edit-plan-v2-go-ast/**
+  - .docs/wiki/04_RF/RF-QRY-018.md
+  - .docs/wiki/04_RF.md
+  - .docs/wiki/06_matriz_pruebas_RF.md
+  - .docs/wiki/06_pruebas/TP-QRY.md
+  - .docs/wiki/07_baseline_tecnica.md
+  - .docs/wiki/09_contratos_tecnicos.md
+  - .docs/wiki/09_contratos/CT-NAV-EDIT-PLAN.md
+  - internal/model/**
+  - internal/service/**
+  - internal/cli/**
+  - internal/indexer/**
+  - internal/telemetry/**
+forbidden_paths:
+  - .git/**
+  - .mi-lsp/**
+  - .docs/wiki/_mi-lsp/read-model.toml
+  - .env
+  - .env.*
+  - "**/*.pem"
+  - "**/*.key"
+  - "**/*.pfx"
+  - "**/*.exe"
+  - "**/*.dll"
+  - dist/**
+required_evidence:
+  - "go test ./internal/model ./internal/service ./internal/cli ./internal/indexer"
+  - "Go AST dogfood dry-run/apply fixture"
+  - "C#/TS/Python language_not_supported tests"
+  - "v1 textual compatibility tests"
+  - "mi-lsp nav governance --workspace mi-lsp --format toon"
+  - "mi-lsp nav wiki validate-harness --workspace mi-lsp --format toon"
+  - ".\\scripts\\release\\ae-release-binaries.ps1 -SkipWslInstall -SkipMirror"
+  - "ps-trazabilidad closure packet"
+  - "ps-auditar-trazabilidad audit report"
+touched_cards: []
+github_issues: []
+release_gate_required: true
+branch_disposition: integrate-main
+cleanup_policy: auto-after-successful-integration
+explicit_waivers:
+  - "No C#, TypeScript, or Python AST backend in this wave; v2 returns language_not_supported for those languages."
+  - "No semantic rename or cross-file refactor."
