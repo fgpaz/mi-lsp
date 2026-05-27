@@ -1,0 +1,90 @@
+task_slug: 2026-05-27-mi-lsp-ae-programa-gateway
+skill: ps-trazabilidad
+closure_verdict: PASS
+session_contract_path: .docs/auditoria/2026-05-27-mi-lsp-ae-programa-gateway/session-contract.yaml
+issue_or_card:
+  waiver: "AE bootstrap requested directly by user; no external issue/card linked."
+git:
+  base_ref: origin/main
+  base_sha: 672fa485f3a3018534ca4a5a050854377c85f428
+  branch: codex/mi-lsp-ae-programa-gateway
+  head_before_packet: 62dd201
+scope:
+  expected: "Install ae-programa gateway layer before functional work."
+  verdict: PASS
+  forbidden_hits: []
+  functional_work_executed: false
+changed_paths:
+  canon:
+    - .docs/wiki/ae/README.md
+    - .docs/wiki/ae/AE-PHASES.md
+    - .docs/wiki/ae/AE-HARNESS-MANIFEST.md
+    - .docs/wiki/ae/AE-HARNESS-ORCHESTRATION.md
+    - .docs/wiki/ae/AE-WORK-MODES.md
+    - .docs/wiki/ae/AE-SESSION-CONTRACT.md
+    - .docs/wiki/ae/AE-PROJECTION-POLICY.md
+    - .docs/wiki/ae/AE-EVIDENCE-POLICY.md
+  projections:
+    - AGENTS.md
+    - CLAUDE.md
+    - PATHS.md
+  guard:
+    - scripts/ae/pre-push-guard.ps1
+  evidence:
+    - .docs/auditoria/2026-05-27-mi-lsp-ae-programa-gateway/session-contract.yaml
+    - .docs/auditoria/2026-05-27-mi-lsp-ae-programa-gateway/orchestrator-registry.yaml
+    - .docs/auditoria/2026-05-27-mi-lsp-ae-programa-gateway/decision-ledger.yaml
+    - .docs/auditoria/2026-05-27-mi-lsp-ae-programa-gateway/recursion-learning-log.yaml
+    - .docs/auditoria/2026-05-27-mi-lsp-ae-programa-gateway/evidence-index.yaml
+traceability_chains:
+  reviewed:
+    - 00_gobierno_documental
+    - AE-README
+    - AE-PHASES
+    - AE-HARNESS-MANIFEST
+    - AE-HARNESS-ORCHESTRATION
+    - AE-WORK-MODES
+    - AE-SESSION-CONTRACT
+    - AE-PROJECTION-POLICY
+    - AE-EVIDENCE-POLICY
+    - AE-RELEASE-DISTRIBUTION
+  missing: []
+verification:
+  - command: "mi-lsp workspace status mi-lsp --format toon"
+    result: PASS
+  - command: "mi-lsp nav governance --workspace mi-lsp --format toon"
+    result: PASS
+  - command: "mi-lsp index --docs-only --workspace . --format toon"
+    result: PASS
+  - command: "mi-lsp nav governance --workspace . --format toon"
+    result: PASS
+  - command: "mi-lsp nav wiki validate-harness --workspace . --format toon"
+    result: PASS
+  - command: "mi-lsp nav wiki validate-source --workspace . --format toon"
+    result: PASS
+  - command: "./scripts/ae/pre-push-guard.ps1 -SessionContract .docs/auditoria/2026-05-27-mi-lsp-ae-programa-gateway/session-contract.yaml"
+    result: PASS
+runtime_sensitive: false
+data_or_contract_sensitive: true
+contract_evidence:
+  - .docs/wiki/ae/AE-SESSION-CONTRACT.md
+  - .docs/wiki/ae/AE-PROJECTION-POLICY.md
+  - scripts/ae/pre-push-guard.ps1
+harness_verdict: PASS
+wiki_source_verdict: PASS
+board_sync:
+  provider: not_applicable
+  reason: "No issue/card linked."
+pre_push_inputs:
+  issue_or_card: waiver
+  evidence_path: .docs/auditoria/2026-05-27-mi-lsp-ae-programa-gateway/traceability-closure.yaml
+  session_contract_path: .docs/auditoria/2026-05-27-mi-lsp-ae-programa-gateway/session-contract.yaml
+  expected_scope: "AE gateway installation only."
+completion_handoff:
+  branch_disposition: integrate-main
+  cleanup_policy: auto-after-successful-integration
+  required_steps:
+    - "Open PR and merge through PR flow."
+    - "Fast-forward local main or verify main points at origin/main."
+    - "Remove worktree and local/remote task branch after successful integration."
+blockers: []

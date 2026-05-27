@@ -1,0 +1,49 @@
+task_slug: 2026-05-27-mi-lsp-ae-programa-gateway
+skill: ps-auditar-trazabilidad
+audit_verdict: Approved
+session_contract:
+  path: .docs/auditoria/2026-05-27-mi-lsp-ae-programa-gateway/session-contract.yaml
+  verdict: PASS
+traceability_packet:
+  path: .docs/auditoria/2026-05-27-mi-lsp-ae-programa-gateway/traceability-closure.yaml
+  verdict: PASS
+findings: []
+scope_audit:
+  verdict: PASS
+  notes:
+    - "Repair was limited to AE canon, projections, guard script, and audit evidence."
+    - "No functional mi-lsp feature work was executed."
+governance_audit:
+  verdict: PASS
+  evidence:
+    - "governance blocked=false"
+    - "harness_verdict=PASS"
+    - "wiki_source_verdict=PASS"
+projection_audit:
+  verdict: PASS
+  canon_source: .docs/wiki/ae/AE-PROJECTION-POLICY.md
+  projections:
+    - AGENTS.md
+    - CLAUDE.md
+    - PATHS.md
+  required_strings_verified:
+    - ae-programa
+    - AE-PROJECTION-POLICY
+    - Subagent Orchestration
+    - pre-push-guard
+guard_audit:
+  verdict: PASS
+  script: scripts/ae/pre-push-guard.ps1
+  smoke: "./scripts/ae/pre-push-guard.ps1 -SessionContract .docs/auditoria/2026-05-27-mi-lsp-ae-programa-gateway/session-contract.yaml"
+branch_worktree_audit:
+  verdict: PASS
+  branch: codex/mi-lsp-ae-programa-gateway
+  worktree_path: C:\repos\mios\mi-lsp-ae-programa-gateway
+  cleanup_policy: auto-after-successful-integration
+pre_push_readiness:
+  verdict: PASS_WITH_WAIVER
+  waiver: "No external issue/card linked for bootstrap repair."
+  final_guard_required_after_evidence_commit: true
+post_audit_no_drift_gate:
+  expected: "Only traceability/audit files are dirty until committed; rerun guard after commit."
+final_verdict: Approved
