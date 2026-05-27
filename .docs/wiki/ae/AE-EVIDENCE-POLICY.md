@@ -70,3 +70,39 @@ evidence:
 ## Closure Rule
 
 For binary-affecting work, `ps-trazabilidad` must include the AE release evidence or an explicit waiver. `ps-auditar-trazabilidad` is required for cross-OS, release, worker bootstrap, or policy changes.
+
+## Pre-Push Guard
+
+```toon
+doc_id: AE-EVIDENCE-POLICY
+block_id: AE-EVIDENCE-POLICY.pre_push_guard
+kind: policy
+source_of_truth: this
+guard_script: scripts/ae/pre-push-guard.ps1
+required_before:
+  - push_ready_claim
+  - direct_main_push
+  - merge_or_cleanup_after_policy_work
+requires:
+  - session_contract
+  - ae_contract
+  - allowed_paths
+  - forbidden_paths
+  - required_evidence
+  - cleanup_policy
+checks:
+  - session_contract_exists
+  - branch_not_main_unless_waived
+  - no_forbidden_path_drift
+  - no_ungoverned_raw_artifacts
+stop_if:
+  - session_contract_missing
+  - dirty_worktree_without_explicit_allow_dirty_precommit_mode
+  - forbidden_path_changed
+  - raw_artifact_changed_without_governed_allowlist
+verify:
+  - ./scripts/ae/pre-push-guard.ps1 -SessionContract .docs/auditoria/<task>/session-contract.yaml -AllowDirty
+evidence:
+  - scripts/ae/pre-push-guard.ps1
+  - .docs/auditoria/<YYYY-MM-DD>-<task-slug>/traceability-closure.yaml
+```

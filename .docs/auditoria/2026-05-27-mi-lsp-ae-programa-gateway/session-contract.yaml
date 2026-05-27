@@ -64,7 +64,7 @@ required_evidence:
   - "mi-lsp nav governance --workspace mi-lsp --format toon"
   - "mi-lsp nav wiki validate-harness --workspace . --format toon"
   - "mi-lsp nav wiki validate-source --workspace . --format toon"
-  - "powershell -NoProfile -File scripts/ae/pre-push-guard.ps1 -SessionContract .docs/auditoria/2026-05-27-mi-lsp-ae-programa-gateway/session-contract.yaml -AllowDirty"
+  - "./scripts/ae/pre-push-guard.ps1 -SessionContract .docs/auditoria/2026-05-27-mi-lsp-ae-programa-gateway/session-contract.yaml -AllowDirty"
   - "ps-trazabilidad closure packet"
   - "ps-auditar-trazabilidad audit report"
 touched_linear_issues: []

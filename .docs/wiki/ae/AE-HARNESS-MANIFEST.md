@@ -9,7 +9,11 @@ kind: "support-doc"
 audience: "llm-first"
 imports:
   - '[[00_gobierno_documental]]'
+  - '[[AE-PHASES]]'
+  - '[[AE-HARNESS-ORCHESTRATION]]'
   - '[[AE-WORK-MODES]]'
+  - '[[AE-SESSION-CONTRACT]]'
+  - '[[AE-PROJECTION-POLICY]]'
   - '[[AE-RELEASE-DISTRIBUTION]]'
   - '[[AE-EVIDENCE-POLICY]]'
 exports:
@@ -41,8 +45,10 @@ source_of_truth: this
 protocols:
   - SDD-HARNESS-v1
   - SDD-WIKI-SOURCE-v1
-entry_skill: ae-orquestador
+entry_skill: ae-programa
+mode_router: ae-orquestador
 required_sequence:
+  - ae-programa_gateway
   - ps-contexto
   - governance_gate
   - brainstorming
@@ -56,6 +62,7 @@ required_sequence:
   - ps-auditar-trazabilidad_when_risky
 session_contract_path: .docs/auditoria/<YYYY-MM-DD>-<task-slug>/session-contract.yaml
 required_session_fields:
+  - ae_contract
   - ae_mode
   - ae_docs
   - release_distribution_required
@@ -73,6 +80,7 @@ evidence:
   - .docs/wiki/ae/AE-HARNESS-MANIFEST.md
   - .docs/auditoria/<YYYY-MM-DD>-<task-slug>/session-contract.yaml
 stop_if:
+  - ae-programa gateway was skipped for non-trivial work
   - session contract is missing for mutating or non-trivial work
   - release_distribution_required=true and AE-RELEASE-DISTRIBUTION was skipped
   - policy files drift from AE layer
@@ -87,13 +95,19 @@ kind: routing
 source_of_truth: this
 routes:
   - when: "agent workflow, policy, or harness shape changes"
-    next: AE-WORK-MODES
+    next: AE-HARNESS-ORCHESTRATION
+  - when: "work mode, phase, or recursion depth must be selected"
+    next: AE-PHASES
+  - when: "session contract schema or scope guard changes"
+    next: AE-SESSION-CONTRACT
+  - when: "AGENTS.md, CLAUDE.md, PATHS.md, or runner prompt projection changes"
+    next: AE-PROJECTION-POLICY
   - when: "binaries, release assets, worker bootstrap, version provenance, or install flow can drift"
     next: AE-RELEASE-DISTRIBUTION
   - when: "closure evidence, traceability, or audit surface changes"
     next: AE-EVIDENCE-POLICY
   - when: "AGENTS.md or CLAUDE.md changes"
-    next: ae-crear-politicas
+    next: ps-crear-agentsclaudemd
 verify:
   - mi-lsp nav wiki validate-source --workspace mi-lsp --format toon
 evidence:
