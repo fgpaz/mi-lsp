@@ -1,0 +1,14 @@
+session: 2026-05-27-mi-lsp-ae-programa-gateway
+orchestration_depth: v0_shadow
+recursion_needed_events:
+  - parent_orchestrator_id: policy-repair-lane
+    proposed_child_type: task_orchestrator
+    launch_allowed: false
+    reason: "Future AE work should launch subagents/workers, but this bootstrap session only installs the policy and records v0 shadow depth."
+    missing_contract_fields: []
+    recommendation: "Pilot v1_supervised in a later task after subagent registry and tool availability are validated."
+learning_classification:
+  - item: "ae-programa required canon was stricter than current repo AE layer."
+    classification: canon_update_required
+  - item: "Policy projections need a single PATHS.md to reduce repeated path drift."
+    classification: canon_update_required

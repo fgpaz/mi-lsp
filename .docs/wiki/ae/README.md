@@ -9,8 +9,12 @@ kind: "support-doc"
 audience: "llm-first"
 imports:
   - '[[00_gobierno_documental]]'
+  - '[[AE-PHASES]]'
   - '[[AE-HARNESS-MANIFEST]]'
+  - '[[AE-HARNESS-ORCHESTRATION]]'
   - '[[AE-WORK-MODES]]'
+  - '[[AE-SESSION-CONTRACT]]'
+  - '[[AE-PROJECTION-POLICY]]'
   - '[[AE-RELEASE-DISTRIBUTION]]'
   - '[[AE-EVIDENCE-POLICY]]'
 exports:
@@ -19,10 +23,18 @@ agent_must_read:
   - .docs/wiki/00_gobierno_documental.md
   - .docs/wiki/ae/README.md
   - .docs/wiki/ae/AE-HARNESS-MANIFEST.md
+  - .docs/wiki/ae/AE-PHASES.md
+  - .docs/wiki/ae/AE-HARNESS-ORCHESTRATION.md
+  - .docs/wiki/ae/AE-SESSION-CONTRACT.md
+  - .docs/wiki/ae/AE-PROJECTION-POLICY.md
 agent_may_edit:
   - .docs/wiki/ae/README.md
   - .docs/wiki/ae/AE-HARNESS-MANIFEST.md
+  - .docs/wiki/ae/AE-PHASES.md
+  - .docs/wiki/ae/AE-HARNESS-ORCHESTRATION.md
   - .docs/wiki/ae/AE-WORK-MODES.md
+  - .docs/wiki/ae/AE-SESSION-CONTRACT.md
+  - .docs/wiki/ae/AE-PROJECTION-POLICY.md
   - .docs/wiki/ae/AE-RELEASE-DISTRIBUTION.md
   - .docs/wiki/ae/AE-EVIDENCE-POLICY.md
 agent_must_not_edit:
@@ -57,8 +69,12 @@ non_goals:
   - changing CLI behavior without 09/CT docs
   - treating .docs/raw as durable evidence
 must_read:
+  - AE-PHASES
   - AE-HARNESS-MANIFEST
+  - AE-HARNESS-ORCHESTRATION
   - AE-WORK-MODES
+  - AE-SESSION-CONTRACT
+  - AE-PROJECTION-POLICY
   - AE-RELEASE-DISTRIBUTION
   - AE-EVIDENCE-POLICY
 verify:
@@ -75,6 +91,6 @@ stop_if:
 
 ## Operating Rule
 
-Use `ae-orquestador` for AE-scoped work. It selects a work mode, then routes to `ae-harness-manifest`, `ae-decision-lock`, release distribution, and evidence policy as needed.
+Use `ae-programa` as the gateway for non-trivial, mutating, policy, harness, shared-skill, or multi-step work. It invokes `ae-orquestador` for mode selection, then routes to `ae-harness-manifest`, `ae-decision-lock`, release distribution, projections, and evidence policy as needed.
 
 Any change that can alter the installed CLI, worker bootstrap, release assets, version provenance, or cross-OS behavior must close through [[AE-RELEASE-DISTRIBUTION]] before it is considered done.

@@ -37,12 +37,22 @@ block_id: AE-WORK-MODES.modes
 kind: policy
 source_of_truth: this
 modes:
+  - id: manual_exploratorio
+    use_when:
+      - execution_changing_decisions_are_open
+      - task_is_discovery_or_design
+    required_controls:
+      - ps-contexto
+      - governance_gate
+      - brainstorming
+      - learning_classification
   - id: manual_acotado
     use_when:
       - bounded repo edit
       - decisions are known
       - no independent worker has a clean write slice
     required_controls:
+      - ae-programa_gateway
       - session_contract
       - targeted_tests
       - traceability
@@ -51,17 +61,36 @@ modes:
       - governance or AE layer is missing, stale, or ambiguous
       - policy files need projection from wiki
     required_controls:
+      - ae-programa_gateway
       - crear-gobierno-documental_when_00_changes
       - ae-crear-politicas_when_policy_changes
       - reindex
-  - id: worker_deterministico
+  - id: canon_repair
+    use_when:
+      - governed wiki source is missing or contradicted
+      - projection must be regenerated from canon
+    required_controls:
+      - ps-asistente-wiki_or_owner_skill
+      - session_contract
+      - governance_revalidation
+  - id: orquestado_deterministico
     use_when:
       - task can be split into disjoint write sets
       - worker prompt can be atomic and evidence-bounded
     required_controls:
+      - ae-programa_gateway
+      - ae-decision-lock
       - explicit_write_scope
       - no_reverting_foreign_changes
       - integration_review
+  - id: validation_audit
+    use_when:
+      - implementation exists and needs independent closure review
+      - traceability or runtime evidence may be stale
+    required_controls:
+      - ps-trazabilidad
+      - ps-auditar-trazabilidad
+      - no_drift_snapshot
   - id: release_distribution
     use_when:
       - CLI or worker binaries can drift

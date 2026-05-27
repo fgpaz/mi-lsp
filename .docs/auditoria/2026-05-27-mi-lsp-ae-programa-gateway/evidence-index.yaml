@@ -1,0 +1,19 @@
+session: 2026-05-27-mi-lsp-ae-programa-gateway
+evidence:
+  - path: .docs/auditoria/2026-05-27-mi-lsp-ae-programa-gateway/session-contract.yaml
+    kind: session_contract
+    status: present
+  - path: .docs/auditoria/2026-05-27-mi-lsp-ae-programa-gateway/orchestrator-registry.yaml
+    kind: operational_ledger
+    status: present
+  - path: .docs/auditoria/2026-05-27-mi-lsp-ae-programa-gateway/decision-ledger.yaml
+    kind: operational_ledger
+    status: present
+  - path: .docs/auditoria/2026-05-27-mi-lsp-ae-programa-gateway/recursion-learning-log.yaml
+    kind: operational_ledger
+    status: present
+  - path: .docs/auditoria/2026-05-27-mi-lsp-ae-programa-gateway/evidence-index.yaml
+    kind: operational_ledger
+    status: present
+verification_commands: []
+verdict: in_progress
