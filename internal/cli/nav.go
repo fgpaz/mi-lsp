@@ -451,7 +451,7 @@ instead of claiming complete graph precision.`,
 	editPlanCommand := &cobra.Command{
 		Use:   "edit-plan",
 		Short: "Preview or experimentally apply a guarded patch packet",
-		Long: `Build a deterministic diff from an edit-plan-v1 packet.
+		Long: `Build a deterministic diff from an edit-plan-v1 or edit-plan-v2 packet.
 Dry-run is the default. File writes require both --apply and
 --experimental-apply, a clean git workspace, safe paths, and matching hashes.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -484,8 +484,8 @@ Dry-run is the default. File writes require both --apply and
 			return state.executeOperation(cmd, "nav.edit-plan", payload, true)
 		},
 	}
-	editPlanCommand.Flags().BoolVar(&editPlanStdin, "stdin", false, "Read an edit-plan-v1 packet from stdin")
-	editPlanCommand.Flags().StringVar(&editPlanPacket, "packet", "", "Read an edit-plan-v1 packet from a JSON file")
+	editPlanCommand.Flags().BoolVar(&editPlanStdin, "stdin", false, "Read an edit-plan-v1/v2 packet from stdin")
+	editPlanCommand.Flags().StringVar(&editPlanPacket, "packet", "", "Read an edit-plan-v1/v2 packet from a JSON file")
 	editPlanCommand.Flags().BoolVar(&editPlanStrict, "strict", false, "Reject unknown packet fields and require target hashes")
 	editPlanCommand.Flags().BoolVar(&editPlanIncludeContent, "include-content", false, "Include target content evidence in the response")
 	editPlanCommand.Flags().BoolVar(&editPlanApply, "apply", false, "Write the generated diff to files when all guardrails pass")

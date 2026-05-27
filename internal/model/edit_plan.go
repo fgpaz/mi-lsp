@@ -1,6 +1,10 @@
 package model
 
-const EditPlanVersion = "edit-plan-v1"
+const (
+	EditPlanVersionV1 = "edit-plan-v1"
+	EditPlanVersionV2 = "edit-plan-v2"
+	EditPlanVersion   = EditPlanVersionV1
+)
 
 type EditPlanRequest struct {
 	Version     string              `json:"version"`
@@ -14,6 +18,7 @@ type EditPlanRequest struct {
 type EditPlanTarget struct {
 	ID           string          `json:"id"`
 	Path         string          `json:"path"`
+	Language     string          `json:"language,omitempty"`
 	Range        EditPlanRange   `json:"range"`
 	ExpectedHash string          `json:"expected_hash,omitempty"`
 	Symbol       *EditPlanSymbol `json:"symbol,omitempty"`
@@ -27,6 +32,7 @@ type EditPlanRange struct {
 type EditPlanSymbol struct {
 	Name      string `json:"name,omitempty"`
 	Kind      string `json:"kind,omitempty"`
+	Receiver  string `json:"receiver,omitempty"`
 	Signature string `json:"signature,omitempty"`
 }
 
@@ -37,6 +43,8 @@ type EditPlanOperation struct {
 	Find            string `json:"find,omitempty"`
 	Replace         string `json:"replace,omitempty"`
 	Content         string `json:"content,omitempty"`
+	ImportPath      string `json:"import_path,omitempty"`
+	ImportAlias     string `json:"import_alias,omitempty"`
 	MaxReplacements int    `json:"max_replacements,omitempty"`
 }
 

@@ -6,6 +6,7 @@ implements:
   - internal/model/edit_plan.go
   - internal/service/app.go
   - internal/service/edit_plan.go
+  - internal/service/edit_plan_go_ast.go
 tests:
   - internal/cli/nav_test.go
   - internal/service/edit_plan_test.go
@@ -47,6 +48,8 @@ evidence:
 
 Exponer `mi-lsp nav edit-plan` como superficie agent-first para convertir un packet declarativo en un diff determinista. El comando debe ser dry-run por default y solo puede escribir archivos cuando el usuario pasa explicitamente `--apply --experimental-apply`.
 
+La superficie acepta `edit-plan-v1` textual y `edit-plan-v2` multi-lenguaje. En esta ola `edit-plan-v2` implementa backend AST solo para Go; C#, TypeScript y Python se reconocen como lenguajes validos pero devuelven `language_not_supported` para operaciones AST, con sugerencia accionable hacia `edit-plan-v1` textual o backends futuros.
+
 ## Actor principal
 
 Skill / Agente / CLI
@@ -65,8 +68,8 @@ TP-QRY
 
 ## Entradas
 
-- `--stdin`: lee un packet JSON `edit-plan-v1` desde stdin.
-- `--packet <file>`: lee un packet JSON `edit-plan-v1` desde archivo.
+- `--stdin`: lee un packet JSON `edit-plan-v1` o `edit-plan-v2` desde stdin.
+- `--packet <file>`: lee un packet JSON `edit-plan-v1` o `edit-plan-v2` desde archivo.
 - `--strict`: rechaza campos desconocidos y requiere hashes.
 - `--include-content`: incluye evidencia de contenido del target.
 - `--apply`: solicita escritura de archivos.
@@ -94,7 +97,10 @@ Si el diff/evidencia supera presupuesto, debe devolver `truncated=true` y `next_
 - Apply puede escribir archivos con temp file + replace por archivo; no puede stagear, commitear, formatear, renombrar, chmod, borrar directorios ni tocar `.git/**`, `.mi-lsp/**`, binarios o `.docs/wiki/_mi-lsp/read-model.toml`.
 - Si una escritura falla, debe intentar restaurar bytes previos de archivos ya tocados y devolver evidencia de rollback via error/guardrail.
 - `replace_regex_limited` requiere `max_replacements` y no permite regex multilinea.
-- No se implementa AST en esta version.
+- `edit-plan-v2` agrega `targets[].language` (`go|csharp|typescript|python`, inferible por extension cuando falta), `targets[].symbol.receiver` y operaciones estructurales language-aware.
+- En esta version las operaciones AST implementadas son solo Go: `replace_go_function`, `replace_go_function_body`, `insert_go_function_after`, `ensure_go_import` y `remove_go_import`.
+- Para `csharp`, `typescript` y `python`, cualquier operacion AST v2 debe fallar antes de generar diff con error accionable `language_not_supported`.
+- `edit-plan-v1` conserva las operaciones textuales y debe seguir funcionando sobre fixtures Go, C#, TypeScript y Python.
 
 ## Data model
 
@@ -112,6 +118,8 @@ Si el diff/evidencia supera presupuesto, debe devolver `truncated=true` y `next_
 - `QRY_EDIT_PLAN_OVERLAP`
 - `QRY_EDIT_PLAN_APPLY_REQUIRES_EXPERIMENTAL`
 - `QRY_EDIT_PLAN_DIRTY_GIT`
+- `QRY_EDIT_PLAN_LANGUAGE_NOT_SUPPORTED`
+- `QRY_EDIT_PLAN_INVALID_GO_AST`
 
 ## Trazabilidad de tests
 
@@ -123,10 +131,20 @@ Si el diff/evidencia supera presupuesto, debe devolver `truncated=true` y `next_
 - Negativo: `TP-QRY / TC-QRY-123`
 - Negativo: `TP-QRY / TC-QRY-124`
 - Negativo: `TP-QRY / TC-QRY-125`
+- Positivo: `TP-QRY / TC-QRY-126`
+- Positivo: `TP-QRY / TC-QRY-127`
+- Positivo: `TP-QRY / TC-QRY-128`
+- Positivo: `TP-QRY / TC-QRY-129`
+- Positivo: `TP-QRY / TC-QRY-130`
+- Negativo: `TP-QRY / TC-QRY-131`
+- Negativo: `TP-QRY / TC-QRY-132`
+- Negativo: `TP-QRY / TC-QRY-133`
+- Positivo: `TP-QRY / TC-QRY-134`
 
 ## Fuera de alcance
 
-- Ediciones AST-aware.
+- Backends AST reales para C#, TypeScript y Python.
+- Ediciones AST fuera de Go.
 - Staging o commit automatico.
-- Formateo automatico.
+- Formateo externo automatico.
 - Creacion, renombre, chmod o borrado de archivos/directorios.

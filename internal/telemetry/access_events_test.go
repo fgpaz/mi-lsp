@@ -145,6 +145,7 @@ func TestClassifyErrorInfo_DetectsEditPlanErrors(t *testing.T) {
 		{name: "unsafe path", message: "target target-main: path denied by .git/**", code: "qry_edit_plan_unsafe_path"},
 		{name: "hash mismatch", message: "target target-main: expected_hash mismatch", code: "qry_edit_plan_hash_mismatch"},
 		{name: "overlap", message: "operation op-b overlaps target range already used by operation op-a", code: "qry_edit_plan_overlap"},
+		{name: "language not supported", message: `operation op: language_not_supported: AST backend for language "python" is not implemented`, code: "qry_edit_plan_language_not_supported"},
 		{name: "experimental", message: "--apply requires --experimental-apply", code: "qry_edit_plan_apply_requires_experimental"},
 		{name: "dirty git", message: "apply requires a clean git workspace; commit or stash changes first", code: "qry_edit_plan_dirty_git"},
 	}

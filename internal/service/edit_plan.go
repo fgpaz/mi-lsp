@@ -84,7 +84,12 @@ func (a *App) editPlan(ctx context.Context, request model.CommandRequest) (model
 		return model.Envelope{}, err
 	}
 	fileStates := editPlanInitialFileStates(targets)
-	operationResults, err := applyEditPlanInMemory(&packet, targets, fileStates)
+	var operationResults []model.EditPlanOperationResult
+	if editPlanVersion(&packet) == model.EditPlanVersionV2 {
+		operationResults, err = applyEditPlanV2InMemory(&packet, targets, fileStates)
+	} else {
+		operationResults, err = applyEditPlanInMemory(&packet, targets, fileStates)
+	}
 	if err != nil {
 		return model.Envelope{}, err
 	}
@@ -168,8 +173,12 @@ func parseEditPlanPacket(packetText string, strict bool) (model.EditPlanRequest,
 }
 
 func validateEditPlanPacket(root string, packet *model.EditPlanRequest, strict bool, applyRequested bool, includeContent bool) (map[string]editPlanResolvedTarget, []model.EditPlanGuardrail, []model.EditPlanEvidence, error) {
-	if strings.TrimSpace(packet.Version) != model.EditPlanVersion {
-		return nil, nil, nil, fmt.Errorf("unsupported edit-plan version %q; expected %q", packet.Version, model.EditPlanVersion)
+	version := editPlanVersion(packet)
+	switch version {
+	case model.EditPlanVersionV1, model.EditPlanVersionV2:
+		packet.Version = version
+	default:
+		return nil, nil, nil, fmt.Errorf("unsupported edit-plan version %q; expected %q or %q", packet.Version, model.EditPlanVersionV1, model.EditPlanVersionV2)
 	}
 	if len(packet.Targets) == 0 {
 		return nil, nil, nil, errors.New("edit-plan requires at least one target")
@@ -186,6 +195,9 @@ func validateEditPlanPacket(root string, packet *model.EditPlanRequest, strict b
 		{Code: "dry_run_default", Status: "active", Message: "dry-run is the default; writes require --apply --experimental-apply"},
 		{Code: "no_stage_commit_format", Status: "active", Message: "edit-plan never stages, commits, formats, renames, chmods, or deletes directories"},
 		{Code: "path_denylist", Status: "active", Message: "blocked paths include .git/**, .mi-lsp/**, read-model.toml, binaries, and configured deny_paths"},
+	}
+	if version == model.EditPlanVersionV2 {
+		guardrails = append(guardrails, model.EditPlanGuardrail{Code: "go_ast_only", Status: "active", Message: "edit-plan-v2 implements Go AST operations only; C#, TypeScript, and Python return language_not_supported"})
 	}
 	if applyRequested {
 		guardrails = append(guardrails, model.EditPlanGuardrail{Code: "apply_clean_git", Status: "active", Message: "apply requires a clean git workspace and revalidated hashes"})
@@ -225,6 +237,18 @@ func validateEditPlanPacket(root string, packet *model.EditPlanRequest, strict b
 		if isEditPlanBinaryPath(relPath, before) {
 			return nil, nil, nil, fmt.Errorf("target %s: binary files are blocked", id)
 		}
+		if version == model.EditPlanVersionV2 {
+			language, err := normalizeEditPlanTargetLanguage(target.Language, relPath)
+			if err != nil {
+				return nil, nil, nil, fmt.Errorf("target %s: %w", id, err)
+			}
+			target.Language = language
+			packet.Targets[i].Language = language
+			if target.Range.StartLine <= 0 && target.Range.EndLine <= 0 {
+				target.Range.StartLine = 1
+				packet.Targets[i].Range.StartLine = 1
+			}
+		}
 		start, end, lineCount, err := editPlanLineRangeOffsets(before, target.Range.StartLine, target.Range.EndLine)
 		if err != nil {
 			return nil, nil, nil, fmt.Errorf("target %s: %w", id, err)
@@ -243,6 +267,7 @@ func validateEditPlanPacket(root string, packet *model.EditPlanRequest, strict b
 		} else if !editPlanHashMatches(expectedHash, actualHash) {
 			return nil, nil, nil, fmt.Errorf("target %s: expected_hash mismatch", id)
 		}
+		packet.Targets[i] = target
 		resolved := editPlanResolvedTarget{
 			Target:     target,
 			RelPath:    relPath,
@@ -284,10 +309,11 @@ func validateEditPlanPacket(root string, packet *model.EditPlanRequest, strict b
 		if _, ok := targets[targetID]; !ok {
 			return nil, nil, nil, fmt.Errorf("operation %s: unknown target_id %q", id, targetID)
 		}
-		if err := validateEditPlanOperation(operation); err != nil {
+		target := targets[targetID]
+		if err := validateEditPlanOperation(operation, version, target); err != nil {
 			return nil, nil, nil, fmt.Errorf("operation %s: %w", id, err)
 		}
-		if editPlanOperationUsesWholeRange(operation.Kind) {
+		if version == model.EditPlanVersionV1 && editPlanOperationUsesWholeRange(operation.Kind) {
 			if previous := rangeOperationByTarget[targetID]; previous != "" {
 				return nil, nil, nil, fmt.Errorf("operation %s overlaps target range already used by operation %s", id, previous)
 			}
@@ -295,6 +321,41 @@ func validateEditPlanPacket(root string, packet *model.EditPlanRequest, strict b
 		}
 	}
 	return targets, guardrails, evidence, nil
+}
+
+func editPlanVersion(packet *model.EditPlanRequest) string {
+	return strings.TrimSpace(packet.Version)
+}
+
+func normalizeEditPlanTargetLanguage(language string, relPath string) (string, error) {
+	language = strings.ToLower(strings.TrimSpace(language))
+	switch language {
+	case "":
+		switch strings.ToLower(filepath.Ext(relPath)) {
+		case ".go":
+			language = "go"
+		case ".cs":
+			language = "csharp"
+		case ".ts", ".tsx", ".js", ".jsx":
+			language = "typescript"
+		case ".py":
+			language = "python"
+		default:
+			return "", fmt.Errorf("language is required for edit-plan-v2 target %q", relPath)
+		}
+	case "cs":
+		language = "csharp"
+	case "ts", "tsx", "javascript", "js", "jsx":
+		language = "typescript"
+	case "py":
+		language = "python"
+	}
+	switch language {
+	case "go", "csharp", "typescript", "python":
+		return language, nil
+	default:
+		return "", fmt.Errorf("unsupported target language %q", language)
+	}
 }
 
 func editPlanDenyPaths(configured []string) []string {
@@ -383,7 +444,10 @@ func isEditPlanBinaryPath(relPath string, content []byte) bool {
 	return bytes.IndexByte(content, 0) >= 0
 }
 
-func validateEditPlanOperation(operation model.EditPlanOperation) error {
+func validateEditPlanOperation(operation model.EditPlanOperation, version string, target editPlanResolvedTarget) error {
+	if version == model.EditPlanVersionV2 {
+		return validateEditPlanV2Operation(operation, target)
+	}
 	switch operation.Kind {
 	case "replace_literal":
 		if operation.Find == "" {
@@ -411,6 +475,35 @@ func validateEditPlanOperation(operation model.EditPlanOperation) error {
 		return fmt.Errorf("unsupported operation kind %q", operation.Kind)
 	}
 	return nil
+}
+
+func validateEditPlanV2Operation(operation model.EditPlanOperation, target editPlanResolvedTarget) error {
+	if target.Target.Language != "go" {
+		return fmt.Errorf("language_not_supported: AST backend for language %q is not implemented; use edit-plan-v1 textual operations or a future backend", target.Target.Language)
+	}
+	switch operation.Kind {
+	case "replace_go_function", "replace_go_function_body", "insert_go_function_after":
+		if target.Target.Symbol == nil || strings.TrimSpace(target.Target.Symbol.Name) == "" {
+			return errors.New("symbol.name is required for Go function operations")
+		}
+		if strings.TrimSpace(operation.Content) == "" {
+			return errors.New("content is required")
+		}
+	case "ensure_go_import", "remove_go_import":
+		if editPlanOperationImportPath(operation) == "" {
+			return errors.New("import_path or content is required")
+		}
+	default:
+		return fmt.Errorf("unsupported edit-plan-v2 operation kind %q", operation.Kind)
+	}
+	return nil
+}
+
+func editPlanOperationImportPath(operation model.EditPlanOperation) string {
+	if trimmed := strings.TrimSpace(operation.ImportPath); trimmed != "" {
+		return trimmed
+	}
+	return strings.TrimSpace(operation.Content)
 }
 
 func editPlanOperationUsesWholeRange(kind string) bool {
