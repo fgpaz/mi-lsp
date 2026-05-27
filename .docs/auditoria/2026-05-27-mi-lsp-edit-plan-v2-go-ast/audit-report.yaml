@@ -1,0 +1,93 @@
+task_slug: 2026-05-27-mi-lsp-edit-plan-v2-go-ast
+audit_skill: ps-auditar-trazabilidad
+audit_verdict: Approved
+session_contract_review:
+  path: .docs/auditoria/2026-05-27-mi-lsp-edit-plan-v2-go-ast/session-contract.yaml
+  verdict: PASS
+  branch: codex/mi-lsp-edit-plan-v2-go-ast
+  worktree_path: C:\repos\mios\mi-lsp-edit-plan-v2-go-ast
+  base_sha: 3bd4680f8611862d6f0e8645a7190906871e3ca1
+traceability_packet_review:
+  path: .docs/auditoria/2026-05-27-mi-lsp-edit-plan-v2-go-ast/traceability-closure.yaml
+  verdict: PASS
+scope_audit:
+  verdict: PASS
+  forbidden_hits: []
+  allowed_path_drift: []
+  raw_docs_note: "Plan docs under .docs/raw/plans are allowed by the session contract; durable closure evidence is under .docs/auditoria."
+governance_audit:
+  verdict: PASS
+  governance_command: "go run ./cmd/mi-lsp nav governance --workspace . --format toon"
+  governance_result: "blocked=false, sync=in_sync, index_sync=current"
+  harness_command: "go run ./cmd/mi-lsp nav wiki validate-harness --workspace . --format toon"
+  harness_result: "harness_verdict=PASS after docs-only reindex"
+trace_chain_audit:
+  verdict: PASS
+  chain:
+    - 00_gobierno_documental
+    - FL-QRY-01
+    - RF-QRY-018
+    - CT-NAV-EDIT-PLAN
+    - TP-QRY
+  docs_reviewed:
+    - .docs/wiki/04_RF/RF-QRY-018.md
+    - .docs/wiki/06_matriz_pruebas_RF.md
+    - .docs/wiki/06_pruebas/TP-QRY.md
+    - .docs/wiki/07_baseline_tecnica.md
+    - .docs/wiki/09_contratos/CT-NAV-EDIT-PLAN.md
+    - .docs/wiki/09_contratos_tecnicos.md
+technical_drift_audit:
+  verdict: PASS
+  runtime_sensitive: true
+  code_evidence:
+    - internal/model/edit_plan.go
+    - internal/service/edit_plan.go
+    - internal/service/edit_plan_go_ast.go
+    - internal/service/edit_plan_test.go
+    - internal/cli/nav.go
+    - internal/telemetry/access_events.go
+  checks:
+    - "edit-plan-v1 textual contract remains supported."
+    - "edit-plan-v2 Go AST backend is implemented through in-memory transforms and existing apply guardrails."
+    - "Non-Go v2 AST operations return language_not_supported and do not degrade to regex."
+    - "Public CLI help and telemetry classifier were synchronized."
+test_audit:
+  verdict: PASS
+  commands:
+    - "go test ./internal/model ./internal/service ./internal/cli ./internal/indexer ./internal/telemetry"
+    - "go test ./..."
+    - "Go AST dogfood dry-run/apply fixture + fixture go test ./..."
+    - "edit-plan-v1 C#/TypeScript/Python textual smoke"
+release_audit:
+  verdict: PASS
+  command: "./scripts/release/ae-release-binaries.ps1 -SkipWslInstall -SkipMirror"
+  local_install_sha256: 49539074bd5281186546ef093185763ab79ade8a77947ba3337b6351ece1b9bb
+findings: []
+non_blocking_notes:
+  - "Final local binary refresh must be repeated from local main after PR merge, because the current local install was produced from the temporary worktree."
+  - "Post-merge cleanup is not executed by this audit; it is approved as the next mutating completion phase."
+branch_worktree_audit:
+  verdict: PASS
+  current_worktree: C:\repos\mios\mi-lsp-edit-plan-v2-go-ast
+  same_scope_unknown_worktrees: []
+  branch_disposition: integrate-main
+  cleanup_policy: auto-after-successful-integration
+pre_push_readiness:
+  verdict: PASS_WITH_WAIVER
+  issue_or_card_waiver: "No external issue/card linked."
+  evidence_path: .docs/auditoria/2026-05-27-mi-lsp-edit-plan-v2-go-ast/traceability-closure.yaml
+  required_next_gate: "PR flow and post-merge main refresh; no direct push to main."
+post_audit_no_drift_gate:
+  expected_after_evidence_commit: "git status --short --branch is clean on codex/mi-lsp-edit-plan-v2-go-ast."
+automatic_cleanup_handoff:
+  verdict: approved
+  allowed_after_successful_integration:
+    - remove_worktree
+    - delete_local_branch
+    - delete_remote_branch
+  safety_conditions:
+    - "PR merged or branch otherwise integrated into origin/main."
+    - "Local main fast-forwarded to origin/main."
+    - "No open PR remains for the task branch."
+    - "Branch is not default/protected."
+final_verdict: Approved

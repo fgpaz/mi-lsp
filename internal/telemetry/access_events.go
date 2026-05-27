@@ -174,6 +174,8 @@ func ClassifyErrorInfo(backend string, errorText string, warnings []string) Erro
 		switch {
 		case strings.Contains(message, "invalid edit-plan packet json") || strings.Contains(message, "unsupported edit-plan version"):
 			return ErrorInfo{Kind: "validation", Code: "qry_edit_plan_invalid_packet"}
+		case strings.Contains(message, "language_not_supported"):
+			return ErrorInfo{Kind: "validation", Code: "qry_edit_plan_language_not_supported"}
 		case strings.Contains(message, "path denied") || strings.Contains(message, "outside workspace") || strings.Contains(message, "binary files are blocked") || strings.Contains(message, "symlink resolves outside"):
 			return ErrorInfo{Kind: "validation", Code: "qry_edit_plan_unsafe_path"}
 		case strings.Contains(message, "expected_hash mismatch") || strings.Contains(message, "hash changed before apply"):

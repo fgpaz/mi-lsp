@@ -201,3 +201,12 @@ evidence:
 | TC-QRY-123 | negativo | RF-QRY-018 | `TestEditPlanRejectsUnsafePackets/path traversal/read model/binary`: paths fuera del workspace, `read-model.toml` y binarios se bloquean |
 | TC-QRY-124 | negativo | RF-QRY-018 | `TestEditPlanRejectsUnsafePackets/regex needs limit`: `replace_regex_limited` sin `max_replacements` se rechaza |
 | TC-QRY-125 | negativo | RF-QRY-018 | `TestEditPlanRejectsUnsafePackets/overlapping range ops`: operaciones solapadas sobre el mismo target range se rechazan |
+| TC-QRY-126 | positivo | RF-QRY-018 | `TestEditPlanV2GoASTOperationsDryRunDoesNotWrite`: `edit-plan-v2` aplica en memoria operaciones Go AST (`replace_go_function`, `replace_go_function_body`, `insert_go_function_after`, `ensure_go_import`, `remove_go_import`) y no escribe en dry-run |
+| TC-QRY-127 | positivo | RF-QRY-018 | `TestEditPlanV2GoASTApplyWritesExpectedFile`: apply v2 Go requiere doble opt-in, git limpio y hashes esperados, y escribe solo el archivo target |
+| TC-QRY-128 | positivo | RF-QRY-018 | `TestEditPlanV1TextualCompatibilityForNonGoFixtures`: `edit-plan-v1` textual sigue funcionando sobre fixtures C#, TypeScript y Python |
+| TC-QRY-129 | negativo | RF-QRY-018 | `TestEditPlanV2RejectsUnsupportedLanguages`: operaciones AST v2 en C#, TypeScript y Python devuelven `language_not_supported` accionable |
+| TC-QRY-130 | negativo | RF-QRY-018 | `TestEditPlanV2RejectsMissingAmbiguousAndInvalidGo`: Go AST rechaza simbolo ausente, simbolo ambiguo y codigo Go invalido |
+| TC-QRY-131 | negativo | RF-QRY-018 | `TestEditPlanV2ApplyRequiresCleanGit`: apply v2 Go se bloquea cuando el workspace git esta dirty |
+| TC-QRY-132 | negativo | RF-QRY-018 | `TestEditPlanRejectsUnsafePackets`: los guardrails heredados de hashes, paths inseguros, binarios y read-model tambien aplican a packets v2 |
+| TC-QRY-133 | positivo | RF-QRY-018 | `go test ./internal/model ./internal/service ./internal/cli ./internal/indexer`: contrato v1/v2 compila y preserva dispatch directo sin daemon |
+| TC-QRY-134 | positivo | RF-QRY-018 | Dogfood temporal: `nav edit-plan --packet` dry-run y apply experimental sobre fixture Go real generan diff/aplican y luego pasan `go test ./...` |
