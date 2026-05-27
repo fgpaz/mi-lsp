@@ -6,12 +6,18 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	_ "modernc.org/sqlite"
 
 	"github.com/fgpaz/mi-lsp/internal/model"
 	"github.com/fgpaz/mi-lsp/internal/telemetry"
+)
+
+const (
+	telemetrySQLiteRetryAttempts = 4
+	telemetrySQLiteRetryDelay    = 25 * time.Millisecond
 )
 
 func daemonRootDir() (string, error) {
@@ -181,8 +187,47 @@ func (s *TelemetryStore) configureConnection() error {
 	return s.enableWALMode()
 }
 
+func retryTelemetrySQLite(fn func() error) error {
+	var err error
+	delay := telemetrySQLiteRetryDelay
+	for attempt := 0; attempt < telemetrySQLiteRetryAttempts; attempt++ {
+		err = fn()
+		if !isTelemetrySQLiteLocked(err) {
+			return err
+		}
+		if attempt == telemetrySQLiteRetryAttempts-1 {
+			break
+		}
+		time.Sleep(delay)
+		delay *= 2
+	}
+	return err
+}
+
+func isTelemetrySQLiteLocked(err error) bool {
+	if err == nil {
+		return false
+	}
+	message := strings.ToLower(strings.TrimSpace(err.Error()))
+	return strings.Contains(message, "database is locked") ||
+		strings.Contains(message, "database table is locked") ||
+		strings.Contains(message, "database is busy") ||
+		strings.Contains(message, "sqlite_busy") ||
+		strings.Contains(message, "sqlite_locked")
+}
+
+func (s *TelemetryStore) execWithRetry(query string, args ...any) (sql.Result, error) {
+	var result sql.Result
+	err := retryTelemetrySQLite(func() error {
+		var execErr error
+		result, execErr = s.db.Exec(query, args...)
+		return execErr
+	})
+	return result, err
+}
+
 func (s *TelemetryStore) PurgeOldEvents(olderThan time.Time) (int64, error) {
-	result, err := s.db.Exec(`DELETE FROM access_events WHERE occurred_at < ?`, olderThan.Unix())
+	result, err := s.execWithRetry(`DELETE FROM access_events WHERE occurred_at < ?`, olderThan.Unix())
 	if err != nil {
 		return 0, err
 	}
@@ -421,7 +466,7 @@ func (s *TelemetryStore) RecordAccessDirect(event model.AccessEvent) error {
 		}
 		warningsJSON = string(body)
 	}
-	_, err := s.db.Exec(
+	_, err := s.execWithRetry(
 		`INSERT INTO access_events(daemon_run_id, occurred_at, client_name, session_id, seq, workspace, workspace_input, workspace_root, workspace_alias, repo, operation, backend, route, format, token_budget, max_items, max_chars, compress, success, latency_ms, warnings_json, runtime_key, entrypoint_id, error_text, error_kind, error_code, truncated, result_count, warning_count, pattern_mode, routing_outcome, failure_stage, hint_code, truncation_reason, decision_json) VALUES (NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		normalized.OccurredAt.Unix(),
 		normalized.ClientName,
@@ -474,7 +519,7 @@ func (s *TelemetryStore) RecordAccess(runID int64, event model.AccessEvent) erro
 		}
 		warningsJSON = string(body)
 	}
-	_, err := s.db.Exec(
+	_, err := s.execWithRetry(
 		`INSERT INTO access_events(daemon_run_id, occurred_at, client_name, session_id, seq, workspace, workspace_input, workspace_root, workspace_alias, repo, operation, backend, route, format, token_budget, max_items, max_chars, compress, success, latency_ms, warnings_json, runtime_key, entrypoint_id, error_text, error_kind, error_code, truncated, result_count, warning_count, pattern_mode, routing_outcome, failure_stage, hint_code, truncation_reason, decision_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		runID,
 		normalized.OccurredAt.Unix(),

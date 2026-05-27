@@ -1,6 +1,12 @@
 package daemon
 
-import "testing"
+import (
+	"os"
+	"path/filepath"
+	"testing"
+
+	"github.com/fgpaz/mi-lsp/internal/model"
+)
 
 func TestFilterBenignDaemonLogNoiseDropsClosedConnectionHelpBlock(t *testing.T) {
 	lines := []LogTailLine{
@@ -19,5 +25,29 @@ func TestFilterBenignDaemonLogNoiseDropsClosedConnectionHelpBlock(t *testing.T) 
 	}
 	if filtered[0].Line != 1 || filtered[1].Line != 7 {
 		t.Fatalf("filtered lines = %#v, want original line 1 and 7", filtered)
+	}
+}
+
+func TestResolveDaemonLogPathUsesPersistedDaemonRoot(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+
+	daemonRoot := t.TempDir()
+	fallbackRoot := t.TempDir()
+	logPath := filepath.Join(daemonRoot, ".mi-lsp", "daemon.log")
+	if err := os.MkdirAll(filepath.Dir(logPath), 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	if err := os.WriteFile(logPath, []byte("daemon log\n"), 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	if err := saveDaemonState(model.DaemonState{RepoRoot: daemonRoot}); err != nil {
+		t.Fatalf("saveDaemonState: %v", err)
+	}
+
+	got := ResolveDaemonLogPath(fallbackRoot)
+	if got != logPath {
+		t.Fatalf("ResolveDaemonLogPath = %q, want %q", got, logPath)
 	}
 }

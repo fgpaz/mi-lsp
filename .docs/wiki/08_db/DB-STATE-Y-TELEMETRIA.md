@@ -172,7 +172,7 @@ Campos recomendados:
 - `admin export --summary` puede derivar `recommendations` desde agregados sanitizados y usage-doctor actions; no agrega columnas obligatorias nuevas y no persiste recomendaciones por fila
 - Los SLOs de memoria/proceso no se calculan desde `access_events`: salen de `daemon_process`, `runtime_snapshots` y `watchers` en status/admin
 - `index.db` repo-local debe inicializarse con `PRAGMA journal_mode=WAL` y `PRAGMA busy_timeout`
-- `daemon.db` debe abrirse con una conexion SQLite serializada (`SetMaxOpenConns(1)`), `busy_timeout`, `synchronous=NORMAL` y WAL para proteger escrituras append-heavy y exports concurrentes.
+- `daemon.db` debe abrirse con una conexion SQLite serializada (`SetMaxOpenConns(1)`), `busy_timeout`, `synchronous=NORMAL`, WAL y retry/backoff breve en escrituras para proteger escrituras append-heavy y exports concurrentes.
 - la escritura catalog/docs/file-symbols debe quedar serializada por workspace para que watcher e index manual no peleen la misma DB
 - Nota: columnas agregadas via migration idempotente (`ALTER TABLE ... ADD COLUMN`); rows existentes quedan con DEFAULT 0 o `NULL` segun el schema de origen
 - Lectores y exportadores deben usar lectura null-safe para columnas opcionales legacy (`repo`, `client_name`, `session_id`, `backend`, `runtime_key`, `entrypoint_id`, `error_text`, `workspace_root`, `workspace_alias`, `error_kind`, `error_code`)

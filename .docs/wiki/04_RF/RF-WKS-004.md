@@ -84,7 +84,7 @@ evidence:
 - El home AXI puede mostrar readiness barata (daemon/worker) pero no debe mutar runtime solo para renderizar el overview.
 - `workspace list` sin flags sigue preservando todos los aliases registrados.
 - `workspace list --group-by-root` solo agrega una vista diagnostica por root exacto; no deduplica ni modifica el registry.
-- `workspace doctor` es diagnostico no mutante para aliases duplicados, familias de worktrees, paths stale y shadowing de binario.
+- `workspace doctor` es diagnostico no mutante para aliases duplicados, familias de worktrees, paths stale, colisiones de paths Git que difieren solo por casing y shadowing de binario.
 - `workspace hygiene` es la superficie agent-first de higiene del registry: por default diagnostica sin mutar; con `--apply-safe` solo delega en la poda segura de aliases con root inexistente y limpia defaults invalidos. No borra directorios, worktrees, indices, ramas ni procesos.
 - `workspace prune --stale` conserva el contrato de limpieza puntual de registry: en dry-run no muta; con `--apply` remueve solo aliases con root inexistente y no toca archivos ni worktrees.
 
@@ -104,4 +104,4 @@ evidence:
 - TOON default en PersistentPreRunE: `internal/cli/root.go:103-106`
 - Mutual exclusion `--axi + --classic`: `internal/cli/root.go:101-103`
 - `--axi=false` hard disable: `internal/cli/axi_mode.go:65-69`
-- Cobertura de tests: TC-WKS-011, TC-WKS-012, TC-WKS-013, TC-WKS-016, TC-WKS-017, TC-WKS-018, TC-WKS-021, TC-WKS-022, TC-WKS-023, TC-WKS-024
+- Cobertura de tests: TC-WKS-011, TC-WKS-012, TC-WKS-013, TC-WKS-016, TC-WKS-017, TC-WKS-018, TC-WKS-021, TC-WKS-022, TC-WKS-023, TC-WKS-024, TC-WKS-031, TC-WKS-032, TC-WKS-034

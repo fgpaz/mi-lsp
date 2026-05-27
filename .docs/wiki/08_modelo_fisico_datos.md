@@ -99,7 +99,7 @@ La novedad de v1.3 es que el store repo-local persiste tambien el grafo document
 - `decision_json` existe para debugging causal local y debe permanecer sanitizado: sin `pattern` crudo, sin argv, sin snapshot completo del request y sin el texto/comandos completos del bloque `coach`.
 - `decision_json` puede incluir solo derivaciones de `continuation` y `memory_pointer` (`continuation_present`, `continuation_reason`, `continuation_op`, `memory_pointer_present`, `memory_stale`) y metadatos diagnosticos como `doc_ranker` / `intent_mode`; nunca `why`, `query`, `handoff` ni el contenido completo del snapshot repo-local.
 - `decision_json` puede incluir campos backend/fallback derivados (`requested_backend`, `result_backend`, `backend_fallback_taken`, `fallback_from`, `fallback_to`, `runtime_error_code`) para diagnostico de harnesses, pero nunca paths crudos, `slice_text`, errores raw de worker, query ni payload completo.
-- `daemon.db` usa WAL mode para manejar escrituras concurrentes (daemon + CLI directo).
+- `daemon.db` usa WAL mode, `busy_timeout` y retry/backoff breve en escrituras para manejar contencion transitoria entre daemon y CLI directo.
 - `.mi-lsp/index.db` repo-local tambien usa WAL mode + `busy_timeout`, y las escrituras se serializan por workspace para evitar contencion entre watcher e index manual.
 - Las lecturas documentales criticas (`ListDocRecords`, `FindDocRecordsBySourceID`, `ListDocSourceBlocks`, `ListDocSourceRecords`, FTS doc search y helpers relacionados) aplican retry/backoff breve ante `database is locked` / `SQLITE_BUSY`; si el lock persiste, el error sigue visible.
 - Ante corrupcion de `index.db`, el runtime debe cuarentenar el archivo previo y reconstruir uno nuevo en el mismo workspace.

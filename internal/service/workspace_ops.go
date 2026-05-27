@@ -149,6 +149,7 @@ func (a *App) workspaceDoctor() (model.Envelope, error) {
 	item := map[string]any{
 		"aliases_sharing_root": nonNilRootGroups(report.AliasesSharingRoot),
 		"worktree_families":    nonNilWorktreeFamilies(report.WorktreeFamilies),
+		"git_case_collisions":  nonNilGitCaseCollisions(report.GitCaseCollisions),
 		"stale_paths":          nonNilStalePaths(report.StalePaths),
 		"binary_shadowing":     nonNilBinaryCandidates(report.BinaryShadowing),
 		"health":               report.Health,
@@ -164,6 +165,9 @@ func (a *App) workspaceDoctor() (model.Envelope, error) {
 	}
 	if len(report.StalePaths) > 0 {
 		warnings = append(warnings, "registry contains stale workspace roots")
+	}
+	if len(report.GitCaseCollisions) > 0 {
+		warnings = append(warnings, "git tree contains case-insensitive path collisions; Windows worktrees may be incomplete")
 	}
 	if len(report.BinaryShadowing) > 1 {
 		warnings = append(warnings, "multiple mi-lsp binaries are visible on PATH")
@@ -323,6 +327,13 @@ func nonNilRootGroups(items []workspace.WorkspaceRootGroup) []workspace.Workspac
 func nonNilWorktreeFamilies(items []workspace.WorkspaceWorktreeFamily) []workspace.WorkspaceWorktreeFamily {
 	if items == nil {
 		return []workspace.WorkspaceWorktreeFamily{}
+	}
+	return items
+}
+
+func nonNilGitCaseCollisions(items []workspace.GitCaseCollision) []workspace.GitCaseCollision {
+	if items == nil {
+		return []workspace.GitCaseCollision{}
 	}
 	return items
 }
