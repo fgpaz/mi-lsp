@@ -33,9 +33,6 @@ stop_if:
   - policy_projection_drift=true
 evidence:
   - .docs/wiki/ae/AE-PROJECTION-POLICY.md
-  - AGENTS.md
-  - CLAUDE.md
-  - PATHS.md
 ```
 
 ## Projection Contract
