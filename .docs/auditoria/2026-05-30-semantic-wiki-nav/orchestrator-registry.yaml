@@ -1,47 +1,43 @@
 schema: ae-orchestrator-registry-v1
 session: 2026-05-30-semantic-wiki-nav
 recursion_depth: v0_shadow
+status: closed
 orchestrators:
   - id: director-ae
     role: meta_orchestrator
     level: 1
     harness: claude-code
-    owns:
-      - decision_lock
-      - session_contract
-      - ledger_maintenance
-      - subagent/worker dispatch via Workflow
-      - final_verdict
-    owned_paths: ["(verifies, does not exclusively own code paths)"]
-    state: active
+    owns: [decision_lock, session_contract, ledger_maintenance, dispatch, verification, final_verdict]
+    state: done
     evidence_dir: .docs/auditoria/2026-05-30-semantic-wiki-nav/
     parent: null
-    verdict: pending
+    verdict: PASS
   - id: explore-lane
     role: read_only_exploration
     level: 2
-    state: planned
-    owns: ["read-only Go code exploration via Workflow agents"]
-    owned_paths: ["read-only"]
-    evidence_dir: .docs/auditoria/2026-05-30-semantic-wiki-nav/exploration/
+    state: done
+    detail: "Workflow wf_248d2e19 (5 Explore agents) -> exploration-findings.md"
     parent: director-ae
-    verdict: pending
+    verdict: PASS
   - id: implement-lane
     role: specialized_implementation
     level: 2
-    state: planned
-    owns: ["additive Go code in cmd/ and internal/ per locked plan"]
-    owned_paths: ["cmd/**", "internal/**", "testdata/**"]
-    evidence_dir: .docs/auditoria/2026-05-30-semantic-wiki-nav/implementation/
+    state: done
+    detail: "Wave0 workflow (embed+wikichunk), Wave1 agent (spine), Wave2 agent (tests). All verified by orchestrator (build/test/smoke). Orchestrator fixed Windows path-sep bug + direct routing found by real smoke."
     parent: director-ae
-    verdict: pending
+    verdict: PASS
+  - id: docs-lane
+    role: docs_sync
+    level: 2
+    state: done
+    detail: "Wave4 workflow (3 disjoint doc lanes). Orchestrator caught + repaired 6 RF-SEM harness blockers the lane mis-reported as pre-existing."
+    parent: director-ae
+    verdict: PASS
   - id: verify-lane
     role: verification
     level: 2
-    state: planned
-    owns: ["go test ./..., recall smoke, knowledge-wiki-without-governance check"]
-    owned_paths: ["read-only + test execution"]
-    evidence_dir: .docs/auditoria/2026-05-30-semantic-wiki-nav/verification/
+    state: done
+    detail: "go test ./... green; real tesla recall smoke; knowledge-wiki without governance; validate-harness/source PASS; governance not blocked."
     parent: director-ae
-    verdict: pending
-notes: "v0_shadow: two active levels (director + lanes). Third-level task orchestrators are shadow-only; record recursion_needed events instead of launching them."
+    verdict: PASS
+notes: "v0_shadow honored: 2 active levels (director + lanes), no level-3 task orchestrators launched. Independent orchestrator verification caught 2 defects (path-sep no-op, RF-SEM broken imports) that subagent self-reports missed — confirms the AE 'verify cited results before integrating' rule."

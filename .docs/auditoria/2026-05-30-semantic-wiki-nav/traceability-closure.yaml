@@ -1,0 +1,88 @@
+schema: ps-trazabilidad-closure-v1
+session_contract_path: .docs/auditoria/2026-05-30-semantic-wiki-nav/session-contract.yaml
+task_slug: semantic-wiki-nav
+base_ref: main
+base_sha: 7b1251c3b3091f73516a3c582318dfe9f9c0f207
+
+git_before:
+  branch: main
+  head: 7b1251c3b3091f73516a3c582318dfe9f9c0f207
+git_after:
+  branch: feat/semantic-wiki-nav
+  head: a5271a1051d8eea5a45ba1d207f175d2f7fe5c8d
+  upstream: none-yet
+  working_tree: clean
+  commits:
+    - f6db00a docs(plan): design + plan + AE session artifacts
+    - 46afdf9 feat(embed,wikichunk): pure-Go embeddings client + chunker
+    - 5b872b6 feat(nav): semantic recall + embeddings index hook + vector store
+    - e7047c2 fix(recall): Windows path-sep bug + direct routing + real-path test
+    - 002b300 docs(evidence): test + real tesla recall smoke evidence
+    - a5271a1 docs: README/CHANGELOG + wiki canon sync
+
+changed_paths:
+  code: ["internal/embed/*", "internal/wikichunk/*", "internal/model/types.go", "internal/store/{schema.go,queries_embeddings.go}", "internal/service/{recall.go,recall_test.go,app.go,index_jobs.go,workspace_ops.go}", "internal/cli/nav.go", "internal/output/formatter.go", "testdata/wiki-semantic/*"]
+  docs_canon: [".docs/wiki/03_FL.md", ".docs/wiki/04_RF.md", ".docs/wiki/04_RF/RF-SEM-00{1,2,3}.md", ".docs/wiki/06_matriz_pruebas_RF.md", ".docs/wiki/07_baseline_tecnica.md", ".docs/wiki/07_tech/TECH-SEMANTIC-RECALL.md", ".docs/wiki/08_modelo_fisico_datos.md", ".docs/wiki/08_db/DB-WIKI-EMBEDDINGS.md", ".docs/wiki/09_contratos_tecnicos.md", ".docs/wiki/09_contratos/CT-NAV-RECALL.md", "README.md", "CHANGELOG.md"]
+  raw_governed: [".docs/raw/plans/2026-05-30-semantic-wiki-nav*"]
+  audit: [".docs/auditoria/2026-05-30-semantic-wiki-nav/*"]
+  forbidden_hits: []   # verified: no worker-dotnet, read-model.toml, 00_gobierno, .env, dist, .git
+
+scope_verdict: PASS   # every changed path within session-contract allowed_paths; zero forbidden hits
+
+traceability_chains:
+  functional: "FL-SEM-01 -> RF-SEM-001/002/003 -> TP-SEM (06 matrix) -> tests (recall_test.go, embed/*_test.go, wikichunk/*_test.go)"
+  technical: "07_baseline_tecnica -> TECH-SEMANTIC-RECALL ; 08_modelo_fisico_datos -> DB-WIKI-EMBEDDINGS (wiki_chunk_embeddings) ; 09_contratos_tecnicos -> CT-NAV-RECALL (nav recall command + envelope)"
+  reviewed_anchors: ["FL-SEM-01", "RF-SEM-001", "RF-SEM-002", "RF-SEM-003", "TECH-SEMANTIC-RECALL", "DB-WIKI-EMBEDDINGS", "CT-NAV-RECALL", "TP-SEM"]
+  missing_anchors: []
+
+runtime_sensitive: true
+runtime_evidence:
+  - "go test ./... green (.docs/auditoria/.../go-test-final.txt, exit 0)"
+  - "real tesla bge-m3 smoke (.docs/auditoria/.../recall-smoke.txt): ES query 'como la fermentacion microbiana baja el pH' -> .docs/wiki/acidification.md § Biological acidification score 0.65; lexical nav search of same ES term = 0 matches (gap closed); ES logistics query -> logistica.md (discrimination)"
+  - "knowledge-wiki without 00_gobierno_documental.md indexed + recalled, not governance-blocked"
+  - "nav recall runs direct (no daemon dependency); offline -> lexical fallback path implemented"
+
+data_or_contract_sensitive: true
+data_contract_evidence:
+  - "New SQLite table wiki_chunk_embeddings documented in DB-WIKI-EMBEDDINGS + 08_modelo_fisico_datos (lazy CREATE IF NOT EXISTS, backward-compatible)."
+  - "New CLI contract nav recall documented in CT-NAV-RECALL + 09_contratos_tecnicos."
+  - "crear-capa-tecnica-wiki not invoked as a separate skill; technical detail docs (TECH/DB/CT) authored by the docs lane mirroring sibling canon (TECH-GOVERNANCE-PROFILES / DB-DOC-INDEX / CT-NAV-ASK). Consistency evidenced by validate-harness PASS + validate-source PASS."
+
+governance:
+  blocked: false
+  sync: in_sync
+  index_sync: current
+harness_verdict: PASS      # mi-lsp nav wiki validate-harness, 0 blockers (6 RF-SEM broken-import blockers found by independent check and repaired)
+wiki_source_verdict: PASS  # mi-lsp nav wiki validate-source, 0 blockers
+
+board_sync:
+  status: not_applicable
+  rationale: "No tracker card; user-directed prompt (.docs/raw/prompts/2026-05-30-semantic-wiki-navigation.md). Waiver recorded in session-contract."
+
+shared_skill_sync:
+  status: not_applicable
+  rationale: "No skill under C:/Users/fgpaz/.agents/skills was modified."
+
+release_distribution:
+  status: waived
+  rationale: "Binary-affecting (rebuilds mi-lsp) but no GitHub release/publish requested. Merge via PR; AE-RELEASE-DISTRIBUTION publish deferred. Waiver in session-contract (release-distribution-waiver)."
+
+pre_push_inputs:
+  issue_or_waiver: "waiver: user-directed prompt; release-distribution-waiver"
+  evidence_path: .docs/auditoria/2026-05-30-semantic-wiki-nav/
+  expected_scope: "additive semantic recall path (cmd/internal/docs/testdata)"
+  session_contract_path: .docs/auditoria/2026-05-30-semantic-wiki-nav/session-contract.yaml
+
+no_drift_snapshot:
+  commands: ["git status --short --branch", "go build ./...", "go test ./...", "nav wiki validate-harness", "nav wiki validate-source", "nav governance"]
+  result: "working tree clean; build exit 0; tests exit 0; harness PASS; source PASS; governance not blocked"
+
+branch_disposition: pr-open
+cleanup_policy: pr-open
+completion_handoff:
+  target: finishing-a-development-branch
+  disposition: "push feat/semantic-wiki-nav and open PR to main (repo rule: no direct push to main)"
+  blockers: none
+
+remaining_gaps: []
+final_verdict: APPROVED_FOR_CLOSURE   # pending ps-auditar-trazabilidad + pre-push-guard before push
