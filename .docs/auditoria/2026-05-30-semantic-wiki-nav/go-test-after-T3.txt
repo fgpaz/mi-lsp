@@ -1,0 +1,19 @@
+?   	github.com/fgpaz/mi-lsp/cmd/mi-lsp	[no test files]
+ok  	github.com/fgpaz/mi-lsp/internal/cli	(cached)
+ok  	github.com/fgpaz/mi-lsp/internal/daemon	2.949s
+ok  	github.com/fgpaz/mi-lsp/internal/docgraph	0.372s
+ok  	github.com/fgpaz/mi-lsp/internal/embed	(cached)
+ok  	github.com/fgpaz/mi-lsp/internal/indexer	0.487s
+ok  	github.com/fgpaz/mi-lsp/internal/model	(cached)
+ok  	github.com/fgpaz/mi-lsp/internal/nav	(cached)
+ok  	github.com/fgpaz/mi-lsp/internal/output	(cached)
+ok  	github.com/fgpaz/mi-lsp/internal/processutil	(cached)
+ok  	github.com/fgpaz/mi-lsp/internal/reentry	(cached)
+ok  	github.com/fgpaz/mi-lsp/internal/service	(cached)
+ok  	github.com/fgpaz/mi-lsp/internal/store	(cached)
+ok  	github.com/fgpaz/mi-lsp/internal/telemetry	(cached)
+ok  	github.com/fgpaz/mi-lsp/internal/wikichunk	(cached)
+ok  	github.com/fgpaz/mi-lsp/internal/wikisource	(cached)
+ok  	github.com/fgpaz/mi-lsp/internal/worker	(cached)
+ok  	github.com/fgpaz/mi-lsp/internal/workspace	(cached)
+TEST_EXIT=0
