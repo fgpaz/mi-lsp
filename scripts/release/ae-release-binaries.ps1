@@ -3,8 +3,8 @@ param(
     [string[]]$Rids = @('win-arm64', 'win-x64', 'linux-arm64', 'linux-x64'),
     [string]$OutDir = (Join-Path $PSScriptRoot '..\..\dist'),
     [string]$InstallDir = (Join-Path $HOME 'bin'),
-    [string]$WslUser = 'fgpaz',
-    [string[]]$WslInstallPaths = @('/home/fgpaz/.local/bin/mi-lsp', '/home/fgpaz/bin/mi-lsp'),
+    [string]$WslUser = '',
+    [string[]]$WslInstallPaths = @(),
     [string]$MirrorRoot = '',
     [string]$Tag = '',
     [string]$Remote = 'origin',
@@ -143,6 +143,34 @@ function Get-WslRid {
     }
 }
 
+function Get-WslUser {
+    $wsl = Get-WslCommandPath
+    if ([string]::IsNullOrWhiteSpace($wsl)) {
+        return $null
+    }
+    $userOutput = & $wsl sh -lc 'whoami' 2>$null
+    $exitCode = $LASTEXITCODE
+    $user = $userOutput | Select-Object -First 1
+    if ($exitCode -ne 0 -or [string]::IsNullOrWhiteSpace($user)) {
+        return $null
+    }
+    return $user.Trim()
+}
+
+function Get-WslHome {
+    $wsl = Get-WslCommandPath
+    if ([string]::IsNullOrWhiteSpace($wsl)) {
+        return $null
+    }
+    $homeOutput = & $wsl sh -lc 'printf "%s" "$HOME"' 2>$null
+    $exitCode = $LASTEXITCODE
+    $homeLine = $homeOutput | Select-Object -First 1
+    if ($exitCode -ne 0 -or [string]::IsNullOrWhiteSpace($homeLine)) {
+        return $null
+    }
+    return $homeLine.Trim()
+}
+
 foreach ($rid in $Rids) {
     if ($supportedRids -notcontains $rid) {
         throw "Unsupported RID '$rid'. Supported values: $($supportedRids -join ', ')."
@@ -243,11 +271,23 @@ else {
         $result.wsl_install = [pscustomobject]@{ skipped = $true; reason = "WSL RID '$wslRid' was not in requested RIDs." }
     }
     else {
+        $effectiveWslUser = $WslUser
+        if ([string]::IsNullOrWhiteSpace($effectiveWslUser)) {
+            $effectiveWslUser = Get-WslUser
+        }
+        $effectiveWslInstallPaths = $WslInstallPaths
+        if ($effectiveWslInstallPaths.Count -eq 0) {
+            $wslHome = Get-WslHome
+            if ([string]::IsNullOrWhiteSpace($wslHome)) {
+                throw 'WSL home could not be detected; pass -WslInstallPaths or use -SkipWslInstall.'
+            }
+            $effectiveWslInstallPaths = @("$wslHome/.local/bin/mi-lsp", "$wslHome/bin/mi-lsp")
+        }
         $linuxCli = Get-DistCliPath -Rid $wslRid
         $sourceWsl = ConvertTo-WslPath -Path $linuxCli
         $commands = New-Object System.Collections.Generic.List[string]
         $commands.Add('set -eu')
-        foreach ($target in $WslInstallPaths) {
+        foreach ($target in $effectiveWslInstallPaths) {
             $commands.Add("install -D -m 0755 $(Quote-Sh $sourceWsl) $(Quote-Sh $target)")
             $commands.Add("$(Quote-Sh $target) version --format compact >/dev/null")
             if (-not $SkipWorkerStatus) {
@@ -264,9 +304,9 @@ else {
         $result.wsl_install = [pscustomobject]@{
             skipped = $false
             rid = $wslRid
-            paths = $WslInstallPaths
+            paths = $effectiveWslInstallPaths
             source = $sourceWsl
-            user = $WslUser
+            user = $effectiveWslUser
         }
     }
 }

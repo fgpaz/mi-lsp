@@ -104,6 +104,8 @@ func inferTelemetryBackend(request model.CommandRequest) string {
 	switch request.Operation {
 	case "nav.search":
 		return "text"
+	case "nav.evidence.inventory":
+		return "evidence.inventory"
 	case "nav.edit-plan":
 		return "edit-plan"
 	case "nav.find", "nav.overview", "nav.outline", "nav.symbols":

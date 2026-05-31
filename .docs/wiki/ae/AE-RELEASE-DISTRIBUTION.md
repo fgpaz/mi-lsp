@@ -50,9 +50,11 @@ applies_when:
 required_targets:
   local_current_machine:
     windows_arm64: C:/Users/fgpaz/bin/mi-lsp.exe
-    wsl_linux_arm64:
-      - /home/fgpaz/.local/bin/mi-lsp
-      - /home/fgpaz/bin/mi-lsp
+    wsl_linux:
+      detection: "wsl sh -lc 'whoami; printf %s \"$HOME\"; uname -m'"
+      install_paths:
+        - "$HOME/.local/bin/mi-lsp"
+        - "$HOME/bin/mi-lsp"
   release_assets:
     - win-arm64
     - win-x64
@@ -87,5 +89,6 @@ evidence:
 `scripts/release/ae-release-binaries.ps1` is the maintained entrypoint for this gate. By default it builds all four RIDs and refreshes the current host install. On Windows it also refreshes the active WSL install when WSL is present and the matching Linux RID was built.
 
 The local install path must stop an existing `mi-lsp daemon` before replacing the executable and worker bundle, then retry copy/removal briefly to absorb Windows file-lock lag.
+WSL install defaults are detected from the active distro user and `$HOME`; pass `-WslInstallPaths` only when the target distro uses non-standard paths.
 
 Publishing is explicit. The script only pushes a tag when `-Publish -Tag <tag>` is passed, the worktree is clean, and the tag points at `HEAD`. The GitHub release workflow remains the public upload mechanism for release assets.

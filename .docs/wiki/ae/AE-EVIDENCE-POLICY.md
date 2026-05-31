@@ -71,6 +71,47 @@ evidence:
 
 For binary-affecting work, `ps-trazabilidad` must include the AE release evidence or an explicit waiver. `ps-auditar-trazabilidad` is required for cross-OS, release, worker bootstrap, or policy changes.
 
+## Evidence Inventory
+
+```toon
+doc_id: AE-EVIDENCE-POLICY
+block_id: AE-EVIDENCE-POLICY.inventory
+kind: policy
+source_of_truth: this
+surface: mi-lsp nav evidence inventory <query> --workspace <alias> --format toon
+purpose:
+  - choose cheapest safe reentry path before reading raw evidence
+  - distinguish canonical wiki from operational evidence
+inventoriable_evidence:
+  manifest: manifest.yaml|manifest.yml
+  verdict: verdict.md|verdict.yaml|verdict.yml
+  issues: issues.yaml|issues.yml
+  assertions: assertions.yaml|assertions.yml|assertions.json|assertions.md
+  turns: metadata_only
+  logs: metadata_only
+  screenshots: metadata_only
+  raw_prompts: historical_non_authoritative
+  raw_plans: historical_non_authoritative
+authority:
+  canonical_wiki: source_of_truth_for_decisions
+  evidence_not_canon: closure_or_handoff_evidence
+recommended_order:
+  - route
+  - manifest_verdict
+  - summary_assertions
+  - targeted_raw
+  - full_raw
+stop_if:
+  - evidence lives only in chat
+  - raw prompt/log/turn/screenshot content would be emitted by inventory
+  - .docs/raw is treated as canonical source
+verify:
+  - mi-lsp nav evidence inventory "AE evidence" --workspace mi-lsp --format toon
+evidence:
+  - .docs/wiki/ae/AE-EVIDENCE-POLICY.md
+  - .docs/auditoria/<YYYY-MM-DD>-<task-slug>/
+```
+
 ## Pre-Push Guard
 
 ```toon

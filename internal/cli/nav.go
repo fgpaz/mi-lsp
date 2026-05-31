@@ -579,8 +579,9 @@ Examples:
 	attachCatalogRepoFlag(intentCommand, &intentRepo)
 
 	wikiCommand := newNavWikiCommand(state)
+	evidenceCommand := newNavEvidenceCommand(state)
 
-	command.AddCommand(symbolsCommand, findCommand, refsCommand, overviewCommand, outlineCommand, askCommand, recallCommand, packCommand, routeCommand, wikiCommand, governanceCommand, serviceCommand, searchCommand, contextCommand, depsCommand, multiReadCommand, batchCommand, relatedCommand, workspaceMapCommand, diffContextCommand, affectedCommand, editPlanCommand, traceCommand, intentCommand)
+	command.AddCommand(symbolsCommand, findCommand, refsCommand, overviewCommand, outlineCommand, askCommand, recallCommand, packCommand, routeCommand, wikiCommand, evidenceCommand, governanceCommand, serviceCommand, searchCommand, contextCommand, depsCommand, multiReadCommand, batchCommand, relatedCommand, workspaceMapCommand, diffContextCommand, affectedCommand, editPlanCommand, traceCommand, intentCommand)
 	return command
 }
 
@@ -851,5 +852,32 @@ Use --with-layer-counts to include per-layer documentation counts (RS, FL, RF, T
 	inventoryCommand.Flags().StringVar(&invWorkspace, "workspace", "", "Limit to a single workspace alias (only valid when --all-workspaces=false)")
 
 	command.AddCommand(searchCommand, routeCommand, packCommand, traceCommand, validateHarnessCommand, validateSourceCommand, inventoryCommand)
+	return command
+}
+
+func newNavEvidenceCommand(state *rootState) *cobra.Command {
+	command := &cobra.Command{
+		Use:   "evidence",
+		Short: "Inspect low-token evidence reentry surfaces",
+		Long: `Inspect operational evidence roots without dumping raw evidence.
+
+Use inventory to pick the cheapest safe canonical/evidence read path before
+loading large prompts, transcripts, logs, or screenshots.`,
+	}
+
+	inventoryCommand := &cobra.Command{
+		Use:     "inventory <query>",
+		Short:   "Preview evidence roots and recommended reentry path",
+		Example: `  mi-lsp nav evidence inventory "AE token budget evidence lifecycle" --workspace mi-lsp --format toon`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := requireArgs(args, 1, "query"); err != nil {
+				return err
+			}
+			query := strings.Join(args, " ")
+			return state.executeOperation(cmd, "nav.evidence.inventory", map[string]any{"query": query}, false)
+		},
+	}
+
+	command.AddCommand(inventoryCommand)
 	return command
 }

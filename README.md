@@ -120,6 +120,7 @@ mi-lsp nav pack "understand how this login flow works" --workspace myapp --full
 | Read the code around one line | `mi-lsp nav context path/to/file.cs 42 --workspace myapp --format compact` |
 | Search text and see the matching code | `mi-lsp nav search "billing retry" --include-content --workspace myapp` |
 | Find a wiki note by meaning (multilingual) | `mi-lsp nav recall "<query>" --workspace myapp` |
+| Choose the cheapest safe evidence reentry path | `mi-lsp nav evidence inventory "AE evidence lifecycle" --workspace myapp --format toon` |
 | Search symbols by intent | `mi-lsp nav intent "password reset frontend" --workspace myapp --repo web` |
 | Audit one backend/service path | `mi-lsp nav service src/backend/orders --workspace myapp --format compact` |
 | Read several files in one call | `mi-lsp nav multi-read file1.cs:1-80 file2.ts:20-80 --workspace myapp --format compact` |
@@ -177,6 +178,13 @@ The API key is populated via `mkey run` and injected as an environment variable 
 `tesla bge-m3` is the documented reference endpoint (1024-dim multilingual embeddings).
 The `knowledge-wiki` profile auto-detects when no formal governance exists, bypassing the spec-driven gate.
 Chunks are stored in repo-local `wiki_chunk_embeddings` table with incremental re-embedding by content hash.
+
+## Evidence Inventory For Agent Reentry
+
+Use `mi-lsp nav evidence inventory "<query>" --workspace myapp --format toon` before opening large audit folders or historical prompts.
+The preview returns canonical wiki anchors first, then metadata-only summaries for `.docs/auditoria`, `.docs/raw/prompts`, and `.docs/raw/plans`.
+It prefers `manifest.yaml`, `verdict.md`, `issues.yaml`, summaries, assertions, and hashes before raw turns, logs, screenshots, or prompt bodies.
+Heavy raw evidence is counted with file/byte/token estimates and omitted from content by default.
 
 ## Use With Claude Code, Codex, and Skill-Based Agents
 
