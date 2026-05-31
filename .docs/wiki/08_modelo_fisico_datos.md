@@ -60,6 +60,7 @@ La novedad de v1.3 es que el store repo-local persiste tambien el grafo document
   - `doc_mentions` con `doc_path`, `mention_type`, `mention_value`
   - `doc_source_blocks` con `doc_path`, `block_id`, `doc_id`, `kind`, `source_format`, `ordinal`, `start_line`, `end_line`, `content_hash`, `indexed_at`
   - `doc_source_records` con `doc_path`, `block_id`, `record_id`, `record_type`, `ordinal`, `start_line`, `end_line`, `content_hash`, `indexed_at`
+  - `wiki_chunk_embeddings` con `doc_path`, `chunk_id`, `content_hash`, `embedding` (BLOB float32 LE), `embedding_model`, `indexed_at`
   - `index_jobs` con `job_id`, `generation_id`, workspace, `mode`, `status`, `phase`, `current_stage`, `current_path`, `files_total`, `pid`, `requested_cancel`, `error`, contadores y timestamps
   - `index_generations` con `generation_id`, `job_id`, workspace, `mode`, `status`, contadores, `created_at`, `published_at` y `error`
   - `workspace_meta` con `workspace_kind`, `default_repo`, `default_entrypoint`, `doc_count`, `memory_snapshot_json`, `memory_snapshot_built_at`, `active_*_generation_id`
@@ -150,3 +151,4 @@ La novedad de v1.3 es que el store repo-local persiste tambien el grafo document
 - [DB-STATE-Y-TELEMETRIA.md](08_db/DB-STATE-Y-TELEMETRIA.md)
 - [DB-DOC-INDEX.md](08_db/DB-DOC-INDEX.md)
 - [DB-SYMBOL-EDGE-GRAPH.md](08_db/DB-SYMBOL-EDGE-GRAPH.md)
+- [DB-WIKI-EMBEDDINGS.md](08_db/DB-WIKI-EMBEDDINGS.md)
