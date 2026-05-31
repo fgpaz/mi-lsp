@@ -99,3 +99,43 @@ evidence:
 ## Phase Rule
 
 No functional work starts until `gateway`, `context_and_governance`, and `decision_lock` are satisfied or an explicit read-only/trivial waiver is recorded in the session contract.
+
+## Integration Rule
+
+```toon
+doc_id: AE-PHASES
+block_id: AE-PHASES.integration_rule
+kind: policy
+source_of_truth: this
+rule: auto_integrate_on_green_closure
+applies_when:
+  - cycle_produced_a_real_diff
+green_closure_gates:
+  - ps_trazabilidad_closure_packet_present
+  - ps_auditar_trazabilidad_verdict=APPROVED
+  - all_detected_drift_repaired
+  - pre_push_guard_green
+  - pr_ci_status_checks_green
+on_green:
+  - guarded_integration_into_origin_main_through_pr_flow
+  - no_separate_human_approval_required
+  - independent_review_satisfied_by: ps-auditar-trazabilidad
+  - if_branch_protection_requires_review_and_enforce_admins_false: admin_merge_allowed
+  - merge_command_example: "gh pr merge <n> --merge --admin --delete-branch"
+  - after_merge: delete_local_and_remote_task_branch_per_cleanup_policy
+hold_for_human_only_when:
+  - ps_auditar_trazabilidad_verdict in [BLOCKED]
+  - approved_with_follow_ups_that_need_a_human_decision
+  - a_waiver_is_required
+  - user_explicitly_requests_review
+stop_if:
+  - integration_attempted_while_any_green_closure_gate_is_red
+  - admin_merge_used_to_bypass_a_failing_ci_check
+verify:
+  - mi-lsp nav wiki validate-source --workspace mi-lsp --format toon
+evidence:
+  - .docs/wiki/ae/AE-PHASES.md
+  - .docs/auditoria/<YYYY-MM-DD>-<task-slug>/audit-verdict.yaml
+```
+
+The PR flow is the integration mechanism, not a human approval gate. When the green closure gates pass, the agent completes the merge itself (guarded, admin merge when branch protection requires the review that `ps-auditar-trazabilidad` already provides). A `BLOCKED` audit, a follow-up that needs a human decision, a required waiver, or an explicit user request to review are the only reasons to leave the PR open instead of integrating.

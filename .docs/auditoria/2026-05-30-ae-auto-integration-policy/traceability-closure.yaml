@@ -1,0 +1,42 @@
+schema: ps-trazabilidad-closure-v1
+session_contract_path: .docs/auditoria/2026-05-30-ae-auto-integration-policy/session-contract.yaml
+task_slug: ae-auto-integration-policy
+mode: canon_repair
+base_ref: main
+base_sha: 9112bf1
+
+changed_paths:
+  canon: [".docs/wiki/ae/AE-PHASES.md"]
+  projections: ["CLAUDE.md", "AGENTS.md"]
+  audit: [".docs/auditoria/2026-05-30-ae-auto-integration-policy/*"]
+  forbidden_hits: []   # no code, no read-model, no 00_gobierno
+
+scope_verdict: PASS
+
+traceability_chains:
+  policy: "AE-PHASES.integration_rule (canon, source of truth) -> CLAUDE.md + AGENTS.md (synchronized projections). Consistent with AE-PROJECTION-POLICY (projections derive from .docs/wiki/ae)."
+  consistency: "ae-programa skill already mandates guarded_integration_into_origin_main on green; this repo-local canon makes the auto-merge (incl. admin-merge under branch protection with enforce_admins=false) explicit and projects it."
+
+projection_sync:
+  claude_agents_identical_bullet: true   # diff = empty
+runtime_sensitive: false
+data_or_contract_sensitive: false
+rationale_not_applicable: "Documentation/policy-only canon repair. No code, schema, persistence, or runtime config changed."
+
+governance: { blocked: false, sync: in_sync, index_sync: current }
+harness_verdict: PASS
+wiki_source_verdict: PASS
+
+board_sync: { status: not_applicable, rationale: "no tracker card; user-directed policy clarification" }
+shared_skill_sync:
+  status: noted
+  detail: "AE canon + projections changed in-repo. The shared ae-programa skill (~/.agents/skills + buho mirror) already encodes guarded integration; not modified this task, so no source/mirror sync required."
+
+audit_verdict: APPROVED
+audit_findings: []
+no_drift_snapshot: "git status clean (audit files force-add pending, expected); harness PASS; source PASS; governance not blocked; projections synced"
+
+branch_disposition: integrate-main
+cleanup_policy: auto-after-successful-integration
+completion_handoff: "push chore/ae-auto-integration-policy, open PR, wait for CI green, then guarded admin-merge per the NEW rule this PR establishes (dogfood), delete branch"
+final_verdict: APPROVED_FOR_AUTO_INTEGRATION
