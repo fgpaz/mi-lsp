@@ -1,0 +1,51 @@
+schema: ae-session-contract-v1
+task_slug: ae-auto-integration-policy
+issue_or_waiver: "waiver: user-directed policy clarification (this session) — AE closure must auto-integrate on green gates without separate human approval"
+base_ref: main
+base_sha: 9112bf1
+branch: chore/ae-auto-integration-policy
+worktree_path: "C:/repos/mios/mi-lsp"
+
+ae_contract:
+  gateway_skill: ae-programa
+  selected_mode: canon_repair
+  decision_lock: locked
+  harness_adapter: claude-code
+  orchestration_depth: v0_shadow
+  ledgers_required: false   # single-author policy clarification, no recursion
+  runtime_target: { environment: local, volatility: stable, verification_policy: not_deployable }
+  stop_before_functional_work: [governance_blocked=true]
+
+intent: "Make explicit, in the AE canon (source of truth) and its CLAUDE.md/AGENTS.md projections, that once the AE closure gates pass (ps-trazabilidad packet + ps-auditar-trazabilidad APPROVED with drifts repaired + pre-push-guard green + PR CI green), the agent performs guarded auto-integration into origin/main via the PR flow WITHOUT a separate human approval. ps-auditar-trazabilidad is the independent review that satisfies branch-protection's review requirement; admin-merge is used when branch protection requires that review and enforce_admins=false. Human hold only on BLOCKED / Approved-with-follow-ups-needing-a-decision / waiver-needed / explicit user request."
+
+anchors:
+  ae_canon: [.docs/wiki/ae/AE-PHASES.md, .docs/wiki/ae/AE-PROJECTION-POLICY.md, .docs/wiki/ae/AE-EVIDENCE-POLICY.md]
+  projections: [CLAUDE.md, AGENTS.md]
+
+expected_scope: "Policy clarification: AE-PHASES integration rule + synchronized CLAUDE.md/AGENTS.md projection of the auto-integration-on-green rule."
+allowed_paths:
+  - ".docs/wiki/ae/AE-PHASES.md"
+  - "CLAUDE.md"
+  - "AGENTS.md"
+  - ".docs/auditoria/2026-05-30-ae-auto-integration-policy/**"
+forbidden_paths:
+  - ".git/**"
+  - ".mi-lsp/**"
+  - ".docs/wiki/_mi-lsp/read-model.toml"
+  - ".docs/wiki/00_gobierno_documental.md"
+  - "cmd/**"
+  - "internal/**"
+  - "worker-dotnet/**"
+
+required_evidence:
+  - "governance not blocked after change"
+  - "nav wiki validate-harness PASS (AE-PHASES still valid)"
+  - "CLAUDE.md and AGENTS.md remain synchronized"
+
+touched_linear_issues: []
+waivers:
+  - id: solo-author-policy-waiver
+    scope: "no separate brainstorming round / no ledgers"
+    reason: "User dictated the exact rule; canon_repair of a single integration clause. Decision already locked by the user instruction."
+branch_disposition: integrate-main
+cleanup_policy: auto-after-successful-integration

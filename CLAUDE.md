@@ -56,7 +56,7 @@ Escalation rules:
 - Spec-driven development is mandatory in ALL tasks.
 - `.docs/wiki/00_gobierno_documental.md` is the human governance authority.
 - `.docs/wiki/_mi-lsp/read-model.toml` is the versioned executable projection of `00`.
-- Do not push directly to `main`; create a branch, open a pull request, and merge through the PR flow unless the user explicitly asks to bypass that repository rule.
+- Do not push directly to `main`; create a branch and integrate through the PR flow. The PR flow is the integration mechanism, NOT a human-approval gate. Once the AE closure gates pass (`ps-trazabilidad` closure packet + `ps-auditar-trazabilidad` verdict `APPROVED` with all drift repaired + `scripts/ae/pre-push-guard.ps1` green + PR CI checks green), **auto-integrate the PR into `main`** via guarded merge without waiting for a separate human approval — `ps-auditar-trazabilidad` is the independent review. When branch protection requires a review and `enforce_admins=false`, complete it with an admin merge (`gh pr merge <n> --merge --admin --delete-branch`). Hold the PR open for a human only when the audit is `BLOCKED`, an `Approved with follow-ups` needs a human decision, a waiver is required, or the user explicitly asks to review. Never admin-merge over a failing CI check. Authority: `.docs/wiki/ae/AE-PHASES.md` (`AE-PHASES.integration_rule`).
 - Invalid, ambiguous, incomplete, or stale governance puts the repo in `blocked mode`.
 - In `blocked mode`, use `mi-lsp nav governance`, `$ps-asistente-wiki`, and `crear-gobierno-documental`; normal work must stop.
 - Run `$ps-auditar-trazabilidad` for large, risky, multi-module, or cross-layer changes.
