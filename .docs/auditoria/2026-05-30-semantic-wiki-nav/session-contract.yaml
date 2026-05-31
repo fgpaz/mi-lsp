@@ -1,0 +1,88 @@
+schema: ae-session-contract-v1
+task_slug: semantic-wiki-nav
+issue_or_waiver: "waiver: no tracker card; user-directed prompt .docs/raw/prompts/2026-05-30-semantic-wiki-navigation.md"
+base_ref: main
+base_sha: 7b1251c3b3091f73516a3c582318dfe9f9c0f207
+branch: feat/semantic-wiki-nav
+worktree_path: "C:/repos/mios/mi-lsp"
+
+ae_contract:
+  gateway_skill: ae-programa
+  selected_mode: orquestado_deterministico
+  decision_lock: locked   # all 7 decisions resolved at brainstorming gate (see decision-ledger.yaml)
+  harness_adapter: claude-code
+  orchestration_depth: v0_shadow     # 2 active levels; level-3 task orchestrators shadow-only
+  ledgers_required: true
+  runtime_target:
+    environment: local
+    volatility: stable
+    verification_policy: not_deployable   # CLI tool; closure = go test + local recall smoke
+  stop_before_functional_work:
+    - governance_blocked=true
+    - decision_lock unresolved after brainstorming gate
+    - existing go test ./... not green at baseline
+
+anchors:
+  prompt: .docs/raw/prompts/2026-05-30-semantic-wiki-navigation.md
+  ae_canon:
+    - .docs/wiki/ae/AE-PHASES.md
+    - .docs/wiki/ae/AE-SESSION-CONTRACT.md
+    - .docs/wiki/ae/AE-EVIDENCE-POLICY.md
+    - .docs/wiki/ae/AE-HARNESS-ORCHESTRATION.md
+  functional:
+    - .docs/wiki/01_alcance_funcional.md
+    - .docs/wiki/02_arquitectura.md
+    - .docs/wiki/03_FL.md
+    - .docs/wiki/04_RF.md
+  technical:
+    - .docs/wiki/07_baseline_tecnica.md
+    - .docs/wiki/08_modelo_fisico_datos.md
+    - .docs/wiki/09_contratos_tecnicos.md
+
+expected_scope: "Additive Go code path for semantic knowledge-wiki navigation: workspace embeddings config, markdown chunking, embeddings HTTP client, local vector store, nav recall command, knowledge-wiki profile, source-map generator, fixtures, docs sync."
+
+allowed_paths:
+  - "cmd/**"
+  - "internal/**"
+  - "docs/**"
+  - "README.md"
+  - "CHANGELOG.md"
+  - "testdata/**"
+  - ".docs/wiki/07_baseline_tecnica.md"
+  - ".docs/wiki/07_tech/**"
+  - ".docs/wiki/08_modelo_fisico_datos.md"
+  - ".docs/wiki/08_db/**"
+  - ".docs/wiki/09_contratos_tecnicos.md"
+  - ".docs/wiki/09_contratos/**"
+  - ".docs/wiki/ae/AE-RELEASE-DISTRIBUTION.md"
+  - ".docs/auditoria/2026-05-30-semantic-wiki-nav/**"
+  - "go.mod"
+  - "go.sum"
+
+forbidden_paths:
+  - ".git/**"
+  - ".mi-lsp/**"
+  - ".docs/wiki/_mi-lsp/read-model.toml"
+  - ".docs/wiki/00_gobierno_documental.md"
+  - ".env"
+  - ".env.*"
+  - "**/*.pem"
+  - "**/*.key"
+  - "**/*.pfx"
+  - "dist/**"
+  - "worker-dotnet/**"
+
+required_evidence:
+  - "go test ./... green (existing + new), captured under evidence dir"
+  - "nav recall smoke: ES query retrieves an EN note by meaning (real tesla bge-m3 or recorded mock)"
+  - "knowledge-wiki profile: index+recall work WITHOUT 00_gobierno_documental.md"
+  - "existing nav/index tests still green (additive, non-breaking)"
+
+touched_linear_issues: []
+ticket_frontier: "single self-contained implementation task; no child tracker cards"
+waivers:
+  - id: release-distribution-waiver
+    scope: "AE-RELEASE-DISTRIBUTION binary publish"
+    reason: "Code-only change merged via PR per repo rule; no GitHub release/publish requested by user. Binary refresh + ae-release-binaries.ps1 deferred unless user requests a release."
+branch_disposition: "merge feat/semantic-wiki-nav into main via PR, then delete branch"
+cleanup_policy: "remove feature branch after merge; no worktrees created; no scratch artifacts outside .docs/auditoria and testdata"

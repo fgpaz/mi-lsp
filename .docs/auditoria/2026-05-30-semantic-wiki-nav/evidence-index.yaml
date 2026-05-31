@@ -1,0 +1,24 @@
+schema: ae-evidence-index-v1
+session: 2026-05-30-semantic-wiki-nav
+status: closed
+durable_evidence_root: .docs/auditoria/2026-05-30-semantic-wiki-nav/
+artifacts:
+  - { path: daily-goals.yaml, kind: goal_seed, state: present }
+  - { path: session-contract.yaml, kind: session_contract, state: present }
+  - { path: orchestrator-registry.yaml, kind: ledger, state: present }
+  - { path: decision-ledger.yaml, kind: ledger, state: present }
+  - { path: recursion-learning-log.yaml, kind: ledger, state: present }
+  - { path: exploration/exploration-findings.md, kind: exploration, state: present }
+  - { path: go-test-baseline.txt, kind: test_evidence, state: present }
+  - { path: go-test-after-T3.txt, kind: test_evidence, state: present }
+  - { path: go-test-final.txt, kind: test_evidence, state: present }
+  - { path: recall-smoke.txt, kind: runtime_evidence, state: present }
+  - { path: traceability-closure.yaml, kind: closure_packet, state: present }
+  - { path: audit-verdict.yaml, kind: audit_verdict, state: present }
+verdicts:
+  go_test: "exit 0 (baseline + final)"
+  real_recall_smoke: "ES->EN score 0.65; lexical=0; discrimination ok"
+  validate_harness: PASS
+  validate_source: PASS
+  governance: not_blocked
+  audit: APPROVED

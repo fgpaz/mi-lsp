@@ -1,0 +1,18 @@
+schema: ae-recursion-learning-log-v1
+session: 2026-05-30-semantic-wiki-nav
+recursion_depth: v0_shadow
+recursion_needed_events: []
+learnings:
+  - id: L1-windows-sep-bug
+    severity: significant
+    found_by: orchestrator real-tesla smoke (not caught by unit/integration tests)
+    file: internal/service/recall.go
+    detail: "embedWorkspaceWiki filtered doc paths with strings.HasPrefix(docPath, \".docs\"+string(filepath.Separator)). On Windows filepath.Separator is backslash but doc_records store forward-slash paths, so the filter skipped ALL docs -> empty embeddings table, silent 16ms no-op index. Fix: drop the .docs-only filter (embed all indexed doc_records, more general for any knowledge wiki) or normalize with filepath.ToSlash and prefix '.docs/'."
+    classification: skill_improvement_required? no -> code bug fixed in this session
+  - id: L2-test-workaround
+    severity: moderate
+    found_by: orchestrator review of T4 recall_test.go
+    detail: "T4 agent added a workaround (if len(allEmbs)==0 { manually call embedWorkspaceWiki }) plus debug logging, masking the real index-hook bug. A passing test with a workaround hid the defect. Tests must exercise the real path; remove the workaround and debug scaffolding."
+  - id: L3-stale-daemon
+    severity: minor
+    detail: "Semantic CLI smoke against a freshly built binary routes to an already-running global daemon built from the OLD binary, returning 'unknown operation nav.recall'. For local smoke of new operations, stop the daemon (daemon stop) so direct execution runs the new code; --no-auto-daemon alone does not bypass an already-running daemon."

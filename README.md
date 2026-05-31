@@ -119,6 +119,7 @@ mi-lsp nav pack "understand how this login flow works" --workspace myapp --full
 | Understand one symbol deeply | `mi-lsp nav related MySymbol --workspace myapp --format compact` |
 | Read the code around one line | `mi-lsp nav context path/to/file.cs 42 --workspace myapp --format compact` |
 | Search text and see the matching code | `mi-lsp nav search "billing retry" --include-content --workspace myapp` |
+| Find a wiki note by meaning (multilingual) | `mi-lsp nav recall "<query>" --workspace myapp` |
 | Search symbols by intent | `mi-lsp nav intent "password reset frontend" --workspace myapp --repo web` |
 | Audit one backend/service path | `mi-lsp nav service src/backend/orders --workspace myapp --format compact` |
 | Read several files in one call | `mi-lsp nav multi-read file1.cs:1-80 file2.ts:20-80 --workspace myapp --format compact` |
@@ -151,6 +152,31 @@ The project can optionally add `.docs/wiki/_mi-lsp/read-model.toml` to teach `mi
 - generic fallback docs (`README*`, `docs/`, `.docs/`)
 
 That gives you a local, explainable answer instead of a black-box summary.
+
+## Semantic Recall Over Knowledge Wikis
+
+For repositories that have a markdown knowledge wiki but no formal `00_gobierno_documental.md`, use `mi-lsp nav recall` to embed a freeform query and rank wiki sections by semantic similarity.
+It works multilingually: a Spanish query will find matching English notes by meaning, not just text.
+Offline ⇒ lexical fallback: when embeddings service is unavailable, `recall` degrades gracefully to keyword search.
+
+The feature is gated by optional `[embeddings]` configuration in `.mi-lsp/project.toml`:
+
+```toml
+[embeddings]
+provider = "openai"
+base_url = "http://localhost:8000/v1"
+model = "bge-m3"
+dim = 1024
+api_key_env = "MI_LSP_EMBEDDINGS_API_KEY"
+profile = "knowledge-wiki"
+batch_size = 100
+timeout_ms = 30000
+```
+
+The API key is populated via `mkey run` and injected as an environment variable (`MI_LSP_EMBEDDINGS_API_KEY`), never committed to the repo.
+`tesla bge-m3` is the documented reference endpoint (1024-dim multilingual embeddings).
+The `knowledge-wiki` profile auto-detects when no formal governance exists, bypassing the spec-driven gate.
+Chunks are stored in repo-local `wiki_chunk_embeddings` table with incremental re-embedding by content hash.
 
 ## Use With Claude Code, Codex, and Skill-Based Agents
 
@@ -228,7 +254,7 @@ The daemon is a performance optimization, not a prerequisite for the CLI.
 ```text
 mi-lsp init [path] [--name <alias>] [--no-index]
 mi-lsp workspace add|remove|scan|list|warm|status
-mi-lsp nav ask|pack|symbols|find|refs|overview|outline|service|search|context|deps|multi-read|batch|related|workspace-map|diff-context
+mi-lsp nav ask|pack|symbols|find|refs|overview|outline|service|search|context|deps|multi-read|batch|related|workspace-map|diff-context|recall
 mi-lsp index [path] [--clean]
 mi-lsp info
 mi-lsp daemon start|stop|restart|status|logs
@@ -325,7 +351,6 @@ Out of scope for `v0.1.0`:
 - Authenticated governance UI
 - Additional languages beyond the current C#/TS/Python/Go catalog focus
 - Strong completeness scoring for services
-- Embeddings or remote semantic search services
 
 ## Documentation
 

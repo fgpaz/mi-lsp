@@ -53,6 +53,7 @@ El detalle operativo y de subsistemas vive en `07_tech/`.
 | Governance UI | HTTP loopback local | Runtime supervision | Estado, accesos, memoria y diagnostico |
 | File watcher (fsnotify) | Subsistema daemon | Pre-fetch | Re-indexa archivos modificados en background |
 | Agent acceleration CLI | Subsistema Go | Compound commands | `multi-read`, `batch`, `related`, `workspace-map`, `search --include-content`, `nav ask`, `nav pack`, `nav edit-plan` |
+| Semantic recall / embeddings backend | Subsistema Go | Query/runtime | semantic wiki recall via embeddings |
 | Store repo-local | SQLite | Workspace owner | Catalogo de codigo, indice documental y metadata del repo |
 | Index job runner | CLI + SQLite repo-local | Workspace owner | Jobs de indexacion `queued/running/published`, generacion de indice y cancelacion cooperativa |
 | Store global daemon | SQLite + state file | Runtime supervision | Estado global del daemon y telemetria local |
@@ -94,6 +95,9 @@ flowchart LR
 - Existe un unico daemon por usuario/host; no un daemon por workspace.
 - El daemon debe ser compartible entre Claude Code, Codex y subagentes del mismo usuario.
 - El daemon nunca es requisito funcional: toda consulta debe poder hacer fallback directo.
+- Vector store es puro-Go (sin CGO, sin `sqlite-vec`); escalable en memoria local; offline->lexical fallback.
+- `nav recall` es ungated y no requiere gobernanza valida ni index ready.
+- Embeddings pluggables: OpenAI-compatible, Tesla bge-m3, Azure; configurables via `[embeddings]` en `project.toml`.
 - AXI se resuelve por superficie en el borde del CLI: root, `init`, `workspace status`, `nav search`, `nav intent` y `nav pack` son AXI-default; `nav ask` solo lo es para preguntas claras de onboarding/orientacion.
 - `nav workspace-map` y el resto de la CLI conservan modo clasico por default; `--axi` o `MI_LSP_AXI=1` pueden forzar AXI sobre superficies soportadas.
 - `--classic` prevalece sobre defaults por superficie y sobre `MI_LSP_AXI=1`; `--axi` y `--classic` juntos son invalidos.
@@ -269,6 +273,7 @@ Los comandos `nav ask/search/find --all-workspaces` implementan un patrón de pa
 - [TECH-WIKI-AWARE-SEARCH.md](07_tech/TECH-WIKI-AWARE-SEARCH.md)
 - [TECH-GOVERNANCE-PROFILES.md](07_tech/TECH-GOVERNANCE-PROFILES.md)
 - [TECH-DOC-ROUTER.md](07_tech/TECH-DOC-ROUTER.md)
+- [TECH-SEMANTIC-RECALL.md](07_tech/TECH-SEMANTIC-RECALL.md)
 
 ## Change triggers
 
@@ -282,3 +287,4 @@ Actualizar `07` y/o `TECH-*` cuando cambie cualquiera de estos puntos:
 - backend semantico Python (Pyright)
 - estrategia de hardening de dependencias o bootstrap runtime
 - perfiles de exploracion docs-first o evidence-first como `nav ask` y `nav service`
+- embeddings backends, profiles, configuracion, migracion o recall contract

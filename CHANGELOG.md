@@ -7,6 +7,16 @@ and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2
 
 ## [Unreleased]
 
+### Added
+
+- `nav recall` command: semantic search over markdown knowledge wikis using pluggable OpenAI-compatible embeddings
+- `[embeddings]` config block in `.mi-lsp/project.toml`: provider, base_url, model, dim, api_key_env, profile, batch_size, timeout_ms
+- Reference embeddings backend: tesla bge-m3 (1024-dim multilingual)
+- `wiki_chunk_embeddings` repo-local SQLite BLOB table with incremental re-embedding by content hash
+- `knowledge-wiki` profile: auto-detected when no `00_gobierno_documental.md` exists, bypasses spec-driven governance gate
+- API key injection via `mkey run` and `MI_LSP_EMBEDDINGS_API_KEY` environment variable (never committed)
+- Offline ⇒ lexical fallback: when embeddings service is unavailable, `nav recall` degrades to keyword search
+
 ## [0.2.0] - 2026-03-31
 
 ### Added

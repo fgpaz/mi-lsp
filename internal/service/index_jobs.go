@@ -229,6 +229,15 @@ func (a *App) runIndexJob(ctx context.Context, registration model.WorkspaceRegis
 		if err := store.MarkIndexJobPhase(ctx, db, jobID, store.IndexJobPublishing, "publishing"); err != nil {
 			return err
 		}
+
+		// Post-publish: embed wiki chunks if applicable (for full/docs modes)
+		if job.Mode == store.IndexModeDocs || job.Mode == store.IndexModeFull {
+			embedWarnings := a.embedWorkspaceWiki(ctx, registration.Root)
+			if len(embedWarnings) > 0 {
+				result.Warnings = append(result.Warnings, embedWarnings...)
+			}
+		}
+
 		return store.MarkIndexJobSucceeded(ctx, db, jobID, result.Stats.Files, result.Stats.Symbols, result.Docs)
 	})
 	if err != nil {

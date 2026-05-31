@@ -1,0 +1,53 @@
+schema: ps-auditar-trazabilidad-verdict-v1
+session: 2026-05-30-semantic-wiki-nav
+audited_at: "2026-05-30"
+scope_audited: "Additive semantic knowledge-wiki navigation: embeddings backend, vector store, nav recall command, knowledge-wiki profile, source-map, docs canon."
+
+governance_findings:
+  - severity: none
+    detail: "governance_blocked=false, sync=in_sync, index_sync=current (verified post-change)."
+
+harness_findings:
+  - severity: none
+    detail: "nav wiki validate-harness = PASS, 0 blockers. NOTE: independent check caught 6 RF-SEM broken-import blockers introduced by the docs lane (kind=requirement + import [[FL-SEM-01]]); repaired to the sibling pattern (kind=support-doc, self-import). The docs lane's 'pre-existing/unrelated' claim was incorrect and was overridden by verification."
+wiki_source_findings:
+  - severity: none
+    detail: "nav wiki validate-source = PASS, 0 blockers."
+
+technical_drift:
+  docs_reviewed: ["07_baseline_tecnica", "07_tech/TECH-SEMANTIC-RECALL", "08_modelo_fisico_datos", "08_db/DB-WIKI-EMBEDDINGS", "09_contratos_tecnicos", "09_contratos/CT-NAV-RECALL"]
+  canon_vs_runtime: "Consistent. New wiki_chunk_embeddings table + nav recall command documented and match the implemented code; verified by go build/test + real recall smoke."
+  caller_callee: "n/a single-process CLI; recall reads repo-local SQLite + calls external OpenAI-compatible endpoint (tesla reference)."
+  verdict: no_blocking_drift
+
+runtime_evidence_reviewed:
+  - "go-test-final.txt: go test ./... exit 0 (all 17 packages ok)"
+  - "recall-smoke.txt: real tesla bge-m3; ES query -> EN note (score 0.65); lexical search of same ES term = 0; ES logistics query -> logistica.md"
+
+findings:
+  - severity: Low
+    title: "crear-capa-tecnica-wiki not invoked as a discrete skill"
+    detail: "TECH/DB/CT detail docs were authored by the docs lane mirroring sibling canon rather than via crear-capa-tecnica-wiki. Non-blocking: canon validates (harness+source PASS) and matches code. Follow-up optional."
+    blocking: false
+  - severity: Low
+    title: "AE-RELEASE-DISTRIBUTION publish deferred"
+    detail: "Change rebuilds the mi-lsp binary but no GitHub release/publish was requested. Waived in session-contract (release-distribution-waiver); install/release is a separate user-triggered step."
+    blocking: false
+
+session_contract_reviewed: true
+closure_packet_reviewed: true
+closure_packet_fresh: true   # git_after a5271a1 == current HEAD; no-drift snapshot consistent
+scope_verdict: PASS          # changed paths within allowed_paths; zero forbidden hits
+branch_worktree_inventory: "single worktree C:/repos/mios/mi-lsp on feat/semantic-wiki-nav; no other same-scope branches; main is clean base"
+unknown_same_scope_branches: none
+board_sync: not_applicable
+shared_skill_mirror: not_applicable
+post_audit_no_drift: "git status clean (.docs/auditoria force-add evidence pending commit, which is expected closure evidence)"
+
+branch_disposition: pr-open
+cleanup_policy: pr-open
+completion_handoff: "push feat/semantic-wiki-nav, open PR to main (repo rule: no direct push to main); after merge, delete feature branch"
+pre_push_required: true   # run scripts/ae/pre-push-guard.ps1 + repo PR flow before/at push
+
+final_verdict: APPROVED
+remediations_before_push: []

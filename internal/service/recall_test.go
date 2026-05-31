@@ -1,0 +1,425 @@
+package service
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"io"
+	"math"
+	"net/http"
+	"net/http/httptest"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	"github.com/fgpaz/mi-lsp/internal/model"
+	"github.com/fgpaz/mi-lsp/internal/store"
+	"github.com/fgpaz/mi-lsp/internal/workspace"
+)
+
+// buildVector creates a deterministic vector based on text concepts
+func buildVector(text string) []float32 {
+	dim := 8
+	v := make([]float32, dim)
+	lower := strings.ToLower(text)
+
+	// Axis 0: acidification concept (EN + ES)
+	if strings.Contains(lower, "acidif") || strings.Contains(lower, "ferment") ||
+		strings.Contains(lower, "acidificacion") || strings.Contains(lower, "fermentacion") ||
+		strings.Contains(lower, "biologica") {
+		v[0] = 0.9
+	} else {
+		v[0] = 0.1
+	}
+
+	// Axis 1: logistica/facturacion (distractor)
+	if strings.Contains(lower, "logistica") || strings.Contains(lower, "transporte") ||
+		strings.Contains(lower, "facturacion") || strings.Contains(lower, "factura") {
+		v[1] = 0.8
+	} else {
+		v[1] = 0.1
+	}
+
+	// Axis 2: biological concept
+	if strings.Contains(lower, "biologica") || strings.Contains(lower, "biological") {
+		v[2] = 0.7
+	} else {
+		v[2] = 0.2
+	}
+
+	// Remaining axes: low values or storage-specific
+	for i := 3; i < dim; i++ {
+		if strings.Contains(lower, "storage") || strings.Contains(lower, "almacen") {
+			v[i] = 0.3
+		} else {
+			v[i] = 0.15
+		}
+	}
+
+	// Normalize to unit vector
+	norm := float32(0.0)
+	for _, val := range v {
+		norm += val * val
+	}
+	norm = float32(math.Sqrt(float64(norm)))
+	if norm > 0 {
+		for i := range v {
+			v[i] /= norm
+		}
+	}
+
+	return v
+}
+
+// newFakeEmbeddings creates a deterministic httptest server for embeddings
+func newFakeEmbeddings(t *testing.T) *httptest.Server {
+	t.Helper()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			http.Error(w, "failed to read body", http.StatusBadRequest)
+			return
+		}
+		defer r.Body.Close()
+
+		var req map[string]any
+		if err := json.Unmarshal(body, &req); err != nil {
+			http.Error(w, "invalid json", http.StatusBadRequest)
+			return
+		}
+
+		var inputs []string
+		if input, ok := req["input"].(string); ok {
+			inputs = []string{input}
+		} else if inputArr, ok := req["input"].([]any); ok {
+			for _, item := range inputArr {
+				if s, ok := item.(string); ok {
+					inputs = append(inputs, s)
+				}
+			}
+		}
+
+		if len(inputs) == 0 {
+			http.Error(w, "no input provided", http.StatusBadRequest)
+			return
+		}
+
+		// Build embeddings response
+		var embeddings [][]float32
+		for _, input := range inputs {
+			embeddings = append(embeddings, buildVector(input))
+		}
+
+		resp := map[string]any{
+			"object": "list",
+			"data": func() []map[string]any {
+				var data []map[string]any
+				for i, emb := range embeddings {
+					data = append(data, map[string]any{
+						"object":    "embedding",
+						"embedding": emb,
+						"index":     i,
+					})
+				}
+				return data
+			}(),
+			"model": "fake",
+			"usage": map[string]any{
+				"prompt_tokens":     len(inputs),
+				"total_tokens":      len(inputs),
+				"completion_tokens": 0,
+			},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(resp)
+	}))
+
+	return server
+}
+
+// TestRecall_BilingualEStoEN tests that a Spanish query retrieves an English note by semantic meaning
+func TestRecall_BilingualEStoEN(t *testing.T) {
+	server := newFakeEmbeddings(t)
+	defer server.Close()
+
+	ensureWritableTestHome(t)
+	root := t.TempDir()
+
+	// Add project marker
+	writeWorkspaceFile(t, root, "go.mod", "module wiki-semantic-test\n\ngo 1.24\n")
+
+	// Create fixture notes
+	writeWorkspaceFile(t, root, ".docs/wiki/acidification.md", strings.Join([]string{
+		"# Acidification in Biological Systems",
+		"",
+		"This document describes acidification processes in microbial fermentation systems.",
+		"",
+		"## Biological acidification",
+		"",
+		"Acidification through microbial fermentation is a natural process where bacteria and fungi lower the pH of a medium by producing organic acids. Lactobacillus species are common acidifiers in fermented foods.",
+		"",
+		"## Storage",
+		"",
+		"Acidified foods should be stored in cool, dry conditions.",
+	}, "\n"))
+
+	writeWorkspaceFile(t, root, ".docs/wiki/otros.md", strings.Join([]string{
+		"# Otros Temas de Negocio",
+		"",
+		"## Logística de transporte",
+		"",
+		"La logística de transporte requiere planificación cuidadosa de rutas y horarios.",
+		"",
+		"## Facturación",
+		"",
+		"El proceso de facturación genera documentos legales.",
+	}, "\n"))
+
+	// Initialize workspace
+	alias := "wiki-semantic-" + filepath.Base(root)
+	app := New(root, nil)
+
+	initEnv, err := app.Execute(context.Background(), model.CommandRequest{
+		Operation: "workspace.init",
+		Context:   model.QueryOptions{},
+		Payload:   map[string]any{"path": root, "alias": alias, "no_index": true},
+	})
+	if err != nil {
+		t.Fatalf("workspace.init: %v", err)
+	}
+	if !initEnv.Ok {
+		t.Fatalf("workspace.init not ok")
+	}
+	defer func() { _ = workspace.RemoveWorkspace(alias) }()
+
+	// Update project with embeddings config
+	proj, err := workspace.LoadProjectFile(root)
+	if err != nil {
+		t.Fatalf("LoadProjectFile: %v", err)
+	}
+	proj.Embeddings = &model.EmbeddingsBlock{
+		Enabled:   true,
+		Provider:  "openai",
+		BaseURL:   server.URL,
+		Model:     "fake",
+		Dim:       8,
+		BatchSize: 4,
+		TimeoutMS: 5000,
+	}
+	if err := workspace.SaveProjectFile(root, proj); err != nil {
+		t.Fatalf("SaveProjectFile: %v", err)
+	}
+
+	// Index docs
+	indexEnv, err := app.Execute(context.Background(), model.CommandRequest{
+		Operation: "index.run",
+		Context:   model.QueryOptions{Workspace: alias},
+		Payload:   map[string]any{"docs_only": true},
+	})
+	if err != nil {
+		t.Fatalf("index.run: %v", err)
+	}
+	if !indexEnv.Ok {
+		t.Fatalf("index.run not ok")
+	}
+
+	// Exercise the REAL embedding path: this is exactly what the index job calls
+	// post-publish. With the fake deterministic server, embedWorkspaceWiki must chunk
+	// every indexed doc and populate wiki_chunk_embeddings. This guards the Windows
+	// path-separator regression where doc paths (forward-slash) were filtered with
+	// filepath.Separator and every doc was silently skipped.
+	if warns := app.embedWorkspaceWiki(context.Background(), root); len(warns) > 0 {
+		t.Fatalf("embedWorkspaceWiki returned warnings: %v", warns)
+	}
+
+	db, err := store.Open(root)
+	if err != nil {
+		t.Fatalf("store.Open: %v", err)
+	}
+	embs, err := store.AllWikiChunkEmbeddings(context.Background(), db)
+	db.Close()
+	if err != nil {
+		t.Fatalf("AllWikiChunkEmbeddings: %v", err)
+	}
+	if len(embs) == 0 {
+		t.Fatalf("embedWorkspaceWiki populated 0 embeddings; expected chunks from the indexed wiki notes (Windows path-separator regression?)")
+	}
+
+	// Now call recall with Spanish query
+	env, err := app.Execute(context.Background(), model.CommandRequest{
+		Operation: "nav.recall",
+		Context:   model.QueryOptions{Workspace: alias, MaxItems: 10},
+		Payload:   map[string]any{"query": "acidificacion biologica"},
+	})
+	if err != nil {
+		t.Fatalf("recall: %v", err)
+	}
+
+	if !env.Ok {
+		t.Fatalf("recall not ok")
+	}
+
+	results, ok := env.Items.([]model.RecallResult)
+	if !ok {
+		t.Fatalf("expected []RecallResult, got %T", env.Items)
+	}
+
+	if len(results) == 0 {
+		t.Fatalf("expected non-empty results for ES query")
+	}
+
+	// First result should be acidification note
+	topResult := results[0]
+	if !strings.HasSuffix(topResult.Archivo, "acidification.md") {
+		t.Fatalf("first result should be acidification.md, got %q", topResult.Archivo)
+	}
+
+	if !strings.Contains(strings.ToLower(topResult.Heading), "acidif") {
+		t.Fatalf("first result heading should contain 'acidif', got %q", topResult.Heading)
+	}
+
+	t.Logf("PASS: ES query ranked EN acidification note first (score=%.3f)", topResult.Score)
+}
+
+// TestRecall_KnowledgeWikiNoGovernance tests that knowledge-wiki without 00_gobierno_documental.md works
+func TestRecall_KnowledgeWikiNoGovernance(t *testing.T) {
+	server := newFakeEmbeddings(t)
+	defer server.Close()
+
+	ensureWritableTestHome(t)
+	root := t.TempDir()
+
+	writeWorkspaceFile(t, root, "go.mod", "module knowledge-wiki-test\n\ngo 1.24\n")
+	writeWorkspaceFile(t, root, ".docs/wiki/intro.md", "# Introduction\n\n## Overview\n\nTest content.\n")
+
+	writeWorkspaceFile(t, root, ".mi-lsp/project.toml", strings.Join([]string{
+		"[project]",
+		"name = \"knowledge-wiki-test\"",
+		"languages = [\"markdown\"]",
+		"kind = \"single\"",
+		"",
+		"[repo.main]",
+		"id = \"main\"",
+		"name = \"main\"",
+		"root = \".\"",
+		"",
+		"[embeddings]",
+		"enabled = true",
+		"provider = \"openai\"",
+		fmt.Sprintf("base_url = \"%s\"", server.URL),
+		"model = \"fake\"",
+		"dim = 8",
+	}, "\n"))
+
+	alias := "knowledge-wiki-" + filepath.Base(root)
+	app := New(root, nil)
+
+	initEnv, err := app.Execute(context.Background(), model.CommandRequest{
+		Operation: "workspace.init",
+		Context:   model.QueryOptions{},
+		Payload:   map[string]any{"path": root, "alias": alias},
+	})
+	if err != nil {
+		t.Fatalf("workspace.init: %v", err)
+	}
+	if !initEnv.Ok {
+		t.Fatalf("workspace.init not ok")
+	}
+	defer func() { _ = workspace.RemoveWorkspace(alias) }()
+
+	// Call recall (should succeed without governance block)
+	recallEnv, err := app.Execute(context.Background(), model.CommandRequest{
+		Operation: "nav.recall",
+		Context:   model.QueryOptions{Workspace: alias, MaxItems: 5},
+		Payload:   map[string]any{"query": "introduction"},
+	})
+	if err != nil {
+		t.Fatalf("recall: %v", err)
+	}
+
+	if !recallEnv.Ok {
+		t.Fatalf("recall not ok")
+	}
+
+	if !strings.Contains(recallEnv.Backend, "recall") {
+		t.Fatalf("unexpected backend: %q", recallEnv.Backend)
+	}
+
+	t.Logf("PASS: knowledge-wiki indexed and recalled without governance block")
+}
+
+// TestRecall_ConfigGatedWhenDisabled tests that recall returns hint when embeddings disabled
+func TestRecall_ConfigGatedWhenDisabled(t *testing.T) {
+	ensureWritableTestHome(t)
+	root := t.TempDir()
+
+	writeWorkspaceFile(t, root, "go.mod", "module no-embeddings-test\n\ngo 1.24\n")
+	writeWorkspaceFile(t, root, ".docs/wiki/test.md", "# Test\n\nContent.\n")
+
+	writeWorkspaceFile(t, root, ".mi-lsp/project.toml", strings.Join([]string{
+		"[project]",
+		"name = \"no-embeddings-test\"",
+		"languages = [\"markdown\"]",
+		"kind = \"single\"",
+		"",
+		"[repo.main]",
+		"id = \"main\"",
+		"name = \"main\"",
+		"root = \".\"",
+	}, "\n"))
+
+	alias := "no-embeddings-" + filepath.Base(root)
+	app := New(root, nil)
+
+	initEnv, err := app.Execute(context.Background(), model.CommandRequest{
+		Operation: "workspace.init",
+		Context:   model.QueryOptions{},
+		Payload:   map[string]any{"path": root, "alias": alias},
+	})
+	if err != nil {
+		t.Fatalf("workspace.init: %v", err)
+	}
+	if !initEnv.Ok {
+		t.Fatalf("workspace.init not ok")
+	}
+	defer func() { _ = workspace.RemoveWorkspace(alias) }()
+
+	// Call recall with embeddings disabled
+	recallEnv, err := app.Execute(context.Background(), model.CommandRequest{
+		Operation: "nav.recall",
+		Context:   model.QueryOptions{Workspace: alias},
+		Payload:   map[string]any{"query": "test"},
+	})
+	if err != nil {
+		t.Fatalf("recall: %v", err)
+	}
+
+	if !recallEnv.Ok {
+		t.Fatalf("recall not ok; expected ok=true when embeddings disabled")
+	}
+
+	results, ok := recallEnv.Items.([]model.RecallResult)
+	if !ok {
+		t.Fatalf("expected []RecallResult, got %T", recallEnv.Items)
+	}
+
+	if len(results) > 0 {
+		t.Fatalf("expected empty items when embeddings disabled, got %d", len(results))
+	}
+
+	if recallEnv.Hint == "" {
+		t.Fatalf("expected non-empty hint when embeddings disabled")
+	}
+
+	if !strings.Contains(recallEnv.Hint, "embeddings") {
+		t.Fatalf("hint should mention embeddings, got: %q", recallEnv.Hint)
+	}
+
+	t.Logf("PASS: recall with embeddings disabled returned ok=true, empty items, and hint")
+}

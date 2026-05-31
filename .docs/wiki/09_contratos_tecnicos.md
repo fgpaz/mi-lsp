@@ -69,6 +69,25 @@ El detalle por frontera vive en `09_contratos/`.
 - `nav context` pertenece a la CLI publica y su salida visible es slice-first; el backend profundo solo enriquece el mismo item.
 - `nav intent` pertenece a la CLI publica y expone `mode=docs|code`: en `docs` usa routing documental owner-aware; en `code` conserva el ranking BM25 sobre `search_text`. En workspaces `container`, `--repo` acota solo `mode=code`.
 
+## Configuracion de embeddings
+
+`[embeddings]` en `.mi-lsp/project.toml` habilita busqueda semantica:
+
+```toml
+[embeddings]
+provider = "openai"  # o "tesla", "azure-openai"
+base_url = "https://api.openai.com/v1"
+model = "text-embedding-3-large"
+dim = 1536
+api_key_env = "MI_LSP_EMBEDDINGS_API_KEY"
+profile = "knowledge-wiki"  # o "spec-driven"
+batch_size = 100
+timeout_ms = 30000
+```
+
+API key resuelta via `MI_LSP_EMBEDDINGS_API_KEY` environment variable (usualmente inyectada con `mkey run`).
+Sin configuracion, `nav recall` cae a busqueda lexical (FTS/ripgrep) con hint visible.
+
 ## Versionado, auth y errores
 
 - El proyecto usa compatibilidad best-effort intra-version; cambios incompatibles deben reflejar `protocol_version`.
@@ -145,10 +164,12 @@ El detalle por frontera vive en `09_contratos/`.
 - [CT-NAV-ROUTE.md](09_contratos/CT-NAV-ROUTE.md)
 - [CT-NAV-WIKI.md](09_contratos/CT-NAV-WIKI.md) — `search|route|pack|trace` con `--all-workspaces` e nuevo subcomando `inventory`
 - [CT-NAV-EDIT-PLAN.md](09_contratos/CT-NAV-EDIT-PLAN.md) - `nav edit-plan` con packet `edit-plan-v1/v2`, diff dry-run, Go AST y apply experimental
+- [CT-NAV-RECALL.md](09_contratos/CT-NAV-RECALL.md)
 
 ## Operaciones adicionales
 
 - `init [path] [--name alias] [--no-index]`: detecta, registra e indexa el workspace actual o el path pedido
+- `nav recall <query>`: busqueda semantica sobre wiki; ungated, cae a lexical si embeddings no disponibles; responde `RecallResult[]` con score, snippet, linea; backends `recall` o `recall+lexical`
 - `mi-lsp [--classic] [--axi] [--full]`: por default devuelve home content-first; `--classic` restaura help generica
 - `workspace.remove`: elimina un workspace registrado de `registry.toml`
 - `workspace hygiene [--apply-safe]`: diagnostica higiene agent-first del registry con `backend=registry-hygiene`; por default no muta y con `--apply-safe` solo remueve aliases stale/defaults invalidos mediante la logica segura existente. No borra directorios, worktrees, indices, ramas ni procesos.
@@ -264,3 +285,4 @@ Actualizar `09` y/o `CT-*` cuando cambie cualquiera de estos puntos:
 - protocolo con Roslyn worker o bridge con `tsserver` o `pyright`
 - politica de bootstrap, instalacion o compatibilidad del worker por RID
 - contrato explainable de `nav ask` o shortcut publico `init`
+- embeddings backends, profiles, configuracion, API key env, contrato recall

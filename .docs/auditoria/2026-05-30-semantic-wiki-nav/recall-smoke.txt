@@ -1,0 +1,13 @@
+=== REAL tesla bge-m3 smoke (knowledge-wiki, no 00_gobierno_documental.md) ===
+--- reindex (embeds .docs/wiki notes via tesla bge-m3) ---
+status succeeded | docs 2 | warnings None
+--- recall: Spanish query retrieving the English note by meaning ---
+ok True | backend recall | mode semantic
+  score=0.6509  .docs/wiki/acidification.md  |  Biological acidification
+  score=0.4946  .docs/wiki/acidification.md  |  Storage and aging
+  score=0.3595  .docs/wiki/acidification.md  |  Fermentation knowledge notes
+--- lexical gap: nav search ES term over EN note (expect 0) ---
+lexical nav search items: 0 | hint: 0 matches for "fermentacion microbiana acidificacion" in workspace recall-smoke
+--- recall discriminates: ES logistics query -> logistica.md ---
+  score=0.6460  .docs/wiki/logistica.md  |  Logística de transporte
+  score=0.5599  .docs/wiki/logistica.md  |  Facturación y cobranzas

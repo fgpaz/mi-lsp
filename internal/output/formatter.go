@@ -421,6 +421,19 @@ func compactItems(items any, compress bool) any {
 			})
 		}
 		return compact
+	case []model.RecallResult:
+		compact := make([]map[string]any, 0, len(typed))
+		for _, item := range typed {
+			compact = append(compact, map[string]any{
+				"arch": item.Archivo,
+				"h":    item.Heading,
+				"s":    item.Score,
+				"snip": item.Snippet,
+				"l":    item.StartLine,
+				"why":  item.Why,
+			})
+		}
+		return compact
 	case []model.GovernanceStatus:
 		compact := make([]map[string]any, 0, len(typed))
 		for _, item := range typed {
