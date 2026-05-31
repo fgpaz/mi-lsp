@@ -394,6 +394,19 @@ func (a *App) workspaceStatus(ctx context.Context, request model.CommandRequest)
 	item["governance_index_sync_details"] = governance.IndexSyncDetails
 	item["governance_blocked"] = governance.Blocked
 	item["governance_summary"] = governance.Summary
+
+	// Embeddings status
+	embeddingsEnabled := project.Embeddings != nil && project.Embeddings.Enabled
+	item["embeddings_enabled"] = embeddingsEnabled
+	recallProfile := "knowledge-wiki"
+	if governance.Profile != "" {
+		recallProfile = "spec-driven"
+	}
+	if project.Embeddings != nil && project.Embeddings.Profile != "" {
+		recallProfile = project.Embeddings.Profile
+	}
+	item["recall_profile"] = recallProfile
+
 	memory, memoryWarnings := a.statusMemory(ctx, registration, opts, autoSync, governance.Blocked)
 	db, err := openWorkspaceDB(registration, "workspace.status")
 	if err != nil {

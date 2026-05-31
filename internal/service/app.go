@@ -147,6 +147,8 @@ func (a *App) Execute(ctx context.Context, request model.CommandRequest) (model.
 		envelope, err = a.trace(ctx, request)
 	case "nav.intent":
 		envelope, err = a.intent(ctx, request)
+	case "nav.recall":
+		envelope, err = a.recall(ctx, request)
 	case "worker.install":
 		envelope, err = a.installWorker(request)
 	case "worker.status":

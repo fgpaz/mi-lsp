@@ -147,6 +147,24 @@ context retrieval, dependency analysis, and service exploration.`,
 	askCommand.Flags().BoolVar(&allWorkspacesAsk, "all-workspaces", false, "Search docs across all registered workspaces")
 	attachWikiCompatRepoFlag(askCommand, &askRepo)
 
+	var recallMap bool
+	recallCommand := &cobra.Command{
+		Use:   "recall <query>",
+		Short: "Semantic recall over markdown knowledge wiki (no governance gate)",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := requireArgs(args, 1, "query"); err != nil {
+				return err
+			}
+			query := strings.Join(args, " ")
+			payload := map[string]any{"query": query}
+			if recallMap {
+				payload["map"] = true
+			}
+			return state.executeOperation(cmd, "nav.recall", payload, true)
+		},
+	}
+	recallCommand.Flags().BoolVar(&recallMap, "map", false, "Group results into compact sub-topic map")
+
 	var packRF string
 	var packFL string
 	var packDoc string
@@ -560,7 +578,7 @@ Examples:
 
 	wikiCommand := newNavWikiCommand(state)
 
-	command.AddCommand(symbolsCommand, findCommand, refsCommand, overviewCommand, outlineCommand, askCommand, packCommand, routeCommand, wikiCommand, governanceCommand, serviceCommand, searchCommand, contextCommand, depsCommand, multiReadCommand, batchCommand, relatedCommand, workspaceMapCommand, diffContextCommand, affectedCommand, editPlanCommand, traceCommand, intentCommand)
+	command.AddCommand(symbolsCommand, findCommand, refsCommand, overviewCommand, outlineCommand, askCommand, recallCommand, packCommand, routeCommand, wikiCommand, governanceCommand, serviceCommand, searchCommand, contextCommand, depsCommand, multiReadCommand, batchCommand, relatedCommand, workspaceMapCommand, diffContextCommand, affectedCommand, editPlanCommand, traceCommand, intentCommand)
 	return command
 }
 

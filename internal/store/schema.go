@@ -186,8 +186,25 @@ CREATE TABLE IF NOT EXISTS index_generations (
 );
 `
 
+const wikiChunkEmbeddingsDDL = `
+CREATE TABLE IF NOT EXISTS wiki_chunk_embeddings (
+    doc_path        TEXT NOT NULL,
+    chunk_id        TEXT NOT NULL,
+    start_line      INTEGER NOT NULL,
+    end_line        INTEGER NOT NULL,
+    heading_text    TEXT,
+    snippet         TEXT,
+    content_hash    TEXT NOT NULL,
+    embedding       BLOB,
+    embedding_model TEXT,
+    embedding_dim   INTEGER,
+    indexed_at      INTEGER,
+    UNIQUE(doc_path, chunk_id)
+);
+`
+
 func EnsureSchema(db *sql.DB) error {
-	statements := []string{reposDDL, entrypointsDDL, symbolsDDL, filesDDL, docsDDL, docsFtsDDL, docEdgesDDL, docMentionsDDL, docSourceBlocksDDL, docSourceRecordsDDL, metaDDL, indexJobsDDL, indexGenerationsDDL}
+	statements := []string{reposDDL, entrypointsDDL, symbolsDDL, filesDDL, docsDDL, docsFtsDDL, docEdgesDDL, docMentionsDDL, docSourceBlocksDDL, docSourceRecordsDDL, metaDDL, indexJobsDDL, indexGenerationsDDL, wikiChunkEmbeddingsDDL}
 	for _, stmt := range statements {
 		if _, err := db.Exec(stmt); err != nil {
 			return err
@@ -269,6 +286,7 @@ END`,
 		{table: "doc_source_records", column: "record_id", statement: `CREATE INDEX IF NOT EXISTS idx_doc_source_records_record_id ON doc_source_records(record_id);`, required: true},
 		{table: "index_jobs", column: "workspace_root", statement: `CREATE INDEX IF NOT EXISTS idx_index_jobs_workspace_status ON index_jobs(workspace_root, status, updated_at);`, required: true},
 		{table: "index_generations", column: "workspace_root", statement: `CREATE INDEX IF NOT EXISTS idx_index_generations_workspace ON index_generations(workspace_root, status, published_at);`, required: true},
+		{table: "wiki_chunk_embeddings", column: "doc_path", statement: `CREATE INDEX IF NOT EXISTS idx_wiki_chunk_embeddings_doc ON wiki_chunk_embeddings(doc_path);`, required: false},
 	}
 	for _, index := range indexes {
 		hasColumn, err := tableHasColumn(db, index.table, index.column)

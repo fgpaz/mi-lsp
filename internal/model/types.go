@@ -588,11 +588,49 @@ type IgnoreBlock struct {
 	ExtraPatterns []string `toml:"extra_patterns"`
 }
 
+type EmbeddingsBlock struct {
+	Enabled   bool   `toml:"enabled" json:"enabled,omitempty"`
+	Provider  string `toml:"provider" json:"provider,omitempty"`
+	BaseURL   string `toml:"base_url" json:"base_url,omitempty"`
+	Model     string `toml:"model" json:"model,omitempty"`
+	Dim       int    `toml:"dim" json:"dim,omitempty"`
+	APIKeyEnv string `toml:"api_key_env" json:"api_key_env,omitempty"`
+	Profile   string `toml:"profile" json:"profile,omitempty"` // "" | "knowledge-wiki" | "spec-driven"
+	BatchSize int    `toml:"batch_size" json:"batch_size,omitempty"`
+	TimeoutMS int    `toml:"timeout_ms" json:"timeout_ms,omitempty"`
+}
+
+type WikiChunkEmbedding struct {
+	DocPath          string
+	ChunkID          string
+	Heading          string
+	Snippet          string
+	ContentHash      string
+	EmbeddingModel   string
+	StartLine        int
+	EndLine          int
+	EmbeddingDim     int
+	Embedding        []byte // little-endian float32
+	IndexedAt        int64
+}
+
+type RecallResult struct {
+	Query     string   `json:"query,omitempty"`
+	Archivo   string   `json:"archivo"`
+	Heading   string   `json:"heading,omitempty"`
+	Score     float64  `json:"score"`
+	Snippet   string   `json:"snippet,omitempty"`
+	StartLine int      `json:"start_line,omitempty"`
+	EndLine   int      `json:"end_line,omitempty"`
+	Why       []string `json:"why,omitempty"`
+}
+
 type ProjectFile struct {
 	Project     ProjectBlock          `toml:"project"`
 	Ignore      IgnoreBlock           `toml:"ignore"`
 	Repos       []WorkspaceRepo       `toml:"repo"`
 	Entrypoints []WorkspaceEntrypoint `toml:"entrypoint"`
+	Embeddings  *EmbeddingsBlock      `toml:"embeddings,omitempty" json:"embeddings,omitempty"`
 }
 
 type CommandRequest struct {
