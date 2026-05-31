@@ -160,7 +160,9 @@ context retrieval, dependency analysis, and service exploration.`,
 			if recallMap {
 				payload["map"] = true
 			}
-			return state.executeOperation(cmd, "nav.recall", payload, true)
+			// recall is a direct read (repo-local SQLite + embeddings endpoint); it does
+			// not need daemon warm state, so it never routes to / auto-starts the daemon.
+			return state.executeOperation(cmd, "nav.recall", payload, false)
 		},
 	}
 	recallCommand.Flags().BoolVar(&recallMap, "map", false, "Group results into compact sub-topic map")

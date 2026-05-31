@@ -74,16 +74,15 @@ func (a *App) embedWorkspaceWiki(ctx context.Context, root string) []string {
 	}
 	client := embed.New(cfg)
 
-	// Process each doc
+	// Process each doc. doc records are the markdown docs the indexer selected
+	// (any knowledge-wiki layout: .docs/wiki, .library, docs/, README, ...). We embed
+	// all of them. NOTE: doc.Path uses forward slashes; do not filter with
+	// filepath.Separator (that broke on Windows and skipped every doc).
 	for _, doc := range docs {
 		docPath := doc.Path
-		// Skip if not under .docs (only wiki docs)
-		if !strings.HasPrefix(docPath, ".docs"+string(filepath.Separator)) && docPath != ".docs" {
-			continue
-		}
 
 		// Read file
-		filePath := filepath.Join(root, docPath)
+		filePath := filepath.Join(root, filepath.FromSlash(docPath))
 		content, err := os.ReadFile(filePath)
 		if err != nil {
 			warnings = append(warnings, fmt.Sprintf("embeddings: failed to read %s: %v", docPath, err))
