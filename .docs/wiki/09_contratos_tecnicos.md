@@ -129,7 +129,7 @@ Sin configuracion, `nav recall` cae a busqueda lexical (FTS/ripgrep) con hint vi
 - `--axi=false` explicito anula el default AXI de la superficie actual; equivalente a `--classic` para esa invocacion.
 - `--axi` y `--classic` juntos deben fallar antes de ejecutar la operacion.
 - `worker status` debe conservar el mismo payload visible con y sin daemon; el daemon no puede reemplazar `items` por `RuntimeSnapshot`/`WorkerStatus` crudos.
-- `nav.find`, `nav.search`, `nav.intent`, `nav.symbols`, `nav.outline`, `nav.overview`, `nav.multi-read`, `nav.affected`, `nav.edit-plan` y `nav.workspace-map` summary-first pertenecen a la superficie publica directa: no deben esperar daemon ni cambiar de comportamiento por su health.
+- `nav.find`, `nav.search`, `nav.intent`, `nav.symbols`, `nav.outline`, `nav.overview`, `nav.multi-read`, `nav.affected`, `nav.edit-plan`, `nav.evidence.inventory` y `nav.workspace-map` summary-first pertenecen a la superficie publica directa: no deben esperar daemon ni cambiar de comportamiento por su health.
 - `nav.wiki.search`, `nav.wiki.route`, `nav.wiki.pack`, `nav.wiki.trace`, `nav.wiki.validate-harness` y `nav.wiki.validate-source` pertenecen a la superficie publica directa y no deben esperar daemon.
 - `nav.ask` tambien pertenece al hot path directo por default; la presencia del daemon no debe ser requisito para una primera respuesta docs-first util.
 - `index` puede degradar a full rebuild aun sin cambios git detectados cuando el runtime observa que `doc_records` no contiene docs canonicos pese a que la wiki existe en disco; el contrato visible no debe quedar en `no changes detected` en ese caso.
@@ -164,6 +164,7 @@ Sin configuracion, `nav recall` cae a busqueda lexical (FTS/ripgrep) con hint vi
 - [CT-NAV-ROUTE.md](09_contratos/CT-NAV-ROUTE.md)
 - [CT-NAV-WIKI.md](09_contratos/CT-NAV-WIKI.md) — `search|route|pack|trace` con `--all-workspaces` e nuevo subcomando `inventory`
 - [CT-NAV-EDIT-PLAN.md](09_contratos/CT-NAV-EDIT-PLAN.md) - `nav edit-plan` con packet `edit-plan-v1/v2`, diff dry-run, Go AST y apply experimental
+- [CT-NAV-EVIDENCE.md](09_contratos/CT-NAV-EVIDENCE.md) - `nav evidence inventory` metadata-only para reentry/evidencia AE
 - [CT-NAV-RECALL.md](09_contratos/CT-NAV-RECALL.md)
 
 ## Operaciones adicionales

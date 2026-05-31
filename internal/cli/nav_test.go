@@ -132,6 +132,26 @@ func TestNavCommandExposesWikiGroup(t *testing.T) {
 	}
 }
 
+func TestNavCommandExposesEvidenceInventory(t *testing.T) {
+	command := newNavCommand(&rootState{})
+
+	evidence, _, err := command.Find([]string{"evidence"})
+	if err != nil {
+		t.Fatalf("find evidence command: %v", err)
+	}
+	if evidence.Name() != "evidence" {
+		t.Fatalf("evidence command name = %q, want evidence", evidence.Name())
+	}
+
+	inventory, _, err := command.Find([]string{"evidence", "inventory"})
+	if err != nil {
+		t.Fatalf("find evidence inventory command: %v", err)
+	}
+	if inventory.Name() != "inventory" {
+		t.Fatalf("evidence subcommand name = %q, want inventory", inventory.Name())
+	}
+}
+
 func TestParseContextTargetAcceptsFileLineShorthand(t *testing.T) {
 	file, line, err := parseContextTarget([]string{"internal/service/context.go:42"})
 	if err != nil {

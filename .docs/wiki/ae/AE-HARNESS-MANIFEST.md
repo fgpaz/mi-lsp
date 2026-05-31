@@ -106,6 +106,8 @@ routes:
     next: AE-RELEASE-DISTRIBUTION
   - when: "closure evidence, traceability, or audit surface changes"
     next: AE-EVIDENCE-POLICY
+  - when: "a runner must choose between canon, manifest/verdict, summaries, or raw evidence"
+    next: "mi-lsp nav evidence inventory <query> --workspace <alias> --format toon"
   - when: "AGENTS.md or CLAUDE.md changes"
     next: ps-crear-agentsclaudemd
 verify:

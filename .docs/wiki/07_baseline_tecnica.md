@@ -52,7 +52,7 @@ El detalle operativo y de subsistemas vive en `07_tech/`.
 | Pyright semantic backend | Runtime opcional | Python semantic backend | Semantica Python via `pyright-langserver` |
 | Governance UI | HTTP loopback local | Runtime supervision | Estado, accesos, memoria y diagnostico |
 | File watcher (fsnotify) | Subsistema daemon | Pre-fetch | Re-indexa archivos modificados en background |
-| Agent acceleration CLI | Subsistema Go | Compound commands | `multi-read`, `batch`, `related`, `workspace-map`, `search --include-content`, `nav ask`, `nav pack`, `nav edit-plan` |
+| Agent acceleration CLI | Subsistema Go | Compound commands | `multi-read`, `batch`, `related`, `workspace-map`, `search --include-content`, `nav ask`, `nav pack`, `nav edit-plan`, `nav evidence inventory` |
 | Semantic recall / embeddings backend | Subsistema Go | Query/runtime | semantic wiki recall via embeddings |
 | Store repo-local | SQLite | Workspace owner | Catalogo de codigo, indice documental y metadata del repo |
 | Index job runner | CLI + SQLite repo-local | Workspace owner | Jobs de indexacion `queued/running/published`, generacion de indice y cancelacion cooperativa |
@@ -106,8 +106,9 @@ flowchart LR
 - En AXI efectivo, `--format` explicito gana; si no existe, las superficies cubiertas usan TOON como default.
 - En AXI efectivo, `--full` solo expande disclosure sobre superficies cubiertas; no cambia semantica ni routing de la operacion.
 - La version actual de AXI no instala hooks ni mantiene contexto ambiente persistente fuera del proceso CLI.
-- Las lecturas baratas de catalogo/texto (`nav.find`, `nav.search`, `nav.symbols`, `nav.outline`, `nav.overview`, `nav.multi-read`, `nav.edit-plan`) deben ejecutarse directas y no depender del health del daemon.
+- Las lecturas baratas de catalogo/texto/evidencia (`nav.find`, `nav.search`, `nav.symbols`, `nav.outline`, `nav.overview`, `nav.multi-read`, `nav.edit-plan`, `nav.evidence.inventory`) deben ejecutarse directas y no depender del health del daemon.
 - `nav edit-plan` es dry-run por default: genera diff determinista desde packets `edit-plan-v1` textual o `edit-plan-v2` multi-lenguaje y solo escribe archivos con `--apply --experimental-apply`, git limpio, hashes esperados, paths seguros y operaciones sin solapamiento. En esta baseline `edit-plan-v2` implementa AST solo para Go; C#, TypeScript y Python se reconocen pero devuelven `language_not_supported` para operaciones AST.
+- `nav evidence inventory` es metadata-only por default: resuelve anchor canonico wiki-first, inventaria `.docs/auditoria`/`.docs/raw` con conteos/bytes y recomienda `manifest_verdict` antes que evidencia raw. No emite cuerpos de prompts, turns, logs, screenshots, secretos, emails ni PHI.
 - `nav.ask` tambien usa el camino directo por default; el daemon no es el hot path obligatorio para respuestas docs-first.
 - `nav trace` sigue siendo una lectura directa del repo-local y debe resolver IDs `RS-*`, `RF-*` y `TP-*` desde `doc_records/doc_mentions`; para `RS-*` devuelve identidad documental (`doc_id`, `layer=RS`, `stage=outcome`) sin poblar el campo legacy `rf`, y para `RF-*` los docs TP del layer `06` cuentan como evidencia documental de cobertura y evitan falsos `missing` despues de `index --docs-only`.
 - Todo subprocesso no interactivo debe usar la politica comun de proceso; en Windows eso implica `HideWindow + CREATE_NO_WINDOW`, y los procesos background del daemon agregan `DETACHED_PROCESS`.
@@ -156,6 +157,7 @@ flowchart LR
 - `nav context` es slice-first: el core arma un bloque legible por lineas y luego superpone enriquecimiento semantico o de catalogo cuando exista.
 - `nav service` usa evidencia observable, no score fuerte de completitud; cuando el catalogo bajo el path es mayoritariamente Go, perfila `go-package`, evita scans .NET y detecta evidencia Go acotada (`net/http`, routers tipo chi/gin/fiber, Cobra y workers) filtrando falsos positivos obvios de tests, fixtures y literales string/raw.
 - `nav route` es la superficie publica de routing de bajo token: resuelve `anchor_doc + mini_pack_preview` con semantica fail-closed y canonical lane autoritativa. `nav ask` y `nav pack` reutilizan este motor internamente.
+- `nav evidence inventory` reutiliza el route core para no abrir evidence pesada antes de ubicar el anchor canonico; su detalle tecnico vive en `07_tech/TECH-EVIDENCE-INVENTORY.md`.
 - `nav.intent` es hibrido router-first: clasifica `mode=docs|code`, usa el scorer owner-aware en `docs` y conserva BM25 de simbolos en `code` sin mezclar ambos lanes en la misma lista.
 - Para harnesses/agentes, las consultas literal symbol-like deben seguir una escalera agent-first: `nav find --exact`, luego `nav related`, luego `nav context` con fallback `catalog`/`text --no-auto-daemon` si los backends semanticos son riesgosos. `nav search` queda disponible como evidencia textual, pero no debe ser el unico proximo paso cuando el input parece identificador de codigo.
 

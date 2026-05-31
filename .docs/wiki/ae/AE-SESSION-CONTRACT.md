@@ -100,3 +100,29 @@ evidence:
 ## Session Rule
 
 The session contract is the operational scope boundary. Chat memory, branch names, and plan prose do not override it.
+
+## Evidence Reentry Rule
+
+```toon
+doc_id: AE-SESSION-CONTRACT
+block_id: AE-SESSION-CONTRACT.evidence_reentry
+kind: policy
+source_of_truth: this
+optional_pre_closure_check: mi-lsp nav evidence inventory <task-or-evidence-query> --workspace <alias> --format toon
+use_when:
+  - required_evidence points at .docs/auditoria
+  - evidence roots may contain turns logs screenshots or raw prompts
+  - context budget is tight and the agent needs manifest-first guidance
+record_in_session_contract:
+  - required_evidence
+  - evidence_loading_profile
+  - context_loading_profile
+  - why_not_cheaper
+stop_if:
+  - inventory suggests full_raw without why_not_cheaper
+  - raw evidence would be loaded before manifest/verdict/summary paths
+verify:
+  - mi-lsp nav evidence inventory "<task>" --workspace <alias> --format toon
+evidence:
+  - .docs/auditoria/<YYYY-MM-DD>-<task-slug>/evidence-index.yaml
+```

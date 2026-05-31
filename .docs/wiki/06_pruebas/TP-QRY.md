@@ -210,3 +210,8 @@ evidence:
 | TC-QRY-132 | negativo | RF-QRY-018 | `TestEditPlanRejectsUnsafePackets`: los guardrails heredados de hashes, paths inseguros, binarios y read-model tambien aplican a packets v2 |
 | TC-QRY-133 | positivo | RF-QRY-018 | `go test ./internal/model ./internal/service ./internal/cli ./internal/indexer`: contrato v1/v2 compila y preserva dispatch directo sin daemon |
 | TC-QRY-134 | positivo | RF-QRY-018 | Dogfood temporal: `nav edit-plan --packet` dry-run y apply experimental sobre fixture Go real generan diff/aplican y luego pasan `go test ./...` |
+| TC-QRY-135 | positivo | RF-QRY-019 | `TestEvidenceInventoryPrefersManifestVerdictAndCountsHeavyArtifacts`: `nav evidence inventory` devuelve `backend=evidence.inventory`, ruta recomendada `manifest_verdict`, perfiles `CL1_EXACT/EL1_MANIFEST_VERDICT` y anchor canonico wiki |
+| TC-QRY-136 | positivo | RF-QRY-019 | `TestEvidenceInventoryPrefersManifestVerdictAndCountsHeavyArtifacts`: fixture `.docs/auditoria/**` prioriza `manifest.yaml`, `verdict.md`, `issues.yaml` y cuenta `turns`, `logs`, `screenshots` como metadata-only |
+| TC-QRY-137 | positivo | RF-QRY-019 | `TestNavCommandExposesEvidenceInventory` y `TestShouldUseDaemonPolicy/evidence inventory bypasses daemon`: CLI expone `nav evidence inventory` y preserva ejecucion directa sin daemon |
+| TC-QRY-138 | negativo | RF-QRY-019 | `TestEvidenceInventoryPrefersManifestVerdictAndCountsHeavyArtifacts`: prompts/logs/transcripts con secretos o PHI de fixture no aparecen en JSON ni TOON |
+| TC-QRY-139 | positivo | RF-QRY-019 | `go test ./internal/cli ./internal/service ./internal/output ./internal/reentry`: el contrato compila con render TOON `tokens_est` y sin regresion de reentry/output |

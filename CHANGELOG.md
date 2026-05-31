@@ -7,6 +7,8 @@ and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-05-31
+
 ### Added
 
 - `nav recall` command: semantic search over markdown knowledge wikis using pluggable OpenAI-compatible embeddings
@@ -16,6 +18,11 @@ and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2
 - `knowledge-wiki` profile: auto-detected when no `00_gobierno_documental.md` exists, bypasses spec-driven governance gate
 - API key injection via `mkey run` and `MI_LSP_EMBEDDINGS_API_KEY` environment variable (never committed)
 - Offline ⇒ lexical fallback: when embeddings service is unavailable, `nav recall` degrades to keyword search
+- `nav evidence inventory <query>` command: preview-first operational evidence inventory for agents, with canonical wiki anchors first, manifest/verdict guidance, file/size estimates, loading profiles, and metadata-only handling for raw prompts, logs, turns, and screenshots
+
+### Fixed
+
+- AE release binary refresh now autodetects the active WSL user and home directory instead of assuming `/home/fgpaz`, so local WSL installs work on machines whose distro user differs from the Windows username.
 
 ## [0.2.0] - 2026-03-31
 
