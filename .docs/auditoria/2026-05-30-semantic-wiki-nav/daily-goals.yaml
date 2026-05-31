@@ -1,0 +1,39 @@
+daily_goal_seed:
+  schema: sdd-daily-goal-seed-v1
+  goal_slug: "semantic-wiki-nav"
+  codex_goal_title: "mi-lsp: semantic knowledge-wiki navigation with pluggable embeddings"
+  target_repo: "C:/repos/mios/mi-lsp"
+  objective: "Add a pluggable OpenAI-compatible embeddings backend + semantic recall (nav recall) over markdown knowledge wikis, with a knowledge-wiki profile that bypasses the spec-driven governance gate. Generalize the Source Map navigability pattern."
+  work_type: implementation
+  sdd_anchors:
+    note: "mi-lsp tool repo (Go). Authority = its own CLAUDE.md/AGENTS.md/docs; confirm before assuming SDD wiki layers."
+  expected_scope: "cmd/, internal/ (Go index+nav+config), docs/, CHANGELOG.md, testdata/ fixtures, .docs/auditoria/2026-05-30-semantic-wiki-nav/"
+  non_goals:
+    - "Rewrite the existing code LSP backends (roslyn/tsserver/pyright/gopls)"
+    - "Modify the tesla embeddings service (external)"
+    - "Force the spec-driven governance gate onto knowledge wikis"
+  allowed_paths:
+    - "cmd/**"
+    - "internal/**"
+    - "docs/**"
+    - "CHANGELOG.md"
+    - "README.md"
+    - "testdata/**"
+    - ".docs/auditoria/2026-05-30-semantic-wiki-nav/**"
+  forbidden_paths:
+    - "worker-dotnet/** (unless brainstorming proves it is needed)"
+    - "secrets / .env"
+  required_evidence:
+    - "go test ./... green (existing + new)"
+    - "nav recall smoke: ES query retrieves an EN note by meaning (multilingual)"
+    - "knowledge-wiki profile: index+recall work WITHOUT 00_gobierno_documental.md"
+  first_gate: ps-contexto
+  next_gate_after_context: brainstorming
+  close_with:
+    - ps-trazabilidad
+
+session_alignment:
+  materialized_at: "2026-05-30"
+  harness: claude-code
+  goals_authority: "this daily-goals.yaml wins over /goals if they contradict"
+  governance_status: "governance_blocked=false, sync=in_sync, index_sync=current (verified 2026-05-30)"

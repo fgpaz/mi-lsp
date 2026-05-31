@@ -1,0 +1,26 @@
+schema: ae-evidence-index-v1
+session: 2026-05-30-semantic-wiki-nav
+durable_evidence_root: .docs/auditoria/2026-05-30-semantic-wiki-nav/
+artifacts:
+  - path: daily-goals.yaml
+    kind: goal_seed
+    state: present
+  - path: session-contract.yaml
+    kind: session_contract
+    state: present
+  - path: orchestrator-registry.yaml
+    kind: ledger
+    state: present
+  - path: decision-ledger.yaml
+    kind: ledger
+    state: present
+  - path: recursion-learning-log.yaml
+    kind: ledger
+    state: present
+pending_evidence:
+  - exploration/exploration-findings.md
+  - go-test-baseline.txt
+  - go-test-final.txt
+  - recall-smoke.txt
+  - knowledge-wiki-no-governance.txt
+  - traceability-closure.yaml

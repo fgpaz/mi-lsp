@@ -1,0 +1,34 @@
+schema: ae-decision-ledger-v1
+session: 2026-05-30-semantic-wiki-nav
+decision_lock: locked   # all execution-changing decisions resolved after brainstorming gate
+
+locked_from_prompt:
+  - id: LOCK-ENGINE
+    decision: "Reference embeddings engine = tesla OpenAI-compatible service (bge-m3, 1024-dim normalized) at http://tesla.tailde0a03.ts.net:8081/v1. Backend is generic/configurable; tesla is only the documented reference default."
+  - id: LOCK-NO-REWRITE
+    decision: "Do NOT rewrite the code LSP backends (roslyn/tsserver/pyright/gopls). Only ADD the semantic wiki path. Existing tests stay green."
+  - id: LOCK-NO-GOV-GATE
+    decision: "Knowledge-wiki navigation must NOT depend on the spec-driven governance gate."
+  - id: LOCK-SINGLE-TOOL
+    decision: "mi-lsp remains the single navigation tool; this capability lives in mi-lsp, not in per-project external heuristics."
+
+resolved_decisions:
+  - id: D1-VECTOR-STORE
+    decision: "SQLite BLOB table `wiki_chunk_embeddings` inside .mi-lsp/index.db; brute-force cosine in pure Go. NO CGO, NO new heavy deps. Forced by modernc.org/sqlite pure-Go cross-compile of 4 RIDs; sqlite-vec/mattn rejected (would break Makefile/build-dist.ps1)."
+    rationale: "go.mod modernc.org/sqlite v1.37.1; Makefile:25-37 + build-dist.ps1:39-42 use plain GOOS/GOARCH, zero CGO. ~1.7k chunks => brute-force cosine is instant."
+  - id: D2-COMMAND-SHAPE
+    decision: "New top-level `mi-lsp nav recall <query>`, UNGATED (does not call governanceGateEnvelope). Flags: --workspace, --max-items, --token-budget, --format, --layer (optional), --include-content/--snippet, --lexical (force lexical). Output: RecallResult {archivo, heading, score, snippet, line?} in stable envelope. `nav wiki search` stays lexical (additive, non-breaking)."
+    user_choice: "nav recall (top-level), ungated"
+  - id: D3-PROFILE-DETECTION
+    decision: "Auto-detect: valid 00_gobierno_documental.md => profile=spec-driven; absent/invalid => profile=knowledge-wiki. Optional explicit override via [embeddings].profile in project.toml. recall is ungated in BOTH profiles; workspace status reports detected profile."
+    user_choice: "Auto + override opcional"
+  - id: D4-CHUNK-INCREMENTAL
+    decision: "Chunk markdown by `##` (and deeper) headings, carrying the `#` title as context; one chunk per section. Re-embed only chunks whose content_hash (sha256 of normalized chunk text) + model + dim changed. Store content_hash per chunk; skip unchanged on re-index."
+  - id: D5-ENDPOINT-FAILURE
+    decision: "Embeddings endpoint offline/error => recall degrades to lexical search over the same governed/markdown notes (reuses text fallback), NEVER hard-fails; envelope emits warning + hint (e.g. 'embeddings_unavailable; served lexical'). Same posture for index: if embedding fails, persist docs without vectors and warn."
+  - id: D6-DEFAULT-ENDPOINT
+    decision: "No silent external calls. With no [embeddings] config and no env, `nav recall` does NOT call any host: returns actionable hint ('configure [embeddings] or use nav search'). tesla documented as reference example only."
+    user_choice: "Requiere config explícita"
+  - id: D7-SECRET
+    decision: "api_key resolved at runtime from env var named by [embeddings].api_key_env (default MI_LSP_EMBEDDINGS_API_KEY). Never stored in committed config. Canonical population path = `mkey run <project> <env> -- mi-lsp nav recall ...` (mi-key-cli injects env without writing disk). If endpoint needs a key and none resolves, recall emits hint pointing to mkey. Authorization: Bearer header only sent when a key resolves (tesla accepts any/none)."
+    user_note: "vamos a usar siempre /mi-key-cli para obtener esa api key"

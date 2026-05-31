@@ -1,0 +1,47 @@
+schema: ae-orchestrator-registry-v1
+session: 2026-05-30-semantic-wiki-nav
+recursion_depth: v0_shadow
+orchestrators:
+  - id: director-ae
+    role: meta_orchestrator
+    level: 1
+    harness: claude-code
+    owns:
+      - decision_lock
+      - session_contract
+      - ledger_maintenance
+      - subagent/worker dispatch via Workflow
+      - final_verdict
+    owned_paths: ["(verifies, does not exclusively own code paths)"]
+    state: active
+    evidence_dir: .docs/auditoria/2026-05-30-semantic-wiki-nav/
+    parent: null
+    verdict: pending
+  - id: explore-lane
+    role: read_only_exploration
+    level: 2
+    state: planned
+    owns: ["read-only Go code exploration via Workflow agents"]
+    owned_paths: ["read-only"]
+    evidence_dir: .docs/auditoria/2026-05-30-semantic-wiki-nav/exploration/
+    parent: director-ae
+    verdict: pending
+  - id: implement-lane
+    role: specialized_implementation
+    level: 2
+    state: planned
+    owns: ["additive Go code in cmd/ and internal/ per locked plan"]
+    owned_paths: ["cmd/**", "internal/**", "testdata/**"]
+    evidence_dir: .docs/auditoria/2026-05-30-semantic-wiki-nav/implementation/
+    parent: director-ae
+    verdict: pending
+  - id: verify-lane
+    role: verification
+    level: 2
+    state: planned
+    owns: ["go test ./..., recall smoke, knowledge-wiki-without-governance check"]
+    owned_paths: ["read-only + test execution"]
+    evidence_dir: .docs/auditoria/2026-05-30-semantic-wiki-nav/verification/
+    parent: director-ae
+    verdict: pending
+notes: "v0_shadow: two active levels (director + lanes). Third-level task orchestrators are shadow-only; record recursion_needed events instead of launching them."
