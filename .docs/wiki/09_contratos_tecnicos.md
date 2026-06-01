@@ -50,12 +50,15 @@ El detalle por frontera vive en `09_contratos/`.
 - La CLI publica es la frontera estable para humanos, skills y wrappers.
 - AXI es parte de la CLI publica como overlay selectivo por superficie: no todo comando entra en AXI por default.
 - El repo publica una skill curada en `skills/mi-lsp/` para herramientas compatibles con skills; esa skill documenta buenas practicas de uso, pero no redefine la semantica del CLI.
+- La instalacion publica vive fuera del contrato runtime: `scripts/install/install.ps1|sh` instala/actualiza la CLI desde GitHub `releases/latest`, y `scripts/install/install-agent.ps1|sh` agrega la skill via `npx skills add`.
+- Los instaladores publicos deben mapear solo RIDs publicados (`win-x64`, `win-arm64`, `linux-x64`, `linux-arm64`), verificar `mi-lsp_<version>_checksums.txt` antes de extraer y preservar `workers/<rid>/` junto al binario.
 - El daemon comparte estado entre clientes pero no redefine la CLI publica.
 - La UI/admin es una vista local del daemon; no es API publica remota.
 - El protocolo daemon-worker es interno, versionado y con envelope estable.
 - Cada contrato debe exponer `warnings`, fallas accionables y degradacion clara cuando aplique.
 - `worker status` forma parte de la CLI publica y debe exponer `tool_root`, `tool_root_kind`, `cli_path`, `protocol_version`, origen del worker seleccionado y compatibilidad de candidatos.
 - `version` forma parte de la CLI publica y debe exponer provenance del ejecutable (`version`, `module_path`, `go_version`, `goos`, `goarch`, `protocol_version`, `worker_rid`, `tool_root`, `cli_path`, `executable_sha256`, `vcs_revision`, `vcs_time`, `vcs_modified`) sin depender de workspace, daemon ni workers vivos.
+- `version` + `worker status` son los probes publicos de instalacion; `worker install` repara bundles movidos o worker global stale cuando corresponde.
 - `workspace status` forma parte de la CLI publica y debe exponer `docs_read_model`, `doc_count`, `docs_index_ready`, `governance_profile`, `governance_sync`, `governance_index_sync`, `governance_index_sync_details` y `governance_blocked`; en `--full` puede expandir el digest repo-local de memoria de reentrada.
 - En AXI efectivo, `workspace status`, `nav search`, `nav wiki search`, `nav wiki validate-harness`, `nav wiki validate-source`, `nav intent`, `nav route`, `nav wiki route`, `nav pack` y `nav wiki pack` pertenecen a la superficie preview/full por default; `nav ask` solo lo hace para preguntas de orientacion y `nav workspace-map` solo cuando se fuerza AXI.
 - `init` pertenece a la CLI publica como shortcut de onboarding; no reemplaza `workspace add`, pero reutiliza su semantica base.
@@ -144,6 +147,7 @@ Sin configuracion activa, `nav recall` devuelve hint visible y no llama al prove
 - La politica comun de subprocessos no interactivos debe evitar UI extra; en Windows aplica `HideWindow + CREATE_NO_WINDOW`, y los procesos background del daemon agregan `DETACHED_PROCESS`.
 - La resolucion de bootstrap del worker usa el ejecutable/distribucion activa o, en desarrollo, el repo `mi-lsp`; nunca el `cwd` arbitrario del workspace consultado.
 - La distribucion publica canonica es un bundle por RID que incluye `mi-lsp(.exe)` y `workers/<rid>/`; una build desde source no redefine ese contrato de bootstrap.
+- Los scripts publicos de install/update deben consumir esa misma distribucion canonica; macOS debe fallar con mensaje explicito hasta que existan assets Darwin.
 - La distribucion operativa AE debe producir y verificar `win-arm64`, `win-x64`, `linux-arm64` y `linux-x64`; `scripts/release/ae-release-binaries.ps1` es el entrypoint mantenido para refrescar installs locales/WSL, mirrors x64 opcionales y publicar por tag limpio cuando se pasa `-Publish`.
 - Las queries Roslyn deben resolver candidatos en orden `bundle -> installed -> dev-local` por presencia de archivos; el probe `status` queda reservado para `worker status` y diagnostico explicito.
 - Si el primer candidato Roslyn falla por bootstrap al arrancar, el caller puede reintentar una sola vez con el siguiente candidato determinista antes de devolver error accionable.
@@ -206,6 +210,8 @@ Sin configuracion activa, `nav recall` devuelve hint visible y no llama al prove
 - `worker install`: instala o refresca el worker por RID desde un bundle adjunto o, en desarrollo, desde `worker-dotnet/`
 - `worker status`: diagnostica el estado de candidatos `bundle`, `installed` y `dev-local`, e identifica el `cli_path` y `protocol_version` visibles para detectar binarios stale o inesperados en `PATH`
 - `version`: muestra provenance del ejecutable local; por default usa salida `text` legible y con `--format compact|json|toon|yaml` emite envelope estructurado `backend=version`
+- `scripts/install/install.ps1|sh`: instaladores publicos CLI-only; detectan RID, descargan latest release, verifican checksum, reemplazan binario/worker bundle y ejecutan probes
+- `scripts/install/install-agent.ps1|sh`: instaladores publicos agent-first; ejecutan el instalador CLI y luego `npx skills add fgpaz/mi-lsp --skill mi-lsp -g -a codex -a claude-code -y`
 - `scripts/release/ae-release-binaries.ps1`: comando mantenido de release-distribution; construye todos los RIDs por default, instala el RID del host, refresca WSL cuando esta disponible, copia mirrors x64 opcionales y solo publica cuando `-Publish -Tag <tag>` pasa las precondiciones de arbol limpio y tag en `HEAD`
 - `nav multi-read`: lee N rangos de archivo en una sola invocacion, reduce round-trips de agentes AI
 - `nav search --include-content`: extiende search con contenido inline; modo hibrido (symbol body si indexado, +-N lineas fallback)

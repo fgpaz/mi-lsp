@@ -56,6 +56,7 @@ Documenta la postura de hardening de dependencias y bootstrap del worker .NET, i
 - Compatibilidad minima significa que el worker responde al probe `status` con `protocol_version` aceptado por la CLI; ese probe queda reservado para `worker status` y diagnostico explicito.
 - `worker install` debe copiar el bundle por RID cuando existe; solo usa `dotnet publish` como ruta de desarrollo o remediacion desde source.
 - El empaquetado local/release debe materializar `dist/<rid>/mi-lsp(.exe)` + `dist/<rid>/workers/<rid>/` para que la CLI instalada vea el mismo layout que en validacion.
+- Los instaladores publicos `scripts/install/install.ps1|sh` deben consumir el asset GoReleaser por RID y preservar ese mismo layout despues de verificar checksum.
 - El bundle del worker debe copiar el directorio completo de `dotnet publish` por RID; `PublishSingleFile` no es una variante soportada para Roslyn/MSBuild porque rompe la carga de dependencias en consultas semanticas reales.
 - Los artefactos locales `bin/workers/<rid>` dentro del repo no se consideran bundle de distribucion canonico para consultas; se evita preferirlos por encima del fallback `dev-local`.
 - El `tool_root` se deriva del ejecutable/distribucion o del repo `mi-lsp`; no debe depender del `cwd` del workspace consultado.
@@ -93,7 +94,7 @@ Documenta la postura de hardening de dependencias y bootstrap del worker .NET, i
 - compatibilidad con Roslyn Workspace API
 - `Microsoft.Build.Locator`
 - layout de distribucion canonico `dist/<rid>/mi-lsp(.exe)` + `dist/<rid>/workers/<rid>/`
-- scripts operativos `scripts/release/build-dist.ps1`, `scripts/release/build-workers.ps1`, `scripts/release/install-local.ps1` y `scripts/release/ae-release-binaries.ps1` para build/install/release-distribution reproducible
+- scripts operativos `scripts/release/build-dist.ps1`, `scripts/release/build-workers.ps1`, `scripts/release/install-local.ps1`, `scripts/release/ae-release-binaries.ps1` y `scripts/install/*` para build/install/release-distribution reproducible
 - `.goreleaser.yaml` y `.github/workflows/release.yml` como pipeline publica canonica de empaquetado por RID
 - la capa [[AE-RELEASE-DISTRIBUTION]] exige cerrar cambios release-visible con build de `win-arm64`, `win-x64`, `linux-arm64`, `linux-x64`, refresh local/WSL cuando aplique, evidencia de SHA/provenance y publicacion por tag limpio o waiver explicito
 
