@@ -523,6 +523,19 @@ Reglas:
 - si el daemon atiende esta operacion, debe devolver exactamente el mismo envelope canonico que el modo directo; `active_workers` queda anidado dentro del item diagnostico
 - en repo de desarrollo, los artefactos locales `bin/workers/<rid>` no deben presentarse como bundle canonico de distribucion
 
+### Public install/update contract
+
+Public installers are shell wrappers around the release contract, not new runtime semantics:
+
+- `scripts/install/install.ps1` and `scripts/install/install.sh` install or update only the CLI.
+- `scripts/install/install-agent.ps1` and `scripts/install/install-agent.sh` run the CLI installer and then install the repo skill through `npx skills add fgpaz/mi-lsp --skill mi-lsp -g -a codex -a claude-code -y`.
+- Supported public RIDs are exactly `win-x64`, `win-arm64`, `linux-x64`, and `linux-arm64`; unsupported OS/arch combinations, including macOS until Darwin assets exist, must fail with an actionable message.
+- Installers consume GitHub `releases/latest`, derive archive names from GoReleaser (`mi-lsp_<version>_<rid>.zip|tar.gz`), download `mi-lsp_<version>_checksums.txt`, and verify SHA256 before extracting.
+- The extracted install must preserve `mi-lsp(.exe)` plus `workers/<rid>/`; if a user moves only the binary, `mi-lsp worker install` is the repair path.
+- Existing daemons should be stopped before replacing a target binary; after replacement, `daemon restart` is recommended when daemon-backed state is in use.
+- Successful install verification must run the installed path through `version --format toon` and `worker status --format compact|toon`.
+- PATH shadowing remains diagnosed through `where.exe mi-lsp` on Windows, `command -v mi-lsp` on Linux, `version.cli_path`, and `worker status.cli_path`.
+
 ## Payload, error y compatibilidad
 
 - `daemon start` debe devolver la instancia existente si ya corre.

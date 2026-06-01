@@ -2,116 +2,99 @@
 ![Go Version](https://img.shields.io/badge/go-1.24+-00ADD8?logo=go)
 ![CI](https://github.com/fgpaz/mi-lsp/actions/workflows/test.yml/badge.svg)
 
-> Semantic code navigation for coding agents, without requiring MCP.
+> Stop burning agent context on repo discovery.
 
-`mi-lsp` is a local CLI for exploring large `.NET/C# + TypeScript` codebases from the terminal.
-It keeps a lightweight repo-local index, supports optional warm state through a daemon, and now includes a docs-first entrypoint for onboarding a repo fast.
-For onboarding and discovery, AXI is now selective by default on the surfaces where it saves the most tokens; use `--classic` when you want the old CLI behavior and `--axi` when you want to force AXI on a classic surface.
+`mi-lsp` is a local semantic navigation CLI for coding agents and developers who work in large `.NET/C#`, TypeScript, Python, and Go codebases.
+It gives Codex, Claude Code, and other terminal-based agents a compact way to understand a repo before they start reading whole files.
 
-## Quick Start
+Instead of asking an agent to grep, open ten files, summarize them, and then try again, you can ask `mi-lsp` for the repo map, the canonical docs, the exact file slices, or the symbol neighborhood in one command.
+The result is fewer round-trips, less pasted code, and output formats built for token budgets.
 
-### 1. Install
+## Why mi-lsp exists
 
-The recommended install path is a bundled release from GitHub Releases.
+Agents are good at reasoning once they have the right context. They are expensive when they have to discover that context by trial and error.
 
-1. Download the asset for your platform (`win-x64`, `win-arm64`, `linux-x64`, or `linux-arm64`) from the [Releases page](https://github.com/fgpaz/mi-lsp/releases).
-2. Extract it and keep `workers/<rid>/` next to the `mi-lsp` binary.
-3. Run the binary directly or add it to your `PATH`.
+`mi-lsp` turns daily repo discovery into small, repeatable shell commands:
 
-Sanity check:
+- docs-first answers when a repo has `.docs/wiki`
+- canonical reading packs for a task before the agent opens files
+- `multi-read`, `batch`, and `related` commands to replace repeated full-file reads
+- TOON output for large result arrays, typically smaller than JSON
+- semantic C# queries through a bundled Roslyn worker, with text/catalog fallbacks elsewhere
+- an optional local daemon for warm state, never a required MCP server
+
+## One-command install
+
+Install the CLI and the `mi-lsp` skill for Codex/Claude-style agents:
 
 ```powershell
-mi-lsp version
-mi-lsp info
-mi-lsp worker status --format compact
+irm https://raw.githubusercontent.com/fgpaz/mi-lsp/main/scripts/install/install-agent.ps1 | iex
 ```
 
-If you move the binary after extraction, run `mi-lsp worker install` once to copy the bundled worker into `~/.mi-lsp/workers/<rid>/`.
-Regular C# queries resolve the Roslyn worker by layout presence in `bundle -> installed -> dev-local` order, while `mi-lsp worker status` is the explicit compatibility probe.
-`mi-lsp version --format toon` exposes the exact executable path, SHA256, Go runtime, OS/architecture, protocol version, RID, and VCS metadata without needing a registered workspace or daemon.
-`worker status` keeps the same visible diagnostic payload whether it is served directly or through the daemon; only `active_workers` changes with live state. It now also surfaces `cli_path` and `protocol_version`, which makes stale or unexpected binaries on `PATH` easier to diagnose.
-On Windows, non-interactive child processes are started hidden so normal queries should not open extra console windows.
-Maintainers use the AE release distribution gate for binary refreshes: `pwsh ./scripts/release/ae-release-binaries.ps1 -Clean` builds all four RIDs and refreshes the current host install; add `-Publish -Tag <vX.Y.Z>` only after the clean release tag is ready.
+```bash
+curl -fsSL https://raw.githubusercontent.com/fgpaz/mi-lsp/main/scripts/install/install-agent.sh | sh
+```
 
-### 2. Initialize a workspace
+Install or update only the CLI:
 
-The shortest first-run path is:
+```powershell
+irm https://raw.githubusercontent.com/fgpaz/mi-lsp/main/scripts/install/install.ps1 | iex
+```
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/fgpaz/mi-lsp/main/scripts/install/install.sh | sh
+```
+
+The installers download the latest GitHub Release, pick the host RID (`win-x64`, `win-arm64`, `linux-x64`, or `linux-arm64`), verify the SHA256 checksum, install the bundled `workers/<rid>/` layout, and run `mi-lsp version` plus `mi-lsp worker status`.
+macOS assets are not published yet, so the shell installer exits with a clear unsupported-OS message on Darwin.
+
+`install-agent` intentionally requires `npx` and installs the skill through `npx skills add fgpaz/mi-lsp --skill mi-lsp -g -a codex -a claude-code -y`.
+There is no direct folder-copy fallback in that path.
+
+Manual release downloads are still available on the [Releases page](https://github.com/fgpaz/mi-lsp/releases).
+If you move only the binary after extracting a release, run `mi-lsp worker install` once so C# semantic queries can find the bundled worker.
+
+## First minute
+
+From any repo:
 
 ```powershell
 mi-lsp init . --name myapp
-```
-
-That command:
-- detects the workspace shape
-- registers it in `~/.mi-lsp/registry.toml`
-- writes `.mi-lsp/project.toml`
-- indexes code and docs by default
-- leaves you with a ready `--workspace myapp`
-
-If you prefer the explicit workflow, `workspace add` still exists:
-
-```powershell
-mi-lsp workspace add C:\code\my-dotnet-app --name myapp
-mi-lsp workspace status myapp --format compact
-```
-
-AXI discovery starts from the root command by default:
-
-```powershell
-mi-lsp
-mi-lsp workspace status myapp
-```
-
-### 3. Ask one useful question first
-
-```powershell
 mi-lsp nav ask "how is this workspace organized?" --workspace myapp
+mi-lsp nav pack "understand how authentication works" --workspace myapp
 ```
 
-`nav ask` is docs-first:
-- it prioritizes `.docs/wiki` when the repo has one
-- it uses explicit traceability links before text heuristics
-- it adds code evidence so you can jump into the implementation immediately
+`mi-lsp init` detects the workspace shape, registers an alias, writes `.mi-lsp/project.toml`, and indexes code plus docs by default.
+`nav ask` answers from canonical docs first when the repo has them; `nav pack` gives the reading order when you want to inspect the evidence yourself.
 
-When you want the reading order instead of a prose answer:
+## Daily workflows
 
-```powershell
-mi-lsp nav pack "understand how this login flow works" --workspace myapp
-mi-lsp nav pack "understand how this login flow works" --workspace myapp --full
-```
-
-### 4. Use the right command for the job
-
-| You want to... | Run this |
+| You need to... | Run this |
 |---|---|
-| Understand the repo quickly | `mi-lsp nav ask "how is this workspace organized?" --workspace myapp` |
-| Get the canonical docs reading order for a task | `mi-lsp nav pack "understand how billing retry works" --workspace myapp` |
-| See the high-level map of services | `mi-lsp nav workspace-map --workspace myapp --axi` |
-| Understand one symbol deeply | `mi-lsp nav related MySymbol --workspace myapp --format compact` |
-| Read the code around one line | `mi-lsp nav context path/to/file.cs 42 --workspace myapp --format compact` |
-| Search text and see the matching code | `mi-lsp nav search "billing retry" --include-content --workspace myapp` |
-| Find a wiki note by meaning (multilingual) | `mi-lsp nav recall "<query>" --workspace myapp` |
-| Choose the cheapest safe evidence reentry path | `mi-lsp nav evidence inventory "AE evidence lifecycle" --workspace myapp --format toon` |
-| Search symbols by intent | `mi-lsp nav intent "password reset frontend" --workspace myapp --repo web` |
-| Audit one backend/service path | `mi-lsp nav service src/backend/orders --workspace myapp --format compact` |
-| Read several files in one call | `mi-lsp nav multi-read file1.cs:1-80 file2.ts:20-80 --workspace myapp --format compact` |
+| Orient in a new repo | `mi-lsp nav ask "how is this workspace organized?" --workspace myapp` |
+| Get the docs reading order for a task | `mi-lsp nav pack "understand billing retry" --workspace myapp` |
+| Find canonical RF/FL/TP/CT/TECH docs | `mi-lsp nav wiki search "billing retry" --workspace myapp --format toon` |
+| Search text and see matching code | `mi-lsp nav search "billing retry" --include-content --workspace myapp` |
+| Read only useful slices | `mi-lsp nav multi-read file1.cs:1-80 file2.ts:20-80 --workspace myapp --format toon` |
+| Understand a symbol neighborhood | `mi-lsp nav related MySymbol --workspace myapp --format toon` |
+| Read code around one line | `mi-lsp nav context path/to/file.cs 42 --workspace myapp --format toon` |
+| Audit one service path | `mi-lsp nav service src/backend/orders --workspace myapp --format toon` |
+| Resume from evidence without opening logs | `mi-lsp nav evidence inventory "release evidence" --workspace myapp --format toon` |
+| Map a parent folder with many repos | `mi-lsp nav workspace-map --workspace myapp --axi` |
 
-Use `--full` when an AXI preview asks you to expand detail:
+Use `--full` when a preview asks you to expand detail:
 
 ```powershell
 mi-lsp nav search "billing retry" --include-content --workspace myapp --full
 mi-lsp nav workspace-map --workspace myapp --axi --full
 ```
 
-### 5. Parent folder with several repos
-
-Start broad, then narrow semantic queries:
+For container workspaces, start broad and then narrow with `--repo`, `--entrypoint`, `--solution`, or `--project`:
 
 ```powershell
-mi-lsp nav workspace-map --workspace myapp --format compact
-mi-lsp nav search OrderHandler --workspace myapp --format compact
-mi-lsp nav search "forgot password" --workspace myapp --repo web --format compact
-mi-lsp nav refs IOrderRepository --workspace myapp --repo Orders.Api --format compact
+mi-lsp nav workspace-map --workspace myapp --format toon
+mi-lsp nav search "forgot password" --workspace myapp --repo web --format toon
+mi-lsp nav refs IOrderRepository --workspace myapp --repo Orders.Api --format toon
 ```
 
 ## Docs-First Search
@@ -163,18 +146,20 @@ Heavy raw evidence is counted with file/byte/token estimates and omitted from co
 ## Use With Claude Code, Codex, and Skill-Based Agents
 
 The repository ships a ready-to-install skill in [`skills/mi-lsp`](skills/mi-lsp).
-If your coding tool supports folder-based skills, copy or symlink that folder into the skill directory your tool scans.
-
-Typical installs:
+The recommended path installs the CLI and registers the skill through the skills CLI:
 
 ```powershell
-# Codex
-New-Item -ItemType Directory -Force $HOME\.codex\skills | Out-Null
-Copy-Item -Recurse .\skills\mi-lsp $HOME\.codex\skills\
+irm https://raw.githubusercontent.com/fgpaz/mi-lsp/main/scripts/install/install-agent.ps1 | iex
+```
 
-# Claude Code or any runner using a folder-based skills setup
-New-Item -ItemType Directory -Force $HOME\.agents\skills | Out-Null
-Copy-Item -Recurse .\skills\mi-lsp $HOME\.agents\skills\
+```bash
+curl -fsSL https://raw.githubusercontent.com/fgpaz/mi-lsp/main/scripts/install/install-agent.sh | sh
+```
+
+That path uses:
+
+```text
+npx skills add fgpaz/mi-lsp --skill mi-lsp -g -a codex -a claude-code -y
 ```
 
 Once the skill is installed, an agent can start with prompts such as:
@@ -204,6 +189,12 @@ For shared daemon attribution across several agents, set:
 ```powershell
 $env:MI_LSP_CLIENT_NAME = "codex"
 $env:MI_LSP_SESSION_ID = "demo-session"
+```
+
+To update only the installed skill later:
+
+```powershell
+npx skills update mi-lsp -g -y
 ```
 
 ## Workspace Model
@@ -312,7 +303,7 @@ mi-lsp index --workspace myapp --clean
 If a command fails before `mi-lsp` itself starts, treat it as a host incident first.
 See the public runbook in [TROUBLESHOOTING.md](TROUBLESHOOTING.md).
 
-## Current v0.1.0 Scope
+## Current Scope
 
 - Global daemon with governance UI and local telemetry
 - Repo-local lightweight catalog in SQLite with repo ownership and docs graph
@@ -321,11 +312,14 @@ See the public runbook in [TROUBLESHOOTING.md](TROUBLESHOOTING.md).
 - TS/JS discovery index for symbols, routes, and overview
 - Optional TS semantic bridge through `tsserver`
 - Optional Python semantic bridge through `pyright-langserver`
+- Optional Go semantic enrichment through `gopls`
 - Service exploration summaries via `nav service`
 - Docs-first repo questions via `nav ask`
 - Canonical reading packs via `nav pack`
+- Semantic recall over knowledge wikis via optional embeddings
+- Evidence inventory for low-token agent reentry
 
-Out of scope for `v0.1.0`:
+Out of scope:
 - MCP transport
 - Semantic editing/refactors
 - Automatic semantic fanout across all child repos

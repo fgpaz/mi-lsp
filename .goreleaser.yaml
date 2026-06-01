@@ -45,6 +45,8 @@ archives:
       - CHANGELOG.md
       - src: TROUBLESHOOTING.md
         dst: docs
+      - src: "scripts/install/**/*"
+        dst: scripts/install
       - src: ".goreleaser/workers/**/*"
         dst: workers
 

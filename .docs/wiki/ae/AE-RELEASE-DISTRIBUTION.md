@@ -60,11 +60,24 @@ required_targets:
     - win-x64
     - linux-arm64
     - linux-x64
+  public_install_scripts:
+    - scripts/install/install.ps1
+    - scripts/install/install.sh
+    - scripts/install/install-agent.ps1
+    - scripts/install/install-agent.sh
   optional_skill_mirror:
-    root: C:/repos/buho/assets/skills/mi-lsp
+    roots:
+      - C:/Users/fgpaz/.agents/skills/mi-lsp
+      - C:/repos/buho/assets/skills/mi-lsp
     files:
       - bin/mi-lsp-win-x64.exe
       - bin/mi-lsp-linux-x64
+  public_install_contract:
+    latest_release: GitHub releases/latest
+    checksum_asset: mi-lsp_<version>_checksums.txt
+    archive_layout: mi-lsp(.exe) plus workers/<rid> inside the release archive
+    agent_install: npx skills add fgpaz/mi-lsp --skill mi-lsp -g -a codex -a claude-code -y
+    no_silent_auto_update: true
 default_command: scripts/release/ae-release-binaries.ps1
 publish_command:
   shape: "pwsh ./scripts/release/ae-release-binaries.ps1 -Clean -Publish -Tag <vX.Y.Z>"
@@ -73,6 +86,9 @@ stop_if:
   - current worktree is dirty and Publish is requested
   - tag does not point at HEAD when Publish is requested
   - any required RID artifact is missing
+  - public install script references an asset name not produced by GoReleaser
+  - public install script extracts before checksum verification
+  - install-agent bypasses npx with an ungoverned folder-copy fallback
   - local ARM64 install was skipped without waiver on this workstation
   - WSL install was skipped without waiver when WSL is available
   - local executable remains locked after daemon stop and copy retries
@@ -87,6 +103,10 @@ evidence:
 ## Operational Notes
 
 `scripts/release/ae-release-binaries.ps1` is the maintained entrypoint for this gate. By default it builds all four RIDs and refreshes the current host install. On Windows it also refreshes the active WSL install when WSL is present and the matching Linux RID was built.
+
+`scripts/install/install.ps1` and `scripts/install/install.sh` are the public CLI install/update entrypoints. They consume GitHub `releases/latest`, map the host to one of the four published RIDs, verify the release checksum before extraction, preserve the bundled `workers/<rid>/` layout, and run `version` plus `worker status` probes.
+
+`scripts/install/install-agent.ps1` and `scripts/install/install-agent.sh` compose the CLI installer with `npx skills add`; they do not copy skill folders directly. A weekly release check from the skill may notify about newer releases, but binary update remains explicit user action.
 
 The local install path must stop an existing `mi-lsp daemon` before replacing the executable and worker bundle, then retry copy/removal briefly to absorb Windows file-lock lag.
 WSL install defaults are detected from the active distro user and `$HOME`; pass `-WslInstallPaths` only when the target distro uses non-standard paths.

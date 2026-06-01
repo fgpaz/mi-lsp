@@ -8,6 +8,9 @@ description: Use when a folder-based agent should navigate code with the mi-lsp 
 Use this skill when you want local semantic navigation with `mi-lsp` without introducing an MCP dependency.
 If the skill is installed but the binary is missing, bootstrap the CLI first instead of abandoning the flow.
 
+If `mi-lsp` is missing from `PATH`, use the one-command bootstrap in the `Install bootstrap` section before falling back to raw `rg` or broad file reads.
+The intended first path is: install or verify CLI -> `mi-lsp init . --name <alias>` -> `nav ask` / `nav pack` / `nav search --include-content`.
+
 Prefer the AXI-default surfaces for onboarding and discovery: `mi-lsp`, `init`, `workspace status`, `nav wiki inventory`, `nav wiki search`, `nav route`, `nav search`, and `nav intent`.
 Use `nav wiki search` when the task is clearly about project docs, RS/RF/FL/TP/CT/TECH/DB, outcomes, contracts, tests, or traceability.
 Use `nav route` as the cheapest first orientation step — it resolves the canonical anchor doc from governance alone without touching the index.
@@ -248,11 +251,54 @@ Do not wait for a dedicated `mi-lsp` MCP integration. `mi-lsp` is a CLI-first to
 If the skill folder exists but `mi-lsp` is not callable, do not stop at "tool unavailable".
 Install the CLI first, verify it, and only then continue with repo navigation.
 
+Use the combined installer when the user wants both the CLI and this skill installed through the skills CLI:
+
+```powershell
+irm https://raw.githubusercontent.com/fgpaz/mi-lsp/main/scripts/install/install-agent.ps1 | iex
+```
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/fgpaz/mi-lsp/main/scripts/install/install-agent.sh | sh
+```
+
+Use the CLI-only installer when the skill is already present and only the binary needs install or update:
+
+```powershell
+irm https://raw.githubusercontent.com/fgpaz/mi-lsp/main/scripts/install/install.ps1 | iex
+```
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/fgpaz/mi-lsp/main/scripts/install/install.sh | sh
+```
+
+Installer rules:
+
+- Supported RIDs: `win-x64`, `win-arm64`, `linux-x64`, `linux-arm64`.
+- macOS is unsupported until release assets exist; do not map Darwin to a Linux archive.
+- Archives come from GitHub Releases latest and must pass SHA256 verification before extraction.
+- The install must keep `workers/<rid>/` next to the `mi-lsp` binary or run `mi-lsp worker install`.
+- `install-agent` requires `npx` and uses `npx skills add fgpaz/mi-lsp --skill mi-lsp -g -a codex -a claude-code -y`; it has no folder-copy fallback.
+
+Verify the install:
+
+```powershell
+where.exe mi-lsp
+mi-lsp version --format toon
+mi-lsp worker status --format toon
+```
+
+If the binary was moved after extraction, run:
+
+```powershell
+mi-lsp worker install
+```
+
+## Legacy manual install
+
+Use this only when the one-command installer cannot run in the current shell.
+
 1. Download the release bundle for the user's platform from `https://github.com/fgpaz/mi-lsp/releases`.
 2. Choose the right bundle: `win-x64`, `win-arm64`, `linux-x64`, or `linux-arm64`.
-   - On this workstation, the local Windows install is `win-arm64` at `C:\Users\fgpaz\bin\mi-lsp.exe`; the local WSL/Linux install is `linux-arm64` at `/home/fgpaz/.local/bin/mi-lsp`. These ARM64 binaries are machine-local only and must not be committed to shared skill repositories.
-   - The versioned skill distribution is AMD64-only: `bin/mi-lsp-win-x64.exe` and `bin/mi-lsp-linux-x64`.
-   - When refreshing skills/binaries after a code change, publish those same AMD64 bytes to both `C:\Users\fgpaz\.agents\skills\mi-lsp\bin` and `C:\repos\buho\assets\skills\mi-lsp\bin`, then verify hash parity and `go version -m` (`GOARCH=amd64`, `vcs.modified=false`).
 3. Extract it into a stable tools directory and keep `workers/<rid>/` next to the `mi-lsp` binary.
 4. Add that directory to the current session `PATH`, or invoke the binary by absolute path until `PATH` is fixed permanently.
 5. Verify the install:
@@ -270,6 +316,16 @@ mi-lsp worker install
 ```
 
 ## Updating to a new version
+
+The CLI-only installer is also the normal update command. It downloads the latest release, replaces the binary and worker bundle for the host RID, and reruns the install probes.
+
+```powershell
+irm https://raw.githubusercontent.com/fgpaz/mi-lsp/main/scripts/install/install.ps1 | iex
+```
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/fgpaz/mi-lsp/main/scripts/install/install.sh | sh
+```
 
 A new release publishes pre-built bundles for all platforms — no Go toolchain needed.
 
@@ -301,15 +357,15 @@ mi-lsp workspace doctor --format toon
 If the release changes CLI/daemon telemetry or `admin export`, refresh the `mi-lsp` binary and restart the daemon before trusting new fields in `access_events`.
 If `daemon status` reports missing executable metadata, an `executable_sha256` mismatch, or stale-daemon guidance, rebuild/install the CLI and run `mi-lsp daemon restart` before trusting daemon-backed results.
 Only replace `workers/<rid>/` when the release notes say the worker changed.
-If a `mi-lsp` code update changes CLI-visible behavior, daemon/runtime behavior, query envelopes, telemetry, or anything else that makes the skill/binaries stale, refresh all distribution surfaces in the same task:
+## Weekly release check
 
-- Build the four release RIDs from the clean source revision: `win-arm64`, `linux-arm64`, `win-x64`, and `linux-x64`.
-- Install ARM64 only on this workstation: `C:\Users\fgpaz\bin\mi-lsp.exe` for Windows and `/home/fgpaz/.local/bin/mi-lsp` for WSL/Linux.
-- Commit/distribute AMD64 only in skill repositories: `mi-lsp-win-x64.exe` and `mi-lsp-linux-x64` under both `C:\Users\fgpaz\.agents\skills\mi-lsp\bin` and `C:\repos\buho\assets\skills\mi-lsp\bin`.
-- Verify installed local binaries with `mi-lsp version --format toon` plus `go version -m` on the exact Windows and WSL paths.
-- Verify `compare-skill-mirrors.ps1 -Skill mi-lsp` returns no drift, hashes match across both skill repos, and `go version -m` reports `GOARCH=amd64`, `vcs.revision=<source revision>`, `vcs.modified=false` for both committed binaries.
+At most once every 7 days, an agent may check whether a newer GitHub Release exists.
+Cache the check timestamp and last seen tag under `~/.mi-lsp/release-check.json` or an equivalent local cache.
 
-If you update the skill under `C:\Users\fgpaz\.agents\skills\mi-lsp`, update the mirrored copy under `C:\repos\buho\assets\skills\mi-lsp` in the same task and preserve the architecture split: ARM64 local-only, AMD64 versioned in both skill repositories.
+- Compare local `mi-lsp version --format toon` with `https://api.github.com/repos/fgpaz/mi-lsp/releases/latest`.
+- If a newer release exists, notify the user and show the CLI-only update command.
+- Do not run the installer automatically unless the user explicitly asks to update.
+- To update this skill itself, use `npx skills update mi-lsp -g -y`.
 
 ### Admin export note
 
