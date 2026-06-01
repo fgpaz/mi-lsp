@@ -1,31 +1,38 @@
+# mi-lsp
+
 ![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)
 ![Go Version](https://img.shields.io/badge/go-1.24+-00ADD8?logo=go)
 ![CI](https://github.com/fgpaz/mi-lsp/actions/workflows/test.yml/badge.svg)
 
-> Stop burning agent context on repo discovery.
+**Stop burning agent context before the real work starts.**
 
-`mi-lsp` is a local semantic navigation CLI for coding agents and developers who work in large `.NET/C#`, TypeScript, Python, and Go codebases.
-It gives Codex, Claude Code, and other terminal-based agents a compact way to understand a repo before they start reading whole files.
+You asked for a fix.
+The agent spends its first turns discovering the repo: search, open files, summarize, retry.
+`mi-lsp` gives Codex, Claude Code, and terminal-based agents a repo map before they wander: ask the canonical docs, get a reading pack, read exact file slices, and inspect related symbols from one local CLI.
+No MCP server required.
 
-Instead of asking an agent to grep, open ten files, summarize them, and then try again, you can ask `mi-lsp` for the repo map, the canonical docs, the exact file slices, or the symbol neighborhood in one command.
-The result is fewer round-trips, less pasted code, and output formats built for token budgets.
+![mi-lsp turns repo discovery into compact agent context](docs/assets/readme/agent-context-before-after.svg)
 
-## Why mi-lsp exists
+## Why Agents Use It
 
-Agents are good at reasoning once they have the right context. They are expensive when they have to discover that context by trial and error.
+Agents do their best work after they know where the truth lives.
+The waste happens before that: broad searches, whole-file dumps, repeated summaries, and JSON-heavy output pasted back into the chat.
 
-`mi-lsp` turns daily repo discovery into small, repeatable shell commands:
+`mi-lsp` moves that discovery into a local index and returns the smallest useful evidence:
 
-- docs-first answers when a repo has `.docs/wiki`
-- canonical reading packs for a task before the agent opens files
-- `multi-read`, `batch`, and `related` commands to replace repeated full-file reads
-- TOON output for large result arrays, typically smaller than JSON
-- semantic C# queries through a bundled Roslyn worker, with text/catalog fallbacks elsewhere
-- an optional local daemon for warm state, never a required MCP server
+| Before | With `mi-lsp` |
+|---|---|
+| Ask the agent to grep, open files, summarize, retry | Ask `nav ask` or `nav pack` for the repo map and reading order |
+| Paste whole files into the conversation | Use `nav multi-read` to return only the useful ranges |
+| Spend tokens on large JSON result arrays | Use TOON output, documented at about 20-40% fewer tokens than JSON on large arrays |
+| Set up a server before getting value | Run a plain local CLI; the daemon is optional warm state |
 
-## One-command install
+These are workflow savings, not a universal benchmark.
+The practical benefit is simple: the agent spends more context on the change and less context finding the change.
 
-Install the CLI and the `mi-lsp` skill for Codex/Claude-style agents:
+## Install In One Command
+
+Recommended for agents: install the CLI and the `mi-lsp` skill for Codex/Claude-style workflows.
 
 ```powershell
 irm https://raw.githubusercontent.com/fgpaz/mi-lsp/main/scripts/install/install-agent.ps1 | iex
@@ -35,7 +42,7 @@ irm https://raw.githubusercontent.com/fgpaz/mi-lsp/main/scripts/install/install-
 curl -fsSL https://raw.githubusercontent.com/fgpaz/mi-lsp/main/scripts/install/install-agent.sh | sh
 ```
 
-Install or update only the CLI:
+CLI-only install or update:
 
 ```powershell
 irm https://raw.githubusercontent.com/fgpaz/mi-lsp/main/scripts/install/install.ps1 | iex
@@ -45,44 +52,46 @@ irm https://raw.githubusercontent.com/fgpaz/mi-lsp/main/scripts/install/install.
 curl -fsSL https://raw.githubusercontent.com/fgpaz/mi-lsp/main/scripts/install/install.sh | sh
 ```
 
-The installers download the latest GitHub Release, pick the host RID (`win-x64`, `win-arm64`, `linux-x64`, or `linux-arm64`), verify the SHA256 checksum, install the bundled `workers/<rid>/` layout, and run `mi-lsp version` plus `mi-lsp worker status`.
+The installers download the latest GitHub Release, pick the host RID (`win-x64`, `win-arm64`, `linux-x64`, or `linux-arm64`), verify SHA256 checksums, install the bundled `workers/<rid>/` layout, and run `mi-lsp version` plus `mi-lsp worker status`.
 macOS assets are not published yet, so the shell installer exits with a clear unsupported-OS message on Darwin.
 
-`install-agent` intentionally requires `npx` and installs the skill through `npx skills add fgpaz/mi-lsp --skill mi-lsp -g -a codex -a claude-code -y`.
-There is no direct folder-copy fallback in that path.
-
-Manual release downloads are still available on the [Releases page](https://github.com/fgpaz/mi-lsp/releases).
-If you move only the binary after extracting a release, run `mi-lsp worker install` once so C# semantic queries can find the bundled worker.
-
-## First minute
+## 30-Second Demo
 
 From any repo:
 
 ```powershell
 mi-lsp init . --name myapp
-mi-lsp nav ask "how is this workspace organized?" --workspace myapp
-mi-lsp nav pack "understand how authentication works" --workspace myapp
+mi-lsp nav ask "how is this workspace organized?" --workspace myapp --format toon
+mi-lsp nav pack "understand how authentication works" --workspace myapp --format toon
 ```
 
+![mi-lsp first minute agent workflow demo](docs/assets/readme/daily-flow-demo.svg)
+
 `mi-lsp init` detects the workspace shape, registers an alias, writes `.mi-lsp/project.toml`, and indexes code plus docs by default.
-`nav ask` answers from canonical docs first when the repo has them; `nav pack` gives the reading order when you want to inspect the evidence yourself.
+`nav ask` answers from canonical docs first when the repo has them.
+`nav pack` gives the reading order before expanding into file content.
+When the pack points to file ranges, `nav multi-read` returns multiple exact slices in one call:
 
-## Daily workflows
+```powershell
+mi-lsp nav multi-read path/to/file.cs:1-90 path/to/other.ts:20-80 --workspace myapp --format toon
+```
 
-| You need to... | Run this |
+## Built For The Daily Agent Loop
+
+| You need the agent to... | Run this |
 |---|---|
-| Orient in a new repo | `mi-lsp nav ask "how is this workspace organized?" --workspace myapp` |
-| Get the docs reading order for a task | `mi-lsp nav pack "understand billing retry" --workspace myapp` |
+| Orient in a new repo | `mi-lsp nav ask "how is this workspace organized?" --workspace myapp --format toon` |
+| Get the docs reading order for a task | `mi-lsp nav pack "understand billing retry" --workspace myapp --format toon` |
 | Find canonical RF/FL/TP/CT/TECH docs | `mi-lsp nav wiki search "billing retry" --workspace myapp --format toon` |
-| Search text and see matching code | `mi-lsp nav search "billing retry" --include-content --workspace myapp` |
+| Search text and see matching code | `mi-lsp nav search "billing retry" --include-content --workspace myapp --format toon` |
 | Read only useful slices | `mi-lsp nav multi-read file1.cs:1-80 file2.ts:20-80 --workspace myapp --format toon` |
 | Understand a symbol neighborhood | `mi-lsp nav related MySymbol --workspace myapp --format toon` |
 | Read code around one line | `mi-lsp nav context path/to/file.cs 42 --workspace myapp --format toon` |
 | Audit one service path | `mi-lsp nav service src/backend/orders --workspace myapp --format toon` |
 | Resume from evidence without opening logs | `mi-lsp nav evidence inventory "release evidence" --workspace myapp --format toon` |
-| Map a parent folder with many repos | `mi-lsp nav workspace-map --workspace myapp --axi` |
+| Map a parent folder with many repos | `mi-lsp nav workspace-map --workspace myapp --axi --format toon` |
 
-Use `--full` when a preview asks you to expand detail:
+Use `--full` only when a preview asks you to expand detail:
 
 ```powershell
 mi-lsp nav search "billing retry" --include-content --workspace myapp --full
@@ -96,6 +105,21 @@ mi-lsp nav workspace-map --workspace myapp --format toon
 mi-lsp nav search "forgot password" --workspace myapp --repo web --format toon
 mi-lsp nav refs IOrderRepository --workspace myapp --repo Orders.Api --format toon
 ```
+
+## What It Does Under The Hood
+
+- Docs-first answers when a repo has `.docs/wiki`
+- Canonical reading packs for a task before the agent opens files
+- `multi-read`, `batch`, and `related` commands to replace repeated full-file reads
+- TOON and compact output formats built for token budgets
+- Semantic C# queries through a bundled Roslyn worker, with text/catalog fallbacks elsewhere
+- Optional local daemon for warm state, never a required MCP server
+
+Manual release downloads are still available on the [Releases page](https://github.com/fgpaz/mi-lsp/releases).
+If you move only the binary after extracting a release, run `mi-lsp worker install` once so C# semantic queries can find the bundled worker.
+
+`install-agent` intentionally requires `npx` and installs the skill through `npx skills add fgpaz/mi-lsp --skill mi-lsp -g -a codex -a claude-code -y`.
+There is no direct folder-copy fallback in that path.
 
 ## Docs-First Search
 
@@ -349,3 +373,40 @@ Start here:
 ## License
 
 MIT
+
+<!--
+harness_protocol: SDD-HARNESS-v1
+id: README
+kind: public-entrypoint
+audience: public-human
+imports:
+  - .docs/wiki/01_alcance_funcional.md
+  - .docs/wiki/02_arquitectura.md
+  - .docs/wiki/04_RF/RF-QRY-001.md
+  - .docs/wiki/09_contratos_tecnicos.md
+exports:
+  - public onboarding narrative
+  - public install commands
+  - agent workflow examples
+agent_must_read:
+  - README.md
+agent_may_edit:
+  - README.md
+  - docs/assets/readme/**
+agent_must_not_edit:
+  - .docs/wiki/_mi-lsp/read-model.toml
+  - .mi-lsp/**
+verify:
+  - mi-lsp workspace status mi-lsp --format toon
+  - mi-lsp nav governance --workspace mi-lsp --format toon
+  - mi-lsp nav wiki validate-harness --workspace mi-lsp --format toon
+  - mi-lsp nav wiki validate-source --workspace mi-lsp --format toon
+  - validate README local links and asset paths
+stop_if:
+  - README leads with implementation details before user benefit
+  - README makes unsupported benchmark or speed claims
+  - public install commands drift from scripts/install paths
+  - linked README assets are missing
+evidence:
+  - .docs/auditoria/<YYYY-MM-DD>-<task-slug>/
+-->
