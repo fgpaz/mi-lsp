@@ -1,6 +1,9 @@
 package model
 
-import "time"
+import (
+	"strings"
+	"time"
+)
 
 const ProtocolVersion = "mi-lsp-v1.1"
 
@@ -589,7 +592,7 @@ type IgnoreBlock struct {
 }
 
 type EmbeddingsBlock struct {
-	Enabled   bool   `toml:"enabled" json:"enabled,omitempty"`
+	Enabled   *bool  `toml:"enabled" json:"enabled,omitempty"`
 	Provider  string `toml:"provider" json:"provider,omitempty"`
 	BaseURL   string `toml:"base_url" json:"base_url,omitempty"`
 	Model     string `toml:"model" json:"model,omitempty"`
@@ -600,18 +603,28 @@ type EmbeddingsBlock struct {
 	TimeoutMS int    `toml:"timeout_ms" json:"timeout_ms,omitempty"`
 }
 
+func (e *EmbeddingsBlock) Active() bool {
+	if e == nil {
+		return false
+	}
+	if e.Enabled != nil && !*e.Enabled {
+		return false
+	}
+	return strings.TrimSpace(e.BaseURL) != "" && strings.TrimSpace(e.Model) != ""
+}
+
 type WikiChunkEmbedding struct {
-	DocPath          string
-	ChunkID          string
-	Heading          string
-	Snippet          string
-	ContentHash      string
-	EmbeddingModel   string
-	StartLine        int
-	EndLine          int
-	EmbeddingDim     int
-	Embedding        []byte // little-endian float32
-	IndexedAt        int64
+	DocPath        string
+	ChunkID        string
+	Heading        string
+	Snippet        string
+	ContentHash    string
+	EmbeddingModel string
+	StartLine      int
+	EndLine        int
+	EmbeddingDim   int
+	Embedding      []byte // little-endian float32
+	IndexedAt      int64
 }
 
 type RecallResult struct {

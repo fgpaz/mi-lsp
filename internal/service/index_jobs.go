@@ -209,6 +209,7 @@ func (a *App) runIndexJob(ctx context.Context, registration model.WorkspaceRegis
 						warning = "no changes detected"
 					}
 					result.Warnings = appendStringIfMissing(result.Warnings, warning)
+					result.Warnings = a.appendWikiEmbeddingWarnings(ctx, registration.Root, result.Warnings)
 					if genErr := store.MarkIndexGenerationSkipped(ctx, db, jobID, "incremental update did not publish a full generation"); genErr != nil {
 						return genErr
 					}
@@ -232,10 +233,7 @@ func (a *App) runIndexJob(ctx context.Context, registration model.WorkspaceRegis
 
 		// Post-publish: embed wiki chunks if applicable (for full/docs modes)
 		if job.Mode == store.IndexModeDocs || job.Mode == store.IndexModeFull {
-			embedWarnings := a.embedWorkspaceWiki(ctx, registration.Root)
-			if len(embedWarnings) > 0 {
-				result.Warnings = append(result.Warnings, embedWarnings...)
-			}
+			result.Warnings = a.appendWikiEmbeddingWarnings(ctx, registration.Root, result.Warnings)
 		}
 
 		return store.MarkIndexJobSucceeded(ctx, db, jobID, result.Stats.Files, result.Stats.Symbols, result.Docs)

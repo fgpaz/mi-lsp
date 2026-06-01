@@ -7,6 +7,11 @@ and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2
 
 ## [Unreleased]
 
+### Fixed
+
+- `[embeddings]` now activates when `base_url` and `model` are present even if `enabled` is omitted; `enabled = false` remains the explicit kill switch.
+- `mi-lsp index`/`index.run` now attempt wiki embedding backfill after docs indexing and no-change incremental runs, so missing `wiki_chunk_embeddings` rows can be populated without forcing unrelated source changes.
+
 ## [0.4.0] - 2026-05-31
 
 ### Added

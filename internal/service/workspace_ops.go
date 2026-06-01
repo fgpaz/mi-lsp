@@ -396,7 +396,7 @@ func (a *App) workspaceStatus(ctx context.Context, request model.CommandRequest)
 	item["governance_summary"] = governance.Summary
 
 	// Embeddings status
-	embeddingsEnabled := project.Embeddings != nil && project.Embeddings.Enabled
+	embeddingsEnabled := project.Embeddings.Active()
 	item["embeddings_enabled"] = embeddingsEnabled
 	recallProfile := "knowledge-wiki"
 	if governance.Profile != "" {

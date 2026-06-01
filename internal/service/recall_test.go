@@ -10,12 +10,17 @@ import (
 	"net/http/httptest"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/fgpaz/mi-lsp/internal/model"
 	"github.com/fgpaz/mi-lsp/internal/store"
 	"github.com/fgpaz/mi-lsp/internal/workspace"
 )
+
+func boolPtr(value bool) *bool {
+	return &value
+}
 
 // buildVector creates a deterministic vector based on text concepts
 func buildVector(text string) []float32 {
@@ -204,7 +209,7 @@ func TestRecall_BilingualEStoEN(t *testing.T) {
 		t.Fatalf("LoadProjectFile: %v", err)
 	}
 	proj.Embeddings = &model.EmbeddingsBlock{
-		Enabled:   true,
+		Enabled:   boolPtr(true),
 		Provider:  "openai",
 		BaseURL:   server.URL,
 		Model:     "fake",
@@ -218,24 +223,15 @@ func TestRecall_BilingualEStoEN(t *testing.T) {
 
 	// Index docs
 	indexEnv, err := app.Execute(context.Background(), model.CommandRequest{
-		Operation: "index.run",
+		Operation: "index.start",
 		Context:   model.QueryOptions{Workspace: alias},
-		Payload:   map[string]any{"docs_only": true},
+		Payload:   map[string]any{"docs_only": true, "wait": true},
 	})
 	if err != nil {
-		t.Fatalf("index.run: %v", err)
+		t.Fatalf("index.start: %v", err)
 	}
 	if !indexEnv.Ok {
-		t.Fatalf("index.run not ok")
-	}
-
-	// Exercise the REAL embedding path: this is exactly what the index job calls
-	// post-publish. With the fake deterministic server, embedWorkspaceWiki must chunk
-	// every indexed doc and populate wiki_chunk_embeddings. This guards the Windows
-	// path-separator regression where doc paths (forward-slash) were filtered with
-	// filepath.Separator and every doc was silently skipped.
-	if warns := app.embedWorkspaceWiki(context.Background(), root); len(warns) > 0 {
-		t.Fatalf("embedWorkspaceWiki returned warnings: %v", warns)
+		t.Fatalf("index.start not ok")
 	}
 
 	db, err := store.Open(root)
@@ -248,7 +244,7 @@ func TestRecall_BilingualEStoEN(t *testing.T) {
 		t.Fatalf("AllWikiChunkEmbeddings: %v", err)
 	}
 	if len(embs) == 0 {
-		t.Fatalf("embedWorkspaceWiki populated 0 embeddings; expected chunks from the indexed wiki notes (Windows path-separator regression?)")
+		t.Fatalf("index.start populated 0 embeddings; expected chunks from the indexed wiki notes (Windows path-separator regression?)")
 	}
 
 	// Now call recall with Spanish query
@@ -285,6 +281,153 @@ func TestRecall_BilingualEStoEN(t *testing.T) {
 	}
 
 	t.Logf("PASS: ES query ranked EN acidification note first (score=%.3f)", topResult.Score)
+}
+
+func TestRecall_EmbeddingsImplicitlyActiveWithoutEnabled(t *testing.T) {
+	server := newFakeEmbeddings(t)
+	defer server.Close()
+
+	ensureWritableTestHome(t)
+	root := t.TempDir()
+
+	writeWorkspaceFile(t, root, "go.mod", "module wiki-implicit-embeddings-test\n\ngo 1.24\n")
+	writeWorkspaceFile(t, root, ".docs/wiki/intro.md", strings.Join([]string{
+		"# Semantic Notes",
+		"",
+		"## Recall",
+		"",
+		"Semantic recall should embed wiki chunks when the embeddings block has a base URL and model.",
+	}, "\n"))
+
+	alias := "wiki-implicit-embeddings-" + filepath.Base(root)
+	app := New(root, nil)
+
+	initEnv, err := app.Execute(context.Background(), model.CommandRequest{
+		Operation: "workspace.init",
+		Context:   model.QueryOptions{},
+		Payload:   map[string]any{"path": root, "alias": alias, "no_index": true},
+	})
+	if err != nil {
+		t.Fatalf("workspace.init: %v", err)
+	}
+	if !initEnv.Ok {
+		t.Fatalf("workspace.init not ok")
+	}
+	defer func() { _ = workspace.RemoveWorkspace(alias) }()
+
+	proj, err := workspace.LoadProjectFile(root)
+	if err != nil {
+		t.Fatalf("LoadProjectFile: %v", err)
+	}
+	proj.Embeddings = &model.EmbeddingsBlock{
+		Provider:  "openai",
+		BaseURL:   server.URL,
+		Model:     "fake",
+		Dim:       8,
+		BatchSize: 4,
+		TimeoutMS: 5000,
+	}
+	if err := workspace.SaveProjectFile(root, proj); err != nil {
+		t.Fatalf("SaveProjectFile: %v", err)
+	}
+
+	indexEnv, err := app.Execute(context.Background(), model.CommandRequest{
+		Operation: "index.start",
+		Context:   model.QueryOptions{Workspace: alias},
+		Payload:   map[string]any{"docs_only": true, "wait": true},
+	})
+	if err != nil {
+		t.Fatalf("index.start: %v", err)
+	}
+	if !indexEnv.Ok {
+		t.Fatalf("index.start not ok")
+	}
+
+	db, err := store.Open(root)
+	if err != nil {
+		t.Fatalf("store.Open: %v", err)
+	}
+	embs, err := store.AllWikiChunkEmbeddings(context.Background(), db)
+	db.Close()
+	if err != nil {
+		t.Fatalf("AllWikiChunkEmbeddings: %v", err)
+	}
+	if len(embs) == 0 {
+		t.Fatalf("embeddings block with base_url and model but omitted enabled populated 0 embeddings")
+	}
+}
+
+func TestRecall_EmbeddingsExplicitFalseDisablesConfiguredBlock(t *testing.T) {
+	var calls atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		http.Error(w, "embeddings provider should not be called", http.StatusInternalServerError)
+	}))
+	defer server.Close()
+
+	ensureWritableTestHome(t)
+	root := t.TempDir()
+
+	writeWorkspaceFile(t, root, "go.mod", "module wiki-explicit-disabled-embeddings-test\n\ngo 1.24\n")
+	writeWorkspaceFile(t, root, ".docs/wiki/intro.md", "# Disabled Embeddings\n\nThis note should stay lexical only.\n")
+
+	alias := "wiki-explicit-disabled-embeddings-" + filepath.Base(root)
+	app := New(root, nil)
+
+	initEnv, err := app.Execute(context.Background(), model.CommandRequest{
+		Operation: "workspace.init",
+		Context:   model.QueryOptions{},
+		Payload:   map[string]any{"path": root, "alias": alias, "no_index": true},
+	})
+	if err != nil {
+		t.Fatalf("workspace.init: %v", err)
+	}
+	if !initEnv.Ok {
+		t.Fatalf("workspace.init not ok")
+	}
+	defer func() { _ = workspace.RemoveWorkspace(alias) }()
+
+	proj, err := workspace.LoadProjectFile(root)
+	if err != nil {
+		t.Fatalf("LoadProjectFile: %v", err)
+	}
+	proj.Embeddings = &model.EmbeddingsBlock{
+		Enabled: boolPtr(false),
+		BaseURL: server.URL,
+		Model:   "fake",
+		Dim:     8,
+	}
+	if err := workspace.SaveProjectFile(root, proj); err != nil {
+		t.Fatalf("SaveProjectFile: %v", err)
+	}
+
+	indexEnv, err := app.Execute(context.Background(), model.CommandRequest{
+		Operation: "index.run",
+		Context:   model.QueryOptions{Workspace: alias},
+		Payload:   map[string]any{"docs_only": true},
+	})
+	if err != nil {
+		t.Fatalf("index.run: %v", err)
+	}
+	if !indexEnv.Ok {
+		t.Fatalf("index.run not ok")
+	}
+	if got := calls.Load(); got != 0 {
+		t.Fatalf("explicit enabled=false should not call embeddings provider, got %d calls", got)
+	}
+
+	db, err := store.Open(root)
+	if err != nil {
+		t.Fatalf("store.Open: %v", err)
+	}
+	embs, err := store.AllWikiChunkEmbeddings(context.Background(), db)
+	db.Close()
+	if err != nil {
+		t.Fatalf("AllWikiChunkEmbeddings: %v", err)
+	}
+	if len(embs) != 0 {
+		t.Fatalf("explicit enabled=false populated %d embeddings; expected 0", len(embs))
+	}
 }
 
 // TestRecall_KnowledgeWikiNoGovernance tests that knowledge-wiki without 00_gobierno_documental.md works
