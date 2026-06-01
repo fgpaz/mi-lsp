@@ -69,14 +69,15 @@ El envelope puede contener ademas:
 
 - **Ungated**: no requiere `governance_blocked=false` ni `docs_index_ready=true`
 - Hot path directo: no auto-inicia daemon
-- Si embeddings no estan listos, cae inmediatamente a FTS/ripgrep
-- Si embeddings estan configurados pero API falla por transient, reintenta exponencial breve (3x) antes de fallback
-- Si API agota timeout o falla permanentemente, transicion a lexical con `coach.trigger=backend_runtime_fallback`
+- `[embeddings]` esta activo cuando `base_url` + `model` existen y `enabled` no es `false`
+- Si `[embeddings]` no esta activo, devuelve `backend=recall`, `items=[]` y `hint` accionable sin llamar al proveedor
+- Si embeddings estan activos pero API falla por transient, cae a fallback lexical
+- Si API agota timeout o falla permanentemente, transicion a lexical con `warning` e `hint` de fallback
 
 ## Backends de busqueda
 
 - `recall`: vector similarity puro cuando embeddings estan listos
-- `recall+lexical`: cosine + FTS/ripgrep cuando fallback activo
+- `recall+lexical`: FTS/ripgrep cuando el proveedor configurado falla
 - Degradacion automatica: usuario no necesita cambiar comando
 
 ## Semantica observable
@@ -89,9 +90,9 @@ El envelope puede contener ademas:
 
 ## Warnings esperables
 
-- `embeddings_unconfigured` — `[embeddings]` no esta seteado en `project.toml`; operacion cae a lexical
+- `embeddings_unconfigured` — `[embeddings]` no esta seteado, falta `base_url`/`model`, o `enabled=false`; operacion devuelve hint sin proveedor
 - `embeddings_unavailable` — API fallo pero fallback lexical disponible
-- `api_timeout` — timeout en embedding API; reintentando fallback
+- `api_timeout` — timeout en embedding API; fallback lexical cuando sea posible
 - `search_fallback` — documentado porque FTS/ripgrep se usa por defecto offline
 - `workspace omitted; multiple registry aliases share root ...`
 - `workspace omitted; no registered workspace matched caller cwd ...; falling back to last_workspace=...`
@@ -136,29 +137,15 @@ El envelope puede contener ademas:
 }
 ```
 
-Si embeddings no estan configurados:
+Si embeddings no estan configurados o fueron apagados explicitamente:
 
 ```json
 {
   "ok": true,
-  "backend": "recall+lexical",
+  "backend": "recall",
   "workspace": "alias",
-  "items": [...],
-  "warnings": ["embeddings_unconfigured"],
-  "coach": {
-    "trigger": "embeddings_unconfigured",
-    "message": "Semantic recall disabled; using lexical search. Configure [embeddings] in .mi-lsp/project.toml to enable vectors.",
-    "confidence": "low",
-    "actions": [
-      {
-        "kind": "configure",
-        "label": "Set up embeddings",
-        "command": "# Edit .mi-lsp/project.toml [embeddings]"
-      }
-    ]
-  },
-  "hint": "configure embeddings for semantic search",
-  "stats": {"items": 5, "backend_time_ms": 234},
+  "items": [],
+  "hint": "embeddings not configured; configure [embeddings] section in .mi-lsp/project.toml or use 'mi-lsp nav search' for lexical search",
   "truncated": false
 }
 ```
@@ -173,6 +160,6 @@ Si embeddings no estan configurados:
 
 `mi-lsp workspace status` debe exponer en su envelope:
 - `embeddings_enabled: true|false`
-- `embeddings_profile`: "knowledge-wiki" o "spec-driven" (o `null` si unconfigured)
-- `embeddings_model`: nombre del modelo actual si enabled
+- `recall_profile`: "knowledge-wiki" o "spec-driven"
+- `embeddings_model`: nombre del modelo actual si enabled (campo futuro/diagnostico cuando exista)
 - Si embeddings esta en estado `unconfigured` o `offline`, incluir hint accionable

@@ -51,6 +51,7 @@ evidence:
 
 | Campo | Tipo | Req. | Origen | Validacion | RN |
 |---|---|---|---|---|---|
+| `enabled` | bool | no | `.mi-lsp/project.toml [embeddings]` | omitido = activo si `base_url` + `model`; `false` = apagado explicito | RF-SEM-001 |
 | `provider` | string | no | `.mi-lsp/project.toml [embeddings]` | e.g. `openai`, `azure`, `custom` o vacio | RF-SEM-001 |
 | `base_url` | string | no | `.mi-lsp/project.toml [embeddings]` | valid HTTP(S) URL o vacio | RF-SEM-001 |
 | `model` | string | no | `.mi-lsp/project.toml [embeddings]` | e.g. `text-embedding-3-small`, `bge-m3` o vacio | RF-SEM-001 |
@@ -64,11 +65,11 @@ evidence:
 
 1. CLI recibe comando `nav recall` o similar.
 2. Core lee `.mi-lsp/project.toml` seccion `[embeddings]` si existe.
-3. Si `[embeddings]` section no existe, usa default offlineion-lexical).
-4. Si `provider` esta configurado, carga cliente OpenAI-compatible con credenciales de env var.
-5. Valida conexion a backend (timeout `timeout_ms`).
-6. Si validacion falla, registra warning y cae a fallback offline-lexical.
-7. Config se mantiene viva para toda sesion de CLI.
+3. Si `[embeddings]` no existe, falta `base_url`/`model`, o `enabled=false`, devuelve hint y no llama al backend.
+4. Si `base_url` + `model` existen y `enabled` esta omitido o `true`, carga cliente OpenAI-compatible con credenciales de env var.
+5. Ejecuta embedding del query o de chunks de wiki con timeout `timeout_ms`.
+6. Si la llamada falla, registra warning y cae a fallback offline-lexical cuando el comando soporta fallback.
+7. Config efectiva se resuelve desde `.mi-lsp/project.toml` por operacion.
 
 ## 5. Outputs
 
@@ -89,7 +90,9 @@ evidence:
 
 ## 7. Special Cases and Variants
 
-- Si no hay seccion `[embeddings]` en `project.toml`, default es offline-lexical (no error).
+- Si no hay seccion `[embeddings]` en `project.toml`, default es `embeddings_unconfigured` con hint accionable (no error).
+- Si hay `base_url` + `model` y `enabled` esta omitido, la config esta activa.
+- Si `enabled=false`, la config queda apagada aunque existan `base_url` + `model`.
 - Si `provider` es vacio o `null`, skip inicializacion de cliente y usa offline directo.
 - Si backend esta accesible pero timeout en validacion, registra warning y cae a offline.
 - Config puede ser override parcial por CLI flags (future expansion).
@@ -104,9 +107,18 @@ evidence:
 ```gherkin
 Scenario: Cargar config valida desde project.toml
   Given un workspace con [embeddings] section en project.toml valida
+  And la config incluye base_url y model
+  And enabled esta omitido
   When ejecuto "mi-lsp nav recall 'query' --workspace <alias>"
   Then la config se carga exitosamente
   And backend = "embeddings"
+
+Scenario: Apagar embeddings con kill switch explicito
+  Given un workspace con [embeddings] section en project.toml valida
+  And enabled = false
+  When ejecuto "mi-lsp index --workspace <alias> --docs-only"
+  Then no se llama al provider de embeddings
+  And wiki_chunk_embeddings no recibe filas nuevas
 
 Scenario: Caer a offline si backend no responde
   Given config que apunta a un backend no disponible
@@ -118,8 +130,10 @@ Scenario: Caer a offline si backend no responde
 Scenario: Usar default offline si no hay config
   Given un workspace sin seccion [embeddings]
   When ejecuto "mi-lsp nav recall 'query' --workspace <alias>"
-  Then no hay error, backend = "text-index"
-  And se usa online-lexical sin intentar remote
+  Then no hay error, backend = "recall"
+  And items = []
+  And hint menciona embeddings
+  And no se intenta remote
 ```
 
 ## 10. Test Traceability

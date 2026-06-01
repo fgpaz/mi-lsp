@@ -51,16 +51,17 @@ Indices:
 
 ### Migracion inicial
 
-- Tabla creada on-demand en el primer `mi-lsp index` que detecta `[embeddings]` configurado
+- Tabla creada on-demand en el primer `mi-lsp index`/`index.run` que detecta `[embeddings]` activo (`base_url` + `model`, salvo `enabled=false`)
 - Lazy CREATE-IF-NOT-EXISTS: no bloquea publicacion si la creacion de tabla falla
 - Migrar desde absence a presencia no requiere `PRAGMA user_version`
+- Un index incremental sin cambios puede ejecutar backfill para poblar filas faltantes de `wiki_chunk_embeddings`
 
 ### Cambios de contenido incremental
 
-- Chunk se re-embeddea solo si `content_hash` en `doc_records` diferente del de `wiki_chunk_embeddings`
+- Chunk se re-embeddea solo si `content_hash`, modelo o dimension difieren de la fila existente en `wiki_chunk_embeddings`
 - Cambios en `doc_records` (ej. titulo, body) disparan recalculo del hash
-- Query de lookup: `SELECT embedding FROM wiki_chunk_embeddings WHERE doc_path = ? AND content_hash = ?`
-- Si hit en hash, se salta embedding; si miss, se requerimiento via API y se upsert a BLOB
+- Query de lookup: `SELECT ... FROM wiki_chunk_embeddings` cargada por `(doc_path, chunk_id)`
+- Si hit en hash/modelo/dimension, se reutiliza el BLOB; si miss, se requiere via API y se reemplaza el batch de docs indexados
 
 ### Full refresh
 

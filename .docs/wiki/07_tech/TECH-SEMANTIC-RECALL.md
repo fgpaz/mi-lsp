@@ -37,8 +37,8 @@ Detallar la arquitectura tecnica del backend de semantic recall: embeddings vect
 
 Subsistema responsable de:
 - Inicializacion de cliente OpenAI-compatible con configuracion de `[embeddings]` desde `project.toml`
-- Resolucion de endpoint base, modelo y API key desde `MI_LSP_EMBEDDINGS_API_KEY`
-- Timeout configurado, reintentos y manejo de fallas de conectividad
+- Resolucion de endpoint base, modelo y API key opcional desde `MI_LSP_EMBEDDINGS_API_KEY`
+- Timeout configurado y manejo de fallas de conectividad
 - Soporte pluggable de proveedores: OpenAI, Tesla BGE-m3, Azure OpenAI y compatibles
 
 ### `internal/wikichunk`
@@ -63,9 +63,9 @@ Persistencia SQLite:
 
 ### Flujo de embedding
 
-1. Durante `mi-lsp index`, post-publicacion del corpus documental
-2. Deteccion de cambios por `content_hash` en `doc_records`
-3. Reintentos exponenciales para fallos transientes de API
+1. Durante `mi-lsp index`/`index.run`, post-publicacion del corpus documental o como backfill incremental sin cambios
+2. Activacion por `EmbeddingsBlock.Active()`: `[embeddings]` existe con `base_url` + `model`, salvo `enabled = false` explicito
+3. Deteccion de cambios por `content_hash`, modelo y dimension respecto de `wiki_chunk_embeddings`
 4. Almacenamiento en BLOB float32 little-endian para compacidad
 5. Lazy CREATE-IF-NOT-EXISTS cuando se detecta la tabla ausente
 6. No bloquea publication del indice si embedding falla
@@ -75,7 +75,7 @@ Persistencia SQLite:
 - Encoding del query via el mismo modelo
 - Cosine similarity puro-Go sobre vectores BLOB cargados en memoria
 - Top-k determinista respecto de `max_items`
-- Degradacion a lexical (FTS/ripgrep) si embeddings no estan listos
+- Degradacion a lexical (FTS/ripgrep) si el proveedor activo falla; hint accionable si `[embeddings]` no esta activo
 - Score normalizacion [0, 1] con penalizacion de score bajo
 
 ### Configuracion
@@ -84,6 +84,7 @@ En `.mi-lsp/project.toml`:
 
 ```toml
 [embeddings]
+# enabled = false  # kill switch explicito; omitido equivale a activo si base_url + model existen
 provider = "openai"  # o "tesla", "azure-openai"
 base_url = "https://api.openai.com/v1"
 model = "text-embedding-3-large"  # o "bge-m3" para Tesla
@@ -101,8 +102,8 @@ timeout_ms = 30000
 
 ### Degradacion offline
 
-- Si `MI_LSP_EMBEDDINGS_API_KEY` no esta configurado, el subsistema arranca en modo `offline`
-- Primer query en modo offline dispara fallback automatico a FTS/ripgrep nativo
+- Si `[embeddings]` no existe, falta `base_url`/`model`, o `enabled = false`, `nav recall` devuelve hint de configuracion sin llamar al proveedor
+- Si el proveedor configurado no responde o rechaza la request, `nav recall` cae a FTS/ripgrep nativo
 - Usuario puede configurar manualmente con `--no-auto-daemon` si lo prefiere
 - Warnings informan sobre el cambio de backend
 
@@ -126,7 +127,8 @@ timeout_ms = 30000
 
 - Workspace status expone `embeddings_enabled` y `recall_profile` (o `embeddings_unconfigured` en hint)
 - Migration: tabla `wiki_chunk_embeddings` creada on-demand con lazy CREATE-IF-NOT-EXISTS
-- Cambios en embeddings config disparan re-embedding por content hash, no full rebuild
+- `embeddings_enabled=true` cuando `[embeddings]` tiene `base_url` + `model` y no esta apagado con `enabled=false`
+- Cambios en embeddings config disparan re-embedding por content hash/modelo/dimension, no full rebuild manual
 
 ## No objetivos
 

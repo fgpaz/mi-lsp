@@ -160,10 +160,12 @@ For repositories that have a markdown knowledge wiki but no formal `00_gobierno_
 It works multilingually: a Spanish query will find matching English notes by meaning, not just text.
 Offline ⇒ lexical fallback: when embeddings service is unavailable, `recall` degrades gracefully to keyword search.
 
-The feature is gated by optional `[embeddings]` configuration in `.mi-lsp/project.toml`:
+The feature is gated by optional `[embeddings]` configuration in `.mi-lsp/project.toml`.
+A block with both `base_url` and `model` is active by default; set `enabled = false` only when you need an explicit local kill switch:
 
 ```toml
 [embeddings]
+# enabled = false  # optional kill switch; omit for normal active config
 provider = "openai"
 base_url = "http://localhost:8000/v1"
 model = "bge-m3"
@@ -178,6 +180,7 @@ The API key is populated via `mkey run` and injected as an environment variable 
 `tesla bge-m3` is the documented reference endpoint (1024-dim multilingual embeddings).
 The `knowledge-wiki` profile auto-detects when no formal governance exists, bypassing the spec-driven gate.
 Chunks are stored in repo-local `wiki_chunk_embeddings` table with incremental re-embedding by content hash.
+Rerunning `mi-lsp index` can backfill missing vectors even when the document catalog reports no source changes.
 
 ## Evidence Inventory For Agent Reentry
 

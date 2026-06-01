@@ -71,10 +71,12 @@ El detalle por frontera vive en `09_contratos/`.
 
 ## Configuracion de embeddings
 
-`[embeddings]` en `.mi-lsp/project.toml` habilita busqueda semantica:
+`[embeddings]` en `.mi-lsp/project.toml` habilita busqueda semantica cuando incluye `base_url` + `model`.
+`enabled` es opcional: omitido equivale a activo y `enabled = false` es el kill switch explicito.
 
 ```toml
 [embeddings]
+# enabled = false  # opcional; apaga semantic recall sin borrar la config
 provider = "openai"  # o "tesla", "azure-openai"
 base_url = "https://api.openai.com/v1"
 model = "text-embedding-3-large"
@@ -86,7 +88,7 @@ timeout_ms = 30000
 ```
 
 API key resuelta via `MI_LSP_EMBEDDINGS_API_KEY` environment variable (usualmente inyectada con `mkey run`).
-Sin configuracion, `nav recall` cae a busqueda lexical (FTS/ripgrep) con hint visible.
+Sin configuracion activa, `nav recall` devuelve hint visible y no llama al proveedor; si el proveedor activo falla, degrada a busqueda lexical (FTS/ripgrep).
 
 ## Versionado, auth y errores
 

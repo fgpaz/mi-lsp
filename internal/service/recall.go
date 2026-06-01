@@ -28,8 +28,8 @@ func (a *App) embedWorkspaceWiki(ctx context.Context, root string) []string {
 		return warnings
 	}
 
-	// Check if embeddings are enabled and configured
-	if project.Embeddings == nil || !project.Embeddings.Enabled || project.Embeddings.BaseURL == "" || project.Embeddings.Model == "" {
+	// Check if embeddings are active and configured.
+	if !project.Embeddings.Active() {
 		// No-op: embeddings not configured
 		return nil
 	}
@@ -61,13 +61,13 @@ func (a *App) embedWorkspaceWiki(ctx context.Context, root string) []string {
 
 	// Build embeddings client
 	cfg := embed.Config{
-		Provider:    project.Embeddings.Provider,
-		BaseURL:     project.Embeddings.BaseURL,
-		Model:       project.Embeddings.Model,
-		APIKeyEnv:   project.Embeddings.APIKeyEnv,
-		Dim:         project.Embeddings.Dim,
-		BatchSize:   project.Embeddings.BatchSize,
-		TimeoutMS:   project.Embeddings.TimeoutMS,
+		Provider:  project.Embeddings.Provider,
+		BaseURL:   project.Embeddings.BaseURL,
+		Model:     project.Embeddings.Model,
+		APIKeyEnv: project.Embeddings.APIKeyEnv,
+		Dim:       project.Embeddings.Dim,
+		BatchSize: project.Embeddings.BatchSize,
+		TimeoutMS: project.Embeddings.TimeoutMS,
 	}
 	if cfg.APIKeyEnv == "" {
 		cfg.APIKeyEnv = "MI_LSP_EMBEDDINGS_API_KEY"
@@ -174,6 +174,13 @@ func (a *App) embedWorkspaceWiki(ctx context.Context, root string) []string {
 	return warnings
 }
 
+func (a *App) appendWikiEmbeddingWarnings(ctx context.Context, root string, warnings []string) []string {
+	if embedWarnings := a.embedWorkspaceWiki(ctx, root); len(embedWarnings) > 0 {
+		warnings = append(warnings, embedWarnings...)
+	}
+	return warnings
+}
+
 // recall handles semantic search over wiki chunks via embeddings or lexical fallback.
 func (a *App) recall(ctx context.Context, request model.CommandRequest) (model.Envelope, error) {
 	// Resolve workspace (same pattern as search/ask, NO governance gate)
@@ -190,16 +197,16 @@ func (a *App) recall(ctx context.Context, request model.CommandRequest) (model.E
 
 	mapMode, _ := request.Payload["map"].(bool)
 
-	// Check if embeddings are configured
-	if project.Embeddings == nil || !project.Embeddings.Enabled || project.Embeddings.BaseURL == "" || project.Embeddings.Model == "" {
+	// Check if embeddings are active and configured.
+	if !project.Embeddings.Active() {
 		// Return hint without calling embeddings
 		hint := "embeddings not configured; configure [embeddings] section in .mi-lsp/project.toml or use 'mi-lsp nav search' for lexical search"
 		return model.Envelope{
-			Ok:       true,
+			Ok:        true,
 			Workspace: registration.Name,
-			Backend:  "recall",
-			Items:    []model.RecallResult{},
-			Hint:     hint,
+			Backend:   "recall",
+			Items:     []model.RecallResult{},
+			Hint:      hint,
 		}, nil
 	}
 
@@ -212,13 +219,13 @@ func (a *App) recall(ctx context.Context, request model.CommandRequest) (model.E
 
 	// Build embeddings client
 	cfg := embed.Config{
-		Provider:    project.Embeddings.Provider,
-		BaseURL:     project.Embeddings.BaseURL,
-		Model:       project.Embeddings.Model,
-		APIKeyEnv:   project.Embeddings.APIKeyEnv,
-		Dim:         project.Embeddings.Dim,
-		BatchSize:   project.Embeddings.BatchSize,
-		TimeoutMS:   project.Embeddings.TimeoutMS,
+		Provider:  project.Embeddings.Provider,
+		BaseURL:   project.Embeddings.BaseURL,
+		Model:     project.Embeddings.Model,
+		APIKeyEnv: project.Embeddings.APIKeyEnv,
+		Dim:       project.Embeddings.Dim,
+		BatchSize: project.Embeddings.BatchSize,
+		TimeoutMS: project.Embeddings.TimeoutMS,
 	}
 	if cfg.APIKeyEnv == "" {
 		cfg.APIKeyEnv = "MI_LSP_EMBEDDINGS_API_KEY"
@@ -240,11 +247,11 @@ func (a *App) recall(ctx context.Context, request model.CommandRequest) (model.E
 			path, _ := item["path"].(string)
 			snippet, _ := item["snippet"].(string)
 			results = append(results, model.RecallResult{
-				Query:     query,
-				Archivo:   path,
-				Snippet:   snippet,
-				Score:     0,
-				Why:       []string{"lexical_fallback"},
+				Query:   query,
+				Archivo: path,
+				Snippet: snippet,
+				Score:   0,
+				Why:     []string{"lexical_fallback"},
 			})
 		}
 
@@ -252,13 +259,13 @@ func (a *App) recall(ctx context.Context, request model.CommandRequest) (model.E
 		hint := "embeddings endpoint offline; results are from lexical search. Fix embeddings config to enable semantic search."
 
 		return model.Envelope{
-			Ok:       true,
+			Ok:        true,
 			Workspace: registration.Name,
-			Backend:  "recall+lexical",
-			Items:    results,
-			Warnings: warnings,
-			Hint:     hint,
-			Stats:    model.Stats{Files: len(results)},
+			Backend:   "recall+lexical",
+			Items:     results,
+			Warnings:  warnings,
+			Hint:      hint,
+			Stats:     model.Stats{Files: len(results)},
 		}, nil
 	}
 
@@ -317,12 +324,12 @@ func (a *App) recall(ctx context.Context, request model.CommandRequest) (model.E
 	}
 
 	return model.Envelope{
-		Ok:       true,
+		Ok:        true,
 		Workspace: registration.Name,
-		Backend:  "recall",
-		Mode:     "semantic",
-		Items:    results,
-		Stats:    model.Stats{Files: len(results)},
+		Backend:   "recall",
+		Mode:      "semantic",
+		Items:     results,
+		Stats:     model.Stats{Files: len(results)},
 	}, nil
 }
 
