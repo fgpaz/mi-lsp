@@ -23,6 +23,18 @@ type resolvedGovernanceProfile struct {
 	Overlays []string
 }
 
+var requiredAECanonModules = []string{
+	"README.md",
+	"AE-PHASES.md",
+	"AE-HARNESS-MANIFEST.md",
+	"AE-HARNESS-ORCHESTRATION.md",
+	"AE-WORK-MODES.md",
+	"AE-SESSION-CONTRACT.md",
+	"AE-PROJECTION-POLICY.md",
+	"AE-EVIDENCE-POLICY.md",
+	"AE-RELEASE-DISTRIBUTION.md",
+}
+
 func GovernanceDocPath(root string) string {
 	return filepath.Join(root, ".docs", "wiki", "00_gobierno_documental.md")
 }
@@ -42,6 +54,7 @@ func InspectGovernance(root string, autoSync bool) model.GovernanceStatus {
 	if err != nil {
 		status.Sync = "missing"
 		status.IndexSync, status.IndexSyncDetails = inspectIndexSync(root)
+		status.AECanon = inspectAECanonFromProjection(root, "governance_missing")
 		status.Issues = []string{"missing .docs/wiki/00_gobierno_documental.md"}
 		status.Blocked = true
 		status.NextSteps = governanceRepairSteps(status.ProjectionDoc)
@@ -53,6 +66,7 @@ func InspectGovernance(root string, autoSync bool) model.GovernanceStatus {
 	if err != nil {
 		status.Sync = "invalid"
 		status.IndexSync, status.IndexSyncDetails = inspectIndexSync(root)
+		status.AECanon = inspectAECanonFromProjection(root, "governance_invalid")
 		status.Issues = []string{"missing fenced YAML governance block in 00_gobierno_documental.md"}
 		status.Blocked = true
 		status.NextSteps = governanceRepairSteps(status.ProjectionDoc)
@@ -64,6 +78,7 @@ func InspectGovernance(root string, autoSync bool) model.GovernanceStatus {
 	if err := yaml.Unmarshal([]byte(block), &source); err != nil {
 		status.Sync = "invalid"
 		status.IndexSync, status.IndexSyncDetails = inspectIndexSync(root)
+		status.AECanon = inspectAECanonFromProjection(root, "governance_invalid")
 		status.Issues = []string{fmt.Sprintf("invalid governance YAML: %v", err)}
 		status.Blocked = true
 		status.NextSteps = governanceRepairSteps(status.ProjectionDoc)
@@ -90,6 +105,7 @@ func InspectGovernance(root string, autoSync bool) model.GovernanceStatus {
 	status.AuditChain = append([]string{}, source.AuditChain...)
 	status.BlockingRules = append([]string{}, source.BlockingRules...)
 	status.NumberingRecommended = source.NumberingRecommended
+	status.AECanon = inspectAECanonFromHierarchy(root, source.Hierarchy, "governance")
 
 	if len(issues) > 0 {
 		status.Sync = "invalid"
@@ -148,6 +164,9 @@ func InspectGovernance(root string, autoSync bool) model.GovernanceStatus {
 	if status.IndexSync == "stale" {
 		status.Issues = append(status.Issues, "workspace index is stale relative to governance sources; rerun mi-lsp index")
 	}
+	if status.AECanon.Blocking && (status.AECanon.Status == "missing" || status.AECanon.Status == "mismatch") {
+		status.Issues = append(status.Issues, "AE canon is blocked: "+status.AECanon.Reason)
+	}
 
 	status.Blocked = len(status.Issues) > 0
 	if status.Blocked {
@@ -163,6 +182,222 @@ func InspectGovernance(root string, autoSync bool) model.GovernanceStatus {
 	}
 	status.Summary = fmt.Sprintf("Governance is valid for profile %s and the projection is ready.", status.Profile)
 	return status
+}
+
+func inspectAECanonFromProjection(root string, reason string) model.AECanonStatus {
+	profile, source, _ := LoadProfile(root)
+	if source == "project" {
+		roots := declaredAECanonRoots(profile.Governance.Hierarchy)
+		if len(roots) > 0 {
+			status := inspectAECanonRoots(root, roots, "read_model", reason+"_read_model_projection")
+			status.Status = "projection_only"
+			status.Blocking = true
+			status.Reason = reason + "_read_model_projection_only"
+			return status
+		}
+	}
+	if directoryExists(filepath.Join(root, ".docs", "wiki", "ae")) {
+		return inspectAECanonRoots(root, []string{filepath.ToSlash(filepath.Join(".docs", "wiki", "ae"))}, "fallback", reason+"_fallback")
+	}
+	return model.AECanonStatus{
+		Status:          "missing",
+		Source:          "fallback",
+		RequiredModules: append([]string{}, requiredAECanonModules...),
+		MissingModules:  append([]string{}, requiredAECanonModules...),
+		Blocking:        true,
+		Reason:          reason,
+	}
+}
+
+func inspectAECanonFromHierarchy(root string, hierarchy []model.GovernanceHierarchyItem, source string) model.AECanonStatus {
+	roots := declaredAECanonRoots(hierarchy)
+	if len(roots) > 0 {
+		return inspectAECanonRoots(root, roots, source, source+"_declared")
+	}
+	fallbackRoot := filepath.ToSlash(filepath.Join(".docs", "wiki", "ae"))
+	if directoryExists(filepath.Join(root, filepath.FromSlash(fallbackRoot))) {
+		return inspectAECanonRoots(root, []string{fallbackRoot}, "fallback", "fallback_docs_wiki_ae")
+	}
+	return model.AECanonStatus{
+		Status:          "not_applicable",
+		Source:          "fallback",
+		RequiredModules: append([]string{}, requiredAECanonModules...),
+		Blocking:        false,
+		Reason:          "no_ae_canon_declared",
+	}
+}
+
+func inspectAECanonRoots(root string, roots []string, source string, reason string) model.AECanonStatus {
+	roots = dedupeStrings(normalizeAECanonRoots(roots))
+	for _, declaredRoot := range roots {
+		if redirectedRoot := aeCanonRedirectRoot(root, declaredRoot); redirectedRoot != "" {
+			status := inspectAECanonRoot(root, redirectedRoot, "redirect", "readme_redirect")
+			if status.Status == "valid" {
+				return status
+			}
+			if status.Status == "missing" {
+				status.Status = "mismatch"
+				status.Reason = "readme_redirect_missing_modules"
+			}
+			return status
+		}
+	}
+	best := model.AECanonStatus{
+		Status:          "missing",
+		Roots:           append([]string{}, roots...),
+		Source:          source,
+		RequiredModules: append([]string{}, requiredAECanonModules...),
+		Blocking:        true,
+		Reason:          reason + "_missing_modules",
+	}
+	for _, declaredRoot := range roots {
+		status := inspectAECanonRoot(root, declaredRoot, source, reason)
+		if status.Status == "valid" {
+			return status
+		}
+		if len(best.MissingModules) == 0 || len(status.MissingModules) < len(best.MissingModules) {
+			best = status
+		}
+	}
+	return best
+}
+
+func inspectAECanonRoot(root string, aeRoot string, source string, reason string) model.AECanonStatus {
+	aeRoot = filepath.ToSlash(strings.Trim(strings.TrimSpace(aeRoot), "/"))
+	missing := make([]string, 0)
+	for _, module := range requiredAECanonModules {
+		rel := filepath.ToSlash(filepath.Join(aeRoot, module))
+		if _, err := os.Stat(filepath.Join(root, filepath.FromSlash(rel))); err != nil {
+			missing = append(missing, rel)
+		}
+	}
+	status := model.AECanonStatus{
+		Status:          "valid",
+		Roots:           []string{aeRoot},
+		Source:          source,
+		RequiredModules: append([]string{}, requiredAECanonModules...),
+		MissingModules:  missing,
+		Blocking:        false,
+		Reason:          reason + "_valid",
+	}
+	if len(missing) > 0 {
+		status.Status = "missing"
+		status.Blocking = true
+		status.Reason = reason + "_missing_modules"
+	}
+	return status
+}
+
+func declaredAECanonRoots(hierarchy []model.GovernanceHierarchyItem) []string {
+	roots := make([]string, 0)
+	for _, item := range hierarchy {
+		itemDeclaresAE := governanceItemDeclaresAE(item)
+		for _, path := range item.Paths {
+			if !itemDeclaresAE && !pathLooksLikeAERoot(path) {
+				continue
+			}
+			if root := aeRootFromPattern(path); root != "" {
+				roots = append(roots, root)
+			}
+		}
+	}
+	return dedupeStrings(normalizeAECanonRoots(roots))
+}
+
+func governanceItemDeclaresAE(item model.GovernanceHierarchyItem) bool {
+	layer := strings.ToUpper(strings.TrimSpace(item.Layer))
+	id := strings.ToLower(strings.TrimSpace(item.ID))
+	label := strings.ToLower(strings.TrimSpace(item.Label))
+	return layer == "AE" ||
+		strings.Contains(id, "agent_engineering") ||
+		strings.Contains(id, "agent-engineering") ||
+		strings.Contains(label, "agent engineering")
+}
+
+func pathLooksLikeAERoot(path string) bool {
+	normalized := "/" + strings.ToLower(filepath.ToSlash(strings.TrimSpace(path))) + "/"
+	return strings.Contains(normalized, "/ae/") ||
+		strings.Contains(normalized, "/wiki/ae/") ||
+		strings.Contains(normalized, "/.docs/ae/")
+}
+
+func aeRootFromPattern(path string) string {
+	normalized := filepath.ToSlash(strings.TrimSpace(path))
+	if normalized == "" {
+		return ""
+	}
+	normalized = strings.TrimSuffix(normalized, "/")
+	if strings.ContainsAny(normalized, "*?[") {
+		parts := strings.Split(normalized, "/")
+		kept := make([]string, 0, len(parts))
+		for _, part := range parts {
+			if strings.ContainsAny(part, "*?[") {
+				break
+			}
+			kept = append(kept, part)
+		}
+		return strings.Trim(strings.Join(kept, "/"), "/")
+	}
+	if strings.HasSuffix(strings.ToLower(normalized), ".md") {
+		return strings.Trim(filepath.ToSlash(filepath.Dir(normalized)), "/")
+	}
+	return strings.Trim(normalized, "/")
+}
+
+func normalizeAECanonRoots(roots []string) []string {
+	out := make([]string, 0, len(roots))
+	for _, root := range roots {
+		normalized := filepath.ToSlash(strings.Trim(strings.TrimSpace(root), "/"))
+		if normalized == "." || normalized == "" {
+			continue
+		}
+		out = append(out, normalized)
+	}
+	return out
+}
+
+func aeCanonRedirectRoot(root string, declaredRoot string) string {
+	readmePath := filepath.Join(root, filepath.FromSlash(declaredRoot), "README.md")
+	content, err := os.ReadFile(readmePath)
+	if err != nil {
+		return ""
+	}
+	text := strings.ToLower(filepath.ToSlash(string(content)))
+	candidates := []string{
+		".docs/ae/README.md",
+		".docs/ae",
+		".docs/wiki/ae/README.md",
+		".docs/wiki/ae",
+		"wiki/ae/README.md",
+		"wiki/ae",
+	}
+	for _, candidate := range candidates {
+		if !containsAEPathMention(text, strings.ToLower(candidate)) {
+			continue
+		}
+		target := aeRootFromPattern(candidate)
+		if target != "" && target != declaredRoot {
+			return target
+		}
+	}
+	return ""
+}
+
+func containsAEPathMention(text string, candidate string) bool {
+	if !strings.HasPrefix(candidate, "wiki/ae") {
+		return strings.Contains(text, candidate)
+	}
+	for _, prefix := range []string{"`", " ", "\n", "\r", "\t", "(", "[", ":"} {
+		if strings.Contains(text, prefix+candidate) {
+			return true
+		}
+	}
+	return strings.HasPrefix(text, candidate)
+}
+
+func directoryExists(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && info.IsDir()
 }
 
 func extractGovernanceYAMLBlock(content []byte) (string, error) {

@@ -228,6 +228,41 @@ func TestNavRouteDoesNotAttachMissingExplicitRFToGovernanceFallback(t *testing.T
 	}
 }
 
+func TestNavRouteExplicitAEIDPrefersDeclaredCanonRoot(t *testing.T) {
+	alias := "route-ae-canon-" + t.Name()
+	ensureWritableTestHome(t)
+	root := t.TempDir()
+	writeWorkspaceFile(t, root, "src/App.csproj", `<Project Sdk="Microsoft.NET.Sdk"></Project>`)
+	writeWorkspaceFile(t, root, ".docs/wiki/07_baseline_tecnica.md", "# 07. Baseline tecnica\n")
+	writeAECanonModules(t, root, ".docs/ae")
+	writeSpecBackendGovernanceFixtureWithAE(t, root, ".docs/ae")
+	writeWorkspaceFile(t, root, ".docs/wiki/ae/AE-HARNESS-MANIFEST.md", "# AE-HARNESS-MANIFEST\n\nLegacy projection only.\n")
+	if _, err := workspace.RegisterWorkspace(alias, model.WorkspaceRegistration{
+		Name:      alias,
+		Root:      root,
+		Languages: []string{"csharp"},
+		Kind:      model.WorkspaceKindSingle,
+	}); err != nil {
+		t.Fatalf("register workspace: %v", err)
+	}
+	defer func() { _ = workspace.RemoveWorkspace(alias) }()
+
+	app := New(root, nil)
+	env, err := app.Execute(context.Background(), model.CommandRequest{
+		Operation: "nav.route",
+		Context:   model.QueryOptions{Workspace: alias},
+		Payload:   map[string]any{"task": "AE-HARNESS-MANIFEST"},
+	})
+	if err != nil {
+		t.Fatalf("nav.route: %v", err)
+	}
+	results := env.Items.([]model.RouteResult)
+	anchor := results[0].Canonical.AnchorDoc
+	if anchor.Path != ".docs/ae/AE-HARNESS-MANIFEST.md" {
+		t.Fatalf("AE anchor path = %q, want declared .docs/ae root", anchor.Path)
+	}
+}
+
 func TestNavRoutePreviewModeByDefault(t *testing.T) {
 	alias := "route-preview-" + t.Name()
 	root := createFunctionalPackWorkspaceFixture(t, alias)

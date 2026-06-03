@@ -394,6 +394,7 @@ func (a *App) workspaceStatus(ctx context.Context, request model.CommandRequest)
 	item["governance_index_sync_details"] = governance.IndexSyncDetails
 	item["governance_blocked"] = governance.Blocked
 	item["governance_summary"] = governance.Summary
+	item["ae_canon"] = governance.AECanon
 
 	// Embeddings status
 	embeddingsEnabled := project.Embeddings.Active()
@@ -440,7 +441,7 @@ func (a *App) workspaceStatus(ctx context.Context, request model.CommandRequest)
 	}
 	docsIndexReady := docCount > 0
 	item["index_ready"] = stats.Files > 0 || stats.Symbols > 0
-	item["docs_ready"] = docsIndexReady
+	item["docs_ready"] = docsIndexReady && !governance.AECanon.Blocking
 	item["docs_index_ready"] = docsIndexReady
 	item["doc_count"] = docCount
 	item["index_files"] = stats.Files

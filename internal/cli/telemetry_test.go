@@ -46,6 +46,43 @@ func TestRecordOperationInfersBackendForFailedContextRequests(t *testing.T) {
 	}
 }
 
+func TestRecordOperationPersistsGovernedHarnessAttribution(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+
+	telemetry := NewCLITelemetry("codex-ae-worker", "ae-session-1", false)
+	if telemetry == nil {
+		t.Fatal("expected telemetry instance")
+	}
+	defer telemetry.Close()
+
+	telemetry.RecordOperation(model.CommandRequest{
+		Operation: "nav.governance",
+		Context:   model.QueryOptions{Workspace: "mi-lsp", Format: "toon"},
+	}, model.Envelope{Ok: true, Backend: "governance", Items: []model.GovernanceStatus{}}, nil, 12*time.Millisecond, "direct")
+
+	store, err := daemon.OpenTelemetryStore()
+	if err != nil {
+		t.Fatalf("OpenTelemetryStore: %v", err)
+	}
+	defer store.Close()
+
+	events, err := daemon.QueryAccessEvents(store, daemon.ExportQuery{SessionID: "ae-session-1", ClientName: "codex-ae-worker", Limit: 10})
+	if err != nil {
+		t.Fatalf("QueryAccessEvents: %v", err)
+	}
+	if len(events) != 1 {
+		t.Fatalf("expected 1 event, got %d", len(events))
+	}
+	if events[0].ClientName == "manual-cli" {
+		t.Fatalf("client_name downgraded to manual-cli: %#v", events[0])
+	}
+	if events[0].ClientName != "codex-ae-worker" || events[0].SessionID != "ae-session-1" {
+		t.Fatalf("unexpected attribution: client=%q session=%q", events[0].ClientName, events[0].SessionID)
+	}
+}
+
 func TestRecordOperationPersistsRouteAndQueryBudgetMetadata(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)

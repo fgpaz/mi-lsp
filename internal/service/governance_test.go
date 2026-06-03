@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/fgpaz/mi-lsp/internal/docgraph"
 	"github.com/fgpaz/mi-lsp/internal/model"
 	"github.com/fgpaz/mi-lsp/internal/workspace"
 )
@@ -50,6 +51,150 @@ func TestNavGovernanceReportsEffectiveProfileAndSync(t *testing.T) {
 	}
 	if status.Sync != "in_sync" {
 		t.Fatalf("sync = %q, want in_sync", status.Sync)
+	}
+}
+
+func TestNavGovernanceReportsDeclaredAECanonRoots(t *testing.T) {
+	for _, aeRoot := range []string{".docs/wiki/ae", "wiki/ae", ".docs/ae"} {
+		t.Run(aeRoot, func(t *testing.T) {
+			alias := "gov-ae-" + filepath.Base(t.TempDir())
+			ensureWritableTestHome(t)
+			root := t.TempDir()
+			writeWorkspaceFile(t, root, "src/App.csproj", `<Project Sdk="Microsoft.NET.Sdk"></Project>`)
+			writeWorkspaceFile(t, root, ".docs/wiki/07_baseline_tecnica.md", "# 07. Baseline tecnica\n")
+			writeAECanonModules(t, root, aeRoot)
+			if aeRoot == ".docs/wiki/ae" {
+				writeWorkspaceFile(t, root, ".docs/wiki/ae/README.md", "# AE\n\nCanon lives in `.docs/wiki/ae/README.md`.\n")
+			}
+			writeSpecBackendGovernanceFixtureWithAE(t, root, aeRoot)
+
+			app := New(root, nil)
+			if _, err := workspace.RegisterWorkspace(alias, model.WorkspaceRegistration{
+				Name:      alias,
+				Root:      root,
+				Languages: []string{"csharp"},
+				Kind:      model.WorkspaceKindSingle,
+			}); err != nil {
+				t.Fatalf("RegisterWorkspace: %v", err)
+			}
+			if err := workspace.SaveProjectFile(root, model.ProjectFile{
+				Project: model.ProjectBlock{Name: alias, Kind: model.WorkspaceKindSingle, DefaultRepo: "main"},
+				Repos:   []model.WorkspaceRepo{{ID: "main", Name: "main", Root: "."}},
+			}); err != nil {
+				t.Fatalf("SaveProjectFile: %v", err)
+			}
+			defer func() { _ = workspace.RemoveWorkspace(alias) }()
+
+			env, err := app.Execute(context.Background(), model.CommandRequest{
+				Operation: "nav.governance",
+				Context:   model.QueryOptions{Workspace: alias},
+			})
+			if err != nil {
+				t.Fatalf("nav.governance: %v", err)
+			}
+			status := env.Items.([]model.GovernanceStatus)[0]
+			if status.Blocked {
+				t.Fatalf("expected governance to pass, got %#v", status)
+			}
+			if status.AECanon.Status != "valid" {
+				t.Fatalf("ae_canon.status = %q, want valid: %#v", status.AECanon.Status, status.AECanon)
+			}
+			if status.AECanon.Source != "governance" {
+				t.Fatalf("ae_canon.source = %q, want governance", status.AECanon.Source)
+			}
+			if len(status.AECanon.Roots) != 1 || status.AECanon.Roots[0] != aeRoot {
+				t.Fatalf("ae_canon.roots = %#v, want [%s]", status.AECanon.Roots, aeRoot)
+			}
+		})
+	}
+}
+
+func TestNavGovernanceFollowsExplicitAECanonReadmeRedirect(t *testing.T) {
+	alias := "gov-ae-redirect-" + filepath.Base(t.TempDir())
+	ensureWritableTestHome(t)
+	root := t.TempDir()
+	writeWorkspaceFile(t, root, "src/App.csproj", `<Project Sdk="Microsoft.NET.Sdk"></Project>`)
+	writeWorkspaceFile(t, root, ".docs/wiki/07_baseline_tecnica.md", "# 07. Baseline tecnica\n")
+	writeAECanonModules(t, root, ".docs/ae")
+	writeSpecBackendGovernanceFixture(t, root)
+	addAEDeclarationToGovernanceFixture(t, root, ".docs/wiki/ae")
+	writeWorkspaceFile(t, root, ".docs/wiki/ae/README.md", "# AE redirect\n\nCanon moved to `.docs/ae/README.md`.\n")
+	if status := docgraph.InspectGovernance(root, true); status.Blocked {
+		t.Fatalf("expected redirected AE canon to pass, got %#v", status)
+	}
+
+	app := New(root, nil)
+	if _, err := workspace.RegisterWorkspace(alias, model.WorkspaceRegistration{
+		Name:      alias,
+		Root:      root,
+		Languages: []string{"csharp"},
+		Kind:      model.WorkspaceKindSingle,
+	}); err != nil {
+		t.Fatalf("RegisterWorkspace: %v", err)
+	}
+	if err := workspace.SaveProjectFile(root, model.ProjectFile{
+		Project: model.ProjectBlock{Name: alias, Kind: model.WorkspaceKindSingle, DefaultRepo: "main"},
+		Repos:   []model.WorkspaceRepo{{ID: "main", Name: "main", Root: "."}},
+	}); err != nil {
+		t.Fatalf("SaveProjectFile: %v", err)
+	}
+	defer func() { _ = workspace.RemoveWorkspace(alias) }()
+
+	env, err := app.Execute(context.Background(), model.CommandRequest{
+		Operation: "nav.governance",
+		Context:   model.QueryOptions{Workspace: alias},
+	})
+	if err != nil {
+		t.Fatalf("nav.governance: %v", err)
+	}
+	status := env.Items.([]model.GovernanceStatus)[0]
+	if status.AECanon.Status != "valid" || status.AECanon.Source != "redirect" {
+		t.Fatalf("expected valid redirected ae_canon, got %#v", status.AECanon)
+	}
+	if len(status.AECanon.Roots) != 1 || status.AECanon.Roots[0] != ".docs/ae" {
+		t.Fatalf("ae_canon.roots = %#v, want [.docs/ae]", status.AECanon.Roots)
+	}
+}
+
+func TestNavGovernanceDoesNotPromoteUndeclaredDocsAE(t *testing.T) {
+	alias := "gov-ae-undeclared-" + filepath.Base(t.TempDir())
+	ensureWritableTestHome(t)
+	root := t.TempDir()
+	writeWorkspaceFile(t, root, "src/App.csproj", `<Project Sdk="Microsoft.NET.Sdk"></Project>`)
+	writeWorkspaceFile(t, root, ".docs/wiki/07_baseline_tecnica.md", "# 07. Baseline tecnica\n")
+	writeAECanonModules(t, root, ".docs/ae")
+	writeSpecBackendGovernanceFixture(t, root)
+
+	app := New(root, nil)
+	if _, err := workspace.RegisterWorkspace(alias, model.WorkspaceRegistration{
+		Name:      alias,
+		Root:      root,
+		Languages: []string{"csharp"},
+		Kind:      model.WorkspaceKindSingle,
+	}); err != nil {
+		t.Fatalf("RegisterWorkspace: %v", err)
+	}
+	if err := workspace.SaveProjectFile(root, model.ProjectFile{
+		Project: model.ProjectBlock{Name: alias, Kind: model.WorkspaceKindSingle, DefaultRepo: "main"},
+		Repos:   []model.WorkspaceRepo{{ID: "main", Name: "main", Root: "."}},
+	}); err != nil {
+		t.Fatalf("SaveProjectFile: %v", err)
+	}
+	defer func() { _ = workspace.RemoveWorkspace(alias) }()
+
+	env, err := app.Execute(context.Background(), model.CommandRequest{
+		Operation: "nav.governance",
+		Context:   model.QueryOptions{Workspace: alias},
+	})
+	if err != nil {
+		t.Fatalf("nav.governance: %v", err)
+	}
+	status := env.Items.([]model.GovernanceStatus)[0]
+	if status.AECanon.Status == "valid" || len(status.AECanon.Roots) != 0 {
+		t.Fatalf("undeclared .docs/ae should not become authority, got %#v", status.AECanon)
+	}
+	if status.Blocked {
+		t.Fatalf("undeclared .docs/ae should not block a non-AE governance profile, got %#v", status)
 	}
 }
 
@@ -166,6 +311,56 @@ func TestWorkspaceStatusIncludesGovernanceFields(t *testing.T) {
 	}
 	if item["governance_sync"] != "in_sync" {
 		t.Fatalf("governance_sync = %#v, want in_sync", item["governance_sync"])
+	}
+	aeCanon, ok := item["ae_canon"].(model.AECanonStatus)
+	if !ok || aeCanon.Status == "" {
+		t.Fatalf("expected ae_canon in workspace.status, got %#v", item["ae_canon"])
+	}
+}
+
+func TestWorkspaceStatusBlocksKapsitoStyleMissingGovernanceEmptyDocs(t *testing.T) {
+	alias := "gov-kapsito-regression-" + filepath.Base(t.TempDir())
+	ensureWritableTestHome(t)
+	root := t.TempDir()
+	writeWorkspaceFile(t, root, "src/App.csproj", `<Project Sdk="Microsoft.NET.Sdk"></Project>`)
+	app := New(root, nil)
+	if _, err := workspace.RegisterWorkspace(alias, model.WorkspaceRegistration{
+		Name:      alias,
+		Root:      root,
+		Languages: []string{"csharp"},
+		Kind:      model.WorkspaceKindSingle,
+	}); err != nil {
+		t.Fatalf("RegisterWorkspace: %v", err)
+	}
+	if err := workspace.SaveProjectFile(root, model.ProjectFile{
+		Project: model.ProjectBlock{Name: alias, Kind: model.WorkspaceKindSingle, DefaultRepo: "main"},
+		Repos:   []model.WorkspaceRepo{{ID: "main", Name: "main", Root: "."}},
+	}); err != nil {
+		t.Fatalf("SaveProjectFile: %v", err)
+	}
+	defer func() { _ = workspace.RemoveWorkspace(alias) }()
+
+	env, err := app.Execute(context.Background(), model.CommandRequest{
+		Operation: "workspace.status",
+		Context:   model.QueryOptions{Workspace: alias},
+	})
+	if err != nil {
+		t.Fatalf("workspace.status: %v", err)
+	}
+	items := env.Items.([]any)
+	item := items[0].(map[string]any)
+	if item["governance_blocked"] != true {
+		t.Fatalf("governance_blocked = %#v, want true", item["governance_blocked"])
+	}
+	if item["docs_ready"] != false || item["doc_count"] != 0 {
+		t.Fatalf("expected empty docs to be not ready, got docs_ready=%#v doc_count=%#v", item["docs_ready"], item["doc_count"])
+	}
+	aeCanon, ok := item["ae_canon"].(model.AECanonStatus)
+	if !ok {
+		t.Fatalf("expected ae_canon status, got %#v", item["ae_canon"])
+	}
+	if aeCanon.Status != "missing" || !aeCanon.Blocking {
+		t.Fatalf("expected missing blocking ae_canon, got %#v", aeCanon)
 	}
 }
 
