@@ -22,8 +22,8 @@ agent_may_edit:
 agent_must_not_edit:
   - .docs/wiki/_mi-lsp/read-model.toml
 verify:
-  - mi-lsp nav governance --workspace mi-lsp --format toon
-  - mi-lsp nav wiki validate-harness --workspace mi-lsp --format toon
+  - mi-lsp nav governance --workspace <alias> --format toon
+  - mi-lsp nav wiki validate-harness --workspace <alias> --format toon
 stop_if:
   - governance_blocked=true
   - harness_verdict=BLOCKED
@@ -61,6 +61,55 @@ subagent_rule:
   first_wave: read_only_exploration
   writing_wave: specialized_implementation_or_worker_lane
   zero_subagents: non_compliant
+attribution_gate:
+  required_before:
+    - worker_launch
+    - historical_execution_audit
+    - closure
+  env:
+    - MI_LSP_CLIENT_NAME
+    - MI_LSP_SESSION_ID
+  session_contract_field: mi_lsp_preflight
+  required_preflight_fields:
+    - alias
+    - root
+    - cli_path
+    - governance_blocked
+    - docs_ready
+    - doc_count
+    - ae_canon.status
+    - ae_canon.roots
+    - ae_canon.source
+    - ae_canon.blocking
+    - client_name
+    - session_id
+  stop_if:
+    - client_name missing
+    - client_name=manual-cli
+    - session_id missing
+    - session_id matches cli-<pid>
+    - governance_blocked=true
+    - docs_ready=false
+    - doc_count=0
+    - ae_canon.status in [missing, mismatch, projection_only]
+wsl_worker_execution_audit:
+  mode: read_only_first
+  required_artifacts:
+    - wsl-execution-inventory.yaml
+    - telemetry-export-summary.toon
+    - manual-cli-attribution-findings.yaml
+    - worker-session-attribution-matrix.yaml
+  evidence_rules:
+    - use_mi_lsp_admin_export_before_raw_logs
+    - summarize_shell_history_or_worker_transcripts_without_raw_dump
+    - do_not_mutate_wsl_filesystems
+    - do_not_treat_shell_history_telemetry_or_transcripts_as_canon
+  warning_only_closure_forbidden_when:
+    - missing_governance
+    - empty_doc_index
+    - missing_attribution
+    - manual_cli_without_exception
+    - ae_canon_blocking_state
 recursion_depth:
   default: v0_shadow
   active_levels: 2
@@ -82,10 +131,12 @@ ledger_files:
 stop_if:
   - no_session_contract_for_mutating_work
   - subagent_or_worker_scope_is_ambiguous
+  - worker_or_wsl_audit_without_attributed_mi_lsp_preflight
+  - worker_or_wsl_audit_missing_worker_session_attribution_matrix
   - two_orchestrators_own_same_exclusive_path
   - evidence_would_live_only_in_chat
 verify:
-  - mi-lsp nav wiki validate-source --workspace mi-lsp --format toon
+  - mi-lsp nav wiki validate-source --workspace <alias> --format toon
 evidence:
   - .docs/wiki/ae/AE-HARNESS-ORCHESTRATION.md
   - .docs/auditoria/<YYYY-MM-DD>-<task-slug>/orchestrator-registry.yaml

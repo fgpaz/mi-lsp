@@ -25,7 +25,7 @@ agent_must_not_edit:
   - .docs/wiki/_mi-lsp/read-model.toml
 verify:
   - pwsh ./scripts/release/ae-release-binaries.ps1 -SkipBuild -SkipLocalInstall -SkipWslInstall -SkipMirror
-  - mi-lsp nav governance --workspace mi-lsp --format toon
+  - mi-lsp nav governance --workspace <alias> --format toon
 stop_if:
   - governance_blocked=true
   - release-visible work lacks provenance evidence
@@ -94,10 +94,47 @@ stop_if:
   - local executable remains locked after daemon stop and copy retries
 verify:
   - powershell -File ./scripts/release/ae-release-binaries.ps1 -SkipBuild -SkipLocalInstall -SkipWslInstall -SkipMirror
-  - mi-lsp nav wiki validate-source --workspace mi-lsp --format toon
+  - mi-lsp nav wiki validate-source --workspace <alias> --format toon
 evidence:
   - .docs/wiki/ae/AE-RELEASE-DISTRIBUTION.md
   - scripts/release/ae-release-binaries.ps1
+```
+
+## WSL Worker Execution Audit
+
+```toon
+doc_id: AE-RELEASE-DISTRIBUTION
+block_id: AE-RELEASE-DISTRIBUTION.wsl_worker_execution_audit
+kind: policy
+source_of_truth: this
+applies_when:
+  - historical WSL worker execution audit
+  - release-visible WSL worker evidence is reviewed
+required_inventory_fields:
+  - distro_name
+  - distro_state
+  - wsl_version
+  - detected_user_or_waiver
+  - detected_home_or_waiver
+  - cli_install_paths_reviewed
+  - worker_paths_reviewed
+  - read_only_scope
+  - skipped_mutating_checks
+required_attribution_fields:
+  - MI_LSP_CLIENT_NAME
+  - MI_LSP_SESSION_ID
+  - mi_lsp_preflight.alias
+  - mi_lsp_preflight.ae_canon.status
+stop_if:
+  - WSL distro must be started only to read history
+  - audit would rewrite shell history, telemetry, install paths, or worker state
+  - WSL skip has no waiver or scope-limit note
+  - worker status is treated as enough without client/session attribution
+verify:
+  - mi-lsp nav governance --workspace <alias> --format toon
+evidence:
+  - .docs/auditoria/<YYYY-MM-DD>-<task-slug>/wsl-execution-inventory.yaml
+  - .docs/auditoria/<YYYY-MM-DD>-<task-slug>/worker-session-attribution-matrix.yaml
 ```
 
 ## Operational Notes

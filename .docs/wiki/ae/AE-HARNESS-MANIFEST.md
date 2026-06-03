@@ -26,8 +26,8 @@ agent_may_edit:
 agent_must_not_edit:
   - .docs/wiki/_mi-lsp/read-model.toml
 verify:
-  - mi-lsp nav governance --workspace mi-lsp --format toon
-  - mi-lsp nav wiki validate-harness --workspace mi-lsp --format toon
+  - mi-lsp nav governance --workspace <alias> --format toon
+  - mi-lsp nav wiki validate-harness --workspace <alias> --format toon
 stop_if:
   - governance_blocked=true
   - harness_verdict=BLOCKED
@@ -51,6 +51,7 @@ required_sequence:
   - ae-programa_gateway
   - ps-contexto
   - governance_gate
+  - attributed_mi_lsp_preflight
   - brainstorming
   - session_contract
   - ae_harness_manifest
@@ -63,6 +64,7 @@ required_sequence:
 session_contract_path: .docs/auditoria/<YYYY-MM-DD>-<task-slug>/session-contract.yaml
 required_session_fields:
   - ae_contract
+  - mi_lsp_preflight
   - ae_mode
   - ae_docs
   - release_distribution_required
@@ -70,10 +72,14 @@ required_session_fields:
   - publish_strategy
   - local_install_targets
   - mirror_targets
+  - worker_session_attribution_matrix_when_worker_or_wsl_audit
+  - admin_export_summary_when_worker_or_wsl_audit
+  - manual_cli_exception_review_when_worker_or_wsl_audit
   - waivers
 verify:
   - every AE doc has harness contract
   - every normative section has doc_id and block_id
+  - mi_lsp_preflight records alias, root, client_name, session_id, docs_ready, doc_count, and ae_canon.status
   - release-visible work declares binary targets
   - closure evidence is durable under .docs/auditoria
 evidence:
@@ -82,6 +88,12 @@ evidence:
 stop_if:
   - ae-programa gateway was skipped for non-trivial work
   - session contract is missing for mutating or non-trivial work
+  - mi_lsp_preflight is missing for governed AE work
+  - mi_lsp_preflight.client_name=manual-cli
+  - mi_lsp_preflight.session_id matches cli-<pid>
+  - mi_lsp_preflight.docs_ready=false
+  - mi_lsp_preflight.doc_count=0
+  - mi_lsp_preflight.ae_canon.status in [missing, mismatch, projection_only]
   - release_distribution_required=true and AE-RELEASE-DISTRIBUTION was skipped
   - policy files drift from AE layer
 ```
@@ -106,12 +118,14 @@ routes:
     next: AE-RELEASE-DISTRIBUTION
   - when: "closure evidence, traceability, or audit surface changes"
     next: AE-EVIDENCE-POLICY
+  - when: "WSL, subagent, worker, or historical execution audit is requested"
+    next: AE-HARNESS-ORCHESTRATION
   - when: "a runner must choose between canon, manifest/verdict, summaries, or raw evidence"
     next: "mi-lsp nav evidence inventory <query> --workspace <alias> --format toon"
   - when: "AGENTS.md or CLAUDE.md changes"
     next: ps-crear-agentsclaudemd
 verify:
-  - mi-lsp nav wiki validate-source --workspace mi-lsp --format toon
+  - mi-lsp nav wiki validate-source --workspace <alias> --format toon
 evidence:
   - .docs/wiki/ae/AE-HARNESS-MANIFEST.md
 ```

@@ -22,7 +22,11 @@ If any required AE file is missing or contradicted, enter `manifest_repair` mode
 
 Every mutating or non-trivial task must create/update `.docs/auditoria/<YYYY-MM-DD>-<task-slug>/session-contract.yaml` with an `ae_contract` block before edits. The contract must name selected mode, decision lock, adapter, orchestration depth, allowed paths, forbidden paths, required evidence, stop conditions, and cleanup policy.
 
+Governed AE work must also record `mi_lsp_preflight` in the session contract before worker launch, historical audit, closure, push, or PR-ready claims. Set `MI_LSP_CLIENT_NAME` and `MI_LSP_SESSION_ID` before every `mi-lsp` command; `client_name=manual-cli`, a default `session_id` like `cli-<pid>`, `governance_blocked=true`, `docs_ready=false`, `doc_count=0`, or `ae_canon.status` in `missing|mismatch|projection_only` is a hard blocker, not a warning.
+
 Subagents or worker lanes are mandatory for future non-trivial work. Zero-subagent execution is non-compliant unless the session contract records a trivial/read-only waiver. Default recursion depth is `v0_shadow`: two active levels, third-level task orchestrators are shadow-only until a later supervised pilot.
+
+WSL/subagent/worker execution audits must be read-only first and must produce a worker/session attribution matrix, admin export summary, manual-cli exception review, and WSL evidence-handling note. Do not mutate WSL filesystems, rewrite histories/logs, dump raw shell history, or treat telemetry/transcripts as canon.
 
 Before any push or PR-ready claim, run `scripts/ae/pre-push-guard.ps1` with the active session contract, then close with `ps-trazabilidad` and `ps-auditar-trazabilidad`. If any diff, branch, evidence, scope, or tracker state changes after audit, rerun both closure gates.
 
@@ -42,9 +46,10 @@ For every task in this repository:
 1. Run `$ps-contexto`.
 1a. Run `$ae-programa` as the gateway for non-trivial, mutating, policy, harness, shared-skill, or multi-step work.
 2. Validate governance before planning or execution:
+   - set `MI_LSP_CLIENT_NAME` and `MI_LSP_SESSION_ID`
    - `mi-lsp workspace status <alias> --format toon`
    - `mi-lsp nav governance --workspace <alias> --format toon`
-3. If governance is blocked, only diagnosis and repair work are allowed.
+3. If governance is blocked, docs are not ready, `doc_count=0`, attribution is missing/manual, or `ae_canon` is not repo-canon valid, only diagnosis and repair work are allowed.
 4. Run `$brainstorming` once after context is loaded.
 5. Close critical context gaps before execution.
 6. Work as an orchestrator by default.
