@@ -154,6 +154,7 @@ func openTelemetryStore() (*TelemetryStore, error) {
 		return nil, err
 	}
 	db.SetMaxOpenConns(1)
+	db.SetMaxIdleConns(1)
 	store := &TelemetryStore{db: db}
 	if err := store.configureConnection(); err != nil {
 		_ = db.Close()
@@ -445,11 +446,13 @@ func (s *TelemetryStore) NextSeq(sessionID string) int {
 		return 0
 	}
 	var seq int
-	row := s.db.QueryRow(
-		`SELECT COALESCE(MAX(seq), 0) + 1 FROM access_events WHERE session_id = ?`,
-		sessionID,
-	)
-	_ = row.Scan(&seq)
+	_ = retryTelemetrySQLite(func() error {
+		row := s.db.QueryRow(
+			`SELECT COALESCE(MAX(seq), 0) + 1 FROM access_events WHERE session_id = ?`,
+			sessionID,
+		)
+		return row.Scan(&seq)
+	})
 	return seq
 }
 
@@ -564,10 +567,15 @@ func (s *TelemetryStore) RecentAccesses(limit int) ([]model.AccessEvent, error) 
 	if limit <= 0 {
 		limit = 50
 	}
-	rows, err := s.db.Query(
-		`SELECT id, occurred_at, COALESCE(client_name, ''), COALESCE(session_id, ''), COALESCE(seq, 0), COALESCE(workspace, ''), COALESCE(workspace_input, ''), COALESCE(workspace_root, ''), COALESCE(workspace_alias, ''), COALESCE(repo, ''), operation, COALESCE(backend, ''), COALESCE(route, ''), COALESCE(format, ''), COALESCE(token_budget, 0), COALESCE(max_items, 0), COALESCE(max_chars, 0), COALESCE(compress, 0), success, latency_ms, COALESCE(warnings_json, '[]'), COALESCE(runtime_key, ''), COALESCE(entrypoint_id, ''), COALESCE(error_text, ''), COALESCE(error_kind, ''), COALESCE(error_code, ''), COALESCE(truncated, 0), COALESCE(result_count, 0), COALESCE(warning_count, 0), COALESCE(pattern_mode, ''), COALESCE(routing_outcome, ''), COALESCE(failure_stage, ''), COALESCE(hint_code, ''), COALESCE(truncation_reason, ''), COALESCE(decision_json, '') FROM access_events ORDER BY occurred_at DESC, id DESC LIMIT ?`,
-		limit,
-	)
+	var rows *sql.Rows
+	err := retryTelemetrySQLite(func() error {
+		var queryErr error
+		rows, queryErr = s.db.Query(
+			`SELECT id, occurred_at, COALESCE(client_name, ''), COALESCE(session_id, ''), COALESCE(seq, 0), COALESCE(workspace, ''), COALESCE(workspace_input, ''), COALESCE(workspace_root, ''), COALESCE(workspace_alias, ''), COALESCE(repo, ''), operation, COALESCE(backend, ''), COALESCE(route, ''), COALESCE(format, ''), COALESCE(token_budget, 0), COALESCE(max_items, 0), COALESCE(max_chars, 0), COALESCE(compress, 0), success, latency_ms, COALESCE(warnings_json, '[]'), COALESCE(runtime_key, ''), COALESCE(entrypoint_id, ''), COALESCE(error_text, ''), COALESCE(error_kind, ''), COALESCE(error_code, ''), COALESCE(truncated, 0), COALESCE(result_count, 0), COALESCE(warning_count, 0), COALESCE(pattern_mode, ''), COALESCE(routing_outcome, ''), COALESCE(failure_stage, ''), COALESCE(hint_code, ''), COALESCE(truncation_reason, ''), COALESCE(decision_json, '') FROM access_events ORDER BY occurred_at DESC, id DESC LIMIT ?`,
+			limit,
+		)
+		return queryErr
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -601,14 +609,19 @@ type metricsRow struct {
 }
 
 func (s *TelemetryStore) ComputeMetrics(since time.Time) ([]metricsRow, error) {
-	rows, err := s.db.Query(
-		`SELECT operation, COALESCE(NULLIF(workspace_root, ''), NULLIF(workspace, ''), ''), COALESCE(client_name, ''), latency_ms, success, COALESCE(truncated, 0)
-		 FROM access_events
-		 WHERE occurred_at > ?
-		   AND operation NOT LIKE 'system.%'
-		 ORDER BY operation, latency_ms`,
-		since.Unix(),
-	)
+	var rows *sql.Rows
+	err := retryTelemetrySQLite(func() error {
+		var queryErr error
+		rows, queryErr = s.db.Query(
+			`SELECT operation, COALESCE(NULLIF(workspace_root, ''), NULLIF(workspace, ''), ''), COALESCE(client_name, ''), latency_ms, success, COALESCE(truncated, 0)
+			 FROM access_events
+			 WHERE occurred_at > ?
+			   AND operation NOT LIKE 'system.%'
+			 ORDER BY operation, latency_ms`,
+			since.Unix(),
+		)
+		return queryErr
+	})
 	if err != nil {
 		return nil, err
 	}

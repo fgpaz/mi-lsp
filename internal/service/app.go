@@ -172,9 +172,10 @@ func (a *App) normalizeWorkspaceRequest(request model.CommandRequest) (model.Com
 		return request, nil, nil
 	}
 	if strings.TrimSpace(request.Context.Workspace) != "" {
-		warnings := workspace.ExplicitWorkspaceCWDWarnings(request.Context.Workspace, request.Context.CallerCWD)
+		selector := strings.TrimSpace(request.Context.Workspace)
+		warnings := workspace.ExplicitWorkspaceCWDWarnings(selector, request.Context.CallerCWD)
 		if strings.TrimSpace(request.Context.WorkspaceSource) == "" {
-			if resolution, err := workspace.ResolveWorkspaceSelection(request.Context.Workspace, request.Context.CallerCWD); err == nil {
+			if resolution, err := workspace.ResolveWorkspaceSelection(selector, request.Context.CallerCWD); err == nil {
 				request.Context.WorkspaceSource = string(resolution.Source)
 			} else {
 				request.Context.WorkspaceSource = string(workspace.ResolutionSourceExplicit)
@@ -450,6 +451,11 @@ func (a *App) search(ctx context.Context, request model.CommandRequest) (model.E
 		envelope.Continuation = buildSearchContinuation(pattern, project, stringPayload(request.Payload, "repo"), nil, memory)
 		return applyCoachPolicy(envelope, request.Context), nil
 	}
+	if shouldDegradeUnscopedContainerSearch(project, request, includeContent) {
+		envelope := buildContainerSearchScopePreview(registration.Name, project, pattern, includeContent, useRegex)
+		envelope = attachMemoryPointer(envelope, memory)
+		return applyCoachPolicy(envelope, request.Context), nil
+	}
 	searchRoot := registration.Root
 	if scopedRepo != nil {
 		searchRoot = filepath.Join(registration.Root, filepath.FromSlash(scopedRepo.Root))
@@ -535,6 +541,74 @@ func (a *App) search(ctx context.Context, request model.CommandRequest) (model.E
 		env = applyAXIPreviewHints(env, request.Context, axiPreviewSummaryHint)
 	}
 	return applyCoachPolicy(env, request.Context), nil
+}
+
+func shouldDegradeUnscopedContainerSearch(project model.ProjectFile, request model.CommandRequest, includeContent bool) bool {
+	if !includeContent || request.Context.Full {
+		return false
+	}
+	if strings.TrimSpace(stringPayload(request.Payload, "repo")) != "" {
+		return false
+	}
+	return project.Project.Kind == model.WorkspaceKindContainer || len(project.Repos) > 1
+}
+
+func buildContainerSearchScopePreview(alias string, project model.ProjectFile, pattern string, includeContent bool, useRegex bool) model.Envelope {
+	items := make([]map[string]any, 0, len(project.Repos))
+	actions := make([]model.CoachAction, 0, min(len(project.Repos), 2))
+	for _, repo := range project.Repos {
+		command := searchCommand(alias, pattern, includeContent, repo.Name, useRegex, false)
+		items = append(items, map[string]any{
+			"repo":      repo.Name,
+			"repo_id":   repo.ID,
+			"root":      repo.Root,
+			"languages": repo.Languages,
+			"command":   command,
+		})
+		if len(actions) < 2 {
+			actions = append(actions, coachAction("narrow", "Search repo "+repo.Name, command))
+		}
+	}
+	rerun := "rerun with --repo <name> --include-content after choosing a repo; use --full only to force broad container search"
+	if len(project.Repos) == 1 {
+		rerun = searchCommand(alias, pattern, includeContent, project.Repos[0].Name, useRegex, false)
+	} else if len(project.Repos) > 1 {
+		rerun = searchCommand(alias, pattern, includeContent, project.Repos[0].Name, useRegex, false)
+	}
+	return model.Envelope{
+		Ok:        true,
+		Workspace: alias,
+		Backend:   "planner",
+		Mode:      "scope-preview",
+		Items:     items,
+		Warnings: []string{
+			"container search with --include-content and no --repo was degraded to a scope preview to avoid broad token-heavy output",
+		},
+		Hint:     "choose a repo before requesting inline content",
+		NextHint: &rerun,
+		Stats:    model.Stats{Files: len(items)},
+		Coach: &model.Coach{
+			Trigger:    coachTriggerScopeNarrowingRequired,
+			Message:    "Inline content search across a container workspace is token-expensive; choose the repo first.",
+			Confidence: "high",
+			Actions:    actions,
+		},
+		Continuation: &model.Continuation{
+			Reason: "scope_narrowing_required",
+			Next: model.ContinuationTarget{
+				Op:    "nav.search",
+				Query: pattern,
+				Repo:  firstProjectRepoName(project),
+			},
+		},
+	}
+}
+
+func firstProjectRepoName(project model.ProjectFile) string {
+	if len(project.Repos) == 0 {
+		return ""
+	}
+	return project.Repos[0].Name
 }
 
 func searchTextLimit(opts model.QueryOptions, pattern string, useRegex bool) int {

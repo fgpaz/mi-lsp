@@ -2,7 +2,11 @@ package cli
 
 import (
 	"errors"
+	"io"
+	"os"
+	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 
 	"github.com/fgpaz/mi-lsp/internal/model"
@@ -200,6 +204,42 @@ func TestRootCommandExposesVersionCommand(t *testing.T) {
 	}
 	if version.Name() != "version" {
 		t.Fatalf("version command name = %q, want version", version.Name())
+	}
+	if command.Version == "" {
+		t.Fatal("root --version metadata is empty")
+	}
+	if !strings.Contains(command.Version, "protocol="+model.ProtocolVersion) {
+		t.Fatalf("root version = %q, want protocol provenance", command.Version)
+	}
+}
+
+func TestVersionCommandDoesNotCreateDaemonState(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+
+	readPipe, writePipe, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("os.Pipe: %v", err)
+	}
+	originalStdout := os.Stdout
+	os.Stdout = writePipe
+
+	command := NewRootCommand()
+	command.SetArgs([]string{"version", "--format", "compact"})
+	execErr := command.Execute()
+
+	_ = writePipe.Close()
+	os.Stdout = originalStdout
+	_, _ = io.ReadAll(readPipe)
+	_ = readPipe.Close()
+
+	if execErr != nil {
+		t.Fatalf("version command: %v", execErr)
+	}
+	daemonDir := filepath.Join(home, ".mi-lsp", "daemon")
+	if _, statErr := os.Stat(daemonDir); !errors.Is(statErr, os.ErrNotExist) {
+		t.Fatalf("daemon dir stat err = %v, want not exist for %s", statErr, daemonDir)
 	}
 }
 

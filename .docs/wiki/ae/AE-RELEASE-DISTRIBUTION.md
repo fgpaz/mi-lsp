@@ -46,6 +46,7 @@ applies_when:
   - CLI behavior can drift between source and installed binary
   - worker bootstrap or bundled worker layout changes
   - release, install, version, doctor, daemon, or cross-OS behavior changes
+  - search routing, safe-degrade planner, telemetry export, attribution, or version provenance fields change
   - an agent claims final readiness after modifying binary-producing code
 required_targets:
   local_current_machine:
@@ -92,8 +93,11 @@ stop_if:
   - local ARM64 install was skipped without waiver on this workstation
   - WSL install was skipped without waiver when WSL is available
   - local executable remains locked after daemon stop and copy retries
+  - telemetry/planner/provenance changes lack installed-path `version`, `worker status`, and `admin export --summary` evidence or explicit waiver
 verify:
   - powershell -File ./scripts/release/ae-release-binaries.ps1 -SkipBuild -SkipLocalInstall -SkipWslInstall -SkipMirror
+  - mi-lsp version --format toon
+  - mi-lsp admin export --recent --summary --by-route --by-client --by-hint --by-failure-stage --format toon
   - mi-lsp nav wiki validate-source --workspace <alias> --format toon
 evidence:
   - .docs/wiki/ae/AE-RELEASE-DISTRIBUTION.md

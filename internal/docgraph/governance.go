@@ -39,27 +39,91 @@ func GovernanceDocPath(root string) string {
 	return filepath.Join(root, ".docs", "wiki", "00_gobierno_documental.md")
 }
 
+func resolveGovernanceDoc(root string) (string, string, model.DocsReadProfile, string) {
+	profile, source, _ := LoadProfile(root)
+	displayPath := filepath.ToSlash(filepath.Join(".docs", "wiki", "00_gobierno_documental.md"))
+	docPath := filepath.Join(root, filepath.FromSlash(displayPath))
+	if source == "project" && strings.TrimSpace(profile.Governance.SourceDoc) != "" {
+		if safeDisplayPath, ok := safeGovernanceSourceDoc(root, profile.Governance.SourceDoc); ok {
+			displayPath = safeDisplayPath
+			docPath = filepath.Join(root, filepath.FromSlash(displayPath))
+		} else {
+			displayPath = "INVALID:" + filepath.ToSlash(strings.TrimSpace(profile.Governance.SourceDoc))
+			docPath = ""
+		}
+	}
+	return docPath, displayPath, profile, source
+}
+
+func safeGovernanceSourceDoc(root string, sourceDoc string) (string, bool) {
+	candidate := filepath.Clean(filepath.FromSlash(strings.TrimSpace(sourceDoc)))
+	if candidate == "." || candidate == "" || filepath.IsAbs(candidate) {
+		return "", false
+	}
+	absRoot, err := filepath.Abs(root)
+	if err != nil {
+		return "", false
+	}
+	absCandidate, err := filepath.Abs(filepath.Join(absRoot, candidate))
+	if err != nil {
+		return "", false
+	}
+	rel, err := filepath.Rel(absRoot, absCandidate)
+	if err != nil || rel == "." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) || rel == ".." || filepath.IsAbs(rel) {
+		return "", false
+	}
+	normalizedRel := filepath.ToSlash(rel)
+	if !strings.HasPrefix(normalizedRel, ".docs/wiki/") {
+		return "", false
+	}
+	return normalizedRel, true
+}
+
+func isKnowledgeWikiProjection(profile model.DocsReadProfile, source string) bool {
+	if source != "project" {
+		return false
+	}
+	sourceFormat := strings.ToLower(strings.TrimSpace(profile.Governance.SourceFormat))
+	profileName := strings.ToLower(strings.TrimSpace(profile.Governance.Profile))
+	effectiveBase := strings.ToLower(strings.TrimSpace(profile.Governance.EffectiveBase))
+	return sourceFormat == "markdown" && (profileName == "knowledge-wiki" || effectiveBase == "knowledge-wiki")
+}
+
 func InspectGovernance(root string, autoSync bool) model.GovernanceStatus {
+	docPath, humanDoc, projectionProfile, projectionSource := resolveGovernanceDoc(root)
 	status := model.GovernanceStatus{
-		HumanDoc:      filepath.ToSlash(filepath.Join(".docs", "wiki", "00_gobierno_documental.md")),
+		HumanDoc:      humanDoc,
 		ProjectionDoc: filepath.ToSlash(filepath.Join(".docs", "wiki", "_mi-lsp", "read-model.toml")),
 		AllowedActions: []string{
 			"mi-lsp nav governance --workspace <alias> --format toon",
 			"mi-lsp index --workspace <alias>",
 		},
 	}
+	if strings.HasPrefix(humanDoc, "INVALID:") {
+		status.Sync = "invalid"
+		status.IndexSync, status.IndexSyncDetails = inspectIndexSync(root)
+		status.AECanon = inspectAECanonFromProjection(root, "governance_invalid")
+		status.Issues = []string{"invalid governance source_doc; it must be a relative path under .docs/wiki/ and stay inside the workspace"}
+		status.Blocked = true
+		status.NextSteps = governanceRepairStepsFor(filepath.ToSlash(filepath.Join(".docs", "wiki", "00_gobierno_documental.md")), status.ProjectionDoc)
+		status.Summary = "Governance is blocked because the read-model source_doc points outside the governed wiki boundary."
+		return status
+	}
 
-	docPath := GovernanceDocPath(root)
 	content, err := os.ReadFile(docPath)
 	if err != nil {
 		status.Sync = "missing"
 		status.IndexSync, status.IndexSyncDetails = inspectIndexSync(root)
 		status.AECanon = inspectAECanonFromProjection(root, "governance_missing")
-		status.Issues = []string{"missing .docs/wiki/00_gobierno_documental.md"}
+		status.Issues = []string{"missing " + status.HumanDoc}
 		status.Blocked = true
-		status.NextSteps = governanceRepairSteps(status.ProjectionDoc)
+		status.NextSteps = governanceRepairStepsFor(status.HumanDoc, status.ProjectionDoc)
 		status.Summary = "Governance is blocked because the human governance document is missing."
 		return status
+	}
+
+	if isKnowledgeWikiProjection(projectionProfile, projectionSource) {
+		return inspectKnowledgeWikiGovernance(root, status, projectionProfile)
 	}
 
 	block, err := extractGovernanceYAMLBlock(content)
@@ -67,10 +131,10 @@ func InspectGovernance(root string, autoSync bool) model.GovernanceStatus {
 		status.Sync = "invalid"
 		status.IndexSync, status.IndexSyncDetails = inspectIndexSync(root)
 		status.AECanon = inspectAECanonFromProjection(root, "governance_invalid")
-		status.Issues = []string{"missing fenced YAML governance block in 00_gobierno_documental.md"}
+		status.Issues = []string{"missing fenced YAML governance block in " + status.HumanDoc}
 		status.Blocked = true
-		status.NextSteps = governanceRepairSteps(status.ProjectionDoc)
-		status.Summary = "Governance is blocked because 00_gobierno_documental.md has no machine-readable YAML source."
+		status.NextSteps = governanceRepairStepsFor(status.HumanDoc, status.ProjectionDoc)
+		status.Summary = "Governance is blocked because the human governance document has no machine-readable YAML source."
 		return status
 	}
 
@@ -81,7 +145,7 @@ func InspectGovernance(root string, autoSync bool) model.GovernanceStatus {
 		status.AECanon = inspectAECanonFromProjection(root, "governance_invalid")
 		status.Issues = []string{fmt.Sprintf("invalid governance YAML: %v", err)}
 		status.Blocked = true
-		status.NextSteps = governanceRepairSteps(status.ProjectionDoc)
+		status.NextSteps = governanceRepairStepsFor(status.HumanDoc, status.ProjectionDoc)
 		status.Summary = "Governance is blocked because the YAML source inside 00_gobierno_documental.md is invalid."
 		return status
 	}
@@ -112,7 +176,7 @@ func InspectGovernance(root string, autoSync bool) model.GovernanceStatus {
 		status.IndexSync, status.IndexSyncDetails = inspectIndexSync(root)
 		status.Issues = issues
 		status.Blocked = true
-		status.NextSteps = governanceRepairSteps(status.ProjectionDoc)
+		status.NextSteps = governanceRepairStepsFor(status.HumanDoc, status.ProjectionDoc)
 		status.Summary = "Governance is blocked because the YAML source is incomplete or contradictory."
 		return status
 	}
@@ -124,7 +188,7 @@ func InspectGovernance(root string, autoSync bool) model.GovernanceStatus {
 		status.IndexSync, status.IndexSyncDetails = inspectIndexSync(root)
 		status.Issues = []string{fmt.Sprintf("failed to render read-model projection: %v", err)}
 		status.Blocked = true
-		status.NextSteps = governanceRepairSteps(status.ProjectionDoc)
+		status.NextSteps = governanceRepairStepsFor(status.HumanDoc, status.ProjectionDoc)
 		status.Summary = "Governance is blocked because read-model projection could not be rendered."
 		return status
 	}
@@ -140,7 +204,7 @@ func InspectGovernance(root string, autoSync bool) model.GovernanceStatus {
 			status.IndexSync, status.IndexSyncDetails = inspectIndexSync(root)
 			status.Issues = []string{fmt.Sprintf("failed to create read-model directory: %v", err)}
 			status.Blocked = true
-			status.NextSteps = governanceRepairSteps(status.ProjectionDoc)
+			status.NextSteps = governanceRepairStepsFor(status.HumanDoc, status.ProjectionDoc)
 			status.Summary = "Governance is blocked because read-model projection could not be written."
 			return status
 		}
@@ -149,7 +213,7 @@ func InspectGovernance(root string, autoSync bool) model.GovernanceStatus {
 			status.IndexSync, status.IndexSyncDetails = inspectIndexSync(root)
 			status.Issues = []string{fmt.Sprintf("failed to write read-model projection: %v", err)}
 			status.Blocked = true
-			status.NextSteps = governanceRepairSteps(status.ProjectionDoc)
+			status.NextSteps = governanceRepairStepsFor(status.HumanDoc, status.ProjectionDoc)
 			status.Summary = "Governance is blocked because read-model projection could not be written."
 			return status
 		}
@@ -170,11 +234,50 @@ func InspectGovernance(root string, autoSync bool) model.GovernanceStatus {
 
 	status.Blocked = len(status.Issues) > 0
 	if status.Blocked {
-		status.NextSteps = governanceRepairSteps(status.ProjectionDoc)
+		status.NextSteps = governanceRepairStepsFor(status.HumanDoc, status.ProjectionDoc)
 		status.Summary = "Governance is blocked until the projection and the workspace index are both consistent."
 		return status
 	}
 
+	status.NextSteps = []string{
+		"mi-lsp nav route \"how is this workspace organized?\" --workspace <alias> --format toon",
+		"mi-lsp nav ask \"how is this workspace organized?\" --workspace <alias> --format toon",
+		"mi-lsp nav pack \"understand this task\" --workspace <alias> --format toon",
+	}
+	status.Summary = fmt.Sprintf("Governance is valid for profile %s and the projection is ready.", status.Profile)
+	return status
+}
+
+func inspectKnowledgeWikiGovernance(root string, status model.GovernanceStatus, profile model.DocsReadProfile) model.GovernanceStatus {
+	status.Profile = firstNonEmpty(profile.Governance.Profile, "knowledge-wiki")
+	status.Extends = profile.Governance.Extends
+	status.EffectiveBase = firstNonEmpty(profile.Governance.EffectiveBase, status.Profile)
+	status.EffectiveOverlays = append([]string{}, profile.Governance.EffectiveOverlays...)
+	status.ContextChain = append([]string{}, profile.Governance.ContextChain...)
+	status.ClosureChain = append([]string{}, profile.Governance.ClosureChain...)
+	status.AuditChain = append([]string{}, profile.Governance.AuditChain...)
+	status.BlockingRules = append([]string{}, profile.Governance.BlockingRules...)
+	status.NumberingRecommended = profile.Governance.NumberingRecommended
+	status.Sync = "in_sync"
+	status.AECanon = inspectAECanonFromHierarchy(root, profile.Governance.Hierarchy, "read_model")
+	if len(profile.Governance.Hierarchy) == 0 && status.AECanon.Status == "not_applicable" {
+		status.AECanon = inspectAECanonFromProjection(root, "knowledge_wiki")
+	}
+
+	status.IndexSync, status.IndexSyncDetails = inspectIndexSync(root)
+	if status.IndexSync == "stale" {
+		status.Issues = append(status.Issues, "workspace index is stale relative to governance sources; rerun mi-lsp index")
+	}
+	if status.AECanon.Blocking && (status.AECanon.Status == "missing" || status.AECanon.Status == "mismatch") {
+		status.Issues = append(status.Issues, "AE canon is blocked: "+status.AECanon.Reason)
+	}
+
+	status.Blocked = len(status.Issues) > 0
+	if status.Blocked {
+		status.NextSteps = governanceRepairStepsFor(status.HumanDoc, status.ProjectionDoc)
+		status.Summary = "Governance is blocked until the knowledge-wiki source, projection and index are consistent."
+		return status
+	}
 	status.NextSteps = []string{
 		"mi-lsp nav route \"how is this workspace organized?\" --workspace <alias> --format toon",
 		"mi-lsp nav ask \"how is this workspace organized?\" --workspace <alias> --format toon",
@@ -668,6 +771,15 @@ func normalizedText(content []byte) string {
 	return strings.ReplaceAll(string(content), "\r\n", "\n")
 }
 
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return strings.TrimSpace(value)
+		}
+	}
+	return ""
+}
+
 func dedupeStrings(items []string) []string {
 	seen := map[string]struct{}{}
 	out := make([]string, 0, len(items))
@@ -686,9 +798,13 @@ func dedupeStrings(items []string) []string {
 }
 
 func governanceRepairSteps(projectionPath string) []string {
+	return governanceRepairStepsFor(filepath.ToSlash(filepath.Join(".docs", "wiki", "00_gobierno_documental.md")), projectionPath)
+}
+
+func governanceRepairStepsFor(humanDoc string, projectionPath string) []string {
 	return []string{
-		"repair .docs/wiki/00_gobierno_documental.md",
-		"verify the fenced YAML governance block is complete",
+		"repair " + humanDoc,
+		"verify the governance source is complete for its declared source_format",
 		"rerun mi-lsp nav governance --workspace <alias> --format toon",
 		"rerun mi-lsp index --workspace <alias> once the projection is stable",
 		fmt.Sprintf("confirm %s stays versioned and in sync", projectionPath),
@@ -708,7 +824,8 @@ func inspectIndexSync(root string) (string, *model.GovernanceIndexSyncDetails) {
 	indexInfo, err := os.Stat(indexPath)
 	if err != nil {
 		details.Reason = "index database is missing"
-		for _, path := range []string{GovernanceDocPath(root), ProfilePath(root)} {
+		governanceDocPath, _, _, _ := resolveGovernanceDoc(root)
+		for _, path := range []string{governanceDocPath, ProfilePath(root)} {
 			details.ComparedPaths = append(details.ComparedPaths, governanceComparedPath(root, path, time.Time{}))
 		}
 		return "missing", details
@@ -716,7 +833,8 @@ func inspectIndexSync(root string) (string, *model.GovernanceIndexSyncDetails) {
 	latest := indexInfo.ModTime()
 	details.IndexModTime = latest.UTC().Format(time.RFC3339Nano)
 	state := "current"
-	for _, path := range []string{GovernanceDocPath(root), ProfilePath(root)} {
+	governanceDocPath, _, _, _ := resolveGovernanceDoc(root)
+	for _, path := range []string{governanceDocPath, ProfilePath(root)} {
 		compared := governanceComparedPath(root, path, latest)
 		details.ComparedPaths = append(details.ComparedPaths, compared)
 		if compared.NewerThanIndex {

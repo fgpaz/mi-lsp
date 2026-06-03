@@ -161,6 +161,7 @@ Campos recomendados:
 - `decision_json` puede incluir metadata derivada del bloque `coach` (`coach_present`, `coach_trigger`, `coach_action_count`) pero nunca su `message` ni los `command` sugeridos
 - `decision_json` puede incluir metadata derivada de `continuation` y `memory_pointer` (`continuation_present`, `continuation_reason`, `continuation_op`, `memory_pointer_present`, `memory_stale`) y flags diagnosticos como `doc_ranker` / `intent_mode`, pero nunca `why`, `query`, `handoff` ni el snapshot repo-local completo
 - `decision_json` puede incluir metadata backend/fallback derivada (`requested_backend`, `result_backend`, `backend_fallback_taken`, `fallback_from`, `fallback_to`, `runtime_error_code`) y nunca paths crudos, `slice_text`, errores raw de worker ni contenido de archivos
+- `decision_json` puede incluir metadata del planner de precision (`planner_path`, `planner_outcome`, `safe_degrade_reason`, `guardrail_trigger`) para auditar decisiones de token-savings sin guardar queries, comandos raw ni contenido de archivos
 - `hint_code` puede caer al `coach.trigger` cuando no hubo `hint`/`next_hint` explicitos pero si existe guidance estructurado
 - `hint_code=search_timeout` representa timeout de busqueda con respuesta parcial exitosa; debe permitir recomendaciones de narrowing sin marcar la request como fallo duro cuando `success=1`
 - `workspace_input` no debe reescribirse con el alias resuelto; el export tiene que distinguir input vacio de alias/path explicito

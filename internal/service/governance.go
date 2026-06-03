@@ -9,14 +9,21 @@ import (
 )
 
 func (a *App) governance(ctx context.Context, request model.CommandRequest) (model.Envelope, error) {
-	registration, _, err := a.resolveWorkspaceWithProject(request.Context.Workspace)
+	registration, _, resolutionWarnings, resolutionHint, err := a.resolvePreflightWorkspaceWithProject(request)
 	if err != nil {
 		return model.Envelope{}, err
 	}
 	status := docgraph.InspectGovernance(registration.Root, true)
-	warnings := append([]string{}, status.Warnings...)
+	warnings := append([]string{}, resolutionWarnings...)
+	warnings = append(warnings, status.Warnings...)
 	if status.Blocked {
 		warnings = append(warnings, status.Issues...)
+	}
+	hint := governanceHint(registration.Name, status)
+	if resolutionHint != "" && hint != "" {
+		hint = resolutionHint + " " + hint
+	} else if resolutionHint != "" {
+		hint = resolutionHint
 	}
 	return model.Envelope{
 		Ok:        true,
@@ -24,7 +31,7 @@ func (a *App) governance(ctx context.Context, request model.CommandRequest) (mod
 		Backend:   "governance",
 		Items:     []model.GovernanceStatus{status},
 		Warnings:  warnings,
-		Hint:      governanceHint(registration.Name, status),
+		Hint:      hint,
 	}, nil
 }
 

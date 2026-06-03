@@ -160,6 +160,7 @@ flowchart LR
 - `nav route` es la superficie publica de routing de bajo token: resuelve `anchor_doc + mini_pack_preview` con semantica fail-closed y canonical lane autoritativa. `nav ask` y `nav pack` reutilizan este motor internamente.
 - `nav evidence inventory` reutiliza el route core para no abrir evidence pesada antes de ubicar el anchor canonico; su detalle tecnico vive en `07_tech/TECH-EVIDENCE-INVENTORY.md`.
 - `nav.intent` es hibrido router-first: clasifica `mode=docs|code`, usa el scorer owner-aware en `docs` y conserva BM25 de simbolos en `code` sin mezclar ambos lanes en la misma lista.
+- El safe-degrade planner prioriza superficies de menor costo antes de abrir contexto caro: `nav route|wiki search|pack preview`, luego `multi-read` o `search --include-content`, y solo despues semantica profunda. Cada degradacion debe ser visible en `warnings|hint|next_hint|continuation` y en telemetria sanitizada.
 - Para harnesses/agentes, las consultas literal symbol-like deben seguir una escalera agent-first: `nav find --exact`, luego `nav related`, luego `nav context` con fallback `catalog`/`text --no-auto-daemon` si los backends semanticos son riesgosos. `nav search` queda disponible como evidencia textual, pero no debe ser el unico proximo paso cuando el input parece identificador de codigo.
 
 ## Busqueda: cadena de fallback
@@ -176,6 +177,7 @@ Si el usuario forza `--regex` y el patron es invalido, el core reintenta automat
 Si `rg` existe pero falla por permisos o arranque de proceso, el core cae a `searchPatternGo` y agrega warning tipado `backend_runtime/process_spawn_access_denied` o `backend_runtime/process_spawn_failed`; la telemetria solo guarda el codigo causal, no argv ni payloads crudos.
 Para patrones literal symbol-like, `nav search` emite `coach.trigger=symbol_query_detected` con acciones estructuradas hacia `nav find --exact` y `nav related`, y prioriza declaraciones/implementaciones fuente por encima de docs, tests, backups y generados.
 En AXI preview, el sobre-muestreo para rankear identificadores es acotado: recolecta mas que `MaxItems` para no esconder declaraciones fuente, pero evita el limite amplio de modo full/clasico para proteger latencia en repos grandes y escenarios concurrentes.
+El planner no debe repetir la misma busqueda fallida sin actuar sobre `hint`/`next_hint`; debe cambiar modo, selector, regex/literal o presupuesto, y registrar `planner_path`, `planner_outcome`, `safe_degrade_reason` y `guardrail_trigger` dentro de `decision_json` cuando esos datos existan.
 Cuando `nav search --include-content` intenta enriquecer un resultado cuyo archivo indexado ya no existe, conserva el resultado y agrega stale-index warning accionable hacia `mi-lsp index --workspace <alias>`.
 La exploracion de servicios y el fallback de `nav ask` reutilizan la misma cadena.
 

@@ -7,6 +7,7 @@ import (
 	"os"
 	"runtime"
 	"runtime/debug"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -73,6 +74,64 @@ func buildVersionInfo(toolRoot string) model.VersionInfo {
 		VCSTime:          buildSetting(info, "vcs.time"),
 		VCSModified:      buildSetting(info, "vcs.modified"),
 	}
+}
+
+func buildRootVersionInfo(toolRoot string) model.VersionInfo {
+	info, ok := debug.ReadBuildInfo()
+	if !ok {
+		return model.VersionInfo{
+			Command:         "mi-lsp",
+			Version:         "unknown",
+			GoVersion:       runtime.Version(),
+			GOOS:            runtime.GOOS,
+			GOARCH:          runtime.GOARCH,
+			ProtocolVersion: model.ProtocolVersion,
+			WorkerRID:       worker.ResolveRID(),
+			ToolRoot:        toolRoot,
+		}
+	}
+	version := info.Main.Version
+	if version == "" {
+		version = "unknown"
+	}
+	return model.VersionInfo{
+		Command:         "mi-lsp",
+		Version:         version,
+		ModulePath:      info.Main.Path,
+		GoVersion:       info.GoVersion,
+		GOOS:            runtime.GOOS,
+		GOARCH:          runtime.GOARCH,
+		ProtocolVersion: model.ProtocolVersion,
+		WorkerRID:       worker.ResolveRID(),
+		ToolRoot:        toolRoot,
+		VCSRevision:     buildSetting(info, "vcs.revision"),
+		VCSTime:         buildSetting(info, "vcs.time"),
+		VCSModified:     buildSetting(info, "vcs.modified"),
+	}
+}
+
+func rootVersionString(info model.VersionInfo) string {
+	parts := []string{strings.TrimSpace(info.Version)}
+	if strings.TrimSpace(info.VCSRevision) != "" {
+		revision := info.VCSRevision
+		if len(revision) > 12 {
+			revision = revision[:12]
+		}
+		parts = append(parts, "revision="+revision)
+	}
+	parts = append(parts, "protocol="+info.ProtocolVersion)
+	parts = append(parts, "rid="+info.WorkerRID)
+	return strings.Join(nonEmptyStrings(parts), " ")
+}
+
+func nonEmptyStrings(items []string) []string {
+	filtered := make([]string, 0, len(items))
+	for _, item := range items {
+		if strings.TrimSpace(item) != "" {
+			filtered = append(filtered, item)
+		}
+	}
+	return filtered
 }
 
 func executableSnapshot() (string, string) {

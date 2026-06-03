@@ -48,6 +48,10 @@ release_evidence_required:
   - local_install_paths
   - wsl_install_paths_or_waiver
   - worker_status_result_or_waiver
+  - version_output_by_install_path_or_waiver
+  - admin_export_summary_for_telemetry_changes_or_waiver
+  - safe_degrade_planner_evidence_or_waiver
+  - attributed_mi_lsp_preflight
   - publish_tag_or_waiver
   - mirror_sync_or_waiver
   - governance_result
@@ -59,6 +63,7 @@ dirty_binary_policy:
 stop_if:
   - final answer claims published binaries without tag/workflow evidence
   - final answer claims installed parity without version path/hash evidence
+  - final answer claims token-savings precision or planner safety without telemetry/guardrail evidence
   - evidence lives only in chat or .docs/raw
 verify:
   - mi-lsp nav wiki validate-source --workspace mi-lsp --format toon

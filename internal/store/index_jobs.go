@@ -129,7 +129,7 @@ func CreateIndexJob(ctx context.Context, db *sql.DB, workspaceName string, works
 }
 
 func ActiveIndexJob(ctx context.Context, db *sql.DB, workspaceRoot string) (IndexJob, bool, error) {
-	rows, err := db.QueryContext(ctx, `
+	rows, err := QueryContextWithRetry(ctx, db, `
 		SELECT job_id, generation_id, workspace_name, workspace_root, mode, clean, status, phase, pid, requested_cancel, COALESCE(error, ''),
 		       COALESCE(current_stage, ''), COALESCE(current_path, ''), files_total,
 		       files, symbols, docs, created_at, COALESCE(started_at, ''), COALESCE(finished_at, ''), updated_at
@@ -161,14 +161,19 @@ func ActiveIndexJob(ctx context.Context, db *sql.DB, workspaceRoot string) (Inde
 }
 
 func GetIndexJob(ctx context.Context, db *sql.DB, jobID string) (IndexJob, bool, error) {
-	row := db.QueryRowContext(ctx, `
-		SELECT job_id, generation_id, workspace_name, workspace_root, mode, clean, status, phase, pid, requested_cancel, COALESCE(error, ''),
-		       COALESCE(current_stage, ''), COALESCE(current_path, ''), files_total,
-		       files, symbols, docs, created_at, COALESCE(started_at, ''), COALESCE(finished_at, ''), updated_at
-		FROM index_jobs
-		WHERE job_id = ?
-	`, jobID)
-	job, err := scanIndexJob(row)
+	var job IndexJob
+	err := WithSQLiteReadRetry(ctx, func() error {
+		row := db.QueryRowContext(ctx, `
+			SELECT job_id, generation_id, workspace_name, workspace_root, mode, clean, status, phase, pid, requested_cancel, COALESCE(error, ''),
+			       COALESCE(current_stage, ''), COALESCE(current_path, ''), files_total,
+			       files, symbols, docs, created_at, COALESCE(started_at, ''), COALESCE(finished_at, ''), updated_at
+			FROM index_jobs
+			WHERE job_id = ?
+		`, jobID)
+		var scanErr error
+		job, scanErr = scanIndexJob(row)
+		return scanErr
+	})
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return IndexJob{}, false, nil
@@ -179,15 +184,20 @@ func GetIndexJob(ctx context.Context, db *sql.DB, jobID string) (IndexJob, bool,
 }
 
 func LatestIndexJob(ctx context.Context, db *sql.DB) (IndexJob, bool, error) {
-	row := db.QueryRowContext(ctx, `
-		SELECT job_id, generation_id, workspace_name, workspace_root, mode, clean, status, phase, pid, requested_cancel, COALESCE(error, ''),
-		       COALESCE(current_stage, ''), COALESCE(current_path, ''), files_total,
-		       files, symbols, docs, created_at, COALESCE(started_at, ''), COALESCE(finished_at, ''), updated_at
-		FROM index_jobs
-		ORDER BY created_at DESC
-		LIMIT 1
-	`)
-	job, err := scanIndexJob(row)
+	var job IndexJob
+	err := WithSQLiteReadRetry(ctx, func() error {
+		row := db.QueryRowContext(ctx, `
+			SELECT job_id, generation_id, workspace_name, workspace_root, mode, clean, status, phase, pid, requested_cancel, COALESCE(error, ''),
+			       COALESCE(current_stage, ''), COALESCE(current_path, ''), files_total,
+			       files, symbols, docs, created_at, COALESCE(started_at, ''), COALESCE(finished_at, ''), updated_at
+			FROM index_jobs
+			ORDER BY created_at DESC
+			LIMIT 1
+		`)
+		var scanErr error
+		job, scanErr = scanIndexJob(row)
+		return scanErr
+	})
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return IndexJob{}, false, nil
@@ -359,7 +369,9 @@ func CancelIndexJob(ctx context.Context, db *sql.DB, jobID string, force bool) (
 func IsIndexJobCancelRequested(ctx context.Context, db *sql.DB, jobID string) (bool, error) {
 	var requested int
 	var status string
-	if err := db.QueryRowContext(ctx, "SELECT requested_cancel, status FROM index_jobs WHERE job_id = ?", jobID).Scan(&requested, &status); err != nil {
+	if err := WithSQLiteReadRetry(ctx, func() error {
+		return db.QueryRowContext(ctx, "SELECT requested_cancel, status FROM index_jobs WHERE job_id = ?", jobID).Scan(&requested, &status)
+	}); err != nil {
 		return false, err
 	}
 	return requested != 0 || status == IndexJobCancelRequested, nil

@@ -1026,6 +1026,64 @@ func TestIndexStartWaitCreatesSucceededJobAndGeneration(t *testing.T) {
 	}
 }
 
+func TestIndexStartReturnsActiveJobWithBackoffHint(t *testing.T) {
+	ensureWritableTestHome(t)
+	root := t.TempDir()
+	alias := "index-active-" + filepath.Base(root)
+	project := testProject(alias)
+	if err := workspace.SaveProjectFile(root, project); err != nil {
+		t.Fatalf("SaveProjectFile: %v", err)
+	}
+	writeWorkspaceFile(t, root, "src/App.csproj", `<Project Sdk="Microsoft.NET.Sdk"></Project>`)
+	writeWorkspaceFile(t, root, "src/App.cs", "namespace Demo; public class App { }\n")
+
+	if _, err := workspace.RegisterWorkspace(alias, model.WorkspaceRegistration{
+		Name:      alias,
+		Root:      root,
+		Languages: []string{"csharp"},
+		Kind:      model.WorkspaceKindSingle,
+	}); err != nil {
+		t.Fatalf("register workspace: %v", err)
+	}
+	defer func() { _ = workspace.RemoveWorkspace(alias) }()
+
+	db, err := store.Open(root)
+	if err != nil {
+		t.Fatalf("store.Open: %v", err)
+	}
+	defer db.Close()
+	activeJob, err := store.CreateIndexJob(context.Background(), db, alias, root, store.IndexModeFull, false)
+	if err != nil {
+		t.Fatalf("CreateIndexJob: %v", err)
+	}
+
+	app := New(root, nil)
+	env, err := app.Execute(context.Background(), model.CommandRequest{
+		Operation: "index.start",
+		Context:   model.QueryOptions{Workspace: alias},
+		Payload:   map[string]any{"mode": "full"},
+	})
+	if err != nil {
+		t.Fatalf("index.start with active job: %v", err)
+	}
+	if !env.Ok {
+		t.Fatalf("env.Ok = false, want true: %#v", env)
+	}
+	if env.Hint == "" || !strings.Contains(env.Hint, "existing index job") {
+		t.Fatalf("hint = %q, want existing job guidance", env.Hint)
+	}
+	if env.NextHint == nil || !strings.Contains(*env.NextHint, activeJob.JobID) {
+		t.Fatalf("next_hint = %#v, want status command for active job %s", env.NextHint, activeJob.JobID)
+	}
+	jobs, ok := env.Items.([]store.IndexJob)
+	if !ok || len(jobs) != 1 {
+		t.Fatalf("items = %#v, want one active IndexJob", env.Items)
+	}
+	if jobs[0].JobID != activeJob.JobID {
+		t.Fatalf("job_id = %q, want active %q", jobs[0].JobID, activeJob.JobID)
+	}
+}
+
 func TestRunIndexJobHonorsCooperativeCancelRequest(t *testing.T) {
 	ensureWritableTestHome(t)
 	root := t.TempDir()
@@ -1690,6 +1748,42 @@ func TestSearchCoachSuggestsRepoNarrowingWhenResultsShareRepo(t *testing.T) {
 	}
 }
 
+func TestSearchContainerIncludeContentWithoutRepoDegradesToScopePreview(t *testing.T) {
+	alias := "container-search-preview-" + filepath.Base(t.TempDir())
+	root := createContainerWorkspaceFixture(t, alias)
+	app := New(root, nil)
+
+	env, err := app.Execute(context.Background(), model.CommandRequest{
+		Operation: "nav.search",
+		Context:   model.QueryOptions{Workspace: alias, MaxItems: 10},
+		Payload:   map[string]any{"pattern": "forgot password", "include_content": true},
+	})
+	if err != nil {
+		t.Fatalf("nav.search: %v", err)
+	}
+	if !env.Ok {
+		t.Fatalf("expected ok=true, got %#v", env)
+	}
+	if env.Backend != "planner" || env.Mode != "scope-preview" {
+		t.Fatalf("backend/mode = %q/%q, want planner/scope-preview", env.Backend, env.Mode)
+	}
+	if env.Coach == nil || env.Coach.Trigger != coachTriggerScopeNarrowingRequired {
+		t.Fatalf("coach = %#v, want scope_narrowing_required", env.Coach)
+	}
+	if env.NextHint == nil || !strings.Contains(*env.NextHint, "--repo") {
+		t.Fatalf("next_hint = %#v, want --repo rerun", env.NextHint)
+	}
+	items, ok := env.Items.([]map[string]any)
+	if !ok || len(items) < 2 {
+		t.Fatalf("items = %#v, want repo preview items", env.Items)
+	}
+	for _, item := range items {
+		if _, hasContent := item["content"]; hasContent {
+			t.Fatalf("planner preview must not include inline content: %#v", item)
+		}
+	}
+}
+
 func TestSearchUnknownRepoSelectorEmitsCoach(t *testing.T) {
 	alias := "container-search-coach-" + filepath.Base(t.TempDir())
 	root := createContainerWorkspaceFixture(t, alias)
@@ -1711,6 +1805,18 @@ func TestSearchUnknownRepoSelectorEmitsCoach(t *testing.T) {
 	}
 	if len(env.Coach.Actions) != 1 || !strings.Contains(env.Coach.Actions[0].Command, "--repo") {
 		t.Fatalf("expected rerun action for repo selector, got %#v", env.Coach)
+	}
+	items, ok := env.Items.([]map[string]any)
+	if !ok || len(items) < 2 {
+		t.Fatalf("expected concrete repo candidates, got %#v", env.Items)
+	}
+	for _, item := range items {
+		if item["repo"] == "" || item["root"] == "" {
+			t.Fatalf("candidate missing repo/root: %#v", item)
+		}
+		if _, hasContent := item["content"]; hasContent {
+			t.Fatalf("invalid repo must not fall back to broad content search: %#v", item)
+		}
 	}
 }
 

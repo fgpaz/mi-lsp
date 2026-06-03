@@ -156,6 +156,54 @@ func TestRecordOperationPersistsRouteAndQueryBudgetMetadata(t *testing.T) {
 	}
 }
 
+func TestRecordOperationDoesNotInferTruncationFromExactMaxItems(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+
+	telemetry := NewCLITelemetry("test-cli", "session-exact-max", false)
+	if telemetry == nil {
+		t.Fatal("expected telemetry instance")
+	}
+	defer telemetry.Close()
+
+	request := model.CommandRequest{
+		Operation: "nav.search",
+		Context: model.QueryOptions{
+			Workspace: "multi-tedi",
+			MaxItems:  1,
+		},
+		Payload: map[string]any{"pattern": "handler"},
+	}
+	envelope := model.Envelope{
+		Ok:      true,
+		Backend: "text",
+		Items:   []map[string]any{{"file": "src/handler.go", "line": 10}},
+	}
+
+	telemetry.RecordOperation(request, envelope, nil, 25*time.Millisecond, "direct")
+
+	store, err := daemon.OpenTelemetryStore()
+	if err != nil {
+		t.Fatalf("OpenTelemetryStore: %v", err)
+	}
+	defer store.Close()
+
+	events, err := daemon.QueryAccessEvents(store, daemon.ExportQuery{SessionID: "session-exact-max", Limit: 10})
+	if err != nil {
+		t.Fatalf("QueryAccessEvents: %v", err)
+	}
+	if len(events) != 1 {
+		t.Fatalf("expected 1 event, got %d", len(events))
+	}
+	if events[0].Truncated {
+		t.Fatalf("truncated = true, want false for exact max_items without envelope truncation")
+	}
+	if events[0].TruncationReason != "none" {
+		t.Fatalf("truncation_reason = %q, want none", events[0].TruncationReason)
+	}
+}
+
 func TestRecordOperationCapturesSearchRoutingDiagnostics(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
@@ -456,6 +504,82 @@ func TestRecordOperationCapturesCoachMetadataWithoutLeakingCoachContent(t *testi
 	}
 	if decision["memory_stale"] != true {
 		t.Fatalf("memory_stale = %#v, want true", decision["memory_stale"])
+	}
+	if decision["guardrail_trigger"] != "low_confidence" {
+		t.Fatalf("guardrail_trigger = %#v, want low_confidence", decision["guardrail_trigger"])
+	}
+	if decision["safe_degrade_reason"] != "low_evidence" {
+		t.Fatalf("safe_degrade_reason = %#v, want low_evidence", decision["safe_degrade_reason"])
+	}
+	if decision["planner_outcome"] != "low_confidence" {
+		t.Fatalf("planner_outcome = %#v, want low_confidence", decision["planner_outcome"])
+	}
+}
+
+func TestRecordOperationCapturesPlannerScopePreviewMetadata(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+
+	telemetry := NewCLITelemetry("test-cli", "session-planner", false)
+	if telemetry == nil {
+		t.Fatal("expected telemetry instance")
+	}
+	defer telemetry.Close()
+
+	request := model.CommandRequest{
+		Operation: "nav.search",
+		Context:   model.QueryOptions{Workspace: "container", MaxItems: 10},
+		Payload:   map[string]any{"pattern": "PasswordResetService", "include_content": true},
+	}
+	envelope := model.Envelope{
+		Ok:      true,
+		Backend: "planner",
+		Mode:    "scope-preview",
+		Items:   []map[string]any{{"repo": "api"}, {"repo": "web"}},
+		Coach: &model.Coach{
+			Trigger: "scope_narrowing_required",
+		},
+		Continuation: &model.Continuation{
+			Reason: "scope_narrowing_required",
+			Next:   model.ContinuationTarget{Op: "nav.search", Repo: "api"},
+		},
+	}
+
+	telemetry.RecordOperation(request, envelope, nil, 18*time.Millisecond, "direct")
+
+	store, err := daemon.OpenTelemetryStore()
+	if err != nil {
+		t.Fatalf("OpenTelemetryStore: %v", err)
+	}
+	defer store.Close()
+
+	events, err := daemon.QueryAccessEvents(store, daemon.ExportQuery{SessionID: "session-planner", Limit: 10})
+	if err != nil {
+		t.Fatalf("QueryAccessEvents: %v", err)
+	}
+	if len(events) != 1 {
+		t.Fatalf("expected 1 event, got %d", len(events))
+	}
+	if events[0].HintCode != "scope_narrowing_required" {
+		t.Fatalf("hint_code = %q, want scope_narrowing_required", events[0].HintCode)
+	}
+	if strings.Contains(events[0].DecisionJSON, "PasswordResetService") {
+		t.Fatalf("decision_json leaked raw pattern: %s", events[0].DecisionJSON)
+	}
+	var decision map[string]any
+	if err := json.Unmarshal([]byte(events[0].DecisionJSON), &decision); err != nil {
+		t.Fatalf("Unmarshal(decision_json): %v", err)
+	}
+	for key, want := range map[string]string{
+		"planner_path":        "planner",
+		"planner_outcome":     "scope_preview",
+		"safe_degrade_reason": "scope_narrowing_required",
+		"guardrail_trigger":   "scope_narrowing_required",
+	} {
+		if decision[key] != want {
+			t.Fatalf("%s = %#v, want %q in %s", key, decision[key], want, events[0].DecisionJSON)
+		}
 	}
 }
 

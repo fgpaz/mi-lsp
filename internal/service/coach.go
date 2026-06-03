@@ -18,6 +18,7 @@ const (
 	coachTriggerLowConfidence          = "low_confidence"
 	coachTriggerTextFallback           = "text_fallback"
 	coachTriggerScopeNarrowingAvailabe = "scope_narrowing_available"
+	coachTriggerScopeNarrowingRequired = "scope_narrowing_required"
 	coachTriggerSymbolQueryDetected    = "symbol_query_detected"
 	coachTriggerAnchorDrift            = "anchor_drift"
 )

@@ -39,7 +39,7 @@ func (a *App) indexStart(ctx context.Context, request model.CommandRequest) (mod
 	job, err := store.CreateIndexJob(ctx, db, registration.Name, registration.Root, mode, clean)
 	if err != nil {
 		if activeErr, ok := err.(*store.ActiveIndexJobError); ok {
-			return model.Envelope{}, fmt.Errorf("index already running for workspace %s: %w", registration.Name, activeErr)
+			return activeIndexJobEnvelope(registration, activeErr.Job), nil
 		}
 		return model.Envelope{}, err
 	}
@@ -76,6 +76,24 @@ func (a *App) indexStart(ctx context.Context, request model.CommandRequest) (mod
 		Stats:     result.Stats,
 		Warnings:  result.Warnings,
 	}, nil
+}
+
+func activeIndexJobEnvelope(registration model.WorkspaceRegistration, job store.IndexJob) model.Envelope {
+	statusCommand := "mi-lsp index status " + job.JobID
+	nextHint := statusCommand
+	return model.Envelope{
+		Ok:        true,
+		Workspace: registration.Name,
+		Backend:   "index-job",
+		Mode:      job.Mode,
+		Items:     []store.IndexJob{job},
+		Warnings: []string{
+			"index job already active; use `" + statusCommand + "` to inspect progress",
+			"backoff recommended: retry index.start after the active job finishes",
+		},
+		Hint:     "existing index job returned instead of starting a duplicate job",
+		NextHint: &nextHint,
+	}
 }
 
 func (a *App) indexRunJob(ctx context.Context, request model.CommandRequest) (model.Envelope, error) {

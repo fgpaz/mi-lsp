@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"os"
 	"os/exec"
@@ -48,6 +49,28 @@ func TestCancelIndexJobForceTerminatesProcessAndMarksCanceled(t *testing.T) {
 	}
 	if processExists(cmd.Process.Pid) {
 		t.Fatalf("expected pid %d to be terminated", cmd.Process.Pid)
+	}
+}
+
+func TestCreateIndexJobReturnsActiveIndexJobError(t *testing.T) {
+	db, root := seedTestDB(t)
+	ctx := context.Background()
+
+	active, err := CreateIndexJob(ctx, db, "test", root, IndexModeFull, false)
+	if err != nil {
+		t.Fatalf("CreateIndexJob(active): %v", err)
+	}
+
+	_, err = CreateIndexJob(ctx, db, "test", root, IndexModeFull, false)
+	var activeErr *ActiveIndexJobError
+	if !errors.As(err, &activeErr) {
+		t.Fatalf("CreateIndexJob duplicate error = %T %v, want ActiveIndexJobError", err, err)
+	}
+	if activeErr.Job.JobID != active.JobID {
+		t.Fatalf("active job id = %q, want %q", activeErr.Job.JobID, active.JobID)
+	}
+	if activeErr.Job.Status != IndexJobQueued {
+		t.Fatalf("active job status = %q, want %q", activeErr.Job.Status, IndexJobQueued)
 	}
 }
 
