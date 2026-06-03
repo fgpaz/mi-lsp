@@ -71,6 +71,44 @@ function Get-TouchedPaths($BaseSha) {
     return @($paths | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Sort-Object -Unique)
 }
 
+function Get-StatusPath($StatusLine) {
+    if ($StatusLine -match "^.{2}\s+(?<path>.+)$") {
+        return ($Matches["path"] -replace "^""|""$", "")
+    }
+    return $null
+}
+
+function Get-WaivedDirtyPaths($Text) {
+    $paths = @()
+    $inWaivers = $false
+    $inScope = $false
+    foreach ($line in ($Text -split "`r?`n")) {
+        if ($line -match "^\s*waivers:\s*$") {
+            $inWaivers = $true
+            $inScope = $false
+            continue
+        }
+        if ($inWaivers -and $line -match "^[A-Za-z0-9_][A-Za-z0-9_-]*:\s*") {
+            break
+        }
+        if (-not $inWaivers) {
+            continue
+        }
+        if ($line -match "^\s+scope:\s*$") {
+            $inScope = $true
+            continue
+        }
+        if ($inScope -and $line -match "^\s+-\s+""?(?<path>[^""]+?)""?\s*$") {
+            $paths += $Matches["path"]
+            continue
+        }
+        if ($inScope -and $line -match "^\s+[A-Za-z0-9_][A-Za-z0-9_-]*:\s*") {
+            $inScope = $false
+        }
+    }
+    return @($paths | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Sort-Object -Unique)
+}
+
 if (-not (Test-Path -LiteralPath $SessionContract)) {
     Fail "Session contract not found: $SessionContract"
 }
@@ -102,23 +140,41 @@ $clientName = Get-ScalarValue $contractText "client_name"
 if ($clientName -eq "manual-cli") {
     Fail "mi_lsp_preflight.client_name must identify the harness; manual-cli is not valid for governed T2+ work."
 }
+$sessionID = Get-ScalarValue $contractText "session_id"
+if ($sessionID -match "^cli-\d+$") {
+    Fail "mi_lsp_preflight.session_id must identify the governed session; default cli-<pid> is not valid for governed T2+ work."
+}
 if ((Get-ScalarValue $contractText "governance_blocked") -eq "true") {
     Fail "mi_lsp_preflight.governance_blocked=true; only diagnosis/repair is allowed."
 }
 if ((Get-ScalarValue $contractText "docs_ready") -eq "false") {
     Fail "mi_lsp_preflight.docs_ready=false; governed docs-first/AE work cannot close as warning-only."
 }
+$docCountText = Get-ScalarValue $contractText "doc_count"
+$docCount = 0
+if (-not [int]::TryParse($docCountText, [ref]$docCount)) {
+    Fail "mi_lsp_preflight.doc_count must be numeric."
+}
+if ($docCount -le 0) {
+    Fail "mi_lsp_preflight.doc_count=$docCount; governed docs-first/AE work cannot close with an empty document index."
+}
 $aeCanonStatus = Get-AECanonStatus $contractText
 if ([string]::IsNullOrWhiteSpace($aeCanonStatus)) {
     Fail "mi_lsp_preflight must record ae_canon.status."
 }
-if ($aeCanonStatus -in @("missing", "mismatch", "not_implemented")) {
+if ($aeCanonStatus -in @("missing", "mismatch", "projection_only", "not_implemented")) {
     Fail "mi_lsp_preflight.ae_canon.status=$aeCanonStatus blocks guarded closure."
 }
 
 $status = @(git status --porcelain=v1)
-if (-not $AllowDirty -and $status.Count -gt 0) {
-    Fail "Working tree is dirty; rerun after committing/stashing or pass -AllowDirty for pre-commit validation."
+$waivedDirtyPaths = @(Get-WaivedDirtyPaths $contractText)
+$blockingStatus = @($status | Where-Object {
+    $path = Get-StatusPath $_
+    [string]::IsNullOrWhiteSpace($path) -or ($waivedDirtyPaths -notcontains $path)
+})
+if (-not $AllowDirty -and $blockingStatus.Count -gt 0) {
+    $blockingPaths = @($blockingStatus | ForEach-Object { Get-StatusPath $_ } | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+    Fail "Working tree has unwaived dirty paths: $($blockingPaths -join '; '). Commit/stash them or pass -AllowDirty for pre-commit validation."
 }
 
 $baseSha = Get-ScalarValue $contractText "base_sha"

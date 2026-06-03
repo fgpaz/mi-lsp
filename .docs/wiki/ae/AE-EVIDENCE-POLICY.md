@@ -19,8 +19,8 @@ agent_may_edit:
 agent_must_not_edit:
   - .docs/wiki/_mi-lsp/read-model.toml
 verify:
-  - mi-lsp nav governance --workspace mi-lsp --format toon
-  - mi-lsp nav wiki validate-harness --workspace mi-lsp --format toon
+  - mi-lsp nav governance --workspace <alias> --format toon
+  - mi-lsp nav wiki validate-harness --workspace <alias> --format toon
 stop_if:
   - governance_blocked=true
   - harness_verdict=BLOCKED
@@ -134,10 +134,26 @@ requires:
 checks:
   - session_contract_exists
   - branch_not_main_unless_waived
+  - dirty_paths_are_committed_or_explicitly_waived
+  - mi_lsp_preflight_present
+  - mi_lsp_preflight_client_name_not_manual_cli
+  - mi_lsp_preflight_session_id_not_default_cli_pid
+  - mi_lsp_preflight_governance_blocked_false
+  - mi_lsp_preflight_docs_ready_true
+  - mi_lsp_preflight_doc_count_greater_than_zero
+  - mi_lsp_preflight_ae_canon_status_not_missing_mismatch_or_projection_only
   - no_forbidden_path_drift
   - no_ungoverned_raw_artifacts
 stop_if:
   - session_contract_missing
+  - uncommitted_dirty_path_not_listed_in_session_contract_waivers
+  - mi_lsp_preflight_missing
+  - mi_lsp_preflight.client_name=manual-cli
+  - mi_lsp_preflight.session_id matches cli-<pid>
+  - mi_lsp_preflight.governance_blocked=true
+  - mi_lsp_preflight.docs_ready=false
+  - mi_lsp_preflight.doc_count=0
+  - mi_lsp_preflight.ae_canon.status in [missing, mismatch, projection_only]
   - dirty_worktree_without_explicit_allow_dirty_precommit_mode
   - forbidden_path_changed
   - raw_artifact_changed_without_governed_allowlist
@@ -146,4 +162,43 @@ verify:
 evidence:
   - scripts/ae/pre-push-guard.ps1
   - .docs/auditoria/<YYYY-MM-DD>-<task-slug>/traceability-closure.yaml
+```
+
+## WSL And Worker Audit Evidence
+
+```toon
+doc_id: AE-EVIDENCE-POLICY
+block_id: AE-EVIDENCE-POLICY.wsl_worker_audit
+kind: policy
+source_of_truth: this
+applies_when:
+  - WSL execution audit
+  - subagent execution audit
+  - worker execution audit
+required_artifacts:
+  - wsl-execution-inventory.yaml
+  - telemetry-export-summary.toon
+  - manual-cli-attribution-findings.yaml
+  - worker-session-attribution-matrix.yaml
+required_sources_first:
+  - mi-lsp admin export --since <window> --summary --by-client --by-route --by-failure-stage --format toon
+  - mi-lsp admin export --since <window> --client-name manual-cli --format toon --limit <n>
+  - mi-lsp admin export --since <window> --operation nav.governance --format toon --limit <n>
+  - mi-lsp admin export --since <window> --operation workspace.status --format toon --limit <n>
+evidence_handling:
+  - WSL filesystems are read-only during audit
+  - shell histories and worker transcripts are summarized, not dumped
+  - secrets are redacted or the evidence source is blocked
+  - telemetry rows and transcripts are closure evidence, not canon
+stop_if:
+  - audit requires mutating WSL state
+  - raw history or transcript content would expose secrets
+  - worker/session attribution matrix is missing
+  - manual-cli governed worker session has no exception or waiver
+  - missing governance, doc_count=0, missing attribution, or ae_canon blocking state is treated as warning-only
+verify:
+  - ./scripts/ae/pre-push-guard.ps1 -SessionContract .docs/auditoria/<task>/session-contract.yaml -AllowDirty
+evidence:
+  - .docs/wiki/ae/AE-EVIDENCE-POLICY.md
+  - .docs/auditoria/<YYYY-MM-DD>-<task-slug>/worker-session-attribution-matrix.yaml
 ```

@@ -23,9 +23,9 @@ agent_may_edit:
 agent_must_not_edit:
   - .docs/wiki/_mi-lsp/read-model.toml
 verify:
-  - mi-lsp nav governance --workspace mi-lsp --format toon
-  - mi-lsp nav wiki validate-harness --workspace mi-lsp --format toon
-  - mi-lsp nav wiki validate-source --workspace mi-lsp --format toon
+  - mi-lsp nav governance --workspace <alias> --format toon
+  - mi-lsp nav wiki validate-harness --workspace <alias> --format toon
+  - mi-lsp nav wiki validate-source --workspace <alias> --format toon
 stop_if:
   - governance_blocked=true
   - harness_verdict=BLOCKED
@@ -59,8 +59,14 @@ phases:
     requires:
       - workspace_status
       - nav_governance
+      - attributed_mi_lsp_preflight
     stop_if:
       - governance_blocked=true
+      - docs_ready=false
+      - doc_count=0
+      - ae_canon.status in [missing, mismatch, projection_only]
+      - client_name=manual-cli
+      - session_id matches cli-<pid>
   - id: decision_lock
     owner: ae-decision-lock
     requires:
@@ -91,7 +97,7 @@ stop_if:
   - session_contract_missing_for_non_trivial_work
   - adapter_selected_without_profile
 verify:
-  - mi-lsp nav wiki validate-source --workspace mi-lsp --format toon
+  - mi-lsp nav wiki validate-source --workspace <alias> --format toon
 evidence:
   - .docs/wiki/ae/AE-PHASES.md
 ```
@@ -111,6 +117,7 @@ rule: auto_integrate_on_green_closure
 applies_when:
   - cycle_produced_a_real_diff
 green_closure_gates:
+  - mi_lsp_preflight_present_and_clean
   - ps_trazabilidad_closure_packet_present
   - ps_auditar_trazabilidad_verdict=APPROVED
   - all_detected_drift_repaired
@@ -129,10 +136,11 @@ hold_for_human_only_when:
   - a_waiver_is_required
   - user_explicitly_requests_review
 stop_if:
+  - missing governance, docs_ready=false, doc_count=0, missing attribution, or ae_canon blocking state is downgraded to warning-only
   - integration_attempted_while_any_green_closure_gate_is_red
   - admin_merge_used_to_bypass_a_failing_ci_check
 verify:
-  - mi-lsp nav wiki validate-source --workspace mi-lsp --format toon
+  - mi-lsp nav wiki validate-source --workspace <alias> --format toon
 evidence:
   - .docs/wiki/ae/AE-PHASES.md
   - .docs/auditoria/<YYYY-MM-DD>-<task-slug>/audit-verdict.yaml

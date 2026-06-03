@@ -20,8 +20,8 @@ agent_may_edit:
 agent_must_not_edit:
   - .docs/wiki/_mi-lsp/read-model.toml
 verify:
-  - mi-lsp nav governance --workspace mi-lsp --format toon
-  - mi-lsp nav wiki validate-harness --workspace mi-lsp --format toon
+  - mi-lsp nav governance --workspace <alias> --format toon
+  - mi-lsp nav wiki validate-harness --workspace <alias> --format toon
 stop_if:
   - governance_blocked=true
   - harness_verdict=BLOCKED
@@ -52,7 +52,13 @@ required_fields:
   - base_sha
   - branch
   - worktree_path
+  - mode
+  - decision_lock
+  - harness_adapter
+  - orchestration_depth
+  - closure_profile
   - ae_contract
+  - mi_lsp_preflight
   - anchors
   - expected_scope
   - allowed_paths
@@ -72,6 +78,24 @@ ae_contract_required_fields:
   - ledgers_required
   - runtime_target
   - stop_before_functional_work
+mi_lsp_preflight_required_fields:
+  - alias
+  - root
+  - cli_path
+  - governance_blocked
+  - docs_ready
+  - doc_count
+  - ae_canon.status
+  - ae_canon.roots
+  - ae_canon.source
+  - ae_canon.blocking
+  - client_name
+  - session_id
+worker_audit_required_fields:
+  - worker_session_attribution_matrix
+  - admin_export_summary
+  - manual_cli_exception_review
+  - wsl_read_only_evidence_handling
 forbidden_path_defaults:
   - .git/**
   - .mi-lsp/**
@@ -88,6 +112,13 @@ closure_consumers:
   - scripts/ae/pre-push-guard.ps1
 stop_if:
   - contract_missing_for_required_work
+  - mi_lsp_preflight_missing_for_governed_work
+  - mi_lsp_preflight.client_name=manual-cli
+  - mi_lsp_preflight.session_id matches cli-<pid>
+  - mi_lsp_preflight.governance_blocked=true
+  - mi_lsp_preflight.docs_ready=false
+  - mi_lsp_preflight.doc_count=0
+  - mi_lsp_preflight.ae_canon.status in [missing, mismatch, projection_only]
   - real_diff_exceeds_allowed_paths
   - forbidden_path_touched_without_explicit_waiver
 verify:
