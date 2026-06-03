@@ -356,6 +356,7 @@ Metadata operativa que debe quedar observable en `access_events` y `admin export
 - `hint_code`
 - `truncation_reason`
 - `requested_backend`, `result_backend`, `backend_fallback_taken`, `fallback_from`, `fallback_to`, `runtime_error_code` dentro de `decision_json` cuando hay fallback backend/runtime
+- `planner_path`, `planner_outcome`, `safe_degrade_reason` y `guardrail_trigger` dentro de `decision_json` cuando el planner cambia ruta, baja de daemon/semantica a texto, fuerza preview/full, o activa guardrails de search
 - `decision_json` sanitizado; nunca `pattern` crudo ni argv
 - si `route=daemon` y la ejecucion fue normal, el registro canonico lo escribe el daemon; la CLI no debe duplicar esa misma operacion en `access_events`
 - `result_count` representa items emitidos en el envelope final, no `Stats.Symbols`
@@ -535,6 +536,7 @@ Public installers are shell wrappers around the release contract, not new runtim
 - Existing daemons should be stopped before replacing a target binary; after replacement, `daemon restart` is recommended when daemon-backed state is in use.
 - Successful install verification must run the installed path through `version --format toon` and `worker status --format compact|toon`.
 - PATH shadowing remains diagnosed through `where.exe mi-lsp` on Windows, `command -v mi-lsp` on Linux, `version.cli_path`, and `worker status.cli_path`.
+- When a release changes telemetry, search routing, safe-degrade planner behavior, or provenance fields, release evidence must also include `admin export --summary --by-route --by-client --by-hint --by-failure-stage`, plus `version --format toon` from the installed path used by the agent.
 
 ## Payload, error y compatibilidad
 

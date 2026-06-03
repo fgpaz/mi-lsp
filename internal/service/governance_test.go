@@ -109,6 +109,80 @@ func TestNavGovernanceReportsDeclaredAECanonRoots(t *testing.T) {
 	}
 }
 
+func TestNavGovernanceUsesReadModelSourceDocForKnowledgeWiki(t *testing.T) {
+	alias := "gov-knowledge-wiki-" + filepath.Base(t.TempDir())
+	ensureWritableTestHome(t)
+	root := t.TempDir()
+	writeWorkspaceFile(t, root, "src/App.csproj", `<Project Sdk="Microsoft.NET.Sdk"></Project>`)
+	writeWorkspaceFile(t, root, ".docs/wiki/00-gobierno.md", "# 00 - Gobierno\n\nKraal-style knowledge wiki governance.\n")
+	writeWorkspaceFile(t, root, ".docs/wiki/01-alcance.md", "# 01 - Alcance\n")
+	writeAECanonModules(t, root, ".docs/wiki/ae")
+	writeWorkspaceFile(t, root, ".docs/wiki/_mi-lsp/read-model.toml", `version = 1
+
+[[family]]
+  name = "kraal-canon"
+  intent_keywords = ["gobierno", "ae"]
+  paths = [".docs/wiki/*.md", ".docs/wiki/ae/"]
+
+[generic_docs]
+  paths = ["README.md", ".docs/wiki/"]
+
+[reading_pack]
+  max_docs = 8
+  functional_stage_order = ["kraal-canon"]
+  technical_stage_order = ["kraal-canon"]
+  ux_stage_order = ["kraal-canon"]
+
+[governance]
+  source_doc = ".docs/wiki/00-gobierno.md"
+  source_format = "markdown"
+  profile = "knowledge-wiki"
+  effective_base = "knowledge-wiki"
+  context_chain = [".docs/wiki/00-gobierno.md", ".docs/wiki/01-alcance.md"]
+  closure_chain = ["tools/validate_kraal.py"]
+  audit_chain = [".docs/auditoria/"]
+  blocking_rules = ["Do not treat .docs/raw/** as canonical truth."]
+`)
+
+	app := New(root, nil)
+	if _, err := workspace.RegisterWorkspace(alias, model.WorkspaceRegistration{
+		Name:      alias,
+		Root:      root,
+		Languages: []string{"csharp"},
+		Kind:      model.WorkspaceKindSingle,
+	}); err != nil {
+		t.Fatalf("RegisterWorkspace: %v", err)
+	}
+	if err := workspace.SaveProjectFile(root, model.ProjectFile{
+		Project: model.ProjectBlock{Name: alias, Kind: model.WorkspaceKindSingle, DefaultRepo: "main"},
+		Repos:   []model.WorkspaceRepo{{ID: "main", Name: "main", Root: "."}},
+	}); err != nil {
+		t.Fatalf("SaveProjectFile: %v", err)
+	}
+	defer func() { _ = workspace.RemoveWorkspace(alias) }()
+
+	env, err := app.Execute(context.Background(), model.CommandRequest{
+		Operation: "nav.governance",
+		Context:   model.QueryOptions{Workspace: alias},
+	})
+	if err != nil {
+		t.Fatalf("nav.governance: %v", err)
+	}
+	status := env.Items.([]model.GovernanceStatus)[0]
+	if status.Blocked {
+		t.Fatalf("expected knowledge-wiki governance to pass, got %#v", status)
+	}
+	if status.HumanDoc != ".docs/wiki/00-gobierno.md" {
+		t.Fatalf("human_doc = %q, want .docs/wiki/00-gobierno.md", status.HumanDoc)
+	}
+	if status.Profile != "knowledge-wiki" || status.Sync != "in_sync" {
+		t.Fatalf("expected knowledge-wiki in_sync, got profile=%q sync=%q", status.Profile, status.Sync)
+	}
+	if status.AECanon.Status != "valid" {
+		t.Fatalf("expected valid fallback AE canon, got %#v", status.AECanon)
+	}
+}
+
 func TestNavGovernanceFollowsExplicitAECanonReadmeRedirect(t *testing.T) {
 	alias := "gov-ae-redirect-" + filepath.Base(t.TempDir())
 	ensureWritableTestHome(t)

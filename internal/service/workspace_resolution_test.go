@@ -147,6 +147,54 @@ func TestExecuteWorkspaceStatusExplicitAliasWinsOverCallerCWDWithWarning(t *test
 	}
 }
 
+func TestExecuteWorkspaceStatusInvalidExplicitAliasReturnsDiagnosticError(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+
+	root := t.TempDir()
+	writeWorkspaceFile(t, root, "src/Program.cs", "class Program {}")
+	if err := workspace.SaveProjectFile(root, model.ProjectFile{
+		Project: model.ProjectBlock{
+			Name:      "caller-workspace",
+			Languages: []string{"csharp"},
+			Kind:      model.WorkspaceKindSingle,
+		},
+	}); err != nil {
+		t.Fatalf("SaveProjectFile(root): %v", err)
+	}
+	registerServiceWorkspace(t, "caller-workspace", root)
+
+	app := New(root, nil)
+	env, err := app.Execute(context.Background(), model.CommandRequest{
+		Operation: "workspace.status",
+		Context: model.QueryOptions{
+			Workspace: "stale-alias",
+			CallerCWD: filepath.Join(root, "src"),
+		},
+	})
+	if err == nil {
+		t.Fatalf("Execute(workspace.status) err = nil, env=%#v", env)
+	}
+	message := err.Error()
+	if !strings.Contains(message, "stale-alias") {
+		t.Fatalf("error = %q, want stale alias", message)
+	}
+	if !strings.Contains(message, "caller-workspace") {
+		t.Fatalf("error = %q, want caller cwd diagnostic alias", message)
+	}
+	if !strings.Contains(message, "workspace hygiene --apply-safe") {
+		t.Fatalf("error = %q, want hygiene suggestion", message)
+	}
+	workspaces, err := workspace.ListWorkspaces()
+	if err != nil {
+		t.Fatalf("ListWorkspaces: %v", err)
+	}
+	if len(workspaces) != 1 || workspaces[0].Name != "caller-workspace" {
+		t.Fatalf("workspaces = %#v, want only caller-workspace", workspaces)
+	}
+}
+
 func TestExecuteWorkspaceStatusPathWorkspaceUsesPathSafeNextSteps(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
@@ -195,6 +243,51 @@ func TestExecuteWorkspaceStatusPathWorkspaceUsesPathSafeNextSteps(t *testing.T) 
 	joined := strings.Join(nextSteps, "\n")
 	if !strings.Contains(joined, "--workspace .") {
 		t.Fatalf("next_steps = %v, want --workspace .", nextSteps)
+	}
+}
+
+func TestExecuteNavGovernanceInvalidAliasReturnsCallerCWDDiagnostic(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+
+	root := t.TempDir()
+	writeWorkspaceFile(t, root, "src/Program.cs", "class Program {}")
+	writeSpecBackendGovernanceFixture(t, root)
+	if err := workspace.SaveProjectFile(root, model.ProjectFile{
+		Project: model.ProjectBlock{
+			Name:      "current-repo",
+			Languages: []string{"csharp"},
+			Kind:      model.WorkspaceKindSingle,
+		},
+	}); err != nil {
+		t.Fatalf("SaveProjectFile(root): %v", err)
+	}
+	registerServiceWorkspace(t, "current-repo", root)
+
+	app := New(root, nil)
+	env, err := app.Execute(context.Background(), model.CommandRequest{
+		Operation: "nav.governance",
+		Context: model.QueryOptions{
+			Workspace: "missing-alias",
+			CallerCWD: filepath.Join(root, "src"),
+		},
+	})
+	if err == nil {
+		t.Fatalf("Execute(nav.governance) err = nil, env=%#v", env)
+	}
+	message := err.Error()
+	for _, want := range []string{"missing-alias", "current-repo", "workspace hygiene --apply-safe"} {
+		if !strings.Contains(message, want) {
+			t.Fatalf("error = %q, want %q", message, want)
+		}
+	}
+	workspaces, err := workspace.ListWorkspaces()
+	if err != nil {
+		t.Fatalf("ListWorkspaces: %v", err)
+	}
+	if len(workspaces) != 1 || workspaces[0].Name != "current-repo" {
+		t.Fatalf("workspaces = %#v, want only current-repo", workspaces)
 	}
 }
 

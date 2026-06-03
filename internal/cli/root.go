@@ -37,6 +37,7 @@ type rootState struct {
 	classic      bool
 	full         bool
 	telemetry    *CLITelemetry
+	retentionRun bool
 	noAutoDaemon bool
 	compress     bool
 }
@@ -81,18 +82,10 @@ func NewRootCommand() *cobra.Command {
 		axi:         axiEnabled,
 	}
 
-	// Initialize CLI telemetry (best-effort, never blocks startup).
-	state.telemetry = NewCLITelemetry(clientName, sessionID, false)
-	if state.telemetry != nil {
-		if purged, err := state.telemetry.ApplyRetention(retentionDays()); err == nil && purged > 0 {
-			// Retention applied silently on startup.
-			_ = purged
-		}
-	}
-
 	root := &cobra.Command{
 		Use:           "mi-lsp",
 		Short:         "Semantic CLI for multi-workspace .NET and TS repositories",
+		Version:       rootVersionString(buildRootVersionInfo(repoRoot)),
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -238,20 +231,39 @@ func (s *rootState) executeOperation(cmd *cobra.Command, operation string, paylo
 	if err != nil {
 		envelope = buildCLIErrorEnvelope(request, route, err)
 	}
+	finalEnvelope := output.ApplyEnvelopeLimits(envelope, request.Context)
 
 	// Best-effort telemetry: direct/direct_fallback record at the caller.
 	// Daemon-served requests are recorded canonically inside the daemon.
-	if s.telemetry != nil && shouldRecordCLITelemetry(route, err) {
-		s.telemetry.RecordOperation(request, envelope, err, latency, route)
+	if shouldRecordCLITelemetry(route, err) {
+		if cliTelemetry := s.ensureTelemetry(); cliTelemetry != nil {
+			cliTelemetry.RecordOperation(request, finalEnvelope, err, latency, route)
+		}
 	}
 
 	if err != nil {
-		if printErr := s.printEnvelope(envelope, request.Context); printErr != nil {
+		if printErr := s.printPreparedEnvelope(finalEnvelope, request.Context); printErr != nil {
 			return printErr
 		}
 		return envelopePrintedError{err: err}
 	}
-	return s.printEnvelope(envelope, request.Context)
+	return s.printPreparedEnvelope(finalEnvelope, request.Context)
+}
+
+func (s *rootState) ensureTelemetry() *CLITelemetry {
+	if s == nil {
+		return nil
+	}
+	if s.telemetry == nil {
+		s.telemetry = NewCLITelemetry(s.clientName, s.sessionID, s.verbose)
+	}
+	if s.telemetry != nil && !s.retentionRun {
+		s.retentionRun = true
+		if purged, err := s.telemetry.ApplyRetention(retentionDays()); err == nil && purged > 0 {
+			_ = purged
+		}
+	}
+	return s.telemetry
 }
 
 func buildCLIErrorEnvelope(request model.CommandRequest, route string, err error) model.Envelope {
@@ -457,6 +469,10 @@ func offsetFromPayload(payload map[string]any) (int, bool) {
 
 func (s *rootState) printEnvelope(envelope model.Envelope, opts model.QueryOptions) error {
 	envelope = output.ApplyEnvelopeLimits(envelope, opts)
+	return s.printPreparedEnvelope(envelope, opts)
+}
+
+func (s *rootState) printPreparedEnvelope(envelope model.Envelope, opts model.QueryOptions) error {
 	rendered, err := output.Render(envelope, opts.Format, opts.Compress)
 	if err != nil {
 		return err

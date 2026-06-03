@@ -42,6 +42,10 @@ type accessDecision struct {
 	FallbackFrom         string `json:"fallback_from,omitempty"`
 	FallbackTo           string `json:"fallback_to,omitempty"`
 	RuntimeErrorCode     string `json:"runtime_error_code,omitempty"`
+	PlannerPath          string `json:"planner_path,omitempty"`
+	PlannerOutcome       string `json:"planner_outcome,omitempty"`
+	SafeDegradeReason    string `json:"safe_degrade_reason,omitempty"`
+	GuardrailTrigger     string `json:"guardrail_trigger,omitempty"`
 }
 
 func EnrichAccessEvent(event model.AccessEvent, request model.CommandRequest, envelope model.Envelope, opErr error) model.AccessEvent {
@@ -66,11 +70,7 @@ func EnrichAccessEvent(event model.AccessEvent, request model.CommandRequest, en
 	}
 
 	event.ResultCount = count
-	maxItems := request.Context.MaxItems
-	if maxItems <= 0 {
-		maxItems = 50
-	}
-	event.Truncated = envelope.Truncated || (count > 0 && count >= maxItems)
+	event.Truncated = envelope.Truncated
 	event.WarningCount = len(envelope.Warnings)
 	if strings.TrimSpace(event.PatternMode) == "" {
 		event.PatternMode = derivePatternMode(focusOp, focusPayload)
@@ -259,6 +259,8 @@ func buildDecisionJSON(route string, request model.CommandRequest, focusOp strin
 		RequestedBackend:  requestedBackend,
 		ResultBackend:     resultBackend,
 		RuntimeErrorCode:  runtimeError.Code,
+		PlannerPath:       derivePlannerPath(envelope),
+		PlannerOutcome:    derivePlannerOutcome(envelope),
 	}
 	if requestedBackend != "" && resultBackend != "" && !strings.EqualFold(requestedBackend, resultBackend) {
 		decision.BackendFallbackTaken = true
@@ -275,11 +277,16 @@ func buildDecisionJSON(route string, request model.CommandRequest, focusOp strin
 		decision.CoachPresent = true
 		decision.CoachTrigger = strings.TrimSpace(envelope.Coach.Trigger)
 		decision.CoachActionCount = len(envelope.Coach.Actions)
+		decision.GuardrailTrigger = strings.TrimSpace(envelope.Coach.Trigger)
 	}
 	if envelope.Continuation != nil {
 		decision.ContinuationPresent = true
 		decision.ContinuationReason = strings.TrimSpace(envelope.Continuation.Reason)
 		decision.ContinuationOp = strings.TrimSpace(envelope.Continuation.Next.Op)
+		decision.SafeDegradeReason = strings.TrimSpace(envelope.Continuation.Reason)
+	}
+	if decision.SafeDegradeReason == "" && envelope.Coach != nil {
+		decision.SafeDegradeReason = strings.TrimSpace(envelope.Coach.Trigger)
 	}
 	if envelope.MemoryPointer != nil {
 		decision.MemoryPointerPresent = true
@@ -290,6 +297,30 @@ func buildDecisionJSON(route string, request model.CommandRequest, focusOp strin
 		return ""
 	}
 	return string(body)
+}
+
+func derivePlannerPath(envelope model.Envelope) string {
+	switch {
+	case strings.EqualFold(strings.TrimSpace(envelope.Backend), "planner"):
+		return "planner"
+	case strings.EqualFold(strings.TrimSpace(envelope.Backend), "router"):
+		return "router"
+	case strings.TrimSpace(envelope.Mode) != "":
+		return strings.TrimSpace(envelope.Backend) + ":" + strings.TrimSpace(envelope.Mode)
+	default:
+		return ""
+	}
+}
+
+func derivePlannerOutcome(envelope model.Envelope) string {
+	mode := strings.TrimSpace(envelope.Mode)
+	if strings.EqualFold(strings.TrimSpace(envelope.Backend), "planner") && mode != "" {
+		return strings.ReplaceAll(mode, "-", "_")
+	}
+	if envelope.Coach != nil && strings.TrimSpace(envelope.Coach.Trigger) != "" {
+		return strings.TrimSpace(envelope.Coach.Trigger)
+	}
+	return ""
 }
 
 func deriveRequestedBackend(request model.CommandRequest, focusOp string, payload map[string]any) string {

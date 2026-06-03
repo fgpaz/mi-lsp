@@ -522,6 +522,20 @@ func (a *App) resolveWorkspaceStatusTarget(request model.CommandRequest) (model.
 	return registration, project, selector, source, warnings, hint, nil
 }
 
+func (a *App) resolvePreflightWorkspaceWithProject(request model.CommandRequest) (model.WorkspaceRegistration, model.ProjectFile, []string, string, error) {
+	resolution, err := workspace.ResolveWorkspaceSelection(request.Context.Workspace, request.Context.CallerCWD)
+	if err != nil {
+		return model.WorkspaceRegistration{}, model.ProjectFile{}, nil, "", err
+	}
+	registration := resolution.Registration
+	project, err := workspace.LoadProjectTopology(registration.Root, registration)
+	if err != nil {
+		return model.WorkspaceRegistration{}, model.ProjectFile{}, nil, "", err
+	}
+	registration = workspace.ApplyProjectTopology(registration, project)
+	return registration, project, resolution.Warnings, "", nil
+}
+
 func (a *App) statusMemory(ctx context.Context, registration model.WorkspaceRegistration, opts model.QueryOptions, autoSync bool, governanceBlocked bool) (*loadedReentryMemory, []string) {
 	memory, _ := loadReentryMemory(ctx, registration.Root)
 	if memory == nil || !memory.Stale || !autoSync || !opts.Full || governanceBlocked {

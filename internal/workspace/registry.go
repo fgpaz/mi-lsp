@@ -34,6 +34,43 @@ type WorkspaceResolution struct {
 	Warnings     []string
 }
 
+const workspaceResolutionNotFoundMessage = "workspace not found in registry and path does not exist"
+
+type WorkspaceResolutionError struct {
+	Selector          string
+	CallerCWD         string
+	Fallback          WorkspaceResolution
+	FallbackAvailable bool
+	Warnings          []string
+}
+
+func (e *WorkspaceResolutionError) Error() string {
+	selector := strings.TrimSpace(e.Selector)
+	if selector == "" {
+		return workspaceResolutionNotFoundMessage
+	}
+	message := fmt.Sprintf("workspace %q is not registered and path does not exist", selector)
+	if e.FallbackAvailable {
+		alias := strings.TrimSpace(e.Fallback.Registration.Name)
+		root := strings.TrimSpace(e.Fallback.Registration.Root)
+		if alias != "" && root != "" {
+			return fmt.Sprintf("%s; caller cwd %q resolves to workspace %q at %q for diagnostics only; rerun with --workspace %s if intended, or run `mi-lsp workspace hygiene --apply-safe` after review", message, strings.TrimSpace(e.CallerCWD), alias, root, alias)
+		}
+	}
+	if strings.TrimSpace(e.CallerCWD) != "" {
+		return fmt.Sprintf("%s; caller cwd %q did not resolve to a registered workspace; try --workspace . from the repo root or run `mi-lsp init . --name <alias>`", message, strings.TrimSpace(e.CallerCWD))
+	}
+	return message + "; run `mi-lsp workspace list --group-by-root` or `mi-lsp workspace doctor`"
+}
+
+func AsWorkspaceResolutionError(err error) (*WorkspaceResolutionError, bool) {
+	var resolutionErr *WorkspaceResolutionError
+	if errors.As(err, &resolutionErr) {
+		return resolutionErr, true
+	}
+	return nil, false
+}
+
 type WorkspaceRootGroup struct {
 	Root            string   `json:"root"`
 	AliasCount      int      `json:"alias_count"`
@@ -275,7 +312,7 @@ func ResolveWorkspaceSelection(nameOrPath string, callerCWD string) (WorkspaceRe
 			}
 			return WorkspaceResolution{Registration: registration, Source: ResolutionSourcePath}, nil
 		}
-		return WorkspaceResolution{}, errors.New("workspace not found in registry and path does not exist")
+		return WorkspaceResolution{}, newWorkspaceResolutionError(selector, callerCWD, registry)
 	}
 
 	if resolution, ok := resolveWorkspaceFromCallerCWD(callerCWD, registry); ok {
@@ -297,6 +334,19 @@ func ResolveWorkspaceSelection(nameOrPath string, callerCWD string) (WorkspaceRe
 	}
 
 	return WorkspaceResolution{}, errors.New("no workspace specified and no default workspace configured")
+}
+
+func newWorkspaceResolutionError(selector string, callerCWD string, registry model.RegistryFile) error {
+	resolutionErr := &WorkspaceResolutionError{
+		Selector:  strings.TrimSpace(selector),
+		CallerCWD: strings.TrimSpace(callerCWD),
+	}
+	if fallback, ok := resolveWorkspaceFromCallerCWD(callerCWD, registry); ok {
+		resolutionErr.Fallback = fallback
+		resolutionErr.FallbackAvailable = true
+		resolutionErr.Warnings = append(resolutionErr.Warnings, fallback.Warnings...)
+	}
+	return resolutionErr
 }
 
 func ListWorkspaces() ([]model.WorkspaceRegistration, error) {
