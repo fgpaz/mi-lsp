@@ -448,6 +448,16 @@ type DocsGovernanceProfile struct {
 	Hierarchy            []GovernanceHierarchyItem `toml:"hierarchy,omitempty"`
 }
 
+type AECanonStatus struct {
+	Status          string   `json:"status,omitempty"`
+	Roots           []string `json:"roots,omitempty"`
+	Source          string   `json:"source,omitempty"`
+	RequiredModules []string `json:"required_modules,omitempty"`
+	MissingModules  []string `json:"missing_modules,omitempty"`
+	Blocking        bool     `json:"blocking"`
+	Reason          string   `json:"reason,omitempty"`
+}
+
 type GovernanceStatus struct {
 	HumanDoc             string                      `json:"human_doc,omitempty"`
 	ProjectionDoc        string                      `json:"projection_doc,omitempty"`
@@ -463,6 +473,7 @@ type GovernanceStatus struct {
 	Sync                 string                      `json:"sync,omitempty"`
 	IndexSync            string                      `json:"index_sync,omitempty"`
 	IndexSyncDetails     *GovernanceIndexSyncDetails `json:"index_sync_details,omitempty"`
+	AECanon              AECanonStatus               `json:"ae_canon,omitempty"`
 	Blocked              bool                        `json:"blocked"`
 	Issues               []string                    `json:"issues,omitempty"`
 	Warnings             []string                    `json:"warnings,omitempty"`

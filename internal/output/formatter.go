@@ -214,6 +214,9 @@ func renderText(env model.Envelope) string {
 	case []model.GovernanceStatus:
 		for _, item := range items {
 			lines = append(lines, fmt.Sprintf("governance profile=%s base=%s sync=%s index=%s blocked=%t", item.Profile, item.EffectiveBase, item.Sync, item.IndexSync, item.Blocked))
+			if item.AECanon.Status != "" {
+				lines = append(lines, fmt.Sprintf("  ae_canon status=%s source=%s roots=%s blocking=%t reason=%s", item.AECanon.Status, item.AECanon.Source, strings.Join(item.AECanon.Roots, ","), item.AECanon.Blocking, item.AECanon.Reason))
+			}
 			if item.IndexSyncDetails != nil && item.IndexSyncDetails.Reason != "" {
 				lines = append(lines, "  index_reason "+item.IndexSyncDetails.Reason)
 			}
@@ -444,6 +447,7 @@ func compactItems(items any, compress bool) any {
 				"sync":                  item.Sync,
 				"index_sync":            item.IndexSync,
 				"index_sync_details":    item.IndexSyncDetails,
+				"ae_canon":              item.AECanon,
 				"blocked":               item.Blocked,
 				"issues":                item.Issues,
 				"warnings":              item.Warnings,
