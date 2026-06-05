@@ -1,0 +1,69 @@
+schema: mi-lsp-audit-verdict-v1
+task_slug: qwen-nan-recall-docs
+audited_at: 2026-06-05T00:00:00-03:00
+auditor: ps-auditar-trazabilidad-equivalent
+session_contract: .docs/auditoria/2026-06-05-qwen-nan-recall-docs/session-contract.yaml
+traceability_closure: .docs/auditoria/2026-06-05-qwen-nan-recall-docs/traceability-closure.yaml
+verdict: Approved
+
+scope_reviewed:
+  - canonical wiki RF/FL/TP/TECH/DB/CT/model docs
+  - public README
+  - internal Qwen/Nan recall runtime implementation
+  - repo skill source
+  - installed skill and mirror parity
+  - AE session contract and closure evidence
+
+findings:
+  - id: repo_local_index_stale_for_new_tp_sem
+    severity: Low
+    status: follow_up
+    evidence: .docs/wiki/06_pruebas/TP-SEM.md exists and .docs/wiki/_mi-lsp/read-model.toml includes .docs/wiki/06_pruebas/*.md, but workspace status still reports doc_count=120 because no reindex was run.
+    impact: validators pass against the current index; TP-SEM will be visible to indexed navigation after an allowed docs reindex.
+    remediation: run mi-lsp index --workspace . in a task where .mi-lsp writes are allowed.
+  - id: guarded_integration_pending
+    severity: Low
+    status: integration_step
+    evidence: user requested uploading everything to origin main after validation.
+    impact: branch must be pushed and merged through the repo PR flow.
+    remediation: push branch, create PR, merge once checks are green or not configured.
+
+checks:
+  governance:
+    result: PASS
+    blocked: false
+    ae_canon_status: valid
+  harness:
+    result: PASS
+    harness_verdict: PASS
+  wiki_source:
+    result: PASS
+    wiki_source_verdict: PASS
+  tests:
+    result: PASS
+    command: go test ./...
+  bge_default_drift:
+    result: PASS
+    classification: remaining BGE hits are negative/no-hidden-BGE wording only
+  skill_sync:
+    result: PASS
+    source: skills/mi-lsp
+    installed_mirror_compare: identical
+    repo_agents_mirror_hash_parity: true
+  forbidden_paths:
+    result: PASS
+    read_model_touched: false
+    mi_lsp_state_touched: false
+    env_or_auth_touched: false
+    internal_staged: true
+  pre_push_guard:
+    result: PASS
+    dirty_allowed: true
+    dirty_count: 29
+    diff_count: 29
+
+conclusion:
+  blocking: false
+  push_ready: true
+  reason: user requested integration to origin/main and pre-push guard passed
+  stage_ready: true

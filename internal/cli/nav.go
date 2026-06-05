@@ -148,6 +148,7 @@ context retrieval, dependency analysis, and service exploration.`,
 	attachWikiCompatRepoFlag(askCommand, &askRepo)
 
 	var recallMap bool
+	var recallIntent string
 	recallCommand := &cobra.Command{
 		Use:   "recall <query>",
 		Short: "Semantic recall over markdown knowledge wiki (no governance gate)",
@@ -160,12 +161,16 @@ context retrieval, dependency analysis, and service exploration.`,
 			if recallMap {
 				payload["map"] = true
 			}
+			if strings.TrimSpace(recallIntent) != "" {
+				payload["intent"] = recallIntent
+			}
 			// recall is a direct read (repo-local SQLite + embeddings endpoint); it does
 			// not need daemon warm state, so it never routes to / auto-starts the daemon.
 			return state.executeOperation(cmd, "nav.recall", payload, false)
 		},
 	}
 	recallCommand.Flags().BoolVar(&recallMap, "map", false, "Group results into compact sub-topic map")
+	recallCommand.Flags().StringVar(&recallIntent, "intent", "explore", "Recall intent: formula, evidence, route, explore, or learning")
 
 	var packRF string
 	var packFL string

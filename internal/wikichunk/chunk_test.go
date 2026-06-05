@@ -83,6 +83,69 @@ text B
 	}
 }
 
+func TestLargeNestedHeadingChunkSplitsAtChildHeadings(t *testing.T) {
+	longBody := strings.Repeat("large nested section body\n", maxChunkChars/12)
+	content := `## Parent
+short overview
+
+### Child A
+` + longBody + `
+### Child B
+` + longBody
+
+	chunks := ChunkByHeading(content)
+	if len(chunks) < 3 {
+		t.Fatalf("expected parent overview plus child chunks, got %d", len(chunks))
+	}
+
+	var foundChildA, foundChildB bool
+	for _, chunk := range chunks {
+		if len(chunk.Text) > maxChunkChars {
+			t.Fatalf("chunk %q is too large: %d chars", chunk.Heading, len(chunk.Text))
+		}
+		if chunk.Heading == "Child A" {
+			foundChildA = true
+		}
+		if chunk.Heading == "Child B" {
+			foundChildB = true
+		}
+	}
+	if !foundChildA || !foundChildB {
+		t.Fatalf("expected child heading chunks, found A=%v B=%v", foundChildA, foundChildB)
+	}
+}
+
+func TestLargeLeafChunkSplitsByParagraphs(t *testing.T) {
+	var builder strings.Builder
+	builder.WriteString("## Long Leaf\n")
+	for i := 0; i < 180; i++ {
+		builder.WriteString("This is a paragraph used to force a large markdown chunk for embeddings.\n\n")
+	}
+
+	chunks := ChunkByHeading(builder.String())
+	if len(chunks) < 2 {
+		t.Fatalf("expected paragraph chunk split, got %d chunks", len(chunks))
+	}
+	for _, chunk := range chunks {
+		if len(chunk.Text) > maxChunkChars {
+			t.Fatalf("chunk %q is too large: %d chars", chunk.Heading, len(chunk.Text))
+		}
+	}
+}
+
+func TestLargeSingleLineSplitsBelowLimit(t *testing.T) {
+	content := "## Long Line\n" + strings.Repeat("cell|", maxChunkChars)
+	chunks := ChunkByHeading(content)
+	if len(chunks) < 2 {
+		t.Fatalf("expected long single line split, got %d chunks", len(chunks))
+	}
+	for _, chunk := range chunks {
+		if len(chunk.Text) > maxChunkChars {
+			t.Fatalf("chunk %q is too large: %d chars", chunk.Heading, len(chunk.Text))
+		}
+	}
+}
+
 // Test fenced code block
 func TestFencedCodeBlock(t *testing.T) {
 	content := `## Real

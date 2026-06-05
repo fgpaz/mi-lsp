@@ -136,7 +136,7 @@ That gives you a local, explainable answer instead of a black-box summary.
 
 For repositories that have a markdown knowledge wiki but no formal `00_gobierno_documental.md`, use `mi-lsp nav recall` to embed a freeform query and rank wiki sections by semantic similarity.
 It works multilingually: a Spanish query will find matching English notes by meaning, not just text.
-Offline ⇒ lexical fallback: when embeddings service is unavailable, `recall` degrades gracefully to keyword search.
+When embeddings are unavailable, use `mi-lsp nav wiki search` as the lexical/wiki fallback.
 
 The feature is gated by optional `[embeddings]` configuration in `.mi-lsp/project.toml`.
 A block with both `base_url` and `model` is active by default; set `enabled = false` only when you need an explicit local kill switch:
@@ -145,20 +145,33 @@ A block with both `base_url` and `model` is active by default; set `enabled = fa
 [embeddings]
 # enabled = false  # optional kill switch; omit for normal active config
 provider = "openai"
-base_url = "http://localhost:8000/v1"
-model = "bge-m3"
-dim = 1024
-api_key_env = "MI_LSP_EMBEDDINGS_API_KEY"
+base_url = "https://api.nan.builders/v1"
+model = "qwen3-embedding"
+dim = 4096
+api_key_env = "NAN_API_KEY"
 profile = "knowledge-wiki"
-batch_size = 100
+batch_size = 32
 timeout_ms = 30000
+encoding_format = "float"
+user_agent = "mi-lsp-embeddings/1.0"
 ```
 
-The API key is populated via `mkey run` and injected as an environment variable (`MI_LSP_EMBEDDINGS_API_KEY`), never committed to the repo.
-`tesla bge-m3` is the documented reference endpoint (1024-dim multilingual embeddings).
+The API key is populated through the environment or `mkey run` and injected as the variable named in `api_key_env`; never print or commit key values.
+Nan/Qwen3 is the documented reference endpoint for operational recall.
 The `knowledge-wiki` profile auto-detects when no formal governance exists, bypassing the spec-driven gate.
-Chunks are stored in repo-local `wiki_chunk_embeddings` table with incremental re-embedding by content hash.
+Chunks are stored in repo-local `wiki_chunk_embeddings` table with incremental re-embedding by metadata-prefix, content hash, model, and dimension.
 Rerunning `mi-lsp index` can backfill missing vectors even when the document catalog reports no source changes.
+
+Use `--intent` to tune recall toward the job:
+
+```powershell
+mi-lsp nav recall "what contract defines recall result fields?" --workspace <alias> --intent formula --format toon
+mi-lsp nav recall "collect citations for semantic fallback" --workspace <alias> --intent evidence --format toon
+mi-lsp nav recall "where should I start this docs task?" --workspace <alias> --intent route --map --format toon
+```
+
+Intent guide: `formula` finds rules and definitions, `evidence` finds citable support, `route` finds the next anchor to inspect, `explore` is the balanced default, and `learning` favors onboarding/explanatory material. Qwen discovers candidates; route-only material is not a final source of truth until you open the canonical doc or evidence it points to.
+If Nan, the key, or the provider fails, rerun through `mi-lsp nav wiki search "<query>" --workspace <alias> --format toon`. There is no hidden BGE fallback.
 
 ## Evidence Inventory For Agent Reentry
 

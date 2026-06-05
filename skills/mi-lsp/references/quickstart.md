@@ -36,12 +36,13 @@ If `mi-lsp workspace list` fails because the command is missing, return to the i
 2. `nav wiki search` when you need RF/FL/TP/CT/TECH/DB docs or traceability anchors
 3. `nav route` when you need the cheapest canonical orientation (no index needed, governance-first)
 4. `nav ask` when you need richer orientation, ownership, or docs-first evidence synthesis
-5. `nav search --include-content` when you need literal implementation evidence
-6. `nav workspace-map --axi` when you need structure across repos or services
-7. `nav related` when you need one symbol's neighborhood in one call
-8. `nav service` when you need evidence-first understanding of a backend area
-9. `nav intent` when you know what the code does but not the symbol name
-10. `nav multi-read` or `nav batch` when you already know the targets
+5. `nav recall --intent formula|evidence|route|explore|learning` when embeddings are configured and you need semantic wiki candidates
+6. `nav search --include-content` when you need literal implementation evidence
+7. `nav workspace-map --axi` when you need structure across repos or services
+8. `nav related` when you need one symbol's neighborhood in one call
+9. `nav service` when you need evidence-first understanding of a backend area
+10. `nav intent` when you know what the code does but not the symbol name
+11. `nav multi-read` or `nav batch` when you already know the targets
 
 ## Canonical wiki-first loop
 
@@ -74,6 +75,7 @@ Canonical doc location follows governance and `read-model`, not a fixed path ass
 | Build a pack from wiki anchors | `nav wiki pack "workflow con masterformularios"` |
 | Trace one requirement/test ID through the canonical wiki surface | `nav wiki trace RF-QRY-003` |
 | Cheapest canonical orientation (no index needed) | `nav route "how is this workspace organized?"` |
+| Find semantic wiki candidates by job | `nav recall "what contract defines fallback?" --intent formula` |
 | Understand the repo with full evidence | `nav ask "how is this workspace organized?"` |
 | Find the right repo/entrypoint in a parent folder | `nav workspace-map --axi` |
 | Understand one symbol fully | `nav related MySymbol` |
@@ -99,4 +101,5 @@ If a cheap read is slow, suspect stale binary, stale index, or wrong PATH before
 In container workspaces, prefer `--repo` for direct `find`, `search`, or `intent` before reaching for semantic selectors.
 Do not use `--repo docs` as a wiki selector. Use `nav wiki search|route|pack`; `nav ask|route|pack --repo` is compatibility-only and will be ignored for docs.
 Do not use `nav search` to decide which documentation source is canonical when `nav wiki search|route|pack|trace` can answer that question.
+If `nav recall` cannot use Nan/Qwen embeddings because config, key, or provider fails, use `nav wiki search` as the lexical/wiki fallback. There is no hidden BGE runtime fallback.
 For Go files, `nav context` / `nav refs` may use `gopls` when it is installed. If `gopls` is unavailable, the command should degrade to catalog/text with a visible install hint; do not treat that fallback as a hard failure unless the task explicitly requires live Go LSP semantics.

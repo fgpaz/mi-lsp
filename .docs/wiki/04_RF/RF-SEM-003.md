@@ -43,8 +43,8 @@ evidence:
 
 | Condicion | Tipo | Estado requerido |
 |---|---|---|
-| Workspace con embeddings indexados (RF-SEM-002) | funcional | obligatorio |
-| Config embeddings cargada (RF-SEM-001) | tecnica | obligatorio |
+| Workspace con embeddings indexados (RF-SEM-002) | funcional | obligatorio para ranking vectorial |
+| Config embeddings cargada (RF-SEM-001) | tecnica | obligatorio para ranking vectorial |
 | Perfil knowledge-wiki efectivo (no bloqueado por gobernanza) | operativa | obligatorio |
 | Sin requirement de governance gate (ungated recall) | semantica | obligatorio |
 
@@ -54,22 +54,31 @@ evidence:
 |---|---|---|---|---|---|
 | `query` | string | si | CLI | natural language, ES o EN soportado | RF-SEM-003 |
 | `--workspace` | string | si | CLI | alias workspace registrado | RF-SEM-003 |
-| `--top` | entero | no | CLI | 1..50, default 5 | RF-SEM-003 |
-| `--offset` | entero | no | CLI | >= 0, default 0 | RF-SEM-003 |
-| `--layer` | string | no | CLI | e.g. `04_RF`, `07_tech` o `*` | RF-SEM-003 |
+| `--max-items` | entero | no | CLI global | limite de resultados; default global del CLI | RF-SEM-003 |
+| `--token-budget` | entero | no | CLI global | presupuesto aproximado de salida | RF-SEM-003 |
+| `--map` | bool | no | CLI | agrupa resultados en mapa compacto | RF-SEM-003 |
+| `--intent` | enum | no | CLI | `formula`, `evidence`, `route`, `explore`, `learning`; default `explore` | RF-SEM-003 |
 | `format` | enum | no | CLI | `compact`, `json`, `text`, `toon` o `yaml`; default `compact` | RF-SEM-003 |
+
+Guia de intenciones:
+
+- `formula`: recuperar contratos, formulas, unidades, fixtures, rangos y stop conditions source-grounded.
+- `evidence`: recuperar fuentes canonicas, source IDs, matrices de evidencia y punteros de seccion.
+- `route`: recuperar perfiles o notas de ruteo para decidir quien atiende; estos hits no son fuente final.
+- `explore`: explorar contexto amplio, sintesis, indices y decisiones previas.
+- `learning`: recuperar aprendizajes durables, memoria operativa y reglas de mejora.
 
 ## 4. Process Steps (Happy Path)
 
-1. CLI recibe `mi-lsp nav recall "<query>" --workspace <alias> [--top N] [--layer X]`.
+1. CLI recibe `mi-lsp nav recall "<query>" --workspace <alias> [--intent formula|evidence|route|explore|learning]`.
 2. Core carga config embeddings (RF-SEM-001).
-3. Si query es ES, opcionalmente traduce a EN (o embebe ES directo si backend soporta).
-4. Core solicita embedding de la query al backend (timeout `timeout_ms`).
+3. Core normaliza `--intent` y enriquece el texto de query para sesgar el ranking.
+4. Core solicita embedding de la query enriquecida al backend (timeout `timeout_ms`).
 5. Si embedding disponible, busca TOP-K similitud cosine en tabla `wiki_chunk_embeddings`.
-6. Si backend no disponible, cae a fallback: busca lexical full-text sobre `chunk_content` (offline).
-7. Filtro por `--layer` si esta presente (e.g., solo `04_RF/` docs).
-8. Aplica paginacion: `--offset` y `--top`.
-9. Formatea resultados con `heading`, `doc_path`, `relevance_score` (cosine o BM25 en fallback).
+6. Aplica reranking por intencion sobre metadata, path, doc title, heading y snippet.
+7. Si backend no disponible, emite warning/hint y la guia documental segura es `mi-lsp nav wiki search`, no BGE oculto.
+8. Aplica `--max-items` y `--token-budget`.
+9. Formatea resultados como `RecallResult` con `intent`, `archivo`, `heading`, `score`, `snippet`, `start_line`, `end_line` y `why`.
 10. Devuelve envelope estable (no gated por gobernanza).
 
 ## 5. Outputs
@@ -77,25 +86,28 @@ evidence:
 | Campo | Tipo | Destino | Efecto observable |
 |---|---|---|---|
 | `ok` | bool | usuario/skill | operacion exitosa |
-| `items` | lista | usuario/skill | array de chunks con `heading`, `doc_path`, `content_preview`, `relevance_score` |
-| `backend` | string | usuario/skill | `embeddings` si usa semantic, `text-index` si es fallback |
+| `items` | lista | usuario/skill | array `RecallResult[]` con `intent`, `archivo`, `heading`, `snippet`, `score`, lineas y `why` |
+| `backend` | string | usuario/skill | `recall` si usa semantic; fallback documental recomendado `nav wiki search` |
 | `truncated` | bool | usuario/skill | hay mas resultados disponibles |
 | `warnings` | lista | usuario/skill | diagnostico de fallback activado, slow query, etc. |
-| `stats` | objeto | usuario/skill | `chunks_matched`, `search_time_ms`, `backend_latency_ms` |
+| `hint` | string | usuario/skill | explica intencion efectiva o fallback |
+| `stats` | objeto | usuario/skill | conteos y presupuesto de salida |
 
 ## 6. Typed Errors
 
 | Codigo | Causa | Trigger | Respuesta esperada |
 |---|---|---|---|
 | `SEM_WORKSPACE_UNRESOLVED` | alias invalido | `--workspace` no existe | abortar con error explicito |
-| `SEM_QUERY_TIMEOUT` | query embedding agota timeout | timeout_ms excedido | cae a fallback lexical |
+| `SEM_QUERY_TIMEOUT` | query embedding agota timeout | timeout_ms excedido | warning + guidance a `nav wiki search` |
 | `SEM_NO_RESULTS` | ninguna seccion coincide | query muy especifica o indice vacio | retorna items=[] con hint accionable |
 
 ## 7. Special Cases and Variants
 
 - Si query es muy corta (<3 caracteres), sugiere expansion en `next_hint`.
-- Si backend disponible pero timeout, cae silenciosamente a fallback con warning.
-- Si `--layer` es presente pero ningun resultado coincide, retorna items=[] + hint "no matches in layer X".
+- Si backend disponible pero timeout, devuelve warning/hint y recomienda `nav wiki search`.
+- Intent desconocido se normaliza a `explore`.
+- Qwen descubre candidatos; no convierte material route-only en fuente final.
+- `intent=route` prioriza perfiles/routing para despacho, pero el agente debe volver a `formula` o `evidence` para citar fuentes finales.
 - Soporta bilingual: query ES se embebe directo o se traduce segun backend capability.
 - Sin gobernanza gate (ungated): mismo usuario puede recuperar spec docs, implementation docs, o knowledge wiki sin bloqueo.
 
@@ -109,17 +121,16 @@ evidence:
 ```gherkin
 Scenario: Recuperar secciones por significado con backend
   Given un workspace con embeddings indexados
-  When ejecuto "mi-lsp nav recall 'como configurar embeddings' --workspace mi-lsp --top 5"
+  When ejecuto "mi-lsp nav recall 'como configurar embeddings' --workspace mi-lsp --max-items 5"
   Then retorna items con relevancia ordenada
-  And cada item tiene "heading", "doc_path", "relevance_score"
-  And backend = "embeddings"
+  And cada item tiene "intent", "heading", "archivo", "score"
+  And backend = "recall"
 
-Scenario: Caer a fallback lexical si backend no disponible
+Scenario: Recomendar fallback wiki si backend no disponible
   Given backend embeddings no disponible
   When ejecuto "mi-lsp nav recall 'configurar embeddings' --workspace mi-lsp"
-  Then retorna items usando busqueda full-text (offline)
-  And backend = "text-index"
-  And warning indica "backend unavailable; using offline lexical"
+  Then warning indica provider no disponible
+  And hint recomienda `mi-lsp nav wiki search`
 
 Scenario: Soportar bilingual ES↔EN
   Given workspace con docs en Español e Ingles
@@ -127,11 +138,13 @@ Scenario: Soportar bilingual ES↔EN
   Then retorna sections de ambos idiomas si son semanticamente relacionadas
   And cuando ejecuto misma query con termino ES equivalente, resultados similares
 
-Scenario: Respetar layer filtering
-  Given workspace con docs en multiples capas (04_RF/, 07_tech/)
-  When ejecuto "mi-lsp nav recall 'recall' --workspace mi-lsp --layer 04_RF"
-  Then solo retorna chunks de archivos en .docs/wiki/04_RF/
-  And chunks de 07_tech/ son excluidos
+Scenario: Diferenciar route de formula
+  Given workspace con un contrato de formula y un perfil route-only
+  When ejecuto "mi-lsp nav recall 'formula hops' --workspace mi-lsp --intent formula"
+  Then el contrato de formula queda por encima del perfil route-only
+  When ejecuto "mi-lsp nav recall 'formula hops' --workspace mi-lsp --intent route"
+  Then el perfil route-only puede subir para despacho
+  And el hint indica que route no es fuente final
 ```
 
 ## 10. Test Traceability
@@ -147,10 +160,11 @@ Scenario: Respetar layer filtering
   - no exponer tokens de embeddings raw en output
   - no filtrar resultados por RF existencia (knowledge-wiki es agnóstico)
 - Decisiones cerradas:
-  - fallback offline-lexical es automatico
+  - fallback documental seguro es `nav wiki search`
   - TOP-K cosine similarity ranking
   - query embedding temporal (no cacheado globalmente)
   - soporte ES/EN bilingual (backend-dependent)
+  - Qwen/Nan descubre candidatos; source-of-truth final sigue siendo wiki canonica/source-grounded
 - TODO explicit = 0
 - Fuera de alcance:
   - multi-workspace recall (future, similar a FL-WIKI-01)

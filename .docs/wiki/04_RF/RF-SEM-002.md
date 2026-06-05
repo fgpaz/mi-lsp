@@ -44,7 +44,7 @@ evidence:
 | Condicion | Tipo | Estado requerido |
 |---|---|---|
 | Workspace indexado (`.mi-lsp/index.db` existente) | funcional | obligatorio |
-| Tabla `wiki_chunk_embeddings` existe en `.mi-lsp/index.db` | tecnica | obligatorio |
+| Tabla `wiki_chunk_embeddings` existe o puede crearse lazy en `.mi-lsp/index.db` | tecnica | obligatorio |
 | Backend embeddings accesible o fallback offline activo | operativa | obligatorio |
 
 ## 3. Inputs
@@ -54,20 +54,21 @@ evidence:
 | `doc_path` | string | si | indexer | archivo `.md` en `.docs/wiki` | RF-SEM-002 |
 | `chunk_heading` | string | si | parser markdown | heading (e.g., `## Seccion`) | RF-SEM-002 |
 | `chunk_content` | string | si | parser markdown | contenido bajo heading | RF-SEM-002 |
-| `chunk_hash` | string | si | hasher | SHA256 del contenido | RF-SEM-002 |
-| `embedding_batch` | lista | no | embeddings client | batch de chunks a emebeer | RF-SEM-002 |
+| `chunk_hash` | string | si | hasher | SHA256 del texto enriquecido para embedding | RF-SEM-002 |
+| `embedding_batch` | lista | no | embeddings client | batch de chunks a embeber | RF-SEM-002 |
 
 ## 4. Process Steps (Happy Path)
 
 1. Indexer detecta cambio en `.docs/wiki/**.md` (git status o file watcher).
 2. Parser markdown divide contenido en chunks por H2/H3 heading.
-3. Para cada chunk, calcula `chunk_hash = SHA256(heading + content)`.
-4. Consulta `wiki_chunk_embeddings` con `chunk_hash`; si existe y `content_hash` coincide, SKIP (incremental).
-5. Para chunks nuevos, agrupa en batch (default 10 por `batch_size` config).
-6. Envia batch a embeddings backend (OpenAI-compatible o offline).
-7. Si backend responde, inserta `(chunk_hash, doc_path, heading, content, embedding_vector, dim)` en tabla.
-8. Si backend falla/timeout, registra warning y cae a fallback: guarda chunk SIN embedding (vector=NULL).
-9. Marca indice como `last_semantic_index_ts = now()`.
+3. Para cada chunk, construye `embedding_text` con metadata (`documentKey`, `body_role`, `tags`, `path`, `title`, `layer`, `family`, `heading`) + contenido.
+4. Calcula `content_hash = SHA256(chunk.ContentHash + "\0qwen-metadata-v1\0" + embedding_text)`.
+5. Consulta `wiki_chunk_embeddings` por `(doc_path, chunk_id)`; si `content_hash`, `embedding_model`, `embedding_dim` y BLOB existen y coinciden, SKIP (incremental).
+6. Para chunks nuevos o invalidos, agrupa en batch usando `batch_size`.
+7. Envia batch al backend OpenAI-compatible con `encoding_format = "float"` cuando aplique.
+8. Si backend responde, valida dimension estrictamente contra `[embeddings].dim` e inserta `(doc_path, chunk_id, start_line, end_line, heading_text, snippet, content_hash, embedding, embedding_model, embedding_dim, indexed_at)`.
+9. Si backend falla/timeout, registra warning; el camino documental seguro para el usuario es `nav wiki search`, no un modelo BGE oculto.
+10. Marca indice como publicado con warnings si el embedding no pudo completarse.
 
 ## 5. Outputs
 
@@ -78,29 +79,31 @@ evidence:
 | `chunks_skipped` | entero | diagnostico | numero de chunks sin cambios |
 | `embeddings_inserted` | entero | diagnostico | numero de embeddings guardados |
 | `embeddings_failed` | entero | diagnostico | numero de chunks con fallback |
-| `backend` | string | diagnostico | `embeddings` o `fallback` |
+| `backend` | string | diagnostico | `recall` cuando embeddings estan listos; fallback recomendado `nav wiki search` |
 | `warnings` | lista | usuario | diagnostico de fallos parciales |
 
 ## 6. Typed Errors
 
 | Codigo | Causa | Trigger | Respuesta esperada |
 |---|---|---|---|
-| `SEM_INDEX_CORRUPTED` | tabla wiki_chunk_embeddings no existe | `.mi-lsp/index.db` invalido | abortar con error explicito |
+| `SEM_INDEX_CORRUPTED` | tabla wiki_chunk_embeddings no puede crearse/leerse | `.mi-lsp/index.db` invalido | abortar con error explicito |
 | `SEM_BATCH_TIMEOUT` | backend agota timeout en embedding | timeout_ms excedido | registrar warning, guardar sin embedding, continuar |
 | `SEM_INVALID_CHUNK` | contenido invalido o demasiado largo | >8000 tokens | SKIP chunk con warning |
+| `SEM_DIMENSION_MISMATCH` | embedding devuelto no coincide con `dim` | proveedor responde dimension distinta | warning/error de batch; requiere corregir config o reindexar |
 
 ## 7. Special Cases and Variants
 
 - Si `batch_size=1`, cada chunk se embebe por separado (mas lento pero mas granular).
-- Si embeddings son NULL (fallback), `nav recall` aun puede usar texto (lexical fallback offline).
-- Indice es incremental: SOLO procesa chunks nuevos o modificados por `chunk_hash`.
+- Si embeddings no estan disponibles, usar `nav wiki search` para recuperacion documental lexical/canonica.
+- Indice es incremental: SOLO procesa chunks nuevos o modificados por metadata-prefix/content hash/modelo/dimension.
 - Si indice nunca fue inicializado, primera ejecucion procesa TODO (posiblemente lento).
 - Daemon puede activar background re-indexing con debounce (RF-DAE-004).
 
 ## 8. Data Model Impact
 
-- `WikiChunkEmbedding` tabla: `(chunk_hash, doc_path, heading, content, embedding_vector BLOB, dim, inserted_at, last_updated_at)`
-- Indice por `chunk_hash` para lookup O(1) de duplicados
+- `wiki_chunk_embeddings` tabla real: `(doc_path, chunk_id, start_line, end_line, heading_text, snippet, content_hash, embedding BLOB, embedding_model, embedding_dim, indexed_at)`.
+- Unicidad por `(doc_path, chunk_id)` e indice por `doc_path`.
+- El BLOB codifica float32 little-endian; `embedding_dim` debe coincidir con `[embeddings].dim`.
 
 ## 9. Expanded Acceptance Criteria (Gherkin)
 
@@ -108,7 +111,7 @@ evidence:
 Scenario: Indexar chunks nuevos
   Given un workspace con docs en .docs/wiki/ sin embeddings
   When ejecuto "mi-lsp index --semantic"
-  Then wiki_chunk_embeddings contiene N filas
+  Then wiki_chunk_embeddings contiene N filas con embedding_model y embedding_dim
   And chunks_processed = N
   And cada fila tiene embedding_vector (o NULL si fallback)
 
@@ -118,13 +121,13 @@ Scenario: Detectar duplicados por chunk_hash y SKIP
   Then chunks_skipped = M-1
   And chunks_processed = 1
   And no reembeeo los M-1 chunks viejos
+  And cambio de metadata-prefix, modelo o dimension fuerza reembedding
 
 Scenario: Caer a fallback si backend no responde
   Given config con backend no disponible
   When ejecuto "mi-lsp index --semantic"
-  Then embeddings_failed > 0
-  And embedding_vector = NULL para esos chunks
-  And warning registrado de backend timeout
+  Then warning registrado de backend timeout
+  And el usuario puede continuar con `mi-lsp nav wiki search`
 ```
 
 ## 10. Test Traceability
@@ -137,13 +140,12 @@ Scenario: Caer a fallback si backend no responde
 
 - Supuestos prohibidos:
   - no asumir disponibilidad constante del backend
-  - no eliminar embeddings viejos
-  - no procesar chunks ya indexados por hash
+  - no eliminar embeddings viejos fuera de docs reindexados
+  - no procesar chunks ya indexados por hash/modelo/dimension
 - Decisiones cerradas:
-  - incremental por `chunk_hash`
-  - fallback sin embedding (NULL vector)
-  - batch_size default 10
+  - incremental por metadata-prefix/content hash/modelo/dimension
+  - fallback documental seguro via `nav wiki search`
+  - batch_size segun config efectiva
 - TODO explicit = 0
 - Fuera de alcance:
-  - re-embedding de chunks viejos (update estrategia: future)
   - soporte para formatos no-markdown (future)

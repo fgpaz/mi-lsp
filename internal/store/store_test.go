@@ -108,6 +108,47 @@ func TestReplaceWorkspaceIndexPublishesGenerationMetadata(t *testing.T) {
 	}
 }
 
+func TestReplaceWikiChunkEmbeddingsForDocsDropsInvalidRows(t *testing.T) {
+	db, _ := seedTestDB(t)
+	ctx := context.Background()
+	if _, err := db.ExecContext(ctx, `
+		INSERT INTO wiki_chunk_embeddings(doc_path, chunk_id, start_line, end_line, heading_text, snippet, content_hash, embedding, embedding_model, embedding_dim, indexed_at)
+		VALUES('', '', 0, 0, '', '', '', NULL, '', 0, 1)
+	`); err != nil {
+		t.Fatalf("insert invalid embedding row: %v", err)
+	}
+
+	chunks := []model.WikiChunkEmbedding{
+		{
+			DocPath:        ".docs/wiki/a.md",
+			ChunkID:        "a#0",
+			StartLine:      1,
+			EndLine:        3,
+			Heading:        "A",
+			Snippet:        "A",
+			ContentHash:    "hash-a",
+			Embedding:      []byte{1, 2, 3, 4},
+			EmbeddingModel: "test-model",
+			EmbeddingDim:   1,
+		},
+		{DocPath: ".docs/wiki/b.md", ChunkID: "b#0"},
+	}
+	if err := ReplaceWikiChunkEmbeddingsForDocs(ctx, db, []string{".docs/wiki/a.md"}, chunks); err != nil {
+		t.Fatalf("ReplaceWikiChunkEmbeddingsForDocs: %v", err)
+	}
+
+	var invalidCount int
+	if err := db.QueryRowContext(ctx, `
+		SELECT COUNT(*) FROM wiki_chunk_embeddings
+		WHERE doc_path = '' OR chunk_id = '' OR embedding IS NULL OR length(embedding) = 0
+	`).Scan(&invalidCount); err != nil {
+		t.Fatalf("invalid count query: %v", err)
+	}
+	if invalidCount != 0 {
+		t.Fatalf("invalid embedding rows = %d, want 0", invalidCount)
+	}
+}
+
 func TestUpsertAndQuerySymbols(t *testing.T) {
 	db, _ := seedTestDB(t)
 	ctx := context.Background()

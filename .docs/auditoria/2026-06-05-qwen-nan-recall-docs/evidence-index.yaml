@@ -1,0 +1,53 @@
+schema: mi-lsp-evidence-index-v1
+task_slug: qwen-nan-recall-docs
+session_contract: .docs/auditoria/2026-06-05-qwen-nan-recall-docs/session-contract.yaml
+
+evidence:
+  - id: governance_status
+    command: mi-lsp workspace status . --format toon
+    result: PASS
+    summary: governance_blocked=false docs_ready=true ae_canon.status=valid
+  - id: governance_detail
+    command: mi-lsp nav governance --workspace . --format toon
+    result: PASS
+    summary: blocked=false sync=in_sync
+  - id: recall_help
+    command: mi-lsp nav recall --help
+    result: PASS
+    summary: --intent exposes formula, evidence, route, explore, learning
+  - id: go_tests
+    command: go test ./...
+    result: PASS
+    summary: all packages passed
+  - id: harness_validator
+    command: mi-lsp nav wiki validate-harness --workspace . --format toon
+    result: PASS
+    summary: harness_verdict=PASS
+  - id: source_validator
+    command: mi-lsp nav wiki validate-source --workspace . --format toon
+    result: PASS
+    summary: wiki_source_verdict=PASS
+  - id: recall_terms
+    command: rg -n "recall --intent|encoding_format|qwen3-embedding|NAN_API_KEY|formula|evidence|route|learning" .
+    result: PASS
+    summary: required terms present
+  - id: bge_terms
+    command: rg -n "bge-m3|Tesla BGE|BGE" README.md .docs/wiki skills/mi-lsp
+    result: PASS
+    summary: remaining hits are no-hidden-BGE caveats
+  - id: skill_mirror_compare
+    command: scripts/compare-skill-mirrors.ps1 -Skill mi-lsp -IncludeIdentical -AsJson
+    result: PASS
+    summary: status=identical diffCount=0
+  - id: repo_agents_mirror_hash_parity
+    command: hash repo skill source, installed skill, and mirror files
+    result: PASS
+    summary: SKILL.md and references/quickstart.md have byte parity across source, installed, and mirror
+  - id: pre_push_guard
+    command: scripts/ae/pre-push-guard.ps1 -SessionContract .docs/auditoria/2026-06-05-qwen-nan-recall-docs/session-contract.yaml -AllowDirty
+    result: PASS
+    summary: ok=true branch=codex/qwen-nan-recall-docs dirty_allowed=true dirty_count=29 diff_count=29 ae_canon_status=valid
+  - id: user_push_request
+    command: chat request
+    result: PASS
+    summary: user requested subir todo a origin main; internal implementation changes are now in scope for guarded integration

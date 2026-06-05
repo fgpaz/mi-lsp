@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -405,5 +406,53 @@ func TestAuthorizationHeaderNotSetWhenAPIKeyEnvEmpty(t *testing.T) {
 
 	if authHeaderPresent {
 		t.Error("Authorization header should not be set when APIKeyEnv is empty")
+	}
+}
+
+func TestOpenAICompatiblePayloadHeadersAndDimensionValidation(t *testing.T) {
+	headersSeen := map[string]string{}
+	encodingSeen := ""
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		headersSeen["accept"] = r.Header.Get("Accept")
+		headersSeen["user_agent"] = r.Header.Get("User-Agent")
+
+		var req requestPayload
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "invalid request", http.StatusBadRequest)
+			return
+		}
+		encodingSeen = req.EncodingFormat
+		resp := responsePayload{
+			Data: []responseData{{Embedding: []float32{0.1, 0.2}}},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer server.Close()
+
+	client := New(Config{
+		BaseURL:   server.URL,
+		Model:     "qwen3-embedding",
+		Dim:       4,
+		BatchSize: 1,
+		TimeoutMS: 5000,
+		UserAgent: "mi-lsp-test",
+	})
+
+	_, err := client.Embed(context.Background(), []string{"hello"})
+	if err == nil {
+		t.Fatal("expected dimension validation error")
+	}
+	if !strings.Contains(err.Error(), "dimension 2 but expected 4") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if headersSeen["accept"] != "application/json" {
+		t.Fatalf("Accept header = %q, want application/json", headersSeen["accept"])
+	}
+	if headersSeen["user_agent"] != "mi-lsp-test" {
+		t.Fatalf("User-Agent header = %q, want mi-lsp-test", headersSeen["user_agent"])
+	}
+	if encodingSeen != "float" {
+		t.Fatalf("encoding_format = %q, want float", encodingSeen)
 	}
 }

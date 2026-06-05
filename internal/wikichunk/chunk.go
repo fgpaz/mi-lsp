@@ -19,6 +19,16 @@ type Chunk struct {
 	ContentHash string
 }
 
+const maxChunkChars = 4500
+
+type chunkPart struct {
+	Heading   string
+	Level     int
+	StartLine int
+	EndLine   int
+	Text      string
+}
+
 // ChunkByHeading splits content into chunks by ATX headings (##, ###, etc.),
 // respecting fenced code blocks and carrying the H1 title as context.
 func ChunkByHeading(content string) []Chunk {
@@ -101,17 +111,7 @@ func ChunkByHeading(content string) []Chunk {
 				heading = "(intro)"
 			}
 
-			chunk := Chunk{
-				ChunkID:     fmt.Sprintf("%s#%d", slug(heading), ordinal),
-				Heading:     heading,
-				Level:       1,
-				StartLine:   introStartLine,
-				EndLine:     introEndLine,
-				Text:        introText,
-				ContentHash: hashText(introText),
-			}
-			chunks = append(chunks, chunk)
-			ordinal++
+			appendChunkParts(&chunks, heading, 1, introStartLine, introEndLine, introText, &ordinal)
 		}
 	}
 
@@ -144,23 +144,235 @@ func ChunkByHeading(content string) []Chunk {
 			}
 
 			chunkText := strings.Join(lines[h.lineIdx:endLine], "\n")
-			if strings.TrimSpace(chunkText) != "" {
-				chunk := Chunk{
-					ChunkID:     fmt.Sprintf("%s#%d", slug(h.text), ordinal),
-					Heading:     h.text,
-					Level:       h.level,
-					StartLine:   h.lineIdx + 1,
-					EndLine:     endLine,
-					Text:        chunkText,
-					ContentHash: hashText(chunkText),
-				}
-				chunks = append(chunks, chunk)
-				ordinal++
-			}
+			appendChunkParts(&chunks, h.text, h.level, h.lineIdx+1, endLine, chunkText, &ordinal)
 		}
 	}
 
 	return chunks
+}
+
+func appendChunkParts(chunks *[]Chunk, heading string, level int, startLine int, endLine int, text string, ordinal *int) {
+	for _, part := range splitLargeChunk(heading, level, startLine, endLine, text) {
+		if strings.TrimSpace(part.Text) == "" {
+			continue
+		}
+		chunk := Chunk{
+			ChunkID:     fmt.Sprintf("%s#%d", slug(part.Heading), *ordinal),
+			Heading:     part.Heading,
+			Level:       part.Level,
+			StartLine:   part.StartLine,
+			EndLine:     part.EndLine,
+			Text:        part.Text,
+			ContentHash: hashText(part.Text),
+		}
+		*chunks = append(*chunks, chunk)
+		(*ordinal)++
+	}
+}
+
+func splitLargeChunk(heading string, level int, startLine int, endLine int, text string) []chunkPart {
+	text = strings.Trim(text, "\n")
+	if strings.TrimSpace(text) == "" {
+		return nil
+	}
+	if len(text) <= maxChunkChars {
+		return []chunkPart{{Heading: heading, Level: level, StartLine: startLine, EndLine: endLine, Text: text}}
+	}
+
+	lines := splitLines(text)
+	if nested := splitByNestedHeadings(lines, heading, level, startLine); len(nested) > 0 {
+		var parts []chunkPart
+		for _, part := range nested {
+			if len(part.Text) <= maxChunkChars {
+				parts = append(parts, part)
+				continue
+			}
+			parts = append(parts, splitLargeChunk(part.Heading, part.Level, part.StartLine, part.EndLine, part.Text)...)
+		}
+		return parts
+	}
+
+	return splitByParagraphs(lines, heading, level, startLine)
+}
+
+func splitByNestedHeadings(lines []string, heading string, level int, absoluteStartLine int) []chunkPart {
+	type nestedHeading struct {
+		lineIdx int
+		level   int
+		text    string
+	}
+	var headings []nestedHeading
+	headingRegex := regexp.MustCompile(`^(#{1,6})\s+(.*)$`)
+	inFence := false
+	fenceDelim := ""
+	for i, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "```") || strings.HasPrefix(trimmed, "~~~") {
+			if !inFence {
+				inFence = true
+				fenceDelim = trimmed[:3]
+			} else if strings.HasPrefix(trimmed, fenceDelim) {
+				inFence = false
+				fenceDelim = ""
+			}
+		}
+		if inFence || i == 0 {
+			continue
+		}
+		match := headingRegex.FindStringSubmatch(trimmed)
+		if len(match) != 3 {
+			continue
+		}
+		nestedLevel := len(match[1])
+		if nestedLevel <= level {
+			continue
+		}
+		headings = append(headings, nestedHeading{
+			lineIdx: i,
+			level:   nestedLevel,
+			text:    strings.TrimSpace(match[2]),
+		})
+	}
+	if len(headings) == 0 {
+		return nil
+	}
+
+	var parts []chunkPart
+	if headings[0].lineIdx > 0 {
+		if part, ok := makePart(heading+" (overview)", level, absoluteStartLine, lines[:headings[0].lineIdx]); ok {
+			parts = append(parts, part)
+		}
+	}
+	for idx, h := range headings {
+		endIdx := len(lines)
+		for nextIdx := idx + 1; nextIdx < len(headings); nextIdx++ {
+			if headings[nextIdx].level <= h.level {
+				endIdx = headings[nextIdx].lineIdx
+				break
+			}
+		}
+		if part, ok := makePart(h.text, h.level, absoluteStartLine+h.lineIdx, lines[h.lineIdx:endIdx]); ok {
+			parts = append(parts, part)
+		}
+	}
+	return parts
+}
+
+func splitByParagraphs(lines []string, heading string, level int, absoluteStartLine int) []chunkPart {
+	var parts []chunkPart
+	partStart := 0
+	chars := 0
+	partIndex := 1
+	inFence := false
+	fenceDelim := ""
+
+	flush := func(end int) {
+		if end <= partStart {
+			return
+		}
+		partHeading := heading
+		if partIndex > 1 {
+			partHeading = fmt.Sprintf("%s (part %d)", heading, partIndex)
+		}
+		if part, ok := makePart(partHeading, level, absoluteStartLine+partStart, lines[partStart:end]); ok {
+			parts = append(parts, part)
+			partIndex++
+		}
+		partStart = end
+		chars = 0
+	}
+
+	for i, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if chars > 0 && chars+len(line)+1 > maxChunkChars {
+			flush(i)
+		}
+		if len(line)+1 > maxChunkChars {
+			partHeading := heading
+			if partIndex > 1 {
+				partHeading = fmt.Sprintf("%s (part %d)", heading, partIndex)
+			}
+			for _, segment := range splitLongLine(line, maxChunkChars) {
+				if strings.TrimSpace(segment) == "" {
+					continue
+				}
+				parts = append(parts, chunkPart{
+					Heading:   partHeading,
+					Level:     level,
+					StartLine: absoluteStartLine + i,
+					EndLine:   absoluteStartLine + i,
+					Text:      segment,
+				})
+				partIndex++
+				partHeading = fmt.Sprintf("%s (part %d)", heading, partIndex)
+			}
+			partStart = i + 1
+			chars = 0
+			continue
+		}
+		if strings.HasPrefix(trimmed, "```") || strings.HasPrefix(trimmed, "~~~") {
+			if !inFence {
+				inFence = true
+				fenceDelim = trimmed[:3]
+			} else if strings.HasPrefix(trimmed, fenceDelim) {
+				inFence = false
+				fenceDelim = ""
+			}
+		}
+		chars += len(line) + 1
+		if chars < maxChunkChars {
+			continue
+		}
+		if inFence {
+			continue
+		}
+		if trimmed == "" {
+			flush(i + 1)
+		}
+	}
+	flush(len(lines))
+	return parts
+}
+
+func splitLongLine(line string, limit int) []string {
+	if len(line) <= limit {
+		return []string{line}
+	}
+	var parts []string
+	for len(line) > limit {
+		cut := strings.LastIndexAny(line[:limit], " \t,;|")
+		if cut < limit/2 {
+			cut = limit
+		}
+		parts = append(parts, strings.TrimSpace(line[:cut]))
+		line = strings.TrimSpace(line[cut:])
+	}
+	if line != "" {
+		parts = append(parts, line)
+	}
+	return parts
+}
+
+func makePart(heading string, level int, absoluteStartLine int, lines []string) (chunkPart, bool) {
+	start := 0
+	end := len(lines)
+	for start < end && strings.TrimSpace(lines[start]) == "" {
+		start++
+	}
+	for end > start && strings.TrimSpace(lines[end-1]) == "" {
+		end--
+	}
+	if start >= end {
+		return chunkPart{}, false
+	}
+	text := strings.Join(lines[start:end], "\n")
+	return chunkPart{
+		Heading:   heading,
+		Level:     level,
+		StartLine: absoluteStartLine + start,
+		EndLine:   absoluteStartLine + end - 1,
+		Text:      text,
+	}, true
 }
 
 // slug converts a string to a slug: lowercase, alphanumeric + dash, trim dashes.
