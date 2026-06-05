@@ -29,15 +29,35 @@ evidence:
 
 ## Boundary
 
-Usuario/agente -> CLI publica `mi-lsp nav recall`
+Usuario/agente -> CLI publica `mi-lsp nav recall`.
 
 ## Forma de invocacion
 
 ```text
-mi-lsp nav recall <query> [--workspace <alias>] [--max-items 10] [--token-budget 2000] [--format compact|json|text|toon] [--map]
+mi-lsp nav recall <query> [--workspace <alias>] [--max-items 10] [--token-budget 2000] [--intent formula|evidence|route|explore|learning] [--format compact|json|text|toon] [--map]
 ```
 
-La CLI acepta una consulta libre (query semantica) y produce un envelope `backend=recall` o `backend=recall+lexical` (fallback).
+La CLI acepta una consulta libre y una intencion opcional. Produce un envelope `backend=recall` con candidatos wiki semanticos cuando embeddings estan configurados. Cuando Nan, la key, el provider o la config fallan, la guia canonica de fallback es rerutear a `mi-lsp nav wiki search`, no activar un BGE oculto ni convertir una degradacion lexical en runtime default.
+
+## Configuracion `[embeddings]`
+
+`[embeddings]` en `.mi-lsp/project.toml` habilita recall cuando incluye `base_url` + `model`, salvo `enabled = false`. El bloque completo soportado es:
+
+```toml
+[embeddings]
+provider = "openai"
+base_url = "https://api.nan.builders/v1"
+model = "qwen3-embedding"
+dim = 4096
+api_key_env = "NAN_API_KEY"
+profile = "knowledge-wiki"
+batch_size = 32
+timeout_ms = 30000
+encoding_format = "float"
+user_agent = "mi-lsp-embeddings/1.0"
+```
+
+El cliente usa payload OpenAI-compatible con `encoding_format = "float"`, header `Accept: application/json`, `User-Agent` configurable y validacion estricta de dimension contra `dim`. La API key se resuelve desde el environment o desde un wrapper como `mkey run`; nunca se imprime ni se guarda en docs.
 
 ## Payload logico
 
@@ -45,55 +65,73 @@ La CLI acepta una consulta libre (query semantica) y produce un envelope `backen
 - `workspace`: alias o path resoluble
 - `max_items`: limite de resultados (default 10)
 - `token_budget`: presupuesto de tokens aproximado (default 2000)
-- `format`: salida estructura (default toon en AXI, compact classico)
-- `map`: boolean, agregar mini-mapa de ubicacion documento si valor true
+- `intent`: una de `formula`, `evidence`, `route`, `explore`, `learning`; default `explore`
+- `format`: salida estructurada
+- `map`: boolean, agrega mini-mapa de ubicacion documental cuando el valor es true
 
 Cuando `workspace` se omite, el runtime resuelve primero el workspace registrado cuyo root contiene el `caller_cwd` real del invocador. Solo si no hay match puede caer a `last_workspace`, y ese caso debe quedar visible en `warnings`.
 
+## Guia de intenciones
+
+| Intent | Uso recomendado | Efecto esperado |
+|---|---|---|
+| `formula` | Buscar la definicion canonica, regla, contrato o decision que formula la respuesta. | Prioriza secciones normativas, RF/CT/TECH/DB y chunks con lenguaje definitorio. |
+| `evidence` | Reunir evidencia citables para justificar una respuesta o auditoria. | Prioriza trazabilidad, pruebas, acceptance criteria, snippets y referencias documentales. |
+| `route` | Elegir la ruta de trabajo o el proximo documento a leer. | Prioriza anchors, flows, RF/TP/CT relacionados y puede usarse con `--map`. |
+| `explore` | Exploracion general cuando todavia no se conoce el vocabulario. | Balancea similitud semantica y cobertura documental. |
+| `learning` | Preparar onboarding, resumen de conceptos o aprendizaje progresivo. | Prioriza explicaciones, arquitectura, baseline y docs de contexto. |
+
+Regla de autoridad: Qwen descubre candidatos. Un hit `route` o material `route-only` no se convierte por si mismo en fuente final; la respuesta final debe anclarse en el documento canonico o evidencia que el candidato permita abrir.
+
 ## Respuesta
 
-Cada item de `backend=recall` o `backend=recall+lexical` contiene:
+Cada item de `backend=recall` contiene:
+
+- `query`: consulta efectiva usada para el embedding
+- `intent`: intencion efectiva, normalizada
 - `archivo`: ruta relativa al workspace
 - `heading`: titulo o numero de seccion del chunk
 - `score`: float [0, 1] de similitud de coseno normalizada
-- `snippet`: fragmento de contexto de 2-3 lineas
-- `start_line`: numero de linea en el archivo original
+- `snippet`: fragmento de contexto
+- `start_line`: numero de linea inicial en el archivo original
+- `end_line`: numero de linea final en el archivo original
+- `why`: razon breve de ranking/reranking cuando esta disponible
 
 El envelope puede contener ademas:
-- `coach.trigger`: cuando el backend cae a fallback automatico
-- `coach.message`: guidance sobre la degradacion
-- `continuation.reason`: cuando hay siguiente paso recomendado
-- `hint`: cuando embeddings no estan configurados o API falla sin fallback lexical util
+
+- `warnings`: fallas o degradaciones visibles
+- `continuation.reason`: siguiente paso recomendado
+- `hint`: accion recomendada cuando embeddings no estan configurados, la API falla o la consulta queda sin resultados
+- `truncated`: true cuando `token_budget` recorta items
 
 ## Gating y prerequisitos
 
-- **Ungated**: no requiere `governance_blocked=false` ni `docs_index_ready=true`
-- Hot path directo: no auto-inicia daemon
-- `[embeddings]` esta activo cuando `base_url` + `model` existen y `enabled` no es `false`
-- Si `[embeddings]` no esta activo, devuelve `backend=recall`, `items=[]` y `hint` accionable sin llamar al proveedor
-- Si embeddings estan activos pero API falla por transient, cae a fallback lexical
-- Si API agota timeout o falla permanentemente, transicion a lexical con `warning` e `hint` de fallback
+- **Ungated**: no requiere `governance_blocked=false` ni `docs_index_ready=true` para devolver guidance operacional.
+- Hot path directo: no auto-inicia daemon.
+- `[embeddings]` esta activo cuando `base_url` + `model` existen y `enabled` no es `false`.
+- Si `[embeddings]` no esta activo, devuelve `backend=recall`, `items=[]` y `hint` accionable sin llamar al proveedor.
+- Si el provider activo falla por key, endpoint, timeout o payload, el fallback canonico es `mi-lsp nav wiki search "<query>" --workspace <alias> --format toon`.
+- No existe fallback BGE oculto ni modelo local implicito.
 
 ## Backends de busqueda
 
-- `recall`: vector similarity puro cuando embeddings estan listos
-- `recall+lexical`: FTS/ripgrep cuando el proveedor configurado falla
-- Degradacion automatica: usuario no necesita cambiar comando
+- `recall`: vector similarity sobre chunks wiki enriquecidos con metadata.
+- `nav wiki search`: fallback lexical/wiki explicito que el agente debe ejecutar cuando recall no puede usar embeddings.
 
 ## Semantica observable
 
-- `score` de embeddings siempre [0, 1] post-normalizacion
-- Score de FTS (fallback lexical) tambien normalizado [0, 1] para uniformidad
-- Ranking determinista: dentro de backend, por score descendente
-- Top-k = `min(max_items, presupuesto_token / tokens_por_item)`
-- Cuando `token_budget` agota, truncar con `truncated=true` y `next_hint` accionable
+- `score` de embeddings siempre [0, 1] post-normalizacion.
+- Ranking determinista: dentro de backend, por score descendente y reranking estable por `intent`.
+- Top-k = `min(max_items, presupuesto_token / tokens_por_item)`.
+- Cuando `token_budget` agota, truncar con `truncated=true` y `next_hint` accionable.
+- Cambios de metadata-prefix, texto enriquecido, content hash, `embedding_model` o `embedding_dim` requieren reindex/reembedding.
 
 ## Warnings esperables
 
-- `embeddings_unconfigured` — `[embeddings]` no esta seteado, falta `base_url`/`model`, o `enabled=false`; operacion devuelve hint sin proveedor
-- `embeddings_unavailable` — API fallo pero fallback lexical disponible
-- `api_timeout` — timeout en embedding API; fallback lexical cuando sea posible
-- `search_fallback` — documentado porque FTS/ripgrep se usa por defecto offline
+- `embeddings_unconfigured` - `[embeddings]` no esta seteado, falta `base_url`/`model`, o `enabled=false`.
+- `embeddings_unavailable` - API/provider no disponible; usar `nav wiki search` como fallback.
+- `api_timeout` - timeout en embedding API; usar `nav wiki search` como fallback.
+- `dimension_mismatch` - el vector devuelto no coincide con `dim`; no reutilizar ni persistir ese resultado.
 - `workspace omitted; multiple registry aliases share root ...`
 - `workspace omitted; no registered workspace matched caller cwd ...; falling back to last_workspace=...`
 
@@ -102,15 +140,16 @@ El envelope puede contener ademas:
 - query vacia -> error explicito
 - workspace no resoluble -> error explicito
 - `index.db` no accesible -> error explicito
-- API key invalida o endpoint malformado -> warning + fallback lexical (no error duro)
+- API key invalida o endpoint malformado -> warning/hint accionable, sin imprimir secretos
 
 ## Relacion con otros comandos
 
 `nav recall` es complementario a:
-- `nav ask`: respuesta docs-first con reasoning; `nav recall` es pure vector similarity
-- `nav search`: busqueda textual; `nav recall` es semantica enriquecida cuando embeddings listos
-- `nav wiki search`: busqueda dentro de docs gobernados; `nav recall` idem pero vectorial
-- `nav route`: routing de tarea canonico; `nav recall` es busqueda libre sin ancla RF
+
+- `nav ask`: respuesta docs-first con synthesis; `nav recall` devuelve candidatos semanticos.
+- `nav wiki search`: fallback canonico y busqueda wiki lexical gobernada.
+- `nav route`: routing de tarea canonico; `nav recall --intent route` descubre candidatos pero no reemplaza el ancla canonica.
+- `nav pack`: lectura compacta de los documentos canonicos elegidos.
 
 ## Envelope structure
 
@@ -121,18 +160,19 @@ El envelope puede contener ademas:
   "workspace": "alias",
   "items": [
     {
-      "archivo": ".docs/wiki/07_baseline_tecnica.md",
-      "heading": "## Decisiones e invariantes",
+      "query": "how does recall validate dimensions",
+      "intent": "formula",
+      "archivo": ".docs/wiki/07_tech/TECH-SEMANTIC-RECALL.md",
+      "heading": "## Embedding provider contract",
       "score": 0.87,
-      "snippet": "Existe un unico daemon por usuario/host; ...",
-      "start_line": 92
+      "snippet": "The provider response must match the configured embedding dimension...",
+      "start_line": 92,
+      "end_line": 104,
+      "why": "formula intent boosted contract-like technical language"
     }
   ],
   "warnings": [],
-  "coach": {
-    "trigger": null
-  },
-  "stats": {"items": 3, "backend_time_ms": 145},
+  "stats": {"items": 1, "backend_time_ms": 145},
   "truncated": false
 }
 ```
@@ -145,21 +185,22 @@ Si embeddings no estan configurados o fueron apagados explicitamente:
   "backend": "recall",
   "workspace": "alias",
   "items": [],
-  "hint": "embeddings not configured; configure [embeddings] section in .mi-lsp/project.toml or use 'mi-lsp nav search' for lexical search",
+  "hint": "embeddings not configured; configure [embeddings] or use 'mi-lsp nav wiki search' for lexical wiki fallback",
   "truncated": false
 }
 ```
 
 ## Profile-driven selection
 
-- `embeddings.profile = "knowledge-wiki"`: ranking docs-first, penaliza generic README
-- `embeddings.profile = "spec-driven"`: penaliza hits textuales puros, prioriza docs gobernados RF/CT
-- Selection influencia en token budget y scoring
+- `embeddings.profile = "knowledge-wiki"`: ranking docs-first, penaliza generic README.
+- `embeddings.profile = "spec-driven"`: penaliza hits textuales puros, prioriza docs gobernados RF/CT.
+- Selection influencia en token budget y scoring.
 
 ## Operaciones adicionales
 
 `mi-lsp workspace status` debe exponer en su envelope:
+
 - `embeddings_enabled: true|false`
 - `recall_profile`: "knowledge-wiki" o "spec-driven"
-- `embeddings_model`: nombre del modelo actual si enabled (campo futuro/diagnostico cuando exista)
-- Si embeddings esta en estado `unconfigured` o `offline`, incluir hint accionable
+- `embeddings_model`: nombre del modelo actual si enabled
+- Si embeddings esta en estado `unconfigured` u `offline`, incluir hint accionable hacia config o `nav wiki search`

@@ -1,0 +1,145 @@
+schema: mi-lsp-session-contract-v1
+task_slug: qwen-nan-recall-docs
+created_at: 2026-06-05T00:00:00-03:00
+mode: orquestado_deterministico
+decision_lock: locked
+harness_adapter: codex
+orchestration_depth: v0_shadow
+closure_profile: C2_POLICY_SHARED
+worktree_path: repo-root
+branch: codex/qwen-nan-recall-docs
+base_ref: main
+base_sha: cff9b303ebcf858716360abdea91963987e7a273
+upstream: none
+branch_disposition: integrate-main
+cleanup_policy: pr-merge-delete-branch
+push_policy: "User requested subir todo a origin main on 2026-06-05; integrate through guarded PR flow per repo policy."
+
+ae_contract:
+  selected_mode: orquestado_deterministico
+  decision_lock: locked
+  adapter: codex
+  orchestration_depth: v0_shadow
+  allowed_paths:
+    - .docs/auditoria/2026-06-05-qwen-nan-recall-docs/**
+    - .docs/wiki/**
+    - README.md
+    - internal/**
+    - skills/mi-lsp/**
+  forbidden_paths:
+    - .docs/wiki/_mi-lsp/read-model.toml
+    - .mi-lsp/**
+    - .env
+    - .env.*
+    - AGENTS.md
+    - CLAUDE.md
+    - PATHS.md
+    - .docs/raw/**
+  required_evidence:
+    - mi-lsp workspace status . --format toon
+    - mi-lsp nav governance --workspace . --format toon
+    - mi-lsp nav recall --help
+    - go test ./...
+    - mi-lsp nav wiki validate-harness --workspace . --format toon
+    - mi-lsp nav wiki validate-source --workspace . --format toon
+    - rg recall and embeddings documentation terms
+    - rg legacy BGE terms and classify remaining hits
+    - scripts/compare-skill-mirrors.ps1 -Skill mi-lsp -IncludeIdentical -AsJson
+    - scripts/ae/pre-push-guard.ps1 -SessionContract .docs/auditoria/2026-06-05-qwen-nan-recall-docs/session-contract.yaml -AllowDirty
+    - git push origin codex/qwen-nan-recall-docs
+    - guarded PR merge to origin/main
+  stop_conditions:
+    - governance_blocked=true
+    - docs_ready=false
+    - ae_canon.status in [missing, mismatch, projection_only]
+    - secret value would be read or printed
+    - public docs require machine-specific personal paths
+    - real diff touches forbidden paths without explicit user expansion
+    - skill source/install/mirror parity fails after sync
+  cleanup_policy: pr-merge-delete-branch
+
+mi_lsp_preflight:
+  alias: "."
+  root: repo-root
+  cli_path: "PATH:mi-lsp"
+  governance_blocked: false
+  docs_ready: true
+  doc_count: 120
+  ae_canon:
+    status: valid
+    roots:
+      - .docs/wiki/ae
+    source: governance
+    blocking: false
+    reason: governance_declared_valid
+  client_name: codex-implementation
+  session_id: codex-20260605-qwen-nan-recall-docs
+
+sdd_anchors:
+  - FL-SEM-01
+  - RF-SEM-001
+  - RF-SEM-002
+  - RF-SEM-003
+  - TP-SEM
+  - TECH-SEMANTIC-RECALL
+  - DB-WIKI-EMBEDDINGS
+  - CT-NAV-RECALL
+
+expected_scope:
+  - Document Qwen3/Nan operational embeddings configuration.
+  - Document nav recall intent modes and result intent field.
+  - Replace hidden BGE/default fallback guidance with nav wiki search fallback guidance.
+  - Include the already-implemented internal Qwen/Nan recall runtime changes in the same integration at user request.
+  - Sync mi-lsp skill source and local install/mirror targets from repo source.
+
+allowed_paths:
+  - .docs/auditoria/2026-06-05-qwen-nan-recall-docs/**
+  - .docs/wiki/**
+  - README.md
+  - internal/**
+  - skills/mi-lsp/**
+
+external_allowed_paths:
+  - <agents_skill_root>/mi-lsp/**
+  - <mirror_skill_root>/mi-lsp/**
+
+forbidden_paths:
+  - .docs/wiki/_mi-lsp/read-model.toml
+  - .mi-lsp/**
+  - .env
+  - .env.*
+  - AGENTS.md
+  - CLAUDE.md
+  - PATHS.md
+  - .docs/raw/**
+
+required_evidence:
+  - mi-lsp workspace status . --format toon
+  - mi-lsp nav governance --workspace . --format toon
+  - mi-lsp nav recall --help
+  - go test ./...
+  - mi-lsp nav wiki validate-harness --workspace . --format toon
+  - mi-lsp nav wiki validate-source --workspace . --format toon
+  - rg recall and embeddings documentation terms
+  - rg legacy BGE terms and classify remaining hits
+  - skill source/install/mirror hash parity
+  - pre-push guard
+  - ps-trazabilidad closure packet
+  - ps-auditar-trazabilidad audit verdict
+  - git push origin codex/qwen-nan-recall-docs
+  - guarded PR merge to origin/main
+
+stop_conditions:
+  - governance_blocked=true
+  - docs_ready=false
+  - ae_canon.status in [missing, mismatch, projection_only]
+  - secret value would be read or printed
+  - public docs require machine-specific personal paths
+  - real diff touches forbidden paths without explicit user expansion
+  - skill source/install/mirror parity fails after sync
+
+touched_cards: not_applicable
+board_sync: not_applicable
+waivers:
+  - "Local skill install and mirror paths are represented as placeholders in versioned evidence to avoid adding machine-specific paths."
+  - "Internal implementation changes were pre-existing during the docs task, then explicitly brought into scope by the user request 'subir todo a origin main'."

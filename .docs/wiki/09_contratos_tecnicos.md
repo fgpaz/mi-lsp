@@ -76,22 +76,26 @@ El detalle por frontera vive en `09_contratos/`.
 
 `[embeddings]` en `.mi-lsp/project.toml` habilita busqueda semantica cuando incluye `base_url` + `model`.
 `enabled` es opcional: omitido equivale a activo y `enabled = false` es el kill switch explicito.
+El contrato operacional actual usa providers OpenAI-compatible; Nan/Qwen3 es la referencia documentada.
 
 ```toml
 [embeddings]
 # enabled = false  # opcional; apaga semantic recall sin borrar la config
-provider = "openai"  # o "tesla", "azure-openai"
-base_url = "https://api.openai.com/v1"
-model = "text-embedding-3-large"
-dim = 1536
-api_key_env = "MI_LSP_EMBEDDINGS_API_KEY"
+provider = "openai"
+base_url = "https://api.nan.builders/v1"
+model = "qwen3-embedding"
+dim = 4096
+api_key_env = "NAN_API_KEY"
 profile = "knowledge-wiki"  # o "spec-driven"
-batch_size = 100
+batch_size = 32
 timeout_ms = 30000
+encoding_format = "float"
+user_agent = "mi-lsp-embeddings/1.0"
 ```
 
-API key resuelta via `MI_LSP_EMBEDDINGS_API_KEY` environment variable (usualmente inyectada con `mkey run`).
-Sin configuracion activa, `nav recall` devuelve hint visible y no llama al proveedor; si el proveedor activo falla, degrada a busqueda lexical (FTS/ripgrep).
+El cliente envia payload OpenAI-compatible con `encoding_format = "float"`, header `Accept: application/json`, `User-Agent` configurable y validacion estricta de dimension contra `dim`.
+API key resuelta via la environment variable nombrada en `api_key_env` (usualmente inyectada con `mkey run`).
+Sin configuracion activa, `nav recall` devuelve hint visible y no llama al proveedor; si Nan/key/provider falla, el fallback canonico es `mi-lsp nav wiki search`, sin BGE oculto ni modelo local implicito.
 
 ## Versionado, auth y errores
 
@@ -177,7 +181,7 @@ Sin configuracion activa, `nav recall` devuelve hint visible y no llama al prove
 ## Operaciones adicionales
 
 - `init [path] [--name alias] [--no-index]`: detecta, registra e indexa el workspace actual o el path pedido
-- `nav recall <query>`: busqueda semantica sobre wiki; ungated, cae a lexical si embeddings no disponibles; responde `RecallResult[]` con score, snippet, linea; backends `recall` o `recall+lexical`
+- `nav recall <query> [--intent formula|evidence|route|explore|learning]`: busqueda semantica sobre wiki; ungated; responde `RecallResult[]` con `intent`, score, snippet y rango de lineas; si embeddings no disponibles, el fallback canonico es `nav wiki search`
 - `mi-lsp [--classic] [--axi] [--full]`: por default devuelve home content-first; `--classic` restaura help generica
 - `workspace.remove`: elimina un workspace registrado de `registry.toml`
 - `workspace hygiene [--apply-safe]`: diagnostica higiene agent-first del registry con `backend=registry-hygiene`; por default no muta y con `--apply-safe` solo remueve aliases stale/defaults invalidos mediante la logica segura existente. No borra directorios, worktrees, indices, ramas ni procesos.

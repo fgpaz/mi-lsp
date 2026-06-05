@@ -94,6 +94,48 @@ Follow `next_queries` and `continuation.next` from wiki results before improvisi
 
 Canonical wiki location is governed by `00_gobierno_documental.md` and `read-model.toml`, not by assuming the corpus always lives under a fixed path like `.docs/wiki/*`.
 
+## Semantic recall by intent
+
+Use `nav recall --intent` when a knowledge wiki has embeddings configured and you need semantic candidates, not final authority. Qwen/Nan recall discovers candidates; a `route` hit or route-only material is not a final source until you open the canonical doc or evidence it points to.
+
+```powershell
+mi-lsp nav recall "what contract defines recall result fields?" --workspace <alias> --intent formula --format toon
+mi-lsp nav recall "collect citations for semantic fallback" --workspace <alias> --intent evidence --format toon
+mi-lsp nav recall "where should I start this docs task?" --workspace <alias> --intent route --map --format toon
+```
+
+Intent guide:
+
+- `formula`: definitions, rules, contracts, acceptance criteria, and stable technical formulas
+- `evidence`: citable support for an answer, audit, or closure packet
+- `route`: next canonical anchor or workflow path to inspect; follow with `nav wiki pack|trace`
+- `explore`: balanced discovery when vocabulary is still unknown
+- `learning`: onboarding, concepts, architecture, and explanatory material
+
+Reference Qwen/Nan config:
+
+```toml
+[embeddings]
+provider = "openai"
+base_url = "https://api.nan.builders/v1"
+model = "qwen3-embedding"
+dim = 4096
+api_key_env = "NAN_API_KEY"
+profile = "knowledge-wiki"
+batch_size = 32
+timeout_ms = 30000
+encoding_format = "float"
+user_agent = "mi-lsp-embeddings/1.0"
+```
+
+Secret handling: set the variable named by `api_key_env` through the environment or a wrapper such as `mkey run`. Never print API key values, paste them into prompts, commit them, or read auth/secret stores during normal navigation.
+
+If Nan, the key, provider, or embeddings config fails, do not expect a hidden BGE fallback. Use the canonical lexical/wiki fallback:
+
+```powershell
+mi-lsp nav wiki search "<query>" --workspace <alias> --format toon
+```
+
 ## Search syntax rule
 
 `nav search` accepts exactly one positional `pattern` argument.
@@ -450,6 +492,7 @@ Use these commands first:
 - Read 2+ file slices: `mi-lsp nav multi-read file1:1-120 file2:40-160 --workspace <alias> --format toon`
 - Search and see code inline: `mi-lsp nav search "billing retry" --include-content --workspace <alias>`
 - Search inside one repo of a container workspace: `mi-lsp nav search "forgot password" --workspace <alias> --repo web`
+- Semantic wiki recall by intent: `mi-lsp nav recall "what contract defines fallback?" --workspace <alias> --intent formula --format toon`
 - Understand a symbol in one call: `mi-lsp nav related MySymbol --workspace <alias> --format toon`
 - Orient in a new repo or parent folder: `mi-lsp nav workspace-map --workspace <alias> --axi`
 - Profile a service: `mi-lsp nav service <path> --workspace <alias> --format toon` (`go-package` is language-aware Go evidence, not .NET evidence)

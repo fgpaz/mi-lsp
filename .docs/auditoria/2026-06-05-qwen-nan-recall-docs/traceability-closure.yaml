@@ -1,0 +1,178 @@
+schema: mi-lsp-traceability-closure-v1
+task_slug: qwen-nan-recall-docs
+closed_at: 2026-06-05T00:00:00-03:00
+session_contract: .docs/auditoria/2026-06-05-qwen-nan-recall-docs/session-contract.yaml
+branch: codex/qwen-nan-recall-docs
+base_sha: cff9b303ebcf858716360abdea91963987e7a273
+closure_profile: C2_POLICY_SHARED
+result: completed_pending_guarded_integration
+
+scope:
+  changed:
+    - canonical_wiki_semantic_recall
+    - public_readme_semantic_recall
+    - internal_qwen_nan_recall_runtime
+    - repo_skill_source
+    - installed_skill_and_mirror_sync
+    - ae_audit_evidence
+  preserved:
+    - secrets_and_auth_files
+    - .mi-lsp_operational_state
+    - .docs/wiki/_mi-lsp/read-model.toml
+
+sdd_anchors:
+  - FL-SEM-01
+  - RF-SEM-001
+  - RF-SEM-002
+  - RF-SEM-003
+  - TP-SEM
+  - TECH-SEMANTIC-RECALL
+  - DB-WIKI-EMBEDDINGS
+  - CT-NAV-RECALL
+
+changed_paths:
+  - .docs/auditoria/2026-06-05-qwen-nan-recall-docs/session-contract.yaml
+  - .docs/auditoria/2026-06-05-qwen-nan-recall-docs/traceability-closure.yaml
+  - .docs/auditoria/2026-06-05-qwen-nan-recall-docs/audit-verdict.yaml
+  - .docs/auditoria/2026-06-05-qwen-nan-recall-docs/evidence-index.yaml
+  - .docs/wiki/03_FL.md
+  - .docs/wiki/04_RF/RF-SEM-001.md
+  - .docs/wiki/04_RF/RF-SEM-002.md
+  - .docs/wiki/04_RF/RF-SEM-003.md
+  - .docs/wiki/05_modelo_datos.md
+  - .docs/wiki/06_pruebas/TP-SEM.md
+  - .docs/wiki/07_baseline_tecnica.md
+  - .docs/wiki/07_tech/TECH-SEMANTIC-RECALL.md
+  - .docs/wiki/08_modelo_fisico_datos.md
+  - .docs/wiki/08_db/DB-WIKI-EMBEDDINGS.md
+  - .docs/wiki/09_contratos_tecnicos.md
+  - .docs/wiki/09_contratos/CT-NAV-RECALL.md
+  - README.md
+  - internal/cli/nav.go
+  - internal/embed/client.go
+  - internal/embed/client_test.go
+  - internal/model/types.go
+  - internal/service/recall.go
+  - internal/service/recall_test.go
+  - internal/store/queries_embeddings.go
+  - internal/store/store_test.go
+  - internal/wikichunk/chunk.go
+  - internal/wikichunk/chunk_test.go
+  - skills/mi-lsp/SKILL.md
+  - skills/mi-lsp/references/quickstart.md
+
+wiki_updates:
+  embeddings_config:
+    documented_fields:
+      - provider
+      - base_url
+      - model
+      - dim
+      - api_key_env
+      - profile
+      - batch_size
+      - timeout_ms
+      - encoding_format
+      - user_agent
+    reference_provider: Nan/Qwen3
+    reference_model: qwen3-embedding
+    reference_dim: 4096
+    secret_handling: env_or_mkey_run_never_print_values
+  recall_intents:
+    documented:
+      - formula
+      - evidence
+      - route
+      - explore
+      - learning
+    result_field: RecallResult.intent
+    authority_rule: qwen_discovers_candidates_route_only_is_not_final_source
+  fallback:
+    canonical: mi-lsp nav wiki search
+    hidden_bge_fallback: false
+  reindex_rule:
+    triggers:
+      - metadata_prefix
+      - enriched_text
+      - content_hash
+      - embedding_model
+      - embedding_dim
+  persistence:
+    table: wiki_chunk_embeddings
+    schema_documented: true
+
+skill_updates:
+  source: skills/mi-lsp
+  installed_and_mirror_sync: completed_from_repo_source
+  updated_files:
+    - SKILL.md
+    - references/quickstart.md
+  parity:
+    repo_agents_mirror:
+      SKILL.md: EF00B38519DCD25E5A8DBB38355D1292749DFC0C059BC72BFB966E0C1EE7F3A2
+      references/quickstart.md: 3154CD2F929BAB4B84AFD410AB5326463FFFABD042498CD57FC79BDFF7916E8E
+
+validation:
+  mi_lsp_workspace_status:
+    command: mi-lsp workspace status . --format toon
+    result: PASS
+    governance_blocked: false
+    docs_ready: true
+    doc_count: 120
+    note: doc_count reflects the existing repo-local index; reindex was not run because .mi-lsp writes are forbidden in this task.
+  mi_lsp_nav_governance:
+    command: mi-lsp nav governance --workspace . --format toon
+    result: PASS
+    sync: in_sync
+    ae_canon_status: valid
+  nav_recall_help:
+    command: mi-lsp nav recall --help
+    result: PASS
+    intent_flag: formula|evidence|route|explore|learning
+  go_test:
+    command: go test ./...
+    result: PASS
+  validate_harness:
+    command: mi-lsp nav wiki validate-harness --workspace . --format toon
+    result: PASS
+    harness_verdict: PASS
+  validate_source:
+    command: mi-lsp nav wiki validate-source --workspace . --format toon
+    result: PASS
+    wiki_source_verdict: PASS
+  recall_terms_rg:
+    command: rg -n "recall --intent|encoding_format|qwen3-embedding|NAN_API_KEY|formula|evidence|route|learning" .
+    result: PASS
+    note: matches found in canonical wiki, README, skill source, and tests/code.
+  bge_terms_rg:
+    command: rg -n "bge-m3|Tesla BGE|BGE" README.md .docs/wiki skills/mi-lsp
+    result: PASS
+    remaining_hits_classification: only negative/no-hidden-BGE wording
+  skill_mirror_compare:
+    command: scripts/compare-skill-mirrors.ps1 -Skill mi-lsp -IncludeIdentical -AsJson
+    result: PASS
+    status: identical
+    diff_count: 0
+  pre_push_guard:
+    command: scripts/ae/pre-push-guard.ps1 -SessionContract .docs/auditoria/2026-06-05-qwen-nan-recall-docs/session-contract.yaml -AllowDirty
+    result: PASS
+    dirty_allowed: true
+    dirty_count: 29
+    diff_count: 29
+    ae_canon_status: valid
+
+risks:
+  - id: repo_local_index_stale_for_new_tp_sem
+    severity: low
+    detail: TP-SEM exists on disk and read-model globs cover 06_pruebas, but the repo-local docs index still reports the previous doc_count because reindexing would write .mi-lsp state, which this task forbids.
+    follow_up: run mi-lsp index --workspace . when operational-state writes are allowed.
+  - id: repo_branch_cleanup_pending
+    severity: low
+    detail: branch cleanup depends on successful guarded PR merge to origin/main.
+    follow_up: delete remote/local topic branch after merge if the PR flow does not do it automatically.
+
+no_secrets:
+  api_key_values_read: false
+  api_key_values_printed: false
+  env_vars_dumped: false
+  auth_files_read: false

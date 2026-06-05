@@ -603,15 +603,17 @@ type IgnoreBlock struct {
 }
 
 type EmbeddingsBlock struct {
-	Enabled   *bool  `toml:"enabled" json:"enabled,omitempty"`
-	Provider  string `toml:"provider" json:"provider,omitempty"`
-	BaseURL   string `toml:"base_url" json:"base_url,omitempty"`
-	Model     string `toml:"model" json:"model,omitempty"`
-	Dim       int    `toml:"dim" json:"dim,omitempty"`
-	APIKeyEnv string `toml:"api_key_env" json:"api_key_env,omitempty"`
-	Profile   string `toml:"profile" json:"profile,omitempty"` // "" | "knowledge-wiki" | "spec-driven"
-	BatchSize int    `toml:"batch_size" json:"batch_size,omitempty"`
-	TimeoutMS int    `toml:"timeout_ms" json:"timeout_ms,omitempty"`
+	Enabled        *bool  `toml:"enabled" json:"enabled,omitempty"`
+	Provider       string `toml:"provider" json:"provider,omitempty"`
+	BaseURL        string `toml:"base_url" json:"base_url,omitempty"`
+	Model          string `toml:"model" json:"model,omitempty"`
+	Dim            int    `toml:"dim" json:"dim,omitempty"`
+	APIKeyEnv      string `toml:"api_key_env" json:"api_key_env,omitempty"`
+	Profile        string `toml:"profile" json:"profile,omitempty"` // "" | "knowledge-wiki" | "spec-driven"
+	BatchSize      int    `toml:"batch_size" json:"batch_size,omitempty"`
+	TimeoutMS      int    `toml:"timeout_ms" json:"timeout_ms,omitempty"`
+	EncodingFormat string `toml:"encoding_format" json:"encoding_format,omitempty"`
+	UserAgent      string `toml:"user_agent" json:"user_agent,omitempty"`
 }
 
 func (e *EmbeddingsBlock) Active() bool {
@@ -640,6 +642,7 @@ type WikiChunkEmbedding struct {
 
 type RecallResult struct {
 	Query     string   `json:"query,omitempty"`
+	Intent    string   `json:"intent,omitempty"`
 	Archivo   string   `json:"archivo"`
 	Heading   string   `json:"heading,omitempty"`
 	Score     float64  `json:"score"`

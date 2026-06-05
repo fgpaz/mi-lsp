@@ -2,6 +2,8 @@ package service
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -61,13 +63,15 @@ func (a *App) embedWorkspaceWiki(ctx context.Context, root string) []string {
 
 	// Build embeddings client
 	cfg := embed.Config{
-		Provider:  project.Embeddings.Provider,
-		BaseURL:   project.Embeddings.BaseURL,
-		Model:     project.Embeddings.Model,
-		APIKeyEnv: project.Embeddings.APIKeyEnv,
-		Dim:       project.Embeddings.Dim,
-		BatchSize: project.Embeddings.BatchSize,
-		TimeoutMS: project.Embeddings.TimeoutMS,
+		Provider:       project.Embeddings.Provider,
+		BaseURL:        project.Embeddings.BaseURL,
+		Model:          project.Embeddings.Model,
+		APIKeyEnv:      project.Embeddings.APIKeyEnv,
+		Dim:            project.Embeddings.Dim,
+		BatchSize:      project.Embeddings.BatchSize,
+		TimeoutMS:      project.Embeddings.TimeoutMS,
+		EncodingFormat: project.Embeddings.EncodingFormat,
+		UserAgent:      project.Embeddings.UserAgent,
 	}
 	if cfg.APIKeyEnv == "" {
 		cfg.APIKeyEnv = "MI_LSP_EMBEDDINGS_API_KEY"
@@ -89,6 +93,8 @@ func (a *App) embedWorkspaceWiki(ctx context.Context, root string) []string {
 			continue
 		}
 
+		docMeta := parseWikiDocMetadata(string(content), doc)
+
 		// Chunk by heading
 		chunks := wikichunk.ChunkByHeading(string(content))
 		indexedDocPaths = append(indexedDocPaths, docPath)
@@ -98,11 +104,13 @@ func (a *App) embedWorkspaceWiki(ctx context.Context, root string) []string {
 		var chunkIndicesForEmbedding []int
 
 		for chunkIdx, chunk := range chunks {
+			embeddingText := embeddingTextForChunk(doc, docMeta, chunk)
+			embeddingHash := hashEmbeddingText(chunk.ContentHash, embeddingText)
 			key := docPath + "\x00" + chunk.ChunkID
 			existing, exists := existingEmbeddings[key]
 
 			// Check if we can reuse existing embedding
-			if exists && existing.ContentHash == chunk.ContentHash && existing.EmbeddingModel == cfg.Model && existing.EmbeddingDim == cfg.Dim && existing.Embedding != nil {
+			if exists && existing.ContentHash == embeddingHash && existing.EmbeddingModel == cfg.Model && existing.EmbeddingDim == cfg.Dim && existing.Embedding != nil {
 				// Reuse
 				snippet := chunk.Text
 				if len(snippet) > 200 {
@@ -113,7 +121,7 @@ func (a *App) embedWorkspaceWiki(ctx context.Context, root string) []string {
 					ChunkID:        chunk.ChunkID,
 					Heading:        chunk.Heading,
 					Snippet:        snippet,
-					ContentHash:    chunk.ContentHash,
+					ContentHash:    embeddingHash,
 					EmbeddingModel: cfg.Model,
 					StartLine:      chunk.StartLine,
 					EndLine:        chunk.EndLine,
@@ -123,7 +131,7 @@ func (a *App) embedWorkspaceWiki(ctx context.Context, root string) []string {
 				})
 			} else {
 				// Need to embed
-				textsToEmbed = append(textsToEmbed, chunk.Text)
+				textsToEmbed = append(textsToEmbed, embeddingText)
 				chunkIndicesForEmbedding = append(chunkIndicesForEmbedding, chunkIdx)
 				// Reserve space
 				allChunks = append(allChunks, model.WikiChunkEmbedding{})
@@ -144,6 +152,7 @@ func (a *App) embedWorkspaceWiki(ctx context.Context, root string) []string {
 			for i, emb := range embeddings {
 				chunkIdx := chunkIndicesForEmbedding[i]
 				c := chunks[chunkIdx]
+				embeddingText := embeddingTextForChunk(doc, docMeta, c)
 				snippet := c.Text
 				if len(snippet) > 200 {
 					snippet = snippet[:200]
@@ -153,7 +162,7 @@ func (a *App) embedWorkspaceWiki(ctx context.Context, root string) []string {
 					ChunkID:        c.ChunkID,
 					Heading:        c.Heading,
 					Snippet:        snippet,
-					ContentHash:    c.ContentHash,
+					ContentHash:    hashEmbeddingText(c.ContentHash, embeddingText),
 					EmbeddingModel: cfg.Model,
 					StartLine:      c.StartLine,
 					EndLine:        c.EndLine,
@@ -196,6 +205,7 @@ func (a *App) recall(ctx context.Context, request model.CommandRequest) (model.E
 	}
 
 	mapMode, _ := request.Payload["map"].(bool)
+	intent := normalizeRecallIntent(stringPayload(request.Payload, "intent"))
 
 	// Check if embeddings are active and configured.
 	if !project.Embeddings.Active() {
@@ -219,13 +229,15 @@ func (a *App) recall(ctx context.Context, request model.CommandRequest) (model.E
 
 	// Build embeddings client
 	cfg := embed.Config{
-		Provider:  project.Embeddings.Provider,
-		BaseURL:   project.Embeddings.BaseURL,
-		Model:     project.Embeddings.Model,
-		APIKeyEnv: project.Embeddings.APIKeyEnv,
-		Dim:       project.Embeddings.Dim,
-		BatchSize: project.Embeddings.BatchSize,
-		TimeoutMS: project.Embeddings.TimeoutMS,
+		Provider:       project.Embeddings.Provider,
+		BaseURL:        project.Embeddings.BaseURL,
+		Model:          project.Embeddings.Model,
+		APIKeyEnv:      project.Embeddings.APIKeyEnv,
+		Dim:            project.Embeddings.Dim,
+		BatchSize:      project.Embeddings.BatchSize,
+		TimeoutMS:      project.Embeddings.TimeoutMS,
+		EncodingFormat: project.Embeddings.EncodingFormat,
+		UserAgent:      project.Embeddings.UserAgent,
 	}
 	if cfg.APIKeyEnv == "" {
 		cfg.APIKeyEnv = "MI_LSP_EMBEDDINGS_API_KEY"
@@ -233,7 +245,7 @@ func (a *App) recall(ctx context.Context, request model.CommandRequest) (model.E
 	client := embed.New(cfg)
 
 	// Try to embed the query
-	queryVector, err := client.EmbedOne(ctx, query)
+	queryVector, err := client.EmbedOne(ctx, recallQueryText(query, intent))
 	if err != nil {
 		// Fall back to lexical search
 		items, searchErr := searchPatternHelper(ctx, registration.Root, project, query, false, askLimit(request.Context.MaxItems, 10, 10))
@@ -248,6 +260,7 @@ func (a *App) recall(ctx context.Context, request model.CommandRequest) (model.E
 			snippet, _ := item["snippet"].(string)
 			results = append(results, model.RecallResult{
 				Query:   query,
+				Intent:  intent,
 				Archivo: path,
 				Snippet: snippet,
 				Score:   0,
@@ -274,6 +287,11 @@ func (a *App) recall(ctx context.Context, request model.CommandRequest) (model.E
 	if err != nil {
 		return model.Envelope{}, err
 	}
+	docRecords, _ := store.ListDocRecords(ctx, db)
+	docByPath := make(map[string]model.DocRecord, len(docRecords))
+	for _, doc := range docRecords {
+		docByPath[doc.Path] = doc
+	}
 
 	// Score each embedding
 	type scoredChunk struct {
@@ -285,6 +303,11 @@ func (a *App) recall(ctx context.Context, request model.CommandRequest) (model.E
 	for _, emb := range allEmbeddings {
 		vector := embed.DecodeVector(emb.Embedding)
 		score := embed.Cosine(queryVector, vector)
+		if doc, ok := docByPath[emb.DocPath]; ok {
+			score += recallIntentBoost(intent, emb, doc)
+		} else {
+			score += recallIntentBoost(intent, emb, model.DocRecord{Path: emb.DocPath})
+		}
 		scored = append(scored, scoredChunk{embedding: emb, score: score})
 	}
 
@@ -305,15 +328,17 @@ func (a *App) recall(ctx context.Context, request model.CommandRequest) (model.E
 	// Build results
 	var results []model.RecallResult
 	for _, sc := range scored {
+		doc := docByPath[sc.embedding.DocPath]
 		results = append(results, model.RecallResult{
 			Query:     query,
+			Intent:    intent,
 			Archivo:   sc.embedding.DocPath,
 			Heading:   sc.embedding.Heading,
 			Score:     sc.score,
 			Snippet:   sc.embedding.Snippet,
 			StartLine: sc.embedding.StartLine,
 			EndLine:   sc.embedding.EndLine,
-			Why:       []string{"semantic_match"},
+			Why:       recallWhy(intent, sc.embedding, doc),
 		})
 	}
 
@@ -330,7 +355,185 @@ func (a *App) recall(ctx context.Context, request model.CommandRequest) (model.E
 		Mode:      "semantic",
 		Items:     results,
 		Stats:     model.Stats{Files: len(results)},
+		Hint:      recallIntentHint(intent),
 	}, nil
+}
+
+type wikiDocMetadata struct {
+	DocumentKey string
+	BodyRole    string
+	Tags        string
+}
+
+func parseWikiDocMetadata(content string, doc model.DocRecord) wikiDocMetadata {
+	meta := wikiDocMetadata{DocumentKey: firstNonEmpty(doc.DocID, doc.Title), BodyRole: doc.Family}
+	lines := strings.Split(content, "\n")
+	if len(lines) == 0 || strings.TrimSpace(lines[0]) != "---" {
+		return meta
+	}
+	for _, line := range lines[1:] {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "---" {
+			break
+		}
+		key, value, ok := strings.Cut(trimmed, ":")
+		if !ok {
+			continue
+		}
+		value = strings.Trim(strings.TrimSpace(value), `"'`)
+		switch strings.ToLower(strings.TrimSpace(key)) {
+		case "documentkey", "document_key":
+			meta.DocumentKey = value
+		case "body_role", "bodyrole":
+			meta.BodyRole = value
+		case "tags":
+			meta.Tags = value
+		}
+	}
+	return meta
+}
+
+func embeddingTextForChunk(doc model.DocRecord, meta wikiDocMetadata, chunk wikichunk.Chunk) string {
+	prefix := []string{
+		"mi-lsp retrieval document metadata:",
+		"documentKey: " + firstNonEmpty(meta.DocumentKey, doc.DocID, doc.Title, doc.Path),
+		"body_role: " + firstNonEmpty(meta.BodyRole, doc.Family, doc.Layer),
+		"tags: " + meta.Tags,
+		"path: " + doc.Path,
+		"title: " + doc.Title,
+		"layer: " + doc.Layer,
+		"family: " + doc.Family,
+		"heading: " + chunk.Heading,
+		"",
+		"content:",
+	}
+	return strings.Join(prefix, "\n") + "\n" + chunk.Text
+}
+
+func hashEmbeddingText(chunkHash string, embeddingText string) string {
+	sum := sha256.Sum256([]byte(chunkHash + "\x00qwen-metadata-v1\x00" + embeddingText))
+	return hex.EncodeToString(sum[:])
+}
+
+func normalizeRecallIntent(raw string) string {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "formula", "calculation", "calc":
+		return "formula"
+	case "evidence", "source", "sources":
+		return "evidence"
+	case "route", "routing", "worker":
+		return "route"
+	case "learning", "memory", "aprendizaje":
+		return "learning"
+	default:
+		return "explore"
+	}
+}
+
+func recallQueryText(query string, intent string) string {
+	switch normalizeRecallIntent(intent) {
+	case "formula":
+		return "Retrieve source-grounded formula and calculation contract passages. Prefer validated formula contracts, evidence matrices, worked examples, fixtures, units, ranges and stop conditions. Avoid aliases, roadmaps and worker profiles unless no source exists.\nQuery: " + query
+	case "evidence":
+		return "Retrieve canonical source evidence, document keys, source ids, page or section pointers, and evidence matrices. Prefer .library source-grounded notes and manifests.\nQuery: " + query
+	case "route":
+		return "Retrieve canonical worker profiles and domain routing notes that identify which Kraal worker should handle the request. Prefer worker profile documents and routing contracts.\nQuery: " + query
+	case "learning":
+		return "Retrieve durable learning, prior decisions, operational notes, memory quality rules and assistant improvement guidance.\nQuery: " + query
+	default:
+		return "Retrieve broad Kraal context, synthesis notes, indexes, prior decisions and relevant canonical project knowledge.\nQuery: " + query
+	}
+}
+
+func recallIntentBoost(intent string, emb model.WikiChunkEmbedding, doc model.DocRecord) float64 {
+	haystack := strings.ToLower(strings.Join([]string{doc.Path, doc.Title, doc.DocID, doc.Layer, doc.Family, doc.Snippet, emb.Heading, emb.Snippet}, "\n"))
+	path := strings.ToLower(doc.Path)
+	score := 0.0
+
+	isWorker := strings.Contains(path, ".docs/wiki/workers/") || strings.Contains(path, "skills/brewing/")
+	isLibrary := strings.Contains(path, ".library/")
+	isContract := strings.Contains(haystack, "contract") || strings.Contains(haystack, "contrato")
+	isEvidence := strings.Contains(haystack, "evidence") || strings.Contains(haystack, "source-grounded") || strings.Contains(haystack, "source note")
+	isFormula := strings.Contains(haystack, "formula") || strings.Contains(haystack, "calculation") || strings.Contains(haystack, "fixture")
+	isAlias := strings.Contains(haystack, "search aliases") || strings.Contains(haystack, "aliases")
+	isRoadmap := strings.Contains(haystack, "roadmap") || strings.Contains(haystack, "future")
+	isSynthesis := strings.Contains(haystack, "synthesis") || strings.Contains(haystack, "index")
+	isLearning := strings.Contains(haystack, "learning") || strings.Contains(haystack, "aprendizaje")
+
+	switch normalizeRecallIntent(intent) {
+	case "formula":
+		if isLibrary {
+			score += 0.08
+		}
+		if isContract || isEvidence || isFormula {
+			score += 0.18
+		}
+		if isAlias {
+			score -= 0.20
+		}
+		if isWorker {
+			score -= 0.25
+		}
+		if isRoadmap && !(isContract || isEvidence || isFormula) {
+			score -= 0.08
+		}
+	case "evidence":
+		if isLibrary {
+			score += 0.10
+		}
+		if isEvidence || isContract {
+			score += 0.12
+		}
+		if isWorker {
+			score -= 0.08
+		}
+	case "route":
+		if isWorker {
+			score += 0.28
+		}
+		if isLibrary && !isWorker {
+			score -= 0.04
+		}
+	case "learning":
+		if isLearning {
+			score += 0.18
+		}
+		if isWorker {
+			score -= 0.04
+		}
+	default:
+		if isSynthesis {
+			score += 0.06
+		}
+	}
+	return score
+}
+
+func recallWhy(intent string, emb model.WikiChunkEmbedding, doc model.DocRecord) []string {
+	why := []string{"semantic_match", "intent_" + normalizeRecallIntent(intent)}
+	boost := recallIntentBoost(intent, emb, doc)
+	if boost > 0 {
+		why = append(why, "intent_boost")
+	}
+	if boost < 0 {
+		why = append(why, "intent_penalty")
+	}
+	return why
+}
+
+func recallIntentHint(intent string) string {
+	switch normalizeRecallIntent(intent) {
+	case "formula":
+		return "intent=formula prioritizes source-grounded contracts/evidence and penalizes aliases or worker profiles; final numbers still require validated contracts."
+	case "route":
+		return "intent=route prioritizes worker profiles for dispatch; route hits are not final source evidence."
+	case "learning":
+		return "intent=learning prioritizes durable learning and operational memory."
+	case "evidence":
+		return "intent=evidence prioritizes .library source-grounded notes, source ids and evidence matrices."
+	default:
+		return "intent=explore prioritizes broad synthesis and project context."
+	}
 }
 
 // compactRecallResults groups results for --map mode, keeping them as RecallResult but marking why as map-relevant.

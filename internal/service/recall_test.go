@@ -357,6 +357,121 @@ func TestRecall_EmbeddingsImplicitlyActiveWithoutEnabled(t *testing.T) {
 	}
 }
 
+func TestRecallIntentRerankingSeparatesFormulaAndRoute(t *testing.T) {
+	server := newFakeEmbeddings(t)
+	defer server.Close()
+
+	ensureWritableTestHome(t)
+	root := t.TempDir()
+	writeWorkspaceFile(t, root, "go.mod", "module wiki-recall-intent-test\n\ngo 1.24\n")
+	writeWorkspaceFile(t, root, ".docs/wiki/hops-ibu-formula-contract.md", strings.Join([]string{
+		"---",
+		"documentKey: hops-ibu-tinseth-standard-formula-contract",
+		"body_role: source-grounded",
+		"tags: [formula, calculation, evidence, hops]",
+		"---",
+		"# Hops IBU Formula Contract",
+		"",
+		"## Validated formula",
+		"",
+		"This note contains a source-grounded formula contract, units, fixtures and stop conditions for IBU calculation.",
+	}, "\n"))
+	writeWorkspaceFile(t, root, ".docs/wiki/workers/hopping-worker.md", strings.Join([]string{
+		"---",
+		"documentKey: hopping-recipe-design-worker",
+		"body_role: worker-profile",
+		"tags: [worker, hops, route]",
+		"---",
+		"# Hopping Worker",
+		"",
+		"## Mission",
+		"",
+		"This worker profile routes hop questions. It is route-only and not final formula evidence.",
+	}, "\n"))
+
+	alias := "wiki-recall-intent-" + filepath.Base(root)
+	app := New(root, nil)
+	initEnv, err := app.Execute(context.Background(), model.CommandRequest{
+		Operation: "workspace.init",
+		Context:   model.QueryOptions{},
+		Payload:   map[string]any{"path": root, "alias": alias, "no_index": true},
+	})
+	if err != nil {
+		t.Fatalf("workspace.init: %v", err)
+	}
+	if !initEnv.Ok {
+		t.Fatalf("workspace.init not ok")
+	}
+	defer func() { _ = workspace.RemoveWorkspace(alias) }()
+
+	proj, err := workspace.LoadProjectFile(root)
+	if err != nil {
+		t.Fatalf("LoadProjectFile: %v", err)
+	}
+	proj.Embeddings = &model.EmbeddingsBlock{
+		Provider:       "openai",
+		BaseURL:        server.URL,
+		Model:          "fake",
+		Dim:            8,
+		BatchSize:      4,
+		TimeoutMS:      5000,
+		EncodingFormat: "float",
+	}
+	if err := workspace.SaveProjectFile(root, proj); err != nil {
+		t.Fatalf("SaveProjectFile: %v", err)
+	}
+
+	indexEnv, err := app.Execute(context.Background(), model.CommandRequest{
+		Operation: "index.start",
+		Context:   model.QueryOptions{Workspace: alias},
+		Payload:   map[string]any{"docs_only": true, "wait": true},
+	})
+	if err != nil {
+		t.Fatalf("index.start: %v", err)
+	}
+	if !indexEnv.Ok {
+		t.Fatalf("index.start not ok")
+	}
+
+	formulaEnv, err := app.Execute(context.Background(), model.CommandRequest{
+		Operation: "nav.recall",
+		Context:   model.QueryOptions{Workspace: alias, MaxItems: 5},
+		Payload:   map[string]any{"query": "IBU formula hops", "intent": "formula"},
+	})
+	if err != nil {
+		t.Fatalf("formula recall: %v", err)
+	}
+	formulaResults := formulaEnv.Items.([]model.RecallResult)
+	if len(formulaResults) == 0 || !strings.Contains(formulaResults[0].Archivo, "formula-contract") {
+		t.Fatalf("formula intent top result = %#v, want formula contract", formulaResults)
+	}
+	if !containsRecallWhy(formulaResults[0].Why, "intent_boost") {
+		t.Fatalf("formula top result why = %#v, want intent_boost", formulaResults[0].Why)
+	}
+
+	routeEnv, err := app.Execute(context.Background(), model.CommandRequest{
+		Operation: "nav.recall",
+		Context:   model.QueryOptions{Workspace: alias, MaxItems: 5},
+		Payload:   map[string]any{"query": "IBU formula hops", "intent": "route"},
+	})
+	if err != nil {
+		t.Fatalf("route recall: %v", err)
+	}
+	routeResults := routeEnv.Items.([]model.RecallResult)
+	if len(routeResults) == 0 || !strings.Contains(routeResults[0].Archivo, "workers/hopping-worker") {
+		t.Fatalf("route intent top result = %#v, want worker profile", routeResults)
+	}
+}
+
+func containsRecallWhy(values []string, target string) bool {
+	for _, value := range values {
+		if value == target {
+			return true
+		}
+	}
+	return false
+}
+
 func TestRecall_EmbeddingsExplicitFalseDisablesConfiguredBlock(t *testing.T) {
 	var calls atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

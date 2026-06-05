@@ -14,13 +14,15 @@ import (
 
 // Config holds the configuration for the embeddings client.
 type Config struct {
-	Provider    string
-	BaseURL     string
-	Model       string
-	APIKeyEnv   string
-	Dim         int
-	BatchSize   int
-	TimeoutMS   int
+	Provider       string
+	BaseURL        string
+	Model          string
+	APIKeyEnv      string
+	Dim            int
+	BatchSize      int
+	TimeoutMS      int
+	EncodingFormat string
+	UserAgent      string
 }
 
 // Client is an OpenAI-compatible embeddings client.
@@ -38,6 +40,12 @@ func New(cfg Config) *Client {
 	if cfg.TimeoutMS <= 0 {
 		cfg.TimeoutMS = 30000
 	}
+	if strings.TrimSpace(cfg.EncodingFormat) == "" {
+		cfg.EncodingFormat = "float"
+	}
+	if strings.TrimSpace(cfg.UserAgent) == "" {
+		cfg.UserAgent = "OpenAI/Go mi-lsp-embeddings/1.0"
+	}
 
 	return &Client{
 		cfg: cfg,
@@ -49,8 +57,9 @@ func New(cfg Config) *Client {
 
 // requestPayload is the JSON request sent to the embeddings endpoint.
 type requestPayload struct {
-	Model string   `json:"model"`
-	Input []string `json:"input"`
+	Model          string   `json:"model"`
+	Input          []string `json:"input"`
+	EncodingFormat string   `json:"encoding_format,omitempty"`
 }
 
 // responseData represents a single embedding in the response.
@@ -96,8 +105,9 @@ func (c *Client) Embed(ctx context.Context, texts []string) ([][]float32, error)
 // embedBatch sends a single batch to the endpoint and returns the embeddings.
 func (c *Client) embedBatch(ctx context.Context, batch []string) ([][]float32, error) {
 	payload := requestPayload{
-		Model: c.cfg.Model,
-		Input: batch,
+		Model:          c.cfg.Model,
+		Input:          batch,
+		EncodingFormat: c.cfg.EncodingFormat,
 	}
 
 	body, err := json.Marshal(payload)
@@ -112,6 +122,8 @@ func (c *Client) embedBatch(ctx context.Context, batch []string) ([][]float32, e
 	}
 
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("User-Agent", c.cfg.UserAgent)
 
 	// Set Authorization header if API key is available
 	if c.cfg.APIKeyEnv != "" {
@@ -143,6 +155,9 @@ func (c *Client) embedBatch(ctx context.Context, batch []string) ([][]float32, e
 
 	result := make([][]float32, len(batch))
 	for i := range batch {
+		if c.cfg.Dim > 0 && len(respPayload.Data[i].Embedding) != c.cfg.Dim {
+			return nil, fmt.Errorf("embedding %d has dimension %d but expected %d", i, len(respPayload.Data[i].Embedding), c.cfg.Dim)
+		}
 		result[i] = respPayload.Data[i].Embedding
 	}
 

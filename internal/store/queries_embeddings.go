@@ -40,6 +40,13 @@ func ReplaceWikiChunkEmbeddingsForDocs(ctx context.Context, db *sql.DB, docPaths
 	}
 	defer func() { _ = tx.Rollback() }()
 
+	if _, err := tx.ExecContext(ctx, `
+		DELETE FROM wiki_chunk_embeddings
+		WHERE doc_path = '' OR chunk_id = '' OR embedding IS NULL OR length(embedding) = 0
+	`); err != nil {
+		return err
+	}
+
 	// Delete existing embeddings for these doc paths
 	if len(docPaths) > 0 {
 		placeholders := make([]string, len(docPaths))
@@ -66,6 +73,9 @@ func ReplaceWikiChunkEmbeddingsForDocs(ctx context.Context, db *sql.DB, docPaths
 		defer stmt.Close()
 		now := time.Now().Unix()
 		for _, chunk := range chunks {
+			if chunk.DocPath == "" || chunk.ChunkID == "" || len(chunk.Embedding) == 0 {
+				continue
+			}
 			if _, err := stmt.ExecContext(ctx, chunk.DocPath, chunk.ChunkID, chunk.StartLine, chunk.EndLine, chunk.Heading, chunk.Snippet, chunk.ContentHash, chunk.Embedding, chunk.EmbeddingModel, chunk.EmbeddingDim, now); err != nil {
 				return err
 			}

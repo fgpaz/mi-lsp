@@ -29,53 +29,59 @@ evidence:
 
 ## Proposito
 
-Detallar la tabla SQLite `wiki_chunk_embeddings` que persiste vectores de embeddings para busqueda semantica sobre la wiki canonico gobernada.
+Detallar la tabla SQLite `wiki_chunk_embeddings` que persiste vectores de embeddings para recall semantico sobre la wiki canonica. La tabla es repo-local, recomputable y no transporta secretos.
 
 ## Tabla `wiki_chunk_embeddings`
 
 Campos canonicos:
-- `id INTEGER PRIMARY KEY AUTOINCREMENT`
-- `doc_path TEXT NOT NULL`: ruta relativa del documento
-- `chunk_id INTEGER NOT NULL`: ordinal del chunk dentro del documento (0-indexed)
-- `content_hash TEXT NOT NULL`: SHA256 del contenido del chunk para dedup incremental
-- `embedding BLOB NOT NULL`: vector float32 little-endian codificado
-- `embedding_model TEXT NOT NULL`: nombre del modelo usado (ej. `text-embedding-3-large`, `bge-m3`)
-- `indexed_at INTEGER NOT NULL`: timestamp UNIX cuando se embedde
+
+- `doc_path TEXT NOT NULL`: ruta relativa del documento.
+- `chunk_id TEXT NOT NULL`: id estable del chunk dentro del documento.
+- `start_line INTEGER NOT NULL`: linea inicial del chunk.
+- `end_line INTEGER NOT NULL`: linea final del chunk.
+- `heading_text TEXT`: heading asociado.
+- `snippet TEXT`: preview seguro de contenido.
+- `content_hash TEXT NOT NULL`: SHA256 del texto enriquecido con metadata-prefix.
+- `embedding BLOB`: vector float32 little-endian codificado.
+- `embedding_model TEXT`: nombre del modelo usado, por ejemplo `qwen3-embedding`.
+- `embedding_dim INTEGER`: dimension validada, `4096` para `qwen3-embedding`.
+- `indexed_at INTEGER`: timestamp UNIX cuando se embedde.
 
 Indices:
-- `UNIQUE(doc_path, chunk_id)`: evita duplicados
-- Indice en `(doc_path, content_hash)` para lookup rapido de cambios incrementales
-- Indice en `(embedding_model)` para eviction/refresh por modelo
+
+- `UNIQUE(doc_path, chunk_id)`: evita duplicados por chunk.
+- `idx_wiki_chunk_embeddings_doc` sobre `doc_path`: acelera reemplazo/carga por documento.
 
 ## Estrategia de refresco
 
 ### Migracion inicial
 
-- Tabla creada on-demand en el primer `mi-lsp index`/`index.run` que detecta `[embeddings]` activo (`base_url` + `model`, salvo `enabled=false`)
-- Lazy CREATE-IF-NOT-EXISTS: no bloquea publicacion si la creacion de tabla falla
-- Migrar desde absence a presencia no requiere `PRAGMA user_version`
-- Un index incremental sin cambios puede ejecutar backfill para poblar filas faltantes de `wiki_chunk_embeddings`
+- Tabla creada on-demand por `mi-lsp index`/`index.run` cuando `[embeddings]` esta activo (`base_url` + `model`, salvo `enabled=false`).
+- Lazy CREATE-IF-NOT-EXISTS: no bloquea publicacion si la creacion de tabla falla; la operacion registra warning.
+- Migrar desde ausencia a presencia no requiere `PRAGMA user_version`.
+- Un index incremental sin cambios puede ejecutar backfill para poblar filas faltantes.
 
-### Cambios de contenido incremental
+### Cambios incrementales
 
-- Chunk se re-embeddea solo si `content_hash`, modelo o dimension difieren de la fila existente en `wiki_chunk_embeddings`
-- Cambios en `doc_records` (ej. titulo, body) disparan recalculo del hash
-- Query de lookup: `SELECT ... FROM wiki_chunk_embeddings` cargada por `(doc_path, chunk_id)`
-- Si hit en hash/modelo/dimension, se reutiliza el BLOB; si miss, se requiere via API y se reemplaza el batch de docs indexados
+- Un chunk se re-embeddea si cambia cualquiera de estos factores: metadata-prefix, texto enriquecido, `content_hash`, `embedding_model`, `embedding_dim` o ausencia de BLOB.
+- El texto enriquecido incluye metadata documental (`documentKey`, `body_role`, `tags`, `path`, `title`, `layer`, `family`, `heading`) y luego contenido.
+- La version de metadata-prefix actual es `qwen-metadata-v1`; si cambia, se debe reindexar para no reutilizar vectores anteriores.
+- Si hay hit exacto en hash/modelo/dimension/BLOB, se reutiliza la fila.
+- Si hay miss, se llama al proveedor OpenAI-compatible y se reemplazan los chunks de los docs reindexados.
 
-### Full refresh
+### Cambios de proveedor o configuracion
 
-- `mi-lsp index` puede forzar `[embeddings].force_refresh = true` para recomputar todo
-- Cambio en `[embeddings].model` dispara full refresh por modelo anterior
-- Cambio en `[embeddings].provider` dispara full refresh y borra embeddings del provider anterior
+- Cambio en `[embeddings].model` o `[embeddings].dim` invalida filas previas por comparacion de modelo/dimension.
+- Cambio de `base_url`, `api_key_env`, `encoding_format` o `user_agent` requiere rerun de `mi-lsp index` si se necesita regenerar vectores con la nueva config.
+- Si Nan/key/provider falla, no se activa un fallback BGE oculto. El camino documental seguro mientras se corrige config es `mi-lsp nav wiki search`.
 
 ## Operaciones clave
 
 ### Lectura
 
 ```sql
-SELECT embedding, embedding_model 
-  FROM wiki_chunk_embeddings 
+SELECT embedding, embedding_model, embedding_dim, content_hash
+  FROM wiki_chunk_embeddings
  WHERE doc_path = ? AND chunk_id = ?
  LIMIT 1;
 ```
@@ -83,42 +89,50 @@ SELECT embedding, embedding_model
 ### Upsert incremental
 
 ```sql
-INSERT INTO wiki_chunk_embeddings 
-  (doc_path, chunk_id, content_hash, embedding, embedding_model, indexed_at)
-VALUES (?, ?, ?, ?, ?, ?)
+INSERT INTO wiki_chunk_embeddings
+  (doc_path, chunk_id, start_line, end_line, heading_text, snippet,
+   content_hash, embedding, embedding_model, embedding_dim, indexed_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT(doc_path, chunk_id) DO UPDATE SET
+  start_line = excluded.start_line,
+  end_line = excluded.end_line,
+  heading_text = excluded.heading_text,
+  snippet = excluded.snippet,
   content_hash = excluded.content_hash,
   embedding = excluded.embedding,
   embedding_model = excluded.embedding_model,
+  embedding_dim = excluded.embedding_dim,
   indexed_at = excluded.indexed_at
- WHERE content_hash != excluded.content_hash;
+ WHERE content_hash != excluded.content_hash
+    OR embedding_model != excluded.embedding_model
+    OR embedding_dim != excluded.embedding_dim;
 ```
 
-### Batch cleanup
+### Limpieza por documentos reindexados
 
 ```sql
-DELETE FROM wiki_chunk_embeddings 
- WHERE embedding_model = ?;
+DELETE FROM wiki_chunk_embeddings
+ WHERE doc_path IN (<docs reindexed>);
 ```
 
 ## Persistencia y codificacion
 
-- BLOB almacena float32 puro (4 bytes por componente) en little-endian
-- Dimension configurada en `[embeddings].dim` (ej. 1536 para OpenAI, 1024 para bge-m3)
-- Size = `dim * 4 bytes`; ej. 1536-dim -> 6144 bytes por chunk
-- Decodificacion en Go: `binary.LittleEndian.Uint32(blob[i*4:(i+1)*4])` + conversión a float32
+- BLOB almacena float32 puro (4 bytes por componente) en little-endian.
+- Dimension configurada en `[embeddings].dim`; `qwen3-embedding` usa 4096.
+- Size = `dim * 4 bytes`; 4096-dim -> 16384 bytes por chunk.
+- Decodificacion en Go: `binary.LittleEndian.Uint32(blob[i*4:(i+1)*4])` + conversion a float32.
 
 ## Reglas de consistencia
 
-- Todas las filas de un documento deben tener el mismo `embedding_model` (invariante observable por `nav recall` output)
-- Si modelo cambia en config, se re-embeddea todo el documento
-- `indexed_at` siempre UNIX seconds para compatibilidad con telemetria de indexacion
-- Si la creacion de tabla falla durante `index`, la operacion sigue; warning visible en `workspace status`
-- La tabla NO se copia ni snapshots en `daemon.db` global; es repo-local
+- Todas las filas de un documento deben tener el mismo `embedding_model` y `embedding_dim` efectivo.
+- Si modelo o dimension cambia en config, se re-embeddea el documento afectado.
+- Si metadata-prefix o contenido enriquecido cambia, se re-embeddea el chunk afectado.
+- `indexed_at` siempre UNIX seconds para compatibilidad con telemetria de indexacion.
+- La tabla NO se copia ni snapshots en `daemon.db` global; es repo-local.
 
 ## No objetivos
 
-- Versionado historico de embeddings
-- Sincronizacion remota de vectores
-- Compresion de BLOB (float32 ya es compacto)
-- Backup/restore automatico de embeddings (estan disponibles para recomputo via API)
+- Versionado historico de embeddings.
+- Sincronizacion remota de vectores.
+- Compresion adicional de BLOB.
+- Backup/restore automatico de embeddings; son recomputables via API configurada.

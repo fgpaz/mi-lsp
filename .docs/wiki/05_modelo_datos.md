@@ -37,7 +37,7 @@ La novedad canonica de v1.3 es distinguir workspaces `single` de workspaces `con
 | Entidad | Tipo | Owner | Persistencia | Descripcion |
 |---|---|---|---|---|
 | WorkspaceRegistration | Operativa | Core runtime | `~/.mi-lsp/registry.toml` | Alias, root, languages, `kind` y compatibilidad legacy |
-| ProjectConfig | Operativa | Workspace owner | `<repo>/.mi-lsp/project.toml` | Nombre local, ignores, `repos`, `entrypoints`, defaults; alias semantico de `ProjectFile` en codigo Go |
+| ProjectConfig | Operativa | Workspace owner | `<repo>/.mi-lsp/project.toml` | Nombre local, ignores, `repos`, `entrypoints`, defaults y `[embeddings]` (`provider`, `base_url`, `model`, `dim`, `api_key_env`, `profile`, `batch_size`, `timeout_ms`, `encoding_format`, `user_agent`); alias semantico de `ProjectFile` en codigo Go |
 | WorkspaceRepo | Operativa derivada | Core runtime | `<repo>/.mi-lsp/project.toml` | Repo hijo reconocido dentro de un workspace `container` |
 | WorkspaceEntrypoint | Operativa derivada | Core runtime | `<repo>/.mi-lsp/project.toml` | `.sln` o `.csproj` semanticamente enrutable |
 | SymbolRecord | Derivada | Indexer | `<repo>/.mi-lsp/index.db` | Declaracion liviana con `repo_id` y `repo` |
@@ -47,6 +47,7 @@ La novedad canonica de v1.3 es distinguir workspaces `single` de workspaces `con
 | DocMention | Derivada | Doc indexer | `<repo>/.mi-lsp/index.db` | Menciones explicitas desde docs hacia paths, simbolos o comandos |
 | DocSourceBlock | Derivada | Doc indexer | `<repo>/.mi-lsp/index.db` | Bloque `toon` normativo de un artefacto `SDD-WIKI-SOURCE-v1`, con `block_id`, `doc_id`, lineas y hash |
 | DocSourceRecord | Derivada | Doc indexer | `<repo>/.mi-lsp/index.db` | Record referenciable dentro de un bloque fuente, con `record_id`, `record_type`, lineas y hash |
+| WikiChunkEmbedding | Derivada | Doc indexer | `<repo>/.mi-lsp/index.db` | Chunk wiki enriquecido con metadata, hash de contenido/prefix, BLOB float32, `embedding_model`, `embedding_dim`, heading, snippet y rango de lineas |
 | GovernanceSource | Operativa local | Maintainer de wiki | `<repo>/.docs/wiki/00_gobierno_documental.md` | Bloque YAML fuente que define perfil, jerarquia, cadenas y reglas de bloqueo |
 | GovernanceStatus | Derivada | CLI/Core | Respuesta en memoria | Estado efectivo de gobernanza: perfil, sync, bloqueos, overlays y pasos de reparacion |
 | DocsReadProfile | Operativa local | Maintainer de wiki | `<repo>/.docs/wiki/_mi-lsp/read-model.toml` | Perfil opcional que clasifica familias, paths y fallback documental |
@@ -59,6 +60,7 @@ La novedad canonica de v1.3 es distinguir workspaces `single` de workspaces `con
 | AccessEvent | Historica local | Runtime supervision | `~/.mi-lsp/daemon/daemon.db` | Acceso ejecutado con cliente, sesion, repo y entrypoint |
 | QueryEnvelope | Derivada | CLI/Core | Respuesta en memoria | Envelope estable que ve el usuario o skill; mapea a `Envelope` en `internal/model/types.go` |
 | AskResult | Derivada | CLI/Core | Respuesta en memoria | Resultado de `nav ask` con `summary`, `primary_doc`, evidencias, `why` y `next_queries` |
+| RecallResult | Derivada | CLI/Core | Respuesta en memoria | Resultado de `nav recall` con `query`, `intent`, `archivo`, `heading`, `score`, `snippet`, rango de lineas y `why` |
 | PackResult | Derivada | CLI/Core | Respuesta en memoria | Resultado de `nav pack` con familia, modo, documento primario, reading pack y siguientes pasos |
 | PackDoc | Derivada | CLI/Core | Respuesta en memoria | Documento seleccionado dentro del reading pack con stage, targets y slice opcional |
 | PackTarget | Derivada | CLI/Core | Respuesta en memoria | Heading/linea sugerida para orientar lectura compacta del documento |
@@ -73,8 +75,10 @@ La novedad canonica de v1.3 es distinguir workspaces `single` de workspaces `con
 
 - Un `WorkspaceRegistration` referencia un workspace `single` o `container`.
 - Un `ProjectConfig` puede contener muchos `WorkspaceRepo` y muchos `WorkspaceEntrypoint`.
+- Un `ProjectConfig` puede declarar `[embeddings]`; `api_key_env` nombra una variable de entorno, no guarda secretos.
 - Cada `FileRecord` y `SymbolRecord` pertenece a un `repo_id`.
 - Cada `DocRecord` puede tener muchos `DocEdge`, `DocMention`, `DocSourceBlock` y `DocSourceRecord`.
+- Un `WikiChunkEmbedding` pertenece a un chunk documental y se invalida cuando cambia metadata-prefix, texto enriquecido, content hash, modelo o dimension.
 - Un `GovernanceSource` manda sobre el `DocsReadProfile`; la proyeccion ejecutable no redefine la autoridad humana.
 - Un `DocsOwnerHint` vive en `GovernanceSource` y se proyecta al `DocsReadProfile`; no redefine la gobernanza, solo refina ranking documental repo-especifico.
 - Un `DocsReadProfile` gobierna como se interpreta la wiki del repo, pero no reemplaza el corpus indexado.
