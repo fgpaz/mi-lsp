@@ -6,6 +6,8 @@ import (
 	"os"
 	"sync"
 	"time"
+
+	"github.com/fgpaz/mi-lsp/internal/store"
 )
 
 // IndexMode selects the indexing strategy for a background job.
@@ -127,16 +129,18 @@ func StartBackgroundIndex(ctx context.Context, root string, clean bool, mode Ind
 			Done:  false,
 		})
 
-		var err error
-
-		// Run the appropriate indexing path based on mode
-		if mode == IndexModeIncremental {
-			// Incremental path: use git-aware diff indexing
-			_, err = IndexWorkspace(ic, root, false)
-		} else {
-			// Full path: complete rebuild
-			_, err = IndexWorkspace(ic, root, clean)
-		}
+		// Acquire the workspace index lock so the background index serializes with
+		// other indexers (a degraded sync attempt has already released its lock).
+		err := store.WithWorkspaceIndexLock(root, "workspace.background-index", func() error {
+			if mode == IndexModeIncremental {
+				// Incremental path: git-aware diff indexing.
+				_, e := IndexWorkspace(ic, root, false)
+				return e
+			}
+			// Full path: complete rebuild.
+			_, e := IndexWorkspace(ic, root, clean)
+			return e
+		})
 
 		// Mark job as finished
 		jobs.finish(jobID, err)

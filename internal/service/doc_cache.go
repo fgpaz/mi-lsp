@@ -3,11 +3,18 @@ package service
 import (
 	"context"
 	"database/sql"
+	"strings"
 	"sync"
+	"sync/atomic"
 
 	"github.com/fgpaz/mi-lsp/internal/model"
 	"github.com/fgpaz/mi-lsp/internal/store"
 )
+
+// maxFTSCacheEntries bounds the per-process FTS score cache. Distinct queries each add
+// one entry; when the cap is exceeded the cache is dropped wholesale (FTS recompute is
+// cheap) so a long-lived daemon cannot grow it without bound.
+const maxFTSCacheEntries = 4096
 
 // Generation-keyed doc/FTS caches (PERF-02/03).
 //
@@ -30,8 +37,9 @@ type ftsCacheEntry struct {
 }
 
 var (
-	docRecordsCache sync.Map // workspaceRoot -> docRecordsCacheEntry
-	ftsScoresCache  sync.Map // workspaceRoot+"\x00"+query -> ftsCacheEntry
+	docRecordsCache sync.Map     // workspaceRoot -> docRecordsCacheEntry
+	ftsScoresCache  sync.Map     // workspaceRoot+"\x00"+query -> ftsCacheEntry
+	ftsCacheSize    atomic.Int64 // approximate ftsScoresCache entry count for the cap
 )
 
 // docsGeneration returns the active docs generation id for the workspace, or "" when
@@ -75,7 +83,26 @@ func ftsScoresCached(ctx context.Context, db *sql.DB, root, query, generation st
 	}
 	_, scores, _ := store.FTSSearchDocs(ctx, db, query, 20)
 	if generation != "" {
+		// Bound the cache: when the cap is exceeded, drop everything and start over.
+		if ftsCacheSize.Add(1) > maxFTSCacheEntries {
+			ftsScoresCache.Range(func(k, _ any) bool { ftsScoresCache.Delete(k); return true })
+			ftsCacheSize.Store(1)
+		}
 		ftsScoresCache.Store(key, ftsCacheEntry{generation: generation, scores: scores})
 	}
 	return scores
+}
+
+// PurgeWorkspaceCaches drops cached doc records and FTS scores for a workspace root.
+// Call after unregistering a workspace so its cache entries do not linger.
+func PurgeWorkspaceCaches(root string) {
+	docRecordsCache.Delete(root)
+	prefix := root + "\x00"
+	ftsScoresCache.Range(func(k, _ any) bool {
+		if s, ok := k.(string); ok && strings.HasPrefix(s, prefix) {
+			ftsScoresCache.Delete(k)
+			ftsCacheSize.Add(-1)
+		}
+		return true
+	})
 }

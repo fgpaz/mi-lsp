@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.4]
+
+### Fixed
+
+Hardening of the v0.5.1-v0.5.3 follow-up code, found by a parallel adversarial code audit:
+
+- **doc/FTS cache memory bound**: `ftsScoresCache` accumulated one entry per distinct query with no eviction (unbounded growth in a long-lived daemon). Now capped (`maxFTSCacheEntries=4096`, drop-and-rebuild on overflow). Added `PurgeWorkspaceCaches(root)`, called on `workspace.remove`, so unregistered workspaces don't leave orphaned cache entries.
+- **smart-sync lock contention**: `workspace.add/init` now acquires the index lock via `AcquireWithTimeout(syncTimeout)` instead of the unbounded blocking lock, and degrades to a background job on lock contention (`IndexLockError`) as well as on deadline — so the sync window isn't burned waiting for another indexer.
+- **background index lock**: `StartBackgroundIndex` now holds the workspace index lock for its run, serializing with other indexers (previously it indexed without the lock, racing concurrent indexers).
+- **degradation robustness**: the smart-sync degrade path now triggers whenever the sync context deadline expired (`ic.Err()`) regardless of how `IndexWorkspace` wrapped the error, not only on an exact `context.DeadlineExceeded` match.
+- **VACUUM / PRAGMA optimize timeouts**: `PurgeAndVacuum`'s `VACUUM` (30s) and `PublishIndexPragmaOptimize`'s `PRAGMA optimize` (10s) now run under a bounded `ExecContext` so they cannot hang the daemon indefinitely under lock contention.
+
 ## [0.5.3]
 
 ### Fixed

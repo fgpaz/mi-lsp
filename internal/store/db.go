@@ -98,7 +98,11 @@ func configureWorkspaceDB(db *sql.DB) error {
 // PublishIndexPragmaOptimize runs PRAGMA optimize after publishing the index.
 // Called by L1/L2 after index publication to compact and optimize the database.
 func PublishIndexPragmaOptimize(db *sql.DB) error {
-	_, err := db.Exec("PRAGMA optimize")
+	// Best-effort and bounded: PRAGMA optimize refreshes query-planner statistics but
+	// must not block the publish path under lock contention. Callers ignore the error.
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	_, err := db.ExecContext(ctx, "PRAGMA optimize")
 	return err
 }
 
