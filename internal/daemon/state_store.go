@@ -227,6 +227,15 @@ func (s *TelemetryStore) execWithRetry(query string, args ...any) (sql.Result, e
 	return result, err
 }
 
+// PurgeAndVacuum enforces telemetry retention and reclaims space.
+//
+// Wave 0 stub: L3 (telemetry-store lane) implements size-aware retention plus
+// VACUUM. The signature is the locked cross-lane interface called by the daemon
+// core retention ticker (L2).
+func (s *TelemetryStore) PurgeAndVacuum(retentionDays int, maxBytes int64) (int, bool, error) {
+	return 0, false, errors.New("not implemented: PurgeAndVacuum")
+}
+
 func (s *TelemetryStore) PurgeOldEvents(olderThan time.Time) (int64, error) {
 	result, err := s.execWithRetry(`DELETE FROM access_events WHERE occurred_at < ?`, olderThan.Unix())
 	if err != nil {

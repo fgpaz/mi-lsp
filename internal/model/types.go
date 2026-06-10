@@ -135,10 +135,20 @@ type Envelope struct {
 	Coach         *Coach             `json:"coach,omitempty"`
 	Continuation  *Continuation      `json:"continuation,omitempty"`
 	MemoryPointer *MemoryPointer     `json:"memory_pointer,omitempty"`
+	Profile       OutputProfile      `json:"-"`
 }
 
 // QueryEnvelope is a semantic alias of Envelope for traceability with 05_modelo_datos.md.
 type QueryEnvelope = Envelope
+
+// OutputProfile selects render verbosity for an envelope. "agent" trims human-only
+// telemetry and verbose diagnostic fields to reduce token cost for harness clients.
+type OutputProfile string
+
+const (
+	OutputProfileHuman OutputProfile = "human"
+	OutputProfileAgent OutputProfile = "agent"
+)
 
 type VersionInfo struct {
 	Command          string `json:"command"`
@@ -783,6 +793,7 @@ type AccessEvent struct {
 	HintCode         string    `json:"hint_code,omitempty"`
 	TruncationReason string    `json:"truncation_reason,omitempty"`
 	DecisionJSON     string    `json:"decision_json,omitempty"`
+	DecisionHash     string    `json:"decision_hash,omitempty"`
 }
 
 // TraceLink represents a spec-to-code link, either explicit (wiki marker) or inferred (heuristic).
