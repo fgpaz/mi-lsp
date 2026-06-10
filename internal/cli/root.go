@@ -149,6 +149,7 @@ func NewRootCommand() *cobra.Command {
 		newAdminCommand(state),
 		newWorkerCommand(state),
 		newVersionCommand(state),
+		newDoctorCommand(state),
 	)
 	return root
 }
