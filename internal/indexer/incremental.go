@@ -4,10 +4,12 @@ import (
 	"context"
 	"crypto/md5"
 	"fmt"
+	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/fgpaz/mi-lsp/internal/model"
@@ -15,6 +17,37 @@ import (
 	"github.com/fgpaz/mi-lsp/internal/store"
 	"github.com/fgpaz/mi-lsp/internal/workspace"
 )
+
+var (
+	gitPath     string
+	gitResolved bool
+	gitOnce     sync.Once
+)
+
+// resolveGitBinary resolves the git binary from MI_LSP_GIT env var or PATH.
+// Logs a warning once if falling back to PATH resolution (SEC-06).
+func resolveGitBinary() string {
+	gitOnce.Do(func() {
+		if envPath := os.Getenv("MI_LSP_GIT"); envPath != "" {
+			if _, err := os.Stat(envPath); err == nil {
+				gitPath = envPath
+				gitResolved = true
+				return
+			}
+		}
+		if path, err := exec.LookPath("git"); err == nil {
+			gitPath = path
+			gitResolved = true
+			// Log warning once if we had to fall back to PATH (SEC-06)
+			if os.Getenv("MI_LSP_GIT") != "" {
+				log.Printf("warning: MI_LSP_GIT not found; resolved git from PATH: %s", path)
+			}
+			return
+		}
+		gitResolved = true
+	})
+	return gitPath
+}
 
 // ExtractFileSymbols reads a file and extracts symbols from it.
 // Used by the file watcher for incremental indexing.
@@ -69,7 +102,11 @@ func ResolveRepoFromProjectFile(workspaceRoot string, projectFile model.ProjectF
 }
 
 func gitChangedFiles(ctx context.Context, workspaceRoot string) (changed []string, deleted []string) {
-	cmd := exec.CommandContext(ctx, "git", "status", "--porcelain")
+	gitBin := resolveGitBinary()
+	if gitBin == "" {
+		return []string{}, []string{}
+	}
+	cmd := exec.CommandContext(ctx, gitBin, "status", "--porcelain")
 	processutil.ConfigureNonInteractiveCommand(cmd)
 	cmd.Dir = workspaceRoot
 	output, err := cmd.Output()

@@ -1,10 +1,14 @@
 package service
 
 import (
+	"crypto/md5"
+	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/fgpaz/mi-lsp/internal/docgraph"
 	"github.com/fgpaz/mi-lsp/internal/model"
@@ -13,6 +17,21 @@ import (
 const (
 	docRankerOwner  = "owner"
 	docRankerLegacy = "legacy"
+)
+
+// rankingCacheEntry holds a cached ranking result with TTL.
+type rankingCacheEntry struct {
+	ranked    []scoredDoc
+	expiredAt time.Time
+}
+
+var (
+	// rankingCache caches doc ranking results by query hash.
+	// Key: MD5(question), Value: rankingCacheEntry
+	rankingCache sync.Map
+
+	// rankingCacheTTL is the time-to-live for cached rankings (5 minutes).
+	rankingCacheTTL = 5 * time.Minute
 )
 
 type ownerHintMatch struct {
@@ -30,10 +49,22 @@ func docRankingMode() string {
 }
 
 func rankDocs(question string, family string, docs []model.DocRecord, ftsScores map[string]float64, profile model.DocsReadProfile, recent []model.ReentryMemoryChange) []scoredDoc {
-	if docRankingMode() == docRankerLegacy {
-		return legacyRankDocs(question, family, docs, ftsScores)
+	// PERF-02: Check cache first
+	if cached, ok := lookupRankingCache(question); ok {
+		return cached
 	}
-	return ownerAwareRankDocs(question, family, docs, ftsScores, profile, recent)
+
+	var ranked []scoredDoc
+	if docRankingMode() == docRankerLegacy {
+		ranked = legacyRankDocs(question, family, docs, ftsScores)
+	} else {
+		ranked = ownerAwareRankDocs(question, family, docs, ftsScores, profile, recent)
+	}
+
+	// PERF-02: Store in cache
+	storeRankingCache(question, ranked)
+
+	return ranked
 }
 
 func legacyRankDocs(question string, family string, docs []model.DocRecord, ftsScores map[string]float64) []scoredDoc {
@@ -512,4 +543,44 @@ func layerWeight(family string, layer string) int {
 		return 2
 	}
 	return 0
+}
+
+// rankingHash computes a stable hash for a ranking question and mode.
+// Includes the ranking mode to avoid cache collisions between legacy and owner modes.
+func rankingHash(question string) string {
+	mode := docRankingMode()
+	combined := mode + "|" + strings.ToLower(strings.TrimSpace(question))
+	return fmt.Sprintf("%x", md5.Sum([]byte(combined)))
+}
+
+// lookupRankingCache returns cached ranking results if valid, otherwise nil.
+func lookupRankingCache(question string) ([]scoredDoc, bool) {
+	qhash := rankingHash(question)
+	val, ok := rankingCache.Load(qhash)
+	if !ok {
+		return nil, false
+	}
+	cached, ok := val.(rankingCacheEntry)
+	if !ok || time.Now().After(cached.expiredAt) {
+		rankingCache.Delete(qhash)
+		return nil, false
+	}
+	return cached.ranked, true
+}
+
+// storeRankingCache stores ranking results in the cache with TTL.
+func storeRankingCache(question string, ranked []scoredDoc) {
+	qhash := rankingHash(question)
+	rankingCache.Store(qhash, rankingCacheEntry{
+		ranked:    ranked,
+		expiredAt: time.Now().Add(rankingCacheTTL),
+	})
+}
+
+// ClearRankingCache clears the ranking cache. Used for testing.
+func ClearRankingCache() {
+	rankingCache.Range(func(key, value interface{}) bool {
+		rankingCache.Delete(key)
+		return true
+	})
 }

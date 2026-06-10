@@ -85,12 +85,21 @@ func configureWorkspaceDB(db *sql.DB) error {
 		"PRAGMA busy_timeout=5000",
 		"PRAGMA synchronous=NORMAL",
 		"PRAGMA foreign_keys=ON",
+		"PRAGMA cache_size=-40000",        // ~40MB cache
+		"PRAGMA mmap_size=30000000",       // 30MB memory-mapped I/O
 	} {
 		if _, err := db.Exec(pragma); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+// PublishIndexPragmaOptimize runs PRAGMA optimize after publishing the index.
+// Called by L1/L2 after index publication to compact and optimize the database.
+func PublishIndexPragmaOptimize(db *sql.DB) error {
+	_, err := db.Exec("PRAGMA optimize")
+	return err
 }
 
 func IsCorruptionError(err error) bool {

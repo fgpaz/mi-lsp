@@ -20,6 +20,6 @@ func DefaultConfig() Config {
 		DefaultMaxItems:     50,
 		OperationTimeout:    2 * time.Minute,
 		DaemonClientTimeout: 5 * time.Second,
-		SearchTimeout:       5 * time.Second,
+		SearchTimeout:       8 * time.Second, // AUD-06: increased from 5s for large repos
 	}
 }
