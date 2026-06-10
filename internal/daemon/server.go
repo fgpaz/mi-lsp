@@ -225,17 +225,18 @@ func (s *Server) handleRequest(request model.CommandRequest) (model.Envelope, er
 	case "system.status":
 		// Default to 5 recent accesses for token efficiency.
 		// Opt-in to 20 with --telemetry flag or full context.
+		// recent_accesses defaults to a compact view (5 events, path fields stripped) for
+		// token efficiency; pass --verbose (or --full) to get the full 20-event detail.
+		verboseTelemetry := request.Context.Full || request.Context.Verbose
 		recentAccessCount := 5
-		fullTelemetry := request.Context.Full || strings.EqualFold(request.Context.Format, "telemetry")
-		if fullTelemetry {
+		if verboseTelemetry {
 			recentAccessCount = 20
 		}
 		accesses, _ := s.telemetry.RecentAccesses(recentAccessCount)
-		if !fullTelemetry {
+		if !verboseTelemetry {
 			// TOK-03: strip the long, repeated absolute-path fields from the compact
 			// recent_accesses view to cut token cost (workspace_root and runtime_key embed
-			// the full root on every event). The workspace alias is retained; full detail
-			// stays available via --full or --format telemetry.
+			// the full root on every event). The workspace alias is retained.
 			for i := range accesses {
 				accesses[i].WorkspaceRoot = ""
 				accesses[i].RuntimeKey = ""
