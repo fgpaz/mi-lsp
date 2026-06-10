@@ -25,7 +25,15 @@ func defaultEndpoint() string {
 }
 
 func listenDaemon() (net.Listener, error) {
-	return winio.ListenPipe(defaultEndpoint(), nil)
+	// SEC-03: Use SDDL to restrict named pipe access to owner and SYSTEM only.
+	// SDDL format: D: for DACL
+	// (A;;GA;;;OW) = Allow Generic All to Owner (OW)
+	// (A;;GA;;;SY) = Allow Generic All to SYSTEM (SY)
+	// This prevents other users from accessing the pipe.
+	pipeConfig := &winio.PipeConfig{
+		SecurityDescriptor: "D:(A;;GA;;;OW)(A;;GA;;;SY)",
+	}
+	return winio.ListenPipe(defaultEndpoint(), pipeConfig)
 }
 
 func dialDaemon(ctx context.Context) (net.Conn, error) {

@@ -741,6 +741,7 @@ type DaemonState struct {
 	PID              int       `json:"pid"`
 	Endpoint         string    `json:"endpoint"`
 	AdminURL         string    `json:"admin_url,omitempty"`
+	AdminToken       string    `json:"admin_token,omitempty"`
 	RepoRoot         string    `json:"repo_root,omitempty"`
 	ExecutablePath   string    `json:"executable_path,omitempty"`
 	ExecutableSize   int64     `json:"executable_size,omitempty"`

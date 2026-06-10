@@ -26,7 +26,8 @@ func daemonRootDir() (string, error) {
 		return "", err
 	}
 	dir := filepath.Join(home, ".mi-lsp", "daemon")
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	// SEC-04: Create daemon directory with restricted permissions (0o700) to prevent other users from reading admin_token, PID, etc.
+	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return "", err
 	}
 	return dir, nil
@@ -71,7 +72,8 @@ func acquireStartLock(timeout time.Duration) (*startLock, error) {
 	}
 	deadline := time.Now().Add(timeout)
 	for {
-		file, openErr := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o644)
+		// SEC-04: Create lock file with restricted permissions (0o600) to prevent other users from reading PID
+		file, openErr := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
 		if openErr == nil {
 			return &startLock{path: path, file: file}, nil
 		}
@@ -126,7 +128,8 @@ func saveDaemonState(state model.DaemonState) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(path, body, 0o644)
+	// SEC-04: Save daemon state with restricted permissions (0o600) to protect admin_token and other sensitive data
+	return os.WriteFile(path, body, 0o600)
 }
 
 func clearDaemonState() error {

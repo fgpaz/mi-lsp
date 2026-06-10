@@ -20,12 +20,13 @@ import (
 )
 
 type AdminServer struct {
-	listener net.Listener
-	server   *http.Server
-	manager  *Manager
-	store    *TelemetryStore
-	app      *service.App
-	stateFn  func() model.DaemonState
+	listener   net.Listener
+	server     *http.Server
+	manager    *Manager
+	store      *TelemetryStore
+	app        *service.App
+	stateFn    func() model.DaemonState
+	adminToken string
 }
 
 type dashboardMetrics struct {
@@ -46,12 +47,12 @@ type workspaceSummary struct {
 	Active         bool      `json:"active"`
 }
 
-func NewAdminServer(manager *Manager, store *TelemetryStore, app *service.App, stateFn func() model.DaemonState) (*AdminServer, error) {
+func NewAdminServer(manager *Manager, store *TelemetryStore, app *service.App, stateFn func() model.DaemonState, adminToken string) (*AdminServer, error) {
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		return nil, err
 	}
-	admin := &AdminServer{listener: listener, manager: manager, store: store, app: app, stateFn: stateFn}
+	admin := &AdminServer{listener: listener, manager: manager, store: store, app: app, stateFn: stateFn, adminToken: adminToken}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", admin.handleIndex)
 	mux.HandleFunc("/api/status", admin.handleStatus)
@@ -79,9 +80,48 @@ func (a *AdminServer) Shutdown() error {
 	return a.server.Close()
 }
 
+// isLoopbackHost checks if the request is from a loopback address.
+func (a *AdminServer) isLoopbackHost(request *http.Request) bool {
+	host := strings.TrimSpace(request.Host)
+	// Extract hostname from "host:port" format
+	if idx := strings.LastIndex(host, ":"); idx != -1 {
+		host = host[:idx]
+	}
+	// Remove brackets from IPv6 addresses
+	host = strings.Trim(host, "[]")
+	return strings.HasPrefix(host, "127.") || strings.EqualFold(host, "localhost") || host == "::1"
+}
+
+// validateToken checks that the request includes the correct admin token in X-Mi-Lsp-Token header.
+func (a *AdminServer) validateToken(request *http.Request) bool {
+	if a.adminToken == "" {
+		return true // Token validation disabled if not set
+	}
+	token := strings.TrimSpace(request.Header.Get("X-Mi-Lsp-Token"))
+	return token == a.adminToken
+}
+
+// requireAuth validates token and host for mutating endpoints.
+func (a *AdminServer) requireAuth(writer http.ResponseWriter, request *http.Request) bool {
+	// SEC-02: Validate Host/Origin to prevent CSRF and DNS rebinding attacks
+	if !a.isLoopbackHost(request) {
+		http.Error(writer, "forbidden: must be accessed from loopback", http.StatusForbidden)
+		return false
+	}
+	// SEC-02: Require admin token for mutating operations
+	if !a.validateToken(request) {
+		http.Error(writer, "unauthorized: missing or invalid admin token", http.StatusUnauthorized)
+		return false
+	}
+	return true
+}
+
 func (a *AdminServer) handleIndex(writer http.ResponseWriter, request *http.Request) {
+	// SEC-10: Add CSP and X-Frame-Options headers
 	writer.Header().Set("Content-Type", "text/html; charset=utf-8")
 	writer.Header().Set("Cache-Control", "no-store")
+	writer.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'")
+	writer.Header().Set("X-Frame-Options", "DENY")
 	_, _ = writer.Write([]byte(adminHTML))
 }
 
@@ -163,6 +203,10 @@ func (a *AdminServer) handleWorkspace(writer http.ResponseWriter, request *http.
 func (a *AdminServer) handleWorkspaceWarm(writer http.ResponseWriter, request *http.Request, rawWorkspace string) {
 	if request.Method != http.MethodPost {
 		http.Error(writer, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	// SEC-02: Require authentication for mutating operation
+	if !a.requireAuth(writer, request) {
 		return
 	}
 	workspaceName, err := neturl.PathUnescape(strings.Trim(rawWorkspace, "/"))

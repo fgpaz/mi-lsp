@@ -106,3 +106,83 @@ func TestReadLogTailUsesBoundedTail(t *testing.T) {
 		t.Fatalf("items = %#v, want last two lines", items)
 	}
 }
+
+func TestHandleIndexAddsSecurityHeaders(t *testing.T) {
+	admin := &AdminServer{adminToken: "test-token"}
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	res := httptest.NewRecorder()
+
+	admin.handleIndex(res, req)
+
+	if res.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", res.Code)
+	}
+	csp := res.Header().Get("Content-Security-Policy")
+	if csp != "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'" {
+		t.Fatalf("CSP = %q, want expected policy", csp)
+	}
+	xframe := res.Header().Get("X-Frame-Options")
+	if xframe != "DENY" {
+		t.Fatalf("X-Frame-Options = %q, want DENY", xframe)
+	}
+}
+
+// TestHandleWorkspaceWarmRequiresToken verifies that warm endpoint requires admin token.
+func TestHandleWorkspaceWarmRequiresToken(t *testing.T) {
+	store := testStore(t)
+	defer store.Close()
+	admin := &AdminServer{store: store, adminToken: "correct-token"}
+
+	// Test missing token
+	req := httptest.NewRequest(http.MethodPost, "/api/workspaces/test/warm", nil)
+	req.Host = "127.0.0.1:9999"
+	res := httptest.NewRecorder()
+	admin.handleWorkspaceWarm(res, req, "test")
+	if res.Code != http.StatusUnauthorized {
+		t.Fatalf("missing token: status = %d, want 401", res.Code)
+	}
+
+	// Test wrong token
+	req = httptest.NewRequest(http.MethodPost, "/api/workspaces/test/warm", nil)
+	req.Host = "127.0.0.1:9999"
+	req.Header.Set("X-Mi-Lsp-Token", "wrong-token")
+	res = httptest.NewRecorder()
+	admin.handleWorkspaceWarm(res, req, "test")
+	if res.Code != http.StatusUnauthorized {
+		t.Fatalf("wrong token: status = %d, want 401", res.Code)
+	}
+
+	// Test correct token but non-loopback host
+	req = httptest.NewRequest(http.MethodPost, "/api/workspaces/test/warm", nil)
+	req.Host = "example.com:9999"
+	req.Header.Set("X-Mi-Lsp-Token", "correct-token")
+	res = httptest.NewRecorder()
+	admin.handleWorkspaceWarm(res, req, "test")
+	if res.Code != http.StatusForbidden {
+		t.Fatalf("non-loopback: status = %d, want 403", res.Code)
+	}
+}
+
+// TestIsLoopbackHostValidatesLoopback checks loopback detection.
+func TestIsLoopbackHostValidatesLoopback(t *testing.T) {
+	tests := []struct {
+		host string
+		want bool
+	}{
+		{"127.0.0.1:9999", true},
+		{"127.1.1.1:8000", true},
+		{"localhost:9999", true},
+		{"[::1]:9999", true},
+		{"example.com:9999", false},
+		{"192.168.1.1:9999", false},
+	}
+	admin := &AdminServer{}
+	for _, test := range tests {
+		req := httptest.NewRequest(http.MethodGet, "/", nil)
+		req.Host = test.host
+		got := admin.isLoopbackHost(req)
+		if got != test.want {
+			t.Fatalf("isLoopbackHost(%q) = %v, want %v", test.host, got, test.want)
+		}
+	}
+}
