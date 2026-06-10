@@ -7,11 +7,13 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"runtime/debug"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/fgpaz/mi-lsp/internal/indexer"
 	"github.com/fgpaz/mi-lsp/internal/model"
 	"github.com/fgpaz/mi-lsp/internal/service"
 	"github.com/fgpaz/mi-lsp/internal/telemetry"
@@ -60,7 +62,7 @@ func NewServerWithOptions(repoRoot string, maxWorkers int, idleTimeout time.Dura
 			Endpoint:        defaultEndpoint(),
 			RepoRoot:        repoRoot,
 			StartedAt:       time.Now(),
-			Version:         "dev",
+			Version:         buildVersionString(),
 			ProtocolVersion: model.ProtocolVersion,
 			MaxWorkers:      maxWorkers,
 			IdleTimeout:     idleTimeout.String(),
@@ -88,11 +90,16 @@ func NewServerWithOptions(repoRoot string, maxWorkers int, idleTimeout time.Dura
 	}
 	server.state.RunID = runID
 
-	// Apply retention on daemon startup.
+	// Start retention ticker to periodically purge old telemetry.
 	retDays := daemonRetentionDays()
-	cutoff := time.Now().AddDate(0, 0, -retDays)
-	_, _ = telemetry.PurgeOldEvents(cutoff)
-	_, _ = telemetry.PurgeOldRuns(cutoff)
+	maxBytes := int64(50 * 1024 * 1024) // 50MB
+	go func() {
+		ticker := time.NewTicker(6 * time.Hour)
+		defer ticker.Stop()
+		for range ticker.C {
+			_, _, _ = telemetry.PurgeAndVacuum(retDays, maxBytes)
+		}
+	}()
 
 	if err := saveDaemonState(server.state); err != nil {
 		_ = listener.Close()
@@ -189,13 +196,19 @@ func (s *Server) handleConnection(conn net.Conn) {
 }
 
 func (s *Server) handleRequest(request model.CommandRequest) (model.Envelope, error) {
-	if request.ProtocolVersion != "" && request.ProtocolVersion != model.ProtocolVersion {
+	if request.ProtocolVersion == "" || request.ProtocolVersion != model.ProtocolVersion {
 		return model.Envelope{}, fmt.Errorf("protocol version mismatch: client=%s daemon=%s", request.ProtocolVersion, model.ProtocolVersion)
 	}
 
 	switch request.Operation {
 	case "system.status":
-		accesses, _ := s.telemetry.RecentAccesses(20)
+		// Default to 5 recent accesses for token efficiency.
+		// Opt-in to 20 with --telemetry flag or full context.
+		recentAccessCount := 5
+		if request.Context.Full || strings.EqualFold(request.Context.Format, "telemetry") {
+			recentAccessCount = 20
+		}
+		accesses, _ := s.telemetry.RecentAccesses(recentAccessCount)
 		return model.Envelope{
 			Ok:      true,
 			Backend: "daemon",
@@ -211,6 +224,21 @@ func (s *Server) handleRequest(request model.CommandRequest) (model.Envelope, er
 		go s.Shutdown()
 		return model.Envelope{Ok: true, Backend: "daemon", Items: []string{"stopping daemon"}}, nil
 	case "worker.status":
+		return s.app.Execute(context.Background(), request)
+	case "workspace.add", "workspace.init":
+		// For workspace add/init, start async background indexing instead of blocking on sync index.
+		// Extract workspace root from payload and queue async job.
+		if path, ok := request.Payload["path"].(string); ok && path != "" {
+			// Normalize path and start background index
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			jobID, _ := indexer.StartBackgroundIndex(ctx, path, false, indexer.IndexModeFull)
+			cancel()
+			// Store job ID in context for later retrieval if needed
+			if jobID != "" {
+				request.Payload["_index_job_id"] = jobID
+			}
+		}
+		// Proceed with normal registration flow
 		return s.app.Execute(context.Background(), request)
 	case "workspace.warm":
 		resolution, err := workspace.ResolveWorkspaceSelection(request.Context.Workspace, request.Context.CallerCWD)
@@ -354,7 +382,7 @@ func (s *Server) releaseInflight() {
 
 func (s *Server) isBackpressureLimited(request model.CommandRequest) bool {
 	switch request.Operation {
-	case "nav.refs", "nav.context", "nav.deps", "nav.related", "nav.service", "nav.diff-context", "nav.batch", "workspace.warm":
+	case "nav.refs", "nav.context", "nav.deps", "nav.related", "nav.service", "nav.diff-context", "nav.batch", "nav.search", "nav.find", "workspace.warm":
 		return true
 	case "nav.workspace-map":
 		return request.Context.Full
@@ -514,4 +542,18 @@ func daemonRetentionDays() int {
 		return 30
 	}
 	return days
+}
+
+// buildVersionString retrieves the version from build info (same source as CLI).
+// Falls back to "unknown" if build info is not available.
+func buildVersionString() string {
+	info, ok := debug.ReadBuildInfo()
+	if !ok {
+		return "unknown"
+	}
+	version := info.Main.Version
+	if version == "" {
+		version = "unknown"
+	}
+	return version
 }
