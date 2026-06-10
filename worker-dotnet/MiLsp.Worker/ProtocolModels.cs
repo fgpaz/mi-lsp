@@ -30,6 +30,7 @@ public sealed record WorkerResponse(
     [property: JsonPropertyName("items")] List<Dictionary<string, object?>>? Items = null,
     [property: JsonPropertyName("warnings")] List<string>? Warnings = null,
     [property: JsonPropertyName("error")] string? Error = null,
+    [property: JsonPropertyName("error_code")] string? ErrorCode = null,
     [property: JsonPropertyName("stats")] WorkerStats? Stats = null
 );
 

@@ -36,7 +36,20 @@ public sealed class RoslynService
         }
         catch (Exception exception)
         {
-            return new WorkerResponse(false, "roslyn", Error: exception.Message, Stats: new WorkerStats(Ms: started.ElapsedMilliseconds));
+            var errorCode = "";
+
+            // Check if this is a solution config error
+            if (exception.Message.StartsWith("solution_config_error", StringComparison.OrdinalIgnoreCase))
+            {
+                errorCode = "solution_config_error";
+            }
+            else if (exception.Message.Contains("already exists") && exception.Message.Contains("solution folder"))
+            {
+                // Roslyn error about duplicate project names
+                errorCode = "solution_config_error";
+            }
+
+            return new WorkerResponse(false, "roslyn", Error: exception.Message, ErrorCode: errorCode, Stats: new WorkerStats(Ms: started.ElapsedMilliseconds));
         }
     }
 
@@ -215,6 +228,18 @@ public sealed class RoslynService
     private async Task<Solution> LoadSolutionAsync(WorkerRequest request, CancellationToken cancellationToken)
     {
         EnsureMsBuildRegistered();
+        var solutionPath = ResolveSolutionPath(request);
+
+        // Check for duplicate project names BEFORE any caching logic
+        if (solutionPath.EndsWith(".sln", StringComparison.OrdinalIgnoreCase))
+        {
+            var duplicates = DetectDuplicateProjectNames(solutionPath);
+            if (duplicates.Count > 0)
+            {
+                throw new InvalidOperationException($"solution_config_error: duplicate project names in solution: {string.Join(", ", duplicates)}");
+            }
+        }
+
         var cacheKey = ResolveCacheKey(request);
         var workspace = _workspaceCache.GetOrAdd(cacheKey, _ => MSBuildWorkspace.Create());
         if (workspace.CurrentSolution.ProjectIds.Count > 0)
@@ -222,7 +247,6 @@ public sealed class RoslynService
             return workspace.CurrentSolution;
         }
 
-        var solutionPath = ResolveSolutionPath(request);
         if (solutionPath.EndsWith(".sln", StringComparison.OrdinalIgnoreCase))
         {
             return await workspace.OpenSolutionAsync(solutionPath, cancellationToken: cancellationToken).ConfigureAwait(false);
@@ -363,5 +387,52 @@ public sealed class RoslynService
             ["qualified_name"] = symbol.ToDisplayString(SymbolDisplayFormat.CSharpErrorMessageFormat),
             ["repo"] = repoName,
         };
+    }
+
+    private static List<string> DetectDuplicateProjectNames(string slnPath)
+    {
+        var solutionDir = Path.GetDirectoryName(slnPath) ?? string.Empty;
+        var projectsByFolder = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
+
+        try
+        {
+            var lines = File.ReadAllLines(slnPath);
+            foreach (var line in lines)
+            {
+                // Match lines like: Project("{GUID}") = "ProjectName", "relative/path/ProjectName.csproj", "{GUID}"
+                if (line.StartsWith("Project(", StringComparison.OrdinalIgnoreCase))
+                {
+                    var parts = line.Split(new[] { '"' }, StringSplitOptions.None);
+                    if (parts.Length >= 4)
+                    {
+                        var projectName = parts[3];
+                        // Root folder for projects that are not in nested folders
+                        var folderKey = "Root";
+
+                        if (!projectsByFolder.ContainsKey(folderKey))
+                        {
+                            projectsByFolder[folderKey] = new List<string>();
+                        }
+                        projectsByFolder[folderKey].Add(projectName);
+                    }
+                }
+            }
+        }
+        catch (Exception)
+        {
+            // If we can't read the file, don't block on duplicate detection
+            return new List<string>();
+        }
+
+        // Find duplicates within each folder
+        var duplicates = new List<string>();
+        foreach (var folder in projectsByFolder.Values)
+        {
+            var grouped = folder.GroupBy(name => name, StringComparer.OrdinalIgnoreCase).ToList();
+            var dupes = grouped.Where(g => g.Count() > 1).Select(g => g.Key).ToList();
+            duplicates.AddRange(dupes);
+        }
+
+        return duplicates.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
     }
 }
