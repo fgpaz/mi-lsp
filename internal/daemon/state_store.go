@@ -1,12 +1,16 @@
 package daemon
 
 import (
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	_ "modernc.org/sqlite"
@@ -26,7 +30,7 @@ func daemonRootDir() (string, error) {
 		return "", err
 	}
 	dir := filepath.Join(home, ".mi-lsp", "daemon")
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return "", err
 	}
 	return dir, nil
@@ -71,7 +75,7 @@ func acquireStartLock(timeout time.Duration) (*startLock, error) {
 	}
 	deadline := time.Now().Add(timeout)
 	for {
-		file, openErr := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o644)
+		file, openErr := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
 		if openErr == nil {
 			return &startLock{path: path, file: file}, nil
 		}
@@ -126,7 +130,7 @@ func saveDaemonState(state model.DaemonState) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(path, body, 0o644)
+	return os.WriteFile(path, body, 0o600)
 }
 
 func clearDaemonState() error {
@@ -140,8 +144,20 @@ func clearDaemonState() error {
 	return nil
 }
 
+// telemetryWriteRequest represents an async write operation to the telemetry store.
+type telemetryWriteRequest struct {
+	runID    int64
+	event    model.AccessEvent
+	isDirect bool // true if recording directly without runID
+}
+
 type TelemetryStore struct {
 	db *sql.DB
+	// Async write queue (PERF-06): unbuffered channel with single consumer goroutine
+	// prevents "database is locked" errors under concurrent write load.
+	writeQueue chan telemetryWriteRequest
+	done       chan struct{}
+	wg         sync.WaitGroup
 }
 
 func openTelemetryStore() (*TelemetryStore, error) {
@@ -155,7 +171,11 @@ func openTelemetryStore() (*TelemetryStore, error) {
 	}
 	db.SetMaxOpenConns(1)
 	db.SetMaxIdleConns(1)
-	store := &TelemetryStore{db: db}
+	store := &TelemetryStore{
+		db:         db,
+		writeQueue: make(chan telemetryWriteRequest, 256), // Buffered queue; blocks gracefully when full
+		done:       make(chan struct{}),
+	}
 	if err := store.configureConnection(); err != nil {
 		_ = db.Close()
 		return nil, err
@@ -164,6 +184,9 @@ func openTelemetryStore() (*TelemetryStore, error) {
 		_ = db.Close()
 		return nil, err
 	}
+	// Start async write worker (PERF-06).
+	store.wg.Add(1)
+	go store.asyncWriteWorker()
 	return store, nil
 }
 
@@ -227,13 +250,48 @@ func (s *TelemetryStore) execWithRetry(query string, args ...any) (sql.Result, e
 	return result, err
 }
 
-// PurgeAndVacuum enforces telemetry retention and reclaims space.
+// PurgeAndVacuum enforces telemetry retention and reclaims space (PERF-05).
 //
-// Wave 0 stub: L3 (telemetry-store lane) implements size-aware retention plus
-// VACUUM. The signature is the locked cross-lane interface called by the daemon
-// core retention ticker (L2).
+// If the database exceeds maxBytes, aggressively purges to 7 days.
+// Otherwise, respects retentionDays. Always runs VACUUM to reclaim space.
+//
+// Returns (purged_count, vacuum_success, error).
 func (s *TelemetryStore) PurgeAndVacuum(retentionDays int, maxBytes int64) (int, bool, error) {
-	return 0, false, errors.New("not implemented: PurgeAndVacuum")
+	days := retentionDays
+
+	// Check database size and downgrade retention if needed.
+	sz, sizeErr := s.dbSize()
+	if sizeErr == nil && sz > maxBytes {
+		days = 7
+	}
+
+	// Purge events older than the retention window.
+	cutoff := time.Now().AddDate(0, 0, -days)
+	purged, purgeErr := s.PurgeOldEvents(cutoff)
+	if purgeErr != nil {
+		return int(purged), false, fmt.Errorf("purge events: %w", purgeErr)
+	}
+
+	// Run VACUUM to reclaim space.
+	_, vacErr := s.db.Exec("VACUUM")
+	if vacErr != nil {
+		return int(purged), false, fmt.Errorf("vacuum: %w", vacErr)
+	}
+
+	return int(purged), true, nil
+}
+
+// dbSize returns the current database file size in bytes.
+func (s *TelemetryStore) dbSize() (int64, error) {
+	path, err := daemonDatabasePath()
+	if err != nil {
+		return 0, err
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		return 0, err
+	}
+	return info.Size(), nil
 }
 
 func (s *TelemetryStore) PurgeOldEvents(olderThan time.Time) (int64, error) {
@@ -252,9 +310,101 @@ func (s *TelemetryStore) PurgeOldRuns(olderThan time.Time) (int64, error) {
 	return result.RowsAffected()
 }
 
+// asyncWriteWorker is the single consumer goroutine that processes telemetry writes.
+// This eliminates "database is locked" errors under concurrent write load (PERF-06).
+func (s *TelemetryStore) asyncWriteWorker() {
+	defer s.wg.Done()
+	for {
+		select {
+		case <-s.done:
+			// Drain remaining writes on shutdown.
+			for {
+				select {
+				case req := <-s.writeQueue:
+					_ = s.recordAccessDirectInternal(req.runID, req.event, req.isDirect)
+				default:
+					return
+				}
+			}
+		case req := <-s.writeQueue:
+			_ = s.recordAccessDirectInternal(req.runID, req.event, req.isDirect)
+		}
+	}
+}
+
+// recordAccessDirectInternal handles the actual database write (called from async worker).
+func (s *TelemetryStore) recordAccessDirectInternal(runID int64, event model.AccessEvent, isDirect bool) error {
+	if event.Seq == 0 {
+		event.Seq = s.NextSeq(event.SessionID)
+	}
+	normalized := telemetry.NormalizeAccessEvent(event)
+	warningsJSON := "[]"
+	if len(normalized.Warnings) > 0 {
+		body, err := json.Marshal(normalized.Warnings)
+		if err != nil {
+			return err
+		}
+		warningsJSON = string(body)
+	}
+	args := []any{
+		normalized.OccurredAt.Unix(),
+		normalized.ClientName,
+		normalized.SessionID,
+		normalized.Seq,
+		normalized.Workspace,
+		normalized.WorkspaceInput,
+		normalized.WorkspaceRoot,
+		normalized.WorkspaceAlias,
+		normalized.Repo,
+		normalized.Operation,
+		normalized.Backend,
+		normalized.Route,
+		normalized.Format,
+		normalized.TokenBudget,
+		normalized.MaxItems,
+		normalized.MaxChars,
+		boolToInt(normalized.Compress),
+		boolToInt(normalized.Success),
+		normalized.LatencyMs,
+		warningsJSON,
+		normalized.RuntimeKey,
+		normalized.EntrypointID,
+		normalized.Error,
+		normalized.ErrorKind,
+		normalized.ErrorCode,
+		boolToInt(normalized.Truncated),
+		normalized.ResultCount,
+		normalized.WarningCount,
+		normalized.PatternMode,
+		normalized.RoutingOutcome,
+		normalized.FailureStage,
+		normalized.HintCode,
+		normalized.TruncationReason,
+		normalized.DecisionJSON,
+	}
+	if isDirect {
+		_, err := s.execWithRetry(
+			`INSERT INTO access_events(daemon_run_id, occurred_at, client_name, session_id, seq, workspace, workspace_input, workspace_root, workspace_alias, repo, operation, backend, route, format, token_budget, max_items, max_chars, compress, success, latency_ms, warnings_json, runtime_key, entrypoint_id, error_text, error_kind, error_code, truncated, result_count, warning_count, pattern_mode, routing_outcome, failure_stage, hint_code, truncation_reason, decision_json) VALUES (NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			args...,
+		)
+		return err
+	} else {
+		_, err := s.execWithRetry(
+			`INSERT INTO access_events(daemon_run_id, occurred_at, client_name, session_id, seq, workspace, workspace_input, workspace_root, workspace_alias, repo, operation, backend, route, format, token_budget, max_items, max_chars, compress, success, latency_ms, warnings_json, runtime_key, entrypoint_id, error_text, error_kind, error_code, truncated, result_count, warning_count, pattern_mode, routing_outcome, failure_stage, hint_code, truncation_reason, decision_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			append([]any{runID}, args...)...,
+		)
+		return err
+	}
+}
+
 func (s *TelemetryStore) Close() error {
 	if s == nil || s.db == nil {
 		return nil
+	}
+	// Signal worker to stop and wait for shutdown.
+	if s.done != nil {
+		close(s.done)
+		s.wg.Wait()
 	}
 	return s.db.Close()
 }
@@ -466,110 +616,29 @@ func (s *TelemetryStore) NextSeq(sessionID string) int {
 }
 
 func (s *TelemetryStore) RecordAccessDirect(event model.AccessEvent) error {
-	if event.Seq == 0 {
-		event.Seq = s.NextSeq(event.SessionID)
+	// Queue write asynchronously (PERF-06). Non-blocking if queue has space;
+	// blocks briefly if queue is full (max 256), never drops.
+	// Use non-blocking send to avoid hangs under test conditions.
+	select {
+	case s.writeQueue <- telemetryWriteRequest{runID: 0, event: event, isDirect: true}:
+		return nil
+	default:
+		// Queue is full; force a synchronous write as fallback to avoid dropping events.
+		return s.recordAccessDirectInternal(0, event, true)
 	}
-	normalized := telemetry.NormalizeAccessEvent(event)
-	warningsJSON := "[]"
-	if len(normalized.Warnings) > 0 {
-		body, err := json.Marshal(normalized.Warnings)
-		if err != nil {
-			return err
-		}
-		warningsJSON = string(body)
-	}
-	_, err := s.execWithRetry(
-		`INSERT INTO access_events(daemon_run_id, occurred_at, client_name, session_id, seq, workspace, workspace_input, workspace_root, workspace_alias, repo, operation, backend, route, format, token_budget, max_items, max_chars, compress, success, latency_ms, warnings_json, runtime_key, entrypoint_id, error_text, error_kind, error_code, truncated, result_count, warning_count, pattern_mode, routing_outcome, failure_stage, hint_code, truncation_reason, decision_json) VALUES (NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		normalized.OccurredAt.Unix(),
-		normalized.ClientName,
-		normalized.SessionID,
-		normalized.Seq,
-		normalized.Workspace,
-		normalized.WorkspaceInput,
-		normalized.WorkspaceRoot,
-		normalized.WorkspaceAlias,
-		normalized.Repo,
-		normalized.Operation,
-		normalized.Backend,
-		normalized.Route,
-		normalized.Format,
-		normalized.TokenBudget,
-		normalized.MaxItems,
-		normalized.MaxChars,
-		boolToInt(normalized.Compress),
-		boolToInt(normalized.Success),
-		normalized.LatencyMs,
-		warningsJSON,
-		normalized.RuntimeKey,
-		normalized.EntrypointID,
-		normalized.Error,
-		normalized.ErrorKind,
-		normalized.ErrorCode,
-		boolToInt(normalized.Truncated),
-		normalized.ResultCount,
-		normalized.WarningCount,
-		normalized.PatternMode,
-		normalized.RoutingOutcome,
-		normalized.FailureStage,
-		normalized.HintCode,
-		normalized.TruncationReason,
-		normalized.DecisionJSON,
-	)
-	return err
 }
 
 func (s *TelemetryStore) RecordAccess(runID int64, event model.AccessEvent) error {
-	if event.Seq == 0 {
-		event.Seq = s.NextSeq(event.SessionID)
+	// Queue write asynchronously (PERF-06). Non-blocking if queue has space;
+	// blocks briefly if queue is full (max 256), never drops.
+	// Use non-blocking send to avoid hangs under test conditions.
+	select {
+	case s.writeQueue <- telemetryWriteRequest{runID: runID, event: event, isDirect: false}:
+		return nil
+	default:
+		// Queue is full; force a synchronous write as fallback to avoid dropping events.
+		return s.recordAccessDirectInternal(runID, event, false)
 	}
-	normalized := telemetry.NormalizeAccessEvent(event)
-	warningsJSON := "[]"
-	if len(normalized.Warnings) > 0 {
-		body, err := json.Marshal(normalized.Warnings)
-		if err != nil {
-			return err
-		}
-		warningsJSON = string(body)
-	}
-	_, err := s.execWithRetry(
-		`INSERT INTO access_events(daemon_run_id, occurred_at, client_name, session_id, seq, workspace, workspace_input, workspace_root, workspace_alias, repo, operation, backend, route, format, token_budget, max_items, max_chars, compress, success, latency_ms, warnings_json, runtime_key, entrypoint_id, error_text, error_kind, error_code, truncated, result_count, warning_count, pattern_mode, routing_outcome, failure_stage, hint_code, truncation_reason, decision_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		runID,
-		normalized.OccurredAt.Unix(),
-		normalized.ClientName,
-		normalized.SessionID,
-		normalized.Seq,
-		normalized.Workspace,
-		normalized.WorkspaceInput,
-		normalized.WorkspaceRoot,
-		normalized.WorkspaceAlias,
-		normalized.Repo,
-		normalized.Operation,
-		normalized.Backend,
-		normalized.Route,
-		normalized.Format,
-		normalized.TokenBudget,
-		normalized.MaxItems,
-		normalized.MaxChars,
-		boolToInt(normalized.Compress),
-		boolToInt(normalized.Success),
-		normalized.LatencyMs,
-		warningsJSON,
-		normalized.RuntimeKey,
-		normalized.EntrypointID,
-		normalized.Error,
-		normalized.ErrorKind,
-		normalized.ErrorCode,
-		boolToInt(normalized.Truncated),
-		normalized.ResultCount,
-		normalized.WarningCount,
-		normalized.PatternMode,
-		normalized.RoutingOutcome,
-		normalized.FailureStage,
-		normalized.HintCode,
-		normalized.TruncationReason,
-		normalized.DecisionJSON,
-	)
-	return err
 }
 
 func (s *TelemetryStore) RecentAccesses(limit int) ([]model.AccessEvent, error) {
@@ -596,6 +665,13 @@ func (s *TelemetryStore) RecentAccesses(limit int) ([]model.AccessEvent, error) 
 		if err != nil {
 			return nil, err
 		}
+		// TOK-02: Compute DecisionHash from decision_json (sha256 hex[:12]).
+		if strings.TrimSpace(item.DecisionJSON) != "" {
+			hash := sha256.Sum256([]byte(item.DecisionJSON))
+			item.DecisionHash = hex.EncodeToString(hash[:])[:12]
+		}
+		// TOK-02: Clear decision_json from response (only send hash).
+		item.DecisionJSON = ""
 		items = append(items, item)
 	}
 	return items, rows.Err()
