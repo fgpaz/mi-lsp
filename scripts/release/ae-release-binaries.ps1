@@ -20,6 +20,13 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
+# Provenance gate: AE-RELEASE-DISTRIBUTION requires clean tree to certify vcs.modified=false
+$gitStatus = git status --porcelain
+if (-not [string]::IsNullOrWhiteSpace(($gitStatus -join "`n"))) {
+    Write-Error "release aborted: working tree is dirty (would embed vcs.modified=true). Commit or stash changes first."
+    exit 1
+}
+
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 $buildScript = Join-Path $PSScriptRoot 'build-dist.ps1'
 $installScript = Join-Path $PSScriptRoot 'install-local.ps1'
@@ -202,6 +209,19 @@ if (-not $SkipBuild) {
         $buildArgs.Clean = $true
     }
     & $buildScript @buildArgs | Out-Null
+}
+
+# Provenance verification: after build, verify binaries do not report vcs.modified
+$hostRid = Get-HostRid
+$builtCliPath = Get-DistCliPath -Rid $hostRid
+if (Test-Path -LiteralPath $builtCliPath) {
+    $versionOutput = & $builtCliPath version --format compact 2>&1
+    if ($LASTEXITCODE -eq 0) {
+        if ($versionOutput -match '\+dirty|vcs_modified["\s]*[:=]\s*true') {
+            Write-Error "release aborted: built binary reports vcs.modified=true or +dirty. This breaks AE-RELEASE-DISTRIBUTION provenance."
+            exit 1
+        }
+    }
 }
 
 foreach ($rid in $Rids) {

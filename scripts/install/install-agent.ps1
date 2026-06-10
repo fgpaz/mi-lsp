@@ -14,6 +14,11 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
+# SEC-08: warn if GITHUB_TOKEN is in environment (token should not be embedded in scripts)
+if (-not [string]::IsNullOrWhiteSpace($env:GITHUB_TOKEN)) {
+    Write-Warning "GITHUB_TOKEN environment variable is set. It will be used for authentication during download. Ensure you trust this environment and do not commit credentials in history."
+}
+
 function Get-InstallScript {
     if (-not [string]::IsNullOrWhiteSpace($PSScriptRoot)) {
         $local = Join-Path $PSScriptRoot 'install.ps1'
