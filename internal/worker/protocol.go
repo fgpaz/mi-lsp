@@ -3,8 +3,13 @@ package worker
 import (
 	"encoding/binary"
 	"encoding/json"
+	"fmt"
 	"io"
 )
+
+// MaxFrameSize is the maximum allowed frame size (256MB).
+// Frames exceeding this size are rejected to prevent OOM DoS attacks.
+const MaxFrameSize = 256 << 20
 
 func WriteFrame(writer io.Writer, payload any) error {
 	body, err := json.Marshal(payload)
@@ -26,6 +31,10 @@ func ReadFrame(reader io.Reader, payload any) error {
 		return err
 	}
 	length := binary.BigEndian.Uint32(header)
+	// SEC-01: Validate frame size before allocating memory
+	if int64(length) > MaxFrameSize {
+		return fmt.Errorf("frame too large: %d > %d", length, MaxFrameSize)
+	}
 	body := make([]byte, length)
 	if _, err := io.ReadFull(reader, body); err != nil {
 		return err

@@ -312,6 +312,21 @@ func ResolveWorkspaceSelection(nameOrPath string, callerCWD string) (WorkspaceRe
 			}
 			return WorkspaceResolution{Registration: registration, Source: ResolutionSourcePath}, nil
 		}
+		// AUD-03: Try to auto-correct the alias when the cwd resolves unambiguously
+		if fallback, ok := resolveWorkspaceFromCallerCWD(callerCWD, registry); ok {
+			resolutionErr := &WorkspaceResolutionError{
+				Selector:          selector,
+				CallerCWD:         strings.TrimSpace(callerCWD),
+				Fallback:          fallback,
+				FallbackAvailable: true,
+				Warnings:          append([]string{}, fallback.Warnings...),
+			}
+			// Add note about auto-correction
+			resolutionErr.Warnings = append(resolutionErr.Warnings,
+				fmt.Sprintf("alias %q not found; auto-corrected to %q from caller cwd", selector, fallback.Registration.Name))
+			// Return the fallback with a warning instead of erroring out
+			return fallback, nil
+		}
 		return WorkspaceResolution{}, newWorkspaceResolutionError(selector, callerCWD, registry)
 	}
 

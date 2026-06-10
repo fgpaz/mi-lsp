@@ -180,10 +180,12 @@ Sin configuracion activa, `nav recall` devuelve hint visible y no llama al prove
 
 ## Operaciones adicionales
 
-- `init [path] [--name alias] [--no-index]`: detecta, registra e indexa el workspace actual o el path pedido
+- `init [path] [--name alias] [--no-index]`: detecta, registra e indexa el workspace actual o el path pedido; `--no-index` registra sin bloquear.
+- `doctor [--workspace <alias>]`: comando unificado de diagnostico; sin args inspecciona workspace actual; reporta aliases duplicados, worktrees, paths stale, colisiones de casing, shadowing de binario y health de daemon/workers.
 - `nav recall <query> [--intent formula|evidence|route|explore|learning]`: busqueda semantica sobre wiki; ungated; responde `RecallResult[]` con `intent`, score, snippet y rango de lineas; si embeddings no disponibles, el fallback canonico es `nav wiki search`
 - `mi-lsp [--classic] [--axi] [--full]`: por default devuelve home content-first; `--classic` restaura help generica
 - `workspace.remove`: elimina un workspace registrado de `registry.toml`
+- `workspace doctor`: alias del comando `doctor` raiz; diagnostica workspace actual.
 - `workspace hygiene [--apply-safe]`: diagnostica higiene agent-first del registry con `backend=registry-hygiene`; por default no muta y con `--apply-safe` solo remueve aliases stale/defaults invalidos mediante la logica segura existente. No borra directorios, worktrees, indices, ramas ni procesos.
 - `workspace prune --stale [--dry-run|--apply]`: lista o remueve aliases del registry cuyo root ya no existe; `--dry-run` es el default seguro, `--apply` persiste la limpieza y no borra archivos del workspace.
 - `admin export`: exporta telemetria de `access_events` desde `daemon.db`; raw soporta `--format json|csv|compact|toon` y con `--summary` agrega sobre toda la ventana filtrada salvo que `--limit` se haya seteado explicitamente
@@ -192,10 +194,11 @@ Sin configuracion activa, `nav recall` devuelve hint visible y no llama al prove
 - `admin export --summary` sin `--limit` explicito debe preservar semantica de ventana completa usando agregacion streaming; con `--limit` explicito puede resumir solo los eventos consultados.
 - `admin export --summary` puede incluir `recommendations` con usage-doctor actions derivadas de telemetria agregada; las recomendaciones son aditivas y deben basarse solo en contadores, hints, failure stages, truncation rates, latencias y breakdowns sanitizados. Cuando detecta stale registry, workspace resolution failures, repo selector invalid o search timeout debe sugerir comandos concretos, incluyendo `workspace hygiene` para higiene de aliases.
 - el export raw de `access_events` preserva metadata operativa minima del request (`route`, `format`, `token_budget`, `max_items`, `max_chars`, `compress`) y diagnosticos causales sanitizados (`warning_count`, `pattern_mode`, `routing_outcome`, `failure_stage`, `hint_code`, `truncation_reason`, `decision_json`) para diferenciar uso directo, daemonizado, routing errors, backend runtime failures y truncacion; `decision_json` puede agregar solo metadata derivada como `doc_ranker`, `intent_mode`, `requested_backend`, `result_backend`, `backend_fallback_taken`, `fallback_from`, `fallback_to`, `runtime_error_code`, `planner_path`, `planner_outcome`, `safe_degrade_reason` y `guardrail_trigger`, nunca texto libre, query, argv, payloads ni contenido de archivos; en operaciones daemonizadas normales debe existir una sola fila canonica por request
-- `index [path] [--clean] [--docs-only]`: wrapper compatible que espera a completar; indexa codigo + docs, o solo docs cuando `--docs-only` esta presente
-- `index start [path] [--mode full|docs|catalog] [--clean] [--wait]`: crea un job de indexacion; sin `--wait` lanza proceso detached y devuelve `job_id`
-- `index status [job-id]`: inspecciona el ultimo job o el job indicado
+- `index [path] [--clean] [--docs-only]`: wrapper compatible que espera a completar (con `--wait` implicito); indexa codigo + docs, o solo docs cuando `--docs-only` esta presente
+- `index start [path] [--mode full|docs|catalog] [--clean] [--wait]`: crea un job de indexacion; sin `--wait` lanza proceso detached y devuelve `job_id`; con `--wait` bloquea hasta completar
+- `index status [job-id]`: inspecciona el ultimo job o el job indicado; expone progreso vivo durante indexacion
 - `index cancel <job-id> [--force]`: solicita cancelacion cooperativa; con `--force` termina el proceso vivo del job cuando existe y limpia el lock matching cuando el PID ya no esta vivo
+- `workspace.add [--wait]`: agrega workspace sin indexar por default; `--wait` bloquea hasta que indexacion async complete; `--no-index` omite indexacion
 - `nav route <task>`: resuelve el documento canonico de anclaje y un mini reading pack con minimos tokens; si la tarea trae un `RF-*` embebido en un doc agregado, Tier 1 ancla el contenedor canonico; `--include-code-discovery` agrega discovery de codigo; `--full` expande canonical lane y discovery
 - `nav wiki search <query>`: busca en el docgraph gobernado con filtros `--layer RS,RF,FL,TP,CT,TECH,DB`, paginacion `--top/--offset` y contenido opcional `--include-content`; la superficie textual directa `nav search` debe incluir docs gobernados y artefactos repo-locales ocultos cuando el repo use directorios hidden, sin entrar en caches/dependencias generadas cubiertas por `DefaultIgnorePatterns`
 - `nav wiki route|pack|trace`: aliases documentales para agentes que reutilizan `nav route`, `nav pack` y `nav trace`

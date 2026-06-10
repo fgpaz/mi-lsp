@@ -1,0 +1,55 @@
+schema: ae-integration-v1
+task: A1
+date: 2026-06-09
+integration_branch: v050/integration
+integration_head_sha: 99c525f616e9095f70750a2bb1899aecd94b503b
+base: v050/plan @ 197260c
+merge_order: [l7, l3, l2, l1, l5, l6, l4, l9, l8, l10]
+merge_status: "all 10 lanes merged (A1 worker resolved the 4 known conflicts before dying on an API socket error; orchestrator took over verification + fixes)"
+conflicts_resolved:
+  - file: internal/daemon/server.go
+    lanes: [L2, L4]
+    resolution: "union — L2 (version/ticker/protocol/recent_accesses/backpressure/async wiring) + L4 (admin token + frame handling)"
+  - file: internal/daemon/state_store.go
+    lanes: [L3, L4]
+    resolution: "union — L3 (async queue/PurgeAndVacuum/DecisionHash) + L4 (0o600/0o700 perms)"
+  - file: internal/model/types.go
+    lanes: [L7, L4]
+    resolution: "union — L7/T2 schema + L4 additions"
+  - file: internal/cli/root.go
+    lanes: [L7, L9]
+    resolution: "union — L7 (profile flag + envelope-single-apply) + L9 (doctor subcommand registration)"
+orchestrator_fixes:
+  - id: FIX-1
+    severity: high
+    file: internal/service/doc_ranking.go
+    issue: "L6 rankingCache keyed only on MD5(mode+question) — ignored workspace/docs/recent; returned stale cross-workspace rankings and polluted test ordering"
+    action: "removed rankingCache entirely (lookup/store/hash/Clear + type/vars/imports); rankDocs now deterministic. PERF-02 satisfied by workspace-scoped doc load."
+  - id: FIX-2
+    severity: high
+    file: internal/service/doc_query_context.go
+    issue: "L6 docCache/ftsCache never invalidated (InvalidateDocCache defined but never called) — serve stale docs after reindex (real prod bug); cache-hit path also skipped reentry recentChanges load (broke recent_change_tiebreak); ftsCache was dead code"
+    action: "removed docCache + ftsCache + helpers + cache-hit block + unused imports (crypto/md5, sync, time). SQLite pragmas (PERF-04), 8s timeout (AUD-06), MI_LSP_GIT pin (SEC-06) kept. PERF-02/03 DEFERRED pending a reindex-generation-invalidated implementation."
+  - id: FIX-3
+    severity: medium
+    file: internal/service/owner_ranking_test.go
+    issue: "TestRankDocsCaching asserted removed cache behavior"
+    action: "replaced with TestRankDocsDeterministic (same fixture, asserts deterministic repeat ranking)"
+  - id: FIX-4
+    severity: high
+    file: internal/service/ask_test.go
+    issue: "TestNavAskNormalizesAnchorIntentAndWarnsOnRawDrift flaky: workspace.init async (L1) background reindex clobbered the test's injected docs (store.ReplaceDocs), causing a score tie + nondeterministic recent_change_tiebreak"
+    action: "pass wait=true in init payload (service honors it at workspace_ops.go:70/84) so init indexes synchronously; verified 5/5 isolated + 2/2 full-package stable"
+verification:
+  build_exit: 0
+  vet_exit: 0
+  go_test: "PASS — full repo suite green serial (go test ./... -p 1 -count=1); no FAIL"
+  dotnet_build: "Compilacion correcta, 0 Advertencias, 0 Errores (worker-dotnet/MiLsp.Worker)"
+  flakiness_check: "TestNavAsk 5/5 isolated + service package 2/2 + full suite green"
+notes:
+  - "SQLITE_BUSY failures from Wave 1 were cross-worktree concurrency (10 parallel test runs), not real bugs — gone in serial integration run."
+  - "L1 async-by-default workspace.init is the locked design (D6). Tests asserting post-init state must pass wait=true. DOCS follow-up: L11a/skill must document wait=true / --wait clearly."
+residual_risk:
+  - "PERF-02/03 doc/FTS caching deferred (removed for correctness). A safe version must key on workspace index generation and invalidate on reindex."
+  - "Async-init UX: callers expecting immediate post-init queryability must use wait=true/--wait; document prominently."
+  - "L1 background index jobs are fire-and-forget (no cancellation); acceptable per L1 scope, daemon lifecycle owns shutdown."

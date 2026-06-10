@@ -1,0 +1,43 @@
+schema: ae-release-provenance-v1
+task: B1
+date: 2026-06-09
+release: v0.5.0
+built_from:
+  branch: main
+  commit: 2f67ce8ee885d82488041cc8a760c00c8a326db6
+  tag: v0.5.0
+  tree_state: clean
+binary:
+  rid: win-arm64
+  path_installed: "C:/Users/fgpaz/bin/mi-lsp.exe"
+  backup_of_previous: "C:/Users/fgpaz/bin/mi-lsp.exe.v042.bak"
+  sha256: 626d3095349d73c4618a12c7a277b9f27475b89cd3e57cbb3134bc26cdffe635
+  size_bytes: 20917760
+provenance_gate:
+  cli_version_string: "mi-lsp version v0.5.0 revision=2f67ce8ee885 protocol=mi-lsp-v1.1 rid=win-arm64"
+  vcs_modified: "false"
+  vcs_revision: 2f67ce8ee885d82488041cc8a760c00c8a326db6
+  vcs_time: "2026-06-10T16:40:58Z"
+  verdict: PASS  # AUD-02 resolved: clean v0.5.0 binary, no +dirty
+version_propagation:
+  daemon_run_id: 103
+  daemon_pid: 30916
+  daemon_version: "v0.5.0"   # AUD-02 daemon side: not "dev"
+  daemon_executable_sha256: 626d3095349d73c4618a12c7a277b9f27475b89cd3e57cbb3134bc26cdffe635
+  protocol_version: "mi-lsp-v1.1"
+  verdict: PASS
+live_smoke:
+  doctor:
+    exit: 0
+    checks: 7
+    findings: "stale-aliases P2 (kapsito-fnf-real-e2e-fix, kapsito-admin-control, fnf08); binary-dirty=clean; db-size 34.4MB; 75 workspaces"
+    verdict: PASS  # read-only, exit 0, no P1 failures
+  admin_token_present: true   # L4 SEC-02
+  workspace_status: { governance_blocked: false, docs_ready: true, doc_count: 120, index_symbols: 2451 }
+  index_async: { job_id: "idxjob-3f9e1818971702de", status: succeeded }
+  nav_search: { query: StartBackgroundIndex, ok: true, items: 4 }
+worker_dotnet:
+  status: "source change (L8 duplicate-project detection) built green in integration (dotnet build OK); dist worker rebuild + reinstall pending (secondary; Go-side AUD-04 timeout in L5 is in the CLI binary)"
+notes:
+  - "Release binary built from the MAIN checkout (real .git) — building from a git worktree does NOT VCS-stamp (Go treats worktree .git file specially), so worktree builds report version=(devel)."
+  - "Old daemon (v0.4.2, run 102) was already stopped before install; no .exe lock conflict."

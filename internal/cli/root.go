@@ -36,6 +36,7 @@ type rootState struct {
 	axi          bool
 	classic      bool
 	full         bool
+	profile      string
 	telemetry    *CLITelemetry
 	retentionRun bool
 	noAutoDaemon bool
@@ -131,6 +132,7 @@ func NewRootCommand() *cobra.Command {
 	root.PersistentFlags().StringVar(&state.clientName, "client-name", state.clientName, "Logical client name for governance and telemetry")
 	root.PersistentFlags().StringVar(&state.sessionID, "session-id", state.sessionID, "Logical client session identifier for governance and telemetry")
 	root.PersistentFlags().StringVar(&state.backendHint, "backend", "", "Force a backend hint: roslyn|tsserver|pyright|gopls|catalog|text")
+	root.PersistentFlags().StringVar(&state.profile, "profile", "", "Output profile: human|agent (agent auto-activates for harness clients)")
 	root.PersistentFlags().BoolVar(&state.axi, "axi", axiEnabled, "Enable AXI discovery and preview mode")
 	root.PersistentFlags().BoolVar(&state.classic, "classic", false, "Force classic CLI behavior on AXI-default surfaces")
 	root.PersistentFlags().BoolVar(&state.full, "full", false, "Expand AXI preview responses to fuller detail")
@@ -147,6 +149,7 @@ func NewRootCommand() *cobra.Command {
 		newAdminCommand(state),
 		newWorkerCommand(state),
 		newVersionCommand(state),
+		newDoctorCommand(state),
 	)
 	return root
 }
@@ -468,11 +471,14 @@ func offsetFromPayload(payload map[string]any) (int, bool) {
 }
 
 func (s *rootState) printEnvelope(envelope model.Envelope, opts model.QueryOptions) error {
-	envelope = output.ApplyEnvelopeLimits(envelope, opts)
+	// Note: ApplyEnvelopeLimits is applied once in executeOperation, not here.
+	// Callers of printEnvelope should ensure limits have been applied if needed.
 	return s.printPreparedEnvelope(envelope, opts)
 }
 
 func (s *rootState) printPreparedEnvelope(envelope model.Envelope, opts model.QueryOptions) error {
+	// Set profile based on resolved value from root state
+	envelope.Profile = resolveProfile(s.profile, s.clientName)
 	rendered, err := output.Render(envelope, opts.Format, opts.Compress)
 	if err != nil {
 		return err
@@ -491,12 +497,51 @@ func envBool(name string) bool {
 	}
 }
 
+func isHarnessClient(clientName string) bool {
+	lower := strings.ToLower(strings.TrimSpace(clientName))
+	harnessNames := map[string]bool{
+		"claude-code": true,
+		"codex":       true,
+		"claude-ai":   true,
+		"opencode":    true,
+		"copilot":     true,
+		"jetbrains":   true,
+		"cursor":      true,
+		"neovim":      true,
+		"emacs":       true,
+		"vim":         true,
+	}
+	return harnessNames[lower]
+}
+
+func resolveProfile(flag string, clientName string) model.OutputProfile {
+	// Explicit flag always wins
+	if flag != "" {
+		lower := strings.ToLower(strings.TrimSpace(flag))
+		switch lower {
+		case "agent":
+			return model.OutputProfileAgent
+		case "human":
+			return model.OutputProfileHuman
+		default:
+			return model.OutputProfileHuman
+		}
+	}
+	// Auto-activate agent profile for harness clients
+	if isHarnessClient(clientName) {
+		return model.OutputProfileAgent
+	}
+	return model.OutputProfileHuman
+}
+
 func (s *rootState) renderAXIHome(cmd *cobra.Command) error {
 	env, err := s.buildAXIHomeEnvelope(cmd)
 	if err != nil {
 		return err
 	}
-	return s.printEnvelope(env, s.queryOptions(cmd, "root.home", nil))
+	opts := s.queryOptions(cmd, "root.home", nil)
+	env = output.ApplyEnvelopeLimits(env, opts)
+	return s.printEnvelope(env, opts)
 }
 
 func (s *rootState) buildAXIHomeEnvelope(cmd *cobra.Command) (model.Envelope, error) {

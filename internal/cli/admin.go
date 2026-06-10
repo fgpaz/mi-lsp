@@ -17,6 +17,7 @@ import (
 
 	"github.com/fgpaz/mi-lsp/internal/daemon"
 	"github.com/fgpaz/mi-lsp/internal/model"
+	"github.com/fgpaz/mi-lsp/internal/output"
 	"github.com/fgpaz/mi-lsp/internal/telemetry"
 )
 
@@ -34,11 +35,13 @@ Provides runtime dashboards, access logs, and workspace status.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx, cancel := context.WithTimeout(cmd.Context(), 5*time.Second)
 			defer cancel()
-			response, err := daemon.NewClient().Execute(ctx, model.CommandRequest{ProtocolVersion: model.ProtocolVersion, Operation: "system.status", Context: state.queryOptions(cmd, "system.status", nil)})
+			opts := state.queryOptions(cmd, "system.status", nil)
+			response, err := daemon.NewClient().Execute(ctx, model.CommandRequest{ProtocolVersion: model.ProtocolVersion, Operation: "system.status", Context: opts})
 			if err != nil {
 				return daemon.BuildStatusError()
 			}
-			return state.printEnvelope(response, state.queryOptions(cmd, "system.status", nil))
+			response = output.ApplyEnvelopeLimits(response, opts)
+			return state.printEnvelope(response, opts)
 		},
 	}
 
@@ -63,7 +66,10 @@ Provides runtime dashboards, access logs, and workspace status.`,
 			if err := openURL(finalURL); err != nil {
 				return err
 			}
-			return state.printEnvelope(model.Envelope{Ok: true, Backend: "admin", Items: []map[string]any{{"admin_url": finalURL}}}, state.queryOptions(cmd, "admin.url", nil))
+			opts := state.queryOptions(cmd, "admin.url", nil)
+			env := model.Envelope{Ok: true, Backend: "admin", Items: []map[string]any{{"admin_url": finalURL}}}
+			env = output.ApplyEnvelopeLimits(env, opts)
+			return state.printEnvelope(env, opts)
 		},
 	}
 

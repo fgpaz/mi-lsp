@@ -1,0 +1,98 @@
+schema: ae-session-contract-v1
+task_slug: post-release-audit-v042
+issue_or_waiver: "User requested deep post-release audit; scope locked via brainstorming to option A: read-only exhaustive report, no code changes this session."
+base_ref: main
+base_sha: 268f5125d70c12db67ef53bfed997c10f49589f6
+branch: main
+worktree_path: "C:/repos/mios/mi-lsp"
+mode: validation_audit
+decision_lock: locked
+harness_adapter: claude-code
+orchestration_depth: v0_shadow
+closure_profile: C1_READONLY_AUDIT
+cleanup_policy: keep_evidence_under_auditoria
+created_at: "2026-06-09T20:15:00-03:00"
+updated_at: "2026-06-09T20:15:00-03:00"
+expected_scope: >
+  Read-only post-release audit of mi-lsp since v0.4.2 (2026-06-03): (1) runtime errors
+  and performance incidents observed in daemon telemetry and code, (2) potential security
+  vulnerabilities or information leaks across CLI, daemon, admin API, worker protocol,
+  install scripts, (3) performance improvement opportunities, (4) further token-consumption
+  reductions for harnesses. Output is a prioritized findings report; no fixes this session.
+allowed_paths:
+  - ".docs/auditoria/2026-06-09-post-release-audit-v042/**"
+read_only_paths:
+  - "internal/**"
+  - "cmd/**"
+  - "worker-dotnet/**"
+  - "scripts/**"
+  - ".docs/wiki/**"
+  - "AGENTS.md"
+  - "CLAUDE.md"
+  - "PATHS.md"
+  - "C:/Users/fgpaz/.mi-lsp/**"
+  - "C:/Users/fgpaz/.agents/skills/**"
+forbidden_paths:
+  - ".git/**"
+  - "secrets/**"
+  - ".env"
+  - ".env.*"
+  - "Any source-code mutation"
+  - "Any daemon state mutation beyond read-only status/export queries"
+required_evidence:
+  - ".docs/auditoria/2026-06-09-post-release-audit-v042/informe-auditoria.md"
+  - ".docs/auditoria/2026-06-09-post-release-audit-v042/traceability-closure.yaml"
+stop_conditions:
+  - "governance_blocked=true"
+  - "docs_ready=false"
+  - "doc_count=0"
+  - "ae_canon.status in [missing, mismatch, projection_only]"
+  - "client/session attribution absent, manual-cli, or cli-<pid>"
+  - "any step requires mutating source code or daemon state"
+waivers: []
+mi_lsp_preflight:
+  alias: axi-smoke
+  root: "C:/repos/mios/mi-lsp"
+  cli_path: "C:/Users/fgpaz/bin/mi-lsp.exe"
+  cli_version: "v0.4.2+dirty revision=cff9b303ebcf protocol=mi-lsp-v1.1 rid=win-arm64"
+  governance_blocked: false
+  docs_ready: true
+  doc_count: 120
+  ae_canon:
+    status: valid
+    roots:
+      - ".docs/wiki/ae"
+    source: governance
+    blocking: false
+  client_name: claude-code
+  session_id: claude-audit-20260609
+brainstorming_decision_packet:
+  user_goal: "Deep review of all errors/performance problems since the v0.4.2 release, potential security leaks, performance improvements, and further harness token reductions."
+  observable_result: "Prioritized audit report with evidence (file:line, telemetry records) and a proposed remediation backlog."
+  session_type: validation_audit
+  selected_worker: "claude-code orchestrator + read-only Workflow lanes (telemetry, release-diff, security x2, performance, tokens) + adversarial verification"
+  ae_required: true
+  durable_destination: ".docs/auditoria/2026-06-09-post-release-audit-v042/"
+  open_questions: []
+  recommended_next_step: "Launch read-only multi-lane audit workflow, verify findings, synthesize report."
+ae_contract:
+  gateway_skill: ae-programa
+  selected_mode: validation_audit
+  decision_lock: locked
+  harness_adapter: claude-code
+  orchestration_depth: v0_shadow
+  subagent_lanes_planned: 7
+  allowed_paths:
+    - ".docs/auditoria/2026-06-09-post-release-audit-v042/**"
+  forbidden_paths:
+    - ".git/**"
+    - "secrets/**"
+    - ".env"
+    - "Any source mutation"
+  required_evidence:
+    - "informe-auditoria.md"
+    - "traceability-closure.yaml"
+  stop_conditions:
+    - "governance blocked"
+    - "mutation required"
+    - "unredacted secret risk"

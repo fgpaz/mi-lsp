@@ -68,7 +68,7 @@ La novedad de v1.3 es que el store repo-local persiste tambien el grafo document
   - JSON efimero con `pid`, `operation`, `started_at`; se crea con semantica exclusiva y se elimina al terminar la indexacion
 - `daemon.db`
   - `runtime_snapshots` con `repo_name`, `repo_root`, `entrypoint_id`, `entrypoint_path`, `entrypoint_type`
-  - `access_events` con `client_name`, `session_id`, `seq INTEGER DEFAULT 0`, `workspace_input`, `workspace_root`, `workspace_alias`, `repo`, `entrypoint_id`, `route`, `format`, `token_budget`, `max_items`, `max_chars`, `compress`, `error_kind`, `error_code`, `truncated`, `result_count`, `warning_count`, `pattern_mode`, `routing_outcome`, `failure_stage`, `hint_code`, `truncation_reason`, `decision_json`
+  - `access_events` con `client_name`, `session_id`, `seq INTEGER DEFAULT 0`, `workspace_input`, `workspace_root`, `workspace_alias`, `repo`, `entrypoint_id`, `route`, `format`, `token_budget`, `max_items`, `max_chars`, `compress`, `error_kind`, `error_code`, `truncated`, `result_count`, `warning_count`, `pattern_mode`, `routing_outcome`, `failure_stage`, `hint_code`, `truncation_reason`, `decision_json`, `decision_hash` (v0.5.0+)
 - `daemon status` / `/api/status`
   - `daemon_process` y `watchers` son snapshots derivados del proceso vivo; no se persisten como tablas nuevas.
 
@@ -105,9 +105,11 @@ La novedad de v1.3 es que el store repo-local persiste tambien el grafo document
 - `.mi-lsp/index.db` repo-local tambien usa WAL mode + `busy_timeout`, y las escrituras se serializan por workspace para evitar contencion entre watcher e index manual.
 - Las lecturas documentales criticas (`ListDocRecords`, `FindDocRecordsBySourceID`, `ListDocSourceBlocks`, `ListDocSourceRecords`, FTS doc search y helpers relacionados) aplican retry/backoff breve ante `database is locked` / `SQLITE_BUSY`; si el lock persiste, el error sigue visible.
 - Ante corrupcion de `index.db`, el runtime debe cuarentenar el archivo previo y reconstruir uno nuevo en el mismo workspace.
-- Auto-purge elimina eventos y runs con mas de 30 dias en startup de CLI y daemon.
+- Auto-purge elimina eventos y runs con mas de 30 dias en startup de CLI y daemon; debe ejecutarse con `VACUUM` para recuperar espacio en `daemon.db`.
 - La fila canonica de una request `route=daemon` la escribe el daemon.
 - Backpressure daemon-aware usa la telemetria existente: `error_kind=daemon`, `error_code=backpressure_busy`, `success=false` y warning `daemon/backpressure_busy`.
+- Permisos de archivo: `~/.mi-lsp/daemon/daemon.db` y `state.json` deben crearse con permisos 0o600 (rw--- para owner); `~/.mi-lsp/daemon/` debe tener 0o700 (rwx--- para owner). Esto protege exposicion de `admin_url` y `PID` a otros usuarios del mismo host.
+- `decision_hash` es un campo v0.5.0+ que guarda un hash corto del JSON `decision_json` para tracking de patrones de decision y deduplicacion sin overhead de almacenamiento directo del JSON; es opcional en migrations legacy.
 - La CLI directa solo graba `access_events` cuando la request se sirve como `direct`, `direct_fallback` o falla antes de delegarse al daemon; esos eventos pueden llevar `daemon_run_id = NULL`.
 - `runtime_key` debe persistirse tambien en filas `route=direct` o `route=direct_fallback` para que `admin export` pueda atribuir uso de queries directas a un workspace/backend/entrypoint estable; la clave usa `(workspace_root, backend_type, entrypoint_id)` y preserva alias/input en campos separados para display y forensics.
 - `result_count` representa los items emitidos en el envelope final; `warning_count` se persiste como contador explicito para que summary/CSV no dependan de re-hidratar `warnings_json`.

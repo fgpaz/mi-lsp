@@ -29,6 +29,11 @@ func docRankingMode() string {
 	}
 }
 
+// rankDocs ranks docs for a query. Ranking itself is cheap (O(n log n) over
+// already-loaded docs); the expensive doc load + FTS is cached per workspace in
+// doc_query_context.go (docCache). A ranking-level cache keyed only on the
+// question is unsafe across workspaces and was removed (PERF-02 is satisfied by
+// the workspace-scoped docCache).
 func rankDocs(question string, family string, docs []model.DocRecord, ftsScores map[string]float64, profile model.DocsReadProfile, recent []model.ReentryMemoryChange) []scoredDoc {
 	if docRankingMode() == docRankerLegacy {
 		return legacyRankDocs(question, family, docs, ftsScores)

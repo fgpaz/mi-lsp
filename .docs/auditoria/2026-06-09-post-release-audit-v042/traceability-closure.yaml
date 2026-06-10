@@ -1,0 +1,85 @@
+schema: ae-traceability-closure-v1
+task_slug: post-release-audit-v042
+date: 2026-06-09
+mode: validation_audit
+read_only: true
+session_contract_path: .docs/auditoria/2026-06-09-post-release-audit-v042/session-contract.yaml
+base_ref: main
+base_sha: 268f5125d70c12db67ef53bfed997c10f49589f6
+release_audited: v0.4.2 (cff9b30, 2026-06-03)
+git_before:
+  branch: main
+  head: 268f5125d70c12db67ef53bfed997c10f49589f6
+  upstream: origin/main
+  ahead_behind: "0/0"
+git_after:
+  branch: main
+  head: 268f5125d70c12db67ef53bfed997c10f49589f6
+  upstream: origin/main
+  ahead_behind: "0/0"
+changed_paths:
+  tracked: []
+  staged: []
+  untracked_evidence_only:
+    - .docs/auditoria/2026-06-09-post-release-audit-v042/session-contract.yaml
+    - .docs/auditoria/2026-06-09-post-release-audit-v042/informe-auditoria.md
+    - .docs/auditoria/2026-06-09-post-release-audit-v042/traceability-closure.yaml
+  raw_paths: []
+  forbidden_hits: []
+scope_verdict: PASS  # diff real == allowed_paths del contrato (solo .docs/auditoria/<task>/**); cero mutaciones de codigo/daemon/wiki
+mutations:
+  source_code: none
+  daemon_state: none
+  wiki_canon: none
+method:
+  orchestration: claude-code Workflow tool, runs wf_bff0fcdb-e36 (inicial + resume), 30 agents
+  lanes: [telemetria, release-diff, seguridad-daemon, seguridad-cli-worker-install, performance-runtime, tokens-harness]
+  verification: refutacion adversarial por hallazgo P0/P1; reconciliacion del orquestador = priorizar veredictos con acceso a daemon.db + registros presenciados (IDs 68444,68445,68447,68454,68458,68459)
+findings_summary:
+  p0: 0
+  p1: 4   # AUD-01 auto-index, AUD-02 release drift, AUD-03 resolution failures, AUD-04 roslyn per-call timeout
+  p2: 24
+  p3: 12
+  refuted: 3
+traceability_chains:
+  reviewed_anchors:
+    - "00_gobierno_documental (gate inicial: governance_blocked=false, in_sync, index current)"
+    - "FL-IDX-01 / RF-IDX-* (hallazgos AUD-01, PERF-01 referencian comportamiento de indexado vigente; sin cambio de spec en esta sesion)"
+    - "FL-DAE-01 / RF-DAE-* (hallazgos de daemon/admin API; sin cambio de spec)"
+    - "AE-RELEASE-DISTRIBUTION (AUD-02 registra drift abierto de binario instalado)"
+  missing_anchors: []
+  updated_paths: []   # auditoria read-only: ningun doc canonico requiere sync hasta ejecutar las waves de remediacion
+runtime_sensitive: false  # no se cambio ningun timeout/budget/header/config; solo se documentaron los vigentes
+data_or_contract_sensitive: false  # sin cambios de schema/contratos; nota: trabajo documental-only sobre evidencia operacional
+harness_verdict: PASS_WITH_NOTE  # artefactos de esta sesion son evidencia operacional bajo .docs/auditoria (no LLM-first wiki canon); no aplican contratos SDD-HARNESS-v1 por ser no-canon
+wiki_source_verdict: NOT_APPLICABLE  # no se creo ni edito ningun artefacto LLM-first de .docs/wiki
+board_sync: not_applicable  # sin tracker activo para esta tarea; backlog de remediacion queda en informe-auditoria.md seccion 5
+pre_push_inputs:
+  push_requested: false
+  rationale: evidencia es gitignored y no hay commits; nada que pushear
+no_drift_snapshot:
+  commands:
+    - "git status --short --branch -> ## main...origin/main (limpio)"
+    - "git diff --cached --name-only -> vacio"
+    - "git worktree list --porcelain -> solo C:/repos/mios/mi-lsp (main)"
+    - "git branch --no-merged main -> vacio"
+  result: clean
+branch_disposition: integrated  # se trabajo directo en main sin commits; nada que integrar
+cleanup_policy: already-clean
+completion_handoff:
+  target_skill: none  # no hay branch/worktree de tarea que integrar o limpiar
+  blockers: []
+governance:
+  gate_at_start: governance_blocked=false, docs_ready=true, doc_count=120, ae_canon=valid
+  preflight: recorded in session-contract.yaml (client_name=claude-code, session_id=claude-audit-20260609)
+spec_impact:
+  rf_changed: none
+  docs_sync_required: deferred  # las waves de remediacion gatillaran sync 07/08/09 + AE-RELEASE-DISTRIBUTION cuando se ejecuten
+  ae_release_distribution: AUD-02 registra drift abierto (binario instalado +dirty, daemon version=dev); remediacion diferida a wave release-hygiene por alcance bloqueado (opcion A)
+next_actions:
+  - wave runtime-P1 (AUD-01, AUD-04, AUD-05)
+  - wave release-hygiene (AUD-02)
+  - wave tokens-v2 (TOK-01..TOK-08)
+  - wave security-hardening (SEC-01..SEC-06)
+  - wave perf (PERF-02..PERF-08)
+verdict: APPROVED_FOR_DOCUMENTARY_CLOSURE  # read-only; evidencia requerida producida; cero drift introducido; push no solicitado

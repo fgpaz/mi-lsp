@@ -1,6 +1,8 @@
 package telemetry
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"os"
 	"reflect"
@@ -377,4 +379,20 @@ func payloadBool(payload map[string]any, key string) bool {
 	}
 	value, _ := payload[key].(bool)
 	return value
+}
+
+// RedactAccessEventPaths redacts absolute paths in an AccessEvent for export (SEC-05).
+// If redactPaths is true, replaces workspace_root with a sha256 hash prefix.
+// Used when exporting telemetry to untrusted destinations.
+func RedactAccessEventPaths(event model.AccessEvent, redactPaths bool) model.AccessEvent {
+	if !redactPaths {
+		return event
+	}
+	if strings.TrimSpace(event.WorkspaceRoot) != "" {
+		hash := sha256.Sum256([]byte(event.WorkspaceRoot))
+		event.WorkspaceRoot = "root_" + hex.EncodeToString(hash[:])[:12]
+	}
+	// Note: EntrypointPath is not currently in AccessEvent struct, but if added,
+	// it should be redacted similarly.
+	return event
 }

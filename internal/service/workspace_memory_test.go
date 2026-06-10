@@ -31,14 +31,41 @@ func TestWorkspaceStatusExposesMemoryPointerAndFullMemory(t *testing.T) {
 	root := createWorkspaceMemoryFixture(t, alias)
 	app := New(root, nil)
 
-	if _, err := app.Execute(context.Background(), model.CommandRequest{
+	initEnv, err := app.Execute(context.Background(), model.CommandRequest{
 		Operation: "workspace.init",
 		Context:   model.QueryOptions{},
 		Payload:   map[string]any{"path": root, "alias": alias},
-	}); err != nil {
+	})
+	if err != nil {
 		t.Fatalf("workspace.init: %v", err)
 	}
 	defer func() { _ = workspace.RemoveWorkspace(alias) }()
+
+	// L1: async indexing. Poll the background job to completion.
+	items, ok := initEnv.Items.([]map[string]any)
+	if ok && len(items) > 0 {
+		if jobID, found := items[0]["index_job_id"].(string); found && jobID != "" {
+			deadline := time.Now().Add(30 * time.Second)
+			for {
+				state, jobFound := indexer.IndexJobStatus(jobID)
+				if !jobFound {
+					t.Logf("job %s not found; continuing", jobID)
+					break
+				}
+				if state.Done {
+					if state.Err != "" {
+						t.Logf("index job error (non-fatal): %s", state.Err)
+					}
+					break
+				}
+				if time.Now().After(deadline) {
+					t.Logf("index job timed out (30s), continuing with test")
+					break
+				}
+				time.Sleep(100 * time.Millisecond)
+			}
+		}
+	}
 
 	previewEnv, err := app.Execute(context.Background(), model.CommandRequest{
 		Operation: "workspace.status",

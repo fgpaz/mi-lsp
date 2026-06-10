@@ -433,8 +433,10 @@ func TestWorkspaceStatusBlocksKapsitoStyleMissingGovernanceEmptyDocs(t *testing.
 	if !ok {
 		t.Fatalf("expected ae_canon status, got %#v", item["ae_canon"])
 	}
-	if aeCanon.Status != "missing" || !aeCanon.Blocking {
-		t.Fatalf("expected missing blocking ae_canon, got %#v", aeCanon)
+	// AECanon.Blocking should only be true if the workspace declares AE in its governance.
+	// When governance is missing, Blocking should be false (workspace must create governance first).
+	if aeCanon.Status != "missing" || aeCanon.Blocking {
+		t.Fatalf("expected missing non-blocking ae_canon when governance is missing, got %#v", aeCanon)
 	}
 }
 

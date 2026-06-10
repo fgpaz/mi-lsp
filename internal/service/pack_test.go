@@ -52,14 +52,17 @@ func TestNavPackPreviewUsesRouteCoreAnchorAndShortPack(t *testing.T) {
 	root := createFunctionalPackWorkspaceFixture(t, alias)
 	app := New(root, nil)
 
-	if _, err := app.Execute(context.Background(), model.CommandRequest{
+	initEnv, err := app.Execute(context.Background(), model.CommandRequest{
 		Operation: "workspace.init",
 		Context:   model.QueryOptions{},
 		Payload:   map[string]any{"path": root, "alias": alias},
-	}); err != nil {
+	})
+	if err != nil {
 		t.Fatalf("workspace.init: %v", err)
 	}
 	defer func() { _ = workspace.RemoveWorkspace(alias) }()
+
+	waitForIndexingComplete(t, initEnv)
 
 	env, err := app.Execute(context.Background(), model.CommandRequest{
 		Operation: "nav.pack",
@@ -105,14 +108,17 @@ func TestNavPackFullIncludesReadableSlices(t *testing.T) {
 	root := createFunctionalPackWorkspaceFixture(t, alias)
 	app := New(root, nil)
 
-	if _, err := app.Execute(context.Background(), model.CommandRequest{
+	initEnv, err := app.Execute(context.Background(), model.CommandRequest{
 		Operation: "workspace.init",
 		Context:   model.QueryOptions{},
 		Payload:   map[string]any{"path": root, "alias": alias},
-	}); err != nil {
+	})
+	if err != nil {
 		t.Fatalf("workspace.init: %v", err)
 	}
 	defer func() { _ = workspace.RemoveWorkspace(alias) }()
+
+	waitForIndexingComplete(t, initEnv)
 
 	env, err := app.Execute(context.Background(), model.CommandRequest{
 		Operation: "nav.pack",
@@ -243,14 +249,17 @@ func TestNavPackNextQueriesArePopulated(t *testing.T) {
 	alias := "pack-nq-" + filepath.Base(t.TempDir())
 	root := createFunctionalPackWorkspaceFixture(t, alias)
 	app := New(root, nil)
-	if _, err := app.Execute(context.Background(), model.CommandRequest{
+	initEnv, err := app.Execute(context.Background(), model.CommandRequest{
 		Operation: "workspace.init",
 		Context:   model.QueryOptions{},
 		Payload:   map[string]any{"path": root, "alias": alias},
-	}); err != nil {
+	})
+	if err != nil {
 		t.Fatalf("workspace.init: %v", err)
 	}
 	defer func() { _ = workspace.RemoveWorkspace(alias) }()
+
+	waitForIndexingComplete(t, initEnv)
 
 	env, err := app.Execute(context.Background(), model.CommandRequest{
 		Operation: "nav.pack",
@@ -276,14 +285,17 @@ func TestNavPackExplicitRFAnchorWinsOverRouteCore(t *testing.T) {
 	alias := "pack-rf-anchor-" + filepath.Base(t.TempDir())
 	root := createFunctionalPackWorkspaceFixture(t, alias)
 	app := New(root, nil)
-	if _, err := app.Execute(context.Background(), model.CommandRequest{
+	initEnv, err := app.Execute(context.Background(), model.CommandRequest{
 		Operation: "workspace.init",
 		Context:   model.QueryOptions{},
 		Payload:   map[string]any{"path": root, "alias": alias},
-	}); err != nil {
+	})
+	if err != nil {
 		t.Fatalf("workspace.init: %v", err)
 	}
 	defer func() { _ = workspace.RemoveWorkspace(alias) }()
+
+	waitForIndexingComplete(t, initEnv)
 
 	env, err := app.Execute(context.Background(), model.CommandRequest{
 		Operation: "nav.pack",
@@ -310,14 +322,17 @@ func TestNavPackFullExplicitDocIsAnchorFirstAndPreserved(t *testing.T) {
 	alias := "pack-doc-anchor-full-" + filepath.Base(t.TempDir())
 	root := createFunctionalPackWorkspaceFixture(t, alias)
 	app := New(root, nil)
-	if _, err := app.Execute(context.Background(), model.CommandRequest{
+	initEnv, err := app.Execute(context.Background(), model.CommandRequest{
 		Operation: "workspace.init",
 		Context:   model.QueryOptions{},
 		Payload:   map[string]any{"path": root, "alias": alias},
-	}); err != nil {
+	})
+	if err != nil {
 		t.Fatalf("workspace.init: %v", err)
 	}
 	defer func() { _ = workspace.RemoveWorkspace(alias) }()
+
+	waitForIndexingComplete(t, initEnv)
 
 	wantPrimary := ".docs/wiki/04_RF/RF-AUTH-001.md"
 	env, err := app.Execute(context.Background(), model.CommandRequest{
@@ -347,14 +362,17 @@ func TestNavPackLookupStatusUsesPrimaryDocForExactRF(t *testing.T) {
 	alias := "pack-lookup-rf-" + filepath.Base(t.TempDir())
 	root := createFunctionalPackWorkspaceFixture(t, alias)
 	app := New(root, nil)
-	if _, err := app.Execute(context.Background(), model.CommandRequest{
+	initEnv, err := app.Execute(context.Background(), model.CommandRequest{
 		Operation: "workspace.init",
 		Context:   model.QueryOptions{},
 		Payload:   map[string]any{"path": root, "alias": alias},
-	}); err != nil {
+	})
+	if err != nil {
 		t.Fatalf("workspace.init: %v", err)
 	}
 	defer func() { _ = workspace.RemoveWorkspace(alias) }()
+
+	waitForIndexingComplete(t, initEnv)
 
 	env, err := app.Execute(context.Background(), model.CommandRequest{
 		Operation: "nav.pack",

@@ -5,6 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] (unreleased)
+
+### Added
+
+- `AE-MANIFEST.toml`: lazy-load index of required AE docs with phase metadata and evidence tracking (TOK-08)
+- Provenance gate in release script (`ae-release-binaries.ps1`): abort if working tree is dirty, verify built binary does not report `vcs.modified=true` (AUD-02)
+- Security warning in install scripts when `GITHUB_TOKEN` environment variable is set (SEC-08)
+- Migration note in `pre-push-guard.ps1` for session contracts without `mi_lsp_preflight` block
+- Security documentation for MSBuild trust model (SEC-07) in CLAUDE.md
+
+### Changed
+
+- `CLAUDE.md` and `AGENTS.md` now reference `PATHS.md` for shared AE Programa Gateway and Subagent Orchestration sections (TOK-07)
+- Moved authoritative AE gateway documentation to `PATHS.md` to eliminate duplication across harness policy files
+
+### Docs
+
+- `PATHS.md`: expanded with AE Programa Gateway and Subagent Orchestration Protocol (shared foundation for all harnesses)
+
 ## [Unreleased]
 
 ### Fixed

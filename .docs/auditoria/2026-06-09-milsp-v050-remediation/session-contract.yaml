@@ -1,0 +1,100 @@
+schema: ae-session-contract-v1
+task_slug: milsp-v050-remediation
+issue_or_waiver: "User requested a mega-plan to resolve all 48 post-release-v0.4.2 audit findings + 4 new features, with a full AE cycle, binary refresh, skill update, and v0.5.0 release. Brainstorming locked: single v0.5.0, full P1+P2+P3 scope, all 4 new ideas, worktree-per-lane."
+base_ref: main
+base_sha: 268f5125d70c12db67ef53bfed997c10f49589f6
+branch: v050/integration
+worktree_path: "C:/wt/v050-integration (per-lane worktrees under C:/wt/v050-*)"
+mode: orquestado_deterministico
+parent_execution_mode: orchestrator_plus_local_critical_path
+decision_lock: locked
+harness_adapter: claude-code
+orchestration_depth: v0_shadow
+closure_profile: C3_RUNTIME
+cleanup_policy: auto-after-successful-integration
+created_at: "2026-06-09T20:55:00-03:00"
+updated_at: "2026-06-09T20:55:00-03:00"
+expected_scope: >
+  Implement the v0.5.0 remediation plan (.docs/raw/plans/2026-06-09-milsp-v050-remediation.md):
+  10 parallel implementation lanes (exclusive file ownership) + integration aggregator + clean
+  binary build with provenance gate + tech-canon and skill-mirror sync + v0.5.0 release, closed
+  with traceability/audit/pre-push and guarded integration to main.
+allowed_paths:
+  - "internal/**"
+  - "cmd/**"
+  - "worker-dotnet/MiLsp.Worker/**"
+  - "scripts/release/**"
+  - "scripts/install/**"
+  - "scripts/ae/**"
+  - ".docs/wiki/07_baseline_tecnica.md"
+  - ".docs/wiki/07_tech/**"
+  - ".docs/wiki/08_modelo_fisico_datos.md"
+  - ".docs/wiki/08_db/**"
+  - ".docs/wiki/09_contratos_tecnicos.md"
+  - ".docs/wiki/09_contratos/**"
+  - ".docs/wiki/ae/**"
+  - "CLAUDE.md"
+  - "AGENTS.md"
+  - "PATHS.md"
+  - "CHANGELOG.md"
+  - "C:/Users/fgpaz/.agents/skills/mi-lsp/**"
+  - "C:/repos/buho/assets/skills/mi-lsp/**"
+  - ".docs/auditoria/2026-06-09-milsp-v050-remediation/**"
+  - ".docs/raw/plans/2026-06-09-milsp-v050-remediation*/**"
+forbidden_paths:
+  - ".git/**"
+  - "secrets/**"
+  - ".env"
+  - ".env.*"
+  - "worker-dotnet/**/obj/**"
+  - "worker-dotnet/**/bin/**"
+  - ".docs/wiki/00_gobierno_documental.md"
+  - ".docs/wiki/_mi-lsp/read-model.toml"
+required_evidence:
+  - ".docs/auditoria/2026-06-09-milsp-v050-remediation/L{1..10}-verdict.yaml"
+  - ".docs/auditoria/2026-06-09-milsp-v050-remediation/A1-integration.yaml"
+  - ".docs/auditoria/2026-06-09-milsp-v050-remediation/release-provenance.yaml"
+  - ".docs/auditoria/2026-06-09-milsp-v050-remediation/ae-release-distribution.yaml"
+  - ".docs/auditoria/2026-06-09-milsp-v050-remediation/traceability-closure.yaml"
+stop_conditions:
+  - "governance_blocked=true at any gate"
+  - "two lanes mutate the same Go file (planning defect)"
+  - "release binary still reports +dirty after provenance gate"
+  - "daemon still reports version=dev after L2 version propagation"
+  - "skill source and mirror hashes differ"
+explicit_user_approval_required_for:
+  - "Wave 3 binary reinstall into C:/Users/fgpaz/bin (overwrites installed CLI)"
+  - "Wave 4 commit to the separate buho repo (skill mirror)"
+  - "Wave 5 release publish / tag push"
+  - "Final guarded merge to origin/main"
+waivers: []
+mi_lsp_preflight:
+  alias: axi-smoke
+  root: "C:/repos/mios/mi-lsp"
+  cli_path: "C:/Users/fgpaz/bin/mi-lsp.exe"
+  governance_blocked: false
+  docs_ready: true
+  doc_count: 120
+  ae_canon:
+    status: valid
+    roots: [".docs/wiki/ae"]
+    blocking: false
+  client_name: claude-code
+  session_id: claude-audit-20260609
+ae_contract:
+  gateway_skill: ae-programa
+  selected_mode: orquestado_deterministico
+  decision_lock: locked
+  harness_adapter: claude-code
+  orchestration_depth: v0_shadow
+  closure_profile: C3_RUNTIME
+  worker_decision: spawned
+  worker_authorized_by_user: true
+  worker_fanout_plan:
+    max_safe_wave_size: 10
+    join_gate: "A1 integration aggregator"
+    integration_aggregator_required: true
+    parent_local_critical_path: "gates, decision lock, integration supervision, release coordination"
+  allowed_paths_ref: see allowed_paths
+  required_evidence_ref: see required_evidence
+  stop_conditions_ref: see stop_conditions

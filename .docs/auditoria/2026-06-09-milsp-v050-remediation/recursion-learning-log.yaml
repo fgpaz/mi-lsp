@@ -1,0 +1,10 @@
+schema: ae-recursion-learning-log-v1
+session: milsp-v050-remediation
+recursion_depth: v0_shadow
+recursion_needed_events:
+  - parent_orchestrator_id: director-ae
+    proposed_child_type: task_orchestrator
+    reason: "10 implementation lanes + integration + release verification would benefit from level-3 task orchestrators per lane, but v0_shadow forbids launching child orchestrators; lanes run as flat constructor workers under the director."
+    missing_contract_fields: []
+    recommendation: "Consider v1_supervised with independent verifier lanes (security + perf) for the integration/runtime verification phase in a future supervised pilot."
+learnings_pending_closure: true

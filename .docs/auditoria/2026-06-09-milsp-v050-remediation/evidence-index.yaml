@@ -1,0 +1,25 @@
+schema: ae-evidence-index-v1
+session: milsp-v050-remediation
+plan: ".docs/raw/plans/2026-06-09-milsp-v050-remediation.md"
+plan_subdocs_dir: ".docs/raw/plans/2026-06-09-milsp-v050-remediation/"
+source_audit: ".docs/auditoria/2026-06-09-post-release-audit-v042/informe-auditoria.md"
+artifacts:
+  contract: "session-contract.yaml"
+  registry: "orchestrator-registry.yaml"
+  decisions: "decision-ledger.yaml"
+  recursion_log: "recursion-learning-log.yaml"
+expected_execution_evidence:
+  - "discovery.yaml (T1)"
+  - "T0-worktrees.yaml (T0)"
+  - "L1..L10-verdict.yaml (Wave 1)"
+  - "A1-integration.yaml (Wave 2)"
+  - "release-provenance.yaml (Wave 3 / B1)"
+  - "L11a-verdict.yaml, L11b-verdict.yaml (Wave 4)"
+  - "ae-release-distribution.yaml (Wave 5 / R1)"
+  - "traceability-closure.yaml (Final F1)"
+status: wave0_discovery_done_wave1_pending
+wave0_progress:
+  T1_discovery: done (discovery.yaml; 3 signature corrections applied to T2/L1/L2/L3/L7)
+  T0_worktrees: pending (not yet created)
+  T2_schema_stubs: pending
+notes: "Plan validated against HEAD 268f512. Corrections: indexer uses package funcs (no Engine); store is TelemetryStore (no StateStore); envelope is model.Envelope (no QueryEnvelope)."

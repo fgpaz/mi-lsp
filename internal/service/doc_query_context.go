@@ -51,6 +51,7 @@ func loadDocQueryContext(ctx context.Context, registration model.WorkspaceRegist
 		return query
 	}
 	query.db = db
+
 	docs, err := store.ListDocRecords(ctx, db)
 	if err != nil {
 		query.dbErr = err
@@ -66,11 +67,13 @@ func loadDocQueryContext(ctx context.Context, registration model.WorkspaceRegist
 	if len(docs) == 0 {
 		return query
 	}
+
 	_, query.ftsScores, _ = store.FTSSearchDocs(ctx, db, rankingTask, 20)
 	query.ranked = rankDocs(rankingTask, query.family, docs, query.ftsScores, query.profile, query.recentChanges)
 	for _, item := range query.ranked {
 		query.rankedByPath[item.record.Path] = item
 	}
+
 	return query
 }
 
@@ -188,3 +191,4 @@ func (q *docQueryContext) primaryDoc(routeResult model.RouteResult) (scoredDoc, 
 	}
 	return scoredDoc{}, false
 }
+

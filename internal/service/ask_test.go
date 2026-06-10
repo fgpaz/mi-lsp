@@ -5,11 +5,45 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/fgpaz/mi-lsp/internal/indexer"
 	"github.com/fgpaz/mi-lsp/internal/model"
 	"github.com/fgpaz/mi-lsp/internal/store"
 	"github.com/fgpaz/mi-lsp/internal/workspace"
 )
+
+// waitForIndexingComplete polls the background index job from an init response to completion.
+// Helper for L1: async-first indexing. Non-fatal if job not found.
+func waitForIndexingComplete(t *testing.T, initEnv model.Envelope) {
+	t.Helper()
+	items, ok := initEnv.Items.([]map[string]any)
+	if !ok || len(items) == 0 {
+		return
+	}
+	jobID, found := items[0]["index_job_id"].(string)
+	if !found || jobID == "" {
+		return
+	}
+	deadline := time.Now().Add(30 * time.Second)
+	for {
+		state, jobFound := indexer.IndexJobStatus(jobID)
+		if !jobFound {
+			return
+		}
+		if state.Done {
+			if state.Err != "" {
+				t.Logf("index job completed with error (non-fatal): %s", state.Err)
+			}
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Logf("index job timed out (30s), proceeding anyway")
+			return
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+}
 
 func createIndexedWorkspaceFixture(t *testing.T, alias string) string {
 	t.Helper()
@@ -106,9 +140,35 @@ func TestWorkspaceInitRegistersAndIndexes(t *testing.T) {
 	if item["name"] != alias {
 		t.Fatalf("name = %#v, want %s", item["name"], alias)
 	}
+
+	// Sync auto-index is the default: init returns index stats directly so the
+	// init-then-query contract holds.
 	if item["index_files"] == nil {
-		t.Fatalf("expected init to auto-index, got %#v", item)
+		t.Fatalf("expected init to auto-index synchronously, got %#v", item)
 	}
+
+	// Now check that the index was populated
+	env2, err := app.Execute(context.Background(), model.CommandRequest{
+		Operation: "workspace.status",
+		Context: model.QueryOptions{
+			Workspace: alias,
+		},
+	})
+	if err != nil {
+		t.Fatalf("workspace.status after index: %v", err)
+	}
+	statusItems, ok := env2.Items.([]interface{})
+	if !ok || len(statusItems) != 1 {
+		t.Fatalf("expected one status item, got %#v", env2.Items)
+	}
+	statusItem, ok := statusItems[0].(map[string]any)
+	if !ok {
+		t.Fatalf("expected status item to be map, got %T", statusItems[0])
+	}
+	if statusItem["index_ready"] != true {
+		t.Fatalf("expected index_ready=true after job completion, got %#v", statusItem)
+	}
+
 	nextSteps, ok := item["next_steps"].([]string)
 	if !ok || len(nextSteps) == 0 || !strings.Contains(nextSteps[0], "--workspace "+alias) {
 		t.Fatalf("expected init next steps to include workspace alias, got %#v", item["next_steps"])
@@ -123,14 +183,18 @@ func TestNavAskUsesWikiAndCodeEvidence(t *testing.T) {
 	root := createIndexedWorkspaceFixture(t, alias)
 	app := New(root, nil)
 
-	if _, err := app.Execute(context.Background(), model.CommandRequest{
+	initEnv, err := app.Execute(context.Background(), model.CommandRequest{
 		Operation: "workspace.init",
 		Context:   model.QueryOptions{},
 		Payload:   map[string]any{"path": root, "alias": alias},
-	}); err != nil {
+	})
+	if err != nil {
 		t.Fatalf("workspace.init: %v", err)
 	}
 	defer func() { _ = workspace.RemoveWorkspace(alias) }()
+
+	// L1: Wait for async indexing to complete before nav.ask
+	waitForIndexingComplete(t, initEnv)
 
 	env, err := app.Execute(context.Background(), model.CommandRequest{
 		Operation: "nav.ask",
@@ -247,13 +311,18 @@ func TestNavAskNormalizesAnchorIntentAndWarnsOnRawDrift(t *testing.T) {
 	writeSpecBackendGovernanceFixture(t, root)
 
 	app := New(root, nil)
-	if _, err := app.Execute(context.Background(), model.CommandRequest{
+	// L1 async indexing: pass wait=true so init indexes synchronously. Otherwise the
+	// background index job races with (and clobbers) the store.ReplaceDocs below,
+	// making the ranking tiebreak non-deterministic.
+	initEnv, err := app.Execute(context.Background(), model.CommandRequest{
 		Operation: "workspace.init",
 		Context:   model.QueryOptions{},
-		Payload:   map[string]any{"path": root, "alias": alias},
-	}); err != nil {
+		Payload:   map[string]any{"path": root, "alias": alias, "wait": true},
+	})
+	if err != nil {
 		t.Fatalf("workspace.init: %v", err)
 	}
+	waitForIndexingComplete(t, initEnv)
 	defer func() { _ = workspace.RemoveWorkspace(alias) }()
 
 	db, err := store.Open(root)
@@ -282,8 +351,28 @@ func TestNavAskNormalizesAnchorIntentAndWarnsOnRawDrift(t *testing.T) {
 		t.Fatalf("nav.ask: %v", err)
 	}
 	results := env.Items.([]model.AskResult)
+	// L6: Search ranking prioritizes FTS match + code evidence. FL-VALIDATION-01 has both:
+	// - FTS match: "validar" appears in SearchText
+	// - Code mention: ValidationService.cs matches "validar workflow servicios"
+	// FL-AUDI-PII-01 has FTS match ("anclas") but no code evidence.
+	// Combined, FL-VALIDATION-01 ranks higher now (code evidence + FTS > FTS alone).
 	if results[0].PrimaryDoc.DocID != "FL-VALIDATION-01" {
-		t.Fatalf("primary doc id = %q, want FL-VALIDATION-01; result=%#v warnings=%#v", results[0].PrimaryDoc.DocID, results[0], env.Warnings)
+		t.Fatalf("primary doc id = %q, want FL-VALIDATION-01 (L6: FTS+code rank); result=%#v warnings=%#v", results[0].PrimaryDoc.DocID, results[0], env.Warnings)
+	}
+	// Verify FL-AUDI-PII-01 still appears in supporting evidence
+	hasAudiEvi := false
+	for _, doc := range results[0].DocEvidence {
+		if doc.DocID == "FL-AUDI-PII-01" {
+			hasAudiEvi = true
+			break
+		}
+	}
+	if !hasAudiEvi {
+		t.Fatalf("expected FL-AUDI-PII-01 in doc evidence, got %#v", results[0].DocEvidence)
+	}
+	// Verify code evidence is present
+	if len(results[0].CodeEvidence) == 0 {
+		t.Fatalf("expected code evidence for primary doc, got %#v", results[0])
 	}
 	if env.Coach == nil || env.Coach.Trigger != coachTriggerAnchorDrift {
 		t.Fatalf("expected anchor_drift coach, got %#v warnings=%#v", env.Coach, env.Warnings)
@@ -298,14 +387,17 @@ func TestNavAskPrefersExplicitLinkedDocs(t *testing.T) {
 	root := createLinkedDocsWorkspaceFixture(t, alias)
 	app := New(root, nil)
 
-	if _, err := app.Execute(context.Background(), model.CommandRequest{
+	initEnv, err := app.Execute(context.Background(), model.CommandRequest{
 		Operation: "workspace.init",
 		Context:   model.QueryOptions{},
 		Payload:   map[string]any{"path": root, "alias": alias},
-	}); err != nil {
+	})
+	if err != nil {
 		t.Fatalf("workspace.init: %v", err)
 	}
 	defer func() { _ = workspace.RemoveWorkspace(alias) }()
+
+	waitForIndexingComplete(t, initEnv)
 
 	env, err := app.Execute(context.Background(), model.CommandRequest{
 		Operation: "nav.ask",
@@ -340,14 +432,17 @@ func TestNavAskFallsBackWhenDocsIndexIsEmpty(t *testing.T) {
 	writeSpecBackendGovernanceFixture(t, root)
 	app := New(root, nil)
 
-	if _, err := app.Execute(context.Background(), model.CommandRequest{
+	initEnv, err := app.Execute(context.Background(), model.CommandRequest{
 		Operation: "workspace.init",
 		Context:   model.QueryOptions{},
 		Payload:   map[string]any{"path": root, "alias": alias},
-	}); err != nil {
+	})
+	if err != nil {
 		t.Fatalf("workspace.init: %v", err)
 	}
 	defer func() { _ = workspace.RemoveWorkspace(alias) }()
+
+	waitForIndexingComplete(t, initEnv)
 
 	db, err := store.Open(root)
 	if err != nil {
@@ -405,14 +500,17 @@ func TestNavAskGenericMatchPrefersLexicalSearchNextQuery(t *testing.T) {
 	root := createGenericDocsWorkspaceFixture(t, alias)
 	app := New(root, nil)
 
-	if _, err := app.Execute(context.Background(), model.CommandRequest{
+	initEnv, err := app.Execute(context.Background(), model.CommandRequest{
 		Operation: "workspace.init",
 		Context:   model.QueryOptions{},
 		Payload:   map[string]any{"path": root, "alias": alias},
-	}); err != nil {
+	})
+	if err != nil {
 		t.Fatalf("workspace.init: %v", err)
 	}
 	defer func() { _ = workspace.RemoveWorkspace(alias) }()
+
+	waitForIndexingComplete(t, initEnv)
 
 	env, err := app.Execute(context.Background(), model.CommandRequest{
 		Operation: "nav.ask",
@@ -457,14 +555,17 @@ func TestNavAskUsesBuiltinProfileForMinimalTechnicalDocs(t *testing.T) {
 	writeSpecBackendGovernanceFixture(t, root)
 	app := New(root, nil)
 
-	if _, err := app.Execute(context.Background(), model.CommandRequest{
+	initEnv, err := app.Execute(context.Background(), model.CommandRequest{
 		Operation: "workspace.init",
 		Context:   model.QueryOptions{},
 		Payload:   map[string]any{"path": root, "alias": alias},
-	}); err != nil {
+	})
+	if err != nil {
 		t.Fatalf("workspace.init: %v", err)
 	}
 	defer func() { _ = workspace.RemoveWorkspace(alias) }()
+
+	waitForIndexingComplete(t, initEnv)
 
 	env, err := app.Execute(context.Background(), model.CommandRequest{
 		Operation: "nav.ask",
@@ -493,10 +594,12 @@ func TestNavAskAXIPreviewEmitsPreviewTrimmedCoach(t *testing.T) {
 	root := createLinkedDocsWorkspaceFixture(t, alias)
 	app := New(root, nil)
 
+	// L1 async indexing: wait=true so init indexes synchronously before the test
+	// injects docs below (otherwise the background reindex clobbers store.ReplaceDocs).
 	if _, err := app.Execute(context.Background(), model.CommandRequest{
 		Operation: "workspace.init",
 		Context:   model.QueryOptions{},
-		Payload:   map[string]any{"path": root, "alias": alias},
+		Payload:   map[string]any{"path": root, "alias": alias, "wait": true},
 	}); err != nil {
 		t.Fatalf("workspace.init: %v", err)
 	}
@@ -575,14 +678,17 @@ func TestNavAskNextQueriesIncludeRepoForContainerEvidence(t *testing.T) {
 	}
 
 	app := New(root, nil)
-	if _, err := app.Execute(context.Background(), model.CommandRequest{
+	initEnv, err := app.Execute(context.Background(), model.CommandRequest{
 		Operation: "workspace.init",
 		Context:   model.QueryOptions{},
 		Payload:   map[string]any{"path": root, "alias": alias},
-	}); err != nil {
+	})
+	if err != nil {
 		t.Fatalf("workspace.init: %v", err)
 	}
 	defer func() { _ = workspace.RemoveWorkspace(alias) }()
+
+	waitForIndexingComplete(t, initEnv)
 
 	env, err := app.Execute(context.Background(), model.CommandRequest{
 		Operation: "nav.ask",
