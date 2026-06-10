@@ -226,10 +226,22 @@ func (s *Server) handleRequest(request model.CommandRequest) (model.Envelope, er
 		// Default to 5 recent accesses for token efficiency.
 		// Opt-in to 20 with --telemetry flag or full context.
 		recentAccessCount := 5
-		if request.Context.Full || strings.EqualFold(request.Context.Format, "telemetry") {
+		fullTelemetry := request.Context.Full || strings.EqualFold(request.Context.Format, "telemetry")
+		if fullTelemetry {
 			recentAccessCount = 20
 		}
 		accesses, _ := s.telemetry.RecentAccesses(recentAccessCount)
+		if !fullTelemetry {
+			// TOK-03: strip the long, repeated absolute-path fields from the compact
+			// recent_accesses view to cut token cost (workspace_root and runtime_key embed
+			// the full root on every event). The workspace alias is retained; full detail
+			// stays available via --full or --format telemetry.
+			for i := range accesses {
+				accesses[i].WorkspaceRoot = ""
+				accesses[i].RuntimeKey = ""
+				accesses[i].EntrypointID = ""
+			}
+		}
 		return model.Envelope{
 			Ok:      true,
 			Backend: "daemon",
