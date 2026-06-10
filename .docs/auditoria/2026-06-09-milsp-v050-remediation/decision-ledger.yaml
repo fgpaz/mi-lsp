@@ -28,6 +28,14 @@ locked_decisions:
   - id: D9
     decision: "Waves 3 (binary reinstall), 4 (buho mirror commit), 5 (release publish), and final guarded merge require explicit user approval (C3 irreversible/outward-facing)"
     source: ae-programa Live Runtime Staging Gate
+integration_deviations:
+  - id: DEV-D6-sync-default
+    original_decision: "D6 — indexado async-first: workspace.add/init devuelve job_id al instante e indexa en background (default async)"
+    deviation: "Integración invirtió el default a SÍNCRONO acotado por IndexTimeout; async queda como modo de primera clase opt-in vía --background/background:true."
+    rationale: "Async-by-default rompía el contrato init-then-query (callers/agentes recibían índice vacío tras init) y hacía timing-flaky ~docenas de tests init-then-assert (CI lo expuso en linux/windows lentos: TestNavAsk*, TestNavDiffContext, etc.). El espíritu de AUD-01 (no colgar 300s) se cumple con incremental + IndexTimeout acotado + escape --background para repos grandes."
+    status: needs_user_review
+    reversible: true
+    docs_synced: ["07_baseline_tecnica.md", "09_contratos/CT-CLI-DAEMON-ADMIN.md"]
 deferred_or_followups:
   - id: F-SEC03
     note: "Named pipe SDDL: if go-winio vendored version lacks SDDL param, record as documented follow-up, do not fake"

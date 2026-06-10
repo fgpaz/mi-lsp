@@ -125,7 +125,7 @@ Reglas:
 - `index status` expone progreso vivo en `current_stage`, `current_path`, `files_total`, `files`, `symbols`, `docs` y `updated_at`; esos campos deben refrescarse durante catalogo/docs antes de publicar.
 - `index cancel` marca cancelacion solicitada; la cancelacion es cooperativa y puede no interrumpir una publicacion que ya llego al commit.
 - `index cancel --force` puede terminar el PID vivo del job, marcarlo `canceled` y remover el `.mi-lsp/index.lock` si pertenece a ese PID ya muerto; se reserva para jobs colgados.
-- `workspace.add`, `init` aceptan `--wait` para bloquear hasta completar indexacion async; sin `--wait` devuelven `job_id` y continuan en background. `--no-index` omite indexacion.
+- `workspace.add`, `init` indexan **sincronicamente por default** (acotado por `IndexTimeout`, `MI_LSP_INDEX_TIMEOUT` 5min) para preservar el contrato init-then-query; `--background`/`background:true` indexa en background y devuelve `job_id` para workspaces muy grandes; `--no-index` omite indexacion. `--wait` es no-op de compatibilidad.
 - sin `--docs-only`, indexa catalogo de codigo y grafo documental, con incremental git-aware cuando corresponde.
 - con `--docs-only`, reconstruye `doc_records`, `doc_edges`, `doc_mentions` y `memory_pointer` sin reemplazar `files` ni `symbols`.
 - toda indexacion toma `.mi-lsp/index.lock`; si ya existe, la operacion debe fallar con mensaje accionable que incluya el lock owner cuando este disponible.
