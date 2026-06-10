@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.2]
+
+### Fixed
+
+- **PERF-04**: `PRAGMA optimize` now actually runs after a bulk index publish (`ReplaceWorkspaceIndex`/`Docs`/`Catalog`). The helper was added in v0.5.0 but never called (dead code); SQLite query-planner statistics were never refreshed post-publish. Caught by adversarial verification.
+- **TOK-03**: `daemon status` `recent_accesses` now strips the long, repeated absolute-path fields (`workspace_root`, `runtime_key`, `entrypoint_id`) from the compact view (full detail remains under `--full`/`--format telemetry`). Previously claimed "handled by the output layer" but unimplemented. Caught by adversarial verification.
+
 ## [0.5.1]
 
 ### Changed

@@ -36,7 +36,13 @@ func ReplaceWorkspaceIndex(ctx context.Context, db *sql.DB, generationID string,
 	if err := publishGenerationTx(ctx, tx, generationID, "full", len(files), len(symbols), len(docs)); err != nil {
 		return err
 	}
-	return tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	// PERF-04: run PRAGMA optimize after a bulk index publish so SQLite refreshes
+	// query-planner statistics for the new data. Best-effort; never fail the publish.
+	_ = PublishIndexPragmaOptimize(db)
+	return nil
 }
 
 func ReplaceWorkspaceDocs(ctx context.Context, db *sql.DB, generationID string, docs []model.DocRecord, edges []model.DocEdge, mentions []model.DocMention, sourceBlocks []model.DocSourceBlock, sourceRecords []model.DocSourceRecord, snapshot model.ReentryMemorySnapshot) error {
@@ -55,7 +61,13 @@ func ReplaceWorkspaceDocs(ctx context.Context, db *sql.DB, generationID string, 
 	if err := publishGenerationTx(ctx, tx, generationID, "docs", 0, 0, len(docs)); err != nil {
 		return err
 	}
-	return tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	// PERF-04: run PRAGMA optimize after a bulk index publish so SQLite refreshes
+	// query-planner statistics for the new data. Best-effort; never fail the publish.
+	_ = PublishIndexPragmaOptimize(db)
+	return nil
 }
 
 func ReplaceWorkspaceCatalog(ctx context.Context, db *sql.DB, generationID string, project model.ProjectFile, files []model.FileRecord, symbols []model.SymbolRecord) error {
@@ -71,7 +83,13 @@ func ReplaceWorkspaceCatalog(ctx context.Context, db *sql.DB, generationID strin
 	if err := publishGenerationTx(ctx, tx, generationID, "catalog", len(files), len(symbols), 0); err != nil {
 		return err
 	}
-	return tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	// PERF-04: run PRAGMA optimize after a bulk index publish so SQLite refreshes
+	// query-planner statistics for the new data. Best-effort; never fail the publish.
+	_ = PublishIndexPragmaOptimize(db)
+	return nil
 }
 
 func publishGenerationTx(ctx context.Context, tx *sql.Tx, generationID string, mode string, files int, symbols int, docs int) error {
