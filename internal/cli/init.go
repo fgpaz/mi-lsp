@@ -21,6 +21,6 @@ func newInitCommand(state *rootState) *cobra.Command {
 	command.Flags().StringVar(&alias, "name", "", "Workspace alias")
 	command.Flags().BoolVar(&noIndex, "no-index", false, "Skip automatic indexing after registration")
 	command.Flags().BoolVar(&background, "background", false, "Index asynchronously in the background and return immediately (for very large workspaces)")
-	command.Flags().BoolVar(&wait, "wait", false, "Deprecated/no-op: indexing is synchronous by default; use --background for async")
+	command.Flags().BoolVar(&wait, "wait", false, "Block until indexing fully completes (forces full sync; no smart-sync degrade to background)")
 	return command
 }
