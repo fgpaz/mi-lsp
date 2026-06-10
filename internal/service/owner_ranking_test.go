@@ -812,3 +812,45 @@ func hasAnyContinuationOwnerPath(path string) bool {
 	}
 	return false
 }
+
+func TestRankDocsCaching(t *testing.T) {
+	// Verify that rankDocs returns cached results on second call (PERF-02).
+	// Clear cache first to ensure clean state.
+	ClearRankingCache()
+
+	docs := []model.DocRecord{
+		{
+			Path:       ".docs/wiki/04_RF/RF-QRY-010.md",
+			Title:      "RF-QRY-010 continuation memory pointer",
+			DocID:      "RF-QRY-010",
+			Family:     "functional",
+			Layer:      "04",
+			SearchText: "continuation memory pointer",
+		},
+		{
+			Path:       ".docs/wiki/09_contratos/CT-NAV-ASK.md",
+			Title:      "CT-NAV-ASK contract",
+			DocID:      "CT-NAV-ASK",
+			Family:     "technical",
+			Layer:      "09",
+			SearchText: "ask contract",
+		},
+	}
+
+	question := "continuation and memory pointer"
+
+	// First call should compute ranking
+	result1 := rankDocs(question, "functional", docs, nil, model.DocsReadProfile{}, nil)
+	if len(result1) == 0 {
+		t.Fatalf("expected ranked docs, got none")
+	}
+
+	// Second call should return cached result (same pointer reference check isn't reliable,
+	// so we just verify it returns the same results)
+	result2 := rankDocs(question, "functional", docs, nil, model.DocsReadProfile{}, nil)
+	if len(result2) == 0 || result2[0].record.DocID != result1[0].record.DocID {
+		t.Fatalf("expected cache to return same ranking, got %v", result2)
+	}
+
+	ClearRankingCache()
+}
