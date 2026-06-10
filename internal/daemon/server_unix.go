@@ -31,14 +31,15 @@ func listenDaemon() (net.Listener, error) {
 		}
 		_ = os.Remove(endpoint)
 	}
-	if err := os.MkdirAll(filepath.Dir(endpoint), 0o755); err != nil {
+	// SEC-04: Ensure daemon directory has restricted permissions (0o700 for owner only)
+	if err := os.MkdirAll(filepath.Dir(endpoint), 0o700); err != nil {
 		return nil, err
 	}
 	listener, err := net.Listen("unix", endpoint)
 	if err != nil {
 		return nil, err
 	}
-	// Restrict socket access to owner only
+	// SEC-04: Restrict socket access to owner only (0o600)
 	if err := os.Chmod(endpoint, 0o600); err != nil {
 		listener.Close()
 		return nil, err

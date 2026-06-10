@@ -2,6 +2,8 @@ package daemon
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -32,6 +34,15 @@ type Server struct {
 	inflight  chan struct{}
 	stopped   chan struct{}
 	stopOnce  sync.Once
+}
+
+// generateAdminToken creates a random 32-byte hex token for admin authentication.
+func generateAdminToken() (string, error) {
+	bytes := make([]byte, 32)
+	if _, err := rand.Read(bytes); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(bytes), nil
 }
 
 func NewServer(repoRoot string, maxWorkers int, idleTimeout time.Duration) (*Server, error) {
@@ -72,8 +83,18 @@ func NewServerWithOptions(repoRoot string, maxWorkers int, idleTimeout time.Dura
 		},
 	}
 	model.CurrentExecutableSnapshot().ApplyToDaemonState(&server.state)
+
+	// SEC-02: Generate admin token for authentication
+	adminToken, err := generateAdminToken()
+	if err != nil {
+		_ = listener.Close()
+		_ = telemetry.Close()
+		return nil, err
+	}
+	server.state.AdminToken = adminToken
+
 	server.app = service.New(repoRoot, manager)
-	admin, err := NewAdminServer(manager, telemetry, server.app, func() model.DaemonState { return server.state })
+	admin, err := NewAdminServer(manager, telemetry, server.app, func() model.DaemonState { return server.state }, adminToken)
 	if err != nil {
 		_ = listener.Close()
 		_ = telemetry.Close()
