@@ -5,6 +5,7 @@ import "github.com/spf13/cobra"
 func newInitCommand(state *rootState) *cobra.Command {
 	var alias string
 	var noIndex bool
+	var wait bool
 	command := &cobra.Command{
 		Use:   "init [path]",
 		Short: "Detect, register, and index the current workspace",
@@ -13,10 +14,11 @@ func newInitCommand(state *rootState) *cobra.Command {
 			if len(args) > 0 {
 				path = args[0]
 			}
-			return state.executeOperation(cmd, "workspace.init", map[string]any{"path": path, "alias": alias, "no_index": noIndex}, false)
+			return state.executeOperation(cmd, "workspace.init", map[string]any{"path": path, "alias": alias, "no_index": noIndex, "wait": wait}, false)
 		},
 	}
 	command.Flags().StringVar(&alias, "name", "", "Workspace alias")
 	command.Flags().BoolVar(&noIndex, "no-index", false, "Skip automatic indexing after registration")
+	command.Flags().BoolVar(&wait, "wait", false, "Block until indexing completes (default: background async)")
 	return command
 }

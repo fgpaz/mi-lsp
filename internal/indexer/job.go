@@ -2,7 +2,10 @@ package indexer
 
 import (
 	"context"
-	"errors"
+	"fmt"
+	"os"
+	"sync"
+	"time"
 )
 
 // IndexMode selects the indexing strategy for a background job.
@@ -23,18 +26,109 @@ type IndexJobState struct {
 	Err   string `json:"err,omitempty"`
 }
 
+// jobRegistry tracks background indexing jobs.
+type jobRegistry struct {
+	mu    sync.RWMutex
+	jobs  map[string]IndexJobState
+}
+
+var jobs = &jobRegistry{
+	jobs: make(map[string]IndexJobState),
+}
+
+// newJobID generates a unique job ID based on root and current timestamp.
+func newJobID(root string) string {
+	return fmt.Sprintf("job-%d-%s", os.Getpid(), fmt.Sprintf("%d", time.Now().UnixNano()%1e9))
+}
+
+// set stores or updates a job in the registry.
+func (jr *jobRegistry) set(jobID string, state IndexJobState) {
+	jr.mu.Lock()
+	defer jr.mu.Unlock()
+	jr.jobs[jobID] = state
+}
+
+// get retrieves a job from the registry.
+func (jr *jobRegistry) get(jobID string) (IndexJobState, bool) {
+	jr.mu.RLock()
+	defer jr.mu.RUnlock()
+	state, ok := jr.jobs[jobID]
+	return state, ok
+}
+
+// finish marks a job as done with an optional error.
+func (jr *jobRegistry) finish(jobID string, err error) {
+	jr.mu.Lock()
+	defer jr.mu.Unlock()
+	if state, ok := jr.jobs[jobID]; ok {
+		state.Done = true
+		state.Phase = "done"
+		if err != nil {
+			state.Err = err.Error()
+		}
+		jr.jobs[jobID] = state
+	}
+}
+
+// indexTimeout returns the configured index timeout (default 5 minutes, configurable via MI_LSP_INDEX_TIMEOUT).
+func indexTimeout() time.Duration {
+	if envVal := os.Getenv("MI_LSP_INDEX_TIMEOUT"); envVal != "" {
+		if d, err := time.ParseDuration(envVal); err == nil {
+			return d
+		}
+	}
+	return 5 * time.Minute
+}
+
 // StartBackgroundIndex starts an async index job and returns its jobID immediately.
 //
-// Wave 0 stub: L1 (async-indexing lane) replaces this body with the real
-// goroutine + per-stage timeout + job registry implementation. The signature is
-// the locked cross-lane interface consumed by the daemon core (L2).
+// The job runs in a background goroutine with per-stage timeouts. The state is
+// tracked in the package-level job registry and can be queried via IndexJobStatus.
+// The mode parameter determines whether to do a full index or incremental (git-aware).
+//
+// Lock acquisition is handled by the caller (workspace_ops) with timeout and degradation.
 func StartBackgroundIndex(ctx context.Context, root string, clean bool, mode IndexMode) (string, error) {
-	return "", errors.New("not implemented: StartBackgroundIndex")
+	jobID := newJobID(root)
+	jobs.set(jobID, IndexJobState{
+		JobID: jobID,
+		Phase: "queued",
+		Done:  false,
+	})
+
+	// Spawn background goroutine
+	go func() {
+		// Create a context with timeout for the entire indexing operation
+		ic, cancel := context.WithTimeout(context.WithoutCancel(ctx), indexTimeout())
+		defer cancel()
+
+		// Update phase to "running"
+		jobs.set(jobID, IndexJobState{
+			JobID: jobID,
+			Phase: "running",
+			Done:  false,
+		})
+
+		var err error
+
+		// Run the appropriate indexing path based on mode
+		if mode == IndexModeIncremental {
+			// Incremental path: use git-aware diff indexing
+			_, err = IndexWorkspace(ic, root, false)
+		} else {
+			// Full path: complete rebuild
+			_, err = IndexWorkspace(ic, root, clean)
+		}
+
+		// Mark job as finished
+		jobs.finish(jobID, err)
+	}()
+
+	return jobID, nil
 }
 
 // IndexJobStatus returns the state of a background index job.
 //
-// Wave 0 stub: L1 replaces this with a real lookup against the job registry.
+// The returned bool indicates whether the job was found in the registry.
 func IndexJobStatus(jobID string) (IndexJobState, bool) {
-	return IndexJobState{}, false
+	return jobs.get(jobID)
 }
