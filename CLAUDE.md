@@ -1,43 +1,6 @@
 # mi-lsp Claude Policy
 
-## AE Programa Gateway (MANDATORY)
-
-`ae-programa` is the mandatory gateway before any non-trivial, mutating, policy, harness, shared-skill, or multi-step work in this repository.
-
-Before functional work, validate the local AE layer is complete:
-
-- `.docs/wiki/ae/README.md`
-- `.docs/wiki/ae/AE-PHASES.md`
-- `.docs/wiki/ae/AE-HARNESS-MANIFEST.md`
-- `.docs/wiki/ae/AE-HARNESS-ORCHESTRATION.md`
-- `.docs/wiki/ae/AE-WORK-MODES.md`
-- `.docs/wiki/ae/AE-SESSION-CONTRACT.md`
-- `.docs/wiki/ae/AE-PROJECTION-POLICY.md`
-- `.docs/wiki/ae/AE-EVIDENCE-POLICY.md`
-- `.docs/wiki/ae/AE-RELEASE-DISTRIBUTION.md`
-- `AGENTS.md`, `CLAUDE.md`, `PATHS.md`
-- `scripts/ae/pre-push-guard.ps1`
-
-If any required AE file is missing or contradicted, enter `manifest_repair` mode and repair the AE layer before doing functional work. `AGENTS.md`, `CLAUDE.md`, and `PATHS.md` are projections; `.docs/wiki/ae/**` is the AE source of truth.
-
-Every mutating or non-trivial task must create/update `.docs/auditoria/<YYYY-MM-DD>-<task-slug>/session-contract.yaml` with an `ae_contract` block before edits. The contract must name selected mode, decision lock, adapter, orchestration depth, allowed paths, forbidden paths, required evidence, stop conditions, and cleanup policy.
-
-Governed AE work must also record `mi_lsp_preflight` in the session contract before worker launch, historical audit, closure, push, or PR-ready claims. Set `MI_LSP_CLIENT_NAME` and `MI_LSP_SESSION_ID` before every `mi-lsp` command; `client_name=manual-cli`, a default `session_id` like `cli-<pid>`, `governance_blocked=true`, `docs_ready=false`, `doc_count=0`, or `ae_canon.status` in `missing|mismatch|projection_only` is a hard blocker, not a warning.
-
-Subagents or worker lanes are mandatory for future non-trivial work. Zero-subagent execution is non-compliant unless the session contract records a trivial/read-only waiver. Default recursion depth is `v0_shadow`: two active levels, third-level task orchestrators are shadow-only until a later supervised pilot.
-
-WSL/subagent/worker execution audits must be read-only first and must produce a worker/session attribution matrix, admin export summary, manual-cli exception review, and WSL evidence-handling note. Do not mutate WSL filesystems, rewrite histories/logs, dump raw shell history, or treat telemetry/transcripts as canon.
-
-Before any push or PR-ready claim, run `scripts/ae/pre-push-guard.ps1` with the active session contract, then close with `ps-trazabilidad` and `ps-auditar-trazabilidad`. If any diff, branch, evidence, scope, or tracker state changes after audit, rerun both closure gates.
-
-## Subagent Orchestration Protocol
-
-- Every non-trivial task must launch subagents or worker lanes after `ae-programa` locks the session contract.
-- First wave is read-only exploration; implementation writes go to specialized implementation or worker lanes.
-- Minimum lanes: 1 for trivial/read-only checks, 3 for medium work, 5 for complex or cross-layer work.
-- Delegated tasks must be atomic, path-bounded, and evidence-bounded; subagents return summaries with file/line or command evidence, not raw dumps.
-- The orchestrator must verify cited paths/results before integrating. Contradictory subagent results trigger another bounded verification lane.
-- Zero-subagent execution requires an explicit trivial/read-only waiver in the session contract.
+**Shared AE Gateway & Orchestration:** See `PATHS.md` for the authoritative AE Programa Gateway and Subagent Orchestration Protocol sections. This document covers Claude-specific adaptations to the shared gateway and Claude Code harness policy.
 
 ## Mandatory Workflow
 
@@ -300,3 +263,19 @@ rg --files .docs/wiki
 - Do not close binary-affecting work without `AE-RELEASE-DISTRIBUTION` evidence or an explicit recorded waiver.
 - Keep `AGENTS.md` and `CLAUDE.md` synchronized.
 - If updating any skill under `C:\Users\fgpaz\.agents\skills`, also update the mirrored copy under `C:\repos\buho\assets\skills` in the same task.
+
+## Security Notes
+
+### SEC-07: MSBuild Trust Model
+
+The Roslyn worker (`.NET/C#` semantic backend) uses MSBuild to load and analyze project/solution files. MSBuild evaluates `.targets` and `.props` files during project load, which can execute arbitrary code embedded in non-trusted repositories.
+
+**Risk:** When registering a workspace from a repository you do not control or curate (e.g., forks, untrusted third-party repos, or code submitted by external contributors), the Roslyn worker will execute build scripts during `nav refs`, `nav search` (semantic), and any C# symbol resolution.
+
+**Mitigation:**
+- Register only repositories from trusted sources, or use `--readonly` workspaces to avoid semantic backends.
+- If you must analyze untrusted .NET code, do so in isolated environments (e.g., WSL, containers, ephemeral VMs).
+- Consider using `nav search` with `--repo` to stay on text-based indexing for untrusted repos.
+- The `.NET worker` does not sandbox MSBuild — this is an inherent trust model of the .NET ecosystem, not specific to mi-lsp.
+
+See `AE-RELEASE-DISTRIBUTION.md` for release-time verification and `.docs/wiki/01_alcance_funcional.md` for scope boundaries on semantic operations.

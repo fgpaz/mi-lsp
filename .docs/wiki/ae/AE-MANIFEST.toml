@@ -1,0 +1,78 @@
+# AE Manifest: Lazy-load Index for Agent Engineering Docs
+# Source: AE-PROJECTION-POLICY.md
+# Purpose: Provide minimal metadata (phase, required evidence, hash) for fast harness startup
+#          without loading all 9 AE docs; full docs loaded only in manifest_repair or blocked mode.
+
+[metadata]
+version = "1"
+date_created = "2026-06-10"
+note = "Lazy-load manifest for AE required documents. Load full docs only when governance is blocked, manifest_repair mode, or auditing."
+
+[[docs]]
+name = "README.md"
+path = ".docs/wiki/ae/README.md"
+phase = "foundation"
+required_evidence = "AE layer introduction, governance scope, agent roles"
+sha256 = ""  # Updated on each release via CI
+
+[[docs]]
+name = "AE-PHASES.md"
+path = ".docs/wiki/ae/AE-PHASES.md"
+phase = "foundation"
+required_evidence = "task phases, integration rule, closure gates"
+sha256 = ""
+
+[[docs]]
+name = "AE-HARNESS-MANIFEST.md"
+path = ".docs/wiki/ae/AE-HARNESS-MANIFEST.md"
+phase = "foundation"
+required_evidence = "agent harness registry, skill/MCP entry points, routing table"
+sha256 = ""
+
+[[docs]]
+name = "AE-HARNESS-ORCHESTRATION.md"
+path = ".docs/wiki/ae/AE-HARNESS-ORCHESTRATION.md"
+phase = "foundation"
+required_evidence = "subagent dispatch strategy, lane contracts, evidence collection rules"
+sha256 = ""
+
+[[docs]]
+name = "AE-WORK-MODES.md"
+path = ".docs/wiki/ae/AE-WORK-MODES.md"
+phase = "foundation"
+required_evidence = "mode types (spec-driven, read-only, repair, shadow), decision locks, adapter semantics"
+sha256 = ""
+
+[[docs]]
+name = "AE-SESSION-CONTRACT.md"
+path = ".docs/wiki/ae/AE-SESSION-CONTRACT.md"
+phase = "foundation"
+required_evidence = "session contract schema, mi_lsp_preflight block, evidence index, closure profile"
+sha256 = ""
+
+[[docs]]
+name = "AE-PROJECTION-POLICY.md"
+path = ".docs/wiki/ae/AE-PROJECTION-POLICY.md"
+phase = "foundation"
+required_evidence = "AGENTS.md, CLAUDE.md, PATHS.md projection rules, sync triggers"
+sha256 = ""
+
+[[docs]]
+name = "AE-EVIDENCE-POLICY.md"
+path = ".docs/wiki/ae/AE-EVIDENCE-POLICY.md"
+phase = "foundation"
+required_evidence = "evidence types, telemetry binding, audit export rules, anonymization"
+sha256 = ""
+
+[[docs]]
+name = "AE-RELEASE-DISTRIBUTION.md"
+path = ".docs/wiki/ae/AE-RELEASE-DISTRIBUTION.md"
+phase = "foundation"
+required_evidence = "provenance gate, binary distribution, WSL install audit, worker status, publish gate"
+sha256 = ""
+
+[load_strategy]
+default = "lazy"
+eager_on = ["manifest_repair", "governance_blocked", "ae_canon_mismatch", "ps-auditar-trazabilidad"]
+normal_workflow_docs = ["PATHS.md reference only"]
+note = "In normal task workflows, agents read PATHS.md (shared gateway + path map). Full AE docs loaded only in repair, blocked, or audit modes."

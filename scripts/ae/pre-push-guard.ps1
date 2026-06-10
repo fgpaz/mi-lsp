@@ -131,7 +131,11 @@ foreach ($requiredList in @("allowed_paths", "forbidden_paths", "required_eviden
     Assert-ListHasItems $contractText $requiredList
 }
 if ($contractText -notmatch "(?m)^\s*mi_lsp_preflight:\s*$") {
-    Fail "Session contract is missing mi_lsp_preflight for governed AE work."
+    # Migration note: older session contracts may not have mi_lsp_preflight block yet.
+    # This is a deprecation window — if you have old contracts without it, add the block with
+    # mandatory fields: alias, root, client_name, session_id, governance_blocked, docs_ready, doc_count.
+    # See AE-SESSION-CONTRACT.md for the required schema. Gates do NOT relax; only documentation changes.
+    Fail "Session contract is missing mi_lsp_preflight for governed AE work (see migration note in pre-push-guard.ps1)."
 }
 foreach ($preflightField in @("alias", "root", "client_name", "session_id", "governance_blocked", "docs_ready", "doc_count")) {
     [void](Assert-ScalarValue $contractText $preflightField)
