@@ -52,7 +52,11 @@ func loadDocQueryContext(ctx context.Context, registration model.WorkspaceRegist
 	}
 	query.db = db
 
-	docs, err := store.ListDocRecords(ctx, db)
+	// PERF-02/03: read the active docs generation once; doc records and FTS scores are
+	// cached per generation and invalidate structurally on reindex. recentChanges and
+	// ranking always run fresh (no cache-hit shortcut), so no stale tiebreak data.
+	generation := docsGeneration(ctx, db)
+	docs, err := loadDocRecordsCached(ctx, db, registration.Root, generation)
 	if err != nil {
 		query.dbErr = err
 		return query
@@ -68,7 +72,7 @@ func loadDocQueryContext(ctx context.Context, registration model.WorkspaceRegist
 		return query
 	}
 
-	_, query.ftsScores, _ = store.FTSSearchDocs(ctx, db, rankingTask, 20)
+	query.ftsScores = ftsScoresCached(ctx, db, registration.Root, rankingTask, generation)
 	query.ranked = rankDocs(rankingTask, query.family, docs, query.ftsScores, query.profile, query.recentChanges)
 	for _, item := range query.ranked {
 		query.rankedByPath[item.record.Path] = item

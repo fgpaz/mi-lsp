@@ -72,9 +72,7 @@ func (a *App) registerWorkspace(ctx context.Context, request model.CommandReques
 	// background=true (--background) for very large workspaces. `wait=true` is still
 	// honored (forces sync) for backward compatibility; sync is now the default.
 	background, _ := request.Payload["background"].(bool)
-	if w, ok := request.Payload["wait"].(bool); ok && w {
-		background = false
-	}
+	forceWait, _ := request.Payload["wait"].(bool) // force full sync, no smart-sync degrade
 
 	if !noIndex {
 		// Check if index already exists to use incremental mode
@@ -89,8 +87,8 @@ func (a *App) registerWorkspace(ctx context.Context, request model.CommandReques
 		}
 
 		if background {
-			// Async index: spawn background job and return immediately. AUD-01 escape
-			// for very large workspaces that should not block add/init.
+			// Async index: spawn background job and return immediately. Explicit
+			// --background escape for very large workspaces.
 			jobID, err := indexer.StartBackgroundIndex(ctx, registration.Root, false, mode)
 			if err != nil {
 				warnings = append(warnings, "auto-index failed to start: "+err.Error())
@@ -99,23 +97,40 @@ func (a *App) registerWorkspace(ctx context.Context, request model.CommandReques
 				item["index_status"] = "background"
 			}
 		} else {
-			// Synchronous index (default), bounded by IndexTimeout so it cannot hang
-			// indefinitely (AUD-01). On timeout it downgrades to a warning instead of
-			// blocking forever. IndexWorkspace(clean=false) is incremental-aware.
-			ic, cancel := context.WithTimeout(ctx, indexer.IndexTimeout())
-			defer cancel()
+			// Hybrid smart-sync (FD1): index synchronously within a short window so the
+			// init-then-query contract holds for small/incremental repos; if a very large
+			// first index exceeds the window (and --wait was not forced), degrade to a
+			// background job and return job_id instead of blocking. wait=true forces the
+			// full IndexTimeout (no degrade). AUD-01 (no indefinite hang) + D6 (async-first
+			// for large repos) reconciled.
+			syncTimeout := indexer.SmartSyncTimeout()
+			if forceWait {
+				syncTimeout = indexer.IndexTimeout()
+			}
+			ic, cancel := context.WithTimeout(ctx, syncTimeout)
 			var indexResult indexer.Result
 			indexErr := store.WithWorkspaceIndexLock(registration.Root, "workspace.auto-index", func() error {
 				var err error
 				indexResult, err = indexer.IndexWorkspace(ic, registration.Root, false)
 				return err
 			})
-			if indexErr != nil {
-				warnings = append(warnings, "auto-index failed: "+indexErr.Error())
-			} else {
+			cancel()
+			switch {
+			case indexErr == nil:
 				item["index_symbols"] = indexResult.Stats.Symbols
 				item["index_files"] = indexResult.Stats.Files
 				item["index_ms"] = indexResult.Stats.Ms
+			case errors.Is(indexErr, context.DeadlineExceeded) && !forceWait:
+				// Sync window elapsed: finish indexing in the background.
+				if jobID, err := indexer.StartBackgroundIndex(ctx, registration.Root, false, mode); err == nil {
+					item["index_job_id"] = jobID
+					item["index_status"] = "background"
+					warnings = append(warnings, "auto-index exceeded the sync window; continuing in background (use --wait to block, or query index status)")
+				} else {
+					warnings = append(warnings, "auto-index failed to start in background: "+err.Error())
+				}
+			default:
+				warnings = append(warnings, "auto-index failed: "+indexErr.Error())
 			}
 		}
 	}

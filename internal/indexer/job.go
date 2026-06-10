@@ -85,6 +85,20 @@ func indexTimeout() time.Duration {
 // MI_LSP_INDEX_TIMEOUT; default 5 minutes.
 func IndexTimeout() time.Duration { return indexTimeout() }
 
+// SmartSyncTimeout returns the short window during which workspace.add/init index
+// synchronously before degrading to a background job (hybrid smart-sync, FD1).
+// Configurable via MI_LSP_INDEX_SYNC_TIMEOUT; default 20s. Small/incremental repos
+// finish well within it (preserving init-then-query); very large first indexes exceed
+// it and continue in the background returning a job_id.
+func SmartSyncTimeout() time.Duration {
+	if envVal := os.Getenv("MI_LSP_INDEX_SYNC_TIMEOUT"); envVal != "" {
+		if d, err := time.ParseDuration(envVal); err == nil {
+			return d
+		}
+	}
+	return 20 * time.Second
+}
+
 // StartBackgroundIndex starts an async index job and returns its jobID immediately.
 //
 // The job runs in a background goroutine with per-stage timeouts. The state is

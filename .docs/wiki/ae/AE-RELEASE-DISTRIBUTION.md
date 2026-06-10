@@ -79,6 +79,16 @@ required_targets:
     archive_layout: mi-lsp(.exe) plus workers/<rid> inside the release archive
     agent_install: npx skills add fgpaz/mi-lsp --skill mi-lsp -g -a codex -a claude-code -y
     no_silent_auto_update: true
+  code_signing_posture:
+    decision: deferred  # SEC-11 / FD3 (2026-06-10)
+    rationale: >
+      CLI and worker artifacts are integrity-verified via published SHA256 checksums
+      (mi-lsp_<version>_checksums.txt) which install scripts validate before extraction.
+      Authenticode/code-signing is NOT applied: it requires a CA code-signing certificate
+      plus CI signing secrets and mainly improves Windows SmartScreen reputation for wide
+      non-technical distribution. Revisit when distributing broadly to non-technical users.
+    integrity_today: sha256_checksums_verified_pre_extract
+    revisit_trigger: broad_non_technical_distribution
 default_command: scripts/release/ae-release-binaries.ps1
 publish_command:
   shape: "pwsh ./scripts/release/ae-release-binaries.ps1 -Clean -Publish -Tag <vX.Y.Z>"

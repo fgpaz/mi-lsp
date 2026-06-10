@@ -5,7 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.5.0] (unreleased)
+## [0.5.1]
+
+### Changed
+
+- Auto-index for `workspace.add`/`init` is now **hybrid smart-sync** (FD1): synchronous within a short window (`MI_LSP_INDEX_SYNC_TIMEOUT`, default 20s) so small/incremental repos preserve the init-then-query contract, degrading to a background job (returning `job_id`) when a very large first index exceeds the window. `--background` forces immediate async; `--wait` forces full sync. Reconciles AUD-01 with the async-first intent of D6.
+
+### Fixed
+
+- Reinstated doc/FTS caching (PERF-02/03) with **generation-keyed invalidation** (`internal/service/doc_cache.go`): caches `ListDocRecords` and FTS scores per `(workspaceRoot, active_docs_generation_id)`, structurally invalidated on reindex. Replaces the v0.5.0-removed caches that served stale cross-workspace/post-reindex data.
+
+### Notes
+
+- SEC-11 (Authenticode code-signing) deferred: artifacts remain integrity-verified via SHA256 checksums. See `AE-RELEASE-DISTRIBUTION.md` (`code_signing_posture`).
+- SEC-03 (named pipe SDDL) was already shipped in v0.5.0 (`server_windows.go`).
+
+## [0.5.0]
 
 ### Added
 
