@@ -3,6 +3,7 @@ package daemon
 import (
 	"context"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -18,6 +19,60 @@ import (
 
 const memCacheTTL = 10 * time.Second
 
+// failureCache holds cached deterministic solution-load failures keyed by runtime_key
+type failureCache struct {
+	mu      sync.Mutex
+	entries map[string]failureCacheEntry
+}
+
+type failureCacheEntry struct {
+	err       error
+	expiresAt time.Time
+}
+
+func newFailureCache() *failureCache {
+	return &failureCache{
+		entries: make(map[string]failureCacheEntry),
+	}
+}
+
+func (fc *failureCache) get(key string) (error, bool) {
+	fc.mu.Lock()
+	defer fc.mu.Unlock()
+	entry, ok := fc.entries[key]
+	if !ok {
+		return nil, false
+	}
+	if time.Now().After(entry.expiresAt) {
+		delete(fc.entries, key)
+		return nil, false
+	}
+	return entry.err, true
+}
+
+func (fc *failureCache) set(key string, err error, ttl time.Duration) {
+	fc.mu.Lock()
+	defer fc.mu.Unlock()
+	fc.entries[key] = failureCacheEntry{
+		err:       err,
+		expiresAt: time.Now().Add(ttl),
+	}
+}
+
+// isDeterministicSolutionFailure returns true if the error is a deterministic
+// solution/project configuration failure (not transient like network/timeout).
+func isDeterministicSolutionFailure(err error) bool {
+	if err == nil {
+		return false
+	}
+	errStr := err.Error()
+	// Cache failures that indicate config/duplicate issues, not transient errors
+	return strings.Contains(errStr, "already exists") ||
+		strings.Contains(errStr, "duplicate") ||
+		strings.Contains(errStr, "not found") && strings.Contains(errStr, "project") ||
+		strings.Contains(errStr, "invalid") && strings.Contains(errStr, "solution")
+}
+
 type managedRuntime struct {
 	workspace   model.WorkspaceRegistration
 	request     model.WorkerRequest
@@ -28,18 +83,21 @@ type managedRuntime struct {
 }
 
 type Manager struct {
-	repoRoot        string
-	maxWorkers      int
-	idleTimeout     time.Duration
-	options         StartOptions
-	mu              sync.Mutex
-	runtimes        map[string]*managedRuntime
-	stopCh          chan struct{}
-	watchers        map[string]*FileWatcher
-	watcherRoots    []string
-	skippedWatchers int
-	watcherCtx      context.Context
-	watcherCancel   context.CancelFunc
+	repoRoot           string
+	maxWorkers         int
+	idleTimeout        time.Duration
+	callTimeout        time.Duration
+	softMemoryThresh   uint64
+	options            StartOptions
+	mu                 sync.Mutex
+	runtimes           map[string]*managedRuntime
+	stopCh             chan struct{}
+	watchers           map[string]*FileWatcher
+	watcherRoots       []string
+	skippedWatchers    int
+	watcherCtx         context.Context
+	watcherCancel      context.CancelFunc
+	failureCache       *failureCache
 }
 
 func NewManager(repoRoot string, maxWorkers int, idleTimeout time.Duration) *Manager {
@@ -53,18 +111,26 @@ func NewManagerWithOptions(repoRoot string, maxWorkers int, idleTimeout time.Dur
 	if idleTimeout <= 0 {
 		idleTimeout = 30 * time.Minute
 	}
+	callTimeout := parseDurationEnv("MI_LSP_WORKER_CALL_TIMEOUT_SECONDS", 30*time.Second)
+	softMemoryThresh := runtimeMemoryLimitBytes("MI_LSP_DAEMON_SOFT_MEMORY_MB")
+	if softMemoryThresh == 0 {
+		softMemoryThresh = 500 * 1024 * 1024 // 500MB default
+	}
 	options = NormalizeStartOptions(options)
 	watcherCtx, watcherCancel := context.WithCancel(context.Background())
 	manager := &Manager{
-		repoRoot:      repoRoot,
-		maxWorkers:    maxWorkers,
-		idleTimeout:   idleTimeout,
-		options:       options,
-		runtimes:      map[string]*managedRuntime{},
-		stopCh:        make(chan struct{}),
-		watchers:      map[string]*FileWatcher{},
-		watcherCtx:    watcherCtx,
-		watcherCancel: watcherCancel,
+		repoRoot:         repoRoot,
+		maxWorkers:       maxWorkers,
+		idleTimeout:      idleTimeout,
+		callTimeout:      callTimeout,
+		softMemoryThresh: softMemoryThresh,
+		options:          options,
+		runtimes:         map[string]*managedRuntime{},
+		stopCh:           make(chan struct{}),
+		watchers:         map[string]*FileWatcher{},
+		watcherCtx:       watcherCtx,
+		watcherCancel:    watcherCancel,
+		failureCache:     newFailureCache(),
 	}
 	go manager.reapLoop()
 	return manager
@@ -73,13 +139,31 @@ func NewManagerWithOptions(repoRoot string, maxWorkers int, idleTimeout time.Dur
 func (m *Manager) Call(ctx context.Context, workspace model.WorkspaceRegistration, request model.WorkerRequest) (model.WorkerResponse, error) {
 	request.BackendType = normalizeBackendType(request.BackendType)
 	m.EnsureFileWatcher(workspace)
+
+	// Check failure cache for this runtime
+	rk := runtimeKey(workspace, request)
+	if cachedErr, ok := m.failureCache.get(rk); ok {
+		return model.WorkerResponse{}, fmt.Errorf("cached backend failure: %w", cachedErr)
+	}
+
 	managed, err := m.getOrCreate(workspace, request, true)
 	if err != nil {
 		return model.WorkerResponse{}, err
 	}
 	defer m.releaseRuntime(managed)
-	response, err := managed.client.Call(ctx, request)
+
+	// Wrap context with per-call timeout
+	callCtx, cancel := context.WithTimeout(ctx, m.callTimeout)
+	defer cancel()
+
+	response, err := managed.client.Call(callCtx, request)
 	m.updateStatus(managed)
+
+	// Cache deterministic solution-load failures to avoid repeated long timeouts
+	if err != nil && isDeterministicSolutionFailure(err) {
+		m.failureCache.set(rk, err, 5*time.Minute)
+	}
+
 	return response, err
 }
 
@@ -267,12 +351,34 @@ func (m *Manager) reapIdle() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	now := time.Now()
-	for key, managed := range m.runtimes {
-		if managed.activeCalls == 0 && now.Sub(managed.status.LastUsedAt) > m.idleTimeout {
-			_ = managed.client.Close()
-			delete(m.runtimes, key)
+
+	// Check memory pressure and apply soft limit
+	processStats := getProcessStats()
+	if processStats.PrivateBytes > m.softMemoryThresh {
+		log.Printf("[mi-lsp:daemon] memory pressure: %dMB exceeds soft limit %dMB, reducing idle timeout and triggering GC",
+			processStats.PrivateBytes/(1024*1024), m.softMemoryThresh/(1024*1024))
+
+		// Reduce idle timeout under memory pressure
+		effectiveIdleTimeout := m.idleTimeout / 2
+		for key, managed := range m.runtimes {
+			if managed.activeCalls == 0 && now.Sub(managed.status.LastUsedAt) > effectiveIdleTimeout {
+				_ = managed.client.Close()
+				delete(m.runtimes, key)
+			}
+		}
+
+		// Trigger garbage collection
+		runtime.GC()
+	} else {
+		// Normal reap at full idle timeout
+		for key, managed := range m.runtimes {
+			if managed.activeCalls == 0 && now.Sub(managed.status.LastUsedAt) > m.idleTimeout {
+				_ = managed.client.Close()
+				delete(m.runtimes, key)
+			}
 		}
 	}
+
 	m.enforceIdleMemoryBoundsLocked(now)
 }
 
@@ -556,4 +662,32 @@ func statusSummary(statuses []model.WorkerStatus) string {
 		parts = append(parts, label)
 	}
 	return strings.Join(parts, ",")
+}
+
+func parseDurationEnv(envName string, defaultVal time.Duration) time.Duration {
+	raw := strings.TrimSpace(os.Getenv(envName))
+	if raw == "" {
+		return defaultVal
+	}
+	seconds, err := strconv.ParseInt(raw, 10, 64)
+	if err != nil || seconds <= 0 {
+		return defaultVal
+	}
+	return time.Duration(seconds) * time.Second
+}
+
+func getProcessStats() model.DaemonProcessStats {
+	// Get current process stats (will be implemented per-platform as needed)
+	// For now, return zero values; the actual memory check will work with system calls
+	pid := os.Getpid()
+	return model.DaemonProcessStats{
+		PID:          pid,
+		PrivateBytes: getPrivateMemoryBytes(pid),
+	}
+}
+
+func getPrivateMemoryBytes(pid int) uint64 {
+	// Platform-specific memory retrieval; delegated to existing impl if available
+	// For daemon purposes, we'll use processMemoryBytes if it exists
+	return processMemoryBytes(pid)
 }
