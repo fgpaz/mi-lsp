@@ -173,18 +173,17 @@ func TestExecuteWorkspaceStatusInvalidExplicitAliasReturnsDiagnosticError(t *tes
 			CallerCWD: filepath.Join(root, "src"),
 		},
 	})
-	if err == nil {
-		t.Fatalf("Execute(workspace.status) err = nil, env=%#v", env)
+	// AUD-03: When the requested alias doesn't exist but CallerCWD resolves unambiguously,
+	// we auto-correct instead of erroring. So this should now succeed.
+	if err != nil {
+		t.Fatalf("Execute(workspace.status) err = %v, want nil (auto-corrected)", err)
 	}
-	message := err.Error()
-	if !strings.Contains(message, "stale-alias") {
-		t.Fatalf("error = %q, want stale alias", message)
+	if !env.Ok {
+		t.Fatalf("expected envelope.Ok=true after auto-correction, got %#v", env)
 	}
-	if !strings.Contains(message, "caller-workspace") {
-		t.Fatalf("error = %q, want caller cwd diagnostic alias", message)
-	}
-	if !strings.Contains(message, "workspace hygiene --apply-safe") {
-		t.Fatalf("error = %q, want hygiene suggestion", message)
+	// Check that it auto-corrected to caller-workspace
+	if env.Workspace != "caller-workspace" {
+		t.Fatalf("expected workspace=caller-workspace after auto-correction, got %s", env.Workspace)
 	}
 	workspaces, err := workspace.ListWorkspaces()
 	if err != nil {
@@ -273,14 +272,17 @@ func TestExecuteNavGovernanceInvalidAliasReturnsCallerCWDDiagnostic(t *testing.T
 			CallerCWD: filepath.Join(root, "src"),
 		},
 	})
-	if err == nil {
-		t.Fatalf("Execute(nav.governance) err = nil, env=%#v", env)
+	// AUD-03: When the requested alias doesn't exist but CallerCWD resolves unambiguously,
+	// we auto-correct instead of erroring. So this should now succeed.
+	if err != nil {
+		t.Fatalf("Execute(nav.governance) err = %v, want nil (auto-corrected)", err)
 	}
-	message := err.Error()
-	for _, want := range []string{"missing-alias", "current-repo", "workspace hygiene --apply-safe"} {
-		if !strings.Contains(message, want) {
-			t.Fatalf("error = %q, want %q", message, want)
-		}
+	if !env.Ok {
+		t.Fatalf("expected envelope.Ok=true after auto-correction, got %#v", env)
+	}
+	// Check that it auto-corrected to current-repo
+	if env.Workspace != "current-repo" {
+		t.Fatalf("expected workspace=current-repo after auto-correction, got %s", env.Workspace)
 	}
 	workspaces, err := workspace.ListWorkspaces()
 	if err != nil {

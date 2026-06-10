@@ -11,10 +11,23 @@ import (
 	"github.com/fgpaz/mi-lsp/internal/model"
 )
 
+// ApplyProfile filters envelope fields based on the profile setting.
+// Agent profile reduces token cost by omitting human-only telemetry and verbose fields.
+func ApplyProfile(env model.Envelope) model.Envelope {
+	if env.Profile != model.OutputProfileAgent {
+		return env
+	}
+	// For agent profile: auto-compress and omit verbose fields
+	env.Items = compactItems(env.Items, true) // Auto-compress for agent
+	return env
+}
+
 func Render(env model.Envelope, format string, compress bool) ([]byte, error) {
 	if format == "" {
 		format = "compact"
 	}
+	// Apply profile-based filtering before rendering
+	env = ApplyProfile(env)
 	switch strings.ToLower(format) {
 	case "json":
 		return json.MarshalIndent(env, "", "  ")
@@ -440,13 +453,12 @@ func compactItems(items any, compress bool) any {
 	case []model.GovernanceStatus:
 		compact := make([]map[string]any, 0, len(typed))
 		for _, item := range typed {
-			compact = append(compact, map[string]any{
+			entry := map[string]any{
 				"profile":               item.Profile,
 				"effective_base":        item.EffectiveBase,
 				"effective_overlays":    item.EffectiveOverlays,
 				"sync":                  item.Sync,
 				"index_sync":            item.IndexSync,
-				"index_sync_details":    item.IndexSyncDetails,
 				"ae_canon":              item.AECanon,
 				"blocked":               item.Blocked,
 				"issues":                item.Issues,
@@ -458,8 +470,13 @@ func compactItems(items any, compress bool) any {
 				"audit_chain":           item.AuditChain,
 				"numbering_recommended": item.NumberingRecommended,
 				"summary":               item.Summary,
-				"next_steps":            item.NextSteps,
-			})
+			}
+			// Only include detailed sync info and next steps if not in compress mode
+			if !compress {
+				entry["index_sync_details"] = item.IndexSyncDetails
+				entry["next_steps"] = item.NextSteps
+			}
+			compact = append(compact, entry)
 		}
 		return compact
 	case []map[string]any:

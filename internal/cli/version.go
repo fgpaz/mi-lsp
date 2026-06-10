@@ -12,6 +12,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/fgpaz/mi-lsp/internal/model"
+	"github.com/fgpaz/mi-lsp/internal/output"
 	"github.com/fgpaz/mi-lsp/internal/worker"
 )
 
@@ -25,12 +26,14 @@ func newVersionCommand(state *rootState) *cobra.Command {
 			if !flagChanged(cmd, "format") {
 				opts.Format = "text"
 			}
-			return state.printEnvelope(model.Envelope{
+			env := model.Envelope{
 				Ok:      true,
 				Backend: "version",
 				Items:   []model.VersionInfo{info},
 				Stats:   model.Stats{Files: 1},
-			}, opts)
+			}
+			env = output.ApplyEnvelopeLimits(env, opts)
+			return state.printEnvelope(env, opts)
 		},
 	}
 }

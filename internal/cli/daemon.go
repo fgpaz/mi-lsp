@@ -11,6 +11,7 @@ import (
 
 	"github.com/fgpaz/mi-lsp/internal/daemon"
 	"github.com/fgpaz/mi-lsp/internal/model"
+	"github.com/fgpaz/mi-lsp/internal/output"
 )
 
 func newDaemonCommand(state *rootState) *cobra.Command {
@@ -52,7 +53,9 @@ and tsserver processes, reducing cold-start latency.`,
 			if warning := daemonRuntimeDriftWarning(stateBody); warning != "" {
 				envelope.Warnings = append(envelope.Warnings, warning)
 			}
-			return state.printEnvelope(envelope, state.queryOptions(cmd, "daemon.start", nil))
+			opts := state.queryOptions(cmd, "daemon.start", nil)
+			envelope = output.ApplyEnvelopeLimits(envelope, opts)
+			return state.printEnvelope(envelope, opts)
 		},
 	}
 	startCommand.Flags().StringVar(&idleTimeout, "idle-timeout", "30m", "Worker idle eviction timeout")
@@ -67,12 +70,14 @@ and tsserver processes, reducing cold-start latency.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx, cancel := context.WithTimeout(cmd.Context(), 5*time.Second)
 			defer cancel()
-			response, err := daemon.NewClient().Execute(ctx, model.CommandRequest{ProtocolVersion: model.ProtocolVersion, Operation: "system.status", Context: state.queryOptions(cmd, "system.status", nil)})
+			opts := state.queryOptions(cmd, "system.status", nil)
+			response, err := daemon.NewClient().Execute(ctx, model.CommandRequest{ProtocolVersion: model.ProtocolVersion, Operation: "system.status", Context: opts})
 			if err != nil {
 				return daemon.BuildStatusError()
 			}
 			response = annotateDaemonRuntimeDrift(response)
-			return state.printEnvelope(response, state.queryOptions(cmd, "system.status", nil))
+			response = output.ApplyEnvelopeLimits(response, opts)
+			return state.printEnvelope(response, opts)
 		},
 	}
 
@@ -82,11 +87,13 @@ and tsserver processes, reducing cold-start latency.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx, cancel := context.WithTimeout(cmd.Context(), 5*time.Second)
 			defer cancel()
-			response, err := daemon.NewClient().Execute(ctx, model.CommandRequest{ProtocolVersion: model.ProtocolVersion, Operation: "system.stop", Context: state.queryOptions(cmd, "system.stop", nil)})
+			opts := state.queryOptions(cmd, "system.stop", nil)
+			response, err := daemon.NewClient().Execute(ctx, model.CommandRequest{ProtocolVersion: model.ProtocolVersion, Operation: "system.stop", Context: opts})
 			if err != nil {
 				return err
 			}
-			return state.printEnvelope(response, state.queryOptions(cmd, "system.stop", nil))
+			response = output.ApplyEnvelopeLimits(response, opts)
+			return state.printEnvelope(response, opts)
 		},
 	}
 
@@ -122,7 +129,9 @@ and tsserver processes, reducing cold-start latency.`,
 			if warning := daemonRuntimeDriftWarning(stateBody); warning != "" {
 				envelope.Warnings = append(envelope.Warnings, warning)
 			}
-			return state.printEnvelope(envelope, state.queryOptions(cmd, "daemon.restart", nil))
+			opts := state.queryOptions(cmd, "daemon.restart", nil)
+			envelope = output.ApplyEnvelopeLimits(envelope, opts)
+			return state.printEnvelope(envelope, opts)
 		},
 	}
 
@@ -201,7 +210,10 @@ and tsserver processes, reducing cold-start latency.`,
 			if err := openURL(finalURL); err != nil {
 				return err
 			}
-			return state.printEnvelope(model.Envelope{Ok: true, Backend: "admin", Items: []map[string]any{{"admin_url": finalURL}}}, state.queryOptions(cmd, "daemon.admin", nil))
+			opts := state.queryOptions(cmd, "daemon.admin", nil)
+			env := model.Envelope{Ok: true, Backend: "admin", Items: []map[string]any{{"admin_url": finalURL}}}
+			env = output.ApplyEnvelopeLimits(env, opts)
+			return state.printEnvelope(env, opts)
 		},
 	}
 
@@ -261,8 +273,10 @@ and tsserver processes, reducing cold-start latency.`,
 			if err != nil {
 				return err
 			}
+			opts := state.queryOptions(cmd, "daemon.perf-smoke", nil)
 			env := model.Envelope{Ok: result.Passed, Backend: "daemon", Items: []daemon.PerfSmokeResult{result}, Warnings: result.Warnings}
-			return state.printEnvelope(env, state.queryOptions(cmd, "daemon.perf-smoke", nil))
+			env = output.ApplyEnvelopeLimits(env, opts)
+			return state.printEnvelope(env, opts)
 		},
 	}
 	perfSmokeCommand.Flags().IntVar(&smokeCallers, "callers", 16, "Parallel status callers")

@@ -8,6 +8,7 @@ import (
 
 	"github.com/fgpaz/mi-lsp/internal/daemon"
 	"github.com/fgpaz/mi-lsp/internal/model"
+	"github.com/fgpaz/mi-lsp/internal/output"
 )
 
 func newWorkerCommand(state *rootState) *cobra.Command {
@@ -34,9 +35,11 @@ context, and dependency analysis. Includes install and status.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx, cancel := context.WithTimeout(cmd.Context(), 5*time.Second)
 			defer cancel()
-			response, err := daemon.NewClient().Execute(ctx, model.CommandRequest{ProtocolVersion: model.ProtocolVersion, Operation: "worker.status", Context: state.queryOptions(cmd, "worker.status", nil)})
+			opts := state.queryOptions(cmd, "worker.status", nil)
+			response, err := daemon.NewClient().Execute(ctx, model.CommandRequest{ProtocolVersion: model.ProtocolVersion, Operation: "worker.status", Context: opts})
 			if err == nil {
-				return state.printEnvelope(response, state.queryOptions(cmd, "worker.status", nil))
+				response = output.ApplyEnvelopeLimits(response, opts)
+				return state.printEnvelope(response, opts)
 			}
 			return state.executeOperation(cmd, "worker.status", nil, false)
 		},

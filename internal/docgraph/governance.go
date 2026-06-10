@@ -294,7 +294,10 @@ func inspectAECanonFromProjection(root string, reason string) model.AECanonStatu
 		if len(roots) > 0 {
 			status := inspectAECanonRoots(root, roots, "read_model", reason+"_read_model_projection")
 			status.Status = "projection_only"
-			status.Blocking = true
+			// Only block if the workspace is actually declaring AE in its governance
+			// (i.e., the governance is valid and declares it). When governance itself is invalid,
+			// don't block on AE to allow repair of governance first.
+			status.Blocking = false
 			status.Reason = reason + "_read_model_projection_only"
 			return status
 		}
@@ -307,7 +310,7 @@ func inspectAECanonFromProjection(root string, reason string) model.AECanonStatu
 		Source:          "fallback",
 		RequiredModules: append([]string{}, requiredAECanonModules...),
 		MissingModules:  append([]string{}, requiredAECanonModules...),
-		Blocking:        true,
+		Blocking:        false,
 		Reason:          reason,
 	}
 }
