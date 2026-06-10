@@ -5,12 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.3]
+
+### Fixed
+
+- **`daemon status` telemetry verbosity escape**: the full `recent_accesses` view (20 events with path fields) is now reachable via `--verbose` (or `--full`). The prior trigger checked a non-existent `--format telemetry` value (dead code since v0.5.0) and `--full` is AXI-gated, so there was no working way to get the full view. Found during live verification of v0.5.2 TOK-03.
+
 ## [0.5.2]
 
 ### Fixed
 
 - **PERF-04**: `PRAGMA optimize` now actually runs after a bulk index publish (`ReplaceWorkspaceIndex`/`Docs`/`Catalog`). The helper was added in v0.5.0 but never called (dead code); SQLite query-planner statistics were never refreshed post-publish. Caught by adversarial verification.
-- **TOK-03**: `daemon status` `recent_accesses` now strips the long, repeated absolute-path fields (`workspace_root`, `runtime_key`, `entrypoint_id`) from the compact view (full detail remains under `--full`/`--format telemetry`). Previously claimed "handled by the output layer" but unimplemented. Caught by adversarial verification.
+- **TOK-03**: `daemon status` `recent_accesses` strips the long, repeated absolute-path fields (`workspace_root`, `runtime_key`, `entrypoint_id`) from the compact view to cut token cost (`--verbose` for full detail; see v0.5.3 for the escape wiring fix). Previously claimed "handled by the output layer" but unimplemented. Caught by adversarial verification.
 
 ## [0.5.1]
 
