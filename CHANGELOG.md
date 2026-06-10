@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.5]
+
+### Added
+
+- **macOS binaries**: releases now publish `darwin-arm64` (Apple Silicon) and `darwin-x64` (Intel) archives, each with a self-contained `osx-*` Roslyn worker. `install.sh` detects macOS and maps it to the right RID (previously rejected macOS explicitly).
+
 ## [0.5.4]
 
 ### Fixed

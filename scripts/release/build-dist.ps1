@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [string[]]$Rids = @('win-arm64', 'win-x64', 'linux-arm64', 'linux-x64'),
+    [string[]]$Rids = @('win-arm64', 'win-x64', 'linux-arm64', 'linux-x64', 'osx-arm64', 'osx-x64'),
     [string]$OutDir = (Join-Path $PSScriptRoot '..\..\dist'),
     [switch]$Clean
 )
@@ -19,7 +19,9 @@ function Get-RidSpec {
         'win-x64'     { return @{ GOOS = 'windows'; GOARCH = 'amd64'; CliName = 'mi-lsp.exe' } }
         'linux-arm64' { return @{ GOOS = 'linux'; GOARCH = 'arm64'; CliName = 'mi-lsp' } }
         'linux-x64'   { return @{ GOOS = 'linux'; GOARCH = 'amd64'; CliName = 'mi-lsp' } }
-        default       { throw "Unsupported RID '$Rid'. Supported values: win-arm64, win-x64, linux-arm64, linux-x64." }
+        'osx-arm64'   { return @{ GOOS = 'darwin'; GOARCH = 'arm64'; CliName = 'mi-lsp' } }
+        'osx-x64'     { return @{ GOOS = 'darwin'; GOARCH = 'amd64'; CliName = 'mi-lsp' } }
+        default       { throw "Unsupported RID '$Rid'. Supported values: win-arm64, win-x64, linux-arm64, linux-x64, osx-arm64, osx-x64." }
     }
 }
 

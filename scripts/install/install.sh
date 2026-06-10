@@ -22,15 +22,16 @@ detect_rid() {
   os="$(uname -s)"
   arch="$(uname -m)"
   case "$os" in
-    Linux) ;;
-    Darwin) echo "macOS assets are not published yet. Supported Linux RIDs: linux-x64, linux-arm64." >&2; exit 1 ;;
-    *) echo "Unsupported OS '$os'. Supported OS: Linux. Use install.ps1 on Windows." >&2; exit 1 ;;
+    Linux) os_part="linux" ;;
+    Darwin) os_part="darwin" ;;
+    *) echo "Unsupported OS '$os'. Supported: Linux, macOS. Use install.ps1 on Windows." >&2; exit 1 ;;
   esac
   case "$arch" in
-    x86_64|amd64) echo "linux-x64" ;;
-    aarch64|arm64) echo "linux-arm64" ;;
-    *) echo "Unsupported Linux architecture '$arch'." >&2; exit 1 ;;
+    x86_64|amd64) arch_part="x64" ;;
+    aarch64|arm64) arch_part="arm64" ;;
+    *) echo "Unsupported architecture '$arch'." >&2; exit 1 ;;
   esac
+  echo "${os_part}-${arch_part}"
 }
 
 if [ -z "$RID" ]; then
@@ -38,8 +39,8 @@ if [ -z "$RID" ]; then
 fi
 
 case "$RID" in
-  linux-x64|linux-arm64) ;;
-  *) echo "Unsupported RID '$RID' for install.sh. Supported values: linux-x64, linux-arm64." >&2; exit 1 ;;
+  linux-x64|linux-arm64|darwin-x64|darwin-arm64) ;;
+  *) echo "Unsupported RID '$RID' for install.sh. Supported values: linux-x64, linux-arm64, darwin-x64, darwin-arm64." >&2; exit 1 ;;
 esac
 
 require_cmd() {
