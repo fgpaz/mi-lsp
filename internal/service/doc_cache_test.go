@@ -8,6 +8,30 @@ import (
 	"github.com/fgpaz/mi-lsp/internal/store"
 )
 
+// TestPurgeWorkspaceCaches verifies cache entries for a workspace root are dropped on
+// unregister, and entries for other roots are untouched (memory-leak hardening).
+func TestPurgeWorkspaceCaches(t *testing.T) {
+	root := "C:/test/ws-purge-" + t.Name()
+	other := "C:/test/ws-other-" + t.Name()
+	docRecordsCache.Store(root, docRecordsCacheEntry{generation: "g1"})
+	ftsScoresCache.Store(root+"\x00q1", ftsCacheEntry{generation: "g1"})
+	ftsScoresCache.Store(root+"\x00q2", ftsCacheEntry{generation: "g1"})
+	ftsScoresCache.Store(other+"\x00q1", ftsCacheEntry{generation: "g1"})
+
+	PurgeWorkspaceCaches(root)
+
+	if _, ok := docRecordsCache.Load(root); ok {
+		t.Fatal("docRecordsCache entry for purged root still present")
+	}
+	if _, ok := ftsScoresCache.Load(root + "\x00q1"); ok {
+		t.Fatal("ftsScoresCache entry for purged root still present")
+	}
+	if _, ok := ftsScoresCache.Load(other + "\x00q1"); !ok {
+		t.Fatal("ftsScoresCache entry for a different root was wrongly purged")
+	}
+	ftsScoresCache.Delete(other + "\x00q1")
+}
+
 // TestDocRecordsCacheInvalidatesOnGeneration verifies the PERF-02 cache is keyed on the
 // active docs generation and that a generation change (reindex) structurally invalidates
 // it — the bug class that forced removal of the previous question-only cache.

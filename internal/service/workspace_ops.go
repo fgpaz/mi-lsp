@@ -109,18 +109,26 @@ func (a *App) registerWorkspace(ctx context.Context, request model.CommandReques
 			}
 			ic, cancel := context.WithTimeout(ctx, syncTimeout)
 			var indexResult indexer.Result
-			indexErr := store.WithWorkspaceIndexLock(registration.Root, "workspace.auto-index", func() error {
+			// Bound lock acquisition by the sync window too: if another indexer holds the
+			// lock, degrade to background instead of burning the window waiting (rather than
+			// the unbounded blocking lock). The background job re-acquires the lock itself.
+			indexErr := store.AcquireWithTimeout(registration.Root, "workspace.auto-index", syncTimeout, func() error {
 				var err error
 				indexResult, err = indexer.IndexWorkspace(ic, registration.Root, false)
 				return err
 			})
+			// Compute timed-out BEFORE cancel() (cancel would mask ic.Err with Canceled).
+			// Degrade on a deadline (slow index) or a lock-contention timeout, regardless of
+			// how the underlying error is wrapped.
+			var lockErr *store.IndexLockError
+			timedOut := errors.Is(indexErr, context.DeadlineExceeded) || ic.Err() == context.DeadlineExceeded || errors.As(indexErr, &lockErr)
 			cancel()
 			switch {
 			case indexErr == nil:
 				item["index_symbols"] = indexResult.Stats.Symbols
 				item["index_files"] = indexResult.Stats.Files
 				item["index_ms"] = indexResult.Stats.Ms
-			case errors.Is(indexErr, context.DeadlineExceeded) && !forceWait:
+			case timedOut && !forceWait:
 				// Sync window elapsed: finish indexing in the background.
 				if jobID, err := indexer.StartBackgroundIndex(ctx, registration.Root, false, mode); err == nil {
 					item["index_job_id"] = jobID
@@ -748,8 +756,16 @@ func (a *App) workspaceRemove(request model.CommandRequest) (model.Envelope, err
 	if name == "" {
 		return model.Envelope{}, errors.New("workspace name is required")
 	}
+	// Capture the root before removing so its cached doc/FTS entries can be dropped.
+	var root string
+	if reg, err := workspace.ResolveWorkspace(name); err == nil {
+		root = reg.Root
+	}
 	if err := workspace.RemoveWorkspace(name); err != nil {
 		return model.Envelope{}, err
+	}
+	if root != "" {
+		PurgeWorkspaceCaches(root)
 	}
 	return model.Envelope{Ok: true, Backend: "registry", Items: []map[string]any{{"removed": name}}}, nil
 }

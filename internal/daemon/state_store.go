@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"context"
 	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
@@ -275,8 +276,11 @@ func (s *TelemetryStore) PurgeAndVacuum(retentionDays int, maxBytes int64) (int,
 		return int(purged), false, fmt.Errorf("purge events: %w", purgeErr)
 	}
 
-	// Run VACUUM to reclaim space.
-	_, vacErr := s.db.Exec("VACUUM")
+	// Run VACUUM to reclaim space, bounded by a timeout so it cannot hang the daemon
+	// indefinitely if a reader holds a lock.
+	vctx, vcancel := context.WithTimeout(context.Background(), 30*time.Second)
+	_, vacErr := s.db.ExecContext(vctx, "VACUUM")
+	vcancel()
 	if vacErr != nil {
 		return int(purged), false, fmt.Errorf("vacuum: %w", vacErr)
 	}
