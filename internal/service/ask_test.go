@@ -613,10 +613,12 @@ func TestNavAskAXIPreviewEmitsPreviewTrimmedCoach(t *testing.T) {
 	root := createLinkedDocsWorkspaceFixture(t, alias)
 	app := New(root, nil)
 
+	// L1 async indexing: wait=true so init indexes synchronously before the test
+	// injects docs below (otherwise the background reindex clobbers store.ReplaceDocs).
 	if _, err := app.Execute(context.Background(), model.CommandRequest{
 		Operation: "workspace.init",
 		Context:   model.QueryOptions{},
-		Payload:   map[string]any{"path": root, "alias": alias},
+		Payload:   map[string]any{"path": root, "alias": alias, "wait": true},
 	}); err != nil {
 		t.Fatalf("workspace.init: %v", err)
 	}

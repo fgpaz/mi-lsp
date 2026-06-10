@@ -152,7 +152,7 @@ func checkStaleAliases(ctx context.Context, opts *RunDoctorOptions) DoctorCheck 
 
 	return DoctorCheck{
 		ID:       id,
-		Severity: "P1",
+		Severity: "P2",
 		OK:       true,
 		Detail:   "No stale aliases in registry",
 	}
