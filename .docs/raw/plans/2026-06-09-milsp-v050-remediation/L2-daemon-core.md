@@ -35,8 +35,10 @@ stop_if:
   - "StartBackgroundIndex or PurgeAndVacuum signatures differ from T2 stubs — STOP, do not redefine them"
 ```
 
+> **CONFIRMADO por discovery.yaml:** `Version:"dev"`@63, `ProtocolVersion != ""`@192, `RecentAccesses(20)`@198 + `"recent_accesses"`@207, `context.Background()` en `s.app.Execute`@214 y @235, `PurgeOldEvents/PurgeOldRuns(cutoff)`@94-95 (solo startup). El ticker llama `s.telemetry.PurgeAndVacuum(...)` (método de `TelemetryStore`).
+
 ## Reference
-`discovery.yaml` AUD-01(235)/AUD-02(63)/SEC-09(192)/PERF-05(91-95)/TOK-01(207). `internal/cli/version.go` para la fuente de versión.
+`discovery.yaml` AUD-01(214,235)/AUD-02(63)/SEC-09(192)/PERF-05(94-95)/TOK-01(198,207). `internal/cli/version.go` para la fuente de versión.
 
 ## Prompt
 Editá SOLO `server.go` y `options.go`. No definas `StartBackgroundIndex` ni `PurgeAndVacuum` (son stubs de L1/L3); solo llamalos. Cambios:

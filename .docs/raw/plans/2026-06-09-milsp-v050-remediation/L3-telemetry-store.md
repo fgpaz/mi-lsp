@@ -5,6 +5,8 @@
 **Stack:** Go, SQLite.
 **Architecture:** Worktree `C:/wt/v050-l3-telemetry-store`, branch `v050/l3-telemetry-store`. Único dueño de `state_store.go`, `telemetry/access_diagnostics.go`, `telemetry/access_events.go`. Implementa el stub `PurgeAndVacuum` de T2.
 
+> **CORREGIDO por discovery.yaml:** el tipo es `TelemetryStore` (state_store.go:143), no `StateStore`. Métodos existentes: `PurgeOldEvents`:230, `PurgeOldRuns`:238, `RecentAccesses`:566, `RecordAccess`:512, `NextSeq`:444, `ComputeMetrics`:611. El campo `DecisionHash` en `model.AccessEvent` ya viene de T2.
+
 ## Locked Decisions
 - Escrituras de telemetría a una cola async (canal con worker único) para eliminar "database is locked" de raíz; el retry queda como red de seguridad.
 - `state.json` y `start.lock`: modo 0o600; dir `~/.mi-lsp/daemon` 0o700 (no-op en Windows, aplicar en Unix).
@@ -55,7 +57,7 @@ Editá SOLO tu set. No cambies `model/types.go` (L7 lo posee; el campo `Decision
 
 ## Skeleton
 ```go
-func (s *StateStore) PurgeAndVacuum(retentionDays int, maxBytes int64) (int, bool, error) {
+func (s *TelemetryStore) PurgeAndVacuum(retentionDays int, maxBytes int64) (int, bool, error) {
     days := retentionDays
     if sz, _ := s.dbSize(); sz > maxBytes { days = 7 }
     purged, err := s.purgeOlderThan(days)

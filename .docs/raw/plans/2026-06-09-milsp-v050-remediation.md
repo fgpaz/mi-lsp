@@ -210,19 +210,21 @@ goals:
 
 Estas firmas se materializan como stubs en T2 antes de Wave 1. Ninguna lane las cambia; las consumen.
 
-```go
-// internal/indexer/job.go  (NEW, owned by L1)
-// Arranca indexado en background; devuelve jobID inmediatamente.
-func (e *Engine) StartBackgroundIndex(ctx context.Context, reg model.WorkspaceRegistration, mode IndexMode) (jobID string, err error)
-func (e *Engine) IndexJobStatus(jobID string) (IndexJobState, bool)
+> **Corregido por T1/discovery.yaml (2026-06-09):** el indexer NO tiene receiver `Engine` (usa funcs de paquete); el store es `TelemetryStore` (no `StateStore`); el envelope es `model.Envelope` (no `QueryEnvelope`).
 
-// internal/store/state_store.go  (owned by L3) — método consumido por L2 ticker
-func (s *StateStore) PurgeAndVacuum(retentionDays int, maxBytes int64) (purged int, vacuumed bool, err error)
+```go
+// internal/indexer/job.go  (NEW, owned by L1) — funcs de PAQUETE, no métodos de Engine
+// indexer.go:37 ya expone IndexWorkspace(ctx, root string, clean bool) (Result, error)
+func StartBackgroundIndex(ctx context.Context, root string, clean bool, mode IndexMode) (jobID string, err error)
+func IndexJobStatus(jobID string) (IndexJobState, bool)
+
+// internal/daemon/state_store.go  (owned by L3) — método consumido por L2 ticker. Tipo real: TelemetryStore (state_store.go:143)
+func (s *TelemetryStore) PurgeAndVacuum(retentionDays int, maxBytes int64) (purged int, vacuumed bool, err error)
 
 // internal/model/types.go  (owned by L7) — campos nuevos consumidos por L2/L3
-type AccessEvent struct { /* ...existing...; DecisionHash string `json:"decision_hash,omitempty"` */ }
+type AccessEvent struct { /* ...existing (types.go:750)...; DecisionHash string `json:"decision_hash,omitempty"` */ }
 type OutputProfile string // "human" | "agent"
-// QueryEnvelope gana: Profile OutputProfile `json:"-"`  (no se serializa; controla render)
+// model.Envelope (types.go:121) gana: Profile OutputProfile `json:"-"`  (no se serializa; controla render)
 ```
 
 ## File Ownership Matrix (exclusive write sets — NINGÚN archivo en dos lanes)

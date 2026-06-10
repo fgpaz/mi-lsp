@@ -17,4 +17,9 @@ expected_execution_evidence:
   - "L11a-verdict.yaml, L11b-verdict.yaml (Wave 4)"
   - "ae-release-distribution.yaml (Wave 5 / R1)"
   - "traceability-closure.yaml (Final F1)"
-status: plan_authored_execution_pending
+status: wave0_discovery_done_wave1_pending
+wave0_progress:
+  T1_discovery: done (discovery.yaml; 3 signature corrections applied to T2/L1/L2/L3/L7)
+  T0_worktrees: pending (not yet created)
+  T2_schema_stubs: pending
+notes: "Plan validated against HEAD 268f512. Corrections: indexer uses package funcs (no Engine); store is TelemetryStore (no StateStore); envelope is model.Envelope (no QueryEnvelope)."

@@ -1,0 +1,67 @@
+schema: ae-discovery-v1
+task: T1
+date: 2026-06-09
+mode: read_only
+base_sha: 268f5125d70c12db67ef53bfed997c10f49589f6
+confirmed:
+  AUD-01:
+    file: internal/daemon/server.go
+    lines: [214, 235]
+    symbol: "s.app.Execute(context.Background(), request)"
+    status: confirmed
+  AUD-01-lock:
+    file: internal/service/workspace_ops.go
+    lines: [56, 58]
+    symbol: "store.WithWorkspaceIndexLock(registration.Root, \"workspace.auto-index\", func(){ indexer.IndexWorkspace(ctx, registration.Root, false) })"
+    status: confirmed
+  AUD-02:
+    file: internal/daemon/server.go
+    line: 63
+    symbol: "Version: \"dev\""
+    status: confirmed
+  SEC-09:
+    file: internal/daemon/server.go
+    line: 192
+    symbol: "if request.ProtocolVersion != \"\" && request.ProtocolVersion != model.ProtocolVersion"
+    status: confirmed
+  TOK-01:
+    file: internal/daemon/server.go
+    lines: [198, 207]
+    symbol: "accesses, _ := s.telemetry.RecentAccesses(20); ... \"recent_accesses\": accesses"
+    status: confirmed
+  PERF-05:
+    file: internal/daemon/server.go
+    lines: [94, 95]
+    symbol: "telemetry.PurgeOldEvents(cutoff); telemetry.PurgeOldRuns(cutoff)  // startup-only, no ticker"
+    status: confirmed
+  SEC-01:
+    file: internal/worker/protocol.go
+    lines: [23, 29]
+    symbol: "func ReadFrame(reader io.Reader, payload any) error { header := make([]byte,4); ...; body := make([]byte, length) }"
+    status: confirmed
+  AECanonStatus: { file: internal/model/types.go, line: 451, status: confirmed }
+  GovernanceStatus: { file: internal/model/types.go, line: 461, status: confirmed }
+  AccessEvent: { file: internal/model/types.go, line: 750, status: confirmed }
+drift_corrections:
+  - id: DRIFT-1
+    plan_assumed: "envelope type model.QueryEnvelope"
+    actual: "model.Envelope (internal/model/types.go:121)"
+    affected: [T2, L7]
+    fix: "Add Profile field to model.Envelope, not QueryEnvelope"
+  - id: DRIFT-2
+    plan_assumed: "indexer entry via method func (e *Engine) StartBackgroundIndex"
+    actual: "indexer uses PACKAGE-LEVEL funcs: IndexWorkspace(ctx, root string, clean bool) (Result, error) at indexer.go:37; no Engine type (only Result:17, Progress:25)"
+    affected: [T2, L1, L2]
+    fix: "StartBackgroundIndex must be a package-level func: func StartBackgroundIndex(ctx context.Context, root string, clean bool, mode IndexMode) (string, error) with a package-level job registry; IndexJobStatus(jobID string) (IndexJobState, bool) package-level"
+  - id: DRIFT-3
+    plan_assumed: "state store type StateStore"
+    actual: "type is TelemetryStore (internal/daemon/state_store.go:143); methods PurgeOldEvents:230, PurgeOldRuns:238, RecentAccesses:566, RecordAccess:512, NextSeq:444, ComputeMetrics:611"
+    affected: [T2, L2, L3]
+    fix: "PurgeAndVacuum receiver is (s *TelemetryStore); L2 ticker calls s.telemetry.PurgeAndVacuum(...)"
+cross_interfaces_resolved:
+  StartBackgroundIndex: "package indexer; func StartBackgroundIndex(ctx context.Context, root string, clean bool, mode IndexMode) (string, error)"
+  IndexJobStatus: "package indexer; func IndexJobStatus(jobID string) (IndexJobState, bool)"
+  PurgeAndVacuum: "func (s *TelemetryStore) PurgeAndVacuum(retentionDays int, maxBytes int64) (int, bool, error)"
+  envelope_profile: "model.Envelope gains Profile OutputProfile `json:\"-\"`"
+  accessevent_hash: "model.AccessEvent gains DecisionHash string `json:\"decision_hash,omitempty\"`"
+verdict: "plan executable after 3 signature corrections applied to T2/L1/L2/L3/L7"

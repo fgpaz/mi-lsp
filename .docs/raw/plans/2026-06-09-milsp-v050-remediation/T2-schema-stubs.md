@@ -36,17 +36,18 @@ stop_if:
 ## Reference
 `internal/model/types.go` structs `AccessEvent`, `QueryEnvelope`, `GovernanceStatus` — seguir el estilo de tags JSON existente.
 
+> **CORREGIDO por discovery.yaml:** indexer = funcs de paquete (no `Engine`); store = `TelemetryStore` en `internal/daemon/state_store.go` (no `StateStore`); envelope = `model.Envelope` (no `QueryEnvelope`).
+
 ## Prompt
 Agregá SOLO declaraciones (campos + stubs), sin lógica:
 1. En `internal/model/types.go`:
-   - `AccessEvent`: campo `DecisionHash string `json:"decision_hash,omitempty"`.
+   - `AccessEvent` (types.go:750): campo `DecisionHash string `json:"decision_hash,omitempty"`.
    - Nuevo tipo `type OutputProfile string` con consts `OutputProfileHuman OutputProfile = "human"` y `OutputProfileAgent OutputProfile = "agent"`.
-   - `QueryEnvelope`: campo `Profile OutputProfile `json:"-"`.
-2. Creá `internal/indexer/job.go` con el tipo `IndexMode`, `IndexJobState`, y los stubs:
-   `func (e *Engine) StartBackgroundIndex(ctx context.Context, reg model.WorkspaceRegistration, mode IndexMode) (string, error)` → `return "", errors.New("not implemented: StartBackgroundIndex")`.
-   `func (e *Engine) IndexJobStatus(jobID string) (IndexJobState, bool)` → `return IndexJobState{}, false`.
-   (Si el indexer no usa el receiver `Engine`, usá el tipo real confirmado en discovery.yaml `cross_interfaces`.)
-3. En `internal/store/state_store.go`: agregá el método stub `func (s *StateStore) PurgeAndVacuum(retentionDays int, maxBytes int64) (int, bool, error) { return 0, false, errors.New("not implemented: PurgeAndVacuum") }`.
+   - `Envelope` (types.go:121): campo `Profile OutputProfile `json:"-"`.
+2. Creá `internal/indexer/job.go` con el tipo `IndexMode`, `IndexJobState`, y los stubs a NIVEL DE PAQUETE (el indexer usa funcs de paquete como `IndexWorkspace(ctx, root, clean)` en indexer.go:37, NO un receiver `Engine`):
+   `func StartBackgroundIndex(ctx context.Context, root string, clean bool, mode IndexMode) (string, error)` → `return "", errors.New("not implemented: StartBackgroundIndex")`.
+   `func IndexJobStatus(jobID string) (IndexJobState, bool)` → `return IndexJobState{}, false`.
+3. En `internal/daemon/state_store.go`: agregá el método stub sobre `TelemetryStore` (state_store.go:143): `func (s *TelemetryStore) PurgeAndVacuum(retentionDays int, maxBytes int64) (int, bool, error) { return 0, false, errors.New("not implemented: PurgeAndVacuum") }`.
 4. `go build ./...` y `go vet ./...`. Si verde, `git add -A && git commit -m "feat(v050): land cross-lane schema and interface stubs"`.
 5. Propagá a los worktrees: por cada `C:/wt/v050-<id>`, `git -C C:/wt/v050-<id> merge --no-edit main`.
 
@@ -61,14 +62,14 @@ Agregá SOLO declaraciones (campos + stubs), sin lógica:
 ```go
 // internal/indexer/job.go
 package indexer
-import ("context"; "errors"; "github.com/.../internal/model")
+import ("context"; "errors")
 type IndexMode int
 const ( IndexModeFull IndexMode = iota; IndexModeIncremental )
 type IndexJobState struct { JobID string; Phase string; Done bool; Err string }
-func (e *Engine) StartBackgroundIndex(ctx context.Context, reg model.WorkspaceRegistration, mode IndexMode) (string, error) {
+func StartBackgroundIndex(ctx context.Context, root string, clean bool, mode IndexMode) (string, error) {
     return "", errors.New("not implemented: StartBackgroundIndex")
 }
-func (e *Engine) IndexJobStatus(jobID string) (IndexJobState, bool) { return IndexJobState{}, false }
+func IndexJobStatus(jobID string) (IndexJobState, bool) { return IndexJobState{}, false }
 ```
 
 ## Verify

@@ -45,7 +45,7 @@ stop_if:
 
 ## Prompt
 Editá SOLO tu set. Cambios:
-1. TOK-05/--profile agent: en `cli/root.go` resolvé `QueryEnvelope.Profile` desde flag `--profile` o `client_name`; en `formatter.go`/`truncator.go` aplicá: compress on, omitir recent_accesses, index_sync_details, ae_canon repetido cuando Profile==agent. Conservá siempre ok/items/hint/stats/next.
+1. TOK-05/--profile agent: en `cli/root.go` resolvé `model.Envelope.Profile` desde flag `--profile` o `client_name`; en `formatter.go`/`truncator.go` aplicá: compress on, omitir recent_accesses, index_sync_details, ae_canon repetido cuando Profile==agent. Conservá siempre ok/items/hint/stats/next.
 2. AUD-03: en `registry.go` autocorrección de alias cuando el cwd resuelve inequívocamente.
 3. governance-ae-canon: en `docgraph/governance.go` setear `Blocking=true` solo si el workspace declara capa AE; `service/governance.go` consume.
 4. TOK-04: `index_sync_details` opt-in (`--show-sync-details`); default solo count.

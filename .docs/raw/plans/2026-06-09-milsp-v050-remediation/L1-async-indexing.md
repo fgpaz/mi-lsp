@@ -62,18 +62,22 @@ Cambios:
 
 ## Skeleton
 ```go
-func (e *Engine) StartBackgroundIndex(ctx context.Context, reg model.WorkspaceRegistration, mode IndexMode) (string, error) {
-    jobID := newJobID(reg.Root)
-    e.jobs.set(jobID, IndexJobState{JobID: jobID, Phase: "queued"})
+// funcs de PAQUETE (no receiver Engine). Registro de jobs a nivel paquete con mutex.
+var jobs = newJobRegistry()
+func StartBackgroundIndex(ctx context.Context, root string, clean bool, mode IndexMode) (string, error) {
+    jobID := newJobID(root)
+    jobs.set(jobID, IndexJobState{JobID: jobID, Phase: "queued"})
     go func() {
-        ic, cancel := context.WithTimeout(context.WithoutCancel(ctx), e.indexTimeout())
+        ic, cancel := context.WithTimeout(context.WithoutCancel(ctx), indexTimeout())
         defer cancel()
-        err := e.runIndex(ic, reg, mode) // existing IndexWorkspace body, staged with ic.Err() checks
-        e.jobs.finish(jobID, err)
+        var err error
+        if mode == IndexModeIncremental { _, err = IndexWorkspace(ic, root, false) /* incremental path */ } else { _, err = IndexWorkspace(ic, root, clean) }
+        jobs.finish(jobID, err)
     }()
     return jobID, nil
 }
 ```
+> NOTA discovery: el cuerpo real reusa `indexer.IndexWorkspace(ctx, root, clean)` (indexer.go:37), etapando con chequeos `ic.Err()`. `workspace_ops.go:56-58` hoy llama `indexer.IndexWorkspace` dentro de `WithWorkspaceIndexLock`; cambialo para usar `StartBackgroundIndex` por defecto.
 
 ## Verify
 `go test ./internal/indexer/... ./internal/store/... ./internal/service/...` → PASS
