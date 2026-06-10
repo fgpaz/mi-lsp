@@ -8,6 +8,7 @@ import (
 	"os"
 	pathpkg "path"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -20,17 +21,20 @@ import (
 )
 
 type FileWatcher struct {
-	workspaceRoot string
-	registration  model.WorkspaceRegistration
-	watcher       *fsnotify.Watcher
-	debounce      map[string]*time.Timer
-	debounceDur   time.Duration
-	mu            sync.Mutex
-	stopCh        chan struct{}
-	stopOnce      sync.Once
-	wg            sync.WaitGroup
-	verbose       bool
-	watchedDirs   int
+	workspaceRoot   string
+	registration    model.WorkspaceRegistration
+	watcher         *fsnotify.Watcher
+	debounce        map[string]*time.Timer
+	debounceDur     time.Duration
+	maxWatchedDirs  int
+	mu              sync.Mutex
+	stopCh          chan struct{}
+	stopOnce        sync.Once
+	wg              sync.WaitGroup
+	verbose         bool
+	watchedDirs     int
+	batchTimer      *time.Timer
+	pendingBatch    map[string]struct{}
 }
 
 // NewFileWatcher creates a new file watcher for a workspace.
@@ -44,14 +48,18 @@ func NewFileWatcher(registration model.WorkspaceRegistration, debounceDur time.D
 		debounceDur = 500 * time.Millisecond
 	}
 
+	maxDirs := parseMaxDirsEnv("MI_LSP_WATCHER_MAX_DIRS", 10000)
+
 	fw := &FileWatcher{
-		workspaceRoot: registration.Root,
-		registration:  registration,
-		watcher:       watcher,
-		debounce:      make(map[string]*time.Timer),
-		debounceDur:   debounceDur,
-		stopCh:        make(chan struct{}),
-		verbose:       os.Getenv("MI_LSP_VERBOSE") != "",
+		workspaceRoot:  registration.Root,
+		registration:   registration,
+		watcher:        watcher,
+		debounce:       make(map[string]*time.Timer),
+		debounceDur:    debounceDur,
+		maxWatchedDirs: maxDirs,
+		stopCh:         make(chan struct{}),
+		verbose:        os.Getenv("MI_LSP_VERBOSE") != "",
+		pendingBatch:   make(map[string]struct{}),
 	}
 
 	return fw, nil
@@ -76,12 +84,17 @@ func (fw *FileWatcher) Stop() {
 		close(fw.stopCh)
 	})
 
-	// Cancel all pending debounce timers
+	// Cancel all pending debounce timers and batch timer
 	fw.mu.Lock()
 	for filePath, timer := range fw.debounce {
 		timer.Stop()
 		delete(fw.debounce, filePath)
 	}
+	if fw.batchTimer != nil {
+		fw.batchTimer.Stop()
+		fw.batchTimer = nil
+	}
+	fw.pendingBatch = make(map[string]struct{})
 	fw.mu.Unlock()
 
 	// Wait for watchLoop to exit
@@ -105,17 +118,21 @@ func (fw *FileWatcher) watchLoop(ctx context.Context) {
 			}
 			if event.Op&(fsnotify.Write|fsnotify.Create) != 0 {
 				if isWatchableFile(event.Name) {
-					fw.scheduleReindex(event.Name)
+					fw.scheduleBatchReindex(event.Name)
 				}
 			}
 			if event.Op&fsnotify.Create != 0 {
-				// Watch new directories
+				// Watch new directories respecting max cap
 				if info, err := os.Stat(event.Name); err == nil && info.IsDir() && !shouldSkipDir(event.Name) {
-					if err := fw.watcher.Add(event.Name); err == nil {
-						fw.mu.Lock()
-						fw.watchedDirs++
-						fw.mu.Unlock()
+					fw.mu.Lock()
+					if fw.watchedDirs < fw.maxWatchedDirs {
+						if err := fw.watcher.Add(event.Name); err == nil {
+							fw.watchedDirs++
+						}
+					} else if fw.verbose {
+						log.Printf("[mi-lsp:watcher] reached max watched dirs (%d), not adding %s", fw.maxWatchedDirs, event.Name)
 					}
+					fw.mu.Unlock()
 				}
 			}
 		case err, ok := <-fw.watcher.Errors:
@@ -155,6 +172,35 @@ func (fw *FileWatcher) scheduleReindex(filePath string) {
 		delete(fw.debounce, filePath)
 		fw.mu.Unlock()
 		fw.reindexFile(filePath)
+	})
+}
+
+// scheduleBatchReindex batches file changes into a coalesced window instead of
+// per-file timers. This reduces redundant re-indexing during rapid file changes.
+func (fw *FileWatcher) scheduleBatchReindex(filePath string) {
+	fw.mu.Lock()
+	defer fw.mu.Unlock()
+
+	// Add file to pending batch
+	fw.pendingBatch[filePath] = struct{}{}
+
+	// If batch timer already running, do nothing; it will reindex all pending files
+	if fw.batchTimer != nil {
+		return
+	}
+
+	// Start a new batch timer window
+	fw.batchTimer = time.AfterFunc(fw.debounceDur, func() {
+		fw.mu.Lock()
+		batch := fw.pendingBatch
+		fw.pendingBatch = make(map[string]struct{})
+		fw.batchTimer = nil
+		fw.mu.Unlock()
+
+		// Reindex all files in the batch
+		for filePath := range batch {
+			fw.reindexFile(filePath)
+		}
 	})
 }
 
@@ -233,6 +279,16 @@ func (fw *FileWatcher) addWatchRecursive(root string) error {
 			if shouldSkipDir(path) {
 				return filepath.SkipDir
 			}
+			fw.mu.Lock()
+			if fw.watchedDirs >= fw.maxWatchedDirs {
+				fw.mu.Unlock()
+				if fw.verbose {
+					log.Printf("[mi-lsp:watcher] reached max watched dirs (%d) during recursive add", fw.maxWatchedDirs)
+				}
+				return filepath.SkipDir
+			}
+			fw.mu.Unlock()
+
 			if watchErr := fw.watcher.Add(path); watchErr != nil {
 				// Log but don't fail — some dirs may not be watchable
 				if fw.verbose {
@@ -274,4 +330,16 @@ func computeHash(content []byte) string {
 	// Compute SHA1 hash of content
 	sum := sha1.Sum(content)
 	return hex.EncodeToString(sum[:])
+}
+
+func parseMaxDirsEnv(envName string, defaultVal int) int {
+	raw := strings.TrimSpace(os.Getenv(envName))
+	if raw == "" {
+		return defaultVal
+	}
+	val, err := strconv.Atoi(raw)
+	if err != nil || val <= 0 {
+		return defaultVal
+	}
+	return val
 }
