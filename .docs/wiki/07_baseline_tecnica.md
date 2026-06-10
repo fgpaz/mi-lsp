@@ -114,6 +114,7 @@ flowchart LR
 - `nav trace` sigue siendo una lectura directa del repo-local y debe resolver IDs `RS-*`, `RF-*` y `TP-*` desde `doc_records/doc_mentions`; para `RS-*` devuelve identidad documental (`doc_id`, `layer=RS`, `stage=outcome`) sin poblar el campo legacy `rf`, y para `RF-*` los docs TP del layer `06` cuentan como evidencia documental de cobertura y evitan falsos `missing` despues de `index --docs-only`.
 - Todo subprocesso no interactivo debe usar la politica comun de proceso; en Windows eso implica `HideWindow + CREATE_NO_WINDOW`, y los procesos background del daemon agregan `DETACHED_PROCESS`.
 - El `tool_root` del worker se resuelve contra el ejecutable/distribucion activa o, en desarrollo, contra el repo `mi-lsp`; nunca contra el `cwd` arbitrario del workspace consultado.
+- Indexacion async-first es el design locked (D6): `workspace.add/init` sin `--wait` devuelven `job_id` inmediatamente y continuan indexacion en background; con `--wait` se bloquean hasta publicacion.
 - `index`, `index start` y `index run-job` deben estar protegidos por un lock interproceso repo-local (`.mi-lsp/index.lock`) durante toda la indexacion, no solo durante el commit SQLite.
 - `index start` crea un job durable en `index_jobs`; sin `--wait` lanza un proceso hijo detached y devuelve `job_id`, con `--wait` ejecuta el job en el proceso actual.
 - `index cancel` sin `--force` debe detener cooperativamente loops largos de catalogo/docs mediante polling de `requested_cancel`; `index cancel --force` puede terminar el PID vivo asociado al job, marcarlo `canceled` y limpiar el lock asociado cuando el PID ya no existe.
@@ -128,6 +129,8 @@ flowchart LR
 - `daemon status` compara la metadata del ejecutable del daemon contra el CLI invocante (`path`, `size`, `mtime`, `sha256`) y advierte con `daemon restart` cuando la huella prueba build stale; el hash prevalece sobre diferencias de path para evitar falsos positivos en `go run`.
 - Requests pesadas daemon-aware se limitan con `MI_LSP_DAEMON_MAX_INFLIGHT` y devuelven `daemon/backpressure_busy` cuando se supera el limite.
 - SLO operativo local: `daemon perf-smoke` debe fallar con `ok=false` si working set, private bytes o handles superan los umbrales configurados; los defaults pueden ser conservadores y deben aparecer como presupuesto visible en el resultado.
+- Cachés de doc/FTS (PERF-02/03) fueron DIFERIDOS: se removieron de la integración debido a falta de invalidación robusta por generación de indice. Una version segura requiere clave por generacion y debe re-implementarse cuando exista garantia de invalidacion en reindex.
+- Pragmas SQLite de performance (PERF-04) — `cache_size`, `mmap_size`, `journal_mode=WAL`, `busy_timeout` — QUEDARON implementados en `internal/store/db.go`.
 - La resolucion efectiva de workspace para queries usa la precedencia `--workspace explicito > workspace registrado cuyo root contiene caller_cwd > last_workspace`.
 - Si varios aliases registrados comparten root, la seleccion automatica usa `project.name`, luego basename del root, luego `last_workspace` solo si apunta a ese mismo root, y deja warning visible.
 - El estado semantico persistente del workspace vive repo-local; el estado global solo guarda registro, estado del daemon y telemetria local.
@@ -202,12 +205,13 @@ El struct `internal/service/config.go` centraliza todos los valores hardcodeados
 - Cuando `index.db` esta corrupta, el comando legacy `index` debe cuarentenarla, reconstruir y dejar warning visible con la ruta respaldada.
 - `index.run` debe chequear `context.Context` durante walk, lectura de candidatos y parseo documental para que un timeout operativo corte el trabajo en curso.
 - Si el incremental detecta `doc_records` sin docs canonicos aunque la wiki existe en disco, `index.run` debe degradar a full rebuild en vez de devolver `no changes detected`.
-- Auto-purge de eventos > 30 dias (configurable via `MI_LSP_RETENTION_DAYS`) en startup de CLI y daemon.
+- Auto-purge de eventos > 30 dias (configurable via `MI_LSP_RETENTION_DAYS`) en startup de CLI y daemon; la purga debe ejecutarse con `VACUUM` para recuperar space en `daemon.db`.
 - `access_events` separa identidad analitica y diagnostica: `workspace_root` es la clave canonica de agrupacion; `workspace_alias` y `workspace_input` preservan display y forensics.
 - `workspace_input` preserva el selector crudo recibido, incluso cuando viene vacio; `workspace`, `workspace_alias` y `workspace_root` deben reflejar el workspace resuelto efectivamente.
 - Tanto CLI directo como daemon deben persistir `runtime_key` determinista; en modo directo puede ser pseudo-runtime y sigue siendo valido para attribution/export.
 - `access_events.seq` ordena eventos dentro de un `session_id`; vale `0` cuando la llamada no trae sesion y arranca en `1` para la primera operacion de una sesion trazable.
 - `access_events` tambien preserva metadata minima del llamado para analitica local: `route` (`direct`, `daemon`, `direct_fallback`), `format`, presupuestos (`token_budget`, `max_items`, `max_chars`) y `compress`.
+- `decision_hash` es un hash corto (8-16 chars) del bloque `decision_json` para tracking de patrones de decision sin guardar el JSON completo en indice; permite deduplic rápida y análisis de patrones recurrentes sin overhead de almacenamiento.
 - La ola actual de telemetria operativa agrega causalidad tipada para search/routing sin guardar payloads crudos: `warning_count`, `pattern_mode`, `routing_outcome`, `failure_stage`, `hint_code`, `truncation_reason` y `decision_json`.
 - El bloque `coach` no se persiste crudo; solo puede derivar metadata sanitizada como `coach_present`, `coach_trigger` y `coach_action_count` dentro de `decision_json`.
 - `decision_json` puede incluir solo metadata derivada de `continuation` y `memory_pointer` (`continuation_present`, `continuation_reason`, `continuation_op`, `memory_pointer_present`, `memory_stale`) y nunca el `why`, `query`, `handoff` ni comandos raw.
@@ -243,7 +247,8 @@ El struct `internal/service/config.go` centraliza todos los valores hardcodeados
 - En workspaces Go, `nav.workspace-map` agrega paquetes `cmd/*`, `internal/*` y `pkg/*` como servicios `go-package` desde el catalogo para que el mapa de self-dogfood no dependa de entrypoints C#.
 - En AXI efectivo, `init`, `workspace status`, `nav search`, `nav intent` y `nav pack` arrancan en preview-first por default; `nav ask` lo hace solo cuando la heuristica detecta orientacion, y `nav workspace-map` solo cuando se fuerza AXI.
 - `nav search` debe ser resiliente a timeout: cada busqueda textual directa aplica un presupuesto interactivo corto (5s por workspace), excluye caches/dependencias generadas aun con `--hidden`, limita el sobre-muestreo de identificadores en AXI preview, y, si existen resultados parciales seguros, responde `ok=true` con warning `search_timeout`, `next_hint` y coach accionable; no convierte el timeout en ausencia falsa.
-- `init` registra, persiste proyecto e indexa por defecto sin requerir `workspace add` previo.
+- `init` registra, persiste proyecto e indexa por defecto sin requerir `workspace add` previo; aceptar `--no-index` para registrar sin bloquear en indexacion asincona.
+- `workspace.add` y `workspace.init` aceptan `--wait` para bloquear hasta que la indexacion async completada; sin `--wait` devuelven `job_id` y la indexacion continua en background.
 - `worker install` es explicito; no hay descargas silenciosas durante consultas.
 - `worker install` copia un worker bundled por RID cuando la distribucion lo trae adjunto; si la CLI corre dentro del repo `mi-lsp` y no existe bundle adjunto, publica el worker desde `worker-dotnet/` con `dotnet publish`.
 - `scripts/install/install.ps1|sh` es la superficie publica de instalacion/actualizacion CLI-only: consume GitHub `releases/latest`, detecta uno de los cuatro RIDs publicados, verifica checksum antes de extraer y mantiene `workers/<rid>/` junto al binario.
@@ -263,6 +268,7 @@ El struct `internal/service/config.go` centraliza todos los valores hardcodeados
 - `nav service` debe funcionar sin Roslyn y seguir entregando evidencia util incluso cuando el catalogo es parcial; para paquetes Go debe apoyarse en catalogo antes que en patrones textuales .NET y solo luego sumar patrones Go language-aware.
 - `nav context` acepta `file line` y `file:line`; sobre archivos no semanticos no debe depender de Roslyn, `tsserver`, Pyright ni `gopls`.
 - Si `tsserver`, `pyright` o `gopls` ya fallaron por indisponibilidad en la misma sesion/runtime, el core puede entrar en cooldown corto y degradar directamente a catalog/text.
+- `mi-lsp doctor` es el comando unificado de diagnostico: sin args inspecciona el workspace actual; con `--workspace <alias>` inspecciona ese workspace. Reporta alias duplicados, worktrees, paths stale, colisiones de casing, shadowing de binario, health de daemon/workers y next actions.
 
 ## Fan-out de comandos wiki
 

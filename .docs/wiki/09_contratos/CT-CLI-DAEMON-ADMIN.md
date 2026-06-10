@@ -63,11 +63,12 @@ Define la frontera entre clientes locales y el runtime compartido: CLI publica, 
 
 Comandos canonicos:
 
-- `workspace add|scan|list|warm|status|remove`
+- `workspace add|scan|list|warm|status|remove|doctor|hygiene|prune`
 - `nav symbols|find|refs|overview|outline|service|search|context|deps|ask|pack|batch|related|workspace-map|diff-context|affected|trace|intent`
 - `index [path] [--clean] [--docs-only]`
 - `index start|status|cancel`
 - `info`
+- `doctor` (alias unificado para diagnostico workspace-aware)
 - `daemon start|stop|status|restart|open|logs [--tail N]`
 - `daemon perf-smoke [--callers N] [--max-working-set-mb N] [--max-private-mb N] [--max-handles N]`
 - `worker install|status`
@@ -88,6 +89,7 @@ Flags globales minimos:
 - `--session-id`
 - `--backend`
 - `--verbose`
+- `--profile agent` (auto para harness cuando se detecta `client_name=harness-*`)
 
 Flags especificos:
 
@@ -100,7 +102,7 @@ Flags especificos:
 - `index start --mode full|docs|catalog --wait`
 - `daemon start|restart|serve --watch-mode off|lazy|eager --max-watched-roots N --max-inflight N`
 
-### `index`
+### `index` + indexacion async
 
 Input:
 
@@ -109,24 +111,28 @@ mi-lsp index [path] [--workspace <alias>] [--clean] [--docs-only]
 mi-lsp index start [path] [--workspace <alias>] [--mode full|docs|catalog] [--clean] [--wait]
 mi-lsp index status [job-id] [--workspace <alias>]
 mi-lsp index cancel <job-id> [--workspace <alias>] [--force]
+
+mi-lsp init [path] [--name alias] [--no-index]
+mi-lsp workspace add [path] [--name alias] [--no-index]
 ```
 
 Reglas:
 
-- `index [path]` es wrapper de compatibilidad que ejecuta `index start --mode full --wait`; con `--docs-only`, ejecuta `--mode docs --wait`
-- `index start` crea un registro durable en `index_jobs`; sin `--wait` lanza un proceso detached y retorna el `job_id`
-- `index status` consulta el ultimo job del workspace si no se pasa `job-id`
-- `index status.phase` conserva `indexing` durante el trabajo pesado y solo pasa a `publishing` en el cierre/publicacion final
-- `index status` expone progreso vivo en `current_stage`, `current_path`, `files_total`, `files`, `symbols`, `docs` y `updated_at`; esos campos deben refrescarse durante catalogo/docs antes de publicar
-- `index cancel` marca cancelacion solicitada; la cancelacion es cooperativa y puede no interrumpir una publicacion que ya llego al commit
-- `index cancel --force` puede terminar el PID vivo del job, marcarlo `canceled` y remover el `.mi-lsp/index.lock` si pertenece a ese PID ya muerto; se reserva para jobs colgados
-- sin `--docs-only`, indexa catalogo de codigo y grafo documental, con incremental git-aware cuando corresponde
-- con `--docs-only`, reconstruye `doc_records`, `doc_edges`, `doc_mentions` y `memory_pointer` sin reemplazar `files` ni `symbols`
-- toda indexacion toma `.mi-lsp/index.lock`; si ya existe, la operacion debe fallar con mensaje accionable que incluya el lock owner cuando este disponible
-- locks con PID inexistente se consideran stale y pueden recuperarse automaticamente
-- la publicacion full de catalogo + docs + memoria es all-or-nothing dentro de SQLite
-- el indexador debe respetar cancelacion de contexto durante el walk y el parseo documental
-- la lista interna de ignores excluye dependencias/caches generadas como `.venv`, `venv`, `__pycache__`, `.pytest_cache`, `.turbo`, `.next` y `node_modules`
+- `index [path]` es wrapper de compatibilidad que ejecuta `index start --mode full --wait`; con `--docs-only`, ejecuta `--mode docs --wait`.
+- `index start` crea un registro durable en `index_jobs`; sin `--wait` lanza un proceso detached y retorna el `job_id`; con `--wait` bloquea hasta que la indexacion complete.
+- `index status` consulta el ultimo job del workspace si no se pasa `job-id`.
+- `index status.phase` conserva `indexing` durante el trabajo pesado y solo pasa a `publishing` en el cierre/publicacion final.
+- `index status` expone progreso vivo en `current_stage`, `current_path`, `files_total`, `files`, `symbols`, `docs` y `updated_at`; esos campos deben refrescarse durante catalogo/docs antes de publicar.
+- `index cancel` marca cancelacion solicitada; la cancelacion es cooperativa y puede no interrumpir una publicacion que ya llego al commit.
+- `index cancel --force` puede terminar el PID vivo del job, marcarlo `canceled` y remover el `.mi-lsp/index.lock` si pertenece a ese PID ya muerto; se reserva para jobs colgados.
+- `workspace.add`, `init` aceptan `--wait` para bloquear hasta completar indexacion async; sin `--wait` devuelven `job_id` y continuan en background. `--no-index` omite indexacion.
+- sin `--docs-only`, indexa catalogo de codigo y grafo documental, con incremental git-aware cuando corresponde.
+- con `--docs-only`, reconstruye `doc_records`, `doc_edges`, `doc_mentions` y `memory_pointer` sin reemplazar `files` ni `symbols`.
+- toda indexacion toma `.mi-lsp/index.lock`; si ya existe, la operacion debe fallar con mensaje accionable que incluya el lock owner cuando este disponible.
+- locks con PID inexistente se consideran stale y pueden recuperarse automaticamente.
+- la publicacion full de catalogo + docs + memoria es all-or-nothing dentro de SQLite.
+- el indexador debe respetar cancelacion de contexto durante el walk y el parseo documental.
+- la lista interna de ignores excluye dependencias/caches generadas como `.venv`, `venv`, `__pycache__`, `.pytest_cache`, `.turbo`, `.next` y `node_modules`.
 
 Respuesta `index start --wait` exitosa:
 
@@ -315,7 +321,7 @@ Canal:
 
 Request envelope actual:
 
-- `protocol_version`
+- `protocol_version` (requerido, no puede estar vacio; versiones incompatibles rechazadas tempranamente)
 - `operation`
 - `context`
 - `payload`
@@ -377,7 +383,7 @@ Endpoints minimos:
 - `GET /api/status?window=<recent|7d|30d|90d>`
 - `GET /api/workspaces?window=<recent|7d|30d|90d>`
 - `GET /api/workspaces/{workspace}?window=<recent|7d|30d|90d>`
-- `POST /api/workspaces/{workspace}/warm`
+- `POST /api/workspaces/{workspace}/warm` (requiere admin token + validacion Host/Origin)
 - `GET /api/accesses?window=<recent|7d|30d|90d>`
 - `GET /api/logs?tail=<n>`
 - `GET /api/metrics?window=<recent|7d|30d|90d>`
@@ -389,7 +395,7 @@ Payload clave en `GET /api/status`:
 - `active_runtimes`
 - `daemon_process`
 - `watchers`
-- `recent_accesses`
+- `recent_accesses` (default 5 items, en v0.5.0+)
 - `workspaces`
 - `generated_at`
 - `window`
@@ -401,12 +407,14 @@ Deep-link admin canonico:
 
 Reglas:
 
-- solo `127.0.0.1`
+- solo `127.0.0.1` (loopback local)
 - una UI global
 - acciones seguras solamente
 - query params, no hash-state
 - el resumen agregado debe distinguir cortes por workspace y por operacion
 - `GET /api/logs?tail=n` lee el tail con memoria acotada y puede devolver warning si el archivo se capeo por bytes.
+- Endpoints mutantes (`POST /api/workspaces/{workspace}/warm`) requieren admin token pre-compartido en `state.json` y validacion explicita de `Host` y `Origin` headers para CSRF/DNS-rebinding local.
+- Frames de protocolo daemon-CLI limitados a MaxFrameSize 256MB para prevenir OOM DoS por header malformado; se valida antes de alocar.
 
 ### Comandos del workspace
 

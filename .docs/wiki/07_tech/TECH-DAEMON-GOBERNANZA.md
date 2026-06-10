@@ -123,12 +123,14 @@ Define el modelo canonico del daemon global, su governance UI workspace-first y 
 - `GET /api/status?window=<recent|7d|30d|90d>`
 - `GET /api/workspaces?window=<recent|7d|30d|90d>`
 - `GET /api/workspaces/{workspace}?window=<recent|7d|30d|90d>`
-- `POST /api/workspaces/{workspace}/warm`
+- `POST /api/workspaces/{workspace}/warm` (requiere admin token pre-compartido en header `X-Mi-Lsp-Token` + validacion Host/Origin)
 - `GET /api/accesses?window=<recent|7d|30d|90d>`
 - `GET /api/logs?tail=<n>`
 - `GET /api/metrics?window=<recent|7d|30d|90d>` — computa p50/p95, error rate y truncation rate por operacion/workspace/cliente desde `access_events`; mantiene compatibilidad legacy con `days=<n>`
 - `mi-lsp admin export --summary` reutiliza la misma ventana y agrega breakdowns opcionales por route/client/hint/failure-stage; raw y summary soportan `--format toon` para revision agent-friendly, el summary sin `--limit` debe agregarse en streaming desde `daemon.db`, y el raw export prioriza CLI antes que UI para debugging operativo y es la primera superficie donde deben aparecer los campos causales nuevos.
 - `GET /api/status` tambien expone `daemon_process` y `watchers`, equivalentes a `daemon status`, para validar presupuestos de agentes sin inspeccion externa.
+- admin token es un valor pre-compartido guardado en `~/.mi-lsp/daemon/state.json` y requerido solo para endpoints mutantes; se comunica al usuario via `daemon status` o `admin open`.
+- Host/Origin validation previene CSRF/DNS-rebinding local: endpoints mutantes rechazan requests cuyo header `Host` o `Origin` no apunten a `127.0.0.1:<puerto>` del daemon.
 
 ## Dependencias e interacciones
 
