@@ -17,6 +17,7 @@ with an optional .mi-lsp/project.toml topology file.`,
 
 	var alias string
 	var noIndex bool
+	var background bool
 	addCommand := &cobra.Command{
 		Use:   "add <path>",
 		Short: "Register a workspace path",
@@ -24,11 +25,12 @@ with an optional .mi-lsp/project.toml topology file.`,
 			if err := requireArgs(args, 1, "path"); err != nil {
 				return err
 			}
-			return state.executeOperation(cmd, "workspace.add", map[string]any{"path": args[0], "alias": alias, "no_index": noIndex}, false)
+			return state.executeOperation(cmd, "workspace.add", map[string]any{"path": args[0], "alias": alias, "no_index": noIndex, "background": background}, false)
 		},
 	}
 	addCommand.Flags().StringVar(&alias, "name", "", "Workspace alias")
 	addCommand.Flags().BoolVar(&noIndex, "no-index", false, "Skip automatic indexing after registration")
+	addCommand.Flags().BoolVar(&background, "background", false, "Index asynchronously in the background and return immediately (for very large workspaces)")
 
 	scanCommand := &cobra.Command{
 		Use:   "scan",

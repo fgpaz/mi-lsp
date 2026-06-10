@@ -67,7 +67,14 @@ func (a *App) registerWorkspace(ctx context.Context, request model.CommandReques
 	item := workspaceSummaryItem(registration, project)
 	warnings := []string{}
 	noIndex, _ := request.Payload["no_index"].(bool)
-	wait, _ := request.Payload["wait"].(bool)
+	// Default is a synchronous, bounded auto-index so the init-then-query contract
+	// holds (callers can query immediately after add/init). Opt into async with
+	// background=true (--background) for very large workspaces. `wait=true` is still
+	// honored (forces sync) for backward compatibility; sync is now the default.
+	background, _ := request.Payload["background"].(bool)
+	if w, ok := request.Payload["wait"].(bool); ok && w {
+		background = false
+	}
 
 	if !noIndex {
 		// Check if index already exists to use incremental mode
@@ -81,12 +88,26 @@ func (a *App) registerWorkspace(ctx context.Context, request model.CommandReques
 			}
 		}
 
-		if wait {
-			// Blocking index with full lock
+		if background {
+			// Async index: spawn background job and return immediately. AUD-01 escape
+			// for very large workspaces that should not block add/init.
+			jobID, err := indexer.StartBackgroundIndex(ctx, registration.Root, false, mode)
+			if err != nil {
+				warnings = append(warnings, "auto-index failed to start: "+err.Error())
+			} else {
+				item["index_job_id"] = jobID
+				item["index_status"] = "background"
+			}
+		} else {
+			// Synchronous index (default), bounded by IndexTimeout so it cannot hang
+			// indefinitely (AUD-01). On timeout it downgrades to a warning instead of
+			// blocking forever. IndexWorkspace(clean=false) is incremental-aware.
+			ic, cancel := context.WithTimeout(ctx, indexer.IndexTimeout())
+			defer cancel()
 			var indexResult indexer.Result
 			indexErr := store.WithWorkspaceIndexLock(registration.Root, "workspace.auto-index", func() error {
 				var err error
-				indexResult, err = indexer.IndexWorkspace(ctx, registration.Root, false)
+				indexResult, err = indexer.IndexWorkspace(ic, registration.Root, false)
 				return err
 			})
 			if indexErr != nil {
@@ -95,15 +116,6 @@ func (a *App) registerWorkspace(ctx context.Context, request model.CommandReques
 				item["index_symbols"] = indexResult.Stats.Symbols
 				item["index_files"] = indexResult.Stats.Files
 				item["index_ms"] = indexResult.Stats.Ms
-			}
-		} else {
-			// Async index: spawn background job
-			jobID, err := indexer.StartBackgroundIndex(ctx, registration.Root, false, mode)
-			if err != nil {
-				warnings = append(warnings, "auto-index failed to start: "+err.Error())
-			} else {
-				item["index_job_id"] = jobID
-				item["index_status"] = "background"
 			}
 		}
 	}

@@ -141,29 +141,10 @@ func TestWorkspaceInitRegistersAndIndexes(t *testing.T) {
 		t.Fatalf("name = %#v, want %s", item["name"], alias)
 	}
 
-	// L1: async indexing is now background. Poll the job to completion.
-	jobID, ok := item["index_job_id"].(string)
-	if !ok || jobID == "" {
-		t.Fatalf("expected index_job_id in init response, got %#v", item)
-	}
-
-	// Poll until the job is done
-	deadline := time.Now().Add(30 * time.Second)
-	for {
-		state, found := indexer.IndexJobStatus(jobID)
-		if !found {
-			t.Fatalf("job %s not found in registry", jobID)
-		}
-		if state.Done {
-			if state.Err != "" {
-				t.Fatalf("index job failed: %s", state.Err)
-			}
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("index job timed out (30s) with state: %#v", state)
-		}
-		time.Sleep(100 * time.Millisecond)
+	// Sync auto-index is the default: init returns index stats directly so the
+	// init-then-query contract holds.
+	if item["index_files"] == nil {
+		t.Fatalf("expected init to auto-index synchronously, got %#v", item)
 	}
 
 	// Now check that the index was populated

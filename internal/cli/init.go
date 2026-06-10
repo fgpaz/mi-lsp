@@ -6,6 +6,7 @@ func newInitCommand(state *rootState) *cobra.Command {
 	var alias string
 	var noIndex bool
 	var wait bool
+	var background bool
 	command := &cobra.Command{
 		Use:   "init [path]",
 		Short: "Detect, register, and index the current workspace",
@@ -14,11 +15,12 @@ func newInitCommand(state *rootState) *cobra.Command {
 			if len(args) > 0 {
 				path = args[0]
 			}
-			return state.executeOperation(cmd, "workspace.init", map[string]any{"path": path, "alias": alias, "no_index": noIndex, "wait": wait}, false)
+			return state.executeOperation(cmd, "workspace.init", map[string]any{"path": path, "alias": alias, "no_index": noIndex, "wait": wait, "background": background}, false)
 		},
 	}
 	command.Flags().StringVar(&alias, "name", "", "Workspace alias")
 	command.Flags().BoolVar(&noIndex, "no-index", false, "Skip automatic indexing after registration")
-	command.Flags().BoolVar(&wait, "wait", false, "Block until indexing completes (default: background async)")
+	command.Flags().BoolVar(&background, "background", false, "Index asynchronously in the background and return immediately (for very large workspaces)")
+	command.Flags().BoolVar(&wait, "wait", false, "Deprecated/no-op: indexing is synchronous by default; use --background for async")
 	return command
 }

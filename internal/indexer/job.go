@@ -80,6 +80,11 @@ func indexTimeout() time.Duration {
 	return 5 * time.Minute
 }
 
+// IndexTimeout returns the configured index timeout, used to bound a synchronous
+// auto-index so it cannot hang indefinitely (AUD-01). Configurable via
+// MI_LSP_INDEX_TIMEOUT; default 5 minutes.
+func IndexTimeout() time.Duration { return indexTimeout() }
+
 // StartBackgroundIndex starts an async index job and returns its jobID immediately.
 //
 // The job runs in a background goroutine with per-stage timeouts. The state is
