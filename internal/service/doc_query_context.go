@@ -2,42 +2,13 @@ package service
 
 import (
 	"context"
-	"crypto/md5"
 	"database/sql"
 	"fmt"
 	"strings"
-	"sync"
-	"time"
 
 	"github.com/fgpaz/mi-lsp/internal/docgraph"
 	"github.com/fgpaz/mi-lsp/internal/model"
 	"github.com/fgpaz/mi-lsp/internal/store"
-)
-
-// cachedFTSResult holds cached FTS search results with TTL.
-type cachedFTSResult struct {
-	docs      []model.DocRecord
-	scores    map[string]float64
-	expiredAt time.Time
-}
-
-// docCacheEntry holds a cached doc query result with TTL.
-type docCacheEntry struct {
-	docs      []model.DocRecord
-	expiredAt time.Time
-}
-
-var (
-	// ftsCache caches FTS5 search results by query hash.
-	// Key: MD5(normalizedQuery), Value: cachedFTSResult
-	ftsCache sync.Map
-
-	// docCache caches full doc query results by workspace/query hash.
-	// Key: MD5(workspaceRoot+normalizedQuery), Value: docCacheEntry
-	docCache sync.Map
-
-	// cacheTTL is the time-to-live for cached results (5 minutes).
-	cacheTTL = 5 * time.Minute
 )
 
 type docQueryContext struct {
@@ -81,21 +52,6 @@ func loadDocQueryContext(ctx context.Context, registration model.WorkspaceRegist
 	}
 	query.db = db
 
-	// PERF-02: Try to load docs from cache first
-	if cachedDocs, ok := lookupDocCache(registration.Root, rankingTask); ok {
-		query.docs = cachedDocs
-		for _, doc := range cachedDocs {
-			query.docByPath[doc.Path] = doc
-		}
-		// Re-run ranking with cached docs
-		_, query.ftsScores, _ = store.FTSSearchDocs(ctx, db, rankingTask, 20)
-		query.ranked = rankDocs(rankingTask, query.family, cachedDocs, query.ftsScores, query.profile, query.recentChanges)
-		for _, item := range query.ranked {
-			query.rankedByPath[item.record.Path] = item
-		}
-		return query
-	}
-
 	docs, err := store.ListDocRecords(ctx, db)
 	if err != nil {
 		query.dbErr = err
@@ -112,15 +68,11 @@ func loadDocQueryContext(ctx context.Context, registration model.WorkspaceRegist
 		return query
 	}
 
-	// PERF-03: Cache FTS results with 5-minute TTL
 	_, query.ftsScores, _ = store.FTSSearchDocs(ctx, db, rankingTask, 20)
 	query.ranked = rankDocs(rankingTask, query.family, docs, query.ftsScores, query.profile, query.recentChanges)
 	for _, item := range query.ranked {
 		query.rankedByPath[item.record.Path] = item
 	}
-
-	// PERF-02: Store doc results in cache
-	storeDocCache(registration.Root, rankingTask, docs)
 
 	return query
 }
@@ -240,75 +192,3 @@ func (q *docQueryContext) primaryDoc(routeResult model.RouteResult) (scoredDoc, 
 	return scoredDoc{}, false
 }
 
-// queryHash computes a stable hash for a query string (MD5 of normalized query).
-func queryHash(query string) string {
-	return fmt.Sprintf("%x", md5.Sum([]byte(strings.ToLower(strings.TrimSpace(query)))))
-}
-
-// docQueryCacheKey computes a stable key for caching doc queries.
-func docQueryCacheKey(workspaceRoot, query string) string {
-	combined := workspaceRoot + "|" + strings.ToLower(strings.TrimSpace(query))
-	return fmt.Sprintf("%x", md5.Sum([]byte(combined)))
-}
-
-// InvalidateDocCache clears cached doc query results.
-// Called by L1/L2 after index publication.
-func InvalidateDocCache() {
-	docCache.Range(func(key, value interface{}) bool {
-		docCache.Delete(key)
-		return true
-	})
-	ftsCache.Range(func(key, value interface{}) bool {
-		ftsCache.Delete(key)
-		return true
-	})
-}
-
-// lookupFTSCache returns cached FTS search results if valid, otherwise nil.
-func lookupFTSCache(query string) ([]model.DocRecord, map[string]float64, bool) {
-	qhash := queryHash(query)
-	val, ok := ftsCache.Load(qhash)
-	if !ok {
-		return nil, nil, false
-	}
-	cached, ok := val.(cachedFTSResult)
-	if !ok || time.Now().After(cached.expiredAt) {
-		ftsCache.Delete(qhash)
-		return nil, nil, false
-	}
-	return cached.docs, cached.scores, true
-}
-
-// storeFTSCache stores FTS search results in the cache with TTL.
-func storeFTSCache(query string, docs []model.DocRecord, scores map[string]float64) {
-	qhash := queryHash(query)
-	ftsCache.Store(qhash, cachedFTSResult{
-		docs:      docs,
-		scores:    scores,
-		expiredAt: time.Now().Add(cacheTTL),
-	})
-}
-
-// lookupDocCache returns cached doc query result if valid, otherwise nil.
-func lookupDocCache(workspaceRoot, query string) ([]model.DocRecord, bool) {
-	key := docQueryCacheKey(workspaceRoot, query)
-	val, ok := docCache.Load(key)
-	if !ok {
-		return nil, false
-	}
-	cached, ok := val.(docCacheEntry)
-	if !ok || time.Now().After(cached.expiredAt) {
-		docCache.Delete(key)
-		return nil, false
-	}
-	return cached.docs, true
-}
-
-// storeDocCache stores doc query results in the cache with TTL.
-func storeDocCache(workspaceRoot, query string, docs []model.DocRecord) {
-	key := docQueryCacheKey(workspaceRoot, query)
-	docCache.Store(key, docCacheEntry{
-		docs:      docs,
-		expiredAt: time.Now().Add(cacheTTL),
-	})
-}

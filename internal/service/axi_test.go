@@ -122,14 +122,17 @@ func TestNavAskAXIPreviewSuggestsFullAndKeepsUsefulNextQueries(t *testing.T) {
 	root := createLinkedDocsWorkspaceFixture(t, alias)
 	app := New(root, nil)
 
-	if _, err := app.Execute(context.Background(), model.CommandRequest{
+	initEnv, err := app.Execute(context.Background(), model.CommandRequest{
 		Operation: "workspace.init",
 		Context:   model.QueryOptions{},
 		Payload:   map[string]any{"path": root, "alias": alias},
-	}); err != nil {
+	})
+	if err != nil {
 		t.Fatalf("workspace.init: %v", err)
 	}
 	defer func() { _ = workspace.RemoveWorkspace(alias) }()
+
+	waitForIndexingComplete(t, initEnv)
 
 	env, err := app.Execute(context.Background(), model.CommandRequest{
 		Operation: "nav.ask",
