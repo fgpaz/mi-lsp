@@ -1,0 +1,33 @@
+schema: ae-orchestrator-registry-v1
+session: milsp-v050-remediation
+parent_orchestrator:
+  id: director-ae
+  role: meta_orchestrator
+  owns: [decision_lock, ticket_frontier, session_contract, adapter_selection, gates, final_verdict]
+  state: active
+  evidence_dir: ".docs/auditoria/2026-06-09-milsp-v050-remediation/"
+lane_orchestrators:
+  - { id: T0, role: setup, owns_paths: [worktrees], state: planned, evidence: T0-worktrees.yaml }
+  - { id: T1, role: discovery_readonly, owns_paths: [readonly all], state: planned, evidence: discovery.yaml }
+  - { id: T2, role: schema_stubs, owns_paths: [internal/model/types.go, internal/indexer/job.go, internal/store/state_store.go], state: planned, evidence: build-log }
+  - { id: L1, role: constructor, owns_paths: [indexer, index_lock, queries_incremental, index_publish, workspace_ops, cli/index, cli/init], state: planned, evidence: L1-verdict.yaml }
+  - { id: L2, role: constructor, owns_paths: [daemon/server.go, daemon/options.go], state: planned, evidence: L2-verdict.yaml }
+  - { id: L3, role: constructor, owns_paths: [daemon/state_store.go, telemetry/access_diagnostics.go, telemetry/access_events.go], state: planned, evidence: L3-verdict.yaml }
+  - { id: L4, role: constructor, owns_paths: [daemon/admin.go, admin_ui.go, server_windows.go, server_unix.go, worker/protocol.go], state: planned, evidence: L4-verdict.yaml }
+  - { id: L5, role: constructor, owns_paths: [daemon/lifecycle.go, daemon/file_watcher.go], state: planned, evidence: L5-verdict.yaml }
+  - { id: L6, role: constructor, owns_paths: [store/db.go, queries_docs.go, doc_query_context.go, doc_ranking.go, service/search.go, config.go, indexer/incremental.go, search_text.go], state: planned, evidence: L6-verdict.yaml }
+  - { id: L7, role: constructor, owns_paths: [docgraph/governance.go, service/governance.go, output/formatter.go, output/truncator.go, workspace/registry.go, cli/root.go, model/types.go], state: planned, evidence: L7-verdict.yaml }
+  - { id: L8, role: constructor_dotnet, owns_paths: [worker-dotnet/MiLsp.Worker/*.cs], state: planned, evidence: L8-verdict.yaml }
+  - { id: L9, role: constructor, owns_paths: [cli/doctor.go(new), service/doctor.go(new)], state: planned, evidence: L9-verdict.yaml }
+  - { id: L10, role: constructor_docs, owns_paths: [scripts/release, scripts/install, scripts/ae, CLAUDE.md, AGENTS.md, PATHS.md, ae docs, CHANGELOG], state: planned, evidence: L10-verdict.yaml }
+  - { id: A1, role: integration_aggregator, owns_paths: [v050/integration merge], state: planned, evidence: A1-integration.yaml }
+  - { id: B1, role: release_binary, owns_paths: [binary build + reinstall], state: planned, evidence: release-provenance.yaml }
+  - { id: L11a, role: constructor_docs, owns_paths: [07/08/09 + CT/TECH/DB], state: planned, evidence: L11a-verdict.yaml }
+  - { id: L11b, role: constructor_skill, owns_paths: [skill mi-lsp + mirror], state: planned, evidence: L11b-verdict.yaml }
+  - { id: R1, role: release, owns_paths: [CHANGELOG, distribution evidence], state: planned, evidence: ae-release-distribution.yaml }
+verifier_orchestrators:
+  - { id: F1, role: traceability, state: planned }
+  - { id: F2, role: audit, state: planned }
+  - { id: F3, role: pre_push_guarded_integration, state: planned }
+exclusive_path_check: "PASS — no Go file owned by two lanes (verified against file-ownership matrix in plan)"
+recursion_depth: v0_shadow

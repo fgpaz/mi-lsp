@@ -1,0 +1,36 @@
+schema: ae-decision-ledger-v1
+session: milsp-v050-remediation
+locked_decisions:
+  - id: D1
+    decision: "Single v0.5.0 release at the end (no incremental per-wave tags)"
+    source: brainstorming AskUserQuestion 2026-06-09
+  - id: D2
+    decision: "Full scope: all 48 findings (P1+P2+P3) in this round"
+    source: brainstorming AskUserQuestion 2026-06-09
+  - id: D3
+    decision: "Include all 4 new design ideas: async-first indexing, --profile agent, mi-lsp doctor, release provenance gate"
+    source: brainstorming AskUserQuestion 2026-06-09
+  - id: D4
+    decision: "Worktree per lane for isolation; integration aggregator merges by commit"
+    source: brainstorming AskUserQuestion 2026-06-09
+  - id: D5
+    decision: "Lanes own exclusive file sets; no Go file written by two lanes; cross-lane interfaces (StartBackgroundIndex, PurgeAndVacuum, AccessEvent.DecisionHash, OutputProfile) landed as stubs in Wave 0 T2"
+    source: writing-plans file-ownership analysis
+  - id: D6
+    decision: "async-first indexing supersedes the per-finding timeout patches (AUD-01, init-300s, autoindex-background, incremental) — one coherent redesign"
+    source: brainstorming new-ideas
+  - id: D7
+    decision: "--profile agent consolidates TOK-01/04/05/06; auto-activated by client_name, never for manual-cli"
+    source: brainstorming new-ideas
+  - id: D8
+    decision: "governance-ae-canon-blocking made conditional on workspace declaring an AE layer (do not break docs_ready for non-AE workspaces)"
+    source: audit verifier + brainstorming
+  - id: D9
+    decision: "Waves 3 (binary reinstall), 4 (buho mirror commit), 5 (release publish), and final guarded merge require explicit user approval (C3 irreversible/outward-facing)"
+    source: ae-programa Live Runtime Staging Gate
+deferred_or_followups:
+  - id: F-SEC03
+    note: "Named pipe SDDL: if go-winio vendored version lacks SDDL param, record as documented follow-up, do not fake"
+  - id: F-SIGN
+    note: "Worker .NET code-signing: documented follow-up (P3), not implemented this round"
+open_questions: []
