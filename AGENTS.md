@@ -8,6 +8,7 @@ For every task in this repository:
 
 1. Run `$ps-contexto` first.
 1a. Run `$ae-programa` as the gateway for non-trivial, mutating, policy, harness, shared-skill, or multi-step work.
+1b. Select workers through manifest-backed global `ae-adapter-*` skills first: read `adapter_manifest.schema=ae-harness-adapter/v1`, prefer an explicit user-requested harness, then current/project harness fit, and fall back to `simulated_packets` with `missing_ae_adapter_manifest` when no adapter satisfies evidence and isolation.
 2. Validate governance before planning or execution:
    - set `MI_LSP_CLIENT_NAME` and `MI_LSP_SESSION_ID`
    - `mi-lsp workspace status <alias> --format toon`
