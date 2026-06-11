@@ -50,17 +50,24 @@ compatible_adapters:
   - manual_acotado
 subagent_rule:
   mandatory_for:
+    - T2_plus_work
     - mutating_work
     - non_trivial_work
     - policy_work
     - large_or_multi_step_work
+    - runtime_or_deployable_work
+    - independent_axis_work
   minimum:
-    trivial_read: 1
-    medium_task: 3
+    C0_INLINE_NO_DIFF: 0
+    required_worker_scope: 1
+    medium_independent_axes: 3
     complex_task: 5
   first_wave: read_only_exploration
   writing_wave: specialized_implementation_or_worker_lane
-  zero_subagents: non_compliant
+  zero_subagents: "compliant only for C0_INLINE_NO_DIFF true read-only/no-diff with no independent axes"
+  worker_decision_required: true
+  spawn_required_when_adapter_usable: true
+  fallback: "simulated_packets only with missing_ae_adapter_manifest or equivalent blocker"
 attribution_gate:
   required_before:
     - worker_launch
@@ -131,6 +138,8 @@ ledger_files:
 stop_if:
   - no_session_contract_for_mutating_work
   - subagent_or_worker_scope_is_ambiguous
+  - required_worker_scope_with_worker_decision_none
+  - why_no_worker_used_as_authorization
   - worker_or_wsl_audit_without_attributed_mi_lsp_preflight
   - worker_or_wsl_audit_missing_worker_session_attribution_matrix
   - two_orchestrators_own_same_exclusive_path
@@ -144,4 +153,4 @@ evidence:
 
 ## Adapter Rule
 
-Harness adapters execute; they do not become conceptual authority. If Codex, Claude Code, OpenCode, Hermes, or any future runner contradicts the AE canon, stop and repair the canon/projection drift before continuing.
+Harness adapters execute; they do not become conceptual authority. If Codex, Claude Code, OpenCode, Hermes, or any future runner contradicts the AE canon, stop and repair the canon/projection drift before continuing. For required worker scope, a usable `ae-adapter-*` must launch real workers and produce compact verdict/evidence; `simulated_packets` is only a blocker-backed fallback when native spawn is unavailable, unsafe, or unauthorized.

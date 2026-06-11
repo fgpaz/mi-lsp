@@ -53,6 +53,8 @@ phases:
       - selected_mode
       - decision_lock_status
       - adapter_selection
+      - worker_decision
+      - independent_axes
       - session_contract_path_or_waiver
   - id: context_and_governance
     owner: ps-contexto
@@ -79,6 +81,7 @@ phases:
     requires:
       - session_contract
       - adapter_profile
+      - worker_decision=spawned for required worker scope, or blocker-backed simulated_packets
       - stop_conditions
   - id: verification
     owner: selected_adapter
@@ -96,6 +99,7 @@ stop_if:
   - ae_programa_gateway_missing
   - session_contract_missing_for_non_trivial_work
   - adapter_selected_without_profile
+  - required_worker_scope_with_worker_decision_none
 verify:
   - mi-lsp nav wiki validate-source --workspace <alias> --format toon
 evidence:
@@ -104,7 +108,7 @@ evidence:
 
 ## Phase Rule
 
-No functional work starts until `gateway`, `context_and_governance`, and `decision_lock` are satisfied or an explicit read-only/trivial waiver is recorded in the session contract.
+No functional work starts until `gateway`, `context_and_governance`, and `decision_lock` are satisfied. Required worker scope also needs `worker_decision=spawned` with adapter launch evidence, or blocker-backed `simulated_packets`; an inline/no-worker path is only for `C0_INLINE_NO_DIFF` true read-only/no-diff work with no independent axes.
 
 ## Integration Rule
 

@@ -44,6 +44,8 @@ required_for:
   - shared_skill_work
   - harness_work
   - multi_step_work
+  - runtime_or_deployable_work
+  - independent_axis_work
 required_fields:
   - schema
   - task_slug
@@ -58,6 +60,13 @@ required_fields:
   - orchestration_depth
   - closure_profile
   - ae_contract
+  - worker_decision
+  - worker_adapter_available
+  - worker_authorized_by_user
+  - independent_axes
+  - selected_adapter
+  - adapter_evidence_or_blocker
+  - worker_verdicts
   - mi_lsp_preflight
   - anchors
   - expected_scope
@@ -77,6 +86,9 @@ ae_contract_required_fields:
   - orchestration_depth
   - ledgers_required
   - runtime_target
+  - worker_decision
+  - independent_axes
+  - adapter_evidence_or_blocker
   - stop_before_functional_work
 mi_lsp_preflight_required_fields:
   - alias
@@ -121,6 +133,8 @@ stop_if:
   - mi_lsp_preflight.ae_canon.status in [missing, mismatch, projection_only]
   - real_diff_exceeds_allowed_paths
   - forbidden_path_touched_without_explicit_waiver
+  - required_worker_scope_with_worker_decision_none
+  - why_no_worker_used_as_authorization
 verify:
   - ./scripts/ae/pre-push-guard.ps1 -SessionContract <path> -AllowDirty
 evidence:

@@ -23,13 +23,13 @@ Before functional work, validate the local AE layer is complete:
 
 If any required AE file is missing or contradicted, enter `manifest_repair` mode and repair the AE layer before doing functional work. `AGENTS.md`, `CLAUDE.md`, and `PATHS.md` are projections; `.docs/wiki/ae/**` is the AE source of truth.
 
-Every mutating or non-trivial task must create/update `.docs/auditoria/<YYYY-MM-DD>-<task-slug>/session-contract.yaml` with an `ae_contract` block before edits. The contract must name selected mode, decision lock, adapter, orchestration depth, allowed paths, forbidden paths, required evidence, stop conditions, and cleanup policy.
+Every mutating or non-trivial task must create/update `.docs/auditoria/<YYYY-MM-DD>-<task-slug>/session-contract.yaml` with an `ae_contract` block before edits. The contract must name selected mode, decision lock, adapter, orchestration depth, `worker_decision`, independent axes, launch/join evidence or blocker, allowed paths, forbidden paths, required evidence, stop conditions, and cleanup policy.
 
-Adapter selection is manifest-first: discover global `ae-adapter-*` skills, read `adapter_manifest.schema=ae-harness-adapter/v1`, prefer an explicit user-requested harness, then current/project harness fit, and fall back to `simulated_packets` with `missing_ae_adapter_manifest` when no adapter satisfies evidence and isolation.
+Adapter selection is manifest-first: discover global `ae-adapter-*` skills, read `adapter_manifest.schema=ae-harness-adapter/v1`, prefer an explicit user-requested harness, then current/project harness fit. If a usable adapter exists for required worker scope, it must launch real workers with `worker_decision=spawned`; fall back to `simulated_packets` with `missing_ae_adapter_manifest` only when no adapter satisfies evidence and isolation.
 
 Governed AE work must also record `mi_lsp_preflight` in the session contract before worker launch, historical audit, closure, push, or PR-ready claims. Set `MI_LSP_CLIENT_NAME` and `MI_LSP_SESSION_ID` before every `mi-lsp` command; `client_name=manual-cli`, a default `session_id` like `cli-<pid>`, `governance_blocked=true`, `docs_ready=false`, `doc_count=0`, or `ae_canon.status` in `missing|mismatch|projection_only` is a hard blocker, not a warning.
 
-Subagents or worker lanes are mandatory for future non-trivial work. Zero-subagent execution is non-compliant unless the session contract records a trivial/read-only waiver. Default recursion depth is `v0_shadow`: two active levels, third-level task orchestrators are shadow-only until a later supervised pilot.
+Subagents or worker lanes are mandatory for AE-governed T2+, mutating, multi-step, policy/harness/shared-skill, runtime/deployable, or independent-axis work. Zero-subagent execution is compliant only for `C0_INLINE_NO_DIFF` true read-only/no-diff work with no independent axes; any `why_no_worker` outside that case is blocker evidence, not authorization for local execution. Default recursion depth is `v0_shadow`: two active levels, third-level task orchestrators are shadow-only until a later supervised pilot.
 
 WSL/subagent/worker execution audits must be read-only first and must produce a worker/session attribution matrix, admin export summary, manual-cli exception review, and WSL evidence-handling note. Do not mutate WSL filesystems, rewrite histories/logs, dump raw shell history, or treat telemetry/transcripts as canon.
 
@@ -37,12 +37,12 @@ Before any push or PR-ready claim, run `scripts/ae/pre-push-guard.ps1` with the 
 
 ## Subagent Orchestration Protocol
 
-- Every non-trivial task must launch subagents or worker lanes after `ae-programa` locks the session contract.
+- Every required worker scope must launch subagents or worker lanes after `ae-programa` locks the session contract and selects a usable adapter.
 - First wave is read-only exploration; implementation writes go to specialized implementation or worker lanes.
-- Minimum lanes: 1 for trivial/read-only checks, 3 for medium work, 5 for complex or cross-layer work.
+- Minimum lanes: 0 only for `C0_INLINE_NO_DIFF`; 1+ for T2+/mutating/multi-step/policy/harness/shared-skill/runtime/deployable scope; 3+ for medium independent axes; 5+ for complex or cross-layer work.
 - Delegated tasks must be atomic, path-bounded, and evidence-bounded; subagents return summaries with file/line or command evidence, not raw dumps.
 - The orchestrator must verify cited paths/results before integrating. Contradictory subagent results trigger another bounded verification lane.
-- Zero-subagent execution requires an explicit trivial/read-only waiver in the session contract.
+- Zero-subagent execution requires `C0_INLINE_NO_DIFF` true read-only/no-diff/no independent axes in the session contract.
 
 ## Canon
 
