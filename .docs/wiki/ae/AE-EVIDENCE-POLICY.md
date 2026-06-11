@@ -72,6 +72,37 @@ evidence:
   - .docs/auditoria/<YYYY-MM-DD>-<task-slug>/
 ```
 
+## Audit Hygiene
+
+```toon
+doc_id: AE-EVIDENCE-POLICY
+block_id: AE-EVIDENCE-POLICY.audit_hygiene
+kind: policy
+source_of_truth: this
+schema: ae-audit-hygiene/v1
+manifest: .docs/auditoria/<YYYY-MM-DD>-<task-slug>/audit-manifest.yaml
+retention_ttl_days: 14
+hash_algorithm: sha256
+required_when:
+  - non_trivial_ae_work
+  - worker_or_qa_or_runtime_evidence
+  - raw_logs_screenshots_transcripts_prompts_or_plans
+artifact_classes:
+  durable_keep: sanitized durable evidence
+  promote_summary: raw artifact must become sanitized-summary.md or evidence-index.yaml
+  raw_prune_after_14d: temporary raw evidence pruned after TTL when not promoted
+  quarantine_redact: sensitive raw evidence held until redacted
+  delete_now: duplicate, accidental, or unsafe artifact with no durable value
+  blocked_hold: cleanup blocked with owner, reason, next action, and recheck date
+stop_if:
+  - raw audit evidence is treated as durable without manifest, summary, sha256, retention decision
+  - durable evidence would be deleted without replacement summary, hash, path, date, owner, and reason
+verify:
+  - mi-lsp nav evidence inventory "AE evidence" --workspace mi-lsp --format toon
+evidence:
+  - .docs/wiki/ae/AE-EVIDENCE-POLICY.md
+```
+
 ## Closure Rule
 
 For binary-affecting work, `ps-trazabilidad` must include the AE release evidence or an explicit waiver. `ps-auditar-trazabilidad` is required for cross-OS, release, worker bootstrap, or policy changes.
