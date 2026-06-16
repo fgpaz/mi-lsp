@@ -34,6 +34,28 @@ type WorkspaceResolution struct {
 	Warnings     []string
 }
 
+type ExplicitWorkspaceCWDMismatch struct {
+	Selector           string `json:"selector"`
+	SelectedAlias      string `json:"selected_alias"`
+	SelectedRoot       string `json:"selected_root"`
+	CallerCWD          string `json:"caller_cwd"`
+	CWDWorkspaceAlias  string `json:"cwd_workspace_alias"`
+	CWDWorkspaceRoot   string `json:"cwd_workspace_root"`
+	RecommendedCommand string `json:"recommended_command,omitempty"`
+	OverrideFlag       string `json:"override_flag,omitempty"`
+	Warning            string `json:"warning,omitempty"`
+}
+
+type WorkspaceReadinessIssue struct {
+	Alias             string   `json:"alias"`
+	Root              string   `json:"root"`
+	GovernanceBlocked bool     `json:"governance_blocked"`
+	DocsReady         bool     `json:"docs_ready"`
+	DocCount          int      `json:"doc_count"`
+	Reasons           []string `json:"reasons,omitempty"`
+	Commands          []string `json:"commands,omitempty"`
+}
+
 const workspaceResolutionNotFoundMessage = "workspace not found in registry and path does not exist"
 
 type WorkspaceResolutionError struct {
@@ -82,14 +104,15 @@ type WorkspaceRootGroup struct {
 }
 
 type WorkspaceDoctorReport struct {
-	AliasesSharingRoot []WorkspaceRootGroup      `json:"aliases_sharing_root,omitempty"`
-	WorktreeFamilies   []WorkspaceWorktreeFamily `json:"worktree_families,omitempty"`
-	GitCaseCollisions  []GitCaseCollision        `json:"git_case_collisions,omitempty"`
-	StalePaths         []WorkspaceStalePath      `json:"stale_paths,omitempty"`
-	BinaryShadowing    []BinaryCandidate         `json:"binary_shadowing,omitempty"`
-	Health             string                    `json:"health,omitempty"`
-	NextActions        []WorkspaceDoctorAction   `json:"next_actions,omitempty"`
-	Suggestions        []string                  `json:"suggestions,omitempty"`
+	AliasesSharingRoot       []WorkspaceRootGroup      `json:"aliases_sharing_root,omitempty"`
+	WorktreeFamilies         []WorkspaceWorktreeFamily `json:"worktree_families,omitempty"`
+	WorkspaceReadinessIssues []WorkspaceReadinessIssue `json:"workspace_readiness_issues,omitempty"`
+	GitCaseCollisions        []GitCaseCollision        `json:"git_case_collisions,omitempty"`
+	StalePaths               []WorkspaceStalePath      `json:"stale_paths,omitempty"`
+	BinaryShadowing          []BinaryCandidate         `json:"binary_shadowing,omitempty"`
+	Health                   string                    `json:"health,omitempty"`
+	NextActions              []WorkspaceDoctorAction   `json:"next_actions,omitempty"`
+	Suggestions              []string                  `json:"suggestions,omitempty"`
 }
 
 type WorkspacePruneReport struct {
@@ -770,26 +793,44 @@ func selectAliasForRoot(registrations []model.WorkspaceRegistration, lastWorkspa
 }
 
 func ExplicitWorkspaceCWDWarnings(selector string, callerCWD string) []string {
+	mismatch, ok := ExplicitWorkspaceCWDMismatchFor(selector, callerCWD)
+	if !ok {
+		return nil
+	}
+	return []string{mismatch.Warning}
+}
+
+func ExplicitWorkspaceCWDMismatchFor(selector string, callerCWD string) (ExplicitWorkspaceCWDMismatch, bool) {
 	selector = strings.TrimSpace(selector)
 	if selector == "" || strings.TrimSpace(callerCWD) == "" {
-		return nil
+		return ExplicitWorkspaceCWDMismatch{}, false
 	}
 	selected, err := ResolveWorkspaceSelection(selector, callerCWD)
 	if err != nil {
-		return nil
+		return ExplicitWorkspaceCWDMismatch{}, false
 	}
 	cwdResolution, ok := resolveWorkspaceFromCallerCWD(callerCWD, mustLoadRegistry())
 	if !ok {
-		return nil
+		return ExplicitWorkspaceCWDMismatch{}, false
 	}
 	selectedRoot, selectedOK := normalizeComparablePath(selected.Registration.Root)
 	cwdRoot, cwdOK := normalizeComparablePath(cwdResolution.Registration.Root)
 	if !selectedOK || !cwdOK || selectedRoot == cwdRoot {
-		return nil
+		return ExplicitWorkspaceCWDMismatch{}, false
 	}
-	return []string{
-		fmt.Sprintf("explicit workspace %q resolves to root %q, but caller cwd %q is inside registered workspace %q at %q; explicit workspace wins", selector, selected.Registration.Root, callerCWD, cwdResolution.Registration.Name, cwdResolution.Registration.Root),
+	recommended := fmt.Sprintf("mi-lsp %s --workspace %s", "nav governance", cwdResolution.Registration.Name)
+	mismatch := ExplicitWorkspaceCWDMismatch{
+		Selector:           selector,
+		SelectedAlias:      selected.Registration.Name,
+		SelectedRoot:       selected.Registration.Root,
+		CallerCWD:          strings.TrimSpace(callerCWD),
+		CWDWorkspaceAlias:  cwdResolution.Registration.Name,
+		CWDWorkspaceRoot:   cwdResolution.Registration.Root,
+		RecommendedCommand: recommended,
+		OverrideFlag:       "--allow-cross-workspace",
 	}
+	mismatch.Warning = fmt.Sprintf("workspace mismatch: --workspace %q resolves to %q, but caller cwd %q is inside workspace %q at %q; use --workspace %s for the current repo or pass --allow-cross-workspace if this cross-workspace query is intentional", selector, selected.Registration.Root, mismatch.CallerCWD, mismatch.CWDWorkspaceAlias, mismatch.CWDWorkspaceRoot, mismatch.CWDWorkspaceAlias)
+	return mismatch, true
 }
 
 func mustLoadRegistry() model.RegistryFile {

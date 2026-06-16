@@ -131,8 +131,8 @@ func TestExecuteWorkspaceStatusExplicitAliasWinsOverCallerCWDWithWarning(t *test
 	if env.Workspace != "mi-lsp-main" {
 		t.Fatalf("env.Workspace = %q, want mi-lsp-main", env.Workspace)
 	}
-	if !strings.Contains(strings.Join(env.Warnings, " "), "explicit workspace") {
-		t.Fatalf("Warnings = %v, want explicit workspace mismatch warning", env.Warnings)
+	if !strings.Contains(strings.Join(env.Warnings, " "), "workspace mismatch") {
+		t.Fatalf("Warnings = %v, want actionable workspace mismatch warning", env.Warnings)
 	}
 	items, ok := env.Items.([]any)
 	if !ok || len(items) != 1 {
@@ -144,6 +144,120 @@ func TestExecuteWorkspaceStatusExplicitAliasWinsOverCallerCWDWithWarning(t *test
 	}
 	if item["workspace_source"] != "explicit" {
 		t.Fatalf("item[workspace_source] = %#v, want explicit", item["workspace_source"])
+	}
+}
+
+func TestExecuteWorkspaceStatusAgentRejectsExplicitAliasOutsideCallerCWD(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+
+	mainRoot := t.TempDir()
+	worktreeRoot := t.TempDir()
+	writeWorkspaceFile(t, mainRoot, "src/Main.cs", "class Main {}")
+	writeWorkspaceFile(t, worktreeRoot, "src/Feature.cs", "class Feature {}")
+
+	registerServiceWorkspace(t, "mi-lsp-main", mainRoot)
+	registerServiceWorkspace(t, "mi-lsp-feature", worktreeRoot)
+
+	app := New(mainRoot, nil)
+	_, err := app.Execute(context.Background(), model.CommandRequest{
+		Operation: "workspace.status",
+		Context: model.QueryOptions{
+			Workspace:  "mi-lsp-main",
+			CallerCWD:  filepath.Join(worktreeRoot, "src"),
+			ClientName: "codex",
+		},
+	})
+	if err == nil {
+		t.Fatal("Execute(workspace.status) err = nil, want workspace cross-workspace refusal")
+	}
+	if !strings.Contains(err.Error(), "workspace cross-workspace refused") {
+		t.Fatalf("err = %v, want workspace cross-workspace refusal", err)
+	}
+	if !strings.Contains(err.Error(), "--allow-cross-workspace") {
+		t.Fatalf("err = %v, want override hint", err)
+	}
+}
+
+func TestExecuteNavGovernanceAgentRejectsExplicitAliasOutsideCallerCWD(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+
+	mainRoot := t.TempDir()
+	worktreeRoot := t.TempDir()
+	writeWorkspaceFile(t, mainRoot, "src/Main.cs", "class Main {}")
+	writeWorkspaceFile(t, worktreeRoot, "src/Feature.cs", "class Feature {}")
+
+	registerServiceWorkspace(t, "mi-lsp-main", mainRoot)
+	registerServiceWorkspace(t, "mi-lsp-feature", worktreeRoot)
+
+	app := New(mainRoot, nil)
+	_, err := app.Execute(context.Background(), model.CommandRequest{
+		Operation: "nav.governance",
+		Context: model.QueryOptions{
+			Workspace:  "mi-lsp-main",
+			CallerCWD:  filepath.Join(worktreeRoot, "src"),
+			ClientName: "codex",
+		},
+	})
+	if err == nil {
+		t.Fatal("Execute(nav.governance) err = nil, want workspace cross-workspace refusal")
+	}
+	if !strings.Contains(err.Error(), "workspace cross-workspace refused") {
+		t.Fatalf("err = %v, want workspace cross-workspace refusal", err)
+	}
+	if !strings.Contains(err.Error(), "mi-lsp nav governance --workspace mi-lsp-feature --format toon") {
+		t.Fatalf("err = %v, want nav governance recommendation", err)
+	}
+}
+
+func TestExecuteWorkspaceStatusAgentAllowsExplicitCrossWorkspaceOverride(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+
+	mainRoot := t.TempDir()
+	worktreeRoot := t.TempDir()
+	writeWorkspaceFile(t, mainRoot, "src/Main.cs", "class Main {}")
+	writeWorkspaceFile(t, worktreeRoot, "src/Feature.cs", "class Feature {}")
+
+	registerServiceWorkspace(t, "mi-lsp-main", mainRoot)
+	registerServiceWorkspace(t, "mi-lsp-feature", worktreeRoot)
+
+	app := New(mainRoot, nil)
+	env, err := app.Execute(context.Background(), model.CommandRequest{
+		Operation: "workspace.status",
+		Context: model.QueryOptions{
+			Workspace:           "mi-lsp-main",
+			CallerCWD:           filepath.Join(worktreeRoot, "src"),
+			ClientName:          "codex",
+			AllowCrossWorkspace: true,
+		},
+	})
+	if err != nil {
+		t.Fatalf("Execute(workspace.status): %v", err)
+	}
+	if env.Workspace != "mi-lsp-main" {
+		t.Fatalf("env.Workspace = %q, want mi-lsp-main", env.Workspace)
+	}
+	if !strings.Contains(strings.Join(env.Warnings, " "), "--allow-cross-workspace") {
+		t.Fatalf("Warnings = %v, want explicit override warning", env.Warnings)
+	}
+}
+
+func TestOperationRequiresWorkspaceResolutionSkipsNavAllWorkspaces(t *testing.T) {
+	if operationRequiresWorkspaceResolution(model.CommandRequest{
+		Operation: "nav.ask",
+		Payload:   map[string]any{"all_workspaces": true},
+	}) {
+		t.Fatal("nav.ask --all-workspaces should not require single-workspace resolution")
+	}
+	if !operationRequiresWorkspaceResolution(model.CommandRequest{
+		Operation: "nav.ask",
+	}) {
+		t.Fatal("nav.ask without --all-workspaces should require workspace resolution")
 	}
 }
 

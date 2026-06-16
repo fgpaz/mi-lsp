@@ -66,7 +66,7 @@ func (a *App) Execute(ctx context.Context, request model.CommandRequest) (model.
 	case "workspace.list":
 		envelope, err = a.workspaceList(request)
 	case "workspace.doctor":
-		envelope, err = a.workspaceDoctor()
+		envelope, err = a.workspaceDoctor(ctx)
 	case "workspace.hygiene":
 		envelope, err = a.workspaceHygiene(request)
 	case "workspace.prune":
@@ -173,7 +173,20 @@ func (a *App) normalizeWorkspaceRequest(request model.CommandRequest) (model.Com
 	}
 	if strings.TrimSpace(request.Context.Workspace) != "" {
 		selector := strings.TrimSpace(request.Context.Workspace)
-		warnings := workspace.ExplicitWorkspaceCWDWarnings(selector, request.Context.CallerCWD)
+		warnings := []string{}
+		if mismatch, ok := workspace.ExplicitWorkspaceCWDMismatchFor(selector, request.Context.CallerCWD); ok {
+			warnings = append(warnings, mismatch.Warning)
+			if isHarnessClientName(request.Context.ClientName) && !request.Context.AllowCrossWorkspace {
+				return request, nil, fmt.Errorf("workspace cross-workspace refused: --workspace %q resolves to root %q, but caller cwd %q is inside workspace %q at root %q; recommended command: mi-lsp %s --format toon; pass --allow-cross-workspace only when this cross-workspace query is intentional",
+					mismatch.Selector,
+					mismatch.SelectedRoot,
+					mismatch.CallerCWD,
+					mismatch.CWDWorkspaceAlias,
+					mismatch.CWDWorkspaceRoot,
+					recommendedWorkspaceCommand(request.Operation, mismatch.CWDWorkspaceAlias),
+				)
+			}
+		}
 		if strings.TrimSpace(request.Context.WorkspaceSource) == "" {
 			if resolution, err := workspace.ResolveWorkspaceSelection(selector, request.Context.CallerCWD); err == nil {
 				request.Context.WorkspaceSource = string(resolution.Source)
@@ -193,6 +206,9 @@ func (a *App) normalizeWorkspaceRequest(request model.CommandRequest) (model.Com
 }
 
 func operationRequiresWorkspaceResolution(request model.CommandRequest) bool {
+	if allWorkspaces, _ := request.Payload["all_workspaces"].(bool); allWorkspaces && strings.HasPrefix(request.Operation, "nav.") {
+		return false
+	}
 	switch request.Operation {
 	case "workspace.add", "workspace.init", "workspace.scan", "workspace.list", "workspace.doctor", "workspace.hygiene", "workspace.prune", "workspace.remove", "workspace.warm", "worker.install", "worker.status":
 		return false
@@ -205,6 +221,32 @@ func operationRequiresWorkspaceResolution(request model.CommandRequest) bool {
 		return true
 	default:
 		return false
+	}
+}
+
+func isHarnessClientName(clientName string) bool {
+	switch strings.ToLower(strings.TrimSpace(clientName)) {
+	case "claude-code", "codex", "claude-ai", "opencode", "copilot", "jetbrains", "cursor", "neovim", "emacs", "vim":
+		return true
+	default:
+		return false
+	}
+}
+
+func recommendedWorkspaceCommand(operation string, alias string) string {
+	alias = strings.TrimSpace(alias)
+	switch strings.TrimSpace(operation) {
+	case "workspace.status":
+		return fmt.Sprintf("workspace status %s", alias)
+	case "nav.governance":
+		return fmt.Sprintf("nav governance --workspace %s", alias)
+	case "nav.workspace-map":
+		return fmt.Sprintf("nav workspace-map --workspace %s", alias)
+	default:
+		if strings.HasPrefix(operation, "nav.") {
+			return fmt.Sprintf("%s --workspace %s", strings.ReplaceAll(operation, ".", " "), alias)
+		}
+		return fmt.Sprintf("%s --workspace %s", strings.ReplaceAll(operation, ".", " "), alias)
 	}
 }
 

@@ -15,21 +15,22 @@ const (
 )
 
 type QueryOptions struct {
-	Workspace       string `json:"workspace,omitempty"`
-	WorkspaceSource string `json:"workspace_source,omitempty"`
-	CallerCWD       string `json:"caller_cwd,omitempty"`
-	Format          string `json:"format,omitempty"`
-	TokenBudget     int    `json:"token_budget,omitempty"`
-	MaxItems        int    `json:"max_items,omitempty"`
-	MaxChars        int    `json:"max_chars,omitempty"`
-	Offset          int    `json:"offset,omitempty"`
-	AXI             bool   `json:"axi,omitempty"`
-	Full            bool   `json:"full,omitempty"`
-	Verbose         bool   `json:"verbose,omitempty"`
-	ClientName      string `json:"client_name,omitempty"`
-	SessionID       string `json:"session_id,omitempty"`
-	BackendHint     string `json:"backend_hint,omitempty"`
-	Compress        bool   `json:"compress,omitempty"`
+	Workspace           string `json:"workspace,omitempty"`
+	WorkspaceSource     string `json:"workspace_source,omitempty"`
+	CallerCWD           string `json:"caller_cwd,omitempty"`
+	Format              string `json:"format,omitempty"`
+	TokenBudget         int    `json:"token_budget,omitempty"`
+	MaxItems            int    `json:"max_items,omitempty"`
+	MaxChars            int    `json:"max_chars,omitempty"`
+	Offset              int    `json:"offset,omitempty"`
+	AXI                 bool   `json:"axi,omitempty"`
+	Full                bool   `json:"full,omitempty"`
+	Verbose             bool   `json:"verbose,omitempty"`
+	ClientName          string `json:"client_name,omitempty"`
+	SessionID           string `json:"session_id,omitempty"`
+	BackendHint         string `json:"backend_hint,omitempty"`
+	AllowCrossWorkspace bool   `json:"allow_cross_workspace,omitempty"`
+	Compress            bool   `json:"compress,omitempty"`
 }
 
 type Stats struct {
