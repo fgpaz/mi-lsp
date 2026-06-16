@@ -74,3 +74,6 @@ evidence:
 | TC-WKS-032 | positivo | RF-WKS-004 | `workspace hygiene --apply-safe` remueve solo aliases con root inexistente via la logica existente de poda segura y conserva aliases vivos, roots, worktrees e indices |
 | TC-WKS-033 | positivo | RF-WKS-005, RF-QRY-013 | `workspace status`/`nav governance` exponen detalles de stale index con timestamps comparados y comando de reindex accionable |
 | TC-WKS-034 | positivo | RF-WKS-004 | `TestDoctorWorkspacesReportsGitCaseCollisions`: `workspace doctor` detecta paths versionados que difieren solo por casing y emite `fix_git_case_collisions` sin mutar registry ni worktrees |
+| TC-WKS-035 | negativo | RF-WKS-005 | `TestExecuteWorkspaceStatusAgentRejectsExplicitAliasOutsideCallerCWD`: caller agente con `--workspace` fuera del `caller_cwd` recibe `workspace_cross_workspace_refused` y hint hacia `--allow-cross-workspace` |
+| TC-WKS-036 | positivo | RF-WKS-005 | `TestExecuteWorkspaceStatusAgentAllowsExplicitCrossWorkspaceOverride`: `--allow-cross-workspace` permite el uso intencional y conserva warning auditable |
+| TC-WKS-037 | positivo | RF-WKS-004 | `TestWorkspaceHygieneReportsLiveReadinessIssuesWithoutPruning`: `workspace hygiene` reporta aliases vivos sin gobernanza/docs como `workspace_readiness_issues` y `--apply-safe` no los remueve |

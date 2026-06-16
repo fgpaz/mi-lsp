@@ -218,20 +218,22 @@ func (a *App) workspaceList(request model.CommandRequest) (model.Envelope, error
 	return model.Envelope{Ok: true, Backend: "registry", Items: items}, nil
 }
 
-func (a *App) workspaceDoctor() (model.Envelope, error) {
+func (a *App) workspaceDoctor(ctx context.Context) (model.Envelope, error) {
 	report, err := workspace.DoctorWorkspaces()
 	if err != nil {
 		return model.Envelope{}, err
 	}
+	report = a.enrichWorkspaceReadiness(ctx, report)
 	item := map[string]any{
-		"aliases_sharing_root": nonNilRootGroups(report.AliasesSharingRoot),
-		"worktree_families":    nonNilWorktreeFamilies(report.WorktreeFamilies),
-		"git_case_collisions":  nonNilGitCaseCollisions(report.GitCaseCollisions),
-		"stale_paths":          nonNilStalePaths(report.StalePaths),
-		"binary_shadowing":     nonNilBinaryCandidates(report.BinaryShadowing),
-		"health":               report.Health,
-		"next_actions":         nonNilDoctorActions(report.NextActions),
-		"suggestions":          nonNilStrings(report.Suggestions),
+		"aliases_sharing_root":       nonNilRootGroups(report.AliasesSharingRoot),
+		"worktree_families":          nonNilWorktreeFamilies(report.WorktreeFamilies),
+		"workspace_readiness_issues": nonNilWorkspaceReadinessIssues(report.WorkspaceReadinessIssues),
+		"git_case_collisions":        nonNilGitCaseCollisions(report.GitCaseCollisions),
+		"stale_paths":                nonNilStalePaths(report.StalePaths),
+		"binary_shadowing":           nonNilBinaryCandidates(report.BinaryShadowing),
+		"health":                     workspaceDoctorServiceHealth(report),
+		"next_actions":               nonNilDoctorActions(workspaceDoctorServiceActions(report)),
+		"suggestions":                nonNilStrings(report.Suggestions),
 	}
 	warnings := []string{}
 	if len(report.AliasesSharingRoot) > 0 {
@@ -242,6 +244,9 @@ func (a *App) workspaceDoctor() (model.Envelope, error) {
 	}
 	if len(report.StalePaths) > 0 {
 		warnings = append(warnings, "registry contains stale workspace roots")
+	}
+	if len(report.WorkspaceReadinessIssues) > 0 {
+		warnings = append(warnings, "registered workspaces have governance or documentation readiness issues; inspect before using those aliases in agent sessions")
 	}
 	if len(report.GitCaseCollisions) > 0 {
 		warnings = append(warnings, "git tree contains case-insensitive path collisions; Windows worktrees may be incomplete")
@@ -260,17 +265,19 @@ func (a *App) workspaceHygiene(request model.CommandRequest) (model.Envelope, er
 	if err != nil {
 		return model.Envelope{}, err
 	}
+	report = a.enrichWorkspaceReadiness(context.Background(), report)
 	applySafe, _ := request.Payload["apply_safe"].(bool)
 	item := map[string]any{
-		"health":               report.Health,
-		"aliases_sharing_root": nonNilRootGroups(report.AliasesSharingRoot),
-		"worktree_families":    nonNilWorktreeFamilies(report.WorktreeFamilies),
-		"stale_paths":          nonNilStalePaths(report.StalePaths),
-		"binary_shadowing":     nonNilBinaryCandidates(report.BinaryShadowing),
-		"safe_actions":         hygieneSafeActions(report),
-		"manual_actions":       hygieneManualActions(report),
-		"applied_actions":      []map[string]any{},
-		"apply_safe":           applySafe,
+		"health":                     workspaceDoctorServiceHealth(report),
+		"aliases_sharing_root":       nonNilRootGroups(report.AliasesSharingRoot),
+		"worktree_families":          nonNilWorktreeFamilies(report.WorktreeFamilies),
+		"workspace_readiness_issues": nonNilWorkspaceReadinessIssues(report.WorkspaceReadinessIssues),
+		"stale_paths":                nonNilStalePaths(report.StalePaths),
+		"binary_shadowing":           nonNilBinaryCandidates(report.BinaryShadowing),
+		"safe_actions":               hygieneSafeActions(report),
+		"manual_actions":             hygieneManualActions(report),
+		"applied_actions":            []map[string]any{},
+		"apply_safe":                 applySafe,
 	}
 	warnings := workspaceHygieneWarnings(report)
 	if applySafe {
@@ -313,6 +320,14 @@ func hygieneSafeActions(report workspace.WorkspaceDoctorReport) []map[string]any
 
 func hygieneManualActions(report workspace.WorkspaceDoctorReport) []map[string]any {
 	actions := []map[string]any{}
+	if len(report.WorkspaceReadinessIssues) > 0 {
+		actions = append(actions, map[string]any{
+			"id":      "review_workspace_readiness",
+			"command": "mi-lsp workspace hygiene --format toon",
+			"reason":  "registered aliases have missing governance docs, blocked governance, empty doc indexes, or docs not ready; remove only aliases you explicitly no longer use",
+			"count":   len(report.WorkspaceReadinessIssues),
+		})
+	}
 	if len(report.WorktreeFamilies) > 0 {
 		actions = append(actions, map[string]any{
 			"id":      "verify_worktree_aliases",
@@ -351,7 +366,109 @@ func workspaceHygieneWarnings(report workspace.WorkspaceDoctorReport) []string {
 	if len(report.AliasesSharingRoot) > 0 {
 		warnings = append(warnings, "aliases share exact workspace roots; workspace list remains alias-preserving")
 	}
+	if len(report.WorkspaceReadinessIssues) > 0 {
+		warnings = append(warnings, "workspace readiness issues require explicit review; --apply-safe will not remove live aliases")
+	}
 	return warnings
+}
+
+func (a *App) enrichWorkspaceReadiness(ctx context.Context, report workspace.WorkspaceDoctorReport) workspace.WorkspaceDoctorReport {
+	registrations, err := workspace.ListWorkspaces()
+	if err != nil {
+		return report
+	}
+	canonicalByRoot := canonicalAliasesByRoot(report.AliasesSharingRoot)
+	for _, registration := range registrations {
+		if strings.TrimSpace(registration.Root) == "" {
+			continue
+		}
+		if _, statErr := os.Stat(registration.Root); statErr != nil {
+			continue
+		}
+		governance := docgraph.InspectGovernance(registration.Root, false)
+		docCount := 0
+		db, dbErr := openWorkspaceDB(registration, "workspace.doctor")
+		if dbErr == nil {
+			if count, countErr := store.CountDocRecords(ctx, db); countErr == nil {
+				docCount = count
+			}
+			_ = db.Close()
+		}
+		docsReady := docCount > 0 && !governance.Blocked && !governance.AECanon.Blocking
+		reasons := []string{}
+		if governance.Blocked {
+			reasons = append(reasons, "governance_blocked")
+		}
+		if governance.HumanDoc == "" || !fileExists(filepath.Join(registration.Root, governance.HumanDoc)) {
+			reasons = append(reasons, "governance_doc_missing")
+		}
+		if docCount == 0 {
+			reasons = append(reasons, "doc_count_zero")
+		}
+		if !docsReady {
+			reasons = append(reasons, "docs_not_ready")
+		}
+		if len(reasons) == 0 {
+			continue
+		}
+		commands := []string{
+			fmt.Sprintf("mi-lsp workspace status %s --format toon", registration.Name),
+			fmt.Sprintf("mi-lsp workspace remove %s", registration.Name),
+		}
+		if canonical := canonicalByRoot[workspaceRootKey(registration.Root)]; canonical != "" && canonical != registration.Name {
+			commands = append(commands, fmt.Sprintf("mi-lsp workspace status %s --format toon", canonical))
+		} else {
+			commands = append(commands, "mi-lsp workspace list --group-by-root")
+		}
+		report.WorkspaceReadinessIssues = append(report.WorkspaceReadinessIssues, workspace.WorkspaceReadinessIssue{
+			Alias:             registration.Name,
+			Root:              registration.Root,
+			GovernanceBlocked: governance.Blocked,
+			DocsReady:         docsReady,
+			DocCount:          docCount,
+			Reasons:           reasons,
+			Commands:          commands,
+		})
+	}
+	return report
+}
+
+func canonicalAliasesByRoot(groups []workspace.WorkspaceRootGroup) map[string]string {
+	result := map[string]string{}
+	for _, group := range groups {
+		result[workspaceRootKey(group.Root)] = group.CanonicalAlias
+	}
+	return result
+}
+
+func workspaceRootKey(root string) string {
+	clean := filepath.Clean(strings.TrimSpace(root))
+	return strings.ToLower(clean)
+}
+
+func fileExists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
+}
+
+func workspaceDoctorServiceHealth(report workspace.WorkspaceDoctorReport) string {
+	if len(report.StalePaths) > 0 || len(report.GitCaseCollisions) > 0 || len(report.WorkspaceReadinessIssues) > 0 {
+		return "action_required"
+	}
+	return report.Health
+}
+
+func workspaceDoctorServiceActions(report workspace.WorkspaceDoctorReport) []workspace.WorkspaceDoctorAction {
+	actions := append([]workspace.WorkspaceDoctorAction{}, report.NextActions...)
+	if len(report.WorkspaceReadinessIssues) > 0 && !doctorActionsContain(actions, "review_workspace_readiness") {
+		actions = append(actions, workspace.WorkspaceDoctorAction{
+			ID:       "review_workspace_readiness",
+			Severity: "high",
+			Command:  "mi-lsp workspace hygiene --format toon",
+			Reason:   "registered aliases have governance or documentation readiness issues; inspect and remove only aliases no longer in use",
+		})
+	}
+	return actions
 }
 
 func doctorActionsContain(actions []workspace.WorkspaceDoctorAction, id string) bool {
@@ -404,6 +521,13 @@ func nonNilRootGroups(items []workspace.WorkspaceRootGroup) []workspace.Workspac
 func nonNilWorktreeFamilies(items []workspace.WorkspaceWorktreeFamily) []workspace.WorkspaceWorktreeFamily {
 	if items == nil {
 		return []workspace.WorkspaceWorktreeFamily{}
+	}
+	return items
+}
+
+func nonNilWorkspaceReadinessIssues(items []workspace.WorkspaceReadinessIssue) []workspace.WorkspaceReadinessIssue {
+	if items == nil {
+		return []workspace.WorkspaceReadinessIssue{}
 	}
 	return items
 }

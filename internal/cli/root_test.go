@@ -188,6 +188,26 @@ func TestBuildCLIErrorEnvelopeTypesWorkspaceFailure(t *testing.T) {
 	}
 }
 
+func TestBuildCLIErrorEnvelopeTypesCrossWorkspaceRefusal(t *testing.T) {
+	env := buildCLIErrorEnvelope(model.CommandRequest{
+		Operation: "workspace.status",
+		Context:   model.QueryOptions{Workspace: "legacy", ClientName: "codex"},
+	}, "direct", errors.New("workspace cross-workspace refused: --workspace \"legacy\" resolves outside caller cwd"))
+
+	if env.Ok {
+		t.Fatal("error envelope Ok = true, want false")
+	}
+	if env.Error == nil {
+		t.Fatal("error envelope missing Error")
+	}
+	if env.Error.Kind != "workspace" || env.Error.Code != "workspace_cross_workspace_refused" {
+		t.Fatalf("error = %+v, want workspace/workspace_cross_workspace_refused", *env.Error)
+	}
+	if env.Error.HintCode != "workspace_cross_workspace_refused" {
+		t.Fatalf("hint_code = %q, want workspace_cross_workspace_refused", env.Error.HintCode)
+	}
+}
+
 func TestEnvelopePrintedErrorIsDetectable(t *testing.T) {
 	err := envelopePrintedError{err: errors.New("boom")}
 	if !IsEnvelopePrintedError(err) {

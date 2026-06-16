@@ -90,6 +90,7 @@ Flags globales minimos:
 - `--backend`
 - `--verbose`
 - `--profile agent` (auto para harness cuando se detecta `client_name=harness-*`)
+- `--allow-cross-workspace`
 
 Flags especificos:
 
@@ -98,6 +99,15 @@ Flags especificos:
 - `nav search --regex`
 - `nav affected --from-git-diff --changed-ref <ref> --stdin --include-tests --include-docs --quiet --test-command <cmd>`
 - `nav service --include-archetype`
+
+### Workspace mismatch guard
+
+Cuando un comando workspace-aware recibe `--workspace <alias>` y el `caller_cwd` esta dentro de otro workspace registrado:
+
+- `client_name` humano conserva compatibilidad: ejecuta sobre el alias explicito y emite warning con alias/root seleccionado, cwd, workspace/root detectado por cwd, comando recomendado y `--allow-cross-workspace`.
+- `client_name` harness/agente (`codex`, `claude-code`, `claude-ai`, `opencode`, `copilot`, `jetbrains`, `cursor`, `neovim`, `emacs`, `vim`) rechaza la operacion salvo `--allow-cross-workspace`.
+- El error estructurado debe usar `error.kind=workspace`, `error.code=workspace_cross_workspace_refused`, `error.stage=selector_validation` y `error.hint_code=workspace_cross_workspace_refused`.
+- El override `--allow-cross-workspace` permite continuar pero no suprime el warning; el warning es evidencia de intencion cross-workspace.
 - `index --docs-only`
 - `index start --mode full|docs|catalog --wait`
 - `daemon start|restart|serve --watch-mode off|lazy|eager --max-watched-roots N --max-inflight N`

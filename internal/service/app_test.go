@@ -1395,6 +1395,42 @@ func TestWorkspaceHygieneApplySafePrunesOnlyStaleAliases(t *testing.T) {
 	}
 }
 
+func TestWorkspaceHygieneReportsLiveReadinessIssuesWithoutPruning(t *testing.T) {
+	ensureWritableTestHome(t)
+	brokenRoot := t.TempDir()
+	writeWorkspaceFile(t, brokenRoot, "src/Program.cs", "class Program {}")
+	if _, err := workspace.RegisterWorkspace("broken-live", model.WorkspaceRegistration{Name: "broken-live", Root: brokenRoot, Languages: []string{"csharp"}, Kind: model.WorkspaceKindSingle}); err != nil {
+		t.Fatalf("RegisterWorkspace(broken-live): %v", err)
+	}
+
+	app := New(brokenRoot, nil)
+	env, err := app.Execute(context.Background(), model.CommandRequest{
+		Operation: "workspace.hygiene",
+		Payload:   map[string]any{"apply_safe": true},
+	})
+	if err != nil {
+		t.Fatalf("workspace.hygiene --apply-safe: %v", err)
+	}
+	items, ok := env.Items.([]map[string]any)
+	if !ok || len(items) != 1 {
+		t.Fatalf("Items = %#v, want one hygiene item", env.Items)
+	}
+	issues, ok := items[0]["workspace_readiness_issues"].([]workspace.WorkspaceReadinessIssue)
+	if !ok || len(issues) != 1 {
+		t.Fatalf("workspace_readiness_issues = %#v, want one issue", items[0]["workspace_readiness_issues"])
+	}
+	if issues[0].Alias != "broken-live" || !issues[0].GovernanceBlocked || issues[0].DocsReady {
+		t.Fatalf("issue = %#v, want blocked not-ready broken-live", issues[0])
+	}
+	commands := strings.Join(issues[0].Commands, "\n")
+	if !strings.Contains(commands, "mi-lsp workspace status broken-live --format toon") || !strings.Contains(commands, "mi-lsp workspace remove broken-live") {
+		t.Fatalf("commands = %v, want status and explicit remove commands", issues[0].Commands)
+	}
+	if _, err := workspace.ResolveWorkspace("broken-live"); err != nil {
+		t.Fatalf("apply-safe should not remove live readiness issue alias: %v", err)
+	}
+}
+
 func createContainerWorkspaceFixture(t *testing.T, alias string) string {
 	t.Helper()
 	ensureWritableTestHome(t)

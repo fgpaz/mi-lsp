@@ -22,25 +22,26 @@ import (
 )
 
 type rootState struct {
-	repoRoot     string
-	app          *service.App
-	workspace    string
-	format       string
-	tokenBudget  int
-	maxItems     int
-	maxChars     int
-	verbose      bool
-	clientName   string
-	sessionID    string
-	backendHint  string
-	axi          bool
-	classic      bool
-	full         bool
-	profile      string
-	telemetry    *CLITelemetry
-	retentionRun bool
-	noAutoDaemon bool
-	compress     bool
+	repoRoot            string
+	app                 *service.App
+	workspace           string
+	format              string
+	tokenBudget         int
+	maxItems            int
+	maxChars            int
+	verbose             bool
+	clientName          string
+	sessionID           string
+	backendHint         string
+	axi                 bool
+	classic             bool
+	full                bool
+	profile             string
+	telemetry           *CLITelemetry
+	retentionRun        bool
+	noAutoDaemon        bool
+	compress            bool
+	allowCrossWorkspace bool
 }
 
 type envelopePrintedError struct {
@@ -138,6 +139,7 @@ func NewRootCommand() *cobra.Command {
 	root.PersistentFlags().BoolVar(&state.full, "full", false, "Expand AXI preview responses to fuller detail")
 	root.PersistentFlags().BoolVar(&state.noAutoDaemon, "no-auto-daemon", false, "Disable automatic daemon startup for semantic queries")
 	root.PersistentFlags().BoolVar(&state.compress, "compress", false, "Aggressive compression: strips parent, scope, implements from compact output")
+	root.PersistentFlags().BoolVar(&state.allowCrossWorkspace, "allow-cross-workspace", false, "Allow an explicit --workspace alias to target a different root than the caller cwd")
 
 	root.AddCommand(
 		newInitCommand(state),
@@ -162,19 +164,20 @@ func (s *rootState) queryOptions(cmd *cobra.Command, operation string, payload m
 		callerCWD = cwd
 	}
 	return model.QueryOptions{
-		Workspace:   s.workspace,
-		CallerCWD:   callerCWD,
-		Format:      s.effectiveFormat(cmd, operation, payload, axiEnabled),
-		TokenBudget: s.tokenBudget,
-		MaxItems:    s.effectiveMaxItems(cmd, operation, axiEnabled, fullEnabled),
-		MaxChars:    s.maxChars,
-		AXI:         axiEnabled,
-		Full:        fullEnabled,
-		Verbose:     s.verbose,
-		ClientName:  s.clientName,
-		SessionID:   s.sessionID,
-		BackendHint: s.backendHint,
-		Compress:    s.compress,
+		Workspace:           s.workspace,
+		CallerCWD:           callerCWD,
+		Format:              s.effectiveFormat(cmd, operation, payload, axiEnabled),
+		TokenBudget:         s.tokenBudget,
+		MaxItems:            s.effectiveMaxItems(cmd, operation, axiEnabled, fullEnabled),
+		MaxChars:            s.maxChars,
+		AXI:                 axiEnabled,
+		Full:                fullEnabled,
+		Verbose:             s.verbose,
+		ClientName:          s.clientName,
+		SessionID:           s.sessionID,
+		BackendHint:         s.backendHint,
+		AllowCrossWorkspace: s.allowCrossWorkspace,
+		Compress:            s.compress,
 	}
 }
 
@@ -322,6 +325,11 @@ func classifyEnvelopeError(request model.CommandRequest, backend string, route s
 	}
 
 	switch {
+	case strings.Contains(lower, "workspace cross-workspace refused"):
+		result.Kind = "workspace"
+		result.Code = "workspace_cross_workspace_refused"
+		result.Stage = "selector_validation"
+		result.HintCode = "workspace_cross_workspace_refused"
 	case isWorkspaceErrorMessage(lower):
 		result.Kind = "workspace"
 		result.Code = "workspace_resolution_failed"
