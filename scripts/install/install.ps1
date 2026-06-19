@@ -19,7 +19,7 @@ if (-not [string]::IsNullOrWhiteSpace($env:GITHUB_TOKEN)) {
 
 function Get-HostRid {
     if ([System.Environment]::OSVersion.Platform -ne [System.PlatformID]::Win32NT) {
-        throw 'install.ps1 supports Windows only. Use install.sh on Linux. macOS assets are not published yet.'
+        throw 'install.ps1 supports Windows only. Use install.sh on Linux or macOS.'
     }
 
     $hints = @(

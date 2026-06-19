@@ -22,15 +22,16 @@ detect_rid() {
   os="$(uname -s)"
   arch="$(uname -m)"
   case "$os" in
-    Linux) ;;
-    Darwin) echo "macOS assets are not published yet. Supported Linux RIDs: linux-x64, linux-arm64." >&2; exit 1 ;;
-    *) echo "Unsupported OS '$os'. Supported OS: Linux. Use install.ps1 on Windows." >&2; exit 1 ;;
+    Linux) os_part="linux" ;;
+    Darwin) os_part="darwin" ;;
+    *) echo "Unsupported OS '$os'. Supported: Linux, macOS. Use install.ps1 on Windows." >&2; exit 1 ;;
   esac
   case "$arch" in
-    x86_64|amd64) echo "linux-x64" ;;
-    aarch64|arm64) echo "linux-arm64" ;;
-    *) echo "Unsupported Linux architecture '$arch'." >&2; exit 1 ;;
+    x86_64|amd64) arch_part="x64" ;;
+    aarch64|arm64) arch_part="arm64" ;;
+    *) echo "Unsupported architecture '$arch'." >&2; exit 1 ;;
   esac
+  echo "${os_part}-${arch_part}"
 }
 
 if [ -z "$RID" ]; then
@@ -38,8 +39,17 @@ if [ -z "$RID" ]; then
 fi
 
 case "$RID" in
-  linux-x64|linux-arm64) ;;
-  *) echo "Unsupported RID '$RID' for install.sh. Supported values: linux-x64, linux-arm64." >&2; exit 1 ;;
+  linux-x64|linux-arm64|darwin-x64|darwin-arm64|osx-x64|osx-arm64) ;;
+  *) echo "Unsupported RID '$RID' for install.sh. Supported values: linux-x64, linux-arm64, darwin-x64, darwin-arm64, osx-x64, osx-arm64." >&2; exit 1 ;;
+esac
+
+archive_rid="$RID"
+worker_rid="$RID"
+case "$RID" in
+  darwin-x64) worker_rid="osx-x64" ;;
+  darwin-arm64) worker_rid="osx-arm64" ;;
+  osx-x64) archive_rid="darwin-x64" ;;
+  osx-arm64) archive_rid="darwin-arm64" ;;
 esac
 
 require_cmd() {
@@ -51,7 +61,19 @@ require_cmd() {
 
 require_cmd curl
 require_cmd tar
-require_cmd sha256sum
+
+sha256_file() {
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "$1" | awk '{print $1}'
+    return
+  fi
+  if command -v shasum >/dev/null 2>&1; then
+    shasum -a 256 "$1" | awk '{print $1}'
+    return
+  fi
+  echo "Required command missing: sha256sum or shasum" >&2
+  exit 1
+}
 
 retry() {
   attempts=0
@@ -100,13 +122,13 @@ if [ -z "$tag" ]; then
   exit 1
 fi
 version="${tag#v}"
-archive="mi-lsp_${version}_${RID}.tar.gz"
+archive="mi-lsp_${version}_${archive_rid}.tar.gz"
 checksums="mi-lsp_${version}_checksums.txt"
 base_url="https://github.com/$REPO/releases/download/$tag"
 
 if [ "$DRY_RUN" -eq 1 ]; then
-  printf 'repo=%s\nversion=%s\nrid=%s\narchive=%s\nchecksums=%s\ninstall_dir=%s\n' \
-    "$REPO" "$tag" "$RID" "$archive" "$checksums" "$INSTALL_DIR"
+  printf 'repo=%s\nversion=%s\nrid=%s\narchive_rid=%s\nworker_rid=%s\narchive=%s\nchecksums=%s\ninstall_dir=%s\n' \
+    "$REPO" "$tag" "$RID" "$archive_rid" "$worker_rid" "$archive" "$checksums" "$INSTALL_DIR"
   exit 0
 fi
 
@@ -129,7 +151,7 @@ if [ -z "$expected" ]; then
   echo "Checksum for $archive was not found in $checksums." >&2
   exit 1
 fi
-actual="$(sha256sum "$tmp/$archive" | awk '{print $1}')"
+actual="$(sha256_file "$tmp/$archive")"
 if [ "$actual" != "$expected" ]; then
   echo "Checksum mismatch for $archive. Expected $expected, got $actual." >&2
   exit 1
@@ -138,13 +160,13 @@ fi
 mkdir -p "$tmp/extract"
 tar -xzf "$tmp/$archive" -C "$tmp/extract"
 source_cli="$(find "$tmp/extract" -type f -name mi-lsp | head -n 1)"
-source_worker="$(find "$tmp/extract" -type d -path "*/workers/$RID" | head -n 1)"
+source_worker="$(find "$tmp/extract" -type d -path "*/workers/$worker_rid" | head -n 1)"
 if [ -z "$source_cli" ]; then
   echo "Extracted archive did not contain mi-lsp." >&2
   exit 1
 fi
 if [ -z "$source_worker" ]; then
-  echo "Extracted archive did not contain workers/$RID." >&2
+  echo "Extracted archive did not contain workers/$worker_rid." >&2
   exit 1
 fi
 
@@ -154,7 +176,7 @@ if [ -x "$target" ]; then
   "$target" daemon stop --format compact >/dev/null 2>&1 || true
 fi
 workers_root="$(cd "$INSTALL_DIR/workers" && pwd -P)"
-target_worker="$workers_root/$RID"
+target_worker="$workers_root/$worker_rid"
 case "$target_worker" in
   "$workers_root"/*) ;;
   *) echo "Refusing to replace worker directory outside install workers root: $target_worker" >&2; exit 1 ;;
@@ -174,7 +196,7 @@ case ":$PATH:" in
 esac
 
 if [ "$SKIP_WORKER_INSTALL" -eq 0 ]; then
-  "$target" worker install --rid "$RID" --format compact
+  "$target" worker install --rid "$worker_rid" --format compact
 fi
 "$target" version --format toon
 "$target" worker status --format compact

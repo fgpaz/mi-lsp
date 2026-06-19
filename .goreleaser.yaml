@@ -18,6 +18,7 @@ builds:
     goos:
       - linux
       - windows
+      - darwin
     goarch:
       - amd64
       - arm64
@@ -47,6 +48,9 @@ archives:
         dst: docs
       - src: "scripts/install/**/*"
         dst: scripts/install
+      # All platform workers are bundled in every archive; the runtime selects
+      # workers/<rid> by ResolveRID(). (GoReleaser v2 does not template files.src/dst,
+      # so per-platform pruning is not done here.)
       - src: ".goreleaser/workers/**/*"
         dst: workers
 

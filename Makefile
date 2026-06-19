@@ -1,4 +1,4 @@
-.PHONY: build test lint clean dist build-linux-arm64 build-win-arm64 build-linux-x64 build-win-x64 build-all worker-win-arm64 worker-linux-arm64 worker-win-x64 worker-linux-x64 worker-all
+.PHONY: build test lint clean dist build-linux-arm64 build-win-arm64 build-linux-x64 build-win-x64 build-osx-arm64 build-osx-x64 build-all worker-win-arm64 worker-linux-arm64 worker-win-x64 worker-linux-x64 worker-osx-arm64 worker-osx-x64 worker-all
 
 build:
 	go build -ldflags="-s -w" -o bin/mi-lsp ./cmd/mi-lsp
@@ -34,7 +34,13 @@ build-linux-x64:
 build-win-x64:
 	GOOS=windows GOARCH=amd64 go build -ldflags="-s -w" -o bin/mi-lsp-win-x64.exe ./cmd/mi-lsp
 
-build-all: build-linux-arm64 build-win-arm64 build-linux-x64 build-win-x64
+build-osx-arm64:
+	GOOS=darwin GOARCH=arm64 go build -ldflags="-s -w" -o bin/mi-lsp-osx-arm64 ./cmd/mi-lsp
+
+build-osx-x64:
+	GOOS=darwin GOARCH=amd64 go build -ldflags="-s -w" -o bin/mi-lsp-osx-x64 ./cmd/mi-lsp
+
+build-all: build-linux-arm64 build-win-arm64 build-linux-x64 build-win-x64 build-osx-arm64 build-osx-x64
 
 worker-win-arm64:
 	dotnet publish worker-dotnet/MiLsp.Worker/MiLsp.Worker.csproj -c Release -r win-arm64 --self-contained true -o bin/workers/win-arm64
@@ -48,4 +54,10 @@ worker-win-x64:
 worker-linux-x64:
 	dotnet publish worker-dotnet/MiLsp.Worker/MiLsp.Worker.csproj -c Release -r linux-x64 --self-contained true -o bin/workers/linux-x64
 
-worker-all: worker-win-arm64 worker-linux-arm64 worker-win-x64 worker-linux-x64
+worker-osx-arm64:
+	dotnet publish worker-dotnet/MiLsp.Worker/MiLsp.Worker.csproj -c Release -r osx-arm64 --self-contained true -o bin/workers/osx-arm64
+
+worker-osx-x64:
+	dotnet publish worker-dotnet/MiLsp.Worker/MiLsp.Worker.csproj -c Release -r osx-x64 --self-contained true -o bin/workers/osx-x64
+
+worker-all: worker-win-arm64 worker-linux-arm64 worker-win-x64 worker-linux-x64 worker-osx-arm64 worker-osx-x64

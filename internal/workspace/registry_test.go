@@ -134,6 +134,10 @@ func TestDoctorWorkspacesReportsWorktreeFamiliesWithoutCollapsingAliases(t *test
 	mustRunGit(t, mainRoot, "add", ".")
 	mustRunGit(t, mainRoot, "commit", "-m", "init")
 	mustRunGit(t, mainRoot, "worktree", "add", worktreeRoot, "-b", "feature")
+	t.Cleanup(func() {
+		_ = runGitBestEffort(mainRoot, "worktree", "remove", "--force", worktreeRoot)
+		_ = runGitBestEffort(mainRoot, "worktree", "prune")
+	})
 
 	registerTestWorkspace(t, "mi-lsp-main", mainRoot)
 	registerTestWorkspace(t, "mi-lsp-feature", worktreeRoot)
@@ -327,6 +331,12 @@ func mustRunGit(t *testing.T, dir string, args ...string) {
 	if output, err := command.CombinedOutput(); err != nil {
 		t.Fatalf("git %v failed: %v\n%s", args, err, string(output))
 	}
+}
+
+func runGitBestEffort(dir string, args ...string) error {
+	command := exec.Command("git", args...)
+	command.Dir = dir
+	return command.Run()
 }
 
 func mustRunGitInput(t *testing.T, dir string, input string, args ...string) string {

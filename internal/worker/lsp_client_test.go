@@ -62,10 +62,10 @@ func TestURIToPath(t *testing.T) {
 
 func TestLSPPosition(t *testing.T) {
 	tests := []struct {
-		line     int
-		col      int
-		expLine  int
-		expChar  int
+		line    int
+		col     int
+		expLine int
+		expChar int
 	}{
 		{1, 1, 0, 0},
 		{10, 5, 9, 4},

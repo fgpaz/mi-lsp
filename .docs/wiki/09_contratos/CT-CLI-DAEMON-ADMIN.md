@@ -548,7 +548,7 @@ Public installers are shell wrappers around the release contract, not new runtim
 
 - `scripts/install/install.ps1` and `scripts/install/install.sh` install or update only the CLI.
 - `scripts/install/install-agent.ps1` and `scripts/install/install-agent.sh` run the CLI installer and then install the repo skill through `npx skills add fgpaz/mi-lsp --skill mi-lsp -g -a codex -a claude-code -y`.
-- Supported public RIDs are exactly `win-x64`, `win-arm64`, `linux-x64`, and `linux-arm64`; unsupported OS/arch combinations, including macOS until Darwin assets exist, must fail with an actionable message.
+- Supported public archive RIDs are exactly `win-x64`, `win-arm64`, `linux-x64`, `linux-arm64`, `darwin-x64`, and `darwin-arm64`; Darwin archives map to worker RIDs `osx-x64` and `osx-arm64`. Unsupported OS/arch combinations must fail with an actionable message.
 - Installers consume GitHub `releases/latest`, derive archive names from GoReleaser (`mi-lsp_<version>_<rid>.zip|tar.gz`), download `mi-lsp_<version>_checksums.txt`, and verify SHA256 before extracting.
 - The extracted install must preserve `mi-lsp(.exe)` plus `workers/<rid>/`; if a user moves only the binary, `mi-lsp worker install` is the repair path.
 - Existing daemons should be stopped before replacing a target binary; after replacement, `daemon restart` is recommended when daemon-backed state is in use.

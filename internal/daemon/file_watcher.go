@@ -21,20 +21,20 @@ import (
 )
 
 type FileWatcher struct {
-	workspaceRoot   string
-	registration    model.WorkspaceRegistration
-	watcher         *fsnotify.Watcher
-	debounce        map[string]*time.Timer
-	debounceDur     time.Duration
-	maxWatchedDirs  int
-	mu              sync.Mutex
-	stopCh          chan struct{}
-	stopOnce        sync.Once
-	wg              sync.WaitGroup
-	verbose         bool
-	watchedDirs     int
-	batchTimer      *time.Timer
-	pendingBatch    map[string]struct{}
+	workspaceRoot  string
+	registration   model.WorkspaceRegistration
+	watcher        *fsnotify.Watcher
+	debounce       map[string]*time.Timer
+	debounceDur    time.Duration
+	maxWatchedDirs int
+	mu             sync.Mutex
+	stopCh         chan struct{}
+	stopOnce       sync.Once
+	wg             sync.WaitGroup
+	verbose        bool
+	watchedDirs    int
+	batchTimer     *time.Timer
+	pendingBatch   map[string]struct{}
 }
 
 // NewFileWatcher creates a new file watcher for a workspace.

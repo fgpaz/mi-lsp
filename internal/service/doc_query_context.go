@@ -195,4 +195,3 @@ func (q *docQueryContext) primaryDoc(routeResult model.RouteResult) (scoredDoc, 
 	}
 	return scoredDoc{}, false
 }
-

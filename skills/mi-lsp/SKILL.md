@@ -315,8 +315,8 @@ curl -fsSL https://raw.githubusercontent.com/fgpaz/mi-lsp/main/scripts/install/i
 
 Installer rules:
 
-- Supported RIDs: `win-x64`, `win-arm64`, `linux-x64`, `linux-arm64`.
-- macOS is unsupported until release assets exist; do not map Darwin to a Linux archive.
+- Supported archive RIDs: `win-x64`, `win-arm64`, `linux-x64`, `linux-arm64`, `darwin-x64`, `darwin-arm64`.
+- Darwin archives map to worker RIDs `osx-x64` and `osx-arm64`; do not map Darwin to a Linux archive.
 - Archives come from GitHub Releases latest and must pass SHA256 verification before extraction.
 - The install must keep `workers/<rid>/` next to the `mi-lsp` binary or run `mi-lsp worker install`.
 - `install-agent` requires `npx` and uses `npx skills add fgpaz/mi-lsp --skill mi-lsp -g -a codex -a claude-code -y`; it has no folder-copy fallback.
@@ -340,7 +340,7 @@ mi-lsp worker install
 Use this only when the one-command installer cannot run in the current shell.
 
 1. Download the release bundle for the user's platform from `https://github.com/fgpaz/mi-lsp/releases`.
-2. Choose the right bundle: `win-x64`, `win-arm64`, `linux-x64`, or `linux-arm64`.
+2. Choose the right bundle: `win-x64`, `win-arm64`, `linux-x64`, `linux-arm64`, `darwin-x64`, or `darwin-arm64`.
 3. Extract it into a stable tools directory and keep `workers/<rid>/` next to the `mi-lsp` binary.
 4. Add that directory to the current session `PATH`, or invoke the binary by absolute path until `PATH` is fixed permanently.
 5. Verify the install:
