@@ -49,7 +49,21 @@ func DetectWorkspaceLayout(path string, explicitName string) (model.WorkspaceReg
 	case rootDetection.hasMarkers:
 		detections = append(detections, rootDetection)
 	default:
-		return model.WorkspaceRegistration{}, model.ProjectFile{}, errors.New("no supported project markers found")
+		project, ok, err := detectConfiguredWorkspace(root, explicitName)
+		if err != nil {
+			return model.WorkspaceRegistration{}, model.ProjectFile{}, err
+		}
+		if !ok {
+			return model.WorkspaceRegistration{}, model.ProjectFile{}, errors.New("no supported project markers found")
+		}
+		registration := model.WorkspaceRegistration{
+			Name:      project.Project.Name,
+			Root:      root,
+			Languages: append([]string{}, project.Project.Languages...),
+			Kind:      project.Project.Kind,
+			Solution:  defaultSolutionPath(project),
+		}
+		return registration, project, nil
 	}
 
 	project := buildProjectFile(root, explicitName, kind, detections)
@@ -61,6 +75,41 @@ func DetectWorkspaceLayout(path string, explicitName string) (model.WorkspaceReg
 		Solution:  defaultSolutionPath(project),
 	}
 	return registration, project, nil
+}
+
+func detectConfiguredWorkspace(root string, explicitName string) (model.ProjectFile, bool, error) {
+	if _, err := os.Stat(ProjectConfigPath(root)); errors.Is(err, os.ErrNotExist) {
+		return model.ProjectFile{}, false, nil
+	} else if err != nil {
+		return model.ProjectFile{}, false, err
+	}
+	project, err := LoadProjectFile(root)
+	if err != nil {
+		return model.ProjectFile{}, false, err
+	}
+	if !projectFileDeclaresWorkspace(project) {
+		return model.ProjectFile{}, false, nil
+	}
+	registration := model.WorkspaceRegistration{
+		Name:      explicitName,
+		Root:      root,
+		Languages: append([]string{}, project.Project.Languages...),
+		Kind:      firstNonEmpty(project.Project.Kind, model.WorkspaceKindSingle),
+	}
+	project = normalizeProjectFile(root, registration, project)
+	if strings.TrimSpace(explicitName) != "" {
+		project.Project.Name = strings.TrimSpace(explicitName)
+	}
+	return project, true, nil
+}
+
+func projectFileDeclaresWorkspace(project model.ProjectFile) bool {
+	return strings.TrimSpace(project.Project.Name) != "" ||
+		len(project.Project.Languages) > 0 ||
+		strings.TrimSpace(project.Project.Kind) != "" ||
+		len(project.Repos) > 0 ||
+		len(project.Entrypoints) > 0 ||
+		project.Embeddings != nil
 }
 
 func ScanCandidates(startDir string) ([]model.WorkspaceRegistration, error) {

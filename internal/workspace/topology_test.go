@@ -99,6 +99,45 @@ func TestDetectWorkspaceLayoutDetectsGo(t *testing.T) {
 	}
 }
 
+func TestDetectWorkspaceLayoutAcceptsMarkdownProjectConfigWithoutCodeMarkers(t *testing.T) {
+	root := t.TempDir()
+	if err := SaveProjectFile(root, model.ProjectFile{
+		Project: model.ProjectBlock{
+			Name:      "knowledge-base",
+			Languages: []string{"markdown"},
+			Kind:      model.WorkspaceKindSingle,
+		},
+	}); err != nil {
+		t.Fatalf("SaveProjectFile: %v", err)
+	}
+
+	registration, project, err := DetectWorkspaceLayout(root, "memoria-karen")
+	if err != nil {
+		t.Fatalf("DetectWorkspaceLayout returned error: %v", err)
+	}
+	if registration.Name != "memoria-karen" {
+		t.Fatalf("expected explicit workspace name, got %q", registration.Name)
+	}
+	if registration.Kind != model.WorkspaceKindSingle {
+		t.Fatalf("expected single workspace, got %q", registration.Kind)
+	}
+	if !hasLanguage(registration.Languages, "markdown") {
+		t.Fatalf("expected markdown in registration languages, got %v", registration.Languages)
+	}
+	if project.Project.Name != "memoria-karen" {
+		t.Fatalf("expected explicit project name, got %q", project.Project.Name)
+	}
+	if len(project.Repos) != 1 {
+		t.Fatalf("expected a default repo for configured workspace, got %#v", project.Repos)
+	}
+	if project.Repos[0].Root != "." {
+		t.Fatalf("expected default repo root '.', got %q", project.Repos[0].Root)
+	}
+	if !hasLanguage(project.Repos[0].Languages, "markdown") {
+		t.Fatalf("expected markdown in default repo languages, got %v", project.Repos[0].Languages)
+	}
+}
+
 func TestLoadProjectTopologyMergesDetectedGoIntoExistingProjectFile(t *testing.T) {
 	root := t.TempDir()
 	mustCreateDir(t, filepath.Join(root, ".git"))
