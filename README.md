@@ -309,6 +309,18 @@ pwsh ./scripts/release/build-dist.ps1 -Rids @('win-x64') -Clean
 pwsh ./scripts/release/install-local.ps1 -Rid win-x64 -InstallDir $HOME\bin
 ```
 
+On macOS or Linux, use the shell local installer. It detects the current host RID
+(`osx-x64` on this Mac), builds the CLI plus bundled worker, installs both, and
+verifies `version` and `worker status`:
+
+```bash
+make install-local
+
+# Or explicitly for Intel macOS:
+sh ./scripts/release/install-local.sh --rid osx-x64 --install-dir "$HOME/.local/bin"
+export PATH="$HOME/.local/bin:$PATH"
+```
+
 For AE-managed release distribution across Windows/Linux and ARM64/x64:
 
 ```powershell

@@ -335,6 +335,19 @@ If the binary was moved after extraction, run:
 mi-lsp worker install
 ```
 
+### Local source install on macOS/Linux
+
+If the release asset is not available yet but the source checkout exists, build
+and install the current machine's RID from the repo:
+
+```bash
+cd ~/Documents/mi-lsp
+sh scripts/release/install-local.sh --install-dir "$HOME/.local/bin"
+export PATH="$HOME/.local/bin:$PATH"
+mi-lsp version --format toon
+mi-lsp worker status --format toon
+```
+
 ## Legacy manual install
 
 Use this only when the one-command installer cannot run in the current shell.
