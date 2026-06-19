@@ -71,8 +71,8 @@ func TestExecuteBatchOp_InvalidOperation(t *testing.T) {
 	ctx := context.Background()
 
 	op := batchOperation{
-		ID: "invalid-1",
-		Op: "nonexistent.operation",
+		ID:     "invalid-1",
+		Op:     "nonexistent.operation",
 		Params: map[string]any{},
 	}
 
@@ -153,8 +153,8 @@ func TestExecuteBatchOp_ResultStructure(t *testing.T) {
 	ctx := context.Background()
 
 	op := batchOperation{
-		ID: "struct-test",
-		Op: "workspace.status",
+		ID:     "struct-test",
+		Op:     "workspace.status",
 		Params: map[string]any{},
 	}
 
@@ -203,8 +203,8 @@ func TestBatch_TableDriven(t *testing.T) {
 		{
 			name: "invalid operation",
 			op: batchOperation{
-				ID: "op2",
-				Op: "invalid.op",
+				ID:     "op2",
+				Op:     "invalid.op",
 				Params: map[string]any{},
 			},
 			expectErr: true,
@@ -212,8 +212,8 @@ func TestBatch_TableDriven(t *testing.T) {
 		{
 			name: "missing required params",
 			op: batchOperation{
-				ID: "op3",
-				Op: "workspace.status", // This operation doesn't require params
+				ID:     "op3",
+				Op:     "workspace.status", // This operation doesn't require params
 				Params: map[string]any{},
 			},
 			expectErr: false, // workspace.status doesn't require params

@@ -83,21 +83,21 @@ type managedRuntime struct {
 }
 
 type Manager struct {
-	repoRoot           string
-	maxWorkers         int
-	idleTimeout        time.Duration
-	callTimeout        time.Duration
-	softMemoryThresh   uint64
-	options            StartOptions
-	mu                 sync.Mutex
-	runtimes           map[string]*managedRuntime
-	stopCh             chan struct{}
-	watchers           map[string]*FileWatcher
-	watcherRoots       []string
-	skippedWatchers    int
-	watcherCtx         context.Context
-	watcherCancel      context.CancelFunc
-	failureCache       *failureCache
+	repoRoot         string
+	maxWorkers       int
+	idleTimeout      time.Duration
+	callTimeout      time.Duration
+	softMemoryThresh uint64
+	options          StartOptions
+	mu               sync.Mutex
+	runtimes         map[string]*managedRuntime
+	stopCh           chan struct{}
+	watchers         map[string]*FileWatcher
+	watcherRoots     []string
+	skippedWatchers  int
+	watcherCtx       context.Context
+	watcherCancel    context.CancelFunc
+	failureCache     *failureCache
 }
 
 func NewManager(repoRoot string, maxWorkers int, idleTimeout time.Duration) *Manager {

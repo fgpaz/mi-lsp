@@ -30,8 +30,8 @@ type IndexJobState struct {
 
 // jobRegistry tracks background indexing jobs.
 type jobRegistry struct {
-	mu    sync.RWMutex
-	jobs  map[string]IndexJobState
+	mu   sync.RWMutex
+	jobs map[string]IndexJobState
 }
 
 var jobs = &jobRegistry{

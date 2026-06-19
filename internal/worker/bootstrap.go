@@ -64,6 +64,8 @@ type cachedWorkerProbe struct {
 
 var workerProbeCache sync.Map
 
+const workerProbeTimeout = 15 * time.Second
+
 func ResolveRID() string {
 	osPart := runtime.GOOS
 	switch osPart {
@@ -527,8 +529,8 @@ func probeWorkerBinaryOnce(path string) workerProbeResult {
 			return workerProbeResult{ProtocolVersion: protocolVersion, Err: fmt.Errorf("protocol version mismatch: cli=%s worker=%s", model.ProtocolVersion, protocolVersion)}
 		}
 		return workerProbeResult{ProtocolVersion: firstNonEmpty(protocolVersion, model.ProtocolVersion), Compatible: true}
-	case <-time.After(3 * time.Second):
-		return workerProbeResult{Err: errors.New("worker probe timed out")}
+	case <-time.After(workerProbeTimeout):
+		return workerProbeResult{Err: fmt.Errorf("worker probe timed out after %s", workerProbeTimeout)}
 	}
 }
 

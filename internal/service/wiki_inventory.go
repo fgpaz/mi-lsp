@@ -14,7 +14,6 @@ import (
 	"github.com/fgpaz/mi-lsp/internal/workspace"
 )
 
-
 // wikiInventory handles the nav wiki inventory command.
 func (a *App) wikiInventory(ctx context.Context, request model.CommandRequest) (model.Envelope, error) {
 	allWorkspaces := true
@@ -48,7 +47,7 @@ func (a *App) wikiInventory(ctx context.Context, request model.CommandRequest) (
 // wikiInventoryAllWorkspaces fans out across all registered workspaces.
 func (a *App) wikiInventoryAllWorkspaces(ctx context.Context, withLayerCounts bool) (model.Envelope, error) {
 	fanOutOpts := nav.WikiFanOutOptions{
-		Timeout: 0, // Use default (30s)
+		Timeout:  0, // Use default (30s)
 		Parallel: 0, // Use default (4)
 	}
 
@@ -146,11 +145,11 @@ func (a *App) wikiInventorySingleWorkspace(ctx context.Context, workspaceAlias s
 // buildInventoryItem constructs a single model.WikiInventoryItem from a workspace.
 func buildInventoryItem(ctx context.Context, ws model.WorkspaceRegistration, withLayerCounts bool) (*model.WikiInventoryItem, error) {
 	item := &model.WikiInventoryItem{
-		Alias:           ws.Name,
-		Root:            ws.Root,
-		WikiRoot:        detectWikiRoot(ws.Root),
-		DocCount:        0,
-		LastIndexedAt:   0,
+		Alias:         ws.Name,
+		Root:          ws.Root,
+		WikiRoot:      detectWikiRoot(ws.Root),
+		DocCount:      0,
+		LastIndexedAt: 0,
 	}
 
 	// Check governance

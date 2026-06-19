@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [string[]]$Rids = @('win-arm64', 'win-x64', 'linux-arm64', 'linux-x64'),
+    [string[]]$Rids = @('win-arm64', 'win-x64', 'linux-arm64', 'linux-x64', 'osx-arm64', 'osx-x64'),
     [string]$OutDir = (Join-Path $PSScriptRoot '..\..\dist'),
     [string]$InstallDir = (Join-Path $HOME 'bin'),
     [string]$WslUser = '',
@@ -30,10 +30,14 @@ if (-not [string]::IsNullOrWhiteSpace(($gitStatus -join "`n"))) {
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 $buildScript = Join-Path $PSScriptRoot 'build-dist.ps1'
 $installScript = Join-Path $PSScriptRoot 'install-local.ps1'
-$supportedRids = @('win-arm64', 'win-x64', 'linux-arm64', 'linux-x64')
+$supportedRids = @('win-arm64', 'win-x64', 'linux-arm64', 'linux-x64', 'osx-arm64', 'osx-x64')
 
 function Test-IsWindows {
     return [System.Environment]::OSVersion.Platform -eq [System.PlatformID]::Win32NT
+}
+
+function Test-IsMacOS {
+    return [System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform([System.Runtime.InteropServices.OSPlatform]::OSX)
 }
 
 function Get-HostArchitecture {
@@ -61,6 +65,9 @@ function Get-HostRid {
     $arch = Get-HostArchitecture
     if (Test-IsWindows) {
         return "win-$arch"
+    }
+    if (Test-IsMacOS) {
+        return "osx-$arch"
     }
     return "linux-$arch"
 }

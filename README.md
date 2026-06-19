@@ -52,8 +52,7 @@ irm https://raw.githubusercontent.com/fgpaz/mi-lsp/main/scripts/install/install.
 curl -fsSL https://raw.githubusercontent.com/fgpaz/mi-lsp/main/scripts/install/install.sh | sh
 ```
 
-The installers download the latest GitHub Release, pick the host RID (`win-x64`, `win-arm64`, `linux-x64`, or `linux-arm64`), verify SHA256 checksums, install the bundled `workers/<rid>/` layout, and run `mi-lsp version` plus `mi-lsp worker status`.
-macOS assets are not published yet, so the shell installer exits with a clear unsupported-OS message on Darwin.
+The installers download the latest GitHub Release, pick the host RID (`win-x64`, `win-arm64`, `linux-x64`, `linux-arm64`, `darwin-x64`, or `darwin-arm64`), verify SHA256 checksums, install the bundled `workers/<rid>/` layout, and run `mi-lsp version` plus `mi-lsp worker status`. Darwin archives map to worker RIDs `osx-x64` and `osx-arm64` internally.
 
 ## 30-Second Demo
 

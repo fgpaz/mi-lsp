@@ -24,13 +24,13 @@ func TestRunDoctorBasicChecks(t *testing.T) {
 
 	// Verify all expected checks are present
 	expectedChecks := map[string]bool{
-		"stale-aliases":              false,
-		"daemon-version-drift":       false,
-		"daemon-db-size":             false,
-		"watched-dirs-handle-limit":  false,
-		"binary-dirty":               false,
-		"governance-blocked":         false,
-		"truncation-rate":            false,
+		"stale-aliases":             false,
+		"daemon-version-drift":      false,
+		"daemon-db-size":            false,
+		"watched-dirs-handle-limit": false,
+		"binary-dirty":              false,
+		"governance-blocked":        false,
+		"truncation-rate":           false,
 	}
 
 	for _, check := range report.Checks {

@@ -384,7 +384,6 @@ func getCLIVersion() string {
 	return version
 }
 
-
 // executableSnapshot returns the path and SHA256 of the running executable.
 func executableSnapshot() (string, string) {
 	exePath, err := os.Executable()

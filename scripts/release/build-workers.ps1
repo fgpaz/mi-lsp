@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [string[]]$Rids = @('win-arm64', 'win-x64', 'linux-arm64', 'linux-x64'),
+    [string[]]$Rids = @('win-arm64', 'win-x64', 'linux-arm64', 'linux-x64', 'osx-arm64', 'osx-x64'),
     [string]$OutDir = (Join-Path $PSScriptRoot '..\..\.goreleaser\workers'),
     [switch]$Clean
 )
