@@ -1,0 +1,74 @@
+schema: ps-trazabilidad-closure/v1
+session_id: 2026-06-27-mi-lsp-rerank-extension
+status: PASS
+closed_at: "2026-06-27T15:59:00-03:00"
+branch: codex/mi-lsp-rerank-extension
+scope:
+  fl:
+    - FL-SEM-01
+  rf:
+    - RF-SEM-001
+    - RF-SEM-002
+    - RF-SEM-003
+    - RF-SEM-004
+  tech:
+    - TECH-SEMANTIC-RECALL
+  db:
+    - DB-WIKI-EMBEDDINGS
+  ct:
+    - CT-NAV-RECALL
+  tp:
+    - TP-SEM
+implementation_links:
+  - internal/model/types.go
+  - internal/rerank/extension.go
+  - internal/service/recall.go
+  - internal/service/workspace_ops.go
+test_links:
+  - internal/model/embeddings_test.go
+  - internal/rerank/extension_test.go
+  - internal/service/recall_test.go
+doc_links:
+  - README.md
+  - .docs/wiki/03_FL.md
+  - .docs/wiki/04_RF.md
+  - .docs/wiki/04_RF/RF-SEM-004.md
+  - .docs/wiki/05_modelo_datos.md
+  - .docs/wiki/06_matriz_pruebas_RF.md
+  - .docs/wiki/06_pruebas/TP-SEM.md
+  - .docs/wiki/07_baseline_tecnica.md
+  - .docs/wiki/07_tech/TECH-SEMANTIC-RECALL.md
+  - .docs/wiki/08_modelo_fisico_datos.md
+  - .docs/wiki/08_db/DB-WIKI-EMBEDDINGS.md
+  - .docs/wiki/09_contratos_tecnicos.md
+  - .docs/wiki/09_contratos/CT-NAV-RECALL.md
+trace_results:
+  rf_sem_004:
+    command: "mi-lsp nav trace RF-SEM-004 --workspace C:/repos/mios/mi-lsp --format toon"
+    status: implemented
+    coverage: 1
+    confidence: high
+    explicit_links_verified: 4
+    test_links_verified: 5
+governance_results:
+  workspace_status: PASS
+  nav_governance: PASS
+  harness_validate: PASS
+  docs_only_index:
+    status: PASS
+    docs: 122
+verification:
+  targeted_tests: PASS
+  full_tests: PASS
+  diff_check: PASS
+  pre_push_guard_allow_dirty: PASS
+redaction:
+  private_provider_strings: PASS
+  warnings_do_not_leak_query_snippet_payload_or_secret: PASS
+waivers:
+  - id: no_live_micro_proxy_smoke
+    reason: "Core owns only local-command protocol; private adapter is out of repo scope."
+  - id: release_distribution_no_binary_publish
+    reason: "No binary release/publish performed in this task; future distribution must close AE-RELEASE-DISTRIBUTION."
+residual_risk:
+  - "External adapter quality is outside core; core contract only validates process protocol and fallback."

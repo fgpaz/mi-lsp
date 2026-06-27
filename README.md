@@ -144,10 +144,10 @@ A block with both `base_url` and `model` is active by default; set `enabled = fa
 [embeddings]
 # enabled = false  # optional kill switch; omit for normal active config
 provider = "openai"
-base_url = "https://api.nan.builders/v1"
-model = "qwen3-embedding"
-dim = 4096
-api_key_env = "NAN_API_KEY"
+base_url = "https://embeddings.example.local/v1"
+model = "text-embedding-model"
+dim = 1536
+api_key_env = "MI_LSP_EMBEDDINGS_API_KEY"
 profile = "knowledge-wiki"
 batch_size = 32
 timeout_ms = 30000
@@ -156,7 +156,7 @@ user_agent = "mi-lsp-embeddings/1.0"
 ```
 
 The API key is populated through the environment or `mkey run` and injected as the variable named in `api_key_env`; never print or commit key values.
-Nan/Qwen3 is the documented reference endpoint for operational recall.
+`mi-lsp` only requires an OpenAI-compatible embeddings endpoint; private provider adapters live outside the core repository.
 The `knowledge-wiki` profile auto-detects when no formal governance exists, bypassing the spec-driven gate.
 Chunks are stored in repo-local `wiki_chunk_embeddings` table with incremental re-embedding by metadata-prefix, content hash, model, and dimension.
 Rerunning `mi-lsp index` can backfill missing vectors even when the document catalog reports no source changes.
@@ -169,8 +169,8 @@ mi-lsp nav recall "collect citations for semantic fallback" --workspace <alias> 
 mi-lsp nav recall "where should I start this docs task?" --workspace <alias> --intent route --map --format toon
 ```
 
-Intent guide: `formula` finds rules and definitions, `evidence` finds citable support, `route` finds the next anchor to inspect, `explore` is the balanced default, and `learning` favors onboarding/explanatory material. Qwen discovers candidates; route-only material is not a final source of truth until you open the canonical doc or evidence it points to.
-If Nan, the key, or the provider fails, rerun through `mi-lsp nav wiki search "<query>" --workspace <alias> --format toon`. There is no hidden BGE fallback.
+Intent guide: `formula` finds rules and definitions, `evidence` finds citable support, `route` finds the next anchor to inspect, `explore` is the balanced default, and `learning` favors onboarding/explanatory material. Embeddings discover candidates; route-only material is not a final source of truth until you open the canonical doc or evidence it points to.
+If the key, endpoint, or provider fails, rerun through `mi-lsp nav wiki search "<query>" --workspace <alias> --format toon`. There is no hidden local-model fallback.
 
 ## Evidence Inventory For Agent Reentry
 

@@ -600,6 +600,11 @@ func (a *App) workspaceStatus(ctx context.Context, request model.CommandRequest)
 	// Embeddings status
 	embeddingsEnabled := project.Embeddings.Active()
 	item["embeddings_enabled"] = embeddingsEnabled
+	rerankExtensionEnabled := project.Recall != nil && project.Recall.RerankExtension.Active()
+	item["rerank_extension_enabled"] = rerankExtensionEnabled
+	if rerankExtensionEnabled {
+		item["rerank_extension_mode"] = "local-command"
+	}
 	recallProfile := "knowledge-wiki"
 	if governance.Profile != "" {
 		recallProfile = "spec-driven"

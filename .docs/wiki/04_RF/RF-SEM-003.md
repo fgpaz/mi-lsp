@@ -76,10 +76,11 @@ Guia de intenciones:
 4. Core solicita embedding de la query enriquecida al backend (timeout `timeout_ms`).
 5. Si embedding disponible, busca TOP-K similitud cosine en tabla `wiki_chunk_embeddings`.
 6. Aplica reranking por intencion sobre metadata, path, doc title, heading y snippet.
-7. Si backend no disponible, emite warning/hint y la guia documental segura es `mi-lsp nav wiki search`, no BGE oculto.
-8. Aplica `--max-items` y `--token-budget`.
-9. Formatea resultados como `RecallResult` con `intent`, `archivo`, `heading`, `score`, `snippet`, `start_line`, `end_line` y `why`.
-10. Devuelve envelope estable (no gated por gobernanza).
+7. Si RF-SEM-004 esta configurado, puede reordenar una ventana acotada mediante hook local externo antes del corte final.
+8. Si backend no disponible, emite warning/hint y la guia documental segura es `mi-lsp nav wiki search`, no modelo local oculto.
+9. Aplica `--max-items` y `--token-budget`.
+10. Formatea resultados como `RecallResult` con `intent`, `archivo`, `heading`, `score`, `snippet`, `start_line`, `end_line` y `why`.
+11. Devuelve envelope estable (no gated por gobernanza).
 
 ## 5. Outputs
 
@@ -106,9 +107,10 @@ Guia de intenciones:
 - Si query es muy corta (<3 caracteres), sugiere expansion en `next_hint`.
 - Si backend disponible pero timeout, devuelve warning/hint y recomienda `nav wiki search`.
 - Intent desconocido se normaliza a `explore`.
-- Qwen descubre candidatos; no convierte material route-only en fuente final.
+- El modelo de embeddings descubre candidatos; no convierte material route-only en fuente final.
 - `intent=route` prioriza perfiles/routing para despacho, pero el agente debe volver a `formula` o `evidence` para citar fuentes finales.
 - Soporta bilingual: query ES se embebe directo o se traduce segun backend capability.
+- Si el hook externo de RF-SEM-004 falla, conserva el orden semantico e informa warning sanitizado.
 - Sin gobernanza gate (ungated): mismo usuario puede recuperar spec docs, implementation docs, o knowledge wiki sin bloqueo.
 
 ## 8. Data Model Impact
@@ -164,7 +166,8 @@ Scenario: Diferenciar route de formula
   - TOP-K cosine similarity ranking
   - query embedding temporal (no cacheado globalmente)
   - soporte ES/EN bilingual (backend-dependent)
-  - Qwen/Nan descubre candidatos; source-of-truth final sigue siendo wiki canonica/source-grounded
+  - embeddings descubren candidatos; source-of-truth final sigue siendo wiki canonica/source-grounded
+  - rerank externo es opcional, local y fail-open hacia el orden semantico original
 - TODO explicit = 0
 - Fuera de alcance:
   - multi-workspace recall (future, similar a FL-WIKI-01)

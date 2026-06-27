@@ -8,6 +8,7 @@ import (
 	"math"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync/atomic"
@@ -463,6 +464,257 @@ func TestRecallIntentRerankingSeparatesFormulaAndRoute(t *testing.T) {
 	}
 }
 
+func TestRecall_RerankExtensionReordersCandidates(t *testing.T) {
+	server := newFakeEmbeddings(t)
+	defer server.Close()
+
+	command, args := serviceRerankHelperCommand(t, "reverse")
+	ensureWritableTestHome(t)
+	root := t.TempDir()
+	writeWorkspaceFile(t, root, "go.mod", "module wiki-rerank-extension-test\n\ngo 1.24\n")
+	writeWorkspaceFile(t, root, ".docs/wiki/acidification.md", strings.Join([]string{
+		"# Acidification",
+		"",
+		"Acidification and biological fermentation lower pH through microbial organic acids.",
+	}, "\n"))
+	writeWorkspaceFile(t, root, ".docs/wiki/logistics.md", strings.Join([]string{
+		"# Logistics",
+		"",
+		"Logistica de transporte y facturacion para rutas comerciales.",
+	}, "\n"))
+
+	alias := "wiki-rerank-extension-" + filepath.Base(root)
+	app := New(root, nil)
+	initEnv, err := app.Execute(context.Background(), model.CommandRequest{
+		Operation: "workspace.init",
+		Context:   model.QueryOptions{},
+		Payload:   map[string]any{"path": root, "alias": alias, "no_index": true},
+	})
+	if err != nil {
+		t.Fatalf("workspace.init: %v", err)
+	}
+	if !initEnv.Ok {
+		t.Fatalf("workspace.init not ok")
+	}
+	defer func() { _ = workspace.RemoveWorkspace(alias) }()
+
+	proj, err := workspace.LoadProjectFile(root)
+	if err != nil {
+		t.Fatalf("LoadProjectFile: %v", err)
+	}
+	proj.Embeddings = &model.EmbeddingsBlock{
+		Enabled:   boolPtr(true),
+		Provider:  "openai",
+		BaseURL:   server.URL,
+		Model:     "fake",
+		Dim:       8,
+		BatchSize: 4,
+		TimeoutMS: 5000,
+	}
+	proj.Recall = &model.RecallBlock{RerankExtension: &model.RerankExtensionBlock{
+		Enabled:         boolPtr(true),
+		Command:         command,
+		Args:            args,
+		TimeoutMS:       5000,
+		CandidateCount:  2,
+		TopN:            1,
+		MaxSnippetChars: 80,
+	}}
+	if err := workspace.SaveProjectFile(root, proj); err != nil {
+		t.Fatalf("SaveProjectFile: %v", err)
+	}
+
+	indexEnv, err := app.Execute(context.Background(), model.CommandRequest{
+		Operation: "index.start",
+		Context:   model.QueryOptions{Workspace: alias},
+		Payload:   map[string]any{"docs_only": true, "wait": true},
+	})
+	if err != nil {
+		t.Fatalf("index.start: %v", err)
+	}
+	if !indexEnv.Ok {
+		t.Fatalf("index.start not ok")
+	}
+
+	env, err := app.Execute(context.Background(), model.CommandRequest{
+		Operation: "nav.recall",
+		Context:   model.QueryOptions{Workspace: alias, MaxItems: 1},
+		Payload:   map[string]any{"query": "acidificacion biologica"},
+	})
+	if err != nil {
+		t.Fatalf("recall: %v", err)
+	}
+	results := env.Items.([]model.RecallResult)
+	if len(results) != 1 {
+		t.Fatalf("results len = %d, want 1", len(results))
+	}
+	if !strings.HasSuffix(results[0].Archivo, "logistics.md") {
+		t.Fatalf("rerank top result = %#v, want logistics.md", results[0])
+	}
+	if !containsRecallWhy(results[0].Why, "external_rerank") {
+		t.Fatalf("why = %#v, want external_rerank", results[0].Why)
+	}
+}
+
+func TestRecall_RerankExtensionFailurePreservesOrderAndSanitizesWarning(t *testing.T) {
+	server := newFakeEmbeddings(t)
+	defer server.Close()
+
+	command, args := serviceRerankHelperCommand(t, "invalid-json")
+	ensureWritableTestHome(t)
+	root := t.TempDir()
+	writeWorkspaceFile(t, root, "go.mod", "module wiki-rerank-fallback-test\n\ngo 1.24\n")
+	writeWorkspaceFile(t, root, ".docs/wiki/acidification.md", "# Acidification\n\nAcidification SECRET_SNIPPET_TOKEN biological fermentation.\n")
+	writeWorkspaceFile(t, root, ".docs/wiki/logistics.md", "# Logistics\n\nLogistica de transporte y facturacion.\n")
+
+	alias := "wiki-rerank-fallback-" + filepath.Base(root)
+	app := New(root, nil)
+	initEnv, err := app.Execute(context.Background(), model.CommandRequest{
+		Operation: "workspace.init",
+		Context:   model.QueryOptions{},
+		Payload:   map[string]any{"path": root, "alias": alias, "no_index": true},
+	})
+	if err != nil {
+		t.Fatalf("workspace.init: %v", err)
+	}
+	if !initEnv.Ok {
+		t.Fatalf("workspace.init not ok")
+	}
+	defer func() { _ = workspace.RemoveWorkspace(alias) }()
+
+	proj, err := workspace.LoadProjectFile(root)
+	if err != nil {
+		t.Fatalf("LoadProjectFile: %v", err)
+	}
+	proj.Embeddings = &model.EmbeddingsBlock{
+		Enabled:   boolPtr(true),
+		Provider:  "openai",
+		BaseURL:   server.URL,
+		Model:     "fake",
+		Dim:       8,
+		BatchSize: 4,
+		TimeoutMS: 5000,
+	}
+	proj.Recall = &model.RecallBlock{RerankExtension: &model.RerankExtensionBlock{
+		Enabled:        boolPtr(true),
+		Command:        command,
+		Args:           args,
+		TimeoutMS:      5000,
+		CandidateCount: 2,
+	}}
+	if err := workspace.SaveProjectFile(root, proj); err != nil {
+		t.Fatalf("SaveProjectFile: %v", err)
+	}
+
+	indexEnv, err := app.Execute(context.Background(), model.CommandRequest{
+		Operation: "index.start",
+		Context:   model.QueryOptions{Workspace: alias},
+		Payload:   map[string]any{"docs_only": true, "wait": true},
+	})
+	if err != nil {
+		t.Fatalf("index.start: %v", err)
+	}
+	if !indexEnv.Ok {
+		t.Fatalf("index.start not ok")
+	}
+
+	env, err := app.Execute(context.Background(), model.CommandRequest{
+		Operation: "nav.recall",
+		Context:   model.QueryOptions{Workspace: alias, MaxItems: 1},
+		Payload:   map[string]any{"query": "acidificacion biologica SECRET_QUERY_TOKEN"},
+	})
+	if err != nil {
+		t.Fatalf("recall: %v", err)
+	}
+	results := env.Items.([]model.RecallResult)
+	if len(results) != 1 || !strings.HasSuffix(results[0].Archivo, "acidification.md") {
+		t.Fatalf("failure should preserve semantic order, got %#v", results)
+	}
+	warningText := strings.Join(env.Warnings, " ")
+	if !strings.Contains(warningText, "rerank extension invalid_json") {
+		t.Fatalf("warnings = %#v, want sanitized rerank failure", env.Warnings)
+	}
+	for _, forbidden := range []string{"SECRET_QUERY_TOKEN", "SECRET_SNIPPET_TOKEN", "not-json"} {
+		if strings.Contains(warningText, forbidden) {
+			t.Fatalf("warning leaked %q: %q", forbidden, warningText)
+		}
+	}
+}
+
+func TestRecall_EmbeddingFallbackWarningIsSanitized(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		http.Error(w, "provider echoed "+string(body)+" SECRET_PROVIDER_TOKEN", http.StatusInternalServerError)
+	}))
+	defer server.Close()
+
+	ensureWritableTestHome(t)
+	root := t.TempDir()
+	writeWorkspaceFile(t, root, "go.mod", "module wiki-embedding-fallback-sanitize-test\n\ngo 1.24\n")
+	writeWorkspaceFile(t, root, ".docs/wiki/secret.md", "# Secret\n\nSECRET_QUERY_TOKEN lexical fallback target.\n")
+
+	alias := "wiki-embedding-fallback-sanitize-" + filepath.Base(root)
+	app := New(root, nil)
+	initEnv, err := app.Execute(context.Background(), model.CommandRequest{
+		Operation: "workspace.init",
+		Context:   model.QueryOptions{},
+		Payload:   map[string]any{"path": root, "alias": alias, "no_index": true},
+	})
+	if err != nil {
+		t.Fatalf("workspace.init: %v", err)
+	}
+	if !initEnv.Ok {
+		t.Fatalf("workspace.init not ok")
+	}
+	defer func() { _ = workspace.RemoveWorkspace(alias) }()
+
+	proj, err := workspace.LoadProjectFile(root)
+	if err != nil {
+		t.Fatalf("LoadProjectFile: %v", err)
+	}
+	proj.Embeddings = &model.EmbeddingsBlock{
+		Enabled:   boolPtr(true),
+		Provider:  "openai",
+		BaseURL:   server.URL,
+		Model:     "fake",
+		Dim:       8,
+		TimeoutMS: 5000,
+	}
+	if err := workspace.SaveProjectFile(root, proj); err != nil {
+		t.Fatalf("SaveProjectFile: %v", err)
+	}
+
+	indexEnv, err := app.Execute(context.Background(), model.CommandRequest{
+		Operation: "index.run",
+		Context:   model.QueryOptions{Workspace: alias},
+		Payload:   map[string]any{"docs_only": true},
+	})
+	if err != nil {
+		t.Fatalf("index.run: %v", err)
+	}
+	if !indexEnv.Ok {
+		t.Fatalf("index.run not ok")
+	}
+
+	env, err := app.Execute(context.Background(), model.CommandRequest{
+		Operation: "nav.recall",
+		Context:   model.QueryOptions{Workspace: alias, MaxItems: 5},
+		Payload:   map[string]any{"query": "SECRET_QUERY_TOKEN"},
+	})
+	if err != nil {
+		t.Fatalf("recall: %v", err)
+	}
+	warningText := strings.Join(env.Warnings, " ")
+	if !strings.Contains(warningText, "embeddings unavailable; served lexical results") {
+		t.Fatalf("warnings = %#v, want sanitized embedding fallback warning", env.Warnings)
+	}
+	for _, forbidden := range []string{"SECRET_QUERY_TOKEN", "SECRET_PROVIDER_TOKEN", "provider echoed", "embeddings endpoint returned"} {
+		if strings.Contains(warningText, forbidden) {
+			t.Fatalf("warning leaked %q: %q", forbidden, warningText)
+		}
+	}
+}
+
 func containsRecallWhy(values []string, target string) bool {
 	for _, value := range values {
 		if value == target {
@@ -680,4 +932,41 @@ func TestRecall_ConfigGatedWhenDisabled(t *testing.T) {
 	}
 
 	t.Logf("PASS: recall with embeddings disabled returned ok=true, empty items, and hint")
+}
+
+func serviceRerankHelperCommand(t *testing.T, mode string) (string, []string) {
+	t.Helper()
+	t.Setenv("MI_LSP_SERVICE_RERANK_HELPER", "1")
+	return os.Args[0], []string{"-test.run=TestServiceRerankHelperProcess", "--", mode}
+}
+
+func TestServiceRerankHelperProcess(t *testing.T) {
+	if os.Getenv("MI_LSP_SERVICE_RERANK_HELPER") != "1" {
+		return
+	}
+	mode := ""
+	for i, arg := range os.Args {
+		if arg == "--" && i+1 < len(os.Args) {
+			mode = os.Args[i+1]
+			break
+		}
+	}
+	switch mode {
+	case "reverse":
+		body, _ := io.ReadAll(os.Stdin)
+		var req struct {
+			Candidates []any `json:"candidates"`
+		}
+		_ = json.Unmarshal(body, &req)
+		if len(req.Candidates) >= 2 {
+			fmt.Println(`{"protocol_version":"mi-lsp-rerank-extension-v1","indices":[1,0]}`)
+		} else {
+			fmt.Println(`{"protocol_version":"mi-lsp-rerank-extension-v1","indices":[0]}`)
+		}
+	case "invalid-json":
+		fmt.Println("not-json SECRET_SNIPPET_TOKEN")
+	default:
+		fmt.Println(`{"protocol_version":"mi-lsp-rerank-extension-v1","indices":[0]}`)
+	}
+	os.Exit(0)
 }

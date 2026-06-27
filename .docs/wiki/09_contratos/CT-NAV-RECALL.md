@@ -37,7 +37,7 @@ Usuario/agente -> CLI publica `mi-lsp nav recall`.
 mi-lsp nav recall <query> [--workspace <alias>] [--max-items 10] [--token-budget 2000] [--intent formula|evidence|route|explore|learning] [--format compact|json|text|toon] [--map]
 ```
 
-La CLI acepta una consulta libre y una intencion opcional. Produce un envelope `backend=recall` con candidatos wiki semanticos cuando embeddings estan configurados. Cuando Nan, la key, el provider o la config fallan, la guia canonica de fallback es rerutear a `mi-lsp nav wiki search`, no activar un BGE oculto ni convertir una degradacion lexical en runtime default.
+La CLI acepta una consulta libre y una intencion opcional. Produce un envelope `backend=recall` con candidatos wiki semanticos cuando embeddings estan configurados. Cuando la key, el provider o la config fallan, la guia canonica de fallback es rerutear a `mi-lsp nav wiki search`, no activar un modelo local oculto ni convertir una degradacion lexical en runtime default.
 
 ## Configuracion `[embeddings]`
 
@@ -46,10 +46,10 @@ La CLI acepta una consulta libre y una intencion opcional. Produce un envelope `
 ```toml
 [embeddings]
 provider = "openai"
-base_url = "https://api.nan.builders/v1"
-model = "qwen3-embedding"
-dim = 4096
-api_key_env = "NAN_API_KEY"
+base_url = "https://embeddings.example.local/v1"
+model = "text-embedding-model"
+dim = 1536
+api_key_env = "MI_LSP_EMBEDDINGS_API_KEY"
 profile = "knowledge-wiki"
 batch_size = 32
 timeout_ms = 30000
@@ -58,6 +58,23 @@ user_agent = "mi-lsp-embeddings/1.0"
 ```
 
 El cliente usa payload OpenAI-compatible con `encoding_format = "float"`, header `Accept: application/json`, `User-Agent` configurable y validacion estricta de dimension contra `dim`. La API key se resuelve desde el environment o desde un wrapper como `mkey run`; nunca se imprime ni se guarda en docs.
+
+## Configuracion `[recall.rerank_extension]`
+
+El rerank externo es opcional, local y deshabilitado por defecto:
+
+```toml
+[recall.rerank_extension]
+enabled = true
+command = "mi-lsp-rerank-local"
+args = ["--profile", "default"]
+timeout_ms = 2000
+candidate_count = 50
+top_n = 10
+max_snippet_chars = 500
+```
+
+`command` se ejecuta sin shell y recibe stdin JSON. `args` son literales de configuracion, no templates de secretos. El core no implementa cliente HTTP privado de rerank.
 
 ## Payload logico
 
@@ -81,7 +98,7 @@ Cuando `workspace` se omite, el runtime resuelve primero el workspace registrado
 | `explore` | Exploracion general cuando todavia no se conoce el vocabulario. | Balancea similitud semantica y cobertura documental. |
 | `learning` | Preparar onboarding, resumen de conceptos o aprendizaje progresivo. | Prioriza explicaciones, arquitectura, baseline y docs de contexto. |
 
-Regla de autoridad: Qwen descubre candidatos. Un hit `route` o material `route-only` no se convierte por si mismo en fuente final; la respuesta final debe anclarse en el documento canonico o evidencia que el candidato permita abrir.
+Regla de autoridad: embeddings descubren candidatos. Un hit `route` o material `route-only` no se convierte por si mismo en fuente final; la respuesta final debe anclarse en el documento canonico o evidencia que el candidato permita abrir.
 
 ## Respuesta
 
@@ -95,7 +112,7 @@ Cada item de `backend=recall` contiene:
 - `snippet`: fragmento de contexto
 - `start_line`: numero de linea inicial en el archivo original
 - `end_line`: numero de linea final en el archivo original
-- `why`: razon breve de ranking/reranking cuando esta disponible
+- `why`: razon breve de ranking/reranking; incluye `external_rerank` cuando el hook local externo reordeno ese candidato
 
 El envelope puede contener ademas:
 
@@ -111,7 +128,8 @@ El envelope puede contener ademas:
 - `[embeddings]` esta activo cuando `base_url` + `model` existen y `enabled` no es `false`.
 - Si `[embeddings]` no esta activo, devuelve `backend=recall`, `items=[]` y `hint` accionable sin llamar al proveedor.
 - Si el provider activo falla por key, endpoint, timeout o payload, el fallback canonico es `mi-lsp nav wiki search "<query>" --workspace <alias> --format toon`.
-- No existe fallback BGE oculto ni modelo local implicito.
+- Si embeddings no estan activos o fallan, no se invoca `[recall.rerank_extension]`.
+- No existe fallback local oculto ni modelo implicito.
 
 ## Backends de busqueda
 
@@ -122,9 +140,11 @@ El envelope puede contener ademas:
 
 - `score` de embeddings siempre [0, 1] post-normalizacion.
 - Ranking determinista: dentro de backend, por score descendente y reranking estable por `intent`.
+- Rerank extension se aplica despues del ranking semantico y antes del corte final; si falla, el orden semantico se preserva.
 - Top-k = `min(max_items, presupuesto_token / tokens_por_item)`.
 - Cuando `token_budget` agota, truncar con `truncated=true` y `next_hint` accionable.
 - Cambios de metadata-prefix, texto enriquecido, content hash, `embedding_model` o `embedding_dim` requieren reindex/reembedding.
+- Cambios en `[recall.rerank_extension]` no requieren reindex si el modelo/dimension de embeddings no cambia.
 
 ## Warnings esperables
 
@@ -132,6 +152,7 @@ El envelope puede contener ademas:
 - `embeddings_unavailable` - API/provider no disponible; usar `nav wiki search` como fallback.
 - `api_timeout` - timeout en embedding API; usar `nav wiki search` como fallback.
 - `dimension_mismatch` - el vector devuelto no coincide con `dim`; no reutilizar ni persistir ese resultado.
+- `rerank extension <kind>; preserved semantic order` - hook no disponible, timeout, salida invalida, indices invalidos o exit no cero.
 - `workspace omitted; multiple registry aliases share root ...`
 - `workspace omitted; no registered workspace matched caller cwd ...; falling back to last_workspace=...`
 
@@ -141,6 +162,7 @@ El envelope puede contener ademas:
 - workspace no resoluble -> error explicito
 - `index.db` no accesible -> error explicito
 - API key invalida o endpoint malformado -> warning/hint accionable, sin imprimir secretos
+- salida invalida del hook externo -> warning sanitizado y orden semantico preservado
 
 ## Relacion con otros comandos
 

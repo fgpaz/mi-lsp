@@ -13,6 +13,7 @@ import (
 
 	"github.com/fgpaz/mi-lsp/internal/embed"
 	"github.com/fgpaz/mi-lsp/internal/model"
+	"github.com/fgpaz/mi-lsp/internal/rerank"
 	"github.com/fgpaz/mi-lsp/internal/store"
 	"github.com/fgpaz/mi-lsp/internal/wikichunk"
 	"github.com/fgpaz/mi-lsp/internal/workspace"
@@ -190,6 +191,12 @@ func (a *App) appendWikiEmbeddingWarnings(ctx context.Context, root string, warn
 	return warnings
 }
 
+type scoredChunk struct {
+	embedding model.WikiChunkEmbedding
+	score     float64
+	reranked  bool
+}
+
 // recall handles semantic search over wiki chunks via embeddings or lexical fallback.
 func (a *App) recall(ctx context.Context, request model.CommandRequest) (model.Envelope, error) {
 	// Resolve workspace (same pattern as search/ask, NO governance gate)
@@ -210,7 +217,7 @@ func (a *App) recall(ctx context.Context, request model.CommandRequest) (model.E
 	// Check if embeddings are active and configured.
 	if !project.Embeddings.Active() {
 		// Return hint without calling embeddings
-		hint := "embeddings not configured; configure [embeddings] section in .mi-lsp/project.toml or use 'mi-lsp nav search' for lexical search"
+		hint := "embeddings not configured; configure [embeddings] section in .mi-lsp/project.toml or use 'mi-lsp nav wiki search' for lexical search"
 		return model.Envelope{
 			Ok:        true,
 			Workspace: registration.Name,
@@ -268,8 +275,8 @@ func (a *App) recall(ctx context.Context, request model.CommandRequest) (model.E
 			})
 		}
 
-		warnings := []string{fmt.Sprintf("embeddings unavailable (%v); served lexical results", err)}
-		hint := "embeddings endpoint offline; results are from lexical search. Fix embeddings config to enable semantic search."
+		warnings := []string{"embeddings unavailable; served lexical results"}
+		hint := "embeddings endpoint offline; results are from lexical search. Fix embeddings config to enable semantic search or use 'mi-lsp nav wiki search'."
 
 		return model.Envelope{
 			Ok:        true,
@@ -294,10 +301,6 @@ func (a *App) recall(ctx context.Context, request model.CommandRequest) (model.E
 	}
 
 	// Score each embedding
-	type scoredChunk struct {
-		embedding model.WikiChunkEmbedding
-		score     float64
-	}
 	var scored []scoredChunk
 
 	for _, emb := range allEmbeddings {
@@ -321,6 +324,8 @@ func (a *App) recall(ctx context.Context, request model.CommandRequest) (model.E
 	if maxItems <= 0 {
 		maxItems = 10
 	}
+	var warnings []string
+	scored = applyRecallRerank(ctx, project, query, intent, scored, maxItems, docByPath, &warnings)
 	if len(scored) > maxItems {
 		scored = scored[:maxItems]
 	}
@@ -338,7 +343,7 @@ func (a *App) recall(ctx context.Context, request model.CommandRequest) (model.E
 			Snippet:   sc.embedding.Snippet,
 			StartLine: sc.embedding.StartLine,
 			EndLine:   sc.embedding.EndLine,
-			Why:       recallWhy(intent, sc.embedding, doc),
+			Why:       recallWhyWithRerank(intent, sc.embedding, doc, sc.reranked),
 		})
 	}
 
@@ -355,8 +360,84 @@ func (a *App) recall(ctx context.Context, request model.CommandRequest) (model.E
 		Mode:      "semantic",
 		Items:     results,
 		Stats:     model.Stats{Files: len(results)},
+		Warnings:  warnings,
 		Hint:      recallIntentHint(intent),
 	}, nil
+}
+
+func applyRecallRerank(ctx context.Context, project model.ProjectFile, query string, intent string, scored []scoredChunk, maxItems int, docByPath map[string]model.DocRecord, warnings *[]string) []scoredChunk {
+	if project.Recall == nil || !project.Recall.RerankExtension.Active() || len(scored) == 0 {
+		return scored
+	}
+	cfgBlock := project.Recall.RerankExtension
+	cfg := rerank.Config{
+		Command:         cfgBlock.Command,
+		Args:            append([]string(nil), cfgBlock.Args...),
+		TimeoutMS:       cfgBlock.TimeoutMS,
+		CandidateCount:  cfgBlock.CandidateCount,
+		TopN:            cfgBlock.TopN,
+		MaxSnippetChars: cfgBlock.MaxSnippetChars,
+	}
+	candidateCount := cfg.CandidateCount
+	if candidateCount <= 0 {
+		candidateCount = 50
+		if maxItems > candidateCount {
+			candidateCount = maxItems
+		}
+	}
+	if candidateCount > len(scored) {
+		candidateCount = len(scored)
+	}
+	if candidateCount <= 0 {
+		return scored
+	}
+
+	candidates := make([]rerank.Candidate, 0, candidateCount)
+	for i, sc := range scored[:candidateCount] {
+		doc := docByPath[sc.embedding.DocPath]
+		candidates = append(candidates, rerank.Candidate{
+			Index:     i,
+			Archivo:   sc.embedding.DocPath,
+			Heading:   sc.embedding.Heading,
+			Snippet:   sc.embedding.Snippet,
+			Score:     sc.score,
+			StartLine: sc.embedding.StartLine,
+			EndLine:   sc.embedding.EndLine,
+			Why:       recallWhy(intent, sc.embedding, doc),
+		})
+	}
+
+	outcome, err := rerank.Execute(ctx, cfg, query, candidates)
+	if err != nil {
+		kind := "failed"
+		if safeErr, ok := err.(*rerank.SafeError); ok && safeErr.Kind != "" {
+			kind = safeErr.Kind
+		}
+		*warnings = append(*warnings, fmt.Sprintf("rerank extension %s; preserved semantic order", kind))
+		return scored
+	}
+	if len(outcome.Warnings) > 0 {
+		*warnings = append(*warnings, outcome.Warnings...)
+	}
+	if len(outcome.Order) == 0 {
+		return scored
+	}
+
+	ordered := make([]scoredChunk, 0, len(scored))
+	for _, index := range outcome.Order {
+		if index < 0 || index >= candidateCount {
+			continue
+		}
+		next := scored[index]
+		if outcome.Applied[index] {
+			next.reranked = true
+		}
+		ordered = append(ordered, next)
+	}
+	if len(scored) > candidateCount {
+		ordered = append(ordered, scored[candidateCount:]...)
+	}
+	return ordered
 }
 
 type wikiDocMetadata struct {
@@ -517,6 +598,14 @@ func recallWhy(intent string, emb model.WikiChunkEmbedding, doc model.DocRecord)
 	}
 	if boost < 0 {
 		why = append(why, "intent_penalty")
+	}
+	return why
+}
+
+func recallWhyWithRerank(intent string, emb model.WikiChunkEmbedding, doc model.DocRecord, reranked bool) []string {
+	why := recallWhy(intent, emb, doc)
+	if reranked {
+		why = append(why, "external_rerank")
 	}
 	return why
 }

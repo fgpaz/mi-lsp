@@ -44,7 +44,7 @@ evidence:
 | Condicion | Tipo | Estado requerido |
 |---|---|---|
 | Workspace registrado con `.mi-lsp/project.toml` accesible | funcional | obligatorio |
-| Backend embeddings disponible (OpenAI-compatible; Nan/Qwen3 recomendado para recall operativo) | tecnica | opcional |
+| Backend embeddings disponible (OpenAI-compatible) | tecnica | opcional |
 | Perfil knowledge-wiki efectivo | operativa | obligatorio |
 
 ## 3. Inputs
@@ -54,8 +54,8 @@ evidence:
 | `enabled` | bool | no | `.mi-lsp/project.toml [embeddings]` | omitido = activo si `base_url` + `model`; `false` = apagado explicito | RF-SEM-001 |
 | `provider` | string | no | `.mi-lsp/project.toml [embeddings]` | e.g. `openai`, `azure`, `custom`, `nan` o vacio | RF-SEM-001 |
 | `base_url` | string | no | `.mi-lsp/project.toml [embeddings]` | valid HTTP(S) URL o vacio | RF-SEM-001 |
-| `model` | string | no | `.mi-lsp/project.toml [embeddings]` | e.g. `qwen3-embedding`, `text-embedding-3-large` o vacio | RF-SEM-001 |
-| `dim` | entero | no | `.mi-lsp/project.toml [embeddings]` | > 0; `4096` para `qwen3-embedding` | RF-SEM-001 |
+| `model` | string | no | `.mi-lsp/project.toml [embeddings]` | nombre del modelo OpenAI-compatible o vacio | RF-SEM-001 |
+| `dim` | entero | no | `.mi-lsp/project.toml [embeddings]` | > 0; depende del modelo elegido | RF-SEM-001 |
 | `api_key_env` | string | no | `.mi-lsp/project.toml [embeddings]` | env var name (e.g. `MI_LSP_EMBEDDINGS_API_KEY`) o vacio | RF-SEM-001 |
 | `profile` | enum | no | `.mi-lsp/project.toml [embeddings]` | `spec-driven` o `knowledge-wiki`; default `knowledge-wiki` | RF-SEM-001 |
 | `batch_size` | entero | no | `.mi-lsp/project.toml [embeddings]` | >= 1, default 10 | RF-SEM-001 |
@@ -63,15 +63,15 @@ evidence:
 | `encoding_format` | string | no | `.mi-lsp/project.toml [embeddings]` | OpenAI-compatible; default operativo `float` | RF-SEM-001 |
 | `user_agent` | string | no | `.mi-lsp/project.toml [embeddings]` | header HTTP seguro; default del cliente si se omite | RF-SEM-001 |
 
-Ejemplo operativo Nan/Qwen3:
+Ejemplo operativo generico:
 
 ```toml
 [embeddings]
 provider = "openai"
-base_url = "https://api.nan.builders/v1"
-model = "qwen3-embedding"
-dim = 4096
-api_key_env = "NAN_API_KEY"
+base_url = "https://embeddings.example.local/v1"
+model = "text-embedding-model"
+dim = 1536
+api_key_env = "MI_LSP_EMBEDDINGS_API_KEY"
 profile = "knowledge-wiki"
 batch_size = 32
 timeout_ms = 30000
@@ -88,7 +88,7 @@ user_agent = "mi-lsp-embeddings/1.0"
 3. Si `[embeddings]` no existe, falta `base_url`/`model`, o `enabled=false`, devuelve hint y no llama al backend.
 4. Si `base_url` + `model` existen y `enabled` esta omitido o `true`, carga cliente OpenAI-compatible con credenciales desde `api_key_env`.
 5. Ejecuta embedding del query o de chunks de wiki con timeout `timeout_ms`, payload `encoding_format = "float"` cuando no haya override y headers `Accept: application/json` + `User-Agent`.
-6. Si la llamada falla, registra warning y orienta el fallback canonico a `mi-lsp nav wiki search`; no existe fallback BGE oculto.
+6. Si la llamada falla, registra warning y orienta el fallback canonico a `mi-lsp nav wiki search`; no existe fallback local oculto.
 7. Config efectiva se resuelve desde `.mi-lsp/project.toml` por operacion.
 
 ## 5. Outputs
@@ -150,7 +150,7 @@ Scenario: Caer a offline si backend no responde
   When ejecuto "mi-lsp nav recall 'query' --workspace <alias>"
   Then se registra warning de provider unreachable
   And la guidance recomienda `mi-lsp nav wiki search`
-  And no se usa un fallback BGE oculto
+  And no se usa un fallback local oculto
 
 Scenario: Usar default offline si no hay config
   Given un workspace sin seccion [embeddings]

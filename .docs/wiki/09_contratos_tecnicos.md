@@ -76,16 +76,16 @@ El detalle por frontera vive en `09_contratos/`.
 
 `[embeddings]` en `.mi-lsp/project.toml` habilita busqueda semantica cuando incluye `base_url` + `model`.
 `enabled` es opcional: omitido equivale a activo y `enabled = false` es el kill switch explicito.
-El contrato operacional actual usa providers OpenAI-compatible; Nan/Qwen3 es la referencia documentada.
+El contrato operacional usa providers OpenAI-compatible y no incluye clientes privados en core.
 
 ```toml
 [embeddings]
 # enabled = false  # opcional; apaga semantic recall sin borrar la config
 provider = "openai"
-base_url = "https://api.nan.builders/v1"
-model = "qwen3-embedding"
-dim = 4096
-api_key_env = "NAN_API_KEY"
+base_url = "https://embeddings.example.local/v1"
+model = "text-embedding-model"
+dim = 1536
+api_key_env = "MI_LSP_EMBEDDINGS_API_KEY"
 profile = "knowledge-wiki"  # o "spec-driven"
 batch_size = 32
 timeout_ms = 30000
@@ -95,7 +95,9 @@ user_agent = "mi-lsp-embeddings/1.0"
 
 El cliente envia payload OpenAI-compatible con `encoding_format = "float"`, header `Accept: application/json`, `User-Agent` configurable y validacion estricta de dimension contra `dim`.
 API key resuelta via la environment variable nombrada en `api_key_env` (usualmente inyectada con `mkey run`).
-Sin configuracion activa, `nav recall` devuelve hint visible y no llama al proveedor; si Nan/key/provider falla, el fallback canonico es `mi-lsp nav wiki search`, sin BGE oculto ni modelo local implicito.
+Sin configuracion activa, `nav recall` devuelve hint visible y no llama al proveedor; si key/provider/config falla, el fallback canonico es `mi-lsp nav wiki search`, sin modelo local oculto.
+
+`[recall.rerank_extension]` puede reordenar candidatos mediante comando local externo. El comando recibe stdin JSON versionado `mi-lsp-rerank-extension-v1` y devuelve stdout JSON con `indices` o `results[].index`; no se ejecuta via shell, no guarda payloads y cualquier falla preserva el orden semantico original con warning sanitizado.
 
 ## Versionado, auth y errores
 

@@ -1,0 +1,50 @@
+schema: ae-evidence-index/v1
+session_id: 2026-06-27-mi-lsp-rerank-extension
+status: ready_for_commit
+summary: "AE hygiene plus external local rerank extension hook for mi-lsp semantic recall."
+evidence:
+  governance:
+    - command: "mi-lsp workspace status C:/repos/mios/mi-lsp --format toon"
+      verdict: PASS
+      notes: "governance_blocked=false; docs_ready=true; doc_count=122 after docs-only index; ae_canon.status=valid"
+    - command: "mi-lsp nav governance --workspace C:/repos/mios/mi-lsp --format toon"
+      verdict: PASS
+      notes: "sync=in_sync; blocked=false; index_sync=current"
+    - command: "mi-lsp nav wiki validate-harness --workspace C:/repos/mios/mi-lsp --format toon"
+      verdict: PASS
+      notes: "harness_verdict=PASS; harness_contracts_reviewed=118; RF-SEM-004 indexed"
+  git_hygiene:
+    - path: .docs/auditoria/2026-06-27-mi-lsp-rerank-extension/branch-hygiene.md
+      verdict: PASS
+  worker_lanes:
+    - id: 019f09b7-90df-7710-8342-66eecb9c10ab
+      kind: read_only_docs
+      status: launched
+    - id: 019f09b7-c015-73b1-92c5-90218a480fbb
+      kind: read_only_code
+      status: launched
+  verification:
+    - command: "go test ./internal/rerank ./internal/model ./internal/service"
+      verdict: PASS
+      notes: "targeted rerank/model/service suites passed"
+    - command: "go test ./..."
+      verdict: PASS
+      notes: "first run exposed transient internal/cli telemetry zero-event failures; isolated internal/cli passed; repeat go test ./... -count=1 passed"
+    - command: "git diff --check"
+      verdict: PASS
+      notes: "only CRLF normalization warnings from Git; no whitespace errors"
+    - command: "rg private provider strings in README.md .docs/wiki"
+      verdict: PASS
+      notes: "no api.nan.builders, NAN_API_KEY, micro-proxy, rerank-nan, or BGE fallback recipe remains"
+  traceability:
+    - command: "mi-lsp nav trace RF-SEM-004 --workspace C:/repos/mios/mi-lsp --format toon"
+      verdict: PASS
+      notes: "status=implemented; coverage=1; confidence=high; explicit implementation and test links verified"
+  guard:
+    - command: "scripts/ae/pre-push-guard.ps1 -SessionContract .docs/auditoria/2026-06-27-mi-lsp-rerank-extension/session-contract.yaml -AllowDirty"
+      verdict: PASS
+      notes: "ok=true; branch=codex/mi-lsp-rerank-extension; dirty_count=22; diff_count=22; ae_canon_status=valid"
+terminal_disposition:
+  branch: codex/mi-lsp-rerank-extension
+  branch_disposition: integrate-main
+  cleanup_policy: auto-after-successful-integration

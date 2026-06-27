@@ -97,7 +97,8 @@ flowchart LR
 - El daemon nunca es requisito funcional: toda consulta debe poder hacer fallback directo.
 - Vector store es puro-Go (sin CGO, sin `sqlite-vec`); escalable en memoria local; cuando embeddings no estan disponibles, el fallback canonico es `nav wiki search`.
 - `nav recall` es ungated y no requiere gobernanza valida ni index ready.
-- Embeddings pluggables: OpenAI-compatible, con Nan/Qwen3 como referencia operacional; configurables via `[embeddings]` en `project.toml`, activos con `base_url` + `model` salvo `enabled=false`.
+- Embeddings pluggables: OpenAI-compatible y provider-neutral; configurables via `[embeddings]` en `project.toml`, activos con `base_url` + `model` salvo `enabled=false`.
+- Rerank opcional de `nav recall`: hook local externo configurado en `[recall.rerank_extension]`, invocado solo despues del recall semantico y antes del corte final; timeout/falla/salida invalida preservan el orden semantico original con warnings sanitizados.
 - `mi-lsp index` debe poder backfillear `wiki_chunk_embeddings` aunque el catalogo incremental no detecte cambios de fuente.
 - AXI se resuelve por superficie en el borde del CLI: root, `init`, `workspace status`, `nav search`, `nav intent` y `nav pack` son AXI-default; `nav ask` solo lo es para preguntas claras de onboarding/orientacion.
 - `nav workspace-map` y el resto de la CLI conservan modo clasico por default; `--axi` o `MI_LSP_AXI=1` pueden forzar AXI sobre superficies soportadas.

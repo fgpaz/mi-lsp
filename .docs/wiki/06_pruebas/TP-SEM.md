@@ -34,6 +34,7 @@ evidence:
 - RF-SEM-001
 - RF-SEM-002
 - RF-SEM-003
+- RF-SEM-004
 
 ## Casos
 
@@ -41,10 +42,15 @@ evidence:
 |---|---|---|---|
 | TC-SEM-001 | positivo | RF-SEM-001 | acepta config `[embeddings]` completa con `provider`, `base_url`, `model`, `dim`, `api_key_env`, `profile`, `batch_size`, `timeout_ms`, `encoding_format` y `user_agent` |
 | TC-SEM-002 | positivo | RF-SEM-001 | envia payload OpenAI-compatible con `encoding_format = "float"`, `Accept`, `User-Agent` y valida dimension estrictamente contra `dim` |
-| TC-SEM-003 | negativo | RF-SEM-001 | si Nan/key/provider/config falla, no imprime secretos y recomienda `nav wiki search` sin fallback BGE oculto |
+| TC-SEM-003 | negativo | RF-SEM-001 | si key/provider/config falla, no imprime secretos y recomienda `nav wiki search` sin fallback local oculto |
 | TC-SEM-004 | positivo | RF-SEM-002 | reindexa cuando cambia metadata-prefix, texto enriquecido, content hash, modelo o dimension |
 | TC-SEM-005 | positivo | RF-SEM-002 | persiste `wiki_chunk_embeddings` con `doc_path`, `chunk_id`, rango de lineas, heading, snippet, `embedding_model`, `embedding_dim` y BLOB float32 |
 | TC-SEM-006 | negativo | RF-SEM-002 | rechaza reutilizar vectores stale cuando el hash, modelo, dimension o BLOB faltante no coincide |
 | TC-SEM-007 | positivo | RF-SEM-003 | `nav recall --intent formula` devuelve `RecallResult.intent` y prioriza reglas, contratos y definiciones |
 | TC-SEM-008 | positivo | RF-SEM-003 | `nav recall --intent route` descubre candidatos de ruta, pero no convierte material route-only en fuente final |
 | TC-SEM-009 | negativo | RF-SEM-003 | con embeddings no configurados o provider fallido, el envelope entrega hint accionable hacia `nav wiki search` y no expone API keys |
+| TC-SEM-010 | positivo | RF-SEM-004 | con `[recall.rerank_extension] enabled=true`, `nav recall` envia candidatos acotados por stdin JSON versionado a un comando local |
+| TC-SEM-011 | positivo | RF-SEM-004 | una respuesta valida del hook reordena candidatos antes del corte final y marca `why=external_rerank` |
+| TC-SEM-012 | negativo | RF-SEM-004 | comando faltante, timeout, salida no JSON, exit no cero o version invalida preservan el orden semantico original |
+| TC-SEM-013 | negativo | RF-SEM-004 | indices duplicados o fuera de rango se rechazan y preservan el orden semantico original |
+| TC-SEM-014 | negativo | RF-SEM-004 | warnings/logs no exponen query, snippets, stdin/stdout completos, provider responses, tokens ni secretos |
