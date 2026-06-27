@@ -1,0 +1,59 @@
+schema: ae-session-contract/v1
+session_id: 2026-06-27-mi-lsp-skill-release-sync
+task_slug: mi-lsp-skill-release-sync
+created_at: "2026-06-27T16:02:04-03:00"
+base:
+  branch: main
+  sha: 81880352dce85e2db4880345fecf6f4360024d8d
+base_sha: 81880352dce85e2db4880345fecf6f4360024d8d
+working_branch: codex/mi-lsp-skill-release-sanitize
+mode: T2_BOUNDED_MUTATION
+objective: "Finish missing skill/binary readiness work after rerank extension integration and repair direct telemetry test flake found during validation."
+decision_lock: provider_neutral_public_skill
+decision_notes:
+  - "Public skill must stay provider-neutral and contain no private endpoint, token value, or hardcoded private rerank client."
+  - "Private micro-proxy or Nan adapter instructions live outside mi-lsp core and outside OSS-facing skill docs."
+harness_adapter: simulated_packets
+orchestration_depth: bounded_single_lane
+closure_profile: traceability_plus_release_waiver
+cleanup_policy: ttl_14_days_audit_artifacts
+ae_contract:
+  schema: ae-session-contract/v1
+  worker_decision: simulated_packets
+mi_lsp_preflight:
+  alias: mi-lsp
+  root: C:/repos/mios/mi-lsp
+  client_name: codex-desktop
+  session_id: 2026-06-27-mi-lsp-skill-release-sync
+  governance_blocked: false
+  docs_ready: true
+  doc_count: 122
+  ae_canon:
+    status: valid
+allowed_paths:
+  - internal/daemon/state_store.go
+  - skills/mi-lsp/**
+  - .docs/auditoria/2026-06-27-mi-lsp-skill-release-sync/**
+forbidden_paths:
+  - cmd/**
+  - scripts/install/**
+  - scripts/release/**
+  - .mi-lsp/**
+external_sync_targets:
+  - C:/Users/fgpaz/.agents/skills/mi-lsp
+  - C:/Users/fgpaz/.codex/skills/mi-lsp
+  - C:/repos/buho/assets/skills/mi-lsp
+required_evidence:
+  - "Compare normalized SKILL.md hashes across source, installed skill, Codex skill, and Buho mirror."
+  - "Scan public skill copies for Nan/micro-proxy/provider-specific private references."
+  - "Verify local installed binary and worker status."
+  - "Record release publication status and waiver when release cannot be pushed from a dirty/source-changing branch."
+  - "Validate that direct CLI telemetry tests no longer race async persistence."
+stop_conditions:
+  - "Secret value, .env, or private endpoint appears in OSS-facing files."
+  - "Unexpected binary addition appears in skill source or mirrors."
+  - "Governance reports blocked or docs_ready=false."
+  - "Pre-push guard blocks closure."
+worker_decision:
+  decision: simulated_packets
+  reason: "No native AE adapter proof was available in this turn; work is bounded to skill sync/docs evidence and external repo commits."

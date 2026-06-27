@@ -1,0 +1,37 @@
+schema: ps-trazabilidad/v1
+session_id: 2026-06-27-mi-lsp-skill-release-sync
+status: READY_WITH_RELEASE_FOLLOWUP
+requirements:
+  - id: SKILL-PUBLIC-001
+    statement: "The public mi-lsp skill must not expose private provider endpoints, secret names tied to a private account, or private rerank clients."
+    evidence:
+      - skills/mi-lsp/SKILL.md
+      - skills/mi-lsp/references/quickstart.md
+      - .docs/auditoria/2026-06-27-mi-lsp-skill-release-sync/evidence-index.yaml
+    result: PASS
+  - id: SKILL-SYNC-001
+    statement: "Repo source, global agent skill, Codex skill, and Buho mirror must carry the same public skill content."
+    evidence:
+      - "normalized SKILL.md sha256 e673bb0a1854dfcf704dca497eca179c6013e48dde281eae64a0b477f7fb2d33"
+    result: PASS
+  - id: RELEASE-LOCAL-001
+    statement: "Local installed binary and worker must be usable for the current machine."
+    evidence:
+      - "mi-lsp version reports commit 81880352dce85e2db4880345fecf6f4360024d8d and vcs_modified=false"
+      - "mi-lsp worker status reports compatible installed worker"
+    result: PASS
+  - id: TELEMETRY-DIRECT-001
+    statement: "Direct CLI telemetry should be visible to immediate diagnostic queries after RecordOperation returns."
+    evidence:
+      - internal/daemon/state_store.go
+      - "go test ./internal/cli -count=1 -v"
+    result: PASS
+  - id: RELEASE-PUBLIC-001
+    statement: "Public latest release should expose current binaries for frictionless installs."
+    evidence:
+      - "gh release view reports latest v0.5.7"
+    result: FOLLOWUP
+    followup: "Cut/publish v0.5.8 from clean integrated main after this skill sanitization branch merges."
+closure_notes:
+  - "Rerank remains external-command based; no private HTTP rerank client was added."
+  - "Embeddings docs now describe generic OpenAI-compatible config; private adapter setup can be documented in a private runbook."

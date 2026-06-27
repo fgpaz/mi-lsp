@@ -1,0 +1,18 @@
+schema: ae-audit-hygiene/v1
+session_id: 2026-06-27-mi-lsp-skill-release-sync
+retention_ttl_days: 14
+hash_algorithm: sha256
+artifact_classes:
+  - class: session_contract
+    path: .docs/auditoria/2026-06-27-mi-lsp-skill-release-sync/session-contract.yaml
+    sanitized_summary: "Skill sanitization and local release evidence contract."
+    promoted_summary: .docs/auditoria/2026-06-27-mi-lsp-skill-release-sync/evidence-index.yaml
+  - class: evidence_index
+    path: .docs/auditoria/2026-06-27-mi-lsp-skill-release-sync/evidence-index.yaml
+    sanitized_summary: "Commands and outcomes for skill sync, local binary checks, and release waiver."
+    promoted_summary: .docs/auditoria/2026-06-27-mi-lsp-skill-release-sync/evidence-index.yaml
+  - class: traceability_closure
+    path: .docs/auditoria/2026-06-27-mi-lsp-skill-release-sync/traceability-closure.yaml
+    sanitized_summary: "Traceability closure for public skill provider-neutral config and mirror sync."
+    promoted_summary: .docs/auditoria/2026-06-27-mi-lsp-skill-release-sync/evidence-index.yaml
+cleanup_status: active
