@@ -1,0 +1,61 @@
+schema: ae-evidence-index/v1
+session_id: 2026-06-27-mi-lsp-skill-release-sync
+summary: "Public skill sanitized, installed skill copies synced, local binaries verified, public release status recorded."
+source_changes:
+  - path: internal/daemon/state_store.go
+    summary: "Made RecordAccessDirect persist synchronously so CLI direct telemetry is query-visible when RecordOperation returns; daemon RecordAccess remains async."
+  - path: skills/mi-lsp/SKILL.md
+    summary: "Replaced Qwen/Nan-specific sample with provider-neutral OpenAI-compatible embeddings placeholders."
+  - path: skills/mi-lsp/references/quickstart.md
+    summary: "Replaced Nan/Qwen fallback wording with generic configured-embeddings wording."
+external_sync:
+  normalized_skill_sha256: e673bb0a1854dfcf704dca497eca179c6013e48dde281eae64a0b477f7fb2d33
+  targets:
+    - name: repo_source
+      path: C:/repos/mios/mi-lsp/skills/mi-lsp/SKILL.md
+      status: synced
+    - name: agents_global
+      path: C:/Users/fgpaz/.agents/skills/mi-lsp/SKILL.md
+      status: synced
+    - name: codex_global
+      path: C:/Users/fgpaz/.codex/skills/mi-lsp/SKILL.md
+      status: synced
+    - name: buho_assets_mirror
+      path: C:/repos/buho/assets/skills/mi-lsp/SKILL.md
+      status: synced
+checks:
+  - command: 'rg -n "Qwen|Nan|NAN_API_KEY|api\\.nan|micro-proxy|rerank-nan" skills/mi-lsp and synced skill targets'
+    result: PASS
+    notes: "No provider-specific private references remain in public skill copies."
+  - command: "go test ./internal/rerank ./internal/model ./internal/service"
+    result: PASS
+    notes: "Targeted rerank/model/service suites passed."
+  - command: "go test ./internal/cli -count=1 -v"
+    result: PASS
+    notes: "Telemetry package tests pass in isolation after direct persistence repair."
+  - command: "go test ./internal/daemon -count=1"
+    result: PASS
+    notes: "Daemon telemetry store tests pass after RecordAccessDirect change."
+  - command: "go test ./..."
+    result: PASS
+    notes: "Full Go suite passed after telemetry repair."
+  - command: "scripts/ae/pre-push-guard.ps1 -SessionContract .docs/auditoria/2026-06-27-mi-lsp-skill-release-sync/session-contract.yaml -AllowDirty"
+    result: PASS
+    notes: "ok=true; branch=codex/mi-lsp-skill-release-sanitize; ae_canon_status=valid."
+  - command: "C:/Users/fgpaz/bin/mi-lsp.exe version --format toon"
+    result: PASS
+    notes: "Local installed CLI reports commit 81880352dce85e2db4880345fecf6f4360024d8d and vcs_modified=false."
+  - command: "C:/Users/fgpaz/bin/mi-lsp.exe worker status --format toon"
+    result: PASS
+    notes: "Windows worker installed and compatible."
+  - command: "gh release view --json tagName,publishedAt,targetCommitish,url"
+    result: PASS_WITH_GAP
+    notes: "Latest public release is still v0.5.7; v0.5.8 publication remains a release-flow follow-up after this branch is merged cleanly."
+release_distribution:
+  local_windows_install: ok
+  local_darwin_x64_package: ok
+  public_latest_release: pending
+  waiver: "Do not publish release from dirty/source-changing branch; release tag must be cut from clean integrated main so provenance remains vcs_modified=false."
+privacy_boundary:
+  oss_core: "Provider-neutral embeddings config and external local rerank hook only."
+  private_material: "Endpoint, model, and credential binding for private micro-proxy/Nan adapter are intentionally outside OSS-facing files."

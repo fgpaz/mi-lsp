@@ -623,16 +623,7 @@ func (s *TelemetryStore) NextSeq(sessionID string) int {
 }
 
 func (s *TelemetryStore) RecordAccessDirect(event model.AccessEvent) error {
-	// Queue write asynchronously (PERF-06). Non-blocking if queue has space;
-	// blocks briefly if queue is full (max 256), never drops.
-	// Use non-blocking send to avoid hangs under test conditions.
-	select {
-	case s.writeQueue <- telemetryWriteRequest{runID: 0, event: event, isDirect: true}:
-		return nil
-	default:
-		// Queue is full; force a synchronous write as fallback to avoid dropping events.
-		return s.recordAccessDirectInternal(0, event, true)
-	}
+	return s.recordAccessDirectInternal(0, event, true)
 }
 
 func (s *TelemetryStore) RecordAccess(runID int64, event model.AccessEvent) error {

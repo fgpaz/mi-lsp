@@ -96,7 +96,7 @@ Canonical wiki location is governed by `00_gobierno_documental.md` and `read-mod
 
 ## Semantic recall by intent
 
-Use `nav recall --intent` when a knowledge wiki has embeddings configured and you need semantic candidates, not final authority. Qwen/Nan recall discovers candidates; a `route` hit or route-only material is not a final source until you open the canonical doc or evidence it points to.
+Use `nav recall --intent` when a knowledge wiki has embeddings configured and you need semantic candidates, not final authority. Embeddings recall discovers candidates; a `route` hit or route-only material is not a final source until you open the canonical doc or evidence it points to.
 
 ```powershell
 mi-lsp nav recall "what contract defines recall result fields?" --workspace <alias> --intent formula --format toon
@@ -112,15 +112,15 @@ Intent guide:
 - `explore`: balanced discovery when vocabulary is still unknown
 - `learning`: onboarding, concepts, architecture, and explanatory material
 
-Reference Qwen/Nan config:
+Reference OpenAI-compatible embeddings config:
 
 ```toml
 [embeddings]
 provider = "openai"
-base_url = "https://api.nan.builders/v1"
-model = "qwen3-embedding"
+base_url = "https://<openai-compatible-embeddings-endpoint>/v1"
+model = "<embedding-model>"
 dim = 4096
-api_key_env = "NAN_API_KEY"
+api_key_env = "MI_LSP_EMBEDDINGS_API_KEY"
 profile = "knowledge-wiki"
 batch_size = 32
 timeout_ms = 30000
@@ -130,7 +130,7 @@ user_agent = "mi-lsp-embeddings/1.0"
 
 Secret handling: set the variable named by `api_key_env` through the environment or a wrapper such as `mkey run`. Never print API key values, paste them into prompts, commit them, or read auth/secret stores during normal navigation.
 
-If Nan, the key, provider, or embeddings config fails, do not expect a hidden BGE fallback. Use the canonical lexical/wiki fallback:
+If the provider, key, or embeddings config fails, do not expect a hidden BGE fallback. Use the canonical lexical/wiki fallback:
 
 ```powershell
 mi-lsp nav wiki search "<query>" --workspace <alias> --format toon

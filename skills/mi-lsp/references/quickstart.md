@@ -101,5 +101,5 @@ If a cheap read is slow, suspect stale binary, stale index, or wrong PATH before
 In container workspaces, prefer `--repo` for direct `find`, `search`, or `intent` before reaching for semantic selectors.
 Do not use `--repo docs` as a wiki selector. Use `nav wiki search|route|pack`; `nav ask|route|pack --repo` is compatibility-only and will be ignored for docs.
 Do not use `nav search` to decide which documentation source is canonical when `nav wiki search|route|pack|trace` can answer that question.
-If `nav recall` cannot use Nan/Qwen embeddings because config, key, or provider fails, use `nav wiki search` as the lexical/wiki fallback. There is no hidden BGE runtime fallback.
+If `nav recall` cannot use configured embeddings because config, key, or provider fails, use `nav wiki search` as the lexical/wiki fallback. There is no hidden BGE runtime fallback.
 For Go files, `nav context` / `nav refs` may use `gopls` when it is installed. If `gopls` is unavailable, the command should degrade to catalog/text with a visible install hint; do not treat that fallback as a hard failure unless the task explicitly requires live Go LSP semantics.
