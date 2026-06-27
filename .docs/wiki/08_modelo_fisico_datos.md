@@ -71,6 +71,9 @@ La novedad de v1.3 es que el store repo-local persiste tambien el grafo document
   - `access_events` con `client_name`, `session_id`, `seq INTEGER DEFAULT 0`, `workspace_input`, `workspace_root`, `workspace_alias`, `repo`, `entrypoint_id`, `route`, `format`, `token_budget`, `max_items`, `max_chars`, `compress`, `error_kind`, `error_code`, `truncated`, `result_count`, `warning_count`, `pattern_mode`, `routing_outcome`, `failure_stage`, `hint_code`, `truncation_reason`, `decision_json`, `decision_hash` (v0.5.0+)
 - `daemon status` / `/api/status`
   - `daemon_process` y `watchers` son snapshots derivados del proceso vivo; no se persisten como tablas nuevas.
+- Rerank extension
+  - no crea tablas nuevas; `[recall.rerank_extension]` vive en `.mi-lsp/project.toml`
+  - no persiste query, snippets, stdin/stdout, stderr, provider responses, tokens ni secretos
 
 ## Reglas de consistencia y retencion
 
@@ -96,6 +99,7 @@ La novedad de v1.3 es que el store repo-local persiste tambien el grafo document
 - Worktrees de un mismo repositorio comparten `git common dir` pero tienen `workspace_root` fisico distinto; cada worktree mantiene su propio `.mi-lsp/index.db`, watcher y runtime identity.
 - `runtime_snapshots` representan solamente runtimes observables del `daemon_run_id` vigente.
 - `access_events` registran metadata y nunca payloads completos.
+- Las fallas del hook de rerank solo pueden aumentar contadores/warnings sanitizados; no deben copiar payloads del hook a `decision_json`, logs o tablas.
 - `workspace_input` guarda el selector crudo recibido; `workspace`, `workspace_alias` y `workspace_root` representan la identidad resuelta del workspace y no deben degradarse a `unscoped` si la operacion eligio un alias real.
 - `decision_json` existe para debugging causal local y debe permanecer sanitizado: sin `pattern` crudo, sin argv, sin snapshot completo del request y sin el texto/comandos completos del bloque `coach`.
 - `decision_json` puede incluir solo derivaciones de `continuation` y `memory_pointer` (`continuation_present`, `continuation_reason`, `continuation_op`, `memory_pointer_present`, `memory_stale`) y metadatos diagnosticos como `doc_ranker` / `intent_mode`; nunca `why`, `query`, `handoff` ni el contenido completo del snapshot repo-local.

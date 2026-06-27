@@ -43,8 +43,8 @@ Campos canonicos:
 - `snippet TEXT`: preview seguro de contenido.
 - `content_hash TEXT NOT NULL`: SHA256 del texto enriquecido con metadata-prefix.
 - `embedding BLOB`: vector float32 little-endian codificado.
-- `embedding_model TEXT`: nombre del modelo usado, por ejemplo `qwen3-embedding`.
-- `embedding_dim INTEGER`: dimension validada, `4096` para `qwen3-embedding`.
+- `embedding_model TEXT`: nombre del modelo usado.
+- `embedding_dim INTEGER`: dimension validada segun el modelo elegido.
 - `indexed_at INTEGER`: timestamp UNIX cuando se embedde.
 
 Indices:
@@ -73,7 +73,8 @@ Indices:
 
 - Cambio en `[embeddings].model` o `[embeddings].dim` invalida filas previas por comparacion de modelo/dimension.
 - Cambio de `base_url`, `api_key_env`, `encoding_format` o `user_agent` requiere rerun de `mi-lsp index` si se necesita regenerar vectores con la nueva config.
-- Si Nan/key/provider falla, no se activa un fallback BGE oculto. El camino documental seguro mientras se corrige config es `mi-lsp nav wiki search`.
+- Si key/provider/config falla, no se activa un fallback local oculto. El camino documental seguro mientras se corrige config es `mi-lsp nav wiki search`.
+- Cambios en `[recall.rerank_extension]` no invalidan ni reescriben `wiki_chunk_embeddings`; el hook es stateless respecto de SQLite.
 
 ## Operaciones clave
 
@@ -118,7 +119,7 @@ DELETE FROM wiki_chunk_embeddings
 ## Persistencia y codificacion
 
 - BLOB almacena float32 puro (4 bytes por componente) en little-endian.
-- Dimension configurada en `[embeddings].dim`; `qwen3-embedding` usa 4096.
+- Dimension configurada en `[embeddings].dim`; depende del modelo elegido.
 - Size = `dim * 4 bytes`; 4096-dim -> 16384 bytes por chunk.
 - Decodificacion en Go: `binary.LittleEndian.Uint32(blob[i*4:(i+1)*4])` + conversion a float32.
 

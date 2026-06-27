@@ -72,6 +72,7 @@ evidence:
 | RF-SEM-001 | FL-SEM-01 | TP-SEM | TC-SEM-001, TC-SEM-002 | TC-SEM-003 | ready |
 | RF-SEM-002 | FL-SEM-01 | TP-SEM | TC-SEM-004, TC-SEM-005 | TC-SEM-006 | ready |
 | RF-SEM-003 | FL-SEM-01 | TP-SEM | TC-SEM-007, TC-SEM-008 | TC-SEM-009 | ready |
+| RF-SEM-004 | FL-SEM-01 | TP-SEM | TC-SEM-010, TC-SEM-011 | TC-SEM-012, TC-SEM-013, TC-SEM-014 | ready |
 
 ## Regla de mantenimiento
 

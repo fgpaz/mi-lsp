@@ -1,0 +1,44 @@
+schema: ae-audit-hygiene/v1
+session_id: 2026-06-27-mi-lsp-rerank-extension
+owner_harness: codex
+created_at: "2026-06-27T00:00:00-03:00"
+retention_ttl_days: 14
+hash_algorithm: sha256
+artifacts:
+  - path: .docs/auditoria/2026-06-27-mi-lsp-rerank-extension/session-contract.yaml
+    class: durable_keep
+    contains_sensitive_data: false
+    promoted_summary: .docs/auditoria/2026-06-27-mi-lsp-rerank-extension/evidence-index.yaml
+    hash: c7b6144e6aec777f63ebb2ac943dfbc9cf3202f7dd9f10ccfa19eabee610a139
+    decision: keep
+    reason: operational source of truth for this governed task
+  - path: .docs/auditoria/2026-06-27-mi-lsp-rerank-extension/branch-hygiene.md
+    class: durable_keep
+    contains_sensitive_data: false
+    promoted_summary: .docs/auditoria/2026-06-27-mi-lsp-rerank-extension/evidence-index.yaml
+    hash: 54abd686d3ab4fc760bc3809c012d74ecc51f00721186086978cdf9f5d6bac67
+    decision: keep
+    reason: branch/worktree cleanup evidence
+  - path: .docs/auditoria/2026-06-27-mi-lsp-rerank-extension/evidence-index.yaml
+    class: durable_keep
+    contains_sensitive_data: false
+    promoted_summary: .docs/auditoria/2026-06-27-mi-lsp-rerank-extension/evidence-index.yaml
+    hash: 2e2546e496c2fe7f16d9365cbab6ef89b100236906d962e7445c31c338535ba9
+    decision: keep
+    reason: concise evidence index
+  - path: .docs/auditoria/2026-06-27-mi-lsp-rerank-extension/traceability-closure.yaml
+    class: durable_keep
+    contains_sensitive_data: false
+    promoted_summary: .docs/auditoria/2026-06-27-mi-lsp-rerank-extension/evidence-index.yaml
+    hash: 0a3ad4cb4d07a0b5d55ad47925e66edcf652b514bd2be29d2cfc83f55e4d94ab
+    decision: keep
+    reason: ps-trazabilidad closure packet
+  - path: .docs/auditoria/2026-06-27-mi-lsp-rerank-extension/audit-verdict.md
+    class: durable_keep
+    contains_sensitive_data: false
+    promoted_summary: .docs/auditoria/2026-06-27-mi-lsp-rerank-extension/evidence-index.yaml
+    hash: c9889ad6cc4604dfb116085d1da3dc3eb7391fe7f33a184d8595863123a11da0
+    decision: keep
+    reason: ps-auditar-trazabilidad verdict
+blockers: []
+cleanup_status: complete

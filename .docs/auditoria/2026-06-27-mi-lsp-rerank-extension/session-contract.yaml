@@ -1,0 +1,146 @@
+schema: ae-session-contract/v1
+ae_contract: true
+task_slug: 2026-06-27-mi-lsp-rerank-extension
+created_at: "2026-06-27T00:00:00-03:00"
+owner_harness: codex
+mode: orchestrator
+decision_lock: external_local_rerank_command_hook
+harness_adapter: codex
+orchestration_depth: T2
+closure_profile: traceability_audit_guarded_pr
+issue_or_waiver:
+  type: user_request
+  value: "Implement AE hygiene plus external rerank extension hook for mi-lsp recall"
+base_ref:
+  name: origin/main
+  sha: 46fec761aae550afaf3981bc5a3c4e9a4d874655
+base_sha: 46fec761aae550afaf3981bc5a3c4e9a4d874655
+branch:
+  name: codex/mi-lsp-rerank-extension
+  start_sha: 46fec761aae550afaf3981bc5a3c4e9a4d874655
+worktree_path: C:/repos/mios/mi-lsp
+target_environment:
+  environment: local
+  production_required: false
+  deployment_mechanism: not_applicable
+mi_lsp_preflight:
+  alias: mi-lsp
+  client_name: codex-ae-programa
+  session_id: 2026-06-27-mi-lsp-rerank-extension
+  workspace_absolute_path: C:/repos/mios/mi-lsp
+  root: C:/repos/mios/mi-lsp
+  governance_blocked: false
+  docs_ready: true
+  doc_count: 122
+  ae_canon:
+    status: valid
+    roots:
+      - .docs/wiki/ae
+    blocking: false
+expected_scope:
+  summary: "Add optional local-command rerank extension after semantic recall candidate selection; update canon and evidence; preserve OSS/local-first boundary."
+  in_scope:
+    - "Git branch/worktree hygiene and local main fast-forward evidence"
+    - "Project config types for disabled-by-default rerank extension hook"
+    - "Recall service integration with sanitized failure fallback"
+    - "Focused tests for config, rerank ordering, failure fallback, invalid output, and redaction"
+    - "Semantic recall canon docs and test matrix updates"
+    - "AE traceability/audit evidence for this task"
+  out_of_scope:
+    - "Direct NaN provider calls from mi-lsp core"
+    - "Hardcoded micro-proxy endpoint, rerank-nan model, NAN_API_KEY, or private auth policy"
+    - "Live micro-proxy smoke from mi-lsp tests"
+    - "Remote branch deletion"
+    - "Deleting or rewriting v055/macos-binaries"
+allowed_paths:
+  - internal/model/**
+  - internal/service/**
+  - internal/rerank/**
+  - .docs/wiki/01_alcance_funcional.md
+  - .docs/wiki/03_FL.md
+  - .docs/wiki/04_RF.md
+  - .docs/wiki/04_RF/**
+  - .docs/wiki/05_modelo_datos.md
+  - .docs/wiki/06_pruebas/**
+  - .docs/wiki/06_matriz_pruebas_RF.md
+  - .docs/wiki/07_baseline_tecnica.md
+  - .docs/wiki/07_tech/**
+  - .docs/wiki/08_modelo_fisico_datos.md
+  - .docs/wiki/08_db/**
+  - .docs/wiki/09_contratos_tecnicos.md
+  - .docs/wiki/09_contratos/**
+  - README.md
+  - .docs/auditoria/2026-06-27-mi-lsp-rerank-extension/**
+forbidden_paths:
+  - C:/Users/fgpaz/.agents/skills/**
+  - C:/repos/buho/assets/skills/**
+  - .env*
+  - secrets/**
+  - .docs/wiki/_mi-lsp/read-model.toml
+  - .mi-lsp/index.db
+  - .git/**
+sdd_anchors:
+  rs: []
+  fl:
+    - FL-SEM-01
+  rf:
+    - RF-SEM-001
+    - RF-SEM-002
+    - RF-SEM-003
+    - RF-SEM-004
+  tech:
+    - TECH-SEMANTIC-RECALL
+  db:
+    - DB-WIKI-EMBEDDINGS
+  ct:
+    - CT-NAV-RECALL
+  tp:
+    - TP-SEM
+brainstorming_decision_packet:
+  user_goal: "Improve embedding recall quality while keeping mi-lsp open-source and not dependent on private infrastructure."
+  observable_result: "`nav recall` can optionally invoke a configured local rerank command and preserves original semantic order on any hook failure."
+  selected_architecture: external_local_rerank_command_hook
+  non_goals:
+    - "No built-in micro-proxy or NaN HTTP client in mi-lsp core"
+    - "No provider secrets or private endpoint defaults in committed config"
+  independent_axes:
+    - git_hygiene
+    - ae_cycle
+    - canon_docs
+    - rerank_hook_contract
+    - recall_integration
+    - tests_and_audit
+  worker_decision: simulated_packets
+  visible_worker_decision: multi_agent_ephemeral
+  why_not_visible_thread: "create_thread was not exposed; fork_thread worktree materialization would be harder to join safely for this bounded patch. Ephemeral read-only workers are used for discovery, while parent owns integrated patch and closure."
+  worker_authorized_by_user: true
+  launched_readonly_workers:
+    - 019f09b7-90df-7710-8342-66eecb9c10ab
+    - 019f09b7-c015-73b1-92c5-90218a480fbb
+required_evidence:
+  - .docs/auditoria/2026-06-27-mi-lsp-rerank-extension/branch-hygiene.md
+  - .docs/auditoria/2026-06-27-mi-lsp-rerank-extension/evidence-index.yaml
+  - .docs/auditoria/2026-06-27-mi-lsp-rerank-extension/traceability-closure.yaml
+  - .docs/auditoria/2026-06-27-mi-lsp-rerank-extension/audit-verdict.md
+  - "go test ./internal/rerank ./internal/model ./internal/service"
+  - "go test ./..."
+touched_cards: not_applicable
+waivers:
+  - id: no_live_micro_proxy_smoke
+    reason: "Core owns only local-command hook; private micro-proxy adapter is explicitly outside this repository."
+  - id: release_distribution_no_binary_publish
+    reason: "CLI behavior changes but binary release/publish is not performed in this task; release evidence remains required for a future distribution task."
+branch_disposition: integrate-main
+cleanup_policy: auto-after-successful-integration
+stop_if:
+  - governance_blocked=true
+  - direct_provider_or_micro_proxy_client_added_to_core
+  - warnings_or_evidence_include_query_snippet_provider_payload_or_secret
+  - v055_macos_binaries_branch_would_be_deleted_or_rewritten
+  - tests_fail_without_environment_hold_classification
+stop_conditions:
+  - governance_blocked=true
+  - direct_provider_or_micro_proxy_client_added_to_core
+  - warnings_or_evidence_include_query_snippet_provider_payload_or_secret
+  - v055_macos_binaries_branch_would_be_deleted_or_rewritten
+  - tests_fail_without_environment_hold_classification

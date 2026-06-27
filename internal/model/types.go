@@ -637,6 +637,27 @@ func (e *EmbeddingsBlock) Active() bool {
 	return strings.TrimSpace(e.BaseURL) != "" && strings.TrimSpace(e.Model) != ""
 }
 
+type RecallBlock struct {
+	RerankExtension *RerankExtensionBlock `toml:"rerank_extension,omitempty" json:"rerank_extension,omitempty"`
+}
+
+type RerankExtensionBlock struct {
+	Enabled         *bool    `toml:"enabled" json:"enabled,omitempty"`
+	Command         string   `toml:"command" json:"command,omitempty"`
+	Args            []string `toml:"args" json:"args,omitempty"`
+	TimeoutMS       int      `toml:"timeout_ms" json:"timeout_ms,omitempty"`
+	CandidateCount  int      `toml:"candidate_count" json:"candidate_count,omitempty"`
+	TopN            int      `toml:"top_n" json:"top_n,omitempty"`
+	MaxSnippetChars int      `toml:"max_snippet_chars" json:"max_snippet_chars,omitempty"`
+}
+
+func (r *RerankExtensionBlock) Active() bool {
+	if r == nil || r.Enabled == nil || !*r.Enabled {
+		return false
+	}
+	return strings.TrimSpace(r.Command) != ""
+}
+
 type WikiChunkEmbedding struct {
 	DocPath        string
 	ChunkID        string
@@ -669,6 +690,7 @@ type ProjectFile struct {
 	Repos       []WorkspaceRepo       `toml:"repo"`
 	Entrypoints []WorkspaceEntrypoint `toml:"entrypoint"`
 	Embeddings  *EmbeddingsBlock      `toml:"embeddings,omitempty" json:"embeddings,omitempty"`
+	Recall      *RecallBlock          `toml:"recall,omitempty" json:"recall,omitempty"`
 }
 
 type CommandRequest struct {

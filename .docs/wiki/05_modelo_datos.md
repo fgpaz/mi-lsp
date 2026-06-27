@@ -37,7 +37,7 @@ La novedad canonica de v1.3 es distinguir workspaces `single` de workspaces `con
 | Entidad | Tipo | Owner | Persistencia | Descripcion |
 |---|---|---|---|---|
 | WorkspaceRegistration | Operativa | Core runtime | `~/.mi-lsp/registry.toml` | Alias, root, languages, `kind` y compatibilidad legacy |
-| ProjectConfig | Operativa | Workspace owner | `<repo>/.mi-lsp/project.toml` | Nombre local, ignores, `repos`, `entrypoints`, defaults y `[embeddings]` (`provider`, `base_url`, `model`, `dim`, `api_key_env`, `profile`, `batch_size`, `timeout_ms`, `encoding_format`, `user_agent`); alias semantico de `ProjectFile` en codigo Go |
+| ProjectConfig | Operativa | Workspace owner | `<repo>/.mi-lsp/project.toml` | Nombre local, ignores, `repos`, `entrypoints`, defaults, `[embeddings]` (`provider`, `base_url`, `model`, `dim`, `api_key_env`, `profile`, `batch_size`, `timeout_ms`, `encoding_format`, `user_agent`) y `[recall.rerank_extension]` (`enabled`, `command`, `args`, `timeout_ms`, `candidate_count`, `top_n`, `max_snippet_chars`); alias semantico de `ProjectFile` en codigo Go |
 | WorkspaceRepo | Operativa derivada | Core runtime | `<repo>/.mi-lsp/project.toml` | Repo hijo reconocido dentro de un workspace `container` |
 | WorkspaceEntrypoint | Operativa derivada | Core runtime | `<repo>/.mi-lsp/project.toml` | `.sln` o `.csproj` semanticamente enrutable |
 | SymbolRecord | Derivada | Indexer | `<repo>/.mi-lsp/index.db` | Declaracion liviana con `repo_id` y `repo` |
@@ -76,6 +76,7 @@ La novedad canonica de v1.3 es distinguir workspaces `single` de workspaces `con
 - Un `WorkspaceRegistration` referencia un workspace `single` o `container`.
 - Un `ProjectConfig` puede contener muchos `WorkspaceRepo` y muchos `WorkspaceEntrypoint`.
 - Un `ProjectConfig` puede declarar `[embeddings]`; `api_key_env` nombra una variable de entorno, no guarda secretos.
+- Un `ProjectConfig` puede declarar `[recall.rerank_extension]` como hook local externo; no guarda payloads, respuestas de proveedor ni secretos.
 - Cada `FileRecord` y `SymbolRecord` pertenece a un `repo_id`.
 - Cada `DocRecord` puede tener muchos `DocEdge`, `DocMention`, `DocSourceBlock` y `DocSourceRecord`.
 - Un `WikiChunkEmbedding` pertenece a un chunk documental y se invalida cuando cambia metadata-prefix, texto enriquecido, content hash, modelo o dimension.

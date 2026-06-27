@@ -67,7 +67,7 @@ evidence:
 6. Para chunks nuevos o invalidos, agrupa en batch usando `batch_size`.
 7. Envia batch al backend OpenAI-compatible con `encoding_format = "float"` cuando aplique.
 8. Si backend responde, valida dimension estrictamente contra `[embeddings].dim` e inserta `(doc_path, chunk_id, start_line, end_line, heading_text, snippet, content_hash, embedding, embedding_model, embedding_dim, indexed_at)`.
-9. Si backend falla/timeout, registra warning; el camino documental seguro para el usuario es `nav wiki search`, no un modelo BGE oculto.
+9. Si backend falla/timeout, registra warning; el camino documental seguro para el usuario es `nav wiki search`, no un modelo local oculto.
 10. Marca indice como publicado con warnings si el embedding no pudo completarse.
 
 ## 5. Outputs

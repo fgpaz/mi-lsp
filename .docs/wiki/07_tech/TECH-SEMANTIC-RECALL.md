@@ -29,7 +29,7 @@ evidence:
 
 ## Proposito
 
-Detallar la arquitectura tecnica del backend de semantic recall: embeddings vectoriales pluggables sobre la wiki gobernada, store puro-Go, recurso sin CGO, uso operativo Qwen3/Nan y fallback documental seguro via `nav wiki search`.
+Detallar la arquitectura tecnica del backend de semantic recall: embeddings vectoriales pluggables sobre la wiki gobernada, store puro-Go, recurso sin CGO, hook local opcional de rerank y fallback documental seguro via `nav wiki search`.
 
 ## Componentes
 
@@ -39,7 +39,7 @@ Subsistema responsable de:
 - Inicializacion de cliente OpenAI-compatible con configuracion de `[embeddings]` desde `project.toml`
 - Resolucion de endpoint base, modelo y API key opcional desde la variable nombrada en `api_key_env`
 - Timeout configurado y manejo de fallas de conectividad
-- Soporte pluggable de proveedores OpenAI-compatible; Nan/Qwen3 es la referencia operativa actual
+- Soporte pluggable de proveedores OpenAI-compatible sin cliente privado en core
 - Payload OpenAI-compatible con `encoding_format`, `Accept: application/json`, `User-Agent` y validacion estricta de dimension
 
 ### `internal/wikichunk`
@@ -81,6 +81,7 @@ Persistencia SQLite:
 - Cosine similarity puro-Go sobre vectores BLOB cargados en memoria
 - Top-k determinista respecto de `max_items`
 - Reranking por intencion (`formula`, `evidence`, `route`, `explore`, `learning`) sobre metadata, path, heading y snippet
+- Rerank externo opcional por comando local despues del ranking semantico y antes del corte final
 - Fallback recomendado a `nav wiki search` si el proveedor activo falla; hint accionable si `[embeddings]` no esta activo
 - Score normalizacion [0, 1] con penalizacion de score bajo
 
@@ -92,10 +93,10 @@ En `.mi-lsp/project.toml`:
 [embeddings]
 # enabled = false  # kill switch explicito; omitido equivale a activo si base_url + model existen
 provider = "openai"
-base_url = "https://api.nan.builders/v1"
-model = "qwen3-embedding"
-dim = 4096
-api_key_env = "NAN_API_KEY"
+base_url = "https://embeddings.example.local/v1"
+model = "text-embedding-model"
+dim = 1536
+api_key_env = "MI_LSP_EMBEDDINGS_API_KEY"
 profile = "knowledge-wiki"  # o "spec-driven"
 batch_size = 32
 timeout_ms = 30000
@@ -104,6 +105,21 @@ user_agent = "mi-lsp-embeddings/1.0"
 ```
 
 La key se inyecta por environment variable o `mkey run`; el valor nunca se imprime ni se guarda en docs, logs o evidencia.
+
+Rerank externo opcional en `.mi-lsp/project.toml`:
+
+```toml
+[recall.rerank_extension]
+enabled = true
+command = "mi-lsp-rerank-local"
+args = ["--profile", "default"]
+timeout_ms = 2000
+candidate_count = 50
+top_n = 10
+max_snippet_chars = 500
+```
+
+El comando se ejecuta localmente sin shell. El core no implementa cliente HTTP de rerank, no conoce proveedores privados y no interpola secretos en `args`.
 
 ### Perfiles
 
@@ -114,22 +130,24 @@ La key se inyecta por environment variable o `mkey run`; el valor nunca se impri
 
 - Si `[embeddings]` no existe, falta `base_url`/`model`, o `enabled = false`, `nav recall` devuelve hint de configuracion sin llamar al proveedor
 - Si el proveedor configurado no responde o rechaza la request, la guidance segura para docs canonicos es `mi-lsp nav wiki search`
+- Si el hook de rerank falta, tarda, sale con codigo no cero o responde JSON invalido, `nav recall` preserva el orden semantico original
 - Usuario puede configurar manualmente con `--no-auto-daemon` si lo prefiere
-- Warnings informan sobre el cambio de backend
+- Warnings informan sobre el cambio de backend o falla del hook con texto sanitizado
 
 ### Invariantes
 
 - Pure-Go: sin CGO, sin `sqlite-vec` remoto ni dependencias C
 - `sqlite-vec` fue rechazado por requerir extension C, instalacion/distribucion compleja y overhead en builds cross-platform
 - Ungated: `nav recall` no requiere gobernanza valida ni index ready
-- Qwen descubre candidatos; no convierte material route-only en fuente final
-- Sin BGE oculto: no hay proveedor local implicito cuando Nan/key/provider falla
+- El modelo de embeddings descubre candidatos; no convierte material route-only en fuente final
+- Sin proveedor oculto: no hay modelo local implicito cuando key/provider/config falla
+- Rerank extension no persiste query, snippets, stdin/stdout, stderr, provider responses, tokens ni secretos
 - Incremental: cambios de metadata-prefix, contenido, modelo o dimension re-embedden chunks afectados
 
 ## `nav recall` command
 
 - Superficie publica: `mi-lsp nav recall <query> [--workspace <alias>] [--intent formula|evidence|route|explore|learning] [--max-items 10] [--token-budget 2000] [--format toon|json] [--map]`
-- Respuesta: `RecallResult[]` con `{query, intent, archivo, heading, score, snippet, start_line, end_line, why}`
+- Respuesta: `RecallResult[]` con `{query, intent, archivo, heading, score, snippet, start_line, end_line, why}`; si aplica el hook externo, `why` incluye `external_rerank`
 - Backend seleccion: `recall` si embeddings listos; fallback documental recomendado `nav wiki search`
 - No aguarda daemon; hot path directo
 - Hint cuando embeddings no estan configurados
@@ -137,13 +155,15 @@ La key se inyecta por environment variable o `mkey run`; el valor nunca se impri
 ## Compatibilidad y migracion
 
 - Workspace status expone `embeddings_enabled` y `recall_profile` (o `embeddings_unconfigured` en hint)
+- Workspace status expone `rerank_extension_enabled` y `rerank_extension_mode=local-command` cuando el hook esta activo
 - Migration: tabla `wiki_chunk_embeddings` creada on-demand con lazy CREATE-IF-NOT-EXISTS
 - `embeddings_enabled=true` cuando `[embeddings]` tiene `base_url` + `model` y no esta apagado con `enabled=false`
 - Cambios en metadata-prefix, texto de chunk, modelo o dimension requieren reindex/reembedding; rerun `mi-lsp index` cuando cambie cualquiera de esos factores
+- Cambios en `[recall.rerank_extension]` no requieren migracion ni reindex, salvo que cambie el modelo/dimension de embeddings upstream
 
 ## No objetivos
 
 - Embedding de codigo C#, TS o Python (solo wiki)
 - Vectores persistentes en daemon.db remoto
 - Clustering o faceting de resultados
-- Reranking por modelo LLM adicional
+- Cliente privado de rerank dentro del core
