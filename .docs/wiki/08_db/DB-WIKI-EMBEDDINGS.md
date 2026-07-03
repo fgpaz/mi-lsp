@@ -67,7 +67,8 @@ Indices:
 - El texto enriquecido incluye metadata documental (`documentKey`, `body_role`, `tags`, `path`, `title`, `layer`, `family`, `heading`) y luego contenido.
 - La version de metadata-prefix actual es `qwen-metadata-v1`; si cambia, se debe reindexar para no reutilizar vectores anteriores.
 - Si hay hit exacto en hash/modelo/dimension/BLOB, se reutiliza la fila.
-- Si hay miss, se llama al proveedor OpenAI-compatible y se reemplazan los chunks de los docs reindexados.
+- Si hay miss, se llama al proveedor OpenAI-compatible por batches y cada batch exitoso se persiste con `INSERT OR REPLACE`; si el proceso se interrumpe, la siguiente corrida reutiliza los batches ya guardados.
+- La limpieza de stale rows por documento ocurre al cierre de una fase de embeddings completada, no antes, para no borrar progreso valido ante deadline/cancelacion.
 
 ### Cambios de proveedor o configuracion
 
@@ -90,30 +91,18 @@ SELECT embedding, embedding_model, embedding_dim, content_hash
 ### Upsert incremental
 
 ```sql
-INSERT INTO wiki_chunk_embeddings
+INSERT OR REPLACE INTO wiki_chunk_embeddings
   (doc_path, chunk_id, start_line, end_line, heading_text, snippet,
    content_hash, embedding, embedding_model, embedding_dim, indexed_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-ON CONFLICT(doc_path, chunk_id) DO UPDATE SET
-  start_line = excluded.start_line,
-  end_line = excluded.end_line,
-  heading_text = excluded.heading_text,
-  snippet = excluded.snippet,
-  content_hash = excluded.content_hash,
-  embedding = excluded.embedding,
-  embedding_model = excluded.embedding_model,
-  embedding_dim = excluded.embedding_dim,
-  indexed_at = excluded.indexed_at
- WHERE content_hash != excluded.content_hash
-    OR embedding_model != excluded.embedding_model
-    OR embedding_dim != excluded.embedding_dim;
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 ```
 
 ### Limpieza por documentos reindexados
 
 ```sql
 DELETE FROM wiki_chunk_embeddings
- WHERE doc_path IN (<docs reindexed>);
+ WHERE doc_path = ?
+   AND chunk_id NOT IN (<chunks successfully stored in this run>);
 ```
 
 ## Persistencia y codificacion

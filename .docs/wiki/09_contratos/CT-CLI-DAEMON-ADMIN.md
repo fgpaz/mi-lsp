@@ -129,13 +129,13 @@ mi-lsp workspace add [path] [--name alias] [--no-index]
 Reglas:
 
 - `index [path]` es wrapper de compatibilidad que ejecuta `index start --mode full --wait`; con `--docs-only`, ejecuta `--mode docs --wait`.
-- `index start` crea un registro durable en `index_jobs`; sin `--wait` lanza un proceso detached y retorna el `job_id`; con `--wait` bloquea hasta que la indexacion complete.
+- `index start` crea un registro durable en `index_jobs` sin consultar primero jobs activos; sin `--wait` lanza un proceso detached y retorna el `job_id`; con `--wait` bloquea hasta que la indexacion complete. Si hay competencia, el runner queda serializado por `.mi-lsp/index.lock` y el resultado se inspecciona con `index status`.
 - `index status` consulta el ultimo job del workspace si no se pasa `job-id`.
 - `index status.phase` conserva `indexing` durante el trabajo pesado y solo pasa a `publishing` en el cierre/publicacion final.
-- `index status` expone progreso vivo en `current_stage`, `current_path`, `files_total`, `files`, `symbols`, `docs` y `updated_at`; esos campos deben refrescarse durante catalogo/docs antes de publicar.
+- `index status` expone progreso vivo en `current_stage`, `current_path`, `files_total`, `files`, `symbols`, `docs` y `updated_at`; esos campos deben refrescarse durante catalogo/docs/embeddings antes de publicar. En embeddings, `current_stage=embeddings` y `current_path` incluye `N/M chunks embedded`.
 - `index cancel` marca cancelacion solicitada; la cancelacion es cooperativa y puede no interrumpir una publicacion que ya llego al commit.
 - `index cancel --force` puede terminar el PID vivo del job, marcarlo `canceled` y remover el `.mi-lsp/index.lock` si pertenece a ese PID ya muerto; se reserva para jobs colgados.
-- `workspace.add`, `init` usan **hibrido smart-sync** (FD1): indexan sincronicamente dentro de `SmartSyncTimeout` (`MI_LSP_INDEX_SYNC_TIMEOUT`, 20s) para preservar el contrato init-then-query; si una primera indexacion grande lo excede, degradan a background y devuelven `job_id` con warning. `--background`/`background:true` fuerza async inmediato; `--wait`/`wait:true` fuerza sync completo (`IndexTimeout`, `MI_LSP_INDEX_TIMEOUT` 5min); `--no-index` omite indexacion.
+- `workspace.add`, `init` usan **hibrido smart-sync** (FD1): indexan sincronicamente dentro de `SmartSyncTimeout` (`MI_LSP_INDEX_SYNC_TIMEOUT`, 20s) para preservar el contrato init-then-query; si una primera indexacion grande lo excede, degradan a background y devuelven `job_id` con warning. `--background`/`background:true` fuerza async inmediato; `--wait`/`wait:true` fuerza sync completo (`IndexTimeout`, `MI_LSP_INDEX_TIMEOUT` default 30min); con `[embeddings]` activo el wrapper de index puede elevar ese presupuesto por corpus/batches o por `[embeddings].index_timeout_ms`; `--no-index` omite indexacion.
 - sin `--docs-only`, indexa catalogo de codigo y grafo documental, con incremental git-aware cuando corresponde.
 - con `--docs-only`, reconstruye `doc_records`, `doc_edges`, `doc_mentions` y `memory_pointer` sin reemplazar `files` ni `symbols`.
 - toda indexacion toma `.mi-lsp/index.lock`; si ya existe, la operacion debe fallar con mensaje accionable que incluya el lock owner cuando este disponible.

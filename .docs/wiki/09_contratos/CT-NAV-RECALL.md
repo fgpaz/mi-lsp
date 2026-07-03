@@ -53,11 +53,12 @@ api_key_env = "MI_LSP_EMBEDDINGS_API_KEY"
 profile = "knowledge-wiki"
 batch_size = 32
 timeout_ms = 30000
+index_timeout_ms = 0
 encoding_format = "float"
 user_agent = "mi-lsp-embeddings/1.0"
 ```
 
-El cliente usa payload OpenAI-compatible con `encoding_format = "float"`, header `Accept: application/json`, `User-Agent` configurable y validacion estricta de dimension contra `dim`. La API key se resuelve desde el environment o desde un wrapper como `mkey run`; nunca se imprime ni se guarda en docs.
+El cliente usa payload OpenAI-compatible con `encoding_format = "float"`, header `Accept: application/json`, `User-Agent` configurable y validacion estricta de dimension contra `dim`. La API key se resuelve desde el environment o desde un wrapper como `mkey run`; nunca se imprime ni se guarda en docs. `index_timeout_ms` es opcional: cuando vale 0 u omitido, el timeout de indexacion con embeddings se estima desde corpus documental, `batch_size` y `timeout_ms`.
 
 ## Configuracion `[recall.rerank_extension]`
 
@@ -144,6 +145,8 @@ El envelope puede contener ademas:
 - Top-k = `min(max_items, presupuesto_token / tokens_por_item)`.
 - Cuando `token_budget` agota, truncar con `truncated=true` y `next_hint` accionable.
 - Cambios de metadata-prefix, texto enriquecido, content hash, `embedding_model` o `embedding_dim` requieren reindex/reembedding.
+- El backfill de embeddings persiste lotes confirmados y reutiliza chunks ya guardados con mismo hash/modelo/dimension; una corrida interrumpida puede retomarse sin rehacer todos los vectores.
+- Durante backfill, `index status` expone `current_stage=embeddings` y progreso `N/M chunks embedded`; errores por deadline/cancelacion usan `error.stage=embeddings`.
 - Cambios en `[recall.rerank_extension]` no requieren reindex si el modelo/dimension de embeddings no cambia.
 
 ## Warnings esperables

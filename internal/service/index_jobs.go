@@ -18,6 +18,8 @@ import (
 
 var errIndexJobCanceled = errors.New("index job canceled")
 
+var spawnDetachedIndexJobProcess = startDetachedIndexJobProcess
+
 func (a *App) indexStart(ctx context.Context, request model.CommandRequest) (model.Envelope, error) {
 	registration, err := a.resolveIndexWorkspace(request)
 	if err != nil {
@@ -36,7 +38,7 @@ func (a *App) indexStart(ctx context.Context, request model.CommandRequest) (mod
 	}
 	defer db.Close()
 
-	job, err := store.CreateIndexJob(ctx, db, registration.Name, registration.Root, mode, clean)
+	job, err := store.CreateIndexJobUnchecked(ctx, db, registration.Name, registration.Root, mode, clean)
 	if err != nil {
 		if activeErr, ok := err.(*store.ActiveIndexJobError); ok {
 			return activeIndexJobEnvelope(registration, activeErr.Job), nil
@@ -227,7 +229,10 @@ func (a *App) runIndexJob(ctx context.Context, registration model.WorkspaceRegis
 						warning = "no changes detected"
 					}
 					result.Warnings = appendStringIfMissing(result.Warnings, warning)
-					result.Warnings = a.appendWikiEmbeddingWarnings(ctx, registration.Root, result.Warnings)
+					result.Warnings, err = a.appendWikiEmbeddingWarnings(ctx, registration.Root, result.Warnings, progress.report)
+					if err != nil {
+						return err
+					}
 					if genErr := store.MarkIndexGenerationSkipped(ctx, db, jobID, "incremental update did not publish a full generation"); genErr != nil {
 						return genErr
 					}
@@ -251,7 +256,10 @@ func (a *App) runIndexJob(ctx context.Context, registration model.WorkspaceRegis
 
 		// Post-publish: embed wiki chunks if applicable (for full/docs modes)
 		if job.Mode == store.IndexModeDocs || job.Mode == store.IndexModeFull {
-			result.Warnings = a.appendWikiEmbeddingWarnings(ctx, registration.Root, result.Warnings)
+			result.Warnings, err = a.appendWikiEmbeddingWarnings(ctx, registration.Root, result.Warnings, progress.report)
+			if err != nil {
+				return err
+			}
 		}
 
 		return store.MarkIndexJobSucceeded(ctx, db, jobID, result.Stats.Files, result.Stats.Symbols, result.Docs)
@@ -329,6 +337,17 @@ func (r *indexJobProgressReporter) report(ctx context.Context, progress indexer.
 }
 
 func (a *App) spawnIndexJob(ctx context.Context, db *sql.DB, registration model.WorkspaceRegistration, jobID string) (int, error) {
+	pid, err := spawnDetachedIndexJobProcess(registration, jobID)
+	if err != nil {
+		return 0, err
+	}
+	if err := store.MarkIndexJobRunning(ctx, db, jobID, pid, "spawned"); err != nil {
+		return pid, err
+	}
+	return pid, nil
+}
+
+func startDetachedIndexJobProcess(registration model.WorkspaceRegistration, jobID string) (int, error) {
 	executable, err := os.Executable()
 	if err != nil {
 		return 0, err
@@ -344,7 +363,9 @@ func (a *App) spawnIndexJob(ctx context.Context, db *sql.DB, registration model.
 	defer logFile.Close()
 
 	cmd := exec.CommandContext(context.Background(), executable, "--workspace", registration.Name, "--format", "json", "index", "run-job", jobID)
-	cmd.Dir = registration.Root
+	if neutralCWD := detachedIndexJobCWD(); neutralCWD != "" {
+		cmd.Dir = neutralCWD
+	}
 	cmd.Stdout = logFile
 	cmd.Stderr = logFile
 	cmd.Env = append(os.Environ(), "MI_LSP_CLIENT_NAME=mi-lsp-index-job")
@@ -354,10 +375,21 @@ func (a *App) spawnIndexJob(ctx context.Context, db *sql.DB, registration model.
 	}
 	pid := cmd.Process.Pid
 	_ = cmd.Process.Release()
-	if err := store.MarkIndexJobRunning(ctx, db, jobID, pid, "spawned"); err != nil {
-		return pid, err
-	}
 	return pid, nil
+}
+
+func detachedIndexJobCWD() string {
+	if dir := os.TempDir(); dir != "" {
+		if stat, err := os.Stat(dir); err == nil && stat.IsDir() {
+			return dir
+		}
+	}
+	if dir, err := os.UserHomeDir(); err == nil && dir != "" {
+		if stat, statErr := os.Stat(dir); statErr == nil && stat.IsDir() {
+			return dir
+		}
+	}
+	return ""
 }
 
 func (a *App) resolveIndexWorkspace(request model.CommandRequest) (model.WorkspaceRegistration, error) {

@@ -149,6 +149,50 @@ func TestReplaceWikiChunkEmbeddingsForDocsDropsInvalidRows(t *testing.T) {
 	}
 }
 
+func TestUpsertWikiChunkEmbeddingsPersistsBatchAndPrunesStaleAtEnd(t *testing.T) {
+	db, _ := seedTestDB(t)
+	ctx := context.Background()
+
+	first := []model.WikiChunkEmbedding{
+		{
+			DocPath:        ".docs/wiki/a.md",
+			ChunkID:        "a#0",
+			StartLine:      1,
+			EndLine:        3,
+			Heading:        "A",
+			Snippet:        "A",
+			ContentHash:    "hash-a",
+			Embedding:      []byte{1, 2, 3, 4},
+			EmbeddingModel: "test-model",
+			EmbeddingDim:   1,
+		},
+	}
+	if err := UpsertWikiChunkEmbeddings(ctx, db, first); err != nil {
+		t.Fatalf("UpsertWikiChunkEmbeddings(first): %v", err)
+	}
+	if err := UpsertWikiChunkEmbeddings(ctx, db, []model.WikiChunkEmbedding{{
+		DocPath:        ".docs/wiki/a.md",
+		ChunkID:        "stale#0",
+		ContentHash:    "stale",
+		Embedding:      []byte{9, 9, 9, 9},
+		EmbeddingModel: "test-model",
+		EmbeddingDim:   1,
+	}}); err != nil {
+		t.Fatalf("UpsertWikiChunkEmbeddings(stale): %v", err)
+	}
+	if err := DeleteStaleWikiChunkEmbeddingsForDocs(ctx, db, []string{".docs/wiki/a.md"}, map[string]struct{}{".docs/wiki/a.md\x00a#0": {}}); err != nil {
+		t.Fatalf("DeleteStaleWikiChunkEmbeddingsForDocs: %v", err)
+	}
+
+	embeddings, err := AllWikiChunkEmbeddings(ctx, db)
+	if err != nil {
+		t.Fatalf("AllWikiChunkEmbeddings: %v", err)
+	}
+	if len(embeddings) != 1 || embeddings[0].ChunkID != "a#0" {
+		t.Fatalf("embeddings = %#v, want only a#0", embeddings)
+	}
+}
+
 func TestUpsertAndQuerySymbols(t *testing.T) {
 	db, _ := seedTestDB(t)
 	ctx := context.Background()

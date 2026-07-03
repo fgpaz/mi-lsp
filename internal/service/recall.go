@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -12,6 +13,7 @@ import (
 	"time"
 
 	"github.com/fgpaz/mi-lsp/internal/embed"
+	"github.com/fgpaz/mi-lsp/internal/indexer"
 	"github.com/fgpaz/mi-lsp/internal/model"
 	"github.com/fgpaz/mi-lsp/internal/rerank"
 	"github.com/fgpaz/mi-lsp/internal/store"
@@ -19,29 +21,76 @@ import (
 	"github.com/fgpaz/mi-lsp/internal/workspace"
 )
 
+type wikiEmbeddingPlan struct {
+	docPaths []string
+	chunks   []wikiEmbeddingChunkPlan
+}
+
+type wikiEmbeddingChunkPlan struct {
+	DocPath     string
+	ChunkID     string
+	Heading     string
+	Snippet     string
+	ContentHash string
+	StartLine   int
+	EndLine     int
+	Text        string
+	Model       string
+	Dim         int
+	Reusable    bool
+	Existing    model.WikiChunkEmbedding
+}
+
+func (p wikiEmbeddingChunkPlan) embeddingWith(vector []byte, indexedAt int64) model.WikiChunkEmbedding {
+	return model.WikiChunkEmbedding{
+		DocPath:        p.DocPath,
+		ChunkID:        p.ChunkID,
+		Heading:        p.Heading,
+		Snippet:        p.Snippet,
+		ContentHash:    p.ContentHash,
+		EmbeddingModel: p.Model,
+		StartLine:      p.StartLine,
+		EndLine:        p.EndLine,
+		EmbeddingDim:   p.Dim,
+		Embedding:      vector,
+		IndexedAt:      indexedAt,
+	}
+}
+
+type embeddingIndexError struct {
+	err       error
+	completed int
+	total     int
+}
+
+func (e embeddingIndexError) Error() string {
+	return fmt.Sprintf("embeddings: %v after %d/%d chunks embedded", e.err, e.completed, e.total)
+}
+
+func (e embeddingIndexError) Unwrap() error { return e.err }
+
 // embedWorkspaceWiki indexes wiki chunks with embeddings after a successful doc publish.
-// Returns warnings (never fails the caller).
-func (a *App) embedWorkspaceWiki(ctx context.Context, root string) []string {
+func (a *App) embedWorkspaceWiki(ctx context.Context, root string, progress func(context.Context, indexer.Progress) error) ([]string, error) {
 	var warnings []string
 
 	// Load project file for embeddings config
 	project, err := workspace.LoadProjectFile(root)
 	if err != nil {
 		warnings = append(warnings, fmt.Sprintf("embeddings: failed to load project config: %v", err))
-		return warnings
+		return warnings, nil
 	}
 
 	// Check if embeddings are active and configured.
 	if !project.Embeddings.Active() {
 		// No-op: embeddings not configured
-		return nil
+		return nil, nil
 	}
 
 	// Open the repo-local store
 	db, err := store.Open(root)
 	if err != nil {
 		warnings = append(warnings, fmt.Sprintf("embeddings: failed to open store: %v", err))
-		return warnings
+		return warnings, nil
 	}
 	defer db.Close()
 
@@ -49,17 +98,14 @@ func (a *App) embedWorkspaceWiki(ctx context.Context, root string) []string {
 	docs, err := store.ListDocRecords(ctx, db)
 	if err != nil {
 		warnings = append(warnings, fmt.Sprintf("embeddings: failed to load doc records: %v", err))
-		return warnings
+		return warnings, nil
 	}
-
-	var indexedDocPaths []string
-	var allChunks []model.WikiChunkEmbedding
 
 	// For each doc, chunk and embed
 	existingEmbeddings, err := store.LoadWikiChunkEmbeddings(ctx, db)
 	if err != nil {
 		warnings = append(warnings, fmt.Sprintf("embeddings: failed to load existing embeddings: %v", err))
-		return warnings
+		return warnings, nil
 	}
 
 	// Build embeddings client
@@ -79,116 +125,209 @@ func (a *App) embedWorkspaceWiki(ctx context.Context, root string) []string {
 	}
 	client := embed.New(cfg)
 
-	// Process each doc. doc records are the markdown docs the indexer selected
-	// (any knowledge-wiki layout: .docs/wiki, .library, docs/, README, ...). We embed
-	// all of them. NOTE: doc.Path uses forward slashes; do not filter with
-	// filepath.Separator (that broke on Windows and skipped every doc).
-	for _, doc := range docs {
-		docPath := doc.Path
+	plan, planWarnings := buildWikiEmbeddingPlan(ctx, root, docs, existingEmbeddings, cfg)
+	warnings = append(warnings, planWarnings...)
+	total := len(plan.chunks)
+	completed := 0
+	if err := ctx.Err(); err != nil {
+		return warnings, embeddingPhaseError(err, completed, total)
+	}
+	if total == 0 {
+		return warnings, nil
+	}
+	if err := store.PruneInvalidWikiChunkEmbeddings(ctx, db); err != nil {
+		warnings = append(warnings, fmt.Sprintf("embeddings: failed to prune invalid embeddings: %v", err))
+		return warnings, nil
+	}
 
-		// Read file
+	batchSize := effectiveEmbeddingBatchSize(cfg.BatchSize)
+	pending := make([]model.WikiChunkEmbedding, 0, batchSize)
+	texts := make([]string, 0, batchSize)
+	textPlans := make([]wikiEmbeddingChunkPlan, 0, batchSize)
+	storedKeys := make(map[string]struct{}, total)
+
+	report := func(force bool, currentPath string) error {
+		if progress == nil {
+			return nil
+		}
+		return progress(ctx, indexer.Progress{
+			Stage:      "embeddings",
+			Path:       embeddingProgressPath(currentPath, completed, total),
+			Docs:       completed,
+			FilesTotal: total,
+			Force:      force,
+		})
+	}
+	flushStored := func(force bool, currentPath string) error {
+		if len(pending) == 0 {
+			return report(force, currentPath)
+		}
+		if err := store.UpsertWikiChunkEmbeddings(ctx, db, pending); err != nil {
+			return embeddingPhaseError(fmt.Errorf("failed to store embeddings: %w", err), completed, total)
+		}
+		for _, chunk := range pending {
+			storedKeys[chunk.DocPath+"\x00"+chunk.ChunkID] = struct{}{}
+		}
+		completed += len(pending)
+		pending = pending[:0]
+		return report(force, currentPath)
+	}
+	flushEmbeddings := func(force bool) error {
+		if len(texts) == 0 {
+			return nil
+		}
+		currentPath := textPlans[len(textPlans)-1].DocPath
+		vectors, err := client.Embed(ctx, texts)
+		if err != nil {
+			if ctxErr := ctx.Err(); ctxErr != nil {
+				return embeddingPhaseError(ctxErr, completed, total)
+			}
+			warnings = append(warnings, fmt.Sprintf("embeddings: failed to embed %d chunks ending at %s: %v", len(texts), currentPath, err))
+			texts = texts[:0]
+			textPlans = textPlans[:0]
+			return report(force, currentPath)
+		}
+		now := time.Now().Unix()
+		for i, vector := range vectors {
+			pending = append(pending, textPlans[i].embeddingWith(embed.EncodeVector(vector), now))
+		}
+		texts = texts[:0]
+		textPlans = textPlans[:0]
+		return flushStored(force, currentPath)
+	}
+
+	if err := report(true, ""); err != nil {
+		return warnings, embeddingPhaseError(err, completed, total)
+	}
+	for _, planned := range plan.chunks {
+		if err := ctx.Err(); err != nil {
+			return warnings, embeddingPhaseError(err, completed, total)
+		}
+		if planned.Reusable {
+			pending = append(pending, planned.embeddingWith(planned.Existing.Embedding, planned.Existing.IndexedAt))
+			if len(pending) >= batchSize {
+				if err := flushStored(false, planned.DocPath); err != nil {
+					return warnings, err
+				}
+			}
+			continue
+		}
+		if len(pending) > 0 {
+			if err := flushStored(false, planned.DocPath); err != nil {
+				return warnings, err
+			}
+		}
+		texts = append(texts, planned.Text)
+		textPlans = append(textPlans, planned)
+		if len(texts) >= batchSize {
+			if err := flushEmbeddings(false); err != nil {
+				return warnings, err
+			}
+		}
+	}
+	if err := flushEmbeddings(true); err != nil {
+		return warnings, err
+	}
+	if err := flushStored(true, ""); err != nil {
+		return warnings, err
+	}
+	if err := store.DeleteStaleWikiChunkEmbeddingsForDocs(ctx, db, plan.docPaths, storedKeys); err != nil {
+		return warnings, embeddingPhaseError(fmt.Errorf("failed to delete stale embeddings: %w", err), completed, total)
+	}
+	if completed < total {
+		warnings = append(warnings, fmt.Sprintf("embeddings: stored %d/%d chunks; skipped %d chunks after provider errors", completed, total, total-completed))
+	}
+
+	return warnings, nil
+}
+
+func (a *App) appendWikiEmbeddingWarnings(ctx context.Context, root string, warnings []string, progress func(context.Context, indexer.Progress) error) ([]string, error) {
+	embedWarnings, err := a.embedWorkspaceWiki(ctx, root, progress)
+	if len(embedWarnings) > 0 {
+		warnings = append(warnings, embedWarnings...)
+	}
+	return warnings, err
+}
+
+func buildWikiEmbeddingPlan(ctx context.Context, root string, docs []model.DocRecord, existingEmbeddings map[string]model.WikiChunkEmbedding, cfg embed.Config) (wikiEmbeddingPlan, []string) {
+	var (
+		plan       wikiEmbeddingPlan
+		warnings   []string
+		seenDoc    = make(map[string]struct{})
+		configured = cfg
+	)
+	if configured.BatchSize <= 0 {
+		configured.BatchSize = 32
+	}
+	for _, doc := range docs {
+		if ctx.Err() != nil {
+			return plan, warnings
+		}
+		docPath := doc.Path
 		filePath := filepath.Join(root, filepath.FromSlash(docPath))
 		content, err := os.ReadFile(filePath)
 		if err != nil {
 			warnings = append(warnings, fmt.Sprintf("embeddings: failed to read %s: %v", docPath, err))
 			continue
 		}
-
+		if _, ok := seenDoc[docPath]; !ok {
+			seenDoc[docPath] = struct{}{}
+			plan.docPaths = append(plan.docPaths, docPath)
+		}
 		docMeta := parseWikiDocMetadata(string(content), doc)
-
-		// Chunk by heading
-		chunks := wikichunk.ChunkByHeading(string(content))
-		indexedDocPaths = append(indexedDocPaths, docPath)
-
-		// Build candidates and check if re-embedding is needed
-		var textsToEmbed []string
-		var chunkIndicesForEmbedding []int
-
-		for chunkIdx, chunk := range chunks {
+		for _, chunk := range wikichunk.ChunkByHeading(string(content)) {
 			embeddingText := embeddingTextForChunk(doc, docMeta, chunk)
 			embeddingHash := hashEmbeddingText(chunk.ContentHash, embeddingText)
-			key := docPath + "\x00" + chunk.ChunkID
-			existing, exists := existingEmbeddings[key]
-
-			// Check if we can reuse existing embedding
-			if exists && existing.ContentHash == embeddingHash && existing.EmbeddingModel == cfg.Model && existing.EmbeddingDim == cfg.Dim && existing.Embedding != nil {
-				// Reuse
-				snippet := chunk.Text
-				if len(snippet) > 200 {
-					snippet = snippet[:200]
-				}
-				allChunks = append(allChunks, model.WikiChunkEmbedding{
-					DocPath:        docPath,
-					ChunkID:        chunk.ChunkID,
-					Heading:        chunk.Heading,
-					Snippet:        snippet,
-					ContentHash:    embeddingHash,
-					EmbeddingModel: cfg.Model,
-					StartLine:      chunk.StartLine,
-					EndLine:        chunk.EndLine,
-					EmbeddingDim:   cfg.Dim,
-					Embedding:      existing.Embedding,
-					IndexedAt:      existing.IndexedAt,
-				})
-			} else {
-				// Need to embed
-				textsToEmbed = append(textsToEmbed, embeddingText)
-				chunkIndicesForEmbedding = append(chunkIndicesForEmbedding, chunkIdx)
-				// Reserve space
-				allChunks = append(allChunks, model.WikiChunkEmbedding{})
+			snippet := chunk.Text
+			if len(snippet) > 200 {
+				snippet = snippet[:200]
 			}
-		}
-
-		// If there are texts to embed, call the API
-		if len(textsToEmbed) > 0 {
-			embeddings, err := client.Embed(ctx, textsToEmbed)
-			if err != nil {
-				warnings = append(warnings, fmt.Sprintf("embeddings: failed to embed chunks from %s: %v", docPath, err))
-				// Remove the reserved spaces
-				allChunks = allChunks[:len(allChunks)-len(textsToEmbed)]
-				continue
+			item := wikiEmbeddingChunkPlan{
+				DocPath:     docPath,
+				ChunkID:     chunk.ChunkID,
+				Heading:     chunk.Heading,
+				Snippet:     snippet,
+				ContentHash: embeddingHash,
+				StartLine:   chunk.StartLine,
+				EndLine:     chunk.EndLine,
+				Text:        embeddingText,
+				Model:       configured.Model,
+				Dim:         configured.Dim,
 			}
-
-			// Populate the embeddings
-			for i, emb := range embeddings {
-				chunkIdx := chunkIndicesForEmbedding[i]
-				c := chunks[chunkIdx]
-				embeddingText := embeddingTextForChunk(doc, docMeta, c)
-				snippet := c.Text
-				if len(snippet) > 200 {
-					snippet = snippet[:200]
-				}
-				allChunks[len(allChunks)-len(textsToEmbed)+i] = model.WikiChunkEmbedding{
-					DocPath:        docPath,
-					ChunkID:        c.ChunkID,
-					Heading:        c.Heading,
-					Snippet:        snippet,
-					ContentHash:    hashEmbeddingText(c.ContentHash, embeddingText),
-					EmbeddingModel: cfg.Model,
-					StartLine:      c.StartLine,
-					EndLine:        c.EndLine,
-					EmbeddingDim:   cfg.Dim,
-					Embedding:      embed.EncodeVector(emb),
-					IndexedAt:      time.Now().Unix(),
-				}
+			if existing, ok := existingEmbeddings[docPath+"\x00"+chunk.ChunkID]; ok && existing.ContentHash == embeddingHash && existing.EmbeddingModel == configured.Model && existing.EmbeddingDim == configured.Dim && len(existing.Embedding) > 0 {
+				item.Reusable = true
+				item.Existing = existing
 			}
+			plan.chunks = append(plan.chunks, item)
 		}
 	}
-
-	// Replace embeddings in DB
-	if err := store.ReplaceWikiChunkEmbeddingsForDocs(ctx, db, indexedDocPaths, allChunks); err != nil {
-		warnings = append(warnings, fmt.Sprintf("embeddings: failed to store embeddings: %v", err))
-		return warnings
-	}
-
-	return warnings
+	sort.Strings(plan.docPaths)
+	return plan, warnings
 }
 
-func (a *App) appendWikiEmbeddingWarnings(ctx context.Context, root string, warnings []string) []string {
-	if embedWarnings := a.embedWorkspaceWiki(ctx, root); len(embedWarnings) > 0 {
-		warnings = append(warnings, embedWarnings...)
+func effectiveEmbeddingBatchSize(batchSize int) int {
+	if batchSize <= 0 {
+		return 32
 	}
-	return warnings
+	return batchSize
+}
+
+func embeddingProgressPath(currentPath string, completed int, total int) string {
+	progress := fmt.Sprintf("%d/%d chunks embedded", completed, total)
+	if strings.TrimSpace(currentPath) == "" {
+		return progress
+	}
+	return fmt.Sprintf("%s (%s)", currentPath, progress)
+}
+
+func embeddingPhaseError(err error, completed int, total int) error {
+	if err == nil {
+		return nil
+	}
+	if errors.Is(err, errIndexJobCanceled) {
+		return err
+	}
+	return embeddingIndexError{err: err, completed: completed, total: total}
 }
 
 type scoredChunk struct {
