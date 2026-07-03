@@ -13,9 +13,11 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/fgpaz/mi-lsp/internal/daemon"
+	"github.com/fgpaz/mi-lsp/internal/indexer"
 	"github.com/fgpaz/mi-lsp/internal/model"
 	"github.com/fgpaz/mi-lsp/internal/output"
 	"github.com/fgpaz/mi-lsp/internal/service"
+	"github.com/fgpaz/mi-lsp/internal/store"
 	"github.com/fgpaz/mi-lsp/internal/telemetry"
 	"github.com/fgpaz/mi-lsp/internal/worker"
 	"github.com/fgpaz/mi-lsp/internal/workspace"
@@ -192,7 +194,7 @@ func (s *rootState) executeOperation(cmd *cobra.Command, operation string, paylo
 		Context:         opts,
 		Payload:         payload,
 	}
-	ctx, cancel := context.WithTimeout(cmd.Context(), timeoutForOperation(operation))
+	ctx, cancel := context.WithTimeout(cmd.Context(), timeoutForRequest(request))
 	defer cancel()
 
 	useDaemon := shouldUseDaemon(operation, preferDaemon)
@@ -312,7 +314,7 @@ func inferErrorBackend(request model.CommandRequest, route string) string {
 func classifyEnvelopeError(request model.CommandRequest, backend string, route string, err error) model.EnvelopeError {
 	message := safeErrorMessage(err)
 	lower := strings.ToLower(message)
-	result := model.EnvelopeError{Kind: "backend_runtime", Code: "operation_failed", Message: message, Stage: "backend"}
+	result := model.EnvelopeError{Kind: "backend_runtime", Code: "operation_failed", Message: message, Stage: defaultErrorStage(request)}
 
 	if strings.TrimSpace(backend) != "" {
 		info := telemetry.ClassifyErrorInfo(backend, message, nil)
@@ -325,6 +327,17 @@ func classifyEnvelopeError(request model.CommandRequest, backend string, route s
 	}
 
 	switch {
+	case strings.HasPrefix(lower, "embeddings:"):
+		result.Kind = "backend_runtime"
+		result.Stage = "embeddings"
+		if strings.Contains(lower, "context deadline exceeded") || strings.Contains(lower, "deadline exceeded") {
+			result.Code = "embeddings_timeout"
+			result.HintCode = "embeddings_timeout"
+			result.Retryable = true
+		} else {
+			result.Code = "embeddings_failed"
+			result.HintCode = "embeddings_failed"
+		}
 	case strings.Contains(lower, "workspace cross-workspace refused"):
 		result.Kind = "workspace"
 		result.Code = "workspace_cross_workspace_refused"
@@ -441,12 +454,89 @@ func shouldAutoStartDaemon(operation string) bool {
 func timeoutForOperation(operation string) time.Duration {
 	switch operation {
 	case "index.run", "index.start", "index.run-job":
-		return 15 * time.Minute
+		return indexer.IndexTimeout()
 	case "workspace.add", "workspace.init":
 		return 5 * time.Minute
 	default:
 		return 2 * time.Minute
 	}
+}
+
+func defaultErrorStage(request model.CommandRequest) string {
+	if request.Operation != "index.run" && request.Operation != "index.start" && request.Operation != "index.run-job" {
+		return "backend"
+	}
+	mode := strings.TrimSpace(payloadString(request.Payload, "mode"))
+	if payloadBool(request.Payload, "docs_only") || mode == store.IndexModeDocs {
+		return "docs"
+	}
+	if mode == store.IndexModeCatalog {
+		return "catalog"
+	}
+	return "indexing"
+}
+
+func timeoutForRequest(request model.CommandRequest) time.Duration {
+	timeout := timeoutForOperation(request.Operation)
+	if request.Operation != "index.run" && request.Operation != "index.start" && request.Operation != "index.run-job" {
+		return timeout
+	}
+	embeddingTimeout, ok := embeddingIndexTimeoutForRequest(request)
+	if !ok || embeddingTimeout <= timeout {
+		return timeout
+	}
+	return embeddingTimeout
+}
+
+func embeddingIndexTimeoutForRequest(request model.CommandRequest) (time.Duration, bool) {
+	selector := strings.TrimSpace(payloadString(request.Payload, "path"))
+	if selector == "" {
+		selector = strings.TrimSpace(request.Context.Workspace)
+	}
+	if selector == "" {
+		return 0, false
+	}
+	registration, err := workspace.ResolveWorkspace(selector)
+	if err != nil {
+		return 0, false
+	}
+	project, err := workspace.LoadProjectFile(registration.Root)
+	if err != nil || !project.Embeddings.Active() {
+		return 0, false
+	}
+	configured := time.Duration(project.Embeddings.IndexTimeoutMS) * time.Millisecond
+	requestTimeout := time.Duration(project.Embeddings.TimeoutMS) * time.Millisecond
+	totalChunks := estimatedEmbeddingChunks(registration.Root)
+	return indexer.EmbeddingIndexTimeout(totalChunks, project.Embeddings.BatchSize, requestTimeout, configured), true
+}
+
+func estimatedEmbeddingChunks(root string) int {
+	db, err := store.Open(root)
+	if err != nil {
+		return 0
+	}
+	defer db.Close()
+	count, err := store.CountDocRecords(context.Background(), db)
+	if err != nil || count <= 0 {
+		return 0
+	}
+	return count
+}
+
+func payloadString(payload map[string]any, key string) string {
+	if payload == nil {
+		return ""
+	}
+	value, _ := payload[key].(string)
+	return value
+}
+
+func payloadBool(payload map[string]any, key string) bool {
+	if payload == nil {
+		return false
+	}
+	value, _ := payload[key].(bool)
+	return value
 }
 
 func shouldRecordCLITelemetry(route string, opErr error) bool {

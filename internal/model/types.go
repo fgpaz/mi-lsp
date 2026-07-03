@@ -623,6 +623,7 @@ type EmbeddingsBlock struct {
 	Profile        string `toml:"profile" json:"profile,omitempty"` // "" | "knowledge-wiki" | "spec-driven"
 	BatchSize      int    `toml:"batch_size" json:"batch_size,omitempty"`
 	TimeoutMS      int    `toml:"timeout_ms" json:"timeout_ms,omitempty"`
+	IndexTimeoutMS int    `toml:"index_timeout_ms" json:"index_timeout_ms,omitempty"`
 	EncodingFormat string `toml:"encoding_format" json:"encoding_format,omitempty"`
 	UserAgent      string `toml:"user_agent" json:"user_agent,omitempty"`
 }

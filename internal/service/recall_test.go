@@ -284,6 +284,125 @@ func TestRecall_BilingualEStoEN(t *testing.T) {
 	t.Logf("PASS: ES query ranked EN acidification note first (score=%.3f)", topResult.Score)
 }
 
+func TestEmbeddingIndexPersistsSuccessfulBatchesAndResumes(t *testing.T) {
+	var phase atomic.Int32
+	var firstRunRequests atomic.Int32
+	var secondRunRequests atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		currentPhase := phase.Load()
+		if currentPhase == 1 && firstRunRequests.Add(1) > 1 {
+			http.Error(w, "temporary provider failure", http.StatusInternalServerError)
+			return
+		}
+		if currentPhase == 2 {
+			secondRunRequests.Add(1)
+		}
+
+		var req map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "invalid json", http.StatusBadRequest)
+			return
+		}
+		var inputs []string
+		if inputArr, ok := req["input"].([]any); ok {
+			for _, item := range inputArr {
+				if s, ok := item.(string); ok {
+					inputs = append(inputs, s)
+				}
+			}
+		}
+		data := make([]map[string]any, len(inputs))
+		for i, input := range inputs {
+			data[i] = map[string]any{"embedding": buildVector(input), "index": i}
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{"data": data})
+	}))
+	defer server.Close()
+
+	ensureWritableTestHome(t)
+	root := t.TempDir()
+	writeWorkspaceFile(t, root, "go.mod", "module wiki-resume-test\n\ngo 1.24\n")
+	writeWorkspaceFile(t, root, ".docs/wiki/a.md", "# Alpha\n\nAlpha knowledge chunk.\n")
+	writeWorkspaceFile(t, root, ".docs/wiki/b.md", "# Beta\n\nBeta knowledge chunk.\n")
+
+	alias := "wiki-resume-" + filepath.Base(root)
+	app := New(root, nil)
+	if _, err := app.Execute(context.Background(), model.CommandRequest{
+		Operation: "workspace.init",
+		Payload:   map[string]any{"path": root, "alias": alias, "no_index": true},
+	}); err != nil {
+		t.Fatalf("workspace.init: %v", err)
+	}
+	defer func() { _ = workspace.RemoveWorkspace(alias) }()
+
+	proj, err := workspace.LoadProjectFile(root)
+	if err != nil {
+		t.Fatalf("LoadProjectFile: %v", err)
+	}
+	proj.Embeddings = &model.EmbeddingsBlock{
+		Enabled:   boolPtr(true),
+		Provider:  "openai",
+		BaseURL:   server.URL,
+		Model:     "fake",
+		Dim:       8,
+		BatchSize: 1,
+		TimeoutMS: 5000,
+	}
+	if err := workspace.SaveProjectFile(root, proj); err != nil {
+		t.Fatalf("SaveProjectFile: %v", err)
+	}
+
+	phase.Store(1)
+	env, err := app.Execute(context.Background(), model.CommandRequest{
+		Operation: "index.start",
+		Context:   model.QueryOptions{Workspace: alias},
+		Payload:   map[string]any{"docs_only": true, "wait": true},
+	})
+	if err != nil {
+		t.Fatalf("first index.start: %v", err)
+	}
+	if !strings.Contains(strings.Join(env.Warnings, " "), "failed to embed") {
+		t.Fatalf("first warnings = %v, want provider warning", env.Warnings)
+	}
+	db, err := store.Open(root)
+	if err != nil {
+		t.Fatalf("store.Open: %v", err)
+	}
+	embeddings, err := store.AllWikiChunkEmbeddings(context.Background(), db)
+	db.Close()
+	if err != nil {
+		t.Fatalf("AllWikiChunkEmbeddings(first): %v", err)
+	}
+	if len(embeddings) != 1 {
+		t.Fatalf("first run embeddings = %d, want 1 committed batch", len(embeddings))
+	}
+
+	phase.Store(2)
+	if _, err := app.Execute(context.Background(), model.CommandRequest{
+		Operation: "index.start",
+		Context:   model.QueryOptions{Workspace: alias},
+		Payload:   map[string]any{"docs_only": true, "wait": true},
+	}); err != nil {
+		t.Fatalf("second index.start: %v", err)
+	}
+	if got := secondRunRequests.Load(); got != 1 {
+		t.Fatalf("second run provider requests = %d, want 1 missing chunk only", got)
+	}
+	db, err = store.Open(root)
+	if err != nil {
+		t.Fatalf("store.Open(second): %v", err)
+	}
+	embeddings, err = store.AllWikiChunkEmbeddings(context.Background(), db)
+	db.Close()
+	if err != nil {
+		t.Fatalf("AllWikiChunkEmbeddings(second): %v", err)
+	}
+	if len(embeddings) != 2 {
+		t.Fatalf("second run embeddings = %d, want 2", len(embeddings))
+	}
+}
+
 func TestRecall_EmbeddingsImplicitlyActiveWithoutEnabled(t *testing.T) {
 	server := newFakeEmbeddings(t)
 	defer server.Close()

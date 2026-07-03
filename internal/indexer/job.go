@@ -72,20 +72,65 @@ func (jr *jobRegistry) finish(jobID string, err error) {
 	}
 }
 
-// indexTimeout returns the configured index timeout (default 5 minutes, configurable via MI_LSP_INDEX_TIMEOUT).
+// indexTimeout returns the configured index timeout (default 30 minutes, configurable via MI_LSP_INDEX_TIMEOUT).
 func indexTimeout() time.Duration {
 	if envVal := os.Getenv("MI_LSP_INDEX_TIMEOUT"); envVal != "" {
 		if d, err := time.ParseDuration(envVal); err == nil {
 			return d
 		}
 	}
-	return 5 * time.Minute
+	return 30 * time.Minute
 }
 
 // IndexTimeout returns the configured index timeout, used to bound a synchronous
 // auto-index so it cannot hang indefinitely (AUD-01). Configurable via
-// MI_LSP_INDEX_TIMEOUT; default 5 minutes.
+// MI_LSP_INDEX_TIMEOUT; default 30 minutes.
 func IndexTimeout() time.Duration { return indexTimeout() }
+
+// EmbeddingIndexTimeout estimates a full index budget when the workspace has
+// embeddings enabled. The embeddings phase renews the HTTP timeout per batch,
+// so the outer CLI/job budget must scale with the number of expected batches
+// instead of using a fixed short deadline.
+func EmbeddingIndexTimeout(totalChunks int, batchSize int, requestTimeout time.Duration, configured time.Duration) time.Duration {
+	if configured > 0 {
+		return configured
+	}
+	base := IndexTimeout()
+	if totalChunks <= 0 {
+		return base
+	}
+	if batchSize <= 0 {
+		batchSize = 32
+	}
+	if requestTimeout <= 0 {
+		requestTimeout = 30 * time.Second
+	}
+	perBatch := requestTimeout
+	if perBatch > 15*time.Second {
+		perBatch = 15 * time.Second
+	}
+	if perBatch < 5*time.Second {
+		perBatch = 5 * time.Second
+	}
+	batches := (totalChunks + batchSize - 1) / batchSize
+	budget := 15*time.Minute + time.Duration(batches)*perBatch
+	if budget < base {
+		budget = base
+	}
+	if max := maxEmbeddingIndexTimeout(); max > 0 && budget > max {
+		return max
+	}
+	return budget
+}
+
+func maxEmbeddingIndexTimeout() time.Duration {
+	if envVal := os.Getenv("MI_LSP_INDEX_MAX_TIMEOUT"); envVal != "" {
+		if d, err := time.ParseDuration(envVal); err == nil {
+			return d
+		}
+	}
+	return 6 * time.Hour
+}
 
 // SmartSyncTimeout returns the short window during which workspace.add/init index
 // synchronously before degrading to a background job (hybrid smart-sync, FD1).

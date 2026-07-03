@@ -269,7 +269,10 @@ func (a *App) indexWorkspace(ctx context.Context, request model.CommandRequest) 
 			if err != nil {
 				return err
 			}
-			result.Warnings = a.appendWikiEmbeddingWarnings(ctx, registration.Root, result.Warnings)
+			result.Warnings, err = a.appendWikiEmbeddingWarnings(ctx, registration.Root, result.Warnings, nil)
+			if err != nil {
+				return err
+			}
 			envelope = model.Envelope{Ok: true, Workspace: registration.Name, Backend: "docgraph", Items: []model.DocRecord{}, Stats: result.Stats, Warnings: result.Warnings}
 			return nil
 		}
@@ -285,7 +288,10 @@ func (a *App) indexWorkspace(ctx context.Context, request model.CommandRequest) 
 			} else if err == nil && result.Stats.Files == 0 {
 				// No changes detected
 				warnings := appendStringIfMissing(result.Warnings, "no changes detected")
-				warnings = a.appendWikiEmbeddingWarnings(ctx, registration.Root, warnings)
+				warnings, err = a.appendWikiEmbeddingWarnings(ctx, registration.Root, warnings, nil)
+				if err != nil {
+					return err
+				}
 				envelope = model.Envelope{Ok: true, Workspace: registration.Name, Backend: "catalog", Items: []model.SymbolRecord{}, Stats: result.Stats, Warnings: warnings}
 				return nil
 			}
@@ -318,7 +324,10 @@ func (a *App) indexWorkspace(ctx context.Context, request model.CommandRequest) 
 		if incremental {
 			warnings = appendStringIfMissing(warnings, "incremental=true")
 		}
-		warnings = a.appendWikiEmbeddingWarnings(ctx, registration.Root, warnings)
+		warnings, err = a.appendWikiEmbeddingWarnings(ctx, registration.Root, warnings, nil)
+		if err != nil {
+			return err
+		}
 		envelope = model.Envelope{Ok: true, Workspace: registration.Name, Backend: "catalog", Items: result.Symbols, Stats: result.Stats, Warnings: warnings}
 		return nil
 	})

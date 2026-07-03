@@ -80,14 +80,24 @@ func NormalizeIndexMode(mode string) (string, error) {
 }
 
 func CreateIndexJob(ctx context.Context, db *sql.DB, workspaceName string, workspaceRoot string, mode string, clean bool) (IndexJob, error) {
+	return createIndexJob(ctx, db, workspaceName, workspaceRoot, mode, clean, true)
+}
+
+func CreateIndexJobUnchecked(ctx context.Context, db *sql.DB, workspaceName string, workspaceRoot string, mode string, clean bool) (IndexJob, error) {
+	return createIndexJob(ctx, db, workspaceName, workspaceRoot, mode, clean, false)
+}
+
+func createIndexJob(ctx context.Context, db *sql.DB, workspaceName string, workspaceRoot string, mode string, clean bool, checkActive bool) (IndexJob, error) {
 	normalizedMode, err := NormalizeIndexMode(mode)
 	if err != nil {
 		return IndexJob{}, err
 	}
-	if active, ok, err := ActiveIndexJob(ctx, db, workspaceRoot); err != nil {
-		return IndexJob{}, err
-	} else if ok {
-		return IndexJob{}, &ActiveIndexJobError{Job: active}
+	if checkActive {
+		if active, ok, err := ActiveIndexJob(ctx, db, workspaceRoot); err != nil {
+			return IndexJob{}, err
+		} else if ok {
+			return IndexJob{}, &ActiveIndexJobError{Job: active}
+		}
 	}
 
 	now := time.Now().UTC().Format(time.RFC3339Nano)
@@ -134,10 +144,10 @@ func ActiveIndexJob(ctx context.Context, db *sql.DB, workspaceRoot string) (Inde
 		       COALESCE(current_stage, ''), COALESCE(current_path, ''), files_total,
 		       files, symbols, docs, created_at, COALESCE(started_at, ''), COALESCE(finished_at, ''), updated_at
 		FROM index_jobs
-		WHERE workspace_root = ?
-		  AND status IN ('queued', 'running', 'publishing', 'cancel_requested')
-		ORDER BY updated_at DESC
-	`, workspaceRoot)
+		WHERE status IN ('queued', 'running', 'publishing', 'cancel_requested')
+		ORDER BY rowid DESC
+		LIMIT 128
+	`)
 	if err != nil {
 		return IndexJob{}, false, err
 	}
@@ -147,6 +157,9 @@ func ActiveIndexJob(ctx context.Context, db *sql.DB, workspaceRoot string) (Inde
 		job, err := scanIndexJob(rows)
 		if err != nil {
 			return IndexJob{}, false, err
+		}
+		if job.WorkspaceRoot != workspaceRoot {
+			continue
 		}
 		if staleIndexJob(job) {
 			_ = MarkIndexJobFailed(ctx, db, job.JobID, "stale index job process exited")

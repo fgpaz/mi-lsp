@@ -1026,16 +1026,16 @@ func TestIndexStartWaitCreatesSucceededJobAndGeneration(t *testing.T) {
 	}
 }
 
-func TestIndexStartReturnsActiveJobWithBackoffHint(t *testing.T) {
+func TestIndexStartWithoutWaitReturnsSpawnedJobWithoutRunningInline(t *testing.T) {
 	ensureWritableTestHome(t)
 	root := t.TempDir()
-	alias := "index-active-" + filepath.Base(root)
+	alias := "index-start-async-" + filepath.Base(root)
 	project := testProject(alias)
 	if err := workspace.SaveProjectFile(root, project); err != nil {
 		t.Fatalf("SaveProjectFile: %v", err)
 	}
 	writeWorkspaceFile(t, root, "src/App.csproj", `<Project Sdk="Microsoft.NET.Sdk"></Project>`)
-	writeWorkspaceFile(t, root, "src/App.cs", "namespace Demo; public class App { }\n")
+	writeWorkspaceFile(t, root, "src/App.cs", "namespace Demo; public class App { public void Run() {} }\n")
 
 	if _, err := workspace.RegisterWorkspace(alias, model.WorkspaceRegistration{
 		Name:      alias,
@@ -1047,15 +1047,19 @@ func TestIndexStartReturnsActiveJobWithBackoffHint(t *testing.T) {
 	}
 	defer func() { _ = workspace.RemoveWorkspace(alias) }()
 
-	db, err := store.Open(root)
-	if err != nil {
-		t.Fatalf("store.Open: %v", err)
+	oldSpawner := spawnDetachedIndexJobProcess
+	spawnCalled := false
+	spawnDetachedIndexJobProcess = func(registration model.WorkspaceRegistration, jobID string) (int, error) {
+		spawnCalled = true
+		if registration.Name != alias {
+			t.Fatalf("spawn workspace = %q, want %q", registration.Name, alias)
+		}
+		if jobID == "" {
+			t.Fatalf("spawn job id is empty")
+		}
+		return 4242, nil
 	}
-	defer db.Close()
-	activeJob, err := store.CreateIndexJob(context.Background(), db, alias, root, store.IndexModeFull, false)
-	if err != nil {
-		t.Fatalf("CreateIndexJob: %v", err)
-	}
+	t.Cleanup(func() { spawnDetachedIndexJobProcess = oldSpawner })
 
 	app := New(root, nil)
 	env, err := app.Execute(context.Background(), model.CommandRequest{
@@ -1064,23 +1068,17 @@ func TestIndexStartReturnsActiveJobWithBackoffHint(t *testing.T) {
 		Payload:   map[string]any{"mode": "full"},
 	})
 	if err != nil {
-		t.Fatalf("index.start with active job: %v", err)
+		t.Fatalf("index.start: %v", err)
 	}
-	if !env.Ok {
-		t.Fatalf("env.Ok = false, want true: %#v", env)
-	}
-	if env.Hint == "" || !strings.Contains(env.Hint, "existing index job") {
-		t.Fatalf("hint = %q, want existing job guidance", env.Hint)
-	}
-	if env.NextHint == nil || !strings.Contains(*env.NextHint, activeJob.JobID) {
-		t.Fatalf("next_hint = %#v, want status command for active job %s", env.NextHint, activeJob.JobID)
+	if !spawnCalled {
+		t.Fatalf("spawn was not called")
 	}
 	jobs, ok := env.Items.([]store.IndexJob)
 	if !ok || len(jobs) != 1 {
-		t.Fatalf("items = %#v, want one active IndexJob", env.Items)
+		t.Fatalf("items = %#v, want one IndexJob", env.Items)
 	}
-	if jobs[0].JobID != activeJob.JobID {
-		t.Fatalf("job_id = %q, want active %q", jobs[0].JobID, activeJob.JobID)
+	if jobs[0].Status != store.IndexJobRunning || jobs[0].Phase != "spawned" || jobs[0].PID != 4242 {
+		t.Fatalf("job = %+v, want running spawned pid 4242", jobs[0])
 	}
 }
 

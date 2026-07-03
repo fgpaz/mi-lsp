@@ -71,9 +71,10 @@ Persistencia SQLite:
 1. Durante `mi-lsp index`/`index.run`, post-publicacion del corpus documental o como backfill incremental sin cambios
 2. Activacion por `EmbeddingsBlock.Active()`: `[embeddings]` existe con `base_url` + `model`, salvo `enabled = false` explicito
 3. Deteccion de cambios por metadata-prefix/content hash, modelo y dimension respecto de `wiki_chunk_embeddings`
-4. Almacenamiento en BLOB float32 little-endian para compacidad
-5. Lazy CREATE-IF-NOT-EXISTS cuando se detecta la tabla ausente
-6. No bloquea publication del indice si embedding falla
+4. Almacenamiento incremental por batch confirmado en `wiki_chunk_embeddings`; chunks ya persistidos con mismo hash/modelo/dimension se reutilizan en corridas posteriores
+5. Limpieza de filas invalidas y pruning de stale rows solo al cierre de una fase de embeddings completada, para no perder progreso si el proceso se interrumpe
+6. Lazy CREATE-IF-NOT-EXISTS cuando se detecta la tabla ausente
+7. Fallas del provider se reportan como warnings sanitizados y conservan lotes exitosos; cancelacion/deadline del contexto falla con stage `embeddings` y progreso `N/M chunks embedded`
 
 ### Algoritmo de busqueda
 
@@ -100,6 +101,7 @@ api_key_env = "MI_LSP_EMBEDDINGS_API_KEY"
 profile = "knowledge-wiki"  # o "spec-driven"
 batch_size = 32
 timeout_ms = 30000
+index_timeout_ms = 0  # opcional; 0 usa presupuesto escalado por corpus/batches
 encoding_format = "float"
 user_agent = "mi-lsp-embeddings/1.0"
 ```

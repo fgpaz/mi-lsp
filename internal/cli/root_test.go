@@ -8,6 +8,7 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/fgpaz/mi-lsp/internal/model"
 )
@@ -205,6 +206,48 @@ func TestBuildCLIErrorEnvelopeTypesCrossWorkspaceRefusal(t *testing.T) {
 	}
 	if env.Error.HintCode != "workspace_cross_workspace_refused" {
 		t.Fatalf("hint_code = %q, want workspace_cross_workspace_refused", env.Error.HintCode)
+	}
+}
+
+func TestBuildCLIErrorEnvelopeTypesEmbeddingsTimeout(t *testing.T) {
+	env := buildCLIErrorEnvelope(model.CommandRequest{
+		Operation: "index.start",
+		Context:   model.QueryOptions{Workspace: "wiki"},
+	}, "direct", errors.New("embeddings: context deadline exceeded after 12/20 chunks embedded"))
+
+	if env.Ok {
+		t.Fatal("error envelope Ok = true, want false")
+	}
+	if env.Error == nil {
+		t.Fatal("error envelope missing Error")
+	}
+	if env.Error.Stage != "embeddings" || env.Error.Code != "embeddings_timeout" {
+		t.Fatalf("error = %+v, want embeddings/embeddings_timeout", *env.Error)
+	}
+	if !env.Error.Retryable {
+		t.Fatalf("Retryable = false, want true")
+	}
+}
+
+func TestBuildCLIErrorEnvelopeUsesDocsStageForDocsIndex(t *testing.T) {
+	env := buildCLIErrorEnvelope(model.CommandRequest{
+		Operation: "index.start",
+		Context:   model.QueryOptions{Workspace: "wiki"},
+		Payload:   map[string]any{"mode": "docs"},
+	}, "direct", errors.New("context deadline exceeded"))
+
+	if env.Error == nil {
+		t.Fatal("error envelope missing Error")
+	}
+	if env.Error.Stage != "docs" {
+		t.Fatalf("stage = %q, want docs", env.Error.Stage)
+	}
+}
+
+func TestTimeoutForOperationIndexUsesConfiguredIndexTimeout(t *testing.T) {
+	t.Setenv("MI_LSP_INDEX_TIMEOUT", "42m")
+	if got := timeoutForOperation("index.run"); got != 42*time.Minute {
+		t.Fatalf("timeoutForOperation(index.run) = %v, want 42m", got)
 	}
 }
 
