@@ -77,8 +77,9 @@ func TestHandleRequestSystemStatusIncludesProcessAndWatcherStats(t *testing.T) {
 	manager := NewManagerWithOptions(t.TempDir(), 1, time.Minute, StartOptions{WatchMode: WatchModeLazy, MaxWatchedRoots: 2})
 	defer manager.Shutdown()
 	server := &Server{
-		manager:   manager,
-		telemetry: store,
+		manager:     manager,
+		telemetry:   store,
+		resultCache: newResultCache(),
 		state: model.DaemonState{
 			PID:             123,
 			Endpoint:        "test",
