@@ -21,7 +21,7 @@ func TestShouldUseDaemonPolicy(t *testing.T) {
 		want      bool
 	}{
 		{name: "find bypasses daemon", operation: "nav.find", requested: true, want: false},
-		{name: "search bypasses daemon", operation: "nav.search", requested: true, want: false},
+		{name: "search uses daemon", operation: "nav.search", requested: true, want: true},
 		{name: "wiki search bypasses daemon", operation: "nav.wiki.search", requested: true, want: false},
 		{name: "wiki validate harness bypasses daemon", operation: "nav.wiki.validate-harness", requested: true, want: false},
 		{name: "wiki validate source bypasses daemon", operation: "nav.wiki.validate-source", requested: true, want: false},
@@ -34,9 +34,9 @@ func TestShouldUseDaemonPolicy(t *testing.T) {
 		{name: "affected bypasses daemon", operation: "nav.affected", requested: true, want: false},
 		{name: "edit-plan bypasses daemon", operation: "nav.edit-plan", requested: true, want: false},
 		{name: "trace bypasses daemon", operation: "nav.trace", requested: true, want: false},
-		{name: "pack bypasses daemon", operation: "nav.pack", requested: true, want: false},
+		{name: "pack uses daemon", operation: "nav.pack", requested: true, want: true},
 		{name: "wiki pack bypasses daemon", operation: "nav.wiki.pack", requested: true, want: false},
-		{name: "ask bypasses daemon", operation: "nav.ask", requested: true, want: false},
+		{name: "ask uses daemon", operation: "nav.ask", requested: true, want: true},
 		{name: "governance bypasses daemon", operation: "nav.governance", requested: true, want: false},
 		{name: "context keeps daemon", operation: "nav.context", requested: true, want: true},
 		{name: "refs keeps daemon", operation: "nav.refs", requested: true, want: true},
