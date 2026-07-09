@@ -1,0 +1,26 @@
+schema: ae-audit-hygiene/v1
+session: 2026-07-09-max-optimizacion-milsp-mipi
+retention_ttl_days: 14
+hash_algorithm: sha256
+artifact_classes:
+  - class: session_contract
+    path: session-contract.yaml
+  - class: traceability_closure
+    path: traceability-closure.yaml
+  - class: worker_registry
+    path: claude-code/worker-registry.yaml
+  - class: plan
+    path: ../../raw/plans/2026-07-09-max-optimizacion-milsp-mipi.md
+sanitized: true
+sanitization_notes: sin secretos; NAN_API_KEY referenciada solo por nombre ([SET] via ~/.secrets/nan-api-key)
+summary: >
+  Programa de optimizacion en 3 olas para escalar workers pi con mi-lsp vivo de 3 a 50
+  concurrentes: cache tier-2 compartido por disco, scheduler global NaN de 3 slots,
+  daemon-first + result cache en mi-lsp, defaults para 50 clientes, registry gc,
+  higiene .tmp, evidencia por spawn, canon y skills sincronizados. Binario arm64
+  instalado y verificado en vivo.
+verdicts:
+  wave1: PASS_post_fixes
+  wave2: PASS_post_fixes
+  wave3: PASS
+cleanup_status: pending_ttl

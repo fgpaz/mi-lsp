@@ -1,0 +1,68 @@
+schema: traceability-closure/v1
+session_contract_path: .docs/auditoria/2026-07-09-max-optimizacion-milsp-mipi/session-contract.yaml
+task_slug: 2026-07-09-max-optimizacion-milsp-mipi
+plan: .docs/raw/plans/2026-07-09-max-optimizacion-milsp-mipi.md
+change_class: runtime_multi_repo (mi-lsp Go daemon/CLI + mi-pi TS provider/launcher + skill compartida + wikis)
+git_state:
+  mi-lsp:
+    branch: feat/max-opt-program
+    base: main@eaed36b
+    commits:
+      - 8d5f5f7 docs(plan)
+      - 2ed455c perf(daemon) result cache
+      - aa8e377 perf(daemon) defaults 50 clientes
+      - f206eaa feat(registry) gc
+      - f809372 perf(daemon) daemon-first nav.ask/search/pack
+      - 3909c9d docs(wiki) 07/09 sync
+  mi-pi:
+    branch: feat/max-opt-wave1
+    base: main@ecff451
+    commits:
+      - 7afa79f perf(native-milsp) tier-2 cache
+      - 182abb3 feat(workers) NaN scheduler + evidencia
+      - bd01826 chore(tmp) pi-tmp-clean
+      - a17d10d docs(wiki) 08/10 sync
+  buho-assets:
+    branch: main
+    commits:
+      - 3027abd docs(skill) ae-worker-pi mirror sync
+goals:
+  G1_mipi:
+    verdict: PASS
+    evidence:
+      - smoke native-milsp PASS (native-milsp-smoke-20260709T202314z tras fixes)
+      - smoke contencion slots: 3 adquiridos, 4to nan_slot_queue_timeout, re-adquisicion OK
+      - dry-run evidencia: 4 yaml con verdict DRY_RUN fiel, 8 milsp_tools, reason correcto
+      - .tmp: 121 dirs / 215 MB liberados; report-empty 0 hallazgos
+  G2_milsp:
+    verdict: PASS
+    evidence:
+      - go build/vet/test ./... completos en verde (gate T8)
+      - binario arm64 instalado sha256 81a3206dfbfdc4ce4591bd8425250170f3d25853885b0633778d415f0570dcfe
+      - daemon run 113 con max_workers 6; result_cache hits=1 verificado en vivo con 2x nav ask
+      - registry gc dry-run operativo (49 muertos detectados con binario go run; 1 con binario instalado post-limpieza previa)
+  G3_canon:
+    verdict: PASS
+    evidence:
+      - skill ae-worker-pi + mirror buho identicos (sha256 3975E9A6...)
+      - governance blocked=false + in_sync en mi-lsp y mi-pi tras reindex
+runtime_sensitive: true
+runtime_evidence:
+  - daemon reiniciado con binario nuevo (run 113); workspace status verde
+  - result_cache stats expuestos en system.status
+review_gates:
+  wave1: FIX_FIRST -> 7 fixes aplicados -> verify verde
+  wave2: FIX_FIRST -> 3 fixes aplicados (1 critico cache-key) -> verify verde
+worker_registry: .docs/auditoria/2026-07-09-max-optimizacion-milsp-mipi/claude-code/worker-registry.yaml
+worker_join_verdict: PASS (joins verificados contra artefactos en disco)
+known_followups:
+  - posible drift documental: CT-CLI-DAEMON-ADMIN documenta "workspace prune --stale" mientras T7 implemento "registry gc" — verificar en audit si son comandos distintos coexistentes o error de doc
+  - release multi-plataforma (linux/osx/win-x64) quedo corriendo asincronicamente; win-arm64 (maquina) verificado
+  - hash previo de la skill (4784ef07...) ya no coincidia al iniciar T9 (line endings); invariante skill==mirror verificado antes y despues
+  - evidencia de smokes en mi-pi (.docs/auditoria/native-milsp-smoke-*) sin trackear; promover en el push final si corresponde (gitignore parcial)
+pre_push_inputs:
+  issue_or_waiver: user_direct_request_no_tracker_card
+  session_contract_path: .docs/auditoria/2026-07-09-max-optimizacion-milsp-mipi/session-contract.yaml
+completion_handoff:
+  disposition: branches_ready_for_audit_then_guarded_pr_integration
+  next: ps-auditar-trazabilidad (independiente) -> pre-push-guard -> PRs

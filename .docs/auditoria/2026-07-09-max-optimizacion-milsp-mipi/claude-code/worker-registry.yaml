@@ -1,0 +1,119 @@
+schema: claude-code-worker-registry/v1
+session: 2026-07-09-max-optimizacion-milsp-mipi
+orchestration_role: strategic_root
+adapter: ae-adapter-claude-code
+leaf_policy: ae-worker-pi (supervisores sonnet; lanes pi opcionales por descubrimiento)
+lanes:
+  - id: explore-mipi-provider
+    phase: diagnostico
+    mechanism: agent_tool_background
+    model_requested: sonnet
+    verdict: DONE
+    output: mapa de hot paths del provider nativo + call-sites mi-lsp + rate limits NaN
+  - id: explore-milsp-daemon
+    phase: diagnostico
+    mechanism: agent_tool_background
+    model_requested: sonnet
+    verdict: DONE
+    output: modelo de procesos/daemon, exclusion de nav.ask/search/pack, limites, telemetria
+  - id: explore-telemetria
+    phase: diagnostico
+    mechanism: agent_tool_background
+    model_requested: sonnet
+    verdict: DONE
+    output: 240MB ~/.mi-lsp, 273MB .tmp/5827 dirs, 16 node/1.88GB RAM, WAL 5.7MB, registry 493
+  - id: plan-review
+    phase: plan
+    mechanism: agent_tool_background
+    model_requested: sonnet
+    verdict: NEEDS_FIX_APPLIED
+    output: 2 ambiguedades endurecidas (T4 exclusion-list, T2 punto de integracion + schema yaml)
+  - id: T1-cache-tier2
+    phase: wave1
+    mechanism: agent_tool_background
+    model_requested: sonnet
+    verdict: DONE
+    note: interrumpida por usuario y luego caida de conexion API; trabajo completo verificado en disco (+147/-8, smoke PASS)
+  - id: T2-scheduler-nan
+    phase: wave1
+    mechanism: agent_tool_background
+    model_requested: sonnet
+    verdict: DONE
+  - id: T3-higiene-tmp
+    phase: wave1
+    mechanism: agent_tool_background
+    model_requested: sonnet
+    model_observed: haiku (self-report; clamp del harness registrado como limits_observed)
+    verdict: DONE
+    output: 215 MB / 121 dirs liberados
+  - id: review-wave1
+    phase: wave1_verify
+    mechanism: agent_tool_background
+    model_requested: sonnet
+    verdict: FIX_FIRST (7 findings)
+  - id: fix-wave1
+    phase: wave1_verify
+    mechanism: agent_tool_background
+    model_requested: sonnet
+    verdict: DONE
+    note: fix del fd-leak corregido por el root (mantener openSync wx + closeSync; el fix sugerido por review rompia exclusion mutua)
+  - id: T4-daemon-first
+    phase: wave2
+    mechanism: agent_tool_background
+    model_requested: sonnet
+    verdict: DONE (bloqueo transitorio por build cruzado de T7, resuelto solo)
+  - id: T5-result-cache
+    phase: wave2
+    mechanism: agent_tool_background
+    model_requested: sonnet
+    verdict: DONE
+  - id: T6-tuning
+    phase: wave2
+    mechanism: agent_tool_background
+    model_requested: sonnet
+    model_observed: haiku (self-report)
+    verdict: DONE
+    note: desviacion softMemoryThresh 500->1024 detectada por review y revertida en fix-wave2
+  - id: T7-registry-gc
+    phase: wave2
+    mechanism: agent_tool_background
+    model_requested: sonnet
+    model_observed: haiku (self-report)
+    verdict: DONE
+    output: dry-run real detecto 49 workspaces muertos
+  - id: review-wave2
+    phase: wave2_verify
+    mechanism: agent_tool_background
+    model_requested: sonnet
+    verdict: FIX_FIRST (1 critico cache-key + soft-mem + validacion muerta)
+  - id: fix-wave2
+    phase: wave2_verify
+    mechanism: agent_tool_background
+    model_requested: sonnet
+    verdict: DONE
+    note: estrategia cache-key invertida a blacklist canonica por decision del root
+  - id: T8-release-gate
+    phase: wave3
+    mechanism: agent_tool_background
+    model_requested: sonnet
+    verdict: PASS
+    output: binario arm64 sha256 81a3206dfbfdc4ce4591bd8425250170f3d25853885b0633778d415f0570dcfe; daemon run 113; result_cache hits=1 en vivo
+    note: dejo docs de T10 en stash (restaurado por el root); waiver parcial de release por working tree sucio, install local OK
+  - id: T9-skills-sync
+    phase: wave3
+    mechanism: agent_tool_background
+    model_requested: sonnet
+    verdict: DONE
+    output: skill+mirror sha256 3975E9A60A4782575B4709805CBAE56D07A65726CF35143D6166A4666A8401BA
+  - id: T10-docs-sync
+    phase: wave3
+    mechanism: agent_tool_background
+    model_requested: sonnet
+    verdict: DONE
+    note: posible drift documental workspace prune vs registry gc — derivado al audit
+limits_observed:
+  - harness_model_clamp: lanes pidieron sonnet y algunas reportaron haiku (T3/T6/T7/T8); joins verificados contra artefactos en disco
+why_pi_leaf_lanes_limited: >
+  Wave 1 editaba el launcher pi mismo (prohibido lanzar workers live con el launcher a medio editar);
+  en Wave 2/3 los supervisores optaron por lectura directa registrando why_not_nan; el dry-run del
+  launcher y el smoke de contencion cubren la evidencia pi de esta sesion.
