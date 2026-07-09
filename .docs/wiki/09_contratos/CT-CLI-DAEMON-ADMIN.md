@@ -87,6 +87,18 @@ behavior:
   result: "purga SOLO aliases cuya raíz no existe; NO borra archivos ni worktrees"
 ```
 
+```toon
+block_id: CT-CLI-DAEMON-ADMIN.registry-gc-v1
+description: "Registry GC command (limpieza de aliases con raiz inexistente)"
+command_signature: "registry gc [--apply] [--dry-run]"
+behavior:
+  default: "dry-run preview"
+  --dry-run: "default true; lista candidatos alias/path/reason sin mutar"
+  --apply: "ejecuta la purga; crea backup registry.toml.bak-<timestamp>"
+  criteria: "purga SOLO aliases cuya workspace_root no existe (os.Stat NotExist); nunca por antiguedad ni por falta de index"
+  note: "coexiste con 'workspace prune --stale' (legacy compatible); mismo report WorkspacePruneReport"
+```
+
 Flags globales minimos:
 
 - `--workspace`
