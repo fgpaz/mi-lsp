@@ -98,6 +98,8 @@ type Manager struct {
 	watcherCtx       context.Context
 	watcherCancel    context.CancelFunc
 	failureCache     *failureCache
+	telemetryStore   *TelemetryStore
+	reapCount        int
 }
 
 func NewManager(repoRoot string, maxWorkers int, idleTimeout time.Duration) *Manager {
@@ -202,6 +204,12 @@ func (m *Manager) Status() []model.WorkerStatus {
 		return items[i].Workspace < items[j].Workspace
 	})
 	return items
+}
+
+func (m *Manager) SetTelemetryStore(ts *TelemetryStore) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.telemetryStore = ts
 }
 
 func (m *Manager) Shutdown() {
@@ -343,6 +351,22 @@ func (m *Manager) reapLoop() {
 			return
 		case <-ticker.C:
 			m.reapIdle()
+			m.checkpointWALIfNeeded()
+		}
+	}
+}
+
+func (m *Manager) checkpointWALIfNeeded() {
+	m.mu.Lock()
+	m.reapCount++
+	count := m.reapCount
+	store := m.telemetryStore
+	m.mu.Unlock()
+
+	if count%30 == 0 && store != nil {
+		if err := store.Checkpoint(); err != nil {
+			// Error is non-fatal; log to debug and continue.
+			log.Printf("[mi-lsp:daemon] WAL checkpoint failed (non-fatal): %v", err)
 		}
 	}
 }
@@ -469,19 +493,21 @@ func (m *Manager) releaseRuntime(managed *managedRuntime) {
 
 func (m *Manager) enforceIdleMemoryBoundsLocked(now time.Time) {
 	maxRuntimeBytes := runtimeMemoryLimitBytes("MI_LSP_DAEMON_MAX_RUNTIME_MEMORY_MB")
-	totalRuntimeBytes := runtimeMemoryLimitBytes("MI_LSP_DAEMON_TOTAL_RUNTIME_MEMORY_MB")
-	if maxRuntimeBytes == 0 && totalRuntimeBytes == 0 {
-		return
+	if maxRuntimeBytes == 0 {
+		maxRuntimeBytes = 1024 * 1024 * 1024 // 1024MB default
 	}
+	totalRuntimeBytes := runtimeMemoryLimitBytes("MI_LSP_DAEMON_TOTAL_RUNTIME_MEMORY_MB")
 
+	// Enforce per-runtime memory limit
 	for key, managed := range m.runtimes {
 		refreshManagedMemory(managed, now)
-		if maxRuntimeBytes > 0 && managed.activeCalls == 0 && managed.status.MemoryBytes > maxRuntimeBytes {
+		if managed.activeCalls == 0 && managed.status.MemoryBytes > maxRuntimeBytes {
 			_ = managed.client.Close()
 			delete(m.runtimes, key)
 		}
 	}
 
+	// Enforce total runtime memory limit if set
 	if totalRuntimeBytes == 0 {
 		return
 	}

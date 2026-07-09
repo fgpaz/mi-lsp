@@ -13,7 +13,7 @@ const (
 	WatchModeEager = "eager"
 
 	defaultMaxWatchedRoots = 8
-	defaultMaxInflight     = 16
+	defaultMaxInflight     = 48
 )
 
 type StartOptions struct {

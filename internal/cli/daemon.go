@@ -59,10 +59,10 @@ and tsserver processes, reducing cold-start latency.`,
 		},
 	}
 	startCommand.Flags().StringVar(&idleTimeout, "idle-timeout", "30m", "Worker idle eviction timeout")
-	startCommand.Flags().IntVar(&maxWorkers, "max-workers", 3, "Maximum active semantic workers")
+	startCommand.Flags().IntVar(&maxWorkers, "max-workers", 6, "Maximum active semantic workers (each Roslyn worker uses 100+ MB)")
 	startCommand.Flags().StringVar(&watchMode, "watch-mode", "", "File watcher mode: off|lazy|eager (default: env or lazy)")
 	startCommand.Flags().IntVar(&maxWatchedRoots, "max-watched-roots", 0, "Maximum active watched roots (default: env or 8)")
-	startCommand.Flags().IntVar(&maxInflight, "max-inflight", 0, "Maximum concurrent daemon-served heavy requests (default: env or 16)")
+	startCommand.Flags().IntVar(&maxInflight, "max-inflight", 0, "Maximum concurrent daemon-served heavy requests (default: env or 48)")
 
 	statusCommand := &cobra.Command{
 		Use:   "status",
@@ -165,7 +165,7 @@ and tsserver processes, reducing cold-start latency.`,
 		},
 	}
 	serveCommand.Flags().StringVar(&idleTimeout, "idle-timeout", "30m", "Worker idle eviction timeout")
-	serveCommand.Flags().IntVar(&maxWorkers, "max-workers", 3, "Maximum active semantic workers")
+	serveCommand.Flags().IntVar(&maxWorkers, "max-workers", 6, "Maximum active semantic workers (each Roslyn worker uses 100+ MB)")
 	serveCommand.Flags().StringVar(&watchMode, "watch-mode", "", "File watcher mode: off|lazy|eager")
 	serveCommand.Flags().IntVar(&maxWatchedRoots, "max-watched-roots", 0, "Maximum active watched roots")
 	serveCommand.Flags().IntVar(&maxInflight, "max-inflight", 0, "Maximum concurrent daemon-served heavy requests")
