@@ -68,19 +68,36 @@ Define el modelo canonico del daemon global, su governance UI workspace-first y 
   - `roslyn`
   - `tsserver`
 - Politica por defecto:
-  - `max_workers = 3`
+  - `max_workers = 6` (era 3)
   - `idle_timeout = 30m`
   - `watch_mode = lazy`
   - `max_watched_roots = 8`
-  - `max_inflight = 16`
+  - `max_inflight = 48` (era 16; env `MI_LSP_DAEMON_MAX_INFLIGHT`)
   - eviction `LRU`
 
-### Acceso compartido
+```toon
+block_id: TECH-DAEMON-GOBERNANZA.topology-defaults-v2
+description: "Daemon topology defaults updated for max concurrency"
+max_workers: 6
+max_inflight: 48
+max_runtime_memory_mb: 1024
+soft_memory_threshold_mb: 500
+wal_checkpoint_interval_sec: 1800
+result_cache:
+  enabled: true
+  max_entries: 256
+  ttl_minutes: 10
+  cacheable_ops: ["nav.ask", "nav.search", "nav.pack", "nav.governance", "nav.route"]
+  disable_env: "MI_LSP_DAEMON_RESULT_CACHE=0"
+  key_derivation: "sha256(workspace_root + generation(mtime index.db) + op + canonical_payload_json)"
+```
+
+### Acceso compartido y caching
 
 - El daemon vive fuera de la terminal que lo lanza.
 - Claude Code, Codex y subagentes deben poder conectarse al mismo daemon bajo el mismo usuario.
 - No todo `nav` debe pasar por el daemon: las lecturas baratas de catalogo/texto se resuelven directo en la CLI y reservan el daemon para queries semanticas o compuestas.
-- `nav.ask` tambien pertenece a ese camino directo por default; el daemon no debe convertirse en dependencia accidental de onboarding docs-first.
+- `nav.ask`, `nav.search`, `nav.pack` son daemon-elegibles cuando el daemon vive (sin auto-start forzado; fallback a directo intacto).
 - Cuando el daemon atiende diagnosticos administrativos como `worker status`, debe delegar al contrato canonico del core y no reinterpretar el payload como una lista cruda de runtimes.
 - Cada request debe incluir cuando esta disponible:
   - `client_name`
@@ -93,6 +110,7 @@ Define el modelo canonico del daemon global, su governance UI workspace-first y 
 - El watcher no arranca recursivamente sobre todos los aliases por default: `lazy` activa por root canonico, `eager` es opt-in y `off` deshabilita watchers.
 - Los watchers se deduplican por `workspace_root` canonico y se acotan por LRU con `max_watched_roots`; worktrees con roots distintos se observan por separado.
 - Requests pesadas daemon-aware se acotan con `max_inflight`; saturacion devuelve `daemon/backpressure_busy`.
+- Result cache LRU (256 entradas, TTL 10 min): cachea read-only ops (nav.ask/search/pack/governance/route) keyed por sha256(workspace_root + generacion(mtime index.db) + op + payload canonico sin session_id). Sin error-caching. Disable con `MI_LSP_DAEMON_RESULT_CACHE=0`. Stats en `system.status.result_cache: {hits, misses, entries}`.
 - Presupuesto SLO local: `daemon perf-smoke` valida callers paralelos contra working set, private bytes y handles; cualquier excedente debe devolver envelope `ok=false` tipado y dejar warning accionable, no un pass degradado.
 
 ### Governance UI
