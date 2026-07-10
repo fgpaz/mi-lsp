@@ -1,6 +1,6 @@
 schema: ps-auditar-trazabilidad/v1
 session: 2026-07-09-wave5-full-optimization
-verdict: APPROVED_PREMERGE
+verdict: APPROVED
 scope_complete: true
 findings:
   critical: []
@@ -20,7 +20,11 @@ independent_review:
   status: environment_failed_local_takeover
   evidence: C:/wt/mi-pi-wave5/.docs/auditoria/2026-07-09-wave5-full-optimization/independent-audit/
   compensating_controls: [full Go suite, release artifact hashes, installed runtime readback, remote GitHub CI pending]
-conditions_to_final_approval:
-  - GitHub CI green on Windows and Linux
-  - public release workflow green before release node PASS
-next_action: PR and remote CI
+remote_ci:
+  runs:
+    - https://github.com/fgpaz/mi-lsp/actions/runs/29070307897
+    - https://github.com/fgpaz/mi-lsp/actions/runs/29070316823
+  ubuntu-latest: PASS
+  windows-latest: PASS
+release_boundary: public release workflow must be green before release node PASS
+next_action: guarded merge, then public release gate

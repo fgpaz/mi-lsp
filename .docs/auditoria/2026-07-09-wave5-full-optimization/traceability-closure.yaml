@@ -1,6 +1,6 @@
 schema: ps-trazabilidad-closure/v1
 session: 2026-07-09-wave5-full-optimization
-status: PREPUBLISH_READY
+status: INTEGRATION_APPROVED
 scope:
   - prune empty-root aliases as safe registry hygiene candidates
   - prevent generic README FTS noise from outranking positive canonical owners
@@ -21,7 +21,7 @@ worker_audit:
   result: environment_failed_local_takeover
   evidence: C:/wt/mi-pi-wave5/.docs/auditoria/2026-07-09-wave5-full-optimization/independent-audit/
 pending_gates:
-  - GitHub PR CI on Windows and Linux
+  - GitHub PR CI passed on Windows and Linux (runs 29070307897 and 29070316823)
   - guarded merge to main
   - v0.5.11 tag, release workflow and six public assets plus checksums
 next_action: open PR, wait for CI, merge, rebuild provenance from main, then publish only through explicit irreversible gate
