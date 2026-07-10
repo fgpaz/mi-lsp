@@ -41,5 +41,11 @@ canon_implementation_alignment:
 tracker: NOT_APPLICABLE
 branch_disposition: active-followup
 cleanup_policy: auto-after-successful-integration
-pre_push_readiness: READY_PENDING_GUARD
+pre_push_guard:
+  verdict: PASS
+  initial_tested_head: 3751dda
+  dirty_count: 0
+  diff_count: 0
+  ae_canon_status: valid
+pre_push_readiness: APPROVED_FINAL_RECHECK_BEFORE_PUSH
 post_audit_no_drift: PASS
