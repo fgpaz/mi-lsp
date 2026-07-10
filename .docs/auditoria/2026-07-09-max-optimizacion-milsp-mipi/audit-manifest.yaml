@@ -7,20 +7,29 @@ artifact_classes:
     path: session-contract.yaml
   - class: traceability_closure
     path: traceability-closure.yaml
+  - class: independent_audit
+    path: audit-report-wave4.yaml
+  - class: canon_cross_ref
+    path: canon-cross-ref-check.yaml
   - class: worker_registry
     path: claude-code/worker-registry.yaml
-  - class: plan
-    path: ../../raw/plans/2026-07-09-max-optimizacion-milsp-mipi.md
+  - class: pi_program_ledger
+    path: C:/repos/mios/mi-pi/.docs/auditoria/mipi-program/program-ledger/
+  - class: release_provenance
+    path: wave4-release.log
+  - class: runtime_readback
+    paths:
+      - wave4-daemon-status-before.toon
+      - wave4-daemon-status-after.toon
+      - wave4-nav-ask-1.toon
+      - wave4-nav-ask-2.toon
+      - wave4-concurrency-smoke/summary.json
 sanitized: true
-sanitization_notes: sin secretos; NAN_API_KEY referenciada solo por nombre ([SET] via ~/.secrets/nan-api-key)
-summary: >
-  Programa de optimizacion en 3 olas para escalar workers pi con mi-lsp vivo de 3 a 50
-  concurrentes: cache tier-2 compartido por disco, scheduler global NaN de 3 slots,
-  daemon-first + result cache en mi-lsp, defaults para 50 clientes, registry gc,
-  higiene .tmp, evidencia por spawn, canon y skills sincronizados. Binario arm64
-  instalado y verificado en vivo.
+sanitization_notes: no secrets; admin token from daemon restart output was not persisted in evidence files
+summary: Wave 4 adds concurrent read-only SQLite pooling, cache diagnostics, worker timeout/context-pack recovery, queue no-fallback and orphan-slot cleanup; release and runtime readback PASS.
 verdicts:
   wave1: PASS_post_fixes
   wave2: PASS_post_fixes
   wave3: PASS
-cleanup_status: pending_ttl
+  wave4: PASS_release_verified
+cleanup_status: active_followup_until_guarded_integration

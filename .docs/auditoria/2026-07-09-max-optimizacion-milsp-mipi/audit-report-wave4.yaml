@@ -1,16 +1,11 @@
 schema: traceability-audit/v1
 session: 2026-07-09-max-optimizacion-milsp-mipi
 scope: W4A mi-lsp + W4B mi-pi
-verdict: Blocked
+verdict: Approved
 findings:
   critical: []
   high: []
-  medium:
-    - id: RUNTIME-READBACK-PENDING
-      description: Runtime-sensitive Wave 4 source is not yet built into the installed binary/daemon; live result-cache and multi-client readback must run after clean commits.
-      owner: release_lane
-      next_action: build/install fresh binary, restart daemon, run 2x daemon query and concurrency smoke, then refresh traceability/audit
-      recheck_rule: audit may become Approved only when installed SHA/provenance and live smoke evidence exist
+  medium: []
   low:
     - id: REVIEWER-SCOPE-LIMIT
       description: W4A independent reviewer did not include result_cache_test.go and incorrectly said dedicated cache tests were absent; parent verification confirmed result_cache_test.go exists and go test ./... passes.
@@ -32,7 +27,13 @@ worker_join:
 false_pass_audit:
   worker_only_promoted_to_runtime_go: false
   local_tests_promoted_to_installed_binary_go: false
-  live_runtime_missing_visible: true
+  live_runtime_missing_visible: false
+runtime_readback:
+  verdict: PASS
+  installed_sha256: 0f0d99f5c97015442cedec38aa652700030114aede10b8e8a1d114862db29af7
+  daemon_run_id: 116
+  result_cache: {hits: 1, misses: 1, entries: 1}
+  concurrency_smoke: {requests: 12, exit_zero: 12, stderr_nonempty: 0}
 canon_implementation_alignment:
   w4a: PASS_TARGETED
   w4b: PASS_TARGETED
@@ -40,5 +41,5 @@ canon_implementation_alignment:
 tracker: NOT_APPLICABLE
 branch_disposition: active-followup
 cleanup_policy: auto-after-successful-integration
-pre_push_readiness: BLOCKED_BY_RUNTIME_READBACK
+pre_push_readiness: READY_PENDING_GUARD
 post_audit_no_drift: PASS

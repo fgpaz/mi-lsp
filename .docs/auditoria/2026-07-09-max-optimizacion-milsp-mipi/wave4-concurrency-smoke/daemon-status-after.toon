@@ -1,0 +1,48 @@
+backend: daemon
+items[1]:
+  - active_runtimes[0]:
+    daemon_process:
+      handle_count: 294
+      pid: 60992
+      private_bytes: 27451392
+      thread_count: 33
+      working_set_bytes: 29392896
+    recent_accesses[5]{backend,client_name,decision_hash,failure_stage,format,hint_code,id,latency_ms,max_items,occurred_at,operation,pattern_mode,route,routing_outcome,seq,session_id,success,token_budget,truncation_reason,workspace,workspace_input}:
+      text,ae-adapter-pi,39349295ec4a,none,toon,no_matches,77517,3872,5,"2026-07-09T21:35:35-03:00",nav.search,literal,daemon,direct,6,2026-07-09-wave4-concurrency,true,4000,none,mi-lsp,"C:/repos/mios/mi-lsp"
+      text,ae-adapter-pi,3f0f073938d0,none,toon,no_matches,77516,3580,5,"2026-07-09T21:35:34-03:00",nav.search,literal,daemon,direct,5,2026-07-09-wave4-concurrency,true,4000,none,mi-lsp,"C:/repos/mios/mi-lsp"
+      text,ae-adapter-pi,39349295ec4a,none,toon,no_matches,77515,3362,5,"2026-07-09T21:35:34-03:00",nav.search,literal,daemon,direct,5,2026-07-09-wave4-concurrency,true,4000,none,mi-lsp,"C:/repos/mios/mi-lsp"
+      text,ae-adapter-pi,39349295ec4a,none,toon,no_matches,77514,3333,5,"2026-07-09T21:35:34-03:00",nav.search,literal,daemon,direct,5,2026-07-09-wave4-concurrency,true,4000,none,mi-lsp,"C:/repos/mios/mi-lsp"
+      text,ae-adapter-pi,3f0f073938d0,none,toon,no_matches,77513,3460,5,"2026-07-09T21:35:34-03:00",nav.search,literal,daemon,direct,5,2026-07-09-wave4-concurrency,true,4000,none,mi-lsp,"C:/repos/mios/mi-lsp"
+    result_cache:
+      entries: 13
+      hits: 1
+      misses: 13
+    state:
+      admin_token: 5af7a76143cd20f9f388835c1a180e7af453cfdae23f3a3a7f7b212cf26dffc9
+      admin_url: "http://127.0.0.1:52354"
+      endpoint: "\\\\.\\pipe\\mi-lsp-fgpaz"
+      executable_mtime: "2026-07-09T21:33:37.0858178-03:00"
+      executable_path: "C:\\Users\\fgpaz\\bin\\mi-lsp.exe"
+      executable_sha256: 0f0d99f5c97015442cedec38aa652700030114aede10b8e8a1d114862db29af7
+      executable_size: 14147072
+      idle_timeout: 30m0s
+      max_inflight: 48
+      max_watched_roots: 8
+      max_workers: 6
+      pid: 60992
+      protocol_version: mi-lsp-v1.1
+      repo_root: "C:\\repos\\mios\\mi-lsp"
+      run_id: 116
+      started_at: "2026-07-09T21:35:06.6437489-03:00"
+      version: v0.5.10-0.20260710003254-a7b7dad49b7b
+      watch_mode: lazy
+    watchers:
+      max_watched_roots: 8
+      mode: lazy
+      pending_events: 0
+      watched_dirs: 0
+      watched_roots: 0
+ok: true
+stats:
+  tokens_est: 621
+truncated: false

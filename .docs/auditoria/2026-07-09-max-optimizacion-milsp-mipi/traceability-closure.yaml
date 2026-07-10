@@ -10,8 +10,8 @@ git_before:
   mi-lsp: {branch: feat/max-opt-program, head: 64906eb1b35a307a381a0770ea24fae7407604e3, upstream: none, ahead_origin_main: 8, behind_origin_main: 0}
   mi-pi: {branch: feat/max-opt-wave1, head: a17d10dba31dd13ed66402f6676123689c0510ce, upstream: none, ahead_origin_main: 4, behind_origin_main: 0}
 git_after:
-  mi-lsp: {branch: feat/max-opt-program, head: 64906eb1b35a307a381a0770ea24fae7407604e3, working_diff: wave4_pending_commit}
-  mi-pi: {branch: feat/max-opt-wave1, head: a17d10dba31dd13ed66402f6676123689c0510ce, working_diff: wave4_pending_commit}
+  mi-lsp: {branch: feat/max-opt-program, head: a7b7dad49b7bad4bacf6cc7be761c7673d859c2d, working_diff: closure_runtime_evidence_only}
+  mi-pi: {branch: feat/max-opt-wave1, head: e82588f, working_diff: closure_evidence_only}
 expected_scope: W4A mi-lsp SQLite read pool/result-cache diagnostics plus W4B mi-pi timeout/context-pack/scheduler recovery, docs and evidence closure
 changed_paths:
   tracked:
@@ -49,7 +49,19 @@ runtime_evidence:
     - node --test scripts/nan-slots.test.mjs 4/4 PASS
     - native mi-lsp smoke PASS
     - queue no-fallback smoke PASS with attempts=1 and QUEUE_TIMEOUT evidence
-  release_lane: pending fresh binary build/install, daemon restart, 2x daemon query cache readback and multi-client smoke
+  release_lane:
+    verdict: PASS
+    installed_version: v0.5.10-0.20260710003254-a7b7dad49b7b
+    installed_sha256: 0f0d99f5c97015442cedec38aa652700030114aede10b8e8a1d114862db29af7
+    vcs_revision: a7b7dad49b7bad4bacf6cc7be761c7673d859c2d
+    daemon: {run_id: 116, max_workers: 6, max_inflight: 48}
+    cache_readback: {before_hits: 0, before_misses: 0, after_hits: 1, after_misses: 1, entries: 1}
+    concurrency_smoke: {requests: 12, exit_zero: 12, stderr_nonempty: 0, cache_entries_after: 13, cache_misses_after: 13}
+    evidence:
+      - .docs/auditoria/2026-07-09-max-optimizacion-milsp-mipi/wave4-release.log
+      - .docs/auditoria/2026-07-09-max-optimizacion-milsp-mipi/wave4-daemon-status-before.toon
+      - .docs/auditoria/2026-07-09-max-optimizacion-milsp-mipi/wave4-daemon-status-after.toon
+      - .docs/auditoria/2026-07-09-max-optimizacion-milsp-mipi/wave4-concurrency-smoke/summary.json
 data_or_contract_sensitive: true
 data_authoring_gate:
   crear_modelo_de_datos: NOT_APPLICABLE (no semantic entity/schema change)
@@ -97,15 +109,14 @@ no_drift_snapshot:
     - git status --short --branch (both repos)
     - git diff --check (both repos)
     - mi_lsp_workspace_status + mi_lsp_governance (both repos)
-  result: PASS_at_evidence_write
+  result: PASS_after_runtime_readback
 completion_handoff:
   target_skill: finishing-a-development-branch
   branch_disposition: integrate-main
   cleanup_policy: auto-after-successful-integration
   executable_after:
     - independent audit Approved
-    - release/runtime readback PASS
     - repo pre-push guards Approved
     - PR CI green
-  blockers: [release_lane_runtime_readback_pending, independent_audit_pending, pre_push_pending]
-final_closure_verdict: WARN_PENDING_RELEASE_AND_INTEGRATION
+  blockers: [pre_push_pending]
+final_closure_verdict: PASS_LOCAL_RELEASE_VERIFIED_PENDING_INTEGRATION
