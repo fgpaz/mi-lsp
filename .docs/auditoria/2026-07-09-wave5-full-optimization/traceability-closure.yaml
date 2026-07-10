@@ -1,0 +1,27 @@
+schema: ps-trazabilidad-closure/v1
+session: 2026-07-09-wave5-full-optimization
+status: PREPUBLISH_READY
+scope:
+  - prune empty-root aliases as safe registry hygiene candidates
+  - prevent generic README FTS noise from outranking positive canonical owners
+  - honor JSON and compact output for admin export summary
+  - validate six-RID Windows/Linux/macOS release bundles and installed worker readback
+implementation_commit: f81f6e9 fix(routing): harden registry hygiene and canonical ranking
+verification:
+  go_build: PASS
+  go_vet: PASS
+  go_test_all: PASS
+  route_readback: PASS (release/route-readback.toon -> AE-RELEASE-DISTRIBUTION)
+  telemetry_json_summary: PASS (release/telemetry-readback.json)
+  six_rid_build: PASS (release/multi-rid-build.json)
+  artifact_hash_manifest: PASS (release/artifact-manifest.json)
+  local_install_worker_status: PASS (release/install-readback.json)
+  wsl_install_worker_status: PASS (release/install-readback.json)
+worker_audit:
+  result: environment_failed_local_takeover
+  evidence: C:/wt/mi-pi-wave5/.docs/auditoria/2026-07-09-wave5-full-optimization/independent-audit/
+pending_gates:
+  - GitHub PR CI on Windows and Linux
+  - guarded merge to main
+  - v0.5.11 tag, release workflow and six public assets plus checksums
+next_action: open PR, wait for CI, merge, rebuild provenance from main, then publish only through explicit irreversible gate

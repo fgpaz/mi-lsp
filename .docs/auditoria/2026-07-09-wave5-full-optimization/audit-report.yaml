@@ -1,0 +1,26 @@
+schema: ps-auditar-trazabilidad/v1
+session: 2026-07-09-wave5-full-optimization
+verdict: APPROVED_PREMERGE
+scope_complete: true
+findings:
+  critical: []
+  high: []
+  medium: []
+  repaired:
+    - admin export summary now respects JSON and compact formats
+checks:
+  governance: PASS
+  full_go_suite: PASS
+  canonical_route_regression: PASS
+  registry_empty_root_regression: PASS
+  six_rid_bundle_build: PASS
+  local_and_wsl_readback: PASS
+  docs_contract_sync: PASS
+independent_review:
+  status: environment_failed_local_takeover
+  evidence: C:/wt/mi-pi-wave5/.docs/auditoria/2026-07-09-wave5-full-optimization/independent-audit/
+  compensating_controls: [full Go suite, release artifact hashes, installed runtime readback, remote GitHub CI pending]
+conditions_to_final_approval:
+  - GitHub CI green on Windows and Linux
+  - public release workflow green before release node PASS
+next_action: PR and remote CI

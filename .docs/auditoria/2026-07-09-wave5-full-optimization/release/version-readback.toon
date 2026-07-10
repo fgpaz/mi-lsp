@@ -1,0 +1,8 @@
+backend: version
+items[1]{cli_path,command,executable_sha256,go_version,goarch,goos,module_path,protocol_version,tool_root,version,worker_rid}:
+  "C:\\Users\\fgpaz\\bin\\mi-lsp.exe",mi-lsp,b39e460ce75f421de1d98130fe3a582d1113ca85261283c0a557c36d1ae4cd2c,go1.24.4,arm64,windows,github.com/fgpaz/mi-lsp,mi-lsp-v1.1,"C:\\wt\\mi-lsp-wave5",(devel),win-arm64
+ok: true
+stats:
+  files: 1
+  tokens_est: 100
+truncated: false

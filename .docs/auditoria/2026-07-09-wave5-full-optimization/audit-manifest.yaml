@@ -11,4 +11,4 @@ artifact_classes:
 sanitized: true
 sanitization_notes: no admin tokens, secrets, or raw customer data retained
 summary: Wave 5 mi-lsp routing telemetry hardening and public release.
-cleanup_status: active
+cleanup_status: premerge_ready

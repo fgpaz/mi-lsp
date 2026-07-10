@@ -24,7 +24,7 @@ required_evidence:
   - telemetry baseline and final comparison
   - deterministic route/edit-plan/status/index regressions
   - concurrent benchmark
-  - four-RID build and checksum evidence
+  - six-RID build and checksum evidence
   - local install and runtime readback
   - GitHub PR CI and release gate
 stop_conditions:
