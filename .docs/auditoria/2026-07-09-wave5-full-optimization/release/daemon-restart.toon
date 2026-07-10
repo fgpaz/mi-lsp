@@ -1,0 +1,28 @@
+backend: daemon
+items[1]:
+  - already_running: false
+    restarted: true
+    started: true
+    state:
+      admin_token: cbfb815a17bb77a6e467279bea061061b912b6dea4d2c2a8e68504b37968fc89
+      admin_url: "http://127.0.0.1:52521"
+      endpoint: "\\\\.\\pipe\\mi-lsp-fgpaz"
+      executable_mtime: "2026-07-10T01:30:56.1431811-03:00"
+      executable_path: "C:\\Users\\fgpaz\\bin\\mi-lsp.exe"
+      executable_sha256: b39e460ce75f421de1d98130fe3a582d1113ca85261283c0a557c36d1ae4cd2c
+      executable_size: 14149120
+      idle_timeout: 30m0s
+      max_inflight: 48
+      max_watched_roots: 8
+      max_workers: 6
+      pid: 36456
+      protocol_version: mi-lsp-v1.1
+      repo_root: "C:\\wt\\mi-lsp-wave5"
+      run_id: 117
+      started_at: "2026-07-10T01:33:53.9530165-03:00"
+      version: (devel)
+      watch_mode: lazy
+ok: true
+stats:
+  tokens_est: 214
+truncated: false

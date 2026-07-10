@@ -1,0 +1,14 @@
+schema: ae-audit-hygiene/v1
+session: 2026-07-09-wave5-full-optimization
+retention_ttl_days: 14
+hash_algorithm: sha256
+artifact_classes:
+  - {class: session_contract, path: session-contract.yaml}
+  - {class: traceability_closure, path: traceability-closure.yaml}
+  - {class: telemetry_baseline, path: telemetry/}
+  - {class: release, path: release/}
+  - {class: audit, path: audit-report.yaml}
+sanitized: true
+sanitization_notes: no admin tokens, secrets, or raw customer data retained
+summary: Wave 5 mi-lsp routing telemetry hardening and public release.
+cleanup_status: integration_ready

@@ -276,7 +276,12 @@ func PruneStaleWorkspaces(apply bool) (WorkspacePruneReport, error) {
 	for _, name := range names {
 		ws := registry.Workspaces[name]
 		if strings.TrimSpace(ws.Root) == "" {
-			report.Skipped = append(report.Skipped, WorkspaceStalePath{Alias: name, Root: ws.Root, Error: "empty root; skipped"})
+			candidate := WorkspaceStalePath{Alias: name, Root: ws.Root, Error: "empty root"}
+			report.Candidates = append(report.Candidates, candidate)
+			if apply {
+				delete(registry.Workspaces, name)
+				report.Removed = append(report.Removed, candidate)
+			}
 			continue
 		}
 		if _, statErr := os.Stat(ws.Root); statErr == nil {
@@ -333,7 +338,12 @@ func GarbageCollectRegistry(apply bool) (WorkspacePruneReport, error) {
 	for _, name := range names {
 		ws := registry.Workspaces[name]
 		if strings.TrimSpace(ws.Root) == "" {
-			report.Skipped = append(report.Skipped, WorkspaceStalePath{Alias: name, Root: ws.Root, Error: "empty root; skipped"})
+			candidate := WorkspaceStalePath{Alias: name, Root: ws.Root, Error: "empty root"}
+			report.Candidates = append(report.Candidates, candidate)
+			if apply {
+				delete(registry.Workspaces, name)
+				report.Removed = append(report.Removed, candidate)
+			}
 			continue
 		}
 		if _, statErr := os.Stat(ws.Root); statErr == nil {
