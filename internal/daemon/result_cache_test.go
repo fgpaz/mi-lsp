@@ -4,11 +4,85 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/fgpaz/mi-lsp/internal/model"
+	"github.com/fgpaz/mi-lsp/internal/service"
 )
+
+func TestCacheGenerationValueEncodesStringsWithoutFmtArtifacts(t *testing.T) {
+	if got := cacheGenerationValue("generation-1"); got != "generation-1" {
+		t.Fatalf("generation encoding = %q, want generation-1", got)
+	}
+}
+
+func TestPreparationCacheArgsChangeForTaskPlanAndAffectedPaths(t *testing.T) {
+	base := model.CommandRequest{Operation: "nav.prepare", Payload: map[string]any{"task": "one", "plan": "plan-one", "affected_paths": []string{"a.go"}}}
+	changed := []model.CommandRequest{
+		{Operation: "nav.prepare", Payload: map[string]any{"task": "two", "plan": "plan-one", "affected_paths": []string{"a.go"}}},
+		{Operation: "nav.prepare", Payload: map[string]any{"task": "one", "plan": "plan-two", "affected_paths": []string{"a.go"}}},
+		{Operation: "nav.prepare", Payload: map[string]any{"task": "one", "plan": "plan-one", "affected_paths": []string{"b.go"}}},
+	}
+	baseKey, err := resultCacheKey("/workspace", "nav.prepare", "generation-1", extractCanonicalArgs(base))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, request := range changed {
+		key, err := resultCacheKey("/workspace", "nav.prepare", "generation-1", extractCanonicalArgs(request))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if key == baseKey {
+			t.Fatalf("request %#v reused base cache key", request.Payload)
+		}
+	}
+}
+
+func TestPreparationCacheIdentityChangesWithGovernanceAndGeneration(t *testing.T) {
+	root := t.TempDir()
+	gov := filepath.Join(root, ".docs", "wiki")
+	if err := os.MkdirAll(gov, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(gov, "00_gobierno_documental.md")
+	if err := os.WriteFile(path, []byte("one"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	first := service.PreparationGovernanceDigest(root)
+	if err := os.WriteFile(path, []byte("two"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	second := service.PreparationGovernanceDigest(root)
+	if first == second || first == "" || second == "" {
+		t.Fatalf("governance digests = %q, %q", first, second)
+	}
+	args := map[string]any{"_governance_digest": first}
+	key1, _ := resultCacheKey(root, "nav.prepare", "generation-1", args)
+	args["_governance_digest"] = second
+	key2, _ := resultCacheKey(root, "nav.prepare", "generation-1", args)
+	key3, _ := resultCacheKey(root, "nav.prepare", "generation-2", args)
+	if key1 == key2 || key2 == key3 {
+		t.Fatal("cache identity did not change for governance or generation")
+	}
+}
+
+func TestPreparationCacheIdentityCanonicalizesAliases(t *testing.T) {
+	root := t.TempDir()
+	alias := filepath.Join(root, "nested", "..")
+	left, _, err := service.PreparationCacheIdentity(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	right, _, err := service.PreparationCacheIdentity(alias)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if left != right {
+		t.Fatalf("canonical roots differ: %q vs %q", left, right)
+	}
+}
 
 func TestResultCachePutGet(t *testing.T) {
 	rc := newResultCache()
@@ -169,15 +243,15 @@ func TestResultCacheStatsHitMiss(t *testing.T) {
 
 func TestIsCacheableOp(t *testing.T) {
 	tests := map[string]bool{
-		"nav.ask":      true,
-		"nav.search":   true,
-		"nav.pack":     true,
-		"nav.governance": true,
-		"nav.route":    true,
-		"workspace.add": false,
+		"nav.ask":          true,
+		"nav.search":       true,
+		"nav.pack":         true,
+		"nav.governance":   true,
+		"nav.route":        true,
+		"workspace.add":    false,
 		"workspace.status": false,
-		"system.stop":   false,
-		"unknown":       false,
+		"system.stop":      false,
+		"unknown":          false,
 	}
 
 	for op, expected := range tests {

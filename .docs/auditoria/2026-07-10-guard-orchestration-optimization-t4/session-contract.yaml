@@ -1,0 +1,42 @@
+schema: ae-session-contract/v1
+task_slug: guard-orchestration-optimization-t4-direct-luna-repair
+issue_or_waiver: repair-packet-from-independent-review-luna-fail
+base_ref: 56af5f294be52d5ed2bead7c66d388428988c4a7
+base_sha: 56af5f294be52d5ed2bead7c66d388428988c4a7
+branch: feat/semantic-prepare-api
+worktree_path: C:/wt/mi-lsp-semantic-prepare-api
+expected_scope:
+  - repair current T4 semantic-preparation diff findings
+  - add focused tests and durable worker-final evidence
+allowed_paths:
+  - internal/service/prepare.go
+  - internal/service/prepare_test.go
+  - internal/service/edit_plan.go
+  - internal/store/meta.go
+  - internal/store/meta_generation_test.go
+  - internal/daemon/result_cache.go
+  - internal/daemon/server.go
+  - .docs/wiki/09_contratos/CT-NAV-EDIT-PLAN.md
+  - .docs/auditoria/2026-07-10-guard-orchestration-optimization-t4/**
+forbidden_paths:
+  - .docs/wiki/00_gobierno_documental.md
+  - .docs/wiki/_mi-lsp/read-model.toml
+  - commits
+  - pushes
+  - releases
+required_evidence:
+  - worker-final/v1 JSON
+  - gofmt
+  - targeted Go tests
+  - go test ./...
+  - go vet ./...
+  - git diff --check
+branch_disposition: hold
+cleanup_policy: hold
+touched_cards: not_applicable
+worker_decision: none
+why_no_worker: locked leaf repair packet explicitly forbids delegation; direct-luna is the authorized leaf executor
+stop_if:
+  - governance_blocked=true
+  - any required test fails
+  - scope requires unrelated architecture refactor
