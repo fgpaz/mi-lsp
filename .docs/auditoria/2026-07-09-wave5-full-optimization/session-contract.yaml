@@ -44,4 +44,7 @@ mi_lsp_preflight:
   governance_blocked: false
   docs_ready: true
   doc_count: 122
-  ae_canon: {status: valid, roots: [.docs/wiki/ae], blocking: false}
+  ae_canon:
+    status: valid
+    roots: [.docs/wiki/ae]
+    blocking: false
