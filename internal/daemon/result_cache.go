@@ -14,6 +14,14 @@ const (
 	resultCacheMaxSize   = 256
 )
 
+// minInt returns the minimum of two integers.
+func minInt(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}
+
 // resultCache holds cached operation results keyed by workspace, generation, op, and query hash.
 type resultCache struct {
 	mu      sync.Mutex
@@ -83,9 +91,14 @@ func (rc *resultCache) get(key string) ([]byte, bool) {
 	rc.mu.Lock()
 	defer rc.mu.Unlock()
 
+	debugEnabled := os.Getenv("MI_LSP_DAEMON_RESULT_CACHE_DEBUG") != ""
+
 	entry, ok := rc.entries[key]
 	if !ok {
 		rc.misses++
+		if debugEnabled {
+			fmt.Fprintf(os.Stderr, "[cache:miss] key=%s entries=%d\n", key[:minInt(12, len(key))], len(rc.entries))
+		}
 		return nil, false
 	}
 
@@ -99,6 +112,9 @@ func (rc *resultCache) get(key string) ([]byte, bool) {
 			}
 		}
 		rc.misses++
+		if debugEnabled {
+			fmt.Fprintf(os.Stderr, "[cache:miss:expired] key=%s\n", key[:minInt(12, len(key))])
+		}
 		return nil, false
 	}
 
@@ -111,6 +127,11 @@ func (rc *resultCache) get(key string) ([]byte, bool) {
 		}
 	}
 	rc.lru = append(rc.lru, key)
+
+	if debugEnabled {
+		fmt.Fprintf(os.Stderr, "[cache:hit] key=%s hits=%d misses=%d entries=%d\n",
+			key[:minInt(12, len(key))], rc.hits, rc.misses, len(rc.entries))
+	}
 
 	return entry.envelope, true
 }

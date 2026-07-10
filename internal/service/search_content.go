@@ -18,7 +18,7 @@ func enrichSearchResultsWithContent(ctx context.Context, registration model.Work
 
 	// Open catalog DB for symbol lookup (hybrid/symbol modes)
 	if contextMode != "lines" {
-		opened, err := openWorkspaceDB(registration, "nav.search content")
+		opened, err := openWorkspaceDB(registration, "nav.search content", true)
 		if err != nil {
 			warnings = append(warnings, "catalog unavailable for symbol-based content; falling back to line-based")
 			contextMode = "lines"

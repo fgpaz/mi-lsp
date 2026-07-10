@@ -157,7 +157,7 @@ func buildInventoryItem(ctx context.Context, ws model.WorkspaceRegistration, wit
 	item.GovernanceBlocked = governance.Blocked
 
 	// Open workspace index database
-	db, err := openWorkspaceDB(ws, "wiki.inventory")
+	db, err := openWorkspaceDB(ws, "wiki.inventory", true)
 	if err != nil {
 		// No database yet, docs not ready
 		item.DocsReady = false

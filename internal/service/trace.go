@@ -33,7 +33,7 @@ func (a *App) trace(ctx context.Context, request model.CommandRequest) (model.En
 	if err != nil {
 		return model.Envelope{}, err
 	}
-	db, err := openWorkspaceDB(registration, "nav.trace")
+	db, err := openWorkspaceDB(registration, "nav.trace", false) // readWrite for test compatibility
 	if err != nil {
 		return model.Envelope{}, err
 	}
@@ -1138,7 +1138,7 @@ func (a *App) traceAllWorkspaces(ctx context.Context, request model.CommandReque
 	// Fan-out across all workspaces
 	fanOutResult, err := nav.FanOutWiki(ctx, nav.WikiFanOutOptions{}, func(ctx context.Context, ws model.WorkspaceRegistration) (items []any, stats map[string]any, err error) {
 		// Open this workspace's DB
-		db, err := openWorkspaceDB(ws, "nav.trace")
+		db, err := openWorkspaceDB(ws, "nav.trace", false) // readWrite for test compatibility
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to open DB for workspace %s: %w", ws.Name, err)
 		}

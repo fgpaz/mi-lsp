@@ -317,6 +317,17 @@ func (s *Server) handleRequest(request model.CommandRequest) (model.Envelope, er
 						if err := json.Unmarshal(cachedBytes, &cachedEnvelope); err == nil {
 							return cachedEnvelope, nil
 						}
+					} else {
+						// Cache miss: log debug info if enabled
+						if os.Getenv("MI_LSP_DAEMON_RESULT_CACHE_DEBUG") != "" {
+							argsJSON, _ := json.Marshal(canonicalArgs)
+							argsStr := string(argsJSON)
+							if len(argsStr) > 200 {
+								argsStr = argsStr[:200] + "..."
+							}
+							fmt.Fprintf(os.Stderr, "[cache:debug:miss] op=%s key=%s args_sample=%s\n",
+								request.Operation, cacheKey[:minInt(12, len(cacheKey))], argsStr)
+						}
 					}
 				}
 			}

@@ -356,7 +356,7 @@ func (a *App) info(ctx context.Context, name string) (model.Envelope, error) {
 	if err != nil {
 		return model.Envelope{}, err
 	}
-	db, err := openWorkspaceDB(registration, "info")
+	db, err := openWorkspaceDB(registration, "info", true) // readOnly
 	if err != nil {
 		return model.Envelope{}, err
 	}
@@ -384,7 +384,7 @@ func (a *App) symbols(ctx context.Context, request model.CommandRequest) (model.
 	if err != nil {
 		return model.Envelope{}, err
 	}
-	db, err := openWorkspaceDB(registration, "nav.symbols")
+	db, err := openWorkspaceDB(registration, "nav.symbols", true) // readOnly
 	if err != nil {
 		return model.Envelope{}, err
 	}
@@ -418,7 +418,7 @@ func (a *App) find(ctx context.Context, request model.CommandRequest) (model.Env
 	if scopeEnvelope != nil {
 		return *scopeEnvelope, nil
 	}
-	db, err := openWorkspaceDB(registration, "nav.find")
+	db, err := openWorkspaceDB(registration, "nav.find", true) // readOnly
 	if err != nil {
 		return model.Envelope{}, err
 	}
@@ -463,7 +463,7 @@ func (a *App) overview(ctx context.Context, request model.CommandRequest) (model
 			prefix = ""
 		}
 	}
-	db, err := openWorkspaceDB(registration, "nav.overview")
+	db, err := openWorkspaceDB(registration, "nav.overview", true) // readOnly
 	if err != nil {
 		return model.Envelope{}, err
 	}
@@ -1151,7 +1151,7 @@ func (a *App) findAllWorkspaces(ctx context.Context, request model.CommandReques
 			semaphore <- struct{}{}
 			defer func() { <-semaphore }()
 
-			db, err := openWorkspaceDB(wsReg, "nav.find --all-workspaces")
+			db, err := openWorkspaceDB(wsReg, "nav.find --all-workspaces", true) // readOnly
 			if err != nil {
 				results <- findResult{ws: wsReg, err: err}
 				return

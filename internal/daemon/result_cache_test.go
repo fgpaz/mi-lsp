@@ -328,3 +328,69 @@ func TestExtractCanonicalArgsSessionIDIgnored(t *testing.T) {
 		t.Fatal("expected same key when only session_id differs (non-semantic field)")
 	}
 }
+
+func TestResultCacheConsecutiveHits(t *testing.T) {
+	// Verify that consecutive identical queries produce a HIT on the second execution
+	rc := newResultCache()
+
+	envelope1 := []byte(`{"ok": true, "items": ["result1"]}`)
+
+	// Simulate two identical requests
+	args := map[string]any{"question": "What is the system?"}
+	key, _ := resultCacheKey("/workspace", "nav.ask", 100, args)
+
+	// First execution: MISS, then set
+	_, hit := rc.get(key)
+	if hit {
+		t.Fatal("expected cache miss on first access")
+	}
+	rc.set(key, envelope1, 1*time.Minute)
+
+	// Second execution: HIT
+	result, hit := rc.get(key)
+	if !hit {
+		t.Fatal("expected cache hit on second access with identical args")
+	}
+	if string(result) != string(envelope1) {
+		t.Fatalf("cache result mismatch: got %s, want %s", string(result), string(envelope1))
+	}
+
+	// Verify stats
+	hits, misses, entries := rc.stats()
+	if hits != 1 {
+		t.Fatalf("expected 1 hit, got %d", hits)
+	}
+	if misses != 1 {
+		t.Fatalf("expected 1 miss, got %d", misses)
+	}
+	if entries != 1 {
+		t.Fatalf("expected 1 entry, got %d", entries)
+	}
+}
+
+func TestResultCacheDebugLogging(t *testing.T) {
+	// Verify that debug logging is controlled by MI_LSP_DAEMON_RESULT_CACHE_DEBUG env var
+	rc := newResultCache()
+
+	envelope := []byte(`{"ok": true}`)
+	key := "debug_test_key"
+
+	// Without debug enabled, no issue
+	rc.set(key, envelope, 1*time.Minute)
+	_, hit := rc.get(key)
+	if !hit {
+		t.Fatal("expected cache hit without debug logging")
+	}
+
+	// With debug enabled (just verify no panic or error)
+	os.Setenv("MI_LSP_DAEMON_RESULT_CACHE_DEBUG", "1")
+	defer os.Unsetenv("MI_LSP_DAEMON_RESULT_CACHE_DEBUG")
+
+	rc2 := newResultCache()
+	rc2.set(key, envelope, 1*time.Minute)
+	_, hit2 := rc2.get(key)
+	if !hit2 {
+		t.Fatal("expected cache hit with debug logging enabled")
+	}
+	// Test just verifies no panic occurs with debug enabled
+}

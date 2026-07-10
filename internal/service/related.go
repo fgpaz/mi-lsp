@@ -50,7 +50,7 @@ func (a *App) related(ctx context.Context, request model.CommandRequest) (model.
 	backend := "catalog"
 
 	// Open catalog DB
-	db, err := openWorkspaceDB(registration, "nav.related")
+	db, err := openWorkspaceDB(registration, "nav.related", true)
 	if err != nil {
 		return model.Envelope{}, fmt.Errorf("opening catalog: %w", err)
 	}

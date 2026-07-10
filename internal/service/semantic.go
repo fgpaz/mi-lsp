@@ -155,7 +155,7 @@ func (a *App) resolveSemanticTarget(ctx context.Context, registration model.Work
 		return targetForRepo(project, repo, backendType, method)
 	}
 	if symbol, _ := payload["symbol"].(string); strings.TrimSpace(symbol) != "" {
-		db, err := openWorkspaceDB(registration, "semantic.resolve-target")
+		db, err := openWorkspaceDB(registration, "semantic.resolve-target", true)
 		if err != nil {
 			return semanticTarget{}, nil, err
 		}
@@ -210,7 +210,7 @@ func (a *App) catalogContextFallback(ctx context.Context, registration model.Wor
 	if err != nil {
 		return model.Envelope{}, err
 	}
-	db, err := openWorkspaceDB(registration, "semantic.catalog-context-fallback")
+	db, err := openWorkspaceDB(registration, "semantic.catalog-context-fallback", true)
 	if err != nil {
 		return model.Envelope{}, err
 	}

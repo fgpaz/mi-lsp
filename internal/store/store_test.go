@@ -621,6 +621,50 @@ func TestCandidateReposForSymbol_Fuzzy(t *testing.T) {
 		t.Errorf("exact Foo: want 0 repos, got %d", len(exact))
 	}
 }
+func TestOpenReadOnly_EnforcesPragmasOnPoolConnections(t *testing.T) {
+	_, root := seedTestDB(t)
+
+	readOnly, err := OpenReadOnly(root)
+	if err != nil {
+		t.Fatalf("OpenReadOnly: %v", err)
+	}
+	defer readOnly.Close()
+
+	// Hold multiple distinct connections simultaneously so the pool must create them.
+	conns := make([]*sql.Conn, 4)
+	for i := 0; i < 4; i++ {
+		conns[i], err = readOnly.Conn(context.Background())
+		if err != nil {
+			t.Fatalf("Conn(%d): %v", i, err)
+		}
+		defer conns[i].Close()
+	}
+
+	for i, c := range conns {
+		var qo int
+		if err := c.QueryRowContext(context.Background(), "PRAGMA query_only").Scan(&qo); err != nil {
+			t.Fatalf("conn[%d] query_only query: %v", i, err)
+		}
+		if qo != 1 {
+			t.Errorf("conn[%d] PRAGMA query_only = %d, want 1", i, qo)
+		}
+
+		var fk int
+		if err := c.QueryRowContext(context.Background(), "PRAGMA foreign_keys").Scan(&fk); err != nil {
+			t.Fatalf("conn[%d] foreign_keys query: %v", i, err)
+		}
+		if fk != 1 {
+			t.Errorf("conn[%d] PRAGMA foreign_keys = %d, want 1", i, fk)
+		}
+	}
+
+	// A write through a read-only connection must fail.
+	_, err = conns[0].ExecContext(context.Background(), "INSERT INTO files(file_path) VALUES('x')")
+	if err == nil {
+		t.Fatal("expected write to fail on read-only connection, got nil")
+	}
+}
+
 func TestOpen_MigratesLegacyRepoColumns(t *testing.T) {
 	root := t.TempDir()
 	stateDir := filepath.Join(root, ".mi-lsp")

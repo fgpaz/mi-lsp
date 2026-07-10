@@ -387,7 +387,7 @@ func (a *App) enrichWorkspaceReadiness(ctx context.Context, report workspace.Wor
 		}
 		governance := docgraph.InspectGovernance(registration.Root, false)
 		docCount := 0
-		db, dbErr := openWorkspaceDB(registration, "workspace.doctor")
+		db, dbErr := openWorkspaceDB(registration, "workspace.doctor", true)
 		if dbErr == nil {
 			if count, countErr := store.CountDocRecords(ctx, db); countErr == nil {
 				docCount = count
@@ -651,7 +651,7 @@ func (a *App) workspaceStatus(ctx context.Context, request model.CommandRequest)
 	item["recall_profile"] = recallProfile
 
 	memory, memoryWarnings := a.statusMemory(ctx, registration, opts, autoSync, governance.Blocked)
-	db, err := openWorkspaceDB(registration, "workspace.status")
+	db, err := openWorkspaceDB(registration, "workspace.status", true)
 	if err != nil {
 		item["index_ready"] = false
 		item["docs_ready"] = false

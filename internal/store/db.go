@@ -44,6 +44,33 @@ func Open(root string) (*sql.DB, error) {
 	return db, nil
 }
 
+// OpenReadOnly opens a read-only connection pool to the workspace index database.
+// Uses PRAGMA query_only=ON to enforce read-only access and allows concurrent connections
+// (SetMaxOpenConns=8, SetMaxIdleConns=4) for improved query performance. WAL mode and busy_timeout
+// are still active from pragmas, so multiple readers can safely coexist.
+// Note: EnsureSchema is NOT called on read-only connections. The schema is expected to already exist.
+// If the schema does not exist (e.g., in a test where the DB was never initialized with Open()),
+// the first query will fail with "no such table" error. Tests should ensure the schema is initialized
+// before opening read-only connections, or use Open() for the initial setup.
+func OpenReadOnly(root string) (*sql.DB, error) {
+	stateDir := filepath.Join(root, ".mi-lsp")
+	if err := os.MkdirAll(stateDir, 0o755); err != nil {
+		return nil, err
+	}
+	dsn := WorkspaceDBPath(root) + "?_pragma=query_only(ON)&_pragma=foreign_keys(ON)"
+	db, err := sql.Open(driverName, dsn)
+	if err != nil {
+		return nil, err
+	}
+	db.SetMaxOpenConns(8)
+	db.SetMaxIdleConns(4)
+	if err := configureWorkspaceDB(db); err != nil {
+		_ = db.Close()
+		return nil, err
+	}
+	return db, nil
+}
+
 func WithSQLiteReadRetry(ctx context.Context, fn func() error) error {
 	var err error
 	delay := sqliteRetryDelay

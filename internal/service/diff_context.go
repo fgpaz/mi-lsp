@@ -84,7 +84,7 @@ func (a *App) diffContext(ctx context.Context, request model.CommandRequest) (mo
 	}
 
 	// 4. Open database for symbol lookup
-	db, err := openWorkspaceDB(registration, "nav.diff-context")
+	db, err := openWorkspaceDB(registration, "nav.diff-context", true)
 	if err != nil {
 		return model.Envelope{}, err
 	}
