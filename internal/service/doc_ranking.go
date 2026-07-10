@@ -109,6 +109,7 @@ func ownerAwareRankDocs(question string, family string, docs []model.DocRecord, 
 	provisional := make([]provisionalDoc, 0, len(docs))
 	hasCanonicalPositive := false
 	hasCanonicalWikiPositive := false
+	maxCanonicalScore := 0
 	for _, doc := range docs {
 		if doc.IsSnapshot {
 			continue
@@ -116,6 +117,9 @@ func ownerAwareRankDocs(question string, family string, docs []model.DocRecord, 
 		score, reasons, positive := scoreOwnerAwareDoc(doc, family, normalizedQuestion, tokens, ftsScores, hints, recentRank)
 		if positive && doc.Family != "generic" {
 			hasCanonicalPositive = true
+			if score > maxCanonicalScore {
+				maxCanonicalScore = score
+			}
 		}
 		if positive && isCanonicalWikiDoc(doc.Path) {
 			hasCanonicalWikiPositive = true
@@ -135,6 +139,10 @@ func ownerAwareRankDocs(question string, family string, docs []model.DocRecord, 
 		if hasCanonicalPositive && candidate.doc.Family == "generic" && candidate.positive {
 			score -= 60
 			reasons = append(reasons, "generic_penalty")
+			if maxCanonicalScore > 0 && score >= maxCanonicalScore {
+				score = maxCanonicalScore - 1
+				reasons = append(reasons, "canonical_ceiling")
+			}
 		}
 		if hasCanonicalWikiPositive && candidate.positive && isSupportArtifactDoc(candidate.doc.Path) {
 			score -= 90

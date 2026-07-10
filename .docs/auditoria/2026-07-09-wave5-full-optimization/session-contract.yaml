@@ -1,0 +1,47 @@
+task_slug: 2026-07-09-wave5-full-optimization
+mode: governed_program_lane
+harness_adapter: ae-adapter-pi
+orchestration_depth: 2
+decision_lock: locked
+closure_profile: C3_RUNTIME_RELEASE
+cleanup_policy: remove_worktree_after_guarded_merge
+allowed_paths:
+  - internal/**
+  - cmd/**
+  - scripts/**
+  - .github/workflows/**
+  - .goreleaser.yml
+  - .docs/wiki/**
+  - .docs/raw/plans/2026-07-09-wave5-full-optimization.md
+  - .docs/auditoria/2026-07-09-wave5-full-optimization/**
+forbidden_paths:
+  - AGENTS.md
+  - .env
+  - .mi-lsp/**
+  - worker-dotnet/**/bin/**
+  - worker-dotnet/**/obj/**
+required_evidence:
+  - telemetry baseline and final comparison
+  - deterministic route/edit-plan/status/index regressions
+  - concurrent benchmark
+  - four-RID build and checksum evidence
+  - local install and runtime readback
+  - GitHub PR CI and release gate
+stop_conditions:
+  - governance_blocked=true
+  - historical error lacks reproduction
+  - publish without explicit human gate
+ae_contract:
+  schema: ae-contract/v1
+  worker_decision: spawned
+  adapter_id: ae-adapter-pi
+  parent_program: C:/wt/mi-pi-wave5/.docs/auditoria/2026-07-09-wave5-full-optimization/program-ledger
+mi_lsp_preflight:
+  alias: mi-lsp-wave5
+  root: C:/wt/mi-lsp-wave5
+  client_name: ae-adapter-pi
+  session_id: 2026-07-09-wave5-full-optimization
+  governance_blocked: false
+  docs_ready: true
+  doc_count: 122
+  ae_canon: {status: valid, roots: [.docs/wiki/ae], blocking: false}

@@ -246,7 +246,7 @@ func TestRegistryGCWithEmptyRoot(t *testing.T) {
 		t.Fatalf("failed to create existing path: %v", err)
 	}
 
-	// Create registry with workspace with empty root (should be skipped)
+	// Create registry with workspace with empty root (safe prune candidate)
 	registry := model.RegistryFile{
 		Workspaces: map[string]model.WorkspaceRegistration{
 			"exists": {Name: "exists", Root: existingPath, Kind: "mixed"},
@@ -266,11 +266,11 @@ func TestRegistryGCWithEmptyRoot(t *testing.T) {
 		t.Fatalf("GarbageCollectRegistry failed: %v", err)
 	}
 
-	// Verify that empty root is skipped, not treated as a candidate
-	if len(report.Candidates) != 0 {
-		t.Errorf("expected 0 candidates for empty root, got %d", len(report.Candidates))
+	// Empty roots cannot identify a workspace and are safe prune candidates.
+	if len(report.Candidates) != 1 || report.Candidates[0].Alias != "empty" {
+		t.Errorf("expected empty root candidate, got %#v", report.Candidates)
 	}
-	if len(report.Skipped) != 1 {
-		t.Errorf("expected 1 skipped, got %d", len(report.Skipped))
+	if len(report.Skipped) != 0 {
+		t.Errorf("expected no skipped roots, got %#v", report.Skipped)
 	}
 }

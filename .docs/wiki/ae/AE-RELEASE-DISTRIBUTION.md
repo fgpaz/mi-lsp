@@ -61,6 +61,8 @@ required_targets:
     - win-x64
     - linux-arm64
     - linux-x64
+    - osx-arm64
+    - osx-x64
   public_install_scripts:
     - scripts/install/install.ps1
     - scripts/install/install.sh
@@ -153,9 +155,9 @@ evidence:
 
 ## Operational Notes
 
-`scripts/release/ae-release-binaries.ps1` is the maintained entrypoint for this gate. By default it builds all four RIDs and refreshes the current host install. On Windows it also refreshes the active WSL install when WSL is present and the matching Linux RID was built.
+`scripts/release/ae-release-binaries.ps1` is the maintained entrypoint for this gate. By default it builds all six RIDs and refreshes the current host install. On Windows it also refreshes the active WSL install when WSL is present and the matching Linux RID was built.
 
-`scripts/install/install.ps1` and `scripts/install/install.sh` are the public CLI install/update entrypoints. They consume GitHub `releases/latest`, map the host to one of the four published RIDs, verify the release checksum before extraction, preserve the bundled `workers/<rid>/` layout, and run `version` plus `worker status` probes.
+`scripts/install/install.ps1` and `scripts/install/install.sh` are the public CLI install/update entrypoints. They consume GitHub `releases/latest`, map the host to one of the six published RIDs, verify the release checksum before extraction, preserve the bundled `workers/<rid>/` layout, and run `version` plus `worker status` probes.
 
 `scripts/install/install-agent.ps1` and `scripts/install/install-agent.sh` compose the CLI installer with `npx skills add`; they do not copy skill folders directly. A weekly release check from the skill may notify about newer releases, but binary update remains explicit user action.
 

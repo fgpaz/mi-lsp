@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.11] - 2026-07-09
+
+### Added
+
+- Observable daemon result-cache diagnostics and bounded cache behavior.
+- Concurrent read-only SQLite pool for daemon query paths.
+- Six-RID release build coverage: Windows, Linux and macOS on x64/arm64, with bundled workers and SHA256 checksums.
+
+### Changed
+
+- Owner-aware documentation ranking now guarantees that a positive canonical owner outranks generic README FTS noise.
+- Registry hygiene treats empty-root aliases as safe prune candidates instead of leaving permanently broken selectors.
+
+### Fixed
+
+- Multi-connection read-only enforcement now applies per SQLite connection.
+- Runtime cache and concurrent read-path behavior are covered by live daemon readback and contention tests.
+
 ## [0.5.4]
 
 ### Fixed
