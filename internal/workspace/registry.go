@@ -122,6 +122,7 @@ type WorkspacePruneReport struct {
 	Removed      []WorkspaceStalePath `json:"removed,omitempty"`
 	Skipped      []WorkspaceStalePath `json:"skipped,omitempty"`
 	RemovedCount int                  `json:"removed_count"`
+	Warnings     []string             `json:"warnings,omitempty"`
 }
 
 type WorkspaceWorktreeFamily struct {
@@ -293,6 +294,75 @@ func PruneStaleWorkspaces(apply bool) (WorkspacePruneReport, error) {
 	}
 	report.RemovedCount = len(report.Removed)
 	if apply && len(report.Removed) > 0 {
+		if registry.Defaults.LastWorkspace != "" {
+			for _, removed := range report.Removed {
+				if removed.Alias == registry.Defaults.LastWorkspace {
+					registry.Defaults.LastWorkspace = ""
+					break
+				}
+			}
+		}
+		if err := SaveRegistry(registry); err != nil {
+			return WorkspacePruneReport{}, err
+		}
+	}
+	return report, nil
+}
+
+func GarbageCollectRegistry(apply bool) (WorkspacePruneReport, error) {
+	registry, err := LoadRegistry()
+	if err != nil {
+		return WorkspacePruneReport{}, err
+	}
+	registryPath, err := RegistryPath()
+	if err != nil {
+		return WorkspacePruneReport{}, err
+	}
+	report := WorkspacePruneReport{
+		DryRun:   !apply,
+		Registry: filepath.Clean(registryPath),
+	}
+	if registry.Workspaces == nil {
+		return report, nil
+	}
+	names := make([]string, 0, len(registry.Workspaces))
+	for name := range registry.Workspaces {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		ws := registry.Workspaces[name]
+		if strings.TrimSpace(ws.Root) == "" {
+			report.Skipped = append(report.Skipped, WorkspaceStalePath{Alias: name, Root: ws.Root, Error: "empty root; skipped"})
+			continue
+		}
+		if _, statErr := os.Stat(ws.Root); statErr == nil {
+			continue
+		} else if errors.Is(statErr, os.ErrNotExist) {
+			candidate := WorkspaceStalePath{Alias: name, Root: ws.Root, Error: "path not found"}
+			report.Candidates = append(report.Candidates, candidate)
+			if apply {
+				delete(registry.Workspaces, name)
+				report.Removed = append(report.Removed, candidate)
+			}
+		} else {
+			report.Skipped = append(report.Skipped, WorkspaceStalePath{Alias: name, Root: ws.Root, Error: statErr.Error()})
+		}
+	}
+	report.RemovedCount = len(report.Removed)
+	if apply && len(report.Removed) > 0 {
+		// Create backup before writing
+		backupPath := registryPath + ".bak-" + time.Now().Format("20060102150405")
+		if data, err := os.ReadFile(registryPath); err == nil {
+			if err := os.WriteFile(backupPath, data, 0o644); err != nil {
+				// If backup fails, still try to save but add a warning
+				report.Warnings = append(report.Warnings, "failed to create backup: "+err.Error())
+			}
+		} else {
+			// If we can't read the original, add a warning but continue
+			report.Warnings = append(report.Warnings, "failed to read registry for backup: "+err.Error())
+		}
+		// Clear LastWorkspace if it's being removed
 		if registry.Defaults.LastWorkspace != "" {
 			for _, removed := range report.Removed {
 				if removed.Alias == registry.Defaults.LastWorkspace {

@@ -1,0 +1,6 @@
+{
+  "requests": 12,
+  "exit_zero": 12,
+  "exit_nonzero": 0,
+  "stderr_nonempty": []
+}

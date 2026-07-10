@@ -404,6 +404,17 @@ func (s *TelemetryStore) recordAccessDirectInternal(runID int64, event model.Acc
 	}
 }
 
+func (s *TelemetryStore) Checkpoint() error {
+	if s == nil || s.db == nil {
+		return nil
+	}
+	var mode string
+	if err := s.db.QueryRow("PRAGMA wal_checkpoint(TRUNCATE)").Scan(&mode); err != nil {
+		return fmt.Errorf("wal_checkpoint: %w", err)
+	}
+	return nil
+}
+
 func (s *TelemetryStore) Close() error {
 	if s == nil || s.db == nil {
 		return nil

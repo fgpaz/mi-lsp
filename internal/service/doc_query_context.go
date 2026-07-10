@@ -45,7 +45,7 @@ func loadDocQueryContext(ctx context.Context, registration model.WorkspaceRegist
 		docByPath:         map[string]model.DocRecord{},
 		rankedByPath:      map[string]scoredDoc{},
 	}
-	db, err := openWorkspaceDB(registration, "doc.query")
+	db, err := openWorkspaceDB(registration, "doc.query", true) // readOnly=true for doc queries
 	if err != nil {
 		query.dbErr = err
 		return query

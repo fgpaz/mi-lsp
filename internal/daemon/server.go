@@ -24,16 +24,17 @@ import (
 )
 
 type Server struct {
-	listener  net.Listener
-	app       *service.App
-	manager   *Manager
-	telemetry *TelemetryStore
-	admin     *AdminServer
-	state     model.DaemonState
-	options   StartOptions
-	inflight  chan struct{}
-	stopped   chan struct{}
-	stopOnce  sync.Once
+	listener   net.Listener
+	app        *service.App
+	manager    *Manager
+	telemetry  *TelemetryStore
+	admin      *AdminServer
+	state      model.DaemonState
+	options    StartOptions
+	inflight   chan struct{}
+	stopped    chan struct{}
+	stopOnce   sync.Once
+	resultCache *resultCache
 }
 
 // generateAdminToken creates a random 32-byte hex token for admin authentication.
@@ -62,12 +63,13 @@ func NewServerWithOptions(repoRoot string, maxWorkers int, idleTimeout time.Dura
 	}
 	manager := NewManagerWithOptions(repoRoot, maxWorkers, idleTimeout, options)
 	server := &Server{
-		listener:  listener,
-		manager:   manager,
-		telemetry: telemetry,
-		options:   options,
-		inflight:  make(chan struct{}, options.MaxInflight),
-		stopped:   make(chan struct{}),
+		listener:    listener,
+		manager:     manager,
+		telemetry:   telemetry,
+		options:     options,
+		inflight:    make(chan struct{}, options.MaxInflight),
+		stopped:     make(chan struct{}),
+		resultCache: newResultCache(),
 		state: model.DaemonState{
 			PID:             os.Getpid(),
 			Endpoint:        defaultEndpoint(),
@@ -243,6 +245,7 @@ func (s *Server) handleRequest(request model.CommandRequest) (model.Envelope, er
 				accesses[i].EntrypointID = ""
 			}
 		}
+		hits, misses, entries := s.resultCache.stats()
 		return model.Envelope{
 			Ok:      true,
 			Backend: "daemon",
@@ -252,6 +255,11 @@ func (s *Server) handleRequest(request model.CommandRequest) (model.Envelope, er
 				"watchers":        s.manager.WatcherStats(),
 				"active_runtimes": s.manager.Status(),
 				"recent_accesses": accesses,
+				"result_cache": map[string]any{
+					"hits":    hits,
+					"misses":  misses,
+					"entries": entries,
+				},
 			}},
 		}, nil
 	case "system.stop":
@@ -294,7 +302,55 @@ func (s *Server) handleRequest(request model.CommandRequest) (model.Envelope, er
 		}
 		return model.Envelope{Ok: true, Workspace: registration.Name, Backend: "daemon", Items: items, Warnings: warnings}, nil
 	default:
+		// Attempt result caching for deterministic read-only operations
+		if isCacheableOp(request.Operation) {
+			resolution, resolveErr := workspace.ResolveWorkspaceSelection(request.Context.Workspace, request.Context.CallerCWD)
+			if resolveErr == nil {
+				generation, _ := indexGeneration(resolution.Registration.Root)
+				// Extract canonical args from request (use query, limit, offset, etc.)
+				canonicalArgs := extractCanonicalArgs(request)
+				cacheKey, keyErr := resultCacheKey(resolution.Registration.Root, request.Operation, generation, canonicalArgs)
+				if keyErr == nil {
+					// Try cache hit
+					if cachedBytes, ok := s.resultCache.get(cacheKey); ok {
+						var cachedEnvelope model.Envelope
+						if err := json.Unmarshal(cachedBytes, &cachedEnvelope); err == nil {
+							return cachedEnvelope, nil
+						}
+					} else {
+						// Cache miss: log debug info if enabled
+						if os.Getenv("MI_LSP_DAEMON_RESULT_CACHE_DEBUG") != "" {
+							argsJSON, _ := json.Marshal(canonicalArgs)
+							argsStr := string(argsJSON)
+							if len(argsStr) > 200 {
+								argsStr = argsStr[:200] + "..."
+							}
+							fmt.Fprintf(os.Stderr, "[cache:debug:miss] op=%s key=%s args_sample=%s\n",
+								request.Operation, cacheKey[:minInt(12, len(cacheKey))], argsStr)
+						}
+					}
+				}
+			}
+		}
+
+		// Execute operation
 		response, err := s.app.Execute(context.Background(), request)
+
+		// Cache successful results for cacheable ops
+		if err == nil && response.Ok && isCacheableOp(request.Operation) {
+			resolution, resolveErr := workspace.ResolveWorkspaceSelection(request.Context.Workspace, request.Context.CallerCWD)
+			if resolveErr == nil {
+				generation, _ := indexGeneration(resolution.Registration.Root)
+				canonicalArgs := extractCanonicalArgs(request)
+				cacheKey, keyErr := resultCacheKey(resolution.Registration.Root, request.Operation, generation, canonicalArgs)
+				if keyErr == nil {
+					if envelopeBytes, marshalErr := json.Marshal(response); marshalErr == nil {
+						s.resultCache.set(cacheKey, envelopeBytes, resultCacheTTL)
+					}
+				}
+			}
+		}
+
 		return response, err
 	}
 }
@@ -590,4 +646,46 @@ func buildVersionString() string {
 		version = "unknown"
 	}
 	return version
+}
+
+// extractCanonicalArgs extracts ALL semantically relevant arguments from a request for cache keying.
+// Serializes the complete payload + envelope flags (Format, AXI, Full, Verbose, Compress, etc.)
+// with deterministic JSON ordering, excluding only non-semantic fields:
+// session_id, client_name, workspace (already in cache key), caller_cwd, workspace_source, token_budget, backend_hint, allow_cross_workspace.
+func extractCanonicalArgs(request model.CommandRequest) map[string]any {
+	result := make(map[string]any)
+
+	// Copy ALL payload fields (payload affects result semantically)
+	for k, v := range request.Payload {
+		result[k] = v
+	}
+
+	// Include semantic envelope flags from Context
+	// These flags alter the result format and content:
+	if request.Context.Format != "" {
+		result["_format"] = request.Context.Format
+	}
+	if request.Context.MaxItems > 0 {
+		result["_max_items"] = request.Context.MaxItems
+	}
+	if request.Context.MaxChars > 0 {
+		result["_max_chars"] = request.Context.MaxChars
+	}
+	if request.Context.AXI {
+		result["_axi"] = true
+	}
+	if request.Context.Full {
+		result["_full"] = true
+	}
+	if request.Context.Verbose {
+		result["_verbose"] = true
+	}
+	if request.Context.Compress {
+		result["_compress"] = true
+	}
+	if request.Context.Offset > 0 {
+		result["_offset"] = request.Context.Offset
+	}
+
+	return result
 }

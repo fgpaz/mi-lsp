@@ -54,7 +54,7 @@ func (a *App) intent(ctx context.Context, request model.CommandRequest) (model.E
 		return a.intentDocs(ctx, request, registration, question, topN, offset, scopedRepo, scopeWarnings)
 	}
 
-	db, err := openWorkspaceDB(registration, "nav.intent")
+	db, err := openWorkspaceDB(registration, "nav.intent", true)
 	if err != nil {
 		return model.Envelope{}, err
 	}

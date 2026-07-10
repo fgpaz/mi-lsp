@@ -1,0 +1,79 @@
+schema: ae-session-contract/v1
+task_slug: 2026-07-09-max-optimizacion-milsp-mipi
+issue_or_waiver: user_direct_request_no_tracker_card
+sdd_anchors:
+  rs: []
+  fl: [FL-QRY-01, FL-DAE-01]
+  rf: [RF-QRY-001, RF-QRY-004, RF-DAE-001, RF-DAE-002, RF-DAE-003]
+  ct: [CT-MIPI-NAN-MODELS-01]
+base_ref:
+  mi-lsp: { branch: main, sha: eaed36b }
+  mi-pi: { branch: main, sha: e97f84d }
+intended_branches:
+  mi-pi: feat/max-opt-wave1-cache-scheduler
+  mi-lsp: feat/max-opt-wave2-daemon-cache
+expected_scope: >
+  Programa de optimizacion en 3 olas para escalar ae-worker-pi con mi-lsp vivo
+  de 3 a 50 workers concurrentes multi-proyecto: Ola 1 mi-pi TS (cache tier-2
+  disco compartido, scheduler global NaN 3 slots, higiene .tmp, evidencia por
+  spawn), Ola 2 mi-lsp Go (daemon-first nav.ask/search/pack, result cache,
+  tuning limites, registry gc, release gate), Ola 3 canon/skills sync.
+allowed_paths:
+  - C:/repos/mios/mi-pi/extensions/mi-pi-native-milsp/**
+  - C:/repos/mios/mi-pi/scripts/**
+  - C:/repos/mios/mi-pi/package.json
+  - C:/repos/mios/mi-pi/.docs/**
+  - C:/repos/mios/mi-lsp/internal/**
+  - C:/repos/mios/mi-lsp/.docs/**
+  - C:/Users/fgpaz/.agents/skills/ae-worker-pi/**
+  - C:/repos/buho/assets/skills/ae-worker-pi/**
+forbidden_paths:
+  - "**/.env"
+  - "**/secrets/**"
+  - C:/repos/mios/mi-pi/.pi/settings.json
+required_evidence:
+  - plan + subdocs bajo .docs/raw/plans/2026-07-09-max-optimizacion-milsp-mipi*
+  - verify por tarea (node --check, npm run mi-pi:check, go build ./..., go test)
+  - traceability-closure.yaml + audit verdict
+waivers:
+  - pre_existing_drift_mi_pi: scripts/pi-worker-launch.mjs (strict model find-miss)
+    se integra en el commit del scheduler (T2), no se revierte.
+  - nul_files: artefactos "nul" preexistentes en ambos repos no se tocan.
+worker_decision: spawned
+worker_adapter: ae-adapter-claude-code
+orchestration_role: strategic_root
+branch_disposition: PR flow con auto-integracion guarded segun AE-PHASES.integration_rule
+retention_ttl_days: 14
+hash_algorithm: sha256
+
+mode: governed_continuation
+harness_adapter: ae-adapter-pi
+orchestration_depth: 1
+closure_profile: C3_RUNTIME
+cleanup_policy: auto-after-successful-integration
+stop_conditions:
+  - governance_blocked=true
+  - worker review finds unresolved High or Critical defect
+  - release provenance or live runtime readback fails
+  - pre-push guard or PR CI fails
+ae_contract:
+  schema: ae-contract/v1
+  decision_lock: locked
+  worker_decision: spawned
+  adapter_available: true
+  independent_axes: [w4a_sqlite_pool_and_cache, w4a_readonly_callsites, w4b_timeout_context_pack_prefix]
+  launch_evidence: C:/repos/mios/mi-pi/.docs/auditoria/mipi-program/program-ledger/worker-registry.yaml
+  join_evidence: C:/repos/mios/mi-pi/.docs/auditoria/mipi-program/program-ledger/nodes.yaml
+  closure_profile: C3_RUNTIME
+mi_lsp_preflight:
+  alias: mi-lsp
+  root: C:/repos/mios/mi-lsp
+  client_name: ae-adapter-pi
+  session_id: 2026-07-09-cc-continuar-via-pi
+  governance_blocked: false
+  docs_ready: true
+  doc_count: 122
+  ae_canon:
+    status: valid
+    roots: [.docs/wiki/ae]
+    blocking: false

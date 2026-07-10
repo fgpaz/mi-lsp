@@ -75,6 +75,30 @@ Comandos canonicos:
 - `admin open|status`
 - `version`
 
+```toon
+block_id: CT-CLI-DAEMON-ADMIN.workspace-prune-v2
+description: "Workspace prune command (GC for dead aliases)"
+command_signature: "workspace prune --stale [--apply] [--dry-run]"
+behavior:
+  default: "dry-run preview"
+  --stale: "required; scans for aliases cuya workspace_root no exista"
+  --apply: "ejecuta la purga; crea backup registry.toml.bak-<timestamp>"
+  --dry-run: "default true; preview sin mutar"
+  result: "purga SOLO aliases cuya raíz no existe; NO borra archivos ni worktrees"
+```
+
+```toon
+block_id: CT-CLI-DAEMON-ADMIN.registry-gc-v1
+description: "Registry GC command (limpieza de aliases con raiz inexistente)"
+command_signature: "registry gc [--apply] [--dry-run]"
+behavior:
+  default: "dry-run preview"
+  --dry-run: "default true; lista candidatos alias/path/reason sin mutar"
+  --apply: "ejecuta la purga; crea backup registry.toml.bak-<timestamp>"
+  criteria: "purga SOLO aliases cuya workspace_root no existe (os.Stat NotExist); nunca por antiguedad ni por falta de index"
+  note: "coexiste con 'workspace prune --stale' (legacy compatible); mismo report WorkspacePruneReport"
+```
+
 Flags globales minimos:
 
 - `--workspace`
@@ -110,7 +134,21 @@ Cuando un comando workspace-aware recibe `--workspace <alias>` y el `caller_cwd`
 - El override `--allow-cross-workspace` permite continuar pero no suprime el warning; el warning es evidencia de intencion cross-workspace.
 - `index --docs-only`
 - `index start --mode full|docs|catalog --wait`
-- `daemon start|restart|serve --watch-mode off|lazy|eager --max-watched-roots N --max-inflight N`
+- `daemon start|restart|serve --watch-mode off|lazy|eager --max-watched-roots N --max-inflight N --max-workers N`
+
+```toon
+block_id: CT-CLI-DAEMON-ADMIN.daemon-flags-v2
+description: "Daemon start flags with new defaults"
+defaults:
+  watch_mode: "lazy"
+  max_watched_roots: 8
+  max_inflight: 48 (env MI_LSP_DAEMON_MAX_INFLIGHT)
+  max_workers: 6 (env MI_LSP_DAEMON_MAX_WORKERS)
+  max_runtime_memory_mb: 1024 (env MI_LSP_DAEMON_MAX_RUNTIME_MEMORY_MB)
+  soft_memory_threshold_mb: 500
+  wal_checkpoint_interval_sec: 1800
+note: "max_inflight raised from 16 to 48; max_workers raised from 3 to 6 for sustained concurrent ops"
+```
 
 ### `index` + indexacion async
 
@@ -319,10 +357,26 @@ Reglas:
 
 Reglas de routing:
 
-- `nav.find`, `nav.search`, `nav.intent`, `nav.symbols`, `nav.outline`, `nav.overview`, `nav.multi-read`, `nav.affected` y `nav.pack` no deben cruzar esta frontera en el hot path.
+- `nav.find`, `nav.intent`, `nav.symbols`, `nav.outline`, `nav.overview`, `nav.multi-read`, `nav.affected` y `nav.intent` no deben cruzar esta frontera en el hot path.
+- `nav.ask`, `nav.search`, `nav.pack` son daemon-elegibles cuando daemon vive (sin auto-start; fallback directo si daemon no responde).
 - `nav.refs`, `nav.context`, `nav.deps`, `nav.related`, `nav.service`, `nav.diff-context` y `nav.batch` pueden preferir daemon cuando corresponda.
 - `nav.workspace-map` summary-first queda directo por default; `--full` puede seguir siendo una operacion pesada pero no debe autostartear daemon en el contrato base.
 - `workspace.warm` puede preferir daemon pero no debe auto-iniciarlo.
+
+```toon
+block_id: CT-CLI-DAEMON-ADMIN.daemon-eligible-v2
+description: "Operations that prefer daemon when available"
+daemon_eligible_ops:
+  - nav.ask
+  - nav.search
+  - nav.pack
+  - nav.governance
+  - nav.route
+behavior:
+  auto_start: false
+  fallback: "direct if daemon unavailable"
+  caching: "LRU 256 entries, TTL 10 min per operation+workspace+generation"
+```
 
 Canal:
 

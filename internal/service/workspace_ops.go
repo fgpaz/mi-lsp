@@ -387,7 +387,7 @@ func (a *App) enrichWorkspaceReadiness(ctx context.Context, report workspace.Wor
 		}
 		governance := docgraph.InspectGovernance(registration.Root, false)
 		docCount := 0
-		db, dbErr := openWorkspaceDB(registration, "workspace.doctor")
+		db, dbErr := openWorkspaceDB(registration, "workspace.doctor", true)
 		if dbErr == nil {
 			if count, countErr := store.CountDocRecords(ctx, db); countErr == nil {
 				docCount = count
@@ -511,6 +511,42 @@ func (a *App) workspacePrune(request model.CommandRequest) (model.Envelope, erro
 	return model.Envelope{Ok: true, Backend: "registry-prune", Items: []map[string]any{item}, Warnings: warnings}, nil
 }
 
+func (a *App) registryGC(request model.CommandRequest) (model.Envelope, error) {
+	dryRun, _ := request.Payload["dry_run"].(bool)
+	apply, _ := request.Payload["apply"].(bool)
+
+	// If apply is true, override dry_run to false (--apply implies not dry-run)
+	if apply {
+		dryRun = false
+	}
+
+	// Convert dryRun to shouldApply for the workspace function
+	shouldApply := !dryRun
+	report, err := workspace.GarbageCollectRegistry(shouldApply)
+	if err != nil {
+		return model.Envelope{}, err
+	}
+	item := map[string]any{
+		"dry_run":       report.DryRun,
+		"registry":      report.Registry,
+		"candidates":    nonNilStalePaths(report.Candidates),
+		"removed":       nonNilStalePaths(report.Removed),
+		"removed_count": report.RemovedCount,
+		"skipped":       nonNilStalePaths(report.Skipped),
+	}
+	warnings := append([]string{}, report.Warnings...)
+	if report.DryRun && len(report.Candidates) > 0 {
+		warnings = append(warnings, fmt.Sprintf("dry-run only; %d stale workspace(s) found; rerun with --apply to remove", len(report.Candidates)))
+	}
+	if !report.DryRun && len(report.Removed) > 0 {
+		warnings = append(warnings, fmt.Sprintf("removed %d stale workspace alias/aliases from registry; backup saved to registry.toml.bak-*", len(report.Removed)))
+	}
+	if len(report.Skipped) > 0 {
+		warnings = append(warnings, "some aliases were skipped because their roots could not be safely classified as missing")
+	}
+	return model.Envelope{Ok: true, Backend: "registry-gc", Items: []map[string]any{item}, Warnings: warnings}, nil
+}
+
 func nonNilRootGroups(items []workspace.WorkspaceRootGroup) []workspace.WorkspaceRootGroup {
 	if items == nil {
 		return []workspace.WorkspaceRootGroup{}
@@ -615,7 +651,7 @@ func (a *App) workspaceStatus(ctx context.Context, request model.CommandRequest)
 	item["recall_profile"] = recallProfile
 
 	memory, memoryWarnings := a.statusMemory(ctx, registration, opts, autoSync, governance.Blocked)
-	db, err := openWorkspaceDB(registration, "workspace.status")
+	db, err := openWorkspaceDB(registration, "workspace.status", true)
 	if err != nil {
 		item["index_ready"] = false
 		item["docs_ready"] = false
