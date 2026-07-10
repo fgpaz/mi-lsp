@@ -1,0 +1,6 @@
+96b5143a09ec5388a2aa555976f5d15f28e3b6871b4c09af67a3da2a1fc1f808 *C:/wt/release-artifacts/mi-lsp-v0.5.11-final/win-x64/mi-lsp.exe
+96b5143a09ec5388a2aa555976f5d15f28e3b6871b4c09af67a3da2a1fc1f808 *C:/Users/fgpaz/.agents/skills/mi-lsp/bin/mi-lsp-win-x64.exe
+96b5143a09ec5388a2aa555976f5d15f28e3b6871b4c09af67a3da2a1fc1f808 *C:/repos/buho/assets/skills/mi-lsp/bin/mi-lsp-win-x64.exe
+636834b5633854430e4ea236a6a1e0df9eeca9d0cf57a37a6dba6590a9541507 *C:/wt/release-artifacts/mi-lsp-v0.5.11-final/linux-x64/mi-lsp
+636834b5633854430e4ea236a6a1e0df9eeca9d0cf57a37a6dba6590a9541507 *C:/Users/fgpaz/.agents/skills/mi-lsp/bin/mi-lsp-linux-x64
+636834b5633854430e4ea236a6a1e0df9eeca9d0cf57a37a6dba6590a9541507 *C:/repos/buho/assets/skills/mi-lsp/bin/mi-lsp-linux-x64
