@@ -45,3 +45,35 @@ orchestration_role: strategic_root
 branch_disposition: PR flow con auto-integracion guarded segun AE-PHASES.integration_rule
 retention_ttl_days: 14
 hash_algorithm: sha256
+
+mode: governed_continuation
+harness_adapter: ae-adapter-pi
+orchestration_depth: 1
+closure_profile: C3_RUNTIME
+cleanup_policy: auto-after-successful-integration
+stop_conditions:
+  - governance_blocked=true
+  - worker review finds unresolved High or Critical defect
+  - release provenance or live runtime readback fails
+  - pre-push guard or PR CI fails
+ae_contract:
+  schema: ae-contract/v1
+  decision_lock: locked
+  worker_decision: spawned
+  adapter_available: true
+  independent_axes: [w4a_sqlite_pool_and_cache, w4a_readonly_callsites, w4b_timeout_context_pack_prefix]
+  launch_evidence: C:/repos/mios/mi-pi/.docs/auditoria/mipi-program/program-ledger/worker-registry.yaml
+  join_evidence: C:/repos/mios/mi-pi/.docs/auditoria/mipi-program/program-ledger/nodes.yaml
+  closure_profile: C3_RUNTIME
+mi_lsp_preflight:
+  alias: mi-lsp
+  root: C:/repos/mios/mi-lsp
+  client_name: ae-adapter-pi
+  session_id: 2026-07-09-cc-continuar-via-pi
+  governance_blocked: false
+  docs_ready: true
+  doc_count: 122
+  ae_canon:
+    status: valid
+    roots: [.docs/wiki/ae]
+    blocking: false
