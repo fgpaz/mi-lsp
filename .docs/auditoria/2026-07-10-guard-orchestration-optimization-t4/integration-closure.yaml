@@ -17,6 +17,9 @@ repairs:
   - path: internal/rerank/extension_test.go
     reason: helper subprocess inherited the production 2s timeout and flaked under full-suite process load
     resolution: use a 30s helper timeout only in non-timeout tests; retain the explicit 10ms timeout oracle
+  - path: internal/service/search_wave3b_test.go
+    reason: wall-clock threshold duplicated the deterministic timeout-envelope oracle and flaked under loaded Windows process teardown
+    resolution: retain warning, coach, and partial-result assertions; remove only the nondeterministic elapsed-time assertion
 scope:
   production_behavior_changed_by_repairs: false
   release_or_publication_performed: false

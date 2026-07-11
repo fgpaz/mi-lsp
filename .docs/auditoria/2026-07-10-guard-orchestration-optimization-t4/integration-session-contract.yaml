@@ -24,6 +24,7 @@ allowed_paths:
   - internal/service/edit_plan.go
   - internal/service/prepare.go
   - internal/service/prepare_test.go
+  - internal/service/search_wave3b_test.go
   - internal/store/meta.go
   - internal/store/meta_generation_test.go
   - .docs/wiki/07_tech/TECH-SEMANTIC-PREPARATION.md
