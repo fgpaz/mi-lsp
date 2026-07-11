@@ -1,15 +1,18 @@
 schema: ae-integration-closure/v1
 task: finish-nav-prepare-integration
-verdict: READY_FOR_PR
+verdict: PASS
 base_sha: 56af5f294be52d5ed2bead7c66d388428988c4a7
 implementation_sha: 33f3bf74fa6d9dcdbda18616a98b4f0cd25e03c4
 fresh_validation:
   targeted_registry_gc_count_3: PASS
   targeted_rerank_count_3: PASS
-  go_test_all_count_1: PASS
+  go_test_all_count_1_twice_consecutively: PASS
   go_vet_all: PASS
   git_diff_check: PASS
   wiki_source: PASS
+  pre_push_guard: PASS
+  github_ci_ubuntu_jobs: 2/2 PASS
+  github_ci_windows_jobs: 2/2 PASS
 repairs:
   - path: internal/cli/registry_test.go
     reason: os.UserHomeDir uses USERPROFILE on Windows; tests isolated only HOME and touched the real registry
@@ -23,7 +26,17 @@ repairs:
 scope:
   production_behavior_changed_by_repairs: false
   release_or_publication_performed: false
-pending:
-  - commit integration test repairs
-  - open PR and wait for CI
-  - guarded merge and main readback
+integration:
+  pull_request: https://github.com/fgpaz/mi-lsp/pull/52
+  merge_commit: 006e220f0a52279c69101f731c5fe0f7de4efd01
+  merged_at: 2026-07-11T15:08:03Z
+  main_readback:
+    command: go run ./cmd/mi-lsp nav prepare "finish nav prepare integration" --workspace C:/wt/mi-lsp-semantic-prepare-api --format toon
+    schema: semantic-preparation-evidence/v1
+    ok: true
+    total_ms: 668
+    daemon_compatibility: daemon_unavailable_fallback_pass
+release:
+  performed: false
+  reason: release tag, binary publication, installation, and deployment require a separate explicit gate
+pending: []
