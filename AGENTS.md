@@ -6,8 +6,8 @@
 
 For every task in this repository:
 
-1. Run `$ps-contexto` first.
-1a. Run `$ae-programa` as the gateway for non-trivial, mutating, policy, harness, shared-skill, or multi-step work.
+1. Run `$ae-work` first.
+1a. Run `$ae-work` as the gateway for non-trivial, mutating, policy, harness, shared-skill, or multi-step work.
 1b. Select workers through manifest-backed global `ae-adapter-*` skills first: read `adapter_manifest.schema=ae-harness-adapter/v1`, prefer an explicit user-requested harness, then current/project harness fit, and fall back to `simulated_packets` with `missing_ae_adapter_manifest` when no adapter satisfies evidence and isolation.
 1c. Worker-first is mandatory for AE-governed T2+, mutating, multi-step, policy/harness/shared-skill, runtime/deployable, or independent-axis work: use `worker_decision=spawned` when a usable adapter exists. `worker_decision=none` is valid only for `C0_INLINE_NO_DIFF` true read-only/no-diff work with no independent axes; `why_no_worker` is blocker evidence only.
 1d. `ae-adapter-hermes` and `ae-adapter-claude-code` are discoverable partial seeds only; they are not usable until a native `ae-adapter-proof/v1` proves spawn, monitor, join, fallback, evidence, and sanitization.
@@ -17,23 +17,23 @@ For every task in this repository:
    - `mi-lsp workspace status <alias> --format toon`
    - `mi-lsp nav governance --workspace <alias> --format toon`
 3. If governance is blocked, docs are not ready, `doc_count=0`, attribution is missing/manual, or `ae_canon` is not repo-canon valid, only diagnosis and repair are allowed until the repo is valid again.
-4. After context load, run `$brainstorming` exactly once before planning or execution.
+4. After context load, run `$ae-decide` exactly once before planning or execution.
 5. Close critical context gaps before acting.
 6. Work in orchestrator mode by default.
 7. Prefer `dispatching-parallel-agents` when work is safely partitionable.
-8. Run `$ps-trazabilidad` before closing the task.
+8. Run `$ae-close` before closing the task.
 
 Additional strict rules:
 
 - Spec-driven development is mandatory in ALL tasks.
 - `.docs/wiki/00_gobierno_documental.md` is the human authority for governance.
 - `.docs/wiki/_mi-lsp/read-model.toml` is the versioned executable projection of `00`.
-- Do not push directly to `main`; create a branch and integrate through the PR flow. The PR flow is the integration mechanism, NOT a human-approval gate. Once the AE closure gates pass (`ps-trazabilidad` closure packet + `ps-auditar-trazabilidad` verdict `APPROVED` with all drift repaired + `scripts/ae/pre-push-guard.ps1` green + PR CI checks green), **auto-integrate the PR into `main`** via guarded merge without waiting for a separate human approval — `ps-auditar-trazabilidad` is the independent review. When branch protection requires a review and `enforce_admins=false`, complete it with an admin merge (`gh pr merge <n> --merge --admin --delete-branch`). Hold the PR open for a human only when the audit is `BLOCKED`, an `Approved with follow-ups` needs a human decision, a waiver is required, or the user explicitly asks to review. Never admin-merge over a failing CI check. Authority: `.docs/wiki/ae/AE-PHASES.md` (`AE-PHASES.integration_rule`).
+- Do not push directly to `main`; create a branch and integrate through the PR flow. The PR flow is the integration mechanism, NOT a human-approval gate. Once the AE closure gates pass (`ae-close` closure packet + `ae-close` verdict `APPROVED` with all drift repaired + `scripts/ae/pre-push-guard.ps1` green + PR CI checks green), **auto-integrate the PR into `main`** via guarded merge without waiting for a separate human approval — `ae-close` is the independent review. When branch protection requires a review and `enforce_admins=false`, complete it with an admin merge (`gh pr merge <n> --merge --admin --delete-branch`). Hold the PR open for a human only when the audit is `BLOCKED`, an `Approved with follow-ups` needs a human decision, a waiver is required, or the user explicitly asks to review. Never admin-merge over a failing CI check. Authority: `.docs/wiki/ae/AE-PHASES.md` (`AE-PHASES.integration_rule`).
 - If governance is ambiguous, incomplete, out of sync, or the workspace index is stale relative to governance sources, the repo is in `blocked mode`.
 - In `blocked mode`, only diagnosis and repair are allowed. Use `mi-lsp nav governance`, `$ps-asistente-wiki`, and `crear-gobierno-documental`.
-- Run `$ps-auditar-trazabilidad` for large, risky, cross-layer, or multi-module changes.
+- Run `$ae-close` for large, risky, cross-layer, or multi-module changes.
 - If editing `AGENTS.md` or `CLAUDE.md`, use `$ps-crear-agentsclaudemd`.
-- Use `.docs/wiki/ae/` as the Agent Engineering layer. For workflow, policy, release, binary, worker, install, or publication work, enter through `$ae-programa`, load `AE-HARNESS-MANIFEST`, and close through `AE-RELEASE-DISTRIBUTION` when binaries can drift.
+- Use `.docs/wiki/ae/` as the Agent Engineering layer. For workflow, policy, release, binary, worker, install, or publication work, enter through `$ae-work`, load `AE-HARNESS-MANIFEST`, and close through `AE-RELEASE-DISTRIBUTION` when binaries can drift.
 - If updating any skill under `C:\Users\fgpaz\.agents\skills`, also update the mirrored copy under `C:\repos\buho\assets\skills` in the same task.
 - If creating or refactoring technical wiki docs under `07/08/09`, use `$crear-capa-tecnica-wiki`.
 - If changing scope, architecture, or flows, use `crear-alcance`, `crear-arquitectura`, and `crear-flujo` in that order when applicable.
@@ -254,35 +254,35 @@ rg -n "07_baseline_tecnica|08_modelo_fisico_datos|09_contratos_tecnicos" .docs/w
 
 Standard task:
 
-1. `$ps-contexto`
+1. `$ae-work`
 2. governance gate with `workspace status` + `nav governance`
-3. `$brainstorming`
+3. `$ae-decide`
 4. orchestrate and execute
-5. `$ps-trazabilidad`
+5. `$ae-close`
 
 Large or risky task:
 
-1. `$ps-contexto`
+1. `$ae-work`
 2. governance gate with `workspace status` + `nav governance`
-3. `$brainstorming`
+3. `$ae-decide`
 4. orchestrate, preferably with `dispatching-parallel-agents`
 5. update docs if needed
-6. `$ps-trazabilidad`
-7. `$ps-auditar-trazabilidad`
+6. `$ae-close`
+7. `$ae-close`
 
 Policy-edit task:
 
-1. `$ps-contexto`
+1. `$ae-work`
 2. governance gate with `workspace status` + `nav governance`
-3. `$brainstorming`
+3. `$ae-decide`
 4. `$ps-crear-agentsclaudemd`
 5. sync `AGENTS.md` and `CLAUDE.md`
 6. verify `.docs/wiki/ae/` still matches policy when the change touches agent execution
-7. `$ps-trazabilidad`
+7. `$ae-close`
 
 Governance-repair task:
 
-1. `$ps-contexto`
+1. `$ae-work`
 2. `mi-lsp workspace status <alias> --format toon`
 3. `mi-lsp nav governance --workspace <alias> --format toon`
 4. `$ps-asistente-wiki`
@@ -293,32 +293,32 @@ Governance-repair task:
 ## Workflow Catalog
 
 ### A) Standard Task Flow
-1. `ps-contexto` — load project context
+1. `ae-work` — load project context
 2. governance gate — `workspace status` + `nav governance`
-3. `brainstorming` — challenge and lock design decisions
+3. `ae-decide` — challenge and lock design decisions
 4. orchestrate and execute
 5. documentation synchronization when needed
-6. `ps-trazabilidad` — closure
+6. `ae-close` — closure
 
 ### B) Large / Risky / Multi-Step Task Flow
-1. `ps-contexto` — load project context
+1. `ae-work` — load project context
 2. governance gate — `workspace status` + `nav governance`
-3. `brainstorming` — design and harden
+3. `ae-decide` — design and harden
 4. `writing-plans` — generate wave-dispatchable plan when the work benefits from formal waves
 5. wave execution and docs sync
-6. `ps-trazabilidad` — final closure
-7. `ps-auditar-trazabilidad` — read-only audit before marking done
+6. `ae-close` — final closure
+7. `ae-close` — read-only audit before marking done
 
 ### C) Policy-Change Flow
-1. `ps-contexto`
+1. `ae-work`
 2. governance gate
-3. `brainstorming`
+3. `ae-decide`
 4. `ps-crear-agentsclaudemd`
 5. update both policy files
-6. `ps-trazabilidad`
+6. `ae-close`
 
 ### D) Governance-Repair Flow
-1. `ps-contexto`
+1. `ae-work`
 2. `mi-lsp workspace status <alias> --format toon`
 3. `mi-lsp nav governance --workspace <alias> --format toon`
 4. `ps-asistente-wiki`
@@ -330,16 +330,16 @@ Governance-repair task:
 
 | Skill | When | Mandatory |
 |-------|------|-----------|
-| `ps-contexto` | At the start of every task | Yes |
+| `ae-work` | At the start of every task | Yes |
 | `mi-lsp` | Governance diagnostics, docs-first navigation, code exploration | Yes |
-| `brainstorming` | After context and governance gate, before non-trivial execution | Yes |
+| `ae-decide` | After context and governance gate, before non-trivial execution | Yes |
 | `ps-asistente-wiki` | Governance/documentation diagnosis and next-step routing | Yes when governance or wiki work is involved |
 | `crear-gobierno-documental` | Create, repair, or refactor `.docs/wiki/00_gobierno_documental.md` and its projection | Yes when governance is missing, invalid, or stale |
 | `writing-plans` | Large, risky, or multi-step work | Yes when a formal wave plan is needed |
 | `ps-crear-agentsclaudemd` | Editing `AGENTS.md` or `CLAUDE.md` | Yes |
-| `ae-orquestador` | Agent Engineering, workflow, policy, release, binary, install, or publication work | Yes |
-| `ps-trazabilidad` | Before closing any task | Yes |
-| `ps-auditar-trazabilidad` | Large, risky, multi-module, or cross-layer changes | Yes |
+| `ae-work` | Agent Engineering, workflow, policy, release, binary, install, or publication work | Yes |
+| `ae-close` | Before closing any task | Yes |
+| `ae-close` | Large, risky, multi-module, or cross-layer changes | Yes |
 
 ## Agent Acceleration Commands (v1.3)
 
@@ -434,10 +434,10 @@ If `hint` is present and `items` is empty: **act on the hint first — do not re
 
 ## Non-Negotiables
 
-- Do not skip `$ps-contexto`, even for documentation work.
+- Do not skip `$ae-work`, even for documentation work.
 - Do not skip the governance gate at the start of every task.
-- Do not skip the single `$brainstorming` pass after context load.
-- Do not close tasks without `$ps-trazabilidad`.
+- Do not skip the single `$ae-decide` pass after context load.
+- Do not close tasks without `$ae-close`.
 - Do not continue normal work when `governance_blocked=true`.
 - Do not treat `00_gobierno_documental.md` and `read-model.toml` as co-authorities; `00` always wins.
 - Do not treat the daemon, worker, TS backend, or governance UI as purely code concerns; keep `07/08/09` in sync.

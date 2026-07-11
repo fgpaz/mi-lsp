@@ -5,7 +5,7 @@ The wiki remains the source of truth; this file gives agents a compact path map.
 
 ## AE Programa Gateway (MANDATORY)
 
-`ae-programa` is the mandatory gateway before any non-trivial, mutating, policy, harness, shared-skill, or multi-step work in this repository.
+`ae-work` is the mandatory gateway before any non-trivial, mutating, policy, harness, shared-skill, or multi-step work in this repository.
 
 Before functional work, validate the local AE layer is complete:
 
@@ -35,11 +35,11 @@ Subagents or worker lanes are mandatory for AE-governed T2+, mutating, multi-ste
 
 WSL/subagent/worker execution audits must be read-only first and must produce a worker/session attribution matrix, admin export summary, manual-cli exception review, and WSL evidence-handling note. Do not mutate WSL filesystems, rewrite histories/logs, dump raw shell history, or treat telemetry/transcripts as canon.
 
-Before any push or PR-ready claim, run `scripts/ae/pre-push-guard.ps1` with the active session contract, then close with `ps-trazabilidad` and `ps-auditar-trazabilidad`. If any diff, branch, evidence, scope, or tracker state changes after audit, rerun both closure gates.
+Before any push or PR-ready claim, run `scripts/ae/pre-push-guard.ps1` with the active session contract, then close with `ae-close` and `ae-close`. If any diff, branch, evidence, scope, or tracker state changes after audit, rerun both closure gates.
 
 ## Subagent Orchestration Protocol
 
-- Every required worker scope must launch subagents or worker lanes after `ae-programa` locks the session contract and selects a usable adapter.
+- Every required worker scope must launch subagents or worker lanes after `ae-work` locks the session contract and selects a usable adapter.
 - First wave is read-only exploration; implementation writes go to specialized implementation or worker lanes.
 - Minimum lanes: 0 only for `C0_INLINE_NO_DIFF`; 1+ for T2+/mutating/multi-step/policy/harness/shared-skill/runtime/deployable scope; 3+ for medium independent axes; 5+ for complex or cross-layer work.
 - Delegated tasks must be atomic, path-bounded, and evidence-bounded; subagents return summaries with file/line or command evidence, not raw dumps.
