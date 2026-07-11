@@ -64,7 +64,7 @@ Define la frontera entre clientes locales y el runtime compartido: CLI publica, 
 Comandos canonicos:
 
 - `workspace add|scan|list|warm|status|remove|doctor|hygiene|prune`
-- `nav symbols|find|refs|overview|outline|service|search|context|deps|ask|pack|batch|related|workspace-map|diff-context|affected|trace|intent`
+- `nav symbols|find|refs|overview|outline|service|search|context|deps|ask|pack|prepare|batch|related|workspace-map|diff-context|affected|trace|intent`
 - `index [path] [--clean] [--docs-only]`
 - `index start|status|cancel`
 - `info`
@@ -372,6 +372,7 @@ daemon_eligible_ops:
   - nav.pack
   - nav.governance
   - nav.route
+  - nav.prepare
 behavior:
   auto_start: false
   fallback: "direct if daemon unavailable"

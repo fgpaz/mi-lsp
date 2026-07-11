@@ -701,6 +701,29 @@ type CommandRequest struct {
 	Payload         map[string]any `json:"payload,omitempty"`
 }
 
+// SemanticPreparationEvidence is a read-only, generation-bound readiness packet.
+// It contains evidence for a caller-owned edit decision; it never grants mutation authority.
+type SemanticPreparationEvidence struct {
+	Schema           string              `json:"schema"`
+	WorkspaceRoot    string              `json:"workspace_root"`
+	TaskDigest       string              `json:"task_digest"`
+	GovernanceDigest string              `json:"governance_digest"`
+	IndexGeneration  string              `json:"index_generation"`
+	PlanDigest       string              `json:"plan_digest,omitempty"`
+	AllowedPaths     []string            `json:"allowed_paths"`
+	Warnings         []string            `json:"warnings,omitempty"`
+	Timings          map[string]int64    `json:"timings_ms,omitempty"`
+	TotalMS          int64               `json:"total_ms"`
+	Failure          *PreparationFailure `json:"failure,omitempty"`
+}
+
+type PreparationFailure struct {
+	Kind      string `json:"kind"`
+	Code      string `json:"code"`
+	Stage     string `json:"stage,omitempty"`
+	Retryable bool   `json:"retryable,omitempty"`
+}
+
 type WorkerRequest struct {
 	ProtocolVersion string         `json:"protocol_version,omitempty"`
 	Method          string         `json:"method"`

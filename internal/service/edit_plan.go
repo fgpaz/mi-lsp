@@ -384,7 +384,7 @@ func resolveEditPlanPath(root string, requested string, denyPaths []string) (str
 	if !editPlanPathInsideRoot(root, absPath) {
 		return "", "", errors.New("path outside workspace root")
 	}
-	if evaluated, err := filepath.EvalSymlinks(absPath); err == nil {
+	if evaluated, err := evalExistingPathOrAncestor(absPath); err == nil {
 		evaluatedRoot := root
 		if resolvedRoot, rootErr := filepath.EvalSymlinks(root); rootErr == nil {
 			evaluatedRoot = resolvedRoot
@@ -402,6 +402,22 @@ func resolveEditPlanPath(root string, requested string, denyPaths []string) (str
 		return "", "", fmt.Errorf("path denied by %s", deniedBy)
 	}
 	return absPath, rel, nil
+}
+
+func evalExistingPathOrAncestor(path string) (string, error) {
+	candidate := filepath.Clean(path)
+	for {
+		if _, err := os.Lstat(candidate); err == nil {
+			return filepath.EvalSymlinks(candidate)
+		} else if !errors.Is(err, os.ErrNotExist) {
+			return "", err
+		}
+		parent := filepath.Dir(candidate)
+		if parent == candidate {
+			return "", os.ErrNotExist
+		}
+		candidate = parent
+	}
 }
 
 func editPlanPathInsideRoot(root string, absPath string) bool {

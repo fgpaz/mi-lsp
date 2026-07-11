@@ -10,23 +10,16 @@ import (
 )
 
 func TestRegistryGCDryRun(t *testing.T) {
-	// Create a temporary registry directory
+	// Create a temporary registry directory.
 	tmpDir := t.TempDir()
-	oldHome := os.Getenv("HOME")
-	defer func() {
-		if oldHome != "" {
-			_ = os.Setenv("HOME", oldHome)
-		}
-	}()
 
-	// Create a temporary home directory with mi-lsp subdirectory
+	// Isolate both Unix and Windows home-directory resolution.
 	homeDir := filepath.Join(tmpDir, "home")
 	if err := os.MkdirAll(homeDir, 0o755); err != nil {
 		t.Fatalf("failed to create home dir: %v", err)
 	}
-	if err := os.Setenv("HOME", homeDir); err != nil {
-		t.Fatalf("failed to set HOME: %v", err)
-	}
+	t.Setenv("HOME", homeDir)
+	t.Setenv("USERPROFILE", homeDir)
 
 	// Create registry directory
 	registryDir := filepath.Join(homeDir, ".mi-lsp")
@@ -91,23 +84,16 @@ func TestRegistryGCDryRun(t *testing.T) {
 }
 
 func TestRegistryGCApply(t *testing.T) {
-	// Create a temporary registry directory
+	// Create a temporary registry directory.
 	tmpDir := t.TempDir()
-	oldHome := os.Getenv("HOME")
-	defer func() {
-		if oldHome != "" {
-			_ = os.Setenv("HOME", oldHome)
-		}
-	}()
 
-	// Create a temporary home directory with mi-lsp subdirectory
+	// Isolate both Unix and Windows home-directory resolution.
 	homeDir := filepath.Join(tmpDir, "home")
 	if err := os.MkdirAll(homeDir, 0o755); err != nil {
 		t.Fatalf("failed to create home dir: %v", err)
 	}
-	if err := os.Setenv("HOME", homeDir); err != nil {
-		t.Fatalf("failed to set HOME: %v", err)
-	}
+	t.Setenv("HOME", homeDir)
+	t.Setenv("USERPROFILE", homeDir)
 
 	// Create registry directory
 	registryDir := filepath.Join(homeDir, ".mi-lsp")
@@ -216,23 +202,16 @@ func TestRegistryGCApply(t *testing.T) {
 }
 
 func TestRegistryGCWithEmptyRoot(t *testing.T) {
-	// Create a temporary registry directory
+	// Create a temporary registry directory.
 	tmpDir := t.TempDir()
-	oldHome := os.Getenv("HOME")
-	defer func() {
-		if oldHome != "" {
-			_ = os.Setenv("HOME", oldHome)
-		}
-	}()
 
-	// Create a temporary home directory with mi-lsp subdirectory
+	// Isolate both Unix and Windows home-directory resolution.
 	homeDir := filepath.Join(tmpDir, "home")
 	if err := os.MkdirAll(homeDir, 0o755); err != nil {
 		t.Fatalf("failed to create home dir: %v", err)
 	}
-	if err := os.Setenv("HOME", homeDir); err != nil {
-		t.Fatalf("failed to set HOME: %v", err)
-	}
+	t.Setenv("HOME", homeDir)
+	t.Setenv("USERPROFILE", homeDir)
 
 	// Create registry directory
 	registryDir := filepath.Join(homeDir, ".mi-lsp")

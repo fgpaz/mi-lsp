@@ -1,0 +1,29 @@
+schema: ae-integration-closure/v1
+task: finish-nav-prepare-integration
+verdict: READY_FOR_PR
+base_sha: 56af5f294be52d5ed2bead7c66d388428988c4a7
+implementation_sha: 33f3bf74fa6d9dcdbda18616a98b4f0cd25e03c4
+fresh_validation:
+  targeted_registry_gc_count_3: PASS
+  targeted_rerank_count_3: PASS
+  go_test_all_count_1: PASS
+  go_vet_all: PASS
+  git_diff_check: PASS
+  wiki_source: PASS
+repairs:
+  - path: internal/cli/registry_test.go
+    reason: os.UserHomeDir uses USERPROFILE on Windows; tests isolated only HOME and touched the real registry
+    resolution: isolate HOME and USERPROFILE with testing.T.Setenv
+  - path: internal/rerank/extension_test.go
+    reason: helper subprocess inherited the production 2s timeout and flaked under full-suite process load
+    resolution: use a 30s helper timeout only in non-timeout tests; retain the explicit 10ms timeout oracle
+  - path: internal/service/search_wave3b_test.go
+    reason: wall-clock threshold duplicated the deterministic timeout-envelope oracle and flaked under loaded Windows process teardown
+    resolution: retain warning, coach, and partial-result assertions; remove only the nondeterministic elapsed-time assertion
+scope:
+  production_behavior_changed_by_repairs: false
+  release_or_publication_performed: false
+pending:
+  - commit integration test repairs
+  - open PR and wait for CI
+  - guarded merge and main readback
