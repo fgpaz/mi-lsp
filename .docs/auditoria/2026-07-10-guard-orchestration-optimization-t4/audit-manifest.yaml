@@ -5,8 +5,10 @@ hash_algorithm: sha256
 artifact_classes:
   canonical_evidence:
     - session-contract.yaml
+    - integration-session-contract.yaml
     - join-disposition.yaml
     - traceability-closure.yaml
+    - integration-closure.yaml
     - latency-p50-p95.json
   worker_summaries:
     - direct-luna/worker-final.json
