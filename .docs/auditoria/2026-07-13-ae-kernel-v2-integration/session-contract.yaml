@@ -119,11 +119,11 @@ changed_file_hashes:
 changed_file_hashes_scope: implementation_policy_canonical_files_only
 package_hashes:
   algorithm: sha256
-  normalization: remove this package_hashes mapping before hashing each artifact
+  normalization: remove the top-level package_hashes block before hashing each artifact
   files:
-    audit-manifest.yaml: e4499d29154de91a26a3a369b18bcff956c3252a528ff6f8174f4cc94b3d0491
-    session-contract.yaml: d63a159f948c78ce2cd085c17335e936d58a203b0af7c114814d196b4d1fdc4d
-    traceability-closure.yaml: c146c575d8b109e25ca05d8cd36242b6d09d9c7be8dbe4c55d1e44671459346a
+    audit-manifest.yaml: 3a4a123562a35814df24e1a97ef2ef1ae74d222b659e63f6cd227076522146d6
+    session-contract.yaml: 42a0840d85551ce1bd178362c842556ee68f49aeca6bfb9a9d2b940502865404
+    traceability-closure.yaml: f92724800ce7edbe578ab41bf5f6cda73f03e08959fc4e6f1b16cda1d5f3f2ab
 worker_join:
   status: PASS
   worker_id: claudex-writer
@@ -140,11 +140,20 @@ worker_join:
     - validate_source_targeted: PASS
     - pre_push_guard_negative_tests: PASS
     - git_diff_check: PASS
-completion_handoff: BLOCKED
+post_commit:
+  sha: 4f6012e
+  origin_main: 9f232e8
+  fetch_status: stable
+  ahead_of_origin_main: 1
+  go_test_all: PASS
+  pre_push_guard:
+    status: PASS
+    dirty_count: 0
+    diff_count: 20
+    ae_canon_status: valid
+completion_handoff: handoff_ready
+handoff_target: integrate-main
 blockers:
-  - id: commit_not_executed_in_worker
+  - id: push_readback_pending
     owner: integration_owner
-    detail: root session authorizes commit/integration; this worker preserves the no-commit boundary
-  - id: integration_not_executed_in_worker
-    owner: integration_owner
-    detail: root session authorizes integration; this worker does not perform integration or cleanup
+    detail: push and remote readback remain pending and are outside this worker execution
