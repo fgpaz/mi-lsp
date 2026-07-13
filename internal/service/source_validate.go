@@ -66,7 +66,7 @@ func (a *App) validateSource(ctx context.Context, request model.CommandRequest) 
 		return model.Envelope{}, err
 	}
 	docs := loadSourceDocs(registration.Root, query.docs)
-	result := compileSourceValidation(docs, query.docs, blocks, records)
+	result := compileSourceValidation(registration.Root, docs, query.docs, blocks, records)
 	env := model.Envelope{
 		Ok:        true,
 		Workspace: registration.Name,
@@ -105,7 +105,7 @@ func loadSourceDocs(root string, records []model.DocRecord) []sourceDoc {
 	return docs
 }
 
-func compileSourceValidation(docs []sourceDoc, allDocs []model.DocRecord, indexedBlocks []model.DocSourceBlock, indexedRecords []model.DocSourceRecord) model.WikiSourceValidationResult {
+func compileSourceValidation(root string, docs []sourceDoc, allDocs []model.DocRecord, indexedBlocks []model.DocSourceBlock, indexedRecords []model.DocSourceRecord) model.WikiSourceValidationResult {
 	result := model.WikiSourceValidationResult{
 		WikiSourceProtocol:          wikiSourceProtocolV1,
 		IndexFreshness:              "current",
@@ -181,12 +181,12 @@ func compileSourceValidation(docs []sourceDoc, allDocs []model.DocRecord, indexe
 			addDocBlocker("missing exports")
 		}
 		for _, ref := range parsed.Imports {
-			if !harnessRefExists("", docIndex, doc.record.Path, ref) {
+			if !harnessRefExists(root, docIndex, doc.record.Path, ref) {
 				addDocBlocker("broken import " + ref)
 			}
 		}
 		for _, ref := range parsed.Exports {
-			if !sourceExportExists(parsed, indexedSourceIDs, ref) {
+			if !sourceExportExists(root, parsed, indexedSourceIDs, ref) {
 				addDocBlocker("export not indexed " + ref)
 			}
 		}
@@ -385,7 +385,10 @@ func sourceDocLabel(doc sourceDoc) string {
 	return doc.record.Path
 }
 
-func sourceExportExists(parsed wikisource.ParsedDoc, indexedSourceIDs map[string]struct{}, ref string) bool {
+func sourceExportExists(root string, parsed wikisource.ParsedDoc, indexedSourceIDs map[string]struct{}, ref string) bool {
+	if kernelV2CanonReferenceExists(root, ref) {
+		return true
+	}
 	if normalizeHarnessRef(ref) == normalizeHarnessRef(parsed.DocID) {
 		return true
 	}

@@ -419,12 +419,19 @@ type GovernanceSource struct {
 	Overlays             []string                  `yaml:"overlays,omitempty"`
 	NumberingRecommended bool                      `yaml:"numbering_recommended,omitempty"`
 	OwnerHints           []DocsOwnerHint           `yaml:"owner_hints,omitempty"`
+	AECanon              GovernanceAECanon         `yaml:"ae_canon,omitempty"`
 	Hierarchy            []GovernanceHierarchyItem `yaml:"hierarchy"`
 	ContextChain         []string                  `yaml:"context_chain"`
 	ClosureChain         []string                  `yaml:"closure_chain"`
 	AuditChain           []string                  `yaml:"audit_chain"`
 	BlockingRules        []string                  `yaml:"blocking_rules"`
 	Projection           GovernanceProjection      `yaml:"projection"`
+}
+
+type GovernanceAECanon struct {
+	Mode       string `yaml:"mode,omitempty" toml:"mode,omitempty"`
+	Source     string `yaml:"source,omitempty" toml:"source,omitempty"`
+	RepoPolicy string `yaml:"repo_policy,omitempty" toml:"repo_policy,omitempty"`
 }
 
 type GovernanceHierarchyItem struct {
@@ -455,6 +462,7 @@ type DocsGovernanceProfile struct {
 	AuditChain           []string                  `toml:"audit_chain,omitempty"`
 	BlockingRules        []string                  `toml:"blocking_rules,omitempty"`
 	NumberingRecommended bool                      `toml:"numbering_recommended,omitempty"`
+	AECanon              GovernanceAECanon         `toml:"ae_canon,omitempty"`
 	Projection           GovernanceProjection      `toml:"projection,omitempty"`
 	Hierarchy            []GovernanceHierarchyItem `toml:"hierarchy,omitempty"`
 }

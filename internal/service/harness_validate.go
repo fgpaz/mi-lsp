@@ -11,6 +11,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
+	"github.com/fgpaz/mi-lsp/internal/docgraph"
 	"github.com/fgpaz/mi-lsp/internal/model"
 )
 
@@ -555,6 +556,9 @@ func harnessRefExists(root string, index map[string]struct{}, fromPath string, r
 	if strings.HasPrefix(ref, "http://") || strings.HasPrefix(ref, "https://") {
 		return true
 	}
+	if kernelV2CanonReferenceExists(root, ref) {
+		return true
+	}
 	if _, ok := index[normalizeHarnessRef(ref)]; ok {
 		return true
 	}
@@ -572,14 +576,55 @@ func harnessRefExists(root string, index map[string]struct{}, fromPath string, r
 	if strings.HasPrefix(path, "./") || strings.HasPrefix(path, "../") {
 		path = filepath.ToSlash(filepath.Clean(filepath.Join(filepath.Dir(filepath.ToSlash(fromPath)), filepath.FromSlash(path))))
 	}
-	if filepath.Ext(path) == "" && strings.Contains(path, "/") {
+	if filepath.Ext(path) == "" {
 		path += ".md"
 	}
 	if _, ok := index[normalizeHarnessRef(path)]; ok {
 		return true
 	}
-	if strings.Contains(path, "/") {
-		if _, err := os.Stat(filepath.Join(root, filepath.FromSlash(path))); err == nil {
+	candidates := []string{path}
+	if !strings.Contains(path, "/") {
+		candidates = append(candidates, filepath.ToSlash(filepath.Join(".docs", "wiki", path)))
+	}
+	for _, candidate := range candidates {
+		if _, err := os.Stat(filepath.Join(root, filepath.FromSlash(candidate))); err == nil {
+			return true
+		}
+	}
+	return false
+}
+
+func kernelV2CanonReferenceExists(root string, ref string) bool {
+	if strings.TrimSpace(root) == "" {
+		return false
+	}
+	normalized := normalizeHarnessRef(ref)
+	if normalized == "ae_canon" {
+		status := docgraph.InspectGovernance(root, false)
+		return status.AECanon.Status == "valid" && status.AECanon.Source == "kernel_v2"
+	}
+	const prefix = "<kernel_home>/canon/"
+	if !strings.HasPrefix(normalized, prefix) {
+		return false
+	}
+	module := strings.TrimPrefix(normalized, prefix)
+	for _, required := range []string{
+		"AE-KERNEL-V2.md",
+		"AE-PHASES.md",
+		"AE-HARNESS-ORCHESTRATION.md",
+		"AE-EVIDENCE-POLICY.md",
+		"AE-POLICY-PROJECTION.md",
+	} {
+		if module == strings.ToLower(required) {
+			status := docgraph.InspectGovernance(root, false)
+			if status.AECanon.Status != "valid" || status.AECanon.Source != "kernel_v2" {
+				return false
+			}
+			for _, missing := range status.AECanon.MissingModules {
+				if strings.EqualFold(missing, "<kernel_home>/canon/"+required) {
+					return false
+				}
+			}
 			return true
 		}
 	}

@@ -176,6 +176,74 @@ func addAEDeclarationToGovernanceFixture(t *testing.T, root string, aeRoot strin
 	writeWorkspaceFile(t, root, ".docs/wiki/00_gobierno_documental.md", updated)
 }
 
+func addKernelV2AECanonToGovernanceFixture(t *testing.T, root string) {
+	t.Helper()
+	path := filepath.Join(root, ".docs", "wiki", "00_gobierno_documental.md")
+	content, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read governance fixture: %v", err)
+	}
+	config := strings.Join([]string{
+		"ae_canon:",
+		"  mode: kernel_v2",
+		"  source: <kernel_home>/canon",
+		"  repo_policy: .docs/ae/repo-policy.yaml",
+	}, "\n")
+	updated := strings.Replace(string(content), "hierarchy:", config+"\nhierarchy:", 1)
+	writeWorkspaceFile(t, root, ".docs/wiki/00_gobierno_documental.md", updated)
+}
+
+func writeKernelV2CanonModules(t *testing.T, kernelHome string) {
+	t.Helper()
+	for _, name := range []string{
+		"AE-KERNEL-V2.md",
+		"AE-PHASES.md",
+		"AE-HARNESS-ORCHESTRATION.md",
+		"AE-EVIDENCE-POLICY.md",
+		"AE-POLICY-PROJECTION.md",
+	} {
+		writeWorkspaceFile(t, kernelHome, "canon/"+name, "# "+strings.TrimSuffix(name, ".md")+"\n")
+	}
+}
+
+func writeKernelV2RepoPolicy(t *testing.T, root string) {
+	t.Helper()
+	writeWorkspaceFile(t, root, ".docs/ae/repo-policy.yaml", strings.Join([]string{
+		"repo:",
+		"  name: test-repo",
+		"  description: Test repository",
+		"language:",
+		"  policy_lang: English",
+		"  docs_lang: Spanish",
+		"tracker:",
+		"  provider: Linear",
+		"  key_env: TEST_LINEAR_API_KEY",
+		"  conf_file: .linear.conf",
+		"  linear:",
+		"    base_url: https://api.linear.app/graphql",
+		"    workspace: test",
+		"    projects:",
+		"      - key: TEST",
+		"secrets:",
+		"  vault: environment",
+		"  tool: env",
+		"wrappers:",
+		"  - name: test-wrapper",
+		"    script: scripts/test-wrapper.ps1",
+		"wiki:",
+		"  layers_map:",
+		"    \"02\": Architecture",
+		"  workspace_alias: test-repo",
+		"  paths_file: .docs/wiki/INDEX.md",
+		"qa:",
+		"  canon_paths:",
+		"    - .docs/wiki/06_tests.md",
+		"subagents:",
+		"  roster_file: SUBAGENTS.md",
+		"last_updated: \"2026-07-13\"",
+	}, "\n")+"\n")
+}
+
 func writeAECanonModules(t *testing.T, root string, aeRoot string) {
 	t.Helper()
 	for _, name := range []string{

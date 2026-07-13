@@ -1,285 +1,159 @@
-# mi-lsp Claude Policy
+# CLAUDE.md — mi-lsp Agentic Engineering Policy
 
-**Shared AE Gateway & Orchestration:** See `PATHS.md` for the authoritative AE Programa Gateway and Subagent Orchestration Protocol sections. This document covers Claude-specific adaptations to the shared gateway and Claude Code harness policy.
+> **Authority**: architecture + AE-KERNEL-V2.md. **Language**: English. Canonical source of truth for Claude Code orchestration on mi-lsp.
 
-## Mandatory Workflow
+## Pi-NaN Leaf Worker Policy
 
-For every task in this repository:
+Pi-NaN-first applies inside execution supervisors, not in the strategic root. Codex, Claude Code, OpenCode, and Pi strategic roots are orchestration-only: plan, launch child supervisors, monitor, join, and decide.
 
-1. Run `$ps-contexto`.
-1a. Run `$ae-programa` as the gateway for non-trivial, mutating, policy, harness, shared-skill, or multi-step work.
-1b. Select workers through manifest-backed global `ae-adapter-*` skills first: read `adapter_manifest.schema=ae-harness-adapter/v1`, prefer an explicit user-requested harness, then current/project harness fit, and fall back to `simulated_packets` with `missing_ae_adapter_manifest` when no adapter satisfies evidence and isolation.
-1c. Worker-first is mandatory for AE-governed T2+, mutating, multi-step, policy/harness/shared-skill, runtime/deployable, or independent-axis work: use `worker_decision=spawned` when a usable adapter exists. `worker_decision=none` is valid only for `C0_INLINE_NO_DIFF` true read-only/no-diff work with no independent axes; `why_no_worker` is blocker evidence only.
-1d. `ae-adapter-hermes` and `ae-adapter-claude-code` are discoverable partial seeds only; they are not usable until a native `ae-adapter-proof/v1` proves spawn, monitor, join, fallback, evidence, and sanitization.
-1e. Non-trivial `.docs/auditoria/<session>/` folders must include `audit-manifest.yaml` with `schema: ae-audit-hygiene/v1`, `retention_ttl_days: 14`, `hash_algorithm: sha256`, artifact classes, sanitized summaries/verdicts, and cleanup status.
-2. Validate governance before planning or execution:
-   - set `MI_LSP_CLIENT_NAME` and `MI_LSP_SESSION_ID`
-   - `mi-lsp workspace status <alias> --format toon`
-   - `mi-lsp nav governance --workspace <alias> --format toon`
-3. If governance is blocked, docs are not ready, `doc_count=0`, attribution is missing/manual, or `ae_canon` is not repo-canon valid, only diagnosis and repair work are allowed.
-4. Run `$brainstorming` once after context is loaded.
-5. Close critical context gaps before execution.
-6. Work as an orchestrator by default.
-7. Prefer `dispatching-parallel-agents` when the work can be split safely.
-8. Run `$ps-trazabilidad` before finishing.
+- The strategic root must not run `mi-pi program init`, `mi-pi model-router select`, `mi-pi worker spawn`, including `--model-router-only` and `--dry-run`, or any live Pi lifecycle command.
+- For bounded leaf work, the strategic root launches or continues a Codex child execution supervisor via the selected adapter. If unavailable, record an adapter blocker; do not bypass by running Pi directly.
+- `execution_supervisor` owns the `mi-pi` ledger, child-node registration, Pi-NaN spawn, fallback evidence, and compact join packet.
+- `execution_supervisor` launches bounded leaf work with: `mi-pi worker spawn --node <id> --executor pi_native_nan --model-router --task-class <locked_edit|read_only_exploration|verification|docs_wiki|structured_output> --human-approved --live --session <slug> --evidence-root <dir>`.
+- `pi_nan_leaf` may read, edit, or verify only within bounded scope; no subdelegation, push, deploy, or final closure.
+- Missing ledger repair is owned by the child execution supervisor.
+- GPT fallback is allowed only inside the child supervisor after durable Pi-NaN blocker evidence.
+- Required packet fields: `orchestration_role`, `delegation_boundary`, `pi_nan_launch_owner`, `child_supervisor_required`, `root_pi_nan_spawn_allowed: false`, and `boundary_violation`.
+- Join only from the child supervisor's compact join packet and durable worker evidence such as `verdict.yaml`, `command-status.yaml`, `model-selection.yaml`, `fallback-chain.yaml`, and cited diff/check summaries.
 
-Escalation rules:
+## Spec Driven Development Contract (Mandatory)
 
-- Spec-driven development is mandatory in ALL tasks.
-- `.docs/wiki/00_gobierno_documental.md` is the human governance authority.
-- `.docs/wiki/_mi-lsp/read-model.toml` is the versioned executable projection of `00`.
-- Do not push directly to `main`; create a branch and integrate through the PR flow. The PR flow is the integration mechanism, NOT a human-approval gate. Once the AE closure gates pass (`ps-trazabilidad` closure packet + `ps-auditar-trazabilidad` verdict `APPROVED` with all drift repaired + `scripts/ae/pre-push-guard.ps1` green + PR CI checks green), **auto-integrate the PR into `main`** via guarded merge without waiting for a separate human approval — `ps-auditar-trazabilidad` is the independent review. When branch protection requires a review and `enforce_admins=false`, complete it with an admin merge (`gh pr merge <n> --merge --admin --delete-branch`). Hold the PR open for a human only when the audit is `BLOCKED`, an `Approved with follow-ups` needs a human decision, a waiver is required, or the user explicitly asks to review. Never admin-merge over a failing CI check. Authority: `.docs/wiki/ae/AE-PHASES.md` (`AE-PHASES.integration_rule`).
-- Invalid, ambiguous, incomplete, or stale governance puts the repo in `blocked mode`.
-- In `blocked mode`, use `mi-lsp nav governance`, `$ps-asistente-wiki`, and `crear-gobierno-documental`; normal work must stop.
-- Run `$ps-auditar-trazabilidad` for large, risky, multi-module, or cross-layer changes.
-- Use `$ps-crear-agentsclaudemd` when editing `AGENTS.md` or `CLAUDE.md`.
-- Use `$crear-capa-tecnica-wiki` when creating or restructuring docs under `07/08/09`.
-- Use `.docs/wiki/ae/` as the Agent Engineering layer. For workflow, policy, release, binary, worker, install, or publication work, enter through `$ae-programa`, load `AE-HARNESS-MANIFEST`, and close through `AE-RELEASE-DISTRIBUTION` when binaries can drift.
+The governed project documentation under `.docs/wiki/` is the local product source of truth; universal AE authority lives in `<kernel_home>/canon/` and repository-specific AE configuration lives in `.docs/ae/repo-policy.yaml`.
 
-## Canonical Project Paths
+Before writing code:
+1. Identify the `RS-*`, `RF-*`, `FL-*`, or `CT-*` anchor. If none, create/repair it via `Skill("ps-docs")` / `Skill("ps-asistente-wiki")` / owning `crear-*` skill.
+2. Declare `ae_budget_gate` before loading expensive context, opening raw evidence, creating persistence, creating a worktree, dispatching workers, or choosing verification depth.
+3. Use the cheapest sufficient context path. `ps-contexto`, `ps-explorer`, `mi-lsp nav pack`, worktrees and session contracts are budget-gated, not automatic.
+4. For governed tracked work, claim the not_configured issue and mirror the ticket frontier in the selected persistence artifact.
+5. No write worker (`ps-dotnet10`, `ps-next-vercel`, `ps-python`, `ps-docs`, `ps-worker`) starts unless `worker_decision: spawned` is recorded.
 
-Functional docs:
+Non-compliant: implementing without an anchor, escalating legacy "mandatory/always" rules without `ae_budget_gate`, editing a dirty/high-risk base without isolation, missing not_configured parent/agent issue and ticket frontier for governed work, closing without the selected closure profile, or closing deployable work after `origin/main` integration without post-deploy health evidence.
 
-- `.docs/wiki/00_gobierno_documental.md`
-- `.docs/wiki/01_alcance_funcional.md`
-- `.docs/wiki/02_arquitectura.md`
-- `.docs/wiki/03_FL.md`
-- `.docs/wiki/03_FL/`
-- `.docs/wiki/04_RF.md`
-- `.docs/wiki/04_RF/`
-- `.docs/wiki/05_modelo_datos.md`
-- `.docs/wiki/06_matriz_pruebas_RF.md`
-- `.docs/wiki/06_pruebas/`
+## Agentic Engineering Contract (Mandatory)
 
-Technical docs:
+Full AE is the workflow authority. Canon lives in `<kernel_home>/canon/`; `CLAUDE.md`, `AGENTS.md`, `SUBAGENTS.md`, shared skills, and service policy files are projections. Every task first declares or implies `ae_budget_gate`; non-trivial work then runs only the AE depth selected by effort: `CONTEXTO -> TICKET -> GAPS -> AISLAR -> CONSTRUIR -> CERRAR -> VERIFICAR`.
 
-- `.docs/wiki/07_baseline_tecnica.md`
-- `.docs/wiki/08_modelo_fisico_datos.md`
-- `.docs/wiki/09_contratos_tecnicos.md`
-- `.docs/wiki/07_tech/`
-- `.docs/wiki/08_db/`
-- `.docs/wiki/09_contratos/`
+Mandatory AE rules:
+- Invoke `Skill("ae-work")` as the default AE entry point for implementation, fixes, refactors, documentation, integration, and other software work; it owns classify → execute → `Skill("ae-close")` → unchanged completion handoff routing → verified readback.
+- Adapter selection is manifest-first: discover global `ae-adapter-*` skills, read `adapter_manifest.schema=ae-harness-adapter/v1`, prefer the explicit user-requested harness, then project/current harness capability fit. If no compatible adapter is usable, use legacy fallback only with evidence/isolation fit or record `missing_ae_adapter_manifest` and use `simulated_packets`.
+- An adapter is usable only when its current global manifest records a native `ae-adapter-proof/v1` PASS covering spawn, monitor, join, fallback, evidence, and sanitization. Adapters without that proof are not usable and must not be inferred from another repository's history.
+- Worker-first is mandatory for AE-governed T2+, multi-step, mutating, policy/harness/shared-skill, runtime/deployable, or independent-axis work: record `worker_decision` and use `worker_decision=spawned` when a usable adapter is available. `worker_decision=none` is valid only for `C0_INLINE_NO_DIFF` true read-only/no-diff work with no independent axes; `why_no_worker` is blocker evidence, not authorization for local execution.
+- Human decision routing: ask <operator> via `Skill("brainstorming")` only for execution-changing product/UX, architecture/data/security/validation, credentials/secrets, destructive/spendful/external side effects, prod deploy/tag/reindex/reset/live cutover windows, or out-of-frontier scope/priority changes. Closure-only work, missing terminal fields, traceability/audit/not_configured sync, evidence promotion, branch/worktree cleanup/hold classification, and test/runtime failure classification must be resolved by the parent or owner thread unless a real human decision remains after classification. Async human decisions are accumulated in one session file, `.docs/auditoria/<session>/human-decision-brainstorming-protocol.md`, as Markdown plus fenced YAML packets; only packets marked `ready_for_operator` may be rendered through `AskUserQuestion`, one decision at a time.
+- Audit hygiene is mandatory for non-trivial `.docs/auditoria/<session>/`: create `audit-manifest.yaml` with `schema: ae-audit-hygiene/v1`, `retention_ttl_days: 14`, `hash_algorithm: sha256`, artifact classes, cleanup status, and a sanitized summary/verdict before treating captured audit material as durable. `.docs/raw/plans/**` and `.docs/raw/prompts/**` never become evidence through this lifecycle.
+- `SDD-HARNESS-v1` applies to every LLM-first wiki artifact this project produces or consumes: missing Harness contract, broken imports, empty verification, missing stop conditions, or missing durable evidence are hard blockers. `ps-contexto`, `ps-asistente-wiki`, `ps-trazabilidad`, and `ps-auditar-trazabilidad` must report `harness_readiness` before closure.
+- **New-artifact hardening (no-parity):** every NEW LLM-first wiki artifact (`RS/FL/RF/TP/UXS/UI-RFC/TECH/DB/CT/...`) is born hardened — full Harness Contract (11 fields), `doc_id`, `block_id` per normative section, normative content in `toon`. Partial migration of sibling canon is no excuse to skip it; `ps-trazabilidad`/`ps-auditar-trazabilidad` verify hardening per new artifact before closure. Canon: `AE-HARNESS-MANIFEST` block `AE-HARNESS-MANIFEST-ARTIFACT-CREATION-HARDENING`.
+- Read `<kernel_home>/canon/AE-KERNEL-V2.md` before governed planning, `<kernel_home>/canon/AE-HARNESS-ORCHESTRATION.md` for harness/shared-skill/policy/adapter work, and `<kernel_home>/canon/AE-EVIDENCE-POLICY.md` for deployment and closure evidence. Local `.docs/wiki/ae/**` copies are compatibility history, not current AE authority.
+- `ae_budget_gate` fields: `effort_class`, `persistence_mode`, `governance_depth`, `context_loading_profile`, `evidence_loading_profile`, `artifact_lifecycle`, `closure_profile`, `worker_budget`, `worker_decision`, `worker_adapter_available`, `worker_authorized_by_user`, `independent_axes`, `why_no_worker`, `why_not_cheaper`. Goal persistence, full suites, live/runtime, worker fanout, full trace/audit, and full governance require `why_not_cheaper`.
+- CQA work also declares `cqa_budget_gate`: `qa_effort`, `evidence_profile`, `retry_budget`, `file_ownership_partition`, `preflight_stamp`, `why_run_again`, `why_not_cheaper`. Start from `QE0_INVENTORY`/`QE1_VERDICT_ASSERTIONS`; use `reentry-packet` and `preflight-stamp` before raw turns/logs.
+- Select one AE work mode through `Skill("ae-work")`: `FAST` for trivial reversible work, `STANDARD` for bounded component work, or `STRICT` only for production-irreversible work. Invoke `Skill("ae-decide")` only when an unresolved execution-changing decision is genuinely human-owned.
+- Keep filename `session-contract.yaml`; add the mandatory `ae_contract` overlay for policy, shared-skill, harness, or non-trivial mutating work.
+- Primary skills: `Skill("ae-crear-politicas")`, `Skill("ae-crear-politicas-microservicios")`, `Skill("ae-pre-push")`. Legacy aliases (`ps-crear-agentsclaudemd`, `ps-crear-claudemd-microservicio`, `ps-pre-push`) remain callable but are not authority.
+- Shared-skill changes (governed by `AE-HARNESS-ORCHESTRATION.md`): update `~/.agents/skills` and `<org>/assets/skills` in the same run; closure evidence needs source path, mirror path, SHA-256 for both, and `byte_identical: true`. Don't push policy/harness/shared-skill changes until source/mirror sync, traceability, audit, and `ae-pre-push` evidence exist.
+- Legacy A-G/G.1 workflow names are read-only aliases mapped in `AE-LEGACY-ALIASES.md`.
 
-Agent Engineering docs:
+### Skill Invocation Semantics
 
-- `.docs/wiki/ae/`
-- `.docs/wiki/ae/AE-PHASES.md`
-- `.docs/wiki/ae/AE-HARNESS-MANIFEST.md`
-- `.docs/wiki/ae/AE-HARNESS-ORCHESTRATION.md`
-- `.docs/wiki/ae/AE-WORK-MODES.md`
-- `.docs/wiki/ae/AE-SESSION-CONTRACT.md`
-- `.docs/wiki/ae/AE-PROJECTION-POLICY.md`
-- `.docs/wiki/ae/AE-RELEASE-DISTRIBUTION.md`
-- `.docs/wiki/ae/AE-EVIDENCE-POLICY.md`
+- **Task start**: invoke `Skill("ae-work")`; classify the work as FAST, STANDARD, or STRICT before acting.
+- **Inside ps-explorer / orchestrator spot-verify**: `Skill("mi-lsp")` semantic backend under `src/`.
+- **Before mutating work**: `Skill("using-git-worktrees")` only when the gate/base risk requires isolation.
+- **Large/risky/multi-step**: `Skill("writing-plans")` after brainstorming.
+- **Inside ae-work**: continue mechanical work directly; route only unresolved human-owned product, architecture, UX, risk, scope, validation, or workflow choices to `Skill("ae-decide")`.
+- **Policy edits (`AGENTS.md`/`CLAUDE.md`/`SUBAGENTS.md`/`PATHS.md`)**: `Skill("ae-crear-politicas")`. Service policies: `Skill("ae-crear-politicas-microservicios")`. Cross-projection drift: `Skill("ae-projection-audit")`.
+- **Governance unhealthy**: `Skill("crear-gobierno-documental")` is the mandatory repair skill.
+- **Code-writing workers**: delegate through the selected adapter for mutating/code/docs/policy work whenever the scope requires workers and the adapter is available. `worker_decision=spawned` is the required state; `worker_decision=none` is only for `C0_INLINE_NO_DIFF` true read-only/no-diff work with no independent axes.
+- **Closure → completion handoff**: `Skill("ps-trazabilidad")` produces `completion_handoff` → `Skill("ps-auditar-trazabilidad")` audits it without mutation (rerun after drift) → `Skill("ae-close")` emits `handoff_ready`, `HOLD`, or `BLOCKED`.
+- **Authorized completion**: on `handoff_ready`, route the packet unchanged to `Skill("finishing-a-development-branch")`; it performs only explicitly authorized integration/cleanup, runs `Skill("ae-pre-push")` (`ps-pre-push` alias) immediately before any push, and reports remote readback.
+- **Final response gate**: governed completed work cannot end with closure steps as user follow-up; execute the closure completion loop or return a BLOCKED packet with owner, blocker class, and next action.
 
-Plan reference:
+### not_configured (Project Management)
 
-- `.docs/raw/plans/2026-04-12-governance-profile-hardening.md`
+not_configured is the configured source of truth for tickets, workflow, ownership, and closure. GitHub may still host code, PRs, CI, and releases. Endpoint `POST not_configured`, header `Authorization: <unset>` (raw key, no `Bearer`). Configured workspace `not_configured`, team key `MI-LSP`; repository routing details live in `absent`.
 
-## Governance Source of Truth
+- `unset` is a secret — env or `Skill("mi-key-cli")` only; never in tracked files, docs, prompts, logs, issue bodies, or printed args. `absent` is non-secret routing only. Verify routing with a redacted smoke query (`viewer`, `organization`, `teams(first:50)`); report workspace slug, team keys, and counts only.
+- `Skill("pj-crear-tarjeta")` is the live tracker helper in not_configured mode when repository routing is configured.
+- **Parent/agent split**: when the repository declares separate human-planning and agent-execution projects, governed code modification uses linked issues according to `absent` and the Additional Local Rules. Never assume project names or IDs from another repository.
+- **Planning states**: follow the workflow states configured for this repository; do not hardcode Now/Next/Later mappings unless the local policy declares them.
+- **Before taking a ticket**: check assignee, workflow state, and latest claim/scope comments; an active claim blocks work until handoff, integration-owner override, or explicit waiver.
+- **Claim before governed repo edits when tracker routing is active**: assign owner, move to the configured active state, and record owner, branch/worktree, scope frontier, allowed/forbidden paths, integration owner, required evidence, and start time.
+- Every active ticket declares a ticket frontier mirrored in the selected persistence artifact; out-of-frontier work is forbidden until both update. Out-of-frontier discoveries go to the configured parking-lot or triage path.
 
-- Human authority: `.docs/wiki/00_gobierno_documental.md`
-- Executable projection: `.docs/wiki/_mi-lsp/read-model.toml`
-- Primary diagnostic surface: `mi-lsp nav governance --workspace <alias> --format toon`
-- If `governance_blocked=true`, do not continue with normal docs-first work.
-- After repairing governance or auto-syncing the projection, rerun `mi-lsp index --workspace <alias>` before resuming `nav ask` or `nav pack`.
+### Governance Gate + `mi-lsp` Defaults
 
-## Layer Boundary
+**Governance**: `.docs/wiki/00_gobierno_documental.md` is the human governance authority; `.docs/wiki/_mi-lsp/read-model.toml` is its versioned executable projection. Diagnose via `mi-lsp workspace status <alias> --format toon` + `mi-lsp nav governance --workspace <alias> --format toon`. If governance is ambiguous, invalid, stale, or out of sync → stop and run `Skill("crear-gobierno-documental")` before continuing. `ps-trazabilidad` and `ps-auditar-trazabilidad` verify governance completeness and `00 ↔ read-model.toml` projection sync before closure.
 
-- `00-06` = functional source of truth.
-- `07+` = technical source of truth.
-- Root `07/08/09` docs are short and canonical.
-- `TECH-*`, `DB-*`, and `CT-*` contain delegated technical detail.
+**mi-lsp** (reference-not-duplicate doctrine — `Skill("mi-lsp")` owns command tables, alias validation, telemetry):
+- Project workspace alias: `mi-lsp`. Always pass `--workspace mi-lsp --format toon`; in container workspaces add `--repo <name>` before broader queries.
+- CLI-first; don't wait for an MCP path when the CLI answers. Use at T1+ for semantic navigation and inside every spawned `ps-explorer` dispatch; exact T0 searches may use `rg` first.
+- Fallback order: `mi-lsp` → `rg` (canonical-doc only) → `Read`; don't skip steps. If `mi-lsp` returns `items: []` with a `hint`, act on the hint before retrying.
 
-## Context Map
+### Windows Runner Guard
 
-- Repository purpose: local semantic CLI for large `.NET/C# + TypeScript` non-monorepo workspaces.
-- Runtime shape: Go CLI, optional global daemon, repo-local SQLite, Roslyn worker, optional TS semantic backend.
-- Hardening direction: one daemon per OS user, shared across agents, runtime pool by `(workspace_root, backend_type)`, local governance UI, explicit worker install, strict dependency remediation.
-- Active flows: `FL-BOOT-01`, `FL-IDX-01`, `FL-QRY-01`, `FL-CS-01`, `FL-DAE-01`
-- Active RFs: `RF-WKS-001`, `RF-WKS-002`, `RF-WKS-003`, `RF-WKS-004`, `RF-WKS-005`, `RF-IDX-001`, `RF-IDX-002`, `RF-IDX-003`, `RF-QRY-001`, `RF-QRY-002`, `RF-QRY-003`, `RF-QRY-004`, `RF-QRY-005`, `RF-QRY-006`, `RF-QRY-007`, `RF-QRY-008`, `RF-QRY-009`, `RF-QRY-010`, `RF-QRY-011`, `RF-QRY-012`, `RF-QRY-013`, `RF-CS-001`, `RF-DAE-001`, `RF-DAE-002`, `RF-DAE-003`, `RF-DAE-004`
-- Canonical entities: `WorkspaceRegistration`, `ProjectConfig`, `SymbolRecord`, `FileRecord`, `WorkspaceMeta`, `DaemonState`, `DaemonRun`, `RuntimeSnapshot`, `AccessEvent`, `QueryEnvelope`
-- Local machine state:
-  - `~/.mi-lsp/registry.toml`
-  - `~/.mi-lsp/daemon/state.json`
-  - `~/.mi-lsp/daemon/daemon.db`
-- Repo-local state:
-  - `.mi-lsp/project.toml`
-  - `.mi-lsp/index.db`
+On Windows, run a repository-declared runner preflight before a tracker lock, worktree, or long worker prompt when one exists. Do not reuse another repository's guard, issue identifier, or runbook; if the selected adapter fails its own preflight, record the concrete infrastructure blocker and evidence path.
 
-## Placeholder Mapping
+## Orchestration Mode (Always Active)
 
-- `<ALCANCE_DOC>` -> `.docs/wiki/01_alcance_funcional.md`
-- `<ARQUITECTURA_DOC>` -> `.docs/wiki/02_arquitectura.md`
-- `<FL_INDEX_DOC>` -> `.docs/wiki/03_FL.md`
-- `<FL_DOCS_DIR>` -> `.docs/wiki/03_FL/`
-- `<RF_INDEX_DOC>` -> `.docs/wiki/04_RF.md`
-- `<RF_DOCS_DIR>` -> `.docs/wiki/04_RF/`
-- `<MODELO_DATOS_DOC>` -> `.docs/wiki/05_modelo_datos.md`
-- `<TP_INDEX_DOC>` -> `.docs/wiki/06_matriz_pruebas_RF.md`
-- `<TP_DOCS_DIR>` -> `.docs/wiki/06_pruebas/`
-- `<BASELINE_TECNICA_DOC>` -> `.docs/wiki/07_baseline_tecnica.md`
-- `<MODELO_FISICO_DOC>` -> `.docs/wiki/08_modelo_fisico_datos.md`
-- `<CONTRATOS_TECNICOS_DOC>` -> `.docs/wiki/09_contratos_tecnicos.md`
-- `<TECH_DOCS_DIR>` -> `.docs/wiki/07_tech/`
-- `<DB_DOCS_DIR>` -> `.docs/wiki/08_db/`
-- `<CONTRATOS_DOCS_DIR>` -> `.docs/wiki/09_contratos/`
+For work that is non-trivial, mutating, governed, live/runtime, shared-skill, policy, or multi-step:
 
-## Documentation Sync Triggers
+1. Declare or infer `ae_budget_gate` (T0/T1 may stay inline, no persistence).
+2. `Skill("ae-work")` — default work gateway; execute FAST work directly, use ROI-positive workers only for independent STANDARD/STRICT axes, and preserve the acceptance oracle through integration and readback.
+3. Context loading follows `context_loading_profile`; `Skill("ps-contexto")` + governance gate only when the profile justifies them.
+4. `Skill("brainstorming")` once before planning/execution; close critical gaps via `AskUserQuestion` (or chat).
+5. **Human decision routing**: use `Skill("brainstorming")` for a human decision only after classifying the gap as execution-changing and not parent/owner-resolvable; otherwise continue with the owner thread, bounded worker, formal blocker, or durable closure artifact. If the decision is not asked immediately, add/update the session's `human-decision-brainstorming-protocol.md` packet; do not batch multiple `ready_for_operator` packets into one question unless the operator explicitly asks for a combined review.
+6. **Worker decision**: record `worker_decision`, `worker_budget`, adapter availability, authorization, independent axes, and either `why_not_cheaper` or `why_no_worker`.
+7. **Execution/review wave**: route implementation/review/QA/docs/ops to workers for T2+, multi-step, mutating, policy/harness/shared-skill, runtime/deployable, or independent-axis scope when an adapter is usable. Local work is valid only for `C0_INLINE_NO_DIFF`, orchestration, integration, citation verification, and final stitching after compact worker verdicts.
+8. `Skill("ps-trazabilidad")` produces `completion_handoff`; `Skill("ps-auditar-trazabilidad")` audits that packet without mutation.
+9. `Skill("ae-close")` verifies drift and emits exactly `handoff_ready`, `HOLD`, or `BLOCKED`; it does not commit, push, merge, clean up, or reap evidence.
+10. On `handoff_ready`, route the packet unchanged to `Skill("finishing-a-development-branch")`. That owner may sync not_configured via `unset` and perform only explicitly authorized completion mutations.
+11. Immediately before any authorized `git push` to `main`, the completion owner runs `Skill("ae-pre-push")`; after integration it records remote readback. Fresh-session continuation/bootstrap may use `Skill("ps-prompt")` with the handoff, targeting the next harness.
 
-- Runtime, daemon, governance, bootstrap, TS backend, or dependency changes:
-  - sync `.docs/wiki/07_baseline_tecnica.md`
-  - sync affected `07_tech/TECH-*.md`
+Standing rules:
+- User grants permission to launch workers when `ae_budget_gate.worker_decision: spawned`; only irreversible external actions outside repo/runtime scope require confirmation.
+- Persistence follows `persistence_mode`: T0/T1 may use none/inline, T2 uses task packet or mini contract, T3/T4 use session contract/full governance. Post-audit drift -> rerun the selected gates.
+- `handoff_ready` with `branch_disposition: integrate-main` requests guarded integration but grants no mutation authority. Only `finishing-a-development-branch`, acting under explicit session/operator authority, may integrate; after successful remote readback it may perform separately authorized worktree/branch cleanup. Preserve `hold`/`pr-open`/`active-followup`/`cleanup-blocked` classifications with evidence.
+- **Post-deploy closure** (deployable changes on `origin/main`): blocked until the affected surface is verified working AND a dev-qa health sweep covers every canonical microservice/store. Evidence under `.docs/auditoria/<session>/`: target env, affected surface, deployed ref or SHA-drift blocker, Dokploy status, smoke results. Any failed probe / missing deploy / stale ref / unknown status = `deployment-drift` → PASS loop §G.1; sweep-promoted artifacts trigger a final `ps-trazabilidad` + `ps-auditar-trazabilidad` refresh before marking integrated.
+- **PASS-gate**: any FAIL/BLOCKED from repo/runtime drift, deployment mismatch, flaky harness, stale evidence, or unclassified error is not closure. Iterate fix → redeploy/retest → evidence until fully PASS or human-approved external blocker recorded. Keep ticket frontier + contract + evidence + not_configured claim comments current.
+- XP on `main` requires `ae-pre-push` immediately before push. Guard blocks on: non-fast-forward; missing parent/agent issue or ticket frontier; undeclared critical surfaces; missing evidence; stale not_configured state; any added or modified `.docs/raw/plans/**` or `.docs/raw/prompts/**` without a separate `governed_raw_input` operation naming exact paths, valid SDD frontmatter, owner, task_scope, tracking_reason, and rollback; any broad `.docs/raw/**` allowlist; dangerous untracked artifacts under `src/`. **Force-push to `main` is never allowed.**
+- Edits to `AGENTS.md`/`CLAUDE.md` use `Skill("ae-crear-politicas")` + `Skill("ae-projection-audit")`; `ps-contexto` reads the architecture doc to identify active microservices before planning.
+- For visible UX/UI work, follow the repository's declared UX canon and validation chain from the Repository-Specific Contract. Do not assume numbered UX paths or migration skills that the repository does not declare.
 
-- Persistence, schema, migration, retention, or telemetry changes:
-  - sync `.docs/wiki/08_modelo_fisico_datos.md`
-  - sync affected `08_db/DB-*.md`
+## Language Rule
 
-- Commands, flags, envelopes, handshake, admin API, or worker protocol changes:
-  - sync `.docs/wiki/09_contratos_tecnicos.md`
-  - sync affected `09_contratos/CT-*.md`
+Keep `AGENTS.md`, `CLAUDE.md`, and project-local `ps-*` skills in English. All other project documentation is in Spanish.
 
-- Functional behavior or flow changes:
-  - also review `.docs/wiki/01_alcance_funcional.md`
-  - also review `.docs/wiki/02_arquitectura.md`
-  - also review `.docs/wiki/03_FL.md` and `.docs/wiki/03_FL/`
+## Collaboration Rules
 
-- Release, binary refresh, worker bootstrap, install, publication, or cross-OS distribution changes:
-  - sync `.docs/wiki/ae/AE-RELEASE-DISTRIBUTION.md`
-  - run or explicitly waive `scripts/release/ae-release-binaries.ps1`
-  - record provenance, install paths, worker status, and publish/mirror evidence under `.docs/auditoria/<task>/`
+**Style**: avoid emojis in policy/governance outputs. User-facing copy (UI labels, errors, placeholders, buttons, banners, toasts, modals) MUST preserve correct Spanish orthography — accents (á, é, í, ó, ú, ñ), dieresis (ü), opening punctuation (¿, ¡); voseo carries accents (podés, querés, tenés, sabés). Applies to hardcoded strings, i18n keys, dynamic copy. Verify against RAE rules.
 
-## `$mi-lsp` Usage Policy
+**Mandatory wrappers**: use only the wrappers declared under the Repository-Specific Contract, and never bypass a declared wrapper with raw shell, HTTP, SSH, database clients, or unrelated MCP tools. Follow each declared wrapper's preconditions and verification command; do not infer hosts, networks, secret stores, or service names from another repository.
 
-- For repo orientation, docs-first questions, symbol lookup, service audits, semantic refs/context, and batched reads, prefer `$mi-lsp` before raw `rg` or broad file inspection.
-- Run `mi-lsp` through the host shell tool:
-  - Codex: `functions.shell_command`
-  - Claude Code: shell/Bash tool
-  - Do not treat `mi-lsp` as an MCP server or wait for a dedicated built-in tool.
-- Default invocation shape:
-  - `mi-lsp <command> --workspace <alias> --format toon`
-- Recommended ladder:
-  1. `mi-lsp workspace status <alias> --format toon` or `mi-lsp init . --name <alias>`
-  2. `mi-lsp nav governance --workspace <alias> --format toon`
-  3. `mi-lsp nav ask "how is this workspace organized?" --workspace <alias> --format toon`
-  4. `mi-lsp nav workspace-map --workspace <alias> --format toon`
-  5. `mi-lsp nav search "<pattern>" --include-content --workspace <alias> --format toon` or `mi-lsp nav multi-read ...`
-  6. `mi-lsp nav related|context|refs ... --workspace <alias> --format toon`
-  7. `mi-lsp nav service <path> --workspace <alias> --format toon`
-- If `workspace status` reports `governance_blocked=true`, stop normal execution and repair governance before any `nav ask`, `nav pack`, planning, or implementation.
-- Query routing expectations:
-  - cheap reads stay direct: `nav.find`, `nav.search`, `nav.symbols`, `nav.outline`, `nav.overview`, `nav.multi-read`
-  - semantic/compound queries may use daemon warm state: `nav.ask`, `nav.related`, `nav.context`, `nav.refs`, `nav.deps`, `nav.service`, `nav.workspace-map`, `nav.diff-context`, `nav.batch`
-  - if a container workspace returns `backend=router`, rerun with `--repo`, `--entrypoint`, `--solution`, or `--project`
-- Fall back to plain `rg` only when `mi-lsp` is unavailable or the request is outside the CLI surface.
 
-## Agent Acceleration Commands (v1.3)
+## Repository-Specific Contract
 
-Docs-first orientation:
+### Repository Description
 
-- `mi-lsp init . --name <alias>` — detect, register, and index the current workspace
-- `mi-lsp nav ask "how is this workspace organized?" --workspace <alias> --format compact` — start from the wiki/read-model before code hunting
+Go semantic navigation CLI with repo-local wiki governance, SQLite indexing, and optional language workers.
 
-Compound commands to reduce agent round-trips from 7+ to 1-2:
+### Mandatory Wrappers
 
-- `nav multi-read file1:1-120 file2:260-440` — batch-read N file ranges in one call
-- `nav search "pattern" --include-content` — search with inline code content (hybrid symbol/lines mode)
-- `nav batch < ops.json` — N heterogeneous operations in one process spawn (parallel by default)
-- `nav related <symbol>` — symbol neighborhood: definition + callers + implementors + tests
-- `nav workspace-map` — high-level map of services, endpoints, events, and dependencies
-- `nav diff-context [ref]` — semantic context of all changed symbols in a git diff, with impact analysis
-- `nav search "X" --all-workspaces` / `nav find X --all-workspaces` — cross-workspace parallel search
-- Auto-start daemon: semantic queries (refs/context/deps/related) auto-start daemon if not running
-- Auto-index: `workspace add` automatically indexes after registration (use `--no-index` to skip)
-- `--compress` flag: aggressive token compression (strips parent, scope, implements from output)
-- Incremental indexing: `mi-lsp index` auto-detects git changes, only re-indexes modified files
-- Output formats: `--format toon` (recommended, ~20-40% savings on arrays), `--format yaml` (readable), `--format compact` (backward compat/jq)
-- `hint` field: envelopes may include a `hint` string when items=0 or daemon is unavailable — act on it before retrying
+  -
+    name: go
+    script: go toolchain (repository go.mod)
+  -
+    name: pre-push-guard
+    script: scripts/ae/pre-push-guard.ps1
 
-## Search Shortcuts
+### QA Canon Paths
 
-```powershell
-rg -n "FL-|TECH-|DB-|CT-|daemon|worker|tsserver|Roslyn|contract|schema" .docs/wiki docs README.md internal worker-dotnet
-rg -n "RF-|TP-|WorkspaceRegistration|DaemonState|RuntimeSnapshot|AccessEvent" .docs/wiki
-rg --files .docs/wiki
-```
+  - internal/service/governance_test.go
+  - internal/service/governance_test_helpers_test.go
+  - tests
+  - go.mod
+  - .docs/wiki/09_contratos
 
-## Workflow Catalog
+---
 
-### A) Standard Task Flow
-1. `ps-contexto` — load project context
-2. governance gate — `workspace status` + `nav governance`
-3. `brainstorming` — challenge and lock design decisions
-4. orchestrate and execute
-5. documentation synchronization when needed
-6. `ps-trazabilidad` — closure
-
-### B) Large / Risky / Multi-Step Task Flow
-1. `ps-contexto` — load project context
-2. governance gate — `workspace status` + `nav governance`
-3. `brainstorming` — design and harden
-4. `writing-plans` — generate wave-dispatchable plan when the work benefits from formal waves
-5. wave execution and docs sync
-6. `ps-trazabilidad` — final closure
-7. `ps-auditar-trazabilidad` — read-only audit before marking done
-
-### C) Policy-Change Flow
-1. `ps-contexto`
-2. governance gate
-3. `brainstorming`
-4. `ps-crear-agentsclaudemd`
-5. update both policy files
-6. `ps-trazabilidad`
-
-### D) Governance-Repair Flow
-1. `ps-contexto`
-2. `mi-lsp workspace status <alias> --format toon`
-3. `mi-lsp nav governance --workspace <alias> --format toon`
-4. `ps-asistente-wiki`
-5. `crear-gobierno-documental`
-6. `mi-lsp index --workspace <alias>`
-7. verify `governance_blocked=false`
-
-## Skill Invocation Semantics
-
-| Skill | When | Mandatory |
-|-------|------|-----------|
-| `ps-contexto` | At the start of every task | Yes |
-| `mi-lsp` | Governance diagnostics, docs-first navigation, code exploration | Yes |
-| `brainstorming` | After context and governance gate, before non-trivial execution | Yes |
-| `ps-asistente-wiki` | Governance/documentation diagnosis and next-step routing | Yes when governance or wiki work is involved |
-| `crear-gobierno-documental` | Create, repair, or refactor `.docs/wiki/00_gobierno_documental.md` and its projection | Yes when governance is missing, invalid, or stale |
-| `writing-plans` | Large, risky, or multi-step work | Yes when a formal wave plan is needed |
-| `ps-crear-agentsclaudemd` | Editing `AGENTS.md` or `CLAUDE.md` | Yes |
-| `ae-orquestador` | Agent Engineering, workflow, policy, release, binary, install, or publication work | Yes |
-| `ps-trazabilidad` | Before closing any task | Yes |
-| `ps-auditar-trazabilidad` | Large, risky, multi-module, or cross-layer changes | Yes |
-
-## Keep These Rules Tight
-
-- Do not skip `$ps-contexto`.
-- Do not skip the governance gate at the start of every task.
-- Do not skip the mandatory single `$brainstorming` pass.
-- Do not finish without `$ps-trazabilidad`.
-- Do not continue normal work when `governance_blocked=true`.
-- Do not treat `00_gobierno_documental.md` and `read-model.toml` as co-authorities; `00` always wins.
-- Do not leave cross-layer documentation drift behind.
-- Do not close binary-affecting work without `AE-RELEASE-DISTRIBUTION` evidence or an explicit recorded waiver.
-- Keep `AGENTS.md` and `CLAUDE.md` synchronized.
-- If updating any skill under `C:\Users\fgpaz\.agents\skills`, also update the mirrored copy under `C:\repos\buho\assets\skills` in the same task.
-
-## Security Notes
-
-### SEC-07: MSBuild Trust Model
-
-The Roslyn worker (`.NET/C#` semantic backend) uses MSBuild to load and analyze project/solution files. MSBuild evaluates `.targets` and `.props` files during project load, which can execute arbitrary code embedded in non-trusted repositories.
-
-**Risk:** When registering a workspace from a repository you do not control or curate (e.g., forks, untrusted third-party repos, or code submitted by external contributors), the Roslyn worker will execute build scripts during `nav refs`, `nav search` (semantic), and any C# symbol resolution.
-
-**Mitigation:**
-- Register only repositories from trusted sources, or use `--readonly` workspaces to avoid semantic backends.
-- If you must analyze untrusted .NET code, do so in isolated environments (e.g., WSL, containers, ephemeral VMs).
-- Consider using `nav search` with `--repo` to stay on text-based indexing for untrusted repos.
-- The `.NET worker` does not sandbox MSBuild — this is an inherent trust model of the .NET ecosystem, not specific to mi-lsp.
-
-See `AE-RELEASE-DISTRIBUTION.md` for release-time verification and `.docs/wiki/01_alcance_funcional.md` for scope boundaries on semantic operations.
+**Version**: CLAUDE.md (AE-KERNEL-V2)
+**Status**: Generated from AE-POLICY-PROJECTION-V2
+**Last Updated**: 2026-07-13
+**Source**: repo-policy.yaml + template.claude
+<!-- kernel_version: d1b9e9d -->

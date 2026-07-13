@@ -1,0 +1,150 @@
+schema: ae-session-contract/v1
+task_slug: ae-kernel-v2-integration
+base_sha: 9f232e8f9e298c4b5fa8d2a6989cbbf3cb7424b8
+changed_paths:
+  - scripts/ae/pre-push-guard.ps1
+  - scripts/ae/pre-push-guard.tests.ps1
+  - .docs/ae/repo-policy.yaml
+  - .docs/auditoria/2026-07-13-ae-kernel-v2-integration/audit-manifest.yaml
+  - .docs/auditoria/2026-07-13-ae-kernel-v2-integration/session-contract.yaml
+  - .docs/auditoria/2026-07-13-ae-kernel-v2-integration/traceability-closure.yaml
+  - .docs/wiki/00_gobierno_documental.md
+  - .docs/wiki/_mi-lsp/read-model.toml
+  - .docs/wiki/09_contratos/CT-GOVERNANCE-AE-KERNEL-V2.md
+  - .gitignore
+  - AGENTS.md
+  - CLAUDE.md
+  - PATHS.md
+  - internal/docgraph/governance.go
+  - internal/model/types.go
+  - internal/service/governance_test.go
+  - internal/service/governance_test_helpers_test.go
+  - internal/service/harness_validate.go
+  - internal/service/harness_validate_test.go
+  - internal/service/source_validate.go
+worktree: C:/wt/mi-lsp-ae-kernel-v2-final
+branch: ae-kernel-v2-final
+mode: STANDARD
+decision_lock: bounded_kernel_v2_reconciliation
+harness_adapter: bounded_write_worker
+orchestration_depth: child_supervisor_required
+closure_profile: blocked_until_audit
+cleanup_policy: preserve_worktree_and_branch
+ae_contract:
+  mode: STANDARD
+  decision_lock: bounded_kernel_v2_reconciliation
+  harness_adapter: bounded_write_worker
+  orchestration_depth: child_supervisor_required
+  worker_decision: spawned
+  independent_axes:
+    - kernel_go_reconciliation
+    - governance_policy_and_projection
+    - contract_and_audit_artifacts
+  launch_join_evidence: child_supervisor_required
+  closure_profile: blocked_until_audit
+allowed_paths:
+  - scripts/ae/pre-push-guard.ps1
+  - scripts/ae/pre-push-guard.tests.ps1
+  - internal/docgraph/governance.go
+  - internal/model/types.go
+  - internal/service/governance_test.go
+  - internal/service/governance_test_helpers_test.go
+  - internal/service/harness_validate.go
+  - internal/service/harness_validate_test.go
+  - internal/service/source_validate.go
+  - .docs/ae/repo-policy.yaml
+  - .docs/wiki/00_gobierno_documental.md
+  - .docs/wiki/_mi-lsp/read-model.toml
+  - .docs/wiki/09_contratos/**
+  - .docs/auditoria/2026-07-13-ae-kernel-v2-integration/**
+  - AGENTS.md
+  - CLAUDE.md
+  - PATHS.md
+  - .gitignore
+forbidden_paths:
+  - .docs/raw/**
+  - .env*
+  - secrets/**
+  - C:/repos/mios/casas/**
+  - C:/repos/mios/ae-kernel/**
+  - C:/wt/mi-lsp-ae-kernel-v2/**
+required_evidence:
+  - .docs/wiki/00_gobierno_documental.md
+  - .docs/wiki/_mi-lsp/read-model.toml
+  - .docs/ae/repo-policy.yaml
+  - .docs/wiki/09_contratos/CT-GOVERNANCE-AE-KERNEL-V2.md
+  - .docs/auditoria/2026-07-13-ae-kernel-v2-integration/audit-manifest.yaml
+  - .docs/auditoria/2026-07-13-ae-kernel-v2-integration/traceability-closure.yaml
+stop_conditions:
+  - governance_blocked=true
+  - ae_canon.status in [missing, mismatch]
+  - compile_failure_outside_allowed_paths
+  - path_or_symlink_safety_failure
+mi_lsp_preflight:
+  alias: mi-lsp
+  root: C:/wt/mi-lsp-ae-kernel-v2-final
+  cli_path: go run ./cmd/mi-lsp
+  governance_blocked: false
+  docs_ready: true
+  doc_count: 124
+  index_status: docs_only_succeeded
+  ae_canon:
+    status: valid
+    roots:
+      - <kernel_home>/canon
+      - .docs/ae/repo-policy.yaml
+    source: kernel_v2
+    blocking: false
+    reason: kernel_v2_external_valid
+  client_name: bounded-write-worker
+  session_id: ae-kernel-v2-final-20260713
+worker_decision: spawned
+worker_adapter_available: true
+worker_authorized_by_user: true
+independent_axes:
+  - kernel_go_reconciliation
+  - governance_policy_and_projection
+  - contract_and_audit_artifacts
+why_not_cheaper: multi-file code and governance reconciliation requires isolated worktree and durable audit evidence
+orchestration_role: bounded_write_worker
+delegation_boundary: mi-lsp_new_worktree_only
+pi_nan_launch_owner: child_execution_supervisor
+child_supervisor_required: true
+root_pi_nan_spawn_allowed: false
+boundary_violation: false
+changed_file_hashes:
+  algorithm: sha256
+  status: recorded_after_final_verification
+  source: traceability-closure.yaml
+changed_file_hashes_scope: implementation_policy_canonical_files_only
+package_hashes:
+  algorithm: sha256
+  normalization: remove this package_hashes mapping before hashing each artifact
+  files:
+    audit-manifest.yaml: e4499d29154de91a26a3a369b18bcff956c3252a528ff6f8174f4cc94b3d0491
+    session-contract.yaml: d63a159f948c78ce2cd085c17335e936d58a203b0af7c114814d196b4d1fdc4d
+    traceability-closure.yaml: c146c575d8b109e25ca05d8cd36242b6d09d9c7be8dbe4c55d1e44671459346a
+worker_join:
+  status: PASS
+  worker_id: claudex-writer
+  role: bounded_write_worker
+  joined_from: real_renderer_and_verification_commands
+  evidence:
+    - policy_renderer: PASS
+    - renderer_repeatability: PASS
+    - deprecation_scan_active_scope: PASS
+    - go_test_all: PASS
+    - governance_status: PASS
+    - governance_nav: PASS
+    - validate_harness_targeted: PASS
+    - validate_source_targeted: PASS
+    - pre_push_guard_negative_tests: PASS
+    - git_diff_check: PASS
+completion_handoff: BLOCKED
+blockers:
+  - id: commit_not_executed_in_worker
+    owner: integration_owner
+    detail: root session authorizes commit/integration; this worker preserves the no-commit boundary
+  - id: integration_not_executed_in_worker
+    owner: integration_owner
+    detail: root session authorizes integration; this worker does not perform integration or cleanup

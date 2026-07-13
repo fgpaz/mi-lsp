@@ -30,6 +30,27 @@ func TestValidateHarnessValidLLMFirstContract(t *testing.T) {
 	}
 }
 
+func TestHarnessRefExistsSupportsValidatedKernelV2Canon(t *testing.T) {
+	ensureWritableTestHome(t)
+	root := t.TempDir()
+	kernelHome := t.TempDir()
+	t.Setenv("AE_KERNEL_HOME", kernelHome)
+	writeSpecBackendGovernanceFixture(t, root)
+	addKernelV2AECanonToGovernanceFixture(t, root)
+	writeKernelV2CanonModules(t, kernelHome)
+	writeKernelV2RepoPolicy(t, root)
+
+	if !kernelV2CanonReferenceExists(root, "<kernel_home>/canon/AE-KERNEL-V2.md") {
+		t.Fatal("expected validated external kernel_v2 module reference to resolve")
+	}
+	if !kernelV2CanonReferenceExists(root, "ae_canon") {
+		t.Fatal("expected ae_canon export to resolve for validated kernel_v2 governance")
+	}
+	if kernelV2CanonReferenceExists(root, "<kernel_home>/canon/UNKNOWN.md") {
+		t.Fatal("unknown external kernel_v2 module must not resolve")
+	}
+}
+
 func TestHarnessRefExistsSupportsCodeEvidencePath(t *testing.T) {
 	root := t.TempDir()
 	writeWorkspaceFile(t, root, "internal/nav/fanout_wiki.go", "package nav\n")

@@ -37,6 +37,78 @@ function Assert-ListHasItems($Text, $FieldName) {
     }
 }
 
+function Test-ContractListContainsExactPath($Text, $FieldName, $Path) {
+    $inList = $false
+    foreach ($line in ($Text -split "`r?`n")) {
+        if ($line -match "^\s*" + [regex]::Escape($FieldName) + ":\s*$") {
+            $inList = $true
+            continue
+        }
+        if ($inList -and $line -match "^[A-Za-z0-9_][A-Za-z0-9_-]*:\s*") {
+            break
+        }
+        if ($inList -and $line -match '^\s+-\s+"?(?<path>[^"].*?)"?\s*$' -and $Matches["path"] -eq $Path) {
+            return $true
+        }
+    }
+    return $false
+}
+
+function Get-ContractListValues($Text, $FieldName) {
+    $values = @()
+    $inList = $false
+    foreach ($line in ($Text -split "`r?`n")) {
+        if ($line -match "^\s*" + [regex]::Escape($FieldName) + ":\s*$") {
+            $inList = $true
+            continue
+        }
+        if (-not $inList) {
+            continue
+        }
+        if ($line -match "^[A-Za-z0-9_][A-Za-z0-9_-]*:\s*") {
+            break
+        }
+        if ($line -match '^\s+-\s+"?(?<value>[^"].*?)"?\s*$') {
+            $value = $Matches["value"].Trim()
+            if ($value -ne "") {
+                $values += $value
+            }
+        }
+    }
+    return @($values)
+}
+
+function Normalize-ContractPath($Path) {
+    if ([string]::IsNullOrWhiteSpace($Path)) {
+        return ""
+    }
+    $normalized = $Path.Trim().Trim('"').Trim("'") -replace "\\", "/"
+    while ($normalized.StartsWith("./")) {
+        $normalized = $normalized.Substring(2)
+    }
+    return $normalized.TrimStart('/')
+}
+
+function Test-ContractPathPattern($Path, $Pattern) {
+    $pathValue = Normalize-ContractPath $Path
+    $patternValue = Normalize-ContractPath $Pattern
+    if ($pathValue -eq "" -or $patternValue -eq "") {
+        return $false
+    }
+    if ($pathValue.Equals($patternValue, [StringComparison]::OrdinalIgnoreCase)) {
+        return $true
+    }
+    if (-not ($patternValue.Contains('*') -or $patternValue.Contains('?'))) {
+        return $false
+    }
+    $marker = '__AE_DOUBLESTAR__'
+    $escaped = [regex]::Escape($patternValue.Replace('**', $marker))
+    $escaped = $escaped.Replace([regex]::Escape($marker), '.*')
+    $escaped = $escaped.Replace('\*', '[^/]*')
+    $escaped = $escaped.Replace('\?', '[^/]')
+    return [regex]::IsMatch($pathValue, "^(?i:" + $escaped + ")$")
+}
+
 function Get-AECanonStatus($Text) {
     $nestedPattern = "(?ms)^\s*ae_canon:\s*\r?\n(?<body>(?:\s{2,}.+\r?\n?)*)"
     $nested = [regex]::Match($Text, $nestedPattern)
@@ -63,19 +135,23 @@ function Get-TouchedPaths($BaseSha) {
             Fail "Unable to inspect branch diff from base_sha '$BaseSha': $($_.Exception.Message)"
         }
     }
-    $paths += @(git status --porcelain=v1 | ForEach-Object {
-        if ($_ -match "^.{2}\s+(?<path>.+)$") {
-            $Matches["path"] -replace "^""|""$", ""
-        }
-    })
-    return @($paths | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Sort-Object -Unique)
+    $paths += @(git status --porcelain=v1 --untracked-files=all | ForEach-Object { Get-StatusPaths $_ })
+    return @($paths | ForEach-Object { Normalize-ContractPath $_ } | Where-Object { $_ -ne "" } | Sort-Object -Unique)
+}
+
+function Get-StatusPaths($StatusLine) {
+    if ($StatusLine -notmatch "^.{2}\s+(?<path>.+)$") {
+        return @()
+    }
+    $raw = ($Matches["path"] -replace "^""|""$", "")
+    if ($raw -match "^(?<old>.+?)\s+->\s+(?<new>.+)$") {
+        return @($Matches["old"], $Matches["new"])
+    }
+    return @($raw)
 }
 
 function Get-StatusPath($StatusLine) {
-    if ($StatusLine -match "^.{2}\s+(?<path>.+)$") {
-        return ($Matches["path"] -replace "^""|""$", "")
-    }
-    return $null
+    return @(Get-StatusPaths $StatusLine) | Select-Object -First 1
 }
 
 function Get-WaivedDirtyPaths($Text) {
@@ -183,19 +259,46 @@ if (-not $AllowDirty -and $blockingStatus.Count -gt 0) {
 
 $baseSha = Get-ScalarValue $contractText "base_sha"
 $touchedPaths = Get-TouchedPaths $baseSha
-$rawTouched = @($touchedPaths | Where-Object { $_ -match "^\.docs/raw/" })
-if ($rawTouched.Count -gt 0) {
-    Fail "Ungoverned .docs/raw changes detected in working tree: $($rawTouched -join '; ')"
+$allowedPatterns = @(Get-ContractListValues $contractText "allowed_paths")
+$forbiddenPatterns = @(Get-ContractListValues $contractText "forbidden_paths")
+
+# Hard blocks are independent of the contract and cannot be waived by allowed_paths.
+$hardForbiddenPatterns = @(
+    ".docs/raw/**",
+    ".mi-lsp/**",
+    ".env",
+    ".env.*",
+    "*.env",
+    "*.env.*",
+    "**/.env",
+    "**/.env.*",
+    "dist/**",
+    "**/dist/**",
+    "secrets/**",
+    "**/secrets/**"
+)
+$hardForbiddenHits = @($touchedPaths | Where-Object {
+    $path = $_
+    @($hardForbiddenPatterns | Where-Object { Test-ContractPathPattern $path $_ }).Count -gt 0
+})
+if ($hardForbiddenHits.Count -gt 0) {
+    Fail "Hard-forbidden path changes detected: $($hardForbiddenHits -join '; ')"
 }
 
-$forbiddenHits = @($touchedPaths | Where-Object {
-    $_ -match "^\.mi-lsp/" -or
-    $_ -match "^\.docs/wiki/_mi-lsp/read-model\.toml$" -or
-    $_ -match "(^|/)\.env(\.|$)" -or
-    $_ -match "(^|/)dist/"
+$contractForbiddenHits = @($touchedPaths | Where-Object {
+    $path = $_
+    @($forbiddenPatterns | Where-Object { Test-ContractPathPattern $path $_ }).Count -gt 0
 })
-if ($forbiddenHits.Count -gt 0) {
-    Fail "Forbidden-path changes detected: $($forbiddenHits -join '; ')"
+if ($contractForbiddenHits.Count -gt 0) {
+    Fail "Contract-forbidden path changes detected: $($contractForbiddenHits -join '; ')"
+}
+
+$unallowedPaths = @($touchedPaths | Where-Object {
+    $path = $_
+    @($allowedPatterns | Where-Object { Test-ContractPathPattern $path $_ }).Count -eq 0
+})
+if ($unallowedPaths.Count -gt 0) {
+    Fail "Changed paths outside session contract allowed_paths: $($unallowedPaths -join '; ')"
 }
 
 [pscustomobject]@{

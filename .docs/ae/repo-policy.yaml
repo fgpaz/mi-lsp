@@ -1,0 +1,53 @@
+schema: ae-repo-policy/v1
+last_updated: "2026-07-13"
+repo:
+  name: mi-lsp
+  description: Go semantic navigation CLI with repo-local wiki governance, SQLite indexing, and optional language workers.
+language:
+  policy_lang: English
+  docs_lang: Spanish
+tracker:
+  provider: not_configured
+  key_env: unset
+  conf_file: absent
+  linear:
+    base_url: not_configured
+    workspace: not_configured
+    projects:
+      - key: MI-LSP
+secrets:
+  vault: environment
+  tool: environment-only
+wrappers:
+  - name: go
+    script: go toolchain (repository go.mod)
+  - name: pre-push-guard
+    script: scripts/ae/pre-push-guard.ps1
+wiki:
+  layers_map:
+    "00": governance
+    "01": scope
+    "02": architecture
+    "03": flows
+    "04": requirements
+    "05": data
+    "06": tests
+    "07": technical_baseline
+    "08": physical_data
+    "09": contracts
+    AE: agent_engineering
+  workspace_alias: mi-lsp
+  paths_file: PATHS.md
+subagents:
+  roster_file: AGENTS.md
+qa:
+  canon_paths:
+    - internal/service/governance_test.go
+    - internal/service/governance_test_helpers_test.go
+    - tests
+    - go.mod
+    - .docs/wiki/09_contratos
+security:
+  path_traversal: reject absolute and parent-escaping source paths
+  symlink: reject symlinked roots, components, and files before canon reads
+  secrets: do not store credentials or values in policy, docs, prompts, logs, or evidence
