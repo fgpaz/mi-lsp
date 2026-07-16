@@ -30,7 +30,7 @@ version = 1
   prefer_layers = ["04", "09"]
 
 [[owner_hint]]
-  terms = ["ae", "agent engineering", "ae-orquestador", "release distribution", "actualizar binarios", "publicar binarios", "subir binarios", "mirror binaries"]
+  terms = ["ae", "agent engineering", "ae-work", "release distribution", "actualizar binarios", "publicar binarios", "subir binarios", "mirror binaries"]
   prefer_doc_ids = ["AE-README", "AE-HARNESS-MANIFEST", "AE-WORK-MODES", "AE-RELEASE-DISTRIBUTION", "AE-EVIDENCE-POLICY"]
   prefer_layers = ["AE"]
 

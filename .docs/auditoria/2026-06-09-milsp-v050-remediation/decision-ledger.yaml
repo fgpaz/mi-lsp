@@ -1,3 +1,4 @@
+# deprecation-scan-file: historical
 schema: ae-decision-ledger-v1
 session: milsp-v050-remediation
 locked_decisions:

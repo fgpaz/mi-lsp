@@ -1,0 +1,79 @@
+schema: ae-session-contract/v1
+task_slug: ae-setup-close
+issue_or_waiver: user-authorized-no-ticket
+mode: STANDARD
+decision_lock: linear_tracker_and_kernel_v2_render
+base_ref: origin/main
+base_sha: 44eefed58df70f51625d3e278a10a354df841b90
+intended_branch: chore/ae-setup-close
+worktree_path: C:/wt/mi-lsp-ae-setup
+expected_scope:
+  - validate fresh external AE kernel
+  - make repo-policy renderable with the current kernel v2 schema
+  - deterministically regenerate CLAUDE.md and AGENTS.md
+  - align mi-lsp governance validation with the current provider-specific kernel v2 tracker schema
+  - repair the local kernel-v2 governance contract only where schema drift blocks setup
+  - classify deprecations and historical Kernel branches without promoting legacy canon
+allowed_paths:
+  - .docs/ae/repo-policy.yaml
+  - CLAUDE.md
+  - AGENTS.md
+  - .docs/wiki/09_contratos/CT-GOVERNANCE-AE-KERNEL-V2.md
+  - .docs/wiki/07_baseline_tecnica.md
+  - .docs/wiki/07_tech/TECH-GOVERNANCE-PROFILES.md
+  - .docs/wiki/00_gobierno_documental.md
+  - .docs/wiki/_mi-lsp/read-model.toml
+  - .docs/wiki/ae/**
+  - skills/mi-lsp/SKILL.md
+  - internal/docgraph/governance.go
+  - internal/service/governance_test.go
+  - internal/service/governance_test_helpers_test.go
+  - .docs/auditoria/**/*.yaml
+  - .docs/auditoria/2026-07-16-ae-setup-close/**
+forbidden_paths:
+  - worker-dotnet/**
+  - C:/repos/mios/ae-kernel/**
+sdd_anchors:
+  - CT-GOVERNANCE-AE-KERNEL-V2
+  - <kernel_home>/canon/AE-POLICY-PROJECTION.md
+required_evidence:
+  - kernel freshness is fresh or ahead
+  - repo-policy validates with Linear provider metadata and no secret values
+  - deterministic render exits zero and produces twin policies
+  - governance_blocked=false and ae_canon.status=valid after render
+  - deprecation findings are classified without deleting raw plans or prompts
+  - diff excludes historical local AE canon and product source
+stop_conditions:
+  - kernel freshness is behind or diverged
+  - governance_blocked=true
+  - ae_canon.status in [missing, mismatch]
+  - changed_path_outside_allowed_paths
+  - render_exit_nonzero
+mi_lsp_preflight:
+  alias: mi-lsp-ae-setup
+  root: C:/wt/mi-lsp-ae-setup
+  governance_blocked: false
+  docs_ready: true
+  doc_count: 132
+  ae_canon_status: valid
+  client_name: claude-code
+  session_id: 2026-07-16-ae-setup-close
+ae_contract:
+  mode: STANDARD
+  decision_lock: linear_tracker_and_kernel_v2_render
+  harness_adapter: claude-code
+  orchestration_depth: parent_with_bounded_verifier
+  worker_decision: spawned
+  independent_axes:
+    - policy_render
+    - historical_branch_classification
+  launch_join_evidence: verifier_a407077227495ced1
+  closure_profile: integrate_after_green
+decision_token:
+  id: tracker-provider-mi-lsp
+  locked_value: Linear
+  consequence: repo-policy uses the canonical Linear adapter without storing credentials
+  scope: repo-policy render and generated twins
+publish_strategy: guarded-pr-merge
+branch_disposition: integrate-main
+cleanup_policy: delete setup and superseded Kernel branches/worktrees only after successful integration and unique-commit verification

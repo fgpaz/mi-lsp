@@ -1,3 +1,4 @@
+<!-- deprecation-scan-file: compatibility -->
 # AE Layer
 
 ```yaml

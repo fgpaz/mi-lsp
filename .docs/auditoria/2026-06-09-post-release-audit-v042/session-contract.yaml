@@ -1,3 +1,4 @@
+# deprecation-scan-file: historical
 schema: ae-session-contract-v1
 task_slug: post-release-audit-v042
 issue_or_waiver: "User requested deep post-release audit; scope locked via brainstorming to option A: read-only exhaustive report, no code changes this session."

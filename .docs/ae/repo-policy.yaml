@@ -3,18 +3,25 @@ last_updated: "2026-07-13"
 repo:
   name: mi-lsp
   description: Go semantic navigation CLI with repo-local wiki governance, SQLite indexing, and optional language workers.
+  structure_rules:
+    - Go CLI and service code lives under cmd/ and internal/.
+    - Optional language workers live under worker-dotnet/ and are distributed through governed release scripts.
+    - .docs/wiki/00-06 is functional canon; .docs/wiki/07-09 is technical canon.
+    - Universal Agent Engineering canon comes from <kernel_home>/canon; repo-specific policy lives in .docs/ae/repo-policy.yaml.
+    - Durable task evidence lives under .docs/auditoria/<session>/; .docs/raw remains non-canonical input.
 language:
   policy_lang: English
   docs_lang: Spanish
 tracker:
-  provider: not_configured
-  key_env: unset
-  conf_file: absent
+  provider: Linear
   linear:
-    base_url: not_configured
-    workspace: not_configured
+    base_url: https://api.linear.app/graphql
+    workspace: mi-lsp
+    key_env: LINEAR_API_KEY
     projects:
       - key: MI-LSP
+        name: mi-lsp
+        scope: features, bugs, documentation, and Agent Engineering
 secrets:
   vault: environment
   tool: environment-only

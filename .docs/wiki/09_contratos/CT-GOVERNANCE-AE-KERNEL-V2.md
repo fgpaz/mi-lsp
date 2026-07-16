@@ -81,27 +81,29 @@ source_of_truth: .docs/ae/repo-policy.yaml
 required_slots:
   - repo.name
   - repo.description
+  - repo.structure_rules[]
   - language.policy_lang
   - language.docs_lang
   - tracker.provider
-  - tracker.key_env
-  - tracker.conf_file
-  - tracker.linear.base_url
-  - tracker.linear.workspace
+  - tracker.<provider>.base_url
+  - tracker.<provider>.workspace
+  - tracker.<provider>.key_env
+  - tracker.<provider>.projects[].key
   - secrets.vault
   - secrets.tool
   - wiki.layers_map.02
   - wiki.workspace_alias
   - wiki.paths_file
   - subagents.roster_file
-  - tracker.linear.projects[0].key
   - wrappers[]
   - qa.canon_paths[]
   - last_updated
 policy:
+  supported_tracker_providers: [Linear, Plane, Azure Boards, Jira]
+  exactly_one_provider_block: true
+  top_level_tracker_aliases: forbidden
   no_secrets: true
   no_fixture_config: true
-  unset_tracker_values_must_be_explicit: true
 verify:
   - parse YAML and validate every required slot is non-empty
 stop_if:
@@ -159,18 +161,20 @@ required_slots:
   - doc_id
   - block_id
 closure:
-  completion_handoff: BLOCKED
-  handoff_ready: forbidden
+  completion_handoff: finishing-a-development-branch
+  handoff_ready: after_setup_pass
   audit_required: true
 verify:
   - projection matches the fenced YAML source
+  - deterministic policy render passes against the fresh external kernel
   - audit manifest and traceability closure exist
 stop_if:
   - projection_out_of_sync
+  - render_failed
   - audit_missing
-  - completion_handoff != BLOCKED
+  - setup_verdict != PASS
 evidence:
-  - .docs/auditoria/2026-07-13-ae-kernel-v2-integration/session-contract.yaml
-  - .docs/auditoria/2026-07-13-ae-kernel-v2-integration/audit-manifest.yaml
   - .docs/auditoria/2026-07-13-ae-kernel-v2-integration/traceability-closure.yaml
+  - .docs/auditoria/2026-07-16-ae-setup-close/session-contract.yaml
+  - .docs/auditoria/2026-07-16-ae-setup-close/traceability-closure.yaml
 ```
