@@ -17,13 +17,31 @@ imports:
   - '[[CT-NAV-EDIT-PLAN]]'
 exports:
   - 'TECH-SEMANTIC-PREPARATION'
+agent_must_read:
+  - .docs/wiki/00_gobierno_documental.md
+  - .docs/wiki/07_tech/TECH-SEMANTIC-PREPARATION.md
+  - .docs/wiki/09_contratos/CT-NAV-EDIT-PLAN.md
 agent_may_edit:
   - .docs/wiki/07_tech/TECH-SEMANTIC-PREPARATION.md
+agent_must_not_edit:
+  - .docs/wiki/00_gobierno_documental.md
+  - .docs/wiki/_mi-lsp/read-model.toml
 verify:
-  - go test ./...
+  - go test ./internal/service ./internal/daemon ./internal/cli ./internal/store
+  - mi-lsp nav governance --workspace <alias> --format toon
+  - mi-lsp nav wiki validate-harness --workspace <alias> --format toon
 stop_if:
+  - go_test_failed=true
+  - governance_blocked=true
+  - harness_verdict=BLOCKED
   - preparation grants mutation authority
   - allowed_paths are inferred from an implicit git diff
+evidence:
+  - internal/service/prepare.go
+  - internal/service/prepare_test.go
+  - internal/daemon/server_test.go
+  - internal/daemon/result_cache_test.go
+  - .docs/wiki/09_contratos/CT-NAV-EDIT-PLAN.md
 ```
 
 `nav.prepare` is a single read-only service call for semantic readiness. The

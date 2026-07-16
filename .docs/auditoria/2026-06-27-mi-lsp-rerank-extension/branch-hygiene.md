@@ -1,5 +1,38 @@
 # Branch Hygiene Evidence
 
+```yaml
+harness_protocol: SDD-HARNESS-v1
+id: "BRANCH-HYGIENE-2026-06-27"
+kind: "historical-branch-evidence"
+audience: "human"
+imports:
+  - '[[AE-EVIDENCE-POLICY]]'
+  - '[[AE-PHASES]]'
+exports:
+  - 'BRANCH-HYGIENE-2026-06-27'
+agent_must_read:
+  - .docs/auditoria/2026-06-27-mi-lsp-rerank-extension/branch-hygiene.md
+  - .docs/auditoria/2026-06-27-mi-lsp-rerank-extension/session-contract.yaml
+agent_may_edit:
+  - .docs/auditoria/2026-06-27-mi-lsp-rerank-extension/branch-hygiene-annotations.md
+agent_must_not_edit:
+  - .docs/auditoria/2026-06-27-mi-lsp-rerank-extension/branch-hygiene.md
+  - .docs/wiki/_mi-lsp/read-model.toml
+verify:
+  - mi-lsp nav wiki validate-harness --workspace <alias> --format toon
+  - compare the historical branch inventory with its session and closure evidence
+stop_if:
+  - historical branch state is treated as current repository state
+  - the historical branch evidence would be rewritten instead of annotated separately
+  - supporting session or closure evidence is missing
+evidence:
+  - .docs/auditoria/2026-06-27-mi-lsp-rerank-extension/branch-hygiene.md
+  - .docs/auditoria/2026-06-27-mi-lsp-rerank-extension/audit-manifest.yaml
+  - .docs/auditoria/2026-06-27-mi-lsp-rerank-extension/evidence-index.yaml
+  - .docs/auditoria/2026-06-27-mi-lsp-rerank-extension/session-contract.yaml
+  - .docs/auditoria/2026-06-27-mi-lsp-rerank-extension/traceability-closure.yaml
+```
+
 ## Preflight
 
 - Started on `v055/macos-binaries` at `5b5793ba48d72e04ed4d02642d17e2a8983a5e72`, clean worktree, ahead of `origin/v055/macos-binaries` by one commit.

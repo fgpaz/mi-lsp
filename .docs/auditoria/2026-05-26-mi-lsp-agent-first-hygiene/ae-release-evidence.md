@@ -1,5 +1,37 @@
 # AE release evidence - mi-lsp agent-first hygiene
 
+```yaml
+harness_protocol: SDD-HARNESS-v1
+id: "AE-RELEASE-EVIDENCE-2026-05-26"
+kind: "historical-release-evidence"
+audience: "human"
+imports:
+  - '[[AE-EVIDENCE-POLICY]]'
+  - '[[AE-RELEASE-DISTRIBUTION]]'
+exports:
+  - 'AE-RELEASE-EVIDENCE-2026-05-26'
+agent_must_read:
+  - .docs/auditoria/2026-05-26-mi-lsp-agent-first-hygiene/ae-release-evidence.md
+  - .docs/auditoria/2026-05-26-mi-lsp-agent-first-hygiene/traceability-closure.yaml
+agent_may_edit:
+  - .docs/auditoria/2026-05-26-mi-lsp-agent-first-hygiene/ae-release-evidence-annotations.md
+agent_must_not_edit:
+  - .docs/auditoria/2026-05-26-mi-lsp-agent-first-hygiene/ae-release-evidence.md
+  - .docs/wiki/_mi-lsp/read-model.toml
+verify:
+  - mi-lsp nav wiki validate-harness --workspace <alias> --format toon
+  - inspect the recorded release command, result, and checksums as a historical snapshot
+stop_if:
+  - historical evidence is treated as current release state
+  - the historical evidence file would be rewritten instead of annotated separately
+  - referenced traceability or audit evidence is missing
+evidence:
+  - .docs/auditoria/2026-05-26-mi-lsp-agent-first-hygiene/ae-release-evidence.md
+  - .docs/auditoria/2026-05-26-mi-lsp-agent-first-hygiene/traceability-closure.yaml
+  - .docs/auditoria/2026-05-26-mi-lsp-agent-first-hygiene/traceability-audit.yaml
+  - scripts/release/ae-release-binaries.ps1
+```
+
 Date: 2026-05-26
 
 Command requested by plan:

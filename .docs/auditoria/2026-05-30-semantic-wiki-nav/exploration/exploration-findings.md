@@ -1,5 +1,40 @@
 # Exploration findings — semantic-wiki-nav
 
+```yaml
+harness_protocol: SDD-HARNESS-v1
+id: "SEMANTIC-WIKI-NAV-EXPLORATION-2026-05-30"
+kind: "historical-exploration-evidence"
+audience: "human"
+imports:
+  - '[[AE-EVIDENCE-POLICY]]'
+  - '[[TECH-SEMANTIC-RECALL]]'
+exports:
+  - 'SEMANTIC-WIKI-NAV-EXPLORATION-2026-05-30'
+agent_must_read:
+  - .docs/auditoria/2026-05-30-semantic-wiki-nav/exploration/exploration-findings.md
+  - .docs/auditoria/2026-05-30-semantic-wiki-nav/session-contract.yaml
+agent_may_edit:
+  - .docs/auditoria/2026-05-30-semantic-wiki-nav/exploration/exploration-findings-annotations.md
+agent_must_not_edit:
+  - .docs/auditoria/2026-05-30-semantic-wiki-nav/exploration/exploration-findings.md
+  - .docs/wiki/_mi-lsp/read-model.toml
+verify:
+  - mi-lsp nav wiki validate-harness --workspace <alias> --format toon
+  - compare exploration claims with the preserved test and recall evidence
+stop_if:
+  - RF-DUMMY-001 is treated as a canonical requirement
+  - historical exploration is treated as current implementation truth
+  - the historical exploration file would be rewritten instead of annotated separately
+  - supporting test or recall evidence is missing
+evidence:
+  - .docs/auditoria/2026-05-30-semantic-wiki-nav/exploration/exploration-findings.md
+  - .docs/auditoria/2026-05-30-semantic-wiki-nav/evidence-index.yaml
+  - .docs/auditoria/2026-05-30-semantic-wiki-nav/session-contract.yaml
+  - .docs/auditoria/2026-05-30-semantic-wiki-nav/traceability-closure.yaml
+  - .docs/auditoria/2026-05-30-semantic-wiki-nav/go-test-final.txt
+  - .docs/auditoria/2026-05-30-semantic-wiki-nav/recall-smoke.txt
+```
+
 Source: Workflow `semantic-wiki-explore` (run wf_248d2e19-6f3), 5 read-only Explore agents, 142 tool-uses. 2026-05-30.
 Baseline `go test ./...` = green (EXIT=0) before any change.
 
