@@ -53,7 +53,7 @@ The earlier recommendation to reject Darwin was based on stale evidence. Public 
 
 ## Release gate note
 
-The release orchestration script correctly refused the dirty working tree at its provenance gate. No binary-producing source changed, and the session contract waives rebuild and local install refresh. Live GitHub assets and archive contents were verified independently.
+The release orchestration script passed its clean-tree provenance gate, then stopped because the skipped build left no `dist/win-arm64/mi-lsp.exe` artifact to inspect. No binary-producing source changed, and the session contract waives rebuild and local install refresh. Live GitHub assets and archive contents were verified independently.
 
 ## Integration state
 

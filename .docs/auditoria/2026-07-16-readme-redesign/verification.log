@@ -67,9 +67,13 @@ PASS Go canonical reconciliation
 - Go does not claim Roslyn-level semantic depth
 
 WARN release provenance dry-run
-- scripts/release/ae-release-binaries.ps1 -SkipBuild -SkipLocalInstall -SkipWslInstall -SkipMirror stopped at its clean-tree provenance gate
-- expected during uncommitted task work; no binary-producing source changed and session contract records the binary rebuild/local install waiver
-- live release assets and archive contents were verified independently through GitHub
+- scripts/release/ae-release-binaries.ps1 -SkipBuild -SkipLocalInstall -SkipWslInstall -SkipMirror passed the clean-tree gate and then stopped because dist/win-arm64/mi-lsp.exe is absent
+- no binary-producing source changed; the session contract records the binary rebuild and local-install waiver, so generating a fresh release matrix is outside this task
+- live v0.5.12 release assets and the Darwin archive contents were verified independently through GitHub
+
+PASS final pre-push guard
+- scripts/ae/pre-push-guard.ps1 ran without -AllowDirty
+- ok=true, dirty_count=0, diff_count=20, ae_canon_status=valid
 
 PASS Git hygiene
 - content commit: 1c3379ada2559f3e34348536cfeacaa2b59034e6

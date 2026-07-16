@@ -106,9 +106,9 @@ release_distribution:
     - scripts/tests/install-platform-mapping.sh passes
   waiver: no binary-producing source changed, so rebuild and local install refresh are not applicable
   clean_tree_probe:
-    verdict: EXPECTED_BLOCK
+    verdict: PASS_WITH_WAIVER
     command: scripts/release/ae-release-binaries.ps1 -SkipBuild -SkipLocalInstall -SkipWslInstall -SkipMirror
-    reason: provenance gate correctly refuses an uncommitted dirty worktree
+    reason: clean-tree provenance passed; the script then required absent dist/win-arm64/mi-lsp.exe, and rebuilding the release matrix is waived because binary-producing source did not change
 
 harness_verdict: BLOCKED_PREEXISTING
 wiki_source_verdict: BLOCKED_PREEXISTING
