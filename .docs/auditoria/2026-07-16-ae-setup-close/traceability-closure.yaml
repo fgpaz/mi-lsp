@@ -9,9 +9,10 @@ git_before:
   behind: 0
 git_after:
   branch: chore/ae-setup-close
-  head_sha: pending_content_commit
+  content_head_sha: 402059674c777a3b917caa1b216df55cef5675e9
+  evidence_commit: pending
   upstream: origin/main
-  ahead: pending
+  ahead: 1
   behind: 0
 changed_paths:
   policy_and_config:
@@ -129,14 +130,24 @@ pre_push_inputs:
 release_distribution:
   required: true
   reason: internal/docgraph/governance.go changes CLI behavior
+  source_commit: 402059674c777a3b917caa1b216df55cef5675e9
+  status: PASS
   binary_targets:
-    - win-arm64
-    - win-x64
-    - linux-arm64
-    - linux-x64
-    - osx-arm64
-    - osx-x64
-  status: pending_clean_commit
+    win-arm64: 16b5a1ea9b20e2aa53d05b19d7677c234bb750acda55c287ed4cbe01c989ed16
+    win-x64: d6426ecaf7adf10650e67a7d671ccc9267c251aec0f349003f04e37877f5ff78
+    linux-arm64: 75cd17d8318f77aeac48a6a154c0c453d00385777bbf142d7d3312374c5f0fc0
+    linux-x64: 4d83a070ee4ffd695c949c7cdbd43f624804466a53f750b73d2a60102426a28f
+    osx-arm64: 865b10cd7b25f7bcdfd34cd33573bc9b4deee60e39990190902a2dab7bbe1e81
+    osx-x64: 4c2d2e3bce7da4d47d58518a9bad2d0352853204046cc35bd39045c4bb8b8549
+  local_install:
+    rid: win-arm64
+    path: C:/Users/fgpaz/bin/mi-lsp.exe
+    worker_source: installed
+    worker_compatible: true
+  installed_readback:
+    governance_blocked: false
+    ae_canon_status: valid
+    governance_sync: in_sync
 no_drift_snapshot:
   result: PASS
   commands:
@@ -162,4 +173,4 @@ completion_handoff:
   cleanup:
     state: authorized-after-successful-integration
   blockers: []
-final_verdict: APPROVED_PENDING_RELEASE_AND_INTEGRATION
+final_verdict: APPROVED_PENDING_INTEGRATION
