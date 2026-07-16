@@ -57,4 +57,4 @@ The release orchestration script correctly refused the dirty working tree at its
 
 ## Integration state
 
-The implementation is complete on `docs/readme-redesign`. The user explicitly authorized guarded integration into `origin/main`; commit, push, PR, CI, merge, and remote readback remain the active completion steps. Release publication and cleanup remain out of scope.
+The implementation is committed on `docs/readme-redesign` at `1c3379ada2559f3e34348536cfeacaa2b59034e6`. The user explicitly authorized guarded integration into `origin/main`; push, PR, CI, merge, and remote readback remain the active completion steps. Release publication and cleanup remain out of scope.

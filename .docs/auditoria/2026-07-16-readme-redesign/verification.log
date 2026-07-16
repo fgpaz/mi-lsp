@@ -72,11 +72,11 @@ WARN release provenance dry-run
 - live release assets and archive contents were verified independently through GitHub
 
 PASS Git hygiene
-- 14 implementation paths staged; audit evidence remains unstaged until its final update
+- content commit: 1c3379ada2559f3e34348536cfeacaa2b59034e6
 - task paths stay within session-contract allowed paths
 - scripts/install/install.sh is unchanged after live release evidence corrected the earlier false Darwin-rejection premise
 - integration worktree contains no internal/** changes from the source worktree
-- no commit, push, PR mutation, merge, cleanup, or release publication has occurred yet
+- push, PR mutation, merge, cleanup, and release publication have not occurred yet
 
 SHA256
 - README.md 818acec0988aa887429a160059c102e93bfc8b0feb9550e02f77f55f31e82540

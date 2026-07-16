@@ -10,9 +10,9 @@ git_before:
   behind: 0
 git_after:
   branch: docs/readme-redesign
-  head_sha: pending_integration_commit
+  head_sha: 1c3379ada2559f3e34348536cfeacaa2b59034e6
   upstream: origin/main
-  ahead: pending
+  ahead: 1
   behind: 0
 
 changed_paths:
