@@ -34,6 +34,10 @@ jobs:
         with:
           dotnet-version: 10.0.x
 
+      - name: Test shell installer platform mappings
+        if: matrix.os == 'ubuntu-latest'
+        run: sh scripts/tests/install-platform-mapping.sh
+
       - name: Run Go tests
         run: go test -v -race ./...
 

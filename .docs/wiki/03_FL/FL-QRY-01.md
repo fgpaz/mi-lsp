@@ -125,7 +125,7 @@ sequenceDiagram
 | Daemon caido | fallback directo para queries daemon-aware; las lecturas baratas siguen directas |
 | Operacion de catalogo/texto (`find/search/intent/symbols/outline/overview/multi-read/pack`) | ejecuta directo y no depende de health del daemon |
 | Presupuesto agotado | `truncated=true` + `next_hint` |
-| Backend degradado (`tsserver` ausente, worker semantico no disponible) | `warnings` explicitos y backend alternativo |
+| Backend degradado (`tsserver`, `pyright` o `gopls` ausente; worker Roslyn no disponible) | `warnings` explicitos y backend alternativo `catalog|text` |
 | Catalogo ausente para `nav service` | degradacion a evidencia textual con warning |
 | `nav ask` sin corpus documental fuerte | degradacion a fallback generico/textual con warning y `coach` de refinamiento |
 | `nav wiki search` con docgraph vacio | `backend=wiki.search`, `items=[]` y hint hacia `index --docs-only` |

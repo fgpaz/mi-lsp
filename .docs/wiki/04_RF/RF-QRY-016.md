@@ -97,7 +97,7 @@ TP-QRY
 10. Ejecutar `mi-lsp nav wiki validate-source --workspace <alias>` como lectura directa que valida solo artefactos que declaran `wiki_source_protocol: SDD-WIKI-SOURCE-v1`
 11. Indexar bloques `toon` normativos y records referenciables en tablas typed (`doc_source_blocks`, `doc_source_records`) y emitir menciones compatibles para `source_protocol`, `doc_id`, `block_id`, `record_id`, imports y exports
 12. Resolver busquedas exactas por `doc_id`, `block_id` y `record_id` desde las tablas typed antes del ranking textual normal
-13. Para harnesses que consultan identificadores C#/TS/Python, la guia agent-first de busqueda debe recomendar `nav find --exact`, luego `nav related`, y recien despues `nav context` o `nav search` textual segun la evidencia disponible.
+13. Para harnesses que consultan identificadores C#/TS/Python/Go, la guia agent-first de busqueda debe recomendar `nav find --exact`, luego `nav related`, y recien despues `nav context` o `nav search` textual segun la evidencia disponible.
 14. Si `nav search` recibe un literal symbol-like, debe emitir `coach.trigger=symbol_query_detected` y priorizar declaraciones/implementaciones fuente antes que docs, tests, backups o generados, sin ocultar esos matches secundarios.
 
 ## Invariantes

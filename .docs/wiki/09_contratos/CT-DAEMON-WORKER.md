@@ -35,7 +35,7 @@ Define el contrato interno entre core/daemon y los backends semanticos, con foco
 
 ## Boundary and owner
 
-- Boundary: daemon/core -> worker Roslyn, runtime `tsserver`, o `pyright-langserver`
+- Boundary: daemon/core -> worker Roslyn, runtime `tsserver`, `pyright-langserver` o `gopls`
 - Owner logico: Semantic backends
 - Scope: framing, envelopes, lifecycle, payloads derivados y bootstrap de runtimes
 
@@ -67,11 +67,18 @@ TS semantic bridge:
 - framing `Content-Length` propio de `tsserver`
 - sin handshake separado de `mi-lsp`; el bridge opera request/response por comando
 
+Pyright y Go LSP bridge:
+
+- transporte por `stdio` hacia `pyright-langserver` o `gopls`
+- framing LSP JSON-RPC 2.0 con `Content-Length`
+- lifecycle y documentos abiertos gestionados por el cliente LSP generico
+
 ## Backends soportados
 
 - `roslyn`
 - `tsserver`
 - `pyright`
+- `gopls`
 
 ## Operaciones minimas actuales
 
@@ -89,7 +96,7 @@ TS semantic bridge:
 - `get_context`
 - `find_refs`
 
-Pyright LSP bridge:
+Pyright y gopls LSP bridge:
 
 - `get_context` (via `textDocument/hover`)
 - `find_refs` (via `textDocument/references`)
@@ -100,6 +107,7 @@ Pyright LSP bridge:
 - Orden canonico de candidatos Roslyn para queries: `bundle -> installed -> dev-local`, resuelto por presencia de archivos y sin probe de compatibilidad en el hot path.
 - Compatibilidad minima se valida mediante probe `status` y comparacion de `protocol_version`; ese probe vive en `worker status` y diagnostico explicito.
 - Si el primer candidato Roslyn falla por bootstrap/arranque, el caller puede reintentar una sola vez con el siguiente candidato determinista antes de devolver error accionable.
+- `gopls` es opcional y se resuelve primero desde `PATH`, luego desde `bin/gopls(.exe)` o `.bin/gopls(.exe)` dentro del repo; su ausencia no invalida el catalogo AST nativo de Go.
 - Los procesos hijo no interactivos del worker y del bridge semantico deben usar la politica comun de proceso; en Windows eso significa `HideWindow + CREATE_NO_WINDOW`, y los procesos detached agregan `DETACHED_PROCESS`.
 - El runtime pool debe respetar presupuesto de memoria/proceso observable por daemon: working set, private bytes, handles y cantidad de runtimes activos son parte del contrato de `daemon status`/`perf-smoke`.
 - El worker instalado por RID vive en `~/.mi-lsp/workers/<rid>/`.
@@ -115,6 +123,7 @@ Pyright LSP bridge:
 - Los errores del worker deben mapearse a mensajes accionables para el CLI.
 - Si `tsserver` falla o no existe, el caller debe poder degradar a catalog/text con warning.
 - Si `pyright` falla o no existe, el caller debe poder degradar a catalog/text con warning.
+- Si `gopls` falla o no existe, el caller debe conservar el catalogo AST nativo de Go y degradar a catalog/text con warning.
 - Si Roslyn falla en `get_context` y el archivo existe, el caller debe preservar `slice_text` y degradar a `catalog` o `text` con warning accionable.
 - Si Roslyn falla en operaciones sin fallback util, como `find_refs` o `get_deps`, el caller debe devolver error tipado y accionable.
 - Si el SLO de memoria/proceso se excede durante `perf-smoke`, el envelope debe ser `ok=false` con `error.kind=daemon` o `backend_runtime`, `error.code` estable y warning accionable; no debe esconderse como warning benigno.
