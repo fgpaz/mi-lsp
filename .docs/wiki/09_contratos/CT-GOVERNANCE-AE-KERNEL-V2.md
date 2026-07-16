@@ -39,7 +39,7 @@ evidence:
   - .docs/wiki/00_gobierno_documental.md
   - .docs/wiki/_mi-lsp/read-model.toml
   - .docs/ae/repo-policy.yaml
-  - .docs/auditoria/2026-07-13-ae-kernel-v2-integration/
+  - .docs/auditoria/2026-07-13-ae-kernel-v2-integration/traceability-closure.yaml
 ```
 
 ## Canonical binding
