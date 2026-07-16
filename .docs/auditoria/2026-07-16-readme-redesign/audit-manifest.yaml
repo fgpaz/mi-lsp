@@ -1,0 +1,18 @@
+schema: ae-audit-hygiene/v1
+session: 2026-07-16-readme-redesign
+retention_ttl_days: 14
+hash_algorithm: sha256
+artifact_classes:
+  session-contract.yaml: contract
+  inventory.md: sanitized-summary
+  verification.log: sanitized-verification
+  traceability-closure.yaml: sanitized-closure
+  verdict.md: sanitized-verdict
+sanitization:
+  secrets_included: false
+  raw_prompts_included: false
+  raw_transcripts_included: false
+cleanup:
+  status: retained
+  eligible_after: 2026-07-30
+  owner: separate-explicit-cleanup-operation

@@ -44,6 +44,7 @@ El detalle por frontera vive en `09_contratos/`.
 | Worker protocol | Daemon/core -> worker Roslyn | Semantic backends | stdio JSON length-prefixed |
 | TS semantic bridge | Daemon/core -> `tsserver` | TS semantic backend | `tsserver` Content-Length protocol |
 | Pyright LSP bridge | Daemon/core -> `pyright-langserver` | Python semantic backend | LSP JSON-RPC 2.0 Content-Length protocol |
+| Go catalog + LSP opcional | Core -> extractor AST / `gopls` | Go navigation backend | indice repo-local / LSP JSON-RPC 2.0 |
 
 ## Boundaries y ownership
 
@@ -70,6 +71,7 @@ El detalle por frontera vive en `09_contratos/`.
 - `nav governance` pertenece a la CLI publica y devuelve el estado efectivo de gobernanza del workspace.
 - `nav service` pertenece a la CLI publica y usa un contrato evidence-first, no uno de scoring.
 - `nav context` pertenece a la CLI publica y su salida visible es slice-first; el backend profundo solo enriquece el mismo item.
+- Para archivos Go, el catalogo AST nativo conserva navegacion basica sin `gopls`; cuando `gopls` existe, `nav context` y `nav refs` pueden enriquecer el resultado, sin prometer paridad con la semantica profunda C# de Roslyn.
 - `nav intent` pertenece a la CLI publica y expone `mode=docs|code`: en `docs` usa routing documental owner-aware; en `code` conserva el ranking BM25 sobre `search_text`. En workspaces `container`, `--repo` acota solo `mode=code`.
 
 ## Configuracion de embeddings
@@ -154,7 +156,7 @@ Sin configuracion activa, `nav recall` devuelve hint visible y no llama al prove
 - La politica comun de subprocessos no interactivos debe evitar UI extra; en Windows aplica `HideWindow + CREATE_NO_WINDOW`, y los procesos background del daemon agregan `DETACHED_PROCESS`.
 - La resolucion de bootstrap del worker usa el ejecutable/distribucion activa o, en desarrollo, el repo `mi-lsp`; nunca el `cwd` arbitrario del workspace consultado.
 - La distribucion publica canonica es un bundle por RID que incluye `mi-lsp(.exe)` y `workers/<rid>/`; una build desde source no redefine ese contrato de bootstrap.
-- Los scripts publicos de install/update deben consumir esa misma distribucion canonica; macOS debe fallar con mensaje explicito hasta que existan assets Darwin.
+- Los scripts publicos de install/update deben consumir esa misma distribucion canonica; `install.sh` detecta macOS como archive RID `darwin-*` y mapea el worker runtime a `osx-*`, preservando compatibilidad con ambos aliases en `--rid`.
 - La distribucion operativa AE debe producir y verificar `win-arm64`, `win-x64`, `linux-arm64` y `linux-x64`; `scripts/release/ae-release-binaries.ps1` es el entrypoint mantenido para refrescar installs locales/WSL, mirrors x64 opcionales y publicar por tag limpio cuando se pasa `-Publish`.
 - Las queries Roslyn deben resolver candidatos en orden `bundle -> installed -> dev-local` por presencia de archivos; el probe `status` queda reservado para `worker status` y diagnostico explicito.
 - Si el primer candidato Roslyn falla por bootstrap al arrancar, el caller puede reintentar una sola vez con el siguiente candidato determinista antes de devolver error accionable.
@@ -302,7 +304,7 @@ Actualizar `09` y/o `CT-*` cuando cambie cualquiera de estos puntos:
 - envelope JSON de salida
 - politica de sanitizacion y compatibilidad por formato (`compact|json|text|toon|yaml`)
 - endpoints/admin URL o payloads de gobernanza
-- protocolo con Roslyn worker o bridge con `tsserver` o `pyright`
+- protocolo con Roslyn worker, catalogo Go AST nativo o bridges opcionales con `tsserver`, `pyright` o `gopls`
 - politica de bootstrap, instalacion o compatibilidad del worker por RID
 - contrato explainable de `nav ask` o shortcut publico `init`
 - embeddings backends, profiles, configuracion, API key env, contrato recall
