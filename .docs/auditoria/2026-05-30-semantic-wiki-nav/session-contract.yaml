@@ -1,3 +1,4 @@
+# deprecation-scan-file: historical
 schema: ae-session-contract-v1
 task_slug: semantic-wiki-nav
 issue_or_waiver: "waiver: no tracker card; user-directed prompt .docs/raw/prompts/2026-05-30-semantic-wiki-navigation.md"

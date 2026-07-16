@@ -1,3 +1,4 @@
+# deprecation-scan-file: historical
 schema: ps-trazabilidad-closure-v1
 session_contract_path: .docs/auditoria/2026-05-30-ae-auto-integration-policy/session-contract.yaml
 task_slug: ae-auto-integration-policy

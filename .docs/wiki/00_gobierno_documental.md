@@ -52,7 +52,7 @@ owner_hints:
   - terms:
       - ae
       - agent engineering
-      - ae-orquestador
+      - ae-work
       - release distribution
       - actualizar binarios
       - publicar binarios

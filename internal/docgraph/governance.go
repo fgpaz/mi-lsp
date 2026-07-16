@@ -49,17 +49,28 @@ var requiredKernelV2RepoPolicyStringSlots = [][]string{
 	{"repo", "description"},
 	{"language", "policy_lang"},
 	{"language", "docs_lang"},
-	{"tracker", "provider"},
-	{"tracker", "key_env"},
-	{"tracker", "conf_file"},
-	{"tracker", "linear", "base_url"},
-	{"tracker", "linear", "workspace"},
 	{"secrets", "vault"},
 	{"secrets", "tool"},
 	{"wiki", "layers_map", "02"},
 	{"wiki", "workspace_alias"},
 	{"wiki", "paths_file"},
 	{"subagents", "roster_file"},
+}
+
+var kernelV2TrackerProviderBlocks = map[string]string{
+	"linear":       "linear",
+	"Linear":       "linear",
+	"LINEAR":       "linear",
+	"plane":        "plane",
+	"Plane":        "plane",
+	"PLANE":        "plane",
+	"azure_boards": "azure_boards",
+	"azure-boards": "azure_boards",
+	"AzureBoards":  "azure_boards",
+	"Azure Boards": "azure_boards",
+	"jira":         "jira",
+	"Jira":         "jira",
+	"JIRA":         "jira",
 }
 
 var (
@@ -467,9 +478,10 @@ func invalidKernelV2RepoPolicySlots(policy map[string]any) []string {
 			invalid = append(invalid, strings.Join(slot, "."))
 		}
 	}
-	if !validKernelV2ProjectKey(lookupKernelV2RepoPolicyValue(policy, "tracker", "linear", "projects")) {
-		invalid = append(invalid, "tracker.linear.projects[0].key")
+	if !validKernelV2StringList(lookupKernelV2RepoPolicyValue(policy, "repo", "structure_rules")) {
+		invalid = append(invalid, "repo.structure_rules[]")
 	}
+	invalid = append(invalid, invalidKernelV2TrackerSlots(lookupKernelV2RepoPolicyValue(policy, "tracker"))...)
 	if !validKernelV2Wrappers(lookupKernelV2RepoPolicyValue(policy, "wrappers")) {
 		invalid = append(invalid, "wrappers[]")
 	}
@@ -478,6 +490,45 @@ func invalidKernelV2RepoPolicySlots(policy map[string]any) []string {
 	}
 	if !validKernelV2Date(lookupKernelV2RepoPolicyValue(policy, "last_updated")) {
 		invalid = append(invalid, "last_updated")
+	}
+	return invalid
+}
+
+func invalidKernelV2TrackerSlots(value any) []string {
+	tracker, ok := value.(map[string]any)
+	if !ok {
+		return []string{"tracker.provider"}
+	}
+	provider, ok := tracker["provider"].(string)
+	if !ok {
+		return []string{"tracker.provider"}
+	}
+	blockName, ok := kernelV2TrackerProviderBlocks[provider]
+	if !ok {
+		return []string{"tracker.provider"}
+	}
+	invalid := make([]string, 0)
+	for key := range tracker {
+		if key != "provider" && key != blockName {
+			invalid = append(invalid, "tracker."+key+"#forbidden")
+		}
+	}
+	block, ok := tracker[blockName].(map[string]any)
+	if !ok {
+		return append(invalid, "tracker."+blockName)
+	}
+	for key := range block {
+		if key != "base_url" && key != "workspace" && key != "key_env" && key != "projects" {
+			invalid = append(invalid, "tracker."+blockName+"."+key+"#forbidden")
+		}
+	}
+	for _, field := range []string{"base_url", "workspace", "key_env"} {
+		if !validKernelV2RepoPolicyString(block[field]) {
+			invalid = append(invalid, "tracker."+blockName+"."+field)
+		}
+	}
+	if !validKernelV2Projects(block["projects"]) {
+		invalid = append(invalid, "tracker."+blockName+".projects[].key")
 	}
 	return invalid
 }
@@ -502,13 +553,29 @@ func validKernelV2RepoPolicyString(value any) bool {
 	return ok && strings.TrimSpace(text) != ""
 }
 
-func validKernelV2ProjectKey(value any) bool {
+func validKernelV2Projects(value any) bool {
 	projects, ok := value.([]any)
 	if !ok || len(projects) == 0 {
 		return false
 	}
-	project, ok := projects[0].(map[string]any)
-	return ok && validKernelV2RepoPolicyString(project["key"])
+	for _, value := range projects {
+		project, ok := value.(map[string]any)
+		if !ok || !validKernelV2RepoPolicyString(project["key"]) {
+			return false
+		}
+		for key, field := range project {
+			switch key {
+			case "key":
+			case "name", "scope", "project_id":
+				if !validKernelV2RepoPolicyString(field) {
+					return false
+				}
+			default:
+				return false
+			}
+		}
+	}
+	return true
 }
 
 func validKernelV2Wrappers(value any) bool {

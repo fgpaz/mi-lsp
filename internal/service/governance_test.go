@@ -368,7 +368,7 @@ func TestInspectGovernanceReportsKernelV2SourceDefects(t *testing.T) {
 		missing := strings.Join(status.AECanon.MissingModules, "\n")
 		for _, slot := range []string{
 			"#repo.description",
-			"#tracker.linear.projects[0].key",
+			"#tracker.provider",
 			"#wrappers[]",
 			"#qa.canon_paths[]",
 			"#last_updated",
@@ -406,8 +406,7 @@ func TestInspectGovernanceReportsKernelV2SourceDefects(t *testing.T) {
 		missing := strings.Join(status.AECanon.MissingModules, "\n")
 		for _, slot := range []string{
 			"#repo.name",
-			"#tracker.linear.base_url",
-			"#tracker.linear.projects[0].key",
+			"#tracker.provider",
 			"#wrappers[]",
 			"#qa.canon_paths[]",
 			"#last_updated",
@@ -443,6 +442,18 @@ func TestInspectGovernanceReportsKernelV2SourceDefects(t *testing.T) {
 			missingSlot: "#language.docs_lang",
 		},
 		{
+			name:        "empty structure rules are rejected",
+			oldValue:    "  structure_rules:\n    - Keep code under internal",
+			newValue:    "  structure_rules: []",
+			missingSlot: "#repo.structure_rules[]",
+		},
+		{
+			name:        "provider key env is required",
+			oldValue:    "    key_env: TEST_LINEAR_API_KEY",
+			newValue:    "    key_env: \"\"",
+			missingSlot: "#tracker.linear.key_env",
+		},
+		{
 			name:        "invalid update date is rejected",
 			oldValue:    "last_updated: \"2026-07-13\"",
 			newValue:    "last_updated: \"not-a-date\"",
@@ -452,7 +463,7 @@ func TestInspectGovernanceReportsKernelV2SourceDefects(t *testing.T) {
 			name:        "first tracker project requires key",
 			oldValue:    "      - key: TEST",
 			newValue:    "      - name: Test",
-			missingSlot: "#tracker.linear.projects[0].key",
+			missingSlot: "#tracker.linear.projects[].key",
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -484,6 +495,107 @@ func TestInspectGovernanceReportsKernelV2SourceDefects(t *testing.T) {
 				t.Fatalf("expected missing policy slot %q, got %#v", tc.missingSlot, status.AECanon.MissingModules)
 			}
 		})
+	}
+}
+
+func TestInspectGovernanceAcceptsKernelV2TrackerProviders(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		provider string
+		block    string
+	}{
+		{name: "linear lowercase", provider: "linear", block: "linear"},
+		{name: "linear canonical", provider: "Linear", block: "linear"},
+		{name: "linear uppercase", provider: "LINEAR", block: "linear"},
+		{name: "plane lowercase", provider: "plane", block: "plane"},
+		{name: "plane canonical", provider: "Plane", block: "plane"},
+		{name: "plane uppercase", provider: "PLANE", block: "plane"},
+		{name: "azure underscore", provider: "azure_boards", block: "azure_boards"},
+		{name: "azure hyphen", provider: "azure-boards", block: "azure_boards"},
+		{name: "azure compact", provider: "AzureBoards", block: "azure_boards"},
+		{name: "azure canonical", provider: "Azure Boards", block: "azure_boards"},
+		{name: "jira lowercase", provider: "jira", block: "jira"},
+		{name: "jira canonical", provider: "Jira", block: "jira"},
+		{name: "jira uppercase", provider: "JIRA", block: "jira"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ensureWritableTestHome(t)
+			root := t.TempDir()
+			kernelHome := t.TempDir()
+			t.Setenv("AE_KERNEL_HOME", kernelHome)
+			writeSpecBackendGovernanceFixture(t, root)
+			addKernelV2AECanonToGovernanceFixture(t, root)
+			writeKernelV2CanonModules(t, kernelHome)
+			writeKernelV2RepoPolicy(t, root)
+
+			policyPath := filepath.Join(root, ".docs", "ae", "repo-policy.yaml")
+			content, err := os.ReadFile(policyPath)
+			if err != nil {
+				t.Fatalf("read repo policy fixture: %v", err)
+			}
+			updated := strings.Replace(string(content), "  provider: Linear", "  provider: "+tc.provider, 1)
+			updated = strings.Replace(updated, "  linear:", "  "+tc.block+":", 1)
+			writeWorkspaceFile(t, root, ".docs/ae/repo-policy.yaml", updated)
+
+			status := docgraph.InspectGovernance(root, true)
+			if status.Blocked || status.AECanon.Status != "valid" {
+				t.Fatalf("expected %s tracker policy to pass, got %#v", tc.provider, status)
+			}
+		})
+	}
+}
+
+func TestInspectGovernanceRejectsKernelV2TrackerProviderOutsideRendererAliases(t *testing.T) {
+	ensureWritableTestHome(t)
+	root := t.TempDir()
+	kernelHome := t.TempDir()
+	t.Setenv("AE_KERNEL_HOME", kernelHome)
+	writeSpecBackendGovernanceFixture(t, root)
+	addKernelV2AECanonToGovernanceFixture(t, root)
+	writeKernelV2CanonModules(t, kernelHome)
+	writeKernelV2RepoPolicy(t, root)
+
+	policyPath := filepath.Join(root, ".docs", "ae", "repo-policy.yaml")
+	content, err := os.ReadFile(policyPath)
+	if err != nil {
+		t.Fatalf("read repo policy fixture: %v", err)
+	}
+	updated := strings.Replace(string(content), "  provider: Linear", "  provider: \" Linear \"", 1)
+	writeWorkspaceFile(t, root, ".docs/ae/repo-policy.yaml", updated)
+
+	status := docgraph.InspectGovernance(root, true)
+	if !status.Blocked || status.AECanon.Status != "missing" {
+		t.Fatalf("expected provider outside renderer aliases to block, got %#v", status)
+	}
+	if !strings.Contains(strings.Join(status.AECanon.MissingModules, "\n"), "#tracker.provider") {
+		t.Fatalf("expected invalid tracker provider marker, got %#v", status.AECanon.MissingModules)
+	}
+}
+
+func TestInspectGovernanceRejectsKernelV2TrackerNeutralAliases(t *testing.T) {
+	ensureWritableTestHome(t)
+	root := t.TempDir()
+	kernelHome := t.TempDir()
+	t.Setenv("AE_KERNEL_HOME", kernelHome)
+	writeSpecBackendGovernanceFixture(t, root)
+	addKernelV2AECanonToGovernanceFixture(t, root)
+	writeKernelV2CanonModules(t, kernelHome)
+	writeKernelV2RepoPolicy(t, root)
+
+	policyPath := filepath.Join(root, ".docs", "ae", "repo-policy.yaml")
+	content, err := os.ReadFile(policyPath)
+	if err != nil {
+		t.Fatalf("read repo policy fixture: %v", err)
+	}
+	updated := strings.Replace(string(content), "  provider: Linear", "  provider: Linear\n  key_env: LEGACY_LINEAR_API_KEY", 1)
+	writeWorkspaceFile(t, root, ".docs/ae/repo-policy.yaml", updated)
+
+	status := docgraph.InspectGovernance(root, true)
+	if !status.Blocked || status.AECanon.Status != "missing" {
+		t.Fatalf("expected neutral tracker alias to block, got %#v", status)
+	}
+	if !strings.Contains(strings.Join(status.AECanon.MissingModules, "\n"), "#tracker.key_env#forbidden") {
+		t.Fatalf("expected forbidden neutral alias marker, got %#v", status.AECanon.MissingModules)
 	}
 }
 

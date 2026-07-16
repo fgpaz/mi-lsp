@@ -1,3 +1,4 @@
+# deprecation-scan-file: historical
 session: 2026-05-27-mi-lsp-ae-programa-gateway
 decisions:
   - id: DEC-AE-GATEWAY
