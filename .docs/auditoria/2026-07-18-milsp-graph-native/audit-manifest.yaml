@@ -1,0 +1,27 @@
+schema: ae-audit-hygiene/v1
+session_id: 2026-07-18-milsp-graph-native
+retention_ttl_days: 14
+hash_algorithm: sha256
+artifact_classes:
+  - audit_manifest
+  - session_contract
+  - sanitized_summary
+  - sanitized_verdict
+  - verification_result
+sanitized_summaries: true
+sanitized_verdicts: true
+secret_policy:
+  forbid_secrets: true
+  forbid_raw_logs: true
+  allowed_content: sanitized_metadata_only
+cleanup_status: pending_until_closure
+cleanup:
+  status: pending_until_closure
+  retain_until: closure
+  remove_after_ttl: true
+acceptance:
+  required_files:
+    - .docs/auditoria/2026-07-18-milsp-graph-native/audit-manifest.yaml
+    - .docs/auditoria/2026-07-18-milsp-graph-native/session-contract.yaml
+  required_schema: ae-audit-hygiene/v1
+  closure_requires_sanitized_evidence: true
