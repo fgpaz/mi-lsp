@@ -78,6 +78,6 @@ sequenceDiagram
 4. La evidencia se conserva junto al camino; no se presentan inferencias como hechos.
 5. Las respuestas siguen siendo validas aunque el daemon no este activo.
 
-## 7. Deferred contracts
+## 7. Contratos derivados
 
-Los nombres finales de comandos, RF, TP, CT y schemas de persistencia se derivan despues de validar este flujo.
+Navegacion, impacto, autoridad wiki-codigo, federacion y optimizacion se especifican en `RF-GPH-005..007`, `RF-GPH-009` y `RF-GPH-011`; sus oraculos viven en `TP-GPH-004..007`. CT y schemas fisicos se derivan en SDD-C.

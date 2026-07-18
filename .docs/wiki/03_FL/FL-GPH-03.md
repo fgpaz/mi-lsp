@@ -89,8 +89,8 @@ sequenceDiagram
 - Aceptar solo manifests MILX-v1 validos con capabilities allowlisted y snapshot publicado seleccionado.
 - Verificar rechazo previo para capabilities no permitidas, timeout/fallo aislado, descarte de salida invalida o excesiva y cleanup sin mutacion del core.
 - Mantener explicable la cadena snapshot -> resultado -> evidencia, incluyendo referencias wiki-code cuando correspondan y warnings explicitos para estados unresolved.
-- La trazabilidad de este flujo queda limitada a `01_alcance_funcional.md`, `02_arquitectura.md`, `03_FL.md` y `FL-GPH-01`; RF, TP, TECH, DB y CT se crean solo en olas posteriores.
+- La trazabilidad de este flujo se completa en `RF-GPH-010`, `RF-GPH-011`, `TP-GPH-006` y `TP-GPH-007`; `00_gobierno_documental.md`, alcance, arquitectura y este flujo conservan autoridad sobre los contratos derivados.
 
-## 9. Deferred contracts
+## 9. Contratos derivados
 
-Los nombres finales de comandos, RF, TP, TECH, DB y CT, schemas persistentes y limites numericos se derivan despues de validar este flujo; no se reservan identificadores downstream en SDD-A.
+`MILX-v1`, context packs, limites y gates se especifican en `RF-GPH-010`, `RF-GPH-011`, `TP-GPH-006` y `TP-GPH-007`. TECH, DB y CT se derivan en SDD-C; ninguna proyeccion downstream redefine este flujo.

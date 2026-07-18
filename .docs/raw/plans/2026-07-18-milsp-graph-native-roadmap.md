@@ -36,7 +36,7 @@ Workers must use isolated worktrees, one bounded packet per decision, and no dir
 ## Graph contract locked by G0/G1
 
 - `GraphGeneration`: immutable generation id, workspace identity, schema version, source fingerprint, compiler/backend versions, created-at metadata and status (`staged|active|retired|invalid`).
-- `NodeKey`: canonical tuple `{workspace_root, backend_type, project_or_module, symbol_kind, canonical_name, declaration_uri, declaration_range}`; serialization is normalized and hashed. Missing identity fields, non-deterministic normalization or collisions produce unresolved records, not guessed keys.
+- `NodeKey v1`: BLOB SHA-256 de una serializacion versionada y length-prefixed de `{repository_identity, backend_type, language, project_or_module, owner_path, symbol_kind, semantic_identity}` segun `RF-GPH-001`; root absoluto y declaration range quedan fuera de identidad. Missing fields, normalizacion no determinista o colision producen unresolved y bloquean publicacion.
 - Node record: `node_key`, kind, display name, declaration location, source fingerprint, backend/compiler provenance, confidence/status, cross-RID and generation id.
 - Edge record: `from`, `to`, relation, source location/evidence, provenance, confidence/status, cross-RID and generation id. Inferred edges are visibly marked and never presented as compiler facts.
 - Evidence record: source URI/range, backend, extractor version, digest, observed claim, cross-RID and generation id. Unresolved record: reason code, selector/input, affected generation, cross-RID and recovery hint.
@@ -66,7 +66,7 @@ Workers must use isolated worktrees, one bounded packet per decision, and no dir
 - Inputs: `.docs/wiki/00_gobierno_documental.md`, `.docs/wiki/01_alcance_funcional.md`, `.docs/wiki/02_arquitectura.md`, `.docs/wiki/03_FL.md`, `.docs/wiki/03_FL/FL-GPH-01.md`, `.docs/wiki/03_FL/FL-GPH-02.md`, `.docs/wiki/03_FL/FL-GPH-03.md`, `.docs/raw/plans/2026-07-18-milsp-graph-native-roadmap.md`, the two pinned commits and the benchmark lab paths discovered from the current tree.
 - Outputs: only `.docs/auditoria/<session>/g0-manifest.yaml`, sanitized baseline/reference records, decision lock and packet evidence; do not edit any input wiki, implementation file, `.mi-lsp/**` or governance projection.
 - Steps: validate wiki authority and cross-references; inventory existing graph names without inventing RF/TP/TECH/DB/CT IDs; verify exact commits and worktree roots; pin fixture, command, environment and baseline identifiers; define cross-RID/evidence/omission fields; record allowed paths and forbidden paths; create the wave packet and worker join record.
-- Tests: `mi-lsp nav governance --workspace C:\repos\mios\mi-lsp-w1-sdd --format toon`; ID/cross-reference scan; `git diff --check`; exact commit and path checks; baseline availability check.
+- Tests: `mi-lsp nav governance --workspace mi-lsp --format toon`; ID/cross-reference scan; `git diff --check`; exact commit and path checks; baseline availability check.
 - Acceptance: manifest is reproducible, authority is explicit, both comparators and previous baseline are pinned, no invented SDD IDs exist, every later path is exact or explicitly gated, and evidence records omissions instead of guessing.
 - Rollback: discard the W0 packet and retain only sanitized failure evidence; do not proceed to G1.
 - Next action: join G0, then create isolated `worker/gph-g1` from the exact base. Stop on any failed precondition.
@@ -185,7 +185,7 @@ Workers must use isolated worktrees, one bounded packet per decision, and no dir
 
 ## Fixed verification command set
 
-`mi-lsp nav governance --workspace C:\repos\mios\mi-lsp-w1-sdd --format toon`
+`mi-lsp nav governance --workspace mi-lsp --format toon`
 
 `go test ./...`
 
@@ -195,11 +195,11 @@ Workers must use isolated worktrees, one bounded packet per decision, and no dir
 
 `rg -n "FL-GPH-(01|02|03)|GraphGeneration|NodeKey|MILX-v1|SQLite|adjacency|NetworkX|cross-RID|precision|recall|determinism|incremental|peak RSS|p95|30 repetitions|Graphify|a251ab1f8db4e96f029926fbef275b078a20a111|9bf14a4931658152969586ace39eb965c010f0d1|no-MCP|crash recovery|dual-read|dual-write|rollback|ae-close|no push|no deploy|no publish" .docs/wiki .docs/raw/plans`
 
-`rg -n --glob '!2026-07-18-milsp-graph-native-roadmap.md' "RF-GPH|TP-GPH|TECH-GPH|DB-GPH|CT-GPH" .docs/wiki .docs/raw/plans`
+`rg -n "RF-GPH-(001|002|003|004|005|006|007|008|009|010|011)|TP-GPH-(001|002|003|004|005|006|007)" .docs/wiki .docs/raw/plans`
 
 `git diff --check`
 
-The graph ID scan must show no invented graph RF/TP/TECH/DB/CT IDs. G10 repeats the complete command set plus all targeted graph tests and the pinned benchmark suite; prose, screenshots or API-only checks cannot produce PASS.
+The graph ID scan must resolve exactly `RF-GPH-001..011` and `TP-GPH-001..007`; any other graph RF/TP ID or any TECH/DB/CT ID created outside its governed SDD-C wave is drift. G10 repeats the complete command set plus all targeted graph tests and the pinned benchmark suite; prose, screenshots or API-only checks cannot produce PASS.
 
 ## Release, closure and disposition rules
 

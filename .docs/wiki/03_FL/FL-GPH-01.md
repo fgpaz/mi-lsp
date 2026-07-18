@@ -79,6 +79,6 @@ sequenceDiagram
 4. Query no muta el snapshot ni el catalogo.
 5. No se afirma performance, p95 o RSS sin medicion reproducible en el gate correspondiente.
 
-## 7. Deferred contracts
+## 7. Contratos derivados
 
-RF, TP, TECH, DB y CT se derivan en la siguiente ola; este flujo solo fija alcance e invariantes SDD-A.
+Identidad, generations, edges e incrementalidad se especifican en `RF-GPH-001..004` y `RF-GPH-008`; sus oraculos viven en `TP-GPH-001..003`. TECH, DB y CT se derivan en SDD-C sin alterar este flujo.
