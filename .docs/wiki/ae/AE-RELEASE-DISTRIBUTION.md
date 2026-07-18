@@ -10,6 +10,10 @@ audience: "llm-first"
 imports:
   - '[[00_gobierno_documental]]'
   - '[[TECH-DEPENDENCY-HARDENING]]'
+  - '[[TECH-GRAPH-NATIVE]]'
+  - '[[DB-SYMBOL-EDGE-GRAPH]]'
+  - '[[CT-GRAPH-CLI]]'
+  - '[[CT-MILX-V1]]'
   - '[[09_contratos_tecnicos]]'
   - '[[AE-EVIDENCE-POLICY]]'
 exports:
@@ -17,6 +21,10 @@ exports:
 agent_must_read:
   - .docs/wiki/ae/AE-RELEASE-DISTRIBUTION.md
   - .docs/wiki/07_tech/TECH-DEPENDENCY-HARDENING.md
+  - .docs/wiki/07_tech/TECH-GRAPH-NATIVE.md
+  - .docs/wiki/08_db/DB-SYMBOL-EDGE-GRAPH.md
+  - .docs/wiki/09_contratos/CT-GRAPH-CLI.md
+  - .docs/wiki/09_contratos/CT-MILX-V1.md
   - .docs/wiki/09_contratos_tecnicos.md
 agent_may_edit:
   - .docs/wiki/ae/AE-RELEASE-DISTRIBUTION.md
@@ -48,6 +56,7 @@ applies_when:
   - release, install, version, doctor, daemon, or cross-OS behavior changes
   - search routing, safe-degrade planner, telemetry export, attribution, or version provenance fields change
   - an agent claims final readiness after modifying binary-producing code
+  - graph identity/schema, generation publication/recovery, adapters, query envelopes, federation, MILX host or pack behavior changes
 required_targets:
   local_current_machine:
     windows_arm64: C:/Users/fgpaz/bin/mi-lsp.exe
@@ -104,6 +113,9 @@ stop_if:
   - WSL install was skipped without waiver when WSL is available
   - local executable remains locked after daemon stop and copy retries
   - telemetry/planner/provenance changes lack installed-path `version`, `worker status`, and `admin export --summary` evidence or explicit waiver
+  - graph-native release lacks TP-GPH, migration rollback, cross-RID, no-MCP/no-network and both-comparator Victory evidence
+  - any target RID produces different NodeKey/cross-RID/determinism digest for the same fixture
+  - an extension or pack can write the primary graph/wiki, access network/MCP/secrets, or survive cleanup
 verify:
   - powershell -File ./scripts/release/ae-release-binaries.ps1 -SkipBuild -SkipLocalInstall -SkipWslInstall -SkipMirror
   - mi-lsp version --format toon
@@ -112,6 +124,59 @@ verify:
 evidence:
   - .docs/wiki/ae/AE-RELEASE-DISTRIBUTION.md
   - scripts/release/ae-release-binaries.ps1
+```
+
+## Graph-Native Release Gate
+
+```toon
+doc_id: AE-RELEASE-DISTRIBUTION
+block_id: AE-RELEASE-DISTRIBUTION.graph_native_gate
+kind: release-gate
+source_of_truth: this
+verify:
+  - mi-lsp nav wiki validate-source --workspace mi-lsp --format toon
+evidence:
+  - .docs/wiki/ae/AE-RELEASE-DISTRIBUTION.md
+  - .docs/wiki/06_pruebas/TP-GPH.md
+  - scripts/release/ae-release-binaries.ps1
+applies_when:
+  - graph-kernel-or-identity-code-changes
+  - graph-SQLite-schema-migration-publication-or-recovery-changes
+  - compiler-adapter-or-backend-maturity-changes
+  - graph-query-impact-wiki-code-or-global-federation-changes
+  - MILX-host-protocol-capability-or-pack-changes
+required_canon:
+  - RF-GPH-001-through-RF-GPH-011
+  - TP-GPH-001-through-TP-GPH-007
+  - TECH-GRAPH-NATIVE
+  - DB-SYMBOL-EDGE-GRAPH
+  - CT-GRAPH-CLI
+  - CT-MILX-V1
+required_evidence:
+  - all-prior-slice-joins-PASS
+  - NodeKey-and-cross-RID-golden-vectors
+  - atomic-publish-crash-recovery-and-migration-rollback
+  - direct-daemon-read-only-parity
+  - no-MCP-no-network-no-graph-write-security
+  - 30-repetition-raw-results-for-current-Graphify-and-previous-mi-lsp
+  - correctness-precision-recall-negative-violations-determinism-tokens-warm-p95-peak-RSS-incrementality
+cross_rid_matrix:
+  required_RIDs: [win-arm64, win-x64, linux-arm64, linux-x64]
+  oracle: identical-canonical-identity-and-output-for-same-fixture
+release_artifacts:
+  core: mi-lsp-bundle-per-RID
+  worker: workers-per-RID-when-affected
+  packs: versioned-manifest-plus-executable-sha256-when-shipped
+stop_if:
+  - any-required-metric-unavailable-or-threshold-failed
+  - Graphify-or-previous-mi-lsp-comparator-missing
+  - fewer-than-30-repetitions
+  - rollback-or-crash-recovery-not-exercised
+  - cross-RID-conflict
+  - authority-inversion-or-dangling-edge
+  - capability-escape-MCP-network-secret-or-primary-write
+  - installed-binary-provenance-does-not-match-reviewed-source
+publish: forbidden-until-G10-ae-close-APPROVED
 ```
 
 ## WSL Worker Execution Audit
