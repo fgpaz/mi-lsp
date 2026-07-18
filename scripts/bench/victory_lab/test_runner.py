@@ -1,7 +1,7 @@
 import json
 import unittest
 from pathlib import Path
-from runner import load_manifest, run_case
+from runner import _sha256, load_manifest, run_case, verify_hashes
 from incremental import measure_stale_rate
 
 class RunnerTests(unittest.TestCase):
@@ -28,3 +28,16 @@ class RunnerTests(unittest.TestCase):
         self.assertEqual(result['operations'], ['create', 'change', 'delete', 'rename'])
         self.assertEqual(result['stale_rate'], result['stale_record_count'] / result['comparable_records'])
         self.assertTrue(result['clean_equivalent'])
+
+    def test_manifest_hashes_are_line_ending_stable_and_mutation_sensitive(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            fixture = root / 'fixture.txt'
+            fixture.write_bytes(b'alpha\nbeta\n')
+            manifest = {'hashes': {'fixture.txt': _sha256(fixture)}}
+            fixture.write_bytes(b'alpha\r\nbeta\r\n')
+            verify_hashes(root, manifest)
+            fixture.write_bytes(b'alpha\r\nmutated\r\n')
+            with self.assertRaisesRegex(ValueError, 'hash mismatch'):
+                verify_hashes(root, manifest)

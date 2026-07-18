@@ -14,7 +14,11 @@ except ImportError:
  from process_metrics import directory_bytes, snapshot
  from incremental import measure_stale_rate
 
-def _sha256(path): return hashlib.sha256(path.read_bytes()).hexdigest()
+def _canonical_hash_bytes(path):
+    return path.read_bytes().replace(bytes((13, 10)), bytes((10,)))
+
+def _sha256(path):
+    return hashlib.sha256(_canonical_hash_bytes(path)).hexdigest()
 def _case_paths(root, patterns):
     out=[]
     for pattern in patterns: out.extend(p for p in (root/pattern).rglob("*") if p.is_file())
