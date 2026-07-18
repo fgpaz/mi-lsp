@@ -1,0 +1,14 @@
+{
+  "case_id": "relations",
+  "expected_symbols": ["Consumer", "Known", "Shared"],
+  "relations": [
+    {"from": "Consumer", "to": "Known", "kind": "positive"},
+    {"from": "Consumer", "to": "AbsentContract", "kind": "positive"},
+    {"from": "Consumer", "to": "Consumer", "kind": "negative"},
+    {"from": "Consumer", "to": "Shared", "kind": "ambiguous"},
+    {"from": "Consumer", "to": "MissingType", "kind": "unresolved"},
+    {"from": "Consumer", "to": "UnsupportedProvider", "kind": "not-comparable"}
+  ],
+  "unsupported": ["mi-lsp semantic backend", "third-party parser"],
+  "not_comparable": ["unresolved type annotation without declaration"]
+}
