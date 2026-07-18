@@ -44,11 +44,13 @@ stop_if:
   - harness_verdict=BLOCKED
   - wiki_source_verdict=BLOCKED
 evidence:
-  - .docs/auditoria/2026-05-31-budgeted-reentry-evidence-inventory/session-contract.yaml
-  - .docs/auditoria/2026-05-31-budgeted-reentry-evidence-inventory/evidence-index.yaml
+  - .docs/wiki/07_tech/TECH-EVIDENCE-INVENTORY.md
+  - .docs/wiki/09_contratos/CT-NAV-EVIDENCE.md
   - internal/service/evidence_inventory.go
   - internal/service/evidence_inventory_test.go
 ```
+
+The original session bundle is not retained in this checkout; the harness lists only committed design, contract, implementation, and test evidence instead of fabricating historical audit files.
 
 ## Objective
 
