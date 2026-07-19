@@ -1,45 +1,174 @@
 using System.Text.Json;
 using MiLsp.Worker;
 
-static void Require(bool condition, string message) { if (!condition) throw new InvalidOperationException(message); }
-static WorkerRequest Request(string root, string project, string? repository = "example.invalid/repo") => new(
-    "mi-lsp-v1.1", "graph_observe", root, "fixture", "roslyn", "repo", "repo", root, "fixture", project, "project", new Dictionary<string, JsonElement>
-    {
-        ["repository_identity"] = JsonSerializer.SerializeToElement(repository),
-        ["project_or_module"] = JsonSerializer.SerializeToElement(Path.GetRelativePath(root, project).Replace('\\', '/'))
-    });
+static void Require(bool condition, string message)
+{
+    if (!condition) throw new InvalidOperationException(message);
+}
 
-var root = Path.Combine(Path.GetTempPath(), "milsp-g2-" + Guid.NewGuid().ToString("N"));
-Directory.CreateDirectory(root);
+static WorkerRequest Request(string root, string moduleProject, string? entrypointProject = null, string? repository = "example.invalid/repo")
+{
+    return new WorkerRequest(
+        "mi-lsp-v1.1", "graph_observe", root, "fixture", "roslyn", "repo", "repo", root,
+        "fixture", entrypointProject ?? moduleProject, "project", new Dictionary<string, JsonElement>
+        {
+            ["repository_identity"] = JsonSerializer.SerializeToElement(repository),
+            ["project_or_module"] = JsonSerializer.SerializeToElement(Path.GetRelativePath(root, moduleProject).Replace('\\', '/'))
+        });
+}
+
+static async Task<GraphObservationBatch> Observe(string root, string project, CancellationToken cancellationToken = default)
+{
+    var response = await new RoslynService().HandleAsync(Request(root, project), cancellationToken);
+    Require(response.Ok && response.Observation is not null, "observation response missing");
+    return response.Observation!;
+}
+
+static void AssertCoverage(GraphObservationBatch observation)
+{
+    Require(observation.Capabilities.Count == 6 && observation.Coverage.Count == 6, "coverage matrix invalid");
+    foreach (var coverage in observation.Coverage)
+    {
+        Require(coverage.Eligible == coverage.Observed + coverage.Unresolved + coverage.Omitted, $"coverage not coherent for {coverage.Capability}");
+    }
+}
+
+static void AssertSafePaths(GraphObservationBatch observation)
+{
+    foreach (var evidence in observation.Evidence)
+    {
+        Require(!Path.IsPathRooted(evidence.SourceUri) && evidence.SourceUri != "." && evidence.SourceUri != ".." && !evidence.SourceUri.StartsWith("../", StringComparison.Ordinal), "invalid evidence path");
+        Require(evidence.Range is null || evidence.Range.StartLine > 0, "invalid evidence range");
+    }
+    foreach (var omission in observation.Omissions)
+    {
+        Require(!Path.IsPathRooted(omission.OwnerPath) && omission.OwnerPath != "." && omission.OwnerPath != ".." && !omission.OwnerPath.StartsWith("../", StringComparison.Ordinal), "invalid omission owner");
+    }
+}
+
+static void AssertNonzeroFingerprints(GraphObservationBatch observation)
+{
+    Require(observation.SourceFingerprint.Length == 64 && observation.SourceFingerprint != new string('0', 64), "source fingerprint is zero");
+    Require(observation.ConfigFingerprint.Length == 64 && observation.ConfigFingerprint != new string('0', 64), "config fingerprint is zero");
+}
+
+static string CreateFixture(string name, string? source = null, string? project = null)
+{
+    var root = Path.Combine(Path.GetTempPath(), "milsp-g2-" + name + "-" + Guid.NewGuid().ToString("N"));
+    Directory.CreateDirectory(root);
+    File.WriteAllText(Path.Combine(root, "Fixture.csproj"), project ?? "<Project Sdk=\"Microsoft.NET.Sdk\"><PropertyGroup><TargetFramework>net10.0</TargetFramework><EnableDefaultCompileItems>true</EnableDefaultCompileItems></PropertyGroup></Project>");
+    File.WriteAllText(Path.Combine(root, "Fixture.cs"), source ?? "using System; namespace Fixture; public interface IContract { void Run(); } public class Base { public virtual void BaseRun() { } } public class Derived : Base, IContract { public int Value { get; set; } public event Action? Changed; public void Run() { BaseRun(); } } public class Consumer { public void Use(Derived d) { d.Run(); var x = new Derived(); x.Value = 1; } }");
+    return root;
+}
+
+static void CopyTree(string source, string destination)
+{
+    Directory.CreateDirectory(destination);
+    foreach (var directory in Directory.GetDirectories(source, "*", SearchOption.AllDirectories))
+    {
+        Directory.CreateDirectory(Path.Combine(destination, Path.GetRelativePath(source, directory)));
+    }
+    foreach (var file in Directory.GetFiles(source, "*", SearchOption.AllDirectories))
+    {
+        var target = Path.Combine(destination, Path.GetRelativePath(source, file));
+        Directory.CreateDirectory(Path.GetDirectoryName(target)!);
+        File.Copy(file, target);
+    }
+}
+
+var roots = new List<string>();
 try
 {
+    var root = CreateFixture("main");
+    roots.Add(root);
     var project = Path.Combine(root, "Fixture.csproj");
-    await File.WriteAllTextAsync(project, "<Project Sdk=\"Microsoft.NET.Sdk\"><PropertyGroup><TargetFramework>net10.0</TargetFramework><EnableDefaultCompileItems>true</EnableDefaultCompileItems></PropertyGroup></Project>");
-    await File.WriteAllTextAsync(Path.Combine(root, "Fixture.cs"), "namespace Fixture; public interface IContract { void Run(); } public class Base { public virtual void BaseRun() { } } public class Derived : Base, IContract { public int Value { get; set; } public event Action? Changed; public void Run() { BaseRun(); } } public class Consumer { public void Use(Derived d) { d.Run(); var x = new Derived(); x.Value = 1; } }");
-    var service = new RoslynService();
-    var response1 = await service.HandleAsync(Request(root, project), CancellationToken.None);
-    var response2 = await service.HandleAsync(Request(root, project), CancellationToken.None);
-    Require(response1.Ok && response1.Observation is not null, "observation response missing");
-    Require(response1.Observation!.Nodes.Any(node => node.Key.SymbolKind == "namespace"), "namespace declaration missing");
-    Require(response1.Observation.Nodes.Any(node => node.Key.SymbolKind == "type" && node.DisplayName == "Derived"), "type declaration missing");
-    Require(response1.Observation.Nodes.Any(node => node.Key.SymbolKind == "method" && node.DisplayName == "Run"), "method declaration missing");
-    Require(response1.Observation.Nodes.Any(node => node.Key.SymbolKind == "property" && node.DisplayName == "Value"), "property declaration missing");
-    Require(response1.Observation.Nodes.Any(node => node.Key.SymbolKind == "event" && node.DisplayName == "Changed"), "event declaration missing");
-    Require(response1.Observation.Edges.Any(edge => edge.Relation == "implements"), "implements edge missing");
-    Require(response1.Observation.Edges.Any(edge => edge.Relation == "extends"), "extends edge missing");
-    Require(response1.Observation.Edges.Any(edge => edge.Relation == "calls"), "calls edge missing");
-    Require(response1.Observation.Edges.Any(edge => edge.Relation == "references"), "references edge missing");
-    Require(response1.Observation.Nodes.All(node => node.SourceDigest.Length == 64 && node.SourceDigest.All(Uri.IsHexDigit)), "node digest invalid");
-    Require(response1.Observation.Evidence.All(item => !Path.IsPathRooted(item.SourceUri) && item.Range is null || item.Range!.StartLine > 0), "evidence path/range invalid");
-    Require(response1.Observation.Coverage.Count == 6 && response1.Observation.Capabilities.Count == 6, "coverage matrix invalid");
-    var projection = JsonSerializer.Serialize(new { response1.Observation.SchemaVersion, response1.Observation.RepositoryIdentity, response1.Observation.ProjectOrModule, response1.Observation.Capabilities, response1.Observation.Coverage, response1.Observation.Nodes, response1.Observation.Edges, response1.Observation.Evidence, response1.Observation.Unresolved, response1.Observation.Omissions });
-    var projection2 = JsonSerializer.Serialize(new { response2.Observation!.SchemaVersion, response2.Observation.RepositoryIdentity, response2.Observation.ProjectOrModule, response2.Observation.Capabilities, response2.Observation.Coverage, response2.Observation.Nodes, response2.Observation.Edges, response2.Observation.Evidence, response2.Observation.Unresolved, response2.Observation.Omissions });
-    Require(projection == projection2, "semantic projection is not deterministic");
-    var missing = await service.HandleAsync(Request(root, project, null), CancellationToken.None);
+    var observation1 = await Observe(root, project);
+    var observation2 = await Observe(root, project);
+    Require(observation1.Nodes.Any(node => node.Key.SymbolKind == "namespace"), "namespace declaration missing");
+    Require(observation1.Nodes.Any(node => node.Key.SymbolKind == "type" && node.DisplayName == "Derived"), "type declaration missing");
+    Require(observation1.Nodes.Any(node => node.Key.SymbolKind == "method" && node.DisplayName == "Run"), "method declaration missing");
+    Require(observation1.Nodes.Any(node => node.Key.SymbolKind == "property" && node.DisplayName == "Value"), "property declaration missing");
+    Require(observation1.Nodes.Any(node => node.Key.SymbolKind == "event" && node.DisplayName == "Changed"), "event declaration missing");
+    Require(observation1.Edges.Any(edge => edge.Relation == "implements"), "implements edge missing");
+    Require(observation1.Edges.Any(edge => edge.Relation == "extends"), "extends edge missing");
+    Require(observation1.Edges.Any(edge => edge.Relation == "calls"), "calls edge missing");
+    Require(observation1.Edges.Any(edge => edge.Relation == "references"), "references edge missing");
+    Require(observation1.Nodes.All(node => node.SourceDigest.Length == 64 && node.SourceDigest.All(Uri.IsHexDigit)), "node digest invalid");
+    AssertSafePaths(observation1);
+    AssertCoverage(observation1);
+    AssertNonzeroFingerprints(observation1);
+    var projection1 = JsonSerializer.Serialize(new { observation1.SchemaVersion, observation1.RepositoryIdentity, observation1.ProjectOrModule, observation1.SourceFingerprint, observation1.ConfigFingerprint, observation1.Capabilities, observation1.Coverage, observation1.Nodes, observation1.Edges, observation1.Evidence, observation1.Unresolved, observation1.Omissions });
+    var projection2 = JsonSerializer.Serialize(new { observation2.SchemaVersion, observation2.RepositoryIdentity, observation2.ProjectOrModule, observation2.SourceFingerprint, observation2.ConfigFingerprint, observation2.Capabilities, observation2.Coverage, observation2.Nodes, observation2.Edges, observation2.Evidence, observation2.Unresolved, observation2.Omissions });
+    Require(projection1 == projection2, "semantic projection is not deterministic");
+
+    var otherProject = Path.Combine(root, "Other.csproj");
+    File.WriteAllText(otherProject, File.ReadAllText(project));
+    var mismatch = await new RoslynService().HandleAsync(Request(root, project, otherProject), CancellationToken.None);
+    Require(!mismatch.Ok && mismatch.ErrorCode == "GPH_BACKEND_PROJECT_NOT_FOUND" && mismatch.Observation is null, "exact project mismatch did not reject");
+
+    using (var canceledSource = new CancellationTokenSource())
+    {
+        canceledSource.Cancel();
+        var canceledResponse = await new RoslynService().HandleAsync(Request(root, project), canceledSource.Token);
+        Require(canceledResponse.Ok && canceledResponse.Observation is not null && canceledResponse.Observation.Completeness == "partial", "canceled extraction not partial");
+        var canceled = canceledResponse.Observation!;
+        AssertNonzeroFingerprints(canceled);
+        AssertCoverage(canceled);
+        AssertSafePaths(canceled);
+        Require(canceled.Omissions.Count(omission => omission.ReasonCode == "canceled") == 6, "canceled omissions are not one per capability");
+        Require(canceled.Omissions.Where(omission => omission.ReasonCode == "canceled").All(omission => omission.OwnerPath == "Fixture.csproj"), "canceled omission owner is not the project module");
+    }
+
+    var errorRoot = CreateFixture("compiler-error", "namespace Fixture; public class Broken { public void M( { } }");
+    roots.Add(errorRoot);
+    var errorProject = Path.Combine(errorRoot, "Fixture.csproj");
+    var errorResponse = await new RoslynService().HandleAsync(Request(errorRoot, errorProject), CancellationToken.None);
+    Require(errorResponse.Ok && errorResponse.Observation is not null && errorResponse.Observation.Completeness == "partial", "compiler error batch is not partial");
+    Require(errorResponse.Error is null && (errorResponse.Warnings is null || errorResponse.Warnings.All(warning => !warning.Contains("CS", StringComparison.OrdinalIgnoreCase))), "raw compiler diagnostics emitted");
+    Require(errorResponse.Observation!.Omissions.Count(omission => omission.ReasonCode == "compiler_errors") == 6, "compiler error omissions are not deduplicated per capability");
+    AssertCoverage(errorResponse.Observation);
+    AssertSafePaths(errorResponse.Observation);
+
+    var outsideRoot = CreateFixture("linked", "namespace Fixture; public class Local { }");
+    roots.Add(outsideRoot);
+    var linkedSource = Path.Combine(Path.GetDirectoryName(outsideRoot)!, "linked-outside-" + Guid.NewGuid().ToString("N") + ".cs");
+    File.WriteAllText(linkedSource, "namespace Fixture; public class LinkedOutside { }");
+    var linkedProject = Path.Combine(outsideRoot, "Fixture.csproj");
+    File.WriteAllText(linkedProject, $"<Project Sdk=\"Microsoft.NET.Sdk\"><PropertyGroup><TargetFramework>net10.0</TargetFramework><EnableDefaultCompileItems>false</EnableDefaultCompileItems></PropertyGroup><ItemGroup><Compile Include=\"{linkedSource.Replace("\\", "/")}\" /></ItemGroup></Project>");
+    var linkedResponse = await new RoslynService().HandleAsync(Request(outsideRoot, linkedProject), CancellationToken.None);
+    Require(linkedResponse.Ok && linkedResponse.Observation is not null && linkedResponse.Observation.Completeness == "partial", "linked outside source did not produce partial batch");
+    Require(linkedResponse.Observation!.Omissions.Any(omission => omission.ReasonCode == "linked_outside_root" && omission.OwnerPath == "Fixture.csproj"), "linked outside omission missing or unsafe");
+    AssertSafePaths(linkedResponse.Observation);
+    File.Delete(linkedSource);
+
+    var copyRoot = Path.Combine(Path.GetTempPath(), "milsp-g2-copy-" + Guid.NewGuid().ToString("N"));
+    roots.Add(copyRoot);
+    CopyTree(root, copyRoot);
+    var firstCopyObservation = await Observe(root, project);
+    var secondCopyObservation = await Observe(copyRoot, Path.Combine(copyRoot, "Fixture.csproj"));
+    Require(firstCopyObservation.SourceFingerprint == secondCopyObservation.SourceFingerprint, "relocated source fingerprint changed");
+    Require(firstCopyObservation.ConfigFingerprint == secondCopyObservation.ConfigFingerprint, "relocated config fingerprint changed");
+
+    var mutationRoot = CreateFixture("mutation");
+    roots.Add(mutationRoot);
+    var mutationProject = Path.Combine(mutationRoot, "Fixture.csproj");
+    var beforeSource = await Observe(mutationRoot, mutationProject);
+    File.AppendAllText(Path.Combine(mutationRoot, "Fixture.cs"), "\npublic class AddedAfterFingerprint { }");
+    var afterSource = await Observe(mutationRoot, mutationProject);
+    Require(beforeSource.SourceFingerprint != afterSource.SourceFingerprint, "source byte mutation did not change source fingerprint");
+    var beforeConfig = afterSource.ConfigFingerprint;
+    File.WriteAllText(mutationProject, File.ReadAllText(mutationProject).Replace("</PropertyGroup>", "<LangVersion>preview</LangVersion></PropertyGroup>", StringComparison.Ordinal));
+    var afterConfig = await Observe(mutationRoot, mutationProject);
+    Require(beforeConfig != afterConfig.ConfigFingerprint, "project/compiler option mutation did not change config fingerprint");
+
+    var missing = await new RoslynService().HandleAsync(Request(root, project, project, null), CancellationToken.None);
     Require(!missing.Ok && missing.ErrorCode == "GPH_BACKEND_PROVENANCE_MISSING", "missing provenance gate failed");
-    using var canceled = new CancellationTokenSource(); canceled.Cancel();
-    var partial = await service.HandleAsync(Request(root, project), canceled.Token);
-    Require(partial.Observation is not null && partial.Observation.Completeness == "partial", "canceled extraction not partial");
-    Console.WriteLine("PASS graph observation contract");
+    Console.WriteLine("PASS graph observation provenance contract");
 }
-finally { try { Directory.Delete(root, true); } catch { } }
+finally
+{
+    foreach (var root in roots)
+    {
+        try { Directory.Delete(root, true); } catch { }
+    }
+}

@@ -13,8 +13,8 @@ namespace MiLsp.Worker;
 public sealed class RoslynService
 {
     private readonly ConcurrentDictionary<string, MSBuildWorkspace> _workspaceCache = new(StringComparer.OrdinalIgnoreCase);
-    private readonly object _locatorLock = new();
-    private bool _msbuildRegistered;
+    private static readonly object _locatorLock = new();
+    private static bool _msbuildRegistered;
 
     public async Task<WorkerResponse> HandleAsync(WorkerRequest request, CancellationToken cancellationToken)
     {
@@ -229,13 +229,36 @@ public sealed class RoslynService
         return new WorkerResponse(true, "roslyn", items, Stats: new WorkerStats(Files: items.Count));
     }
 
+    private static readonly string[] GraphCapabilities = ["declarations", "contains", "references", "calls", "implements", "extends"];
+
     private async Task<WorkerResponse> GraphObserveAsync(WorkerRequest request, Stopwatch started, CancellationToken cancellationToken)
     {
-        var repository = request.Payload.GetString("repository_identity");
-        var module = request.Payload.GetString("project_or_module");
-        if (string.IsNullOrWhiteSpace(repository) || string.IsNullOrWhiteSpace(module))
+        var repository = request.Payload.GetString("repository_identity")?.Normalize(NormalizationForm.FormC).Trim();
+        var rawModule = request.Payload.GetString("project_or_module");
+        if (string.IsNullOrWhiteSpace(repository) || string.IsNullOrWhiteSpace(rawModule))
         {
             return new WorkerResponse(false, "roslyn", Error: "Graph observation provenance is required", ErrorCode: "GPH_BACKEND_PROVENANCE_MISSING", Stats: new WorkerStats(Ms: started.ElapsedMilliseconds));
+        }
+        if (!TryNormalizeProjectModule(rawModule, out var module))
+        {
+            return ProjectNotFoundResponse(started.ElapsedMilliseconds);
+        }
+
+        string repoRoot;
+        string expectedProject;
+        try
+        {
+            repoRoot = Path.GetFullPath(request.RepoRoot ?? request.Workspace).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            expectedProject = Path.GetFullPath(Path.Combine(repoRoot, module.Replace('/', Path.DirectorySeparatorChar)));
+        }
+        catch (Exception)
+        {
+            return ProjectNotFoundResponse(started.ElapsedMilliseconds);
+        }
+
+        if (!IsPathInsideRoot(expectedProject, repoRoot) || !File.Exists(expectedProject))
+        {
+            return ProjectNotFoundResponse(started.ElapsedMilliseconds);
         }
 
         var batch = new GraphObservationBatch
@@ -248,59 +271,65 @@ public sealed class RoslynService
             SourceFingerprint = new string('0', 64),
             ConfigFingerprint = new string('0', 64)
         };
-        var capabilities = new[] { "declarations", "contains", "references", "calls", "implements", "extends" };
-        batch.Capabilities.AddRange(capabilities.Select(capability => new GraphObservationCapability { Capability = capability }));
-        var partial = false;
+        batch.Capabilities.AddRange(GraphCapabilities.Select(capability => new GraphObservationCapability { Capability = capability }));
+
         Project? project = null;
-        var projectNotFound = false;
+        var partial = false;
         try
         {
-            var solution = await LoadSolutionAsync(request, cancellationToken).ConfigureAwait(false);
-            if (!module.EndsWith(".csproj", StringComparison.OrdinalIgnoreCase) || Path.IsPathRooted(module) || module.Contains("..", StringComparison.Ordinal))
-            {
-                projectNotFound = true;
-                throw new InvalidOperationException("GPH_BACKEND_PROJECT_NOT_FOUND");
-            }
-            var repoRoot = Path.GetFullPath(request.RepoRoot ?? request.Workspace).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-            var expectedProject = Path.GetFullPath(Path.Combine(repoRoot, module.Replace('/', Path.DirectorySeparatorChar)));
-            project = solution.Projects.SingleOrDefault(candidate => candidate.FilePath is not null && string.Equals(Path.GetFullPath(candidate.FilePath), expectedProject, StringComparison.Ordinal));
+            // Loading and the base fingerprints are deliberately non-cancellable. The caller's token
+            // must not turn a valid project into an unsealable zero-digest partial batch.
+            var solution = await LoadSolutionAsync(request, CancellationToken.None).ConfigureAwait(false);
+            project = solution.Projects.SingleOrDefault(candidate => candidate.FilePath is not null &&
+                string.Equals(Path.GetFullPath(candidate.FilePath), expectedProject, StringComparison.OrdinalIgnoreCase));
             if (project is null)
             {
-                projectNotFound = true;
-                throw new InvalidOperationException("GPH_BACKEND_PROJECT_NOT_FOUND");
+                return ProjectNotFoundResponse(started.ElapsedMilliseconds);
+            }
+
+            Compilation? compilation = null;
+            try
+            {
+                compilation = await project.GetCompilationAsync(CancellationToken.None).ConfigureAwait(false);
+            }
+            catch (Exception)
+            {
+                partial = true;
+            }
+
+            batch.SourceFingerprint = GraphObservationBuilder.SourceFingerprint(project, repoRoot, module, batch.BackendVersion, batch.ExtractorVersion, repository, () => partial = true);
+            batch.ConfigFingerprint = GraphObservationBuilder.ConfigFingerprint(project, compilation, module, batch.BackendVersion, batch.ExtractorVersion, repository);
+
+            if (compilation is not null && compilation.GetDiagnostics(CancellationToken.None).Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
+            {
+                partial = true;
+                AddCapabilityOmissions(batch, "compiler_errors", "fix_compile_errors");
             }
 
             var builder = new GraphObservationBuilder(batch, request, project);
             await builder.ExtractAsync(cancellationToken).ConfigureAwait(false);
-            partial = builder.Partial;
+            partial |= builder.Partial;
         }
         catch (OperationCanceledException)
         {
             partial = true;
-            batch.Omissions.Add(new GraphObservationOmission { Ref = "O1", OwnerPath = module, SubjectKind = "project", Capability = "declarations", ReasonCode = "canceled", RecoveryHintCode = "retry" });
+            AddCapabilityOmissions(batch, "canceled", "retry");
         }
         catch (Exception)
         {
             partial = true;
-            batch.Omissions.Add(new GraphObservationOmission { Ref = "O1", OwnerPath = module, SubjectKind = "project", Capability = "declarations", ReasonCode = projectNotFound ? "project_not_found" : "compiler_partial", RecoveryHintCode = "retry" });
+            AddCapabilityOmissions(batch, "semantic_exception", "retry");
         }
 
         batch.Completeness = partial ? "partial" : "complete";
-        if (project is not null)
-        {
-            var repoRoot = Path.GetFullPath(request.RepoRoot ?? request.Workspace);
-            batch.SourceFingerprint = GraphObservationBuilder.SourceFingerprint(project, repoRoot);
-            batch.ConfigFingerprint = GraphObservationBuilder.ConfigFingerprint(project, module, batch.BackendVersion, batch.ExtractorVersion);
-        }
-        if (batch.SourceFingerprint == new string('0', 64)) batch.SourceFingerprint = GraphObservationBuilder.Sha256(repository + "|" + module + "|source");
-        if (batch.ConfigFingerprint == new string('0', 64)) batch.ConfigFingerprint = GraphObservationBuilder.Sha256(repository + "|" + module + "|config");
-        foreach (var capability in capabilities)
+        foreach (var capability in GraphCapabilities)
         {
             var observed = capability == "declarations" ? batch.Nodes.Count : batch.Edges.Count(edge => edge.Relation == capability);
             var unresolved = batch.Unresolved.Count(item => item.Capability == capability);
             var omitted = batch.Omissions.Count(item => item.Capability == capability);
             batch.Coverage.Add(new GraphObservationCoverage { Capability = capability, Eligible = observed + unresolved + omitted, Observed = observed, Unresolved = unresolved, Omitted = omitted });
         }
+        NormalizeObservationIds(batch);
         batch.Capabilities = batch.Capabilities.OrderBy(item => item.Capability, StringComparer.Ordinal).ToList();
         batch.Coverage = batch.Coverage.OrderBy(item => item.Capability, StringComparer.Ordinal).ToList();
         batch.Nodes = batch.Nodes.OrderBy(item => item.Key.SemanticIdentity, StringComparer.Ordinal).ToList();
@@ -310,6 +339,118 @@ public sealed class RoslynService
         batch.Omissions = batch.Omissions.OrderBy(item => item.Ref, StringComparer.Ordinal).ToList();
         batch.ResourceStats = new GraphObservationResourceStats { ElapsedMilliseconds = started.ElapsedMilliseconds, RssBytes = Environment.WorkingSet };
         return new WorkerResponse(true, "roslyn", Warnings: batch.Completeness == "partial" ? new List<string> { "partial compiler observation" } : null, Stats: new WorkerStats(Symbols: batch.Nodes.Count, Files: batch.Evidence.Select(item => item.SourceUri).Distinct(StringComparer.Ordinal).Count(), Ms: started.ElapsedMilliseconds), Observation: batch);
+    }
+
+    private static WorkerResponse ProjectNotFoundResponse(long elapsedMs) => new(false, "roslyn", Error: "Requested project was not found in the repository", ErrorCode: "GPH_BACKEND_PROJECT_NOT_FOUND", Stats: new WorkerStats(Ms: elapsedMs));
+
+    private static bool TryNormalizeProjectModule(string? value, out string module)
+    {
+        module = (value ?? string.Empty).Normalize(NormalizationForm.FormC).Trim();
+        if (module.Length == 0 || Path.IsPathRooted(module) || module.StartsWith("/", StringComparison.Ordinal) || module.EndsWith("/", StringComparison.Ordinal))
+        {
+            module = string.Empty;
+            return false;
+        }
+        module = module.Replace('\\', '/');
+        var segments = module.Split('/');
+        if (segments.Any(segment => segment.Length == 0 || segment == "." || segment == "..") ||
+            !module.EndsWith(".csproj", StringComparison.OrdinalIgnoreCase))
+        {
+            module = string.Empty;
+            return false;
+        }
+        return true;
+    }
+
+    private static bool IsPathInsideRoot(string path, string root)
+    {
+        var relative = Path.GetRelativePath(root, path).Replace('\\', '/');
+        return relative != "." && relative != ".." && !relative.StartsWith("../", StringComparison.Ordinal) && !Path.IsPathRooted(relative);
+    }
+
+    private static void AddCapabilityOmissions(GraphObservationBatch batch, string reason, string recovery)
+    {
+        foreach (var capability in GraphCapabilities)
+        {
+            if (batch.Omissions.Any(item => item.Capability == capability && item.ReasonCode == reason))
+            {
+                continue;
+            }
+            batch.Omissions.Add(new GraphObservationOmission
+            {
+                Ref = "omission:" + (batch.Omissions.Count + 1).ToString("D8", System.Globalization.CultureInfo.InvariantCulture),
+                OwnerPath = batch.ProjectOrModule,
+                SubjectKind = "project",
+                Capability = capability,
+                ReasonCode = reason,
+                RecoveryHintCode = recovery
+            });
+        }
+    }
+
+    private static void NormalizeObservationIds(GraphObservationBatch batch)
+    {
+        var orderedEdges = batch.Edges
+            .OrderBy(edge => edge.Relation, StringComparer.Ordinal)
+            .ThenBy(edge => edge.FromRef, StringComparer.Ordinal)
+            .ThenBy(edge => edge.ToRef, StringComparer.Ordinal)
+            .ThenBy(edge => edge.OwnerPath, StringComparer.Ordinal)
+            .ThenBy(edge => edge.SourceDigest, StringComparer.Ordinal)
+            .ToList();
+        var edgeRefMap = new Dictionary<string, string>(StringComparer.Ordinal);
+        for (var index = 0; index < orderedEdges.Count; index++)
+        {
+            var canonicalRef = "edge:" + (index + 1).ToString("D8", System.Globalization.CultureInfo.InvariantCulture);
+            edgeRefMap[orderedEdges[index].Ref] = canonicalRef;
+            orderedEdges[index].Ref = canonicalRef;
+        }
+        batch.Edges = orderedEdges;
+        foreach (var evidence in batch.Evidence)
+        {
+            if (evidence.EdgeRef is not null && edgeRefMap.TryGetValue(evidence.EdgeRef, out var canonicalEdgeRef))
+            {
+                evidence.EdgeRef = canonicalEdgeRef;
+            }
+        }
+
+        var orderedEvidence = batch.Evidence
+            .OrderBy(evidence => evidence.NodeRef ?? string.Empty, StringComparer.Ordinal)
+            .ThenBy(evidence => evidence.EdgeRef ?? string.Empty, StringComparer.Ordinal)
+            .ThenBy(evidence => evidence.SourceUri, StringComparer.Ordinal)
+            .ThenBy(evidence => evidence.ClaimKind, StringComparer.Ordinal)
+            .ThenBy(evidence => evidence.SourceDigest, StringComparer.Ordinal)
+            .ThenBy(evidence => evidence.ObservedDigest, StringComparer.Ordinal)
+            .ToList();
+        for (var index = 0; index < orderedEvidence.Count; index++)
+        {
+            orderedEvidence[index].Ref = "evidence:" + (index + 1).ToString("D8", System.Globalization.CultureInfo.InvariantCulture);
+        }
+        batch.Evidence = orderedEvidence;
+
+        var orderedUnresolved = batch.Unresolved
+            .OrderBy(item => item.OwnerPath, StringComparer.Ordinal)
+            .ThenBy(item => item.Capability, StringComparer.Ordinal)
+            .ThenBy(item => item.ReasonCode, StringComparer.Ordinal)
+            .ThenBy(item => item.SelectorDigest, StringComparer.Ordinal)
+            .ToList();
+        for (var index = 0; index < orderedUnresolved.Count; index++)
+        {
+            orderedUnresolved[index].Ref = "unresolved:" + (index + 1).ToString("D8", System.Globalization.CultureInfo.InvariantCulture);
+        }
+        batch.Unresolved = orderedUnresolved;
+
+        var orderedOmissions = batch.Omissions
+            .OrderBy(item => item.OwnerPath, StringComparer.Ordinal)
+            .ThenBy(item => item.Capability, StringComparer.Ordinal)
+            .ThenBy(item => item.ReasonCode, StringComparer.Ordinal)
+            .ThenBy(item => item.SubjectKind, StringComparer.Ordinal)
+            .ThenBy(item => item.RecoveryHintCode, StringComparer.Ordinal)
+            .ToList();
+        for (var index = 0; index < orderedOmissions.Count; index++)
+        {
+            orderedOmissions[index].Ref = "omission:" + (index + 1).ToString("D8", System.Globalization.CultureInfo.InvariantCulture);
+        }
+        batch.Omissions = orderedOmissions;
     }
 
     private sealed class GraphObservationBuilder
@@ -332,12 +473,12 @@ public sealed class RoslynService
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 if (document.FilePath is null) continue;
+                var path = RelativePath(document.FilePath);
+                if (!IsSafeSourcePath(path)) { Partial = true; AddOmission("file", "linked_outside_root"); continue; }
                 var text = await document.GetTextAsync(cancellationToken).ConfigureAwait(false);
                 var root = await document.GetSyntaxRootAsync(cancellationToken).ConfigureAwait(false);
                 var model = await document.GetSemanticModelAsync(cancellationToken).ConfigureAwait(false);
                 if (root is null || model is null) { Partial = true; continue; }
-                var path = RelativePath(document.FilePath);
-                if (path == ".." || path.StartsWith("../", StringComparison.Ordinal) || Path.IsPathRooted(path)) { Partial = true; AddOmission(path, "file", "outside_root"); continue; }
                 var sourceDigest = Sha256(File.ReadAllBytes(document.FilePath));
                 _paths[document.FilePath] = path;
                 documents.Add((document, path, sourceDigest, root, model));
@@ -404,9 +545,9 @@ public sealed class RoslynService
             _batch.Edges.Add(new GraphObservationEdge { Ref = edgeRef, FromRef = fromRef, ToRef = toRef, Relation = relation, OwnerPath = path, SourceDigest = sourceDigest });
             AddEvidence(null, edgeRef, path, location, sourceDigest, relation, sourceDigest);
         }
-        private void AddOmission(string ownerPath, string subjectKind, string reason)
+        private void AddOmission(string subjectKind, string reason)
         {
-            _batch.Omissions.Add(new GraphObservationOmission { Ref = "omission:" + (_batch.Omissions.Count + 1).ToString("D8", System.Globalization.CultureInfo.InvariantCulture), OwnerPath = ownerPath, SubjectKind = subjectKind, Capability = "declarations", ReasonCode = reason, RecoveryHintCode = "inspect" });
+            _batch.Omissions.Add(new GraphObservationOmission { Ref = "omission:" + (_batch.Omissions.Count + 1).ToString("D8", System.Globalization.CultureInfo.InvariantCulture), OwnerPath = _batch.ProjectOrModule, SubjectKind = subjectKind, Capability = "declarations", ReasonCode = reason, RecoveryHintCode = "inspect" });
         }
 
         private void AddEvidence(string? nodeRef, string? edgeRef, string path, Location? location, string sourceDigest, string claim, string observed)
@@ -415,21 +556,55 @@ public sealed class RoslynService
             var range = span is null ? null : new GraphObservationRange { StartLine = span.Value.StartLinePosition.Line + 1, StartColumn = span.Value.StartLinePosition.Character + 1, EndLine = span.Value.EndLinePosition.Line + 1, EndColumn = span.Value.EndLinePosition.Character + 1 };
             _batch.Evidence.Add(new GraphObservationEvidence { Ref = "evidence:" + (++_evidenceNumber).ToString("D8", System.Globalization.CultureInfo.InvariantCulture), NodeRef = nodeRef, EdgeRef = edgeRef, SourceUri = path, Range = range, ExtractorVersion = _batch.ExtractorVersion, SourceDigest = sourceDigest, ObservedDigest = observed, ClaimKind = claim });
         }
+        private bool IsSafeSourcePath(string path) => path != "." && path != ".." && !path.StartsWith("../", StringComparison.Ordinal) && !Path.IsPathRooted(path);
         private string RelativePath(string path) { var root = Path.GetFullPath(_request.RepoRoot ?? _request.Workspace); var full = Path.GetFullPath(path); return Path.GetRelativePath(root, full).Replace('\\', '/'); }
         private static string Kind(ISymbol symbol) => symbol switch { INamespaceSymbol => "namespace", INamedTypeSymbol => "type", IMethodSymbol => "method", IFieldSymbol => "field", IPropertySymbol => "property", IEventSymbol => "event", _ => "" };
         internal static string Sha256(byte[] value) => Convert.ToHexString(SHA256.HashData(value)).ToLowerInvariant();
         internal static string Sha256(string value) => Sha256(Encoding.UTF8.GetBytes(value));
-        internal static string SourceFingerprint(Project project, string root)
+        internal static string SourceFingerprint(Project project, string root, string module, string backend, string extractor, string repository, Action outsideSource)
         {
-            var values = project.Documents.Where(x => x.FilePath is not null).Select(x => Path.GetRelativePath(root, x.FilePath!).Replace('\\', '/') + ":" + Sha256(File.ReadAllBytes(x.FilePath!))).OrderBy(x => x, StringComparer.Ordinal);
-            return Sha256(string.Join("|", values));
+            var values = new List<string>();
+            var projectBytes = project.FilePath is not null && File.Exists(project.FilePath) ? File.ReadAllBytes(project.FilePath) : [];
+            foreach (var document in project.Documents.Where(item => item.FilePath is not null).OrderBy(item => item.FilePath, StringComparer.Ordinal))
+            {
+                var fullPath = Path.GetFullPath(document.FilePath!);
+                var relative = Path.GetRelativePath(root, fullPath).Replace('\\', '/');
+                if (!IsSafeRelativePath(relative) || !IsEligibleSourcePath(relative))
+                {
+                    if (IsEligibleSourcePath(relative)) outsideSource();
+                    continue;
+                }
+                values.Add(relative + ":" + Sha256(File.ReadAllBytes(fullPath)));
+            }
+            return Sha256(string.Join("|", new[] { repository, module, backend, extractor, Sha256(projectBytes), "sources" }.Concat(values)));
         }
-        internal static string ConfigFingerprint(Project project, string module, string backend, string extractor)
+        internal static string ConfigFingerprint(Project project, Compilation? compilation, string module, string backend, string extractor, string repository)
         {
-            var projectDigest = project.FilePath is not null && File.Exists(project.FilePath) ? Sha256(File.ReadAllBytes(project.FilePath)) : new string('0', 64);
-            var refs = project.MetadataReferences.Select(x => x.Display ?? "").OrderBy(x => x, StringComparer.Ordinal);
-            return Sha256(string.Join("|", new[] { projectDigest, module, backend, extractor, "deterministic" }.Concat(refs)));
+            var projectBytes = project.FilePath is not null && File.Exists(project.FilePath) ? File.ReadAllBytes(project.FilePath) : [];
+            var options = compilation?.Options?.ToString() ?? project.CompilationOptions?.ToString() ?? "";
+            var parseOptions = project.ParseOptions?.ToString() ?? "";
+            var references = compilation is null ? [] : compilation.References.Select(reference => GetAssemblyIdentity(compilation, reference)).Where(identity => identity.Length > 0).OrderBy(identity => identity, StringComparer.Ordinal).ToArray();
+            return Sha256(string.Join("|", new[] { repository, module, backend, extractor, Sha256(projectBytes), parseOptions, options, "deterministic" }.Concat(references)));
         }
+        private static string GetAssemblyIdentity(Compilation compilation, MetadataReference reference)
+        {
+            try
+            {
+                if (compilation.GetAssemblyOrModuleSymbol(reference) is not IAssemblySymbol assembly)
+                {
+                    return string.Empty;
+                }
+                var identity = assembly.Identity;
+                var token = identity.PublicKeyToken.IsDefaultOrEmpty ? string.Empty : Convert.ToHexString(identity.PublicKeyToken.ToArray()).ToLowerInvariant();
+                return string.Join("/", identity.Name, identity.Version, identity.CultureName ?? string.Empty, token);
+            }
+            catch (Exception)
+            {
+                return string.Empty;
+            }
+        }
+        private static bool IsSafeRelativePath(string path) => path != "." && path != ".." && !path.StartsWith("../", StringComparison.Ordinal) && !Path.IsPathRooted(path);
+        private static bool IsEligibleSourcePath(string path) => path.EndsWith(".cs", StringComparison.OrdinalIgnoreCase) || path.EndsWith(".csx", StringComparison.OrdinalIgnoreCase);
         private static string FileText(Location? location) => location?.SourceTree?.ToString() ?? "";
     }
 
