@@ -2,8 +2,11 @@ using Microsoft.Build.Locator;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.FindSymbols;
 using Microsoft.CodeAnalysis.MSBuild;
+using Microsoft.CodeAnalysis.CSharp.Syntax;
 using System.Collections.Concurrent;
 using System.Diagnostics;
+using System.Security.Cryptography;
+using System.Text;
 
 namespace MiLsp.Worker;
 
@@ -30,6 +33,7 @@ public sealed class RoslynService
                 "get_overview" => await GetOverviewAsync(request, cancellationToken),
                 "get_context" => await GetContextAsync(request, cancellationToken),
                 "get_deps" => await GetDependenciesAsync(request, cancellationToken),
+                "graph_observe" => await GraphObserveAsync(request, started, cancellationToken),
                 "status" => GetStatus(request, started.ElapsedMilliseconds),
                 _ => new WorkerResponse(false, "roslyn", Error: $"Unknown method '{request.Method}'", Stats: new WorkerStats(Ms: started.ElapsedMilliseconds)),
             };
@@ -223,6 +227,174 @@ public sealed class RoslynService
         }
 
         return new WorkerResponse(true, "roslyn", items, Stats: new WorkerStats(Files: items.Count));
+    }
+
+    private async Task<WorkerResponse> GraphObserveAsync(WorkerRequest request, Stopwatch started, CancellationToken cancellationToken)
+    {
+        var repository = request.Payload.GetString("repository_identity");
+        var module = request.Payload.GetString("project_or_module");
+        if (string.IsNullOrWhiteSpace(repository) || string.IsNullOrWhiteSpace(module))
+        {
+            return new WorkerResponse(false, "roslyn", Error: "Graph observation provenance is required", ErrorCode: "GPH_BACKEND_PROVENANCE_MISSING", Stats: new WorkerStats(Ms: started.ElapsedMilliseconds));
+        }
+
+        var batch = new GraphObservationBatch
+        {
+            WorkspaceIdentity = repository,
+            RepositoryIdentity = repository,
+            BackendVersion = typeof(Microsoft.CodeAnalysis.Compilation).Assembly.GetName().Version?.ToString() ?? "unknown",
+            ExtractorVersion = "mi-lsp-roslyn-g2-v1",
+            ProjectOrModule = module,
+            SourceFingerprint = new string('0', 64),
+            ConfigFingerprint = new string('0', 64)
+        };
+        var capabilities = new[] { "declarations", "contains", "references", "calls", "implements", "extends" };
+        batch.Capabilities.AddRange(capabilities.Select(capability => new GraphObservationCapability { Capability = capability }));
+        var partial = false;
+        try
+        {
+            var solution = await LoadSolutionAsync(request, cancellationToken).ConfigureAwait(false);
+            var project = solution.Projects.FirstOrDefault(candidate =>
+                string.Equals(candidate.Name, module, StringComparison.Ordinal) ||
+                string.Equals(candidate.FilePath, NormalizePath(request.Workspace, module), StringComparison.OrdinalIgnoreCase))
+                ?? solution.Projects.FirstOrDefault();
+            if (project is null)
+                throw new InvalidOperationException("No Roslyn project selected");
+
+            var builder = new GraphObservationBuilder(batch, request, project);
+            await builder.ExtractAsync(cancellationToken).ConfigureAwait(false);
+            partial = builder.Partial;
+        }
+        catch (OperationCanceledException)
+        {
+            partial = true;
+            batch.Omissions.Add(new GraphObservationOmission { Ref = "O1", OwnerPath = ".", Capability = "declarations", ReasonCode = "canceled", RecoveryHintCode = "retry" });
+        }
+        catch (Exception)
+        {
+            partial = true;
+            batch.Omissions.Add(new GraphObservationOmission { Ref = "O1", OwnerPath = ".", Capability = "declarations", ReasonCode = "compiler_partial", RecoveryHintCode = "retry" });
+        }
+
+        batch.Completeness = partial ? "partial" : "complete";
+        if (batch.Evidence.Count > 0)
+        {
+            batch.SourceFingerprint = GraphObservationBuilder.Sha256(string.Join("|", batch.Evidence.Select(item => item.SourceUri + ":" + item.SourceDigest).Distinct(StringComparer.Ordinal).OrderBy(item => item, StringComparer.Ordinal)));
+            batch.ConfigFingerprint = GraphObservationBuilder.Sha256(module + "|" + request.Payload.GetString("project_path"));
+        }
+        foreach (var capability in capabilities)
+        {
+            var observed = capability == "declarations" ? batch.Nodes.Count : batch.Edges.Count(edge => edge.Relation == capability);
+            var unresolved = batch.Unresolved.Count(item => item.Capability == capability);
+            var omitted = batch.Omissions.Count(item => item.Capability == capability);
+            batch.Coverage.Add(new GraphObservationCoverage { Capability = capability, Eligible = observed + unresolved + omitted, Observed = observed, Unresolved = unresolved, Omitted = omitted });
+        }
+        batch.Capabilities = batch.Capabilities.OrderBy(item => item.Capability, StringComparer.Ordinal).ToList();
+        batch.Coverage = batch.Coverage.OrderBy(item => item.Capability, StringComparer.Ordinal).ToList();
+        batch.Nodes = batch.Nodes.OrderBy(item => item.Key.SemanticIdentity, StringComparer.Ordinal).ToList();
+        batch.Edges = batch.Edges.OrderBy(item => item.Relation, StringComparer.Ordinal).ThenBy(item => item.FromRef, StringComparer.Ordinal).ThenBy(item => item.ToRef, StringComparer.Ordinal).ToList();
+        batch.Evidence = batch.Evidence.OrderBy(item => item.Ref, StringComparer.Ordinal).ToList();
+        batch.Unresolved = batch.Unresolved.OrderBy(item => item.Ref, StringComparer.Ordinal).ToList();
+        batch.Omissions = batch.Omissions.OrderBy(item => item.Ref, StringComparer.Ordinal).ToList();
+        batch.ResourceStats = new GraphObservationResourceStats { ElapsedMilliseconds = started.ElapsedMilliseconds, RssBytes = Environment.WorkingSet };
+        return new WorkerResponse(true, "roslyn", Warnings: batch.Completeness == "partial" ? new List<string> { "partial compiler observation" } : null, Stats: new WorkerStats(Symbols: batch.Nodes.Count, Files: batch.Evidence.Select(item => item.SourceUri).Distinct(StringComparer.Ordinal).Count(), Ms: started.ElapsedMilliseconds), Observation: batch);
+    }
+
+    private sealed class GraphObservationBuilder
+    {
+        private readonly GraphObservationBatch _batch;
+        private readonly WorkerRequest _request;
+        private readonly Project _project;
+        private readonly Dictionary<ISymbol, string> _refs = new(SymbolEqualityComparer.Default);
+        private readonly Dictionary<string, string> _paths = new(StringComparer.OrdinalIgnoreCase);
+        private readonly HashSet<string> _edgeKeys = new(StringComparer.Ordinal);
+        private int _edgeNumber;
+        private int _evidenceNumber;
+        public bool Partial { get; private set; }
+        public GraphObservationBuilder(GraphObservationBatch batch, WorkerRequest request, Project project) { _batch = batch; _request = request; _project = project; }
+
+        public async Task ExtractAsync(CancellationToken cancellationToken)
+        {
+            foreach (var document in _project.Documents.OrderBy(item => item.FilePath, StringComparer.OrdinalIgnoreCase))
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                if (document.FilePath is null) continue;
+                var text = await document.GetTextAsync(cancellationToken).ConfigureAwait(false);
+                var root = await document.GetSyntaxRootAsync(cancellationToken).ConfigureAwait(false);
+                var model = await document.GetSemanticModelAsync(cancellationToken).ConfigureAwait(false);
+                if (root is null || model is null) { Partial = true; continue; }
+                var path = RelativePath(document.FilePath);
+                var sourceDigest = Sha256(text.ToString());
+                _paths[document.FilePath] = path;
+                foreach (var node in root.DescendantNodesAndSelf())
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    if (!IsDeclaration(node)) continue;
+                    var symbol = model.GetDeclaredSymbol(node, cancellationToken);
+                    if (symbol is null || !symbol.Locations.Any(location => location.IsInSource)) { Partial = true; continue; }
+                    AddNode(symbol, path, sourceDigest, node.GetLocation());
+                }
+                foreach (var invocation in root.DescendantNodes().OfType<InvocationExpressionSyntax>()) AddReference(model, invocation, invocation.Expression, "calls", path, sourceDigest);
+                foreach (var creation in root.DescendantNodes().OfType<ObjectCreationExpressionSyntax>()) AddReference(model, creation, creation.Type, "calls", path, sourceDigest);
+                foreach (var name in root.DescendantNodes().OfType<IdentifierNameSyntax>()) AddReference(model, name, name, "references", path, sourceDigest);
+            }
+            AddTypeRelations();
+        }
+
+        private static bool IsDeclaration(SyntaxNode node) => node is BaseNamespaceDeclarationSyntax or BaseTypeDeclarationSyntax or BaseMethodDeclarationSyntax or PropertyDeclarationSyntax or EventDeclarationSyntax or EventFieldDeclarationSyntax or VariableDeclaratorSyntax;
+        private void AddNode(ISymbol symbol, string path, string digest, Location location)
+        {
+            var kind = Kind(symbol);
+            if (kind is null) return;
+            if (_refs.ContainsKey(symbol)) return;
+            var identity = symbol.GetDocumentationCommentId() ?? symbol.ToDisplayString(SymbolDisplayFormat.CSharpErrorMessageFormat);
+            var reference = "roslyn:" + Sha256(identity).Substring(0, 32);
+            _refs[symbol] = reference;
+            _batch.Nodes.Add(new GraphObservationNode { Ref = reference, DisplayName = symbol.Name, SourceDigest = digest, Key = new GraphNodeKey { RepositoryIdentity = _batch.RepositoryIdentity, ProjectOrModule = _batch.ProjectOrModule, OwnerPath = path, SymbolKind = kind, SemanticIdentity = identity } });
+            AddEvidence(reference, null, path, location, digest, "declaration", digest);
+            if (symbol.ContainingSymbol is not null && _refs.ContainsKey(symbol.ContainingSymbol)) AddRelation(symbol.ContainingSymbol, symbol, "contains", location, path, digest);
+        }
+        private void AddTypeRelations()
+        {
+            foreach (var pair in _refs.ToArray())
+            {
+                if (pair.Key is not INamedTypeSymbol type) continue;
+                var owner = pair.Key.Locations.FirstOrDefault(item => item.IsInSource);
+                if (type.BaseType is { SpecialType: not SpecialType.System_Object } baseType) AddRelation(type, baseType, "extends", owner);
+                var inherited = type.BaseType?.AllInterfaces.Cast<ISymbol>().ToHashSet(SymbolEqualityComparer.Default) ?? new HashSet<ISymbol>(SymbolEqualityComparer.Default);
+                foreach (var iface in type.Interfaces.Where(item => item.Locations.Any(location => location.IsInSource) && !inherited.Contains(item))) AddRelation(type, iface, "implements", owner);
+            }
+        }
+        private void AddReference(SemanticModel model, SyntaxNode ownerNode, SyntaxNode targetNode, string relation, string path, string digest)
+        {
+            var owner = model.GetEnclosingSymbol(ownerNode.SpanStart);
+            var target = model.GetSymbolInfo(targetNode).Symbol;
+            if (owner is null || target is null) { Partial = true; return; }
+            if (target.Locations.Any(item => item.IsInSource && item.SourceSpan == targetNode.Span)) return;
+            var ownerSource = owner.Locations.FirstOrDefault(item => item.IsInSource);
+            AddRelation(owner, target, relation, ownerSource, path, digest);
+        }
+        private void AddRelation(ISymbol from, ISymbol to, string relation, Location? location, string? ownerPath = null, string? digest = null)
+        {
+            if (!_refs.TryGetValue(from, out var fromRef) || !_refs.TryGetValue(to, out var toRef)) return;
+            var path = ownerPath ?? RelativePath(location?.SourceTree?.FilePath ?? "");
+            var sourceDigest = digest ?? Sha256(FileText(location));
+            var key = fromRef + "|" + toRef + "|" + relation + "|symbol";
+            if (!_edgeKeys.Add(key)) return;
+            var edgeRef = "edge:" + (++_edgeNumber).ToString("D8", System.Globalization.CultureInfo.InvariantCulture);
+            _batch.Edges.Add(new GraphObservationEdge { Ref = edgeRef, FromRef = fromRef, ToRef = toRef, Relation = relation, OwnerPath = path, SourceDigest = sourceDigest });
+            AddEvidence(null, edgeRef, path, location, sourceDigest, relation, sourceDigest);
+        }
+        private void AddEvidence(string? nodeRef, string? edgeRef, string path, Location? location, string sourceDigest, string claim, string observed)
+        {
+            var span = location?.GetLineSpan();
+            var range = span is null ? null : new GraphObservationRange { StartLine = span.Value.StartLinePosition.Line + 1, StartColumn = span.Value.StartLinePosition.Character + 1, EndLine = span.Value.EndLinePosition.Line + 1, EndColumn = span.Value.EndLinePosition.Character + 1 };
+            _batch.Evidence.Add(new GraphObservationEvidence { Ref = "evidence:" + (++_evidenceNumber).ToString("D8", System.Globalization.CultureInfo.InvariantCulture), NodeRef = nodeRef, EdgeRef = edgeRef, SourceUri = path, Range = range, ExtractorVersion = _batch.ExtractorVersion, SourceDigest = sourceDigest, ObservedDigest = observed, ClaimKind = claim });
+        }
+        private string RelativePath(string path) { var root = Path.GetFullPath(_request.RepoRoot ?? _request.Workspace); var full = Path.GetFullPath(path); return Path.GetRelativePath(root, full).Replace('\\', '/'); }
+        private static string Kind(ISymbol symbol) => symbol switch { INamespaceSymbol => "namespace", INamedTypeSymbol => "type", IMethodSymbol => "method", IFieldSymbol => "field", IPropertySymbol => "property", IEventSymbol => "event", _ => "" };
+        internal static string Sha256(string value) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(value))).ToLowerInvariant();
+        private static string FileText(Location? location) => location?.SourceTree?.ToString() ?? "";
     }
 
     private async Task<Solution> LoadSolutionAsync(WorkerRequest request, CancellationToken cancellationToken)
