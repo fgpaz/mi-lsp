@@ -3,6 +3,7 @@ package store
 import (
 	"database/sql"
 	"fmt"
+	"strings"
 )
 
 const reposDDL = `
@@ -203,77 +204,19 @@ CREATE TABLE IF NOT EXISTS wiki_chunk_embeddings (
 );
 `
 
-const graphGenerationsDDL = `
-CREATE TABLE IF NOT EXISTS graph_generations (
-    generation_id TEXT PRIMARY KEY, workspace_root TEXT NOT NULL, schema_version INTEGER NOT NULL,
-    source_fingerprint TEXT, backend_version TEXT, compiler_version TEXT, created_at TEXT NOT NULL,
-    sealed_at TEXT, activated_at TEXT, retired_at TEXT, status TEXT NOT NULL CHECK(status IN ('staged', 'active', 'retired', 'invalid')),
-    owner_id TEXT, owner_pid INTEGER NOT NULL DEFAULT 0, prior_generation_id TEXT, migration_id TEXT,
-    expected_nodes INTEGER NOT NULL DEFAULT 0, expected_edges INTEGER NOT NULL DEFAULT 0,
-    expected_evidence INTEGER NOT NULL DEFAULT 0, expected_unresolved INTEGER NOT NULL DEFAULT 0,
-    digest TEXT, error TEXT
-);
-`
-const graphNodesDDL = `
-CREATE TABLE IF NOT EXISTS graph_nodes (
-    generation_id TEXT NOT NULL, node_key BLOB NOT NULL, canonical_tuple BLOB NOT NULL,
-    kind TEXT NOT NULL, display_name TEXT NOT NULL, declaration_path TEXT NOT NULL,
-    declaration_start INTEGER NOT NULL DEFAULT 0, declaration_end INTEGER NOT NULL DEFAULT 0,
-    source_fingerprint TEXT, backend TEXT NOT NULL, compiler_version TEXT, confidence TEXT,
-    status TEXT NOT NULL, cross_rid TEXT NOT NULL, provenance TEXT,
-    PRIMARY KEY(generation_id, node_key), FOREIGN KEY(generation_id) REFERENCES graph_generations(generation_id) ON DELETE CASCADE
-);
-`
-const graphEvidenceDDL = `
-CREATE TABLE IF NOT EXISTS graph_evidence (
-    generation_id TEXT NOT NULL, evidence_id TEXT NOT NULL, source_uri TEXT NOT NULL,
-    source_range TEXT, backend TEXT NOT NULL, extractor_version TEXT NOT NULL, digest TEXT NOT NULL,
-    observed_claim TEXT NOT NULL, cross_rid TEXT NOT NULL, status TEXT,
-    PRIMARY KEY(generation_id, evidence_id), FOREIGN KEY(generation_id) REFERENCES graph_generations(generation_id) ON DELETE CASCADE
-);
-`
-const graphEdgesDDL = `
-CREATE TABLE IF NOT EXISTS graph_edges (
-    generation_id TEXT NOT NULL, edge_key BLOB NOT NULL, from_node_key BLOB NOT NULL, to_node_key BLOB NOT NULL,
-    relation TEXT NOT NULL, claim_scope TEXT NOT NULL, evidence_id TEXT NOT NULL DEFAULT '', source_path TEXT, source_start INTEGER NOT NULL DEFAULT 0,
-    source_end INTEGER NOT NULL DEFAULT 0, provenance TEXT NOT NULL, confidence TEXT,
-    status TEXT NOT NULL, cross_rid TEXT NOT NULL,
-    PRIMARY KEY(generation_id, edge_key), UNIQUE(generation_id, from_node_key, to_node_key, relation, claim_scope),
-    FOREIGN KEY(generation_id, from_node_key) REFERENCES graph_nodes(generation_id, node_key) ON DELETE CASCADE,
-    FOREIGN KEY(generation_id, to_node_key) REFERENCES graph_nodes(generation_id, node_key) ON DELETE CASCADE
-);
-`
-const graphEdgeEvidenceDDL = `
-CREATE TABLE IF NOT EXISTS graph_edge_evidence (
-    generation_id TEXT NOT NULL, edge_key BLOB NOT NULL, evidence_id TEXT NOT NULL,
-    ordinal INTEGER NOT NULL, PRIMARY KEY(generation_id, edge_key, evidence_id),
-    FOREIGN KEY(generation_id, edge_key) REFERENCES graph_edges(generation_id, edge_key) ON DELETE CASCADE,
-    FOREIGN KEY(generation_id, evidence_id) REFERENCES graph_evidence(generation_id, evidence_id) ON DELETE RESTRICT
-);
-`
-const graphUnresolvedDDL = `
-CREATE TABLE IF NOT EXISTS graph_unresolved (
-    generation_id TEXT NOT NULL, unresolved_id TEXT NOT NULL, reason_code TEXT NOT NULL,
-    selector TEXT, cross_rid TEXT NOT NULL, recovery_hint TEXT,
-    PRIMARY KEY(generation_id, unresolved_id), FOREIGN KEY(generation_id) REFERENCES graph_generations(generation_id) ON DELETE CASCADE
-);
-`
-const graphOwnerStateDDL = `
-CREATE TABLE IF NOT EXISTS graph_owner_state (
-    workspace_root TEXT PRIMARY KEY, owner_id TEXT NOT NULL, owner_pid INTEGER NOT NULL DEFAULT 0,
-    heartbeat_at TEXT NOT NULL, state TEXT NOT NULL, lease_token TEXT NOT NULL
-);
-`
-const graphMigrationsDDL = `
-CREATE TABLE IF NOT EXISTS graph_migrations (
-    migration_id TEXT PRIMARY KEY, workspace_root TEXT NOT NULL, from_schema INTEGER NOT NULL,
-    to_schema INTEGER NOT NULL, status TEXT NOT NULL, checksum TEXT NOT NULL, started_at TEXT NOT NULL,
-    completed_at TEXT, rollback_generation_id TEXT, error TEXT
-);
-`
+const graphGenerationsDDL = `CREATE TABLE IF NOT EXISTS graph_generations (generation_id BLOB NOT NULL CHECK(length(generation_id)=32), schema_version INTEGER NOT NULL CHECK(schema_version=1), workspace_identity TEXT NOT NULL, source_fingerprint BLOB NOT NULL CHECK(length(source_fingerprint)=32), config_fingerprint BLOB NOT NULL CHECK(length(config_fingerprint)=32), backend_manifest_digest BLOB NOT NULL CHECK(length(backend_manifest_digest)=32), content_digest BLOB NOT NULL CHECK(length(content_digest)=32), status TEXT NOT NULL CHECK(status IN ('staged','active','retired','invalid')), node_count INTEGER NOT NULL DEFAULT 0 CHECK(node_count>=0), edge_count INTEGER NOT NULL DEFAULT 0 CHECK(edge_count>=0), evidence_count INTEGER NOT NULL DEFAULT 0 CHECK(evidence_count>=0), unresolved_count INTEGER NOT NULL DEFAULT 0 CHECK(unresolved_count>=0), previous_generation_id BLOB CHECK(previous_generation_id IS NULL OR length(previous_generation_id)=32), created_at TEXT NOT NULL, published_at TEXT, error_code TEXT, PRIMARY KEY(generation_id), FOREIGN KEY(previous_generation_id) REFERENCES graph_generations(generation_id) ON DELETE RESTRICT);`
+const graphNodesDDL = `CREATE TABLE IF NOT EXISTS graph_nodes (generation_id BLOB NOT NULL CHECK(length(generation_id)=32), node_id INTEGER NOT NULL CHECK(node_id>=0), node_key BLOB NOT NULL CHECK(length(node_key)=32), identity_schema TEXT NOT NULL, repository_identity TEXT NOT NULL, backend_type TEXT NOT NULL, language TEXT NOT NULL, project_or_module TEXT NOT NULL, owner_path TEXT NOT NULL, symbol_kind TEXT NOT NULL, semantic_identity TEXT NOT NULL, display_name TEXT NOT NULL, source_digest BLOB NOT NULL CHECK(length(source_digest)=32), claim_status TEXT NOT NULL, cross_rid TEXT NOT NULL, sort_key TEXT NOT NULL, PRIMARY KEY(generation_id,node_id), UNIQUE(generation_id,node_key), FOREIGN KEY(generation_id) REFERENCES graph_generations(generation_id) ON DELETE CASCADE);`
+const graphEdgesDDL = `CREATE TABLE IF NOT EXISTS graph_edges (generation_id BLOB NOT NULL CHECK(length(generation_id)=32), edge_id INTEGER NOT NULL CHECK(edge_id>=0), edge_key BLOB NOT NULL CHECK(length(edge_key)=32), from_node_id INTEGER NOT NULL CHECK(from_node_id>=0), to_node_id INTEGER NOT NULL CHECK(to_node_id>=0), relation TEXT NOT NULL, claim_scope TEXT NOT NULL, claim_status TEXT NOT NULL, owner_path TEXT NOT NULL, source_backend TEXT NOT NULL, cross_rid TEXT NOT NULL, PRIMARY KEY(generation_id,edge_id), UNIQUE(generation_id,edge_key), FOREIGN KEY(generation_id) REFERENCES graph_generations(generation_id) ON DELETE CASCADE, FOREIGN KEY(generation_id,from_node_id) REFERENCES graph_nodes(generation_id,node_id) ON DELETE CASCADE, FOREIGN KEY(generation_id,to_node_id) REFERENCES graph_nodes(generation_id,node_id) ON DELETE CASCADE);`
+const graphEvidenceDDL = `CREATE TABLE IF NOT EXISTS graph_evidence (generation_id BLOB NOT NULL CHECK(length(generation_id)=32), evidence_id INTEGER NOT NULL CHECK(evidence_id>=0), evidence_key BLOB NOT NULL CHECK(length(evidence_key)=32), subject_kind TEXT NOT NULL CHECK(subject_kind IN ('node','edge')), node_id INTEGER, edge_id INTEGER, source_uri TEXT NOT NULL, start_line INTEGER CHECK(start_line IS NULL OR start_line>=0), start_column INTEGER CHECK(start_column IS NULL OR start_column>=0), end_line INTEGER CHECK(end_line IS NULL OR end_line>=0), end_column INTEGER CHECK(end_column IS NULL OR end_column>=0), backend TEXT NOT NULL, extractor_version TEXT NOT NULL, source_digest BLOB NOT NULL CHECK(length(source_digest)=32), claim_kind TEXT NOT NULL, observed_claim_digest BLOB NOT NULL CHECK(length(observed_claim_digest)=32), claim_status TEXT NOT NULL, cross_rid TEXT NOT NULL, CHECK((subject_kind='node' AND node_id IS NOT NULL AND edge_id IS NULL) OR (subject_kind='edge' AND node_id IS NULL AND edge_id IS NOT NULL)), PRIMARY KEY(generation_id,evidence_id), UNIQUE(generation_id,evidence_key), FOREIGN KEY(generation_id) REFERENCES graph_generations(generation_id) ON DELETE CASCADE, FOREIGN KEY(generation_id,node_id) REFERENCES graph_nodes(generation_id,node_id) ON DELETE CASCADE, FOREIGN KEY(generation_id,edge_id) REFERENCES graph_edges(generation_id,edge_id) ON DELETE CASCADE);`
+const graphUnresolvedDDL = `CREATE TABLE IF NOT EXISTS graph_unresolved (generation_id BLOB NOT NULL CHECK(length(generation_id)=32), unresolved_id INTEGER NOT NULL CHECK(unresolved_id>=0), unresolved_key BLOB NOT NULL CHECK(length(unresolved_key)=32), owner_path TEXT NOT NULL, subject_kind TEXT NOT NULL, selector_digest BLOB NOT NULL CHECK(length(selector_digest)=32), reason_code TEXT NOT NULL, candidates_json TEXT NOT NULL, backend TEXT NOT NULL, source_digest BLOB CHECK(source_digest IS NULL OR length(source_digest)=32), cross_rid TEXT NOT NULL, recovery_hint_code TEXT, PRIMARY KEY(generation_id,unresolved_id), UNIQUE(generation_id,unresolved_key), FOREIGN KEY(generation_id) REFERENCES graph_generations(generation_id) ON DELETE CASCADE);`
+const graphMigrationsDDL = `CREATE TABLE IF NOT EXISTS graph_migrations (migration_id TEXT PRIMARY KEY, from_version INTEGER NOT NULL, to_version INTEGER NOT NULL, status TEXT NOT NULL CHECK(status IN ('prepared','applying','validated','committed','rolled_back','failed')), preflight_digest BLOB NOT NULL CHECK(length(preflight_digest)=32), backup_digest BLOB NOT NULL CHECK(length(backup_digest)=32), prior_active_generation_id BLOB CHECK(prior_active_generation_id IS NULL OR length(prior_active_generation_id)=32), started_at TEXT NOT NULL, completed_at TEXT, error_code TEXT, FOREIGN KEY(prior_active_generation_id) REFERENCES graph_generations(generation_id) ON DELETE RESTRICT);`
+const graphAnalysisDDL = `CREATE TABLE IF NOT EXISTS graph_analysis (analysis_key BLOB NOT NULL CHECK(length(analysis_key)=32) PRIMARY KEY, generation_id BLOB NOT NULL CHECK(length(generation_id)=32), extension_id TEXT NOT NULL, extension_version TEXT NOT NULL, executable_digest BLOB NOT NULL CHECK(length(executable_digest)=32), operation TEXT NOT NULL, parameters_digest BLOB NOT NULL CHECK(length(parameters_digest)=32), authority_profile_digest BLOB NOT NULL CHECK(length(authority_profile_digest)=32), output_schema TEXT NOT NULL, result_json_bounded TEXT NOT NULL, result_digest BLOB NOT NULL CHECK(length(result_digest)=32), provenance_json_sanitized TEXT NOT NULL, omissions_json_sanitized TEXT NOT NULL, status TEXT NOT NULL, created_at TEXT NOT NULL, FOREIGN KEY(generation_id) REFERENCES graph_generations(generation_id) ON DELETE CASCADE);`
 
 func EnsureSchema(db *sql.DB) error {
-	statements := []string{reposDDL, entrypointsDDL, symbolsDDL, filesDDL, docsDDL, docsFtsDDL, docEdgesDDL, docMentionsDDL, docSourceBlocksDDL, docSourceRecordsDDL, metaDDL, indexJobsDDL, indexGenerationsDDL, wikiChunkEmbeddingsDDL, graphGenerationsDDL, graphNodesDDL, graphEvidenceDDL, graphEdgesDDL, graphEdgeEvidenceDDL, graphUnresolvedDDL, graphOwnerStateDDL, graphMigrationsDDL}
+	if err := graphSchemaPreflight(db); err != nil {
+		return err
+	}
+	statements := []string{reposDDL, entrypointsDDL, symbolsDDL, filesDDL, docsDDL, docsFtsDDL, docEdgesDDL, docMentionsDDL, docSourceBlocksDDL, docSourceRecordsDDL, metaDDL, indexJobsDDL, indexGenerationsDDL, wikiChunkEmbeddingsDDL}
 	for _, stmt := range statements {
 		if _, err := db.Exec(stmt); err != nil {
 			return err
@@ -331,10 +274,6 @@ END`,
 	if err := ensureColumn(db, "index_jobs", "files_total", "INTEGER NOT NULL DEFAULT 0"); err != nil {
 		return err
 	}
-	if err := ensureColumn(db, "graph_migrations", "compatibility_state", "TEXT NOT NULL DEFAULT 'legacy-preserved-no-dual-write'"); err != nil {
-		return err
-	}
-
 	indexes := []struct {
 		table     string
 		column    string
@@ -359,16 +298,6 @@ END`,
 		{table: "index_jobs", column: "workspace_root", statement: `CREATE INDEX IF NOT EXISTS idx_index_jobs_workspace_status ON index_jobs(workspace_root, status, updated_at);`, required: true},
 		{table: "index_generations", column: "workspace_root", statement: `CREATE INDEX IF NOT EXISTS idx_index_generations_workspace ON index_generations(workspace_root, status, published_at);`, required: true},
 		{table: "wiki_chunk_embeddings", column: "doc_path", statement: `CREATE INDEX IF NOT EXISTS idx_wiki_chunk_embeddings_doc ON wiki_chunk_embeddings(doc_path);`, required: false},
-		{table: "graph_generations", column: "workspace_root", statement: `CREATE INDEX IF NOT EXISTS idx_graph_generations_workspace_status ON graph_generations(workspace_root, status, created_at);`, required: true},
-		{table: "graph_generations", column: "status", statement: `CREATE INDEX IF NOT EXISTS idx_graph_generations_status ON graph_generations(status, created_at);`, required: true},
-		{table: "graph_nodes", column: "generation_id", statement: `CREATE INDEX IF NOT EXISTS idx_graph_nodes_generation ON graph_nodes(generation_id);`, required: true},
-		{table: "graph_nodes", column: "cross_rid", statement: `CREATE INDEX IF NOT EXISTS idx_graph_nodes_cross_rid ON graph_nodes(cross_rid);`, required: true},
-		{table: "graph_edges", column: "generation_id", statement: `CREATE INDEX IF NOT EXISTS idx_graph_edges_generation_from ON graph_edges(generation_id, from_node_key);`, required: true},
-		{table: "graph_edges", column: "to_node_key", statement: `CREATE INDEX IF NOT EXISTS idx_graph_edges_generation_to ON graph_edges(generation_id, to_node_key);`, required: true},
-		{table: "graph_edges", column: "relation", statement: `CREATE INDEX IF NOT EXISTS idx_graph_edges_relation ON graph_edges(generation_id, relation, claim_scope);`, required: true},
-		{table: "graph_evidence", column: "cross_rid", statement: `CREATE INDEX IF NOT EXISTS idx_graph_evidence_cross_rid ON graph_evidence(cross_rid);`, required: true},
-		{table: "graph_unresolved", column: "generation_id", statement: `CREATE INDEX IF NOT EXISTS idx_graph_unresolved_generation ON graph_unresolved(generation_id);`, required: true},
-		{table: "graph_migrations", column: "workspace_root", statement: `CREATE INDEX IF NOT EXISTS idx_graph_migrations_workspace ON graph_migrations(workspace_root, status);`, required: true},
 	}
 
 	for _, index := range indexes {
@@ -385,6 +314,113 @@ END`,
 		if _, err := db.Exec(index.statement); err != nil {
 			return err
 		}
+	}
+	return ensureGraphSchema(db)
+}
+
+type graphSchemaCompatibilityError struct{ reason string }
+
+func (e *graphSchemaCompatibilityError) Error() string {
+	return "graph schema incompatible: " + e.reason
+}
+
+var graphTables = map[string]string{
+	"graph_generations": graphGenerationsDDL, "graph_nodes": graphNodesDDL,
+	"graph_edges": graphEdgesDDL, "graph_evidence": graphEvidenceDDL,
+	"graph_unresolved": graphUnresolvedDDL, "graph_migrations": graphMigrationsDDL,
+	"graph_analysis": graphAnalysisDDL,
+}
+var graphIndexes = map[string]string{
+	"idx_graph_generations_one_active":                  `CREATE UNIQUE INDEX IF NOT EXISTS idx_graph_generations_one_active ON graph_generations(workspace_identity) WHERE status = 'active';`,
+	"idx_graph_generations_workspace_status":            `CREATE INDEX IF NOT EXISTS idx_graph_generations_workspace_status ON graph_generations(workspace_identity, status, created_at);`,
+	"idx_graph_nodes_generation_owner_path":             `CREATE INDEX IF NOT EXISTS idx_graph_nodes_generation_owner_path ON graph_nodes(generation_id, owner_path);`,
+	"idx_graph_nodes_generation_kind_sort_key":          `CREATE INDEX IF NOT EXISTS idx_graph_nodes_generation_kind_sort_key ON graph_nodes(generation_id, symbol_kind, sort_key);`,
+	"idx_graph_nodes_generation_cross_rid":              `CREATE INDEX IF NOT EXISTS idx_graph_nodes_generation_cross_rid ON graph_nodes(generation_id, cross_rid);`,
+	"idx_graph_edges_generation_from_relation_to":       `CREATE INDEX IF NOT EXISTS idx_graph_edges_generation_from_relation_to ON graph_edges(generation_id, from_node_id, relation, to_node_id);`,
+	"idx_graph_edges_generation_to_relation_from":       `CREATE INDEX IF NOT EXISTS idx_graph_edges_generation_to_relation_from ON graph_edges(generation_id, to_node_id, relation, from_node_id);`,
+	"idx_graph_edges_generation_owner_path":             `CREATE INDEX IF NOT EXISTS idx_graph_edges_generation_owner_path ON graph_edges(generation_id, owner_path);`,
+	"idx_graph_evidence_generation_edge":                `CREATE INDEX IF NOT EXISTS idx_graph_evidence_generation_edge ON graph_evidence(generation_id, edge_id);`,
+	"idx_graph_evidence_generation_node":                `CREATE INDEX IF NOT EXISTS idx_graph_evidence_generation_node ON graph_evidence(generation_id, node_id);`,
+	"idx_graph_unresolved_generation_owner_reason":      `CREATE INDEX IF NOT EXISTS idx_graph_unresolved_generation_owner_reason ON graph_unresolved(generation_id, owner_path, reason_code);`,
+	"idx_graph_analysis_generation_extension_operation": `CREATE INDEX IF NOT EXISTS idx_graph_analysis_generation_extension_operation ON graph_analysis(generation_id, extension_id, operation);`,
+	"idx_graph_migrations_status":                       `CREATE INDEX IF NOT EXISTS idx_graph_migrations_status ON graph_migrations(status, started_at);`,
+}
+
+func normalizeSchemaSQL(s string) string {
+	s = strings.ToLower(strings.TrimSpace(s))
+	s = strings.ReplaceAll(s, " if not exists", "")
+	s = strings.TrimSuffix(s, ";")
+	return strings.Join(strings.Fields(s), " ")
+}
+func graphSchemaPreflight(db *sql.DB) error {
+	rows, err := db.Query(`SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'graph_%'`)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	present := map[string]bool{}
+	for rows.Next() {
+		var n string
+		if err := rows.Scan(&n); err != nil {
+			return err
+		}
+		present[n] = true
+	}
+	if len(present) == 0 {
+		return nil
+	}
+	for name, ddl := range graphTables {
+		if !present[name] {
+			return &graphSchemaCompatibilityError{"partial schema missing table " + name}
+		}
+		var actual string
+		if err := db.QueryRow(`SELECT sql FROM sqlite_master WHERE type='table' AND name=?`, name).Scan(&actual); err != nil || normalizeSchemaSQL(actual) != normalizeSchemaSQL(ddl) {
+			return &graphSchemaCompatibilityError{"incompatible table definition " + name}
+		}
+	}
+	for name, ddl := range graphIndexes {
+		var actual sql.NullString
+		if err := db.QueryRow(`SELECT sql FROM sqlite_master WHERE type='index' AND name=?`, name).Scan(&actual); err != nil {
+			return &graphSchemaCompatibilityError{"missing required index " + name}
+		}
+		old := `CREATE UNIQUE INDEX IF NOT EXISTS idx_graph_generations_one_active ON graph_generations(status) WHERE status = 'active';`
+		actualSQL := normalizeSchemaSQL(actual.String)
+		if name == "idx_graph_generations_one_active" && actualSQL == normalizeSchemaSQL(old) {
+			continue
+		}
+		if actualSQL != normalizeSchemaSQL(ddl) {
+			return &graphSchemaCompatibilityError{"incompatible index " + name}
+		}
+	}
+	return nil
+}
+func ensureGraphSchema(db *sql.DB) error {
+	if err := graphSchemaPreflight(db); err != nil {
+		return err
+	}
+	tx, err := db.Begin()
+	if err != nil {
+		return fmt.Errorf("begin graph schema migration: %w", err)
+	}
+	rollback := func(cause error) error { _ = tx.Rollback(); return cause }
+	for name, ddl := range graphTables {
+		if _, err := tx.Exec(ddl); err != nil {
+			return rollback(fmt.Errorf("create %s: %w", name, err))
+		}
+	}
+	if _, err := tx.Exec(`DROP INDEX IF EXISTS idx_graph_generations_one_active`); err != nil {
+		return rollback(err)
+	}
+	for name, ddl := range graphIndexes {
+		if _, err := tx.Exec(ddl); err != nil {
+			return rollback(fmt.Errorf("create %s: %w", name, err))
+		}
+	}
+	if _, err := tx.Exec(`INSERT OR IGNORE INTO workspace_meta(key,value) VALUES ('graph_schema_version','1'), ('graph_compatibility_state','legacy-preserved-no-dual-write'), ('active_graph_generation_id',NULL), ('previous_graph_generation_id',NULL)`); err != nil {
+		return rollback(err)
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit graph schema migration: %w", err)
 	}
 	return nil
 }
