@@ -400,7 +400,7 @@ func (b *GraphObservationBatch) validateCore() error {
 	if b.SchemaVersion != 1 || !observationBackend(b.Backend) || (b.Completeness != GraphCompletenessComplete && b.Completeness != GraphCompletenessPartial) {
 		return observationErr("GPH_OBS_CORE_INVALID", "batch", "invalid schema/backend/completeness")
 	}
-	if b.BackendVersion == "" || len(b.BackendVersion) > 256 || b.ExtractorVersion == "" || len(b.ExtractorVersion) > 256 || b.ProjectOrModule == "" || !observationNonzero(b.SourceFingerprint) || !observationNonzero(b.ConfigFingerprint) {
+	if !obsBounded(b.BackendVersion) || !obsBounded(b.ExtractorVersion) || b.ProjectOrModule == "" || !observationNonzero(b.SourceFingerprint) || !observationNonzero(b.ConfigFingerprint) {
 		return observationErr("GPH_OBS_PROVENANCE_MISSING", "batch", "invalid provenance")
 	}
 	seen := map[string]bool{}
@@ -422,13 +422,6 @@ func (b *GraphObservationBatch) validateCore() error {
 		k, e := NewNodeKey(n.Key)
 		if e != nil || !reflect.DeepEqual(k, n.Key) || n.Key.RepositoryIdentity != b.RepositoryIdentity || n.Key.BackendType != b.Backend || n.Key.ProjectOrModule != b.ProjectOrModule || !obsBounded(n.DisplayName) || !observationNonzero(n.SourceDigest) || !observationClaim(n.ClaimStatus) || !observationResolution(n.Resolution) {
 			return observationErr("GPH_OBS_NODE_INVALID", "nodes", "node violates canonical batch or matrix")
-		}
-		if !nodeAllowed(b.Backend, "declarations", n.ClaimStatus, n.Resolution, func() string {
-			if c, ok := caps["declarations"]; ok {
-				return c.State
-			}
-			return ""
-		}()) { /* checked after caps below */
 		}
 		nodes[n.Ref] = n
 	}
@@ -561,6 +554,17 @@ func (b *GraphObservationBatch) validateCore() error {
 		}
 		if !found {
 			return observationErr("GPH_OBS_EVIDENCE_MISSING", "nodes", "node requires evidence")
+		}
+	}
+	for _, edge := range edges {
+		found := false
+		for _, v := range b.Evidence {
+			if v.EdgeRef == edge.Ref {
+				found = true
+			}
+		}
+		if !found {
+			return observationErr("GPH_OBS_EVIDENCE_MISSING", "edges", "edge requires evidence")
 		}
 	}
 	for _, u := range b.Unresolved {

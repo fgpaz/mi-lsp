@@ -129,6 +129,157 @@ func TestGraphObservationEvidenceAndBounds(t *testing.T) {
 	}
 }
 
+func graphObservationNode(ref, backend, language, kind, identity, claim, resolution string) GraphObservationNode {
+	return GraphObservationNode{
+		Ref:          ref,
+		Key:          NodeKeyFields{RepositoryIdentity: "github.com/acme/Repo", BackendType: backend, Language: language, ProjectOrModule: "Src/App", OwnerPath: "Src/App/a.cs", SymbolKind: kind, SemanticIdentity: identity},
+		DisplayName:  identity,
+		SourceDigest: digestBytes([]byte(ref)),
+		ClaimStatus:  claim,
+		Resolution:   resolution,
+	}
+}
+
+func graphObservationEvidence(ref string, node *GraphObservationNode, edge *GraphObservationEdge, extractor string) GraphObservationEvidence {
+	v := GraphObservationEvidence{Ref: ref, SourceURI: "Src/App/a.cs", Range: &GraphObservationRange{StartLine: 1, StartColumn: 1, EndLine: 1, EndColumn: 2}, Backend: "go", ExtractorVersion: extractor, ObservedDigest: digestBytes([]byte(ref)), Status: GraphRecordExact}
+	if node != nil {
+		v.NodeRef, v.SourceDigest, v.ClaimKind, v.Status = node.Ref, node.SourceDigest, "declaration", node.ClaimStatus
+	} else {
+		v.EdgeRef, v.SourceDigest, v.ClaimKind, v.Status = edge.Ref, edge.SourceDigest, edge.Relation, edge.Status
+	}
+	return v
+}
+
+func graphObservationGoBatch() GraphObservationBatch {
+	b := observationTestBatch()
+	b.Backend, b.BackendVersion, b.ExtractorVersion = "go", "1.24", "extractor-go"
+	n := graphObservationNode("N1", "go", "go", "type", "acme.Widget", GraphRecordExtracted, "go/ast")
+	b.Nodes = []GraphObservationNode{n}
+	b.Evidence = []GraphObservationEvidence{graphObservationEvidence("EV1", &n, nil, b.ExtractorVersion)}
+	b.Capabilities = []GraphObservationCapability{{Backend: "go", Capability: "declarations", State: GraphObservationStatusStable}}
+	b.Coverage = []GraphObservationCoverage{{Backend: "go", Capability: "declarations", Eligible: 1, Observed: 1}}
+	return b
+}
+
+func addGraphObservationEdge(b *GraphObservationBatch, relation, status, resolution string) {
+	e := GraphObservationEdge{Ref: "E1", FromRef: "N1", ToRef: "N1", Relation: relation, Scope: "symbol", Status: status, OwnerPath: "Src/App/a.cs", Backend: b.Backend, Resolution: resolution, SourceDigest: digestBytes([]byte("edge"))}
+	b.Edges = append(b.Edges, e)
+	b.Evidence = append(b.Evidence, graphObservationEvidence("EV2", nil, &e, b.ExtractorVersion))
+	b.Capabilities = append(b.Capabilities, GraphObservationCapability{Backend: b.Backend, Capability: relation, State: GraphObservationStatusStable})
+	b.Coverage = append(b.Coverage, GraphObservationCoverage{Backend: b.Backend, Capability: relation, Eligible: 1, Observed: 1})
+}
+
+func TestGraphObservationEdgeEvidenceRequired(t *testing.T) {
+	b := observationTestBatch()
+	e := GraphObservationEdge{Ref: "E1", FromRef: "N1", ToRef: "N1", Relation: "calls", Scope: "symbol", Status: GraphRecordExact, OwnerPath: "Src/App/a.cs", Backend: "roslyn", Resolution: "roslyn", SourceDigest: digestBytes([]byte("edge"))}
+	b.Edges = []GraphObservationEdge{e}
+	b.Capabilities = append(b.Capabilities, GraphObservationCapability{Backend: "roslyn", Capability: "calls", State: GraphObservationStatusStable})
+	b.Coverage = append(b.Coverage, GraphObservationCoverage{Backend: "roslyn", Capability: "calls", Eligible: 1, Observed: 1})
+	b.Evidence = append(b.Evidence, graphObservationEvidence("EV2", nil, &e, b.ExtractorVersion))
+	b.Evidence[1].Backend = "roslyn"
+	if err := SealGraphObservationBatch(&b); err != nil {
+		t.Fatal(err)
+	}
+	b.Evidence = b.Evidence[:1]
+	if err := SealGraphObservationBatch(&b); err == nil {
+		t.Fatal("edge without evidence accepted")
+	}
+}
+
+func TestGraphObservationGoMatrix(t *testing.T) {
+	cases := []struct {
+		name, relation, status, resolution string
+		want                               bool
+	}{
+		{"ast contains", "contains", GraphRecordExtracted, "go/ast", true},
+		{"ast imports", "imports", GraphRecordExtracted, "go/ast", true},
+		{"types calls", "calls", GraphRecordExact, "go/types", true},
+		{"gopls references", "references", GraphRecordExact, "gopls", true},
+		{"ast calls", "calls", GraphRecordExtracted, "go/ast", false},
+		{"ast references", "references", GraphRecordExtracted, "go/ast", false},
+		{"unsupported implements", "implements", GraphRecordExact, "go/types", false},
+		{"unsupported extends", "extends", GraphRecordExact, "go/types", false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			b := graphObservationGoBatch()
+			addGraphObservationEdge(&b, tc.relation, tc.status, tc.resolution)
+			err := SealGraphObservationBatch(&b)
+			if (err == nil) != tc.want {
+				t.Fatalf("SealGraphObservationBatch() = %v, want success %v", err, tc.want)
+			}
+		})
+	}
+}
+
+func TestGraphObservationGatedAndLexicalBackends(t *testing.T) {
+	for _, backend := range []string{"tsserver", "pyright"} {
+		t.Run(backend, func(t *testing.T) {
+			b := graphObservationGoBatch()
+			b.Backend = backend
+			b.Nodes[0].Key.BackendType, b.Nodes[0].Key.Language, b.Nodes[0].Resolution = backend, backend, backend
+			b.Capabilities[0] = GraphObservationCapability{Backend: backend, Capability: "declarations", State: GraphObservationStatusStable}
+			b.Evidence[0].Backend = backend
+			if err := SealGraphObservationBatch(&b); err == nil {
+				t.Fatal("stable semantic batch accepted")
+			}
+			b.Nodes, b.Evidence = nil, nil
+			b.Capabilities[0].State = GraphObservationStatusGated
+			b.Coverage[0] = GraphObservationCoverage{Backend: backend, Capability: "declarations", Eligible: 1, Omitted: 1}
+			b.Omissions = []GraphObservationOmission{{Ref: "O1", OwnerPath: "Src/App/a.cs", SubjectKind: "file", Backend: backend, Capability: "declarations", ReasonCode: "gated", RecoveryHintCode: "retry"}}
+			if err := SealGraphObservationBatch(&b); err != nil {
+				t.Fatal(err)
+			}
+			if err := b.ReadyForStaging(); err == nil {
+				t.Fatal("gated batch ready")
+			}
+		})
+	}
+	b := graphObservationGoBatch()
+	b.Capabilities[0].State = GraphObservationStatusExperimental
+	b.Nodes[0].Key.SymbolKind, b.Nodes[0].Resolution = "file", "lexical"
+	b.Coverage[0] = GraphObservationCoverage{Backend: "go", Capability: "declarations", Eligible: 2, Observed: 1, Omitted: 1}
+	b.Omissions = []GraphObservationOmission{{Ref: "O1", OwnerPath: "Src/App/a.cs", SubjectKind: "file", Backend: "go", Capability: "declarations", ReasonCode: "experimental", RecoveryHintCode: "retry"}}
+	if err := SealGraphObservationBatch(&b); err != nil {
+		t.Fatal(err)
+	}
+	if err := b.ReadyForStaging(); err == nil {
+		t.Fatal("lexical batch ready")
+	}
+	b = graphObservationGoBatch()
+	b.Capabilities[0].State, b.Nodes[0].Resolution = GraphObservationStatusExperimental, "lexical"
+	b.Coverage[0] = GraphObservationCoverage{Backend: "go", Capability: "declarations", Eligible: 2, Observed: 1, Omitted: 1}
+	b.Omissions = []GraphObservationOmission{{Ref: "O1", OwnerPath: "Src/App/a.cs", SubjectKind: "file", Backend: "go", Capability: "declarations", ReasonCode: "experimental", RecoveryHintCode: "retry"}}
+	if err := SealGraphObservationBatch(&b); err == nil {
+		t.Fatal("lexical type node accepted")
+	}
+	b = graphObservationGoBatch()
+	b.Capabilities[0].State = GraphObservationStatusExperimental
+	b.Nodes[0].Key.SymbolKind, b.Nodes[0].Resolution = "file", "lexical"
+	b.Coverage[0] = GraphObservationCoverage{Backend: "go", Capability: "declarations", Eligible: 2, Observed: 1, Omitted: 1}
+	b.Omissions = []GraphObservationOmission{{Ref: "O1", OwnerPath: "Src/App/a.cs", SubjectKind: "file", Backend: "go", Capability: "declarations", ReasonCode: "experimental", RecoveryHintCode: "retry"}}
+	addGraphObservationEdge(&b, "contains", GraphRecordExtracted, "lexical")
+	if err := SealGraphObservationBatch(&b); err == nil {
+		t.Fatal("lexical edge accepted")
+	}
+}
+
+func TestGraphObservationVersionBounds(t *testing.T) {
+	for _, field := range []string{"backend", "extractor"} {
+		for _, value := range []string{"bad\nversion", string(make([]byte, 257))} {
+			b := observationTestBatch()
+			if field == "backend" {
+				b.BackendVersion = value
+			} else {
+				b.ExtractorVersion = value
+			}
+			if err := SealGraphObservationBatch(&b); err == nil {
+				t.Fatalf("%s %q accepted", field, value)
+			}
+		}
+	}
+}
+
 func TestGraphObservationOrderIndependence(t *testing.T) {
 	a := observationTestBatch()
 	if err := SealGraphObservationBatch(&a); err != nil {
