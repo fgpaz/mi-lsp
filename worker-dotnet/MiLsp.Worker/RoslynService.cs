@@ -261,15 +261,17 @@ public sealed class RoslynService
             return ProjectNotFoundResponse(started.ElapsedMilliseconds);
         }
 
+        var backendVersion = typeof(Microsoft.CodeAnalysis.Compilation).Assembly.GetName().Version?.ToString() ?? "unknown";
+        const string extractorVersion = "mi-lsp-roslyn-g2-v1";
         var batch = new GraphObservationBatch
         {
             WorkspaceIdentity = repository,
             RepositoryIdentity = repository,
-            BackendVersion = typeof(Microsoft.CodeAnalysis.Compilation).Assembly.GetName().Version?.ToString() ?? "unknown",
-            ExtractorVersion = "mi-lsp-roslyn-g2-v1",
+            BackendVersion = backendVersion,
+            ExtractorVersion = extractorVersion,
             ProjectOrModule = module,
-            SourceFingerprint = new string('0', 64),
-            ConfigFingerprint = new string('0', 64)
+            SourceFingerprint = GraphObservationBuilder.PreLoadSourceFingerprint(repoRoot, module, expectedProject, backendVersion, extractorVersion, repository),
+            ConfigFingerprint = GraphObservationBuilder.PreLoadConfigFingerprint(module, expectedProject, backendVersion, extractorVersion, repository)
         };
         batch.Capabilities.AddRange(GraphCapabilities.Select(capability => new GraphObservationCapability { Capability = capability }));
 
@@ -277,9 +279,7 @@ public sealed class RoslynService
         var partial = false;
         try
         {
-            // Loading and the base fingerprints are deliberately non-cancellable. The caller's token
-            // must not turn a valid project into an unsealable zero-digest partial batch.
-            var solution = await LoadSolutionAsync(request, CancellationToken.None).ConfigureAwait(false);
+            var solution = await LoadSolutionAsync(request, cancellationToken).ConfigureAwait(false);
             project = solution.Projects.SingleOrDefault(candidate => candidate.FilePath is not null &&
                 string.Equals(Path.GetFullPath(candidate.FilePath), expectedProject, StringComparison.OrdinalIgnoreCase));
             if (project is null)
@@ -290,7 +290,7 @@ public sealed class RoslynService
             Compilation? compilation = null;
             try
             {
-                compilation = await project.GetCompilationAsync(CancellationToken.None).ConfigureAwait(false);
+                compilation = await project.GetCompilationAsync(cancellationToken).ConfigureAwait(false);
             }
             catch (Exception)
             {
@@ -300,7 +300,7 @@ public sealed class RoslynService
             batch.SourceFingerprint = GraphObservationBuilder.SourceFingerprint(project, repoRoot, module, batch.BackendVersion, batch.ExtractorVersion, repository, () => partial = true);
             batch.ConfigFingerprint = GraphObservationBuilder.ConfigFingerprint(project, compilation, module, batch.BackendVersion, batch.ExtractorVersion, repository);
 
-            if (compilation is not null && compilation.GetDiagnostics(CancellationToken.None).Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
+            if (compilation is not null && compilation.GetDiagnostics(cancellationToken).Any(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error))
             {
                 partial = true;
                 AddCapabilityOmissions(batch, "compiler_errors", "fix_compile_errors");
@@ -459,8 +459,12 @@ public sealed class RoslynService
         private readonly WorkerRequest _request;
         private readonly Project _project;
         private readonly Dictionary<ISymbol, string> _refs = new(SymbolEqualityComparer.Default);
-        private readonly Dictionary<string, string> _paths = new(StringComparer.OrdinalIgnoreCase);
-        private readonly HashSet<string> _edgeKeys = new(StringComparer.Ordinal);
+        private readonly Dictionary<string, string> _identityRefs = new(StringComparer.Ordinal);
+        private readonly Dictionary<string, string> _refIdentities = new(StringComparer.Ordinal);
+        private readonly Dictionary<string, string> _sourceDigests = new(StringComparer.OrdinalIgnoreCase);
+        private readonly Dictionary<string, GraphObservationEdge> _edgesByKey = new(StringComparer.Ordinal);
+        private readonly HashSet<string> _evidenceKeys = new(StringComparer.Ordinal);
+        private readonly HashSet<string> _externalOmissionKeys = new(StringComparer.Ordinal);
         private int _edgeNumber;
         private int _evidenceNumber;
         public bool Partial { get; private set; }
@@ -474,13 +478,14 @@ public sealed class RoslynService
                 cancellationToken.ThrowIfCancellationRequested();
                 if (document.FilePath is null) continue;
                 var path = RelativePath(document.FilePath);
-                if (!IsSafeSourcePath(path)) { Partial = true; AddOmission("file", "linked_outside_root"); continue; }
+                if (!IsSafeSourcePath(path)) { Partial = true; AddOmission(_batch.ProjectOrModule, "file", "linked_outside_root", "inspect_candidates"); continue; }
+                if (!IsEligibleSourcePath(path)) continue;
                 var text = await document.GetTextAsync(cancellationToken).ConfigureAwait(false);
                 var root = await document.GetSyntaxRootAsync(cancellationToken).ConfigureAwait(false);
                 var model = await document.GetSemanticModelAsync(cancellationToken).ConfigureAwait(false);
                 if (root is null || model is null) { Partial = true; continue; }
                 var sourceDigest = Sha256(File.ReadAllBytes(document.FilePath));
-                _paths[document.FilePath] = path;
+                _sourceDigests[path] = sourceDigest;
                 documents.Add((document, path, sourceDigest, root, model));
                 foreach (var node in root.DescendantNodesAndSelf())
                 {
@@ -493,26 +498,69 @@ public sealed class RoslynService
             }
             foreach (var item in documents)
             {
+                cancellationToken.ThrowIfCancellationRequested();
                 var root = item.Root; var model = item.Model; var path = item.Path; var sourceDigest = item.Digest;
-                foreach (var invocation in root.DescendantNodes().OfType<InvocationExpressionSyntax>()) AddReference(model, invocation, invocation.Expression, "calls", path, sourceDigest);
-                foreach (var creation in root.DescendantNodes().OfType<ObjectCreationExpressionSyntax>()) AddReference(model, creation, creation.Type, "calls", path, sourceDigest);
-                foreach (var name in root.DescendantNodes().OfType<IdentifierNameSyntax>()) AddReference(model, name, name, "references", path, sourceDigest);
+                foreach (var invocation in root.DescendantNodes().OfType<InvocationExpressionSyntax>())
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    AddReference(model, invocation, invocation.Expression, "calls", path, sourceDigest);
+                }
+                foreach (var creation in root.DescendantNodes().OfType<ObjectCreationExpressionSyntax>())
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    AddReference(model, creation, creation, "calls", path, sourceDigest);
+                }
+                foreach (var name in root.DescendantNodes().OfType<IdentifierNameSyntax>())
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    if (name.Ancestors().Any(ancestor => ancestor switch
+                    {
+                        UsingDirectiveSyntax usingDirective => usingDirective.Name.Span.Contains(name.Span),
+                        BaseNamespaceDeclarationSyntax namespaceDeclaration => namespaceDeclaration.Name.Span.Contains(name.Span),
+                        _ => false
+                    })) continue;
+                    AddReference(model, name, name, "references", path, sourceDigest);
+                }
             }
             AddTypeRelations();
         }
 
-        private static bool IsDeclaration(SyntaxNode node) => node is BaseNamespaceDeclarationSyntax or BaseTypeDeclarationSyntax or BaseMethodDeclarationSyntax or PropertyDeclarationSyntax or EventDeclarationSyntax or EventFieldDeclarationSyntax or VariableDeclaratorSyntax;
+        private static bool IsDeclaration(SyntaxNode node) => node is BaseNamespaceDeclarationSyntax or BaseTypeDeclarationSyntax or DelegateDeclarationSyntax or BaseMethodDeclarationSyntax or PropertyDeclarationSyntax or EventDeclarationSyntax or VariableDeclaratorSyntax;
         private void AddNode(ISymbol symbol, string path, string digest, Location location)
         {
             var kind = Kind(symbol);
-            if (kind is null) return;
-            if (_refs.ContainsKey(symbol)) return;
+            if (string.IsNullOrWhiteSpace(kind)) return;
+            symbol = CanonicalSymbol(symbol);
             var identity = symbol.GetDocumentationCommentId() ?? symbol.ToDisplayString(SymbolDisplayFormat.CSharpErrorMessageFormat);
-            var reference = "roslyn:" + Sha256(identity).Substring(0, 32);
+            var reference = "roslyn:" + Sha256(identity);
+            if (_refIdentities.TryGetValue(reference, out var registeredIdentity) && !string.Equals(registeredIdentity, identity, StringComparison.Ordinal))
+            {
+                Partial = true;
+                AddOmission(path, kind, "declaration_ref_collision", "inspect_candidates");
+                return;
+            }
+
+            if (_identityRefs.TryGetValue(identity, out var existingRef))
+            {
+                _refs[symbol] = existingRef;
+                var existing = _batch.Nodes.First(node => node.Ref == existingRef);
+                if (string.Equals(existing.Key.OwnerPath, path, StringComparison.Ordinal))
+                {
+                    AddEvidence(existingRef, null, path, location, digest, "declaration", identity);
+                }
+                else
+                {
+                    AddOmission(path, kind, "additional_owner_evidence", "inspect_candidates");
+                }
+                return;
+            }
+
             _refs[symbol] = reference;
+            _identityRefs[identity] = reference;
+            _refIdentities[reference] = identity;
             _batch.Nodes.Add(new GraphObservationNode { Ref = reference, DisplayName = symbol.Name, SourceDigest = digest, Key = new GraphNodeKey { RepositoryIdentity = _batch.RepositoryIdentity, ProjectOrModule = _batch.ProjectOrModule, OwnerPath = path, SymbolKind = kind, SemanticIdentity = identity } });
-            AddEvidence(reference, null, path, location, digest, "declaration", digest);
-            if (symbol.ContainingSymbol is not null && _refs.ContainsKey(symbol.ContainingSymbol)) AddRelation(symbol.ContainingSymbol, symbol, "contains", location, path, digest);
+            AddEvidence(reference, null, path, location, digest, "declaration", identity);
+            if (symbol.ContainingSymbol is { } containing && containing is not INamespaceSymbol { IsGlobalNamespace: true }) AddRelation(containing, symbol, "contains", location, path, digest);
         }
         private void AddTypeRelations()
         {
@@ -522,45 +570,172 @@ public sealed class RoslynService
                 var owner = pair.Key.Locations.FirstOrDefault(item => item.IsInSource);
                 if (type.BaseType is { SpecialType: not SpecialType.System_Object } baseType) AddRelation(type, baseType, "extends", owner);
                 var inherited = type.BaseType?.AllInterfaces.Cast<ISymbol>().ToHashSet(SymbolEqualityComparer.Default) ?? new HashSet<ISymbol>(SymbolEqualityComparer.Default);
-                foreach (var iface in type.Interfaces.Where(item => item.Locations.Any(location => location.IsInSource) && !inherited.Contains(item))) AddRelation(type, iface, "implements", owner);
+                foreach (var iface in type.Interfaces.Where(item => !inherited.Contains(item))) AddRelation(type, iface, "implements", owner);
             }
         }
         private void AddReference(SemanticModel model, SyntaxNode ownerNode, SyntaxNode targetNode, string relation, string path, string digest)
         {
             var owner = model.GetEnclosingSymbol(ownerNode.SpanStart);
-            var target = model.GetSymbolInfo(targetNode).Symbol;
-            if (owner is null || target is null) { Partial = true; return; }
+            if (targetNode.Ancestors().OfType<BaseTypeDeclarationSyntax>().Any(type => type.BaseList?.Types.Any(baseType => baseType.Span.Contains(targetNode.Span)) == true)) return;
+            var info = model.GetSymbolInfo(targetNode);
+            var target = info.Symbol;
+            if (owner is null)
+            {
+                Partial = true;
+                AddUnresolved(path, "file", relation, "source_endpoint_missing", targetNode.ToString(), digest, info.CandidateSymbols);
+                return;
+            }
+            if (target is null)
+            {
+                if (info.CandidateSymbols.Length == 0)
+                {
+                    AddTypedOmission(path, SubjectKind(owner), relation, "unbound_target", "inspect_candidates");
+                    return;
+                }
+                Partial = true;
+                var reason = info.CandidateSymbols.Length > 1 ? "ambiguous_target" : "target_endpoint_missing";
+                AddUnresolved(path, SubjectKind(owner), relation, reason, targetNode.ToString(), digest, info.CandidateSymbols);
+                return;
+            }
+            target = CanonicalSymbol(target);
             if (target.Locations.Any(item => item.IsInSource && item.SourceSpan == targetNode.Span)) return;
-            var ownerSource = owner.Locations.FirstOrDefault(item => item.IsInSource);
-            AddRelation(owner, target, relation, ownerSource, path, digest);
+            if (string.IsNullOrWhiteSpace(Kind(target)))
+            {
+                AddTypedOmission(path, SubjectKind(owner), relation, "unsupported_symbol_kind", "inspect_candidates");
+                return;
+            }
+            AddRelation(owner, target, relation, ownerNode.GetLocation(), path, digest);
         }
         private void AddRelation(ISymbol from, ISymbol to, string relation, Location? location, string? ownerPath = null, string? digest = null)
         {
-            if (!_refs.TryGetValue(from, out var fromRef) || !_refs.TryGetValue(to, out var toRef)) return;
+            from = CanonicalSymbol(from);
+            to = CanonicalSymbol(to);
             var path = ownerPath ?? RelativePath(location?.SourceTree?.FilePath ?? "");
-            var sourceDigest = digest ?? Sha256(FileText(location));
+            var sourceDigest = digest ?? (_sourceDigests.TryGetValue(path, out var registeredDigest) ? registeredDigest : Sha256(FileText(location)));
+            var sourceKind = SubjectKind(from);
+            if (string.IsNullOrWhiteSpace(Kind(from)))
+            {
+                Partial = true;
+                AddUnresolved(path, sourceKind, relation, "source_endpoint_missing", from.ToDisplayString(SymbolDisplayFormat.CSharpErrorMessageFormat), sourceDigest, []);
+                return;
+            }
+            if (string.IsNullOrWhiteSpace(Kind(to)))
+            {
+                AddTypedOmission(path, sourceKind, relation, "unsupported_symbol_kind", "inspect_candidates");
+                return;
+            }
+            if (!_refs.TryGetValue(from, out var fromRef))
+            {
+                Partial = true;
+                AddUnresolved(path, sourceKind, relation, "source_endpoint_missing", from.ToDisplayString(SymbolDisplayFormat.CSharpErrorMessageFormat), sourceDigest, []);
+                return;
+            }
+            if (!_refs.TryGetValue(to, out var toRef))
+            {
+                if (to.IsImplicitlyDeclared)
+                {
+                    AddTypedOmission(path, sourceKind, relation, "implicit_target", "inspect_candidates");
+                    return;
+                }
+                if (!to.Locations.Any(item => item.IsInSource))
+                {
+                    AddExternalOmission(path, sourceKind, relation);
+                    return;
+                }
+                var targetLocation = to.Locations.FirstOrDefault(item => item.IsInSource);
+                var targetPath = targetLocation?.SourceTree?.FilePath is { } targetFile ? RelativePath(targetFile) : "";
+                if (targetLocation is not null && IsSafeSourcePath(targetPath) && _sourceDigests.TryGetValue(targetPath, out var targetDigest))
+                {
+                    AddNode(to, targetPath, targetDigest, targetLocation);
+                    if (_refs.TryGetValue(to, out toRef))
+                    {
+                        AddRelation(from, to, relation, location, ownerPath, digest);
+                        return;
+                    }
+                }
+                AddTypedOmission(path, sourceKind, relation, "source_target_not_declared", "inspect_candidates");
+                return;
+            }
+
             var key = fromRef + "|" + toRef + "|" + relation + "|symbol";
-            if (!_edgeKeys.Add(key)) return;
-            var edgeRef = "edge:" + (++_edgeNumber).ToString("D8", System.Globalization.CultureInfo.InvariantCulture);
-            _batch.Edges.Add(new GraphObservationEdge { Ref = edgeRef, FromRef = fromRef, ToRef = toRef, Relation = relation, OwnerPath = path, SourceDigest = sourceDigest });
-            AddEvidence(null, edgeRef, path, location, sourceDigest, relation, sourceDigest);
+            if (!_edgesByKey.TryGetValue(key, out var edge))
+            {
+                edge = new GraphObservationEdge { Ref = "edge:" + (++_edgeNumber).ToString("D8", System.Globalization.CultureInfo.InvariantCulture), FromRef = fromRef, ToRef = toRef, Relation = relation, OwnerPath = path, SourceDigest = sourceDigest };
+                _edgesByKey[key] = edge;
+                _batch.Edges.Add(edge);
+            }
+            else if (!string.Equals(edge.OwnerPath, path, StringComparison.Ordinal) || !string.Equals(edge.SourceDigest, sourceDigest, StringComparison.OrdinalIgnoreCase))
+            {
+                AddTypedOmission(path, sourceKind, relation, "additional_owner_evidence", "inspect_candidates");
+                return;
+            }
+            AddEvidence(null, edge.Ref, path, location, sourceDigest, relation, key);
         }
-        private void AddOmission(string subjectKind, string reason)
+        private void AddExternalOmission(string ownerPath, string subjectKind, string capability)
         {
-            _batch.Omissions.Add(new GraphObservationOmission { Ref = "omission:" + (_batch.Omissions.Count + 1).ToString("D8", System.Globalization.CultureInfo.InvariantCulture), OwnerPath = _batch.ProjectOrModule, SubjectKind = subjectKind, Capability = "declarations", ReasonCode = reason, RecoveryHintCode = "inspect" });
+            var key = ownerPath + "|" + subjectKind + "|" + capability + "|external_target";
+            if (!_externalOmissionKeys.Add(key)) return;
+            AddTypedOmission(ownerPath, subjectKind, capability, "external_target", "inspect_candidates");
+        }
+        private void AddOmission(string ownerPath, string subjectKind, string reason, string recovery) => AddTypedOmission(ownerPath, subjectKind, "declarations", reason, recovery);
+        private void AddTypedOmission(string ownerPath, string subjectKind, string capability, string reason, string recovery)
+        {
+            if (_batch.Omissions.Any(item => item.OwnerPath == ownerPath && item.SubjectKind == subjectKind && item.Capability == capability && item.ReasonCode == reason)) return;
+            _batch.Omissions.Add(new GraphObservationOmission { Ref = "omission:" + (_batch.Omissions.Count + 1).ToString("D8", System.Globalization.CultureInfo.InvariantCulture), OwnerPath = ownerPath, SubjectKind = subjectKind, Capability = capability, ReasonCode = reason, RecoveryHintCode = recovery });
+        }
+        private void AddUnresolved(string ownerPath, string subjectKind, string capability, string reason, string selector, string sourceDigest, IEnumerable<ISymbol> candidates)
+        {
+            var candidateIds = candidates.Select(symbol => symbol.GetDocumentationCommentId() ?? symbol.ToDisplayString(SymbolDisplayFormat.CSharpErrorMessageFormat))
+                .Select(value => (value ?? string.Empty).Normalize(NormalizationForm.FormC).Trim())
+                .Where(value => value.Length > 0)
+                .Select(value => value.Length <= 256 ? value : "sha256:" + Sha256(value))
+                .Distinct(StringComparer.Ordinal).OrderBy(value => value, StringComparer.Ordinal).Take(8).ToList();
+            var selectorDigest = Sha256(string.Join("|", new[] { _batch.RepositoryIdentity, _batch.ProjectOrModule, ownerPath, subjectKind, capability, reason, selector }));
+            var key = ownerPath + "|" + subjectKind + "|" + capability + "|" + reason + "|" + selectorDigest;
+            if (_batch.Unresolved.Any(item => item.OwnerPath + "|" + item.SubjectKind + "|" + item.Capability + "|" + item.ReasonCode + "|" + item.SelectorDigest == key)) return;
+            _batch.Unresolved.Add(new GraphObservationUnresolved { Ref = "unresolved:" + (_batch.Unresolved.Count + 1).ToString("D8", System.Globalization.CultureInfo.InvariantCulture), OwnerPath = ownerPath, SubjectKind = subjectKind, Capability = capability, SelectorDigest = selectorDigest, ReasonCode = reason, Candidates = candidateIds, SourceDigest = sourceDigest, RecoveryHintCode = "inspect_candidates" });
         }
 
         private void AddEvidence(string? nodeRef, string? edgeRef, string path, Location? location, string sourceDigest, string claim, string observed)
         {
             var span = location?.GetLineSpan();
             var range = span is null ? null : new GraphObservationRange { StartLine = span.Value.StartLinePosition.Line + 1, StartColumn = span.Value.StartLinePosition.Character + 1, EndLine = span.Value.EndLinePosition.Line + 1, EndColumn = span.Value.EndLinePosition.Character + 1 };
-            _batch.Evidence.Add(new GraphObservationEvidence { Ref = "evidence:" + (++_evidenceNumber).ToString("D8", System.Globalization.CultureInfo.InvariantCulture), NodeRef = nodeRef, EdgeRef = edgeRef, SourceUri = path, Range = range, ExtractorVersion = _batch.ExtractorVersion, SourceDigest = sourceDigest, ObservedDigest = observed, ClaimKind = claim });
+            var rangeKey = range is null ? "-" : string.Join(":", range.StartLine, range.StartColumn, range.EndLine, range.EndColumn);
+            var evidenceKey = (edgeRef ?? nodeRef ?? "") + "|" + path + "|" + rangeKey + "|" + claim;
+            if (!_evidenceKeys.Add(evidenceKey)) return;
+            var canonicalClaim = string.Join("|", new[] { nodeRef ?? edgeRef ?? "", claim, path, rangeKey, sourceDigest, observed });
+            var observedDigest = Sha256(canonicalClaim);
+            _batch.Evidence.Add(new GraphObservationEvidence { Ref = "evidence:" + (++_evidenceNumber).ToString("D8", System.Globalization.CultureInfo.InvariantCulture), NodeRef = nodeRef, EdgeRef = edgeRef, SourceUri = path, Range = range, ExtractorVersion = _batch.ExtractorVersion, SourceDigest = sourceDigest, ObservedDigest = observedDigest, ClaimKind = claim });
         }
         private bool IsSafeSourcePath(string path) => path != "." && path != ".." && !path.StartsWith("../", StringComparison.Ordinal) && !Path.IsPathRooted(path);
         private string RelativePath(string path) { var root = Path.GetFullPath(_request.RepoRoot ?? _request.Workspace); var full = Path.GetFullPath(path); return Path.GetRelativePath(root, full).Replace('\\', '/'); }
-        private static string Kind(ISymbol symbol) => symbol switch { INamespaceSymbol => "namespace", INamedTypeSymbol => "type", IMethodSymbol => "method", IFieldSymbol => "field", IPropertySymbol => "property", IEventSymbol => "event", _ => "" };
+        private static ISymbol CanonicalSymbol(ISymbol symbol)
+        {
+            if (symbol is IMethodSymbol method)
+            {
+                if (method.AssociatedSymbol is not null) symbol = method.AssociatedSymbol;
+                else if (method.ReducedFrom is not null) symbol = method.ReducedFrom;
+            }
+            return symbol.OriginalDefinition;
+        }
+        private static string Kind(ISymbol symbol) => CanonicalSymbol(symbol) switch { INamespaceSymbol => "namespace", INamedTypeSymbol => "type", IMethodSymbol => "method", IFieldSymbol => "field", IPropertySymbol => "property", IEventSymbol => "event", _ => "" };
+        private static string SubjectKind(ISymbol symbol) => Kind(symbol) is { Length: > 0 } kind ? kind : "file";
         internal static string Sha256(byte[] value) => Convert.ToHexString(SHA256.HashData(value)).ToLowerInvariant();
         internal static string Sha256(string value) => Sha256(Encoding.UTF8.GetBytes(value));
+        internal static string PreLoadSourceFingerprint(string root, string module, string projectPath, string backend, string extractor, string repository)
+        {
+            var projectBytes = File.Exists(projectPath) ? File.ReadAllBytes(projectPath) : [];
+            var sources = Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories)
+                .Where(path => IsEligibleSourcePath(Path.GetRelativePath(root, path).Replace('\\', '/')))
+                .Select(path => Path.GetRelativePath(root, path).Replace('\\', '/') + ":" + Sha256(File.ReadAllBytes(path)))
+                .OrderBy(value => value, StringComparer.Ordinal);
+            return Sha256(string.Join("|", new[] { repository, module, backend, extractor, Sha256(projectBytes), "sources" }.Concat(sources)));
+        }
+        internal static string PreLoadConfigFingerprint(string module, string projectPath, string backend, string extractor, string repository)
+        {
+            var projectBytes = File.Exists(projectPath) ? File.ReadAllBytes(projectPath) : [];
+            return Sha256(string.Join("|", repository, module, backend, extractor, Sha256(projectBytes), "preload"));
+        }
         internal static string SourceFingerprint(Project project, string root, string module, string backend, string extractor, string repository, Action outsideSource)
         {
             var values = new List<string>();
@@ -604,7 +779,13 @@ public sealed class RoslynService
             }
         }
         private static bool IsSafeRelativePath(string path) => path != "." && path != ".." && !path.StartsWith("../", StringComparison.Ordinal) && !Path.IsPathRooted(path);
-        private static bool IsEligibleSourcePath(string path) => path.EndsWith(".cs", StringComparison.OrdinalIgnoreCase) || path.EndsWith(".csx", StringComparison.OrdinalIgnoreCase);
+        private static bool IsEligibleSourcePath(string path)
+        {
+            var normalized = path.Replace('\\', '/');
+            var segments = normalized.Split('/', StringSplitOptions.RemoveEmptyEntries);
+            if (segments.Any(segment => string.Equals(segment, "obj", StringComparison.OrdinalIgnoreCase) || string.Equals(segment, "bin", StringComparison.OrdinalIgnoreCase))) return false;
+            return normalized.EndsWith(".cs", StringComparison.OrdinalIgnoreCase) || normalized.EndsWith(".csx", StringComparison.OrdinalIgnoreCase);
+        }
         private static string FileText(Location? location) => location?.SourceTree?.ToString() ?? "";
     }
 

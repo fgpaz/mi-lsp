@@ -52,12 +52,30 @@ static void AssertNonzeroFingerprints(GraphObservationBatch observation)
     Require(observation.ConfigFingerprint.Length == 64 && observation.ConfigFingerprint != new string('0', 64), "config fingerprint is zero");
 }
 
+static void AssertGraphInvariants(GraphObservationBatch observation)
+{
+    var nodeRefs = observation.Nodes.Select(node => node.Ref).ToHashSet(StringComparer.Ordinal);
+    Require(observation.Nodes.Select(node => node.Ref).Distinct(StringComparer.Ordinal).Count() == observation.Nodes.Count, "node refs collide");
+    Require(observation.Nodes.All(node => node.Ref.StartsWith("roslyn:", StringComparison.Ordinal) && node.Ref[7..].Length == 64 && node.Ref[7..].All(Uri.IsHexDigit)), "node ref is not full SHA-256");
+    foreach (var edge in observation.Edges)
+    {
+        Require(nodeRefs.Contains(edge.FromRef) && nodeRefs.Contains(edge.ToRef), "dangling edge endpoint");
+        var evidence = observation.Evidence.Where(item => item.EdgeRef == edge.Ref).ToList();
+        Require(evidence.Count > 0, "edge evidence missing");
+        Require(evidence.All(item => item.SourceUri == edge.OwnerPath && item.SourceDigest == edge.SourceDigest), "edge evidence provenance mismatch");
+    }
+    var registeredKinds = new HashSet<string>(StringComparer.Ordinal) { "workspace", "repository", "project", "package", "file", "namespace", "type", "method", "function", "field", "property", "event", "route", "test", "document" };
+    Require(observation.Unresolved.All(item => registeredKinds.Contains(item.SubjectKind)), "unregistered unresolved subject kind");
+    Require(observation.Unresolved.SelectMany(item => item.Candidates).All(candidate => candidate.Length <= 256), "candidate exceeds bound");
+    Require(observation.Evidence.All(evidence => evidence.ObservedDigest.Length == 64 && evidence.ObservedDigest != evidence.SourceDigest), "observed digest is only source digest");
+}
+
 static string CreateFixture(string name, string? source = null, string? project = null)
 {
     var root = Path.Combine(Path.GetTempPath(), "milsp-g2-" + name + "-" + Guid.NewGuid().ToString("N"));
     Directory.CreateDirectory(root);
     File.WriteAllText(Path.Combine(root, "Fixture.csproj"), project ?? "<Project Sdk=\"Microsoft.NET.Sdk\"><PropertyGroup><TargetFramework>net10.0</TargetFramework><EnableDefaultCompileItems>true</EnableDefaultCompileItems></PropertyGroup></Project>");
-    File.WriteAllText(Path.Combine(root, "Fixture.cs"), source ?? "using System; namespace Fixture; public interface IContract { void Run(); } public class Base { public virtual void BaseRun() { } } public class Derived : Base, IContract { public int Value { get; set; } public event Action? Changed; public void Run() { BaseRun(); } } public class Consumer { public void Use(Derived d) { d.Run(); var x = new Derived(); x.Value = 1; } }");
+    File.WriteAllText(Path.Combine(root, "Fixture.cs"), source ?? "namespace Fixture; public delegate void ChangedHandler(); public interface IContract { void Run(); } public class Base { public virtual void BaseRun() { } } public class Derived : Base, IContract { public int Value { get; set; } public event ChangedHandler? Changed; public void Run() { BaseRun(); } } public class Consumer { public void Use() { new Derived().Run(); new Derived().Run(); } }");
     return root;
 }
 
@@ -94,9 +112,38 @@ try
     Require(observation1.Edges.Any(edge => edge.Relation == "calls"), "calls edge missing");
     Require(observation1.Edges.Any(edge => edge.Relation == "references"), "references edge missing");
     Require(observation1.Nodes.All(node => node.SourceDigest.Length == 64 && node.SourceDigest.All(Uri.IsHexDigit)), "node digest invalid");
+    Require(observation1.Completeness == "complete", "main fixture is not complete");
+    Require(observation1.Omissions.Any(item => item.ReasonCode == "implicit_target"), "implicit constructor omission missing");
     AssertSafePaths(observation1);
     AssertCoverage(observation1);
     AssertNonzeroFingerprints(observation1);
+    AssertGraphInvariants(observation1);
+    var repeatedCallEdge = observation1.Edges.Where(edge => edge.Relation == "calls").OrderByDescending(edge => observation1.Evidence.Count(evidence => evidence.EdgeRef == edge.Ref)).First();
+    Require(observation1.Evidence.Count(evidence => evidence.EdgeRef == repeatedCallEdge.Ref) >= 2, "repeated call evidence was dropped");
+
+    var multiFileRoot = CreateFixture("multi-file", "namespace Fixture; public partial class Split { public void First() { } }");
+    roots.Add(multiFileRoot);
+    File.WriteAllText(Path.Combine(multiFileRoot, "Fixture.Partial.cs"), "namespace Fixture; public partial class Split { public void Second() { } }");
+    var multiFileResponse = await Observe(multiFileRoot, Path.Combine(multiFileRoot, "Fixture.csproj"));
+    Require(multiFileResponse.Completeness == "complete", "multi-file declaration owners made observation partial");
+    Require(multiFileResponse.Omissions.Any(item => item.ReasonCode == "additional_owner_evidence"), "additional declaration owner omission missing");
+    Require(!multiFileResponse.Omissions.Any(item => item.ReasonCode == "declaration_owner_conflict"), "legacy declaration owner conflict emitted");
+    AssertGraphInvariants(multiFileResponse);
+
+    var accessorRoot = CreateFixture("accessor", "namespace Fixture; public class Accessor { private int _value; public int Value { get { return _value; } set { _value = value; } } public int Read() => Value; }");
+    roots.Add(accessorRoot);
+    var accessorResponse = await Observe(accessorRoot, Path.Combine(accessorRoot, "Fixture.csproj"));
+    Require(accessorResponse.Completeness == "complete", "property/accessor fixture is not complete");
+    AssertGraphInvariants(accessorResponse);
+
+    var unsupportedRoot = CreateFixture("unsupported", "namespace Fixture; public class Unsupported { public void Use() { var local = 1; local.ToString(); } }");
+    roots.Add(unsupportedRoot);
+    var unsupportedResponse = await Observe(unsupportedRoot, Path.Combine(unsupportedRoot, "Fixture.csproj"));
+    var unsupported = unsupportedResponse.Omissions.Where(item => item.ReasonCode == "unsupported_symbol_kind").ToList();
+    Require(unsupported.Count > 0 && unsupported.Count <= 2, "unsupported symbol omissions are not bounded");
+    Require(unsupported.All(item => item.SubjectKind != "symbol"), "unsupported omission uses invalid subject kind");
+    AssertGraphInvariants(unsupportedResponse);
+
     var projection1 = JsonSerializer.Serialize(new { observation1.SchemaVersion, observation1.RepositoryIdentity, observation1.ProjectOrModule, observation1.SourceFingerprint, observation1.ConfigFingerprint, observation1.Capabilities, observation1.Coverage, observation1.Nodes, observation1.Edges, observation1.Evidence, observation1.Unresolved, observation1.Omissions });
     var projection2 = JsonSerializer.Serialize(new { observation2.SchemaVersion, observation2.RepositoryIdentity, observation2.ProjectOrModule, observation2.SourceFingerprint, observation2.ConfigFingerprint, observation2.Capabilities, observation2.Coverage, observation2.Nodes, observation2.Edges, observation2.Evidence, observation2.Unresolved, observation2.Omissions });
     Require(projection1 == projection2, "semantic projection is not deterministic");
@@ -140,6 +187,32 @@ try
     Require(linkedResponse.Observation!.Omissions.Any(omission => omission.ReasonCode == "linked_outside_root" && omission.OwnerPath == "Fixture.csproj"), "linked outside omission missing or unsafe");
     AssertSafePaths(linkedResponse.Observation);
     File.Delete(linkedSource);
+
+    var externalRoot = CreateFixture("external", "using System; namespace Fixture; public class ExternalConsumer { public void Use() { Console.WriteLine(\"x\"); } }");
+    roots.Add(externalRoot);
+    var externalResponse = await Observe(externalRoot, Path.Combine(externalRoot, "Fixture.csproj"));
+    if (externalResponse.Completeness != "complete") Console.WriteLine(JsonSerializer.Serialize(new { externalResponse.Completeness, externalResponse.Omissions, externalResponse.Unresolved }));
+    Require(externalResponse.Completeness == "complete", "external metadata scope made observation partial");
+    var externalOmissions = externalResponse.Omissions.Where(omission => omission.ReasonCode == "external_target").ToList();
+    Require(externalOmissions.Count > 0 && externalOmissions.Count <= 2, "external metadata omissions are not bounded and deduplicated");
+    Require(externalOmissions.All(omission => omission.Capability is "calls" or "references"), "external omission capability is not typed");
+    AssertCoverage(externalResponse);
+
+    var ambiguousRoot = CreateFixture("ambiguous", "namespace Fixture; public class Ambiguous { public void Pick(int value) { } public void Pick(string value) { } public void Use() { Pick(default); } }");
+    roots.Add(ambiguousRoot);
+    var ambiguousResponse = await Observe(ambiguousRoot, Path.Combine(ambiguousRoot, "Fixture.csproj"));
+    Require(ambiguousResponse.Completeness == "partial", "ambiguous overload did not make observation partial");
+    var ambiguous = ambiguousResponse.Unresolved.Where(item => item.ReasonCode == "ambiguous_target").ToList();
+    Require(ambiguous.Count > 0 && ambiguous.All(item => item.Candidates.Count is > 0 and <= 8), "ambiguous unresolved candidates missing or unbounded");
+    Require(ambiguous.All(item => item.Candidates.SequenceEqual(item.Candidates.OrderBy(candidate => candidate, StringComparer.Ordinal))), "ambiguous candidates are not sorted");
+    AssertGraphInvariants(ambiguousResponse);
+
+    var lambdaRoot = CreateFixture("lambda", "using System; Action action = () => Console.WriteLine(\"x\");");
+    roots.Add(lambdaRoot);
+    var lambdaResponse = await Observe(lambdaRoot, Path.Combine(lambdaRoot, "Fixture.csproj"));
+    Require(lambdaResponse.Completeness == "partial", "source-owner-missing lambda did not make observation partial");
+    Require(lambdaResponse.Unresolved.Any(item => item.ReasonCode == "source_endpoint_missing"), "source endpoint unresolved record missing");
+    AssertGraphInvariants(lambdaResponse);
 
     var copyRoot = Path.Combine(Path.GetTempPath(), "milsp-g2-copy-" + Guid.NewGuid().ToString("N"));
     roots.Add(copyRoot);
