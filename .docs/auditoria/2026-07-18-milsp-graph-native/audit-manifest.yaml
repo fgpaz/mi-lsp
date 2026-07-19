@@ -1,5 +1,6 @@
 schema: ae-audit-hygiene/v1
 session_id: 2026-07-18-milsp-graph-native
+evidence_slug: w1-verification
 retention_ttl_days: 14
 hash_algorithm: sha256
 artifact_classes:
@@ -8,6 +9,7 @@ artifact_classes:
   - sanitized_summary
   - sanitized_verdict
   - verification_result
+  - edit_plan
 sanitized_summaries: true
 sanitized_verdicts: true
 secret_policy:
@@ -25,3 +27,31 @@ acceptance:
     - .docs/auditoria/2026-07-18-milsp-graph-native/session-contract.yaml
   required_schema: ae-audit-hygiene/v1
   closure_requires_sanitized_evidence: true
+verification_records:
+  - id: w1-governance
+    status: PASS
+    command: mi-lsp workspace status . --format toon
+  - id: w1-governance-doc
+    status: PASS
+    command: mi-lsp nav governance --workspace . --format toon
+  - id: w1-harness
+    status: PASS
+    command: mi-lsp nav wiki validate-harness --workspace . --format toon
+  - id: w1-source
+    status: PASS
+    command: mi-lsp nav wiki validate-source --workspace . --format toon
+  - id: w1-clean-index
+    status: PASS
+    command: mi-lsp index --clean --docs-only --workspace .
+  - id: w1-full-index
+    status: PASS
+    command: mi-lsp index --workspace .
+  - id: w1-go-test
+    status: PASS
+    command: go test ./...
+  - id: w1-victory
+    status: PASS
+    details: "python scripts/bench/victory_lab/runner.py --manifest benchmarks/victory-lab/v1/manifest.json --repetitions 30"
+  - id: w1-diff-check
+    status: PASS
+    command: git diff --check
