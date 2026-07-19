@@ -1,8 +1,10 @@
 package store
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -662,6 +664,124 @@ func TestOpenReadOnly_EnforcesPragmasOnPoolConnections(t *testing.T) {
 	_, err = conns[0].ExecContext(context.Background(), "INSERT INTO files(file_path) VALUES('x')")
 	if err == nil {
 		t.Fatal("expected write to fail on read-only connection, got nil")
+	}
+}
+
+func TestGraphNodeKeyGoldenAndValidation(t *testing.T) {
+	key, err := model.NewNodeKey(model.NodeKeyFields{
+		RepositoryIdentity: "repo-stable",
+		BackendType:        "Roslyn",
+		Language:           "CSharp",
+		ProjectOrModule:    "App",
+		OwnerPath:          "src/cafe\u0301.cs",
+		SymbolKind:         "Class",
+		SemanticIdentity:   "Ns.Cafe",
+	})
+	if err != nil {
+		t.Fatalf("NewNodeKey: %v", err)
+	}
+	encoded, err := key.Serialize()
+	if err != nil {
+		t.Fatalf("Serialize: %v", err)
+	}
+	if !bytes.HasPrefix(encoded, []byte("MILSP-NK\x01\x00\x07")) {
+		t.Fatalf("encoding prefix = %x", encoded[:min(10, len(encoded))])
+	}
+	if key.OwnerPath != "src/café.cs" || key.BackendType != "roslyn" || key.Language != "csharp" {
+		t.Fatalf("normalized key = %#v", key)
+	}
+	hash1, err := key.Hash()
+	if err != nil {
+		t.Fatal(err)
+	}
+	hash2, err := key.Hash()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(hash1, hash2) || model.CrossRID(string(hash1)) != model.CrossRID(string(hash2)) {
+		t.Fatal("NodeKey/hash/cross-RID are not deterministic")
+	}
+	for _, path := range []string{"", "/src/a.cs", "../a.cs", "src//a.cs", "src/./a.cs", "src/../a.cs", "C:/a.cs", "src\\\\a.cs", "src/a.cs\\x00"} {
+		fields := key
+		fields.OwnerPath = path
+		if _, err := model.NewNodeKey(fields); err == nil {
+			t.Errorf("path %q unexpectedly accepted", path)
+		}
+	}
+}
+
+func TestGraphSchemaAndAtomicGenerationLifecycle(t *testing.T) {
+	db, _ := seedTestDB(t)
+	ctx := context.Background()
+	key, err := model.NewNodeKey(model.NodeKeyFields{RepositoryIdentity: "repo", BackendType: "go", Language: "go", ProjectOrModule: "mod", OwnerPath: "main.go", SymbolKind: "function", SemanticIdentity: "main"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	gen := model.GraphGeneration{GenerationID: "g1", WorkspaceRoot: "/workspace", SchemaVersion: 1, SourceFingerprint: "src", BackendVersion: "go1", CompilerVersion: "go1", Status: model.GraphGenerationStaged, OwnerID: "worker"}
+	if err := CreateGraphGeneration(ctx, db, gen); err != nil {
+		t.Fatal(err)
+	}
+	evidence := model.GraphEvidence{EvidenceID: "ev1", GenerationID: "g1", SourceURI: "main.go", SourceRange: "1:1-3:1", Backend: "go", ExtractorVersion: "v1", Digest: "digest", ObservedClaim: "declared", CrossRID: model.GraphEvidenceCrossRID("g1", "ev1")}
+	node := model.GraphNodeRecord{GenerationID: "g1", NodeKey: key, Kind: "function", DisplayName: "main", DeclarationPath: "main.go", DeclarationStart: 1, DeclarationEnd: 3, SourceFingerprint: "src", Backend: "go", CompilerVersion: "go1", Confidence: "high", Status: model.GraphRecordAccepted, CrossRID: model.GraphNodeCrossRID("g1", "node"), Provenance: "compiler"}
+	if err := InsertGraphEvidence(ctx, db, evidence); err != nil {
+		t.Fatal(err)
+	}
+	if err := InsertGraphNode(ctx, db, node); err != nil {
+		t.Fatal(err)
+	}
+	if err := InsertGraphEdge(ctx, db, model.GraphEdgeRecord{GenerationID: "g1", From: key, To: key, Relation: "calls", ClaimScope: "symbol", EvidenceID: "ev1", Provenance: "compiler", Confidence: "high", Status: model.GraphRecordAccepted, CrossRID: model.GraphEdgeCrossRID("g1", "edge")}); err != nil {
+		t.Fatal(err)
+	}
+	if err := SealGraphGeneration(ctx, db, "g1"); err != nil {
+		t.Fatal(err)
+	}
+	if err := ActivateGraphGeneration(ctx, db, "g1"); err != nil {
+		t.Fatal(err)
+	}
+	active, ok, err := ActiveGraphGeneration(ctx, db)
+	if err != nil || !ok || active != "g1" {
+		t.Fatalf("active = %q/%v/%v", active, ok, err)
+	}
+	if err := ActivateGraphGeneration(ctx, db, "g1"); err != nil {
+		t.Fatal(err)
+	}
+	if err := RollbackGraphGeneration(ctx, db, "missing"); err == nil {
+		t.Fatal("rollback missing generation unexpectedly succeeded")
+	}
+	var staged int
+	if err := db.QueryRowContext(ctx, "SELECT COUNT(*) FROM graph_generations WHERE status = ?", model.GraphGenerationStaged).Scan(&staged); err != nil {
+		t.Fatal(err)
+	}
+	if staged != 0 {
+		t.Fatalf("staged generations visible after seal: %d", staged)
+	}
+}
+
+func TestGraphValidationDetectsCorruptionAndPointerConflict(t *testing.T) {
+	db, _ := seedTestDB(t)
+	ctx := context.Background()
+	gen := model.GraphGeneration{GenerationID: "g-corrupt", WorkspaceRoot: "/workspace", SchemaVersion: 1, Status: model.GraphGenerationStaged, OwnerID: "worker"}
+	if err := CreateGraphGeneration(ctx, db, gen); err != nil {
+		t.Fatal(err)
+	}
+	key, _ := model.NewNodeKey(model.NodeKeyFields{RepositoryIdentity: "r", BackendType: "go", Language: "go", ProjectOrModule: "m", OwnerPath: "a.go", SymbolKind: "var", SemanticIdentity: "x"})
+	if err := InsertGraphNode(ctx, db, model.GraphNodeRecord{GenerationID: "g-corrupt", NodeKey: key, Kind: "var", DisplayName: "x", DeclarationPath: "a.go", Backend: "go", Status: model.GraphRecordAccepted, CrossRID: model.GraphNodeCrossRID("node"), Provenance: "compiler"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := SealGraphGeneration(ctx, db, "g-corrupt"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ExecContext(ctx, "UPDATE graph_nodes SET display_name = 'tampered' WHERE generation_id = 'g-corrupt'"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ValidateGraphGeneration(ctx, db, "g-corrupt"); err == nil {
+		t.Fatal("tampered generation validated")
+	}
+	if err := ActivateGraphGeneration(ctx, db, "g-corrupt"); err == nil {
+		t.Fatal("corrupt generation activated")
+	}
+	if !errors.Is(model.ErrGraphGenerationInvalid, model.ErrGraphGenerationInvalid) {
+		t.Fatal("typed graph error sentinel missing")
 	}
 }
 

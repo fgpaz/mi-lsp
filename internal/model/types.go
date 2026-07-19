@@ -1,8 +1,18 @@
 package model
 
 import (
+	"bytes"
+	"crypto/sha256"
+	"encoding/binary"
+	"encoding/hex"
+	"errors"
+	"fmt"
 	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
+
+	"golang.org/x/text/unicode/norm"
 )
 
 const ProtocolVersion = "mi-lsp-v1.1"
@@ -953,4 +963,284 @@ type RuntimeSnapshot struct {
 	PID         int       `json:"pid"`
 	MemoryBytes uint64    `json:"memory_bytes,omitempty"`
 	SnapshotAt  time.Time `json:"snapshot_at"`
+}
+
+// Graph model (G1). Identity is semantic and deliberately independent of absolute roots.
+const (
+	NodeKeyVersion         = byte(1)
+	GraphGenerationStaged  = "staged"
+	GraphGenerationActive  = "active"
+	GraphGenerationRetired = "retired"
+	GraphGenerationInvalid = "invalid"
+	GraphRecordAccepted    = "accepted"
+	GraphRecordPartial     = "partial"
+	GraphRecordBlocked     = "blocked"
+)
+
+var (
+	ErrNodeKeyInvalid         = errors.New("invalid NodeKey")
+	ErrNodeKeyCollision       = errors.New("NodeKey canonical collision")
+	ErrGraphGenerationInvalid = errors.New("invalid graph generation")
+	ErrGraphPointerConflict   = errors.New("graph active pointer conflict")
+)
+
+type NodeKeyFields struct {
+	RepositoryIdentity string `json:"repository_identity"`
+	BackendType        string `json:"backend_type"`
+	Language           string `json:"language"`
+	ProjectOrModule    string `json:"project_or_module"`
+	OwnerPath          string `json:"owner_path"`
+	SymbolKind         string `json:"symbol_kind"`
+	SemanticIdentity   string `json:"semantic_identity"`
+}
+
+type NodeKey = NodeKeyFields
+
+type NodeKeyError struct{ Field, Code, Message string }
+
+func (e *NodeKeyError) Error() string {
+	return fmt.Sprintf("NodeKey %s (%s): %s", e.Field, e.Code, e.Message)
+}
+func (e *NodeKeyError) Unwrap() error { return ErrNodeKeyInvalid }
+
+func NewNodeKey(fields NodeKeyFields) (NodeKey, error) {
+	fields.RepositoryIdentity, _ = normalizeText(fields.RepositoryIdentity)
+	if err := validateRepositoryIdentity(fields.RepositoryIdentity); err != nil {
+		return NodeKey{}, err
+	}
+	var err error
+	if fields.BackendType, err = normalizeEnum(fields.BackendType, "backend_type"); err != nil {
+		return NodeKey{}, err
+	}
+	if fields.Language, err = normalizeEnum(fields.Language, "language"); err != nil {
+		return NodeKey{}, err
+	}
+	if fields.ProjectOrModule, err = normalizeRequired(fields.ProjectOrModule, "project_or_module"); err != nil {
+		return NodeKey{}, err
+	}
+	if fields.OwnerPath, err = normalizeRelativeSlashPath(fields.OwnerPath); err != nil {
+		return NodeKey{}, err
+	}
+	if fields.SymbolKind, err = normalizeEnum(fields.SymbolKind, "symbol_kind"); err != nil {
+		return NodeKey{}, err
+	}
+	if fields.SemanticIdentity, err = normalizeRequired(fields.SemanticIdentity, "semantic_identity"); err != nil {
+		return NodeKey{}, err
+	}
+	return fields, nil
+}
+
+func (k NodeKey) Validate() error { _, err := NewNodeKey(k); return err }
+func (k NodeKey) CanonicalTuple() []string {
+	return []string{k.RepositoryIdentity, k.BackendType, k.Language, k.ProjectOrModule, k.OwnerPath, k.SymbolKind, k.SemanticIdentity}
+}
+
+func (k NodeKey) Serialize() ([]byte, error) {
+	normalized, err := NewNodeKey(k)
+	if err != nil {
+		return nil, err
+	}
+	fields := normalized.CanonicalTuple()
+	if len(fields) > 0xffff {
+		return nil, &NodeKeyError{Code: "field_count", Message: "too many fields"}
+	}
+	var b bytes.Buffer
+	b.WriteString("MILSP-NK")
+	b.WriteByte(NodeKeyVersion)
+	var count [2]byte
+	binary.BigEndian.PutUint16(count[:], uint16(len(fields)))
+	b.Write(count[:])
+	for i, value := range fields {
+		if len(value) > int(^uint32(0)) {
+			return nil, &NodeKeyError{Field: fmt.Sprint(i), Code: "field_too_large", Message: "field exceeds uint32 length"}
+		}
+		b.WriteByte(byte(i + 1))
+		var size [4]byte
+		binary.BigEndian.PutUint32(size[:], uint32(len(value)))
+		b.Write(size[:])
+		b.WriteString(value)
+	}
+	return b.Bytes(), nil
+}
+func EncodeNodeKey(k NodeKey) ([]byte, error) { return k.Serialize() }
+func (k NodeKey) Hash() ([]byte, error) {
+	encoded, err := k.Serialize()
+	if err != nil {
+		return nil, err
+	}
+	sum := sha256.Sum256(encoded)
+	return sum[:], nil
+}
+func HashNodeKey(k NodeKey) ([]byte, error) { return k.Hash() }
+func (k NodeKey) HashHex() (string, error)  { h, err := k.Hash(); return hex.EncodeToString(h), err }
+func CanonicalTupleEqual(a, b NodeKey) bool {
+	return a.CanonicalTuple()[0] == b.CanonicalTuple()[0] && strings.Join(a.CanonicalTuple(), "\x00") == strings.Join(b.CanonicalTuple(), "\x00")
+}
+func CompareNodeKeyCanonicalTuple(a, b NodeKey) error {
+	if CanonicalTupleEqual(a, b) {
+		return nil
+	}
+	return ErrNodeKeyCollision
+}
+
+func CrossRID(parts ...string) string {
+	h := sha256.New()
+	h.Write([]byte("mi-lsp-cross-rid-v1\x00"))
+	for _, part := range parts {
+		var size [4]byte
+		binary.BigEndian.PutUint32(size[:], uint32(len(part)))
+		h.Write(size[:])
+		h.Write([]byte(part))
+	}
+	return hex.EncodeToString(h.Sum(nil))
+}
+func GraphNodeCrossRID(parts ...string) string     { return "node:" + CrossRID(parts...) }
+func GraphEdgeCrossRID(parts ...string) string     { return "edge:" + CrossRID(parts...) }
+func GraphEvidenceCrossRID(parts ...string) string { return "evidence:" + CrossRID(parts...) }
+
+func normalizeText(value string) (string, error) {
+	if !utf8.ValidString(value) {
+		return "", &NodeKeyError{Code: "utf8", Message: "invalid UTF-8"}
+	}
+	return norm.NFC.String(value), nil
+}
+func normalizeRequired(value, field string) (string, error) {
+	value, err := normalizeText(strings.TrimSpace(value))
+	if err != nil {
+		return "", err
+	}
+	if value == "" {
+		return "", &NodeKeyError{Field: field, Code: "missing", Message: "field is required"}
+	}
+	for _, r := range value {
+		if unicode.IsControl(r) {
+			return "", &NodeKeyError{Field: field, Code: "control", Message: "control character is not allowed"}
+		}
+	}
+	return value, nil
+}
+func normalizeEnum(value, field string) (string, error) {
+	value, err := normalizeRequired(value, field)
+	if err != nil {
+		return "", err
+	}
+	return strings.ToLower(value), nil
+}
+func validateRepositoryIdentity(value string) error {
+	if value == "" {
+		return &NodeKeyError{Field: "repository_identity", Code: "missing", Message: "repository identity is required"}
+	}
+	if value == "." || value == ".." || strings.ContainsAny(value, "/\\\x00") {
+		return &NodeKeyError{Field: "repository_identity", Code: "path_like", Message: "repository identity must not be a path"}
+	}
+	if strings.HasPrefix(value, "~") || (len(value) >= 2 && value[1] == ':') {
+		return &NodeKeyError{Field: "repository_identity", Code: "absolute", Message: "absolute repository identity is not allowed"}
+	}
+	return nil
+}
+func normalizeRelativeSlashPath(value string) (string, error) {
+	value, err := normalizeText(value)
+	if err != nil {
+		return "", err
+	}
+	if value == "" {
+		return "", &NodeKeyError{Field: "owner_path", Code: "missing", Message: "owner path is required"}
+	}
+	if strings.ContainsRune(value, '\x00') || strings.ContainsRune(value, '\\') || strings.HasPrefix(value, "/") || strings.HasPrefix(value, "//") || (len(value) >= 2 && value[1] == ':') {
+		return "", &NodeKeyError{Field: "owner_path", Code: "absolute_or_separator", Message: "owner path must be slash-relative"}
+	}
+	parts := strings.Split(value, "/")
+	for _, part := range parts {
+		if part == "" || part == "." || part == ".." {
+			return "", &NodeKeyError{Field: "owner_path", Code: "segment", Message: "path contains an invalid segment"}
+		}
+		for _, r := range part {
+			if unicode.IsControl(r) {
+				return "", &NodeKeyError{Field: "owner_path", Code: "control", Message: "control character is not allowed"}
+			}
+		}
+	}
+	return value, nil
+}
+
+// Graph records are immutable once their generation is sealed.
+type GraphGeneration struct {
+	GenerationID       string    `json:"generation_id"`
+	WorkspaceRoot      string    `json:"workspace_root"`
+	SchemaVersion      int       `json:"schema_version"`
+	SourceFingerprint  string    `json:"source_fingerprint,omitempty"`
+	BackendVersion     string    `json:"backend_version,omitempty"`
+	CompilerVersion    string    `json:"compiler_version,omitempty"`
+	CreatedAt          time.Time `json:"created_at"`
+	SealedAt           time.Time `json:"sealed_at,omitempty"`
+	ActivatedAt        time.Time `json:"activated_at,omitempty"`
+	Status             string    `json:"status"`
+	OwnerID            string    `json:"owner_id,omitempty"`
+	OwnerPID           int       `json:"owner_pid,omitempty"`
+	PriorGenerationID  string    `json:"prior_generation_id,omitempty"`
+	MigrationID        string    `json:"migration_id,omitempty"`
+	ExpectedNodes      int       `json:"expected_nodes,omitempty"`
+	ExpectedEdges      int       `json:"expected_edges,omitempty"`
+	ExpectedEvidence   int       `json:"expected_evidence,omitempty"`
+	ExpectedUnresolved int       `json:"expected_unresolved,omitempty"`
+	Digest             string    `json:"digest,omitempty"`
+	Error              string    `json:"error,omitempty"`
+}
+type GraphNodeRecord struct {
+	GenerationID      string  `json:"generation_id"`
+	NodeKey           NodeKey `json:"node_key"`
+	Kind              string  `json:"kind"`
+	DisplayName       string  `json:"display_name"`
+	DeclarationPath   string  `json:"declaration_path"`
+	DeclarationStart  int     `json:"declaration_start,omitempty"`
+	DeclarationEnd    int     `json:"declaration_end,omitempty"`
+	SourceFingerprint string  `json:"source_fingerprint,omitempty"`
+	Backend           string  `json:"backend"`
+	CompilerVersion   string  `json:"compiler_version,omitempty"`
+	Confidence        string  `json:"confidence,omitempty"`
+	Status            string  `json:"status"`
+	CrossRID          string  `json:"cross_rid"`
+	Provenance        string  `json:"provenance,omitempty"`
+}
+type GraphEdgeRecord struct {
+	GenerationID string  `json:"generation_id"`
+	From         NodeKey `json:"from"`
+	To           NodeKey `json:"to"`
+	Relation     string  `json:"relation"`
+	ClaimScope   string  `json:"claim_scope"`
+	EvidenceID   string  `json:"evidence_id,omitempty"`
+	SourcePath   string  `json:"source_path,omitempty"`
+	SourceStart  int     `json:"source_start,omitempty"`
+	SourceEnd    int     `json:"source_end,omitempty"`
+	Provenance   string  `json:"provenance"`
+	Confidence   string  `json:"confidence,omitempty"`
+	Status       string  `json:"status"`
+	CrossRID     string  `json:"cross_rid"`
+}
+type GraphEvidence struct {
+	EvidenceID       string `json:"evidence_id"`
+	GenerationID     string `json:"generation_id"`
+	SourceURI        string `json:"source_uri"`
+	SourceRange      string `json:"source_range,omitempty"`
+	Backend          string `json:"backend"`
+	ExtractorVersion string `json:"extractor_version"`
+	Digest           string `json:"digest"`
+	ObservedClaim    string `json:"observed_claim"`
+	CrossRID         string `json:"cross_rid"`
+	Status           string `json:"status,omitempty"`
+}
+type GraphUnresolved struct {
+	UnresolvedID string `json:"unresolved_id"`
+	GenerationID string `json:"generation_id"`
+	ReasonCode   string `json:"reason_code"`
+	Selector     string `json:"selector,omitempty"`
+	CrossRID     string `json:"cross_rid"`
+	RecoveryHint string `json:"recovery_hint,omitempty"`
+}
+type GraphGenerationValidation struct {
+	GenerationID                       string   `json:"generation_id"`
+	Nodes, Edges, Evidence, Unresolved int      `json:"nodes,omitempty"`
+	Digest                             string   `json:"digest"`
+	Valid                              bool     `json:"valid"`
+	Errors                             []string `json:"errors,omitempty"`
 }
