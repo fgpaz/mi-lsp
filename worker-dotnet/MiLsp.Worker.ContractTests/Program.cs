@@ -6,7 +6,7 @@ static WorkerRequest Request(string root, string project, string? repository = "
     "mi-lsp-v1.1", "graph_observe", root, "fixture", "roslyn", "repo", "repo", root, "fixture", project, "project", new Dictionary<string, JsonElement>
     {
         ["repository_identity"] = JsonSerializer.SerializeToElement(repository),
-        ["project_or_module"] = JsonSerializer.SerializeToElement("Fixture")
+        ["project_or_module"] = JsonSerializer.SerializeToElement(Path.GetRelativePath(root, project).Replace('\\', '/'))
     });
 
 var root = Path.Combine(Path.GetTempPath(), "milsp-g2-" + Guid.NewGuid().ToString("N"));
