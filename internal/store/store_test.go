@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"database/sql"
+	"encoding/hex"
 	"errors"
 	"os"
 	"path/filepath"
@@ -667,6 +668,27 @@ func TestOpenReadOnly_EnforcesPragmasOnPoolConnections(t *testing.T) {
 	}
 }
 
+func TestGraphIdentityUsesDigestAndTypedRIDs(t *testing.T) {
+	key, err := model.NewNodeKey(model.NodeKeyFields{RepositoryIdentity: "https://Example.com/a.git", BackendType: "Go", Language: "Go", ProjectOrModule: "m", OwnerPath: "a.go", SymbolKind: "function", SemanticIdentity: "main"})
+	if err != nil {
+		t.Fatalf("NewNodeKey: %v", err)
+	}
+	payload, err := key.Serialize()
+	if err != nil {
+		t.Fatal(err)
+	}
+	hash, err := key.Hash()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Equal(payload, hash) || len(hash) != 32 {
+		t.Fatalf("node key must persist SHA-256 digest: payload=%x hash=%x", payload, hash)
+	}
+	if got := model.GraphNodeCrossRID(hex.EncodeToString(hash)); got != "milsp:gph-node:v1:"+hex.EncodeToString(hash) {
+		t.Fatalf("node RID=%s", got)
+	}
+}
+
 func TestGraphNodeKeyGoldenAndValidation(t *testing.T) {
 	key, err := model.NewNodeKey(model.NodeKeyFields{
 		RepositoryIdentity: "repo-stable",
@@ -722,14 +744,14 @@ func TestGraphSchemaAndAtomicGenerationLifecycle(t *testing.T) {
 		t.Fatal(err)
 	}
 	evidence := model.GraphEvidence{EvidenceID: "ev1", GenerationID: "g1", SourceURI: "main.go", SourceRange: "1:1-3:1", Backend: "go", ExtractorVersion: "v1", Digest: "digest", ObservedClaim: "declared", CrossRID: model.GraphEvidenceCrossRID("g1", "ev1")}
-	node := model.GraphNodeRecord{GenerationID: "g1", NodeKey: key, Kind: "function", DisplayName: "main", DeclarationPath: "main.go", DeclarationStart: 1, DeclarationEnd: 3, SourceFingerprint: "src", Backend: "go", CompilerVersion: "go1", Confidence: "high", Status: model.GraphRecordAccepted, CrossRID: model.GraphNodeCrossRID("g1", "node"), Provenance: "compiler"}
+	node := model.GraphNodeRecord{GenerationID: "g1", NodeKey: key, Kind: "function", DisplayName: "main", DeclarationPath: "main.go", DeclarationStart: 1, DeclarationEnd: 3, SourceFingerprint: "src", Backend: "go", CompilerVersion: "go1", Confidence: "high", Status: model.GraphRecordAccepted, CrossRID: "", Provenance: "compiler"}
 	if err := InsertGraphEvidence(ctx, db, evidence); err != nil {
 		t.Fatal(err)
 	}
 	if err := InsertGraphNode(ctx, db, node); err != nil {
 		t.Fatal(err)
 	}
-	if err := InsertGraphEdge(ctx, db, model.GraphEdgeRecord{GenerationID: "g1", From: key, To: key, Relation: "calls", ClaimScope: "symbol", EvidenceID: "ev1", Provenance: "compiler", Confidence: "high", Status: model.GraphRecordAccepted, CrossRID: model.GraphEdgeCrossRID("g1", "edge")}); err != nil {
+	if err := InsertGraphEdge(ctx, db, model.GraphEdgeRecord{GenerationID: "g1", From: key, To: key, Relation: "calls", ClaimScope: "symbol", EvidenceID: "ev1", Provenance: "compiler", Confidence: "high", Status: model.GraphRecordAccepted, CrossRID: ""}); err != nil {
 		t.Fatal(err)
 	}
 	if err := SealGraphGeneration(ctx, db, "g1"); err != nil {
@@ -765,7 +787,7 @@ func TestGraphValidationDetectsCorruptionAndPointerConflict(t *testing.T) {
 		t.Fatal(err)
 	}
 	key, _ := model.NewNodeKey(model.NodeKeyFields{RepositoryIdentity: "r", BackendType: "go", Language: "go", ProjectOrModule: "m", OwnerPath: "a.go", SymbolKind: "var", SemanticIdentity: "x"})
-	if err := InsertGraphNode(ctx, db, model.GraphNodeRecord{GenerationID: "g-corrupt", NodeKey: key, Kind: "var", DisplayName: "x", DeclarationPath: "a.go", Backend: "go", Status: model.GraphRecordAccepted, CrossRID: model.GraphNodeCrossRID("node"), Provenance: "compiler"}); err != nil {
+	if err := InsertGraphNode(ctx, db, model.GraphNodeRecord{GenerationID: "g-corrupt", NodeKey: key, Kind: "var", DisplayName: "x", DeclarationPath: "a.go", Backend: "go", Status: model.GraphRecordAccepted, CrossRID: "", Provenance: "compiler"}); err != nil {
 		t.Fatal(err)
 	}
 	if err := SealGraphGeneration(ctx, db, "g-corrupt"); err != nil {

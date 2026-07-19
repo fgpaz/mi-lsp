@@ -234,13 +234,20 @@ CREATE TABLE IF NOT EXISTS graph_evidence (
 `
 const graphEdgesDDL = `
 CREATE TABLE IF NOT EXISTS graph_edges (
-    generation_id TEXT NOT NULL, from_node_key BLOB NOT NULL, to_node_key BLOB NOT NULL,
-    relation TEXT NOT NULL, claim_scope TEXT NOT NULL, evidence_id TEXT, source_path TEXT, source_start INTEGER NOT NULL DEFAULT 0,
+    generation_id TEXT NOT NULL, edge_key BLOB NOT NULL, from_node_key BLOB NOT NULL, to_node_key BLOB NOT NULL,
+    relation TEXT NOT NULL, claim_scope TEXT NOT NULL, evidence_id TEXT NOT NULL DEFAULT '', source_path TEXT, source_start INTEGER NOT NULL DEFAULT 0,
     source_end INTEGER NOT NULL DEFAULT 0, provenance TEXT NOT NULL, confidence TEXT,
     status TEXT NOT NULL, cross_rid TEXT NOT NULL,
-    PRIMARY KEY(generation_id, from_node_key, to_node_key, relation, claim_scope),
+    PRIMARY KEY(generation_id, edge_key), UNIQUE(generation_id, from_node_key, to_node_key, relation, claim_scope),
     FOREIGN KEY(generation_id, from_node_key) REFERENCES graph_nodes(generation_id, node_key) ON DELETE CASCADE,
-    FOREIGN KEY(generation_id, to_node_key) REFERENCES graph_nodes(generation_id, node_key) ON DELETE CASCADE,
+    FOREIGN KEY(generation_id, to_node_key) REFERENCES graph_nodes(generation_id, node_key) ON DELETE CASCADE
+);
+`
+const graphEdgeEvidenceDDL = `
+CREATE TABLE IF NOT EXISTS graph_edge_evidence (
+    generation_id TEXT NOT NULL, edge_key BLOB NOT NULL, evidence_id TEXT NOT NULL,
+    ordinal INTEGER NOT NULL, PRIMARY KEY(generation_id, edge_key, evidence_id),
+    FOREIGN KEY(generation_id, edge_key) REFERENCES graph_edges(generation_id, edge_key) ON DELETE CASCADE,
     FOREIGN KEY(generation_id, evidence_id) REFERENCES graph_evidence(generation_id, evidence_id) ON DELETE RESTRICT
 );
 `
@@ -266,7 +273,7 @@ CREATE TABLE IF NOT EXISTS graph_migrations (
 `
 
 func EnsureSchema(db *sql.DB) error {
-	statements := []string{reposDDL, entrypointsDDL, symbolsDDL, filesDDL, docsDDL, docsFtsDDL, docEdgesDDL, docMentionsDDL, docSourceBlocksDDL, docSourceRecordsDDL, metaDDL, indexJobsDDL, indexGenerationsDDL, wikiChunkEmbeddingsDDL, graphGenerationsDDL, graphNodesDDL, graphEvidenceDDL, graphEdgesDDL, graphUnresolvedDDL, graphOwnerStateDDL, graphMigrationsDDL}
+	statements := []string{reposDDL, entrypointsDDL, symbolsDDL, filesDDL, docsDDL, docsFtsDDL, docEdgesDDL, docMentionsDDL, docSourceBlocksDDL, docSourceRecordsDDL, metaDDL, indexJobsDDL, indexGenerationsDDL, wikiChunkEmbeddingsDDL, graphGenerationsDDL, graphNodesDDL, graphEvidenceDDL, graphEdgesDDL, graphEdgeEvidenceDDL, graphUnresolvedDDL, graphOwnerStateDDL, graphMigrationsDDL}
 	for _, stmt := range statements {
 		if _, err := db.Exec(stmt); err != nil {
 			return err
@@ -322,6 +329,9 @@ END`,
 		return err
 	}
 	if err := ensureColumn(db, "index_jobs", "files_total", "INTEGER NOT NULL DEFAULT 0"); err != nil {
+		return err
+	}
+	if err := ensureColumn(db, "graph_migrations", "compatibility_state", "TEXT NOT NULL DEFAULT 'legacy-preserved-no-dual-write'"); err != nil {
 		return err
 	}
 

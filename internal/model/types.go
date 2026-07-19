@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"net/url"
 	"strings"
 	"time"
 	"unicode"
@@ -1004,11 +1005,13 @@ func (e *NodeKeyError) Error() string {
 func (e *NodeKeyError) Unwrap() error { return ErrNodeKeyInvalid }
 
 func NewNodeKey(fields NodeKeyFields) (NodeKey, error) {
-	fields.RepositoryIdentity, _ = normalizeText(fields.RepositoryIdentity)
+	var err error
+	if fields.RepositoryIdentity, err = NormalizeRepositoryIdentity(fields.RepositoryIdentity); err != nil {
+		return NodeKey{}, err
+	}
 	if err := validateRepositoryIdentity(fields.RepositoryIdentity); err != nil {
 		return NodeKey{}, err
 	}
-	var err error
 	if fields.BackendType, err = normalizeEnum(fields.BackendType, "backend_type"); err != nil {
 		return NodeKey{}, err
 	}
@@ -1094,9 +1097,24 @@ func CrossRID(parts ...string) string {
 	}
 	return hex.EncodeToString(h.Sum(nil))
 }
-func GraphNodeCrossRID(parts ...string) string     { return "node:" + CrossRID(parts...) }
-func GraphEdgeCrossRID(parts ...string) string     { return "edge:" + CrossRID(parts...) }
-func GraphEvidenceCrossRID(parts ...string) string { return "evidence:" + CrossRID(parts...) }
+func GraphNodeCrossRID(parts ...string) string {
+	if len(parts) == 1 && len(parts[0]) == sha256.Size*2 {
+		return "milsp:gph-node:v1:" + strings.ToLower(parts[0])
+	}
+	return "milsp:gph-node:v1:" + CrossRID(parts...)
+}
+func GraphEdgeCrossRID(parts ...string) string {
+	if len(parts) == 1 && len(parts[0]) == sha256.Size*2 {
+		return "milsp:gph-edge:v1:" + strings.ToLower(parts[0])
+	}
+	return "milsp:gph-edge:v1:" + CrossRID(parts...)
+}
+func GraphEvidenceCrossRID(parts ...string) string {
+	if len(parts) == 1 && len(parts[0]) == sha256.Size*2 {
+		return "milsp:gph-evidence:v1:" + strings.ToLower(parts[0])
+	}
+	return "milsp:gph-evidence:v1:" + CrossRID(parts...)
+}
 
 func normalizeText(value string) (string, error) {
 	if !utf8.ValidString(value) {
@@ -1126,14 +1144,36 @@ func normalizeEnum(value, field string) (string, error) {
 	}
 	return strings.ToLower(value), nil
 }
+func NormalizeRepositoryIdentity(value string) (string, error) {
+	value, err := normalizeText(strings.TrimSpace(value))
+	if err != nil {
+		return "", err
+	}
+	if value == "" {
+		return "", &NodeKeyError{Field: "repository_identity", Code: "missing", Message: "repository identity is required"}
+	}
+	if u, parseErr := url.Parse(value); parseErr == nil && u.Scheme != "" && u.Host != "" {
+		if u.User != nil || u.RawQuery != "" || u.Fragment != "" {
+			return "", &NodeKeyError{Field: "repository_identity", Code: "secret_or_decorated_origin", Message: "repository origin contains credentials or query data"}
+		}
+		u.Host = strings.ToLower(u.Host)
+		u.Path = strings.TrimSuffix(u.Path, ".git")
+		if u.Path == "" {
+			return "", &NodeKeyError{Field: "repository_identity", Code: "folder_only", Message: "repository origin must identify a repository"}
+		}
+		return strings.TrimSuffix(u.String(), "/"), nil
+	}
+	return value, nil
+}
+
 func validateRepositoryIdentity(value string) error {
 	if value == "" {
 		return &NodeKeyError{Field: "repository_identity", Code: "missing", Message: "repository identity is required"}
 	}
-	if value == "." || value == ".." || strings.ContainsAny(value, "/\\\x00") {
+	if value == "." || value == ".." || strings.ContainsRune(value, '\x00') {
 		return &NodeKeyError{Field: "repository_identity", Code: "path_like", Message: "repository identity must not be a path"}
 	}
-	if strings.HasPrefix(value, "~") || (len(value) >= 2 && value[1] == ':') {
+	if strings.HasPrefix(value, "~") || strings.HasPrefix(value, "/") || (len(value) >= 2 && value[1] == ':') {
 		return &NodeKeyError{Field: "repository_identity", Code: "absolute", Message: "absolute repository identity is not allowed"}
 	}
 	return nil
@@ -1237,6 +1277,33 @@ type GraphUnresolved struct {
 	CrossRID     string `json:"cross_rid"`
 	RecoveryHint string `json:"recovery_hint,omitempty"`
 }
+
+func GraphEvidenceCrossRIDFromEdge(edgeKey []byte, digest string, ordinal int) string {
+	h := sha256.New()
+	h.Write([]byte("MILSP-EVIDENCE-RID/v1"))
+	var n [4]byte
+	for _, part := range [][]byte{edgeKey, []byte(digest)} {
+		binary.BigEndian.PutUint32(n[:], uint32(len(part)))
+		h.Write(n[:])
+		h.Write(part)
+	}
+	binary.BigEndian.PutUint32(n[:], uint32(ordinal))
+	h.Write(n[:])
+	return "milsp:gph-evidence:v1:" + hex.EncodeToString(h.Sum(nil))
+}
+
+func GraphGenerationID(schema int, workspace, source, backend, compiler, digest string) string {
+	h := sha256.New()
+	h.Write([]byte("MILSP-GENERATION/v1"))
+	for _, v := range []string{fmt.Sprint(schema), workspace, source, backend, compiler, digest} {
+		var n [4]byte
+		binary.BigEndian.PutUint32(n[:], uint32(len(v)))
+		h.Write(n[:])
+		h.Write([]byte(v))
+	}
+	return "gph:v1:" + hex.EncodeToString(h.Sum(nil))
+}
+
 type GraphGenerationValidation struct {
 	GenerationID                       string   `json:"generation_id"`
 	Nodes, Edges, Evidence, Unresolved int      `json:"nodes,omitempty"`
