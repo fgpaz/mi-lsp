@@ -606,6 +606,15 @@ func nodeByRef(batch model.GraphObservationBatch, ref string) model.GraphObserva
 	}
 	return model.GraphObservationNode{}
 }
+func graphNodeByIdentityOwner(batch model.GraphObservationBatch, identity, owner string) (model.GraphObservationNode, bool) {
+	for _, node := range batch.Nodes {
+		if node.Key.SemanticIdentity == identity && node.Key.OwnerPath == owner {
+			return node, true
+		}
+	}
+	return model.GraphObservationNode{}, false
+}
+
 func nodeByIdentity(batch model.GraphObservationBatch, identity string) (model.GraphObservationNode, bool) {
 	for _, n := range batch.Nodes {
 		if n.Key.SemanticIdentity == identity {
@@ -631,6 +640,57 @@ func hasGoGraphEdge(batch model.GraphObservationBatch, relation string) bool {
 		}
 	}
 	return false
+}
+
+func TestGoGraphStableSyntheticPackageAndFileLocalInit(t *testing.T) {
+	root := t.TempDir()
+	writeGoTestFile(t, root, "go.mod", "module example.com/stablepkg\n\ngo 1.24.4\n")
+	writeGoTestFile(t, root, "z.go", "package stablepkg\nfunc init() {}\nfunc F() {}\n")
+	req := GoGraphObservationRequest{Root: root, RepositoryIdentity: "example.com/stablepkg", ProjectOrModule: "go.mod"}
+	before, err := ObserveGoGraph(context.Background(), req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pkgBefore, ok := graphNodeByIdentity(before, "pkg:example.com/stablepkg")
+	if !ok || pkgBefore.Key.OwnerPath != "@package/example.com/stablepkg" {
+		t.Fatalf("package owner = %#v", pkgBefore.Key)
+	}
+	initBefore, ok := graphNodeByIdentity(before, "func:example.com/stablepkg:init:0")
+	if !ok {
+		t.Fatal("missing init")
+	}
+	writeGoTestFile(t, root, "a.go", "package stablepkg\nfunc init() {}\n")
+	after, err := ObserveGoGraph(context.Background(), req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pkgAfter, ok := graphNodeByIdentity(after, "pkg:example.com/stablepkg")
+	if !ok || pkgAfter.Ref != pkgBefore.Ref || pkgAfter.SourceDigest == pkgBefore.SourceDigest {
+		t.Fatal("package identity/digest not stable/changed")
+	}
+	initAfter, ok := graphNodeByIdentityOwner(after, "func:example.com/stablepkg:init:0", "z.go")
+	if !ok || initAfter.Ref != initBefore.Ref {
+		t.Fatal("file-local init identity shifted")
+	}
+}
+
+func TestGoGraphUnknownEndpointIsUnresolved(t *testing.T) {
+	root := t.TempDir()
+	writeGoTestFile(t, root, "go.mod", "module example.com/missing\n\ngo 1.24.4\n")
+	writeGoTestFile(t, root, "main.go", "package missing\nfunc F() { Missing() }\n")
+	batch, err := ObserveGoGraph(context.Background(), GoGraphObservationRequest{Root: root, RepositoryIdentity: "example.com/missing", ProjectOrModule: "go.mod"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, u := range batch.Unresolved {
+		if u.ReasonCode == "target_endpoint_missing" && (u.Capability == "calls" || u.Capability == "references") {
+			found = true
+		}
+	}
+	if !found || batch.ReadyForStaging() == nil {
+		t.Fatalf("missing unresolved endpoint: %#v", batch.Unresolved)
+	}
 }
 
 func assertGoSymbol(t *testing.T, items []model.SymbolRecord, name string, kind string, parent string, scope string) {

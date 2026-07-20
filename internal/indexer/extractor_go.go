@@ -249,26 +249,27 @@ type goGraphDecl struct {
 }
 
 type goGraphBuilder struct {
-	batch        model.GraphObservationBatch
-	root         string
-	moduleRoot   string
-	modulePath   string
-	packages     map[string]*goGraphPackage
-	local        map[string]*goGraphPackage
-	objectRefs   map[types.Object]string
-	nodes        map[string]model.GraphObservationNode
-	edges        map[string]model.GraphObservationEdge
-	edgeDigests  map[string]model.GraphDigest
-	evidence     []model.GraphObservationEvidence
-	omissions    map[string]model.GraphObservationOmission
-	unresolved   map[string]model.GraphObservationUnresolved
-	evidenceOrd  map[string]int
-	evidenceKeys map[string]bool
-	exports      map[string]string
-	partial      bool
-	importCache  map[string]*types.Package
-	initOrdinals map[string]int
-	sourceDomain []byte
+	batch              model.GraphObservationBatch
+	root               string
+	moduleRoot         string
+	modulePath         string
+	packages           map[string]*goGraphPackage
+	local              map[string]*goGraphPackage
+	objectRefs         map[types.Object]string
+	nodes              map[string]model.GraphObservationNode
+	edges              map[string]model.GraphObservationEdge
+	edgeDigests        map[string]model.GraphDigest
+	evidence           []model.GraphObservationEvidence
+	omissions          map[string]model.GraphObservationOmission
+	unresolved         map[string]model.GraphObservationUnresolved
+	evidenceOrd        map[string]int
+	evidenceKeys       map[string]bool
+	exports            map[string]string
+	partial            bool
+	importCache        map[string]*types.Package
+	initOrdinals       map[string]int
+	typeErrorPositions map[string][]token.Pos
+	sourceDomain       []byte
 }
 
 const goGraphExtractorVersion = "go-compiler-observation-v1"
@@ -316,7 +317,7 @@ func ObserveGoGraph(ctx context.Context, req GoGraphObservationRequest) (model.G
 		root: root, moduleRoot: moduleRoot, modulePath: modulePath,
 		packages: map[string]*goGraphPackage{}, local: map[string]*goGraphPackage{}, objectRefs: map[types.Object]string{},
 		nodes: map[string]model.GraphObservationNode{}, edges: map[string]model.GraphObservationEdge{}, edgeDigests: map[string]model.GraphDigest{}, omissions: map[string]model.GraphObservationOmission{},
-		unresolved: map[string]model.GraphObservationUnresolved{}, evidenceOrd: map[string]int{}, evidenceKeys: map[string]bool{}, exports: map[string]string{}, importCache: map[string]*types.Package{}, initOrdinals: map[string]int{},
+		unresolved: map[string]model.GraphObservationUnresolved{}, evidenceOrd: map[string]int{}, evidenceKeys: map[string]bool{}, exports: map[string]string{}, importCache: map[string]*types.Package{}, initOrdinals: map[string]int{}, typeErrorPositions: map[string][]token.Pos{},
 		sourceDomain: []byte(fmt.Sprintf("go-graph-source-v1:%d:%s:%d:%x;", len(project), project, len(modBytes), modBytes)),
 		batch:        model.GraphObservationBatch{SchemaVersion: model.GraphObservationSchemaVersion, WorkspaceIdentity: req.RepositoryIdentity, RepositoryIdentity: req.RepositoryIdentity, Backend: "go", BackendVersion: runtime.Version(), ExtractorVersion: goGraphExtractorVersion, ProjectOrModule: project, ConfigFingerprint: configDigest, Capabilities: goGraphCapabilities()},
 	}
@@ -330,14 +331,17 @@ func ObserveGoGraph(ctx context.Context, req GoGraphObservationRequest) (model.G
 		return builder.finish()
 	}
 	listed, listErr := goGraphList(ctx, moduleRoot, tags, goos, goarch)
-	if listErr != nil && len(listed) == 0 {
+	if listErr != nil {
 		builder.partial = true
 		if errors.Is(listErr, context.Canceled) || errors.Is(listErr, context.DeadlineExceeded) {
 			builder.addPartialOmissions(project, "cancelled")
 			builder.batch.SourceFingerprint = builder.sourceFingerprint()
 			return builder.finish()
 		}
-		return empty, goGraphError("GPH_GO_LIST_UNAVAILABLE", "go_list", "go list could not produce package metadata")
+		if len(listed) == 0 {
+			return empty, goGraphError("GPH_GO_LIST_UNAVAILABLE", "go_list", "go list could not produce package metadata")
+		}
+		builder.addPartialOmissions(project, "listing_error")
 	}
 	for _, p := range listed {
 		if p.ImportPath != "" && p.Export != "" {
@@ -773,6 +777,44 @@ func (b *goGraphBuilder) addUnresolved(owner, subject, capability, reason string
 	b.unresolved[key] = model.GraphObservationUnresolved{Ref: model.UnresolvedRID(d), OwnerPath: owner, SubjectKind: subject, Capability: capability, SelectorDigest: d, ReasonCode: reason, Backend: "go", SourceDigest: source, RecoveryHintCode: "retry"}
 }
 
+func goGraphPackageSourceDigest(p *goGraphPackage) model.GraphDigest {
+	var out strings.Builder
+	for _, f := range p.files {
+		fmt.Fprintf(&out, "%d:%s:%d:%x;", len(f.rel), f.rel, len(f.data), f.data)
+	}
+	return goGraphDigest([]byte("go-package-source-v1:" + out.String()))
+}
+
+func (b *goGraphBuilder) addPackageNode(p *goGraphPackage) string {
+	if p == nil || len(p.files) == 0 || p.files[0].file == nil {
+		return ""
+	}
+	file := &p.files[0]
+	owner := "@package/" + p.list.ImportPath
+	identity := "pkg:" + p.list.ImportPath
+	key := model.NodeKeyFields{RepositoryIdentity: b.batch.RepositoryIdentity, BackendType: "go", Language: "go", ProjectOrModule: b.batch.ProjectOrModule, OwnerPath: owner, SymbolKind: "package", SemanticIdentity: identity}
+	digest, err := model.HashNodeKey(key)
+	if err != nil {
+		return ""
+	}
+	ref := model.NodeRID(digest)
+	if existing, ok := b.nodes[ref]; ok {
+		return existing.Ref
+	}
+	rng := goGraphRange(p.fset, file.file.Pos(), file.file.End())
+	if rng.StartLine < 1 || rng.StartColumn < 1 || rng.EndLine < rng.StartLine || rng.EndColumn < 1 {
+		return ""
+	}
+	source := goGraphPackageSourceDigest(p)
+	n := model.GraphObservationNode{Ref: ref, Key: key, DisplayName: p.list.ImportPath, SourceDigest: source, ClaimStatus: model.GraphRecordExtracted, Resolution: "go/ast"}
+	b.nodes[ref] = n
+	d := &goGraphDecl{ref: ref, keyDigest: digest, node: file.file, kind: "package", identity: identity, owner: owner, name: p.list.ImportPath, pkg: p, file: file, rng: rng}
+	p.nodes = append(p.nodes, d)
+	obs := goGraphDigest([]byte(fmt.Sprintf("package-node-claim-v1\\x00%s\\x00%s\\x00%d:%d-%d:%d\\x00%s", ref, owner, rng.StartLine, rng.StartColumn, rng.EndLine, rng.EndColumn, source.String())))
+	b.addEvidence(ref, "", owner, rng, source, obs, "declaration", model.GraphRecordExtracted)
+	return ref
+}
+
 func (b *goGraphBuilder) extractDeclarations() {
 	paths := make([]string, 0, len(b.local))
 	for path := range b.local {
@@ -785,8 +827,7 @@ func (b *goGraphBuilder) extractDeclarations() {
 		if len(p.files) == 0 {
 			continue
 		}
-		packageFile := &p.files[0]
-		b.addNode(p, packageFile, packageFile.file, "package", "pkg:"+importPath, importPath, "", model.GraphRecordExtracted, "go/ast")
+		b.addPackageNode(p)
 		for i := range p.files {
 			b.extractFileDeclarations(p, &p.files[i])
 		}
@@ -804,7 +845,7 @@ func (b *goGraphBuilder) extractFileDeclarations(p *goGraphPackage, f *goGraphFi
 			}
 			ordinal := ""
 			if d.Name.Name == "init" && parent == "" {
-				key := p.list.ImportPath + ":init"
+				key := p.list.ImportPath + ":" + f.rel + ":init"
 				ordinal = fmt.Sprintf(":%d", b.initOrdinals[key])
 				b.initOrdinals[key]++
 			}
@@ -989,7 +1030,15 @@ func (b *goGraphBuilder) typeCheckAll(ctx context.Context) {
 		}
 		info := &types.Info{Defs: map[*ast.Ident]types.Object{}, Uses: map[*ast.Ident]types.Object{}, Selections: map[*ast.SelectorExpr]*types.Selection{}, Types: map[ast.Expr]types.TypeAndValue{}}
 		typeError := false
-		cfg := &types.Config{Importer: goGraphImporter{local: b.local, exports: b.exports, fallback: importer.Default(), cache: b.importCache}, Error: func(error) { typeError = true; b.partial = true }}
+		cfg := &types.Config{Importer: goGraphImporter{local: b.local, exports: b.exports, fallback: importer.Default(), cache: b.importCache}, Error: func(err error) {
+			typeError = true
+			b.partial = true
+			if e, ok := err.(types.Error); ok {
+				b.typeErrorPositions[path] = append(b.typeErrorPositions[path], e.Pos)
+			} else if e, ok := err.(*types.Error); ok && e != nil {
+				b.typeErrorPositions[path] = append(b.typeErrorPositions[path], e.Pos)
+			}
+		}}
 		files := make([]*ast.File, 0, len(p.files))
 		for i := range p.files {
 			files = append(files, p.files[i].file)
@@ -1088,13 +1137,27 @@ func (b *goGraphBuilder) extractTypedRelations(ctx context.Context) {
 				b.addFileIssue(f.rel, "cancelled")
 				return
 			}
-			resolve := func(obj types.Object, capability string, owner string) string {
+			hasTypeErrorAt := func(pos token.Pos) bool {
+				for _, candidate := range b.typeErrorPositions[p.list.ImportPath] {
+					if candidate == pos {
+						return true
+					}
+				}
+				return false
+			}
+			resolve := func(obj types.Object, capability string, owner string, pos token.Pos) string {
 				subject := "package"
 				if node, ok := b.nodes[owner]; ok {
 					subject = node.Key.SymbolKind
 				}
 				if obj == nil {
-					b.addOmission(f.rel, subject, capability, "unsupported_symbol_kind")
+					if hasTypeErrorAt(pos) {
+						b.partial = true
+						source := goGraphDigest(f.data)
+						b.addUnresolved(f.rel, subject, capability, "target_endpoint_missing", &source)
+					} else {
+						b.addOmission(f.rel, subject, capability, "unsupported_symbol_kind")
+					}
 					return ""
 				}
 				if ref := b.objectRefs[obj]; ref != "" {
@@ -1143,7 +1206,8 @@ func (b *goGraphBuilder) extractTypedRelations(ctx context.Context) {
 				}
 				owner := b.ownerFor(p, n.Pos())
 				if owner == "" {
-					b.addOmission(f.rel, "package", "references", "owner_endpoint_missing")
+					b.partial = true
+					b.addUnresolved(f.rel, "package", "references", "owner_endpoint_missing", b.targetSourceDigest(p, n.Pos()))
 					return true
 				}
 				switch x := n.(type) {
@@ -1151,7 +1215,7 @@ func (b *goGraphBuilder) extractTypedRelations(ctx context.Context) {
 					if p.posRefs[x.Pos()] != "" {
 						return true
 					}
-					if target := resolve(p.info.Uses[x], "references", owner); target != "" {
+					if target := resolve(p.info.Uses[x], "references", owner, x.Pos()); target != "" {
 						b.addEdge(owner, target, "references", f.rel, goGraphRange(p.fset, x.Pos(), x.End()), goGraphDigest(f.data), model.GraphRecordExact, "go/types")
 					}
 				case *ast.SelectorExpr:
@@ -1161,7 +1225,7 @@ func (b *goGraphBuilder) extractTypedRelations(ctx context.Context) {
 					} else {
 						obj = p.info.Uses[x.Sel]
 					}
-					if target := resolve(obj, "references", owner); target != "" {
+					if target := resolve(obj, "references", owner, x.Sel.Pos()); target != "" {
 						b.addEdge(owner, target, "references", f.rel, goGraphRange(p.fset, x.Sel.Pos(), x.Sel.End()), goGraphDigest(f.data), model.GraphRecordExact, "go/types")
 					}
 				case *ast.CallExpr:
@@ -1188,7 +1252,7 @@ func (b *goGraphBuilder) extractTypedRelations(ctx context.Context) {
 							obj = p.info.Uses[y.Sel]
 						}
 					}
-					if target := resolve(obj, "calls", owner); target != "" {
+					if target := resolve(obj, "calls", owner, x.Pos()); target != "" {
 						b.addEdge(owner, target, "calls", f.rel, goGraphRange(p.fset, x.Pos(), x.End()), goGraphDigest(f.data), model.GraphRecordExact, "go/types")
 					}
 				}
