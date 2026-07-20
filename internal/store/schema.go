@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"strings"
@@ -353,6 +354,9 @@ func normalizeSchemaSQL(s string) string {
 	return strings.Join(strings.Fields(s), " ")
 }
 func graphSchemaPreflight(db *sql.DB) error {
+	if db == nil {
+		return fmt.Errorf("graph schema database is required")
+	}
 	rows, err := db.Query(`SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'graph_%'`)
 	if err != nil {
 		return err
@@ -365,6 +369,9 @@ func graphSchemaPreflight(db *sql.DB) error {
 			return err
 		}
 		present[n] = true
+	}
+	if err := rows.Err(); err != nil {
+		return err
 	}
 	if len(present) == 0 {
 		return nil
@@ -402,25 +409,40 @@ func ensureGraphSchema(db *sql.DB) error {
 	if err != nil {
 		return fmt.Errorf("begin graph schema migration: %w", err)
 	}
-	rollback := func(cause error) error { _ = tx.Rollback(); return cause }
-	for name, ddl := range graphTables {
-		if _, err := tx.Exec(ddl); err != nil {
-			return rollback(fmt.Errorf("create %s: %w", name, err))
-		}
-	}
-	if _, err := tx.Exec(`DROP INDEX IF EXISTS idx_graph_generations_one_active`); err != nil {
-		return rollback(err)
-	}
-	for name, ddl := range graphIndexes {
-		if _, err := tx.Exec(ddl); err != nil {
-			return rollback(fmt.Errorf("create %s: %w", name, err))
-		}
-	}
-	if _, err := tx.Exec(`INSERT OR IGNORE INTO workspace_meta(key,value) VALUES ('graph_schema_version','1'), ('graph_compatibility_state','legacy-preserved-no-dual-write'), ('active_graph_generation_id',NULL), ('previous_graph_generation_id',NULL)`); err != nil {
-		return rollback(err)
+	if err := ensureGraphSchemaTx(context.Background(), tx); err != nil {
+		_ = tx.Rollback()
+		return err
 	}
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("commit graph schema migration: %w", err)
+	}
+	return nil
+}
+
+// ensureGraphSchemaTx creates the graph schema inside the caller's transaction.
+// It is intentionally separate from ensureGraphSchema so a 0->1 bootstrap can
+// be atomic with its migration intent.
+func ensureGraphSchemaTx(ctx context.Context, tx interface {
+	ExecContext(context.Context, string, ...any) (sql.Result, error)
+}) error {
+	if _, err := tx.ExecContext(ctx, metaDDL); err != nil {
+		return fmt.Errorf("create workspace_meta: %w", err)
+	}
+	for name, ddl := range graphTables {
+		if _, err := tx.ExecContext(ctx, ddl); err != nil {
+			return fmt.Errorf("create %s: %w", name, err)
+		}
+	}
+	if _, err := tx.ExecContext(ctx, `DROP INDEX IF EXISTS idx_graph_generations_one_active`); err != nil {
+		return err
+	}
+	for name, ddl := range graphIndexes {
+		if _, err := tx.ExecContext(ctx, ddl); err != nil {
+			return fmt.Errorf("create %s: %w", name, err)
+		}
+	}
+	if _, err := tx.ExecContext(ctx, `INSERT OR IGNORE INTO workspace_meta(key,value) VALUES ('graph_schema_version','1'), ('graph_compatibility_state','legacy-preserved-no-dual-write'), ('active_graph_generation_id',NULL), ('previous_graph_generation_id',NULL)`); err != nil {
+		return err
 	}
 	return nil
 }

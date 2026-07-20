@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"time"
 
@@ -110,11 +111,11 @@ func RecoverGraphState(ctx context.Context, db *sql.DB, workspaceIdentity string
 
 	var active, previous []byte
 	activeErr := t.c.QueryRowContext(ctx, "SELECT value FROM workspace_meta WHERE key=?", graphActiveMeta).Scan(&active)
-	if activeErr != nil && activeErr != sql.ErrNoRows {
+	if activeErr != nil && !errors.Is(activeErr, sql.ErrNoRows) {
 		return activeErr
 	}
 	previousErr := t.c.QueryRowContext(ctx, "SELECT value FROM workspace_meta WHERE key=?", graphPreviousMeta).Scan(&previous)
-	if previousErr != nil && previousErr != sql.ErrNoRows {
+	if previousErr != nil && !errors.Is(previousErr, sql.ErrNoRows) {
 		return previousErr
 	}
 	if len(active) > 0 {

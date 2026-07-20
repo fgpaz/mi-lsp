@@ -411,3 +411,17 @@ func StageGraphObservationBatches(ctx context.Context, db *sql.DB, req GraphAsse
 	}
 	return bundle.Generation, nil
 }
+
+// PublishGraphObservationBatches composes the explicit stage and publish
+// operations. StageGraphObservationBatches deliberately never activates a
+// generation; a pointer conflict leaves the staged generation invisible.
+func PublishGraphObservationBatches(ctx context.Context, db *sql.DB, req GraphAssemblyRequest, expectedPrior *model.GraphDigest) (model.GraphGeneration, error) {
+	generation, err := StageGraphObservationBatches(ctx, db, req)
+	if err != nil {
+		return generation, err
+	}
+	if err := store.ActivateGraphGenerationAt(ctx, db, generation.GenerationID, expectedPrior, req.CreatedAt); err != nil {
+		return generation, err
+	}
+	return generation, nil
+}

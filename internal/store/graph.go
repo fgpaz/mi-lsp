@@ -15,6 +15,13 @@ import (
 var (
 	ErrGraphCrashRecoveryRequired = errors.New("GPH_CRASH_RECOVERY_REQUIRED")
 	ErrGraphMigrationTransition   = errors.New("illegal graph migration transition")
+	ErrGraphCompatibilityConflict = errors.New("graph compatibility compare-and-set conflict")
+)
+
+const (
+	GraphCompatibilityLegacyPreservedNoDualWrite = "legacy-preserved-no-dual-write"
+	GraphCompatibilityDualReadWrite              = "dual-read-write"
+	GraphCompatibilityGraphAuthoritative         = "graph-authoritative"
 )
 
 const (
@@ -114,7 +121,7 @@ func StageGraphGeneration(ctx context.Context, db *sql.DB, b *model.GraphBundle)
 	}
 	defer t.rollback(ctx)
 	g := b.Generation
-	_, e = t.c.ExecContext(ctx, `INSERT INTO graph_generations(generation_id,schema_version,workspace_identity,source_fingerprint,config_fingerprint,backend_manifest_digest,content_digest,status,node_count,edge_count,evidence_count,unresolved_count,previous_generation_id,created_at,published_at,error_code) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, digestArg(g.GenerationID), g.SchemaVersion, g.WorkspaceIdentity, digestArg(g.SourceFingerprint), digestArg(g.ConfigFingerprint), digestArg(g.BackendManifestDigest), digestArg(g.ContentDigest), model.GraphGenerationStaged, g.NodeCount, g.EdgeCount, g.EvidenceCount, g.UnresolvedCount, nil, g.CreatedAt.UTC().Format(time.RFC3339Nano), nil, nil)
+	_, e = t.c.ExecContext(ctx, `INSERT INTO graph_generations(generation_id,schema_version,workspace_identity,source_fingerprint,config_fingerprint,backend_manifest_digest,content_digest,status,node_count,edge_count,evidence_count,unresolved_count,previous_generation_id,created_at,published_at,error_code) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, digestArg(g.GenerationID), g.SchemaVersion, g.WorkspaceIdentity, digestArg(g.SourceFingerprint), digestArg(g.ConfigFingerprint), digestArg(g.BackendManifestDigest), digestArg(g.ContentDigest), model.GraphGenerationStaged, g.NodeCount, g.EdgeCount, g.EvidenceCount, g.UnresolvedCount, digestOrNil(g.PreviousGenerationID), g.CreatedAt.UTC().Format(time.RFC3339Nano), nil, nil)
 	if e != nil {
 		if !strings.Contains(strings.ToLower(e.Error()), "unique") && !strings.Contains(strings.ToLower(e.Error()), "constraint") {
 			return e
@@ -476,7 +483,82 @@ func ActiveGraphGeneration(ctx context.Context, db *sql.DB) (model.GraphDigest, 
 	return d, e == nil, e
 }
 
+func validGraphCompatibilityState(state string) bool {
+	return state == GraphCompatibilityLegacyPreservedNoDualWrite || state == GraphCompatibilityDualReadWrite || state == GraphCompatibilityGraphAuthoritative
+}
+
+// GetGraphCompatibilityState reads the explicit compatibility mode without
+// changing it. In particular, reads never auto-enable dual-read/write.
+func GetGraphCompatibilityState(ctx context.Context, db *sql.DB) (string, error) {
+	if ctx == nil || db == nil {
+		return "", model.ErrGraphGenerationInvalid
+	}
+	var state string
+	if err := db.QueryRowContext(ctx, "SELECT value FROM workspace_meta WHERE key='graph_compatibility_state'").Scan(&state); err != nil {
+		return "", err
+	}
+	if !validGraphCompatibilityState(state) {
+		return "", ErrGraphMigrationTransition
+	}
+	return state, nil
+}
+
+// TransitionGraphCompatibilityState performs an explicit CAS under BEGIN
+// IMMEDIATE. The only legal transitions are legacy->dual, dual->authoritative,
+// and dual->legacy for rollback.
+func TransitionGraphCompatibilityState(ctx context.Context, db *sql.DB, expected, next string) error {
+	if ctx == nil || db == nil || !validGraphCompatibilityState(expected) || !validGraphCompatibilityState(next) {
+		return ErrGraphMigrationTransition
+	}
+	allowed := map[string]map[string]bool{
+		GraphCompatibilityLegacyPreservedNoDualWrite: {GraphCompatibilityDualReadWrite: true},
+		GraphCompatibilityDualReadWrite:              {GraphCompatibilityGraphAuthoritative: true, GraphCompatibilityLegacyPreservedNoDualWrite: true},
+		GraphCompatibilityGraphAuthoritative:         {},
+	}
+	if !allowed[expected][next] {
+		return ErrGraphMigrationTransition
+	}
+	t, err := beginGraphImmediate(ctx, db)
+	if err != nil {
+		return err
+	}
+	defer t.rollback(ctx)
+	var current string
+	if err := t.c.QueryRowContext(ctx, "SELECT value FROM workspace_meta WHERE key='graph_compatibility_state'").Scan(&current); err != nil {
+		return err
+	}
+	if current != expected {
+		return ErrGraphCompatibilityConflict
+	}
+	r, err := t.c.ExecContext(ctx, "UPDATE workspace_meta SET value=? WHERE key='graph_compatibility_state' AND value=?", next, expected)
+	if err != nil {
+		return err
+	}
+	if n, err := r.RowsAffected(); err != nil {
+		return err
+	} else if n != 1 {
+		return ErrGraphCompatibilityConflict
+	}
+	return t.commit(ctx)
+}
+
+// SetGraphCompatibilityState is the explicit transition API name used by
+// older callers; it retains compare-and-set semantics.
+func SetGraphCompatibilityState(ctx context.Context, db *sql.DB, expected, next string) error {
+	return TransitionGraphCompatibilityState(ctx, db, expected, next)
+}
+
 func ActivateGraphGeneration(ctx context.Context, db *sql.DB, id model.GraphDigest, expectedPrior *model.GraphDigest) error {
+	return ActivateGraphGenerationAt(ctx, db, id, expectedPrior, time.Now().UTC())
+}
+
+// ActivateGraphGenerationAt is the deterministic publication primitive. The
+// supplied timestamp is persisted only after all pointer and generation CAS
+// checks pass.
+func ActivateGraphGenerationAt(ctx context.Context, db *sql.DB, id model.GraphDigest, expectedPrior *model.GraphDigest, publishedAt time.Time) error {
+	if publishedAt.IsZero() {
+		return model.ErrGraphGenerationInvalid
+	}
 	t, e := beginGraphImmediate(ctx, db)
 	if e != nil {
 		return e
@@ -533,7 +615,7 @@ func ActivateGraphGeneration(ctx context.Context, db *sql.DB, id model.GraphDige
 			return model.ErrGraphPointerConflict
 		}
 	}
-	r, e := t.c.ExecContext(ctx, "UPDATE graph_generations SET status=?,published_at=? WHERE generation_id=? AND status=?", model.GraphGenerationActive, time.Now().UTC().Format(time.RFC3339Nano), digestArg(id), model.GraphGenerationStaged)
+	r, e := t.c.ExecContext(ctx, "UPDATE graph_generations SET status=?,published_at=?,previous_generation_id=? WHERE generation_id=? AND status=?", model.GraphGenerationActive, publishedAt.UTC().Format(time.RFC3339Nano), old, digestArg(id), model.GraphGenerationStaged)
 	if e != nil {
 		return e
 	}
@@ -554,6 +636,15 @@ func ActivateGraphGeneration(ctx context.Context, db *sql.DB, id model.GraphDige
 }
 
 func RollbackGraphGeneration(ctx context.Context, db *sql.DB, id model.GraphDigest, expectedCurrent *model.GraphDigest) error {
+	return RollbackGraphGenerationAt(ctx, db, id, expectedCurrent, time.Now().UTC())
+}
+
+// RollbackGraphGenerationAt restores a retired generation using an explicit
+// publication timestamp and the same immediate-transaction CAS as activation.
+func RollbackGraphGenerationAt(ctx context.Context, db *sql.DB, id model.GraphDigest, expectedCurrent *model.GraphDigest, publishedAt time.Time) error {
+	if publishedAt.IsZero() {
+		return model.ErrGraphGenerationInvalid
+	}
 	t, e := beginGraphImmediate(ctx, db)
 	if e != nil {
 		return e
@@ -563,7 +654,7 @@ func RollbackGraphGeneration(ctx context.Context, db *sql.DB, id model.GraphDige
 	if e != nil {
 		return e
 	}
-	if target.Status != model.GraphGenerationRetired {
+	if target.Status != model.GraphGenerationRetired && target.Status != model.GraphGenerationActive {
 		return model.ErrGraphGenerationInvalid
 	}
 	var active []byte
@@ -572,6 +663,14 @@ func RollbackGraphGeneration(ctx context.Context, db *sql.DB, id model.GraphDige
 		return metaErr
 	}
 	if (expectedCurrent == nil) || len(active) == 0 || string(digestArg(*expectedCurrent)) != string(active) {
+		// A retry after a committed rollback is successful only when both
+		// pointers still describe that same completed outcome.
+		if target.Status == model.GraphGenerationActive && expectedCurrent != nil && string(active) == string(digestArg(id)) {
+			var previous []byte
+			if previousErr := t.c.QueryRowContext(ctx, "SELECT value FROM workspace_meta WHERE key=?", graphPreviousMeta).Scan(&previous); previousErr == nil && string(previous) == string(digestArg(*expectedCurrent)) {
+				return t.commit(ctx)
+			}
+		}
 		return model.ErrGraphPointerConflict
 	}
 	currentID, se := scanDigest(active)
@@ -580,6 +679,17 @@ func RollbackGraphGeneration(ctx context.Context, db *sql.DB, id model.GraphDige
 	}
 	current, se := validateGraphGenerationConn(ctx, t.c, currentID)
 	if se != nil || current.Status != model.GraphGenerationActive {
+		return model.ErrGraphPointerConflict
+	}
+	var previous []byte
+	previousErr := t.c.QueryRowContext(ctx, "SELECT value FROM workspace_meta WHERE key=?", graphPreviousMeta).Scan(&previous)
+	if previousErr != nil && !errors.Is(previousErr, sql.ErrNoRows) {
+		return previousErr
+	}
+	if target.Status == model.GraphGenerationActive {
+		return model.ErrGraphPointerConflict
+	}
+	if len(previous) == 0 || string(previous) != string(digestArg(id)) {
 		return model.ErrGraphPointerConflict
 	}
 	r, e := t.c.ExecContext(ctx, "UPDATE graph_generations SET status=? WHERE generation_id=? AND status=?", model.GraphGenerationRetired, active, model.GraphGenerationActive)
@@ -593,7 +703,7 @@ func RollbackGraphGeneration(ctx context.Context, db *sql.DB, id model.GraphDige
 	if n != 1 {
 		return model.ErrGraphPointerConflict
 	}
-	r, e = t.c.ExecContext(ctx, "UPDATE graph_generations SET status=? WHERE generation_id=? AND status=?", model.GraphGenerationActive, digestArg(id), model.GraphGenerationRetired)
+	r, e = t.c.ExecContext(ctx, "UPDATE graph_generations SET status=?,published_at=?,previous_generation_id=NULL WHERE generation_id=? AND status=?", model.GraphGenerationActive, publishedAt.UTC().Format(time.RFC3339Nano), digestArg(id), model.GraphGenerationRetired)
 	if e != nil {
 		return e
 	}
@@ -629,20 +739,121 @@ func RollbackGraphGeneration(ctx context.Context, db *sql.DB, id model.GraphDige
 	return t.commit(ctx)
 }
 
+// CleanupGraphGenerations removes only explicitly eligible historical graph
+// generations. It refuses to run while recovery evidence (staged generations
+// or nonterminal migrations) remains unresolved.
+func CleanupGraphGenerations(ctx context.Context, db *sql.DB, workspaceIdentity string, cutoff time.Time) error {
+	if ctx == nil || db == nil || strings.TrimSpace(workspaceIdentity) == "" || cutoff.IsZero() {
+		return model.ErrGraphGenerationInvalid
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	t, err := beginGraphImmediate(ctx, db)
+	if err != nil {
+		return err
+	}
+	defer t.rollback(ctx)
+	var pending int
+	if err = t.c.QueryRowContext(ctx, `SELECT COUNT(*) FROM graph_migrations WHERE status IN ('prepared','applying','validated')`).Scan(&pending); err != nil {
+		return err
+	}
+	var staged int
+	if err = t.c.QueryRowContext(ctx, `SELECT COUNT(*) FROM graph_generations WHERE workspace_identity=? AND status='staged'`, workspaceIdentity).Scan(&staged); err != nil {
+		return err
+	}
+	if pending != 0 || staged != 0 {
+		return ErrGraphCrashRecoveryRequired
+	}
+	var active, previous []byte
+	if scanErr := t.c.QueryRowContext(ctx, "SELECT value FROM workspace_meta WHERE key=?", graphActiveMeta).Scan(&active); scanErr != nil && !errors.Is(scanErr, sql.ErrNoRows) {
+		return scanErr
+	}
+	if scanErr := t.c.QueryRowContext(ctx, "SELECT value FROM workspace_meta WHERE key=?", graphPreviousMeta).Scan(&previous); scanErr != nil && !errors.Is(scanErr, sql.ErrNoRows) {
+		return scanErr
+	}
+	protected := func(id []byte) bool {
+		return len(id) > 0 && (string(id) == string(active) || string(id) == string(previous))
+	}
+	rows, err := t.c.QueryContext(ctx, `SELECT generation_id FROM graph_generations WHERE workspace_identity=? AND status IN ('invalid','retired') AND created_at < ?`, workspaceIdentity, cutoff.UTC().Format(time.RFC3339Nano))
+	if err != nil {
+		return err
+	}
+	var candidates [][]byte
+	for rows.Next() {
+		var id []byte
+		if err = rows.Scan(&id); err != nil {
+			rows.Close()
+			return err
+		}
+		candidates = append(candidates, append([]byte(nil), id...))
+	}
+	if err = rows.Err(); err != nil {
+		rows.Close()
+		return err
+	}
+	rows.Close()
+	for _, id := range candidates {
+		if protected(id) {
+			continue
+		}
+		var refs int
+		if err = t.c.QueryRowContext(ctx, `SELECT COUNT(*) FROM graph_generations WHERE previous_generation_id=?`, id).Scan(&refs); err != nil {
+			return err
+		}
+		if refs != 0 {
+			continue
+		}
+		if err = t.c.QueryRowContext(ctx, `SELECT COUNT(*) FROM graph_migrations WHERE prior_active_generation_id=?`, id).Scan(&refs); err != nil {
+			return err
+		}
+		if refs != 0 {
+			continue
+		}
+		result, execErr := t.c.ExecContext(ctx, "DELETE FROM graph_generations WHERE generation_id=? AND workspace_identity=? AND status IN ('invalid','retired') AND created_at < ?", id, workspaceIdentity, cutoff.UTC().Format(time.RFC3339Nano))
+		if execErr != nil {
+			return execErr
+		}
+		if _, execErr = result.RowsAffected(); execErr != nil {
+			return execErr
+		}
+	}
+	return t.commit(ctx)
+}
+
 // PrepareGraphMigration records an exact, idempotent migration intent.
 func PrepareGraphMigration(ctx context.Context, db *sql.DB, m model.GraphMigration) error {
-	if m.MigrationID == "" || m.FromVersion <= 0 || m.ToVersion <= m.FromVersion || m.Status != "prepared" ||
+	if ctx == nil || db == nil {
+		return ErrGraphMigrationTransition
+	}
+	canonicalBootstrap := m.FromVersion == 0 && m.ToVersion == 1
+	if m.MigrationID == "" || m.FromVersion < 0 || m.ToVersion <= m.FromVersion || (m.FromVersion == 0 && !canonicalBootstrap) || m.Status != "prepared" ||
 		m.PreflightDigest == (model.GraphDigest{}) || m.BackupDigest == (model.GraphDigest{}) || m.StartedAt.IsZero() {
 		return ErrGraphMigrationTransition
 	}
 	if m.PriorActiveGenerationID != nil && *m.PriorActiveGenerationID == (model.GraphDigest{}) {
 		return ErrGraphMigrationTransition
 	}
+	if err := graphSchemaPreflight(db); err != nil {
+		return err
+	}
 	t, e := beginGraphImmediate(ctx, db)
 	if e != nil {
 		return e
 	}
 	defer t.rollback(ctx)
+	var graphTableCount int
+	if e = t.c.QueryRowContext(ctx, "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name LIKE 'graph_%'").Scan(&graphTableCount); e != nil {
+		return e
+	}
+	if graphTableCount == 0 {
+		if !canonicalBootstrap {
+			return ErrGraphMigrationTransition
+		}
+		if e = ensureGraphSchemaTx(ctx, t.c); e != nil {
+			return e
+		}
+	}
 	var existing model.GraphMigration
 	var pre, bak, prior []byte
 	var started string
@@ -655,6 +866,9 @@ func PrepareGraphMigration(ctx context.Context, db *sql.DB, m model.GraphMigrati
 	}
 	if !errors.Is(e, sql.ErrNoRows) {
 		return e
+	}
+	if canonicalBootstrap && graphTableCount != 0 {
+		return ErrGraphMigrationTransition
 	}
 	var priorValue any
 	if m.PriorActiveGenerationID != nil {
@@ -677,7 +891,7 @@ func digestOrNil(d *model.GraphDigest) []byte {
 // TransitionGraphMigration performs a compare-and-set lifecycle transition.
 func TransitionGraphMigration(ctx context.Context, db *sql.DB, id, expected, next, errorCode string, now time.Time) error {
 	allowed := map[string]map[string]bool{"prepared": {"applying": true, "rolled_back": true, "failed": true}, "applying": {"validated": true, "rolled_back": true, "failed": true}, "validated": {"committed": true, "rolled_back": true, "failed": true}}
-	if id == "" || !allowed[expected][next] || (next == "failed" && errorCode == "") {
+	if id == "" || now.IsZero() || !allowed[expected][next] || (next == "failed" && errorCode == "") {
 		return ErrGraphMigrationTransition
 	}
 	t, e := beginGraphImmediate(ctx, db)
