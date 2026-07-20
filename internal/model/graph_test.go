@@ -213,6 +213,25 @@ func TestGenerationExcludesWorkspaceMetadata(t *testing.T) {
 		t.Fatal("generation ID changed with metadata")
 	}
 }
+func TestGraphUnresolvedKeyGoldenAndBounds(t *testing.T) {
+	u := GraphUnresolved{OwnerPath: "src/main.go", SubjectKind: "file", SelectorDigest: digestBytes([]byte("selector")), ReasonCode: "missing_symbol", Candidates: []string{"a", "b"}, Backend: "go", RecoveryHintCode: "retry"}
+	u.UnresolvedKey = GraphUnresolvedKey(u)
+	u.CrossRID = UnresolvedRID(u.UnresolvedKey)
+	if err := ValidateGraphUnresolved(u); err != nil {
+		t.Fatal(err)
+	}
+	if GraphUnresolvedKey(u) != u.UnresolvedKey {
+		t.Fatal("unresolved key is not stable")
+	}
+	tooMany := u
+	tooMany.Candidates = make([]string, maxUnresolvedCandidates+1)
+	tooMany.UnresolvedKey = GraphUnresolvedKey(tooMany)
+	tooMany.CrossRID = UnresolvedRID(tooMany.UnresolvedKey)
+	if err := ValidateGraphUnresolved(tooMany); !errors.Is(err, ErrGraphUnresolved) {
+		t.Fatalf("accepted too many candidates: %v", err)
+	}
+}
+
 func TestJSONTagsRoundTrip(t *testing.T) {
 	g := GraphGeneration{NodeCount: 1, EdgeCount: 2, EvidenceCount: 3, UnresolvedCount: 4, ErrorCode: "x"}
 	raw, e := json.Marshal(g)

@@ -555,6 +555,26 @@ func ValidateGraphEvidence(e GraphEvidence, subject GraphDigest) error {
 	return nil
 }
 
+// GraphUnresolvedKey derives the canonical key for an unresolved claim.
+// Its field framing is part of the v1 graph identity contract.
+func GraphUnresolvedKey(u GraphUnresolved) GraphDigest {
+	var w binaryWriter
+	w.WriteString("MILSP-UNRESOLVED/v1")
+	w.text(1, u.OwnerPath)
+	w.text(2, u.SubjectKind)
+	w.digest(3, u.SelectorDigest)
+	w.text(4, u.ReasonCode)
+	for _, c := range u.Candidates {
+		w.text(5, c)
+	}
+	w.text(6, u.Backend)
+	if u.SourceDigest != nil {
+		w.digest(7, *u.SourceDigest)
+	}
+	w.text(8, u.RecoveryHintCode)
+	return digestBytes(w.Bytes())
+}
+
 // ValidateGraphUnresolved validates an unresolved claim and its canonical key.
 func ValidateGraphUnresolved(u GraphUnresolved) error {
 	if u.UnresolvedID < 0 || u.OwnerPath == "" || u.SubjectKind == "" || u.ReasonCode == "" || u.Backend == "" || len(u.Candidates) > maxUnresolvedCandidates {
@@ -564,12 +584,6 @@ func ValidateGraphUnresolved(u GraphUnresolved) error {
 		return ErrGraphUnresolved
 	}
 	total := 0
-	var w binaryWriter
-	w.WriteString("MILSP-UNRESOLVED/v1")
-	w.text(1, u.OwnerPath)
-	w.text(2, u.SubjectKind)
-	w.digest(3, u.SelectorDigest)
-	w.text(4, u.ReasonCode)
 	for _, c := range u.Candidates {
 		if _, err := required(c, "candidate"); err != nil {
 			return ErrGraphUnresolved
@@ -578,14 +592,8 @@ func ValidateGraphUnresolved(u GraphUnresolved) error {
 		if total > maxCandidateBytes {
 			return ErrGraphUnresolved
 		}
-		w.text(5, c)
 	}
-	w.text(6, u.Backend)
-	if u.SourceDigest != nil {
-		w.digest(7, *u.SourceDigest)
-	}
-	w.text(8, u.RecoveryHintCode)
-	key := digestBytes(w.Bytes())
+	key := GraphUnresolvedKey(u)
 	if u.UnresolvedKey != key || u.CrossRID != UnresolvedRID(key) {
 		return ErrGraphUnresolved
 	}
@@ -734,21 +742,7 @@ func (b *GraphBundle) validate(requireSealed bool) error {
 				return ErrGraphUnresolved
 			}
 		}
-		var w binaryWriter
-		w.WriteString("MILSP-UNRESOLVED/v1")
-		w.text(1, u.OwnerPath)
-		w.text(2, u.SubjectKind)
-		w.digest(3, u.SelectorDigest)
-		w.text(4, u.ReasonCode)
-		for _, c := range u.Candidates {
-			w.text(5, c)
-		}
-		w.text(6, u.Backend)
-		if u.SourceDigest != nil {
-			w.digest(7, *u.SourceDigest)
-		}
-		w.text(8, u.RecoveryHintCode)
-		d := digestBytes(w.Bytes())
+		d := GraphUnresolvedKey(u)
 		if d != u.UnresolvedKey || u.CrossRID != UnresolvedRID(d) {
 			return ErrGraphUnresolved
 		}
