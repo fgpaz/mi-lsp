@@ -15,11 +15,14 @@ import (
 )
 
 type Result struct {
-	Files    []model.FileRecord
-	Symbols  []model.SymbolRecord
-	Docs     int
-	Stats    model.Stats
-	Warnings []string
+	Files                []model.FileRecord
+	Symbols              []model.SymbolRecord
+	Docs                 int
+	Stats                model.Stats
+	Warnings             []string
+	GraphGenerationID    string
+	GraphBackendManifest string
+	GraphOmissions       []model.GraphObservationOmission
 }
 
 type Progress struct {
@@ -43,6 +46,10 @@ func IndexWorkspaceWithGeneration(ctx context.Context, root string, clean bool, 
 }
 
 func IndexWorkspaceWithProgress(ctx context.Context, root string, clean bool, generationID string, progress ProgressFunc) (Result, error) {
+	return IndexWorkspaceWithGraphProgress(ctx, root, clean, generationID, progress, GraphIndexOptions{})
+}
+
+func IndexWorkspaceWithGraphProgress(ctx context.Context, root string, clean bool, generationID string, progress ProgressFunc, graphOptions GraphIndexOptions) (Result, error) {
 	started := time.Now()
 	projectFile, files, symbols, warnings, matcher, err := buildCatalog(ctx, root, progress)
 	if err != nil {
@@ -51,6 +58,13 @@ func IndexWorkspaceWithProgress(ctx context.Context, root string, clean bool, ge
 	if clean {
 		warnings = appendIfMissing(warnings, "clean=true")
 	}
+
+	// Observe before publishing catalog data so an observer failure preserves the prior graph state.
+	graphBatches, graphOmissions, graphWarnings, err := ObserveGraph(ctx, root, projectFile, graphOptions, progress)
+	if err != nil {
+		return Result{}, err
+	}
+	warnings = append(warnings, graphWarnings...)
 
 	docs, docEdges, docMentions, sourceBlocks, sourceRecords, docWarnings, err := docgraph.IndexWorkspaceDocsWithSourcesWithProgress(ctx, root, matcher, func(ctx context.Context, progressValue docgraph.Progress) error {
 		return reportProgress(ctx, progress, Progress{
@@ -72,6 +86,7 @@ func IndexWorkspaceWithProgress(ctx context.Context, root string, clean bool, ge
 		return Result{}, err
 	}
 
+	var graphGeneration model.GraphGeneration
 	if err := store.WithWorkspaceWriteLock(root, func() error {
 		db, err := store.Open(root)
 		if err != nil {
@@ -79,22 +94,45 @@ func IndexWorkspaceWithProgress(ctx context.Context, root string, clean bool, ge
 		}
 		defer db.Close()
 
-		return store.ReplaceWorkspaceIndex(ctx, db, generationID, projectFile, files, symbols, docs, docEdges, docMentions, sourceBlocks, sourceRecords, snapshot)
+		// Capture the pointer before catalog publication; activation must reject a concurrent replacement.
+		var prior *model.GraphDigest
+		if active, ok, activeErr := store.ActiveGraphGeneration(ctx, db); activeErr != nil {
+			return activeErr
+		} else if ok {
+			prior = &active
+		}
+		if err := store.ReplaceWorkspaceIndex(ctx, db, generationID, projectFile, files, symbols, docs, docEdges, docMentions, sourceBlocks, sourceRecords, snapshot); err != nil {
+			return err
+		}
+		if err := store.SetGraphRuntimeState(ctx, db, store.GraphRuntimeStale, ""); err != nil {
+			return err
+		}
+		if len(graphBatches) == 0 {
+			return nil
+		}
+		if err := reportProgress(ctx, progress, Progress{Stage: "graph.activate", Files: len(files), Symbols: len(symbols), Docs: len(docs), Force: true}); err != nil {
+			return err
+		}
+		graphGeneration, err = PublishGraphObservationBatches(ctx, db, GraphAssemblyRequest{Batches: graphBatches, CreatedAt: time.Now().UTC()}, prior)
+		if err != nil {
+			_ = store.SetGraphRuntimeState(ctx, db, store.GraphRuntimeStale, "")
+			return fmt.Errorf("graph publication failed after legacy index publication: %w", err)
+		}
+		if err := store.SetGraphRuntimeState(ctx, db, store.GraphRuntimeFresh, generationID); err != nil {
+			return err
+		}
+		return nil
 	}); err != nil {
 		return Result{}, err
 	}
 
-	return Result{
-		Files:    files,
-		Symbols:  symbols,
-		Docs:     len(docs),
-		Warnings: warnings,
-		Stats: model.Stats{
-			Files:   len(files),
-			Symbols: len(symbols),
-			Ms:      time.Since(started).Milliseconds(),
-		},
-	}, nil
+	result := Result{Files: files, Symbols: symbols, Docs: len(docs), Warnings: warnings, GraphOmissions: graphOmissions,
+		Stats: model.Stats{Files: len(files), Symbols: len(symbols), Ms: time.Since(started).Milliseconds()}}
+	if graphGeneration.GenerationID != (model.GraphDigest{}) {
+		result.GraphGenerationID = graphGeneration.GenerationID.String()
+		result.GraphBackendManifest = graphGeneration.BackendManifestDigest.String()
+	}
+	return result, nil
 }
 
 func IndexWorkspaceCatalogOnly(ctx context.Context, root string, clean bool) (Result, error) {

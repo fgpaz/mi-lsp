@@ -184,6 +184,9 @@ func IncrementalIndex(ctx context.Context, workspaceRoot string) (Result, error)
 			return fmt.Errorf("open database: %w", err)
 		}
 		defer db.Close()
+		if err := store.SetGraphRuntimeState(ctx, db, store.GraphRuntimeStale, ""); err != nil {
+			return fmt.Errorf("mark graph stale: %w", err)
+		}
 
 		for _, relPath := range changedFiles {
 			absPath := filepath.Join(workspaceRoot, filepath.FromSlash(relPath))

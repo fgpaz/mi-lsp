@@ -342,7 +342,7 @@ func graphImpactCanFallback(err error) bool {
 		return true
 	}
 	switch graphErr.Code {
-	case "GPH_QUERY_BACKEND_UNAVAILABLE", "GPH_QUERY_GENERATION_NOT_FOUND", "GPH_QUERY_GRAPH_UNAVAILABLE":
+	case "GPH_QUERY_BACKEND_UNAVAILABLE", "GPH_QUERY_GENERATION_NOT_FOUND", "GPH_QUERY_GRAPH_UNAVAILABLE", "GPH_QUERY_GRAPH_INVALID", "GPH_IMPACT_GRAPH_STALE":
 		return true
 	default:
 		return false

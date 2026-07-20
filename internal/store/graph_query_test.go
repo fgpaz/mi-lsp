@@ -8,6 +8,39 @@ import (
 	"github.com/fgpaz/mi-lsp/internal/model"
 )
 
+func TestBeginGraphQuerySnapshotRejectsCatalogGenerationMismatch(t *testing.T) {
+	ctx := context.Background()
+	db, _ := seedTestDB(t)
+	defer db.Close()
+	bundle := testGraphBundle(t)
+	if err := StageGraphGeneration(ctx, db, &bundle); err != nil {
+		t.Fatal(err)
+	}
+	if err := ActivateGraphGeneration(ctx, db, bundle.Generation.GenerationID, nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := SetGraphRuntimeState(ctx, db, GraphRuntimeFresh, "catalog-a"); err != nil {
+		t.Fatal(err)
+	}
+	if err := UpsertWorkspaceMeta(ctx, db, WorkspaceMetaActiveCatalogGeneration, "catalog-b"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := BeginGraphQuerySnapshot(ctx, db, ""); err == nil {
+		t.Fatal("expected stale graph rejection")
+	}
+	if err := SetGraphRuntimeState(ctx, db, GraphRuntimeFresh, ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, bound, err := WorkspaceMetaValue(ctx, db, GraphCatalogGenerationMeta); err != nil || bound {
+		t.Fatalf("binding not cleared: bound=%v err=%v", bound, err)
+	}
+	if snapshot, err := BeginGraphQuerySnapshot(ctx, db, ""); err != nil {
+		t.Fatal(err)
+	} else {
+		_ = snapshot.Close()
+	}
+}
+
 func TestBeginGraphQuerySnapshotAcceptsActiveAndRetiredOnly(t *testing.T) {
 	ctx := context.Background()
 	db, _ := seedTestDB(t)

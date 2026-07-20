@@ -304,7 +304,7 @@ func (a *App) indexWorkspace(ctx context.Context, request model.CommandRequest) 
 
 		// Fall back to full index if incremental didn't succeed
 		if !incremental {
-			result, err = indexer.IndexWorkspace(ctx, registration.Root, clean)
+			result, err = indexer.IndexWorkspaceWithGraphProgress(ctx, registration.Root, clean, "", nil, indexer.GraphIndexOptions{RoslynObserver: a.graphObserver()})
 			if err != nil {
 				if store.IsCorruptionError(err) {
 					backupPath, backupErr := store.QuarantineCorruptDB(registration.Root)

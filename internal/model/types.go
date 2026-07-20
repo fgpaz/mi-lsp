@@ -582,11 +582,12 @@ type WorkspaceRegistration struct {
 }
 
 type WorkspaceRepo struct {
-	ID                string   `json:"id" toml:"id"`
-	Name              string   `json:"name" toml:"name"`
-	Root              string   `json:"root" toml:"root"`
-	Languages         []string `json:"languages,omitempty" toml:"languages"`
-	DefaultEntrypoint string   `json:"default_entrypoint,omitempty" toml:"default_entrypoint,omitempty"`
+	ID                 string   `json:"id" toml:"id"`
+	Name               string   `json:"name" toml:"name"`
+	Root               string   `json:"root" toml:"root"`
+	RepositoryIdentity string   `json:"repository_identity,omitempty" toml:"repository_identity,omitempty"`
+	Languages          []string `json:"languages,omitempty" toml:"languages"`
+	DefaultEntrypoint  string   `json:"default_entrypoint,omitempty" toml:"default_entrypoint,omitempty"`
 }
 
 type WorkspaceEntrypoint struct {
@@ -722,12 +723,14 @@ type WorkerRequest struct {
 }
 
 type WorkerResponse struct {
-	Ok       bool             `json:"ok"`
-	Backend  string           `json:"backend,omitempty"`
-	Items    []map[string]any `json:"items,omitempty"`
-	Warnings []string         `json:"warnings,omitempty"`
-	Error    string           `json:"error,omitempty"`
-	Stats    Stats            `json:"stats,omitempty"`
+	Ok          bool                   `json:"ok"`
+	Backend     string                 `json:"backend,omitempty"`
+	Items       []map[string]any       `json:"items,omitempty"`
+	Warnings    []string               `json:"warnings,omitempty"`
+	Error       string                 `json:"error,omitempty"`
+	ErrorCode   string                 `json:"error_code,omitempty"`
+	Observation *GraphObservationBatch `json:"observation,omitempty"`
+	Stats       Stats                  `json:"stats,omitempty"`
 }
 
 type WorkerStatus struct {

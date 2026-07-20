@@ -32,6 +32,24 @@ func BeginGraphQuerySnapshot(ctx context.Context, db *sql.DB, generation string)
 		return nil, err
 	}
 	fail := func(e error) (*GraphQuerySnapshot, error) { _ = tx.Rollback(); return nil, e }
+	state, err := GraphRuntimeState(ctx, tx)
+	if err != nil {
+		return fail(err)
+	}
+	if state != GraphRuntimeFresh {
+		return fail(&model.GraphQueryError{Code: "GPH_QUERY_GRAPH_INVALID", Message: "graph catalog is stale"})
+	}
+	graphCatalogGeneration, graphBound, err := workspaceMetaValueConn(ctx, tx, GraphCatalogGenerationMeta)
+	if err != nil {
+		return fail(err)
+	}
+	activeCatalogGeneration, catalogBound, err := workspaceMetaValueConn(ctx, tx, WorkspaceMetaActiveCatalogGeneration)
+	if err != nil {
+		return fail(err)
+	}
+	if graphBound && catalogBound && graphCatalogGeneration != activeCatalogGeneration {
+		return fail(&model.GraphQueryError{Code: "GPH_QUERY_GRAPH_INVALID", Message: "graph catalog is stale"})
+	}
 	var id model.GraphDigest
 	if strings.TrimSpace(generation) == "" {
 		var ok bool

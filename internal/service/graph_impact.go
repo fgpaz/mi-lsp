@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"sort"
 	"strings"
 
@@ -29,6 +30,10 @@ func GraphImpact(ctx context.Context, db *sql.DB, request model.GraphImpactReque
 	}
 	snapshot, err := store.BeginGraphQuerySnapshot(ctx, db, q.Generation)
 	if err != nil {
+		var graphErr *model.GraphQueryError
+		if errors.As(err, &graphErr) && graphErr.Code == "GPH_QUERY_GRAPH_INVALID" {
+			return model.GraphImpactEnvelope{}, &model.GraphQueryError{Code: "GPH_IMPACT_GRAPH_STALE", Message: "graph catalog is stale"}
+		}
 		return model.GraphImpactEnvelope{}, store.SanitizeGraphQueryError(err)
 	}
 	defer snapshot.Close()

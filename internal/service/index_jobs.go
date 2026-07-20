@@ -242,7 +242,7 @@ func (a *App) runIndexJob(ctx context.Context, registration model.WorkspaceRegis
 					return store.MarkIndexJobSucceeded(ctx, db, jobID, result.Stats.Files, result.Stats.Symbols, result.Docs)
 				}
 			}
-			result, err = indexer.IndexWorkspaceWithProgress(ctx, registration.Root, job.Clean, job.GenerationID, progress.report)
+			result, err = indexer.IndexWorkspaceWithGraphProgress(ctx, registration.Root, job.Clean, job.GenerationID, progress.report, indexer.GraphIndexOptions{RoslynObserver: a.graphObserver()})
 		}
 		if err != nil {
 			return err

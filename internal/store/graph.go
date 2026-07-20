@@ -25,8 +25,12 @@ const (
 )
 
 const (
-	graphActiveMeta   = "active_graph_generation_id"
-	graphPreviousMeta = "previous_graph_generation_id"
+	graphActiveMeta            = "active_graph_generation_id"
+	graphPreviousMeta          = "previous_graph_generation_id"
+	GraphCatalogGenerationMeta = "graph_catalog_generation_id"
+	GraphRuntimeStateMeta      = "graph_runtime_state"
+	GraphRuntimeFresh          = "fresh"
+	GraphRuntimeStale          = "stale"
 )
 
 type graphConn interface {
@@ -552,6 +556,38 @@ func activeGraphGenerationConn(ctx context.Context, q graphConn) (model.GraphDig
 	}
 	d, e := scanDigest(b)
 	return d, e == nil, e
+}
+
+func SetGraphRuntimeState(ctx context.Context, db *sql.DB, state string, catalogGeneration string) error {
+	if ctx == nil || db == nil || (state != GraphRuntimeFresh && state != GraphRuntimeStale) {
+		return model.ErrGraphGenerationInvalid
+	}
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err = tx.ExecContext(ctx, "INSERT INTO workspace_meta(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value", GraphRuntimeStateMeta, state); err != nil {
+		return err
+	}
+	if catalogGeneration == "" {
+		if _, err = tx.ExecContext(ctx, "DELETE FROM workspace_meta WHERE key=?", GraphCatalogGenerationMeta); err != nil {
+			return err
+		}
+	} else if _, err = tx.ExecContext(ctx, "INSERT INTO workspace_meta(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value", GraphCatalogGenerationMeta, catalogGeneration); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+func GraphRuntimeState(ctx context.Context, q graphConn) (string, error) {
+	var state string
+	err := q.QueryRowContext(ctx, "SELECT value FROM workspace_meta WHERE key=?", GraphRuntimeStateMeta).Scan(&state)
+	if errors.Is(err, sql.ErrNoRows) {
+		// Pre-runtime-state databases may contain a valid active graph; preserve compatibility.
+		return GraphRuntimeFresh, nil
+	}
+	return state, err
 }
 
 func ActiveGraphGeneration(ctx context.Context, db *sql.DB) (model.GraphDigest, bool, error) {
