@@ -165,6 +165,7 @@ func (a *App) Execute(ctx context.Context, request model.CommandRequest) (model.
 	if err != nil {
 		return model.Envelope{}, err
 	}
+	envelope = a.enrichWikiCodeContext(ctx, request, envelope)
 	for _, warning := range resolutionWarnings {
 		envelope.Warnings = appendStringIfMissing(envelope.Warnings, warning)
 	}
