@@ -389,7 +389,15 @@ func ObserveGoGraph(ctx context.Context, req GoGraphObservationRequest) (model.G
 		}
 	}
 	if len(builder.local) == 0 {
-		return empty, goGraphError("GPH_GO_NO_OWNED_SOURCES", "sources", "selected module has no owned Go sources")
+		if !goGraphHasGoSource(moduleRoot) {
+			return empty, goGraphError("GPH_GO_NO_OWNED_SOURCES", "sources", "selected module has no owned Go sources")
+		}
+		// Some target configurations exclude cgo-only packages from go list. Preserve
+		// a valid, explicitly partial observation instead of returning an unusable batch.
+		builder.partial = true
+		builder.addPartialOmissions(project, "cgo_list_error")
+		builder.batch.SourceFingerprint = builder.sourceFingerprint()
+		return builder.finish()
 	}
 	importPaths := make([]string, 0, len(listed))
 	for _, p := range listed {
@@ -542,6 +550,23 @@ func goGraphInside(root, path string) bool {
 	r, err := filepath.Rel(root, path)
 	return err == nil && r != ".." && !strings.HasPrefix(r, ".."+string(filepath.Separator)) && !filepath.IsAbs(r)
 }
+func goGraphHasGoSource(root string) bool {
+	found := false
+	_ = filepath.WalkDir(root, func(path string, entry os.DirEntry, err error) error {
+		if err != nil || found {
+			return nil
+		}
+		if entry.IsDir() && goGraphSkippedPath(path) {
+			return filepath.SkipDir
+		}
+		if !entry.IsDir() && isGoPath(path) {
+			found = true
+		}
+		return nil
+	})
+	return found
+}
+
 func goGraphSkippedPath(path string) bool {
 	p := filepath.ToSlash(path)
 	for _, part := range strings.Split(p, "/") {

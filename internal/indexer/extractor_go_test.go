@@ -324,6 +324,143 @@ func TestGoGraphProvenanceAndConfigDomains(t *testing.T) {
 	}
 }
 
+func TestGoGraphContractInvariants(t *testing.T) {
+	root := t.TempDir()
+	writeGoTestFile(t, root, "go.mod", "module example.com/contract\n\ngo 1.24.4\n")
+	writeGoTestFile(t, root, "main.go", `package contract
+import "example.com/contract/sub"
+type Box struct{ Value int }
+func (b Box) M() { sub.G() }
+`)
+	writeGoTestFile(t, root, "sub/sub.go", "package sub\nfunc G() {}\n")
+	batch, err := ObserveGoGraph(context.Background(), GoGraphObservationRequest{Root: root, RepositoryIdentity: "example.com/contract", ProjectOrModule: "go.mod"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertGoGraphContract(t, batch)
+	if batch.ReadyForStaging() != nil {
+		t.Fatal("clean batch is not ready")
+	}
+	if !hasEvidenceAtLine(batch, "main.go", 2) {
+		t.Fatal("ImportSpec range missing")
+	}
+	for _, edge := range batch.Edges {
+		from, to := nodeByRef(batch, edge.FromRef), nodeByRef(batch, edge.ToRef)
+		if edge.Relation == "contains" && (from.Key.SymbolKind == "package" && to.Key.SymbolKind == "method" || from.Key.SymbolKind == "package" && to.Key.SymbolKind == "field") {
+			t.Fatalf("non-immediate contains %#v", edge)
+		}
+	}
+}
+
+func TestGoGraphRelocationAndConfigSelection(t *testing.T) {
+	one, two := t.TempDir(), t.TempDir()
+	for _, root := range []string{one, two} {
+		writeGoTestFile(t, root, "go.mod", "module example.com/relocate\n\ngo 1.24.4\n")
+		writeGoTestFile(t, root, "main.go", "package relocate\nfunc F() {}\n")
+		writeGoTestFile(t, root, "tagged.go", "//go:build special\npackage relocate\nfunc Tagged() {}\n")
+	}
+	req := GoGraphObservationRequest{RepositoryIdentity: "example.com/relocate", ProjectOrModule: "go.mod", BuildTags: []string{"special", "special"}}
+	req.Root = one
+	a, err := ObserveGoGraph(context.Background(), req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Root = two
+	b, err := ObserveGoGraph(context.Background(), req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if a.SourceFingerprint != b.SourceFingerprint || a.ConfigFingerprint != b.ConfigFingerprint || a.Digest != b.Digest {
+		t.Fatal("relocation changed semantic batch")
+	}
+	req.Root = one
+	req.BuildTags = nil
+	plain, err := ObserveGoGraph(context.Background(), req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plain.ConfigFingerprint == a.ConfigFingerprint || plain.Digest == a.Digest {
+		t.Fatal("build tags did not affect config")
+	}
+	writeGoTestFile(t, one, "go.mod", "module example.com/relocate\n\ngo 1.24.4\n// config mutation\n")
+	changed, err := ObserveGoGraph(context.Background(), req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if changed.ConfigFingerprint == plain.ConfigFingerprint {
+		t.Fatal("go.mod mutation did not affect config")
+	}
+}
+
+func TestGoGraphCgoIsSealedPartial(t *testing.T) {
+	root := t.TempDir()
+	writeGoTestFile(t, root, "go.mod", "module example.com/cgo\n\ngo 1.24.4\n")
+	writeGoTestFile(t, root, "main.go", "package cgo\n/*\n#include <stdlib.h>\n*/\nimport \"C\"\nfunc F() { C.free(nil) }\n")
+	batch, err := ObserveGoGraph(context.Background(), GoGraphObservationRequest{Root: root, RepositoryIdentity: "example.com/cgo", ProjectOrModule: "go.mod", GOOS: "js", GOARCH: "wasm"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if batch.Validate() != nil || batch.ReadyForStaging() == nil || batch.Completeness != model.GraphCompletenessPartial {
+		t.Fatal("cgo was not sealed partial")
+	}
+	if !hasOmission(batch, "calls", "type_check_error") && !hasOmission(batch, "calls", "cgo_list_error") {
+		t.Fatalf("missing typed cgo omission: %#v", batch.Omissions)
+	}
+}
+
+func TestGoGraphExternalReplaceDoesNotLeakDependency(t *testing.T) {
+	root := t.TempDir()
+	writeGoTestFile(t, root, "go.mod", "module example.com/main\n\ngo 1.24.4\n\nrequire example.com/dep v0.0.0\nreplace example.com/dep => ./dep\n")
+	writeGoTestFile(t, root, "main.go", "package main\nimport \"example.com/dep\"\nfunc F() { dep.G() }\n")
+	writeGoTestFile(t, root, "dep/go.mod", "module example.com/dep\n\ngo 1.24.4\n")
+	writeGoTestFile(t, root, "dep/dep.go", "package dep\nfunc G() {}\n")
+	batch, err := ObserveGoGraph(context.Background(), GoGraphObservationRequest{Root: root, RepositoryIdentity: "example.com/main", ProjectOrModule: "go.mod"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertGoGraphContract(t, batch)
+	if batch.ReadyForStaging() != nil || batch.Completeness != model.GraphCompletenessComplete {
+		t.Fatal("external replace main module was not complete")
+	}
+	for _, n := range batch.Nodes {
+		if strings.Contains(n.Key.OwnerPath, "dep/") || strings.Contains(n.Key.SemanticIdentity, "example.com/dep") {
+			t.Fatalf("external dependency leaked: %#v", n)
+		}
+	}
+	if !hasOmission(batch, "calls", "external_target") && !hasOmission(batch, "references", "external_target") {
+		t.Fatal("external target omission missing")
+	}
+}
+
+func TestGoGraphCancelledAndTypedRequestErrors(t *testing.T) {
+	root := t.TempDir()
+	writeGoTestFile(t, root, "go.mod", "module example.com/cancel\n\ngo 1.24.4\n")
+	writeGoTestFile(t, root, "main.go", "package cancel\nfunc F() {}\n")
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	batch, err := ObserveGoGraph(ctx, GoGraphObservationRequest{Root: root, RepositoryIdentity: "example.com/cancel", ProjectOrModule: "go.mod"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if batch.Validate() != nil || batch.ReadyForStaging() == nil || batch.SourceFingerprint == (model.GraphDigest{}) || batch.ConfigFingerprint == (model.GraphDigest{}) {
+		t.Fatal("cancelled batch contract invalid")
+	}
+	for _, cap := range []string{"declarations", "contains", "imports", "references", "calls"} {
+		if !hasOmission(batch, cap, "cancelled") {
+			t.Fatalf("missing cancelled %s", cap)
+		}
+	}
+	for _, project := range []string{"", "missing.go.mod", "../go.mod", filepath.Join(root, "go.mod")} {
+		_, err := ObserveGoGraph(context.Background(), GoGraphObservationRequest{Root: root, RepositoryIdentity: "example.com/cancel", ProjectOrModule: project})
+		if err == nil {
+			t.Fatalf("accepted invalid project %q", project)
+		}
+		if _, ok := err.(*model.GraphObservationError); !ok {
+			t.Fatalf("untyped error %T", err)
+		}
+	}
+}
+
 func TestGoGraphOwnedTypeErrorIsPartial(t *testing.T) {
 	root := t.TempDir()
 	writeGoTestFile(t, root, "go.mod", "module example.com/broken\n\ngo 1.24.4\n")
@@ -335,12 +472,130 @@ func TestGoGraphOwnedTypeErrorIsPartial(t *testing.T) {
 	if batch.Completeness != model.GraphCompletenessPartial || batch.ReadyForStaging() == nil {
 		t.Fatal("type error was not sealed partial")
 	}
-	for _, o := range batch.Omissions {
-		if o.ReasonCode == "type_check_error" && o.OwnerPath == "main.go" {
-			return
+	for _, capability := range []string{"calls", "references"} {
+		if !hasOmission(batch, capability, "type_check_error") {
+			t.Fatalf("missing type_check_error %s", capability)
 		}
 	}
-	t.Fatal("missing typed type_check_error omission")
+	for _, o := range batch.Omissions {
+		if strings.Contains(o.OwnerPath, root) || strings.Contains(o.ReasonCode, "Missing") {
+			t.Fatalf("raw diagnostic leaked: %#v", o)
+		}
+	}
+}
+
+func assertGoGraphContract(t *testing.T, batch model.GraphObservationBatch) {
+	t.Helper()
+	if err := batch.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	caps := map[string]bool{}
+	for _, c := range batch.Capabilities {
+		if c.Backend != "go" || c.State != model.GraphObservationStatusStable {
+			t.Fatalf("bad capability %#v", c)
+		}
+		caps[c.Capability] = true
+	}
+	for _, cap := range []string{"declarations", "contains", "imports", "references", "calls"} {
+		if !caps[cap] {
+			t.Fatalf("missing capability %s", cap)
+		}
+	}
+	nodes, edges := map[string]model.GraphObservationNode{}, map[string]model.GraphObservationEdge{}
+	for _, n := range batch.Nodes {
+		if nodes[n.Ref].Ref != "" {
+			t.Fatalf("duplicate node %s", n.Ref)
+		}
+		nodes[n.Ref] = n
+		if filepath.IsAbs(n.Key.OwnerPath) {
+			t.Fatalf("absolute node path %q", n.Key.OwnerPath)
+		}
+	}
+	for _, e := range batch.Edges {
+		if _, ok := edges[e.Ref]; ok {
+			t.Fatalf("duplicate edge %s", e.Ref)
+		}
+		edges[e.Ref] = e
+		if filepath.IsAbs(e.OwnerPath) {
+			t.Fatalf("absolute edge path %q", e.OwnerPath)
+		}
+	}
+	has := map[string]int{}
+	for _, ev := range batch.Evidence {
+		if ev.Range == nil || ev.Range.StartLine < 1 || ev.Range.EndLine < ev.Range.StartLine || ev.Range.StartColumn < 1 || ev.Range.EndColumn < 1 || filepath.IsAbs(ev.SourceURI) || ev.ObservedDigest == (model.GraphDigest{}) || ev.ObservedDigest == ev.SourceDigest {
+			t.Fatalf("invalid evidence %#v", ev)
+		}
+		if n, ok := nodes[ev.NodeRef]; ok {
+			if ev.SourceDigest != n.SourceDigest || ev.Status != n.ClaimStatus {
+				t.Fatalf("node evidence mismatch %#v", ev)
+			}
+			has[ev.NodeRef]++
+		} else if e, ok := edges[ev.EdgeRef]; ok {
+			if ev.SourceDigest != e.SourceDigest || ev.Status != e.Status {
+				t.Fatalf("edge evidence mismatch %#v", ev)
+			}
+			has[ev.EdgeRef]++
+		} else {
+			t.Fatalf("dangling evidence %#v", ev)
+		}
+	}
+	for ref := range nodes {
+		if has[ref] == 0 {
+			t.Fatalf("node lacks evidence %s", ref)
+		}
+	}
+	for ref := range edges {
+		if has[ref] == 0 {
+			t.Fatalf("edge lacks evidence %s", ref)
+		}
+	}
+	for _, c := range batch.Coverage {
+		observed, unresolved, omitted := 0, 0, 0
+		if c.Capability == "declarations" {
+			observed = len(batch.Nodes)
+		} else {
+			for _, e := range batch.Edges {
+				if e.Relation == c.Capability {
+					observed++
+				}
+			}
+		}
+		for _, u := range batch.Unresolved {
+			if u.Capability == c.Capability {
+				unresolved++
+			}
+			if filepath.IsAbs(u.OwnerPath) {
+				t.Fatal("absolute unresolved path")
+			}
+		}
+		for _, o := range batch.Omissions {
+			if o.Capability == c.Capability {
+				omitted++
+			}
+			if filepath.IsAbs(o.OwnerPath) {
+				t.Fatal("absolute omission path")
+			}
+		}
+		if c.Observed != observed || c.Unresolved != unresolved || c.Omitted != omitted || (batch.Completeness == model.GraphCompletenessComplete && c.Eligible != observed+unresolved+omitted) {
+			t.Fatalf("bad coverage %#v", c)
+		}
+	}
+}
+func hasOmission(batch model.GraphObservationBatch, capability, reason string) bool {
+	for _, o := range batch.Omissions {
+		if o.Capability == capability && o.ReasonCode == reason {
+			return true
+		}
+	}
+	return false
+}
+func hasEvidenceAtLine(batch model.GraphObservationBatch, uri string, line int) bool {
+	for _, e := range batch.Evidence {
+		if e.SourceURI == uri && e.Range != nil && e.Range.StartLine == line {
+			return true
+		}
+	}
+	return false
 }
 
 func nodeByRef(batch model.GraphObservationBatch, ref string) model.GraphObservationNode {
