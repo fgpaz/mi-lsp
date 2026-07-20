@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"sort"
@@ -16,12 +17,20 @@ import (
 const affectedHeuristicWarning = "nav.affected uses conservative path, catalog, docs, and test heuristics; confidence is advisory and not complete impact proof"
 
 type AffectedItem struct {
-	Kind             string   `json:"kind"`
-	Path             string   `json:"path"`
-	Reason           string   `json:"reason"`
-	Confidence       float64  `json:"confidence"`
-	SuggestedCommand string   `json:"suggested_command,omitempty"`
-	Evidence         []string `json:"evidence,omitempty"`
+	Kind             string                      `json:"kind"`
+	Path             string                      `json:"path"`
+	Reason           string                      `json:"reason"`
+	Confidence       float64                     `json:"confidence"`
+	SuggestedCommand string                      `json:"suggested_command,omitempty"`
+	Evidence         []string                    `json:"evidence,omitempty"`
+	CrossRID         string                      `json:"cross_rid,omitempty"`
+	GenerationID     string                      `json:"generation_id,omitempty"`
+	ConfidenceClass  string                      `json:"confidence_class,omitempty"`
+	EvidencePath     []model.GraphImpactPathStep `json:"evidence_path,omitempty"`
+	ChangeType       string                      `json:"change_type,omitempty"`
+	TriggerPath      string                      `json:"trigger_path,omitempty"`
+	Warnings         []string                    `json:"warnings,omitempty"`
+	Omissions        []model.GraphImpactOmission `json:"omissions,omitempty"`
 }
 
 type affectedInput struct {
@@ -43,7 +52,6 @@ func (a *App) affected(ctx context.Context, request model.CommandRequest) (model
 	quiet, _ := request.Payload["quiet"].(bool)
 	changedRef := strings.TrimSpace(stringPayload(request.Payload, "changed_ref"))
 	testCommand := strings.TrimSpace(stringPayload(request.Payload, "test_command"))
-
 	inputs := map[string]affectedInput{}
 	for _, path := range affectedPathsFromPayload(request.Payload["paths"]) {
 		addAffectedInput(inputs, path, "", "explicit_path")
@@ -113,6 +121,35 @@ func (a *App) affected(ctx context.Context, request model.CommandRequest) (model
 	var items []AffectedItem
 	seenItems := map[string]struct{}{}
 	symbolEvidenceCount := 0
+	graphUsed := false
+	if db != nil {
+		impactRequest, requestErr := affectedGraphRequest(request.Payload)
+		if requestErr != nil {
+			return model.Envelope{}, requestErr
+		}
+		impactRequest.Paths = make([]string, 0, len(orderedInputs))
+		for _, input := range orderedInputs {
+			impactRequest.Paths = append(impactRequest.Paths, input.Path)
+		}
+		impact, graphErr := GraphImpact(ctx, db, impactRequest)
+		if graphErr == nil && impact.GenerationID != "" {
+			graphUsed = true
+			warnings = appendStringIfMissing(warnings, "graph-native impact is exact/extracted; heuristic items remain advisory")
+			for _, graphItem := range append(impact.Items, impact.Inferred...) {
+				item := AffectedItem{Kind: "code", Path: graphItem.Path, Reason: graphItem.Reason, Confidence: 0.9, CrossRID: graphItem.CrossRID, GenerationID: graphItem.GenerationID, ConfidenceClass: graphItem.ConfidenceClass, EvidencePath: graphItem.EvidencePath, TriggerPath: graphItem.TriggerPath, Evidence: append([]string(nil), graphItem.EvidenceRefs...)}
+				addAffectedItem(&items, seenItems, item)
+			}
+			for _, omission := range impact.Omissions {
+				warnings = appendStringIfMissing(warnings, omission.Code+": "+omission.Reason)
+			}
+		}
+		if graphErr != nil && !graphImpactCanFallback(graphErr) {
+			return model.Envelope{}, graphErr
+		}
+	}
+	if graphUsed {
+		warnings = appendStringIfMissing(warnings, "legacy path/test/doc suggestions are heuristic and not graph facts")
+	}
 	for _, input := range orderedInputs {
 		evidence := []string{"source:" + input.Source}
 		if input.ChangeType != "" {
@@ -133,12 +170,19 @@ func (a *App) affected(ctx context.Context, request model.CommandRequest) (model
 			reason = "changed test path selected from " + input.Source
 		}
 
+		legacyClass := "heuristic"
+		if !graphUsed {
+			legacyClass = "legacy"
+		}
 		addAffectedItem(&items, seenItems, AffectedItem{
-			Kind:       kind,
-			Path:       input.Path,
-			Reason:     reason,
-			Confidence: confidence,
-			Evidence:   evidence,
+			Kind:            kind,
+			Path:            input.Path,
+			Reason:          reason,
+			Confidence:      confidence,
+			ConfidenceClass: legacyClass,
+			ChangeType:      input.ChangeType,
+			TriggerPath:     input.Path,
+			Evidence:        evidence,
 		})
 
 		if includeTests {
@@ -258,6 +302,51 @@ func addAffectedInput(inputs map[string]affectedInput, path string, changeType s
 		return
 	}
 	inputs[path] = affectedInput{Path: path, ChangeType: changeType, Source: source}
+}
+
+func affectedGraphRequest(payload map[string]any) (model.GraphImpactRequest, error) {
+	q := model.GraphImpactRequest{
+		Generation:   stringPayload(payload, "generation"),
+		Mode:         stringPayload(payload, "mode"),
+		Depth:        intFromAny(payload["depth"], 0),
+		Limit:        intFromAny(payload["limit"], 0),
+		TokenBudget:  intFromAny(payload["token_budget"], 0),
+		Direction:    stringPayload(payload, "direction"),
+		IncludeTests: boolPayload(payload, "include_tests"),
+		IncludeDocs:  boolPayload(payload, "include_docs"),
+	}
+	for _, key := range []string{"edge", "edges", "relations"} {
+		switch v := payload[key].(type) {
+		case []string:
+			q.Relations = append(q.Relations, v...)
+		case []any:
+			for _, x := range v {
+				if s, ok := x.(string); ok {
+					q.Relations = append(q.Relations, s)
+				}
+			}
+		case string:
+			if strings.TrimSpace(v) != "" {
+				q.Relations = append(q.Relations, v)
+			}
+		}
+	}
+	return q.Normalize()
+}
+
+func boolPayload(payload map[string]any, key string) bool { v, _ := payload[key].(bool); return v }
+
+func graphImpactCanFallback(err error) bool {
+	var graphErr *model.GraphQueryError
+	if !errors.As(err, &graphErr) {
+		return true
+	}
+	switch graphErr.Code {
+	case "GPH_QUERY_BACKEND_UNAVAILABLE", "GPH_QUERY_GENERATION_NOT_FOUND", "GPH_QUERY_GRAPH_UNAVAILABLE":
+		return true
+	default:
+		return false
+	}
 }
 
 func addAffectedItem(items *[]AffectedItem, seen map[string]struct{}, item AffectedItem) {

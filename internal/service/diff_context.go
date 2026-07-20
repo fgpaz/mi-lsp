@@ -29,10 +29,11 @@ type DiffSymbol struct {
 }
 
 type DiffContextResult struct {
-	Ref            string       `json:"ref"`
-	ChangedFiles   int          `json:"changed_files"`
-	ChangedSymbols []DiffSymbol `json:"changed_symbols"`
-	Impact         *DiffImpact  `json:"impact,omitempty"`
+	Ref            string                     `json:"ref"`
+	ChangedFiles   int                        `json:"changed_files"`
+	ChangedSymbols []DiffSymbol               `json:"changed_symbols"`
+	Impact         *DiffImpact                `json:"impact,omitempty"`
+	GraphImpact    *model.GraphImpactEnvelope `json:"graph_impact,omitempty"`
 }
 
 type DiffImpact struct {
@@ -90,7 +91,32 @@ func (a *App) diffContext(ctx context.Context, request model.CommandRequest) (mo
 	}
 	defer db.Close()
 
-	// 5. For each changed file+line: lookup enclosing symbol
+	// 5. Reuse the read-only graph impact core for the same changed paths.
+	var graphImpact *model.GraphImpactEnvelope
+	graphRequest := model.GraphImpactRequest{
+		Generation:   stringPayload(request.Payload, "generation"),
+		Mode:         stringPayload(request.Payload, "mode"),
+		Depth:        intFromAny(request.Payload["depth"], 0),
+		Limit:        intFromAny(request.Payload["limit"], 0),
+		TokenBudget:  intFromAny(request.Payload["token_budget"], 0),
+		IncludeTests: boolPayload(request.Payload, "include_tests"),
+		IncludeDocs:  boolPayload(request.Payload, "include_docs"),
+	}
+	for path := range changedMap {
+		graphRequest.Paths = append(graphRequest.Paths, path)
+	}
+	sort.Strings(graphRequest.Paths)
+	if graphRequest.Mode == "" {
+		graphRequest.Mode = model.GraphImpactModeDirect
+	}
+	if edges, ok := request.Payload["edge"].([]string); ok {
+		graphRequest.Relations = edges
+	}
+	if impact, impactErr := GraphImpact(ctx, db, graphRequest); impactErr == nil && impact.GenerationID != "" {
+		graphImpact = &impact
+	}
+
+	// 6. For each changed file+line: lookup enclosing symbol
 	symbolMap := make(map[string]*DiffSymbol) // key: "file:line:name" for dedup
 	var changingFiles []string
 
@@ -172,6 +198,7 @@ func (a *App) diffContext(ctx context.Context, request model.CommandRequest) (mo
 			FilesAffected:   len(changingFiles),
 			SymbolsAffected: len(symbols),
 		},
+		GraphImpact: graphImpact,
 	}
 
 	return model.Envelope{

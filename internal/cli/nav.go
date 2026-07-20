@@ -434,6 +434,12 @@ Use --include-content to embed symbol bodies in the output.`,
 	var affectedIncludeDocs bool
 	var affectedQuiet bool
 	var affectedTestCommand string
+	var affectedGeneration string
+	var affectedMode string
+	var affectedDepth int
+	var affectedLimit int
+	var affectedTokenBudget int
+	var affectedEdges []string
 	affectedCommand := &cobra.Command{
 		Use:   "affected [paths...]",
 		Short: "Conservative git-aware impact selector",
@@ -449,6 +455,12 @@ instead of claiming complete graph precision.`,
 				"include_docs":  affectedIncludeDocs,
 				"quiet":         affectedQuiet,
 				"test_command":  affectedTestCommand,
+				"generation":    affectedGeneration,
+				"mode":          affectedMode,
+				"depth":         affectedDepth,
+				"limit":         affectedLimit,
+				"token_budget":  affectedTokenBudget,
+				"edge":          affectedEdges,
 			}
 			if affectedStdin {
 				data, err := io.ReadAll(os.Stdin)
@@ -467,6 +479,12 @@ instead of claiming complete graph precision.`,
 	affectedCommand.Flags().BoolVar(&affectedIncludeDocs, "include-docs", false, "Suggest canonical docs likely affected by changed paths")
 	affectedCommand.Flags().BoolVar(&affectedQuiet, "quiet", false, "Suppress non-essential hints while preserving stable item fields")
 	affectedCommand.Flags().StringVar(&affectedTestCommand, "test-command", "", "Override inferred test command for suggested test items")
+	affectedCommand.Flags().StringVar(&affectedGeneration, "generation", "", "Graph generation identifier")
+	affectedCommand.Flags().StringVar(&affectedMode, "mode", "direct", "Graph impact mode: direct or transitive")
+	affectedCommand.Flags().IntVar(&affectedDepth, "depth", 0, "Maximum transitive graph depth")
+	affectedCommand.Flags().IntVar(&affectedLimit, "limit", 0, "Maximum impact items")
+	affectedCommand.Flags().IntVar(&affectedTokenBudget, "token-budget", 0, "Maximum graph impact token budget")
+	affectedCommand.Flags().StringArrayVar(&affectedEdges, "edge", nil, "Graph relation edge (repeatable)")
 
 	var editPlanStdin bool
 	var editPlanPacket string
