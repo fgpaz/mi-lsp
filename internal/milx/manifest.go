@@ -10,7 +10,7 @@ import (
 
 var idPattern = regexp.MustCompile(`^[a-z0-9]+(?:[._-][a-z0-9]+)*$`)
 var digestPattern = regexp.MustCompile(`^[0-9a-f]{64}$`)
-var allowedOperations = map[string]bool{"describe": true, "prepare": true, "execute": true, "cancel": true, "health": true, "shutdown": true}
+var allowedOperations = map[string]bool{"analysis": true, "describe": true, "prepare": true, "execute": true, "cancel": true, "health": true, "shutdown": true}
 var allowedCapabilities = map[string]bool{"graph.read.nodes": true, "graph.read.edges": true, "graph.read.evidence": true, "documents.read.pack": true, "analysis.emit": true, "visual.emit": true, "import.emit-advisory": true}
 var allowedSchemas = map[string]bool{"milx-envelope/v1": true, "milx-manifest/v1": true, "milx-pack/v1": true, "milx-result/v1": true, "milx-provenance/v1": true, "milx-omissions/v1": true}
 

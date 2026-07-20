@@ -31,7 +31,7 @@ func helperExecutable(t *testing.T) (string, string) {
 func helperManifest(t *testing.T) Manifest {
 	path, digest := helperExecutable(t)
 	_ = path
-	return Manifest{Schema: ManifestSchema, ExtensionID: "test.helper", ExtensionVersion: "1.0.0", ExecutableSHA256: digest, ProtocolMin: 1, ProtocolMax: 1, Operations: []string{"cancel", "describe", "execute", "health", "prepare", "shutdown"}, InputSchemas: []string{"milx-pack/v1"}, OutputSchemas: []string{"milx-result/v1"}, Capabilities: []string{"analysis.emit"}, Deterministic: true}
+	return Manifest{Schema: ManifestSchema, ExtensionID: "test.helper", ExtensionVersion: "1.0.0", ExecutableSHA256: digest, ProtocolMin: 1, ProtocolMax: 1, Operations: []string{"analysis", "cancel", "describe", "execute", "health", "prepare", "shutdown"}, InputSchemas: []string{"milx-pack/v1"}, OutputSchemas: []string{"milx-result/v1"}, Capabilities: []string{"analysis.emit"}, Deterministic: true}
 }
 
 func helperConfig(t *testing.T) HostConfig {
@@ -42,7 +42,7 @@ func helperConfig(t *testing.T) HostConfig {
 		Timeout:            5 * time.Second,
 		Environment:        map[string]string{"MILX_TEST_HELPER": "1"},
 		AllowedEnvironment: []string{"MILX_TEST_HELPER"},
-		IsolationGuard:     &IsolationGuard{NetworkDenied: true, ProcessTreeContained: true},
+		IsolationGuard:     &isolationGuard{networkDenied: true, processTreeContained: true},
 	}
 }
 
@@ -193,7 +193,7 @@ func runMILXHelper() {
 		case "describe":
 			path, _ := os.Executable()
 			data, _ := os.ReadFile(path)
-			m := Manifest{Schema: ManifestSchema, ExtensionID: "test.helper", ExtensionVersion: "1.0.0", ExecutableSHA256: DigestHex(data), ProtocolMin: 1, ProtocolMax: 1, Operations: []string{"cancel", "describe", "execute", "health", "prepare", "shutdown"}, InputSchemas: []string{"milx-pack/v1"}, OutputSchemas: []string{"milx-result/v1"}, Capabilities: []string{"analysis.emit"}, Deterministic: true}
+			m := Manifest{Schema: ManifestSchema, ExtensionID: "test.helper", ExtensionVersion: "1.0.0", ExecutableSHA256: DigestHex(data), ProtocolMin: 1, ProtocolMax: 1, Operations: []string{"analysis", "cancel", "describe", "execute", "health", "prepare", "shutdown"}, InputSchemas: []string{"milx-pack/v1"}, OutputSchemas: []string{"milx-result/v1"}, Capabilities: []string{"analysis.emit"}, Deterministic: true}
 			response.Payload, _ = CanonicalJSON(m)
 		case "prepare":
 			var p map[string]any
