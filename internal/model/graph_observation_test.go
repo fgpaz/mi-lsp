@@ -1,10 +1,149 @@
 package model
 
 import (
+	"bytes"
 	"encoding/json"
+	"errors"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"reflect"
 	"testing"
 )
+
+func TestRoslynObservationWireContract(t *testing.T) {
+	if os.Getenv("MILSP_RUN_ROSLYN_CROSSLANG") != "1" {
+		t.Skip("set MILSP_RUN_ROSLYN_CROSSLANG=1 to run the opt-in Roslyn wire oracle")
+	}
+
+	repoRoot, err := filepath.Abs(filepath.Join("..", ".."))
+	if err != nil {
+		t.Fatal(err)
+	}
+	emitDir := t.TempDir()
+	cmd := exec.Command("dotnet", "run", "--project", "worker-dotnet/MiLsp.Worker.ContractTests/MiLsp.Worker.ContractTests.csproj", "-c", "Release")
+	cmd.Dir = repoRoot
+	cmd.Env = append(os.Environ(), "MILSP_G2_EMIT_DIR="+emitDir)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("Roslyn contract failed: %v\\n%s", err, output)
+	}
+
+	paths := []string{"complete.json", "compiler-error.json", "canceled.json"}
+	batches := make(map[string]GraphObservationBatch, len(paths))
+	for _, name := range paths {
+		path := filepath.Join(emitDir, name)
+		raw, readErr := os.ReadFile(path)
+		if readErr != nil || len(raw) == 0 {
+			t.Fatalf("missing or empty emitted artifact %s: %v", name, readErr)
+		}
+		if bytes.Contains(raw, []byte(emitDir)) {
+			t.Fatalf("emitted artifact %s leaks its temporary output path", name)
+		}
+		var batch GraphObservationBatch
+		if err := json.Unmarshal(raw, &batch); err != nil {
+			t.Fatalf("decode %s: %v", name, err)
+		}
+		batches[name] = batch
+	}
+
+	complete := batches["complete.json"]
+	if observationNonzero(complete.Digest) {
+		t.Fatal("complete batch was already sealed")
+	}
+	if err := SealGraphObservationBatch(&complete); err != nil {
+		t.Fatalf("seal complete: %v", err)
+	}
+	before, err := json.Marshal(complete)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := complete.Validate(); err != nil {
+		t.Fatalf("validate complete: %v", err)
+	}
+	after, err := json.Marshal(complete)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(before, after) {
+		t.Fatal("Validate mutated complete batch")
+	}
+	if err := complete.ReadyForStaging(); err != nil {
+		t.Fatalf("complete batch is not stageable: %v", err)
+	}
+
+	for _, name := range []string{"compiler-error.json", "canceled.json"} {
+		batch := batches[name]
+		if err := SealGraphObservationBatch(&batch); err != nil {
+			t.Fatalf("seal %s: %v", name, err)
+		}
+		if err := batch.Validate(); err != nil {
+			t.Fatalf("validate %s: %v", name, err)
+		}
+		if err := batch.ReadyForStaging(); !errors.Is(err, ErrGraphObservationNotStageable) {
+			t.Fatalf("%s staging error = %v, want ErrGraphObservationNotStageable", name, err)
+		}
+		wantReason := "compiler_errors"
+		if name == "canceled.json" {
+			wantReason = "canceled"
+		}
+		if !slicesContainOmissionReason(batch.Omissions, wantReason) {
+			t.Fatalf("%s lost typed reason %q", name, wantReason)
+		}
+	}
+
+	withTamper := func(label string, mutate func(*GraphObservationBatch)) {
+		t.Helper()
+		raw := batches["complete.json"]
+		batch := cloneObservation(&raw)
+		mutate(&batch)
+		if err := SealGraphObservationBatch(&batch); err == nil {
+			t.Fatalf("tampered %s batch was accepted by SealGraphObservationBatch", label)
+		}
+	}
+	withTamper("unsafe path", func(batch *GraphObservationBatch) {
+		batch.Evidence[0].SourceURI = "../leak"
+	})
+	withTamper("dangling edge evidence", func(batch *GraphObservationBatch) {
+		for i := range batch.Evidence {
+			if batch.Evidence[i].EdgeRef != "" {
+				batch.Evidence[i].EdgeRef = "edge:missing"
+				return
+			}
+		}
+		t.Fatal("complete batch has no edge evidence")
+	})
+	withTamper("missing edge evidence", func(batch *GraphObservationBatch) {
+		for _, edge := range batch.Edges {
+			filtered := batch.Evidence[:0]
+			removed := false
+			for _, evidence := range batch.Evidence {
+				if evidence.EdgeRef == edge.Ref {
+					removed = true
+					continue
+				}
+				filtered = append(filtered, evidence)
+			}
+			if removed {
+				batch.Evidence = filtered
+				return
+			}
+		}
+		t.Fatal("complete batch has no edge evidence")
+	})
+	withTamper("zero source digest", func(batch *GraphObservationBatch) {
+		batch.Nodes[0].SourceDigest = GraphDigest{}
+	})
+}
+
+func slicesContainOmissionReason(omissions []GraphObservationOmission, reason string) bool {
+	for _, omission := range omissions {
+		if omission.ReasonCode == reason {
+			return true
+		}
+	}
+	return false
+}
 
 func observationTestBatch() GraphObservationBatch {
 	key := NodeKeyFields{RepositoryIdentity: "github.com/acme/Repo", BackendType: "roslyn", Language: "csharp", ProjectOrModule: "Src/App", OwnerPath: "Src/App/a.cs", SymbolKind: "type", SemanticIdentity: "Acme.App.Widget"}
@@ -63,7 +202,7 @@ func TestGraphObservationValidationIsNonMutatingAndTamperResistant(t *testing.T)
 	if err := unsealed.Validate(); err == nil {
 		t.Fatal("unsealed accepted")
 	}
-	if !reflect.DeepEqual(unsealed, snapshot) {
+	if !reflect.DeepEqual(cloneObservation(&unsealed), snapshot) {
 		t.Fatal("Validate mutated unsealed input")
 	}
 }
@@ -277,6 +416,30 @@ func TestGraphObservationVersionBounds(t *testing.T) {
 				t.Fatalf("%s %q accepted", field, value)
 			}
 		}
+	}
+}
+
+func TestGraphObservationNilSlicesNormalizeToWireEmptyArrays(t *testing.T) {
+	b := observationTestBatch()
+	b.Edges, b.Unresolved, b.Omissions = nil, nil, nil
+	if err := SealGraphObservationBatch(&b); err != nil {
+		t.Fatal(err)
+	}
+	if b.Edges == nil || b.Unresolved == nil || b.Omissions == nil {
+		t.Fatal("sealed batch retained nil wire slices")
+	}
+	if err := b.Validate(); err != nil {
+		t.Fatal(err)
+	}
+
+	incoming := b
+	incoming.Edges, incoming.Unresolved, incoming.Omissions = nil, nil, nil
+	before := cloneObservation(&incoming)
+	if err := incoming.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(before, cloneObservation(&incoming)) {
+		t.Fatal("Validate mutated nil-slice input")
 	}
 }
 

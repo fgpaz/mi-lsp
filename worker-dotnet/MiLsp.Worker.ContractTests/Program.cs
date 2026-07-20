@@ -52,6 +52,23 @@ static void AssertNonzeroFingerprints(GraphObservationBatch observation)
     Require(observation.ConfigFingerprint.Length == 64 && observation.ConfigFingerprint != new string('0', 64), "config fingerprint is zero");
 }
 
+static void EmitObservationsIfRequested(GraphObservationBatch complete, GraphObservationBatch compilerError, GraphObservationBatch canceled)
+{
+    var output = Environment.GetEnvironmentVariable("MILSP_G2_EMIT_DIR");
+    if (string.IsNullOrWhiteSpace(output) || !Path.IsPathFullyQualified(output)) return;
+    Directory.CreateDirectory(output);
+    var options = new JsonSerializerOptions(JsonSerializerDefaults.Web);
+    foreach (var item in new[]
+    {
+        (Name: "complete.json", Observation: complete),
+        (Name: "compiler-error.json", Observation: compilerError),
+        (Name: "canceled.json", Observation: canceled)
+    })
+    {
+        File.WriteAllText(Path.Combine(output, item.Name), JsonSerializer.Serialize(item.Observation, options));
+    }
+}
+
 static void AssertGraphInvariants(GraphObservationBatch observation)
 {
     var nodeRefs = observation.Nodes.Select(node => node.Ref).ToHashSet(StringComparer.Ordinal);
@@ -95,6 +112,8 @@ static void CopyTree(string source, string destination)
 }
 
 var roots = new List<string>();
+GraphObservationBatch? emittedCompilerError = null;
+GraphObservationBatch? emittedCanceled = null;
 try
 {
     var root = CreateFixture("main");
@@ -159,6 +178,7 @@ try
         var canceledResponse = await new RoslynService().HandleAsync(Request(root, project), canceledSource.Token);
         Require(canceledResponse.Ok && canceledResponse.Observation is not null && canceledResponse.Observation.Completeness == "partial", "canceled extraction not partial");
         var canceled = canceledResponse.Observation!;
+        emittedCanceled = canceled;
         AssertNonzeroFingerprints(canceled);
         AssertCoverage(canceled);
         AssertSafePaths(canceled);
@@ -171,6 +191,7 @@ try
     var errorProject = Path.Combine(errorRoot, "Fixture.csproj");
     var errorResponse = await new RoslynService().HandleAsync(Request(errorRoot, errorProject), CancellationToken.None);
     Require(errorResponse.Ok && errorResponse.Observation is not null && errorResponse.Observation.Completeness == "partial", "compiler error batch is not partial");
+    emittedCompilerError = errorResponse.Observation;
     Require(errorResponse.Error is null && (errorResponse.Warnings is null || errorResponse.Warnings.All(warning => !warning.Contains("CS", StringComparison.OrdinalIgnoreCase))), "raw compiler diagnostics emitted");
     Require(errorResponse.Observation!.Omissions.Count(omission => omission.ReasonCode == "compiler_errors") == 6, "compiler error omissions are not deduplicated per capability");
     AssertCoverage(errorResponse.Observation);
@@ -236,6 +257,8 @@ try
 
     var missing = await new RoslynService().HandleAsync(Request(root, project, project, null), CancellationToken.None);
     Require(!missing.Ok && missing.ErrorCode == "GPH_BACKEND_PROVENANCE_MISSING", "missing provenance gate failed");
+    Require(emittedCompilerError is not null && emittedCanceled is not null, "emission observations missing");
+    EmitObservationsIfRequested(observation1, emittedCompilerError, emittedCanceled);
     Console.WriteLine("PASS graph observation provenance contract");
 }
 finally

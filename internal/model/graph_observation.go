@@ -192,15 +192,39 @@ func observationCapability(s string) bool {
 }
 func observationRelation(s string) bool      { return s != "declarations" && observationCapability(s) }
 func canonicalPath(s string) (string, error) { return slashPath(nfcTrim(s), "path") }
+func normalizeObservationSlices(b *GraphObservationBatch) {
+	if b.Capabilities == nil {
+		b.Capabilities = []GraphObservationCapability{}
+	}
+	if b.Coverage == nil {
+		b.Coverage = []GraphObservationCoverage{}
+	}
+	if b.Nodes == nil {
+		b.Nodes = []GraphObservationNode{}
+	}
+	if b.Edges == nil {
+		b.Edges = []GraphObservationEdge{}
+	}
+	if b.Evidence == nil {
+		b.Evidence = []GraphObservationEvidence{}
+	}
+	if b.Unresolved == nil {
+		b.Unresolved = []GraphObservationUnresolved{}
+	}
+	if b.Omissions == nil {
+		b.Omissions = []GraphObservationOmission{}
+	}
+}
+
 func cloneObservation(b *GraphObservationBatch) GraphObservationBatch {
 	x := *b
-	x.Capabilities = append([]GraphObservationCapability(nil), b.Capabilities...)
-	x.Coverage = append([]GraphObservationCoverage(nil), b.Coverage...)
-	x.Nodes = append([]GraphObservationNode(nil), b.Nodes...)
-	x.Edges = append([]GraphObservationEdge(nil), b.Edges...)
-	x.Evidence = append([]GraphObservationEvidence(nil), b.Evidence...)
-	x.Unresolved = append([]GraphObservationUnresolved(nil), b.Unresolved...)
-	x.Omissions = append([]GraphObservationOmission(nil), b.Omissions...)
+	x.Capabilities = append([]GraphObservationCapability{}, b.Capabilities...)
+	x.Coverage = append([]GraphObservationCoverage{}, b.Coverage...)
+	x.Nodes = append([]GraphObservationNode{}, b.Nodes...)
+	x.Edges = append([]GraphObservationEdge{}, b.Edges...)
+	x.Evidence = append([]GraphObservationEvidence{}, b.Evidence...)
+	x.Unresolved = append([]GraphObservationUnresolved{}, b.Unresolved...)
+	x.Omissions = append([]GraphObservationOmission{}, b.Omissions...)
 	for i := range x.Evidence {
 		if b.Evidence[i].Range != nil {
 			r := *b.Evidence[i].Range
@@ -239,6 +263,7 @@ func observationDigest(b *GraphObservationBatch) (GraphDigest, error) {
 }
 
 func (b *GraphObservationBatch) canonicalize() error {
+	normalizeObservationSlices(b)
 	var e error
 	b.Backend = enumLower(b.Backend)
 	b.BackendVersion = nfcTrim(b.BackendVersion)
@@ -620,6 +645,7 @@ func (b *GraphObservationBatch) Validate() error {
 	if b == nil {
 		return ErrGraphObservationInvalid
 	}
+	input := cloneObservation(b)
 	c := cloneObservation(b)
 	if e := c.canonicalize(); e != nil {
 		return e
@@ -627,10 +653,10 @@ func (b *GraphObservationBatch) Validate() error {
 	if e := c.validateCore(); e != nil {
 		return e
 	}
-	if !reflect.DeepEqual(*b, c) {
+	if !reflect.DeepEqual(input, c) {
 		return observationErr("GPH_OBS_NONCANONICAL", "batch", "batch is not canonical")
 	}
-	d, e := observationDigest(b)
+	d, e := observationDigest(&c)
 	if e != nil {
 		return e
 	}
