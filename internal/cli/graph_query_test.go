@@ -8,7 +8,7 @@ import (
 
 func TestGraphCommandsExposeCanonicalArityAndFlags(t *testing.T) {
 	commands := newGraphQueryCommands(nil)
-	want := map[string]int{"neighbors": 1, "callers": 1, "callees": 1, "path": 2, "graph": 0}
+	want := map[string]int{"neighbors": 1, "callers": 1, "callees": 1, "explain": 1, "path": 2, "graph": 0}
 	for _, command := range commands {
 		name := command.Name()
 		arity, ok := want[name]

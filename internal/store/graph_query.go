@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"sort"
 	"strings"
 
@@ -201,6 +200,27 @@ func graphEdgeFromRow(scanner interface{ Scan(...any) error }, generation model.
 	e.GenerationID = generation
 	e.EdgeKey, err = scanDigest(key)
 	return e, err
+}
+
+func (s *GraphQuerySnapshot) ResolveGraphEdgeSelector(ctx context.Context, selector string) ([]model.GraphEdgeRecord, error) {
+	selector = strings.TrimSpace(selector)
+	if selector == "" {
+		return nil, &model.GraphQueryError{Code: "GPH_QUERY_SELECTOR_INVALID", Message: "selector is required"}
+	}
+	rows, err := s.query(ctx, `SELECT edge_id,edge_key,from_node_id,to_node_id,relation,claim_scope,claim_status,owner_path,source_backend,cross_rid FROM graph_edges WHERE generation_id=? AND cross_rid=? ORDER BY edge_key LIMIT 2`, digestArg(s.generation.GenerationID), selector)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var edges []model.GraphEdgeRecord
+	for rows.Next() {
+		e, scanErr := graphEdgeFromRow(rows, s.generation.GenerationID)
+		if scanErr != nil {
+			return nil, scanErr
+		}
+		edges = append(edges, e)
+	}
+	return edges, rows.Err()
 }
 
 func (s *GraphQuerySnapshot) EdgesFromFrontier(ctx context.Context, frontier []int, direction string, relations []string, maxRows int) ([]model.GraphEdgeRecord, error) {
@@ -439,5 +459,8 @@ func SanitizeGraphQueryError(err error) error {
 	if errors.Is(err, ErrGraphQuerySelectorAmbiguous) {
 		return &model.GraphQueryError{Code: "GPH_QUERY_SELECTOR_AMBIGUOUS", Message: "selector matched multiple graph nodes"}
 	}
-	return fmt.Errorf("graph query failed")
+	if errors.Is(err, model.ErrGraphGenerationInvalid) || errors.Is(err, model.ErrGraphGenerationCorrupt) || errors.Is(err, model.ErrGraphEdgeInvalid) || errors.Is(err, model.ErrGraphEvidenceInvalid) || errors.Is(err, model.ErrGraphUnresolved) {
+		return &model.GraphQueryError{Code: "GPH_QUERY_GRAPH_INVALID", Message: "graph generation is invalid"}
+	}
+	return &model.GraphQueryError{Code: "GPH_QUERY_BACKEND_UNAVAILABLE", Message: "graph backend is unavailable"}
 }

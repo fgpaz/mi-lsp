@@ -66,7 +66,7 @@ type GraphQueryRequest struct {
 
 func (q GraphQueryRequest) Normalize() (GraphQueryRequest, error) {
 	q.Operation = strings.TrimSpace(q.Operation)
-	if q.Operation != "nav.neighbors" && q.Operation != "nav.callers" && q.Operation != "nav.callees" && q.Operation != "nav.path" && q.Operation != "nav.graph.stats" && q.Operation != "nav.graph.validate" {
+	if q.Operation != "nav.neighbors" && q.Operation != "nav.callers" && q.Operation != "nav.callees" && q.Operation != "nav.path" && q.Operation != "nav.explain" && q.Operation != "nav.graph.stats" && q.Operation != "nav.graph.validate" {
 		return q, &GraphQueryError{Code: "GPH_QUERY_SELECTOR_INVALID", Field: "operation", Message: "operation is not a graph query"}
 	}
 	q.Selector = strings.TrimSpace(q.Selector)
@@ -120,32 +120,35 @@ func (q GraphQueryRequest) Normalize() (GraphQueryRequest, error) {
 }
 
 type GraphQueryItem struct {
-	Kind         string   `json:"kind"`
-	CrossRID     string   `json:"cross_rid"`
-	Display      string   `json:"display"`
-	Status       string   `json:"status"`
-	Distance     int      `json:"distance"`
-	EvidenceRefs []string `json:"evidence_refs,omitempty"`
-	NodeKey      string   `json:"node_key,omitempty"`
-	EdgeKey      string   `json:"edge_key,omitempty"`
-	NodeID       int      `json:"node_id,omitempty"`
-	EdgeID       int      `json:"edge_id,omitempty"`
-	Relation     string   `json:"relation,omitempty"`
-	FromNodeKey  string   `json:"from_node_key,omitempty"`
-	ToNodeKey    string   `json:"to_node_key,omitempty"`
-	FromCrossRID string   `json:"from_cross_rid,omitempty"`
-	ToCrossRID   string   `json:"to_cross_rid,omitempty"`
-	SymbolKind   string   `json:"symbol_kind,omitempty"`
-	OwnerPath    string   `json:"owner_path,omitempty"`
+	Kind            string   `json:"kind"`
+	CrossRID        string   `json:"cross_rid"`
+	Display         string   `json:"display"`
+	Status          string   `json:"status"`
+	Distance        int      `json:"distance"`
+	EvidenceRefs    []string `json:"evidence_refs,omitempty"`
+	NodeKey         string   `json:"node_key,omitempty"`
+	EdgeKey         string   `json:"edge_key,omitempty"`
+	EdgeCrossRID    string   `json:"edge_cross_rid,omitempty"`
+	ConfidenceClass string   `json:"confidence_class,omitempty"`
+	NodeID          int      `json:"node_id,omitempty"`
+	EdgeID          int      `json:"edge_id,omitempty"`
+	Relation        string   `json:"relation,omitempty"`
+	FromNodeKey     string   `json:"from_node_key,omitempty"`
+	ToNodeKey       string   `json:"to_node_key,omitempty"`
+	FromCrossRID    string   `json:"from_cross_rid,omitempty"`
+	ToCrossRID      string   `json:"to_cross_rid,omitempty"`
+	SymbolKind      string   `json:"symbol_kind,omitempty"`
+	OwnerPath       string   `json:"owner_path,omitempty"`
 }
 
 type GraphQueryStats struct {
-	Visited    int `json:"visited"`
-	Frontier   int `json:"frontier"`
-	Returned   int `json:"returned"`
-	Depth      int `json:"depth"`
-	TokenUnits int `json:"token_units"`
-	Unresolved int `json:"unresolved"`
+	Visited      int `json:"visited"`
+	Frontier     int `json:"frontier"`
+	Returned     int `json:"returned"`
+	Depth        int `json:"depth"`
+	TokenUnits   int `json:"token_units"`
+	DepthReached int `json:"depth_reached"`
+	Unresolved   int `json:"unresolved"`
 }
 
 type GraphQueryMetadata struct {

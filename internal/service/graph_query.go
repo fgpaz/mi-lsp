@@ -106,7 +106,7 @@ func equalStrings(a, b []string) bool {
 
 func GraphQuery(ctx context.Context, db *sql.DB, q model.GraphQueryRequest) (model.Envelope, error) {
 	if ctx == nil || db == nil {
-		return model.Envelope{}, &model.GraphQueryError{Code: "GPH_QUERY_GENERATION_INVALID", Message: "graph database is unavailable"}
+		return model.Envelope{}, &model.GraphQueryError{Code: "GPH_QUERY_BACKEND_UNAVAILABLE", Message: "graph backend is unavailable"}
 	}
 	q, err := q.Normalize()
 	if err != nil {
@@ -149,6 +149,8 @@ func GraphQuery(ctx context.Context, db *sql.DB, q model.GraphQueryRequest) (mod
 		envelope, err = graphStats(ctx, snapshot, q, generation)
 	case "nav.graph.validate":
 		envelope, err = graphValidate(ctx, snapshot, q, generation)
+	case "nav.explain":
+		envelope, err = graphExplain(ctx, snapshot, q, generation)
 	case "nav.path":
 		envelope, err = graphPath(ctx, snapshot, q, generation, cursor.Offset)
 	default:
@@ -164,6 +166,24 @@ func GraphQuery(ctx context.Context, db *sql.DB, q model.GraphQueryRequest) (mod
 		}
 	}
 	return envelope, nil
+}
+
+func graphExplain(ctx context.Context, s *store.GraphQuerySnapshot, q model.GraphQueryRequest, g model.GraphGeneration) (model.Envelope, error) {
+	edges, err := s.ResolveGraphEdgeSelector(ctx, q.Selector)
+	if err != nil {
+		return model.Envelope{}, err
+	}
+	if len(edges) == 0 {
+		return graphEnvelope(q, g, []any{}, nil, model.GraphQueryStats{Depth: 1}, "edge selector not found"), nil
+	}
+	if len(edges) > 1 {
+		return model.Envelope{}, &model.GraphQueryError{Code: "GPH_QUERY_SELECTOR_AMBIGUOUS", Message: "edge selector matched multiple graph edges"}
+	}
+	item, err := graphEdgeItem(s, ctx, edges[0])
+	if err != nil {
+		return model.Envelope{}, err
+	}
+	return graphEnvelope(q, g, []any{item}, []model.GraphQueryItem{item}, model.GraphQueryStats{Visited: 2, Returned: 1, Depth: 1, DepthReached: 1}, ""), nil
 }
 
 func graphStats(ctx context.Context, s *store.GraphQuerySnapshot, q model.GraphQueryRequest, g model.GraphGeneration) (model.Envelope, error) {
@@ -383,7 +403,7 @@ func sNode(s *store.GraphQuerySnapshot, ctx context.Context, id int) (model.Grap
 }
 
 func graphNodeItem(s *store.GraphQuerySnapshot, ctx context.Context, n model.GraphNodeRecord, distance int, edge *model.GraphEdgeRecord) (model.GraphQueryItem, error) {
-	item := model.GraphQueryItem{Kind: "node", CrossRID: n.CrossRID, Display: n.DisplayName, Status: n.ClaimStatus, Distance: distance, NodeKey: n.NodeKey.String(), NodeID: n.NodeID, SymbolKind: n.Identity.SymbolKind, OwnerPath: n.Identity.OwnerPath}
+	item := model.GraphQueryItem{Kind: "node", CrossRID: n.CrossRID, Display: n.DisplayName, Status: n.ClaimStatus, ConfidenceClass: confidenceClass(n.ClaimStatus), Distance: distance, NodeKey: n.NodeKey.String(), NodeID: n.NodeID, SymbolKind: n.Identity.SymbolKind, OwnerPath: n.Identity.OwnerPath}
 	var evidenceNodeID = &n.NodeID
 	var evidenceEdgeID *int
 	if edge != nil {
@@ -393,6 +413,8 @@ func graphNodeItem(s *store.GraphQuerySnapshot, ctx context.Context, n model.Gra
 		item.Relation = edge.Relation
 		item.Status = edge.ClaimStatus
 		item.CrossRID = edge.CrossRID
+		item.EdgeCrossRID = edge.CrossRID
+		item.ConfidenceClass = confidenceClass(edge.ClaimStatus)
 		evidenceEdgeID = &edge.EdgeID
 		from, err := s.Node(ctx, edge.FromNodeID)
 		if err != nil {
@@ -410,6 +432,32 @@ func graphNodeItem(s *store.GraphQuerySnapshot, ctx context.Context, n model.Gra
 	refs, err := s.EvidenceRefs(ctx, evidenceNodeID, evidenceEdgeID, 32)
 	item.EvidenceRefs = refs
 	return item, err
+}
+
+func graphEdgeItem(s *store.GraphQuerySnapshot, ctx context.Context, edge model.GraphEdgeRecord) (model.GraphQueryItem, error) {
+	from, err := s.Node(ctx, edge.FromNodeID)
+	if err != nil {
+		return model.GraphQueryItem{}, err
+	}
+	to, err := s.Node(ctx, edge.ToNodeID)
+	if err != nil {
+		return model.GraphQueryItem{}, err
+	}
+	refs, err := s.EvidenceRefs(ctx, nil, &edge.EdgeID, 32)
+	return model.GraphQueryItem{Kind: "edge", CrossRID: edge.CrossRID, EdgeCrossRID: edge.CrossRID, EdgeKey: edge.EdgeKey.String(), EdgeID: edge.EdgeID, Relation: edge.Relation, Status: edge.ClaimStatus, ConfidenceClass: confidenceClass(edge.ClaimStatus), Distance: 0, EvidenceRefs: refs, FromNodeKey: from.NodeKey.String(), ToNodeKey: to.NodeKey.String(), FromCrossRID: from.CrossRID, ToCrossRID: to.CrossRID, OwnerPath: edge.OwnerPath}, err
+}
+
+func confidenceClass(status string) string {
+	switch status {
+	case model.GraphRecordExact:
+		return "exact"
+	case model.GraphRecordExtracted:
+		return "extracted"
+	case model.GraphRecordInferred:
+		return "inferred"
+	default:
+		return "unknown"
+	}
 }
 
 func sortPathEdges(ctx context.Context, s *store.GraphQuerySnapshot, edges []model.GraphEdgeRecord) {
@@ -506,11 +554,14 @@ func finalizeGraphItems(q model.GraphQueryRequest, g model.GraphGeneration, s *s
 	if truncated {
 		next = encodeGraphCursor(graphCursor{Generation: g.GenerationID.String(), Operation: q.Operation, Selector: q.Selector, From: q.From, To: q.To, Depth: q.Depth, Limit: q.Limit, Token: q.TokenBudget, Direction: q.Direction, Relations: q.Relations, Offset: offset + len(returned)})
 	}
-	stats := model.GraphQueryStats{Visited: visited, Frontier: frontier, Returned: len(returned), Depth: q.Depth, TokenUnits: units, Unresolved: g.UnresolvedCount}
+	stats := model.GraphQueryStats{Visited: visited, Frontier: frontier, Returned: len(returned), Depth: q.Depth, DepthReached: q.Depth, TokenUnits: units, Unresolved: g.UnresolvedCount}
 	env := graphEnvelope(q, g, nil, returned, stats, "")
 	env.Items = returned
 	env.Truncated = truncated
 	env.Graph.NextCursor = next
+	if truncated {
+		env.Continuation = &model.Continuation{Reason: "graph result truncated", Next: model.ContinuationTarget{Op: q.Operation, Query: next}}
+	}
 	return env
 }
 func graphEnvelope(q model.GraphQueryRequest, g model.GraphGeneration, raw []any, canonical []model.GraphQueryItem, stats model.GraphQueryStats, hint string) model.Envelope {

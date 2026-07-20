@@ -621,7 +621,7 @@ func newGraphQueryCommands(state *rootState) []*cobra.Command {
 			} else if arity > 0 {
 				payload["selector"] = args[0]
 			}
-			return state.executeOperation(cmd, operation, payload, false)
+			return state.executeOperation(cmd, operation, payload, true)
 		}}
 		queryFlags(command, &generation, &depth, &limit, &tokenBudget, &direction, &cursor, &edges)
 		return command
@@ -629,12 +629,13 @@ func newGraphQueryCommands(state *rootState) []*cobra.Command {
 	neighbors := makeQuery("neighbors <selector>", "Bounded graph neighbors", "nav.neighbors", 1)
 	callers := makeQuery("callers <selector>", "Bounded incoming call graph", "nav.callers", 1)
 	callees := makeQuery("callees <selector>", "Bounded outgoing call graph", "nav.callees", 1)
+	explain := makeQuery("explain <edge-cross-rid>", "Explain an exact graph edge", "nav.explain", 1)
 	path := makeQuery("path <from> <to>", "Shortest bounded graph path", "nav.path", 2)
 	graph := &cobra.Command{Use: "graph", Short: "Generation-aware graph administration queries"}
 	stats := makeQuery("stats", "Read graph generation statistics", "nav.graph.stats", 0)
 	validate := makeQuery("validate", "Validate a graph generation without mutation", "nav.graph.validate", 0)
 	graph.AddCommand(stats, validate)
-	return []*cobra.Command{neighbors, callers, callees, path, graph}
+	return []*cobra.Command{neighbors, callers, callees, explain, path, graph}
 }
 
 func attachCatalogRepoFlag(command *cobra.Command, repo *string) {

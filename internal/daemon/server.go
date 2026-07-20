@@ -24,16 +24,16 @@ import (
 )
 
 type Server struct {
-	listener   net.Listener
-	app        *service.App
-	manager    *Manager
-	telemetry  *TelemetryStore
-	admin      *AdminServer
-	state      model.DaemonState
-	options    StartOptions
-	inflight   chan struct{}
-	stopped    chan struct{}
-	stopOnce   sync.Once
+	listener    net.Listener
+	app         *service.App
+	manager     *Manager
+	telemetry   *TelemetryStore
+	admin       *AdminServer
+	state       model.DaemonState
+	options     StartOptions
+	inflight    chan struct{}
+	stopped     chan struct{}
+	stopOnce    sync.Once
 	resultCache *resultCache
 }
 
@@ -472,7 +472,7 @@ func (s *Server) releaseInflight() {
 
 func (s *Server) isBackpressureLimited(request model.CommandRequest) bool {
 	switch request.Operation {
-	case "nav.refs", "nav.context", "nav.deps", "nav.related", "nav.service", "nav.diff-context", "nav.batch", "nav.search", "nav.find", "workspace.warm":
+	case "nav.refs", "nav.context", "nav.deps", "nav.related", "nav.service", "nav.diff-context", "nav.batch", "nav.search", "nav.find", "nav.neighbors", "nav.callers", "nav.callees", "nav.path", "nav.explain", "nav.graph.stats", "nav.graph.validate", "workspace.warm":
 		return true
 	case "nav.workspace-map":
 		return request.Context.Full

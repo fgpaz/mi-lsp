@@ -77,7 +77,7 @@ func TestGraphQuerySnapshotRejectsInvalidAndCancelledQueries(t *testing.T) {
 
 func TestSanitizeGraphQueryErrorDoesNotLeakDatabaseDetail(t *testing.T) {
 	err := SanitizeGraphQueryError(errors.New("SQLITE_ERROR: sensitive schema detail"))
-	if err == nil || err.Error() != "graph query failed" {
+	if err == nil || err.Error() != "GPH_QUERY_BACKEND_UNAVAILABLE: graph backend is unavailable" {
 		t.Fatalf("sanitized error=%v", err)
 	}
 }
