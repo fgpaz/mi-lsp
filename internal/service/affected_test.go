@@ -2,10 +2,13 @@ package service
 
 import (
 	"context"
+	"errors"
 	"path/filepath"
 	"testing"
 
+	"github.com/fgpaz/mi-lsp/internal/indexer"
 	"github.com/fgpaz/mi-lsp/internal/model"
+	"github.com/fgpaz/mi-lsp/internal/store"
 	"github.com/fgpaz/mi-lsp/internal/workspace"
 )
 
@@ -112,6 +115,97 @@ func TestNavAffectedNoChangesQuietHasNoHint(t *testing.T) {
 	}
 	if !containsWarning(env.Warnings, "no affected paths detected") {
 		t.Fatalf("expected no-change warning, got %#v", env.Warnings)
+	}
+}
+
+func TestNavAffectedUsesPublishedGoGraphForCallerImpact(t *testing.T) {
+	ensureWritableTestHome(t)
+	root := t.TempDir()
+	alias := "affected-graph-" + filepath.Base(root)
+	project := model.ProjectFile{
+		Project: model.ProjectBlock{Name: alias, Kind: model.WorkspaceKindSingle, DefaultRepo: "repo", Languages: []string{"go"}},
+		Repos:   []model.WorkspaceRepo{{ID: "repo", Name: "repo", Root: ".", RepositoryIdentity: "https://example.com/" + alias, Languages: []string{"go"}}},
+	}
+	if err := workspace.SaveProjectFile(root, project); err != nil {
+		t.Fatalf("SaveProjectFile: %v", err)
+	}
+	writeWorkspaceFile(t, root, "go.mod", "module example.com/affectedgraph\n\ngo 1.23\n")
+	writeWorkspaceFile(t, root, "subject.go", "package affectedgraph\n\nfunc Subject() string { return \"ok\" }\n")
+	writeWorkspaceFile(t, root, "caller.go", "package affectedgraph\n\nfunc Caller() string { return Subject() }\n")
+	writeWorkspaceFile(t, root, "caller_test.go", "package affectedgraph\n\nimport \"testing\"\n\nfunc TestCaller(t *testing.T) { if Caller() != \"ok\" { t.Fatal(\"unexpected\") } }\n")
+	if _, err := indexer.IndexWorkspaceWithGraphProgress(context.Background(), root, true, "", nil, indexer.GraphIndexOptions{}); err != nil {
+		t.Fatalf("IndexWorkspaceWithGraphProgress: %v", err)
+	}
+	if _, err := workspace.RegisterWorkspace(alias, model.WorkspaceRegistration{Name: alias, Root: root, Languages: []string{"go"}, Kind: model.WorkspaceKindSingle}); err != nil {
+		t.Fatalf("RegisterWorkspace: %v", err)
+	}
+	t.Cleanup(func() { _ = workspace.RemoveWorkspace(alias) })
+
+	env, err := New(root, nil).Execute(context.Background(), model.CommandRequest{
+		Operation: "nav.affected",
+		Context:   model.QueryOptions{Workspace: alias},
+		Payload:   map[string]any{"paths": []string{"subject.go"}, "include_tests": true},
+	})
+	if err != nil {
+		t.Fatalf("nav.affected: %v", err)
+	}
+	if env.Backend != "graph-native" && env.Backend != "graph-native+heuristic" {
+		t.Fatalf("backend = %q, want graph-native", env.Backend)
+	}
+	items := affectedItemsFromEnvelope(t, env)
+	var caller *AffectedItem
+	for i := range items {
+		if items[i].Path == "caller.go" {
+			caller = &items[i]
+			break
+		}
+	}
+	if caller == nil {
+		t.Fatalf("missing graph caller impact in %#v", items)
+	}
+	if caller.CrossRID == "" || len(caller.EvidencePath) == 0 {
+		t.Fatalf("caller lacks graph proof: %#v", caller)
+	}
+	if caller.ConfidenceClass != "exact" && caller.ConfidenceClass != "extracted" {
+		t.Fatalf("caller confidence = %q, want exact or extracted", caller.ConfidenceClass)
+	}
+	for _, item := range items {
+		if item.Path == "unrelated.go" {
+			t.Fatalf("unrelated graph positive: %#v", item)
+		}
+	}
+}
+
+func TestNavAffectedBlocksTypedStaleGraph(t *testing.T) {
+	ensureWritableTestHome(t)
+	root := t.TempDir()
+	alias := "affected-stale-" + filepath.Base(root)
+	project := model.ProjectFile{Project: model.ProjectBlock{Name: alias, Kind: model.WorkspaceKindSingle, DefaultRepo: "repo", Languages: []string{"go"}}, Repos: []model.WorkspaceRepo{{ID: "repo", Name: "repo", Root: ".", RepositoryIdentity: "https://example.com/" + alias, Languages: []string{"go"}}}}
+	if err := workspace.SaveProjectFile(root, project); err != nil {
+		t.Fatal(err)
+	}
+	writeWorkspaceFile(t, root, "go.mod", "module example.com/affectedstale\n\ngo 1.23\n")
+	writeWorkspaceFile(t, root, "subject.go", "package affectedstale\nfunc Subject() {}\n")
+	if _, err := indexer.IndexWorkspaceWithGraphProgress(context.Background(), root, true, "", nil, indexer.GraphIndexOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := workspace.RegisterWorkspace(alias, model.WorkspaceRegistration{Name: alias, Root: root, Languages: []string{"go"}, Kind: model.WorkspaceKindSingle}); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = workspace.RemoveWorkspace(alias) })
+	db, err := store.Open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if err := store.SetGraphRuntimeState(context.Background(), db, store.GraphRuntimeStale, ""); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = New(root, nil).Execute(context.Background(), model.CommandRequest{Operation: "nav.affected", Context: model.QueryOptions{Workspace: alias}, Payload: map[string]any{"paths": []string{"subject.go"}}})
+	var graphErr *model.GraphQueryError
+	if !errors.As(err, &graphErr) || graphErr.Code != "GPH_IMPACT_GRAPH_STALE" {
+		t.Fatalf("nav.affected error = %v, want typed GPH_IMPACT_GRAPH_STALE", err)
 	}
 }
 

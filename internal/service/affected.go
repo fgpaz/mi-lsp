@@ -122,7 +122,8 @@ func (a *App) affected(ctx context.Context, request model.CommandRequest) (model
 	seenItems := map[string]struct{}{}
 	symbolEvidenceCount := 0
 	graphUsed := false
-	if db != nil {
+	legacyHeuristic := false
+	if db != nil && graphGenerationAvailable(ctx, db) {
 		impactRequest, requestErr := affectedGraphRequest(request.Payload)
 		if requestErr != nil {
 			return model.Envelope{}, requestErr
@@ -136,7 +137,7 @@ func (a *App) affected(ctx context.Context, request model.CommandRequest) (model
 			graphUsed = true
 			warnings = appendStringIfMissing(warnings, "graph-native impact is exact/extracted; heuristic items remain advisory")
 			for _, graphItem := range append(impact.Items, impact.Inferred...) {
-				item := AffectedItem{Kind: "code", Path: graphItem.Path, Reason: graphItem.Reason, Confidence: 0.9, CrossRID: graphItem.CrossRID, GenerationID: graphItem.GenerationID, ConfidenceClass: graphItem.ConfidenceClass, EvidencePath: graphItem.EvidencePath, TriggerPath: graphItem.TriggerPath, Evidence: append([]string(nil), graphItem.EvidenceRefs...)}
+				item := AffectedItem{Kind: affectedGraphItemKind(graphItem), Path: graphItem.Path, Reason: graphItem.Reason, Confidence: affectedGraphConfidence(graphItem.ConfidenceClass), CrossRID: graphItem.CrossRID, GenerationID: graphItem.GenerationID, ConfidenceClass: graphItem.ConfidenceClass, EvidencePath: graphItem.EvidencePath, TriggerPath: graphItem.TriggerPath, Evidence: append([]string(nil), graphItem.EvidenceRefs...)}
 				addAffectedItem(&items, seenItems, item)
 			}
 			for _, omission := range impact.Omissions {
@@ -147,8 +148,8 @@ func (a *App) affected(ctx context.Context, request model.CommandRequest) (model
 			return model.Envelope{}, graphErr
 		}
 	}
-	if graphUsed {
-		warnings = appendStringIfMissing(warnings, "legacy path/test/doc suggestions are heuristic and not graph facts")
+	if !graphUsed && db != nil {
+		warnings = appendStringIfMissing(warnings, "graph generation unavailable; using git and catalog heuristics")
 	}
 	for _, input := range orderedInputs {
 		evidence := []string{"source:" + input.Source}
@@ -187,20 +188,25 @@ func (a *App) affected(ctx context.Context, request model.CommandRequest) (model
 
 		if includeTests {
 			if testItem, ok := affectedTestSuggestion(input.Path, testCommand); ok {
+				legacyHeuristic = true
 				addAffectedItem(&items, seenItems, testItem)
 			}
 		}
 		if includeDocs {
 			for _, docItem := range affectedDocSuggestions(input.Path, registration.Name) {
+				legacyHeuristic = true
 				addAffectedItem(&items, seenItems, docItem)
 			}
 		}
+	}
+	if graphUsed && legacyHeuristic {
+		warnings = appendStringIfMissing(warnings, "legacy path/test/doc suggestions are heuristic and not graph facts")
 	}
 
 	env := model.Envelope{
 		Ok:        true,
 		Workspace: registration.Name,
-		Backend:   "git+catalog+heuristic",
+		Backend:   affectedBackend(graphUsed, legacyHeuristic),
 		Items:     items,
 		Warnings:  warnings,
 		Stats: model.Stats{
@@ -342,11 +348,53 @@ func graphImpactCanFallback(err error) bool {
 		return true
 	}
 	switch graphErr.Code {
-	case "GPH_QUERY_BACKEND_UNAVAILABLE", "GPH_QUERY_GENERATION_NOT_FOUND", "GPH_QUERY_GRAPH_UNAVAILABLE", "GPH_QUERY_GRAPH_INVALID", "GPH_IMPACT_GRAPH_STALE":
+	case "GPH_QUERY_BACKEND_UNAVAILABLE", "GPH_QUERY_GENERATION_NOT_FOUND", "GPH_QUERY_GRAPH_UNAVAILABLE":
 		return true
 	default:
 		return false
 	}
+}
+
+func affectedGraphItemKind(item model.GraphImpactItem) string {
+	path := strings.ToLower(filepath.ToSlash(item.Path))
+	if strings.Contains(path, "/test") || strings.HasSuffix(path, "_test.go") || strings.HasSuffix(path, ".test.cs") || strings.Contains(strings.ToLower(item.SymbolKind), "test") {
+		return "test"
+	}
+	if isWikiPath(item.Path) || strings.HasPrefix(path, ".docs/") || strings.Contains(strings.ToLower(item.SymbolKind), "document") {
+		return "doc"
+	}
+	return "code"
+}
+
+func affectedGraphConfidence(class string) float64 {
+	switch class {
+	case "exact", "extracted":
+		return 1
+	case "inferred":
+		return 0.8
+	case "heuristic":
+		return 0.5
+	default:
+		return 0.5
+	}
+}
+
+func graphGenerationAvailable(ctx context.Context, db *sql.DB) bool {
+	if db == nil {
+		return false
+	}
+	var count int
+	return db.QueryRowContext(ctx, "SELECT COUNT(*) FROM graph_generations WHERE status=?", model.GraphGenerationActive).Scan(&count) == nil && count > 0
+}
+
+func affectedBackend(graphUsed, legacyHeuristic bool) string {
+	if !graphUsed {
+		return "git+catalog+heuristic"
+	}
+	if legacyHeuristic {
+		return "graph-native+heuristic"
+	}
+	return "graph-native"
 }
 
 func addAffectedItem(items *[]AffectedItem, seen map[string]struct{}, item AffectedItem) {
