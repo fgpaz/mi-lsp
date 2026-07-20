@@ -137,6 +137,7 @@ type Envelope struct {
 	Continuation       *Continuation       `json:"continuation,omitempty"`
 	MemoryPointer      *MemoryPointer      `json:"memory_pointer,omitempty"`
 	Graph              *GraphQueryMetadata `json:"graph,omitempty"`
+	WikiCodeContext    *WikiCodeContext    `json:"wiki_code_context,omitempty"`
 	Operation          string              `json:"operation,omitempty"`
 	GenerationID       string              `json:"generation_id,omitempty"`
 	GraphSchemaVersion int                 `json:"graph_schema_version,omitempty"`
