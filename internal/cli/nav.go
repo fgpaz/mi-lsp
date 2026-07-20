@@ -410,6 +410,14 @@ Results are returned as an array of envelopes.`,
 	}
 
 	var diffIncludeContent bool
+	var diffGeneration string
+	var diffMode string
+	var diffDepth int
+	var diffLimit int
+	var diffTokenBudget int
+	var diffIncludeTests bool
+	var diffIncludeDocs bool
+	var diffEdges []string
 	diffContextCommand := &cobra.Command{
 		Use:   "diff-context [ref]",
 		Short: "Semantic context of changed symbols in a git diff",
@@ -421,11 +429,18 @@ Use --include-content to embed symbol bodies in the output.`,
 			if len(args) > 0 {
 				ref = args[0]
 			}
-			payload := map[string]any{"ref": ref, "include_content": diffIncludeContent}
-			return state.executeOperation(cmd, "nav.diff-context", payload, true)
+			return state.executeOperation(cmd, "nav.diff-context", diffContextPayload(ref, diffIncludeContent, diffGeneration, diffMode, diffDepth, diffLimit, diffTokenBudget, diffIncludeTests, diffIncludeDocs, diffEdges), true)
 		},
 	}
 	diffContextCommand.Flags().BoolVar(&diffIncludeContent, "include-content", false, "Include changed symbol bodies in output")
+	diffContextCommand.Flags().StringVar(&diffGeneration, "generation", "", "Graph generation identifier")
+	diffContextCommand.Flags().StringVar(&diffMode, "mode", "direct", "Graph impact mode: direct or transitive")
+	diffContextCommand.Flags().IntVar(&diffDepth, "depth", 0, "Maximum transitive graph depth")
+	diffContextCommand.Flags().IntVar(&diffLimit, "limit", 0, "Maximum graph impact items")
+	diffContextCommand.Flags().IntVar(&diffTokenBudget, "token-budget", 0, "Maximum graph impact token budget")
+	diffContextCommand.Flags().BoolVar(&diffIncludeTests, "include-tests", false, "Include test impact")
+	diffContextCommand.Flags().BoolVar(&diffIncludeDocs, "include-docs", false, "Include documentation impact")
+	diffContextCommand.Flags().StringArrayVar(&diffEdges, "edge", nil, "Graph relation edge (repeatable)")
 
 	var affectedFromGitDiff bool
 	var affectedChangedRef string
@@ -609,6 +624,16 @@ Examples:
 	catalogCommands := []*cobra.Command{symbolsCommand, findCommand, refsCommand, overviewCommand, outlineCommand, askCommand, recallCommand, packCommand, routeCommand, wikiCommand, evidenceCommand, governanceCommand, serviceCommand, searchCommand, contextCommand, depsCommand, multiReadCommand, batchCommand, relatedCommand, workspaceMapCommand, diffContextCommand, affectedCommand, editPlanCommand, traceCommand, intentCommand}
 	command.AddCommand(append(catalogCommands, graphCommands...)...)
 	return command
+}
+
+func diffContextPayload(ref string, includeContent bool, generation string, mode string, depth int, limit int, tokenBudget int, includeTests bool, includeDocs bool, edges []string) map[string]any {
+	return map[string]any{
+		"ref": ref, "include_content": includeContent,
+		"generation": generation, "mode": mode, "depth": depth,
+		"limit": limit, "token_budget": tokenBudget,
+		"include_tests": includeTests, "include_docs": includeDocs,
+		"edge": edges,
+	}
 }
 
 func newGraphQueryCommands(state *rootState) []*cobra.Command {

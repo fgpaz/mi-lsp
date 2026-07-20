@@ -37,6 +37,23 @@ func TestNavCommandExposesRepoScopeFlags(t *testing.T) {
 	}
 }
 
+func TestDiffContextPayloadCarriesGraphImpactOptions(t *testing.T) {
+	payload := diffContextPayload("HEAD~1", true, "generation-1", "transitive", 3, 12, 800, true, true, []string{"calls", "tests"})
+	checks := map[string]any{
+		"ref": "HEAD~1", "include_content": true, "generation": "generation-1", "mode": "transitive",
+		"depth": 3, "limit": 12, "token_budget": 800, "include_tests": true, "include_docs": true,
+	}
+	for key, want := range checks {
+		if got := payload[key]; got != want {
+			t.Fatalf("payload[%q] = %#v, want %#v", key, got, want)
+		}
+	}
+	edges, ok := payload["edge"].([]string)
+	if !ok || strings.Join(edges, ",") != "calls,tests" {
+		t.Fatalf("payload edge = %#v, want calls,tests", payload["edge"])
+	}
+}
+
 func TestNavCommandExposesAffectedFlags(t *testing.T) {
 	command := newNavCommand(&rootState{})
 

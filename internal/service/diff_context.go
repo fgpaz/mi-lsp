@@ -93,6 +93,8 @@ func (a *App) diffContext(ctx context.Context, request model.CommandRequest) (mo
 
 	// 5. Reuse the read-only graph impact core for the same changed paths.
 	var graphImpact *model.GraphImpactEnvelope
+	graphBackend := "git+catalog+heuristic"
+	graphWarning := "graph impact unavailable; results are limited to git and catalog heuristics"
 	graphRequest := model.GraphImpactRequest{
 		Generation:   stringPayload(request.Payload, "generation"),
 		Mode:         stringPayload(request.Payload, "mode"),
@@ -112,8 +114,18 @@ func (a *App) diffContext(ctx context.Context, request model.CommandRequest) (mo
 	if edges, ok := request.Payload["edge"].([]string); ok {
 		graphRequest.Relations = edges
 	}
-	if impact, impactErr := GraphImpact(ctx, db, graphRequest); impactErr == nil && impact.GenerationID != "" {
-		graphImpact = &impact
+	if graphGenerationAvailable(ctx, db) {
+		if impact, impactErr := GraphImpact(ctx, db, graphRequest); impactErr == nil && impact.GenerationID != "" {
+			graphImpact = &impact
+			graphBackend = "graph-native"
+			graphWarning = ""
+		} else if impactErr != nil {
+			if !graphImpactCanFallback(impactErr) {
+				return model.Envelope{}, impactErr
+			}
+		}
+	} else {
+		graphWarning = "graph generation unavailable; results are limited to git and catalog heuristics"
 	}
 
 	// 6. For each changed file+line: lookup enclosing symbol
@@ -201,11 +213,16 @@ func (a *App) diffContext(ctx context.Context, request model.CommandRequest) (mo
 		GraphImpact: graphImpact,
 	}
 
+	warnings := []string{}
+	if graphWarning != "" {
+		warnings = append(warnings, graphWarning)
+	}
 	return model.Envelope{
 		Ok:        true,
 		Workspace: registration.Name,
-		Backend:   "git+catalog",
+		Backend:   graphBackend,
 		Items:     []DiffContextResult{result},
+		Warnings:  warnings,
 		Stats: model.Stats{
 			Files:   len(changingFiles),
 			Symbols: len(symbols),
