@@ -278,7 +278,7 @@ func (s *rootState) ensureTelemetry() *CLITelemetry {
 func buildCLIErrorEnvelope(request model.CommandRequest, route string, err error) model.Envelope {
 	backend := inferErrorBackend(request, route)
 	envErr := classifyEnvelopeError(request, backend, route, err)
-	return model.Envelope{
+	env := model.Envelope{
 		Ok:        false,
 		Workspace: request.Context.Workspace,
 		Backend:   backend,
@@ -286,6 +286,16 @@ func buildCLIErrorEnvelope(request model.CommandRequest, route string, err error
 		Error:     &envErr,
 		Warnings:  errorWarnings(envErr),
 	}
+	var graphErr *model.GraphQueryError
+	if errors.As(err, &graphErr) {
+		if len(graphErr.Candidates) > 0 {
+			env.Items = graphErr.Candidates
+		}
+		if graphErr.Hint != "" {
+			env.NextHint = &graphErr.Hint
+		}
+	}
+	return env
 }
 
 func inferErrorBackend(request model.CommandRequest, route string) string {
@@ -316,6 +326,15 @@ func classifyEnvelopeError(request model.CommandRequest, backend string, route s
 	message := safeErrorMessage(err)
 	lower := strings.ToLower(message)
 	result := model.EnvelopeError{Kind: "backend_runtime", Code: "operation_failed", Message: message, Stage: defaultErrorStage(request)}
+	var graphErr *model.GraphQueryError
+	if errors.As(err, &graphErr) {
+		result.Kind = "validation"
+		result.Code = graphErr.Code
+		result.Message = graphErr.Message
+		result.Stage = "selector_validation"
+		result.HintCode = graphErr.Code
+		return result
+	}
 
 	if strings.TrimSpace(backend) != "" {
 		info := telemetry.ClassifyErrorInfo(backend, message, nil)

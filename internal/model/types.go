@@ -120,23 +120,28 @@ type EnvelopeMetrics struct {
 }
 
 type Envelope struct {
-	Ok            bool               `json:"ok"`
-	Workspace     string             `json:"workspace,omitempty"`
-	Backend       string             `json:"backend,omitempty"`
-	Mode          string             `json:"mode,omitempty"`
-	Items         any                `json:"items"`
-	Error         *EnvelopeError     `json:"error,omitempty"`
-	Omissions     []EnvelopeOmission `json:"omissions,omitempty"`
-	Metrics       *EnvelopeMetrics   `json:"metrics,omitempty"`
-	Truncated     bool               `json:"truncated"`
-	Stats         Stats              `json:"stats,omitempty"`
-	Warnings      []string           `json:"warnings,omitempty"`
-	Hint          string             `json:"hint,omitempty"`
-	NextHint      *string            `json:"next_hint,omitempty"`
-	Coach         *Coach             `json:"coach,omitempty"`
-	Continuation  *Continuation      `json:"continuation,omitempty"`
-	MemoryPointer *MemoryPointer     `json:"memory_pointer,omitempty"`
-	Profile       OutputProfile      `json:"-"`
+	Ok                 bool                `json:"ok"`
+	Workspace          string              `json:"workspace,omitempty"`
+	Backend            string              `json:"backend,omitempty"`
+	Mode               string              `json:"mode,omitempty"`
+	Items              any                 `json:"items"`
+	Error              *EnvelopeError      `json:"error,omitempty"`
+	Omissions          []EnvelopeOmission  `json:"omissions,omitempty"`
+	Metrics            *EnvelopeMetrics    `json:"metrics,omitempty"`
+	Truncated          bool                `json:"truncated"`
+	Stats              Stats               `json:"stats,omitempty"`
+	Warnings           []string            `json:"warnings,omitempty"`
+	Hint               string              `json:"hint,omitempty"`
+	NextHint           *string             `json:"next_hint,omitempty"`
+	Coach              *Coach              `json:"coach,omitempty"`
+	Continuation       *Continuation       `json:"continuation,omitempty"`
+	MemoryPointer      *MemoryPointer      `json:"memory_pointer,omitempty"`
+	Graph              *GraphQueryMetadata `json:"graph,omitempty"`
+	Operation          string              `json:"operation,omitempty"`
+	GenerationID       string              `json:"generation_id,omitempty"`
+	GraphSchemaVersion int                 `json:"graph_schema_version,omitempty"`
+	DeterminismDigest  string              `json:"determinism_digest,omitempty"`
+	Profile            OutputProfile       `json:"-"`
 }
 
 // QueryEnvelope is a semantic alias of Envelope for traceability with 05_modelo_datos.md.

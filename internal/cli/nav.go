@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/fgpaz/mi-lsp/internal/model"
 	"github.com/spf13/cobra"
 )
 
@@ -586,8 +587,54 @@ Examples:
 	wikiCommand := newNavWikiCommand(state)
 	evidenceCommand := newNavEvidenceCommand(state)
 
-	command.AddCommand(symbolsCommand, findCommand, refsCommand, overviewCommand, outlineCommand, askCommand, recallCommand, packCommand, routeCommand, wikiCommand, evidenceCommand, governanceCommand, serviceCommand, searchCommand, contextCommand, depsCommand, multiReadCommand, batchCommand, relatedCommand, workspaceMapCommand, diffContextCommand, affectedCommand, editPlanCommand, traceCommand, intentCommand)
+	graphCommands := newGraphQueryCommands(state)
+	catalogCommands := []*cobra.Command{symbolsCommand, findCommand, refsCommand, overviewCommand, outlineCommand, askCommand, recallCommand, packCommand, routeCommand, wikiCommand, evidenceCommand, governanceCommand, serviceCommand, searchCommand, contextCommand, depsCommand, multiReadCommand, batchCommand, relatedCommand, workspaceMapCommand, diffContextCommand, affectedCommand, editPlanCommand, traceCommand, intentCommand}
+	command.AddCommand(append(catalogCommands, graphCommands...)...)
 	return command
+}
+
+func newGraphQueryCommands(state *rootState) []*cobra.Command {
+	queryFlags := func(command *cobra.Command, generation *string, depth, limit, tokenBudget *int, direction, cursor *string, edges *[]string) {
+		command.Flags().StringVar(generation, "generation", "", "Active generation or retired generation ID")
+		command.Flags().IntVar(depth, "depth", 1, "Maximum traversal depth")
+		command.Flags().IntVar(limit, "limit", 50, "Maximum returned items (1..500)")
+		command.Flags().IntVar(tokenBudget, "token-budget", model.GraphQueryDefaultToken, "Approximate graph output token budget (1..20000)")
+		command.Flags().StringVar(direction, "direction", "both", "Traversal direction: in|out|both")
+		command.Flags().StringSliceVar(edges, "edge", nil, "Registered edge relation filter; repeatable")
+		command.Flags().StringVar(cursor, "cursor", "", "Opaque continuation cursor")
+	}
+	makeQuery := func(use, short, operation string, arity int) *cobra.Command {
+		var generation, direction, cursor string
+		var depth, limit, tokenBudget int
+		var edges []string
+		command := &cobra.Command{Use: use, Short: short, RunE: func(cmd *cobra.Command, args []string) error {
+			if err := requireArgs(args, arity, "selector"); err != nil {
+				return err
+			}
+			if len(args) > arity {
+				return fmt.Errorf("%s accepts exactly %d arguments", use, arity)
+			}
+			payload := map[string]any{"generation": generation, "depth": depth, "limit": limit, "token_budget": tokenBudget, "direction": direction, "cursor": cursor, "edge": edges}
+			if operation == "nav.path" {
+				payload["from"] = args[0]
+				payload["to"] = args[1]
+			} else if arity > 0 {
+				payload["selector"] = args[0]
+			}
+			return state.executeOperation(cmd, operation, payload, false)
+		}}
+		queryFlags(command, &generation, &depth, &limit, &tokenBudget, &direction, &cursor, &edges)
+		return command
+	}
+	neighbors := makeQuery("neighbors <selector>", "Bounded graph neighbors", "nav.neighbors", 1)
+	callers := makeQuery("callers <selector>", "Bounded incoming call graph", "nav.callers", 1)
+	callees := makeQuery("callees <selector>", "Bounded outgoing call graph", "nav.callees", 1)
+	path := makeQuery("path <from> <to>", "Shortest bounded graph path", "nav.path", 2)
+	graph := &cobra.Command{Use: "graph", Short: "Generation-aware graph administration queries"}
+	stats := makeQuery("stats", "Read graph generation statistics", "nav.graph.stats", 0)
+	validate := makeQuery("validate", "Validate a graph generation without mutation", "nav.graph.validate", 0)
+	graph.AddCommand(stats, validate)
+	return []*cobra.Command{neighbors, callers, callees, path, graph}
 }
 
 func attachCatalogRepoFlag(command *cobra.Command, repo *string) {

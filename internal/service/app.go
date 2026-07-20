@@ -137,6 +137,8 @@ func (a *App) Execute(ctx context.Context, request model.CommandRequest) (model.
 		envelope, err = a.batch(ctx, request)
 	case "nav.related":
 		envelope, err = a.related(ctx, request)
+	case "nav.neighbors", "nav.callers", "nav.callees", "nav.path", "nav.graph.stats", "nav.graph.validate":
+		envelope, err = a.graphQuery(ctx, request)
 	case "nav.workspace-map":
 		envelope, err = a.workspaceMap(ctx, request)
 	case "nav.diff-context":
@@ -219,7 +221,7 @@ func operationRequiresWorkspaceResolution(request model.CommandRequest) bool {
 		return !allWorkspaces
 	case "index.run", "index.start":
 		return strings.TrimSpace(stringPayload(request.Payload, "path")) == ""
-	case "index.status", "index.cancel", "index.run-job", "workspace.status", "info", "nav.symbols", "nav.overview", "nav.outline", "nav.governance", "nav.route", "nav.wiki.route", "nav.ask", "nav.pack", "nav.wiki.pack", "nav.wiki.search", "nav.wiki.validate-harness", "nav.wiki.validate-source", "nav.wiki.inventory", "nav.evidence.inventory", "nav.service", "nav.refs", "nav.context", "nav.deps", "nav.multi-read", "nav.batch", "nav.related", "nav.workspace-map", "nav.diff-context", "nav.affected", "nav.edit-plan", "nav.trace", "nav.wiki.trace", "nav.intent", "nav.recall":
+	case "index.status", "index.cancel", "index.run-job", "workspace.status", "info", "nav.symbols", "nav.overview", "nav.outline", "nav.governance", "nav.route", "nav.wiki.route", "nav.ask", "nav.pack", "nav.wiki.pack", "nav.wiki.search", "nav.wiki.validate-harness", "nav.wiki.validate-source", "nav.wiki.inventory", "nav.evidence.inventory", "nav.service", "nav.refs", "nav.context", "nav.deps", "nav.multi-read", "nav.batch", "nav.related", "nav.workspace-map", "nav.diff-context", "nav.affected", "nav.edit-plan", "nav.trace", "nav.wiki.trace", "nav.intent", "nav.recall", "nav.neighbors", "nav.callers", "nav.callees", "nav.path", "nav.graph.stats", "nav.graph.validate":
 		return true
 	default:
 		return false
@@ -339,6 +341,30 @@ func (a *App) indexWorkspace(ctx context.Context, request model.CommandRequest) 
 		}
 		return model.Envelope{}, err
 	}
+	return envelope, nil
+}
+
+func (a *App) graphQuery(ctx context.Context, request model.CommandRequest) (model.Envelope, error) {
+	// Normalize and reject all budgets before resolving or opening SQLite.
+	q, err := graphRequestFromPayload(request)
+	if err != nil {
+		return model.Envelope{}, err
+	}
+	registration, _, err := a.resolveWorkspaceWithProject(request.Context.Workspace)
+	if err != nil {
+		return model.Envelope{}, &model.GraphQueryError{Code: "GPH_QUERY_GENERATION_INVALID", Message: "workspace is unavailable"}
+	}
+	db, err := openWorkspaceDB(registration, request.Operation, true)
+	if err != nil {
+		return model.Envelope{}, store.SanitizeGraphQueryError(err)
+	}
+	defer db.Close()
+	envelope, err := GraphQuery(ctx, db, q)
+	if err != nil {
+		return model.Envelope{}, store.SanitizeGraphQueryError(err)
+	}
+	envelope.Workspace = registration.Name
+	envelope.Backend = "sqlite-direct"
 	return envelope, nil
 }
 
