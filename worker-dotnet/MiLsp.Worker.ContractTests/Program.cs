@@ -17,11 +17,16 @@ static WorkerRequest Request(string root, string moduleProject, string? entrypoi
         });
 }
 
+static GraphObservationBatch RequireObservation(WorkerResponse response)
+{
+    Require(response.Ok && response.Observation is not null, "observation response missing");
+    return response.Observation ?? throw new InvalidOperationException("observation response missing");
+}
+
 static async Task<GraphObservationBatch> Observe(string root, string project, CancellationToken cancellationToken = default)
 {
     var response = await new RoslynService().HandleAsync(Request(root, project), cancellationToken);
-    Require(response.Ok && response.Observation is not null, "observation response missing");
-    return response.Observation!;
+    return RequireObservation(response);
 }
 
 static void AssertCoverage(GraphObservationBatch observation)
@@ -172,6 +177,15 @@ try
     var mismatch = await new RoslynService().HandleAsync(Request(root, project, otherProject), CancellationToken.None);
     Require(!mismatch.Ok && mismatch.ErrorCode == "GPH_BACKEND_PROJECT_NOT_FOUND" && mismatch.Observation is null, "exact project mismatch did not reject");
 
+    if (OperatingSystem.IsWindows())
+    {
+        using var lockedProject = new FileStream(project, FileMode.Open, FileAccess.Read, FileShare.None);
+        var unavailable = await new RoslynService().HandleAsync(Request(root, project), CancellationToken.None);
+        Require(!unavailable.Ok && unavailable.ErrorCode == "GPH_BACKEND_UNAVAILABLE" && unavailable.Observation is null, "locked project did not return sanitized unavailability");
+        var unavailableError = unavailable.Error ?? string.Empty;
+        Require(!unavailableError.Contains(root, StringComparison.OrdinalIgnoreCase) && !unavailableError.Contains(project, StringComparison.OrdinalIgnoreCase), "unavailability response exposed a local path");
+    }
+
     using (var canceledSource = new CancellationTokenSource())
     {
         canceledSource.Cancel();
@@ -258,7 +272,9 @@ try
     var missing = await new RoslynService().HandleAsync(Request(root, project, project, null), CancellationToken.None);
     Require(!missing.Ok && missing.ErrorCode == "GPH_BACKEND_PROVENANCE_MISSING", "missing provenance gate failed");
     Require(emittedCompilerError is not null && emittedCanceled is not null, "emission observations missing");
-    EmitObservationsIfRequested(observation1, emittedCompilerError, emittedCanceled);
+    var compilerError = emittedCompilerError ?? throw new InvalidOperationException("emission observations missing");
+    var emittedCanceledBatch = emittedCanceled ?? throw new InvalidOperationException("emission observations missing");
+    EmitObservationsIfRequested(observation1, compilerError, emittedCanceledBatch);
     Console.WriteLine("PASS graph observation provenance contract");
 }
 finally

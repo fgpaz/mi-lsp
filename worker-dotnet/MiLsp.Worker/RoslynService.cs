@@ -263,17 +263,25 @@ public sealed class RoslynService
 
         var backendVersion = typeof(Microsoft.CodeAnalysis.Compilation).Assembly.GetName().Version?.ToString() ?? "unknown";
         const string extractorVersion = "mi-lsp-roslyn-g2-v1";
-        var batch = new GraphObservationBatch
+        GraphObservationBatch batch;
+        try
         {
-            WorkspaceIdentity = repository,
-            RepositoryIdentity = repository,
-            BackendVersion = backendVersion,
-            ExtractorVersion = extractorVersion,
-            ProjectOrModule = module,
-            SourceFingerprint = GraphObservationBuilder.PreLoadSourceFingerprint(repoRoot, module, expectedProject, backendVersion, extractorVersion, repository),
-            ConfigFingerprint = GraphObservationBuilder.PreLoadConfigFingerprint(module, expectedProject, backendVersion, extractorVersion, repository)
-        };
-        batch.Capabilities.AddRange(GraphCapabilities.Select(capability => new GraphObservationCapability { Capability = capability }));
+            batch = new GraphObservationBatch
+            {
+                WorkspaceIdentity = repository,
+                RepositoryIdentity = repository,
+                BackendVersion = backendVersion,
+                ExtractorVersion = extractorVersion,
+                ProjectOrModule = module,
+                SourceFingerprint = GraphObservationBuilder.PreLoadSourceFingerprint(module, expectedProject, backendVersion, extractorVersion, repository),
+                ConfigFingerprint = GraphObservationBuilder.PreLoadConfigFingerprint(module, expectedProject, backendVersion, extractorVersion, repository)
+            };
+            batch.Capabilities.AddRange(GraphCapabilities.Select(capability => new GraphObservationCapability { Capability = capability }));
+        }
+        catch (Exception)
+        {
+            return BackendUnavailableResponse(started.ElapsedMilliseconds);
+        }
 
         Project? project = null;
         var partial = false;
@@ -342,6 +350,8 @@ public sealed class RoslynService
     }
 
     private static WorkerResponse ProjectNotFoundResponse(long elapsedMs) => new(false, "roslyn", Error: "Requested project was not found in the repository", ErrorCode: "GPH_BACKEND_PROJECT_NOT_FOUND", Stats: new WorkerStats(Ms: elapsedMs));
+
+    private static WorkerResponse BackendUnavailableResponse(long elapsedMs) => new(false, "roslyn", Error: "Graph observation backend is unavailable", ErrorCode: "GPH_BACKEND_UNAVAILABLE", Stats: new WorkerStats(Ms: elapsedMs));
 
     private static bool TryNormalizeProjectModule(string? value, out string module)
     {
@@ -515,7 +525,7 @@ public sealed class RoslynService
                     cancellationToken.ThrowIfCancellationRequested();
                     if (name.Ancestors().Any(ancestor => ancestor switch
                     {
-                        UsingDirectiveSyntax usingDirective => usingDirective.Name.Span.Contains(name.Span),
+                        UsingDirectiveSyntax { Name: { } usingName } => usingName.Span.Contains(name.Span),
                         BaseNamespaceDeclarationSyntax namespaceDeclaration => namespaceDeclaration.Name.Span.Contains(name.Span),
                         _ => false
                     })) continue;
@@ -722,19 +732,15 @@ public sealed class RoslynService
         private static string SubjectKind(ISymbol symbol) => Kind(symbol) is { Length: > 0 } kind ? kind : "file";
         internal static string Sha256(byte[] value) => Convert.ToHexString(SHA256.HashData(value)).ToLowerInvariant();
         internal static string Sha256(string value) => Sha256(Encoding.UTF8.GetBytes(value));
-        internal static string PreLoadSourceFingerprint(string root, string module, string projectPath, string backend, string extractor, string repository)
+        internal static string PreLoadSourceFingerprint(string module, string projectPath, string backend, string extractor, string repository)
         {
-            var projectBytes = File.Exists(projectPath) ? File.ReadAllBytes(projectPath) : [];
-            var sources = Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories)
-                .Where(path => IsEligibleSourcePath(Path.GetRelativePath(root, path).Replace('\\', '/')))
-                .Select(path => Path.GetRelativePath(root, path).Replace('\\', '/') + ":" + Sha256(File.ReadAllBytes(path)))
-                .OrderBy(value => value, StringComparer.Ordinal);
-            return Sha256(string.Join("|", new[] { repository, module, backend, extractor, Sha256(projectBytes), "sources" }.Concat(sources)));
+            var projectBytes = File.ReadAllBytes(projectPath);
+            return Sha256(string.Join("|", repository, module, backend, extractor, Sha256(projectBytes), "preload-source-v1"));
         }
         internal static string PreLoadConfigFingerprint(string module, string projectPath, string backend, string extractor, string repository)
         {
-            var projectBytes = File.Exists(projectPath) ? File.ReadAllBytes(projectPath) : [];
-            return Sha256(string.Join("|", repository, module, backend, extractor, Sha256(projectBytes), "preload"));
+            var projectBytes = File.ReadAllBytes(projectPath);
+            return Sha256(string.Join("|", repository, module, backend, extractor, Sha256(projectBytes), "preload-config-v1"));
         }
         internal static string SourceFingerprint(Project project, string root, string module, string backend, string extractor, string repository, Action outsideSource)
         {
