@@ -14,6 +14,10 @@ import (
 
 func stagingDigest(s string) model.GraphDigest { return model.GraphDigest(sha256.Sum256([]byte(s))) }
 
+func stagingDoc(path, id string) model.DocRecord {
+	return model.DocRecord{Path: path, DocID: id, Title: id, Layer: "technical", Family: "technical", ContentHash: stagingDigest(path + id).String()}
+}
+
 func stagingBatch(backend, module string, withCall bool) model.GraphObservationBatch {
 	resolution, claim, language, identity := "roslyn", model.GraphRecordExact, "csharp", "Acme.Widget"
 	if backend == "go" {
@@ -36,6 +40,100 @@ func stagingBatch(backend, module string, withCall bool) model.GraphObservationB
 		batch.Coverage = append(batch.Coverage, model.GraphObservationCoverage{Backend: backend, Capability: "calls", Eligible: 1, Observed: 1})
 	}
 	return batch
+}
+
+func TestAssembleCanonicalDocumentationSupplement(t *testing.T) {
+	batch := stagingBatch("go", "src/go", false)
+	if err := model.SealGraphObservationBatch(&batch); err != nil {
+		t.Fatal(err)
+	}
+	docs := []model.DocRecord{stagingDoc(".docs/wiki/target.md", "DOC-TARGET"), stagingDoc(".docs/wiki/guide.md", "DOC-GUIDE"), stagingDoc(".docs/raw/draft.md", "DOC-RAW"), stagingDoc(".docs/auditoria/report.md", "DOC-AUDIT"), stagingDoc(".docs/wiki/archive/old.md", "DOC-OLD")}
+	edges := []model.DocEdge{{FromPath: ".docs/wiki/guide.md", ToDocID: "DOC-TARGET", Kind: "doc_id", Label: "DOC-TARGET"}}
+	mentions := []model.DocMention{{DocPath: ".docs/wiki/guide.md", MentionType: "file_path", MentionValue: "src/go/main.go"}, {DocPath: ".docs/wiki/guide.md", MentionType: "symbol", MentionValue: "Widget"}}
+	bundle, err := AssembleGraphObservationBatches(GraphAssemblyRequest{Batches: []model.GraphObservationBatch{batch}, Docs: docs, DocEdges: edges, DocMentions: mentions, CreatedAt: time.Unix(1, 0)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(bundle.Nodes) != 3 || len(bundle.Edges) != 2 || len(bundle.Evidence) != 5 || len(bundle.Unresolved) != 0 {
+		t.Fatalf("docs graph counts: nodes=%d edges=%d evidence=%d unresolved=%d", len(bundle.Nodes), len(bundle.Edges), len(bundle.Evidence), len(bundle.Unresolved))
+	}
+	for _, node := range bundle.Nodes {
+		if node.Identity.OwnerPath == ".docs/raw/draft.md" || node.Identity.OwnerPath == ".docs/auditoria/report.md" || node.Identity.OwnerPath == ".docs/wiki/archive/old.md" {
+			t.Fatalf("excluded document became node: %s", node.Identity.OwnerPath)
+		}
+	}
+	for _, edge := range bundle.Edges {
+		if edge.Relation == "doc_mentions" && edge.SourceBackend != "docgraph" {
+			t.Fatalf("doc edge backend=%q", edge.SourceBackend)
+		}
+	}
+	if err := bundle.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 30; i++ {
+		permuted, err := AssembleGraphObservationBatches(GraphAssemblyRequest{Batches: []model.GraphObservationBatch{batch}, Docs: []model.DocRecord{docs[(i+1)%2], docs[i%2]}, DocEdges: edges, DocMentions: mentions, CreatedAt: time.Unix(1, 0)})
+		if err != nil || !reflect.DeepEqual(bundle, permuted) {
+			t.Fatalf("document permutation %d changed graph: %v", i, err)
+		}
+		moved := docs[1]
+		moved.Path = ".docs/wiki/moved.md"
+		relocated, err := AssembleGraphObservationBatches(GraphAssemblyRequest{Batches: []model.GraphObservationBatch{batch}, Docs: []model.DocRecord{docs[0], moved}, CreatedAt: time.Unix(1, 0)})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if relocated.Generation.GenerationID == bundle.Generation.GenerationID || relocated.Generation.SourceFingerprint == bundle.Generation.SourceFingerprint || relocated.Generation.ConfigFingerprint == bundle.Generation.ConfigFingerprint || relocated.Generation.BackendManifestDigest == bundle.Generation.BackendManifestDigest {
+			t.Fatal("document relocation did not change all generation identity inputs")
+		}
+	}
+	codeOnly, err := AssembleGraphObservationBatches(GraphAssemblyRequest{Batches: []model.GraphObservationBatch{batch}, CreatedAt: time.Unix(1, 0)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	excludedOnly, err := AssembleGraphObservationBatches(GraphAssemblyRequest{Batches: []model.GraphObservationBatch{batch}, Docs: docs[2:], CreatedAt: time.Unix(1, 0)})
+	if err != nil || !reflect.DeepEqual(codeOnly, excludedOnly) {
+		t.Fatalf("excluded docs changed code-only graph: %v", err)
+	}
+}
+
+func TestAssembleDocumentationMentionsFailsClosed(t *testing.T) {
+	first := stagingBatch("go", "src/a", false)
+	second := stagingBatch("go", "src/b", false)
+	second.Nodes[0].Key.OwnerPath = first.Nodes[0].Key.OwnerPath
+	second.Nodes[0].Key.SemanticIdentity = "acme.Other"
+	second.Evidence[0].SourceURI = first.Nodes[0].Key.OwnerPath
+	for _, batch := range []*model.GraphObservationBatch{&first, &second} {
+		if err := model.SealGraphObservationBatch(batch); err != nil {
+			t.Fatal(err)
+		}
+	}
+	doc := stagingDoc(".docs/wiki/guide.md", "DOC-GUIDE")
+	bundle, err := AssembleGraphObservationBatches(GraphAssemblyRequest{Batches: []model.GraphObservationBatch{first, second}, Docs: []model.DocRecord{doc}, DocMentions: []model.DocMention{{DocPath: doc.Path, MentionType: "file_path", MentionValue: first.Nodes[0].Key.OwnerPath}, {DocPath: doc.Path, MentionType: "file_path", MentionValue: "src/missing.go"}, {DocPath: doc.Path, MentionType: "symbol", MentionValue: "Widget"}}, CreatedAt: time.Unix(1, 0)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(bundle.Edges) != 0 || len(bundle.Unresolved) != 2 {
+		t.Fatalf("fail-closed mentions: edges=%d unresolved=%d", len(bundle.Edges), len(bundle.Unresolved))
+	}
+	if err := bundle.Validate(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestDocOnlyAssemblyRequiresExplicitRepositoryIdentity(t *testing.T) {
+	doc := stagingDoc(".docs/wiki/guide.md", "")
+	if _, err := AssembleGraphObservationBatches(GraphAssemblyRequest{Docs: []model.DocRecord{doc}, CreatedAt: time.Unix(1, 0)}); err == nil {
+		t.Fatal("doc-only assembly accepted without repository identity")
+	}
+	bundle, err := AssembleGraphObservationBatches(GraphAssemblyRequest{Docs: []model.DocRecord{doc}, RepositoryIdentity: "https://example.com/docs", CreatedAt: time.Unix(1, 0)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(bundle.Nodes) != 1 || len(bundle.Edges) != 0 || len(bundle.Evidence) != 1 {
+		t.Fatalf("doc-only graph counts: nodes=%d edges=%d evidence=%d", len(bundle.Nodes), len(bundle.Edges), len(bundle.Evidence))
+	}
+	if err := bundle.Validate(); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func TestAssembleGraphObservationBatchesIsPermutationInvariantAndScoped(t *testing.T) {

@@ -113,7 +113,7 @@ func IndexWorkspaceWithGraphProgress(ctx context.Context, root string, clean boo
 		if err := reportProgress(ctx, progress, Progress{Stage: "graph.activate", Files: len(files), Symbols: len(symbols), Docs: len(docs), Force: true}); err != nil {
 			return err
 		}
-		graphGeneration, err = PublishGraphObservationBatches(ctx, db, GraphAssemblyRequest{Batches: graphBatches, CreatedAt: time.Now().UTC()}, prior)
+		graphGeneration, err = PublishGraphObservationBatches(ctx, db, GraphAssemblyRequest{Batches: graphBatches, Docs: docs, DocEdges: docEdges, DocMentions: docMentions, CreatedAt: time.Now().UTC()}, prior)
 		if err != nil {
 			_ = store.SetGraphRuntimeState(ctx, db, store.GraphRuntimeStale, "")
 			return fmt.Errorf("graph publication failed after legacy index publication: %w", err)

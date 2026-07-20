@@ -460,7 +460,7 @@ func validStatus(s string) bool {
 }
 
 var registeredGraphValues = map[string]map[string]struct{}{
-	"backend_type": {"roslyn": {}, "go": {}, "tsserver": {}, "pyright": {}},
+	"backend_type": {"roslyn": {}, "go": {}, "tsserver": {}, "pyright": {}, "docgraph": {}},
 	"symbol_kind":  {"workspace": {}, "repository": {}, "project": {}, "package": {}, "file": {}, "namespace": {}, "type": {}, "method": {}, "function": {}, "field": {}, "property": {}, "event": {}, "route": {}, "test": {}, "document": {}},
 	"relation":     {"contains": {}, "imports": {}, "references": {}, "calls": {}, "implements": {}, "extends": {}, "tests": {}, "route_to_handler": {}, "publishes": {}, "consumes": {}, "reads": {}, "writes": {}, "doc_mentions": {}},
 }

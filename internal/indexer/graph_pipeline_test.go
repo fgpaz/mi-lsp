@@ -22,6 +22,8 @@ func TestFullIndexPublishesLocalGoGraph(t *testing.T) {
 	}
 	writeProgressTestFile(t, root, "go.mod", "module example.com/graph-fixture\n\ngo 1.23\n")
 	writeProgressTestFile(t, root, "main.go", "package main\nfunc main() {}\n")
+	writeProgressTestFile(t, root, ".docs/wiki/guide.md", "# Guide\n\n[target](./target.md)\n")
+	writeProgressTestFile(t, root, ".docs/wiki/target.md", "# Target\n")
 
 	result, err := IndexWorkspace(context.Background(), root, true)
 	if err != nil {
@@ -39,6 +41,22 @@ func TestFullIndexPublishesLocalGoGraph(t *testing.T) {
 	active, ok, err := store.ActiveGraphGeneration(context.Background(), db)
 	if err != nil || !ok || active.String() != result.GraphGenerationID {
 		t.Fatalf("active graph = %s, %v, want %s", active, err, result.GraphGenerationID)
+	}
+	snapshot, err := store.BeginGraphQuerySnapshot(context.Background(), db, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer snapshot.Close()
+	docNodes, selectorKind, err := snapshot.ResolveGraphSelector(context.Background(), ".docs/wiki/guide.md")
+	if err != nil || selectorKind != "semantic_identity" || len(docNodes) != 1 || docNodes[0].Identity.SymbolKind != "document" {
+		t.Fatalf("document selector: nodes=%d kind=%q err=%v", len(docNodes), selectorKind, err)
+	}
+	docEdges, err := snapshot.Edges(context.Background(), []int{docNodes[0].NodeID}, "out", []string{"doc_mentions"}, 10)
+	if err != nil || len(docEdges) != 1 || docEdges[0].SourceBackend != "docgraph" {
+		t.Fatalf("doc_mentions query: edges=%#v err=%v", docEdges, err)
+	}
+	if refs, err := snapshot.EvidenceRefs(context.Background(), nil, &docEdges[0].EdgeID, 10); err != nil || len(refs) != 1 {
+		t.Fatalf("doc_mentions evidence: refs=%v err=%v", refs, err)
 	}
 }
 
