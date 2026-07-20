@@ -42,7 +42,7 @@ func helperConfig(t *testing.T) HostConfig {
 		Timeout:            5 * time.Second,
 		Environment:        map[string]string{"MILX_TEST_HELPER": "1"},
 		AllowedEnvironment: []string{"MILX_TEST_HELPER"},
-		IsolationGuard:     &isolationGuard{networkDenied: true, processTreeContained: true},
+		IsolationGuard:     newIsolationGuardForTest(),
 	}
 }
 
@@ -67,7 +67,13 @@ func TestHostLifecycleDescribePrepareExecuteAndCleanup(t *testing.T) {
 	if host.State() != StateDescribed {
 		t.Fatalf("state=%s", host.State())
 	}
-	packBytes, err := CanonicalJSON(Pack{Schema: "milx-pack/v1", GenerationID: "generation-1", Selection: json.RawMessage(`{"nodes":[]}`), Provenance: Provenance{GenerationID: "generation-1"}, Digest: DigestHex([]byte("pack")), Omissions: []Omission{}})
+	selection := packSelection()
+	selection.GenerationID = "generation-1"
+	pack, err := BuildPack(selection)
+	if err != nil {
+		t.Fatal(err)
+	}
+	packBytes, err := CanonicalJSON(pack)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -87,6 +93,49 @@ func TestHostLifecycleDescribePrepareExecuteAndCleanup(t *testing.T) {
 	}
 	if err := host.Shutdown(context.Background()); err != nil {
 		t.Fatal(err)
+	}
+	if host.State() != StateShutdown {
+		t.Fatalf("state=%s", host.State())
+	}
+	if _, err := os.Stat(host.TempDir()); !os.IsNotExist(err) {
+		t.Fatalf("temp dir remains: %v", err)
+	}
+}
+
+func TestHostGracefulShutdownWaitsForCleanExit(t *testing.T) {
+	cfg := helperConfig(t)
+	host, err := NewHost(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := host.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if err := host.Shutdown(context.Background()); err != nil {
+		t.Fatalf("graceful shutdown failed: %v", err)
+	}
+	if host.State() != StateShutdown {
+		t.Fatalf("state=%s", host.State())
+	}
+	if _, err := os.Stat(host.TempDir()); !os.IsNotExist(err) {
+		t.Fatalf("temp dir remains: %v", err)
+	}
+}
+
+func TestHostShutdownTimeoutForcesCleanup(t *testing.T) {
+	cfg := helperConfig(t)
+	cfg.Environment["MILX_TEST_SHUTDOWN_DELAY"] = "1"
+	cfg.AllowedEnvironment = append(cfg.AllowedEnvironment, "MILX_TEST_SHUTDOWN_DELAY")
+	host, err := NewHost(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := host.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	host.cfg.Timeout = 20 * time.Millisecond
+	if err := host.Shutdown(context.Background()); err == nil {
+		t.Fatal("shutdown timeout was accepted")
 	}
 	if host.State() != StateShutdown {
 		t.Fatalf("state=%s", host.State())
@@ -151,7 +200,16 @@ func TestHostSingleInflight(t *testing.T) {
 	if err := host.Start(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	pack := []byte(`{"digest":"` + strings.Repeat("a", 64) + `","generation_id":"g","omissions":[],"provenance":{"generation_id":"g"},"schema":"milx-pack/v1","selection":{}}`)
+	selection := packSelection()
+	selection.GenerationID = "g"
+	builtPack, err := BuildPack(selection)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pack, err := CanonicalJSON(builtPack)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if err := host.Prepare(context.Background(), PrepareRequest{GenerationID: "g", PackSchema: "milx-pack/v1", PackDigest: DigestHex(pack), PackBytes: pack}); err != nil {
 		t.Fatal(err)
 	}
@@ -209,6 +267,9 @@ func runMILXHelper() {
 		case "health":
 			response.Payload, _ = CanonicalJSON(map[string]any{"status": "ok", "protocol_version": 1, "extension_id": "test.helper"})
 		case "shutdown":
+			if os.Getenv("MILX_TEST_SHUTDOWN_DELAY") == "1" {
+				time.Sleep(time.Second)
+			}
 			response.Payload, _ = CanonicalJSON(map[string]any{"cleanup_status": "ok"})
 			b, _ := CanonicalJSON(response)
 			_ = WriteFrame(os.Stdout, b)

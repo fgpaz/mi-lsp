@@ -71,7 +71,7 @@ func VerifyPack(pack Pack) error {
 		return packError("GPH_MILX_PACK_INVALID", "pack identity or provenance is invalid")
 	}
 	var selection PackSelection
-	if err := DecodeCanonical(pack.Selection, &selection); err != nil || selection.GenerationID != pack.GenerationID || validateSelection(selection) != nil {
+	if err := DecodeCanonical(pack.Selection, &selection); err != nil || selection.GenerationID != pack.GenerationID || pack.Provenance.ParametersDigest != selection.AuthorityProfileDigest || validateSelection(selection) != nil {
 		return packError("GPH_MILX_PACK_INVALID", "pack selection is invalid")
 	}
 	semantic, err := canonicalPack(pack)

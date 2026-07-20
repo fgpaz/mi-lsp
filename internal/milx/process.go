@@ -2,7 +2,9 @@ package milx
 
 import (
 	"context"
+	"errors"
 	"io"
+	"os"
 	"os/exec"
 	"sync"
 )
@@ -57,7 +59,16 @@ func startManagedProcess(ctx context.Context, executable string, args []string, 
 	return p, nil
 }
 func (p *managedProcess) killTree() error { return killManagedProcess(p.cmd) }
-func (p *managedProcess) close() error    { _ = p.stdin.Close(); _ = p.stdout.Close(); return nil }
+func (p *managedProcess) close() error {
+	return errors.Join(closePipe(p.stdin), closePipe(p.stdout))
+}
+
+func closePipe(pipe io.Closer) error {
+	if err := pipe.Close(); err != nil && !errors.Is(err, os.ErrClosed) && !errors.Is(err, io.ErrClosedPipe) {
+		return err
+	}
+	return nil
+}
 func (p *managedProcess) wait() error {
 	p.waitOnce.Do(func() { p.waitErr = p.cmd.Wait() })
 	return p.waitErr

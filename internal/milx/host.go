@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/subtle"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -19,10 +20,18 @@ import (
 // isolationGuard is intentionally unexported: production callers cannot forge
 // the platform proof required to start an extension host. Platform adapters
 // must create it only after enforcing network denial and process-tree containment.
-type isolationGuard struct {
+type IsolationGuard struct {
 	networkDenied        bool
 	processTreeContained bool
 }
+
+func (g *IsolationGuard) verify() error {
+	if g == nil || !g.networkDenied || !g.processTreeContained {
+		return NewError("GPH_MILX_NETWORK_FORBIDDEN", "host", false, "", "verified isolation guard is required")
+	}
+	return nil
+}
+
 type HostConfig struct {
 	Manifest           Manifest
 	Executable         string
@@ -30,7 +39,7 @@ type HostConfig struct {
 	Timeout            time.Duration
 	Environment        map[string]string
 	AllowedEnvironment []string
-	IsolationGuard     *isolationGuard
+	IsolationGuard     *IsolationGuard
 }
 type PrepareRequest struct {
 	GenerationID       string
@@ -64,8 +73,8 @@ const (
 )
 
 func NewHost(cfg HostConfig) (*Host, error) {
-	if cfg.IsolationGuard == nil || !cfg.IsolationGuard.networkDenied || !cfg.IsolationGuard.processTreeContained {
-		return nil, NewError("GPH_MILX_NETWORK_FORBIDDEN", "host", false, "", "verified isolation guard is required")
+	if err := cfg.IsolationGuard.verify(); err != nil {
+		return nil, err
 	}
 	if cfg.Timeout == 0 {
 		cfg.Timeout = defaultHostTimeout
@@ -162,8 +171,8 @@ func (h *Host) Prepare(ctx context.Context, req PrepareRequest) error {
 		return NewError("GPH_MILX_OUTPUT_INVALID", "prepare", false, "", "pack schema, generation, or digest is invalid")
 	}
 	var pack Pack
-	if err := DecodeCanonical(req.PackBytes, &pack); err != nil || pack.Schema != "milx-pack/v1" {
-		return NewError("GPH_MILX_OUTPUT_INVALID", "prepare", false, "", "pack is not canonical")
+	if err := DecodeCanonical(req.PackBytes, &pack); err != nil || VerifyPack(pack) != nil || pack.GenerationID != req.GenerationID || pack.Schema != req.PackSchema || req.PackDigest != DigestHex(req.PackBytes) {
+		return NewError("GPH_MILX_OUTPUT_INVALID", "prepare", false, "", "pack is not canonical or does not match the request")
 	}
 	payload, err := CanonicalJSON(map[string]any{"generation_id": req.GenerationID, "graph_schema_version": req.GraphSchemaVersion, "pack_schema": req.PackSchema, "pack_digest": req.PackDigest, "pack_bytes": json.RawMessage(req.PackBytes)})
 	if err != nil {
@@ -214,11 +223,11 @@ func (h *Host) Execute(ctx context.Context, req ExecuteRequest) (Result, error) 
 	if err != nil {
 		return zero, err
 	}
-	if DecodeCanonical(raw, &zero) != nil || zero.Schema != "milx-result/v1" || zero.ResultDigest != DigestHex(zero.Result) {
+	h.mu.Lock()
+	generationID := h.generationID
+	h.mu.Unlock()
+	if DecodeCanonical(raw, &zero) != nil || ValidateDerivedResult(zero, generationID, h.cfg.Manifest.ExtensionID, h.cfg.Manifest.ExtensionVersion, req.ParametersDigest) != nil {
 		return Result{}, NewError("GPH_MILX_OUTPUT_INVALID", "execute", false, "", "extension result is invalid")
-	}
-	if zero.Provenance.GenerationID != h.generationID || zero.Provenance.ExtensionID != h.cfg.Manifest.ExtensionID || zero.Provenance.ExtensionVersion != h.cfg.Manifest.ExtensionVersion || zero.Provenance.ParametersDigest != req.ParametersDigest {
-		return Result{}, NewError("GPH_MILX_OUTPUT_INVALID", "execute", false, "", "extension result provenance is invalid")
 	}
 	return zero, nil
 }
@@ -239,23 +248,34 @@ func (h *Host) Shutdown(ctx context.Context) error {
 	}
 	_, err := h.call(ctx, "shutdown", []byte(`{}`), h.State())
 	if err != nil {
-		_ = p.killTree()
+		return err
 	}
-	h.terminate(p)
-	return err
+	if err := h.terminate(p); err != nil {
+		return cleanupFailure("shutdown")
+	}
+	return nil
 }
-func (h *Host) terminate(p *managedProcess) {
-	_ = p.close()
-	_ = p.wait()
+
+func cleanupFailure(operation string) error {
+	return NewError("GPH_MILX_CLEANUP_FAILED", operation, false, "", "extension cleanup could not be completed")
+}
+
+func (h *Host) cleanup(p *managedProcess) error {
+	return errors.Join(p.killTree(), h.terminate(p))
+}
+
+func (h *Host) terminate(p *managedProcess) error {
+	closeErr := p.close()
+	waitErr := p.wait()
 	h.mu.Lock()
 	if h.process != p {
 		h.mu.Unlock()
-		return
+		return errors.Join(closeErr, waitErr)
 	}
 	dir := h.tempDir
 	h.process, h.tempDir, h.state = nil, "", StateShutdown
 	h.mu.Unlock()
-	_ = os.RemoveAll(dir)
+	return errors.Join(closeErr, waitErr, os.RemoveAll(dir))
 }
 
 func (h *Host) call(ctx context.Context, operation string, payload []byte, expected LifecycleState) ([]byte, error) {
@@ -274,11 +294,11 @@ func (h *Host) call(ctx context.Context, operation string, payload []byte, expec
 	}
 	h.mu.Unlock()
 	if err := ValidateOperationPayload(operation, payload); err != nil {
-		return nil, NewError("GPH_MILX_OUTPUT_INVALID", operation, false, "", "operation payload is invalid")
+		return h.cleanupAfterFailure(p, operation, "GPH_MILX_OUTPUT_INVALID", false, "operation payload is invalid")
 	}
 	env, err := CanonicalJSON(Envelope{Schema: EnvelopeSchema, RequestID: id, Operation: operation, ProtocolVersion: ProtocolVersion, Payload: payload})
 	if err != nil || WriteFrame(p.stdin, env) != nil {
-		return nil, NewError("GPH_MILX_PROCESS_FAILED", operation, false, "", "extension request could not be written")
+		return h.cleanupAfterFailure(p, operation, "GPH_MILX_PROCESS_FAILED", false, "extension request could not be written")
 	}
 	result := make(chan struct {
 		b   []byte
@@ -302,6 +322,13 @@ func (h *Host) call(ctx context.Context, operation string, payload []byte, expec
 		return h.finishResponse(p, operation, id, r.b, r.err)
 	}
 }
+func (h *Host) cleanupAfterFailure(p *managedProcess, operation, code string, retryable bool, summary string) ([]byte, error) {
+	if err := h.cleanup(p); err != nil {
+		return nil, cleanupFailure(operation)
+	}
+	return nil, NewError(code, operation, retryable, "", summary)
+}
+
 func readResponseFor(r io.Reader, id string) ([]byte, error) {
 	for {
 		b, err := ReadFrame(r)
@@ -330,39 +357,28 @@ func (h *Host) cancelAndCleanup(p *managedProcess, id, operation string, result 
 	defer grace.Stop()
 	select {
 	case <-result:
-		_ = p.killTree()
-		h.terminate(p)
-		return nil, NewError("GPH_MILX_TIMEOUT", operation, true, "", "extension request canceled")
+		return h.cleanupAfterFailure(p, operation, "GPH_MILX_TIMEOUT", true, "extension request canceled")
 	case <-grace.C:
 	}
-	_ = p.killTree()
-	h.terminate(p)
-	return nil, NewError("GPH_MILX_TIMEOUT", operation, true, "", "extension request timed out")
+	return h.cleanupAfterFailure(p, operation, "GPH_MILX_TIMEOUT", true, "extension request timed out")
 }
 func (h *Host) finishResponse(p *managedProcess, operation, id string, b []byte, readErr error) ([]byte, error) {
 	if readErr != nil {
-		h.terminate(p)
-		return nil, NewError("GPH_MILX_PROCESS_FAILED", operation, false, "", "extension response could not be read")
+		return h.cleanupAfterFailure(p, operation, "GPH_MILX_PROCESS_FAILED", false, "extension response could not be read")
 	}
 	var response Envelope
 	if DecodeCanonical(b, &response) != nil || ValidateEnvelope(response, true) != nil || response.RequestID != id || response.Operation != operation {
-		_ = p.killTree()
-		h.terminate(p)
-		return nil, NewError("GPH_MILX_OUTPUT_INVALID", operation, false, "", "extension response envelope is invalid")
+		return h.cleanupAfterFailure(p, operation, "GPH_MILX_OUTPUT_INVALID", false, "extension response envelope is invalid")
 	}
 	if response.Status != "ok" {
-		_ = p.killTree()
-		h.terminate(p)
-		return nil, NewError("GPH_MILX_PROCESS_FAILED", operation, false, "", "extension rejected the request")
+		return h.cleanupAfterFailure(p, operation, "GPH_MILX_PROCESS_FAILED", false, "extension rejected the request")
 	}
 	h.mu.Lock()
 	if operation == "describe" {
 		var m Manifest
 		if DecodeCanonical(response.Payload, &m) != nil || !reflect.DeepEqual(m, h.cfg.Manifest) {
 			h.mu.Unlock()
-			_ = p.killTree()
-			h.terminate(p)
-			return nil, NewError("GPH_MILX_MANIFEST_INVALID", operation, false, "", "extension manifest does not match")
+			return h.cleanupAfterFailure(p, operation, "GPH_MILX_MANIFEST_INVALID", false, "extension manifest does not match")
 		}
 		h.state = StateDescribed
 	}
@@ -380,9 +396,7 @@ func (h *Host) finishResponse(p *managedProcess, operation, id string, b []byte,
 		}
 		if DecodeCanonical(response.Payload, &health) != nil || health.Status != "ok" || health.ProtocolVersion != ProtocolVersion || health.ExtensionID != h.cfg.Manifest.ExtensionID {
 			h.mu.Unlock()
-			_ = p.killTree()
-			h.terminate(p)
-			return nil, NewError("GPH_MILX_OUTPUT_INVALID", operation, false, "", "health response is invalid")
+			return h.cleanupAfterFailure(p, operation, "GPH_MILX_OUTPUT_INVALID", false, "health response is invalid")
 		}
 	}
 	if operation == "shutdown" {
@@ -391,9 +405,7 @@ func (h *Host) finishResponse(p *managedProcess, operation, id string, b []byte,
 		}
 		if DecodeCanonical(response.Payload, &shutdown) != nil || shutdown.CleanupStatus != "ok" {
 			h.mu.Unlock()
-			_ = p.killTree()
-			h.terminate(p)
-			return nil, NewError("GPH_MILX_CLEANUP_FAILED", operation, false, "", "shutdown response is invalid")
+			return h.cleanupAfterFailure(p, operation, "GPH_MILX_CLEANUP_FAILED", false, "shutdown response is invalid")
 		}
 	}
 	h.mu.Unlock()

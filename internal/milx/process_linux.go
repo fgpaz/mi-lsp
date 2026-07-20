@@ -1,4 +1,4 @@
-//go:build !windows && !linux
+//go:build linux
 
 package milx
 
@@ -7,7 +7,7 @@ import (
 	"syscall"
 )
 
-func configureProcess(cmd *exec.Cmd) { cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true} }
+func configureProcess(cmd *exec.Cmd) { configureLinuxIsolation(cmd) }
 func killManagedProcess(cmd *exec.Cmd) error {
 	if cmd == nil || cmd.Process == nil {
 		return nil

@@ -55,6 +55,22 @@ func TestPackRejectsUnsafeInputsAndTamper(t *testing.T) {
 		t.Fatal("expected digest failure")
 	}
 }
+func TestVerifyPackRejectsAuthorityProvenanceBypass(t *testing.T) {
+	p, err := BuildPack(packSelection())
+	if err != nil {
+		t.Fatal(err)
+	}
+	p.Provenance.ParametersDigest = strings.Repeat("c", 64)
+	semantic, err := canonicalPack(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p.Digest = DigestHex(semantic)
+	if err := VerifyPack(p); err == nil {
+		t.Fatal("expected authority provenance rejection")
+	}
+}
+
 func TestDerivedResultRejectsAuthorityAttempt(t *testing.T) {
 	result := Result{Schema: "milx-result/v1", Result: json.RawMessage(`{"authority_claim":"accepted"}`), Provenance: Provenance{GenerationID: "g", ExtensionID: "x", ExtensionVersion: "1", ParametersDigest: "p"}}
 	result.ResultDigest = DigestHex(result.Result)
