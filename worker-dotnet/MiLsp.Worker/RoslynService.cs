@@ -53,7 +53,11 @@ public sealed class RoslynService
                 errorCode = "solution_config_error";
             }
 
-            return new WorkerResponse(false, "roslyn", Error: exception.Message, ErrorCode: errorCode, Stats: new WorkerStats(Ms: started.ElapsedMilliseconds));
+            var graphObservation = request.Method == "graph_observe";
+            var error = graphObservation
+                ? "Graph observation backend is unavailable"
+                : errorCode == "solution_config_error" ? "Solution configuration is invalid" : "Worker request failed";
+            return new WorkerResponse(false, "roslyn", Error: error, ErrorCode: graphObservation ? "GPH_BACKEND_UNAVAILABLE" : errorCode, Stats: new WorkerStats(Ms: started.ElapsedMilliseconds));
         }
     }
 
@@ -300,9 +304,13 @@ public sealed class RoslynService
             {
                 compilation = await project.GetCompilationAsync(cancellationToken).ConfigureAwait(false);
             }
-            catch (Exception)
+            catch (IOException)
             {
-                partial = true;
+                return BackendUnavailableResponse(started.ElapsedMilliseconds);
+            }
+            catch (UnauthorizedAccessException)
+            {
+                return BackendUnavailableResponse(started.ElapsedMilliseconds);
             }
 
             batch.SourceFingerprint = GraphObservationBuilder.SourceFingerprint(project, repoRoot, module, batch.BackendVersion, batch.ExtractorVersion, repository, () => partial = true);
@@ -322,6 +330,14 @@ public sealed class RoslynService
         {
             partial = true;
             AddCapabilityOmissions(batch, "canceled", "retry");
+        }
+        catch (IOException)
+        {
+            return BackendUnavailableResponse(started.ElapsedMilliseconds);
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return BackendUnavailableResponse(started.ElapsedMilliseconds);
         }
         catch (Exception)
         {

@@ -269,6 +269,23 @@ try
     var afterConfig = await Observe(mutationRoot, mutationProject);
     Require(beforeConfig != afterConfig.ConfigFingerprint, "project/compiler option mutation did not change config fingerprint");
 
+    if (OperatingSystem.IsWindows())
+    {
+        var lockRoot = CreateFixture("source-lock");
+        roots.Add(lockRoot);
+        var lockProject = Path.Combine(lockRoot, "Fixture.csproj");
+        var warmedService = new RoslynService();
+        var warmed = await warmedService.HandleAsync(Request(lockRoot, lockProject), CancellationToken.None);
+        Require(warmed.Ok && warmed.Observation is not null, "preload lock observation failed");
+        var lockedSourcePath = Path.Combine(lockRoot, "Fixture.cs");
+        using (new FileStream(lockedSourcePath, FileMode.Open, FileAccess.Read, FileShare.None))
+        {
+            var locked = await warmedService.HandleAsync(Request(lockRoot, lockProject), CancellationToken.None);
+            Require(!locked.Ok && locked.ErrorCode == "GPH_BACKEND_UNAVAILABLE" && locked.Observation is null, "source lock did not return sanitized backend unavailable");
+            Require(!locked.Error!.Contains(lockRoot, StringComparison.OrdinalIgnoreCase) && !locked.Error.Contains(lockProject, StringComparison.OrdinalIgnoreCase) && !locked.Error.Contains(lockedSourcePath, StringComparison.OrdinalIgnoreCase), "source lock response leaked a path");
+        }
+    }
+
     var missing = await new RoslynService().HandleAsync(Request(root, project, project, null), CancellationToken.None);
     Require(!missing.Ok && missing.ErrorCode == "GPH_BACKEND_PROVENANCE_MISSING", "missing provenance gate failed");
     Require(emittedCompilerError is not null && emittedCanceled is not null, "emission observations missing");
