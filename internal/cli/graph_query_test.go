@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"reflect"
 	"testing"
 
 	"github.com/fgpaz/mi-lsp/internal/model"
@@ -43,6 +44,57 @@ func TestGraphCommandsExposeCanonicalArityAndFlags(t *testing.T) {
 	}
 	if model.GraphQueryDefaultToken != 4000 || model.GraphQueryMaxToken != 20000 {
 		t.Fatalf("unexpected graph token contract: %d/%d", model.GraphQueryDefaultToken, model.GraphQueryMaxToken)
+	}
+}
+
+func TestGraphCommandsForwardExactContractThroughTestHook(t *testing.T) {
+	var gotOp string
+	var gotPayload map[string]any
+	var gotPrefer bool
+	state := &rootState{executeOperationHook: func(_ *cobra.Command, operation string, payload map[string]any, preferDaemon bool) error {
+		gotOp, gotPayload, gotPrefer = operation, payload, preferDaemon
+		return nil
+	}}
+	commands := newGraphQueryCommands(state)
+	cases := []struct {
+		name    string
+		command *cobra.Command
+		args    []string
+		op      string
+		want    map[string]any
+	}{
+		{"neighbors", commands[0], []string{"pkg.Root"}, "nav.neighbors", map[string]any{"selector": "pkg.Root"}},
+		{"callers", commands[1], []string{"pkg.Root"}, "nav.callers", map[string]any{"selector": "pkg.Root"}},
+		{"callees", commands[2], []string{"pkg.Root"}, "nav.callees", map[string]any{"selector": "pkg.Root"}},
+		{"explain", commands[3], []string{"edge-1"}, "nav.explain", map[string]any{"selector": "edge-1"}},
+		{"path", commands[4], []string{"from", "to"}, "nav.path", map[string]any{"from": "from", "to": "to"}},
+		{"stats", commands[5].Commands()[0], nil, "nav.graph.stats", map[string]any{}},
+		{"validate", commands[5].Commands()[1], nil, "nav.graph.validate", map[string]any{}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			for name, value := range map[string]string{"generation": "gen-1", "depth": "3", "limit": "7", "token-budget": "1234", "direction": "out", "edge": "calls", "cursor": "cursor-1"} {
+				if err := tc.command.Flags().Set(name, value); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := tc.command.RunE(tc.command, tc.args); err != nil {
+				t.Fatal(err)
+			}
+			if gotOp != tc.op || !gotPrefer {
+				t.Fatalf("operation=%q prefer=%v", gotOp, gotPrefer)
+			}
+			for key, value := range map[string]any{"generation": "gen-1", "depth": 3, "limit": 7, "token_budget": 1234, "direction": "out", "cursor": "cursor-1", "edge": []string{"calls"}} {
+				if !reflect.DeepEqual(gotPayload[key], value) {
+					t.Errorf("payload[%s]=%#v want %#v", key, gotPayload[key], value)
+				}
+			}
+			for key, value := range tc.want {
+				if !reflect.DeepEqual(gotPayload[key], value) {
+					t.Errorf("payload[%s]=%#v want %#v", key, gotPayload[key], value)
+				}
+			}
+		})
 	}
 }
 

@@ -664,7 +664,7 @@ func newGraphQueryCommands(state *rootState) []*cobra.Command {
 			} else if arity > 0 {
 				payload["selector"] = args[0]
 			}
-			return state.executeOperation(cmd, operation, payload, true)
+			return state.executeGraphOperation(cmd, operation, payload, true)
 		}}
 		queryFlags(command, &generation, &depth, &limit, &tokenBudget, &direction, &cursor, &edges)
 		return command

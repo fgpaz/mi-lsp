@@ -24,26 +24,27 @@ import (
 )
 
 type rootState struct {
-	repoRoot            string
-	app                 *service.App
-	workspace           string
-	format              string
-	tokenBudget         int
-	maxItems            int
-	maxChars            int
-	verbose             bool
-	clientName          string
-	sessionID           string
-	backendHint         string
-	axi                 bool
-	classic             bool
-	full                bool
-	profile             string
-	telemetry           *CLITelemetry
-	retentionRun        bool
-	noAutoDaemon        bool
-	compress            bool
-	allowCrossWorkspace bool
+	repoRoot             string
+	app                  *service.App
+	workspace            string
+	format               string
+	tokenBudget          int
+	maxItems             int
+	maxChars             int
+	verbose              bool
+	clientName           string
+	sessionID            string
+	backendHint          string
+	axi                  bool
+	classic              bool
+	full                 bool
+	profile              string
+	telemetry            *CLITelemetry
+	retentionRun         bool
+	noAutoDaemon         bool
+	compress             bool
+	allowCrossWorkspace  bool
+	executeOperationHook func(*cobra.Command, string, map[string]any, bool) error
 }
 
 type envelopePrintedError struct {
@@ -257,6 +258,13 @@ func (s *rootState) executeOperation(cmd *cobra.Command, operation string, paylo
 		return envelopePrintedError{err: err}
 	}
 	return s.printPreparedEnvelope(finalEnvelope, request.Context)
+}
+
+func (s *rootState) executeGraphOperation(cmd *cobra.Command, operation string, payload map[string]any, preferDaemon bool) error {
+	if s.executeOperationHook != nil {
+		return s.executeOperationHook(cmd, operation, payload, preferDaemon)
+	}
+	return s.executeOperation(cmd, operation, payload, preferDaemon)
 }
 
 func (s *rootState) ensureTelemetry() *CLITelemetry {
