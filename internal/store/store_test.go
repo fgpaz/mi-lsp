@@ -622,6 +622,74 @@ func TestCandidateReposForSymbol_Fuzzy(t *testing.T) {
 		t.Errorf("exact Foo: want 0 repos, got %d", len(exact))
 	}
 }
+func TestGraphReadAPIsAreQueryOnlyAndFailClosedWithoutSchema(t *testing.T) {
+	ctx := context.Background()
+	db, root := seedTestDB(t)
+	bundle := testGraphBundle(t)
+	if err := StageGraphGeneration(ctx, db, &bundle); err != nil {
+		t.Fatal(err)
+	}
+	if err := ActivateGraphGeneration(ctx, db, bundle.Generation.GenerationID, nil); err != nil {
+		t.Fatal(err)
+	}
+	readOnly, err := OpenReadOnly(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer readOnly.Close()
+	snapshot, err := BeginGraphReadSnapshot(ctx, readOnly)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer snapshot.Close()
+	var dataBefore, changesBefore int64
+	if err := snapshot.tx.QueryRowContext(ctx, "PRAGMA data_version").Scan(&dataBefore); err != nil {
+		t.Fatal(err)
+	}
+	if err := snapshot.tx.QueryRowContext(ctx, "SELECT total_changes()").Scan(&changesBefore); err != nil {
+		t.Fatal(err)
+	}
+	active, ok, err := snapshot.ActiveGraphGeneration()
+	if err != nil || !ok || active.GenerationID != bundle.Generation.GenerationID {
+		t.Fatalf("snapshot active=%+v ok=%v err=%v", active, ok, err)
+	}
+	if _, err := snapshot.ValidateGraphGeneration(ctx, bundle.Generation.GenerationID); err != nil {
+		t.Fatal(err)
+	}
+	var dataAfter, changesAfter int64
+	if err := snapshot.tx.QueryRowContext(ctx, "PRAGMA data_version").Scan(&dataAfter); err != nil {
+		t.Fatal(err)
+	}
+	if err := snapshot.tx.QueryRowContext(ctx, "SELECT total_changes()").Scan(&changesAfter); err != nil {
+		t.Fatal(err)
+	}
+	if dataAfter != dataBefore || changesAfter != changesBefore {
+		t.Fatalf("read APIs mutated sqlite: data_version %d->%d total_changes %d->%d", dataBefore, dataAfter, changesBefore, changesAfter)
+	}
+
+	missing, err := sql.Open(driverName, ":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer missing.Close()
+	if _, _, err := ActiveGraphGeneration(ctx, missing); err == nil {
+		t.Fatal("missing schema active read succeeded")
+	}
+	if _, err := ValidateGraphGeneration(ctx, missing, bundle.Generation.GenerationID); err == nil {
+		t.Fatal("missing schema validation succeeded")
+	}
+	if _, err := BeginGraphReadSnapshot(ctx, missing); err == nil {
+		t.Fatal("missing schema snapshot succeeded")
+	}
+	var tables int
+	if err := missing.QueryRowContext(ctx, "SELECT COUNT(*) FROM sqlite_master WHERE type='table'").Scan(&tables); err != nil {
+		t.Fatal(err)
+	}
+	if tables != 0 {
+		t.Fatalf("missing schema read repaired database: tables=%d", tables)
+	}
+}
+
 func TestOpenReadOnly_EnforcesPragmasOnPoolConnections(t *testing.T) {
 	_, root := seedTestDB(t)
 

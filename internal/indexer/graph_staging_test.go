@@ -180,6 +180,54 @@ func TestStageGraphObservationBatchesRejectsInvalidRequestBeforeWrite(t *testing
 	}
 }
 
+func TestPublishGraphObservationBatchesConflictLeavesInvisibleStageForRetry(t *testing.T) {
+	ctx := context.Background()
+	db, err := store.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	firstBatch := stagingBatch("go", "src/first", false)
+	if err := model.SealGraphObservationBatch(&firstBatch); err != nil {
+		t.Fatal(err)
+	}
+	firstReq := GraphAssemblyRequest{Batches: []model.GraphObservationBatch{firstBatch}, CreatedAt: time.Unix(100, 0).UTC()}
+	first, err := PublishGraphObservationBatches(ctx, db, firstReq, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	secondBatch := stagingBatch("go", "src/second", false)
+	if err := model.SealGraphObservationBatch(&secondBatch); err != nil {
+		t.Fatal(err)
+	}
+	secondReq := GraphAssemblyRequest{Batches: []model.GraphObservationBatch{secondBatch}, CreatedAt: time.Unix(101, 0).UTC()}
+	wrongPrior := stagingDigest("wrong-prior")
+	staged, err := PublishGraphObservationBatches(ctx, db, secondReq, &wrongPrior)
+	if !errors.Is(err, model.ErrGraphPointerConflict) {
+		t.Fatalf("publish conflict=%v", err)
+	}
+	if staged.Status != model.GraphGenerationStaged {
+		t.Fatalf("conflicted stage status=%q", staged.Status)
+	}
+	active, ok, err := store.ActiveGraphGeneration(ctx, db)
+	if err != nil || !ok || active != first.GenerationID {
+		t.Fatalf("active after conflict=%x ok=%v err=%v", active, ok, err)
+	}
+	if _, err := store.ValidateGraphGeneration(ctx, db, staged.GenerationID); err != nil {
+		t.Fatalf("staged generation was not complete: %v", err)
+	}
+	if err := store.ActivateGraphGenerationAt(ctx, db, staged.GenerationID, &first.GenerationID, secondReq.CreatedAt); err != nil {
+		t.Fatalf("retry activation: %v", err)
+	}
+	if err := store.ActivateGraphGenerationAt(ctx, db, staged.GenerationID, &staged.GenerationID, secondReq.CreatedAt); err != nil {
+		t.Fatalf("idempotent activation retry: %v", err)
+	}
+	active, ok, err = store.ActiveGraphGeneration(ctx, db)
+	if err != nil || !ok || active != staged.GenerationID {
+		t.Fatalf("active after retry=%x ok=%v err=%v", active, ok, err)
+	}
+}
+
 func TestStageGraphObservationBatchesIsStagedIdempotent(t *testing.T) {
 	root := t.TempDir()
 	db, err := store.Open(root)

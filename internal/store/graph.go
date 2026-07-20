@@ -427,7 +427,72 @@ func streamGraph(ctx context.Context, q graphConn, id model.GraphDigest, g model
 }
 
 func ValidateGraphGeneration(ctx context.Context, db *sql.DB, id model.GraphDigest) (model.GraphGeneration, error) {
+	if ctx == nil || db == nil {
+		return model.GraphGeneration{}, model.ErrGraphGenerationInvalid
+	}
 	return validateGraphGenerationConn(ctx, db, id)
+}
+
+type GraphReadSnapshot struct {
+	tx         *sql.Tx
+	generation model.GraphGeneration
+	active     bool
+	closed     bool
+}
+
+// BeginGraphReadSnapshot pins the active graph pointer and its validated
+// generation to one read transaction. Callers must Close the snapshot.
+func BeginGraphReadSnapshot(ctx context.Context, db *sql.DB) (*GraphReadSnapshot, error) {
+	if ctx == nil || db == nil {
+		return nil, model.ErrGraphGenerationInvalid
+	}
+	tx, err := db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
+	if err != nil {
+		return nil, err
+	}
+	id, ok, err := activeGraphGenerationConn(ctx, tx)
+	if err != nil {
+		_ = tx.Rollback()
+		return nil, err
+	}
+	snapshot := &GraphReadSnapshot{tx: tx, active: ok}
+	if ok {
+		snapshot.generation, err = validateGraphGenerationConn(ctx, tx, id)
+		if err != nil || snapshot.generation.Status != model.GraphGenerationActive {
+			_ = tx.Rollback()
+			if err == nil {
+				err = model.ErrGraphGenerationCorrupt
+			}
+			return nil, err
+		}
+	}
+	return snapshot, nil
+}
+
+// ActiveGraphGeneration returns the validated active generation selected when
+// this snapshot was opened. It never consults a second connection.
+func (s *GraphReadSnapshot) ActiveGraphGeneration() (model.GraphGeneration, bool, error) {
+	if s == nil || s.closed {
+		return model.GraphGeneration{}, false, model.ErrGraphGenerationInvalid
+	}
+	return s.generation, s.active, nil
+}
+
+// ValidateGraphGeneration validates a generation using this snapshot's pinned
+// read transaction, so all rows come from the same SQLite snapshot.
+func (s *GraphReadSnapshot) ValidateGraphGeneration(ctx context.Context, id model.GraphDigest) (model.GraphGeneration, error) {
+	if s == nil || s.closed || ctx == nil {
+		return model.GraphGeneration{}, model.ErrGraphGenerationInvalid
+	}
+	return validateGraphGenerationConn(ctx, s.tx, id)
+}
+
+func (s *GraphReadSnapshot) Close() error {
+	if s == nil || s.closed {
+		return nil
+	}
+	s.closed = true
+	return s.tx.Rollback()
 }
 
 func validateGraphGenerationConn(ctx context.Context, q graphConn, id model.GraphDigest) (model.GraphGeneration, error) {
@@ -470,17 +535,30 @@ func validateGraphGenerationConn(ctx context.Context, q graphConn, id model.Grap
 	return g, nil
 }
 
-func ActiveGraphGeneration(ctx context.Context, db *sql.DB) (model.GraphDigest, bool, error) {
+func activeGraphGenerationConn(ctx context.Context, q graphConn) (model.GraphDigest, bool, error) {
+	if ctx == nil || q == nil {
+		return model.GraphDigest{}, false, model.ErrGraphGenerationInvalid
+	}
 	var b []byte
-	err := db.QueryRowContext(ctx, "SELECT value FROM workspace_meta WHERE key=?", graphActiveMeta).Scan(&b)
-	if errors.Is(err, sql.ErrNoRows) || len(b) == 0 {
+	err := q.QueryRowContext(ctx, "SELECT value FROM workspace_meta WHERE key=?", graphActiveMeta).Scan(&b)
+	if errors.Is(err, sql.ErrNoRows) {
 		return model.GraphDigest{}, false, nil
 	}
 	if err != nil {
 		return model.GraphDigest{}, false, err
 	}
+	if len(b) == 0 {
+		return model.GraphDigest{}, false, nil
+	}
 	d, e := scanDigest(b)
 	return d, e == nil, e
+}
+
+func ActiveGraphGeneration(ctx context.Context, db *sql.DB) (model.GraphDigest, bool, error) {
+	if ctx == nil || db == nil {
+		return model.GraphDigest{}, false, model.ErrGraphGenerationInvalid
+	}
+	return activeGraphGenerationConn(ctx, db)
 }
 
 func validGraphCompatibilityState(state string) bool {
@@ -538,6 +616,34 @@ func TransitionGraphCompatibilityState(ctx context.Context, db *sql.DB, expected
 		return err
 	} else if n != 1 {
 		return ErrGraphCompatibilityConflict
+	}
+	if next == GraphCompatibilityLegacyPreservedNoDualWrite {
+		var active []byte
+		if err := t.c.QueryRowContext(ctx, "SELECT value FROM workspace_meta WHERE key=?", graphActiveMeta).Scan(&active); err != nil && !errors.Is(err, sql.ErrNoRows) {
+			return err
+		}
+		var activeRows int
+		if err := t.c.QueryRowContext(ctx, "SELECT COUNT(*) FROM graph_generations WHERE status=?", model.GraphGenerationActive).Scan(&activeRows); err != nil {
+			return err
+		}
+		if (len(active) == 0 && activeRows != 0) || (len(active) != 0 && activeRows != 1) {
+			return ErrGraphCompatibilityConflict
+		}
+		if len(active) != 0 {
+			if _, err := scanDigest(active); err != nil {
+				return ErrGraphCompatibilityConflict
+			}
+			updated, err := t.c.ExecContext(ctx, "UPDATE graph_generations SET status=? WHERE status=?", model.GraphGenerationRetired, model.GraphGenerationActive)
+			if err != nil {
+				return err
+			}
+			if n, err := updated.RowsAffected(); err != nil || n != 1 {
+				return ErrGraphCompatibilityConflict
+			}
+		}
+		if _, err := t.c.ExecContext(ctx, "UPDATE workspace_meta SET value=NULL WHERE key IN (?, ?)", graphActiveMeta, graphPreviousMeta); err != nil {
+			return err
+		}
 	}
 	return t.commit(ctx)
 }
@@ -772,6 +878,16 @@ func CleanupGraphGenerations(ctx context.Context, db *sql.DB, workspaceIdentity 
 	if scanErr := t.c.QueryRowContext(ctx, "SELECT value FROM workspace_meta WHERE key=?", graphPreviousMeta).Scan(&previous); scanErr != nil && !errors.Is(scanErr, sql.ErrNoRows) {
 		return scanErr
 	}
+	if len(active) > 0 {
+		if _, scanErr := scanDigest(active); scanErr != nil {
+			return fmt.Errorf("%w: active pointer: %v", model.ErrGraphGenerationCorrupt, scanErr)
+		}
+	}
+	if len(previous) > 0 {
+		if _, scanErr := scanDigest(previous); scanErr != nil {
+			return fmt.Errorf("%w: previous pointer: %v", model.ErrGraphGenerationCorrupt, scanErr)
+		}
+	}
 	protected := func(id []byte) bool {
 		return len(id) > 0 && (string(id) == string(active) || string(id) == string(previous))
 	}
@@ -891,7 +1007,7 @@ func digestOrNil(d *model.GraphDigest) []byte {
 // TransitionGraphMigration performs a compare-and-set lifecycle transition.
 func TransitionGraphMigration(ctx context.Context, db *sql.DB, id, expected, next, errorCode string, now time.Time) error {
 	allowed := map[string]map[string]bool{"prepared": {"applying": true, "rolled_back": true, "failed": true}, "applying": {"validated": true, "rolled_back": true, "failed": true}, "validated": {"committed": true, "rolled_back": true, "failed": true}}
-	if id == "" || now.IsZero() || !allowed[expected][next] || (next == "failed" && errorCode == "") {
+	if ctx == nil || db == nil || id == "" || now.IsZero() || !allowed[expected][next] || (next == "failed" && errorCode == "") {
 		return ErrGraphMigrationTransition
 	}
 	t, e := beginGraphImmediate(ctx, db)
