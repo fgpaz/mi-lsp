@@ -15,6 +15,10 @@ artifact_classes:
   - g1_review_index
   - g1_release_gate
   - g1_verdict
+  - g2g3_session_contract
+  - g2g3_verification_summary
+  - g2g3_review_index
+  - g2g3_verdict
 sanitized_summaries: true
 sanitized_verdicts: true
 secret_policy:
@@ -35,8 +39,17 @@ acceptance:
     - .docs/auditoria/2026-07-18-milsp-graph-native/g1-review-index.yaml
     - .docs/auditoria/2026-07-18-milsp-graph-native/g1-release-gate.yaml
     - .docs/auditoria/2026-07-18-milsp-graph-native/g1-verdict.md
+    - .docs/auditoria/2026-07-18-milsp-graph-native/g2g3-session-contract.yaml
+    - .docs/auditoria/2026-07-18-milsp-graph-native/g2g3-verification-summary.yaml
+    - .docs/auditoria/2026-07-18-milsp-graph-native/g2g3-review-index.yaml
+    - .docs/auditoria/2026-07-18-milsp-graph-native/g2g3-verdict.md
   required_schema: ae-audit-hygiene/v1
   closure_requires_sanitized_evidence: true
+artifact_hashes:
+  g2g3-session-contract.yaml: ce47c0a39377898e7f8008738d12fe0882ef4f0db56d82cf11cf8198fb8be6e7
+  g2g3-verification-summary.yaml: 6f57af680928f4f050bc18af0cbdcb8537dfe1c30ab6506bb9bc6b7b7ae5452b
+  g2g3-review-index.yaml: 09df0338d99d1bc55ccdc1f092dd8cabbd6753f08a3101bda4b1da1181ab8957
+  g2g3-verdict.md: 7182dfcfd0d223754ed352ec7fce6c078437905d143da4221245f5980365ed9d
 verification_records:
   - id: w1-governance
     status: PASS
