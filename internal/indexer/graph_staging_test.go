@@ -131,6 +131,55 @@ func TestAssembleGraphObservationBatchesRejectsBeforeStoreAndTracksManifestOmiss
 	}
 }
 
+func TestAssembleGraphObservationBatchesConvertsUnresolved(t *testing.T) {
+	batch := stagingBatch("go", "src/go", false)
+	batch.Completeness = model.GraphCompletenessComplete
+	batch.Coverage[0].Eligible = 2
+	batch.Unresolved = append(batch.Unresolved, model.GraphObservationUnresolved{Ref: "U1", OwnerPath: "src/go/main.go", SubjectKind: "file", Capability: "declarations", SelectorDigest: stagingDigest("selector"), ReasonCode: "missing_symbol", Candidates: []string{"Widget"}, Backend: "go", RecoveryHintCode: "retry"})
+	batch.Coverage[0].Unresolved = 1
+	if err := model.SealGraphObservationBatch(&batch); err != nil {
+		t.Fatal(err)
+	}
+	bundle, err := AssembleGraphObservationBatches(GraphAssemblyRequest{Batches: []model.GraphObservationBatch{batch}, CreatedAt: time.Unix(1, 0)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(bundle.Unresolved) != 1 || bundle.Unresolved[0].UnresolvedID != 0 || bundle.Unresolved[0].CrossRID != model.UnresolvedRID(bundle.Unresolved[0].UnresolvedKey) || bundle.Unresolved[0].ReasonCode != "missing_symbol" {
+		t.Fatalf("unresolved conversion=%+v", bundle.Unresolved)
+	}
+	if err := bundle.Validate(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestStageGraphObservationBatchesRejectsNilBoundariesBeforeAssembly(t *testing.T) {
+	req := GraphAssemblyRequest{}
+	if _, err := StageGraphObservationBatches(nil, nil, req); !errors.Is(err, model.ErrGraphGenerationInvalid) {
+		t.Fatalf("nil context/db error=%v", err)
+	}
+	if _, err := StageGraphObservationBatches(context.Background(), nil, req); !errors.Is(err, model.ErrGraphGenerationInvalid) {
+		t.Fatalf("nil db error=%v", err)
+	}
+}
+
+func TestStageGraphObservationBatchesRejectsInvalidRequestBeforeWrite(t *testing.T) {
+	db, err := store.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if _, err := StageGraphObservationBatches(context.Background(), db, GraphAssemblyRequest{}); err == nil {
+		t.Fatal("invalid request accepted")
+	}
+	var count int
+	if err := db.QueryRow("SELECT count(*) FROM graph_generations").Scan(&count); err != nil || count != 0 {
+		t.Fatalf("generation rows=%d err=%v", count, err)
+	}
+	if _, active, err := store.ActiveGraphGeneration(context.Background(), db); err != nil || active {
+		t.Fatalf("active pointer: active=%v err=%v", active, err)
+	}
+}
+
 func TestStageGraphObservationBatchesIsStagedIdempotent(t *testing.T) {
 	root := t.TempDir()
 	db, err := store.Open(root)

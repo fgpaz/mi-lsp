@@ -24,6 +24,20 @@ func testGraphBundle(t *testing.T) model.GraphBundle {
 	return b
 }
 
+func TestStageGraphGenerationRejectsNilBoundaries(t *testing.T) {
+	b := testGraphBundle(t)
+	if err := StageGraphGeneration(nil, nil, &b); !errors.Is(err, model.ErrGraphGenerationInvalid) {
+		t.Fatalf("nil context/db error=%v", err)
+	}
+	db, _ := seedTestDB(t)
+	if err := StageGraphGeneration(context.Background(), nil, &b); !errors.Is(err, model.ErrGraphGenerationInvalid) {
+		t.Fatalf("nil db error=%v", err)
+	}
+	if _, err := beginGraphImmediate(nil, db); !errors.Is(err, model.ErrGraphGenerationInvalid) {
+		t.Fatalf("nil context transaction error=%v", err)
+	}
+}
+
 func TestStageGraphGenerationIsAtomicAndInitiallyInvisible(t *testing.T) {
 	db, _ := seedTestDB(t)
 	b := testGraphBundle(t)

@@ -34,6 +34,9 @@ type graphImmediateTx struct {
 }
 
 func beginGraphImmediate(ctx context.Context, db *sql.DB) (*graphImmediateTx, error) {
+	if ctx == nil || db == nil {
+		return nil, model.ErrGraphGenerationInvalid
+	}
 	c, err := db.Conn(ctx)
 	if err != nil {
 		return nil, err
@@ -99,7 +102,7 @@ func jsonBounded(v []string) (string, error) {
 
 // StageGraphGeneration validates a sealed bundle, then inserts the complete bundle in one transaction.
 func StageGraphGeneration(ctx context.Context, db *sql.DB, b *model.GraphBundle) error {
-	if b == nil || b.Generation.Status != model.GraphGenerationStaged {
+	if ctx == nil || db == nil || b == nil || b.Generation.Status != model.GraphGenerationStaged {
 		return model.ErrGraphGenerationInvalid
 	}
 	if err := b.Validate(); err != nil {

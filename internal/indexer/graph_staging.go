@@ -396,6 +396,9 @@ func AssembleGraphObservationBatches(req GraphAssemblyRequest) (model.GraphBundl
 // StageGraphObservationBatches assembles once and persists one staged generation.
 func StageGraphObservationBatches(ctx context.Context, db *sql.DB, req GraphAssemblyRequest) (model.GraphGeneration, error) {
 	var empty model.GraphGeneration
+	if ctx == nil || db == nil {
+		return empty, model.ErrGraphGenerationInvalid
+	}
 	if err := ctx.Err(); err != nil {
 		return empty, err
 	}

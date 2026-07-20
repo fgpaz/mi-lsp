@@ -180,6 +180,21 @@ func TestGraphSerializationGoldens(t *testing.T) {
 		t.Fatal("generation golden")
 	}
 }
+func TestGraphValidationRejectsMissingEdgeEndpoints(t *testing.T) {
+	b := makeBundle(t)
+	b.Nodes = nil
+	b.Generation.NodeCount = 0
+	if err := b.Validate(); !errors.Is(err, ErrGraphEdgeInvalid) {
+		t.Fatalf("zero-value missing endpoint error=%v", err)
+	}
+
+	b = makeBundle(t)
+	b.Edges[0].ToNodeID = 1
+	if err := b.Validate(); !errors.Is(err, ErrGraphEdgeInvalid) {
+		t.Fatalf("out-of-range endpoint error=%v", err)
+	}
+}
+
 func TestGraphValidationRejectsDuplicateAndTypedFailures(t *testing.T) {
 	b := makeBundle(t)
 	dup := b.Nodes[0]

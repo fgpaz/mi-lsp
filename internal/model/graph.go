@@ -660,11 +660,13 @@ func (b *GraphBundle) validate(requireSealed bool) error {
 	edges := map[int]GraphEdgeRecord{}
 	edgeKeys := map[GraphDigest]bool{}
 	for i, e := range b.Edges {
-		if e.EdgeID != i || e.GenerationID != g.GenerationID || nodes[e.FromNodeID].NodeID != e.FromNodeID || nodes[e.ToNodeID].NodeID != e.ToNodeID || e.Relation == "" || e.SourceBackend == "" || !validClaim(e.ClaimStatus) {
+		from, fromOK := nodes[e.FromNodeID]
+		to, toOK := nodes[e.ToNodeID]
+		if e.EdgeID != i || e.GenerationID != g.GenerationID || !fromOK || !toOK || e.Relation == "" || e.SourceBackend == "" || !validClaim(e.ClaimStatus) {
 			return ErrGraphEdgeInvalid
 		}
-		d := EdgeKey(nodes[e.FromNodeID].NodeKey, nodes[e.ToNodeID].NodeKey, e.Relation, e.ClaimScope)
-		if x := ValidateGraphEdgeRecord(e, nodes[e.FromNodeID].NodeKey, nodes[e.ToNodeID].NodeKey); x != nil || edgeKeys[d] {
+		d := EdgeKey(from.NodeKey, to.NodeKey, e.Relation, e.ClaimScope)
+		if x := ValidateGraphEdgeRecord(e, from.NodeKey, to.NodeKey); x != nil || edgeKeys[d] {
 			return ErrGraphEdgeInvalid
 		}
 		edgeKeys[d] = true
