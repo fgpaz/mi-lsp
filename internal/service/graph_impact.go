@@ -114,7 +114,7 @@ func GraphImpact(ctx context.Context, db *sql.DB, request model.GraphImpactReque
 				continue
 			}
 			paths[target] = candidatePath
-			if !visited[target] {
+			if impactRelationCanTraverse(edge.Relation) && !visited[target] {
 				visited[target] = true
 				next = append(next, target)
 			}
@@ -135,6 +135,8 @@ func GraphImpact(ctx context.Context, db *sql.DB, request model.GraphImpactReque
 			}
 		}
 		for _, edge := range inferredEdges {
+			// Inferred edges are reported for explainability but never become traversal
+			// frontier, even when their relation itself is transitive.
 			target := edge.FromNodeID
 			step, stepErr := graphImpactStep(ctx, snapshot, edge)
 			if stepErr != nil {
@@ -250,6 +252,11 @@ func impactItemFromNode(generation model.GraphGeneration, node model.GraphNodeRe
 		EvidencePath:    path,
 		EvidenceRefs:    append([]string(nil), refs...),
 	}
+}
+
+func impactRelationCanTraverse(relation string) bool {
+	semantics, ok := model.GraphImpactRelationSemantics(relation)
+	return ok && semantics.Transitive
 }
 
 func impactConfidence(status string) string {

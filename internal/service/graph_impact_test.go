@@ -85,6 +85,28 @@ func TestGraphImpactTransitiveGatesTestsAndReportsDepthAndBudgetTruncation(t *te
 	}
 }
 
+func TestGraphImpactTransitiveStopsAtNonTransitiveRelations(t *testing.T) {
+	db := impactTestDB(t)
+	ctx := context.Background()
+	for i := 0; i < 30; i++ {
+		testsOnly, err := GraphImpact(ctx, db, model.GraphImpactRequest{Paths: []string{"src/target.go"}, Mode: model.GraphImpactModeTransitive, Depth: 3, Relations: []string{"tests"}, Limit: 10})
+		if err != nil || len(testsOnly.Items) != 1 || testsOnly.Items[0].Path != "src/target_test.go" {
+			t.Fatalf("run=%d tests-only=%+v err=%v", i, testsOnly.Items, err)
+		}
+		mixed, err := GraphImpact(ctx, db, model.GraphImpactRequest{Paths: []string{"src/target.go"}, Mode: model.GraphImpactModeTransitive, Depth: 3, Relations: []string{"calls", "tests"}, Limit: 10})
+		if err != nil {
+			t.Fatal(err)
+		}
+		paths := map[string]bool{}
+		for _, item := range mixed.Items {
+			paths[item.Path] = true
+		}
+		if !paths["src/caller.go"] || !paths["src/upstream.go"] || !paths["src/test_consumer.go"] || paths["src/test_upstream.go"] {
+			t.Fatalf("run=%d mixed paths=%v", i, paths)
+		}
+	}
+}
+
 func TestGraphImpactUnresolvedAndDigestAreDeterministic(t *testing.T) {
 	db := impactTestDB(t)
 	ctx := context.Background()
@@ -137,7 +159,7 @@ func graphGenerationCount(t *testing.T, db *sql.DB) int {
 
 func impactTestBundle(t *testing.T) model.GraphBundle {
 	t.Helper()
-	paths := []string{"src/target.go", "src/caller.go", "src/upstream.go", "src/guessed.go", "src/target_test.go"}
+	paths := []string{"src/target.go", "src/caller.go", "src/upstream.go", "src/guessed.go", "src/target_test.go", "src/test_consumer.go", "src/test_upstream.go", "src/test_chain.go"}
 	nodes := make([]model.GraphNodeRecord, len(paths))
 	for i, path := range paths {
 		key, err := model.NewNodeKey(model.NodeKeyFields{RepositoryIdentity: "https://example.com/repo", BackendType: "go", Language: "go", ProjectOrModule: "core", OwnerPath: path, SymbolKind: "function", SemanticIdentity: fmt.Sprintf("n%d", i)})
@@ -157,6 +179,9 @@ func impactTestBundle(t *testing.T) model.GraphBundle {
 		edge(2, 3, 0, "calls", model.GraphRecordInferred),
 		edge(3, 4, 0, "tests", model.GraphRecordExact),
 		edge(4, 2, 0, "references", model.GraphRecordExact),
+		edge(5, 5, 1, "tests", model.GraphRecordExact),
+		edge(6, 6, 5, "calls", model.GraphRecordExact),
+		edge(7, 7, 4, "tests", model.GraphRecordExtracted),
 	}
 	source := nodes[1].SourceDigest
 	evidence := make([]model.GraphEvidence, len(edges))
