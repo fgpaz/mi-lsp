@@ -3,6 +3,7 @@ package daemon
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"testing"
 	"time"
 
@@ -113,6 +114,42 @@ func TestHandleRequestSystemStatusIncludesProcessAndWatcherStats(t *testing.T) {
 	}
 	if watchers["mode"] != WatchModeLazy {
 		t.Fatalf("watchers.mode = %v, want %s", watchers["mode"], WatchModeLazy)
+	}
+}
+
+func TestGraphQueryDaemonParityPreservesTypedPreResolutionBudgetError(t *testing.T) {
+	app := service.New(t.TempDir(), nil)
+	server := &Server{app: app}
+	request := model.CommandRequest{
+		ProtocolVersion: model.ProtocolVersion,
+		Operation:       "nav.neighbors",
+		Context:         model.QueryOptions{Workspace: "invalid-workspace-sentinel"},
+		Payload:         map[string]any{"selector": "x", "token_budget": model.GraphQueryMaxToken + 1},
+	}
+
+	_, directErr := app.Execute(context.Background(), request)
+	_, daemonErr := server.handleRequest(request)
+	var directGraphErr, daemonGraphErr *model.GraphQueryError
+	if !errors.As(directErr, &directGraphErr) || !errors.As(daemonErr, &daemonGraphErr) {
+		t.Fatalf("errors must remain typed through App.Execute and Server.handleRequest: direct=%T daemon=%T", directErr, daemonErr)
+	}
+	if directGraphErr.Code != "GPH_QUERY_BUDGET_INVALID" || daemonGraphErr.Code != directGraphErr.Code {
+		t.Fatalf("graph error codes differ: direct=%q daemon=%q", directGraphErr.Code, daemonGraphErr.Code)
+	}
+}
+
+func TestGraphQueryOperationsAreClassifiedAndBackpressureLimited(t *testing.T) {
+	server := &Server{}
+	for _, operation := range []string{"nav.neighbors", "nav.callers", "nav.callees", "nav.path", "nav.explain", "nav.graph.stats", "nav.graph.validate"} {
+		if !isGraphQueryOperation(operation) {
+			t.Errorf("%s not classified as graph query", operation)
+		}
+		if !server.isBackpressureLimited(model.CommandRequest{Operation: operation}) {
+			t.Errorf("%s not backpressure-limited", operation)
+		}
+	}
+	if isGraphQueryOperation("nav.context") {
+		t.Fatal("nav.context incorrectly classified as graph query")
 	}
 }
 

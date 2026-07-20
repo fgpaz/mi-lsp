@@ -333,8 +333,13 @@ func (s *Server) handleRequest(request model.CommandRequest) (model.Envelope, er
 			}
 		}
 
-		// Execute operation
+		// Execute operation.
 		response, err := s.app.Execute(context.Background(), request)
+		// Graph queries are executed by the canonical service contract. Preserve its
+		// payload exactly, while identifying the daemon-routed SQLite result.
+		if err == nil && response.Ok && isGraphQueryOperation(request.Operation) {
+			response.Backend = "daemon/sqlite"
+		}
 
 		// Cache successful results for cacheable ops
 		if err == nil && response.Ok && isCacheableOp(request.Operation) {
@@ -467,6 +472,15 @@ func (s *Server) releaseInflight() {
 	select {
 	case <-s.inflight:
 	default:
+	}
+}
+
+func isGraphQueryOperation(operation string) bool {
+	switch operation {
+	case "nav.neighbors", "nav.callers", "nav.callees", "nav.path", "nav.explain", "nav.graph.stats", "nav.graph.validate":
+		return true
+	default:
+		return false
 	}
 }
 
