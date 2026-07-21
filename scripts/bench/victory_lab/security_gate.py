@@ -270,16 +270,25 @@ class RuntimeProofProbe:
 
             # Metadata is deliberately acquired before netstat.  A network
             # listing without a live root identity is not a valid sample.
-            raw_observations = self.process_observer(pids)
-            normalized_observations: dict[int, Mapping[str, object]] = {}
-            if isinstance(raw_observations, Mapping):
-                for observed_pid, item in raw_observations.items():
-                    try:
-                        normalized_pid = int(observed_pid)
-                    except (TypeError, ValueError):
-                        continue
-                    if normalized_pid in pids and isinstance(item, Mapping):
-                        normalized_observations[normalized_pid] = item
+            # One bounded re-read closes the PID-enumeration/metadata lookup
+            # race without dropping an observed PID or inventing metadata.
+            def normalize(raw: Mapping[int, Mapping[str, object]] | object) -> dict[int, Mapping[str, object]]:
+                normalized: dict[int, Mapping[str, object]] = {}
+                if isinstance(raw, Mapping):
+                    for observed_pid, item in raw.items():
+                        try:
+                            normalized_pid = int(observed_pid)
+                        except (TypeError, ValueError):
+                            continue
+                        if normalized_pid in pids and isinstance(item, Mapping):
+                            normalized[normalized_pid] = item
+                return normalized
+
+            normalized_observations = normalize(self.process_observer(pids))
+            missing_metadata = pids - set(normalized_observations)
+            if missing_metadata:
+                retry_observations = normalize(self.process_observer(pids))
+                normalized_observations.update(retry_observations)
             root_metadata = normalized_observations.get(self.pid)
             if root_metadata is None:
                 if self.samples == 0:

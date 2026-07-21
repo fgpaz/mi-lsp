@@ -353,13 +353,17 @@ class _Sampler:
         self._tree_partial = False
         self._reason_codes: set[str] = set()
         self.observed_pids: set[int] = {pid}
+        self._observed_pids_lock = threading.Lock()
         self._descendants_observed: set[int] = set()
+
+    def observed_pid_snapshot(self) -> set[int]:
+        with self._observed_pids_lock:
+            return set(self.observed_pids)
 
     def start(self) -> None:
         self.thread.start()
 
     def _sample(self) -> None:
-        root = self.probe.working_set(self.pid)
         raw_descendants = self.probe.descendants(self.pid) or ()
         descendants = {
             descendant for descendant in raw_descendants
@@ -369,12 +373,25 @@ class _Sampler:
             and descendant != self.pid
         }
         pids = {self.pid} | descendants
-        self.observed_pids.update(pids)
+        with self._observed_pids_lock:
+            self.observed_pids.update(pids)
         self._descendants_observed.update(descendants)
 
-        values_by_pid = {self.pid: root}
-        for descendant in descendants:
-            values_by_pid[descendant] = self.probe.working_set(descendant)
+        # The process list and native counters cannot be read as one Windows
+        # kernel operation.  Keep one PID snapshot, then allow one bounded
+        # counter re-read for a handle/open race.  A PID with no successful
+        # native counter remains observed and fail-closed below.
+        values_by_pid: dict[int, int | None] = {}
+        for attempt in range(2):
+            values_by_pid = {pid: self.probe.working_set(pid) for pid in pids}
+            valid_values = {
+                pid: value for pid, value in values_by_pid.items()
+                if isinstance(value, int) and not isinstance(value, bool) and value >= 0
+            }
+            if len(valid_values) == len(pids):
+                break
+            if attempt == 0:
+                time.sleep(min(self.interval, 0.002))
         valid_values = {
             pid: value for pid, value in values_by_pid.items()
             if isinstance(value, int) and not isinstance(value, bool) and value >= 0
@@ -414,7 +431,6 @@ class _Sampler:
         while not self.stop.is_set():
             self._sample()
             self.stop.wait(self.interval)
-        self._sample()
 
     def finish(self) -> None:
         self.stop.set()
@@ -525,7 +541,7 @@ def run_child(
             sampler.start()
         runtime_probe = RuntimeProofProbe(
             process.pid,
-            pid_provider=(lambda: set(sampler.observed_pids)) if sampler is not None else None,
+            pid_provider=(sampler.observed_pid_snapshot) if sampler is not None else None,
             process_observer=(lambda pids: _observe_child_processes(pids, env.keys())) if sampler is not None else None,
             provenance="child_metrics_executor" if sampler is not None else None,
         )
@@ -553,10 +569,10 @@ def run_child(
         spawn_error = True
         cleanup_status = "not_required"
     finally:
-        # Stop runtime observation before the sampler's final post-exit sample.
-        # The sampler intentionally retains observed descendants; allowing it
-        # to add PIDs after runtime proof stops would create metadata gaps for
-        # processes that were never live during a proof sample.
+        # Stop runtime observation before freezing the sampler's observed PID
+        # set.  The sampler never performs a post-exit sample: a process that
+        # was already gone cannot provide a native counter, and observing it
+        # then would turn a successful in-flight sample into false evidence.
         if runtime_probe is not None:
             runtime_observation = runtime_probe.finish(stdout=stdout, stderr=stderr)
         if sampler is not None:

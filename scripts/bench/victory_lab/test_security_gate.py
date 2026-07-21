@@ -106,6 +106,21 @@ class RuntimeProofFocusedTests(unittest.TestCase):
         self.assertEqual(result["observed_pids"], [101, 202])
         self.assertEqual(result["metadata_observed_pids"], [101])
 
+    def test_bounded_metadata_reread_recovers_transient_pid_lookup_race(self):
+        responses = [
+            {101: {"image": "child.exe"}},
+            {101: {"image": "child.exe"}, 202: {"image": "worker.exe"}},
+        ]
+        probe = self._probe(lambda: {101, 202}, lambda pids: responses.pop(0))
+        with patch(f"{security_gate_module.__name__}.subprocess.run", return_value=subprocess.CompletedProcess(["netstat", "-ano"], 0, "", "")):
+            probe._sample()
+            result = probe.finish()
+
+        self.assertEqual(result["status"], "PASS")
+        self.assertTrue(result["runtime_proof"])
+        self.assertEqual(result["observed_pids"], [101, 202])
+        self.assertEqual(result["metadata_observed_pids"], [101, 202])
+
     def test_pid_disappearance_is_reported_as_sanitized_observer_race(self):
         probe = self._probe(lambda: set(), lambda pids: {101: {"image": "child.exe"}})
         probe._sample()

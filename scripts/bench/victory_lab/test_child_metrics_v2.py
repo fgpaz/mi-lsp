@@ -6,12 +6,50 @@ import tempfile
 import unittest
 
 try:
-    from .child_metrics import ChildMetrics, run_child
+    from .child_metrics import ChildMetrics, _Sampler, run_child
 except ImportError:
-    from child_metrics import ChildMetrics, run_child
+    from child_metrics import ChildMetrics, _Sampler, run_child
+
+
+class _SequenceProbe:
+    def __init__(self):
+        self.calls = {101: 0, 202: 0}
+
+    def descendants(self, _pid):
+        return {202}
+
+    def working_set(self, pid):
+        self.calls[pid] += 1
+        if pid == 202 and self.calls[pid] == 1:
+            return None
+        return {101: 100, 202: 200}[pid]
 
 
 class ChildMetricsV2Tests(unittest.TestCase):
+    def test_bounded_counter_reread_recovers_transient_open_race(self):
+        probe = _SequenceProbe()
+        sampler = _Sampler(101, probe, interval=1.0)
+        sampler._sample()
+
+        metrics = sampler.metrics(
+            pid=101, returncode=0, timed_out=False, crashed=False,
+            cleanup_status="clean",
+        )
+
+        self.assertEqual(metrics.status, "PASS")
+        self.assertEqual(metrics.tree_peak_rss_bytes, 300)
+        self.assertEqual(metrics.observed_pids, (101, 202))
+        self.assertEqual(probe.calls[202], 2)
+
+    def test_stopping_sampler_does_not_sample_after_child_exit(self):
+        probe = _SequenceProbe()
+        sampler = _Sampler(101, probe, interval=1.0)
+        sampler.stop.set()
+
+        sampler._run()
+
+        self.assertEqual(probe.calls, {101: 0, 202: 0})
+
     def _env(self):
         return {"PATH": os.environ.get("PATH", ""), "TEMP": os.environ.get("TEMP", ""), "TMP": os.environ.get("TMP", "")}
 
