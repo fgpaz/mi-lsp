@@ -1,0 +1,301 @@
+{
+  "adapters": [
+    {
+      "adapter_id": "mi-lsp-current-v2",
+      "capabilities": [
+        "callers",
+        "affected",
+        "path"
+      ],
+      "command": [
+        "{executable}",
+        "nav",
+        "{operation}",
+        "{selector}",
+        "{from}",
+        "{to}",
+        "--workspace",
+        "{root}",
+        "--format",
+        "json",
+        "--no-auto-daemon",
+        "--client-name",
+        "victory-lab-v2",
+        "--session-id",
+        "victory-lab-v2-mi-lsp-current-v2"
+      ],
+      "comparable_operations": [
+        "callers",
+        "affected",
+        "path"
+      ],
+      "env_allowlist": [
+        "PATH",
+        "TEMP",
+        "TMP",
+        "MI_LSP_CLIENT_NAME",
+        "MI_LSP_SESSION_ID",
+        "VICTORY_LAB_FIXTURE_ROOT",
+        "PYTHONPATH",
+        "SystemRoot",
+        "USERPROFILE",
+        "GOROOT",
+        "LOCALAPPDATA",
+        "GOPATH",
+        "GOMODCACHE"
+      ],
+      "executable": "",
+      "expected_commit": "cc8207f9a89201066f70343524db755d7b196c81",
+      "expected_executable_sha256": "8f19da0eb404c96a30e70c286618550042103e5b3627bd62469e6738ab4b0955",
+      "expected_version": "(devel)",
+      "kind": "current",
+      "metadata_command": [
+        "{executable}",
+        "version",
+        "--format",
+        "json",
+        "--no-auto-daemon"
+      ],
+      "normalizable_operations": [],
+      "path_env": "VICTORY_LAB_CURRENT_EXE",
+      "schema": "victory-adapter-spec/v2",
+      "source": "",
+      "timeout_seconds": 30
+    },
+    {
+      "adapter_id": "mi-lsp-baseline-v2",
+      "capabilities": [
+        "affected"
+      ],
+      "command": [
+        "{executable}",
+        "nav",
+        "{operation}",
+        "{selector}",
+        "{from}",
+        "{to}",
+        "--workspace",
+        "{root}",
+        "--format",
+        "json",
+        "--no-auto-daemon",
+        "--client-name",
+        "victory-lab-v2",
+        "--session-id",
+        "victory-lab-v2-mi-lsp-baseline-v2"
+      ],
+      "comparable_operations": [
+        "affected"
+      ],
+      "env_allowlist": [
+        "PATH",
+        "TEMP",
+        "TMP",
+        "MI_LSP_CLIENT_NAME",
+        "MI_LSP_SESSION_ID",
+        "VICTORY_LAB_FIXTURE_ROOT",
+        "PYTHONPATH",
+        "SystemRoot",
+        "USERPROFILE",
+        "GOROOT",
+        "LOCALAPPDATA",
+        "GOPATH",
+        "GOMODCACHE"
+      ],
+      "executable": "",
+      "expected_commit": "a251ab1f8db4e96f029926fbef275b078a20a111",
+      "expected_executable_sha256": "2028e20fd54f7b243d2aaf20201097bb7e2d0b8ba48b2a94f11a8b0d8e3cc4c4",
+      "expected_version": "(devel)",
+      "kind": "baseline",
+      "metadata_command": [
+        "{executable}",
+        "version",
+        "--format",
+        "json",
+        "--no-auto-daemon"
+      ],
+      "normalizable_operations": [],
+      "path_env": "VICTORY_LAB_BASELINE_EXE",
+      "schema": "victory-adapter-spec/v2",
+      "source": "",
+      "timeout_seconds": 30
+    },
+    {
+      "adapter_id": "graphify-0.9.19-v2",
+      "capabilities": [
+        "callers"
+      ],
+      "command": [
+        "{python}",
+        "-m",
+        "graphify",
+        "affected",
+        "{selector}",
+        "--graph",
+        "{graph}",
+        "--depth",
+        "{depth}"
+      ],
+      "comparable_operations": [
+        "callers"
+      ],
+      "env_allowlist": [
+        "PATH",
+        "TEMP",
+        "TMP",
+        "MI_LSP_CLIENT_NAME",
+        "MI_LSP_SESSION_ID",
+        "VICTORY_LAB_FIXTURE_ROOT",
+        "PYTHONPATH",
+        "SystemRoot",
+        "USERPROFILE",
+        "GOROOT",
+        "LOCALAPPDATA",
+        "GOPATH",
+        "GOMODCACHE"
+      ],
+      "executable": "",
+      "expected_commit": "9bf14a4931658152969586ace39eb965c010f0d1",
+      "expected_executable_sha256": "",
+      "expected_source_sha256": "55776c37f9b059f38baea0ec80f7214b61d342ce1d34563417d35334b6d894d1",
+      "expected_version": "0.9.19",
+      "kind": "graphify",
+      "metadata_command": [],
+      "normalizable_operations": [
+        "callers"
+      ],
+      "path_env": "VICTORY_LAB_GRAPHIFY_PYTHON",
+      "python_path_env": "VICTORY_LAB_GRAPHIFY_PYTHON",
+      "schema": "victory-adapter-spec/v2",
+      "source": "",
+      "source_digest_path": "pyproject.toml",
+      "source_path_env": "VICTORY_LAB_GRAPHIFY_SOURCE",
+      "timeout_seconds": 30
+    }
+  ],
+  "baseline_commit": "a251ab1f8db4e96f029926fbef275b078a20a111",
+  "cases": [
+    {
+      "corpus": [
+        "corpus/go"
+      ],
+      "golden": "goldens/callers.json",
+      "id": "callers-direct",
+      "mode": "direct",
+      "operation": "callers",
+      "selector": "subject.Normalize"
+    },
+    {
+      "corpus": [
+        "corpus/go"
+      ],
+      "golden": "goldens/callers.json",
+      "id": "callers-transitive",
+      "mode": "transitive",
+      "operation": "callers",
+      "selector": "subject.Normalize"
+    },
+    {
+      "changed_paths": [
+        "go/subject/subject.go"
+      ],
+      "corpus": [
+        "corpus/go"
+      ],
+      "golden": "goldens/affected.json",
+      "id": "affected-direct",
+      "mode": "direct",
+      "operation": "affected"
+    },
+    {
+      "changed_paths": [
+        "go/subject/subject.go"
+      ],
+      "corpus": [
+        "corpus/go"
+      ],
+      "golden": "goldens/affected.json",
+      "id": "affected-transitive",
+      "mode": "transitive",
+      "operation": "affected"
+    },
+    {
+      "corpus": [
+        "corpus/go"
+      ],
+      "from": "app.Run",
+      "golden": "goldens/path.json",
+      "id": "path-shortest",
+      "operation": "path",
+      "to": "subject.Normalize"
+    }
+  ],
+  "current": {
+    "commit": "cc8207f9a89201066f70343524db755d7b196c81"
+  },
+  "default_repetitions": 30,
+  "fixture_hashes": {
+    "corpus/fixture-metadata.json": "e31c77db76a3aa7703cf5281797fc5961fec93d283581720733b8c108484747c",
+    "corpus/go/ambiguous/alpha/shared.go": "be4f1c064e38d57db95477f631c1fa3f469f69455ddd89a7ff86f35e3fc5a8ed",
+    "corpus/go/ambiguous/beta/shared.go": "771c9dba62f63ea94c1bdcfc261ce8cfccf7d078cf1006359999422ecf4ca512",
+    "corpus/go/app/app.go": "6f434ca427e8edd1ca33298688b87e0ada726f187a768ff0cd9e9527c93ee9a6",
+    "corpus/go/callers/callers.go": "90d7d3b2a4cdf303bbbed91f079310ca512ff4b8b9acf3a6f89f66e5147871b5",
+    "corpus/go/go.mod": "542ad22ebc0fb98c6575f23f62aeadbc815ee53cad96a4c14b8e2512064e0a85",
+    "corpus/go/mutation/mutation.go": "55e500ca5db631d3575da1549c9a8fe9f2c842674acc470be6eed0d8dec58d18",
+    "corpus/go/subject/subject.go": "8dbd6dec78ddd65bdd8c4b3501de0d8a65b7b29052165536d84bfcbce6d5aaad",
+    "corpus/go/unrelated/unrelated.go": "c58b93d2e530cc11f1d434edb6883227075d9962cff1b5444e540d60d40c49bb",
+    "corpus/go/unresolved/unresolved.go": "e4259b1de6c076f654769cfd4cd2fc48963e17b9a9d3d07e8e7043c60243ce44"
+  },
+  "fixture_id": "graph-native-go-callers-affected-path",
+  "graphify": {
+    "commit": "9bf14a4931658152969586ace39eb965c010f0d1",
+    "version": "0.9.19"
+  },
+  "oracle_hashes": {
+    "goldens/affected.json": "4452e073ec9fb4fa680a1d1543c8f174e87b731a3f77f989908f286c54d35fa5",
+    "goldens/callers.json": "44c7465350fb8bdde2476cd8e71d146671c5f9c2a52e872ca6a7edff07ad398f",
+    "goldens/mutation.json": "b642194275698332409463b5b795618f65311b86a1b069d1d2054e9cd36f6749",
+    "goldens/path.json": "930852fe0ccd5b3c522945dd52369985917407a3be0e18f23ac6b6c10f024566",
+    "goldens/relations.json": "35931e4c1d7ade436f8299d76809f4ac65258d85e0c1626c48940380c1cd54c8"
+  },
+  "oracles": {
+    "affected-direct": {
+      "expected_direct": [
+        "callers.Direct",
+        "subject.Validate"
+      ]
+    },
+    "affected-transitive": {
+      "expected_transitive": [
+        "app.Run",
+        "callers.Direct",
+        "callers.Indirect",
+        "subject.Validate"
+      ]
+    },
+    "callers-direct": {
+      "expected_direct": [
+        "callers.Direct",
+        "subject.Validate"
+      ]
+    },
+    "callers-transitive": {
+      "expected_transitive": [
+        "app.Run",
+        "callers.Direct",
+        "callers.Indirect",
+        "subject.Validate"
+      ]
+    },
+    "path-shortest": {
+      "expected_shortest_path": [
+        "app.Run",
+        "callers.Direct",
+        "subject.Normalize"
+      ]
+    }
+  },
+  "repository_identity": "https://example.com/mi-lsp/victory-lab-v2",
+  "schema": "victory-lab-manifest/v2",
+  "version": 2
+}
