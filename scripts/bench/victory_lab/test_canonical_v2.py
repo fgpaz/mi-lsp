@@ -19,6 +19,27 @@ class CanonicalV2Tests(unittest.TestCase):
         self.assertEqual(left["digest"], right["digest"])
         self.assertEqual(left["schema"], "victory-canonical/v2")
 
+    def test_workspace_fixture_identity_accepts_case_insensitive_basename_and_full_path(self):
+        root = Path("C:/tmp/victory-fixture")
+        for workspace in (root.name.upper(), r"c:\\TMP\\VICTORY-FIXTURE"):
+            payload = canonical_payload("callers", {"workspace": workspace, "items": []}, root)
+            self.assertEqual(payload["payload"]["workspace"], "<FIXTURE_ROOT>")
+
+    def test_unrecognized_workspace_pii_and_path_are_redacted(self):
+        root = Path("C:/tmp/victory-fixture")
+        for workspace in (
+            "alice@example.com",
+            r"C:\\other\\patient\\record.json",
+            str(root / "private" / "record.json"),
+        ):
+            payload = canonical_payload("callers", {"workspace": workspace, "items": []}, root)
+            self.assertEqual(payload["payload"]["workspace"], "<REDACTED>")
+
+    def test_semantic_workspace_name_is_preserved(self):
+        root = Path("C:/tmp/victory-fixture")
+        payload = canonical_payload("callers", {"workspace": "domain-workspace", "items": []}, root)
+        self.assertEqual(payload["payload"]["workspace"], "domain-workspace")
+
     def test_json_parser_rejects_empty(self):
         with self.assertRaises(ValueError):
             parse_json_output("  ")

@@ -4,20 +4,26 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import math
+import secrets
 import sys
 from pathlib import Path
 from typing import Any, Mapping
 
 try:
     from .adapters.v2 import VictoryAdapter
+    from .canonical_v2 import payload_digest, token_count, validate_terminal_state
     from .manifest_v2 import ManifestError, canonical_file_hash, load_manifest, manifest_adapters, sha256_bytes, sha256_file
     from .schema_v2 import RunRecord
     from .validate_manifest import validate_runtime, validate_strict_manifest
+    from .security_gate import runtime_evidence_digest
 except ImportError:  # pragma: no cover
     from adapters.v2 import VictoryAdapter
+    from canonical_v2 import payload_digest, token_count, validate_terminal_state
     from manifest_v2 import ManifestError, canonical_file_hash, load_manifest, manifest_adapters, sha256_bytes, sha256_file
     from schema_v2 import RunRecord
     from validate_manifest import validate_runtime, validate_strict_manifest
+    from security_gate import runtime_evidence_digest
 
 
 def _digest_group(manifest: Mapping[str, Any], key: str) -> str:
@@ -42,6 +48,22 @@ def _runtime_preflight_digest(manifest_path: Path, manifest: Mapping[str, Any]) 
         ],
     }
     return sha256_bytes(json.dumps(evidence, sort_keys=True, separators=(",", ":")).encode())
+
+
+def _sample_nonce(run_id: str, preflight_digest: str, group_key: str, repetition: int) -> str:
+    material = "\\0".join((run_id, preflight_digest, group_key, str(repetition)))
+    return hashlib.sha256(("victory-sample/v1\\0" + material).encode("utf-8")).hexdigest()
+
+
+def _freshness(run_id: str, preflight_digest: str, group_key: str, repetition: int) -> dict[str, Any]:
+    return {
+        "schema": "victory-sample-freshness/v1",
+        "run_id": run_id,
+        "preflight_digest": preflight_digest,
+        "group_id": "g" + hashlib.sha256(group_key.encode("utf-8")).hexdigest()[:63],
+        "repetition": repetition,
+        "nonce": _sample_nonce(run_id, preflight_digest, group_key, repetition),
+    }
 
 
 def _tree_digest(path: Path) -> str:
@@ -92,6 +114,121 @@ def _effective_status(samples: list[dict[str, Any]]) -> str:
     return "NOT_RUN"
 
 
+def _is_sha256(value: Any) -> bool:
+    return isinstance(value, str) and len(value) == 64 and all(char in "0123456789abcdef" for char in value)
+
+
+def _is_finite_number(value: Any) -> bool:
+    if not isinstance(value, (int, float)) or isinstance(value, bool):
+        return False
+    try:
+        return math.isfinite(float(value))
+    except (OverflowError, ValueError):
+        return False
+
+
+def _valid_pid_list(value: Any, *, nonempty: bool) -> bool:
+    return (
+        isinstance(value, list)
+        and (bool(value) or not nonempty)
+        and all(isinstance(pid, int) and not isinstance(pid, bool) and pid > 0 for pid in value)
+        and len(set(value)) == len(value)
+    )
+
+
+def _runtime_digest_matches(runtime: Mapping[str, Any]) -> bool:
+    try:
+        return runtime_evidence_digest(runtime) == runtime.get("evidence_digest")
+    except (TypeError, ValueError):
+        return False
+
+
+def _manifest_identity(path: Path) -> str:
+    canonical_path = path.resolve().as_posix().casefold()
+    return "m" + sha256_bytes(canonical_path.encode("utf-8"))[:63]
+
+
+def _validate_pass_sample(sample: Mapping[str, Any]) -> None:
+    """Reject a forged PASS before it can enter durable runner evidence."""
+    canonical = sample.get("canonical")
+    if not isinstance(canonical, Mapping) or not isinstance(canonical.get("payload"), Mapping):
+        raise ManifestError("adapter returned PASS without a canonical payload")
+    payload = canonical["payload"]
+    validate_terminal_state(payload)
+    if canonical.get("digest") != payload_digest(payload):
+        raise ManifestError("adapter returned PASS with a canonical digest mismatch")
+    token_units = canonical.get("token_units")
+    if (
+        isinstance(token_units, bool)
+        or not _is_finite_number(token_units)
+        or token_units <= 0
+        or token_units != token_count(payload)
+    ):
+        raise ManifestError("adapter returned PASS with invalid canonical token_units")
+
+    if not _is_finite_number(sample.get("elapsed_ms")):
+        raise ManifestError("adapter returned PASS without finite elapsed_ms")
+    metrics = sample.get("metrics")
+    child = metrics.get("child") if isinstance(metrics, Mapping) else None
+    if not isinstance(child, Mapping) or child.get("status") != "PASS":
+        raise ManifestError("adapter returned PASS without successful child metrics")
+    if not _is_finite_number(child.get("peak_rss_bytes")) or child["peak_rss_bytes"] < 0:
+        raise ManifestError("adapter returned PASS without measured child RSS")
+    if not _is_finite_number(child.get("tree_peak_rss_bytes")) or child["tree_peak_rss_bytes"] < 0:
+        raise ManifestError("adapter returned PASS without measured tree RSS")
+    if child.get("tree_supported") is not True:
+        raise ManifestError("adapter returned PASS without process-tree support")
+    if not isinstance(child.get("samples"), int) or isinstance(child.get("samples"), bool) or child["samples"] <= 0:
+        raise ManifestError("adapter returned PASS without child samples")
+    if child.get("timed_out") is not False or child.get("crashed") is not False:
+        raise ManifestError("adapter returned PASS with an unsuccessful child terminal state")
+    if child.get("failure_class") != "none" or not isinstance(child.get("exit_code"), int) or isinstance(child.get("exit_code"), bool) or child.get("exit_code") != 0:
+        raise ManifestError("adapter returned PASS with an unsuccessful child exit")
+    if child.get("cleanup_status") not in {"not_required", "clean", "forced"}:
+        raise ManifestError("adapter returned PASS without successful child cleanup")
+    if (
+        child.get("timed_out") is not False
+        or child.get("crashed") is not False
+        or child.get("failure_class") != "none"
+        or not isinstance(child.get("exit_code"), int)
+        or isinstance(child.get("exit_code"), bool)
+        or child.get("exit_code") != 0
+    ):
+        raise ManifestError("adapter returned PASS with an unsuccessful child terminal state")
+
+    security = metrics.get("security") if isinstance(metrics, Mapping) else None
+    runtime = security.get("runtime") if isinstance(security, Mapping) else None
+    integrity = security.get("integrity") if isinstance(security, Mapping) else None
+    source_integrity = security.get("source_integrity") if isinstance(security, Mapping) else None
+    if (
+        not isinstance(security, Mapping)
+        or security.get("status") != "PASS"
+        or security.get("runtime_proof") is not True
+        or not isinstance(runtime, Mapping)
+        or runtime.get("status") != "PASS"
+        or runtime.get("runtime_proof") is not True
+        or runtime.get("provenance") != "child_metrics_executor"
+        or not isinstance(runtime.get("probe_mode"), str)
+        or not runtime.get("probe_mode")
+        or runtime.get("network_count") != 0
+        or runtime.get("mcp_count") != 0
+        or runtime.get("reason") is not None
+        or not isinstance(runtime.get("sample_count"), int)
+        or isinstance(runtime.get("sample_count"), bool)
+        or runtime.get("sample_count", 0) <= 0
+        or not _valid_pid_list(runtime.get("observed_pids"), nonempty=True)
+        or not _valid_pid_list(runtime.get("metadata_observed_pids"), nonempty=False)
+        or not set(runtime.get("observed_pids", [])) <= set(runtime.get("metadata_observed_pids", []))
+        or not _is_sha256(runtime.get("evidence_digest"))
+        or not _runtime_digest_matches(runtime)
+        or not isinstance(integrity, Mapping)
+        or integrity.get("status") != "PASS"
+        or not isinstance(source_integrity, Mapping)
+        or source_integrity.get("status") != "PASS"
+    ):
+        raise ManifestError("adapter returned PASS without complete security/provenance evidence")
+
+
 def run_manifest(manifest_path: str | Path, output: str | Path, *, repetitions: int = 30, mode: str = "authoritative", executor: Any = None) -> dict[str, Any]:
     path = Path(manifest_path).resolve()
     manifest = load_manifest(path)
@@ -111,7 +248,9 @@ def run_manifest(manifest_path: str | Path, output: str | Path, *, repetitions: 
     output_path = Path(output).resolve()
     output_path.mkdir(parents=True, exist_ok=True)
     adapters = manifest_adapters(manifest)
+    run_id = "r" + hashlib.sha256(secrets.token_bytes(32)).hexdigest()[:63]
     samples: list[dict[str, Any]] = []
+    seen_sample_keys: set[tuple[str, str, str, int]] = set()
     # Deliberately serial: comparator processes and fixture materialization must not overlap.
     for adapter_id in sorted(adapters):
         adapter = VictoryAdapter(adapters[adapter_id], manifest, path.parent, executor=executor)
@@ -119,12 +258,31 @@ def run_manifest(manifest_path: str | Path, output: str | Path, *, repetitions: 
             for repetition in range(repetitions):
                 record = adapter.run_case(case, repetition=repetition)
                 sample = record.to_dict()
+                returned_case_id = sample.get("case_id")
+                returned_repetition = sample.get("repetition")
                 if sample.get("adapter_id") != adapter_id or sample.get("operation") != case["operation"]:
                     raise ManifestError("adapter returned a sample for the wrong comparator or operation")
+                if not (isinstance(returned_case_id, str) and returned_case_id in ("", case["id"])):
+                    raise ManifestError("adapter returned a sample for the wrong case_id")
+                if not isinstance(returned_repetition, int) or isinstance(returned_repetition, bool) or returned_repetition != repetition:
+                    raise ManifestError("adapter returned a sample for the wrong repetition")
                 sample["case_id"] = case["id"]
                 sample["fixture_digest"] = manifest["fixture_digest"]
                 sample["oracle_digest"] = manifest["oracle_digest"]
+                group_key = f"{adapter_id}:{case['id']}:{case['operation']}"
+                sample_key = (adapter_id, case["id"], case["operation"], repetition)
+                if sample_key in seen_sample_keys:
+                    raise ManifestError("adapter returned a duplicate sample key")
+                seen_sample_keys.add(sample_key)
+                metrics = sample.get("metrics")
+                if not isinstance(metrics, dict):
+                    raise ManifestError("adapter returned malformed metrics")
+                metrics = dict(metrics)
+                metrics["freshness"] = _freshness(run_id, runtime_preflight_digest, group_key, repetition)
+                sample["metrics"] = metrics
                 RunRecord.from_dict(sample)
+                if sample.get("status") == "PASS":
+                    _validate_pass_sample(sample)
                 samples.append(sample)
     _assert_content_unchanged(content_before, path, manifest)
     expected_samples = len(adapters) * len(manifest["cases"]) * repetitions
@@ -134,9 +292,18 @@ def run_manifest(manifest_path: str | Path, output: str | Path, *, repetitions: 
     with samples_path.open("w", encoding="utf-8", newline="\n") as stream:
         for sample in samples:
             stream.write(json.dumps(sample, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n")
+    samples_sha256 = sha256_file(samples_path)
+    manifest_sha256 = sha256_file(path)
+    manifest_path = str(path)
+    manifest_id = _manifest_identity(path)
     summary = {
         "schema": "victory-run/v2",
-        "manifest": str(path),
+        "run_id": run_id,
+        "manifest": manifest_path,
+        "manifest_path": manifest_path,
+        "manifest_id": manifest_id,
+        "manifest_sha256": manifest_sha256,
+        "manifest_bundle": {"path": manifest_path, "id": manifest_id, "sha256": manifest_sha256},
         "manifest_schema": manifest["schema"],
         "status": _effective_status(samples),
         "mode": mode,
@@ -146,6 +313,7 @@ def run_manifest(manifest_path: str | Path, output: str | Path, *, repetitions: 
         "cases": [case["id"] for case in manifest["cases"]],
         "samples": len(samples),
         "samples_path": str(samples_path),
+        "samples_sha256": samples_sha256,
         "status_counts": {status: sum(sample["status"] == status for sample in samples) for status in ("PASS", "FAIL", "BLOCKED", "NOT_COMPARABLE", "NOT_RUN")},
         "fixture_digest": manifest["fixture_digest"],
         "oracle_digest": manifest["oracle_digest"],

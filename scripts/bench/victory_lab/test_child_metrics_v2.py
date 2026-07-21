@@ -24,13 +24,24 @@ class ChildMetricsV2Tests(unittest.TestCase):
         self.assertIsInstance(result.metrics, ChildMetrics)
         self.assertEqual(result.returncode, 0)
         self.assertNotIn("transient-output", str(result.metrics.to_dict()))
-        if os.name == "nt":
+        if result.metrics.tree_supported:
             self.assertEqual(result.metrics.status, "PASS")
+            self.assertIsNone(result.metrics.reason)
             self.assertIsInstance(result.metrics.peak_rss_bytes, int)
             self.assertGreater(result.metrics.peak_rss_bytes, 0)
+            self.assertIsInstance(result.metrics.tree_peak_rss_bytes, int)
+            self.assertGreater(result.metrics.tree_peak_rss_bytes, 0)
+            self.assertGreater(len(result.metrics.observed_pids), 1)
         else:
             self.assertEqual(result.metrics.status, "NOT_COMPARABLE")
-            self.assertIsNone(result.metrics.peak_rss_bytes)
+            self.assertFalse(result.metrics.tree_supported)
+            self.assertIsNone(result.metrics.tree_peak_rss_bytes)
+            if os.name == "nt":
+                self.assertEqual(result.metrics.reason, "tree_not_observed")
+                self.assertIn("tree_not_observed", result.metrics.reason_codes)
+            else:
+                self.assertEqual(result.metrics.reason, "unsupported_platform")
+                self.assertIsNone(result.metrics.peak_rss_bytes)
 
     def test_timeout_terminates_child_tree_and_preserves_class(self):
         with tempfile.TemporaryDirectory() as temp:

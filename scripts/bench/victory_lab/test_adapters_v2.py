@@ -5,7 +5,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from adapters.v2 import CommandResult, VictoryAdapter, _graphify_affected_payload, _normalize_set_payload, materialize_fixture
+from adapters.v2 import CommandResult, VictoryAdapter, _adapt_mi_lsp_terminal, _graphify_affected_payload, _normalize_set_payload, materialize_fixture
 from manifest_v2 import load_manifest
 from schema_v2 import AdapterSpec
 
@@ -207,7 +207,25 @@ class AdapterV2Tests(unittest.TestCase):
         payload = _graphify_affected_payload(
             "Affected nodes for Normalize()\n- Validate() [calls] subject/subject.go:L9\n- Direct() [calls] callers/callers.go:L6\n"
         )
+        self.assertTrue(payload["done"])
         self.assertEqual([item["display"] for item in payload["items"]], ["subject.Validate", "callers.Direct"])
+
+    def test_graphify_empty_stdout_fails_closed(self):
+        for stdout in ("  \r\n", "Affected nodes for Normalize()\n"):
+            with self.assertRaises(ValueError):
+                _graphify_affected_payload(stdout)
+
+    def test_mi_lsp_terminality_is_adapted_only_after_complete_process(self):
+        native = {"ok": True, "backend": "go", "truncated": False, "error": "", "items": []}
+        result = CommandResult([], "", [], 0, "")
+        adapted = _adapt_mi_lsp_terminal(native, result)
+        self.assertTrue(adapted["done"])
+        partial = dict(native, partial=True)
+        self.assertNotIn("done", _adapt_mi_lsp_terminal(partial, result))
+        failed = _adapt_mi_lsp_terminal(native, CommandResult([], "", [], 1, ""))
+        self.assertNotIn("done", failed)
+        timed_out = _adapt_mi_lsp_terminal(native, CommandResult([], "", [], 0, "", timed_out=True))
+        self.assertNotIn("done", timed_out)
 
 
 if __name__ == "__main__":

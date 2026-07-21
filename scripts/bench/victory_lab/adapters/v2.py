@@ -223,6 +223,8 @@ def _normalize_payload(payload: Any, case: Mapping[str, Any]) -> Any:
 
 def _graphify_affected_payload(stdout: str) -> dict[str, Any]:
     """Convert Graphify's human-readable affected output into adapter JSON."""
+    if not stdout.strip():
+        raise ValueError("Graphify returned empty output")
     items: list[dict[str, str]] = []
     line_pattern = re.compile(r"^\s*-\s*(?P<name>.+?)\s+\[[^]]+\]\s+(?P<path>[^:]+):L\d+")
     for line in stdout.splitlines():
@@ -233,9 +235,38 @@ def _graphify_affected_payload(stdout: str) -> dict[str, Any]:
         source_path = Path(match.group("path").replace("\\\\", "/"))
         package = source_path.parent.as_posix().replace("/", ".")
         items.append({"display": f"{package}.{name}" if package else name})
-    if not items and "No unique node match" in stdout:
-        raise ValueError("Graphify could not resolve selector")
-    return {"ok": True, "backend": "graphify", "completeness": "complete", "truncated": False, "items": items}
+    if not items:
+        if "No unique node match" in stdout:
+            raise ValueError("Graphify could not resolve selector")
+        raise ValueError("Graphify output contained no affected items")
+    return {
+        "ok": True, "backend": "graphify", "completeness": "complete",
+        "truncated": False, "done": True, "items": items,
+    }
+
+
+def _adapt_mi_lsp_terminal(native: Any, result: CommandResult) -> Any:
+    """Materialize terminality only from a complete, successful mi-lsp process."""
+    if (
+        not isinstance(native, Mapping)
+        or result.returncode != 0
+        or result.timed_out
+        or result.crashed
+    ):
+        return native
+    if "done" in native:
+        return native
+    if (
+        native.get("ok") is True
+        and native.get("truncated") is False
+        and native.get("error") in (None, "", {}, [])
+        and native.get("errors") in (None, "", {}, [])
+        and native.get("partial") in (None, False)
+    ):
+        adapted = dict(native)
+        adapted["done"] = True
+        return adapted
+    return native
 
 
 class VictoryAdapter:
@@ -573,6 +604,8 @@ class VictoryAdapter:
                     )
                 try:
                     native = _graphify_affected_payload(result.stdout) if self.spec.kind == "graphify" else parse_json_output(result.stdout)
+                    if self.spec.kind in {"current", "baseline"}:
+                        native = _adapt_mi_lsp_terminal(native, result)
                     native = _normalize_payload(native, case)
                     validate_terminal_state(native)
                     canonical = canonical_payload(case["operation"], native, root)

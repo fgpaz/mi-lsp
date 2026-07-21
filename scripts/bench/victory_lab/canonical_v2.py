@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import ntpath
 import re
 from pathlib import Path
 from typing import Any
@@ -32,6 +33,7 @@ _VALID_BACKENDS = frozenset({
     "git+catalog+heuristic",
 })
 _VALID_COMPLETENESS = frozenset({"complete", "exact", "full"})
+_FIXTURE_ROOT_SENTINEL = "<FIXTURE_ROOT>"
 
 
 def _relative(value: str, fixture_root: Path | None) -> str:
@@ -43,6 +45,24 @@ def _relative(value: str, fixture_root: Path | None) -> str:
     if candidate.startswith(root):
         return candidate[len(root):]
     return value
+
+
+def _windows_path_key(value: str) -> str:
+    """Normalize a path for Windows identity comparisons on any host OS."""
+    return ntpath.normcase(ntpath.normpath(value.replace("/", "\\")))
+
+
+def _is_fixture_identity(value: str, fixture_root: Path | None) -> bool:
+    """Recognize only the fixture basename or its equivalent full path."""
+    if fixture_root is None:
+        return False
+    if value.casefold() == fixture_root.name.casefold():
+        return True
+    fixture_paths = {
+        _windows_path_key(str(fixture_root)),
+        _windows_path_key(str(fixture_root.resolve())),
+    }
+    return _windows_path_key(value) in fixture_paths
 
 
 def canonicalize(value: Any, fixture_root: Path | None = None, *, key: str = "") -> Any:
@@ -59,8 +79,14 @@ def canonicalize(value: Any, fixture_root: Path | None = None, *, key: str = "")
         # and distance-ordered relation results must never be re-sorted here.
         return [canonicalize(v, fixture_root, key=key) for v in value]
     if isinstance(value, str):
+        if key == "workspace" and _is_fixture_identity(value, fixture_root):
+            return _FIXTURE_ROOT_SENTINEL
         original = value.replace("\\", "/")
         normalized = _relative(value.replace("\r\n", "\n").replace("\r", "\n"), fixture_root)
+        # Workspace is sentinel-only: an unrecognized path remains redacted,
+        # even when it happens to be below the fixture root.
+        if key == "workspace" and normalized != original:
+            return "<REDACTED>"
         # Fixture-root-relative paths are intentionally comparable; every
         # arbitrary absolute/relative path and PII/PHI value is not.
         if fixture_root is not None and normalized != original:
@@ -94,7 +120,7 @@ def validate_terminal_state(native: Any) -> dict[str, Any]:
         raise ValueError("terminal output must be an object")
     if native.get("ok") is not True:
         raise ValueError("terminal output is not ok=true")
-    if "done" in native and native.get("done") is not True:
+    if native.get("done") is not True:
         raise ValueError("terminal output is not done=true")
     for key in ("state", "terminal_state", "phase"):
         state = native.get(key)

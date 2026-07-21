@@ -59,6 +59,27 @@ class ChildMetrics:
             raise ValueError("peak_rss_bytes must be non-negative")
         if self.tree_peak_rss_bytes is not None and self.tree_peak_rss_bytes < 0:
             raise ValueError("tree_peak_rss_bytes must be non-negative")
+        observed_pids = {
+            pid for pid in self.observed_pids
+            if isinstance(pid, int) and not isinstance(pid, bool) and pid > 0
+        }
+        tree_valid = (
+            self.tree_supported
+            and self.tree_peak_rss_bytes is not None
+            and len(observed_pids) > 1
+            and len(observed_pids) == len(self.observed_pids)
+        )
+        if not tree_valid:
+            # A root-only or partial sample is not a process-tree measurement.
+            # Never expose the root value as a fabricated tree total.
+            object.__setattr__(self, "status", STATUS_NOT_COMPARABLE)
+            object.__setattr__(self, "tree_supported", False)
+            object.__setattr__(self, "tree_peak_rss_bytes", None)
+            if self.reason is None:
+                object.__setattr__(self, "reason", "tree_not_observed")
+                codes = set(self.reason_codes)
+                codes.add("tree_not_observed")
+                object.__setattr__(self, "reason_codes", tuple(sorted(codes)))
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -322,6 +343,7 @@ class _Sampler:
         self.tree_peak: int | None = None
         self.samples = 0
         self.tree_supported = False
+        self._tree_partial = False
         self._reason_codes: set[str] = set()
         self.observed_pids: set[int] = {pid}
 
@@ -330,16 +352,43 @@ class _Sampler:
 
     def _sample(self) -> None:
         root = self.probe.working_set(self.pid)
-        pids = {self.pid} | self.probe.descendants(self.pid)
+        raw_descendants = self.probe.descendants(self.pid) or ()
+        descendants = {
+            descendant for descendant in raw_descendants
+            if isinstance(descendant, int)
+            and not isinstance(descendant, bool)
+            and descendant > 0
+            and descendant != self.pid
+        }
+        pids = {self.pid} | descendants
         self.observed_pids.update(pids)
-        values = [value for value in (self.probe.working_set(pid) for pid in pids) if value is not None]
-        if root is not None:
-            self.root_peak = max(self.root_peak or 0, root)
+
+        values_by_pid = {self.pid: root}
+        for descendant in descendants:
+            values_by_pid[descendant] = self.probe.working_set(descendant)
+        valid_values = {
+            pid: value for pid, value in values_by_pid.items()
+            if isinstance(value, int) and not isinstance(value, bool) and value >= 0
+        }
+        if self.pid in valid_values:
+            self.root_peak = max(self.root_peak or 0, valid_values[self.pid])
             self.samples += 1
+        else:
+            self._reason_codes.add("working_set_unavailable")
+
         if len(pids) > 1:
-            self.tree_supported = True
-        if values:
-            self.tree_peak = max(self.tree_peak or 0, sum(values))
+            if len(valid_values) != len(pids) or self._tree_partial:
+                # Once any observed descendant lacks a native working-set
+                # value, the tree evidence is permanently partial.  Do not
+                # recover to PASS from a later complete sample.
+                self._tree_partial = True
+                self.tree_supported = False
+                self.tree_peak = None
+                self._reason_codes.add("working_set_unavailable")
+            else:
+                total = sum(valid_values.values())
+                self.tree_peak = max(self.tree_peak or 0, total)
+                self.tree_supported = self.tree_peak is not None
 
     def _run(self) -> None:
         while not self.stop.is_set():
@@ -360,19 +409,26 @@ class _Sampler:
             reason_codes.add("working_set_unavailable")
             status = STATUS_NOT_COMPARABLE
             reason = "working_set_unavailable"
+        elif self._tree_partial:
+            # A partial tree observation is not comparable, even when a later
+            # sample happened to recover the missing counter.
+            reason_codes.add("working_set_unavailable")
+            status = STATUS_NOT_COMPARABLE
+            reason = "working_set_unavailable"
+        elif not self.tree_supported or self.tree_peak is None or len(self.observed_pids) <= 1:
+            reason_codes.add("tree_not_observed")
+            status = STATUS_NOT_COMPARABLE
+            reason = "tree_not_observed"
         else:
             status = "PASS"
             reason = None
-        if len(self.observed_pids) <= 1:
-            reason_codes.add("tree_not_observed")
-        else:
-            self.tree_supported = True
+        tree_peak = self.tree_peak if status == "PASS" else None
         return ChildMetrics(
-            peak_rss_bytes=self.root_peak, tree_peak_rss_bytes=self.tree_peak,
+            peak_rss_bytes=self.root_peak, tree_peak_rss_bytes=tree_peak,
             status=status, reason=reason, pid=pid, exit_code=returncode,
             failure_class=_failure_class(returncode=returncode, timed_out=timed_out, crashed=crashed, spawn_error=spawn_error),
             timed_out=timed_out, crashed=crashed, cleanup_status=cleanup_status,
-            samples=self.samples, tree_supported=self.tree_supported,
+            samples=self.samples, tree_supported=status == "PASS",
             reason_codes=tuple(sorted(reason_codes)), observed_pids=tuple(sorted(self.observed_pids)),
         )
 
@@ -477,19 +533,26 @@ def run_child(
         spawn_error = True
         cleanup_status = "not_required"
     finally:
+        # Stop runtime observation before the sampler's final post-exit sample.
+        # The sampler intentionally retains observed descendants; allowing it
+        # to add PIDs after runtime proof stops would create metadata gaps for
+        # processes that were never live during a proof sample.
+        if runtime_probe is not None:
+            runtime_observation = runtime_probe.finish(stdout=stdout, stderr=stderr)
         if sampler is not None:
             sampler.finish()
         if job is not None:
             probe.close_job(job)
         if process is not None and process.poll() is None:
             cleanup_status = _terminate_tree(process, probe, None)
-    if runtime_probe is not None:
-        runtime_observation = runtime_probe.finish(stdout=stdout, stderr=stderr)
-    else:
-        runtime_observation = {
-            "status": STATUS_NOT_COMPARABLE, "runtime_proof": False,
-            "reason_code": probe.reason or "runtime_proof_unavailable",
-        }
+    if runtime_observation is None:
+        if runtime_probe is not None:
+            runtime_observation = runtime_probe.finish(stdout=stdout, stderr=stderr)
+        else:
+            runtime_observation = {
+                "status": STATUS_NOT_COMPARABLE, "runtime_proof": False,
+                "reason_code": probe.reason or "runtime_proof_unavailable",
+            }
     if sampler is None:
         metrics = ChildMetrics(
             peak_rss_bytes=None, tree_peak_rss_bytes=None, status=STATUS_NOT_COMPARABLE,
