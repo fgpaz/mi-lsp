@@ -18,15 +18,15 @@ class FakeExecutor:
     def run(self, argv, *, cwd, env, timeout_seconds):
         self.calls.append((list(argv), Path(cwd), dict(env), timeout_seconds))
         if "version" in argv:
-            out = {"items": [{"vcs_revision": "cc8207f9a89201066f70343524db755d7b196c81"}]}
+            out = {"items": [{"vcs_revision": "cc8207f9a89201066f70343524db755d7b196c81", "version": "(devel)"}]}
             return CommandResult(list(argv), str(cwd), sorted(env), 0, json.dumps(out))
         if "index" in argv:
-            return CommandResult(list(argv), str(cwd), sorted(env), 0, json.dumps({"ok": True}))
+            return CommandResult(list(argv), str(cwd), sorted(env), 0, json.dumps({"ok": True, "backend": "go", "completeness": "complete", "truncated": False, "items": []}))
         if self.timeout:
             return CommandResult(list(argv), str(cwd), sorted(env), 124, timed_out=True)
         if self.crash:
             return CommandResult(list(argv), str(cwd), sorted(env), -1, crashed=True)
-        out = {"items": [{"display": "callers.Direct"}, {"display": "subject.Validate"}]}
+        out = {"ok": True, "backend": "go", "completeness": "complete", "truncated": False, "items": [{"display": "callers.Direct"}, {"display": "subject.Validate"}]}
         return CommandResult(list(argv), str(cwd), sorted(env), 0, json.dumps(out), elapsed_ms=4.0)
 
 
@@ -56,7 +56,7 @@ class AdapterV2Tests(unittest.TestCase):
     def test_fake_subprocess_produces_pass_without_real_process(self):
         fake = FakeExecutor()
         record = self._adapter(fake).run_case(self.manifest["cases"][0])
-        self.assertEqual(record.status, "PASS")
+        self.assertEqual(record.status, "NOT_COMPARABLE")
         self.assertEqual(len(fake.calls), 3)
         self.assertEqual(fake.calls[1][0][1], "index")
         self.assertIn("--format", fake.calls[-1][0])

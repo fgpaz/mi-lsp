@@ -17,7 +17,24 @@ _ID_RE = re.compile(r"^[A-Za-z0-9_.:/-]{1,128}$")
 _REASON_RE = re.compile(r"^[a-z][a-z0-9_.-]{0,63}$")
 _SECRET_RE = re.compile(r"(?i)(password|passwd|secret|token|api[_-]?key|private[_-]?key|authorization|cookie)")
 _PATH_RE = re.compile(r"(?:[A-Za-z]:[\\/]|\\\\|/(?:Users|home|root|private|tmp)/)")
+_PII_RE = re.compile(
+    r"(?ix)(?:[A-Z0-9._%+-]+@[A-Z0-9.-]+\\.[A-Z]{2,}|"
+    r"\\b(?:ssn|social\\s+security|patient|medical|phi|name|email)\\b|"
+    r"\\b\\d{3}-\\d{2}-\\d{4}\\b)"
+)
 _FORBIDDEN_KEYS = frozenset({"stdout", "stderr", "raw_output", "native_output", "source", "source_payload", "env", "environment"})
+
+# This is deliberately finite.  Error text is diagnostic input only and can
+# never become a durable reason code or an accidental PII oracle.
+REASON_CATALOG = frozenset({
+    "unknown", "unspecified", "spawn", "timeout", "crash", "prepare", "decode", "oracle",
+    "provenance", "security", "capability", "comparability", "integrity", "cleanup", "blocked",
+    "not_measured", "unavailable", "counter_unavailable", "unsupported_platform", "working_set_unavailable",
+    "tree_not_observed", "network_indicator", "mcp_indicator", "secret_indicator", "protected_path_changed",
+    "runtime_proof_unavailable", "metadata_missing", "metadata_mismatch", "executable_sha_mismatch",
+    "source_sha_mismatch", "source_revision_mismatch", "missing_executable", "missing_source",
+    "not_comparable", "nonzero_exit", "invalid_terminal_state", "truncated_output", "native_error",
+})
 
 
 def digest_bytes(value: bytes) -> str:
@@ -29,12 +46,19 @@ def digest_text(value: object) -> str:
 
 
 def bounded_reason(value: object, default: str = "unspecified") -> str:
-    raw = str(value or default).strip()
-    if _PATH_RE.search(raw) or _SECRET_RE.search(raw):
-        return default
+    """Map an opaque diagnostic to a fixed catalog entry.
+
+    This function is intentionally not a slugifier.  Unknown text, paths,
+    secrets, names, emails, SSNs, and PHI all collapse to the caller's fixed
+    fallback rather than becoming new durable taxonomy.
+    """
+    fallback = default if default in REASON_CATALOG else "unspecified"
+    raw = str(value or "").strip()
+    if not raw or _PATH_RE.search(raw) or _SECRET_RE.search(raw) or _PII_RE.search(raw):
+        return fallback
     text = raw.lower().replace(" ", "_")
     text = re.sub(r"[^a-z0-9_.-]", "_", text)[:64]
-    return text if _REASON_RE.fullmatch(text) else default
+    return text if _REASON_RE.fullmatch(text) and text in REASON_CATALOG else fallback
 
 
 def sanitize_env(env: Mapping[str, object], allowlist: Sequence[str]) -> list[str]:
@@ -62,7 +86,7 @@ def _safe_scalar(key: str, value: object) -> tuple[str, object] | None:
     if isinstance(value, str):
         if lowered in {"reason", "reason_code"}:
             return key, bounded_reason(value)
-        if _PATH_RE.search(value) or _SECRET_RE.search(value):
+        if _PATH_RE.search(value) or _SECRET_RE.search(value) or _PII_RE.search(value):
             return None
         if _SHA256_RE.fullmatch(value) and ("digest" in lowered or lowered.endswith("sha256")):
             return key, value
@@ -122,10 +146,13 @@ def sanitize_process_result(result: object, *, env_allowlist: Sequence[str] = ()
 
 
 def sanitize_error(kind: object, message: object = "") -> dict[str, str]:
-    """Return bounded diagnostics with no path or exception payload."""
+    """Return a catalog-only diagnostic; message is never an authority input."""
     code = bounded_reason(kind, "unknown")
-    msg_code = bounded_reason(message, code)
-    return {"kind": code, "reason_code": msg_code}
+    # Keep the argument for API compatibility, but never derive a code from
+    # free-form exception text.  This prevents email/name/SSN/PHI leakage and
+    # keeps the taxonomy stable across platforms and child processes.
+    _ = message
+    return {"kind": code, "reason_code": code}
 
 
 def sanitize_paths(paths: Sequence[str | os.PathLike[str]]) -> list[str]:
@@ -134,6 +161,6 @@ def sanitize_paths(paths: Sequence[str | os.PathLike[str]]) -> list[str]:
 
 
 __all__ = [
-    "bounded_reason", "digest_bytes", "digest_text", "sanitize_argv", "sanitize_env",
+    "REASON_CATALOG", "bounded_reason", "digest_bytes", "digest_text", "sanitize_argv", "sanitize_env",
     "sanitize_error", "sanitize_metrics", "sanitize_paths", "sanitize_process_result",
 ]

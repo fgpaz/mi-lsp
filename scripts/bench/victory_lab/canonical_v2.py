@@ -14,6 +14,11 @@ except ImportError:  # pragma: no cover
 
 _VOLATILE_KEYS = frozenset({"elapsed_ms", "duration_ms", "duration_ns", "started_at", "finished_at", "pid", "hostname", "rss_bytes", "raw_output", "stdout", "stderr"})
 _SECRET_KEY_RE = re.compile(r"(secret|token|password|api[_-]?key|authorization|cookie)", re.I)
+_VALID_BACKENDS = frozenset({
+    "go", "csharp", "roslyn", "typescript", "ts", "tsserver", "graph", "graph-native",
+    "graphify", "mi-lsp", "router", "current", "baseline", "native", "sqlite-direct", "index-job", "version",
+})
+_VALID_COMPLETENESS = frozenset({"complete", "exact", "full"})
 
 
 def _relative(value: str, fixture_root: Path | None) -> str:
@@ -37,11 +42,9 @@ def canonicalize(value: Any, fixture_root: Path | None = None, *, key: str = "")
             if str(k) not in _VOLATILE_KEYS and not _SECRET_KEY_RE.search(str(k))
         }
     if isinstance(value, list):
-        normalized = [canonicalize(v, fixture_root, key=key) for v in value]
-        # Items are sorted only when they are maps; preserving path order is meaningful.
-        if all(isinstance(item, dict) for item in normalized):
-            return sorted(normalized, key=lambda item: json.dumps(item, ensure_ascii=False, sort_keys=True, separators=(",", ":")))
-        return normalized
+        # Result order is part of the oracle.  In particular, shortest paths
+        # and distance-ordered relation results must never be re-sorted here.
+        return [canonicalize(v, fixture_root, key=key) for v in value]
     if isinstance(value, str):
         return _relative(value.replace("\r\n", "\n").replace("\r", "\n"), fixture_root)
     return value
@@ -58,6 +61,39 @@ def payload_digest(value: Any, fixture_root: Path | None = None) -> str:
 def token_count(value: Any, fixture_root: Path | None = None) -> int:
     text = value if isinstance(value, str) else canonical_json(value, fixture_root)
     return len(re.findall(r"\w+|[^\w\s]", text, re.UNICODE))
+
+
+def validate_terminal_state(native: Any) -> dict[str, Any]:
+    """Require a complete terminal response before canonicalization.
+
+    A timeout, partial envelope, backend error, or truncated result is not a
+    successful query merely because it contains an ``items`` array.
+    """
+    if not isinstance(native, dict):
+        raise ValueError("terminal output must be an object")
+    if native.get("ok") is not True:
+        raise ValueError("terminal output is not ok=true")
+    backend = native.get("backend")
+    if not isinstance(backend, str) or backend not in _VALID_BACKENDS:
+        raise ValueError("terminal output has invalid backend")
+    completeness = native.get("completeness")
+    if completeness is None and native.get("complete") is True:
+        completeness = "complete"
+    if completeness is None and native.get("truncated") is False and native.get("error") in (None, "", {}, []):
+        # mi-lsp v2 envelopes use ok=true + truncated=false as the complete
+        # terminal contract and omit a redundant completeness string.
+        completeness = "complete"
+    if completeness not in _VALID_COMPLETENESS:
+        raise ValueError("terminal output has invalid completeness")
+    if native.get("truncated") is not False:
+        raise ValueError("terminal output is truncated or lacks truncation=false")
+    if native.get("error") not in (None, "", {}, []):
+        raise ValueError("terminal output contains an error")
+    if native.get("errors") not in (None, "", {}, []):
+        raise ValueError("terminal output contains errors")
+    if native.get("partial") not in (None, False):
+        raise ValueError("terminal output is partial")
+    return native
 
 
 def canonical_payload(operation: str, native: Any, fixture_root: Path | None = None) -> dict[str, Any]:

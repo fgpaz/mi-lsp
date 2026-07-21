@@ -14,6 +14,10 @@
         "{selector}",
         "{from}",
         "{to}",
+        "--depth",
+        "{depth}",
+        "--mode",
+        "{mode}",
         "--workspace",
         "{root}",
         "--format",
@@ -294,6 +298,24 @@
         "subject.Normalize"
       ]
     }
+  },
+  "relation_cases": {
+    "golden": "goldens/relations.json",
+    "expected_categories": ["positive", "negative", "ambiguous", "unresolved", "NOT_COMPARABLE"],
+    "negative_violations_max": 0,
+    "unresolved_are_not_edges": true,
+    "ambiguous_are_not_edges": true
+  },
+  "mutation_cases": {
+    "golden": "goldens/mutation.json",
+    "required_operations": ["change"],
+    "stale_rate_max": 0.0,
+    "clean_equivalent": true
+  },
+  "thresholds": {
+    "status": "NOT_COMPARABLE",
+    "reason_code": "thresholds_require_comparable_30_sample_slices",
+    "per_slice": true
   },
   "repository_identity": "https://example.com/mi-lsp/victory-lab-v2",
   "schema": "victory-lab-manifest/v2",

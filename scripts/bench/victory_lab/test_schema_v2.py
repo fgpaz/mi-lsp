@@ -8,9 +8,10 @@ class SchemaV2Tests(unittest.TestCase):
     def test_adapter_and_record_are_versioned(self):
         spec = AdapterSpec.from_dict({
             "schema": "victory-adapter-spec/v2", "adapter_id": "fake", "kind": "current",
+            "expected_commit": "c" * 40, "expected_executable_sha256": "a" * 64,
             "capabilities": ["affected"], "comparable_operations": ["affected"],
             "normalizable_operations": [], "env_allowlist": ["PATH", "TEMP", "TMP", "MI_LSP_CLIENT_NAME", "MI_LSP_SESSION_ID"],
-            "command": ["fake", "{operation}"], "metadata_command": [],
+            "command": ["fake", "{operation}"], "metadata_command": ["fake", "version"],
         })
         self.assertEqual(spec.to_dict()["schema"], "victory-adapter-spec/v2")
         record = RunRecord(

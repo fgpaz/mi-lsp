@@ -50,6 +50,16 @@ def validate_strict_manifest(manifest: Mapping[str, Any], root: Path | None = No
             if corpus_path.is_absolute() or ".." in corpus_path.parts or not any(str(path).replace("\\", "/").startswith(prefix) for path in fixture_hashes):
                 raise ManifestError(f"case {case_id} corpus is not safely pinned")
         case_ids.add(case_id)
+    for section, required in (("relation_cases", "golden"), ("mutation_cases", "golden")):
+        metadata = manifest.get(section)
+        if not isinstance(metadata, Mapping) or not isinstance(metadata.get(required), str):
+            raise ManifestError(f"{section} metadata is required")
+        golden = metadata[required].replace("\\", "/")
+        if golden not in oracle_hashes:
+            raise ManifestError(f"{section} golden is not pinned")
+    thresholds = manifest.get("thresholds")
+    if not isinstance(thresholds, Mapping) or thresholds.get("per_slice") is not True:
+        raise ManifestError("per-slice thresholds are required")
     if check_files:
         if root is None:
             raise ManifestError("root is required when checking files")
@@ -77,7 +87,9 @@ def validate_runtime(manifest: dict, *, require_runtime: bool = False) -> list[s
                 if spec.source_digest_path and spec.expected_source_sha256 and sha256_file(source / spec.source_digest_path) != spec.expected_source_sha256:
                     raise ManifestError(f"Graphify source digest mismatch: {spec.adapter_id}")
         except ManifestError as exc:
-            if require_runtime:
+            # Missing runtime may be NOT_COMPARABLE when probing is optional,
+            # but an absent provenance contract is never silently accepted.
+            if require_runtime or "provenance" in str(exc).lower() or "pin" in str(exc).lower() or "sha" in str(exc).lower():
                 blockers.append(str(exc))
     return blockers
 

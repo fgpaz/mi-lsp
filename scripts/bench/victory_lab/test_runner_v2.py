@@ -32,7 +32,7 @@ class RunnerV2Tests(unittest.TestCase):
         manifest = {
             "schema": "victory-lab-manifest/v2", "version": 2,
             "fixture_hashes": {"fixture": "a" * 64}, "oracle_hashes": {"oracle": "b" * 64},
-            "adapters": [{"schema": "victory-adapter-spec/v2", "adapter_id": "a", "kind": "current", "command": ["fake"], "capabilities": ["affected"], "comparable_operations": ["affected"], "env_allowlist": []}],
+            "adapters": [{"schema": "victory-adapter-spec/v2", "adapter_id": "a", "kind": "current", "expected_commit": "c" * 40, "expected_executable_sha256": "a" * 64, "metadata_command": ["fake", "version"], "command": ["fake"], "capabilities": ["affected"], "comparable_operations": ["affected"], "env_allowlist": []}],
             "cases": [{"id": "c", "operation": "affected", "corpus": ["x"], "golden": "o", "changed_paths": ["x"]}],
         }
         spec = AdapterSpec.from_dict(manifest["adapters"][0])

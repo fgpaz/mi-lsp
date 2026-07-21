@@ -41,7 +41,7 @@ class SecurityGateV2Tests(unittest.TestCase):
             gate = SecurityGate({"fixture": fixture})
             start = gate.start(["safe-tool"], {"PATH": "redacted"})
             finish = gate.finish(["safe-tool", "mcp"], {"PATH": "redacted"})
-        self.assertEqual(finish["status"], "PASS")
+        self.assertEqual(finish["status"], "NOT_COMPARABLE")
         self.assertEqual(finish["advisory_scan"]["status"], "FAIL")
         self.assertFalse(start["advisory_scan"]["runtime_proof"])
         self.assertFalse(finish["runtime_proof"])

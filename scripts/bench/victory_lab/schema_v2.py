@@ -97,6 +97,16 @@ class AdapterSpec:
         _optional_pin(self.expected_commit, "expected_commit", 40)
         _optional_pin(self.expected_executable_sha256, "expected_executable_sha256", 64)
         _optional_pin(self.expected_source_sha256, "expected_source_sha256", 64)
+        if self.kind in {"current", "baseline"}:
+            if not self.expected_commit:
+                raise SchemaError(f"{self.adapter_id} must pin expected_commit")
+            if not self.expected_executable_sha256:
+                raise SchemaError(f"{self.adapter_id} must pin expected_executable_sha256")
+            crypto_proof = bool(self.source and self.source_digest_path and self.expected_source_sha256)
+            if not self.metadata_command and not crypto_proof:
+                raise SchemaError(
+                    f"{self.adapter_id} requires observed metadata_command or explicit source-to-binary proof"
+                )
         if self.timeout_seconds <= 0:
             raise SchemaError("timeout_seconds must be positive")
         for name, values in (
@@ -239,7 +249,7 @@ class RunRecord:
                 raise SchemaError("PASS records require canonical payload object")
             if self.error is not None:
                 raise SchemaError("PASS records cannot carry an error")
-        elif self.status in {"FAIL", "BLOCKED"} and not isinstance(self.error, Mapping):
+        elif self.status in {"FAIL", "BLOCKED", "NOT_COMPARABLE"} and not isinstance(self.error, Mapping):
             raise SchemaError(f"{self.status} records require sanitized error")
         if self.error is not None:
             if not isinstance(self.error, Mapping) or set(self.error) - {"kind", "reason_code"}:

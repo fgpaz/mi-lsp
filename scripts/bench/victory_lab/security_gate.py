@@ -78,7 +78,7 @@ def scan_command_env(argv: Sequence[object], env: Mapping[str, object]) -> dict[
     findings: set[str] = set()
     if _NETWORK_RE.search(command_text) or _NETWORK_RE.search(env_values):
         findings.add("network_indicator")
-    if _MCP_RE.search(command_text) or _MCP_RE.search(env_names) or _MCP_RE.search(env_values):
+    if _MCP_RE.search(command_text) or _MCP_RE.search(env_names):
         findings.add("mcp_indicator")
     if _SECRET_RE.search(command_text) or _SECRET_RE.search(env_names) or _SECRET_RE.search(env_values):
         findings.add("secret_indicator")
@@ -110,9 +110,14 @@ class SecurityGate:
         after = snapshot_paths(self.protected_paths)
         integrity = compare_snapshots(self.before, after)
         scan = scan_command_env(argv, env or {})
-        # The integrity result is the no-write gate.  Command scanning remains
-        # advisory and cannot be promoted to runtime network proof.
+        # Advisory scans are never runtime proof.  Network/MCP indicators
+        # therefore cannot finish an authoritative sample as PASS.
         status = str(integrity["status"])
+        advisory_codes = set(scan.get("reason_codes", []))
+        if {"network_indicator", "mcp_indicator"} & advisory_codes:
+            status = "NOT_COMPARABLE"
+        elif "secret_indicator" in advisory_codes and status == "PASS":
+            status = "BLOCKED"
         return {
             "status": status,
             "integrity_after": after.to_dict(),

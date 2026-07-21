@@ -62,8 +62,14 @@ class VictoryAdversarialV2Tests(unittest.TestCase):
             "oracle_hashes": {"goldens/case.json": digest(root / "goldens/case.json")},
             "adapters": [{
                 "schema": "victory-adapter-spec/v2", "adapter_id": "fake", "kind": "current",
+                "expected_commit": "c" * 40, "expected_executable_sha256": "a" * 64,
                 "capabilities": ["affected"], "comparable_operations": ["affected"],
-                "normalizable_operations": [], "env_allowlist": [], "command": ["fake"],
+                "normalizable_operations": [], "env_allowlist": [], "command": ["fake"], "metadata_command": ["fake", "version"],
+            }, {
+                "schema": "victory-adapter-spec/v2", "adapter_id": "baseline", "kind": "baseline",
+                "expected_commit": BASELINE_COMMIT, "expected_executable_sha256": "b" * 64,
+                "capabilities": ["affected"], "comparable_operations": ["affected"],
+                "normalizable_operations": [], "env_allowlist": [], "command": ["fake"], "metadata_command": ["fake", "version"],
             }],
             "cases": [{"id": "case", "operation": "affected", "corpus": ["corpus"], "golden": "goldens/case.json", "changed_paths": ["corpus/fixture.go"]}],
             "oracles": {"case": {"expected_direct": ["stable"]}},
@@ -195,8 +201,7 @@ class VictoryAdversarialV2Tests(unittest.TestCase):
     def test_nondeterministic_digest_and_raw_log_leak_are_blocked(self):
         records = self._samples()
         records[1] = self._record(1, payload={"items": ["changed"]})
-        with self.assertRaises(ValueError):
-            build_report(self._write_samples(records))
+        self.assertEqual(build_report(self._write_samples(records))["status"], "FAIL")
         leaked = self._record(0)
         leaked["canonical"]["payload"]["stdout"] = "raw native log"
         with self.assertRaises(SchemaError):

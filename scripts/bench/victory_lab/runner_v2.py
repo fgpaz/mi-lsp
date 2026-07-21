@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import sys
 from pathlib import Path
@@ -24,9 +25,21 @@ def _digest_group(manifest: Mapping[str, Any], key: str) -> str:
     return sha256_bytes(value)
 
 
+def _tree_digest(path: Path) -> str:
+    digest = hashlib.sha256()
+    for item in sorted((candidate for candidate in path.rglob("*") if candidate.is_file()), key=lambda candidate: candidate.relative_to(path).as_posix()):
+        digest.update(item.relative_to(path).as_posix().encode("utf-8"))
+        digest.update(sha256_file(item).encode("ascii"))
+    return digest.hexdigest()
+
+
 def _content_snapshot(manifest_path: Path, manifest: Mapping[str, Any]) -> dict[str, str]:
     root = manifest_path.parent
-    snapshot = {"__manifest__": sha256_file(manifest_path)}
+    snapshot = {
+        "__manifest__": sha256_file(manifest_path),
+        "__corpus_tree__": _tree_digest(root / "corpus"),
+        "__goldens_tree__": _tree_digest(root / "goldens"),
+    }
     for group in ("fixture_hashes", "oracle_hashes"):
         for relative in manifest[group]:
             path = root / relative

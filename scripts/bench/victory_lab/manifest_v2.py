@@ -53,6 +53,50 @@ def canonical_file_hash(path: Path) -> str:
     return sha256_file(path)
 
 
+def inventory_entries(root: Path) -> list[dict[str, Any]]:
+    """Return the recursively enumerated raw-byte corpus/golden universe."""
+    root = Path(root).resolve()
+    entries: list[dict[str, Any]] = []
+    for base_name in ("corpus", "goldens"):
+        base = root / base_name
+        if not base.is_dir():
+            raise ManifestError(f"inventory root is missing: {base_name}")
+        for path in sorted((item for item in base.rglob("*") if item.is_file()), key=lambda item: item.relative_to(root).as_posix()):
+            relative = path.relative_to(root).as_posix()
+            if relative == "goldens/inventory.json":
+                continue
+            if path.is_symlink():
+                raise ManifestError(f"inventory cannot include symlink: {relative}")
+            data = path.read_bytes()
+            entries.append({"bytes": len(data), "path": relative, "sha256": sha256_bytes(data)})
+    return entries
+
+
+def validate_inventory(root: Path, inventory: Mapping[str, Any]) -> None:
+    """Require an exact recursive raw-byte inventory, including no omissions."""
+    if inventory.get("schema") != "victory-inventory/v2" or inventory.get("byte_semantics") != "raw-byte":
+        raise ManifestError("unsupported or non-raw inventory")
+    files = inventory.get("files")
+    if not isinstance(files, list) or files != sorted(files, key=lambda item: str(item.get("path", ""))):
+        raise ManifestError("inventory files must be an ordered list")
+    expected = inventory_entries(root)
+    normalized: list[dict[str, Any]] = []
+    for item in files:
+        if not isinstance(item, Mapping) or set(item) != {"bytes", "path", "sha256"}:
+            raise ManifestError("inventory entry schema drift")
+        relative = item.get("path")
+        if not isinstance(relative, str) or Path(relative).is_absolute() or ".." in Path(relative).parts:
+            raise ManifestError("inventory contains unsafe path")
+        if not isinstance(item.get("bytes"), int) or item["bytes"] < 0:
+            raise ManifestError("inventory bytes must be a non-negative integer")
+        digest = item.get("sha256")
+        if not isinstance(digest, str) or not _SHA_RE.fullmatch(digest):
+            raise ManifestError("inventory contains invalid digest")
+        normalized.append({"bytes": item["bytes"], "path": relative.replace("\\", "/"), "sha256": digest})
+    if normalized != expected:
+        raise ManifestError("recursive raw-byte inventory mismatch")
+
+
 def resolve_configured_path(name: str, value: str | None = None) -> Path:
     if name not in DEFAULT_PATHS:
         raise ManifestError(f"unknown configurable path: {name}")
@@ -118,6 +162,7 @@ def validate_manifest(manifest: Mapping[str, Any], root: Path | None = None, *, 
     if not isinstance(adapters, list) or not adapters:
         raise ManifestError("manifest must declare adapters")
     ids = set()
+    specs: list[AdapterSpec] = []
     for raw in adapters:
         if raw.get("schema") != ADAPTER_SCHEMA:
             raise ManifestError("adapter schema missing")
@@ -128,6 +173,15 @@ def validate_manifest(manifest: Mapping[str, Any], root: Path | None = None, *, 
         if spec.adapter_id in ids:
             raise ManifestError(f"duplicate adapter: {spec.adapter_id}")
         ids.add(spec.adapter_id)
+        specs.append(spec)
+    by_kind = {kind: [spec for spec in specs if spec.kind == kind] for kind in ("current", "baseline", "graphify")}
+    for kind in ("current", "baseline"):
+        if len(by_kind[kind]) != 1:
+            raise ManifestError(f"manifest must contain exactly one {kind} adapter")
+    if by_kind["current"][0].expected_commit != manifest["current"]["commit"]:
+        raise ManifestError("current commit pin is not linked to current adapter")
+    if by_kind["baseline"][0].expected_commit != manifest["baseline_commit"]:
+        raise ManifestError("baseline commit pin is not linked to baseline adapter")
     cases = manifest.get("cases")
     if not isinstance(cases, list) or not cases:
         raise ManifestError("manifest must declare cases")
@@ -140,6 +194,13 @@ def validate_manifest(manifest: Mapping[str, Any], root: Path | None = None, *, 
     if check_files:
         if root is None:
             raise ManifestError("root is required when check_files=true")
+        inventory_path = root / "goldens" / "inventory.json"
+        if not inventory_path.is_file():
+            raise ManifestError("recursive raw-byte inventory is missing")
+        try:
+            validate_inventory(root, json.loads(inventory_path.read_text(encoding="utf-8")))
+        except (OSError, json.JSONDecodeError) as exc:
+            raise ManifestError(f"cannot read inventory: {exc}") from exc
         for group in ("fixture_hashes", "oracle_hashes"):
             for rel, expected in manifest[group].items():
                 path = root / rel
@@ -170,17 +231,26 @@ def validate_current_metadata(
     *,
     expected_commit: str | None = None,
     expected_version: str | None = None,
+    expected_executable_sha256: str | None = None,
+    require_observed: bool = True,
 ) -> str:
-    """Require adapter provenance from CLI when present, otherwise its manifest pin."""
+    """Require observed adapter provenance; pins are not observations."""
     expected = expected_commit or manifest["current"]["commit"]
     item = metadata.get("items", [{}])[0] if isinstance(metadata.get("items"), list) else metadata
     if not isinstance(item, Mapping):
         raise ManifestError("provenance metadata item must be an object")
     observed = item.get("vcs_revision") or item.get("commit") or item.get("revision")
+    observed_executable = item.get("executable_sha256")
+    if expected_executable_sha256 and observed_executable and observed_executable != expected_executable_sha256:
+        raise ManifestError("CLI executable digest mismatch")
+    if require_observed and not observed and not (expected_executable_sha256 and observed_executable == expected_executable_sha256):
+        raise ManifestError("observed CLI provenance is missing")
     if observed and observed != expected:
         raise ManifestError(f"CLI revision mismatch: {observed} != {expected}")
     if expected_version:
         observed_version = item.get("version")
+        if require_observed and not observed_version:
+            raise ManifestError("observed CLI version is missing")
         if observed_version and observed_version != expected_version:
             raise ManifestError(f"CLI version mismatch: {observed_version} != {expected_version}")
     return observed or expected
