@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 
 from canonical_v2 import payload_digest, token_count
-from report_v2 import _manifest_identity, _sample_nonce, _validate_manifest_bundle, build_report
+from report_v2 import _comparisons, _items, _manifest_identity, _quality, _sample_nonce, _validate_manifest_bundle, build_report
 from security_gate import runtime_evidence_digest
 
 
@@ -214,6 +214,50 @@ class ReportV2Tests(unittest.TestCase):
         records = [self._record(0) for _ in range(30)]
         with self.assertRaises(ValueError):
             build_report(self._write(records))
+
+    def test_affected_quality_uses_path_identity_for_all_30_samples(self):
+        payload = {
+            "items": [{"path": "subject/subject.go", "display": "subject.Normalize"}],
+            "ok": True, "done": True, "backend": "go", "completeness": "complete", "truncated": False,
+        }
+        records = [self._record(i, payload=payload) for i in range(30)]
+        quality = _quality(
+            records,
+            {"id": "case", "operation": "affected"},
+            {"oracles": {"case": {"expected_direct": ["subject/subject.go"]}}},
+        )
+        self.assertEqual(_items(payload, "affected"), ["subject/subject.go"])
+        self.assertEqual(quality["status"], "PASS")
+        self.assertEqual(quality["matching_samples"], 30)
+        self.assertTrue(quality["all_samples_match"])
+
+    def test_threshold_join_uses_current_over_graphify_and_all_metric_samples(self):
+        def group(status, tokens, warm, rss):
+            return {
+                "status": status, "tokens": {"n": 30, "p95": tokens},
+                "latency": {"n": 30, "p95_ms": warm},
+                "child_metrics": {"tree_peak_rss_bytes": {"n": 30, "p95": rss}},
+            }
+        manifest = {
+            "comparator_pair": {"callers-direct": {"current": "current", "graphify": "graphify", "metrics": ["tokens", "warm_p95", "tree_rss"]}},
+            "thresholds": {"current_vs_graphify": {"tokens": 0.70, "warm_p95": 0.80, "tree_rss": 0.50}, "hotpath": {"current_p95_multiplier": 1.10, "baseline_p95_additive_ms": 25}},
+        }
+        reports = {
+            "current": group("PASS", 7, 8, 4), "graphify": group("PASS", 10, 10, 10),
+            "current-affected-direct": group("PASS", 1, 10, 1), "baseline-affected-direct-hotpath": group("NOT_COMPARABLE", 1, 20, 1),
+        }
+        comparisons = _comparisons(reports, manifest)
+        self.assertEqual(comparisons["callers-direct"]["status"], "PASS")
+        self.assertEqual(comparisons["callers-direct"]["metrics"]["tokens"]["ratio_current_over_graphify"], 0.7)
+        self.assertEqual(comparisons["baseline-hotpath"]["status"], "PASS")
+
+    def test_unavailable_comparison_never_passes_threshold(self):
+        manifest = {
+            "comparator_pair": {"callers-direct": {"current": "current", "graphify": "graphify", "metrics": ["tokens"]}},
+            "thresholds": {"current_vs_graphify": {"tokens": 0.70}, "hotpath": {"current_p95_multiplier": 1.10, "baseline_p95_additive_ms": 25}},
+        }
+        reports = {"current": {"status": "PASS", "tokens": {"n": 30, "p95": 1}}, "graphify": {"status": "NOT_COMPARABLE", "tokens": {"n": 0, "p95": None}}}
+        self.assertEqual(_comparisons(reports, manifest)["callers-direct"]["status"], "NOT_COMPARABLE")
 
 
 if __name__ == "__main__":

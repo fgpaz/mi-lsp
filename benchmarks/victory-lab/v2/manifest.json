@@ -172,6 +172,8 @@
         "graphify",
         "affected",
         "{selector}",
+        "--relation",
+        "calls",
         "--graph",
         "{graph}",
         "--depth",
@@ -385,10 +387,48 @@
   },
   "repository_identity": "https://example.com/mi-lsp/victory-lab-v2",
   "schema": "victory-lab-manifest/v2",
+  "workloads": [
+    {"workload_id": "callers-direct", "case_id": "callers-direct", "operation": "callers", "mode": "direct"},
+    {"workload_id": "callers-transitive", "case_id": "callers-transitive", "operation": "callers", "mode": "transitive"},
+    {"workload_id": "affected-direct", "case_id": "affected-direct", "operation": "affected", "mode": "direct"},
+    {"workload_id": "affected-transitive", "case_id": "affected-transitive", "operation": "affected", "mode": "transitive"},
+    {"workload_id": "path-shortest", "case_id": "path-shortest", "operation": "path"}
+  ],
+  "groups": [
+    {"group_id": "current-callers-direct", "adapter_id": "mi-lsp-current-v2", "workload_id": "callers-direct", "case_id": "callers-direct", "operation": "callers", "repetitions": 30, "authoritative": true},
+    {"group_id": "current-callers-transitive", "adapter_id": "mi-lsp-current-v2", "workload_id": "callers-transitive", "case_id": "callers-transitive", "operation": "callers", "repetitions": 30, "authoritative": true},
+    {"group_id": "graphify-callers-direct", "adapter_id": "graphify-0.9.19-v2", "workload_id": "callers-direct", "case_id": "callers-direct", "operation": "callers", "repetitions": 30, "authoritative": true},
+    {"group_id": "graphify-callers-transitive", "adapter_id": "graphify-0.9.19-v2", "workload_id": "callers-transitive", "case_id": "callers-transitive", "operation": "callers", "repetitions": 30, "authoritative": true},
+    {"group_id": "current-affected-direct", "adapter_id": "mi-lsp-current-v2", "workload_id": "affected-direct", "case_id": "affected-direct", "operation": "affected", "repetitions": 30, "authoritative": true},
+    {"group_id": "current-affected-transitive", "adapter_id": "mi-lsp-current-v2", "workload_id": "affected-transitive", "case_id": "affected-transitive", "operation": "affected", "repetitions": 30, "authoritative": true},
+    {"group_id": "baseline-affected-direct-hotpath", "adapter_id": "mi-lsp-baseline-v2", "workload_id": "affected-direct", "case_id": "affected-direct", "operation": "affected", "repetitions": 30, "authoritative": true},
+    {"group_id": "current-path-shortest", "adapter_id": "mi-lsp-current-v2", "workload_id": "path-shortest", "case_id": "path-shortest", "operation": "path", "repetitions": 30, "authoritative": true}
+  ],
+  "comparator_pair": {
+    "callers-direct": {"current": "current-callers-direct", "graphify": "graphify-callers-direct", "metrics": ["tokens", "warm_p95", "tree_rss"]},
+    "callers-transitive": {"current": "current-callers-transitive", "graphify": "graphify-callers-transitive", "metrics": ["tokens", "warm_p95", "tree_rss"]}
+  },
+  "hotpath_pair": {
+    "current": "current-affected-direct",
+    "baseline": "baseline-affected-direct-hotpath",
+    "metrics": ["warm_p95"]
+  },
+  "per_metric_comparability": {
+    "tokens": ["callers-direct", "callers-transitive"],
+    "warm_p95": ["callers-direct", "callers-transitive"],
+    "tree_rss": ["callers-direct", "callers-transitive"]
+  },
+  "scopes": [
+    {"scope": "incremental", "status": "NOT_COMPARABLE", "reason": "Graphify has no build-equivalent incremental protocol and the current incremental protocol is not verified"},
+    {"scope": "build", "status": "NOT_COMPARABLE", "reason": "Graphify has no build-equivalent workload"},
+    {"scope": "index", "status": "NOT_COMPARABLE", "reason": "Graphify extraction is not an equivalent current index protocol"}
+  ],
   "thresholds": {
     "per_slice": true,
+    "current_vs_graphify": {"tokens": 0.70, "warm_p95": 0.80, "tree_rss": 0.50},
+    "hotpath": {"current_p95_multiplier": 1.10, "baseline_p95_additive_ms": 25},
     "reason_code": "thresholds_require_comparable_30_sample_slices",
-    "status": "NOT_COMPARABLE"
+    "status": "DECLARED"
   },
   "version": 2
 }

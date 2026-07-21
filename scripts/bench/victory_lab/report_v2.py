@@ -74,7 +74,7 @@ def _sample_nonce(run_id: str, preflight_digest: str, group_key: str, repetition
     return hashlib.sha256(("victory-sample/v1\\0" + material).encode("utf-8")).hexdigest()
 
 
-def _freshness_issue(record: Mapping[str, Any], *, expected_preflight: str | None = None, expected_run_id: str | None = None) -> str | None:
+def _freshness_issue(record: Mapping[str, Any], *, expected_preflight: str | None = None, expected_run_id: str | None = None, expected_group_key: str | None = None) -> str | None:
     metrics = record.get("metrics")
     freshness = metrics.get("freshness") if isinstance(metrics, Mapping) else None
     if not isinstance(freshness, Mapping) or set(freshness) != _FRESHNESS_KEYS:
@@ -94,7 +94,7 @@ def _freshness_issue(record: Mapping[str, Any], *, expected_preflight: str | Non
         return "freshness_run_mismatch"
     if expected_preflight is not None and preflight != expected_preflight:
         return "freshness_preflight_mismatch"
-    expected_group = f"{record.get('adapter_id')}:{record.get('case_id')}:{record.get('operation')}"
+    expected_group = expected_group_key or f"{record.get('adapter_id')}:{record.get('case_id')}:{record.get('operation')}"
     expected_group_id = "g" + hashlib.sha256(expected_group.encode("utf-8")).hexdigest()[:63]
     if not isinstance(group_id, str) or not _DURABLE_DIGEST_RE.fullmatch(group_id) or group_id != expected_group_id:
         return "freshness_group_mismatch"
@@ -301,18 +301,24 @@ def _digest_group(manifest: Mapping[str, Any], key: str) -> str:
     return sha256_bytes(json.dumps(manifest.get(key, {}), sort_keys=True, separators=(",", ":")).encode())
 
 
-def _items(payload: Any) -> list[str]:
+def _items(payload: Any, operation: str | None = None) -> list[str]:
+    """Extract comparator identities, using file paths for affected results."""
     if not isinstance(payload, Mapping):
         return []
     values = payload.get("items", payload.get("nodes", payload.get("results", [])))
     if not isinstance(values, list):
         return []
     result: list[str] = []
+    keys = (
+        ("path", "display", "name", "symbol", "qualified_name", "owner_path")
+        if operation == "affected"
+        else ("display", "name", "symbol", "qualified_name", "owner_path", "path")
+    )
     for value in values:
         if isinstance(value, str):
             result.append(value)
         elif isinstance(value, Mapping):
-            for key in ("display", "name", "symbol", "qualified_name", "owner_path"):
+            for key in keys:
                 if isinstance(value.get(key), str) and value[key]:
                     result.append(value[key])
                     break
@@ -333,21 +339,39 @@ def _negative(case: Mapping[str, Any], manifest: Mapping[str, Any]) -> set[str]:
 
 
 def _quality(records: list[dict[str, Any]], case: Mapping[str, Any], manifest: Mapping[str, Any]) -> dict[str, Any]:
+    """Score every authoritative sample against the oracle; first-sample quality is forbidden."""
     expected = _expected(case, manifest)
     expected_set, negative = set(expected), _negative(case, manifest)
-    actuals = [_items(record.get("canonical", {}).get("payload", {})) for record in records if record.get("status") == "PASS"]
-    actual = actuals[0] if actuals else []
-    actual_set = set(actual)
-    tp, fp, fn = len(actual_set & expected_set), len(actual_set - expected_set), len(expected_set - actual_set)
-    negative_violations = len(actual_set & negative)
-    precision = tp / (tp + fp) if tp + fp else 0.0
-    recall = tp / (tp + fn) if tp + fn else 0.0
+    sample_results: list[bool] = []
+    precision_values: list[float] = []
+    recall_values: list[float] = []
+    negative_violations = 0
+    for record in records:
+        if record.get("status") != "PASS":
+            sample_results.append(False)
+            continue
+        actual = _items(record.get("canonical", {}).get("payload", {}), case.get("operation"))
+        actual_set = set(actual)
+        tp, fp, fn = len(actual_set & expected_set), len(actual_set - expected_set), len(expected_set - actual_set)
+        precision_values.append(tp / (tp + fp) if tp + fp else 0.0)
+        recall_values.append(tp / (tp + fn) if tp + fn else 0.0)
+        negative_violations += len(actual_set & negative)
+        sample_results.append(actual == expected)
+    denominator = len(records)
+    matching = sum(sample_results)
+    precision = statistics.fmean(precision_values) if precision_values else 0.0
+    recall = statistics.fmean(recall_values) if recall_values else 0.0
+    all_pass = denominator == 30 and all(record.get("status") == "PASS" for record in records)
     return {
-        "correctness": {"numerator": int(actual == expected), "denominator": 1, "value": 1.0 if actual == expected else 0.0},
-        "precision": {"tp": tp, "fp": fp, "denominator": tp + fp, "value": precision},
-        "recall": {"tp": tp, "fn": fn, "denominator": tp + fn, "value": recall},
-        "f1": {"numerator": 2 * tp, "denominator": 2 * tp + fp + fn, "value": 2 * precision * recall / (precision + recall) if precision + recall else 0.0},
-        "negative_violations": {"count": negative_violations, "denominator": len(negative), "value": negative_violations},
+        "status": "PASS" if all_pass and matching == 30 else "FAIL" if all_pass else "NOT_COMPARABLE",
+        "samples": denominator,
+        "matching_samples": matching,
+        "all_samples_match": denominator == 30 and matching == 30,
+        "correctness": {"numerator": matching, "denominator": denominator, "value": matching / denominator if denominator else 0.0},
+        "precision": {"samples": len(precision_values), "value": precision},
+        "recall": {"samples": len(recall_values), "value": recall},
+        "f1": {"value": 2 * precision * recall / (precision + recall) if precision + recall else 0.0},
+        "negative_violations": {"count": negative_violations, "denominator": len(negative) * denominator, "value": negative_violations},
     }
 
 
@@ -466,6 +490,60 @@ def _load_manifest(manifest: str | Path | Mapping[str, Any] | None) -> tuple[dic
     return value, path
 
 
+def _metric_value(group: Mapping[str, Any], metric: str) -> tuple[float | None, int]:
+    if metric == "tokens":
+        stats = group.get("tokens", {})
+        return stats.get("p95"), int(stats.get("n", 0)) if isinstance(stats, Mapping) else 0
+    if metric == "warm_p95":
+        latency = group.get("latency", {})
+        return latency.get("p95_ms"), int(latency.get("n", 0)) if isinstance(latency, Mapping) else 0
+    if metric == "tree_rss":
+        child = group.get("child_metrics", {})
+        stats = child.get("tree_peak_rss_bytes", {}) if isinstance(child, Mapping) else {}
+        return stats.get("p95"), int(stats.get("n", 0)) if isinstance(stats, Mapping) else 0
+    return None, 0
+
+
+def _comparisons(group_reports: Mapping[str, Mapping[str, Any]], manifest: Mapping[str, Any]) -> dict[str, Any]:
+    thresholds = manifest.get("thresholds", {})
+    ratio_targets = thresholds.get("current_vs_graphify", {}) if isinstance(thresholds, Mapping) else {}
+    pairs = manifest.get("comparator_pair", {})
+    result: dict[str, Any] = {}
+    for pair_id, pair in pairs.items() if isinstance(pairs, Mapping) else ():
+        current = group_reports.get(pair.get("current"))
+        graphify = group_reports.get(pair.get("graphify"))
+        metrics = pair.get("metrics", [])
+        metric_reports: dict[str, Any] = {}
+        for metric in metrics:
+            left, left_n = _metric_value(current or {}, metric)
+            right, right_n = _metric_value(graphify or {}, metric)
+            target = ratio_targets.get(metric)
+            comparable = bool(current and graphify and current.get("status") == "PASS" and graphify.get("status") == "PASS" and left_n == 30 and right_n == 30 and _is_finite_number(left) and _is_finite_number(right) and float(right) > 0 and _is_finite_number(target))
+            ratio = float(left) / float(right) if comparable else None
+            metric_reports[metric] = {
+                "status": "PASS" if comparable and ratio <= float(target) else "FAIL" if comparable else "NOT_COMPARABLE",
+                "current": left, "graphify": right, "current_samples": left_n, "graphify_samples": right_n,
+                "ratio_current_over_graphify": ratio, "target_max_ratio": target,
+            }
+        result[pair_id] = {"current_group": pair.get("current"), "graphify_group": pair.get("graphify"), "metrics": metric_reports, "status": "PASS" if metric_reports and all(item["status"] == "PASS" for item in metric_reports.values()) else "FAIL" if any(item["status"] == "FAIL" for item in metric_reports.values()) else "NOT_COMPARABLE"}
+
+    hotpath = thresholds.get("hotpath", {}) if isinstance(thresholds, Mapping) else {}
+    current = group_reports.get("current-affected-direct")
+    baseline = group_reports.get("baseline-affected-direct-hotpath")
+    current_value, current_n = _metric_value(current or {}, "warm_p95")
+    baseline_value, baseline_n = _metric_value(baseline or {}, "warm_p95")
+    multiplier, additive = hotpath.get("current_p95_multiplier"), hotpath.get("baseline_p95_additive_ms")
+    comparable = bool(current and baseline and current.get("status") == "PASS" and baseline.get("status") in {"PASS", "NOT_COMPARABLE"} and current_n == 30 and baseline_n == 30 and _is_finite_number(current_value) and _is_finite_number(baseline_value) and _is_finite_number(multiplier) and _is_finite_number(additive))
+    # Baseline is deliberately a hot-path measurement, not an oracle comparator.
+    result["baseline-hotpath"] = {
+        "current_group": "current-affected-direct", "baseline_group": "baseline-affected-direct-hotpath",
+        "status": "PASS" if comparable and float(current_value) <= float(baseline_value) * float(multiplier) + float(additive) else "FAIL" if comparable else "NOT_COMPARABLE",
+        "current_p95_ms": current_value, "baseline_p95_ms": baseline_value, "current_samples": current_n, "baseline_samples": baseline_n,
+        "limit_ms": float(baseline_value) * float(multiplier) + float(additive) if comparable else None,
+    }
+    return result
+
+
 def build_report(samples: str | Path, *, manifest: str | Path | Mapping[str, Any] | None = None, expected_repetitions: int = AUTHORITATIVE_REPETITIONS) -> dict[str, Any]:
     if expected_repetitions != AUTHORITATIVE_REPETITIONS:
         raise ValueError("Victory Lab reports require exactly 30 repetitions")
@@ -492,12 +570,17 @@ def build_report(samples: str | Path, *, manifest: str | Path | Mapping[str, Any
         expected_preflight = manifest_preflight
     expected_keys = None
     case_map: dict[tuple[str, str], Mapping[str, Any]] = {}
+    declared_group_keys: dict[tuple[str, str, str], str] = {}
     if loaded_manifest is not None:
         fixture_digest, oracle_digest = _digest_group(loaded_manifest, "fixture_hashes"), _digest_group(loaded_manifest, "oracle_hashes")
         for record in records:
             if record.get("fixture_digest") != fixture_digest or record.get("oracle_digest") != oracle_digest:
                 raise ValueError("sample fixture/oracle digest does not match manifest")
-        expected_keys = {(adapter["adapter_id"], case["id"], case["operation"]) for adapter in loaded_manifest["adapters"] for case in loaded_manifest["cases"]}
+        declared = loaded_manifest.get("groups")
+        if not isinstance(declared, list) or len(declared) != 8:
+            raise ValueError("manifest-backed evidence requires exactly 8 explicit groups")
+        expected_keys = {(item["adapter_id"], item["case_id"], item["operation"]) for item in declared}
+        declared_group_keys = {(item["adapter_id"], item["case_id"], item["operation"]): item["group_id"] for item in declared}
         case_map = {(case["id"], case["operation"]): case for case in loaded_manifest["cases"]}
     groups = _group(records, "adapter_id", "case_id", "operation")
     if expected_keys is not None and set(groups) != expected_keys:
@@ -507,6 +590,7 @@ def build_report(samples: str | Path, *, manifest: str | Path | Mapping[str, Any
     freshness_run_ids: set[str] = set()
     freshness_preflights: set[str] = set()
     for (adapter_id, case_id, operation), group in sorted(groups.items()):
+        group_id = declared_group_keys.get((adapter_id, case_id, operation), f"{adapter_id}:{case_id}:{operation}")
         if len(group) != 30:
             raise ValueError(f"{adapter_id}/{case_id}/{operation}: expected exactly 30 samples, got {len(group)}")
         sample_keys = [(adapter_id, case_id, operation, record.get("repetition")) for record in group]
@@ -517,7 +601,7 @@ def build_report(samples: str | Path, *, manifest: str | Path | Mapping[str, Any
             raise ValueError(f"{adapter_id}/{case_id}/{operation}: repetitions must be exactly 0..29")
         freshness_issues = [
             issue for issue in (
-                _freshness_issue(record, expected_preflight=expected_preflight, expected_run_id=expected_run_id)
+                _freshness_issue(record, expected_preflight=expected_preflight, expected_run_id=expected_run_id, expected_group_key=group_id)
                 for record in group
             ) if issue
         ]
@@ -563,8 +647,8 @@ def build_report(samples: str | Path, *, manifest: str | Path | Mapping[str, Any
             status = "BLOCKED"
         elif metric_issues and status == "PASS":
             status = "NOT_COMPARABLE"
-        if loaded_manifest is not None and status == "PASS" and (not incremental or not stale):
-            status = "NOT_COMPARABLE"
+        if loaded_manifest is not None and status == "PASS" and quality.get("all_samples_match") is not True:
+            status = "FAIL"
         if status == "PASS" and determinism["status"] != "PASS":
             status = "FAIL"
         latency = latency_stats(group)
@@ -575,8 +659,8 @@ def build_report(samples: str | Path, *, manifest: str | Path | Mapping[str, Any
             runtime = security.get("runtime") if isinstance(security, Mapping) else None
             if isinstance(runtime, Mapping):
                 provenances.add(runtime.get("provenance"))
-        group_reports[f"{adapter_id}:{case_id}:{operation}"] = {
-            "adapter_id": adapter_id, "case_id": case_id, "operation": operation, "status": status,
+        group_reports[group_id] = {
+            "group_id": group_id, "adapter_id": adapter_id, "case_id": case_id, "operation": operation, "status": status,
             "status_counts": {item: sum(record["status"] == item for record in group) for item in ("PASS", "FAIL", "BLOCKED", "NOT_COMPARABLE", "NOT_RUN")},
             "latency": latency, "warm_p95_ms": latency["p95_ms"], "tokens": _stats(tokens), "child_metrics": child_metric_stats(group),
             "runtime_proof": {"status": "PASS" if provenances == {"child_metrics_executor"} else "NOT_COMPARABLE", "provenance": sorted(str(item) for item in provenances), "samples": len(group)},
@@ -585,9 +669,11 @@ def build_report(samples: str | Path, *, manifest: str | Path | Mapping[str, Any
         }
     if len(freshness_run_ids) != 1 or len(freshness_preflights) != 1:
         raise ValueError("sample freshness identity changed across run")
+    comparisons = _comparisons(group_reports, loaded_manifest) if loaded_manifest is not None else {}
     counts = {item: sum(record["status"] == item for record in records) for item in ("PASS", "FAIL", "BLOCKED", "NOT_COMPARABLE", "NOT_RUN")}
     statuses = [item["status"] for item in group_reports.values()]
-    status = "BLOCKED" if "BLOCKED" in statuses else "FAIL" if "FAIL" in statuses else "NOT_COMPARABLE" if "NOT_COMPARABLE" in statuses or (loaded_manifest is not None and (loaded_manifest.get("thresholds", {}).get("status") != "PASS")) else "PASS" if statuses and all(item == "PASS" for item in statuses) else "NOT_RUN"
+    comparison_statuses = [item.get("status") for item in comparisons.values()]
+    status = "BLOCKED" if "BLOCKED" in statuses else "FAIL" if "FAIL" in statuses or "FAIL" in comparison_statuses else "NOT_COMPARABLE" if "NOT_COMPARABLE" in statuses or (loaded_manifest is not None and loaded_manifest.get("scopes")) else "PASS" if statuses and all(item == "PASS" for item in statuses) else "NOT_RUN"
     if loaded_manifest is None and status == "PASS":
         status = "NOT_COMPARABLE"
     return {
@@ -599,6 +685,8 @@ def build_report(samples: str | Path, *, manifest: str | Path | Mapping[str, Any
         "manifest_bundle": manifest_bundle,
         "expected_repetitions": 30, "expected_universe": len(expected_keys) if expected_keys is not None else None,
         "groups": group_reports,
+        "comparisons": comparisons,
+        "scopes": (loaded_manifest or {}).get("scopes", [{"scope": "measurement", "status": "NOT_COMPARABLE", "reason": "manifest not supplied"}]),
         "thresholds": (loaded_manifest or {}).get("thresholds", {"status": "NOT_COMPARABLE", "reason_code": "thresholds_not_declared"}),
         "anti_gaming": {"all_samples_used": True, "best_of": False, "exactly_30": all(len(group) == 30 for group in groups.values()), "manifest_consumed": loaded_manifest is not None},
     }

@@ -31,14 +31,27 @@ class ChildMetricsV2Tests(unittest.TestCase):
             self.assertGreater(result.metrics.peak_rss_bytes, 0)
             self.assertIsInstance(result.metrics.tree_peak_rss_bytes, int)
             self.assertGreater(result.metrics.tree_peak_rss_bytes, 0)
-            self.assertGreater(len(result.metrics.observed_pids), 1)
+            observed_pids = result.metrics.observed_pids
+            self.assertTrue(observed_pids)
+            self.assertEqual(len(observed_pids), len(set(observed_pids)))
+            self.assertTrue(all(isinstance(pid, int) and pid > 0 for pid in observed_pids))
+            if len(observed_pids) == 1:
+                self.assertEqual(result.metrics.tree_peak_rss_bytes, result.metrics.peak_rss_bytes)
+            else:
+                # A multi-process sample is valid only with complete PID
+                # coverage; its tree peak includes, but need not equal, root.
+                self.assertGreaterEqual(result.metrics.tree_peak_rss_bytes, result.metrics.peak_rss_bytes)
         else:
             self.assertEqual(result.metrics.status, "NOT_COMPARABLE")
             self.assertFalse(result.metrics.tree_supported)
             self.assertIsNone(result.metrics.tree_peak_rss_bytes)
             if os.name == "nt":
-                self.assertEqual(result.metrics.reason, "tree_not_observed")
-                self.assertIn("tree_not_observed", result.metrics.reason_codes)
+                # Short-lived children can fail closed because the native
+                # counter or required metadata was unavailable.  They must
+                # never be upgraded to PASS from partial evidence.
+                self.assertIn(result.metrics.reason, {"working_set_unavailable", "metadata_missing"})
+                self.assertIn(result.metrics.reason, result.metrics.reason_codes)
+                self.assertNotEqual(result.metrics.status, "PASS")
             else:
                 self.assertEqual(result.metrics.reason, "unsupported_platform")
                 self.assertIsNone(result.metrics.peak_rss_bytes)
@@ -68,7 +81,21 @@ class ChildMetricsV2Tests(unittest.TestCase):
     def test_crash_preserves_crash_class(self):
         with tempfile.TemporaryDirectory() as temp:
             result = run_child(
-                [sys.executable, "-c", "import os; os.abort()"],
+                [
+                    sys.executable,
+                    "-c",
+                    (
+                        "import ctypes, os\n"
+                        "if os.name == 'nt':\n"
+                        "    kernel32 = ctypes.WinDLL('kernel32', use_last_error=True)\n"
+                        "    kernel32.GetCurrentProcess.restype = ctypes.c_void_p\n"
+                        "    kernel32.TerminateProcess.argtypes = [ctypes.c_void_p, ctypes.c_uint]\n"
+                        "    kernel32.TerminateProcess.restype = ctypes.c_int\n"
+                        "    kernel32.TerminateProcess(kernel32.GetCurrentProcess(), 0xC0000005)\n"
+                        "else:\n"
+                        "    os.abort()\n"
+                    ),
+                ],
                 cwd=Path(temp), env=self._env(), timeout_seconds=2,
             )
         self.assertFalse(result.timed_out)

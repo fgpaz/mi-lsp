@@ -52,6 +52,27 @@ class RuntimeProofFocusedTests(unittest.TestCase):
         self.assertEqual(result["reason_code"], "root_metadata_missing")
         self.assertEqual(result["sample_count"], 0)
 
+    def test_start_retries_transient_root_metadata_before_background_observer(self):
+        calls = []
+
+        def observe(pids):
+            calls.append(tuple(sorted(pids)))
+            return {} if len(calls) == 1 else {101: {"image": "child.exe"}}
+
+        probe = self._probe(lambda: {101}, observe)
+        with patch(
+            f"{security_gate_module.__name__}.subprocess.run",
+            return_value=subprocess.CompletedProcess(["netstat", "-ano"], 0, "", ""),
+        ):
+            probe.start()
+            result = probe.finish()
+
+        self.assertGreaterEqual(len(calls), 2)
+        self.assertEqual(result["status"], "PASS")
+        self.assertTrue(result["runtime_proof"])
+        self.assertEqual(result["metadata_observed_pids"], [101])
+        self.assertGreater(result["sample_count"], 0)
+
     def test_all_observed_pids_with_metadata_can_produce_runtime_pass(self):
         probe = self._probe(
             lambda: {101, 202},

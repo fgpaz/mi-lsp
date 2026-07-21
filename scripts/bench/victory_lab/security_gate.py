@@ -330,10 +330,14 @@ class RuntimeProofProbe:
     def start(self) -> None:
         if not self.available:
             return
-        # Establish one observation in the caller before returning.  This
-        # closes the launch/exit window where a short-lived child could finish
-        # before the background observer ever sampled it.
-        self._sample()
+        # Establish bounded initial observations in the caller before returning.
+        # A short-lived child may otherwise exit after one transient metadata
+        # miss and before the background observer can prove the root. Retries
+        # never re-run the child and never add metadata for unseen descendants.
+        for _ in range(3):
+            self._sample()
+            if self.samples > 0:
+                break
         self._thread = threading.Thread(target=self._run, name="victory-runtime-proof", daemon=True)
         self._thread.start()
 

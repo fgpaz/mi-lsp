@@ -409,22 +409,24 @@ class VictoryAdversarialV2Tests(unittest.TestCase):
             self.skipTest("native runtime proof is Windows-only")
         env = {key: os.environ.get(key, "") for key in ("PATH", "TEMP", "TMP")}
         with tempfile.TemporaryDirectory() as temp:
-            result = None
-            for _ in range(4):
-                candidate = run_child(
-                    [
-                        sys.executable, "-c",
-                        "import subprocess,sys,time; p=subprocess.Popen([sys.executable,'-c','import time; time.sleep(.40)']); time.sleep(.50); p.wait()",
-                    ],
-                    cwd=Path(temp), env=env, timeout_seconds=2,
-                )
-                if candidate.metrics.status == "PASS" and isinstance(candidate.runtime_proof, dict) and candidate.runtime_proof.get("runtime_proof") is True:
-                    result = candidate
-                    break
-            self.assertIsNotNone(result)
-            assert result is not None
+            result = run_child(
+                [sys.executable, "-c", "import time; time.sleep(1.2)"],
+                cwd=Path(temp), env=env, timeout_seconds=3,
+            )
+            self.assertEqual(result.metrics.status, "PASS")
             self.assertTrue(result.metrics.tree_supported)
+            observed_pids = result.metrics.observed_pids
+            self.assertTrue(observed_pids)
+            self.assertEqual(len(observed_pids), len(set(observed_pids)))
+            self.assertTrue(all(isinstance(pid, int) and pid > 0 for pid in observed_pids))
+            if len(observed_pids) == 1:
+                self.assertEqual(len(observed_pids), 1)
+                self.assertEqual(result.metrics.tree_peak_rss_bytes, result.metrics.peak_rss_bytes)
+            else:
+                self.assertGreater(len(observed_pids), 1)
+                self.assertGreaterEqual(result.metrics.tree_peak_rss_bytes, result.metrics.peak_rss_bytes)
             self.assertIsInstance(result.runtime_proof, dict)
+            self.assertEqual(result.runtime_proof["status"], "PASS")
             self.assertEqual(result.runtime_proof["provenance"], "child_metrics_executor")
             self.assertTrue(result.runtime_proof["runtime_proof"])
             gate = SecurityGate({"fixture": Path(temp)})

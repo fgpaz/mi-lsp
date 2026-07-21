@@ -29,7 +29,7 @@ _SENSITIVE_VALUE_RE = re.compile(
 )
 _VALID_BACKENDS = frozenset({
     "go", "csharp", "roslyn", "typescript", "ts", "tsserver", "graph", "graph-native",
-    "graphify", "mi-lsp", "router", "current", "baseline", "native", "sqlite-direct", "index-job", "version",
+    "graphify", "catalog", "mi-lsp", "router", "current", "baseline", "native", "sqlite-direct", "index-job", "version",
     "git+catalog+heuristic",
 })
 _VALID_COMPLETENESS = frozenset({"complete", "exact", "full"})
@@ -65,6 +65,35 @@ def _is_fixture_identity(value: str, fixture_root: Path | None) -> bool:
     return _windows_path_key(value) in fixture_paths
 
 
+def _is_fixture_relative_path(value: str, fixture_root: Path | None) -> bool:
+    """Allow only existing benchmark files to retain relative path identity."""
+    if fixture_root is None or not value or value.startswith(("/", "\\")):
+        return False
+    parts = tuple(part for part in value.replace("\\", "/").split("/") if part not in ("", "."))
+    if not parts or ".." in parts:
+        return False
+    root = fixture_root.resolve()
+    base = root / "corpus" / "go"
+    relative = Path(*parts)
+    candidates = [base / relative]
+    # Native tools may report either a fixture-root-relative path or a path
+    # relative to the configured Go corpus.  Both forms must use the same
+    # existing-file allowlist, while PII/PHI is checked before this function.
+    if parts[:2] == ("corpus", "go"):
+        candidates.insert(0, root / relative)
+    elif parts[0] == "go":
+        candidates.insert(0, root / "corpus" / relative)
+    for raw_candidate in candidates:
+        candidate = raw_candidate.resolve()
+        try:
+            candidate.relative_to(root)
+        except ValueError:
+            continue
+        if candidate.is_file():
+            return True
+    return False
+
+
 def canonicalize(value: Any, fixture_root: Path | None = None, *, key: str = "") -> Any:
     if _SECRET_KEY_RE.search(key):
         return "<REDACTED>"
@@ -87,9 +116,15 @@ def canonicalize(value: Any, fixture_root: Path | None = None, *, key: str = "")
         # even when it happens to be below the fixture root.
         if key == "workspace" and normalized != original:
             return "<REDACTED>"
-        # Fixture-root-relative paths are intentionally comparable; every
-        # arbitrary absolute/relative path and PII/PHI value is not.
+        # Relativization is only a normalization step.  It must not bypass the
+        # PII/PHI gate: a sensitive value can become fixture-relative first.
+        if EMAIL_RE.search(normalized) or PHI_RE.search(normalized) or SSN_RE.search(normalized):
+            return "<REDACTED>"
+        # After PII/PHI checks, a path made relative to the fixture is
+        # comparable even when the fixture is synthetic or not materialized.
         if fixture_root is not None and normalized != original:
+            return normalized
+        if key == "path" and _is_fixture_relative_path(normalized, fixture_root):
             return normalized
         if _SENSITIVE_VALUE_RE.search(normalized):
             return "<REDACTED>"

@@ -63,15 +63,22 @@ class ChildMetrics:
             pid for pid in self.observed_pids
             if isinstance(pid, int) and not isinstance(pid, bool) and pid > 0
         }
+        singleton_tree = (
+            len(observed_pids) == 1
+            and self.peak_rss_bytes is not None
+            and self.tree_peak_rss_bytes == self.peak_rss_bytes
+        )
         tree_valid = (
             self.tree_supported
             and self.tree_peak_rss_bytes is not None
-            and len(observed_pids) > 1
+            and observed_pids
             and len(observed_pids) == len(self.observed_pids)
+            and (len(observed_pids) > 1 or singleton_tree)
         )
         if not tree_valid:
-            # A root-only or partial sample is not a process-tree measurement.
-            # Never expose the root value as a fabricated tree total.
+            # A partial sample is not a process-tree measurement.  A singleton
+            # root is valid only when its tree total is exactly its native peak;
+            # never expose a fabricated descendant or root/tree mismatch.
             object.__setattr__(self, "status", STATUS_NOT_COMPARABLE)
             object.__setattr__(self, "tree_supported", False)
             object.__setattr__(self, "tree_peak_rss_bytes", None)
@@ -346,6 +353,7 @@ class _Sampler:
         self._tree_partial = False
         self._reason_codes: set[str] = set()
         self.observed_pids: set[int] = {pid}
+        self._descendants_observed: set[int] = set()
 
     def start(self) -> None:
         self.thread.start()
@@ -362,6 +370,7 @@ class _Sampler:
         }
         pids = {self.pid} | descendants
         self.observed_pids.update(pids)
+        self._descendants_observed.update(descendants)
 
         values_by_pid = {self.pid: root}
         for descendant in descendants:
@@ -379,7 +388,7 @@ class _Sampler:
         if len(pids) > 1:
             if len(valid_values) != len(pids) or self._tree_partial:
                 # Once any observed descendant lacks a native working-set
-                # value, the tree evidence is permanently partial.  Do not
+                # value, the tree evidence is permanently partial. Do not
                 # recover to PASS from a later complete sample.
                 self._tree_partial = True
                 self.tree_supported = False
@@ -389,6 +398,17 @@ class _Sampler:
                 total = sum(valid_values.values())
                 self.tree_peak = max(self.tree_peak or 0, total)
                 self.tree_supported = self.tree_peak is not None
+        elif self._descendants_observed:
+            # A descendant observed in an earlier sample remains covered by the
+            # already accumulated peak; do not turn its later exit into a fake
+            # singleton tree or invent a missing counter.
+            pass
+        elif self.pid in valid_values:
+            # A native root sample is complete coverage for a tree containing
+            # only that process. This is a singleton tree, not a fabricated
+            # child measurement.
+            self.tree_peak = max(self.tree_peak or 0, valid_values[self.pid])
+            self.tree_supported = self.tree_peak is not None
 
     def _run(self) -> None:
         while not self.stop.is_set():
@@ -415,7 +435,7 @@ class _Sampler:
             reason_codes.add("working_set_unavailable")
             status = STATUS_NOT_COMPARABLE
             reason = "working_set_unavailable"
-        elif not self.tree_supported or self.tree_peak is None or len(self.observed_pids) <= 1:
+        elif not self.tree_supported or self.tree_peak is None:
             reason_codes.add("tree_not_observed")
             status = STATUS_NOT_COMPARABLE
             reason = "tree_not_observed"

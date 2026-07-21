@@ -77,10 +77,11 @@ def _copy_fixture(source: Path, destination: Path) -> None:
 
 
 def _project_toml(repository_identity: str) -> str:
+    """Point the materialized topology at the real ``corpus/go`` tree."""
     return "\n".join([
         '[project]', 'name = "victory-lab-v2"', 'languages = ["go"]', 'kind = "single"',
         'default_repo = "go"', 'default_entrypoint = "go.mod"',
-        '', '[[repo]]', 'id = "go"', 'name = "go"', 'root = "go"',
+        '', '[[repo]]', 'id = "go"', 'name = "go"', 'root = "corpus/go"',
         'languages = ["go"]', 'default_entrypoint = "go.mod"',
         f'repository_identity = "{repository_identity}"', '',
     ])
@@ -91,7 +92,10 @@ def materialize_fixture(fixture_source: Path, repository_identity: str) -> Itera
     """Copy the corpus to TEMP and create local project state there only."""
     with tempfile.TemporaryDirectory(prefix="victory-lab-v2-") as raw:
         root = Path(raw)
-        _copy_fixture(fixture_source, root)
+        # Preserve the manifest-relative corpus/go identity.  Flattening corpus
+        # to the temp root made the topology claim a different repository.
+        (root / "corpus").mkdir(parents=True, exist_ok=True)
+        _copy_fixture(fixture_source, root / "corpus")
         state = root / ".mi-lsp"
         state.mkdir(parents=True, exist_ok=True)
         (state / "project.toml").write_text(_project_toml(repository_identity), encoding="utf-8", newline="\n")
@@ -221,6 +225,19 @@ def _normalize_payload(payload: Any, case: Mapping[str, Any]) -> Any:
     return _normalize_set_payload(payload, case["operation"])
 
 
+def _graphify_graph_path(root: Path) -> Path:
+    """Return the one graph path produced by Graphify's ``--out`` contract."""
+    return root / "graphify-out" / "graph.json"
+
+
+def _graphify_help_supports_affected_relation(help_text: str) -> bool:
+    """Require the top-level Graphify help to advertise the closed route."""
+    return bool(
+        re.search(r"(?m)^\s+affected(?:\s|\")", help_text)
+        and re.search(r"(?m)^\s+--relation\s+", help_text)
+    )
+
+
 def _graphify_affected_payload(stdout: str) -> dict[str, Any]:
     """Convert Graphify's human-readable affected output into adapter JSON."""
     if not stdout.strip():
@@ -269,6 +286,17 @@ def _adapt_mi_lsp_terminal(native: Any, result: CommandResult) -> Any:
     return native
 
 
+def _probe_materialized_fixture(root: Path) -> None:
+    """Fail closed when the real corpus/go topology is absent."""
+    project = root / ".mi-lsp" / "project.toml"
+    module = root / "corpus" / "go" / "go.mod"
+    if not project.is_file() or not module.is_file():
+        raise AdapterError("fixture root probe failed: corpus/go is not materialized")
+    text = project.read_text(encoding="utf-8")
+    if 'root = "corpus/go"' not in text or 'default_repo = "go"' not in text:
+        raise AdapterError("fixture root probe failed: project.toml root is not corpus/go")
+
+
 class VictoryAdapter:
     """One adapter instance, with provenance checked before every authoritative run."""
 
@@ -287,6 +315,7 @@ class VictoryAdapter:
         self._executable_sha = ""
         self._source_sha = ""
         self._security_gate: SecurityGate | None = None
+        self._graphify_relation_probed = False
 
     def _resolve_executable(self) -> Path:
         if self.spec.kind == "graphify":
@@ -335,7 +364,7 @@ class VictoryAdapter:
             to_value = to_value.rsplit(".", 1)[-1]
         values = {
             "executable": str(self._executable), "python": str(self._executable), "source": str(self._source or ""),
-            "root": str(root), "graph": str(root / "graphify-out" / "graph.json"), "depth": str(depth),
+            "root": str(root), "graph": str(_graphify_graph_path(root)), "depth": str(depth),
             "operation": str(case["operation"]), "selector": selector,
             "from": from_value, "to": to_value, "mode": mode,
             "changed_paths": ",".join(case.get("changed_paths", [])),
@@ -452,16 +481,52 @@ class VictoryAdapter:
 
     def _graphify_input(self, root: Path, case: Mapping[str, Any]) -> Path:
         corpus = Path(str(case["corpus"][0]))
-        if corpus.parts and corpus.parts[0] == "corpus":
-            corpus = Path(*corpus.parts[1:])
+        if corpus.is_absolute() or ".." in corpus.parts:
+            raise AdapterError("unsafe corpus path")
         return root / corpus
 
     def _prepare_graphify(self, root: Path, case: Mapping[str, Any], env: Mapping[str, str]) -> CommandResult:
+        if not self._graphify_relation_probed:
+            probe = self.executor.run(
+                [str(self._executable), "-m", "graphify", "--help"],
+                cwd=root, env=env, timeout_seconds=self.spec.timeout_seconds,
+            )
+            help_text = f"{probe.stdout}\n{probe.stderr}"
+            if (
+                probe.timed_out
+                or probe.crashed
+                or probe.returncode != 0
+                or not _graphify_help_supports_affected_relation(help_text)
+            ):
+                raise AdapterError("Graphify 0.9.19 help lacks affected --relation support")
+            self._graphify_relation_probed = True
+        graph_path = _graphify_graph_path(root)
         command = (
             str(self._executable), "-m", "graphify", "extract", str(self._graphify_input(root, case)),
             "--code-only", "--no-cluster", "--out", str(root),
         )
-        return self.executor.run(list(command), cwd=root, env=env, timeout_seconds=self.spec.timeout_seconds)
+        result = self.executor.run(list(command), cwd=root, env=env, timeout_seconds=self.spec.timeout_seconds)
+        if result.returncode == 0 and not result.timed_out and not result.crashed and not graph_path.is_file():
+            raise AdapterError("Graphify output graph is not pinned at graphify-out/graph.json")
+        return result
+
+    def _probe_current_index(self, root: Path, env: Mapping[str, str]) -> None:
+        """Prove the current adapter indexed the configured corpus/go repo."""
+        command = [
+            str(self._executable), "nav", "find", "Normalize", "--repo", "go",
+            "--workspace", str(root), "--format", "json", "--no-auto-daemon",
+            "--client-name", "victory-lab-v2", "--session-id", f"victory-lab-v2-{self.spec.adapter_id}",
+        ]
+        result = self.executor.run(command, cwd=root, env=env, timeout_seconds=self.spec.timeout_seconds)
+        if result.timed_out or result.crashed or result.returncode != 0:
+            raise AdapterError("fixture root probe failed: current index query did not complete")
+        try:
+            native = _adapt_mi_lsp_terminal(parse_json_output(result.stdout), result)
+            validate_terminal_state(native)
+        except ValueError as exc:
+            raise AdapterError("fixture root probe failed: current index returned no terminal envelope") from exc
+        if not _items(native):
+            raise AdapterError("fixture root probe failed: current did not index corpus/go")
 
     def _prepare_runtime(self, root: Path, case: Mapping[str, Any], env: Mapping[str, str]) -> CommandResult | None:
         if self.spec.kind == "graphify":
@@ -560,6 +625,7 @@ class VictoryAdapter:
             elif self.spec.kind == "graphify":
                 source_inputs[self.spec.kind] = (self._source, ("pyproject.toml", self.spec.source_package_path or self.spec.module_name))
         with materialize_fixture(fixture_source, self.manifest["repository_identity"]) as root:
+            _probe_materialized_fixture(root)
             env = self._env(root)
             gate = SecurityGate(protected_paths, source_inputs=source_inputs)
             try:
@@ -590,6 +656,8 @@ class VictoryAdapter:
                             argv=preparation.argv, result=preparation,
                             error=_safe_error("prepare", "adapter preparation exited unsuccessfully"),
                         )
+                    if self.spec.kind == "current" and self.manifest.get("groups"):
+                        self._probe_current_index(root, env)
                 argv = self._format_command(self.spec.command, root=root, case=case)
                 result = self.executor.run(argv, cwd=root, env=env, timeout_seconds=self.spec.timeout_seconds)
                 if result.timed_out:

@@ -5,7 +5,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from adapters.v2 import CommandResult, VictoryAdapter, _adapt_mi_lsp_terminal, _graphify_affected_payload, _normalize_set_payload, materialize_fixture
+from adapters.v2 import AdapterError, CommandResult, VictoryAdapter, _adapt_mi_lsp_terminal, _graphify_affected_payload, _graphify_graph_path, _normalize_set_payload, materialize_fixture
 from manifest_v2 import load_manifest
 from schema_v2 import AdapterSpec
 
@@ -26,12 +26,34 @@ class FakeExecutor:
             return CommandResult(list(argv), str(cwd), sorted(env), 0, json.dumps(out), runtime_proof=self.runtime_proof)
         if "index" in argv:
             return CommandResult(list(argv), str(cwd), sorted(env), 0, json.dumps({"ok": True, "backend": "go", "completeness": "complete", "truncated": False, "items": []}), runtime_proof=self.runtime_proof)
+        if "find" in argv:
+            return CommandResult(list(argv), str(cwd), sorted(env), 0, json.dumps({"ok": True, "backend": "go", "completeness": "complete", "truncated": False, "items": [{"display": "subject.Normalize"}]}), runtime_proof=self.runtime_proof)
         if self.timeout:
             return CommandResult(list(argv), str(cwd), sorted(env), 124, timed_out=True)
         if self.crash:
             return CommandResult(list(argv), str(cwd), sorted(env), -1, crashed=True)
         out = {"ok": True, "backend": "go", "completeness": "complete", "truncated": False, "items": self.items}
         return CommandResult(list(argv), str(cwd), sorted(env), 0, json.dumps(out), elapsed_ms=4.0, runtime_proof=self.runtime_proof)
+
+
+class GraphifyPrepareExecutor:
+    def __init__(self, *, write_graph=True, help_text=None):
+        self.calls = []
+        self.write_graph = write_graph
+        self.help_text = help_text or (
+            '  affected "X"             reverse traversal\n'
+            '    --relation R            edge relation to traverse in reverse (repeatable)\n'
+        )
+
+    def run(self, argv, *, cwd, env, timeout_seconds):
+        self.calls.append((list(argv), Path(cwd), dict(env), timeout_seconds))
+        if "--help" in argv:
+            return CommandResult(list(argv), str(cwd), sorted(env), 0, self.help_text)
+        if self.write_graph:
+            graph_path = _graphify_graph_path(Path(cwd))
+            graph_path.parent.mkdir(parents=True, exist_ok=True)
+            graph_path.write_text("{}", encoding="utf-8")
+        return CommandResult(list(argv), str(cwd), sorted(env), 0, "", elapsed_ms=4.0)
 
 
 class AdapterV2Tests(unittest.TestCase):
@@ -58,6 +80,19 @@ class AdapterV2Tests(unittest.TestCase):
         spec = AdapterSpec.from_dict(raw)
         return VictoryAdapter(spec, test_manifest, self.root / "benchmarks/victory-lab/v2", executor=executor)
 
+    def _graphify_adapter(self, executor):
+        with tempfile.NamedTemporaryFile(delete=False) as handle:
+            handle.write(b"fake python")
+            executable = Path(handle.name)
+        raw = next(item for item in self.manifest["adapters"] if item["kind"] == "graphify").copy()
+        raw["executable"] = str(executable)
+        raw["expected_executable_sha256"] = hashlib.sha256(executable.read_bytes()).hexdigest()
+        raw.pop("attestation_path", None)
+        raw.pop("expected_attestation_sha256", None)
+        test_manifest = copy.deepcopy(self.manifest)
+        test_manifest.pop("provenance_contract", None)
+        return VictoryAdapter(AdapterSpec.from_dict(raw), test_manifest, self.root / "benchmarks/victory-lab/v2", executor=executor)
+
     def _baseline_adapter(self, executor):
         with tempfile.NamedTemporaryFile(delete=False) as handle:
             handle.write(b"fake executable")
@@ -76,14 +111,17 @@ class AdapterV2Tests(unittest.TestCase):
         source = self.root / "benchmarks/victory-lab/v2/corpus"
         with materialize_fixture(source, self.manifest["repository_identity"]) as fixture:
             self.assertTrue((fixture / ".mi-lsp/project.toml").is_file())
-            self.assertTrue((fixture / "go/subject/subject.go").is_file())
+            self.assertTrue((fixture / "corpus/go/subject/subject.go").is_file())
+            project = (fixture / ".mi-lsp/project.toml").read_text(encoding="utf-8")
+            self.assertIn('root = "corpus/go"', project)
         self.assertFalse((source / ".mi-lsp").exists())
 
     def test_fake_subprocess_produces_pass_without_real_process(self):
         fake = FakeExecutor()
         record = self._adapter(fake).run_case(self.manifest["cases"][0])
         self.assertEqual(record.status, "NOT_COMPARABLE")
-        self.assertEqual(len(fake.calls), 3)
+        self.assertEqual(len(fake.calls), 4)
+        self.assertEqual(fake.calls[2][0][1:3], ["nav", "find"])
         self.assertEqual(fake.calls[1][0][1], "index")
         self.assertIn("--format", fake.calls[-1][0])
         self.assertNotIn("stdout", record.to_dict())
@@ -202,6 +240,39 @@ class AdapterV2Tests(unittest.TestCase):
         for case in self.manifest["cases"]:
             if case["operation"] != "affected":
                 self.assertEqual(baseline.run_case(case).status, "NOT_COMPARABLE")
+
+    def test_graphify_prepare_probes_top_level_help_and_pins_single_graph_path(self):
+        executor = GraphifyPrepareExecutor()
+        adapter = self._graphify_adapter(executor)
+        case = next(case for case in self.manifest["cases"] if case["operation"] == "callers")
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            result = adapter._prepare_graphify(root, case, {})
+            self.assertEqual(result.returncode, 0)
+            self.assertEqual(executor.calls[0][0][1:], ["-m", "graphify", "--help"])
+            extract_argv = executor.calls[1][0]
+            self.assertIn("extract", extract_argv)
+            out_index = extract_argv.index("--out")
+            self.assertEqual(Path(extract_argv[out_index + 1]), root)
+            self.assertTrue(_graphify_graph_path(root).is_file())
+            self.assertFalse((root / "graphify-out" / "graphify-out" / "graph.json").exists())
+
+    def test_graphify_prepare_rejects_subcommand_help_without_top_level_contract(self):
+        executor = GraphifyPrepareExecutor(help_text="Run 'graphify --help' for full usage.")
+        adapter = self._graphify_adapter(executor)
+        case = next(case for case in self.manifest["cases"] if case["operation"] == "callers")
+        with tempfile.TemporaryDirectory() as temp:
+            with self.assertRaisesRegex(AdapterError, "affected --relation"):
+                adapter._prepare_graphify(Path(temp), case, {})
+        self.assertEqual(len(executor.calls), 1)
+
+    def test_graphify_prepare_rejects_success_without_pinned_graph(self):
+        executor = GraphifyPrepareExecutor(write_graph=False)
+        adapter = self._graphify_adapter(executor)
+        case = next(case for case in self.manifest["cases"] if case["operation"] == "callers")
+        with tempfile.TemporaryDirectory() as temp:
+            with self.assertRaisesRegex(AdapterError, "graphify-out/graph.json"):
+                adapter._prepare_graphify(Path(temp), case, {})
 
     def test_graphify_text_is_normalized_to_qualified_names(self):
         payload = _graphify_affected_payload(

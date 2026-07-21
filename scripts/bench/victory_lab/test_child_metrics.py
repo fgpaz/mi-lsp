@@ -19,7 +19,7 @@ class _Probe:
 
 
 class ChildMetricsFocusedTests(unittest.TestCase):
-    def test_root_only_sample_is_not_comparable_and_has_no_fabricated_tree(self):
+    def test_singleton_root_sample_is_complete_tree_coverage(self):
         sampler = _Sampler(101, _Probe({101: 100}), interval=1.0)
         sampler._sample()
 
@@ -28,11 +28,12 @@ class ChildMetricsFocusedTests(unittest.TestCase):
             cleanup_status="clean",
         )
 
-        self.assertEqual(metrics.status, "NOT_COMPARABLE")
-        self.assertEqual(metrics.reason, "tree_not_observed")
-        self.assertIsNone(metrics.tree_peak_rss_bytes)
+        self.assertEqual(metrics.status, "PASS")
+        self.assertTrue(metrics.tree_supported)
+        self.assertEqual(metrics.peak_rss_bytes, 100)
+        self.assertEqual(metrics.tree_peak_rss_bytes, 100)
         self.assertEqual(metrics.observed_pids, (101,))
-        self.assertIn("tree_not_observed", metrics.reason_codes)
+        self.assertNotIn("tree_not_observed", metrics.reason_codes)
 
     def test_inconsistent_pass_is_normalized_without_descendants(self):
         metrics = ChildMetrics(
@@ -75,6 +76,36 @@ class ChildMetricsFocusedTests(unittest.TestCase):
         self.assertTrue(metrics.tree_supported)
         self.assertEqual(metrics.tree_peak_rss_bytes, 300)
         self.assertEqual(metrics.observed_pids, (101, 202))
+
+    def test_partial_descendant_stays_not_comparable_after_later_sample(self):
+        class _SequenceProbe(_Probe):
+            def __init__(self):
+                super().__init__({101: 100, 202: 200})
+                self.calls = 0
+
+            def descendants(self, pid):
+                self.calls += 1
+                return {202}
+
+            def working_set(self, pid):
+                if pid == 202 and self.calls > 1:
+                    return None
+                return super().working_set(pid)
+
+        sampler = _Sampler(101, _SequenceProbe(), interval=1.0)
+        sampler._sample()
+        sampler._sample()
+
+        metrics = sampler.metrics(
+            pid=101, returncode=0, timed_out=False, crashed=False,
+            cleanup_status="clean",
+        )
+
+        self.assertEqual(metrics.status, "NOT_COMPARABLE")
+        self.assertFalse(metrics.tree_supported)
+        self.assertIsNone(metrics.tree_peak_rss_bytes)
+        self.assertEqual(metrics.reason, "working_set_unavailable")
+        self.assertIn("working_set_unavailable", metrics.reason_codes)
 
 
 if __name__ == "__main__":

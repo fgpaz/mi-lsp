@@ -248,44 +248,55 @@ def run_manifest(manifest_path: str | Path, output: str | Path, *, repetitions: 
     output_path = Path(output).resolve()
     output_path.mkdir(parents=True, exist_ok=True)
     adapters = manifest_adapters(manifest)
+    cases = {case["id"]: case for case in manifest["cases"]}
+    groups = manifest.get("groups")
+    if not isinstance(groups, list) or not groups:
+        raise ManifestError("manifest must declare explicit measurement groups")
+    workloads = {item["workload_id"]: item for item in manifest.get("workloads", []) if isinstance(item, Mapping)}
     run_id = "r" + hashlib.sha256(secrets.token_bytes(32)).hexdigest()[:63]
     samples: list[dict[str, Any]] = []
     seen_sample_keys: set[tuple[str, str, str, int]] = set()
-    # Deliberately serial: comparator processes and fixture materialization must not overlap.
-    for adapter_id in sorted(adapters):
+    # Deliberately serial: only the exact manifest groups are authoritative.
+    for group in groups:
+        group_id = group.get("group_id")
+        adapter_id = group.get("adapter_id")
+        workload = workloads.get(group.get("workload_id"))
+        case = cases.get(group.get("case_id"))
+        if not isinstance(group_id, str) or not isinstance(adapter_id, str) or workload is None or case is None:
+            raise ManifestError("group references an unknown adapter, workload, or case")
+        if adapter_id not in adapters or group.get("operation") != case.get("operation") or workload.get("case_id") != case.get("id"):
+            raise ManifestError(f"group {group_id} is not an exact workload declaration")
         adapter = VictoryAdapter(adapters[adapter_id], manifest, path.parent, executor=executor)
-        for case in manifest["cases"]:
-            for repetition in range(repetitions):
-                record = adapter.run_case(case, repetition=repetition)
-                sample = record.to_dict()
-                returned_case_id = sample.get("case_id")
-                returned_repetition = sample.get("repetition")
-                if sample.get("adapter_id") != adapter_id or sample.get("operation") != case["operation"]:
-                    raise ManifestError("adapter returned a sample for the wrong comparator or operation")
-                if not (isinstance(returned_case_id, str) and returned_case_id in ("", case["id"])):
-                    raise ManifestError("adapter returned a sample for the wrong case_id")
-                if not isinstance(returned_repetition, int) or isinstance(returned_repetition, bool) or returned_repetition != repetition:
-                    raise ManifestError("adapter returned a sample for the wrong repetition")
-                sample["case_id"] = case["id"]
-                sample["fixture_digest"] = manifest["fixture_digest"]
-                sample["oracle_digest"] = manifest["oracle_digest"]
-                group_key = f"{adapter_id}:{case['id']}:{case['operation']}"
-                sample_key = (adapter_id, case["id"], case["operation"], repetition)
-                if sample_key in seen_sample_keys:
-                    raise ManifestError("adapter returned a duplicate sample key")
-                seen_sample_keys.add(sample_key)
-                metrics = sample.get("metrics")
-                if not isinstance(metrics, dict):
-                    raise ManifestError("adapter returned malformed metrics")
-                metrics = dict(metrics)
-                metrics["freshness"] = _freshness(run_id, runtime_preflight_digest, group_key, repetition)
-                sample["metrics"] = metrics
-                RunRecord.from_dict(sample)
-                if sample.get("status") == "PASS":
-                    _validate_pass_sample(sample)
-                samples.append(sample)
+        for repetition in range(repetitions):
+            record = adapter.run_case(case, repetition=repetition)
+            sample = record.to_dict()
+            returned_case_id = sample.get("case_id")
+            returned_repetition = sample.get("repetition")
+            if sample.get("adapter_id") != adapter_id or sample.get("operation") != case["operation"]:
+                raise ManifestError("adapter returned a sample for the wrong comparator or operation")
+            if not (isinstance(returned_case_id, str) and returned_case_id in ("", case["id"])):
+                raise ManifestError("adapter returned a sample for the wrong case_id")
+            if not isinstance(returned_repetition, int) or isinstance(returned_repetition, bool) or returned_repetition != repetition:
+                raise ManifestError("adapter returned a sample for the wrong repetition")
+            sample["case_id"] = case["id"]
+            sample["fixture_digest"] = manifest["fixture_digest"]
+            sample["oracle_digest"] = manifest["oracle_digest"]
+            sample_key = (group_id, case["id"], case["operation"], repetition)
+            if sample_key in seen_sample_keys:
+                raise ManifestError("adapter returned a duplicate explicit group sample key")
+            seen_sample_keys.add(sample_key)
+            metrics = sample.get("metrics")
+            if not isinstance(metrics, dict):
+                raise ManifestError("adapter returned malformed metrics")
+            metrics = dict(metrics)
+            metrics["freshness"] = _freshness(run_id, runtime_preflight_digest, group_id, repetition)
+            sample["metrics"] = metrics
+            RunRecord.from_dict(sample)
+            if sample.get("status") == "PASS":
+                _validate_pass_sample(sample)
+            samples.append(sample)
     _assert_content_unchanged(content_before, path, manifest)
-    expected_samples = len(adapters) * len(manifest["cases"]) * repetitions
+    expected_samples = len(groups) * repetitions
     if len(samples) != expected_samples:
         raise ManifestError(f"authoritative runner retained {len(samples)} samples, expected {expected_samples}")
     samples_path = output_path / "samples.jsonl"
@@ -311,6 +322,8 @@ def run_manifest(manifest_path: str | Path, output: str | Path, *, repetitions: 
         "authoritative": mode == "authoritative",
         "adapters": sorted(adapters),
         "cases": [case["id"] for case in manifest["cases"]],
+        "groups": [group["group_id"] for group in groups],
+        "expected_groups": len(groups),
         "samples": len(samples),
         "samples_path": str(samples_path),
         "samples_sha256": samples_sha256,
@@ -323,7 +336,7 @@ def run_manifest(manifest_path: str | Path, output: str | Path, *, repetitions: 
             "fresh_reproduction": True,
             "evidence_digest": runtime_preflight_digest,
         },
-        "anti_gaming": {"serialized_variants": True, "all_samples_retained": True, "best_of_rejected": True},
+        "anti_gaming": {"serialized_variants": True, "all_samples_retained": True, "best_of_rejected": True, "cartesian_expansion": False, "explicit_groups_only": True},
     }
     (output_path / "run.json").write_text(json.dumps(summary, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     return summary

@@ -8,15 +8,17 @@ from pathlib import Path
 from typing import Any, Mapping
 
 try:
-    from .manifest_v2 import ManifestError, load_manifest, manifest_adapters, resolve_configured_path, sha256_file, git_revision
+    from .manifest_v2 import ManifestError, _validate_measurement_contract, load_manifest, manifest_adapters, resolve_configured_path, sha256_file, git_revision
     from .attestation_v2 import source_artifact_digest, validate_attestation
 except ImportError:  # pragma: no cover
-    from manifest_v2 import ManifestError, load_manifest, manifest_adapters, resolve_configured_path, sha256_file, git_revision
+    from manifest_v2 import ManifestError, _validate_measurement_contract, load_manifest, manifest_adapters, resolve_configured_path, sha256_file, git_revision
     from attestation_v2 import source_artifact_digest, validate_attestation
 
 
 def validate_strict_manifest(manifest: Mapping[str, Any], root: Path | None = None, *, check_files: bool = True) -> dict[str, Any]:
     """Apply the v2 evidence gates that a permissive loader cannot omit."""
+    if manifest.get("provenance_contract") == "victory-build-attestation/v2" or any(key in manifest for key in ("workloads", "groups", "comparator_pair", "per_metric_comparability")):
+        _validate_measurement_contract(manifest)
     adapters = manifest_adapters(manifest)
     if not adapters or any(not spec.comparable_operations for spec in adapters.values()):
         raise ManifestError("manifest has no usable comparator")

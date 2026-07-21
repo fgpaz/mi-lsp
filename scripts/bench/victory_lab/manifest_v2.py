@@ -152,6 +152,161 @@ def _validate_operation_case(case: Mapping[str, Any]) -> None:
         raise ManifestError(f"case {case['id']} lacks path endpoints")
 
 
+_CANONICAL_WORKLOADS: dict[str, dict[str, str]] = {
+    "callers-direct": {"workload_id": "callers-direct", "case_id": "callers-direct", "operation": "callers", "mode": "direct"},
+    "callers-transitive": {"workload_id": "callers-transitive", "case_id": "callers-transitive", "operation": "callers", "mode": "transitive"},
+    "affected-direct": {"workload_id": "affected-direct", "case_id": "affected-direct", "operation": "affected", "mode": "direct"},
+    "affected-transitive": {"workload_id": "affected-transitive", "case_id": "affected-transitive", "operation": "affected", "mode": "transitive"},
+    "path-shortest": {"workload_id": "path-shortest", "case_id": "path-shortest", "operation": "path"},
+}
+_CANONICAL_GROUPS: dict[str, dict[str, Any]] = {
+    "current-callers-direct": {"adapter_id": "mi-lsp-current-v2", "workload_id": "callers-direct", "case_id": "callers-direct", "operation": "callers"},
+    "current-callers-transitive": {"adapter_id": "mi-lsp-current-v2", "workload_id": "callers-transitive", "case_id": "callers-transitive", "operation": "callers"},
+    "graphify-callers-direct": {"adapter_id": "graphify-0.9.19-v2", "workload_id": "callers-direct", "case_id": "callers-direct", "operation": "callers"},
+    "graphify-callers-transitive": {"adapter_id": "graphify-0.9.19-v2", "workload_id": "callers-transitive", "case_id": "callers-transitive", "operation": "callers"},
+    "current-affected-direct": {"adapter_id": "mi-lsp-current-v2", "workload_id": "affected-direct", "case_id": "affected-direct", "operation": "affected"},
+    "current-affected-transitive": {"adapter_id": "mi-lsp-current-v2", "workload_id": "affected-transitive", "case_id": "affected-transitive", "operation": "affected"},
+    "baseline-affected-direct-hotpath": {"adapter_id": "mi-lsp-baseline-v2", "workload_id": "affected-direct", "case_id": "affected-direct", "operation": "affected"},
+    "current-path-shortest": {"adapter_id": "mi-lsp-current-v2", "workload_id": "path-shortest", "case_id": "path-shortest", "operation": "path"},
+}
+_CANONICAL_GRAPHIFY_PAIRS: dict[str, tuple[str, str]] = {
+    "callers-direct": ("current-callers-direct", "graphify-callers-direct"),
+    "callers-transitive": ("current-callers-transitive", "graphify-callers-transitive"),
+}
+_CANONICAL_HOTPATH_PAIR = ("current-affected-direct", "baseline-affected-direct-hotpath")
+_COMPARISON_METRICS = ("tokens", "warm_p95", "tree_rss")
+_NON_COMPARABLE_SCOPES = frozenset({"incremental", "build", "index"})
+
+
+def _validate_measurement_contract(manifest: Mapping[str, Any]) -> None:
+    """Validate the explicit, finite G9 measurement universe; never infer a Cartesian product."""
+    workloads = manifest.get("workloads")
+    groups = manifest.get("groups")
+    adapters = manifest.get("adapters")
+    cases = manifest.get("cases")
+    pairs = manifest.get("comparator_pair")
+    hotpath_pair = manifest.get("hotpath_pair")
+    per_metric = manifest.get("per_metric_comparability")
+    thresholds = manifest.get("thresholds")
+    if not isinstance(workloads, list) or len(workloads) != len(_CANONICAL_WORKLOADS):
+        raise ManifestError("manifest must declare exactly the canonical workloads")
+    workload_by_id: dict[str, Mapping[str, Any]] = {}
+    for workload in workloads:
+        if not isinstance(workload, Mapping) or not isinstance(workload.get("workload_id"), str):
+            raise ManifestError("workload must declare workload_id")
+        workload_id = str(workload["workload_id"])
+        expected = _CANONICAL_WORKLOADS.get(workload_id)
+        if expected is None or dict(workload) != expected:
+            raise ManifestError(f"workload {workload_id} is not a canonical semantic workload")
+        if workload_id in workload_by_id:
+            raise ManifestError(f"duplicate workload: {workload_id}")
+        workload_by_id[workload_id] = workload
+    if set(workload_by_id) != set(_CANONICAL_WORKLOADS):
+        raise ManifestError("workload set is not canonical")
+
+    if not isinstance(cases, list):
+        raise ManifestError("manifest must declare cases")
+    case_by_id = {case.get("id"): case for case in cases if isinstance(case, Mapping)}
+    if len(case_by_id) != len(cases):
+        raise ManifestError("cases must have unique object ids")
+    for workload_id, workload in workload_by_id.items():
+        case = case_by_id.get(workload["case_id"])
+        if not isinstance(case, Mapping) or case.get("operation") != workload["operation"]:
+            raise ManifestError(f"workload {workload_id} is not coherent with its case")
+        if workload.get("mode") is not None and case.get("mode") != workload["mode"]:
+            raise ManifestError(f"workload {workload_id} mode does not match its case")
+
+    if not isinstance(adapters, list):
+        raise ManifestError("manifest must declare adapters")
+    adapter_by_id = {item.get("adapter_id"): item for item in adapters if isinstance(item, Mapping)}
+    if len(adapter_by_id) != len(adapters):
+        raise ManifestError("adapters must have unique object ids")
+    if not isinstance(groups, list) or len(groups) != len(_CANONICAL_GROUPS):
+        raise ManifestError("authoritative measurement universe must contain exactly 8 canonical groups")
+    if {group.get("group_id") for group in groups if isinstance(group, Mapping)} != set(_CANONICAL_GROUPS):
+        raise ManifestError("group_id set must be exactly the canonical eight groups")
+
+    group_by_id: dict[str, Mapping[str, Any]] = {}
+    seen_tuples: set[tuple[str, str, str]] = set()
+    required_group_keys = {"group_id", "adapter_id", "workload_id", "case_id", "operation", "repetitions", "authoritative"}
+    for group in groups:
+        if not isinstance(group, Mapping) or set(group) != required_group_keys:
+            raise ManifestError("groups must use the exact authoritative group schema")
+        group_id = group.get("group_id")
+        expected = _CANONICAL_GROUPS.get(group_id)
+        if expected is None:
+            raise ManifestError(f"unknown canonical group: {group_id}")
+        for field, expected_value in expected.items():
+            if group.get(field) != expected_value:
+                raise ManifestError(f"group {group_id} has non-canonical {field}")
+        if group.get("repetitions") != 30 or group.get("authoritative") is not True:
+            raise ManifestError(f"group {group_id} must be authoritative with exactly 30 repetitions")
+        adapter = adapter_by_id.get(group["adapter_id"])
+        workload = workload_by_id.get(group["workload_id"])
+        case = case_by_id.get(group["case_id"])
+        if not isinstance(adapter, Mapping) or not isinstance(workload, Mapping) or not isinstance(case, Mapping):
+            raise ManifestError(f"group {group_id} references an unknown adapter, workload, or case")
+        if group["operation"] not in adapter.get("comparable_operations", []):
+            raise ManifestError(f"group {group_id} uses an operation the adapter did not declare comparable")
+        if group["operation"] != workload["operation"] or group["case_id"] != workload["case_id"] or case.get("operation") != group["operation"]:
+            raise ManifestError(f"group {group_id} does not match its workload semantics")
+        tuple_key = (group["adapter_id"], group["case_id"], group["operation"])
+        if tuple_key in seen_tuples:
+            raise ManifestError("measurement groups must be explicit and unique; Cartesian duplicates are forbidden")
+        seen_tuples.add(tuple_key)
+        group_by_id[group_id] = group
+
+    if not isinstance(pairs, Mapping) or set(pairs) != set(_CANONICAL_GRAPHIFY_PAIRS):
+        raise ManifestError("comparator_pair must declare exactly the two canonical callers pairs")
+    for pair_id, (current_id, graphify_id) in _CANONICAL_GRAPHIFY_PAIRS.items():
+        pair = pairs[pair_id]
+        if not isinstance(pair, Mapping) or set(pair) != {"current", "graphify", "metrics"}:
+            raise ManifestError(f"comparator pair {pair_id} schema is not exact")
+        if pair["current"] != current_id or pair["graphify"] != graphify_id or pair["metrics"] != list(_COMPARISON_METRICS):
+            raise ManifestError(f"comparator pair {pair_id} is not reciprocal/coherent with its canonical groups")
+        current = group_by_id[current_id]
+        graphify = group_by_id[graphify_id]
+        current_adapter = adapter_by_id[current["adapter_id"]]
+        graphify_adapter = adapter_by_id[graphify["adapter_id"]]
+        if current_adapter.get("kind") != "current" or graphify_adapter.get("kind") != "graphify":
+            raise ManifestError(f"Graphify pair {pair_id} must be current versus Graphify")
+        if current["operation"] != graphify["operation"] or current["operation"] != "callers" or current["workload_id"] != graphify["workload_id"] or current["case_id"] != graphify["case_id"]:
+            raise ManifestError(f"Graphify pair {pair_id} must compare the same callers semantic workload")
+        if workload_by_id[current["workload_id"]].get("mode") != workload_by_id[graphify["workload_id"]].get("mode"):
+            raise ManifestError(f"Graphify pair {pair_id} must compare the same callers mode")
+
+    if not isinstance(hotpath_pair, Mapping) or set(hotpath_pair) != {"current", "baseline", "metrics"}:
+        raise ManifestError("hotpath_pair must declare current affected-direct versus baseline affected-direct")
+    if hotpath_pair["current"] != _CANONICAL_HOTPATH_PAIR[0] or hotpath_pair["baseline"] != _CANONICAL_HOTPATH_PAIR[1] or hotpath_pair["metrics"] != ["warm_p95"]:
+        raise ManifestError("hotpath_pair is not the canonical affected-direct pair")
+    hot_current = group_by_id[_CANONICAL_HOTPATH_PAIR[0]]
+    hot_baseline = group_by_id[_CANONICAL_HOTPATH_PAIR[1]]
+    if hot_current["operation"] != hot_baseline["operation"] or hot_current["operation"] != "affected" or hot_current["workload_id"] != hot_baseline["workload_id"] or hot_current["case_id"] != hot_baseline["case_id"]:
+        raise ManifestError("hotpath_pair must compare the same affected-direct semantic workload")
+    if adapter_by_id[hot_current["adapter_id"]].get("kind") != "current" or adapter_by_id[hot_baseline["adapter_id"]].get("kind") != "baseline":
+        raise ManifestError("hotpath_pair must use current and baseline adapters")
+
+    expected_per_metric = {metric: list(_CANONICAL_GRAPHIFY_PAIRS) for metric in _COMPARISON_METRICS}
+    if per_metric != expected_per_metric:
+        raise ManifestError("per_metric_comparability must cover exactly the canonical Graphify pairs")
+
+    if not isinstance(thresholds, Mapping):
+        raise ManifestError("manifest must declare thresholds")
+    ratios = thresholds.get("current_vs_graphify")
+    if not isinstance(ratios, Mapping) or ratios.get("tokens") != 0.70 or ratios.get("warm_p95") != 0.80 or ratios.get("tree_rss") != 0.50:
+        raise ManifestError("thresholds must declare current-vs-Graphify targets .70/.80/.50")
+    hotpath = thresholds.get("hotpath")
+    if not isinstance(hotpath, Mapping) or hotpath.get("current_p95_multiplier") != 1.10 or hotpath.get("baseline_p95_additive_ms") != 25:
+        raise ManifestError("thresholds must declare the hotpath 1.10x + 25ms guard")
+
+    scopes = manifest.get("scopes")
+    if not isinstance(scopes, list) or {item.get("scope") for item in scopes if isinstance(item, Mapping)} != _NON_COMPARABLE_SCOPES or len(scopes) != len(_NON_COMPARABLE_SCOPES):
+        raise ManifestError("incremental, build, and index must be the complete explicit scope set")
+    for item in scopes:
+        if not isinstance(item, Mapping) or set(item) != {"scope", "status", "reason"} or item.get("status") != "NOT_COMPARABLE" or not isinstance(item.get("reason"), str) or not item["reason"].strip():
+            raise ManifestError("unavailable scopes must remain NOT_COMPARABLE with a reason")
+
+
 def validate_manifest(manifest: Mapping[str, Any], root: Path | None = None, *, check_files: bool = True) -> dict[str, Any]:
     if manifest.get("schema") != MANIFEST_SCHEMA:
         raise ManifestError("unsupported manifest schema")
@@ -233,6 +388,8 @@ def validate_manifest(manifest: Mapping[str, Any], root: Path | None = None, *, 
         if case["id"] in case_ids:
             raise ManifestError(f"duplicate case: {case['id']}")
         case_ids.add(case["id"])
+    if manifest.get("provenance_contract") == "victory-build-attestation/v2" or any(key in manifest for key in ("workloads", "groups", "comparator_pair", "per_metric_comparability")):
+        _validate_measurement_contract(manifest)
     if check_files:
         if root is None:
             raise ManifestError("root is required when check_files=true")
