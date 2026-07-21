@@ -17,6 +17,7 @@ try:
     from .durable_v2 import validate_group_key, validate_identifier
     from .validate_manifest import validate_strict_manifest
     from .security_gate import runtime_evidence_digest
+    from .sanitize_v2 import validate_runtime_security_keys
 except ImportError:  # pragma: no cover
     from canonical_v2 import payload_digest, token_count, validate_terminal_state
     from manifest_v2 import load_manifest, sha256_bytes, sha256_file
@@ -24,6 +25,7 @@ except ImportError:  # pragma: no cover
     from durable_v2 import validate_group_key, validate_identifier
     from validate_manifest import validate_strict_manifest
     from security_gate import runtime_evidence_digest
+    from sanitize_v2 import validate_runtime_security_keys
 
 AUTHORITATIVE_REPETITIONS = 30
 _FORBIDDEN_KEYS = frozenset({"best", "best_of", "minimum", "fastest", "selected_sample", "summary"})
@@ -55,6 +57,7 @@ def _pid_coverage(runtime: Mapping[str, Any]) -> bool:
 
 def _runtime_digest_matches(runtime: Mapping[str, Any]) -> bool:
     try:
+        validate_runtime_security_keys(runtime)
         return runtime_evidence_digest(runtime) == runtime.get("evidence_digest")
     except (TypeError, ValueError):
         return False
@@ -196,6 +199,13 @@ def _validate_sample_metrics(record: dict[str, Any]) -> str | None:
     runtime = security.get("runtime")
     integrity = security.get("integrity")
     source_integrity = security.get("source_integrity")
+    if runtime is not None:
+        if not isinstance(runtime, Mapping):
+            return "runtime_keys"
+        try:
+            validate_runtime_security_keys(runtime)
+        except ValueError:
+            return "runtime_keys"
     required = (
         security.get("status") == "PASS",
         security.get("runtime_proof") is True,
@@ -203,9 +213,9 @@ def _validate_sample_metrics(record: dict[str, Any]) -> str | None:
         isinstance(runtime, Mapping) and runtime.get("runtime_proof") is True,
         isinstance(runtime, Mapping) and runtime.get("provenance") == "child_metrics_executor",
         isinstance(runtime, Mapping) and isinstance(runtime.get("probe_mode"), str) and bool(runtime.get("probe_mode")),
-        isinstance(runtime, Mapping) and runtime.get("network_count") == 0,
-        isinstance(runtime, Mapping) and runtime.get("mcp_count") == 0,
-        isinstance(runtime, Mapping) and runtime.get("reason") is None,
+        isinstance(runtime, Mapping) and runtime.get("observed_network_count") == 0,
+        isinstance(runtime, Mapping) and runtime.get("observed_mcp_count") == 0,
+        isinstance(runtime, Mapping) and runtime.get("reason_code") is None,
         isinstance(runtime, Mapping) and isinstance(runtime.get("sample_count"), int) and not isinstance(runtime.get("sample_count"), bool) and runtime.get("sample_count", 0) > 0,
         isinstance(runtime, Mapping) and _valid_pid_list(runtime.get("observed_pids"), nonempty=True),
         isinstance(runtime, Mapping) and _valid_pid_list(runtime.get("metadata_observed_pids"), nonempty=False),
@@ -285,6 +295,8 @@ def _read_samples(path: Path) -> list[dict[str, Any]]:
         if freshness_issue:
             raise ValueError(f"sample freshness is invalid: {freshness_issue}")
         metric_issue = _validate_sample_metrics(record)
+        if metric_issue == "runtime_keys":
+            raise ValueError("runtime security projection keys are not exact")
         if metric_issue and record.get("status") == "PASS":
             raise ValueError(f"PASS sample metrics are incomplete: {metric_issue}")
     return records

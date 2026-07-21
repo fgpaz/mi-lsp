@@ -26,8 +26,8 @@ class ReportV2Tests(unittest.TestCase):
         runtime = {
             "status": "PASS", "runtime_proof": True, "provenance": "child_metrics_executor",
             "probe_mode": "windows_netstat_child_tree_observation", "observed_pids": [101],
-            "metadata_observed_pids": [101], "sample_count": 1, "network_count": 0, "mcp_count": 0,
-            "observed_network_count": 0, "observed_mcp_count": 0, "reason": None,
+            "metadata_observed_pids": [101], "sample_count": 1,
+            "observed_network_count": 0, "observed_mcp_count": 0, "reason_code": None,
         }
         runtime["evidence_digest"] = runtime_evidence_digest(runtime)
         return {
@@ -152,6 +152,25 @@ class ReportV2Tests(unittest.TestCase):
         records[0]["metrics"]["security"]["runtime"]["observed_pids"] = []
         with self.assertRaisesRegex(ValueError, "security"):
             build_report(self._write(records))
+
+    def test_json_round_trip_accepts_valid_pass_and_rejects_canonical_tamper(self):
+        records = [json.loads(json.dumps(self._record(i), sort_keys=True)) for i in range(30)]
+        report = build_report(self._write(records))
+        self.assertEqual(report["status"], "NOT_COMPARABLE")
+
+        tampered = [json.loads(json.dumps(record, sort_keys=True)) for record in records]
+        runtime = tampered[0]["metrics"]["security"]["runtime"]
+        runtime["observed_network_count"] = 1
+        with self.assertRaisesRegex(ValueError, "security"):
+            build_report(self._write(tampered))
+
+    def test_json_round_trip_rejects_each_noncanonical_runtime_key(self):
+        records = [json.loads(json.dumps(self._record(i), sort_keys=True)) for i in range(30)]
+        for extra in ("network_count", "mcp_count", "reason", "unknown_runtime_key"):
+            tampered = [json.loads(json.dumps(record, sort_keys=True)) for record in records]
+            tampered[0]["metrics"]["security"]["runtime"][extra] = None
+            with self.assertRaisesRegex(ValueError, "runtime security projection keys"):
+                build_report(self._write(tampered))
 
     def test_manifest_bundle_requires_matching_sha_path_and_id(self):
         with tempfile.TemporaryDirectory() as temp:

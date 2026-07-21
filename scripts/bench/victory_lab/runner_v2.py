@@ -17,6 +17,7 @@ try:
     from .schema_v2 import RunRecord
     from .validate_manifest import validate_runtime, validate_strict_manifest
     from .security_gate import runtime_evidence_digest
+    from .sanitize_v2 import validate_runtime_security_keys
 except ImportError:  # pragma: no cover
     from adapters.v2 import VictoryAdapter
     from canonical_v2 import payload_digest, token_count, validate_terminal_state
@@ -24,6 +25,7 @@ except ImportError:  # pragma: no cover
     from schema_v2 import RunRecord
     from validate_manifest import validate_runtime, validate_strict_manifest
     from security_gate import runtime_evidence_digest
+    from sanitize_v2 import validate_runtime_security_keys
 
 
 def _digest_group(manifest: Mapping[str, Any], key: str) -> str:
@@ -96,13 +98,12 @@ def _assert_content_unchanged(before: Mapping[str, str], manifest_path: Path, ma
         raise ManifestError("fixture, golden, or manifest content changed during run")
 
 
-def _effective_status(samples: list[dict[str, Any]]) -> str:
-    statuses = {str(sample.get("status")) for sample in samples}
-    child_statuses = {
-        str(sample.get("metrics", {}).get("child", {}).get("status"))
-        for sample in samples
-        if isinstance(sample.get("metrics"), Mapping) and isinstance(sample["metrics"].get("child"), Mapping)
-    }
+_RUNNER_ERROR_SCHEMA = "victory-runner-error/v2"
+_RUN_ARTIFACTS = ("run.json", "samples.jsonl", "runner-error.json")
+
+
+def _effective_status_counts(status_counts: Mapping[str, int], child_statuses: set[str]) -> str:
+    statuses = {status for status, count in status_counts.items() if count}
     if "BLOCKED" in statuses:
         return "BLOCKED"
     if "FAIL" in statuses:
@@ -112,6 +113,38 @@ def _effective_status(samples: list[dict[str, Any]]) -> str:
     if statuses == {"PASS"}:
         return "PASS"
     return "NOT_RUN"
+
+
+def _runner_reason_code(exc: BaseException) -> str:
+    """Map an abort to the closed, durable reason-code catalog without leaking it."""
+    if isinstance(exc, (ManifestError, ValueError)):
+        return "blocked"
+    return "native_error"
+
+
+def _write_runner_error(
+    output_path: Path,
+    *,
+    run_id: str,
+    manifest_sha256: str,
+    runtime_preflight_digest: str,
+    completed_samples: int,
+    expected_samples: int,
+    reason_code: str,
+) -> None:
+    payload = {
+        "schema": _RUNNER_ERROR_SCHEMA,
+        "status": "BLOCKED",
+        "reason_code": reason_code,
+        "completed_samples": completed_samples,
+        "expected_samples": expected_samples,
+        "run_id": run_id,
+        "manifest_sha256": manifest_sha256,
+        "runtime_preflight_digest": runtime_preflight_digest,
+    }
+    error_path = output_path / "runner-error.json"
+    with error_path.open("x", encoding="utf-8", newline="\n") as stream:
+        stream.write(json.dumps(payload, indent=2, sort_keys=True) + "\n")
 
 
 def _is_sha256(value: Any) -> bool:
@@ -138,9 +171,23 @@ def _valid_pid_list(value: Any, *, nonempty: bool) -> bool:
 
 def _runtime_digest_matches(runtime: Mapping[str, Any]) -> bool:
     try:
+        validate_runtime_security_keys(runtime)
         return runtime_evidence_digest(runtime) == runtime.get("evidence_digest")
     except (TypeError, ValueError):
         return False
+
+
+def _validate_runtime_projection(sample: Mapping[str, Any]) -> None:
+    metrics = sample.get("metrics")
+    security = metrics.get("security") if isinstance(metrics, Mapping) else None
+    runtime = security.get("runtime") if isinstance(security, Mapping) else None
+    if runtime is not None:
+        if not isinstance(runtime, Mapping):
+            raise ManifestError("runtime security projection must be an object")
+        try:
+            validate_runtime_security_keys(runtime)
+        except ValueError as exc:
+            raise ManifestError(str(exc)) from exc
 
 
 def _manifest_identity(path: Path) -> str:
@@ -200,6 +247,7 @@ def _validate_pass_sample(sample: Mapping[str, Any]) -> None:
     runtime = security.get("runtime") if isinstance(security, Mapping) else None
     integrity = security.get("integrity") if isinstance(security, Mapping) else None
     source_integrity = security.get("source_integrity") if isinstance(security, Mapping) else None
+    _validate_runtime_projection(sample)
     if (
         not isinstance(security, Mapping)
         or security.get("status") != "PASS"
@@ -210,9 +258,9 @@ def _validate_pass_sample(sample: Mapping[str, Any]) -> None:
         or runtime.get("provenance") != "child_metrics_executor"
         or not isinstance(runtime.get("probe_mode"), str)
         or not runtime.get("probe_mode")
-        or runtime.get("network_count") != 0
-        or runtime.get("mcp_count") != 0
-        or runtime.get("reason") is not None
+        or runtime.get("observed_network_count") != 0
+        or runtime.get("observed_mcp_count") != 0
+        or runtime.get("reason_code") is not None
         or not isinstance(runtime.get("sample_count"), int)
         or isinstance(runtime.get("sample_count"), bool)
         or runtime.get("sample_count", 0) <= 0
@@ -237,6 +285,7 @@ def run_manifest(manifest_path: str | Path, output: str | Path, *, repetitions: 
     if runtime_blockers:
         raise ManifestError("runtime preflight failed: " + "; ".join(runtime_blockers))
     runtime_preflight_digest = _runtime_preflight_digest(path, manifest)
+    manifest_sha256 = sha256_file(path)
     if repetitions != 30:
         raise ManifestError("Victory Lab v2 evidence requires exactly 30 repetitions")
     if mode not in {"authoritative", "exploratory"}:
@@ -247,64 +296,98 @@ def run_manifest(manifest_path: str | Path, output: str | Path, *, repetitions: 
     content_before = _content_snapshot(path, manifest)
     output_path = Path(output).resolve()
     output_path.mkdir(parents=True, exist_ok=True)
+    existing_artifacts = [name for name in _RUN_ARTIFACTS if (output_path / name).exists()]
+    if existing_artifacts:
+        raise ManifestError("output directory already contains run artifacts")
     adapters = manifest_adapters(manifest)
     cases = {case["id"]: case for case in manifest["cases"]}
     groups = manifest.get("groups")
     if not isinstance(groups, list) or not groups:
         raise ManifestError("manifest must declare explicit measurement groups")
     workloads = {item["workload_id"]: item for item in manifest.get("workloads", []) if isinstance(item, Mapping)}
+    expected_samples = len(groups) * repetitions
     run_id = "r" + hashlib.sha256(secrets.token_bytes(32)).hexdigest()[:63]
-    samples: list[dict[str, Any]] = []
+    samples_path = output_path / "samples.jsonl"
+    completed_samples = 0
+    status_counts = {status: 0 for status in ("PASS", "FAIL", "BLOCKED", "NOT_COMPARABLE", "NOT_RUN")}
+    child_statuses: set[str] = set()
     seen_sample_keys: set[tuple[str, str, str, int]] = set()
     # Deliberately serial: only the exact manifest groups are authoritative.
-    for group in groups:
-        group_id = group.get("group_id")
-        adapter_id = group.get("adapter_id")
-        workload = workloads.get(group.get("workload_id"))
-        case = cases.get(group.get("case_id"))
-        if not isinstance(group_id, str) or not isinstance(adapter_id, str) or workload is None or case is None:
-            raise ManifestError("group references an unknown adapter, workload, or case")
-        if adapter_id not in adapters or group.get("operation") != case.get("operation") or workload.get("case_id") != case.get("id"):
-            raise ManifestError(f"group {group_id} is not an exact workload declaration")
-        adapter = VictoryAdapter(adapters[adapter_id], manifest, path.parent, executor=executor)
-        for repetition in range(repetitions):
-            record = adapter.run_case(case, repetition=repetition)
-            sample = record.to_dict()
-            returned_case_id = sample.get("case_id")
-            returned_repetition = sample.get("repetition")
-            if sample.get("adapter_id") != adapter_id or sample.get("operation") != case["operation"]:
-                raise ManifestError("adapter returned a sample for the wrong comparator or operation")
-            if not (isinstance(returned_case_id, str) and returned_case_id in ("", case["id"])):
-                raise ManifestError("adapter returned a sample for the wrong case_id")
-            if not isinstance(returned_repetition, int) or isinstance(returned_repetition, bool) or returned_repetition != repetition:
-                raise ManifestError("adapter returned a sample for the wrong repetition")
-            sample["case_id"] = case["id"]
-            sample["fixture_digest"] = manifest["fixture_digest"]
-            sample["oracle_digest"] = manifest["oracle_digest"]
-            sample_key = (group_id, case["id"], case["operation"], repetition)
-            if sample_key in seen_sample_keys:
-                raise ManifestError("adapter returned a duplicate explicit group sample key")
-            seen_sample_keys.add(sample_key)
-            metrics = sample.get("metrics")
-            if not isinstance(metrics, dict):
-                raise ManifestError("adapter returned malformed metrics")
-            metrics = dict(metrics)
-            metrics["freshness"] = _freshness(run_id, runtime_preflight_digest, group_id, repetition)
-            sample["metrics"] = metrics
-            RunRecord.from_dict(sample)
-            if sample.get("status") == "PASS":
-                _validate_pass_sample(sample)
-            samples.append(sample)
-    _assert_content_unchanged(content_before, path, manifest)
-    expected_samples = len(groups) * repetitions
-    if len(samples) != expected_samples:
-        raise ManifestError(f"authoritative runner retained {len(samples)} samples, expected {expected_samples}")
-    samples_path = output_path / "samples.jsonl"
-    with samples_path.open("w", encoding="utf-8", newline="\n") as stream:
-        for sample in samples:
-            stream.write(json.dumps(sample, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n")
+    # Open the stream before invoking the first adapter so validated samples survive an abort.
+    with samples_path.open("x", encoding="utf-8", newline="\n") as stream:
+        try:
+            for group in groups:
+                group_id = group.get("group_id")
+                adapter_id = group.get("adapter_id")
+                workload = workloads.get(group.get("workload_id"))
+                case = cases.get(group.get("case_id"))
+                if not isinstance(group_id, str) or not isinstance(adapter_id, str) or workload is None or case is None:
+                    raise ManifestError("group references an unknown adapter, workload, or case")
+                if adapter_id not in adapters or group.get("operation") != case.get("operation") or workload.get("case_id") != case.get("id"):
+                    raise ManifestError(f"group {group_id} is not an exact workload declaration")
+                adapter = VictoryAdapter(adapters[adapter_id], manifest, path.parent, executor=executor)
+                for repetition in range(repetitions):
+                    record = adapter.run_case(case, repetition=repetition)
+                    sample = record.to_dict()
+                    returned_case_id = sample.get("case_id")
+                    returned_repetition = sample.get("repetition")
+                    if sample.get("adapter_id") != adapter_id or sample.get("operation") != case["operation"]:
+                        raise ManifestError("adapter returned a sample for the wrong comparator or operation")
+                    if not (isinstance(returned_case_id, str) and returned_case_id in ("", case["id"])):
+                        raise ManifestError("adapter returned a sample for the wrong case_id")
+                    if not isinstance(returned_repetition, int) or isinstance(returned_repetition, bool) or returned_repetition != repetition:
+                        raise ManifestError("adapter returned a sample for the wrong repetition")
+                    sample["case_id"] = case["id"]
+                    sample["fixture_digest"] = manifest["fixture_digest"]
+                    sample["oracle_digest"] = manifest["oracle_digest"]
+                    sample_key = (group_id, case["id"], case["operation"], repetition)
+                    if sample_key in seen_sample_keys:
+                        raise ManifestError("adapter returned a duplicate explicit group sample key")
+                    seen_sample_keys.add(sample_key)
+                    metrics = sample.get("metrics")
+                    if not isinstance(metrics, dict):
+                        raise ManifestError("adapter returned malformed metrics")
+                    metrics = dict(metrics)
+                    sample["metrics"] = metrics
+                    _validate_runtime_projection(sample)
+                    metrics["freshness"] = _freshness(run_id, runtime_preflight_digest, group_id, repetition)
+                    sample["metrics"] = metrics
+                    RunRecord.from_dict(sample)
+                    if sample.get("status") == "PASS":
+                        _validate_pass_sample(sample)
+
+                    stream.write(json.dumps(sample, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n")
+                    stream.flush()
+                    completed_samples += 1
+                    status = str(sample.get("status"))
+                    if status in status_counts:
+                        status_counts[status] += 1
+                    child = metrics.get("child")
+                    if isinstance(child, Mapping) and isinstance(child.get("status"), str):
+                        child_statuses.add(child["status"])
+
+            _assert_content_unchanged(content_before, path, manifest)
+            if completed_samples != expected_samples:
+                raise ManifestError(f"authoritative runner retained {completed_samples} samples, expected {expected_samples}")
+        except Exception as exc:
+            try:
+                stream.flush()
+            except OSError:
+                pass
+            try:
+                _write_runner_error(
+                    output_path,
+                    run_id=run_id,
+                    manifest_sha256=manifest_sha256,
+                    runtime_preflight_digest=runtime_preflight_digest,
+                    completed_samples=completed_samples,
+                    expected_samples=expected_samples,
+                    reason_code=_runner_reason_code(exc),
+                )
+            except OSError:
+                pass
+            raise
     samples_sha256 = sha256_file(samples_path)
-    manifest_sha256 = sha256_file(path)
     manifest_path = str(path)
     manifest_id = _manifest_identity(path)
     summary = {
@@ -316,7 +399,7 @@ def run_manifest(manifest_path: str | Path, output: str | Path, *, repetitions: 
         "manifest_sha256": manifest_sha256,
         "manifest_bundle": {"path": manifest_path, "id": manifest_id, "sha256": manifest_sha256},
         "manifest_schema": manifest["schema"],
-        "status": _effective_status(samples),
+        "status": _effective_status_counts(status_counts, child_statuses),
         "mode": mode,
         "repetitions": repetitions,
         "authoritative": mode == "authoritative",
@@ -324,10 +407,10 @@ def run_manifest(manifest_path: str | Path, output: str | Path, *, repetitions: 
         "cases": [case["id"] for case in manifest["cases"]],
         "groups": [group["group_id"] for group in groups],
         "expected_groups": len(groups),
-        "samples": len(samples),
+        "samples": completed_samples,
         "samples_path": str(samples_path),
         "samples_sha256": samples_sha256,
-        "status_counts": {status: sum(sample["status"] == status for sample in samples) for status in ("PASS", "FAIL", "BLOCKED", "NOT_COMPARABLE", "NOT_RUN")},
+        "status_counts": status_counts,
         "fixture_digest": manifest["fixture_digest"],
         "oracle_digest": manifest["oracle_digest"],
         "runtime_preflight": {
@@ -351,7 +434,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     try:
         summary = run_manifest(args.manifest, args.output, repetitions=args.repetitions, mode=args.mode)
-    except (ManifestError, OSError, ValueError) as exc:
+    except Exception as exc:
         print(f"BLOCKED: {exc}", file=sys.stderr)
         return 2
     print(json.dumps(summary, sort_keys=True))

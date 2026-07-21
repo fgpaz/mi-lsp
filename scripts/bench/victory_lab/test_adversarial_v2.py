@@ -32,8 +32,8 @@ class _StableAdapter:
         runtime = {
             "status": "PASS", "runtime_proof": True, "provenance": "child_metrics_executor",
             "probe_mode": "windows_netstat_child_tree_observation", "observed_pids": [101],
-            "metadata_observed_pids": [101], "sample_count": 1, "network_count": 0, "mcp_count": 0,
-            "observed_network_count": 0, "observed_mcp_count": 0, "reason": None,
+            "metadata_observed_pids": [101], "sample_count": 1,
+            "observed_network_count": 0, "observed_mcp_count": 0, "reason_code": None,
         }
         runtime["evidence_digest"] = runtime_evidence_digest(runtime)
         return RunRecord(
@@ -107,8 +107,8 @@ class VictoryAdversarialV2Tests(unittest.TestCase):
         runtime = {
             "status": "PASS", "runtime_proof": True, "provenance": "child_metrics_executor",
             "probe_mode": "windows_netstat_child_tree_observation", "observed_pids": [101],
-            "metadata_observed_pids": [101], "sample_count": 1, "network_count": 0, "mcp_count": 0,
-            "observed_network_count": 0, "observed_mcp_count": 0, "reason": None,
+            "metadata_observed_pids": [101], "sample_count": 1,
+            "observed_network_count": 0, "observed_mcp_count": 0, "reason_code": None,
         }
         runtime["evidence_digest"] = runtime_evidence_digest(runtime)
         return {

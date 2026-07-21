@@ -18,7 +18,7 @@ try:
     from ..canonical_v2 import canonical_payload, parse_json_output, validate_terminal_state
     from ..child_metrics import ChildMetrics, ChildMetricsExecutor
     from ..manifest_v2 import ManifestError, git_revision, resolve_configured_path, sha256_file, validate_current_metadata
-    from ..sanitize_v2 import sanitize_env, sanitize_error, sanitize_metrics
+    from ..sanitize_v2 import bounded_reason, project_runtime_security, sanitize_env, sanitize_error, sanitize_metrics
     from ..schema_v2 import AdapterSpec, RunRecord
     from ..security_gate import SecurityGate
 except ImportError:  # pragma: no cover
@@ -26,7 +26,7 @@ except ImportError:  # pragma: no cover
     from canonical_v2 import canonical_payload, parse_json_output, validate_terminal_state
     from child_metrics import ChildMetrics, ChildMetricsExecutor
     from manifest_v2 import ManifestError, git_revision, resolve_configured_path, sha256_file, validate_current_metadata
-    from sanitize_v2 import sanitize_env, sanitize_error, sanitize_metrics
+    from sanitize_v2 import bounded_reason, project_runtime_security, sanitize_env, sanitize_error, sanitize_metrics
     from schema_v2 import AdapterSpec, RunRecord
     from security_gate import SecurityGate
 
@@ -68,6 +68,39 @@ class SubprocessExecutor:
 
 def _safe_error(kind: str, message: str) -> dict[str, str]:
     return sanitize_error(kind, message)
+
+
+def _child_metrics_dict(result: CommandResult | None) -> Mapping[str, Any]:
+    if result is None or result.metrics is None:
+        return {}
+    metrics = result.metrics.to_dict() if hasattr(result.metrics, "to_dict") else result.metrics
+    return metrics if isinstance(metrics, Mapping) else {}
+
+
+def _child_pass_reason(result: CommandResult | None) -> str:
+    child = _child_metrics_dict(result)
+    return bounded_reason(
+        child.get("reason_code", child.get("reason")),
+        "not_comparable",
+    )
+
+
+def _child_metrics_support_pass(result: CommandResult | None) -> bool:
+    child = _child_metrics_dict(result)
+    peak = child.get("peak_rss_bytes")
+    tree_peak = child.get("tree_peak_rss_bytes")
+    measured = lambda value: isinstance(value, (int, float)) and not isinstance(value, bool) and value >= 0
+    return (
+        child.get("status") == "PASS"
+        and child.get("tree_supported") is True
+        and measured(peak)
+        and measured(tree_peak)
+    )
+
+
+def _comparability_error(reason_code: str) -> dict[str, str]:
+    code = bounded_reason(reason_code, "not_comparable")
+    return {"kind": "comparability", "reason_code": code}
 
 
 def _copy_fixture(source: Path, destination: Path) -> None:
@@ -548,6 +581,10 @@ class VictoryAdapter:
         child_metrics = result.metrics.to_dict() if result is not None and result.metrics is not None else {
             "status": "NOT_COMPARABLE", "reason_code": "not_measured"
         }
+        durable_security: dict[str, object] = dict(security or {"status": "NOT_COMPARABLE", "reason_code": "not_checked"})
+        durable_security["runtime"] = project_runtime_security(
+            security.get("runtime") if isinstance(security, Mapping) else None
+        )
         record = RunRecord(
             adapter_id=self.spec.adapter_id, operation=case["operation"], status=status, repetition=repetition,
             fixture_digest=str(self.manifest.get("fixture_digest", "")), oracle_digest=str(self.manifest.get("oracle_digest", "")),
@@ -558,7 +595,7 @@ class VictoryAdapter:
             elapsed_ms=result.elapsed_ms if result else None, canonical=canonical,
             metrics=sanitize_metrics({
                 "sample": repetition, "child": child_metrics,
-                "security": security or {"status": "NOT_COMPARABLE", "reason_code": "not_checked"},
+                "security": durable_security,
             }), error=error,
         )
         record.validate()
@@ -596,6 +633,9 @@ class VictoryAdapter:
         elif status == "PASS" and not bool(security.get("runtime_proof", False)):
             status = "NOT_COMPARABLE"
             error = _safe_error("security", "runtime proof unavailable")
+        if status == "PASS" and not _child_metrics_support_pass(result):
+            status = "NOT_COMPARABLE"
+            error = _comparability_error(_child_pass_reason(result))
         return self._record(
             case, repetition, status, root=root, env=env, canonical=canonical,
             result=result, error=error, security=security,

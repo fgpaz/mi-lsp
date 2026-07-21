@@ -13,18 +13,24 @@ import threading
 from typing import Callable, Mapping, Sequence
 
 try:
-    from .sanitize_v2 import bounded_reason, digest_text
+    from .sanitize_v2 import (
+        RUNTIME_PROBE_MODES, RUNTIME_PROVENANCE,
+        bounded_reason, digest_text, project_runtime_security,
+    )
 except ImportError:  # pragma: no cover
-    from sanitize_v2 import bounded_reason, digest_text
+    from sanitize_v2 import (
+        RUNTIME_PROBE_MODES, RUNTIME_PROVENANCE,
+        bounded_reason, digest_text, project_runtime_security,
+    )
 
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 _NETWORK_RE = re.compile(r"(?i)(https?://|ftp://|\\\\|\b(socket|requests|urllib|curl|wget|nc|netcat|network|webclient|invoke-webrequest)\b)")
 _MCP_RE = re.compile(r"(?i)\bmcp\b|model.context.protocol")
 _SECRET_RE = re.compile(r"(?i)(password|passwd|secret|token|api[_-]?key|private[_-]?key|authorization|credential|cookie)")
 _RUNTIME_REASON_CODES = frozenset({
-    "runtime_proof_unavailable", "root_metadata_missing", "observer_race",
-    "network_indicator", "mcp_indicator", "metadata_missing", "metadata_mismatch",
-    "unsupported_platform", "counter_unavailable", "working_set_unavailable",
+    "runtime_proof_unavailable", "root_metadata_missing", "observer_race", "network_indicator",
+    "mcp_indicator", "metadata_missing", "metadata_mismatch", "unsupported_platform",
+    "counter_unavailable", "working_set_unavailable", "not_comparable",
 })
 
 
@@ -44,23 +50,21 @@ def _valid_runtime_pid_list(value: object, *, nonempty: bool) -> bool:
 
 
 def runtime_evidence_digest(envelope: Mapping[str, object]) -> str:
-    """Digest the bounded runtime-proof envelope, never raw process diagnostics."""
-    network_count = envelope.get("network_count", envelope.get("observed_network_count"))
-    mcp_count = envelope.get("mcp_count", envelope.get("observed_mcp_count"))
-    reason = envelope.get("reason") if "reason" in envelope else envelope.get("reason_code")
+    """Digest exactly the fields serialized by the canonical runtime contract."""
     canonical = {
+        "status": envelope.get("status"),
+        "runtime_proof": envelope.get("runtime_proof"),
         "provenance": envelope.get("provenance"),
         "probe_mode": envelope.get("probe_mode"),
         "observed_pids": _canonical_runtime_pids(envelope.get("observed_pids")),
         "metadata_observed_pids": _canonical_runtime_pids(envelope.get("metadata_observed_pids")),
         "sample_count": envelope.get("sample_count"),
-        "network_count": network_count,
-        "mcp_count": mcp_count,
-        "status": envelope.get("status"),
-        "runtime_proof": envelope.get("runtime_proof"),
-        "reason": reason,
+        "observed_network_count": envelope.get("observed_network_count"),
+        "observed_mcp_count": envelope.get("observed_mcp_count"),
+        "reason_code": envelope.get("reason_code"),
     }
-    return hashlib.sha256(json.dumps(canonical, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode("utf-8")).hexdigest()
+    serialized = json.dumps(canonical, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
+    return hashlib.sha256(serialized.encode("utf-8")).hexdigest()
 
 
 def _sanitize_runtime_reason(value: object) -> str:
@@ -78,14 +82,6 @@ def _safe_pid_set(value: object) -> set[int] | None:
     if any(not isinstance(pid, int) or isinstance(pid, bool) or pid <= 0 for pid in value):
         return None
     return set(value)
-
-
-def _runtime_reason(observation: Mapping[str, object]) -> str:
-    observed = _safe_pid_set(observation.get("observed_pids"))
-    metadata = _safe_pid_set(observation.get("metadata_observed_pids"))
-    if observed is not None and (metadata is None or not observed <= metadata):
-        return "metadata_missing"
-    return _sanitize_runtime_reason(observation.get("reason", observation.get("reason_code")))
 
 
 def _runtime_digest_matches(observation: Mapping[str, object]) -> bool:
@@ -386,11 +382,8 @@ class RuntimeProofProbe:
             "observed_pids": sorted(self.observed_pids),
             "metadata_observed_pids": sorted(self.metadata_observed_pids),
             "sample_count": self.samples,
-            "network_count": len(self._snapshots),
-            "mcp_count": len(self._mcp_indicators),
             "observed_network_count": len(self._snapshots),
             "observed_mcp_count": len(self._mcp_indicators),
-            "reason": reason,
             "reason_code": reason,
         }
         evidence["evidence_digest"] = runtime_evidence_digest(evidence)
@@ -430,67 +423,46 @@ class SecurityGate:
             status = "NOT_COMPARABLE"
         elif "secret_indicator" in advisory_codes and status == "PASS":
             status = "BLOCKED"
-        observation = dict(runtime_observation or {})
+        raw_observation = dict(runtime_observation or {}) if isinstance(runtime_observation, Mapping) else {}
+        observation = project_runtime_security(raw_observation)
         observed_pids = _safe_pid_set(observation.get("observed_pids"))
         metadata_observed_pids = _safe_pid_set(observation.get("metadata_observed_pids"))
         complete_runtime = (
             observation.get("status") in {"PASS", "FAIL"}
-            and observation.get("provenance") == "child_metrics_executor"
-            and isinstance(observation.get("probe_mode"), str) and bool(observation.get("probe_mode"))
+            and observation.get("provenance") == RUNTIME_PROVENANCE
+            and observation.get("probe_mode") in RUNTIME_PROBE_MODES
+            and observation.get("probe_mode") != "runtime_proof_unavailable"
             and isinstance(observation.get("runtime_proof"), bool)
-            and isinstance(observation.get("sample_count"), int) and not isinstance(observation.get("sample_count"), bool) and observation.get("sample_count", 0) > 0
-            and isinstance(observation.get("network_count"), int) and not isinstance(observation.get("network_count"), bool) and observation.get("network_count", -1) >= 0
-            and isinstance(observation.get("mcp_count"), int) and not isinstance(observation.get("mcp_count"), bool) and observation.get("mcp_count", -1) >= 0
+            and isinstance(observation.get("sample_count"), int)
+            and not isinstance(observation.get("sample_count"), bool)
+            and observation.get("sample_count", 0) > 0
+            and isinstance(observation.get("observed_network_count"), int)
+            and not isinstance(observation.get("observed_network_count"), bool)
+            and observation.get("observed_network_count", -1) >= 0
+            and isinstance(observation.get("observed_mcp_count"), int)
+            and not isinstance(observation.get("observed_mcp_count"), bool)
+            and observation.get("observed_mcp_count", -1) >= 0
             and _valid_runtime_pid_list(observation.get("observed_pids"), nonempty=True)
             and _valid_runtime_pid_list(observation.get("metadata_observed_pids"), nonempty=False)
             and observed_pids is not None and bool(observed_pids)
             and metadata_observed_pids is not None
             and observed_pids <= metadata_observed_pids
-            and "reason" in observation
-            and (observation.get("reason") is None or observation.get("reason") in _RUNTIME_REASON_CODES)
-            and isinstance(observation.get("evidence_digest"), str) and _SHA256_RE.fullmatch(observation["evidence_digest"])
+            and isinstance(observation.get("evidence_digest"), str)
+            and _SHA256_RE.fullmatch(observation["evidence_digest"])
             and _runtime_digest_matches(observation)
         )
         if not complete_runtime:
-            # Preserve bounded diagnostic information when the envelope itself
-            # is incomplete.  A fallback must not erase the observer's reason
-            # or turn already observed counters into zeros.
-            fallback: dict[str, object] = {
-                "status": "NOT_COMPARABLE", "runtime_proof": False,
-                "provenance": observation.get("provenance") if isinstance(observation.get("provenance"), str) else None,
-                "probe_mode": observation.get("probe_mode") if isinstance(observation.get("probe_mode"), str) else "runtime_proof_unavailable",
-                "reason": _runtime_reason(observation),
-                "reason_code": _runtime_reason(observation),
-                "sample_count": _safe_counter(observation.get("sample_count")),
-                "network_count": _safe_counter(observation.get("network_count", observation.get("observed_network_count"))),
-                "mcp_count": _safe_counter(observation.get("mcp_count", observation.get("observed_mcp_count"))),
-                "observed_network_count": _safe_counter(observation.get("network_count", observation.get("observed_network_count"))),
-                "observed_mcp_count": _safe_counter(observation.get("mcp_count", observation.get("observed_mcp_count"))),
-            }
-            if "probe_errors" in observation:
-                fallback["probe_errors"] = _safe_counter(observation.get("probe_errors"))
-            raw_pids = observation.get("observed_pids")
-            if isinstance(raw_pids, (list, tuple, set)):
-                fallback["observed_pids"] = sorted({pid for pid in raw_pids if isinstance(pid, int) and not isinstance(pid, bool) and pid > 0})
-            raw_metadata_pids = observation.get("metadata_observed_pids")
-            if isinstance(raw_metadata_pids, (list, tuple, set)):
-                fallback["metadata_observed_pids"] = sorted({pid for pid in raw_metadata_pids if isinstance(pid, int) and not isinstance(pid, bool) and pid > 0})
-            else:
-                fallback["metadata_observed_pids"] = []
-            fallback["evidence_digest"] = runtime_evidence_digest(fallback)
-            observation = fallback
             status = "NOT_COMPARABLE"
         elif observation["status"] == "FAIL":
             status = "BLOCKED"
         elif status == "PASS" and observation.get("runtime_proof") is not True:
             status = "NOT_COMPARABLE"
-        if status == "PASS" and (observation.get("network_count", observation.get("observed_network_count", 0)) or observation.get("mcp_count", observation.get("observed_mcp_count", 0))):
+        if status == "PASS" and (observation.get("observed_network_count", 0) or observation.get("observed_mcp_count", 0)):
             status = "BLOCKED"
         if integrity.get("status") != "PASS":
             status = "BLOCKED"
         return {
             "status": status,
-            "integrity_after": after.to_dict(),
             "integrity": integrity,
             "source_integrity": source_integrity,
             "advisory_scan": scan,

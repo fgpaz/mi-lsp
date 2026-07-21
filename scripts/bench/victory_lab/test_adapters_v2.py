@@ -6,18 +6,22 @@ import unittest
 from pathlib import Path
 
 from adapters.v2 import AdapterError, CommandResult, VictoryAdapter, _adapt_mi_lsp_terminal, _graphify_affected_payload, _graphify_graph_path, _normalize_set_payload, materialize_fixture
+from child_metrics import ChildMetrics
 from manifest_v2 import load_manifest
+from runner_v2 import _validate_pass_sample
 from schema_v2 import AdapterSpec
+from security_gate import runtime_evidence_digest
 
 
 class FakeExecutor:
-    def __init__(self, *, timeout=False, crash=False, commit="11ac8af870d4110b6b4333199b8a8343c52ce784", items=None, runtime_proof=None):
+    def __init__(self, *, timeout=False, crash=False, commit="11ac8af870d4110b6b4333199b8a8343c52ce784", items=None, runtime_proof=None, metrics=None):
         self.calls = []
         self.timeout = timeout
         self.crash = crash
         self.commit = commit
         self.items = items or [{"display": "callers.Direct"}, {"display": "subject.Validate"}]
         self.runtime_proof = runtime_proof
+        self.metrics = metrics
 
     def run(self, argv, *, cwd, env, timeout_seconds):
         self.calls.append((list(argv), Path(cwd), dict(env), timeout_seconds))
@@ -33,7 +37,7 @@ class FakeExecutor:
         if self.crash:
             return CommandResult(list(argv), str(cwd), sorted(env), -1, crashed=True)
         out = {"ok": True, "backend": "go", "completeness": "complete", "truncated": False, "items": self.items}
-        return CommandResult(list(argv), str(cwd), sorted(env), 0, json.dumps(out), elapsed_ms=4.0, runtime_proof=self.runtime_proof)
+        return CommandResult(list(argv), str(cwd), sorted(env), 0, json.dumps(out), elapsed_ms=4.0, metrics=self.metrics, runtime_proof=self.runtime_proof)
 
 
 class GraphifyPrepareExecutor:
@@ -106,6 +110,66 @@ class AdapterV2Tests(unittest.TestCase):
         test_manifest.pop("provenance_contract", None)
         spec = AdapterSpec.from_dict(raw)
         return VictoryAdapter(spec, test_manifest, self.root / "benchmarks/victory-lab/v2", executor=executor)
+
+    @staticmethod
+    def _runtime_pass():
+        runtime = {
+            "status": "PASS", "runtime_proof": True, "provenance": "child_metrics_executor",
+            "probe_mode": "windows_netstat_child_tree_observation", "observed_pids": [101, 202],
+            "metadata_observed_pids": [101, 202], "sample_count": 2,
+            "observed_network_count": 0, "observed_mcp_count": 0, "reason_code": None,
+            "argv": ["C:\\private\\tool.exe", "--token", "secret"],
+            "stdout": "patient@example.com", "stderr": "C:\\private\\trace.log",
+            "env": {"TOKEN": "secret"},
+        }
+        runtime["evidence_digest"] = runtime_evidence_digest(runtime)
+        return runtime
+
+    @staticmethod
+    def _child_pass():
+        return ChildMetrics(
+            peak_rss_bytes=42, tree_peak_rss_bytes=84, status="PASS", pid=101,
+            exit_code=0, cleanup_status="clean", samples=2, tree_supported=True,
+            observed_pids=(101, 202),
+        )
+
+    def test_child_not_comparable_never_becomes_pass(self):
+        fake = FakeExecutor(
+            runtime_proof=self._runtime_pass(),
+            metrics=ChildMetrics(
+                peak_rss_bytes=42, status="NOT_COMPARABLE", reason="tree_not_observed",
+                pid=101, exit_code=0, cleanup_status="clean", samples=1,
+            ),
+        )
+        record = self._adapter(fake).run_case(self.manifest["cases"][0])
+        self.assertEqual(record.status, "NOT_COMPARABLE")
+        self.assertEqual(record.error, {"kind": "comparability", "reason_code": "tree_not_observed"})
+
+    def test_runtime_security_is_durable_and_runner_accepts_pass_sample(self):
+        record = self._adapter(
+            FakeExecutor(runtime_proof=self._runtime_pass(), metrics=self._child_pass())
+        ).run_case(self.manifest["cases"][0])
+        self.assertEqual(record.status, "PASS")
+        runtime = record.metrics["security"]["runtime"]
+        self.assertEqual(
+            set(runtime),
+            {
+                "status", "runtime_proof", "provenance", "probe_mode", "observed_pids",
+                "metadata_observed_pids", "sample_count", "observed_network_count",
+                "observed_mcp_count", "reason_code", "evidence_digest",
+            },
+        )
+        self.assertEqual(runtime["provenance"], "child_metrics_executor")
+        self.assertEqual(runtime["observed_pids"], [101, 202])
+        self.assertEqual(runtime["metadata_observed_pids"], [101, 202])
+        self.assertEqual(runtime["evidence_digest"], runtime_evidence_digest(runtime))
+        runtime_text = repr(runtime)
+        for forbidden in ("private", "patient@example.com", "secret", "stdout", "stderr", "TOKEN"):
+            self.assertNotIn(forbidden, runtime_text)
+        record_text = repr(record.to_dict())
+        self.assertNotIn("patient@example.com", record_text)
+        self.assertNotIn("C:\\private\\", record_text)
+        _validate_pass_sample(record.to_dict())
 
     def test_materializes_project_state_only_in_temp(self):
         source = self.root / "benchmarks/victory-lab/v2/corpus"

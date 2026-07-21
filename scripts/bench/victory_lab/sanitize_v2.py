@@ -44,6 +44,14 @@ REASON_CATALOG = frozenset({
 STATUS_CATALOG = frozenset({"PASS", "FAIL", "BLOCKED", "NOT_COMPARABLE", "NOT_RUN"})
 FAILURE_CLASS_CATALOG = frozenset({"none", "timeout", "crash", "exit_nonzero", "spawn_error"})
 CLEANUP_STATUS_CATALOG = frozenset({"not_required", "clean", "forced", "failed"})
+RUNTIME_PROVENANCE = "child_metrics_executor"
+RUNTIME_PROBE_MODES = frozenset({"windows_netstat_child_tree_observation", "runtime_proof_unavailable"})
+RUNTIME_STATUSES = frozenset({"PASS", "FAIL", "NOT_COMPARABLE"})
+RUNTIME_SECURITY_KEYS = frozenset({
+    "status", "runtime_proof", "provenance", "probe_mode", "observed_pids",
+    "metadata_observed_pids", "sample_count", "observed_network_count",
+    "observed_mcp_count", "reason_code", "evidence_digest",
+})
 ERROR_KIND_CATALOG = frozenset({
     "unknown", "spawn", "timeout", "crash", "prepare", "decode", "oracle", "provenance",
     "security", "capability", "comparability", "integrity", "cleanup", "blocked",
@@ -97,7 +105,7 @@ def _safe_scalar(key: str, value: object) -> tuple[str, object] | None:
     if isinstance(value, float):
         return (key, value) if math.isfinite(value) else None
     if isinstance(value, str):
-        if lowered in {"reason", "reason_code"}:
+        if lowered == "reason_code":
             return key, bounded_reason(value)
         if _PATH_RE.search(value) or _SECRET_RE.search(value) or _pii_match(value):
             return None
@@ -115,8 +123,102 @@ def _safe_scalar(key: str, value: object) -> tuple[str, object] | None:
     return None
 
 
+class RuntimeSecurityProjection(dict):
+    """Durable runtime proof using only the serialized v2 field names."""
+
+
+def validate_runtime_security_keys(value: Mapping[str, object]) -> None:
+    """Require the exact durable runtime projection before digest validation."""
+    if not isinstance(value, Mapping):
+        raise ValueError("runtime security projection must be an object")
+    actual = set(value)
+    if actual != RUNTIME_SECURITY_KEYS:
+        missing = sorted(RUNTIME_SECURITY_KEYS - actual)
+        extra = sorted(actual - RUNTIME_SECURITY_KEYS)
+        raise ValueError(
+            f"runtime security projection keys must be exact; missing={missing} extra={extra}"
+        )
+
+
+def _runtime_digest(value: Mapping[str, object]) -> str:
+    try:
+        from .security_gate import runtime_evidence_digest
+    except ImportError:  # pragma: no cover
+        from security_gate import runtime_evidence_digest
+    return runtime_evidence_digest(value)
+
+
+def _runtime_pids(value: object) -> list[int]:
+    if not isinstance(value, (list, tuple, set, frozenset)):
+        return []
+    return sorted({
+        pid for pid in value
+        if isinstance(pid, int) and not isinstance(pid, bool) and pid > 0
+    })
+
+
+def _runtime_count(value: object) -> int:
+    return value if isinstance(value, int) and not isinstance(value, bool) and value >= 0 else 0
+
+
+def project_runtime_security(observation: Mapping[str, object] | None) -> RuntimeSecurityProjection:
+    """Create the only durable projection permitted for runtime security.
+
+    This boundary deliberately drops argv, command output, paths, environment,
+    process metadata, probe errors, aliases, and every unknown field before
+    calculating the evidence digest.
+    """
+    raw = observation if isinstance(observation, Mapping) else {}
+    observed_pids = _runtime_pids(raw.get("observed_pids"))
+    metadata_pids = _runtime_pids(raw.get("metadata_observed_pids"))
+    sample_count = _runtime_count(raw.get("sample_count"))
+    observed_network_count = _runtime_count(raw.get("observed_network_count"))
+    observed_mcp_count = _runtime_count(raw.get("observed_mcp_count"))
+    status = raw.get("status") if raw.get("status") in RUNTIME_STATUSES else "NOT_COMPARABLE"
+    runtime_proof = raw.get("runtime_proof") if isinstance(raw.get("runtime_proof"), bool) else False
+    provenance = RUNTIME_PROVENANCE if raw.get("provenance") == RUNTIME_PROVENANCE else None
+    probe_mode = raw.get("probe_mode") if raw.get("probe_mode") in RUNTIME_PROBE_MODES else "runtime_proof_unavailable"
+    reason_present = "reason_code" in raw
+    raw_reason = raw.get("reason_code")
+    reason_code = None if reason_present and raw_reason is None else bounded_reason(raw_reason, "runtime_proof_unavailable")
+
+    if observed_pids and not set(observed_pids) <= set(metadata_pids):
+        status = "NOT_COMPARABLE"
+        runtime_proof = False
+        reason_code = "metadata_missing"
+    elif status == "PASS" and (
+        not runtime_proof or provenance != RUNTIME_PROVENANCE
+        or probe_mode == "runtime_proof_unavailable" or not observed_pids
+        or not metadata_pids or sample_count <= 0
+        or observed_network_count or observed_mcp_count or reason_code is not None
+    ):
+        status = "NOT_COMPARABLE"
+        runtime_proof = False
+        if reason_code is None:
+            reason_code = "runtime_proof_unavailable"
+    elif status != "PASS":
+        runtime_proof = False
+        if reason_code is None and status == "NOT_COMPARABLE":
+            reason_code = "runtime_proof_unavailable"
+
+    projected: RuntimeSecurityProjection = RuntimeSecurityProjection({
+        "status": status,
+        "runtime_proof": runtime_proof,
+        "provenance": provenance,
+        "probe_mode": probe_mode,
+        "observed_pids": observed_pids,
+        "metadata_observed_pids": metadata_pids,
+        "sample_count": sample_count,
+        "observed_network_count": observed_network_count,
+        "observed_mcp_count": observed_mcp_count,
+        "reason_code": reason_code,
+    })
+    projected["evidence_digest"] = _runtime_digest(projected)
+    return projected
+
+
 def sanitize_metrics(metrics: Mapping[str, object] | None) -> dict[str, object]:
-    """Keep a bounded, flat-ish projection of metric evidence."""
+    """Keep bounded metric evidence, with a strict runtime-security boundary."""
     if not isinstance(metrics, Mapping):
         return {}
     result: dict[str, object] = {}
@@ -124,6 +226,12 @@ def sanitize_metrics(metrics: Mapping[str, object] | None) -> dict[str, object]:
     for raw_key, raw_value in metrics.items():
         key = str(raw_key)
         if key.lower() in _FORBIDDEN_KEYS or _SECRET_RE.search(key.lower()):
+            continue
+        if key == "runtime" and isinstance(raw_value, RuntimeSecurityProjection):
+            result[key] = raw_value
+            continue
+        if key == "runtime" and isinstance(raw_value, Mapping):
+            result[key] = project_runtime_security(raw_value)
             continue
         if key == "reason_codes" and isinstance(raw_value, (list, tuple)):
             reason_codes.extend(bounded_reason(item) for item in raw_value)
@@ -179,6 +287,9 @@ def sanitize_paths(paths: Sequence[str | os.PathLike[str]]) -> list[str]:
 
 
 __all__ = [
-    "REASON_CATALOG", "bounded_reason", "digest_bytes", "digest_text", "sanitize_argv", "sanitize_env",
-    "sanitize_error", "sanitize_metrics", "sanitize_paths", "sanitize_process_result",
+    "REASON_CATALOG", "RUNTIME_PROBE_MODES", "RUNTIME_PROVENANCE", "RUNTIME_SECURITY_KEYS",
+    "RuntimeSecurityProjection", "bounded_reason", "digest_bytes", "digest_text", "project_runtime_security",
+    "validate_runtime_security_keys",
+    "sanitize_argv", "sanitize_env", "sanitize_error", "sanitize_metrics", "sanitize_paths",
+    "sanitize_process_result",
 ]
