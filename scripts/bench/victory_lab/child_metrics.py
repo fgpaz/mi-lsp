@@ -18,7 +18,12 @@ import platform
 import subprocess
 import threading
 import time
-from typing import Mapping, Sequence
+from typing import Callable, Mapping, Sequence
+
+try:
+    from .security_gate import RuntimeProofProbe, _observable_processes
+except ImportError:  # pragma: no cover
+    from security_gate import RuntimeProofProbe, _observable_processes
 
 
 STATUS_NOT_COMPARABLE = "NOT_COMPARABLE"
@@ -43,6 +48,7 @@ class ChildMetrics:
     samples: int = 0
     tree_supported: bool = False
     reason_codes: tuple[str, ...] = field(default_factory=tuple)
+    observed_pids: tuple[int, ...] = field(default_factory=tuple)
 
     def __post_init__(self) -> None:
         if self.status not in _STATUS_CODES:
@@ -69,6 +75,7 @@ class ChildMetrics:
             "samples": self.samples,
             "tree_supported": self.tree_supported,
             "reason_codes": list(self.reason_codes),
+            "observed_pids": list(self.observed_pids),
         }
 
 
@@ -86,6 +93,7 @@ class ChildRunResult:
     timed_out: bool = False
     crashed: bool = False
     metrics: ChildMetrics | None = None
+    runtime_proof: dict[str, object] | None = None
 
 
 if os.name == "nt":
@@ -178,6 +186,30 @@ if os.name == "nt":
     _JOB_OBJECT_EXTENDED_LIMIT_INFORMATION = 9
     _JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE = 0x2000
     _INVALID_HANDLE_VALUE = ctypes.c_void_p(-1).value
+
+
+def _observe_child_processes(pids: set[int], env_keys: Sequence[str]) -> Mapping[int, Mapping[str, object]]:
+    """Observe the live tree through the same native Windows boundary as RSS.
+
+    CIM/PowerShell startup is slower than short-lived benchmark children and can
+    turn a successful tree sample into a false unavailable result.  Image paths
+    from ``QueryFullProcessImageNameW`` are sufficient for the closed MCP
+    executable-name scan; command output and the root argv are checked
+    separately by ``RuntimeProofProbe``.
+    """
+    probe = _WindowsProbe()
+    if not probe.available:
+        return {}
+    result: dict[int, Mapping[str, object]] = {}
+    for pid in sorted(pids):
+        image = probe.image_path(pid)
+        if image:
+            result[pid] = {
+                "argv": "",
+                "image": image,
+                "env_keys": tuple(str(key) for key in env_keys),
+            }
+    return result
 
 
 def _decode(value: object) -> str:
@@ -291,6 +323,7 @@ class _Sampler:
         self.samples = 0
         self.tree_supported = False
         self._reason_codes: set[str] = set()
+        self.observed_pids: set[int] = {pid}
 
     def start(self) -> None:
         self.thread.start()
@@ -298,6 +331,7 @@ class _Sampler:
     def _sample(self) -> None:
         root = self.probe.working_set(self.pid)
         pids = {self.pid} | self.probe.descendants(self.pid)
+        self.observed_pids.update(pids)
         values = [value for value in (self.probe.working_set(pid) for pid in pids) if value is not None]
         if root is not None:
             self.root_peak = max(self.root_peak or 0, root)
@@ -329,15 +363,17 @@ class _Sampler:
         else:
             status = "PASS"
             reason = None
-        if not self.tree_supported:
+        if len(self.observed_pids) <= 1:
             reason_codes.add("tree_not_observed")
+        else:
+            self.tree_supported = True
         return ChildMetrics(
             peak_rss_bytes=self.root_peak, tree_peak_rss_bytes=self.tree_peak,
             status=status, reason=reason, pid=pid, exit_code=returncode,
             failure_class=_failure_class(returncode=returncode, timed_out=timed_out, crashed=crashed, spawn_error=spawn_error),
             timed_out=timed_out, crashed=crashed, cleanup_status=cleanup_status,
             samples=self.samples, tree_supported=self.tree_supported,
-            reason_codes=tuple(sorted(reason_codes)),
+            reason_codes=tuple(sorted(reason_codes)), observed_pids=tuple(sorted(self.observed_pids)),
         )
 
 
@@ -387,12 +423,14 @@ def run_child(
     job = None
     process: subprocess.Popen[bytes] | None = None
     sampler: _Sampler | None = None
+    runtime_probe: RuntimeProofProbe | None = None
     timed_out = False
     cleanup_status = "not_required"
     stdout = stderr = ""
     returncode = 127
     crashed = False
     spawn_error = False
+    runtime_observation: dict[str, object] | None = None
     try:
         creationflags = subprocess.CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0
         process = subprocess.Popen(
@@ -409,6 +447,13 @@ def run_child(
         if probe.available:
             sampler = _Sampler(process.pid, probe, sample_interval)
             sampler.start()
+        runtime_probe = RuntimeProofProbe(
+            process.pid,
+            pid_provider=(lambda: set(sampler.observed_pids)) if sampler is not None else None,
+            process_observer=(lambda pids: _observe_child_processes(pids, env.keys())) if sampler is not None else None,
+            provenance="child_metrics_executor" if sampler is not None else None,
+        )
+        runtime_probe.start()
         try:
             out_bytes, err_bytes = process.communicate(timeout=timeout_seconds)
             stdout, stderr = _decode(out_bytes), _decode(err_bytes)
@@ -438,6 +483,13 @@ def run_child(
             probe.close_job(job)
         if process is not None and process.poll() is None:
             cleanup_status = _terminate_tree(process, probe, None)
+    if runtime_probe is not None:
+        runtime_observation = runtime_probe.finish(stdout=stdout, stderr=stderr)
+    else:
+        runtime_observation = {
+            "status": STATUS_NOT_COMPARABLE, "runtime_proof": False,
+            "reason_code": probe.reason or "runtime_proof_unavailable",
+        }
     if sampler is None:
         metrics = ChildMetrics(
             peak_rss_bytes=None, tree_peak_rss_bytes=None, status=STATUS_NOT_COMPARABLE,
@@ -454,7 +506,7 @@ def run_child(
     return ChildRunResult(
         argv=command, cwd=str(cwd), env_keys=sorted(str(key) for key in env), returncode=returncode,
         stdout=stdout, stderr=stderr, elapsed_ms=(time.perf_counter() - started) * 1000,
-        timed_out=timed_out, crashed=crashed, metrics=metrics,
+        timed_out=timed_out, crashed=crashed, metrics=metrics, runtime_proof=runtime_observation,
     )
 
 

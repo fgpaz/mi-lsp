@@ -9,8 +9,10 @@ from typing import Any, Mapping
 
 try:
     from .manifest_v2 import ManifestError, load_manifest, manifest_adapters, resolve_configured_path, sha256_file, git_revision
+    from .attestation_v2 import source_artifact_digest, validate_attestation
 except ImportError:  # pragma: no cover
     from manifest_v2 import ManifestError, load_manifest, manifest_adapters, resolve_configured_path, sha256_file, git_revision
+    from attestation_v2 import source_artifact_digest, validate_attestation
 
 
 def validate_strict_manifest(manifest: Mapping[str, Any], root: Path | None = None, *, check_files: bool = True) -> dict[str, Any]:
@@ -18,6 +20,39 @@ def validate_strict_manifest(manifest: Mapping[str, Any], root: Path | None = No
     adapters = manifest_adapters(manifest)
     if not adapters or any(not spec.comparable_operations for spec in adapters.values()):
         raise ManifestError("manifest has no usable comparator")
+    if manifest.get("provenance_contract") == "victory-build-attestation/v2":
+        try:
+            from .attestation_v2 import AttestationError, validate_attestation
+        except ImportError:
+            from attestation_v2 import AttestationError, validate_attestation
+        for spec in adapters.values():
+            if not spec.attestation_path or not spec.expected_attestation_sha256:
+                raise ManifestError(f"missing manifested build attestation: {spec.adapter_id}")
+            attestation = Path(spec.attestation_path)
+            if attestation.is_absolute() or ".." in attestation.parts:
+                raise ManifestError(f"unsafe build attestation path: {spec.adapter_id}")
+            if check_files:
+                if root is None:
+                    raise ManifestError("root is required when checking build attestations")
+                try:
+                    validate_attestation(
+                        root / attestation,
+                        expected_commit=spec.expected_commit,
+                        expected_executable_sha256=spec.expected_executable_sha256,
+                        expected_source_sha256=spec.expected_source_sha256,
+                        expected_file_sha256=spec.expected_attestation_sha256,
+                        expected_kind=spec.kind,
+                        expected_build_command=spec.build_command,
+                        expected_toolchain=spec.toolchain,
+                        expected_package_provenance=spec.package_provenance,
+                        expected_runtime_role=spec.runtime_role or None,
+                        expected_interpreter_sha256=spec.interpreter_sha256,
+                        expected_module_name=spec.module_name or "graphify",
+                        expected_distribution_name=spec.distribution_name or "graphifyy",
+                        expected_version=spec.expected_version,
+                    )
+                except AttestationError as exc:
+                    raise ManifestError(f"invalid build attestation: {spec.adapter_id}") from exc
     comparable = {operation for spec in adapters.values() for operation in spec.comparable_operations}
     fixture_hashes = manifest.get("fixture_hashes")
     oracle_hashes = manifest.get("oracle_hashes")
@@ -71,26 +106,48 @@ def validate_strict_manifest(manifest: Mapping[str, Any], root: Path | None = No
     return dict(manifest)
 
 
-def validate_runtime(manifest: dict, *, require_runtime: bool = False) -> list[str]:
+def validate_runtime(manifest: dict, *, require_runtime: bool = False, manifest_root: Path | None = None) -> list[str]:
     blockers: list[str] = []
+    attestation_root = manifest_root or Path(__file__).resolve().parents[3] / "benchmarks" / "victory-lab" / "v2"
     for spec in manifest_adapters(manifest).values():
         try:
             executable = resolve_configured_path("graphify_python" if spec.kind == "graphify" else spec.kind, spec.executable or None)
             if not executable.is_file():
-                raise ManifestError(f"missing executable: {executable}")
-            if spec.expected_executable_sha256 and sha256_file(executable) != spec.expected_executable_sha256:
-                raise ManifestError(f"executable sha mismatch: {spec.adapter_id}")
+                raise ManifestError(f"missing executable: {spec.adapter_id}")
             if spec.kind == "graphify":
-                source = resolve_configured_path("graphify_source", spec.source or None)
-                if not source.is_dir() or git_revision(source) != spec.expected_commit:
-                    raise ManifestError(f"Graphify source pin mismatch: {spec.adapter_id}")
-                if spec.source_digest_path and spec.expected_source_sha256 and sha256_file(source / spec.source_digest_path) != spec.expected_source_sha256:
-                    raise ManifestError(f"Graphify source digest mismatch: {spec.adapter_id}")
-        except ManifestError as exc:
-            # Missing runtime may be NOT_COMPARABLE when probing is optional,
-            # but an absent provenance contract is never silently accepted.
+                if sha256_file(executable) != spec.interpreter_sha256:
+                    raise ManifestError(f"interpreter sha mismatch: {spec.adapter_id}")
+            elif spec.expected_executable_sha256 and sha256_file(executable) != spec.expected_executable_sha256:
+                raise ManifestError(f"executable sha mismatch: {spec.adapter_id}")
+            source_name = "graphify_source" if spec.kind == "graphify" else f"{spec.kind}_source"
+            source = resolve_configured_path(source_name, spec.source or None)
+            if not source.is_dir() or git_revision(source) != spec.expected_commit:
+                raise ManifestError(f"source pin mismatch: {spec.adapter_id}")
+            if spec.expected_source_sha256 and source_artifact_digest(source, spec.expected_commit) != spec.expected_source_sha256:
+                raise ManifestError(f"source artifact digest mismatch: {spec.adapter_id}")
+            validate_attestation(
+                Path(spec.attestation_path) if Path(spec.attestation_path).is_absolute() else attestation_root / spec.attestation_path,
+                expected_commit=spec.expected_commit,
+                expected_executable_sha256=spec.expected_executable_sha256,
+                expected_source_sha256=spec.expected_source_sha256,
+                source_root=source,
+                expected_kind=spec.kind,
+                expected_build_command=spec.build_command,
+                expected_toolchain=spec.toolchain,
+                expected_package_provenance=spec.package_provenance,
+                expected_runtime_role=spec.runtime_role or None,
+                expected_interpreter_sha256=spec.interpreter_sha256,
+                expected_module_name=spec.module_name or "graphify",
+                expected_distribution_name=spec.distribution_name or "graphifyy",
+                expected_source_package_sha256=spec.expected_source_package_sha256,
+                expected_metadata_pyproject_sha256=spec.expected_metadata_pyproject_sha256,
+                expected_version=spec.expected_version,
+                require_runtime=require_runtime,
+                interpreter_path=executable,
+            )
+        except (ManifestError, ValueError, OSError) as exc:
             if require_runtime or "provenance" in str(exc).lower() or "pin" in str(exc).lower() or "sha" in str(exc).lower():
-                blockers.append(str(exc))
+                blockers.append(f"{spec.adapter_id}: {exc}")
     return blockers
 
 
@@ -103,7 +160,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         manifest = load_manifest(args.manifest, check_files=not args.skip_files)
         validate_strict_manifest(manifest, Path(args.manifest).resolve().parent, check_files=not args.skip_files)
-        blockers = validate_runtime(manifest, require_runtime=args.require_runtime)
+        blockers = validate_runtime(manifest, require_runtime=args.require_runtime, manifest_root=Path(args.manifest).resolve().parent)
         if blockers:
             raise ManifestError("; ".join(blockers))
     except (ManifestError, OSError, ValueError) as exc:

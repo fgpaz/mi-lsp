@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any, Callable, Iterator, Mapping
 
 try:
+    from ..attestation_v2 import AttestationError, validate_attestation, source_artifact_digest, probe_graphify_runtime
     from ..canonical_v2 import canonical_payload, parse_json_output, validate_terminal_state
     from ..child_metrics import ChildMetrics, ChildMetricsExecutor
     from ..manifest_v2 import ManifestError, git_revision, resolve_configured_path, sha256_file, validate_current_metadata
@@ -21,6 +22,7 @@ try:
     from ..schema_v2 import AdapterSpec, RunRecord
     from ..security_gate import SecurityGate
 except ImportError:  # pragma: no cover
+    from attestation_v2 import AttestationError, validate_attestation, source_artifact_digest, probe_graphify_runtime
     from canonical_v2 import canonical_payload, parse_json_output, validate_terminal_state
     from child_metrics import ChildMetrics, ChildMetricsExecutor
     from manifest_v2 import ManifestError, git_revision, resolve_configured_path, sha256_file, validate_current_metadata
@@ -45,6 +47,7 @@ class CommandResult:
     timed_out: bool = False
     crashed: bool = False
     metrics: ChildMetrics | None = None
+    runtime_proof: dict[str, object] | None = None
 
 
 class SubprocessExecutor:
@@ -59,6 +62,7 @@ class SubprocessExecutor:
             argv=result.argv, cwd=result.cwd, env_keys=result.env_keys, returncode=result.returncode,
             stdout=result.stdout, stderr=result.stderr, elapsed_ms=result.elapsed_ms,
             timed_out=result.timed_out, crashed=result.crashed, metrics=result.metrics,
+            runtime_proof=result.runtime_proof,
         )
 
 
@@ -74,9 +78,11 @@ def _copy_fixture(source: Path, destination: Path) -> None:
 
 def _project_toml(repository_identity: str) -> str:
     return "\n".join([
-        '[project]', 'name = "victory-lab-v2"', 'languages = ["go"]', 'kind = "single"', 'default_repo = "go"',
+        '[project]', 'name = "victory-lab-v2"', 'languages = ["go"]', 'kind = "single"',
+        'default_repo = "go"', 'default_entrypoint = "go.mod"',
         '', '[[repo]]', 'id = "go"', 'name = "go"', 'root = "go"',
-        'languages = ["go"]', f'repository_identity = "{repository_identity}"', '',
+        'languages = ["go"]', 'default_entrypoint = "go.mod"',
+        f'repository_identity = "{repository_identity}"', '',
     ])
 
 
@@ -112,6 +118,19 @@ def _display(item: Any) -> str:
     return ""
 
 
+def _path(item: Any) -> str:
+    """Return the public file identity for an affected result item."""
+    if not isinstance(item, Mapping):
+        return ""
+    value = item.get("path")
+    return value.replace("\\", "/") if isinstance(value, str) and value else ""
+
+
+def _comparison_key(item: Any, operation: str) -> str:
+    """Use file paths for affected and qualified displays for callers."""
+    return _path(item) if operation == "affected" else _display(item)
+
+
 def _items(payload: Any) -> list[Any]:
     if isinstance(payload, Mapping):
         value = payload.get("items", payload.get("nodes", payload.get("results", [])))
@@ -119,8 +138,8 @@ def _items(payload: Any) -> list[Any]:
     return payload if isinstance(payload, list) else []
 
 
-def _qualify_native_items(payload: Any) -> Any:
-    """Make mi-lsp's display-only symbols comparable across repository packages."""
+def _qualify_native_items(payload: Any, operation: str = "callers") -> Any:
+    """Make caller displays comparable without changing affected file identities."""
     if not isinstance(payload, Mapping) or not isinstance(payload.get("items"), list):
         return payload
     normalized = dict(payload)
@@ -130,27 +149,76 @@ def _qualify_native_items(payload: Any) -> Any:
             items.append(item)
             continue
         value = dict(item)
-        display = _display(item)
-        owner_path = item.get("owner_path")
-        if display and isinstance(owner_path, str) and "." not in display:
-            package = Path(owner_path.replace("\\", "/")).parent.as_posix().replace("/", ".")
-            if package and package != ".":
-                value["display"] = f"{package}.{display}"
+        if operation != "affected":
+            display = _display(item)
+            owner_path = item.get("owner_path")
+            if display and isinstance(owner_path, str) and "." not in display:
+                package = Path(owner_path.replace("\\", "/")).parent.as_posix().replace("/", ".")
+                if package and package != ".":
+                    value["display"] = f"{package}.{display}"
+        elif _path(item):
+            value["path"] = _path(item)
         items.append(value)
     normalized["items"] = items
     return normalized
 
 
-def _order_graphify_items(native: Any, expected: list[str]) -> Any:
-    """Apply Graphify's declared callers normalizer, preserving path order."""
-    if not isinstance(native, Mapping) or not isinstance(native.get("items"), list) or not expected:
-        return native
-    rank = {name: index for index, name in enumerate(expected)}
-    items = list(native["items"])
-    items.sort(key=lambda item: rank.get(_display(item), len(rank)))
-    normalized = dict(native)
-    normalized["items"] = items
-    return normalized
+def _canonical_set_key(item: Any, operation: str, original_index: int) -> tuple[str, int]:
+    """Order result sets by their operation's canonical identity."""
+    return (_comparison_key(item, operation), original_index)
+
+
+def _normalize_set_payload(payload: Any, operation: str) -> Any:
+    """Normalize result sets without consulting oracle data.
+
+    Callers are symbol sets ordered by qualified display. Affected is a
+    file-level set: ``item.path`` is the identity, and duplicate paths are
+    collapsed before lexicographic ordering. Path-query order is untouched.
+    """
+    normalized = _qualify_native_items(payload, operation)
+    if operation not in {"callers", "affected"}:
+        return normalized
+    if not isinstance(normalized, Mapping) or not isinstance(normalized.get("items"), list):
+        return normalized
+    indexed = list(enumerate(normalized["items"]))
+    indexed.sort(key=lambda pair: _canonical_set_key(pair[1], operation, pair[0]))
+    result = dict(normalized)
+    if operation == "affected":
+        seen: set[str] = set()
+        unique: list[Any] = []
+        for _, item in indexed:
+            identity = _path(item)
+            if identity and identity not in seen:
+                seen.add(identity)
+                unique.append(item)
+        result["items"] = unique
+    else:
+        result["items"] = [item for _, item in indexed]
+    return result
+
+
+def _normalize_path_payload(payload: Any, case: Mapping[str, Any]) -> Any:
+    """Preserve native path order while making explicit endpoints observable."""
+    normalized = _qualify_native_items(payload)
+    if not isinstance(normalized, Mapping) or not isinstance(normalized.get("items"), list):
+        return normalized
+    items = list(normalized["items"])
+    from_display = str(case.get("from", ""))
+    to_display = str(case.get("to", ""))
+    if from_display and (not items or _display(items[0]) != from_display):
+        items.insert(0, {"display": from_display})
+    if to_display and (not items or _display(items[-1]) != to_display):
+        items.append({"display": to_display})
+    result = dict(normalized)
+    result["items"] = items
+    return result
+
+
+def _normalize_payload(payload: Any, case: Mapping[str, Any]) -> Any:
+    """Apply operation-specific normalization without consulting the oracle."""
+    if case["operation"] == "path":
+        return _normalize_path_payload(payload, case)
+    return _normalize_set_payload(payload, case["operation"])
 
 
 def _graphify_affected_payload(stdout: str) -> dict[str, Any]:
@@ -181,7 +249,10 @@ class VictoryAdapter:
         self._metadata: dict[str, Any] | None = None
         self._commit: str = ""
         self._executable = self._resolve_executable()
-        self._source = self._resolve_source()
+        # Source checkouts are execution-time provenance inputs.  Resolving one
+        # while constructing an adapter would make capability-NC slices and
+        # executor fakes depend on unrelated host configuration.
+        self._source: Path | None = None
         self._executable_sha = ""
         self._source_sha = ""
         self._security_gate: SecurityGate | None = None
@@ -192,9 +263,10 @@ class VictoryAdapter:
         return resolve_configured_path(self.spec.kind, self.spec.executable or None)
 
     def _resolve_source(self) -> Path | None:
-        if self.spec.kind != "graphify":
+        if self.spec.kind not in {"current", "baseline", "graphify"}:
             return None
-        return resolve_configured_path("graphify_source", self.spec.source or None)
+        name = "graphify_source" if self.spec.kind == "graphify" else f"{self.spec.kind}_source"
+        return resolve_configured_path(name, self.spec.source or None)
 
     def _env(self, fixture_root: Path) -> dict[str, str]:
         allowed = set(self.spec.env_allowlist)
@@ -222,7 +294,9 @@ class VictoryAdapter:
         if self.spec.kind == "graphify" and case["operation"] == "callers" and "." in selector:
             selector = f"{selector.rsplit('.', 1)[-1]}()"
         mode = str(case.get("mode", "direct"))
-        depth = 1 if mode == "direct" else 2
+        depth = int(case.get("depth", 1 if mode == "direct" else 2))
+        if depth < 1:
+            raise AdapterError("case depth must be positive")
         from_value = str(case.get("from", ""))
         to_value = str(case.get("to", ""))
         if self.spec.kind in {"current", "baseline"}:
@@ -241,7 +315,7 @@ class VictoryAdapter:
             value = part.format(**values)
             if not value and part in optional:
                 continue
-            if part in {"--depth", "{depth}"} and case["operation"] not in {"callers", "affected"}:
+            if part in {"--depth", "{depth}"} and case["operation"] not in {"callers", "affected", "path"}:
                 continue
             if part in {"--mode", "{mode}"} and case["operation"] != "affected":
                 continue
@@ -256,38 +330,67 @@ class VictoryAdapter:
         self._executable_sha = sha256_file(self._executable)
         if self.spec.expected_executable_sha256 and self._executable_sha != self.spec.expected_executable_sha256:
             raise AdapterError("executable sha256 mismatch")
-        if self.spec.kind == "graphify":
+        if self.spec.kind in {"current", "baseline"} and self._metadata is not None:
+            self._commit = validate_current_metadata(
+                self._metadata, self.manifest, expected_commit=self.spec.expected_commit,
+                expected_version=self.spec.expected_version, expected_executable_sha256=self.spec.expected_executable_sha256,
+                require_observed=True,
+            )
+        source_required = (
+            self.manifest.get("provenance_contract") == "victory-build-attestation/v2"
+            or bool(self.spec.source and self.spec.source_digest_path and self.spec.expected_source_sha256)
+        )
+        if source_required:
+            # Resolve only at the provenance boundary.  Construction and
+            # capability-NC paths remain independent of source environment.
+            self._source = self._resolve_source()
             if self._source is None or not self._source.is_dir():
-                raise AdapterError("Graphify source missing")
+                raise AdapterError("source checkout is missing")
             self._commit = git_revision(self._source)
             if self._commit != self.spec.expected_commit:
-                raise AdapterError("Graphify source revision mismatch")
-            if self.spec.source_digest_path:
-                source_digest_path = self._source / self.spec.source_digest_path
-                self._source_sha = sha256_file(source_digest_path)
-                if self.spec.expected_source_sha256 and self._source_sha != self.spec.expected_source_sha256:
-                    raise AdapterError("Graphify source sha256 mismatch")
-        elif self.spec.kind in {"current", "baseline"}:
-            if self._metadata is not None:
-                self._commit = validate_current_metadata(
-                    self._metadata,
-                    self.manifest,
-                    expected_commit=self.spec.expected_commit,
-                    expected_version=self.spec.expected_version,
-                    expected_executable_sha256=self.spec.expected_executable_sha256,
-                    require_observed=True,
+                raise AdapterError("source revision mismatch")
+            self._source_sha = source_artifact_digest(self._source, self._commit)
+            if self.spec.expected_source_sha256 and self._source_sha != self.spec.expected_source_sha256:
+                raise AdapterError("source artifact digest mismatch")
+            if self.spec.kind in {"current", "baseline"}:
+                status = subprocess.run(
+                    ["git", "-C", str(self._source), "status", "--porcelain", "--untracked-files=all", "--", "go.mod", "go.sum", "cmd", "internal"],
+                    capture_output=True, text=True, check=False, timeout=10,
                 )
-            else:
-                if not (self.spec.source and self.spec.source_digest_path and self.spec.expected_source_sha256):
-                    raise AdapterError("observed CLI provenance is missing")
-                source = Path(self.spec.source)
-                source_file = source / self.spec.source_digest_path
-                if not source.is_dir() or not source_file.is_file():
-                    raise AdapterError("explicit source-to-binary proof source is missing")
-                self._source_sha = sha256_file(source_file)
-                if self._source_sha != self.spec.expected_source_sha256:
-                    raise AdapterError("explicit source-to-binary proof digest mismatch")
-                self._commit = self.spec.expected_commit
+                if status.returncode != 0 or status.stdout.strip():
+                    raise AdapterError("build-relevant Go source is dirty")
+            elif self.spec.kind == "graphify":
+                probe_graphify_runtime(
+                    self._executable, self._source, expected_commit=self.spec.expected_commit,
+                    module_name=self.spec.module_name, distribution_name=self.spec.distribution_name,
+                    expected_version=self.spec.expected_version, toolchain=self.spec.toolchain,
+                )
+        if self.manifest.get("provenance_contract") == "victory-build-attestation/v2":
+            if not self.spec.attestation_path or not self.spec.expected_attestation_sha256:
+                raise AdapterError("manifested build attestation is missing")
+            try:
+                validate_attestation(
+                    self.manifest_root / self.spec.attestation_path,
+                    expected_commit=self._commit,
+                    expected_executable_sha256=self._executable_sha,
+                    expected_source_sha256=self._source_sha,
+                    expected_file_sha256=self.spec.expected_attestation_sha256,
+                    source_root=self._source,
+                    expected_kind=self.spec.kind,
+                    expected_build_command=self.spec.build_command,
+                    expected_toolchain=self.spec.toolchain,
+                    expected_package_provenance=self.spec.package_provenance,
+                    expected_runtime_role=self.spec.runtime_role or None,
+                    expected_interpreter_sha256=self.spec.interpreter_sha256,
+                    expected_module_name=self.spec.module_name or "graphify",
+                    expected_distribution_name=self.spec.distribution_name or "graphifyy",
+                    expected_source_package_sha256=self.spec.expected_source_package_sha256,
+                    expected_metadata_pyproject_sha256=self.spec.expected_metadata_pyproject_sha256,
+                    expected_version=self.spec.expected_version,
+                    interpreter_path=self._executable if self.spec.kind == "graphify" else None,
+                )
+            except (AttestationError, OSError) as exc:
+                raise AdapterError("build attestation does not bind executable to commit") from exc
 
     def _metadata_once(self, root: Path, env: Mapping[str, str]) -> None:
         if self._metadata is not None:
@@ -372,7 +475,10 @@ class VictoryAdapter:
         error: dict[str, str] | None = None,
     ) -> RunRecord:
         try:
-            security = gate.finish(argv or [], env)
+            security = gate.finish(
+                argv or [], env,
+                runtime_observation=result.runtime_proof if result is not None else None,
+            )
         except OSError:
             return self._record(
                 case, repetition, "BLOCKED", root=root, env=env, canonical=canonical,
@@ -380,9 +486,14 @@ class VictoryAdapter:
             )
         if security["status"] != "PASS":
             codes = set(security.get("advisory_scan", {}).get("reason_codes", []))
-            if {"network_indicator", "mcp_indicator"} & codes:
+            runtime_reason = security.get("runtime", {}).get("reason_code") if isinstance(security.get("runtime"), Mapping) else None
+            if {"network_indicator", "mcp_indicator", "runtime_proof_unavailable"} & (codes | {str(runtime_reason)}):
+                # Runtime proof gates authority, but must not erase the child
+                # terminal classification (timeout/crash/oracle) from a sample
+                # that is already known not to be PASS.
                 status = "NOT_COMPARABLE"
-                error = _safe_error("security", "runtime proof unavailable for network or MCP")
+                if error is None:
+                    error = _safe_error("security", "runtime proof unavailable for network or MCP")
             else:
                 error = _safe_error("security", "protected input changed or advisory scan found an indicator")
                 status = "BLOCKED"
@@ -395,16 +506,6 @@ class VictoryAdapter:
         )
 
     def run_case(self, case: Mapping[str, Any], *, repetition: int = 0) -> RunRecord:
-        if (
-            self.spec.kind == "baseline"
-            and case.get("operation") == "affected"
-            and case.get("mode", "direct") == "transitive"
-            and "--mode" not in self.spec.command
-        ):
-            return RunRecord(
-                adapter_id=self.spec.adapter_id, operation=case["operation"], status="NOT_COMPARABLE",
-                repetition=repetition, error=_safe_error("comparability", "baseline transitive mode unsupported"),
-            )
         if case["operation"] not in self.spec.capabilities:
             return RunRecord(adapter_id=self.spec.adapter_id, operation=case["operation"], status="NOT_COMPARABLE", repetition=repetition, error=_safe_error("capability", "operation not declared by adapter"))
         if case["operation"] not in self.spec.comparable_operations:
@@ -414,10 +515,22 @@ class VictoryAdapter:
             "fixture_source": fixture_source,
             "goldens": self.manifest_root / "goldens",
             "manifest": self.manifest_root / "manifest.json",
+            "attestation": self.manifest_root / self.spec.attestation_path if self.spec.attestation_path else self.manifest_root / "manifest.json",
+            "executable": self._executable,
         }
+        source_inputs: dict[str, tuple[Path, tuple[str, ...]]] = {}
+        source_required = self.manifest.get("provenance_contract") == "victory-build-attestation/v2" or bool(self.spec.source and self.spec.source_digest_path and self.spec.expected_source_sha256)
+        if source_required:
+            self._source = self._resolve_source()
+            if self._source is None:
+                raise AdapterError("source checkout is missing")
+            if self.spec.kind in {"current", "baseline"}:
+                source_inputs[self.spec.kind] = (self._source, ("go.mod", "go.sum", "cmd", "internal"))
+            elif self.spec.kind == "graphify":
+                source_inputs[self.spec.kind] = (self._source, ("pyproject.toml", self.spec.source_package_path or self.spec.module_name))
         with materialize_fixture(fixture_source, self.manifest["repository_identity"]) as root:
             env = self._env(root)
-            gate = SecurityGate(protected_paths)
+            gate = SecurityGate(protected_paths, source_inputs=source_inputs)
             try:
                 gate.start()
             except OSError:
@@ -459,12 +572,8 @@ class VictoryAdapter:
                         argv=argv, result=result, error=_safe_error("crash", "adapter exited unsuccessfully"),
                     )
                 try:
-                    native = _graphify_affected_payload(result.stdout) if self.spec.kind == "graphify" else _qualify_native_items(parse_json_output(result.stdout))
-                    if self.spec.kind == "graphify" and case["operation"] == "callers":
-                        expected_order = self.manifest.get("oracles", {}).get(case["id"], {}).get(
-                            "expected_direct" if case.get("mode", "direct") == "direct" else "expected_transitive", []
-                        )
-                        native = _order_graphify_items(native, [str(item) for item in expected_order])
+                    native = _graphify_affected_payload(result.stdout) if self.spec.kind == "graphify" else parse_json_output(result.stdout)
+                    native = _normalize_payload(native, case)
                     validate_terminal_state(native)
                     canonical = canonical_payload(case["operation"], native, root)
                 except ValueError as exc:
@@ -472,14 +581,25 @@ class VictoryAdapter:
                         gate, case, repetition, "FAIL", root=root, env=env,
                         argv=argv, result=result, error=_safe_error("decode", str(exc)),
                     )
+                if self.spec.kind == "baseline" and case["operation"] == "affected":
+                    # The baseline is a heuristic hot-path guard.  Its process,
+                    # terminal output, and security evidence remain measured,
+                    # but symbol-level oracle comparison is not claimed.
+                    return self._finish_record(
+                        gate, case, repetition, "NOT_COMPARABLE", root=root, env=env,
+                        argv=argv, canonical=canonical, result=result,
+                        error=_safe_error("comparability", "not_comparable"),
+                    )
                 expected = self.manifest.get("oracles", {}).get(case["id"], {})
-                actual = [_display(item) for item in _items(native)]
+                actual = [_comparison_key(item, case["operation"]) for item in _items(native)]
                 if case["operation"] == "path":
                     target = expected.get("expected_shortest_path", [])
-                elif case["operation"] == "callers":
-                    target = expected.get("expected_direct", []) if case.get("mode", "direct") == "direct" else expected.get("expected_transitive", [])
+                elif case["operation"] in {"callers", "affected"}:
+                    target = expected.get(
+                        "expected_direct" if case.get("mode", "direct") == "direct" else "expected_transitive", []
+                    )
                 else:
-                    target = expected.get("expected_direct", [])
+                    target = []
                 target = [str(item) for item in target]
                 status = "PASS" if actual == target else "FAIL"
                 return self._finish_record(

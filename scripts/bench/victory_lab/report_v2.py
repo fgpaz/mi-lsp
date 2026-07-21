@@ -5,21 +5,25 @@ import argparse
 import json
 import statistics
 from pathlib import Path
+import re
 from typing import Any, Iterable, Mapping
 
 try:
     from .canonical_v2 import payload_digest
     from .manifest_v2 import load_manifest, sha256_bytes
     from .schema_v2 import RunRecord
+    from .durable_v2 import validate_group_key, validate_identifier
     from .validate_manifest import validate_strict_manifest
 except ImportError:  # pragma: no cover
     from canonical_v2 import payload_digest
     from manifest_v2 import load_manifest, sha256_bytes
     from schema_v2 import RunRecord
+    from durable_v2 import validate_group_key, validate_identifier
     from validate_manifest import validate_strict_manifest
 
 AUTHORITATIVE_REPETITIONS = 30
 _FORBIDDEN_KEYS = frozenset({"best", "best_of", "minimum", "fastest", "selected_sample", "summary"})
+_SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 
 
 def percentile(values: Iterable[float], p: float) -> float | None:
@@ -61,17 +65,46 @@ def _contains_forbidden_key(value: Any) -> bool:
     return False
 
 
-def _validate_sample_metrics(record: dict[str, Any]) -> None:
+def _validate_sample_metrics(record: dict[str, Any]) -> str | None:
+    """Return a conservative comparability reason instead of manufacturing PASS."""
     metrics = record.get("metrics")
     child = metrics.get("child") if isinstance(metrics, dict) else None
     if not isinstance(child, dict) or child.get("status") not in {"PASS", "NOT_COMPARABLE"}:
-        raise ValueError("missing or invalid child metric status")
+        return "child_metrics_missing"
     if child["status"] == "PASS":
         value = child.get("peak_rss_bytes")
+        tree_value = child.get("tree_peak_rss_bytes")
         if isinstance(value, bool) or not isinstance(value, (int, float)) or value < 0:
-            raise ValueError("PASS sample is missing peak_rss_bytes")
-    if record["status"] == "PASS" and not isinstance(record.get("elapsed_ms"), (int, float)):
-        raise ValueError("PASS sample is missing elapsed_ms")
+            return "working_set_unavailable"
+        if isinstance(tree_value, bool) or not isinstance(tree_value, (int, float)) or tree_value < 0:
+            return "tree_rss_missing"
+        if child.get("tree_supported") is not True:
+            return "tree_not_observed"
+        if child.get("cleanup_status") not in {"clean", "forced"}:
+            return "cleanup_missing"
+    if record["status"] == "PASS" and (not isinstance(record.get("elapsed_ms"), (int, float)) or isinstance(record.get("elapsed_ms"), bool)):
+        return "latency_missing"
+    security = metrics.get("security") if isinstance(metrics, dict) else None
+    if not isinstance(security, dict):
+        return "security_missing"
+    runtime = security.get("runtime")
+    integrity = security.get("integrity")
+    required = (
+        security.get("status") == "PASS",
+        security.get("runtime_proof") is True,
+        isinstance(runtime, dict) and runtime.get("status") == "PASS",
+        isinstance(runtime, dict) and runtime.get("runtime_proof") is True,
+        isinstance(runtime, dict) and runtime.get("observed_network_count") == 0,
+        isinstance(runtime, dict) and runtime.get("observed_mcp_count") == 0,
+        isinstance(runtime, dict) and isinstance(runtime.get("sample_count"), int) and runtime.get("sample_count", 0) > 0,
+        isinstance(runtime, dict) and isinstance(runtime.get("evidence_digest"), str) and _SHA256_RE.fullmatch(runtime["evidence_digest"]),
+        isinstance(integrity, dict) and integrity.get("status") == "PASS",
+    )
+    if not all(required):
+        if security.get("status") in {"FAIL", "BLOCKED"} or (isinstance(runtime, dict) and runtime.get("status") in {"FAIL", "BLOCKED"}):
+            return "security_failed"
+        return "security_incomplete"
+    return None
 
 
 def child_metric_stats(records: list[dict[str, Any]]) -> dict[str, Any]:
@@ -103,7 +136,12 @@ def _read_samples(path: Path) -> list[dict[str, Any]]:
         if _contains_forbidden_key(record):
             raise ValueError("best-of summaries are forbidden")
         RunRecord.from_dict(record)
-        _validate_sample_metrics(record)
+        validate_identifier(record.get("adapter_id"), "adapter_id")
+        validate_identifier(record.get("case_id"), "case_id")
+        validate_group_key(f"{record['adapter_id']}:{record['case_id']}:{record['operation']}")
+        metric_issue = _validate_sample_metrics(record)
+        if metric_issue and record.get("status") == "PASS":
+            raise ValueError(f"PASS sample metrics are incomplete: {metric_issue}")
     return records
 
 
@@ -224,6 +262,7 @@ def build_report(samples: str | Path, *, manifest: str | Path | Mapping[str, Any
         if len(set(fingerprints)) != 30:
             raise ValueError("duplicate or replayed sample")
         digests = []
+        metric_issues = [issue for issue in (_validate_sample_metrics(record) for record in group) if issue]
         for record in group:
             if record.get("status") == "PASS":
                 canonical = record.get("canonical")
@@ -237,6 +276,8 @@ def build_report(samples: str | Path, *, manifest: str | Path | Mapping[str, Any
         stale = [record.get("metrics", {}).get("stale_rate") for record in group if isinstance(record.get("metrics", {}).get("stale_rate"), (int, float))]
         incremental = [record.get("metrics", {}).get("incrementality_ms") for record in group if isinstance(record.get("metrics", {}).get("incrementality_ms"), (int, float))]
         status = _effective_status(group)
+        if metric_issues:
+            status = "BLOCKED" if "security_failed" in metric_issues else "NOT_COMPARABLE"
         if loaded_manifest is not None and status == "PASS" and (not incremental or not stale):
             status = "NOT_COMPARABLE"
         if status == "PASS" and determinism["status"] != "PASS":

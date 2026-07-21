@@ -10,8 +10,10 @@ from pathlib import Path
 from typing import Any, Mapping
 
 try:
+    from .attestation_v2 import AttestationError, validate_attestation
     from .schema_v2 import ADAPTER_SCHEMA, MANIFEST_SCHEMA, OPERATIONS, AdapterSpec, SchemaError
 except ImportError:  # pragma: no cover - direct script compatibility
+    from attestation_v2 import AttestationError, validate_attestation
     from schema_v2 import ADAPTER_SCHEMA, MANIFEST_SCHEMA, OPERATIONS, AdapterSpec, SchemaError
 
 BASELINE_COMMIT = "a251ab1f8db4e96f029926fbef275b078a20a111"
@@ -20,12 +22,16 @@ GRAPHIFY_VERSION = "0.9.19"
 DEFAULT_PATHS = {
     "current": r"C:\tmp\milsp-g9-bin\mi-lsp-current.exe",
     "baseline": r"C:\tmp\milsp-g9-bin\mi-lsp-baseline.exe",
-    "graphify_source": r"C:\tmp\pi-github-repos\Graphify-Labs\graphify",
+    "current_source": "",
+    "baseline_source": "",
+    "graphify_source": "",
     "graphify_python": r"C:\tmp\graphify-bench-venv\Scripts\python.exe",
 }
 _PATH_ENV = {
     "current": "VICTORY_LAB_CURRENT_EXE",
     "baseline": "VICTORY_LAB_BASELINE_EXE",
+    "current_source": "VICTORY_LAB_CURRENT_SOURCE",
+    "baseline_source": "VICTORY_LAB_BASELINE_SOURCE",
     "graphify_source": "VICTORY_LAB_GRAPHIFY_SOURCE",
     "graphify_python": "VICTORY_LAB_GRAPHIFY_PYTHON",
 }
@@ -101,6 +107,11 @@ def resolve_configured_path(name: str, value: str | None = None) -> Path:
     if name not in DEFAULT_PATHS:
         raise ManifestError(f"unknown configurable path: {name}")
     configured = value or os.environ.get(_PATH_ENV[name]) or DEFAULT_PATHS[name]
+    if isinstance(configured, str) and configured.startswith("${") and configured.endswith("}"):
+        env_name = configured[2:-1]
+        if env_name not in _PATH_ENV.values():
+            raise ManifestError(f"unknown portable path variable: {env_name}")
+        configured = os.environ.get(env_name, "")
     if not configured or "\x00" in configured:
         raise ManifestError(f"invalid configured path: {name}")
     return Path(configured).expanduser()
@@ -182,6 +193,37 @@ def validate_manifest(manifest: Mapping[str, Any], root: Path | None = None, *, 
         raise ManifestError("current commit pin is not linked to current adapter")
     if by_kind["baseline"][0].expected_commit != manifest["baseline_commit"]:
         raise ManifestError("baseline commit pin is not linked to baseline adapter")
+    if manifest.get("provenance_contract") == "victory-build-attestation/v2":
+        for spec in specs:
+            if not spec.attestation_path or not spec.expected_attestation_sha256:
+                raise ManifestError(f"{spec.adapter_id} lacks manifested build attestation")
+            attestation = Path(spec.attestation_path)
+            if attestation.is_absolute() or ".." in attestation.parts:
+                raise ManifestError(f"{spec.adapter_id} has unsafe attestation path")
+            if check_files:
+                if root is None:
+                    raise ManifestError("root is required for build attestation checks")
+                try:
+                    validate_attestation(
+                        root / attestation,
+                        expected_commit=spec.expected_commit,
+                        expected_executable_sha256=spec.expected_executable_sha256,
+                        expected_source_sha256=spec.expected_source_sha256,
+                        expected_file_sha256=spec.expected_attestation_sha256,
+                        expected_kind=spec.kind,
+                        expected_build_command=spec.build_command,
+                        expected_toolchain=spec.toolchain,
+                        expected_package_provenance=spec.package_provenance,
+                        expected_runtime_role=spec.runtime_role or None,
+                        expected_interpreter_sha256=spec.interpreter_sha256,
+                        expected_module_name=spec.module_name or "graphify",
+                        expected_distribution_name=spec.distribution_name or "graphifyy",
+                        expected_source_package_sha256=spec.expected_source_package_sha256,
+                        expected_metadata_pyproject_sha256=spec.expected_metadata_pyproject_sha256,
+                        expected_version=spec.expected_version,
+                    )
+                except AttestationError as exc:
+                    raise ManifestError(f"invalid build attestation for {spec.adapter_id}: {exc}") from exc
     cases = manifest.get("cases")
     if not isinstance(cases, list) or not cases:
         raise ManifestError("manifest must declare cases")

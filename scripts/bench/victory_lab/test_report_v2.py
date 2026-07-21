@@ -26,7 +26,7 @@ class ReportV2Tests(unittest.TestCase):
             "status": status, "repetition": repetition, "fixture_digest": "a" * 64, "oracle_digest": "b" * 64,
             "executable_sha256": "", "source_sha256": "", "commit": "", "version": "", "capabilities": ["affected"],
             "argv": [], "cwd": "", "env_keys": [], "elapsed_ms": repetition + 1,
-            "canonical": canonical, "metrics": {"child": {"status": child_status, "peak_rss_bytes": peak}},
+            "canonical": canonical, "metrics": {"child": {"status": child_status, "peak_rss_bytes": peak, "tree_peak_rss_bytes": peak, "tree_supported": True, "cleanup_status": "clean"}, "security": {"status": "PASS", "runtime_proof": True, "runtime": {"status": "PASS", "runtime_proof": True, "sample_count": 1, "observed_network_count": 0, "observed_mcp_count": 0, "evidence_digest": "c" * 64}, "integrity": {"status": "PASS"}}},
             "error": None if status == "PASS" else {"kind": "timeout", "reason_code": "timeout"},
         }
 

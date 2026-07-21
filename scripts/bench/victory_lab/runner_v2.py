@@ -12,17 +12,36 @@ try:
     from .adapters.v2 import VictoryAdapter
     from .manifest_v2 import ManifestError, canonical_file_hash, load_manifest, manifest_adapters, sha256_bytes, sha256_file
     from .schema_v2 import RunRecord
-    from .validate_manifest import validate_strict_manifest
+    from .validate_manifest import validate_runtime, validate_strict_manifest
 except ImportError:  # pragma: no cover
     from adapters.v2 import VictoryAdapter
     from manifest_v2 import ManifestError, canonical_file_hash, load_manifest, manifest_adapters, sha256_bytes, sha256_file
     from schema_v2 import RunRecord
-    from validate_manifest import validate_strict_manifest
+    from validate_manifest import validate_runtime, validate_strict_manifest
 
 
 def _digest_group(manifest: Mapping[str, Any], key: str) -> str:
     value = json.dumps(manifest.get(key, {}), sort_keys=True, separators=(",", ":")).encode()
     return sha256_bytes(value)
+
+
+def _runtime_preflight_digest(manifest_path: Path, manifest: Mapping[str, Any]) -> str:
+    """Bind the fresh runtime reproduction to this exact measurement manifest."""
+    evidence = {
+        "manifest_sha256": sha256_file(manifest_path),
+        "adapters": [
+            {
+                "adapter_id": adapter.get("adapter_id"),
+                "attestation_sha256": adapter.get("expected_attestation_sha256"),
+                "executable_sha256": adapter.get("expected_executable_sha256"),
+                "interpreter_sha256": adapter.get("interpreter_sha256"),
+                "source_commit": adapter.get("expected_commit"),
+                "source_sha256": adapter.get("expected_source_sha256"),
+            }
+            for adapter in manifest.get("adapters", [])
+        ],
+    }
+    return sha256_bytes(json.dumps(evidence, sort_keys=True, separators=(",", ":")).encode())
 
 
 def _tree_digest(path: Path) -> str:
@@ -77,6 +96,10 @@ def run_manifest(manifest_path: str | Path, output: str | Path, *, repetitions: 
     path = Path(manifest_path).resolve()
     manifest = load_manifest(path)
     validate_strict_manifest(manifest, path.parent, check_files=True)
+    runtime_blockers = validate_runtime(manifest, require_runtime=True, manifest_root=path.parent)
+    if runtime_blockers:
+        raise ManifestError("runtime preflight failed: " + "; ".join(runtime_blockers))
+    runtime_preflight_digest = _runtime_preflight_digest(path, manifest)
     if repetitions != 30:
         raise ManifestError("Victory Lab v2 evidence requires exactly 30 repetitions")
     if mode not in {"authoritative", "exploratory"}:
@@ -126,6 +149,12 @@ def run_manifest(manifest_path: str | Path, output: str | Path, *, repetitions: 
         "status_counts": {status: sum(sample["status"] == status for sample in samples) for status in ("PASS", "FAIL", "BLOCKED", "NOT_COMPARABLE", "NOT_RUN")},
         "fixture_digest": manifest["fixture_digest"],
         "oracle_digest": manifest["oracle_digest"],
+        "runtime_preflight": {
+            "status": "PASS",
+            "require_runtime": True,
+            "fresh_reproduction": True,
+            "evidence_digest": runtime_preflight_digest,
+        },
         "anti_gaming": {"serialized_variants": True, "all_samples_retained": True, "best_of_rejected": True},
     }
     (output_path / "run.json").write_text(json.dumps(summary, indent=2, sort_keys=True) + "\n", encoding="utf-8")

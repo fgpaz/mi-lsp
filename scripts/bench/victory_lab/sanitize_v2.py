@@ -12,16 +12,22 @@ import re
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
+try:
+    from .durable_v2 import EMAIL_RE, PHI_RE, SECRET_RE, SSN_RE
+except ImportError:  # pragma: no cover
+    from durable_v2 import EMAIL_RE, PHI_RE, SECRET_RE, SSN_RE
+
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 _ID_RE = re.compile(r"^[A-Za-z0-9_.:/-]{1,128}$")
 _REASON_RE = re.compile(r"^[a-z][a-z0-9_.-]{0,63}$")
-_SECRET_RE = re.compile(r"(?i)(password|passwd|secret|token|api[_-]?key|private[_-]?key|authorization|cookie)")
-_PATH_RE = re.compile(r"(?:[A-Za-z]:[\\/]|\\\\|/(?:Users|home|root|private|tmp)/)")
-_PII_RE = re.compile(
-    r"(?ix)(?:[A-Z0-9._%+-]+@[A-Z0-9.-]+\\.[A-Z]{2,}|"
-    r"\\b(?:ssn|social\\s+security|patient|medical|phi|name|email)\\b|"
-    r"\\b\\d{3}-\\d{2}-\\d{4}\\b)"
+_SECRET_RE = SECRET_RE
+_PATH_RE = re.compile(
+    r"(?ix)(?:[A-Z]:[\/]|\\|^/|(?:^|[\s\"'])(?:\.\.?[\/]|[\w.-]+[\/])\S+|\.(?:exe|dll|pdb|py|go|cs|ts|tsx|json|toml|yaml|yml|db)(?:$|[\s:#]))"
 )
+
+
+def _pii_match(value: str) -> bool:
+    return bool(EMAIL_RE.search(value) or PHI_RE.search(value) or SSN_RE.search(value))
 _FORBIDDEN_KEYS = frozenset({"stdout", "stderr", "raw_output", "native_output", "source", "source_payload", "env", "environment"})
 
 # This is deliberately finite.  Error text is diagnostic input only and can
@@ -34,6 +40,13 @@ REASON_CATALOG = frozenset({
     "runtime_proof_unavailable", "metadata_missing", "metadata_mismatch", "executable_sha_mismatch",
     "source_sha_mismatch", "source_revision_mismatch", "missing_executable", "missing_source",
     "not_comparable", "nonzero_exit", "invalid_terminal_state", "truncated_output", "native_error",
+})
+STATUS_CATALOG = frozenset({"PASS", "FAIL", "BLOCKED", "NOT_COMPARABLE", "NOT_RUN"})
+FAILURE_CLASS_CATALOG = frozenset({"none", "timeout", "crash", "exit_nonzero", "spawn_error"})
+CLEANUP_STATUS_CATALOG = frozenset({"not_required", "clean", "forced", "failed"})
+ERROR_KIND_CATALOG = frozenset({
+    "unknown", "spawn", "timeout", "crash", "prepare", "decode", "oracle", "provenance",
+    "security", "capability", "comparability", "integrity", "cleanup", "blocked",
 })
 
 
@@ -54,7 +67,7 @@ def bounded_reason(value: object, default: str = "unspecified") -> str:
     """
     fallback = default if default in REASON_CATALOG else "unspecified"
     raw = str(value or "").strip()
-    if not raw or _PATH_RE.search(raw) or _SECRET_RE.search(raw) or _PII_RE.search(raw):
+    if not raw or _PATH_RE.search(raw) or _SECRET_RE.search(raw) or _pii_match(raw):
         return fallback
     text = raw.lower().replace(" ", "_")
     text = re.sub(r"[^a-z0-9_.-]", "_", text)[:64]
@@ -86,13 +99,17 @@ def _safe_scalar(key: str, value: object) -> tuple[str, object] | None:
     if isinstance(value, str):
         if lowered in {"reason", "reason_code"}:
             return key, bounded_reason(value)
-        if _PATH_RE.search(value) or _SECRET_RE.search(value) or _PII_RE.search(value):
+        if _PATH_RE.search(value) or _SECRET_RE.search(value) or _pii_match(value):
             return None
         if _SHA256_RE.fullmatch(value) and ("digest" in lowered or lowered.endswith("sha256")):
             return key, value
         if (lowered.endswith("_id") or lowered == "id") and _ID_RE.fullmatch(value):
             return key, value
-        if lowered in {"status", "failure_class", "cleanup_status"} and _ID_RE.fullmatch(value):
+        if lowered == "status" and value in STATUS_CATALOG:
+            return key, value
+        if lowered == "failure_class" and value in FAILURE_CLASS_CATALOG:
+            return key, value
+        if lowered == "cleanup_status" and value in CLEANUP_STATUS_CATALOG:
             return key, value
         return None
     return None
@@ -147,7 +164,8 @@ def sanitize_process_result(result: object, *, env_allowlist: Sequence[str] = ()
 
 def sanitize_error(kind: object, message: object = "") -> dict[str, str]:
     """Return a catalog-only diagnostic; message is never an authority input."""
-    code = bounded_reason(kind, "unknown")
+    candidate = bounded_reason(kind, "unknown")
+    code = candidate if candidate in ERROR_KIND_CATALOG else "unknown"
     # Keep the argument for API compatibility, but never derive a code from
     # free-form exception text.  This prevents email/name/SSN/PHI leakage and
     # keeps the taxonomy stable across platforms and child processes.

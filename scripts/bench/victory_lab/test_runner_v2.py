@@ -28,6 +28,18 @@ class RunnerV2Tests(unittest.TestCase):
         with self.assertRaises(ValueError):
             runner_v2.run_manifest("ignored", tempfile.mkdtemp(), repetitions=29)
 
+    def test_authoritative_runner_requires_fresh_runtime_preflight(self):
+        manifest = {
+            "schema": "victory-lab-manifest/v2", "version": 2,
+            "fixture_hashes": {"fixture": "a" * 64}, "oracle_hashes": {"oracle": "b" * 64},
+            "adapters": [], "cases": [],
+        }
+        with tempfile.TemporaryDirectory() as temp, patch.object(runner_v2, "load_manifest", return_value=manifest), patch.object(runner_v2, "validate_strict_manifest"), patch.object(runner_v2, "validate_runtime", return_value=["reproduction mismatch"]):
+            path = Path(temp) / "manifest.json"
+            path.write_text("{}", encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "runtime preflight failed"):
+                runner_v2.run_manifest(path, Path(temp) / "output", repetitions=30)
+
     def test_serializes_adapters_cases_and_retains_all_samples(self):
         manifest = {
             "schema": "victory-lab-manifest/v2", "version": 2,
@@ -37,7 +49,7 @@ class RunnerV2Tests(unittest.TestCase):
         }
         spec = AdapterSpec.from_dict(manifest["adapters"][0])
         FakeAdapter.calls = []
-        with tempfile.TemporaryDirectory() as temp, patch.object(runner_v2, "load_manifest", return_value=manifest), patch.object(runner_v2, "validate_strict_manifest"), patch.object(runner_v2, "manifest_adapters", return_value={"a": spec}), patch.object(runner_v2, "VictoryAdapter", FakeAdapter):
+        with tempfile.TemporaryDirectory() as temp, patch.object(runner_v2, "load_manifest", return_value=manifest), patch.object(runner_v2, "validate_strict_manifest"), patch.object(runner_v2, "validate_runtime", return_value=[]), patch.object(runner_v2, "manifest_adapters", return_value={"a": spec}), patch.object(runner_v2, "VictoryAdapter", FakeAdapter):
             root = Path(temp)
             (root / "manifest.json").write_text("{}", encoding="utf-8")
             (root / "fixture").write_text("fixture", encoding="utf-8")

@@ -9,14 +9,27 @@ from typing import Any
 
 try:
     from .schema_v2 import CANONICAL_SCHEMA
+    from .durable_v2 import EMAIL_RE, PHI_RE, POSIX_ABSOLUTE_RE, SSN_RE, WINDOWS_ABSOLUTE_RE, UNC_RE
 except ImportError:  # pragma: no cover
     from schema_v2 import CANONICAL_SCHEMA
+    from durable_v2 import EMAIL_RE, PHI_RE, POSIX_ABSOLUTE_RE, SSN_RE, WINDOWS_ABSOLUTE_RE, UNC_RE
 
 _VOLATILE_KEYS = frozenset({"elapsed_ms", "duration_ms", "duration_ns", "started_at", "finished_at", "pid", "hostname", "rss_bytes", "raw_output", "stdout", "stderr"})
 _SECRET_KEY_RE = re.compile(r"(secret|token|password|api[_-]?key|authorization|cookie)", re.I)
+_SENSITIVE_VALUE_RE = re.compile(
+    r"(?ix)(?:"
+    r"[A-Z]:[\\/][^\s\r\n]+|\\\\[^\s\r\n]+|/[^\s\r\n]+|"
+    r"(?:^|[\s\"'])(?:\.?\.?[\\/]|[\w.-]+[\\/])[^\s\r\n]+|"
+    r"[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b|"
+    r"\b(?:ssn|social\s+security|patient|medical|phi|email|telephone|phone)\b|"
+    r"\b\d{3}-\d{2}-\d{4}\b"
+    r")",
+    re.I,
+)
 _VALID_BACKENDS = frozenset({
     "go", "csharp", "roslyn", "typescript", "ts", "tsserver", "graph", "graph-native",
     "graphify", "mi-lsp", "router", "current", "baseline", "native", "sqlite-direct", "index-job", "version",
+    "git+catalog+heuristic",
 })
 _VALID_COMPLETENESS = frozenset({"complete", "exact", "full"})
 
@@ -46,7 +59,15 @@ def canonicalize(value: Any, fixture_root: Path | None = None, *, key: str = "")
         # and distance-ordered relation results must never be re-sorted here.
         return [canonicalize(v, fixture_root, key=key) for v in value]
     if isinstance(value, str):
-        return _relative(value.replace("\r\n", "\n").replace("\r", "\n"), fixture_root)
+        original = value.replace("\\", "/")
+        normalized = _relative(value.replace("\r\n", "\n").replace("\r", "\n"), fixture_root)
+        # Fixture-root-relative paths are intentionally comparable; every
+        # arbitrary absolute/relative path and PII/PHI value is not.
+        if fixture_root is not None and normalized != original:
+            return normalized
+        if _SENSITIVE_VALUE_RE.search(normalized):
+            return "<REDACTED>"
+        return normalized
     return value
 
 
@@ -73,6 +94,12 @@ def validate_terminal_state(native: Any) -> dict[str, Any]:
         raise ValueError("terminal output must be an object")
     if native.get("ok") is not True:
         raise ValueError("terminal output is not ok=true")
+    if "done" in native and native.get("done") is not True:
+        raise ValueError("terminal output is not done=true")
+    for key in ("state", "terminal_state", "phase"):
+        state = native.get(key)
+        if state is not None and str(state).lower() not in {"done", "complete", "completed", "terminal", "success"}:
+            raise ValueError("terminal output has an incompatible state")
     backend = native.get("backend")
     if not isinstance(backend, str) or backend not in _VALID_BACKENDS:
         raise ValueError("terminal output has invalid backend")

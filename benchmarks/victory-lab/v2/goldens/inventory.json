@@ -52,9 +52,9 @@
       "sha256": "e4259b1de6c076f654769cfd4cd2fc48963e17b9a9d3d07e8e7043c60243ce44"
     },
     {
-      "bytes": 855,
+      "bytes": 749,
       "path": "goldens/affected.json",
-      "sha256": "4452e073ec9fb4fa680a1d1543c8f174e87b731a3f77f989908f286c54d35fa5"
+      "sha256": "9c2527c3a4700975e898f06965e0322de843861a570ba946aa3e7b47997d8450"
     },
     {
       "bytes": 799,

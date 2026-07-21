@@ -4,31 +4,25 @@
   "repository_identity": "https://example.com/mi-lsp/victory-lab-v2",
   "operation": "nav.affected",
   "changed_paths": [
-    "go/subject/subject.go"
+    "subject/subject.go"
   ],
   "mode": "direct",
   "relations": [
     "calls"
   ],
-  "expected_seeds": [
-    "subject.Normalize",
-    "subject.Validate",
-    "subject.Uncalled"
-  ],
   "expected_direct": [
-    "callers.Direct",
-    "subject.Validate"
+    "callers/callers.go",
+    "subject/subject.go"
   ],
   "expected_transitive": [
-    "app.Run",
-    "callers.Direct",
-    "callers.Indirect",
-    "subject.Validate"
+    "app/app.go",
+    "callers/callers.go",
+    "subject/subject.go"
   ],
   "negative_violations": [],
   "negative_exclusions": [
-    "unrelated.Unrelated",
-    "subject.Uncalled"
+    "unrelated/unrelated.go",
+    "unresolved/unresolved.go"
   ],
   "incremental": {
     "clean_equivalent": true,

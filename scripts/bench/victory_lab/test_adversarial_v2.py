@@ -1,17 +1,25 @@
 import copy
 import hashlib
 import json
+import os
+import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
 
 import runner_v2
-from canonical_v2 import payload_digest
-from manifest_v2 import BASELINE_COMMIT, GRAPHIFY_COMMIT, GRAPHIFY_VERSION, ManifestError, validate_manifest
+from adapters.v2 import _graphify_affected_payload
+from attestation_v2 import AttestationError, build_input_digest, canonical_attestation, source_artifact_digest, validate_attestation
+from child_metrics import run_child
+from canonical_v2 import canonicalize, payload_digest, validate_terminal_state
+from manifest_v2 import BASELINE_COMMIT, GRAPHIFY_COMMIT, GRAPHIFY_VERSION, ManifestError, load_manifest, validate_manifest
 from report_v2 import build_report
+from security_gate import SecurityGate
 from validate_manifest import validate_runtime, validate_strict_manifest
 from schema_v2 import AdapterSpec, RunRecord, SchemaError
+from durable_v2 import validate_durable
 
 
 class _StableAdapter:
@@ -89,7 +97,7 @@ class VictoryAdversarialV2Tests(unittest.TestCase):
             "argv": [], "cwd": "", "env_keys": [], "elapsed_ms": repetition + 1.0,
             "canonical": {"schema": "victory-canonical/v2", "operation": "affected", "payload": payload,
                           "digest": payload_digest(payload), "token_units": 1} if passed else None,
-            "metrics": {"child": {"status": child_status, "peak_rss_bytes": peak}},
+            "metrics": {"child": {"status": child_status, "peak_rss_bytes": peak, "tree_peak_rss_bytes": peak, "tree_supported": True, "cleanup_status": "clean"}, "security": {"status": "PASS", "runtime_proof": True, "runtime": {"status": "PASS", "runtime_proof": True, "sample_count": 1, "observed_network_count": 0, "observed_mcp_count": 0, "evidence_digest": "c" * 64}, "integrity": {"status": "PASS"}}},
             "error": None if passed else {"kind": "timeout", "reason_code": "timeout"},
         }
 
@@ -206,6 +214,159 @@ class VictoryAdversarialV2Tests(unittest.TestCase):
         leaked["canonical"]["payload"]["stdout"] = "raw native log"
         with self.assertRaises(SchemaError):
             RunRecord.from_dict(leaked)
+
+    def test_terminal_state_is_checked_before_any_pass_claim(self):
+        valid = {"ok": True, "backend": "go", "truncated": False, "items": []}
+        self.assertIs(validate_terminal_state(valid), valid)
+        for field, value in (("done", False), ("phase", "running"), ("partial", True), ("truncated", True)):
+            broken = dict(valid)
+            broken[field] = value
+            with self.assertRaises(ValueError):
+                validate_terminal_state(broken)
+
+    def test_pass_requires_positive_token_units_even_when_payload_is_stable(self):
+        record = self._record(0)
+        record["canonical"]["token_units"] = 0
+        with self.assertRaises(SchemaError):
+            RunRecord.from_dict(record)
+        records = self._samples()
+        records[0]["canonical"]["token_units"] = 0
+        with self.assertRaises(SchemaError):
+            build_report(self._write_samples(records))
+
+    def test_closed_catalogs_do_not_reject_domain_status_but_reject_metric_drift(self):
+        domain_status = self._record(0, payload={"items": [{"display": "stable", "status": "active"}]})
+        RunRecord.from_dict(domain_status)
+        metric_drift = self._record(0)
+        metric_drift["metrics"]["child"]["status"] = "MAYBE"
+        with self.assertRaises(SchemaError):
+            RunRecord.from_dict(metric_drift)
+
+    def test_value_redaction_covers_email_phi_ssn_and_relative_paths(self):
+        values = ["alice@example.com", "patient record", "SSN 123-45-6789", "relative/path/file.go"]
+        for value in values:
+            self.assertEqual(canonicalize(value), "<REDACTED>")
+        rendered = repr([canonicalize(value) for value in values])
+        for value in values:
+            self.assertNotIn(value, rendered)
+
+    def test_attestation_binds_source_checkout_recipe_and_executable(self):
+        root = Path(__file__).resolve().parents[3]
+        source = root
+        commit = subprocess.check_output(["git", "-C", str(source), "rev-parse", "HEAD"], text=True).strip()
+        source_sha = source_artifact_digest(source, commit)
+        executable_sha = "a" * 64
+        command = ["go", "build", "-trimpath", "-buildvcs=false", "-o", "{output}", "./cmd/mi-lsp"]
+        toolchain = {"go": "test", "target": "windows/arm64"}
+        value = {"schema": "victory-build-attestation/v2", "adapter_kind": "current", "source_tree_commit": commit,
+                 "source_artifact_digest": source_sha, "source_digest_recipe": "git-ls-tree-v1",
+                 "build_command": command, "toolchain": toolchain, "executable_sha256": executable_sha,
+                 "package_provenance": {}, "reproducible": True,
+                 "build_execution": {"status": "reproduced", "executed_command": command, "source_head": commit,
+                   "toolchain": toolchain, "target": "windows/arm64",
+                   "build_input_digest": build_input_digest(source, commit, command, toolchain),
+                   "sanitized_log_digest": "b" * 64, "produced_sha256": executable_sha, "matches_expected": True}}
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / "attestation.json"; path.write_bytes(canonical_attestation(value))
+            digest = hashlib.sha256(path.read_bytes()).hexdigest()
+            self.assertEqual(validate_attestation(path, expected_commit=commit, expected_executable_sha256=executable_sha,
+                expected_source_sha256=source_sha, expected_file_sha256=digest, source_root=source,
+                expected_kind="current", expected_build_command=value["build_command"], expected_toolchain=value["toolchain"],
+                expected_package_provenance={})["source_tree_commit"], commit)
+            for changed in (dict(value, source_tree_commit="0" * 40), dict(value, build_command=["go", "test"])):
+                path.write_bytes(canonical_attestation(changed))
+                with self.assertRaises(AttestationError):
+                    validate_attestation(path, expected_commit=commit, expected_executable_sha256=executable_sha, expected_source_sha256=source_sha, source_root=source, expected_kind="current", expected_build_command=value["build_command"], expected_toolchain=value["toolchain"], expected_package_provenance={})
+            path.write_text(json.dumps({"schema": "victory-build-attestation/v1", "commit": commit, "executable_sha256": executable_sha, "source_sha256": source_sha, "binding_sha256": "0" * 64, "reproducible": True}), encoding="utf8")
+            with self.assertRaises(AttestationError):
+                validate_attestation(path, expected_commit=commit, expected_executable_sha256=executable_sha, expected_source_sha256=source_sha)
+
+    def test_manifest_attestation_digest_mismatch_is_blocked(self):
+        root = Path(__file__).resolve().parents[3]
+        path = root / "benchmarks/victory-lab/v2/manifest.json"
+        manifest = load_manifest(path)
+        broken = copy.deepcopy(manifest)
+        broken["adapters"][0]["expected_attestation_sha256"] = "0" * 64
+        with self.assertRaises(ManifestError):
+            validate_strict_manifest(broken, path.parent, check_files=True)
+
+    def test_durable_rejects_email_adapter_id(self):
+        with self.assertRaises((SchemaError, ValueError)):
+            RunRecord(adapter_id="alice@example.com", case_id="case", operation="affected", status="NOT_COMPARABLE", error={"kind": "capability", "reason_code": "unavailable"}).to_dict()
+
+    def test_durable_rejects_windows_patient_path_case_id(self):
+        with self.assertRaises((SchemaError, ValueError)):
+            RunRecord(adapter_id="adapter", case_id=r"C:\\patient\\record.json", operation="affected", status="NOT_COMPARABLE", error={"kind": "capability", "reason_code": "unavailable"}).to_dict()
+
+    def test_durable_rejects_group_key_email_and_path(self):
+        with self.assertRaises(ValueError):
+            validate_durable({"groups": {"alice@example.com:case:affected": {}}})
+        with self.assertRaises(ValueError):
+            validate_durable({"groups": {r"adapter:C:\\patient\\record.json:affected": {}}})
+
+    def test_source_input_mutation_after_verification_is_blocked(self):
+        from security_gate import SecurityGate
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            (root / ".git").mkdir()
+            with patch("security_gate._git_head", return_value="a" * 40):
+                source = root / "internal"; source.mkdir()
+                input_file = root / "go.mod"; input_file.write_text("module stable", encoding="utf-8")
+                gate = SecurityGate(source_inputs={"go": (root, ("go.mod", "internal"))})
+                gate.start()
+                input_file.write_text("module mutated", encoding="utf-8")
+                result = gate.finish()
+        self.assertEqual(result["status"], "BLOCKED")
+        self.assertEqual(result["integrity"]["reason_code"], "protected_path_changed")
+
+    def test_graphify_payload_preserves_native_order_instead_of_oracle_sorting(self):
+        payload = _graphify_affected_payload(
+            "Affected nodes for Normalize()\n"
+            "- Validate() [calls] subject/subject.go:L9\n"
+            "- Direct() [calls] callers/callers.go:L6\n"
+        )
+        self.assertEqual([item["display"] for item in payload["items"]], ["subject.Validate", "callers.Direct"])
+
+    def test_injected_runtime_observation_without_executor_provenance_is_not_comparable(self):
+        with tempfile.TemporaryDirectory() as temp:
+            fixture = Path(temp) / "fixture.txt"
+            fixture.write_text("stable", encoding="utf-8")
+            gate = SecurityGate({"fixture": fixture})
+            gate.start(["safe-tool"], {"PATH": "redacted"})
+            comparable = gate.finish(
+                ["safe-tool"], {"PATH": "redacted"},
+                runtime_observation={
+                    "status": "PASS", "runtime_proof": True, "sample_count": 1,
+                    "observed_network_count": 0, "observed_mcp_count": 0,
+                    "evidence_digest": "c" * 64,
+                },
+            )
+            self.assertEqual(comparable["status"], "NOT_COMPARABLE")
+            self.assertFalse(comparable["runtime_proof"])
+            self.assertEqual(comparable["runtime"]["provenance"], None)
+
+    def test_real_child_tree_passes_only_with_child_metrics_executor_evidence(self):
+        if os.name != "nt":
+            self.skipTest("native runtime proof is Windows-only")
+        env = {key: os.environ.get(key, "") for key in ("PATH", "TEMP", "TMP")}
+        with tempfile.TemporaryDirectory() as temp:
+            result = run_child(
+                [
+                    sys.executable, "-c",
+                    "import subprocess,sys,time; p=subprocess.Popen([sys.executable,'-c','import time; time.sleep(.25)']); time.sleep(.30); p.wait()",
+                ],
+                cwd=Path(temp), env=env, timeout_seconds=2,
+            )
+            self.assertEqual(result.metrics.status, "PASS")
+            self.assertTrue(result.metrics.tree_supported)
+            self.assertIsInstance(result.runtime_proof, dict)
+            self.assertEqual(result.runtime_proof["provenance"], "child_metrics_executor")
+            self.assertTrue(result.runtime_proof["runtime_proof"])
+            gate = SecurityGate({"fixture": Path(temp)})
+            gate.start(result.argv, env)
+            comparable = gate.finish(result.argv, env, runtime_observation=result.runtime_proof)
+            self.assertEqual(comparable["status"], "PASS")
+            self.assertTrue(comparable["runtime_proof"])
 
 
 if __name__ == "__main__":
