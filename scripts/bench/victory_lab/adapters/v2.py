@@ -103,6 +103,17 @@ def _comparability_error(reason_code: str) -> dict[str, str]:
     return {"kind": "comparability", "reason_code": code}
 
 
+def _has_security_failure(security: Mapping[str, Any]) -> bool:
+    """Detect security failures before applying capacity classifications."""
+    if security.get("status") in {"FAIL", "BLOCKED"}:
+        return True
+    for key in ("runtime", "integrity", "source_integrity"):
+        evidence = security.get(key)
+        if isinstance(evidence, Mapping) and evidence.get("status") in {"FAIL", "BLOCKED"}:
+            return True
+    return False
+
+
 def _copy_fixture(source: Path, destination: Path) -> None:
     if not source.is_dir():
         raise AdapterError(f"fixture source missing: {source}")
@@ -617,7 +628,13 @@ class VictoryAdapter:
                 case, repetition, "BLOCKED", root=root, env=env, canonical=canonical,
                 result=result, error=_safe_error("security", "integrity snapshot unavailable"),
             )
-        if security["status"] != "PASS":
+        if _has_security_failure(security):
+            # Security failures outrank capability and semantic classifications.
+            # In particular, a runtime network/MCP finding must not be hidden by
+            # a baseline or otherwise non-comparable sample classification.
+            status = "BLOCKED"
+            error = _safe_error("security", "protected input changed or advisory scan found an indicator")
+        elif security["status"] != "PASS":
             codes = set(security.get("advisory_scan", {}).get("reason_codes", []))
             runtime_reason = security.get("runtime", {}).get("reason_code") if isinstance(security.get("runtime"), Mapping) else None
             if {"network_indicator", "mcp_indicator", "runtime_proof_unavailable"} & (codes | {str(runtime_reason)}):

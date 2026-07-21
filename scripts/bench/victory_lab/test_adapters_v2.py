@@ -126,6 +126,18 @@ class AdapterV2Tests(unittest.TestCase):
         return runtime
 
     @staticmethod
+    def _runtime_network_fail():
+        runtime = AdapterV2Tests._runtime_pass()
+        runtime.update({
+            "status": "FAIL",
+            "runtime_proof": False,
+            "observed_network_count": 1,
+            "reason_code": "network_indicator",
+        })
+        runtime["evidence_digest"] = runtime_evidence_digest(runtime)
+        return runtime
+
+    @staticmethod
     def _child_pass():
         return ChildMetrics(
             peak_rss_bytes=42, tree_peak_rss_bytes=84, status="PASS", pid=101,
@@ -283,6 +295,23 @@ class AdapterV2Tests(unittest.TestCase):
         self.assertEqual(fake.calls[-1][0][1:3], ["nav", "affected"])
         self.assertIn("subject/subject.go", fake.calls[-1][0])
         self.assertIn("security", record.metrics)
+
+    def test_baseline_affected_runtime_security_failure_overrides_not_comparable(self):
+        fake = FakeExecutor(
+            commit="a251ab1f8db4e96f029926fbef275b078a20a111",
+            runtime_proof=self._runtime_network_fail(),
+            metrics=self._child_pass(),
+        )
+        record = self._baseline_adapter(fake).run_case(
+            next(case for case in self.manifest["cases"] if case["id"] == "affected-direct"),
+            repetition=7,
+        )
+        self.assertEqual(record.repetition, 7)
+        self.assertEqual(record.status, "BLOCKED")
+        self.assertEqual(record.error, {"kind": "security", "reason_code": "security"})
+        self.assertEqual(record.metrics["security"]["status"], "BLOCKED")
+        self.assertEqual(record.metrics["security"]["runtime"]["status"], "FAIL")
+        self.assertEqual(record.metrics["security"]["runtime"]["reason_code"], "network_indicator")
 
     def test_affected_transitive_uses_transitive_path_oracle(self):
         items = [
