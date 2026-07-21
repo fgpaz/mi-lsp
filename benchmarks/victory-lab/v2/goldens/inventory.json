@@ -1,0 +1,88 @@
+{
+  "byte_semantics": "raw-byte",
+  "files": [
+    {
+      "bytes": 637,
+      "path": "corpus/fixture-metadata.json",
+      "sha256": "03f23d70706e8fbbbbfcf19c792e7938a19a70d1e277ca61d54cf063e776dbd0"
+    },
+    {
+      "bytes": 139,
+      "path": "corpus/go/ambiguous/alpha/shared.go",
+      "sha256": "7d957c6d7e80898e27d7e773dd61bcf5cc3e13311336dbf35260f1f3712ee966"
+    },
+    {
+      "bytes": 139,
+      "path": "corpus/go/ambiguous/beta/shared.go",
+      "sha256": "866bb22ce40e74ede2443d64e3db5f985d396f952fff59a82279cbb0265500c5"
+    },
+    {
+      "bytes": 226,
+      "path": "corpus/go/app/app.go",
+      "sha256": "3ff40ce3099cdb4d76c0606766e0afc3d5315948f909b1382642da41356d0932"
+    },
+    {
+      "bytes": 338,
+      "path": "corpus/go/callers/callers.go",
+      "sha256": "e01b2f2356a55550ce266a1cb922ca61ab100e2a854dbbaf7b94866f776fada4"
+    },
+    {
+      "bytes": 50,
+      "path": "corpus/go/go.mod",
+      "sha256": "75c5464fdc7ad2fd3343832a655cab075a2535f86317d1c857289347074324b8"
+    },
+    {
+      "bytes": 140,
+      "path": "corpus/go/mutation/mutation.go",
+      "sha256": "eb307e8b0012eb06405dbec0b8278ac49df92a7f0d91a6c931ffc90675762dc5"
+    },
+    {
+      "bytes": 404,
+      "path": "corpus/go/subject/subject.go",
+      "sha256": "75e6515f7e67622cc05233205047975f39e0b7fab6186334ee03953b02bb63a1"
+    },
+    {
+      "bytes": 151,
+      "path": "corpus/go/unrelated/unrelated.go",
+      "sha256": "4814f49711d5092f0ab4e548e1ad28806ecc473c3b46de33e8b04cf1595c41f2"
+    },
+    {
+      "bytes": 156,
+      "path": "corpus/go/unresolved/unresolved.go",
+      "sha256": "cb9a6b71b8f944ec0172116f9a09778bc1a353aa3b6184634f95d76d96985053"
+    },
+    {
+      "bytes": 817,
+      "path": "goldens/affected.json",
+      "sha256": "cd0e7fdbfbaf12ad6876b5e10bb0788e2bb2a6997eb3692f0060fee08ced246d"
+    },
+    {
+      "bytes": 766,
+      "path": "goldens/callers.json",
+      "sha256": "8561c88eb59e5668048a55895df12b9aa2adfda1243dd9532d4d28a0e5a32152"
+    },
+    {
+      "bytes": 722,
+      "path": "goldens/mutation.json",
+      "sha256": "0ce9e6b8b64e63abd05cb3c47be85c668c28ee60cea4c14c7cdbfa981782d9ad"
+    },
+    {
+      "bytes": 861,
+      "path": "goldens/path.json",
+      "sha256": "9af4a525e428f5ca9b4c32effbac1c9542d385635fa26ca2f451cc4317d5bad9"
+    },
+    {
+      "bytes": 1842,
+      "path": "goldens/relations.json",
+      "sha256": "2800f73ef7d91debb3109199b7a96cee4531a5768ec5b837a62745acf74fdb98"
+    }
+  ],
+  "fixture_id": "graph-native-go-callers-affected-path",
+  "hash_algorithm": "sha256",
+  "inventory_path": "goldens/inventory.json",
+  "repository_identity": "https://example.com/mi-lsp/victory-lab-v2",
+  "root": "benchmarks/victory-lab/v2",
+  "schema": "victory-inventory/v2",
+  "self_excluded": true,
+  "self_excluded_reason": "inventory digest would be recursively self-referential"
+}

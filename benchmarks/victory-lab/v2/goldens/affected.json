@@ -1,0 +1,38 @@
+{
+  "schema": "victory-golden/v2",
+  "fixture_id": "graph-native-go-callers-affected-path",
+  "repository_identity": "https://example.com/mi-lsp/victory-lab-v2",
+  "operation": "nav.affected",
+  "changed_paths": [
+    "go/subject/subject.go"
+  ],
+  "mode": "direct",
+  "relations": [
+    "calls"
+  ],
+  "expected_seeds": [
+    "subject.Normalize",
+    "subject.Validate",
+    "subject.Uncalled"
+  ],
+  "expected_direct": [
+    "callers.Direct",
+    "subject.Validate"
+  ],
+  "expected_transitive": [
+    "app.Run",
+    "callers.Direct",
+    "callers.Indirect",
+    "subject.Validate"
+  ],
+  "negative_violations": [],
+  "negative_exclusions": [
+    "unrelated.Unrelated",
+    "subject.Uncalled"
+  ],
+  "incremental": {
+    "clean_equivalent": true,
+    "stale_rate": 0.0,
+    "mutation_golden": "mutation.json"
+  }
+}
