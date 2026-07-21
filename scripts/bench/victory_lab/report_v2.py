@@ -30,6 +30,39 @@ def latency_stats(records: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
+def _metric_stats(records: list[dict[str, Any]], key: str) -> dict[str, Any]:
+    values: list[float] = []
+    for record in records:
+        child = record.get("metrics", {}).get("child", {})
+        value = child.get(key) if isinstance(child, dict) else None
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            values.append(float(value))
+    return {
+        "n": len(values), "p50": percentile(values, 50), "p95": percentile(values, 95),
+        "max": max(values) if values else None,
+    }
+
+
+def child_metric_stats(records: list[dict[str, Any]]) -> dict[str, Any]:
+    statuses: dict[str, int] = {}
+    reasons: dict[str, int] = {}
+    for record in records:
+        child = record.get("metrics", {}).get("child", {})
+        if not isinstance(child, dict):
+            continue
+        status = str(child.get("status", "NOT_COMPARABLE"))
+        statuses[status] = statuses.get(status, 0) + 1
+        reason = child.get("reason_code")
+        if reason:
+            reasons[str(reason)] = reasons.get(str(reason), 0) + 1
+    return {
+        "status_counts": dict(sorted(statuses.items())),
+        "reason_counts": dict(sorted(reasons.items())),
+        "peak_rss_bytes": _metric_stats(records, "peak_rss_bytes"),
+        "tree_peak_rss_bytes": _metric_stats(records, "tree_peak_rss_bytes"),
+    }
+
+
 def _read_samples(path: Path) -> list[dict[str, Any]]:
     if path.is_file() and path.suffix == ".jsonl":
         lines = path.read_text(encoding="utf-8").splitlines()
@@ -77,7 +110,7 @@ def build_report(samples: str | Path, *, expected_repetitions: int = 30) -> dict
             status = "NOT_RUN"
         group_reports[f"{adapter_id}:{operation}"] = {
             "adapter_id": adapter_id, "operation": operation, "status": status,
-            "status_counts": statuses, "latency": latency_stats(group),
+            "status_counts": statuses, "latency": latency_stats(group), "child_metrics": child_metric_stats(group),
             "all_samples": len(group), "canonical_digests": sorted({record["canonical"]["digest"] for record in group if record.get("canonical")}),
         }
     counts = {status: sum(record["status"] == status for record in records) for status in ("PASS", "FAIL", "BLOCKED", "NOT_COMPARABLE", "NOT_RUN")}

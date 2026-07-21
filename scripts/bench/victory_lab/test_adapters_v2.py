@@ -61,6 +61,8 @@ class AdapterV2Tests(unittest.TestCase):
         self.assertEqual(fake.calls[1][0][1], "index")
         self.assertIn("--format", fake.calls[-1][0])
         self.assertNotIn("stdout", record.to_dict())
+        self.assertEqual(record.metrics["security"]["status"], "PASS")
+        self.assertFalse(record.metrics["security"]["runtime_proof"])
 
     def test_timeout_and_crash_fail_closed(self):
         timeout = self._adapter(FakeExecutor(timeout=True)).run_case(self.manifest["cases"][0])

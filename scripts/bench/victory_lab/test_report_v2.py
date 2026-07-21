@@ -28,6 +28,22 @@ class ReportV2Tests(unittest.TestCase):
         self.assertGreater(latency["p95_ms"], latency["p50_ms"])
         self.assertTrue(report["anti_gaming"]["all_samples_used"])
 
+    def test_reports_child_peak_metrics_from_all_samples(self):
+        records = []
+        for repetition in range(30):
+            records.append({
+                "schema": "victory-run-record/v2", "adapter_id": "fake", "operation": "affected", "status": "PASS", "repetition": repetition,
+                "canonical": {"digest": str(repetition)}, "metrics": {
+                    "child": {"status": "PASS", "peak_rss_bytes": repetition + 1, "tree_peak_rss_bytes": (repetition + 1) * 2},
+                }, "elapsed_ms": 1,
+            })
+        report = build_report(self._write(records))
+        child = report["groups"]["fake:affected"]["child_metrics"]
+        self.assertEqual(child["status_counts"], {"PASS": 30})
+        self.assertEqual(child["peak_rss_bytes"]["n"], 30)
+        self.assertEqual(child["peak_rss_bytes"]["max"], 30)
+        self.assertEqual(child["tree_peak_rss_bytes"]["p50"], 31)
+
     def test_best_of_fields_are_rejected(self):
         records = [{
             "schema": "victory-run-record/v2", "adapter_id": "fake", "operation": "affected", "status": "PASS", "repetition": i,

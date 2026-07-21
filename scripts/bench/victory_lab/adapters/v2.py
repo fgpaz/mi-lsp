@@ -15,12 +15,18 @@ from typing import Any, Callable, Iterator, Mapping
 
 try:
     from ..canonical_v2 import canonical_payload, parse_json_output
+    from ..child_metrics import ChildMetrics, ChildMetricsExecutor
     from ..manifest_v2 import ManifestError, git_revision, resolve_configured_path, sha256_file, validate_current_metadata
+    from ..sanitize_v2 import sanitize_env, sanitize_error, sanitize_metrics
     from ..schema_v2 import AdapterSpec, RunRecord
+    from ..security_gate import SecurityGate
 except ImportError:  # pragma: no cover
     from canonical_v2 import canonical_payload, parse_json_output
+    from child_metrics import ChildMetrics, ChildMetricsExecutor
     from manifest_v2 import ManifestError, git_revision, resolve_configured_path, sha256_file, validate_current_metadata
+    from sanitize_v2 import sanitize_env, sanitize_error, sanitize_metrics
     from schema_v2 import AdapterSpec, RunRecord
+    from security_gate import SecurityGate
 
 
 class AdapterError(RuntimeError):
@@ -38,40 +44,26 @@ class CommandResult:
     elapsed_ms: float = 0.0
     timed_out: bool = False
     crashed: bool = False
+    metrics: ChildMetrics | None = None
 
 
 class SubprocessExecutor:
-    """Small injectable boundary; tests replace it with a fake."""
+    """Real child-process boundary with native metrics and tree cleanup."""
+
+    def __init__(self) -> None:
+        self._executor = ChildMetricsExecutor()
 
     def run(self, argv: list[str], *, cwd: Path, env: Mapping[str, str], timeout_seconds: float) -> CommandResult:
-        started = time.perf_counter()
-        try:
-            completed = subprocess.run(
-                argv, cwd=str(cwd), env=dict(env), capture_output=True, text=True,
-                timeout=timeout_seconds, check=False,
-            )
-            return CommandResult(
-                argv=list(argv), cwd=str(cwd), env_keys=sorted(env), returncode=completed.returncode,
-                stdout=completed.stdout or "", stderr=completed.stderr or "",
-                elapsed_ms=(time.perf_counter() - started) * 1000,
-                crashed=completed.returncode < 0,
-            )
-        except subprocess.TimeoutExpired as exc:
-            return CommandResult(
-                argv=list(argv), cwd=str(cwd), env_keys=sorted(env), returncode=124,
-                stdout=exc.stdout or "", stderr=exc.stderr or "",
-                elapsed_ms=(time.perf_counter() - started) * 1000, timed_out=True,
-            )
-        except OSError as exc:
-            return CommandResult(
-                argv=list(argv), cwd=str(cwd), env_keys=sorted(env), returncode=127,
-                stderr=f"{type(exc).__name__}: {exc}", elapsed_ms=(time.perf_counter() - started) * 1000,
-                crashed=True,
-            )
+        result = self._executor.run(argv, cwd=cwd, env=env, timeout_seconds=timeout_seconds)
+        return CommandResult(
+            argv=result.argv, cwd=result.cwd, env_keys=result.env_keys, returncode=result.returncode,
+            stdout=result.stdout, stderr=result.stderr, elapsed_ms=result.elapsed_ms,
+            timed_out=result.timed_out, crashed=result.crashed, metrics=result.metrics,
+        )
 
 
 def _safe_error(kind: str, message: str) -> dict[str, str]:
-    return {"kind": kind, "message": message[:300]}
+    return sanitize_error(kind, message)
 
 
 def _copy_fixture(source: Path, destination: Path) -> None:
@@ -172,6 +164,7 @@ class VictoryAdapter:
         self._source = self._resolve_source()
         self._executable_sha = ""
         self._source_sha = ""
+        self._security_gate: SecurityGate | None = None
 
     def _resolve_executable(self) -> Path:
         if self.spec.kind == "graphify":
@@ -297,17 +290,50 @@ class VictoryAdapter:
             return self.executor.run(list(command), cwd=root, env=env, timeout_seconds=self.spec.timeout_seconds)
         return None
 
-    def _record(self, case: Mapping[str, Any], repetition: int, status: str, *, root: Path, env: Mapping[str, str], canonical: Any = None, result: CommandResult | None = None, error: dict[str, str] | None = None) -> RunRecord:
+    def _record(
+        self, case: Mapping[str, Any], repetition: int, status: str, *, root: Path,
+        env: Mapping[str, str], canonical: Any = None, result: CommandResult | None = None,
+        error: dict[str, str] | None = None, security: Mapping[str, Any] | None = None,
+    ) -> RunRecord:
+        child_metrics = result.metrics.to_dict() if result is not None and result.metrics is not None else {
+            "status": "NOT_COMPARABLE", "reason_code": "not_measured"
+        }
         record = RunRecord(
             adapter_id=self.spec.adapter_id, operation=case["operation"], status=status, repetition=repetition,
             fixture_digest=str(self.manifest.get("fixture_digest", "")), oracle_digest=str(self.manifest.get("oracle_digest", "")),
             executable_sha256=self._executable_sha, source_sha256=self._source_sha, commit=self._commit or self.spec.expected_commit,
             version=self.spec.expected_version, capabilities=list(self.spec.capabilities),
-            argv=result.argv if result else [], cwd=str(root), env_keys=sorted(env), elapsed_ms=result.elapsed_ms if result else None,
-            canonical=canonical, metrics={"sample": repetition}, error=error,
+            # Process paths and raw argv are intentionally not durable evidence.
+            argv=[], cwd="", env_keys=sanitize_env({key: None for key in env}, self.spec.env_allowlist),
+            elapsed_ms=result.elapsed_ms if result else None, canonical=canonical,
+            metrics=sanitize_metrics({
+                "sample": repetition, "child": child_metrics,
+                "security": security or {"status": "NOT_COMPARABLE", "reason_code": "not_checked"},
+            }), error=error,
         )
         record.validate()
         return record
+
+    def _finish_record(
+        self, gate: SecurityGate, case: Mapping[str, Any], repetition: int, status: str, *,
+        root: Path, env: Mapping[str, str], argv: list[str] | None = None,
+        canonical: Any = None, result: CommandResult | None = None,
+        error: dict[str, str] | None = None,
+    ) -> RunRecord:
+        try:
+            security = gate.finish(argv or [], env)
+        except OSError:
+            return self._record(
+                case, repetition, "BLOCKED", root=root, env=env, canonical=canonical,
+                result=result, error=_safe_error("security", "integrity snapshot unavailable"),
+            )
+        if security["status"] != "PASS":
+            error = _safe_error("security", "protected input changed or advisory scan found an indicator")
+            status = "BLOCKED"
+        return self._record(
+            case, repetition, status, root=root, env=env, canonical=canonical,
+            result=result, error=error, security=security,
+        )
 
     def run_case(self, case: Mapping[str, Any], *, repetition: int = 0) -> RunRecord:
         if case["operation"] not in self.spec.capabilities:
@@ -315,38 +341,72 @@ class VictoryAdapter:
         if case["operation"] not in self.spec.comparable_operations:
             return RunRecord(adapter_id=self.spec.adapter_id, operation=case["operation"], status="NOT_COMPARABLE", repetition=repetition, error=_safe_error("comparability", "operation is not declared comparable"))
         fixture_source = self.manifest_root / "corpus"
+        protected_paths = {"fixture_source": fixture_source, "manifest": self.manifest_root / "manifest.json"}
         with materialize_fixture(fixture_source, self.manifest["repository_identity"]) as root:
             env = self._env(root)
+            gate = SecurityGate(protected_paths)
             try:
-                self._metadata_once(root, env)
-                self._verify_provenance(env, root)
-            except (AdapterError, ManifestError, OSError) as exc:
-                return self._record(case, repetition, "BLOCKED", root=root, env=env, error=_safe_error("provenance", str(exc)))
-            preparation = self._prepare_runtime(root, case, env)
-            if preparation is not None:
-                if preparation.timed_out:
-                    return self._record(case, repetition, "FAIL", root=root, env=env, result=preparation, error=_safe_error("timeout", "adapter preparation timed out"))
-                if preparation.crashed or preparation.returncode != 0:
-                    return self._record(case, repetition, "FAIL", root=root, env=env, result=preparation, error=_safe_error("prepare", "adapter preparation exited unsuccessfully"))
-            argv = self._format_command(self.spec.command, root=root, case=case)
-            result = self.executor.run(argv, cwd=root, env=env, timeout_seconds=self.spec.timeout_seconds)
-            if result.timed_out:
-                return self._record(case, repetition, "FAIL", root=root, env=env, result=result, error=_safe_error("timeout", "adapter timed out"))
-            if result.crashed or result.returncode != 0:
-                return self._record(case, repetition, "FAIL", root=root, env=env, result=result, error=_safe_error("crash", "adapter exited unsuccessfully"))
+                gate.start()
+            except OSError:
+                return self._record(case, repetition, "BLOCKED", root=root, env=env, error=_safe_error("security", "integrity snapshot unavailable"))
+            self._security_gate = gate
             try:
-                native = _graphify_affected_payload(result.stdout) if self.spec.kind == "graphify" else _qualify_native_items(parse_json_output(result.stdout))
-                canonical = canonical_payload(case["operation"], native, root)
-            except ValueError as exc:
-                return self._record(case, repetition, "FAIL", root=root, env=env, result=result, error=_safe_error("decode", str(exc)))
-            expected = self.manifest.get("oracles", {}).get(case["id"], {})
-            actual = [_display(item) for item in _items(native)]
-            if case["operation"] == "path":
-                target = expected.get("expected_shortest_path", [])
-            elif case["operation"] == "callers":
-                target = expected.get("expected_direct", []) if case.get("mode", "direct") == "direct" else expected.get("expected_transitive", [])
-            else:
-                target = expected.get("expected_direct", [])
-            target = [str(item) for item in target]
-            status = "PASS" if actual == target or set(actual) == set(target) else "FAIL"
-            return self._record(case, repetition, status, root=root, env=env, canonical=canonical, result=result, error=None if status == "PASS" else _safe_error("oracle", "canonical result differs from oracle"))
+                try:
+                    self._metadata_once(root, env)
+                    self._verify_provenance(env, root)
+                except (AdapterError, ManifestError, OSError) as exc:
+                    return self._finish_record(
+                        gate, case, repetition, "BLOCKED", root=root, env=env,
+                        error=_safe_error("provenance", str(exc)),
+                    )
+                preparation = self._prepare_runtime(root, case, env)
+                if preparation is not None:
+                    if preparation.timed_out:
+                        return self._finish_record(
+                            gate, case, repetition, "FAIL", root=root, env=env,
+                            argv=preparation.argv, result=preparation,
+                            error=_safe_error("timeout", "adapter preparation timed out"),
+                        )
+                    if preparation.crashed or preparation.returncode != 0:
+                        return self._finish_record(
+                            gate, case, repetition, "FAIL", root=root, env=env,
+                            argv=preparation.argv, result=preparation,
+                            error=_safe_error("prepare", "adapter preparation exited unsuccessfully"),
+                        )
+                argv = self._format_command(self.spec.command, root=root, case=case)
+                result = self.executor.run(argv, cwd=root, env=env, timeout_seconds=self.spec.timeout_seconds)
+                if result.timed_out:
+                    return self._finish_record(
+                        gate, case, repetition, "FAIL", root=root, env=env,
+                        argv=argv, result=result, error=_safe_error("timeout", "adapter timed out"),
+                    )
+                if result.crashed or result.returncode != 0:
+                    return self._finish_record(
+                        gate, case, repetition, "FAIL", root=root, env=env,
+                        argv=argv, result=result, error=_safe_error("crash", "adapter exited unsuccessfully"),
+                    )
+                try:
+                    native = _graphify_affected_payload(result.stdout) if self.spec.kind == "graphify" else _qualify_native_items(parse_json_output(result.stdout))
+                    canonical = canonical_payload(case["operation"], native, root)
+                except ValueError as exc:
+                    return self._finish_record(
+                        gate, case, repetition, "FAIL", root=root, env=env,
+                        argv=argv, result=result, error=_safe_error("decode", str(exc)),
+                    )
+                expected = self.manifest.get("oracles", {}).get(case["id"], {})
+                actual = [_display(item) for item in _items(native)]
+                if case["operation"] == "path":
+                    target = expected.get("expected_shortest_path", [])
+                elif case["operation"] == "callers":
+                    target = expected.get("expected_direct", []) if case.get("mode", "direct") == "direct" else expected.get("expected_transitive", [])
+                else:
+                    target = expected.get("expected_direct", [])
+                target = [str(item) for item in target]
+                status = "PASS" if actual == target or set(actual) == set(target) else "FAIL"
+                return self._finish_record(
+                    gate, case, repetition, status, root=root, env=env,
+                    argv=argv, canonical=canonical, result=result,
+                    error=None if status == "PASS" else _safe_error("oracle", "canonical result differs from oracle"),
+                )
+            finally:
+                self._security_gate = None
