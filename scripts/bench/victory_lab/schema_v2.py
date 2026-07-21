@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import math
 import re
 from typing import Any, Mapping
 
@@ -12,6 +13,15 @@ CANONICAL_SCHEMA = "victory-canonical/v2"
 STATUSES = frozenset({"PASS", "FAIL", "BLOCKED", "NOT_COMPARABLE", "NOT_RUN"})
 OPERATIONS = frozenset({"callers", "affected", "path"})
 ADAPTER_KINDS = frozenset({"current", "baseline", "graphify"})
+_HEX40_RE = re.compile(r"^[0-9a-f]{40}$")
+_HEX64_RE = re.compile(r"^[0-9a-f]{64}$")
+_SAFE_CODE_RE = re.compile(r"^[a-z][a-z0-9_.-]{0,63}$")
+_RUN_KEYS = frozenset({
+    "schema", "case_id", "adapter_id", "operation", "status", "repetition", "fixture_digest", "oracle_digest",
+    "executable_sha256", "source_sha256", "commit", "version", "capabilities", "argv", "cwd", "env_keys",
+    "elapsed_ms", "canonical", "metrics", "error",
+})
+_FORBIDDEN_KEYS = frozenset({"stdout", "stderr", "raw_output", "native_output", "source_payload"})
 
 
 class SchemaError(ValueError):
@@ -33,6 +43,27 @@ def _string_list(value: Any, name: str) -> list[str]:
 def _optional_pin(value: str, name: str, length: int) -> None:
     if value and not re.fullmatch(rf"[0-9a-f]{{{length}}}", value):
         raise SchemaError(f"{name} must be a lowercase hexadecimal {length}-character pin")
+
+
+def _walk_forbidden(value: Any, *, where: str = "record") -> None:
+    if isinstance(value, Mapping):
+        for raw_key, child in value.items():
+            key = str(raw_key)
+            lowered = key.lower()
+            if lowered in _FORBIDDEN_KEYS or "stdout" in lowered or "stderr" in lowered or "raw_output" in lowered:
+                raise SchemaError(f"raw native output is forbidden in {where}")
+            _walk_forbidden(child, where=f"{where}.{key}")
+    elif isinstance(value, (list, tuple)):
+        for index, child in enumerate(value):
+            _walk_forbidden(child, where=f"{where}[{index}]")
+    elif isinstance(value, float) and not math.isfinite(value):
+        raise SchemaError(f"non-finite number is forbidden in {where}")
+
+
+def _required_digest(value: Any, name: str) -> str:
+    if not isinstance(value, str) or not _HEX64_RE.fullmatch(value):
+        raise SchemaError(f"{name} must be a lowercase hexadecimal 64-character digest")
+    return value
 
 
 @dataclass(frozen=True)
@@ -150,6 +181,7 @@ class RunRecord:
     adapter_id: str
     operation: str
     status: str
+    case_id: str = ""
     repetition: int = 0
     fixture_digest: str = ""
     oracle_digest: str = ""
@@ -168,21 +200,58 @@ class RunRecord:
 
     def validate(self) -> None:
         _nonempty(self.adapter_id, "adapter_id")
+        if self.case_id and not isinstance(self.case_id, str):
+            raise SchemaError("case_id must be a string")
         if self.operation not in OPERATIONS:
             raise SchemaError(f"unsupported operation: {self.operation}")
         if self.status not in STATUSES:
             raise SchemaError(f"unsupported status: {self.status}")
-        if self.repetition < 0:
-            raise SchemaError("repetition must be non-negative")
-        if any(key.lower() in {"stdout", "stderr", "raw_output", "native_output", "secret", "token"} for key in self.metrics):
-            raise SchemaError("raw native output and secrets cannot be durable")
-        if self.status == "PASS" and self.canonical is None:
-            raise SchemaError("PASS records require canonical payload")
+        if not isinstance(self.repetition, int) or isinstance(self.repetition, bool) or self.repetition < 0:
+            raise SchemaError("repetition must be a non-negative integer")
+        for name, value in (("fixture_digest", self.fixture_digest), ("oracle_digest", self.oracle_digest),
+                            ("executable_sha256", self.executable_sha256), ("source_sha256", self.source_sha256)):
+            if value:
+                _required_digest(value, name)
+        if self.commit and not _HEX40_RE.fullmatch(self.commit):
+            raise SchemaError("commit must be a lowercase hexadecimal 40-character pin")
+        if not isinstance(self.capabilities, list) or any(not isinstance(item, str) for item in self.capabilities):
+            raise SchemaError("capabilities must be a list of strings")
+        if self.argv or self.cwd:
+            raise SchemaError("raw argv and cwd are not durable evidence")
+        if not isinstance(self.env_keys, list) or any(not isinstance(item, str) for item in self.env_keys):
+            raise SchemaError("env_keys must be a list of strings")
+        if self.elapsed_ms is not None and (
+            isinstance(self.elapsed_ms, bool) or not isinstance(self.elapsed_ms, (int, float)) or not math.isfinite(float(self.elapsed_ms))
+        ):
+            raise SchemaError("elapsed_ms must be a finite number")
+        if not isinstance(self.metrics, dict):
+            raise SchemaError("metrics must be an object")
+        _walk_forbidden(self.metrics, where="metrics")
+        _walk_forbidden(self.canonical, where="canonical")
+        _walk_forbidden(self.error, where="error")
+        if self.status == "PASS":
+            if not isinstance(self.canonical, Mapping):
+                raise SchemaError("PASS records require canonical payload")
+            if self.canonical.get("schema") != CANONICAL_SCHEMA or self.canonical.get("operation") != self.operation:
+                raise SchemaError("PASS records have canonical schema drift")
+            _required_digest(self.canonical.get("digest"), "canonical.digest")
+            if not isinstance(self.canonical.get("payload"), Mapping):
+                raise SchemaError("PASS records require canonical payload object")
+            if self.error is not None:
+                raise SchemaError("PASS records cannot carry an error")
+        elif self.status in {"FAIL", "BLOCKED"} and not isinstance(self.error, Mapping):
+            raise SchemaError(f"{self.status} records require sanitized error")
+        if self.error is not None:
+            if not isinstance(self.error, Mapping) or set(self.error) - {"kind", "reason_code"}:
+                raise SchemaError("error must contain only kind and reason_code")
+            if any(not isinstance(value, str) or not _SAFE_CODE_RE.fullmatch(value) for value in self.error.values()):
+                raise SchemaError("error fields must be bounded reason codes")
 
     def to_dict(self) -> dict[str, Any]:
         self.validate()
         return {
             "schema": RUN_SCHEMA,
+            "case_id": self.case_id,
             "adapter_id": self.adapter_id,
             "operation": self.operation,
             "status": self.status,
@@ -205,18 +274,25 @@ class RunRecord:
 
     @classmethod
     def from_dict(cls, value: Mapping[str, Any]) -> "RunRecord":
-        if value.get("schema") != RUN_SCHEMA:
+        if not isinstance(value, Mapping) or value.get("schema") != RUN_SCHEMA:
             raise SchemaError("unsupported run record schema")
+        unknown = set(value) - _RUN_KEYS
+        if unknown:
+            raise SchemaError(f"run record schema drift: unexpected fields {sorted(unknown)}")
+        required = {"adapter_id", "operation", "status", "repetition", "canonical", "metrics", "error"}
+        missing = required - set(value)
+        if missing:
+            raise SchemaError(f"run record schema drift: missing fields {sorted(missing)}")
         record = cls(
-            adapter_id=str(value.get("adapter_id", "")), operation=str(value.get("operation", "")),
-            status=str(value.get("status", "")), repetition=int(value.get("repetition", 0)),
-            fixture_digest=str(value.get("fixture_digest", "")), oracle_digest=str(value.get("oracle_digest", "")),
-            executable_sha256=str(value.get("executable_sha256", "")), source_sha256=str(value.get("source_sha256", "")),
-            commit=str(value.get("commit", "")), version=str(value.get("version", "")),
-            capabilities=list(value.get("capabilities", [])), argv=list(value.get("argv", [])),
-            cwd=str(value.get("cwd", "")), env_keys=list(value.get("env_keys", [])),
+            case_id=value.get("case_id", ""), adapter_id=value.get("adapter_id"), operation=value.get("operation"),
+            status=value.get("status"), repetition=value.get("repetition"),
+            fixture_digest=value.get("fixture_digest", ""), oracle_digest=value.get("oracle_digest", ""),
+            executable_sha256=value.get("executable_sha256", ""), source_sha256=value.get("source_sha256", ""),
+            commit=value.get("commit", ""), version=value.get("version", ""),
+            capabilities=value.get("capabilities", []), argv=value.get("argv", []),
+            cwd=value.get("cwd", ""), env_keys=value.get("env_keys", []),
             elapsed_ms=value.get("elapsed_ms"), canonical=value.get("canonical"),
-            metrics=dict(value.get("metrics", {})), error=value.get("error"),
+            metrics=value.get("metrics"), error=value.get("error"),
         )
         record.validate()
         return record

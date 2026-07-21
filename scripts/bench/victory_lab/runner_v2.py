@@ -9,10 +9,14 @@ from typing import Any, Mapping
 
 try:
     from .adapters.v2 import VictoryAdapter
-    from .manifest_v2 import ManifestError, load_manifest, manifest_adapters, sha256_bytes
+    from .manifest_v2 import ManifestError, canonical_file_hash, load_manifest, manifest_adapters, sha256_bytes, sha256_file
+    from .schema_v2 import RunRecord
+    from .validate_manifest import validate_strict_manifest
 except ImportError:  # pragma: no cover
     from adapters.v2 import VictoryAdapter
-    from manifest_v2 import ManifestError, load_manifest, manifest_adapters, sha256_bytes
+    from manifest_v2 import ManifestError, canonical_file_hash, load_manifest, manifest_adapters, sha256_bytes, sha256_file
+    from schema_v2 import RunRecord
+    from validate_manifest import validate_strict_manifest
 
 
 def _digest_group(manifest: Mapping[str, Any], key: str) -> str:
@@ -20,16 +24,54 @@ def _digest_group(manifest: Mapping[str, Any], key: str) -> str:
     return sha256_bytes(value)
 
 
+def _content_snapshot(manifest_path: Path, manifest: Mapping[str, Any]) -> dict[str, str]:
+    root = manifest_path.parent
+    snapshot = {"__manifest__": sha256_file(manifest_path)}
+    for group in ("fixture_hashes", "oracle_hashes"):
+        for relative in manifest[group]:
+            path = root / relative
+            if path.is_symlink() or not path.is_file():
+                raise ManifestError(f"protected {group} file is missing or linked: {relative}")
+            snapshot[f"{group}:{relative}"] = canonical_file_hash(path)
+    return snapshot
+
+
+def _assert_content_unchanged(before: Mapping[str, str], manifest_path: Path, manifest: Mapping[str, Any]) -> None:
+    after = _content_snapshot(manifest_path, manifest)
+    if dict(before) != after:
+        raise ManifestError("fixture, golden, or manifest content changed during run")
+
+
+def _effective_status(samples: list[dict[str, Any]]) -> str:
+    statuses = {str(sample.get("status")) for sample in samples}
+    child_statuses = {
+        str(sample.get("metrics", {}).get("child", {}).get("status"))
+        for sample in samples
+        if isinstance(sample.get("metrics"), Mapping) and isinstance(sample["metrics"].get("child"), Mapping)
+    }
+    if "BLOCKED" in statuses:
+        return "BLOCKED"
+    if "FAIL" in statuses:
+        return "FAIL"
+    if "NOT_COMPARABLE" in statuses or "NOT_COMPARABLE" in child_statuses:
+        return "NOT_COMPARABLE"
+    if statuses == {"PASS"}:
+        return "PASS"
+    return "NOT_RUN"
+
+
 def run_manifest(manifest_path: str | Path, output: str | Path, *, repetitions: int = 30, mode: str = "authoritative", executor: Any = None) -> dict[str, Any]:
     path = Path(manifest_path).resolve()
     manifest = load_manifest(path)
-    if mode == "authoritative" and repetitions != 30:
-        raise ManifestError("authoritative Victory Lab runs require exactly 30 repetitions")
-    if repetitions < 1 or repetitions > 30:
-        raise ManifestError("repetitions must be between 1 and 30")
+    validate_strict_manifest(manifest, path.parent, check_files=True)
+    if repetitions != 30:
+        raise ManifestError("Victory Lab v2 evidence requires exactly 30 repetitions")
+    if mode not in {"authoritative", "exploratory"}:
+        raise ManifestError(f"unsupported run mode: {mode}")
     manifest = dict(manifest)
     manifest["fixture_digest"] = _digest_group(manifest, "fixture_hashes")
     manifest["oracle_digest"] = _digest_group(manifest, "oracle_hashes")
+    content_before = _content_snapshot(path, manifest)
     output_path = Path(output).resolve()
     output_path.mkdir(parents=True, exist_ok=True)
     adapters = manifest_adapters(manifest)
@@ -40,7 +82,15 @@ def run_manifest(manifest_path: str | Path, output: str | Path, *, repetitions: 
         for case in manifest["cases"]:
             for repetition in range(repetitions):
                 record = adapter.run_case(case, repetition=repetition)
-                samples.append(record.to_dict())
+                sample = record.to_dict()
+                if sample.get("adapter_id") != adapter_id or sample.get("operation") != case["operation"]:
+                    raise ManifestError("adapter returned a sample for the wrong comparator or operation")
+                sample["case_id"] = case["id"]
+                sample["fixture_digest"] = manifest["fixture_digest"]
+                sample["oracle_digest"] = manifest["oracle_digest"]
+                RunRecord.from_dict(sample)
+                samples.append(sample)
+    _assert_content_unchanged(content_before, path, manifest)
     expected_samples = len(adapters) * len(manifest["cases"]) * repetitions
     if len(samples) != expected_samples:
         raise ManifestError(f"authoritative runner retained {len(samples)} samples, expected {expected_samples}")
@@ -52,6 +102,7 @@ def run_manifest(manifest_path: str | Path, output: str | Path, *, repetitions: 
         "schema": "victory-run/v2",
         "manifest": str(path),
         "manifest_schema": manifest["schema"],
+        "status": _effective_status(samples),
         "mode": mode,
         "repetitions": repetitions,
         "authoritative": mode == "authoritative",
