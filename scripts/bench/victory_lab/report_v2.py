@@ -97,16 +97,18 @@ def _freshness_issue(record: Mapping[str, Any], *, expected_preflight: str | Non
         return "freshness_run_mismatch"
     if expected_preflight is not None and preflight != expected_preflight:
         return "freshness_preflight_mismatch"
-    expected_group = expected_group_key or f"{record.get('adapter_id')}:{record.get('case_id')}:{record.get('operation')}"
-    expected_group_id = "g" + hashlib.sha256(expected_group.encode("utf-8")).hexdigest()[:63]
-    if not isinstance(group_id, str) or not _DURABLE_DIGEST_RE.fullmatch(group_id) or group_id != expected_group_id:
-        return "freshness_group_mismatch"
+    if not isinstance(group_id, str) or not _DURABLE_DIGEST_RE.fullmatch(group_id):
+        return "freshness_group_format"
     if not isinstance(repetition, int) or isinstance(repetition, bool) or repetition != record.get("repetition"):
         return "freshness_repetition_mismatch"
     if not isinstance(nonce, str) or not _SHA256_RE.fullmatch(nonce):
         return "freshness_nonce"
-    if nonce != _sample_nonce(run_id, preflight, expected_group, repetition):
-        return "freshness_nonce_mismatch"
+    if expected_group_key is not None:
+        expected_group_id = "g" + hashlib.sha256(expected_group_key.encode("utf-8")).hexdigest()[:63]
+        if group_id != expected_group_id:
+            return "freshness_group_mismatch"
+        if nonce != _sample_nonce(run_id, preflight, expected_group_key, repetition):
+            return "freshness_nonce_mismatch"
     return None
 
 
@@ -613,7 +615,12 @@ def build_report(samples: str | Path, *, manifest: str | Path | Mapping[str, Any
             raise ValueError(f"{adapter_id}/{case_id}/{operation}: repetitions must be exactly 0..29")
         freshness_issues = [
             issue for issue in (
-                _freshness_issue(record, expected_preflight=expected_preflight, expected_run_id=expected_run_id, expected_group_key=group_id)
+                _freshness_issue(
+                    record,
+                    expected_preflight=expected_preflight,
+                    expected_run_id=expected_run_id,
+                    expected_group_key=group_id if loaded_manifest is not None else None,
+                )
                 for record in group
             ) if issue
         ]

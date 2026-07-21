@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 
 from canonical_v2 import payload_digest, token_count
-from report_v2 import _comparisons, _items, _manifest_identity, _quality, _sample_nonce, _validate_manifest_bundle, build_report
+from report_v2 import _comparisons, _items, _manifest_identity, _quality, _read_samples, _sample_nonce, _validate_manifest_bundle, build_report
 from security_gate import runtime_evidence_digest
 
 
@@ -109,6 +109,71 @@ class ReportV2Tests(unittest.TestCase):
             records.append(clone)
         with self.assertRaises(ValueError):
             build_report(self._write(records))
+
+    def test_read_phase_accepts_runner_freshness_bound_to_explicit_group_id(self):
+        explicit_group_id = "current-callers-direct"
+        records = [self._record(repetition) for repetition in range(30)]
+        for record in records:
+            freshness = record["metrics"]["freshness"]
+            freshness["group_id"] = "g" + hashlib.sha256(explicit_group_id.encode()).hexdigest()[:63]
+            freshness["nonce"] = _sample_nonce(
+                freshness["run_id"], freshness["preflight_digest"], explicit_group_id, record["repetition"]
+            )
+        path = self._write(records)
+        self.assertEqual(len(_read_samples(path)), 30)
+        self.assertEqual(build_report(path)["status"], "NOT_COMPARABLE")
+
+    def test_manifest_phase_rejects_tampered_explicit_group_freshness(self):
+        explicit_group_id = "current-callers-direct"
+        fixture_hashes = {}
+        oracle_hashes = {"case": {"expected_direct": ["stable"]}}
+        fixture_digest = hashlib.sha256(b"{}").hexdigest()
+        oracle_digest = hashlib.sha256(
+            json.dumps(oracle_hashes, sort_keys=True, separators=(",", ":")).encode()
+        ).hexdigest()
+        manifest = {
+            "fixture_hashes": fixture_hashes,
+            "oracle_hashes": oracle_hashes,
+            "groups": [
+                {"group_id": explicit_group_id, "adapter_id": "fake", "case_id": "case", "operation": "affected"}
+                for _ in range(8)
+            ],
+            "cases": [{"id": "case", "operation": "affected"}],
+        }
+        for tampered_field in ("group_id", "nonce"):
+            with self.subTest(tampered_field=tampered_field):
+                records = [self._record(repetition) for repetition in range(30)]
+                for record in records:
+                    record["fixture_digest"] = fixture_digest
+                    record["oracle_digest"] = oracle_digest
+                    freshness = record["metrics"]["freshness"]
+                    freshness["group_id"] = "g" + hashlib.sha256(explicit_group_id.encode()).hexdigest()[:63]
+                    freshness["nonce"] = _sample_nonce(
+                        freshness["run_id"], freshness["preflight_digest"], explicit_group_id, record["repetition"]
+                    )
+                if tampered_field == "group_id":
+                    records[0]["metrics"]["freshness"]["group_id"] = "g" + "0" * 63
+                else:
+                    records[0]["metrics"]["freshness"]["nonce"] = "0" * 64
+                with tempfile.TemporaryDirectory() as temp:
+                    output = Path(temp)
+                    samples_path = output / "samples.jsonl"
+                    samples_path.write_text(
+                        "".join(json.dumps(record) + "\n" for record in records), encoding="utf-8"
+                    )
+                    run = {
+                        "schema": "victory-run/v2", "run_id": "r" + "a" * 63,
+                        "status": "PASS", "repetitions": 30, "samples": 30,
+                        "samples_sha256": hashlib.sha256(samples_path.read_bytes()).hexdigest(),
+                        "status_counts": {"PASS": 30, "FAIL": 0, "BLOCKED": 0, "NOT_COMPARABLE": 0, "NOT_RUN": 0},
+                        "runtime_preflight": {
+                            "status": "PASS", "require_runtime": True, "fresh_reproduction": True,
+                            "evidence_digest": "e" * 64,
+                        },
+                    }
+                    (output / "run.json").write_text(json.dumps(run), encoding="utf-8")
+                    with self.assertRaisesRegex(ValueError, "freshness"):
+                        build_report(output, manifest=manifest)
 
     def test_not_required_requires_successful_terminal_state_and_single_process_is_rejected(self):
         for field, value in (("timed_out", True), ("crashed", True), ("failure_class", "exit_nonzero"), ("exit_code", 7)):
