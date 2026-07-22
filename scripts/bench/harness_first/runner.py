@@ -37,7 +37,7 @@ EMAIL = re.compile(r"\b[^\s@]+@[^\s@]+\.[^\s@]+\b")
 PATH = re.compile(r"(?i)(?:^[a-z]:[\\/]|^/|(?:^|[\\/])\.\.?[\\/]|[\\/]\.git[\\/])")
 VOLATILE = frozenset({
     "backend", "route", "routing_outcome", "daemon", "daemon_state", "request_id",
-    "session_id", "occurred_at", "timestamp", "latency_ms", "format_ms", "tokens_est",
+    "session_id", "occurred_at", "timestamp", "latency_ms", "format_ms", "tokens_est", "ms",
     "warnings", "hint", "next_hint", "telemetry", "memory_pointer",
 })
 FRESHNESS_STATES = frozenset({"current", "lagging", "stale", "invalid", "unknown"})

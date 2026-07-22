@@ -13,6 +13,8 @@ from scripts.bench.harness_first.runner import (
     _rss_report,
     _select_latest_telemetry_event,
     claim_global_marker,
+    digest,
+    normalize,
     parse_go_version_m,
     query_check,
     to_yaml,
@@ -80,6 +82,40 @@ class RunnerContractTests(unittest.TestCase):
         self.assertNotIn("--no-daemon", daemon)
         self.assertEqual(direct[-3:], ["nav", "related", "BuildIntentPlan"])
         self.assertEqual(daemon[-3:], ["nav", "related", "BuildIntentPlan"])
+
+    def test_stats_ms_does_not_change_normalized_digest(self):
+        base = {"stats": {"ms": 10, "symbols": 4, "files": 2}}
+        changed = {"stats": {"ms": 900, "symbols": 4, "files": 2}}
+        self.assertEqual(digest(normalize(base)), digest(normalize(changed)))
+
+    def test_normalized_stats_preserve_semantic_fields(self):
+        normalized = normalize({"stats": {"ms": 10, "symbols": 4, "files": 2, "references": 7}})
+        self.assertNotIn("ms", normalized["stats"])
+        self.assertEqual(normalized["stats"]["symbols"], 4)
+        self.assertEqual(normalized["stats"]["files"], 2)
+        self.assertEqual(normalized["stats"]["references"], 7)
+
+    def test_query_check_direct_and_daemon_ignore_route_and_stats_ms_for_digest(self):
+        query = {"id": "search", "kind": "search", "args": ["nav", "search", "BuildIntentPlan"]}
+        direct = {
+            "ok": True,
+            "route": "direct",
+            "backend": "catalog",
+            "stats": {"ms": 10, "symbols": 4, "files": 2},
+            "items": [{"name": "BuildIntentPlan"}],
+        }
+        daemon = {
+            "ok": True,
+            "route": "daemon",
+            "backend": "roslyn",
+            "stats": {"ms": 900, "symbols": 4, "files": 2},
+            "items": [{"name": "BuildIntentPlan"}],
+        }
+        direct_result = query_check(query, direct, output_bytes=1, estimated_tokens=1)
+        daemon_result = query_check(query, daemon, output_bytes=1, estimated_tokens=1)
+        self.assertEqual(direct_result["status"], "PASS")
+        self.assertEqual(daemon_result["status"], "PASS")
+        self.assertEqual(direct_result["normalized_digest"], daemon_result["normalized_digest"])
 
     def test_telemetry_selection_prefers_highest_id_in_newest_first_export(self):
         events = [
