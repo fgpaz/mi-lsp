@@ -162,6 +162,25 @@ func TestValidateHarnessScopedIDsFilterBeforeLoadingDocs(t *testing.T) {
 	}
 }
 
+func TestValidateHarnessScopedImportsUseCanonicalCorpus(t *testing.T) {
+	alias, root := createHarnessWorkspace(t)
+	pilotPath := ".docs/wiki/09_contratos/CT-PILOT.md"
+	globalPath := ".docs/wiki/09_contratos/CT-GLOBAL.md"
+	pilot := strings.Replace(validHarnessContract("llm-first", "CT-PILOT", "artifacts/harness/evidence.md", ""), "'[[CT-PILOT]]'", "'[[CT-GLOBAL]]'", 1)
+	writeHarnessDoc(t, root, pilotPath, pilot)
+	writeHarnessDoc(t, root, globalPath, validHarnessContract("llm-first", "CT-GLOBAL", "artifacts/harness/evidence.md", ""))
+	writeWorkspaceFile(t, root, "artifacts/harness/evidence.md", "verified")
+	replaceHarnessDocs(t, root, []model.DocRecord{
+		harnessDocRecord(pilotPath, "CT-PILOT"),
+		harnessDocRecord(globalPath, "CT-GLOBAL"),
+	})
+
+	result := executeHarnessValidationPayload(t, root, alias, map[string]any{"ids": "CT-PILOT"})
+	if result.HarnessVerdict != "PASS" || result.HarnessContractsReviewed != 1 || result.HarnessLinksReviewed != 2 {
+		t.Fatalf("scoped cross-document import result = %#v", result)
+	}
+}
+
 func TestValidateHarnessScopedIDsPreferCanonicalPathOverAggregateRecord(t *testing.T) {
 	alias, root := createHarnessWorkspace(t)
 	writeHarnessDoc(t, root, ".docs/wiki/09_contratos/CT-PILOT.md", validHarnessContract("llm-first", "CT-PILOT", "artifacts/harness/evidence.md", ""))
@@ -195,6 +214,49 @@ func TestValidateHarnessUnscopedPrefersCanonicalPathOverAggregateRecord(t *testi
 	result := executeHarnessValidation(t, root, alias)
 	if result.HarnessVerdict != "PASS" || result.HarnessContractsReviewed != 1 {
 		t.Fatalf("unscoped verdict = %#v, want only canonical passing contract", result)
+	}
+}
+
+func TestValidateHarnessExcludesRawAndAuditRecords(t *testing.T) {
+	alias, root := createHarnessWorkspace(t)
+	wikiPath := ".docs/wiki/09_contratos/CT-PILOT.md"
+	rawPath := ".docs/raw/CT-RAW.md"
+	auditPath := ".docs/auditoria/session/CT-AUDIT.md"
+	writeHarnessDoc(t, root, wikiPath, validHarnessContract("llm-first", "CT-PILOT", "artifacts/harness/evidence.md", ""))
+	writeHarnessDoc(t, root, rawPath, "# invalid raw contract\n")
+	writeHarnessDoc(t, root, auditPath, "# invalid audit contract\n")
+	writeWorkspaceFile(t, root, "artifacts/harness/evidence.md", "verified")
+	replaceHarnessDocs(t, root, []model.DocRecord{harnessDocRecord(wikiPath, "CT-PILOT"), harnessDocRecord(rawPath, "CT-RAW"), harnessDocRecord(auditPath, "CT-AUDIT")})
+
+	result := executeHarnessValidation(t, root, alias)
+	if result.HarnessVerdict != "PASS" || result.HarnessContractsReviewed != 1 || len(result.HarnessDocsMissingContract) != 0 {
+		t.Fatalf("raw/audit records leaked into validation: %#v", result)
+	}
+}
+
+func TestValidateHarnessCanonicalInvalidRecordWinsDuplicate(t *testing.T) {
+	alias, root := createHarnessWorkspace(t)
+	canonicalPath := ".docs/wiki/09_contratos/CT-PILOT.md"
+	aggregatePath := ".docs/wiki/09_contratos_tecnicos.md"
+	writeWorkspaceFile(t, root, canonicalPath, "# CT-PILOT\n\nNo contract in canonical path.\n")
+	writeHarnessDoc(t, root, aggregatePath, validHarnessContract("llm-first", "CT-PILOT", "artifacts/harness/evidence.md", ""))
+	writeWorkspaceFile(t, root, "artifacts/harness/evidence.md", "verified")
+	aggregate := harnessDocRecord(aggregatePath, "CT-PILOT")
+	aggregate.Title = "CT-PILOT"
+	replaceHarnessDocs(t, root, []model.DocRecord{aggregate, harnessDocRecord(canonicalPath, "CT-PILOT")})
+
+	result := executeHarnessValidationPayload(t, root, alias, map[string]any{"ids": "CT-PILOT"})
+	if result.HarnessVerdict != "BLOCKED" || result.HarnessContractsReviewed != 0 || len(result.HarnessDocsMissingContract) != 1 {
+		t.Fatalf("canonical duplicate was not authoritative: %#v", result)
+	}
+}
+
+func TestValidateHarnessScopedRecordsDeduplicateDeterministically(t *testing.T) {
+	canonical := harnessDocRecord(".docs/wiki/09_contratos/CT-PILOT.md", "CT-PILOT")
+	aggregate := harnessDocRecord(".docs/wiki/09_contratos_tecnicos.md", "CT-PILOT")
+	got := filterGovernedWikiDocRecords([]model.DocRecord{aggregate, canonical, canonical}, map[string]any{})
+	if len(got) != 1 || got[0].Path != canonical.Path {
+		t.Fatalf("records = %#v, want one canonical record", got)
 	}
 }
 

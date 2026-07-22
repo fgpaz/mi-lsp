@@ -41,6 +41,21 @@ func (a *App) validateSource(ctx context.Context, request model.CommandRequest) 
 
 	warnings := append([]string{}, query.profileWarnings...)
 	warnings = append(warnings, fmt.Sprintf("read_model=%s", query.profileSource))
+	if explicitEmptyWikiSourceScope(request.Payload) {
+		hint := wikiSourceScopeHint(request.Payload)
+		result := model.WikiSourceValidationResult{
+			WikiSourceProtocol:  wikiSourceProtocolV1,
+			IndexFreshness:      "scope_empty",
+			GovernanceSync:      "in_sync",
+			WikiSourceReadiness: "blocked",
+			WikiSourceVerdict:   "BLOCKED",
+			WikiSourceBlockers:  []string{hint},
+			NavigationReadiness: "blocked",
+			NavigationBlockers:  []string{hint},
+		}
+		env := model.Envelope{Ok: true, Workspace: registration.Name, Backend: "wiki.source", Items: []model.WikiSourceValidationResult{result}, Warnings: warnings, Hint: hint}
+		return applyCoachPolicy(attachMemoryPointer(env, memory), request.Context), nil
+	}
 	if len(query.docs) == 0 {
 		hint := fmt.Sprintf("documentation index is empty; rerun 'mi-lsp index --workspace %s --docs-only' before validate-source", registration.Name)
 		result := model.WikiSourceValidationResult{
@@ -57,6 +72,23 @@ func (a *App) validateSource(ctx context.Context, request model.CommandRequest) 
 		return applyCoachPolicy(attachMemoryPointer(env, memory), request.Context), nil
 	}
 
+	allWikiDocs := filterGovernedWikiDocRecords(query.docs, map[string]any{})
+	scopedDocs := filterGovernedWikiDocRecords(query.docs, request.Payload)
+	if wikiSourceScopeRequested(request.Payload) && len(scopedDocs) == 0 {
+		hint := wikiSourceScopeHint(request.Payload)
+		result := model.WikiSourceValidationResult{
+			WikiSourceProtocol:  wikiSourceProtocolV1,
+			IndexFreshness:      "scope_empty",
+			GovernanceSync:      "in_sync",
+			WikiSourceReadiness: "blocked",
+			WikiSourceVerdict:   "BLOCKED",
+			WikiSourceBlockers:  []string{hint},
+			NavigationReadiness: "blocked",
+			NavigationBlockers:  []string{hint},
+		}
+		env := model.Envelope{Ok: true, Workspace: registration.Name, Backend: "wiki.source", Items: []model.WikiSourceValidationResult{result}, Warnings: warnings, Hint: hint}
+		return applyCoachPolicy(attachMemoryPointer(env, memory), request.Context), nil
+	}
 	blocks, err := store.ListDocSourceBlocks(ctx, query.db)
 	if err != nil {
 		return model.Envelope{}, err
@@ -65,8 +97,12 @@ func (a *App) validateSource(ctx context.Context, request model.CommandRequest) 
 	if err != nil {
 		return model.Envelope{}, err
 	}
-	docs := loadSourceDocs(registration.Root, query.docs)
-	result := compileSourceValidation(docs, query.docs, blocks, records)
+	docs := loadSourceDocs(registration.Root, scopedDocs)
+	reportedBlocks := filterSourceBlocksByDocs(blocks, docs)
+	reportedRecords := filterSourceRecordsByDocs(records, docs)
+	corpusBlocks := filterSourceBlocksByDocRecords(blocks, allWikiDocs)
+	corpusRecords := filterSourceRecordsByDocRecords(records, allWikiDocs)
+	result := compileSourceValidationWithCorpus(docs, allWikiDocs, reportedBlocks, reportedRecords, corpusBlocks, corpusRecords)
 	env := model.Envelope{
 		Ok:        true,
 		Workspace: registration.Name,
@@ -105,7 +141,101 @@ func loadSourceDocs(root string, records []model.DocRecord) []sourceDoc {
 	return docs
 }
 
+func wikiSourceScopeRequested(payload map[string]any) bool {
+	_, idsPresent := payload["ids"]
+	_, pathsPresent := payload["paths"]
+	return idsPresent || pathsPresent
+}
+
+func explicitEmptyWikiSourceScope(payload map[string]any) bool {
+	if !wikiSourceScopeRequested(payload) {
+		return false
+	}
+	return len(splitHarnessScopeValues(stringPayload(payload, "ids"))) == 0 && len(splitHarnessScopeValues(stringPayload(payload, "paths"))) == 0
+}
+
+func wikiSourceScopeHint(payload map[string]any) string {
+	if explicitEmptyWikiSourceScope(payload) {
+		return "scope=explicit_empty; required=non-empty ids or paths; protocol=" + wikiSourceProtocolV1
+	}
+	parts := []string{}
+	if ids := strings.TrimSpace(stringPayload(payload, "ids")); ids != "" {
+		parts = append(parts, "ids="+ids)
+	}
+	if paths := strings.TrimSpace(stringPayload(payload, "paths")); paths != "" {
+		parts = append(parts, "paths="+paths)
+	}
+	if len(parts) == 0 {
+		return "scope=no_match; required=governed wiki docs declaring " + wikiSourceProtocolV1
+	}
+	return "scope=no_match; " + strings.Join(parts, ", ") + "; required=governed wiki docs declaring " + wikiSourceProtocolV1
+}
+
+func filterSourceBlocksByDocs(blocks []model.DocSourceBlock, docs []sourceDoc) []model.DocSourceBlock {
+	allowed := sourceDocPathSet(docs)
+	filtered := make([]model.DocSourceBlock, 0, len(blocks))
+	for _, block := range blocks {
+		if _, ok := allowed[normalizeHarnessScopePath(block.DocPath)]; ok {
+			filtered = append(filtered, block)
+		}
+	}
+	return filtered
+}
+
+func filterSourceRecordsByDocs(records []model.DocSourceRecord, docs []sourceDoc) []model.DocSourceRecord {
+	allowed := sourceDocPathSet(docs)
+	filtered := make([]model.DocSourceRecord, 0, len(records))
+	for _, record := range records {
+		if _, ok := allowed[normalizeHarnessScopePath(record.DocPath)]; ok {
+			filtered = append(filtered, record)
+		}
+	}
+	return filtered
+}
+
+func filterSourceBlocksByDocRecords(blocks []model.DocSourceBlock, docs []model.DocRecord) []model.DocSourceBlock {
+	allowed := docRecordPathSet(docs)
+	filtered := make([]model.DocSourceBlock, 0, len(blocks))
+	for _, block := range blocks {
+		if _, ok := allowed[normalizeHarnessScopePath(block.DocPath)]; ok {
+			filtered = append(filtered, block)
+		}
+	}
+	return filtered
+}
+
+func filterSourceRecordsByDocRecords(records []model.DocSourceRecord, docs []model.DocRecord) []model.DocSourceRecord {
+	allowed := docRecordPathSet(docs)
+	filtered := make([]model.DocSourceRecord, 0, len(records))
+	for _, record := range records {
+		if _, ok := allowed[normalizeHarnessScopePath(record.DocPath)]; ok {
+			filtered = append(filtered, record)
+		}
+	}
+	return filtered
+}
+
+func sourceDocPathSet(docs []sourceDoc) map[string]struct{} {
+	allowed := make(map[string]struct{}, len(docs))
+	for _, doc := range docs {
+		allowed[normalizeHarnessScopePath(doc.record.Path)] = struct{}{}
+	}
+	return allowed
+}
+
+func docRecordPathSet(docs []model.DocRecord) map[string]struct{} {
+	allowed := make(map[string]struct{}, len(docs))
+	for _, doc := range docs {
+		allowed[normalizeHarnessScopePath(doc.Path)] = struct{}{}
+	}
+	return allowed
+}
+
 func compileSourceValidation(docs []sourceDoc, allDocs []model.DocRecord, indexedBlocks []model.DocSourceBlock, indexedRecords []model.DocSourceRecord) model.WikiSourceValidationResult {
+	return compileSourceValidationWithCorpus(docs, allDocs, indexedBlocks, indexedRecords, indexedBlocks, indexedRecords)
+}
+
+func compileSourceValidationWithCorpus(docs []sourceDoc, allDocs []model.DocRecord, indexedBlocks []model.DocSourceBlock, indexedRecords []model.DocSourceRecord, corpusBlocks []model.DocSourceBlock, corpusRecords []model.DocSourceRecord) model.WikiSourceValidationResult {
 	result := model.WikiSourceValidationResult{
 		WikiSourceProtocol:          wikiSourceProtocolV1,
 		IndexFreshness:              "current",
@@ -123,18 +253,10 @@ func compileSourceValidation(docs []sourceDoc, allDocs []model.DocRecord, indexe
 	}
 
 	docIDToPath := map[string]string{}
-	indexedBlockKeys := map[string]struct{}{}
-	indexedRecordKeys := map[string]struct{}{}
-	indexedSourceIDs := map[string]struct{}{}
-	for _, block := range indexedBlocks {
-		indexedBlockKeys[strings.ToLower(block.DocPath+"::"+block.BlockID)] = struct{}{}
-		addSourceResolverKey(indexedSourceIDs, block.DocID)
-		addSourceResolverKey(indexedSourceIDs, block.BlockID)
-	}
-	for _, record := range indexedRecords {
-		indexedRecordKeys[strings.ToLower(record.DocPath+"::"+record.BlockID+"::"+record.RecordID)] = struct{}{}
-		addSourceResolverKey(indexedSourceIDs, record.RecordID)
-	}
+	indexedBlockKeys := sourceBlockKeySet(indexedBlocks)
+	indexedRecordKeys := sourceRecordKeySet(indexedRecords)
+	indexedSourceIDs := sourceResolverIDSet(corpusBlocks, corpusRecords)
+	corpusRecordIDs := sourceRecordIDSet(corpusRecords)
 	docIndex := buildSourceDocIndex(docs, allDocs, indexedSourceIDs)
 	for _, doc := range docs {
 		parsed := doc.parsed
@@ -220,6 +342,11 @@ func compileSourceValidation(docs []sourceDoc, allDocs []model.DocRecord, indexe
 			if len(block.Evidence) == 0 {
 				blockBlockers = append(blockBlockers, "block missing evidence")
 			}
+			for _, ref := range block.Imports {
+				if !harnessRefExists("", docIndex, doc.record.Path, ref) {
+					blockBlockers = append(blockBlockers, "broken block import "+ref)
+				}
+			}
 			for _, blocker := range blockBlockers {
 				addDocBlocker(blocker)
 			}
@@ -228,7 +355,7 @@ func compileSourceValidation(docs []sourceDoc, allDocs []model.DocRecord, indexe
 				blockDetail.Severity = "error"
 			}
 			if strings.TrimSpace(block.BlockID) != "" {
-				if _, ok := indexedBlockKeys[strings.ToLower(doc.record.Path+"::"+block.BlockID)]; !ok {
+				if _, ok := indexedBlockKeys[sourceBlockKey(doc.record.Path, block.BlockID)]; !ok {
 					addDocNavigationBlocker("block_id " + block.BlockID + " missing from doc_source_blocks")
 				}
 			}
@@ -246,11 +373,13 @@ func compileSourceValidation(docs []sourceDoc, allDocs []model.DocRecord, indexe
 					recordDetail.Severity = "error"
 					addDocBlocker("referencable record missing id")
 				} else if strings.TrimSpace(record.ID) != "" {
-					key := strings.ToLower(doc.record.Path + "::" + block.BlockID + "::" + record.ID)
+					key := sourceRecordKey(doc.record.Path, block.BlockID, record.ID)
 					if _, ok := indexedRecordKeys[key]; !ok {
-						recordDetail.Verdict = "BLOCKED"
-						recordDetail.Severity = "error"
-						addDocNavigationBlocker("record_id " + record.ID + " missing from doc_source_records")
+						if _, external := corpusRecordIDs[normalizeHarnessRef(record.ID)]; !external {
+							recordDetail.Verdict = "BLOCKED"
+							recordDetail.Severity = "error"
+							addDocNavigationBlocker("record_id " + record.ID + " missing from doc_source_records")
+						}
 					}
 				}
 				detail.Records = append(detail.Records, recordDetail)
@@ -328,6 +457,50 @@ func buildSourceDocIndex(docs []sourceDoc, allDocs []model.DocRecord, indexedSou
 		addHarnessIndexKey(index, value)
 	}
 	return index
+}
+
+func sourceResolverIDSet(blocks []model.DocSourceBlock, records []model.DocSourceRecord) map[string]struct{} {
+	ids := map[string]struct{}{}
+	for _, block := range blocks {
+		addSourceResolverKey(ids, block.DocID)
+		addSourceResolverKey(ids, block.BlockID)
+	}
+	for _, record := range records {
+		addSourceResolverKey(ids, record.RecordID)
+	}
+	return ids
+}
+
+func sourceRecordIDSet(records []model.DocSourceRecord) map[string]struct{} {
+	ids := map[string]struct{}{}
+	for _, record := range records {
+		addSourceResolverKey(ids, record.RecordID)
+	}
+	return ids
+}
+
+func sourceBlockKeySet(blocks []model.DocSourceBlock) map[string]struct{} {
+	keys := map[string]struct{}{}
+	for _, block := range blocks {
+		keys[sourceBlockKey(block.DocPath, block.BlockID)] = struct{}{}
+	}
+	return keys
+}
+
+func sourceRecordKeySet(records []model.DocSourceRecord) map[string]struct{} {
+	keys := map[string]struct{}{}
+	for _, record := range records {
+		keys[sourceRecordKey(record.DocPath, record.BlockID, record.RecordID)] = struct{}{}
+	}
+	return keys
+}
+
+func sourceBlockKey(docPath string, blockID string) string {
+	return normalizeHarnessScopePath(docPath) + "::" + normalizeHarnessRef(blockID)
+}
+
+func sourceRecordKey(docPath string, blockID string, recordID string) string {
+	return normalizeHarnessScopePath(docPath) + "::" + normalizeHarnessRef(blockID) + "::" + normalizeHarnessRef(recordID)
 }
 
 func addSourceResolverKey(index map[string]struct{}, value string) {

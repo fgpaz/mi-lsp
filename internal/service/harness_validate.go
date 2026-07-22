@@ -78,7 +78,7 @@ func (a *App) validateHarness(ctx context.Context, request model.CommandRequest)
 		return applyCoachPolicy(attachMemoryPointer(env, memory), request.Context), nil
 	}
 
-	records := filterHarnessDocRecords(query.docs, request.Payload)
+	records := filterGovernedWikiDocRecords(query.docs, request.Payload)
 	if len(records) == 0 {
 		hint := harnessNoScopeMatchHint(request.Payload)
 		result := model.HarnessValidationResult{
@@ -91,8 +91,10 @@ func (a *App) validateHarness(ctx context.Context, request model.CommandRequest)
 		return applyCoachPolicy(attachMemoryPointer(env, memory), request.Context), nil
 	}
 
-	docs := loadHarnessDocs(registration.Root, records)
-	result := compileHarnessValidation(registration.Root, docs)
+	corpusRecords := filterGovernedWikiDocRecords(query.docs, map[string]any{})
+	corpusDocs := loadHarnessDocs(registration.Root, corpusRecords)
+	docs := selectHarnessDocs(corpusDocs, records)
+	result := compileHarnessValidation(registration.Root, docs, corpusDocs)
 	env := model.Envelope{
 		Ok:        true,
 		Workspace: registration.Name,
@@ -107,16 +109,31 @@ func (a *App) validateHarness(ctx context.Context, request model.CommandRequest)
 	return applyCoachPolicy(attachMemoryPointer(env, memory), request.Context), nil
 }
 
-func filterHarnessDocRecords(records []model.DocRecord, payload map[string]any) []model.DocRecord {
+func filterGovernedWikiDocRecords(records []model.DocRecord, payload map[string]any) []model.DocRecord {
+	records = filterGovernedWikiRecords(records)
 	ids := splitHarnessScopeValues(stringPayload(payload, "ids"))
 	paths := splitHarnessScopeValues(stringPayload(payload, "paths"))
 	if len(ids) == 0 && len(paths) == 0 {
-		return records
+		return preferCanonicalHarnessDocRecords(records)
 	}
 	filtered := make([]model.DocRecord, 0, len(records))
 	filtered = append(filtered, filterHarnessDocRecordsByIDs(records, ids)...)
 	for _, record := range records {
 		if harnessRecordMatchesPaths(record, paths) {
+			filtered = append(filtered, record)
+		}
+	}
+	return preferCanonicalHarnessDocRecords(filtered)
+}
+
+func filterHarnessDocRecords(records []model.DocRecord, payload map[string]any) []model.DocRecord {
+	return filterGovernedWikiDocRecords(records, payload)
+}
+
+func filterGovernedWikiRecords(records []model.DocRecord) []model.DocRecord {
+	filtered := make([]model.DocRecord, 0, len(records))
+	for _, record := range records {
+		if isGovernedWikiDocPath(record.Path) {
 			filtered = append(filtered, record)
 		}
 	}
@@ -262,10 +279,23 @@ func normalizeHarnessScopePath(path string) string {
 	return strings.ToLower(normalized)
 }
 
+func isGovernedWikiDocPath(path string) bool {
+	normalized := filepath.ToSlash(filepath.Clean(filepath.FromSlash(strings.TrimSpace(path))))
+	for strings.HasPrefix(normalized, "./") {
+		normalized = strings.TrimPrefix(normalized, "./")
+	}
+	normalized = strings.ToLower(normalized)
+	return strings.HasPrefix(normalized, ".docs/wiki/")
+}
+
 func uniqueHarnessDocRecords(records []model.DocRecord) []model.DocRecord {
-	filtered := make([]model.DocRecord, 0, len(records))
+	sortedRecords := append([]model.DocRecord(nil), records...)
+	sort.SliceStable(sortedRecords, func(i, j int) bool {
+		return harnessDocRecordSortKey(sortedRecords[i]) < harnessDocRecordSortKey(sortedRecords[j])
+	})
+	filtered := make([]model.DocRecord, 0, len(sortedRecords))
 	seen := map[string]struct{}{}
-	for _, record := range records {
+	for _, record := range sortedRecords {
 		key := strings.ToLower(filepath.ToSlash(record.Path)) + "\x00" + strings.ToLower(record.DocID)
 		if _, ok := seen[key]; ok {
 			continue
@@ -274,6 +304,18 @@ func uniqueHarnessDocRecords(records []model.DocRecord) []model.DocRecord {
 		filtered = append(filtered, record)
 	}
 	return filtered
+}
+
+func harnessDocRecordSortKey(record model.DocRecord) string {
+	return strings.ToLower(filepath.ToSlash(record.Path)) + "\x00" +
+		strings.ToLower(strings.TrimSpace(record.DocID)) + "\x00" +
+		strings.ToLower(strings.TrimSpace(record.Title)) + "\x00" +
+		strings.ToLower(strings.TrimSpace(record.Layer)) + "\x00" +
+		strings.ToLower(strings.TrimSpace(record.Family)) + "\x00" +
+		strings.ToLower(strings.TrimSpace(record.SearchText)) + "\x00" +
+		strings.ToLower(strings.TrimSpace(record.ContentHash)) + "\x00" +
+		fmt.Sprintf("%020d", record.IndexedAt) + "\x00" +
+		fmt.Sprintf("%t", record.IsSnapshot)
 }
 
 func harnessNoScopeMatchHint(payload map[string]any) string {
@@ -288,6 +330,21 @@ func harnessNoScopeMatchHint(payload map[string]any) string {
 		return "scoped validate-harness filters matched no indexed wiki docs"
 	}
 	return "scoped validate-harness filters matched no indexed wiki docs (" + strings.Join(parts, ", ") + ")"
+}
+
+func selectHarnessDocs(corpus []harnessDoc, records []model.DocRecord) []harnessDoc {
+	allowed := map[string]struct{}{}
+	for _, record := range records {
+		allowed[strings.ToLower(filepath.ToSlash(record.Path))+"\x00"+strings.ToLower(record.DocID)] = struct{}{}
+	}
+	selected := make([]harnessDoc, 0, len(records))
+	for _, doc := range corpus {
+		key := strings.ToLower(filepath.ToSlash(doc.record.Path)) + "\x00" + strings.ToLower(doc.record.DocID)
+		if _, ok := allowed[key]; ok {
+			selected = append(selected, doc)
+		}
+	}
+	return selected
 }
 
 func loadHarnessDocs(root string, records []model.DocRecord) []harnessDoc {
@@ -353,13 +410,13 @@ func candidateHarnessYAMLBlocks(content string) []string {
 	return blocks
 }
 
-func compileHarnessValidation(root string, docs []harnessDoc) model.HarnessValidationResult {
+func compileHarnessValidation(root string, docs []harnessDoc, corpus []harnessDoc) model.HarnessValidationResult {
 	result := model.HarnessValidationResult{
 		HarnessProtocol: harnessProtocolV1,
 		HarnessVerdict:  "PASS",
 	}
-	docIndex := buildHarnessDocIndex(docs)
-	contractCoverage := buildHarnessContractCoverage(docs)
+	docIndex := buildHarnessDocIndex(corpus)
+	contractCoverage := buildHarnessContractCoverage(corpus)
 	seenRequired := map[string]struct{}{}
 	seenFound := map[string]struct{}{}
 

@@ -11,6 +11,13 @@ import (
 	"github.com/spf13/cobra"
 )
 
+func (s *rootState) executeNavOperation(cmd *cobra.Command, operation string, payload map[string]any, preferDaemon bool) error {
+	if s.executeOperationHook != nil {
+		return s.executeOperationHook(cmd, operation, payload, preferDaemon)
+	}
+	return s.executeOperation(cmd, operation, payload, preferDaemon)
+}
+
 func newNavCommand(state *rootState) *cobra.Command {
 	command := &cobra.Command{
 		Use:   "nav",
@@ -198,7 +205,7 @@ context retrieval, dependency analysis, and service exploration.`,
 			if packRepo != "" {
 				payload["repo"] = packRepo
 			}
-			return state.executeOperation(cmd, "nav.pack", payload, true)
+			return state.executeNavOperation(cmd, "nav.pack", payload, false)
 		},
 	}
 	packCommand.Flags().StringVar(&packRF, "rf", "", "Requirement anchor to harden pack selection")
@@ -851,7 +858,7 @@ pack for a reading pack, and trace for RS/RF/TP evidence links.`,
 			if packAllWorkspaces {
 				payload["all_workspaces"] = true
 			}
-			return state.executeOperation(cmd, "nav.pack", payload, true)
+			return state.executeNavOperation(cmd, "nav.wiki.pack", payload, false)
 		},
 	}
 	packCommand.Flags().StringVar(&packRF, "rf", "", "Requirement anchor to harden pack selection")
@@ -911,14 +918,25 @@ pack for a reading pack, and trace for RS/RF/TP evidence links.`,
 	validateHarnessCommand.Flags().StringVar(&validateHarnessIDs, "ids", "", "Comma-separated doc IDs/titles/basenames to validate")
 	validateHarnessCommand.Flags().StringVar(&validateHarnessPaths, "paths", "", "Comma-separated doc paths or basenames to validate")
 
+	var validateSourceIDs string
+	var validateSourcePaths string
 	validateSourceCommand := &cobra.Command{
 		Use:     "validate-source",
 		Short:   "Validate SDD-WIKI-SOURCE-v1 source blocks in governed wiki docs",
 		Example: `  mi-lsp nav wiki validate-source --workspace mi-lsp --format toon`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return state.executeOperation(cmd, "nav.wiki.validate-source", map[string]any{}, true)
+			payload := map[string]any{}
+			if strings.TrimSpace(validateSourceIDs) != "" {
+				payload["ids"] = validateSourceIDs
+			}
+			if strings.TrimSpace(validateSourcePaths) != "" {
+				payload["paths"] = validateSourcePaths
+			}
+			return state.executeOperation(cmd, "nav.wiki.validate-source", payload, true)
 		},
 	}
+	validateSourceCommand.Flags().StringVar(&validateSourceIDs, "ids", "", "Comma-separated doc IDs/titles/basenames to validate")
+	validateSourceCommand.Flags().StringVar(&validateSourcePaths, "paths", "", "Comma-separated doc paths or basenames to validate")
 
 	var invAllWorkspaces bool
 	var invWithLayerCounts bool
