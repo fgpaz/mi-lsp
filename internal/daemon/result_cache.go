@@ -10,8 +10,8 @@ import (
 )
 
 const (
-	resultCacheTTL       = 10 * time.Minute
-	resultCacheMaxSize   = 256
+	resultCacheTTL     = 10 * time.Minute
+	resultCacheMaxSize = 256
 )
 
 // minInt returns the minimum of two integers.

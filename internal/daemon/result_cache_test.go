@@ -169,15 +169,15 @@ func TestResultCacheStatsHitMiss(t *testing.T) {
 
 func TestIsCacheableOp(t *testing.T) {
 	tests := map[string]bool{
-		"nav.ask":      true,
-		"nav.search":   true,
-		"nav.pack":     true,
-		"nav.governance": true,
-		"nav.route":    true,
-		"workspace.add": false,
+		"nav.ask":          true,
+		"nav.search":       true,
+		"nav.pack":         true,
+		"nav.governance":   true,
+		"nav.route":        true,
+		"workspace.add":    false,
 		"workspace.status": false,
-		"system.stop":   false,
-		"unknown":       false,
+		"system.stop":      false,
+		"unknown":          false,
 	}
 
 	for op, expected := range tests {
