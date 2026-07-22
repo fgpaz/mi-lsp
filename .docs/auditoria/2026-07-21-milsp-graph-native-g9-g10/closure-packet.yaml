@@ -1,0 +1,88 @@
+schema: ae-closure-packet/v1
+doc_id: G9-G10-CLOSURE-PACKET-20260721
+block_id: closure-packet
+harness_protocol: SDD-HARNESS-v1
+wiki_source_protocol: SDD-WIKI-SOURCE-v1
+harness_contract:
+  id: HC-G9-G10-CLOSURE-PACKET
+  kind: closure-packet
+  audience: dual
+  imports:
+    - benchmark-summary.yaml
+    - review-index.yaml
+    - g9-verdict.md
+    - traceability-closure.yaml
+    - session-contract.yaml
+    - worker-registry.yaml
+    - execution-limits.yaml
+  exports:
+    - ae-close-verdict.md (planned, absent)
+  agent_must_read:
+    - benchmark-summary.yaml
+    - g9-verdict.md
+    - traceability-closure.yaml
+  agent_may_edit:
+    - closure-packet.yaml
+  agent_must_not_edit:
+    - ae-close-verdict.md
+    - product_source
+    - comparator_source
+    - release_artifacts
+  verify:
+    - yaml_parse
+    - hash_index_matches_durable_artifacts
+    - status_and_promotion_gates_consistent
+  stop_if:
+    - ae_close_verdict_created_before_ae_close=true
+    - release_action_requested=true
+    - blocked_verdict_changed=true
+  evidence:
+    - closure-packet.yaml
+    - g9-verdict.md
+    - traceability-closure.yaml
+harness_verdict: BLOCKED
+wiki_source_verdict: BLOCKED
+status: BLOCKED
+promoted_verdict: pending_ae_close
+repository_evidence_head: 2e89564b6a3033101e9cfbb7a7610acaa2acfb54
+product_benchmark_pin: 11ac8af870d4110b6b4333199b8a8343c52ce784
+evidence_bundle:
+  alias: '<external-evidence-root>/victory-g9-authoritative-v4-20260721'
+  run_sha256: d46e13bd6dae30acbc05a5c0998e17302150f5b74eeb6fa653188ca8cce0a604
+  samples_sha256: f086a8ed02a9ffb40dc9da7274d562d86ea4bde0319fab43de081c62a7a8af07
+  report_sha256: 0299ebb341eeeeba0c3fd6e6a6ee92135d9010ebcb9c47157dcc90c127c63da4
+  manifest_sha256: 62cb0f6ab6ff3bb57780c35bc72cc84b91df598b2e4aa1c8ace32d0fb7379389
+acceptance:
+  sample_shape: 240=8x30
+  outcome_counts: PASS195/NC42/BLOCKED3/FAIL0
+  independent_g9_review: BLOCKED
+  g10_authoritative_tests: PASS
+  g10_go_test_race: NOT_RUN_HOST_UNSUPPORTED
+  worker_status: TIMEOUT_NOT_PASS
+  execution_measurement_concurrency: 1
+  max_reviewer_fanout: 4
+  joins: completion_driven
+  watchdog: declared_180_300_not_runtime_proven
+  retries: infrastructure_only_max_2_declared; retry_storm_prohibited
+  model_or_pin_claims: none_invented
+release_disposition:
+  install: forbidden
+  push: forbidden
+  pr: forbidden
+  deploy: forbidden
+  publish: forbidden
+  global_exe_sha256: 16b5...ed16
+  global_exe_provenance: unchanged_and_not_benchmark_or_release_provenance
+  benchmark_hashes: evidence_only_not_release_promotion
+  rollback: no_mutation
+blockers:
+  - g9_independent_review_blocked_by_repeated_observer_failures_v3_v4
+  - formal_global_superiority_not_established
+  - incomplete_comparator_groups_and_not_comparable_scopes
+  - benchmark_runtime_blocked
+  - worker_timeout_not_pass
+  - ae_close_verdict_pending
+required_next:
+  - run_ae_close_read_only_closure
+  - preserve_status_BLOCKED
+  - create_ae-close-verdict.md_only_during_ae_close

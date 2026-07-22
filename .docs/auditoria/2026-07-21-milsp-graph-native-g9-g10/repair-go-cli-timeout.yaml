@@ -1,0 +1,41 @@
+schema: edit-plan-v1
+id: G10-REPAIR-CLI-PIPE-CANCELLATION
+status: authorized_by_existing_session_contract
+source_gate: G10 full fresh verification
+failure_class: correctness
+severity: SEV-1
+observed:
+  command: go test ./internal/cli -run '^TestBuildAXIHomeEnvelopeWithoutWorkspaceShowsBootstrapGuidance$' -count=1 -timeout=30s
+  result: timeout
+  affected_test: internal/cli/axi_test.go:140-160
+  stack:
+    - internal/cli/root.go:789-817
+    - internal/daemon/client.go:17-30
+    - internal/worker/protocol.go:28-42
+hypothesis: daemon.Client.Execute blocks in pipe io.ReadFull after context cancellation because the active connection is not interrupted.
+allowed_paths:
+  - internal/daemon/client.go
+  - internal/daemon/*_test.go
+  - internal/cli/axi_test.go
+forbidden_paths:
+  - .docs/wiki/00_gobierno_documental.md
+  - .docs/wiki/_mi-lsp/read-model.toml
+  - .mi-lsp/**
+  - comparator source trees
+  - production or release paths
+locked_constraints:
+  - context cancellation must interrupt a blocked read
+  - no goroutine or connection leak
+  - preserve daemon framing and successful request behavior
+  - no retry loop
+verify:
+  - go test ./internal/daemon -count=1
+  - go test ./internal/cli -run '^TestBuildAXIHomeEnvelopeWithoutWorkspaceShowsBootstrapGuidance$' -count=1 -timeout=30s
+  - go test ./internal/cli -count=1 -timeout=10m
+  - go test ./... -count=1 -timeout=15m
+stop_if:
+  - repair requires protocol or public contract change
+  - repair requires edits outside allowed_paths
+  - successful daemon requests regress
+rollback: revert the atomic repair commit
+evidence_target: .docs/auditoria/2026-07-21-milsp-graph-native-g9-g10/closure-packet.yaml

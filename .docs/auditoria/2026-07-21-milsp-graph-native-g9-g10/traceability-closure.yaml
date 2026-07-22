@@ -1,0 +1,92 @@
+schema: ae-traceability-closure/v1
+doc_id: G9-G10-TRACEABILITY-CLOSURE-20260721
+block_id: closure-traceability
+harness_protocol: SDD-HARNESS-v1
+wiki_source_protocol: SDD-WIKI-SOURCE-v1
+harness_contract:
+  id: HC-G9-G10-TRACEABILITY
+  kind: closure-traceability
+  audience: dual
+  imports:
+    - benchmark-summary.yaml
+    - review-index.yaml
+    - g9-verdict.md
+    - docs/benchmarks/VICTORY_LAB.md
+  exports:
+    - closure-packet.yaml
+  agent_must_read:
+    - g9-verdict.md
+    - benchmark-summary.yaml
+  agent_may_edit:
+    - traceability-closure.yaml
+    - closure-packet.yaml
+  agent_must_not_edit:
+    - ae-close-verdict.md
+    - .docs/wiki/00_gobierno_documental.md
+    - .docs/wiki/_mi-lsp/read-model.toml
+  verify:
+    - every_anchor_has_evidence_ref
+    - blocked_status_preserved
+    - no_release_promotion
+  stop_if:
+    - missing_required_anchor=true
+    - promoted_verdict != pending_ae_close
+  evidence:
+    - traceability-closure.yaml
+    - closure-packet.yaml
+harness_verdict: BLOCKED
+wiki_source_verdict: BLOCKED
+status: BLOCKED
+promoted_verdict: pending_ae_close
+repository_evidence_head: 2e89564b6a3033101e9cfbb7a7610acaa2acfb54
+product_benchmark_pin: 11ac8af870d4110b6b4333199b8a8343c52ce784
+external_evidence_alias: '<external-evidence-root>/victory-g9-authoritative-v4-20260721'
+anchors:
+  - id: G9
+    status: BLOCKED
+    source: TP-GPH
+    requirement: 30 repetitions per measured group and honest comparability
+    evidence_ref: benchmark-summary.yaml#sample_shape
+    outcome_ref: benchmark-summary.yaml#outcomes
+    review_ref: review-index.yaml#reviews[0]
+  - id: G9-hotpath
+    status: PASS
+    source: TP-GPH
+    requirement: current hotpath remains within guarded baseline limit
+    evidence_ref: benchmark-summary.yaml#performance.hotpath
+  - id: G9-quality
+    status: PASS_WITH_EXCEPTIONS
+    source: TP-GPH
+    requirement: correctness and relation quality are reported without gaming
+    evidence_ref: benchmark-summary.yaml#quality
+  - id: G9-competitive-comparison
+    status: NOT_COMPARABLE
+    source: RF-GPH-011
+    requirement: formal comparison requires complete comparable groups
+    evidence_ref: benchmark-summary.yaml#performance.semantic_tokens
+  - id: G10-tests
+    status: PASS
+    source: G10-local-verification
+    requirement: repository and benchmark verification suite
+    evidence_ref: benchmark-summary.yaml#verification.authoritative_g10
+  - id: G10-security
+    status: BLOCKED
+    source: CT-MILX-V1
+    requirement: security evidence must prove containment and runtime gate
+    evidence_ref: benchmark-summary.yaml#security
+  - id: G10-release
+    status: BLOCKED
+    source: AE-RELEASE-DISTRIBUTION
+    requirement: no promotion without ae-close and release provenance
+    evidence_ref: benchmark-summary.yaml#release
+closure_gates:
+  g9_independent_review: BLOCKED
+  g10_traceability: BLOCKED
+  ae_close_verdict: PENDING
+  release_promotion: FORBIDDEN
+  install_push_pr_deploy_publish: FORBIDDEN
+  rollback: no_mutation
+follow_up:
+  owner: ae-close
+  action: issue_ae_close_verdict_without_changing_g9_status
+  required_state: pending_ae_close

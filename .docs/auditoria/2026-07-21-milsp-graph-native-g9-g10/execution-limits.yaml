@@ -1,0 +1,80 @@
+schema: ae-execution-limits-evidence/v1
+doc_id: G9-G10-EXECUTION-LIMITS-20260721
+block_id: observed-limits
+harness_protocol: SDD-HARNESS-v1
+wiki_source_protocol: SDD-WIKI-SOURCE-v1
+harness_contract:
+  id: HC-G9-G10-EXECUTION-LIMITS
+  kind: execution-limits
+  audience: dual
+  imports:
+    - session-contract.yaml
+    - worker-registry.yaml
+  exports:
+    - closure-packet.yaml
+  agent_must_read:
+    - session-contract.yaml
+    - worker-registry.yaml
+  agent_may_edit:
+    - execution-limits.yaml
+    - closure-packet.yaml
+  agent_must_not_edit:
+    - ae-close-verdict.md
+    - product_source
+  verify:
+    - observed_vs_declared_fields_are_distinguished
+    - no_invented_model_or_pin_claims
+    - yaml_parse
+  stop_if:
+    - declared_policy_presented_as_runtime_proof=true
+    - timeout_or_silence_promoted_to_pass=true
+  evidence:
+    - execution-limits.yaml
+    - worker-registry.yaml
+harness_verdict: BLOCKED
+wiki_source_verdict: BLOCKED
+session: 2026-07-21-milsp-graph-native-g9-g10
+sanitized: true
+evidence_status: partially_observed_with_truthful_unverified_guards
+basis:
+  documents:
+    - session-contract.yaml
+    - worker-registry.yaml
+    - task-provided authoritative G9/G10 summary
+  runtime_observation: limited to the explicitly listed observed fields
+limits:
+  measurement:
+    observed_concurrency: 1
+    maximum_reviewer_fanout: 4
+    joins: completion_driven
+    status: OBSERVED
+  watchdog:
+    soft_seconds: 180
+    hard_seconds: 300
+    status: DECLARED_NOT_RUNTIME_PROVEN
+  retries:
+    maximum_attempts: 2
+    scope: infrastructure_classified_only
+    retry_storm: prohibited
+    status: DECLARED_NOT_RUNTIME_PROVEN
+  workers:
+    status: TIMEOUT_NOT_PASS
+    model_claim: none_invented
+runtime_verification:
+  status: BLOCKED
+  observed:
+    - serial_measurement_concurrency_1
+    - max_reviewer_fanout_4
+    - completion_driven_joins
+  not_runtime_proven:
+    - watchdog_180_300
+    - bounded_infrastructure_only_retries
+    - native_adapter_spawn_monitor_join_fallback_sanitization
+    - worker_model_selection
+  retry_decision: do_not_retry_after_v3_v4_observer_repetition
+non_claims:
+  - no runtime enforcement is asserted for declared watchdog limits
+  - no worker model or product pin is invented
+  - no PASS verdict is emitted for an unverified policy
+  - timeout, silence, and DONE are not completion evidence
+promoted_verdict: pending_ae_close

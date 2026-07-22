@@ -1,0 +1,127 @@
+schema: ae-audit-hygiene/v1
+doc_id: G9-G10-AUDIT-MANIFEST-20260721
+block_id: manifest-and-hashes
+harness_protocol: SDD-HARNESS-v1
+wiki_source_protocol: SDD-WIKI-SOURCE-v1
+harness_contract:
+  id: HC-G9-G10-AUDIT-MANIFEST
+  kind: audit-manifest
+  audience: dual
+  imports:
+    - session-contract.yaml
+    - benchmark-summary.yaml
+    - review-index.yaml
+    - g9-verdict.md
+    - traceability-closure.yaml
+    - closure-packet.yaml
+  exports:
+    - sanitized_durable_audit_bundle
+  agent_must_read:
+    - audit-manifest.yaml
+    - closure-packet.yaml
+  agent_may_edit:
+    - audit-manifest.yaml
+  agent_must_not_edit:
+    - ae-close-verdict.md
+    - raw_external_evidence
+    - product_source
+  verify:
+    - hash_index_matches_all_listed_durable_artifacts
+    - self_hash_is_not_applicable
+    - retention_ttl_days_is_14
+    - no_private_absolute_paths_or_secrets
+  stop_if:
+    - self_hash_recursion=true
+    - artifact_hash_mismatch=true
+    - promoted_verdict != pending_ae_close
+  evidence:
+    - audit-manifest.yaml
+    - benchmark-summary.yaml
+harness_verdict: BLOCKED
+wiki_source_verdict: BLOCKED
+session: 2026-07-21-milsp-graph-native-g9-g10
+owner: claude-code-chief-of-staff
+retention_ttl_days: 14
+hash_algorithm: sha256
+sanitized: true
+status: BLOCKED
+artifact_classes:
+  durable:
+    - daily-goals.yaml
+    - session-contract.yaml
+    - audit-manifest.yaml
+    - benchmark-summary.yaml
+    - review-index.yaml
+    - g9-verdict.md
+    - traceability-closure.yaml
+    - closure-packet.yaml
+    - worker-registry.yaml
+    - execution-limits.yaml
+    - repair-go-cli-timeout.yaml
+  promotable_sanitized:
+    - benchmark-summary.yaml
+    - review-index.yaml
+    - g9-verdict.md
+    - traceability-closure.yaml
+    - closure-packet.yaml
+    - docs/benchmarks/VICTORY_LAB.md
+  temporary_external:
+    - arbitrary process stdout and stderr
+    - comparator runtime logs
+    - unsanitized absolute temp paths
+    - worker transcripts and workflow journals
+  planned_not_present:
+    - ae-close-verdict.md
+promoted_summary:
+  status: BLOCKED
+  path: benchmark-summary.yaml
+promoted_verdict:
+  status: pending_ae_close
+  path: ae-close-verdict.md
+  presence: absent_by_instruction
+external_evidence_bundle:
+  alias: '<external-evidence-root>/victory-g9-authoritative-v4-20260721'
+  run_sha256: d46e13bd6dae30acbc05a5c0998e17302150f5b74eeb6fa653188ca8cce0a604
+  samples_sha256: f086a8ed02a9ffb40dc9da7274d562d86ea4bde0319fab43de081c62a7a8af07
+  report_sha256: 0299ebb341eeeeba0c3fd6e6a6ee92135d9010ebcb9c47157dcc90c127c63da4
+  manifest_sha256: 62cb0f6ab6ff3bb57780c35bc72cc84b91df598b2e4aa1c8ace32d0fb7379389
+hash_index:
+  status: finalized_excluding_self
+  self_hash: not_applicable
+  entries:
+    - path: daily-goals.yaml
+      sha256: 657e474c4aac5f12ec8d3aee945577554eb05fee53066f1390056eaa15234511
+    - path: session-contract.yaml
+      sha256: 8c2a73fe3f093094ac259066402ca0e51e70bcc6d4f3e7a8aad16bf03c83d63f
+    - path: worker-registry.yaml
+      sha256: b589c83af5a370070c0369a8e8ae8b737def29cebe7d59960fedbf0b843c0529
+    - path: execution-limits.yaml
+      sha256: 760e78ca31d6da9e376fe7baed96c04fd5f026617c4f4c02cbec8fe075c1d6db
+    - path: repair-go-cli-timeout.yaml
+      sha256: 28c0f2c74c947b4608a939d363a3f2f597e152d9c2fa47d1042b3faf3955fe03
+    - path: benchmark-summary.yaml
+      sha256: 6485f3a78c4a01adb10ad0f771166f8bbda6284c564895e344ed0ca0a58c8e67
+    - path: review-index.yaml
+      sha256: 4c7b76e56acf43ad69cbb7d75e53082b9038b7fead6ef1b816627ead1ad6a23d
+    - path: g9-verdict.md
+      sha256: 7e67a7ea67a0f78735e7e955e20937df24a66b5635b96f627a3a9082f0a9fa27
+    - path: traceability-closure.yaml
+      sha256: d46d7b8be7d53b6c6f098221be5d35b29960397928f235cc56132cab008edc73
+    - path: closure-packet.yaml
+      sha256: 544d3f41cdf17aa7991e9fd509a23d0c8496cd66a80c92d236ef965a5caffe22
+    - path: docs/benchmarks/VICTORY_LAB.md
+      sha256: 8a21ca178a62167ed8f20b61e5d6d0763ad1196420ff6429723cbe9523a0bef0
+cleanup_status:
+  state: active_until_ae_close_plus_ttl
+  external_raw_evidence: retain_until_final_verdict_plus_ttl
+  worker_worktrees: not_observed_in_allowed_evidence
+  join_status: evidence_repaired_runtime_verification_pending
+  destructive_cleanup_used: false
+  private_absolute_paths_persisted: false
+  secrets_persisted: false
+forbidden_content:
+  - secrets
+  - tokens or credentials
+  - arbitrary raw stdout or stderr
+  - private absolute user data
+  - unsanitized temporary paths
