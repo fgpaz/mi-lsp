@@ -31,13 +31,60 @@ jobs:
         with:
           dotnet-version: 10.0.x
 
-      - name: Verify test suite
+      - name: Verify test suite with host-compatible race gate
+        if: runner.arch != 'ARM64'
         run: go test -v -race ./...
+
+      - name: Record unsupported Windows ARM64 race gate
+        if: runner.os == 'Windows' && runner.arch == 'ARM64'
+        shell: pwsh
+        run: Write-Output "NOT_RUN_HOST_UNSUPPORTED"
 
       - name: Verify worker build
         run: dotnet build worker-dotnet/MiLsp.Worker.sln -c Release
 
-      - name: Run GoReleaser
+      - name: Build GoReleaser artifacts without publishing
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          distribution: goreleaser
+          version: "~> v2"
+          args: release --clean --skip=publish
+
+      - name: Verify six RID provenance, checksums, and worker bundles before publication
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected_revision="$(git rev-parse HEAD)"
+          mkdir -p dist/provenance
+          : > dist/provenance/cli-sha256.txt
+          : > dist/provenance/worker-bundles.txt
+          verify_artifacts() {
+            for spec in \
+              "win-arm64 windows arm64 mi-lsp.exe" \
+              "win-x64 windows amd64 mi-lsp.exe" \
+              "linux-arm64 linux arm64 mi-lsp" \
+              "linux-x64 linux amd64 mi-lsp" \
+              "osx-arm64 darwin arm64 mi-lsp" \
+              "osx-x64 darwin amd64 mi-lsp"; do
+              read -r rid goos goarch name <<< "$spec"
+              artifact="$(find dist -type f -name "$name" -path "*${goos}_${goarch}*" -not -path "*/workers/*" -print -quit)"
+              test -n "$artifact"
+              metadata="$(go version -m "$artifact")"
+              grep -Eq "(^|[[:space:]])vcs\.revision(=|[[:space:]]+)${expected_revision}$" <<< "$metadata"
+              grep -Eq "(^|[[:space:]])vcs\.modified(=|[[:space:]]+)false$" <<< "$metadata"
+              sha256sum "$artifact" >> dist/provenance/cli-sha256.txt
+              worker_count="$(find .goreleaser/workers/${rid} -type f -print | wc -l)"
+              test "$worker_count" -gt 0
+              printf '%s %s\n' "$rid" "$worker_count" >> dist/provenance/worker-bundles.txt
+            done
+            test "$(wc -l < dist/provenance/cli-sha256.txt)" -eq 6
+            test "$(wc -l < dist/provenance/worker-bundles.txt)" -eq 6
+            checksum_file="$(find dist -maxdepth 1 -type f -name '*checksums.txt' -print -quit)"
+            test -n "$checksum_file"
+          }
+          verify_artifacts
+
+      - name: Publish verified GoReleaser artifacts
         uses: goreleaser/goreleaser-action@v6
         with:
           distribution: goreleaser
@@ -45,3 +92,105 @@ jobs:
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Re-verify published-build metadata and worker bundles from release assets
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          expected_revision="$(git rev-parse HEAD)"
+          published_dir="$(mktemp -d)"
+          extracted_dir="$(mktemp -d)"
+          trap 'rm -rf "$published_dir" "$extracted_dir"' EXIT
+
+          gh release download "$GITHUB_REF_NAME" \
+            --repo "$GITHUB_REPOSITORY" \
+            --dir "$published_dir" \
+            --clobber
+
+          assets=("$published_dir"/*)
+          test "${#assets[@]}" -eq 7
+
+          rids=(win-arm64 win-x64 linux-arm64 linux-x64 osx-arm64 osx-x64)
+          archives=()
+          expected_names=()
+          declare -A expected_set=()
+          for rid in "${rids[@]}"; do
+            matches=("$published_dir"/*_"$rid".zip "$published_dir"/*_"$rid".tar.gz)
+            test "${#matches[@]}" -eq 1
+            archive="${matches[0]}"
+            archive_name="$(basename "$archive")"
+            test "$archive_name" = "$(basename -- "$archive")"
+            archives+=("$archive")
+            expected_names+=("$archive_name")
+            expected_set["$archive_name"]=1
+          done
+          test "${#archives[@]}" -eq 6
+
+          checksum_files=("$published_dir"/*_checksums.txt)
+          test "${#checksum_files[@]}" -eq 1
+          checksum_file="${checksum_files[0]}"
+          test -f "$checksum_file"
+          test ! -L "$checksum_file"
+          published_real="$(realpath -e -- "$published_dir")"
+          checksum_real="$(realpath -e -- "$checksum_file")"
+          [[ "$checksum_real" == "$published_real/"* ]]
+          declare -A seen_names=()
+          checksum_count=0
+          while IFS= read -r checksum_line; do
+            if ! [[ "$checksum_line" =~ ^[0-9a-fA-F]{64}[[:space:]]+(.+)$ ]]; then
+              exit 1
+            fi
+            checksum_name="${BASH_REMATCH[1]}"
+            test "$checksum_name" = "$(basename -- "$checksum_name")"
+            [[ "$checksum_name" != /* && "$checksum_name" != */* && "$checksum_name" != *..* ]]
+            test "$checksum_name" != "."
+            test "$checksum_name" != ".."
+            test ! -L "$published_dir/$checksum_name"
+            test -f "$published_dir/$checksum_name"
+            test -z "${seen_names[$checksum_name]+present}"
+            test -n "${expected_set[$checksum_name]+present}"
+            seen_names["$checksum_name"]=1
+            checksum_count=$((checksum_count + 1))
+          done < "$checksum_file"
+          test "$checksum_count" -eq 6
+          for expected_name in "${expected_names[@]}"; do
+            test -n "${seen_names[$expected_name]+present}"
+          done
+          (cd "$published_dir" && sha256sum -c "$(basename "$checksum_file")")
+
+          for index in "${!rids[@]}"; do
+            rid="${rids[$index]}"
+            archive="${archives[$index]}"
+            target="$extracted_dir/$rid"
+            mkdir -p "$target"
+            case "$archive" in
+              *.zip) unzip -q "$archive" -d "$target" ;;
+              *.tar.gz) tar -xzf "$archive" -C "$target" ;;
+              *) exit 1 ;;
+            esac
+
+            if [[ "$rid" == win-* ]]; then
+              binary_name="mi-lsp.exe"
+            else
+              binary_name="mi-lsp"
+            fi
+            mapfile -t binaries < <(find "$target" -type f -name "$binary_name" -not -path '*/workers/*' -print)
+            test "${#binaries[@]}" -eq 1
+            metadata="$(go version -m "${binaries[0]}")"
+            grep -Eq "(^|[[:space:]])vcs\.revision(=|[[:space:]]+)${expected_revision}$" <<< "$metadata"
+            grep -Eq "(^|[[:space:]])vcs\.modified(=|[[:space:]]+)false$" <<< "$metadata"
+
+            mapfile -t worker_roots < <(find "$target" -type d -name workers -print)
+            test "${#worker_roots[@]}" -eq 1
+            worker_root="${worker_roots[0]}"
+            worker_dirs=("$worker_root"/*)
+            test "${#worker_dirs[@]}" -eq 6
+            for worker_rid in "${rids[@]}"; do
+              test -d "$worker_root/$worker_rid"
+              mapfile -t worker_files < <(find "$worker_root/$worker_rid" -type f -print)
+              test "${#worker_files[@]}" -gt 0
+            done
+          done

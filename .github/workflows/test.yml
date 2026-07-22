@@ -34,12 +34,32 @@ jobs:
         with:
           dotnet-version: 10.0.x
 
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install pinned Harness-first RSS dependency
+        run: python -m pip install --requirement scripts/bench/harness_first/requirements.txt
+
+      - name: Validate Harness-first runner tests
+        run: python -m unittest discover -s scripts/bench/harness_first/tests -p "test_*.py"
+
+      - name: Validate Harness-first campaign schema (dry-run)
+        run: python -m scripts.bench.harness_first.runner --manifest docs/benchmarks/HARNESS_FIRST_CAMPAIGN.json --output .artifacts/harness-first-dry-run --dry-run
+
       - name: Test shell installer platform mappings
         if: matrix.os == 'ubuntu-latest'
         run: sh scripts/tests/install-platform-mapping.sh
 
-      - name: Run Go tests
+      - name: Run Go tests with race detector
+        if: runner.arch != 'ARM64'
         run: go test -v -race ./...
+
+      - name: Record unsupported Windows ARM64 race gate
+        if: runner.os == 'Windows' && runner.arch == 'ARM64'
+        shell: pwsh
+        run: Write-Output "NOT_RUN_HOST_UNSUPPORTED"
 
       - name: Run go vet
         run: go vet ./...

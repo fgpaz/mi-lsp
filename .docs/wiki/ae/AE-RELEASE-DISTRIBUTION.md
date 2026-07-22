@@ -184,6 +184,70 @@ stop_if:
 publish: forbidden-until-G10-ae-close-APPROVED
 ```
 
+## Campaña Harness-first única
+
+```toon
+doc_id: AE-RELEASE-DISTRIBUTION
+block_id: AE-RELEASE-DISTRIBUTION.harness_first_campaign
+kind: campaign-gate
+source_of_truth: docs/benchmarks/HARNESS_FIRST_CAMPAIGN.json
+imports:
+  - docs/benchmarks/HARNESS_FIRST.md
+  - docs/benchmarks/HARNESS_FIRST_CAMPAIGN.json
+  - scripts/bench/harness_first/runner.py
+evidence:
+  - .docs/wiki/ae/AE-RELEASE-DISTRIBUTION.md
+  - docs/benchmarks/HARNESS_FIRST_CAMPAIGN.json
+  - scripts/bench/harness_first/tests/test_runner.py
+verify:
+  - python -m scripts.bench.harness_first.runner --manifest docs/benchmarks/HARNESS_FIRST_CAMPAIGN.json --output <evidence-dir> --dry-run
+  - python -m unittest discover -s scripts/bench/harness_first/tests -p "test_*.py"
+stop_if:
+  - campaign_status=NOT_RUN_or_FAIL
+  - retry_attempted=true
+  - provenance_not_exact=true
+  - rss_not_observed_for_all_query_and_worker_processes=true
+campaign:
+  schema: harness-first-campaign/v1
+  campaign_id: harness-first-final
+  authorized_runner: scripts/bench/harness_first/runner.py
+  execution: one_run_per_candidate_mode
+  retry: forbidden
+  status: NOT_RUN
+  status_rule: remains_NOT_RUN_until_real_run
+  comparator: none
+  victory_lab_comparison: forbidden
+queries:
+  manifest: [wiki-pack, explain-change, workspace-map, related]
+  direct_only: [wiki-pack, explain-change, workspace-map]
+  daemon_capable: [related]
+  explain_change_preview_required: true
+  freshness_rank_required: [workspace-map, related]
+  related_parity: direct_and_daemon
+contract_gates:
+  preview_sections: [change, affected, callers, callees, tests, contracts, wiki]
+  expansion_fields: [command, reason]
+  expansion_command_prefix: "mi-lsp nav "
+  freshness_exact_state: current
+  traversal: fail_closed
+  measurements: [output_bytes, estimated_tokens, peak_rss]
+  telemetry: sanitized_allowlisted_only
+release_targets:
+  required_RIDs: [win-arm64, win-x64, linux-arm64, linux-x64, osx-arm64, osx-x64]
+  local_preferred: win-arm64
+  remote_readback: only_if_release_contract_does_not_already_reflect_remote_assets
+provenance:
+  source_worktree: clean_required
+  vcs_revision: exact_40_or_64_hex_required
+  vcs_modified: false_required
+  worker_status: usable_evidence_required
+artifacts:
+  persisted: [report.json, report.yaml, marker]
+  raw_stdout_stderr_payload: forbidden
+```
+
+La presencia de tests del runner, del manifest o del contrato no equivale a una ejecución de campaña. No se registra `PASS` ni métricas reales hasta que exista una única corrida autorizada con evidencia sanitizada.
+
 ## WSL Worker Execution Audit
 
 ```toon
