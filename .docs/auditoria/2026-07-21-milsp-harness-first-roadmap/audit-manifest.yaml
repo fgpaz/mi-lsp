@@ -1,0 +1,41 @@
+schema: ae-audit-hygiene/v1
+doc_id: MILSP-HARNESS-FIRST-AUDIT-20260721
+session: 2026-07-21-milsp-harness-first-roadmap
+owner: claude-code-strategic-root
+retention_ttl_days: 14
+hash_algorithm: sha256
+sanitized: true
+status: active
+artifact_classes:
+  durable:
+    - session-contract.yaml
+    - audit-manifest.yaml
+  promotable_sanitized:
+    - implementation-summary.yaml
+    - traceability-closure.yaml
+    - audit-report.yaml
+    - ae-close-verdict.md
+  temporary_external:
+    - workflow journals and worker transcripts
+    - raw command stdout and stderr
+    - benchmark raw samples
+  planned:
+    - implementation-summary.yaml
+    - traceability-closure.yaml
+    - audit-report.yaml
+    - ae-close-verdict.md
+hash_index:
+  status: pending_finalization
+  self_hash: not_applicable
+  entries: []
+cleanup_status:
+  state: active_until_terminal_closure_plus_ttl
+  destructive_cleanup_used: false
+  private_absolute_paths_persisted: false
+  secrets_persisted: false
+forbidden_content:
+  - secrets
+  - tokens or credentials
+  - arbitrary raw stdout or stderr
+  - private user data
+  - unsanitized temporary paths

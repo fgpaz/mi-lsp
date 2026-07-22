@@ -1,0 +1,101 @@
+required: []
+last_updated: "2026-07-22"
+
+repo:
+  name: "mi-lsp"
+  description: "Local semantic CLI and graph-native code intelligence runtime for large .NET/C# and TypeScript workspaces."
+  structure_rules:
+    - "Go CLI and daemon code lives under cmd/ and internal/."
+    - "Roslyn semantic worker lives under worker-dotnet/."
+    - "Functional canon lives under .docs/wiki/00-06 and technical canon under .docs/wiki/07-09."
+    - "Agent Engineering canon lives under .docs/wiki/ae/."
+    - "Audit evidence lives under .docs/auditoria/<session>/."
+    - "Raw plans and prompts are non-canonical scratch inputs under .docs/raw/."
+    - "Repository-local runtime state under .mi-lsp/ is never committed."
+
+language:
+  policy_lang: "English"
+  docs_lang: "Spanish"
+  ux_orthography_rules:
+    - "preserve Spanish accents and opening punctuation"
+
+tracker:
+  provider: "Linear"
+  linear:
+    base_url: "https://api.linear.app/graphql"
+    key_env: "LINEAR_API_KEY"
+    workspace: "fgpaz"
+    projects:
+      - key: "MI-LSP"
+        name: "mi-lsp"
+        scope: "features, bugs, documentation, releases"
+
+secrets:
+  vault: "environment-or-user-vault"
+  tool: "Skill('secret-wrapper')"
+
+wrappers:
+  - name: "mi-lsp"
+    script: "mi-lsp"
+    precondition: "registered workspace with valid governance and explicit client/session attribution"
+    authority: "repository policy"
+  - name: "release"
+    script: "scripts/release/ae-release-binaries.ps1"
+    precondition: "ae-close and pre-push gates are green"
+    authority: "AE-RELEASE-DISTRIBUTION"
+
+wiki:
+  layers_map:
+    "00": "Governance"
+    "01": "Functional scope"
+    "02": "Architecture"
+    "03": "Flows"
+    "04": "Requirements"
+    "05": "Data model"
+    "06": "Test matrix and test plans"
+    "07": "Technical baseline and TECH details"
+    "08": "Physical data model and DB details"
+    "09": "Technical contracts"
+    "ae": "Agent Engineering"
+  workspace_alias: "milsp-harness-first"
+  paths_file: "PATHS.md"
+  subagents_file: "CLAUDE.md"
+  decision_priority:
+    functional_behavior:
+      - "RF"
+      - "FL"
+      - "data model"
+      - "architecture"
+    data_state_contract:
+      - "data model"
+      - "RF"
+      - "FL"
+      - "architecture"
+    operational_perf_infra:
+      - "architecture"
+      - "FL"
+      - "RF"
+      - "data model"
+
+qa:
+  canon_paths:
+    - ".docs/wiki/06_matriz_pruebas_RF.md"
+    - ".docs/wiki/06_pruebas/"
+    - ".docs/wiki/ae/"
+
+subagents:
+  max_model: "sonnet"
+  roster_file: "CLAUDE.md"
+  routing_notes:
+    - "read-only exploration uses ps-explorer or Explore"
+    - "Go implementation uses claudex-writer or writer"
+    - "documentation uses ps-docs"
+    - "verification uses claudex-verifier or verifier-adversarial"
+
+extras:
+  - title: "mi-lsp mandatory routing"
+    body: "For supported repository orientation, code navigation, impact analysis, wiki context, planning, review, QA, and traceability intents, invoke mi-lsp first. Raw rg, Grep, Glob, and broad Read are explicit fallback tools only after mi-lsp returns an unusable or unsupported terminal state."
+  - title: "Release platform"
+    body: "Windows release verification must include arm64 binaries and real installed-binary readback."
+  - title: "Shared skill mirrors"
+    body: "Any shared skill changed under the user skill source must be synchronized to C:/repos/buho/assets/skills in the same task."

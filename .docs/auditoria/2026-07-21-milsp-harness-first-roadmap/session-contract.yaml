@@ -1,0 +1,127 @@
+schema: ae-session-contract/v1
+task_slug: milsp-harness-first-roadmap
+issue_or_waiver: USER-AUTHORIZED-COMPLETE-ROADMAP-20260721
+mode: STRICT
+ae_work_invoked_before_execution: true
+base_ref: ae/graph-native-roadmap-20260718
+base_sha: f9dbeeee7a47facc31ed178e9908208cd80fc889
+mi_lsp_preflight:
+  client_name: claude-code
+  session_id: milsp-harness-first-20260722
+  workspace: milsp-harness-first
+  workspace_root: C:/wt/milsp-harness-first
+  governance_blocked: false
+  docs_ready: true
+  doc_count: 141
+  index_files: 334
+  index_symbols: 4138
+  governance_index_sync: current
+  ae_canon_status: valid
+  status: PASS
+intended_branch: feat/harness-first-roadmap
+worktree_path: C:/wt/milsp-harness-first
+expected_scope: >-
+  Integrate the complete graph-native foundation into an automatic intent-first
+  Harness experience, repair wiki pack and validators, add explain-change with
+  wiki-aware progressive previews, add architectural ranking and utility memory,
+  optimize query latency and memory, synchronize shared skills, and run one final
+  benchmark plus real-binary readback.
+decision_lock:
+  status: locked
+  source: user conversation and brainstorming decision tokens
+  values:
+    - automatic intent routing without opt-out
+    - mi-lsp precedes rg Grep Glob when the intent is supported
+    - explain-change with directed wiki context is the first journey
+    - progressive preview always includes executable expansion queries
+    - architectural ranking and utility memory are included as second priority
+    - focused verification during implementation and one final benchmark
+anchors:
+  fl: [FL-QRY-01, FL-WIKI-01]
+  rf: [RF-QRY-016, RF-QRY-017, RF-WIKI-005, RF-GPH-001..RF-GPH-011]
+  ct: [CT-NAV-WIKI, CT-GRAPH-CLI]
+  tech: [TECH-GRAPH-NATIVE]
+  tp: [TP-WIKI, TP-GPH]
+allowed_paths:
+  - cmd/**
+  - internal/**
+  - scripts/**
+  - docs/**
+  - README.md
+  - .github/workflows/**
+  - .docs/wiki/**
+  - .docs/raw/plans/2026-07-22-milsp-harness-first-roadmap.md
+  - .docs/raw/plans/2026-07-22-milsp-harness-first-roadmap/**
+  - .docs/auditoria/2026-07-21-milsp-harness-first-roadmap/**
+  - C:/Users/fgpaz/.claude/skills/**
+  - C:/repos/buho/assets/skills/**
+  - .mi-lsp/index.db
+forbidden_paths:
+  - C:/repos/mios/mi-lsp/**
+  - C:/repos/mios/mi-pi/**
+  - C:/repos/mios/mi-lsp-graph-native/**
+  - comparator source trees
+  - .env*
+  - secrets/**
+  - .mi-lsp/project.toml
+  - .mi-lsp/**/*.toml
+  - .mi-lsp/**/*.json
+  - .docs/wiki/00_gobierno_documental.md
+  - .docs/wiki/_mi-lsp/read-model.toml
+required_evidence:
+  - focused tests for each changed behavior
+  - wiki pack real-binary smoke with structured terminal output
+  - validator canon precedence and filtering tests
+  - intent router and explain-change journey tests
+  - progressive preview and expansion command tests
+  - ranking determinism and bounded-memory tests
+  - utility-memory sanitization and non-authority tests
+  - shared skill source/mirror parity
+  - one final end-to-end benchmark for latency memory correctness and Harness utility
+  - release binary provenance and readback if binary-affecting changes are integrated
+  - ps-trazabilidad and ps-auditar-trazabilidad
+orchestration:
+  orchestration_role: strategic_root
+  selected_harness: claude-code
+  selected_adapter: ae-adapter-claude-code
+  worker_decision: spawned
+  independent_axes:
+    - H0 wiki pack and validators
+    - graph-native intent synthesis
+    - architectural ranking and utility memory
+    - shared Harness skill adoption
+    - performance and final verification
+  worker_budget: workflow fanout up to safe host concurrency
+  recursion_needed: false
+  worker_launch_evidence_target: workflow journal and bounded lane reports
+  worker_join_evidence_target: commits, focused verification, and final synthesis
+  delegation_boundary:
+    execution_supervisor_owner: claude-code
+    native_worker_launch_owner: strategic_root
+    child_supervisor_required: false
+    leaf_may_subdelegate: false
+stop_conditions:
+  - governance_blocked=true
+  - unowned overlap with the dirty C:/repos/mios/mi-lsp checkout
+  - mutation of comparator or mi-pi sources
+  - secret or environment material exposure
+  - network or MCP dependency introduced into core runtime
+  - unbounded traversal, unbounded memory, or silent timeout
+  - shared skill source/mirror divergence
+cleanup_policy:
+  branch_disposition: integrate-origin-main-after-approved-closure-and-green-CI
+  release_disposition: create-and-publish-new-release-after-integrated-readback
+  remote_mutation_authorized_by_user: true
+  authorized_mutations:
+    - push feature branch
+    - create and update pull request
+    - guarded merge into origin/main after all gates are green
+    - create and publish a new release with synchronized binaries
+    - delete remote feature branch after verified integration
+  worktree: remove only after verified integration and release readback
+  destructive_cleanup: false
+  retention_ttl_days: 14
+waivers:
+  - prior G9/G10 competitive blockers do not block this new product-improvement scope
+  - no repeated competitive benchmark during implementation; one final benchmark only
+  - go test -race remains NOT_RUN_HOST_UNSUPPORTED on Windows arm64
