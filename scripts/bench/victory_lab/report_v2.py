@@ -678,17 +678,25 @@ def build_report(samples: str | Path, *, manifest: str | Path | Mapping[str, Any
             status = "FAIL"
         latency = latency_stats(group)
         provenances = set()
+        runtime_provenances: list[Any] = []
         for record in group:
             metrics = record.get("metrics")
             security = metrics.get("security") if isinstance(metrics, Mapping) else None
             runtime = security.get("runtime") if isinstance(security, Mapping) else None
             if isinstance(runtime, Mapping):
-                provenances.add(runtime.get("provenance"))
+                provenance = runtime.get("provenance")
+                provenances.add(provenance)
+                runtime_provenances.append(provenance)
+        runtime_proof_pass = (
+            all(record.get("status") == "PASS" for record in group)
+            and len(runtime_provenances) == len(group)
+            and all(provenance == "child_metrics_executor" for provenance in runtime_provenances)
+        )
         group_reports[group_id] = {
             "group_id": group_id, "adapter_id": adapter_id, "case_id": case_id, "operation": operation, "status": status,
             "status_counts": {item: sum(record["status"] == item for record in group) for item in ("PASS", "FAIL", "BLOCKED", "NOT_COMPARABLE", "NOT_RUN")},
             "latency": latency, "warm_p95_ms": latency["p95_ms"], "tokens": _stats(tokens), "child_metrics": child_metric_stats(group),
-            "runtime_proof": {"status": "PASS" if provenances == {"child_metrics_executor"} else "NOT_COMPARABLE", "provenance": sorted(str(item) for item in provenances), "samples": len(group)},
+            "runtime_proof": {"status": "PASS" if runtime_proof_pass else "NOT_COMPARABLE", "provenance": sorted(str(item) for item in provenances), "samples": len(group)},
             "incrementality": {"status": "PASS" if incremental else "NOT_COMPARABLE", "samples": _stats(incremental), "stale_rate": _stats(stale) if stale else {"status": "NOT_COMPARABLE"}},
             "quality": quality, "determinism": determinism, "all_samples": 30, "canonical_digests": sorted(set(digests)),
         }

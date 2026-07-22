@@ -94,6 +94,31 @@ class ReportV2Tests(unittest.TestCase):
         with self.assertRaises(ValueError):
             build_report(self._write(records))
 
+    def test_runtime_proof_passes_only_for_all_terminal_pass_samples(self):
+        records = [self._record(i) for i in range(30)]
+        report = build_report(self._write(records))
+        group = report["groups"]["fake:case:affected"]
+        self.assertEqual(report["status"], "NOT_COMPARABLE")
+        self.assertEqual(group["status"], "PASS")
+        self.assertEqual(group["runtime_proof"]["status"], "PASS")
+        self.assertEqual(group["runtime_proof"]["provenance"], ["child_metrics_executor"])
+
+    def test_runtime_proof_mixed_terminal_statuses_never_pass_nested_proof(self):
+        expected_global_status = {
+            "BLOCKED": "BLOCKED",
+            "FAIL": "FAIL",
+            "NOT_COMPARABLE": "NOT_COMPARABLE",
+        }
+        for mixed_status, global_status in expected_global_status.items():
+            with self.subTest(mixed_status=mixed_status):
+                records = [self._record(i) for i in range(30)]
+                records[0] = self._record(0, status=mixed_status)
+                report = build_report(self._write(records))
+                group = report["groups"]["fake:case:affected"]
+                self.assertEqual(report["status"], global_status)
+                self.assertEqual(group["status"], global_status)
+                self.assertEqual(group["runtime_proof"]["status"], "NOT_COMPARABLE")
+
     def test_malformed_metrics_fail_closed_without_type_error(self):
         records = [self._record(i) for i in range(30)]
         records[0]["metrics"] = {"child": {"status": "PASS"}, "security": []}
