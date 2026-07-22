@@ -142,6 +142,7 @@ type Envelope struct {
 	GenerationID       string              `json:"generation_id,omitempty"`
 	GraphSchemaVersion int                 `json:"graph_schema_version,omitempty"`
 	DeterminismDigest  string              `json:"determinism_digest,omitempty"`
+	GraphFreshness     *GraphFreshness     `json:"graph_freshness,omitempty"`
 	Profile            OutputProfile       `json:"-"`
 }
 
@@ -834,6 +835,7 @@ type AccessEvent struct {
 	WorkspaceAlias   string    `json:"workspace_alias,omitempty"`
 	Repo             string    `json:"repo,omitempty"`
 	Operation        string    `json:"operation"`
+	Intent           string    `json:"intent,omitempty"`
 	Backend          string    `json:"backend,omitempty"`
 	Route            string    `json:"route,omitempty"`
 	Format           string    `json:"format,omitempty"`

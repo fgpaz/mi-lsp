@@ -20,13 +20,15 @@ var (
 )
 
 type workspaceMapEntry struct {
-	Mode         string              `json:"mode,omitempty"`
-	NextSteps    []string            `json:"next_steps,omitempty"`
-	Repos        []repoMapEntry      `json:"repos"`
-	Services     []serviceMapEntry   `json:"services"`
-	FrontendApps []frontendAppEntry  `json:"frontend_apps,omitempty"`
-	Dependencies []serviceDependency `json:"dependencies,omitempty"`
-	Stats        workspaceMapStats   `json:"stats"`
+	Mode           string                `json:"mode,omitempty"`
+	NextSteps      []string              `json:"next_steps,omitempty"`
+	GraphFreshness *model.GraphFreshness `json:"graph_freshness,omitempty"`
+	GraphRanks     []model.GraphRank     `json:"graph_ranks,omitempty"`
+	Repos          []repoMapEntry        `json:"repos"`
+	Services       []serviceMapEntry     `json:"services"`
+	FrontendApps   []frontendAppEntry    `json:"frontend_apps,omitempty"`
+	Dependencies   []serviceDependency   `json:"dependencies,omitempty"`
+	Stats          workspaceMapStats     `json:"stats"`
 }
 
 type repoMapEntry struct {
@@ -133,6 +135,22 @@ func (a *App) workspaceMap(ctx context.Context, request model.CommandRequest) (m
 		FrontendApps: frontendApps,
 		Dependencies: deps,
 		Stats:        stats,
+	}
+	if rankEnvelope, rankErr := GraphRank(ctx, db, GraphRankRequest{MaxNodes: model.GraphAnalysisMaxNodes, MaxEdges: model.GraphAnalysisMaxEdges, Limit: 8}); rankErr != nil {
+		warnings = append(warnings, "graph rank unavailable: "+rankErr.Error())
+	} else {
+		freshness := rankEnvelope.GraphFreshness
+		mapEntry.GraphFreshness = &freshness
+		// Workspace-map ranking is scoped to code/service topology. Keep canonical
+		// wiki documents out of this additive field so docs-first authority selection
+		// cannot be changed by advisory graph metadata.
+		for _, rank := range rankEnvelope.Items {
+			if model.CanonicalWikiAuthority(rank.OwnerPath) {
+				continue
+			}
+			mapEntry.GraphRanks = append(mapEntry.GraphRanks, rank)
+		}
+		warnings = append(warnings, rankEnvelope.Warnings...)
 	}
 	previewExpanded := false
 	if isAXIMode(request.Context) {

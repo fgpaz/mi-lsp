@@ -446,6 +446,10 @@ type GraphAnalysis struct {
 	OmissionsJSON          string      `json:"omissions_json"`
 	Status                 string      `json:"status"`
 	CreatedAt              time.Time   `json:"created_at"`
+	Algorithm              string      `json:"algorithm,omitempty"`
+	AlgorithmVersion       string      `json:"algorithm_version,omitempty"`
+	Profile                string      `json:"profile,omitempty"`
+	DeterminismDigest      string      `json:"determinism_digest,omitempty"`
 }
 type GraphBundle struct {
 	Generation GraphGeneration

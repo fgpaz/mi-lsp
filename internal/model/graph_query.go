@@ -67,7 +67,7 @@ type GraphQueryRequest struct {
 
 func (q GraphQueryRequest) Normalize() (GraphQueryRequest, error) {
 	q.Operation = strings.TrimSpace(q.Operation)
-	if q.Operation != "nav.neighbors" && q.Operation != "nav.callers" && q.Operation != "nav.callees" && q.Operation != "nav.path" && q.Operation != "nav.explain" && q.Operation != "nav.graph.stats" && q.Operation != "nav.graph.validate" {
+	if q.Operation != "nav.neighbors" && q.Operation != "nav.callers" && q.Operation != "nav.callees" && q.Operation != "nav.path" && q.Operation != "nav.explain" && q.Operation != "nav.graph.stats" && q.Operation != "nav.graph.status" && q.Operation != "nav.graph.rank" && q.Operation != "nav.graph.validate" {
 		return q, &GraphQueryError{Code: "GPH_QUERY_SELECTOR_INVALID", Field: "operation", Message: "operation is not a graph query"}
 	}
 	q.Selector = strings.TrimSpace(q.Selector)
@@ -159,6 +159,7 @@ type GraphQueryMetadata struct {
 	Schema            int             `json:"schema"`
 	DeterminismDigest string          `json:"determinism_digest"`
 	Stats             GraphQueryStats `json:"stats"`
+	GraphFreshness    GraphFreshness  `json:"graph_freshness"`
 	NextCursor        string          `json:"next_cursor,omitempty"`
 }
 

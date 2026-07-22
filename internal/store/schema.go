@@ -350,6 +350,8 @@ var graphIndexes = map[string]string{
 var graphAdditiveIndexes = map[string]string{
 	"idx_graph_nodes_generation_semantic_identity": `CREATE INDEX IF NOT EXISTS idx_graph_nodes_generation_semantic_identity ON graph_nodes(generation_id, semantic_identity);`,
 	"idx_graph_nodes_generation_display_name":      `CREATE INDEX IF NOT EXISTS idx_graph_nodes_generation_display_name ON graph_nodes(generation_id, display_name);`,
+	"idx_graph_analysis_generation_key":            `CREATE INDEX IF NOT EXISTS idx_graph_analysis_generation_key ON graph_analysis(generation_id, analysis_key);`,
+	"idx_graph_analysis_generation_profile":        `CREATE INDEX IF NOT EXISTS idx_graph_analysis_generation_profile ON graph_analysis(generation_id, algorithm, algorithm_version, profile);`,
 }
 
 func normalizeSchemaSQL(s string) string {
@@ -358,6 +360,30 @@ func normalizeSchemaSQL(s string) string {
 	s = strings.TrimSuffix(s, ";")
 	return strings.Join(strings.Fields(s), " ")
 }
+
+func graphTableDefinitionCompatible(name, actual, expected string) bool {
+	actual = normalizeSchemaSQL(actual)
+	expected = normalizeSchemaSQL(expected)
+	if actual == expected {
+		return true
+	}
+	if name != "graph_analysis" {
+		return false
+	}
+	// graph_analysis received additive ranking metadata columns. SQLite keeps
+	// ALTER TABLE additions in sqlite_master, so compare the original table
+	// contract after removing only those known additive columns.
+	for _, column := range []string{
+		", algorithm text not null default 'bounded-deterministic-v1'",
+		", algorithm_version text not null default '1'",
+		", profile text not null default 'exact-extracted-only'",
+		", determinism_digest text not null default ''",
+	} {
+		actual = strings.ReplaceAll(actual, column, "")
+	}
+	return actual == expected
+}
+
 func graphSchemaPreflight(db *sql.DB) error {
 	if db == nil {
 		return fmt.Errorf("graph schema database is required")
@@ -386,7 +412,7 @@ func graphSchemaPreflight(db *sql.DB) error {
 			return &graphSchemaCompatibilityError{"partial schema missing table " + name}
 		}
 		var actual string
-		if err := db.QueryRow(`SELECT sql FROM sqlite_master WHERE type='table' AND name=?`, name).Scan(&actual); err != nil || normalizeSchemaSQL(actual) != normalizeSchemaSQL(ddl) {
+		if err := db.QueryRow(`SELECT sql FROM sqlite_master WHERE type='table' AND name=?`, name).Scan(&actual); err != nil || !graphTableDefinitionCompatible(name, actual, ddl) {
 			return &graphSchemaCompatibilityError{"incompatible table definition " + name}
 		}
 	}
@@ -429,6 +455,7 @@ func ensureGraphSchema(db *sql.DB) error {
 // be atomic with its migration intent.
 func ensureGraphSchemaTx(ctx context.Context, tx interface {
 	ExecContext(context.Context, string, ...any) (sql.Result, error)
+	QueryContext(context.Context, string, ...any) (*sql.Rows, error)
 }) error {
 	if _, err := tx.ExecContext(ctx, metaDDL); err != nil {
 		return fmt.Errorf("create workspace_meta: %w", err)
@@ -436,6 +463,20 @@ func ensureGraphSchemaTx(ctx context.Context, tx interface {
 	for name, ddl := range graphTables {
 		if _, err := tx.ExecContext(ctx, ddl); err != nil {
 			return fmt.Errorf("create %s: %w", name, err)
+		}
+	}
+	// These columns are additive and intentionally migrated inside the same
+	// transaction as graph bootstrap. This handles both a fresh database and
+	// an existing v1 graph_analysis table without changing its sqlite_master
+	// definition used by the compatibility preflight.
+	for _, column := range []struct{ name, definition string }{
+		{"algorithm", "TEXT NOT NULL DEFAULT 'bounded-deterministic-v1'"},
+		{"algorithm_version", "TEXT NOT NULL DEFAULT '1'"},
+		{"profile", "TEXT NOT NULL DEFAULT 'exact-extracted-only'"},
+		{"determinism_digest", "TEXT NOT NULL DEFAULT ''"},
+	} {
+		if err := ensureColumnTx(ctx, tx, "graph_analysis", column.name, column.definition); err != nil {
+			return err
 		}
 	}
 	if _, err := tx.ExecContext(ctx, `DROP INDEX IF EXISTS idx_graph_generations_one_active`); err != nil {
@@ -452,6 +493,35 @@ func ensureGraphSchemaTx(ctx context.Context, tx interface {
 		}
 	}
 	if _, err := tx.ExecContext(ctx, `INSERT OR IGNORE INTO workspace_meta(key,value) VALUES ('graph_schema_version','1'), ('graph_compatibility_state','legacy-preserved-no-dual-write'), ('active_graph_generation_id',NULL), ('previous_graph_generation_id',NULL)`); err != nil {
+		return err
+	}
+	return nil
+}
+
+func ensureColumnTx(ctx context.Context, tx interface {
+	ExecContext(context.Context, string, ...any) (sql.Result, error)
+	QueryContext(context.Context, string, ...any) (*sql.Rows, error)
+}, table, column, definition string) error {
+	rows, err := tx.QueryContext(ctx, fmt.Sprintf("PRAGMA table_info(%s)", table))
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var cid, notNull, pk int
+		var name, typeName string
+		var defaultValue sql.NullString
+		if err := rows.Scan(&cid, &name, &typeName, &notNull, &defaultValue, &pk); err != nil {
+			return err
+		}
+		if name == column {
+			return nil
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, fmt.Sprintf("ALTER TABLE %s ADD COLUMN %s %s", table, column, definition)); err != nil {
 		return err
 	}
 	return nil

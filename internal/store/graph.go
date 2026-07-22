@@ -67,6 +67,10 @@ func (t *graphImmediateTx) commit(ctx context.Context) error {
 	_ = t.c.Close()
 	return e
 }
+func (t *graphImmediateTx) QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error) {
+	return t.c.QueryContext(ctx, query, args...)
+}
+
 func (t *graphImmediateTx) rollback(ctx context.Context) error {
 	if t.done {
 		return nil

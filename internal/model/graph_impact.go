@@ -174,6 +174,8 @@ type GraphImpactItem struct {
 	NodeID          int                   `json:"node_id,omitempty"`
 	EvidencePath    []GraphImpactPathStep `json:"evidence_path,omitempty"`
 	EvidenceRefs    []string              `json:"evidence_refs,omitempty"`
+	RankScore       float64               `json:"rank_score,omitempty"`
+	CommunityID     string                `json:"community_id,omitempty"`
 }
 
 type GraphImpactOmission struct {
@@ -209,6 +211,7 @@ type GraphImpactEnvelope struct {
 	Truncated          bool                  `json:"truncated"`
 	Warnings           []string              `json:"warnings,omitempty"`
 	DeterminismDigest  string                `json:"determinism_digest"`
+	GraphFreshness     GraphFreshness        `json:"graph_freshness"`
 	Continuation       *Continuation         `json:"continuation,omitempty"`
 }
 

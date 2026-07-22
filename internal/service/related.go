@@ -22,11 +22,13 @@ type symbolWithContent struct {
 }
 
 type symbolNeighborhood struct {
-	Symbol       string              `json:"symbol"`
-	Definition   *symbolWithContent  `json:"definition,omitempty"`
-	Implementors []symbolWithContent `json:"implementors,omitempty"`
-	Callers      []symbolWithContent `json:"callers,omitempty"`
-	Tests        []symbolWithContent `json:"tests,omitempty"`
+	Symbol         string                `json:"symbol"`
+	GraphFreshness *model.GraphFreshness `json:"graph_freshness,omitempty"`
+	GraphRanks     []model.GraphRank     `json:"graph_ranks,omitempty"`
+	Definition     *symbolWithContent    `json:"definition,omitempty"`
+	Implementors   []symbolWithContent   `json:"implementors,omitempty"`
+	Callers        []symbolWithContent   `json:"callers,omitempty"`
+	Tests          []symbolWithContent   `json:"tests,omitempty"`
 }
 
 func (a *App) related(ctx context.Context, request model.CommandRequest) (model.Envelope, error) {
@@ -77,6 +79,17 @@ func (a *App) related(ctx context.Context, request model.CommandRequest) (model.
 		if depth.implementors {
 			neighborhood.Implementors = filterRefsByRole(refsItems, registration.Root, "implementor", request.Context.Full)
 		}
+	}
+
+	// Graph ranking is advisory and additive; exact identity and semantic refs
+	// remain authoritative. Utility can only affect final ties in GraphRank.
+	if rankEnvelope, rankErr := GraphRank(ctx, db, GraphRankRequest{Limit: 8}); rankErr != nil {
+		warnings = append(warnings, "graph rank unavailable: "+rankErr.Error())
+	} else {
+		freshness := rankEnvelope.GraphFreshness
+		neighborhood.GraphFreshness = &freshness
+		neighborhood.GraphRanks = append([]model.GraphRank(nil), rankEnvelope.Items...)
+		warnings = append(warnings, rankEnvelope.Warnings...)
 	}
 
 	// 3. Find tests via text search (if requested)
