@@ -75,8 +75,10 @@ El detalle por frontera vive en `09_contratos/`; contratos `accepted-design` no 
 - `nav service` pertenece a la CLI publica y usa un contrato evidence-first, no uno de scoring.
 - `nav context` pertenece a la CLI publica y su salida visible es slice-first; el backend profundo solo enriquece el mismo item.
 - Para archivos Go, el catalogo AST nativo conserva navegacion basica sin `gopls`; cuando `gopls` existe, `nav context` y `nav refs` pueden enriquecer el resultado, sin prometer paridad con la semantica profunda C# de Roslyn.
-- `nav intent` pertenece a la CLI publica y expone `mode=docs|code`: en `docs` usa routing documental owner-aware; en `code` conserva el ranking BM25 sobre `search_text`. En workspaces `container`, `--repo` acota solo `mode=code`.
-- El target graph CLI agrega `neighbors`, `callers`, `callees`, `path`, `explain`, `graph stats` y `graph validate`; enriquece `affected`, `diff-context`, `related` y `workspace-map` de forma aditiva.
+- `nav intent` pertenece a la CLI publica y expone `mode=docs|code`: en `docs` usa routing documental owner-aware; en `code` conserva el ranking BM25 sobre `search_text`. En workspaces `container`, `--repo` acota solo `mode=code`. Para intenciones soportadas el routing es automatico, mi-lsp es obligatorio primero y no existe opt-out.
+- `nav explain-change` pertenece a la CLI publica y devuelve siete secciones estables: `change`, `affected`, `callers`, `callees`, `tests`, `contracts` y `wiki`. La preview es bounded; `expansions[]` siempre identifica `command` y `reason` cuando hay una continuación ejecutable. `--full` solicita expansión, pero puede conservar `mode=preview` si no hay evidencia adicional.
+- El target graph CLI agrega `neighbors`, `callers`, `callees`, `path`, `explain`, `graph stats` y `graph validate`; enriquece `affected`, `diff-context`, `related` y `workspace-map` de forma aditiva. La ayuda actual distingue estos comandos directos de `nav graph stats|validate`.
+- La ausencia de generation/backend graph produce fallback tipado, omisiones y warnings visibles; no habilita presentar heurística como paridad graph-native. Un timeout sin diagnóstico tipado es blocker y no autoriza sustitución silenciosa por herramientas textuales.
 - Toda respuesta graph-native fija `generation_id`, conserva status/evidence/omissions y usa ordering/budgets deterministas. Daemon y direct mode deben ser semanticamente equivalentes.
 - `MILX-v1` es un contrato stdio local aislado, no MCP. No admite graph/wiki write, network, secrets o process spawn en v1.
 - Federation lista member generations y unavailable members; un global snapshot es derivativo y nunca cambia stores miembros ni autoridad wiki.
@@ -134,7 +136,8 @@ Sin configuracion activa, `nav recall` devuelve hint visible y no llama al prove
 - `nav pack` debe devolver una estructura estable con `task`, `family`, `mode`, `primary_doc`, `docs`, `why` y `next_queries`.
 - `nav wiki search` debe devolver `WikiSearchResult` con `doc_id`, `path`, `title`, `layer`, `family`, `stage`, `score`, `why`, `snippet/content` y `next_queries`; `RS-*` y las rutas `02_resultados*` pertenecen a `layer=RS`, `stage=outcome`.
 - `nav wiki validate-harness` debe devolver `HarnessValidationResult` con `harness_protocol`, `harness_readiness`, `harness_verdict`, blockers/warnings, conteos de contratos/links revisados, evidencia requerida/encontrada y docs sin contrato/audience.
-- `nav wiki validate-source` debe devolver `WikiSourceValidationResult` con `wiki_source_protocol`, `wiki_source_readiness`, `wiki_source_verdict`, blockers/warnings, conteos de artefactos/bloques/records/tablas revisados, `navigation_readiness` y `navigation_blockers`.
+- `nav wiki validate-source` debe devolver `WikiSourceValidationResult` con `wiki_source_protocol`, `wiki_source_readiness`, `wiki_source_verdict`, blockers/warnings, conteos de artefactos/bloques/records/tablas revisados, `navigation_readiness` y `navigation_blockers`. Acepta `--paths` y `--ids`; un scope inexistente devuelve `ok=true` con `wiki_source_verdict=BLOCKED`, `navigation_readiness=blocked` y `scope=no_match`.
+- La telemetría de intent y utility solo conserva metadata derivada y sanitizada: `planner_version`, `operation`, `selector_kind`, `candidate_count`, `section_count`, `fallback` y `omission_count`. No puede transportar query, prompt, argv, payload, contenido, snippets, secretos ni errores raw.
 - `nav trace <DOC-ID>` debe clasificar explicitamente `RS|RF|TP`: `RS-*` devuelve `doc_id`, `layer=RS`, `stage=outcome` sin poblar el campo legacy `rf`; `RF-*` conserva evidencia spec-to-code y `TP-*` conserva evidencia de cobertura documental.
 - `nav trace <DOC-ID>` tambien puede resolver `block_id` o `record_id` fuente exacto desde `doc_source_blocks`/`doc_source_records` y devolver evidencia `wiki-source`.
 - `TraceResult` puede agregar campos aditivos `confidence`, `confidence_reason` y `status_reason` para explicar cobertura parcial, ausencia real o evidencia fuerte sin cambiar `status`, `doc_id`, `layer`, `stage` ni el campo legacy `rf`.
@@ -142,6 +145,45 @@ Sin configuracion activa, `nav recall` devuelve hint visible y no llama al prove
 - `nav edit-plan` debe devolver `backend=edit-plan`, `mode=dry_run|applied` e `items[0]` con `patch_packet`, `diff`, `files_changed`, `operations`, `evidence`, `guardrails` y `apply_status`; si trunca diff/evidencia debe setear `truncated=true` y `next_hint`. En `edit-plan-v2`, C#, TypeScript y Python con operaciones AST deben fallar con `language_not_supported` accionable hasta que existan backends especificos.
 - `nav governance` debe devolver una estructura estable con perfil, base efectiva, overlays, sync, blockers, `index_sync_details` con timestamps comparados y siguientes pasos.
 - `nav service` puede usar `backend=catalog`, `backend=text` o `backend=catalog+text`.
+
+## Contrato Harness-first de routing y graph advisory
+
+```toon
+block_id: ct-technical-harness-first-routing
+kind: technical-contract
+source_of_truth: this
+imports:
+  - .docs/wiki/09_contratos/CT-GRAPH-CLI.md
+  - .docs/wiki/09_contratos/CT-NAV-WIKI.md
+  - .docs/wiki/07_tech/TECH-GRAPH-NATIVE.md
+exports:
+  - automatic_intent_routing
+  - explain_change_seven_sections
+  - wiki_source_scoped_validation
+verify:
+  - go run ./cmd/mi-lsp nav --help
+  - go run ./cmd/mi-lsp nav explain-change --help
+  - go run ./cmd/mi-lsp nav wiki validate-source --workspace <alias> --paths <path> --format toon
+  - go run ./cmd/mi-lsp nav wiki validate-source --workspace <alias> --ids <doc-id> --format toon
+stop_if:
+  - governance_blocked=true
+  - timeout_without_typed_diagnostic=true
+  - exact_graph_claim_when_freshness!=current
+routing:
+  entrypoint: mi-lsp
+  policy: automatic_mi_lsp_first_no_opt_out
+  terminal_fallbacks: [unsupported_operation, unavailable_binary, invalid_workspace, explicit_incomplete]
+explain_change:
+  sections: [change, affected, callers, callees, tests, contracts, wiki]
+  response: preview_bounded_with_expansions
+wiki_validation:
+  selectors: [paths, ids]
+  no_match: scope=no_match
+telemetry:
+  sanitized_metadata_only: true
+```
+
+Interpretación: el contrato define la superficie observable y las reglas de degradación. No afirma que todas las generations o backends graph estén disponibles en cada workspace.
 
 ## Compatibilidad y migracion
 

@@ -194,6 +194,50 @@ cache:
   stale-cache-behavior: discard-or-explicit-omission
 ```
 
+## Analisis graph-native: freshness, rank, communities y utility
+
+El runtime actual ya expone la infraestructura de analisis como enriquecimiento acotado. La freshness es un gate de autoridad: solo `current` permite claims exactos; `lagging`, `stale`, `invalid` y `unknown` deben producir omision o degradacion visible. El rank es determinista y advisory; no reemplaza identidad, evidencia ni autoridad wiki.
+
+```toon
+doc_id: TECH-GRAPH-NATIVE
+block_id: TECH-GRAPH-NATIVE.analysis
+kind: graph-analysis
+source_of_truth: this
+evidence:
+  - .docs/wiki/06_pruebas/TP-GPH.md
+  - .docs/wiki/07_tech/TECH-GRAPH-NATIVE.md
+verify:
+  - go test ./internal/model/... ./internal/service/... ./internal/store/...
+  - mi-lsp nav graph stats --help
+  - mi-lsp nav graph validate --help
+  - mi-lsp nav explain-change --help
+  - mi-lsp nav wiki validate-source --workspace <alias> --format toon
+algorithm: bounded-deterministic-v1
+profile: exact-extracted-only
+freshness:
+  states: [current, lagging, stale, invalid, unknown]
+  exact_claims_allowed_only: current
+rank:
+  score: 0.45*authority + 0.25*impact + 0.20*centrality + 0.10*boundary
+  authority_sources: [exact, extracted]
+  inferred_nodes: excluded_from_authority
+  tie_breakers: [authority, impact, centrality, boundary, utility, node_key]
+  digest: sorted_canonical_output
+communities:
+  algorithm: deterministic_connected_components_v1
+  id: sha256_sorted_node_keys
+utility:
+  signals: [continuation_followed, feedback_positive, feedback_negative, result_selected]
+  effect: final_tie_break_only
+  bounded_events_per_scope: 4096
+telemetry:
+  sanitized_only: true
+  forbidden: [query, prompt, argv, payload, snippet, content, secret, raw_backend_log]
+  allowed: [planner_version, operation, selector_kind, candidate_count, section_count, fallback, omission_count]
+```
+
+Si el backend graph no esta disponible, `nav intent` y `nav explain-change` conservan la preview y etiquetan el fallback; no presentan heuristica como precision graph-native ni usan un timeout silencioso para cambiar de herramienta.
+
 ## Backend maturity
 
 ```toon

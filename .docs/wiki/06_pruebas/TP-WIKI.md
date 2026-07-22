@@ -219,6 +219,63 @@ cases:
     then: "cada mini-pack anotado con 'workspace' y 'doc_count_local'; A.doc_count <> B.doc_count reflejado en items; stats.workspaces_queried >= 2"
 ```
 
+## TP-WIKI-T5 - Routing dirigido y validación Wiki Source
+
+```toon
+block_id: tp-wiki-t5-group-e
+kind: test-cases
+source_of_truth: this
+evidence: .docs/wiki/06_pruebas/TP-WIKI.md
+verify:
+  - go run ./cmd/mi-lsp nav wiki --help
+  - go run ./cmd/mi-lsp nav wiki validate-source --workspace <alias> --paths <path> --format toon
+  - go run ./cmd/mi-lsp nav wiki validate-source --workspace <alias> --ids <doc-id> --format toon
+stop_if:
+  - governance_blocked=true
+  - wiki_source_verdict=BLOCKED
+cases:
+  - id: TC-WIKI-021
+    type: positivo
+    given: "consulta documental sobre graph impact y contracts"
+    when: "mi-lsp nav wiki route '<task>' --workspace <alias> --format toon"
+    then: "route selecciona owner documental y devuelve primary doc, stages relacionados, warnings y next_queries"
+  - id: TC-WIKI-022
+    type: positivo
+    given: "consulta que requiere contexto de gobernanza, scope, arquitectura y detalle tecnico"
+    when: "mi-lsp nav wiki pack '<task>' --workspace <alias> --full --format toon"
+    then: "pack conserva la autoridad de la wiki y explicita stages, documentos y warnings de graph context si no esta disponible"
+  - id: TC-WIKI-023
+    type: positivo
+    given: "paths existentes que incluyen artefactos SDD-WIKI-SOURCE-v1"
+    when: "validate-source --paths <path-1>,<path-2>"
+    then: "solo se seleccionan artefactos source-declarados y el resultado expone readiness, verdict, bloques y navigation_readiness"
+  - id: TC-WIKI-024
+    type: positivo
+    given: "IDs existentes de documentos source y duales"
+    when: "validate-source --ids <doc-id-1>,<doc-id-2>"
+    then: "el filtro acepta IDs; los documentos sin declaracion SDD-WIKI-SOURCE-v1 no se convierten implicitamente en source artifacts"
+  - id: TC-WIKI-025
+    type: negativo
+    given: "path o doc-id inexistente"
+    when: "validate-source --paths .docs/wiki/does-not-exist.md o --ids DOES-NOT-EXIST"
+    then: "ok=true pero wiki_source_verdict=BLOCKED, navigation_readiness=blocked y navigation_blockers incluye scope=no_match"
+  - id: TC-WIKI-026
+    type: negativo
+    given: "artifact source sin doc_id, block_id, fence toon o evidencia durable"
+    when: "validate-source revisa el documento"
+    then: "verdict=BLOCKED y el blocker identifica el campo o evidencia faltante"
+  - id: TC-WIKI-027
+    type: positivo
+    given: "preview documental con cobertura parcial"
+    when: "route/search/pack devuelven resultados truncados"
+    then: "la respuesta incluye next_queries o next_hint y no oculta la omision"
+  - id: TC-WIKI-028
+    type: negativo
+    given: "governance_blocked=true o index documental no listo"
+    when: "se invoca una superficie wiki dirigida"
+    then: "la operacion se detiene o degrada con diagnostico explicito; no usa fallback silencioso a contenido no gobernado"
+```
+
 ## Regla de mantenimiento
 
 - Ningun RF-WIKI-* se considera completamente especificado si no tiene al menos 4 test cases positivos trazados en TP-WIKI.

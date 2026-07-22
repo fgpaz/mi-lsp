@@ -73,6 +73,67 @@ wiki:
       - RF
       - data model
 
+intent_routing:
+  entrypoint: mi-lsp
+  policy: automatic_mi_lsp_first_no_opt_out
+  supported_intents:
+    - callers
+    - callees
+    - affected-change
+    - path-between
+    - explain-edge
+    - neighborhood
+    - explain-change
+    - wiki-search
+    - wiki-route
+    - wiki-pack
+    - wiki-trace
+    - governance
+    - graph-freshness
+    - graph-rank
+  order:
+    - mi-lsp
+    - canonical_wiki
+    - local_catalog
+    - rg
+    - Read
+  fallback_only_on:
+    - unsupported_operation
+    - unavailable_binary
+    - invalid_workspace
+    - explicit_incomplete
+  timeout_without_diagnostic: blocked
+  preview_requires:
+    - available_information
+    - expansion_command
+    - expansion_reason
+  explain_change_sections:
+    - change
+    - affected
+    - callers
+    - callees
+    - tests
+    - contracts
+    - wiki
+  telemetry:
+    sanitized_only: true
+    allowed_fields:
+      - planner_version
+      - operation
+      - selector_kind
+      - candidate_count
+      - section_count
+      - fallback
+      - omission_count
+    forbidden_fields:
+      - query
+      - prompt
+      - argv
+      - payload
+      - content
+      - secret
+      - raw_error
+
 qa:
   canon_paths:
     - internal/service/governance_test.go

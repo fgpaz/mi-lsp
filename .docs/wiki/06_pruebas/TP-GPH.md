@@ -190,4 +190,68 @@ mi-lsp nav governance --workspace mi-lsp --format toon
 mi-lsp nav wiki validate-harness --workspace mi-lsp --format toon
 ```
 
+## TP-GPH-008 - T5 Grupo E: routing, explain-change y analisis advisory
+
+```toon
+block_id: tp-gph-t5-group-e
+kind: test-cases
+source_of_truth: this
+verify:
+  - go test ./internal/service/... ./cmd/mi-lsp/...
+  - go run ./cmd/mi-lsp nav explain-change --path internal/service/intent.go --workspace <alias> --format toon
+  - go run ./cmd/mi-lsp nav graph stats --workspace <alias> --format toon
+  - go run ./cmd/mi-lsp nav graph validate --workspace <alias> --format toon
+stop_if:
+  - governance_blocked=true
+  - timeout_without_typed_diagnostic=true
+  - graph_claim_without_freshness_current=true
+cases:
+  - id: TC-GPH-059
+    type: positivo
+    given: "pregunta soportada con callers, callees, affected-change, tests, contracts y wiki"
+    when: "mi-lsp nav intent '<question>' --workspace <alias> --format toon"
+    then: "mi-lsp es el primer planner sin opt-out; devuelve intent, operation, confidence, freshness, preview, expansions y telemetry sanitizada"
+  - id: TC-GPH-060
+    type: positivo
+    given: "path de cambio y catalogo documental gobernado"
+    when: "mi-lsp nav explain-change --path <path> --workspace <alias> --format toon"
+    then: "section_count=7 y las secciones son change, affected, callers, callees, tests, contracts y wiki"
+  - id: TC-GPH-061
+    type: positivo
+    given: "preview con evidencia parcial"
+    when: "se inspecciona expansions[] y next_hint"
+    then: "cada expansion tiene command ejecutable y reason; la preview declara omisiones y no afirma completitud"
+  - id: TC-GPH-062
+    type: negativo
+    given: "backend graph no disponible"
+    when: "explain-change intenta completar affected, callers o callees"
+    then: "fallback tipado y omisiones visibles; no se presenta heuristica como prueba graph-native"
+  - id: TC-GPH-063
+    type: negativo
+    given: "nav ask excede el deadline"
+    when: "el runtime devuelve context deadline exceeded sin diagnostico tipado"
+    then: "resultado BLOCKED; no se permite sustituir silenciosamente la consulta por rg, Grep, Glob o Read"
+  - id: TC-GPH-064
+    type: positivo
+    given: "analysis con freshness current y nodos exact/extracted"
+    when: "se calcula graph rank y communities"
+    then: "rank usa 0.45 authority + 0.25 impact + 0.20 centrality + 0.10 boundary; communities y digest son deterministas"
+  - id: TC-GPH-065
+    type: negativo
+    given: "freshness lagging, stale, invalid o unknown"
+    when: "se solicitan claims exactos del grafo"
+    then: "claims exactos quedan omitidos o degradados con warning; solo current autoriza afirmaciones exactas"
+  - id: TC-GPH-066
+    type: negativo
+    given: "eventos de utility o intent telemetry"
+    when: "se serializa evidencia operacional"
+    then: "solo metadata derivada permitida; query, prompt, argv, payload, content, snippets, secrets y raw_error no aparecen"
+  - id: TC-GPH-067
+    type: positivo
+    given: "comando graph read-only publicado"
+    when: "mi-lsp nav graph stats|validate --workspace <alias> --format toon"
+    then: "stats/validate no escriben ni reparan index.db y exponen generation/status/omissions de forma estable"
+
+```
+
 PASS final requiere los siete TP, comparadores fijados, raw evidence, cross-RID, rollback, seguridad y autoridad wiki. Un caso `planned` no cuenta como ejecutado hasta enlazar test automatizado o evidencia manual determinista.

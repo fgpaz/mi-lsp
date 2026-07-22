@@ -60,6 +60,7 @@ El detalle operativo y de subsistemas vive en `07_tech/`; `accepted-design` no e
 | Governance UI | HTTP loopback local | Runtime supervision | Estado, accesos, memoria y diagnostico |
 | File watcher (fsnotify) | Subsistema daemon | Pre-fetch | Re-indexa archivos modificados en background |
 | Agent acceleration CLI | Subsistema Go | Compound commands | `multi-read`, `batch`, `related`, `workspace-map`, `search --include-content`, `nav ask`, `nav pack`, `nav edit-plan`, `nav evidence inventory` |
+| Intent planner | Subsistema Go | Harness routing | `nav intent` y `nav explain-change`; routing local, preview bounded, expansiones ejecutables y fallbacks tipados |
 | Semantic recall / embeddings backend | Subsistema Go | Query/runtime | semantic wiki recall via embeddings |
 | Store repo-local | SQLite | Workspace owner | Catalogo de codigo, indice documental y metadata del repo |
 | Index job runner | CLI + SQLite repo-local | Workspace owner | Jobs de indexacion `queued/running/published`, generacion de indice y cancelacion cooperativa |
@@ -189,6 +190,32 @@ flowchart LR
 - Wiki conserva autoridad sobre codigo. El grafo agrega evidencia o drift, nunca reemplaza canon.
 - Global graph es una vista derivativa de member generations. MILX-v1 ejecuta packs en proceso aislado, sin MCP/red/graph write.
 - Cada slice requiere `TP-GPH` y Victory Lab contra los dos comparadores fijados. Ver [[TECH-GRAPH-NATIVE]], [[DB-SYMBOL-EDGE-GRAPH]], [[CT-GRAPH-CLI]] y [[CT-MILX-V1]].
+
+## Routing automatico y explain-change
+
+Las intenciones soportadas entran primero por `mi-lsp` sin opt-out. El planner local decide la operacion, conserva los argumentos extraidos, expone confianza y separa evidencia graph-native, catalogo, wiki y heuristica. Las respuestas preview no ocultan incertidumbre: siempre incluyen una expansion ejecutable y su razon cuando exista un siguiente paso acotado.
+
+```toon
+block_id: TECH-INTENT-ROUTING
+kind: intent-routing
+source_of_truth: 07_baseline_tecnica
+verify:
+  - go run ./cmd/mi-lsp nav --help
+  - go run ./cmd/mi-lsp nav explain-change --help
+  - go run ./cmd/mi-lsp nav wiki validate-source --workspace <alias> --format toon
+intent_routing:
+  policy: automatic_mi_lsp_first_no_opt_out
+  supported: [callers, callees, affected-change, path-between, explain-edge, neighborhood, explain-change, wiki-search, wiki-route, wiki-pack, wiki-trace, governance, graph-freshness, graph-rank]
+  terminal_fallbacks: [unsupported_operation, unavailable_binary, invalid_workspace, explicit_incomplete]
+  timeout_without_diagnostic: blocked
+  preview_fields: [intent, operation, arguments, confidence, freshness, preview, omissions, fallbacks, expansions, telemetry]
+  explain_change_sections: [change, affected, callers, callees, tests, contracts, wiki]
+  expansion_fields: [command, reason]
+  wiki_authority: must_read_before_may_read
+  telemetry: sanitized_metadata_only
+```
+
+`nav explain-change` acepta una pregunta opcional, `--path` repetible y `--ref`; sus siete secciones son estables aunque alguna quede vacia por falta de evidencia. `--full` es una expansion real del CLI, pero el smoke actual puede conservar `mode=preview` cuando el mismo snapshot no aporta mas evidencia; el agente debe seguir `expansions[]` y `next_hint`, no asumir completitud por el flag.
 
 ## Busqueda: cadena de fallback
 

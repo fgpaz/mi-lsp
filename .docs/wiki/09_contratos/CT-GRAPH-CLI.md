@@ -3,7 +3,7 @@ doc_id: CT-GRAPH-CLI
 title: Contrato CLI graph-native
 layer: CT
 family: GRAPH-CLI
-status: accepted-design
+status: implemented
 ---
 
 ```yaml
@@ -56,7 +56,7 @@ Volver a [09_contratos_tecnicos.md](../09_contratos_tecnicos.md).
 
 ## Boundary
 
-Contrato aditivo de CLI para consultar generations publicadas. La CLI es publica; daemon, SQLite y adapters son internos. El estado `accepted-design` no habilita comandos hasta que sus slices y goldens esten implementados.
+Contrato de CLI para consultar generations publicadas y enrutar intenciones graph-native. La CLI es publica; daemon, SQLite y adapters son internos. La superficie de comandos esta implementada en el runtime actual; la disponibilidad de una generation o backend graph concreto puede degradar de forma visible y no convierte heuristica en equivalencia exacta.
 
 ## Comandos v1
 
@@ -100,7 +100,45 @@ commands:
     compatibility: existing-shape-preserved-graph-native-backend-visible
   nav.workspace-map:
     compatibility: existing-shape-preserved-graph-summary-additive
+  nav.intent:
+    shape: mi-lsp nav intent <question> [common-graph-flags]
+    semantics: automatic-intent-first; supported graph intents have no opt-out
+  nav.explain-change:
+    shape: mi-lsp nav explain-change [question] [--path <path> ...] [--ref <git-ref>] [common-graph-flags]
+    status: implemented
+    sections: [change, affected, callers, callees, tests, contracts, wiki]
+    preview: bounded-seven-section-with-executable-expansions
+    full: expansion-request; may remain preview when no additional evidence is available
 ```
+
+## Routing de intencion y explain-change
+
+```toon
+doc_id: CT-GRAPH-CLI
+block_id: CT-GRAPH-CLI.intent-routing
+kind: intent-contract
+source_of_truth: this
+evidence:
+  - .docs/wiki/06_pruebas/TP-GPH.md
+  - .docs/wiki/09_contratos/CT-GRAPH-CLI.md
+verify:
+  - go run ./cmd/mi-lsp nav intent --help
+  - go run ./cmd/mi-lsp nav explain-change --help
+  - go run ./cmd/mi-lsp nav explain-change --path internal/service/intent.go --workspace <alias> --format toon
+  - go run ./cmd/mi-lsp nav wiki validate-source --workspace <alias> --ids CT-GRAPH-CLI --format toon
+intent_routing:
+  policy: automatic_mi_lsp_first_no_opt_out
+  supported: [callers, callees, affected-change, path-between, explain-edge, neighborhood, explain-change]
+  seven_sections: [change, affected, callers, callees, tests, contracts, wiki]
+  required_plan_fields: [intent, operation, arguments, confidence, freshness, preview, omissions, fallbacks, expansions, telemetry]
+  expansion_fields: [command, reason]
+  terminal_fallbacks: [unsupported_operation, unavailable_binary, invalid_workspace, explicit_incomplete]
+  timeout_without_diagnostic: blocked
+  selector_ambiguity: candidates_without_auto_selection
+  wiki: must_read_governance_and_contracts_before_may_read_specs_or_tests
+```
+
+`nav graph stats` y `nav graph validate` son comandos read-only reales; `nav neighbors`, `nav callers`, `nav callees`, `nav path` y `nav explain` tambien tienen wiring CLI real. La consulta puede devolver `GPH_QUERY_BACKEND_UNAVAILABLE` o fallback explicito si no existe una generation publicada; eso es disponibilidad runtime, no ausencia del comando.
 
 ## Selector y flags comunes
 
