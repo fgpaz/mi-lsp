@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"fmt"
 	"path/filepath"
 	"testing"
 
@@ -173,6 +174,23 @@ func TestNavAffectedUsesPublishedGoGraphForCallerImpact(t *testing.T) {
 		if item.Path == "unrelated.go" {
 			t.Fatalf("unrelated graph positive: %#v", item)
 		}
+	}
+
+	massivePaths := make([]string, model.MaxImpactSeeds+1)
+	massivePaths[0] = "subject.go"
+	for i := 1; i < len(massivePaths); i++ {
+		massivePaths[i] = fmt.Sprintf("missing/%04d.go", i)
+	}
+	limited, err := New(root, nil).Execute(context.Background(), model.CommandRequest{
+		Operation: "nav.affected",
+		Context:   model.QueryOptions{Workspace: alias},
+		Payload:   map[string]any{"paths": massivePaths},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !limited.Truncated || limited.GenerationID == "" || !containsWarning(limited.Warnings, "impact seed input was bounded") {
+		t.Fatalf("outer impact truncation was not propagated: %#v", limited)
 	}
 }
 

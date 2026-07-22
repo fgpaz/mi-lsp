@@ -70,3 +70,56 @@ func TestFinalizeGraphItemsAlwaysAdvancesCursorAtTinyBudget(t *testing.T) {
 		t.Fatalf("cursor=%+v err=%v, want offset 1", cursor, err)
 	}
 }
+
+func testCanonicalPathKey(edge, node model.GraphDigest) string {
+	return "calls\x00" + edge.String() + "\x00" + node.String()
+}
+
+func TestGraphPathPrefersCanonicalEqualLengthPath(t *testing.T) {
+	ctx := context.Background()
+	db := impactTestDB(t)
+	bundle := impactTestBundle(t)
+	altKey, err := model.NewNodeKey(model.NodeKeyFields{RepositoryIdentity: "https://example.com/repo", BackendType: "go", Language: "go", ProjectOrModule: "core", OwnerPath: "src/alternate.go", SymbolKind: "function", SemanticIdentity: "alternate"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	altDigest, _ := altKey.Hash()
+	generation := bundle.Generation.GenerationID
+	if _, err := db.Exec(`INSERT INTO graph_nodes (generation_id,node_id,node_key,identity_schema,repository_identity,backend_type,language,project_or_module,owner_path,symbol_kind,semantic_identity,display_name,source_digest,claim_status,cross_rid,sort_key) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, generation[:], 100, altDigest[:], "milsp-node-key/v1", altKey.RepositoryIdentity, altKey.BackendType, altKey.Language, altKey.ProjectOrModule, altKey.OwnerPath, altKey.SymbolKind, altKey.SemanticIdentity, "src/alternate.go", altDigest[:], model.GraphRecordExact, model.NodeRID(altDigest), altKey.OwnerPath); err != nil {
+		t.Fatal(err)
+	}
+	altFirst := model.EdgeKey(bundle.Nodes[2].NodeKey, altDigest, "calls", "workspace")
+	altSecond := model.EdgeKey(altDigest, bundle.Nodes[0].NodeKey, "calls", "workspace")
+	for _, edge := range []struct {
+		id   int
+		key  model.GraphDigest
+		from int
+		to   int
+	}{
+		{100, altFirst, 2, 100},
+		{101, altSecond, 100, 0},
+	} {
+		if _, err := db.Exec(`INSERT INTO graph_edges (generation_id,edge_id,edge_key,from_node_id,to_node_id,relation,claim_scope,claim_status,owner_path,source_backend,cross_rid) VALUES (?,?,?,?,?,?,?,?,?,?,?)`, generation[:], edge.id, edge.key[:], edge.from, edge.to, "calls", "workspace", model.GraphRecordExact, "src/alternate.go", "go", model.EdgeRID(edge.key)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	env, err := GraphQuery(ctx, db, model.GraphQueryRequest{Operation: "nav.path", From: "src/upstream.go", To: "src/target.go", Direction: "out", Relations: []string{"calls"}, Depth: 2, Limit: 50})
+	if err != nil {
+		t.Fatal(err)
+	}
+	items, ok := env.Items.([]model.GraphQueryItem)
+	if !ok || len(items) != 2 {
+		t.Fatalf("path items=%#v", env.Items)
+	}
+	callerFirst := testCanonicalPathKey(model.EdgeKey(bundle.Nodes[2].NodeKey, bundle.Nodes[1].NodeKey, "calls", "workspace"), bundle.Nodes[1].NodeKey)
+	callerFirst += testCanonicalPathKey(model.EdgeKey(bundle.Nodes[1].NodeKey, bundle.Nodes[0].NodeKey, "calls", "workspace"), bundle.Nodes[0].NodeKey)
+	altPath := testCanonicalPathKey(altFirst, altDigest)
+	altPath += testCanonicalPathKey(altSecond, bundle.Nodes[0].NodeKey)
+	want := bundle.Nodes[1].CrossRID
+	if altPath < callerFirst {
+		want = model.NodeRID(altDigest)
+	}
+	if items[0].ToCrossRID != want {
+		t.Fatalf("first hop=%q want=%q callerKey=%q alternateKey=%q", items[0].ToCrossRID, want, callerFirst, altPath)
+	}
+}

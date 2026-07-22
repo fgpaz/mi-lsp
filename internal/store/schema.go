@@ -347,6 +347,11 @@ var graphIndexes = map[string]string{
 	"idx_graph_migrations_status":                       `CREATE INDEX IF NOT EXISTS idx_graph_migrations_status ON graph_migrations(status, started_at);`,
 }
 
+var graphAdditiveIndexes = map[string]string{
+	"idx_graph_nodes_generation_semantic_identity": `CREATE INDEX IF NOT EXISTS idx_graph_nodes_generation_semantic_identity ON graph_nodes(generation_id, semantic_identity);`,
+	"idx_graph_nodes_generation_display_name":      `CREATE INDEX IF NOT EXISTS idx_graph_nodes_generation_display_name ON graph_nodes(generation_id, display_name);`,
+}
+
 func normalizeSchemaSQL(s string) string {
 	s = strings.ToLower(strings.TrimSpace(s))
 	s = strings.ReplaceAll(s, " if not exists", "")
@@ -437,6 +442,11 @@ func ensureGraphSchemaTx(ctx context.Context, tx interface {
 		return err
 	}
 	for name, ddl := range graphIndexes {
+		if _, err := tx.ExecContext(ctx, ddl); err != nil {
+			return fmt.Errorf("create %s: %w", name, err)
+		}
+	}
+	for name, ddl := range graphAdditiveIndexes {
 		if _, err := tx.ExecContext(ctx, ddl); err != nil {
 			return fmt.Errorf("create %s: %w", name, err)
 		}

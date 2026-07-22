@@ -11,13 +11,14 @@ import (
 )
 
 const (
-	GraphQueryDefaultDepth = 1
-	GraphQueryMaxDepth     = 6
-	GraphQueryPathMaxDepth = 12
-	GraphQueryDefaultLimit = 50
-	GraphQueryMaxLimit     = 500
-	GraphQueryDefaultToken = 4000
-	GraphQueryMaxToken     = 20000
+	GraphQueryDefaultDepth        = 1
+	GraphQueryMaxDepth            = 6
+	GraphQueryPathMaxDepth        = 12
+	GraphQueryPathExpansionBudget = 1000
+	GraphQueryDefaultLimit        = 50
+	GraphQueryMaxLimit            = 500
+	GraphQueryDefaultToken        = 4000
+	GraphQueryMaxToken            = 20000
 )
 
 var (
@@ -142,13 +143,14 @@ type GraphQueryItem struct {
 }
 
 type GraphQueryStats struct {
-	Visited      int `json:"visited"`
-	Frontier     int `json:"frontier"`
-	Returned     int `json:"returned"`
-	Depth        int `json:"depth"`
-	TokenUnits   int `json:"token_units"`
-	DepthReached int `json:"depth_reached"`
-	Unresolved   int `json:"unresolved"`
+	Visited               int  `json:"visited"`
+	Frontier              int  `json:"frontier"`
+	Returned              int  `json:"returned"`
+	Depth                 int  `json:"depth"`
+	TokenUnits            int  `json:"token_units"`
+	DepthReached          int  `json:"depth_reached"`
+	Unresolved            int  `json:"unresolved"`
+	SearchBudgetExhausted bool `json:"search_budget_exhausted,omitempty"`
 }
 
 type GraphQueryMetadata struct {

@@ -1,6 +1,7 @@
 package model
 
 import (
+	"container/heap"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -11,6 +12,7 @@ import (
 const (
 	GraphImpactModeDirect     = "direct"
 	GraphImpactModeTransitive = "transitive"
+	MaxImpactSeeds            = 2048
 )
 
 var graphImpactRelations = map[string]GraphImpactRelation{
@@ -61,6 +63,9 @@ type GraphImpactRequest struct {
 	Relations    []string
 	IncludeTests bool
 	IncludeDocs  bool
+	Cursor       string
+	Omissions    []GraphImpactOmission
+	Warnings     []string
 }
 
 func (q GraphImpactRequest) Normalize() (GraphImpactRequest, error) {
@@ -98,20 +103,16 @@ func (q GraphImpactRequest) Normalize() (GraphImpactRequest, error) {
 	if q.TokenBudget < 1 || q.TokenBudget > GraphQueryMaxToken {
 		return q, &GraphQueryError{Code: "GPH_IMPACT_BUDGET_INVALID", Field: "token_budget", Message: "token budget is outside the allowed range"}
 	}
-	paths := make([]string, 0, len(q.Paths)+len(q.ChangedPaths))
-	seenPaths := map[string]struct{}{}
-	for _, path := range append(append([]string(nil), q.Paths...), q.ChangedPaths...) {
-		path = strings.TrimSpace(strings.ReplaceAll(path, "\\", "/"))
-		path = strings.TrimPrefix(path, "./")
-		if path == "" {
-			continue
-		}
-		if _, ok := seenPaths[path]; !ok {
-			seenPaths[path] = struct{}{}
-			paths = append(paths, path)
-		}
+	paths, seedOverflow := boundedImpactSeedPaths(q.Paths, q.ChangedPaths)
+	q.Omissions = nil
+	q.Warnings = nil
+	if seedOverflow {
+		q.Omissions = append(q.Omissions, GraphImpactOmission{
+			Reason: "normalized seed input exceeded the explicit bounded seed limit before ordering",
+			Code:   "GPH_IMPACT_SEED_BUDGET_EXCEEDED",
+		})
+		q.Warnings = append(q.Warnings, "impact seed input was bounded before ordering; omitted seed paths were not traversed")
 	}
-	sort.Strings(paths)
 	q.Paths = paths
 	q.ChangedPaths = append([]string(nil), paths...)
 	unique := map[string]struct{}{}
@@ -208,6 +209,7 @@ type GraphImpactEnvelope struct {
 	Truncated          bool                  `json:"truncated"`
 	Warnings           []string              `json:"warnings,omitempty"`
 	DeterminismDigest  string                `json:"determinism_digest"`
+	Continuation       *Continuation         `json:"continuation,omitempty"`
 }
 
 func GraphImpactDeterminismDigest(q GraphImpactRequest, generation GraphDigest, items, inferred []GraphImpactItem, stats GraphImpactStats) string {
@@ -221,6 +223,53 @@ func GraphImpactDeterminismDigest(q GraphImpactRequest, generation GraphDigest, 
 	b, _ := json.Marshal(payload)
 	d := sha256.Sum256(b)
 	return hex.EncodeToString(d[:])
+}
+
+type impactSeedMaxHeap []string
+
+func (h impactSeedMaxHeap) Len() int           { return len(h) }
+func (h impactSeedMaxHeap) Less(i, j int) bool { return h[i] > h[j] }
+func (h impactSeedMaxHeap) Swap(i, j int)      { h[i], h[j] = h[j], h[i] }
+func (h *impactSeedMaxHeap) Push(value any)    { *h = append(*h, value.(string)) }
+func (h *impactSeedMaxHeap) Pop() any {
+	old := *h
+	value := old[len(old)-1]
+	*h = old[:len(old)-1]
+	return value
+}
+
+func boundedImpactSeedPaths(sources ...[]string) ([]string, bool) {
+	h := &impactSeedMaxHeap{}
+	heap.Init(h)
+	accepted := make(map[string]struct{}, MaxImpactSeeds)
+	overflow := false
+	for _, source := range sources {
+		for _, raw := range source {
+			path := strings.TrimPrefix(strings.TrimSpace(strings.ReplaceAll(raw, "\\", "/")), "./")
+			if path == "" {
+				continue
+			}
+			if _, ok := accepted[path]; ok {
+				continue
+			}
+			if h.Len() < MaxImpactSeeds {
+				heap.Push(h, path)
+				accepted[path] = struct{}{}
+				continue
+			}
+			overflow = true
+			if path >= (*h)[0] {
+				continue
+			}
+			removed := heap.Pop(h).(string)
+			delete(accepted, removed)
+			heap.Push(h, path)
+			accepted[path] = struct{}{}
+		}
+	}
+	paths := append([]string(nil), (*h)...)
+	sort.Strings(paths)
+	return paths, overflow
 }
 
 // ImpactRequest and ImpactItem are concise compatibility aliases for core callers.

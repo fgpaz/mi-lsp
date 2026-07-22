@@ -139,6 +139,8 @@ func (a *App) Execute(ctx context.Context, request model.CommandRequest) (model.
 		envelope, err = a.related(ctx, request)
 	case "nav.neighbors", "nav.callers", "nav.callees", "nav.path", "nav.explain", "nav.graph.stats", "nav.graph.validate":
 		envelope, err = a.graphQuery(ctx, request)
+	case "nav.graph-impact":
+		envelope, err = a.graphImpact(ctx, request)
 	case "nav.workspace-map":
 		envelope, err = a.workspaceMap(ctx, request)
 	case "nav.diff-context":
@@ -222,7 +224,7 @@ func operationRequiresWorkspaceResolution(request model.CommandRequest) bool {
 		return !allWorkspaces
 	case "index.run", "index.start":
 		return strings.TrimSpace(stringPayload(request.Payload, "path")) == ""
-	case "index.status", "index.cancel", "index.run-job", "workspace.status", "info", "nav.symbols", "nav.overview", "nav.outline", "nav.governance", "nav.route", "nav.wiki.route", "nav.ask", "nav.pack", "nav.wiki.pack", "nav.wiki.search", "nav.wiki.validate-harness", "nav.wiki.validate-source", "nav.wiki.inventory", "nav.evidence.inventory", "nav.service", "nav.refs", "nav.context", "nav.deps", "nav.multi-read", "nav.batch", "nav.related", "nav.workspace-map", "nav.diff-context", "nav.affected", "nav.edit-plan", "nav.trace", "nav.wiki.trace", "nav.intent", "nav.recall", "nav.neighbors", "nav.callers", "nav.callees", "nav.path", "nav.explain", "nav.graph.stats", "nav.graph.validate":
+	case "index.status", "index.cancel", "index.run-job", "workspace.status", "info", "nav.symbols", "nav.overview", "nav.outline", "nav.governance", "nav.route", "nav.wiki.route", "nav.ask", "nav.pack", "nav.wiki.pack", "nav.wiki.search", "nav.wiki.validate-harness", "nav.wiki.validate-source", "nav.wiki.inventory", "nav.evidence.inventory", "nav.service", "nav.refs", "nav.context", "nav.deps", "nav.multi-read", "nav.batch", "nav.related", "nav.workspace-map", "nav.diff-context", "nav.affected", "nav.edit-plan", "nav.trace", "nav.wiki.trace", "nav.intent", "nav.recall", "nav.neighbors", "nav.callers", "nav.callees", "nav.path", "nav.explain", "nav.graph.stats", "nav.graph.validate", "nav.graph-impact":
 		return true
 	default:
 		return false

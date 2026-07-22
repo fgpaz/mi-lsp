@@ -15,18 +15,19 @@ import (
 )
 
 type graphCursor struct {
-	Generation string   `json:"generation"`
-	Operation  string   `json:"operation"`
-	Selector   string   `json:"selector,omitempty"`
-	From       string   `json:"from,omitempty"`
-	To         string   `json:"to,omitempty"`
-	Depth      int      `json:"depth"`
-	Limit      int      `json:"limit"`
-	Token      int      `json:"token"`
-	Direction  string   `json:"direction"`
-	Relations  []string `json:"relations,omitempty"`
-	Offset     int      `json:"offset"`
-	Checksum   string   `json:"checksum"`
+	Generation    string   `json:"generation"`
+	Operation     string   `json:"operation"`
+	Selector      string   `json:"selector,omitempty"`
+	From          string   `json:"from,omitempty"`
+	To            string   `json:"to,omitempty"`
+	Depth         int      `json:"depth"`
+	Limit         int      `json:"limit"`
+	Token         int      `json:"token"`
+	Direction     string   `json:"direction"`
+	Relations     []string `json:"relations,omitempty"`
+	Offset        int      `json:"offset"`
+	RequestDigest string   `json:"request_digest,omitempty"`
+	Checksum      string   `json:"checksum"`
 }
 
 func graphCursorDigest(c graphCursor) string {
@@ -243,7 +244,7 @@ func graphNeighborhood(ctx context.Context, s *store.GraphQuerySnapshot, q model
 	root := nodes[0]
 	frontier := []int{root.NodeID}
 	visited := map[int]int{root.NodeID: 0}
-	result := []model.GraphQueryItem{}
+	works := []graphEdgeWork{}
 	seenEdges := map[int]bool{}
 	frontierCount := 1
 	for distance := 1; distance <= q.Depth; distance++ {
@@ -264,15 +265,7 @@ func graphNeighborhood(ctx context.Context, s *store.GraphQuerySnapshot, q model
 			if effectiveNeighborhoodDirection(q) == "both" && !containsInt(frontier, edge.FromNodeID) {
 				toID = edge.FromNodeID
 			}
-			n, e := sNode(s, ctx, toID)
-			if e != nil {
-				return model.Envelope{}, store.SanitizeGraphQueryError(e)
-			}
-			item, e := graphNodeItem(s, ctx, n, distance, &edge)
-			if e != nil {
-				return model.Envelope{}, store.SanitizeGraphQueryError(e)
-			}
-			result = append(result, item)
+			works = append(works, graphEdgeWork{edge: edge, nodeID: toID, distance: distance})
 			if _, ok := visited[toID]; !ok {
 				visited[toID] = distance
 				next = append(next, toID)
@@ -283,6 +276,10 @@ func graphNeighborhood(ctx context.Context, s *store.GraphQuerySnapshot, q model
 		if len(frontier) == 0 {
 			break
 		}
+	}
+	result, err := graphItemsFromEdgeWorks(ctx, s, works)
+	if err != nil {
+		return model.Envelope{}, store.SanitizeGraphQueryError(err)
 	}
 	canonical := append([]model.GraphQueryItem(nil), result...)
 	sortGraphItems(canonical)
@@ -340,66 +337,202 @@ func graphPath(ctx context.Context, s *store.GraphQuerySnapshot, q model.GraphQu
 	}
 	type parent struct {
 		node     int
+		next     int
 		edge     model.GraphEdgeRecord
 		distance int
+		pathKey  string
 	}
 	parents := map[int]parent{}
-	visited := map[int]bool{start.NodeID: true}
+	visited := map[int]int{start.NodeID: 0}
+	pathKeys := map[int]string{start.NodeID: ""}
 	frontier := []int{start.NodeID}
-	found := false
 	depth := 0
-	for depth < q.Depth && len(frontier) > 0 && !found {
+	searchBudgetExhausted := false
+	expansionBudget := model.GraphQueryPathExpansionBudget
+	for depth < q.Depth && len(frontier) > 0 {
 		depth++
-		edges, e := s.Edges(ctx, frontier, "out", q.Relations, q.Limit+offset+1)
+		edges, e := s.Edges(ctx, frontier, q.Direction, q.Relations, expansionBudget+1)
 		if e != nil {
 			return model.Envelope{}, store.SanitizeGraphQueryError(e)
+		}
+		if len(edges) > expansionBudget {
+			searchBudgetExhausted = true
+			edges = edges[:expansionBudget]
 		}
 		sortPathEdges(ctx, s, edges)
 		next := []int{}
 		for _, edge := range edges {
-			if visited[edge.ToNodeID] {
+			neighbor, parentNode, ok := graphPathNeighbor(edge, frontier, q.Direction)
+			if !ok || neighbor == start.NodeID {
 				continue
 			}
-			visited[edge.ToNodeID] = true
-			parents[edge.ToNodeID] = parent{node: edge.FromNodeID, edge: edge, distance: depth}
-			next = append(next, edge.ToNodeID)
-			if edge.ToNodeID == target.NodeID {
-				found = true
-				break
+			parentKey, ok := pathKeys[parentNode]
+			if !ok {
+				continue
 			}
+			node, nodeErr := sNode(s, ctx, neighbor)
+			if nodeErr != nil {
+				return model.Envelope{}, store.SanitizeGraphQueryError(nodeErr)
+			}
+			candidateKey := graphPathStepKey(parentKey, edge, node)
+			oldDistance, seen := visited[neighbor]
+			if seen && oldDistance < depth {
+				continue
+			}
+			if seen && oldDistance == depth && pathKeys[neighbor] <= candidateKey {
+				continue
+			}
+			visited[neighbor] = depth
+			pathKeys[neighbor] = candidateKey
+			parents[neighbor] = parent{node: parentNode, next: neighbor, edge: edge, distance: depth, pathKey: candidateKey}
+			next = append(next, neighbor)
 		}
 		frontier = uniqueInts(next)
+		if distance, ok := visited[target.NodeID]; ok && distance == depth {
+			break
+		}
 	}
-	if !found {
-		return graphEnvelope(q, g, []any{}, nil, model.GraphQueryStats{Visited: len(visited), Frontier: len(frontier), Depth: depth}, "no path within depth"), nil
+	if _, found := visited[target.NodeID]; !found {
+		stats := model.GraphQueryStats{Visited: len(visited), Frontier: len(frontier), Depth: depth, SearchBudgetExhausted: searchBudgetExhausted}
+		hint := "no path within depth"
+		if searchBudgetExhausted {
+			hint = "search_budget_exhausted"
+		}
+		return graphEnvelope(q, g, []any{}, nil, stats, hint), nil
 	}
 	edges := []model.GraphEdgeRecord{}
+	pathNodes := []int{}
 	cur := target.NodeID
 	for cur != start.NodeID {
 		p := parents[cur]
 		edges = append(edges, p.edge)
+		pathNodes = append(pathNodes, p.next)
 		cur = p.node
 	}
 	for i, j := 0, len(edges)-1; i < j; i, j = i+1, j-1 {
 		edges[i], edges[j] = edges[j], edges[i]
+		pathNodes[i], pathNodes[j] = pathNodes[j], pathNodes[i]
 	}
-	items := []model.GraphQueryItem{}
+	works := make([]graphEdgeWork, 0, len(edges))
 	for i, edge := range edges {
-		n, e := sNode(s, ctx, edge.ToNodeID)
-		if e != nil {
-			return model.Envelope{}, store.SanitizeGraphQueryError(e)
-		}
-		item, e := graphNodeItem(s, ctx, n, i+1, &edge)
-		if e != nil {
-			return model.Envelope{}, store.SanitizeGraphQueryError(e)
-		}
-		items = append(items, item)
+		works = append(works, graphEdgeWork{edge: edge, nodeID: pathNodes[i], distance: i + 1})
 	}
-	return finalizeGraphItems(q, g, s, items, len(visited), len(frontier), offset), nil
+	items, err := graphItemsFromEdgeWorks(ctx, s, works)
+	if err != nil {
+		return model.Envelope{}, store.SanitizeGraphQueryError(err)
+	}
+	env := finalizeGraphItemsWithSearchBudget(q, g, s, items, len(visited), len(frontier), offset, searchBudgetExhausted)
+	if searchBudgetExhausted {
+		env.Truncated = true
+		env.Hint = "search_budget_exhausted"
+		env.Warnings = append(env.Warnings, "path search budget exhausted; canonical path is not proven complete")
+	}
+	return env, nil
+}
+
+func graphPathNeighbor(edge model.GraphEdgeRecord, frontier []int, direction string) (neighbor, parent int, ok bool) {
+	fromFrontier := containsInt(frontier, edge.FromNodeID)
+	toFrontier := containsInt(frontier, edge.ToNodeID)
+	switch direction {
+	case "out":
+		if fromFrontier {
+			return edge.ToNodeID, edge.FromNodeID, true
+		}
+	case "in":
+		if toFrontier {
+			return edge.FromNodeID, edge.ToNodeID, true
+		}
+	case "both":
+		if fromFrontier {
+			return edge.ToNodeID, edge.FromNodeID, true
+		}
+		if toFrontier {
+			return edge.FromNodeID, edge.ToNodeID, true
+		}
+	}
+	return 0, 0, false
+}
+
+func graphPathStepKey(previous string, edge model.GraphEdgeRecord, node model.GraphNodeRecord) string {
+	return previous + edge.Relation + "\x00" + edge.EdgeKey.String() + "\x00" + node.NodeKey.String()
 }
 
 func sNode(s *store.GraphQuerySnapshot, ctx context.Context, id int) (model.GraphNodeRecord, error) {
 	return s.Node(ctx, id)
+}
+
+type graphEdgeWork struct {
+	edge     model.GraphEdgeRecord
+	nodeID   int
+	distance int
+}
+
+type graphHydration struct {
+	nodes        map[int]model.GraphNodeRecord
+	edgeEvidence map[int][]string
+}
+
+func hydrateGraphEdges(ctx context.Context, s *store.GraphQuerySnapshot, works []graphEdgeWork) (graphHydration, error) {
+	nodeIDs := make([]int, 0, len(works)*3)
+	edgeIDs := make([]int, 0, len(works))
+	for _, work := range works {
+		nodeIDs = append(nodeIDs, work.nodeID, work.edge.FromNodeID, work.edge.ToNodeID)
+		edgeIDs = append(edgeIDs, work.edge.EdgeID)
+	}
+	nodes, err := s.NodesByIDs(ctx, nodeIDs)
+	if err != nil {
+		return graphHydration{}, err
+	}
+	evidence, err := s.EvidenceRefsByEdges(ctx, edgeIDs, 32)
+	if err != nil {
+		return graphHydration{}, err
+	}
+	return graphHydration{nodes: nodes, edgeEvidence: evidence}, nil
+}
+
+func graphItemsFromEdgeWorks(ctx context.Context, s *store.GraphQuerySnapshot, works []graphEdgeWork) ([]model.GraphQueryItem, error) {
+	hydration, err := hydrateGraphEdges(ctx, s, works)
+	if err != nil {
+		return nil, err
+	}
+	items := make([]model.GraphQueryItem, 0, len(works))
+	for _, work := range works {
+		n, ok := hydration.nodes[work.nodeID]
+		if !ok {
+			return nil, store.ErrGraphQueryGenerationMissing
+		}
+		item, itemErr := graphNodeItemHydrated(n, work.distance, &work.edge, hydration)
+		if itemErr != nil {
+			return nil, itemErr
+		}
+		items = append(items, item)
+	}
+	return items, nil
+}
+
+func graphNodeItemHydrated(n model.GraphNodeRecord, distance int, edge *model.GraphEdgeRecord, hydration graphHydration) (model.GraphQueryItem, error) {
+	item := model.GraphQueryItem{Kind: "node", CrossRID: n.CrossRID, Display: n.DisplayName, Status: n.ClaimStatus, ConfidenceClass: confidenceClass(n.ClaimStatus), Distance: distance, NodeKey: n.NodeKey.String(), NodeID: n.NodeID, SymbolKind: n.Identity.SymbolKind, OwnerPath: n.Identity.OwnerPath}
+	if edge != nil {
+		item.Kind = "edge"
+		item.EdgeKey = edge.EdgeKey.String()
+		item.EdgeID = edge.EdgeID
+		item.Relation = edge.Relation
+		item.Status = edge.ClaimStatus
+		item.CrossRID = edge.CrossRID
+		item.EdgeCrossRID = edge.CrossRID
+		item.ConfidenceClass = confidenceClass(edge.ClaimStatus)
+		from, fromOK := hydration.nodes[edge.FromNodeID]
+		to, toOK := hydration.nodes[edge.ToNodeID]
+		if !fromOK || !toOK {
+			return item, store.ErrGraphQueryGenerationMissing
+		}
+		item.FromNodeKey = from.NodeKey.String()
+		item.ToNodeKey = to.NodeKey.String()
+		item.FromCrossRID = from.CrossRID
+		item.ToCrossRID = to.CrossRID
+		item.EvidenceRefs = append([]string(nil), hydration.edgeEvidence[edge.EdgeID]...)
+	}
+	return item, nil
 }
 
 func graphNodeItem(s *store.GraphQuerySnapshot, ctx context.Context, n model.GraphNodeRecord, distance int, edge *model.GraphEdgeRecord) (model.GraphQueryItem, error) {
@@ -529,6 +662,10 @@ func claimRank(s string) int {
 }
 
 func finalizeGraphItems(q model.GraphQueryRequest, g model.GraphGeneration, s *store.GraphQuerySnapshot, all []model.GraphQueryItem, visited, frontier, offset int) model.Envelope {
+	return finalizeGraphItemsWithSearchBudget(q, g, s, all, visited, frontier, offset, false)
+}
+
+func finalizeGraphItemsWithSearchBudget(q model.GraphQueryRequest, g model.GraphGeneration, s *store.GraphQuerySnapshot, all []model.GraphQueryItem, visited, frontier, offset int, searchBudgetExhausted bool) model.Envelope {
 	if offset > len(all) {
 		offset = len(all)
 	}
@@ -554,7 +691,7 @@ func finalizeGraphItems(q model.GraphQueryRequest, g model.GraphGeneration, s *s
 	if truncated {
 		next = encodeGraphCursor(graphCursor{Generation: g.GenerationID.String(), Operation: q.Operation, Selector: q.Selector, From: q.From, To: q.To, Depth: q.Depth, Limit: q.Limit, Token: q.TokenBudget, Direction: q.Direction, Relations: q.Relations, Offset: offset + len(returned)})
 	}
-	stats := model.GraphQueryStats{Visited: visited, Frontier: frontier, Returned: len(returned), Depth: q.Depth, DepthReached: q.Depth, TokenUnits: units, Unresolved: g.UnresolvedCount}
+	stats := model.GraphQueryStats{Visited: visited, Frontier: frontier, Returned: len(returned), Depth: q.Depth, DepthReached: q.Depth, TokenUnits: units, Unresolved: g.UnresolvedCount, SearchBudgetExhausted: searchBudgetExhausted}
 	env := graphEnvelope(q, g, nil, returned, stats, "")
 	env.Items = returned
 	env.Truncated = truncated

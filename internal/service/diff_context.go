@@ -101,6 +101,7 @@ func (a *App) diffContext(ctx context.Context, request model.CommandRequest) (mo
 		Depth:        intFromAny(request.Payload["depth"], 0),
 		Limit:        intFromAny(request.Payload["limit"], 0),
 		TokenBudget:  intFromAny(request.Payload["token_budget"], 0),
+		Cursor:       stringPayload(request.Payload, "cursor"),
 		IncludeTests: boolPayload(request.Payload, "include_tests"),
 		IncludeDocs:  boolPayload(request.Payload, "include_docs"),
 	}
@@ -217,12 +218,32 @@ func (a *App) diffContext(ctx context.Context, request model.CommandRequest) (mo
 	if graphWarning != "" {
 		warnings = append(warnings, graphWarning)
 	}
+	var truncated bool
+	var generationID string
+	var graphSchemaVersion int
+	var determinismDigest string
+	var continuation *model.Continuation
+	if graphImpact != nil {
+		truncated = graphImpact.Truncated
+		generationID = graphImpact.GenerationID
+		graphSchemaVersion = graphImpact.GraphSchemaVersion
+		determinismDigest = graphImpact.DeterminismDigest
+		continuation = graphImpact.Continuation
+		for _, warning := range graphImpact.Warnings {
+			warnings = appendStringIfMissing(warnings, warning)
+		}
+	}
 	return model.Envelope{
-		Ok:        true,
-		Workspace: registration.Name,
-		Backend:   graphBackend,
-		Items:     []DiffContextResult{result},
-		Warnings:  warnings,
+		Ok:                 true,
+		Workspace:          registration.Name,
+		Backend:            graphBackend,
+		Items:              []DiffContextResult{result},
+		Warnings:           warnings,
+		Truncated:          truncated,
+		GenerationID:       generationID,
+		GraphSchemaVersion: graphSchemaVersion,
+		DeterminismDigest:  determinismDigest,
+		Continuation:       continuation,
 		Stats: model.Stats{
 			Files:   len(changingFiles),
 			Symbols: len(symbols),

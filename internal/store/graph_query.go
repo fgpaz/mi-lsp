@@ -138,6 +138,96 @@ func (s *GraphQuerySnapshot) nodeByID(ctx context.Context, id int) (model.GraphN
 	return s.Node(ctx, id)
 }
 
+func (s *GraphQuerySnapshot) NodesByIDs(ctx context.Context, ids []int) (map[int]model.GraphNodeRecord, error) {
+	if s == nil || s.closed || ctx == nil {
+		return nil, model.ErrGraphGenerationInvalid
+	}
+	canonical := uniqueSortedNonNegative(ids)
+	result := make(map[int]model.GraphNodeRecord, len(canonical))
+	for start := 0; start < len(canonical); start += 500 {
+		end := start + 500
+		if end > len(canonical) {
+			end = len(canonical)
+		}
+		placeholders := make([]string, end-start)
+		args := []any{digestArg(s.generation.GenerationID)}
+		for i, id := range canonical[start:end] {
+			placeholders[i] = "?"
+			args = append(args, id)
+		}
+		rows, err := s.query(ctx, graphNodeSelect+" AND node_id IN ("+strings.Join(placeholders, ",")+") ORDER BY node_id", args...)
+		if err != nil {
+			return nil, err
+		}
+		for rows.Next() {
+			n, scanErr := scanGraphNode(rows, s.generation.GenerationID)
+			if scanErr != nil {
+				rows.Close()
+				return nil, scanErr
+			}
+			result[n.NodeID] = n
+		}
+		if err := rows.Err(); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		rows.Close()
+	}
+	return result, nil
+}
+
+func (s *GraphQuerySnapshot) EvidenceRefsByEdges(ctx context.Context, edgeIDs []int, maxEach int) (map[int][]string, error) {
+	if s == nil || s.closed || ctx == nil {
+		return nil, model.ErrGraphGenerationInvalid
+	}
+	if maxEach < 1 {
+		return map[int][]string{}, nil
+	}
+	if maxEach > 32 {
+		maxEach = 32
+	}
+	canonical := uniqueSortedNonNegative(edgeIDs)
+	result := make(map[int][]string, len(canonical))
+	for start := 0; start < len(canonical); start += 500 {
+		end := start + 500
+		if end > len(canonical) {
+			end = len(canonical)
+		}
+		placeholders := make([]string, end-start)
+		args := []any{digestArg(s.generation.GenerationID)}
+		for i, id := range canonical[start:end] {
+			placeholders[i] = "?"
+			args = append(args, id)
+		}
+		args = append(args, maxEach)
+		query := `SELECT edge_id,evidence_key FROM (SELECT edge_id,evidence_key,ROW_NUMBER() OVER (PARTITION BY edge_id ORDER BY evidence_key) AS rn FROM graph_evidence WHERE generation_id=? AND edge_id IN (` + strings.Join(placeholders, ",") + `)) WHERE rn<=? ORDER BY edge_id,evidence_key`
+		rows, err := s.query(ctx, query, args...)
+		if err != nil {
+			return nil, err
+		}
+		for rows.Next() {
+			var edgeID int
+			var raw []byte
+			if err := rows.Scan(&edgeID, &raw); err != nil {
+				rows.Close()
+				return nil, err
+			}
+			digest, err := scanDigest(raw)
+			if err != nil {
+				rows.Close()
+				return nil, err
+			}
+			result[edgeID] = append(result[edgeID], digest.String())
+		}
+		if err := rows.Err(); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		rows.Close()
+	}
+	return result, nil
+}
+
 func (s *GraphQuerySnapshot) ResolveGraphSelector(ctx context.Context, selector string) ([]model.GraphNodeRecord, string, error) {
 	selector = strings.TrimSpace(selector)
 	if selector == "" {
@@ -318,14 +408,55 @@ func minGraphQueryInt(a, b int) int {
 
 func (s *GraphQuerySnapshot) Edges(ctx context.Context, frontier []int, direction string, relations []string, maxRows int) ([]model.GraphEdgeRecord, error) {
 	if direction == "both" {
+		if maxRows < 1 {
+			return []model.GraphEdgeRecord{}, nil
+		}
+		// Read each direction under the same bounded budget, then interleave the
+		// results so one side cannot consume the entire both-direction budget.
 		out, err := s.EdgesFromFrontier(ctx, frontier, "out", relations, maxRows)
 		if err != nil {
 			return nil, err
 		}
-		in, err := s.EdgesFromFrontier(ctx, frontier, "in", relations, maxRows-len(out))
-		return append(out, in...), err
+		in, err := s.EdgesFromFrontier(ctx, frontier, "in", relations, maxRows)
+		if err != nil {
+			return nil, err
+		}
+		return interleaveGraphEdges(out, in, maxRows), nil
 	}
 	return s.EdgesFromFrontier(ctx, frontier, direction, relations, maxRows)
+}
+
+func interleaveGraphEdges(out, in []model.GraphEdgeRecord, maxRows int) []model.GraphEdgeRecord {
+	if maxRows < 1 {
+		return []model.GraphEdgeRecord{}
+	}
+	result := make([]model.GraphEdgeRecord, 0, minGraphQueryInt(maxRows, len(out)+len(in)))
+	seen := make(map[int]struct{}, len(out)+len(in))
+	next := func(edges []model.GraphEdgeRecord, index *int) (model.GraphEdgeRecord, bool) {
+		for *index < len(edges) {
+			edge := edges[*index]
+			(*index)++
+			if _, ok := seen[edge.EdgeID]; ok {
+				continue
+			}
+			return edge, true
+		}
+		return model.GraphEdgeRecord{}, false
+	}
+	for i, j := 0, 0; len(result) < maxRows && (i < len(out) || j < len(in)); {
+		if edge, ok := next(out, &i); ok {
+			seen[edge.EdgeID] = struct{}{}
+			result = append(result, edge)
+		}
+		if len(result) >= maxRows {
+			break
+		}
+		if edge, ok := next(in, &j); ok {
+			seen[edge.EdgeID] = struct{}{}
+			result = append(result, edge)
+		}
+	}
+	return result
 }
 
 func (s *GraphQuerySnapshot) EvidenceRefs(ctx context.Context, nodeID, edgeID *int, max int) ([]string, error) {

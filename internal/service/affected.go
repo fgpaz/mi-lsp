@@ -123,6 +123,11 @@ func (a *App) affected(ctx context.Context, request model.CommandRequest) (model
 	symbolEvidenceCount := 0
 	graphUsed := false
 	legacyHeuristic := false
+	var graphGenerationID string
+	var graphSchemaVersion int
+	var graphDeterminismDigest string
+	var graphContinuation *model.Continuation
+	graphTruncated := false
 	if db != nil && graphGenerationAvailable(ctx, db) {
 		impactRequest, requestErr := affectedGraphRequest(request.Payload)
 		if requestErr != nil {
@@ -135,7 +140,15 @@ func (a *App) affected(ctx context.Context, request model.CommandRequest) (model
 		impact, graphErr := GraphImpact(ctx, db, impactRequest)
 		if graphErr == nil && impact.GenerationID != "" {
 			graphUsed = true
+			graphGenerationID = impact.GenerationID
+			graphSchemaVersion = impact.GraphSchemaVersion
+			graphDeterminismDigest = impact.DeterminismDigest
+			graphContinuation = impact.Continuation
+			graphTruncated = impact.Truncated
 			warnings = appendStringIfMissing(warnings, "graph-native impact is exact/extracted; heuristic items remain advisory")
+			for _, warning := range impact.Warnings {
+				warnings = appendStringIfMissing(warnings, warning)
+			}
 			for _, graphItem := range append(impact.Items, impact.Inferred...) {
 				item := AffectedItem{Kind: affectedGraphItemKind(graphItem), Path: graphItem.Path, Reason: graphItem.Reason, Confidence: affectedGraphConfidence(graphItem.ConfidenceClass), CrossRID: graphItem.CrossRID, GenerationID: graphItem.GenerationID, ConfidenceClass: graphItem.ConfidenceClass, EvidencePath: graphItem.EvidencePath, TriggerPath: graphItem.TriggerPath, Evidence: append([]string(nil), graphItem.EvidenceRefs...)}
 				addAffectedItem(&items, seenItems, item)
@@ -204,11 +217,16 @@ func (a *App) affected(ctx context.Context, request model.CommandRequest) (model
 	}
 
 	env := model.Envelope{
-		Ok:        true,
-		Workspace: registration.Name,
-		Backend:   affectedBackend(graphUsed, legacyHeuristic),
-		Items:     items,
-		Warnings:  warnings,
+		Ok:                 true,
+		Workspace:          registration.Name,
+		Backend:            affectedBackend(graphUsed, legacyHeuristic),
+		Items:              items,
+		Warnings:           warnings,
+		Truncated:          graphTruncated,
+		GenerationID:       graphGenerationID,
+		GraphSchemaVersion: graphSchemaVersion,
+		DeterminismDigest:  graphDeterminismDigest,
+		Continuation:       graphContinuation,
 		Stats: model.Stats{
 			Files:   len(orderedInputs),
 			Symbols: symbolEvidenceCount,
@@ -318,6 +336,7 @@ func affectedGraphRequest(payload map[string]any) (model.GraphImpactRequest, err
 		Limit:        intFromAny(payload["limit"], 0),
 		TokenBudget:  intFromAny(payload["token_budget"], 0),
 		Direction:    stringPayload(payload, "direction"),
+		Cursor:       stringPayload(payload, "cursor"),
 		IncludeTests: boolPayload(payload, "include_tests"),
 		IncludeDocs:  boolPayload(payload, "include_docs"),
 	}

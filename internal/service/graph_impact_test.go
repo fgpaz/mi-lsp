@@ -4,10 +4,12 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"path/filepath"
 	"testing"
 
 	"github.com/fgpaz/mi-lsp/internal/model"
 	"github.com/fgpaz/mi-lsp/internal/store"
+	"github.com/fgpaz/mi-lsp/internal/workspace"
 )
 
 func TestGraphImpactRejectsInvalidBudgetBeforeStoreRead(t *testing.T) {
@@ -80,9 +82,103 @@ func TestGraphImpactTransitiveGatesTestsAndReportsDepthAndBudgetTruncation(t *te
 		t.Fatalf("depth truncation=%+v err=%v", depthLimited, err)
 	}
 	limited, err := GraphImpact(ctx, db, model.GraphImpactRequest{Paths: []string{"src/target.go"}, Relations: []string{"calls"}, Limit: 1, TokenBudget: 1})
-	if err != nil || !limited.Truncated || len(limited.Items)+len(limited.Inferred) != 1 {
+	if err != nil || !limited.Truncated || len(limited.Items)+len(limited.Inferred) != 1 || limited.Continuation == nil || limited.Continuation.Next.Query == "" {
 		t.Fatalf("budget truncation=%+v err=%v", limited, err)
 	}
+	resumed, err := GraphImpact(ctx, db, model.GraphImpactRequest{Cursor: limited.Continuation.Next.Query})
+	if err != nil || len(resumed.Items)+len(resumed.Inferred) != 1 || resumed.GenerationID != limited.GenerationID {
+		t.Fatalf("cursor-only continuation=%+v err=%v", resumed, err)
+	}
+}
+
+func TestGraphImpactContinuationRejectsAlteredRequestAndGeneration(t *testing.T) {
+	db := impactTestDB(t)
+	first, err := GraphImpact(context.Background(), db, model.GraphImpactRequest{Paths: []string{"src/target.go"}, Relations: []string{"calls"}, Limit: 1, TokenBudget: 1})
+	if err != nil || first.Continuation == nil {
+		t.Fatalf("first=%+v err=%v", first, err)
+	}
+	cursor := first.Continuation.Next.Query
+	if _, err := GraphImpact(context.Background(), db, model.GraphImpactRequest{Cursor: cursor, Paths: []string{"src/caller.go"}}); graphErrorCode(err) != "GPH_QUERY_CURSOR_STALE" {
+		t.Fatalf("altered paths error=%v", err)
+	}
+	if _, err := GraphImpact(context.Background(), db, model.GraphImpactRequest{Cursor: cursor, Generation: "other-generation"}); graphErrorCode(err) != "GPH_QUERY_CURSOR_STALE" {
+		t.Fatalf("altered generation error=%v", err)
+	}
+	decoded, err := decodeGraphImpactCursor(cursor)
+	if err != nil || len(decoded.Paths) != 1 || decoded.Paths[0] != "src/target.go" {
+		t.Fatalf("cursor=%+v err=%v", decoded, err)
+	}
+}
+
+func TestGraphImpactAppContinuationUsesOnlyOperationAndCursor(t *testing.T) {
+	root, alias := impactAppWorkspace(t)
+	app := New(root, nil)
+	first, err := app.Execute(context.Background(), model.CommandRequest{
+		Operation: "nav.graph-impact",
+		Context:   model.QueryOptions{Workspace: alias},
+		Payload: map[string]any{
+			"paths":        []string{"./src\\target.go"},
+			"mode":         "transitive",
+			"depth":        2,
+			"relations":    []string{"calls"},
+			"limit":        1,
+			"token_budget": 1,
+		},
+	})
+	if err != nil {
+		t.Fatalf("first app request: %v", err)
+	}
+	if first.Continuation == nil || first.Continuation.Next.Op != "nav.graph-impact" || first.Continuation.Next.Query == "" {
+		t.Fatalf("first continuation=%+v", first.Continuation)
+	}
+	second, err := app.Execute(context.Background(), model.CommandRequest{
+		Operation: first.Continuation.Next.Op,
+		Context:   model.QueryOptions{Workspace: alias},
+		Payload:   map[string]any{"cursor": first.Continuation.Next.Query},
+	})
+	if err != nil {
+		t.Fatalf("cursor-only app request: %v", err)
+	}
+	items, ok := second.Items.([]model.GraphImpactItem)
+	if !ok || len(items) != 1 || items[0].Path != "src/upstream.go" {
+		t.Fatalf("second items=%T %+v", second.Items, second.Items)
+	}
+}
+
+func graphErrorCode(err error) string {
+	graphErr, ok := err.(*model.GraphQueryError)
+	if !ok {
+		return ""
+	}
+	return graphErr.Code
+}
+
+func impactAppWorkspace(t *testing.T) (string, string) {
+	t.Helper()
+	ensureWritableTestHome(t)
+	root := t.TempDir()
+	alias := "graph-impact-" + filepath.Base(root)
+	db, err := store.Open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	bundle := impactTestBundle(t)
+	if err := store.StageGraphGeneration(context.Background(), db, &bundle); err != nil {
+		_ = db.Close()
+		t.Fatal(err)
+	}
+	if err := store.ActivateGraphGeneration(context.Background(), db, bundle.Generation.GenerationID, nil); err != nil {
+		_ = db.Close()
+		t.Fatal(err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := workspace.RegisterWorkspace(alias, model.WorkspaceRegistration{Name: alias, Root: root, Kind: model.WorkspaceKindSingle}); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = workspace.RemoveWorkspace(alias) })
+	return root, alias
 }
 
 func TestGraphImpactTransitiveStopsAtNonTransitiveRelations(t *testing.T) {
