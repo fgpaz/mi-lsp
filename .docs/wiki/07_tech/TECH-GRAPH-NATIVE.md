@@ -249,7 +249,8 @@ rollback:
 doc_id: TECH-GRAPH-NATIVE
 block_id: TECH-GRAPH-NATIVE.slices
 kind: implementation-plan
-source_of_truth: .docs/raw/plans/2026-07-18-milsp-graph-native-roadmap.md
+source_of_truth: this
+plan_anchor: RF-GPH-011
 verify:
   - mi-lsp nav wiki validate-source --workspace mi-lsp --format toon
 evidence:
@@ -257,6 +258,22 @@ evidence:
   - .docs/wiki/06_pruebas/TP-GPH.md
 order: [G1-identity-records, G2-Roslyn-Go-adapters, G3-staging-validation, G4-SQLite-publish-recovery, G5-bounded-query, G6-explain-impact-wiki, G7-MILX-host, G8-CLI-no-MCP, G9-victory, G10-closure]
 join_rule: next-slice-opens-only-after-current-TP-and-regression-gates-pass
+planned_paths:
+  status: slice-targets
+  by_slice:
+    G1-identity-records: [internal/model/graph.go, internal/model/graph_observation.go, internal/store/schema.go]
+    G2-Roslyn-Go-adapters: [internal/indexer/graph_pipeline.go, internal/indexer/extractor_go.go, internal/service/graph_observer.go]
+    G3-staging-validation: [internal/indexer/graph_staging.go, internal/model/graph.go]
+    G4-SQLite-publish-recovery: [internal/store/schema.go, internal/store/graph.go, internal/store/graph_recovery.go, internal/indexer/graph_staging.go]
+    G5-bounded-query: [internal/store/graph_query.go, internal/service/graph_query.go]
+    G6-explain-impact-wiki: [internal/store/graph_impact.go, internal/service/graph_impact.go, internal/service/wiki_code_context.go]
+    G7-MILX-host: [internal/milx/host.go, internal/milx/pack.go]
+    G8-CLI-no-MCP: [internal/service/graph_query.go, internal/service/graph_impact.go]
+    G9-victory: []
+    G10-closure: []
+implementation_paths:
+  status: current-tree-verified
+  files: [internal/model/graph.go, internal/model/graph_observation.go, internal/indexer/graph_pipeline.go, internal/indexer/extractor_go.go, internal/indexer/graph_staging.go, internal/store/schema.go, internal/store/graph.go, internal/store/graph_recovery.go, internal/store/graph_query.go, internal/store/graph_impact.go, internal/service/graph_observer.go, internal/service/graph_query.go, internal/service/graph_impact.go, internal/service/wiki_code_context.go, internal/milx/host.go, internal/milx/pack.go]
 ```
 
 ## Sync y documentos relacionados

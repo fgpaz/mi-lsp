@@ -5,9 +5,10 @@ layer: DB
 family: EDGE-GRAPH
 status: accepted-design
 implements:
-  - internal/store/graph_schema.go
-  - internal/store/graph_persistence.go
-  - internal/store/index_publish.go
+  - internal/store/schema.go
+  - internal/store/graph.go
+  - internal/store/graph_recovery.go
+  - internal/indexer/graph_staging.go
 tests:
   - internal/store
 ---
