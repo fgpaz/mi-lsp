@@ -99,6 +99,14 @@ components:
     planned_paths: [internal/indexer/graph_adapters.go]
     inputs: [Roslyn, Go-parser-types-gopls, tsserver-gated, Pyright-gated]
     output: GraphObservationBatch-only
+  go_extractor:
+    owner: Semantic-backends
+    path: internal/indexer/extractor_go.go
+    type_check: shared_importer_and_package_cache_during_typeCheckAll
+    identity_rule: imported_packages_share_types_identity
+    local_unrepresented: omission_unsupported_symbol_kind
+    partial_rule: never_promote_partial_to_complete
+    staging_gate: ReadyForStaging_remains_strict
   generation_builder_validator:
     owner: Graph-Kernel
     planned_paths: [internal/indexer/graph_staging.go]
@@ -146,6 +154,7 @@ sequence:
   - compute-source-and-config-fingerprints
   - collect-GraphObservationBatch-per-owner
   - derive-NodeKeys-edge-keys-evidence-and-unresolved
+  - type-check-Go-packages-with-shared-importer-and-package-cache
   - build-staged-generation-by-copy-forward-plus-owner-replacement
   - validate-collisions-endpoints-digests-cross-RIDs-and-coverage
   - persist-and-seal-staging-in-SQLite
@@ -270,6 +279,9 @@ stable-order: [csharp-roslyn, go-parser-types-gopls, typescript-tsserver, python
 rules:
   csharp: compiler-backed-relations-are-primary
   go: AST-is-extracted-and-types-or-gopls-required-for-semantic-promotion
+  go_type_check: shared-importer-and-cache-preserve-imported-package-identity
+  go_local_unrepresented: omission-unsupported-symbol-kind; no-semantic-edge
+  go_partial: partial-remains-partial-and-fails-ReadyForStaging
   typescript: gated-until-lifecycle-and-edge-oracles-pass
   python: lexical-catalog-never-becomes-semantic-edge
   text: candidates-doc-mentions-or-unresolved-only
@@ -291,6 +303,8 @@ failures:
   identity-or-hash-collision: invalidate-generation
   dangling-or-stale-edge: unresolved-and-reject-exact-claim
   adapter-timeout-or-crash: discard-partial-batch
+  go-unsupported-local-declaration: omission-without-false-semantic-edge
+  go-partial-observation: preserve-partial-and-keep-ReadyForStaging-strict
   incremental-fanout-unknown: full-rebuild-required
   SQLite-write-or-pointer-conflict: rollback-transaction
   process-crash-during-publish: recovery-keeps-prior-valid-generation

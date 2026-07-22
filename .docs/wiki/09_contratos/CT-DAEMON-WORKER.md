@@ -101,6 +101,33 @@ Pyright y gopls LSP bridge:
 - `get_context` (via `textDocument/hover`)
 - `find_refs` (via `textDocument/references`)
 
+## Ciclo CLI-daemon y deadlines
+
+```toon
+doc_id: CT-DAEMON-WORKER
+block_id: CT-DAEMON-WORKER.request-lifecycle
+kind: request-lifecycle-contract
+source_of_truth: this
+evidence:
+  - .docs/wiki/09_contratos/CT-DAEMON-WORKER.md
+  - internal/daemon/client.go
+routing:
+  no_daemon:
+    flag: --no-daemon
+    behavior: no_connect_and_no_start
+  no_auto_daemon:
+    flag: --no-auto-daemon
+    behavior: skip_auto_start_only
+    existing_daemon: connect_allowed
+  execute:
+    method: ExecuteWithDialTimeout
+    short_timeout_scope: dial_only
+    after_dial: original_context
+    operations: [write, read, response_processing, cancellation]
+```
+
+`--no-daemon` fuerza la ejecucion local y no conecta ni inicia el daemon. `--no-auto-daemon` solo omite el auto-start; si la operacion usa daemon, aun puede conectar a una instancia existente. `ExecuteWithDialTimeout` deriva un contexto breve para establecer la conexion y lo libera al terminar el dial; write, read, procesamiento de respuesta y cancelacion vuelven a obedecer el contexto original de la request.
+
 ## Bootstrap y seleccion de runtime
 
 - Para Roslyn, el caller debe resolver el `tool_root` desde el ejecutable/distribucion actual o, en desarrollo, desde el repo `mi-lsp`.

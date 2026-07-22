@@ -1000,6 +1000,15 @@ func (b *goGraphBuilder) typeCheckAll(ctx context.Context) {
 	}
 	sort.Strings(paths)
 	checked, checking := map[string]bool{}, map[string]bool{}
+	lookup := func(requested string) (io.ReadCloser, error) {
+		exportPath := b.exports[requested]
+		if exportPath == "" {
+			return nil, fmt.Errorf("export metadata unavailable for %s", requested)
+		}
+		return os.Open(exportPath)
+	}
+	exportImporter := importer.ForCompiler(token.NewFileSet(), "gc", lookup)
+	fallbackImporter := importer.Default()
 	var check func(string)
 	check = func(path string) {
 		if checked[path] || checking[path] {
@@ -1030,7 +1039,7 @@ func (b *goGraphBuilder) typeCheckAll(ctx context.Context) {
 		}
 		info := &types.Info{Defs: map[*ast.Ident]types.Object{}, Uses: map[*ast.Ident]types.Object{}, Selections: map[*ast.SelectorExpr]*types.Selection{}, Types: map[ast.Expr]types.TypeAndValue{}}
 		typeError := false
-		cfg := &types.Config{Importer: goGraphImporter{local: b.local, exports: b.exports, fallback: importer.Default(), cache: b.importCache}, Error: func(err error) {
+		cfg := &types.Config{Importer: goGraphImporter{local: b.local, exports: b.exports, export: exportImporter, fallback: fallbackImporter, cache: b.importCache}, Error: func(err error) {
 			typeError = true
 			b.partial = true
 			if e, ok := err.(types.Error); ok {
@@ -1069,6 +1078,7 @@ func (b *goGraphBuilder) typeCheckAll(ctx context.Context) {
 type goGraphImporter struct {
 	local    map[string]*goGraphPackage
 	exports  map[string]string
+	export   types.Importer
 	fallback types.Importer
 	cache    map[string]*types.Package
 }
@@ -1084,17 +1094,8 @@ func (i goGraphImporter) Import(path string) (*types.Package, error) {
 	}
 	var pkg *types.Package
 	var err error
-	if exportPath := i.exports[path]; exportPath != "" {
-		lookup := func(requested string) (io.ReadCloser, error) {
-			requestedExportPath := i.exports[requested]
-			if requestedExportPath == "" {
-				return nil, fmt.Errorf("export metadata unavailable for %s", requested)
-			}
-			return os.Open(requestedExportPath)
-		}
-		if imp := importer.ForCompiler(token.NewFileSet(), "gc", lookup); imp != nil {
-			pkg, err = imp.Import(path)
-		}
+	if i.export != nil && i.exports[path] != "" {
+		pkg, err = i.export.Import(path)
 	}
 	if pkg == nil && err == nil {
 		pkg, err = i.fallback.Import(path)
@@ -1117,6 +1118,83 @@ func (b *goGraphBuilder) targetSourceDigest(p *goGraphPackage, pos token.Pos) *m
 		}
 	}
 	return nil
+}
+
+func goGraphPackageScopeObject(p *goGraphPackage, obj types.Object) bool {
+	return p != nil && p.pkg != nil && obj != nil && obj.Parent() == p.pkg.Scope()
+}
+
+func goGraphTopLevelFieldAt(p *goGraphPackage, pos token.Pos) bool {
+	if p == nil {
+		return false
+	}
+	for _, file := range p.files {
+		for _, decl := range file.file.Decls {
+			gen, ok := decl.(*ast.GenDecl)
+			if !ok || gen.Tok != token.TYPE {
+				continue
+			}
+			for _, spec := range gen.Specs {
+				typeSpec, ok := spec.(*ast.TypeSpec)
+				if !ok {
+					continue
+				}
+				var fields *ast.FieldList
+				switch typ := typeSpec.Type.(type) {
+				case *ast.StructType:
+					fields = typ.Fields
+				case *ast.InterfaceType:
+					fields = typ.Methods
+				}
+				if fields == nil {
+					continue
+				}
+				for _, field := range fields.List {
+					if len(field.Names) > 0 {
+						for _, name := range field.Names {
+							if name.Pos() == pos {
+								return true
+							}
+						}
+					} else if field.Type.Pos() <= pos && pos <= field.Type.End() {
+						return true
+					}
+				}
+			}
+		}
+	}
+	return false
+}
+
+func goGraphTopLevelFuncAt(p *goGraphPackage, pos token.Pos) bool {
+	if p == nil {
+		return false
+	}
+	for _, file := range p.files {
+		for _, decl := range file.file.Decls {
+			fn, ok := decl.(*ast.FuncDecl)
+			if ok && fn.Name != nil && fn.Name.Pos() == pos {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func goGraphLocalTargetEligible(p *goGraphPackage, obj types.Object) bool {
+	switch x := obj.(type) {
+	case *types.Func:
+		return goGraphTopLevelFuncAt(p, obj.Pos())
+	case *types.TypeName, *types.Const:
+		return goGraphPackageScopeObject(p, obj)
+	case *types.Var:
+		if x.IsField() {
+			return goGraphTopLevelFieldAt(p, obj.Pos())
+		}
+		return goGraphPackageScopeObject(p, obj)
+	default:
+		return false
+	}
 }
 
 func (b *goGraphBuilder) extractTypedRelations(ctx context.Context) {
@@ -1174,14 +1252,7 @@ func (b *goGraphBuilder) extractTypedRelations(ctx context.Context) {
 						if ref := targetPkg.posRefs[obj.Pos()]; ref != "" {
 							return ref
 						}
-						eligible := false
-						switch x := obj.(type) {
-						case *types.Func, *types.Const, *types.TypeName:
-							eligible = true
-						case *types.Var:
-							eligible = x.IsField() || (targetPkg.pkg != nil && x.Parent() == targetPkg.pkg.Scope())
-						}
-						if eligible {
+						if goGraphLocalTargetEligible(targetPkg, obj) {
 							b.partial = true
 							b.addUnresolved(f.rel, subject, capability, "local_target_missing_ref", b.targetSourceDigest(targetPkg, obj.Pos()))
 						} else {

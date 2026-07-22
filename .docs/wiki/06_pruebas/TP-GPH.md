@@ -107,7 +107,10 @@ evidence:
 | Caso | Tipo | Descripcion / oraculo |
 |---|---|---|
 | TC-GPH-015 | positivo | Roslyn emite declarations/contains/references/calls/implements/extends exactos con provenance |
-| TC-GPH-016 | positivo | Go emite declarations/contains/imports y solo promueve calls/references cuando types/gopls resuelve |
+| TC-GPH-016 | positivo | Go emite declarations/contains/imports y solo promueve calls/references cuando types/gopls resuelve; `typeCheckAll` comparte importer/cache para conservar identidad de paquetes importados |
+| TC-GPH-016A | positivo | `TestObserveGoGraphSharesExportImporterIdentity`: imports de libreria estandar mantienen identidad coherente y el batch limpio permanece completo y stageable |
+| TC-GPH-016B | negativo | `TestObserveGoGraphLocalTargetsAreUnsupported`: declaraciones locales no representadas se registran como omission `unsupported_symbol_kind`; no crean unresolved ni alteran completeness/ReadyForStaging |
+| TC-GPH-016C | negativo | `TestObserveGoGraphTopLevelEmbeddedFieldRemainsUnresolved`: un endpoint local elegible pero ausente conserva `partial` y el rechazo de `ReadyForStaging`; no se promueve ni se relaja el gate |
 | TC-GPH-017 | negativo | tsserver ausente/experimental produce omission; texto no crea edge semantica |
 | TC-GPH-018 | negativo | Pyright ausente/experimental y extractor lexical producen candidatos/unresolved, no compiler facts |
 | TC-GPH-019 | negativo | ambiguous, stale o endpoint missing produce GraphUnresolved; validacion confirma cero dangling edges |

@@ -89,6 +89,115 @@ func Use() { b := Box[int]{Value: 1}; _ = b.Ptr(); _ = b.Val(); sub.G(); fmt.Pri
 	}
 }
 
+func TestObserveGoGraphSharesExportImporterIdentity(t *testing.T) {
+	root := t.TempDir()
+	writeGoTestFile(t, root, "go.mod", "module example.com/sharedimporter\n\ngo 1.24.4\n")
+	writeGoTestFile(t, root, "main.go", `package sharedimporter
+
+import (
+	"context"
+	"time"
+)
+
+func F() (context.Context, time.Duration) {
+	return context.Background(), time.Second
+}
+`)
+	batch, err := ObserveGoGraph(context.Background(), GoGraphObservationRequest{
+		Root:               root,
+		RepositoryIdentity: "https://example.com/sharedimporter",
+		ProjectOrModule:    "go.mod",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if batch.Completeness != model.GraphCompletenessComplete {
+		t.Fatalf("completeness = %q, omissions = %#v, unresolved = %#v", batch.Completeness, batch.Omissions, batch.Unresolved)
+	}
+	if err := batch.ReadyForStaging(); err != nil {
+		t.Fatalf("shared standard-library imports made graph unstageable: %v", err)
+	}
+}
+
+func TestObserveGoGraphLocalTargetsAreUnsupported(t *testing.T) {
+	root := t.TempDir()
+	writeGoTestFile(t, root, "go.mod", "module example.com/localtargets\n\ngo 1.24.4\n")
+	writeGoTestFile(t, root, "main.go", `package localtargets
+
+type Top struct{ Value int }
+
+const TopConst = 2
+var TopVar = 3
+
+func Use() int {
+	type Local struct{ Value int }
+	var local Local
+	const localConst = 4
+	return local.Value + localConst + TopConst + TopVar
+}
+`)
+	batch, err := ObserveGoGraph(context.Background(), GoGraphObservationRequest{
+		Root:               root,
+		RepositoryIdentity: "https://example.com/localtargets",
+		ProjectOrModule:    "go.mod",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if batch.Completeness != model.GraphCompletenessComplete {
+		t.Fatalf("local declarations made graph partial: omissions=%#v unresolved=%#v", batch.Omissions, batch.Unresolved)
+	}
+	if err := batch.ReadyForStaging(); err != nil {
+		t.Fatal(err)
+	}
+	for _, unresolved := range batch.Unresolved {
+		if unresolved.ReasonCode == "local_target_missing_ref" {
+			t.Fatalf("local declaration was treated as an eligible missing target: %#v", unresolved)
+		}
+	}
+	if !hasOmission(batch, "references", "unsupported_symbol_kind") {
+		t.Fatalf("expected unsupported local target omission: %#v", batch.Omissions)
+	}
+}
+
+func TestObserveGoGraphTopLevelEmbeddedFieldRemainsUnresolved(t *testing.T) {
+	root := t.TempDir()
+	writeGoTestFile(t, root, "go.mod", "module example.com/topleveltarget\n\ngo 1.24.4\n")
+	writeGoTestFile(t, root, "main.go", `package topleveltarget
+
+type Embedded struct{ Value int }
+type Top struct{ Embedded }
+
+func Use() int {
+	var top Top
+	return top.Embedded.Value
+}
+`)
+	batch, err := ObserveGoGraph(context.Background(), GoGraphObservationRequest{
+		Root:               root,
+		RepositoryIdentity: "https://example.com/topleveltarget",
+		ProjectOrModule:    "go.mod",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if batch.Completeness != model.GraphCompletenessPartial || batch.ReadyForStaging() == nil {
+		t.Fatalf("missing top-level field endpoint was not preserved: completeness=%q omissions=%#v unresolved=%#v", batch.Completeness, batch.Omissions, batch.Unresolved)
+	}
+	if !hasOmission(batch, "declarations", "embedded_field_unsupported") || !hasUnresolved(batch, "references", "local_target_missing_ref") {
+		t.Fatalf("missing top-level field diagnostics: omissions=%#v unresolved=%#v", batch.Omissions, batch.Unresolved)
+	}
+}
+
+func hasUnresolved(batch model.GraphObservationBatch, capability, reason string) bool {
+	for _, unresolved := range batch.Unresolved {
+		if unresolved.Capability == capability && unresolved.ReasonCode == reason {
+			return true
+		}
+	}
+	return false
+}
+
 func TestObserveGoGraphDeterministicAndCancellation(t *testing.T) {
 	root := t.TempDir()
 	writeGoTestFile(t, root, "go.mod", "module example.com/deterministic\n\ngo 1.24.4\n")

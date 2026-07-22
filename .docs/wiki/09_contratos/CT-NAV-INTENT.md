@@ -46,6 +46,33 @@ mi-lsp nav intent <question> [--workspace <alias>] [--repo <name>] [--top N] [--
 
 El contrato no mezcla docs y simbolos en la misma lista.
 
+## Ejecucion y deadlines
+
+```toon
+doc_id: CT-NAV-INTENT
+block_id: CT-NAV-INTENT.execution-routing
+kind: runtime-routing-contract
+source_of_truth: this
+evidence:
+  - .docs/wiki/09_contratos/CT-NAV-INTENT.md
+  - .docs/wiki/09_contratos/CT-GRAPH-CLI.md
+routing:
+  current_route: direct
+  no_daemon:
+    semantics: force_direct_local_execution
+    connects_to_daemon: false
+    starts_daemon: false
+  no_auto_daemon:
+    semantics: suppress_auto_start_only
+    daemon_aware_operations_may_connect_existing: true
+  dial_timeout:
+    helper: ExecuteWithDialTimeout
+    scope: dial_only
+    post_dial_context: original_request_context
+```
+
+`nav intent` permanece en el lane directo definido por la politica actual. El flag global `--no-daemon` conserva la garantia fuerte de no conectar ni iniciar daemon; `--no-auto-daemon` no convierte por si solo una operacion daemon-aware en direct mode, solo impide su auto-start. Cuando existe un intento daemon-aware, el timeout corto se limita al dial y no acorta write, read ni procesamiento bajo el contexto original.
+
 ## Payload logico
 
 - `question`: string requerido

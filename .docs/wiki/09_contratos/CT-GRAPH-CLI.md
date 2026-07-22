@@ -187,6 +187,40 @@ invalid_budget: reject-before-store-read
 
 `--format compact|json|text|toon|yaml`, `--compress`, workspace/repo selectors y flags globales conservan su contrato existente. No se agrega modo MCP ni HTTP.
 
+## Seleccion de daemon y ciclo de request
+
+```toon
+doc_id: CT-GRAPH-CLI
+block_id: CT-GRAPH-CLI.execution-routing
+kind: runtime-routing-contract
+source_of_truth: this
+evidence:
+  - .docs/wiki/09_contratos/CT-GRAPH-CLI.md
+  - .docs/wiki/09_contratos/CT-DAEMON-WORKER.md
+verify:
+  - go test ./internal/cli/... ./internal/daemon/...
+routing:
+  no_daemon:
+    flag: --no-daemon
+    semantics: force_direct_local_execution
+    connects_to_daemon: false
+    starts_daemon: false
+  no_auto_daemon:
+    flag: --no-auto-daemon
+    semantics: suppress_auto_start_only
+    existing_daemon_connection: allowed
+    unavailable_daemon: direct_fallback
+  daemon_attempt_timeout:
+    helper: ExecuteWithDialTimeout
+    scope: dial_only
+    write_read_processing_context: original_request_context
+  cancellation:
+    connection_close_hook: original_request_context
+    write_read_processing: obey_original_request_context
+```
+
+`--no-daemon` es una orden de ejecucion directa: no intenta conectar al daemon y tampoco lo inicia. `--no-auto-daemon` solo evita el auto-start; una operacion daemon-aware aun puede conectar a un daemon ya existente y, si no esta disponible, degradar a direct mode. El timeout corto de intento se aplica unicamente al dial mediante `ExecuteWithDialTimeout`; despues de conectar, write, read, procesamiento y cancelacion siguen gobernados por el contexto original de la request.
+
 ## Envelope v1
 
 ```toon
@@ -299,6 +333,9 @@ evidence:
   - .docs/wiki/06_pruebas/TP-GPH.md
 rules:
   direct-daemon: same-canonical-items-order-errors-and-omissions
+  no-daemon: direct-only-without-daemon-connect-or-start
+  no-auto-daemon: suppress-start-but-existing-daemon-connect-remains-allowed
+  daemon-dial-timeout: dial-only; original-request-context-after-connect
   daemon-unavailable: direct-mode
   graph-not-yet-built: existing-command-may-use-legacy-with-explicit-backend-warning
   graph-stale-or-invalid: no-silent-legacy-equivalence

@@ -100,6 +100,9 @@ evidence:
 | TC-QRY-034 | negativo | RF-QRY-010 | `nav ask` degrada a fallback generico o textual cuando falta corpus fuerte |
 | TC-QRY-034A | positivo | RF-QRY-010 | `nav ask` fallback textual emite `coach.trigger=text_fallback` con `confidence=low` |
 | TC-QRY-035 | positivo | RF-QRY-002 | `nav find` responde por catalogo aunque el daemon este caido o detenido |
+| TC-QRY-035A | positivo | RF-QRY-002 | `TestNoDaemonFlagIsPersistent` y `TestNoDaemonForcesRelatedToLocalAppWithoutTouchingDaemon`: `--no-daemon` fuerza direct mode y no conecta ni inicia daemon |
+| TC-QRY-035B | positivo | RF-QRY-002 | `TestDaemonDialTimeoutFallsBackWithOriginalContext`: el timeout corto acota el intento de dial, pero el fallback local conserva el contexto original de la operacion |
+| TC-QRY-035C | positivo | RF-QRY-002 | `TestClientExecuteWithDialTimeoutKeepsOriginalContextAfterDial` y `TestClientExecuteCancellationClosesBlockedRead`: despues del dial, write/read/procesamiento obedecen el contexto original y cancelarlo cierra la lectura pendiente |
 | TC-QRY-036 | positivo | RF-QRY-002 | `nav search`, `nav.symbols`, `nav.outline`, `nav.overview` y `nav.multi-read` no auto-inician daemon y mantienen salida estable |
 | TC-QRY-037 | positivo | RF-QRY-002 | `nav find` y `nav search` aceptan `--repo` en workspaces `container` y acotan resultados sin depender del daemon |
 | TC-QRY-038 | negativo | RF-QRY-002 | `nav find/search/intent --repo` desconocido devuelve `backend=router`, candidatos y `next_hint` |

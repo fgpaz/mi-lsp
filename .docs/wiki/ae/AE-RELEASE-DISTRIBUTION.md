@@ -57,6 +57,7 @@ applies_when:
   - search routing, safe-degrade planner, telemetry export, attribution, or version provenance fields change
   - an agent claims final readiness after modifying binary-producing code
   - graph identity/schema, generation publication/recovery, adapters, query envelopes, federation, MILX host or pack behavior changes
+  - global daemon-routing flags (`--no-daemon`, `--no-auto-daemon`) or daemon request deadline semantics change
 required_targets:
   local_current_machine:
     windows_arm64: C:/Users/fgpaz/bin/mi-lsp.exe
@@ -118,6 +119,7 @@ stop_if:
   - local executable remains locked after daemon stop and copy retries
   - telemetry/planner/provenance changes lack installed-path `version`, `worker status`, and `admin export --summary` evidence or explicit waiver
   - graph-native release lacks TP-GPH, migration rollback, cross-RID, no-MCP/no-network and both-comparator Victory evidence
+  - direct/daemon routing flags or dial-only timeout behavior lack focused CLI/daemon verification
   - any target RID produces different NodeKey/cross-RID/determinism digest for the same fixture
   - an extension or pack can write the primary graph/wiki, access network/MCP/secrets, or survive cleanup
 verify:
