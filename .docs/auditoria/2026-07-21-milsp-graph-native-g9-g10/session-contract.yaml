@@ -6,12 +6,12 @@ base_ref: ae/graph-native-roadmap-20260718
 base_sha: abca4dad443163f920d5f3a7c1480db4f7bf723c
 current_head:
   ref: HEAD
-  sha: 2e89564b6a3033101e9cfbb7a7610acaa2acfb54
+  sha: ec34074455f51af3289d14f4c4c408f002283766
 current_working_base:
   ref: HEAD
-  sha: 2e89564b6a3033101e9cfbb7a7610acaa2acfb54
-  pending_changes: true
-  pending_changes_scope: pre-existing_documentation_changes_plus_this_audit_packet
+  sha: ec34074455f51af3289d14f4c4c408f002283766
+  pending_changes: false
+  pending_changes_scope: none_before_terminal_trace_audit_close_updates
   history_claim: base_ref and base_sha remain the initial baseline; no history rewrite is claimed
 product_benchmark_pin:
   commit: 11ac8af870d4110b6b4333199b8a8343c52ce784
@@ -52,6 +52,9 @@ orchestration:
   measurement_concurrency_observed: 1
 allowed_paths:
   - docs/benchmarks/VICTORY_LAB.md
+  - scripts/bench/victory_lab/report_v2.py
+  - scripts/bench/victory_lab/test_report_v2.py
+  - scripts/bench/victory_lab/test_adversarial_v2.py
   - .docs/auditoria/2026-07-21-milsp-graph-native-g9-g10/**
 forbidden_paths:
   - .docs/wiki/00_gobierno_documental.md
@@ -59,7 +62,7 @@ forbidden_paths:
   - .mi-lsp/**
   - .env*
   - comparator source trees
-  - product source and test paths
+  - product source and product test paths outside explicit repair packets
   - user/global skills
   - secrets
   - ae-close-verdict.md before ae-close
@@ -103,8 +106,10 @@ execution_readiness:
   unresolved_blockers:
     - G9 independent review remains BLOCKED by repeated observer failures in v3 and v4
     - formal global superiority is not established
-    - ae-close verdict is pending
+    - Wiki Source navigation remains BLOCKED because index mutation is forbidden
+    - target repository preflight context is not durable in the allowed packet
+    - ae-close verdict is BLOCKED
   execution_verdict: BLOCKED
 promotion:
-  promoted_verdict: pending_ae_close
-  ae_close_verdict_file: absent_by_instruction
+  promoted_verdict: BLOCKED
+  ae_close_verdict_file: ae-close-verdict.md

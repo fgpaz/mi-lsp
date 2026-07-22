@@ -32,7 +32,7 @@ harness_contract:
     - no_unscoped_PASS
   stop_if:
     - missing_independent_g9_review=true
-    - promoted_verdict != pending_ae_close
+    - promoted_verdict != BLOCKED
   evidence:
     - review-index.yaml
     - benchmark-summary.yaml
@@ -62,7 +62,7 @@ reviews:
     facts:
       - go_test_count_1_all
       - go_vet
-      - python_161
+      - python_163
       - dotnet_release_0_of_0
       - diff_check
       - go_test_race_not_run_host_unsupported
@@ -86,6 +86,17 @@ reviews:
       - worker_timeout_not_pass
       - rollback_no_mutation
       - evidence_hashes_not_release_promotion
-repository_evidence_head: 2e89564b6a3033101e9cfbb7a7610acaa2acfb54
+  - id: g10-terminal-audit-rerun
+    scope: traceability, false PASS, and source navigation
+    status: BLOCKED
+    verdict: BLOCKED
+    evidence_ref: ae-close-verdict.md#audit
+    facts:
+      - nested_runtime_proof_false_PASS_repaired_in_6513781
+      - python_163_PASS
+      - wiki_source_block_shape_PASS
+      - wiki_source_navigation_BLOCKED_without_forbidden_index_mutation
+      - no_remote_or_cleanup_mutation
+repository_evidence_head: ec34074455f51af3289d14f4c4c408f002283766
 product_benchmark_pin: 11ac8af870d4110b6b4333199b8a8343c52ce784
-promoted_verdict: pending_ae_close
+promoted_verdict: BLOCKED

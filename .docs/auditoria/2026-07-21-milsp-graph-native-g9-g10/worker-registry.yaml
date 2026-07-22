@@ -107,4 +107,4 @@ prohibited_claims:
   - no model claim beyond what is directly evidenced
   - no benchmark or test PASS inferred from timeout, silence, or empty output
   - no product pin claim made from repository evidence HEAD
-promoted_verdict: pending_ae_close
+promoted_verdict: BLOCKED

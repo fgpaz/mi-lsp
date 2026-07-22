@@ -77,4 +77,4 @@ non_claims:
   - no worker model or product pin is invented
   - no PASS verdict is emitted for an unverified policy
   - timeout, silence, and DONE are not completion evidence
-promoted_verdict: pending_ae_close
+promoted_verdict: BLOCKED

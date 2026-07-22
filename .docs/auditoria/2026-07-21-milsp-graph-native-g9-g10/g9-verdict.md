@@ -30,7 +30,7 @@ harness_contract:
     - comparator_source
   verify:
     - verdict_matches_summary
-    - promoted_verdict_is_pending_ae_close
+    - promoted_verdict_is_BLOCKED_after_ae_close
     - no_global_superiority_claim
   stop_if:
     - status_is_changed_from_BLOCKED
@@ -41,8 +41,8 @@ harness_contract:
 harness_verdict: BLOCKED
 wiki_source_verdict: BLOCKED
 status: BLOCKED
-promoted_verdict: pending_ae_close
-repository_evidence_head: 2e89564b6a3033101e9cfbb7a7610acaa2acfb54
+promoted_verdict: BLOCKED
+repository_evidence_head: ec34074455f51af3289d14f4c4c408f002283766
 product_benchmark_pin: 11ac8af870d4110b6b4333199b8a8343c52ce784
 sample_shape: 240=8x30
 outcomes: PASS195/NC42/BLOCKED3/FAIL0
@@ -71,6 +71,6 @@ El hotpath sí pasa el límite y la calidad corriente queda documentada como 30/
 
 La comparación de tokens comunes tampoco autoriza una conclusión competitiva. Current y Graphify producen 65 unidades directas y 89 transitivas; la razón 1.0 no alcanza el objetivo 0.7 y no puede hacerse alcanzable sin introducir asimetría. Por eso la comparación formal queda en `NOT_COMPARABLE`.
 
-La revisión independiente G9 permanece bloqueada porque v3 y v4 repiten fallos del observador. Otra corrida igual sería un retry storm, así que no se reintenta ni se cambia el veredicto. El paquete de cierre queda listo para `ae-close`, pero `ae-close-verdict.md` no se crea y `promoted_verdict` permanece `pending_ae_close`.
+La revisión independiente G9 permanece bloqueada porque v3 y v4 repiten fallos del observador. Otra corrida igual sería un retry storm, así que no se reintenta ni se cambia el veredicto. `ae-close` se ejecutó y emitió `ae-close-verdict.md` con veredicto `BLOCKED`; `promoted_verdict` queda `BLOCKED` y la disposición local es `HOLD`.
 
 Referencias: [[benchmark-summary.yaml]], [[review-index.yaml]], [[traceability-closure.yaml]], [[closure-packet.yaml]], [[VICTORY_LAB_V2]].

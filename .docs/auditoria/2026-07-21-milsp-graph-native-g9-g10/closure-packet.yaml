@@ -16,7 +16,7 @@ harness_contract:
     - worker-registry.yaml
     - execution-limits.yaml
   exports:
-    - ae-close-verdict.md (planned, absent)
+    - ae-close-verdict.md
   agent_must_read:
     - benchmark-summary.yaml
     - g9-verdict.md
@@ -24,7 +24,6 @@ harness_contract:
   agent_may_edit:
     - closure-packet.yaml
   agent_must_not_edit:
-    - ae-close-verdict.md
     - product_source
     - comparator_source
     - release_artifacts
@@ -33,7 +32,7 @@ harness_contract:
     - hash_index_matches_durable_artifacts
     - status_and_promotion_gates_consistent
   stop_if:
-    - ae_close_verdict_created_before_ae_close=true
+    - ae_close_verdict_missing_after_ae_close=true
     - release_action_requested=true
     - blocked_verdict_changed=true
   evidence:
@@ -43,8 +42,8 @@ harness_contract:
 harness_verdict: BLOCKED
 wiki_source_verdict: BLOCKED
 status: BLOCKED
-promoted_verdict: pending_ae_close
-repository_evidence_head: 2e89564b6a3033101e9cfbb7a7610acaa2acfb54
+promoted_verdict: BLOCKED
+repository_evidence_head: ec34074455f51af3289d14f4c4c408f002283766
 product_benchmark_pin: 11ac8af870d4110b6b4333199b8a8343c52ce784
 evidence_bundle:
   alias: '<external-evidence-root>/victory-g9-authoritative-v4-20260721'
@@ -57,6 +56,8 @@ acceptance:
   outcome_counts: PASS195/NC42/BLOCKED3/FAIL0
   independent_g9_review: BLOCKED
   g10_authoritative_tests: PASS
+  g10_python_tests: PASS_163
+  nested_runtime_proof_terminal_gate: PASS_COMMIT_6513781
   g10_go_test_race: NOT_RUN_HOST_UNSUPPORTED
   worker_status: TIMEOUT_NOT_PASS
   execution_measurement_concurrency: 1
@@ -81,8 +82,9 @@ blockers:
   - incomplete_comparator_groups_and_not_comparable_scopes
   - benchmark_runtime_blocked
   - worker_timeout_not_pass
-  - ae_close_verdict_pending
+  - wiki_source_navigation_index_refresh_forbidden_by_session_scope
+  - target_repository_preflight_context_not_durable
 required_next:
-  - run_ae_close_read_only_closure
   - preserve_status_BLOCKED
-  - create_ae-close-verdict.md_only_during_ae_close
+  - hold_until_fresh_target_context_and_materially_different_observer_or_host
+  - do_not_run_remote_or_cleanup_mutations
