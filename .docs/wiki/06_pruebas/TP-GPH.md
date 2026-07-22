@@ -2,6 +2,8 @@
 
 ```yaml
 harness_protocol: SDD-HARNESS-v1
+source_protocol: SDD-WIKI-SOURCE-v1
+doc_id: "TP-GPH"
 id: "TP-GPH"
 kind: "support-doc"
 audience: "llm-first"
@@ -72,7 +74,90 @@ evidence:
 - Evidencia durable es sanitizada: no secretos, raw compiler logs ni payloads arbitrarios. Cada fila incluye generation/cross-RID o explica por que no aplica.
 - Gates fail-closed: governance, hash, comparator, baseline, cross-RID, determinismo, no-MCP/no-network, rollback y negative violations.
 
+```toon
+harness_protocol: SDD-HARNESS-v1
+source_protocol: SDD-WIKI-SOURCE-v1
+doc_id: TP-GPH
+block_id: TP-GPH.native-hardening-cases
+kind: test-contract
+audience: llm-first
+source_of_truth: this
+imports:
+  - .docs/wiki/07_tech/TECH-GRAPH-NATIVE.md
+  - .docs/wiki/09_contratos/CT-GRAPH-CLI.md
+  - .docs/wiki/09_contratos/CT-DAEMON-WORKER.md
+evidence:
+  - .docs/wiki/06_pruebas/TP-GPH.md
+  - internal/indexer/graph_staging.go
+  - internal/indexer/graph_staging_test.go
+  - internal/model/graph_observation.go
+  - internal/service/graph_observer.go
+  - worker-dotnet/MiLsp.Worker/RoslynService.cs
+  - worker-dotnet/MiLsp.Worker.ContractTests/Program.cs
+records:
+  - id: TP-GPH-001
+    type: test-suite
+  - id: TP-GPH-002
+    type: test-suite
+  - id: TP-GPH-003
+    type: test-suite
+  - id: TP-GPH-004
+    type: test-suite
+  - id: TP-GPH-005
+    type: test-suite
+  - id: TP-GPH-006
+    type: test-suite
+  - id: TP-GPH-007
+    type: test-suite
+  - id: TP-GPH-008
+    type: test-suite
+  - id: TP-GPH-009
+    type: test-suite
+verify:
+  - go test ./internal/model/... ./internal/indexer/... ./internal/service/... ./internal/daemon/...
+  - dotnet run --project worker-dotnet/MiLsp.Worker.ContractTests/MiLsp.Worker.ContractTests.csproj
+stop_if:
+  - worker_order_is_not_ref=true
+  - worker_batch_sealed_before_core=true
+  - unsupported_symbol_reported_as_unresolved=true
+  - unresolved_ids_not_stable=true
+  - candidate_bounds_or_normalization_wrong=true
+cases:
+  - id: TC-GPH-068
+    type: positivo
+    given: worker Roslyn emits a graph observation
+    when: nodes are serialized
+    then: nodes are ordered by Ref and the batch is canonical but unsealed
+    evidence: worker-dotnet/MiLsp.Worker.ContractTests/Program.cs
+  - id: TC-GPH-069
+    type: positivo
+    given: canonical unsealed worker batch reaches core
+    when: graphObserver accepts it
+    then: core executes ValidateCanonical, SealGraphObservationBatch and ReadyForStaging in that order
+    evidence: internal/service/graph_observer.go; internal/model/graph_observation.go
+  - id: TC-GPH-070
+    type: negativo
+    given: local, lambda, anonymous or synthesized/implicit symbol is not an eligible graph endpoint
+    when: Roslyn cannot represent it
+    then: a typed omission is emitted instead of a false unresolved or semantic edge
+    evidence: worker-dotnet/MiLsp.Worker/RoslynService.cs; worker-dotnet/MiLsp.Worker.ContractTests/Program.cs
+  - id: TC-GPH-071
+    type: negativo
+    given: an eligible endpoint is genuinely missing
+    when: graph assembly materializes unresolved records
+    then: GraphUnresolved is sorted and deduplicated by key before IDs and CrossRID are assigned
+    evidence: internal/indexer/graph_staging.go
+  - id: TC-GPH-072
+    type: negativo
+    given: documentation candidates contain whitespace, backslashes or duplicates
+    when: GraphUnresolved candidates are built
+    then: trim, slash normalization, dedupe and lexical sort run before limits of 64 items and 4096 bytes
+    evidence: internal/indexer/graph_staging.go; internal/indexer/graph_staging_test.go
+```
+
 ## TP-GPH-001 - Identidad, NodeKey y cross-RID
+
+> `wiki_source_table_exception: true`. Las tablas de casos heredadas se conservan como índice humano de cobertura; los bloques `toon` de este documento son la fuente normativa para los contratos LLM-first nuevos y sus gates.
 
 **Cobertura:** RF-GPH-001 y modelo semantico.
 
@@ -201,6 +286,10 @@ mi-lsp nav wiki validate-harness --workspace mi-lsp --format toon
 block_id: tp-gph-t5-group-e
 kind: test-cases
 source_of_truth: this
+evidence:
+  - .docs/wiki/06_pruebas/TP-GPH.md
+  - internal/service/intent_test.go
+  - internal/service/graph_query_test.go
 verify:
   - go test ./internal/service/... ./cmd/mi-lsp/...
   - go run ./cmd/mi-lsp nav explain-change --path internal/service/intent.go --workspace <alias> --format toon

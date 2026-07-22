@@ -47,7 +47,10 @@ func (a *App) graphObserver() indexer.GraphObserver {
 		batch.Backend = "roslyn"
 		batch.WorkspaceIdentity = request.WorkspaceIdentity
 		batch.RepositoryIdentity = request.RepositoryIdentity
-		if err := batch.Validate(); err != nil {
+		if err := batch.ValidateCanonical(); err != nil {
+			return model.GraphObservationBatch{}, fmt.Errorf("invalid graph observation: %w", err)
+		}
+		if err := model.SealGraphObservationBatch(&batch); err != nil {
 			return model.GraphObservationBatch{}, fmt.Errorf("invalid graph observation: %w", err)
 		}
 		if err := batch.ReadyForStaging(); err != nil {

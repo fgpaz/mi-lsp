@@ -812,30 +812,28 @@ type repoSelectorResolution struct {
 
 func resolveRepoSelector(project model.ProjectFile, selector string) repoSelectorResolution {
 	if repo, ok := workspace.FindRepo(project, selector); ok {
+		if !intentSafeRepoName(repo.Name) {
+			return unpublishableRepoResolution()
+		}
 		return repoSelectorResolution{Repo: repo}
 	}
 	candidates := rankRepoCandidates(project, selector)
 	if len(candidates) == 1 && candidates[0].Score >= 100 {
+		if !intentSafeRepoName(candidates[0].Repo.Name) {
+			return unpublishableRepoResolution()
+		}
 		return repoSelectorResolution{
 			Repo:     candidates[0].Repo,
-			Warnings: []string{fmt.Sprintf("repo selector %q resolved automatically to %q", selector, candidates[0].Repo.Name)},
+			Warnings: []string{fmt.Sprintf("repo_selector_resolved; candidate: %s", publicRepoCandidateName(candidates[0].Repo))},
 		}
 	}
 	if len(candidates) > 0 {
 		items := make([]map[string]any, 0, len(candidates))
-		labels := make([]string, 0, len(candidates))
 		for _, candidate := range candidates {
-			items = append(items, map[string]any{
-				"repo":               candidate.Repo.Name,
-				"repo_id":            candidate.Repo.ID,
-				"root":               candidate.Repo.Root,
-				"default_entrypoint": candidate.Repo.DefaultEntrypoint,
-				"match_reason":       candidate.Reason,
-			})
-			labels = append(labels, candidate.Repo.Name)
+			items = append(items, publicRepoCandidateItem(candidate))
 		}
-		warning := fmt.Sprintf("unknown repo selector %q; closest matches: %s", selector, strings.Join(labels, ", "))
-		next := "rerun with --repo " + candidates[0].Repo.Name
+		warning := fmt.Sprintf("repo_selector_invalid; candidates: %s", strings.Join(publicRepoCandidateNames(candidates), ", "))
+		next := "rerun with --repo " + publicRepoCandidateName(candidates[0].Repo)
 		return repoSelectorResolution{
 			Envelope: &model.Envelope{
 				Ok:       false,
@@ -846,9 +844,55 @@ func resolveRepoSelector(project model.ProjectFile, selector string) repoSelecto
 			},
 		}
 	}
-	return repoSelectorResolution{
-		Envelope: ambiguityEnvelope(projectRegistrationHint(project), fmt.Sprintf("unknown repo selector %q", selector), repoCandidates(project.Repos), "--repo <name>"),
+	allCandidates := repoCandidates(project.Repos)
+	if len(allCandidates) > 3 {
+		allCandidates = allCandidates[:3]
 	}
+	return repoSelectorResolution{
+		Envelope: ambiguityEnvelope(projectRegistrationHint(project), "repo_selector_invalid", allCandidates, "--repo <name>"),
+	}
+}
+
+func unpublishableRepoResolution() repoSelectorResolution {
+	next := "rerun with --repo <safe-name>"
+	return repoSelectorResolution{Envelope: &model.Envelope{
+		Ok:       false,
+		Backend:  "router",
+		Items:    []map[string]any{},
+		Warnings: []string{"repo_selector_unpublishable"},
+		NextHint: &next,
+	}}
+}
+
+func publicRepoCandidateName(repo model.WorkspaceRepo) string {
+	if !intentSafeRepoName(repo.Name) {
+		return "__MI_LSP_REPO_CANDIDATE__"
+	}
+	return strings.TrimSpace(repo.Name)
+}
+
+func publicRepoCandidateItem(candidate repoCandidate) map[string]any {
+	if !intentSafeRepoName(candidate.Repo.Name) {
+		return map[string]any{
+			"repo":         "__MI_LSP_REPO_CANDIDATE__",
+			"match_reason": "repo_candidate_unpublishable",
+		}
+	}
+	return map[string]any{
+		"repo":               candidate.Repo.Name,
+		"repo_id":            candidate.Repo.ID,
+		"root":               candidate.Repo.Root,
+		"default_entrypoint": candidate.Repo.DefaultEntrypoint,
+		"match_reason":       candidate.Reason,
+	}
+}
+
+func publicRepoCandidateNames(candidates []repoCandidate) []string {
+	labels := make([]string, 0, minInt(len(candidates), 3))
+	for _, candidate := range candidates {
+		labels = append(labels, publicRepoCandidateName(candidate.Repo))
+	}
+	return labels
 }
 
 type repoCandidate struct {

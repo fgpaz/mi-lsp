@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"strings"
 	"time"
 )
@@ -104,6 +105,39 @@ type EnvelopeError struct {
 	Retryable bool   `json:"retryable,omitempty"`
 }
 
+// StableError is a terminal error whose public text is already a stable code.
+// It deliberately does not retain or expose the underlying diagnostic.
+type StableError struct {
+	Code string
+}
+
+func (e *StableError) Error() string {
+	if e == nil || !ValidStableErrorCode(e.Code) {
+		return "operation_error"
+	}
+	return strings.TrimSpace(e.Code)
+}
+
+func ValidStableErrorCode(code string) bool {
+	code = strings.TrimSpace(code)
+	if code == "" {
+		return false
+	}
+	for _, r := range code {
+		if (r < 'a' || r > 'z') && (r < 'A' || r > 'Z') && (r < '0' || r > '9') && r != '_' {
+			return false
+		}
+	}
+	return true
+}
+
+func NewStableError(code string) error {
+	if !ValidStableErrorCode(code) {
+		code = "operation_error"
+	}
+	return &StableError{Code: strings.TrimSpace(code)}
+}
+
 type EnvelopeOmission struct {
 	Input          string `json:"input,omitempty"`
 	Path           string `json:"path,omitempty"`
@@ -168,7 +202,7 @@ type IntentPlan struct {
 	Wiki              IntentWikiPlan    `json:"wiki,omitempty"`
 	Candidates        []IntentCandidate `json:"candidates,omitempty"`
 	Omissions         []IntentOmission  `json:"omissions,omitempty"`
-	Fallbacks         []IntentFallback  `json:"fallbacks,omitempty"`
+	Fallbacks         []IntentFallback  `json:"fallbacks"`
 	Expansions        []Expansion       `json:"expansions,omitempty"`
 	Telemetry         IntentTelemetry   `json:"telemetry"`
 	Truncated         bool              `json:"truncated,omitempty"`
@@ -201,16 +235,75 @@ type IntentOmission struct {
 	Candidates []string `json:"candidates,omitempty"`
 }
 
-type IntentFallback struct {
-	Section   string `json:"section,omitempty"`
-	Operation string `json:"operation,omitempty"`
-	Reason    string `json:"reason"`
+const (
+	IntentFallbackUnsupportedOperation = "unsupported_operation"
+	IntentFallbackUnavailableBinary    = "unavailable_binary"
+	IntentFallbackInvalidWorkspace     = "invalid_workspace"
+	IntentFallbackExplicitIncomplete   = "explicit_incomplete"
+)
+
+var intentFallbackCanonicalDetails = map[string]string{
+	IntentFallbackUnsupportedOperation: "the requested operation is not supported",
+	IntentFallbackUnavailableBinary:    "the required backend binary is unavailable",
+	IntentFallbackInvalidWorkspace:     "the requested workspace is invalid",
+	IntentFallbackExplicitIncomplete:   "the result is explicitly incomplete",
 }
 
-// Expansion is an executable continuation from a bounded preview.
+func ValidIntentFallbackReasonCode(code string) bool {
+	_, ok := intentFallbackCanonicalDetails[code]
+	return ok
+}
+
+// NewIntentFallback constructs a terminal external fallback with a canonical
+// detail. The caller-provided detail is intentionally not retained.
+func NewIntentFallback(section, operation, reasonCode string) (IntentFallback, error) {
+	if !ValidIntentFallbackReasonCode(reasonCode) {
+		return IntentFallback{}, errors.New("invalid intent fallback reason code")
+	}
+	return IntentFallback{Section: section, Operation: operation, ReasonCode: reasonCode, Detail: intentFallbackCanonicalDetails[reasonCode]}, nil
+}
+
+// IntentFallback is reserved for terminal external fallback decisions. Internal
+// backend degradation belongs in IntentOmission and must not be represented as
+// an external fallback. Detail is canonicalized at serialization time so raw
+// input can never cross the JSON boundary.
+type IntentFallback struct {
+	Section    string `json:"section,omitempty"`
+	Operation  string `json:"operation,omitempty"`
+	ReasonCode string `json:"reason_code"`
+	Detail     string `json:"detail"`
+}
+
+func (f IntentFallback) Valid() bool {
+	return ValidIntentFallbackReasonCode(f.ReasonCode)
+}
+
+func (f IntentFallback) MarshalJSON() ([]byte, error) {
+	detail, ok := intentFallbackCanonicalDetails[f.ReasonCode]
+	if !ok {
+		return nil, errors.New("invalid intent fallback reason code")
+	}
+	type intentFallbackJSON struct {
+		Section    string `json:"section,omitempty"`
+		Operation  string `json:"operation,omitempty"`
+		ReasonCode string `json:"reason_code"`
+		Detail     string `json:"detail"`
+	}
+	return json.Marshal(intentFallbackJSON{
+		Section:    f.Section,
+		Operation:  f.Operation,
+		ReasonCode: f.ReasonCode,
+		Detail:     detail,
+	})
+}
+
+// Expansion is a bounded continuation. Command contains only allowlisted
+// values or inert placeholders; Arguments carries values structurally so a
+// client can bind them without passing the command through a shell.
 type Expansion struct {
-	Command string `json:"command"`
-	Reason  string `json:"reason"`
+	Command   string         `json:"command"`
+	Reason    string         `json:"reason"`
+	Arguments map[string]any `json:"arguments,omitempty"`
 }
 
 type IntentWikiPlan struct {

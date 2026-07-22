@@ -14,6 +14,7 @@ jobs:
       matrix:
         os:
           - ubuntu-latest
+          - macos-latest
           - windows-latest
         go-version:
           - "1.24.4"
@@ -49,8 +50,19 @@ jobs:
         run: python -m scripts.bench.harness_first.runner --manifest docs/benchmarks/HARNESS_FIRST_CAMPAIGN.json --output .artifacts/harness-first-dry-run --dry-run
 
       - name: Test shell installer platform mappings
-        if: matrix.os == 'ubuntu-latest'
+        if: matrix.os == 'ubuntu-latest' || matrix.os == 'macos-latest'
         run: sh scripts/tests/install-platform-mapping.sh
+
+      - name: Test release platform mapping and offline archive guards
+        if: matrix.os == 'ubuntu-latest' || matrix.os == 'macos-latest'
+        env:
+          MI_LSP_ALLOW_NO_PWSH: ${{ matrix.os == 'ubuntu-latest' && '1' || '0' }}
+        run: sh scripts/tests/release-platform-mapping.sh
+
+      - name: Test PowerShell archive guards
+        if: matrix.os == 'windows-latest' || matrix.os == 'macos-latest'
+        shell: pwsh
+        run: ./scripts/tests/archive-safety.ps1
 
       - name: Run Go tests with race detector
         if: runner.arch != 'ARM64'
@@ -66,3 +78,7 @@ jobs:
 
       - name: Build worker
         run: dotnet build worker-dotnet/MiLsp.Worker.sln -c Release
+
+      - name: Run Roslyn worker contract tests from repository root
+        working-directory: .
+        run: dotnet run --project worker-dotnet/MiLsp.Worker.ContractTests/MiLsp.Worker.ContractTests.csproj -c Release

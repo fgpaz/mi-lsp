@@ -21,6 +21,15 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Validate release platform mapping and offline archive guards
+        shell: bash
+        run: MI_LSP_RELEASE=1 sh scripts/tests/release-platform-mapping.sh
+
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
@@ -55,6 +64,10 @@ jobs:
         run: |
           set -euo pipefail
           expected_revision="$(git rev-parse HEAD)"
+          prepublish_dir="${RUNNER_TEMP}/mi-lsp-prepublish-${GITHUB_RUN_ID}"
+          rm -rf "$prepublish_dir"
+          mkdir -p "$prepublish_dir/manifests"
+          printf 'MI_LSP_PREPUBLISH_DIR=%s\n' "$prepublish_dir" >> "$GITHUB_ENV"
           mkdir -p dist/provenance
           : > dist/provenance/cli-sha256.txt
           : > dist/provenance/worker-bundles.txt
@@ -75,12 +88,21 @@ jobs:
               sha256sum "$artifact" >> dist/provenance/cli-sha256.txt
               worker_count="$(find .goreleaser/workers/${rid} -type f -print | wc -l)"
               test "$worker_count" -gt 0
+              test -f ".goreleaser/workers/${rid}/worker-manifest.json"
               printf '%s %s\n' "$rid" "$worker_count" >> dist/provenance/worker-bundles.txt
             done
             test "$(wc -l < dist/provenance/cli-sha256.txt)" -eq 6
             test "$(wc -l < dist/provenance/worker-bundles.txt)" -eq 6
             checksum_file="$(find dist -maxdepth 1 -type f -name '*checksums.txt' -print -quit)"
             test -n "$checksum_file"
+            pwsh -NoProfile -File scripts/release/verify-worker-bundles.ps1 \
+              -WorkersRoot .goreleaser/workers \
+              -ExpectedManifestRoot .goreleaser/workers \
+              -ProbeHost
+            for rid in win-arm64 win-x64 linux-arm64 linux-x64 osx-arm64 osx-x64; do
+              cp ".goreleaser/workers/${rid}/worker-manifest.json" "$prepublish_dir/manifests/${rid}.json"
+            done
+            cp "$checksum_file" "$prepublish_dir/$(basename "$checksum_file")"
           }
           verify_artifacts
 
@@ -101,9 +123,11 @@ jobs:
           set -euo pipefail
           shopt -s nullglob
           expected_revision="$(git rev-parse HEAD)"
+          test -d "$MI_LSP_PREPUBLISH_DIR/manifests"
           published_dir="$(mktemp -d)"
           extracted_dir="$(mktemp -d)"
           trap 'rm -rf "$published_dir" "$extracted_dir"' EXIT
+          source scripts/release/platform-mapping.sh
 
           gh release download "$GITHUB_REF_NAME" \
             --repo "$GITHUB_REPOSITORY" \
@@ -118,7 +142,8 @@ jobs:
           expected_names=()
           declare -A expected_set=()
           for rid in "${rids[@]}"; do
-            matches=("$published_dir"/*_"$rid".zip "$published_dir"/*_"$rid".tar.gz)
+            asset_rid="$(release_asset_rid "$rid")"
+            matches=("$published_dir"/*_"$asset_rid".zip "$published_dir"/*_"$asset_rid".tar.gz)
             test "${#matches[@]}" -eq 1
             archive="${matches[0]}"
             archive_name="$(basename "$archive")"
@@ -159,18 +184,54 @@ jobs:
           for expected_name in "${expected_names[@]}"; do
             test -n "${seen_names[$expected_name]+present}"
           done
+          prepublish_checksum="$MI_LSP_PREPUBLISH_DIR/$(basename "$checksum_file")"
+          test -f "$prepublish_checksum"
+          cmp -s "$prepublish_checksum" "$checksum_file"
           (cd "$published_dir" && sha256sum -c "$(basename "$checksum_file")")
+
+          assert_confined_tree() {
+            root="$(realpath -e -- "$1")"
+            if find "$root" -type l -print -quit | grep -q .; then
+              echo "readback extraction produced a symlink" >&2
+              return 1
+            fi
+            if find "$root" -type f -links +1 -print -quit | grep -q .; then
+              echo "readback extraction produced a hardlink" >&2
+              return 1
+            fi
+            while IFS= read -r path; do
+              [ -n "$path" ] || continue
+              resolved="$(realpath -e -- "$path")"
+              case "$resolved" in
+                "$root"|"$root"/*) ;;
+                *) echo "readback extraction escaped confined root" >&2; return 1 ;;
+              esac
+            done < <(find "$root" -print)
+          }
+
+          safe_extract_archive() {
+            archive="$1"
+            target="$2"
+            mkdir -p "$target"
+            case "$archive" in
+              *.zip)
+                pwsh -NoProfile -File scripts/install/install.ps1 -ValidateArchive "$archive"
+                unzip -q "$archive" -d "$target"
+                ;;
+              *.tar.gz)
+                sh scripts/install/install.sh --validate-archive "$archive"
+                tar -xzf "$archive" -C "$target"
+                ;;
+              *) echo "unsupported archive: $archive" >&2; return 1 ;;
+            esac
+            assert_confined_tree "$target"
+          }
 
           for index in "${!rids[@]}"; do
             rid="${rids[$index]}"
             archive="${archives[$index]}"
             target="$extracted_dir/$rid"
-            mkdir -p "$target"
-            case "$archive" in
-              *.zip) unzip -q "$archive" -d "$target" ;;
-              *.tar.gz) tar -xzf "$archive" -C "$target" ;;
-              *) exit 1 ;;
-            esac
+            safe_extract_archive "$archive" "$target"
 
             if [[ "$rid" == win-* ]]; then
               binary_name="mi-lsp.exe"
@@ -186,11 +247,24 @@ jobs:
             mapfile -t worker_roots < <(find "$target" -type d -name workers -print)
             test "${#worker_roots[@]}" -eq 1
             worker_root="${worker_roots[0]}"
-            worker_dirs=("$worker_root"/*)
+            mapfile -t worker_dirs < <(find "$worker_root" -mindepth 1 -maxdepth 1 -type d -print)
             test "${#worker_dirs[@]}" -eq 6
+            declare -A worker_dir_set=()
+            for worker_dir in "${worker_dirs[@]}"; do
+              worker_dir_name="$(basename -- "$worker_dir")"
+              test -n "${worker_dir_set[$worker_dir_name]+present}" || worker_dir_set["$worker_dir_name"]=1
+            done
             for worker_rid in "${rids[@]}"; do
-              test -d "$worker_root/$worker_rid"
+              test -n "${worker_dir_set[$worker_rid]+present}"
+              if [[ "$worker_rid" == osx-* ]]; then
+                asset_worker_rid="$(release_asset_rid "$worker_rid")"
+                test -z "${worker_dir_set[$asset_worker_rid]+present}"
+              fi
               mapfile -t worker_files < <(find "$worker_root/$worker_rid" -type f -print)
               test "${#worker_files[@]}" -gt 0
             done
+            pwsh -NoProfile -File scripts/release/verify-worker-bundles.ps1 \
+              -WorkersRoot "$worker_root" \
+              -ExpectedManifestRoot "$MI_LSP_PREPUBLISH_DIR/manifests" \
+              -ProbeHost
           done

@@ -132,7 +132,11 @@ intent_routing:
   seven_sections: [change, affected, callers, callees, tests, contracts, wiki]
   required_plan_fields: [intent, operation, arguments, confidence, freshness, preview, omissions, fallbacks, expansions, telemetry]
   expansion_fields: [command, reason]
-  terminal_fallbacks: [unsupported_operation, unavailable_binary, invalid_workspace, explicit_incomplete]
+  terminal_fallbacks:
+    allowlist: [unsupported_operation, unavailable_binary, invalid_workspace, explicit_incomplete]
+    fields: [reason_code, detail]
+    detail: sanitized_bounded_separate_from_reason_code
+  internal_degradation: omission_only
   timeout_without_diagnostic: blocked
   selector_ambiguity: candidates_without_auto_selection
   wiki: must_read_governance_and_contracts_before_may_read_specs_or_tests
@@ -284,6 +288,48 @@ continuation:
 ```
 
 Ordering canonico: distance, confidence class (`exact`, `extracted`, `inferred`, `heuristic`), relation, display casefold + original, NodeKey/edge key y evidence digest. Timings, host path y daemon runtime metadata quedan fuera del determinism digest.
+
+## Canonicalizacion de GraphUnresolved y candidatos
+
+```toon
+harness_protocol: SDD-HARNESS-v1
+source_protocol: SDD-WIKI-SOURCE-v1
+doc_id: CT-GRAPH-CLI
+block_id: CT-GRAPH-CLI.unresolved-canonicalization
+kind: graph-unresolved-contract
+audience: llm-first
+source_of_truth: this
+imports:
+  - .docs/wiki/07_tech/TECH-GRAPH-NATIVE.md
+  - .docs/wiki/06_pruebas/TP-GPH.md
+exports:
+  - graph_unresolved_canonicalization
+evidence:
+  - .docs/wiki/09_contratos/CT-GRAPH-CLI.md
+  - .docs/wiki/07_tech/TECH-GRAPH-NATIVE.md
+  - internal/indexer/graph_staging.go
+  - internal/indexer/graph_staging_test.go
+verify:
+  - go test ./internal/indexer/... ./internal/model/...
+stop_if:
+  - unresolved_ids_before_key_order=true
+  - candidate_bounds_exceeded=true
+  - candidate_path_not_normalized=true
+unresolved:
+  sort_key: key
+  dedupe_key: key
+  ids_assigned: after_sort_and_dedupe
+candidates:
+  operations: [trim, slash_normalize, dedupe, sort]
+  slash_normalize: filepath.ToSlash
+  max_items: 64
+  max_bytes: 4096
+semantics:
+  omission: typed_non_eligible_or_external_case
+  unresolved: eligible_endpoint_really_missing_only
+```
+
+El contrato hace reproducible el orden y evita que el orden de llegada altere IDs o `CrossRID`. El límite de candidatos aplica después de trim, normalización, deduplicación y orden lexicográfico.
 
 ## Errores
 

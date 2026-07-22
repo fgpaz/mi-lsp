@@ -169,6 +169,70 @@ publication:
 
 Adapters no conocen SQLite ni publican. Store no inventa identidad. Service no reextrae ni repara durante query. El daemon solo conserva warm state/cache y no cambia semantica.
 
+## Observacion Roslyn, sellado y normalizacion de unresolved
+
+El worker entrega el `GraphObservationBatch` ya canonico pero no sellado. El core es el unico owner del digest y del gate de staging; no se acepta que un batch no canonico o no sellado llegue al store.
+
+```toon
+harness_protocol: SDD-HARNESS-v1
+source_protocol: SDD-WIKI-SOURCE-v1
+doc_id: TECH-GRAPH-NATIVE
+block_id: TECH-GRAPH-NATIVE.observation-and-unresolved
+kind: observation-contract
+audience: llm-first
+source_of_truth: this
+imports:
+  - .docs/wiki/09_contratos/CT-DAEMON-WORKER.md
+  - .docs/wiki/06_pruebas/TP-GPH.md
+exports:
+  - roslyn_graph_observation_contract
+evidence:
+  - .docs/wiki/07_tech/TECH-GRAPH-NATIVE.md
+  - .docs/wiki/06_pruebas/TP-GPH.md
+  - internal/service/graph_observer.go
+  - internal/model/graph_observation.go
+  - internal/indexer/graph_staging.go
+verify:
+  - go test ./internal/model/... ./internal/indexer/... ./internal/service/...
+  - dotnet run --project worker-dotnet/MiLsp.Worker.ContractTests/MiLsp.Worker.ContractTests.csproj
+stop_if:
+  - worker_batch_noncanonical=true
+  - worker_batch_sealed_before_core=true
+  - graph_observation_not_ready_for_staging=true
+  - unresolved_ids_assigned_before_key_dedupe=true
+worker:
+  output: GraphObservationBatch
+  canonical: true
+  sealed: false
+  node_order: Ref
+core:
+  sequence: [ValidateCanonical, SealGraphObservationBatch, ReadyForStaging]
+  seal_owner: core
+symbol_resolution:
+  typed_omissions:
+    - local
+    - lambda
+    - anonymous
+    - synthesized_or_implicitly_declared
+    - external
+    - unsupported
+  unresolved: eligible_endpoints_really_missing_only
+graph_unresolved:
+  order: key
+  dedupe: key
+  assign_ids: after_sort_and_dedupe
+  cross_rid: derived_from_key
+candidate_normalization:
+  trim: true
+  slash_normalization: filepath.ToSlash
+  dedupe: true
+  sort: lexical
+  max_count: 64
+  max_bytes: 4096
+```
+
+La regla de elegibilidad separa una omision tipada —sin falso edge ni falsa incompletitud— de un endpoint que el contrato si exige y que realmente no pudo resolverse. `GraphUnresolved` se ordena y deduplica por `key` antes de asignar `UnresolvedID`, `UnresolvedKey` y `CrossRID`; los candidatos documentales se normalizan antes de entrar en ese key.
+
 ## Runtime y memoria
 
 ```toon

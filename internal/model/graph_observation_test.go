@@ -48,6 +48,9 @@ func TestRoslynObservationWireContract(t *testing.T) {
 	}
 
 	complete := batches["complete.json"]
+	if err := complete.ValidateCanonical(); err != nil {
+		t.Fatalf("worker-produced complete JSON is not canonical before sealing: %v", err)
+	}
 	if observationNonzero(complete.Digest) {
 		t.Fatal("complete batch was already sealed")
 	}

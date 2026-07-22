@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"database/sql"
 	"encoding/binary"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"hash"
@@ -374,8 +375,44 @@ func graphDocClaimDigest(kind, from, to, label string, source model.GraphDigest)
 	return b.sum()
 }
 
+const (
+	graphDocMaxCandidates     = 64
+	graphDocMaxCandidateBytes = 4096
+)
+
+func canonicalGraphDocCandidates(candidates []string) []string {
+	seen := make(map[string]struct{}, len(candidates))
+	values := make([]string, 0, len(candidates))
+	for _, candidate := range candidates {
+		candidate = strings.TrimSpace(filepath.ToSlash(candidate))
+		if candidate == "" {
+			continue
+		}
+		if _, ok := seen[candidate]; ok {
+			continue
+		}
+		seen[candidate] = struct{}{}
+		values = append(values, candidate)
+	}
+	sort.Strings(values)
+	bounded := make([]string, 0, len(values))
+	for _, candidate := range values {
+		if len(bounded) >= graphDocMaxCandidates {
+			break
+		}
+		candidateSet := append(append([]string(nil), bounded...), candidate)
+		serialized, err := json.Marshal(candidateSet)
+		if err != nil || len(serialized) > graphDocMaxCandidateBytes {
+			continue
+		}
+		bounded = candidateSet
+	}
+	return bounded
+}
+
 func graphDocUnresolved(ref, owner, kind, value, reason string, candidates []string, source model.GraphDigest) graphUnresolvedCandidate {
-	u := model.GraphUnresolved{OwnerPath: owner, SubjectKind: "document", SelectorDigest: graphDocClaimDigest(kind, owner, value, reason, source), ReasonCode: reason, Candidates: append([]string(nil), candidates...), Backend: "docgraph", SourceDigest: &source, RecoveryHintCode: "inspect_doc_graph_reference"}
+	candidates = canonicalGraphDocCandidates(candidates)
+	u := model.GraphUnresolved{OwnerPath: owner, SubjectKind: "document", SelectorDigest: graphDocClaimDigest(kind, owner, value, reason, source), ReasonCode: reason, Candidates: candidates, Backend: "docgraph", SourceDigest: &source, RecoveryHintCode: "inspect_doc_graph_reference"}
 	return graphUnresolvedCandidate{key: model.GraphUnresolvedKey(u), unresolved: u, ref: ref}
 }
 
@@ -690,6 +727,14 @@ func assembleGraphBundle(input graphAssemblyInput) (model.GraphBundle, error) {
 		}
 		return graphStringSliceLess(a.unresolved.Candidates, b.unresolved.Candidates)
 	})
+	uniqueUnresolved := unresolved[:0]
+	for _, candidate := range unresolved {
+		if len(uniqueUnresolved) != 0 && uniqueUnresolved[len(uniqueUnresolved)-1].key == candidate.key {
+			continue
+		}
+		uniqueUnresolved = append(uniqueUnresolved, candidate)
+	}
+	unresolved = uniqueUnresolved
 	unresolvedRecords := make([]model.GraphUnresolved, len(unresolved))
 	for i, candidate := range unresolved {
 		candidate.unresolved.UnresolvedID, candidate.unresolved.UnresolvedKey, candidate.unresolved.CrossRID = i, candidate.key, model.UnresolvedRID(candidate.key)

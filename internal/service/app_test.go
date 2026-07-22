@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -1676,8 +1677,9 @@ func TestSearch_RepoSelectorAutoResolvesUniquePrefix(t *testing.T) {
 	if items[0]["repo"] != "frontend" {
 		t.Fatalf("repo = %#v, want frontend", items[0]["repo"])
 	}
-	if !strings.Contains(strings.Join(env.Warnings, " "), `resolved automatically to "frontend"`) {
-		t.Fatalf("expected auto-resolve warning, got %v", env.Warnings)
+	warnings := strings.Join(env.Warnings, " ")
+	if warnings != "repo_selector_resolved; candidate: frontend" {
+		t.Fatalf("expected stable canonical auto-resolve warning, got %v", env.Warnings)
 	}
 }
 
@@ -1732,6 +1734,57 @@ func TestCatalogQueryUnknownRepoSelectorReturnsRouterEnvelope(t *testing.T) {
 	}
 	if env.NextHint == nil || !strings.Contains(*env.NextHint, "--repo") {
 		t.Fatalf("expected rerun hint for repo selector, got %#v", env.NextHint)
+	}
+}
+
+func TestRepoSelectorWarningUsesStableCodeAndBoundedCanonicalCandidates(t *testing.T) {
+	project := model.ProjectFile{Repos: []model.WorkspaceRepo{
+		{Name: "frontend", ID: "frontend", Root: "frontend"},
+		{Name: "backend", ID: "backend", Root: "backend"},
+	}}
+	const hostileSelector = `$(cat secret);../../private`
+	resolution := resolveRepoSelector(project, hostileSelector)
+	if resolution.Envelope == nil {
+		t.Fatalf("resolution=%+v, want fail-closed envelope", resolution)
+	}
+	joinedWarnings := strings.Join(resolution.Envelope.Warnings, " ")
+	if joinedWarnings != "repo_selector_invalid" {
+		t.Fatalf("warnings=%q, want stable repo_selector_invalid", joinedWarnings)
+	}
+	if strings.Contains(joinedWarnings, hostileSelector) || strings.Contains(*resolution.Envelope.NextHint, hostileSelector) {
+		t.Fatalf("hostile selector leaked: envelope=%+v", resolution.Envelope)
+	}
+	if len(resolution.Envelope.Items.([]map[string]any)) > 3 {
+		t.Fatalf("candidate count=%d, want bounded to three", len(resolution.Envelope.Items.([]map[string]any)))
+	}
+}
+
+func TestRepoSelectorRejectsUnpublishableCanonicalNames(t *testing.T) {
+	cases := []struct {
+		name     string
+		selector string
+	}{
+		{name: `$(whoami)`, selector: `$(whoami)`},
+		{name: `../secret`, selector: `secret`},
+		{name: `C:\\Users\\Ana\\secret`, selector: `secret`},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			resolution := resolveRepoSelector(model.ProjectFile{Repos: []model.WorkspaceRepo{{ID: "hostile", Name: tc.name, Root: "internal"}}}, tc.selector)
+			if resolution.Envelope == nil || resolution.Repo.Name != "" {
+				t.Fatalf("resolution=%+v, want fail-closed envelope without selected repo", resolution)
+			}
+			if len(resolution.Envelope.Warnings) != 1 || resolution.Envelope.Warnings[0] != "repo_selector_unpublishable" {
+				t.Fatalf("warnings=%v, want stable unpublishable diagnostic", resolution.Envelope.Warnings)
+			}
+			encoded, err := json.Marshal(resolution.Envelope)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if strings.Contains(string(encoded), tc.name) || strings.Contains(*resolution.Envelope.NextHint, tc.name) {
+				t.Fatalf("hostile repo name leaked: %s", encoded)
+			}
+		})
 	}
 }
 

@@ -316,6 +316,49 @@ func TestBuildCLIErrorEnvelopeTypesCrossWorkspaceRefusal(t *testing.T) {
 	}
 }
 
+func TestBuildCLIErrorEnvelopeKeepsStableIntentTerminalCode(t *testing.T) {
+	const hostile = `token=secret; path=C:\\Users\\Ana\\private.db pii=ana@example.test`
+	env := buildCLIErrorEnvelope(model.CommandRequest{Operation: "nav.intent"}, "direct", model.NewStableError("intent_search_failed"))
+	if env.Error == nil || env.Error.Code != "intent_search_failed" || env.Error.Message != "intent_search_failed" {
+		t.Fatalf("error=%+v", env.Error)
+	}
+	if strings.Contains(env.Error.Message, hostile) || strings.Contains(env.Error.Message, "private.db") {
+		t.Fatalf("stable intent error leaked hostile payload: %+v", env.Error)
+	}
+}
+
+func TestBuildCLIErrorEnvelopeRedactsHostileStableWorkspaceSelector(t *testing.T) {
+	for _, selector := range []string{
+		`C:\\Users\\Ana\\private-workspace`,
+		`/srv/private-workspace`,
+		`../../private-workspace`,
+		`workspace;secret`,
+	} {
+		t.Run(selector, func(t *testing.T) {
+			env := buildCLIErrorEnvelope(model.CommandRequest{
+				Operation: "nav.intent",
+				Context:   model.QueryOptions{Workspace: selector},
+			}, "direct", model.NewStableError("intent_workspace_invalid"))
+			if env.Workspace != redactedErrorWorkspace {
+				t.Fatalf("workspace=%q, want %q", env.Workspace, redactedErrorWorkspace)
+			}
+			if strings.Contains(env.Workspace, selector) {
+				t.Fatalf("hostile workspace selector leaked: %q", env.Workspace)
+			}
+		})
+	}
+}
+
+func TestBuildCLIErrorEnvelopeCanonicalizesValidStableWorkspace(t *testing.T) {
+	env := buildCLIErrorEnvelope(model.CommandRequest{
+		Operation: "nav.intent",
+		Context:   model.QueryOptions{Workspace: "demo-workspace"},
+	}, "direct", model.NewStableError("intent_question_required"))
+	if env.Workspace != "demo-workspace" {
+		t.Fatalf("workspace=%q, want canonical valid selector", env.Workspace)
+	}
+}
+
 func TestBuildCLIErrorEnvelopeTypesEmbeddingsTimeout(t *testing.T) {
 	env := buildCLIErrorEnvelope(model.CommandRequest{
 		Operation: "index.start",

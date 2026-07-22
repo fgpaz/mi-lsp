@@ -641,7 +641,7 @@ func (b *GraphObservationBatch) validateCore() error {
 	}
 	return nil
 }
-func (b *GraphObservationBatch) Validate() error {
+func (b *GraphObservationBatch) ValidateCanonical() error {
 	if b == nil {
 		return ErrGraphObservationInvalid
 	}
@@ -656,7 +656,18 @@ func (b *GraphObservationBatch) Validate() error {
 	if !reflect.DeepEqual(input, c) {
 		return observationErr("GPH_OBS_NONCANONICAL", "batch", "batch is not canonical")
 	}
-	d, e := observationDigest(&c)
+	return nil
+}
+
+func (b *GraphObservationBatch) Validate() error {
+	if err := b.ValidateCanonical(); err != nil {
+		return err
+	}
+	canonical := cloneObservation(b)
+	if err := canonical.canonicalize(); err != nil {
+		return err
+	}
+	d, e := observationDigest(&canonical)
 	if e != nil {
 		return e
 	}

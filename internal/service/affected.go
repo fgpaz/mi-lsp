@@ -105,7 +105,7 @@ func (a *App) affected(ctx context.Context, request model.CommandRequest) (model
 	var db *sql.DB
 	db, err = openWorkspaceDB(registration, "nav.affected", true)
 	if err != nil {
-		warnings = appendStringIfMissing(warnings, fmt.Sprintf("catalog unavailable; symbol evidence omitted: %s", err))
+		warnings = appendStringIfMissing(warnings, "catalog unavailable; symbol evidence omitted: "+sanitizeIntentError(err))
 	} else {
 		defer db.Close()
 	}

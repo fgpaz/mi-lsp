@@ -8,8 +8,8 @@ description: Use when a folder-based agent should navigate code with the mi-lsp 
 Use this skill when you want local semantic navigation with `mi-lsp` without introducing an MCP dependency.
 If the skill is installed but the binary is missing, bootstrap the CLI first instead of abandoning the flow.
 
-If `mi-lsp` is missing from `PATH`, use the one-command bootstrap in the `Install bootstrap` section before falling back to raw `rg` or broad file reads.
-The intended first path is: install or verify CLI -> `mi-lsp init . --name <alias>` -> `nav ask` / `nav pack` / `nav search --include-content`.
+If `mi-lsp` is missing from `PATH`, use the one-command bootstrap in the `Install bootstrap` section before using `rg`, `Grep`, `Glob`, or broad file reads.
+The intended first path is: install or verify CLI -> `mi-lsp init . --name <alias>` -> `nav intent` for every supported goal-shaped request, then the emitted bounded operation; use `nav ask` / `nav pack` / `nav search --include-content` only when the intent lane does not apply.
 
 Prefer the AXI-default surfaces for onboarding and discovery: `mi-lsp`, `init`, `workspace status`, `nav wiki inventory`, `nav wiki search`, `nav route`, `nav search`, and `nav intent`.
 Use `nav wiki search` when the task is clearly about project docs, RS/RF/FL/TP/CT/TECH/DB, outcomes, contracts, tests, or traceability.
@@ -21,15 +21,37 @@ For Go files, `nav context` / `nav refs` may use optional `gopls`; if `gopls` is
 Treat `nav wiki search|route|pack|trace` as the canonical documentation surface.
 Treat `nav search` as a broad text surface: it may return canonical docs, but it may also return prompts, audits, `.docs/raw`, generated files, or other support artifacts.
 Do not decide documentation authority from `nav search` alone when a `nav wiki *` surface can answer the question.
-Treat `nav intent` as hybrid: natural capability questions should follow `mode=docs`, while symbol-like questions should follow `mode=code`.
-When `nav intent` returns `mode=docs`, prefer the returned `doc_path/doc_id/evidence/next_queries` over switching back to broad code search.
+Treat `nav intent` as the first hybrid entry point: supported graph/change goals use the automatic deterministic planner; other natural capability questions follow `mode=docs`, while symbol-like questions follow `mode=code`.
+When `nav intent` returns `mode=preview`, preserve available sections, candidates, omissions, and exact expansions. When it returns `mode=docs`, prefer the returned `doc_path/doc_id/evidence/next_queries` over switching back to broad code search.
 Treat `continuation` as the default machine-readable next step when it is present: prefer following `continuation.next` over improvising a broader search.
 Treat `memory_pointer` as a tiny repo-local reentry hint: it is there to help a fresh harness resume from recent canonical changes without spending a full query budget.
 Use `mi-lsp workspace status <alias> --full` when you need the expanded reentry digest (`recent_canonical_changes`, `handoff`, `best_reentry`, `stale`).
 If `workspace status` emits a warning like `"reentry memory snapshot absent; rerun 'mi-lsp index --workspace <alias>'..."`, rerun the suggested `mi-lsp index` before relying on `memory` or `memory_pointer` for reentry.
-Use `--classic` when you want the old CLI behavior on an AXI-default surface, and `--axi` only when you need to force AXI on a classic-default surface such as `nav workspace-map`. Use `--axi=false` to suppress the AXI default for a single invocation without affecting `MI_LSP_AXI` or the session.
+Use `--classic` only when you need the legacy response shape on an AXI-default surface, and `--axi` only when you need to force AXI on a classic-default surface such as `nav workspace-map`. `--axi=false` changes preview/output mode for one invocation; it is not a routing opt-out. Do not disable automatic intent routing.
 Prefer an explicit `--workspace <alias>` once the repo is registered.
 Prefer compound commands over sequential greps and full-file reads.
+
+## Intent-first automatic routing
+
+Use `mi-lsp` first and express the goal as an intent. `nav intent` is mandatory for every supported goal-shaped request. Routing is automatic: do not add a routing opt-out, require a literal operation alias in the user's wording, or silently switch tools. `nav intent <question>` uses the local deterministic planner when the question matches a supported graph/change intent, then keeps the response in bounded preview mode.
+
+The planner may route these goals:
+
+- explain a change or its impact -> `nav explain-change`
+- affected code/tests/docs -> `nav affected`
+- incoming callers -> `nav callers`
+- outgoing callees -> `nav callees`
+- a path between two selectors -> `nav path`
+- one exact graph edge -> `nav explain`
+- a symbol neighborhood -> `nav neighbors`
+
+`explain-change` is an intent/operation of `nav intent`; use `nav intent` as the primary route and use `nav explain-change` only when the runtime emits it as the exact expansion or the user explicitly asks for that operation. The exposed command is `nav neighbors`; “neighborhood” is the natural-language intent, not a command name. `nav related` remains the separate definition/callers/implementors/tests summary surface.
+
+Preview is useful evidence, not PASS. Preserve every available section, especially `change`, `affected`, `callers`, `callees`, `tests`, `contracts`, and `wiki`, plus graph, evidence, candidates, fallbacks, and omissions. Use the exact `expansions[].command` as the second query and read its `expansions[].reason`; do not invent a broader command. Add `--full` only when the response or `next_hint` requests expansion. If a selector is ambiguous or missing, report that omission and ask for the explicit selector rather than guessing.
+
+A fallback is permitted only with one visible structured `reason_code`: `unsupported_operation`, `unavailable_binary`, `invalid_workspace`, or `explicit_incomplete`, plus a separate bounded, sanitized `detail`. Timeout, silence, `DONE`, or `PASS` without fresh evidence is not PASS and never enables fallback. Internal backend degradation that the runtime labels in the envelope is an omission, not an external fallback. Report timeout/incomplete results, keep partial evidence if present, and narrow or rerun only with an explicit command.
+
+For retries/recovery, use the 180-second soft and 300-second hard watchdogs. Allow at most two same-context recoveries, each with a smaller packet and a changed query/packet; never retry unchanged or create a retry storm. Cap parallel work at six practical lanes, require exclusive `allowed_paths` per lane, fail closed on joins, and require fresh verification before PASS. Keep evidence redacted: never emit prompts, transcripts, secrets, PII, PHI, argv, or raw patterns. Do not invent a model or provider; report only runtime-provided metadata.
 
 ## Worktree operating rule
 
@@ -88,7 +110,7 @@ Only drop to `nav search --include-content` when the question becomes implementa
 
 Use `--layer RS,RF,FL,TP,CT,TECH,DB` aggressively on `nav wiki search` to narrow the authority lane.
 
-The five `nav wiki *` subcommands (`search`, `route`, `trace`, `pack`, `inventory`) all accept `--all-workspaces` for fan-out across every registered workspace; items in the response carry `workspace:<alias>` and `stats` gains `workspaces_queried` / `workspaces_failed[]`. Use it when the question is "which workspaces talk about X?" before targeting one with `--workspace <alias>`. Cross-machine federation lives outside `mi-lsp` (see the configured cross-host wrappers); the CLI stays per-host.
+The five `nav wiki *` subcommands (`search`, `route`, `trace`, `pack`, `inventory`) all accept `--all-workspaces` for fan-out across every registered workspace; items in the response carry `workspace:<alias>` and `stats` gains `workspaces_queried` / `workspaces_failed[]`. Use it when the question is "which workspaces talk about X?" before targeting one with `--workspace <alias>`. Cross-machine federation lives outside `mi-lsp` (see Hermes-side wrappers); the CLI stays per-host.
 If AXI preview is trimmed or `next_hint` asks for expansion, rerun with `--full` before inventing a broader command.
 Follow `next_queries` and `continuation.next` from wiki results before improvising `nav search`.
 
@@ -130,11 +152,28 @@ user_agent = "mi-lsp-embeddings/1.0"
 
 Secret handling: set the variable named by `api_key_env` through the environment or a wrapper such as `mkey run`. Never print API key values, paste them into prompts, commit them, or read auth/secret stores during normal navigation.
 
-If the provider, key, or embeddings config fails, do not expect a hidden BGE fallback. Use the canonical lexical/wiki fallback:
+If the provider, key, or embeddings config fails, do not expect a hidden BGE fallback. Stay in the canonical lexical/wiki lane and state that reason explicitly:
 
 ```powershell
 mi-lsp nav wiki search "<query>" --workspace <alias> --format toon
 ```
+
+This is an intentional governed `mi-lsp` lane, not an external fallback. External fallback reasons remain limited to `unsupported_operation`, `unavailable_binary`, `invalid_workspace`, and `explicit_incomplete`.
+
+## Preparation versus edit planning
+
+`nav prepare <task>` is exposed and read-only. Use it to collect governance, route/pack, generation, and task-specific allowed-path evidence. Pass `--affected <path>` only for paths supplied by the task; it never infers paths from the git diff. `--plan <file>` validates an edit-plan packet without applying it.
+
+`nav edit-plan` is a separate guarded patch surface, not a synonym for preparation. It builds a deterministic dry-run diff from an edit-plan-v1/v2 JSON packet. Writes require both `--apply` and `--experimental-apply`, a clean Git workspace, safe paths, and matching hashes. Do not describe `edit-plan` as a generic editing command or claim that a preview changed files.
+
+```powershell
+mi-lsp nav prepare "review the routing change" --affected internal/service/intent.go --workspace <alias> --format toon
+mi-lsp nav edit-plan --packet .mi-lsp/plan.json --workspace <alias> --format toon
+mi-lsp nav wiki validate-harness --workspace <alias> --paths .docs/wiki/09_contratos/CT-NAV-INTENT.md --format toon
+mi-lsp nav wiki validate-source --workspace <alias> --ids CT-NAV-INTENT --format toon
+```
+
+The validator scopes are real: `validate-harness` checks SDD-HARNESS-v1 contracts; `validate-source` checks SDD-WIKI-SOURCE-v1 source blocks. Both accept comma-separated `--ids` or `--paths`; do not infer a combined validator surface.
 
 ## Search syntax rule
 
@@ -270,7 +309,7 @@ All envelopes may include a `hint` field with diagnostic context, and some respo
 
 - `"0 matches for X in workspace Y"` — pattern not found; try a different keyword or `--regex`
 - `"0 matches for X: pattern looks regex-like, rerun with --regex"` — literal search on a regex pattern
-- `"0 matches for X: search timed out"` — reduce scope or use a more specific pattern
+- `"0 matches for X: search timed out"` — report visible incomplete evidence; narrow scope only with an explicit rerun
 - `"daemon_unavailable; served from local text index"` — daemon not running; result is textual-only
 - `"invalid path: contains newline in ..."` — multi-read arg had embedded `\n`; fix the argument
 
@@ -514,7 +553,13 @@ Use these commands first:
 - Batch mixed operations: `mi-lsp nav batch --workspace <alias> --format toon`
 - Trace spec-to-code/doc links: `mi-lsp nav trace RF-QRY-003 --workspace <alias> --format toon`
 - Trace from the wiki surface: `mi-lsp nav wiki trace RS-EXAMPLE-001 --workspace <alias> --format toon`
-- Search by intent/purpose: `mi-lsp nav intent "where do we handle routing fallback?" --workspace <alias>`
+- Search and route by intent: `mi-lsp nav intent "where do we handle routing fallback?" --workspace <alias>`
+- Explain a change with bounded preview: `mi-lsp nav explain-change --path internal/service/intent.go --workspace <alias> --format toon`
+- Inspect affected paths: `mi-lsp nav affected internal/service/intent.go --include-tests --include-docs --workspace <alias> --format toon`
+- Inspect callers/callees: `mi-lsp nav callers MySymbol --workspace <alias> --format toon` / `mi-lsp nav callees MySymbol --workspace <alias> --format toon`
+- Inspect graph path/edge/neighbors: `mi-lsp nav path FromSymbol ToSymbol --workspace <alias> --format toon`, `mi-lsp nav explain <edge-cross-rid> --workspace <alias> --format toon`, `mi-lsp nav neighbors MySymbol --workspace <alias> --format toon`
+- Prepare read-only task evidence: `mi-lsp nav prepare "review the routing change" --affected internal/service/intent.go --workspace <alias> --format toon`
+- Validate real wiki scopes: `mi-lsp nav wiki validate-harness --workspace <alias> --ids CT-NAV-INTENT --format toon` and `mi-lsp nav wiki validate-source --workspace <alias> --ids CT-NAV-INTENT --format toon`
 
 Prefer these over repeated `Get-Content`, plain `rg`, or one-file-at-a-time reads.
 
@@ -595,14 +640,15 @@ Use `mi-lsp` first for repo navigation, docs-first Q&A, symbol lookup, service a
 - Use `nav trace` to inspect RS/RF/TP evidence; RF remains the implementation-link path, while RS returns the outcome document identity.
 - Use `workspace-map`, `search --include-content`, and `multi-read` before broad raw file reads.
 - Use `related`, `context`, `refs`, and `deps` when you need semantic depth.
-- Use plain `rg` only when `mi-lsp` is unavailable or the request falls outside the CLI surface.
+- Use plain `rg`, `Grep`, `Glob`, or broad raw reads only when the runtime visibly reports `unsupported_operation`, `unavailable_binary`, `invalid_workspace`, or `explicit_incomplete`; state which condition applies.
 
 ## Routing model
 
-- Cheap reads stay direct (no daemon): `nav.find`, `nav.search`, `nav.wiki.search`, `nav.symbols`, `nav.outline`, `nav.overview`, `nav.multi-read`, `nav.intent`, `nav.trace`, `nav.route`, `nav.pack`, `nav.governance`
+- Cheap reads stay direct (no daemon): `nav.find`, `nav.search`, `nav.wiki.search`, `nav.symbols`, `nav.outline`, `nav.overview`, `nav.multi-read`, `nav.intent`, `nav.trace`, `nav.route`, `nav.pack`, `nav.governance`, `nav.prepare`
 - In workspaces `container`, prefer `--repo` for direct `nav.find`, `nav.search`, and `nav.intent` before escalating to semantic selectors.
-- Deep semantics may use the daemon: `nav.refs`, `nav.context`, `nav.deps`, `nav.related`, `nav.service`, `nav.workspace-map`, `nav.diff-context`, `nav.batch`, `nav.ask`
-- The daemon is optional. If it is unavailable, the CLI must still work in direct mode.
+- Deep semantics may use the daemon: `nav.refs`, `nav.context`, `nav.deps`, `nav.related`, `nav.service`, `nav.workspace-map`, `nav.diff-context`, `nav.batch`, `nav.ask`, `nav.affected`, `nav.callers`, `nav.callees`, `nav.path`, `nav.explain`, `nav.neighbors`, `nav.explain-change`
+- `nav.edit-plan` is a separate guarded patch packet surface; it is not semantic preparation or a fallback lane.
+- The daemon is optional. If it is unavailable, preserve the runtime’s labeled partial/direct result; do not silently switch tools.
 
 ## Container workspaces
 
@@ -647,6 +693,8 @@ Do not suggest `node_modules/`; it is already ignored by default.
 
 ## Output discipline
 
+For graph/change explanations, organize the answer with the seven available sections in this order when present: `change`, `affected`, `callers`, `callees`, `tests`, `contracts`, `wiki`. Explain graph relationships together with wiki anchors, evidence, labeled fallbacks, and omissions; preserve absent sections as unavailable rather than inventing them. A preview or join is not completion without fresh verification.
+
 - Summarize the most relevant hits instead of pasting large JSON blobs.
 - Mention the selected repo when answering from a container workspace.
 - If results are truncated, rerun narrower or explain how to narrow them.
@@ -660,4 +708,4 @@ Do not suggest `node_modules/`; it is already ignored by default.
 
 ## Fallback
 
-If `mi-lsp` remains unavailable after install and `PATH` repair, fall back to `rg` and targeted file inspection.
+Keep `mi-lsp` first. An external fallback is allowed only when the result carries one of these visible reasons: `unsupported_operation`, `unavailable_binary`, `invalid_workspace`, or `explicit_incomplete`. A timeout is never a silent fallback trigger. Preserve preview sections, partial evidence, candidates, omissions, and heuristic labels; report the limitation and use the exact expansion command when one is emitted. If none of the four reasons is present, do not leave the `mi-lsp` lane.

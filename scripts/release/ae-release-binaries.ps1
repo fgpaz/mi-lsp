@@ -37,6 +37,7 @@ if (-not [string]::IsNullOrWhiteSpace(($gitStatus -join "`n"))) {
 }
 $buildScript = Join-Path $PSScriptRoot 'build-dist.ps1'
 $installScript = Join-Path $PSScriptRoot 'install-local.ps1'
+$verifyWorkerScript = Join-Path $PSScriptRoot 'verify-worker-bundles.ps1'
 $supportedRids = @('win-arm64', 'win-x64', 'linux-arm64', 'linux-x64', 'osx-arm64', 'osx-x64')
 
 function Test-IsWindows {
@@ -129,7 +130,7 @@ function Get-SourceRevision {
 function Get-DirectorySha256 {
     param([Parameter(Mandatory = $true)][string]$Path)
     $records = @()
-    foreach ($file in (Get-ChildItem -LiteralPath $Path -File -Recurse | Sort-Object FullName)) {
+    foreach ($file in (Get-ChildItem -LiteralPath $Path -Force -File -Recurse | Sort-Object FullName)) {
         $relative = $file.FullName.Substring((Resolve-Path $Path).Path.Length).TrimStart('\\', '/')
         $records += "$relative`t$((Get-FileSha256 -Path $file.FullName))"
     }
@@ -323,6 +324,15 @@ foreach ($rid in $Rids) {
     $metadata = Get-GoVersionMetadata -Path $cliPath -ExpectedRevision $expectedRevision
     $cliSha = Get-FileSha256 -Path $cliPath
     $workerSha = Get-DirectorySha256 -Path $workerDir
+    $workerManifestPath = Join-Path $workerDir 'worker-manifest.json'
+    if (-not (Test-Path -LiteralPath $workerManifestPath)) {
+        throw "Missing worker manifest for RID '$rid'."
+    }
+    & $verifyWorkerScript -WorkersRoot (Join-Path (Join-Path $OutDir $rid) 'workers') -ExpectedManifestRoot (Join-Path (Join-Path $OutDir $rid) 'workers') -Rids $rid -ProbeHost -AllowPartialRoot | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        throw "Worker manifest verification failed for RID '$rid'."
+    }
+    $workerManifestSha = Get-FileSha256 -Path $workerManifestPath
     $result.provenance += [pscustomobject]@{
         rid = $rid
         status = $metadata.status
@@ -331,6 +341,7 @@ foreach ($rid in $Rids) {
         vcs_modified = $metadata.vcs_modified
         binary_sha256 = $cliSha
         worker_bundle_sha256 = $workerSha
+        worker_manifest_sha256 = $workerManifestSha
         worker_file_count = $workerFiles.Count
     }
     $result.built += [pscustomobject]@{

@@ -316,7 +316,7 @@ func buildCLIErrorEnvelope(request model.CommandRequest, route string, err error
 	envErr := classifyEnvelopeError(request, backend, route, err)
 	env := model.Envelope{
 		Ok:        false,
-		Workspace: request.Context.Workspace,
+		Workspace: errorEnvelopeWorkspace(request.Context.Workspace, err),
 		Backend:   backend,
 		Items:     []map[string]any{},
 		Error:     &envErr,
@@ -362,6 +362,13 @@ func classifyEnvelopeError(request model.CommandRequest, backend string, route s
 	message := safeErrorMessage(err)
 	lower := strings.ToLower(message)
 	result := model.EnvelopeError{Kind: "backend_runtime", Code: "operation_failed", Message: message, Stage: defaultErrorStage(request)}
+	var stableErr *model.StableError
+	if errors.As(err, &stableErr) {
+		result.Code = stableErr.Error()
+		result.Message = stableErr.Error()
+		result.HintCode = result.Code
+		return result
+	}
 	var graphErr *model.GraphQueryError
 	if errors.As(err, &graphErr) {
 		result.Kind = "validation"
@@ -445,6 +452,41 @@ func safeErrorMessage(err error) string {
 		return strings.TrimSpace(message[:500])
 	}
 	return message
+}
+
+const redactedErrorWorkspace = "__MI_LSP_WORKSPACE_REDACTED__"
+
+func errorEnvelopeWorkspace(selector string, err error) string {
+	selector = strings.TrimSpace(selector)
+	if selector == "" {
+		return ""
+	}
+	var stableErr *model.StableError
+	if !errors.As(err, &stableErr) {
+		return selector
+	}
+	if resolution, resolveErr := workspace.ResolveWorkspace(selector); resolveErr == nil {
+		if alias := strings.TrimSpace(resolution.Name); intentSafeWorkspaceAlias(alias) {
+			return alias
+		}
+	}
+	if intentSafeWorkspaceAlias(selector) {
+		return selector
+	}
+	return redactedErrorWorkspace
+}
+
+func intentSafeWorkspaceAlias(value string) bool {
+	value = strings.TrimSpace(value)
+	if value == "" || value == "." || value == ".." || strings.ContainsAny(value, `/\\`) {
+		return false
+	}
+	for _, r := range value {
+		if (r < 'a' || r > 'z') && (r < 'A' || r > 'Z') && (r < '0' || r > '9') && r != '_' && r != '-' && r != '.' {
+			return false
+		}
+	}
+	return true
 }
 
 func isWorkspaceErrorMessage(message string) bool {

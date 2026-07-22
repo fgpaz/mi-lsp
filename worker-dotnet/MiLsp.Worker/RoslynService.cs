@@ -13,6 +13,7 @@ namespace MiLsp.Worker;
 public sealed class RoslynService
 {
     private readonly ConcurrentDictionary<string, MSBuildWorkspace> _workspaceCache = new(StringComparer.OrdinalIgnoreCase);
+    private readonly ConcurrentDictionary<string, SemaphoreSlim> _workspaceLocks = new(StringComparer.OrdinalIgnoreCase);
     private static readonly object _locatorLock = new();
     private static bool _msbuildRegistered;
 
@@ -34,7 +35,7 @@ public sealed class RoslynService
                 "get_context" => await GetContextAsync(request, cancellationToken),
                 "get_deps" => await GetDependenciesAsync(request, cancellationToken),
                 "graph_observe" => await GraphObserveAsync(request, started, cancellationToken),
-                "status" => GetStatus(request, started.ElapsedMilliseconds),
+                "status" => await GetStatusAsync(request, started.ElapsedMilliseconds, cancellationToken),
                 _ => new WorkerResponse(false, "roslyn", Error: $"Unknown method '{request.Method}'", Stats: new WorkerStats(Ms: started.ElapsedMilliseconds)),
             };
         }
@@ -61,9 +62,24 @@ public sealed class RoslynService
         }
     }
 
-    private WorkerResponse GetStatus(WorkerRequest request, long elapsedMs)
+    private async Task<WorkerResponse> GetStatusAsync(WorkerRequest request, long elapsedMs, CancellationToken cancellationToken)
     {
-        var cachedWorkspaces = _workspaceCache.Values.ToList();
+        var cachedWorkspaces = _workspaceCache.ToArray();
+        var projectCount = 0;
+        foreach (var entry in cachedWorkspaces)
+        {
+            var workspaceLock = _workspaceLocks.GetOrAdd(entry.Key, _ => new SemaphoreSlim(1, 1));
+            await workspaceLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                projectCount += entry.Value.CurrentSolution.ProjectIds.Count;
+            }
+            finally
+            {
+                workspaceLock.Release();
+            }
+        }
+
         var items = new List<Dictionary<string, object?>>
         {
             new()
@@ -74,8 +90,8 @@ public sealed class RoslynService
                 ["repo"] = request.RepoName,
                 ["entrypoint_id"] = request.EntrypointId,
                 ["entrypoint_path"] = request.EntrypointPath,
-                ["workspace_cache_count"] = _workspaceCache.Count,
-                ["project_count"] = cachedWorkspaces.Sum(workspace => workspace.CurrentSolution.ProjectIds.Count),
+                ["workspace_cache_count"] = cachedWorkspaces.Length,
+                ["project_count"] = projectCount,
             }
         };
         return new WorkerResponse(true, "roslyn", items, Stats: new WorkerStats(Files: 1, Ms: elapsedMs));
@@ -356,7 +372,7 @@ public sealed class RoslynService
         NormalizeObservationIds(batch);
         batch.Capabilities = batch.Capabilities.OrderBy(item => item.Capability, StringComparer.Ordinal).ToList();
         batch.Coverage = batch.Coverage.OrderBy(item => item.Capability, StringComparer.Ordinal).ToList();
-        batch.Nodes = batch.Nodes.OrderBy(item => item.Key.SemanticIdentity, StringComparer.Ordinal).ToList();
+        batch.Nodes = batch.Nodes.OrderBy(item => item.Ref, StringComparer.Ordinal).ToList();
         batch.Edges = batch.Edges.OrderBy(item => item.Relation, StringComparer.Ordinal).ThenBy(item => item.FromRef, StringComparer.Ordinal).ThenBy(item => item.ToRef, StringComparer.Ordinal).ToList();
         batch.Evidence = batch.Evidence.OrderBy(item => item.Ref, StringComparer.Ordinal).ToList();
         batch.Unresolved = batch.Unresolved.OrderBy(item => item.Ref, StringComparer.Ordinal).ToList();
@@ -414,6 +430,25 @@ public sealed class RoslynService
         }
     }
 
+    internal static void NormalizeObservationIdsForContract(GraphObservationBatch batch) => NormalizeObservationIds(batch);
+
+    private static void RecomputeEdgeObservedDigests(GraphObservationBatch batch)
+    {
+        var edgesByRef = batch.Edges.ToDictionary(edge => edge.Ref, StringComparer.Ordinal);
+        foreach (var evidence in batch.Evidence.Where(item => item.EdgeRef is not null))
+        {
+            var edge = edgesByRef.GetValueOrDefault(evidence.EdgeRef!);
+            var rangeKey = evidence.Range is null
+                ? "-"
+                : string.Join(":", evidence.Range.StartLine, evidence.Range.StartColumn, evidence.Range.EndLine, evidence.Range.EndColumn);
+            var observed = edge is null
+                ? evidence.EdgeRef!
+                : string.Join("|", edge.FromRef, edge.ToRef, edge.Relation, edge.Scope);
+            var canonicalClaim = string.Join("|", evidence.EdgeRef!, evidence.ClaimKind, evidence.SourceUri, rangeKey, evidence.SourceDigest, observed);
+            evidence.ObservedDigest = GraphObservationBuilder.Sha256(canonicalClaim);
+        }
+    }
+
     private static void NormalizeObservationIds(GraphObservationBatch batch)
     {
         var orderedEdges = batch.Edges
@@ -438,6 +473,8 @@ public sealed class RoslynService
                 evidence.EdgeRef = canonicalEdgeRef;
             }
         }
+
+        RecomputeEdgeObservedDigests(batch);
 
         var orderedEvidence = batch.Evidence
             .OrderBy(evidence => evidence.NodeRef ?? string.Empty, StringComparer.Ordinal)
@@ -485,7 +522,6 @@ public sealed class RoslynService
         private readonly WorkerRequest _request;
         private readonly Project _project;
         private readonly Dictionary<ISymbol, string> _refs = new(SymbolEqualityComparer.Default);
-        private readonly Dictionary<string, string> _identityRefs = new(StringComparer.Ordinal);
         private readonly Dictionary<string, string> _refIdentities = new(StringComparer.Ordinal);
         private readonly Dictionary<string, string> _sourceDigests = new(StringComparer.OrdinalIgnoreCase);
         private readonly Dictionary<string, GraphObservationEdge> _edgesByKey = new(StringComparer.Ordinal);
@@ -557,7 +593,7 @@ public sealed class RoslynService
             var kind = Kind(symbol);
             if (string.IsNullOrWhiteSpace(kind)) return;
             symbol = CanonicalSymbol(symbol);
-            var identity = symbol.GetDocumentationCommentId() ?? symbol.ToDisplayString(SymbolDisplayFormat.CSharpErrorMessageFormat);
+            var identity = SemanticIdentity(symbol);
             var reference = "roslyn:" + Sha256(identity);
             if (_refIdentities.TryGetValue(reference, out var registeredIdentity) && !string.Equals(registeredIdentity, identity, StringComparison.Ordinal))
             {
@@ -566,9 +602,8 @@ public sealed class RoslynService
                 return;
             }
 
-            if (_identityRefs.TryGetValue(identity, out var existingRef))
+            if (_refs.TryGetValue(symbol, out var existingRef))
             {
-                _refs[symbol] = existingRef;
                 var existing = _batch.Nodes.First(node => node.Ref == existingRef);
                 if (string.Equals(existing.Key.OwnerPath, path, StringComparison.Ordinal))
                 {
@@ -582,7 +617,6 @@ public sealed class RoslynService
             }
 
             _refs[symbol] = reference;
-            _identityRefs[identity] = reference;
             _refIdentities[reference] = identity;
             _batch.Nodes.Add(new GraphObservationNode { Ref = reference, DisplayName = symbol.Name, SourceDigest = digest, Key = new GraphNodeKey { RepositoryIdentity = _batch.RepositoryIdentity, ProjectOrModule = _batch.ProjectOrModule, OwnerPath = path, SymbolKind = kind, SemanticIdentity = identity } });
             AddEvidence(reference, null, path, location, digest, "declaration", identity);
@@ -641,8 +675,15 @@ public sealed class RoslynService
             var sourceKind = SubjectKind(from);
             if (string.IsNullOrWhiteSpace(Kind(from)))
             {
-                Partial = true;
-                AddUnresolved(path, sourceKind, relation, "source_endpoint_missing", from.ToDisplayString(SymbolDisplayFormat.CSharpErrorMessageFormat), sourceDigest, []);
+                if (IsUnsupportedSourceSymbol(from))
+                {
+                    AddTypedOmission(path, sourceKind, relation, "unsupported_symbol_kind", "inspect_candidates");
+                }
+                else
+                {
+                    Partial = true;
+                    AddUnresolved(path, sourceKind, relation, "source_endpoint_missing", from.ToDisplayString(SymbolDisplayFormat.CSharpErrorMessageFormat), sourceDigest, []);
+                }
                 return;
             }
             if (string.IsNullOrWhiteSpace(Kind(to)))
@@ -650,14 +691,26 @@ public sealed class RoslynService
                 AddTypedOmission(path, sourceKind, relation, "unsupported_symbol_kind", "inspect_candidates");
                 return;
             }
-            if (!_refs.TryGetValue(from, out var fromRef))
+            if (!TryGetRef(from, out var fromRef))
             {
-                Partial = true;
-                AddUnresolved(path, sourceKind, relation, "source_endpoint_missing", from.ToDisplayString(SymbolDisplayFormat.CSharpErrorMessageFormat), sourceDigest, []);
+                if (IsUnsupportedSourceSymbol(from))
+                {
+                    AddTypedOmission(path, sourceKind, relation, "unsupported_symbol_kind", "inspect_candidates");
+                }
+                else
+                {
+                    Partial = true;
+                    AddUnresolved(path, sourceKind, relation, "source_endpoint_missing", from.ToDisplayString(SymbolDisplayFormat.CSharpErrorMessageFormat), sourceDigest, []);
+                }
                 return;
             }
-            if (!_refs.TryGetValue(to, out var toRef))
+            if (!TryGetRef(to, out var toRef))
             {
+                if (IsUnsupportedTargetSymbol(to))
+                {
+                    AddTypedOmission(path, sourceKind, relation, "unsupported_symbol_kind", "inspect_candidates");
+                    return;
+                }
                 if (to.IsImplicitlyDeclared)
                 {
                     AddTypedOmission(path, sourceKind, relation, "implicit_target", "inspect_candidates");
@@ -673,7 +726,7 @@ public sealed class RoslynService
                 if (targetLocation is not null && IsSafeSourcePath(targetPath) && _sourceDigests.TryGetValue(targetPath, out var targetDigest))
                 {
                     AddNode(to, targetPath, targetDigest, targetLocation);
-                    if (_refs.TryGetValue(to, out toRef))
+                    if (TryGetRef(to, out toRef))
                     {
                         AddRelation(from, to, relation, location, ownerPath, digest);
                         return;
@@ -735,6 +788,48 @@ public sealed class RoslynService
         }
         private bool IsSafeSourcePath(string path) => path != "." && path != ".." && !path.StartsWith("../", StringComparison.Ordinal) && !Path.IsPathRooted(path);
         private string RelativePath(string path) { var root = Path.GetFullPath(_request.RepoRoot ?? _request.Workspace); var full = Path.GetFullPath(path); return Path.GetRelativePath(root, full).Replace('\\', '/'); }
+        private bool TryGetRef(ISymbol symbol, out string reference)
+        {
+            return _refs.TryGetValue(CanonicalSymbol(symbol), out reference!);
+        }
+        private static string SemanticIdentity(ISymbol symbol) => symbol.GetDocumentationCommentId() ?? symbol.ToDisplayString(SymbolDisplayFormat.CSharpErrorMessageFormat);
+        private bool IsUnsupportedSourceSymbol(ISymbol symbol)
+        {
+            symbol = CanonicalSymbol(symbol);
+            if (symbol is INamespaceSymbol)
+            {
+                var identity = SemanticIdentity(symbol);
+                if (_refs.Keys.OfType<INamespaceSymbol>().Any(registered => SemanticIdentity(registered).StartsWith(identity + ".", StringComparison.Ordinal)))
+                {
+                    return true;
+                }
+            }
+            if (symbol is IMethodSymbol method)
+            {
+                if (method.MethodKind.ToString() is "LocalFunction" or "AnonymousFunction" or "LambdaMethod")
+                {
+                    return true;
+                }
+                if (method.IsImplicitlyDeclared && method.MethodKind.ToString() is "Constructor" or "StaticConstructor")
+                {
+                    return false;
+                }
+            }
+            if (symbol is INamespaceSymbol && symbol.DeclaringSyntaxReferences.Length == 0)
+            {
+                return true;
+            }
+            if (!symbol.Locations.Any(location => location.IsInSource))
+            {
+                return true;
+            }
+            return symbol.IsImplicitlyDeclared;
+        }
+        private static bool IsUnsupportedTargetSymbol(ISymbol symbol)
+        {
+            symbol = CanonicalSymbol(symbol);
+            return symbol is IMethodSymbol method && method.MethodKind.ToString() is "LocalFunction" or "AnonymousFunction" or "LambdaMethod";
+        }
         private static ISymbol CanonicalSymbol(ISymbol symbol)
         {
             if (symbol is IMethodSymbol method)
@@ -828,18 +923,33 @@ public sealed class RoslynService
 
         var cacheKey = ResolveCacheKey(request);
         var workspace = _workspaceCache.GetOrAdd(cacheKey, _ => MSBuildWorkspace.Create());
-        if (workspace.CurrentSolution.ProjectIds.Count > 0)
+        var workspaceLock = _workspaceLocks.GetOrAdd(cacheKey, _ => new SemaphoreSlim(1, 1));
+        await workspaceLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
         {
+            // A long-lived service must never serve a prior Solution snapshot after disk changes.
+            // CloseSolution clears the workspace before every request, so a failed reload cannot
+            // fall back to stale semantic state.
+            workspace.CloseSolution();
+            if (solutionPath.EndsWith(".sln", StringComparison.OrdinalIgnoreCase))
+            {
+                await workspace.OpenSolutionAsync(solutionPath, cancellationToken: cancellationToken).ConfigureAwait(false);
+            }
+            else
+            {
+                await workspace.OpenProjectAsync(solutionPath, cancellationToken: cancellationToken).ConfigureAwait(false);
+            }
+
+            if (workspace.CurrentSolution.ProjectIds.Count == 0)
+            {
+                throw new InvalidOperationException("Roslyn workspace reload produced no projects");
+            }
             return workspace.CurrentSolution;
         }
-
-        if (solutionPath.EndsWith(".sln", StringComparison.OrdinalIgnoreCase))
+        finally
         {
-            return await workspace.OpenSolutionAsync(solutionPath, cancellationToken: cancellationToken).ConfigureAwait(false);
+            workspaceLock.Release();
         }
-
-        await workspace.OpenProjectAsync(solutionPath, cancellationToken: cancellationToken).ConfigureAwait(false);
-        return workspace.CurrentSolution;
     }
 
     private static string ResolveCacheKey(WorkerRequest request)

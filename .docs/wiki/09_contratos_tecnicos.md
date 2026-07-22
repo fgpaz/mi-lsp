@@ -57,6 +57,7 @@ El detalle por frontera vive en `09_contratos/`; contratos `accepted-design` no 
 - La instalacion publica vive fuera del contrato runtime: `scripts/install/install.ps1|sh` instala/actualiza la CLI desde GitHub `releases/latest`, y `scripts/install/install-agent.ps1|sh` agrega la skill via `npx skills add`.
 - Los instaladores publicos deben mapear solo RIDs publicados (`win-x64`, `win-arm64`, `linux-x64`, `linux-arm64`), verificar `mi-lsp_<version>_checksums.txt` antes de extraer y preservar `workers/<rid>/` junto al binario.
 - El daemon comparte estado entre clientes pero no redefine la CLI publica.
+- `daemon start` mantiene `start.guard` persistente y nunca lo elimina; bajo su lock OS exclusivo (`LockFileEx` en Windows, `flock` en Unix) serializa crear, inspeccionar, recuperar y `Close` de `start.lock`. `start.lock` conserva `O_CREATE|O_EXCL`, se rellena con metadata versionada `pid+nonce` y el descriptor se cierra después de sincronizarla. Solo se recupera un owner muerto; owner vivo o metadata desconocida se preservan, los errores son fail-closed, un lock legacy vacío solo se recupera después de 5 minutos y `Close` elimina únicamente bajo guard cuando coinciden `pid+nonce`. PID válido: `1..math.MaxInt32`; en Windows, `ACCESS_DENIED` y cualquier error ambiguo cuentan como owner vivo, y solo `ERROR_INVALID_PARAMETER` prueba inexistencia.
 - La UI/admin es una vista local del daemon; no es API publica remota.
 - El protocolo daemon-worker es interno, versionado y con envelope estable.
 - Cada contrato debe exponer `warnings`, fallas accionables y degradacion clara cuando aplique.
@@ -80,6 +81,9 @@ El detalle por frontera vive en `09_contratos/`; contratos `accepted-design` no 
 - El target graph CLI agrega `neighbors`, `callers`, `callees`, `path`, `explain`, `graph stats` y `graph validate`; enriquece `affected`, `diff-context`, `related` y `workspace-map` de forma aditiva. La ayuda actual distingue estos comandos directos de `nav graph stats|validate`.
 - La ausencia de generation/backend graph produce fallback tipado, omisiones y warnings visibles; no habilita presentar heurística como paridad graph-native. Un timeout sin diagnóstico tipado es blocker y no autoriza sustitución silenciosa por herramientas textuales.
 - Toda respuesta graph-native fija `generation_id`, conserva status/evidence/omissions y usa ordering/budgets deterministas. Daemon y direct mode deben ser semanticamente equivalentes.
+- El worker Roslyn ordena los `nodes` por `Ref` y entrega un `GraphObservationBatch` canonico no sellado; el core ejecuta `ValidateCanonical`, `SealGraphObservationBatch` y `ReadyForStaging` antes de aceptar staging.
+- Los simbolos locales, lambda, anonymous y synthesized/implicit no elegibles se expresan como omissions tipadas; solo endpoints elegibles realmente faltantes generan `GraphUnresolved`.
+- `GraphUnresolved` se ordena y deduplica por `key` antes de asignar IDs. Sus candidatos se trim, normalizan a slash, deduplican, ordenan y limitan a 64 elementos/4096 bytes.
 - `MILX-v1` es un contrato stdio local aislado, no MCP. No admite graph/wiki write, network, secrets o process spawn en v1.
 - Federation lista member generations y unavailable members; un global snapshot es derivativo y nunca cambia stores miembros ni autoridad wiki.
 
@@ -209,7 +213,9 @@ Interpretación: el contrato define la superficie observable y las reglas de deg
 - La resolucion de bootstrap del worker usa el ejecutable/distribucion activa o, en desarrollo, el repo `mi-lsp`; nunca el `cwd` arbitrario del workspace consultado.
 - La distribucion publica canonica es un bundle por RID que incluye `mi-lsp(.exe)` y `workers/<rid>/`; una build desde source no redefine ese contrato de bootstrap.
 - Los scripts publicos de install/update deben consumir esa misma distribucion canonica; `install.sh` detecta macOS como archive RID `darwin-*` y mapea el worker runtime a `osx-*`, preservando compatibilidad con ambos aliases en `--rid`.
+- El readback de release usa RIDs logicos `osx-arm64|osx-x64` y assets de archive `darwin-arm64|darwin-x64`; al validar el archive conserva el worker bajo `workers/osx-*` y no lo renombra a `workers/darwin-*`.
 - La distribucion operativa AE debe producir y verificar `win-arm64`, `win-x64`, `linux-arm64`, `linux-x64`, `osx-arm64` y `osx-x64`; `scripts/release/ae-release-binaries.ps1` es el entrypoint mantenido para refrescar installs locales/WSL, mirrors x64 opcionales y publicar por tag limpio cuando se pasa `-Publish`.
+- La dependencia `System.Security.Cryptography.Xml` del worker queda fijada en `10.0.10`; la auditoria de paquetes vulnerables y cualquier `NU1903` son gates de release, no resultados implícitos.
 - Las queries Roslyn deben resolver candidatos en orden `bundle -> installed -> dev-local` por presencia de archivos; el probe `status` queda reservado para `worker status` y diagnostico explicito.
 - Si el primer candidato Roslyn falla por bootstrap al arrancar, el caller puede reintentar una sola vez con el siguiente candidato determinista antes de devolver error accionable.
 - Si `tsserver` no existe, el sistema debe degradar a catalog/text con warning explicito.

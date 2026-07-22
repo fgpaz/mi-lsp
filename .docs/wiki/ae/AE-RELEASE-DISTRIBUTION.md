@@ -91,6 +91,7 @@ required_targets:
     archive_layout: mi-lsp(.exe) plus workers/<rid> inside the release archive
     agent_install: npx skills add fgpaz/mi-lsp --skill mi-lsp -g -a codex -a claude-code -y
     macos_mapping: install.sh resolves darwin-* release archives and maps bundled workers to osx-*; explicit darwin-* and osx-* aliases remain accepted
+    worker_manifest_validation: install.sh requires a Python 3 JSON parser and validates schema, RID, protocol, file_count, paths, sizes, and SHA-256 hashes before install
     no_silent_auto_update: true
   code_signing_posture:
     decision: deferred  # SEC-11 / FD3 (2026-06-10)
@@ -110,9 +111,14 @@ stop_if:
   - current worktree is dirty and Publish is requested
   - tag does not point at HEAD when Publish is requested
   - any required RID artifact is missing
+  - worker verification accepts a WorkersRoot that is not exactly the six allowlisted RID directories
+  - worker protocol probe reads are unbounded before timeout enforcement
   - public install script references an asset name not produced by GoReleaser
   - install.sh maps a Darwin host or darwin-*|osx-* alias to an archive/worker RID pair not produced by the release
+  - release-platform-mapping runs without literal `pwsh` in release mode (same executable contract as GoReleaser verification)
   - public install script extracts before checksum verification
+  - public installer accepts a worker manifest with the wrong schema, RID, or protocol
+  - PowerShell extraction skips per-entry lexical, root-reparse, or destination-reparse checks
   - install-agent bypasses npx with an ungoverned folder-copy fallback
   - local ARM64 install was skipped without waiver on this workstation
   - WSL install was skipped without waiver when WSL is available
@@ -125,6 +131,8 @@ stop_if:
 verify:
   - powershell -File ./scripts/release/ae-release-binaries.ps1 -SkipBuild -SkipLocalInstall -SkipWslInstall -SkipMirror
   - sh scripts/tests/install-platform-mapping.sh
+  - MI_LSP_RELEASE=1 sh scripts/tests/release-platform-mapping.sh
+  - sh scripts/install/install.sh --rid linux-x64 --validate-worker-manifest <manifest> --worker-root <worker-root>
   - mi-lsp version --format toon
   - mi-lsp admin export --recent --summary --by-route --by-client --by-hint --by-failure-stage --format toon
   - mi-lsp nav wiki validate-source --workspace <alias> --format toon
@@ -132,6 +140,82 @@ evidence:
   - .docs/wiki/ae/AE-RELEASE-DISTRIBUTION.md
   - scripts/release/ae-release-binaries.ps1
 ```
+
+## Contrato de release para el lock de arranque del daemon
+
+```toon
+harness_protocol: SDD-HARNESS-v1
+source_protocol: SDD-WIKI-SOURCE-v1
+doc_id: AE-RELEASE-DISTRIBUTION
+block_id: AE-RELEASE-DISTRIBUTION.daemon-start-lock
+kind: release-contract
+audience: llm-first
+source_of_truth: this
+imports:
+  - .docs/wiki/09_contratos/CT-DAEMON-WORKER.md
+  - .docs/wiki/09_contratos_tecnicos.md
+exports:
+  - daemon_start_lock_release_invariants
+evidence:
+  - .docs/wiki/ae/AE-RELEASE-DISTRIBUTION.md
+  - .docs/wiki/09_contratos/CT-DAEMON-WORKER.md
+  - internal/daemon/start_lock.go
+  - internal/daemon/start_lock_windows.go
+  - internal/daemon/start_lock_unix.go
+  - internal/daemon/process_liveness_windows.go
+  - internal/daemon/start_lock_test.go
+verify:
+  - go test ./internal/daemon/... -run 'Test(StartLock|ProcessExists)'
+  - git diff --check
+stop_if:
+  - start_guard_not_persistent=true
+  - start_guard_removed=true
+  - start_lock_create_without_O_CREATE_O_EXCL=true
+  - start_lock_metadata_not_versioned_pid_nonce=true
+  - start_lock_descriptor_not_closed_after_metadata=true
+  - start_lock_operation_outside_guard=true
+  - live_or_unknown_owner_reclaimed=true
+  - ambiguous_windows_liveness_reclaimed=true
+  - legacy_empty_lock_reclaimed_at_or_before_5m=true
+  - close_without_matching_pid_nonce=true
+  - fail_open_on_liveness_error=true
+start_lock:
+  guard:
+    path: start.guard
+    persistence: persistent_never_removed
+    os_exclusive_lock:
+      windows: LockFileEx
+      unix: flock
+    serializes: [create, inspect, reclaim, Close]
+  lock_file:
+    path: start.lock
+    create_flags: O_CREATE|O_EXCL|O_RDWR
+    mode: 0600
+    metadata:
+      version: 1
+      fields: [pid, nonce]
+      descriptor_close: after_versioned_metadata_sync
+    pid_valid_range: 1..math.MaxInt32
+  reclaim:
+    live_owner: preserve
+    dead_owner: reclaim
+    metadata_unknown: preserve
+    legacy_empty_only_after: 5m
+    windows_liveness:
+      ERROR_INVALID_PARAMETER: nonexistent
+      ACCESS_DENIED: alive
+      ambiguous_error: alive
+      exit_code_error: alive
+    errors: fail_closed
+  close:
+    under_guard: true
+    remove_only_when_pid_and_nonce_match: true
+    replacement_with_different_metadata: preserve
+release_status:
+  claim: not_declared_by_document_update
+```
+
+Este bloque fija invariantes que deben conservarse en cualquier artefacto distribuido; la actualización documental no declara un resultado de release ni sustituye la evidencia de ejecución.
 
 ## Graph-Native Release Gate
 
@@ -237,7 +321,11 @@ contract_gates:
 release_targets:
   required_RIDs: [win-arm64, win-x64, linux-arm64, linux-x64, osx-arm64, osx-x64]
   local_preferred: win-arm64
-  remote_readback: only_if_release_contract_does_not_already_reflect_remote_assets
+  remote_readback:
+    logical_rids: [osx-arm64, osx-x64]
+    asset_rids: [darwin-arm64, darwin-x64]
+    worker_paths: [workers/osx-arm64, workers/osx-x64]
+    rule: map_logical_osx_to_darwin_assets_without_renaming_worker_paths
 provenance:
   source_worktree: clean_required
   vcs_revision: exact_40_or_64_hex_required
@@ -249,6 +337,50 @@ artifacts:
 ```
 
 La presencia de tests del runner, del manifest o del contrato no equivale a una ejecución de campaña. No se registra `PASS` ni métricas reales hasta que exista una única corrida autorizada con evidencia sanitizada.
+
+## Readback de assets Darwin y workers macOS
+
+```toon
+harness_protocol: SDD-HARNESS-v1
+source_protocol: SDD-WIKI-SOURCE-v1
+doc_id: AE-RELEASE-DISTRIBUTION
+block_id: AE-RELEASE-DISTRIBUTION.darwin-readback
+kind: release-readback-contract
+audience: llm-first
+source_of_truth: this
+imports:
+  - .docs/wiki/07_tech/TECH-DEPENDENCY-HARDENING.md
+  - .docs/wiki/09_contratos_tecnicos.md
+exports:
+  - darwin_release_readback_mapping
+evidence:
+  - .docs/wiki/ae/AE-RELEASE-DISTRIBUTION.md
+  - scripts/release/ae-release-binaries.ps1
+  - scripts/release/platform-mapping.sh
+  - scripts/tests/release-platform-mapping.sh
+verify:
+  - pwsh ./scripts/release/ae-release-binaries.ps1 -SkipBuild -SkipLocalInstall -SkipWslInstall -SkipMirror
+  - sh scripts/tests/install-platform-mapping.sh
+stop_if:
+  - logical_osx_rid_compared_as_darwin_worker_rid=true
+  - darwin_asset_missing=true
+  - worker_osx_path_lost=true
+readback:
+  logical_rids: [osx-arm64, osx-x64]
+  release_asset_rids: [darwin-arm64, darwin-x64]
+  archive_mapping:
+    osx-arm64: darwin-arm64
+    osx-x64: darwin-x64
+  worker_layout:
+    osx-arm64: workers/osx-arm64
+    osx-x64: workers/osx-x64
+  invariant: asset_name_and_worker_runtime_name_are_distinct_but_mapped
+release_status:
+  campaign_result: not_claimed_by_document_presence
+  pass_or_metrics: require_real_evidence
+```
+
+El readback compara el RID lógico que usa el worker con el nombre del asset publicado: `osx-*` se busca en assets `darwin-*`, mientras el contenido conserva `workers/osx-*`. Esta traducción es de validación y empaquetado; no autoriza afirmar una campaña ejecutada.
 
 ## WSL Worker Execution Audit
 

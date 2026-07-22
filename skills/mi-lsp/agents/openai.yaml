@@ -1,4 +1,4 @@
 interface:
   display_name: "mi-lsp"
   short_description: "Semantic CLI for code and .docs/wiki canon"
-  default_prompt: "Use $mi-lsp to explore this local codebase and its .docs/wiki canon with mi-lsp. If the mi-lsp binary is missing, install/bootstrap it first instead of falling back immediately. Then avoid grep-heavy loops and summarize the strongest semantic evidence without requiring MCP."
+  default_prompt: "Use $mi-lsp first. For every supported goal-shaped request start with nav intent; routing is automatic with no opt-out. Preserve bounded preview sections, candidates, fallbacks, omissions, and exact expansions[].command/reason. Never fall back on timeout, silence, DONE, or PASS without fresh evidence; use external fallback only for visible unsupported_operation, unavailable_binary, invalid_workspace, or explicit_incomplete. Keep evidence redacted and do not invent model/provider metadata."
