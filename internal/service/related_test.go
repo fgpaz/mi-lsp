@@ -1,11 +1,61 @@
 package service
 
 import (
+	"context"
+	"encoding/json"
 	"os"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/fgpaz/mi-lsp/internal/model"
 )
+
+func TestRelatedWithoutActiveGenerationIsExplicitAndNonBlocking(t *testing.T) {
+	root, alias := setupTestWorkspace(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	env, err := New(root, nil).Execute(ctx, model.CommandRequest{
+		Operation: "nav.related",
+		Context:   model.QueryOptions{Workspace: alias},
+		Payload:   map[string]any{"symbol": "MissingSymbol", "depth": "definition"},
+	})
+	if err != nil {
+		t.Fatalf("related: %v", err)
+	}
+	if !env.Ok {
+		t.Fatalf("related ok=%v, want true", env.Ok)
+	}
+	items, ok := env.Items.([]symbolNeighborhood)
+	if !ok || len(items) != 1 {
+		t.Fatalf("items=%T %#v, want one related item", env.Items, env.Items)
+	}
+	item := items[0]
+	if item.GraphFreshness == nil || item.GraphFreshness.State == model.GraphFreshnessCurrent {
+		t.Fatalf("graph freshness=%#v, want explicit non-current state", item.GraphFreshness)
+	}
+	if item.GraphRanks == nil || len(item.GraphRanks) != 0 {
+		t.Fatalf("graph ranks=%#v, want initialized empty list", item.GraphRanks)
+	}
+	foundWarning := false
+	for _, warning := range env.Warnings {
+		if strings.Contains(warning, "graph rank unavailable") {
+			foundWarning = true
+			break
+		}
+	}
+	if !foundWarning {
+		t.Fatalf("warnings=%v, want graph rank warning", env.Warnings)
+	}
+	encoded, err := json.Marshal(item)
+	if err != nil {
+		t.Fatalf("marshal related item: %v", err)
+	}
+	if !strings.Contains(string(encoded), `"graph_ranks":[]`) {
+		t.Fatalf("related JSON=%s, want present empty graph_ranks list", encoded)
+	}
+}
 
 func TestParseDepth_Empty(t *testing.T) {
 	depth := parseDepth("")

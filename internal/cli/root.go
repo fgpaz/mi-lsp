@@ -42,9 +42,14 @@ type rootState struct {
 	telemetry            *CLITelemetry
 	retentionRun         bool
 	noAutoDaemon         bool
+	noDaemon             bool
 	compress             bool
 	allowCrossWorkspace  bool
 	executeOperationHook func(*cobra.Command, string, map[string]any, bool) error
+	appExecute           func(context.Context, model.CommandRequest) (model.Envelope, error)
+	daemonExecute        func(context.Context, model.CommandRequest) (model.Envelope, error)
+	ensureDaemon         func(string) error
+	daemonTimeout        time.Duration
 }
 
 type envelopePrintedError struct {
@@ -141,6 +146,7 @@ func NewRootCommand() *cobra.Command {
 	root.PersistentFlags().BoolVar(&state.classic, "classic", false, "Force classic CLI behavior on AXI-default surfaces")
 	root.PersistentFlags().BoolVar(&state.full, "full", false, "Expand AXI preview responses to fuller detail")
 	root.PersistentFlags().BoolVar(&state.noAutoDaemon, "no-auto-daemon", false, "Disable automatic daemon startup for semantic queries")
+	root.PersistentFlags().BoolVar(&state.noDaemon, "no-daemon", false, "Force direct local execution; do not connect to or start the daemon")
 	root.PersistentFlags().BoolVar(&state.compress, "compress", false, "Aggressive compression: strips parent, scope, implements from compact output")
 	root.PersistentFlags().BoolVar(&state.allowCrossWorkspace, "allow-cross-workspace", false, "Allow an explicit --workspace alias to target a different root than the caller cwd")
 
@@ -199,11 +205,15 @@ func (s *rootState) executeOperation(cmd *cobra.Command, operation string, paylo
 	ctx, cancel := context.WithTimeout(cmd.Context(), timeoutForRequest(request))
 	defer cancel()
 
-	useDaemon := shouldUseDaemon(operation, preferDaemon)
+	useDaemon := !s.noDaemon && shouldUseDaemon(operation, preferDaemon)
 
 	// Only heavy daemon-backed queries should auto-start the daemon.
 	if useDaemon && !s.noAutoDaemon && shouldAutoStartDaemon(operation) {
-		if err := daemon.EnsureDaemon(s.repoRoot); err != nil {
+		ensureDaemon := daemon.EnsureDaemon
+		if s.ensureDaemon != nil {
+			ensureDaemon = s.ensureDaemon
+		}
+		if err := ensureDaemon(s.repoRoot); err != nil {
 			// Log warning but don't fail; fall back to direct mode
 			if s.verbose {
 				fmt.Fprintf(os.Stderr, "[mi-lsp] daemon auto-start failed: %v; using direct mode\n", err)
@@ -219,7 +229,13 @@ func (s *rootState) executeOperation(cmd *cobra.Command, operation string, paylo
 	)
 	daemonFailed := false
 	if useDaemon {
-		envelope, err = daemon.NewClient().Execute(ctx, request)
+		daemonCtx, daemonCancel := context.WithTimeout(ctx, s.daemonAttemptTimeout())
+		if s.daemonExecute != nil {
+			envelope, err = s.daemonExecute(daemonCtx, request)
+		} else {
+			envelope, err = daemon.NewClient().Execute(daemonCtx, request)
+		}
+		daemonCancel()
 		if err != nil {
 			daemonFailed = true
 		} else if shouldFallbackNavPrepareForUnknownOperation(request.Operation, envelope) {
@@ -231,7 +247,11 @@ func (s *rootState) executeOperation(cmd *cobra.Command, operation string, paylo
 		}
 	}
 	if !useDaemon || daemonFailed {
-		envelope, err = s.app.Execute(ctx, request)
+		if s.appExecute != nil {
+			envelope, err = s.appExecute(ctx, request)
+		} else {
+			envelope, err = s.app.Execute(ctx, request)
+		}
 		if err == nil && daemonFailed && envelope.Hint == "" {
 			envelope.Hint = "daemon_unavailable; served from local text index"
 		}
@@ -485,6 +505,15 @@ func shouldAutoStartDaemon(operation string) bool {
 		return false
 	}
 	return false
+}
+
+const defaultDaemonAttemptTimeout = 5 * time.Second
+
+func (s *rootState) daemonAttemptTimeout() time.Duration {
+	if s != nil && s.daemonTimeout > 0 {
+		return s.daemonTimeout
+	}
+	return defaultDaemonAttemptTimeout
 }
 
 func timeoutForOperation(operation string) time.Duration {

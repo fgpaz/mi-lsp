@@ -23,7 +23,7 @@ type workspaceMapEntry struct {
 	Mode           string                `json:"mode,omitempty"`
 	NextSteps      []string              `json:"next_steps,omitempty"`
 	GraphFreshness *model.GraphFreshness `json:"graph_freshness,omitempty"`
-	GraphRanks     []model.GraphRank     `json:"graph_ranks,omitempty"`
+	GraphRanks     []model.GraphRank     `json:"graph_ranks"`
 	Repos          []repoMapEntry        `json:"repos"`
 	Services       []serviceMapEntry     `json:"services"`
 	FrontendApps   []frontendAppEntry    `json:"frontend_apps,omitempty"`
@@ -96,13 +96,19 @@ func (a *App) workspaceMap(ctx context.Context, request model.CommandRequest) (m
 	db, err := openWorkspaceDB(registration, "nav.workspace-map", true)
 	if err != nil {
 		warnings = append(warnings, "catalog unavailable: "+err.Error())
+		freshness := model.GraphFreshness{State: model.GraphFreshnessUnknown, ReasonCode: "graph_backend_unavailable"}
 		return model.Envelope{
 			Ok:        true,
 			Workspace: registration.Name,
 			Backend:   "registry",
-			Items:     []workspaceMapEntry{{Repos: repos, Stats: workspaceMapStats{RepoCount: len(repos)}}},
-			Warnings:  warnings,
-			Stats:     model.Stats{Ms: time.Since(started).Milliseconds()},
+			Items: []workspaceMapEntry{{
+				Repos:          repos,
+				GraphFreshness: &freshness,
+				GraphRanks:     make([]model.GraphRank, 0),
+				Stats:          workspaceMapStats{RepoCount: len(repos)},
+			}},
+			Warnings: warnings,
+			Stats:    model.Stats{Ms: time.Since(started).Milliseconds()},
 		}, nil
 	}
 	defer db.Close()
@@ -132,11 +138,14 @@ func (a *App) workspaceMap(ctx context.Context, request model.CommandRequest) (m
 	mapEntry := workspaceMapEntry{
 		Repos:        repos,
 		Services:     services,
+		GraphRanks:   make([]model.GraphRank, 0),
 		FrontendApps: frontendApps,
 		Dependencies: deps,
 		Stats:        stats,
 	}
 	if rankEnvelope, rankErr := GraphRank(ctx, db, GraphRankRequest{MaxNodes: model.GraphAnalysisMaxNodes, MaxEdges: model.GraphAnalysisMaxEdges, Limit: 8}); rankErr != nil {
+		freshness := graphRankFailureFreshness(ctx, db, "")
+		mapEntry.GraphFreshness = &freshness
 		warnings = append(warnings, "graph rank unavailable: "+rankErr.Error())
 	} else {
 		freshness := rankEnvelope.GraphFreshness

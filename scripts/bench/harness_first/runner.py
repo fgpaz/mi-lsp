@@ -592,7 +592,7 @@ def run_process(argv: Sequence[str], timeout_seconds: float) -> ProcessResult:
 def _command(binary: Path, source_root: Path, campaign_id: str, query: Mapping[str, Any], mode: str) -> list[str]:
     command = [str(binary), "--workspace", str(source_root), "--format", "json", "--client-name", "harness-first", "--session-id", campaign_id]
     if mode == "direct":
-        command.append("--no-auto-daemon")
+        command.append("--no-daemon")
     return command + list(query["args"]) + list(query.get(f"{mode}_args", []))
 
 

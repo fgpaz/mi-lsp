@@ -53,6 +53,23 @@ func GraphRank(ctx context.Context, db *sql.DB, request GraphRankRequest) (model
 	return result, err
 }
 
+// graphRankFailureFreshness preserves an explicit negative freshness claim when
+// ranking cannot produce an envelope, without turning a missing or invalid
+// generation into a current graph claim.
+func graphRankFailureFreshness(ctx context.Context, db *sql.DB, requestedGeneration string) model.GraphFreshness {
+	freshness, err := store.GraphFreshness(ctx, db, requestedGeneration)
+	if freshness.ValidState() {
+		if freshness.ReasonCode == "" {
+			freshness.ReasonCode = "graph_rank_unavailable"
+		}
+		return freshness
+	}
+	if db == nil || err != nil {
+		return model.GraphFreshness{State: model.GraphFreshnessUnknown, ReasonCode: "graph_freshness_unavailable"}
+	}
+	return model.GraphFreshness{State: model.GraphFreshnessInvalid, ReasonCode: "graph_freshness_invalid"}
+}
+
 // graphRankOnSnapshot is the single cache-aware rank path. Callers that already
 // own a graph snapshot must use it rather than opening a nested snapshot.
 func graphRankOnSnapshot(ctx context.Context, db *sql.DB, snapshot *store.GraphQuerySnapshot, request GraphRankRequest) (model.GraphRankEnvelope, error) {

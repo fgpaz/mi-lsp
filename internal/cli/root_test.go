@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"errors"
 	"io"
 	"os"
@@ -11,6 +12,7 @@ import (
 	"time"
 
 	"github.com/fgpaz/mi-lsp/internal/model"
+	"github.com/spf13/cobra"
 )
 
 func TestShouldFallbackNavPrepareForUnknownOperation(t *testing.T) {
@@ -33,6 +35,78 @@ func TestShouldFallbackNavPrepareForUnknownOperation(t *testing.T) {
 				t.Fatal("typed non-legacy response should not fall back")
 			}
 		})
+	}
+}
+
+func TestNoDaemonFlagIsPersistent(t *testing.T) {
+	command := NewRootCommand()
+	for _, name := range []string{"no-daemon", "no-auto-daemon"} {
+		if command.PersistentFlags().Lookup(name) == nil {
+			t.Fatalf("missing persistent --%s flag", name)
+		}
+	}
+}
+
+func TestNoDaemonForcesRelatedToLocalAppWithoutTouchingDaemon(t *testing.T) {
+	localCalled := false
+	daemonCalled := false
+	state := &rootState{
+		format:     "json",
+		noDaemon:   true,
+		clientName: "test",
+		appExecute: func(ctx context.Context, request model.CommandRequest) (model.Envelope, error) {
+			localCalled = true
+			if ctx.Err() != nil {
+				t.Fatalf("local App.Execute received canceled context: %v", ctx.Err())
+			}
+			if request.Operation != "nav.related" {
+				t.Fatalf("local operation = %q, want nav.related", request.Operation)
+			}
+			return model.Envelope{Ok: true, Items: []any{}}, nil
+		},
+		daemonExecute: func(context.Context, model.CommandRequest) (model.Envelope, error) {
+			daemonCalled = true
+			return model.Envelope{}, errors.New("daemon must not be called")
+		},
+	}
+	cmd := &cobra.Command{}
+	cmd.SetContext(context.Background())
+	if err := state.executeOperation(cmd, "nav.related", map[string]any{"symbol": "BuildIntentPlan"}, true); err != nil {
+		t.Fatalf("executeOperation: %v", err)
+	}
+	if !localCalled || daemonCalled {
+		t.Fatalf("localCalled=%v daemonCalled=%v, want local only", localCalled, daemonCalled)
+	}
+}
+
+func TestDaemonAttemptTimeoutFallsBackWithOriginalContext(t *testing.T) {
+	state := &rootState{
+		format:        "json",
+		clientName:    "test",
+		daemonTimeout: 10 * time.Millisecond,
+		ensureDaemon:  func(string) error { return nil },
+		daemonExecute: func(ctx context.Context, _ model.CommandRequest) (model.Envelope, error) {
+			<-ctx.Done()
+			return model.Envelope{}, ctx.Err()
+		},
+		appExecute: func(ctx context.Context, _ model.CommandRequest) (model.Envelope, error) {
+			if ctx.Err() != nil {
+				t.Fatalf("fallback received daemon child context: %v", ctx.Err())
+			}
+			if deadline, ok := ctx.Deadline(); !ok || time.Until(deadline) < time.Second {
+				t.Fatalf("fallback deadline=%v, want original operation timeout", deadline)
+			}
+			return model.Envelope{Ok: true, Items: []any{}}, nil
+		},
+	}
+	cmd := &cobra.Command{}
+	cmd.SetContext(context.Background())
+	started := time.Now()
+	if err := state.executeOperation(cmd, "nav.related", map[string]any{"symbol": "BuildIntentPlan"}, true); err != nil {
+		t.Fatalf("executeOperation: %v", err)
+	}
+	if elapsed := time.Since(started); elapsed > time.Second {
+		t.Fatalf("daemon fallback took %v, want bounded attempt", elapsed)
 	}
 }
 

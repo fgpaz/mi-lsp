@@ -24,7 +24,7 @@ type symbolWithContent struct {
 type symbolNeighborhood struct {
 	Symbol         string                `json:"symbol"`
 	GraphFreshness *model.GraphFreshness `json:"graph_freshness,omitempty"`
-	GraphRanks     []model.GraphRank     `json:"graph_ranks,omitempty"`
+	GraphRanks     []model.GraphRank     `json:"graph_ranks"`
 	Definition     *symbolWithContent    `json:"definition,omitempty"`
 	Implementors   []symbolWithContent   `json:"implementors,omitempty"`
 	Callers        []symbolWithContent   `json:"callers,omitempty"`
@@ -48,7 +48,7 @@ func (a *App) related(ctx context.Context, request model.CommandRequest) (model.
 	depth := parseDepth(depthStr)
 
 	warnings := []string{}
-	neighborhood := symbolNeighborhood{Symbol: symbolName}
+	neighborhood := symbolNeighborhood{Symbol: symbolName, GraphRanks: make([]model.GraphRank, 0)}
 	backend := "catalog"
 
 	// Open catalog DB
@@ -94,11 +94,13 @@ func (a *App) related(ctx context.Context, request model.CommandRequest) (model.
 		}
 	}
 	if rankEnvelope, rankErr := GraphRank(ctx, db, GraphRankRequest{Limit: 8, Intent: model.SanitizeUtilityIntent(utilityIntent)}); rankErr != nil {
+		freshness := graphRankFailureFreshness(ctx, db, "")
+		neighborhood.GraphFreshness = &freshness
 		warnings = append(warnings, "graph rank unavailable: "+rankErr.Error())
 	} else {
 		freshness := rankEnvelope.GraphFreshness
 		neighborhood.GraphFreshness = &freshness
-		neighborhood.GraphRanks = append([]model.GraphRank(nil), rankEnvelope.Items...)
+		neighborhood.GraphRanks = append(make([]model.GraphRank, 0, len(rankEnvelope.Items)), rankEnvelope.Items...)
 		warnings = append(warnings, rankEnvelope.Warnings...)
 	}
 

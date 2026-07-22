@@ -2,7 +2,10 @@ package service
 
 import (
 	"context"
+	"encoding/json"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/fgpaz/mi-lsp/internal/model"
 	"github.com/fgpaz/mi-lsp/internal/store"
@@ -395,6 +398,51 @@ func TestWorkspaceMapEntry_Immutability(t *testing.T) {
 
 	if len(copy.Repos) != 2 {
 		t.Errorf("copy Repos should have 2 items")
+	}
+}
+
+func TestWorkspaceMapWithoutActiveGenerationIsExplicitAndNonBlocking(t *testing.T) {
+	root, alias := setupTestWorkspace(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	env, err := New(root, nil).Execute(ctx, model.CommandRequest{
+		Operation: "nav.workspace-map",
+		Context:   model.QueryOptions{Workspace: alias},
+	})
+	if err != nil {
+		t.Fatalf("workspace-map: %v", err)
+	}
+	if !env.Ok {
+		t.Fatalf("workspace-map ok=%v, want true", env.Ok)
+	}
+	items, ok := env.Items.([]workspaceMapEntry)
+	if !ok || len(items) != 1 {
+		t.Fatalf("items=%T %#v, want one workspace map entry", env.Items, env.Items)
+	}
+	item := items[0]
+	if item.GraphFreshness == nil || item.GraphFreshness.State == model.GraphFreshnessCurrent {
+		t.Fatalf("graph freshness=%#v, want explicit non-current state", item.GraphFreshness)
+	}
+	if item.GraphRanks == nil || len(item.GraphRanks) != 0 {
+		t.Fatalf("graph ranks=%#v, want initialized empty list", item.GraphRanks)
+	}
+	foundWarning := false
+	for _, warning := range env.Warnings {
+		if strings.Contains(warning, "graph rank unavailable") {
+			foundWarning = true
+			break
+		}
+	}
+	if !foundWarning {
+		t.Fatalf("warnings=%v, want graph rank warning", env.Warnings)
+	}
+	encoded, err := json.Marshal(item)
+	if err != nil {
+		t.Fatalf("marshal workspace map item: %v", err)
+	}
+	if !strings.Contains(string(encoded), `"graph_ranks":[]`) {
+		t.Fatalf("workspace map JSON=%s, want present empty graph_ranks list", encoded)
 	}
 }
 

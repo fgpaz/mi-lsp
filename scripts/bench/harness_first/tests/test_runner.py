@@ -9,6 +9,7 @@ from scripts.bench.harness_first.runner import (
     MARKER_NAME,
     SECTIONS,
     _RSSSampler,
+    _command,
     _rss_report,
     claim_global_marker,
     parse_go_version_m,
@@ -68,6 +69,16 @@ class RunnerContractTests(unittest.TestCase):
         manifest["queries"][0]["modes"] = ["direct", "daemon"]
         with self.assertRaises(HarnessError):
             validate_manifest(manifest)
+
+    def test_command_routes_direct_and_daemon_modes_explicitly(self):
+        query = {"args": ["nav", "related", "BuildIntentPlan"]}
+        direct = _command(Path("mi-lsp"), Path("workspace"), "campaign", query, "direct")
+        daemon = _command(Path("mi-lsp"), Path("workspace"), "campaign", query, "daemon")
+        self.assertIn("--no-daemon", direct)
+        self.assertNotIn("--no-auto-daemon", direct)
+        self.assertNotIn("--no-daemon", daemon)
+        self.assertEqual(direct[-3:], ["nav", "related", "BuildIntentPlan"])
+        self.assertEqual(daemon[-3:], ["nav", "related", "BuildIntentPlan"])
 
     def test_budget_drift_is_rejected(self):
         manifest = self.manifest()
@@ -239,6 +250,26 @@ class RunnerContractTests(unittest.TestCase):
         result = measured_query_check(query, payload)
         self.assertEqual(result["status"], "PASS")
         self.assertEqual(result["freshness_rank"]["status"], "PASS")
+
+    def test_graph_shape_and_freshness_are_separate_fail_closed_gates(self):
+        for kind, args in (("related", ["nav", "related", "BuildIntentPlan"]), ("workspace_map", ["nav", "workspace-map"])):
+            query = {"id": kind, "kind": kind, "args": args, "freshness_rank_required": True}
+            unknown = {"ok": True, "items": [{"graph_freshness": {"state": "unknown"}, "graph_ranks": []}]}
+            unknown_result = measured_query_check(query, unknown)
+            self.assertEqual(unknown_result["kind_schema"]["status"], "PASS")
+            self.assertEqual(unknown_result["freshness_rank"]["status"], "FAIL")
+            self.assertEqual(unknown_result["status"], "FAIL")
+
+            current = {"ok": True, "items": [{"graph_freshness": {"state": "current"}, "graph_ranks": []}]}
+            current_result = measured_query_check(query, current)
+            self.assertEqual(current_result["status"], "PASS")
+            self.assertEqual(current_result["kind_schema"]["status"], "PASS")
+            self.assertEqual(current_result["freshness_rank"]["status"], "PASS")
+
+            missing = {"ok": True, "items": [{}]}
+            missing_result = measured_query_check(query, missing)
+            self.assertEqual(missing_result["kind_schema"]["status"], "FAIL")
+            self.assertEqual(missing_result["status"], "FAIL")
 
     def test_worker_status_requires_real_usable_evidence(self):
         usable = {"ok": True, "backend": "worker", "items": [{"selected_compatible": True, "selected_source": "bundle", "selected_path": "worker"}]}
