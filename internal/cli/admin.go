@@ -183,15 +183,11 @@ func newExportCommand(state *rootState) *cobra.Command {
 				} else if !percentileFlag {
 					summary.ByOperationPercentiles = nil
 				}
-				if formatFlag == "toon" {
-					body, err := daemon.RenderSummaryTOON(summary)
-					if err != nil {
-						return err
-					}
-					fmt.Fprint(os.Stdout, body)
-					return nil
+				body, err := renderExportSummary(summary, formatFlag)
+				if err != nil {
+					return err
 				}
-				fmt.Fprint(os.Stdout, daemon.RenderSummaryTable(summary))
+				fmt.Fprint(os.Stdout, body)
 				return nil
 			}
 
@@ -277,6 +273,27 @@ func newExportCommand(state *rootState) *cobra.Command {
 	command.Flags().BoolVar(&byFailureStageFlag, "by-failure-stage", false, "Show failure-stage breakdown (requires --summary)")
 
 	return command
+}
+
+func renderExportSummary(summary daemon.ExportSummary, format string) (string, error) {
+	switch strings.ToLower(strings.TrimSpace(format)) {
+	case "json":
+		body, err := json.MarshalIndent(summary, "", "  ")
+		if err != nil {
+			return "", err
+		}
+		return string(body) + "\n", nil
+	case "compact":
+		body, err := json.Marshal(summary)
+		if err != nil {
+			return "", err
+		}
+		return string(body) + "\n", nil
+	case "toon":
+		return daemon.RenderSummaryTOON(summary)
+	default:
+		return daemon.RenderSummaryTable(summary), nil
+	}
 }
 
 func exportQueryLimit(limitFlag int, limitChanged bool, summaryFlag bool) int {

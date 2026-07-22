@@ -16,6 +16,11 @@
 !/.docs/wiki/**
 !/.docs/planificacion/
 !/.docs/planificacion/**
+!/.docs/ae/
+!/.docs/ae/repo-policy.yaml
+!/.docs/auditoria/
+!/.docs/auditoria/2026-07-13-ae-kernel-v2-integration/
+!/.docs/auditoria/2026-07-13-ae-kernel-v2-integration/**
 /.docs/tmp/
 /docs/plans/
 /docs/policies/

@@ -1,0 +1,71 @@
+task_slug: 2026-07-11-finish-nav-prepare-integration
+mode: governed_integration
+harness_adapter: ae-adapter-pi
+orchestration_depth: 1
+decision_lock: locked
+closure_profile: C2_INTEGRATION
+cleanup_policy: remove_worktree_after_guarded_merge
+base_ref: origin/main
+base_sha: 56af5f294be52d5ed2bead7c66d388428988c4a7
+branch: feat/semantic-prepare-api
+worktree_path: C:/wt/mi-lsp-semantic-prepare-api
+allowed_paths:
+  - internal/cli/nav.go
+  - internal/cli/root.go
+  - internal/cli/root_test.go
+  - internal/cli/registry_test.go
+  - internal/daemon/result_cache.go
+  - internal/daemon/result_cache_test.go
+  - internal/daemon/server.go
+  - internal/daemon/server_test.go
+  - internal/model/types.go
+  - internal/rerank/extension_test.go
+  - internal/service/app.go
+  - internal/service/edit_plan.go
+  - internal/service/prepare.go
+  - internal/service/prepare_test.go
+  - internal/service/search_wave3b_test.go
+  - internal/store/meta.go
+  - internal/store/meta_generation_test.go
+  - .docs/wiki/07_tech/TECH-SEMANTIC-PREPARATION.md
+  - .docs/wiki/09_contratos/CT-CLI-DAEMON-ADMIN.md
+  - .docs/wiki/09_contratos/CT-NAV-EDIT-PLAN.md
+  - .docs/auditoria/2026-07-10-guard-orchestration-optimization-t4/**
+forbidden_paths:
+  - .env
+  - .mi-lsp/**
+  - .docs/wiki/00_gobierno_documental.md
+  - .docs/wiki/_mi-lsp/read-model.toml
+  - production deployment
+  - release tag or binary publication
+required_evidence:
+  - go test ./... -count=1
+  - go vet ./...
+  - targeted registry tests repeated three times
+  - targeted rerank tests repeated three times
+  - git diff --check
+  - wiki source validation
+  - PR CI and main readback
+stop_conditions:
+  - governance_blocked=true
+  - deterministic tests remain red
+  - CI fails
+  - release or publication would be required
+ae_contract:
+  schema: ae-contract/v1
+  worker_decision: blocked
+  adapter_id: ae-adapter-pi
+  blocker: provider circuit open after repeated Qwen empty output and Luna empty-input failures; same-packet retry forbidden
+mi_lsp_preflight:
+  alias: mi-lsp-semantic-prepare-api
+  root: C:/wt/mi-lsp-semantic-prepare-api
+  client_name: pi-native-mi-lsp
+  session_id: 2026-07-11-finish-nav-prepare
+  governance_blocked: false
+  docs_ready: true
+  doc_count: 123
+  ae_canon:
+    status: valid
+    roots: [.docs/wiki/ae]
+    blocking: false
+branch_disposition: guarded_pr_auto_integrate

@@ -1,0 +1,216 @@
+schema: ps-traceability-closure/v1
+session_contract_path: .docs/auditoria/2026-07-16-harness-debt-close/session-contract.yaml
+task_slug: harness-debt-close
+base_ref: origin/main
+base_sha: 1bde9980904d392aa6d5db94049c6d6ff26c2376
+actual_branch: chore/harness-debt-close
+actual_worktree_path: C:/wt/mi-lsp-harness-debt
+expected_scope_verdict: PASS
+allowed_paths_verdict: PASS
+forbidden_paths_verdict: PASS
+cleanup_policy: auto-after-successful-integration
+git_before:
+  branch: chore/harness-debt-close
+  head_sha: 1bde9980904d392aa6d5db94049c6d6ff26c2376
+  upstream: origin/main
+  ahead: 0
+  behind: 0
+git_after:
+  branch: chore/harness-debt-close
+  content_head_sha: 01d8ed71c2f4afc57233d21ccb9da468b4893abd
+  evidence_commit: pending
+  upstream: origin/main
+  ahead: 2
+  behind: 0
+changed_paths:
+  tracked:
+    - .docs/auditoria/2026-05-26-mi-lsp-agent-first-hygiene/ae-release-evidence.md
+    - .docs/auditoria/2026-05-30-semantic-wiki-nav/exploration/exploration-findings.md
+    - .docs/auditoria/2026-06-27-mi-lsp-rerank-extension/branch-hygiene.md
+    - .docs/planificacion/2026-05-31-budgeted-reentry-evidence-inventory-prompt.md
+    - .docs/wiki/07_tech/TECH-SEMANTIC-PREPARATION.md
+    - .docs/wiki/09_contratos/CT-GOVERNANCE-AE-KERNEL-V2.md
+    - .docs/auditoria/2026-07-16-harness-debt-close/audit-manifest.yaml
+    - .docs/auditoria/2026-07-16-harness-debt-close/session-contract.yaml
+    - .docs/auditoria/2026-07-16-harness-debt-close/traceability-closure.yaml
+  untracked: []
+  historical_contract_repairs:
+    - .docs/auditoria/2026-05-26-mi-lsp-agent-first-hygiene/ae-release-evidence.md
+    - .docs/auditoria/2026-05-30-semantic-wiki-nav/exploration/exploration-findings.md
+    - .docs/auditoria/2026-06-27-mi-lsp-rerank-extension/branch-hygiene.md
+  historical_prompt_repair:
+    - .docs/planificacion/2026-05-31-budgeted-reentry-evidence-inventory-prompt.md
+  active_technical_contract_repair:
+    - .docs/wiki/07_tech/TECH-SEMANTIC-PREPARATION.md
+    - .docs/wiki/09_contratos/CT-GOVERNANCE-AE-KERNEL-V2.md
+  audit_evidence:
+    - .docs/auditoria/2026-07-16-harness-debt-close/audit-manifest.yaml
+    - .docs/auditoria/2026-07-16-harness-debt-close/session-contract.yaml
+    - .docs/auditoria/2026-07-16-harness-debt-close/traceability-closure.yaml
+  untracked_outside_audit_evidence: []
+  raw_inputs:
+    changed: []
+    untracked: []
+    preserved: true
+  forbidden_hits: []
+scope_verdict: PASS
+traceability_chains:
+  reviewed_anchors:
+    - RF-QRY-019
+    - TECH-EVIDENCE-INVENTORY
+    - CT-NAV-EVIDENCE
+    - TECH-SEMANTIC-PREPARATION
+    - CT-NAV-EDIT-PLAN
+    - CT-GOVERNANCE-AE-KERNEL-V2
+    - SDD-HARNESS-v1
+  missing_anchors: []
+  historical_truthfulness:
+    - the three repaired audit artifacts are explicitly historical and do not claim current runtime or branch state
+    - historical evidence files are protected from direct edits; optional corrections must use separate annotation paths
+    - RF-DUMMY-001 remains exploration-only and is not exported as a canonical requirement
+    - the RF-QRY-019 prompt is explicitly historical, exports only its own prompt id, and points only to existing canon, implementation, and tests
+    - durable verify commands use <alias> instead of the temporary task workspace registration
+    - the Kernel v2 governance contract references a concrete existing evidence file instead of a directory-only path
+    - no missing May 2026 audit bundle was fabricated
+runtime_sensitive:
+  value: false
+  rationale: only documentation contracts, historical evidence metadata, and audit evidence changed; runtime code and configuration are unchanged
+data_or_contract_sensitive:
+  value: true
+  rationale: active TECH and CT Harness contracts plus historical execution contracts changed, without changing runtime behavior or external command schemas
+  authoring_skill_evidence:
+    - ps-experto-documental technical mode applied to contract repair
+    - no data-model or physical-schema authoring skill is applicable
+harness_verdict: PASS
+harness_readiness: ready
+harness_scope_classification: full_workspace_pass
+harness_evidence:
+  command: mi-lsp nav wiki validate-harness --workspace mi-lsp-harness-debt --format compact
+  contracts_reviewed: 124
+  links_reviewed: 579
+  evidence_required: 147
+  evidence_found: 147
+  blockers: 0
+wiki_source_verdict: PASS
+navigation_readiness: ready
+wiki_source_evidence:
+  command: mi-lsp nav wiki validate-source --workspace mi-lsp-harness-debt --format compact
+  artifacts_reviewed: 11
+  blocks_reviewed: 27
+governance_verdict: PASS
+governance_evidence:
+  governance_blocked: false
+  docs_ready: true
+  doc_count: 132
+  index_sync: current
+  ae_canon_status: valid
+core_product_promise_verdict:
+  verdict: NOT_APPLICABLE
+  rationale: the task repairs execution metadata and historical evidence integrity without changing a user-visible product promise
+expected_experience_oracle_verdict:
+  verdict: PASS
+  evidence:
+    - full-workspace Harness compilation reports PASS with zero blockers
+    - Wiki Source compilation remains PASS and navigation_readiness remains ready
+    - governance remains unblocked with valid external Kernel v2 canon
+qa_learning_loop_verdict:
+  verdict: PASS
+  evidence:
+    - the original eight blockers were reproduced and classified before repair
+    - an empty agent_may_edit list was rejected by the validator and repaired with a separate bounded annotation path
+    - adversarial review found temporary aliases in durable verify commands; all affected contracts now use <alias>
+    - evidence resolution improved from 146/147 to 147/147 by replacing a directory-only evidence reference
+    - the full Go suite passes after the documentation repairs
+worker_join_verdict:
+  verdict: PASS
+  evidence:
+    - bounded read-only verifier evidence is recorded by session contract token verifier_a62aec1467c73ea44
+    - final adversarial verifier found the temporary-alias durability defect and withdrew a transient test observation after exact parent reproduction
+    - parent repaired the durable finding and accepted only changes proven by deterministic validators
+board_sync:
+  touched_cards: []
+  verdict: not_applicable
+  rationale: user-authorized Harness debt closure without an existing tracker ticket
+verification:
+  go_test:
+    command: go test ./... -count=1 -timeout 15m
+    verdict: PASS
+  diff_check:
+    command: git diff --check
+    verdict: PASS
+  raw_preservation:
+    command: git diff and untracked inventory restricted to .docs/raw
+    verdict: PASS
+    changed_paths: []
+release_distribution:
+  required: false
+  rationale: no runtime, build, installer, worker, or binary-affecting path changed
+pre_push_inputs:
+  issue_or_waiver: user-authorized-no-ticket
+  evidence_path: .docs/auditoria/2026-07-16-harness-debt-close/traceability-closure.yaml
+  expected_scope:
+    - .docs/auditoria/2026-05-26-mi-lsp-agent-first-hygiene/ae-release-evidence.md
+    - .docs/auditoria/2026-05-30-semantic-wiki-nav/exploration/exploration-findings.md
+    - .docs/auditoria/2026-06-27-mi-lsp-rerank-extension/branch-hygiene.md
+    - .docs/planificacion/2026-05-31-budgeted-reentry-evidence-inventory-prompt.md
+    - .docs/wiki/07_tech/TECH-SEMANTIC-PREPARATION.md
+    - .docs/wiki/09_contratos/CT-GOVERNANCE-AE-KERNEL-V2.md
+    - .docs/auditoria/2026-07-16-harness-debt-close/**
+  session_contract_path: .docs/auditoria/2026-07-16-harness-debt-close/session-contract.yaml
+  required_before_push: ae-pre-push
+  guard_verdict: PASS
+  guard_evidence:
+    dirty_allowed: true
+    dirty_count: 7
+    diff_count: 9
+    ae_canon_status: valid
+no_drift_snapshot:
+  result: PASS
+  commands:
+    - git fetch --prune origin
+    - git rev-list --left-right --count origin/main...HEAD
+    - git diff --check
+    - git diff --name-only -- .docs/raw
+    - git ls-files --others --exclude-standard -- .docs/raw
+    - mi-lsp workspace status mi-lsp-harness-debt --format toon
+    - mi-lsp nav governance --workspace mi-lsp-harness-debt --format toon
+    - mi-lsp nav wiki validate-harness --workspace mi-lsp-harness-debt --format compact
+    - mi-lsp nav wiki validate-source --workspace mi-lsp-harness-debt --format compact
+    - go test ./... -count=1 -timeout 15m
+    - powershell.exe -File scripts/ae/pre-push-guard.ps1 -SessionContract .docs/auditoria/2026-07-16-harness-debt-close/session-contract.yaml -AllowDirty
+  base_matches_origin_main: true
+  raw_inputs_preserved: true
+  raw_inputs_changed: []
+  forbidden_hits: []
+branch_inventory:
+  primary_worktree:
+    path: C:/repos/mios/mi-lsp
+    branch: ae-kernel-v2-migration
+    classification: active-followup-unrelated-dirty-work-preserved
+  task_worktree:
+    path: C:/wt/mi-lsp-harness-debt
+    branch: chore/harness-debt-close
+    classification: integrate-main
+  other_unmerged_branch:
+    branch: v055/macos-binaries
+    classification: unrelated-preserved
+completion_handoff:
+  target_skill: finishing-a-development-branch
+  package: unchanged
+  disposition: integrate-main
+  pre_push_required: true
+  authorized_mutations:
+    - create scoped documentation and audit-evidence commits
+    - push chore/harness-debt-close
+    - open and merge a PR after all required checks are green
+    - verify origin/main readback for Harness, Wiki Source, and governance
+    - remove the temporary branch, worktree, and workspace registration only after verified integration
+  cleanup:
+    state: authorized-after-successful-integration
+    preserve:
+      - C:/repos/mios/mi-lsp worktree and all preexisting dirty changes
+      - .docs/raw/plans/**
+      - .docs/raw/prompts/**
+      - C:/repos/mios/ae-kernel and its local changes
+  blockers: []
+final_verdict: APPROVED_PENDING_INTEGRATION

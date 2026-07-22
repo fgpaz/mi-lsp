@@ -13,6 +13,29 @@ import (
 	"github.com/fgpaz/mi-lsp/internal/model"
 )
 
+func TestShouldFallbackNavPrepareForUnknownOperation(t *testing.T) {
+	unknown := model.Envelope{Error: &model.EnvelopeError{Code: "nav_generic", Message: "unknown operation nav.prepare"}}
+	if !shouldFallbackNavPrepareForUnknownOperation("nav.prepare", unknown) {
+		t.Fatal("unknown nav.prepare operation should fall back")
+	}
+	cases := []struct {
+		name      string
+		operation string
+		envelope  model.Envelope
+	}{
+		{name: "typed plan error", operation: "nav.prepare", envelope: model.Envelope{Error: &model.EnvelopeError{Code: "plan_invalid", Message: "unknown operation"}}},
+		{name: "other operation", operation: "nav.search", envelope: unknown},
+		{name: "successful envelope", operation: "nav.prepare", envelope: model.Envelope{Ok: true, Error: nil}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if shouldFallbackNavPrepareForUnknownOperation(tc.operation, tc.envelope) {
+				t.Fatal("typed non-legacy response should not fall back")
+			}
+		})
+	}
+}
+
 func TestShouldUseDaemonPolicy(t *testing.T) {
 	tests := []struct {
 		name      string
@@ -22,6 +45,7 @@ func TestShouldUseDaemonPolicy(t *testing.T) {
 	}{
 		{name: "find bypasses daemon", operation: "nav.find", requested: true, want: false},
 		{name: "search uses daemon", operation: "nav.search", requested: true, want: true},
+		{name: "prepare uses daemon", operation: "nav.prepare", requested: true, want: true},
 		{name: "wiki search bypasses daemon", operation: "nav.wiki.search", requested: true, want: false},
 		{name: "wiki validate harness bypasses daemon", operation: "nav.wiki.validate-harness", requested: true, want: false},
 		{name: "wiki validate source bypasses daemon", operation: "nav.wiki.validate-source", requested: true, want: false},

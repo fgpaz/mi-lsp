@@ -7,6 +7,8 @@ import (
 	"os"
 	"sync"
 	"time"
+
+	"github.com/fgpaz/mi-lsp/internal/service"
 )
 
 const (
@@ -48,7 +50,7 @@ func newResultCache() *resultCache {
 // isCacheableOp returns true if the operation is deterministic and read-only.
 func isCacheableOp(op string) bool {
 	switch op {
-	case "nav.ask", "nav.search", "nav.pack", "nav.governance", "nav.route":
+	case "nav.ask", "nav.search", "nav.pack", "nav.governance", "nav.route", "nav.prepare":
 		return true
 	default:
 		return false
@@ -56,7 +58,7 @@ func isCacheableOp(op string) bool {
 }
 
 // resultCacheKey constructs a cache key from workspace root, generation, op, and canonical args.
-func resultCacheKey(workspaceRoot, op string, generation int64, canonicalArgs map[string]any) (string, error) {
+func resultCacheKey(workspaceRoot, op string, generation any, canonicalArgs map[string]any) (string, error) {
 	// Serialize args to deterministic JSON
 	argsJSON, err := json.Marshal(canonicalArgs)
 	if err != nil {
@@ -67,7 +69,7 @@ func resultCacheKey(workspaceRoot, op string, generation int64, canonicalArgs ma
 	hash := sha256.New()
 	hash.Write([]byte(workspaceRoot))
 	hash.Write([]byte{0})
-	hash.Write([]byte(fmt.Sprintf("%d", generation)))
+	hash.Write([]byte(cacheGenerationValue(generation)))
 	hash.Write([]byte{0})
 	hash.Write([]byte(op))
 	hash.Write([]byte{0})
@@ -76,15 +78,12 @@ func resultCacheKey(workspaceRoot, op string, generation int64, canonicalArgs ma
 	return fmt.Sprintf("%x", hash.Sum(nil)), nil
 }
 
-// indexGeneration reads the mtime of <workspace>/.mi-lsp/index.db as a generation marker.
-func indexGeneration(workspaceRoot string) (int64, error) {
-	indexPath := workspaceRoot + "/.mi-lsp/index.db"
-	info, err := os.Stat(indexPath)
-	if err != nil {
-		// If index.db doesn't exist, return 0 (no generation); the cache key will differ
-		return 0, nil
-	}
-	return info.ModTime().UnixNano(), nil
+func cacheGenerationValue(generation any) string {
+	return fmt.Sprint(generation)
+}
+
+func indexGeneration(workspaceRoot string) (string, string, error) {
+	return service.PreparationCacheIdentity(workspaceRoot)
 }
 
 func (rc *resultCache) get(key string) ([]byte, bool) {

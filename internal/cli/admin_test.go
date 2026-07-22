@@ -1,6 +1,12 @@
 package cli
 
-import "testing"
+import (
+	"encoding/json"
+	"strings"
+	"testing"
+
+	"github.com/fgpaz/mi-lsp/internal/daemon"
+)
 
 func TestResolveExportWindowRejectsExplicitSinceWithRecent(t *testing.T) {
 	cmd := newExportCommand(&rootState{})
@@ -20,6 +26,23 @@ func TestResolveExportWindowUsesRecentPreset(t *testing.T) {
 	}
 	if window.Name != "recent" {
 		t.Fatalf("Name = %q, want recent", window.Name)
+	}
+}
+
+func TestRenderExportSummaryHonorsJSONAndCompact(t *testing.T) {
+	summary := daemon.ExportSummary{WindowLabel: "recent"}
+	for _, format := range []string{"json", "compact"} {
+		body, err := renderExportSummary(summary, format)
+		if err != nil {
+			t.Fatalf("renderExportSummary(%s): %v", format, err)
+		}
+		var decoded daemon.ExportSummary
+		if err := json.Unmarshal([]byte(strings.TrimSpace(body)), &decoded); err != nil {
+			t.Fatalf("renderExportSummary(%s) returned non-JSON output %q: %v", format, body, err)
+		}
+		if decoded.WindowLabel != "recent" {
+			t.Fatalf("WindowLabel = %q, want recent", decoded.WindowLabel)
+		}
 	}
 }
 

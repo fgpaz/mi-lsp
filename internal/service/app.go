@@ -149,6 +149,8 @@ func (a *App) Execute(ctx context.Context, request model.CommandRequest) (model.
 		envelope, err = a.affected(ctx, request)
 	case "nav.edit-plan":
 		envelope, err = a.editPlan(ctx, request)
+	case "nav.prepare":
+		envelope, err = a.prepare(ctx, request)
 	case "nav.trace":
 		envelope, err = a.trace(ctx, request)
 	case "nav.wiki.trace":
@@ -224,7 +226,8 @@ func operationRequiresWorkspaceResolution(request model.CommandRequest) bool {
 		return !allWorkspaces
 	case "index.run", "index.start":
 		return strings.TrimSpace(stringPayload(request.Payload, "path")) == ""
-	case "index.status", "index.cancel", "index.run-job", "workspace.status", "info", "nav.symbols", "nav.overview", "nav.outline", "nav.governance", "nav.route", "nav.wiki.route", "nav.ask", "nav.pack", "nav.wiki.pack", "nav.wiki.search", "nav.wiki.validate-harness", "nav.wiki.validate-source", "nav.wiki.inventory", "nav.evidence.inventory", "nav.service", "nav.refs", "nav.context", "nav.deps", "nav.multi-read", "nav.batch", "nav.related", "nav.workspace-map", "nav.diff-context", "nav.affected", "nav.edit-plan", "nav.trace", "nav.wiki.trace", "nav.intent", "nav.recall", "nav.neighbors", "nav.callers", "nav.callees", "nav.path", "nav.explain", "nav.graph.stats", "nav.graph.validate", "nav.graph-impact":
+	case "index.status", "index.cancel", "index.run-job", "workspace.status", "info", "nav.symbols", "nav.overview", "nav.outline", "nav.governance", "nav.route", "nav.wiki.route", "nav.ask", "nav.pack", "nav.wiki.pack", "nav.wiki.search", "nav.wiki.validate-harness", "nav.wiki.validate-source", "nav.wiki.inventory", "nav.evidence.inventory", "nav.service", "nav.refs", "nav.context", "nav.deps", "nav.multi-read", "nav.batch", "nav.related", "nav.workspace-map", "nav.diff-context", "nav.affected", "nav.edit-plan", "nav.prepare", "nav.trace", "nav.wiki.trace", "nav.intent", "nav.recall", "nav.neighbors", "nav.callers", "nav.callees", "nav.path", "nav.explain", "nav.graph.stats", "nav.graph.validate", "nav.graph-impact":
+
 		return true
 	default:
 		return false

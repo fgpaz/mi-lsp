@@ -425,12 +425,19 @@ type GovernanceSource struct {
 	Overlays             []string                  `yaml:"overlays,omitempty"`
 	NumberingRecommended bool                      `yaml:"numbering_recommended,omitempty"`
 	OwnerHints           []DocsOwnerHint           `yaml:"owner_hints,omitempty"`
+	AECanon              GovernanceAECanon         `yaml:"ae_canon,omitempty"`
 	Hierarchy            []GovernanceHierarchyItem `yaml:"hierarchy"`
 	ContextChain         []string                  `yaml:"context_chain"`
 	ClosureChain         []string                  `yaml:"closure_chain"`
 	AuditChain           []string                  `yaml:"audit_chain"`
 	BlockingRules        []string                  `yaml:"blocking_rules"`
 	Projection           GovernanceProjection      `yaml:"projection"`
+}
+
+type GovernanceAECanon struct {
+	Mode       string `yaml:"mode,omitempty" toml:"mode,omitempty"`
+	Source     string `yaml:"source,omitempty" toml:"source,omitempty"`
+	RepoPolicy string `yaml:"repo_policy,omitempty" toml:"repo_policy,omitempty"`
 }
 
 type GovernanceHierarchyItem struct {
@@ -461,6 +468,7 @@ type DocsGovernanceProfile struct {
 	AuditChain           []string                  `toml:"audit_chain,omitempty"`
 	BlockingRules        []string                  `toml:"blocking_rules,omitempty"`
 	NumberingRecommended bool                      `toml:"numbering_recommended,omitempty"`
+	AECanon              GovernanceAECanon         `toml:"ae_canon,omitempty"`
 	Projection           GovernanceProjection      `toml:"projection,omitempty"`
 	Hierarchy            []GovernanceHierarchyItem `toml:"hierarchy,omitempty"`
 }
@@ -706,6 +714,29 @@ type CommandRequest struct {
 	Operation       string         `json:"operation"`
 	Context         QueryOptions   `json:"context"`
 	Payload         map[string]any `json:"payload,omitempty"`
+}
+
+// SemanticPreparationEvidence is a read-only, generation-bound readiness packet.
+// It contains evidence for a caller-owned edit decision; it never grants mutation authority.
+type SemanticPreparationEvidence struct {
+	Schema           string              `json:"schema"`
+	WorkspaceRoot    string              `json:"workspace_root"`
+	TaskDigest       string              `json:"task_digest"`
+	GovernanceDigest string              `json:"governance_digest"`
+	IndexGeneration  string              `json:"index_generation"`
+	PlanDigest       string              `json:"plan_digest,omitempty"`
+	AllowedPaths     []string            `json:"allowed_paths"`
+	Warnings         []string            `json:"warnings,omitempty"`
+	Timings          map[string]int64    `json:"timings_ms,omitempty"`
+	TotalMS          int64               `json:"total_ms"`
+	Failure          *PreparationFailure `json:"failure,omitempty"`
+}
+
+type PreparationFailure struct {
+	Kind      string `json:"kind"`
+	Code      string `json:"code"`
+	Stage     string `json:"stage,omitempty"`
+	Retryable bool   `json:"retryable,omitempty"`
 }
 
 type WorkerRequest struct {

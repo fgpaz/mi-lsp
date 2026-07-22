@@ -2,6 +2,7 @@ package docgraph
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -33,6 +34,52 @@ var requiredAECanonModules = []string{
 	"AE-PROJECTION-POLICY.md",
 	"AE-EVIDENCE-POLICY.md",
 	"AE-RELEASE-DISTRIBUTION.md",
+}
+
+var requiredKernelV2CanonModules = []string{
+	"AE-KERNEL-V2.md",
+	"AE-PHASES.md",
+	"AE-HARNESS-ORCHESTRATION.md",
+	"AE-EVIDENCE-POLICY.md",
+	"AE-POLICY-PROJECTION.md",
+}
+
+var requiredKernelV2RepoPolicyStringSlots = [][]string{
+	{"repo", "name"},
+	{"repo", "description"},
+	{"language", "policy_lang"},
+	{"language", "docs_lang"},
+	{"secrets", "vault"},
+	{"secrets", "tool"},
+	{"wiki", "layers_map", "02"},
+	{"wiki", "workspace_alias"},
+	{"wiki", "paths_file"},
+	{"subagents", "roster_file"},
+}
+
+var kernelV2TrackerProviderBlocks = map[string]string{
+	"linear":       "linear",
+	"Linear":       "linear",
+	"LINEAR":       "linear",
+	"plane":        "plane",
+	"Plane":        "plane",
+	"PLANE":        "plane",
+	"azure_boards": "azure_boards",
+	"azure-boards": "azure_boards",
+	"AzureBoards":  "azure_boards",
+	"Azure Boards": "azure_boards",
+	"jira":         "jira",
+	"Jira":         "jira",
+	"JIRA":         "jira",
+}
+
+var (
+	errSafeFileMissing = errors.New("safe file missing")
+	errSafeFileInvalid = errors.New("safe file path invalid")
+)
+
+type aeKernelConfig struct {
+	KernelHome string `yaml:"kernel_home"`
 }
 
 func GovernanceDocPath(root string) string {
@@ -169,7 +216,7 @@ func InspectGovernance(root string, autoSync bool) model.GovernanceStatus {
 	status.AuditChain = append([]string{}, source.AuditChain...)
 	status.BlockingRules = append([]string{}, source.BlockingRules...)
 	status.NumberingRecommended = source.NumberingRecommended
-	status.AECanon = inspectAECanonFromHierarchy(root, source.Hierarchy, "governance")
+	status.AECanon = inspectConfiguredAECanon(root, source.AECanon, source.Hierarchy, "governance")
 
 	if len(issues) > 0 {
 		status.Sync = "invalid"
@@ -259,7 +306,7 @@ func inspectKnowledgeWikiGovernance(root string, status model.GovernanceStatus, 
 	status.BlockingRules = append([]string{}, profile.Governance.BlockingRules...)
 	status.NumberingRecommended = profile.Governance.NumberingRecommended
 	status.Sync = "in_sync"
-	status.AECanon = inspectAECanonFromHierarchy(root, profile.Governance.Hierarchy, "read_model")
+	status.AECanon = inspectConfiguredAECanon(root, profile.Governance.AECanon, profile.Governance.Hierarchy, "read_model")
 	if len(profile.Governance.Hierarchy) == 0 && status.AECanon.Status == "not_applicable" {
 		status.AECanon = inspectAECanonFromProjection(root, "knowledge_wiki")
 	}
@@ -290,6 +337,15 @@ func inspectKnowledgeWikiGovernance(root string, status model.GovernanceStatus, 
 func inspectAECanonFromProjection(root string, reason string) model.AECanonStatus {
 	profile, source, _ := LoadProfile(root)
 	if source == "project" {
+		if strings.TrimSpace(profile.Governance.AECanon.Mode) != "" {
+			status := inspectConfiguredAECanon(root, profile.Governance.AECanon, profile.Governance.Hierarchy, "read_model")
+			status.Status = "projection_only"
+			// A stale projection may describe AE while the human governance source is being repaired.
+			// Report the projected contract without making that secondary source block repair.
+			status.Blocking = false
+			status.Reason = reason + "_read_model_projection_only"
+			return status
+		}
 		roots := declaredAECanonRoots(profile.Governance.Hierarchy)
 		if len(roots) > 0 {
 			status := inspectAECanonRoots(root, roots, "read_model", reason+"_read_model_projection")
@@ -313,6 +369,364 @@ func inspectAECanonFromProjection(root string, reason string) model.AECanonStatu
 		Blocking:        false,
 		Reason:          reason,
 	}
+}
+
+func inspectConfiguredAECanon(root string, config model.GovernanceAECanon, hierarchy []model.GovernanceHierarchyItem, source string) model.AECanonStatus {
+	mode := strings.ToLower(strings.TrimSpace(config.Mode))
+	switch mode {
+	case "":
+		return inspectAECanonFromHierarchy(root, hierarchy, source)
+	case "kernel_v2":
+		return inspectKernelV2AECanon(root, config)
+	default:
+		return model.AECanonStatus{
+			Status:         "mismatch",
+			Source:         source,
+			Blocking:       true,
+			Reason:         "ae_canon_mode_invalid",
+			MissingModules: []string{"ae_canon.mode must be kernel_v2"},
+		}
+	}
+}
+
+func inspectKernelV2AECanon(root string, config model.GovernanceAECanon) model.AECanonStatus {
+	required := make([]string, 0, len(requiredKernelV2CanonModules)+1)
+	for _, module := range requiredKernelV2CanonModules {
+		required = append(required, "<kernel_home>/canon/"+module)
+	}
+	repoPolicy := filepath.ToSlash(strings.TrimSpace(config.RepoPolicy))
+	roots := []string{"<kernel_home>/canon"}
+	if repoPolicy != "" {
+		required = append(required, repoPolicy)
+		roots = append(roots, repoPolicy)
+	}
+	status := model.AECanonStatus{
+		Status:          "valid",
+		Roots:           roots,
+		Source:          "kernel_v2",
+		RequiredModules: required,
+		Blocking:        false,
+		Reason:          "kernel_v2_external_valid",
+	}
+	if issues := validateKernelV2AECanonConfig(config); len(issues) > 0 {
+		status.Status = "mismatch"
+		status.Blocking = true
+		status.Reason = "kernel_v2_config_invalid"
+		status.MissingModules = issues
+		return status
+	}
+
+	kernelHome, err := resolveAEKernelHome()
+	if err != nil {
+		status.Status = "mismatch"
+		status.Blocking = true
+		status.Reason = "kernel_home_invalid"
+		status.MissingModules = []string{"<kernel_home>"}
+		return status
+	}
+	unsafeSource := false
+	for _, module := range requiredKernelV2CanonModules {
+		moduleLabel := "<kernel_home>/canon/" + module
+		_, err := safeRegularFileWithin(kernelHome, filepath.Join("canon", module))
+		switch {
+		case errors.Is(err, errSafeFileMissing):
+			status.MissingModules = append(status.MissingModules, moduleLabel)
+		case err != nil:
+			status.MissingModules = append(status.MissingModules, moduleLabel+"#unsafe_path")
+			unsafeSource = true
+		}
+	}
+
+	policyPath, err := safeRegularFileWithin(root, filepath.FromSlash(repoPolicy))
+	switch {
+	case errors.Is(err, errSafeFileMissing):
+		status.MissingModules = append(status.MissingModules, repoPolicy)
+	case err != nil:
+		status.MissingModules = append(status.MissingModules, repoPolicy+"#unsafe_path")
+		unsafeSource = true
+	default:
+		policyContent, readErr := os.ReadFile(policyPath)
+		if readErr != nil {
+			status.MissingModules = append(status.MissingModules, repoPolicy)
+		} else {
+			var policy map[string]any
+			if err := yaml.Unmarshal(policyContent, &policy); err != nil {
+				status.MissingModules = append(status.MissingModules, repoPolicy+"#invalid_yaml")
+			} else {
+				for _, slot := range invalidKernelV2RepoPolicySlots(policy) {
+					status.MissingModules = append(status.MissingModules, repoPolicy+"#"+slot)
+				}
+			}
+		}
+	}
+	if unsafeSource {
+		status.Status = "mismatch"
+		status.Blocking = true
+		status.Reason = "kernel_v2_source_path_invalid"
+	} else if len(status.MissingModules) > 0 {
+		status.Status = "missing"
+		status.Blocking = true
+		status.Reason = "kernel_v2_sources_missing"
+	}
+	return status
+}
+
+func invalidKernelV2RepoPolicySlots(policy map[string]any) []string {
+	invalid := make([]string, 0)
+	for _, slot := range requiredKernelV2RepoPolicyStringSlots {
+		if !validKernelV2RepoPolicyString(lookupKernelV2RepoPolicyValue(policy, slot...)) {
+			invalid = append(invalid, strings.Join(slot, "."))
+		}
+	}
+	if !validKernelV2StringList(lookupKernelV2RepoPolicyValue(policy, "repo", "structure_rules")) {
+		invalid = append(invalid, "repo.structure_rules[]")
+	}
+	invalid = append(invalid, invalidKernelV2TrackerSlots(lookupKernelV2RepoPolicyValue(policy, "tracker"))...)
+	if !validKernelV2Wrappers(lookupKernelV2RepoPolicyValue(policy, "wrappers")) {
+		invalid = append(invalid, "wrappers[]")
+	}
+	if !validKernelV2StringList(lookupKernelV2RepoPolicyValue(policy, "qa", "canon_paths")) {
+		invalid = append(invalid, "qa.canon_paths[]")
+	}
+	if !validKernelV2Date(lookupKernelV2RepoPolicyValue(policy, "last_updated")) {
+		invalid = append(invalid, "last_updated")
+	}
+	return invalid
+}
+
+func invalidKernelV2TrackerSlots(value any) []string {
+	tracker, ok := value.(map[string]any)
+	if !ok {
+		return []string{"tracker.provider"}
+	}
+	provider, ok := tracker["provider"].(string)
+	if !ok {
+		return []string{"tracker.provider"}
+	}
+	blockName, ok := kernelV2TrackerProviderBlocks[provider]
+	if !ok {
+		return []string{"tracker.provider"}
+	}
+	invalid := make([]string, 0)
+	for key := range tracker {
+		if key != "provider" && key != blockName {
+			invalid = append(invalid, "tracker."+key+"#forbidden")
+		}
+	}
+	block, ok := tracker[blockName].(map[string]any)
+	if !ok {
+		return append(invalid, "tracker."+blockName)
+	}
+	for key := range block {
+		if key != "base_url" && key != "workspace" && key != "key_env" && key != "projects" {
+			invalid = append(invalid, "tracker."+blockName+"."+key+"#forbidden")
+		}
+	}
+	for _, field := range []string{"base_url", "workspace", "key_env"} {
+		if !validKernelV2RepoPolicyString(block[field]) {
+			invalid = append(invalid, "tracker."+blockName+"."+field)
+		}
+	}
+	if !validKernelV2Projects(block["projects"]) {
+		invalid = append(invalid, "tracker."+blockName+".projects[].key")
+	}
+	return invalid
+}
+
+func lookupKernelV2RepoPolicyValue(policy map[string]any, path ...string) any {
+	var value any = policy
+	for _, segment := range path {
+		mapping, ok := value.(map[string]any)
+		if !ok {
+			return nil
+		}
+		value, ok = mapping[segment]
+		if !ok {
+			return nil
+		}
+	}
+	return value
+}
+
+func validKernelV2RepoPolicyString(value any) bool {
+	text, ok := value.(string)
+	return ok && strings.TrimSpace(text) != ""
+}
+
+func validKernelV2Projects(value any) bool {
+	projects, ok := value.([]any)
+	if !ok || len(projects) == 0 {
+		return false
+	}
+	for _, value := range projects {
+		project, ok := value.(map[string]any)
+		if !ok || !validKernelV2RepoPolicyString(project["key"]) {
+			return false
+		}
+		for key, field := range project {
+			switch key {
+			case "key":
+			case "name", "scope", "project_id":
+				if !validKernelV2RepoPolicyString(field) {
+					return false
+				}
+			default:
+				return false
+			}
+		}
+	}
+	return true
+}
+
+func validKernelV2Wrappers(value any) bool {
+	wrappers, ok := value.([]any)
+	if !ok || len(wrappers) == 0 {
+		return false
+	}
+	for _, wrapper := range wrappers {
+		switch typed := wrapper.(type) {
+		case string:
+			if strings.TrimSpace(typed) == "" {
+				return false
+			}
+		case map[string]any:
+			if !validKernelV2RepoPolicyString(typed["name"]) || !validKernelV2RepoPolicyString(typed["script"]) {
+				return false
+			}
+		default:
+			return false
+		}
+	}
+	return true
+}
+
+func validKernelV2StringList(value any) bool {
+	values, ok := value.([]any)
+	if !ok || len(values) == 0 {
+		return false
+	}
+	for _, item := range values {
+		if !validKernelV2RepoPolicyString(item) {
+			return false
+		}
+	}
+	return true
+}
+
+func validKernelV2Date(value any) bool {
+	text, ok := value.(string)
+	if !ok || strings.TrimSpace(text) != text {
+		return false
+	}
+	_, err := time.Parse("2006-01-02", text)
+	return err == nil
+}
+
+func validateKernelV2AECanonConfig(config model.GovernanceAECanon) []string {
+	issues := make([]string, 0)
+	if strings.TrimSpace(config.Source) != "<kernel_home>/canon" {
+		issues = append(issues, "ae_canon.source must be <kernel_home>/canon")
+	}
+	repoPolicy := filepath.ToSlash(strings.TrimSpace(config.RepoPolicy))
+	if repoPolicy != ".docs/ae/repo-policy.yaml" {
+		issues = append(issues, "ae_canon.repo_policy must be .docs/ae/repo-policy.yaml")
+	}
+	return issues
+}
+
+func resolveAEKernelHome() (string, error) {
+	home, err := resolveAEHome()
+	if err != nil {
+		return "", err
+	}
+	selected := strings.TrimSpace(os.Getenv("AE_KERNEL_HOME"))
+	if selected == "" {
+		configPath := filepath.Join(home, ".ae", "config.yaml")
+		content, readErr := os.ReadFile(configPath)
+		if readErr == nil {
+			var config aeKernelConfig
+			if err := yaml.Unmarshal(content, &config); err != nil {
+				return "", fmt.Errorf("invalid AE kernel config: %w", err)
+			}
+			selected = strings.TrimSpace(config.KernelHome)
+		} else if !os.IsNotExist(readErr) {
+			return "", readErr
+		}
+	}
+	if selected == "" {
+		selected = filepath.Join(home, ".ae", "kernel")
+	}
+	if selected == "~" {
+		selected = home
+	} else if strings.HasPrefix(selected, "~/") || strings.HasPrefix(selected, "~\\") {
+		selected = filepath.Join(home, selected[2:])
+	}
+	return filepath.Abs(selected)
+}
+
+func resolveAEHome() (string, error) {
+	if home := strings.TrimSpace(os.Getenv("HOME")); home != "" {
+		return filepath.Abs(home)
+	}
+	if home := strings.TrimSpace(os.Getenv("USERPROFILE")); home != "" {
+		return filepath.Abs(home)
+	}
+	return os.UserHomeDir()
+}
+
+func safeRegularFileWithin(root string, relative string) (string, error) {
+	candidate := filepath.Clean(relative)
+	if candidate == "." || candidate == "" || filepath.IsAbs(candidate) || candidate == ".." || strings.HasPrefix(candidate, ".."+string(filepath.Separator)) {
+		return "", errSafeFileInvalid
+	}
+	absRoot, err := filepath.Abs(root)
+	if err != nil {
+		return "", errSafeFileInvalid
+	}
+	rootInfo, err := os.Lstat(absRoot)
+	if os.IsNotExist(err) {
+		return "", errSafeFileMissing
+	}
+	if err != nil || rootInfo.Mode()&os.ModeSymlink != 0 || !rootInfo.IsDir() {
+		return "", errSafeFileInvalid
+	}
+	realRoot, err := filepath.EvalSymlinks(absRoot)
+	if err != nil {
+		return "", errSafeFileInvalid
+	}
+
+	parts := strings.Split(candidate, string(filepath.Separator))
+	current := absRoot
+	for index, part := range parts {
+		if part == "" || part == "." || part == ".." {
+			return "", errSafeFileInvalid
+		}
+		current = filepath.Join(current, part)
+		info, statErr := os.Lstat(current)
+		if os.IsNotExist(statErr) {
+			return "", errSafeFileMissing
+		}
+		if statErr != nil || info.Mode()&os.ModeSymlink != 0 {
+			return "", errSafeFileInvalid
+		}
+		isLast := index == len(parts)-1
+		if (!isLast && !info.IsDir()) || (isLast && !info.Mode().IsRegular()) {
+			return "", errSafeFileInvalid
+		}
+		realCurrent, evalErr := filepath.EvalSymlinks(current)
+		if evalErr != nil || !pathContainedBy(realRoot, realCurrent, !isLast) {
+			return "", errSafeFileInvalid
+		}
+	}
+	return current, nil
+}
+
+func pathContainedBy(root string, candidate string, allowEqual bool) bool {
+	relative, err := filepath.Rel(root, candidate)
+	if err != nil || filepath.IsAbs(relative) || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
+		return false
+	}
+	return allowEqual || relative != "."
 }
 
 func inspectAECanonFromHierarchy(root string, hierarchy []model.GovernanceHierarchyItem, source string) model.AECanonStatus {
@@ -533,6 +947,13 @@ func validateAndResolveGovernance(source model.GovernanceSource) (resolvedGovern
 	if !source.Projection.Versioned {
 		issues = append(issues, "projection.versioned must be true")
 	}
+	if mode := strings.TrimSpace(source.AECanon.Mode); mode != "" {
+		if !strings.EqualFold(mode, "kernel_v2") {
+			issues = append(issues, "ae_canon.mode must be kernel_v2 when configured")
+		} else {
+			issues = append(issues, validateKernelV2AECanonConfig(source.AECanon)...)
+		}
+	}
 
 	itemByID := make(map[string]model.GovernanceHierarchyItem, len(source.Hierarchy))
 	for _, item := range source.Hierarchy {
@@ -668,6 +1089,7 @@ func buildDocsReadProfileFromGovernance(source model.GovernanceSource, resolved 
 			AuditChain:           append([]string{}, source.AuditChain...),
 			BlockingRules:        append([]string{}, source.BlockingRules...),
 			NumberingRecommended: source.NumberingRecommended,
+			AECanon:              source.AECanon,
 			Projection:           source.Projection,
 			Hierarchy:            append([]model.GovernanceHierarchyItem(nil), source.Hierarchy...),
 		},

@@ -88,7 +88,7 @@ Only drop to `nav search --include-content` when the question becomes implementa
 
 Use `--layer RS,RF,FL,TP,CT,TECH,DB` aggressively on `nav wiki search` to narrow the authority lane.
 
-The five `nav wiki *` subcommands (`search`, `route`, `trace`, `pack`, `inventory`) all accept `--all-workspaces` for fan-out across every registered workspace; items in the response carry `workspace:<alias>` and `stats` gains `workspaces_queried` / `workspaces_failed[]`. Use it when the question is "which workspaces talk about X?" before targeting one with `--workspace <alias>`. Cross-machine federation lives outside `mi-lsp` (see Hermes-side wrappers); the CLI stays per-host.
+The five `nav wiki *` subcommands (`search`, `route`, `trace`, `pack`, `inventory`) all accept `--all-workspaces` for fan-out across every registered workspace; items in the response carry `workspace:<alias>` and `stats` gains `workspaces_queried` / `workspaces_failed[]`. Use it when the question is "which workspaces talk about X?" before targeting one with `--workspace <alias>`. Cross-machine federation lives outside `mi-lsp` (see the configured cross-host wrappers); the CLI stays per-host.
 If AXI preview is trimmed or `next_hint` asks for expansion, rerun with `--full` before inventing a broader command.
 Follow `next_queries` and `continuation.next` from wiki results before improvising `nav search`.
 

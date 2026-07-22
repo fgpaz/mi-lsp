@@ -1,0 +1,158 @@
+schema: ae-audit-hygiene/v1
+retention_ttl_days: 14
+hash_algorithm: sha256
+session: 2026-07-13-ae-kernel-v2-integration
+base_sha: 9f232e8f9e298c4b5fa8d2a6989cbbf3cb7424b8
+changed_paths:
+  - scripts/ae/pre-push-guard.ps1
+  - scripts/ae/pre-push-guard.tests.ps1
+  - .docs/ae/repo-policy.yaml
+  - .docs/auditoria/2026-07-13-ae-kernel-v2-integration/audit-manifest.yaml
+  - .docs/auditoria/2026-07-13-ae-kernel-v2-integration/session-contract.yaml
+  - .docs/auditoria/2026-07-13-ae-kernel-v2-integration/traceability-closure.yaml
+  - .docs/wiki/00_gobierno_documental.md
+  - .docs/wiki/_mi-lsp/read-model.toml
+  - .docs/wiki/09_contratos/CT-GOVERNANCE-AE-KERNEL-V2.md
+  - .gitignore
+  - AGENTS.md
+  - CLAUDE.md
+  - PATHS.md
+  - internal/docgraph/governance.go
+  - internal/model/types.go
+  - internal/service/governance_test.go
+  - internal/service/governance_test_helpers_test.go
+  - internal/service/harness_validate.go
+  - internal/service/harness_validate_test.go
+  - internal/service/source_validate.go
+worktree: C:/wt/mi-lsp-ae-kernel-v2-final
+branch: ae-kernel-v2-final
+artifact_classes:
+  canonical:
+    - .docs/wiki/00_gobierno_documental.md
+    - .docs/wiki/_mi-lsp/read-model.toml
+    - .docs/wiki/09_contratos/CT-GOVERNANCE-AE-KERNEL-V2.md
+  policy:
+    - scripts/ae/pre-push-guard.ps1
+    - .docs/ae/repo-policy.yaml
+  source:
+    - internal/docgraph/governance.go
+    - internal/model/types.go
+    - internal/service/governance_test.go
+    - internal/service/governance_test_helpers_test.go
+    - internal/service/harness_validate.go
+    - internal/service/harness_validate_test.go
+    - internal/service/source_validate.go
+  operational:
+    - .docs/auditoria/2026-07-13-ae-kernel-v2-integration/session-contract.yaml
+    - .docs/auditoria/2026-07-13-ae-kernel-v2-integration/traceability-closure.yaml
+  raw_excluded:
+    - .docs/raw/**
+cleanup:
+  status: held
+  authorized: false
+  reason: user forbids cleanup and requires preservation of worktrees/branches
+preflight:
+  command: go run ./cmd/mi-lsp workspace status . --format toon
+  result: PASS
+  reason: governance valid; docs-only index succeeded; code catalog remains unindexed by scope
+  governance_blocked: false
+  docs_ready: true
+  doc_count: 124
+  ae_canon_status: valid
+  ae_canon_reason: kernel_v2_external_valid
+  kernel_home: C:/repos/mios/ae-kernel
+canon_hashes:
+  AE-KERNEL-V2.md:
+    path: C:/repos/mios/ae-kernel/canon/AE-KERNEL-V2.md
+    sha256: ef348dc52b34d4c597135593802e07295b913fd9758ef990e75bcf95dd9c4e95
+  AE-PHASES.md:
+    path: C:/repos/mios/ae-kernel/canon/AE-PHASES.md
+    sha256: d7acc10142a68a0e18565dc6a27f2b61097050976b1e23d75bccde1ee6d0b35b
+  AE-HARNESS-ORCHESTRATION.md:
+    path: C:/repos/mios/ae-kernel/canon/AE-HARNESS-ORCHESTRATION.md
+    sha256: d904a7f8b2cd6f823c49d5585239401e86e4ab5b0aee41611656bb6a8fd7508e
+  AE-EVIDENCE-POLICY.md:
+    path: C:/repos/mios/ae-kernel/canon/AE-EVIDENCE-POLICY.md
+    sha256: ec9df70e90d8d55f9b3e053882b53a9c44af26b69345a244157764aedba39cba
+  AE-POLICY-PROJECTION.md:
+    path: C:/repos/mios/ae-kernel/canon/AE-POLICY-PROJECTION.md
+    sha256: 57bd4b3962c5210c1b7656113cfb7b411c4dcdc91665638c842804eb55f4e1cf
+worker_join:
+  status: PASS
+  worker_id: claudex-writer
+  role: bounded_write_worker
+  joined_from: real_renderer_and_verification_commands
+  evidence:
+    - policy_renderer: PASS
+    - renderer_repeatability: PASS
+    - deprecation_scan_active_scope: PASS
+    - go_test_all: PASS
+    - governance_status: PASS
+    - governance_nav: PASS
+    - git_diff_check: PASS
+changed_file_hashes:
+  algorithm: sha256
+  files:
+    scripts/ae/pre-push-guard.ps1: 929e4dd20dec8e2532c23e4731e1b6defd36de4eced9ca307be4d9ec09029608
+    scripts/ae/pre-push-guard.tests.ps1: f1e1b641dbf600b6818d4f758b15a64e5a803a9ac06678a42a68cce4de2660c6
+    .docs/ae/repo-policy.yaml: 2fb9a3327f76b480a2a6e7724be7a76cebcb9e0a63a113cbaea423313058b78b
+    .docs/wiki/00_gobierno_documental.md: f0231ad4ea2955192f115d9296a2acb0070a4ad6e1280a8330086f259dba523f
+    .docs/wiki/_mi-lsp/read-model.toml: 13bc9ac19b894c35b3043f02888809a8d13db27dbe72d247d79260a756005962
+    .docs/wiki/09_contratos/CT-GOVERNANCE-AE-KERNEL-V2.md: 7f7bcc68255dfcb3db312687b1faabe7c4e48d067824307e2df2f73df215f631
+    .gitignore: eaf50315678935be8387cd5ac0b7dc38a703680c9477683a47d1319f163f9a8b
+    AGENTS.md: 4236985452f9dbef5047145521611e235569fb8bb4660c254d06775839cab688
+    CLAUDE.md: 8071ff0d1714f831043cc186faf229cbd6dcb0cd2a81786dd4096f9ca03379f0
+    PATHS.md: fc1018896ba2b51c25d1037013d54c2d03d9daaf611b7035e1f2bd8bd00d40ae
+    internal/docgraph/governance.go: 4245f40902352e4a7614d8c03d7da8b506e56c2b496cbef268540c946cce2eb8
+    internal/model/types.go: 849e18bee123a99c83df561b33fba2fb6edb4703e644934c2ac01bf732f11f1b
+    internal/service/governance_test.go: e714f6fc503ebf51c86e3bc156914733894b1daa37d20ca7e1e9b565f2f16f05
+    internal/service/governance_test_helpers_test.go: 499220810fc8457e2bba3e204445acbe6b4f5da413271e221ced6e01357f56a3
+    internal/service/harness_validate.go: 8dbda1cdbdeccc9570fed1de981e2ae05b7634e9b05a065161b3acc6a0011ebd
+    internal/service/harness_validate_test.go: 6228f0ecb873a968b18dd6aca1cc2a9576bb8f9f51c49d17f6f3752d95542b67
+    internal/service/source_validate.go: 2b1e6d461e054fbc195f344e76d8a0f7aeeedfc917b110c59ed3743516793ef6
+changed_file_hashes_scope: implementation_policy_canonical_files_only
+package_hashes:
+  algorithm: sha256
+  normalization: remove the top-level package_hashes block before hashing each artifact
+  files:
+    audit-manifest.yaml: 3a4a123562a35814df24e1a97ef2ef1ae74d222b659e63f6cd227076522146d6
+    session-contract.yaml: 42a0840d85551ce1bd178362c842556ee68f49aeca6bfb9a9d2b940502865404
+    traceability-closure.yaml: f92724800ce7edbe578ab41bf5f6cda73f03e08959fc4e6f1b16cda1d5f3f2ab
+scans:
+  raw_paths: PASS
+  secrets: PASS
+  forbidden_paths: PASS
+  path_traversal_and_symlink_tests: PASS
+  deprecation_scan_active_scope: PASS
+  renderer_repeatability: PASS
+  pre_push_guard_read_only: PASS
+  pre_push_guard_scope_test: PASS
+  pre_push_guard_negative_tests: PASS
+  go_test_all: PASS
+  governance_status_by_alias: PASS
+  governance_nav_by_alias: PASS
+  validate_harness_targeted: PASS
+  validate_source_targeted: PASS
+  git_diff_check: PASS
+  pre_push_guard_command: pwsh -NoProfile -File scripts/ae/pre-push-guard.ps1 -SessionContract .docs/auditoria/2026-07-13-ae-kernel-v2-integration/session-contract.yaml -AllowDirty
+  pre_push_guard_scope: exact .docs/wiki/_mi-lsp/read-model.toml only when explicitly listed in allowed_paths; .docs/raw remains rejected
+post_commit:
+  sha: 4f6012e
+  origin_main: 9f232e8
+  fetch_status: stable
+  ahead_of_origin_main: 1
+  go_test_all: PASS
+  pre_push_guard:
+    status: PASS
+    dirty_count: 0
+    diff_count: 20
+    ae_canon_status: valid
+summary:
+  verdict: PASS_WITH_PUSH_READBACK_PENDING
+  sanitized: true
+  completion_handoff: handoff_ready
+  handoff_target: integrate-main
+  blockers:
+    - id: push_readback_pending
+      owner: integration_owner
+      detail: push and remote readback remain pending and are outside this worker execution

@@ -1,6 +1,6 @@
 # AGENTS.md — mi-lsp Agentic Engineering Policy
 
-> **Authority**: Architecture + AE-KERNEL-V2.md. **Language**: English. Canonical source of truth for worker-runtime orchestration on mi-lsp.
+> **Authority**: architecture + AE-KERNEL-V2.md. **Language**: English. Canonical source of truth for worker-runtime orchestration on mi-lsp.
 
 ## worker-runtime Leaf Worker Policy
 
@@ -67,7 +67,7 @@ Mandatory AE rules:
 
 ### Linear (Project Management)
 
-Linear is the ONLY source of truth for tickets/workflow/ownership/closure. External code-host issue trackers are not authoritative; the configured tracker remains the workflow source of truth. Use the configured Linear adapter for its endpoint(s), authentication scheme, states, and project routing. Base URL `https://api.linear.app/graphql`, workspace `fgpaz`, project key `MI-LSP`; only the env-var name `LINEAR_API_KEY` is declared, never a credential.
+Linear is the ONLY source of truth for tickets/workflow/ownership/closure. External code-host issue trackers are not authoritative; the configured tracker remains the workflow source of truth. Use the configured Linear adapter for its endpoint(s), authentication scheme, states, and project routing. Base URL `https://api.linear.app/graphql`, workspace `mi-lsp`, project key `MI-LSP`; only the env-var name `LINEAR_API_KEY` is declared, never a credential.
 
 - `LINEAR_API_KEY` is a secret — env or the configured secret wrapper only; never in tracked files, docs, prompts, logs, issue bodies, printed args. a tracker routing file is non-secret routing only. Open every session with a redacted smoke query (`viewer`, `organization`, `teams(first:50)`); report org slug + team keys + counts only.
 - `$tracker-cli` is the live tracker helper in Linear mode (GitHub mode = legacy migration only).
@@ -125,14 +125,10 @@ Keep `AGENTS.md`, `CLAUDE.md`, and project-local skills in English. All other pr
 **Style**: avoid emojis in policy/governance outputs. User-facing copy (UI labels, errors, placeholders, buttons, banners, toasts, modals) MUST preserve correct Spanish orthography — locale-specific characters, punctuation, and inflection. Applies to hardcoded strings, i18n keys, dynamic copy. Verify against the configured language standard.
 
 **Mandatory wrappers** (never bypass with raw `curl`/`ssh`/`psql`/`sqlcmd`/MCPs when the wrapper expresses the action):
-  - name: mi-lsp
-    script: mi-lsp
-    precondition: registered workspace with valid governance and explicit client/session attribution
-    authority: repository policy
-  - name: release
-    script: scripts/release/ae-release-binaries.ps1
-    precondition: ae-close and pre-push gates are green
-    authority: AE-RELEASE-DISTRIBUTION
+  - name: go
+    script: go toolchain (repository go.mod)
+  - name: pre-push-guard
+    script: scripts/ae/pre-push-guard.ps1
 
 **private network precondition**: before `deployment-cli` or `remote-cli`, confirm private access to the target environment (ask the user if not already confirmed).
 
@@ -145,39 +141,32 @@ Local semantic CLI and graph-native code intelligence runtime for large .NET/C# 
 
 ### Repository Structure Rules
 
-  - Go CLI and daemon code lives under cmd/ and internal/.
-  - Roslyn semantic worker lives under worker-dotnet/.
-  - Functional canon lives under .docs/wiki/00-06 and technical canon under .docs/wiki/07-09.
-  - Agent Engineering canon lives under .docs/wiki/ae/.
-  - Audit evidence lives under .docs/auditoria/<session>/.
-  - Raw plans and prompts are non-canonical scratch inputs under .docs/raw/.
+  - Go CLI and service code lives under cmd/ and internal/.
+  - Roslyn semantic worker lives under worker-dotnet/; optional language workers are distributed through governed release scripts.
+  - .docs/wiki/00-06 is functional canon; .docs/wiki/07-09 is technical canon.
+  - Universal Agent Engineering canon comes from <kernel_home>/canon; repo-specific policy lives in .docs/ae/repo-policy.yaml.
+  - Durable task and audit evidence lives under .docs/auditoria/<session>/; .docs/raw remains non-canonical input.
   - Repository-local runtime state under .mi-lsp/ is never committed.
-
-### UX Orthography Rules
-
-  - preserve Spanish accents and opening punctuation
 
 ### Mandatory Wrappers
 
-  - name: mi-lsp
-    script: mi-lsp
-    precondition: registered workspace with valid governance and explicit client/session attribution
-    authority: repository policy
-  - name: release
-    script: scripts/release/ae-release-binaries.ps1
-    precondition: ae-close and pre-push gates are green
-    authority: AE-RELEASE-DISTRIBUTION
+  - name: go
+    script: go toolchain (repository go.mod)
+  - name: pre-push-guard
+    script: scripts/ae/pre-push-guard.ps1
 
 ### QA Canon Paths
 
+  - internal/service/governance_test.go
+  - internal/service/governance_test_helpers_test.go
+  - tests
+  - go.mod
+  - .docs/wiki/09_contratos
   - .docs/wiki/06_matriz_pruebas_RF.md
   - .docs/wiki/06_pruebas/
-  - .docs/wiki/ae/
 
 ### Additional Local Rules
 
-  - title: mi-lsp mandatory routing
-    body: For supported repository orientation, code navigation, impact analysis, wiki context, planning, review, QA, and traceability intents, invoke mi-lsp first. Raw rg, Grep, Glob, and broad Read are explicit fallback tools only after mi-lsp returns an unusable or unsupported terminal state.
   - title: Release platform
     body: Windows release verification must include arm64 binaries and real installed-binary readback.
   - title: Shared skill mirrors

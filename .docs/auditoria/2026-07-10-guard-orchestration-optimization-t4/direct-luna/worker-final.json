@@ -1,0 +1,50 @@
+{
+  "schema": "worker-final/v1",
+  "verdict": "PASS",
+  "model": {
+    "provider": "openai-codex",
+    "model": "gpt-5.6-luna",
+    "thinking": "medium"
+  },
+  "scope": {
+    "task": "T4 final micro-repair: successful daemon parity",
+    "mutation_authority": false,
+    "delegated": false,
+    "changed_paths": [
+      "internal/daemon/server_test.go",
+      "internal/cli/root_test.go",
+      ".docs/auditoria/2026-07-10-guard-orchestration-optimization-t4/direct-luna/worker-final.json"
+    ]
+  },
+  "repairs": [
+    "Parity setup now creates a valid governed workspace and initialized indexed generation.",
+    "Parity asserts direct success, semantic-preparation-evidence/v1, and exact src/allowed.go path preservation.",
+    "Parity compares normalized direct, daemon cache-miss, and daemon cache-hit envelopes while removing only timing/transport fields.",
+    "Parity asserts one cache miss, one cache hit, and one cache entry.",
+    "Added nav.prepare to TestShouldUseDaemonPolicy with expected daemon use."
+  ],
+  "tests": {
+    "commands": [
+      "gofmt -w internal/cli/root_test.go internal/daemon/server_test.go",
+      "go test ./internal/cli ./internal/daemon",
+      "go test ./...",
+      "go vet ./...",
+      "git diff --check"
+    ],
+    "targeted_result": "PASS",
+    "full_result": "PASS",
+    "vet_result": "PASS",
+    "diff_check_result": "PASS"
+  },
+  "evidence": [
+    "internal/daemon/server_test.go: TestHandleRequestNavPrepareMatchesDirectService",
+    "internal/cli/root_test.go: TestShouldUseDaemonPolicy",
+    "go test ./internal/cli ./internal/daemon",
+    "go test ./...",
+    "go vet ./...",
+    "git diff --check"
+  ],
+  "remaining_risks": [
+    "No commit, push, or release performed per repair packet."
+  ]
+}

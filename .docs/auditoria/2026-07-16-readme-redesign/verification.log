@@ -1,0 +1,102 @@
+README redesign and follow-up verification
+Date: 2026-07-16
+Workspace: C:\wt\mi-lsp-readme-redesign
+Branch: docs/readme-redesign
+Base: origin/main@099260e7574b6d79cf3e0a7a4a703697ccaf936e
+
+PASS governance
+- mi-lsp index --workspace . --format toon
+- mi-lsp workspace status . --format toon
+- mi-lsp nav governance --workspace . --format toon
+- governance_blocked=false
+- docs_ready=true
+- doc_count=132
+- ae_canon.status=valid
+- governance index sync=current
+
+WARN full-workspace documentation validators
+- mi-lsp nav wiki validate-harness --workspace . --format toon
+- current task contract is recognized; the prior README-REDESIGN-VERDICT missing-contract blocker is resolved
+- full-workspace harness_verdict=BLOCKED by 10 preexisting findings outside this task's changed paths
+- mi-lsp nav wiki validate-source --workspace . --format toon
+- navigation_readiness=ready
+- full-workspace wiki_source_verdict=BLOCKED by four preexisting CT-GOVERNANCE-AE-KERNEL-V2 import/export findings
+- changed AE-RELEASE-DISTRIBUTION source contract passes both validators
+
+PASS README acceptance oracle
+- physical lines: 185 (required 150-220)
+- section order: Hero -> Install -> Demo -> Why -> Docs-first -> How it works -> Compatibility/limits -> Agent usage -> Learn more -> License
+- local Markdown links resolve
+- install script references resolve
+- unqualified benchmark claims absent
+- illustrative demo label present
+- large-index job_id caveat present
+- public platform claims match the v0.5.12 Windows, Linux, and Darwin assets
+- Go wording distinguishes native AST catalog plus optional gopls from Roslyn-level semantics
+
+PASS assets
+- SVG parses as XML
+- GIF dimensions: 1200x620
+- GIF frames: 5
+- GIF has descriptive Markdown alt text
+- static SVG and GIF use init -> search --include-content -> multi-read
+
+PASS Darwin release and installer mapping
+- gh release view reports v0.5.12 assets for darwin-arm64 and darwin-x64
+- downloaded v0.5.12 darwin-arm64 archive contains mi-lsp and workers/osx-arm64
+- scripts/install/install.sh already supported Darwin and required no source change
+- sh -n scripts/install/install.sh
+- sh -n scripts/tests/install-platform-mapping.sh
+- sh scripts/tests/install-platform-mapping.sh
+- auto Darwin arm64 maps archive darwin-arm64 -> worker osx-arm64
+- explicit darwin-x64 and osx-x64 aliases map to archive darwin-x64 -> worker osx-x64
+- Linux dry-run remains supported
+- invalid RIDs fail before curl execution
+
+PASS regression and CI
+- scripts/tests/install-platform-mapping.sh is executable
+- .github/workflows/test.yml parses as YAML
+- Ubuntu CI runs the installer platform mapping test
+- go test ./... passed for all Go packages
+- git diff --check passed
+
+PASS Go canonical reconciliation
+- functional scope, architecture, FL/RF behavior, root technical contracts, backend owner contract, release distribution, and README now agree
+- Go has a native AST catalog without gopls
+- gopls optionally enriches nav context and nav refs
+- Go does not claim Roslyn-level semantic depth
+
+WARN release provenance dry-run
+- scripts/release/ae-release-binaries.ps1 -SkipBuild -SkipLocalInstall -SkipWslInstall -SkipMirror passed the clean-tree gate and then stopped because dist/win-arm64/mi-lsp.exe is absent
+- no binary-producing source changed; the session contract records the binary rebuild and local-install waiver, so generating a fresh release matrix is outside this task
+- live v0.5.12 release assets and the Darwin archive contents were verified independently through GitHub
+
+PASS final pre-push guard
+- scripts/ae/pre-push-guard.ps1 ran without -AllowDirty
+- ok=true, dirty_count=0, diff_count=20, ae_canon_status=valid
+
+PASS Git hygiene
+- content commit: 1c3379ada2559f3e34348536cfeacaa2b59034e6
+- task paths stay within session-contract allowed paths
+- scripts/install/install.sh is unchanged after live release evidence corrected the earlier false Darwin-rejection premise
+- integration worktree contains no internal/** changes from the source worktree
+- push, PR mutation, merge, cleanup, and release publication have not occurred yet
+
+SHA256
+- README.md 818acec0988aa887429a160059c102e93bfc8b0feb9550e02f77f55f31e82540
+- docs/assets/readme/daily-flow-demo.svg 0c5eb5ca526fe6d926547cdd85ae6218d4954fef2fb723a4ff0482da597bfdf9
+- docs/assets/readme/daily-flow-demo.gif b9af747b22ae46e6baa1808b347f13fad542b9b3a034cc443cefd97967ceca13
+- scripts/tests/install-platform-mapping.sh 4ddd89ef3b0b4a545e29fa21bba242a842fb9d4ce88e304bb168c5636392149c
+- .github/workflows/test.yml 485b6a786f4dc76276ce5b9ef5af204dd88dc72fcfeafeb0bb7467beeab6b401
+- .docs/wiki/01_alcance_funcional.md 61050597e983ab16e76ec8b22360eaf818caa05cd40f00371a16729c9c638494
+- .docs/wiki/02_arquitectura.md 8d424b81e2e805187c97b480bb241db811186bee5d0bf86b5df73700b00082e1
+- .docs/wiki/03_FL/FL-QRY-01.md c5cd55bd8def88fb833b0148c1a7053871b20ffda5a9512d940f70f73aec9ef5
+- .docs/wiki/04_RF/RF-QRY-002.md 8d538c5f2914c1051e920864c2ce21798f83b63a134d59e14f3267553237235e
+- .docs/wiki/04_RF/RF-QRY-006.md 0351b6cb814bf9536e83c68a8257ee0b27da503ead7554e7bce8148852987ea8
+- .docs/wiki/04_RF/RF-QRY-016.md ff4eb52f977eade9c4fc0446c91b25e473e7cc259177b0fca8f7a6cdad9ea7a0
+- .docs/wiki/09_contratos_tecnicos.md 50fb3378a54d449b99039d19ae7a47507be2f9d932010148efaab78602746914
+- .docs/wiki/09_contratos/CT-DAEMON-WORKER.md 6e334928835f408a2f001f627a90dbe4f10f1203109d069e51cdcb82ab8abfc0
+- .docs/wiki/ae/AE-RELEASE-DISTRIBUTION.md b084f29032362fe5914f1deae4946058445b29ee519af7fd72e9e3845766bf4c
+
+Remaining follow-ups
+- none in the requested README, Darwin distribution, or Go canon scope

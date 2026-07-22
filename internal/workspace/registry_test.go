@@ -212,6 +212,14 @@ func TestPruneStaleWorkspacesDryRunAndApply(t *testing.T) {
 	missingRoot := filepath.Join(t.TempDir(), "missing-worktree")
 	registerTestWorkspace(t, "live", liveRoot)
 	registerTestWorkspace(t, "stale", missingRoot)
+	registry, err := LoadRegistry()
+	if err != nil {
+		t.Fatalf("LoadRegistry: %v", err)
+	}
+	registry.Workspaces["empty"] = model.WorkspaceRegistration{Name: "empty", Root: "", Kind: "mixed"}
+	if err := SaveRegistry(registry); err != nil {
+		t.Fatalf("SaveRegistry: %v", err)
+	}
 
 	dryRun, err := PruneStaleWorkspaces(false)
 	if err != nil {
@@ -220,8 +228,8 @@ func TestPruneStaleWorkspacesDryRunAndApply(t *testing.T) {
 	if !dryRun.DryRun {
 		t.Fatal("dry run report should have DryRun=true")
 	}
-	if len(dryRun.Candidates) != 1 || dryRun.Candidates[0].Alias != "stale" {
-		t.Fatalf("dry run candidates = %#v, want stale", dryRun.Candidates)
+	if len(dryRun.Candidates) != 2 || dryRun.Candidates[0].Alias != "empty" || dryRun.Candidates[1].Alias != "stale" {
+		t.Fatalf("dry run candidates = %#v, want empty + stale", dryRun.Candidates)
 	}
 	if _, err := ResolveWorkspace("stale"); err != nil {
 		t.Fatalf("dry run removed stale alias: %v", err)
@@ -234,11 +242,14 @@ func TestPruneStaleWorkspacesDryRunAndApply(t *testing.T) {
 	if applied.DryRun {
 		t.Fatal("apply report should have DryRun=false")
 	}
-	if applied.RemovedCount != 1 || len(applied.Removed) != 1 || applied.Removed[0].Alias != "stale" {
-		t.Fatalf("applied removed = %#v count=%d, want stale", applied.Removed, applied.RemovedCount)
+	if applied.RemovedCount != 2 || len(applied.Removed) != 2 {
+		t.Fatalf("applied removed = %#v count=%d, want empty + stale", applied.Removed, applied.RemovedCount)
 	}
 	if _, err := ResolveWorkspace("stale"); err == nil {
 		t.Fatal("stale alias should be removed after apply")
+	}
+	if _, err := ResolveWorkspace("empty"); err == nil {
+		t.Fatal("empty-root alias should be removed after apply")
 	}
 	if _, err := ResolveWorkspace("live"); err != nil {
 		t.Fatalf("live alias should remain: %v", err)

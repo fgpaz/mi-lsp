@@ -10,23 +10,16 @@ import (
 )
 
 func TestRegistryGCDryRun(t *testing.T) {
-	// Create a temporary registry directory
+	// Create a temporary registry directory.
 	tmpDir := t.TempDir()
-	oldHome := os.Getenv("HOME")
-	defer func() {
-		if oldHome != "" {
-			_ = os.Setenv("HOME", oldHome)
-		}
-	}()
 
-	// Create a temporary home directory with mi-lsp subdirectory
+	// Isolate both Unix and Windows home-directory resolution.
 	homeDir := filepath.Join(tmpDir, "home")
 	if err := os.MkdirAll(homeDir, 0o755); err != nil {
 		t.Fatalf("failed to create home dir: %v", err)
 	}
-	if err := os.Setenv("HOME", homeDir); err != nil {
-		t.Fatalf("failed to set HOME: %v", err)
-	}
+	t.Setenv("HOME", homeDir)
+	t.Setenv("USERPROFILE", homeDir)
 
 	// Create registry directory
 	registryDir := filepath.Join(homeDir, ".mi-lsp")
@@ -91,23 +84,16 @@ func TestRegistryGCDryRun(t *testing.T) {
 }
 
 func TestRegistryGCApply(t *testing.T) {
-	// Create a temporary registry directory
+	// Create a temporary registry directory.
 	tmpDir := t.TempDir()
-	oldHome := os.Getenv("HOME")
-	defer func() {
-		if oldHome != "" {
-			_ = os.Setenv("HOME", oldHome)
-		}
-	}()
 
-	// Create a temporary home directory with mi-lsp subdirectory
+	// Isolate both Unix and Windows home-directory resolution.
 	homeDir := filepath.Join(tmpDir, "home")
 	if err := os.MkdirAll(homeDir, 0o755); err != nil {
 		t.Fatalf("failed to create home dir: %v", err)
 	}
-	if err := os.Setenv("HOME", homeDir); err != nil {
-		t.Fatalf("failed to set HOME: %v", err)
-	}
+	t.Setenv("HOME", homeDir)
+	t.Setenv("USERPROFILE", homeDir)
 
 	// Create registry directory
 	registryDir := filepath.Join(homeDir, ".mi-lsp")
@@ -216,23 +202,16 @@ func TestRegistryGCApply(t *testing.T) {
 }
 
 func TestRegistryGCWithEmptyRoot(t *testing.T) {
-	// Create a temporary registry directory
+	// Create a temporary registry directory.
 	tmpDir := t.TempDir()
-	oldHome := os.Getenv("HOME")
-	defer func() {
-		if oldHome != "" {
-			_ = os.Setenv("HOME", oldHome)
-		}
-	}()
 
-	// Create a temporary home directory with mi-lsp subdirectory
+	// Isolate both Unix and Windows home-directory resolution.
 	homeDir := filepath.Join(tmpDir, "home")
 	if err := os.MkdirAll(homeDir, 0o755); err != nil {
 		t.Fatalf("failed to create home dir: %v", err)
 	}
-	if err := os.Setenv("HOME", homeDir); err != nil {
-		t.Fatalf("failed to set HOME: %v", err)
-	}
+	t.Setenv("HOME", homeDir)
+	t.Setenv("USERPROFILE", homeDir)
 
 	// Create registry directory
 	registryDir := filepath.Join(homeDir, ".mi-lsp")
@@ -246,7 +225,7 @@ func TestRegistryGCWithEmptyRoot(t *testing.T) {
 		t.Fatalf("failed to create existing path: %v", err)
 	}
 
-	// Create registry with workspace with empty root (should be skipped)
+	// Create registry with workspace with empty root (safe prune candidate)
 	registry := model.RegistryFile{
 		Workspaces: map[string]model.WorkspaceRegistration{
 			"exists": {Name: "exists", Root: existingPath, Kind: "mixed"},
@@ -266,11 +245,11 @@ func TestRegistryGCWithEmptyRoot(t *testing.T) {
 		t.Fatalf("GarbageCollectRegistry failed: %v", err)
 	}
 
-	// Verify that empty root is skipped, not treated as a candidate
-	if len(report.Candidates) != 0 {
-		t.Errorf("expected 0 candidates for empty root, got %d", len(report.Candidates))
+	// Empty roots cannot identify a workspace and are safe prune candidates.
+	if len(report.Candidates) != 1 || report.Candidates[0].Alias != "empty" {
+		t.Errorf("expected empty root candidate, got %#v", report.Candidates)
 	}
-	if len(report.Skipped) != 1 {
-		t.Errorf("expected 1 skipped, got %d", len(report.Skipped))
+	if len(report.Skipped) != 0 {
+		t.Errorf("expected no skipped roots, got %#v", report.Skipped)
 	}
 }

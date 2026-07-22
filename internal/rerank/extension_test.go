@@ -12,9 +12,11 @@ import (
 	"time"
 )
 
+const helperTimeoutMS = 30_000
+
 func TestExecuteReordersAndAppendsMissingCandidates(t *testing.T) {
 	command, args := helperCommand(t, "partial")
-	outcome, err := Execute(context.Background(), Config{Command: command, Args: args, TopN: 1}, "sensitive query", testCandidates())
+	outcome, err := Execute(context.Background(), Config{Command: command, Args: args, TimeoutMS: helperTimeoutMS, TopN: 1}, "sensitive query", testCandidates())
 	if err != nil {
 		t.Fatalf("Execute: %v", err)
 	}
@@ -29,7 +31,7 @@ func TestExecuteReordersAndAppendsMissingCandidates(t *testing.T) {
 
 func TestExecuteResultsWithFiniteScores(t *testing.T) {
 	command, args := helperCommand(t, "results")
-	outcome, err := Execute(context.Background(), Config{Command: command, Args: args}, "query", testCandidates())
+	outcome, err := Execute(context.Background(), Config{Command: command, Args: args, TimeoutMS: helperTimeoutMS}, "query", testCandidates())
 	if err != nil {
 		t.Fatalf("Execute: %v", err)
 	}
@@ -52,7 +54,7 @@ func TestExecuteRejectsInvalidOutput(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			command, args := helperCommand(t, tt.mode)
-			_, err := Execute(context.Background(), Config{Command: command, Args: args}, "query", testCandidates())
+			_, err := Execute(context.Background(), Config{Command: command, Args: args, TimeoutMS: helperTimeoutMS}, "query", testCandidates())
 			if err == nil {
 				t.Fatalf("Execute succeeded, want %s", tt.want)
 			}
@@ -90,7 +92,7 @@ func TestExecuteTimesOut(t *testing.T) {
 
 func TestExecuteBoundsSnippetsAndSuppressesWarnings(t *testing.T) {
 	command, args := helperCommand(t, "inspect")
-	outcome, err := Execute(context.Background(), Config{Command: command, Args: args, MaxSnippetChars: 4}, "secret query", []Candidate{
+	outcome, err := Execute(context.Background(), Config{Command: command, Args: args, TimeoutMS: helperTimeoutMS, MaxSnippetChars: 4}, "secret query", []Candidate{
 		{Archivo: "a.md", Snippet: "secret-snippet", Score: 1},
 	})
 	if err != nil {

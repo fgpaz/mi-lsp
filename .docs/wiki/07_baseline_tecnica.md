@@ -150,7 +150,7 @@ flowchart LR
 - El estado semantico persistente del workspace vive repo-local; el estado global solo guarda registro, estado del daemon y telemetria local.
 - El estado documental persistente tambien vive repo-local: `doc_records`, `doc_edges` y `doc_mentions`.
 - La gobernanza documental manda sobre toda tarea spec-driven: `00_gobierno_documental.md` es la autoridad humana y `read-model.toml` su proyeccion ejecutable.
-- `.docs/wiki/ae/` es un anexo tecnico gobernado por `00` para contratos de ejecucion agentica, decision lock, evidencia y release-distribution; no redefine RF/FL/CT, pero si agrega cierre obligatorio para trabajo que pueda dejar binarios o installs en drift.
+- El canon universal de Agent Engineering vive en `<kernel_home>/canon`; `.docs/wiki/ae/` se conserva solo como proyección de compatibilidad repo-local. La configuración específica del repositorio vive en `.docs/ae/repo-policy.yaml` y debe usar un bloque de tracker específico por proveedor (`linear`, `plane`, `azure_boards` o `jira`) sin aliases neutrales en `tracker`.
 - El orden funcional del reading pack se deriva primero de `governance.hierarchy[*].pack_stage`; cuando la gobernanza declara `outcome`, esa etapa queda entre `scope` y `architecture` y los docs `RS-*`, `02_resultados_soluciones_usuario.md` y `02_resultados/*.md` se clasifican como `layer=RS`.
 - `owner_hints` vive en `00_gobierno_documental.md`, se proyecta al `read-model.toml` y solo refina ownership documental repo-especifico; no reemplaza las heuristicas generales del binario.
 - Si `00`, su YAML embebido, la proyeccion o el indice quedan fuera de sync, el workspace entra en `blocked mode`.
@@ -275,7 +275,7 @@ El struct `internal/service/config.go` centraliza todos los valores hardcodeados
 - `workspace.add` y `workspace.init` usan **hibrido smart-sync**: sync dentro de `SmartSyncTimeout` (20s) y degradan a background con `job_id` si lo exceden; `--background` fuerza async inmediato; `--wait` fuerza sync completo (`IndexTimeout`); `--no-index` omite indexacion.
 - `worker install` es explicito; no hay descargas silenciosas durante consultas.
 - `worker install` copia un worker bundled por RID cuando la distribucion lo trae adjunto; si la CLI corre dentro del repo `mi-lsp` y no existe bundle adjunto, publica el worker desde `worker-dotnet/` con `dotnet publish`.
-- `scripts/install/install.ps1|sh` es la superficie publica de instalacion/actualizacion CLI-only: consume GitHub `releases/latest`, detecta uno de los cuatro RIDs publicados, verifica checksum antes de extraer y mantiene `workers/<rid>/` junto al binario.
+- `scripts/install/install.ps1|sh` es la superficie publica de instalacion/actualizacion CLI-only: consume GitHub `releases/latest`, detecta uno de los seis RIDs publicados, verifica checksum antes de extraer y mantiene `workers/<rid>/` junto al binario.
 - `scripts/install/install-agent.ps1|sh` compone la instalacion CLI con `npx skills add`; no instala la skill por copia directa y no ejecuta auto-update silencioso.
 - Las queries Roslyn resuelven candidatos por presencia de archivos en orden `bundle -> installed -> dev-local` y no hacen probe de compatibilidad en el hot path.
 - `worker status` debe exponer `tool_root`, `tool_root_kind`, `cli_path`, `protocol_version`, origen seleccionado (`bundle|installed|dev-local`) y compatibilidad de candidatos; el probe explicito vive ahi y no en las queries regulares.

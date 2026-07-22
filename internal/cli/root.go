@@ -222,6 +222,10 @@ func (s *rootState) executeOperation(cmd *cobra.Command, operation string, paylo
 		envelope, err = daemon.NewClient().Execute(ctx, request)
 		if err != nil {
 			daemonFailed = true
+		} else if shouldFallbackNavPrepareForUnknownOperation(request.Operation, envelope) {
+			// Additive preparation remains usable while an older shared daemon is still running.
+			daemonFailed = true
+			err = nil
 		} else {
 			route = "daemon"
 		}
@@ -265,6 +269,10 @@ func (s *rootState) executeGraphOperation(cmd *cobra.Command, operation string, 
 		return s.executeOperationHook(cmd, operation, payload, preferDaemon)
 	}
 	return s.executeOperation(cmd, operation, payload, preferDaemon)
+}
+
+func shouldFallbackNavPrepareForUnknownOperation(operation string, envelope model.Envelope) bool {
+	return operation == "nav.prepare" && !envelope.Ok && envelope.Error != nil && envelope.Error.Code == "nav_generic" && strings.Contains(strings.ToLower(envelope.Error.Message), "unknown operation")
 }
 
 func (s *rootState) ensureTelemetry() *CLITelemetry {

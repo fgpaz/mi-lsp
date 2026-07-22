@@ -1,3 +1,4 @@
+# deprecation-scan-file: historical
 schema: sdd-traceability-closure-v1
 task_slug: "2026-05-21-ae-release-distribution"
 closed_at: "2026-05-22T00:56:00Z"

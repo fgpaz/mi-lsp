@@ -70,6 +70,8 @@ required_targets:
     - win-x64
     - linux-arm64
     - linux-x64
+    - osx-arm64
+    - osx-x64
   public_install_scripts:
     - scripts/install/install.ps1
     - scripts/install/install.sh
@@ -87,6 +89,7 @@ required_targets:
     checksum_asset: mi-lsp_<version>_checksums.txt
     archive_layout: mi-lsp(.exe) plus workers/<rid> inside the release archive
     agent_install: npx skills add fgpaz/mi-lsp --skill mi-lsp -g -a codex -a claude-code -y
+    macos_mapping: install.sh resolves darwin-* release archives and maps bundled workers to osx-*; explicit darwin-* and osx-* aliases remain accepted
     no_silent_auto_update: true
   code_signing_posture:
     decision: deferred  # SEC-11 / FD3 (2026-06-10)
@@ -107,6 +110,7 @@ stop_if:
   - tag does not point at HEAD when Publish is requested
   - any required RID artifact is missing
   - public install script references an asset name not produced by GoReleaser
+  - install.sh maps a Darwin host or darwin-*|osx-* alias to an archive/worker RID pair not produced by the release
   - public install script extracts before checksum verification
   - install-agent bypasses npx with an ungoverned folder-copy fallback
   - local ARM64 install was skipped without waiver on this workstation
@@ -118,6 +122,7 @@ stop_if:
   - an extension or pack can write the primary graph/wiki, access network/MCP/secrets, or survive cleanup
 verify:
   - powershell -File ./scripts/release/ae-release-binaries.ps1 -SkipBuild -SkipLocalInstall -SkipWslInstall -SkipMirror
+  - sh scripts/tests/install-platform-mapping.sh
   - mi-lsp version --format toon
   - mi-lsp admin export --recent --summary --by-route --by-client --by-hint --by-failure-stage --format toon
   - mi-lsp nav wiki validate-source --workspace <alias> --format toon
@@ -218,9 +223,9 @@ evidence:
 
 ## Operational Notes
 
-`scripts/release/ae-release-binaries.ps1` is the maintained entrypoint for this gate. By default it builds all four RIDs and refreshes the current host install. On Windows it also refreshes the active WSL install when WSL is present and the matching Linux RID was built.
+`scripts/release/ae-release-binaries.ps1` is the maintained entrypoint for this gate. By default it builds all six RIDs and refreshes the current host install. On Windows it also refreshes the active WSL install when WSL is present and the matching Linux RID was built.
 
-`scripts/install/install.ps1` and `scripts/install/install.sh` are the public CLI install/update entrypoints. They consume GitHub `releases/latest`, map the host to one of the four published RIDs, verify the release checksum before extraction, preserve the bundled `workers/<rid>/` layout, and run `version` plus `worker status` probes.
+`scripts/install/install.ps1` and `scripts/install/install.sh` are the public CLI install/update entrypoints. They consume GitHub `releases/latest`, map the host to a published Windows, Linux, or Darwin archive, verify the release checksum before extraction, preserve the bundled worker layout (`darwin-*` archive to `osx-*` worker), and run `version` plus `worker status` probes.
 
 `scripts/install/install-agent.ps1` and `scripts/install/install-agent.sh` compose the CLI installer with `npx skills add`; they do not copy skill folders directly. A weekly release check from the skill may notify about newer releases, but binary update remains explicit user action.
 

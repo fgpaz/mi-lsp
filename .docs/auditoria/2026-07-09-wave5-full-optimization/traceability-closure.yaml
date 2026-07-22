@@ -1,0 +1,33 @@
+schema: ps-trazabilidad-closure/v1
+session: 2026-07-09-wave5-full-optimization
+status: COMPLETE
+scope:
+  - prune empty-root aliases as safe registry hygiene candidates
+  - prevent generic README FTS noise from outranking positive canonical owners
+  - honor JSON and compact output for admin export summary
+  - validate six-RID Windows/Linux/macOS release bundles and installed worker readback
+implementation_commit: f81f6e9 fix(routing): harden registry hygiene and canonical ranking
+integration_merge: f2d776b5c675be1f592bb51c4591034a58208ff1
+verification:
+  go_build: PASS
+  go_vet: PASS
+  go_test_all: PASS
+  route_readback: PASS (release/route-readback.toon -> AE-RELEASE-DISTRIBUTION)
+  telemetry_json_summary: PASS (release/telemetry-readback.json)
+  six_rid_build: PASS (release/multi-rid-build.json)
+  artifact_hash_manifest: PASS (release/artifact-manifest.json)
+  local_install_worker_status: PASS (release/install-readback.json)
+  wsl_install_worker_status: PASS (release/install-readback.json)
+worker_audit:
+  result: environment_failed_local_takeover
+  evidence: C:/wt/mi-pi-wave5/.docs/auditoria/2026-07-09-wave5-full-optimization/independent-audit/
+closure:
+  github_pr: PASS (https://github.com/fgpaz/mi-lsp/pull/50)
+  github_ci: PASS (Windows and Linux)
+  public_release: PASS (https://github.com/fgpaz/mi-lsp/releases/tag/v0.5.11)
+  public_workflow: PASS (https://github.com/fgpaz/mi-lsp/actions/runs/29095740211)
+  release_assets: PASS (6 RID archives + checksum manifest)
+  public_installer: PASS (checksum verified)
+  installed_readback: PASS (v0.5.11, vcs revision f2d776b, vcs.modified=false, bundled workers compatible on Windows ARM64 and WSL Linux ARM64)
+  mirrors: PASS (global skill and Buho mirror SHA256 match final win-x64/linux-x64 artifacts)
+next_action: none

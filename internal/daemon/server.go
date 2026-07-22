@@ -306,10 +306,13 @@ func (s *Server) handleRequest(request model.CommandRequest) (model.Envelope, er
 		if isCacheableOp(request.Operation) {
 			resolution, resolveErr := workspace.ResolveWorkspaceSelection(request.Context.Workspace, request.Context.CallerCWD)
 			if resolveErr == nil {
-				generation, _ := indexGeneration(resolution.Registration.Root)
+				canonicalRoot, generation, identityErr := indexGeneration(resolution.Registration.Root)
 				// Extract canonical args from request (use query, limit, offset, etc.)
 				canonicalArgs := extractCanonicalArgs(request)
-				cacheKey, keyErr := resultCacheKey(resolution.Registration.Root, request.Operation, generation, canonicalArgs)
+				cacheKey, keyErr := resultCacheKey(canonicalRoot, request.Operation, generation, canonicalArgs)
+				if identityErr != nil {
+					keyErr = identityErr
+				}
 				if keyErr == nil {
 					// Try cache hit
 					if cachedBytes, ok := s.resultCache.get(cacheKey); ok {
@@ -345,9 +348,12 @@ func (s *Server) handleRequest(request model.CommandRequest) (model.Envelope, er
 		if err == nil && response.Ok && isCacheableOp(request.Operation) {
 			resolution, resolveErr := workspace.ResolveWorkspaceSelection(request.Context.Workspace, request.Context.CallerCWD)
 			if resolveErr == nil {
-				generation, _ := indexGeneration(resolution.Registration.Root)
+				canonicalRoot, generation, identityErr := indexGeneration(resolution.Registration.Root)
 				canonicalArgs := extractCanonicalArgs(request)
-				cacheKey, keyErr := resultCacheKey(resolution.Registration.Root, request.Operation, generation, canonicalArgs)
+				cacheKey, keyErr := resultCacheKey(canonicalRoot, request.Operation, generation, canonicalArgs)
+				if identityErr != nil {
+					keyErr = identityErr
+				}
 				if keyErr == nil {
 					if envelopeBytes, marshalErr := json.Marshal(response); marshalErr == nil {
 						s.resultCache.set(cacheKey, envelopeBytes, resultCacheTTL)
@@ -700,6 +706,28 @@ func extractCanonicalArgs(request model.CommandRequest) map[string]any {
 	if request.Context.Offset > 0 {
 		result["_offset"] = request.Context.Offset
 	}
+	if request.Operation == "nav.prepare" {
+		if task := payloadString(request.Payload, "task"); task != "" {
+			result["_task_digest"] = service.PreparationDigest(task)
+		}
+		if resolution, err := workspace.ResolveWorkspaceSelection(request.Context.Workspace, request.Context.CallerCWD); err == nil {
+			if canonicalRoot, _, identityErr := service.PreparationCacheIdentity(resolution.Registration.Root); identityErr == nil {
+				result["_governance_digest"] = service.PreparationGovernanceDigest(canonicalRoot)
+			}
+		}
+		if plan := firstPayloadString(request.Payload, "plan", "packet", "edit_plan"); plan != "" {
+			result["_plan_digest"] = service.PreparationDigest(plan)
+		}
+	}
 
 	return result
+}
+
+func firstPayloadString(payload map[string]any, keys ...string) string {
+	for _, key := range keys {
+		if value, ok := payload[key].(string); ok && strings.TrimSpace(value) != "" {
+			return value
+		}
+	}
+	return ""
 }

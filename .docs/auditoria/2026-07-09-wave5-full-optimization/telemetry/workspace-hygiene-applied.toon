@@ -1,0 +1,29 @@
+backend: registry-hygiene
+items[1]:
+  - aliases_sharing_root[0]:
+    applied_actions[1]{id,summary}:
+      prune_stale_aliases,removed 1 stale workspace alias(es) from registry
+    apply_safe: true
+    binary_shadowing[1]{active,goarch,goos,modified,path,revision}:
+      true,arm64,windows,"false","C:\\Users\\fgpaz\\bin\\mi-lsp.exe",a7b7dad49b7bad4bacf6cc7be761c7673d859c2d
+    health: action_required
+    manual_actions[0]:
+    prune:
+      registry: "C:\\Users\\fgpaz\\.mi-lsp\\registry.toml"
+      removed[1]{alias,error,root}:
+        exists,"CreateFile C:\\Users\\fgpaz\\AppData\\Local\\Temp\\TestRegistryGCWithEmptyRoot1463456684\\001\\workspace1: The system cannot find the path specified.","C:\\Users\\fgpaz\\AppData\\Local\\Temp\\TestRegistryGCWithEmptyRoot1463456684\\001\\workspace1"
+      removed_count: 1
+      skipped[1]{alias,error,root}:
+        empty,empty root; skipped,""
+    safe_actions[1]{command,count,id,reason}:
+      mi-lsp workspace hygiene --apply-safe,2,prune_stale_aliases,remove registry aliases whose roots no longer exist; does not delete files or git worktrees
+    stale_paths[2]{alias,error,root}:
+      empty,"Stat : The system cannot find the path specified.",""
+      exists,"CreateFile C:\\Users\\fgpaz\\AppData\\Local\\Temp\\TestRegistryGCWithEmptyRoot1463456684\\001\\workspace1: The system cannot find the path specified.","C:\\Users\\fgpaz\\AppData\\Local\\Temp\\TestRegistryGCWithEmptyRoot1463456684\\001\\workspace1"
+    workspace_readiness_issues[0]:
+    worktree_families[0]:
+ok: true
+stats:
+  tokens_est: 459
+truncated: false
+warnings[3]: registry contains stale workspace roots; run mi-lsp workspace hygiene --apply-safe to remove only stale aliases,registry aliases removed; no files or git worktrees were deleted,some aliases were skipped because their roots could not be safely classified as missing

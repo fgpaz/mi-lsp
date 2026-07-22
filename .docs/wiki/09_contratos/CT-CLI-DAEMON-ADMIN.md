@@ -64,7 +64,7 @@ Define la frontera entre clientes locales y el runtime compartido: CLI publica, 
 Comandos canonicos:
 
 - `workspace add|scan|list|warm|status|remove|doctor|hygiene|prune`
-- `nav symbols|find|refs|overview|outline|service|search|context|deps|ask|pack|batch|related|workspace-map|diff-context|affected|trace|intent`
+- `nav symbols|find|refs|overview|outline|service|search|context|deps|ask|pack|prepare|batch|related|workspace-map|diff-context|affected|trace|intent`
 - `index [path] [--clean] [--docs-only]`
 - `index start|status|cancel`
 - `info`
@@ -84,7 +84,7 @@ behavior:
   --stale: "required; scans for aliases cuya workspace_root no exista"
   --apply: "ejecuta la purga; crea backup registry.toml.bak-<timestamp>"
   --dry-run: "default true; preview sin mutar"
-  result: "purga SOLO aliases cuya raíz no existe; NO borra archivos ni worktrees"
+  result: "purga SOLO aliases cuya raíz no existe o está vacía; NO borra archivos ni worktrees"
 ```
 
 ```toon
@@ -95,7 +95,7 @@ behavior:
   default: "dry-run preview"
   --dry-run: "default true; lista candidatos alias/path/reason sin mutar"
   --apply: "ejecuta la purga; crea backup registry.toml.bak-<timestamp>"
-  criteria: "purga SOLO aliases cuya workspace_root no existe (os.Stat NotExist); nunca por antiguedad ni por falta de index"
+  criteria: "purga SOLO aliases cuya workspace_root está vacía o no existe (os.Stat NotExist); nunca por antiguedad ni por falta de index"
   note: "coexiste con 'workspace prune --stale' (legacy compatible); mismo report WorkspacePruneReport"
 ```
 
@@ -250,7 +250,7 @@ Reglas:
 
 El summary puede incluir un bloque aditivo `recommendations` para usage-doctor. Cada item debe derivarse de telemetria agregada y sanitizada (`hint_code`, `failure_stage`, `truncation_rate`, latencias, breakdowns y conteos), incluir accion sugerida y razon breve, y nunca copiar query cruda, argv, payloads, paths sensibles ni contenido de archivos.
 
-Sin `--limit` explicito, el summary agrega toda la ventana filtrada mediante acumulacion streaming desde `daemon.db`; no debe cargar todos los eventos crudos en memoria. Si el usuario pasa `--limit`, el summary conserva la semantica de muestra acotada. `--by-backend`, `--percentile`, `--by-route`, `--by-client`, `--by-hint` y `--by-failure-stage` siguen siendo opt-in de visualizacion.
+Sin `--limit` explicito, el summary agrega toda la ventana filtrada mediante acumulacion streaming desde `daemon.db`; no debe cargar todos los eventos crudos en memoria. Si el usuario pasa `--limit`, el summary conserva la semantica de muestra acotada. `--by-backend`, `--percentile`, `--by-route`, `--by-client`, `--by-hint` y `--by-failure-stage` siguen siendo opt-in de visualizacion. `--format json` y `--format compact` deben serializar `ExportSummary` como JSON válido; `--format toon` usa TOON y la salida humana tabular queda reservada para formatos text/csv compatibles.
 
 ### `daemon logs`
 
@@ -372,6 +372,7 @@ daemon_eligible_ops:
   - nav.pack
   - nav.governance
   - nav.route
+  - nav.prepare
 behavior:
   auto_start: false
   fallback: "direct if daemon unavailable"

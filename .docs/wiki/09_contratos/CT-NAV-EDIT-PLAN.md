@@ -192,6 +192,24 @@ Las operaciones AST v2 sobre `csharp`, `typescript` o `python` fallan con error 
 - Si una escritura falla, el runtime debe restaurar los bytes anteriores de archivos ya tocados cuando sea posible.
 - Para `edit-plan-v2`, los mismos guardrails aplican antes y despues de la transformacion AST: hashes esperados, paths seguros, diff generado en la misma ejecucion y git limpio para escritura.
 
+## `nav prepare` — semantic-preparation-evidence/v1
+
+`nav prepare <task>` is an additive, read-only preparation surface. It resolves the canonical workspace root, computes task/governance/index-generation digests, invokes route and pack services in-process, and returns timing evidence. It never enables `edit-plan --apply` and never infers allowed paths from an implicit git diff.
+
+Input may include `affected_paths` or an explicit edit-plan JSON (`plan`, `packet`, or `edit_plan`). Without either, `allowed_paths` is empty and the response includes a warning. Direct and daemon envelopes use the same item schema; only transport routing metadata may differ. Daemon cache keys include canonical root, task digest, governance digest, index generation, and plan digest when present.
+
+```toon
+block_id: CT-NAV-EDIT-PLAN.semantic-preparation-v1
+description: "Read-only semantic preparation evidence"
+command_signature: "mi-lsp nav prepare <task> [--affected path...] [--plan file]"
+result_schema: "semantic-preparation-evidence/v1"
+mutation_authority: false
+allowed_paths_source: "explicit affected_paths or supplied edit-plan targets only"
+failure_taxonomy: ["workspace_resolution_failed", "workspace_root_unavailable", "task_required", "governance_unavailable", "governance_blocked", "plan_invalid", "plan_path_invalid", "affected_path_invalid"]
+cache_invalidation: ["canonical_root", "task_digest", "governance_digest", "active_sqlite_generation_snapshot", "plan_digest", "affected_paths_digest"]
+latency_evidence: "total_ms and stats.ms remain measured on failure; deterministic sampling uses N>=5 observations and reports p50/p95 without wall-clock thresholds"
+```
+
 ## Compatibilidad
 
 `edit-plan-v2` es aditivo y no rompe `edit-plan-v1`. Los clientes que ignoran `guardrails`, `evidence` o `apply_status` siguen pudiendo consumir `diff` y `files_changed`. Los packet `edit-plan-v1` textuales siguen siendo la ruta recomendada para C#, TypeScript y Python hasta que existan backends AST especificos.

@@ -1,3 +1,4 @@
+<!-- deprecation-scan-file: compatibility -->
 # AE-PROJECTION-POLICY
 
 ```yaml

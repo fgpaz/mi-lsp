@@ -1,0 +1,247 @@
+schema: ps-traceability-closure/v1
+session_contract_path: .docs/auditoria/2026-07-16-readme-redesign/session-contract.yaml
+task_slug: readme-redesign
+
+git_before:
+  branch: docs/readme-redesign
+  head_sha: 099260e7574b6d79cf3e0a7a4a703697ccaf936e
+  upstream: origin/main
+  ahead: 0
+  behind: 0
+git_after:
+  branch: docs/readme-redesign
+  head_sha: 1c3379ada2559f3e34348536cfeacaa2b59034e6
+  upstream: origin/main
+  ahead: 1
+  behind: 0
+
+changed_paths:
+  task_tracked:
+    - README.md
+    - docs/assets/readme/daily-flow-demo.svg
+    - .github/workflows/test.yml
+    - .docs/wiki/01_alcance_funcional.md
+    - .docs/wiki/02_arquitectura.md
+    - .docs/wiki/03_FL/FL-QRY-01.md
+    - .docs/wiki/04_RF/RF-QRY-002.md
+    - .docs/wiki/04_RF/RF-QRY-006.md
+    - .docs/wiki/04_RF/RF-QRY-016.md
+    - .docs/wiki/09_contratos_tecnicos.md
+    - .docs/wiki/09_contratos/CT-DAEMON-WORKER.md
+    - .docs/wiki/ae/AE-RELEASE-DISTRIBUTION.md
+  task_untracked:
+    - docs/assets/readme/daily-flow-demo.gif
+    - scripts/tests/install-platform-mapping.sh
+  reviewed_unchanged:
+    - scripts/install/install.sh
+    - .goreleaser.yaml
+    - scripts/release/build-workers.ps1
+  audit_ignored:
+    - .docs/auditoria/2026-07-16-readme-redesign/audit-manifest.yaml
+    - .docs/auditoria/2026-07-16-readme-redesign/session-contract.yaml
+    - .docs/auditoria/2026-07-16-readme-redesign/inventory.md
+    - .docs/auditoria/2026-07-16-readme-redesign/verification.log
+    - .docs/auditoria/2026-07-16-readme-redesign/traceability-closure.yaml
+    - .docs/auditoria/2026-07-16-readme-redesign/verdict.md
+  preexisting_excluded: []
+  raw_paths: []
+  forbidden_hits_from_task: []
+
+scope_verdict: PASS
+scope_notes:
+  - all task changes stay inside session-contract allowed paths
+  - scripts/install/install.sh was inspected and left unchanged because the published Darwin assets and RID mapping already exist
+  - integration uses a clean worktree from origin/main, so the source worktree internal changes are absent from this branch
+  - guarded PR integration is authorized; release publication and cleanup remain out of scope
+
+traceability_chains:
+  reviewed_anchors:
+    - README
+    - .docs/wiki/01_alcance_funcional.md
+    - .docs/wiki/02_arquitectura.md
+    - .docs/wiki/03_FL/FL-QRY-01.md
+    - .docs/wiki/04_RF/RF-QRY-002.md
+    - .docs/wiki/04_RF/RF-QRY-006.md
+    - .docs/wiki/04_RF/RF-QRY-016.md
+    - .docs/wiki/07_baseline_tecnica.md
+    - .docs/wiki/09_contratos_tecnicos.md
+    - .docs/wiki/09_contratos/CT-DAEMON-WORKER.md
+    - .docs/wiki/ae/AE-RELEASE-DISTRIBUTION.md
+  missing_anchors: []
+  updated_paths:
+    - README.md
+    - docs/assets/readme/daily-flow-demo.svg
+    - docs/assets/readme/daily-flow-demo.gif
+    - scripts/tests/install-platform-mapping.sh
+    - .github/workflows/test.yml
+    - .docs/wiki/01_alcance_funcional.md
+    - .docs/wiki/02_arquitectura.md
+    - .docs/wiki/03_FL/FL-QRY-01.md
+    - .docs/wiki/04_RF/RF-QRY-002.md
+    - .docs/wiki/04_RF/RF-QRY-006.md
+    - .docs/wiki/04_RF/RF-QRY-016.md
+    - .docs/wiki/09_contratos_tecnicos.md
+    - .docs/wiki/09_contratos/CT-DAEMON-WORKER.md
+    - .docs/wiki/ae/AE-RELEASE-DISTRIBUTION.md
+
+runtime_sensitive:
+  value: false
+  rationale: no executable product or installer source changed; shell behavior was regression-tested against the existing installer
+data_or_contract_sensitive:
+  value: true
+  rationale: functional, RF, technical backend, and release-distribution contracts were synchronized to existing implementation and published artifacts
+  authoring_skill_evidence:
+    - ps-experto-documental guided the README and technical documentation rewrite
+  authoring_skills_not_applicable:
+    - crear-modelo-de-datos: no schema, persistence, entity, or lifecycle change
+    - crear-capa-tecnica-wiki: no new or restructured 07/08/09 layer; existing owner docs received narrow synchronization edits
+
+release_distribution:
+  required: true
+  binary_targets: []
+  verdict: PASS_WITH_WAIVER
+  evidence:
+    - GitHub v0.5.12 exposes darwin-arm64 and darwin-x64 archives
+    - downloaded darwin-arm64 archive contains mi-lsp and workers/osx-arm64
+    - scripts/tests/install-platform-mapping.sh passes
+  waiver: no binary-producing source changed, so rebuild and local install refresh are not applicable
+  clean_tree_probe:
+    verdict: PASS_WITH_WAIVER
+    command: scripts/release/ae-release-binaries.ps1 -SkipBuild -SkipLocalInstall -SkipWslInstall -SkipMirror
+    reason: clean-tree provenance passed; the script then required absent dist/win-arm64/mi-lsp.exe, and rebuilding the release matrix is waived because binary-producing source did not change
+
+harness_verdict: BLOCKED_PREEXISTING
+wiki_source_verdict: BLOCKED_PREEXISTING
+navigation_readiness: ready
+governance_verdict: PASS
+
+core_product_promise_verdict:
+  verdict: PASS
+  sources:
+    - README.md
+    - .docs/wiki/01_alcance_funcional.md
+    - .docs/wiki/07_baseline_tecnica.md
+    - .docs/wiki/09_contratos_tecnicos.md
+  observable_evidence:
+    - README leads with focused code search and exact range reads
+    - demo uses init, nav search --include-content, and nav multi-read
+    - README qualifies the example as illustrative and avoids benchmark claims
+    - language and platform claims match implementation and published release evidence
+expected_experience_oracle_verdict:
+  verdict: PASS
+  evidence:
+    - README physical line count is 185
+    - local links resolve
+    - GIF is 1200x620 with five frames and descriptive alt text
+    - Windows, Linux, and macOS install paths are documented
+    - Go is described as native AST catalog plus optional gopls, not Roslyn parity
+qa_learning_loop_verdict:
+  verdict: PASS
+  evidence:
+    - earlier Darwin finding was challenged against live release evidence
+    - deterministic shell regression coverage now protects Darwin archive-to-worker mapping and invalid-RID validation
+    - CI runs the shell mapping test on Ubuntu
+worker_join_verdict:
+  verdict: PASS
+  evidence:
+    - documentation worker inventory was revalidated after its incorrect governance diagnosis
+    - incorrect worker claims were not promoted into the README
+    - adversarial reviewer corrections for job_id, illustrative paths, fallback precision, Go drift, and Darwin were resolved
+    - the Darwin rejection premise was overturned by live v0.5.12 assets and archive inspection rather than preserved as false canon
+harness_scope_classification: targeted_pass_with_preexisting_debt
+
+preexisting_debt:
+  - area: full-workspace-harness-validation
+    owner: ae-kernel-v2-governance
+    finding: 10 validator findings remain outside this task's changed paths; the task-owned README-REDESIGN-VERDICT contract is now recognized
+    follow_up: repair historical missing contracts and teach the validator to resolve kernel canon imports and range evidence
+    recheck: rerun mi-lsp nav wiki validate-harness after the kernel validator follow-up
+    impact_on_task: none; governance is valid and the changed AE release contract passes
+  - area: full-workspace-wiki-source-validation
+    owner: ae-kernel-v2-governance
+    finding: CT-GOVERNANCE-AE-KERNEL-V2 reports four preexisting import/export indexing blockers
+    follow_up: repair validator resolution for repo-policy, kernel_home canon imports, and ae_canon export indexing
+    recheck: rerun mi-lsp nav wiki validate-source after the kernel validator follow-up
+    impact_on_task: none; navigation_readiness remains ready and changed source contracts pass
+
+board_sync:
+  touched_cards: []
+  verdict: not_applicable
+  rationale: user-authorized documentation and installer regression task without tracker card
+
+pre_push_inputs:
+  issue_or_waiver: user-authorized-no-ticket
+  evidence_path: .docs/auditoria/2026-07-16-readme-redesign/verification.log
+  expected_scope:
+    - README.md
+    - docs/assets/readme/**
+    - scripts/tests/install-platform-mapping.sh
+    - .github/workflows/test.yml
+    - .docs/wiki/01_alcance_funcional.md
+    - .docs/wiki/02_arquitectura.md
+    - .docs/wiki/03_FL/FL-QRY-01.md
+    - .docs/wiki/04_RF/RF-QRY-002.md
+    - .docs/wiki/04_RF/RF-QRY-006.md
+    - .docs/wiki/04_RF/RF-QRY-016.md
+    - .docs/wiki/09_contratos_tecnicos.md
+    - .docs/wiki/09_contratos/CT-DAEMON-WORKER.md
+    - .docs/wiki/ae/AE-RELEASE-DISTRIBUTION.md
+  session_contract_path: .docs/auditoria/2026-07-16-readme-redesign/session-contract.yaml
+  required_before_push: ae-pre-push
+
+no_drift_snapshot:
+  commands:
+    - git status --short --branch
+    - git diff --cached --name-only
+    - git diff --check
+    - sh scripts/tests/install-platform-mapping.sh
+    - validate README local links, line count, SVG, GIF, macOS assets, and Go claims
+  result: PASS
+  staged_paths:
+    - README.md
+    - docs/assets/readme/daily-flow-demo.svg
+    - docs/assets/readme/daily-flow-demo.gif
+    - scripts/tests/install-platform-mapping.sh
+    - .github/workflows/test.yml
+    - .docs/wiki/01_alcance_funcional.md
+    - .docs/wiki/02_arquitectura.md
+    - .docs/wiki/03_FL/FL-QRY-01.md
+    - .docs/wiki/04_RF/RF-QRY-002.md
+    - .docs/wiki/04_RF/RF-QRY-006.md
+    - .docs/wiki/04_RF/RF-QRY-016.md
+    - .docs/wiki/09_contratos_tecnicos.md
+    - .docs/wiki/09_contratos/CT-DAEMON-WORKER.md
+    - .docs/wiki/ae/AE-RELEASE-DISTRIBUTION.md
+  task_paths_unchanged_after_verification: true
+  preexisting_paths_preserved: true
+
+branch_inventory:
+  current_branch: docs/readme-redesign
+  current_worktree: C:/wt/mi-lsp-readme-redesign
+  other_worktrees:
+    - path: C:/wt/mi-lsp-ae-kernel-v2
+      branch: feat/ae-kernel-v2-hard-cut
+      classification: active-followup
+  same_scope_branches:
+    - branch: v055/macos-binaries
+      classification: superseded-release-branch
+      rationale: older v0.5.5 macOS release lane; current main and v0.5.12 publish Darwin assets, while the branch tip adds unrelated indexer changes
+  same_scope_unknown: []
+
+completion_handoff:
+  target_skill: finishing-a-development-branch
+  package: unchanged
+  disposition: integrate-main
+  reason: user explicitly requested visibility in origin/main
+  pre_push_required: true
+  authorized_mutations:
+    - create scoped commit
+    - push docs/readme-redesign
+    - open pull request to main
+    - merge after required checks pass
+  cleanup:
+    state: hold
+    separate_authorization_required: true
+  blockers: []
+
+final_verdict: APPROVED

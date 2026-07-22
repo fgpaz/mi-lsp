@@ -1,14 +1,14 @@
 # Prompt - mi-lsp budgeted reentry and evidence inventory
 
 Date: 2026-05-31
-Status: ready-to-run prompt
+Status: historical — implementation landed; do not execute as a current plan
 Source project: `C:\repos\buho\salud`
 Target project: `C:\repos\mios\mi-lsp`
 
 ```yaml
 harness_protocol: SDD-HARNESS-v1
 id: "2026-05-31-budgeted-reentry-evidence-inventory-prompt"
-kind: "planning-prompt"
+kind: "historical-planning-prompt"
 audience: "llm-first"
 imports:
   - '[[00_gobierno_documental]]'
@@ -18,9 +18,6 @@ imports:
   - '[[AE-EVIDENCE-POLICY]]'
 exports:
   - '2026-05-31-budgeted-reentry-evidence-inventory-prompt'
-  - 'RF-QRY-019'
-  - 'TECH-EVIDENCE-INVENTORY'
-  - 'CT-NAV-EVIDENCE'
 agent_must_read:
   - .docs/wiki/00_gobierno_documental.md
   - .docs/wiki/04_RF/RF-QRY-019.md
@@ -39,11 +36,14 @@ verify:
   - mi-lsp nav wiki validate-harness --workspace mi-lsp --format toon
   - mi-lsp nav wiki validate-source --workspace mi-lsp --format toon
 stop_if:
+  - this historical prompt is treated as a current executable plan
+  - RF-QRY-019 implementation is requested again without a new current plan
   - governance_blocked=true
   - go_test_failed=true
   - harness_verdict=BLOCKED
   - wiki_source_verdict=BLOCKED
 evidence:
+  - .docs/wiki/04_RF/RF-QRY-019.md
   - .docs/wiki/07_tech/TECH-EVIDENCE-INVENTORY.md
   - .docs/wiki/09_contratos/CT-NAV-EVIDENCE.md
   - internal/service/evidence_inventory.go

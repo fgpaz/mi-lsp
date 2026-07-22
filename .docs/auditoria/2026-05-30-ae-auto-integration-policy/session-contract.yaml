@@ -1,3 +1,4 @@
+# deprecation-scan-file: historical
 schema: ae-session-contract-v1
 task_slug: ae-auto-integration-policy
 issue_or_waiver: "waiver: user-directed policy clarification (this session) — AE closure must auto-integrate on green gates without separate human approval"

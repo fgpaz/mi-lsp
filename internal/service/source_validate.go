@@ -102,7 +102,7 @@ func (a *App) validateSource(ctx context.Context, request model.CommandRequest) 
 	reportedRecords := filterSourceRecordsByDocs(records, docs)
 	corpusBlocks := filterSourceBlocksByDocRecords(blocks, allWikiDocs)
 	corpusRecords := filterSourceRecordsByDocRecords(records, allWikiDocs)
-	result := compileSourceValidationWithCorpus(docs, allWikiDocs, reportedBlocks, reportedRecords, corpusBlocks, corpusRecords)
+	result := compileSourceValidationWithCorpus(registration.Root, docs, allWikiDocs, reportedBlocks, reportedRecords, corpusBlocks, corpusRecords)
 	env := model.Envelope{
 		Ok:        true,
 		Workspace: registration.Name,
@@ -231,11 +231,11 @@ func docRecordPathSet(docs []model.DocRecord) map[string]struct{} {
 	return allowed
 }
 
-func compileSourceValidation(docs []sourceDoc, allDocs []model.DocRecord, indexedBlocks []model.DocSourceBlock, indexedRecords []model.DocSourceRecord) model.WikiSourceValidationResult {
-	return compileSourceValidationWithCorpus(docs, allDocs, indexedBlocks, indexedRecords, indexedBlocks, indexedRecords)
+func compileSourceValidation(root string, docs []sourceDoc, allDocs []model.DocRecord, indexedBlocks []model.DocSourceBlock, indexedRecords []model.DocSourceRecord) model.WikiSourceValidationResult {
+	return compileSourceValidationWithCorpus(root, docs, allDocs, indexedBlocks, indexedRecords, indexedBlocks, indexedRecords)
 }
 
-func compileSourceValidationWithCorpus(docs []sourceDoc, allDocs []model.DocRecord, indexedBlocks []model.DocSourceBlock, indexedRecords []model.DocSourceRecord, corpusBlocks []model.DocSourceBlock, corpusRecords []model.DocSourceRecord) model.WikiSourceValidationResult {
+func compileSourceValidationWithCorpus(root string, docs []sourceDoc, allDocs []model.DocRecord, indexedBlocks []model.DocSourceBlock, indexedRecords []model.DocSourceRecord, corpusBlocks []model.DocSourceBlock, corpusRecords []model.DocSourceRecord) model.WikiSourceValidationResult {
 	result := model.WikiSourceValidationResult{
 		WikiSourceProtocol:          wikiSourceProtocolV1,
 		IndexFreshness:              "current",
@@ -303,12 +303,12 @@ func compileSourceValidationWithCorpus(docs []sourceDoc, allDocs []model.DocReco
 			addDocBlocker("missing exports")
 		}
 		for _, ref := range parsed.Imports {
-			if !harnessRefExists("", docIndex, doc.record.Path, ref) {
+			if !harnessRefExists(root, docIndex, doc.record.Path, ref) {
 				addDocBlocker("broken import " + ref)
 			}
 		}
 		for _, ref := range parsed.Exports {
-			if !sourceExportExists(parsed, indexedSourceIDs, ref) {
+			if !sourceExportExists(root, parsed, indexedSourceIDs, ref) {
 				addDocBlocker("export not indexed " + ref)
 			}
 		}
@@ -343,7 +343,7 @@ func compileSourceValidationWithCorpus(docs []sourceDoc, allDocs []model.DocReco
 				blockBlockers = append(blockBlockers, "block missing evidence")
 			}
 			for _, ref := range block.Imports {
-				if !harnessRefExists("", docIndex, doc.record.Path, ref) {
+				if !harnessRefExists(root, docIndex, doc.record.Path, ref) {
 					blockBlockers = append(blockBlockers, "broken block import "+ref)
 				}
 			}
@@ -558,7 +558,10 @@ func sourceDocLabel(doc sourceDoc) string {
 	return doc.record.Path
 }
 
-func sourceExportExists(parsed wikisource.ParsedDoc, indexedSourceIDs map[string]struct{}, ref string) bool {
+func sourceExportExists(root string, parsed wikisource.ParsedDoc, indexedSourceIDs map[string]struct{}, ref string) bool {
+	if kernelV2CanonReferenceExists(root, ref) {
+		return true
+	}
 	if normalizeHarnessRef(ref) == normalizeHarnessRef(parsed.DocID) {
 		return true
 	}

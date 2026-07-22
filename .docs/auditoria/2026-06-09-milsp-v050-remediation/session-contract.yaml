@@ -1,3 +1,4 @@
+# deprecation-scan-file: historical
 schema: ae-session-contract-v1
 task_slug: milsp-v050-remediation
 issue_or_waiver: "User requested a mega-plan to resolve all 48 post-release-v0.4.2 audit findings + 4 new features, with a full AE cycle, binary refresh, skill update, and v0.5.0 release. Brainstorming locked: single v0.5.0, full P1+P2+P3 scope, all 4 new ideas, worktree-per-lane."

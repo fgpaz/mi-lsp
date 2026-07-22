@@ -508,6 +508,32 @@ instead of claiming complete graph precision.`,
 	affectedCommand.Flags().IntVar(&affectedTokenBudget, "token-budget", 0, "Maximum graph impact token budget")
 	affectedCommand.Flags().StringArrayVar(&affectedEdges, "edge", nil, "Graph relation edge (repeatable)")
 
+	var prepareAffected []string
+	var preparePlan string
+	prepareCommand := &cobra.Command{
+		Use:   "prepare <task>",
+		Short: "Build read-only semantic preparation evidence",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := requireArgs(args, 1, "task"); err != nil {
+				return err
+			}
+			payload := map[string]any{"task": strings.Join(args, " ")}
+			if len(prepareAffected) > 0 {
+				payload["affected_paths"] = prepareAffected
+			}
+			if preparePlan != "" {
+				data, err := os.ReadFile(preparePlan)
+				if err != nil {
+					return fmt.Errorf("reading plan %s: %w", preparePlan, err)
+				}
+				payload["plan"] = string(data)
+			}
+			return state.executeOperation(cmd, "nav.prepare", payload, true)
+		},
+	}
+	prepareCommand.Flags().StringSliceVar(&prepareAffected, "affected", nil, "Task-specific affected paths; never inferred from git diff")
+	prepareCommand.Flags().StringVar(&preparePlan, "plan", "", "Read an edit-plan JSON file for task-specific allowed paths")
+
 	var editPlanStdin bool
 	var editPlanPacket string
 	var editPlanStrict bool
@@ -628,8 +654,8 @@ Examples:
 	evidenceCommand := newNavEvidenceCommand(state)
 
 	graphCommands := newGraphQueryCommands(state)
-	catalogCommands := []*cobra.Command{symbolsCommand, findCommand, refsCommand, overviewCommand, outlineCommand, askCommand, recallCommand, packCommand, routeCommand, wikiCommand, evidenceCommand, governanceCommand, serviceCommand, searchCommand, contextCommand, depsCommand, multiReadCommand, batchCommand, relatedCommand, workspaceMapCommand, diffContextCommand, affectedCommand, editPlanCommand, traceCommand, intentCommand}
-	command.AddCommand(append(catalogCommands, graphCommands...)...)
+	command.AddCommand(symbolsCommand, findCommand, refsCommand, overviewCommand, outlineCommand, askCommand, recallCommand, packCommand, routeCommand, wikiCommand, evidenceCommand, governanceCommand, serviceCommand, searchCommand, contextCommand, depsCommand, multiReadCommand, batchCommand, relatedCommand, workspaceMapCommand, diffContextCommand, affectedCommand, prepareCommand, editPlanCommand, traceCommand, intentCommand)
+	command.AddCommand(graphCommands...)
 	return command
 }
 

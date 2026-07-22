@@ -16,6 +16,10 @@ overlays:
   - spec_core
   - technical
 numbering_recommended: true
+ae_canon:
+  mode: kernel_v2
+  source: <kernel_home>/canon
+  repo_policy: .docs/ae/repo-policy.yaml
 owner_hints:
   - terms:
       - continuation
@@ -48,7 +52,7 @@ owner_hints:
   - terms:
       - ae
       - agent engineering
-      - ae-orquestador
+      - ae-work
       - release distribution
       - actualizar binarios
       - publicar binarios
@@ -226,7 +230,17 @@ evidence:
 - Perfil visible: `spec_backend`
 - Base interna compilada: `ordered_wiki`
 - Overlays efectivos: `spec_core`, `technical`
+- Canon AE efectivo: `kernel_v2` en `<kernel_home>/canon`, con política repo-local en `.docs/ae/repo-policy.yaml`
+- Contrato de anclaje: `CT-GOVERNANCE-AE-KERNEL-V2`
 - Numeracion: recomendada porque aporta orden, pero no es requisito de validez
+
+## AE-KERNEL-V2
+
+- `CT-GOVERNANCE-AE-KERNEL-V2` es el anchor repo-local para la integración kernel v2.
+- El canon universal vive fuera del repositorio en `<kernel_home>/canon`; no se copia ni se redefine en `.docs/wiki/ae/`.
+- Los estados operativos son `valid`, `missing` y `mismatch`; `missing` y `mismatch` bloquean el trabajo normal.
+- La validación debe rechazar traversal, rutas absolutas, escapes fuera de `.docs/wiki/`, symlinks en raíces/componentes/archivos y archivos no regulares.
+- `.docs/ae/repo-policy.yaml` declara slots, wrappers, QA, paths y límites de seguridad sin almacenar secretos ni usar fixtures como política productiva.
 
 ## Reglas de bloqueo
 

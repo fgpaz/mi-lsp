@@ -42,6 +42,22 @@ func TestRankDocsOwnerAwarePenalizesGenericWhenCanonicalMatchExists(t *testing.T
 	}
 }
 
+func TestRankDocsOwnerAwareCanonicalAlwaysBeatsGenericFTSNoise(t *testing.T) {
+	t.Setenv("MI_LSP_DOC_RANKING", "owner")
+	docs := []model.DocRecord{
+		{Path: "README.md", Title: "routing telemetry release optimization", Family: "generic", Layer: "generic", SearchText: strings.Repeat("routing telemetry release optimization ", 20)},
+		{Path: ".docs/wiki/07_tech/TECH-DAEMON-GOBERNANZA.md", Title: "Daemon routing telemetry and release", DocID: "TECH-DAEMON-GOBERNANZA", Family: "technical", Layer: "07", SearchText: "routing telemetry release optimization"},
+	}
+	fts := map[string]float64{"README.md": 300, ".docs/wiki/07_tech/TECH-DAEMON-GOBERNANZA.md": 1}
+	ranked := rankDocs("routing telemetry release optimization", "technical", docs, fts, model.DocsReadProfile{}, nil)
+	if len(ranked) < 2 {
+		t.Fatalf("expected both docs, got %#v", ranked)
+	}
+	if ranked[0].record.Path == "README.md" {
+		t.Fatalf("generic FTS noise must never outrank a positive canonical owner: %#v", ranked)
+	}
+}
+
 func TestRankDocsOwnerHintsBeatLexicalDefault(t *testing.T) {
 	t.Setenv("MI_LSP_DOC_RANKING", "owner")
 

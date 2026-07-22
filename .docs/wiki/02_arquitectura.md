@@ -48,6 +48,7 @@ flowchart LR
     C --> S[SQLite repo-local]
     C --> G[Registry global minimo]
     C --> X[Discovery TS/JS + ripgrep]
+    C --> GO[Catalogo Go AST nativo]
     C --> DG[Docgraph + read-model]
     C --> GN[Graph-native pipeline]
     GN --> GS[GraphSnapshot + NodeKey]
@@ -57,6 +58,7 @@ flowchart LR
     P --> R[Worker Roslyn]
     P --> T[tsserver opcional]
     P --> PY[Pyright opcional]
+    P --> GP[gopls opcional]
     D --> DS[~/.mi-lsp/daemon state + db]
     D --> DL[{repoRoot}/.mi-lsp/daemon.log]
 ```
@@ -94,7 +96,9 @@ flowchart LR
 | Service exploration profile | Agregar evidencia observable por path: endpoints, consumers, publishers, entidades e infraestructura |
 | Runtime pool | Mantener un runtime vivo por entrypoint semantico con LRU |
 | Worker .NET | Semantica profunda C# con Roslyn |
-| Pyright worker | Semantica profunda Python via `pyright-langserver` (LSP generico) |
+| Pyright worker | Enriquecimiento Python via `pyright-langserver` cuando esta disponible |
+| Catalogo Go | Extraccion AST nativa para simbolos y navegacion basica sin depender de `gopls` |
+| gopls opcional | Enriquecer `nav context` y `nav refs` para Go; no equivale a la semantica profunda Roslyn |
 | TS discovery | Discovery TS/Next basico y busqueda textual; incluye fallback nativo en Go (`searchPatternGo`) cuando `rg` no esta disponible, respetando `.milspignore` y filtrando binarios |
 | SQLite repo-local | Catalogo liviano, ownership por repo y grafo documental |
 
@@ -146,7 +150,7 @@ El límite explícito: mi-lsp **NO maneja** cross-máquina. La federación wiki 
 
 1. `find/search/overview/symbols/intent` operan sobre el catalogo del workspace completo; en workspaces `container`, `find/search/intent` pueden acotar a un repo con `--repo` sin pasar por el routing semantico.
 2. `service` combina catalogo repo-local y busqueda textual scoped al path pedido.
-3. `refs/context/deps` resuelven un `semantic entrypoint` antes de tocar Roslyn.
+3. `refs/context/deps` resuelven un `semantic entrypoint` antes de usar un backend profundo; C# deriva a Roslyn y Go conserva el catalogo AST nativo, con `gopls` como enriquecimiento opcional para `refs/context`.
 4. `nav wiki search` consulta `doc_records` con filtros documentales; `ask` primero consulta `doc_records/doc_edges/doc_mentions`; si no hay corpus fuerte, degrada a texto.
 5. Cuando `workspace` llega vacio, el core intenta resolverlo contra el `caller_cwd` real del proceso invocador; si varios aliases comparten root, prioriza `project.name`, luego basename del root, luego `last_workspace` solo como desempate de ese mismo root.
 6. `find/search/intent` aceptan `--repo` con resolucion smart: exacto primero, luego prefix/fuzzy deterministico cuando el match es unico, y error accionable con candidatos concretos cuando no lo es.
