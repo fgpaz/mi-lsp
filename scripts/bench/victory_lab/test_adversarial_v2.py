@@ -14,7 +14,7 @@ import runner_v2
 from adapters.v2 import _adapt_mi_lsp_terminal, _graphify_affected_payload
 from attestation_v2 import AttestationError, build_input_digest, canonical_attestation, source_artifact_digest, validate_attestation
 from child_metrics import run_child
-from canonical_v2 import canonical_payload, canonicalize, payload_digest, token_count, validate_terminal_state
+from canonical_v2 import canonical_payload, canonicalize, common_token_units, payload_digest, validate_terminal_state
 from manifest_v2 import BASELINE_COMMIT, GRAPHIFY_COMMIT, GRAPHIFY_VERSION, ManifestError, load_manifest, validate_manifest
 from report_v2 import _sample_nonce, build_report
 from security_gate import SecurityGate, runtime_evidence_digest
@@ -39,7 +39,7 @@ class _StableAdapter:
         return RunRecord(
             adapter_id=self.spec.adapter_id, operation=case["operation"], status="PASS", repetition=repetition,
             canonical={"schema": "victory-canonical/v2", "operation": case["operation"], "payload": payload,
-                       "digest": payload_digest(payload), "token_units": token_count(payload)},
+                       "digest": payload_digest(payload), "token_units": common_token_units("affected", payload)},
             elapsed_ms=1.0, metrics={
                 "child": {"status": "PASS", "peak_rss_bytes": 1, "tree_peak_rss_bytes": 1, "tree_supported": True,
                           "cleanup_status": "clean", "samples": 1, "timed_out": False, "crashed": False,
@@ -117,7 +117,7 @@ class VictoryAdversarialV2Tests(unittest.TestCase):
             "executable_sha256": "", "source_sha256": "", "commit": "", "version": "", "capabilities": ["affected"],
             "argv": [], "cwd": "", "env_keys": [], "elapsed_ms": repetition + 1.0,
             "canonical": {"schema": "victory-canonical/v2", "operation": "affected", "payload": payload,
-                          "digest": payload_digest(payload), "token_units": token_count(payload)} if passed else None,
+                          "digest": payload_digest(payload), "token_units": common_token_units("affected", payload)} if passed else None,
             "metrics": {"child": {"status": child_status, "peak_rss_bytes": peak, "tree_peak_rss_bytes": peak, "tree_supported": True, "cleanup_status": "clean", "samples": 1, "timed_out": False, "crashed": False, "failure_class": "none", "exit_code": 0}, "security": {"status": "PASS", "runtime_proof": True, "runtime": runtime, "integrity": {"status": "PASS"}, "source_integrity": {"status": "PASS"}}, "freshness": {"schema": "victory-sample-freshness/v1", "run_id": "d" * 64, "preflight_digest": "e" * 64, "group_id": "g" + hashlib.sha256(f"fake:{case_id}:affected".encode()).hexdigest()[:63], "repetition": repetition, "nonce": _sample_nonce("d" * 64, "e" * 64, f"fake:{case_id}:affected", repetition)}},
             "error": None if passed else {"kind": "timeout", "reason_code": "timeout"},
         }
@@ -270,7 +270,7 @@ class VictoryAdversarialV2Tests(unittest.TestCase):
             build_report(self._write_samples(records))
 
     def test_closed_catalogs_do_not_reject_domain_status_but_reject_metric_drift(self):
-        domain_status = self._record(0, payload={"items": [{"display": "stable", "status": "active"}], "ok": True, "done": True, "backend": "go", "completeness": "complete", "truncated": False})
+        domain_status = self._record(0, payload={"items": [{"path": "stable.go", "status": "active"}], "ok": True, "done": True, "backend": "go", "completeness": "complete", "truncated": False})
         RunRecord.from_dict(domain_status)
         metric_drift = self._record(0)
         metric_drift["metrics"]["child"]["status"] = "MAYBE"

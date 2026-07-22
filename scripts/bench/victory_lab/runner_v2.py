@@ -12,7 +12,7 @@ from typing import Any, Mapping
 
 try:
     from .adapters.v2 import VictoryAdapter
-    from .canonical_v2 import payload_digest, token_count, validate_terminal_state
+    from .canonical_v2 import common_token_units, payload_digest, validate_terminal_state
     from .manifest_v2 import ManifestError, canonical_file_hash, load_manifest, manifest_adapters, sha256_bytes, sha256_file
     from .schema_v2 import RunRecord
     from .validate_manifest import validate_runtime, validate_strict_manifest
@@ -20,7 +20,7 @@ try:
     from .sanitize_v2 import validate_runtime_security_keys
 except ImportError:  # pragma: no cover
     from adapters.v2 import VictoryAdapter
-    from canonical_v2 import payload_digest, token_count, validate_terminal_state
+    from canonical_v2 import common_token_units, payload_digest, validate_terminal_state
     from manifest_v2 import ManifestError, canonical_file_hash, load_manifest, manifest_adapters, sha256_bytes, sha256_file
     from schema_v2 import RunRecord
     from validate_manifest import validate_runtime, validate_strict_manifest
@@ -201,17 +201,24 @@ def _validate_pass_sample(sample: Mapping[str, Any]) -> None:
     if not isinstance(canonical, Mapping) or not isinstance(canonical.get("payload"), Mapping):
         raise ManifestError("adapter returned PASS without a canonical payload")
     payload = canonical["payload"]
+    operation = canonical.get("operation")
+    if operation != sample.get("operation"):
+        raise ManifestError("adapter returned PASS with canonical operation drift")
     validate_terminal_state(payload)
     if canonical.get("digest") != payload_digest(payload):
         raise ManifestError("adapter returned PASS with a canonical digest mismatch")
     token_units = canonical.get("token_units")
+    try:
+        expected_token_units = common_token_units(operation, payload)
+    except ValueError as exc:
+        raise ManifestError("adapter returned PASS with an invalid common semantic projection") from exc
     if (
         isinstance(token_units, bool)
         or not _is_finite_number(token_units)
         or token_units <= 0
-        or token_units != token_count(payload)
+        or token_units != expected_token_units
     ):
-        raise ManifestError("adapter returned PASS with invalid canonical token_units")
+        raise ManifestError("adapter returned PASS with invalid common-projection token_units")
 
     if not _is_finite_number(sample.get("elapsed_ms")):
         raise ManifestError("adapter returned PASS without finite elapsed_ms")

@@ -11,7 +11,7 @@ import re
 from typing import Any, Iterable, Mapping
 
 try:
-    from .canonical_v2 import payload_digest, token_count, validate_terminal_state
+    from .canonical_v2 import common_token_units, payload_digest, validate_terminal_state
     from .manifest_v2 import load_manifest, sha256_bytes, sha256_file
     from .schema_v2 import RunRecord
     from .durable_v2 import validate_group_key, validate_identifier
@@ -19,7 +19,7 @@ try:
     from .security_gate import runtime_evidence_digest
     from .sanitize_v2 import validate_runtime_security_keys
 except ImportError:  # pragma: no cover
-    from canonical_v2 import payload_digest, token_count, validate_terminal_state
+    from canonical_v2 import common_token_units, payload_digest, validate_terminal_state
     from manifest_v2 import load_manifest, sha256_bytes, sha256_file
     from schema_v2 import RunRecord
     from durable_v2 import validate_group_key, validate_identifier
@@ -256,18 +256,24 @@ def _validate_pass_canonical(record: Mapping[str, Any]) -> None:
     if not isinstance(canonical, Mapping) or not isinstance(canonical.get("payload"), Mapping):
         raise ValueError("PASS sample canonical payload is malformed")
     payload = canonical["payload"]
+    operation = canonical.get("operation")
+    if operation != record.get("operation"):
+        raise ValueError("canonical operation does not match sample operation")
     validate_terminal_state(payload)
     if canonical.get("digest") != payload_digest(payload):
         raise ValueError("canonical digest does not match payload")
     token_units = canonical.get("token_units")
-    expected = token_count(payload)
+    try:
+        expected = common_token_units(operation, payload)
+    except ValueError as exc:
+        raise ValueError("canonical common semantic projection is invalid") from exc
     if (
         isinstance(token_units, bool)
         or not _is_finite_number(token_units)
         or token_units <= 0
         or token_units != expected
     ):
-        raise ValueError("canonical token_units must equal positive token_count(payload)")
+        raise ValueError("canonical token_units must equal common-projection token count")
 
 
 def _read_samples(path: Path) -> list[dict[str, Any]]:

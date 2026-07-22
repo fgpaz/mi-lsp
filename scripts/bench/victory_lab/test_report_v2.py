@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from canonical_v2 import payload_digest, token_count
+from canonical_v2 import common_token_units, payload_digest, token_count
 from report_v2 import _comparisons, _items, _manifest_identity, _quality, _read_samples, _sample_nonce, _validate_manifest_bundle, build_report
 from security_gate import runtime_evidence_digest
 
@@ -21,7 +21,7 @@ class ReportV2Tests(unittest.TestCase):
         payload = payload or {"items": ["stable"], "ok": True, "done": True, "backend": "go", "completeness": "complete", "truncated": False}
         canonical = {
             "schema": "victory-canonical/v2", "operation": "affected", "payload": payload,
-            "digest": payload_digest(payload), "token_units": token_count(payload),
+            "digest": payload_digest(payload), "token_units": common_token_units("affected", payload),
         } if status == "PASS" else None
         runtime = {
             "status": "PASS", "runtime_proof": True, "provenance": "child_metrics_executor",
@@ -200,6 +200,15 @@ class ReportV2Tests(unittest.TestCase):
     def test_token_units_must_equal_recomputed_positive_count(self):
         records = [self._record(i) for i in range(30)]
         records[0]["canonical"]["token_units"] += 1
+        with self.assertRaisesRegex(ValueError, "token_units"):
+            build_report(self._write(records))
+
+    def test_full_payload_token_units_forgery_is_rejected(self):
+        records = [self._record(i) for i in range(30)]
+        payload = records[0]["canonical"]["payload"]
+        forged = token_count(payload)
+        self.assertNotEqual(forged, common_token_units("affected", payload))
+        records[0]["canonical"]["token_units"] = forged
         with self.assertRaisesRegex(ValueError, "token_units"):
             build_report(self._write(records))
 

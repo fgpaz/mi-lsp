@@ -4,9 +4,10 @@ from __future__ import annotations
 import hashlib
 import json
 import ntpath
+import posixpath
 import re
 from pathlib import Path
-from typing import Any
+from typing import Any, Mapping
 
 try:
     from .schema_v2 import CANONICAL_SCHEMA
@@ -145,6 +146,68 @@ def token_count(value: Any, fixture_root: Path | None = None) -> int:
     return len(re.findall(r"\w+|[^\w\s]", text, re.UNICODE))
 
 
+_COMMON_OPERATIONS = frozenset({"callers", "path", "affected"})
+
+
+def _projection_items(payload: Mapping[str, Any], operation: str) -> list[dict[str, str]]:
+    values = payload.get("items", payload.get("nodes", payload.get("results", [])))
+    if not isinstance(values, list):
+        raise ValueError("terminal output items must be a list")
+    projected: list[dict[str, str]] = []
+    for item in values:
+        if operation == "affected":
+            if isinstance(item, str):
+                value = item
+            elif isinstance(item, Mapping) and isinstance(item.get("path"), str):
+                value = item["path"]
+            else:
+                raise ValueError("affected result item is missing path")
+            value = posixpath.normpath(value.replace("\\", "/"))
+            if not value or value == ".":
+                raise ValueError("affected result item has an empty path")
+            projected.append({"path": value})
+        else:
+            if isinstance(item, str):
+                value = item
+            elif isinstance(item, Mapping) and isinstance(item.get("display"), str):
+                value = item["display"]
+            else:
+                raise ValueError(f"{operation} result item is missing display")
+            if not value:
+                raise ValueError(f"{operation} result item has an empty display")
+            projected.append({"display": value})
+    key = "path" if operation == "affected" else "display"
+    return sorted(projected, key=lambda item: item[key])
+
+
+def common_result_projection(operation: str, payload: Mapping[str, Any]) -> dict[str, Any]:
+    """Project a complete native result onto the minimum shared semantic shape.
+
+    The full canonical payload remains authoritative for evidence and its digest.
+    This projection is only the cross-backend semantic input to ``token_units``.
+    """
+    if operation not in _COMMON_OPERATIONS:
+        raise ValueError(f"unsupported common result operation: {operation}")
+    if not isinstance(payload, Mapping):
+        raise ValueError("terminal output must be an object")
+    validate_terminal_state(payload)
+    return {
+        "ok": True,
+        "done": True,
+        "completeness": "complete",
+        "truncated": False,
+        "operation": operation,
+        "items": _projection_items(payload, operation),
+    }
+
+
+def common_token_units(operation: str, payload: Mapping[str, Any]) -> int:
+    """Count tokens from the shared projection, never from the evidence payload."""
+    projection = common_result_projection(operation, payload)
+    text = json.dumps(projection, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return token_count(text)
+
+
 def validate_terminal_state(native: Any) -> dict[str, Any]:
     """Require a complete terminal response before canonicalization.
 
@@ -194,12 +257,13 @@ def canonical_payload(operation: str, native: Any, fixture_root: Path | None = N
     payload.pop("stderr", None)
     payload["operation"] = operation
     normalized = canonicalize(payload, fixture_root)
+    units = common_token_units(operation, normalized)
     return {
         "schema": CANONICAL_SCHEMA,
         "operation": operation,
         "payload": normalized,
         "digest": payload_digest(normalized),
-        "token_units": token_count(normalized),
+        "token_units": units,
     }
 
 

@@ -6,7 +6,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 import runner_v2
-from canonical_v2 import payload_digest, token_count
+from canonical_v2 import common_token_units, payload_digest, token_count
 from schema_v2 import AdapterSpec, RunRecord
 from security_gate import runtime_evidence_digest
 
@@ -46,7 +46,7 @@ class FakeAdapter:
         runtime["evidence_digest"] = runtime_evidence_digest(runtime)
         return RunRecord(
             adapter_id=self.spec.adapter_id, case_id=FakeAdapter.case_override or "", operation=case["operation"], status="PASS", repetition=repetition if FakeAdapter.repetition_override is None else FakeAdapter.repetition_override,
-            canonical={"schema": "victory-canonical/v2", "operation": case["operation"], "payload": payload, "digest": payload_digest(payload), "token_units": token_count(payload) if FakeAdapter.token_units_override is None else FakeAdapter.token_units_override},
+            canonical={"schema": "victory-canonical/v2", "operation": case["operation"], "payload": payload, "digest": payload_digest(payload), "token_units": common_token_units(case["operation"], payload) if FakeAdapter.token_units_override is None else FakeAdapter.token_units_override},
             elapsed_ms=float(repetition + 1), metrics={
                 "child": {"status": "PASS", "peak_rss_bytes": 1, "tree_peak_rss_bytes": 1, "tree_supported": True,
                           "cleanup_status": "clean", "samples": 1, "timed_out": False, "crashed": False,
@@ -127,6 +127,17 @@ class RunnerV2Tests(unittest.TestCase):
         FakeAdapter.token_units_override = 1
         try:
             with self.assertRaises(ValueError):
+                self._run_manifest_with_fake()
+        finally:
+            FakeAdapter.token_units_override = None
+
+    def test_runner_rejects_full_payload_token_units_forgery(self):
+        payload = FakeAdapter._payload()
+        forged = token_count(payload)
+        self.assertNotEqual(forged, common_token_units("affected", payload))
+        FakeAdapter.token_units_override = forged
+        try:
+            with self.assertRaisesRegex(ValueError, "token_units"):
                 self._run_manifest_with_fake()
         finally:
             FakeAdapter.token_units_override = None
