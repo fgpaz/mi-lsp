@@ -650,11 +650,42 @@ Examples:
 	intentCommand.Flags().Int("offset", 0, "Skip first N results (for pagination)")
 	attachCatalogRepoFlag(intentCommand, &intentRepo)
 
+	var explainChangeRef string
+	var explainChangePaths []string
+	explainChangeCommand := &cobra.Command{
+		Use:   "explain-change [question]",
+		Short: "Automatically synthesize a bounded change explanation",
+		Long: `Route a supported change explanation through the local deterministic
+planner. The preview includes change, affected, callers, callees, tests,
+contracts, and governed wiki reading lanes; expansion commands are emitted
+with their reason and preserve the same graph generation when available.`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			question := "explain change"
+			if len(args) > 0 {
+				question = strings.Join(args, " ")
+			}
+			payload := map[string]any{"question": question, "intent": "explain-change"}
+			if explainChangeRef != "" {
+				payload["ref"] = explainChangeRef
+			}
+			if len(explainChangePaths) > 0 {
+				paths := make([]any, len(explainChangePaths))
+				for i, path := range explainChangePaths {
+					paths[i] = path
+				}
+				payload["paths"] = paths
+			}
+			return state.executeOperation(cmd, "nav.intent", payload, true)
+		},
+	}
+	explainChangeCommand.Flags().StringVar(&explainChangeRef, "ref", "", "Git ref used as the change base")
+	explainChangeCommand.Flags().StringArrayVar(&explainChangePaths, "path", nil, "Explicit changed path (repeatable)")
+
 	wikiCommand := newNavWikiCommand(state)
 	evidenceCommand := newNavEvidenceCommand(state)
 
 	graphCommands := newGraphQueryCommands(state)
-	command.AddCommand(symbolsCommand, findCommand, refsCommand, overviewCommand, outlineCommand, askCommand, recallCommand, packCommand, routeCommand, wikiCommand, evidenceCommand, governanceCommand, serviceCommand, searchCommand, contextCommand, depsCommand, multiReadCommand, batchCommand, relatedCommand, workspaceMapCommand, diffContextCommand, affectedCommand, prepareCommand, editPlanCommand, traceCommand, intentCommand)
+	command.AddCommand(symbolsCommand, findCommand, refsCommand, overviewCommand, outlineCommand, askCommand, recallCommand, packCommand, routeCommand, wikiCommand, evidenceCommand, governanceCommand, serviceCommand, searchCommand, contextCommand, depsCommand, multiReadCommand, batchCommand, relatedCommand, workspaceMapCommand, diffContextCommand, affectedCommand, prepareCommand, editPlanCommand, traceCommand, intentCommand, explainChangeCommand)
 	command.AddCommand(graphCommands...)
 	return command
 }

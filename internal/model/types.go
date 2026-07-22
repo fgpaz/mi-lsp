@@ -1,6 +1,9 @@
 package model
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"strings"
 	"time"
 )
@@ -147,6 +150,100 @@ type Envelope struct {
 
 // QueryEnvelope is a semantic alias of Envelope for traceability with 05_modelo_datos.md.
 type QueryEnvelope = Envelope
+
+// IntentPlan is the deterministic, local routing result for supported graph-native
+// navigation intents. It deliberately contains extracted arguments and bounded
+// evidence only; raw prompts belong neither in the plan telemetry nor in daemon
+// access diagnostics.
+type IntentPlan struct {
+	Intent            string            `json:"intent"`
+	Operation         string            `json:"operation"`
+	Arguments         map[string]string `json:"arguments,omitempty"`
+	Confidence        float64           `json:"confidence"`
+	GenerationID      string            `json:"generation_id,omitempty"`
+	Freshness         string            `json:"freshness"`
+	Preview           []IntentPreview   `json:"preview,omitempty"`
+	Wiki              IntentWikiPlan    `json:"wiki,omitempty"`
+	Candidates        []IntentCandidate `json:"candidates,omitempty"`
+	Omissions         []IntentOmission  `json:"omissions,omitempty"`
+	Fallbacks         []IntentFallback  `json:"fallbacks,omitempty"`
+	Expansions        []Expansion       `json:"expansions,omitempty"`
+	Telemetry         IntentTelemetry   `json:"telemetry"`
+	Truncated         bool              `json:"truncated,omitempty"`
+	DeterminismDigest string            `json:"determinism_digest,omitempty"`
+}
+
+// IntentPreview is a bounded section of a progressive intent response.
+type IntentPreview struct {
+	Section   string `json:"section"`
+	Items     []any  `json:"items,omitempty"`
+	Count     int    `json:"count"`
+	Truncated bool   `json:"truncated,omitempty"`
+	Omission  string `json:"omission,omitempty"`
+}
+
+type IntentCandidate struct {
+	Selector      string  `json:"selector"`
+	File          string  `json:"file,omitempty"`
+	Line          int     `json:"line,omitempty"`
+	Kind          string  `json:"kind,omitempty"`
+	QualifiedName string  `json:"qualified_name,omitempty"`
+	Score         float64 `json:"score,omitempty"`
+}
+
+type IntentOmission struct {
+	Code       string   `json:"code"`
+	Section    string   `json:"section,omitempty"`
+	Reason     string   `json:"reason"`
+	Candidates []string `json:"candidates,omitempty"`
+}
+
+type IntentFallback struct {
+	Section   string `json:"section,omitempty"`
+	Operation string `json:"operation,omitempty"`
+	Reason    string `json:"reason"`
+}
+
+// Expansion is an executable continuation from a bounded preview.
+type Expansion struct {
+	Command string `json:"command"`
+	Reason  string `json:"reason"`
+}
+
+type IntentWikiPlan struct {
+	MustRead []IntentWikiRead `json:"must_read,omitempty"`
+	MayRead  []IntentWikiRead `json:"may_read,omitempty"`
+}
+
+type IntentWikiRead struct {
+	Path          string   `json:"path"`
+	DocID         string   `json:"doc_id,omitempty"`
+	Layer         string   `json:"layer,omitempty"`
+	Reason        string   `json:"reason"`
+	EvidencePaths []string `json:"evidence_paths,omitempty"`
+}
+
+// IntentTelemetry is safe to persist: it records route shape, not user text.
+type IntentTelemetry struct {
+	PlannerVersion string `json:"planner_version"`
+	Operation      string `json:"operation"`
+	SelectorKind   string `json:"selector_kind,omitempty"`
+	CandidateCount int    `json:"candidate_count,omitempty"`
+	SectionCount   int    `json:"section_count,omitempty"`
+	Fallback       bool   `json:"fallback,omitempty"`
+	OmissionCount  int    `json:"omission_count,omitempty"`
+}
+
+// IntentPlanDigest excludes no user text because IntentPlan has no raw prompt
+// field. It is stable across direct and daemon execution.
+func IntentPlanDigest(plan IntentPlan) string {
+	copyPlan := plan
+	copyPlan.DeterminismDigest = ""
+	copyPlan.Telemetry = IntentTelemetry{}
+	b, _ := json.Marshal(copyPlan)
+	d := sha256.Sum256(b)
+	return hex.EncodeToString(d[:])
+}
 
 // OutputProfile selects render verbosity for an envelope. "agent" trims human-only
 // telemetry and verbose diagnostic fields to reduce token cost for harness clients.

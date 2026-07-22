@@ -31,6 +31,7 @@ type DiffSymbol struct {
 type DiffContextResult struct {
 	Ref            string                     `json:"ref"`
 	ChangedFiles   int                        `json:"changed_files"`
+	ChangedPaths   []string                   `json:"changed_paths,omitempty"`
 	ChangedSymbols []DiffSymbol               `json:"changed_symbols"`
 	Impact         *DiffImpact                `json:"impact,omitempty"`
 	GraphImpact    *model.GraphImpactEnvelope `json:"graph_impact,omitempty"`
@@ -74,6 +75,7 @@ func (a *App) diffContext(ctx context.Context, request model.CommandRequest) (mo
 			Items: []DiffContextResult{{
 				Ref:            ref,
 				ChangedFiles:   0,
+				ChangedPaths:   []string{},
 				ChangedSymbols: []DiffSymbol{},
 				Impact: &DiffImpact{
 					FilesAffected:   0,
@@ -188,6 +190,7 @@ func (a *App) diffContext(ctx context.Context, request model.CommandRequest) (mo
 			}
 		}
 	}
+	sort.Strings(changingFiles)
 
 	// 6. Build result
 	var symbols []DiffSymbol
@@ -206,6 +209,7 @@ func (a *App) diffContext(ctx context.Context, request model.CommandRequest) (mo
 	result := DiffContextResult{
 		Ref:            ref,
 		ChangedFiles:   len(changingFiles),
+		ChangedPaths:   append([]string(nil), changingFiles...),
 		ChangedSymbols: symbols,
 		Impact: &DiffImpact{
 			FilesAffected:   len(changingFiles),
