@@ -50,7 +50,7 @@ func newResultCache() *resultCache {
 // isCacheableOp returns true if the operation is deterministic and read-only.
 func isCacheableOp(op string) bool {
 	switch op {
-	case "nav.ask", "nav.search", "nav.pack", "nav.governance", "nav.route", "nav.prepare":
+	case "nav.ask", "nav.search", "nav.pack", "nav.governance", "nav.route", "nav.prepare", "nav.intent":
 		return true
 	default:
 		return false
