@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 from dataclasses import dataclass
+from datetime import datetime, timezone
 import hashlib
 import json
 import math
@@ -729,15 +730,103 @@ def stats(values: Sequence[float]) -> dict[str, Any]:
     return {"n": len(values), "p50": percentile(values, 50), "p95": percentile(values, 95), "p99": percentile(values, 99), "max": max(values) if values else None}
 
 
+def _numeric_event_value(value: Any) -> int | None:
+    if isinstance(value, int) and not isinstance(value, bool) and value >= 0:
+        return value
+    if isinstance(value, str) and re.fullmatch(r"[0-9]+", value):
+        return int(value)
+    return None
+
+
+def _event_timestamp(event: Mapping[str, Any]) -> datetime | None:
+    for key in ("occurred_at", "timestamp"):
+        value = event.get(key)
+        if not isinstance(value, str):
+            continue
+        try:
+            parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        except ValueError:
+            continue
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        return parsed.astimezone(timezone.utc)
+    return None
+
+
+def _select_latest_telemetry_event(
+    payload: Sequence[Any],
+    *,
+    campaign_id: str,
+    client_name: str,
+    operation: str,
+) -> Mapping[str, Any] | None:
+    """Select the newest event after applying the complete telemetry scope.
+
+    Numeric event IDs are authoritative because they are database sequence IDs.
+    When no scoped event has a usable ID, occurred_at (then seq) is used. If
+    those fields are unavailable or malformed too, preserve the admin export's
+    documented newest-first order and select its first scoped event.
+    """
+    events = [
+        item
+        for item in payload
+        if isinstance(item, Mapping)
+        and item.get("operation") == operation
+        and item.get("client_name") == client_name
+        and item.get("session_id") == campaign_id
+    ]
+    if not events:
+        return None
+
+    indexed = list(enumerate(events))
+    identified = [(index, event, _numeric_event_value(event.get("id"))) for index, event in indexed]
+    with_ids = [item for item in identified if item[2] is not None]
+    if with_ids:
+        _, event, _ = max(
+            with_ids,
+            key=lambda item: (
+                item[2],
+                _event_timestamp(item[1]) or datetime.min.replace(tzinfo=timezone.utc),
+                _numeric_event_value(item[1].get("seq")) or -1,
+                -item[0],
+            ),
+        )
+        return event
+
+    with_timestamps = [(index, event, timestamp) for index, event in indexed if (timestamp := _event_timestamp(event)) is not None]
+    if with_timestamps:
+        _, event, _ = max(
+            with_timestamps,
+            key=lambda item: (
+                item[2],
+                _numeric_event_value(item[1].get("seq")) or -1,
+                -item[0],
+            ),
+        )
+        return event
+
+    with_seq = [(index, event, _numeric_event_value(event.get("seq"))) for index, event in indexed]
+    usable_seq = [item for item in with_seq if item[2] is not None]
+    if usable_seq:
+        _, event, _ = max(usable_seq, key=lambda item: (item[2], -item[0]))
+        return event
+
+    return events[0]
+
+
 def _telemetry_route_probe(binary: Path, campaign_id: str, operation: str, timeout_seconds: float) -> tuple[str | None, str | None]:
     probe = [str(binary), "--format", "json", "--client-name", "harness-first", "--session-id", campaign_id, "admin", "export", "--since", "1h", "--session-id", campaign_id, "--client-name", "harness-first", "--operation", operation, "--format", "json", "--limit", "50"]
     result = run_process(probe, timeout_seconds)
     if result.reason_code is not None or not isinstance(result.payload, list):
         return None, None
-    events = [item for item in result.payload if isinstance(item, Mapping) and item.get("operation") == operation and item.get("client_name") == "harness-first" and item.get("session_id") == campaign_id]
-    if not events:
+    event = _select_latest_telemetry_event(
+        result.payload,
+        campaign_id=campaign_id,
+        client_name="harness-first",
+        operation=operation,
+    )
+    if event is None:
         return None, None
-    event = events[-1]
     route = event.get("route") if isinstance(event.get("route"), str) else None
     backend = event.get("backend") if isinstance(event.get("backend"), str) else None
     return route, backend

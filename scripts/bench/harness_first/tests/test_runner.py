@@ -11,6 +11,7 @@ from scripts.bench.harness_first.runner import (
     _RSSSampler,
     _command,
     _rss_report,
+    _select_latest_telemetry_event,
     claim_global_marker,
     parse_go_version_m,
     query_check,
@@ -79,6 +80,79 @@ class RunnerContractTests(unittest.TestCase):
         self.assertNotIn("--no-daemon", daemon)
         self.assertEqual(direct[-3:], ["nav", "related", "BuildIntentPlan"])
         self.assertEqual(daemon[-3:], ["nav", "related", "BuildIntentPlan"])
+
+    def test_telemetry_selection_prefers_highest_id_in_newest_first_export(self):
+        events = [
+            {"id": 42, "route": "daemon", "backend": "roslyn", "operation": "nav.related", "client_name": "harness-first", "session_id": "campaign"},
+            {"id": 41, "route": "direct", "backend": "catalog", "operation": "nav.related", "client_name": "harness-first", "session_id": "campaign"},
+        ]
+        selected = _select_latest_telemetry_event(
+            events,
+            campaign_id="campaign",
+            client_name="harness-first",
+            operation="nav.related",
+        )
+        self.assertIsNotNone(selected)
+        self.assertEqual(selected["route"], "daemon")
+
+    def test_telemetry_selection_prefers_highest_id_when_export_order_is_inverted(self):
+        events = [
+            {"id": 41, "route": "direct", "backend": "catalog", "operation": "nav.related", "client_name": "harness-first", "session_id": "campaign"},
+            {"id": 42, "route": "daemon", "backend": "roslyn", "operation": "nav.related", "client_name": "harness-first", "session_id": "campaign"},
+        ]
+        selected = _select_latest_telemetry_event(
+            events,
+            campaign_id="campaign",
+            client_name="harness-first",
+            operation="nav.related",
+        )
+        self.assertIsNotNone(selected)
+        self.assertEqual(selected["route"], "daemon")
+
+    def test_telemetry_selection_falls_back_for_missing_or_malformed_ids(self):
+        timestamped = [
+            {"id": "not-a-number", "occurred_at": "2026-07-22T12:01:00Z", "route": "daemon", "operation": "nav.related", "client_name": "harness-first", "session_id": "campaign"},
+            {"occurred_at": "2026-07-22T12:00:00Z", "route": "direct", "operation": "nav.related", "client_name": "harness-first", "session_id": "campaign"},
+        ]
+        selected = _select_latest_telemetry_event(
+            timestamped,
+            campaign_id="campaign",
+            client_name="harness-first",
+            operation="nav.related",
+        )
+        self.assertIsNotNone(selected)
+        self.assertEqual(selected["route"], "daemon")
+
+        export_order_fallback = [
+            {"route": "daemon", "operation": "nav.related", "client_name": "harness-first", "session_id": "campaign"},
+            {"id": "malformed", "route": "direct", "operation": "nav.related", "client_name": "harness-first", "session_id": "campaign"},
+        ]
+        selected = _select_latest_telemetry_event(
+            export_order_fallback,
+            campaign_id="campaign",
+            client_name="harness-first",
+            operation="nav.related",
+        )
+        self.assertIsNotNone(selected)
+        self.assertEqual(selected["route"], "daemon")
+
+    def test_telemetry_selection_filters_campaign_client_and_operation_before_ordering(self):
+        events = [
+            {"id": 99, "route": "daemon", "operation": "nav.related", "client_name": "other-client", "session_id": "campaign"},
+            {"id": 98, "route": "daemon", "operation": "nav.search", "client_name": "harness-first", "session_id": "campaign"},
+            {"id": 97, "route": "daemon", "operation": "nav.related", "client_name": "harness-first", "session_id": "other-campaign"},
+            {"id": 42, "route": "daemon", "backend": "roslyn", "operation": "nav.related", "client_name": "harness-first", "session_id": "campaign"},
+            {"id": 41, "route": "direct", "backend": "catalog", "operation": "nav.related", "client_name": "harness-first", "session_id": "campaign"},
+        ]
+        selected = _select_latest_telemetry_event(
+            events,
+            campaign_id="campaign",
+            client_name="harness-first",
+            operation="nav.related",
+        )
+        self.assertIsNotNone(selected)
+        self.assertEqual(selected["route"], "daemon")
+        self.assertEqual(selected["id"], 42)
 
     def test_budget_drift_is_rejected(self):
         manifest = self.manifest()
