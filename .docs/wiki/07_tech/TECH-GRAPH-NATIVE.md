@@ -192,6 +192,10 @@ query:
 cache:
   keys: [generation-digest, operation-and-parameters, authority-profile-digest, extension-or-pack-version-digest]
   stale-cache-behavior: discard-or-explicit-omission
+sqlite:
+  write_max_open_conns: 1
+  read_only_pool: {max_open_conns: 8, max_idle_conns: 4}
+  snapshot_generation: fixed-at-request-start
 ```
 
 ## Analisis graph-native: freshness, rank, communities y utility
@@ -226,10 +230,22 @@ rank:
 communities:
   algorithm: deterministic_connected_components_v1
   id: sha256_sorted_node_keys
+bounds:
+  max_nodes: 10000
+  max_edges: 50000
+  max_bytes: 65536
+  truncation: visible_and_not_cacheable
+cache:
+  status_to_persist: complete_only
+  invalidation_fields: [generation, algorithm, version, profile, parameter_digest, authority_digest, result_digest]
+  result_digest: validated_before_acceptance
 utility:
   signals: [continuation_followed, feedback_positive, feedback_negative, result_selected]
   effect: final_tie_break_only
-  bounded_events_per_scope: 4096
+  max_events_per_candidate: 4096
+  max_events_per_scope_intent_operation: 4096
+  retention_days: 30
+  candidate_identity: node_key_only
 telemetry:
   sanitized_only: true
   forbidden: [query, prompt, argv, payload, snippet, content, secret, raw_backend_log]

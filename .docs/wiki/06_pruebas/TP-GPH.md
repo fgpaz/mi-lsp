@@ -30,6 +30,8 @@ exports:
   - 'TP-GPH-005'
   - 'TP-GPH-006'
   - 'TP-GPH-007'
+  - 'TP-GPH-008'
+  - 'TP-GPH-009'
 agent_must_read:
   - .docs/wiki/00_gobierno_documental.md
   - .docs/wiki/03_FL/FL-GPH-01.md
@@ -255,3 +257,67 @@ cases:
 ```
 
 PASS final requiere los siete TP, comparadores fijados, raw evidence, cross-RID, rollback, seguridad y autoridad wiki. Un caso `planned` no cuenta como ejecutado hasta enlazar test automatizado o evidencia manual determinista.
+
+## TP-GPH-009 - Mapa Harness-first F1-F11
+
+```toon
+doc_id: TP-GPH
+block_id: tp-gph-harness-first-f1-f11
+kind: implemented-test-map
+source_of_truth: this
+evidence:
+  - .docs/wiki/06_pruebas/TP-GPH.md
+  - internal/service/intent_test.go
+  - scripts/bench/harness_first/tests/test_runner.py
+status: implemented_tests_not_campaign
+campaign_status: NOT_RUN
+verify:
+  - go test ./internal/model/... ./internal/service/... ./internal/store/... ./internal/telemetry/...
+  - python -m unittest discover -s scripts/bench/harness_first/tests -p "test_*.py"
+stop_if:
+  - campaign_status=PASS_without_real_run=true
+  - raw_campaign_output_promoted=true
+features:
+  F1_intent_routing:
+    status: implemented
+    evidence: internal/service/intent_test.go::TestClassifySupportedIntentRoutesAllT3Operations
+  F2_all_workspaces_intent_plan:
+    status: implemented
+    evidence: internal/service/ask_test.go::TestNavAskAllWorkspacesPreservesSupportedIntentPlansDeterministically
+    invariant: every_plan_preserves_workspace_and_determinism_digest
+  F3_explain_change_preview:
+    status: implemented
+    evidence: internal/service/intent_test.go::TestExplainChangePreviewHasSevenSectionsWikiEvidenceAndExpansions
+    sections: [change, affected, callers, callees, tests, contracts, wiki]
+  F4_executable_expansions:
+    status: implemented
+    evidence: [internal/service/intent_test.go::TestIntentExpansionCommandsUseExecutableCLIOperations, internal/service/intent_test.go::TestExplainChangeExpansionPreservesNormalizedPathsAndRef, internal/service/intent_test.go::TestIncompletePathExpansionUsesExecutableDiscovery]
+    shape: {command: string, reason: string}
+  F5_rank_freshness_communities:
+    status: implemented
+    evidence: [internal/service/graph_query_test.go::TestGraphRankQueryCachesCompleteAnalysisAndReusesIt, internal/model/graph_query_test.go::TestDeterminismDigestExcludesElapsedTime]
+    exact_claim_gate: freshness=current
+  F6_complete_only_cache_and_digests:
+    status: implemented
+    evidence: [internal/service/graph_query_test.go::TestGraphRankCacheBridgeSingleConnectionCoversMissHitAndUtility, internal/store/graph_analysis_test.go::TestGetGraphAnalysisIgnoresDigestMismatch]
+  F7_bounded_snapshot_queries:
+    status: implemented
+    evidence: [internal/service/graph_query_test.go::TestGraphQueryRejectsInvalidBudget, internal/service/graph_query_test.go::TestFinalizeGraphItemsAlwaysAdvancesCursorAtTinyBudget]
+  F8_utility_caps_and_decay:
+    status: implemented
+    evidence: [internal/store/utility_test.go::TestUtilityGlobalScopeCapBoundsManyCandidateSignals, internal/store/utility_test.go::TestUtilityEventsApplyScopeRetentionAndDecay]
+    signals: [continuation_followed, feedback_positive, feedback_negative, result_selected]
+  F9_sqlite_connection_invariants:
+    status: implemented
+    evidence: [internal/service/graph_query_test.go::TestGraphRankCacheBridgeSingleConnectionCoversMissHitAndUtility, internal/store/db.go, internal/daemon/state_store.go]
+    write_max_open_conns: 1
+  F10_sanitized_telemetry:
+    status: implemented
+    evidence: [internal/telemetry/access_events_test.go::TestEnrichAccessEventRedactsRawTelemetryInputs, internal/telemetry/access_events_test.go::TestNormalizeAccessEventRejectsArbitraryTelemetryCodesEverywhere]
+  F11_campaign_contract_and_release_gate:
+    status: implemented_contract_only
+    evidence: [scripts/bench/harness_first/tests/test_runner.py, docs/benchmarks/HARNESS_FIRST_CAMPAIGN.json, docs/benchmarks/HARNESS_FIRST.md]
+    campaign_execution: NOT_RUN
+```
+
+El mapa F1-F11 demuestra cobertura automatizada o contractual del árbol actual; no constituye evidencia de una campaña real. La campaña Harness-first permanece `NOT_RUN` hasta una ejecución única autorizada con binario, provenance, RSS y seis RIDs cuando corresponda.

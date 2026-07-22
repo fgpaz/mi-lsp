@@ -175,7 +175,7 @@ func (s *Server) Serve(ctx context.Context) error {
 			}
 			return err
 		}
-		go s.handleConnection(conn)
+		go s.handleConnectionContext(ctx, conn)
 	}
 }
 
@@ -193,6 +193,13 @@ func (s *Server) Shutdown() {
 }
 
 func (s *Server) handleConnection(conn net.Conn) {
+	s.handleConnectionContext(context.Background(), conn)
+}
+
+func (s *Server) handleConnectionContext(ctx context.Context, conn net.Conn) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	defer conn.Close()
 
 	var request model.CommandRequest
@@ -210,7 +217,7 @@ func (s *Server) handleConnection(conn net.Conn) {
 	if s.isBackpressureLimited(request) {
 		defer s.releaseInflight()
 	}
-	response, err := s.handleRequest(request)
+	response, err := s.handleRequestContext(ctx, request)
 	if err != nil {
 		response = daemonErrorEnvelope(request, err, "daemon")
 	}
@@ -219,6 +226,13 @@ func (s *Server) handleConnection(conn net.Conn) {
 }
 
 func (s *Server) handleRequest(request model.CommandRequest) (model.Envelope, error) {
+	return s.handleRequestContext(context.Background(), request)
+}
+
+func (s *Server) handleRequestContext(ctx context.Context, request model.CommandRequest) (model.Envelope, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	if request.ProtocolVersion == "" || request.ProtocolVersion != model.ProtocolVersion {
 		return model.Envelope{}, fmt.Errorf("protocol version mismatch: client=%s daemon=%s", request.ProtocolVersion, model.ProtocolVersion)
 	}
@@ -266,22 +280,20 @@ func (s *Server) handleRequest(request model.CommandRequest) (model.Envelope, er
 		go s.Shutdown()
 		return model.Envelope{Ok: true, Backend: "daemon", Items: []string{"stopping daemon"}}, nil
 	case "worker.status":
-		return s.app.Execute(context.Background(), request)
+		return s.app.Execute(ctx, request)
 	case "workspace.add", "workspace.init":
 		// For workspace add/init, start async background indexing instead of blocking on sync index.
 		// Extract workspace root from payload and queue async job.
 		if path, ok := request.Payload["path"].(string); ok && path != "" {
 			// Normalize path and start background index
-			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-			jobID, _ := indexer.StartBackgroundIndex(ctx, path, false, indexer.IndexModeFull)
-			cancel()
+			jobID := startWorkspaceBackgroundIndex(ctx, path)
 			// Store job ID in context for later retrieval if needed
 			if jobID != "" {
 				request.Payload["_index_job_id"] = jobID
 			}
 		}
 		// Proceed with normal registration flow
-		return s.app.Execute(context.Background(), request)
+		return s.app.Execute(ctx, request)
 	case "workspace.warm":
 		resolution, err := workspace.ResolveWorkspaceSelection(request.Context.Workspace, request.Context.CallerCWD)
 		if err != nil {
@@ -337,7 +349,7 @@ func (s *Server) handleRequest(request model.CommandRequest) (model.Envelope, er
 		}
 
 		// Execute operation.
-		response, err := s.app.Execute(context.Background(), request)
+		response, err := s.app.Execute(ctx, request)
 		// Graph queries are executed by the canonical service contract. Preserve its
 		// payload exactly, while identifying the daemon-routed SQLite result.
 		if err == nil && response.Ok && isGraphQueryOperation(request.Operation) {
@@ -378,6 +390,7 @@ func (s *Server) recordAccess(request model.CommandRequest, response model.Envel
 		Seq:            seq,
 		Repo:           payloadString(request.Payload, "repo"),
 		Operation:      request.Operation,
+		Intent:         requestTelemetryIntent(request, response),
 		Backend:        response.Backend,
 		Route:          "daemon",
 		Format:         request.Context.Format,
@@ -596,6 +609,17 @@ func probeDaemon(ctx context.Context) (model.DaemonState, error) {
 		return model.DaemonState{}, err
 	}
 	return state, nil
+}
+
+func startWorkspaceBackgroundIndex(ctx context.Context, path string) string {
+	indexCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	jobID, _ := indexer.StartBackgroundIndex(indexCtx, path, false, indexer.IndexModeFull)
+	return jobID
+}
+
+func requestTelemetryIntent(request model.CommandRequest, response model.Envelope) string {
+	return telemetry.IntentFromRequestEnvelope(request, response)
 }
 
 func payloadString(payload map[string]any, key string) string {

@@ -3,8 +3,10 @@ package service
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/fgpaz/mi-lsp/internal/model"
+	"github.com/fgpaz/mi-lsp/internal/store"
 )
 
 func TestGraphRequestFromPayloadDefaultsAndOperationOverrides(t *testing.T) {
@@ -25,6 +27,128 @@ func TestGraphRequestFromPayloadDefaultsAndOperationOverrides(t *testing.T) {
 	}
 	if q.Depth != 2 || q.Limit != 7 || q.TokenBudget != 4000 {
 		t.Fatalf("payload shape lost: %+v", q)
+	}
+}
+
+func TestGraphRankRequestPersistsTypedUtilitySignalAndReadsItOnNextRank(t *testing.T) {
+	db := impactTestDB(t)
+	bundle := impactTestBundle(t)
+	candidate := bundle.Nodes[0].NodeKey.String()
+	first, err := GraphQuery(context.Background(), db, model.GraphQueryRequest{
+		Operation:        "nav.graph.rank",
+		Limit:            50,
+		UtilitySignal:    model.UtilitySignalResultSelected,
+		CandidateNodeKey: candidate,
+		UtilityIntent:    "callers",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !first.Ok {
+		t.Fatalf("first rank failed: %#v", first)
+	}
+	generation, ok, err := store.ActiveGraphGeneration(context.Background(), db)
+	if err != nil || !ok {
+		t.Fatalf("active generation: %v %v", err, ok)
+	}
+	events, err := store.UtilityEvents(context.Background(), db, "example.com/repo", "callers", "rank", candidate, time.Now().UTC())
+	if err != nil || len(events) != 1 {
+		t.Fatalf("utility events=%d err=%v", len(events), err)
+	}
+	if events[0].GenerationID != generation.String() || events[0].CandidateNodeKey != candidate {
+		t.Fatalf("event=%+v", events[0])
+	}
+	second, err := GraphQuery(context.Background(), db, model.GraphQueryRequest{Operation: "nav.graph.rank", Limit: 50, UtilityIntent: "callers"})
+	if err != nil || !second.Ok {
+		t.Fatalf("second rank failed: %v %#v", err, second)
+	}
+	items, ok := second.Items.([]any)
+	if !ok || len(items) == 0 {
+		t.Fatalf("rank items=%T %#v", second.Items, second.Items)
+	}
+}
+
+func TestGraphRankCacheBridgeSingleConnectionCoversMissHitAndUtility(t *testing.T) {
+	db := impactTestDB(t)
+	db.SetMaxOpenConns(1)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	miss, err := GraphQuery(ctx, db, model.GraphQueryRequest{Operation: "nav.graph.rank", Limit: 50})
+	if err != nil || !miss.Ok {
+		t.Fatalf("rank cache miss failed: %v %#v", err, miss)
+	}
+	hit, err := GraphQuery(ctx, db, model.GraphQueryRequest{Operation: "nav.graph.rank", Limit: 50})
+	if err != nil || !hit.Ok || hit.DeterminismDigest != miss.DeterminismDigest {
+		t.Fatalf("rank cache hit failed or changed digest: miss=%#v hit=%#v err=%v", miss, hit, err)
+	}
+
+	generationID, ok, err := store.ActiveGraphGeneration(ctx, db)
+	if err != nil || !ok {
+		t.Fatalf("active generation: %v %v", err, ok)
+	}
+	generation, err := store.ValidateGraphGeneration(ctx, db, generationID)
+	if err != nil {
+		t.Fatalf("validate generation: %v", err)
+	}
+	snapshot, err := store.BeginGraphQuerySnapshot(ctx, db, generationID.String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	sentinel := model.GraphRank{NodeKey: "preloaded-cache-result", DeterminismDigest: "preloaded-digest"}
+	preloaded, err := graphRankQuery(ctx, db, snapshot, model.GraphQueryRequest{
+		Operation:    "nav.graph.rank",
+		Limit:        50,
+		CachedRanks:  []model.GraphRank{sentinel},
+		CachedDigest: "preloaded-digest",
+	}, generation)
+	if err != nil {
+		t.Fatal(err)
+	}
+	items, ok := preloaded.Items.([]any)
+	if !ok || len(items) != 1 {
+		t.Fatalf("preloaded cache items=%T %#v", preloaded.Items, preloaded.Items)
+	}
+	if rank, ok := items[0].(model.GraphRank); !ok || rank.NodeKey != sentinel.NodeKey {
+		t.Fatalf("cache bridge did not reuse preloaded rank: %#v", items[0])
+	}
+	snapshot.Close()
+
+	bundle := impactTestBundle(t)
+	utility, err := GraphQuery(ctx, db, model.GraphQueryRequest{
+		Operation:        "nav.graph.rank",
+		Limit:            50,
+		UtilitySignal:    model.UtilitySignalResultSelected,
+		CandidateNodeKey: bundle.Nodes[0].NodeKey.String(),
+		UtilityIntent:    "callers",
+	})
+	if err != nil || !utility.Ok {
+		t.Fatalf("utility rank request failed with one connection: %v %#v", err, utility)
+	}
+}
+
+func TestGraphRankQueryCachesCompleteAnalysisAndReusesIt(t *testing.T) {
+	db := impactTestDB(t)
+	first, err := GraphQuery(context.Background(), db, model.GraphQueryRequest{Operation: "nav.graph.rank", Limit: 50})
+	if err != nil || !first.Ok {
+		t.Fatalf("first rank failed: %v %#v", err, first)
+	}
+	var status string
+	if err := db.QueryRow("SELECT status FROM graph_analysis LIMIT 1").Scan(&status); err != nil || status != "complete" {
+		t.Fatalf("cache status=%q err=%v", status, err)
+	}
+	second, err := GraphQuery(context.Background(), db, model.GraphQueryRequest{Operation: "nav.graph.rank", Limit: 50})
+	if err != nil || !second.Ok || second.DeterminismDigest != first.DeterminismDigest {
+		t.Fatalf("cached rank mismatch: first=%#v second=%#v err=%v", first, second, err)
+	}
+}
+
+func TestGraphRankRequestRejectsInvalidUtilityCandidate(t *testing.T) {
+	db := impactTestDB(t)
+	_, err := GraphQuery(context.Background(), db, model.GraphQueryRequest{Operation: "nav.graph.rank", UtilitySignal: model.UtilitySignalResultSelected, CandidateNodeKey: "raw selector", UtilityIntent: "graph"})
+	graphErr, ok := err.(*model.GraphQueryError)
+	if !ok || graphErr.Code != "GPH_QUERY_UTILITY_INVALID" {
+		t.Fatalf("err=%T %v, want typed utility validation", err, err)
 	}
 }
 

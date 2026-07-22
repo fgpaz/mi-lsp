@@ -52,16 +52,19 @@ func decodeGraphCursor(raw string) (graphCursor, error) {
 
 func graphRequestFromPayload(request model.CommandRequest) (model.GraphQueryRequest, error) {
 	q := model.GraphQueryRequest{
-		Operation:   request.Operation,
-		Selector:    stringPayload(request.Payload, "selector"),
-		From:        stringPayload(request.Payload, "from"),
-		To:          stringPayload(request.Payload, "to"),
-		Generation:  stringPayload(request.Payload, "generation"),
-		Depth:       intFromAny(request.Payload["depth"], 0),
-		Limit:       intFromAny(request.Payload["limit"], 0),
-		TokenBudget: intFromAny(request.Payload["token_budget"], request.Context.TokenBudget),
-		Direction:   stringPayload(request.Payload, "direction"),
-		Cursor:      stringPayload(request.Payload, "cursor"),
+		Operation:        request.Operation,
+		Selector:         stringPayload(request.Payload, "selector"),
+		From:             stringPayload(request.Payload, "from"),
+		To:               stringPayload(request.Payload, "to"),
+		Generation:       stringPayload(request.Payload, "generation"),
+		Depth:            intFromAny(request.Payload["depth"], 0),
+		Limit:            intFromAny(request.Payload["limit"], 0),
+		TokenBudget:      intFromAny(request.Payload["token_budget"], request.Context.TokenBudget),
+		Direction:        stringPayload(request.Payload, "direction"),
+		Cursor:           stringPayload(request.Payload, "cursor"),
+		UtilitySignal:    stringPayload(request.Payload, "utility_signal"),
+		CandidateNodeKey: stringPayload(request.Payload, "candidate_node_key"),
+		UtilityIntent:    stringPayload(request.Payload, "utility_intent"),
 	}
 	if raw, ok := request.Payload["edge"].([]any); ok {
 		for _, v := range raw {
@@ -129,6 +132,38 @@ func GraphQuery(ctx context.Context, db *sql.DB, q model.GraphQueryRequest) (mod
 			q.Generation = cursor.Generation
 		}
 	}
+	if strings.TrimSpace(q.UtilitySignal) != "" {
+		utilityGenerationID := strings.TrimSpace(q.Generation)
+		if utilityGenerationID == "" {
+			active, ok, activeErr := store.ActiveGraphGeneration(ctx, db)
+			if activeErr != nil || !ok {
+				return model.Envelope{}, &model.GraphQueryError{Code: "GPH_QUERY_UTILITY_INVALID", Message: "utility signal requires an active graph generation"}
+			}
+			utilityGenerationID = active.String()
+		}
+		utilityGeneration, generationErr := store.ValidateGraphGeneration(ctx, db, modelDigestOrError(utilityGenerationID))
+		if generationErr != nil {
+			return model.Envelope{}, &model.GraphQueryError{Code: "GPH_QUERY_UTILITY_INVALID", Message: "utility signal generation is invalid"}
+		}
+		if err := recordGraphUtilityEvent(ctx, db, utilityGeneration, q); err != nil {
+			return model.Envelope{}, err
+		}
+	}
+	if q.Operation == "nav.graph.rank" {
+		rankIntent := model.SanitizeUtilityIntent(q.UtilityIntent)
+		if strings.TrimSpace(q.UtilityIntent) == "" {
+			rankIntent = "graph"
+		}
+		if utilityGeneration, generationErr := graphRankGeneration(ctx, db, q.Generation); generationErr == nil {
+			q.Utility = loadGraphRankUtility(ctx, db, utilityGeneration, rankIntent, q.Utility)
+			if len(q.Utility) == 0 {
+				q.CachedRanks, q.CachedDigest, err = loadCachedGraphRanks(ctx, db, GraphRankRequest{GenerationID: utilityGeneration.GenerationID.String(), Limit: q.Limit, MaxNodes: model.GraphAnalysisMaxNodes, MaxEdges: model.GraphAnalysisMaxEdges, Intent: rankIntent})
+				if err != nil {
+					return model.Envelope{}, err
+				}
+			}
+		}
+	}
 	snapshot, err := store.BeginGraphQuerySnapshot(ctx, db, q.Generation)
 	if err != nil {
 		if q.Cursor != "" {
@@ -149,7 +184,7 @@ func GraphQuery(ctx context.Context, db *sql.DB, q model.GraphQueryRequest) (mod
 	case "nav.graph.stats", "nav.graph.status":
 		envelope, err = graphStats(ctx, snapshot, q, generation)
 	case "nav.graph.rank":
-		envelope, err = graphRankQuery(ctx, snapshot, q, generation)
+		envelope, err = graphRankQuery(ctx, db, snapshot, q, generation)
 	case "nav.graph.validate":
 		envelope, err = graphValidate(ctx, snapshot, q, generation)
 	case "nav.explain":
@@ -168,7 +203,29 @@ func GraphQuery(ctx context.Context, db *sql.DB, q model.GraphQueryRequest) (mod
 			return model.Envelope{}, store.SanitizeGraphQueryError(err)
 		}
 	}
+	if q.Operation == "nav.graph.rank" {
+		snapshot.Close()
+		if len(q.CachedRanks) == 0 && len(q.Utility) == 0 && envelope.Ok && !envelope.Truncated {
+			_ = cacheGraphEnvelope(ctx, db, generation, q, envelope)
+		}
+	}
 	return envelope, nil
+}
+
+func cacheGraphEnvelope(ctx context.Context, db *sql.DB, generation model.GraphGeneration, q model.GraphQueryRequest, envelope model.Envelope) error {
+	body, err := json.Marshal(envelope.Items)
+	if err != nil {
+		return err
+	}
+	var ranks []model.GraphRank
+	if err := json.Unmarshal(body, &ranks); err != nil || len(ranks) == 0 {
+		return err
+	}
+	rankIntent := model.SanitizeUtilityIntent(q.UtilityIntent)
+	if strings.TrimSpace(q.UtilityIntent) == "" {
+		rankIntent = "graph"
+	}
+	return cacheGraphRanks(ctx, db, generation, GraphRankRequest{GenerationID: generation.GenerationID.String(), Limit: q.Limit, MaxNodes: model.GraphAnalysisMaxNodes, MaxEdges: model.GraphAnalysisMaxEdges, Intent: rankIntent}, ranks, envelope.DeterminismDigest)
 }
 
 func graphExplain(ctx context.Context, s *store.GraphQuerySnapshot, q model.GraphQueryRequest, g model.GraphGeneration) (model.Envelope, error) {
@@ -177,7 +234,7 @@ func graphExplain(ctx context.Context, s *store.GraphQuerySnapshot, q model.Grap
 		return model.Envelope{}, err
 	}
 	if len(edges) == 0 {
-		return graphEnvelope(q, g, []any{}, nil, model.GraphQueryStats{Depth: 1}, "edge selector not found"), nil
+		return graphEnvelope(q, g, s, []any{}, nil, model.GraphQueryStats{Depth: 1}, "edge selector not found"), nil
 	}
 	if len(edges) > 1 {
 		return model.Envelope{}, &model.GraphQueryError{Code: "GPH_QUERY_SELECTOR_AMBIGUOUS", Message: "edge selector matched multiple graph edges"}
@@ -186,19 +243,31 @@ func graphExplain(ctx context.Context, s *store.GraphQuerySnapshot, q model.Grap
 	if err != nil {
 		return model.Envelope{}, err
 	}
-	return graphEnvelope(q, g, []any{item}, []model.GraphQueryItem{item}, model.GraphQueryStats{Visited: 2, Returned: 1, Depth: 1, DepthReached: 1}, ""), nil
+	return graphEnvelope(q, g, s, []any{item}, []model.GraphQueryItem{item}, model.GraphQueryStats{Visited: 2, Returned: 1, Depth: 1, DepthReached: 1}, ""), nil
 }
 
-func graphRankQuery(ctx context.Context, s *store.GraphQuerySnapshot, q model.GraphQueryRequest, g model.GraphGeneration) (model.Envelope, error) {
-	ranks, digest, truncated, err := graphRankSnapshot(ctx, s, GraphRankRequest{GenerationID: g.GenerationID.String(), Limit: q.Limit, MaxNodes: model.GraphAnalysisMaxNodes, MaxEdges: model.GraphAnalysisMaxEdges})
+func graphRankQuery(ctx context.Context, db *sql.DB, s *store.GraphQuerySnapshot, q model.GraphQueryRequest, g model.GraphGeneration) (model.Envelope, error) {
+	rankIntent := model.SanitizeUtilityIntent(q.UtilityIntent)
+	if strings.TrimSpace(q.UtilityIntent) == "" {
+		rankIntent = "graph"
+	}
+	rankEnvelope, err := graphRankOnSnapshot(ctx, db, s, GraphRankRequest{GenerationID: g.GenerationID.String(), Limit: q.Limit, MaxNodes: model.GraphAnalysisMaxNodes, MaxEdges: model.GraphAnalysisMaxEdges, Intent: rankIntent, Utility: q.Utility, CachedRanks: q.CachedRanks, CachedDigest: q.CachedDigest})
 	if err != nil {
 		return model.Envelope{}, err
 	}
+	if !rankEnvelope.Ok {
+		env := graphEnvelope(q, g, s, []any{}, nil, model.GraphQueryStats{Depth: 1, Unresolved: g.UnresolvedCount}, "graph rank withheld because graph freshness is "+rankEnvelope.GraphFreshness.State)
+		env.GraphFreshness = &rankEnvelope.GraphFreshness
+		return env, nil
+	}
+	ranks := rankEnvelope.Items
+	digest := rankEnvelope.DeterminismDigest
+	truncated := rankEnvelope.Truncated
 	raw := make([]any, len(ranks))
 	for i := range ranks {
 		raw[i] = ranks[i]
 	}
-	env := graphEnvelope(q, g, raw, nil, model.GraphQueryStats{Visited: len(ranks), Returned: len(ranks), Depth: 1, Unresolved: g.UnresolvedCount}, "")
+	env := graphEnvelope(q, g, s, raw, nil, model.GraphQueryStats{Visited: len(ranks), Returned: len(ranks), Depth: 1, Unresolved: g.UnresolvedCount}, "")
 	env.DeterminismDigest = digest
 	env.Graph.DeterminismDigest = digest
 	env.Truncated = truncated
@@ -217,10 +286,10 @@ func graphStats(ctx context.Context, s *store.GraphQuerySnapshot, q model.GraphQ
 	if err != nil {
 		return model.Envelope{}, store.SanitizeGraphQueryError(err)
 	}
-	item := map[string]any{"kind": "graph_stats", "generation_id": g.GenerationID.String(), "schema": g.SchemaVersion, "nodes": counts["nodes"], "edges": counts["edges"], "evidence": counts["evidence"], "unresolved": counts["unresolved"], "by_kind": facets["kind"], "by_relation": facets["relation"], "by_status": facets["status"], "by_backend": facets["backend"], "graph_freshness": model.GraphFreshness{State: model.GraphFreshnessCurrent, GenerationID: g.GenerationID.String(), ReasonCode: "generation_matches_active"}}
+	item := map[string]any{"kind": "graph_stats", "generation_id": g.GenerationID.String(), "schema": g.SchemaVersion, "nodes": counts["nodes"], "edges": counts["edges"], "evidence": counts["evidence"], "unresolved": counts["unresolved"], "by_kind": facets["kind"], "by_relation": facets["relation"], "by_status": facets["status"], "by_backend": facets["backend"], "graph_freshness": s.SnapshotFreshness(q.Generation)}
 	stats := model.GraphQueryStats{Returned: 1, Depth: q.Depth, Unresolved: counts["unresolved"]}
 	items := []model.GraphQueryItem{{Kind: "graph_stats", CrossRID: g.GenerationID.String(), Display: "graph stats", Status: g.Status, Distance: 0}}
-	env := graphEnvelope(q, g, []any{item}, items, stats, "")
+	env := graphEnvelope(q, g, s, []any{item}, items, stats, "")
 	env.Omissions, err = s.UnresolvedOmissions(ctx, q.Limit)
 	if err != nil {
 		return model.Envelope{}, store.SanitizeGraphQueryError(err)
@@ -235,7 +304,7 @@ func graphValidate(ctx context.Context, s *store.GraphQuerySnapshot, q model.Gra
 	item := map[string]any{"kind": "graph_validate", "generation_id": validated.GenerationID.String(), "schema": validated.SchemaVersion, "status": "valid", "nodes": validated.NodeCount, "edges": validated.EdgeCount, "evidence": validated.EvidenceCount, "unresolved": validated.UnresolvedCount}
 	stats := model.GraphQueryStats{Returned: 1, Depth: q.Depth, Unresolved: validated.UnresolvedCount}
 	items := []model.GraphQueryItem{{Kind: "graph_validate", CrossRID: validated.GenerationID.String(), Display: "graph validate", Status: "valid", Distance: 0}}
-	env := graphEnvelope(q, g, []any{item}, items, stats, "")
+	env := graphEnvelope(q, g, s, []any{item}, items, stats, "")
 	env.Omissions, err = s.UnresolvedOmissions(ctx, q.Limit)
 	if err != nil {
 		return model.Envelope{}, store.SanitizeGraphQueryError(err)
@@ -249,7 +318,7 @@ func graphNeighborhood(ctx context.Context, s *store.GraphQuerySnapshot, q model
 		return model.Envelope{}, store.SanitizeGraphQueryError(err)
 	}
 	if len(nodes) == 0 {
-		return graphEnvelope(q, g, []any{}, nil, model.GraphQueryStats{Depth: q.Depth}, "selector not found"), nil
+		return graphEnvelope(q, g, s, []any{}, nil, model.GraphQueryStats{Depth: q.Depth}, "selector not found"), nil
 	}
 	if len(nodes) > 1 {
 		candidates := make([]model.GraphQueryItem, 0, minInt(len(nodes), 50))
@@ -346,7 +415,7 @@ func graphPath(ctx context.Context, s *store.GraphQuerySnapshot, q model.GraphQu
 		return model.Envelope{}, store.SanitizeGraphQueryError(err)
 	}
 	if len(from) == 0 || len(to) == 0 {
-		return graphEnvelope(q, g, []any{}, nil, model.GraphQueryStats{Depth: q.Depth}, "path endpoint not found"), nil
+		return graphEnvelope(q, g, s, []any{}, nil, model.GraphQueryStats{Depth: q.Depth}, "path endpoint not found"), nil
 	}
 	if len(from) > 1 || len(to) > 1 {
 		return model.Envelope{}, &model.GraphQueryError{Code: "GPH_QUERY_SELECTOR_AMBIGUOUS", Message: "path endpoint selector is ambiguous"}
@@ -354,7 +423,7 @@ func graphPath(ctx context.Context, s *store.GraphQuerySnapshot, q model.GraphQu
 	start, target := from[0], to[0]
 	if start.NodeID == target.NodeID {
 		item, _ := graphNodeItem(s, ctx, start, 0, nil)
-		return graphEnvelope(q, g, []any{item}, []model.GraphQueryItem{item}, model.GraphQueryStats{Visited: 1, Frontier: 1, Returned: 1, Depth: 0}, ""), nil
+		return graphEnvelope(q, g, s, []any{item}, []model.GraphQueryItem{item}, model.GraphQueryStats{Visited: 1, Frontier: 1, Returned: 1, Depth: 0}, ""), nil
 	}
 	type parent struct {
 		node     int
@@ -419,7 +488,7 @@ func graphPath(ctx context.Context, s *store.GraphQuerySnapshot, q model.GraphQu
 		if searchBudgetExhausted {
 			hint = "search_budget_exhausted"
 		}
-		return graphEnvelope(q, g, []any{}, nil, stats, hint), nil
+		return graphEnvelope(q, g, s, []any{}, nil, stats, hint), nil
 	}
 	edges := []model.GraphEdgeRecord{}
 	pathNodes := []int{}
@@ -713,7 +782,7 @@ func finalizeGraphItemsWithSearchBudget(q model.GraphQueryRequest, g model.Graph
 		next = encodeGraphCursor(graphCursor{Generation: g.GenerationID.String(), Operation: q.Operation, Selector: q.Selector, From: q.From, To: q.To, Depth: q.Depth, Limit: q.Limit, Token: q.TokenBudget, Direction: q.Direction, Relations: q.Relations, Offset: offset + len(returned)})
 	}
 	stats := model.GraphQueryStats{Visited: visited, Frontier: frontier, Returned: len(returned), Depth: q.Depth, DepthReached: q.Depth, TokenUnits: units, Unresolved: g.UnresolvedCount, SearchBudgetExhausted: searchBudgetExhausted}
-	env := graphEnvelope(q, g, nil, returned, stats, "")
+	env := graphEnvelope(q, g, s, nil, returned, stats, "")
 	env.Items = returned
 	env.Truncated = truncated
 	env.Graph.NextCursor = next
@@ -722,16 +791,17 @@ func finalizeGraphItemsWithSearchBudget(q model.GraphQueryRequest, g model.Graph
 	}
 	return env
 }
-func graphEnvelope(q model.GraphQueryRequest, g model.GraphGeneration, raw []any, canonical []model.GraphQueryItem, stats model.GraphQueryStats, hint string) model.Envelope {
+func graphEnvelope(q model.GraphQueryRequest, g model.GraphGeneration, s *store.GraphQuerySnapshot, raw []any, canonical []model.GraphQueryItem, stats model.GraphQueryStats, hint string) model.Envelope {
 	if raw == nil {
 		raw = make([]any, len(canonical))
 		for i := range canonical {
 			raw[i] = canonical[i]
 		}
 	}
-	meta := &model.GraphQueryMetadata{Operation: q.Operation, GenerationID: g.GenerationID.String(), Schema: g.SchemaVersion, Stats: stats, GraphFreshness: model.GraphFreshness{State: model.GraphFreshnessCurrent, GenerationID: g.GenerationID.String(), ReasonCode: "generation_matches_active"}}
+	freshness := s.SnapshotFreshness(q.Generation)
+	meta := &model.GraphQueryMetadata{Operation: q.Operation, GenerationID: g.GenerationID.String(), Schema: g.SchemaVersion, Stats: stats, GraphFreshness: freshness}
 	meta.DeterminismDigest = model.DeterminismDigest(q.Operation, g.GenerationID, canonical, stats)
-	freshness := meta.GraphFreshness
+	freshness = meta.GraphFreshness
 	return model.Envelope{Ok: true, Backend: "sqlite-direct", Mode: "query_only", Items: raw, Hint: hint, Graph: meta, Operation: q.Operation, GenerationID: g.GenerationID.String(), GraphSchemaVersion: g.SchemaVersion, DeterminismDigest: meta.DeterminismDigest, GraphFreshness: &freshness}
 }
 

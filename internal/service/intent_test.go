@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/fgpaz/mi-lsp/internal/model"
@@ -34,6 +35,63 @@ func TestClassifySupportedIntentRoutesAllT3Operations(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestIntentExpansionCommandsUseExecutableCLIOperations(t *testing.T) {
+	tests := []struct {
+		name string
+		plan model.IntentPlan
+		want []string
+	}{
+		{"neighborhood", model.IntentPlan{Operation: "neighborhood", Arguments: map[string]string{"selector": "Run"}}, []string{"mi-lsp nav neighbors \"Run\"", "--workspace demo"}},
+		{"path-between", model.IntentPlan{Operation: "path-between", Arguments: map[string]string{"from": "Start", "to": "Finish"}}, []string{"mi-lsp nav path \"Start\" \"Finish\"", "--workspace demo"}},
+		{"explain-edge", model.IntentPlan{Operation: "explain-edge", Arguments: map[string]string{"edge": "edge-123"}}, []string{"mi-lsp nav explain \"edge-123\"", "--workspace demo"}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			command := intentExpansionCommandForPlan("demo", test.plan)
+			for _, part := range test.want {
+				if !strings.Contains(command, part) {
+					t.Fatalf("command %q does not contain %q", command, part)
+				}
+			}
+		})
+	}
+}
+
+func TestExplainChangeExpansionPreservesNormalizedPathsAndRef(t *testing.T) {
+	plan := model.IntentPlan{
+		Operation: "explain-change",
+		Arguments: map[string]string{
+			"paths": "internal/service/a b.go,src/quoted.go",
+			"ref":   `feature/quoted "ref"`,
+		},
+		GenerationID: "generation-must-not-leak",
+	}
+	command := intentExplainChangeExpansion("demo", plan)
+	if strings.Count(command, " --path ") != 2 || !strings.Contains(command, `--path "internal/service/a b.go"`) || !strings.Contains(command, `--path "src/quoted.go"`) {
+		t.Fatalf("command=%q, want two safely quoted path flags", command)
+	}
+	if !strings.Contains(command, `--ref "feature/quoted \"ref\""`) {
+		t.Fatalf("command=%q, want safely quoted ref", command)
+	}
+	if strings.Contains(command, "--generation") || strings.Contains(command, "diff-context") || strings.Contains(command, "--from-git-diff") {
+		t.Fatalf("explain-change expansion derived an unsupported/current-diff input: %q", command)
+	}
+}
+
+func TestIncompletePathExpansionUsesExecutableDiscovery(t *testing.T) {
+	command := intentPathDiscoveryExpansion("demo", "Start", "")
+	if !strings.Contains(command, "mi-lsp nav search") || !strings.Contains(command, `"Start"`) || !strings.Contains(command, "--include-content") {
+		t.Fatalf("discovery command=%q", command)
+	}
+	if strings.Contains(command, "nav path") || strings.Contains(command, "--generation") {
+		t.Fatalf("incomplete path emitted non-executable path/generation command=%q", command)
+	}
+	planCommand := intentExpansionCommandForPlan("demo", model.IntentPlan{Operation: "callers", GenerationID: "generation-123", Arguments: map[string]string{"selector": "Run"}})
+	if !strings.Contains(planCommand, "--generation generation-123") {
+		t.Fatalf("graph expansion dropped generation: %q", planCommand)
 	}
 }
 

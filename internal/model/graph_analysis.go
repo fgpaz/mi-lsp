@@ -24,12 +24,17 @@ const (
 	GraphAnalysisMaxEdges  = 50000
 	GraphAnalysisMaxBytes  = 64 * 1024
 
-	UtilitySignalContinuationFollowed = "continuation_followed"
-	UtilitySignalFeedbackPositive     = "feedback_positive"
-	UtilitySignalFeedbackNegative     = "feedback_negative"
-	UtilitySignalResultSelected       = "result_selected"
-	UtilityMaxEventsPerScope          = 4096
-	UtilityMaxIntentLength            = 64
+	UtilitySignalContinuationFollowed       = "continuation_followed"
+	UtilitySignalFeedbackPositive           = "feedback_positive"
+	UtilitySignalFeedbackNegative           = "feedback_negative"
+	UtilitySignalResultSelected             = "result_selected"
+	UtilityMaxEventsPerCandidate            = 4096
+	UtilityMaxEventsPerScopeIntentOperation = 4096
+	// UtilityMaxEventsPerScope is retained as a compatibility alias for the
+	// candidate-scoped cap; new code should use the explicit constant above.
+	UtilityMaxEventsPerScope       = UtilityMaxEventsPerCandidate
+	UtilityMaxIntentLength         = 64
+	UtilityMaxWorkspaceScopeLength = 256
 )
 
 // GraphFreshness is an additive claim gate. Exact graph claims are only
@@ -102,6 +107,7 @@ type GraphAnalysisRequest struct {
 	AuthorityProfile string `json:"authority_profile"`
 	MaxNodes         int    `json:"max_nodes"`
 	MaxEdges         int    `json:"max_edges"`
+	Limit            int    `json:"limit"`
 }
 
 func (r GraphAnalysisRequest) Normalize() GraphAnalysisRequest {
@@ -123,6 +129,9 @@ func (r GraphAnalysisRequest) Normalize() GraphAnalysisRequest {
 	}
 	if r.MaxEdges <= 0 || r.MaxEdges > GraphAnalysisMaxEdges {
 		r.MaxEdges = GraphAnalysisMaxEdges
+	}
+	if r.Limit <= 0 || r.Limit > GraphQueryMaxLimit {
+		r.Limit = GraphQueryMaxLimit
 	}
 	return r
 }
@@ -192,20 +201,32 @@ func CommunityID(nodeKeys []string) string {
 // UtilityEvent intentionally contains no query, prompt, argv, snippet, or
 // content field. It is safe to persist after normalization.
 type UtilityEvent struct {
-	OccurredAt     time.Time `json:"occurred_at"`
-	WorkspaceScope string    `json:"workspace_scope"`
-	Intent         string    `json:"intent"`
-	Operation      string    `json:"operation"`
-	Signal         string    `json:"signal"`
-	Value          float64   `json:"value"`
-	GenerationID   string    `json:"generation_id,omitempty"`
+	OccurredAt       time.Time `json:"occurred_at"`
+	WorkspaceScope   string    `json:"workspace_scope"`
+	Intent           string    `json:"intent"`
+	Operation        string    `json:"operation"`
+	CandidateNodeKey string    `json:"candidate_node_key"`
+	Signal           string    `json:"signal"`
+	Value            float64   `json:"value"`
+	GenerationID     string    `json:"generation_id,omitempty"`
 }
 
 func (e UtilityEvent) Normalize() (UtilityEvent, bool) {
-	e.WorkspaceScope = strings.TrimSpace(e.WorkspaceScope)
+	e.WorkspaceScope = normalizeUtilityWorkspaceScope(e.WorkspaceScope)
 	e.Intent = SanitizeUtilityIntent(e.Intent)
 	e.Operation = sanitizeUtilityToken(e.Operation, 96)
-	e.GenerationID = strings.TrimSpace(e.GenerationID)
+	e.GenerationID = strings.ToLower(strings.TrimSpace(e.GenerationID))
+	e.CandidateNodeKey = strings.ToLower(strings.TrimSpace(e.CandidateNodeKey))
+	if e.CandidateNodeKey != "" {
+		if _, err := ParseGraphDigest(e.CandidateNodeKey); err != nil {
+			return UtilityEvent{}, false
+		}
+	}
+	if e.GenerationID != "" {
+		if _, err := ParseGraphDigest(e.GenerationID); err != nil {
+			return UtilityEvent{}, false
+		}
+	}
 	switch e.Signal {
 	case UtilitySignalContinuationFollowed, UtilitySignalFeedbackPositive, UtilitySignalFeedbackNegative, UtilitySignalResultSelected:
 	default:
@@ -234,10 +255,23 @@ func SanitizeUtilityIntent(raw string) string {
 	allowed := map[string]bool{
 		"callers": true, "callees": true, "affected-change": true, "path-between": true,
 		"explain-edge": true, "neighborhood": true, "explain-change": true,
-		"workspace-map": true, "related": true, "graph": true, "unknown": true,
+		"workspace-map": true, "related": true, "graph": true, "rank": true, "unknown": true,
 	}
 	if !allowed[raw] {
 		return "unknown"
+	}
+	return raw
+}
+
+func normalizeUtilityWorkspaceScope(raw string) string {
+	raw = strings.TrimSpace(strings.ReplaceAll(raw, "\\", "/"))
+	if raw == "" || len(raw) > UtilityMaxWorkspaceScopeLength {
+		return ""
+	}
+	for _, r := range raw {
+		if r < 0x20 || r == 0x7f {
+			return ""
+		}
 	}
 	return raw
 }
@@ -256,14 +290,25 @@ func sanitizeUtilityToken(raw string, max int) string {
 }
 
 type UtilitySignal struct {
-	WorkspaceScope string  `json:"workspace_scope"`
-	Intent         string  `json:"intent"`
-	Operation      string  `json:"operation"`
-	Score          float64 `json:"score"`
-	Samples        int     `json:"samples"`
+	WorkspaceScope   string  `json:"workspace_scope"`
+	Intent           string  `json:"intent"`
+	Operation        string  `json:"operation"`
+	CandidateNodeKey string  `json:"candidate_node_key,omitempty"`
+	Score            float64 `json:"score"`
+	Samples          int     `json:"samples"`
 }
 
 func UtilityScore(events []UtilityEvent, workspace, intent, operation string, now time.Time) UtilitySignal {
+	return utilityScore(events, workspace, intent, operation, "", now)
+}
+
+// UtilityScoreForCandidate is the only candidate-aware utility path. The
+// caller supplies a NodeKey, never a prompt, snippet, or display label.
+func UtilityScoreForCandidate(events []UtilityEvent, workspace, intent, operation, candidateNodeKey string, now time.Time) UtilitySignal {
+	return utilityScore(events, workspace, intent, operation, strings.TrimSpace(candidateNodeKey), now)
+}
+
+func utilityScore(events []UtilityEvent, workspace, intent, operation, candidateNodeKey string, now time.Time) UtilitySignal {
 	workspace = strings.TrimSpace(workspace)
 	intent = SanitizeUtilityIntent(intent)
 	operation = sanitizeUtilityToken(operation, 96)
@@ -275,7 +320,7 @@ func UtilityScore(events []UtilityEvent, workspace, intent, operation string, no
 	samples := 0
 	for _, raw := range events {
 		e, ok := raw.Normalize()
-		if !ok || e.WorkspaceScope != workspace || e.Intent != intent || e.Operation != operation {
+		if !ok || e.WorkspaceScope != workspace || e.Intent != intent || e.Operation != operation || (candidateNodeKey != "" && e.CandidateNodeKey != candidateNodeKey) {
 			continue
 		}
 		age := now.Sub(e.OccurredAt)
@@ -292,5 +337,5 @@ func UtilityScore(events []UtilityEvent, workspace, intent, operation string, no
 	if score < -1 {
 		score = -1
 	}
-	return UtilitySignal{WorkspaceScope: workspace, Intent: intent, Operation: operation, Score: score, Samples: samples}
+	return UtilitySignal{WorkspaceScope: workspace, Intent: intent, Operation: operation, CandidateNodeKey: candidateNodeKey, Score: score, Samples: samples}
 }

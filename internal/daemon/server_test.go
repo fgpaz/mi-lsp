@@ -32,6 +32,61 @@ func (s workerStatusServerSemanticStub) Status() []model.WorkerStatus {
 	return append([]model.WorkerStatus(nil), s.statuses...)
 }
 
+func TestBackgroundIndexChildContextIsNotReusedForSynchronousExecute(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	root := t.TempDir()
+	writeMinimalGovernedIndexedWorkspace(t, root)
+	alias := "background-context-" + filepath.Base(root)
+	if _, err := workspace.RegisterWorkspace(alias, model.WorkspaceRegistration{Name: alias, Root: root, Kind: model.WorkspaceKindSingle}); err != nil {
+		t.Fatal(err)
+	}
+	defer workspace.RemoveWorkspace(alias)
+
+	parent := context.Background()
+	child, cancelChild := context.WithCancel(parent)
+	if jobID := startWorkspaceBackgroundIndex(child, t.TempDir()); jobID == "" {
+		t.Fatal("expected background index job id")
+	}
+	cancelChild()
+
+	server := &Server{app: service.New(root, nil)}
+	request := model.CommandRequest{
+		ProtocolVersion: model.ProtocolVersion,
+		Operation:       "nav.overview",
+		Context:         model.QueryOptions{Workspace: alias},
+	}
+	if _, err := server.handleRequestContext(parent, request); err != nil {
+		t.Fatalf("synchronous App.Execute reused the canceled background child: %v", err)
+	}
+
+	canceled, cancel := context.WithCancel(parent)
+	cancel()
+	if _, err := server.handleRequestContext(canceled, request); !errors.Is(err, context.Canceled) {
+		t.Fatalf("synchronous request lost real server cancellation: %v", err)
+	}
+}
+
+func TestWorkspaceBackgroundIndexDoesNotCancelCallerContext(t *testing.T) {
+	ctx := context.Background()
+	jobID := startWorkspaceBackgroundIndex(ctx, t.TempDir())
+	if jobID == "" {
+		t.Fatal("expected background index job id")
+	}
+	if err := ctx.Err(); err != nil {
+		t.Fatalf("caller context was canceled: %v", err)
+	}
+}
+
+func TestRequestTelemetryIntentReadsSerializedPlannerItems(t *testing.T) {
+	request := model.CommandRequest{Operation: "nav.ask"}
+	response := model.Envelope{Items: []any{map[string]any{"intent": "neighborhood", "query": "must not be captured"}}}
+	if got := requestTelemetryIntent(request, response); got != "neighborhood" {
+		t.Fatalf("intent=%q", got)
+	}
+}
+
 func TestHandleRequestNavPrepareBypassesCacheWhenGenerationUnavailable(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)

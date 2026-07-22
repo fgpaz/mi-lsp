@@ -145,7 +145,7 @@ func GraphImpact(ctx context.Context, db *sql.DB, request model.GraphImpactReque
 		Inferred:           []model.GraphImpactItem{},
 		Omissions:          append(append([]model.GraphImpactOmission(nil), q.Omissions...), seeds.Omissions...),
 		Warnings:           append([]string(nil), q.Warnings...),
-		GraphFreshness:     model.GraphFreshness{State: model.GraphFreshnessCurrent, GenerationID: generation.GenerationID.String(), ReasonCode: "generation_matches_active"},
+		GraphFreshness:     snapshot.SnapshotFreshness(q.Generation),
 	}
 	seedTruncated := impactSeedBudgetOmitted(q.Omissions) || impactSeedBudgetOmitted(seeds.Omissions)
 	if seedTruncated {

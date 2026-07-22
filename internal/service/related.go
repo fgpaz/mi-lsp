@@ -83,7 +83,17 @@ func (a *App) related(ctx context.Context, request model.CommandRequest) (model.
 
 	// Graph ranking is advisory and additive; exact identity and semantic refs
 	// remain authoritative. Utility can only affect final ties in GraphRank.
-	if rankEnvelope, rankErr := GraphRank(ctx, db, GraphRankRequest{Limit: 8}); rankErr != nil {
+	utilityIntent := stringPayload(request.Payload, "utility_intent")
+	if strings.TrimSpace(stringPayload(request.Payload, "utility_signal")) != "" {
+		if active, ok, activeErr := store.ActiveGraphGeneration(ctx, db); activeErr != nil || !ok {
+			return model.Envelope{}, &model.GraphQueryError{Code: "GPH_QUERY_UTILITY_INVALID", Message: "utility signal requires an active graph generation"}
+		} else if generation, generationErr := store.ValidateGraphGeneration(ctx, db, active); generationErr != nil {
+			return model.Envelope{}, &model.GraphQueryError{Code: "GPH_QUERY_UTILITY_INVALID", Message: "utility signal generation is invalid"}
+		} else if utilityErr := recordGraphUtilityEvent(ctx, db, generation, model.GraphQueryRequest{Generation: generation.GenerationID.String(), UtilitySignal: stringPayload(request.Payload, "utility_signal"), CandidateNodeKey: stringPayload(request.Payload, "candidate_node_key"), UtilityIntent: utilityIntent}); utilityErr != nil {
+			return model.Envelope{}, utilityErr
+		}
+	}
+	if rankEnvelope, rankErr := GraphRank(ctx, db, GraphRankRequest{Limit: 8, Intent: model.SanitizeUtilityIntent(utilityIntent)}); rankErr != nil {
 		warnings = append(warnings, "graph rank unavailable: "+rankErr.Error())
 	} else {
 		freshness := rankEnvelope.GraphFreshness

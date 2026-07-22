@@ -209,7 +209,7 @@ Interpretación: el contrato define la superficie observable y las reglas de deg
 - La resolucion de bootstrap del worker usa el ejecutable/distribucion activa o, en desarrollo, el repo `mi-lsp`; nunca el `cwd` arbitrario del workspace consultado.
 - La distribucion publica canonica es un bundle por RID que incluye `mi-lsp(.exe)` y `workers/<rid>/`; una build desde source no redefine ese contrato de bootstrap.
 - Los scripts publicos de install/update deben consumir esa misma distribucion canonica; `install.sh` detecta macOS como archive RID `darwin-*` y mapea el worker runtime a `osx-*`, preservando compatibilidad con ambos aliases en `--rid`.
-- La distribucion operativa AE debe producir y verificar `win-arm64`, `win-x64`, `linux-arm64` y `linux-x64`; `scripts/release/ae-release-binaries.ps1` es el entrypoint mantenido para refrescar installs locales/WSL, mirrors x64 opcionales y publicar por tag limpio cuando se pasa `-Publish`.
+- La distribucion operativa AE debe producir y verificar `win-arm64`, `win-x64`, `linux-arm64`, `linux-x64`, `osx-arm64` y `osx-x64`; `scripts/release/ae-release-binaries.ps1` es el entrypoint mantenido para refrescar installs locales/WSL, mirrors x64 opcionales y publicar por tag limpio cuando se pasa `-Publish`.
 - Las queries Roslyn deben resolver candidatos en orden `bundle -> installed -> dev-local` por presencia de archivos; el probe `status` queda reservado para `worker status` y diagnostico explicito.
 - Si el primer candidato Roslyn falla por bootstrap al arrancar, el caller puede reintentar una sola vez con el siguiente candidato determinista antes de devolver error accionable.
 - Si `tsserver` no existe, el sistema debe degradar a catalog/text con warning explicito.

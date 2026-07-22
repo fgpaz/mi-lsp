@@ -171,6 +171,20 @@ CREATE TABLE IF NOT EXISTS index_jobs (
 );
 `
 
+const utilityEventsDDL = `
+CREATE TABLE IF NOT EXISTS utility_events (
+    event_id INTEGER PRIMARY KEY,
+    workspace_scope TEXT NOT NULL,
+    intent TEXT NOT NULL,
+    operation TEXT NOT NULL,
+    candidate_node_key TEXT NOT NULL,
+    signal TEXT NOT NULL,
+    value REAL NOT NULL CHECK(value >= -1 AND value <= 1),
+    generation_id TEXT NOT NULL DEFAULT '',
+    occurred_at TEXT NOT NULL
+);
+`
+
 const indexGenerationsDDL = `
 CREATE TABLE IF NOT EXISTS index_generations (
     generation_id TEXT PRIMARY KEY,
@@ -217,7 +231,7 @@ func EnsureSchema(db *sql.DB) error {
 	if err := graphSchemaPreflight(db); err != nil {
 		return err
 	}
-	statements := []string{reposDDL, entrypointsDDL, symbolsDDL, filesDDL, docsDDL, docsFtsDDL, docEdgesDDL, docMentionsDDL, docSourceBlocksDDL, docSourceRecordsDDL, metaDDL, indexJobsDDL, indexGenerationsDDL, wikiChunkEmbeddingsDDL}
+	statements := []string{reposDDL, entrypointsDDL, symbolsDDL, filesDDL, docsDDL, docsFtsDDL, docEdgesDDL, docMentionsDDL, docSourceBlocksDDL, docSourceRecordsDDL, metaDDL, indexJobsDDL, indexGenerationsDDL, wikiChunkEmbeddingsDDL, utilityEventsDDL}
 	for _, stmt := range statements {
 		if _, err := db.Exec(stmt); err != nil {
 			return err
@@ -299,6 +313,7 @@ END`,
 		{table: "index_jobs", column: "workspace_root", statement: `CREATE INDEX IF NOT EXISTS idx_index_jobs_workspace_status ON index_jobs(workspace_root, status, updated_at);`, required: true},
 		{table: "index_generations", column: "workspace_root", statement: `CREATE INDEX IF NOT EXISTS idx_index_generations_workspace ON index_generations(workspace_root, status, published_at);`, required: true},
 		{table: "wiki_chunk_embeddings", column: "doc_path", statement: `CREATE INDEX IF NOT EXISTS idx_wiki_chunk_embeddings_doc ON wiki_chunk_embeddings(doc_path);`, required: false},
+		{table: "utility_events", column: "candidate_node_key", statement: `CREATE INDEX IF NOT EXISTS idx_utility_events_scope ON utility_events(workspace_scope, intent, operation, candidate_node_key, occurred_at);`, required: true},
 	}
 
 	for _, index := range indexes {

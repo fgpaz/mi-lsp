@@ -159,6 +159,7 @@ type QueryEnvelope = Envelope
 type IntentPlan struct {
 	Intent            string            `json:"intent"`
 	Operation         string            `json:"operation"`
+	Workspace         string            `json:"workspace,omitempty"`
 	Arguments         map[string]string `json:"arguments,omitempty"`
 	Confidence        float64           `json:"confidence"`
 	GenerationID      string            `json:"generation_id,omitempty"`
@@ -171,6 +172,7 @@ type IntentPlan struct {
 	Expansions        []Expansion       `json:"expansions,omitempty"`
 	Telemetry         IntentTelemetry   `json:"telemetry"`
 	Truncated         bool              `json:"truncated,omitempty"`
+	Incomplete        bool              `json:"incomplete,omitempty"`
 	DeterminismDigest string            `json:"determinism_digest,omitempty"`
 }
 

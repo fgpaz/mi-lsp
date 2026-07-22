@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"net"
+	"syscall"
 	"testing"
 	"time"
 
@@ -79,7 +80,7 @@ func TestClientExecuteCancellationClosesBlockedRead(t *testing.T) {
 		}
 		close(partialResponseWritten)
 		_, err = io.Copy(io.Discard, conn)
-		if err != nil && !errors.Is(err, net.ErrClosed) {
+		if err != nil && !errors.Is(err, net.ErrClosed) && !errors.Is(err, syscall.ECONNRESET) && !errors.Is(err, syscall.Errno(10054)) {
 			serverDone <- err
 			return
 		}

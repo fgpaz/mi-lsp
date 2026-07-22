@@ -104,3 +104,66 @@ En `mode=code`, cada item contiene:
 - RF-QRY-011
 - RF-QRY-014
 - RF-QRY-015
+
+## Contrato Harness-first de planificacion
+
+```toon
+doc_id: CT-NAV-INTENT
+block_id: CT-NAV-INTENT.harness-first-plan
+kind: intent-plan-contract
+source_of_truth: this
+imports:
+  - .docs/wiki/00_gobierno_documental.md
+  - .docs/wiki/09_contratos/CT-GRAPH-CLI.md
+exports:
+  - IntentPlan
+  - automatic_graph_native_routing
+  - explain_change_preview
+evidence:
+  - .docs/wiki/09_contratos/CT-NAV-INTENT.md
+  - .docs/wiki/06_pruebas/TP-QRY.md
+verify:
+  - go test ./internal/service/... ./internal/telemetry/...
+  - mi-lsp nav wiki validate-source --workspace <alias> --ids CT-NAV-INTENT --format toon
+stop_if:
+  - governance_blocked=true
+  - timeout_without_typed_diagnostic=true
+  - ambiguous_selector_auto_selected=true
+routing:
+  entrypoints: [nav.intent, nav.ask]
+  policy: automatic_mi_lsp_first_no_opt_out
+  supported: [callers, callees, affected-change, path-between, explain-edge, neighborhood, explain-change]
+plan:
+  type: IntentPlan
+  required_fields: [intent, operation, arguments, confidence, freshness, preview, omissions, fallbacks, expansions, telemetry]
+  mode: preview
+  digest: deterministic_excluding_telemetry
+all_workspaces:
+  supported: true
+  result_type: []IntentPlan
+  workspace_field: required_on_every_plan
+  ordering: deterministic_by_workspace_then_intent_operation_digest_arguments
+preview:
+  explain_change_sections: [change, affected, callers, callees, tests, contracts, wiki]
+  empty_section: omission_or_fallback_required
+  completeness_claim: forbidden_without_evidence
+expansions:
+  item_shape: {command: string, reason: string}
+  command_prefix: "mi-lsp nav "
+  split_command_reason: forbidden
+arguments:
+  explain_change:
+    paths: repeatable_normalized_workspace_relative_values
+    ref: preserved_and_safely_quoted_when_present
+  graph_operations:
+    generation: preserved_when_present
+  incomplete_path: executable_search_discovery_only
+selectors:
+  ambiguous: bounded_candidates_without_auto_selection
+fallbacks:
+  terminal: [unsupported_operation, unavailable_binary, invalid_workspace, explicit_incomplete]
+  timeout_without_diagnostic: blocked
+telemetry:
+  persisted: derived_metadata_only
+  forbidden: [query, prompt, argv, payload, snippet, content, raw_path, raw_error]
+```

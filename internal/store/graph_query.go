@@ -18,9 +18,11 @@ var (
 )
 
 type GraphQuerySnapshot struct {
-	tx         *sql.Tx
-	generation model.GraphGeneration
-	closed     bool
+	tx               *sql.Tx
+	generation       model.GraphGeneration
+	activeGeneration model.GraphDigest
+	runtimeState     string
+	closed           bool
 }
 
 func BeginGraphQuerySnapshot(ctx context.Context, db *sql.DB, generation string) (*GraphQuerySnapshot, error) {
@@ -77,7 +79,14 @@ func BeginGraphQuerySnapshot(ctx context.Context, db *sql.DB, generation string)
 	if g.Status != model.GraphGenerationActive && g.Status != model.GraphGenerationRetired {
 		return fail(ErrGraphQueryGenerationStatus)
 	}
-	return &GraphQuerySnapshot{tx: tx, generation: g}, nil
+	active, activeOK, err := activeGraphGenerationConn(ctx, tx)
+	if err != nil {
+		return fail(err)
+	}
+	if !activeOK {
+		active = id
+	}
+	return &GraphQuerySnapshot{tx: tx, generation: g, activeGeneration: active, runtimeState: state}, nil
 }
 
 func (s *GraphQuerySnapshot) Generation() (model.GraphGeneration, error) {

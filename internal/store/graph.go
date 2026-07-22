@@ -248,6 +248,7 @@ func streamGraph(ctx context.Context, q graphConn, id model.GraphDigest, g model
 	if e != nil {
 		return model.GraphDigest{}, e
 	}
+	defer rows.Close()
 	for rows.Next() {
 		var n model.GraphNodeRecord
 		var nk, sd []byte
@@ -285,6 +286,7 @@ func streamGraph(ctx context.Context, q graphConn, id model.GraphDigest, g model
 	if e != nil {
 		return model.GraphDigest{}, e
 	}
+	defer rows.Close()
 	for rows.Next() {
 		var x model.GraphEdgeRecord
 		var ek []byte
@@ -317,6 +319,7 @@ func streamGraph(ctx context.Context, q graphConn, id model.GraphDigest, g model
 	if e != nil {
 		return model.GraphDigest{}, e
 	}
+	defer rows.Close()
 	for rows.Next() {
 		var x model.GraphEvidence
 		var ek, sd, oc []byte
@@ -391,6 +394,7 @@ func streamGraph(ctx context.Context, q graphConn, id model.GraphDigest, g model
 	if e != nil {
 		return model.GraphDigest{}, e
 	}
+	defer rows.Close()
 	for rows.Next() {
 		var x model.GraphUnresolved
 		var uk, sel, sd []byte

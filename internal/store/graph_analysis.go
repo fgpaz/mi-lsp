@@ -48,7 +48,29 @@ func (s *GraphQuerySnapshot) Freshness(ctx context.Context, requested string) (m
 	if s == nil || s.closed {
 		return model.GraphFreshness{State: model.GraphFreshnessInvalid, ReasonCode: "snapshot_closed"}, model.ErrGraphGenerationInvalid
 	}
-	return model.ClassifyGraphFreshness(GraphRuntimeFresh, s.generation.GenerationID.String(), requested, true), nil
+	return s.SnapshotFreshness(requested), nil
+}
+
+// SnapshotFreshness derives the claim from the same read transaction that
+// selected the generation. Retired generations are readable but never labeled
+// current merely because their rows are valid.
+func (s *GraphQuerySnapshot) SnapshotFreshness(requested string) model.GraphFreshness {
+	if s == nil || s.closed {
+		return model.GraphFreshness{State: model.GraphFreshnessInvalid, ReasonCode: "snapshot_closed"}
+	}
+	active := s.activeGeneration.String()
+	if active == "" {
+		active = s.generation.GenerationID.String()
+	}
+	if strings.TrimSpace(requested) == "" {
+		requested = s.generation.GenerationID.String()
+	}
+	freshness := model.ClassifyGraphFreshness(s.runtimeState, active, requested, true)
+	if s.generation.Status == model.GraphGenerationRetired && freshness.State == model.GraphFreshnessCurrent {
+		freshness.State = model.GraphFreshnessLagging
+		freshness.ReasonCode = "generation_retired"
+	}
+	return freshness
 }
 
 func GraphAnalysisKey(request model.GraphAnalysisRequest) model.GraphDigest {
@@ -64,6 +86,9 @@ func GraphAnalysisDigest(resultJSON string) model.GraphDigest {
 func PutGraphAnalysis(ctx context.Context, db *sql.DB, analysis model.GraphAnalysis) error {
 	if ctx == nil || db == nil || analysis.GenerationID == (model.GraphDigest{}) {
 		return model.ErrGraphGenerationInvalid
+	}
+	if analysis.Status != "complete" {
+		return errors.New("graph analysis cache accepts complete results only")
 	}
 	if len(analysis.ResultJSON) > model.GraphAnalysisMaxBytes || len(analysis.ProvenanceJSON) > model.GraphAnalysisMaxBytes || len(analysis.OmissionsJSON) > model.GraphAnalysisMaxBytes {
 		return errors.New("graph analysis bounded output exceeds limit")
@@ -86,7 +111,7 @@ func PutGraphAnalysis(ctx context.Context, db *sql.DB, analysis model.GraphAnaly
 	if analysis.CreatedAt.IsZero() {
 		analysis.CreatedAt = time.Now().UTC()
 	}
-	_, err := db.ExecContext(ctx, `INSERT INTO graph_analysis(analysis_key,generation_id,extension_id,extension_version,executable_digest,operation,parameters_digest,authority_profile_digest,output_schema,result_json_bounded,result_digest,provenance_json_sanitized,omissions_json_sanitized,status,created_at,algorithm,algorithm_version,profile,determinism_digest) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(analysis_key) DO UPDATE SET result_json_bounded=excluded.result_json_bounded,result_digest=excluded.result_digest,provenance_json_sanitized=excluded.provenance_json_sanitized,omissions_json_sanitized=excluded.omissions_json_sanitized,status=excluded.status,created_at=excluded.created_at,algorithm=excluded.algorithm,algorithm_version=excluded.algorithm_version,profile=excluded.profile,determinism_digest=excluded.determinism_digest`,
+	_, err := db.ExecContext(ctx, `INSERT INTO graph_analysis(analysis_key,generation_id,extension_id,extension_version,executable_digest,operation,parameters_digest,authority_profile_digest,output_schema,result_json_bounded,result_digest,provenance_json_sanitized,omissions_json_sanitized,status,created_at,algorithm,algorithm_version,profile,determinism_digest) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(analysis_key) DO UPDATE SET result_json_bounded=excluded.result_json_bounded,result_digest=excluded.result_digest,provenance_json_sanitized=excluded.provenance_json_sanitized,omissions_json_sanitized=excluded.omissions_json_sanitized,status=excluded.status,created_at=excluded.created_at,algorithm=excluded.algorithm,algorithm_version=excluded.algorithm_version,profile=excluded.profile,determinism_digest=excluded.determinism_digest`,
 		digestArg(analysis.AnalysisKey), digestArg(analysis.GenerationID), analysis.ExtensionID, analysis.ExtensionVersion, digestArg(analysis.ExecutableDigest), analysis.Operation, digestArg(analysis.ParametersDigest), digestArg(analysis.AuthorityProfileDigest), analysis.OutputSchema, analysis.ResultJSON, digestArg(analysis.ResultDigest), analysis.ProvenanceJSON, analysis.OmissionsJSON, analysis.Status, analysis.CreatedAt.UTC().Format(time.RFC3339Nano), analysis.Algorithm, analysis.AlgorithmVersion, analysis.Profile, analysis.DeterminismDigest)
 	return err
 }
@@ -130,7 +155,7 @@ func GetGraphAnalysis(ctx context.Context, db *sql.DB, request model.GraphAnalys
 	if scanErr != nil {
 		return model.GraphAnalysis{}, false, scanErr
 	}
-	if a.GenerationID.String() != request.GenerationID || a.Algorithm != request.Algorithm || a.AlgorithmVersion != request.AlgorithmVersion || a.Profile != request.Profile || len(a.ResultJSON) > model.GraphAnalysisMaxBytes {
+	if a.Status != "complete" || a.Operation != "rank" || a.GenerationID.String() != request.GenerationID || a.AnalysisKey != key || a.Algorithm != request.Algorithm || a.AlgorithmVersion != request.AlgorithmVersion || a.Profile != request.Profile || a.ParametersDigest.String() != request.ParametersDigest || a.AuthorityProfileDigest.String() != request.AuthorityProfile || len(a.ResultJSON) > model.GraphAnalysisMaxBytes {
 		return model.GraphAnalysis{}, false, nil
 	}
 	if GraphAnalysisDigest(a.ResultJSON) != a.ResultDigest {

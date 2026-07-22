@@ -215,3 +215,63 @@ evidence:
 | TC-QRY-137 | positivo | RF-QRY-019 | `TestNavCommandExposesEvidenceInventory` y `TestShouldUseDaemonPolicy/evidence inventory bypasses daemon`: CLI expone `nav evidence inventory` y preserva ejecucion directa sin daemon |
 | TC-QRY-138 | negativo | RF-QRY-019 | `TestEvidenceInventoryPrefersManifestVerdictAndCountsHeavyArtifacts`: prompts/logs/transcripts con secretos o PHI de fixture no aparecen en JSON ni TOON |
 | TC-QRY-139 | positivo | RF-QRY-019 | `go test ./internal/cli ./internal/service ./internal/output ./internal/reentry`: el contrato compila con render TOON `tokens_est` y sin regresion de reentry/output |
+
+## TP-QRY Harness-first: planes, preview y telemetría
+
+```toon
+doc_id: TP-QRY
+block_id: tp-qry-harness-first
+kind: implemented-test-map
+source_of_truth: this
+status: implemented_tests_not_campaign
+campaign_status: NOT_RUN
+imports:
+  - .docs/wiki/09_contratos/CT-NAV-INTENT.md
+  - .docs/wiki/09_contratos/CT-GRAPH-CLI.md
+  - .docs/wiki/06_pruebas/TP-GPH.md
+evidence:
+  - .docs/wiki/06_pruebas/TP-QRY.md
+  - internal/service/ask_test.go
+  - scripts/bench/harness_first/tests/test_runner.py
+verify:
+  - go test ./internal/service/... ./internal/telemetry/...
+  - python -m unittest discover -s scripts/bench/harness_first/tests -p "test_*.py"
+queries:
+  all_workspaces_intent_plan:
+    case: TC-QRY-140
+    status: implemented
+    evidence: internal/service/ask_test.go::TestNavAskAllWorkspacesPreservesSupportedIntentPlansDeterministically
+    oracle: []IntentPlan_with_workspace_and_stable_digest
+  progressive_explain_change_preview:
+    case: TC-QRY-141
+    status: implemented
+    evidence: internal/service/intent_test.go::TestExplainChangePreviewHasSevenSectionsWikiEvidenceAndExpansions
+    oracle: [change, affected, callers, callees, tests, contracts, wiki]
+  expansion_integrity:
+    case: TC-QRY-142
+    status: implemented
+    evidence: [internal/service/intent_test.go::TestExplainChangeExpansionPreservesNormalizedPathsAndRef, internal/service/intent_test.go::TestIncompletePathExpansionUsesExecutableDiscovery]
+    oracle: command_and_reason_in_same_object
+  graph_freshness_and_rank:
+    case: TC-QRY-143
+    status: implemented
+    evidence: scripts/bench/harness_first/tests/test_runner.py::test_freshness_required_passes_only_with_evidence
+    oracle: only_current_freshness_with_rank_can_pass
+  telemetry_sanitization:
+    case: TC-QRY-144
+    status: implemented
+    evidence: internal/telemetry/access_events_test.go::TestEnrichAccessEventRedactsRawTelemetryInputs
+    oracle: no_query_prompt_argv_payload_snippet_raw_path_or_raw_error
+  sqlite_write_serialization:
+    case: TC-QRY-145
+    status: implemented
+    evidence: internal/store/db.go
+    oracle: write_handles_MaxOpenConns_1
+  benchmark_contract:
+    case: TC-QRY-146
+    status: implemented_contract_only
+    evidence: [scripts/bench/harness_first/tests/test_runner.py, docs/benchmarks/HARNESS_FIRST_CAMPAIGN.json]
+    oracle: [single_run, no_retry, rss_fail_closed, provenance_fail_closed]
+```
+
+Los casos TC-QRY-140 a TC-QRY-146 son cobertura implementada del contrato y sus pruebas; no son resultados de campaña. `campaign_status=NOT_RUN` hasta ejecutar el runner autorizado.

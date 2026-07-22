@@ -178,6 +178,64 @@ func TestWorkspaceInitRegistersAndIndexes(t *testing.T) {
 	}
 }
 
+func TestNavAskAllWorkspacesPreservesSupportedIntentPlansDeterministically(t *testing.T) {
+	ensureWritableTestHome(t)
+	aliases := []string{"ask-plan-zeta", "ask-plan-alpha"}
+	for _, alias := range aliases {
+		root := t.TempDir()
+		writeWorkspaceFile(t, root, "src/router.go", "package router\n\nfunc HandleRequest() {}\n")
+		writeSpecBackendGovernanceFixture(t, root)
+		registerServiceWorkspace(t, alias, root)
+	}
+
+	app := New(t.TempDir(), nil)
+	request := model.CommandRequest{
+		Operation: "nav.ask",
+		Context:   model.QueryOptions{MaxItems: 10},
+		Payload: map[string]any{
+			"question":       "callers of HandleRequest",
+			"intent":         "callers",
+			"all_workspaces": true,
+		},
+	}
+	first, err := app.Execute(context.Background(), request)
+	if err != nil {
+		t.Fatalf("nav.ask --all-workspaces: %v", err)
+	}
+	plans, ok := first.Items.([]model.IntentPlan)
+	if !ok || len(plans) != len(aliases) {
+		t.Fatalf("items=%T %#v, want %d intent plans", first.Items, first.Items, len(aliases))
+	}
+	if first.Backend != "planner" {
+		t.Fatalf("backend=%q, want planner", first.Backend)
+	}
+	for i, plan := range plans {
+		if plan.Workspace == "" || plan.Operation != "callers" || plan.Intent != "callers" {
+			t.Fatalf("plan[%d]=%+v, want explicit supported workspace plan", i, plan)
+		}
+		if plan.DeterminismDigest == "" {
+			t.Fatalf("plan[%d] has no determinism digest", i)
+		}
+		if i > 0 && plans[i-1].Workspace > plan.Workspace {
+			t.Fatalf("plans are not sorted by workspace: %q then %q", plans[i-1].Workspace, plan.Workspace)
+		}
+	}
+
+	second, err := app.Execute(context.Background(), request)
+	if err != nil {
+		t.Fatalf("repeat nav.ask --all-workspaces: %v", err)
+	}
+	secondPlans, ok := second.Items.([]model.IntentPlan)
+	if !ok || len(secondPlans) != len(plans) {
+		t.Fatalf("repeat items=%T %#v", second.Items, second.Items)
+	}
+	for i := range plans {
+		if plans[i].Workspace != secondPlans[i].Workspace || plans[i].DeterminismDigest != secondPlans[i].DeterminismDigest {
+			t.Fatalf("unstable all-workspaces plans: first=%+v second=%+v", plans, secondPlans)
+		}
+	}
+}
+
 func TestNavAskUsesWikiAndCodeEvidence(t *testing.T) {
 	alias := "ask-ws-" + filepath.Base(t.TempDir())
 	root := createIndexedWorkspaceFixture(t, alias)

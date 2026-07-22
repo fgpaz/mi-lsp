@@ -315,6 +315,69 @@ federation:
   scope: registered-and-caller-authorized-only
 ```
 
+## Rank, cache, utility y comportamiento bounded
+
+```toon
+doc_id: CT-GRAPH-CLI
+block_id: CT-GRAPH-CLI.analysis-runtime
+kind: graph-analysis-contract
+source_of_truth: TECH-GRAPH-NATIVE
+imports:
+  - .docs/wiki/07_tech/TECH-GRAPH-NATIVE.md
+  - .docs/wiki/08_db/DB-SYMBOL-EDGE-GRAPH.md
+evidence:
+  - .docs/wiki/09_contratos/CT-GRAPH-CLI.md
+  - .docs/wiki/06_pruebas/TP-GPH.md
+verify:
+  - go test ./internal/model/... ./internal/service/... ./internal/store/...
+  - mi-lsp nav graph stats --workspace <alias> --format toon
+  - mi-lsp nav graph validate --workspace <alias> --format toon
+stop_if:
+  - graph_claim_without_freshness_current=true
+  - truncated_analysis_persisted=true
+  - generation_mismatch_accepted=true
+rank:
+  algorithm: bounded-deterministic-v1
+  version: "1"
+  profile: exact-extracted-only
+  score: 0.45*authority + 0.25*impact + 0.20*centrality + 0.10*boundary
+  utility: last_tie_break_only
+  community: deterministic_connected_components_v1
+  community_id: sha256_sorted_node_keys
+freshness:
+  states: [current, lagging, stale, invalid, unknown]
+  exact_claims_allowed_only: current
+generation:
+  fixed: request_start
+  cache_must_match: [generation, algorithm, version, profile, parameter_digest, authority_digest, result_digest]
+bounds:
+  max_nodes: 10000
+  max_edges: 50000
+  max_bytes: 65536
+  query: [depth, path_depth, result_limit, token_budget]
+cache:
+  operation: rank
+  persist_status: complete_only
+  truncated_results: never_persist
+  miss_on: [generation, analysis_key, algorithm, version, profile, parameter_digest, authority_digest, result_digest, byte_limit]
+utility:
+  signals: [continuation_followed, feedback_positive, feedback_negative, result_selected]
+  max_events_per_candidate: 4096
+  max_events_per_scope_intent_operation: 4096
+  retention_days: 30
+  candidate_identity: node_key_only
+snapshot:
+  reads: bounded_storage_backed
+  full_graph_in_memory: forbidden
+  transitive_closures_persisted: forbidden
+  query_time_migration: forbidden
+sqlite:
+  write_max_open_conns: 1
+  read_only_pool: {max_open_conns: 8, max_idle_conns: 4}
+parity:
+  direct_daemon: same_items_order_errors_omissions
+```
+
 ## Ejemplo compacto
 
 ```json

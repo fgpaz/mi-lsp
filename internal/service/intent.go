@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/fgpaz/mi-lsp/internal/docgraph"
@@ -543,7 +544,8 @@ func (a *App) planGraphIntent(ctx context.Context, request model.CommandRequest,
 		from, to := strings.TrimSpace(plan.Arguments["from"]), strings.TrimSpace(plan.Arguments["to"])
 		if from == "" || to == "" {
 			plan.Omissions = append(plan.Omissions, model.IntentOmission{Code: "INTENT_ARGUMENT_MISSING", Section: "path", Reason: "path-between requires deterministic from and to selectors"})
-			plan.Expansions = append(plan.Expansions, model.Expansion{Command: intentExpansionCommand(registration.Name, "path-between", ""), Reason: "provide explicit from and to selectors before expanding the path"})
+			plan.Incomplete = true
+			plan.Expansions = append(plan.Expansions, model.Expansion{Command: intentPathDiscoveryExpansion(registration.Name, from, to), Reason: "discover valid endpoint selectors before executing nav path; incomplete endpoints must not be sent to nav path"})
 			return
 		}
 		fromResolved, fromCandidates, fromWarning := a.resolveIntentSelector(ctx, registration, project, scopedRepo, from)
@@ -592,8 +594,10 @@ func (a *App) planGraphIntent(ctx context.Context, request model.CommandRequest,
 		if strings.Contains(env.Backend, "heuristic") {
 			plan.Fallbacks = append(plan.Fallbacks, model.IntentFallback{Section: "affected", Operation: "nav.affected", Reason: "graph generation unavailable; affected output is explicitly heuristic"})
 		}
-		for _, warning := range env.Warnings { *warnings = appendStringIfMissing(*warnings, warning) }
-		plan.Expansions = append(plan.Expansions, model.Expansion{Command: fmt.Sprintf("mi-lsp nav affected --from-git-diff --include-tests --include-docs --workspace %s --format toon --full", registration.Name), Reason: "expand the affected-change section with the same changed-path snapshot"})
+		for _, warning := range env.Warnings {
+			*warnings = appendStringIfMissing(*warnings, warning)
+		}
+		plan.Expansions = append(plan.Expansions, model.Expansion{Command: intentAffectedExpansion(registration.Name, plan.GenerationID), Reason: "expand the affected-change section with the same changed-path snapshot"})
 		return
 	}
 
@@ -711,7 +715,24 @@ func (a *App) executePlannedGraph(ctx context.Context, request model.CommandRequ
 		}
 		plan.Omissions = append(plan.Omissions, model.IntentOmission{Code: code, Section: section, Reason: omission.Reason})
 	}
-	plan.Expansions = append(plan.Expansions, model.Expansion{Command: intentExpansionCommand(registration.Name, plan.Operation, plan.Arguments["selector"]), Reason: "expand the selected graph section with the same selector and generation"})
+	plan.Expansions = append(plan.Expansions, model.Expansion{Command: intentExpansionCommandForPlan(registration.Name, *plan), Reason: "expand the selected graph section with the same selector and generation"})
+}
+
+func intentAdoptGeneration(plan *model.IntentPlan, section, observed string) bool {
+	observed = strings.TrimSpace(observed)
+	if observed == "" {
+		return true
+	}
+	if plan.GenerationID == "" {
+		plan.GenerationID = observed
+		return true
+	}
+	if plan.GenerationID == observed {
+		return true
+	}
+	plan.Incomplete = true
+	plan.Omissions = append(plan.Omissions, model.IntentOmission{Code: "INTENT_GENERATION_MISMATCH", Section: section, Reason: "composed graph sections were read from different generations; section withheld"})
+	return false
 }
 
 func (a *App) planExplainChange(ctx context.Context, request model.CommandRequest, registration model.WorkspaceRegistration, plan *model.IntentPlan, warnings *[]string) {
@@ -734,7 +755,7 @@ func (a *App) planExplainChange(ctx context.Context, request model.CommandReques
 		sections["change"].Count = len(diff.ChangedSymbols)
 		sections["change"].Truncated = diffEnv.Truncated
 		if diffEnv.GenerationID != "" {
-			plan.GenerationID = diffEnv.GenerationID
+			intentAdoptGeneration(plan, "change", diffEnv.GenerationID)
 		}
 		for _, warning := range diffEnv.Warnings {
 			*warnings = appendStringIfMissing(*warnings, warning)
@@ -752,22 +773,23 @@ func (a *App) planExplainChange(ctx context.Context, request model.CommandReques
 	}
 	affectedRequest.Payload["include_tests"] = true
 	affectedRequest.Payload["include_docs"] = true
+	if plan.GenerationID != "" {
+		affectedRequest.Payload["generation"] = plan.GenerationID
+	}
 	affectedEnv, affectedErr := a.affected(ctx, affectedRequest)
 	var affectedItems []AffectedItem
 	if affectedErr != nil {
 		plan.Fallbacks = append(plan.Fallbacks, model.IntentFallback{Section: "affected", Operation: "nav.affected", Reason: "affected-change fell back because the catalog or graph was unavailable"})
 		plan.Omissions = append(plan.Omissions, model.IntentOmission{Code: "INTENT_AFFECTED_UNAVAILABLE", Section: "affected", Reason: sanitizeIntentError(affectedErr)})
 	} else {
-		if typed, ok := affectedEnv.Items.([]AffectedItem); ok {
+		generationMatches := intentAdoptGeneration(plan, "affected", affectedEnv.GenerationID)
+		if typed, ok := affectedEnv.Items.([]AffectedItem); ok && generationMatches {
 			affectedItems = typed
 			sections["affected"].Items = intentAnyItems(typed)
 			sections["affected"].Count = len(typed)
 		}
 		if strings.Contains(affectedEnv.Backend, "heuristic") {
 			plan.Fallbacks = append(plan.Fallbacks, model.IntentFallback{Section: "affected", Operation: "nav.affected", Reason: "graph generation was unavailable; affected output is explicitly heuristic"})
-		}
-		if affectedEnv.GenerationID != "" && plan.GenerationID == "" {
-			plan.GenerationID = affectedEnv.GenerationID
 		}
 		if affectedEnv.Truncated {
 			plan.Truncated = true
@@ -814,6 +836,9 @@ func (a *App) planExplainChange(ctx context.Context, request model.CommandReques
 				child.Operation = graphOperation.op
 				child.Payload = cloneIntentPayload(request.Payload)
 				child.Payload["selector"] = symbol.Name
+				if plan.GenerationID != "" {
+					child.Payload["generation"] = plan.GenerationID
+				}
 				env, err := a.graphQuery(ctx, child)
 				if err != nil {
 					plan.Fallbacks = append(plan.Fallbacks, model.IntentFallback{Section: graphOperation.section, Operation: graphOperation.op, Reason: "changed symbol graph expansion was unavailable"})
@@ -821,7 +846,9 @@ func (a *App) planExplainChange(ctx context.Context, request model.CommandReques
 					continue
 				}
 				items := intentAnyItems(env.Items)
-				sections[graphOperation.section].Items = append(sections[graphOperation.section].Items, items...)
+				if intentAdoptGeneration(plan, graphOperation.section, env.GenerationID) {
+					sections[graphOperation.section].Items = append(sections[graphOperation.section].Items, items...)
+				}
 				if env.GenerationID != "" && plan.GenerationID == "" {
 					plan.GenerationID = env.GenerationID
 				}
@@ -861,9 +888,9 @@ func (a *App) planExplainChange(ctx context.Context, request model.CommandReques
 		plan.Preview = append(plan.Preview, *section)
 	}
 	plan.Expansions = append(plan.Expansions,
-		model.Expansion{Command: fmt.Sprintf("mi-lsp nav explain-change --workspace %s --format toon --full", registration.Name), Reason: "rerun the same local planner with the complete progressive preview"},
-		model.Expansion{Command: fmt.Sprintf("mi-lsp nav diff-context --workspace %s --format toon", registration.Name), Reason: "expand changed files and changed symbols from the same git snapshot"},
-		model.Expansion{Command: fmt.Sprintf("mi-lsp nav affected --from-git-diff --include-tests --include-docs --workspace %s --format toon", registration.Name), Reason: "expand affected code, tests, and documentation with explicit heuristic labels"},
+		model.Expansion{Command: intentExplainChangeExpansion(registration.Name, *plan), Reason: "rerun the same local planner with the complete progressive preview and original normalized inputs"},
+		model.Expansion{Command: intentDiffExpansion(registration.Name, plan.GenerationID), Reason: "expand changed files and changed symbols from the same git snapshot"},
+		model.Expansion{Command: intentAffectedExpansion(registration.Name, plan.GenerationID), Reason: "expand affected code, tests, and documentation with explicit heuristic labels"},
 	)
 	if len(wiki.MustRead) == 0 {
 		plan.Omissions = append(plan.Omissions, model.IntentOmission{Code: "INTENT_WIKI_EVIDENCE_OMITTED", Section: "wiki", Reason: "wiki relevance could not cite an evidence path"})
@@ -907,6 +934,69 @@ func intentExpansionCommand(workspaceName, operation, selector string) string {
 		base += fmt.Sprintf(" %q", selector)
 	}
 	return fmt.Sprintf("%s --workspace %s --format toon --full", base, workspaceName)
+}
+
+func intentPathDiscoveryExpansion(workspaceName, from, to string) string {
+	known := strings.TrimSpace(from)
+	if known == "" {
+		known = strings.TrimSpace(to)
+	}
+	if known == "" {
+		known = "path endpoint symbol"
+	}
+	return fmt.Sprintf("mi-lsp nav search %q --workspace %s --format toon --include-content", known, strings.TrimSpace(workspaceName))
+}
+
+func intentExpansionCommandForPlan(workspaceName string, plan model.IntentPlan) string {
+	workspaceName = strings.TrimSpace(workspaceName)
+	var base string
+	switch plan.Operation {
+	case "neighborhood":
+		base = fmt.Sprintf("mi-lsp nav neighbors %q", plan.Arguments["selector"])
+	case "path-between":
+		base = fmt.Sprintf("mi-lsp nav path %q %q", plan.Arguments["from"], plan.Arguments["to"])
+	case "explain-edge":
+		base = fmt.Sprintf("mi-lsp nav explain %q", plan.Arguments["edge"])
+	case "callers", "callees":
+		base = fmt.Sprintf("mi-lsp nav %s %q", plan.Operation, plan.Arguments["selector"])
+	default:
+		return intentExpansionCommand(workspaceName, plan.Operation, plan.Arguments["selector"])
+	}
+	command := fmt.Sprintf("%s --workspace %s --format toon --full", base, workspaceName)
+	if strings.TrimSpace(plan.GenerationID) != "" {
+		command += fmt.Sprintf(" --generation %s", plan.GenerationID)
+	}
+	return command
+}
+
+func intentExplainChangeExpansion(workspaceName string, plan model.IntentPlan) string {
+	command := fmt.Sprintf("mi-lsp nav explain-change --workspace %s --format toon --full", strings.TrimSpace(workspaceName))
+	for _, path := range strings.Split(plan.Arguments["paths"], ",") {
+		path = strings.TrimSpace(path)
+		if path != "" {
+			command += " --path " + strconv.Quote(path)
+		}
+	}
+	if ref := strings.TrimSpace(plan.Arguments["ref"]); ref != "" {
+		command += " --ref " + strconv.Quote(ref)
+	}
+	return command
+}
+
+func intentDiffExpansion(workspaceName, generation string) string {
+	command := fmt.Sprintf("mi-lsp nav diff-context --workspace %s --format toon", workspaceName)
+	if strings.TrimSpace(generation) != "" {
+		command += fmt.Sprintf(" --generation %s", generation)
+	}
+	return command
+}
+
+func intentAffectedExpansion(workspaceName, generation string) string {
+	command := fmt.Sprintf("mi-lsp nav affected --from-git-diff --include-tests --include-docs --workspace %s --format toon --full", workspaceName)
+	if strings.TrimSpace(generation) != "" {
+		command += fmt.Sprintf(" --generation %s", generation)
+	}
+	return command
 }
 
 func intentAnyItems(value any) []any {
