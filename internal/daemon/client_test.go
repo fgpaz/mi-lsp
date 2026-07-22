@@ -50,6 +50,72 @@ func TestClientExecutePreservesSuccessfulRequest(t *testing.T) {
 	waitForClientTestServer(t, serverDone)
 }
 
+func TestClientExecuteWithDialTimeoutCancelsBlockedDial(t *testing.T) {
+	dialStarted := make(chan struct{})
+	client := &Client{dial: func(ctx context.Context) (net.Conn, error) {
+		close(dialStarted)
+		<-ctx.Done()
+		return nil, ctx.Err()
+	}}
+
+	result := make(chan error, 1)
+	go func() {
+		_, err := client.ExecuteWithDialTimeout(context.Background(), model.CommandRequest{
+			ProtocolVersion: model.ProtocolVersion,
+			Operation:       "system.status",
+		}, 20*time.Millisecond)
+		result <- err
+	}()
+
+	select {
+	case <-dialStarted:
+	case <-time.After(time.Second):
+		t.Fatal("dial did not start")
+	}
+	select {
+	case err := <-result:
+		if !errors.Is(err, context.DeadlineExceeded) {
+			t.Fatalf("ExecuteWithDialTimeout error = %v, want context deadline exceeded", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("blocked dial was not canceled by dial timeout")
+	}
+}
+
+func TestClientExecuteWithDialTimeoutKeepsOriginalContextAfterDial(t *testing.T) {
+	const responseDelay = 50 * time.Millisecond
+	client := &Client{dial: func(context.Context) (net.Conn, error) {
+		clientConn, serverConn := net.Pipe()
+		go func() {
+			defer serverConn.Close()
+			var request model.CommandRequest
+			if err := worker.ReadFrame(serverConn, &request); err != nil {
+				return
+			}
+			time.Sleep(responseDelay)
+			_ = worker.WriteFrame(serverConn, model.Envelope{Ok: true, Workspace: "after-dial-timeout"})
+		}()
+		return clientConn, nil
+	}}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	started := time.Now()
+	response, err := client.ExecuteWithDialTimeout(ctx, model.CommandRequest{
+		ProtocolVersion: model.ProtocolVersion,
+		Operation:       "system.status",
+	}, 10*time.Millisecond)
+	if err != nil {
+		t.Fatalf("ExecuteWithDialTimeout: %v", err)
+	}
+	if !response.Ok || response.Workspace != "after-dial-timeout" {
+		t.Fatalf("response = %#v, want response after dial timeout", response)
+	}
+	if elapsed := time.Since(started); elapsed < responseDelay {
+		t.Fatalf("request completed after %v, want it to outlive dial timeout", elapsed)
+	}
+}
+
 func TestClientExecuteCancellationClosesBlockedRead(t *testing.T) {
 	listener := listenClientTestServer(t)
 	partialResponseWritten := make(chan struct{})
@@ -92,10 +158,10 @@ func TestClientExecuteCancellationClosesBlockedRead(t *testing.T) {
 	defer cancel()
 	result := make(chan error, 1)
 	go func() {
-		_, err := client.Execute(ctx, model.CommandRequest{
+		_, err := client.ExecuteWithDialTimeout(ctx, model.CommandRequest{
 			ProtocolVersion: model.ProtocolVersion,
 			Operation:       "system.status",
-		})
+		}, time.Second)
 		result <- err
 	}()
 

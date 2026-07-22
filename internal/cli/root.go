@@ -229,13 +229,13 @@ func (s *rootState) executeOperation(cmd *cobra.Command, operation string, paylo
 	)
 	daemonFailed := false
 	if useDaemon {
-		daemonCtx, daemonCancel := context.WithTimeout(ctx, s.daemonAttemptTimeout())
 		if s.daemonExecute != nil {
-			envelope, err = s.daemonExecute(daemonCtx, request)
+			// Test hooks receive the operation context directly; the production
+			// client applies daemonAttemptTimeout only while dialing.
+			envelope, err = s.daemonExecute(ctx, request)
 		} else {
-			envelope, err = daemon.NewClient().Execute(daemonCtx, request)
+			envelope, err = daemon.NewClient().ExecuteWithDialTimeout(ctx, request, s.daemonAttemptTimeout())
 		}
-		daemonCancel()
 		if err != nil {
 			daemonFailed = true
 		} else if shouldFallbackNavPrepareForUnknownOperation(request.Operation, envelope) {

@@ -18,11 +18,29 @@ func NewClient() *Client {
 }
 
 func (c *Client) Execute(ctx context.Context, request model.CommandRequest) (model.Envelope, error) {
+	return c.execute(ctx, request, 0)
+}
+
+// ExecuteWithDialTimeout executes a request with an optional timeout limited to
+// establishing the daemon connection. Once the connection is established, the
+// original ctx governs the request's write, read, response processing, and
+// cancellation lifecycle.
+func (c *Client) ExecuteWithDialTimeout(ctx context.Context, request model.CommandRequest, dialTimeout time.Duration) (model.Envelope, error) {
+	return c.execute(ctx, request, dialTimeout)
+}
+
+func (c *Client) execute(ctx context.Context, request model.CommandRequest, dialTimeout time.Duration) (model.Envelope, error) {
 	dial := dialDaemon
 	if c != nil && c.dial != nil {
 		dial = c.dial
 	}
-	conn, err := dial(ctx)
+	dialCtx := ctx
+	dialCancel := func() {}
+	if dialTimeout > 0 {
+		dialCtx, dialCancel = context.WithTimeout(ctx, dialTimeout)
+	}
+	conn, err := dial(dialCtx)
+	dialCancel()
 	if err != nil {
 		return model.Envelope{}, err
 	}

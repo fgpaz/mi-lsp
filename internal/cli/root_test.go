@@ -79,19 +79,28 @@ func TestNoDaemonForcesRelatedToLocalAppWithoutTouchingDaemon(t *testing.T) {
 	}
 }
 
-func TestDaemonAttemptTimeoutFallsBackWithOriginalContext(t *testing.T) {
+func TestDaemonDialTimeoutFallsBackWithOriginalContext(t *testing.T) {
 	state := &rootState{
 		format:        "json",
 		clientName:    "test",
 		daemonTimeout: 10 * time.Millisecond,
 		ensureDaemon:  func(string) error { return nil },
 		daemonExecute: func(ctx context.Context, _ model.CommandRequest) (model.Envelope, error) {
-			<-ctx.Done()
-			return model.Envelope{}, ctx.Err()
+			if deadline, ok := ctx.Deadline(); !ok || time.Until(deadline) < time.Second {
+				t.Fatalf("daemon hook deadline=%v, want original operation timeout", deadline)
+			}
+			timer := time.NewTimer(10 * time.Millisecond)
+			defer timer.Stop()
+			select {
+			case <-ctx.Done():
+				return model.Envelope{}, ctx.Err()
+			case <-timer.C:
+				return model.Envelope{}, context.DeadlineExceeded
+			}
 		},
 		appExecute: func(ctx context.Context, _ model.CommandRequest) (model.Envelope, error) {
 			if ctx.Err() != nil {
-				t.Fatalf("fallback received daemon child context: %v", ctx.Err())
+				t.Fatalf("fallback received canceled context: %v", ctx.Err())
 			}
 			if deadline, ok := ctx.Deadline(); !ok || time.Until(deadline) < time.Second {
 				t.Fatalf("fallback deadline=%v, want original operation timeout", deadline)
