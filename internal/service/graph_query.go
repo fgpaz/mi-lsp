@@ -146,8 +146,10 @@ func GraphQuery(ctx context.Context, db *sql.DB, q model.GraphQueryRequest) (mod
 	}
 	var envelope model.Envelope
 	switch q.Operation {
-	case "nav.graph.stats":
+	case "nav.graph.stats", "nav.graph.status":
 		envelope, err = graphStats(ctx, snapshot, q, generation)
+	case "nav.graph.rank":
+		envelope, err = graphRankQuery(ctx, snapshot, q, generation)
 	case "nav.graph.validate":
 		envelope, err = graphValidate(ctx, snapshot, q, generation)
 	case "nav.explain":
@@ -187,6 +189,25 @@ func graphExplain(ctx context.Context, s *store.GraphQuerySnapshot, q model.Grap
 	return graphEnvelope(q, g, []any{item}, []model.GraphQueryItem{item}, model.GraphQueryStats{Visited: 2, Returned: 1, Depth: 1, DepthReached: 1}, ""), nil
 }
 
+func graphRankQuery(ctx context.Context, s *store.GraphQuerySnapshot, q model.GraphQueryRequest, g model.GraphGeneration) (model.Envelope, error) {
+	ranks, digest, truncated, err := graphRankSnapshot(ctx, s, GraphRankRequest{GenerationID: g.GenerationID.String(), Limit: q.Limit, MaxNodes: model.GraphAnalysisMaxNodes, MaxEdges: model.GraphAnalysisMaxEdges})
+	if err != nil {
+		return model.Envelope{}, err
+	}
+	raw := make([]any, len(ranks))
+	for i := range ranks {
+		raw[i] = ranks[i]
+	}
+	env := graphEnvelope(q, g, raw, nil, model.GraphQueryStats{Visited: len(ranks), Returned: len(ranks), Depth: 1, Unresolved: g.UnresolvedCount}, "")
+	env.DeterminismDigest = digest
+	env.Graph.DeterminismDigest = digest
+	env.Truncated = truncated
+	if truncated {
+		env.Warnings = append(env.Warnings, "graph rank output bounded by node/edge or result limits")
+	}
+	return env, nil
+}
+
 func graphStats(ctx context.Context, s *store.GraphQuerySnapshot, q model.GraphQueryRequest, g model.GraphGeneration) (model.Envelope, error) {
 	counts, err := s.Stats(ctx)
 	if err != nil {
@@ -196,7 +217,7 @@ func graphStats(ctx context.Context, s *store.GraphQuerySnapshot, q model.GraphQ
 	if err != nil {
 		return model.Envelope{}, store.SanitizeGraphQueryError(err)
 	}
-	item := map[string]any{"kind": "graph_stats", "generation_id": g.GenerationID.String(), "schema": g.SchemaVersion, "nodes": counts["nodes"], "edges": counts["edges"], "evidence": counts["evidence"], "unresolved": counts["unresolved"], "by_kind": facets["kind"], "by_relation": facets["relation"], "by_status": facets["status"], "by_backend": facets["backend"]}
+	item := map[string]any{"kind": "graph_stats", "generation_id": g.GenerationID.String(), "schema": g.SchemaVersion, "nodes": counts["nodes"], "edges": counts["edges"], "evidence": counts["evidence"], "unresolved": counts["unresolved"], "by_kind": facets["kind"], "by_relation": facets["relation"], "by_status": facets["status"], "by_backend": facets["backend"], "graph_freshness": model.GraphFreshness{State: model.GraphFreshnessCurrent, GenerationID: g.GenerationID.String(), ReasonCode: "generation_matches_active"}}
 	stats := model.GraphQueryStats{Returned: 1, Depth: q.Depth, Unresolved: counts["unresolved"]}
 	items := []model.GraphQueryItem{{Kind: "graph_stats", CrossRID: g.GenerationID.String(), Display: "graph stats", Status: g.Status, Distance: 0}}
 	env := graphEnvelope(q, g, []any{item}, items, stats, "")
@@ -708,9 +729,10 @@ func graphEnvelope(q model.GraphQueryRequest, g model.GraphGeneration, raw []any
 			raw[i] = canonical[i]
 		}
 	}
-	meta := &model.GraphQueryMetadata{Operation: q.Operation, GenerationID: g.GenerationID.String(), Schema: g.SchemaVersion, Stats: stats}
+	meta := &model.GraphQueryMetadata{Operation: q.Operation, GenerationID: g.GenerationID.String(), Schema: g.SchemaVersion, Stats: stats, GraphFreshness: model.GraphFreshness{State: model.GraphFreshnessCurrent, GenerationID: g.GenerationID.String(), ReasonCode: "generation_matches_active"}}
 	meta.DeterminismDigest = model.DeterminismDigest(q.Operation, g.GenerationID, canonical, stats)
-	return model.Envelope{Ok: true, Backend: "sqlite-direct", Mode: "query_only", Items: raw, Hint: hint, Graph: meta, Operation: q.Operation, GenerationID: g.GenerationID.String(), GraphSchemaVersion: g.SchemaVersion, DeterminismDigest: meta.DeterminismDigest}
+	freshness := meta.GraphFreshness
+	return model.Envelope{Ok: true, Backend: "sqlite-direct", Mode: "query_only", Items: raw, Hint: hint, Graph: meta, Operation: q.Operation, GenerationID: g.GenerationID.String(), GraphSchemaVersion: g.SchemaVersion, DeterminismDigest: meta.DeterminismDigest, GraphFreshness: &freshness}
 }
 
 func minInt(a, b int) int {

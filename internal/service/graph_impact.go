@@ -145,6 +145,7 @@ func GraphImpact(ctx context.Context, db *sql.DB, request model.GraphImpactReque
 		Inferred:           []model.GraphImpactItem{},
 		Omissions:          append(append([]model.GraphImpactOmission(nil), q.Omissions...), seeds.Omissions...),
 		Warnings:           append([]string(nil), q.Warnings...),
+		GraphFreshness:     model.GraphFreshness{State: model.GraphFreshnessCurrent, GenerationID: generation.GenerationID.String(), ReasonCode: "generation_matches_active"},
 	}
 	seedTruncated := impactSeedBudgetOmitted(q.Omissions) || impactSeedBudgetOmitted(seeds.Omissions)
 	if seedTruncated {
@@ -337,6 +338,7 @@ func (a *App) graphImpact(ctx context.Context, request model.CommandRequest) (mo
 		GenerationID:       impact.GenerationID,
 		GraphSchemaVersion: impact.GraphSchemaVersion,
 		DeterminismDigest:  impact.DeterminismDigest,
+		GraphFreshness:     &impact.GraphFreshness,
 		Stats:              model.Stats{Symbols: len(items), TokensEstimate: impact.Stats.TokenUnits},
 	}, nil
 }

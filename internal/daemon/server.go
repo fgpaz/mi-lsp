@@ -483,7 +483,7 @@ func (s *Server) releaseInflight() {
 
 func isGraphQueryOperation(operation string) bool {
 	switch operation {
-	case "nav.neighbors", "nav.callers", "nav.callees", "nav.path", "nav.explain", "nav.graph.stats", "nav.graph.validate":
+	case "nav.neighbors", "nav.callers", "nav.callees", "nav.path", "nav.explain", "nav.graph.stats", "nav.graph.status", "nav.graph.rank", "nav.graph.validate":
 		return true
 	default:
 		return false
@@ -492,7 +492,7 @@ func isGraphQueryOperation(operation string) bool {
 
 func (s *Server) isBackpressureLimited(request model.CommandRequest) bool {
 	switch request.Operation {
-	case "nav.refs", "nav.context", "nav.deps", "nav.related", "nav.service", "nav.diff-context", "nav.batch", "nav.search", "nav.find", "nav.neighbors", "nav.callers", "nav.callees", "nav.path", "nav.explain", "nav.graph.stats", "nav.graph.validate", "nav.intent", "workspace.warm":
+	case "nav.refs", "nav.context", "nav.deps", "nav.related", "nav.service", "nav.diff-context", "nav.batch", "nav.search", "nav.find", "nav.neighbors", "nav.callers", "nav.callees", "nav.path", "nav.explain", "nav.graph.stats", "nav.graph.status", "nav.graph.rank", "nav.graph.validate", "nav.intent", "workspace.warm":
 		return true
 	case "nav.workspace-map":
 		return request.Context.Full
