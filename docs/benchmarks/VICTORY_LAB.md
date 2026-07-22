@@ -1,18 +1,28 @@
+---
+doc_id: VICTORY-LAB
+title: Victory Lab competitivo
+layer: TP
+family: GPH
+status: active
+---
+
 # Victory Lab
 
 ## v1 histórico
 
 ```yaml
 harness_protocol: SDD-HARNESS-v1
-id: "VICTORY-LAB-V1"
-kind: "benchmark-doc"
-audience: "llm-first"
+source_protocol: SDD-WIKI-SOURCE-v1
+id: VICTORY-LAB
+doc_id: VICTORY-LAB
+kind: benchmark-doc
+audience: llm-first
 imports:
   - '[[TP-GPH]]'
   - '[[TECH-GRAPH-NATIVE]]'
   - '[[AE-RELEASE-DISTRIBUTION]]'
 exports:
-  - 'VICTORY-LAB-V1'
+  - VICTORY-LAB
 agent_must_read:
   - docs/benchmarks/VICTORY_LAB.md
   - .docs/wiki/06_pruebas/TP-GPH.md
@@ -51,8 +61,10 @@ La sección incremental mide estado inicial, mutaciones deterministas y una reco
 v2 conserva v1 como histórico y agrega attestation, grupos completos de 30 muestras, observación del árbol de procesos, controles anti-gaming, seguridad estática y separación explícita entre el pin del producto medido y el HEAD del repositorio que contiene la evidencia. La fuente de evidencia promovible es el bundle externo con alias `<external-evidence-root>/victory-g9-authoritative-v4-20260721`.
 
 ```toon
-doc_id: VICTORY-LAB-V2
+doc_id: VICTORY-LAB
 block_id: v2-harness-contract
+source_protocol: SDD-WIKI-SOURCE-v1
+source_of_truth: this
 harness_protocol: SDD-HARNESS-v1
 kind: benchmark-doc
 audience: dual
@@ -61,8 +73,7 @@ imports:
   - '[[TECH-GRAPH-NATIVE]]'
   - '[[AE-RELEASE-DISTRIBUTION]]'
 exports:
-  - VICTORY-LAB-V2
-  - G9-BENCHMARK-SUMMARY-20260721
+  - VICTORY-LAB
 agent_must_read:
   - docs/benchmarks/VICTORY_LAB.md
   - benchmarks/victory-lab/v2/manifest.json
@@ -95,12 +106,15 @@ evidence:
 ```
 
 ```toon
-doc_id: VICTORY-LAB-V2
+doc_id: VICTORY-LAB
 block_id: v2-wiki-source
+source_protocol: SDD-WIKI-SOURCE-v1
+kind: wiki-source-contract
 wiki_source_protocol: SDD-WIKI-SOURCE-v1
 wiki_source_readiness: ready_for_blocked_closure
 navigation_readiness: ready_for_blocked_closure
-source_of_truth:
+source_of_truth: this
+authority:
   normative_format: fenced_toon
   human_container: docs/benchmarks/VICTORY_LAB.md
   evidence_summary: .docs/auditoria/2026-07-21-milsp-graph-native-g9-g10/benchmark-summary.yaml
@@ -122,8 +136,16 @@ traceability_links:
   - '[[.docs/auditoria/2026-07-21-milsp-graph-native-g9-g10/traceability-closure.yaml]]'
   - '[[.docs/auditoria/2026-07-21-milsp-graph-native-g9-g10/closure-packet.yaml]]'
 wiki_source_blocks_reviewed:
+  - v1-harness-contract
   - v2-harness-contract
   - v2-wiki-source
+verify:
+  - mi-lsp nav wiki validate-source --workspace <workspace> --format toon
+  - mi-lsp nav wiki validate-harness --workspace <workspace> --format toon
+evidence:
+  - docs/benchmarks/VICTORY_LAB.md
+  - .docs/auditoria/2026-07-21-milsp-graph-native-g9-g10/benchmark-summary.yaml
+  - .docs/auditoria/2026-07-21-milsp-graph-native-g9-g10/g9-verdict.md
 wiki_source_verdict: BLOCKED
 ```
 
