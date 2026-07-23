@@ -20,6 +20,7 @@ from scripts.bench.harness_first.runner import (
     _RSSSampler,
     _bounded_diff_value,
     _bounded_structural_diff,
+    _parity_check,
     _candidate_preflight,
     _candidate_process,
     _command,
@@ -785,6 +786,40 @@ class RunnerContractTests(unittest.TestCase):
         self.assertTrue(result["truncated"])
         self.assertNotIn("private", json.dumps(result))
         self.assertNotIn("secret-value", json.dumps(result))
+
+    def test_equal_large_payload_digest_passes_without_structural_diff(self):
+        payload = {"items": list(range(4096))}
+        normalized_digest = digest(payload)
+        sample = {"status": "PASS", "normalized_digest": normalized_digest, "semantic_projection": {"truncated": False}}
+        with patch(
+            "scripts.bench.harness_first.runner._bounded_structural_diff",
+            return_value={"status": "TRUNCATED", "count": 0, "truncated": True, "items": []},
+        ) as structural_diff:
+            passed, diff = _parity_check(sample, sample, payload, payload)
+        self.assertTrue(passed)
+        self.assertEqual(diff["status"], "NOT_RUN")
+        structural_diff.assert_not_called()
+
+    def test_mismatched_normalized_digest_fails_with_structural_diagnostic(self):
+        direct = {"status": "PASS", "normalized_digest": "a" * 64, "semantic_projection": {"truncated": False}}
+        daemon = {"status": "PASS", "normalized_digest": "b" * 64, "semantic_projection": {"truncated": False}}
+        passed, diff = _parity_check(direct, daemon, {"value": "direct"}, {"value": "daemon"})
+        self.assertFalse(passed)
+        self.assertEqual(diff["status"], "DIFF")
+
+    def test_missing_normalized_digest_fails_closed(self):
+        direct = {"status": "PASS", "normalized_digest": None, "semantic_projection": {"truncated": False}}
+        daemon = {"status": "PASS", "normalized_digest": None, "semantic_projection": {"truncated": False}}
+        passed, _diff = _parity_check(direct, daemon, {"value": "same"}, {"value": "same"})
+        self.assertFalse(passed)
+
+    def test_truncated_semantic_projection_fails_even_with_equal_digest(self):
+        normalized_digest = "c" * 64
+        direct = {"status": "PASS", "normalized_digest": normalized_digest, "semantic_projection": {"truncated": True}}
+        daemon = {"status": "PASS", "normalized_digest": normalized_digest, "semantic_projection": {"truncated": True}}
+        passed, diff = _parity_check(direct, daemon, {"value": "same"}, {"value": "same"})
+        self.assertFalse(passed)
+        self.assertEqual(diff["status"], "NOT_RUN")
 
     def test_projection_redacts_path_sensitive_phi_but_keeps_technical_symbols(self):
         value = {

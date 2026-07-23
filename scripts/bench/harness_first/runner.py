@@ -589,6 +589,37 @@ def _bounded_structural_diff(left: Any, right: Any, *, max_diffs: int = MAX_PARI
     return {"status": "DIFF" if differences else ("TRUNCATED" if truncated else "EQUAL"), "count": len(differences), "truncated": truncated, "items": differences}
 
 
+def _parity_check(
+    direct: Mapping[str, Any],
+    daemon: Mapping[str, Any],
+    direct_projection: Any,
+    daemon_projection: Any,
+) -> tuple[bool, dict[str, Any]]:
+    direct_digest = direct.get("normalized_digest")
+    daemon_digest = daemon.get("normalized_digest")
+    digest_available = all(
+        isinstance(value, str) and SHA256.fullmatch(value) is not None
+        for value in (direct_digest, daemon_digest)
+    )
+    digests_equal = digest_available and direct_digest == daemon_digest
+    if digests_equal:
+        diff = {"status": "NOT_RUN", "count": 0, "truncated": False, "items": []}
+    else:
+        # Structural comparison is diagnostic only.  It must never override an
+        # equal cryptographic normalized digest or make parity depend on the
+        # diagnostic traversal budget.
+        diff = _bounded_structural_diff(direct_projection, daemon_projection)
+    passed = (
+        direct.get("status") == "PASS"
+        and daemon.get("status") == "PASS"
+        and digest_available
+        and digests_equal
+        and direct.get("semantic_projection", {}).get("truncated") is False
+        and daemon.get("semantic_projection", {}).get("truncated") is False
+    )
+    return passed, diff
+
+
 def _find_preview_contract(value: Any, depth: int = 0, budget: _TraversalBudget | None = None) -> tuple[list[Mapping[str, Any]], Mapping[str, Any]] | None:
     budget = budget or _TraversalBudget()
     if not budget.consume_node(depth):
@@ -2037,15 +2068,11 @@ def run_campaign(manifest: Mapping[str, Any], *, binary: str | Path, source_root
             pair = grouped.get(query_id, {})
             direct = pair.get("direct", {})
             daemon = pair.get("daemon", {})
-            diff = _bounded_structural_diff(projections.get((query_id, "direct")), projections.get((query_id, "daemon")))
-            passed = (
-                direct.get("status") == "PASS"
-                and daemon.get("status") == "PASS"
-                and direct.get("normalized_digest") is not None
-                and direct.get("normalized_digest") == daemon.get("normalized_digest")
-                and not diff.get("truncated")
-                and direct.get("semantic_projection", {}).get("truncated") is False
-                and daemon.get("semantic_projection", {}).get("truncated") is False
+            passed, diff = _parity_check(
+                direct,
+                daemon,
+                projections.get((query_id, "direct")),
+                projections.get((query_id, "daemon")),
             )
             parity_results[query_id] = passed
             parity_diagnostics[query_id] = {
