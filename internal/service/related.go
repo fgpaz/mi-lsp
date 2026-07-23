@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -255,7 +256,45 @@ func filterRefsByRole(items []map[string]any, workspaceRoot string, role string,
 
 		result = append(result, sc)
 	}
-	return result
+	return canonicalizeRelatedSymbols(result)
+}
+
+// Semantic backends do not promise reference order. Canonicalize only the
+// unordered related collections; GraphRanks retain their rank/utility order.
+func canonicalizeRelatedSymbols(items []symbolWithContent) []symbolWithContent {
+	if len(items) < 2 {
+		return items
+	}
+	sort.SliceStable(items, func(i, j int) bool {
+		left, right := items[i], items[j]
+		if leftPath, rightPath := relatedPathKey(left.File), relatedPathKey(right.File); leftPath != rightPath {
+			return leftPath < rightPath
+		}
+		if left.File != right.File {
+			return left.File < right.File
+		}
+		if left.Line != right.Line {
+			return left.Line < right.Line
+		}
+		if left.EndLine != right.EndLine {
+			return left.EndLine < right.EndLine
+		}
+		if left.Kind != right.Kind {
+			return left.Kind < right.Kind
+		}
+		if left.Name != right.Name {
+			return left.Name < right.Name
+		}
+		if left.ContentMode != right.ContentMode {
+			return left.ContentMode < right.ContentMode
+		}
+		return left.Content < right.Content
+	})
+	return items
+}
+
+func relatedPathKey(path string) string {
+	return strings.ToLower(filepath.ToSlash(strings.TrimSpace(path)))
 }
 
 func (a *App) findTestsForSymbol(ctx context.Context, registration model.WorkspaceRegistration, project model.ProjectFile, symbolName string) []symbolWithContent {
@@ -285,7 +324,7 @@ func (a *App) findTestsForSymbol(ctx context.Context, registration model.Workspa
 			ContentMode: "lines",
 		})
 	}
-	return tests
+	return canonicalizeRelatedSymbols(tests)
 }
 
 func isTestFile(path string) bool {

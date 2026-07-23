@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 	"time"
 
@@ -237,6 +238,68 @@ func TestUpsertAndQuerySymbols(t *testing.T) {
 	}
 	if len(fuzzy) != 1 {
 		t.Errorf("FindSymbols fuzzy: want 1 (FooClass), got %d", len(fuzzy))
+	}
+}
+
+func TestFindSymbols_SameNameAndFileUsesStableSemanticOrder(t *testing.T) {
+	ctx := context.Background()
+	project := model.ProjectFile{
+		Project: model.ProjectBlock{Name: "test", Kind: "single"},
+		Repos:   []model.WorkspaceRepo{{ID: "main", Name: "main", Root: "."}},
+	}
+	base := model.SymbolRecord{
+		FilePath:  "src/duplicate.cs",
+		RepoID:    "main",
+		RepoName:  "main",
+		Name:      "Duplicate",
+		Kind:      "method",
+		StartLine: 10,
+		EndLine:   12,
+		Parent:    "Container",
+		Signature: "void Duplicate()",
+		Scope:     "public",
+		Language:  "csharp",
+		FileHash:  "file-hash",
+	}
+	first := base
+	first.QualifiedName = "Ns.Container.DuplicateA"
+	first.SignatureHash = "signature-a"
+	second := base
+	second.QualifiedName = "Ns.Container.DuplicateB"
+	second.SignatureHash = "signature-b"
+
+	insertedFirst, _ := seedTestDB(t)
+	if err := ReplaceCatalog(ctx, insertedFirst, project, nil, []model.SymbolRecord{second, first}); err != nil {
+		t.Fatalf("ReplaceCatalog(first order): %v", err)
+	}
+	insertedSecond, _ := seedTestDB(t)
+	if err := ReplaceCatalog(ctx, insertedSecond, project, nil, []model.SymbolRecord{first, second}); err != nil {
+		t.Fatalf("ReplaceCatalog(second order): %v", err)
+	}
+
+	resultsFirst, err := FindSymbols(ctx, insertedFirst, "Duplicate", "", true, 10, 0)
+	if err != nil {
+		t.Fatalf("FindSymbols(first order): %v", err)
+	}
+	resultsSecond, err := FindSymbols(ctx, insertedSecond, "Duplicate", "", true, 10, 0)
+	if err != nil {
+		t.Fatalf("FindSymbols(second order): %v", err)
+	}
+	if len(resultsFirst) != 2 || len(resultsSecond) != 2 {
+		t.Fatalf("FindSymbols returned %d and %d results, want two each", len(resultsFirst), len(resultsSecond))
+	}
+	for _, results := range [][]model.SymbolRecord{resultsFirst, resultsSecond} {
+		if got := []string{results[0].QualifiedName, results[1].QualifiedName}; !reflect.DeepEqual(got, []string{"Ns.Container.DuplicateA", "Ns.Container.DuplicateB"}) {
+			t.Errorf("same-name/same-file order = %v, want semantic order A then B", got)
+		}
+	}
+
+	selected, err := FindSymbols(ctx, insertedFirst, "Duplicate", "", true, 1, 0)
+	if err != nil {
+		t.Fatalf("FindSymbols(selection): %v", err)
+	}
+	if len(selected) != 1 || selected[0].QualifiedName != "Ns.Container.DuplicateA" {
+		t.Fatalf("selected symbol = %#v, want DuplicateA", selected)
 	}
 }
 

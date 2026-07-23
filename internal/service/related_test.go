@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"os"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -409,5 +410,38 @@ func TestSymbolToContent_FileNotFound(t *testing.T) {
 
 	if got.ContentMode != "" {
 		t.Errorf("symbolToContent ContentMode should be empty for nonexistent file, got %q", got.ContentMode)
+	}
+}
+
+func TestRelatedDirectAndDaemonOrderingIsCanonical(t *testing.T) {
+	backendOrder := []map[string]any{
+		{"file": "src/Zeta.cs", "name": "Zeta", "kind": "class", "line": 4},
+		{"file": "src/alpha.cs", "name": "Alpha", "kind": "method", "line": 12},
+		{"file": "src/alpha.cs", "name": "Alpha", "kind": "method", "line": 3},
+	}
+	reversedOrder := append([]map[string]any(nil), backendOrder...)
+	for left, right := 0, len(reversedOrder)-1; left < right; left, right = left+1, right-1 {
+		reversedOrder[left], reversedOrder[right] = reversedOrder[right], reversedOrder[left]
+	}
+
+	directCallers := filterRefsByRole(backendOrder, t.TempDir(), "caller", false)
+	daemonCallers := filterRefsByRole(reversedOrder, t.TempDir(), "caller", false)
+	if !reflect.DeepEqual(directCallers, daemonCallers) {
+		t.Fatalf("direct callers=%#v, daemon callers=%#v; semantic ordering must be canonical", directCallers, daemonCallers)
+	}
+	if got := directCallers[0].Line; got != 3 {
+		t.Fatalf("canonical caller order starts at line %d, want 3", got)
+	}
+
+	directTests := canonicalizeRelatedSymbols([]symbolWithContent{
+		{File: "tests/Zeta_test.go", Name: "zeta", Kind: "test_reference", Line: 2},
+		{File: "tests/alpha_test.go", Name: "alpha", Kind: "test_reference", Line: 9},
+	})
+	daemonTests := canonicalizeRelatedSymbols([]symbolWithContent{
+		{File: "tests/alpha_test.go", Name: "alpha", Kind: "test_reference", Line: 9},
+		{File: "tests/Zeta_test.go", Name: "zeta", Kind: "test_reference", Line: 2},
+	})
+	if !reflect.DeepEqual(directTests, daemonTests) {
+		t.Fatalf("direct tests=%#v, daemon tests=%#v; repeated related queries must be stable", directTests, daemonTests)
 	}
 }

@@ -188,7 +188,11 @@ func FindSymbols(ctx context.Context, db *sql.DB, pattern string, kind string, e
 		query += " AND kind = ?"
 		args = append(args, kind)
 	}
-	query += " ORDER BY name ASC, file_path ASC LIMIT ? OFFSET ?"
+	query += ` ORDER BY name ASC, file_path ASC,
+		repo_id ASC, repo_name ASC, kind ASC, start_line ASC, end_line ASC,
+		parent ASC, qualified_name ASC, signature ASC, signature_hash ASC,
+		scope ASC, language ASC, file_hash ASC, implements ASC, id ASC
+		LIMIT ? OFFSET ?`
 	args = append(args, limit, offset)
 	rows, err := db.QueryContext(ctx, query, args...)
 	if err != nil {
