@@ -131,7 +131,7 @@ function Get-DirectorySha256 {
     param([Parameter(Mandatory = $true)][string]$Path)
     $records = @()
     foreach ($file in (Get-ChildItem -LiteralPath $Path -Force -File -Recurse | Sort-Object FullName)) {
-        $relative = $file.FullName.Substring((Resolve-Path $Path).Path.Length).TrimStart('\\', '/')
+        $relative = $file.FullName.Substring((Resolve-Path $Path).Path.Length).TrimStart([char[]]@('\', '/'))
         $records += "$relative`t$((Get-FileSha256 -Path $file.FullName))"
     }
     $bytes = [System.Text.Encoding]::UTF8.GetBytes(($records -join "`n"))

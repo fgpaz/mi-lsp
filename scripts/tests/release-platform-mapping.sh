@@ -178,6 +178,7 @@ if [ -z "$ps_host" ]; then
   echo "SKIP: PowerShell unavailable; explicit local/test waiver was supplied"
 else
   "$ps_host" -NoProfile -File "$ROOT/scripts/tests/archive-safety.ps1"
+  "$ps_host" -NoProfile -File "$ROOT/scripts/tests/release-directory-sha256.ps1"
 fi
 
 echo "PASS: six release RIDs map to public GoReleaser assets; OSX maps to Darwin; archive guards reject adversarial members"
