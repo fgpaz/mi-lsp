@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -90,7 +91,7 @@ and tsserver processes, reducing cold-start latency.`,
 			opts := state.queryOptions(cmd, "system.stop", nil)
 			response, err := daemon.NewClient().Execute(ctx, model.CommandRequest{ProtocolVersion: model.ProtocolVersion, Operation: "system.stop", Context: opts})
 			if err != nil {
-				return err
+				return daemonStopError(err)
 			}
 			response = output.ApplyEnvelopeLimits(response, opts)
 			return state.printEnvelope(response, opts)
@@ -324,6 +325,19 @@ func daemonStateFromEnvelope(envelope model.Envelope) (model.DaemonState, bool) 
 		return model.DaemonState{}, false
 	}
 	return state, true
+}
+
+// daemonStopError makes stopping an absent daemon idempotent without hiding
+// non-transport failures from the stop request.
+func daemonStopError(err error) error {
+	if err == nil {
+		return nil
+	}
+	message := strings.ToLower(err.Error())
+	if isTransportErrorMessage(message) || (os.IsNotExist(err) && strings.Contains(message, `\\.\pipe\`)) {
+		return daemon.BuildStatusError()
+	}
+	return err
 }
 
 func daemonOptions(watchMode string, maxWatchedRoots int, maxInflight int) (daemon.StartOptions, error) {
