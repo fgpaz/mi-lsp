@@ -23,16 +23,17 @@ artifact_classes:
     - audit-report.yaml
     - ae-close-verdict.md
 hash_index:
-  status: partial_pending_terminal_evidence_commit
+  status: finalized
   self_hash: not_applicable
-  note: >-
-    audit-report.yaml and ae-close-verdict.md hashes land in the terminal
-    evidence-only commit after the re-audit; that commit changes no code or canon.
   entries:
     - path: session-contract.yaml
-      sha256: a0f1c80731602ecc09f38352287271c3b3bef4da4fea59bc9eff662a7899c478
+      sha256: fece061580da90727a42ac4cdaa7994a1dcfef5e4fa98d030a6f04b89b9658a9
     - path: traceability-closure.yaml
-      sha256: 2aa1420de6176c2cd7c9365c12ca9d3a2e77f47f54ffe3f5b38bb84ad5782fbe
+      sha256: 601f86123570c3d66a9de32cd440a458997a2bfdeacbeaa6064e2a0d451040d7
+    - path: audit-report.yaml
+      sha256: b11bfefe2bc67100a954063d90372a427d955a1a6c27c8190d38d9addae6ef85
+    - path: ae-close-verdict.md
+      sha256: 143a646f2959d9d57cd1032341b589b0471e9a6957653deb49e5d2d22a82c024
 cleanup_status:
   state: active_until_terminal_closure_plus_ttl
   destructive_cleanup_used: false

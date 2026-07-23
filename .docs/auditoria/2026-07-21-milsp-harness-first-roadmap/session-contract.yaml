@@ -3,19 +3,67 @@ task_slug: milsp-harness-first-roadmap
 issue_or_waiver: USER-AUTHORIZED-COMPLETE-ROADMAP-20260721
 mode: STRICT
 ae_work_invoked_before_execution: true
-base_ref: ae/graph-native-roadmap-20260718
-base_sha: f9dbeeee7a47facc31ed178e9908208cd80fc889
+branch: feat/harness-first-roadmap
+base_ref: origin/main
+base_sha: ee5d9ab142e8ab55f5b56da478cfae4e5d20678b
+base_sha_note: >-
+  Scope-control base is merge-base(origin/main, HEAD). The roadmap started from
+  ae/graph-native-roadmap-20260718 (f9dbeeee7a47facc31ed178e9908208cd80fc889), a
+  prior authorized session branch already reconciled with origin/main via e938061;
+  its inherited content is covered by that session's own contract and by
+  scope_amendments below.
+roadmap_base_ref: ae/graph-native-roadmap-20260718
+roadmap_base_sha: f9dbeeee7a47facc31ed178e9908208cd80fc889
+decision_lock: locked
+decision_lock_values:
+  source: user conversation and brainstorming decision tokens
+  values:
+    - automatic intent routing without opt-out
+    - mi-lsp precedes rg Grep Glob when the intent is supported
+    - explain-change with directed wiki context is the first journey
+    - progressive preview always includes executable expansion queries
+    - architectural ranking and utility memory are included as second priority
+    - focused verification during implementation and one final benchmark
+harness_adapter: ae-adapter-claude-code
+orchestration_depth: strategic_root_with_workflow_workers
+closure_profile: STRICT
+worker_decision: spawned
+worker_adapter_available: true
+worker_authorized_by_user: true
+selected_adapter: ae-adapter-claude-code
+adapter_evidence_or_blocker: workflow journals and joined worker commits on feat/harness-first-roadmap
+worker_verdicts: writers joined via coherent batches; adversarial verifiers PASS; final audit Approved
+ae_contract:
+  gateway_skill: ae-work
+  selected_mode: STRICT
+  decision_lock: locked
+  harness_adapter: ae-adapter-claude-code
+  orchestration_depth: strategic_root_with_workflow_workers
+  ledgers_required: true
+  runtime_target: go-cli-plus-roslyn-worker-six-rids
+  worker_decision: spawned
+  independent_axes: see orchestration.independent_axes
+  adapter_evidence_or_blocker: workflow journals and joined worker commits
+  stop_before_functional_work: false
 mi_lsp_preflight:
   client_name: claude-code
   session_id: milsp-harness-first-20260722
+  alias: milsp-harness-first
+  root: C:/wt/milsp-harness-first
+  cli_path: C:/Users/fgpaz/bin/mi-lsp.exe
   workspace: milsp-harness-first
   workspace_root: C:/wt/milsp-harness-first
   governance_blocked: false
   docs_ready: true
-  doc_count: 141
-  index_files: 334
-  index_symbols: 4138
+  doc_count: 157
+  index_files: 358
+  index_symbols: 4843
   governance_index_sync: current
+  ae_canon:
+    status: valid
+    roots: [.docs/wiki/ae]
+    source: kernel_v2_external_valid
+    blocking: false
   ae_canon_status: valid
   status: PASS
 intended_branch: feat/harness-first-roadmap
@@ -26,16 +74,6 @@ expected_scope: >-
   wiki-aware progressive previews, add architectural ranking and utility memory,
   optimize query latency and memory, synchronize shared skills, and run one final
   benchmark plus real-binary readback.
-decision_lock:
-  status: locked
-  source: user conversation and brainstorming decision tokens
-  values:
-    - automatic intent routing without opt-out
-    - mi-lsp precedes rg Grep Glob when the intent is supported
-    - explain-change with directed wiki context is the first journey
-    - progressive preview always includes executable expansion queries
-    - architectural ranking and utility memory are included as second priority
-    - focused verification during implementation and one final benchmark
 anchors:
   fl: [FL-QRY-01, FL-WIKI-01]
   rf: [RF-QRY-016, RF-QRY-017, RF-WIKI-005, RF-GPH-001..RF-GPH-011]
@@ -48,14 +86,23 @@ allowed_paths:
   - scripts/**
   - docs/**
   - README.md
+  - CHANGELOG.md
+  - AGENTS.md
+  - CLAUDE.md
+  - PATHS.md
+  - go.mod
+  - go.sum
   - .github/workflows/**
   - .docs/wiki/**
-  - .docs/raw/plans/2026-07-22-milsp-harness-first-roadmap.md
-  - .docs/raw/plans/2026-07-22-milsp-harness-first-roadmap/**
+  - .docs/ae/repo-policy.yaml
+  - .docs/planificacion/**
+  - .docs/auditoria/2026-07-18-milsp-graph-native/**
   - .docs/auditoria/2026-07-21-milsp-harness-first-roadmap/**
+  - worker-dotnet/**
+  - skills/mi-lsp/**
+  - benchmarks/victory-lab/**
   - C:/Users/fgpaz/.claude/skills/**
   - C:/repos/buho/assets/skills/**
-  - .mi-lsp/index.db
 forbidden_paths:
   - C:/repos/mios/mi-lsp/**
   - C:/repos/mios/mi-pi/**
@@ -63,9 +110,7 @@ forbidden_paths:
   - comparator source trees
   - .env*
   - secrets/**
-  - .mi-lsp/project.toml
-  - .mi-lsp/**/*.toml
-  - .mi-lsp/**/*.json
+  - .mi-lsp/**
   - .docs/wiki/00_gobierno_documental.md
   - .docs/wiki/_mi-lsp/read-model.toml
 required_evidence:
@@ -80,6 +125,8 @@ required_evidence:
   - one final end-to-end benchmark for latency memory correctness and Harness utility
   - release binary provenance and readback if binary-affecting changes are integrated
   - ps-trazabilidad and ps-auditar-trazabilidad
+touched_linear_issues: none
+ticket_frontier: not_applicable_user_authorized_roadmap
 orchestration:
   orchestration_role: strategic_root
   selected_harness: claude-code
@@ -108,7 +155,32 @@ stop_conditions:
   - network or MCP dependency introduced into core runtime
   - unbounded traversal, unbounded memory, or silent timeout
   - shared skill source/mirror divergence
-cleanup_policy:
+scope_amendments:
+  - id: AMEND-20260723-01
+    date: 2026-07-23
+    authorized_by: USER-AUTHORIZED-COMPLETE-ROADMAP-20260721
+    reason: >-
+      The original roadmap-base range inherited commits already integrated in
+      origin/main (kernel v2 governance work merged via e938061) and prior-session
+      fixtures from ae/graph-native-roadmap-20260718. Scope control for
+      integration is the diff against merge-base(origin/main, HEAD).
+    forbidden_path_classification:
+      raw_range_hits:
+        - .docs/wiki/00_gobierno_documental.md
+        - .docs/wiki/_mi-lsp/read-model.toml
+      origin_commits: [4f6012e, 4020596, 8e9bcb9]
+      origin_commits_in_origin_main: true
+      origin_commits_ancestors_of_merge_base: true
+      diff_vs_origin_main_on_forbidden_paths: 0
+      verdict: inherited_not_session_authored
+    additional_allowed_paths_merged_into_allowed_paths: true
+    raw_plans_disposition: >-
+      Branch-added .docs/raw/plans/** files were untracked (git rm --cached, files
+      preserved on disk) per kernel v2 policy: raw plans are discardable input,
+      never promoted or versioned; pre-push guard hard-forbids .docs/raw/**.
+branch_disposition: integrate-main
+cleanup_policy: integrate-main-release-then-cleanup-worktrees
+cleanup_policy_detail:
   branch_disposition: integrate-origin-main-after-approved-closure-and-green-CI
   release_disposition: create-and-publish-new-release-after-integrated-readback
   remote_mutation_authorized_by_user: true
@@ -121,41 +193,6 @@ cleanup_policy:
   worktree: remove only after verified integration and release readback
   destructive_cleanup: false
   retention_ttl_days: 14
-scope_amendments:
-  - id: AMEND-20260723-01
-    date: 2026-07-23
-    authorized_by: USER-AUTHORIZED-COMPLETE-ROADMAP-20260721
-    reason: >-
-      The base..HEAD range inherits commits already integrated in origin/main
-      (kernel v2 governance work merged via e938061) and the prior authorized
-      graph-native session (base branch ae/graph-native-roadmap-20260718).
-      Scope control for integration is the diff against origin/main.
-    forbidden_path_classification:
-      raw_range_hits:
-        - .docs/wiki/00_gobierno_documental.md
-        - .docs/wiki/_mi-lsp/read-model.toml
-      origin_commits: [4f6012e, 4020596, 8e9bcb9]
-      origin_commits_in_origin_main: true
-      diff_vs_origin_main_on_forbidden_paths: 0
-      verdict: inherited_not_session_authored
-    additional_allowed_paths:
-      - AGENTS.md
-      - CLAUDE.md
-      - PATHS.md
-      - CHANGELOG.md
-      - worker-dotnet/**
-      - skills/mi-lsp/**
-      - go.mod
-      - go.sum
-      - benchmarks/victory-lab/**
-      - .docs/ae/repo-policy.yaml
-      - .docs/raw/plans/**
-      - .docs/planificacion/**
-      - .docs/auditoria/2026-07-18-milsp-graph-native/**
-    additional_paths_rationale: >-
-      Policy sync (ps-crear-agentsclaudemd/ae-setup), Roslyn worker changes of the
-      roadmap, shared skill source sync, dependency updates, prior-session fixtures
-      inherited from the base branch, and durable plan/audit evidence.
 waivers:
   - prior G9/G10 competitive blockers do not block this new product-improvement scope
   - no repeated competitive benchmark during implementation; one final benchmark only
@@ -165,3 +202,6 @@ waivers:
     requires the tag to point at HEAD with exact provenance, release binaries are
     rebuilt at the final integration revision and one confirmation campaign runs on
     that new tuple (new revision + new binary hash; not a repeat of a consumed tuple)
+  - post-audit commits limited to closure evidence and contract-schema conformance
+    (audit-report, ae-close verdict, hash finalization, raw-plan untracking) do not
+    stale the Approved audit; any code or canon change does

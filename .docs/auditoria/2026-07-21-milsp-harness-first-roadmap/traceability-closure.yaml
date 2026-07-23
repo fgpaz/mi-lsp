@@ -9,12 +9,12 @@ git_before:
   base_sha: f9dbeeee7a47facc31ed178e9908208cd80fc889
 git_after:
   branch: feat/harness-first-roadmap
-  head: pending_remediation_commit
+  head: 92ac28a_plus_terminal_evidence_commit
   upstream: pending_push
   ahead_of_main: 105_plus_remediation
 changed_paths:
   verdict: PASS_with_documented_amendment
-  measurement_basis: diff_vs_origin_main_for_integration_scope
+  measurement_basis: diff_vs_merge_base_origin_main_ee5d9ab_for_integration_scope
   range_base_to_head_paths: 255
   range_out_of_original_allowlist: 84
   range_forbidden_hits:
@@ -26,7 +26,7 @@ changed_paths:
       origin_commits: [4f6012e]
   diff_vs_origin_main_forbidden_hits: 0
   amendment: AMEND-20260723-01 in session-contract.yaml (additional_allowed_paths)
-  worktree_clean: false_until_remediation_commit
+  worktree_clean: true_at_terminal_evidence_commit
 scope_verdict: PASS_with_documented_amendment
 governance:
   status: PASS
@@ -52,7 +52,7 @@ data_or_contract_sensitive:
   status: PASS
   rationale: graph persistence, daemon/query contracts, release distribution, and worker protocol canon were synchronized in the implementation commits
 harness_verdict: PASS
-wiki_source_verdict: pending_validate_source_rerun
+wiki_source_verdict: PASS
 core_product_promise_verdict: NOT_APPLICABLE
 expected_experience_oracle_verdict: NOT_APPLICABLE
 qa_learning_loop_verdict: PASS
@@ -149,8 +149,8 @@ pre_push_inputs:
   expected_scope: complete Harness-first roadmap and release
   shared_skill_mirror_sync: PASS
 no_drift_snapshot:
-  worktree_clean: pending_remediation_commit
-  head: pending_remediation_commit
+  worktree_clean: true
+  head: terminal_evidence_commit_on_feat/harness-first-roadmap
 completion_handoff:
   target: finishing-a-development-branch
   disposition: integrate-main
@@ -165,9 +165,8 @@ completion_handoff:
     audit_manifest: tracked
     campaign_report_raw: sanitized_external_evidence_temporary
     release_provenance_summary: recorded_in_this_packet
+  re_audit_verdict: Approved_2026-07-23
   blockers:
-    - re-audit ps-auditar-trazabilidad pending after remediation commit
-    - ae-close verdict pending
     - pre-push guard pending
     - push feature branch pending
     - PR creation and green CI pending
