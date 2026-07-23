@@ -62,3 +62,24 @@ post_audit_deltas:
       - PR CI matrix on ubuntu/windows/macos is the cross-platform oracle
     audit_disposition: Approved retained with documented delta per
       session-contract waiver POST-AUDIT-DELTA-20260723-01
+  - id: POST-AUDIT-DELTA-20260723-02
+    date: 2026-07-23
+    trigger: second PR 58 CI red after delta 01 (new steps reached for the
+      first time on each platform)
+    changes:
+      - path: scripts/tests/archive-safety.ps1
+        nature: test-only explicit exit 0 (GitHub `shell: pwsh` propagates the
+          residual $LASTEXITCODE=1 left by intentional child-verifier rejections
+          even when every guard passes)
+      - path: internal/milx/host_test.go
+        nature: test-only capability probe and skip (Linux CLONE_NEWNET
+          isolation needs CAP_SYS_ADMIN; unprivileged CI runners cannot spawn
+          the sandboxed helper, and the product fails closed by design)
+    product_code_changed: false
+    canon_changed: false
+    release_binary_inputs_changed: false
+    reverification:
+      - go vet + go test ./internal/milx PASS local
+      - archive-safety.ps1 PASS local exit 0
+      - PR CI matrix remains the cross-platform oracle
+    audit_disposition: Approved retained with documented delta

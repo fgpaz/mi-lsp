@@ -31,7 +31,7 @@ hash_index:
     - path: traceability-closure.yaml
       sha256: 601f86123570c3d66a9de32cd440a458997a2bfdeacbeaa6064e2a0d451040d7
     - path: audit-report.yaml
-      sha256: d291564b5e833af4e9998e2ebce0dede8150a291af1934f9ef42b3f2b39e1925
+      sha256: 8fa5abd0bb0efa6c8759f626da5010dff44face0edadac2c6f43b11df9be3e95
     - path: ae-close-verdict.md
       sha256: 143a646f2959d9d57cd1032341b589b0471e9a6957653deb49e5d2d22a82c024
 cleanup_status:

@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -46,6 +47,21 @@ func helperConfig(t *testing.T) HostConfig {
 	}
 }
 
+// Linux spawns extensions inside a private network namespace (CLONE_NEWNET),
+// which needs CAP_SYS_ADMIN; unprivileged CI runners cannot grant it and the
+// host correctly fails closed, so lifecycle tests skip there.
+func skipIfProcessSandboxUnavailable(t *testing.T) {
+	t.Helper()
+	if runtime.GOOS != "linux" {
+		return
+	}
+	probe := exec.Command("/bin/true")
+	configureProcess(probe)
+	if err := probe.Run(); err != nil {
+		t.Skipf("linux network-namespace isolation unavailable on this host: %v", err)
+	}
+}
+
 func TestMain(m *testing.M) {
 	if os.Getenv("MILX_TEST_HELPER") == "1" {
 		runMILXHelper()
@@ -55,6 +71,7 @@ func TestMain(m *testing.M) {
 }
 
 func TestHostLifecycleDescribePrepareExecuteAndCleanup(t *testing.T) {
+	skipIfProcessSandboxUnavailable(t)
 	cfg := helperConfig(t)
 	host, err := NewHost(cfg)
 	if err != nil {
@@ -103,6 +120,7 @@ func TestHostLifecycleDescribePrepareExecuteAndCleanup(t *testing.T) {
 }
 
 func TestHostGracefulShutdownWaitsForCleanExit(t *testing.T) {
+	skipIfProcessSandboxUnavailable(t)
 	cfg := helperConfig(t)
 	host, err := NewHost(cfg)
 	if err != nil {
@@ -123,6 +141,7 @@ func TestHostGracefulShutdownWaitsForCleanExit(t *testing.T) {
 }
 
 func TestHostShutdownTimeoutForcesCleanup(t *testing.T) {
+	skipIfProcessSandboxUnavailable(t)
 	cfg := helperConfig(t)
 	cfg.Environment["MILX_TEST_SHUTDOWN_DELAY"] = "1"
 	cfg.AllowedEnvironment = append(cfg.AllowedEnvironment, "MILX_TEST_SHUTDOWN_DELAY")
@@ -192,6 +211,7 @@ func TestAnalysisCacheExactKeyAndBound(t *testing.T) {
 }
 
 func TestHostSingleInflight(t *testing.T) {
+	skipIfProcessSandboxUnavailable(t)
 	cfg := helperConfig(t)
 	host, err := NewHost(cfg)
 	if err != nil {

@@ -254,3 +254,7 @@ try {
 finally {
     Remove-Item -LiteralPath $root -Recurse -Force -ErrorAction SilentlyContinue
 }
+
+# The rejection fixtures intentionally leave $LASTEXITCODE=1 from the child
+# verifier; under GitHub's `shell: pwsh` that residual code would fail the step.
+exit 0
