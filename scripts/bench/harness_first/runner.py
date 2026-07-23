@@ -1116,12 +1116,13 @@ def run_process(argv: Sequence[str], timeout_seconds: float) -> ProcessResult:
     elapsed = (time.perf_counter() - started) * 1000.0
     output_bytes = len(stdout.encode("utf-8", "replace"))
     estimated_tokens = math.ceil(output_bytes / 4) if output_bytes else 0
-    if process.returncode != 0:
-        return ProcessResult(process.returncode, elapsed, rss_bytes=rss, reason_code="nonzero_exit", output_bytes=output_bytes, estimated_tokens=estimated_tokens)
     try:
         payload = json.loads(stdout)
     except json.JSONDecodeError:
-        return ProcessResult(process.returncode, elapsed, rss_bytes=rss, reason_code="decode_error", output_bytes=output_bytes, estimated_tokens=estimated_tokens)
+        reason_code = "nonzero_exit" if process.returncode != 0 else "decode_error"
+        return ProcessResult(process.returncode, elapsed, rss_bytes=rss, reason_code=reason_code, output_bytes=output_bytes, estimated_tokens=estimated_tokens)
+    if process.returncode != 0:
+        return ProcessResult(process.returncode, elapsed, payload=payload, rss_bytes=rss, reason_code="nonzero_exit", output_bytes=output_bytes, estimated_tokens=estimated_tokens)
     return ProcessResult(process.returncode, elapsed, payload=payload, rss_bytes=rss, output_bytes=output_bytes, estimated_tokens=estimated_tokens)
 
 
@@ -1321,19 +1322,52 @@ def _preflight_timeout(timeout_seconds: float) -> float:
     return min(max(value, 0.001), MAX_PREFLIGHT_TIMEOUT_SECONDS)
 
 
+def _daemon_not_running_payload(payload: Any) -> bool:
+    """Accept only the CLI's structured daemon-unavailable error contract."""
+    if not isinstance(payload, Mapping) or payload.get("ok") is not False:
+        return False
+    error = payload.get("error")
+    return (
+        isinstance(error, Mapping)
+        and error.get("kind") == "transport"
+        and error.get("code") == "daemon_transport_failed"
+        and error.get("stage") == "transport"
+        and error.get("hint_code") == "daemon_unavailable"
+        and error.get("retryable") is True
+    )
+
+
 def _daemon_stop_probe(binary: Path, timeout_seconds: float, *, required: bool) -> dict[str, Any]:
     try:
         result = run_process([str(binary), "--format", "json", "daemon", "stop"], _preflight_timeout(timeout_seconds))
     except HarnessError:
         result = None
-    passed = result is not None and result.reason_code is None and isinstance(result.payload, Mapping) and result.payload.get("ok") is True
-    if passed:
-        return {"status": "PASS", "best_effort": not required, "elapsed_ms": result.elapsed_ms}
+
+    running_stop = (
+        result is not None
+        and result.returncode == 0
+        and result.reason_code is None
+        and isinstance(result.payload, Mapping)
+        and result.payload.get("ok") is True
+    )
+    already_stopped = (
+        result is not None
+        and result.returncode != 0
+        and result.reason_code == "nonzero_exit"
+        and _daemon_not_running_payload(result.payload)
+    )
+    if running_stop or already_stopped:
+        return {
+            "status": "PASS",
+            "already_stopped": already_stopped,
+            "best_effort": not required,
+            "elapsed_ms": result.elapsed_ms,
+        }
     return {
-        "status": "FAIL" if required else "IGNORED",
+        "status": "FAIL",
         "best_effort": not required,
         "elapsed_ms": result.elapsed_ms if result is not None else None,
-        **({"reason_code": "daemon_preflight_failed"} if required else {}),
+        "reason_code": "daemon_preflight_failed",
     }
 
 
@@ -1379,6 +1413,14 @@ def _daemon_start_status_preflight(binary: Path, expected_sha256: str, timeout_s
 def _daemon_preflight(binary: Path, expected_sha256: str, timeout_seconds: float, candidate: Mapping[str, Any] | None = None) -> dict[str, Any]:
     started = time.perf_counter()
     stop_report = _daemon_stop_probe(binary, timeout_seconds, required=False)
+    if stop_report["status"] != "PASS":
+        return {
+            "status": "BLOCKED",
+            "reason_code": "daemon_preflight_failed",
+            "daemon_identity_match": False,
+            "elapsed_ms": (time.perf_counter() - started) * 1000.0,
+            "stop": stop_report,
+        }
     setup = _daemon_start_status_preflight(binary, expected_sha256, timeout_seconds, candidate)
     return {**setup, "elapsed_ms": (time.perf_counter() - started) * 1000.0, "stop": stop_report}
 
@@ -1597,7 +1639,7 @@ def _candidate_preflight(binary: Path, source_root: Path, campaign_id: str, work
         daemon = _daemon_start_status_preflight(binary, expected_sha256, timeout_seconds, version)
         daemon["stop"] = daemon_stop
     else:
-        daemon = {"status": "NOT_REQUIRED", "daemon_identity_match": None, "elapsed_ms": 0.0}
+        daemon = {"status": "NOT_REQUIRED", "daemon_identity_match": None, "elapsed_ms": 0.0, "stop": daemon_stop}
     return {
         "status": "PASS" if daemon["status"] in {"PASS", "NOT_REQUIRED"} else "BLOCKED",
         "reason_code": daemon.get("reason_code"),

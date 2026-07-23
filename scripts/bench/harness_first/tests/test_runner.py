@@ -22,6 +22,7 @@ from scripts.bench.harness_first.runner import (
     _command,
     _daemon_identity_check,
     _daemon_preflight,
+    _daemon_stop_probe,
     _find_preview_contract,
     _freshness_records,
     _index_preflight,
@@ -186,6 +187,90 @@ class RunnerContractTests(unittest.TestCase):
         self.assertFalse(result["version_match"])
         self.assertEqual(result["reason_code"], "candidate_version_mismatch")
 
+    def daemon_not_running_payload(self):
+        return {
+            "ok": False,
+            "items": [],
+            "error": {
+                "kind": "transport",
+                "code": "daemon_transport_failed",
+                "stage": "transport",
+                "hint_code": "daemon_unavailable",
+                "retryable": True,
+                "message": "daemon is not running",
+            },
+        }
+
+    def test_daemon_stop_running_passes_without_already_stopped(self):
+        with patch(
+            "scripts.bench.harness_first.runner.run_process",
+            return_value=ProcessResult(0, 1.0, payload={"ok": True}),
+        ):
+            result = _daemon_stop_probe(Path("candidate"), 10.0, required=True)
+        self.assertEqual(result["status"], "PASS")
+        self.assertFalse(result["already_stopped"])
+        self.assertEqual(result["elapsed_ms"], 1.0)
+
+    def test_daemon_stop_documented_not_running_is_idempotent_pass(self):
+        payload = self.daemon_not_running_payload()
+        with patch(
+            "scripts.bench.harness_first.runner.run_process",
+            return_value=ProcessResult(1, 2.0, payload=payload, reason_code="nonzero_exit"),
+        ):
+            result = _daemon_stop_probe(Path("candidate"), 10.0, required=True)
+        self.assertEqual(result["status"], "PASS")
+        self.assertTrue(result["already_stopped"])
+        self.assertEqual(result["elapsed_ms"], 2.0)
+        self.assertNotIn("daemon is not running", json.dumps(result))
+        self.assertNotIn("message", result)
+
+    def test_daemon_stop_unrelated_exit_one_fails_closed(self):
+        payload = {
+            "ok": False,
+            "items": [],
+            "error": {
+                "kind": "backend_runtime",
+                "code": "daemon_request_failed",
+                "stage": "backend",
+                "retryable": False,
+            },
+        }
+        with patch(
+            "scripts.bench.harness_first.runner.run_process",
+            return_value=ProcessResult(1, 3.0, payload=payload, reason_code="nonzero_exit"),
+        ):
+            result = _daemon_stop_probe(Path("candidate"), 10.0, required=True)
+        self.assertEqual(result["status"], "FAIL")
+        self.assertEqual(result["reason_code"], "daemon_preflight_failed")
+
+    def test_daemon_stop_malformed_json_fails_closed(self):
+        with patch(
+            "scripts.bench.harness_first.runner.run_process",
+            return_value=ProcessResult(1, 4.0, reason_code="decode_error"),
+        ):
+            result = _daemon_stop_probe(Path("candidate"), 10.0, required=True)
+        self.assertEqual(result["status"], "FAIL")
+        self.assertEqual(result["reason_code"], "daemon_preflight_failed")
+
+    def test_daemon_stop_access_denied_fails_closed(self):
+        payload = {
+            "ok": False,
+            "items": [],
+            "error": {
+                "kind": "process",
+                "code": "process_spawn_access_denied",
+                "stage": "transport",
+                "retryable": False,
+            },
+        }
+        with patch(
+            "scripts.bench.harness_first.runner.run_process",
+            return_value=ProcessResult(1, 5.0, payload=payload, reason_code="nonzero_exit"),
+        ):
+            result = _daemon_stop_probe(Path("candidate"), 10.0, required=True)
+        self.assertEqual(result["status"], "FAIL")
+        self.assertEqual(result["reason_code"], "daemon_preflight_failed")
+
     def test_daemon_preflight_fails_closed_on_identity_mismatch_without_retry(self):
         candidate_sha = "a" * 64
         calls = []
@@ -275,6 +360,8 @@ class RunnerContractTests(unittest.TestCase):
         self.assertEqual(report["retry_amplification"]["attempts"], 1)
         self.assertEqual(report["candidate_preflight"]["index"]["attempts"], 1)
         self.assertEqual(report["candidate_preflight"]["daemon"]["status"], "NOT_REQUIRED")
+        self.assertEqual(report["candidate_preflight"]["daemon"]["stop"]["status"], "PASS")
+        self.assertFalse(report["candidate_preflight"]["daemon"]["stop"]["already_stopped"])
 
     def test_blocked_candidate_preflight_does_not_burn_global_claim(self):
         manifest = self.manifest()
