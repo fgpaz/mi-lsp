@@ -38,6 +38,7 @@ MAX_PROJECTION_LIST_ITEMS = 4096
 MAX_PROJECTION_BYTES = 2 * 1024 * 1024
 MAX_PROJECTION_STRING_BYTES = 64 * 1024
 MAX_PREFLIGHT_TIMEOUT_SECONDS = 120.0
+MAX_CLEAN_INDEX_PREFLIGHT_TIMEOUT_SECONDS = 300.0
 MAX_CREDENTIAL_VALUE_BYTES = MAX_PROJECTION_STRING_BYTES
 MAX_CREDENTIAL_VALUE_CHARS = 512
 MAX_DIFF_NODES = 2048
@@ -1100,10 +1101,18 @@ class _RSSSampler:
         return self.peak if self.available and self.peak is not None else None
 
 
-def run_process(argv: Sequence[str], timeout_seconds: float) -> ProcessResult:
+def run_process(argv: Sequence[str], timeout_seconds: float, *, cwd: Path | str | None = None) -> ProcessResult:
     started = time.perf_counter()
     try:
-        process = subprocess.Popen(list(argv), stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, encoding="utf-8", errors="replace")
+        process = subprocess.Popen(
+            list(argv),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            cwd=os.fspath(cwd) if cwd is not None else None,
+        )
     except OSError as exc:
         raise HarnessError("spawn_error") from exc
     sampler = _RSSSampler(process)
@@ -1161,6 +1170,11 @@ def run_process(argv: Sequence[str], timeout_seconds: float) -> ProcessResult:
         stdout=stdout,
         stderr=stderr,
     )
+
+
+def _candidate_process(binary: Path, argv: Sequence[str], timeout_seconds: float) -> ProcessResult:
+    """Run a candidate from its distribution directory, not the caller's cwd."""
+    return run_process(argv, timeout_seconds, cwd=binary.parent)
 
 
 def _command(binary: Path, source_root: Path, campaign_id: str, query: Mapping[str, Any], mode: str) -> list[str]:
@@ -1241,7 +1255,7 @@ def _worker_status_probe(binary: Path, source_root: Path, campaign_id: str, work
         *worker_args,
     ]
     try:
-        result = run_process(argv, timeout_seconds)
+        result = _candidate_process(binary, argv, timeout_seconds)
     except HarnessError:
         return {"status": "FAIL", "usable": False, "attempts": 1, "elapsed_ms": None, "reason_code": "worker_preflight_failed"}
     report: dict[str, Any] = {
@@ -1300,7 +1314,7 @@ def _version_identity(payload: Any, expected_sha256: str) -> dict[str, Any]:
 
 def _version_probe(binary: Path, timeout_seconds: float, expected_sha256: str) -> dict[str, Any]:
     try:
-        result = run_process([str(binary), "--format", "json", "version"], timeout_seconds)
+        result = _candidate_process(binary, [str(binary), "--format", "json", "version"], timeout_seconds)
     except HarnessError:
         return {"status": "FAIL", "elapsed_ms": None, "reason_code": "candidate_version_failed", "version": None, "protocol_version": None, "executable_sha256": None}
     report = _version_identity(result.payload if result.reason_code is None else None, expected_sha256)
@@ -1386,7 +1400,7 @@ def _daemon_not_running_text(result: ProcessResult) -> bool:
 
 def _daemon_stop_probe(binary: Path, timeout_seconds: float, *, required: bool) -> dict[str, Any]:
     try:
-        result = run_process([str(binary), "--format", "json", "daemon", "stop"], _preflight_timeout(timeout_seconds))
+        result = _candidate_process(binary, [str(binary), "--format", "json", "daemon", "stop"], _preflight_timeout(timeout_seconds))
     except HarnessError:
         result = None
 
@@ -1431,7 +1445,7 @@ def _daemon_stop_probe(binary: Path, timeout_seconds: float, *, required: bool) 
 def _daemon_start_status_preflight(binary: Path, expected_sha256: str, timeout_seconds: float, candidate: Mapping[str, Any] | None = None) -> dict[str, Any]:
     started = time.perf_counter()
     try:
-        start_result = run_process([str(binary), "--format", "json", "daemon", "start"], _preflight_timeout(timeout_seconds))
+        start_result = _candidate_process(binary, [str(binary), "--format", "json", "daemon", "start"], _preflight_timeout(timeout_seconds))
     except HarnessError:
         start_result = None
     start_ok = start_result is not None and start_result.reason_code is None and isinstance(start_result.payload, Mapping) and start_result.payload.get("ok") is True
@@ -1446,7 +1460,7 @@ def _daemon_start_status_preflight(binary: Path, expected_sha256: str, timeout_s
         }
 
     try:
-        status_result = run_process([str(binary), "--format", "json", "daemon", "status"], _preflight_timeout(timeout_seconds))
+        status_result = _candidate_process(binary, [str(binary), "--format", "json", "daemon", "status"], _preflight_timeout(timeout_seconds))
     except HarnessError:
         status_result = None
     identity = _daemon_identity_check(status_result.payload if status_result is not None and status_result.reason_code is None else None, expected_sha256, candidate)
@@ -1512,7 +1526,7 @@ def _index_preflight(binary: Path, source_root: Path, campaign_id: str, _timeout
         "--clean",
     ]
     try:
-        result = run_process(argv, MAX_PREFLIGHT_TIMEOUT_SECONDS)
+        result = _candidate_process(binary, argv, MAX_CLEAN_INDEX_PREFLIGHT_TIMEOUT_SECONDS)
     except HarnessError:
         return {"status": "FAIL", "attempts": 1, "elapsed_ms": None, "reason_code": "index_preflight_failed"}
     report: dict[str, Any] = {
@@ -1554,7 +1568,7 @@ def _freshness_preflight(binary: Path, source_root: Path, campaign_id: str, time
     query = _freshness_probe_query(queries)
     argv = _command(binary, source_root, campaign_id, query, "direct")
     try:
-        result = run_process(argv, _preflight_timeout(timeout_seconds))
+        result = _candidate_process(binary, argv, _preflight_timeout(timeout_seconds))
     except HarnessError:
         return {
             "status": "FAIL",
@@ -1907,7 +1921,7 @@ def _select_latest_telemetry_event(
 
 def _telemetry_route_probe(binary: Path, campaign_id: str, operation: str, timeout_seconds: float) -> tuple[str | None, str | None]:
     probe = [str(binary), "--format", "json", "--client-name", "harness-first", "--session-id", campaign_id, "admin", "export", "--since", "1h", "--session-id", campaign_id, "--client-name", "harness-first", "--operation", operation, "--format", "json", "--limit", "50"]
-    result = run_process(probe, timeout_seconds)
+    result = _candidate_process(binary, probe, timeout_seconds)
     if result.reason_code is not None or not isinstance(result.payload, list):
         return None, None
     event = _select_latest_telemetry_event(
@@ -1976,7 +1990,11 @@ def run_campaign(manifest: Mapping[str, Any], *, binary: str | Path, source_root
         claim_global_marker(source_path, {"campaign_id": contract["campaign_id"], "source_revision": source, "binary_sha256": prov["binary_sha256"]})
         for query in contract["queries"]:
             for mode in query["modes"]:
-                result = run_process(_command(binary_path, source_path, contract["campaign_id"], query, mode), min(float(query.get("timeout_seconds", timeout_seconds)), timeout_seconds))
+                result = _candidate_process(
+                    binary_path,
+                    _command(binary_path, source_path, contract["campaign_id"], query, mode),
+                    min(float(query.get("timeout_seconds", timeout_seconds)), timeout_seconds),
+                )
                 sample: dict[str, Any] = {"query_id": query["id"], "kind": query["kind"], "mode": mode, "attempts": 1, "elapsed_ms": result.elapsed_ms, "peak_rss_bytes": result.rss_bytes, "output_bytes": result.output_bytes, "estimated_tokens": result.estimated_tokens}
                 if result.reason_code:
                     sample.update({"status": "FAIL", "reason_code": result.reason_code})

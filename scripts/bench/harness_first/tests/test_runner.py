@@ -10,6 +10,7 @@ from unittest.mock import patch
 from scripts.bench.harness_first.runner import (
     HarnessError,
     MARKER_NAME,
+    MAX_CLEAN_INDEX_PREFLIGHT_TIMEOUT_SECONDS,
     MAX_PREFLIGHT_TIMEOUT_SECONDS,
     MAX_PROJECTION_DEPTH,
     MAX_PROJECTION_LIST_ITEMS,
@@ -20,6 +21,7 @@ from scripts.bench.harness_first.runner import (
     _bounded_diff_value,
     _bounded_structural_diff,
     _candidate_preflight,
+    _candidate_process,
     _command,
     _daemon_identity_check,
     _daemon_preflight,
@@ -34,9 +36,11 @@ from scripts.bench.harness_first.runner import (
     finite,
     normalize,
     parse_go_version_m,
+    provenance,
     query_check,
     run_campaign,
     sanitize,
+    source_revision,
     to_yaml,
     validate_manifest,
     worker_status_check,
@@ -148,11 +152,56 @@ class RunnerContractTests(unittest.TestCase):
         self.assertEqual(direct[-3:], ["nav", "related", "BuildIntentPlan"])
         self.assertEqual(daemon[-3:], ["nav", "related", "BuildIntentPlan"])
 
+    def test_candidate_process_uses_binary_parent_distribution_cwd(self):
+        with tempfile.TemporaryDirectory() as directory:
+            distribution = Path(directory) / "win-arm64"
+            distribution.mkdir()
+            binary = distribution / "mi-lsp.exe"
+            observed = {}
+
+            def fake_run_process(argv, timeout, *, cwd=None):
+                observed.update(argv=list(argv), timeout=timeout, cwd=cwd)
+                return ProcessResult(0, 1.0, payload={"ok": True})
+
+            with patch("scripts.bench.harness_first.runner.run_process", side_effect=fake_run_process):
+                result = _candidate_process(binary, [str(binary), "version"], 7.0)
+
+        self.assertEqual(result.payload, {"ok": True})
+        self.assertEqual(observed["cwd"], distribution)
+        self.assertEqual(observed["timeout"], 7.0)
+
+    def test_provenance_subprocess_calls_keep_existing_no_cwd_contract(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            binary = root / "mi-lsp.exe"
+            binary.write_bytes(b"candidate")
+            revision = "a" * 40
+            responses = iter([
+                SimpleNamespace(returncode=0, stdout=""),
+                SimpleNamespace(returncode=0, stdout=revision + "\n"),
+                SimpleNamespace(returncode=0, stdout="build\tvcs.revision=" + revision + "\nbuild\tvcs.modified=false\n"),
+            ])
+            calls = []
+
+            def fake_subprocess_run(*args, **kwargs):
+                calls.append((args, kwargs))
+                return next(responses)
+
+            with (
+                patch("scripts.bench.harness_first.runner.subprocess.run", side_effect=fake_subprocess_run),
+                patch("scripts.bench.harness_first.runner.shutil.which", return_value="go"),
+            ):
+                self.assertEqual(source_revision(root), revision)
+                self.assertEqual(provenance(binary, revision)["status"], "PASS")
+
+        self.assertEqual(len(calls), 3)
+        self.assertTrue(all("cwd" not in kwargs for _args, kwargs in calls))
+
     def test_clean_index_argv_is_fixed_and_single_shot(self):
         calls = []
 
-        def fake_run_process(argv, timeout):
-            calls.append(list(argv))
+        def fake_run_process(argv, timeout, *, cwd=None):
+            calls.append((list(argv), timeout))
             return ProcessResult(0, 2.0, payload={"ok": True, "items": [{"status": "succeeded"}]})
 
         with patch("scripts.bench.harness_first.runner.run_process", side_effect=fake_run_process):
@@ -160,10 +209,11 @@ class RunnerContractTests(unittest.TestCase):
         self.assertEqual(report["status"], "PASS")
         self.assertEqual(report["attempts"], 1)
         self.assertEqual(len(calls), 1)
-        self.assertEqual(calls[0][-2:], ["index", "--clean"])
-        self.assertEqual(calls[0][-3], "--no-daemon")
-        self.assertIn("--workspace", calls[0])
-        self.assertEqual(calls[0][calls[0].index("--workspace") + 1], "source")
+        self.assertEqual(calls[0][1], MAX_CLEAN_INDEX_PREFLIGHT_TIMEOUT_SECONDS)
+        self.assertEqual(calls[0][0][-2:], ["index", "--clean"])
+        self.assertEqual(calls[0][0][-3], "--no-daemon")
+        self.assertIn("--workspace", calls[0][0])
+        self.assertEqual(calls[0][0][calls[0][0].index("--workspace") + 1], "source")
 
     def test_run_campaign_separates_index_and_query_timeouts(self):
         manifest = self.manifest()
@@ -179,7 +229,7 @@ class RunnerContractTests(unittest.TestCase):
             ProcessResult(0, 1.0, payload=[]),
         ])
 
-        def fake_run_process(argv, timeout):
+        def fake_run_process(argv, timeout, *, cwd=None):
             calls.append((list(argv), timeout))
             return next(responses)
 
@@ -198,7 +248,8 @@ class RunnerContractTests(unittest.TestCase):
         index_call = next((argv, timeout) for argv, timeout in calls if argv[-2:] == ["index", "--clean"])
         query_call = next((argv, timeout) for argv, timeout in calls if argv[-4:] == ["nav", "explain-change", "--path", "internal/service/intent.go"])
         self.assertEqual(report["status"], "PASS")
-        self.assertEqual(index_call[1], MAX_PREFLIGHT_TIMEOUT_SECONDS)
+        self.assertEqual(MAX_PREFLIGHT_TIMEOUT_SECONDS, 120.0)
+        self.assertEqual(index_call[1], MAX_CLEAN_INDEX_PREFLIGHT_TIMEOUT_SECONDS)
         self.assertEqual(query_call[1], 60)
 
     def test_index_timeout_blocks_before_claim_without_retry(self):
@@ -209,10 +260,10 @@ class RunnerContractTests(unittest.TestCase):
             ProcessResult(0, 1.0, payload={"ok": True, "items": [{"version": "(devel)", "protocol_version": "mi-lsp-v1.1", "executable_sha256": "b" * 64}]}),
             ProcessResult(0, 1.0, payload=worker_payload),
             ProcessResult(0, 1.0, payload={"ok": True}),
-            ProcessResult(124, MAX_PREFLIGHT_TIMEOUT_SECONDS * 1000, reason_code="timeout"),
+            ProcessResult(124, MAX_CLEAN_INDEX_PREFLIGHT_TIMEOUT_SECONDS * 1000, reason_code="timeout"),
         ])
 
-        def fake_run_process(argv, timeout):
+        def fake_run_process(argv, timeout, *, cwd=None):
             calls.append((list(argv), timeout))
             return next(responses)
 
@@ -232,7 +283,7 @@ class RunnerContractTests(unittest.TestCase):
         self.assertEqual(report["status"], "BLOCKED")
         self.assertEqual(report["candidate_preflight"]["reason_code"], "index_preflight_failed")
         self.assertEqual(len(index_calls), 1)
-        self.assertEqual(index_calls[0][1], MAX_PREFLIGHT_TIMEOUT_SECONDS)
+        self.assertEqual(index_calls[0][1], MAX_CLEAN_INDEX_PREFLIGHT_TIMEOUT_SECONDS)
         self.assertEqual(report["candidate_preflight"]["index"]["attempts"], 1)
         claim.assert_not_called()
 
@@ -390,7 +441,7 @@ class RunnerContractTests(unittest.TestCase):
             ProcessResult(0, 3.0, payload={"ok": True, "items": [{"state": {"executable_sha256": "b" * 64, "protocol_version": "mi-lsp-v1.1", "version": "(devel)"}}]}),
         ])
 
-        def fake_run_process(argv, timeout):
+        def fake_run_process(argv, timeout, *, cwd=None):
             calls.append(list(argv))
             return next(responses)
 
@@ -433,9 +484,11 @@ class RunnerContractTests(unittest.TestCase):
             binary.write_bytes(b"candidate")
             output = root / "output"
             calls = []
+            cwd_values = []
 
-            def fake_run_process(argv, timeout):
+            def fake_run_process(argv, timeout, *, cwd=None):
                 calls.append(list(argv))
+                cwd_values.append(cwd)
                 return next(responses)
 
             with (
@@ -458,6 +511,8 @@ class RunnerContractTests(unittest.TestCase):
         self.assertIn("--no-daemon", calls[4])
         self.assertIn("wiki", calls[5])
         self.assertIn("--no-daemon", calls[5])
+        self.assertEqual(set(cwd_values), {root})
+        self.assertEqual(len(cwd_values), len(calls))
         self.assertEqual(report["samples"][0]["elapsed_ms"], 7.0)
         self.assertEqual(report["candidate_preflight"]["worker_elapsed_ms"], 3.0)
         self.assertEqual(report["candidate_preflight"]["index_elapsed_ms"], 5.0)
@@ -468,6 +523,9 @@ class RunnerContractTests(unittest.TestCase):
         self.assertTrue(report["candidate_preflight"]["freshness"]["excluded_from_retry"])
         self.assertEqual(report["latency_ms"]["n"], 1)
         self.assertEqual(report["retry_amplification"]["attempts"], 1)
+        self.assertEqual(report["retry_amplification"]["amplification"], 1.0)
+        self.assertEqual(report["retry_amplification"]["max_attempts_per_query"], 1)
+        self.assertEqual(report["retry_amplification"]["status"], "PASS")
         self.assertEqual(report["candidate_preflight"]["index"]["attempts"], 1)
         self.assertEqual(report["candidate_preflight"]["daemon"]["status"], "NOT_REQUIRED")
         self.assertEqual(report["candidate_preflight"]["daemon"]["stop"]["status"], "PASS")
@@ -485,7 +543,7 @@ class RunnerContractTests(unittest.TestCase):
             binary.write_bytes(b"candidate")
             output = root / "output"
             with (
-                patch("scripts.bench.harness_first.runner.run_process", side_effect=lambda _argv, _timeout: next(responses)),
+                patch("scripts.bench.harness_first.runner.run_process", side_effect=lambda _argv, _timeout, *, cwd=None: next(responses)),
                 patch("scripts.bench.harness_first.runner.source_revision", return_value="a" * 40),
                 patch("scripts.bench.harness_first.runner.provenance", return_value={"status": "PASS", "binary_sha256": "b" * 64}),
                 patch("scripts.bench.harness_first.runner.claim_global_marker") as claim,
@@ -510,7 +568,7 @@ class RunnerContractTests(unittest.TestCase):
         ])
         calls = []
 
-        def fake_run_process(argv, timeout):
+        def fake_run_process(argv, timeout, *, cwd=None):
             calls.append(list(argv))
             return next(responses)
 
@@ -549,7 +607,7 @@ class RunnerContractTests(unittest.TestCase):
             ProcessResult(0, 2.0, payload={"ok": False, "items": [{"status": "failed"}]}),
         ])
         calls = []
-        def fake_run_process(argv, _timeout):
+        def fake_run_process(argv, _timeout, *, cwd=None):
             calls.append(list(argv))
             return next(responses)
         with tempfile.TemporaryDirectory() as directory:
@@ -582,7 +640,7 @@ class RunnerContractTests(unittest.TestCase):
         calls = []
         worker_payload = {"ok": True, "backend": "worker", "items": [{"selected_compatible": True, "selected_source": "bundle", "selected_path": "worker"}]}
 
-        def fake_run_process(argv, _timeout):
+        def fake_run_process(argv, _timeout, *, cwd=None):
             calls.append(list(argv))
             if argv[-1] == "version":
                 return ProcessResult(0, 1.0, payload={"ok": True, "items": [{"version": "(devel)", "protocol_version": "mi-lsp-v1.1", "executable_sha256": "b" * 64}]})
@@ -635,7 +693,7 @@ class RunnerContractTests(unittest.TestCase):
                 worker_payload = {"ok": True, "backend": "worker", "items": [{"selected_compatible": True, "selected_source": "bundle", "selected_path": "worker"}]}
                 calls = []
 
-                def fake_run_process(argv, _timeout):
+                def fake_run_process(argv, _timeout, *, cwd=None):
                     calls.append(list(argv))
                     if argv[-1] == "version":
                         return ProcessResult(0, 1.0, payload={"ok": True, "items": [{"version": "(devel)", "protocol_version": "mi-lsp-v1.1", "executable_sha256": "b" * 64}]})
@@ -674,7 +732,7 @@ class RunnerContractTests(unittest.TestCase):
         calls = []
         last_route = {"value": "direct"}
         worker_payload = {"ok": True, "backend": "worker", "items": [{"selected_compatible": True, "selected_source": "bundle", "selected_path": "worker"}]}
-        def fake_run_process(argv, _timeout):
+        def fake_run_process(argv, _timeout, *, cwd=None):
             calls.append(list(argv))
             if argv[-1] == "version":
                 return ProcessResult(0, 1.0, payload={"ok": True, "items": [{"version": "(devel)", "protocol_version": "mi-lsp-v1.1", "executable_sha256": "b" * 64}]})
