@@ -184,9 +184,11 @@ jobs:
           for expected_name in "${expected_names[@]}"; do
             test -n "${seen_names[$expected_name]+present}"
           done
-          prepublish_checksum="$MI_LSP_PREPUBLISH_DIR/$(basename "$checksum_file")"
-          test -f "$prepublish_checksum"
-          cmp -s "$prepublish_checksum" "$checksum_file"
+          # GoReleaser builds the publish archives independently from the
+          # prepublish verification build, so container timestamps make archive
+          # checksums nondeterministic even when binary and worker contents match.
+          # Verify the published checksum set here; provenance and worker manifests
+          # below remain the content-equivalence oracle.
           (cd "$published_dir" && sha256sum -c "$(basename "$checksum_file")")
 
           assert_confined_tree() {
