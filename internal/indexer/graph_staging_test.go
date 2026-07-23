@@ -846,3 +846,108 @@ func TestStageGraphObservationBatchesIsStagedIdempotent(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestPublishGraphObservationBatchesIsIdempotentForActiveContent(t *testing.T) {
+	ctx := context.Background()
+	db, err := store.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	batch := stagingBatch("go", "src/app", true)
+	if err := model.SealGraphObservationBatch(&batch); err != nil {
+		t.Fatal(err)
+	}
+	first, err := PublishGraphObservationBatches(ctx, db, GraphAssemblyRequest{Batches: []model.GraphObservationBatch{batch}, CreatedAt: time.Unix(100, 0).UTC()}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := PublishGraphObservationBatches(ctx, db, GraphAssemblyRequest{Batches: []model.GraphObservationBatch{batch}, CreatedAt: time.Unix(101, 0).UTC()}, &first.GenerationID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !graphGenerationImmutableEqual(first, second) || second.Status != model.GraphGenerationActive {
+		t.Fatalf("idempotent generation changed: first=%+v second=%+v", first, second)
+	}
+	var generations, active int
+	if err := db.QueryRowContext(ctx, "SELECT count(*) FROM graph_generations").Scan(&generations); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.QueryRowContext(ctx, "SELECT count(*) FROM graph_generations WHERE status = ?", model.GraphGenerationActive).Scan(&active); err != nil {
+		t.Fatal(err)
+	}
+	if generations != 1 || active != 1 {
+		t.Fatalf("generation rows=%d active=%d, want one active generation", generations, active)
+	}
+	if persisted, err := store.ValidateGraphGeneration(ctx, db, first.GenerationID); err != nil {
+		t.Fatalf("persisted content validation: %v", err)
+	} else if !graphGenerationImmutableEqual(persisted, second) {
+		t.Fatalf("persisted generation differs from returned generation: persisted=%+v returned=%+v", persisted, second)
+	}
+}
+
+func TestPublishGraphObservationBatchesRejectsCorruptActiveGeneration(t *testing.T) {
+	for _, test := range []struct {
+		name   string
+		update string
+	}{
+		{name: "metadata", update: "UPDATE graph_generations SET source_fingerprint = zeroblob(32) WHERE generation_id = ?"},
+		{name: "content", update: "UPDATE graph_nodes SET display_name = 'corrupt' WHERE generation_id = ? AND node_id = 0"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			ctx := context.Background()
+			db, err := store.Open(t.TempDir())
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer db.Close()
+			batch := stagingBatch("go", "src/app", false)
+			if err := model.SealGraphObservationBatch(&batch); err != nil {
+				t.Fatal(err)
+			}
+			req := GraphAssemblyRequest{Batches: []model.GraphObservationBatch{batch}, CreatedAt: time.Unix(100, 0).UTC()}
+			first, err := PublishGraphObservationBatches(ctx, db, req, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := db.ExecContext(ctx, test.update, first.GenerationID[:]); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := PublishGraphObservationBatches(ctx, db, GraphAssemblyRequest{Batches: []model.GraphObservationBatch{batch}, CreatedAt: time.Unix(101, 0).UTC()}, &first.GenerationID); !errors.Is(err, model.ErrGraphGenerationCorrupt) {
+				t.Fatalf("corruption error=%v, want %v", err, model.ErrGraphGenerationCorrupt)
+			}
+		})
+	}
+}
+
+func TestPublishGraphObservationBatchesIdempotentPathPreservesPointerCAS(t *testing.T) {
+	ctx := context.Background()
+	db, err := store.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	batch := stagingBatch("go", "src/app", false)
+	if err := model.SealGraphObservationBatch(&batch); err != nil {
+		t.Fatal(err)
+	}
+	first, err := PublishGraphObservationBatches(ctx, db, GraphAssemblyRequest{Batches: []model.GraphObservationBatch{batch}, CreatedAt: time.Unix(100, 0).UTC()}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wrongPrior := stagingDigest("wrong-prior")
+	got, err := PublishGraphObservationBatches(ctx, db, GraphAssemblyRequest{Batches: []model.GraphObservationBatch{batch}, CreatedAt: time.Unix(101, 0).UTC()}, &wrongPrior)
+	if !errors.Is(err, model.ErrGraphPointerConflict) {
+		t.Fatalf("pointer conflict=%v, want %v", err, model.ErrGraphPointerConflict)
+	}
+	if got.GenerationID != first.GenerationID {
+		t.Fatalf("idempotent conflict returned generation=%+v, want %+v", got, first)
+	}
+	var generations int
+	if err := db.QueryRowContext(ctx, "SELECT count(*) FROM graph_generations").Scan(&generations); err != nil {
+		t.Fatal(err)
+	}
+	if generations != 1 {
+		t.Fatalf("generation rows=%d, want 1", generations)
+	}
+}

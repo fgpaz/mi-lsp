@@ -202,6 +202,10 @@ cases:
 | TC-GPH-020 | positivo | create/change/delete/rename reemplaza solo owners afectados y conserva snapshot equivalente al clean |
 | TC-GPH-021 | positivo | cambio de superficie recalcula fanout; uncertainty/config/backend drift fuerza full rebuild explicitamente |
 | TC-GPH-022 | negativo | cancel/crash/partial batch/provenance faltante descarta staging; stale_rate final es 0.0 |
+| TC-GPH-022A | negativo | identidad explicita divergente, origin local ausente/multiple/no normalizable o git ausente falla cerrado sin fallback ni mutacion de `project.toml` |
+| TC-GPH-022B | positivo | container con Go/C#/TS/Python observa Go una sola vez desde el root, procesa cada `.csproj`, omite `.sln`, comparte identidad y rebasa paths al namespace global; un proyecto Roslyn partial queda omission `backend_partial` sin bloquear batches completos |
+| TC-GPH-022C | negativo | backend elegible sin batch devuelve error y conserva el graph previo; workspace explicitamente non-graph devuelve `GraphNotApplicable` |
+| TC-GPH-022D | positivo | clean e incremental equivalentes, con mismo contenido/origin/toolchain/config, producen el mismo `GenerationID` y digest; `CreatedAt` queda fuera del ID |
 
 ## TP-GPH-004 - Navegacion bounded y determinista
 

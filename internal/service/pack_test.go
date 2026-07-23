@@ -16,7 +16,8 @@ func createFunctionalPackWorkspaceFixture(t *testing.T, alias string) string {
 	t.Helper()
 	ensureWritableTestHome(t)
 	root := t.TempDir()
-	writeWorkspaceFile(t, root, "src/App.csproj", `<Project Sdk="Microsoft.NET.Sdk"></Project>`)
+	writeWorkspaceFile(t, root, "go.mod", "module example.com/fixture\n\ngo 1.23\n")
+	writeWorkspaceFile(t, root, "main.go", "package fixture\n")
 	writeWorkspaceFile(t, root, "src/auth/LoginHandler.cs", strings.Join([]string{
 		"namespace Demo;",
 		"public class LoginHandler",
@@ -45,6 +46,7 @@ func createFunctionalPackWorkspaceFixture(t *testing.T, alias string) string {
 		"Este RF implementa `FL-AUTH-01` y se apoya en `src/auth/LoginHandler.cs`.",
 	}, "\n"))
 	writeSpecBackendGovernanceFixture(t, root)
+	saveDetectedFixtureProjectWithIdentity(t, root, alias)
 	return root
 }
 

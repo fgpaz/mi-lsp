@@ -150,8 +150,10 @@ evidence:
   - .docs/wiki/07_tech/TECH-GRAPH-NATIVE.md
   - .docs/wiki/06_pruebas/TP-GPH.md
 sequence:
-  - resolve-workspace-repository-and-backend-identities
+  - resolve-one-repository-identity-explicit-then-local-vcs-origin-fail-closed
   - compute-source-and-config-fingerprints
+  - container-go-observe-once-from-workspace-root
+  - container-csharp-fanout-over-declared-csproj-entrypoints-only
   - collect-GraphObservationBatch-per-owner
   - derive-NodeKeys-edge-keys-evidence-and-unresolved
   - type-check-Go-packages-with-shared-importer-and-package-cache
@@ -169,9 +171,15 @@ publication:
 
 Adapters no conocen SQLite ni publican. Store no inventa identidad. Service no reextrae ni repara durante query. El daemon solo conserva warm state/cache y no cambia semantica.
 
+## Identidad VCS y fan-out de observacion
+
+`ResolveRepositoryIdentity` normaliza todas las identidades explicitas y exige que sean una sola; si faltan, ejecuta unicamente `git -C <workspace> rev-parse --show-toplevel` y `git -C <git-root> config --local --get-all remote.origin.url`. Se exige exactamente un origin HTTPS/SSH normalizable; no hay fetch, red, alias, basename ni fallback de path. La identidad resuelta es simultaneamente `WorkspaceIdentity` y `RepositoryIdentity` para todos los batches y queda en la generation, sin escribir `.mi-lsp/project.toml`.
+
+En un container el modulo Go se observa una sola vez desde el checkout (`go.mod`/`go.work` en el root), aunque existan repos logicos Go anidados. Roslyn recibe un request por cada `.csproj` declarado, ordenado y deduplicado; las soluciones nunca son batches. `ProjectOrModule` es relativo al repo logico y `EntrypointPath` relativo al workspace; `RepoRoot` separa ambos namespaces. Antes de sellar, el core rebasa `ProjectOrModule`, owners, evidence, unresolved y omissions al namespace global del checkout. Un proyecto Roslyn parcial se procesa pero no se publica: queda omission `backend_partial`; otros batches completos pueden publicarse. Si no queda ningun batch publicable, el workspace elegible falla cerrado. TypeScript y Python permanecen como omissions `backend_gated` sin claims.
+
 ## Observacion Roslyn, sellado y normalizacion de unresolved
 
-El worker entrega el `GraphObservationBatch` ya canonico pero no sellado. El core es el unico owner del digest y del gate de staging; no se acepta que un batch no canonico o no sellado llegue al store.
+El worker entrega el `GraphObservationBatch` ya canonico pero no sellado. El adapter puede validar canonicalidad de entrada; el core, despues del rebase al namespace global, es el unico owner de `SealGraphObservationBatch` y del gate `ReadyForStaging`. No se acepta que un batch no canonico o no sellado llegue al store.
 
 ```toon
 harness_protocol: SDD-HARNESS-v1
@@ -190,6 +198,8 @@ evidence:
   - .docs/wiki/07_tech/TECH-GRAPH-NATIVE.md
   - .docs/wiki/06_pruebas/TP-GPH.md
   - internal/service/graph_observer.go
+  - internal/indexer/graph_pipeline.go
+  - internal/workspace/repository_identity.go
   - internal/model/graph_observation.go
   - internal/indexer/graph_staging.go
 verify:
@@ -341,7 +351,7 @@ evidence:
   - .docs/wiki/06_pruebas/TP-GPH.md
 stable-order: [csharp-roslyn, go-parser-types-gopls, typescript-tsserver, python-pyright]
 rules:
-  csharp: compiler-backed-relations-are-primary
+  csharp: compiler-backed-relations-are-primary; partial-project-is-omission-only
   go: AST-is-extracted-and-types-or-gopls-required-for-semantic-promotion
   go_type_check: shared-importer-and-cache-preserve-imported-package-identity
   go_local_unrepresented: omission-unsupported-symbol-kind; no-semantic-edge

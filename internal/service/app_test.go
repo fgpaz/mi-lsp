@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -90,11 +91,12 @@ func testProject(name string) model.ProjectFile {
 			DefaultEntrypoint: "main::src-app-csproj",
 		},
 		Repos: []model.WorkspaceRepo{{
-			ID:                "main",
-			Name:              "main",
-			Root:              ".",
-			Languages:         []string{"csharp", "typescript"},
-			DefaultEntrypoint: "main::src-app-csproj",
+			ID:                 "main",
+			Name:               "main",
+			Root:               ".",
+			RepositoryIdentity: "https://example.com/fixture",
+			Languages:          []string{"csharp", "typescript"},
+			DefaultEntrypoint:  "main::src-app-csproj",
 		}},
 		Entrypoints: []model.WorkspaceEntrypoint{{
 			ID:      "main::src-app-csproj",
@@ -104,6 +106,27 @@ func testProject(name string) model.ProjectFile {
 			Default: true,
 		}},
 	}
+}
+
+func saveDetectedFixtureProjectWithIdentity(t *testing.T, root, alias string) model.ProjectFile {
+	t.Helper()
+	if output, err := exec.Command("git", "-C", root, "init", "--quiet").CombinedOutput(); err != nil {
+		t.Fatalf("git init: %v: %s", err, output)
+	}
+	if output, err := exec.Command("git", "-C", root, "remote", "add", "origin", "https://example.com/fixture").CombinedOutput(); err != nil {
+		t.Fatalf("git remote add origin: %v: %s", err, output)
+	}
+	_, project, err := workspace.DetectWorkspaceLayout(root, alias)
+	if err != nil {
+		t.Fatalf("DetectWorkspaceLayout: %v", err)
+	}
+	for i := range project.Repos {
+		project.Repos[i].RepositoryIdentity = "https://example.com/fixture"
+	}
+	if err := workspace.SaveProjectFile(root, project); err != nil {
+		t.Fatalf("SaveProjectFile: %v", err)
+	}
+	return project
 }
 
 func seedCatalogSymbol(t *testing.T, root string, project model.ProjectFile, filePath string, line int, name string, kind string) {
@@ -979,17 +1002,22 @@ func TestIndexStartWaitCreatesSucceededJobAndGeneration(t *testing.T) {
 	root := t.TempDir()
 	alias := "index-job-" + filepath.Base(root)
 	project := testProject(alias)
+	project.Project.Languages = []string{"go"}
+	project.Project.DefaultEntrypoint = ""
+	project.Repos[0].Languages = []string{"go"}
+	project.Repos[0].DefaultEntrypoint = ""
+	project.Entrypoints = nil
 	if err := workspace.SaveProjectFile(root, project); err != nil {
 		t.Fatalf("SaveProjectFile: %v", err)
 	}
-	writeWorkspaceFile(t, root, "src/App.csproj", `<Project Sdk="Microsoft.NET.Sdk"></Project>`)
-	writeWorkspaceFile(t, root, "src/App.cs", "namespace Demo; public class App { public void Run() {} }\n")
+	writeWorkspaceFile(t, root, "go.mod", "module example.com/fixture\n\ngo 1.23\n")
+	writeWorkspaceFile(t, root, "main.go", "package main\n\nfunc main() {}\n")
 	writeSpecBackendGovernanceFixture(t, root)
 
 	if _, err := workspace.RegisterWorkspace(alias, model.WorkspaceRegistration{
 		Name:      alias,
 		Root:      root,
-		Languages: []string{"csharp"},
+		Languages: []string{"go"},
 		Kind:      model.WorkspaceKindSingle,
 	}); err != nil {
 		t.Fatalf("register workspace: %v", err)
@@ -1469,8 +1497,8 @@ func createContainerWorkspaceFixture(t *testing.T, alias string) string {
 			DefaultRepo: "frontend",
 		},
 		Repos: []model.WorkspaceRepo{
-			{ID: "frontend", Name: "frontend", Root: "frontend", Languages: []string{"typescript"}},
-			{ID: "backend", Name: "backend", Root: "backend", Languages: []string{"csharp"}},
+			{ID: "frontend", Name: "frontend", Root: "frontend", RepositoryIdentity: "https://example.com/fixture", Languages: []string{"typescript"}},
+			{ID: "backend", Name: "backend", Root: "backend", RepositoryIdentity: "https://example.com/fixture", Languages: []string{"csharp"}},
 		},
 	}
 	if err := workspace.SaveProjectFile(root, project); err != nil {

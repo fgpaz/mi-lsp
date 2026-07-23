@@ -2,6 +2,7 @@ package indexer
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -23,6 +24,7 @@ type Result struct {
 	GraphGenerationID    string
 	GraphBackendManifest string
 	GraphOmissions       []model.GraphObservationOmission
+	GraphNotApplicable   bool
 }
 
 type Progress struct {
@@ -63,6 +65,9 @@ func IndexWorkspaceWithGraphProgress(ctx context.Context, root string, clean boo
 	graphBatches, graphOmissions, graphWarnings, err := ObserveGraph(ctx, root, projectFile, graphOptions, progress)
 	if err != nil {
 		return Result{}, err
+	}
+	if len(graphBatches) == 0 && !explicitlyNonGraphProject(projectFile) {
+		return Result{}, errors.New("graph observation produced no publishable generation")
 	}
 	warnings = append(warnings, graphWarnings...)
 

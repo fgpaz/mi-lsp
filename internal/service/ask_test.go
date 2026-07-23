@@ -49,7 +49,8 @@ func createIndexedWorkspaceFixture(t *testing.T, alias string) string {
 	t.Helper()
 	ensureWritableTestHome(t)
 	root := t.TempDir()
-	writeWorkspaceFile(t, root, "src/App.csproj", `<Project Sdk="Microsoft.NET.Sdk"></Project>`)
+	writeWorkspaceFile(t, root, "go.mod", "module example.com/fixture\n\ngo 1.23\n")
+	writeWorkspaceFile(t, root, "main.go", "package fixture\n")
 	writeWorkspaceFile(t, root, "src/daemon/router.cs", strings.Join([]string{
 		"namespace Demo;",
 		"public class DaemonRouter",
@@ -65,6 +66,7 @@ func createIndexedWorkspaceFixture(t *testing.T, alias string) string {
 		"- backend: daemon",
 	}, "\n"))
 	writeSpecBackendGovernanceFixture(t, root)
+	saveDetectedFixtureProjectWithIdentity(t, root, alias)
 	return root
 }
 
@@ -72,7 +74,7 @@ func createLinkedDocsWorkspaceFixture(t *testing.T, alias string) string {
 	t.Helper()
 	ensureWritableTestHome(t)
 	root := t.TempDir()
-	writeWorkspaceFile(t, root, "src/App.csproj", `<Project Sdk="Microsoft.NET.Sdk"></Project>`)
+	writeWorkspaceFile(t, root, "go.mod", "module example.com/fixture\n\ngo 1.23\n")
 	writeWorkspaceFile(t, root, "internal/service/ask.go", "package service\n\nfunc docsFirst() {}\n")
 	writeWorkspaceFile(t, root, ".docs/wiki/03_FL/FL-QRY-01.md", strings.Join([]string{
 		"# FL-QRY-01",
@@ -90,6 +92,7 @@ func createLinkedDocsWorkspaceFixture(t *testing.T, alias string) string {
 		"Contrato de `nav ask` conectado con `internal/service/ask.go`.",
 	}, "\n"))
 	writeSpecBackendGovernanceFixture(t, root)
+	saveDetectedFixtureProjectWithIdentity(t, root, alias)
 	return root
 }
 
@@ -97,7 +100,8 @@ func createGenericDocsWorkspaceFixture(t *testing.T, alias string) string {
 	t.Helper()
 	ensureWritableTestHome(t)
 	root := t.TempDir()
-	writeWorkspaceFile(t, root, "src/App.csproj", `<Project Sdk="Microsoft.NET.Sdk"></Project>`)
+	writeWorkspaceFile(t, root, "go.mod", "module example.com/fixture\n\ngo 1.23\n")
+	writeWorkspaceFile(t, root, "main.go", "package fixture\n")
 	writeWorkspaceFile(t, root, "README.md", strings.Join([]string{
 		"# Demo workspace",
 		"",
@@ -111,6 +115,7 @@ func createGenericDocsWorkspaceFixture(t *testing.T, alias string) string {
 		"}",
 	}, "\n"))
 	writeSpecBackendGovernanceFixture(t, root)
+	saveDetectedFixtureProjectWithIdentity(t, root, alias)
 	return root
 }
 
@@ -485,9 +490,11 @@ func TestNavAskFallsBackWhenDocsIndexIsEmpty(t *testing.T) {
 	alias := "ask-fallback-" + filepath.Base(t.TempDir())
 	ensureWritableTestHome(t)
 	root := t.TempDir()
-	writeWorkspaceFile(t, root, "src/App.csproj", `<Project Sdk="Microsoft.NET.Sdk"></Project>`)
+	writeWorkspaceFile(t, root, "go.mod", "module example.com/fixture\n\ngo 1.23\n")
+	writeWorkspaceFile(t, root, "main.go", "package fixture\n")
 	writeWorkspaceFile(t, root, "src/Program.cs", "namespace Demo;\npublic class Program {}\n")
 	writeSpecBackendGovernanceFixture(t, root)
+	saveDetectedFixtureProjectWithIdentity(t, root, alias)
 	app := New(root, nil)
 
 	initEnv, err := app.Execute(context.Background(), model.CommandRequest{
@@ -598,7 +605,8 @@ func TestNavAskUsesBuiltinProfileForMinimalTechnicalDocs(t *testing.T) {
 	alias := "ask-minimal-" + filepath.Base(t.TempDir())
 	ensureWritableTestHome(t)
 	root := t.TempDir()
-	writeWorkspaceFile(t, root, "src/App.csproj", `<Project Sdk="Microsoft.NET.Sdk"></Project>`)
+	writeWorkspaceFile(t, root, "go.mod", "module example.com/fixture\n\ngo 1.23\n")
+	writeWorkspaceFile(t, root, "main.go", "package fixture\n")
 	writeWorkspaceFile(t, root, "src/worker.cs", strings.Join([]string{
 		"namespace Demo;",
 		"public class WorkerProtocol",
@@ -611,6 +619,7 @@ func TestNavAskUsesBuiltinProfileForMinimalTechnicalDocs(t *testing.T) {
 		"Worker protocol overview for daemon routing and worker protocol diagnostics.",
 	}, "\n"))
 	writeSpecBackendGovernanceFixture(t, root)
+	saveDetectedFixtureProjectWithIdentity(t, root, alias)
 	app := New(root, nil)
 
 	initEnv, err := app.Execute(context.Background(), model.CommandRequest{

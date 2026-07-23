@@ -780,16 +780,68 @@ func StageGraphObservationBatches(ctx context.Context, db *sql.DB, req GraphAsse
 	return bundle.Generation, nil
 }
 
-// PublishGraphObservationBatches composes the explicit stage and publish
-// operations. StageGraphObservationBatches deliberately never activates a
-// generation; a pointer conflict leaves the staged generation invisible.
+// graphGenerationImmutableEqual compares only the identity and content fields
+// that derive a generation ID. Publication metadata is intentionally excluded:
+// activation changes status, timestamps, and previous-generation history.
+func graphGenerationImmutableEqual(a, b model.GraphGeneration) bool {
+	return a.GenerationID == b.GenerationID &&
+		a.SchemaVersion == b.SchemaVersion &&
+		a.WorkspaceIdentity == b.WorkspaceIdentity &&
+		a.RepositoryIdentity == b.RepositoryIdentity &&
+		a.SourceFingerprint == b.SourceFingerprint &&
+		a.ConfigFingerprint == b.ConfigFingerprint &&
+		a.BackendManifestDigest == b.BackendManifestDigest &&
+		a.ContentDigest == b.ContentDigest &&
+		a.NodeCount == b.NodeCount &&
+		a.EdgeCount == b.EdgeCount &&
+		a.EvidenceCount == b.EvidenceCount &&
+		a.UnresolvedCount == b.UnresolvedCount
+}
+
+// PublishGraphObservationBatches assembles exactly once, then stages and
+// activates the generation. An already-active identical generation is
+// validated and activated through the same pointer CAS without re-staging.
 func PublishGraphObservationBatches(ctx context.Context, db *sql.DB, req GraphAssemblyRequest, expectedPrior *model.GraphDigest) (model.GraphGeneration, error) {
-	generation, err := StageGraphObservationBatches(ctx, db, req)
+	var empty model.GraphGeneration
+	if ctx == nil || db == nil {
+		return empty, model.ErrGraphGenerationInvalid
+	}
+	if err := ctx.Err(); err != nil {
+		return empty, err
+	}
+	bundle, err := AssembleGraphObservationBatches(req)
 	if err != nil {
-		return generation, err
+		return empty, err
 	}
-	if err := store.ActivateGraphGenerationAt(ctx, db, generation.GenerationID, expectedPrior, req.CreatedAt); err != nil {
-		return generation, err
+
+	activeID, active, err := store.ActiveGraphGeneration(ctx, db)
+	if err != nil {
+		return bundle.Generation, err
 	}
-	return generation, nil
+	if active && activeID == bundle.Generation.GenerationID {
+		persisted, validationErr := store.ValidateGraphGeneration(ctx, db, activeID)
+		if validationErr != nil {
+			return persisted, fmt.Errorf("%w: persisted active generation validation: %v", model.ErrGraphGenerationCorrupt, validationErr)
+		}
+		if !graphGenerationImmutableEqual(persisted, bundle.Generation) {
+			return persisted, model.ErrGraphGenerationCorrupt
+		}
+		if persisted.Status != model.GraphGenerationActive {
+			// A pointer to a non-active generation is an invariant conflict; do
+			// not silently promote a retired generation during an idempotent retry.
+			return persisted, model.ErrGraphPointerConflict
+		}
+		if err := store.ActivateGraphGenerationAt(ctx, db, activeID, expectedPrior, req.CreatedAt); err != nil {
+			return persisted, err
+		}
+		return persisted, nil
+	}
+
+	if err := store.StageGraphGeneration(ctx, db, &bundle); err != nil {
+		return bundle.Generation, err
+	}
+	if err := store.ActivateGraphGenerationAt(ctx, db, bundle.Generation.GenerationID, expectedPrior, req.CreatedAt); err != nil {
+		return bundle.Generation, err
+	}
+	return bundle.Generation, nil
 }

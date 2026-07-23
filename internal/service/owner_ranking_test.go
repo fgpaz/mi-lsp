@@ -595,7 +595,8 @@ func createOwnerAwareDocsWorkspaceFixture(t *testing.T) string {
 	t.Helper()
 	ensureWritableTestHome(t)
 	root := t.TempDir()
-	writeWorkspaceFile(t, root, "src/App.csproj", `<Project Sdk="Microsoft.NET.Sdk"></Project>`)
+	writeWorkspaceFile(t, root, "go.mod", "module example.com/fixture\n\ngo 1.23\n")
+	writeWorkspaceFile(t, root, "main.go", "package fixture\n")
 	writeWorkspaceFile(t, root, "README.md", strings.Join([]string{
 		"# Demo workspace",
 		"",
@@ -627,6 +628,7 @@ func createOwnerAwareDocsWorkspaceFixture(t *testing.T) string {
 		"Contrato owner de `nav route` para `continuation` y `memory_pointer`.",
 	}, "\n"))
 	writeOwnerAwareGovernanceFixture(t, root)
+	saveDetectedFixtureProjectWithIdentity(t, root, "owner-aware")
 	return root
 }
 
@@ -790,7 +792,8 @@ func createRawSupportArtifactWorkspaceFixture(t *testing.T) string {
 	t.Helper()
 	ensureWritableTestHome(t)
 	root := t.TempDir()
-	writeWorkspaceFile(t, root, "src/App.csproj", `<Project Sdk="Microsoft.NET.Sdk"></Project>`)
+	writeWorkspaceFile(t, root, "go.mod", "module example.com/fixture\n\ngo 1.23\n")
+	writeWorkspaceFile(t, root, "main.go", "package fixture\n")
 	writeWorkspaceFile(t, root, ".docs/wiki/03_FL.md", strings.Join([]string{
 		"# 03_FL",
 		"",
@@ -827,6 +830,7 @@ func createRawSupportArtifactWorkspaceFixture(t *testing.T) string {
 		"Prompt de soporte para hardening full wiki-to-code parity across all microservices.",
 	}, "\n"))
 	writeSpecBackendGovernanceFixture(t, root)
+	saveDetectedFixtureProjectWithIdentity(t, root, "intent-raw")
 	return root
 }
 

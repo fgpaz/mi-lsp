@@ -331,6 +331,39 @@ semantics:
 
 El contrato hace reproducible el orden y evita que el orden de llegada altere IDs o `CrossRID`. El límite de candidatos aplica después de trim, normalización, deduplicación y orden lexicográfico.
 
+## Precondiciones de publicacion graph-native
+
+```toon
+doc_id: CT-GRAPH-CLI
+block_id: CT-GRAPH-CLI.graph-publication-input
+kind: graph-build-contract
+source_of_truth: TECH-GRAPH-NATIVE
+evidence:
+  - internal/workspace/repository_identity.go
+  - internal/indexer/graph_pipeline.go
+  - internal/indexer/indexer.go
+identity:
+  precedence: [explicit-coherent, local-vcs-origin, fail-closed]
+  workspace_equals_repository: true
+  network: forbidden
+container:
+  go: one-root-observation
+  csharp: one-batch-per-declared-csproj
+  solution_batches: forbidden
+  ts_python: omission-backend-gated-no-claims
+paths:
+  project_or_module: repo-relative
+  entrypoint_path: workspace-relative
+  repo_root: logical-repo-root
+  rebase: before-core-seal
+publication:
+  zero_eligible_batch: error-unless-explicit-GraphNotApplicable
+  partial_roslyn_project: processed-as-backend_partial-omission; never-published
+  generation_id: excludes-created_at
+```
+
+La ausencia o invalidez del origin local no permite actualizar la generation activa ni inventar una identidad desde alias, basename o path. Un workspace con backend elegible que no produzca batches es error; solo un proyecto explicitamente no graph puede devolver `GraphNotApplicable`.
+
 ## Errores
 
 ```toon

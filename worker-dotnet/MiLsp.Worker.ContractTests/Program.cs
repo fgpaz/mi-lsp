@@ -66,6 +66,27 @@ static async Task<GraphObservationBatch> Observe(string root, string project, Ca
     return RequireObservation(response);
 }
 
+static async Task AssertNestedProjectUsesRepoRelativeModule()
+{
+    var root = Path.Combine(Path.GetTempPath(), "milsp-g2-nested-" + Guid.NewGuid().ToString("N"));
+    var projectRoot = Path.Combine(root, "MiLsp.Worker");
+    Directory.CreateDirectory(projectRoot);
+    var project = Path.Combine(projectRoot, "MiLsp.Worker.csproj");
+    File.WriteAllText(project, "<Project Sdk=\"Microsoft.NET.Sdk\"><PropertyGroup><TargetFramework>net10.0</TargetFramework></PropertyGroup></Project>");
+    File.WriteAllText(Path.Combine(projectRoot, "Nested.cs"), "namespace Nested; public class Marker { public void Run() { } }");
+    File.WriteAllText(Path.Combine(root, "MiLsp.Worker.sln"), "not opened by graph_observe");
+    try
+    {
+        var observation = await Observe(root, project);
+        Require(observation.ProjectOrModule == "MiLsp.Worker/MiLsp.Worker.csproj", "nested project module was not repo-relative");
+        Require(observation.Nodes.Any(node => node.Key.ProjectOrModule == observation.ProjectOrModule), "nested project was not opened through RepoRoot + project_or_module");
+    }
+    finally
+    {
+        try { Directory.Delete(root, recursive: true); } catch { }
+    }
+}
+
 static void AssertCoverage(GraphObservationBatch observation)
 {
     Require(observation.Capabilities.Count == 6 && observation.Coverage.Count == 6, "coverage matrix invalid");
@@ -255,6 +276,7 @@ GraphObservationBatch? emittedCanceled = null;
 try
 {
     AssertEdgeEvidenceStableUnderReordering();
+    await AssertNestedProjectUsesRepoRelativeModule();
 
     var root = CreateFixture("main");
     roots.Add(root);

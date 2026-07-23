@@ -29,12 +29,15 @@ MARKER_SCHEMA = "harness-first-run-marker/v1"
 PROTOCOL_VERSION = "mi-lsp-v1.1"
 MAX_PARITY_DIFFS = 32
 MAX_PARITY_DIFF_DEPTH = 8
-MAX_PROJECTION_DEPTH = 8
-MAX_PROJECTION_NODES = 2048
-MAX_PROJECTION_MAPPING_ENTRIES = 128
-MAX_PROJECTION_LIST_ITEMS = 128
-MAX_PROJECTION_BYTES = 65536
-MAX_PROJECTION_STRING_BYTES = 512
+# Production projection bounds: large enough for the observed 6–21 KiB
+# responses, but still finite for hostile payloads and recursive structures.
+MAX_PROJECTION_DEPTH = 16
+MAX_PROJECTION_NODES = 32768
+MAX_PROJECTION_MAPPING_ENTRIES = 4096
+MAX_PROJECTION_LIST_ITEMS = 4096
+MAX_PROJECTION_BYTES = 2 * 1024 * 1024
+MAX_PROJECTION_STRING_BYTES = 64 * 1024
+MAX_PREFLIGHT_TIMEOUT_SECONDS = 120.0
 MAX_CREDENTIAL_VALUE_BYTES = MAX_PROJECTION_STRING_BYTES
 MAX_CREDENTIAL_VALUE_CHARS = 512
 MAX_DIFF_NODES = 2048
@@ -76,7 +79,7 @@ REASONS = frozenset({
     "preview_incomplete", "parity_failed", "latency_ceiling", "rss_unavailable", "rss_ceiling",
     "worker_failed", "worker_schema", "worker_preflight_failed", "retry_amplification", "provenance_unavailable",
     "daemon_preflight_failed", "daemon_identity_mismatch", "daemon_protocol_mismatch",
-    "candidate_version_failed", "candidate_version_mismatch", "projection_truncated",
+    "index_preflight_failed", "freshness_preflight_failed", "candidate_version_failed", "candidate_version_mismatch", "projection_truncated",
     "route_unobserved", "route_mismatch", "kind_schema", "native_error",
 })
 DEFAULT_BUDGETS = {
@@ -384,10 +387,14 @@ def _bounded_projection(value: Any, *, omit_volatile: bool) -> tuple[Any, bool]:
         if isinstance(current, list):
             result: list[Any] = []
             try:
-                for child in current:
+                length = len(current)
+                limit = min(length, budget.max_list_items)
+                if length > limit:
+                    budget.truncated = True
+                for index in range(limit):
                     if not budget.consume_list_item():
                         break
-                    projected = visit(child, key, depth + 1)
+                    projected = visit(current[index], key, depth + 1)
                     if projected is not None:
                         result.append(projected)
             except Exception:
@@ -616,10 +623,14 @@ def _find_preview_contract(value: Any, depth: int = 0, budget: _TraversalBudget 
             budget.truncated = True
     elif isinstance(value, list):
         try:
-            for child in value:
+            length = len(value)
+            limit = min(length, budget.max_list_items)
+            if length > limit:
+                budget.truncated = True
+            for index in range(limit):
                 if not budget.consume_list_item():
                     break
-                found = _find_preview_contract(child, depth + 1, budget)
+                found = _find_preview_contract(value[index], depth + 1, budget)
                 if found is not None:
                     return found
         except Exception:
@@ -649,10 +660,14 @@ def _find_sections(value: Any, depth: int = 0, budget: _TraversalBudget | None =
             budget.truncated = True
     elif isinstance(value, list):
         try:
-            for child in value:
+            length = len(value)
+            limit = min(length, budget.max_list_items)
+            if length > limit:
+                budget.truncated = True
+            for index in range(limit):
                 if not budget.consume_list_item():
                     break
-                found = _find_sections(child, depth + 1, budget)
+                found = _find_sections(value[index], depth + 1, budget)
                 if found is not None:
                     return found
         except Exception:
@@ -688,10 +703,14 @@ def _find_expansions(value: Any, depth: int = 0, budget: _TraversalBudget | None
             budget.truncated = True
     elif isinstance(value, list):
         try:
-            for child in value:
+            length = len(value)
+            limit = min(length, budget.max_list_items)
+            if length > limit:
+                budget.truncated = True
+            for index in range(limit):
                 if not budget.consume_list_item():
                     break
-                found = _find_expansions(child, depth + 1, budget)
+                found = _find_expansions(value[index], depth + 1, budget)
                 if found is not None:
                     return found
         except Exception:
@@ -837,10 +856,14 @@ def _freshness_records(value: Any, depth: int = 0, budget: _TraversalBudget | No
             return truncated()
     elif isinstance(value, list):
         try:
-            for child in value:
+            length = len(value)
+            limit = min(length, budget.max_list_items)
+            if length > limit:
+                return truncated()
+            for index in range(limit):
                 if not budget.consume_list_item():
                     return truncated()
-                child_ranks, child_graph, child_lists = _freshness_records(child, depth + 1, budget)
+                child_ranks, child_graph, child_lists = _freshness_records(value[index], depth + 1, budget)
                 ranks.extend(child_ranks)
                 graph.extend(child_graph)
                 rank_lists.extend(child_lists)
@@ -1290,54 +1313,52 @@ def _daemon_identity_check(payload: Any, expected_sha256: str, candidate: Mappin
     }
 
 
-def _daemon_preflight(binary: Path, expected_sha256: str, timeout_seconds: float, candidate: Mapping[str, Any] | None = None) -> dict[str, Any]:
-    started = time.perf_counter()
-    stop_report: dict[str, Any] = {"status": "IGNORED", "best_effort": True}
+def _preflight_timeout(timeout_seconds: float) -> float:
     try:
-        stop_result = run_process([str(binary), "--format", "json", "daemon", "stop"], timeout_seconds)
-        stop_report["status"] = "PASS" if stop_result.reason_code is None else "IGNORED"
-        stop_report["elapsed_ms"] = stop_result.elapsed_ms
-    except HarnessError:
-        stop_report["status"] = "IGNORED"
-        stop_report["elapsed_ms"] = None
+        value = float(timeout_seconds)
+    except (TypeError, ValueError):
+        value = MAX_PREFLIGHT_TIMEOUT_SECONDS
+    return min(max(value, 0.001), MAX_PREFLIGHT_TIMEOUT_SECONDS)
 
+
+def _daemon_stop_probe(binary: Path, timeout_seconds: float, *, required: bool) -> dict[str, Any]:
     try:
-        start_result = run_process([str(binary), "--format", "json", "daemon", "start"], timeout_seconds)
+        result = run_process([str(binary), "--format", "json", "daemon", "stop"], _preflight_timeout(timeout_seconds))
     except HarnessError:
-        return {
-            "status": "BLOCKED",
-            "reason_code": "daemon_preflight_failed",
-            "daemon_identity_match": False,
-            "elapsed_ms": (time.perf_counter() - started) * 1000.0,
-            "stop": stop_report,
-            "start": {"status": "FAIL", "elapsed_ms": None},
-            "status_probe": {"status": "NOT_RUN"},
-        }
-    start_ok = start_result.reason_code is None and isinstance(start_result.payload, Mapping) and start_result.payload.get("ok") is True
+        result = None
+    passed = result is not None and result.reason_code is None and isinstance(result.payload, Mapping) and result.payload.get("ok") is True
+    if passed:
+        return {"status": "PASS", "best_effort": not required, "elapsed_ms": result.elapsed_ms}
+    return {
+        "status": "FAIL" if required else "IGNORED",
+        "best_effort": not required,
+        "elapsed_ms": result.elapsed_ms if result is not None else None,
+        **({"reason_code": "daemon_preflight_failed"} if required else {}),
+    }
+
+
+def _daemon_start_status_preflight(binary: Path, expected_sha256: str, timeout_seconds: float, candidate: Mapping[str, Any] | None = None) -> dict[str, Any]:
+    started = time.perf_counter()
+    try:
+        start_result = run_process([str(binary), "--format", "json", "daemon", "start"], _preflight_timeout(timeout_seconds))
+    except HarnessError:
+        start_result = None
+    start_ok = start_result is not None and start_result.reason_code is None and isinstance(start_result.payload, Mapping) and start_result.payload.get("ok") is True
     if not start_ok:
         return {
             "status": "BLOCKED",
             "reason_code": "daemon_preflight_failed",
             "daemon_identity_match": False,
             "elapsed_ms": (time.perf_counter() - started) * 1000.0,
-            "stop": stop_report,
-            "start": {"status": "FAIL", "elapsed_ms": start_result.elapsed_ms},
+            "start": {"status": "FAIL", "elapsed_ms": start_result.elapsed_ms if start_result is not None else None},
             "status_probe": {"status": "NOT_RUN"},
         }
 
     try:
-        status_result = run_process([str(binary), "--format", "json", "daemon", "status"], timeout_seconds)
+        status_result = run_process([str(binary), "--format", "json", "daemon", "status"], _preflight_timeout(timeout_seconds))
     except HarnessError:
-        return {
-            "status": "BLOCKED",
-            "reason_code": "daemon_preflight_failed",
-            "daemon_identity_match": False,
-            "elapsed_ms": (time.perf_counter() - started) * 1000.0,
-            "stop": stop_report,
-            "start": {"status": "PASS", "elapsed_ms": start_result.elapsed_ms},
-            "status_probe": {"status": "FAIL", "elapsed_ms": None},
-        }
-    identity = _daemon_identity_check(status_result.payload if status_result.reason_code is None else None, expected_sha256, candidate)
+        status_result = None
+    identity = _daemon_identity_check(status_result.payload if status_result is not None and status_result.reason_code is None else None, expected_sha256, candidate)
     return {
         "status": "PASS" if identity["status"] == "PASS" else "BLOCKED",
         "reason_code": identity.get("reason_code"),
@@ -1350,13 +1371,134 @@ def _daemon_preflight(binary: Path, expected_sha256: str, timeout_seconds: float
         "version_match": identity.get("version_match", False),
         "version_present": identity.get("version_present", False),
         "elapsed_ms": (time.perf_counter() - started) * 1000.0,
-        "stop": stop_report,
         "start": {"status": "PASS", "elapsed_ms": start_result.elapsed_ms},
-        "status_probe": {"status": "PASS" if status_result.reason_code is None else "FAIL", "elapsed_ms": status_result.elapsed_ms},
+        "status_probe": {"status": "PASS" if status_result is not None and status_result.reason_code is None else "FAIL", "elapsed_ms": status_result.elapsed_ms if status_result is not None else None},
     }
 
 
-def _candidate_preflight(binary: Path, source_root: Path, campaign_id: str, worker_args: Sequence[str], expected_sha256: str, timeout_seconds: float, *, daemon_required: bool) -> dict[str, Any]:
+def _daemon_preflight(binary: Path, expected_sha256: str, timeout_seconds: float, candidate: Mapping[str, Any] | None = None) -> dict[str, Any]:
+    started = time.perf_counter()
+    stop_report = _daemon_stop_probe(binary, timeout_seconds, required=False)
+    setup = _daemon_start_status_preflight(binary, expected_sha256, timeout_seconds, candidate)
+    return {**setup, "elapsed_ms": (time.perf_counter() - started) * 1000.0, "stop": stop_report}
+
+
+def _index_status_check(payload: Any) -> bool:
+    if not isinstance(payload, Mapping) or payload.get("ok") is not True:
+        return False
+    items = payload.get("items")
+    if not isinstance(items, list) or not items or not isinstance(items[0], Mapping):
+        return False
+    return items[0].get("status") == "succeeded"
+
+
+def _index_preflight(binary: Path, source_root: Path, campaign_id: str, timeout_seconds: float) -> dict[str, Any]:
+    """Run the one fixed, bounded index operation before any candidate claim."""
+    argv = [
+        str(binary),
+        "--workspace",
+        str(source_root),
+        "--format",
+        "json",
+        "--client-name",
+        "harness-first",
+        "--session-id",
+        campaign_id,
+        "--no-daemon",
+        "index",
+        "--clean",
+    ]
+    try:
+        result = run_process(argv, _preflight_timeout(timeout_seconds))
+    except HarnessError:
+        return {"status": "FAIL", "attempts": 1, "elapsed_ms": None, "reason_code": "index_preflight_failed"}
+    report: dict[str, Any] = {
+        "status": "PASS" if result.reason_code is None and _index_status_check(result.payload) else "FAIL",
+        "attempts": 1,
+        "elapsed_ms": result.elapsed_ms,
+        "output_bytes": result.output_bytes,
+        "estimated_tokens": result.estimated_tokens,
+    }
+    if result.reason_code is None:
+        report["payload_digest"] = digest(normalize(sanitize(result.payload)))
+    if report["status"] != "PASS":
+        report["reason_code"] = "index_preflight_failed"
+    return report
+
+
+def _freshness_probe_query(queries: Sequence[Mapping[str, Any]] | None) -> dict[str, Any]:
+    """Build the one fixed graph-native probe from the manifest's graph shape."""
+    queries = queries or []
+    selected = next((query for query in queries if query.get("kind") == "workspace_map"), None)
+    selected = selected or next((query for query in queries if query.get("kind") == "related"), None)
+    if selected is None:
+        return {
+            "id": "__freshness_preflight__",
+            "kind": "workspace_map",
+            "args": ["nav", "workspace-map"],
+            "freshness_rank_required": True,
+        }
+    return {
+        "id": "__freshness_preflight__",
+        "kind": selected["kind"],
+        "args": list(selected["args"]),
+        "freshness_rank_required": True,
+    }
+
+
+def _freshness_preflight(binary: Path, source_root: Path, campaign_id: str, timeout_seconds: float, queries: Sequence[Mapping[str, Any]] | None = None) -> dict[str, Any]:
+    """Probe graph freshness exactly once without creating a campaign sample."""
+    query = _freshness_probe_query(queries)
+    argv = _command(binary, source_root, campaign_id, query, "direct")
+    try:
+        result = run_process(argv, _preflight_timeout(timeout_seconds))
+    except HarnessError:
+        return {
+            "status": "FAIL",
+            "probe_count": 1,
+            "sample": False,
+            "excluded_from_latency": True,
+            "excluded_from_retry": True,
+            "query": sanitize({"kind": query["kind"], "args": query["args"]}),
+            "elapsed_ms": None,
+            "reason_code": "freshness_preflight_failed",
+        }
+    report: dict[str, Any] = {
+        "status": "FAIL",
+        "probe_count": 1,
+        "sample": False,
+        "excluded_from_latency": True,
+        "excluded_from_retry": True,
+        "query": sanitize({"kind": query["kind"], "args": query["args"]}),
+        "elapsed_ms": result.elapsed_ms,
+        "output_bytes": result.output_bytes,
+        "estimated_tokens": result.estimated_tokens,
+    }
+    if result.reason_code is not None:
+        report["reason_code"] = "freshness_preflight_failed"
+        return report
+    inspection_budget = _TraversalBudget()
+    freshness = _freshness_check(query, result.payload, inspection_budget)
+    kind_ok, kind_reason = _kind_check(query, result.payload, inspection_budget)
+    evidence = {
+        "graph_states": freshness.get("graph_states", []),
+        "rank_lists": freshness.get("rank_lists", 0),
+        "truncated": bool(freshness.get("truncated") or inspection_budget.truncated),
+        "kind_schema": "PASS" if kind_ok else "FAIL",
+    }
+    report["freshness"] = sanitize(freshness)
+    report["evidence"] = sanitize(evidence)
+    report["payload_digest"] = digest(normalize(sanitize(result.payload)))
+    passed = freshness.get("status") == "PASS" and kind_ok and not evidence["truncated"]
+    report["status"] = "PASS" if passed else "FAIL"
+    if not passed:
+        report["reason_code"] = "freshness_preflight_failed"
+        if kind_reason:
+            report["kind_reason"] = kind_reason[:MAX_PROJECTION_STRING_BYTES]
+    return report
+
+
+def _candidate_preflight(binary: Path, source_root: Path, campaign_id: str, worker_args: Sequence[str], expected_sha256: str, timeout_seconds: float, *, daemon_required: bool, queries: Sequence[Mapping[str, Any]] | None = None) -> dict[str, Any]:
     started = time.perf_counter()
     if worker_args != ["worker", "status"]:
         raise HarnessError("invalid_manifest")
@@ -1368,10 +1510,12 @@ def _candidate_preflight(binary: Path, source_root: Path, campaign_id: str, work
             "worker_usable": False,
             "daemon_identity_match": None,
             "worker_elapsed_ms": None,
+            "index_elapsed_ms": None,
             "daemon_elapsed_ms": None,
             "elapsed_ms": (time.perf_counter() - started) * 1000.0,
             "version": version,
             "worker": {"status": "NOT_RUN"},
+            "index": {"status": "NOT_RUN", "attempts": 1},
             "daemon": {"status": "NOT_RUN", "daemon_identity_match": None},
         }
     worker = _worker_status_probe(binary, source_root, campaign_id, ["worker", "status"], timeout_seconds)
@@ -1382,26 +1526,92 @@ def _candidate_preflight(binary: Path, source_root: Path, campaign_id: str, work
             "worker_usable": False,
             "daemon_identity_match": None,
             "worker_elapsed_ms": worker.get("elapsed_ms"),
+            "index_elapsed_ms": None,
             "daemon_elapsed_ms": None,
             "elapsed_ms": (time.perf_counter() - started) * 1000.0,
             "version": version,
             "worker": worker,
+            "index": {"status": "NOT_RUN", "attempts": 1},
             "daemon": {"status": "NOT_RUN", "daemon_identity_match": None},
         }
-    if not daemon_required:
-        daemon = {"status": "NOT_REQUIRED", "daemon_identity_match": None, "elapsed_ms": 0.0}
+
+    # Always stop first so a running daemon cannot preserve an older graph while
+    # the fixed clean index establishes the generation used by the probe/queries.
+    daemon_stop = _daemon_stop_probe(binary, timeout_seconds, required=True)
+    if daemon_stop["status"] == "FAIL":
+        daemon = {"status": "BLOCKED", "daemon_identity_match": False, "stop": daemon_stop}
+        return {
+            "status": "BLOCKED",
+            "reason_code": "daemon_preflight_failed",
+            "worker_usable": True,
+            "daemon_identity_match": False,
+            "worker_elapsed_ms": worker.get("elapsed_ms"),
+            "index_elapsed_ms": None,
+            "daemon_elapsed_ms": None,
+            "elapsed_ms": (time.perf_counter() - started) * 1000.0,
+            "version": version,
+            "worker": worker,
+            "index": {"status": "NOT_RUN", "attempts": 1},
+            "daemon": daemon,
+        }
+
+    index = _index_preflight(binary, source_root, campaign_id, timeout_seconds)
+    if index["status"] != "PASS":
+        return {
+            "status": "BLOCKED",
+            "reason_code": "index_preflight_failed",
+            "worker_usable": True,
+            "daemon_identity_match": None,
+            "worker_elapsed_ms": worker.get("elapsed_ms"),
+            "index_elapsed_ms": index.get("elapsed_ms"),
+            "freshness_elapsed_ms": None,
+            "daemon_elapsed_ms": None,
+            "elapsed_ms": (time.perf_counter() - started) * 1000.0,
+            "version": version,
+            "worker": worker,
+            "index": index,
+            "freshness": {"status": "NOT_RUN", "probe_count": 1, "sample": False},
+            "daemon": {"status": "NOT_RUN", "daemon_identity_match": None, "stop": daemon_stop},
+        }
+
+    freshness = _freshness_preflight(binary, source_root, campaign_id, timeout_seconds, queries)
+    if freshness["status"] != "PASS":
+        return {
+            "status": "BLOCKED",
+            "reason_code": "freshness_preflight_failed",
+            "worker_usable": True,
+            "daemon_identity_match": None,
+            "worker_elapsed_ms": worker.get("elapsed_ms"),
+            "index_elapsed_ms": index.get("elapsed_ms"),
+            "freshness_elapsed_ms": freshness.get("elapsed_ms"),
+            "daemon_elapsed_ms": None,
+            "elapsed_ms": (time.perf_counter() - started) * 1000.0,
+            "version": version,
+            "worker": worker,
+            "index": index,
+            "freshness": freshness,
+            "daemon": {"status": "NOT_RUN", "daemon_identity_match": None, "stop": daemon_stop},
+        }
+
+    if daemon_required:
+        daemon = _daemon_start_status_preflight(binary, expected_sha256, timeout_seconds, version)
+        daemon["stop"] = daemon_stop
     else:
-        daemon = _daemon_preflight(binary, expected_sha256, timeout_seconds, version)
+        daemon = {"status": "NOT_REQUIRED", "daemon_identity_match": None, "elapsed_ms": 0.0}
     return {
         "status": "PASS" if daemon["status"] in {"PASS", "NOT_REQUIRED"} else "BLOCKED",
         "reason_code": daemon.get("reason_code"),
         "worker_usable": True,
         "daemon_identity_match": daemon.get("daemon_identity_match"),
         "worker_elapsed_ms": worker.get("elapsed_ms"),
+        "index_elapsed_ms": index.get("elapsed_ms"),
+        "freshness_elapsed_ms": freshness.get("elapsed_ms"),
         "daemon_elapsed_ms": daemon.get("elapsed_ms"),
         "elapsed_ms": (time.perf_counter() - started) * 1000.0,
         "version": version,
         "worker": worker,
+        "index": index,
+        "freshness": freshness,
         "daemon": daemon,
     }
 
@@ -1655,6 +1865,7 @@ def run_campaign(manifest: Mapping[str, Any], *, binary: str | Path, source_root
             prov["binary_sha256"],
             timeout_seconds,
             daemon_required=any("daemon" in query["modes"] for query in contract["queries"]),
+            queries=contract["queries"],
         )
         if candidate_preflight["status"] != "PASS":
             return _write_blocked_report(output_path, marker_path, contract, source, manifest_hash, prov, candidate_preflight, campaign_started)

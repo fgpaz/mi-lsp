@@ -14,7 +14,7 @@ func (a *App) graphObserver() indexer.GraphObserver {
 	return func(ctx context.Context, request indexer.GraphObservationRequest) (model.GraphObservationBatch, error) {
 		payload := map[string]any{
 			"repository_identity": request.RepositoryIdentity,
-			"project_or_module":   request.EntrypointPath,
+			"project_or_module":   request.ProjectOrModule,
 		}
 		workerRequest := model.WorkerRequest{
 			ProtocolVersion: model.ProtocolVersion,
@@ -49,12 +49,6 @@ func (a *App) graphObserver() indexer.GraphObserver {
 		batch.RepositoryIdentity = request.RepositoryIdentity
 		if err := batch.ValidateCanonical(); err != nil {
 			return model.GraphObservationBatch{}, fmt.Errorf("invalid graph observation: %w", err)
-		}
-		if err := model.SealGraphObservationBatch(&batch); err != nil {
-			return model.GraphObservationBatch{}, fmt.Errorf("invalid graph observation: %w", err)
-		}
-		if err := batch.ReadyForStaging(); err != nil {
-			return model.GraphObservationBatch{}, fmt.Errorf("graph observation is not ready for staging: %w", err)
 		}
 		return batch, nil
 	}
