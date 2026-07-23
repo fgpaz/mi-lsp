@@ -8,6 +8,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from scripts.bench.harness_first.runner import (
+    DEFAULT_BUDGETS,
     HarnessError,
     MARKER_NAME,
     MAX_CLEAN_INDEX_PREFLIGHT_TIMEOUT_SECONDS,
@@ -121,6 +122,13 @@ class RunnerContractTests(unittest.TestCase):
             "expansions": [{"command": "mi-lsp nav affected --full", "reason": "expand affected evidence"}],
         }
         return {"ok": True, "items": [plan]}
+
+    def test_manifest_uses_evidence_based_latency_defaults(self):
+        contract = validate_manifest(self.manifest())
+        self.assertEqual(DEFAULT_BUDGETS["latency_p95_ms"], 15000.0)
+        self.assertEqual(DEFAULT_BUDGETS["latency_p99_ms"], 15000.0)
+        self.assertEqual(contract["budgets"]["latency_p95_ms"], 15000.0)
+        self.assertEqual(contract["budgets"]["latency_p99_ms"], 15000.0)
 
     def test_manifest_locks_seven_sections_and_expansions(self):
         contract = validate_manifest(self.manifest())

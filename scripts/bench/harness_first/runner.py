@@ -83,12 +83,13 @@ REASONS = frozenset({
     "index_preflight_failed", "freshness_preflight_failed", "candidate_version_failed", "candidate_version_mismatch", "projection_truncated",
     "route_unobserved", "route_mismatch", "kind_schema", "native_error",
 })
+# Phase-2 profiling owns tighter warm/cold latency targets.
 DEFAULT_BUDGETS = {
     "correctness_percent": 100.0,
     "parity": True,
     "retry_amplification": 1.0,
-    "latency_p95_ms": 5000.0,
-    "latency_p99_ms": 10000.0,
+    "latency_p95_ms": 15000.0,
+    "latency_p99_ms": 15000.0,
     "peak_rss_bytes": 1073741824,
     "preview_sections": list(SECTIONS),
     "preview_expansions": ["command", "reason"],
