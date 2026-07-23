@@ -1,22 +1,36 @@
 import concurrent.futures
+from collections.abc import Mapping
+import json
 import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import patch
 
 from scripts.bench.harness_first.runner import (
     HarnessError,
     MARKER_NAME,
+    ProcessResult,
     SECTIONS,
     _RSSSampler,
+    _bounded_diff_value,
+    _bounded_structural_diff,
+    _candidate_preflight,
     _command,
+    _daemon_identity_check,
+    _daemon_preflight,
+    _find_preview_contract,
+    _freshness_records,
     _rss_report,
     _select_latest_telemetry_event,
     claim_global_marker,
     digest,
+    finite,
     normalize,
     parse_go_version_m,
     query_check,
+    run_campaign,
+    sanitize,
     to_yaml,
     validate_manifest,
     worker_status_check,
@@ -26,6 +40,41 @@ from scripts.bench.harness_first.runner import (
 
 def measured_query_check(query, payload):
     return query_check(query, payload, output_bytes=1, estimated_tokens=1)
+
+
+class CountingMapping(Mapping):
+    def __init__(self, values):
+        self.values = values
+        self.iterated = 0
+        self.lookups = 0
+
+    def __iter__(self):
+        for key in self.values:
+            self.iterated += 1
+            yield key
+
+    def __getitem__(self, key):
+        self.lookups += 1
+        return self.values[key]
+
+    def __len__(self):
+        return len(self.values)
+
+
+class CountingList(list):
+    def __init__(self, values):
+        super().__init__(values)
+        self.indexed = 0
+        self.iterated = 0
+
+    def __iter__(self):
+        for item in super().__iter__():
+            self.iterated += 1
+            yield item
+
+    def __getitem__(self, index):
+        self.indexed += 1
+        return super().__getitem__(index)
 
 
 class RunnerContractTests(unittest.TestCase):
@@ -73,6 +122,16 @@ class RunnerContractTests(unittest.TestCase):
         with self.assertRaises(HarnessError):
             validate_manifest(manifest)
 
+    def test_manifest_worker_status_args_are_exactly_fixed(self):
+        manifest = self.manifest()
+        manifest["worker_status_args"] = ["worker", "install"]
+        with self.assertRaises(HarnessError):
+            validate_manifest(manifest)
+        manifest["worker_status_args"] = ["admin", "export"]
+        with self.assertRaises(HarnessError):
+            validate_manifest(manifest)
+        self.assertEqual(validate_manifest(self.manifest())["worker_status_args"], ["worker", "status"])
+
     def test_command_routes_direct_and_daemon_modes_explicitly(self):
         query = {"args": ["nav", "related", "BuildIntentPlan"]}
         direct = _command(Path("mi-lsp"), Path("workspace"), "campaign", query, "direct")
@@ -82,6 +141,282 @@ class RunnerContractTests(unittest.TestCase):
         self.assertNotIn("--no-daemon", daemon)
         self.assertEqual(direct[-3:], ["nav", "related", "BuildIntentPlan"])
         self.assertEqual(daemon[-3:], ["nav", "related", "BuildIntentPlan"])
+
+    def test_daemon_identity_check_requires_exact_candidate_hash_and_compatible_metadata(self):
+        candidate_sha = "a" * 64
+        payload = {"ok": True, "items": [{"state": {"executable_sha256": candidate_sha, "protocol_version": "mi-lsp-v1.1", "version": "(devel)"}}]}
+        result = _daemon_identity_check(payload, candidate_sha)
+        self.assertEqual(result["status"], "PASS")
+        self.assertTrue(result["daemon_identity_match"])
+        self.assertTrue(result["protocol_compatible"])
+        self.assertTrue(result["version_compatible"])
+
+        mismatch = _daemon_identity_check(payload, "b" * 64)
+        self.assertEqual(mismatch["status"], "FAIL")
+        self.assertFalse(mismatch["daemon_identity_match"])
+        self.assertEqual(mismatch["reason_code"], "daemon_identity_mismatch")
+
+    def test_daemon_version_spoof_fails_closed_even_when_hash_and_protocol_match(self):
+        candidate_sha = "a" * 64
+        candidate = {"version": "(devel)", "protocol_version": "mi-lsp-v1.1", "executable_sha256": candidate_sha}
+        payload = {"ok": True, "items": [{"state": {"executable_sha256": candidate_sha, "protocol_version": "mi-lsp-v1.1", "version": "unrelated-build"}}]}
+        result = _daemon_identity_check(payload, candidate_sha, candidate)
+        self.assertEqual(result["status"], "FAIL")
+        self.assertFalse(result["version_match"])
+        self.assertEqual(result["reason_code"], "candidate_version_mismatch")
+
+    def test_daemon_preflight_fails_closed_on_identity_mismatch_without_retry(self):
+        candidate_sha = "a" * 64
+        calls = []
+        responses = iter([
+            ProcessResult(0, 1.0, payload={"ok": True}),
+            ProcessResult(0, 2.0, payload={"ok": True}),
+            ProcessResult(0, 3.0, payload={"ok": True, "items": [{"state": {"executable_sha256": "b" * 64, "protocol_version": "mi-lsp-v1.1", "version": "(devel)"}}]}),
+        ])
+
+        def fake_run_process(argv, timeout):
+            calls.append(list(argv))
+            return next(responses)
+
+        with patch("scripts.bench.harness_first.runner.run_process", side_effect=fake_run_process):
+            result = _daemon_preflight(Path("candidate"), candidate_sha, 10.0)
+
+        self.assertEqual(result["status"], "BLOCKED")
+        self.assertEqual(result["reason_code"], "daemon_identity_mismatch")
+        self.assertFalse(result["daemon_identity_match"])
+        self.assertEqual(len(calls), 3)
+        self.assertTrue(calls[0][-2:] == ["daemon", "stop"])
+        self.assertTrue(calls[1][-2:] == ["daemon", "start"])
+        self.assertTrue(calls[2][-2:] == ["daemon", "status"])
+
+    def test_candidate_preflight_runs_worker_once_before_direct_sample_and_excludes_preflight_from_latency(self):
+        manifest = {
+            "schema": "harness-first-campaign/v1",
+            "campaign_id": "preflight-test",
+            "queries": [{
+                "id": "wiki",
+                "kind": "wiki_pack",
+                "args": ["nav", "wiki", "pack", "task"],
+                "modes": ["direct"],
+            }],
+        }
+        worker_payload = {"ok": True, "backend": "worker", "items": [{"selected_compatible": True, "selected_source": "bundle", "selected_path": "worker"}]}
+        query_payload = {"ok": True, "items": [{"docs": [{"path": "doc"}]}]}
+        responses = iter([
+            ProcessResult(0, 1.0, payload={"ok": True, "items": [{"version": "(devel)", "protocol_version": "mi-lsp-v1.1", "executable_sha256": "b" * 64}]}),
+            ProcessResult(0, 3.0, payload=worker_payload),
+            ProcessResult(0, 7.0, payload=query_payload),
+            ProcessResult(0, 1.0, payload=[]),
+        ])
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            binary = root / "candidate"
+            binary.write_bytes(b"candidate")
+            output = root / "output"
+            calls = []
+
+            def fake_run_process(argv, timeout):
+                calls.append(list(argv))
+                return next(responses)
+
+            with (
+                patch("scripts.bench.harness_first.runner.run_process", side_effect=fake_run_process),
+                patch("scripts.bench.harness_first.runner.source_revision", return_value="a" * 40),
+                patch("scripts.bench.harness_first.runner.provenance", return_value={"status": "PASS", "binary_sha256": "b" * 64}),
+                patch("scripts.bench.harness_first.runner.claim_global_marker"),
+            ):
+                report = run_campaign(manifest, binary=binary, source_root=root, output=output)
+
+        worker_calls = [call for call in calls if "worker" in call and "status" in call]
+        self.assertEqual(len(worker_calls), 1)
+        self.assertEqual(calls[0][-1], "version")
+        self.assertIn("worker", calls[1])
+        self.assertIn("--no-daemon", calls[1])
+        self.assertIn("wiki", calls[2])
+        self.assertEqual(report["samples"][0]["elapsed_ms"], 7.0)
+        self.assertEqual(report["candidate_preflight"]["worker_elapsed_ms"], 3.0)
+        self.assertEqual(report["candidate_preflight"]["daemon"]["status"], "NOT_REQUIRED")
+
+    def test_blocked_candidate_preflight_does_not_burn_global_claim(self):
+        manifest = self.manifest()
+        responses = iter([
+            ProcessResult(0, 1.0, payload={"ok": True, "items": [{"version": "(devel)", "protocol_version": "mi-lsp-v1.1", "executable_sha256": "b" * 64}]}),
+            ProcessResult(0, 1.0, payload={"ok": True, "backend": "catalog", "items": []}),
+        ])
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            binary = root / "candidate"
+            binary.write_bytes(b"candidate")
+            output = root / "output"
+            with (
+                patch("scripts.bench.harness_first.runner.run_process", side_effect=lambda _argv, _timeout: next(responses)),
+                patch("scripts.bench.harness_first.runner.source_revision", return_value="a" * 40),
+                patch("scripts.bench.harness_first.runner.provenance", return_value={"status": "PASS", "binary_sha256": "b" * 64}),
+                patch("scripts.bench.harness_first.runner.claim_global_marker") as claim,
+            ):
+                report = run_campaign(manifest, binary=binary, source_root=root, output=output)
+        self.assertEqual(report["status"], "BLOCKED")
+        self.assertEqual(report["candidate_preflight"]["reason_code"], "worker_preflight_failed")
+        claim.assert_not_called()
+
+    def test_candidate_preflight_requires_daemon_setup_once_for_daemon_samples(self):
+        candidate_sha = "a" * 64
+        worker_payload = {"ok": True, "backend": "worker", "items": [{"selected_compatible": True, "selected_source": "bundle", "selected_path": "worker"}]}
+        status_payload = {"ok": True, "items": [{"state": {"executable_sha256": candidate_sha, "protocol_version": "mi-lsp-v1.1", "version": "(devel)"}}]}
+        responses = iter([
+            ProcessResult(0, 1.0, payload={"ok": True, "items": [{"version": "(devel)", "protocol_version": "mi-lsp-v1.1", "executable_sha256": candidate_sha}]}),
+            ProcessResult(0, 1.0, payload=worker_payload),
+            ProcessResult(0, 2.0, payload={"ok": True}),
+            ProcessResult(0, 3.0, payload={"ok": True}),
+            ProcessResult(0, 4.0, payload=status_payload),
+        ])
+        calls = []
+
+        def fake_run_process(argv, timeout):
+            calls.append(list(argv))
+            return next(responses)
+
+        with patch("scripts.bench.harness_first.runner.run_process", side_effect=fake_run_process):
+            result = _candidate_preflight(Path("candidate"), Path("source"), "campaign", ["worker", "status"], candidate_sha, 10.0, daemon_required=True)
+
+        self.assertEqual(result["status"], "PASS")
+        self.assertTrue(result["daemon_identity_match"])
+        self.assertEqual(len(calls), 5)
+        self.assertEqual(calls[0][-1], "version")
+        self.assertEqual(result["worker_elapsed_ms"], 1.0)
+        self.assertEqual(result["daemon"]["start"]["elapsed_ms"], 3.0)
+        self.assertEqual(result["daemon"]["status_probe"]["elapsed_ms"], 4.0)
+        self.assertGreaterEqual(result["daemon"]["elapsed_ms"], 0.0)
+
+    def test_bounded_structural_diff_is_redacted_and_limited(self):
+        left = {"items": [{f"field_{index}": f"C:/private/{index}.cs"} for index in range(5)], "token": "secret-value"}
+        right = {"items": [{f"field_{index}": f"C:/other/{index}.cs"} for index in range(5)], "token": "other-secret"}
+        result = _bounded_structural_diff(left, right, max_diffs=2)
+        self.assertEqual(result["count"], 2)
+        self.assertTrue(result["truncated"])
+        self.assertNotIn("private", json.dumps(result))
+        self.assertNotIn("secret-value", json.dumps(result))
+
+    def test_projection_redacts_path_sensitive_phi_but_keeps_technical_symbols(self):
+        value = {
+            "C:/Users/Alice/notes.txt": "private path",
+            "patient_name": "Alice Example",
+            "diagnosis": "rare condition",
+            "MRN": "MRN-123456",
+            "email": "alice@example.com",
+            "symbol": "BuildIntentPlan",
+            "name": "BuildIntentPlan",
+        }
+        rendered = json.dumps(sanitize(value))
+        self.assertNotIn("C:/Users/Alice/notes.txt", rendered)
+        self.assertNotIn("Alice Example", rendered)
+        self.assertNotIn("rare condition", rendered)
+        self.assertNotIn("MRN-123456", rendered)
+        self.assertNotIn("alice@example.com", rendered)
+        self.assertIn("BuildIntentPlan", rendered)
+        self.assertIn('"name": "BuildIntentPlan"', rendered)
+
+    def test_neutral_keys_redact_known_token_formats_and_high_entropy_values(self):
+        values = [
+            "ghp_" + "A" * 36,
+            "github_pat_" + "A" * 30,
+            "glpat-" + "A" * 20,
+            "xoxb-1234567890-1234567890-abcdefghijkl",
+            "sk_live_" + "A" * 24,
+            "sk_test_" + "A" * 24,
+            "AKIA" + "A" * 16,
+            "Bearer " + "A" * 32,
+            "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c",
+            "Aa1+/Bb2-_Cc3+/Dd4-_Ee5+/Ff6-_Gg7+/Hh8-_Ii9+/Jj0-",
+        ]
+        for value in values:
+            with self.subTest(value=value[:12]):
+                rendered = json.dumps(sanitize({"metadata": value}), sort_keys=True)
+                self.assertNotIn(value, rendered)
+                self.assertIn("[REDACTED:", rendered)
+                self.assertEqual(sanitize(value), _bounded_diff_value(value))
+                self.assertNotIn(value, to_yaml({"metadata": value}))
+
+                diff = _bounded_structural_diff({"metadata": value}, {"metadata": "other-value"})
+                self.assertNotIn(value, json.dumps(diff, sort_keys=True))
+
+    def test_neutral_keys_keep_sha_revisions_digests_and_technical_symbols(self):
+        sha256 = "a" * 64
+        revision = "0123456789abcdef0123456789abcdef01234567"
+        semantic_id = "BuildIntentPlanWithManySemanticSegmentsAndTypes20260722"
+        value = {"sha256": sha256, "revision": revision, "semantic_id": semantic_id}
+        rendered = json.dumps(sanitize(value), sort_keys=True)
+        self.assertIn(sha256, rendered)
+        self.assertIn(revision, rendered)
+        self.assertIn(semantic_id, rendered)
+        self.assertEqual(_bounded_diff_value(sha256), sha256)
+        self.assertEqual(_bounded_diff_value(revision), revision)
+        self.assertEqual(_bounded_diff_value(semantic_id), semantic_id)
+
+    def test_credential_detection_is_bounded_by_projection_string_limit(self):
+        oversized = "Aa1+/" * 200
+        self.assertNotIn(oversized, json.dumps(sanitize({"metadata": oversized})))
+
+    def test_projection_truncation_fails_query_closed(self):
+        payload = {"ok": True, "items": [{"name": "BuildIntentPlan"}], "values": list(range(100000))}
+        result = measured_query_check(self.manifest()["queries"][0], payload)
+        self.assertEqual(result["status"], "FAIL")
+        self.assertEqual(result["semantic_projection"]["reason_code"], "projection_truncated")
+        self.assertIsNone(result["normalized_digest"])
+
+    def test_discovery_and_freshness_budget_stop_custom_mapping_before_contract(self):
+        values = {f"junk_{index}": {"nested": index} for index in range(100000)}
+        payload = CountingMapping(values)
+        self.assertIsNone(_find_preview_contract(payload))
+        self.assertLess(payload.iterated, 256)
+        payload = CountingMapping(values)
+        _ranks, graph, _rank_lists = _freshness_records(payload)
+        self.assertIn("__freshness_traversal_truncated__", [item.get("state") for item in graph])
+        self.assertLess(payload.iterated, 256)
+
+    def test_discovery_budget_stops_custom_list_before_final_contract(self):
+        payload = CountingList([{"junk": index} for index in range(100000)] + [{"preview": []}])
+        self.assertIsNone(_find_preview_contract(payload))
+        self.assertLess(payload.iterated, 256)
+
+    def test_bounded_diff_stops_before_final_difference_in_huge_list(self):
+        left = list(range(100000))
+        right = list(range(100000))
+        right[-1] = -1
+        result = _bounded_structural_diff(left, right)
+        self.assertTrue(result["truncated"])
+        self.assertNotEqual(result["status"], "PASS")
+        self.assertLessEqual(result["count"], 32)
+
+    def test_giant_mapping_key_fails_closed_without_raw_key_or_digest(self):
+        giant_key = "k" * 100000
+        payload = {"ok": True, "items": [{"name": "BuildIntentPlan"}], giant_key: "value"}
+        result = measured_query_check(self.manifest()["queries"][0], payload)
+        rendered = json.dumps(result, sort_keys=True)
+        self.assertEqual(result["status"], "FAIL")
+        self.assertEqual(result["semantic_projection"]["reason_code"], "projection_truncated")
+        self.assertIsNone(result["normalized_digest"])
+        self.assertNotIn(giant_key, rendered)
+
+    def test_finite_rejects_bool_and_arbitrary_precision_integer_without_crash(self):
+        self.assertFalse(finite(True))
+        self.assertTrue(finite(1))
+        self.assertTrue(finite(1.0))
+        self.assertFalse(finite(10**1000))
+        result = measured_query_check(self.manifest()["queries"][0], {"ok": True, "items": [{"value": 10**1000}]})
+        self.assertEqual(result["status"], "FAIL")
+        self.assertEqual(result["semantic_projection"]["reason_code"], "projection_truncated")
+
+    def test_diff_redacts_relative_paths_and_clinical_text_after_difference(self):
+        left = {"src/private/patient_notes.txt": "Patient Alice has rare condition"}
+        right = {"src\\private\\patient_notes.txt": "Patient Bob has rare condition"}
+        result = _bounded_structural_diff(left, right)
+        rendered = json.dumps(result, sort_keys=True)
+        self.assertEqual(result["status"], "DIFF")
+        self.assertNotIn("src/private/patient_notes.txt", rendered)
+        self.assertNotIn("Patient Alice has rare condition", rendered)
+        self.assertNotIn("Patient Bob has rare condition", rendered)
+        self.assertNotIn("private", rendered)
 
     def test_stats_ms_does_not_change_normalized_digest(self):
         base = {"stats": {"ms": 10, "symbols": 4, "files": 2}}

@@ -26,6 +26,18 @@ from typing import Any, Iterable, Mapping, Sequence
 SCHEMA = "harness-first-campaign/v1"
 REPORT_SCHEMA = "harness-first-report/v1"
 MARKER_SCHEMA = "harness-first-run-marker/v1"
+PROTOCOL_VERSION = "mi-lsp-v1.1"
+MAX_PARITY_DIFFS = 32
+MAX_PARITY_DIFF_DEPTH = 8
+MAX_PROJECTION_DEPTH = 8
+MAX_PROJECTION_NODES = 2048
+MAX_PROJECTION_MAPPING_ENTRIES = 128
+MAX_PROJECTION_LIST_ITEMS = 128
+MAX_PROJECTION_BYTES = 65536
+MAX_PROJECTION_STRING_BYTES = 512
+MAX_CREDENTIAL_VALUE_BYTES = MAX_PROJECTION_STRING_BYTES
+MAX_CREDENTIAL_VALUE_CHARS = 512
+MAX_DIFF_NODES = 2048
 MARKER_NAME = ".harness-first-run-marker.json"
 GLOBAL_MARKER_NAME = ".harness-first-candidate-registry.json"
 MODES = ("direct", "daemon")
@@ -33,8 +45,19 @@ SECTIONS = ("change", "affected", "callers", "callees", "tests", "contracts", "w
 SHA256 = re.compile(r"^[0-9a-f]{64}$")
 SOURCE_REVISION = re.compile(r"^(?:[0-9a-f]{40}|[0-9a-f]{64})$")
 SECRET = re.compile(r"(?i)(?:token|secret|password|credential|api[_-]?key|authorization|bearer)")
+KNOWN_TOKEN_PREFIX = re.compile(r"(?i)^(?:ghp_|github_pat_|glpat-|xox[baprs]-|sk_live_|sk_test_)[A-Za-z0-9_-]{16,}$")
+AWS_ACCESS_KEY = re.compile(r"^AKIA[0-9A-Z]{16}$")
+BEARER_TOKEN = re.compile(r"(?i)^Bearer[ \t]+[A-Za-z0-9._~+/=-]{16,}$")
+JWT_SEGMENT = re.compile(r"^[A-Za-z0-9_-]{8,}$")
+SENSITIVE_KEY = re.compile(r"(?i)(?:patient|paciente|diagnos(?:is|es)?|diagn[oó]stico|mrn|ssn|dob|medical|health|clinical|phi|pii|email|phone|address|insurance|account|birth)")
+CLINICAL_TEXT = re.compile(r"(?i)\b(?:patient|paciente|diagnosis|diagn[oó]stico|condition|condici[oó]n|medical|health|clinical|phi|mrn|ssn|dob|medical record|historia cl[ií]nica)\b")
 EMAIL = re.compile(r"\b[^\s@]+@[^\s@]+\.[^\s@]+\b")
 PATH = re.compile(r"(?i)(?:^[a-z]:[\\/]|^/|(?:^|[\\/])\.\.?[\\/]|[\\/]\.git[\\/])")
+RELATIVE_PATH = re.compile(r"(?i)(?:[^\\/\s]+[\\/])+[^\\/\s]+(?:\.[a-z0-9]{1,32})?$")
+MRN = re.compile(r"(?i)\b(?:mrn|medical[ _-]?record)[ :#-]*[a-z0-9-]{4,}\b")
+SSN = re.compile(r"\b\d{3}-\d{2}-\d{4}\b")
+DOB = re.compile(r"(?i)\b(?:dob|date of birth)[ :_-]*\d{1,4}[/-]\d{1,2}[/-]\d{1,4}\b")
+MAX_SAFE_METRIC_INT = int(sys.float_info.max)
 VOLATILE = frozenset({
     "backend", "route", "routing_outcome", "daemon", "daemon_state", "request_id",
     "session_id", "occurred_at", "timestamp", "latency_ms", "format_ms", "tokens_est", "ms",
@@ -51,7 +74,9 @@ REASONS = frozenset({
     "source_dirty", "missing_source", "missing_binary", "binary_not_file", "spawn_error",
     "timeout", "nonzero_exit", "decode_error", "schema_mismatch", "correctness_failed",
     "preview_incomplete", "parity_failed", "latency_ceiling", "rss_unavailable", "rss_ceiling",
-    "worker_failed", "worker_schema", "retry_amplification", "provenance_unavailable",
+    "worker_failed", "worker_schema", "worker_preflight_failed", "retry_amplification", "provenance_unavailable",
+    "daemon_preflight_failed", "daemon_identity_mismatch", "daemon_protocol_mismatch",
+    "candidate_version_failed", "candidate_version_mismatch", "projection_truncated",
     "route_unobserved", "route_mismatch", "kind_schema", "native_error",
 })
 DEFAULT_BUDGETS = {
@@ -73,7 +98,18 @@ class HarnessError(ValueError):
 
 
 def finite(value: Any) -> bool:
-    return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(float(value))
+    """Return whether a metric is a finite, safely representable number.
+
+    Integer metrics are bounded before conversion so hostile arbitrary-precision
+    integers cannot raise OverflowError while being inspected.
+    """
+    if isinstance(value, bool):
+        return False
+    if isinstance(value, int):
+        return -MAX_SAFE_METRIC_INT <= value <= MAX_SAFE_METRIC_INT
+    if isinstance(value, float):
+        return math.isfinite(value)
+    return False
 
 
 def digest(value: Any) -> str:
@@ -166,113 +202,528 @@ def validate_manifest(manifest: Mapping[str, Any]) -> dict[str, Any]:
         raise HarnessError("invalid_manifest")
     if sorted(strings(budgets["preview_expansions"], "preview_expansions")) != ["command", "reason"]:
         raise HarnessError("invalid_manifest")
-    worker_args = strings(manifest.get("worker_status_args", ["worker", "status"]), "worker_status_args")
-    return {"schema": SCHEMA, "campaign_id": campaign_id, "queries": queries, "budgets": budgets, "worker_status_args": worker_args}
+    worker_args = manifest.get("worker_status_args", ["worker", "status"])
+    if worker_args != ["worker", "status"]:
+        raise HarnessError("invalid_manifest")
+    return {"schema": SCHEMA, "campaign_id": campaign_id, "queries": queries, "budgets": budgets, "worker_status_args": ["worker", "status"]}
+
+
+class _TraversalBudget:
+    """Shared bounded traversal state for projection and structural inspection."""
+
+    def __init__(
+        self,
+        *,
+        max_nodes: int = MAX_PROJECTION_NODES,
+        max_depth: int = MAX_PROJECTION_DEPTH,
+        max_mapping_entries: int = MAX_PROJECTION_MAPPING_ENTRIES,
+        max_list_items: int = MAX_PROJECTION_LIST_ITEMS,
+        max_bytes: int = MAX_PROJECTION_BYTES,
+        max_string_bytes: int = MAX_PROJECTION_STRING_BYTES,
+    ) -> None:
+        self.max_nodes = max_nodes
+        self.max_depth = max_depth
+        self.max_mapping_entries = max_mapping_entries
+        self.max_list_items = max_list_items
+        self.max_bytes = max_bytes
+        self.max_string_bytes = max_string_bytes
+        self.nodes = 0
+        self.mapping_entries = 0
+        self.list_items = 0
+        self.string_bytes = 0
+        self.total_bytes = 0
+        self.truncated = False
+
+    def consume_node(self, depth: int) -> bool:
+        if depth > self.max_depth or self.nodes >= self.max_nodes:
+            self.truncated = True
+            return False
+        self.nodes += 1
+        return True
+
+    def consume_string(self, value: str) -> str | None:
+        encoded = value.encode("utf-8", "replace")
+        if len(encoded) > self.max_string_bytes:
+            self.truncated = True
+            return None
+        if self.string_bytes + len(encoded) > self.max_bytes or self.total_bytes + len(encoded) > self.max_bytes:
+            self.truncated = True
+            return None
+        self.string_bytes += len(encoded)
+        self.total_bytes += len(encoded)
+        return value
+
+    def consume_mapping_entry(self) -> bool:
+        if self.mapping_entries >= self.max_mapping_entries:
+            self.truncated = True
+            return False
+        self.mapping_entries += 1
+        return True
+
+    def consume_list_item(self) -> bool:
+        if self.list_items >= self.max_list_items:
+            self.truncated = True
+            return False
+        self.list_items += 1
+        return True
+
+
+# Kept as an internal compatibility alias for callers that imported the old name.
+_ProjectionBudget = _TraversalBudget
+
+
+def _safe_text(value: Any) -> str | None:
+    if isinstance(value, str):
+        return value
+    try:
+        return str(value)
+    except Exception:
+        return None
+
+
+def _looks_like_path(value: str) -> bool:
+    return bool(PATH.search(value) or RELATIVE_PATH.search(value) or re.search(r"[\\\\/]", value))
+
+
+def _sensitive_key(key: str) -> bool:
+    lowered = key.strip().lower()
+    return (
+        lowered in {"stdout", "stderr", "raw_output", "native_output", "env", "environment", "payload"}
+        or SECRET.search(lowered) is not None
+        or SENSITIVE_KEY.search(lowered) is not None
+        or _looks_like_path(key)
+    )
+
+
+_TOKEN_CHARACTERS = frozenset("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._~+/=-")
+_HEX_CHARACTERS = frozenset("0123456789abcdefABCDEF")
+
+
+def _looks_like_high_entropy_token(value: str) -> bool:
+    if len(value) < 32 or len(value) > MAX_CREDENTIAL_VALUE_CHARS or not value.isascii():
+        return False
+    if all(character in _HEX_CHARACTERS for character in value):
+        return False
+    if any(character not in _TOKEN_CHARACTERS for character in value):
+        return False
+    classes = sum((
+        any(character.islower() for character in value),
+        any(character.isupper() for character in value),
+        any(character.isdigit() for character in value),
+        any(character in "._~+/=-" for character in value),
+    ))
+    if classes < 3 or len(set(value)) < 16:
+        return False
+    counts: dict[str, int] = {}
+    for character in value:
+        counts[character] = counts.get(character, 0) + 1
+    length = len(value)
+    entropy = -sum((count / length) * math.log2(count / length) for count in counts.values())
+    threshold = 4.5 if any(character in "._~+/=-" for character in value) else 5.0
+    return entropy >= threshold
+
+
+def _looks_like_credential_value(value: str) -> bool:
+    try:
+        if len(value) > MAX_CREDENTIAL_VALUE_CHARS or len(value.encode("utf-8", "replace")) > MAX_CREDENTIAL_VALUE_BYTES:
+            return False
+    except Exception:
+        return False
+    if KNOWN_TOKEN_PREFIX.fullmatch(value) or AWS_ACCESS_KEY.fullmatch(value) or BEARER_TOKEN.fullmatch(value):
+        return True
+    segments = value.split(".")
+    if len(segments) == 3 and segments[0].startswith("eyJ") and all(JWT_SEGMENT.fullmatch(segment) for segment in segments):
+        return True
+    return _looks_like_high_entropy_token(value)
+
+
+def _sensitive_value(value: str) -> bool:
+    return bool(
+        _looks_like_credential_value(value)
+        or EMAIL.search(value)
+        or _looks_like_path(value)
+        or SECRET.search(value)
+        or MRN.search(value)
+        or SSN.search(value)
+        or DOB.search(value)
+        or CLINICAL_TEXT.search(value)
+    )
+
+
+def _redacted_text(value: str) -> str:
+    return f"[REDACTED:{digest(value)[:16]}]"
+
+
+def _bounded_projection(value: Any, *, omit_volatile: bool) -> tuple[Any, bool]:
+    budget = _TraversalBudget()
+
+    def visit(current: Any, key: str, depth: int) -> Any:
+        if not budget.consume_node(depth):
+            return None
+        if _sensitive_key(key):
+            return None
+        if isinstance(current, Mapping):
+            result: dict[str, Any] = {}
+            try:
+                entries = current.items()
+                for raw_key, child in entries:
+                    if not budget.consume_mapping_entry():
+                        break
+                    name = _safe_text(raw_key)
+                    if name is None or budget.consume_string(name) is None:
+                        break
+                    lowered = name.lower()
+                    if (omit_volatile and lowered in VOLATILE) or _sensitive_key(name):
+                        continue
+                    projected = visit(child, name, depth + 1)
+                    if projected is not None:
+                        result[name] = projected
+            except Exception:
+                budget.truncated = True
+            return result
+        if isinstance(current, list):
+            result: list[Any] = []
+            try:
+                for child in current:
+                    if not budget.consume_list_item():
+                        break
+                    projected = visit(child, key, depth + 1)
+                    if projected is not None:
+                        result.append(projected)
+            except Exception:
+                budget.truncated = True
+            return result
+        if isinstance(current, str):
+            bounded = budget.consume_string(current)
+            if bounded is None:
+                return None
+            return _redacted_text(bounded) if _sensitive_value(bounded) else bounded
+        if current is None or isinstance(current, bool):
+            return current
+        if isinstance(current, (int, float)):
+            if finite(current):
+                return current
+            budget.truncated = True
+            return None
+        return None
+
+    projected = visit(value, "", 0)
+    return projected, budget.truncated
 
 
 def sanitize(value: Any, key: str = "") -> Any:
-    lowered = key.lower()
-    if SECRET.search(lowered) or lowered in {"stdout", "stderr", "raw_output", "native_output", "env", "environment", "payload"}:
-        return None
-    if isinstance(value, Mapping):
-        result: dict[str, Any] = {}
-        for raw_key, child in value.items():
-            name = str(raw_key)
-            if name.lower() in VOLATILE or SECRET.search(name.lower()):
-                continue
-            projected = sanitize(child, name)
-            if projected is not None:
-                result[name] = projected
-        return result
-    if isinstance(value, list):
-        result = []
-        for child in value:
-            projected = sanitize(child, key)
-            if projected is not None:
-                result.append(projected)
-        return result
-    if isinstance(value, str):
-        return None if EMAIL.search(value) or PATH.search(value) or SECRET.search(value) else value[:512]
-    return value if value is None or isinstance(value, bool) or finite(value) else None
+    projected, _truncated = _bounded_projection({key: value} if key else value, omit_volatile=False)
+    if key:
+        return projected.get(key) if isinstance(projected, Mapping) else None
+    return projected
 
 
 def normalize(value: Any) -> Any:
-    if isinstance(value, Mapping):
-        return {str(k): normalize(v) for k, v in sorted(value.items(), key=lambda item: str(item[0])) if str(k).lower() not in VOLATILE}
-    if isinstance(value, list):
-        return [normalize(item) for item in value]
-    return value
+    projected, _truncated = _bounded_projection(value, omit_volatile=True)
+    if isinstance(projected, Mapping):
+        return {str(k): projected[k] for k in sorted(projected, key=str)}
+    return projected
 
 
-def _find_preview_contract(value: Any, depth: int = 0) -> tuple[list[Mapping[str, Any]], Mapping[str, Any]] | None:
-    if depth > 8:
+def _semantic_projection(value: Any) -> tuple[Any, bool]:
+    projected, sanitized_truncated = _bounded_projection(value, omit_volatile=True)
+    if isinstance(projected, Mapping):
+        projected = {str(k): projected[k] for k in sorted(projected, key=str)}
+    return projected, sanitized_truncated
+
+
+def _bounded_diff_value(value: Any) -> Any:
+    # This is called only after a difference is detected.  It is intentionally
+    # bounded and never returns the original sensitive value.
+    projected = sanitize(value)
+    return projected if projected is not None else "[REDACTED]"
+
+
+def _diff_key_token(key: Any, *, key_text: str | None = None, budget: _TraversalBudget | None = None) -> str | None:
+    text = key_text if key_text is not None else _safe_text(key)
+    if text is None:
+        if budget is not None:
+            budget.truncated = True
+        return None
+    if budget is not None and budget.consume_string(text) is None:
+        return None
+    return f"k_{digest(text)[:12]}"
+
+
+def _bounded_structural_diff(left: Any, right: Any, *, max_diffs: int = MAX_PARITY_DIFFS, max_depth: int = MAX_PARITY_DIFF_DEPTH) -> dict[str, Any]:
+    differences: list[dict[str, Any]] = []
+    truncated = False
+    budget = _TraversalBudget(max_nodes=MAX_DIFF_NODES, max_depth=max_depth)
+
+    def add(path: str, left_value: Any, right_value: Any) -> None:
+        nonlocal truncated
+        if len(differences) >= max_diffs:
+            truncated = True
+            return
+        differences.append({"path": path, "left": _bounded_diff_value(left_value), "right": _bounded_diff_value(right_value)})
+
+    def bounded_records(mapping: Mapping[Any, Any]) -> tuple[list[tuple[Any, str, Any]], bool]:
+        records: list[tuple[Any, str, Any]] = []
+        try:
+            for raw_key, child in mapping.items():
+                if not budget.consume_mapping_entry():
+                    return records, True
+                key_text = _safe_text(raw_key)
+                if key_text is None or budget.consume_string(key_text) is None:
+                    return records, True
+                records.append((raw_key, key_text, child))
+        except Exception:
+            budget.truncated = True
+            return records, True
+        return records, False
+
+    def visit(left_value: Any, right_value: Any, path: str, depth: int) -> None:
+        nonlocal truncated
+        if len(differences) >= max_diffs:
+            truncated = True
+            return
+        if not budget.consume_node(depth):
+            truncated = True
+            return
+        if depth >= max_depth:
+            if isinstance(left_value, (Mapping, list)) or isinstance(right_value, (Mapping, list)):
+                truncated = True
+                return
+            if isinstance(left_value, str) and budget.consume_string(left_value) is None:
+                truncated = True
+                return
+            if isinstance(right_value, str) and budget.consume_string(right_value) is None:
+                truncated = True
+                return
+            if isinstance(left_value, int) and not finite(left_value) or isinstance(right_value, int) and not finite(right_value):
+                truncated = True
+                return
+            try:
+                different = left_value != right_value
+            except Exception:
+                truncated = True
+                return
+            if different:
+                add(path, left_value, right_value)
+            else:
+                truncated = True
+            return
+        if isinstance(left_value, Mapping) and isinstance(right_value, Mapping):
+            left_records, left_truncated = bounded_records(left_value)
+            right_records, right_truncated = bounded_records(right_value)
+            if left_truncated or right_truncated:
+                truncated = True
+            left_by_key = {key: (text, child) for key, text, child in left_records}
+            right_by_key = {key: (text, child) for key, text, child in right_records}
+            try:
+                def key_sort(key: Any) -> str:
+                    record = left_by_key.get(key)
+                    if record is None:
+                        record = right_by_key[key]
+                    return record[0]
+
+                keys = sorted(set(left_by_key) | set(right_by_key), key=key_sort)
+            except Exception:
+                truncated = True
+                return
+            for key in keys:
+                if len(differences) >= max_diffs:
+                    truncated = True
+                    return
+                record = left_by_key.get(key) or right_by_key.get(key)
+                token = _diff_key_token(key, key_text=record[0], budget=None)
+                if token is None:
+                    truncated = True
+                    return
+                child_path = f"{path}.{token}"
+                if key not in left_by_key:
+                    add(child_path, None, right_by_key[key][1])
+                elif key not in right_by_key:
+                    add(child_path, left_by_key[key][1], None)
+                else:
+                    visit(left_by_key[key][1], right_by_key[key][1], child_path, depth + 1)
+            return
+        if isinstance(left_value, list) and isinstance(right_value, list):
+            try:
+                left_length, right_length = len(left_value), len(right_value)
+                common = min(left_length, right_length, MAX_PROJECTION_LIST_ITEMS)
+                if left_length > common or right_length > common:
+                    truncated = True
+                for index in range(common):
+                    if len(differences) >= max_diffs or not budget.consume_list_item():
+                        truncated = True
+                        return
+                    visit(left_value[index], right_value[index], f"{path}.[{index}]", depth + 1)
+                if left_length != right_length and common < MAX_PROJECTION_LIST_ITEMS:
+                    add(f"{path}.length", left_length, right_length)
+            except Exception:
+                truncated = True
+            return
+        if isinstance(left_value, str) and budget.consume_string(left_value) is None:
+            truncated = True
+            return
+        if isinstance(right_value, str) and budget.consume_string(right_value) is None:
+            truncated = True
+            return
+        if isinstance(left_value, int) and not finite(left_value) or isinstance(right_value, int) and not finite(right_value):
+            truncated = True
+            return
+        try:
+            different = left_value != right_value
+        except Exception:
+            truncated = True
+            return
+        if different:
+            add(path, left_value, right_value)
+
+    visit(left, right, "$", 0)
+    truncated = truncated or budget.truncated
+    return {"status": "DIFF" if differences else ("TRUNCATED" if truncated else "EQUAL"), "count": len(differences), "truncated": truncated, "items": differences}
+
+
+def _find_preview_contract(value: Any, depth: int = 0, budget: _TraversalBudget | None = None) -> tuple[list[Mapping[str, Any]], Mapping[str, Any]] | None:
+    budget = budget or _TraversalBudget()
+    if not budget.consume_node(depth):
         return None
     if isinstance(value, Mapping):
-        preview = value.get("preview")
+        try:
+            preview = value.get("preview")
+        except Exception:
+            budget.truncated = True
+            return None
         if isinstance(preview, list):
-            return [item for item in preview if isinstance(item, Mapping)], value
-        for child in value.values():
-            found = _find_preview_contract(child, depth + 1)
-            if found is not None:
-                return found
+            items: list[Mapping[str, Any]] = []
+            try:
+                for item in preview:
+                    if not budget.consume_list_item() or not budget.consume_node(depth + 1):
+                        break
+                    if isinstance(item, Mapping):
+                        items.append(item)
+            except Exception:
+                budget.truncated = True
+            return items, value
+        try:
+            for raw_key, child in value.items():
+                if not budget.consume_mapping_entry():
+                    break
+                key = _safe_text(raw_key)
+                if key is None or budget.consume_string(key) is None:
+                    break
+                found = _find_preview_contract(child, depth + 1, budget)
+                if found is not None:
+                    return found
+        except Exception:
+            budget.truncated = True
     elif isinstance(value, list):
-        for child in value[:64]:
-            found = _find_preview_contract(child, depth + 1)
-            if found is not None:
-                return found
+        try:
+            for child in value:
+                if not budget.consume_list_item():
+                    break
+                found = _find_preview_contract(child, depth + 1, budget)
+                if found is not None:
+                    return found
+        except Exception:
+            budget.truncated = True
     return None
 
 
-def _find_sections(value: Any, depth: int = 0) -> Mapping[str, Any] | None:
+def _find_sections(value: Any, depth: int = 0, budget: _TraversalBudget | None = None) -> Mapping[str, Any] | None:
     """Compatibility reader for the old map-shaped test fixture."""
-    if depth > 8:
+    budget = budget or _TraversalBudget()
+    if not budget.consume_node(depth):
         return None
     if isinstance(value, Mapping):
-        if all(section in value for section in SECTIONS):
-            return value
-        for child in value.values():
-            found = _find_sections(child, depth + 1)
-            if found is not None:
-                return found
+        try:
+            if all(section in value for section in SECTIONS):
+                return value
+            for raw_key, child in value.items():
+                if not budget.consume_mapping_entry():
+                    break
+                key = _safe_text(raw_key)
+                if key is None or budget.consume_string(key) is None:
+                    break
+                found = _find_sections(child, depth + 1, budget)
+                if found is not None:
+                    return found
+        except Exception:
+            budget.truncated = True
     elif isinstance(value, list):
-        for child in value[:64]:
-            found = _find_sections(child, depth + 1)
-            if found is not None:
-                return found
+        try:
+            for child in value:
+                if not budget.consume_list_item():
+                    break
+                found = _find_sections(child, depth + 1, budget)
+                if found is not None:
+                    return found
+        except Exception:
+            budget.truncated = True
     return None
 
 
-def _find_expansions(value: Any, depth: int = 0) -> list[Mapping[str, Any]] | None:
-    if depth > 8:
+def _find_expansions(value: Any, depth: int = 0, budget: _TraversalBudget | None = None) -> list[Mapping[str, Any]] | None:
+    budget = budget or _TraversalBudget()
+    if not budget.consume_node(depth):
         return None
     if isinstance(value, Mapping):
-        if isinstance(value.get("expansions"), list):
-            return [item for item in value["expansions"] if isinstance(item, Mapping)]
-        for child in value.values():
-            found = _find_expansions(child, depth + 1)
-            if found is not None:
-                return found
+        try:
+            expansions = value.get("expansions")
+            if isinstance(expansions, list):
+                items: list[Mapping[str, Any]] = []
+                for item in expansions:
+                    if not budget.consume_list_item() or not budget.consume_node(depth + 1):
+                        break
+                    if isinstance(item, Mapping):
+                        items.append(item)
+                return items
+            for raw_key, child in value.items():
+                if not budget.consume_mapping_entry():
+                    break
+                key = _safe_text(raw_key)
+                if key is None or budget.consume_string(key) is None:
+                    break
+                found = _find_expansions(child, depth + 1, budget)
+                if found is not None:
+                    return found
+        except Exception:
+            budget.truncated = True
     elif isinstance(value, list):
-        for child in value[:64]:
-            found = _find_expansions(child, depth + 1)
-            if found is not None:
-                return found
+        try:
+            for child in value:
+                if not budget.consume_list_item():
+                    break
+                found = _find_expansions(child, depth + 1, budget)
+                if found is not None:
+                    return found
+        except Exception:
+            budget.truncated = True
     return None
 
 
-def _section_explanation(plan: Mapping[str, Any], section: str) -> str | None:
+def _section_explanation(plan: Mapping[str, Any], section: str, budget: _TraversalBudget | None = None) -> str | None:
+    budget = budget or _TraversalBudget()
     for key in ("omissions", "fallbacks"):
-        values = plan.get(key)
+        try:
+            values = plan.get(key)
+        except Exception:
+            budget.truncated = True
+            return None
         if not isinstance(values, list):
             continue
-        for item in values:
-            if isinstance(item, Mapping) and item.get("section") == section and isinstance(item.get("reason"), str) and item["reason"].strip():
-                return item["reason"].strip()[:512]
+        try:
+            for item in values:
+                if not budget.consume_list_item() or not budget.consume_node(1):
+                    return None
+                if isinstance(item, Mapping) and item.get("section") == section and isinstance(item.get("reason"), str) and item["reason"].strip():
+                    return item["reason"].strip()[:MAX_PROJECTION_STRING_BYTES]
+        except Exception:
+            budget.truncated = True
+            return None
     return None
 
 
-def _preview_check(payload: Any) -> dict[str, Any]:
-    found = _find_preview_contract(payload)
+def _preview_check(payload: Any, budget: _TraversalBudget | None = None) -> dict[str, Any]:
+    budget = budget or _TraversalBudget()
+    found = _find_preview_contract(payload, budget=budget)
     if found is not None:
         preview_items, plan = found
         by_section: dict[str, Mapping[str, Any]] = {}
@@ -300,13 +751,13 @@ def _preview_check(payload: Any) -> dict[str, Any]:
             elif isinstance(item.get("omission"), str) and item["omission"].strip():
                 unavailable[section] = item["omission"].strip()[:512]
             else:
-                explanation = _section_explanation(plan, section)
+                explanation = _section_explanation(plan, section, budget)
                 if explanation:
                     unavailable[section] = explanation
                 else:
                     unexplained.append(section)
                     unavailable[section] = "section has no usable items and no explicit omission/fallback"
-        expansions = _find_expansions(plan) or []
+        expansions = _find_expansions(plan, budget=budget) or []
         invalid_expansions = []
         valid_expansions = []
         for item in expansions:
@@ -318,6 +769,8 @@ def _preview_check(payload: Any) -> dict[str, Any]:
                 invalid_expansions.append({"has_command": isinstance(command, str) and bool(command.strip()), "has_reason": isinstance(reason, str) and bool(reason.strip()), "command_prefix": isinstance(command, str) and command.strip().startswith("mi-lsp nav ")})
         missing_expansion_fields = [field for field in ("command", "reason") if not any(isinstance(item.get(field), str) and item[field].strip() for item in expansions)]
         complete = not missing and not duplicates and not unexplained and bool(expansions) and not invalid_expansions
+        if budget.truncated:
+            complete = False
         result = {
             "status": "PASS" if complete else "FAIL",
             "sections": [section for section in SECTIONS if section in by_section],
@@ -325,72 +778,120 @@ def _preview_check(payload: Any) -> dict[str, Any]:
             "available_sections": available,
             "omissions": unavailable,
             "duplicates": duplicates,
+            "truncated": budget.truncated,
+            "reason_code": "projection_truncated" if budget.truncated else None,
             "expansions": {"required": ["command", "reason"], "complete": complete and bool(valid_expansions), "missing": missing_expansion_fields, "invalid": invalid_expansions, "valid": len(valid_expansions)},
         }
         return result
 
-    section_map = _find_sections(payload)
-    expansions = _find_expansions(payload) or []
+    section_map = _find_sections(payload, budget=budget)
+    expansions = _find_expansions(payload, budget=budget) or []
     missing = [section for section in SECTIONS if section_map is None or section not in section_map]
     unavailable = {} if section_map is None else {section: "section shape is legacy map; no explicit availability evidence" for section in SECTIONS if not section_map.get(section)}
     valid_expansions = [item for item in expansions if isinstance(item.get("command"), str) and item["command"].strip().startswith("mi-lsp nav ") and isinstance(item.get("reason"), str) and item["reason"].strip()]
     invalid_expansions = [item for item in expansions if item not in valid_expansions]
     missing_expansion_fields = [field for field in ("command", "reason") if not any(isinstance(item.get(field), str) and item[field].strip() for item in expansions)]
-    complete = not missing and not unavailable and bool(expansions) and not invalid_expansions
-    return {"status": "PASS" if complete else "FAIL", "sections": list(SECTIONS) if section_map is not None and not missing else [section for section in SECTIONS if section_map and section in section_map], "missing_sections": missing, "available_sections": [], "omissions": unavailable, "duplicates": [], "expansions": {"required": ["command", "reason"], "complete": complete and bool(valid_expansions), "missing": missing_expansion_fields, "invalid": invalid_expansions, "valid": len(valid_expansions)}}
+    complete = not missing and not unavailable and bool(expansions) and not invalid_expansions and not budget.truncated
+    return {"status": "PASS" if complete else "FAIL", "sections": list(SECTIONS) if section_map is not None and not missing else [section for section in SECTIONS if section_map and section in section_map], "missing_sections": missing, "available_sections": [], "omissions": unavailable, "duplicates": [], "truncated": budget.truncated, "reason_code": "projection_truncated" if budget.truncated else None, "expansions": {"required": ["command", "reason"], "complete": complete and bool(valid_expansions), "missing": missing_expansion_fields, "invalid": invalid_expansions, "valid": len(valid_expansions)}}
 
 
-def _freshness_records(value: Any, depth: int = 0) -> tuple[list[float], list[Mapping[str, Any]], list[list[Any]]]:
-    if depth > 8:
-        return [], [{"state": FRESHNESS_TRUNCATED_STATE}], []
+def _freshness_records(value: Any, depth: int = 0, budget: _TraversalBudget | None = None) -> tuple[list[float], list[Mapping[str, Any]], list[list[Any]]]:
+    budget = budget or _TraversalBudget()
     ranks: list[float] = []
     graph: list[Mapping[str, Any]] = []
     rank_lists: list[list[Any]] = []
+
+    def truncated() -> tuple[list[float], list[Mapping[str, Any]], list[list[Any]]]:
+        budget.truncated = True
+        return ranks, graph + [{"state": FRESHNESS_TRUNCATED_STATE}], rank_lists
+
+    if not budget.consume_node(depth):
+        return truncated()
     if isinstance(value, Mapping):
-        if finite(value.get("freshness_rank")):
-            ranks.append(float(value["freshness_rank"]))
-        freshness = value.get("graph_freshness")
-        if isinstance(freshness, Mapping):
-            graph.append(freshness)
-        if isinstance(value.get("graph_ranks"), list):
-            rank_lists.append(value["graph_ranks"])
-        for child in value.values():
-            child_ranks, child_graph, child_lists = _freshness_records(child, depth + 1)
-            ranks.extend(child_ranks)
-            graph.extend(child_graph)
-            rank_lists.extend(child_lists)
+        try:
+            freshness_rank = value.get("freshness_rank")
+            if finite(freshness_rank):
+                ranks.append(float(freshness_rank))
+            freshness = value.get("graph_freshness")
+            if isinstance(freshness, Mapping):
+                graph.append(freshness)
+            graph_ranks = value.get("graph_ranks")
+            if isinstance(graph_ranks, list):
+                bounded_ranks: list[Any] = []
+                for rank in graph_ranks:
+                    if not budget.consume_list_item() or not budget.consume_node(depth + 1):
+                        return truncated()
+                    bounded_ranks.append(rank)
+                rank_lists.append(bounded_ranks)
+            for raw_key, child in value.items():
+                if not budget.consume_mapping_entry():
+                    return truncated()
+                key = _safe_text(raw_key)
+                if key is None or budget.consume_string(key) is None:
+                    return truncated()
+                child_ranks, child_graph, child_lists = _freshness_records(child, depth + 1, budget)
+                ranks.extend(child_ranks)
+                graph.extend(child_graph)
+                rank_lists.extend(child_lists)
+        except Exception:
+            return truncated()
     elif isinstance(value, list):
-        for child in value[:64]:
-            child_ranks, child_graph, child_lists = _freshness_records(child, depth + 1)
-            ranks.extend(child_ranks)
-            graph.extend(child_graph)
-            rank_lists.extend(child_lists)
-        if len(value) > 64:
-            graph.append({"state": FRESHNESS_TRUNCATED_STATE})
+        try:
+            for child in value:
+                if not budget.consume_list_item():
+                    return truncated()
+                child_ranks, child_graph, child_lists = _freshness_records(child, depth + 1, budget)
+                ranks.extend(child_ranks)
+                graph.extend(child_graph)
+                rank_lists.extend(child_lists)
+        except Exception:
+            return truncated()
     return ranks, graph, rank_lists
 
 
-def _kind_check(query: Mapping[str, Any], payload: Any) -> tuple[bool, str | None]:
-    if not isinstance(payload, Mapping) or not isinstance(payload.get("items"), list) or not payload["items"]:
+def _kind_check(query: Mapping[str, Any], payload: Any, budget: _TraversalBudget | None = None) -> tuple[bool, str | None]:
+    budget = budget or _TraversalBudget()
+    try:
+        items = payload.get("items") if isinstance(payload, Mapping) else None
+    except Exception:
+        budget.truncated = True
+        return False, "items must be a non-empty list"
+    if not isinstance(payload, Mapping) or not isinstance(items, list) or not items:
         return False, "items must be a non-empty list"
     kind = query.get("kind")
-    items = payload["items"]
-    if kind == "wiki_pack":
+    try:
+        bounded_items = []
         for item in items:
+            if not budget.consume_list_item() or not budget.consume_node(1):
+                break
+            bounded_items.append(item)
+    except Exception:
+        budget.truncated = True
+        return False, "items must be a non-empty list"
+    if kind == "wiki_pack":
+        for item in bounded_items:
             if not isinstance(item, Mapping):
                 continue
             docs = item.get("docs")
-            if isinstance(docs, list) and any(isinstance(doc, Mapping) and isinstance(doc.get("path"), str) and doc["path"].strip() for doc in docs):
-                return True, None
+            if isinstance(docs, list):
+                for doc in docs:
+                    if not budget.consume_list_item() or not budget.consume_node(2):
+                        break
+                    if isinstance(doc, Mapping) and isinstance(doc.get("path"), str) and doc["path"].strip():
+                        return (False, "projection traversal truncated") if budget.truncated else (True, None)
             for key in ("evidence", "evidence_paths", "evidence_paths_used"):
                 evidence = item.get(key)
-                if isinstance(evidence, list) and any(isinstance(path, str) and path.strip() for path in evidence):
-                    return True, None
+                if isinstance(evidence, list):
+                    for path in evidence:
+                        if not budget.consume_list_item() or not budget.consume_node(2):
+                            break
+                        if isinstance(path, str) and path.strip():
+                            return (False, "projection traversal truncated") if budget.truncated else (True, None)
         return False, "wiki pack has no usable docs/evidence"
     if kind == "explain_change":
-        return True, None
+        return (False, "projection traversal truncated") if budget.truncated else (True, None)
     if kind in {"workspace_map", "related"}:
-        for item in items:
+        for item in bounded_items:
             if not isinstance(item, Mapping):
                 continue
             freshness = item.get("graph_freshness")
@@ -398,13 +899,14 @@ def _kind_check(query: Mapping[str, Any], payload: Any) -> tuple[bool, str | Non
                 return False, "graph_freshness.state is missing or invalid"
             if "graph_ranks" not in item or not isinstance(item.get("graph_ranks"), list):
                 return False, "graph_ranks list is missing"
-        return True, None
-    return True, None
+        return (False, "projection traversal truncated") if budget.truncated else (True, None)
+    return (False, "projection traversal truncated") if budget.truncated else (True, None)
 
 
-def _freshness_check(query: Mapping[str, Any], payload: Any) -> dict[str, Any]:
+def _freshness_check(query: Mapping[str, Any], payload: Any, budget: _TraversalBudget | None = None) -> dict[str, Any]:
     required = bool(query.get("freshness_rank_required"))
-    ranks, graph, rank_lists = _freshness_records(payload) if required else ([], [], [])
+    budget = budget or _TraversalBudget()
+    ranks, graph, rank_lists = _freshness_records(payload, budget=budget) if required else ([], [], [])
     kind = query.get("kind")
     if not required:
         return {"required": False, "status": "NOT_REQUIRED", "observed": 0, "min": None, "max": None, "graph_states": [], "rank_lists": 0}
@@ -414,8 +916,10 @@ def _freshness_check(query: Mapping[str, Any], payload: Any) -> dict[str, Any]:
         passed = current_only and bool(rank_lists)
     else:
         passed = current_only and (bool(ranks) or bool(rank_lists))
+    if budget.truncated:
+        passed = False
     observed = len(ranks) + len(graph)
-    return {"required": True, "status": "PASS" if passed else "FAIL", "observed": observed, "min": min(ranks) if ranks else None, "max": max(ranks) if ranks else None, "graph_states": graph_states, "rank_lists": len(rank_lists)}
+    return {"required": True, "status": "PASS" if passed else "FAIL", "observed": observed, "min": min(ranks) if ranks else None, "max": max(ranks) if ranks else None, "graph_states": graph_states, "rank_lists": len(rank_lists), "truncated": budget.truncated, **({"reason_code": "projection_truncated"} if budget.truncated else {})}
 
 
 def _preview_usefulness(preview: Mapping[str, Any], output_bytes: int | None, estimated_tokens: int | None) -> dict[str, Any]:
@@ -432,25 +936,33 @@ def _sample_measurements_ok(output_bytes: int | None, estimated_tokens: int | No
 
 
 def query_check(query: Mapping[str, Any], payload: Any, *, output_bytes: int | None = None, estimated_tokens: int | None = None) -> dict[str, Any]:
-    projected = sanitize(payload)
-    normalized = normalize(projected)
-    correct = isinstance(payload, Mapping) and payload.get("ok") is True
+    normalized, projection_truncated = _semantic_projection(payload)
+    correct = isinstance(payload, Mapping) and payload.get("ok") is True and not projection_truncated
     expected = query.get("expected_digest")
-    if expected:
+    if expected and not projection_truncated:
         correct = correct and digest(normalized) == expected
+    inspection_budget = _TraversalBudget()
     preview = {"required": bool(query.get("preview_required")), "status": "NOT_REQUIRED", "sections": [], "missing_sections": [], "expansions": {"required": ["command", "reason"], "complete": True}}
     if query.get("preview_required"):
-        preview = {"required": True, **_preview_check(payload)}
+        preview = {"required": True, **_preview_check(payload, inspection_budget)}
         correct = correct and preview["status"] == "PASS"
-    freshness = _freshness_check(query, payload)
+    freshness = _freshness_check(query, payload, inspection_budget)
     if freshness["required"]:
         correct = correct and freshness["status"] == "PASS"
-    kind_ok, kind_reason = _kind_check(query, payload)
+    kind_ok, kind_reason = _kind_check(query, payload, inspection_budget)
     if query.get("kind") in SEMANTIC_KINDS:
         correct = correct and kind_ok
     measurements = {"status": "PASS" if _sample_measurements_ok(output_bytes, estimated_tokens) else "FAIL", "output_bytes": output_bytes, "estimated_tokens": estimated_tokens}
     correct = correct and measurements["status"] == "PASS"
-    result = {"status": "PASS" if correct else "FAIL", "normalized_digest": digest(normalized), "preview": preview, "freshness_rank": freshness, "preview_usefulness": _preview_usefulness(preview, output_bytes, estimated_tokens), "sample_measurements": measurements}
+    result = {
+        "status": "PASS" if correct else "FAIL",
+        "normalized_digest": None if projection_truncated else digest(normalized),
+        "semantic_projection": {"status": "FAIL" if projection_truncated else "PASS", "truncated": projection_truncated, **({"reason_code": "projection_truncated"} if projection_truncated else {})},
+        "preview": preview,
+        "freshness_rank": freshness,
+        "preview_usefulness": _preview_usefulness(preview, output_bytes, estimated_tokens),
+        "sample_measurements": measurements,
+    }
     if kind_reason:
         result["kind_schema"] = {"status": "FAIL", "reason": kind_reason}
     elif query.get("kind") in SEMANTIC_KINDS:
@@ -651,6 +1163,272 @@ def provenance(binary: Path, expected_revision: str | None = None) -> dict[str, 
     result["go_version_m"] = {"status": "PASS" if valid else "FAIL", "revision": parsed["revision"], "modified": parsed["modified"], "parsed": parsed["parsed"], "revision_match": matches if expected_revision else None, "reason_code": None if valid else "provenance_unavailable"}
     result["status"] = "PASS" if valid else "FAIL"
     return result
+
+
+def _worker_status_probe(binary: Path, source_root: Path, campaign_id: str, worker_args: Sequence[str], timeout_seconds: float) -> dict[str, Any]:
+    argv = [
+        str(binary),
+        "--workspace",
+        str(source_root),
+        "--format",
+        "json",
+        "--client-name",
+        "harness-first",
+        "--session-id",
+        campaign_id,
+        "--no-daemon",
+        *worker_args,
+    ]
+    try:
+        result = run_process(argv, timeout_seconds)
+    except HarnessError:
+        return {"status": "FAIL", "usable": False, "attempts": 1, "elapsed_ms": None, "reason_code": "worker_preflight_failed"}
+    report: dict[str, Any] = {
+        "status": "FAIL",
+        "usable": False,
+        "attempts": 1,
+        "elapsed_ms": result.elapsed_ms,
+        "peak_rss_bytes": result.rss_bytes,
+        "output_bytes": result.output_bytes,
+        "estimated_tokens": result.estimated_tokens,
+    }
+    if result.reason_code is not None:
+        report["reason_code"] = "worker_preflight_failed"
+        return report
+    report.update(worker_status_check(result.payload))
+    report["usable"] = report["status"] == "PASS"
+    report["payload_digest"] = digest(normalize(sanitize(result.payload)))
+    if not report["usable"]:
+        report["reason_code"] = "worker_preflight_failed"
+    return report
+
+
+def _daemon_state(payload: Any) -> Mapping[str, Any] | None:
+    if not isinstance(payload, Mapping) or payload.get("ok") is not True:
+        return None
+    items = payload.get("items")
+    if not isinstance(items, list) or not items or not isinstance(items[0], Mapping):
+        return None
+    state = items[0].get("state")
+    return state if isinstance(state, Mapping) else None
+
+
+def _version_identity(payload: Any, expected_sha256: str) -> dict[str, Any]:
+    item: Mapping[str, Any] | None = None
+    if isinstance(payload, Mapping) and payload.get("ok") is True and isinstance(payload.get("items"), list):
+        first = payload["items"][0] if payload["items"] else None
+        if isinstance(first, Mapping):
+            item = first
+    version = item.get("version") if item else None
+    protocol = item.get("protocol_version") if item else None
+    observed_sha256 = item.get("executable_sha256") if item else None
+    version_ok = isinstance(version, str) and bool(version.strip()) and not _sensitive_value(version)
+    protocol_ok = protocol == PROTOCOL_VERSION
+    hash_ok = isinstance(observed_sha256, str) and SHA256.fullmatch(observed_sha256) is not None and observed_sha256 == expected_sha256
+    return {
+        "status": "PASS" if version_ok and protocol_ok and hash_ok else "FAIL",
+        "version": version[:MAX_PROJECTION_STRING_BYTES] if version_ok else None,
+        "protocol_version": protocol if protocol_ok else None,
+        "executable_sha256": observed_sha256 if hash_ok else None,
+        "version_present": version_ok,
+        "protocol_compatible": protocol_ok,
+        "identity_match": hash_ok,
+        "reason_code": None if version_ok and protocol_ok and hash_ok else "candidate_version_failed",
+    }
+
+
+def _version_probe(binary: Path, timeout_seconds: float, expected_sha256: str) -> dict[str, Any]:
+    try:
+        result = run_process([str(binary), "--format", "json", "version"], timeout_seconds)
+    except HarnessError:
+        return {"status": "FAIL", "elapsed_ms": None, "reason_code": "candidate_version_failed", "version": None, "protocol_version": None, "executable_sha256": None}
+    report = _version_identity(result.payload if result.reason_code is None else None, expected_sha256)
+    report["elapsed_ms"] = result.elapsed_ms
+    if result.reason_code is not None:
+        report["status"] = "FAIL"
+        report["reason_code"] = "candidate_version_failed"
+    return report
+
+
+def _daemon_identity_check(payload: Any, expected_sha256: str, candidate: Mapping[str, Any] | None = None) -> dict[str, Any]:
+    state = _daemon_state(payload)
+    if state is None:
+        return {
+            "status": "FAIL",
+            "daemon_identity_match": False,
+            "protocol_compatible": False,
+            "version_compatible": False,
+            "version_match": False,
+            "reason_code": "daemon_preflight_failed",
+        }
+    observed_sha256 = state.get("executable_sha256")
+    protocol_version = state.get("protocol_version")
+    version = state.get("version")
+    identity_match = isinstance(observed_sha256, str) and observed_sha256 == expected_sha256
+    protocol_compatible = protocol_version == PROTOCOL_VERSION
+    version_present = isinstance(version, str) and bool(version.strip()) and not _sensitive_value(version)
+    version_match = candidate is None or (version_present and version == candidate.get("version"))
+    version_compatible = version_present and version_match
+    if not identity_match:
+        reason_code = "daemon_identity_mismatch"
+    elif not protocol_compatible or not version_compatible:
+        reason_code = "candidate_version_mismatch" if candidate is not None and not version_match else "daemon_protocol_mismatch"
+    else:
+        reason_code = None
+    return {
+        "status": "PASS" if reason_code is None else "FAIL",
+        "daemon_identity_match": identity_match,
+        "protocol_compatible": protocol_compatible,
+        "version_compatible": version_compatible,
+        "version_match": version_match,
+        "protocol_version": protocol_version if protocol_compatible else None,
+        "version": version[:MAX_PROJECTION_STRING_BYTES] if version_present else None,
+        "executable_sha256": observed_sha256 if identity_match else None,
+        "version_present": version_present,
+        "protocol_match": protocol_compatible,
+        **({} if reason_code is None else {"reason_code": reason_code}),
+    }
+
+
+def _daemon_preflight(binary: Path, expected_sha256: str, timeout_seconds: float, candidate: Mapping[str, Any] | None = None) -> dict[str, Any]:
+    started = time.perf_counter()
+    stop_report: dict[str, Any] = {"status": "IGNORED", "best_effort": True}
+    try:
+        stop_result = run_process([str(binary), "--format", "json", "daemon", "stop"], timeout_seconds)
+        stop_report["status"] = "PASS" if stop_result.reason_code is None else "IGNORED"
+        stop_report["elapsed_ms"] = stop_result.elapsed_ms
+    except HarnessError:
+        stop_report["status"] = "IGNORED"
+        stop_report["elapsed_ms"] = None
+
+    try:
+        start_result = run_process([str(binary), "--format", "json", "daemon", "start"], timeout_seconds)
+    except HarnessError:
+        return {
+            "status": "BLOCKED",
+            "reason_code": "daemon_preflight_failed",
+            "daemon_identity_match": False,
+            "elapsed_ms": (time.perf_counter() - started) * 1000.0,
+            "stop": stop_report,
+            "start": {"status": "FAIL", "elapsed_ms": None},
+            "status_probe": {"status": "NOT_RUN"},
+        }
+    start_ok = start_result.reason_code is None and isinstance(start_result.payload, Mapping) and start_result.payload.get("ok") is True
+    if not start_ok:
+        return {
+            "status": "BLOCKED",
+            "reason_code": "daemon_preflight_failed",
+            "daemon_identity_match": False,
+            "elapsed_ms": (time.perf_counter() - started) * 1000.0,
+            "stop": stop_report,
+            "start": {"status": "FAIL", "elapsed_ms": start_result.elapsed_ms},
+            "status_probe": {"status": "NOT_RUN"},
+        }
+
+    try:
+        status_result = run_process([str(binary), "--format", "json", "daemon", "status"], timeout_seconds)
+    except HarnessError:
+        return {
+            "status": "BLOCKED",
+            "reason_code": "daemon_preflight_failed",
+            "daemon_identity_match": False,
+            "elapsed_ms": (time.perf_counter() - started) * 1000.0,
+            "stop": stop_report,
+            "start": {"status": "PASS", "elapsed_ms": start_result.elapsed_ms},
+            "status_probe": {"status": "FAIL", "elapsed_ms": None},
+        }
+    identity = _daemon_identity_check(status_result.payload if status_result.reason_code is None else None, expected_sha256, candidate)
+    return {
+        "status": "PASS" if identity["status"] == "PASS" else "BLOCKED",
+        "reason_code": identity.get("reason_code"),
+        "daemon_identity_match": identity["daemon_identity_match"],
+        "protocol_compatible": identity["protocol_compatible"],
+        "version_compatible": identity["version_compatible"],
+        "protocol_version": identity.get("protocol_version"),
+        "version": identity.get("version"),
+        "executable_sha256": identity.get("executable_sha256"),
+        "version_match": identity.get("version_match", False),
+        "version_present": identity.get("version_present", False),
+        "elapsed_ms": (time.perf_counter() - started) * 1000.0,
+        "stop": stop_report,
+        "start": {"status": "PASS", "elapsed_ms": start_result.elapsed_ms},
+        "status_probe": {"status": "PASS" if status_result.reason_code is None else "FAIL", "elapsed_ms": status_result.elapsed_ms},
+    }
+
+
+def _candidate_preflight(binary: Path, source_root: Path, campaign_id: str, worker_args: Sequence[str], expected_sha256: str, timeout_seconds: float, *, daemon_required: bool) -> dict[str, Any]:
+    started = time.perf_counter()
+    if worker_args != ["worker", "status"]:
+        raise HarnessError("invalid_manifest")
+    version = _version_probe(binary, timeout_seconds, expected_sha256)
+    if version["status"] != "PASS":
+        return {
+            "status": "BLOCKED",
+            "reason_code": version.get("reason_code", "candidate_version_failed"),
+            "worker_usable": False,
+            "daemon_identity_match": None,
+            "worker_elapsed_ms": None,
+            "daemon_elapsed_ms": None,
+            "elapsed_ms": (time.perf_counter() - started) * 1000.0,
+            "version": version,
+            "worker": {"status": "NOT_RUN"},
+            "daemon": {"status": "NOT_RUN", "daemon_identity_match": None},
+        }
+    worker = _worker_status_probe(binary, source_root, campaign_id, ["worker", "status"], timeout_seconds)
+    if worker["status"] != "PASS":
+        return {
+            "status": "BLOCKED",
+            "reason_code": "worker_preflight_failed",
+            "worker_usable": False,
+            "daemon_identity_match": None,
+            "worker_elapsed_ms": worker.get("elapsed_ms"),
+            "daemon_elapsed_ms": None,
+            "elapsed_ms": (time.perf_counter() - started) * 1000.0,
+            "version": version,
+            "worker": worker,
+            "daemon": {"status": "NOT_RUN", "daemon_identity_match": None},
+        }
+    if not daemon_required:
+        daemon = {"status": "NOT_REQUIRED", "daemon_identity_match": None, "elapsed_ms": 0.0}
+    else:
+        daemon = _daemon_preflight(binary, expected_sha256, timeout_seconds, version)
+    return {
+        "status": "PASS" if daemon["status"] in {"PASS", "NOT_REQUIRED"} else "BLOCKED",
+        "reason_code": daemon.get("reason_code"),
+        "worker_usable": True,
+        "daemon_identity_match": daemon.get("daemon_identity_match"),
+        "worker_elapsed_ms": worker.get("elapsed_ms"),
+        "daemon_elapsed_ms": daemon.get("elapsed_ms"),
+        "elapsed_ms": (time.perf_counter() - started) * 1000.0,
+        "version": version,
+        "worker": worker,
+        "daemon": daemon,
+    }
+
+
+def _write_blocked_report(output_path: Path, marker_path: Path, contract: Mapping[str, Any], source: str, manifest_hash: str, provenance_report: Mapping[str, Any], candidate_preflight: Mapping[str, Any], started: float) -> dict[str, Any]:
+    reason_code = str(candidate_preflight.get("reason_code", "native_error"))
+    report = {
+        "schema": REPORT_SCHEMA,
+        "campaign_id": contract["campaign_id"],
+        "status": "BLOCKED",
+        "source_revision": source,
+        "manifest_sha256": manifest_hash,
+        "provenance": provenance_report,
+        "budgets": contract["budgets"],
+        "candidate_preflight": candidate_preflight,
+        "worker_status": candidate_preflight.get("worker", {"status": "NOT_RUN"}),
+        "samples": [],
+        "parity": {"required_queries": [query["id"] for query in contract["queries"] if query.get("parity_required")], "results": {}, "status": "BLOCKED", "diagnostics": {}},
+        "duration_ms": (time.perf_counter() - started) * 1000.0,
+        "sanitized": True,
+        "comparators": {"graphify": "not_used"},
+        "failure_reasons": [reason_code if reason_code in REASONS else "native_error"],
+    }
+    (output_path / "report.json").write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    (output_path / "report.yaml").write_text(to_yaml(report), encoding="utf-8")
+    finish_marker(marker_path, "BLOCKED")
+    return report
 
 
 def _registry_path(source_root: Path) -> Path:
@@ -863,12 +1641,25 @@ def run_campaign(manifest: Mapping[str, Any], *, binary: str | Path, source_root
         raise HarnessError("marker_exists")
     if any((output_path / name).exists() for name in ("report.json", "report.yaml")) or any(item.name != MARKER_NAME for item in output_path.iterdir()):
         raise HarnessError("output_reused")
-    claim_global_marker(source_path, {"campaign_id": contract["campaign_id"], "source_revision": source, "binary_sha256": prov["binary_sha256"]})
     write_marker(marker_path, _marker(output_path, contract["campaign_id"], source, manifest_hash, prov["binary_sha256"]))
     samples: list[dict[str, Any]] = []
     failures: list[str] = []
-    started = time.perf_counter()
+    projections: dict[tuple[str, str], Any] = {}
+    campaign_started = time.perf_counter()
     try:
+        candidate_preflight = _candidate_preflight(
+            binary_path,
+            source_path,
+            contract["campaign_id"],
+            contract["worker_status_args"],
+            prov["binary_sha256"],
+            timeout_seconds,
+            daemon_required=any("daemon" in query["modes"] for query in contract["queries"]),
+        )
+        if candidate_preflight["status"] != "PASS":
+            return _write_blocked_report(output_path, marker_path, contract, source, manifest_hash, prov, candidate_preflight, campaign_started)
+        worker_report = candidate_preflight["worker"]
+        claim_global_marker(source_path, {"campaign_id": contract["campaign_id"], "source_revision": source, "binary_sha256": prov["binary_sha256"]})
         for query in contract["queries"]:
             for mode in query["modes"]:
                 result = run_process(_command(binary_path, source_path, contract["campaign_id"], query, mode), min(float(query.get("timeout_seconds", timeout_seconds)), timeout_seconds))
@@ -878,6 +1669,12 @@ def run_campaign(manifest: Mapping[str, Any], *, binary: str | Path, source_root
                     failures.append(result.reason_code)
                 else:
                     sample.update(query_check(query, result.payload, output_bytes=result.output_bytes, estimated_tokens=result.estimated_tokens))
+                    projection, projection_truncated = _semantic_projection(result.payload)
+                    projections[(query["id"], mode)] = projection
+                    sample["semantic_projection_digest"] = None if projection_truncated else digest(projection)
+                    if projection_truncated:
+                        sample["status"] = "FAIL"
+                        sample["reason_code"] = "projection_truncated"
                     if query["kind"] in {"related", "wiki_pack", "explain_change", "workspace_map"}:
                         route, backend = _telemetry_route_probe(binary_path, contract["campaign_id"], "nav.related" if query["kind"] == "related" else ("nav.wiki.pack" if query["kind"] == "wiki_pack" else "nav.intent" if query["kind"] == "explain_change" else "nav.workspace-map"), timeout_seconds)
                         if query["kind"] == "related":
@@ -889,16 +1686,6 @@ def run_campaign(manifest: Mapping[str, Any], *, binary: str | Path, source_root
                     if sample["status"] != "PASS":
                         failures.append(str(sample.get("reason_code", "correctness_failed")))
                 samples.append(sample)
-        worker = run_process([str(binary_path), "--workspace", str(source_path), "--format", "json", "--client-name", "harness-first", "--session-id", contract["campaign_id"], *contract["worker_status_args"]], timeout_seconds)
-        worker_report: dict[str, Any] = {"status": "FAIL", "attempts": 1, "elapsed_ms": worker.elapsed_ms, "peak_rss_bytes": worker.rss_bytes, "output_bytes": worker.output_bytes, "estimated_tokens": worker.estimated_tokens}
-        if worker.reason_code:
-            worker_report["reason_code"] = worker.reason_code
-            failures.append("worker_failed")
-        else:
-            worker_report.update(worker_status_check(worker.payload))
-            worker_report["payload_digest"] = digest(normalize(sanitize(worker.payload)))
-            if worker_report["status"] != "PASS":
-                failures.append(str(worker_report.get("reason_code", "worker_failed")))
         latencies = [float(item["elapsed_ms"]) for item in samples if finite(item.get("elapsed_ms"))]
         budgets = contract["budgets"]
         latency = stats(latencies)
@@ -913,10 +1700,28 @@ def run_campaign(manifest: Mapping[str, Any], *, binary: str | Path, source_root
             grouped.setdefault(sample["query_id"], {})[sample["mode"]] = sample
         parity_ids = [query["id"] for query in contract["queries"] if query.get("parity_required")]
         parity_results = {}
+        parity_diagnostics: dict[str, dict[str, Any]] = {}
         for query_id in parity_ids:
             pair = grouped.get(query_id, {})
-            passed = pair.get("direct", {}).get("status") == "PASS" and pair.get("daemon", {}).get("status") == "PASS" and pair.get("direct", {}).get("normalized_digest") == pair.get("daemon", {}).get("normalized_digest")
+            direct = pair.get("direct", {})
+            daemon = pair.get("daemon", {})
+            diff = _bounded_structural_diff(projections.get((query_id, "direct")), projections.get((query_id, "daemon")))
+            passed = (
+                direct.get("status") == "PASS"
+                and daemon.get("status") == "PASS"
+                and direct.get("normalized_digest") is not None
+                and direct.get("normalized_digest") == daemon.get("normalized_digest")
+                and not diff.get("truncated")
+                and direct.get("semantic_projection", {}).get("truncated") is False
+                and daemon.get("semantic_projection", {}).get("truncated") is False
+            )
             parity_results[query_id] = passed
+            parity_diagnostics[query_id] = {
+                "status": "PASS" if passed else "FAIL",
+                "direct_digest": direct.get("semantic_projection_digest"),
+                "daemon_digest": daemon.get("semantic_projection_digest"),
+                "diff": diff,
+            }
         parity = all(parity_results.values()) if parity_results else True
         if not parity:
             failures.append("parity_failed")
@@ -954,11 +1759,12 @@ def run_campaign(manifest: Mapping[str, Any], *, binary: str | Path, source_root
             "explain_change": kind_reports["explain_change"],
             "workspace_map": kind_reports["workspace_map"],
             "related": kind_reports["related"],
-            "parity": {"required_queries": parity_ids, "results": parity_results, "status": "PASS" if parity else "FAIL"},
+            "parity": {"required_queries": parity_ids, "results": parity_results, "status": "PASS" if parity else "FAIL", "diagnostics": parity_diagnostics},
             "retry_amplification": retry,
+            "candidate_preflight": candidate_preflight,
             "worker_status": worker_report,
             "samples": samples,
-            "duration_ms": (time.perf_counter() - started) * 1000.0,
+            "duration_ms": (time.perf_counter() - campaign_started) * 1000.0,
             "sanitized": True,
             "comparators": {"graphify": "not_used"},
             "failure_reasons": sorted(set(reason if reason in REASONS else "native_error" for reason in failures)),
