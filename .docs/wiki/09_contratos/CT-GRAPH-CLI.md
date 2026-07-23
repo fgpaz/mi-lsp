@@ -342,6 +342,8 @@ evidence:
   - internal/workspace/repository_identity.go
   - internal/indexer/graph_pipeline.go
   - internal/indexer/indexer.go
+verify:
+  - go test ./internal/workspace/... ./internal/indexer/...
 identity:
   precedence: [explicit-coherent, local-vcs-origin, fail-closed]
   workspace_equals_repository: true

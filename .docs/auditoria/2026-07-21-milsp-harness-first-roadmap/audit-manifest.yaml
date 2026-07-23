@@ -20,14 +20,19 @@ artifact_classes:
     - raw command stdout and stderr
     - benchmark raw samples
   planned:
-    - implementation-summary.yaml
-    - traceability-closure.yaml
     - audit-report.yaml
     - ae-close-verdict.md
 hash_index:
-  status: pending_finalization
+  status: partial_pending_terminal_evidence_commit
   self_hash: not_applicable
-  entries: []
+  note: >-
+    audit-report.yaml and ae-close-verdict.md hashes land in the terminal
+    evidence-only commit after the re-audit; that commit changes no code or canon.
+  entries:
+    - path: session-contract.yaml
+      sha256: a0f1c80731602ecc09f38352287271c3b3bef4da4fea59bc9eff662a7899c478
+    - path: traceability-closure.yaml
+      sha256: 2aa1420de6176c2cd7c9365c12ca9d3a2e77f47f54ffe3f5b38bb84ad5782fbe
 cleanup_status:
   state: active_until_terminal_closure_plus_ttl
   destructive_cleanup_used: false

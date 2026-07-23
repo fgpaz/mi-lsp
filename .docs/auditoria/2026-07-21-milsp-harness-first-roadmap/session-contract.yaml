@@ -121,7 +121,47 @@ cleanup_policy:
   worktree: remove only after verified integration and release readback
   destructive_cleanup: false
   retention_ttl_days: 14
+scope_amendments:
+  - id: AMEND-20260723-01
+    date: 2026-07-23
+    authorized_by: USER-AUTHORIZED-COMPLETE-ROADMAP-20260721
+    reason: >-
+      The base..HEAD range inherits commits already integrated in origin/main
+      (kernel v2 governance work merged via e938061) and the prior authorized
+      graph-native session (base branch ae/graph-native-roadmap-20260718).
+      Scope control for integration is the diff against origin/main.
+    forbidden_path_classification:
+      raw_range_hits:
+        - .docs/wiki/00_gobierno_documental.md
+        - .docs/wiki/_mi-lsp/read-model.toml
+      origin_commits: [4f6012e, 4020596, 8e9bcb9]
+      origin_commits_in_origin_main: true
+      diff_vs_origin_main_on_forbidden_paths: 0
+      verdict: inherited_not_session_authored
+    additional_allowed_paths:
+      - AGENTS.md
+      - CLAUDE.md
+      - PATHS.md
+      - CHANGELOG.md
+      - worker-dotnet/**
+      - skills/mi-lsp/**
+      - go.mod
+      - go.sum
+      - benchmarks/victory-lab/**
+      - .docs/ae/repo-policy.yaml
+      - .docs/raw/plans/**
+      - .docs/planificacion/**
+      - .docs/auditoria/2026-07-18-milsp-graph-native/**
+    additional_paths_rationale: >-
+      Policy sync (ps-crear-agentsclaudemd/ae-setup), Roslyn worker changes of the
+      roadmap, shared skill source sync, dependency updates, prior-session fixtures
+      inherited from the base branch, and durable plan/audit evidence.
 waivers:
   - prior G9/G10 competitive blockers do not block this new product-improvement scope
   - no repeated competitive benchmark during implementation; one final benchmark only
   - go test -race remains NOT_RUN_HOST_UNSUPPORTED on Windows arm64
+  - commits after campaign revision 9bb3163 must be docs/evidence-only, verified via
+    git diff 9bb3163..HEAD --name-only before tagging; because AE-RELEASE-DISTRIBUTION
+    requires the tag to point at HEAD with exact provenance, release binaries are
+    rebuilt at the final integration revision and one confirmation campaign runs on
+    that new tuple (new revision + new binary hash; not a repeat of a consumed tuple)

@@ -365,8 +365,25 @@ evidence:
   - .docs/wiki/06_pruebas/TP-GPH.md
   - internal/service/intent_test.go
   - scripts/bench/harness_first/tests/test_runner.py
-status: implemented_tests_not_campaign
-campaign_status: NOT_RUN
+status: implemented_tests_and_campaign
+campaign_status: PASS
+campaign_record:
+  schema: harness-first-campaign/v1
+  campaign_id: harness-first-final-9bb3163
+  source_revision: 9bb3163dc8840c76a6acfdccdbc798973f05bd49
+  binary_sha256: d4dbcf3981ae4569cf92b52d2300eae0cd583436683067db4ed746f1ec1da35a
+  status: PASS
+  correctness_percent: 100.0
+  parity: PASS_exact_digest
+  parity_digest: faae133a60e5e31f0b951867b7477b112cebf49daf463b092e83294b781a072e
+  retry_amplification: 1.0
+  latency_p95_ms: 8009.6
+  latency_p99_ms: 8591.1
+  latency_budget_p95_ms: 15000
+  latency_budget_p99_ms: 15000
+  peak_rss_bytes: 252096512
+  preview_usefulness: PASS
+  evidence: .docs/auditoria/2026-07-21-milsp-harness-first-roadmap/traceability-closure.yaml
 verify:
   - go test ./internal/model/... ./internal/service/... ./internal/store/... ./internal/telemetry/...
   - python -m unittest discover -s scripts/bench/harness_first/tests -p "test_*.py"
@@ -411,9 +428,9 @@ features:
     status: implemented
     evidence: [internal/telemetry/access_events_test.go::TestEnrichAccessEventRedactsRawTelemetryInputs, internal/telemetry/access_events_test.go::TestNormalizeAccessEventRejectsArbitraryTelemetryCodesEverywhere]
   F11_campaign_contract_and_release_gate:
-    status: implemented_contract_only
+    status: implemented_and_executed
     evidence: [scripts/bench/harness_first/tests/test_runner.py, docs/benchmarks/HARNESS_FIRST_CAMPAIGN.json, docs/benchmarks/HARNESS_FIRST.md]
-    campaign_execution: NOT_RUN
+    campaign_execution: PASS_harness-first-final-9bb3163
 ```
 
-El mapa F1-F11 demuestra cobertura automatizada o contractual del árbol actual; no constituye evidencia de una campaña real. La campaña Harness-first permanece `NOT_RUN` hasta una ejecución única autorizada con binario, provenance, RSS y seis RIDs cuando corresponda.
+El mapa F1-F11 demuestra cobertura automatizada del árbol actual, y la campaña Harness-first fue ejecutada una única vez sobre `9bb3163` con binario real, provenance limpia (`vcs.modified=false`), RSS acotado y paridad direct/daemon por digest exacto. El registro sanitizado vive en `campaign_record` y en el paquete de cierre trazado; la salida raw permanece como evidencia externa temporal y no se promueve.
