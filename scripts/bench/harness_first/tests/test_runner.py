@@ -10,6 +10,7 @@ from unittest.mock import patch
 from scripts.bench.harness_first.runner import (
     HarnessError,
     MARKER_NAME,
+    MAX_PREFLIGHT_TIMEOUT_SECONDS,
     MAX_PROJECTION_DEPTH,
     MAX_PROJECTION_LIST_ITEMS,
     MAX_PROJECTION_MAPPING_ENTRIES,
@@ -163,6 +164,77 @@ class RunnerContractTests(unittest.TestCase):
         self.assertEqual(calls[0][-3], "--no-daemon")
         self.assertIn("--workspace", calls[0])
         self.assertEqual(calls[0][calls[0].index("--workspace") + 1], "source")
+
+    def test_run_campaign_separates_index_and_query_timeouts(self):
+        manifest = self.manifest()
+        worker_payload = {"ok": True, "backend": "worker", "items": [{"selected_compatible": True, "selected_source": "bundle", "selected_path": "worker"}]}
+        calls = []
+        responses = iter([
+            ProcessResult(0, 1.0, payload={"ok": True, "items": [{"version": "(devel)", "protocol_version": "mi-lsp-v1.1", "executable_sha256": "b" * 64}]}),
+            ProcessResult(0, 1.0, payload=worker_payload, rss_bytes=1),
+            ProcessResult(0, 1.0, payload={"ok": True}),
+            ProcessResult(0, 1.0, payload={"ok": True, "backend": "index-job", "items": [{"status": "succeeded"}]}),
+            ProcessResult(0, 1.0, payload={"ok": True, "items": [{"graph_freshness": {"state": "current"}, "graph_ranks": []}]}, output_bytes=1, estimated_tokens=1),
+            ProcessResult(0, 1.0, payload=self.preview_payload(), rss_bytes=1, output_bytes=1, estimated_tokens=1),
+            ProcessResult(0, 1.0, payload=[]),
+        ])
+
+        def fake_run_process(argv, timeout):
+            calls.append((list(argv), timeout))
+            return next(responses)
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            binary = root / "candidate"
+            binary.write_bytes(b"candidate")
+            with (
+                patch("scripts.bench.harness_first.runner.run_process", side_effect=fake_run_process),
+                patch("scripts.bench.harness_first.runner.source_revision", return_value="a" * 40),
+                patch("scripts.bench.harness_first.runner.provenance", return_value={"status": "PASS", "binary_sha256": "b" * 64}),
+                patch("scripts.bench.harness_first.runner.claim_global_marker"),
+            ):
+                report = run_campaign(manifest, binary=binary, source_root=root, output=root / "output", timeout_seconds=60)
+
+        index_call = next((argv, timeout) for argv, timeout in calls if argv[-2:] == ["index", "--clean"])
+        query_call = next((argv, timeout) for argv, timeout in calls if argv[-4:] == ["nav", "explain-change", "--path", "internal/service/intent.go"])
+        self.assertEqual(report["status"], "PASS")
+        self.assertEqual(index_call[1], MAX_PREFLIGHT_TIMEOUT_SECONDS)
+        self.assertEqual(query_call[1], 60)
+
+    def test_index_timeout_blocks_before_claim_without_retry(self):
+        manifest = self.manifest()
+        worker_payload = {"ok": True, "backend": "worker", "items": [{"selected_compatible": True, "selected_source": "bundle", "selected_path": "worker"}]}
+        calls = []
+        responses = iter([
+            ProcessResult(0, 1.0, payload={"ok": True, "items": [{"version": "(devel)", "protocol_version": "mi-lsp-v1.1", "executable_sha256": "b" * 64}]}),
+            ProcessResult(0, 1.0, payload=worker_payload),
+            ProcessResult(0, 1.0, payload={"ok": True}),
+            ProcessResult(124, MAX_PREFLIGHT_TIMEOUT_SECONDS * 1000, reason_code="timeout"),
+        ])
+
+        def fake_run_process(argv, timeout):
+            calls.append((list(argv), timeout))
+            return next(responses)
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            binary = root / "candidate"
+            binary.write_bytes(b"candidate")
+            with (
+                patch("scripts.bench.harness_first.runner.run_process", side_effect=fake_run_process),
+                patch("scripts.bench.harness_first.runner.source_revision", return_value="a" * 40),
+                patch("scripts.bench.harness_first.runner.provenance", return_value={"status": "PASS", "binary_sha256": "b" * 64}),
+                patch("scripts.bench.harness_first.runner.claim_global_marker") as claim,
+            ):
+                report = run_campaign(manifest, binary=binary, source_root=root, output=root / "output", timeout_seconds=60)
+
+        index_calls = [(argv, timeout) for argv, timeout in calls if argv[-2:] == ["index", "--clean"]]
+        self.assertEqual(report["status"], "BLOCKED")
+        self.assertEqual(report["candidate_preflight"]["reason_code"], "index_preflight_failed")
+        self.assertEqual(len(index_calls), 1)
+        self.assertEqual(index_calls[0][1], MAX_PREFLIGHT_TIMEOUT_SECONDS)
+        self.assertEqual(report["candidate_preflight"]["index"]["attempts"], 1)
+        claim.assert_not_called()
 
     def test_daemon_identity_check_requires_exact_candidate_hash_and_compatible_metadata(self):
         candidate_sha = "a" * 64

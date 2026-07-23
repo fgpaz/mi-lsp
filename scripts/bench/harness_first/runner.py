@@ -1434,8 +1434,12 @@ def _index_status_check(payload: Any) -> bool:
     return items[0].get("status") == "succeeded"
 
 
-def _index_preflight(binary: Path, source_root: Path, campaign_id: str, timeout_seconds: float) -> dict[str, Any]:
-    """Run the one fixed, bounded index operation before any candidate claim."""
+def _index_preflight(binary: Path, source_root: Path, campaign_id: str, _timeout_seconds: float | None = None) -> dict[str, Any]:
+    """Run the one fixed, bounded index operation before any candidate claim.
+
+    The index preflight has its own fixed ceiling; query timeout configuration
+    must not shorten this clean-index operation.
+    """
     argv = [
         str(binary),
         "--workspace",
@@ -1451,7 +1455,7 @@ def _index_preflight(binary: Path, source_root: Path, campaign_id: str, timeout_
         "--clean",
     ]
     try:
-        result = run_process(argv, _preflight_timeout(timeout_seconds))
+        result = run_process(argv, MAX_PREFLIGHT_TIMEOUT_SECONDS)
     except HarnessError:
         return {"status": "FAIL", "attempts": 1, "elapsed_ms": None, "reason_code": "index_preflight_failed"}
     report: dict[str, Any] = {
