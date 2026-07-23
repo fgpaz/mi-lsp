@@ -1,11 +1,62 @@
 package service
 
 import (
+	"context"
+	"encoding/json"
 	"os"
+	"reflect"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/fgpaz/mi-lsp/internal/model"
 )
+
+func TestRelatedWithoutActiveGenerationIsExplicitAndNonBlocking(t *testing.T) {
+	root, alias := setupTestWorkspace(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	env, err := New(root, nil).Execute(ctx, model.CommandRequest{
+		Operation: "nav.related",
+		Context:   model.QueryOptions{Workspace: alias},
+		Payload:   map[string]any{"symbol": "MissingSymbol", "depth": "definition"},
+	})
+	if err != nil {
+		t.Fatalf("related: %v", err)
+	}
+	if !env.Ok {
+		t.Fatalf("related ok=%v, want true", env.Ok)
+	}
+	items, ok := env.Items.([]symbolNeighborhood)
+	if !ok || len(items) != 1 {
+		t.Fatalf("items=%T %#v, want one related item", env.Items, env.Items)
+	}
+	item := items[0]
+	if item.GraphFreshness == nil || item.GraphFreshness.State == model.GraphFreshnessCurrent {
+		t.Fatalf("graph freshness=%#v, want explicit non-current state", item.GraphFreshness)
+	}
+	if item.GraphRanks == nil || len(item.GraphRanks) != 0 {
+		t.Fatalf("graph ranks=%#v, want initialized empty list", item.GraphRanks)
+	}
+	foundWarning := false
+	for _, warning := range env.Warnings {
+		if strings.Contains(warning, "graph rank unavailable") {
+			foundWarning = true
+			break
+		}
+	}
+	if !foundWarning {
+		t.Fatalf("warnings=%v, want graph rank warning", env.Warnings)
+	}
+	encoded, err := json.Marshal(item)
+	if err != nil {
+		t.Fatalf("marshal related item: %v", err)
+	}
+	if !strings.Contains(string(encoded), `"graph_ranks":[]`) {
+		t.Fatalf("related JSON=%s, want present empty graph_ranks list", encoded)
+	}
+}
 
 func TestParseDepth_Empty(t *testing.T) {
 	depth := parseDepth("")
@@ -359,5 +410,38 @@ func TestSymbolToContent_FileNotFound(t *testing.T) {
 
 	if got.ContentMode != "" {
 		t.Errorf("symbolToContent ContentMode should be empty for nonexistent file, got %q", got.ContentMode)
+	}
+}
+
+func TestRelatedDirectAndDaemonOrderingIsCanonical(t *testing.T) {
+	backendOrder := []map[string]any{
+		{"file": "src/Zeta.cs", "name": "Zeta", "kind": "class", "line": 4},
+		{"file": "src/alpha.cs", "name": "Alpha", "kind": "method", "line": 12},
+		{"file": "src/alpha.cs", "name": "Alpha", "kind": "method", "line": 3},
+	}
+	reversedOrder := append([]map[string]any(nil), backendOrder...)
+	for left, right := 0, len(reversedOrder)-1; left < right; left, right = left+1, right-1 {
+		reversedOrder[left], reversedOrder[right] = reversedOrder[right], reversedOrder[left]
+	}
+
+	directCallers := filterRefsByRole(backendOrder, t.TempDir(), "caller", false)
+	daemonCallers := filterRefsByRole(reversedOrder, t.TempDir(), "caller", false)
+	if !reflect.DeepEqual(directCallers, daemonCallers) {
+		t.Fatalf("direct callers=%#v, daemon callers=%#v; semantic ordering must be canonical", directCallers, daemonCallers)
+	}
+	if got := directCallers[0].Line; got != 3 {
+		t.Fatalf("canonical caller order starts at line %d, want 3", got)
+	}
+
+	directTests := canonicalizeRelatedSymbols([]symbolWithContent{
+		{File: "tests/Zeta_test.go", Name: "zeta", Kind: "test_reference", Line: 2},
+		{File: "tests/alpha_test.go", Name: "alpha", Kind: "test_reference", Line: 9},
+	})
+	daemonTests := canonicalizeRelatedSymbols([]symbolWithContent{
+		{File: "tests/alpha_test.go", Name: "alpha", Kind: "test_reference", Line: 9},
+		{File: "tests/Zeta_test.go", Name: "zeta", Kind: "test_reference", Line: 2},
+	})
+	if !reflect.DeepEqual(directTests, daemonTests) {
+		t.Fatalf("direct tests=%#v, daemon tests=%#v; repeated related queries must be stable", directTests, daemonTests)
 	}
 }

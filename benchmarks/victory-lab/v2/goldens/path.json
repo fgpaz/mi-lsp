@@ -1,0 +1,38 @@
+{
+  "schema": "victory-golden/v2",
+  "fixture_id": "graph-native-go-callers-affected-path",
+  "repository_identity": "https://example.com/mi-lsp/victory-lab-v2",
+  "operation": "nav.path",
+  "from": "app.Run",
+  "to": "subject.Normalize",
+  "relation": "calls",
+  "expected_shortest_path": [
+    "app.Run",
+    "callers.Direct",
+    "subject.Normalize"
+  ],
+  "expected_edge_relations": [
+    "calls",
+    "calls"
+  ],
+  "expected_distance": 2,
+  "tie_break": "shortest-then-lexicographic-canonical-path",
+  "alternate_longer_path": [
+    "app.Run",
+    "callers.Indirect",
+    "subject.Validate",
+    "subject.Normalize"
+  ],
+  "negative_paths": [
+    {
+      "from": "app.Run",
+      "to": "unrelated.Unrelated",
+      "status": "unresolved",
+      "reason": "no calls path"
+    }
+  ],
+  "determinism": {
+    "reruns": 30,
+    "outputs_identical": true
+  }
+}

@@ -465,6 +465,48 @@ func TestRecordAccess_RoundTripsSearchRoutingDiagnostics(t *testing.T) {
 	}
 }
 
+func TestRecordAccess_PersistsSanitizedTelemetryFields(t *testing.T) {
+	store := testStore(t)
+	defer store.Close()
+
+	secret := "F10_PERSISTED_QUERY_PROMPT_ARGV_SNIPPET_PATH_SELECTOR"
+	event := model.AccessEvent{
+		OccurredAt:   time.Now(),
+		ClientName:   "test-cli",
+		SessionID:    "session-f10-persisted",
+		Workspace:    "test",
+		Repo:         secret,
+		Operation:    "nav.search",
+		Backend:      "text",
+		Warnings:     []string{secret, secret},
+		Error:        secret,
+		ErrorCode:    "search_failed",
+		HintCode:     "search_failed",
+		DecisionJSON: `{"pattern_len":7,"raw_query":"` + secret + `"}`,
+	}
+	if err := store.RecordAccessDirect(event); err != nil {
+		t.Fatalf("RecordAccessDirect: %v", err)
+	}
+
+	events, err := QueryAccessEvents(store, ExportQuery{SessionID: event.SessionID, Limit: 10})
+	if err != nil {
+		t.Fatalf("QueryAccessEvents: %v", err)
+	}
+	if len(events) != 1 {
+		t.Fatalf("len(events) = %d, want 1", len(events))
+	}
+	got := events[0]
+	if strings.Contains(got.Repo, secret) || strings.Contains(got.Error, secret) || strings.Contains(strings.Join(got.Warnings, " "), secret) || strings.Contains(got.DecisionJSON, secret) {
+		t.Fatalf("persisted telemetry leaked raw input: %#v", got)
+	}
+	if got.Repo != "selected" || got.Error != "search_failed" || got.WarningCount != 2 {
+		t.Fatalf("persisted typed fields = repo=%q error=%q warning_count=%d", got.Repo, got.Error, got.WarningCount)
+	}
+	if got.DecisionJSON != `{"pattern_len":7}` {
+		t.Fatalf("persisted decision_json = %q, want typed allowlist", got.DecisionJSON)
+	}
+}
+
 func TestQueryAccessEvents_FiltersBySearchRoutingDiagnostics(t *testing.T) {
 	store := testStore(t)
 	defer store.Close()

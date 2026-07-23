@@ -222,7 +222,7 @@ func (a *App) runIndexJob(ctx context.Context, registration model.WorkspaceRegis
 				hasExistingCatalog = stats.Files > 0 || stats.Symbols > 0
 			}
 			if !job.Clean && hasExistingCatalog {
-				result, err = indexer.IncrementalIndex(ctx, registration.Root)
+				result, err = indexer.IncrementalIndexWithGraphProgress(ctx, registration.Root, job.GenerationID, progress.report, indexer.GraphIndexOptions{RoslynObserver: a.graphObserver()})
 				if err == nil {
 					warning := "incremental=true"
 					if result.Stats.Files == 0 {
@@ -233,8 +233,18 @@ func (a *App) runIndexJob(ctx context.Context, registration model.WorkspaceRegis
 					if err != nil {
 						return err
 					}
-					if genErr := store.MarkIndexGenerationSkipped(ctx, db, jobID, "incremental update did not publish a full generation"); genErr != nil {
-						return genErr
+					if result.GraphNotApplicable {
+						if genErr := store.MarkIndexGenerationSkipped(ctx, db, jobID, "incremental catalog update has no graph-capable backend"); genErr != nil {
+							return genErr
+						}
+					} else {
+						freshness, freshnessErr := store.GraphFreshness(ctx, db, "")
+						if freshnessErr != nil {
+							return freshnessErr
+						}
+						if freshness.State != model.GraphFreshnessCurrent {
+							return fmt.Errorf("incremental index completed without a current graph generation: %s", freshness.ReasonCode)
+						}
 					}
 					if err := progress.report(ctx, indexer.Progress{Stage: "done", Files: result.Stats.Files, Symbols: result.Stats.Symbols, Docs: result.Docs, Force: true}); err != nil {
 						return err
@@ -242,7 +252,7 @@ func (a *App) runIndexJob(ctx context.Context, registration model.WorkspaceRegis
 					return store.MarkIndexJobSucceeded(ctx, db, jobID, result.Stats.Files, result.Stats.Symbols, result.Docs)
 				}
 			}
-			result, err = indexer.IndexWorkspaceWithProgress(ctx, registration.Root, job.Clean, job.GenerationID, progress.report)
+			result, err = indexer.IndexWorkspaceWithGraphProgress(ctx, registration.Root, job.Clean, job.GenerationID, progress.report, indexer.GraphIndexOptions{RoslynObserver: a.graphObserver()})
 		}
 		if err != nil {
 			return err

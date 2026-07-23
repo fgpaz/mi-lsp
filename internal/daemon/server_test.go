@@ -3,6 +3,7 @@ package daemon
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -29,6 +30,61 @@ func (s workerStatusServerSemanticStub) Status() []model.WorkerStatus {
 		return nil
 	}
 	return append([]model.WorkerStatus(nil), s.statuses...)
+}
+
+func TestBackgroundIndexChildContextIsNotReusedForSynchronousExecute(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	root := t.TempDir()
+	writeMinimalGovernedIndexedWorkspace(t, root)
+	alias := "background-context-" + filepath.Base(root)
+	if _, err := workspace.RegisterWorkspace(alias, model.WorkspaceRegistration{Name: alias, Root: root, Kind: model.WorkspaceKindSingle}); err != nil {
+		t.Fatal(err)
+	}
+	defer workspace.RemoveWorkspace(alias)
+
+	parent := context.Background()
+	child, cancelChild := context.WithCancel(parent)
+	if jobID := startWorkspaceBackgroundIndex(child, t.TempDir()); jobID == "" {
+		t.Fatal("expected background index job id")
+	}
+	cancelChild()
+
+	server := &Server{app: service.New(root, nil)}
+	request := model.CommandRequest{
+		ProtocolVersion: model.ProtocolVersion,
+		Operation:       "nav.overview",
+		Context:         model.QueryOptions{Workspace: alias},
+	}
+	if _, err := server.handleRequestContext(parent, request); err != nil {
+		t.Fatalf("synchronous App.Execute reused the canceled background child: %v", err)
+	}
+
+	canceled, cancel := context.WithCancel(parent)
+	cancel()
+	if _, err := server.handleRequestContext(canceled, request); !errors.Is(err, context.Canceled) {
+		t.Fatalf("synchronous request lost real server cancellation: %v", err)
+	}
+}
+
+func TestWorkspaceBackgroundIndexDoesNotCancelCallerContext(t *testing.T) {
+	ctx := context.Background()
+	jobID := startWorkspaceBackgroundIndex(ctx, t.TempDir())
+	if jobID == "" {
+		t.Fatal("expected background index job id")
+	}
+	if err := ctx.Err(); err != nil {
+		t.Fatalf("caller context was canceled: %v", err)
+	}
+}
+
+func TestRequestTelemetryIntentReadsSerializedPlannerItems(t *testing.T) {
+	request := model.CommandRequest{Operation: "nav.ask"}
+	response := model.Envelope{Items: []any{map[string]any{"intent": "neighborhood", "query": "must not be captured"}}}
+	if got := requestTelemetryIntent(request, response); got != "neighborhood" {
+		t.Fatalf("intent=%q", got)
+	}
 }
 
 func TestHandleRequestNavPrepareBypassesCacheWhenGenerationUnavailable(t *testing.T) {
@@ -262,6 +318,42 @@ func TestHandleRequestSystemStatusIncludesProcessAndWatcherStats(t *testing.T) {
 	}
 	if watchers["mode"] != WatchModeLazy {
 		t.Fatalf("watchers.mode = %v, want %s", watchers["mode"], WatchModeLazy)
+	}
+}
+
+func TestGraphQueryDaemonParityPreservesTypedPreResolutionBudgetError(t *testing.T) {
+	app := service.New(t.TempDir(), nil)
+	server := &Server{app: app}
+	request := model.CommandRequest{
+		ProtocolVersion: model.ProtocolVersion,
+		Operation:       "nav.neighbors",
+		Context:         model.QueryOptions{Workspace: "invalid-workspace-sentinel"},
+		Payload:         map[string]any{"selector": "x", "token_budget": model.GraphQueryMaxToken + 1},
+	}
+
+	_, directErr := app.Execute(context.Background(), request)
+	_, daemonErr := server.handleRequest(request)
+	var directGraphErr, daemonGraphErr *model.GraphQueryError
+	if !errors.As(directErr, &directGraphErr) || !errors.As(daemonErr, &daemonGraphErr) {
+		t.Fatalf("errors must remain typed through App.Execute and Server.handleRequest: direct=%T daemon=%T", directErr, daemonErr)
+	}
+	if directGraphErr.Code != "GPH_QUERY_BUDGET_INVALID" || daemonGraphErr.Code != directGraphErr.Code {
+		t.Fatalf("graph error codes differ: direct=%q daemon=%q", directGraphErr.Code, daemonGraphErr.Code)
+	}
+}
+
+func TestGraphQueryOperationsAreClassifiedAndBackpressureLimited(t *testing.T) {
+	server := &Server{}
+	for _, operation := range []string{"nav.neighbors", "nav.callers", "nav.callees", "nav.path", "nav.explain", "nav.graph.stats", "nav.graph.validate"} {
+		if !isGraphQueryOperation(operation) {
+			t.Errorf("%s not classified as graph query", operation)
+		}
+		if !server.isBackpressureLimited(model.CommandRequest{Operation: operation}) {
+			t.Errorf("%s not backpressure-limited", operation)
+		}
+	}
+	if isGraphQueryOperation("nav.context") {
+		t.Fatal("nav.context incorrectly classified as graph query")
 	}
 }
 

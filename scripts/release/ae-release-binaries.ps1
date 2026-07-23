@@ -14,22 +14,30 @@ param(
     [switch]$SkipWslInstall,
     [switch]$SkipMirror,
     [switch]$SkipWorkerStatus,
-    [switch]$Publish
+    [switch]$Publish,
+    [switch]$Development
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
+$repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
+
 # Provenance gate: AE-RELEASE-DISTRIBUTION requires clean tree to certify vcs.modified=false
-$gitStatus = git status --porcelain
+Push-Location $repoRoot
+try {
+    $gitStatus = git status --porcelain
+}
+finally {
+    Pop-Location
+}
 if (-not [string]::IsNullOrWhiteSpace(($gitStatus -join "`n"))) {
     Write-Error "release aborted: working tree is dirty (would embed vcs.modified=true). Commit or stash changes first."
     exit 1
 }
-
-$repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 $buildScript = Join-Path $PSScriptRoot 'build-dist.ps1'
 $installScript = Join-Path $PSScriptRoot 'install-local.ps1'
+$verifyWorkerScript = Join-Path $PSScriptRoot 'verify-worker-bundles.ps1'
 $supportedRids = @('win-arm64', 'win-x64', 'linux-arm64', 'linux-x64', 'osx-arm64', 'osx-x64')
 
 function Test-IsWindows {
@@ -109,6 +117,61 @@ function Get-FileSha256 {
         return $null
     }
     return (Get-FileHash -Algorithm SHA256 -Path $Path).Hash.ToLowerInvariant()
+}
+
+function Get-SourceRevision {
+    $revision = (& git -C $repoRoot rev-parse HEAD 2>$null).Trim()
+    if ($LASTEXITCODE -ne 0 -or $revision -notmatch '^(?:[0-9a-f]{40}|[0-9a-f]{64})$') {
+        throw 'unable to resolve a 40/64-hex source revision.'
+    }
+    return $revision.ToLowerInvariant()
+}
+
+function Get-DirectorySha256 {
+    param([Parameter(Mandatory = $true)][string]$Path)
+    $records = @()
+    foreach ($file in (Get-ChildItem -LiteralPath $Path -Force -File -Recurse | Sort-Object FullName)) {
+        $relative = $file.FullName.Substring((Resolve-Path $Path).Path.Length).TrimStart([char[]]@('\', '/'))
+        $records += "$relative`t$((Get-FileSha256 -Path $file.FullName))"
+    }
+    $bytes = [System.Text.Encoding]::UTF8.GetBytes(($records -join "`n"))
+    $sha = [System.Security.Cryptography.SHA256]::Create().ComputeHash($bytes)
+    return (-join ($sha | ForEach-Object { $_.ToString('x2') }))
+}
+
+function Get-GoVersionMetadata {
+    param(
+        [Parameter(Mandatory = $true)][string]$Path,
+        [Parameter(Mandatory = $true)][string]$ExpectedRevision
+    )
+    $go = Get-Command go -ErrorAction SilentlyContinue
+    if (-not $go) {
+        throw 'go is required for binary provenance readback.'
+    }
+    $output = & $go.Source version -m $Path 2>&1
+    if ($LASTEXITCODE -ne 0) {
+        throw "go version -m failed for '$Path'."
+    }
+    $text = ($output -join "`n")
+    $revisionMatch = [regex]::Match($text, '(?m)^\s*(?:build\s+)?vcs\.revision(?:=|\s+)([0-9a-fA-F]{40}|[0-9a-fA-F]{64})\s*$')
+    $modifiedMatch = [regex]::Match($text, '(?im)^\s*(?:build\s+)?vcs\.modified(?:=|\s+)(true|false)\s*$')
+    if (-not $revisionMatch.Success -or -not $modifiedMatch.Success) {
+        throw "go version -m did not expose complete vcs metadata for '$Path'."
+    }
+    $revision = $revisionMatch.Groups[1].Value.ToLowerInvariant()
+    $modified = $modifiedMatch.Groups[1].Value.ToLowerInvariant()
+    if ($revision -ne $ExpectedRevision.ToLowerInvariant()) {
+        throw "vcs.revision mismatch for '$Path': expected '$ExpectedRevision', got '$revision'."
+    }
+    if ($modified -ne 'false') {
+        throw "vcs.modified is not false for '$Path'."
+    }
+    return [pscustomobject]@{
+        status = 'PASS'
+        source_revision = $ExpectedRevision.ToLowerInvariant()
+        vcs_revision = $revision
+        vcs_modified = $false
+    }
 }
 
 function ConvertTo-WslPath {
@@ -191,14 +254,28 @@ foreach ($rid in $Rids) {
     }
 }
 
+$canonicalRids = @('win-arm64', 'win-x64', 'linux-arm64', 'linux-x64', 'osx-arm64', 'osx-x64')
+$requestedSet = @($Rids | Sort-Object)
+$canonicalSet = @($canonicalRids | Sort-Object)
+if (-not $Development -and (Compare-Object -ReferenceObject $canonicalSet -DifferenceObject $requestedSet)) {
+    throw 'Certified release mode requires exactly the six canonical RIDs. Use -Development explicitly for a non-publishing subset.'
+}
+if ($Publish -and $Development) {
+    throw '-Development cannot be combined with -Publish.'
+}
+
+$expectedRevision = Get-SourceRevision
+
 $resolvedOutDir = Resolve-Path $OutDir -ErrorAction SilentlyContinue
 $outDirForReport = if ($resolvedOutDir) { $resolvedOutDir.Path } else { $OutDir }
 
 $result = [ordered]@{
     repo = $repoRoot
     rids = $Rids
+    expected_source_revision = $expectedRevision
     out_dir = $outDirForReport
     built = @()
+    provenance = @()
     checksums = @()
     local_install = $null
     wsl_install = $null
@@ -240,15 +317,43 @@ foreach ($rid in $Rids) {
     if (-not (Test-Path $workerDir)) {
         throw "Missing worker bundle for RID '$rid' at '$workerDir'."
     }
+    $workerFiles = @(Get-ChildItem -LiteralPath $workerDir -File -Recurse)
+    if ($workerFiles.Count -eq 0) {
+        throw "Worker bundle for RID '$rid' is empty at '$workerDir'."
+    }
+    $metadata = Get-GoVersionMetadata -Path $cliPath -ExpectedRevision $expectedRevision
+    $cliSha = Get-FileSha256 -Path $cliPath
+    $workerSha = Get-DirectorySha256 -Path $workerDir
+    $workerManifestPath = Join-Path $workerDir 'worker-manifest.json'
+    if (-not (Test-Path -LiteralPath $workerManifestPath)) {
+        throw "Missing worker manifest for RID '$rid'."
+    }
+    & $verifyWorkerScript -WorkersRoot (Join-Path (Join-Path $OutDir $rid) 'workers') -ExpectedManifestRoot (Join-Path (Join-Path $OutDir $rid) 'workers') -Rids $rid -ProbeHost -AllowPartialRoot | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        throw "Worker manifest verification failed for RID '$rid'."
+    }
+    $workerManifestSha = Get-FileSha256 -Path $workerManifestPath
+    $result.provenance += [pscustomobject]@{
+        rid = $rid
+        status = $metadata.status
+        source_revision = $metadata.source_revision
+        vcs_revision = $metadata.vcs_revision
+        vcs_modified = $metadata.vcs_modified
+        binary_sha256 = $cliSha
+        worker_bundle_sha256 = $workerSha
+        worker_manifest_sha256 = $workerManifestSha
+        worker_file_count = $workerFiles.Count
+    }
     $result.built += [pscustomobject]@{
         rid = $rid
         cli = (Resolve-Path $cliPath).Path
         worker_dir = (Resolve-Path $workerDir).Path
+        provenance = $metadata
     }
     $result.checksums += [pscustomobject]@{
         rid = $rid
         cli = (Resolve-Path $cliPath).Path
-        sha256 = Get-FileSha256 -Path $cliPath
+        sha256 = $cliSha
     }
 }
 

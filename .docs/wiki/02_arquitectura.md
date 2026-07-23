@@ -50,6 +50,9 @@ flowchart LR
     C --> X[Discovery TS/JS + ripgrep]
     C --> GO[Catalogo Go AST nativo]
     C --> DG[Docgraph + read-model]
+    C --> GN[Graph-native pipeline]
+    GN --> GS[GraphSnapshot + NodeKey]
+    GN --> MX[MILX-v1 isolated host]
     C --> SV[Service exploration profile]
     D --> P[Runtime pool por workspace/backend/entrypoint]
     P --> R[Worker Roslyn]
@@ -76,6 +79,8 @@ flowchart LR
 - El mismo envelope puede agregar `continuation` y `memory_pointer` con costo bajo para orientar al harness en la siguiente busqueda o reentrada.
 - El doc router comparte un scorer owner-aware para `nav wiki search`, `nav route`, `nav ask` y `nav pack`, y `nav.intent` clasifica primero `mode=docs|code` antes de elegir entre docs canonicos o BM25 de simbolos.
 - `nav ask` rankea docs primero y usa el codigo como evidencia; `nav pack` usa la misma base para construir reading packs global -> especifico; `nav service` agrega evidencia scoped a un path usando catalogo y busqueda textual.
+- El pipeline graph-native es compiler-first: produce `GraphGeneration` determinista, `NodeKey` estable y aristas explicables desde los backends disponibles; publicar es un paso versionado y reemplazable.
+- Las extensiones `MILX-v1` solo leen el snapshot publicado y devuelven resultados declarativos desde un host aislado; no comparten memoria ni escriben el indice principal.
 
 ## Responsabilidades por modulo
 
@@ -86,6 +91,8 @@ flowchart LR
 | Governance UI | Consola workspace-first con visibilidad de `kind`, repos y entrypoints |
 | Core Go | Discovery de workspace, indexacion repo-local, routing semantico, truncacion, `nav wiki`, `nav ask`, `nav pack` y service exploration |
 | Docgraph/read-model | Clasificar preguntas/tareas, priorizar documentos canonicos y conectar docs con codigo |
+| Graph-native pipeline | Generar, validar y publicar snapshots de grafo con `GraphGeneration`, `NodeKey` y aristas explicables |
+| MILX-v1 isolated host | Ejecutar extensiones fuera del proceso principal con permisos, timeout y salida acotados |
 | Service exploration profile | Agregar evidencia observable por path: endpoints, consumers, publishers, entidades e infraestructura |
 | Runtime pool | Mantener un runtime vivo por entrypoint semantico con LRU |
 | Worker .NET | Semantica profunda C# con Roslyn |
@@ -94,6 +101,44 @@ flowchart LR
 | gopls opcional | Enriquecer `nav context` y `nav refs` para Go; no equivale a la semantica profunda Roslyn |
 | TS discovery | Discovery TS/Next basico y busqueda textual; incluye fallback nativo en Go (`searchPatternGo`) cuando `rg` no esta disponible, respetando `.milspignore` y filtrando binarios |
 | SQLite repo-local | Catalogo liviano, ownership por repo y grafo documental |
+
+## Corte SDD-A graph-native
+
+```toon
+doc_id: 02_arquitectura
+block_id: architecture-graph-native-sdd-a
+source_of_truth: graph-native-scope-and-flows
+compiler_first: true
+graph_generation: GraphGeneration
+node_identity: NodeKey
+extension_contract: MILX-v1
+isolation: process-boundary
+mutation_policy: extensions-never-write-primary-graph
+open_questions: 0
+---
+DECISIONS
+
+1. GraphGeneration se produce desde evidencia estructural del compilador/parser disponible; el texto solo aporta metadata auxiliar.
+2. NodeKey es estable dentro de una generacion y conserva suficiente origen para explicar el camino de una arista.
+3. Query, explain e impact leen snapshots publicados; no mutan el catalogo ni el indice durante la consulta.
+4. MILX-v1 corre aislado, con timeout, capabilities explicitas y salida serializada; un fallo no derriba al core.
+```
+
+```mermaid
+sequenceDiagram
+    participant IDX as Indexer
+    participant GEN as GraphGeneration
+    participant PUB as Publisher
+    participant Q as Graph Query
+    participant EXT as MILX-v1 Host
+    IDX->>GEN: evidencia compiler-first
+    GEN->>GEN: valida NodeKey y aristas
+    GEN->>PUB: snapshot candidato
+    PUB-->>Q: GraphGeneration publicada
+    Q->>Q: query | explain | impact
+    Q->>EXT: extension aislada + snapshot
+    EXT-->>Q: resultado declarativo o timeout
+```
 
 ## Fan-out intra-máquina y limites de federacion
 
@@ -139,3 +184,6 @@ El límite explícito: mi-lsp **NO maneja** cross-máquina. La federación wiki 
 - `FL-QRY-01`: queries compactas, `nav wiki` para exploracion documental, `nav ask` docs-first, `nav pack` para reading packs y `nav service` evidence-first.
 - `FL-CS-01`: routing semantico por repo/entrypoint con error accionable ante ambiguedad.
 - `FL-DAE-01`: runtimes y telemetria por entrypoint, visibles en la governance UI.
+- `FL-GPH-01`: generar y publicar el grafo nativo con `GraphGeneration` y `NodeKey`.
+- `FL-GPH-02`: consultar, explicar e inspeccionar impacto sobre un snapshot publicado.
+- `FL-GPH-03`: ejecutar extensiones `MILX-v1` en un host aislado y tolerante a fallos.

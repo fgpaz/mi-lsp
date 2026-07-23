@@ -287,6 +287,7 @@ func isRegexParseError(err error) bool {
 
 func buildRipgrepArgs(pattern string, useRegex bool, searchRoot string) []string {
 	args := []string{
+		"--sort", "path",
 		"--line-number", "--no-heading", "--color", "never", "--hidden",
 		"--glob", "!.mi-lsp/**",
 		"--glob", "!**/.mi-lsp/**",

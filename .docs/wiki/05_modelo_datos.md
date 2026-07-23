@@ -30,7 +30,7 @@ evidence:
 ## Proposito
 
 `mi-lsp` modela estado operativo local, no un dominio de negocio tradicional.
-La novedad canonica de v1.3 es distinguir workspaces `single` de workspaces `container`, persistir ownership por repo/entrypoint y sostener un grafo documental repo-local que permita responder `nav ask` sin depender de servicios externos.
+La base vigente distingue workspaces `single` de workspaces `container`, persiste ownership por repo/entrypoint y sostiene un grafo documental repo-local. La evolucion graph-native agrega identidad durable, generations inmutables, adjacency con evidencia y extensiones derivativas, sin reemplazar la autoridad wiki ni requerir servicios externos.
 
 ## Entidades canonicas
 
@@ -53,7 +53,18 @@ La novedad canonica de v1.3 es distinguir workspaces `single` de workspaces `con
 | DocsReadProfile | Operativa local | Maintainer de wiki | `<repo>/.docs/wiki/_mi-lsp/read-model.toml` | Perfil opcional que clasifica familias, paths y fallback documental |
 | DocsOwnerHint | Operativa local | Maintainer de wiki | `<repo>/.docs/wiki/00_gobierno_documental.md` -> `read-model.toml` | Hint opcional repo-especifico para ownership documental de capabilities nuevas |
 | DocsGovernanceProfile | Operativa derivada | CLI/Core | `<repo>/.docs/wiki/_mi-lsp/read-model.toml` | Proyeccion ejecutable de la gobernanza humana: perfil efectivo, base, overlays y cadenas |
-| WorkspaceMeta | Derivada | Indexer | `<repo>/.mi-lsp/index.db` | Totales, defaults y metadata del indice |
+| WorkspaceMeta | Derivada | Indexer | `<repo>/.mi-lsp/index.db` | Totales, defaults, schema y punteros activos del indice |
+| GraphGeneration | Derivada inmutable | Graph Kernel | `<repo>/.mi-lsp/index.db` | Snapshot sellado por source/config/backend digests, con estado staged/active/retired/invalid |
+| GraphNode | Derivada | Graph Kernel | `<repo>/.mi-lsp/index.db` | Nodo tipado con `node_id` local, `NodeKey` BLOB(32), identity fields, owner, generation, provenance y cross-RID |
+| GraphEdge | Derivada | Graph Kernel | `<repo>/.mi-lsp/index.db` | Relacion dirigida y tipada entre NodeKeys existentes en la misma generation |
+| GraphEvidence | Derivada | Backend/Graph Kernel | `<repo>/.mi-lsp/index.db` | Observacion versionada con source URI/range/digest, backend, claim, status, generation y cross-RID |
+| GraphUnresolved | Derivada | Backend/Validator | `<repo>/.mi-lsp/index.db` | Identidad, edge o target no publicable con reason code, candidatos bounded y recovery hint |
+| GraphMigration | Operativa derivada | SQLite Publisher | `<repo>/.mi-lsp/index.db` | Ventana de schema, preflight, checksums, dual-read/write y rollback metadata |
+| GraphAnalysis | Derivada descartable | Core/MILX Host | `<repo>/.mi-lsp/index.db` o cache local | Resultado de algoritmo/pack keyeado por generation, extension y parametros; nunca autoridad primaria |
+| GlobalGraphSnapshot | Derivada descartable | Core/Daemon opcional | Estado global local | Vista sellada de member workspaces/generations y cross-edges; no escribe stores miembros |
+| MILXManifest | Operativa local | Extension owner/Core | Archivo de extension validado | ID/version/digest, protocol, schemas, capabilities y resource hints |
+| MILXExecution | Historica local acotada | MILX Host | Telemetria/cache local | request, generation, status, budgets, output digest y cleanup; sin payload arbitrario |
+| ContextPack | Derivada | Context Optimizer | Respuesta/cache | Seleccion bounded de autoridad/evidencia con costo de tokens, coverage, omissions y digest |
 | DaemonState | Operativa | Runtime supervision | `~/.mi-lsp/daemon/state.json` | PID, endpoint, admin URL y version/protocolo |
 | DaemonRun | Historica local | Runtime supervision | `~/.mi-lsp/daemon/daemon.db` | Una corrida del daemon global |
 | RuntimeSnapshot | Derivada | Runtime supervision | `~/.mi-lsp/daemon/daemon.db` | Estado de un runtime por `(workspace_root, backend, entrypoint)` |
@@ -88,6 +99,18 @@ La novedad canonica de v1.3 es distinguir workspaces `single` de workspaces `con
 - Un `AskResult` se deriva de `DocRecord/DocEdge/DocMention` y, de forma secundaria, de `SymbolRecord/FileRecord`.
 - Un `PackResult` se deriva de `DocRecord/DocEdge` y del `DocsReadProfile`; las slices se materializan on-demand desde archivos del workspace.
 - Un `ServiceSurfaceSummary` se deriva de `SymbolRecord`, `FileRecord` y evidencia textual scoped al path pedido.
+- Un `GraphGeneration` contiene muchos `GraphNode`, `GraphEdge`, `GraphEvidence` y `GraphUnresolved`; solo una generation sellada puede ser activa por workspace/schema.
+- `GraphEdge` referencia dos `GraphNode` de la misma generation y una o mas `GraphEvidence`; unresolved nunca se materializa como endpoint fantasma.
+- `GraphMigration` gobierna compatibilidad entre schema legacy y graph-native; no modifica el significado de las entidades.
+- `GraphAnalysis` y `ContextPack` se derivan de generation(s), authority/profile digest, pack/extension version y parameters digest; invalidar cualquiera invalida el cache.
+- `GlobalGraphSnapshot` referencia member generations inmutables por `(workspace_identity, generation_id)` y resuelve cross-edges por cross-RID sin adquirir ownership de sus datos.
+- `MILXExecution` consume un pack/snapshot read-only y puede producir `GraphAnalysis`; no crea o modifica `GraphNode`, `GraphEdge`, wiki ni generation activa.
+
+## Identidad graph-native
+
+`NodeKey v1` es SHA-256 de la serializacion binaria versionada y length-prefixed de `{repository_identity, backend_type, language, project_or_module, owner_path, symbol_kind, semantic_identity}`. Strings usan UTF-8/NFC y paths repo-relative con `/`; root absoluto, timestamps y declaration ranges no participan. `node_id INTEGER` es solo surrogate SQLite. Missing fields, normalizacion no determinista o una colision hash con tupla distinta producen `GraphUnresolved` y bloquean la publicacion.
+
+Los cross-RIDs de nodo/edge/evidence son representaciones versionadas derivadas de sus identidades canonicas, no del RID del binario ni del host. El mismo fixture/config/backend version debe producirlos byte-identical en los RIDs soportados.
 
 ## Estados operativos
 
@@ -107,6 +130,20 @@ La novedad canonica de v1.3 es distinguir workspaces `single` de workspaces `con
 - `evicted`: runtime removido por LRU o idle timeout
 - `ambiguous`: no se pudo resolver repo/entrypoint de forma unica
 
+### GraphGeneration
+
+- `staged`: completa en escritura, aun invisible para readers
+- `active`: snapshot unico seleccionado por el puntero del workspace
+- `retired`: snapshot validado anterior, retenido para rollback
+- `invalid`: staging rechazado o incompleto; nunca consultable
+
+### Backend / claim
+
+- `exact`: compiler/LSP resolvio identidad y relacion
+- `extracted`: parser estructural versionado observo la forma
+- `inferred`: regla derivativa explicita, nunca compiler fact
+- `ambiguous` / `unresolved` / `unsupported`: no se publica claim positivo
+
 ## Invariantes
 
 - `registry.toml` no contiene topologia detallada del container.
@@ -118,6 +155,13 @@ La novedad canonica de v1.3 es distinguir workspaces `single` de workspaces `con
 - `AskResult` nunca debe invertir prioridad: la wiki rankea primero y el codigo actua como evidencia o verificacion.
 - `PackResult` debe preservar el orden canonico global -> especifico y no degradar silenciosamente a docs genericos cuando la wiki canonica existe pero el indice documental esta vacio.
 - `ServiceSurfaceSummary` no persiste score de completitud ni conclusion final de auditoria.
+- SQLite repo-local es la autoridad de adjacency; queries no materializan el grafo completo en RAM, no persisten closures transitivos y no migran schema.
+- Readers fijan una sola `GraphGeneration`; observan el snapshot anterior o el nuevo completo, nunca una mezcla.
+- Todo `GraphEdge` activo tiene endpoints, evidence, generation, provenance y cross-RID validos; ambiguous/unresolved no crea dangling edge.
+- Publicacion, dual-read/write y rollback son transaccionales; crash/cancel conserva o restaura el puntero validado anterior.
+- Wiki sigue siendo autoridad: graph/code puede verificar o detectar drift, no sobreescribir canon.
+- MILX/packs son aislados y derivativos, sin graph/wiki write, MCP, red o secretos en v1.
+- Toda claim de victoria conserva raw samples, ambos comparadores, 30 repeticiones y metricas unavailable explicitas.
 
 ## Datos tocados por RF
 
@@ -130,6 +174,17 @@ La novedad canonica de v1.3 es distinguir workspaces `single` de workspaces `con
 | RF-IDX-001 | SymbolRecord, FileRecord, DocRecord, DocEdge, DocMention, DocSourceBlock, DocSourceRecord, WorkspaceMeta |
 | RF-IDX-002 | SymbolRecord, FileRecord, DocRecord, DocEdge, DocMention, DocSourceBlock, DocSourceRecord, WorkspaceMeta |
 | RF-IDX-003 | GovernanceSource, DocsGovernanceProfile, DocsReadProfile, WorkspaceMeta |
+| RF-GPH-001 | GraphNode, GraphUnresolved |
+| RF-GPH-002 | GraphGeneration, GraphMigration, WorkspaceMeta |
+| RF-GPH-003 | GraphNode, GraphEdge, GraphEvidence, GraphUnresolved |
+| RF-GPH-004 | GraphGeneration, GraphNode, GraphEdge, GraphEvidence, GraphUnresolved |
+| RF-GPH-005 | GraphGeneration, GraphNode, GraphEdge, GraphEvidence, QueryEnvelope |
+| RF-GPH-006 | GraphGeneration, GraphEdge, GraphEvidence, GraphUnresolved, DiffContextResult |
+| RF-GPH-007 | DocRecord, DocEdge, DocMention, GraphNode, GraphEdge, ContextPack |
+| RF-GPH-008 | GraphNode, GraphEdge, GraphEvidence, GraphUnresolved |
+| RF-GPH-009 | GlobalGraphSnapshot, GraphGeneration, GraphEdge |
+| RF-GPH-010 | MILXManifest, MILXExecution, GraphAnalysis |
+| RF-GPH-011 | ContextPack, GraphAnalysis, MILXManifest |
 | RF-QRY-001 | QueryEnvelope |
 | RF-QRY-002 | QueryEnvelope, AccessEvent, WorkspaceEntrypoint |
 | RF-QRY-003 | QueryEnvelope, ServiceSurfaceSummary, SymbolRecord, FileRecord |

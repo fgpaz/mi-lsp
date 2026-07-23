@@ -29,9 +29,9 @@ evidence:
 
 ## Proposito y alcance
 
-Este documento resume la superficie de contratos tecnicos de `mi-lsp`: CLI publica, canal CLI-daemon-admin y protocolo daemon-worker.
+Este documento resume la superficie de contratos tecnicos de `mi-lsp`: CLI publica, canal CLI-daemon-admin, workers y target graph-native/MILX-v1.
 Su foco es compatibilidad, ownership y postura comun de errores/versionado.
-El detalle por frontera vive en `09_contratos/`.
+El detalle por frontera vive en `09_contratos/`; contratos `accepted-design` no afirman comandos implementados.
 
 ## Inventario de contratos
 
@@ -45,6 +45,9 @@ El detalle por frontera vive en `09_contratos/`.
 | TS semantic bridge | Daemon/core -> `tsserver` | TS semantic backend | `tsserver` Content-Length protocol |
 | Pyright LSP bridge | Daemon/core -> `pyright-langserver` | Python semantic backend | LSP JSON-RPC 2.0 Content-Length protocol |
 | Go catalog + LSP opcional | Core -> extractor AST / `gopls` | Go navigation backend | indice repo-local / LSP JSON-RPC 2.0 |
+| Graph CLI (target) | Usuario/agente -> Graph Query | CLI/Core | args + envelope generation-aware |
+| MILX-v1 (target) | Core -> extension process | Extensions runtime | stdio uint32-length + canonical JSON |
+| Global graph view (target) | Core -> member `index.db` | Core runtime | local read-only federation por cross-RID |
 
 ## Boundaries y ownership
 
@@ -54,6 +57,7 @@ El detalle por frontera vive en `09_contratos/`.
 - La instalacion publica vive fuera del contrato runtime: `scripts/install/install.ps1|sh` instala/actualiza la CLI desde GitHub `releases/latest`, y `scripts/install/install-agent.ps1|sh` agrega la skill via `npx skills add`.
 - Los instaladores publicos deben mapear solo RIDs publicados (`win-x64`, `win-arm64`, `linux-x64`, `linux-arm64`), verificar `mi-lsp_<version>_checksums.txt` antes de extraer y preservar `workers/<rid>/` junto al binario.
 - El daemon comparte estado entre clientes pero no redefine la CLI publica.
+- `daemon start` mantiene `start.guard` persistente y nunca lo elimina; bajo su lock OS exclusivo (`LockFileEx` en Windows, `flock` en Unix) serializa crear, inspeccionar, recuperar y `Close` de `start.lock`. `start.lock` conserva `O_CREATE|O_EXCL`, se rellena con metadata versionada `pid+nonce` y el descriptor se cierra después de sincronizarla. Solo se recupera un owner muerto; owner vivo o metadata desconocida se preservan, los errores son fail-closed, un lock legacy vacío solo se recupera después de 5 minutos y `Close` elimina únicamente bajo guard cuando coinciden `pid+nonce`. PID válido: `1..math.MaxInt32`; en Windows, `ACCESS_DENIED` y cualquier error ambiguo cuentan como owner vivo, y solo `ERROR_INVALID_PARAMETER` prueba inexistencia.
 - La UI/admin es una vista local del daemon; no es API publica remota.
 - El protocolo daemon-worker es interno, versionado y con envelope estable.
 - Cada contrato debe exponer `warnings`, fallas accionables y degradacion clara cuando aplique.
@@ -72,7 +76,16 @@ El detalle por frontera vive en `09_contratos/`.
 - `nav service` pertenece a la CLI publica y usa un contrato evidence-first, no uno de scoring.
 - `nav context` pertenece a la CLI publica y su salida visible es slice-first; el backend profundo solo enriquece el mismo item.
 - Para archivos Go, el catalogo AST nativo conserva navegacion basica sin `gopls`; cuando `gopls` existe, `nav context` y `nav refs` pueden enriquecer el resultado, sin prometer paridad con la semantica profunda C# de Roslyn.
-- `nav intent` pertenece a la CLI publica y expone `mode=docs|code`: en `docs` usa routing documental owner-aware; en `code` conserva el ranking BM25 sobre `search_text`. En workspaces `container`, `--repo` acota solo `mode=code`.
+- `nav intent` pertenece a la CLI publica y expone `mode=docs|code`: en `docs` usa routing documental owner-aware; en `code` conserva el ranking BM25 sobre `search_text`. En workspaces `container`, `--repo` acota solo `mode=code`. Para intenciones soportadas el routing es automatico, mi-lsp es obligatorio primero y no existe opt-out.
+- `nav explain-change` pertenece a la CLI publica y devuelve siete secciones estables: `change`, `affected`, `callers`, `callees`, `tests`, `contracts` y `wiki`. La preview es bounded; `expansions[]` siempre identifica `command` y `reason` cuando hay una continuación ejecutable. `--full` solicita expansión, pero puede conservar `mode=preview` si no hay evidencia adicional.
+- El target graph CLI agrega `neighbors`, `callers`, `callees`, `path`, `explain`, `graph stats` y `graph validate`; enriquece `affected`, `diff-context`, `related` y `workspace-map` de forma aditiva. La ayuda actual distingue estos comandos directos de `nav graph stats|validate`.
+- La ausencia de generation/backend graph produce fallback tipado, omisiones y warnings visibles; no habilita presentar heurística como paridad graph-native. Un timeout sin diagnóstico tipado es blocker y no autoriza sustitución silenciosa por herramientas textuales.
+- Toda respuesta graph-native fija `generation_id`, conserva status/evidence/omissions y usa ordering/budgets deterministas. Daemon y direct mode deben ser semanticamente equivalentes.
+- El worker Roslyn ordena los `nodes` por `Ref` y entrega un `GraphObservationBatch` canonico no sellado; el core ejecuta `ValidateCanonical`, `SealGraphObservationBatch` y `ReadyForStaging` antes de aceptar staging.
+- Los simbolos locales, lambda, anonymous y synthesized/implicit no elegibles se expresan como omissions tipadas; solo endpoints elegibles realmente faltantes generan `GraphUnresolved`.
+- `GraphUnresolved` se ordena y deduplica por `key` antes de asignar IDs. Sus candidatos se trim, normalizan a slash, deduplican, ordenan y limitan a 64 elementos/4096 bytes.
+- `MILX-v1` es un contrato stdio local aislado, no MCP. No admite graph/wiki write, network, secrets o process spawn en v1.
+- Federation lista member generations y unavailable members; un global snapshot es derivativo y nunca cambia stores miembros ni autoridad wiki.
 
 ## Configuracion de embeddings
 
@@ -118,13 +131,17 @@ Sin configuracion activa, `nav recall` devuelve hint visible y no llama al prove
 - El envelope estable puede agregar `mode` cuando la superficie necesita distinguir variantes estables sin cambiar `backend` (por ejemplo `nav.intent docs|code`).
 - Los errores de bootstrap deben ser accionables: por ejemplo `Run: mi-lsp worker install`.
 - Los contratos internos no deben transportar ASTs ni blobs completos salvo comando futuro explicito.
+- Graph envelopes agregan `operation`, `generation_id`, `graph_schema_version`, `omissions` y `determinism_digest`; cursors se ligan a generation/query/ordering.
+- MILX frames usan `uint32` big-endian + JSON canonico UTF-8, max 1 MiB por frame y 16 MiB por ejecucion; operaciones v1 son `describe|prepare|execute|cancel|health|shutdown`.
+- Error codes `GPH_*` son tipados y sanitizados. Truncation, member unavailable y omission no se presentan como completitud ni se esconden en texto libre.
 - `nav ask` debe devolver una estructura explainable con `summary`, `primary_doc`, `doc_evidence`, `code_evidence`, `why` y `next_queries`.
 - `nav search` y `nav ask` pueden agregar `coach.trigger` en casos balanceados (`repo_selector_invalid`, `regex_auto_healed`, `no_matches_refinable`, `preview_trimmed`, `text_fallback`, `low_confidence`, `scope_narrowing_available`, `symbol_query_detected`, `search_timeout`).
 - `nav search`, `nav ask`, `nav pack`, `nav route`, `nav.related`, `nav.service` y `nav workspace-map` pueden agregar `continuation.reason` (`recent_change`, `narrow_scope`, `follow_doc`, `expand_preview`, `low_evidence`, `handoff_reentry`) cuando existe un siguiente paso mejor que repetir la misma consulta.
 - `nav pack` debe devolver una estructura estable con `task`, `family`, `mode`, `primary_doc`, `docs`, `why` y `next_queries`.
 - `nav wiki search` debe devolver `WikiSearchResult` con `doc_id`, `path`, `title`, `layer`, `family`, `stage`, `score`, `why`, `snippet/content` y `next_queries`; `RS-*` y las rutas `02_resultados*` pertenecen a `layer=RS`, `stage=outcome`.
 - `nav wiki validate-harness` debe devolver `HarnessValidationResult` con `harness_protocol`, `harness_readiness`, `harness_verdict`, blockers/warnings, conteos de contratos/links revisados, evidencia requerida/encontrada y docs sin contrato/audience.
-- `nav wiki validate-source` debe devolver `WikiSourceValidationResult` con `wiki_source_protocol`, `wiki_source_readiness`, `wiki_source_verdict`, blockers/warnings, conteos de artefactos/bloques/records/tablas revisados, `navigation_readiness` y `navigation_blockers`.
+- `nav wiki validate-source` debe devolver `WikiSourceValidationResult` con `wiki_source_protocol`, `wiki_source_readiness`, `wiki_source_verdict`, blockers/warnings, conteos de artefactos/bloques/records/tablas revisados, `navigation_readiness` y `navigation_blockers`. Acepta `--paths` y `--ids`; un scope inexistente devuelve `ok=true` con `wiki_source_verdict=BLOCKED`, `navigation_readiness=blocked` y `scope=no_match`.
+- La telemetría de intent y utility solo conserva metadata derivada y sanitizada: `planner_version`, `operation`, `selector_kind`, `candidate_count`, `section_count`, `fallback` y `omission_count`. No puede transportar query, prompt, argv, payload, contenido, snippets, secretos ni errores raw.
 - `nav trace <DOC-ID>` debe clasificar explicitamente `RS|RF|TP`: `RS-*` devuelve `doc_id`, `layer=RS`, `stage=outcome` sin poblar el campo legacy `rf`; `RF-*` conserva evidencia spec-to-code y `TP-*` conserva evidencia de cobertura documental.
 - `nav trace <DOC-ID>` tambien puede resolver `block_id` o `record_id` fuente exacto desde `doc_source_blocks`/`doc_source_records` y devolver evidencia `wiki-source`.
 - `TraceResult` puede agregar campos aditivos `confidence`, `confidence_reason` y `status_reason` para explicar cobertura parcial, ausencia real o evidencia fuerte sin cambiar `status`, `doc_id`, `layer`, `stage` ni el campo legacy `rf`.
@@ -132,6 +149,45 @@ Sin configuracion activa, `nav recall` devuelve hint visible y no llama al prove
 - `nav edit-plan` debe devolver `backend=edit-plan`, `mode=dry_run|applied` e `items[0]` con `patch_packet`, `diff`, `files_changed`, `operations`, `evidence`, `guardrails` y `apply_status`; si trunca diff/evidencia debe setear `truncated=true` y `next_hint`. En `edit-plan-v2`, C#, TypeScript y Python con operaciones AST deben fallar con `language_not_supported` accionable hasta que existan backends especificos.
 - `nav governance` debe devolver una estructura estable con perfil, base efectiva, overlays, sync, blockers, `index_sync_details` con timestamps comparados y siguientes pasos.
 - `nav service` puede usar `backend=catalog`, `backend=text` o `backend=catalog+text`.
+
+## Contrato Harness-first de routing y graph advisory
+
+```toon
+block_id: ct-technical-harness-first-routing
+kind: technical-contract
+source_of_truth: this
+imports:
+  - .docs/wiki/09_contratos/CT-GRAPH-CLI.md
+  - .docs/wiki/09_contratos/CT-NAV-WIKI.md
+  - .docs/wiki/07_tech/TECH-GRAPH-NATIVE.md
+exports:
+  - automatic_intent_routing
+  - explain_change_seven_sections
+  - wiki_source_scoped_validation
+verify:
+  - go run ./cmd/mi-lsp nav --help
+  - go run ./cmd/mi-lsp nav explain-change --help
+  - go run ./cmd/mi-lsp nav wiki validate-source --workspace <alias> --paths <path> --format toon
+  - go run ./cmd/mi-lsp nav wiki validate-source --workspace <alias> --ids <doc-id> --format toon
+stop_if:
+  - governance_blocked=true
+  - timeout_without_typed_diagnostic=true
+  - exact_graph_claim_when_freshness!=current
+routing:
+  entrypoint: mi-lsp
+  policy: automatic_mi_lsp_first_no_opt_out
+  terminal_fallbacks: [unsupported_operation, unavailable_binary, invalid_workspace, explicit_incomplete]
+explain_change:
+  sections: [change, affected, callers, callees, tests, contracts, wiki]
+  response: preview_bounded_with_expansions
+wiki_validation:
+  selectors: [paths, ids]
+  no_match: scope=no_match
+telemetry:
+  sanitized_metadata_only: true
+```
+
+Interpretación: el contrato define la superficie observable y las reglas de degradación. No afirma que todas las generations o backends graph estén disponibles en cada workspace.
 
 ## Compatibilidad y migracion
 
@@ -157,7 +213,9 @@ Sin configuracion activa, `nav recall` devuelve hint visible y no llama al prove
 - La resolucion de bootstrap del worker usa el ejecutable/distribucion activa o, en desarrollo, el repo `mi-lsp`; nunca el `cwd` arbitrario del workspace consultado.
 - La distribucion publica canonica es un bundle por RID que incluye `mi-lsp(.exe)` y `workers/<rid>/`; una build desde source no redefine ese contrato de bootstrap.
 - Los scripts publicos de install/update deben consumir esa misma distribucion canonica; `install.sh` detecta macOS como archive RID `darwin-*` y mapea el worker runtime a `osx-*`, preservando compatibilidad con ambos aliases en `--rid`.
-- La distribucion operativa AE debe producir y verificar `win-arm64`, `win-x64`, `linux-arm64` y `linux-x64`; `scripts/release/ae-release-binaries.ps1` es el entrypoint mantenido para refrescar installs locales/WSL, mirrors x64 opcionales y publicar por tag limpio cuando se pasa `-Publish`.
+- El readback de release usa RIDs logicos `osx-arm64|osx-x64` y assets de archive `darwin-arm64|darwin-x64`; al validar el archive conserva el worker bajo `workers/osx-*` y no lo renombra a `workers/darwin-*`.
+- La distribucion operativa AE debe producir y verificar `win-arm64`, `win-x64`, `linux-arm64`, `linux-x64`, `osx-arm64` y `osx-x64`; `scripts/release/ae-release-binaries.ps1` es el entrypoint mantenido para refrescar installs locales/WSL, mirrors x64 opcionales y publicar por tag limpio cuando se pasa `-Publish`.
+- La dependencia `System.Security.Cryptography.Xml` del worker queda fijada en `10.0.10`; la auditoria de paquetes vulnerables y cualquier `NU1903` son gates de release, no resultados implícitos.
 - Las queries Roslyn deben resolver candidatos en orden `bundle -> installed -> dev-local` por presencia de archivos; el probe `status` queda reservado para `worker status` y diagnostico explicito.
 - Si el primer candidato Roslyn falla por bootstrap al arrancar, el caller puede reintentar una sola vez con el siguiente candidato determinista antes de devolver error accionable.
 - Si `tsserver` no existe, el sistema debe degradar a catalog/text con warning explicito.
@@ -166,6 +224,9 @@ Sin configuracion activa, `nav recall` devuelve hint visible y no llama al prove
 - Si `nav context` se ejecuta sobre un archivo no semantico, el sistema debe responder con `backend=text` sin pasar por workers.
 - Si `nav context` encuentra una falla de bootstrap Roslyn o de arranque de proceso/worker y el archivo existe, el sistema debe preservar `slice_text`, degradar a catalog/text cuando aplique y agregar warning accionable `backend_runtime/<code>` o el codigo bootstrap correspondiente.
 - El protocolo CLI-daemon debe rechazar versiones incompatibles tempranamente.
+- Graph query nunca migra/escribe `index.db`; graph stale/invalid bloquea el backend nativo y cualquier fallback legacy queda visible, no equivalente.
+- MILX protocol/capability/digest se valida antes de entregar datos. Timeout/crash/malformed output afecta solo la extension y exige cleanup verificable.
+- Ninguna superficie graph-native o MILX puede depender de MCP, HTTP, red implicita o store externo.
 
 ## Documentos detalle
 
@@ -181,6 +242,8 @@ Sin configuracion activa, `nav recall` devuelve hint visible y no llama al prove
 - [CT-NAV-EDIT-PLAN.md](09_contratos/CT-NAV-EDIT-PLAN.md) - `nav edit-plan` con packet `edit-plan-v1/v2`, diff dry-run, Go AST y apply experimental
 - [CT-NAV-EVIDENCE.md](09_contratos/CT-NAV-EVIDENCE.md) - `nav evidence inventory` metadata-only para reentry/evidencia AE
 - [CT-NAV-RECALL.md](09_contratos/CT-NAV-RECALL.md)
+- [CT-GRAPH-CLI.md](09_contratos/CT-GRAPH-CLI.md)
+- [CT-MILX-V1.md](09_contratos/CT-MILX-V1.md)
 
 ## Operaciones adicionales
 
@@ -231,11 +294,17 @@ Sin configuracion activa, `nav recall` devuelve hint visible y no llama al prove
 - `nav related`: devuelve vecindario de un simbolo (definicion, callers, implementors, tests); el contenido expandido queda reservado para `--full`
 - `nav workspace-map`: mapa de alto nivel del workspace; el modo base es summary-first y `--full` habilita scans profundos de endpoints, eventos y dependencias. Para Go, expone paquetes `cmd/*`, `internal/*` y `pkg/*` como servicios `go-package` derivados del catalogo.
 - `nav diff-context [ref] --include-content`: contexto semantico de simbolos cambiados en un git diff, con analisis de impacto
-- `nav affected [paths...] [--from-git-diff] [--changed-ref <ref>] [--stdin] [--include-tests] [--include-docs] [--quiet] [--test-command <cmd>]`: selecciona impacto conservador de cambios, con evidencia git/catalogo/docs y comandos sugeridos cuando se piden tests o docs
+- `nav affected [paths...] [--from-git-diff] [--changed-ref <ref>] [--stdin] [--include-tests] [--include-docs] [--quiet] [--test-command <cmd>]`: selecciona impacto conservador; el target graph-native agrega generation, direct/transitive mode, evidence path y confidence class sin romper campos existentes
+- Target `nav neighbors|callers|callees <selector>`: traversal bounded sobre generation publicada
+- Target `nav path <from> <to>` y `nav explain <selector-or-edge>`: shortest path estable y evidence chain
+- Target `nav graph stats|validate`: counts/validacion read-only; validate no repara ni migra
+- Target `--all-workspaces` graph: federa solo workspaces registrados/autorizados y expone member generations/omissions
 - `nav edit-plan --stdin|--packet <file> [--strict] [--include-content] [--apply --experimental-apply]`: superficie agent-first de diff/apply experimental para `edit-plan-v1` textual y `edit-plan-v2` Go AST, con denylist de paths, hashes esperados y git limpio obligatorio para escritura.
 - `nav trace <DOC-ID>`: acepta IDs `RS-*`, `RF-*` y `TP-*`; para `RS-*` resuelve docs outcome gobernados o fallbacks embebidos (`.docs/wiki/02_resultados_soluciones_usuario.md`, `.docs/wiki/02_resultados/*.md`) y devuelve `doc_id`, `layer=RS`, `stage=outcome` sin `rf`; si un `RF-*` no existe como `doc_records.doc_id` primario, puede resolverlo por `doc_mentions(doc_id)` dentro de un documento RF agregado y devolver `RF=<RF-ID>` en el resultado visible; los docs TP del layer `06` que mencionan ese `RF-*` cuentan como evidencia documental de cobertura y deben evitar falsos `missing` despues de `index --docs-only`; si el doc index todavia no publico ese ID, el fallback a disco debe recorrer primero las rutas documentales gobernadas por `00`/`read-model` y solo despues los layouts legacy conocidos (`.docs/wiki/04_RF*.md`, `.docs/wiki/RF/*.md`, `.docs/wiki/RF.md`, equivalentes TP); para `TP-*` puede resolver el caso dentro de docs agregados `06_pruebas/*.md` y usar el titulo del caso embebido; `--all` sigue siendo RF-only hasta que el contrato declare otro universo; los marcadores file-only verifican contra el catalogo de simbolos o contra existencia de archivo en el workspace cuando el lenguaje no esta indexado semanticamente; `confidence`, `confidence_reason` y `status_reason` son campos opcionales aditivos para explicar el veredicto.
 - `nav ask --all-workspaces` / `nav search --all-workspaces` / `nav find --all-workspaces`: fan-out paralelo cross-workspace; los aliases cuyo root ya no existe se omiten con warning agregado y sugerencia hacia `workspace hygiene --format toon`.
-- `--no-auto-daemon` global flag: desactiva auto-start de daemon para queries semanticas
+- `--no-daemon` global flag: fuerza ejecucion directa local; no conecta ni inicia el daemon
+- `--no-auto-daemon` global flag: solo desactiva el auto-start; una operacion daemon-aware puede conectar a un daemon existente y hacer fallback directo si no esta disponible
+- Los intentos daemon-aware usan `ExecuteWithDialTimeout`: el timeout corto limita exclusivamente el dial; write, read, procesamiento y cancelacion obedecen el contexto original de la request
 - `--allow-cross-workspace` global flag: permite que callers agente/harness ejecuten intencionalmente un `--workspace <alias>` que apunta fuera del `caller_cwd`; sin este flag, los comandos workspace-aware bloquean el mismatch para evitar gobernanza o navegacion sobre el workspace equivocado.
 - `daemon perf-smoke`: valida presupuesto de daemon y callers paralelos; falla el envelope si supera working set, private bytes o handles configurados
 - `--axi` global flag / `MI_LSP_AXI=1`: fuerzan overlay AXI en superficies soportadas
@@ -308,3 +377,4 @@ Actualizar `09` y/o `CT-*` cuando cambie cualquiera de estos puntos:
 - politica de bootstrap, instalacion o compatibilidad del worker por RID
 - contrato explainable de `nav ask` o shortcut publico `init`
 - embeddings backends, profiles, configuracion, API key env, contrato recall
+- comandos/selectores/budgets/envelopes graph-native, federation, MILX framing/manifest/capabilities o no-MCP/no-network

@@ -1,0 +1,97 @@
+{
+  "cases": [
+    {
+      "corpus": [
+        "corpus/csharp"
+      ],
+      "golden": "goldens/csharp.json",
+      "id": "csharp"
+    },
+    {
+      "corpus": [
+        "corpus/go"
+      ],
+      "golden": "goldens/go.json",
+      "id": "go"
+    },
+    {
+      "corpus": [
+        "corpus/typescript"
+      ],
+      "golden": "goldens/typescript.json",
+      "id": "typescript"
+    },
+    {
+      "corpus": [
+        "corpus/python"
+      ],
+      "golden": "goldens/python.json",
+      "id": "python"
+    },
+    {
+      "corpus": [
+        "corpus/wiki"
+      ],
+      "golden": "goldens/wiki.json",
+      "id": "wiki"
+    },
+    {
+      "corpus": [
+        "corpus/mixed"
+      ],
+      "golden": "goldens/mixed.json",
+      "id": "mixed"
+    },
+    {
+      "corpus": [
+        "corpus/cross-workspace"
+      ],
+      "golden": "goldens/cross-workspace.json",
+      "id": "cross-workspace"
+    },
+    {
+      "corpus": [
+        "corpus/extensions"
+      ],
+      "golden": "goldens/extensions.json",
+      "id": "extensions"
+    },
+    {
+      "corpus": [
+        "corpus/relations"
+      ],
+      "golden": "goldens/relations.json",
+      "id": "relations"
+    }
+  ],
+  "default_repetitions": 30,
+  "extensions": {
+    ".foo": "extension"
+  },
+  "graphify_revision": "victory-graphify-v1",
+  "hashes": {
+    "corpus/cross-workspace/ws-alpha/src/alpha.cs": "e0879b97c2ab5ba546a458e3fb98598553916de73884ba7a934548e5665de642",
+    "corpus/cross-workspace/ws-beta/src/beta.go": "230c94f142492e4fb514de2916677fa8b5372fdee089ef8f8db46f4ff2dfd8e2",
+    "corpus/csharp/Greeter.cs": "cd8df62fd4f1842dee9e4829e623de1551f7b5174876e3b1301754eab2f727c3",
+    "corpus/extensions/custom.foo": "9df2ac495557b3f6cd5a7579838cb9c028b7c726a47debd83737540f7ab0c826",
+    "corpus/go/greeter.go": "2b779bf8d3134828b038b5ddfe44b23aecbf24a3d400e08e13a921754c840889",
+    "corpus/mixed/cross_language.md": "973e440488070145fdf7cc4ea81de5fc4cde9aa4795511e783f8dd113a704103",
+    "corpus/python/greeter.py": "2e75f58a9c0fe3073efceea1c787575501f6390f8b59433d3ad2f6bc6236bbf8",
+    "corpus/relations/consumer.py": "0766e4ef60c67228886c552279d4f974aa6703028cc2900473bc4ca9eb97f7e9",
+    "corpus/relations/duplicate_provider.py": "233b90c1c2f9129bd6820f13d2e77f4cc2fcc612e2df1bc47316fa2c2a9d7f61",
+    "corpus/relations/provider.py": "0c71e89dc760efe90ba06c6104caaeeacde13d7073133238280335a8570b4128",
+    "corpus/typescript/greeter.ts": "70556b62fc9257f738876a796e377aaa1dbd014bbfa4df59da057f67793eb618",
+    "corpus/wiki/contract.md": "a7ab43d3a1f50c3dfee23993c7c2ec4178824efe3d6a3a641941c7d41eb047b0",
+    "goldens/cross-workspace.json": "d3160863707261f83b114f6099a526a0c9346a19032afd8cd5ddc44567a072da",
+    "goldens/csharp.json": "263c459b3230c9d34b9cbc2d0d18271576ae381ccef63ce19e8e338726d3149b",
+    "goldens/extensions.json": "2d0242c0852a08aca94caa63025e216d5e5d900daa9eeb0201f83ba1dda3c40b",
+    "goldens/go.json": "f526afa309c6361996e40f076b50397b6e67abb89700592521ad32e72b81cda2",
+    "goldens/mixed.json": "c8ef23299562ec191ec9b3a1da9f64618d3471804d0d2e91f8a6672dc222ce43",
+    "goldens/python.json": "5735c6c1f68522e01ecb5766f1da7feebf3165869556af78e3ad3bded0f77849",
+    "goldens/relations.json": "16c4ece8f2abcb8d0369506abe8021bd67acb58d080dcefb6ab670046b2c92dd",
+    "goldens/typescript.json": "08d2a20eff961f8191c75894fed00f4a873bd7e5da72d1f60ebae2b8b4bffbc6",
+    "goldens/wiki.json": "99ab43a83d9088c2f1c0aa0257f2773766f7d67f2da735a31df3712d634af041"
+  },
+  "schema": "victory-lab-manifest/v1",
+  "version": "1"
+}

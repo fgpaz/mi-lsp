@@ -6,15 +6,202 @@ param(
     [string]$GitHubToken = $env:GITHUB_TOKEN,
     [switch]$DryRun,
     [switch]$NoPathUpdate,
-    [switch]$SkipWorkerInstall
+    [switch]$SkipWorkerInstall,
+    [string]$ValidateArchive = ''
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+trap { Write-Error $_; exit 1 }
 
 # SEC-08: warn if GITHUB_TOKEN is in environment (token should not be embedded in scripts)
 if (-not [string]::IsNullOrWhiteSpace($env:GITHUB_TOKEN)) {
     Write-Warning "GITHUB_TOKEN environment variable is set. It will be used for authentication during download. Ensure you trust this environment and do not commit credentials in history."
+}
+
+function Ensure-ZipFileSupport {
+    $zipFileType = 'System.IO.Compression.ZipFile' -as [type]
+    if ($null -eq $zipFileType) {
+        foreach ($assemblyName in @('System.IO.Compression', 'System.IO.Compression.FileSystem')) {
+            try {
+                Add-Type -AssemblyName $assemblyName -ErrorAction Stop
+            }
+            catch {
+                if ($assemblyName -eq 'System.IO.Compression.FileSystem') {
+                    throw "Could not load $assemblyName required for ZIP archive validation: $($_.Exception.Message)"
+                }
+            }
+            $zipFileType = 'System.IO.Compression.ZipFile' -as [type]
+            if ($null -ne $zipFileType) { break }
+        }
+    }
+    if ($null -eq $zipFileType) {
+        throw 'System.IO.Compression.ZipFile is unavailable; refusing to process the archive.'
+    }
+}
+
+function Get-NormalizedFullPath {
+    param([Parameter(Mandatory = $true)][string]$Path)
+    $full = [System.IO.Path]::GetFullPath($Path)
+    $root = [System.IO.Path]::GetPathRoot($full)
+    if ($full.Length -gt $root.Length) {
+        return $full.TrimEnd([char][System.IO.Path]::DirectorySeparatorChar, [char][System.IO.Path]::AltDirectorySeparatorChar)
+    }
+    return $full
+}
+
+function Assert-PathLexicallyUnder {
+    param(
+        [Parameter(Mandatory = $true)][string]$Parent,
+        [Parameter(Mandatory = $true)][string]$Child
+    )
+    $parentFull = Get-NormalizedFullPath -Path $Parent
+    $childFull = Get-NormalizedFullPath -Path $Child
+    $separator = [string][System.IO.Path]::DirectorySeparatorChar
+    $comparison = if ([System.Environment]::OSVersion.Platform -eq [System.PlatformID]::Win32NT) { [System.StringComparison]::OrdinalIgnoreCase } else { [System.StringComparison]::Ordinal }
+    if ($childFull.Equals($parentFull, $comparison)) { return }
+    if (-not $childFull.StartsWith($parentFull + $separator, $comparison)) {
+        throw "Path '$Child' escaped lexical root '$Parent'."
+    }
+}
+
+function Assert-DirectoryRootSafe {
+    param(
+        [Parameter(Mandatory = $true)][string]$Root,
+        [string]$ParentRoot = ''
+    )
+    $item = Get-Item -LiteralPath $Root -Force
+    if (-not $item.PSIsContainer) { throw "Extraction root is not a directory: $Root" }
+    if (($item.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
+        throw "Extraction root is a symlink or reparse point: $Root"
+    }
+    if (-not [string]::IsNullOrWhiteSpace($ParentRoot)) {
+        Assert-PathLexicallyUnder -Parent $ParentRoot -Child $item.FullName
+    }
+}
+
+function Assert-ZipArchiveSafe {
+    param(
+        [Parameter(Mandatory = $true)][string]$ArchivePath,
+        [string]$DestinationRoot = '',
+        [string]$ParentRoot = ''
+    )
+    if (-not (Test-Path -LiteralPath $ArchivePath -PathType Leaf)) {
+        throw "Archive not found: $ArchivePath"
+    }
+    $destination = if ([string]::IsNullOrWhiteSpace($DestinationRoot)) { Split-Path -Parent $ArchivePath } else { $DestinationRoot }
+    $destination = (New-Item -ItemType Directory -Force -Path $destination).FullName
+    Assert-DirectoryRootSafe -Root $destination -ParentRoot $ParentRoot
+    $destination = Get-NormalizedFullPath -Path $destination
+    Ensure-ZipFileSupport
+    $zip = [System.IO.Compression.ZipFile]::OpenRead((Resolve-Path -LiteralPath $ArchivePath).Path)
+    try {
+        foreach ($entry in $zip.Entries) {
+            $name = [string]$entry.FullName
+            if ([string]::IsNullOrWhiteSpace($name) -or $name.Contains('\') -or $name -match '^(?:/|//|[A-Za-z]:)' -or $name -match '(^|/)\.\.(?:/|$)') {
+                throw "Archive contains an unsafe path member: $name"
+            }
+            $mode = ([int64]$entry.ExternalAttributes -shr 16) -band 0xF000
+            if ($mode -ne 0 -and $mode -ne 0x4000 -and $mode -ne 0x8000) {
+                throw "Archive contains a symlink, hardlink, or special member: $name"
+            }
+            $candidate = [System.IO.Path]::GetFullPath([System.IO.Path]::Combine($destination, $name.Replace('/', [System.IO.Path]::DirectorySeparatorChar)))
+            if ($candidate -eq $destination -or -not $candidate.StartsWith($destination + [System.IO.Path]::DirectorySeparatorChar, [System.StringComparison]::OrdinalIgnoreCase)) {
+                throw "Archive member destination escaped its staging root: $name"
+            }
+        }
+    }
+    finally {
+        $zip.Dispose()
+    }
+}
+
+function Expand-ZipArchiveSafely {
+    param(
+        [Parameter(Mandatory = $true)][string]$ArchivePath,
+        [Parameter(Mandatory = $true)][string]$DestinationRoot,
+        [string]$ParentRoot = ''
+    )
+    Assert-DirectoryRootSafe -Root $DestinationRoot -ParentRoot $ParentRoot
+    $destination = Get-NormalizedFullPath -Path $DestinationRoot
+    Ensure-ZipFileSupport
+    $zip = [System.IO.Compression.ZipFile]::OpenRead((Resolve-Path -LiteralPath $ArchivePath).Path)
+    try {
+        foreach ($entry in $zip.Entries) {
+            $name = [string]$entry.FullName
+            if ([string]::IsNullOrWhiteSpace($name) -or $name.Contains('\') -or $name -match '^(?:/|//|[A-Za-z]:)' -or $name -match '(^|/)\.\.(?:/|$)') {
+                throw "Archive contains an unsafe path member: $name"
+            }
+            $mode = ([int64]$entry.ExternalAttributes -shr 16) -band 0xF000
+            if ($mode -ne 0 -and $mode -ne 0x4000 -and $mode -ne 0x8000) {
+                throw "Archive contains a symlink, hardlink, or special member: $name"
+            }
+            $candidate = [System.IO.Path]::GetFullPath([System.IO.Path]::Combine($destination, $name.Replace('/', [System.IO.Path]::DirectorySeparatorChar)))
+            if ($candidate -eq $destination -or -not $candidate.StartsWith($destination + [System.IO.Path]::DirectorySeparatorChar, [System.StringComparison]::OrdinalIgnoreCase)) {
+                throw "Archive member destination escaped its staging root: $name"
+            }
+            if ($name.EndsWith('/')) {
+                New-Item -ItemType Directory -Force -Path $candidate | Out-Null
+                Assert-DirectoryRootSafe -Root $candidate -ParentRoot $destination
+                continue
+            }
+            $parent = Split-Path -Parent $candidate
+            New-Item -ItemType Directory -Force -Path $parent | Out-Null
+            Assert-DirectoryRootSafe -Root $parent -ParentRoot $destination
+            if (Test-Path -LiteralPath $candidate) {
+                $existing = Get-Item -LiteralPath $candidate -Force
+                if (($existing.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) { throw "Archive extraction encountered a reparse point: $candidate" }
+                throw "Archive contains duplicate destination path: $name"
+            }
+            $inputStream = $null
+            $outputStream = $null
+            try {
+                $inputStream = $entry.Open()
+                $outputStream = [System.IO.File]::Open($candidate, [System.IO.FileMode]::CreateNew, [System.IO.FileAccess]::Write, [System.IO.FileShare]::None)
+                $buffer = New-Object byte[] 81920
+                while (($count = $inputStream.Read($buffer, 0, $buffer.Length)) -gt 0) {
+                    $outputStream.Write($buffer, 0, $count)
+                }
+            }
+            finally {
+                if ($null -ne $outputStream) { $outputStream.Dispose() }
+                if ($null -ne $inputStream) { $inputStream.Dispose() }
+            }
+            $created = Get-Item -LiteralPath $candidate -Force
+            if (($created.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) { throw "Archive extraction produced a reparse point: $candidate" }
+        }
+    }
+    finally {
+        $zip.Dispose()
+    }
+}
+
+function Assert-ConfinedExtraction {
+    param(
+        [Parameter(Mandatory = $true)][string]$Root,
+        [string]$ParentRoot = ''
+    )
+    Assert-DirectoryRootSafe -Root $Root -ParentRoot $ParentRoot
+    $resolvedRoot = Get-NormalizedFullPath -Path (Resolve-Path -LiteralPath $Root).Path
+    foreach ($item in @(Get-ChildItem -LiteralPath $Root -Force -Recurse)) {
+        if (($item.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
+            throw "Extraction produced a link or reparse point: $($item.FullName)"
+        }
+        $full = [System.IO.Path]::GetFullPath($item.FullName)
+        if (-not $full.StartsWith($resolvedRoot + [System.IO.Path]::DirectorySeparatorChar, [System.StringComparison]::OrdinalIgnoreCase)) {
+            throw "Extraction escaped confined root: $($item.FullName)"
+        }
+        $real = (Get-Item -LiteralPath $item.FullName -Force).FullName
+        if (-not $real.StartsWith($resolvedRoot + [System.IO.Path]::DirectorySeparatorChar, [System.StringComparison]::OrdinalIgnoreCase)) {
+            throw "Extraction resolved outside confined root: $($item.FullName)"
+        }
+    }
+}
+
+if (-not [string]::IsNullOrWhiteSpace($ValidateArchive)) {
+    Assert-ZipArchiveSafe -ArchivePath $ValidateArchive
+    Write-Output 'PASS: zip archive members are confined and link-free'
+    return
 }
 
 function Get-HostRid {
@@ -245,8 +432,13 @@ try {
     }
 
     $extractDir = Join-Path $tmp 'extract'
-    Expand-Archive -LiteralPath $archivePath -DestinationPath $extractDir -Force
-    $sourceCli = Get-ChildItem -LiteralPath $extractDir -Recurse -File -Filter 'mi-lsp.exe' | Select-Object -First 1
+    New-Item -ItemType Directory -Force -Path $extractDir | Out-Null
+    Assert-DirectoryRootSafe -Root $tmp
+    Assert-PathLexicallyUnder -Parent $tmp -Child $extractDir
+    Assert-ZipArchiveSafe -ArchivePath $archivePath -DestinationRoot $extractDir -ParentRoot $tmp
+    Expand-ZipArchiveSafely -ArchivePath $archivePath -DestinationRoot $extractDir -ParentRoot $tmp
+    Assert-ConfinedExtraction -Root $extractDir -ParentRoot $tmp
+    $sourceCli = Get-ChildItem -LiteralPath $extractDir -Force -Recurse -File -Filter 'mi-lsp.exe' | Select-Object -First 1
     if (-not $sourceCli) {
         throw "Extracted archive did not contain mi-lsp.exe."
     }
@@ -255,6 +447,14 @@ try {
         Select-Object -First 1
     if (-not $sourceWorkerDir) {
         throw "Extracted archive did not contain workers/$Rid."
+    }
+    $workerManifestPath = Join-Path $sourceWorkerDir.FullName 'worker-manifest.json'
+    if (-not (Test-Path -LiteralPath $workerManifestPath -PathType Leaf)) {
+        throw "Extracted archive did not contain workers/$Rid/worker-manifest.json."
+    }
+    $workerManifest = Get-Content -LiteralPath $workerManifestPath -Raw | ConvertFrom-Json
+    if ($workerManifest.schema -ne 'mi-lsp-worker-manifest/v1' -or $workerManifest.rid -ne $Rid -or $workerManifest.protocol -ne 'mi-lsp-v1.1') {
+        throw "Worker manifest metadata does not match RID '$Rid'."
     }
 
     New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null

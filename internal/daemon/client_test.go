@@ -1,0 +1,212 @@
+package daemon
+
+import (
+	"context"
+	"errors"
+	"io"
+	"net"
+	"syscall"
+	"testing"
+	"time"
+
+	"github.com/fgpaz/mi-lsp/internal/model"
+	"github.com/fgpaz/mi-lsp/internal/worker"
+)
+
+func TestClientExecutePreservesSuccessfulRequest(t *testing.T) {
+	listener := listenClientTestServer(t)
+	serverDone := make(chan error, 1)
+	go func() {
+		conn, err := listener.Accept()
+		if err != nil {
+			serverDone <- err
+			return
+		}
+		defer conn.Close()
+
+		var request model.CommandRequest
+		if err := worker.ReadFrame(conn, &request); err != nil {
+			serverDone <- err
+			return
+		}
+		if request.Operation != "system.status" {
+			serverDone <- errors.New("unexpected operation: " + request.Operation)
+			return
+		}
+		serverDone <- worker.WriteFrame(conn, model.Envelope{Ok: true, Workspace: "successful"})
+	}()
+
+	client := clientForTestServer(listener)
+	response, err := client.Execute(context.Background(), model.CommandRequest{
+		ProtocolVersion: model.ProtocolVersion,
+		Operation:       "system.status",
+	})
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if !response.Ok || response.Workspace != "successful" {
+		t.Fatalf("response = %#v, want successful envelope", response)
+	}
+	waitForClientTestServer(t, serverDone)
+}
+
+func TestClientExecuteWithDialTimeoutCancelsBlockedDial(t *testing.T) {
+	dialStarted := make(chan struct{})
+	client := &Client{dial: func(ctx context.Context) (net.Conn, error) {
+		close(dialStarted)
+		<-ctx.Done()
+		return nil, ctx.Err()
+	}}
+
+	result := make(chan error, 1)
+	go func() {
+		_, err := client.ExecuteWithDialTimeout(context.Background(), model.CommandRequest{
+			ProtocolVersion: model.ProtocolVersion,
+			Operation:       "system.status",
+		}, 20*time.Millisecond)
+		result <- err
+	}()
+
+	select {
+	case <-dialStarted:
+	case <-time.After(time.Second):
+		t.Fatal("dial did not start")
+	}
+	select {
+	case err := <-result:
+		if !errors.Is(err, context.DeadlineExceeded) {
+			t.Fatalf("ExecuteWithDialTimeout error = %v, want context deadline exceeded", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("blocked dial was not canceled by dial timeout")
+	}
+}
+
+func TestClientExecuteWithDialTimeoutKeepsOriginalContextAfterDial(t *testing.T) {
+	const responseDelay = 50 * time.Millisecond
+	client := &Client{dial: func(context.Context) (net.Conn, error) {
+		clientConn, serverConn := net.Pipe()
+		go func() {
+			defer serverConn.Close()
+			var request model.CommandRequest
+			if err := worker.ReadFrame(serverConn, &request); err != nil {
+				return
+			}
+			time.Sleep(responseDelay)
+			_ = worker.WriteFrame(serverConn, model.Envelope{Ok: true, Workspace: "after-dial-timeout"})
+		}()
+		return clientConn, nil
+	}}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	started := time.Now()
+	response, err := client.ExecuteWithDialTimeout(ctx, model.CommandRequest{
+		ProtocolVersion: model.ProtocolVersion,
+		Operation:       "system.status",
+	}, 10*time.Millisecond)
+	if err != nil {
+		t.Fatalf("ExecuteWithDialTimeout: %v", err)
+	}
+	if !response.Ok || response.Workspace != "after-dial-timeout" {
+		t.Fatalf("response = %#v, want response after dial timeout", response)
+	}
+	if elapsed := time.Since(started); elapsed < responseDelay {
+		t.Fatalf("request completed after %v, want it to outlive dial timeout", elapsed)
+	}
+}
+
+func TestClientExecuteCancellationClosesBlockedRead(t *testing.T) {
+	listener := listenClientTestServer(t)
+	partialResponseWritten := make(chan struct{})
+	serverDone := make(chan error, 1)
+	go func() {
+		conn, err := listener.Accept()
+		if err != nil {
+			serverDone <- err
+			return
+		}
+		defer conn.Close()
+		_ = conn.SetDeadline(time.Now().Add(2 * time.Second))
+
+		var request model.CommandRequest
+		if err := worker.ReadFrame(conn, &request); err != nil {
+			serverDone <- err
+			return
+		}
+		// Send a valid length prefix and only part of the body. The client must
+		// close this connection when its context is cancelled.
+		if _, err := conn.Write([]byte{0, 0, 0, 2}); err != nil {
+			serverDone <- err
+			return
+		}
+		if _, err := conn.Write([]byte{'{'}); err != nil {
+			serverDone <- err
+			return
+		}
+		close(partialResponseWritten)
+		_, err = io.Copy(io.Discard, conn)
+		if err != nil && !errors.Is(err, net.ErrClosed) && !errors.Is(err, syscall.ECONNRESET) && !errors.Is(err, syscall.Errno(10054)) {
+			serverDone <- err
+			return
+		}
+		serverDone <- nil
+	}()
+
+	client := clientForTestServer(listener)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	result := make(chan error, 1)
+	go func() {
+		_, err := client.ExecuteWithDialTimeout(ctx, model.CommandRequest{
+			ProtocolVersion: model.ProtocolVersion,
+			Operation:       "system.status",
+		}, time.Second)
+		result <- err
+	}()
+
+	select {
+	case <-partialResponseWritten:
+		cancel()
+	case <-time.After(time.Second):
+		t.Fatal("test server did not send an incomplete response")
+	}
+
+	select {
+	case err := <-result:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("Execute error = %v, want context.Canceled", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("Execute did not return after context cancellation")
+	}
+	waitForClientTestServer(t, serverDone)
+}
+
+func listenClientTestServer(t *testing.T) net.Listener {
+	t.Helper()
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen test server: %v", err)
+	}
+	t.Cleanup(func() { _ = listener.Close() })
+	return listener
+}
+
+func clientForTestServer(listener net.Listener) *Client {
+	return &Client{dial: func(ctx context.Context) (net.Conn, error) {
+		return (&net.Dialer{}).DialContext(ctx, "tcp", listener.Addr().String())
+	}}
+}
+
+func waitForClientTestServer(t *testing.T, serverDone <-chan error) {
+	t.Helper()
+	select {
+	case err := <-serverDone:
+		if err != nil {
+			t.Fatalf("test server: %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("test server did not finish")
+	}
+}

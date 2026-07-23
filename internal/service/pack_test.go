@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -15,7 +16,8 @@ func createFunctionalPackWorkspaceFixture(t *testing.T, alias string) string {
 	t.Helper()
 	ensureWritableTestHome(t)
 	root := t.TempDir()
-	writeWorkspaceFile(t, root, "src/App.csproj", `<Project Sdk="Microsoft.NET.Sdk"></Project>`)
+	writeWorkspaceFile(t, root, "go.mod", "module example.com/fixture\n\ngo 1.23\n")
+	writeWorkspaceFile(t, root, "main.go", "package fixture\n")
 	writeWorkspaceFile(t, root, "src/auth/LoginHandler.cs", strings.Join([]string{
 		"namespace Demo;",
 		"public class LoginHandler",
@@ -44,6 +46,7 @@ func createFunctionalPackWorkspaceFixture(t *testing.T, alias string) string {
 		"Este RF implementa `FL-AUTH-01` y se apoya en `src/auth/LoginHandler.cs`.",
 	}, "\n"))
 	writeSpecBackendGovernanceFixture(t, root)
+	saveDetectedFixtureProjectWithIdentity(t, root, alias)
 	return root
 }
 
@@ -392,5 +395,91 @@ func TestNavPackLookupStatusUsesPrimaryDocForExactRF(t *testing.T) {
 	}
 	if status.DocID != "RF-AUTH-001" || status.Path != ".docs/wiki/04_RF/RF-AUTH-001.md" || status.MatchKind != "canonical_indexed_id" {
 		t.Fatalf("unexpected pack lookup status: %#v", status)
+	}
+}
+
+func TestPackOperationContractsDoNotMix(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		operation string
+		cliPrefix string
+	}{
+		{name: "legacy", operation: "nav.pack", cliPrefix: "mi-lsp nav pack"},
+		{name: "wiki", operation: "nav.wiki.pack", cliPrefix: "mi-lsp nav wiki pack"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			result := model.PackResult{PrimaryDoc: ".docs/wiki/04_RF/RF-AUTH-001.md"}
+			continuation := buildPackContinuation(tc.operation, "understand login", result, model.QueryOptions{}, nil)
+			if continuation == nil || continuation.Next.Op != tc.operation {
+				t.Fatalf("continuation = %#v, want operation %q", continuation, tc.operation)
+			}
+
+			queries := buildPackNextQueries(tc.operation, "workspace", "understand login", false, []model.PackDoc{{DocID: "RF-AUTH-001"}})
+			if len(queries) == 0 || queries[0] != tc.cliPrefix+` "understand login" --workspace workspace --full` {
+				t.Fatalf("next_queries = %#v, want %q", queries, tc.cliPrefix)
+			}
+			wrongPrefix := "mi-lsp nav pack"
+			if tc.operation == "nav.pack" {
+				wrongPrefix = "mi-lsp nav wiki pack"
+			}
+			if strings.HasPrefix(queries[0], wrongPrefix) {
+				t.Fatalf("next_queries mixed contracts: %#v", queries)
+			}
+		})
+	}
+}
+
+func TestPackReentryMemoryPreservesOperationContract(t *testing.T) {
+	for _, operation := range []string{"nav.pack", "nav.wiki.pack"} {
+		t.Run(operation, func(t *testing.T) {
+			snapshot := model.ReentryMemorySnapshot{
+				Handoff: "pack-handoff",
+				BestReentry: model.ContinuationTarget{
+					Op:    operation,
+					Query: "understand login",
+				},
+			}
+			memory := &loadedReentryMemory{Snapshot: snapshot}
+			pointer := buildMemoryPointer(snapshot, false)
+			if pointer == nil || pointer.ReentryOp != operation {
+				t.Fatalf("memory pointer = %#v, want reentry_op %q", pointer, operation)
+			}
+			continuation := buildMemoryFallbackContinuation(memory, true)
+			if continuation == nil || continuation.Next.Op != operation {
+				t.Fatalf("memory continuation = %#v, want operation %q", continuation, operation)
+			}
+		})
+	}
+}
+
+func TestPackGovernanceGatePreservesOperationID(t *testing.T) {
+	for _, operation := range []string{"nav.pack", "nav.wiki.pack"} {
+		t.Run(operation, func(t *testing.T) {
+			alias := "pack-governance-" + filepath.Base(t.TempDir())
+			root := createFunctionalPackWorkspaceFixture(t, alias)
+			if err := os.Remove(filepath.Join(root, ".docs", "wiki", "00_gobierno_documental.md")); err != nil {
+				t.Fatalf("remove governance source: %v", err)
+			}
+			if _, err := workspace.RegisterWorkspace(alias, model.WorkspaceRegistration{
+				Name: alias,
+				Root: root,
+				Kind: model.WorkspaceKindSingle,
+			}); err != nil {
+				t.Fatalf("register workspace: %v", err)
+			}
+			defer func() { _ = workspace.RemoveWorkspace(alias) }()
+
+			env, err := New(root, nil).Execute(context.Background(), model.CommandRequest{
+				Operation: operation,
+				Context:   model.QueryOptions{Workspace: alias},
+				Payload:   map[string]any{"task": "understand login"},
+			})
+			if err != nil {
+				t.Fatalf("%s: %v", operation, err)
+			}
+			if !strings.Contains(env.Hint, operation) {
+				t.Fatalf("governance hint = %q, want operation %q", env.Hint, operation)
+			}
+		})
 	}
 }

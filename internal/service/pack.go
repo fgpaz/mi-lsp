@@ -28,7 +28,8 @@ type packAnchor struct {
 }
 
 func (a *App) pack(ctx context.Context, request model.CommandRequest) (model.Envelope, error) {
-	if blockedEnv, err := a.governanceGateEnvelope(ctx, request, "nav.pack"); err != nil {
+	operation := packOperation(request)
+	if blockedEnv, err := a.governanceGateEnvelope(ctx, request, operation); err != nil {
 		return model.Envelope{}, err
 	} else if blockedEnv != nil {
 		return *blockedEnv, nil
@@ -37,7 +38,7 @@ func (a *App) pack(ctx context.Context, request model.CommandRequest) (model.Env
 	// Check if --all-workspaces mode is requested
 	allWorkspaces, _ := request.Payload["all_workspaces"].(bool)
 	if allWorkspaces {
-		return a.wikiPackAllWorkspaces(ctx, request)
+		return a.wikiPackAllWorkspaces(ctx, request, operation)
 	}
 
 	registration, _, err := a.resolveWorkspaceWithProject(request.Context.Workspace)
@@ -92,7 +93,8 @@ func (a *App) pack(ctx context.Context, request model.CommandRequest) (model.Env
 				result.Why = append(result.Why, "ranking_query=meta_terms_normalized")
 			}
 		}
-		result.LookupStatus = packLookupStatus(ctx, query, registration.Name, task, result)
+		result.NextQueries = buildPackNextQueries(operation, registration.Name, task, request.Context.Full, result.Docs)
+		result.LookupStatus = packLookupStatusForOperation(ctx, query, registration.Name, task, result, operation)
 		hint := fmt.Sprintf("documentation index is empty; route resolved from governance. Rerun mi-lsp index --workspace %s for full pack", registration.Name)
 		warnings = appendStringIfMissing(warnings, hint)
 		env := model.Envelope{
@@ -103,9 +105,9 @@ func (a *App) pack(ctx context.Context, request model.CommandRequest) (model.Env
 			Warnings:  warnings,
 			Hint:      hint,
 		}
-		env = applyWikiRepoCompatHint(env, request, "nav.pack", registration.Name, task)
+		env = applyWikiRepoCompatHint(env, request, operation, registration.Name, task)
 		env = attachMemoryPointer(env, memory)
-		env.Continuation = buildPackContinuation(task, result, request.Context, memory)
+		env.Continuation = buildPackContinuation(operation, task, result, request.Context, memory)
 		return applyCoachPolicy(env, request.Context), nil
 	}
 
@@ -123,7 +125,8 @@ func (a *App) pack(ctx context.Context, request model.CommandRequest) (model.Env
 	primary, ok := selectPackPrimary(hardAnchor, docs, query.docByPath, query.ranked)
 	if !ok {
 		warnings = appendStringIfMissing(warnings, "no documentation pack candidates matched the task")
-		result.LookupStatus = packLookupStatus(ctx, query, registration.Name, task, result)
+		result.NextQueries = buildPackNextQueries(operation, registration.Name, task, request.Context.Full, result.Docs)
+		result.LookupStatus = packLookupStatusForOperation(ctx, query, registration.Name, task, result, operation)
 		env := model.Envelope{
 			Ok:        true,
 			Workspace: registration.Name,
@@ -131,7 +134,7 @@ func (a *App) pack(ctx context.Context, request model.CommandRequest) (model.Env
 			Items:     []model.PackResult{result},
 			Warnings:  warnings,
 		}
-		return applyWikiRepoCompatHint(env, request, "nav.pack", registration.Name, task), nil
+		return applyWikiRepoCompatHint(env, request, operation, registration.Name, task), nil
 	}
 	result.PrimaryDoc = primary.Path
 	result.Why = append(result.Why, "primary_doc="+primary.Path, "family="+family)
@@ -154,8 +157,8 @@ func (a *App) pack(ctx context.Context, request model.CommandRequest) (model.Env
 			result.Docs = previewDocs
 			result.PrimaryDoc = primary.Path
 			result.Why = append(result.Why, "preview=route_core")
-			result.NextQueries = buildPackNextQueries(registration.Name, task, request.Context.Full, result.Docs)
-			result.LookupStatus = packLookupStatus(ctx, query, registration.Name, task, result)
+			result.NextQueries = buildPackNextQueries(operation, registration.Name, task, request.Context.Full, result.Docs)
+			result.LookupStatus = packLookupStatusForOperation(ctx, query, registration.Name, task, result, operation)
 			env := model.Envelope{
 				Ok:        true,
 				Workspace: registration.Name,
@@ -164,9 +167,9 @@ func (a *App) pack(ctx context.Context, request model.CommandRequest) (model.Env
 				Warnings:  warnings,
 				Stats:     model.Stats{Files: len(result.Docs)},
 			}
-			env = applyWikiRepoCompatHint(env, request, "nav.pack", registration.Name, task)
+			env = applyWikiRepoCompatHint(env, request, operation, registration.Name, task)
 			env = attachMemoryPointer(env, memory)
-			env.Continuation = buildPackContinuation(task, result, request.Context, memory)
+			env.Continuation = buildPackContinuation(operation, task, result, request.Context, memory)
 			return applyCoachPolicy(applyAXIPreviewHints(env, request.Context, "preview mode: rerun with --full for slices"), request.Context), nil
 		}
 	}
@@ -175,8 +178,8 @@ func (a *App) pack(ctx context.Context, request model.CommandRequest) (model.Env
 	packDocs, anchorWarnings := ensurePackAnchorFirst(registration.Root, task, primary, packDocs, request.Context.Full)
 	result.Docs = packDocs
 	result.Why = append(result.Why, packWhy...)
-	result.NextQueries = buildPackNextQueries(registration.Name, task, request.Context.Full, result.Docs)
-	result.LookupStatus = packLookupStatus(ctx, query, registration.Name, task, result)
+	result.NextQueries = buildPackNextQueries(operation, registration.Name, task, request.Context.Full, result.Docs)
+	result.LookupStatus = packLookupStatusForOperation(ctx, query, registration.Name, task, result, operation)
 	warnings = append(warnings, packWarnings...)
 	warnings = append(warnings, anchorWarnings...)
 
@@ -188,9 +191,9 @@ func (a *App) pack(ctx context.Context, request model.CommandRequest) (model.Env
 		Warnings:  warnings,
 		Stats:     model.Stats{Files: len(result.Docs)},
 	}
-	env = applyWikiRepoCompatHint(env, request, "nav.pack", registration.Name, task)
+	env = applyWikiRepoCompatHint(env, request, operation, registration.Name, task)
 	env = attachMemoryPointer(env, memory)
-	env.Continuation = buildPackContinuation(task, result, request.Context, memory)
+	env.Continuation = buildPackContinuation(operation, task, result, request.Context, memory)
 	return applyCoachPolicy(applyAXIPreviewHints(env, request.Context, "preview mode: rerun with --full for slices"), request.Context), nil
 }
 
@@ -605,10 +608,37 @@ func packSlice(root string, doc model.DocRecord, targets []model.PackTarget) (st
 	return content, startLine, actualEnd, nil
 }
 
-func buildPackNextQueries(workspaceName string, task string, full bool, docs []model.PackDoc) []string {
+func packLookupStatusForOperation(ctx context.Context, query *docQueryContext, workspaceName string, task string, result model.PackResult, operation string) *model.WikiLookupStatus {
+	status := packLookupStatus(ctx, query, workspaceName, task, result)
+	if status == nil || operation != "nav.pack" || status.NextHint == "" {
+		return status
+	}
+	status.NextHint = fmt.Sprintf("rerun mi-lsp nav pack %q --workspace %s --format toon --full for expanded pack", task, workspaceName)
+	return status
+}
+
+func packOperation(request model.CommandRequest) string {
+	return normalizePackOperation(request.Operation)
+}
+
+func normalizePackOperation(operation string) string {
+	if operation == "nav.wiki.pack" {
+		return "nav.wiki.pack"
+	}
+	return "nav.pack"
+}
+
+func packCLIPath(operation string) string {
+	if operation == "nav.wiki.pack" {
+		return "nav wiki"
+	}
+	return "nav"
+}
+
+func buildPackNextQueries(operation string, workspaceName string, task string, full bool, docs []model.PackDoc) []string {
 	queries := make([]string, 0, 3)
 	if !full {
-		queries = append(queries, fmt.Sprintf("mi-lsp nav pack %q --workspace %s --full", task, workspaceName))
+		queries = append(queries, fmt.Sprintf("mi-lsp %s pack %q --workspace %s --full", packCLIPath(operation), task, workspaceName))
 	}
 	if len(docs) > 0 && docs[0].DocID != "" {
 		queries = append(queries, fmt.Sprintf("mi-lsp nav search %q --include-content --workspace %s", docs[0].DocID, workspaceName))
@@ -631,7 +661,7 @@ func containsAnyToken(value string, tokens []string) bool {
 }
 
 // wikiPackAllWorkspaces handles --all-workspaces fan-out using FanOutWiki.
-func (a *App) wikiPackAllWorkspaces(ctx context.Context, request model.CommandRequest) (model.Envelope, error) {
+func (a *App) wikiPackAllWorkspaces(ctx context.Context, request model.CommandRequest, operation string) (model.Envelope, error) {
 	task := strings.TrimSpace(firstNonEmpty(
 		stringPayload(request.Payload, "task"),
 		stringPayload(request.Payload, "question"),
@@ -685,7 +715,8 @@ func (a *App) wikiPackAllWorkspaces(ctx context.Context, request model.CommandRe
 				result.Why = append(result.Why, tier1Why...)
 				result.Why = append(result.Why, "tier1=canonical_fallback")
 			}
-			result.LookupStatus = packLookupStatus(subCtx, query, ws.Name, task, result)
+			result.NextQueries = buildPackNextQueries(operation, ws.Name, task, request.Context.Full, result.Docs)
+			result.LookupStatus = packLookupStatusForOperation(subCtx, query, ws.Name, task, result, operation)
 			hint := fmt.Sprintf("documentation index is empty; route resolved from governance. Rerun mi-lsp index --workspace %s for full pack", ws.Name)
 			warnings = appendStringIfMissing(warnings, hint)
 
@@ -711,7 +742,7 @@ func (a *App) wikiPackAllWorkspaces(ctx context.Context, request model.CommandRe
 		primary, ok := selectPackPrimary(hardAnchor, docs, query.docByPath, query.ranked)
 		if !ok {
 			warnings = appendStringIfMissing(warnings, "no documentation pack candidates matched the task")
-			result.LookupStatus = packLookupStatus(subCtx, query, ws.Name, task, result)
+			result.LookupStatus = packLookupStatusForOperation(subCtx, query, ws.Name, task, result, operation)
 
 			itemsAny := []any{result}
 			stats := map[string]any{
@@ -741,8 +772,8 @@ func (a *App) wikiPackAllWorkspaces(ctx context.Context, request model.CommandRe
 				result.Docs = previewDocs
 				result.PrimaryDoc = primary.Path
 				result.Why = append(result.Why, "preview=route_core")
-				result.NextQueries = buildPackNextQueries(ws.Name, task, request.Context.Full, result.Docs)
-				result.LookupStatus = packLookupStatus(subCtx, query, ws.Name, task, result)
+				result.NextQueries = buildPackNextQueries(operation, ws.Name, task, request.Context.Full, result.Docs)
+				result.LookupStatus = packLookupStatusForOperation(subCtx, query, ws.Name, task, result, operation)
 
 				itemsAny := []any{result}
 				stats := map[string]any{
@@ -757,8 +788,8 @@ func (a *App) wikiPackAllWorkspaces(ctx context.Context, request model.CommandRe
 		packDocs, anchorWarnings := ensurePackAnchorFirst(ws.Root, task, primary, packDocs, request.Context.Full)
 		result.Docs = packDocs
 		result.Why = append(result.Why, packWhy...)
-		result.NextQueries = buildPackNextQueries(ws.Name, task, request.Context.Full, result.Docs)
-		result.LookupStatus = packLookupStatus(subCtx, query, ws.Name, task, result)
+		result.NextQueries = buildPackNextQueries(operation, ws.Name, task, request.Context.Full, result.Docs)
+		result.LookupStatus = packLookupStatusForOperation(subCtx, query, ws.Name, task, result, operation)
 		warnings = append(warnings, packWarnings...)
 		warnings = append(warnings, anchorWarnings...)
 

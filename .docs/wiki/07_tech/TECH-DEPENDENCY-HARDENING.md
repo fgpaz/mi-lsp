@@ -2,6 +2,8 @@
 
 ```yaml
 harness_protocol: SDD-HARNESS-v1
+source_protocol: SDD-WIKI-SOURCE-v1
+doc_id: "TECH-DEPENDENCY-HARDENING"
 id: "TECH-DEPENDENCY-HARDENING"
 kind: "support-doc"
 audience: "llm-first"
@@ -77,8 +79,41 @@ Documenta la postura de hardening de dependencias y bootstrap del worker .NET, i
    - `Microsoft.Build.Utilities.Core`
    en `17.14.28`
 4. Declarar `ExcludeAssets="runtime"` en esas referencias para respetar la carga via `Microsoft.Build.Locator`.
-5. Para `GHSA-37gx-xxp4-5rgx` y `GHSA-w3x6-4m5h-cxqf`, fijar `System.Security.Cryptography.Xml` en `10.0.6`, version parcheada para la linea .NET 10.
-6. Resultado esperado: `dotnet list worker-dotnet/MiLsp.Worker/MiLsp.Worker.csproj package --vulnerable --include-transitive` sin paquetes vulnerables y build release sin `NU1903`.
+5. Para `GHSA-37gx-xxp4-5rgx` y `GHSA-w3x6-4m5h-cxqf`, fijar `System.Security.Cryptography.Xml` en la version parcheada `10.0.10` para la linea .NET 10.
+6. La referencia efectiva del proyecto queda fijada en `10.0.10` y la auditoria vulnerable es gate de release.
+7. La auditoria de vulnerabilidades del worker es un gate: un advisory vulnerable o un build con `NU1903` no se promociona como listo.
+8. No se registra resultado de auditoria ni estado de release sin ejecutar el comando correspondiente y conservar evidencia sanitizada.
+
+```toon
+harness_protocol: SDD-HARNESS-v1
+source_protocol: SDD-WIKI-SOURCE-v1
+doc_id: TECH-DEPENDENCY-HARDENING
+block_id: TECH-DEPENDENCY-HARDENING.vulnerability-gate
+kind: dependency-gate
+audience: llm-first
+source_of_truth: this
+imports:
+  - .docs/wiki/ae/AE-RELEASE-DISTRIBUTION.md
+exports:
+  - worker_dependency_vulnerability_gate
+evidence:
+  - .docs/wiki/07_tech/TECH-DEPENDENCY-HARDENING.md
+  - worker-dotnet/MiLsp.Worker/MiLsp.Worker.csproj
+verify:
+  - dotnet list worker-dotnet/MiLsp.Worker/MiLsp.Worker.csproj package --vulnerable --include-transitive
+  - dotnet build worker-dotnet/MiLsp.Worker/MiLsp.Worker.csproj --configuration Release
+stop_if:
+  - vulnerable_package_reported=true
+  - NU1903_present=true
+  - audit_evidence_missing=true
+package:
+  name: System.Security.Cryptography.Xml
+  pinned_version: 10.0.10
+audit:
+  vulnerable_scan: release_blocking
+  build_warning_NU1903: release_blocking
+  result_claim: forbidden_without_command_and_sanitized_evidence
+```
 
 ### Cierres no aceptados
 
@@ -100,10 +135,12 @@ Documenta la postura de hardening de dependencias y bootstrap del worker .NET, i
 
 ## Failure modes y notas operativas
 
+> `wiki_source_table_exception: true`. La siguiente tabla es una comparacion humana de sintomas y mitigaciones; el gate normativo de vulnerabilidades vive en `TECH-DEPENDENCY-HARDENING.vulnerability-gate`.
+
 | Riesgo | Sintoma | Mitigacion canonica |
 |---|---|---|
 | Advisory persistente | `dotnet build` emite `NU1903` | pin directo Microsoft.Build* en version corregida |
-| Advisory transitorio en `System.Security.Cryptography.Xml` | restore/build alerta `GHSA-37gx-xxp4-5rgx` o `GHSA-w3x6-4m5h-cxqf` | pin directo a `System.Security.Cryptography.Xml` `10.0.6` o version superior parcheada |
+| Advisory transitorio en `System.Security.Cryptography.Xml` | restore/build alerta `GHSA-37gx-xxp4-5rgx` o `GHSA-w3x6-4m5h-cxqf` | pin directo a `System.Security.Cryptography.Xml` `10.0.10` o version superior parcheada |
 | Incompatibilidad Roslyn/MSBuild | fallas al cargar workspace | subir versions en bloque controlado |
 | Error de MSBuildLocator | assemblies MSBuild copiados al output | `ExcludeAssets="runtime"` |
 | “Solucion” por suppression | build verde pero inseguro | prohibido por politica |

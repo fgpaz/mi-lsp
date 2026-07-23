@@ -1,0 +1,67 @@
+{
+  "schema": "victory-golden/v2",
+  "fixture_id": "graph-native-go-callers-affected-path",
+  "repository_identity": "https://example.com/mi-lsp/victory-lab-v2",
+  "expected_categories": [
+    "positive",
+    "negative",
+    "ambiguous",
+    "unresolved",
+    "NOT_COMPARABLE"
+  ],
+  "cases": [
+    {
+      "id": "positive-direct-call",
+      "kind": "positive",
+      "from": "callers.Direct",
+      "to": "subject.Normalize",
+      "relation": "calls",
+      "status": "exact",
+      "expected_edge": true
+    },
+    {
+      "id": "negative-unrelated-call",
+      "kind": "negative",
+      "from": "unrelated.Unrelated",
+      "to": "subject.Normalize",
+      "relation": "calls",
+      "status": "absent",
+      "expected_edge": false,
+      "negative_violations": 0
+    },
+    {
+      "id": "ambiguous-shared-selector",
+      "kind": "ambiguous",
+      "selector": "Shared",
+      "candidates": [
+        "example.com/mi-lsp/victory-lab-v2/ambiguous/alpha.Shared",
+        "example.com/mi-lsp/victory-lab-v2/ambiguous/beta.Shared"
+      ],
+      "status": "candidates",
+      "expected_edge": false
+    },
+    {
+      "id": "unresolved-missing-target",
+      "kind": "unresolved",
+      "from": "unresolved.UsesKnown",
+      "to": "unresolved.MissingType",
+      "relation": "references",
+      "status": "unresolved",
+      "reason": "target declaration is absent",
+      "expected_edge": false
+    },
+    {
+      "id": "comparator-unavailable",
+      "kind": "NOT_COMPARABLE",
+      "operation": "nav.path",
+      "from": "subject.Normalize",
+      "to": "external.ComparatorOnly",
+      "status": "NOT_COMPARABLE",
+      "reason": "no pinned comparable graph baseline for this external target",
+      "expected_edge": false
+    }
+  ],
+  "negative_violations": 0,
+  "unresolved_are_not_edges": true,
+  "ambiguous_are_not_edges": true
+}

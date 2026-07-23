@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"path/filepath"
 	"sort"
@@ -44,6 +45,20 @@ func (a *App) ask(ctx context.Context, request model.CommandRequest) (model.Enve
 	question = strings.TrimSpace(question)
 	if question == "" {
 		return model.Envelope{}, fmt.Errorf("question is required")
+	}
+
+	// Supported graph-native intents are routed automatically. There is no opt-out:
+	// silently falling back to documentation ranking would discard the requested
+	// graph/change synthesis semantics.
+	if _, supported := classifySupportedIntent(question, request.Payload); supported {
+		scopedRepo, scopeWarnings, scopeEnvelope := resolveCatalogRepoScope(registration, project, request.Payload)
+		if scopeEnvelope != nil {
+			return *scopeEnvelope, nil
+		}
+		if planned, handled, planErr := a.intentPlan(ctx, request, registration, project, question, scopedRepo, scopeWarnings); handled {
+			planned.Warnings = appendStringIfMissing(planned.Warnings, "nav.ask automatically routed the supported graph-native intent")
+			return planned, planErr
+		}
 	}
 
 	query := loadDocQueryContext(ctx, registration, question)
@@ -626,6 +641,42 @@ func (a *App) askAllWorkspaces(ctx context.Context, request model.CommandRequest
 	var scored []scoredResult
 	var allWarnings []string
 
+	if _, supported := classifySupportedIntent(question, request.Payload); supported {
+		plans := make([]model.IntentPlan, 0, len(workspaces))
+		for result := range results {
+			if result.err != nil {
+				allWarnings = append(allWarnings, fmt.Sprintf("%s: ask failed: %v", result.ws.Name, result.err))
+				continue
+			}
+			allWarnings = append(allWarnings, result.envelope.Warnings...)
+			workspacePlans, ok := result.envelope.Items.([]model.IntentPlan)
+			if !ok {
+				allWarnings = append(allWarnings, fmt.Sprintf("%s: supported intent returned an incompatible response type", result.ws.Name))
+				continue
+			}
+			for _, plan := range workspacePlans {
+				plan.Workspace = result.ws.Name
+				plan.DeterminismDigest = model.IntentPlanDigest(plan)
+				plans = append(plans, plan)
+			}
+		}
+		sort.Slice(plans, func(i, j int) bool {
+			return intentPlanAllWorkspacesSortKey(plans[i]) < intentPlanAllWorkspacesSortKey(plans[j])
+		})
+		return model.Envelope{
+			Ok:      true,
+			Backend: "planner",
+			Items:   plans,
+			Warnings: dedupeStrings(append(allWarnings,
+				"nav.ask all-workspaces preserved the supported intent plans from each workspace",
+			)),
+			Stats: model.Stats{
+				Files:             len(plans),
+				WorkspacesQueried: len(workspaces),
+			},
+		}, nil
+	}
+
 	for result := range results {
 		if result.err != nil {
 			allWarnings = append(allWarnings, fmt.Sprintf("%s: ask failed: %v", result.ws.Name, result.err))
@@ -665,4 +716,15 @@ func (a *App) askAllWorkspaces(ctx context.Context, request model.CommandRequest
 	}
 	env = applyWikiRepoCompatHint(env, request, "nav.ask", request.Context.Workspace, question)
 	return applyCoachPolicy(env, request.Context), nil
+}
+
+func intentPlanAllWorkspacesSortKey(plan model.IntentPlan) string {
+	arguments, _ := json.Marshal(plan.Arguments)
+	return strings.Join([]string{
+		plan.Workspace,
+		plan.Intent,
+		plan.Operation,
+		plan.DeterminismDigest,
+		string(arguments),
+	}, "\x00")
 }

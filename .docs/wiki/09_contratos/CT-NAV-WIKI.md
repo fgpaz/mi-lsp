@@ -39,7 +39,7 @@ mi-lsp nav wiki pack <task> [--all-workspaces] --workspace <alias> [--rf RF-*] [
 mi-lsp nav wiki trace <DOC-ID|--all> [--all-workspaces] --workspace <alias> [--summary] [--format compact|json|text|toon|yaml]
 mi-lsp nav wiki inventory [--all-workspaces] --workspace <alias> [--with-layer-counts] [--format compact|json|text|toon|yaml]
 mi-lsp nav wiki validate-harness --workspace <alias> [--format compact|json|text|toon|yaml]
-mi-lsp nav wiki validate-source --workspace <alias> [--format compact|json|text|toon|yaml]
+mi-lsp nav wiki validate-source --workspace <alias> [--paths <path[,path...]>] [--ids <doc-id[,doc-id...]>] [--format compact|json|text|toon|yaml]
 ```
 
 ## Semantica
@@ -258,6 +258,29 @@ Veredictos:
 - `WARN`: no hay blockers, pero quedan warnings no bloqueantes.
 - `BLOCKED`: falta `doc_id`, hay `doc_id` duplicado, falta fence `toon`, falta `block_id`, hay tabla Markdown normativa sin excepcion o faltan filas de navegacion en `doc_source_blocks`.
 
+```toon
+block_id: ct-nav-wiki-validate-source-scope
+kind: validator-contract
+source_of_truth: this
+verify:
+  - go run ./cmd/mi-lsp nav wiki validate-source --workspace <alias> --paths <path> --format toon
+  - go run ./cmd/mi-lsp nav wiki validate-source --workspace <alias> --ids <doc-id> --format toon
+scope:
+  paths: "comma-separated existing markdown paths"
+  ids: "comma-separated document/source IDs"
+  selection: "intersection with governed SDD-WIKI-SOURCE-v1 artifacts"
+no_match:
+  ok: true
+  wiki_source_verdict: BLOCKED
+  wiki_source_readiness: blocked
+  navigation_readiness: blocked
+  navigation_blockers: [scope=no_match]
+readiness:
+  exact_claims: "only source-declared artifacts"
+  non_source_docs: "not implicitly promoted and not corpus blockers"
+  diagnostics: "hint and blocker are visible"
+```
+
 ## Diagnosticos
 
 - Si `governance_blocked=true`, `wiki search` devuelve `backend=governance` y no ejecuta ranking documental.
@@ -269,6 +292,9 @@ Veredictos:
 - `nav wiki validate-harness` resuelve imports, evidencia y links Obsidian links Obsidian de ejemplo contra `DocRecord`, `doc_id`, exports y paths del workspace.
 - `nav wiki validate-harness` debe usar todo el docgraph gobernado para resolver referencias, aunque la validacion este acotada a contratos `SDD-HARNESS-v1`; si un record agregado apunta al mismo ID que un contrato canonico, el agregado no debe generar falso `missing contract`.
 - `nav wiki validate-source` aplica el gate de gobernanza, lee `doc_source_blocks`/`doc_source_records`, abre solo markdowns que declaran `SDD-WIKI-SOURCE-v1` y no bloquea el resto del corpus.
+- `nav wiki validate-source --paths <path[,path...]>` limita el scope a paths existentes; `--ids <doc-id[,doc-id...]>` limita el scope a IDs documentales/source. Los filtros son aditivos al workspace y no convierten un documento dual sin `SDD-WIKI-SOURCE-v1` en source artifact.
+- Un scope sin coincidencias no es una lista vacía ambigua: devuelve `ok=true`, `wiki_source_verdict=BLOCKED`, `wiki_source_readiness=blocked`, `navigation_readiness=blocked` y `navigation_blockers` con `scope=no_match`, junto con un hint accionable.
+- `nav wiki search`, `route`, `pack` y `trace` son superficies dirigidas y owner-aware. Una preview puede devolver `next_queries`/`next_hint`, pero no debe ocultar truncation, omisiones, stale index ni graph context no disponible.
 - `nav wiki search <id>` resuelve coincidencias exactas en `doc_source_blocks.doc_id`, `doc_source_blocks.block_id` y `doc_source_records.record_id` antes del ranking textual.
 - `nav wiki search` debe exponer evidencia de linea cuando esta disponible: `line_start`/`line_end` en el item o rangos equivalentes dentro de `snippet/content`; los rangos deben apuntar al markdown canonico devuelto en `path`.
 - `nav wiki trace <id>` puede devolver evidencia `wiki-source` para source IDs exactos aunque no sean `RS-*`, `RF-*` o `TP-*`.

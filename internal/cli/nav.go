@@ -7,8 +7,16 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/fgpaz/mi-lsp/internal/model"
 	"github.com/spf13/cobra"
 )
+
+func (s *rootState) executeNavOperation(cmd *cobra.Command, operation string, payload map[string]any, preferDaemon bool) error {
+	if s.executeOperationHook != nil {
+		return s.executeOperationHook(cmd, operation, payload, preferDaemon)
+	}
+	return s.executeOperation(cmd, operation, payload, preferDaemon)
+}
 
 func newNavCommand(state *rootState) *cobra.Command {
 	command := &cobra.Command{
@@ -197,7 +205,7 @@ context retrieval, dependency analysis, and service exploration.`,
 			if packRepo != "" {
 				payload["repo"] = packRepo
 			}
-			return state.executeOperation(cmd, "nav.pack", payload, true)
+			return state.executeNavOperation(cmd, "nav.pack", payload, false)
 		},
 	}
 	packCommand.Flags().StringVar(&packRF, "rf", "", "Requirement anchor to harden pack selection")
@@ -409,6 +417,14 @@ Results are returned as an array of envelopes.`,
 	}
 
 	var diffIncludeContent bool
+	var diffGeneration string
+	var diffMode string
+	var diffDepth int
+	var diffLimit int
+	var diffTokenBudget int
+	var diffIncludeTests bool
+	var diffIncludeDocs bool
+	var diffEdges []string
 	diffContextCommand := &cobra.Command{
 		Use:   "diff-context [ref]",
 		Short: "Semantic context of changed symbols in a git diff",
@@ -420,11 +436,18 @@ Use --include-content to embed symbol bodies in the output.`,
 			if len(args) > 0 {
 				ref = args[0]
 			}
-			payload := map[string]any{"ref": ref, "include_content": diffIncludeContent}
-			return state.executeOperation(cmd, "nav.diff-context", payload, true)
+			return state.executeOperation(cmd, "nav.diff-context", diffContextPayload(ref, diffIncludeContent, diffGeneration, diffMode, diffDepth, diffLimit, diffTokenBudget, diffIncludeTests, diffIncludeDocs, diffEdges), true)
 		},
 	}
 	diffContextCommand.Flags().BoolVar(&diffIncludeContent, "include-content", false, "Include changed symbol bodies in output")
+	diffContextCommand.Flags().StringVar(&diffGeneration, "generation", "", "Graph generation identifier")
+	diffContextCommand.Flags().StringVar(&diffMode, "mode", "direct", "Graph impact mode: direct or transitive")
+	diffContextCommand.Flags().IntVar(&diffDepth, "depth", 0, "Maximum transitive graph depth")
+	diffContextCommand.Flags().IntVar(&diffLimit, "limit", 0, "Maximum graph impact items")
+	diffContextCommand.Flags().IntVar(&diffTokenBudget, "token-budget", 0, "Maximum graph impact token budget")
+	diffContextCommand.Flags().BoolVar(&diffIncludeTests, "include-tests", false, "Include test impact")
+	diffContextCommand.Flags().BoolVar(&diffIncludeDocs, "include-docs", false, "Include documentation impact")
+	diffContextCommand.Flags().StringArrayVar(&diffEdges, "edge", nil, "Graph relation edge (repeatable)")
 
 	var affectedFromGitDiff bool
 	var affectedChangedRef string
@@ -433,6 +456,12 @@ Use --include-content to embed symbol bodies in the output.`,
 	var affectedIncludeDocs bool
 	var affectedQuiet bool
 	var affectedTestCommand string
+	var affectedGeneration string
+	var affectedMode string
+	var affectedDepth int
+	var affectedLimit int
+	var affectedTokenBudget int
+	var affectedEdges []string
 	affectedCommand := &cobra.Command{
 		Use:   "affected [paths...]",
 		Short: "Conservative git-aware impact selector",
@@ -448,6 +477,12 @@ instead of claiming complete graph precision.`,
 				"include_docs":  affectedIncludeDocs,
 				"quiet":         affectedQuiet,
 				"test_command":  affectedTestCommand,
+				"generation":    affectedGeneration,
+				"mode":          affectedMode,
+				"depth":         affectedDepth,
+				"limit":         affectedLimit,
+				"token_budget":  affectedTokenBudget,
+				"edge":          affectedEdges,
 			}
 			if affectedStdin {
 				data, err := io.ReadAll(os.Stdin)
@@ -466,6 +501,12 @@ instead of claiming complete graph precision.`,
 	affectedCommand.Flags().BoolVar(&affectedIncludeDocs, "include-docs", false, "Suggest canonical docs likely affected by changed paths")
 	affectedCommand.Flags().BoolVar(&affectedQuiet, "quiet", false, "Suppress non-essential hints while preserving stable item fields")
 	affectedCommand.Flags().StringVar(&affectedTestCommand, "test-command", "", "Override inferred test command for suggested test items")
+	affectedCommand.Flags().StringVar(&affectedGeneration, "generation", "", "Graph generation identifier")
+	affectedCommand.Flags().StringVar(&affectedMode, "mode", "direct", "Graph impact mode: direct or transitive")
+	affectedCommand.Flags().IntVar(&affectedDepth, "depth", 0, "Maximum transitive graph depth")
+	affectedCommand.Flags().IntVar(&affectedLimit, "limit", 0, "Maximum impact items")
+	affectedCommand.Flags().IntVar(&affectedTokenBudget, "token-budget", 0, "Maximum graph impact token budget")
+	affectedCommand.Flags().StringArrayVar(&affectedEdges, "edge", nil, "Graph relation edge (repeatable)")
 
 	var prepareAffected []string
 	var preparePlan string
@@ -609,11 +650,99 @@ Examples:
 	intentCommand.Flags().Int("offset", 0, "Skip first N results (for pagination)")
 	attachCatalogRepoFlag(intentCommand, &intentRepo)
 
+	var explainChangeRef string
+	var explainChangePaths []string
+	explainChangeCommand := &cobra.Command{
+		Use:   "explain-change [question]",
+		Short: "Automatically synthesize a bounded change explanation",
+		Long: `Route a supported change explanation through the local deterministic
+planner. The preview includes change, affected, callers, callees, tests,
+contracts, and governed wiki reading lanes; expansion commands are emitted
+with their reason and preserve the same graph generation when available.`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			question := "explain change"
+			if len(args) > 0 {
+				question = strings.Join(args, " ")
+			}
+			payload := map[string]any{"question": question, "intent": "explain-change"}
+			if explainChangeRef != "" {
+				payload["ref"] = explainChangeRef
+			}
+			if len(explainChangePaths) > 0 {
+				paths := make([]any, len(explainChangePaths))
+				for i, path := range explainChangePaths {
+					paths[i] = path
+				}
+				payload["paths"] = paths
+			}
+			return state.executeOperation(cmd, "nav.intent", payload, true)
+		},
+	}
+	explainChangeCommand.Flags().StringVar(&explainChangeRef, "ref", "", "Git ref used as the change base")
+	explainChangeCommand.Flags().StringArrayVar(&explainChangePaths, "path", nil, "Explicit changed path (repeatable)")
+
 	wikiCommand := newNavWikiCommand(state)
 	evidenceCommand := newNavEvidenceCommand(state)
 
-	command.AddCommand(symbolsCommand, findCommand, refsCommand, overviewCommand, outlineCommand, askCommand, recallCommand, packCommand, routeCommand, wikiCommand, evidenceCommand, governanceCommand, serviceCommand, searchCommand, contextCommand, depsCommand, multiReadCommand, batchCommand, relatedCommand, workspaceMapCommand, diffContextCommand, affectedCommand, prepareCommand, editPlanCommand, traceCommand, intentCommand)
+	graphCommands := newGraphQueryCommands(state)
+	command.AddCommand(symbolsCommand, findCommand, refsCommand, overviewCommand, outlineCommand, askCommand, recallCommand, packCommand, routeCommand, wikiCommand, evidenceCommand, governanceCommand, serviceCommand, searchCommand, contextCommand, depsCommand, multiReadCommand, batchCommand, relatedCommand, workspaceMapCommand, diffContextCommand, affectedCommand, prepareCommand, editPlanCommand, traceCommand, intentCommand, explainChangeCommand)
+	command.AddCommand(graphCommands...)
 	return command
+}
+
+func diffContextPayload(ref string, includeContent bool, generation string, mode string, depth int, limit int, tokenBudget int, includeTests bool, includeDocs bool, edges []string) map[string]any {
+	return map[string]any{
+		"ref": ref, "include_content": includeContent,
+		"generation": generation, "mode": mode, "depth": depth,
+		"limit": limit, "token_budget": tokenBudget,
+		"include_tests": includeTests, "include_docs": includeDocs,
+		"edge": edges,
+	}
+}
+
+func newGraphQueryCommands(state *rootState) []*cobra.Command {
+	queryFlags := func(command *cobra.Command, generation *string, depth, limit, tokenBudget *int, direction, cursor *string, edges *[]string) {
+		command.Flags().StringVar(generation, "generation", "", "Active generation or retired generation ID")
+		command.Flags().IntVar(depth, "depth", 1, "Maximum traversal depth")
+		command.Flags().IntVar(limit, "limit", 50, "Maximum returned items (1..500)")
+		command.Flags().IntVar(tokenBudget, "token-budget", model.GraphQueryDefaultToken, "Approximate graph output token budget (1..20000)")
+		command.Flags().StringVar(direction, "direction", "both", "Traversal direction: in|out|both")
+		command.Flags().StringSliceVar(edges, "edge", nil, "Registered edge relation filter; repeatable")
+		command.Flags().StringVar(cursor, "cursor", "", "Opaque continuation cursor")
+	}
+	makeQuery := func(use, short, operation string, arity int) *cobra.Command {
+		var generation, direction, cursor string
+		var depth, limit, tokenBudget int
+		var edges []string
+		command := &cobra.Command{Use: use, Short: short, RunE: func(cmd *cobra.Command, args []string) error {
+			if err := requireArgs(args, arity, "selector"); err != nil {
+				return err
+			}
+			if len(args) > arity {
+				return fmt.Errorf("%s accepts exactly %d arguments", use, arity)
+			}
+			payload := map[string]any{"generation": generation, "depth": depth, "limit": limit, "token_budget": tokenBudget, "direction": direction, "cursor": cursor, "edge": edges}
+			if operation == "nav.path" {
+				payload["from"] = args[0]
+				payload["to"] = args[1]
+			} else if arity > 0 {
+				payload["selector"] = args[0]
+			}
+			return state.executeGraphOperation(cmd, operation, payload, true)
+		}}
+		queryFlags(command, &generation, &depth, &limit, &tokenBudget, &direction, &cursor, &edges)
+		return command
+	}
+	neighbors := makeQuery("neighbors <selector>", "Bounded graph neighbors", "nav.neighbors", 1)
+	callers := makeQuery("callers <selector>", "Bounded incoming call graph", "nav.callers", 1)
+	callees := makeQuery("callees <selector>", "Bounded outgoing call graph", "nav.callees", 1)
+	explain := makeQuery("explain <edge-cross-rid>", "Explain an exact graph edge", "nav.explain", 1)
+	path := makeQuery("path <from> <to>", "Shortest bounded graph path", "nav.path", 2)
+	graph := &cobra.Command{Use: "graph", Short: "Generation-aware graph administration queries"}
+	stats := makeQuery("stats", "Read graph generation statistics", "nav.graph.stats", 0)
+	validate := makeQuery("validate", "Validate a graph generation without mutation", "nav.graph.validate", 0)
+	graph.AddCommand(stats, validate)
+	return []*cobra.Command{neighbors, callers, callees, explain, path, graph}
 }
 
 func attachCatalogRepoFlag(command *cobra.Command, repo *string) {
@@ -786,7 +915,7 @@ pack for a reading pack, and trace for RS/RF/TP evidence links.`,
 			if packAllWorkspaces {
 				payload["all_workspaces"] = true
 			}
-			return state.executeOperation(cmd, "nav.pack", payload, true)
+			return state.executeNavOperation(cmd, "nav.wiki.pack", payload, false)
 		},
 	}
 	packCommand.Flags().StringVar(&packRF, "rf", "", "Requirement anchor to harden pack selection")
@@ -846,14 +975,25 @@ pack for a reading pack, and trace for RS/RF/TP evidence links.`,
 	validateHarnessCommand.Flags().StringVar(&validateHarnessIDs, "ids", "", "Comma-separated doc IDs/titles/basenames to validate")
 	validateHarnessCommand.Flags().StringVar(&validateHarnessPaths, "paths", "", "Comma-separated doc paths or basenames to validate")
 
+	var validateSourceIDs string
+	var validateSourcePaths string
 	validateSourceCommand := &cobra.Command{
 		Use:     "validate-source",
 		Short:   "Validate SDD-WIKI-SOURCE-v1 source blocks in governed wiki docs",
 		Example: `  mi-lsp nav wiki validate-source --workspace mi-lsp --format toon`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return state.executeOperation(cmd, "nav.wiki.validate-source", map[string]any{}, true)
+			payload := map[string]any{}
+			if strings.TrimSpace(validateSourceIDs) != "" {
+				payload["ids"] = validateSourceIDs
+			}
+			if strings.TrimSpace(validateSourcePaths) != "" {
+				payload["paths"] = validateSourcePaths
+			}
+			return state.executeOperation(cmd, "nav.wiki.validate-source", payload, true)
 		},
 	}
+	validateSourceCommand.Flags().StringVar(&validateSourceIDs, "ids", "", "Comma-separated doc IDs/titles/basenames to validate")
+	validateSourceCommand.Flags().StringVar(&validateSourcePaths, "paths", "", "Comma-separated doc paths or basenames to validate")
 
 	var invAllWorkspaces bool
 	var invWithLayerCounts bool

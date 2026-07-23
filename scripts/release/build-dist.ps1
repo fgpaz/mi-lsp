@@ -10,6 +10,7 @@ $ErrorActionPreference = 'Stop'
 
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 $workerProject = Join-Path $repoRoot 'worker-dotnet\MiLsp.Worker\MiLsp.Worker.csproj'
+. (Join-Path $PSScriptRoot 'worker-manifest.ps1')
 
 function Get-RidSpec {
     param([Parameter(Mandatory = $true)][string]$Rid)
@@ -56,6 +57,8 @@ foreach ($rid in $Rids) {
         Remove-Item Env:GOARCH -ErrorAction SilentlyContinue
         Pop-Location
     }
+
+    New-WorkerManifest -Rid $rid -WorkerDir $workerOut -ManifestPath (Join-Path $workerOut 'worker-manifest.json') | Out-Null
 
     $results += [pscustomobject]@{
         Rid = $rid

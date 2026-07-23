@@ -143,12 +143,12 @@ func buildAskContinuation(question string, project model.ProjectFile, result mod
 	return buildMemoryFallbackContinuation(memory, true)
 }
 
-func buildPackContinuation(task string, result model.PackResult, opts model.QueryOptions, memory *loadedReentryMemory) *model.Continuation {
+func buildPackContinuation(operation string, task string, result model.PackResult, opts model.QueryOptions, memory *loadedReentryMemory) *model.Continuation {
 	if !opts.Full {
 		return &model.Continuation{
 			Reason: "expand_preview",
 			Next: model.ContinuationTarget{
-				Op:    "nav.pack",
+				Op:    normalizePackOperation(operation),
 				Query: task,
 				DocID: strings.TrimSpace(result.PrimaryDoc),
 				Full:  true,

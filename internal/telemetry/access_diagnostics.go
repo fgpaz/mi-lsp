@@ -50,6 +50,317 @@ type accessDecision struct {
 	GuardrailTrigger     string `json:"guardrail_trigger,omitempty"`
 }
 
+var decisionFieldKinds = map[string]byte{
+	"selector_type": 's', "selector_present": 'b', "repo_selector_valid": 'b',
+	"pattern_len": 'i', "pattern_has_spaces": 'b', "pattern_regex_like": 'b',
+	"used_regex": 'b', "hint_emitted": 'b', "next_hint_emitted": 'b',
+	"fallback_taken": 'b', "result_source": 's', "coach_present": 'b',
+	"coach_trigger": 's', "coach_action_count": 'i', "continuation_present": 'b',
+	"continuation_reason": 's', "continuation_op": 's', "memory_pointer_present": 'b',
+	"memory_stale": 'b', "doc_ranker": 's', "intent_mode": 's',
+	"requested_backend": 's', "result_backend": 's', "backend_fallback_taken": 'b',
+	"fallback_from": 's', "fallback_to": 's', "runtime_error_code": 's',
+	"planner_path": 's', "planner_outcome": 's', "safe_degrade_reason": 's',
+	"guardrail_trigger": 's',
+}
+
+var decisionCodeFields = map[string]struct{}{
+	"coach_trigger":       {},
+	"continuation_reason": {},
+	"guardrail_trigger":   {},
+	"planner_outcome":     {},
+	"runtime_error_code":  {},
+	"safe_degrade_reason": {},
+}
+
+const maxStableTelemetryCodeLength = 64
+
+// stableTelemetryCode is the single gate for values that can become persisted
+// telemetry codes. Keep this set closed: code-shaped input is not evidence that
+// a value is an approved ErrorCode, HintCode, warning, or decision code.
+var stableTelemetryCodeAllowlist = map[string]struct{}{
+	"GPH_BACKEND_EMPTY":                         {},
+	"GPH_BACKEND_MISMATCH":                      {},
+	"GPH_BACKEND_UNAVAILABLE":                   {},
+	"GPH_IMPACT_BUDGET_EXCEEDED":                {},
+	"GPH_IMPACT_BUDGET_INVALID":                 {},
+	"GPH_IMPACT_GRAPH_STALE":                    {},
+	"GPH_IMPACT_RELATION_UNSUPPORTED":           {},
+	"GPH_IMPACT_SEED_BUDGET_EXCEEDED":           {},
+	"GPH_IMPACT_SEED_UNRESOLVED":                {},
+	"GPH_MILX_CAPABILITY_DENIED":                {},
+	"GPH_MILX_EXECUTABLE_DIGEST_MISMATCH":       {},
+	"GPH_MILX_FRAME_INVALID":                    {},
+	"GPH_MILX_MANIFEST_INVALID":                 {},
+	"GPH_MILX_OUTPUT_INVALID":                   {},
+	"GPH_QUERY_BACKEND_UNAVAILABLE":             {},
+	"GPH_QUERY_BUDGET_INVALID":                  {},
+	"GPH_QUERY_CURSOR_STALE":                    {},
+	"GPH_QUERY_GENERATION_NOT_FOUND":            {},
+	"GPH_QUERY_GRAPH_INVALID":                   {},
+	"GPH_QUERY_SELECTOR_AMBIGUOUS":              {},
+	"GPH_QUERY_SELECTOR_INVALID":                {},
+	"GPH_QUERY_UTILITY_INVALID":                 {},
+	"GPH_WIKI_BUDGET_EXCEEDED":                  {},
+	"GPH_WIKI_CODE_AMBIGUOUS":                   {},
+	"GPH_WIKI_CODE_MISSING":                     {},
+	"GPH_WIKI_GRAPH_STALE":                      {},
+	"GPH_WIKI_GRAPH_UNAVAILABLE":                {},
+	"GPH_WIKI_PRIMARY_GRAPH_MISSING":            {},
+	"INTENT_AFFECTED_UNAVAILABLE":               {},
+	"INTENT_ARGUMENT_MISSING":                   {},
+	"INTENT_CALLERS_OMITTED":                    {},
+	"INTENT_CALLEES_OMITTED":                    {},
+	"INTENT_DIFF_UNAVAILABLE":                   {},
+	"INTENT_GENERATION_MISMATCH":                {},
+	"INTENT_GRAPH_OMISSION":                     {},
+	"INTENT_GRAPH_UNAVAILABLE":                  {},
+	"INTENT_NO_CHANGED_PATHS":                   {},
+	"INTENT_SELECTOR_AMBIGUOUS":                 {},
+	"INTENT_TESTS_OMITTED":                      {},
+	"INTENT_WIKI_EVIDENCE_OMITTED":              {},
+	"active_pointer_invalid":                    {},
+	"anchor_drift":                              {},
+	"apply_clean_git":                           {},
+	"backpressure_busy":                         {},
+	"char_budget":                               {},
+	"daemon_request_failed":                     {},
+	"daemon_transport_failed":                   {},
+	"daemon_unavailable":                        {},
+	"dotnet_global_json_mismatch":               {},
+	"dotnet_sdk_missing":                        {},
+	"dry_run_default":                           {},
+	"embeddings_failed":                         {},
+	"embeddings_timeout":                        {},
+	"evidence_inventory_truncated":              {},
+	"expand_preview":                            {},
+	"file_not_found":                            {},
+	"follow_doc":                                {},
+	"go_ast_only":                               {},
+	"governance_blocked":                        {},
+	"gopls_generic":                             {},
+	"invalid_range":                             {},
+	"language_not_supported":                    {},
+	"low_confidence":                            {},
+	"low_evidence":                              {},
+	"max_chars":                                 {},
+	"max_items":                                 {},
+	"missing_expected_hash":                     {},
+	"missing_symbol":                            {},
+	"nav_generic":                               {},
+	"narrow_scope":                              {},
+	"no_matches":                                {},
+	"no_matches_refinable":                      {},
+	"no_stage_commit_format":                    {},
+	"not_found":                                 {},
+	"omitted_ranges":                            {},
+	"operation_error":                           {},
+	"operation_failed":                          {},
+	"operation_required":                        {},
+	"outside_workspace":                         {},
+	"path_denylist":                             {},
+	"plan_invalid":                              {},
+	"planner_generic":                           {},
+	"preview_trimmed":                           {},
+	"process_spawn_access_denied":               {},
+	"process_spawn_failed":                      {},
+	"pyright_generic":                           {},
+	"qry_edit_plan_apply_requires_experimental": {},
+	"qry_edit_plan_dirty_git":                   {},
+	"qry_edit_plan_generic":                     {},
+	"qry_edit_plan_hash_mismatch":               {},
+	"qry_edit_plan_invalid_packet":              {},
+	"qry_edit_plan_language_not_supported":      {},
+	"qry_edit_plan_overlap":                     {},
+	"qry_edit_plan_unsafe_path":                 {},
+	"read_error":                                {},
+	"regex_auto_healed":                         {},
+	"regex_suspected":                           {},
+	"repo_selector_invalid":                     {},
+	"repository_identity_missing":               {},
+	"roslyn_generic":                            {},
+	"roslyn_worker_bootstrap":                   {},
+	"runtime_state_unavailable":                 {},
+	"scope_narrowing_available":                 {},
+	"scope_narrowing_required":                  {},
+	"scope_preview":                             {},
+	"search_failed":                             {},
+	"search_timeout":                            {},
+	"symbol_query_detected":                     {},
+	"text_fallback":                             {},
+	"text_generic":                              {},
+	"token_budget":                              {},
+	"tsserver_generic":                          {},
+	"validation_failed":                         {},
+	"warning_present":                           {},
+	"workspace_cross_workspace_refused":         {},
+	"workspace_resolution_failed":               {},
+	"workspace_unresolved":                      {},
+}
+
+func sanitizePersistedAccessFields(repo string, warnings []string, errorText, errorCode, hintCode, backend string) (string, []string, string, string, string) {
+	if strings.TrimSpace(repo) != "" {
+		repo = "selected"
+	}
+
+	safeErrorCode := stableTelemetryCode(errorCode)
+	safeHintCode := stableTelemetryCode(hintCode)
+	codes := make([]string, 0, len(warnings))
+	seen := make(map[string]struct{}, len(warnings))
+	for _, warning := range warnings {
+		code := firstStableCode(errorCode, hintCode)
+		if code == "" {
+			code = stableTelemetryCode(ClassifyErrorInfo(backend, "", []string{warning}).Code)
+		}
+		if code == "" {
+			code = stableTelemetryCode("warning_present")
+		}
+		if _, ok := seen[code]; ok {
+			continue
+		}
+		seen[code] = struct{}{}
+		codes = append(codes, code)
+	}
+
+	safeError := ""
+	if strings.TrimSpace(errorText) != "" {
+		safeError = safeErrorCode
+		if safeError == "" {
+			safeError = stableTelemetryCode("operation_error")
+		}
+	}
+	return repo, codes, safeError, safeErrorCode, safeHintCode
+}
+
+func firstStableCode(values ...string) string {
+	for _, value := range values {
+		if code := stableTelemetryCode(value); code != "" {
+			return code
+		}
+	}
+	return ""
+}
+
+func stableTelemetryCode(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" || len(value) > maxStableTelemetryCodeLength {
+		return ""
+	}
+	if _, ok := stableTelemetryCodeAllowlist[value]; !ok {
+		return ""
+	}
+	return value
+}
+
+func normalizeDecisionJSON(raw string, event model.AccessEvent) string {
+	if strings.TrimSpace(raw) == "" {
+		return ""
+	}
+	var input map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(raw), &input); err != nil {
+		return ""
+	}
+	output := make(map[string]any, len(input))
+	for key, value := range input {
+		switch decisionFieldKinds[key] {
+		case 'b':
+			var typed bool
+			if json.Unmarshal(value, &typed) == nil {
+				output[key] = typed
+			}
+		case 'i':
+			var typed int
+			if json.Unmarshal(value, &typed) == nil {
+				output[key] = typed
+			}
+		case 's':
+			var typed string
+			if json.Unmarshal(value, &typed) != nil {
+				continue
+			}
+			if _, isCode := decisionCodeFields[key]; isCode {
+				if code := stableTelemetryCode(typed); code != "" {
+					output[key] = code
+				}
+				continue
+			}
+			if decisionTokenAllowed(typed, event) {
+				output[key] = strings.TrimSpace(typed)
+			}
+		}
+	}
+	if len(output) == 0 {
+		return ""
+	}
+	body, err := json.Marshal(output)
+	if err != nil {
+		return ""
+	}
+	return string(body)
+}
+
+func decisionTokenAllowed(value string, event model.AccessEvent) bool {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return false
+	}
+	for _, candidate := range []string{
+		event.Operation, event.Intent, event.Backend, event.Route, event.Format,
+		event.ErrorKind, event.PatternMode, event.RoutingOutcome,
+		event.FailureStage, event.TruncationReason, event.WorkspaceAlias,
+	} {
+		if value == strings.TrimSpace(candidate) {
+			return true
+		}
+	}
+	switch value {
+	case "repo", "unknown", "owner", "legacy", "none", "direct", "daemon", "direct_fallback", "router_error", "narrowed_repo", "router", "text", "roslyn", "tsserver", "pyright", "planner", "intent", "catalog", "worker", "governance", "docs", "code", "ask", "literal", "regex", "present", "low_evidence", "scope_preview", "nav.search", "nav.find", "nav.intent", "nav.refs", "nav.context", "nav.related", "nav.workspace-map", "nav.wiki.pack":
+		return true
+	default:
+		return value == "intent:docs" || value == "intent:code"
+	}
+}
+
+// IntentFromRequestEnvelope extracts only the allowlisted intent token. It handles
+// both in-process typed plans and JSON-decoded cache envelopes.
+func IntentFromRequestEnvelope(request model.CommandRequest, envelope model.Envelope) string {
+	if explicit := model.SanitizeUtilityIntent(payloadStr(request.Payload, "intent")); explicit != "unknown" {
+		return explicit
+	}
+	if intent := intentFromItems(envelope.Items); intent != "" {
+		return model.SanitizeUtilityIntent(intent)
+	}
+	return "unknown"
+}
+
+func intentFromItems(items any) string {
+	switch typed := items.(type) {
+	case []model.IntentPlan:
+		if len(typed) > 0 {
+			return typed[0].Intent
+		}
+	case model.IntentPlan:
+		return typed.Intent
+	case []any:
+		for _, item := range typed {
+			if intent := intentFromItems(item); intent != "" {
+				return intent
+			}
+		}
+	case []map[string]any:
+		for _, item := range typed {
+			if intent := intentFromItems(item); intent != "" {
+				return intent
+			}
+		}
+	case map[string]any:
+		if intent, ok := typed["intent"].(string); ok {
+			return intent
+		}
+	}
+	return ""
+}
+
 func EnrichAccessEvent(event model.AccessEvent, request model.CommandRequest, envelope model.Envelope, opErr error) model.AccessEvent {
 	focusOp, focusPayload := telemetryFocus(request)
 	count := envelopeItemCount(envelope.Items)
@@ -192,7 +503,7 @@ func deriveFailureStage(route string, payload map[string]any, envelope model.Env
 
 func deriveHintCode(envelope model.Envelope) string {
 	if envelope.Error != nil && strings.TrimSpace(envelope.Error.HintCode) != "" {
-		return strings.TrimSpace(envelope.Error.HintCode)
+		return stableTelemetryCode(envelope.Error.HintCode)
 	}
 	parts := make([]string, 0, len(envelope.Warnings)+2)
 	if strings.TrimSpace(envelope.Hint) != "" {
@@ -203,21 +514,21 @@ func deriveHintCode(envelope model.Envelope) string {
 	}
 	parts = append(parts, envelope.Warnings...)
 	if info := ClassifyErrorInfo(envelope.Backend, "", envelope.Warnings); info.Code != "" {
-		return info.Code
+		return stableTelemetryCode(info.Code)
 	}
 	message := strings.ToLower(strings.Join(parts, "\n"))
 	switch {
 	case strings.Contains(message, "unknown repo selector") || strings.Contains(message, "--repo <name>"):
-		return "repo_selector_invalid"
+		return stableTelemetryCode("repo_selector_invalid")
 	case strings.Contains(message, "search timed out"):
-		return "search_timeout"
+		return stableTelemetryCode("search_timeout")
 	case strings.Contains(message, "--regex") || strings.Contains(message, "regex-like"):
-		return "regex_suspected"
+		return stableTelemetryCode("regex_suspected")
 	case strings.Contains(message, "0 matches"):
-		return "no_matches"
+		return stableTelemetryCode("no_matches")
 	default:
 		if envelope.Coach != nil {
-			return strings.TrimSpace(envelope.Coach.Trigger)
+			return stableTelemetryCode(envelope.Coach.Trigger)
 		}
 		return ""
 	}
@@ -244,7 +555,7 @@ func buildDecisionJSON(route string, request model.CommandRequest, focusOp strin
 	selectorPresent := strings.TrimSpace(payloadStr(payload, "repo")) != ""
 	requestedBackend := deriveRequestedBackend(request, focusOp, payload)
 	resultBackend := strings.TrimSpace(envelope.Backend)
-	runtimeError := ClassifyErrorInfo(resultBackend, "", envelope.Warnings)
+	runtimeError := stableTelemetryCode(ClassifyErrorInfo(resultBackend, "", envelope.Warnings).Code)
 	decision := accessDecision{
 		SelectorType:      selectorType(payload),
 		SelectorPresent:   selectorPresent,
@@ -260,7 +571,7 @@ func buildDecisionJSON(route string, request model.CommandRequest, focusOp strin
 		DocRanker:         currentDocRankerMode(),
 		RequestedBackend:  requestedBackend,
 		ResultBackend:     resultBackend,
-		RuntimeErrorCode:  runtimeError.Code,
+		RuntimeErrorCode:  runtimeError,
 		PlannerPath:       derivePlannerPath(envelope),
 		PlannerOutcome:    derivePlannerOutcome(envelope),
 	}
@@ -268,7 +579,7 @@ func buildDecisionJSON(route string, request model.CommandRequest, focusOp strin
 		decision.BackendFallbackTaken = true
 		decision.FallbackFrom = requestedBackend
 		decision.FallbackTo = resultBackend
-	} else if runtimeError.Code != "" && resultBackend != "" {
+	} else if runtimeError != "" && resultBackend != "" {
 		decision.BackendFallbackTaken = true
 		decision.FallbackTo = resultBackend
 	}

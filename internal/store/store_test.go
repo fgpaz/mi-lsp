@@ -1,10 +1,12 @@
 package store
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 	"time"
 
@@ -236,6 +238,68 @@ func TestUpsertAndQuerySymbols(t *testing.T) {
 	}
 	if len(fuzzy) != 1 {
 		t.Errorf("FindSymbols fuzzy: want 1 (FooClass), got %d", len(fuzzy))
+	}
+}
+
+func TestFindSymbols_SameNameAndFileUsesStableSemanticOrder(t *testing.T) {
+	ctx := context.Background()
+	project := model.ProjectFile{
+		Project: model.ProjectBlock{Name: "test", Kind: "single"},
+		Repos:   []model.WorkspaceRepo{{ID: "main", Name: "main", Root: "."}},
+	}
+	base := model.SymbolRecord{
+		FilePath:  "src/duplicate.cs",
+		RepoID:    "main",
+		RepoName:  "main",
+		Name:      "Duplicate",
+		Kind:      "method",
+		StartLine: 10,
+		EndLine:   12,
+		Parent:    "Container",
+		Signature: "void Duplicate()",
+		Scope:     "public",
+		Language:  "csharp",
+		FileHash:  "file-hash",
+	}
+	first := base
+	first.QualifiedName = "Ns.Container.DuplicateA"
+	first.SignatureHash = "signature-a"
+	second := base
+	second.QualifiedName = "Ns.Container.DuplicateB"
+	second.SignatureHash = "signature-b"
+
+	insertedFirst, _ := seedTestDB(t)
+	if err := ReplaceCatalog(ctx, insertedFirst, project, nil, []model.SymbolRecord{second, first}); err != nil {
+		t.Fatalf("ReplaceCatalog(first order): %v", err)
+	}
+	insertedSecond, _ := seedTestDB(t)
+	if err := ReplaceCatalog(ctx, insertedSecond, project, nil, []model.SymbolRecord{first, second}); err != nil {
+		t.Fatalf("ReplaceCatalog(second order): %v", err)
+	}
+
+	resultsFirst, err := FindSymbols(ctx, insertedFirst, "Duplicate", "", true, 10, 0)
+	if err != nil {
+		t.Fatalf("FindSymbols(first order): %v", err)
+	}
+	resultsSecond, err := FindSymbols(ctx, insertedSecond, "Duplicate", "", true, 10, 0)
+	if err != nil {
+		t.Fatalf("FindSymbols(second order): %v", err)
+	}
+	if len(resultsFirst) != 2 || len(resultsSecond) != 2 {
+		t.Fatalf("FindSymbols returned %d and %d results, want two each", len(resultsFirst), len(resultsSecond))
+	}
+	for _, results := range [][]model.SymbolRecord{resultsFirst, resultsSecond} {
+		if got := []string{results[0].QualifiedName, results[1].QualifiedName}; !reflect.DeepEqual(got, []string{"Ns.Container.DuplicateA", "Ns.Container.DuplicateB"}) {
+			t.Errorf("same-name/same-file order = %v, want semantic order A then B", got)
+		}
+	}
+
+	selected, err := FindSymbols(ctx, insertedFirst, "Duplicate", "", true, 1, 0)
+	if err != nil {
+		t.Fatalf("FindSymbols(selection): %v", err)
+	}
+	if len(selected) != 1 || selected[0].QualifiedName != "Ns.Container.DuplicateA" {
+		t.Fatalf("selected symbol = %#v, want DuplicateA", selected)
 	}
 }
 
@@ -621,6 +685,74 @@ func TestCandidateReposForSymbol_Fuzzy(t *testing.T) {
 		t.Errorf("exact Foo: want 0 repos, got %d", len(exact))
 	}
 }
+func TestGraphReadAPIsAreQueryOnlyAndFailClosedWithoutSchema(t *testing.T) {
+	ctx := context.Background()
+	db, root := seedTestDB(t)
+	bundle := testGraphBundle(t)
+	if err := StageGraphGeneration(ctx, db, &bundle); err != nil {
+		t.Fatal(err)
+	}
+	if err := ActivateGraphGeneration(ctx, db, bundle.Generation.GenerationID, nil); err != nil {
+		t.Fatal(err)
+	}
+	readOnly, err := OpenReadOnly(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer readOnly.Close()
+	snapshot, err := BeginGraphReadSnapshot(ctx, readOnly)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer snapshot.Close()
+	var dataBefore, changesBefore int64
+	if err := snapshot.tx.QueryRowContext(ctx, "PRAGMA data_version").Scan(&dataBefore); err != nil {
+		t.Fatal(err)
+	}
+	if err := snapshot.tx.QueryRowContext(ctx, "SELECT total_changes()").Scan(&changesBefore); err != nil {
+		t.Fatal(err)
+	}
+	active, ok, err := snapshot.ActiveGraphGeneration()
+	if err != nil || !ok || active.GenerationID != bundle.Generation.GenerationID {
+		t.Fatalf("snapshot active=%+v ok=%v err=%v", active, ok, err)
+	}
+	if _, err := snapshot.ValidateGraphGeneration(ctx, bundle.Generation.GenerationID); err != nil {
+		t.Fatal(err)
+	}
+	var dataAfter, changesAfter int64
+	if err := snapshot.tx.QueryRowContext(ctx, "PRAGMA data_version").Scan(&dataAfter); err != nil {
+		t.Fatal(err)
+	}
+	if err := snapshot.tx.QueryRowContext(ctx, "SELECT total_changes()").Scan(&changesAfter); err != nil {
+		t.Fatal(err)
+	}
+	if dataAfter != dataBefore || changesAfter != changesBefore {
+		t.Fatalf("read APIs mutated sqlite: data_version %d->%d total_changes %d->%d", dataBefore, dataAfter, changesBefore, changesAfter)
+	}
+
+	missing, err := sql.Open(driverName, ":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer missing.Close()
+	if _, _, err := ActiveGraphGeneration(ctx, missing); err == nil {
+		t.Fatal("missing schema active read succeeded")
+	}
+	if _, err := ValidateGraphGeneration(ctx, missing, bundle.Generation.GenerationID); err == nil {
+		t.Fatal("missing schema validation succeeded")
+	}
+	if _, err := BeginGraphReadSnapshot(ctx, missing); err == nil {
+		t.Fatal("missing schema snapshot succeeded")
+	}
+	var tables int
+	if err := missing.QueryRowContext(ctx, "SELECT COUNT(*) FROM sqlite_master WHERE type='table'").Scan(&tables); err != nil {
+		t.Fatal(err)
+	}
+	if tables != 0 {
+		t.Fatalf("missing schema read repaired database: tables=%d", tables)
+	}
+}
+
 func TestOpenReadOnly_EnforcesPragmasOnPoolConnections(t *testing.T) {
 	_, root := seedTestDB(t)
 
@@ -662,6 +794,70 @@ func TestOpenReadOnly_EnforcesPragmasOnPoolConnections(t *testing.T) {
 	_, err = conns[0].ExecContext(context.Background(), "INSERT INTO files(file_path) VALUES('x')")
 	if err == nil {
 		t.Fatal("expected write to fail on read-only connection, got nil")
+	}
+}
+
+func TestGraphIdentityUsesDigestAndTypedRIDs(t *testing.T) {
+	key, err := model.NewNodeKey(model.NodeKeyFields{RepositoryIdentity: "https://Example.com/a.git", BackendType: "Go", Language: "Go", ProjectOrModule: "m", OwnerPath: "a.go", SymbolKind: "function", SemanticIdentity: "main"})
+	if err != nil {
+		t.Fatalf("NewNodeKey: %v", err)
+	}
+	payload, err := key.Serialize()
+	if err != nil {
+		t.Fatal(err)
+	}
+	hash, err := key.Hash()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Equal(payload, hash[:]) || len(hash) != 32 {
+		t.Fatalf("node key must persist SHA-256 digest: payload=%x hash=%x", payload, hash)
+	}
+	if got := model.NodeRID(hash); got != "milsp:gph-node:v1:"+hash.String() {
+		t.Fatalf("node RID=%s", got)
+	}
+}
+
+func TestGraphNodeKeyGoldenAndValidation(t *testing.T) {
+	key, err := model.NewNodeKey(model.NodeKeyFields{
+		RepositoryIdentity: "https://example.com/repo",
+		BackendType:        "Roslyn",
+		Language:           "CSharp",
+		ProjectOrModule:    "App",
+		OwnerPath:          "src/cafe\u0301.cs",
+		SymbolKind:         "type",
+		SemanticIdentity:   "Ns.Cafe",
+	})
+	if err != nil {
+		t.Fatalf("NewNodeKey: %v", err)
+	}
+	encoded, err := key.Serialize()
+	if err != nil {
+		t.Fatalf("Serialize: %v", err)
+	}
+	if !bytes.HasPrefix(encoded, []byte("MILSP-NK\x01\x00\x07")) {
+		t.Fatalf("encoding prefix = %x", encoded[:min(10, len(encoded))])
+	}
+	if key.OwnerPath != "src/café.cs" || key.BackendType != "roslyn" || key.Language != "csharp" {
+		t.Fatalf("normalized key = %#v", key)
+	}
+	hash1, err := key.Hash()
+	if err != nil {
+		t.Fatal(err)
+	}
+	hash2, err := key.Hash()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if hash1 != hash2 || model.NodeRID(hash1) != model.NodeRID(hash2) {
+		t.Fatal("NodeKey/hash/cross-RID are not deterministic")
+	}
+	for _, path := range []string{"", "/src/a.cs", "../a.cs", "src//a.cs", "src/../a.cs", "C:/a.cs", "src\\\\a.cs", "src/a.cs\\x00"} {
+		fields := key
+		fields.OwnerPath = path
+		if _, err := model.NewNodeKey(fields); err == nil {
+			t.Errorf("path %q unexpectedly accepted", path)
+		}
 	}
 }
 

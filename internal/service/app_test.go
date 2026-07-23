@@ -2,8 +2,10 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -89,11 +91,12 @@ func testProject(name string) model.ProjectFile {
 			DefaultEntrypoint: "main::src-app-csproj",
 		},
 		Repos: []model.WorkspaceRepo{{
-			ID:                "main",
-			Name:              "main",
-			Root:              ".",
-			Languages:         []string{"csharp", "typescript"},
-			DefaultEntrypoint: "main::src-app-csproj",
+			ID:                 "main",
+			Name:               "main",
+			Root:               ".",
+			RepositoryIdentity: "https://example.com/fixture",
+			Languages:          []string{"csharp", "typescript"},
+			DefaultEntrypoint:  "main::src-app-csproj",
 		}},
 		Entrypoints: []model.WorkspaceEntrypoint{{
 			ID:      "main::src-app-csproj",
@@ -103,6 +106,27 @@ func testProject(name string) model.ProjectFile {
 			Default: true,
 		}},
 	}
+}
+
+func saveDetectedFixtureProjectWithIdentity(t *testing.T, root, alias string) model.ProjectFile {
+	t.Helper()
+	if output, err := exec.Command("git", "-C", root, "init", "--quiet").CombinedOutput(); err != nil {
+		t.Fatalf("git init: %v: %s", err, output)
+	}
+	if output, err := exec.Command("git", "-C", root, "remote", "add", "origin", "https://example.com/fixture").CombinedOutput(); err != nil {
+		t.Fatalf("git remote add origin: %v: %s", err, output)
+	}
+	_, project, err := workspace.DetectWorkspaceLayout(root, alias)
+	if err != nil {
+		t.Fatalf("DetectWorkspaceLayout: %v", err)
+	}
+	for i := range project.Repos {
+		project.Repos[i].RepositoryIdentity = "https://example.com/fixture"
+	}
+	if err := workspace.SaveProjectFile(root, project); err != nil {
+		t.Fatalf("SaveProjectFile: %v", err)
+	}
+	return project
 }
 
 func seedCatalogSymbol(t *testing.T, root string, project model.ProjectFile, filePath string, line int, name string, kind string) {
@@ -978,17 +1002,22 @@ func TestIndexStartWaitCreatesSucceededJobAndGeneration(t *testing.T) {
 	root := t.TempDir()
 	alias := "index-job-" + filepath.Base(root)
 	project := testProject(alias)
+	project.Project.Languages = []string{"go"}
+	project.Project.DefaultEntrypoint = ""
+	project.Repos[0].Languages = []string{"go"}
+	project.Repos[0].DefaultEntrypoint = ""
+	project.Entrypoints = nil
 	if err := workspace.SaveProjectFile(root, project); err != nil {
 		t.Fatalf("SaveProjectFile: %v", err)
 	}
-	writeWorkspaceFile(t, root, "src/App.csproj", `<Project Sdk="Microsoft.NET.Sdk"></Project>`)
-	writeWorkspaceFile(t, root, "src/App.cs", "namespace Demo; public class App { public void Run() {} }\n")
+	writeWorkspaceFile(t, root, "go.mod", "module example.com/fixture\n\ngo 1.23\n")
+	writeWorkspaceFile(t, root, "main.go", "package main\n\nfunc main() {}\n")
 	writeSpecBackendGovernanceFixture(t, root)
 
 	if _, err := workspace.RegisterWorkspace(alias, model.WorkspaceRegistration{
 		Name:      alias,
 		Root:      root,
-		Languages: []string{"csharp"},
+		Languages: []string{"go"},
 		Kind:      model.WorkspaceKindSingle,
 	}); err != nil {
 		t.Fatalf("register workspace: %v", err)
@@ -1468,8 +1497,8 @@ func createContainerWorkspaceFixture(t *testing.T, alias string) string {
 			DefaultRepo: "frontend",
 		},
 		Repos: []model.WorkspaceRepo{
-			{ID: "frontend", Name: "frontend", Root: "frontend", Languages: []string{"typescript"}},
-			{ID: "backend", Name: "backend", Root: "backend", Languages: []string{"csharp"}},
+			{ID: "frontend", Name: "frontend", Root: "frontend", RepositoryIdentity: "https://example.com/fixture", Languages: []string{"typescript"}},
+			{ID: "backend", Name: "backend", Root: "backend", RepositoryIdentity: "https://example.com/fixture", Languages: []string{"csharp"}},
 		},
 	}
 	if err := workspace.SaveProjectFile(root, project); err != nil {
@@ -1676,8 +1705,9 @@ func TestSearch_RepoSelectorAutoResolvesUniquePrefix(t *testing.T) {
 	if items[0]["repo"] != "frontend" {
 		t.Fatalf("repo = %#v, want frontend", items[0]["repo"])
 	}
-	if !strings.Contains(strings.Join(env.Warnings, " "), `resolved automatically to "frontend"`) {
-		t.Fatalf("expected auto-resolve warning, got %v", env.Warnings)
+	warnings := strings.Join(env.Warnings, " ")
+	if warnings != "repo_selector_resolved; candidate: frontend" {
+		t.Fatalf("expected stable canonical auto-resolve warning, got %v", env.Warnings)
 	}
 }
 
@@ -1732,6 +1762,57 @@ func TestCatalogQueryUnknownRepoSelectorReturnsRouterEnvelope(t *testing.T) {
 	}
 	if env.NextHint == nil || !strings.Contains(*env.NextHint, "--repo") {
 		t.Fatalf("expected rerun hint for repo selector, got %#v", env.NextHint)
+	}
+}
+
+func TestRepoSelectorWarningUsesStableCodeAndBoundedCanonicalCandidates(t *testing.T) {
+	project := model.ProjectFile{Repos: []model.WorkspaceRepo{
+		{Name: "frontend", ID: "frontend", Root: "frontend"},
+		{Name: "backend", ID: "backend", Root: "backend"},
+	}}
+	const hostileSelector = `$(cat secret);../../private`
+	resolution := resolveRepoSelector(project, hostileSelector)
+	if resolution.Envelope == nil {
+		t.Fatalf("resolution=%+v, want fail-closed envelope", resolution)
+	}
+	joinedWarnings := strings.Join(resolution.Envelope.Warnings, " ")
+	if joinedWarnings != "repo_selector_invalid" {
+		t.Fatalf("warnings=%q, want stable repo_selector_invalid", joinedWarnings)
+	}
+	if strings.Contains(joinedWarnings, hostileSelector) || strings.Contains(*resolution.Envelope.NextHint, hostileSelector) {
+		t.Fatalf("hostile selector leaked: envelope=%+v", resolution.Envelope)
+	}
+	if len(resolution.Envelope.Items.([]map[string]any)) > 3 {
+		t.Fatalf("candidate count=%d, want bounded to three", len(resolution.Envelope.Items.([]map[string]any)))
+	}
+}
+
+func TestRepoSelectorRejectsUnpublishableCanonicalNames(t *testing.T) {
+	cases := []struct {
+		name     string
+		selector string
+	}{
+		{name: `$(whoami)`, selector: `$(whoami)`},
+		{name: `../secret`, selector: `secret`},
+		{name: `C:\\Users\\Ana\\secret`, selector: `secret`},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			resolution := resolveRepoSelector(model.ProjectFile{Repos: []model.WorkspaceRepo{{ID: "hostile", Name: tc.name, Root: "internal"}}}, tc.selector)
+			if resolution.Envelope == nil || resolution.Repo.Name != "" {
+				t.Fatalf("resolution=%+v, want fail-closed envelope without selected repo", resolution)
+			}
+			if len(resolution.Envelope.Warnings) != 1 || resolution.Envelope.Warnings[0] != "repo_selector_unpublishable" {
+				t.Fatalf("warnings=%v, want stable unpublishable diagnostic", resolution.Envelope.Warnings)
+			}
+			encoded, err := json.Marshal(resolution.Envelope)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if strings.Contains(string(encoded), tc.name) || strings.Contains(*resolution.Envelope.NextHint, tc.name) {
+				t.Fatalf("hostile repo name leaked: %s", encoded)
+			}
+		})
 	}
 }
 

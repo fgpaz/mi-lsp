@@ -1,0 +1,126 @@
+schema: ae-audit-hygiene/v1
+session_id: 2026-07-18-milsp-graph-native
+evidence_slug: graph-native-roadmap-closure
+retention_ttl_days: 14
+hash_algorithm: sha256
+artifact_classes:
+  - audit_manifest
+  - session_contract
+  - sanitized_summary
+  - sanitized_verdict
+  - verification_result
+  - edit_plan
+  - g1_session_contract
+  - g1_verification_summary
+  - g1_review_index
+  - g1_release_gate
+  - g1_verdict
+  - g2g3_session_contract
+  - g2g3_verification_summary
+  - g2g3_review_index
+  - g2g3_verdict
+sanitized_summaries: true
+sanitized_verdicts: true
+secret_policy:
+  forbid_secrets: true
+  forbid_raw_logs: true
+  allowed_content: sanitized_metadata_only
+cleanup_status: pending_until_closure
+cleanup:
+  status: pending_until_closure
+  retain_until: closure
+  remove_after_ttl: true
+acceptance:
+  required_files:
+    - .docs/auditoria/2026-07-18-milsp-graph-native/audit-manifest.yaml
+    - .docs/auditoria/2026-07-18-milsp-graph-native/session-contract.yaml
+    - .docs/auditoria/2026-07-18-milsp-graph-native/g1-session-contract.yaml
+    - .docs/auditoria/2026-07-18-milsp-graph-native/g1-verification-summary.yaml
+    - .docs/auditoria/2026-07-18-milsp-graph-native/g1-review-index.yaml
+    - .docs/auditoria/2026-07-18-milsp-graph-native/g1-release-gate.yaml
+    - .docs/auditoria/2026-07-18-milsp-graph-native/g1-verdict.md
+    - .docs/auditoria/2026-07-18-milsp-graph-native/g2g3-session-contract.yaml
+    - .docs/auditoria/2026-07-18-milsp-graph-native/g2g3-verification-summary.yaml
+    - .docs/auditoria/2026-07-18-milsp-graph-native/g2g3-review-index.yaml
+    - .docs/auditoria/2026-07-18-milsp-graph-native/g2g3-verdict.md
+  required_schema: ae-audit-hygiene/v1
+  closure_requires_sanitized_evidence: true
+artifact_hashes:
+  g2g3-session-contract.yaml: ce47c0a39377898e7f8008738d12fe0882ef4f0db56d82cf11cf8198fb8be6e7
+  g2g3-verification-summary.yaml: 6f57af680928f4f050bc18af0cbdcb8537dfe1c30ab6506bb9bc6b7b7ae5452b
+  g2g3-review-index.yaml: 09df0338d99d1bc55ccdc1f092dd8cabbd6753f08a3101bda4b1da1181ab8957
+  g2g3-verdict.md: 7182dfcfd0d223754ed352ec7fce6c078437905d143da4221245f5980365ed9d
+verification_records:
+  - id: w1-governance
+    status: PASS
+    command: mi-lsp workspace status . --format toon
+  - id: w1-governance-doc
+    status: PASS
+    command: mi-lsp nav governance --workspace . --format toon
+  - id: w1-harness
+    status: PASS
+    command: mi-lsp nav wiki validate-harness --workspace . --format toon
+  - id: w1-source
+    status: PASS
+    command: mi-lsp nav wiki validate-source --workspace . --format toon
+  - id: w1-clean-index
+    status: PASS
+    command: mi-lsp index --clean --docs-only --workspace .
+  - id: w1-full-index
+    status: PASS
+    command: mi-lsp index --workspace .
+  - id: w1-go-test
+    status: PASS
+    command: go test ./...
+  - id: w1-victory
+    status: PASS
+    details: python scripts/bench/victory_lab/runner.py --manifest benchmarks/victory-lab/v1/manifest.json --repetitions 30
+  - id: w1-diff-check
+    status: PASS
+    command: git diff --check
+  - id: g1-focused-model-store
+    status: PASS
+    command: go test ./internal/model ./internal/store
+  - id: g1-go-test
+    status: PASS
+    command: go test ./...
+  - id: g1-repeat-30
+    status: PASS
+    command: go test -count=30 ./internal/model ./internal/store
+  - id: g1-victory
+    status: PASS
+    command: python scripts/bench/victory_lab/runner.py --manifest benchmarks/victory-lab/v1/manifest.json --repetitions 30 --output .tmp/g1-victory-30-20260719a && python scripts/bench/victory_lab/report.py --input .tmp/g1-victory-30-20260719a --output .tmp/g1-victory-report-20260719a.json
+    details: Harness execution only; report digest sha256=8e0996a7e9ebbad24d87e1699b2e4addc407951ea54e619d921cfe0112059172; systems.mi_lsp=NOT_RUN and no superiority claim is supported.
+  - id: g1-validate-harness
+    status: PASS
+    command: mi-lsp nav wiki validate-harness --workspace . --format toon
+    details: 137 contracts and 831 links
+  - id: g1-validate-source
+    status: PASS
+    command: mi-lsp nav wiki validate-source --workspace . --format toon
+    details: 14 docs and 49 blocks
+  - id: g1-diff-check
+    status: PASS
+    command: git diff --check
+  - id: g1-race
+    status: NOT_RUN_HOST_UNSUPPORTED
+    command: go test -race ./...
+    details: Go -race unavailable on Windows/arm64; this is not a PASS
+g1_closure:
+  integration_base: 1bda7b8782971eeb357a6b744e2b2260fe8f1d5b
+  head_commit: 1c68d243f8e74a593851fa62a1ea210c99c0420f
+  tree: 55cef1abec645efb6b683faf5bb0e0c571ec0415
+  binary_diff_sha256: 646eaec7447c2de1031fdaab544877e2e03ab3e3d0a9fff1f3f470a1e1b4d8d1
+  victory:
+    execution_scope: harness_only
+    output_directory: .tmp/g1-victory-30-20260719a
+    report_output: .tmp/g1-victory-report-20260719a.json
+    report_digest_sha256: 8e0996a7e9ebbad24d87e1699b2e4addc407951ea54e619d921cfe0112059172
+    systems_mi_lsp_status: NOT_RUN
+    claim_boundary: PASS applies to harness execution only; no mi-lsp or superiority claim is supported.
+  files:
+    - .docs/auditoria/2026-07-18-milsp-graph-native/g1-session-contract.yaml
+    - .docs/auditoria/2026-07-18-milsp-graph-native/g1-verification-summary.yaml
+    - .docs/auditoria/2026-07-18-milsp-graph-native/g1-review-index.yaml
+    - .docs/auditoria/2026-07-18-milsp-graph-native/g1-release-gate.yaml
+    - .docs/auditoria/2026-07-18-milsp-graph-native/g1-verdict.md

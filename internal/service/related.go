@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -22,11 +23,13 @@ type symbolWithContent struct {
 }
 
 type symbolNeighborhood struct {
-	Symbol       string              `json:"symbol"`
-	Definition   *symbolWithContent  `json:"definition,omitempty"`
-	Implementors []symbolWithContent `json:"implementors,omitempty"`
-	Callers      []symbolWithContent `json:"callers,omitempty"`
-	Tests        []symbolWithContent `json:"tests,omitempty"`
+	Symbol         string                `json:"symbol"`
+	GraphFreshness *model.GraphFreshness `json:"graph_freshness,omitempty"`
+	GraphRanks     []model.GraphRank     `json:"graph_ranks"`
+	Definition     *symbolWithContent    `json:"definition,omitempty"`
+	Implementors   []symbolWithContent   `json:"implementors,omitempty"`
+	Callers        []symbolWithContent   `json:"callers,omitempty"`
+	Tests          []symbolWithContent   `json:"tests,omitempty"`
 }
 
 func (a *App) related(ctx context.Context, request model.CommandRequest) (model.Envelope, error) {
@@ -46,7 +49,7 @@ func (a *App) related(ctx context.Context, request model.CommandRequest) (model.
 	depth := parseDepth(depthStr)
 
 	warnings := []string{}
-	neighborhood := symbolNeighborhood{Symbol: symbolName}
+	neighborhood := symbolNeighborhood{Symbol: symbolName, GraphRanks: make([]model.GraphRank, 0)}
 	backend := "catalog"
 
 	// Open catalog DB
@@ -77,6 +80,29 @@ func (a *App) related(ctx context.Context, request model.CommandRequest) (model.
 		if depth.implementors {
 			neighborhood.Implementors = filterRefsByRole(refsItems, registration.Root, "implementor", request.Context.Full)
 		}
+	}
+
+	// Graph ranking is advisory and additive; exact identity and semantic refs
+	// remain authoritative. Utility can only affect final ties in GraphRank.
+	utilityIntent := stringPayload(request.Payload, "utility_intent")
+	if strings.TrimSpace(stringPayload(request.Payload, "utility_signal")) != "" {
+		if active, ok, activeErr := store.ActiveGraphGeneration(ctx, db); activeErr != nil || !ok {
+			return model.Envelope{}, &model.GraphQueryError{Code: "GPH_QUERY_UTILITY_INVALID", Message: "utility signal requires an active graph generation"}
+		} else if generation, generationErr := store.ValidateGraphGeneration(ctx, db, active); generationErr != nil {
+			return model.Envelope{}, &model.GraphQueryError{Code: "GPH_QUERY_UTILITY_INVALID", Message: "utility signal generation is invalid"}
+		} else if utilityErr := recordGraphUtilityEvent(ctx, db, generation, model.GraphQueryRequest{Generation: generation.GenerationID.String(), UtilitySignal: stringPayload(request.Payload, "utility_signal"), CandidateNodeKey: stringPayload(request.Payload, "candidate_node_key"), UtilityIntent: utilityIntent}); utilityErr != nil {
+			return model.Envelope{}, utilityErr
+		}
+	}
+	if rankEnvelope, rankErr := GraphRank(ctx, db, GraphRankRequest{Limit: 8, Intent: model.SanitizeUtilityIntent(utilityIntent)}); rankErr != nil {
+		freshness := graphRankFailureFreshness(ctx, db, "")
+		neighborhood.GraphFreshness = &freshness
+		warnings = append(warnings, "graph rank unavailable: "+rankErr.Error())
+	} else {
+		freshness := rankEnvelope.GraphFreshness
+		neighborhood.GraphFreshness = &freshness
+		neighborhood.GraphRanks = append(make([]model.GraphRank, 0, len(rankEnvelope.Items)), rankEnvelope.Items...)
+		warnings = append(warnings, rankEnvelope.Warnings...)
 	}
 
 	// 3. Find tests via text search (if requested)
@@ -230,7 +256,45 @@ func filterRefsByRole(items []map[string]any, workspaceRoot string, role string,
 
 		result = append(result, sc)
 	}
-	return result
+	return canonicalizeRelatedSymbols(result)
+}
+
+// Semantic backends do not promise reference order. Canonicalize only the
+// unordered related collections; GraphRanks retain their rank/utility order.
+func canonicalizeRelatedSymbols(items []symbolWithContent) []symbolWithContent {
+	if len(items) < 2 {
+		return items
+	}
+	sort.SliceStable(items, func(i, j int) bool {
+		left, right := items[i], items[j]
+		if leftPath, rightPath := relatedPathKey(left.File), relatedPathKey(right.File); leftPath != rightPath {
+			return leftPath < rightPath
+		}
+		if left.File != right.File {
+			return left.File < right.File
+		}
+		if left.Line != right.Line {
+			return left.Line < right.Line
+		}
+		if left.EndLine != right.EndLine {
+			return left.EndLine < right.EndLine
+		}
+		if left.Kind != right.Kind {
+			return left.Kind < right.Kind
+		}
+		if left.Name != right.Name {
+			return left.Name < right.Name
+		}
+		if left.ContentMode != right.ContentMode {
+			return left.ContentMode < right.ContentMode
+		}
+		return left.Content < right.Content
+	})
+	return items
+}
+
+func relatedPathKey(path string) string {
+	return strings.ToLower(filepath.ToSlash(strings.TrimSpace(path)))
 }
 
 func (a *App) findTestsForSymbol(ctx context.Context, registration model.WorkspaceRegistration, project model.ProjectFile, symbolName string) []symbolWithContent {
@@ -260,7 +324,7 @@ func (a *App) findTestsForSymbol(ctx context.Context, registration model.Workspa
 			ContentMode: "lines",
 		})
 	}
-	return tests
+	return canonicalizeRelatedSymbols(tests)
 }
 
 func isTestFile(path string) bool {

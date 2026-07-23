@@ -1,0 +1,33 @@
+{
+  "schema": "victory-golden/v2",
+  "fixture_id": "graph-native-go-callers-affected-path",
+  "repository_identity": "https://example.com/mi-lsp/victory-lab-v2",
+  "operation": "nav.callers",
+  "selector": "subject.Normalize",
+  "relation": "calls",
+  "expected_direct": [
+    "callers.Direct",
+    "subject.Validate"
+  ],
+  "expected_transitive": [
+    "app.Run",
+    "callers.Direct",
+    "callers.Indirect",
+    "subject.Validate"
+  ],
+  "expected_distances": {
+    "callers.Direct": 1,
+    "subject.Validate": 1,
+    "app.Run": 2,
+    "callers.Indirect": 2
+  },
+  "negative_exclusions": [
+    "subject.Uncalled",
+    "unrelated.Unrelated"
+  ],
+  "ordering": "distance-then-canonical-key",
+  "determinism": {
+    "reruns": 30,
+    "outputs_identical": true
+  }
+}

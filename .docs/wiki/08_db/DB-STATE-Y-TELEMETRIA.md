@@ -181,6 +181,50 @@ Campos recomendados:
 - `seq` debe round-trip en `RecentAccesses`, `admin export`, y CSV para que el orden intra-sesion no dependa solo de `occurred_at`
 - `access_events` debe crear indices idempotentes para filtros calientes de export: `occurred_at`, `workspace_root/workspace_alias/workspace`, `operation`, `backend`, `session_id`, `route`, `failure_stage` y `hint_code`.
 
+## Contrato de sanitizacion de AccessEvent
+
+```toon
+doc_id: DB-STATE-Y-TELEMETRIA
+block_id: DB-STATE-Y-TELEMETRIA.access-event-sanitization
+kind: telemetry-storage-contract
+source_of_truth: this
+evidence:
+  - .docs/wiki/08_db/DB-STATE-Y-TELEMETRIA.md
+  - internal/telemetry/access_events_test.go
+verify:
+  - go test ./internal/telemetry/... ./internal/cli/...
+  - mi-lsp nav wiki validate-source --workspace <alias> --ids DB-STATE-Y-TELEMETRIA --format toon
+stop_if:
+  - raw_request_input_persisted=true
+  - arbitrary_telemetry_code_persisted=true
+fields:
+  repo:
+    persisted_form: selected_or_empty
+    raw_selector: forbidden
+  warnings:
+    persisted_form: deduplicated_allowlisted_codes
+    raw_warning_text: forbidden
+  error:
+    persisted_form: allowlisted_stable_code
+    raw_error_message: forbidden
+  error_code:
+    persisted_form: allowlisted_stable_code_or_empty
+    arbitrary_code: forbidden
+  decision_json:
+    persisted_form: typed_allowlisted_derived_metadata
+    forbidden: [selector, query, prompt, argv, payload, snippet, content, raw_path, raw_backend_log, raw_error]
+  counts:
+    warning_count: typed_count_preserved_from_envelope
+    result_count: typed_count_of_emitted_items
+  workspace_input:
+    rule: may_preserve_explicit_selector_separately_from_sanitized_fields
+allowlist:
+  codes_only: stable_telemetry_code_set
+  signals_only: [continuation_followed, feedback_positive, feedback_negative, result_selected]
+```
+
+La separacion entre `workspace_input` y `repo` es deliberada: el primero conserva el selector recibido para attribution, mientras `Repo`, `Warnings`, `Error` y `DecisionJSON` nunca almacenan selector/query/prompt/argv/snippet/path raw.
+
 ## Access patterns y operaciones sensibles
 
 - `index.db` soporta lecturas frecuentes y escrituras incrementales por indexacion.

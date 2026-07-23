@@ -1,0 +1,292 @@
+schema: ae-traceability-closure/v1
+doc_id: G9-G10-TRACEABILITY-CLOSURE-20260721
+block_id: closure-traceability
+harness_protocol: SDD-HARNESS-v1
+wiki_source_protocol: SDD-WIKI-SOURCE-v1
+harness_contract:
+  id: HC-G9-G10-TRACEABILITY
+  kind: closure-traceability
+  audience: dual
+  imports:
+    - session-contract.yaml
+    - benchmark-summary.yaml
+    - review-index.yaml
+    - g9-verdict.md
+    - docs/benchmarks/VICTORY_LAB.md
+  exports:
+    - closure-packet.yaml
+    - ae-close-verdict.md
+  agent_must_read:
+    - session-contract.yaml
+    - g9-verdict.md
+    - benchmark-summary.yaml
+  agent_may_edit:
+    - traceability-closure.yaml
+    - closure-packet.yaml
+  agent_must_not_edit:
+    - .docs/wiki/00_gobierno_documental.md
+    - .docs/wiki/_mi-lsp/read-model.toml
+    - .mi-lsp/**
+  verify:
+    - every_anchor_has_evidence_ref
+    - blocked_status_preserved
+    - no_release_promotion
+    - no_drift_snapshot_matches_git
+  stop_if:
+    - missing_required_anchor=true
+    - blocked_verdict_changed=true
+    - remote_mutation_requested=true
+  evidence:
+    - traceability-closure.yaml
+    - closure-packet.yaml
+    - benchmark-summary.yaml
+status: BLOCKED
+promoted_verdict: BLOCKED
+session_contract_path: .docs/auditoria/2026-07-21-milsp-graph-native-g9-g10/session-contract.yaml
+task_slug: milsp-graph-native-g9-g10
+git_before:
+  branch: ae/graph-native-roadmap-20260718
+  head: abca4dad443163f920d5f3a7c1480db4f7bf723c
+  upstream: none
+  ahead_behind_main: 54_ahead_27_behind_at_initial_scope_start_not_recomputed
+  worktree_path: '<repository-root>'
+git_after:
+  branch: ae/graph-native-roadmap-20260718
+  head: ec34074455f51af3289d14f4c4c408f002283766
+  upstream: none
+  ahead_behind_main: 74_ahead_27_behind
+  ahead_from_session_base: 20
+  behind_session_base: 0
+  worktree_path: '<repository-root>'
+repository_evidence_head: ec34074455f51af3289d14f4c4c408f002283766
+product_benchmark_pin: 11ac8af870d4110b6b4333199b8a8343c52ce784
+external_evidence_alias: '<external-evidence-root>/victory-g9-authoritative-v4-20260721'
+changed_paths:
+  tracked_scope:
+    - benchmarks/victory-lab/v2/**
+    - scripts/bench/victory_lab/**
+    - internal/daemon/client.go
+    - internal/daemon/client_test.go
+    - internal/daemon/result_cache.go
+    - internal/daemon/result_cache_test.go
+    - docs/benchmarks/VICTORY_LAB.md
+    - .docs/wiki/03_FL.md
+    - .docs/wiki/07_tech/TECH-GRAPH-NATIVE.md
+    - .docs/wiki/08_db/DB-SYMBOL-EDGE-GRAPH.md
+    - .docs/auditoria/2026-07-21-milsp-graph-native-g9-g10/**
+  raw_paths:
+    - .docs/raw/plans/2026-07-21-graph-native-g9-g10.md
+    - .docs/raw/plans/2026-07-21-graph-native-g9-g10/**
+  staged_paths: []
+  untracked_paths: []
+  forbidden_hits: []
+  raw_evidence_rule: raw plans are non-canonical and are not cited as readiness or closure proof
+scope_verdict: BLOCKED
+scope_reason:
+  - implementation and evidence changes match the G9/G10 task scope
+  - terminal competitive and security gates remain blocked
+  - worker runtime proof and joins are incomplete
+traceability_chains:
+  reviewed_anchors:
+    - 00_gobierno_documental
+    - FL-QRY-01
+    - RF-GPH-001..RF-GPH-011
+    - TP-GPH
+    - TECH-GRAPH-NATIVE
+    - DB-SYMBOL-EDGE-GRAPH
+    - CT-MILX-V1
+    - AE-RELEASE-DISTRIBUTION
+  missing_anchors: []
+  updated_paths:
+    - .docs/wiki/03_FL.md
+    - .docs/wiki/07_tech/TECH-GRAPH-NATIVE.md
+    - .docs/wiki/08_db/DB-SYMBOL-EDGE-GRAPH.md
+    - docs/benchmarks/VICTORY_LAB.md
+runtime_sensitive:
+  value: true
+  reasons:
+    - daemon named-pipe cancellation behavior changed
+    - benchmark process-tree RSS and runtime security observation changed
+  evidence_paths:
+    - benchmark-summary.yaml
+    - repair-go-cli-timeout.yaml
+    - review-index.yaml
+data_or_contract_sensitive:
+  value: true
+  authoring_evidence: canonical technical graph docs were synchronized and validated; no schema migration or public protocol change was introduced by the terminal repairs
+  evidence_paths:
+    - .docs/wiki/07_tech/TECH-GRAPH-NATIVE.md
+    - .docs/wiki/08_db/DB-SYMBOL-EDGE-GRAPH.md
+    - benchmark-summary.yaml
+harness_readiness: BLOCKED
+harness_blockers:
+  - G9 runtime observation contains three BLOCKED samples
+  - worker adapter proof and complete join evidence are absent
+harness_contracts_reviewed:
+  - SDD-HARNESS-v1
+  - HC-G9-G10-TRACEABILITY
+  - HC-G9-G10-CLOSURE-PACKET
+  - HC-G9-G10-AUDIT-MANIFEST
+harness_links_reviewed:
+  - benchmark-summary.yaml
+  - review-index.yaml
+  - g9-verdict.md
+  - closure-packet.yaml
+harness_evidence_required: exact pins; 8x30 retained samples; runtime security; independent reviews; release disposition
+harness_evidence_found: present but terminally BLOCKED
+harness_verdict: BLOCKED
+wiki_source_readiness: BLOCKED
+wiki_source_blockers: []
+wiki_source_artifacts_reviewed:
+  - docs/benchmarks/VICTORY_LAB.md
+  - .docs/wiki/03_FL.md
+  - .docs/wiki/07_tech/TECH-GRAPH-NATIVE.md
+  - .docs/wiki/08_db/DB-SYMBOL-EDGE-GRAPH.md
+wiki_source_blocks_reviewed: 49
+wiki_source_tables_reviewed: 0
+navigation_readiness: BLOCKED
+navigation_blockers:
+  - VICTORY-LAB v2-harness-contract missing from indexed doc_source_blocks
+  - VICTORY-LAB v2-wiki-source missing from indexed doc_source_blocks
+  - index refresh is not executed because .mi-lsp/** mutation is explicitly forbidden
+wiki_source_verdict: BLOCKED
+core_product_promise_verdict:
+  status: BLOCKED
+  sources:
+    - RF-GPH-011
+    - docs/benchmarks/VICTORY_LAB.md
+  reason: global competitive superiority against Graphify is not established
+expected_experience_oracle_verdict:
+  status: NOT_APPLICABLE
+  reason: no visible UX slice changed
+qa_learning_loop_verdict:
+  status: BLOCKED
+  owner: future benchmark observer follow-up
+  next_action: rerun only on a materially different observer or supported host; do not retry v4 unchanged
+  rerun_policy: no_retry_storm
+  evidence_paths:
+    - benchmark-summary.yaml
+    - g9-verdict.md
+  release_effect: promotion_forbidden
+worker_join_verdict:
+  status: BLOCKED
+  reason: component outputs were integrated into the branch, but native adapter proof and complete runtime join records are not durable in the allowed evidence packet
+harness_scope_classification: blocked_current_scope
+board_sync:
+  status: NOT_APPLICABLE
+  reason: no issue or card mutation was authorized
+pre_push_inputs:
+  status: NOT_APPLICABLE
+  reason: remote mutation, push, and PR creation are explicitly forbidden
+  issue_or_waiver: PROMPT-GRAPH-NATIVE-G9-G10-CLAUDE-20260721
+  evidence_path: .docs/auditoria/2026-07-21-milsp-graph-native-g9-g10/benchmark-summary.yaml
+  expected_scope: local G9/G10 closure only
+  session_contract_path: .docs/auditoria/2026-07-21-milsp-graph-native-g9-g10/session-contract.yaml
+anchors:
+  - id: G9
+    status: BLOCKED
+    source: TP-GPH
+    requirement: 30 repetitions per measured group and honest comparability
+    evidence_ref: benchmark-summary.yaml#sample_shape
+    outcome_ref: benchmark-summary.yaml#outcomes
+    review_ref: review-index.yaml#reviews[0]
+  - id: G9-hotpath
+    status: PASS
+    source: TP-GPH
+    requirement: current hotpath remains within guarded baseline limit
+    evidence_ref: benchmark-summary.yaml#performance.hotpath
+  - id: G9-quality
+    status: PASS_WITH_EXCEPTIONS
+    source: TP-GPH
+    requirement: correctness and relation quality are reported without gaming
+    evidence_ref: benchmark-summary.yaml#quality
+  - id: G9-competitive-comparison
+    status: NOT_COMPARABLE
+    source: RF-GPH-011
+    requirement: formal comparison requires complete comparable groups
+    evidence_ref: benchmark-summary.yaml#performance.semantic_tokens
+  - id: G10-tests
+    status: PASS
+    source: G10-local-verification
+    requirement: repository and benchmark verification suite
+    evidence_ref: benchmark-summary.yaml#verification.authoritative_g10
+  - id: G10-security
+    status: BLOCKED
+    source: CT-MILX-V1
+    requirement: security evidence must prove containment and runtime gate
+    evidence_ref: benchmark-summary.yaml#security
+  - id: G10-release
+    status: BLOCKED
+    source: AE-RELEASE-DISTRIBUTION
+    requirement: no promotion without terminal approval and release provenance
+    evidence_ref: benchmark-summary.yaml#release
+branch_worktree_inventory:
+  current_branch: hold
+  current_worktree: active_hold
+  g1_through_g8_worker_branches: integrated
+  g9_worker_branches: cleanup-blocked
+  g9_worker_reason: branches are not ancestors of current HEAD and cleanup was not authorized; their outputs were consolidated without claiming runtime join proof
+  unrelated_worktrees: excluded_from_scope
+cleanup_policy:
+  state: hold
+  destructive_cleanup_authorized: false
+  worktree_or_branch_deletion: forbidden_without_separate_authorization
+local_only_policy: authorized_hold_no_remote
+remote_mutation: forbidden
+terminal_state: HOLD
+no_drift_snapshot:
+  captured_before_trace_write:
+    - git status --short --branch => clean branch
+    - git diff --check => PASS
+    - git rev-parse HEAD => ec34074455f51af3289d14f4c4c408f002283766
+    - git rev-list --left-right --count main...HEAD => 27 behind, 72 ahead
+    - git rev-list --left-right --count session-base...HEAD => 0 behind, 20 ahead
+    - git diff --cached --name-only => empty
+  status: PASS_FOR_LOCAL_HOLD_WITH_FINAL_EVIDENCE_COMMIT_PENDING
+completion_handoff:
+  target_skill: finishing-a-development-branch
+  package: unchanged_local_BLOCKED_evidence_bundle
+  required_order:
+    - trace
+    - audit
+    - drift_repair_or_rerun
+    - tracker_if_applicable
+    - prepush
+    - integration
+    - remote_post_integration_readback
+    - cleanup
+  executable_disposition: HOLD
+  ae_pre_push_required_before_any_push: true
+  durability_proof:
+    - audit-manifest.yaml
+    - benchmark-summary.yaml
+    - g9-verdict.md
+    - traceability-closure.yaml
+    - closure-packet.yaml
+  authorized_mutations:
+    - local terminal audit evidence updates
+    - local final commit
+  forbidden_mutations:
+    - push
+    - PR
+    - merge
+    - install
+    - deploy
+    - publish
+    - production
+    - cleanup
+  blockers:
+    - G9 BLOCKED
+    - G10 BLOCKED
+    - ae-close verdict pending
+closure_gates:
+  g9_independent_review: BLOCKED
+  g10_traceability: BLOCKED
+  ae_close_verdict: BLOCKED
+  release_promotion: FORBIDDEN
+  install_push_pr_deploy_publish: FORBIDDEN
+  rollback: no_mutation
+follow_up:
+  owner: future_authorized_follow_up
+  action: provide fresh target context and materially different observer or supported host before rerunning gates
+  required_state: HOLD

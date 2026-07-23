@@ -1,0 +1,18 @@
+{
+  "schema": "victory-fixture-metadata/v2",
+  "fixture_id": "graph-native-go-callers-affected-path",
+  "repository_identity": "https://example.com/mi-lsp/victory-lab-v2",
+  "backend": "go",
+  "language": "go",
+  "project_or_module": "go/go.mod",
+  "normalization": {
+    "paths": "repo-relative-slash",
+    "unicode": "NFC",
+    "line_endings": "raw-byte-sensitive",
+    "ordering": "lexicographic-by-canonical-key",
+    "repository_identity": "normalized-https-origin"
+  },
+  "query_scope": ["nav.callers", "nav.affected", "nav.path"],
+  "ambiguity_policy": "separate-compilable-packages",
+  "mutation_policy": "single-replace-once"
+}

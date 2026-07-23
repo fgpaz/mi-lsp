@@ -1,0 +1,29 @@
+{
+  "schema": "victory-mutation/v2",
+  "fixture_id": "graph-native-go-callers-affected-path",
+  "repository_identity": "https://example.com/mi-lsp/victory-lab-v2",
+  "operation": "incremental",
+  "path": "go/mutation/mutation.go",
+  "mutation": {
+    "kind": "replace_once",
+    "before": "return \"before\"",
+    "after": "return \"after\"",
+    "occurrences_required": 1,
+    "changed_symbol": "mutation.MutatedLabel"
+  },
+  "expected": {
+    "operations": [
+      "change"
+    ],
+    "owner_replaced": [
+      "go/mutation/mutation.go"
+    ],
+    "unrelated_owners_replaced": [],
+    "stale_rate": 0.0,
+    "clean_equivalent": true
+  },
+  "raw_bytes": {
+    "line_endings": "LF",
+    "mutation_is_semantic": true
+  }
+}

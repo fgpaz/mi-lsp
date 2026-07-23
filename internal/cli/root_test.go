@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"errors"
 	"io"
 	"os"
@@ -11,6 +12,7 @@ import (
 	"time"
 
 	"github.com/fgpaz/mi-lsp/internal/model"
+	"github.com/spf13/cobra"
 )
 
 func TestShouldFallbackNavPrepareForUnknownOperation(t *testing.T) {
@@ -33,6 +35,87 @@ func TestShouldFallbackNavPrepareForUnknownOperation(t *testing.T) {
 				t.Fatal("typed non-legacy response should not fall back")
 			}
 		})
+	}
+}
+
+func TestNoDaemonFlagIsPersistent(t *testing.T) {
+	command := NewRootCommand()
+	for _, name := range []string{"no-daemon", "no-auto-daemon"} {
+		if command.PersistentFlags().Lookup(name) == nil {
+			t.Fatalf("missing persistent --%s flag", name)
+		}
+	}
+}
+
+func TestNoDaemonForcesRelatedToLocalAppWithoutTouchingDaemon(t *testing.T) {
+	localCalled := false
+	daemonCalled := false
+	state := &rootState{
+		format:     "json",
+		noDaemon:   true,
+		clientName: "test",
+		appExecute: func(ctx context.Context, request model.CommandRequest) (model.Envelope, error) {
+			localCalled = true
+			if ctx.Err() != nil {
+				t.Fatalf("local App.Execute received canceled context: %v", ctx.Err())
+			}
+			if request.Operation != "nav.related" {
+				t.Fatalf("local operation = %q, want nav.related", request.Operation)
+			}
+			return model.Envelope{Ok: true, Items: []any{}}, nil
+		},
+		daemonExecute: func(context.Context, model.CommandRequest) (model.Envelope, error) {
+			daemonCalled = true
+			return model.Envelope{}, errors.New("daemon must not be called")
+		},
+	}
+	cmd := &cobra.Command{}
+	cmd.SetContext(context.Background())
+	if err := state.executeOperation(cmd, "nav.related", map[string]any{"symbol": "BuildIntentPlan"}, true); err != nil {
+		t.Fatalf("executeOperation: %v", err)
+	}
+	if !localCalled || daemonCalled {
+		t.Fatalf("localCalled=%v daemonCalled=%v, want local only", localCalled, daemonCalled)
+	}
+}
+
+func TestDaemonDialTimeoutFallsBackWithOriginalContext(t *testing.T) {
+	state := &rootState{
+		format:        "json",
+		clientName:    "test",
+		daemonTimeout: 10 * time.Millisecond,
+		ensureDaemon:  func(string) error { return nil },
+		daemonExecute: func(ctx context.Context, _ model.CommandRequest) (model.Envelope, error) {
+			if deadline, ok := ctx.Deadline(); !ok || time.Until(deadline) < time.Second {
+				t.Fatalf("daemon hook deadline=%v, want original operation timeout", deadline)
+			}
+			timer := time.NewTimer(10 * time.Millisecond)
+			defer timer.Stop()
+			select {
+			case <-ctx.Done():
+				return model.Envelope{}, ctx.Err()
+			case <-timer.C:
+				return model.Envelope{}, context.DeadlineExceeded
+			}
+		},
+		appExecute: func(ctx context.Context, _ model.CommandRequest) (model.Envelope, error) {
+			if ctx.Err() != nil {
+				t.Fatalf("fallback received canceled context: %v", ctx.Err())
+			}
+			if deadline, ok := ctx.Deadline(); !ok || time.Until(deadline) < time.Second {
+				t.Fatalf("fallback deadline=%v, want original operation timeout", deadline)
+			}
+			return model.Envelope{Ok: true, Items: []any{}}, nil
+		},
+	}
+	cmd := &cobra.Command{}
+	cmd.SetContext(context.Background())
+	started := time.Now()
+	if err := state.executeOperation(cmd, "nav.related", map[string]any{"symbol": "BuildIntentPlan"}, true); err != nil {
+		t.Fatalf("executeOperation: %v", err)
+	}
+	if elapsed := time.Since(started); elapsed > time.Second {
+		t.Fatalf("daemon fallback took %v, want bounded attempt", elapsed)
 	}
 }
 
@@ -230,6 +313,49 @@ func TestBuildCLIErrorEnvelopeTypesCrossWorkspaceRefusal(t *testing.T) {
 	}
 	if env.Error.HintCode != "workspace_cross_workspace_refused" {
 		t.Fatalf("hint_code = %q, want workspace_cross_workspace_refused", env.Error.HintCode)
+	}
+}
+
+func TestBuildCLIErrorEnvelopeKeepsStableIntentTerminalCode(t *testing.T) {
+	const hostile = `token=secret; path=C:\\Users\\Ana\\private.db pii=ana@example.test`
+	env := buildCLIErrorEnvelope(model.CommandRequest{Operation: "nav.intent"}, "direct", model.NewStableError("intent_search_failed"))
+	if env.Error == nil || env.Error.Code != "intent_search_failed" || env.Error.Message != "intent_search_failed" {
+		t.Fatalf("error=%+v", env.Error)
+	}
+	if strings.Contains(env.Error.Message, hostile) || strings.Contains(env.Error.Message, "private.db") {
+		t.Fatalf("stable intent error leaked hostile payload: %+v", env.Error)
+	}
+}
+
+func TestBuildCLIErrorEnvelopeRedactsHostileStableWorkspaceSelector(t *testing.T) {
+	for _, selector := range []string{
+		`C:\\Users\\Ana\\private-workspace`,
+		`/srv/private-workspace`,
+		`../../private-workspace`,
+		`workspace;secret`,
+	} {
+		t.Run(selector, func(t *testing.T) {
+			env := buildCLIErrorEnvelope(model.CommandRequest{
+				Operation: "nav.intent",
+				Context:   model.QueryOptions{Workspace: selector},
+			}, "direct", model.NewStableError("intent_workspace_invalid"))
+			if env.Workspace != redactedErrorWorkspace {
+				t.Fatalf("workspace=%q, want %q", env.Workspace, redactedErrorWorkspace)
+			}
+			if strings.Contains(env.Workspace, selector) {
+				t.Fatalf("hostile workspace selector leaked: %q", env.Workspace)
+			}
+		})
+	}
+}
+
+func TestBuildCLIErrorEnvelopeCanonicalizesValidStableWorkspace(t *testing.T) {
+	env := buildCLIErrorEnvelope(model.CommandRequest{
+		Operation: "nav.intent",
+		Context:   model.QueryOptions{Workspace: "demo-workspace"},
+	}, "direct", model.NewStableError("intent_question_required"))
+	if env.Workspace != "demo-workspace" {
+		t.Fatalf("workspace=%q, want canonical valid selector", env.Workspace)
 	}
 }
 

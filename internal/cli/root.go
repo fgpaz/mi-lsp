@@ -24,26 +24,32 @@ import (
 )
 
 type rootState struct {
-	repoRoot            string
-	app                 *service.App
-	workspace           string
-	format              string
-	tokenBudget         int
-	maxItems            int
-	maxChars            int
-	verbose             bool
-	clientName          string
-	sessionID           string
-	backendHint         string
-	axi                 bool
-	classic             bool
-	full                bool
-	profile             string
-	telemetry           *CLITelemetry
-	retentionRun        bool
-	noAutoDaemon        bool
-	compress            bool
-	allowCrossWorkspace bool
+	repoRoot             string
+	app                  *service.App
+	workspace            string
+	format               string
+	tokenBudget          int
+	maxItems             int
+	maxChars             int
+	verbose              bool
+	clientName           string
+	sessionID            string
+	backendHint          string
+	axi                  bool
+	classic              bool
+	full                 bool
+	profile              string
+	telemetry            *CLITelemetry
+	retentionRun         bool
+	noAutoDaemon         bool
+	noDaemon             bool
+	compress             bool
+	allowCrossWorkspace  bool
+	executeOperationHook func(*cobra.Command, string, map[string]any, bool) error
+	appExecute           func(context.Context, model.CommandRequest) (model.Envelope, error)
+	daemonExecute        func(context.Context, model.CommandRequest) (model.Envelope, error)
+	ensureDaemon         func(string) error
+	daemonTimeout        time.Duration
 }
 
 type envelopePrintedError struct {
@@ -140,6 +146,7 @@ func NewRootCommand() *cobra.Command {
 	root.PersistentFlags().BoolVar(&state.classic, "classic", false, "Force classic CLI behavior on AXI-default surfaces")
 	root.PersistentFlags().BoolVar(&state.full, "full", false, "Expand AXI preview responses to fuller detail")
 	root.PersistentFlags().BoolVar(&state.noAutoDaemon, "no-auto-daemon", false, "Disable automatic daemon startup for semantic queries")
+	root.PersistentFlags().BoolVar(&state.noDaemon, "no-daemon", false, "Force direct local execution; do not connect to or start the daemon")
 	root.PersistentFlags().BoolVar(&state.compress, "compress", false, "Aggressive compression: strips parent, scope, implements from compact output")
 	root.PersistentFlags().BoolVar(&state.allowCrossWorkspace, "allow-cross-workspace", false, "Allow an explicit --workspace alias to target a different root than the caller cwd")
 
@@ -198,11 +205,15 @@ func (s *rootState) executeOperation(cmd *cobra.Command, operation string, paylo
 	ctx, cancel := context.WithTimeout(cmd.Context(), timeoutForRequest(request))
 	defer cancel()
 
-	useDaemon := shouldUseDaemon(operation, preferDaemon)
+	useDaemon := !s.noDaemon && shouldUseDaemon(operation, preferDaemon)
 
 	// Only heavy daemon-backed queries should auto-start the daemon.
 	if useDaemon && !s.noAutoDaemon && shouldAutoStartDaemon(operation) {
-		if err := daemon.EnsureDaemon(s.repoRoot); err != nil {
+		ensureDaemon := daemon.EnsureDaemon
+		if s.ensureDaemon != nil {
+			ensureDaemon = s.ensureDaemon
+		}
+		if err := ensureDaemon(s.repoRoot); err != nil {
 			// Log warning but don't fail; fall back to direct mode
 			if s.verbose {
 				fmt.Fprintf(os.Stderr, "[mi-lsp] daemon auto-start failed: %v; using direct mode\n", err)
@@ -218,7 +229,13 @@ func (s *rootState) executeOperation(cmd *cobra.Command, operation string, paylo
 	)
 	daemonFailed := false
 	if useDaemon {
-		envelope, err = daemon.NewClient().Execute(ctx, request)
+		if s.daemonExecute != nil {
+			// Test hooks receive the operation context directly; the production
+			// client applies daemonAttemptTimeout only while dialing.
+			envelope, err = s.daemonExecute(ctx, request)
+		} else {
+			envelope, err = daemon.NewClient().ExecuteWithDialTimeout(ctx, request, s.daemonAttemptTimeout())
+		}
 		if err != nil {
 			daemonFailed = true
 		} else if shouldFallbackNavPrepareForUnknownOperation(request.Operation, envelope) {
@@ -230,7 +247,11 @@ func (s *rootState) executeOperation(cmd *cobra.Command, operation string, paylo
 		}
 	}
 	if !useDaemon || daemonFailed {
-		envelope, err = s.app.Execute(ctx, request)
+		if s.appExecute != nil {
+			envelope, err = s.appExecute(ctx, request)
+		} else {
+			envelope, err = s.app.Execute(ctx, request)
+		}
 		if err == nil && daemonFailed && envelope.Hint == "" {
 			envelope.Hint = "daemon_unavailable; served from local text index"
 		}
@@ -263,6 +284,13 @@ func (s *rootState) executeOperation(cmd *cobra.Command, operation string, paylo
 	return s.printPreparedEnvelope(finalEnvelope, request.Context)
 }
 
+func (s *rootState) executeGraphOperation(cmd *cobra.Command, operation string, payload map[string]any, preferDaemon bool) error {
+	if s.executeOperationHook != nil {
+		return s.executeOperationHook(cmd, operation, payload, preferDaemon)
+	}
+	return s.executeOperation(cmd, operation, payload, preferDaemon)
+}
+
 func shouldFallbackNavPrepareForUnknownOperation(operation string, envelope model.Envelope) bool {
 	return operation == "nav.prepare" && !envelope.Ok && envelope.Error != nil && envelope.Error.Code == "nav_generic" && strings.Contains(strings.ToLower(envelope.Error.Message), "unknown operation")
 }
@@ -286,14 +314,24 @@ func (s *rootState) ensureTelemetry() *CLITelemetry {
 func buildCLIErrorEnvelope(request model.CommandRequest, route string, err error) model.Envelope {
 	backend := inferErrorBackend(request, route)
 	envErr := classifyEnvelopeError(request, backend, route, err)
-	return model.Envelope{
+	env := model.Envelope{
 		Ok:        false,
-		Workspace: request.Context.Workspace,
+		Workspace: errorEnvelopeWorkspace(request.Context.Workspace, err),
 		Backend:   backend,
 		Items:     []map[string]any{},
 		Error:     &envErr,
 		Warnings:  errorWarnings(envErr),
 	}
+	var graphErr *model.GraphQueryError
+	if errors.As(err, &graphErr) {
+		if len(graphErr.Candidates) > 0 {
+			env.Items = graphErr.Candidates
+		}
+		if graphErr.Hint != "" {
+			env.NextHint = &graphErr.Hint
+		}
+	}
+	return env
 }
 
 func inferErrorBackend(request model.CommandRequest, route string) string {
@@ -324,6 +362,22 @@ func classifyEnvelopeError(request model.CommandRequest, backend string, route s
 	message := safeErrorMessage(err)
 	lower := strings.ToLower(message)
 	result := model.EnvelopeError{Kind: "backend_runtime", Code: "operation_failed", Message: message, Stage: defaultErrorStage(request)}
+	var stableErr *model.StableError
+	if errors.As(err, &stableErr) {
+		result.Code = stableErr.Error()
+		result.Message = stableErr.Error()
+		result.HintCode = result.Code
+		return result
+	}
+	var graphErr *model.GraphQueryError
+	if errors.As(err, &graphErr) {
+		result.Kind = "validation"
+		result.Code = graphErr.Code
+		result.Message = graphErr.Message
+		result.Stage = "selector_validation"
+		result.HintCode = graphErr.Code
+		return result
+	}
 
 	if strings.TrimSpace(backend) != "" {
 		info := telemetry.ClassifyErrorInfo(backend, message, nil)
@@ -400,6 +454,41 @@ func safeErrorMessage(err error) string {
 	return message
 }
 
+const redactedErrorWorkspace = "__MI_LSP_WORKSPACE_REDACTED__"
+
+func errorEnvelopeWorkspace(selector string, err error) string {
+	selector = strings.TrimSpace(selector)
+	if selector == "" {
+		return ""
+	}
+	var stableErr *model.StableError
+	if !errors.As(err, &stableErr) {
+		return selector
+	}
+	if resolution, resolveErr := workspace.ResolveWorkspace(selector); resolveErr == nil {
+		if alias := strings.TrimSpace(resolution.Name); intentSafeWorkspaceAlias(alias) {
+			return alias
+		}
+	}
+	if intentSafeWorkspaceAlias(selector) {
+		return selector
+	}
+	return redactedErrorWorkspace
+}
+
+func intentSafeWorkspaceAlias(value string) bool {
+	value = strings.TrimSpace(value)
+	if value == "" || value == "." || value == ".." || strings.ContainsAny(value, `/\\`) {
+		return false
+	}
+	for _, r := range value {
+		if (r < 'a' || r > 'z') && (r < 'A' || r > 'Z') && (r < '0' || r > '9') && r != '_' && r != '-' && r != '.' {
+			return false
+		}
+	}
+	return true
+}
+
 func isWorkspaceErrorMessage(message string) bool {
 	return strings.Contains(message, "workspace") && (strings.Contains(message, "not registered") || strings.Contains(message, "not found") || strings.Contains(message, "resolve")) || strings.Contains(message, "is not registered")
 }
@@ -458,6 +547,15 @@ func shouldAutoStartDaemon(operation string) bool {
 		return false
 	}
 	return false
+}
+
+const defaultDaemonAttemptTimeout = 5 * time.Second
+
+func (s *rootState) daemonAttemptTimeout() time.Duration {
+	if s != nil && s.daemonTimeout > 0 {
+		return s.daemonTimeout
+	}
+	return defaultDaemonAttemptTimeout
 }
 
 func timeoutForOperation(operation string) time.Duration {

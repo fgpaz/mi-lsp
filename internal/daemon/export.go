@@ -422,7 +422,7 @@ func ComputeUsageRecommendations(summary ExportSummary) []UsageRecommendation {
 
 	for _, top := range summary.TopErrors {
 		message := strings.ToLower(top.ErrorText + " " + top.ErrorCode)
-		if strings.Contains(message, "workspace not found") || strings.Contains(message, "path does not exist") {
+		if strings.Contains(message, "workspace not found") || strings.Contains(message, "path does not exist") || strings.Contains(message, "workspace_resolution_failed") {
 			add(UsageRecommendation{
 				ID:       "workspace_hygiene",
 				Severity: "high",

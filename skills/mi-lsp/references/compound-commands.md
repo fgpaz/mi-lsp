@@ -61,6 +61,32 @@ mi-lsp nav related MyService --depth callers,tests --workspace <alias> --format 
 - Best one-call deep-dive for a symbol
 - Prefer over `refs` plus several manual reads
 
+## Intent planner and bounded graph commands
+
+Use `nav intent` first, and mandatorily for every supported goal-shaped request. Supported intents route automatically without a routing opt-out and return a bounded preview. `explain-change` is an intent/operation of `nav intent`; the user's request need not contain that literal alias. Preserve every available section, especially `change`, `affected`, `callers`, `callees`, `tests`, `contracts`, and `wiki`, together with graph, evidence, fallbacks, candidates, and omissions. Use the exact `expansions[].command` as the second query and read its `reason`.
+
+```powershell
+mi-lsp nav intent "explain the change and its impact" --workspace <alias> --format toon
+mi-lsp nav intent "who calls MySymbol?" --workspace <alias> --format toon
+mi-lsp nav intent "what does MySymbol call?" --workspace <alias> --format toon
+mi-lsp nav intent "path between FromSymbol and ToSymbol" --workspace <alias> --format toon
+mi-lsp nav intent "explain edge edge-cross-rid-123" --workspace <alias> --format toon
+mi-lsp nav intent "show the neighborhood of MySymbol" --workspace <alias> --format toon
+```
+
+The corresponding exposed commands are `nav explain-change`, `nav affected`, `nav callers`, `nav callees`, `nav path`, `nav explain`, and `nav neighbors`. `nav related` is separate and exposes definition/callers/implementors/tests. Graph commands support bounded `--depth`, `--limit`, `--token-budget`, optional `--edge`, and `--generation`; `nav path` takes `<from> <to>`, while `nav explain` takes one edge-cross-RID selector. Redact evidence: never emit prompts, transcripts, secrets, PII, PHI, argv, or raw patterns, and do not invent model/provider metadata.
+
+A timeout, silence, `DONE`, or `PASS` without fresh evidence is not PASS and is not a fallback trigger. Keep any partial envelope, mark it incomplete, and narrow or expand only with an explicit command. External fallback is allowed only for `unsupported_operation`, `unavailable_binary`, `invalid_workspace`, or `explicit_incomplete`. Allow at most two same-context recoveries with a smaller packet and no unchanged retry; use 180/300-second soft/hard watchdogs, at most six practical lanes with exclusive `allowed_paths`, fail-closed joins, and fresh verification.
+
+## `nav prepare` versus `nav edit-plan`
+
+```powershell
+mi-lsp nav prepare "review the routing change" --affected internal/service/intent.go --workspace <alias> --format toon
+mi-lsp nav edit-plan --packet .mi-lsp/plan.json --workspace <alias> --format toon
+```
+
+`nav prepare` is read-only semantic preparation and accepts task-specific `--affected` paths or a validating `--plan`. `nav edit-plan` is a guarded patch packet surface, dry-run by default; writes require `--apply --experimental-apply` and its guardrails. Do not conflate the two.
+
 ## `nav workspace-map`
 
 ```powershell
@@ -92,6 +118,17 @@ mi-lsp nav trace --all --workspace <alias> --format toon
 - Falls back to heuristic keyword matching when no explicit markers exist
 - `--all --summary` gives a quick compliance overview across all RFs
 
+## Wiki validators
+
+```powershell
+mi-lsp nav wiki validate-harness --workspace <alias> --ids CT-NAV-INTENT --format toon
+mi-lsp nav wiki validate-harness --workspace <alias> --paths .docs/wiki/09_contratos/CT-NAV-INTENT.md --format toon
+mi-lsp nav wiki validate-source --workspace <alias> --ids CT-NAV-INTENT --format toon
+mi-lsp nav wiki validate-source --workspace <alias> --paths .docs/wiki/09_contratos/CT-NAV-INTENT.md --format toon
+```
+
+`validate-harness` is scoped to SDD-HARNESS-v1 contracts; `validate-source` is scoped to SDD-WIKI-SOURCE-v1 source blocks. Each accepts comma-separated `--ids` or `--paths`. Use the two named wiki validator subcommands; do not infer a combined validator surface.
+
 ## `nav intent`
 
 ```powershell
@@ -100,11 +137,11 @@ mi-lsp nav intent "error handling daemon" --top 20 --workspace <alias> --format 
 mi-lsp nav intent "forgot password frontend" --workspace <alias> --repo web --format toon
 ```
 
-- Use when you know what the code does but not the symbol name
-- BM25 scoring over enriched index: symbol names, signatures, doc comments, file paths
-- Complementary to `nav ask` (which searches docs) and `nav search` (which matches literal text)
+- Use first for a goal-shaped request; supported graph/change intents route automatically, while other questions continue in docs|code mode
+- For symbol-like questions, BM25 scoring uses enriched index fields: symbol names, signatures, doc comments, and file paths
+- Complementary to `nav ask` (docs-first synthesis) and `nav search` (literal text); do not silently substitute either one
 - In workspaces `container`, prefer `--repo` when you already know the child repo you want to inspect
-- Requires a prior `mi-lsp index` to populate search text
+- Code-mode intent requires a prior `mi-lsp index` to populate search text; the deterministic planner preserves explicit selectors when catalog resolution is incomplete
 
 ## Cross-workspace search
 
@@ -134,6 +171,6 @@ If a response returns `items: []` and includes a `hint`, act on it before retryi
 ```
 "0 matches for X in workspace Y"         → try different keyword
 "pattern looks regex-like, rerun --regex" → add --regex flag
-"0 matches: search timed out"            → narrow the search scope
-"daemon_unavailable; served from..."     → daemon not running, result is text-only
+"0 matches: search timed out"            → report visible incomplete evidence; narrow explicitly
+"daemon_unavailable; served from..."     → daemon not running; keep the labeled partial result
 ```

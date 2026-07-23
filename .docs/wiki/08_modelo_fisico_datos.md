@@ -30,13 +30,13 @@ evidence:
 ## Proposito y alcance
 
 Este documento resume los stores fisicos de `mi-lsp`, su ownership y el ciclo de vida de los datos.
-La novedad de v1.3 es que el store repo-local persiste tambien el grafo documental de `.docs/wiki` y el runtime considera cambios de docs, `00_gobierno_documental.md` o `read-model` como disparadores de full re-index.
+El store repo-local persiste catalogo y grafo documental; el target graph-native agrega generations, adjacency, evidence, unresolved, migration/rollback y analysis cache sin crear otro store autoritativo. El detalle fisico vive en [[DB-SYMBOL-EDGE-GRAPH]].
 
 ## Inventario de stores
 
 | Store | Ubicacion | Owner logico | Proposito |
 |---|---|---|---|
-| Workspace index DB | `<repo>/.mi-lsp/index.db` | Workspace owner | Catalogo repo-local de simbolos, archivos, repos, entrypoints, docs, jobs y generaciones |
+| Workspace index DB | `<repo>/.mi-lsp/index.db` | Workspace owner | Catalogo, docgraph y target graph-native repo-local; SQLite es autoridad de adjacency |
 | Workspace index lock | `<repo>/.mi-lsp/index.lock` | Workspace owner | Lock interproceso con PID owner para evitar dos indexaciones simultaneas y recuperar locks stale |
 | Workspace index job logs | `<repo>/.mi-lsp/index-jobs/*.log` | Workspace owner | stdout/stderr de procesos detached de `index start` |
 | Workspace config | `<repo>/.mi-lsp/project.toml` | Workspace owner | Overrides locales, ignores y topologia `single|container` |
@@ -54,7 +54,12 @@ La novedad de v1.3 es que el store repo-local persiste tambien el grafo document
   - `workspace_entrypoints`
   - `files` con `repo_id`, `repo_name`, `content_hash`
   - `symbols` con `repo_id`, `repo_name`
-  - `symbol_edges` (propuesta futura; no creada por este PR) con `from_symbol_id`, `to_symbol_id`, `from_file_path`, `to_file_path`, `edge_kind`, `source_backend`, `confidence`, `evidence`, `created_at`
+  - target `graph_generations` con identity/schema/fingerprints/digest/status/counts y prior pointer
+  - target `graph_nodes` con surrogate local, `NodeKey` BLOB(32), identity fields, owner, status y cross-RID
+  - target `graph_edges` con endpoints de la misma generation, relation, status, owner/backend y cross-RID
+  - target `graph_evidence` con subject node/edge, source range/digest, backend/version, claim y cross-RID
+  - target `graph_unresolved` con reason, selector digest, candidatos bounded y recovery hint
+  - target `graph_migrations` y `graph_analysis` para rollback durable y cache derivativo; no autoridad
   - `doc_records` con `path`, `doc_id`, `layer`, `family`, `search_text`, `content_hash`, `indexed_at`
   - `doc_edges` con `from_path`, `to_path`, `to_doc_id`, `kind`, `label`
   - `doc_mentions` con `doc_path`, `mention_type`, `mention_value`
@@ -82,6 +87,11 @@ La novedad de v1.3 es que el store repo-local persiste tambien el grafo document
 - Si `index.lock` apunta a un PID inexistente, el siguiente index puede removerlo y continuar; si el PID sigue vivo, la operacion falla con owner visible.
 - `index_jobs` es durable para observabilidad operacional; solo puede existir un job activo por workspace (`queued`, `running`, `publishing`, `cancel_requested`), y los jobs largos deben mantener fresco `updated_at` con `current_stage`, `current_path`, `files_total` y contadores parciales.
 - `index_generations` registra el candidato de publish. Los punteros activos viven en `workspace_meta`: `active_catalog_generation_id`, `active_docs_generation_id`, `active_memory_generation_id` y `last_index_generation_id`.
+- El target graph-native agrega `graph_schema_version`, `active_graph_generation_id` y `previous_graph_generation_id`; cada reader fija una generation y nunca mezcla snapshots.
+- Staging graph-native es invisible; valida NodeKey, colisiones, endpoints, evidence, digests y cross-RID antes del compare-and-swap atomico del pointer.
+- La migracion graph-native es additive y transaccional. Dual-read/write existe solo durante una ventana explicita; query-time migration y conversion destructiva estan prohibidas.
+- Crash/cancel limpia solo staging incompleto y conserva/restaura la generation valida anterior. Retencion mantiene active + rollback probado durante la ventana de release.
+- `graph_analysis` es cache derivativo keyeado por generation/extension/params/authority digest; MILX y packs no escriben nodes/edges primarios.
 - La publicacion `full` reemplaza catalogo, grafo documental y memoria de reentrada en una unica transaccion SQLite. Un crash antes del commit conserva la generacion activa previa.
 - La publicacion `docs` reemplaza docs + memoria en una unica transaccion y no toca `files`, `symbols`, `workspace_repos` ni `workspace_entrypoints`.
 - La publicacion `catalog` reemplaza solo catalogo de codigo y no toca docs ni memoria.
@@ -124,7 +134,10 @@ La novedad de v1.3 es que el store repo-local persiste tambien el grafo document
 ### Queries
 
 - `SymbolContainingLine(file, line)`: devuelve el simbolo mas chico que encierra un archivo + linea dados. Usado por `nav context` y `nav diff-context`.
-- `symbol_edges`: tabla futura para grafo codigo+wiki. Debe modelarse separada de `symbols`, no como columnas adicionales, y solo debe publicarse cuando exista extraccion incremental con edge kinds versionados.
+- Graph selectors: lookup por `node_key`/cross-RID y scoped-name dentro de una generation fija.
+- Graph adjacency: frontiers inbound/outbound por `(generation, endpoint, relation)` con depth/result/token bounds.
+- Graph evidence/unresolved: lookup por subject u owner/reason; siempre generation-aware.
+- La propuesta `symbol_edges` queda supersedida por `graph_generations/nodes/edges/evidence/unresolved`; no se usa como fuente autoritativa de migracion.
 - `ListDocRecords()`: devuelve el corpus documental ordenado por familia/capa.
 - `DocEdgesFrom(path)`: devuelve relaciones explicitas salientes para priorizar supporting docs.
 - `DocMentionsForPath(path)`: devuelve menciones a codigo o comandos derivadas de un documento.
@@ -141,6 +154,10 @@ La novedad de v1.3 es que el store repo-local persiste tambien el grafo document
 - `ReplaceWorkspaceIndex(generation_id, ...)`: publica catalogo, docs, memoria y punteros de generacion en una unica transaccion.
 - `ReplaceWorkspaceDocs(generation_id, ...)`: publica docs, memoria y punteros docs/memory en una unica transaccion.
 - `ReplaceWorkspaceCatalog(generation_id, ...)`: publica solo catalogo y puntero catalog.
+- Target `StageGraphGeneration(...)`: copy-forward de owners intactos + reemplazo de owners invalidados dentro de staging.
+- Target `ValidateGraphGeneration(...)`: sella counts/digest y rechaza collision, dangling, stale evidence o cross-RID conflict.
+- Target `PublishGraphGeneration(expected_prior, next)`: compare-and-swap atomico; actualiza active/previous y estados.
+- Target `RecoverGraphState()`: resuelve migration/staging/pointer no terminal sin elegir por timestamp.
 - `index_jobs`: `CreateIndexJob`, `MarkIndexJobRunning`, `MarkIndexJobProgress`, `MarkIndexJobSucceeded`, `MarkIndexJobFailed`, `RequestIndexJobCancel`, `CancelIndexJob`.
 
 ## Riesgos operativos observados
@@ -159,3 +176,7 @@ La novedad de v1.3 es que el store repo-local persiste tambien el grafo document
 - [DB-DOC-INDEX.md](08_db/DB-DOC-INDEX.md)
 - [DB-SYMBOL-EDGE-GRAPH.md](08_db/DB-SYMBOL-EDGE-GRAPH.md)
 - [DB-WIKI-EMBEDDINGS.md](08_db/DB-WIKI-EMBEDDINGS.md)
+
+## Change triggers graph-native
+
+Actualizar `08`, [[DB-SYMBOL-EDGE-GRAPH]], `05_modelo_datos.md`, RF/TP y contratos cuando cambien NodeKey/edge identity, schema/indexes, publication visibility, migration/rollback, retention, query access pattern, global snapshot cache o MILX analysis persistence.

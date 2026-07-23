@@ -28,9 +28,11 @@ mi-lsp workspace status <alias>
 ```
 
 If the repo already exists in the registry, reuse that alias instead of creating a new one.
-If `mi-lsp workspace list` fails because the command is missing, return to the install steps above instead of falling back immediately.
+If `mi-lsp workspace list` fails because the command is missing, return to the install steps above. Leave the `mi-lsp` lane only for a visible `unsupported_operation`, `unavailable_binary`, `invalid_workspace`, or `explicit_incomplete` reason; never fall back silently.
 
 ## Preferred command order
+
+For every supported goal-shaped request, start the query with `nav intent`; routing is automatic and has no opt-out. Bootstrap or `workspace status` may precede it when the CLI/workspace needs onboarding.
 
 1. `mi-lsp` or `workspace status` when you need the first onboarding/discovery pass
 2. `nav wiki search` when you need RF/FL/TP/CT/TECH/DB docs or traceability anchors
@@ -94,12 +96,18 @@ Canonical doc location follows governance and `read-model`, not a fixed path ass
 
 ## Routing reminder
 
-- Direct and daemon-insensitive: `find`, `search`, `wiki search`, `intent`, `symbols`, `outline`, `overview`, `multi-read`
-- Potentially daemon-backed: `refs`, `context`, `deps`, `related`, `service`, `workspace-map`, `diff-context`, `batch`, `ask`
+Start with the user’s goal in `nav intent`; supported graph/change intents are routed automatically without a routing opt-out. `explain-change` is an intent/operation of `nav intent`, so the request need not contain that literal alias. The planner returns a bounded `mode=preview` envelope with graph, wiki, evidence, fallbacks, available information, candidates, omissions, and exact `expansions[].command` plus its reason. Preserve the seven sections `change`, `affected`, `callers`, `callees`, `tests`, `contracts`, and `wiki`. Follow the exact expansion command verbatim and add `--full` only when requested by `next_hint` or the expansion.
 
-If a cheap read is slow, suspect stale binary, stale index, or wrong PATH before suspecting daemon health.
+Supported intent lanes map to exposed commands: explain-change -> `explain-change`, affected-change -> `affected`, callers -> `callers`, callees -> `callees`, path-between -> `path`, explain-edge -> `explain`, and neighborhood -> `neighbors`. Use `related` only for its separate definition/callers/implementors/tests summary. Preview, timeout, silence, `DONE`, or `PASS` without fresh evidence is not PASS and never enables fallback.
+
+Direct and daemon-insensitive: `find`, `search`, `wiki search`, `intent`, `symbols`, `outline`, `overview`, `multi-read`, `route`, `pack`, `trace`, `governance`, `prepare`
+Potentially daemon-backed: `refs`, `context`, `deps`, `related`, `service`, `workspace-map`, `diff-context`, `batch`, `callers`, `callees`, `path`, `explain`, `neighbors`, `affected`, `explain-change`
+
+If a cheap read is slow, suspect stale binary, stale index, or wrong PATH before suspecting daemon health. A timeout is visible incomplete evidence, never a silent fallback.
 In container workspaces, prefer `--repo` for direct `find`, `search`, or `intent` before reaching for semantic selectors.
 Do not use `--repo docs` as a wiki selector. Use `nav wiki search|route|pack`; `nav ask|route|pack --repo` is compatibility-only and will be ignored for docs.
 Do not use `nav search` to decide which documentation source is canonical when `nav wiki search|route|pack|trace` can answer that question.
-If `nav recall` cannot use configured embeddings because config, key, or provider fails, use `nav wiki search` as the lexical/wiki fallback. There is no hidden BGE runtime fallback.
-For Go files, `nav context` / `nav refs` may use `gopls` when it is installed. If `gopls` is unavailable, the command should degrade to catalog/text with a visible install hint; do not treat that fallback as a hard failure unless the task explicitly requires live Go LSP semantics.
+If `nav recall` cannot use configured embeddings because config, key, or provider fails, remain in the governed lexical lane with `nav wiki search` and state the reason; there is no hidden BGE runtime fallback.
+For Go files, `nav context` / `nav refs` may use `gopls` when it is installed. If `gopls` is unavailable, accept only the runtime’s visible catalog/text partial evidence; do not silently switch tools.
+
+Allowed external fallback reasons are only `unsupported_operation`, `unavailable_binary`, `invalid_workspace`, and `explicit_incomplete`. `nav edit-plan` is a guarded patch preview/apply surface and is not a fallback for `nav prepare`. Do not use `rg`, `Grep`, `Glob`, or broad reads before `mi-lsp`; leave the lane only for one of those four visible reasons. Use 180/300-second soft/hard watchdogs, at most two smaller same-context recoveries without unchanged retry, six practical lanes with exclusive `allowed_paths`, fail-closed joins, fresh verification, and redacted evidence without prompts, transcripts, secrets, PII, PHI, argv, or raw patterns. Do not invent model/provider metadata.

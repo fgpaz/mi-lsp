@@ -2,29 +2,64 @@ package daemon
 
 import (
 	"context"
+	"net"
 	"time"
 
 	"github.com/fgpaz/mi-lsp/internal/model"
 	"github.com/fgpaz/mi-lsp/internal/worker"
 )
 
-type Client struct{}
+type Client struct {
+	dial func(context.Context) (net.Conn, error)
+}
 
 func NewClient() *Client {
-	return &Client{}
+	return &Client{dial: dialDaemon}
 }
 
 func (c *Client) Execute(ctx context.Context, request model.CommandRequest) (model.Envelope, error) {
-	conn, err := dialDaemon(ctx)
+	return c.execute(ctx, request, 0)
+}
+
+// ExecuteWithDialTimeout executes a request with an optional timeout limited to
+// establishing the daemon connection. Once the connection is established, the
+// original ctx governs the request's write, read, response processing, and
+// cancellation lifecycle.
+func (c *Client) ExecuteWithDialTimeout(ctx context.Context, request model.CommandRequest, dialTimeout time.Duration) (model.Envelope, error) {
+	return c.execute(ctx, request, dialTimeout)
+}
+
+func (c *Client) execute(ctx context.Context, request model.CommandRequest, dialTimeout time.Duration) (model.Envelope, error) {
+	dial := dialDaemon
+	if c != nil && c.dial != nil {
+		dial = c.dial
+	}
+	dialCtx := ctx
+	dialCancel := func() {}
+	if dialTimeout > 0 {
+		dialCtx, dialCancel = context.WithTimeout(ctx, dialTimeout)
+	}
+	conn, err := dial(dialCtx)
+	dialCancel()
 	if err != nil {
 		return model.Envelope{}, err
 	}
 	defer conn.Close()
+	stopCancel := context.AfterFunc(ctx, func() {
+		_ = conn.Close()
+	})
+	defer stopCancel()
 	if err := worker.WriteFrame(conn, request); err != nil {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return model.Envelope{}, ctxErr
+		}
 		return model.Envelope{}, err
 	}
 	var response model.Envelope
 	if err := worker.ReadFrame(conn, &response); err != nil {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return model.Envelope{}, ctxErr
+		}
 		return model.Envelope{}, err
 	}
 	return response, nil

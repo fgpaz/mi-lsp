@@ -1,0 +1,19 @@
+//go:build linux
+
+package milx
+
+import (
+	"os/exec"
+	"syscall"
+)
+
+func configureProcess(cmd *exec.Cmd) { configureLinuxIsolation(cmd) }
+func killManagedProcess(cmd *exec.Cmd) error {
+	if cmd == nil || cmd.Process == nil {
+		return nil
+	}
+	if err := syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL); err != nil && err != syscall.ESRCH {
+		return err
+	}
+	return nil
+}

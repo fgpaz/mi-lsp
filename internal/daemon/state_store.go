@@ -62,52 +62,6 @@ func daemonLockPath() (string, error) {
 	return filepath.Join(dir, "start.lock"), nil
 }
 
-type startLock struct {
-	path string
-	file *os.File
-}
-
-func acquireStartLock(timeout time.Duration) (*startLock, error) {
-	if timeout <= 0 {
-		timeout = 10 * time.Second
-	}
-	path, err := daemonLockPath()
-	if err != nil {
-		return nil, err
-	}
-	deadline := time.Now().Add(timeout)
-	for {
-		// SEC-04: Create lock file with restricted permissions (0o600) to prevent other users from reading PID
-		file, openErr := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
-		if openErr == nil {
-			return &startLock{path: path, file: file}, nil
-		}
-		if !errors.Is(openErr, os.ErrExist) {
-			return nil, openErr
-		}
-		if time.Now().After(deadline) {
-			return nil, errors.New("timed out waiting for daemon start lock")
-		}
-		time.Sleep(150 * time.Millisecond)
-	}
-}
-
-func (l *startLock) Close() error {
-	if l == nil {
-		return nil
-	}
-	if l.file != nil {
-		_ = l.file.Close()
-	}
-	if l.path == "" {
-		return nil
-	}
-	if err := os.Remove(l.path); err != nil && !errors.Is(err, os.ErrNotExist) {
-		return err
-	}
-	return nil
-}
-
 func loadDaemonState() (model.DaemonState, error) {
 	path, err := daemonStatePath()
 	if err != nil {

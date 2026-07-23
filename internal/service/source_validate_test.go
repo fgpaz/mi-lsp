@@ -154,6 +154,125 @@ func TestValidateSourceUnmigratedDocsIgnored(t *testing.T) {
 	}
 }
 
+func TestValidateSourceAcceptsBothProtocolKeys(t *testing.T) {
+	for _, key := range []string{"wiki_source_protocol", "source_protocol"} {
+		t.Run(key, func(t *testing.T) {
+			alias, root := createHarnessWorkspace(t)
+			content := validSourceDoc("CT-SOURCE", "CT-SOURCE.contract", "RF-QRY-016", "llm-first", "")
+			if key == "source_protocol" {
+				content = strings.Replace(content, "wiki_source_protocol: SDD-WIKI-SOURCE-v1", "source_protocol: SDD-WIKI-SOURCE-v1", 1)
+			}
+			path := ".docs/wiki/09_contratos/CT-SOURCE.md"
+			writeWorkspaceFile(t, root, path, content)
+			replaceSourceDocs(t, root, []model.DocRecord{sourceDocRecord(path, "CT-SOURCE")}, []model.DocSourceBlock{sourceBlockRecord(path, "CT-SOURCE", "CT-SOURCE.contract")}, []model.DocSourceRecord{sourceRecord(path, "CT-SOURCE.contract", "RF-QRY-016")})
+
+			result := executeSourceValidation(t, root, alias)
+			if result.WikiSourceVerdict != "PASS" || result.WikiSourceArtifactsReviewed != 1 {
+				t.Fatalf("protocol key %q result = %#v", key, result)
+			}
+		})
+	}
+}
+
+func TestValidateSourceScopedIDsAndPathsFilterBeforeLoadingDocs(t *testing.T) {
+	alias, root := createHarnessWorkspace(t)
+	selectedPath := ".docs/wiki/09_contratos/CT-SOURCE.md"
+	otherPath := ".docs/wiki/09_contratos/CT-OTHER.md"
+	writeWorkspaceFile(t, root, selectedPath, validSourceDoc("CT-SOURCE", "CT-SOURCE.contract", "RF-QRY-016", "llm-first", ""))
+	writeWorkspaceFile(t, root, otherPath, "# CT-OTHER\n\nwiki_source_protocol: SDD-WIKI-SOURCE-v1\ndoc_id: CT-OTHER\n")
+	replaceSourceDocs(t, root, []model.DocRecord{sourceDocRecord(selectedPath, "CT-SOURCE"), sourceDocRecord(otherPath, "CT-OTHER")}, []model.DocSourceBlock{sourceBlockRecord(selectedPath, "CT-SOURCE", "CT-SOURCE.contract")}, []model.DocSourceRecord{sourceRecord(selectedPath, "CT-SOURCE.contract", "RF-QRY-016")})
+
+	byID := executeSourceValidationPayload(t, root, alias, map[string]any{"ids": "CT-SOURCE"})
+	if byID.WikiSourceVerdict != "PASS" || byID.WikiSourceArtifactsReviewed != 1 {
+		t.Fatalf("ID-scoped result = %#v", byID)
+	}
+	byPath := executeSourceValidationPayload(t, root, alias, map[string]any{"paths": "CT-SOURCE.md"})
+	if byPath.WikiSourceVerdict != "PASS" || byPath.WikiSourceArtifactsReviewed != 1 {
+		t.Fatalf("path-scoped result = %#v", byPath)
+	}
+}
+
+func TestValidateSourceScopedNoMatchesBlocks(t *testing.T) {
+	alias, root := createHarnessWorkspace(t)
+	path := ".docs/wiki/09_contratos/CT-SOURCE.md"
+	writeWorkspaceFile(t, root, path, validSourceDoc("CT-SOURCE", "CT-SOURCE.contract", "RF-QRY-016", "llm-first", ""))
+	replaceSourceDocs(t, root, []model.DocRecord{sourceDocRecord(path, "CT-SOURCE")}, []model.DocSourceBlock{sourceBlockRecord(path, "CT-SOURCE", "CT-SOURCE.contract")}, []model.DocSourceRecord{sourceRecord(path, "CT-SOURCE.contract", "RF-QRY-016")})
+
+	result := executeSourceValidationPayload(t, root, alias, map[string]any{"ids": "CT-MISSING"})
+	if result.WikiSourceVerdict != "BLOCKED" || !strings.Contains(strings.Join(result.WikiSourceBlockers, " | "), "scope=no_match") {
+		t.Fatalf("scoped no-match result = %#v", result)
+	}
+}
+
+func TestValidateSourceMissingBlockImportBlocks(t *testing.T) {
+	alias, root := createHarnessWorkspace(t)
+	path := ".docs/wiki/09_contratos/CT-SOURCE.md"
+	content := validSourceDoc("CT-SOURCE", "CT-SOURCE.contract", "RF-QRY-016", "llm-first", "")
+	content = strings.Replace(content, "block_id: CT-SOURCE.contract\n", "block_id: CT-SOURCE.contract\nimports:\n  - MISSING-BLOCK\n", 1)
+	writeWorkspaceFile(t, root, path, content)
+	replaceSourceDocs(t, root, []model.DocRecord{sourceDocRecord(path, "CT-SOURCE")}, []model.DocSourceBlock{sourceBlockRecord(path, "CT-SOURCE", "CT-SOURCE.contract")}, []model.DocSourceRecord{sourceRecord(path, "CT-SOURCE.contract", "RF-QRY-016")})
+
+	result := executeSourceValidation(t, root, alias)
+	if result.WikiSourceVerdict != "BLOCKED" || !strings.Contains(strings.Join(result.WikiSourceBlockers, " | "), "broken block import MISSING-BLOCK") {
+		t.Fatalf("missing block import result = %#v", result)
+	}
+}
+
+func TestValidateSourceValidBlockImportUsesCanonicalCorpus(t *testing.T) {
+	alias, root := createHarnessWorkspace(t)
+	selectedPath := ".docs/wiki/09_contratos/CT-SOURCE.md"
+	globalPath := ".docs/wiki/09_contratos/CT-GLOBAL.md"
+	selected := validSourceDoc("CT-SOURCE", "CT-SOURCE.contract", "RF-QRY-016", "llm-first", "")
+	selected = strings.Replace(selected, "block_id: CT-SOURCE.contract\n", "block_id: CT-SOURCE.contract\nimports:\n  - CT-GLOBAL.contract\n  - RF-GLOBAL\n", 1)
+	writeWorkspaceFile(t, root, selectedPath, selected)
+	writeWorkspaceFile(t, root, globalPath, validSourceDoc("CT-GLOBAL", "CT-GLOBAL.contract", "RF-GLOBAL", "llm-first", ""))
+	replaceSourceDocs(t, root, []model.DocRecord{sourceDocRecord(selectedPath, "CT-SOURCE"), sourceDocRecord(globalPath, "CT-GLOBAL")}, []model.DocSourceBlock{sourceBlockRecord(selectedPath, "CT-SOURCE", "CT-SOURCE.contract"), sourceBlockRecord(globalPath, "CT-GLOBAL", "CT-GLOBAL.contract")}, []model.DocSourceRecord{sourceRecord(selectedPath, "CT-SOURCE.contract", "RF-QRY-016"), sourceRecord(globalPath, "CT-GLOBAL.contract", "RF-GLOBAL")})
+
+	result := executeSourceValidationPayload(t, root, alias, map[string]any{"ids": "CT-SOURCE"})
+	if result.WikiSourceVerdict != "PASS" || result.WikiSourceArtifactsReviewed != 1 || result.WikiSourceBlocksReviewed != 1 || result.WikiSourceRecordsReviewed != 1 {
+		t.Fatalf("valid cross-document block and record imports result = %#v", result)
+	}
+	if len(result.Documents) != 1 || result.Documents[0].Path != selectedPath || strings.Contains(strings.Join(result.WikiSourceBlockers, " | "), "CT-GLOBAL") {
+		t.Fatalf("scoped result reported external document: %#v", result)
+	}
+}
+
+func TestValidateSourceExcludesRawAndAuditRecords(t *testing.T) {
+	alias, root := createHarnessWorkspace(t)
+	wikiPath := ".docs/wiki/09_contratos/CT-SOURCE.md"
+	rawPath := ".docs/raw/CT-RAW.md"
+	auditPath := ".docs/auditoria/session/CT-AUDIT.md"
+	writeWorkspaceFile(t, root, wikiPath, validSourceDoc("CT-SOURCE", "CT-SOURCE.contract", "RF-QRY-016", "llm-first", ""))
+	writeWorkspaceFile(t, root, rawPath, "# CT-RAW\n\nsource_protocol: SDD-WIKI-SOURCE-v1\ndoc_id: CT-RAW\n")
+	writeWorkspaceFile(t, root, auditPath, "# CT-AUDIT\n\nsource_protocol: SDD-WIKI-SOURCE-v1\ndoc_id: CT-AUDIT\n")
+	replaceSourceDocs(t, root, []model.DocRecord{sourceDocRecord(wikiPath, "CT-SOURCE"), sourceDocRecord(rawPath, "CT-RAW"), sourceDocRecord(auditPath, "CT-AUDIT")}, []model.DocSourceBlock{sourceBlockRecord(wikiPath, "CT-SOURCE", "CT-SOURCE.contract")}, []model.DocSourceRecord{sourceRecord(wikiPath, "CT-SOURCE.contract", "RF-QRY-016")})
+
+	result := executeSourceValidation(t, root, alias)
+	if result.WikiSourceVerdict != "PASS" || result.WikiSourceArtifactsReviewed != 1 || result.WikiSourceBlocksReviewed != 1 || result.WikiSourceRecordsReviewed != 1 {
+		t.Fatalf("raw/audit records leaked into validation: %#v", result)
+	}
+}
+
+func TestValidateSourceExplicitEmptyScopeBlocksWithStructuredHint(t *testing.T) {
+	alias, root := createHarnessWorkspace(t)
+	app := New(root, nil)
+	env, err := app.Execute(context.Background(), model.CommandRequest{
+		Operation: "nav.wiki.validate-source",
+		Context:   model.QueryOptions{Workspace: alias},
+		Payload:   map[string]any{"ids": ""},
+	})
+	if err != nil {
+		t.Fatalf("nav.wiki.validate-source: %v", err)
+	}
+	results, ok := env.Items.([]model.WikiSourceValidationResult)
+	if !ok || len(results) != 1 || results[0].WikiSourceVerdict != "BLOCKED" || results[0].NavigationReadiness != "blocked" {
+		t.Fatalf("unexpected empty-scope result: %#v", env)
+	}
+	if !strings.Contains(env.Hint, "scope=explicit_empty") || !strings.Contains(env.Hint, "ids or paths") {
+		t.Fatalf("hint = %q, want structured explicit-empty scope hint", env.Hint)
+	}
+}
+
 func TestValidateSourceToonOutputExposesFields(t *testing.T) {
 	alias, root := createHarnessWorkspace(t)
 	path := ".docs/wiki/09_contratos/CT-SOURCE.md"
@@ -182,12 +301,16 @@ func TestValidateSourceToonOutputExposesFields(t *testing.T) {
 }
 
 func executeSourceValidation(t *testing.T, root string, alias string) model.WikiSourceValidationResult {
+	return executeSourceValidationPayload(t, root, alias, map[string]any{})
+}
+
+func executeSourceValidationPayload(t *testing.T, root string, alias string, payload map[string]any) model.WikiSourceValidationResult {
 	t.Helper()
 	app := New(root, nil)
 	env, err := app.Execute(context.Background(), model.CommandRequest{
 		Operation: "nav.wiki.validate-source",
 		Context:   model.QueryOptions{Workspace: alias},
-		Payload:   map[string]any{},
+		Payload:   payload,
 	})
 	if err != nil {
 		t.Fatalf("nav.wiki.validate-source: %v", err)

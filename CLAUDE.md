@@ -23,7 +23,7 @@ The wiki (the canonical documentation set) + governed `context/` annexes is the 
 Before writing code:
 1. Identify the `RS-*`, `RF-*`, `FL-*`, or `CT-*` anchor. If none, create/repair it via `Skill("documentation-worker")` / `Skill("wiki-assistant")` / owning `crear-*` skill.
 2. Declare `ae_budget_gate` before loading expensive context, opening raw evidence, creating persistence, creating a worktree, dispatching workers, or choosing verification depth.
-3. Use the cheapest sufficient context path. `context-loader`, `exploration-worker`, `project-context-cli nav pack`, worktrees and session contracts are budget-gated, not automatic.
+3. Use the cheapest sufficient context path. `context-loader`, `exploration-worker`, `mi-lsp nav pack`, worktrees and session contracts are budget-gated, not automatic.
 4. For governed tracked work, claim the Linear issue and mirror the ticket frontier in the selected persistence artifact.
 5. No write worker (`backend-worker`, `frontend-worker`, `python-worker`, `documentation-worker`, `general-worker`) starts unless `worker_decision: spawned` is recorded.
 
@@ -54,7 +54,7 @@ Mandatory AE rules:
 ### Skill Invocation Semantics
 
 - **Task start**: declare `ae_budget_gate`; invoke `Skill("ae-work")` for non-trivial, mutating, policy/harness/shared-skill, live/runtime, or multi-step work.
-- **Inside exploration-worker / orchestrator spot-verify**: `Skill("project-context-cli")` semantic backend under `src/`.
+- **Inside exploration-worker / orchestrator spot-verify**: `Skill("mi-lsp")` semantic backend under `src/`.
 - **Before mutating work**: `Skill("using-git-worktrees")` only when the gate/base risk requires isolation.
 - **Large/risky/multi-step**: `Skill("writing-plans")` after brainstorming.
 - **Inside ae-work**: continue mechanical work directly; route unresolved human-owned execution-changing decisions to `Skill("ae-decide")`.
@@ -77,18 +77,21 @@ Linear is the ONLY source of truth for tickets/workflow/ownership/closure. Exter
 - **Claim BEFORE repo edits**: assign owner, move to `Claimed`/`In Progress`, post claim comment with owner + branch/worktree + session-contract path + anchors/waiver + expected scope + allowed/exclusive/forbidden/read-review paths + integration owner + required evidence + start time.
 - Every active ticket declares a ticket frontier mirrored in `session-contract.yaml`; out-of-frontier work is forbidden until both update. Out-of-frontier discoveries → parking-lot comment (severity, source, paths, proposed owner).
 
-### Governance Gate + `project-context-cli` Defaults
+### Governance Gate + `mi-lsp` Defaults
 
-**Governance**: the canonical governance document is the human governance authority; the versioned context-tool read model is its versioned executable projection. Diagnose via `project-context-cli workspace status <alias> --format toon` + `project-context-cli nav governance --workspace <alias> --format toon`. If governance is ambiguous, invalid, stale, or out of sync → stop and run `Skill("crear-gobierno-documental")` before continuing. `traceability-check` and `traceability-audit` verify governance completeness and `00 ↔ read-model.toml` projection sync before closure.
+**Governance**: the canonical governance document is the human governance authority; the versioned read model is its executable projection. Diagnose via `mi-lsp workspace status <alias> --format toon` + `mi-lsp nav governance --workspace <alias> --format toon`. If governance is ambiguous, invalid, stale, or out of sync, stop and repair governance before continuing. `traceability-check` and `traceability-audit` verify governance completeness and `00 ↔ read-model.toml` projection sync before closure.
 
-**project-context-cli** (reference-not-duplicate doctrine — `Skill("project-context-cli")` owns command tables, alias validation, telemetry):
-- Project workspace alias: `mi-lsp`. Always pass `--workspace mi-lsp --format toon`; in container workspaces add `--repo <name>` before broader queries.
-- CLI-first; don't wait for an MCP path when the CLI answers. Use at T1+ for semantic navigation and inside every spawned `exploration-worker` dispatch; exact T0 searches may use `rg` first.
-- Fallback order: `project-context-cli` → `rg` (canonical-doc only) → `Read`; don't skip steps. If `project-context-cli` returns `items: []` with a `hint`, act on the hint before retrying.
+**mi-lsp** (reference-not-duplicate doctrine — `Skill("mi-lsp")` owns command tables, alias validation, intent routing, and sanitized telemetry):
+- Project workspace alias: `milsp-harness-first`. Always pass `--workspace milsp-harness-first --format toon`; in container workspaces add `--repo <name>` before broader queries.
+- For supported intents, `mi-lsp` is mandatory first and has no opt-out: callers, callees, affected-change, path-between, explain-edge, neighborhood, explain-change, wiki search/route/pack/trace, governance, graph freshness, and graph rank.
+- Preview must expose available information plus an executable expansion command and its reason. `explain-change` uses seven sections: `change`, `affected`, `callers`, `callees`, `tests`, `contracts`, `wiki`; partial results must expose `next_hint` or `next_queries`.
+- Graph freshness gates exact claims; rank, communities, and utility are advisory signals, with utility restricted to the final tie-break and telemetry remaining sanitized metadata only.
+- Fallback is terminal only for `unsupported_operation`, `unavailable_binary`, `invalid_workspace`, or `explicit_incomplete`. A timeout without a typed diagnostic is a blocker; it does not authorize silent `rg`, Grep, Glob, or Read substitution.
+- If `mi-lsp` returns `items: []` with a `hint`, act on the hint before retrying. Direct and daemon paths must preserve the same semantic contract; backend unavailability remains visible in `warnings`, `fallbacks`, `omissions`, or `hint`.
 
 ### Platform Runner Guard
 
-Codex Desktop workers on Windows MUST pass `<repo-scripts>/Test-PlatformRunner.ps1` (or `platform_runner_guard.py --workspace mi-lsp`) before a Linear lock, worktree, or long prompt. `BLOCKED_PLATFORM_RUNNER` → follow `<repo-docs>/runbooks/platform-runner.md`. Evidence: `.docs/auditoria/<task>/platform-runner-guard.{json,md}`.
+Codex Desktop workers on Windows MUST pass `<repo-scripts>/Test-PlatformRunner.ps1` (or `platform_runner_guard.py --workspace milsp-harness-first`) before a Linear lock, worktree, or long prompt. `BLOCKED_PLATFORM_RUNNER` → follow `<repo-docs>/runbooks/platform-runner.md`. Evidence: `.docs/auditoria/<task>/platform-runner-guard.{json,md}`.
 
 ## Orchestration Mode (Always Active)
 
@@ -137,15 +140,16 @@ Keep `AGENTS.md`, `CLAUDE.md`, and project-local skills in English. All other pr
 
 ### Repository Description
 
-Go semantic navigation CLI with repo-local wiki governance, SQLite indexing, and optional language workers.
+Local semantic CLI and graph-native code intelligence runtime for large .NET/C# and TypeScript workspaces.
 
 ### Repository Structure Rules
 
   - Go CLI and service code lives under cmd/ and internal/.
-  - Optional language workers live under worker-dotnet/ and are distributed through governed release scripts.
+  - Roslyn semantic worker lives under worker-dotnet/; optional language workers are distributed through governed release scripts.
   - .docs/wiki/00-06 is functional canon; .docs/wiki/07-09 is technical canon.
   - Universal Agent Engineering canon comes from <kernel_home>/canon; repo-specific policy lives in .docs/ae/repo-policy.yaml.
-  - Durable task evidence lives under .docs/auditoria/<session>/; .docs/raw remains non-canonical input.
+  - Durable task and audit evidence lives under .docs/auditoria/<session>/; .docs/raw remains non-canonical input.
+  - Repository-local runtime state under .mi-lsp/ is never committed.
 
 ### Mandatory Wrappers
 
@@ -161,11 +165,20 @@ Go semantic navigation CLI with repo-local wiki governance, SQLite indexing, and
   - tests
   - go.mod
   - .docs/wiki/09_contratos
+  - .docs/wiki/06_matriz_pruebas_RF.md
+  - .docs/wiki/06_pruebas/
+
+### Additional Local Rules
+
+  - title: Release platform
+    body: Windows release verification must include arm64 binaries and real installed-binary readback.
+  - title: Shared skill mirrors
+    body: Any shared skill changed under the user skill source must be synchronized to C:/repos/buho/assets/skills in the same task.
 
 ---
 
 **Version**: CLAUDE.md (AE-KERNEL-V2)
 **Status**: Generated from AE-POLICY-PROJECTION-V2
-**Last Updated**: 2026-07-13
+**Last Updated**: 2026-07-22
 **Source**: repo-policy.yaml + template.claude
-<!-- kernel_version: 54414f65 -->
+<!-- kernel_version: 4d131cbf -->

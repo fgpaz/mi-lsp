@@ -2,11 +2,27 @@ package service
 
 import (
 	"database/sql"
-	"fmt"
 
 	"github.com/fgpaz/mi-lsp/internal/model"
 	"github.com/fgpaz/mi-lsp/internal/store"
 )
+
+const workspaceDBOpenErrorCode = "workspace_db_open_failed"
+
+type workspaceDBOpenError struct {
+	cause error
+}
+
+func (e *workspaceDBOpenError) Error() string {
+	return workspaceDBOpenErrorCode
+}
+
+func (e *workspaceDBOpenError) Unwrap() error {
+	if e == nil {
+		return nil
+	}
+	return e.cause
+}
 
 // openWorkspaceDB opens a database connection for the given workspace.
 // If readOnly is true, uses OpenReadOnly for concurrent read access.
@@ -20,14 +36,9 @@ func openWorkspaceDB(registration model.WorkspaceRegistration, operation string,
 		db, err = store.Open(registration.Root)
 	}
 	if err != nil {
-		return nil, fmt.Errorf("sqlite open failed: operation=%s workspace=%s root=%s db_path=%s mode=%s: %w",
-			operation,
-			registration.Name,
-			registration.Root,
-			store.WorkspaceDBPath(registration.Root),
-			map[bool]string{true: "readonly", false: "readwrite"}[readOnly],
-			err,
-		)
+		// Keep the underlying cause for local classification, but never expose
+		// workspace roots, database paths, or driver text through Error().
+		return nil, &workspaceDBOpenError{cause: err}
 	}
 	return db, nil
 }

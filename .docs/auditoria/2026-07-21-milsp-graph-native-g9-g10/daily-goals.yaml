@@ -1,0 +1,71 @@
+schema: sdd-daily-goal-seed-v1
+goal_slug: milsp-graph-native-g9-g10
+codex_goal_title: Finish mi-lsp graph-native competitive benchmark and local closure
+target_repo: <repository-root>
+objective: >-
+  Complete G9 with reproducible 30-run evidence against pinned previous mi-lsp
+  and Graphify, repair legitimate failures without gaming, then complete G10
+  local audit and ae-close with no push, deploy, or publish.
+work_type: implementation
+sdd_anchors:
+  rs:
+    - "legacy/missing: graph-native roadmap predates the RS layer; verify with ps-contexto and record the governed legacy disposition instead of inventing an RS"
+  fl:
+    - FL-GPH-01
+    - FL-GPH-02
+    - FL-GPH-03
+  rf:
+    - RF-GPH-001..011
+    - RF-GPH-011
+  tech:
+    - TECH-GRAPH-NATIVE
+    - DB-SYMBOL-EDGE-GRAPH
+  ct:
+    - CT-GRAPH-CLI
+    - CT-MILX-V1
+expected_scope: >-
+  G9 benchmark harness, fixed fixture/oracles, raw competitive measurements,
+  truthful verdicts, benchmark-proven bounded repairs, and G10 audit,
+  documentation, evidence, and local release disposition.
+non_goals:
+  - push, deploy, publish, production mutation, or remote release
+  - MCP or network dependency in mi-lsp core/runtime
+  - Graphify as authority or runtime dependency
+  - reopening G1-G8 accepted architecture without reproducible regression evidence
+  - claiming global superiority from a subset or unavailable metric
+allowed_paths:
+  - scripts/bench/victory_lab/**
+  - benchmarks/victory-lab/**
+  - docs/benchmarks/VICTORY_LAB.md
+  - bounded source/test paths only when a failing oracle proves a product defect and a new governed packet authorizes them
+  - .docs/auditoria/2026-07-18-milsp-graph-native/**
+  - .docs/auditoria/2026-07-21-milsp-graph-native-g9-g10/**
+forbidden_paths:
+  - .docs/wiki/00_gobierno_documental.md
+  - .docs/wiki/_mi-lsp/read-model.toml
+  - .mi-lsp/**
+  - .env*
+  - comparator source mutation
+  - user/global skill mutation
+required_docs_updates:
+  before_implementation: []
+  before_closure:
+    - docs/benchmarks/VICTORY_LAB.md
+    - .docs/wiki/ae/AE-RELEASE-DISTRIBUTION.md if release disposition/provenance changed
+    - active audit manifest, benchmark summary, review index, verdict, and closure packet
+required_evidence:
+  - 30 raw samples per measured system/variant
+  - current, baseline, and Graphify commit identities
+  - fixture/oracle SHA-256 digests and exact commands
+  - correctness, precision, recall, negative violations, and determinism
+  - token count, warm p95, peak RSS, and incrementality or explicit NOT_COMPARABLE with reason
+  - existing-hot-path regression guard versus baseline
+  - full suites, security/no-MCP scans, and independent reviews
+  - sanitized audit manifest hashes, TTL 14 days, and cleanup status
+first_gate: ps-contexto
+next_gate_after_context: writing-plans
+close_with:
+  - ps-trazabilidad
+  - ps-auditar-trazabilidad
+  - ae-close
+status: active

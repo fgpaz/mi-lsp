@@ -2,13 +2,16 @@ package service
 
 import (
 	"context"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/fgpaz/mi-lsp/internal/indexer"
 	"github.com/fgpaz/mi-lsp/internal/model"
+	"github.com/fgpaz/mi-lsp/internal/store"
 	"github.com/fgpaz/mi-lsp/internal/workspace"
 )
 
@@ -39,6 +42,77 @@ func runGit(t *testing.T, root string, args ...string) string {
 		t.Fatalf("git %s: %v\n%s", strings.Join(args, " "), err, string(out))
 	}
 	return string(out)
+}
+
+func TestDiffContextUsesPublishedGraphForChangedCallee(t *testing.T) {
+	ensureWritableTestHome(t)
+	root := t.TempDir()
+	alias := "diff-graph-" + filepath.Base(root)
+	project := model.ProjectFile{
+		Project: model.ProjectBlock{Name: alias, Kind: model.WorkspaceKindSingle, DefaultRepo: "repo", Languages: []string{"go"}},
+		Repos:   []model.WorkspaceRepo{{ID: "repo", Name: "repo", Root: ".", RepositoryIdentity: "https://example.com/" + alias, Languages: []string{"go"}}},
+	}
+	if err := workspace.SaveProjectFile(root, project); err != nil {
+		t.Fatal(err)
+	}
+	writeWorkspaceFile(t, root, "go.mod", "module example.com/diffgraph\n\ngo 1.23\n")
+	writeWorkspaceFile(t, root, "callee.go", "package diffgraph\n\nfunc Callee() string { return \"baseline\" }\n")
+	writeWorkspaceFile(t, root, "caller.go", "package diffgraph\n\nfunc Caller() string { return Callee() }\n")
+	writeWorkspaceFile(t, root, "unrelated.go", "package diffgraph\n\nfunc Unrelated() string { return \"unrelated\" }\n")
+	runGit(t, root, "init")
+	runGit(t, root, "add", ".")
+	runGit(t, root, "-c", "user.name=smoke", "-c", "user.email=smoke@example.com", "commit", "-m", "baseline")
+	if _, err := indexer.IndexWorkspaceWithGraphProgress(context.Background(), root, true, "", nil, indexer.GraphIndexOptions{}); err != nil {
+		t.Fatalf("IndexWorkspaceWithGraphProgress: %v", err)
+	}
+	if _, err := workspace.RegisterWorkspace(alias, model.WorkspaceRegistration{Name: alias, Root: root, Languages: []string{"go"}, Kind: model.WorkspaceKindSingle}); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = workspace.RemoveWorkspace(alias) })
+
+	writeWorkspaceFile(t, root, "callee.go", "package diffgraph\n\nfunc Callee() string { return \"changed\" }\n")
+	app := New(root, nil)
+	env, err := app.diffContext(context.Background(), model.CommandRequest{
+		Context: model.QueryOptions{Workspace: alias},
+		Payload: map[string]any{"mode": "direct", "edge": []string{"calls"}},
+	})
+	if err != nil {
+		t.Fatalf("diffContext: %v", err)
+	}
+	if env.Backend != "graph-native" && env.Backend != "graph-native+heuristic" {
+		t.Fatalf("backend = %q, want graph-native", env.Backend)
+	}
+	items, ok := env.Items.([]DiffContextResult)
+	if !ok || len(items) != 1 || items[0].GraphImpact == nil {
+		t.Fatalf("expected graph impact result, got %#v", env.Items)
+	}
+	impact := items[0].GraphImpact
+	var caller *model.GraphImpactItem
+	for i := range impact.Items {
+		if impact.Items[i].Path == "caller.go" {
+			caller = &impact.Items[i]
+		}
+		if impact.Items[i].Path == "unrelated.go" {
+			t.Fatalf("unrelated graph positive: %#v", impact.Items[i])
+		}
+	}
+	if caller == nil || len(caller.EvidencePath) == 0 || caller.CrossRID == "" {
+		t.Fatalf("caller lacks graph evidence path: %#v", impact.Items)
+	}
+
+	db, err := store.Open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if err := store.SetGraphRuntimeState(context.Background(), db, store.GraphRuntimeStale, ""); err != nil {
+		t.Fatal(err)
+	}
+	_, err = app.diffContext(context.Background(), model.CommandRequest{Context: model.QueryOptions{Workspace: alias}, Payload: map[string]any{"edge": []string{"calls"}}})
+	var graphErr *model.GraphQueryError
+	if !errors.As(err, &graphErr) || graphErr.Code != "GPH_IMPACT_GRAPH_STALE" {
+		t.Fatalf("stale diffContext error = %v, want typed GPH_IMPACT_GRAPH_STALE", err)
+	}
 }
 
 func TestNavDiffContextIncludesStagedAddedAndDeletedFiles(t *testing.T) {

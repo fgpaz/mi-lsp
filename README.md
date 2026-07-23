@@ -77,6 +77,18 @@ mi-lsp nav wiki search "billing retry" --workspace myapp --format toon
 - `nav pack` returns a small reading order for a task.
 - `nav wiki search` searches governed RF, FL, TP, CT, TECH, and DB documents directly.
 
+### Harness-first intent routing
+
+For supported intents, `mi-lsp` is the mandatory first route; there is no opt-out to bypass it. The local planner keeps the response bounded and makes every fallback explicit.
+
+```powershell
+mi-lsp nav intent "explain this change with callers callees tests contracts wiki" --workspace myapp --format toon
+mi-lsp nav explain-change --path internal/service/intent.go --workspace myapp --format toon
+mi-lsp nav wiki route "graph impact contracts" --workspace myapp --format toon
+```
+
+`explain-change` returns seven named sections: `change`, `affected`, `callers`, `callees`, `tests`, `contracts`, and `wiki`. Preview responses include executable `expansions[]` with a reason. Graph freshness, rank/community signals, utility hints, omissions, and sanitized telemetry remain advisory; they never replace canonical wiki authority. Fallback is terminal only for `unsupported_operation`, `unavailable_binary`, `invalid_workspace`, or `explicit_incomplete`. A timeout without a typed diagnostic is a blocker, not permission to silently switch to `rg`.
+
 Repositories without formal governance can still use text search, the code catalog, and optional semantic backends.
 
 ## How it works

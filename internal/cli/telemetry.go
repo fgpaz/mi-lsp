@@ -46,6 +46,7 @@ func (t *CLITelemetry) RecordOperation(request model.CommandRequest, envelope mo
 		Workspace:      firstNonEmpty(envelope.Workspace, request.Context.Workspace),
 		Repo:           payloadStr(request.Payload, "repo"),
 		Operation:      request.Operation,
+		Intent:         telemetry.IntentFromRequestEnvelope(request, envelope),
 		Backend:        backend,
 		Route:          route,
 		Format:         request.Context.Format,

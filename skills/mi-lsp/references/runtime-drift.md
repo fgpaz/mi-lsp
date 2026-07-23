@@ -20,8 +20,13 @@ mi-lsp worker status --format compact
 - If `daemon status` warns about missing executable metadata, `executable_sha256` mismatch, or stale executable guidance, rebuild/install the CLI and restart the daemon before trusting daemon-backed results.
 - If watcher/memory pressure is suspected, run `mi-lsp daemon perf-smoke --callers 16 --watch-mode off --format toon` after updating the binary.
 - If `nav.find`, `nav.search`, or `nav.intent` are slow or inconsistent, suspect wrong PATH, stale `.mi-lsp/index.db`, or a stale binary before blaming daemon health.
+- `nav.intent` may return a planner preview with graph/wiki/evidence, omissions, fallbacks, and exact expansion commands; preserve available `change`, `affected`, `callers`, `callees`, `tests`, `contracts`, and `wiki` sections. Preview, timeout, silence, `DONE`, or `PASS` without fresh evidence is not PASS and must not trigger a silent tool fallback.
 - `nav.ask` and summary-first `nav.workspace-map` should stay direct and should not auto-start the daemon.
 - If a direct query in a container workspace returns `backend=router`, suspect missing scope before suspecting runtime drift and rerun with `--repo`.
+
+## Fallback discipline
+
+Keep `mi-lsp` first. An external fallback is permitted only when the visible reason is one of `unsupported_operation`, `unavailable_binary`, `invalid_workspace`, or `explicit_incomplete`. A timeout, silence, `DONE`, or `PASS` without fresh evidence must remain visible as incomplete evidence; it is never a silent fallback trigger. If the runtime returns labeled catalog/text/heuristic evidence, preserve that label and do not present it as semantic certainty. Use 180/300-second soft/hard watchdogs, at most two same-context recoveries with a smaller packet and no unchanged retry, at most six practical lanes with exclusive `allowed_paths`, fail-closed joins, and fresh verification. Redact prompts, transcripts, secrets, PII, PHI, argv, and raw patterns; do not invent model/provider metadata.
 
 ## After rebuild or reinstall
 

@@ -3,6 +3,7 @@ package indexer
 import (
 	"context"
 	"crypto/md5"
+	"database/sql"
 	"fmt"
 	"log"
 	"os"
@@ -141,6 +142,14 @@ func gitChangedFiles(ctx context.Context, workspaceRoot string) (changed []strin
 }
 
 func IncrementalIndex(ctx context.Context, workspaceRoot string) (Result, error) {
+	return IncrementalIndexWithGraphProgress(ctx, workspaceRoot, "", nil, GraphIndexOptions{})
+}
+
+// IncrementalIndexWithGraphProgress updates the catalog and, when needed,
+// republishes a complete graph generation before returning success. Observation
+// happens before catalog writes so observer failures preserve the prior graph;
+// graph staging and activation retain their own transactional CAS guarantees.
+func IncrementalIndexWithGraphProgress(ctx context.Context, workspaceRoot, generationID string, progress ProgressFunc, graphOptions GraphIndexOptions) (Result, error) {
 	started := time.Now()
 	indexPath := filepath.Join(workspaceRoot, ".mi-lsp", "index.db")
 	if _, err := os.Stat(indexPath); err != nil {
@@ -155,15 +164,16 @@ func IncrementalIndex(ctx context.Context, workspaceRoot string) (Result, error)
 	}
 
 	changedFiles, deletedFiles := gitChangedFiles(ctx, workspaceRoot)
-	if len(changedFiles) == 0 && len(deletedFiles) == 0 {
-		return Result{Files: []model.FileRecord{}, Symbols: []model.SymbolRecord{}, Warnings: []string{}, Stats: model.Stats{Files: 0, Symbols: 0, Ms: time.Since(started).Milliseconds()}}, nil
-	}
+	hasChanges := len(changedFiles) != 0 || len(deletedFiles) != 0
 	if requiresFullReindex(changedFiles) || requiresFullReindex(deletedFiles) {
 		return Result{}, fmt.Errorf("documentation or read-model changed; fallback to full index")
 	}
 
 	registration, err := workspace.DetectWorkspace(workspaceRoot)
 	if err != nil {
+		if !hasChanges {
+			return Result{GraphNotApplicable: true, Warnings: []string{"incremental: no supported graph workspace detected"}, Stats: model.Stats{Ms: time.Since(started).Milliseconds()}}, nil
+		}
 		return Result{}, fmt.Errorf("detect workspace: %w", err)
 	}
 	projectFile, err := workspace.LoadProjectTopology(workspaceRoot, registration)
@@ -175,9 +185,44 @@ func IncrementalIndex(ctx context.Context, workspaceRoot string) (Result, error)
 		return Result{}, fmt.Errorf("load ignore matcher: %w", err)
 	}
 
+	var graphBatches []model.GraphObservationBatch
+	var graphOmissions []model.GraphObservationOmission
+	var graphWarnings []string
+	var docs []model.DocRecord
+	var docEdges []model.DocEdge
+	var docMentions []model.DocMention
+	graphRepair, catalogGeneration, err := incrementalGraphRepairState(ctx, workspaceRoot, hasChanges)
+	if err != nil {
+		return Result{}, err
+	}
+	if graphRepair {
+		if err := markIncrementalGraphStale(ctx, workspaceRoot); err != nil {
+			return Result{}, err
+		}
+		db, err := store.Open(workspaceRoot)
+		if err != nil {
+			return Result{}, fmt.Errorf("open database for graph facts: %w", err)
+		}
+		docs, docEdges, docMentions, err = loadIncrementalGraphFacts(ctx, db)
+		_ = db.Close()
+		if err != nil {
+			return Result{}, err
+		}
+		graphBatches, graphOmissions, graphWarnings, err = ObserveGraph(ctx, workspaceRoot, projectFile, graphOptions, progress)
+		if err != nil {
+			return Result{}, fmt.Errorf("incremental graph observation failed: %w", err)
+		}
+		if len(graphBatches) == 0 && !explicitlyNonGraphProject(projectFile) {
+			return Result{}, fmt.Errorf("incremental graph observation produced no publishable generation")
+		}
+	}
+
 	processedFiles := 0
 	skippedFiles := 0
 	var allSymbols []model.SymbolRecord
+	var graphGeneration model.GraphGeneration
+	graphCurrent := !graphRepair
+	graphNotApplicable := graphRepair && len(graphBatches) == 0
 	if err := store.WithWorkspaceWriteLock(workspaceRoot, func() error {
 		db, err := store.Open(workspaceRoot)
 		if err != nil {
@@ -225,17 +270,257 @@ func IncrementalIndex(ctx context.Context, workspaceRoot string) (Result, error)
 			}
 			processedFiles++
 		}
+
+		if graphRepair {
+			if len(graphBatches) != 0 {
+				if err := store.SetGraphRuntimeState(ctx, db, store.GraphRuntimeStale, ""); err != nil {
+					return fmt.Errorf("mark graph stale: %w", err)
+				}
+				prior, ok, err := store.ActiveGraphGeneration(ctx, db)
+				if err != nil {
+					return err
+				}
+				if !ok {
+					prior, ok, err = restoreDanglingActiveGraphPointer(ctx, db)
+					if err != nil {
+						return err
+					}
+				}
+				var expectedPrior *model.GraphDigest
+				if ok {
+					expectedPrior = &prior
+				}
+				if err := reportProgress(ctx, progress, Progress{Stage: "graph.activate", Files: processedFiles, Symbols: len(allSymbols), Docs: len(docs), Force: true}); err != nil {
+					return err
+				}
+				graphGeneration, err = PublishGraphObservationBatches(ctx, db, GraphAssemblyRequest{Batches: graphBatches, Docs: docs, DocEdges: docEdges, DocMentions: docMentions, CreatedAt: time.Now().UTC()}, expectedPrior)
+				if err != nil {
+					_ = store.SetGraphRuntimeState(ctx, db, store.GraphRuntimeStale, "")
+					return fmt.Errorf("incremental graph publication failed: %w", err)
+				}
+				graphCurrent = true
+			}
+		}
+
+		if generationID != "" {
+			if err := publishIncrementalGeneration(ctx, db, generationID, processedFiles, len(allSymbols), len(docs), graphCurrent); err != nil {
+				if graphCurrent {
+					_ = store.SetGraphRuntimeState(ctx, db, store.GraphRuntimeStale, "")
+				}
+				return err
+			}
+		} else if graphCurrent && graphRepair {
+			if err := store.SetGraphRuntimeState(ctx, db, store.GraphRuntimeFresh, catalogGeneration); err != nil {
+				return err
+			}
+		}
 		return nil
 	}); err != nil {
 		return Result{}, err
 	}
 
-	return Result{
-		Files:    []model.FileRecord{},
-		Symbols:  allSymbols,
-		Warnings: []string{fmt.Sprintf("incremental: processed %d files, skipped %d", processedFiles, skippedFiles)},
-		Stats:    model.Stats{Files: processedFiles, Symbols: len(allSymbols), Ms: time.Since(started).Milliseconds()},
-	}, nil
+	warnings := append([]string{}, graphWarnings...)
+	warnings = append(warnings, fmt.Sprintf("incremental: processed %d files, skipped %d", processedFiles, skippedFiles))
+	result := Result{Files: []model.FileRecord{}, Symbols: allSymbols, Warnings: warnings, GraphOmissions: graphOmissions, GraphNotApplicable: graphNotApplicable, Stats: model.Stats{Files: processedFiles, Symbols: len(allSymbols), Ms: time.Since(started).Milliseconds()}}
+	if graphGeneration.GenerationID != (model.GraphDigest{}) {
+		result.GraphGenerationID = graphGeneration.GenerationID.String()
+		result.GraphBackendManifest = graphGeneration.BackendManifestDigest.String()
+	}
+	return result, nil
+}
+
+func incrementalGraphRepairState(ctx context.Context, workspaceRoot string, force bool) (bool, string, error) {
+	db, err := store.Open(workspaceRoot)
+	if err != nil {
+		return false, "", fmt.Errorf("open database for graph freshness: %w", err)
+	}
+	defer db.Close()
+	catalogGeneration, _, err := workspaceMetaValue(ctx, db, store.WorkspaceMetaActiveCatalogGeneration)
+	if err != nil {
+		return false, "", err
+	}
+	if force {
+		return true, catalogGeneration, nil
+	}
+	freshness, err := store.GraphFreshness(ctx, db, "")
+	if err != nil {
+		return false, catalogGeneration, err
+	}
+	if freshness.State != model.GraphFreshnessCurrent {
+		return true, catalogGeneration, nil
+	}
+	if catalogGeneration != "" {
+		graphCatalogGeneration, ok, err := workspaceMetaValue(ctx, db, store.GraphCatalogGenerationMeta)
+		if err != nil {
+			return false, catalogGeneration, err
+		}
+		if !ok || graphCatalogGeneration != catalogGeneration {
+			return true, catalogGeneration, nil
+		}
+	}
+	return false, catalogGeneration, nil
+}
+
+func markIncrementalGraphStale(ctx context.Context, workspaceRoot string) error {
+	db, err := store.Open(workspaceRoot)
+	if err != nil {
+		return fmt.Errorf("open database to mark graph stale: %w", err)
+	}
+	defer db.Close()
+	if err := store.SetGraphRuntimeState(ctx, db, store.GraphRuntimeStale, ""); err != nil {
+		return fmt.Errorf("mark graph stale: %w", err)
+	}
+	return nil
+}
+
+func restoreDanglingActiveGraphPointer(ctx context.Context, db *sql.DB) (model.GraphDigest, bool, error) {
+	rows, err := db.QueryContext(ctx, "SELECT lower(hex(generation_id)) FROM graph_generations WHERE status=? ORDER BY generation_id LIMIT 2", model.GraphGenerationActive)
+	if err != nil {
+		return model.GraphDigest{}, false, err
+	}
+	defer rows.Close()
+	var ids []model.GraphDigest
+	for rows.Next() {
+		var raw string
+		if err := rows.Scan(&raw); err != nil {
+			return model.GraphDigest{}, false, err
+		}
+		id, err := model.ParseGraphDigest(raw)
+		if err != nil {
+			return model.GraphDigest{}, false, fmt.Errorf("invalid dangling graph generation: %w", err)
+		}
+		ids = append(ids, id)
+	}
+	if err := rows.Err(); err != nil {
+		return model.GraphDigest{}, false, err
+	}
+	if len(ids) == 0 {
+		return model.GraphDigest{}, false, nil
+	}
+	if len(ids) != 1 {
+		return model.GraphDigest{}, false, model.ErrGraphPointerConflict
+	}
+	if _, err := db.ExecContext(ctx, "INSERT INTO workspace_meta(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value", "active_graph_generation_id", ids[0][:]); err != nil {
+		return model.GraphDigest{}, false, err
+	}
+	return ids[0], true, nil
+}
+
+func workspaceMetaValue(ctx context.Context, db *sql.DB, key string) (string, bool, error) {
+	var value string
+	err := db.QueryRowContext(ctx, "SELECT value FROM workspace_meta WHERE key=?", key).Scan(&value)
+	if err == sql.ErrNoRows {
+		return "", false, nil
+	}
+	if err != nil {
+		return "", false, err
+	}
+	return value, true, nil
+}
+
+func loadIncrementalGraphFacts(ctx context.Context, db *sql.DB) ([]model.DocRecord, []model.DocEdge, []model.DocMention, error) {
+	docs, err := store.ListDocRecords(ctx, db)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("list graph documents: %w", err)
+	}
+	edges := make([]model.DocEdge, 0)
+	rows, err := db.QueryContext(ctx, `SELECT from_path, to_path, to_doc_id, kind, label FROM doc_edges ORDER BY from_path, to_path, to_doc_id, kind, label`)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("list graph document edges: %w", err)
+	}
+	for rows.Next() {
+		var edge model.DocEdge
+		if err := rows.Scan(&edge.FromPath, &edge.ToPath, &edge.ToDocID, &edge.Kind, &edge.Label); err != nil {
+			_ = rows.Close()
+			return nil, nil, nil, fmt.Errorf("scan graph document edge: %w", err)
+		}
+		edges = append(edges, edge)
+	}
+	if err := rows.Err(); err != nil {
+		_ = rows.Close()
+		return nil, nil, nil, fmt.Errorf("read graph document edges: %w", err)
+	}
+	_ = rows.Close()
+
+	mentions := make([]model.DocMention, 0)
+	rows, err = db.QueryContext(ctx, `SELECT doc_path, mention_type, mention_value FROM doc_mentions ORDER BY doc_path, mention_type, mention_value`)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("list graph document mentions: %w", err)
+	}
+	for rows.Next() {
+		var mention model.DocMention
+		if err := rows.Scan(&mention.DocPath, &mention.MentionType, &mention.MentionValue); err != nil {
+			_ = rows.Close()
+			return nil, nil, nil, fmt.Errorf("scan graph document mention: %w", err)
+		}
+		mentions = append(mentions, mention)
+	}
+	if err := rows.Err(); err != nil {
+		_ = rows.Close()
+		return nil, nil, nil, fmt.Errorf("read graph document mentions: %w", err)
+	}
+	_ = rows.Close()
+	return docs, edges, mentions, nil
+}
+
+func explicitlyNonGraphProject(project model.ProjectFile) bool {
+	if len(project.Repos) == 0 {
+		return false
+	}
+	selected := strings.TrimSpace(project.Project.DefaultRepo)
+	if selected == "" && len(project.Repos) == 1 {
+		selected = project.Repos[0].ID
+	}
+	for _, repo := range project.Repos {
+		if repo.ID != selected {
+			continue
+		}
+		if len(repo.Languages) == 0 {
+			return false
+		}
+		for _, language := range repo.Languages {
+			switch strings.ToLower(strings.TrimSpace(language)) {
+			case "go", "csharp", "cs", "dotnet":
+				return false
+			}
+		}
+		return true
+	}
+	return false
+}
+
+func publishIncrementalGeneration(ctx context.Context, db *sql.DB, generationID string, files, symbols, docs int, graphCurrent bool) error {
+	if !graphCurrent {
+		// Explicitly non-graph work keeps the index generation pending so the
+		// caller can mark it skipped without claiming a current graph.
+		return nil
+	}
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	now := time.Now().UTC().Format(time.RFC3339Nano)
+	if _, err := tx.ExecContext(ctx, `UPDATE index_generations SET status='published', files=?, symbols=?, docs=?, published_at=?, error=NULL WHERE generation_id=?`, files, symbols, docs, now, generationID); err != nil {
+		return err
+	}
+	metadata := map[string]string{
+		store.WorkspaceMetaLastIndexGeneration:     generationID,
+		store.WorkspaceMetaActiveCatalogGeneration: generationID,
+		"active_generation_mode":                   "catalog",
+		"active_generation_published_at":           now,
+		"active_generation_files":                  fmt.Sprintf("%d", files),
+		"active_generation_symbols":                fmt.Sprintf("%d", symbols),
+		"active_generation_docs":                   fmt.Sprintf("%d", docs),
+	}
+	metadata[store.GraphRuntimeStateMeta] = store.GraphRuntimeFresh
+	metadata[store.GraphCatalogGenerationMeta] = generationID
+	for key, value := range metadata {
+		if _, err := tx.ExecContext(ctx, "INSERT INTO workspace_meta(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value", key, value); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
 }
 
 func requiresFullReindex(paths []string) bool {

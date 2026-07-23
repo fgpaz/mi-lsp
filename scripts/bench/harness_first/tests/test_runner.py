@@ -1,0 +1,1424 @@
+import concurrent.futures
+from collections.abc import Mapping
+import json
+import tempfile
+import unittest
+from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import patch
+
+from scripts.bench.harness_first.runner import (
+    DEFAULT_BUDGETS,
+    HarnessError,
+    MARKER_NAME,
+    MAX_CLEAN_INDEX_PREFLIGHT_TIMEOUT_SECONDS,
+    MAX_PREFLIGHT_TIMEOUT_SECONDS,
+    MAX_PROJECTION_DEPTH,
+    MAX_PROJECTION_LIST_ITEMS,
+    MAX_PROJECTION_MAPPING_ENTRIES,
+    ProcessResult,
+    SECTIONS,
+    _RSSSampler,
+    _bounded_diff_value,
+    _bounded_structural_diff,
+    _parity_check,
+    _candidate_preflight,
+    _candidate_process,
+    _command,
+    _daemon_identity_check,
+    _daemon_preflight,
+    _daemon_stop_probe,
+    _find_preview_contract,
+    _freshness_records,
+    _index_preflight,
+    _rss_report,
+    _select_latest_telemetry_event,
+    claim_global_marker,
+    digest,
+    finite,
+    normalize,
+    parse_go_version_m,
+    provenance,
+    query_check,
+    run_campaign,
+    sanitize,
+    source_revision,
+    to_yaml,
+    validate_manifest,
+    worker_status_check,
+    write_marker,
+)
+
+
+def measured_query_check(query, payload):
+    return query_check(query, payload, output_bytes=1, estimated_tokens=1)
+
+
+class CountingMapping(Mapping):
+    def __init__(self, values):
+        self.values = values
+        self.iterated = 0
+        self.lookups = 0
+
+    def __iter__(self):
+        for key in self.values:
+            self.iterated += 1
+            yield key
+
+    def __getitem__(self, key):
+        self.lookups += 1
+        return self.values[key]
+
+    def __len__(self):
+        return len(self.values)
+
+
+class CountingList(list):
+    def __init__(self, values):
+        super().__init__(values)
+        self.indexed = 0
+        self.iterated = 0
+
+    def __iter__(self):
+        for item in super().__iter__():
+            self.iterated += 1
+            yield item
+
+    def __getitem__(self, index):
+        self.indexed += 1
+        return super().__getitem__(index)
+
+
+class RunnerContractTests(unittest.TestCase):
+    def manifest(self):
+        return {
+            "schema": "harness-first-campaign/v1",
+            "campaign_id": "dry-run",
+            "queries": [{
+                "id": "explain-change",
+                "kind": "explain_change",
+                "args": ["nav", "explain-change", "--path", "internal/service/intent.go"],
+                "preview_required": True,
+                "modes": ["direct"],
+            }],
+        }
+
+    def preview_payload(self, *, explain=True):
+        omissions = [
+            {"section": section, "reason": f"no {section} evidence was available"}
+            for section in ("callers", "callees", "tests")
+        ]
+        plan = {
+            "preview": [
+                {"section": "change", "items": [{"path": "src/change.go"}], "count": 1},
+                {"section": "affected", "items": [{"path": "src/affected.go"}], "count": 1},
+                {"section": "callers", "items": [], "count": 0},
+                {"section": "callees", "items": [], "count": 0},
+                {"section": "tests", "items": [], "count": 0},
+                {"section": "contracts", "items": [{"path": "CT-EXAMPLE"}], "count": 1},
+                {"section": "wiki", "items": [{"path": ".docs/wiki/00_gobierno_documental.md"}], "count": 1},
+            ],
+            "omissions": omissions,
+            "expansions": [{"command": "mi-lsp nav affected --full", "reason": "expand affected evidence"}],
+        }
+        return {"ok": True, "items": [plan]}
+
+    def test_manifest_uses_evidence_based_latency_defaults(self):
+        contract = validate_manifest(self.manifest())
+        self.assertEqual(DEFAULT_BUDGETS["latency_p95_ms"], 15000.0)
+        self.assertEqual(DEFAULT_BUDGETS["latency_p99_ms"], 15000.0)
+        self.assertEqual(contract["budgets"]["latency_p95_ms"], 15000.0)
+        self.assertEqual(contract["budgets"]["latency_p99_ms"], 15000.0)
+
+    def test_manifest_locks_seven_sections_and_expansions(self):
+        contract = validate_manifest(self.manifest())
+        self.assertEqual(contract["budgets"]["preview_sections"], list(SECTIONS))
+        self.assertEqual(contract["budgets"]["preview_expansions"], ["command", "reason"])
+
+    def test_direct_only_queries_cannot_be_labeled_daemon(self):
+        manifest = self.manifest()
+        manifest["queries"][0]["modes"] = ["direct", "daemon"]
+        with self.assertRaises(HarnessError):
+            validate_manifest(manifest)
+
+    def test_manifest_worker_status_args_are_exactly_fixed(self):
+        manifest = self.manifest()
+        manifest["worker_status_args"] = ["worker", "install"]
+        with self.assertRaises(HarnessError):
+            validate_manifest(manifest)
+        manifest["worker_status_args"] = ["admin", "export"]
+        with self.assertRaises(HarnessError):
+            validate_manifest(manifest)
+        self.assertEqual(validate_manifest(self.manifest())["worker_status_args"], ["worker", "status"])
+
+    def test_command_routes_direct_and_daemon_modes_explicitly(self):
+        query = {"args": ["nav", "related", "BuildIntentPlan"]}
+        direct = _command(Path("mi-lsp"), Path("workspace"), "campaign", query, "direct")
+        daemon = _command(Path("mi-lsp"), Path("workspace"), "campaign", query, "daemon")
+        self.assertIn("--no-daemon", direct)
+        self.assertNotIn("--no-auto-daemon", direct)
+        self.assertNotIn("--no-daemon", daemon)
+        self.assertEqual(direct[-3:], ["nav", "related", "BuildIntentPlan"])
+        self.assertEqual(daemon[-3:], ["nav", "related", "BuildIntentPlan"])
+
+    def test_candidate_process_uses_binary_parent_distribution_cwd(self):
+        with tempfile.TemporaryDirectory() as directory:
+            distribution = Path(directory) / "win-arm64"
+            distribution.mkdir()
+            binary = distribution / "mi-lsp.exe"
+            observed = {}
+
+            def fake_run_process(argv, timeout, *, cwd=None):
+                observed.update(argv=list(argv), timeout=timeout, cwd=cwd)
+                return ProcessResult(0, 1.0, payload={"ok": True})
+
+            with patch("scripts.bench.harness_first.runner.run_process", side_effect=fake_run_process):
+                result = _candidate_process(binary, [str(binary), "version"], 7.0)
+
+        self.assertEqual(result.payload, {"ok": True})
+        self.assertEqual(observed["cwd"], distribution)
+        self.assertEqual(observed["timeout"], 7.0)
+
+    def test_provenance_subprocess_calls_keep_existing_no_cwd_contract(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            binary = root / "mi-lsp.exe"
+            binary.write_bytes(b"candidate")
+            revision = "a" * 40
+            responses = iter([
+                SimpleNamespace(returncode=0, stdout=""),
+                SimpleNamespace(returncode=0, stdout=revision + "\n"),
+                SimpleNamespace(returncode=0, stdout="build\tvcs.revision=" + revision + "\nbuild\tvcs.modified=false\n"),
+            ])
+            calls = []
+
+            def fake_subprocess_run(*args, **kwargs):
+                calls.append((args, kwargs))
+                return next(responses)
+
+            with (
+                patch("scripts.bench.harness_first.runner.subprocess.run", side_effect=fake_subprocess_run),
+                patch("scripts.bench.harness_first.runner.shutil.which", return_value="go"),
+            ):
+                self.assertEqual(source_revision(root), revision)
+                self.assertEqual(provenance(binary, revision)["status"], "PASS")
+
+        self.assertEqual(len(calls), 3)
+        self.assertTrue(all("cwd" not in kwargs for _args, kwargs in calls))
+
+    def test_clean_index_argv_is_fixed_and_single_shot(self):
+        calls = []
+
+        def fake_run_process(argv, timeout, *, cwd=None):
+            calls.append((list(argv), timeout))
+            return ProcessResult(0, 2.0, payload={"ok": True, "items": [{"status": "succeeded"}]})
+
+        with patch("scripts.bench.harness_first.runner.run_process", side_effect=fake_run_process):
+            report = _index_preflight(Path("candidate"), Path("source"), "campaign", 10.0)
+        self.assertEqual(report["status"], "PASS")
+        self.assertEqual(report["attempts"], 1)
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(calls[0][1], MAX_CLEAN_INDEX_PREFLIGHT_TIMEOUT_SECONDS)
+        self.assertEqual(calls[0][0][-2:], ["index", "--clean"])
+        self.assertEqual(calls[0][0][-3], "--no-daemon")
+        self.assertIn("--workspace", calls[0][0])
+        self.assertEqual(calls[0][0][calls[0][0].index("--workspace") + 1], "source")
+
+    def test_run_campaign_separates_index_and_query_timeouts(self):
+        manifest = self.manifest()
+        worker_payload = {"ok": True, "backend": "worker", "items": [{"selected_compatible": True, "selected_source": "bundle", "selected_path": "worker"}]}
+        calls = []
+        responses = iter([
+            ProcessResult(0, 1.0, payload={"ok": True, "items": [{"version": "(devel)", "protocol_version": "mi-lsp-v1.1", "executable_sha256": "b" * 64}]}),
+            ProcessResult(0, 1.0, payload=worker_payload, rss_bytes=1),
+            ProcessResult(0, 1.0, payload={"ok": True}),
+            ProcessResult(0, 1.0, payload={"ok": True, "backend": "index-job", "items": [{"status": "succeeded"}]}),
+            ProcessResult(0, 1.0, payload={"ok": True, "items": [{"graph_freshness": {"state": "current"}, "graph_ranks": []}]}, output_bytes=1, estimated_tokens=1),
+            ProcessResult(0, 1.0, payload=self.preview_payload(), rss_bytes=1, output_bytes=1, estimated_tokens=1),
+            ProcessResult(0, 1.0, payload=[]),
+        ])
+
+        def fake_run_process(argv, timeout, *, cwd=None):
+            calls.append((list(argv), timeout))
+            return next(responses)
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            binary = root / "candidate"
+            binary.write_bytes(b"candidate")
+            with (
+                patch("scripts.bench.harness_first.runner.run_process", side_effect=fake_run_process),
+                patch("scripts.bench.harness_first.runner.source_revision", return_value="a" * 40),
+                patch("scripts.bench.harness_first.runner.provenance", return_value={"status": "PASS", "binary_sha256": "b" * 64}),
+                patch("scripts.bench.harness_first.runner.claim_global_marker"),
+            ):
+                report = run_campaign(manifest, binary=binary, source_root=root, output=root / "output", timeout_seconds=60)
+
+        index_call = next((argv, timeout) for argv, timeout in calls if argv[-2:] == ["index", "--clean"])
+        query_call = next((argv, timeout) for argv, timeout in calls if argv[-4:] == ["nav", "explain-change", "--path", "internal/service/intent.go"])
+        self.assertEqual(report["status"], "PASS")
+        self.assertEqual(MAX_PREFLIGHT_TIMEOUT_SECONDS, 120.0)
+        self.assertEqual(index_call[1], MAX_CLEAN_INDEX_PREFLIGHT_TIMEOUT_SECONDS)
+        self.assertEqual(query_call[1], 60)
+
+    def test_index_timeout_blocks_before_claim_without_retry(self):
+        manifest = self.manifest()
+        worker_payload = {"ok": True, "backend": "worker", "items": [{"selected_compatible": True, "selected_source": "bundle", "selected_path": "worker"}]}
+        calls = []
+        responses = iter([
+            ProcessResult(0, 1.0, payload={"ok": True, "items": [{"version": "(devel)", "protocol_version": "mi-lsp-v1.1", "executable_sha256": "b" * 64}]}),
+            ProcessResult(0, 1.0, payload=worker_payload),
+            ProcessResult(0, 1.0, payload={"ok": True}),
+            ProcessResult(124, MAX_CLEAN_INDEX_PREFLIGHT_TIMEOUT_SECONDS * 1000, reason_code="timeout"),
+        ])
+
+        def fake_run_process(argv, timeout, *, cwd=None):
+            calls.append((list(argv), timeout))
+            return next(responses)
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            binary = root / "candidate"
+            binary.write_bytes(b"candidate")
+            with (
+                patch("scripts.bench.harness_first.runner.run_process", side_effect=fake_run_process),
+                patch("scripts.bench.harness_first.runner.source_revision", return_value="a" * 40),
+                patch("scripts.bench.harness_first.runner.provenance", return_value={"status": "PASS", "binary_sha256": "b" * 64}),
+                patch("scripts.bench.harness_first.runner.claim_global_marker") as claim,
+            ):
+                report = run_campaign(manifest, binary=binary, source_root=root, output=root / "output", timeout_seconds=60)
+
+        index_calls = [(argv, timeout) for argv, timeout in calls if argv[-2:] == ["index", "--clean"]]
+        self.assertEqual(report["status"], "BLOCKED")
+        self.assertEqual(report["candidate_preflight"]["reason_code"], "index_preflight_failed")
+        self.assertEqual(len(index_calls), 1)
+        self.assertEqual(index_calls[0][1], MAX_CLEAN_INDEX_PREFLIGHT_TIMEOUT_SECONDS)
+        self.assertEqual(report["candidate_preflight"]["index"]["attempts"], 1)
+        claim.assert_not_called()
+
+    def test_daemon_identity_check_requires_exact_candidate_hash_and_compatible_metadata(self):
+        candidate_sha = "a" * 64
+        payload = {"ok": True, "items": [{"state": {"executable_sha256": candidate_sha, "protocol_version": "mi-lsp-v1.1", "version": "(devel)"}}]}
+        result = _daemon_identity_check(payload, candidate_sha)
+        self.assertEqual(result["status"], "PASS")
+        self.assertTrue(result["daemon_identity_match"])
+        self.assertTrue(result["protocol_compatible"])
+        self.assertTrue(result["version_compatible"])
+
+        mismatch = _daemon_identity_check(payload, "b" * 64)
+        self.assertEqual(mismatch["status"], "FAIL")
+        self.assertFalse(mismatch["daemon_identity_match"])
+        self.assertEqual(mismatch["reason_code"], "daemon_identity_mismatch")
+
+    def test_daemon_version_spoof_fails_closed_even_when_hash_and_protocol_match(self):
+        candidate_sha = "a" * 64
+        candidate = {"version": "(devel)", "protocol_version": "mi-lsp-v1.1", "executable_sha256": candidate_sha}
+        payload = {"ok": True, "items": [{"state": {"executable_sha256": candidate_sha, "protocol_version": "mi-lsp-v1.1", "version": "unrelated-build"}}]}
+        result = _daemon_identity_check(payload, candidate_sha, candidate)
+        self.assertEqual(result["status"], "FAIL")
+        self.assertFalse(result["version_match"])
+        self.assertEqual(result["reason_code"], "candidate_version_mismatch")
+
+    def daemon_not_running_payload(self):
+        return {
+            "ok": False,
+            "items": [],
+            "error": {
+                "kind": "transport",
+                "code": "daemon_transport_failed",
+                "stage": "transport",
+                "hint_code": "daemon_unavailable",
+                "retryable": True,
+                "message": "daemon is not running",
+            },
+        }
+
+    def test_daemon_stop_running_passes_without_already_stopped(self):
+        with patch(
+            "scripts.bench.harness_first.runner.run_process",
+            return_value=ProcessResult(0, 1.0, payload={"ok": True}),
+        ):
+            result = _daemon_stop_probe(Path("candidate"), 10.0, required=True)
+        self.assertEqual(result["status"], "PASS")
+        self.assertFalse(result["already_stopped"])
+        self.assertEqual(result["elapsed_ms"], 1.0)
+
+    def test_daemon_stop_documented_not_running_is_idempotent_pass(self):
+        payload = self.daemon_not_running_payload()
+        with patch(
+            "scripts.bench.harness_first.runner.run_process",
+            return_value=ProcessResult(1, 2.0, payload=payload, reason_code="nonzero_exit"),
+        ):
+            result = _daemon_stop_probe(Path("candidate"), 10.0, required=True)
+        self.assertEqual(result["status"], "PASS")
+        self.assertTrue(result["already_stopped"])
+        self.assertEqual(result["elapsed_ms"], 2.0)
+        self.assertNotIn("daemon is not running", json.dumps(result))
+        self.assertNotIn("message", result)
+
+    def test_daemon_stop_plain_not_running_is_idempotent_without_raw_output(self):
+        for stdout, stderr in ((" \n daemon is not running \r\n ", ""), ("", "\tdaemon is not running\n")):
+            with self.subTest(stream=(stdout, stderr)):
+                with patch(
+                    "scripts.bench.harness_first.runner.run_process",
+                    return_value=ProcessResult(
+                        1,
+                        2.5,
+                        payload=None,
+                        reason_code="nonzero_exit",
+                        stdout=stdout,
+                        stderr=stderr,
+                    ),
+                ):
+                    result = _daemon_stop_probe(Path("candidate"), 10.0, required=True)
+                self.assertEqual(result["status"], "PASS")
+                self.assertTrue(result["already_stopped"])
+                self.assertEqual(result["elapsed_ms"], 2.5)
+                self.assertNotIn("daemon is not running", json.dumps(result))
+                self.assertNotIn("stdout", result)
+                self.assertNotIn("stderr", result)
+
+    def test_daemon_stop_unrelated_plain_text_exit_one_fails_closed(self):
+        with patch(
+            "scripts.bench.harness_first.runner.run_process",
+            return_value=ProcessResult(
+                1,
+                3.0,
+                payload=None,
+                reason_code="nonzero_exit",
+                stdout="daemon is not running; extra output",
+                stderr="",
+            ),
+        ):
+            result = _daemon_stop_probe(Path("candidate"), 10.0, required=True)
+        self.assertEqual(result["status"], "FAIL")
+        self.assertEqual(result["reason_code"], "daemon_preflight_failed")
+
+    def test_daemon_stop_unrelated_exit_one_fails_closed(self):
+        payload = {
+            "ok": False,
+            "items": [],
+            "error": {
+                "kind": "backend_runtime",
+                "code": "daemon_request_failed",
+                "stage": "backend",
+                "retryable": False,
+            },
+        }
+        with patch(
+            "scripts.bench.harness_first.runner.run_process",
+            return_value=ProcessResult(1, 3.0, payload=payload, reason_code="nonzero_exit"),
+        ):
+            result = _daemon_stop_probe(Path("candidate"), 10.0, required=True)
+        self.assertEqual(result["status"], "FAIL")
+        self.assertEqual(result["reason_code"], "daemon_preflight_failed")
+
+    def test_daemon_stop_malformed_json_fails_closed(self):
+        with patch(
+            "scripts.bench.harness_first.runner.run_process",
+            return_value=ProcessResult(1, 4.0, reason_code="decode_error"),
+        ):
+            result = _daemon_stop_probe(Path("candidate"), 10.0, required=True)
+        self.assertEqual(result["status"], "FAIL")
+        self.assertEqual(result["reason_code"], "daemon_preflight_failed")
+
+    def test_daemon_stop_access_denied_fails_closed(self):
+        payload = {
+            "ok": False,
+            "items": [],
+            "error": {
+                "kind": "process",
+                "code": "process_spawn_access_denied",
+                "stage": "transport",
+                "retryable": False,
+            },
+        }
+        with patch(
+            "scripts.bench.harness_first.runner.run_process",
+            return_value=ProcessResult(1, 5.0, payload=payload, reason_code="nonzero_exit"),
+        ):
+            result = _daemon_stop_probe(Path("candidate"), 10.0, required=True)
+        self.assertEqual(result["status"], "FAIL")
+        self.assertEqual(result["reason_code"], "daemon_preflight_failed")
+
+    def test_daemon_preflight_fails_closed_on_identity_mismatch_without_retry(self):
+        candidate_sha = "a" * 64
+        calls = []
+        responses = iter([
+            ProcessResult(0, 1.0, payload={"ok": True}),
+            ProcessResult(0, 2.0, payload={"ok": True}),
+            ProcessResult(0, 3.0, payload={"ok": True, "items": [{"state": {"executable_sha256": "b" * 64, "protocol_version": "mi-lsp-v1.1", "version": "(devel)"}}]}),
+        ])
+
+        def fake_run_process(argv, timeout, *, cwd=None):
+            calls.append(list(argv))
+            return next(responses)
+
+        with patch("scripts.bench.harness_first.runner.run_process", side_effect=fake_run_process):
+            result = _daemon_preflight(Path("candidate"), candidate_sha, 10.0)
+
+        self.assertEqual(result["status"], "BLOCKED")
+        self.assertEqual(result["reason_code"], "daemon_identity_mismatch")
+        self.assertFalse(result["daemon_identity_match"])
+        self.assertEqual(len(calls), 3)
+        self.assertTrue(calls[0][-2:] == ["daemon", "stop"])
+        self.assertTrue(calls[1][-2:] == ["daemon", "start"])
+        self.assertTrue(calls[2][-2:] == ["daemon", "status"])
+
+    def test_candidate_preflight_runs_worker_once_before_direct_sample_and_excludes_preflight_from_latency(self):
+        manifest = {
+            "schema": "harness-first-campaign/v1",
+            "campaign_id": "preflight-test",
+            "queries": [{
+                "id": "wiki",
+                "kind": "wiki_pack",
+                "args": ["nav", "wiki", "pack", "task"],
+                "modes": ["direct"],
+            }],
+        }
+        worker_payload = {"ok": True, "backend": "worker", "items": [{"selected_compatible": True, "selected_source": "bundle", "selected_path": "worker"}]}
+        query_payload = {"ok": True, "items": [{"docs": [{"path": "doc"}]}]}
+        responses = iter([
+            ProcessResult(0, 1.0, payload={"ok": True, "items": [{"version": "(devel)", "protocol_version": "mi-lsp-v1.1", "executable_sha256": "b" * 64}]}),
+            ProcessResult(0, 3.0, payload=worker_payload),
+            ProcessResult(0, 4.0, payload={"ok": True}),
+            ProcessResult(0, 5.0, payload={"ok": True, "backend": "index-job", "items": [{"status": "succeeded"}]}),
+            ProcessResult(0, 6.0, payload={"ok": True, "items": [{"graph_freshness": {"state": "current"}, "graph_ranks": []}]}),
+            ProcessResult(0, 7.0, payload=query_payload),
+            ProcessResult(0, 1.0, payload=[]),
+        ])
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            binary = root / "candidate"
+            binary.write_bytes(b"candidate")
+            output = root / "output"
+            calls = []
+            cwd_values = []
+
+            def fake_run_process(argv, timeout, *, cwd=None):
+                calls.append(list(argv))
+                cwd_values.append(cwd)
+                return next(responses)
+
+            with (
+                patch("scripts.bench.harness_first.runner.run_process", side_effect=fake_run_process),
+                patch("scripts.bench.harness_first.runner.source_revision", return_value="a" * 40),
+                patch("scripts.bench.harness_first.runner.provenance", return_value={"status": "PASS", "binary_sha256": "b" * 64}),
+                patch("scripts.bench.harness_first.runner.claim_global_marker"),
+            ):
+                report = run_campaign(manifest, binary=binary, source_root=root, output=output)
+
+        worker_calls = [call for call in calls if "worker" in call and "status" in call]
+        self.assertEqual(len(worker_calls), 1)
+        self.assertEqual(calls[0][-1], "version")
+        self.assertIn("worker", calls[1])
+        self.assertIn("--no-daemon", calls[1])
+        self.assertEqual(calls[2][-2:], ["daemon", "stop"])
+        self.assertEqual(calls[3][-2:], ["index", "--clean"])
+        self.assertEqual(calls[3][-3], "--no-daemon")
+        self.assertIn("workspace-map", calls[4])
+        self.assertIn("--no-daemon", calls[4])
+        self.assertIn("wiki", calls[5])
+        self.assertIn("--no-daemon", calls[5])
+        # Resolve both sides: CI runners surface 8.3 short paths on Windows
+        # (RUNNER~1) and /private/var symlinked tmp dirs on macOS.
+        self.assertEqual({Path(value).resolve() for value in cwd_values}, {root.resolve()})
+        self.assertEqual(len(cwd_values), len(calls))
+        self.assertEqual(report["samples"][0]["elapsed_ms"], 7.0)
+        self.assertEqual(report["candidate_preflight"]["worker_elapsed_ms"], 3.0)
+        self.assertEqual(report["candidate_preflight"]["index_elapsed_ms"], 5.0)
+        self.assertEqual(report["candidate_preflight"]["freshness_elapsed_ms"], 6.0)
+        self.assertEqual(report["candidate_preflight"]["freshness"]["probe_count"], 1)
+        self.assertFalse(report["candidate_preflight"]["freshness"]["sample"])
+        self.assertTrue(report["candidate_preflight"]["freshness"]["excluded_from_latency"])
+        self.assertTrue(report["candidate_preflight"]["freshness"]["excluded_from_retry"])
+        self.assertEqual(report["latency_ms"]["n"], 1)
+        self.assertEqual(report["retry_amplification"]["attempts"], 1)
+        self.assertEqual(report["retry_amplification"]["amplification"], 1.0)
+        self.assertEqual(report["retry_amplification"]["max_attempts_per_query"], 1)
+        self.assertEqual(report["retry_amplification"]["status"], "PASS")
+        self.assertEqual(report["candidate_preflight"]["index"]["attempts"], 1)
+        self.assertEqual(report["candidate_preflight"]["daemon"]["status"], "NOT_REQUIRED")
+        self.assertEqual(report["candidate_preflight"]["daemon"]["stop"]["status"], "PASS")
+        self.assertFalse(report["candidate_preflight"]["daemon"]["stop"]["already_stopped"])
+
+    def test_blocked_candidate_preflight_does_not_burn_global_claim(self):
+        manifest = self.manifest()
+        responses = iter([
+            ProcessResult(0, 1.0, payload={"ok": True, "items": [{"version": "(devel)", "protocol_version": "mi-lsp-v1.1", "executable_sha256": "b" * 64}]}),
+            ProcessResult(0, 1.0, payload={"ok": True, "backend": "catalog", "items": []}),
+        ])
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            binary = root / "candidate"
+            binary.write_bytes(b"candidate")
+            output = root / "output"
+            with (
+                patch("scripts.bench.harness_first.runner.run_process", side_effect=lambda _argv, _timeout, *, cwd=None: next(responses)),
+                patch("scripts.bench.harness_first.runner.source_revision", return_value="a" * 40),
+                patch("scripts.bench.harness_first.runner.provenance", return_value={"status": "PASS", "binary_sha256": "b" * 64}),
+                patch("scripts.bench.harness_first.runner.claim_global_marker") as claim,
+            ):
+                report = run_campaign(manifest, binary=binary, source_root=root, output=output)
+        self.assertEqual(report["status"], "BLOCKED")
+        self.assertEqual(report["candidate_preflight"]["reason_code"], "worker_preflight_failed")
+        claim.assert_not_called()
+
+    def test_candidate_preflight_requires_daemon_setup_once_for_daemon_samples(self):
+        candidate_sha = "a" * 64
+        worker_payload = {"ok": True, "backend": "worker", "items": [{"selected_compatible": True, "selected_source": "bundle", "selected_path": "worker"}]}
+        status_payload = {"ok": True, "items": [{"state": {"executable_sha256": candidate_sha, "protocol_version": "mi-lsp-v1.1", "version": "(devel)"}}]}
+        responses = iter([
+            ProcessResult(0, 1.0, payload={"ok": True, "items": [{"version": "(devel)", "protocol_version": "mi-lsp-v1.1", "executable_sha256": candidate_sha}]}),
+            ProcessResult(0, 1.0, payload=worker_payload),
+            ProcessResult(0, 2.0, payload={"ok": True}),
+            ProcessResult(0, 3.0, payload={"ok": True, "backend": "index-job", "items": [{"status": "succeeded"}]}),
+            ProcessResult(0, 4.0, payload={"ok": True, "items": [{"graph_freshness": {"state": "current"}, "graph_ranks": []}]}),
+            ProcessResult(0, 5.0, payload={"ok": True}),
+            ProcessResult(0, 6.0, payload=status_payload),
+        ])
+        calls = []
+
+        def fake_run_process(argv, timeout, *, cwd=None):
+            calls.append(list(argv))
+            return next(responses)
+
+        with patch("scripts.bench.harness_first.runner.run_process", side_effect=fake_run_process):
+            result = _candidate_preflight(Path("candidate"), Path("source"), "campaign", ["worker", "status"], candidate_sha, 10.0, daemon_required=True)
+
+        self.assertEqual(result["status"], "PASS")
+        self.assertTrue(result["daemon_identity_match"])
+        self.assertEqual(len(calls), 7)
+        self.assertEqual(calls[0][-1], "version")
+        self.assertEqual(calls[1][-2:], ["worker", "status"])
+        self.assertEqual(calls[2][-2:], ["daemon", "stop"])
+        self.assertEqual(calls[3][-2:], ["index", "--clean"])
+        self.assertIn("--no-daemon", calls[3])
+        self.assertIn("--no-daemon", calls[4])
+        self.assertIn("workspace-map", calls[4])
+        self.assertEqual(calls[5][-2:], ["daemon", "start"])
+        self.assertEqual(calls[6][-2:], ["daemon", "status"])
+        self.assertEqual(result["worker_elapsed_ms"], 1.0)
+        self.assertEqual(result["index_elapsed_ms"], 3.0)
+        self.assertEqual(result["freshness_elapsed_ms"], 4.0)
+        self.assertEqual(result["daemon"]["start"]["elapsed_ms"], 5.0)
+        self.assertEqual(result["daemon"]["status_probe"]["elapsed_ms"], 6.0)
+        self.assertGreaterEqual(result["daemon"]["elapsed_ms"], 0.0)
+
+    def test_index_failure_blocks_before_claim(self):
+        manifest = {
+            "schema": "harness-first-campaign/v1",
+            "campaign_id": "index-failure",
+            "queries": [{"id": "wiki", "kind": "wiki_pack", "args": ["nav", "wiki", "pack", "task"], "modes": ["direct"]}],
+        }
+        responses = iter([
+            ProcessResult(0, 1.0, payload={"ok": True, "items": [{"version": "(devel)", "protocol_version": "mi-lsp-v1.1", "executable_sha256": "b" * 64}]}),
+            ProcessResult(0, 1.0, payload={"ok": True, "backend": "worker", "items": [{"selected_compatible": True, "selected_source": "bundle", "selected_path": "worker"}]}),
+            ProcessResult(0, 1.5, payload={"ok": True}),
+            ProcessResult(0, 2.0, payload={"ok": False, "items": [{"status": "failed"}]}),
+        ])
+        calls = []
+        def fake_run_process(argv, _timeout, *, cwd=None):
+            calls.append(list(argv))
+            return next(responses)
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            binary = root / "candidate"
+            binary.write_bytes(b"candidate")
+            output = root / "output"
+            with (
+                patch("scripts.bench.harness_first.runner.run_process", side_effect=fake_run_process),
+                patch("scripts.bench.harness_first.runner.source_revision", return_value="a" * 40),
+                patch("scripts.bench.harness_first.runner.provenance", return_value={"status": "PASS", "binary_sha256": "b" * 64}),
+                patch("scripts.bench.harness_first.runner.claim_global_marker") as claim,
+            ):
+                report = run_campaign(manifest, binary=binary, source_root=root, output=output)
+        self.assertEqual(report["status"], "BLOCKED")
+        self.assertEqual(report["candidate_preflight"]["reason_code"], "index_preflight_failed")
+        self.assertEqual(report["candidate_preflight"]["index"]["attempts"], 1)
+        self.assertEqual(len(calls), 4)
+        self.assertEqual(calls[2][-2:], ["daemon", "stop"])
+        self.assertEqual(calls[3][-2:], ["index", "--clean"])
+        claim.assert_not_called()
+
+    def test_stale_fixture_is_current_before_queries_after_index(self):
+        manifest = {
+            "schema": "harness-first-campaign/v1",
+            "campaign_id": "stale-fixture",
+            "queries": [{"id": "related", "kind": "related", "args": ["nav", "related", "BuildIntentPlan"], "modes": ["direct"], "freshness_rank_required": True}],
+        }
+        state = {"fresh": False}
+        calls = []
+        worker_payload = {"ok": True, "backend": "worker", "items": [{"selected_compatible": True, "selected_source": "bundle", "selected_path": "worker"}]}
+
+        def fake_run_process(argv, _timeout, *, cwd=None):
+            calls.append(list(argv))
+            if argv[-1] == "version":
+                return ProcessResult(0, 1.0, payload={"ok": True, "items": [{"version": "(devel)", "protocol_version": "mi-lsp-v1.1", "executable_sha256": "b" * 64}]})
+            if argv[-2:] == ["worker", "status"]:
+                return ProcessResult(0, 1.0, payload=worker_payload, rss_bytes=1, output_bytes=1, estimated_tokens=1)
+            if argv[-2:] == ["index", "--clean"]:
+                state["fresh"] = True
+                return ProcessResult(0, 2.0, payload={"ok": True, "backend": "index-job", "items": [{"status": "succeeded"}]}, rss_bytes=1, output_bytes=1, estimated_tokens=1)
+            if "admin" in argv:
+                return ProcessResult(0, 1.0, payload=[{"id": 1, "route": "direct", "backend": "roslyn", "operation": "nav.related", "client_name": "harness-first", "session_id": "stale-fixture"}], rss_bytes=1, output_bytes=1, estimated_tokens=1)
+            freshness = "current" if state["fresh"] else "unknown"
+            return ProcessResult(0, 3.0, payload={"ok": True, "items": [{"symbol": "BuildIntentPlan", "graph_freshness": {"state": freshness}, "graph_ranks": []}]}, rss_bytes=1, output_bytes=1, estimated_tokens=1)
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            binary = root / "candidate"
+            binary.write_bytes(b"candidate")
+            with (
+                patch("scripts.bench.harness_first.runner.run_process", side_effect=fake_run_process),
+                patch("scripts.bench.harness_first.runner.source_revision", return_value="a" * 40),
+                patch("scripts.bench.harness_first.runner.provenance", return_value={"status": "PASS", "binary_sha256": "b" * 64}),
+                patch("scripts.bench.harness_first.runner.claim_global_marker"),
+            ):
+                report = run_campaign(manifest, binary=binary, source_root=root, output=root / "output")
+        self.assertEqual(report["status"], "PASS")
+        self.assertEqual(report["samples"][0]["freshness_rank"]["graph_states"], ["current"])
+        index_position = calls.index(next(call for call in calls if call[-2:] == ["index", "--clean"]))
+        query_position = calls.index(next(call for call in calls if call[-3:] == ["nav", "related", "BuildIntentPlan"]))
+        self.assertLess(index_position, query_position)
+        self.assertEqual(sum(call[-2:] == ["index", "--clean"] for call in calls), 1)
+        self.assertEqual(report["candidate_preflight"]["freshness"]["probe_count"], 1)
+        self.assertFalse(report["candidate_preflight"]["freshness"]["sample"])
+        self.assertTrue(report["candidate_preflight"]["freshness"]["excluded_from_latency"])
+        self.assertTrue(report["candidate_preflight"]["freshness"]["excluded_from_retry"])
+
+    def test_freshness_unknown_or_stale_blocks_before_claim(self):
+        for state in ("unknown", "stale"):
+            with self.subTest(state=state):
+                manifest = {
+                    "schema": "harness-first-campaign/v1",
+                    "campaign_id": f"freshness-{state}",
+                    "queries": [{
+                        "id": "related",
+                        "kind": "related",
+                        "args": ["nav", "related", "BuildIntentPlan"],
+                        "modes": ["direct"],
+                        "freshness_rank_required": True,
+                    }],
+                }
+                worker_payload = {"ok": True, "backend": "worker", "items": [{"selected_compatible": True, "selected_source": "bundle", "selected_path": "worker"}]}
+                calls = []
+
+                def fake_run_process(argv, _timeout, *, cwd=None):
+                    calls.append(list(argv))
+                    if argv[-1] == "version":
+                        return ProcessResult(0, 1.0, payload={"ok": True, "items": [{"version": "(devel)", "protocol_version": "mi-lsp-v1.1", "executable_sha256": "b" * 64}]})
+                    if argv[-2:] == ["worker", "status"]:
+                        return ProcessResult(0, 1.0, payload=worker_payload)
+                    if argv[-2:] == ["daemon", "stop"]:
+                        return ProcessResult(0, 1.0, payload={"ok": True})
+                    if argv[-2:] == ["index", "--clean"]:
+                        return ProcessResult(0, 1.0, payload={"ok": True, "items": [{"status": "succeeded"}]})
+                    return ProcessResult(0, 1.0, payload={"ok": True, "items": [{"graph_freshness": {"state": state}, "graph_ranks": []}]})
+
+                with tempfile.TemporaryDirectory() as directory:
+                    root = Path(directory)
+                    binary = root / "candidate"
+                    binary.write_bytes(b"candidate")
+                    with (
+                        patch("scripts.bench.harness_first.runner.run_process", side_effect=fake_run_process),
+                        patch("scripts.bench.harness_first.runner.source_revision", return_value="a" * 40),
+                        patch("scripts.bench.harness_first.runner.provenance", return_value={"status": "PASS", "binary_sha256": "b" * 64}),
+                        patch("scripts.bench.harness_first.runner.claim_global_marker") as claim,
+                    ):
+                        report = run_campaign(manifest, binary=binary, source_root=root, output=root / "output")
+                self.assertEqual(report["status"], "BLOCKED")
+                self.assertEqual(report["candidate_preflight"]["reason_code"], "freshness_preflight_failed")
+                self.assertEqual(report["candidate_preflight"]["freshness"]["freshness"]["graph_states"], [state])
+                self.assertEqual(len(calls), 5)
+                self.assertEqual(sum(call[-2:] == ["index", "--clean"] for call in calls), 1)
+                claim.assert_not_called()
+
+    def test_real_parity_divergence_remains_fail(self):
+        manifest = {
+            "schema": "harness-first-campaign/v1",
+            "campaign_id": "parity-divergence",
+            "queries": [{"id": "related", "kind": "related", "args": ["nav", "related", "BuildIntentPlan"], "modes": ["direct", "daemon"], "parity_required": True, "freshness_rank_required": True}],
+        }
+        calls = []
+        last_route = {"value": "direct"}
+        worker_payload = {"ok": True, "backend": "worker", "items": [{"selected_compatible": True, "selected_source": "bundle", "selected_path": "worker"}]}
+        def fake_run_process(argv, _timeout, *, cwd=None):
+            calls.append(list(argv))
+            if argv[-1] == "version":
+                return ProcessResult(0, 1.0, payload={"ok": True, "items": [{"version": "(devel)", "protocol_version": "mi-lsp-v1.1", "executable_sha256": "b" * 64}]})
+            if argv[-2:] == ["worker", "status"]:
+                return ProcessResult(0, 1.0, payload=worker_payload)
+            if argv[-2:] == ["daemon", "stop"] or argv[-2:] == ["daemon", "start"]:
+                return ProcessResult(0, 1.0, payload={"ok": True})
+            if argv[-2:] == ["daemon", "status"]:
+                return ProcessResult(0, 1.0, payload={"ok": True, "items": [{"state": {"executable_sha256": "b" * 64, "protocol_version": "mi-lsp-v1.1", "version": "(devel)"}}]})
+            if argv[-2:] == ["index", "--clean"]:
+                return ProcessResult(0, 1.0, payload={"ok": True, "backend": "index-job", "items": [{"status": "succeeded"}]})
+            if "admin" in argv:
+                return ProcessResult(0, 1.0, payload=[{"id": len(calls), "route": last_route["value"], "backend": "roslyn", "operation": "nav.related", "client_name": "harness-first", "session_id": "parity-divergence"}])
+            symbol = "DirectSymbol" if "--no-daemon" in argv else "DaemonSymbol"
+            last_route["value"] = "direct" if "--no-daemon" in argv else "daemon"
+            return ProcessResult(0, 1.0, payload={"ok": True, "items": [{"symbol": symbol, "graph_freshness": {"state": "current"}, "graph_ranks": []}]})
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            binary = root / "candidate"
+            binary.write_bytes(b"candidate")
+            with (
+                patch("scripts.bench.harness_first.runner.run_process", side_effect=fake_run_process),
+                patch("scripts.bench.harness_first.runner.source_revision", return_value="a" * 40),
+                patch("scripts.bench.harness_first.runner.provenance", return_value={"status": "PASS", "binary_sha256": "b" * 64}),
+                patch("scripts.bench.harness_first.runner.claim_global_marker"),
+            ):
+                report = run_campaign(manifest, binary=binary, source_root=root, output=root / "output")
+        self.assertEqual(report["status"], "FAIL")
+        self.assertIn("parity_failed", report["failure_reasons"])
+        self.assertFalse(report["parity"]["results"]["related"])
+
+    def test_legitimate_nested_report_sizes_do_not_truncate(self):
+        query = {"id": "related", "kind": "related", "args": ["nav", "related", "BuildIntentPlan"], "freshness_rank_required": True}
+        for target_bytes in (6456, 9671, 12479, 21022):
+            with self.subTest(target_bytes=target_bytes):
+                nested = {"leaf": "x" * max(1, target_bytes - 256)}
+                for _ in range(12):
+                    nested = {"technical_context": nested}
+                payload = {"ok": True, "items": [{"symbol": "BuildIntentPlan", "graph_freshness": {"state": "current"}, "graph_ranks": [], "context": nested}]}
+                result = measured_query_check(query, payload)
+                self.assertEqual(result["status"], "PASS")
+                self.assertFalse(result["semantic_projection"]["truncated"])
+
+    def test_bounded_structural_diff_is_redacted_and_limited(self):
+        left = {"items": [{f"field_{index}": f"C:/private/{index}.cs"} for index in range(5)], "token": "secret-value"}
+        right = {"items": [{f"field_{index}": f"C:/other/{index}.cs"} for index in range(5)], "token": "other-secret"}
+        result = _bounded_structural_diff(left, right, max_diffs=2)
+        self.assertEqual(result["count"], 2)
+        self.assertTrue(result["truncated"])
+        self.assertNotIn("private", json.dumps(result))
+        self.assertNotIn("secret-value", json.dumps(result))
+
+    def test_equal_large_payload_digest_passes_without_structural_diff(self):
+        payload = {"items": list(range(4096))}
+        normalized_digest = digest(payload)
+        sample = {"status": "PASS", "normalized_digest": normalized_digest, "semantic_projection": {"truncated": False}}
+        with patch(
+            "scripts.bench.harness_first.runner._bounded_structural_diff",
+            return_value={"status": "TRUNCATED", "count": 0, "truncated": True, "items": []},
+        ) as structural_diff:
+            passed, diff = _parity_check(sample, sample, payload, payload)
+        self.assertTrue(passed)
+        self.assertEqual(diff["status"], "NOT_RUN")
+        structural_diff.assert_not_called()
+
+    def test_mismatched_normalized_digest_fails_with_structural_diagnostic(self):
+        direct = {"status": "PASS", "normalized_digest": "a" * 64, "semantic_projection": {"truncated": False}}
+        daemon = {"status": "PASS", "normalized_digest": "b" * 64, "semantic_projection": {"truncated": False}}
+        passed, diff = _parity_check(direct, daemon, {"value": "direct"}, {"value": "daemon"})
+        self.assertFalse(passed)
+        self.assertEqual(diff["status"], "DIFF")
+
+    def test_missing_normalized_digest_fails_closed(self):
+        direct = {"status": "PASS", "normalized_digest": None, "semantic_projection": {"truncated": False}}
+        daemon = {"status": "PASS", "normalized_digest": None, "semantic_projection": {"truncated": False}}
+        passed, _diff = _parity_check(direct, daemon, {"value": "same"}, {"value": "same"})
+        self.assertFalse(passed)
+
+    def test_truncated_semantic_projection_fails_even_with_equal_digest(self):
+        normalized_digest = "c" * 64
+        direct = {"status": "PASS", "normalized_digest": normalized_digest, "semantic_projection": {"truncated": True}}
+        daemon = {"status": "PASS", "normalized_digest": normalized_digest, "semantic_projection": {"truncated": True}}
+        passed, diff = _parity_check(direct, daemon, {"value": "same"}, {"value": "same"})
+        self.assertFalse(passed)
+        self.assertEqual(diff["status"], "NOT_RUN")
+
+    def test_projection_redacts_path_sensitive_phi_but_keeps_technical_symbols(self):
+        value = {
+            "C:/Users/Alice/notes.txt": "private path",
+            "patient_name": "Alice Example",
+            "diagnosis": "rare condition",
+            "MRN": "MRN-123456",
+            "email": "alice@example.com",
+            "symbol": "BuildIntentPlan",
+            "name": "BuildIntentPlan",
+        }
+        rendered = json.dumps(sanitize(value))
+        self.assertNotIn("C:/Users/Alice/notes.txt", rendered)
+        self.assertNotIn("Alice Example", rendered)
+        self.assertNotIn("rare condition", rendered)
+        self.assertNotIn("MRN-123456", rendered)
+        self.assertNotIn("alice@example.com", rendered)
+        self.assertIn("BuildIntentPlan", rendered)
+        self.assertIn('"name": "BuildIntentPlan"', rendered)
+
+    def test_neutral_keys_redact_known_token_formats_and_high_entropy_values(self):
+        values = [
+            "ghp_" + "A" * 36,
+            "github_pat_" + "A" * 30,
+            "glpat-" + "A" * 20,
+            "xoxb-1234567890-1234567890-abcdefghijkl",
+            "sk_live_" + "A" * 24,
+            "sk_test_" + "A" * 24,
+            "AKIA" + "A" * 16,
+            "Bearer " + "A" * 32,
+            "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c",
+            "Aa1+/Bb2-_Cc3+/Dd4-_Ee5+/Ff6-_Gg7+/Hh8-_Ii9+/Jj0-",
+        ]
+        for value in values:
+            with self.subTest(value=value[:12]):
+                rendered = json.dumps(sanitize({"metadata": value}), sort_keys=True)
+                self.assertNotIn(value, rendered)
+                self.assertIn("[REDACTED:", rendered)
+                self.assertEqual(sanitize(value), _bounded_diff_value(value))
+                self.assertNotIn(value, to_yaml({"metadata": value}))
+
+                diff = _bounded_structural_diff({"metadata": value}, {"metadata": "other-value"})
+                self.assertNotIn(value, json.dumps(diff, sort_keys=True))
+
+    def test_neutral_keys_keep_sha_revisions_digests_and_technical_symbols(self):
+        sha256 = "a" * 64
+        revision = "0123456789abcdef0123456789abcdef01234567"
+        semantic_id = "BuildIntentPlanWithManySemanticSegmentsAndTypes20260722"
+        value = {"sha256": sha256, "revision": revision, "semantic_id": semantic_id}
+        rendered = json.dumps(sanitize(value), sort_keys=True)
+        self.assertIn(sha256, rendered)
+        self.assertIn(revision, rendered)
+        self.assertIn(semantic_id, rendered)
+        self.assertEqual(_bounded_diff_value(sha256), sha256)
+        self.assertEqual(_bounded_diff_value(revision), revision)
+        self.assertEqual(_bounded_diff_value(semantic_id), semantic_id)
+
+    def test_credential_detection_is_bounded_by_projection_string_limit(self):
+        oversized = "Aa1+/" * 200
+        self.assertNotIn(oversized, json.dumps(sanitize({"metadata": oversized})))
+
+    def test_projection_truncation_fails_query_closed(self):
+        payload = {"ok": True, "items": [{"name": "BuildIntentPlan"}], "values": list(range(100000))}
+        result = measured_query_check(self.manifest()["queries"][0], payload)
+        self.assertEqual(result["status"], "FAIL")
+        self.assertEqual(result["semantic_projection"]["reason_code"], "projection_truncated")
+        self.assertIsNone(result["normalized_digest"])
+
+    def test_discovery_and_freshness_budget_stop_custom_mapping_before_contract(self):
+        values = {f"junk_{index}": {"nested": index} for index in range(100000)}
+        payload = CountingMapping(values)
+        self.assertIsNone(_find_preview_contract(payload))
+        self.assertLessEqual(payload.iterated, MAX_PROJECTION_MAPPING_ENTRIES)
+        payload = CountingMapping(values)
+        _ranks, graph, _rank_lists = _freshness_records(payload)
+        self.assertIn("__freshness_traversal_truncated__", [item.get("state") for item in graph])
+        self.assertLessEqual(payload.iterated, MAX_PROJECTION_MAPPING_ENTRIES)
+
+    def test_discovery_budget_stops_custom_list_before_final_contract(self):
+        payload = CountingList([{"junk": index} for index in range(100000)] + [{"preview": []}])
+        self.assertIsNone(_find_preview_contract(payload))
+        self.assertLessEqual(payload.iterated, MAX_PROJECTION_LIST_ITEMS)
+
+    def test_bounded_diff_stops_before_final_difference_in_huge_list(self):
+        left = list(range(100000))
+        right = list(range(100000))
+        right[-1] = -1
+        result = _bounded_structural_diff(left, right)
+        self.assertTrue(result["truncated"])
+        self.assertNotEqual(result["status"], "PASS")
+        self.assertLessEqual(result["count"], 32)
+
+    def test_giant_mapping_key_fails_closed_without_raw_key_or_digest(self):
+        giant_key = "k" * 100000
+        payload = {"ok": True, "items": [{"name": "BuildIntentPlan"}], giant_key: "value"}
+        result = measured_query_check(self.manifest()["queries"][0], payload)
+        rendered = json.dumps(result, sort_keys=True)
+        self.assertEqual(result["status"], "FAIL")
+        self.assertEqual(result["semantic_projection"]["reason_code"], "projection_truncated")
+        self.assertIsNone(result["normalized_digest"])
+        self.assertNotIn(giant_key, rendered)
+
+    def test_finite_rejects_bool_and_arbitrary_precision_integer_without_crash(self):
+        self.assertFalse(finite(True))
+        self.assertTrue(finite(1))
+        self.assertTrue(finite(1.0))
+        self.assertFalse(finite(10**1000))
+        result = measured_query_check(self.manifest()["queries"][0], {"ok": True, "items": [{"value": 10**1000}]})
+        self.assertEqual(result["status"], "FAIL")
+        self.assertEqual(result["semantic_projection"]["reason_code"], "projection_truncated")
+
+    def test_diff_redacts_relative_paths_and_clinical_text_after_difference(self):
+        left = {"src/private/patient_notes.txt": "Patient Alice has rare condition"}
+        right = {"src\\private\\patient_notes.txt": "Patient Bob has rare condition"}
+        result = _bounded_structural_diff(left, right)
+        rendered = json.dumps(result, sort_keys=True)
+        self.assertEqual(result["status"], "DIFF")
+        self.assertNotIn("src/private/patient_notes.txt", rendered)
+        self.assertNotIn("Patient Alice has rare condition", rendered)
+        self.assertNotIn("Patient Bob has rare condition", rendered)
+        self.assertNotIn("private", rendered)
+
+    def test_stats_ms_does_not_change_normalized_digest(self):
+        base = {"stats": {"ms": 10, "symbols": 4, "files": 2}}
+        changed = {"stats": {"ms": 900, "symbols": 4, "files": 2}}
+        self.assertEqual(digest(normalize(base)), digest(normalize(changed)))
+
+    def test_normalized_stats_preserve_semantic_fields(self):
+        normalized = normalize({"stats": {"ms": 10, "symbols": 4, "files": 2, "references": 7}})
+        self.assertNotIn("ms", normalized["stats"])
+        self.assertEqual(normalized["stats"]["symbols"], 4)
+        self.assertEqual(normalized["stats"]["files"], 2)
+        self.assertEqual(normalized["stats"]["references"], 7)
+
+    def test_query_check_direct_and_daemon_ignore_route_and_stats_ms_for_digest(self):
+        query = {"id": "search", "kind": "search", "args": ["nav", "search", "BuildIntentPlan"]}
+        direct = {
+            "ok": True,
+            "route": "direct",
+            "backend": "catalog",
+            "stats": {"ms": 10, "symbols": 4, "files": 2},
+            "items": [{"name": "BuildIntentPlan"}],
+        }
+        daemon = {
+            "ok": True,
+            "route": "daemon",
+            "backend": "roslyn",
+            "stats": {"ms": 900, "symbols": 4, "files": 2},
+            "items": [{"name": "BuildIntentPlan"}],
+        }
+        direct_result = query_check(query, direct, output_bytes=1, estimated_tokens=1)
+        daemon_result = query_check(query, daemon, output_bytes=1, estimated_tokens=1)
+        self.assertEqual(direct_result["status"], "PASS")
+        self.assertEqual(daemon_result["status"], "PASS")
+        self.assertEqual(direct_result["normalized_digest"], daemon_result["normalized_digest"])
+
+    def test_telemetry_selection_prefers_highest_id_in_newest_first_export(self):
+        events = [
+            {"id": 42, "route": "daemon", "backend": "roslyn", "operation": "nav.related", "client_name": "harness-first", "session_id": "campaign"},
+            {"id": 41, "route": "direct", "backend": "catalog", "operation": "nav.related", "client_name": "harness-first", "session_id": "campaign"},
+        ]
+        selected = _select_latest_telemetry_event(
+            events,
+            campaign_id="campaign",
+            client_name="harness-first",
+            operation="nav.related",
+        )
+        self.assertIsNotNone(selected)
+        self.assertEqual(selected["route"], "daemon")
+
+    def test_telemetry_selection_prefers_highest_id_when_export_order_is_inverted(self):
+        events = [
+            {"id": 41, "route": "direct", "backend": "catalog", "operation": "nav.related", "client_name": "harness-first", "session_id": "campaign"},
+            {"id": 42, "route": "daemon", "backend": "roslyn", "operation": "nav.related", "client_name": "harness-first", "session_id": "campaign"},
+        ]
+        selected = _select_latest_telemetry_event(
+            events,
+            campaign_id="campaign",
+            client_name="harness-first",
+            operation="nav.related",
+        )
+        self.assertIsNotNone(selected)
+        self.assertEqual(selected["route"], "daemon")
+
+    def test_telemetry_selection_falls_back_for_missing_or_malformed_ids(self):
+        timestamped = [
+            {"id": "not-a-number", "occurred_at": "2026-07-22T12:01:00Z", "route": "daemon", "operation": "nav.related", "client_name": "harness-first", "session_id": "campaign"},
+            {"occurred_at": "2026-07-22T12:00:00Z", "route": "direct", "operation": "nav.related", "client_name": "harness-first", "session_id": "campaign"},
+        ]
+        selected = _select_latest_telemetry_event(
+            timestamped,
+            campaign_id="campaign",
+            client_name="harness-first",
+            operation="nav.related",
+        )
+        self.assertIsNotNone(selected)
+        self.assertEqual(selected["route"], "daemon")
+
+        export_order_fallback = [
+            {"route": "daemon", "operation": "nav.related", "client_name": "harness-first", "session_id": "campaign"},
+            {"id": "malformed", "route": "direct", "operation": "nav.related", "client_name": "harness-first", "session_id": "campaign"},
+        ]
+        selected = _select_latest_telemetry_event(
+            export_order_fallback,
+            campaign_id="campaign",
+            client_name="harness-first",
+            operation="nav.related",
+        )
+        self.assertIsNotNone(selected)
+        self.assertEqual(selected["route"], "daemon")
+
+    def test_telemetry_selection_filters_campaign_client_and_operation_before_ordering(self):
+        events = [
+            {"id": 99, "route": "daemon", "operation": "nav.related", "client_name": "other-client", "session_id": "campaign"},
+            {"id": 98, "route": "daemon", "operation": "nav.search", "client_name": "harness-first", "session_id": "campaign"},
+            {"id": 97, "route": "daemon", "operation": "nav.related", "client_name": "harness-first", "session_id": "other-campaign"},
+            {"id": 42, "route": "daemon", "backend": "roslyn", "operation": "nav.related", "client_name": "harness-first", "session_id": "campaign"},
+            {"id": 41, "route": "direct", "backend": "catalog", "operation": "nav.related", "client_name": "harness-first", "session_id": "campaign"},
+        ]
+        selected = _select_latest_telemetry_event(
+            events,
+            campaign_id="campaign",
+            client_name="harness-first",
+            operation="nav.related",
+        )
+        self.assertIsNotNone(selected)
+        self.assertEqual(selected["route"], "daemon")
+        self.assertEqual(selected["id"], 42)
+
+    def test_budget_drift_is_rejected(self):
+        manifest = self.manifest()
+        manifest["budgets"] = {"parity": False}
+        with self.assertRaises(HarnessError):
+            validate_manifest(manifest)
+
+    def test_manifest_rejects_unknown_kind(self):
+        manifest = self.manifest()
+        manifest["queries"][0]["kind"] = "unknown_kind"
+        with self.assertRaises(HarnessError):
+            validate_manifest(manifest)
+
+    def test_explain_change_requires_preview(self):
+        manifest = self.manifest()
+        manifest["queries"][0].pop("preview_required")
+        with self.assertRaises(HarnessError):
+            validate_manifest(manifest)
+
+    def test_related_requires_freshness_rank_flag(self):
+        manifest = {
+            "schema": "harness-first-campaign/v1",
+            "campaign_id": "related-contract",
+            "queries": [{
+                "id": "related",
+                "kind": "related",
+                "args": ["nav", "related", "BuildIntentPlan"],
+                "modes": ["direct"],
+            }],
+        }
+        with self.assertRaises(HarnessError):
+            validate_manifest(manifest)
+
+    def test_workspace_map_requires_freshness_rank_flag(self):
+        manifest = {
+            "schema": "harness-first-campaign/v1",
+            "campaign_id": "workspace-contract",
+            "queries": [{
+                "id": "workspace-map",
+                "kind": "workspace_map",
+                "args": ["nav", "workspace-map"],
+                "modes": ["direct"],
+                "freshness_rank_required": False,
+            }],
+        }
+        with self.assertRaises(HarnessError):
+            validate_manifest(manifest)
+
+    def test_stale_graph_requires_flag_and_cannot_be_passed_operationally(self):
+        manifest = {
+            "schema": "harness-first-campaign/v1",
+            "campaign_id": "stale-contract",
+            "queries": [{
+                "id": "related",
+                "kind": "related",
+                "args": ["nav", "related", "BuildIntentPlan"],
+                "modes": ["direct"],
+            }],
+        }
+        with self.assertRaises(HarnessError):
+            validate_manifest(manifest)
+
+    def test_freshness_not_required_is_not_a_failure(self):
+        result = measured_query_check(self.manifest()["queries"][0], self.preview_payload())
+        self.assertEqual(result["status"], "PASS")
+        self.assertEqual(result["freshness_rank"]["status"], "NOT_REQUIRED")
+
+    def test_freshness_required_passes_only_with_evidence(self):
+        query = dict(self.manifest()["queries"][0], freshness_rank_required=True)
+        payload = self.preview_payload()
+        payload["items"][0]["freshness_rank"] = 1
+        payload["items"][0]["graph_freshness"] = {"state": "current"}
+        result = measured_query_check(query, payload)
+        self.assertEqual(result["status"], "PASS")
+        self.assertEqual(result["freshness_rank"]["status"], "PASS")
+
+        payload.pop("items")[0] if False else None
+        missing = self.preview_payload()
+        failed = measured_query_check(query, missing)
+        self.assertEqual(failed["status"], "FAIL")
+        self.assertEqual(failed["freshness_rank"]["status"], "FAIL")
+
+    def test_non_current_freshness_states_never_pass(self):
+        query = {"id": "related", "kind": "related", "args": ["nav", "related", "BuildIntentPlan"], "freshness_rank_required": True}
+        for state in ("lagging", "stale", "invalid", "unknown"):
+            with self.subTest(state=state):
+                payload = {"ok": True, "items": [{"graph_freshness": {"state": state}, "graph_ranks": [1]}]}
+                result = measured_query_check(query, payload)
+                self.assertEqual(result["status"], "FAIL")
+                self.assertEqual(result["freshness_rank"]["status"], "FAIL")
+
+    def test_mixed_freshness_states_fail_closed(self):
+        query = {"id": "related", "kind": "related", "args": ["nav", "related", "BuildIntentPlan"], "freshness_rank_required": True}
+        payload = {"ok": True, "items": [{"graph_freshness": {"state": "current"}, "graph_ranks": [1]}], "metadata": {"graph_freshness": {"state": "lagging"}}}
+        result = measured_query_check(query, payload)
+        self.assertEqual(result["freshness_rank"]["status"], "FAIL")
+        self.assertEqual(result["status"], "FAIL")
+
+    def test_stale_state_at_list_index_64_fails(self):
+        query = {"id": "related", "kind": "related", "args": ["nav", "related", "BuildIntentPlan"], "freshness_rank_required": True}
+        current = {"graph_freshness": {"state": "current"}, "graph_ranks": []}
+        stale = {"graph_freshness": {"state": "stale"}, "graph_ranks": []}
+        payload = {"ok": True, "items": [current.copy() for _ in range(64)] + [stale]}
+        result = measured_query_check(query, payload)
+        self.assertEqual(result["freshness_rank"]["status"], "FAIL")
+        self.assertIn("stale", result["freshness_rank"]["graph_states"])
+
+    def test_nesting_beyond_freshness_limit_fails_closed(self):
+        query = {"id": "related", "kind": "related", "args": ["nav", "related", "BuildIntentPlan"], "freshness_rank_required": True}
+        nested = {"graph_freshness": {"state": "current"}}
+        for _ in range(MAX_PROJECTION_DEPTH + 1):
+            nested = {"nested": nested}
+        payload = {"ok": True, "items": [{"graph_freshness": {"state": "current"}, "graph_ranks": []}], "metadata": nested}
+        result = measured_query_check(query, payload)
+        self.assertEqual(result["freshness_rank"]["status"], "FAIL")
+        self.assertIn("__freshness_traversal_truncated__", result["freshness_rank"]["graph_states"])
+
+    def test_preview_requires_each_section_to_be_available_or_explained(self):
+        result = measured_query_check(self.manifest()["queries"][0], self.preview_payload())
+        self.assertEqual(result["status"], "PASS")
+        self.assertEqual(result["preview"]["sections"], list(SECTIONS))
+        self.assertEqual(result["preview"]["omissions"]["callers"], "no callers evidence was available")
+        self.assertEqual(result["preview"]["expansions"]["valid"], 1)
+
+    def test_preview_rejects_split_command_and_reason_fields(self):
+        payload = self.preview_payload()
+        payload["items"][0]["expansions"] = [
+            {"command": "mi-lsp nav affected --full"},
+            {"reason": "split fields must not be accepted"},
+        ]
+        result = measured_query_check(self.manifest()["queries"][0], payload)
+        self.assertEqual(result["status"], "FAIL")
+        self.assertEqual(result["preview"]["expansions"]["complete"], False)
+        self.assertEqual(len(result["preview"]["expansions"]["invalid"]), 2)
+
+    def test_preview_rejects_non_nav_expansion_command(self):
+        payload = self.preview_payload()
+        payload["items"][0]["expansions"] = [{"command": "next", "reason": "wrong command family"}]
+        result = measured_query_check(self.manifest()["queries"][0], payload)
+        self.assertEqual(result["status"], "FAIL")
+
+    def test_sample_measurements_are_fail_closed(self):
+        query = self.manifest()["queries"][0]
+        for output_bytes, estimated_tokens in ((None, None), (None, 1), (1, None), (0, 1), (1, 0), (-1, 1), (1, -1)):
+            with self.subTest(output_bytes=output_bytes, estimated_tokens=estimated_tokens):
+                result = query_check(query, self.preview_payload(), output_bytes=output_bytes, estimated_tokens=estimated_tokens)
+                self.assertEqual(result["status"], "FAIL")
+                self.assertEqual(result["sample_measurements"]["status"], "FAIL")
+
+        passed = query_check(query, self.preview_payload(), output_bytes=1, estimated_tokens=1)
+        self.assertEqual(passed["status"], "PASS")
+        self.assertEqual(passed["sample_measurements"]["status"], "PASS")
+
+    def test_kind_schema_checks_are_not_ok_only(self):
+        wiki = {"ok": True, "items": [{"docs": []}]}
+        wiki_query = {"id": "wiki", "kind": "wiki_pack", "args": ["nav", "wiki", "pack", "task"]}
+        self.assertEqual(measured_query_check(wiki_query, wiki)["status"], "FAIL")
+
+        related = {"ok": True, "items": [{"symbol": "BuildIntentPlan", "graph_freshness": {"state": "current"}}]}
+        related_query = {"id": "related", "kind": "related", "args": ["nav", "related", "BuildIntentPlan"], "freshness_rank_required": True}
+        self.assertEqual(measured_query_check(related_query, related)["status"], "FAIL")
+
+    def test_real_freshness_and_rank_shape_passes_for_related(self):
+        payload = {
+            "ok": True,
+            "items": [{"symbol": "BuildIntentPlan", "graph_freshness": {"state": "current"}, "graph_ranks": []}],
+        }
+        query = {"id": "related", "kind": "related", "args": ["nav", "related", "BuildIntentPlan"], "freshness_rank_required": True}
+        result = measured_query_check(query, payload)
+        self.assertEqual(result["status"], "PASS")
+        self.assertEqual(result["freshness_rank"]["status"], "PASS")
+
+    def test_graph_shape_and_freshness_are_separate_fail_closed_gates(self):
+        for kind, args in (("related", ["nav", "related", "BuildIntentPlan"]), ("workspace_map", ["nav", "workspace-map"])):
+            query = {"id": kind, "kind": kind, "args": args, "freshness_rank_required": True}
+            unknown = {"ok": True, "items": [{"graph_freshness": {"state": "unknown"}, "graph_ranks": []}]}
+            unknown_result = measured_query_check(query, unknown)
+            self.assertEqual(unknown_result["kind_schema"]["status"], "PASS")
+            self.assertEqual(unknown_result["freshness_rank"]["status"], "FAIL")
+            self.assertEqual(unknown_result["status"], "FAIL")
+
+            current = {"ok": True, "items": [{"graph_freshness": {"state": "current"}, "graph_ranks": []}]}
+            current_result = measured_query_check(query, current)
+            self.assertEqual(current_result["status"], "PASS")
+            self.assertEqual(current_result["kind_schema"]["status"], "PASS")
+            self.assertEqual(current_result["freshness_rank"]["status"], "PASS")
+
+            missing = {"ok": True, "items": [{}]}
+            missing_result = measured_query_check(query, missing)
+            self.assertEqual(missing_result["kind_schema"]["status"], "FAIL")
+            self.assertEqual(missing_result["status"], "FAIL")
+
+    def test_worker_status_requires_real_usable_evidence(self):
+        usable = {"ok": True, "backend": "worker", "items": [{"selected_compatible": True, "selected_source": "bundle", "selected_path": "worker"}]}
+        self.assertEqual(worker_status_check(usable)["status"], "PASS")
+        terminal = {"ok": True, "backend": "worker", "items": [{"selected_compatible": False, "selected_error": "protocol mismatch"}]}
+        self.assertEqual(worker_status_check(terminal)["status"], "FAIL")
+        invented = {"ok": True, "backend": "worker", "items": [{"terminal_state": "ready"}]}
+        self.assertEqual(worker_status_check(invented)["status"], "FAIL")
+        bad = {"ok": True, "backend": "catalog", "items": []}
+        self.assertEqual(worker_status_check(bad)["status"], "FAIL")
+
+    def test_marker_is_exclusive(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / MARKER_NAME
+            value = {"schema": "harness-first-run-marker/v1", "source_revision": "a" * 40}
+            write_marker(path, value)
+            with self.assertRaises(HarnessError) as raised:
+                write_marker(path, value)
+            self.assertEqual(raised.exception.reason_code, "marker_exists")
+
+    def test_global_marker_uses_candidate_tuple_not_output_path(self):
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory)
+            candidate = {"campaign_id": "campaign", "source_revision": "a" * 40, "binary_sha256": "b" * 64}
+            claim_global_marker(source, candidate)
+            with self.assertRaises(HarnessError) as raised:
+                claim_global_marker(source, candidate)
+            self.assertEqual(raised.exception.reason_code, "marker_exists")
+
+    def test_global_marker_claim_is_atomic_under_threads(self):
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory)
+            candidate = {"campaign_id": "campaign", "source_revision": "a" * 40, "binary_sha256": "b" * 64}
+
+            def attempt(_index):
+                try:
+                    claim_global_marker(source, candidate)
+                    return "claimed"
+                except HarnessError as error:
+                    return error.reason_code
+
+            with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
+                results = list(pool.map(attempt, range(32)))
+            self.assertEqual(results.count("claimed"), 1)
+            self.assertEqual(results.count("marker_exists"), 31)
+
+    def test_go_version_metadata_parser_is_fail_closed(self):
+        text = "path example\nbuild\tvcs.revision=" + "a" * 40 + "\nbuild\tvcs.modified=false\n"
+        parsed = parse_go_version_m(text)
+        self.assertEqual(parsed["revision"], "a" * 40)
+        self.assertEqual(parsed["modified"], False)
+        self.assertTrue(parsed["parsed"])
+        self.assertFalse(parse_go_version_m("build vcs.revision " + "a" * 40)["parsed"])
+
+    def test_rss_gate_includes_worker_and_fails_closed(self):
+        samples = [{"peak_rss_bytes": 10}]
+        worker = {"peak_rss_bytes": None}
+        report = _rss_report(samples, worker, 100)
+        self.assertEqual(report["status"], "NOT_RUN")
+        self.assertTrue(report["includes_worker_status"])
+
+    def test_rss_sampler_invalidates_children_and_rss_errors(self):
+        class AccessDenied(Exception):
+            pass
+
+        class NoSuchProcess(Exception):
+            pass
+
+        class FakePsutil:
+            pass
+
+        FakePsutil.NoSuchProcess = NoSuchProcess
+        FakePsutil.AccessDenied = AccessDenied
+
+        class ProcessHandle:
+            def __init__(self, *, children_error=None, rss_error=None, child=None):
+                self.children_error = children_error
+                self.rss_error = rss_error
+                self.child = child
+
+            def children(self, recursive=True):
+                if self.children_error is not None:
+                    raise self.children_error
+                return [self.child] if self.child is not None else []
+
+            def memory_info(self):
+                if self.rss_error is not None:
+                    raise self.rss_error
+                return SimpleNamespace(rss=10)
+
+        for root in (
+            ProcessHandle(children_error=AccessDenied()),
+            ProcessHandle(child=ProcessHandle(rss_error=AccessDenied())),
+        ):
+            with self.subTest(error="observation"):
+                sampler = _RSSSampler(SimpleNamespace(pid=123))
+                sampler.psutil = FakePsutil
+                sampler.psutil.Process = lambda _pid, root=root: root
+                sampler._sample()
+                self.assertTrue(sampler.failure)
+                self.assertIsNone(sampler.stop())
+
+        root = ProcessHandle(child=ProcessHandle(rss_error=NoSuchProcess()))
+        sampler = _RSSSampler(SimpleNamespace(pid=123))
+        sampler.psutil = FakePsutil
+        original_children = root.children
+
+        def one_observation(*, recursive=True):
+            result = original_children(recursive=recursive)
+            sampler.stop_event.set()
+            return result
+
+        root.children = one_observation
+        sampler.psutil.Process = lambda _pid: root
+        sampler._sample()
+        self.assertFalse(sampler.failure)
+        self.assertEqual(sampler.stop(), 10)
+
+    def test_release_post_gate_reads_remote_assets_in_clean_dirs(self):
+        workflow = (Path(__file__).parents[4] / ".github" / "workflows" / "release.yml").read_text(encoding="utf-8")
+        post_gate = workflow.split("Re-verify published-build metadata and worker bundles from release assets", 1)[1]
+        self.assertIn('gh release download "$GITHUB_REF_NAME"', post_gate)
+        self.assertIn('published_dir="$(mktemp -d)"', post_gate)
+        self.assertIn('extracted_dir="$(mktemp -d)"', post_gate)
+        self.assertIn("sha256sum -c", post_gate)
+        self.assertIn("go version -m", post_gate)
+        self.assertIn("worker_root", post_gate)
+        self.assertIn("declare -A expected_set=()", post_gate)
+        self.assertIn("declare -A seen_names=()", post_gate)
+        self.assertIn('test -z "${seen_names[$checksum_name]+present}"', post_gate)
+        self.assertIn('test -n "${expected_set[$checksum_name]+present}"', post_gate)
+        self.assertIn('test "$checksum_count" -eq 6', post_gate)
+        self.assertIn('for expected_name in "${expected_names[@]}"', post_gate)
+        self.assertIn('test "$checksum_name" = "$(basename -- "$checksum_name")"', post_gate)
+        self.assertIn('[[ "$checksum_name" != /* && "$checksum_name" != */* && "$checksum_name" != *..* ]]', post_gate)
+        self.assertNotIn("find dist", post_gate)
+
+    def test_checksum_file_is_regular_and_inside_download_directory_before_read(self):
+        workflow = (Path(__file__).parents[4] / ".github" / "workflows" / "release.yml").read_text(encoding="utf-8")
+        post_gate = workflow.split("Re-verify published-build metadata and worker bundles from release assets", 1)[1]
+        selected = post_gate.index('checksum_file="${checksum_files[0]}"')
+        regular = post_gate.index('test -f "$checksum_file"')
+        nonsymlink = post_gate.index('test ! -L "$checksum_file"')
+        resolved = post_gate.index('checksum_real="$(realpath -e -- "$checksum_file")"')
+        read_loop = post_gate.index('while IFS= read -r checksum_line; do')
+        self.assertLess(selected, regular)
+        self.assertLess(regular, nonsymlink)
+        self.assertLess(nonsymlink, resolved)
+        self.assertLess(resolved, read_loop)
+        self.assertIn('[[ "$checksum_real" == "$published_real/"* ]]', post_gate)
+
+    def test_release_checksum_gate_rejects_duplicate_or_missing_names(self):
+        workflow = (Path(__file__).parents[4] / ".github" / "workflows" / "release.yml").read_text(encoding="utf-8")
+        post_gate = workflow.split("Re-verify published-build metadata and worker bundles from release assets", 1)[1]
+        self.assertIn('test -z "${seen_names[$checksum_name]+present}"', post_gate)
+        self.assertIn('test -n "${expected_set[$checksum_name]+present}"', post_gate)
+        self.assertIn('test "$checksum_count" -eq 6', post_gate)
+        self.assertIn('for expected_name in "${expected_names[@]}"', post_gate)
+
+    def test_release_post_gate_accepts_equals_and_whitespace_metadata(self):
+        workflow = (Path(__file__).parents[4] / ".github" / "workflows" / "release.yml").read_text(encoding="utf-8")
+        self.assertIn(r'vcs\.revision(=|[[:space:]]+)', workflow)
+        self.assertIn(r'vcs\.modified(=|[[:space:]]+)', workflow)
+
+    def test_yaml_sanitizes_native_output_and_payload(self):
+        rendered = to_yaml({"status": "PASS", "stdout": "must not be persisted", "payload": {"secret": "no"}})
+        self.assertIn('status: "PASS"', rendered)
+        self.assertNotIn("stdout", rendered)
+        self.assertNotIn("payload", rendered)
+
+
+if __name__ == "__main__":
+    unittest.main()

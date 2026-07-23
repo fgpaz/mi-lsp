@@ -3,6 +3,8 @@ package cli
 import (
 	"strings"
 	"testing"
+
+	"github.com/spf13/cobra"
 )
 
 func TestNavCommandExposesRepoScopeFlags(t *testing.T) {
@@ -34,6 +36,23 @@ func TestNavCommandExposesRepoScopeFlags(t *testing.T) {
 		if subcommand.Flags().Lookup("offset") == nil {
 			t.Fatalf("%s command should expose --offset", name)
 		}
+	}
+}
+
+func TestDiffContextPayloadCarriesGraphImpactOptions(t *testing.T) {
+	payload := diffContextPayload("HEAD~1", true, "generation-1", "transitive", 3, 12, 800, true, true, []string{"calls", "tests"})
+	checks := map[string]any{
+		"ref": "HEAD~1", "include_content": true, "generation": "generation-1", "mode": "transitive",
+		"depth": 3, "limit": 12, "token_budget": 800, "include_tests": true, "include_docs": true,
+	}
+	for key, want := range checks {
+		if got := payload[key]; got != want {
+			t.Fatalf("payload[%q] = %#v, want %#v", key, got, want)
+		}
+	}
+	edges, ok := payload["edge"].([]string)
+	if !ok || strings.Join(edges, ",") != "calls,tests" {
+		t.Fatalf("payload edge = %#v, want calls,tests", payload["edge"])
 	}
 }
 
@@ -129,6 +148,11 @@ func TestNavCommandExposesWikiGroup(t *testing.T) {
 	}
 	if validateSource.Name() != "validate-source" {
 		t.Fatalf("wiki validate-source command name = %q, want validate-source", validateSource.Name())
+	}
+	for _, flag := range []string{"ids", "paths"} {
+		if validateSource.Flags().Lookup(flag) == nil {
+			t.Fatalf("wiki validate-source should expose --%s", flag)
+		}
 	}
 }
 
@@ -257,5 +281,40 @@ func TestNavWikiInventory_ExposesWithLayerCountsFlag(t *testing.T) {
 	}
 	if inventory.Flags().Lookup("with-layer-counts") == nil {
 		t.Fatalf("wiki inventory should expose --with-layer-counts")
+	}
+}
+
+func TestNavPackCommandsForwardExactOperationIDs(t *testing.T) {
+	var gotOperation string
+	var gotPreferDaemon bool
+	state := &rootState{executeOperationHook: func(_ *cobra.Command, operation string, _ map[string]any, preferDaemon bool) error {
+		gotOperation = operation
+		gotPreferDaemon = preferDaemon
+		return nil
+	}}
+	command := newNavCommand(state)
+	for _, tc := range []struct {
+		name      string
+		path      []string
+		operation string
+	}{
+		{name: "legacy", path: []string{"pack"}, operation: "nav.pack"},
+		{name: "wiki", path: []string{"wiki", "pack"}, operation: "nav.wiki.pack"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			pack, _, err := command.Find(tc.path)
+			if err != nil {
+				t.Fatalf("find %s command: %v", strings.Join(tc.path, " "), err)
+			}
+			if err := pack.RunE(pack, []string{"governance"}); err != nil {
+				t.Fatalf("run %s command: %v", strings.Join(tc.path, " "), err)
+			}
+			if gotOperation != tc.operation {
+				t.Fatalf("operation = %q, want %q", gotOperation, tc.operation)
+			}
+			if gotPreferDaemon {
+				t.Fatalf("%s should use direct execution to avoid stale daemon recursion", tc.operation)
+			}
+		})
 	}
 }

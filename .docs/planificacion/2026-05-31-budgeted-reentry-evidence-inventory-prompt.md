@@ -50,6 +50,8 @@ evidence:
   - internal/service/evidence_inventory_test.go
 ```
 
+The original session bundle is not retained in this checkout; the harness lists only committed design, contract, implementation, and test evidence instead of fabricating historical audit files.
+
 ## Objective
 
 Implement a low-token navigation improvement for agents using `mi-lsp`.

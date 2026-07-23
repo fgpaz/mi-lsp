@@ -49,7 +49,8 @@ func createIndexedWorkspaceFixture(t *testing.T, alias string) string {
 	t.Helper()
 	ensureWritableTestHome(t)
 	root := t.TempDir()
-	writeWorkspaceFile(t, root, "src/App.csproj", `<Project Sdk="Microsoft.NET.Sdk"></Project>`)
+	writeWorkspaceFile(t, root, "go.mod", "module example.com/fixture\n\ngo 1.23\n")
+	writeWorkspaceFile(t, root, "main.go", "package fixture\n")
 	writeWorkspaceFile(t, root, "src/daemon/router.cs", strings.Join([]string{
 		"namespace Demo;",
 		"public class DaemonRouter",
@@ -65,6 +66,7 @@ func createIndexedWorkspaceFixture(t *testing.T, alias string) string {
 		"- backend: daemon",
 	}, "\n"))
 	writeSpecBackendGovernanceFixture(t, root)
+	saveDetectedFixtureProjectWithIdentity(t, root, alias)
 	return root
 }
 
@@ -72,7 +74,7 @@ func createLinkedDocsWorkspaceFixture(t *testing.T, alias string) string {
 	t.Helper()
 	ensureWritableTestHome(t)
 	root := t.TempDir()
-	writeWorkspaceFile(t, root, "src/App.csproj", `<Project Sdk="Microsoft.NET.Sdk"></Project>`)
+	writeWorkspaceFile(t, root, "go.mod", "module example.com/fixture\n\ngo 1.23\n")
 	writeWorkspaceFile(t, root, "internal/service/ask.go", "package service\n\nfunc docsFirst() {}\n")
 	writeWorkspaceFile(t, root, ".docs/wiki/03_FL/FL-QRY-01.md", strings.Join([]string{
 		"# FL-QRY-01",
@@ -90,6 +92,7 @@ func createLinkedDocsWorkspaceFixture(t *testing.T, alias string) string {
 		"Contrato de `nav ask` conectado con `internal/service/ask.go`.",
 	}, "\n"))
 	writeSpecBackendGovernanceFixture(t, root)
+	saveDetectedFixtureProjectWithIdentity(t, root, alias)
 	return root
 }
 
@@ -97,7 +100,8 @@ func createGenericDocsWorkspaceFixture(t *testing.T, alias string) string {
 	t.Helper()
 	ensureWritableTestHome(t)
 	root := t.TempDir()
-	writeWorkspaceFile(t, root, "src/App.csproj", `<Project Sdk="Microsoft.NET.Sdk"></Project>`)
+	writeWorkspaceFile(t, root, "go.mod", "module example.com/fixture\n\ngo 1.23\n")
+	writeWorkspaceFile(t, root, "main.go", "package fixture\n")
 	writeWorkspaceFile(t, root, "README.md", strings.Join([]string{
 		"# Demo workspace",
 		"",
@@ -111,6 +115,7 @@ func createGenericDocsWorkspaceFixture(t *testing.T, alias string) string {
 		"}",
 	}, "\n"))
 	writeSpecBackendGovernanceFixture(t, root)
+	saveDetectedFixtureProjectWithIdentity(t, root, alias)
 	return root
 }
 
@@ -175,6 +180,64 @@ func TestWorkspaceInitRegistersAndIndexes(t *testing.T) {
 	}
 	if _, err := workspace.ResolveWorkspace(alias); err != nil {
 		t.Fatalf("ResolveWorkspace(%s): %v", alias, err)
+	}
+}
+
+func TestNavAskAllWorkspacesPreservesSupportedIntentPlansDeterministically(t *testing.T) {
+	ensureWritableTestHome(t)
+	aliases := []string{"ask-plan-zeta", "ask-plan-alpha"}
+	for _, alias := range aliases {
+		root := t.TempDir()
+		writeWorkspaceFile(t, root, "src/router.go", "package router\n\nfunc HandleRequest() {}\n")
+		writeSpecBackendGovernanceFixture(t, root)
+		registerServiceWorkspace(t, alias, root)
+	}
+
+	app := New(t.TempDir(), nil)
+	request := model.CommandRequest{
+		Operation: "nav.ask",
+		Context:   model.QueryOptions{MaxItems: 10},
+		Payload: map[string]any{
+			"question":       "callers of HandleRequest",
+			"intent":         "callers",
+			"all_workspaces": true,
+		},
+	}
+	first, err := app.Execute(context.Background(), request)
+	if err != nil {
+		t.Fatalf("nav.ask --all-workspaces: %v", err)
+	}
+	plans, ok := first.Items.([]model.IntentPlan)
+	if !ok || len(plans) != len(aliases) {
+		t.Fatalf("items=%T %#v, want %d intent plans", first.Items, first.Items, len(aliases))
+	}
+	if first.Backend != "planner" {
+		t.Fatalf("backend=%q, want planner", first.Backend)
+	}
+	for i, plan := range plans {
+		if plan.Workspace == "" || plan.Operation != "callers" || plan.Intent != "callers" {
+			t.Fatalf("plan[%d]=%+v, want explicit supported workspace plan", i, plan)
+		}
+		if plan.DeterminismDigest == "" {
+			t.Fatalf("plan[%d] has no determinism digest", i)
+		}
+		if i > 0 && plans[i-1].Workspace > plan.Workspace {
+			t.Fatalf("plans are not sorted by workspace: %q then %q", plans[i-1].Workspace, plan.Workspace)
+		}
+	}
+
+	second, err := app.Execute(context.Background(), request)
+	if err != nil {
+		t.Fatalf("repeat nav.ask --all-workspaces: %v", err)
+	}
+	secondPlans, ok := second.Items.([]model.IntentPlan)
+	if !ok || len(secondPlans) != len(plans) {
+		t.Fatalf("repeat items=%T %#v", second.Items, second.Items)
+	}
+	for i := range plans {
+		if plans[i].Workspace != secondPlans[i].Workspace || plans[i].DeterminismDigest != secondPlans[i].DeterminismDigest {
+			t.Fatalf("unstable all-workspaces plans: first=%+v second=%+v", plans, secondPlans)
+		}
 	}
 }
 
@@ -427,9 +490,11 @@ func TestNavAskFallsBackWhenDocsIndexIsEmpty(t *testing.T) {
 	alias := "ask-fallback-" + filepath.Base(t.TempDir())
 	ensureWritableTestHome(t)
 	root := t.TempDir()
-	writeWorkspaceFile(t, root, "src/App.csproj", `<Project Sdk="Microsoft.NET.Sdk"></Project>`)
+	writeWorkspaceFile(t, root, "go.mod", "module example.com/fixture\n\ngo 1.23\n")
+	writeWorkspaceFile(t, root, "main.go", "package fixture\n")
 	writeWorkspaceFile(t, root, "src/Program.cs", "namespace Demo;\npublic class Program {}\n")
 	writeSpecBackendGovernanceFixture(t, root)
+	saveDetectedFixtureProjectWithIdentity(t, root, alias)
 	app := New(root, nil)
 
 	initEnv, err := app.Execute(context.Background(), model.CommandRequest{
@@ -540,7 +605,8 @@ func TestNavAskUsesBuiltinProfileForMinimalTechnicalDocs(t *testing.T) {
 	alias := "ask-minimal-" + filepath.Base(t.TempDir())
 	ensureWritableTestHome(t)
 	root := t.TempDir()
-	writeWorkspaceFile(t, root, "src/App.csproj", `<Project Sdk="Microsoft.NET.Sdk"></Project>`)
+	writeWorkspaceFile(t, root, "go.mod", "module example.com/fixture\n\ngo 1.23\n")
+	writeWorkspaceFile(t, root, "main.go", "package fixture\n")
 	writeWorkspaceFile(t, root, "src/worker.cs", strings.Join([]string{
 		"namespace Demo;",
 		"public class WorkerProtocol",
@@ -553,6 +619,7 @@ func TestNavAskUsesBuiltinProfileForMinimalTechnicalDocs(t *testing.T) {
 		"Worker protocol overview for daemon routing and worker protocol diagnostics.",
 	}, "\n"))
 	writeSpecBackendGovernanceFixture(t, root)
+	saveDetectedFixtureProjectWithIdentity(t, root, alias)
 	app := New(root, nil)
 
 	initEnv, err := app.Execute(context.Background(), model.CommandRequest{

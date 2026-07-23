@@ -1,0 +1,51 @@
+schema: ae-session-contract/v1
+session_id: 2026-07-18-milsp-graph-native
+base: main
+branch: ae/graph-native-roadmap-20260718
+worktree: C:\repos\mios\mi-lsp-graph-native
+objective: Complete and close W1 for the roadmap graph-native full scope in ae/graph-native-roadmap-20260718 without mutating canon, código, scripts, o paths fuera de esta carpeta de auditoría.
+role: chief_of_staff_with_workers
+locked_decisions:
+  compiler_first: true
+  benchmark_gated: true
+  never_mcp: true
+  authoritative_core: true
+  derivative_extensions: true
+sdd_anchors:
+  - .docs/wiki/01_alcance_funcional.md
+  - .docs/wiki/02_arquitectura.md
+  - .docs/wiki/03_FL/FL-GPH-01.md
+allowed_paths:
+  - .docs/auditoria/2026-07-18-milsp-graph-native/session-contract.yaml
+  - .docs/auditoria/2026-07-18-milsp-graph-native/audit-manifest.yaml
+  - .docs/auditoria/2026-07-18-milsp-graph-native/w1-verification-summary.yaml
+  - .docs/auditoria/2026-07-18-milsp-graph-native/w1-verdict.md
+forbidden_paths:
+  - all paths outside .docs/auditoria/2026-07-18-milsp-graph-native/
+  - secrets
+  - raw logs
+acceptance_oracle:
+  command: |
+    test -f .docs/auditoria/2026-07-18-milsp-graph-native/audit-manifest.yaml && \
+    test -f .docs/auditoria/2026-07-18-milsp-graph-native/session-contract.yaml && \
+    rg -n "ae-audit-hygiene/v1|retention_ttl_days|sha256|locked_decisions|never_mcp|acceptance" .docs/auditoria/2026-07-18-milsp-graph-native
+  yaml_readable: true
+  git_apply_check: required
+rollback:
+  method: remove_created_audit_files_only
+  preserve_preexisting_files: true
+escalation:
+  worker_first: true
+  luna: high
+  trigger: ambiguity, schema gap, or acceptance failure
+integration_owner: root Chief of Staff with workers
+test_gates:
+  - git apply --check
+  - yaml readability validation
+  - git status --short scope validation
+closure_gates:
+  - no non-audit path introduced
+  - no secrets or raw logs requested or stored
+  - required schema fields present
+  - sanitized evidence only
+  - ae-close required before task closure

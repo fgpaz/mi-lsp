@@ -45,7 +45,10 @@ This file is a compact path projection. It does not replace the universal AE ker
 ## Verification surfaces
 
 - Governance status: `MI_LSP_CLIENT_NAME=<client> MI_LSP_SESSION_ID=<session> go run ./cmd/mi-lsp workspace status . --format toon`
-- Governance navigation: `MI_LSP_CLIENT_NAME=<client> MI_LSP_SESSION_ID=<session> go run ./cmd/mi-lsp nav governance --workspace mi-lsp --format toon`
+- Governance navigation: `MI_LSP_CLIENT_NAME=<client> MI_LSP_SESSION_ID=<session> go run ./cmd/mi-lsp nav governance --workspace milsp-harness-first --format toon`
+- Runtime help: `go run ./cmd/mi-lsp nav --help` and the affected subcommand helps
+- Intent/explain-change smoke: `go run ./cmd/mi-lsp nav intent <question> --workspace <alias> --format toon` and `go run ./cmd/mi-lsp nav explain-change --path <path> --workspace <alias> --format toon`
+- Wiki validator smoke: `go run ./cmd/mi-lsp nav wiki validate-source --workspace <alias> --paths <path> --format toon` and `go run ./cmd/mi-lsp nav wiki validate-source --workspace <alias> --ids <doc-id> --format toon`
 - Tests: `go test ./...`
 - Formatting check: `git diff --check`
 - Policy renderer: `node C:/repos/mios/ae-kernel/skills/ae-crear-politicas/scripts/render-policy.mjs --canon C:/repos/mios/ae-kernel/canon/AE-POLICY-PROJECTION.md --repo-policy .docs/ae/repo-policy.yaml --out-dir C:/wt/mi-lsp-ae-kernel-v2-final`

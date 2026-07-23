@@ -10,6 +10,7 @@ $ErrorActionPreference = 'Stop'
 
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 $workerProject = Join-Path $repoRoot 'worker-dotnet\MiLsp.Worker\MiLsp.Worker.csproj'
+. (Join-Path $PSScriptRoot 'worker-manifest.ps1')
 
 if ($Clean -and (Test-Path $OutDir)) {
     Remove-Item -Recurse -Force $OutDir
@@ -34,6 +35,8 @@ foreach ($rid in $Rids) {
     finally {
         Pop-Location
     }
+
+    New-WorkerManifest -Rid $rid -WorkerDir $workerOut -ManifestPath (Join-Path $workerOut 'worker-manifest.json') | Out-Null
 }
 
 Get-ChildItem -Directory $OutDir | Select-Object Name, FullName

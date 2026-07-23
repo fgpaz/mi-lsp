@@ -1,0 +1,102 @@
+schema: ae-review-index/v1
+doc_id: G9-G10-REVIEW-INDEX-20260721
+block_id: review-register
+harness_protocol: SDD-HARNESS-v1
+wiki_source_protocol: SDD-WIKI-SOURCE-v1
+harness_contract:
+  id: HC-G9-G10-REVIEW-INDEX
+  kind: review-index
+  audience: dual
+  imports:
+    - benchmark-summary.yaml
+    - worker-registry.yaml
+    - execution-limits.yaml
+  exports:
+    - g9-verdict.md
+    - traceability-closure.yaml
+    - closure-packet.yaml
+  agent_must_read:
+    - benchmark-summary.yaml
+    - session-contract.yaml
+  agent_may_edit:
+    - review-index.yaml
+    - g9-verdict.md
+    - traceability-closure.yaml
+    - closure-packet.yaml
+  agent_must_not_edit:
+    - ae-close-verdict.md
+    - product_source_or_comparator
+  verify:
+    - yaml_parse
+    - every_review_has_status_and_evidence_ref
+    - no_unscoped_PASS
+  stop_if:
+    - missing_independent_g9_review=true
+    - promoted_verdict != BLOCKED
+  evidence:
+    - review-index.yaml
+    - benchmark-summary.yaml
+harness_contracts_reviewed:
+  - SDD-HARNESS-v1
+  - SDD-WIKI-SOURCE-v1
+harness_verdict: BLOCKED
+wiki_source_verdict: BLOCKED
+status: BLOCKED
+external_evidence_alias: '<external-evidence-root>/victory-g9-authoritative-v4-20260721'
+reviews:
+  - id: g9-independent-review
+    scope: G9 competitive benchmark
+    status: BLOCKED
+    verdict: BLOCKED
+    evidence_ref: benchmark-summary.yaml#review
+    findings:
+      - v3_observer_failures_repeated_in_v4
+      - another_run_would_be_retry_storm
+      - no_global_superiority
+    action: no_retry; preserve_blocked_verdict
+  - id: g10-test-verification
+    scope: G10 verification suite
+    status: PASS
+    verdict: PASS
+    evidence_ref: benchmark-summary.yaml#verification.authoritative_g10
+    facts:
+      - go_test_count_1_all
+      - go_vet
+      - python_163
+      - dotnet_release_0_of_0
+      - diff_check
+      - go_test_race_not_run_host_unsupported
+  - id: g10-security-review
+    scope: security static and runtime gates
+    status: BLOCKED
+    verdict: BLOCKED
+    evidence_ref: benchmark-summary.yaml#security
+    facts:
+      - graph_query_read_only_pass
+      - no_implicit_mcp_or_network_core_pass
+      - milx_windows_positive_containment_not_comparable_fail_closed
+      - benchmark_runtime_blocked
+  - id: g10-release-disposition
+    scope: release and rollback
+    status: PASS_WITH_BLOCKED_PROMOTION
+    verdict: BLOCKED
+    evidence_ref: benchmark-summary.yaml#release
+    facts:
+      - no_install_push_pr_deploy_publish
+      - worker_timeout_not_pass
+      - rollback_no_mutation
+      - evidence_hashes_not_release_promotion
+  - id: g10-terminal-audit-rerun
+    scope: traceability, false PASS, and source navigation
+    status: BLOCKED
+    verdict: BLOCKED
+    evidence_ref: ae-close-verdict.md#audit
+    facts:
+      - nested_runtime_proof_false_PASS_repaired_in_6513781
+      - python_163_PASS
+      - wiki_source_block_shape_PASS
+      - wiki_source_navigation_BLOCKED_without_forbidden_index_mutation
+      - no_remote_or_cleanup_mutation
+repository_evidence_head: ec34074455f51af3289d14f4c4c408f002283766
+product_benchmark_pin: 11ac8af870d4110b6b4333199b8a8343c52ce784
+promoted_verdict: BLOCKED

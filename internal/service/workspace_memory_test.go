@@ -18,11 +18,13 @@ func createWorkspaceMemoryFixture(t *testing.T, alias string) string {
 	t.Helper()
 	ensureWritableTestHome(t)
 	root := t.TempDir()
-	writeWorkspaceFile(t, root, "src/App.csproj", `<Project Sdk="Microsoft.NET.Sdk"></Project>`)
+	writeWorkspaceFile(t, root, "go.mod", "module example.com/fixture\n\ngo 1.23\n")
+	writeWorkspaceFile(t, root, "main.go", "package fixture\n")
 	writeWorkspaceFile(t, root, ".docs/wiki/01_alcance_funcional.md", "# 01 Alcance\n\nAlcance funcional del flujo.\n")
 	writeWorkspaceFile(t, root, ".docs/wiki/07_baseline_tecnica.md", "# 07 Baseline tecnica\n\nBaseline tecnica del daemon.\n")
 	writeWorkspaceFile(t, root, ".docs/raw/plans/2026-04-16-reentry-wave.md", "# Reentry wave\n\nPlan reciente.\n")
 	writeSpecBackendGovernanceFixture(t, root)
+	saveDetectedFixtureProjectWithIdentity(t, root, alias)
 	return root
 }
 

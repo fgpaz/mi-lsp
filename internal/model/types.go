@@ -1,6 +1,10 @@
 package model
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"errors"
 	"strings"
 	"time"
 )
@@ -101,6 +105,39 @@ type EnvelopeError struct {
 	Retryable bool   `json:"retryable,omitempty"`
 }
 
+// StableError is a terminal error whose public text is already a stable code.
+// It deliberately does not retain or expose the underlying diagnostic.
+type StableError struct {
+	Code string
+}
+
+func (e *StableError) Error() string {
+	if e == nil || !ValidStableErrorCode(e.Code) {
+		return "operation_error"
+	}
+	return strings.TrimSpace(e.Code)
+}
+
+func ValidStableErrorCode(code string) bool {
+	code = strings.TrimSpace(code)
+	if code == "" {
+		return false
+	}
+	for _, r := range code {
+		if (r < 'a' || r > 'z') && (r < 'A' || r > 'Z') && (r < '0' || r > '9') && r != '_' {
+			return false
+		}
+	}
+	return true
+}
+
+func NewStableError(code string) error {
+	if !ValidStableErrorCode(code) {
+		code = "operation_error"
+	}
+	return &StableError{Code: strings.TrimSpace(code)}
+}
+
 type EnvelopeOmission struct {
 	Input          string `json:"input,omitempty"`
 	Path           string `json:"path,omitempty"`
@@ -120,27 +157,189 @@ type EnvelopeMetrics struct {
 }
 
 type Envelope struct {
-	Ok            bool               `json:"ok"`
-	Workspace     string             `json:"workspace,omitempty"`
-	Backend       string             `json:"backend,omitempty"`
-	Mode          string             `json:"mode,omitempty"`
-	Items         any                `json:"items"`
-	Error         *EnvelopeError     `json:"error,omitempty"`
-	Omissions     []EnvelopeOmission `json:"omissions,omitempty"`
-	Metrics       *EnvelopeMetrics   `json:"metrics,omitempty"`
-	Truncated     bool               `json:"truncated"`
-	Stats         Stats              `json:"stats,omitempty"`
-	Warnings      []string           `json:"warnings,omitempty"`
-	Hint          string             `json:"hint,omitempty"`
-	NextHint      *string            `json:"next_hint,omitempty"`
-	Coach         *Coach             `json:"coach,omitempty"`
-	Continuation  *Continuation      `json:"continuation,omitempty"`
-	MemoryPointer *MemoryPointer     `json:"memory_pointer,omitempty"`
-	Profile       OutputProfile      `json:"-"`
+	Ok                 bool                `json:"ok"`
+	Workspace          string              `json:"workspace,omitempty"`
+	Backend            string              `json:"backend,omitempty"`
+	Mode               string              `json:"mode,omitempty"`
+	Items              any                 `json:"items"`
+	Error              *EnvelopeError      `json:"error,omitempty"`
+	Omissions          []EnvelopeOmission  `json:"omissions,omitempty"`
+	Metrics            *EnvelopeMetrics    `json:"metrics,omitempty"`
+	Truncated          bool                `json:"truncated"`
+	Stats              Stats               `json:"stats,omitempty"`
+	Warnings           []string            `json:"warnings,omitempty"`
+	Hint               string              `json:"hint,omitempty"`
+	NextHint           *string             `json:"next_hint,omitempty"`
+	Coach              *Coach              `json:"coach,omitempty"`
+	Continuation       *Continuation       `json:"continuation,omitempty"`
+	MemoryPointer      *MemoryPointer      `json:"memory_pointer,omitempty"`
+	Graph              *GraphQueryMetadata `json:"graph,omitempty"`
+	WikiCodeContext    *WikiCodeContext    `json:"wiki_code_context,omitempty"`
+	Operation          string              `json:"operation,omitempty"`
+	GenerationID       string              `json:"generation_id,omitempty"`
+	GraphSchemaVersion int                 `json:"graph_schema_version,omitempty"`
+	DeterminismDigest  string              `json:"determinism_digest,omitempty"`
+	GraphFreshness     *GraphFreshness     `json:"graph_freshness,omitempty"`
+	Profile            OutputProfile       `json:"-"`
 }
 
 // QueryEnvelope is a semantic alias of Envelope for traceability with 05_modelo_datos.md.
 type QueryEnvelope = Envelope
+
+// IntentPlan is the deterministic, local routing result for supported graph-native
+// navigation intents. It deliberately contains extracted arguments and bounded
+// evidence only; raw prompts belong neither in the plan telemetry nor in daemon
+// access diagnostics.
+type IntentPlan struct {
+	Intent            string            `json:"intent"`
+	Operation         string            `json:"operation"`
+	Workspace         string            `json:"workspace,omitempty"`
+	Arguments         map[string]string `json:"arguments,omitempty"`
+	Confidence        float64           `json:"confidence"`
+	GenerationID      string            `json:"generation_id,omitempty"`
+	Freshness         string            `json:"freshness"`
+	Preview           []IntentPreview   `json:"preview,omitempty"`
+	Wiki              IntentWikiPlan    `json:"wiki,omitempty"`
+	Candidates        []IntentCandidate `json:"candidates,omitempty"`
+	Omissions         []IntentOmission  `json:"omissions,omitempty"`
+	Fallbacks         []IntentFallback  `json:"fallbacks"`
+	Expansions        []Expansion       `json:"expansions,omitempty"`
+	Telemetry         IntentTelemetry   `json:"telemetry"`
+	Truncated         bool              `json:"truncated,omitempty"`
+	Incomplete        bool              `json:"incomplete,omitempty"`
+	DeterminismDigest string            `json:"determinism_digest,omitempty"`
+}
+
+// IntentPreview is a bounded section of a progressive intent response.
+type IntentPreview struct {
+	Section   string `json:"section"`
+	Items     []any  `json:"items,omitempty"`
+	Count     int    `json:"count"`
+	Truncated bool   `json:"truncated,omitempty"`
+	Omission  string `json:"omission,omitempty"`
+}
+
+type IntentCandidate struct {
+	Selector      string  `json:"selector"`
+	File          string  `json:"file,omitempty"`
+	Line          int     `json:"line,omitempty"`
+	Kind          string  `json:"kind,omitempty"`
+	QualifiedName string  `json:"qualified_name,omitempty"`
+	Score         float64 `json:"score,omitempty"`
+}
+
+type IntentOmission struct {
+	Code       string   `json:"code"`
+	Section    string   `json:"section,omitempty"`
+	Reason     string   `json:"reason"`
+	Candidates []string `json:"candidates,omitempty"`
+}
+
+const (
+	IntentFallbackUnsupportedOperation = "unsupported_operation"
+	IntentFallbackUnavailableBinary    = "unavailable_binary"
+	IntentFallbackInvalidWorkspace     = "invalid_workspace"
+	IntentFallbackExplicitIncomplete   = "explicit_incomplete"
+)
+
+var intentFallbackCanonicalDetails = map[string]string{
+	IntentFallbackUnsupportedOperation: "the requested operation is not supported",
+	IntentFallbackUnavailableBinary:    "the required backend binary is unavailable",
+	IntentFallbackInvalidWorkspace:     "the requested workspace is invalid",
+	IntentFallbackExplicitIncomplete:   "the result is explicitly incomplete",
+}
+
+func ValidIntentFallbackReasonCode(code string) bool {
+	_, ok := intentFallbackCanonicalDetails[code]
+	return ok
+}
+
+// NewIntentFallback constructs a terminal external fallback with a canonical
+// detail. The caller-provided detail is intentionally not retained.
+func NewIntentFallback(section, operation, reasonCode string) (IntentFallback, error) {
+	if !ValidIntentFallbackReasonCode(reasonCode) {
+		return IntentFallback{}, errors.New("invalid intent fallback reason code")
+	}
+	return IntentFallback{Section: section, Operation: operation, ReasonCode: reasonCode, Detail: intentFallbackCanonicalDetails[reasonCode]}, nil
+}
+
+// IntentFallback is reserved for terminal external fallback decisions. Internal
+// backend degradation belongs in IntentOmission and must not be represented as
+// an external fallback. Detail is canonicalized at serialization time so raw
+// input can never cross the JSON boundary.
+type IntentFallback struct {
+	Section    string `json:"section,omitempty"`
+	Operation  string `json:"operation,omitempty"`
+	ReasonCode string `json:"reason_code"`
+	Detail     string `json:"detail"`
+}
+
+func (f IntentFallback) Valid() bool {
+	return ValidIntentFallbackReasonCode(f.ReasonCode)
+}
+
+func (f IntentFallback) MarshalJSON() ([]byte, error) {
+	detail, ok := intentFallbackCanonicalDetails[f.ReasonCode]
+	if !ok {
+		return nil, errors.New("invalid intent fallback reason code")
+	}
+	type intentFallbackJSON struct {
+		Section    string `json:"section,omitempty"`
+		Operation  string `json:"operation,omitempty"`
+		ReasonCode string `json:"reason_code"`
+		Detail     string `json:"detail"`
+	}
+	return json.Marshal(intentFallbackJSON{
+		Section:    f.Section,
+		Operation:  f.Operation,
+		ReasonCode: f.ReasonCode,
+		Detail:     detail,
+	})
+}
+
+// Expansion is a bounded continuation. Command contains only allowlisted
+// values or inert placeholders; Arguments carries values structurally so a
+// client can bind them without passing the command through a shell.
+type Expansion struct {
+	Command   string         `json:"command"`
+	Reason    string         `json:"reason"`
+	Arguments map[string]any `json:"arguments,omitempty"`
+}
+
+type IntentWikiPlan struct {
+	MustRead []IntentWikiRead `json:"must_read,omitempty"`
+	MayRead  []IntentWikiRead `json:"may_read,omitempty"`
+}
+
+type IntentWikiRead struct {
+	Path          string   `json:"path"`
+	DocID         string   `json:"doc_id,omitempty"`
+	Layer         string   `json:"layer,omitempty"`
+	Reason        string   `json:"reason"`
+	EvidencePaths []string `json:"evidence_paths,omitempty"`
+}
+
+// IntentTelemetry is safe to persist: it records route shape, not user text.
+type IntentTelemetry struct {
+	PlannerVersion string `json:"planner_version"`
+	Operation      string `json:"operation"`
+	SelectorKind   string `json:"selector_kind,omitempty"`
+	CandidateCount int    `json:"candidate_count,omitempty"`
+	SectionCount   int    `json:"section_count,omitempty"`
+	Fallback       bool   `json:"fallback,omitempty"`
+	OmissionCount  int    `json:"omission_count,omitempty"`
+}
+
+// IntentPlanDigest excludes no user text because IntentPlan has no raw prompt
+// field. It is stable across direct and daemon execution.
+func IntentPlanDigest(plan IntentPlan) string {
+	copyPlan := plan
+	copyPlan.DeterminismDigest = ""
+	copyPlan.Telemetry = IntentTelemetry{}
+	b, _ := json.Marshal(copyPlan)
+	d := sha256.Sum256(b)
+	return hex.EncodeToString(d[:])
+}
 
 // OutputProfile selects render verbosity for an envelope. "agent" trims human-only
 // telemetry and verbose diagnostic fields to reduce token cost for harness clients.
@@ -585,11 +784,12 @@ type WorkspaceRegistration struct {
 }
 
 type WorkspaceRepo struct {
-	ID                string   `json:"id" toml:"id"`
-	Name              string   `json:"name" toml:"name"`
-	Root              string   `json:"root" toml:"root"`
-	Languages         []string `json:"languages,omitempty" toml:"languages"`
-	DefaultEntrypoint string   `json:"default_entrypoint,omitempty" toml:"default_entrypoint,omitempty"`
+	ID                 string   `json:"id" toml:"id"`
+	Name               string   `json:"name" toml:"name"`
+	Root               string   `json:"root" toml:"root"`
+	RepositoryIdentity string   `json:"repository_identity,omitempty" toml:"repository_identity,omitempty"`
+	Languages          []string `json:"languages,omitempty" toml:"languages"`
+	DefaultEntrypoint  string   `json:"default_entrypoint,omitempty" toml:"default_entrypoint,omitempty"`
 }
 
 type WorkspaceEntrypoint struct {
@@ -748,12 +948,14 @@ type WorkerRequest struct {
 }
 
 type WorkerResponse struct {
-	Ok       bool             `json:"ok"`
-	Backend  string           `json:"backend,omitempty"`
-	Items    []map[string]any `json:"items,omitempty"`
-	Warnings []string         `json:"warnings,omitempty"`
-	Error    string           `json:"error,omitempty"`
-	Stats    Stats            `json:"stats,omitempty"`
+	Ok          bool                   `json:"ok"`
+	Backend     string                 `json:"backend,omitempty"`
+	Items       []map[string]any       `json:"items,omitempty"`
+	Warnings    []string               `json:"warnings,omitempty"`
+	Error       string                 `json:"error,omitempty"`
+	ErrorCode   string                 `json:"error_code,omitempty"`
+	Observation *GraphObservationBatch `json:"observation,omitempty"`
+	Stats       Stats                  `json:"stats,omitempty"`
 }
 
 type WorkerStatus struct {
@@ -825,6 +1027,7 @@ type AccessEvent struct {
 	WorkspaceAlias   string    `json:"workspace_alias,omitempty"`
 	Repo             string    `json:"repo,omitempty"`
 	Operation        string    `json:"operation"`
+	Intent           string    `json:"intent,omitempty"`
 	Backend          string    `json:"backend,omitempty"`
 	Route            string    `json:"route,omitempty"`
 	Format           string    `json:"format,omitempty"`

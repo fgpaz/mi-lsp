@@ -1,0 +1,110 @@
+schema: ae-worker-registry/v1
+doc_id: G9-G10-WORKER-REGISTRY-20260721
+block_id: worker-status
+harness_protocol: SDD-HARNESS-v1
+wiki_source_protocol: SDD-WIKI-SOURCE-v1
+harness_contract:
+  id: HC-G9-G10-WORKER-REGISTRY
+  kind: worker-registry
+  audience: dual
+  imports:
+    - session-contract.yaml
+    - execution-limits.yaml
+  exports:
+    - closure-packet.yaml
+  agent_must_read:
+    - session-contract.yaml
+    - execution-limits.yaml
+  agent_may_edit:
+    - worker-registry.yaml
+    - closure-packet.yaml
+  agent_must_not_edit:
+    - ae-close-verdict.md
+    - product_source
+    - comparator_source
+  verify:
+    - no_worker_PASS_from_declaration_only
+    - timeout_is_not_pass
+    - yaml_parse
+  stop_if:
+    - unobserved_worker_promoted=true
+    - invented_model_or_pin=true
+  evidence:
+    - worker-registry.yaml
+    - closure-packet.yaml
+harness_verdict: BLOCKED
+wiki_source_verdict: BLOCKED
+session: 2026-07-21-milsp-graph-native-g9-g10
+sanitized: true
+registry_basis:
+  observed_artifacts:
+    - session-contract.yaml
+    - execution-limits.yaml
+    - audit-manifest.yaml
+  additional_basis: task-provided authoritative G9/G10 summary
+  evidence_limit: worker transcripts, native adapter proof, and runtime join records are not present in the allowed audit path
+  non_claim: this registry does not promote declarations, timeout, silence, or DONE to PASS
+adapter:
+  selected_harness: claude-code
+  selected_adapter: ae-adapter-claude-code
+  fallback_adapter: ae-worker-pi
+  runtime_use: not_observed_in_allowed_evidence
+  proof_status: pending_runtime_verification
+  no_native_adapter_proof: true
+worker_status:
+  status: TIMEOUT_NOT_PASS
+  verdict_effect: contributes_to_BLOCKED
+  retry: prohibited_after_v3_v4_observer_repetition
+known_workers:
+  - id: T0
+    kind: worker
+    execution_status: not_observed_in_allowed_evidence
+    join_status: not_observed
+    timeout_status: not_observed
+    empty_output_status: not_observed
+    completion_status: not_claimed
+  - id: T1
+    kind: worker
+    execution_status: not_observed_in_allowed_evidence
+    join_status: not_observed
+    timeout_status: not_observed
+    empty_output_status: not_observed
+    completion_status: not_claimed
+  - id: T2
+    kind: worker
+    execution_status: not_observed_in_allowed_evidence
+    join_status: not_observed
+    timeout_status: not_observed
+    empty_output_status: not_observed
+    completion_status: not_claimed
+  - id: T3
+    kind: worker
+    execution_status: not_observed_in_allowed_evidence
+    join_status: not_observed
+    timeout_status: not_observed
+    empty_output_status: not_observed
+    completion_status: not_claimed
+  - id: T4
+    kind: worker
+    execution_status: not_observed_in_allowed_evidence
+    join_status: not_observed
+    timeout_status: not_observed
+    empty_output_status: not_observed
+    completion_status: not_claimed
+workflow:
+  id: g9-g10-orchestration
+  role: strategic_root_chief_of_staff
+  depth: v0_shadow
+  join_policy: completion_driven
+  measurement_concurrency_observed: 1
+  max_reviewer_fanout: 4
+  timeout_is_completion: false
+  silence_is_completion: false
+  done_is_pass: false
+  status: BLOCKED
+prohibited_claims:
+  - no worker execution claimed from declaration alone
+  - no model claim beyond what is directly evidenced
+  - no benchmark or test PASS inferred from timeout, silence, or empty output
+  - no product pin claim made from repository evidence HEAD
+promoted_verdict: BLOCKED

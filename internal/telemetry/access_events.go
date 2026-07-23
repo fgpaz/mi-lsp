@@ -32,6 +32,10 @@ type Window struct {
 }
 
 func NormalizeAccessEvent(event model.AccessEvent) model.AccessEvent {
+	if strings.TrimSpace(event.Intent) != "" {
+		event.Intent = model.SanitizeUtilityIntent(event.Intent)
+	}
+	warningCount := event.WarningCount
 	resolvedIdentity := ResolveWorkspaceIdentity(strings.TrimSpace(event.Workspace))
 	inputIdentity := ResolveWorkspaceIdentity(strings.TrimSpace(event.WorkspaceInput))
 	if strings.TrimSpace(event.WorkspaceRoot) == "" {
@@ -53,8 +57,8 @@ func NormalizeAccessEvent(event model.AccessEvent) model.AccessEvent {
 			event.ErrorCode = info.Code
 		}
 	}
-	if event.WarningCount == 0 && len(event.Warnings) > 0 {
-		event.WarningCount = len(event.Warnings)
+	if warningCount == 0 && len(event.Warnings) > 0 {
+		warningCount = len(event.Warnings)
 	}
 	if strings.TrimSpace(event.PatternMode) == "" {
 		event.PatternMode = "none"
@@ -77,6 +81,9 @@ func NormalizeAccessEvent(event model.AccessEvent) model.AccessEvent {
 	if strings.TrimSpace(event.TruncationReason) == "" {
 		event.TruncationReason = "none"
 	}
+	event.WarningCount = warningCount
+	event.Repo, event.Warnings, event.Error, event.ErrorCode, event.HintCode = sanitizePersistedAccessFields(event.Repo, event.Warnings, event.Error, event.ErrorCode, event.HintCode, event.Backend)
+	event.DecisionJSON = normalizeDecisionJSON(event.DecisionJSON, event)
 	return event
 }
 

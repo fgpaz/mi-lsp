@@ -143,7 +143,7 @@ Hardening of the v0.5.1-v0.5.3 follow-up code, found by a parallel adversarial c
 - `skills/mi-lsp/references/compound-commands.md`: format selection guide with hint interpretation table
 - `AGENTS.md`, `CLAUDE.md`: output formats table and hint field usage
 - Technical contracts synced: `CT-CLI-DAEMON-ADMIN`, `09_contratos_tecnicos`, `RF-QRY-001`, `RF-QRY-002`, `RF-QRY-004`
-- Companion skills updated with mi-lsp format guidance: `ps-contexto`, `ps-trazabilidad`, `ps-auditar-trazabilidad`, `ps-asistente-wiki`, `crear-capa-tecnica-wiki`, `crear-requerimiento`, `ps-gap-terminator`
+- Companion skills updated with mi-lsp format guidance: `ae-work`, `ae-close`, `ae-close`, `ps-asistente-wiki`, `crear-capa-tecnica-wiki`, `crear-requerimiento`, `ps-gap-terminator`
 
 ## [0.1.0] - 2026-03-24
 

@@ -1,0 +1,45 @@
+{
+  "schema": "harness-first-campaign/v1",
+  "campaign_id": "harness-first-final",
+  "worker_status_args": ["worker", "status"],
+  "budgets": {
+    "correctness_percent": 100.0,
+    "parity": true,
+    "retry_amplification": 1.0,
+    "latency_p95_ms": 15000.0,
+    "latency_p99_ms": 15000.0,
+    "peak_rss_bytes": 1073741824,
+    "preview_sections": ["change", "affected", "callers", "callees", "tests", "contracts", "wiki"],
+    "preview_expansions": ["command", "reason"]
+  },
+  "queries": [
+    {
+      "id": "wiki-pack",
+      "kind": "wiki_pack",
+      "args": ["nav", "wiki", "pack", "Harness-first release readiness"],
+      "modes": ["direct"]
+    },
+    {
+      "id": "explain-change",
+      "kind": "explain_change",
+      "args": ["nav", "explain-change", "--path", "internal/service/intent.go"],
+      "modes": ["direct"],
+      "preview_required": true
+    },
+    {
+      "id": "workspace-map",
+      "kind": "workspace_map",
+      "args": ["nav", "workspace-map"],
+      "modes": ["direct"],
+      "freshness_rank_required": true
+    },
+    {
+      "id": "related",
+      "kind": "related",
+      "args": ["nav", "related", "BuildIntentPlan"],
+      "modes": ["direct", "daemon"],
+      "parity_required": true,
+      "freshness_rank_required": true
+    }
+  ]
+}

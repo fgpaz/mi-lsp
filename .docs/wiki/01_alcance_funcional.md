@@ -29,12 +29,15 @@ evidence:
 
 `mi-lsp` es una CLI semantica local para proyectos no-monorepo, orientada a agentes y desarrolladores que necesitan navegar codigo con alta confiabilidad y bajo consumo de tokens. Resuelve el problema de depender de un MCP persistente para discovery en repos grandes y heterogeneos: ofrece semantica profunda C# con Roslyn, catalogos locales para TypeScript/JavaScript y Python, y catalogacion AST nativa para Go con enriquecimiento opcional via `gopls`.
 
-El exito del producto en v1.3 se mide por cinco resultados:
+El exito del producto en v1.3 se mide por estos resultados:
 - la CLI siempre responde aunque el daemon no este activo;
 - el primer uso puede resolverse con `mi-lsp init` sin onboarding largo;
 - `nav wiki` ofrece una entrada documental explicita para agentes que buscan RF/FL/TP/CT/TECH/DB;
 - `nav ask` responde preguntas de intencion usando wiki + evidencia de codigo;
 - `nav pack` entrega el orden de lectura canonico para una tarea con preview/full;
+- el grafo nativo publica una topologia estable y compiler-first con `GraphGeneration` y `NodeKey` reproducibles;
+- las consultas de grafo permiten consultar, explicar e inspeccionar impacto sin convertir el indice en un editor;
+- las extensiones `MILX-v1` se ejecutan aisladas y no pueden degradar la confiabilidad del core;
 - las superficies calientes de navegacion pueden devolver guidance tiny (`continuation`) y memoria de reentrada (`memory_pointer`) para ayudar a un harness a seguir explorando sin gastar muchos tokens;
 - `nav intent` agrega un modo hibrido `docs|code`: las consultas capability-like deben devolver docs canonicos owner-aware y las consultas symbol-like deben seguir devolviendo matches de catalogo/codigo;
 - las consultas semanticas C# entregan contexto util y compacto en repos grandes;
@@ -78,11 +81,14 @@ flowchart TD
     C --> C8[nav wiki documental]
     C --> C9[Federacion wiki cross-workspace]
     C --> C10[Go AST nativo + gopls opcional]
+    C --> C11[Graph query: consultar, explicar, impactar]
+    C --> C12[Extensiones MILX-v1 aisladas]
 
     D --> D1[Catalogo de simbolos]
     D --> D2[Metadatos de archivos]
     D --> D3[Grafo documental wiki-aware]
     D --> D4[Presupuesto de salida]
+    D --> D5[Grafo nativo: nodos, aristas y generaciones]
 
     E --> E1[Worker pool por workspace]
     E --> E2[Fallback directo]
@@ -101,8 +107,10 @@ flowchart TD
 
 - Gestion de workspaces: alta, inicializacion corta, descubrimiento, aliases, estado y warmup.
 - Navegacion y discovery: simbolos, referencias, outline, overview, contexto, dependencias, exploracion `nav wiki`, preguntas docs-first, reading packs canonicos, busqueda por intencion y resumen de servicios. En workspaces `container`, `find/search/intent` pueden acotar por `--repo` sin perder el modo directo. Federacion wiki cross-workspace: explorar wikis de multiples espacios de trabajo en una sola máquina con `--all-workspaces` y fan-out controlado. Ver [[FL-WIKI-01]].
-- Indexacion repo-local: catalogo liviano de simbolos, archivos, metadatos del workspace y grafo documental.
-- Enrutamiento semantico: Roslyn para semantica profunda C#; catalogos y backends opcionales para TS/Next y Python; extractor AST nativo para Go con enriquecimiento `gopls` opcional; fallback catalog/text visible cuando la semantica profunda no esta disponible.
+- Indexacion repo-local: catalogo liviano de simbolos, archivos, metadatos del workspace y grafo documental; el grafo nativo se genera y publica con [[FL-GPH-01]].
+- El grafo nativo agrega consultas para consultar, explicar e impactar. Ver [[FL-GPH-02]].
+- Extensibilidad aislada: ejecucion de extensiones `MILX-v1` con limites de proceso, permisos y salida. Ver [[FL-GPH-03]].
+- Enrutamiento semantico: Roslyn para semantica profunda C#; tree-sitter/ripgrep para TS/Next y texto; Pyright para Python cuando este disponible; extractor AST nativo para Go con enriquecimiento `gopls` opcional; fallback catalog/text visible cuando la semantica profunda no esta disponible.
 - Formateo de salida: envelopes JSON compactos, truncacion determinista y warnings explicitos.
 - Operacion runtime: daemon opcional, worker install explicito y fallback cuando faltan dependencias.
 
@@ -114,3 +122,4 @@ flowchart TD
 - Soporte activo para lenguajes fuera de C#/TS/Python/Go en v1.
 - Persistencia semantica completa de referencias y jerarquias C# en SQLite.
 - Embeddings, reranking externo o servicios remotos para `nav ask`.
+- Mutacion del grafo desde extensiones; `MILX-v1` queda limitado a ejecucion aislada y resultados declarativos en este corte.

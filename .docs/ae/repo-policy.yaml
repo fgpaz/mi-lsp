@@ -1,17 +1,24 @@
 schema: ae-repo-policy/v1
-last_updated: "2026-07-13"
+required: []
+last_updated: "2026-07-22"
+
 repo:
   name: mi-lsp
-  description: Go semantic navigation CLI with repo-local wiki governance, SQLite indexing, and optional language workers.
+  description: Local semantic CLI and graph-native code intelligence runtime for large .NET/C# and TypeScript workspaces.
   structure_rules:
-    - Go CLI and service code lives under cmd/ and internal/.
-    - Optional language workers live under worker-dotnet/ and are distributed through governed release scripts.
+    - Go CLI and daemon code lives under cmd/ and internal/.
+    - Roslyn semantic worker lives under worker-dotnet/; optional language workers are distributed through governed release scripts.
     - .docs/wiki/00-06 is functional canon; .docs/wiki/07-09 is technical canon.
     - Universal Agent Engineering canon comes from <kernel_home>/canon; repo-specific policy lives in .docs/ae/repo-policy.yaml.
-    - Durable task evidence lives under .docs/auditoria/<session>/; .docs/raw remains non-canonical input.
+    - Durable task and audit evidence lives under .docs/auditoria/<session>/; .docs/raw remains non-canonical input.
+    - Repository-local runtime state under .mi-lsp/ is never committed.
+
 language:
   policy_lang: English
   docs_lang: Spanish
+  ux_orthography_rules:
+    - preserve Spanish accents and opening punctuation
+
 tracker:
   provider: Linear
   linear:
@@ -21,15 +28,18 @@ tracker:
     projects:
       - key: MI-LSP
         name: mi-lsp
-        scope: features, bugs, documentation, and Agent Engineering
+        scope: features, bugs, documentation, releases, and Agent Engineering
+
 secrets:
   vault: environment
   tool: environment-only
+
 wrappers:
   - name: go
     script: go toolchain (repository go.mod)
   - name: pre-push-guard
     script: scripts/ae/pre-push-guard.ps1
+
 wiki:
   layers_map:
     "00": governance
@@ -42,19 +52,114 @@ wiki:
     "07": technical_baseline
     "08": physical_data
     "09": contracts
-    AE: agent_engineering
-  workspace_alias: mi-lsp
+    ae: compatibility_history
+  workspace_alias: milsp-harness-first
   paths_file: PATHS.md
-subagents:
-  roster_file: AGENTS.md
+  subagents_file: AGENTS.md
+  decision_priority:
+    functional_behavior:
+      - RF
+      - FL
+      - data model
+      - architecture
+    data_state_contract:
+      - data model
+      - RF
+      - FL
+      - architecture
+    operational_perf_infra:
+      - architecture
+      - FL
+      - RF
+      - data model
+
+intent_routing:
+  entrypoint: mi-lsp
+  policy: automatic_mi_lsp_first_no_opt_out
+  supported_intents:
+    - callers
+    - callees
+    - affected-change
+    - path-between
+    - explain-edge
+    - neighborhood
+    - explain-change
+    - wiki-search
+    - wiki-route
+    - wiki-pack
+    - wiki-trace
+    - governance
+    - graph-freshness
+    - graph-rank
+  order:
+    - mi-lsp
+    - canonical_wiki
+    - local_catalog
+    - rg
+    - Read
+  fallback_only_on:
+    - unsupported_operation
+    - unavailable_binary
+    - invalid_workspace
+    - explicit_incomplete
+  timeout_without_diagnostic: blocked
+  preview_requires:
+    - available_information
+    - expansion_command
+    - expansion_reason
+  explain_change_sections:
+    - change
+    - affected
+    - callers
+    - callees
+    - tests
+    - contracts
+    - wiki
+  telemetry:
+    sanitized_only: true
+    allowed_fields:
+      - planner_version
+      - operation
+      - selector_kind
+      - candidate_count
+      - section_count
+      - fallback
+      - omission_count
+    forbidden_fields:
+      - query
+      - prompt
+      - argv
+      - payload
+      - content
+      - secret
+      - raw_error
+
 qa:
   canon_paths:
     - internal/service/governance_test.go
     - internal/service/governance_test_helpers_test.go
     - tests
     - go.mod
+    - .docs/wiki/06_matriz_pruebas_RF.md
+    - .docs/wiki/06_pruebas/
     - .docs/wiki/09_contratos
+
+subagents:
+  max_model: sonnet
+  roster_file: AGENTS.md
+  routing_notes:
+    - read-only exploration uses ps-explorer or Explore
+    - Go implementation uses claudex-writer or writer
+    - documentation uses ps-docs
+    - verification uses claudex-verifier or verifier-adversarial
+
 security:
   path_traversal: reject absolute and parent-escaping source paths
   symlink: reject symlinked roots, components, and files before canon reads
   secrets: do not store credentials or values in policy, docs, prompts, logs, or evidence
+
+extras:
+  - title: Release platform
+    body: Windows release verification must include arm64 binaries and real installed-binary readback.
+  - title: Shared skill mirrors
+    body: Any shared skill changed under the user skill source must be synchronized to C:/repos/buho/assets/skills in the same task.

@@ -29,9 +29,9 @@ evidence:
 
 ## Proposito y alcance
 
-Este documento resume la base tecnica operativa de `mi-lsp` en su fase `v1.3 hardening`.
+Este documento resume la base tecnica operativa de `mi-lsp` y el target graph-native aceptado para las olas G1-G10.
 Su foco es el runtime local, los componentes ejecutables, las fronteras tecnicas y las decisiones que deben sobrevivir a futuros refactors.
-El detalle operativo y de subsistemas vive en `07_tech/`.
+El detalle operativo y de subsistemas vive en `07_tech/`; `accepted-design` no equivale a implementacion estable.
 
 ## Inventario de componentes
 
@@ -45,6 +45,13 @@ El detalle operativo y de subsistemas vive en `07_tech/`.
 | Worker Roslyn | Proceso .NET hijo | C# semantic backend | Semantica profunda C# |
 | Governance resolver | Subsistema Go | Query/runtime | Validar `00_gobierno_documental.md`, compilar perfil efectivo y proyectar `read-model.toml` |
 | Docgraph/read-model | Subsistema Go | Query/runtime | Rankear wiki, clasificar preguntas, compilar source blocks `SDD-WIKI-SOURCE-v1` y conectar docs con codigo |
+| Graph Kernel (target) | Subsistema Go | Graph Kernel | NodeKey, records, generations, validacion y cross-RID |
+| Graph adapters (target) | Backends/compiler bridges | Semantic backends | Emitir `GraphObservationBatch`; no escribir SQLite |
+| Graph Store/Publisher (target) | Go + SQLite | Workspace owner | Adjacency, staging, publicacion atomica, migration y recovery |
+| Graph Query/Context Optimizer (target) | Subsistema Go | Query/runtime | Traversal bounded, explain/impact y packs docs-first read-only |
+| Global Graph view (target) | Core + cache daemon opcional | Core runtime | Federar member generations por cross-RID sin adquirir autoridad |
+| MILX Host (target) | Proceso local aislado | Extensions runtime | Packs/algoritmos derivativos sin MCP, red o graph write |
+| Victory Lab | Python dependency-free + fixtures | Quality gate | Oraculos y comparacion reproducible; no componente runtime |
 | TS catalog/indexer | Subsistema Go | Discovery backend | Discovery estructural TS/JS/Next repo-local |
 | Service exploration profile | Subsistema Go | Query/runtime | Agregar evidencia observable por path de servicio usando catalogo + texto |
 | TS semantic backend | Runtime opcional | TS semantic backend | Semantica TS/JS via `tsserver` cuando exista |
@@ -53,6 +60,7 @@ El detalle operativo y de subsistemas vive en `07_tech/`.
 | Governance UI | HTTP loopback local | Runtime supervision | Estado, accesos, memoria y diagnostico |
 | File watcher (fsnotify) | Subsistema daemon | Pre-fetch | Re-indexa archivos modificados en background |
 | Agent acceleration CLI | Subsistema Go | Compound commands | `multi-read`, `batch`, `related`, `workspace-map`, `search --include-content`, `nav ask`, `nav pack`, `nav edit-plan`, `nav evidence inventory` |
+| Intent planner | Subsistema Go | Harness routing | `nav intent` y `nav explain-change`; routing local, preview bounded, expansiones ejecutables y fallbacks tipados |
 | Semantic recall / embeddings backend | Subsistema Go | Query/runtime | semantic wiki recall via embeddings |
 | Store repo-local | SQLite | Workspace owner | Catalogo de codigo, indice documental y metadata del repo |
 | Index job runner | CLI + SQLite repo-local | Workspace owner | Jobs de indexacion `queued/running/published`, generacion de indice y cancelacion cooperativa |
@@ -80,6 +88,10 @@ flowchart LR
     D --> UI[Governance UI loopback]
     G --> IDX[.mi-lsp/index.db repo-local]
     G --> DOC[doc_records/doc_edges/doc_mentions]
+    G --> GK[Graph Kernel target]
+    GK --> GS[graph generations/adjacency SQLite]
+    GK --> GQ[bounded graph query/context]
+    GK --> MH[MILX host isolated]
     G --> CAT[TS catalog + ripgrep]
     G --> ASK[ask pipeline]
     G --> SV[Service exploration profile]
@@ -168,6 +180,42 @@ flowchart LR
 - `nav.intent` es hibrido router-first: clasifica `mode=docs|code`, usa el scorer owner-aware en `docs` y conserva BM25 de simbolos en `code` sin mezclar ambos lanes en la misma lista.
 - El safe-degrade planner prioriza superficies de menor costo antes de abrir contexto caro: `nav route|wiki search|pack preview`, luego `multi-read` o `search --include-content`, y solo despues semantica profunda. Cada degradacion debe ser visible en `warnings|hint|next_hint|continuation` y en telemetria sanitizada.
 - Para harnesses/agentes, las consultas literal symbol-like deben seguir una escalera agent-first: `nav find --exact`, luego `nav related`, luego `nav context` con fallback `catalog`/`text --no-auto-daemon` si los backends semanticos son riesgosos. `nav search` queda disponible como evidencia textual, pero no debe ser el unico proximo paso cuando el input parece identificador de codigo.
+
+## Target graph-native aceptado
+
+- `NodeKey v1`, `GraphGeneration`, edge/evidence/unresolved y cross-RID pertenecen al Graph Kernel; adapters no inventan identidad ni publican.
+- SQLite repo-local es la autoridad de adjacency. Staging es invisible, el pointer swap es atomico y crash/migration rollback conserva la generation valida anterior.
+- Queries fijan una generation, son read-only, bounded y storage-backed; no cargan el grafo completo en RAM, no persisten closures y no migran durante query.
+- Roslyn se estabiliza primero, Go despues; tsserver/Pyright permanecen gated. Texto solo produce candidatos, doc mentions u omissions.
+- Wiki conserva autoridad sobre codigo. El grafo agrega evidencia o drift, nunca reemplaza canon.
+- Global graph es una vista derivativa de member generations. MILX-v1 ejecuta packs en proceso aislado, sin MCP/red/graph write.
+- Cada slice requiere `TP-GPH` y Victory Lab contra los dos comparadores fijados. Ver [[TECH-GRAPH-NATIVE]], [[DB-SYMBOL-EDGE-GRAPH]], [[CT-GRAPH-CLI]] y [[CT-MILX-V1]].
+
+## Routing automatico y explain-change
+
+Las intenciones soportadas entran primero por `mi-lsp` sin opt-out. El planner local decide la operacion, conserva los argumentos extraidos, expone confianza y separa evidencia graph-native, catalogo, wiki y heuristica. Las respuestas preview no ocultan incertidumbre: siempre incluyen una expansion ejecutable y su razon cuando exista un siguiente paso acotado.
+
+```toon
+block_id: TECH-INTENT-ROUTING
+kind: intent-routing
+source_of_truth: 07_baseline_tecnica
+verify:
+  - go run ./cmd/mi-lsp nav --help
+  - go run ./cmd/mi-lsp nav explain-change --help
+  - go run ./cmd/mi-lsp nav wiki validate-source --workspace <alias> --format toon
+intent_routing:
+  policy: automatic_mi_lsp_first_no_opt_out
+  supported: [callers, callees, affected-change, path-between, explain-edge, neighborhood, explain-change, wiki-search, wiki-route, wiki-pack, wiki-trace, governance, graph-freshness, graph-rank]
+  terminal_fallbacks: [unsupported_operation, unavailable_binary, invalid_workspace, explicit_incomplete]
+  timeout_without_diagnostic: blocked
+  preview_fields: [intent, operation, arguments, confidence, freshness, preview, omissions, fallbacks, expansions, telemetry]
+  explain_change_sections: [change, affected, callers, callees, tests, contracts, wiki]
+  expansion_fields: [command, reason]
+  wiki_authority: must_read_before_may_read
+  telemetry: sanitized_metadata_only
+```
+
+`nav explain-change` acepta una pregunta opcional, `--path` repetible y `--ref`; sus siete secciones son estables aunque alguna quede vacia por falta de evidencia. `--full` es una expansion real del CLI, pero el smoke actual puede conservar `mode=preview` cuando el mismo snapshot no aporta mas evidencia; el agente debe seguir `expansions[]` y `next_hint`, no asumir completitud por el flag.
 
 ## Busqueda: cadena de fallback
 
@@ -290,6 +338,7 @@ Los comandos `nav ask/search/find --all-workspaces` implementan un patrón de pa
 - [TECH-GOVERNANCE-PROFILES.md](07_tech/TECH-GOVERNANCE-PROFILES.md)
 - [TECH-DOC-ROUTER.md](07_tech/TECH-DOC-ROUTER.md)
 - [TECH-SEMANTIC-RECALL.md](07_tech/TECH-SEMANTIC-RECALL.md)
+- [TECH-GRAPH-NATIVE.md](07_tech/TECH-GRAPH-NATIVE.md)
 
 ## Change triggers
 
@@ -304,3 +353,4 @@ Actualizar `07` y/o `TECH-*` cuando cambie cualquiera de estos puntos:
 - estrategia de hardening de dependencias o bootstrap runtime
 - perfiles de exploracion docs-first o evidence-first como `nav ask` y `nav service`
 - embeddings backends, profiles, configuracion, migracion o recall contract
+- identidad/generations graph-native, adapters, publicacion/recovery, bounded query, federacion, context optimizer o MILX

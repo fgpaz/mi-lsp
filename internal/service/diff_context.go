@@ -29,10 +29,12 @@ type DiffSymbol struct {
 }
 
 type DiffContextResult struct {
-	Ref            string       `json:"ref"`
-	ChangedFiles   int          `json:"changed_files"`
-	ChangedSymbols []DiffSymbol `json:"changed_symbols"`
-	Impact         *DiffImpact  `json:"impact,omitempty"`
+	Ref            string                     `json:"ref"`
+	ChangedFiles   int                        `json:"changed_files"`
+	ChangedPaths   []string                   `json:"changed_paths,omitempty"`
+	ChangedSymbols []DiffSymbol               `json:"changed_symbols"`
+	Impact         *DiffImpact                `json:"impact,omitempty"`
+	GraphImpact    *model.GraphImpactEnvelope `json:"graph_impact,omitempty"`
 }
 
 type DiffImpact struct {
@@ -73,6 +75,7 @@ func (a *App) diffContext(ctx context.Context, request model.CommandRequest) (mo
 			Items: []DiffContextResult{{
 				Ref:            ref,
 				ChangedFiles:   0,
+				ChangedPaths:   []string{},
 				ChangedSymbols: []DiffSymbol{},
 				Impact: &DiffImpact{
 					FilesAffected:   0,
@@ -90,7 +93,45 @@ func (a *App) diffContext(ctx context.Context, request model.CommandRequest) (mo
 	}
 	defer db.Close()
 
-	// 5. For each changed file+line: lookup enclosing symbol
+	// 5. Reuse the read-only graph impact core for the same changed paths.
+	var graphImpact *model.GraphImpactEnvelope
+	graphBackend := "git+catalog+heuristic"
+	graphWarning := "graph impact unavailable; results are limited to git and catalog heuristics"
+	graphRequest := model.GraphImpactRequest{
+		Generation:   stringPayload(request.Payload, "generation"),
+		Mode:         stringPayload(request.Payload, "mode"),
+		Depth:        intFromAny(request.Payload["depth"], 0),
+		Limit:        intFromAny(request.Payload["limit"], 0),
+		TokenBudget:  intFromAny(request.Payload["token_budget"], 0),
+		Cursor:       stringPayload(request.Payload, "cursor"),
+		IncludeTests: boolPayload(request.Payload, "include_tests"),
+		IncludeDocs:  boolPayload(request.Payload, "include_docs"),
+	}
+	for path := range changedMap {
+		graphRequest.Paths = append(graphRequest.Paths, path)
+	}
+	sort.Strings(graphRequest.Paths)
+	if graphRequest.Mode == "" {
+		graphRequest.Mode = model.GraphImpactModeDirect
+	}
+	if edges, ok := request.Payload["edge"].([]string); ok {
+		graphRequest.Relations = edges
+	}
+	if graphGenerationAvailable(ctx, db) {
+		if impact, impactErr := GraphImpact(ctx, db, graphRequest); impactErr == nil && impact.GenerationID != "" {
+			graphImpact = &impact
+			graphBackend = "graph-native"
+			graphWarning = ""
+		} else if impactErr != nil {
+			if !graphImpactCanFallback(impactErr) {
+				return model.Envelope{}, impactErr
+			}
+		}
+	} else {
+		graphWarning = "graph generation unavailable; results are limited to git and catalog heuristics"
+	}
+
+	// 6. For each changed file+line: lookup enclosing symbol
 	symbolMap := make(map[string]*DiffSymbol) // key: "file:line:name" for dedup
 	var changingFiles []string
 
@@ -149,6 +190,7 @@ func (a *App) diffContext(ctx context.Context, request model.CommandRequest) (mo
 			}
 		}
 	}
+	sort.Strings(changingFiles)
 
 	// 6. Build result
 	var symbols []DiffSymbol
@@ -167,18 +209,45 @@ func (a *App) diffContext(ctx context.Context, request model.CommandRequest) (mo
 	result := DiffContextResult{
 		Ref:            ref,
 		ChangedFiles:   len(changingFiles),
+		ChangedPaths:   append([]string(nil), changingFiles...),
 		ChangedSymbols: symbols,
 		Impact: &DiffImpact{
 			FilesAffected:   len(changingFiles),
 			SymbolsAffected: len(symbols),
 		},
+		GraphImpact: graphImpact,
 	}
 
+	warnings := []string{}
+	if graphWarning != "" {
+		warnings = append(warnings, graphWarning)
+	}
+	var truncated bool
+	var generationID string
+	var graphSchemaVersion int
+	var determinismDigest string
+	var continuation *model.Continuation
+	if graphImpact != nil {
+		truncated = graphImpact.Truncated
+		generationID = graphImpact.GenerationID
+		graphSchemaVersion = graphImpact.GraphSchemaVersion
+		determinismDigest = graphImpact.DeterminismDigest
+		continuation = graphImpact.Continuation
+		for _, warning := range graphImpact.Warnings {
+			warnings = appendStringIfMissing(warnings, warning)
+		}
+	}
 	return model.Envelope{
-		Ok:        true,
-		Workspace: registration.Name,
-		Backend:   "git+catalog",
-		Items:     []DiffContextResult{result},
+		Ok:                 true,
+		Workspace:          registration.Name,
+		Backend:            graphBackend,
+		Items:              []DiffContextResult{result},
+		Warnings:           warnings,
+		Truncated:          truncated,
+		GenerationID:       generationID,
+		GraphSchemaVersion: graphSchemaVersion,
+		DeterminismDigest:  determinismDigest,
+		Continuation:       continuation,
 		Stats: model.Stats{
 			Files:   len(changingFiles),
 			Symbols: len(symbols),
