@@ -1032,6 +1032,8 @@ class ProcessResult:
     reason_code: str | None = None
     output_bytes: int = 0
     estimated_tokens: int = 0
+    stdout: str | None = None
+    stderr: str | None = None
 
 
 class _RSSSampler:
@@ -1107,11 +1109,18 @@ def run_process(argv: Sequence[str], timeout_seconds: float) -> ProcessResult:
     sampler = _RSSSampler(process)
     sampler.start()
     try:
-        stdout, _stderr = process.communicate(timeout=timeout_seconds)
+        stdout, stderr = process.communicate(timeout=timeout_seconds)
     except subprocess.TimeoutExpired:
         process.kill()
-        process.communicate()
-        return ProcessResult(process.returncode or 124, (time.perf_counter() - started) * 1000.0, rss_bytes=sampler.stop(), reason_code="timeout")
+        stdout, stderr = process.communicate()
+        return ProcessResult(
+            process.returncode or 124,
+            (time.perf_counter() - started) * 1000.0,
+            rss_bytes=sampler.stop(),
+            reason_code="timeout",
+            stdout=stdout,
+            stderr=stderr,
+        )
     rss = sampler.stop()
     elapsed = (time.perf_counter() - started) * 1000.0
     output_bytes = len(stdout.encode("utf-8", "replace"))
@@ -1120,10 +1129,38 @@ def run_process(argv: Sequence[str], timeout_seconds: float) -> ProcessResult:
         payload = json.loads(stdout)
     except json.JSONDecodeError:
         reason_code = "nonzero_exit" if process.returncode != 0 else "decode_error"
-        return ProcessResult(process.returncode, elapsed, rss_bytes=rss, reason_code=reason_code, output_bytes=output_bytes, estimated_tokens=estimated_tokens)
+        return ProcessResult(
+            process.returncode,
+            elapsed,
+            rss_bytes=rss,
+            reason_code=reason_code,
+            output_bytes=output_bytes,
+            estimated_tokens=estimated_tokens,
+            stdout=stdout,
+            stderr=stderr,
+        )
     if process.returncode != 0:
-        return ProcessResult(process.returncode, elapsed, payload=payload, rss_bytes=rss, reason_code="nonzero_exit", output_bytes=output_bytes, estimated_tokens=estimated_tokens)
-    return ProcessResult(process.returncode, elapsed, payload=payload, rss_bytes=rss, output_bytes=output_bytes, estimated_tokens=estimated_tokens)
+        return ProcessResult(
+            process.returncode,
+            elapsed,
+            payload=payload,
+            rss_bytes=rss,
+            reason_code="nonzero_exit",
+            output_bytes=output_bytes,
+            estimated_tokens=estimated_tokens,
+            stdout=stdout,
+            stderr=stderr,
+        )
+    return ProcessResult(
+        process.returncode,
+        elapsed,
+        payload=payload,
+        rss_bytes=rss,
+        output_bytes=output_bytes,
+        estimated_tokens=estimated_tokens,
+        stdout=stdout,
+        stderr=stderr,
+    )
 
 
 def _command(binary: Path, source_root: Path, campaign_id: str, query: Mapping[str, Any], mode: str) -> list[str]:
@@ -1337,6 +1374,16 @@ def _daemon_not_running_payload(payload: Any) -> bool:
     )
 
 
+def _daemon_not_running_text(result: ProcessResult) -> bool:
+    """Accept only the exact plain-text daemon-unavailable output."""
+    outputs = [
+        stream.strip()
+        for stream in (result.stdout, result.stderr)
+        if isinstance(stream, str) and stream.strip()
+    ]
+    return outputs == ["daemon is not running"]
+
+
 def _daemon_stop_probe(binary: Path, timeout_seconds: float, *, required: bool) -> dict[str, Any]:
     try:
         result = run_process([str(binary), "--format", "json", "daemon", "stop"], _preflight_timeout(timeout_seconds))
@@ -1352,9 +1399,19 @@ def _daemon_stop_probe(binary: Path, timeout_seconds: float, *, required: bool) 
     )
     already_stopped = (
         result is not None
-        and result.returncode != 0
-        and result.reason_code == "nonzero_exit"
-        and _daemon_not_running_payload(result.payload)
+        and (
+            (
+                result.returncode != 0
+                and result.reason_code == "nonzero_exit"
+                and _daemon_not_running_payload(result.payload)
+            )
+            or (
+                result.returncode == 1
+                and result.reason_code == "nonzero_exit"
+                and result.payload is None
+                and _daemon_not_running_text(result)
+            )
+        )
     )
     if running_stop or already_stopped:
         return {

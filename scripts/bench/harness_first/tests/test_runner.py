@@ -296,6 +296,44 @@ class RunnerContractTests(unittest.TestCase):
         self.assertNotIn("daemon is not running", json.dumps(result))
         self.assertNotIn("message", result)
 
+    def test_daemon_stop_plain_not_running_is_idempotent_without_raw_output(self):
+        for stdout, stderr in ((" \n daemon is not running \r\n ", ""), ("", "\tdaemon is not running\n")):
+            with self.subTest(stream=(stdout, stderr)):
+                with patch(
+                    "scripts.bench.harness_first.runner.run_process",
+                    return_value=ProcessResult(
+                        1,
+                        2.5,
+                        payload=None,
+                        reason_code="nonzero_exit",
+                        stdout=stdout,
+                        stderr=stderr,
+                    ),
+                ):
+                    result = _daemon_stop_probe(Path("candidate"), 10.0, required=True)
+                self.assertEqual(result["status"], "PASS")
+                self.assertTrue(result["already_stopped"])
+                self.assertEqual(result["elapsed_ms"], 2.5)
+                self.assertNotIn("daemon is not running", json.dumps(result))
+                self.assertNotIn("stdout", result)
+                self.assertNotIn("stderr", result)
+
+    def test_daemon_stop_unrelated_plain_text_exit_one_fails_closed(self):
+        with patch(
+            "scripts.bench.harness_first.runner.run_process",
+            return_value=ProcessResult(
+                1,
+                3.0,
+                payload=None,
+                reason_code="nonzero_exit",
+                stdout="daemon is not running; extra output",
+                stderr="",
+            ),
+        ):
+            result = _daemon_stop_probe(Path("candidate"), 10.0, required=True)
+        self.assertEqual(result["status"], "FAIL")
+        self.assertEqual(result["reason_code"], "daemon_preflight_failed")
+
     def test_daemon_stop_unrelated_exit_one_fails_closed(self):
         payload = {
             "ok": False,
