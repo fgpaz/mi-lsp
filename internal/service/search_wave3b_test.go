@@ -95,6 +95,52 @@ func TestSearchPatternRg_UsesDefaultIgnoreGlobs(t *testing.T) {
 	}
 }
 
+func TestSearchPatternRg_UsesDeterministicPathSort(t *testing.T) {
+	args := buildRipgrepArgs("needle", false, ".")
+	for i, arg := range args {
+		if arg == "--sort" {
+			if i+1 >= len(args) || args[i+1] != "path" {
+				t.Fatalf("--sort argument = %#v, want --sort path", args[i:])
+			}
+			return
+		}
+	}
+	t.Fatalf("buildRipgrepArgs missing deterministic path sort: %#v", args)
+}
+
+func TestSearchPatternRg_BoundedResultsUsePathOrder(t *testing.T) {
+	rgBin, err := exec.LookPath("rg")
+	if err != nil {
+		t.Skipf("ripgrep is unavailable: %v", err)
+	}
+
+	root, name := setupTestWorkspace(t)
+	project := testProject(name)
+	cases := []struct {
+		directory string
+		files     []string
+	}{
+		{directory: "case-created-z-first", files: []string{"z-last.cs", "a-first.cs"}},
+		{directory: "case-created-a-first", files: []string{"a-first.cs", "z-last.cs"}},
+	}
+	for _, testCase := range cases {
+		for _, file := range testCase.files {
+			writeWorkspaceFile(t, root, filepath.Join(testCase.directory, "src", file), "StableNeedle\n")
+		}
+
+		items, err := searchPatternRg(context.Background(), root, filepath.Join(root, testCase.directory), project, "StableNeedle", false, 1, rgBin)
+		if err != nil {
+			t.Fatalf("searchPatternRg(%s): %v", testCase.directory, err)
+		}
+		if len(items) != 1 {
+			t.Fatalf("searchPatternRg(%s) returned %d items, want 1: %#v", testCase.directory, len(items), items)
+		}
+		if got, _ := items[0]["file"].(string); got != filepath.ToSlash(filepath.Join(testCase.directory, "src", "a-first.cs")) {
+			t.Fatalf("searchPatternRg(%s) file = %q, want path-sorted first match", testCase.directory, got)
+		}
+	}
+}
+
 func TestSearchPatternFallbackIgnoresNestedMiLspState(t *testing.T) {
 	root, name := setupTestWorkspace(t)
 	project := testProject(name)
