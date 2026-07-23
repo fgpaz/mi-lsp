@@ -97,6 +97,7 @@ allowed_paths:
   - .docs/ae/repo-policy.yaml
   - .docs/planificacion/**
   - .docs/auditoria/2026-07-18-milsp-graph-native/**
+  - .docs/auditoria/2026-07-21-milsp-graph-native-g9-g10/**
   - .docs/auditoria/2026-07-21-milsp-harness-first-roadmap/**
   - worker-dotnet/**
   - skills/mi-lsp/**

@@ -27,7 +27,7 @@ hash_index:
   self_hash: not_applicable
   entries:
     - path: session-contract.yaml
-      sha256: fece061580da90727a42ac4cdaa7994a1dcfef5e4fa98d030a6f04b89b9658a9
+      sha256: 2b89c6566cd487a2daaecb61f1734d5d12c8686c85bbd44bbfcbe269a0c12248
     - path: traceability-closure.yaml
       sha256: 601f86123570c3d66a9de32cd440a458997a2bfdeacbeaa6064e2a0d451040d7
     - path: audit-report.yaml
