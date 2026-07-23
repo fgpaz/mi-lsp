@@ -520,7 +520,9 @@ class RunnerContractTests(unittest.TestCase):
         self.assertIn("--no-daemon", calls[4])
         self.assertIn("wiki", calls[5])
         self.assertIn("--no-daemon", calls[5])
-        self.assertEqual(set(cwd_values), {root})
+        # Resolve both sides: CI runners surface 8.3 short paths on Windows
+        # (RUNNER~1) and /private/var symlinked tmp dirs on macOS.
+        self.assertEqual({Path(value).resolve() for value in cwd_values}, {root.resolve()})
         self.assertEqual(len(cwd_values), len(calls))
         self.assertEqual(report["samples"][0]["elapsed_ms"], 7.0)
         self.assertEqual(report["candidate_preflight"]["worker_elapsed_ms"], 3.0)

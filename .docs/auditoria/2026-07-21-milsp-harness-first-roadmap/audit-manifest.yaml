@@ -27,11 +27,11 @@ hash_index:
   self_hash: not_applicable
   entries:
     - path: session-contract.yaml
-      sha256: 2b89c6566cd487a2daaecb61f1734d5d12c8686c85bbd44bbfcbe269a0c12248
+      sha256: 3ba926a57343e964b0a4982a5135c7b192352d521e16f59710bca085a8f14948
     - path: traceability-closure.yaml
       sha256: 601f86123570c3d66a9de32cd440a458997a2bfdeacbeaa6064e2a0d451040d7
     - path: audit-report.yaml
-      sha256: b11bfefe2bc67100a954063d90372a427d955a1a6c27c8190d38d9addae6ef85
+      sha256: d291564b5e833af4e9998e2ebce0dede8150a291af1934f9ef42b3f2b39e1925
     - path: ae-close-verdict.md
       sha256: 143a646f2959d9d57cd1032341b589b0471e9a6957653deb49e5d2d22a82c024
 cleanup_status:

@@ -42,3 +42,23 @@ post_audit_delta_policy: >-
   contract-schema conformance (this report, ae-close verdict, hash finalization,
   raw-plan untracking, contract restructure to canonical schema). No code or wiki
   canon changed; waiver recorded in session-contract.yaml.
+post_audit_deltas:
+  - id: POST-AUDIT-DELTA-20260723-01
+    date: 2026-07-23
+    trigger: PR 58 CI red on all three platforms
+    changes:
+      - path: scripts/bench/harness_first/tests/test_runner.py
+        nature: test-only path normalization (resolve both sides of the cwd
+          assertion; Windows 8.3 short paths and macOS /private/var tmp symlinks)
+      - path: scripts/tests/archive-safety.ps1
+        nature: test-only pwsh host resolution (probe pwsh without .exe suffix
+          plus MainModule fallback for Linux/macOS CI)
+    product_code_changed: false
+    canon_changed: false
+    release_binary_inputs_changed: false
+    reverification:
+      - 82/82 python runner tests PASS local
+      - archive-safety.ps1 PASS local (System32 powershell.exe 5.1, exit 0)
+      - PR CI matrix on ubuntu/windows/macos is the cross-platform oracle
+    audit_disposition: Approved retained with documented delta per
+      session-contract waiver POST-AUDIT-DELTA-20260723-01

@@ -206,3 +206,10 @@ waivers:
   - post-audit commits limited to closure evidence and contract-schema conformance
     (audit-report, ae-close verdict, hash finalization, raw-plan untracking) do not
     stale the Approved audit; any code or canon change does
+  - CI-portability-only fixes in test harness code (test_runner.py path resolution
+    for 8.3 short paths and macOS symlinked tmp; archive-safety.ps1 pwsh host
+    resolution on Linux) are recorded as POST-AUDIT-DELTA-20260723-01; they touch
+    no product code, no release binary inputs, and no canon, and are re-verified
+    deterministically (82/82 python tests, archive-safety PASS) plus by the PR CI
+    matrix on all three platforms; the Approved audit is retained with this
+    documented delta instead of a full re-audit

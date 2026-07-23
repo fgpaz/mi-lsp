@@ -18,10 +18,18 @@ function Get-PowerShellHost {
         $command = Get-Command powershell.exe -ErrorAction SilentlyContinue
     }
     else {
+        # pwsh has no .exe suffix on Linux/macOS; probe both spellings.
         $candidates += Join-Path $PSHOME 'pwsh.exe'
+        $candidates += Join-Path $PSHOME 'pwsh'
         $command = Get-Command pwsh.exe -ErrorAction SilentlyContinue
+        if (-not $command) { $command = Get-Command pwsh -ErrorAction SilentlyContinue }
     }
     if ($command) { $candidates += $command.Source }
+    try {
+        $mainModulePath = [System.Diagnostics.Process]::GetCurrentProcess().MainModule.FileName
+        if (-not [string]::IsNullOrWhiteSpace($mainModulePath)) { $candidates += $mainModulePath }
+    }
+    catch {}
     foreach ($candidate in $candidates) {
         if (-not [string]::IsNullOrWhiteSpace($candidate) -and (Test-Path -LiteralPath $candidate -PathType Leaf)) {
             return (Resolve-Path -LiteralPath $candidate).Path
