@@ -85,10 +85,11 @@ required_slots:
   - language.policy_lang
   - language.docs_lang
   - tracker.provider
-  - tracker.<provider>.base_url
-  - tracker.<provider>.workspace
-  - tracker.<provider>.key_env
-  - tracker.<provider>.projects[].key
+  - tracker.<provider>.base_url (external providers only)
+  - tracker.<provider>.workspace (external providers only)
+  - tracker.<provider>.key_env (external providers only; env name, never a secret value)
+  - tracker.<provider>.projects[].key (external providers only)
+  - tracker.none.mode (None provider only; must be local-only)
   - secrets.vault
   - secrets.tool
   - wiki.layers_map.02
@@ -99,9 +100,12 @@ required_slots:
   - qa.canon_paths[]
   - last_updated
 policy:
-  supported_tracker_providers: [Linear, Plane, Azure Boards, Jira]
+  supported_tracker_providers: [Linear, Plane, Azure Boards, Jira, None]
+  provider_aliases: exact_case_aliases_resolve_to_one_block
   exactly_one_provider_block: true
+  none_mode: local-only_only
   top_level_tracker_aliases: forbidden
+  external_key_env: environment_variable_name_only
   no_secrets: true
   no_fixture_config: true
 verify:

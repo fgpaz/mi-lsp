@@ -1,0 +1,17 @@
+schema: worker-final/v1
+verdict: BLOCKED
+summary: Native worker launch was unavailable in the exposed Claude tool surface; implementation was completed locally under the session contract after recording the adapter blocker.
+changed_paths: []
+verification: []
+blockers:
+  - native_spawn_tool_unavailable
+next_action: Parent performs deterministic join and closure review.
+model_selection:
+  requested: gpt-5.6-luna
+  effort: medium
+mi_lsp:
+  intent: provider-aware governance validator
+  operation: nav intent
+  attribution:
+    client_name: claude-luna
+    session_id: ae-kernel-v2-tracker-provider-luna

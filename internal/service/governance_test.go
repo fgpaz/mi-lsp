@@ -454,6 +454,12 @@ func TestInspectGovernanceReportsKernelV2SourceDefects(t *testing.T) {
 			missingSlot: "#tracker.linear.key_env",
 		},
 		{
+			name:        "provider key env must be an env name",
+			oldValue:    "    key_env: TEST_LINEAR_API_KEY",
+			newValue:    "    key_env: key-env-with-dash",
+			missingSlot: "#tracker.linear.key_env",
+		},
+		{
 			name:        "invalid update date is rejected",
 			oldValue:    "last_updated: \"2026-07-13\"",
 			newValue:    "last_updated: \"not-a-date\"",
@@ -542,6 +548,126 @@ func TestInspectGovernanceAcceptsKernelV2TrackerProviders(t *testing.T) {
 				t.Fatalf("expected %s tracker policy to pass, got %#v", tc.provider, status)
 			}
 		})
+	}
+}
+
+func TestInspectGovernanceAcceptsKernelV2TrackerNone(t *testing.T) {
+	ensureWritableTestHome(t)
+	root := t.TempDir()
+	kernelHome := t.TempDir()
+	t.Setenv("AE_KERNEL_HOME", kernelHome)
+	writeSpecBackendGovernanceFixture(t, root)
+	addKernelV2AECanonToGovernanceFixture(t, root)
+	writeKernelV2CanonModules(t, kernelHome)
+	writeKernelV2RepoPolicy(t, root)
+
+	policyPath := filepath.Join(root, ".docs", "ae", "repo-policy.yaml")
+	content, err := os.ReadFile(policyPath)
+	if err != nil {
+		t.Fatalf("read repo policy fixture: %v", err)
+	}
+	updated := strings.Replace(string(content), strings.Join([]string{
+		"  provider: Linear",
+		"  linear:",
+		"    base_url: https://api.linear.app/graphql",
+		"    workspace: test",
+		"    key_env: TEST_LINEAR_API_KEY",
+		"    projects:",
+		"      - key: TEST",
+	}, "\n"), strings.Join([]string{
+		"  provider: None",
+		"  none:",
+		"    mode: local-only",
+	}, "\n"), 1)
+	if updated == string(content) {
+		t.Fatal("tracker fixture did not contain the expected Linear block")
+	}
+	writeWorkspaceFile(t, root, ".docs/ae/repo-policy.yaml", updated)
+
+	status := docgraph.InspectGovernance(root, true)
+	if status.Blocked || status.AECanon.Status != "valid" {
+		t.Fatalf("expected tracker None policy to pass, got %#v", status)
+	}
+}
+
+func TestInspectGovernanceRejectsKernelV2TrackerNoneDefects(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		tracker     string
+		missingSlot string
+	}{
+		{
+			name:        "missing local-only mode",
+			tracker:     "  provider: None\n  none: {}",
+			missingSlot: "#tracker.none.mode",
+		},
+		{
+			name:        "external field is forbidden",
+			tracker:     "  provider: None\n  none:\n    mode: local-only\n  linear:\n    key_env: SHOULD_NOT_EXIST",
+			missingSlot: "#tracker.linear#forbidden",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ensureWritableTestHome(t)
+			root := t.TempDir()
+			kernelHome := t.TempDir()
+			t.Setenv("AE_KERNEL_HOME", kernelHome)
+			writeSpecBackendGovernanceFixture(t, root)
+			addKernelV2AECanonToGovernanceFixture(t, root)
+			writeKernelV2CanonModules(t, kernelHome)
+			writeKernelV2RepoPolicy(t, root)
+
+			policyPath := filepath.Join(root, ".docs", "ae", "repo-policy.yaml")
+			content, err := os.ReadFile(policyPath)
+			if err != nil {
+				t.Fatalf("read repo policy fixture: %v", err)
+			}
+			updated := strings.Replace(string(content), strings.Join([]string{
+				"  provider: Linear",
+				"  linear:",
+				"    base_url: https://api.linear.app/graphql",
+				"    workspace: test",
+				"    key_env: TEST_LINEAR_API_KEY",
+				"    projects:",
+				"      - key: TEST",
+			}, "\n"), tc.tracker, 1)
+			if updated == string(content) {
+				t.Fatal("tracker fixture did not contain the expected Linear block")
+			}
+			writeWorkspaceFile(t, root, ".docs/ae/repo-policy.yaml", updated)
+
+			status := docgraph.InspectGovernance(root, true)
+			if !status.Blocked || status.AECanon.Status != "missing" {
+				t.Fatalf("expected invalid tracker None policy to block, got %#v", status)
+			}
+			if !strings.Contains(strings.Join(status.AECanon.MissingModules, "\n"), tc.missingSlot) {
+				t.Fatalf("expected tracker defect %q, got %#v", tc.missingSlot, status.AECanon.MissingModules)
+			}
+		})
+	}
+}
+
+func TestInspectGovernanceAcceptsRealBuhoNoneRepoPolicy(t *testing.T) {
+	const realPolicyPath = `C:\repos\buho\assets\.docs\ae\repo-policy.yaml`
+	content, err := os.ReadFile(realPolicyPath)
+	if os.IsNotExist(err) {
+		t.Skipf("real Buho policy is not available at %s", realPolicyPath)
+	}
+	if err != nil {
+		t.Fatalf("read real Buho policy: %v", err)
+	}
+	ensureWritableTestHome(t)
+	root := t.TempDir()
+	kernelHome := t.TempDir()
+	t.Setenv("AE_KERNEL_HOME", kernelHome)
+	writeSpecBackendGovernanceFixture(t, root)
+	addKernelV2AECanonToGovernanceFixture(t, root)
+	writeKernelV2CanonModules(t, kernelHome)
+	writeWorkspaceFile(t, root, ".docs/ae/repo-policy.yaml", string(content))
+
+	status := docgraph.InspectGovernance(root, true)
+	if status.Blocked || status.AECanon.Status != "valid" {
+		t.Fatalf("expected real Buho None policy to pass without tracker secrets, got %#v", status)
 	}
 }
 
