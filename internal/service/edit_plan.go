@@ -265,7 +265,15 @@ func validateEditPlanPacket(root string, packet *model.EditPlanRequest, strict b
 			}
 			guardrails = append(guardrails, model.EditPlanGuardrail{Code: "missing_expected_hash", Status: "warning", Message: "target " + id + " has no expected_hash; dry-run validated current bytes only"})
 		} else if !editPlanHashMatches(expectedHash, actualHash) {
-			return nil, nil, nil, fmt.Errorf("target %s: expected_hash mismatch", id)
+			// Apply/strict/evidence stay hard-fail; dry-run continues on current bytes.
+			if applyRequested || strict || packet.Constraints.RequireEvidence {
+				return nil, nil, nil, fmt.Errorf("target %s: expected_hash mismatch", id)
+			}
+			guardrails = append(guardrails, model.EditPlanGuardrail{
+				Code:    "expected_hash_mismatch",
+				Status:  "warning",
+				Message: "target " + id + ": expected_hash mismatch; dry-run based on current file bytes",
+			})
 		}
 		packet.Targets[i] = target
 		resolved := editPlanResolvedTarget{

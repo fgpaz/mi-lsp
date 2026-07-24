@@ -559,3 +559,89 @@ func runEditPlanGitOutput(t *testing.T, root string, args ...string) string {
 	}
 	return string(output)
 }
+
+func TestEditPlanExpectedHashMismatchDryRunWarning(t *testing.T) {
+	root, name := setupTestWorkspace(t)
+	content := "package demo\n\nfunc Label() string { return \"old\" }\n"
+	writeWorkspaceFile(t, root, "src/edit_plan.go", content)
+
+	ops := []model.EditPlanOperation{{
+		ID:       "op-replace",
+		Kind:     "replace_literal",
+		TargetID: "target-main",
+		Find:     "old",
+		Replace:  "new",
+	}}
+	packet := model.EditPlanRequest{
+		Version: model.EditPlanVersion,
+		Intent:  "test expected_hash mismatch dry-run",
+		Targets: []model.EditPlanTarget{{
+			ID:           "target-main",
+			Path:         "src/edit_plan.go",
+			Range:        model.EditPlanRange{StartLine: 1, EndLine: 0},
+			ExpectedHash: "sha256:deadbeef",
+		}},
+		Operations: ops,
+		Constraints: model.EditPlanConstraints{
+			RequireCleanMatch: true,
+			RequireEvidence:   false,
+		},
+	}
+	data, err := json.Marshal(packet)
+	if err != nil {
+		t.Fatalf("marshal packet: %v", err)
+	}
+
+	env, err := New(root, &fakeSemanticCaller{}).Execute(context.Background(), model.CommandRequest{
+		Operation: "nav.edit-plan",
+		Context:   model.QueryOptions{Workspace: name},
+		Payload:   map[string]any{"packet": string(data)},
+	})
+	if err != nil {
+		t.Fatalf("dry-run with expected_hash mismatch: %v", err)
+	}
+	if env.Mode != "dry_run" {
+		t.Fatalf("mode = %s, want dry_run", env.Mode)
+	}
+	results := env.Items.([]model.EditPlanResult)
+	if len(results) != 1 {
+		t.Fatalf("items = %#v, want one result", env.Items)
+	}
+	found := false
+	for _, g := range results[0].Guardrails {
+		if g.Code == "expected_hash_mismatch" && g.Status == "warning" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("guardrails = %#v, want expected_hash_mismatch warning", results[0].Guardrails)
+	}
+	if !strings.Contains(results[0].Diff, "new") {
+		t.Fatalf("diff = %q, want replacement based on current bytes", results[0].Diff)
+	}
+	got, err := os.ReadFile(filepath.Join(root, "src/edit_plan.go"))
+	if err != nil {
+		t.Fatalf("read file: %v", err)
+	}
+	if string(got) != content {
+		t.Fatalf("file mutated during dry-run: %q", got)
+	}
+
+	initCleanGitWorkspace(t, root)
+	_, err = New(root, &fakeSemanticCaller{}).Execute(context.Background(), model.CommandRequest{
+		Operation: "nav.edit-plan",
+		Context:   model.QueryOptions{Workspace: name},
+		Payload: map[string]any{
+			"packet":             string(data),
+			"apply":              true,
+			"experimental_apply": true,
+		},
+	})
+	if err == nil {
+		t.Fatalf("expected apply with expected_hash mismatch to fail")
+	}
+	if !strings.Contains(err.Error(), "expected_hash mismatch") {
+		t.Fatalf("apply error = %v, want expected_hash mismatch", err)
+	}
+}
