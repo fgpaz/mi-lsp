@@ -109,6 +109,20 @@ commands:
     sections: [change, affected, callers, callees, tests, contracts, wiki]
     preview: bounded-seven-section-with-executable-expansions
     full: expansion-request; may remain preview when no additional evidence is available
+  nav.flow-slice:
+    shape: mi-lsp nav flow-slice [--from <sel>] [--to <sel>] [--selector <sel>] [--limit N]
+    status: implemented
+    semantics: one-shot-harness-flow-packet
+    includes: [path, callers, callees, neighbors, read_first, hub_risk, batch_continuation]
+  nav.change-pack:
+    shape: mi-lsp nav change-pack [ref] [--path <path> ...] [--limit N]
+    status: implemented
+    semantics: one-shot-harness-diff-impact-packet
+    includes: [changed_paths, changed_symbols, affected_ranked, hub_risk, community_overlap, read_first, batch_continuation]
+  output.profiles:
+    - human
+    - agent
+    - harness-micro
 ```
 
 ## Routing de intencion y explain-change

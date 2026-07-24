@@ -13,13 +13,27 @@ import (
 
 // ApplyProfile filters envelope fields based on the profile setting.
 // Agent profile reduces token cost by omitting human-only telemetry and verbose fields.
+// Harness-micro is stricter: drops coach/metrics/memory/hint noise and compresses items.
 func ApplyProfile(env model.Envelope) model.Envelope {
-	if env.Profile != model.OutputProfileAgent {
+	switch env.Profile {
+	case model.OutputProfileHarnessMicro:
+		env.Items = compactItems(env.Items, true)
+		env.Coach = nil
+		env.Metrics = nil
+		env.MemoryPointer = nil
+		// Keep continuation (executable) but drop free-form hints.
+		env.Hint = ""
+		env.NextHint = nil
+		if len(env.Warnings) > 3 {
+			env.Warnings = env.Warnings[:3]
+		}
+		return env
+	case model.OutputProfileAgent:
+		env.Items = compactItems(env.Items, true)
+		return env
+	default:
 		return env
 	}
-	// For agent profile: auto-compress and omit verbose fields
-	env.Items = compactItems(env.Items, true) // Auto-compress for agent
-	return env
 }
 
 func Render(env model.Envelope, format string, compress bool) ([]byte, error) {
