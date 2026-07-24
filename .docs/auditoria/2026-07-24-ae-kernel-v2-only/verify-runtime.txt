@@ -1,6 +1,0 @@
-ts=2026-07-24T13:18:50-03:00
-repo=mi-lsp worktree=C:\wt\milsp-ae-v2-only
-tests=go test ./internal/docgraph ./internal/service PASS
-ae_canon=source kernel_v2 status valid reason kernel_v2_external_valid
-marker=88a02363
-preflight_read=PASS
