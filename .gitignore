@@ -19,6 +19,10 @@
 !/.docs/ae/
 !/.docs/ae/repo-policy.yaml
 !/.docs/auditoria/
+# Keep local audit sessions untracked by default so they do not dirty
+# git status / Go vcs.modified stamps. Only force-tracked allowlisted
+# sessions are versioned.
+/.docs/auditoria/**
 !/.docs/auditoria/2026-07-13-ae-kernel-v2-integration/
 !/.docs/auditoria/2026-07-13-ae-kernel-v2-integration/**
 /.docs/tmp/

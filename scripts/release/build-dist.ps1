@@ -42,7 +42,11 @@ foreach ($rid in $Rids) {
         $env:GOOS = $spec.GOOS
         $env:GOARCH = $spec.GOARCH
         $cliOut = Join-Path $distRoot $spec.CliName
-        & go build '-ldflags=-s -w' -o $cliOut ./cmd/mi-lsp
+        # -buildvcs=true forces VCS stamping even when GOFLAGS or environment
+        # would otherwise suppress it (e.g. some worktree / CI shells).
+        # Clean-tree certification still depends on gitignore excluding local
+        # audit noise so Go does not embed vcs.modified=true.
+        & go build -buildvcs=true '-ldflags=-s -w' -o $cliOut ./cmd/mi-lsp
         if ($LASTEXITCODE -ne 0) {
             throw "go build failed for RID '$rid'"
         }
