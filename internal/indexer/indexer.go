@@ -71,7 +71,8 @@ func IndexWorkspaceWithGraphProgress(ctx context.Context, root string, clean boo
 	}
 	warnings = append(warnings, graphWarnings...)
 
-	docs, docEdges, docMentions, sourceBlocks, sourceRecords, docWarnings, err := docgraph.IndexWorkspaceDocsWithSourcesWithProgress(ctx, root, matcher, func(ctx context.Context, progressValue docgraph.Progress) error {
+	priorDocs := loadPriorDocSnapshot(ctx, root)
+	docs, docEdges, docMentions, sourceBlocks, sourceRecords, docWarnings, err := docgraph.IndexWorkspaceDocsWithSourcesWithProgressPrior(ctx, root, matcher, func(ctx context.Context, progressValue docgraph.Progress) error {
 		return reportProgress(ctx, progress, Progress{
 			Stage:      progressValue.Stage,
 			Path:       progressValue.Path,
@@ -81,7 +82,7 @@ func IndexWorkspaceWithGraphProgress(ctx context.Context, root string, clean boo
 			FilesTotal: progressValue.FilesTotal,
 			Force:      progressValue.Force,
 		})
-	})
+	}, priorDocs)
 	if err != nil {
 		return Result{}, err
 	}
@@ -270,7 +271,8 @@ func IndexWorkspaceDocsOnlyWithProgress(ctx context.Context, root string, genera
 		return Result{}, err
 	}
 
-	docs, docEdges, docMentions, sourceBlocks, sourceRecords, warnings, err := docgraph.IndexWorkspaceDocsWithSourcesWithProgress(ctx, root, matcher, func(ctx context.Context, progressValue docgraph.Progress) error {
+	priorDocs := loadPriorDocSnapshot(ctx, root)
+	docs, docEdges, docMentions, sourceBlocks, sourceRecords, warnings, err := docgraph.IndexWorkspaceDocsWithSourcesWithProgressPrior(ctx, root, matcher, func(ctx context.Context, progressValue docgraph.Progress) error {
 		return reportProgress(ctx, progress, Progress{
 			Stage:      progressValue.Stage,
 			Path:       progressValue.Path,
@@ -278,7 +280,7 @@ func IndexWorkspaceDocsOnlyWithProgress(ctx context.Context, root string, genera
 			FilesTotal: progressValue.FilesTotal,
 			Force:      progressValue.Force,
 		})
-	})
+	}, priorDocs)
 	if err != nil {
 		return Result{}, err
 	}
@@ -317,6 +319,38 @@ func docsOnlyProjectFile(root string) (model.ProjectFile, error) {
 		Kind: model.WorkspaceKindSingle,
 	}
 	return workspace.LoadProjectSummary(root, registration)
+}
+
+// loadPriorDocSnapshot best-effort loads the last published docs index for path-level skip-reparse.
+// Missing/empty indexes return nil (full parse path).
+func loadPriorDocSnapshot(ctx context.Context, root string) *docgraph.PriorDocSnapshot {
+	db, err := store.Open(root)
+	if err != nil {
+		return nil
+	}
+	defer db.Close()
+
+	docs, err := store.ListDocRecords(ctx, db)
+	if err != nil || len(docs) == 0 {
+		return nil
+	}
+	edges, err := store.ListDocEdges(ctx, db)
+	if err != nil {
+		return nil
+	}
+	mentions, err := store.ListDocMentions(ctx, db)
+	if err != nil {
+		return nil
+	}
+	blocks, err := store.ListDocSourceBlocks(ctx, db)
+	if err != nil {
+		return nil
+	}
+	records, err := store.ListDocSourceRecords(ctx, db)
+	if err != nil {
+		return nil
+	}
+	return docgraph.BuildPriorDocSnapshot(docs, edges, mentions, blocks, records)
 }
 
 func reportProgress(ctx context.Context, progress ProgressFunc, value Progress) error {

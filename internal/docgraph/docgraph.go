@@ -56,10 +56,77 @@ type Progress struct {
 	Path       string
 	Docs       int
 	FilesTotal int
-	Force      bool
+	// Parsed/Skipped report docs.read path-level skip-reparse stats when available.
+	Parsed  int
+	Skipped int
+	Force   bool
 }
 
 type ProgressFunc func(context.Context, Progress) error
+
+// PriorDocSnapshot holds a previous docs index keyed by relative path so
+// IndexWorkspaceDocs can skip markdown/wiki-source reparse when content_hash matches.
+type PriorDocSnapshot struct {
+	Docs     map[string]model.DocRecord
+	Edges    map[string][]model.DocEdge
+	Mentions map[string][]model.DocMention
+	Blocks   map[string][]model.DocSourceBlock
+	Records  map[string][]model.DocSourceRecord
+}
+
+// BuildPriorDocSnapshot indexes prior docs facts by path for skip-reparse reuse.
+func BuildPriorDocSnapshot(
+	docs []model.DocRecord,
+	edges []model.DocEdge,
+	mentions []model.DocMention,
+	blocks []model.DocSourceBlock,
+	records []model.DocSourceRecord,
+) *PriorDocSnapshot {
+	if len(docs) == 0 {
+		return nil
+	}
+	prior := &PriorDocSnapshot{
+		Docs:     make(map[string]model.DocRecord, len(docs)),
+		Edges:    make(map[string][]model.DocEdge),
+		Mentions: make(map[string][]model.DocMention),
+		Blocks:   make(map[string][]model.DocSourceBlock),
+		Records:  make(map[string][]model.DocSourceRecord),
+	}
+	for _, doc := range docs {
+		if doc.Path == "" || doc.ContentHash == "" {
+			continue
+		}
+		prior.Docs[doc.Path] = doc
+	}
+	if len(prior.Docs) == 0 {
+		return nil
+	}
+	for _, edge := range edges {
+		if edge.FromPath == "" {
+			continue
+		}
+		prior.Edges[edge.FromPath] = append(prior.Edges[edge.FromPath], edge)
+	}
+	for _, mention := range mentions {
+		if mention.DocPath == "" {
+			continue
+		}
+		prior.Mentions[mention.DocPath] = append(prior.Mentions[mention.DocPath], mention)
+	}
+	for _, block := range blocks {
+		if block.DocPath == "" {
+			continue
+		}
+		prior.Blocks[block.DocPath] = append(prior.Blocks[block.DocPath], block)
+	}
+	for _, record := range records {
+		if record.DocPath == "" {
+			continue
+		}
+		prior.Records[record.DocPath] = append(prior.Records[record.DocPath], record)
+	}
+	return prior
+}
 
 func ProfilePath(root string) string {
 	return filepath.Join(root, ".docs", "wiki", "_mi-lsp", "read-model.toml")
@@ -159,6 +226,12 @@ func IndexWorkspaceDocsWithProgress(ctx context.Context, root string, matcher *w
 }
 
 func IndexWorkspaceDocsWithSourcesWithProgress(ctx context.Context, root string, matcher *workspace.IgnoreMatcher, progress ProgressFunc) ([]model.DocRecord, []model.DocEdge, []model.DocMention, []model.DocSourceBlock, []model.DocSourceRecord, []string, error) {
+	return IndexWorkspaceDocsWithSourcesWithProgressPrior(ctx, root, matcher, progress, nil)
+}
+
+// IndexWorkspaceDocsWithSourcesWithProgressPrior indexes docs and skips markdown/wiki-source
+// reparse when prior content_hash still matches the on-disk file bytes.
+func IndexWorkspaceDocsWithSourcesWithProgressPrior(ctx context.Context, root string, matcher *workspace.IgnoreMatcher, progress ProgressFunc, prior *PriorDocSnapshot) ([]model.DocRecord, []model.DocEdge, []model.DocMention, []model.DocSourceBlock, []model.DocSourceRecord, []string, error) {
 	profile, _, warnings := LoadProfile(root)
 	collectStarted := time.Now()
 	if err := reportProgress(ctx, progress, Progress{Stage: "docs.collect", Force: true}); err != nil {
@@ -188,6 +261,7 @@ func IndexWorkspaceDocsWithSourcesWithProgress(ctx context.Context, root string,
 		edges         []model.DocEdge
 		sourceBlocks  []model.DocSourceBlock
 		sourceRecords []model.DocSourceRecord
+		skipped       bool
 		warning       string
 		err           error
 	}
@@ -224,6 +298,27 @@ func IndexWorkspaceDocsWithSourcesWithProgress(ctx context.Context, root string,
 					results[i] = docWorkResult{warning: fmt.Sprintf("doc read failed for %s: %v", candidate.relativePath, err)}
 					continue
 				}
+				contentHash := digest(content)
+				if prior != nil {
+					if prev, ok := prior.Docs[candidate.relativePath]; ok && prev.ContentHash == contentHash {
+						doc := prev
+						doc.Path = candidate.relativePath
+						doc.Layer = candidate.layer
+						doc.Family = candidate.family
+						doc.ContentHash = contentHash
+						doc.IsSnapshot = isSnapshotPath(candidate.relativePath)
+						// Preserve title/snippet/search_text/doc_id/IndexedAt from prior; content is identical.
+						results[i] = docWorkResult{
+							doc:           doc,
+							mentions:      append([]model.DocMention(nil), prior.Mentions[candidate.relativePath]...),
+							edges:         append([]model.DocEdge(nil), prior.Edges[candidate.relativePath]...),
+							sourceBlocks:  append([]model.DocSourceBlock(nil), prior.Blocks[candidate.relativePath]...),
+							sourceRecords: append([]model.DocSourceRecord(nil), prior.Records[candidate.relativePath]...),
+							skipped:       true,
+						}
+						continue
+					}
+				}
 				title := extractTitle(content)
 				docID := firstDocID(title + "\n" + string(content))
 				doc := model.DocRecord{
@@ -234,7 +329,7 @@ func IndexWorkspaceDocsWithSourcesWithProgress(ctx context.Context, root string,
 					Family:      candidate.family,
 					Snippet:     extractSnippet(content),
 					SearchText:  normalizeSearchText(title + "\n" + candidate.relativePath + "\n" + string(content)),
-					ContentHash: digest(content),
+					ContentHash: contentHash,
 					IndexedAt:   time.Now().Unix(),
 					IsSnapshot:  isSnapshotPath(candidate.relativePath),
 				}
@@ -291,6 +386,8 @@ func IndexWorkspaceDocsWithSourcesWithProgress(ctx context.Context, root string,
 	sourceRecords := make([]model.DocSourceRecord, 0)
 	seenDocID := map[string]string{}
 	pendingDocIDEdges := make([]model.DocEdge, 0)
+	parsed := 0
+	skipped := 0
 
 	for _, result := range results {
 		if result.err != nil {
@@ -302,6 +399,11 @@ func IndexWorkspaceDocsWithSourcesWithProgress(ctx context.Context, root string,
 		}
 		if result.doc.Path == "" {
 			continue
+		}
+		if result.skipped {
+			skipped++
+		} else {
+			parsed++
 		}
 		if result.doc.DocID != "" {
 			seenDocID[result.doc.DocID] = result.doc.Path
@@ -321,12 +423,17 @@ func IndexWorkspaceDocsWithSourcesWithProgress(ctx context.Context, root string,
 
 	if err := reportProgress(ctx, progress, Progress{
 		Stage:      "docs.read",
-		Path:       fmt.Sprintf("elapsed_ms=%d", time.Since(readStarted).Milliseconds()),
+		Path:       fmt.Sprintf("elapsed_ms=%d parsed=%d skipped=%d", time.Since(readStarted).Milliseconds(), parsed, skipped),
 		Docs:       len(docs),
 		FilesTotal: len(candidates),
+		Parsed:     parsed,
+		Skipped:    skipped,
 		Force:      true,
 	}); err != nil {
 		return nil, nil, nil, nil, nil, warnings, err
+	}
+	if skipped > 0 {
+		warnings = append(warnings, fmt.Sprintf("docs_skip_reparse parsed=%d skipped=%d", parsed, skipped))
 	}
 
 	for _, edge := range pendingDocIDEdges {
