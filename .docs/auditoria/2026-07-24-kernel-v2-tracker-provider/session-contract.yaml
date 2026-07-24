@@ -1,0 +1,48 @@
+schema: ae-session-contract/v1
+session_id: ae-kernel-v2-tracker-provider-luna
+work_mode: STANDARD
+ae_budget_gate:
+  effort_class: T2
+  persistence_mode: full_governance
+  governance_depth: kernel_v2
+  context_loading_profile: docs_and_target_symbols
+  evidence_loading_profile: deterministic_tests_and_release_readback
+  artifact_lifecycle: bounded_mutation
+  closure_profile: ae-close
+  worker_budget: 1
+  worker_decision: blocked
+  worker_adapter_available: manifest_present_native_spawn_unavailable
+  worker_authorized_by_user: true
+  independent_axes: [validator, tests, technical_contract]
+  why_no_worker: native_spawn_tool_unavailable; ae-worker-pi skill exposed contract only without launch evidence
+  why_not_cheaper: provider matrix, real policy smoke, and binary provenance require deterministic closure evidence
+base_revision: a251ab1
+actual_base_revision: 474be849b2374aa04cc9529b80449c1cdc38b2e2
+branch: worktree-agent-a775a06a4c3831efb
+worktree: C:\repos\mios\mi-lsp\.claude\worktrees\agent-a775a06a4c3831efb
+allowed_paths:
+  - internal/docgraph/governance.go
+  - internal/service/governance_test.go
+  - .docs/wiki/07_baseline_tecnica.md
+  - .docs/wiki/07_tech/TECH-GOVERNANCE-PROFILES.md
+  - .docs/wiki/09_contratos/CT-GOVERNANCE-AE-KERNEL-V2.md
+  - .docs/auditoria/2026-07-24-kernel-v2-tracker-provider/**
+forbidden_paths:
+  - README.md
+  - skills/**
+  - C:\repos\mios\mi-lsp\**
+  - C:\repos\buho\**
+  - registry.toml
+  - adapters/**
+read_only_references:
+  - C:\repos\mios\mi-lsp\internal\docgraph\governance.go (dirty root)
+  - C:\repos\buho\assets\.docs\ae\repo-policy.yaml
+verification:
+  - go test ./internal/service ./internal/docgraph
+  - go test ./...
+  - race: NOT_RUN_HOST_UNSUPPORTED (Windows ARM64)
+  - real Buho policy read-only smoke test
+release:
+  required_rids: [win-arm64, win-x64, linux-arm64, linux-x64, osx-arm64, osx-x64]
+  publish_authority: blocked_until_commit_and_ci
+cleanup_disposition: retain_until_ae_close_then_ttl_cleanup

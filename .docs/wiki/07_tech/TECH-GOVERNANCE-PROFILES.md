@@ -63,8 +63,9 @@ Detallar el modelo tecnico de gobernanza profile-aware de `mi-lsp`.
 ## Validación del Kernel v2
 
 - El canon universal se resuelve desde `<kernel_home>/canon`; no se duplica en el repositorio.
-- `.docs/ae/repo-policy.yaml` declara `tracker.provider` y exactamente un bloque específico: `linear`, `plane`, `azure_boards` o `jira`.
-- El bloque seleccionado requiere `base_url`, `workspace`, `key_env` y al menos un proyecto con `key`.
+- `.docs/ae/repo-policy.yaml` declara un alias exacto en `tracker.provider` (`Linear`, `Plane`, `Azure Boards`, `Jira` o `None`) y exactamente un bloque correspondiente (`linear`, `plane`, `azure_boards`, `jira` o `none`).
+- `None` solo requiere `tracker.none.mode: local-only`; no requiere ni admite campos de proveedores externos o aliases legacy.
+- Un proveedor externo requiere dentro de su bloque `base_url`, `workspace`, `key_env` (solo nombre de variable de entorno) y al menos un proyecto con `key`.
 - Los aliases neutrales `tracker.base_url`, `tracker.conf_file`, `tracker.key_env`, `tracker.workspace` y `tracker.projects` son inválidos porque impiden un render determinístico entre providers.
 - `repo.structure_rules` debe contener al menos una regla concreta del repositorio.
 

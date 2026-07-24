@@ -57,21 +57,31 @@ var requiredKernelV2RepoPolicyStringSlots = [][]string{
 	{"subagents", "roster_file"},
 }
 
-var kernelV2TrackerProviderBlocks = map[string]string{
-	"linear":       "linear",
-	"Linear":       "linear",
-	"LINEAR":       "linear",
-	"plane":        "plane",
-	"Plane":        "plane",
-	"PLANE":        "plane",
-	"azure_boards": "azure_boards",
-	"azure-boards": "azure_boards",
-	"AzureBoards":  "azure_boards",
-	"Azure Boards": "azure_boards",
-	"jira":         "jira",
-	"Jira":         "jira",
-	"JIRA":         "jira",
+type kernelV2TrackerProviderSpec struct {
+	blockName string
+	fields    []string
 }
+
+var kernelV2TrackerProviders = map[string]kernelV2TrackerProviderSpec{
+	"linear":       {blockName: "linear", fields: []string{"base_url", "workspace", "key_env", "projects"}},
+	"Linear":       {blockName: "linear", fields: []string{"base_url", "workspace", "key_env", "projects"}},
+	"LINEAR":       {blockName: "linear", fields: []string{"base_url", "workspace", "key_env", "projects"}},
+	"plane":        {blockName: "plane", fields: []string{"base_url", "workspace", "key_env", "projects"}},
+	"Plane":        {blockName: "plane", fields: []string{"base_url", "workspace", "key_env", "projects"}},
+	"PLANE":        {blockName: "plane", fields: []string{"base_url", "workspace", "key_env", "projects"}},
+	"azure_boards": {blockName: "azure_boards", fields: []string{"base_url", "workspace", "key_env", "projects"}},
+	"azure-boards": {blockName: "azure_boards", fields: []string{"base_url", "workspace", "key_env", "projects"}},
+	"AzureBoards":  {blockName: "azure_boards", fields: []string{"base_url", "workspace", "key_env", "projects"}},
+	"Azure Boards": {blockName: "azure_boards", fields: []string{"base_url", "workspace", "key_env", "projects"}},
+	"jira":         {blockName: "jira", fields: []string{"base_url", "workspace", "key_env", "projects"}},
+	"Jira":         {blockName: "jira", fields: []string{"base_url", "workspace", "key_env", "projects"}},
+	"JIRA":         {blockName: "jira", fields: []string{"base_url", "workspace", "key_env", "projects"}},
+	"none":         {blockName: "none", fields: []string{"mode"}},
+	"None":         {blockName: "none", fields: []string{"mode"}},
+	"NONE":         {blockName: "none", fields: []string{"mode"}},
+}
+
+var kernelV2EnvNamePattern = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 
 var (
 	errSafeFileMissing = errors.New("safe file missing")
@@ -503,32 +513,45 @@ func invalidKernelV2TrackerSlots(value any) []string {
 	if !ok {
 		return []string{"tracker.provider"}
 	}
-	blockName, ok := kernelV2TrackerProviderBlocks[provider]
+	providerSpec, ok := kernelV2TrackerProviders[provider]
 	if !ok {
 		return []string{"tracker.provider"}
 	}
 	invalid := make([]string, 0)
 	for key := range tracker {
-		if key != "provider" && key != blockName {
+		if key != "provider" && key != providerSpec.blockName {
 			invalid = append(invalid, "tracker."+key+"#forbidden")
 		}
 	}
-	block, ok := tracker[blockName].(map[string]any)
+	block, ok := tracker[providerSpec.blockName].(map[string]any)
 	if !ok {
-		return append(invalid, "tracker."+blockName)
+		return append(invalid, "tracker."+providerSpec.blockName)
+	}
+	allowedFields := make(map[string]struct{}, len(providerSpec.fields))
+	for _, field := range providerSpec.fields {
+		allowedFields[field] = struct{}{}
 	}
 	for key := range block {
-		if key != "base_url" && key != "workspace" && key != "key_env" && key != "projects" {
-			invalid = append(invalid, "tracker."+blockName+"."+key+"#forbidden")
+		if _, allowed := allowedFields[key]; !allowed {
+			invalid = append(invalid, "tracker."+providerSpec.blockName+"."+key+"#forbidden")
 		}
 	}
-	for _, field := range []string{"base_url", "workspace", "key_env"} {
-		if !validKernelV2RepoPolicyString(block[field]) {
-			invalid = append(invalid, "tracker."+blockName+"."+field)
+	if providerSpec.blockName == "none" {
+		if mode, ok := block["mode"].(string); !ok || mode != "local-only" {
+			invalid = append(invalid, "tracker.none.mode")
 		}
+		return invalid
+	}
+	for _, field := range []string{"base_url", "workspace"} {
+		if !validKernelV2RepoPolicyString(block[field]) {
+			invalid = append(invalid, "tracker."+providerSpec.blockName+"."+field)
+		}
+	}
+	if !validKernelV2EnvName(block["key_env"]) {
+		invalid = append(invalid, "tracker."+providerSpec.blockName+".key_env")
 	}
 	if !validKernelV2Projects(block["projects"]) {
-		invalid = append(invalid, "tracker."+blockName+".projects[].key")
+		invalid = append(invalid, "tracker."+providerSpec.blockName+".projects[].key")
 	}
 	return invalid
 }
@@ -551,6 +574,11 @@ func lookupKernelV2RepoPolicyValue(policy map[string]any, path ...string) any {
 func validKernelV2RepoPolicyString(value any) bool {
 	text, ok := value.(string)
 	return ok && strings.TrimSpace(text) != ""
+}
+
+func validKernelV2EnvName(value any) bool {
+	text, ok := value.(string)
+	return ok && kernelV2EnvNamePattern.MatchString(text)
 }
 
 func validKernelV2Projects(value any) bool {
