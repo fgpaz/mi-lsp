@@ -228,15 +228,16 @@ func TestNavRouteDoesNotAttachMissingExplicitRFToGovernanceFallback(t *testing.T
 	}
 }
 
-func TestNavRouteExplicitAEIDPrefersDeclaredCanonRoot(t *testing.T) {
+func TestNavRouteExplicitAEIDUsesCompatibilityHistoryUnderKernelV2(t *testing.T) {
 	alias := "route-ae-canon-" + t.Name()
 	ensureWritableTestHome(t)
 	root := t.TempDir()
 	writeWorkspaceFile(t, root, "src/App.csproj", `<Project Sdk="Microsoft.NET.Sdk"></Project>`)
 	writeWorkspaceFile(t, root, ".docs/wiki/07_baseline_tecnica.md", "# 07. Baseline tecnica\n")
-	writeAECanonModules(t, root, ".docs/ae")
-	writeSpecBackendGovernanceFixtureWithAE(t, root, ".docs/ae")
-	writeWorkspaceFile(t, root, ".docs/wiki/ae/AE-HARNESS-MANIFEST.md", "# AE-HARNESS-MANIFEST\n\nLegacy projection only.\n")
+	writeSpecBackendGovernanceFixtureWithKernelV2(t, root)
+	// Local historical projection remains discoverable for navigation, but is not AE authority.
+	writeWorkspaceFile(t, root, ".docs/wiki/ae/AE-HARNESS-MANIFEST.md", "# AE-HARNESS-MANIFEST\n\nid: AE-HARNESS-MANIFEST\n\nCompatibility history only.\n")
+	writeWorkspaceFile(t, root, ".docs/ae/AE-HARNESS-MANIFEST.md", "# AE-HARNESS-MANIFEST\n\nid: AE-HARNESS-MANIFEST\n\nMust not win over wiki compatibility path when kernel_v2 is active.\n")
 	if _, err := workspace.RegisterWorkspace(alias, model.WorkspaceRegistration{
 		Name:      alias,
 		Root:      root,
@@ -258,8 +259,8 @@ func TestNavRouteExplicitAEIDPrefersDeclaredCanonRoot(t *testing.T) {
 	}
 	results := env.Items.([]model.RouteResult)
 	anchor := results[0].Canonical.AnchorDoc
-	if anchor.Path != ".docs/ae/AE-HARNESS-MANIFEST.md" {
-		t.Fatalf("AE anchor path = %q, want declared .docs/ae root", anchor.Path)
+	if anchor.Path != ".docs/wiki/ae/AE-HARNESS-MANIFEST.md" {
+		t.Fatalf("AE anchor path = %q, want compatibility history .docs/wiki/ae", anchor.Path)
 	}
 }
 

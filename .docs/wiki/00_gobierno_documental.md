@@ -143,8 +143,8 @@ hierarchy:
     paths:
       - .docs/wiki/09_*.md
       - .docs/wiki/09_contratos/*.md
-  - id: agent_engineering
-    label: Agent Engineering
+  - id: compatibility_history
+    label: AE Compatibility History
     layer: "AE"
     family: technical
     pack_stage: technical_detail
@@ -157,14 +157,14 @@ context_chain:
   - flow
   - requirements
   - technical_baseline
-  - agent_engineering
+  - compatibility_history
   - contracts
 closure_chain:
   - governance
   - flow
   - requirements
   - technical_baseline
-  - agent_engineering
+  - compatibility_history
   - contracts
   - tests
 audit_chain:
@@ -172,7 +172,7 @@ audit_chain:
   - flow
   - requirements
   - technical_baseline
-  - agent_engineering
+  - compatibility_history
   - physical_data
   - contracts
   - tests
@@ -261,7 +261,7 @@ evidence:
 8. `07_baseline_tecnica.md` y `07_tech/`
 9. `08_modelo_fisico_datos.md` y `08_db/`
 10. `09_contratos_tecnicos.md` y `09_contratos/`
-11. `ae/`
+11. `ae/` como `compatibility_history` no autoritativa
 
 ## Cadenas canonicas
 

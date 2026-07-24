@@ -147,9 +147,25 @@ func writeSpecBackendGovernanceFixtureWithAE(t *testing.T, root string, aeRoot s
 	writeSpecBackendGovernanceFixture(t, root)
 	addAEDeclarationToGovernanceFixture(t, root, aeRoot)
 
+	// Hard cut: hierarchy-declared repo-local AE without kernel_v2 is rejected.
 	status := docgraph.InspectGovernance(root, true)
-	if status.Blocked {
-		t.Fatalf("expected governance fixture with AE to be valid, got blocked status: %#v", status)
+	if !status.Blocked || status.AECanon.Reason != "ae_canon_legacy_mode_rejected" {
+		t.Fatalf("expected legacy AE declaration to be rejected, got %#v", status)
+	}
+}
+
+func writeSpecBackendGovernanceFixtureWithKernelV2(t *testing.T, root string) {
+	t.Helper()
+	kernelHome := t.TempDir()
+	t.Setenv("AE_KERNEL_HOME", kernelHome)
+	writeSpecBackendGovernanceFixture(t, root)
+	addKernelV2AECanonToGovernanceFixture(t, root)
+	writeKernelV2CanonModules(t, kernelHome)
+	writeKernelV2RepoPolicy(t, root)
+
+	status := docgraph.InspectGovernance(root, true)
+	if status.Blocked || status.AECanon.Status != "valid" || status.AECanon.Source != "kernel_v2" {
+		t.Fatalf("expected kernel_v2 governance fixture to be valid, got %#v", status)
 	}
 }
 

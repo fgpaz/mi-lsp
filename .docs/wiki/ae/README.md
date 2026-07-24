@@ -52,7 +52,9 @@ evidence:
 
 ## Purpose
 
-The AE layer is the agent-engineering operating layer for this repo. It does not replace `00..09`; it binds the existing SDD wiki, agent policies, release scripts, and closure evidence into a repeatable execution contract.
+This directory is retained as `compatibility_history` only. It is a non-authoritative historical projection of earlier repository-local AE workflow material; it is not an AE canon root and must not be used to satisfy governance. The active universal AE canon is the external Kernel v2 at `<kernel_home>/canon`, with repository-specific policy in `.docs/ae/repo-policy.yaml`.
+
+The historical material below is retained for migration context and traceability. It does not replace `00..09`, and it cannot redefine the external Kernel v2 contract.
 
 ```toon
 doc_id: AE-README
@@ -92,6 +94,6 @@ stop_if:
 
 ## Operating Rule
 
-Use `ae-programa` as the gateway for non-trivial, mutating, policy, harness, shared-skill, or multi-step work. It invokes `ae-orquestador` for mode selection, then routes to `ae-harness-manifest`, `ae-decision-lock`, release distribution, projections, and evidence policy as needed.
+Use `ae-work` as the gateway for non-trivial, mutating, policy, harness, shared-skill, or multi-step work against the external Kernel v2. Route through Kernel v2 entrypoints and repository policy only; historical `ae-programa` names are non-authoritative aliases and must not own executable routing.
 
 Any change that can alter the installed CLI, worker bootstrap, release assets, version provenance, or cross-OS behavior must close through [[AE-RELEASE-DISTRIBUTION]] before it is considered done.

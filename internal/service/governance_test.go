@@ -55,7 +55,7 @@ func TestNavGovernanceReportsEffectiveProfileAndSync(t *testing.T) {
 	}
 }
 
-func TestNavGovernanceReportsDeclaredAECanonRoots(t *testing.T) {
+func TestNavGovernanceRejectsDeclaredLegacyAECanonRoots(t *testing.T) {
 	for _, aeRoot := range []string{".docs/wiki/ae", "wiki/ae", ".docs/ae"} {
 		t.Run(aeRoot, func(t *testing.T) {
 			alias := "gov-ae-" + filepath.Base(t.TempDir())
@@ -94,14 +94,11 @@ func TestNavGovernanceReportsDeclaredAECanonRoots(t *testing.T) {
 				t.Fatalf("nav.governance: %v", err)
 			}
 			status := env.Items.([]model.GovernanceStatus)[0]
-			if status.Blocked {
-				t.Fatalf("expected governance to pass, got %#v", status)
+			if !status.Blocked {
+				t.Fatalf("expected legacy AE declaration to block governance, got %#v", status)
 			}
-			if status.AECanon.Status != "valid" {
-				t.Fatalf("ae_canon.status = %q, want valid: %#v", status.AECanon.Status, status.AECanon)
-			}
-			if status.AECanon.Source != "governance" {
-				t.Fatalf("ae_canon.source = %q, want governance", status.AECanon.Source)
+			if status.AECanon.Status != "mismatch" || status.AECanon.Reason != "ae_canon_legacy_mode_rejected" {
+				t.Fatalf("expected legacy AE rejection, got %#v", status.AECanon)
 			}
 			if len(status.AECanon.Roots) != 1 || status.AECanon.Roots[0] != aeRoot {
 				t.Fatalf("ae_canon.roots = %#v, want [%s]", status.AECanon.Roots, aeRoot)
@@ -813,12 +810,12 @@ func TestNavGovernanceUsesReadModelSourceDocForKnowledgeWiki(t *testing.T) {
 	if status.Profile != "knowledge-wiki" || status.Sync != "in_sync" {
 		t.Fatalf("expected knowledge-wiki in_sync, got profile=%q sync=%q", status.Profile, status.Sync)
 	}
-	if status.AECanon.Status != "valid" {
-		t.Fatalf("expected valid fallback AE canon, got %#v", status.AECanon)
+	if status.AECanon.Status == "valid" {
+		t.Fatalf("knowledge-wiki without kernel_v2 must not promote repo-local AE as authority, got %#v", status.AECanon)
 	}
 }
 
-func TestNavGovernanceFollowsExplicitAECanonReadmeRedirect(t *testing.T) {
+func TestNavGovernanceRejectsExplicitAECanonReadmeRedirect(t *testing.T) {
 	alias := "gov-ae-redirect-" + filepath.Base(t.TempDir())
 	ensureWritableTestHome(t)
 	root := t.TempDir()
@@ -828,8 +825,8 @@ func TestNavGovernanceFollowsExplicitAECanonReadmeRedirect(t *testing.T) {
 	writeSpecBackendGovernanceFixture(t, root)
 	addAEDeclarationToGovernanceFixture(t, root, ".docs/wiki/ae")
 	writeWorkspaceFile(t, root, ".docs/wiki/ae/README.md", "# AE redirect\n\nCanon moved to `.docs/ae/README.md`.\n")
-	if status := docgraph.InspectGovernance(root, true); status.Blocked {
-		t.Fatalf("expected redirected AE canon to pass, got %#v", status)
+	if status := docgraph.InspectGovernance(root, true); !status.Blocked || status.AECanon.Reason != "ae_canon_legacy_mode_rejected" {
+		t.Fatalf("expected redirected legacy AE canon to be rejected, got %#v", status)
 	}
 
 	app := New(root, nil)
@@ -857,11 +854,8 @@ func TestNavGovernanceFollowsExplicitAECanonReadmeRedirect(t *testing.T) {
 		t.Fatalf("nav.governance: %v", err)
 	}
 	status := env.Items.([]model.GovernanceStatus)[0]
-	if status.AECanon.Status != "valid" || status.AECanon.Source != "redirect" {
-		t.Fatalf("expected valid redirected ae_canon, got %#v", status.AECanon)
-	}
-	if len(status.AECanon.Roots) != 1 || status.AECanon.Roots[0] != ".docs/ae" {
-		t.Fatalf("ae_canon.roots = %#v, want [.docs/ae]", status.AECanon.Roots)
+	if !status.Blocked || status.AECanon.Reason != "ae_canon_legacy_mode_rejected" {
+		t.Fatalf("expected legacy redirect rejection, got %#v", status)
 	}
 }
 

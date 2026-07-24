@@ -358,7 +358,7 @@ func inspectAECanonFromProjection(root string, reason string) model.AECanonStatu
 		}
 		roots := declaredAECanonRoots(profile.Governance.Hierarchy)
 		if len(roots) > 0 {
-			status := inspectAECanonRoots(root, roots, "read_model", reason+"_read_model_projection")
+			status := rejectedLegacyAECanon("read_model", roots)
 			status.Status = "projection_only"
 			// Only block if the workspace is actually declaring AE in its governance
 			// (i.e., the governance is valid and declares it). When governance itself is invalid,
@@ -368,16 +368,13 @@ func inspectAECanonFromProjection(root string, reason string) model.AECanonStatu
 			return status
 		}
 	}
-	if directoryExists(filepath.Join(root, ".docs", "wiki", "ae")) {
-		return inspectAECanonRoots(root, []string{filepath.ToSlash(filepath.Join(".docs", "wiki", "ae"))}, "fallback", reason+"_fallback")
-	}
 	return model.AECanonStatus{
 		Status:          "missing",
 		Source:          "fallback",
-		RequiredModules: append([]string{}, requiredAECanonModules...),
-		MissingModules:  append([]string{}, requiredAECanonModules...),
+		RequiredModules: nil,
+		MissingModules:  nil,
 		Blocking:        false,
-		Reason:          reason,
+		Reason:          reason + "_not_declared",
 	}
 }
 
@@ -385,7 +382,15 @@ func inspectConfiguredAECanon(root string, config model.GovernanceAECanon, hiera
 	mode := strings.ToLower(strings.TrimSpace(config.Mode))
 	switch mode {
 	case "":
-		return inspectAECanonFromHierarchy(root, hierarchy, source)
+		if roots := declaredAECanonRoots(hierarchy); len(roots) > 0 {
+			return rejectedLegacyAECanon(source, roots)
+		}
+		return model.AECanonStatus{
+			Status:   "not_applicable",
+			Source:   "none",
+			Blocking: false,
+			Reason:   "ae_canon_not_declared",
+		}
 	case "kernel_v2":
 		return inspectKernelV2AECanon(root, config)
 	default:
@@ -396,6 +401,22 @@ func inspectConfiguredAECanon(root string, config model.GovernanceAECanon, hiera
 			Reason:         "ae_canon_mode_invalid",
 			MissingModules: []string{"ae_canon.mode must be kernel_v2"},
 		}
+	}
+}
+
+func rejectedLegacyAECanon(source string, roots []string) model.AECanonStatus {
+	return model.AECanonStatus{
+		Status:          "mismatch",
+		Roots:           append([]string{}, roots...),
+		Source:          source,
+		RequiredModules: append([]string{}, requiredKernelV2CanonModules...),
+		Blocking:        true,
+		Reason:          "ae_canon_legacy_mode_rejected",
+		MissingModules: []string{
+			"ae_canon.mode must be kernel_v2",
+			"ae_canon.source must be <kernel_home>/canon",
+			"ae_canon.repo_policy must be .docs/ae/repo-policy.yaml",
+		},
 	}
 }
 
@@ -757,93 +778,30 @@ func pathContainedBy(root string, candidate string, allowEqual bool) bool {
 	return allowEqual || relative != "."
 }
 
-func inspectAECanonFromHierarchy(root string, hierarchy []model.GovernanceHierarchyItem, source string) model.AECanonStatus {
+// inspectAECanonFromHierarchy is retained only for call-site clarity. Repo-local
+// AE canon modules are never accepted as authority after the Kernel v2 hard cut.
+func inspectAECanonFromHierarchy(_ string, hierarchy []model.GovernanceHierarchyItem, source string) model.AECanonStatus {
 	roots := declaredAECanonRoots(hierarchy)
 	if len(roots) > 0 {
-		return inspectAECanonRoots(root, roots, source, source+"_declared")
-	}
-	fallbackRoot := filepath.ToSlash(filepath.Join(".docs", "wiki", "ae"))
-	if directoryExists(filepath.Join(root, filepath.FromSlash(fallbackRoot))) {
-		return inspectAECanonRoots(root, []string{fallbackRoot}, "fallback", "fallback_docs_wiki_ae")
+		return rejectedLegacyAECanon(source, roots)
 	}
 	return model.AECanonStatus{
-		Status:          "not_applicable",
-		Source:          "fallback",
-		RequiredModules: append([]string{}, requiredAECanonModules...),
-		Blocking:        false,
-		Reason:          "no_ae_canon_declared",
+		Status:   "not_applicable",
+		Source:   "none",
+		Blocking: false,
+		Reason:   "no_ae_canon_declared",
 	}
-}
-
-func inspectAECanonRoots(root string, roots []string, source string, reason string) model.AECanonStatus {
-	roots = dedupeStrings(normalizeAECanonRoots(roots))
-	for _, declaredRoot := range roots {
-		if redirectedRoot := aeCanonRedirectRoot(root, declaredRoot); redirectedRoot != "" {
-			status := inspectAECanonRoot(root, redirectedRoot, "redirect", "readme_redirect")
-			if status.Status == "valid" {
-				return status
-			}
-			if status.Status == "missing" {
-				status.Status = "mismatch"
-				status.Reason = "readme_redirect_missing_modules"
-			}
-			return status
-		}
-	}
-	best := model.AECanonStatus{
-		Status:          "missing",
-		Roots:           append([]string{}, roots...),
-		Source:          source,
-		RequiredModules: append([]string{}, requiredAECanonModules...),
-		Blocking:        true,
-		Reason:          reason + "_missing_modules",
-	}
-	for _, declaredRoot := range roots {
-		status := inspectAECanonRoot(root, declaredRoot, source, reason)
-		if status.Status == "valid" {
-			return status
-		}
-		if len(best.MissingModules) == 0 || len(status.MissingModules) < len(best.MissingModules) {
-			best = status
-		}
-	}
-	return best
-}
-
-func inspectAECanonRoot(root string, aeRoot string, source string, reason string) model.AECanonStatus {
-	aeRoot = filepath.ToSlash(strings.Trim(strings.TrimSpace(aeRoot), "/"))
-	missing := make([]string, 0)
-	for _, module := range requiredAECanonModules {
-		rel := filepath.ToSlash(filepath.Join(aeRoot, module))
-		if _, err := os.Stat(filepath.Join(root, filepath.FromSlash(rel))); err != nil {
-			missing = append(missing, rel)
-		}
-	}
-	status := model.AECanonStatus{
-		Status:          "valid",
-		Roots:           []string{aeRoot},
-		Source:          source,
-		RequiredModules: append([]string{}, requiredAECanonModules...),
-		MissingModules:  missing,
-		Blocking:        false,
-		Reason:          reason + "_valid",
-	}
-	if len(missing) > 0 {
-		status.Status = "missing"
-		status.Blocking = true
-		status.Reason = reason + "_missing_modules"
-	}
-	return status
 }
 
 func declaredAECanonRoots(hierarchy []model.GovernanceHierarchyItem) []string {
 	roots := make([]string, 0)
 	for _, item := range hierarchy {
-		itemDeclaresAE := governanceItemDeclaresAE(item)
+		// Hard cut: only explicit AE-authority hierarchy items declare roots.
+		// compatibility_history and bare /ae/ paths are not canon authority.
+		if !governanceItemDeclaresAE(item) {
+			continue
+		}
 		for _, path := range item.Paths {
-			if !itemDeclaresAE && !pathLooksLikeAERoot(path) {
-				continue
-			}
 			if root := aeRootFromPattern(path); root != "" {
 				roots = append(roots, root)
 			}
@@ -853,9 +811,14 @@ func declaredAECanonRoots(hierarchy []model.GovernanceHierarchyItem) []string {
 }
 
 func governanceItemDeclaresAE(item model.GovernanceHierarchyItem) bool {
-	layer := strings.ToUpper(strings.TrimSpace(item.Layer))
 	id := strings.ToLower(strings.TrimSpace(item.ID))
 	label := strings.ToLower(strings.TrimSpace(item.Label))
+	if id == "compatibility_history" ||
+		strings.Contains(id, "compatibility") ||
+		strings.Contains(label, "compatibility history") {
+		return false
+	}
+	layer := strings.ToUpper(strings.TrimSpace(item.Layer))
 	return layer == "AE" ||
 		strings.Contains(id, "agent_engineering") ||
 		strings.Contains(id, "agent-engineering") ||
@@ -974,6 +937,9 @@ func validateAndResolveGovernance(source model.GovernanceSource) (resolvedGovern
 	}
 	if !source.Projection.Versioned {
 		issues = append(issues, "projection.versioned must be true")
+	}
+	if strings.TrimSpace(source.AECanon.Mode) == "" && len(declaredAECanonRoots(source.Hierarchy)) > 0 {
+		issues = append(issues, "ae_canon.mode must be kernel_v2 when AE governance is declared")
 	}
 	if mode := strings.TrimSpace(source.AECanon.Mode); mode != "" {
 		if !strings.EqualFold(mode, "kernel_v2") {
