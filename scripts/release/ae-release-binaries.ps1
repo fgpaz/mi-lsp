@@ -156,7 +156,14 @@ function Get-GoVersionMetadata {
     $revisionMatch = [regex]::Match($text, '(?m)^\s*(?:build\s+)?vcs\.revision(?:=|\s+)([0-9a-fA-F]{40}|[0-9a-fA-F]{64})\s*$')
     $modifiedMatch = [regex]::Match($text, '(?im)^\s*(?:build\s+)?vcs\.modified(?:=|\s+)(true|false)\s*$')
     if (-not $revisionMatch.Success -or -not $modifiedMatch.Success) {
-        throw "go version -m did not expose complete vcs metadata for '$Path'."
+        $gitFile = Join-Path $repoRoot '.git'
+        $linkedWorktree = (Test-Path -LiteralPath $gitFile -PathType Leaf)
+        $hint = if ($linkedWorktree) {
+            ' Linked git worktrees on this host may omit Go vcs.* stamps even with -buildvcs=true; run certified release builds from the primary checkout with a clean git status (local .docs/auditoria sessions must stay gitignored).'
+        } else {
+            ' Ensure the working tree is clean and Go can read git metadata (git available on PATH, no GIT_DIR override).'
+        }
+        throw "go version -m did not expose complete vcs metadata for '$Path'.$hint"
     }
     $revision = $revisionMatch.Groups[1].Value.ToLowerInvariant()
     $modified = $modifiedMatch.Groups[1].Value.ToLowerInvariant()
