@@ -260,6 +260,11 @@ func (s *Server) handleRequestContext(ctx context.Context, request model.Command
 			}
 		}
 		hits, misses, entries := s.resultCache.stats()
+		total := hits + misses
+		hitRate := 0.0
+		if total > 0 {
+			hitRate = float64(hits) / float64(total)
+		}
 		return model.Envelope{
 			Ok:      true,
 			Backend: "daemon",
@@ -270,9 +275,10 @@ func (s *Server) handleRequestContext(ctx context.Context, request model.Command
 				"active_runtimes": s.manager.Status(),
 				"recent_accesses": accesses,
 				"result_cache": map[string]any{
-					"hits":    hits,
-					"misses":  misses,
-					"entries": entries,
+					"hits":     hits,
+					"misses":   misses,
+					"entries":  entries,
+					"hit_rate": hitRate,
 				},
 			}},
 		}, nil

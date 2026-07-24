@@ -463,6 +463,9 @@ func expandPattern(ctx context.Context, root string, pattern string, matcher *wo
 			if err := ctx.Err(); err != nil {
 				return err
 			}
+			if matcher != nil && matcher.ShouldIgnore(root, match) {
+				continue
+			}
 			visit(match)
 		}
 		return nil
@@ -471,6 +474,9 @@ func expandPattern(ctx context.Context, root string, pattern string, matcher *wo
 		return err
 	}
 	absPath := filepath.Join(root, filepath.FromSlash(trimmed))
+	if matcher != nil && matcher.ShouldIgnore(root, absPath) {
+		return nil
+	}
 	visit(absPath)
 	return nil
 }

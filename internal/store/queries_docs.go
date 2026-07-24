@@ -13,7 +13,35 @@ func ReplaceDocs(ctx context.Context, db *sql.DB, docs []model.DocRecord, edges 
 	return ReplaceDocsWithSources(ctx, db, docs, edges, mentions, nil, nil)
 }
 
+// DocContentHashes returns path -> content_hash for the current docs snapshot.
+// Callers use it to skip re-parsing unchanged docs during incremental reindex.
+func DocContentHashes(ctx context.Context, db *sql.DB) (map[string]string, error) {
+	rows, err := QueryContextWithRetry(ctx, db, `
+		SELECT path, content_hash
+		FROM doc_records
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := make(map[string]string)
+	for rows.Next() {
+		var path, hash string
+		if err := rows.Scan(&path, &hash); err != nil {
+			return nil, err
+		}
+		out[path] = hash
+	}
+	return out, rows.Err()
+}
+
 func ReplaceDocsWithSources(ctx context.Context, db *sql.DB, docs []model.DocRecord, edges []model.DocEdge, mentions []model.DocMention, sourceBlocks []model.DocSourceBlock, sourceRecords []model.DocSourceRecord) error {
+	if unchanged, err := docsSnapshotUnchanged(ctx, db, docs); err != nil {
+		return err
+	} else if unchanged {
+		// Content hashes match the current snapshot; skip wholesale rewrite.
+		return nil
+	}
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
@@ -24,6 +52,23 @@ func ReplaceDocsWithSources(ctx context.Context, db *sql.DB, docs []model.DocRec
 		return err
 	}
 	return tx.Commit()
+}
+
+func docsSnapshotUnchanged(ctx context.Context, db *sql.DB, docs []model.DocRecord) (bool, error) {
+	existing, err := DocContentHashes(ctx, db)
+	if err != nil {
+		return false, err
+	}
+	if len(existing) != len(docs) {
+		return false, nil
+	}
+	for _, doc := range docs {
+		hash, ok := existing[doc.Path]
+		if !ok || hash != doc.ContentHash {
+			return false, nil
+		}
+	}
+	return true, nil
 }
 
 func replaceDocsTx(ctx context.Context, tx *sql.Tx, docs []model.DocRecord, edges []model.DocEdge, mentions []model.DocMention) error {
