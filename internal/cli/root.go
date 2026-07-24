@@ -564,9 +564,22 @@ func timeoutForOperation(operation string) time.Duration {
 		return indexer.IndexTimeout()
 	case "workspace.add", "workspace.init":
 		return 5 * time.Minute
+	case "nav.pack", "nav.ask", "nav.route", "nav.prepare", "nav.wiki.pack", "nav.wiki.search", "nav.affected", "nav.edit-plan":
+		return navHeavyTimeout()
 	default:
 		return 2 * time.Minute
 	}
+}
+
+// navHeavyTimeout bounds multi-doc nav ops on large workspaces.
+// Override with MI_LSP_NAV_TIMEOUT (Go duration, e.g. 5m). Default 5m.
+func navHeavyTimeout() time.Duration {
+	if raw := strings.TrimSpace(os.Getenv("MI_LSP_NAV_TIMEOUT")); raw != "" {
+		if d, err := time.ParseDuration(raw); err == nil && d > 0 {
+			return d
+		}
+	}
+	return 5 * time.Minute
 }
 
 func defaultErrorStage(request model.CommandRequest) string {

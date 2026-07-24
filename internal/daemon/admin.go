@@ -312,6 +312,13 @@ func (a *AdminServer) dashboardPayload(accessLimit int, window telemetry.Window)
 		"window":          window.Name,
 		"window_label":    window.Label,
 		"generated_at":    time.Now(),
+		"result_cache": map[string]any{
+			"hits":     0,
+			"misses":   0,
+			"entries":  0,
+			"hit_rate": 0.0,
+			"note":     "live hit_rate is exposed via system.status",
+		},
 	}
 }
 

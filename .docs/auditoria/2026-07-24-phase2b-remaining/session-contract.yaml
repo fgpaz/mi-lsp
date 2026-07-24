@@ -1,0 +1,41 @@
+schema: ae-session-contract/v1
+session: 2026-07-24-phase2b-remaining
+task: phase2b remaining FAST improvements for mi-lsp
+mode: FAST
+ae_budget_gate:
+  effort_class: T2
+  persistence_mode: mini_contract
+  governance_depth: light
+  context_loading_profile: minimal
+  evidence_loading_profile: package_tests
+  artifact_lifecycle: session
+  closure_profile: pr_merge
+  worker_budget: 0
+  worker_decision: none
+  worker_adapter_available: true
+  worker_authorized_by_user: true
+  independent_axes: []
+  why_no_worker: C0-style orchestration with direct FAST package-scoped mutations after previous worker-first wave; exclusive paths local
+  why_not_cheaper: multi-file remaining backlog across docs ignore, timeouts, cache metrics, docs short-circuit
+base: origin/main
+branch: feat/phase2b-remaining
+worktree: C:\wt\milsp-phase2b
+allowed_paths:
+  - internal/docgraph/**
+  - internal/store/queries_docs.go
+  - internal/cli/root.go
+  - internal/daemon/server.go
+  - internal/daemon/admin.go
+  - .docs/auditoria/2026-07-24-phase2b-remaining/**
+forbidden_paths:
+  - AGENTS.md
+  - CLAUDE.md
+  - .docs/wiki/**
+sdd_anchors:
+  - RF-IDX-001
+  - CT-NAV-EDIT-PLAN
+verify:
+  - go test ./internal/docgraph -count=1
+  - go test ./internal/store ./internal/daemon ./internal/cli -count=1
+cleanup:
+  branch_disposition: pr-open

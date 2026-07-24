@@ -394,3 +394,91 @@ func TestIndexWorkspaceDocsProgressReportsElapsed(t *testing.T) {
 		t.Fatalf("missing elapsed progress markers in %#v", events)
 	}
 }
+
+func TestIndexWorkspaceDocsHonorsMilspignoreSiblingWikiCopy(t *testing.T) {
+	root := t.TempDir()
+	mustWriteDocgraphFile(t, filepath.Join(root, ".milspignore"), "WikiIA/\n")
+	mustWriteDocgraphFile(t, filepath.Join(root, ".docs", "wiki", "_mi-lsp", "read-model.toml"), strings.Join([]string{
+		"version = 1",
+		"",
+		"[[family]]",
+		"  name = \"functional\"",
+		"  intent_keywords = [\"governance\"]",
+		"  paths = [\".docs/wiki/*.md\", \".docs/wiki/**/*.md\", \"WikiIA/*.md\", \"WikiIA/**/*.md\"]",
+		"",
+		"[generic_docs]",
+		"  paths = [\"WikiIA/\", \".docs/\"]",
+	}, "\n"))
+	mustWriteDocgraphFile(t, filepath.Join(root, ".docs", "wiki", "00_gobierno_documental.md"), "# 00 gobierno canon\n")
+	mustWriteDocgraphFile(t, filepath.Join(root, "WikiIA", "00_gobierno_documental.md"), "# 00 gobierno copy\n")
+	mustWriteDocgraphFile(t, filepath.Join(root, "WikiIA", "ae", "README.md"), "# ae copy\n")
+
+	matcher, err := workspace.LoadIgnoreMatcher(root, nil)
+	if err != nil {
+		t.Fatalf("LoadIgnoreMatcher: %v", err)
+	}
+	docs, _, _, warnings, err := IndexWorkspaceDocs(context.Background(), root, matcher)
+	if err != nil {
+		t.Fatalf("IndexWorkspaceDocs: %v", err)
+	}
+	if len(warnings) != 0 {
+		t.Fatalf("warnings = %v, want none", warnings)
+	}
+	for _, doc := range docs {
+		if strings.HasPrefix(doc.Path, "WikiIA/") || strings.Contains(doc.Path, "/WikiIA/") {
+			t.Fatalf("indexed ignored sibling wiki path %q among %#v", doc.Path, docs)
+		}
+	}
+	foundCanon := false
+	for _, doc := range docs {
+		if doc.Path == ".docs/wiki/00_gobierno_documental.md" {
+			foundCanon = true
+			break
+		}
+	}
+	if !foundCanon {
+		t.Fatalf("expected canon doc indexed, got %#v", docs)
+	}
+}
+
+func TestExpandPatternSkipsIgnoredGlobAndExplicitPaths(t *testing.T) {
+	root := t.TempDir()
+	mustWriteDocgraphFile(t, filepath.Join(root, ".docs", "wiki", "keep.md"), "# keep\n")
+	mustWriteDocgraphFile(t, filepath.Join(root, "WikiIA", "skip.md"), "# skip\n")
+	matcher, err := workspace.LoadIgnoreMatcher(root, []string{"WikiIA/", "WikiIA/**"})
+	if err != nil {
+		t.Fatalf("LoadIgnoreMatcher: %v", err)
+	}
+
+	visited := make([]string, 0, 4)
+	visit := func(absPath string) {
+		rel, relErr := filepath.Rel(root, absPath)
+		if relErr != nil {
+			t.Fatalf("Rel: %v", relErr)
+		}
+		visited = append(visited, filepath.ToSlash(rel))
+	}
+	if err := expandPattern(context.Background(), root, "WikiIA/*.md", matcher, visit); err != nil {
+		t.Fatalf("glob expandPattern: %v", err)
+	}
+	if err := expandPattern(context.Background(), root, "WikiIA/skip.md", matcher, visit); err != nil {
+		t.Fatalf("explicit expandPattern: %v", err)
+	}
+	if err := expandPattern(context.Background(), root, ".docs/wiki/keep.md", matcher, visit); err != nil {
+		t.Fatalf("keep expandPattern: %v", err)
+	}
+	for _, path := range visited {
+		if strings.HasPrefix(path, "WikiIA/") {
+			t.Fatalf("ignored path visited: %v", visited)
+		}
+	}
+	foundKeep := false
+	for _, path := range visited {
+		if path == ".docs/wiki/keep.md" {
+			foundKeep = true
+		}
+	}
+	if !foundKeep {
+		t.Fatalf("expected keep.md, got %v", visited)
+	}
+}
