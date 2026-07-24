@@ -316,6 +316,28 @@ func DocEdgesFrom(ctx context.Context, db *sql.DB, docPath string) ([]model.DocE
 	return items, rows.Err()
 }
 
+// ListDocEdges returns all document edges for prior-snapshot reuse during docs index.
+func ListDocEdges(ctx context.Context, db *sql.DB) ([]model.DocEdge, error) {
+	rows, err := QueryContextWithRetry(ctx, db, `
+		SELECT from_path, to_path, to_doc_id, kind, label
+		FROM doc_edges
+		ORDER BY from_path ASC, kind ASC, to_path ASC, to_doc_id ASC
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := make([]model.DocEdge, 0)
+	for rows.Next() {
+		var item model.DocEdge
+		if err := rows.Scan(&item.FromPath, &item.ToPath, &item.ToDocID, &item.Kind, &item.Label); err != nil {
+			return nil, err
+		}
+		items = append(items, item)
+	}
+	return items, rows.Err()
+}
+
 func DocMentionsForPath(ctx context.Context, db *sql.DB, docPath string) ([]model.DocMention, error) {
 	rows, err := QueryContextWithRetry(ctx, db, `
 		SELECT doc_path, mention_type, mention_value
@@ -323,6 +345,28 @@ func DocMentionsForPath(ctx context.Context, db *sql.DB, docPath string) ([]mode
 		WHERE doc_path = ?
 		ORDER BY mention_type ASC, mention_value ASC
 	`, docPath)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := make([]model.DocMention, 0)
+	for rows.Next() {
+		var item model.DocMention
+		if err := rows.Scan(&item.DocPath, &item.MentionType, &item.MentionValue); err != nil {
+			return nil, err
+		}
+		items = append(items, item)
+	}
+	return items, rows.Err()
+}
+
+// ListDocMentions returns all document mentions for prior-snapshot reuse during docs index.
+func ListDocMentions(ctx context.Context, db *sql.DB) ([]model.DocMention, error) {
+	rows, err := QueryContextWithRetry(ctx, db, `
+		SELECT doc_path, mention_type, mention_value
+		FROM doc_mentions
+		ORDER BY doc_path ASC, mention_type ASC, mention_value ASC
+	`)
 	if err != nil {
 		return nil, err
 	}
