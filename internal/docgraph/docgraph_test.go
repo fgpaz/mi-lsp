@@ -320,3 +320,77 @@ func mustWriteDocgraphFile(t *testing.T, path string, content string) {
 		t.Fatalf("WriteFile(%s): %v", path, err)
 	}
 }
+
+func TestExpandPatternSkipsIgnoredDirectory(t *testing.T) {
+	root := t.TempDir()
+	mustWriteDocgraphFile(t, filepath.Join(root, ".docs", "wiki", "keep.md"), "# keep\n")
+	mustWriteDocgraphFile(t, filepath.Join(root, ".docs", "wiki", "ignored", "skip.md"), "# skip\n")
+	matcher, err := workspace.LoadIgnoreMatcher(root, []string{".docs/wiki/ignored/"})
+	if err != nil {
+		t.Fatalf("LoadIgnoreMatcher: %v", err)
+	}
+
+	visited := make([]string, 0, 2)
+	if err := expandPattern(context.Background(), root, ".docs/wiki/", matcher, func(absPath string) {
+		rel, relErr := filepath.Rel(root, absPath)
+		if relErr != nil {
+			t.Fatalf("Rel(%s): %v", absPath, relErr)
+		}
+		visited = append(visited, filepath.ToSlash(rel))
+	}); err != nil {
+		t.Fatalf("expandPattern: %v", err)
+	}
+
+	for _, path := range visited {
+		if strings.Contains(path, "/ignored/") || strings.HasSuffix(path, "skip.md") {
+			t.Fatalf("ignored path visited: %v", visited)
+		}
+	}
+	foundKeep := false
+	for _, path := range visited {
+		if path == ".docs/wiki/keep.md" {
+			foundKeep = true
+			break
+		}
+	}
+	if !foundKeep {
+		t.Fatalf("expected keep.md visited, got %v", visited)
+	}
+}
+
+func TestIndexWorkspaceDocsProgressReportsElapsed(t *testing.T) {
+	root := t.TempDir()
+	mustWriteDocgraphFile(t, filepath.Join(root, ".docs", "wiki", "_mi-lsp", "read-model.toml"), strings.Join([]string{
+		"version = 1",
+		"",
+		"[[family]]",
+		"  name = \"functional\"",
+		"  intent_keywords = [\"flow\"]",
+		"  paths = [\".docs/wiki/*.md\"]",
+	}, "\n"))
+	mustWriteDocgraphFile(t, filepath.Join(root, ".docs", "wiki", "A.md"), "# A\n")
+	mustWriteDocgraphFile(t, filepath.Join(root, ".docs", "wiki", "B.md"), "# B\n")
+
+	events := make([]Progress, 0, 8)
+	_, _, _, _, _, _, err := IndexWorkspaceDocsWithSourcesWithProgress(context.Background(), root, nil, func(ctx context.Context, progress Progress) error {
+		events = append(events, progress)
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("IndexWorkspaceDocsWithSourcesWithProgress: %v", err)
+	}
+
+	foundCollectElapsed := false
+	foundReadElapsed := false
+	for _, event := range events {
+		if event.Stage == "docs.collect" && event.Force && strings.HasPrefix(event.Path, "elapsed_ms=") {
+			foundCollectElapsed = true
+		}
+		if event.Stage == "docs.read" && event.Force && strings.HasPrefix(event.Path, "elapsed_ms=") {
+			foundReadElapsed = true
+		}
+	}
+	if !foundCollectElapsed || !foundReadElapsed {
+		t.Fatalf("missing elapsed progress markers in %#v", events)
+	}
+}
