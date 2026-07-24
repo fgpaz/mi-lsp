@@ -1,61 +1,87 @@
-schema: ae-repo-policy/v1
+last_updated: "2026-07-24"
+schema: "ae-repo-policy/v1"
+version: 1
 required: []
-last_updated: "2026-07-22"
+
+authority:
+  schema: "ae-authority/v1"
+  version: 1
+  model:
+    - Kernel
+    - Team
+    - Repository
+    - Person
+    - Session
+  kernel:
+    id: ae-kernel
+  team:
+    id: local-team
+  repository:
+    id: mi-lsp
+  person:
+    id: local-person
+  session:
+    id: ae-kernel-v2-only
+  allowlist:
+    version: v1
+    paths:
+      - CLAUDE.md
+      - AGENTS.md
+      - .docs/ae/repo-policy.yaml
+      - .docs/raw/repo-policy.yaml
 
 repo:
   name: mi-lsp
-  description: Local semantic CLI and graph-native code intelligence runtime for large .NET/C# and TypeScript workspaces.
+  description: Local semantic CLI for large .NET/C# and TypeScript workspaces.
   structure_rules:
-    - Go CLI and daemon code lives under cmd/ and internal/.
-    - Roslyn semantic worker lives under worker-dotnet/; optional language workers are distributed through governed release scripts.
-    - .docs/wiki/00-06 is functional canon; .docs/wiki/07-09 is technical canon.
-    - Universal Agent Engineering canon comes from <kernel_home>/canon; repo-specific policy lives in .docs/ae/repo-policy.yaml.
-    - Durable task and audit evidence lives under .docs/auditoria/<session>/; .docs/raw remains non-canonical input.
-    - Repository-local runtime state under .mi-lsp/ is never committed.
+    - "Go CLI and daemon code lives under cmd/ and internal/."
+    - "The Roslyn worker lives under worker-dotnet/."
+    - ".docs/wiki is the canonical repository documentation authority."
+    - ".docs/auditoria/<session>/ stores durable sanitized evidence."
+    - ".docs/raw/ remains non-canonical local input."
 
 language:
   policy_lang: English
   docs_lang: Spanish
   ux_orthography_rules:
-    - preserve Spanish accents and opening punctuation
+    - "Preserve Spanish orthography and diacritics in documentation."
 
 tracker:
   provider: Linear
   linear:
     base_url: https://api.linear.app/graphql
-    workspace: mi-lsp
     key_env: LINEAR_API_KEY
+    workspace: TES
     projects:
-      - key: MI-LSP
+      - key: TES
         name: mi-lsp
-        scope: features, bugs, documentation, releases, and Agent Engineering
+        scope: features, bugs, operations
 
 secrets:
   vault: environment
-  tool: environment-only
+  tool: environment variables
 
 wrappers:
-  - name: go
-    script: go toolchain (repository go.mod)
-  - name: pre-push-guard
-    script: scripts/ae/pre-push-guard.ps1
+  - name: mi-lsp
+    script: mi-lsp
+    precondition: "Set MI_LSP_CLIENT_NAME and MI_LSP_SESSION_ID before governed navigation."
+    authority: repository policy
 
 wiki:
   layers_map:
-    "00": governance
-    "01": scope
-    "02": architecture
-    "03": flows
-    "04": requirements
-    "05": data
-    "06": tests
-    "07": technical_baseline
-    "08": physical_data
-    "09": contracts
-    ae: compatibility_history
-  workspace_alias: milsp-harness-first
+    "01": Scope
+    "02": Architecture
+    "03": Functional flows
+    "04": Functional requirements
+    "05": Data model
+    "06": Test matrix and test plans
+    "07": Technical baseline
+    "08": Physical data model
+    "09": Technical contracts
+    "ae": Compatibility history only; universal AE authority is the external Kernel v2 canon
   paths_file: PATHS.md
   subagents_file: AGENTS.md
+  workspace_alias: mi-lsp
   decision_priority:
     functional_behavior:
       - RF
@@ -73,93 +99,14 @@ wiki:
       - RF
       - data model
 
-intent_routing:
-  entrypoint: mi-lsp
-  policy: automatic_mi_lsp_first_no_opt_out
-  supported_intents:
-    - callers
-    - callees
-    - affected-change
-    - path-between
-    - explain-edge
-    - neighborhood
-    - explain-change
-    - wiki-search
-    - wiki-route
-    - wiki-pack
-    - wiki-trace
-    - governance
-    - graph-freshness
-    - graph-rank
-  order:
-    - mi-lsp
-    - canonical_wiki
-    - local_catalog
-    - rg
-    - Read
-  fallback_only_on:
-    - unsupported_operation
-    - unavailable_binary
-    - invalid_workspace
-    - explicit_incomplete
-  timeout_without_diagnostic: blocked
-  preview_requires:
-    - available_information
-    - expansion_command
-    - expansion_reason
-  explain_change_sections:
-    - change
-    - affected
-    - callers
-    - callees
-    - tests
-    - contracts
-    - wiki
-  telemetry:
-    sanitized_only: true
-    allowed_fields:
-      - planner_version
-      - operation
-      - selector_kind
-      - candidate_count
-      - section_count
-      - fallback
-      - omission_count
-    forbidden_fields:
-      - query
-      - prompt
-      - argv
-      - payload
-      - content
-      - secret
-      - raw_error
-
 qa:
   canon_paths:
-    - internal/service/governance_test.go
-    - internal/service/governance_test_helpers_test.go
-    - tests
-    - go.mod
     - .docs/wiki/06_matriz_pruebas_RF.md
     - .docs/wiki/06_pruebas/
-    - .docs/wiki/09_contratos
 
 subagents:
   max_model: sonnet
   roster_file: AGENTS.md
   routing_notes:
-    - read-only exploration uses ps-explorer or Explore
-    - Go implementation uses claudex-writer or writer
-    - documentation uses ps-docs
-    - verification uses claudex-verifier or verifier-adversarial
-
-security:
-  path_traversal: reject absolute and parent-escaping source paths
-  symlink: reject symlinked roots, components, and files before canon reads
-  secrets: do not store credentials or values in policy, docs, prompts, logs, or evidence
-
-extras:
-  - title: Release platform
-    body: Windows release verification must include arm64 binaries and real installed-binary readback.
-  - title: Shared skill mirrors
-    body: Any shared skill changed under the user skill source must be synchronized to C:/repos/buho/assets/skills in the same task.
+    - "Use manifest-backed ae-adapter-* workers for governed T2+ work."
+    - "Use read-only explorers for independent discovery axes."

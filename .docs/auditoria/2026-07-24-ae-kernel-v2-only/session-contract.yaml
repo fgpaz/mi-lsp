@@ -1,0 +1,55 @@
+schema: ae-session-contract/v2
+session: 2026-07-24-ae-kernel-v2-only
+repository: mi-lsp
+kernel:
+  path: C:/repos/mios/ae-kernel
+  revision: 88a0236323a19fdae7ee5215016c0cf6f230876f
+branch: feat/ae-kernel-v2-only
+worktree: C:/wt/milsp-ae-v2-only
+base_ref: origin/main
+base_sha: 96e89581febaa6a9a2cc9c06a6345c959a368169
+mode: STANDARD
+worker_decision: spawned
+worker_adapter: ae-adapter-claude-code
+objective: Make Kernel v2 external canon the only active AE governance mode and remove runtime acceptance of legacy repo-local AE canon.
+decision_token:
+  id: AE-ONLY-KERNEL-V2-20260724
+  locked_value: external_kernel_v2_only
+  consequence: Legacy .docs/wiki/ae modules may remain only as non-authoritative historical documentation or be removed after references are migrated.
+  scope: mi-lsp, mi-pi, buho-assets
+allowed_paths:
+  - CLAUDE.md
+  - AGENTS.md
+  - PATHS.md
+  - .docs/ae/repo-policy.yaml
+  - .docs/wiki/00_gobierno_documental.md
+  - .docs/wiki/_mi-lsp/read-model.toml
+  - .docs/wiki/01_alcance_funcional.md
+  - .docs/wiki/02_arquitectura.md
+  - .docs/wiki/03_FL/**
+  - .docs/wiki/04_RF/**
+  - .docs/wiki/07_baseline_tecnica.md
+  - .docs/wiki/07_tech/**
+  - .docs/wiki/09_contratos_tecnicos.md
+  - .docs/wiki/09_contratos/**
+  - .docs/wiki/ae/**
+  - internal/docgraph/governance.go
+  - internal/model/types.go
+  - internal/service/governance_test.go
+  - internal/service/governance_test_helpers_test.go
+  - .docs/auditoria/2026-07-24-ae-kernel-v2-only/**
+forbidden_paths:
+  - .env*
+  - secrets/**
+  - NUL
+  - README.md
+  - docs/assets/**
+  - .github/workflows/test.yml
+  - scripts/tests/**
+acceptance:
+  - target preflight reports ae_layer kernel_v2
+  - nav governance reports ae_canon source kernel_v2 and roots only external canon plus repo policy
+  - legacy mode is rejected by governance compilation
+  - focused and full Go tests pass
+  - no unrelated dirty path is staged
+cleanup: auto-after-successful-integration
