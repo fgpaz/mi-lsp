@@ -64,7 +64,7 @@ func containingDocForExplicitID(root string, profile model.DocsReadProfile, docI
 	}
 	for _, pattern := range searchPaths {
 		var found string
-		_ = expandPattern(context.Background(), root, pattern, func(absPath string) {
+		_ = expandPattern(context.Background(), root, pattern, nil, func(absPath string) {
 			if found != "" {
 				return
 			}

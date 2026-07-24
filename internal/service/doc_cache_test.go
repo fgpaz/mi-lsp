@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
 	"github.com/fgpaz/mi-lsp/internal/model"
@@ -14,22 +15,47 @@ func TestPurgeWorkspaceCaches(t *testing.T) {
 	root := "C:/test/ws-purge-" + t.Name()
 	other := "C:/test/ws-other-" + t.Name()
 	docRecordsCache.Store(root, docRecordsCacheEntry{generation: "g1"})
-	ftsScoresCache.Store(root+"\x00q1", ftsCacheEntry{generation: "g1"})
-	ftsScoresCache.Store(root+"\x00q2", ftsCacheEntry{generation: "g1"})
-	ftsScoresCache.Store(other+"\x00q1", ftsCacheEntry{generation: "g1"})
+	ftsScoresCache.put(root+"\x00q1", ftsCacheEntry{generation: "g1", scores: map[string]float64{"a": 1}})
+	ftsScoresCache.put(root+"\x00q2", ftsCacheEntry{generation: "g1", scores: map[string]float64{"b": 1}})
+	ftsScoresCache.put(other+"\x00q1", ftsCacheEntry{generation: "g1", scores: map[string]float64{"c": 1}})
 
 	PurgeWorkspaceCaches(root)
 
 	if _, ok := docRecordsCache.Load(root); ok {
 		t.Fatal("docRecordsCache entry for purged root still present")
 	}
-	if _, ok := ftsScoresCache.Load(root + "\x00q1"); ok {
+	if _, ok := ftsScoresCache.get(root + "\x00q1"); ok {
 		t.Fatal("ftsScoresCache entry for purged root still present")
 	}
-	if _, ok := ftsScoresCache.Load(other + "\x00q1"); !ok {
+	if _, ok := ftsScoresCache.get(other + "\x00q1"); !ok {
 		t.Fatal("ftsScoresCache entry for a different root was wrongly purged")
 	}
-	ftsScoresCache.Delete(other + "\x00q1")
+	ftsScoresCache.purgePrefix(other + "\x00")
+}
+
+func TestNormalizeFTSQuery(t *testing.T) {
+	if got := normalizeFTSQuery("  Foo   BAR\tbaz "); got != "foo bar baz" {
+		t.Fatalf("normalizeFTSQuery = %q, want %q", got, "foo bar baz")
+	}
+	if normalizeFTSQuery("Route") != normalizeFTSQuery("  route  ") {
+		t.Fatal("case/space variants must share one normalized key")
+	}
+}
+
+func TestFTSCacheKeyNormalizationAndLRUCap(t *testing.T) {
+	cache := newFTSLRUCache(3)
+	root := "C:/test/ws-lru"
+	cache.put(root+"\x00"+normalizeFTSQuery("Alpha"), ftsCacheEntry{generation: "g", scores: map[string]float64{"1": 1}})
+	cache.put(root+"\x00"+normalizeFTSQuery("  ALPHA "), ftsCacheEntry{generation: "g", scores: map[string]float64{"1": 2}})
+	if cache.len() != 1 {
+		t.Fatalf("normalized duplicates should share one entry, got len=%d", cache.len())
+	}
+	for i := 0; i < 5; i++ {
+		cache.put(fmt.Sprintf("%s\x00q%d", root, i), ftsCacheEntry{generation: "g", scores: map[string]float64{"k": float64(i)}})
+	}
+	if cache.len() > 3 {
+		t.Fatalf("LRU cap exceeded: len=%d max=3", cache.len())
+	}
 }
 
 // TestDocRecordsCacheInvalidatesOnGeneration verifies the PERF-02 cache is keyed on the

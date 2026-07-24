@@ -9,8 +9,10 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/BurntSushi/toml"
@@ -158,6 +160,7 @@ func IndexWorkspaceDocsWithProgress(ctx context.Context, root string, matcher *w
 
 func IndexWorkspaceDocsWithSourcesWithProgress(ctx context.Context, root string, matcher *workspace.IgnoreMatcher, progress ProgressFunc) ([]model.DocRecord, []model.DocEdge, []model.DocMention, []model.DocSourceBlock, []model.DocSourceRecord, []string, error) {
 	profile, _, warnings := LoadProfile(root)
+	collectStarted := time.Now()
 	if err := reportProgress(ctx, progress, Progress{Stage: "docs.collect", Force: true}); err != nil {
 		return nil, nil, nil, nil, nil, warnings, err
 	}
@@ -165,9 +168,122 @@ func IndexWorkspaceDocsWithSourcesWithProgress(ctx context.Context, root string,
 	if err != nil {
 		return nil, nil, nil, nil, nil, warnings, err
 	}
+	if err := reportProgress(ctx, progress, Progress{
+		Stage:      "docs.collect",
+		Path:       fmt.Sprintf("elapsed_ms=%d", time.Since(collectStarted).Milliseconds()),
+		FilesTotal: len(candidates),
+		Force:      true,
+	}); err != nil {
+		return nil, nil, nil, nil, nil, warnings, err
+	}
+
+	readStarted := time.Now()
 	if err := reportProgress(ctx, progress, Progress{Stage: "docs.read", FilesTotal: len(candidates), Force: true}); err != nil {
 		return nil, nil, nil, nil, nil, warnings, err
 	}
+
+	type docWorkResult struct {
+		doc           model.DocRecord
+		mentions      []model.DocMention
+		edges         []model.DocEdge
+		sourceBlocks  []model.DocSourceBlock
+		sourceRecords []model.DocSourceRecord
+		warning       string
+		err           error
+	}
+
+	results := make([]docWorkResult, len(candidates))
+	workers := runtime.GOMAXPROCS(0)
+	if workers < 2 {
+		workers = 2
+	}
+	if workers > 8 {
+		workers = 8
+	}
+	if len(candidates) < workers {
+		workers = len(candidates)
+	}
+	if workers < 1 {
+		workers = 1
+	}
+
+	jobs := make(chan int, len(candidates))
+	var wg sync.WaitGroup
+	for w := 0; w < workers; w++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for i := range jobs {
+				if err := ctx.Err(); err != nil {
+					results[i] = docWorkResult{err: err}
+					continue
+				}
+				candidate := candidates[i]
+				content, err := os.ReadFile(candidate.path)
+				if err != nil {
+					results[i] = docWorkResult{warning: fmt.Sprintf("doc read failed for %s: %v", candidate.relativePath, err)}
+					continue
+				}
+				title := extractTitle(content)
+				docID := firstDocID(title + "\n" + string(content))
+				doc := model.DocRecord{
+					Path:        candidate.relativePath,
+					Title:       title,
+					DocID:       docID,
+					Layer:       candidate.layer,
+					Family:      candidate.family,
+					Snippet:     extractSnippet(content),
+					SearchText:  normalizeSearchText(title + "\n" + candidate.relativePath + "\n" + string(content)),
+					ContentHash: digest(content),
+					IndexedAt:   time.Now().Unix(),
+					IsSnapshot:  isSnapshotPath(candidate.relativePath),
+				}
+				docMentions, docEdges := extractReferences(root, candidate.relativePath, string(content))
+				sourceDoc := wikisource.Parse(candidate.relativePath, string(content), time.Now().Unix())
+				mentions := append(docMentions, sourceDoc.Mentions...)
+				sourceBlocks := wikisource.SourceBlocks(sourceDoc, time.Now().Unix())
+				sourceRecords := wikisource.SourceRecords(sourceDoc, time.Now().Unix())
+				if fm := extractFrontMatter(content); fm != nil {
+					for _, impl := range fm.Implements {
+						impl = strings.TrimSpace(impl)
+						if impl != "" {
+							mentions = append(mentions, model.DocMention{
+								DocPath:      candidate.relativePath,
+								MentionType:  "implements",
+								MentionValue: impl,
+							})
+						}
+					}
+					for _, test := range fm.Tests {
+						test = strings.TrimSpace(test)
+						if test != "" {
+							mentions = append(mentions, model.DocMention{
+								DocPath:      candidate.relativePath,
+								MentionType:  "test_file",
+								MentionValue: test,
+							})
+						}
+					}
+				}
+				results[i] = docWorkResult{
+					doc:           doc,
+					mentions:      mentions,
+					edges:         docEdges,
+					sourceBlocks:  sourceBlocks,
+					sourceRecords: sourceRecords,
+				}
+			}
+		}()
+	}
+	for i := range candidates {
+		jobs <- i
+	}
+	close(jobs)
+	wg.Wait()
+	if err := ctx.Err(); err != nil {
+		return nil, nil, nil, nil, nil, warnings, err
+	}
+
 	docs := make([]model.DocRecord, 0, len(candidates))
 	edges := make([]model.DocEdge, 0)
 	mentions := make([]model.DocMention, 0)
@@ -176,68 +292,25 @@ func IndexWorkspaceDocsWithSourcesWithProgress(ctx context.Context, root string,
 	seenDocID := map[string]string{}
 	pendingDocIDEdges := make([]model.DocEdge, 0)
 
-	for _, candidate := range candidates {
-		if err := ctx.Err(); err != nil {
-			return nil, nil, nil, nil, nil, warnings, err
+	for _, result := range results {
+		if result.err != nil {
+			return nil, nil, nil, nil, nil, warnings, result.err
 		}
-		if err := reportProgress(ctx, progress, Progress{Stage: "docs.read", Path: candidate.relativePath, Docs: len(docs), FilesTotal: len(candidates)}); err != nil {
-			return nil, nil, nil, nil, nil, warnings, err
-		}
-		content, err := os.ReadFile(candidate.path)
-		if err != nil {
-			warnings = append(warnings, fmt.Sprintf("doc read failed for %s: %v", candidate.relativePath, err))
+		if result.warning != "" {
+			warnings = append(warnings, result.warning)
 			continue
 		}
-		title := extractTitle(content)
-		docID := firstDocID(title + "\n" + string(content))
-		if docID != "" {
-			seenDocID[docID] = candidate.relativePath
+		if result.doc.Path == "" {
+			continue
 		}
-		doc := model.DocRecord{
-			Path:        candidate.relativePath,
-			Title:       title,
-			DocID:       docID,
-			Layer:       candidate.layer,
-			Family:      candidate.family,
-			Snippet:     extractSnippet(content),
-			SearchText:  normalizeSearchText(title + "\n" + candidate.relativePath + "\n" + string(content)),
-			ContentHash: digest(content),
-			IndexedAt:   time.Now().Unix(),
-			IsSnapshot:  isSnapshotPath(candidate.relativePath),
+		if result.doc.DocID != "" {
+			seenDocID[result.doc.DocID] = result.doc.Path
 		}
-		docs = append(docs, doc)
-
-		docMentions, docEdges := extractReferences(root, candidate.relativePath, string(content))
-		mentions = append(mentions, docMentions...)
-		sourceDoc := wikisource.Parse(candidate.relativePath, string(content), time.Now().Unix())
-		mentions = append(mentions, sourceDoc.Mentions...)
-		sourceBlocks = append(sourceBlocks, wikisource.SourceBlocks(sourceDoc, time.Now().Unix())...)
-		sourceRecords = append(sourceRecords, wikisource.SourceRecords(sourceDoc, time.Now().Unix())...)
-
-		if fm := extractFrontMatter(content); fm != nil {
-			for _, impl := range fm.Implements {
-				impl = strings.TrimSpace(impl)
-				if impl != "" {
-					mentions = append(mentions, model.DocMention{
-						DocPath:      candidate.relativePath,
-						MentionType:  "implements",
-						MentionValue: impl,
-					})
-				}
-			}
-			for _, test := range fm.Tests {
-				test = strings.TrimSpace(test)
-				if test != "" {
-					mentions = append(mentions, model.DocMention{
-						DocPath:      candidate.relativePath,
-						MentionType:  "test_file",
-						MentionValue: test,
-					})
-				}
-			}
-		}
-
-		for _, edge := range docEdges {
+		docs = append(docs, result.doc)
+		mentions = append(mentions, result.mentions...)
+		sourceBlocks = append(sourceBlocks, result.sourceBlocks...)
+		sourceRecords = append(sourceRecords, result.sourceRecords...)
+		for _, edge := range result.edges {
 			if edge.ToDocID != "" && edge.ToPath == "" {
 				pendingDocIDEdges = append(pendingDocIDEdges, edge)
 				continue
@@ -245,7 +318,14 @@ func IndexWorkspaceDocsWithSourcesWithProgress(ctx context.Context, root string,
 			edges = append(edges, edge)
 		}
 	}
-	if err := reportProgress(ctx, progress, Progress{Stage: "docs.read", Docs: len(docs), FilesTotal: len(candidates), Force: true}); err != nil {
+
+	if err := reportProgress(ctx, progress, Progress{
+		Stage:      "docs.read",
+		Path:       fmt.Sprintf("elapsed_ms=%d", time.Since(readStarted).Milliseconds()),
+		Docs:       len(docs),
+		FilesTotal: len(candidates),
+		Force:      true,
+	}); err != nil {
 		return nil, nil, nil, nil, nil, warnings, err
 	}
 
@@ -267,7 +347,6 @@ func IndexWorkspaceDocsWithSourcesWithProgress(ctx context.Context, root string,
 	})
 	return docs, edges, mentions, sourceBlocks, sourceRecords, warnings, nil
 }
-
 func reportProgress(ctx context.Context, progress ProgressFunc, value Progress) error {
 	if err := ctx.Err(); err != nil {
 		return err
@@ -315,7 +394,7 @@ func collectDocCandidates(ctx context.Context, root string, profile model.DocsRe
 
 	for familyIdx, family := range profile.Families {
 		for _, pattern := range family.Paths {
-			if err := expandPattern(ctx, root, pattern, func(absPath string) {
+			if err := expandPattern(ctx, root, pattern, matcher, func(absPath string) {
 				addCandidate(absPath, family.Name, familyIdx)
 			}); err != nil {
 				return nil, err
@@ -323,7 +402,7 @@ func collectDocCandidates(ctx context.Context, root string, profile model.DocsRe
 		}
 	}
 	for _, pattern := range profile.GenericDocs.Paths {
-		if err := expandPattern(ctx, root, pattern, func(absPath string) {
+		if err := expandPattern(ctx, root, pattern, matcher, func(absPath string) {
 			addCandidate(absPath, "generic", len(profile.Families)+10)
 		}); err != nil {
 			return nil, err
@@ -343,7 +422,7 @@ func collectDocCandidates(ctx context.Context, root string, profile model.DocsRe
 	return items, nil
 }
 
-func expandPattern(ctx context.Context, root string, pattern string, visit func(string)) error {
+func expandPattern(ctx context.Context, root string, pattern string, matcher *workspace.IgnoreMatcher, visit func(string)) error {
 	trimmed := filepath.ToSlash(strings.TrimSpace(pattern))
 	if trimmed == "" {
 		return nil
@@ -359,6 +438,12 @@ func expandPattern(ctx context.Context, root string, pattern string, visit func(
 					return walkErr
 				}
 				if entry.IsDir() {
+					if matcher != nil && matcher.ShouldIgnore(root, path) {
+						return filepath.SkipDir
+					}
+					return nil
+				}
+				if matcher != nil && matcher.ShouldIgnore(root, path) {
 					return nil
 				}
 				if strings.EqualFold(filepath.Ext(path), ".md") {
