@@ -308,6 +308,10 @@ func (s *Server) handleRequestContext(ctx context.Context, request model.Command
 		registration := resolution.Registration
 		warnings := append([]string{}, resolution.Warnings...)
 		warnings = append(warnings, s.manager.Warm(registration)...)
+		// Pre-warm graph join caches (rank/stats) so first harness packet is hot.
+		if warmWarnings := s.warmGraphJoinCaches(ctx, registration, request.Context); len(warmWarnings) > 0 {
+			warnings = append(warnings, warmWarnings...)
+		}
 		statuses := make([]model.WorkerStatus, 0)
 		for _, status := range s.manager.Status() {
 			if status.Workspace == registration.Name {
@@ -321,7 +325,7 @@ func (s *Server) handleRequestContext(ctx context.Context, request model.Command
 		return model.Envelope{Ok: true, Workspace: registration.Name, Backend: "daemon", Items: items, Warnings: warnings}, nil
 	default:
 		// Attempt result caching for deterministic read-only operations
-		if isCacheableOp(request.Operation) {
+		if s.resultCache != nil && isCacheableOp(request.Operation) {
 			resolution, resolveErr := workspace.ResolveWorkspaceSelection(request.Context.Workspace, request.Context.CallerCWD)
 			if resolveErr == nil {
 				canonicalRoot, generation, identityErr := indexGeneration(resolution.Registration.Root)
@@ -363,7 +367,7 @@ func (s *Server) handleRequestContext(ctx context.Context, request model.Command
 		}
 
 		// Cache successful results for cacheable ops
-		if err == nil && response.Ok && isCacheableOp(request.Operation) {
+		if err == nil && response.Ok && s.resultCache != nil && isCacheableOp(request.Operation) {
 			resolution, resolveErr := workspace.ResolveWorkspaceSelection(request.Context.Workspace, request.Context.CallerCWD)
 			if resolveErr == nil {
 				canonicalRoot, generation, identityErr := indexGeneration(resolution.Registration.Root)
@@ -500,6 +504,47 @@ func (s *Server) releaseInflight() {
 	}
 }
 
+func (s *Server) warmGraphJoinCaches(ctx context.Context, registration model.WorkspaceRegistration, opts model.QueryOptions) []string {
+	if s.app == nil {
+		return nil
+	}
+	warnings := []string{}
+	// Seed result cache with graph rank + stats for the active generation.
+	for _, op := range []string{"nav.graph.rank", "nav.graph.stats"} {
+		req := model.CommandRequest{
+			ProtocolVersion: model.ProtocolVersion,
+			Operation:       op,
+			Context:         opts,
+			Payload:         map[string]any{"limit": 32},
+		}
+		req.Context.Workspace = registration.Name
+		env, err := s.app.Execute(ctx, req)
+		if err != nil {
+			warnings = append(warnings, op+" warm skipped: "+err.Error())
+			continue
+		}
+		if !env.Ok {
+			continue
+		}
+		if s.resultCache == nil || !isCacheableOp(op) {
+			continue
+		}
+		canonicalRoot, generation, identityErr := indexGeneration(registration.Root)
+		if identityErr != nil {
+			continue
+		}
+		canonicalArgs := extractCanonicalArgs(req)
+		cacheKey, keyErr := resultCacheKey(canonicalRoot, op, generation, canonicalArgs)
+		if keyErr != nil {
+			continue
+		}
+		if envelopeBytes, marshalErr := json.Marshal(env); marshalErr == nil {
+			s.resultCache.set(cacheKey, envelopeBytes, resultCacheTTL)
+		}
+	}
+	return warnings
+}
+
 func isGraphQueryOperation(operation string) bool {
 	switch operation {
 	case "nav.neighbors", "nav.callers", "nav.callees", "nav.path", "nav.explain", "nav.graph.stats", "nav.graph.status", "nav.graph.rank", "nav.graph.validate":
@@ -511,7 +556,7 @@ func isGraphQueryOperation(operation string) bool {
 
 func (s *Server) isBackpressureLimited(request model.CommandRequest) bool {
 	switch request.Operation {
-	case "nav.refs", "nav.context", "nav.deps", "nav.related", "nav.service", "nav.diff-context", "nav.batch", "nav.search", "nav.find", "nav.neighbors", "nav.callers", "nav.callees", "nav.path", "nav.explain", "nav.graph.stats", "nav.graph.status", "nav.graph.rank", "nav.graph.validate", "nav.intent", "workspace.warm":
+	case "nav.refs", "nav.context", "nav.deps", "nav.related", "nav.service", "nav.diff-context", "nav.batch", "nav.search", "nav.find", "nav.neighbors", "nav.callers", "nav.callees", "nav.path", "nav.explain", "nav.graph.stats", "nav.graph.status", "nav.graph.rank", "nav.graph.validate", "nav.intent", "nav.flow-slice", "nav.change-pack", "workspace.warm":
 		return true
 	case "nav.workspace-map":
 		return request.Context.Full

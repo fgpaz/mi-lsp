@@ -216,6 +216,19 @@ func (a *App) affected(ctx context.Context, request model.CommandRequest) (model
 		warnings = appendStringIfMissing(warnings, "legacy path/test/doc suggestions are heuristic and not graph facts")
 	}
 
+	// Anti-noise ranking for harness usefulness. Focus stays on explicit/git inputs.
+	focusPaths := make([]string, 0, len(orderedInputs))
+	for _, input := range orderedInputs {
+		focusPaths = append(focusPaths, input.Path)
+	}
+	hubPaths := map[string]bool{}
+	if db != nil {
+		if ranks, rankErr := GraphRank(ctx, db, GraphRankRequest{Limit: 32, Intent: "harness"}); rankErr == nil && ranks.Ok {
+			hubPaths = hubPathSetFromRanks(ranks.Items)
+		}
+	}
+	items = rankAffectedForHarness(items, focusPaths, hubPaths)
+
 	env := model.Envelope{
 		Ok:                 true,
 		Workspace:          registration.Name,

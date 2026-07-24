@@ -141,7 +141,7 @@ func NewRootCommand() *cobra.Command {
 	root.PersistentFlags().StringVar(&state.clientName, "client-name", state.clientName, "Logical client name for governance and telemetry")
 	root.PersistentFlags().StringVar(&state.sessionID, "session-id", state.sessionID, "Logical client session identifier for governance and telemetry")
 	root.PersistentFlags().StringVar(&state.backendHint, "backend", "", "Force a backend hint: roslyn|tsserver|pyright|gopls|catalog|text")
-	root.PersistentFlags().StringVar(&state.profile, "profile", "", "Output profile: human|agent (agent auto-activates for harness clients)")
+	root.PersistentFlags().StringVar(&state.profile, "profile", "", "Output profile: human|agent|harness-micro (agent auto-activates for harness clients)")
 	root.PersistentFlags().BoolVar(&state.axi, "axi", axiEnabled, "Enable AXI discovery and preview mode")
 	root.PersistentFlags().BoolVar(&state.classic, "classic", false, "Force classic CLI behavior on AXI-default surfaces")
 	root.PersistentFlags().BoolVar(&state.full, "full", false, "Expand AXI preview responses to fuller detail")
@@ -739,6 +739,8 @@ func resolveProfile(flag string, clientName string) model.OutputProfile {
 		switch lower {
 		case "agent":
 			return model.OutputProfileAgent
+		case "harness-micro", "micro":
+			return model.OutputProfileHarnessMicro
 		case "human":
 			return model.OutputProfileHuman
 		default:

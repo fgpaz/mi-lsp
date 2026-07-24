@@ -73,13 +73,21 @@ type Coach struct {
 }
 
 type ContinuationTarget struct {
-	Op     string `json:"op"`
-	Query  string `json:"query,omitempty"`
-	Repo   string `json:"repo,omitempty"`
-	Path   string `json:"path,omitempty"`
-	Symbol string `json:"symbol,omitempty"`
-	DocID  string `json:"doc_id,omitempty"`
-	Full   bool   `json:"full,omitempty"`
+	Op     string                `json:"op"`
+	Query  string                `json:"query,omitempty"`
+	Repo   string                `json:"repo,omitempty"`
+	Path   string                `json:"path,omitempty"`
+	Symbol string                `json:"symbol,omitempty"`
+	DocID  string                `json:"doc_id,omitempty"`
+	Full   bool                  `json:"full,omitempty"`
+	Batch  []ContinuationBatchOp `json:"batch,omitempty"`
+}
+
+// ContinuationBatchOp is one budgeted sub-operation when continuation.next.op is nav.batch.
+type ContinuationBatchOp struct {
+	ID     string         `json:"id,omitempty"`
+	Op     string         `json:"op"`
+	Params map[string]any `json:"params,omitempty"`
 }
 
 type Continuation struct {
@@ -343,11 +351,13 @@ func IntentPlanDigest(plan IntentPlan) string {
 
 // OutputProfile selects render verbosity for an envelope. "agent" trims human-only
 // telemetry and verbose diagnostic fields to reduce token cost for harness clients.
+// "harness-micro" is the most aggressive profile for multi-agent packets.
 type OutputProfile string
 
 const (
-	OutputProfileHuman OutputProfile = "human"
-	OutputProfileAgent OutputProfile = "agent"
+	OutputProfileHuman        OutputProfile = "human"
+	OutputProfileAgent        OutputProfile = "agent"
+	OutputProfileHarnessMicro OutputProfile = "harness-micro"
 )
 
 type VersionInfo struct {

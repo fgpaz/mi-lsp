@@ -650,6 +650,63 @@ Examples:
 	intentCommand.Flags().Int("offset", 0, "Skip first N results (for pagination)")
 	attachCatalogRepoFlag(intentCommand, &intentRepo)
 
+	var flowSliceFrom string
+	var flowSliceTo string
+	var flowSliceSelector string
+	var flowSliceLimit int
+	flowSliceCommand := &cobra.Command{
+		Use:   "flow-slice",
+		Short: "One-shot harness packet for a code flow (path + neighborhood + ranked reads)",
+		Long: `Build a compact flow packet for harness agents:
+path (optional), callers/callees/neighbors, ranked read_first anchors,
+hub risk, and a single budgeted nav.batch continuation.`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			payload := map[string]any{
+				"from":     flowSliceFrom,
+				"to":       flowSliceTo,
+				"selector": flowSliceSelector,
+				"limit":    flowSliceLimit,
+			}
+			return state.executeOperation(cmd, "nav.flow-slice", payload, true)
+		},
+	}
+	flowSliceCommand.Flags().StringVar(&flowSliceFrom, "from", "", "Flow start selector")
+	flowSliceCommand.Flags().StringVar(&flowSliceTo, "to", "", "Flow end selector")
+	flowSliceCommand.Flags().StringVar(&flowSliceSelector, "selector", "", "Primary symbol when path endpoints are unknown")
+	flowSliceCommand.Flags().IntVar(&flowSliceLimit, "limit", 8, "Maximum ranked anchors")
+
+	var changePackRef string
+	var changePackPaths []string
+	var changePackLimit int
+	changePackCommand := &cobra.Command{
+		Use:   "change-pack [ref]",
+		Short: "One-shot harness packet for PR/diff impact with hub risk",
+		Long: `Build a compact change packet for harness agents:
+changed paths/symbols, ranked affected surfaces, hub/community risk,
+wiki must-read, and a single budgeted nav.batch continuation.`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			ref := changePackRef
+			if len(args) > 0 && ref == "" {
+				ref = args[0]
+			}
+			payload := map[string]any{
+				"ref":   ref,
+				"limit": changePackLimit,
+			}
+			if len(changePackPaths) > 0 {
+				paths := make([]any, len(changePackPaths))
+				for i, path := range changePackPaths {
+					paths[i] = path
+				}
+				payload["paths"] = paths
+			}
+			return state.executeOperation(cmd, "nav.change-pack", payload, true)
+		},
+	}
+	changePackCommand.Flags().StringVar(&changePackRef, "ref", "", "Git ref used as the change base")
+	changePackCommand.Flags().StringArrayVar(&changePackPaths, "path", nil, "Explicit changed path (repeatable)")
+	changePackCommand.Flags().IntVar(&changePackLimit, "limit", 12, "Maximum ranked items")
+
 	var explainChangeRef string
 	var explainChangePaths []string
 	explainChangeCommand := &cobra.Command{
@@ -685,7 +742,7 @@ with their reason and preserve the same graph generation when available.`,
 	evidenceCommand := newNavEvidenceCommand(state)
 
 	graphCommands := newGraphQueryCommands(state)
-	command.AddCommand(symbolsCommand, findCommand, refsCommand, overviewCommand, outlineCommand, askCommand, recallCommand, packCommand, routeCommand, wikiCommand, evidenceCommand, governanceCommand, serviceCommand, searchCommand, contextCommand, depsCommand, multiReadCommand, batchCommand, relatedCommand, workspaceMapCommand, diffContextCommand, affectedCommand, prepareCommand, editPlanCommand, traceCommand, intentCommand, explainChangeCommand)
+	command.AddCommand(symbolsCommand, findCommand, refsCommand, overviewCommand, outlineCommand, askCommand, recallCommand, packCommand, routeCommand, wikiCommand, evidenceCommand, governanceCommand, serviceCommand, searchCommand, contextCommand, depsCommand, multiReadCommand, batchCommand, relatedCommand, workspaceMapCommand, diffContextCommand, affectedCommand, flowSliceCommand, changePackCommand, prepareCommand, editPlanCommand, traceCommand, intentCommand, explainChangeCommand)
 	command.AddCommand(graphCommands...)
 	return command
 }

@@ -431,9 +431,12 @@ func (a *App) intentPlan(ctx context.Context, request model.CommandRequest, regi
 	warnings := append([]string{"automatic intent routing selected a local deterministic planner"}, scopeWarnings...)
 
 	if !unsafeRepo {
-		if route.Operation == "explain-change" {
+		switch route.Operation {
+		case "explain-change":
 			a.planExplainChange(ctx, request, registration, &plan, &warnings)
-		} else {
+		case "flow-slice", "change-pack":
+			a.planHarnessPacket(ctx, request, registration, &plan, &warnings)
+		default:
 			a.planGraphIntent(ctx, request, registration, project, scopedRepo, &plan, &warnings)
 		}
 	}
@@ -500,6 +503,10 @@ func classifySupportedIntent(question string, payload map[string]any) (intentRou
 		operation = "neighborhood"
 	case "explain-change", "change":
 		operation = "explain-change"
+	case "flow-slice", "flow":
+		operation = "flow-slice"
+	case "change-pack", "pr-impact", "diff-pack":
+		operation = "change-pack"
 	}
 	if operation == "" {
 		switch {
@@ -517,6 +524,10 @@ func classifySupportedIntent(question string, payload map[string]any) (intentRou
 			operation = "callees"
 		case hasAnyTerm(normalized, "neighborhood of", "around", "related to"):
 			operation = "neighborhood"
+		case hasAnyTerm(normalized, "flow slice", "code flow", "trace the flow", "follow the flow"):
+			operation = "flow-slice"
+		case hasAnyTerm(normalized, "change pack", "pr impact", "diff pack", "review this pr", "review this diff"):
+			operation = "change-pack"
 		}
 	}
 	if operation == "" {
@@ -527,7 +538,7 @@ func classifySupportedIntent(question string, payload map[string]any) (intentRou
 	if explicit != "" {
 		confidence = 1.0
 	}
-	if operation != "explain-change" && len(args) == 0 {
+	if operation != "explain-change" && operation != "change-pack" && operation != "flow-slice" && len(args) == 0 {
 		confidence = 0.65
 	}
 	return intentRoute{Intent: operation, Operation: operation, Arguments: args, Confidence: confidence}, true
