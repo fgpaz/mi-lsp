@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.18] - 2026-07-25
+
+### Added
+
+- `mi-lsp skills index|list|search|plan` — local skill catalog for agent harnesses (direct execution; default catalog `$HOME/.mi-lsp/skills/catalog.json` or `MI_LSP_SKILLS_CATALOG`, skills root `$HOME/.agents/skills`).
+- Skill catalog taxonomy and seed classification (`mi-lsp-skill-catalog/v1`): family, tier (`parent_router` / `tool_infra` / `core` / `optional` / `bundle`), audience (`parent` / `leaf` / `both`), aliases, token-cost class, and critical flags.
+- Hybrid lexical retrieval for skill search, with optional embedding enrichment on index when configured.
+- `skills plan` (`mi-lsp-skill-plan/v1`) parent/leaf rules: routers stay on the parent path and are never handed to leaves; task intents route specialized tool skills (e.g. `db-cli`, `mi-key-cli`) when the task signals them; default deny families for CEO/research/comms unless explicitly signaled.
+
 ## [0.5.17] - 2026-07-24
 
 ### Added

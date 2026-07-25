@@ -78,6 +78,7 @@ El detalle por frontera vive en `09_contratos/`; contratos `accepted-design` no 
 - Para archivos Go, el catalogo AST nativo conserva navegacion basica sin `gopls`; cuando `gopls` existe, `nav context` y `nav refs` pueden enriquecer el resultado, sin prometer paridad con la semantica profunda C# de Roslyn.
 - `nav intent` pertenece a la CLI publica y expone `mode=docs|code`: en `docs` usa routing documental owner-aware; en `code` conserva el ranking BM25 sobre `search_text`. En workspaces `container`, `--repo` acota solo `mode=code`. Para intenciones soportadas el routing es automatico, mi-lsp es obligatorio primero y no existe opt-out.
 - `nav explain-change` pertenece a la CLI publica y devuelve siete secciones estables: `change`, `affected`, `callers`, `callees`, `tests`, `contracts` y `wiki`. La preview es bounded; `expansions[]` siempre identifica `command` y `reason` cuando hay una continuación ejecutable. `--full` solicita expansión, pero puede conservar `mode=preview` si no hay evidencia adicional.
+- `skills` pertenece a la CLI publica como superficie de catalogo y plan de agent skills locales (`index|list|search|plan`); opera en modo directo (`preferDaemon=false`), no amplía `nav prepare` y no redefine la skill curada del repo en `skills/mi-lsp/`. Detalle en la seccion [skills (catalog + plan)](#skills-catalog--plan).
 - El target graph CLI agrega `neighbors`, `callers`, `callees`, `path`, `explain`, `graph stats` y `graph validate`; enriquece `affected`, `diff-context`, `related` y `workspace-map` de forma aditiva. La ayuda actual distingue estos comandos directos de `nav graph stats|validate`.
 - La ausencia de generation/backend graph produce fallback tipado, omisiones y warnings visibles; no habilita presentar heurística como paridad graph-native. Un timeout sin diagnóstico tipado es blocker y no autoriza sustitución silenciosa por herramientas textuales.
 - Toda respuesta graph-native fija `generation_id`, conserva status/evidence/omissions y usa ordering/budgets deterministas. Daemon y direct mode deben ser semanticamente equivalentes.
@@ -113,6 +114,45 @@ API key resuelta via la environment variable nombrada en `api_key_env` (usualmen
 Sin configuracion activa, `nav recall` devuelve hint visible y no llama al proveedor; si key/provider/config falla, el fallback canonico es `mi-lsp nav wiki search`, sin modelo local oculto.
 
 `[recall.rerank_extension]` puede reordenar candidatos mediante comando local externo. El comando recibe stdin JSON versionado `mi-lsp-rerank-extension-v1` y devuelve stdout JSON con `indices` o `results[].index`; no se ejecuta via shell, no guarda payloads y cualquier falla preserva el orden semantico original con warning sanitizado.
+
+## skills (catalog + plan)
+
+Superficie CLI para indexar, listar, buscar y planificar agent skills locales sin montar el corpus completo en cada turno. Implementacion: `internal/skills` + `internal/cli/skills.go`.
+
+### Comandos
+
+```text
+mi-lsp skills index  [--skills-root] [--catalog] [--seed] [--with-embeddings]
+mi-lsp skills list   [--family] [--tier] [--audience] [--catalog]
+mi-lsp skills search <query> [--audience parent|leaf] [--family] [--top-k] [--catalog]
+mi-lsp skills plan   --role parent|leaf --task "..." [--token-budget] [--max-skills] [--catalog] [--skills-root]
+```
+
+- Operacion directa: no requiere daemon.
+- Skills root default: `$HOME/.agents/skills`.
+- Catalogo default: `$HOME/.mi-lsp/skills/catalog.json` (override `MI_LSP_SKILLS_CATALOG`).
+- Envelopes con `backend: skills` en formatos publicos (`json|toon|yaml|compact`).
+
+### Schemas
+
+| Artefacto | Schema |
+|---|---|
+| Catalogo persistido | `mi-lsp-skill-catalog/v1` |
+| Plan de seleccion | `mi-lsp-skill-plan/v1` |
+
+El catalogo clasifica skills por `family`, `tier` (`parent_router|tool_infra|core|optional|bundle`), `audience` (`parent|leaf|both`) y allowlist `critical`. El plan expone `always`, `routers`, `selected`, `bundles_optional`, `deny_families` y `why_not_cheaper`.
+
+### Retrieval hibrido
+
+La busqueda es **lexical-first** y siempre funciona sin proveedor de embeddings. Si el catalogo se indexo con `--with-embeddings` y hay vectores disponibles, el score combina lexical + cosine opcional; si embeddings no estan o fallan, se degrada a lexical con warning (`embeddings_unavailable` en plan), sin hard-fail ni modelo local oculto.
+
+### Reglas parent vs leaf
+
+`skills plan --role parent` puede incluir routers (`tier=parent_router`, `audience=parent`) y skills de orquestacion; `skills plan --role leaf` y `search --audience leaf` excluyen routers parent. El plan mantiene `mi-lsp` en `always` cuando existe, fuerza intents minimos (`db-cli`, `mi-key-cli` cuando el task lo senala) y deniega por defecto familias ruidosas (`ceo`, `research`, `comms`) salvo senal explicita en el task. Bundles no se cargan por default: entran solo si el task los senala o quedan en `bundles_optional`.
+
+### Evidencia
+
+Diseno y verificacion de la superficie: `.docs/auditoria/2026-07-25-mi-lsp-skill-catalog/` (`design-lock.md`, `summary.md`, taxonomia seed). Codigo de referencia: `internal/skills/`, `internal/cli/skills.go`.
 
 ## Versionado, auth y errores
 
