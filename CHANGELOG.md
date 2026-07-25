@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.17] - 2026-07-24
+
+### Added
+
+- `nav flow-slice` and `nav change-pack` one-shot harness packets with ranked read_first, hub/god-node risk, and budgeted `nav.batch` continuations.
+- Output profile `harness-micro` for low-token harness clients (`--profile harness-micro`).
+- Anti-noise usefulness ranking for affected/path evidence used by harness packets.
+- Daemon `workspace.warm` pre-warms graph rank/stats into the result cache.
+
+### Fixed
+
+- Daemon tests that start background index jobs now wait for job completion before `t.TempDir` cleanup, avoiding flaky `directory not empty` failures on Linux CI (`TestWorkspaceBackgroundIndexDoesNotCancelCallerContext`).
+
 ## [0.5.12] - 2026-07-11
 
 ### Added

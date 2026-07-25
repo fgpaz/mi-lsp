@@ -11,11 +11,31 @@ import (
 	"time"
 
 	"github.com/fgpaz/mi-lsp/internal/docgraph"
+	"github.com/fgpaz/mi-lsp/internal/indexer"
 	"github.com/fgpaz/mi-lsp/internal/model"
 	"github.com/fgpaz/mi-lsp/internal/service"
 	"github.com/fgpaz/mi-lsp/internal/store"
 	"github.com/fgpaz/mi-lsp/internal/workspace"
 )
+
+// waitBackgroundIndexJobDone polls the package job registry until the async
+// indexer finishes. StartBackgroundIndex intentionally uses context.WithoutCancel,
+// so tests must wait before t.TempDir cleanup or RemoveAll races with writers.
+func waitBackgroundIndexJobDone(t *testing.T, jobID string) {
+	t.Helper()
+	if strings.TrimSpace(jobID) == "" {
+		return
+	}
+	deadline := time.Now().Add(15 * time.Second)
+	for time.Now().Before(deadline) {
+		state, ok := indexer.IndexJobStatus(jobID)
+		if ok && state.Done {
+			return
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Fatalf("background index job %s did not finish before TempDir cleanup", jobID)
+}
 
 type workerStatusServerSemanticStub struct {
 	statuses []model.WorkerStatus
@@ -46,9 +66,12 @@ func TestBackgroundIndexChildContextIsNotReusedForSynchronousExecute(t *testing.
 
 	parent := context.Background()
 	child, cancelChild := context.WithCancel(parent)
-	if jobID := startWorkspaceBackgroundIndex(child, t.TempDir()); jobID == "" {
+	bgRoot := t.TempDir()
+	jobID := startWorkspaceBackgroundIndex(child, bgRoot)
+	if jobID == "" {
 		t.Fatal("expected background index job id")
 	}
+	t.Cleanup(func() { waitBackgroundIndexJobDone(t, jobID) })
 	cancelChild()
 
 	server := &Server{app: service.New(root, nil)}
@@ -70,10 +93,12 @@ func TestBackgroundIndexChildContextIsNotReusedForSynchronousExecute(t *testing.
 
 func TestWorkspaceBackgroundIndexDoesNotCancelCallerContext(t *testing.T) {
 	ctx := context.Background()
-	jobID := startWorkspaceBackgroundIndex(ctx, t.TempDir())
+	root := t.TempDir()
+	jobID := startWorkspaceBackgroundIndex(ctx, root)
 	if jobID == "" {
 		t.Fatal("expected background index job id")
 	}
+	t.Cleanup(func() { waitBackgroundIndexJobDone(t, jobID) })
 	if err := ctx.Err(); err != nil {
 		t.Fatalf("caller context was canceled: %v", err)
 	}
