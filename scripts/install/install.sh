@@ -134,7 +134,7 @@ file_identity() {
   printf '%s\n' "$identity"
 }
 
-validate_tar_archive() {
+validate_tar_archive() (
   archive="$1"
   [ -f "$archive" ] || { echo "Archive not found: $archive" >&2; return 1; }
   listing="$(tar -tzf "$archive")" || { echo "Could not list archive: $archive" >&2; return 1; }
@@ -147,7 +147,7 @@ validate_tar_archive() {
     (substr($0, 1, 1) != "-" && substr($0, 1, 1) != "d") { bad = 1 }
     END { exit bad }
   ' || { echo "Archive contains a symlink, hardlink, or special member: $archive" >&2; return 1; }
-}
+)
 
 assert_confined_tree() {
   lexical_root="$1"
