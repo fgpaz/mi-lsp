@@ -81,4 +81,72 @@ fi
 assert_contains "$invalid_output" "darwin-x64, darwin-arm64, osx-x64, osx-arm64"
 [ ! -s "$TMP_ROOT/curl.log" ] || fail "invalid RID invoked curl before validation"
 
-echo "PASS: Darwin archives map to OSX workers, Linux remains supported, and invalid RIDs fail before network access"
+sha256_for_test() {
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "$1" | awk '{print $1}'
+  else
+    shasum -a 256 "$1" | awk '{print $1}'
+  fi
+}
+
+run_offline_install() {
+  fixture="$TMP_ROOT/offline-fixture"
+  bundle="$fixture/bundle"
+  stub_dir="$fixture/bin"
+  install_dir="$fixture/install"
+  archive="$fixture/mi-lsp_0.0.0-test_linux-x64.tar.gz"
+  checksums="$fixture/mi-lsp_0.0.0-test_checksums.txt"
+  mkdir -p "$bundle/workers/linux-x64" "$stub_dir"
+
+  cat >"$bundle/mi-lsp" <<'EOF'
+#!/usr/bin/env sh
+exit 0
+EOF
+  cat >"$bundle/workers/linux-x64/MiLsp.Worker" <<'EOF'
+#!/usr/bin/env sh
+exit 0
+EOF
+  chmod +x "$bundle/mi-lsp" "$bundle/workers/linux-x64/MiLsp.Worker"
+
+  worker_size="$(wc -c <"$bundle/workers/linux-x64/MiLsp.Worker" | tr -d ' ')"
+  worker_hash="$(sha256_for_test "$bundle/workers/linux-x64/MiLsp.Worker")"
+  cat >"$bundle/workers/linux-x64/worker-manifest.json" <<EOF
+{"schema":"mi-lsp-worker-manifest/v1","rid":"linux-x64","protocol":"mi-lsp-v1.1","file_count":1,"files":[{"path":"MiLsp.Worker","size":$worker_size,"sha256":"$worker_hash"}]}
+EOF
+  (cd "$bundle" && tar -czf "$archive" mi-lsp workers)
+  printf '%s  %s\n' "$(sha256_for_test "$archive")" "$(basename "$archive")" >"$checksums"
+
+  cat >"$stub_dir/curl" <<'EOF'
+#!/usr/bin/env sh
+out=""
+url=""
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    -o) out="$2"; shift 2 ;;
+    -H) shift 2 ;;
+    -*) shift ;;
+    *) url="$1"; shift ;;
+  esac
+done
+case "$url" in
+  */releases/latest) printf '%s\n' '{"tag_name":"v0.0.0-test"}' ;;
+  *.tar.gz) cp "$MI_LSP_FIXTURE_ARCHIVE" "$out" ;;
+  *_checksums.txt) cp "$MI_LSP_FIXTURE_CHECKSUMS" "$out" ;;
+  *) echo "unexpected URL: $url" >&2; exit 1 ;;
+esac
+EOF
+  chmod +x "$stub_dir/curl"
+
+  if ! output="$(PATH="$stub_dir:$PATH" \
+      MI_LSP_FIXTURE_ARCHIVE="$archive" \
+      MI_LSP_FIXTURE_CHECKSUMS="$checksums" \
+      sh "$INSTALLER" --rid linux-x64 --install-dir "$install_dir" 2>&1)"; then
+    fail "offline install failed: $output"
+  fi
+  [ -x "$install_dir/mi-lsp" ] || fail "offline install did not place the CLI"
+  [ -x "$install_dir/workers/linux-x64/MiLsp.Worker" ] || fail "offline install did not place the worker"
+}
+
+run_offline_install
+
+echo "PASS: platform mapping, pre-network validation, and offline archive installation"
