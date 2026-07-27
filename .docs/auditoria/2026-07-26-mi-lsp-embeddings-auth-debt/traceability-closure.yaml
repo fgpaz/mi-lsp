@@ -3,19 +3,17 @@ session: 2026-07-26-mi-lsp-embeddings-auth-debt
 session_contract: .docs/auditoria/2026-07-26-mi-lsp-embeddings-auth-debt/session-contract.yaml
 language: es
 sanitized: true
-status: pr-open-ready
-base_sha: 7b64b985b9a8d59f439fd1d15bee4e3ae571c785
-head_sha: 7b64b985b9a8d59f439fd1d15bee4e3ae571c785
-origin_main_sha: 7b64b985b9a8d59f439fd1d15bee4e3ae571c785
-audited_product_head: 7b64b985b9a8d59f439fd1d15bee4e3ae571c785
-required_reconciliation_target: origin/main@7b64b985b9a8d59f439fd1d15bee4e3ae571c785
-reconciliation: PASS
-branch: chore/release-v0.5.20
+status: ready-for-integrate-main
+release_source_sha: 3c2bf79b6c9e53928f04b3382d0b0612ee022553
+released_product_sha: 3c2bf79b6c9e53928f04b3382d0b0612ee022553
+product_recompiled_by_follow_up: false
+branch: chore/v0.5.20-readback-closure
 worktree: C:/repos/mios/mi-lsp/.claude/worktrees/embeddings-auth-debt
-branch_disposition: active-followup
+branch_disposition: integrate-main
+post_integration_cleanup: auto-after-successful-integration
 tracker_mode: none
-changed_paths_count: 12
-product_paths: 1
+changed_paths_count: 11
+product_paths: 0
 audit_artifacts_tracked: 11
 no_drift:
   status: scoped_diff
@@ -24,22 +22,12 @@ verification:
   yaml_duplicate_keys: PASS
   manifest_hashes: PASS
   git_diff_check: PASS
-  traceability_check: PASS
-  traceability_audit: PASS
-  ae_pre_push: PASS
+  exact_scope: PASS
 pending_gates: []
 release_target: v0.5.20
-binary_refresh: pending_post_v0.5.20
+binary_refresh: completed
+post_integration_devqa_health_required: false
+post_integration_devqa_health_rationale: release de CLI/worker distribuible, no despliegue de microservicio/store
 completion_handoff:
-  status: pr-open-ready
-  next_action: push/PR/CI/merge
-history:
-  prior_product_scope:
-    changed_paths_count: 13
-    base_sha: 599c5fa5497d03a1b11f9620d8199d3ceca0afb0
-    audited_product_head: cdd29e55dfa2ca872fba134d927af28716114d64
-    release_target: v0.5.19
-    binary_refresh: pending_post_merge
-    traceability_check: PASS
-    traceability_audit: PASS
-    ae_pre_push: PASS
+  status: ready
+  next_action: integrate-main y cleanup automático tras integración exitosa

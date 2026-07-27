@@ -4,70 +4,108 @@ sanitized: true
 worker_join_verdict: PASS
 delegation_boundary: verification_and_join
 orchestration_role: execution_supervisor
+principal_model: orquestador
+principal_effort: high
 model: subagente
 effort: medium
 fallback: none
+fresh_adversarial_verifier:
+  role: independent_adversarial_verifier
+  result: PASS
+  scope: .docs/auditoria/2026-07-26-mi-lsp-embeddings-auth-debt
+  checks:
+    yaml_duplicate_keys: PASS
+    manifest_hashes: PASS
+    git_diff_check: PASS
+    exact_scope_11: PASS
+    release_tag_sha: PASS
+    routing_fallback: PASS
+    sanitization: PASS
+  blocker: none
+watchdog_retry_concurrency: not_applicable
+watchdog_retry_concurrency_rationale: follow-up documental sin modificación de Router/workflow runtime
 traceability_check: PASS
 traceability_audit: PASS
-ae_pre_push: PASS
-follow_up:
-  scope: release_metadata_correction
-  pr_number: 72
-  merged_sha: 7b64b985b9a8d59f439fd1d15bee4e3ae571c785
-  origin_main_sha: 7b64b985b9a8d59f439fd1d15bee4e3ae571c785
-  preexisting_tag: v0.5.19
-  preexisting_release: v0.5.19
-  preexisting_tag_target: 599c5fa5497d03a1b11f9620d8199d3ceca0afb0
-  preexisting_release_valid_for_fixes: false
-  semver_decision: v0.5.20
-  branch: chore/release-v0.5.20
-  release_target: v0.5.20
-  binary_refresh: pending_post_v0.5.20
-  allowed_paths_count: 12
-  changelog_ordering: PASS
-  historical_v0_5_19_tag_target: 599c5fa5497d03a1b11f9620d8199d3ceca0afb0
-  v0_5_20_available: true
-  allowed_tracked_paths:
-    - CHANGELOG.md
-    - .docs/auditoria/2026-07-26-mi-lsp-embeddings-auth-debt/*.yaml
-    - .docs/auditoria/2026-07-26-mi-lsp-embeddings-auth-debt/verdict.md
-  traceability_check: PASS
-  traceability_audit: PASS
-  ae_pre_push: PASS
-  contractual_guard:
-    exit_code: 0
-    ok: true
-    branch: chore/release-v0.5.20
-    dirty_allowed: true
-    dirty_count: 12
-    diff_count: 12
-    ae_canon_status: ready
-  wrapper_guard:
-    exit_code: 0
-    verdict: Approved with waiver
-    head: 7b64b985b9a8d59f439fd1d15bee4e3ae571c785
-    base: 7b64b985b9a8d59f439fd1d15bee4e3ae571c785
-    fast_forward_safe: true
-    ahead_count: 0
-    behind_count: 0
-    blockers: []
-    expected_surfaces:
-      - canon-docs
-      - evidence-docs
-    warning_reviewed: unknown surface corresponds to declared CHANGELOG and audit artifacts
-history:
-  prior_release:
-    release_target: v0.5.19
-    tag_target: 599c5fa5497d03a1b11f9620d8199d3ceca0afb0
-    product_base_sha: 599c5fa5497d03a1b11f9620d8199d3ceca0afb0
-    product_head_sha: cdd29e55dfa2ca872fba134d927af28716114d64
-    branch: worktree-embeddings-auth-debt
-    binary_refresh: pending_post_merge
-    traceability_check: PASS
-    traceability_audit: PASS
-    ae_pre_push: PASS
-    stale_guard:
-      head: 9a4259f...
-      ahead_count: 2
-      dirty_count: 10
-      diff_count: 24
+release_source_sha: 3c2bf79b6c9e53928f04b3382d0b0612ee022553
+released_product_sha: 3c2bf79b6c9e53928f04b3382d0b0612ee022553
+product_recompiled_by_follow_up: false
+release:
+  tag: v0.5.20
+  feature_pr_final_head: bd4dccafabe176e91b88c1253d1b07e27bca6a10
+  feature_pr_merged_sha: 7b64b985b9a8d59f439fd1d15bee4e3ae571c785
+  release_pr_commit: 97c7f013328e023a82fd66d8cf8d523316bd1367
+  workflow_status: SUCCESS
+  canonical_rids_published: 6
+  checksums_published: true
+readback:
+  windows_arm64:
+    installed_binary: C:/Users/fgpaz/bin/mi-lsp.exe
+    version: v0.5.20
+    sha256: e777cffe6bceeee3779f6c6d85a1e89ac2d23c74714eac1fd6ac18ad080c2490
+    vcs_revision: 3c2bf79b6c9e53928f04b3382d0b0612ee022553
+    vcs_modified: false
+    protocol: mi-lsp-v1.1
+    worker_compatible: true
+    selected_worker_source: bundle
+    selected_worker: C:/Users/fgpaz/bin/workers/win-arm64/MiLsp.Worker.exe
+  wsl_linux_arm64:
+    installed_paths:
+      - /home/fgpaz/.local/bin/mi-lsp
+      - /home/fgpaz/bin/mi-lsp
+    sha256: b576b3f015fca36cf57ad28e7a03b7b10d742318a0ede5c85a38ad002f863e2c
+    version: v0.5.20
+    vcs_revision: 3c2bf79b6c9e53928f04b3382d0b0612ee022553
+    vcs_modified: false
+    worker_path: /home/fgpaz/.mi-lsp/workers/linux-arm64/MiLsp.Worker
+    selected_source: installed
+    selected_compatible: true
+    protocol: mi-lsp-v1.1
+    dotnet_required: false
+skill_distribution:
+  source: C:/Users/fgpaz/.agents/skills/mi-lsp
+  mirror: C:/repos/buho/assets/skills/mi-lsp
+  files_each: 9
+  recursive_parity: true
+  differences: none
+  hashes:
+    SKILL.md: f2ab6c3ed8b02a9f5e044dd0c6d8e1b6bbf794bc4edd6d191843966e690c20a9
+    agents/openai.yaml: 1a89b1645275e0c26fcbc8a69a04d4b705bb98f3fe1b31b0563a9f574996f7b5
+    bin/mi-lsp-linux-x64: e8c23f013e08bfbb342c44c813d54d80b0117fe09326be35f4cba8faeeec8514
+    bin/mi-lsp-win-x64.exe: 8ef99c84bc1386193a86ef21dad07ff9d91f0372718be8d8ac3553148bb8ee05
+    references/compound-commands.md: 5759d71179af7ca4207f2c9a43a4fb862dfe27bf299281c54171809953b22608
+    references/linux-worker-packaging-drift.md: 6edd2e164db36771282cb0368a6eb5b11d89e765602854ec95adb58c30560052
+    references/quickstart.md: 807a37347dc20e3e77d22a8e14e1376718ede89428d723b1ed86694e4bbbbb03
+    references/recipes.md: 6bbc9bf597cc0e70050e12aa79e8a72ecc3773e99b41ed45349970b4d3b5e1e5
+    references/runtime-drift.md: 64d722b0557d7e545af1ecd5d1ae0e37129bfa0d6fbfd3bc994730aa0e885b28
+consumer_pi:
+  native_mi_lsp_skills_tools_registered: false
+  compatible_path: mi-pi mi-lsp raw -- skills ...
+  list: ok
+  list_items: 360
+  list_timeout: not_recorded
+  search: ok
+  search_warnings: none
+  search_items: 5
+  novel_search: ok
+  novel_search_items: 3
+  novel_search_warnings: none
+  novel_search_why_values:
+    - lexical+embedding
+    - parent_router+lexical+embedding
+  search_why_contains_embedding: true
+  plan: ok
+  plan_schema: mi-lsp-skill-plan/v1
+  plan_role: parent
+  plan_selected: 6
+  bounded: true
+  embeddings_unavailable: false
+  auth_failure: false
+  semantic_contribution: true
+  compatible_cli_schema: true
+  blocker: false
+private_adapter:
+  listener_active: true
+  logon_task_enabled: true
+  details_withheld: true
+binary_refresh: completed
+post_integration_devqa_health_required: false

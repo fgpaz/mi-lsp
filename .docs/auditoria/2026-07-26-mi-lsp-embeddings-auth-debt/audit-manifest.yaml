@@ -4,159 +4,76 @@ hash_algorithm: sha256
 session: 2026-07-26-mi-lsp-embeddings-auth-debt
 worktree: C:/repos/mios/mi-lsp/.claude/worktrees/embeddings-auth-debt
 sanitized: true
-base_sha: 7b64b985b9a8d59f439fd1d15bee4e3ae571c785
-head_sha: 7b64b985b9a8d59f439fd1d15bee4e3ae571c785
-origin_main_sha: 7b64b985b9a8d59f439fd1d15bee4e3ae571c785
-changed_paths_count: 12
-product_paths: 1
+base_sha: 3c2bf79b6c9e53928f04b3382d0b0612ee022553
+head_sha: 3c2bf79b6c9e53928f04b3382d0b0612ee022553
+origin_main_sha: 3c2bf79b6c9e53928f04b3382d0b0612ee022553
+follow_up_branch: chore/v0.5.20-readback-closure
+release_source_sha: 3c2bf79b6c9e53928f04b3382d0b0612ee022553
+released_product_sha: 3c2bf79b6c9e53928f04b3382d0b0612ee022553
+post_release_evidence_commit: not_created_this_turn
+changed_paths_count: 11
+product_paths: 0
 audit_artifacts_tracked: 11
 artifact_classes:
   audit:
     - .docs/auditoria/2026-07-26-mi-lsp-embeddings-auth-debt/**
-  product_diff:
-    - internal/embed/client.go
-    - internal/embed/client_test.go
-    - internal/service/recall.go
-    - internal/service/recall_test.go
-    - internal/service/source_validate.go
-    - internal/service/source_validate_test.go
-    - internal/service/harness_validate.go
-    - .docs/wiki/04_RF/RF-SEM-001.md
-    - .docs/wiki/09_contratos/CT-NAV-WIKI.md
-    - .docs/wiki/09_contratos_tecnicos.md
-    - CHANGELOG.md
-    - skills/mi-lsp/SKILL.md
-    - skills/mi-lsp/references/quickstart.md
+  historical_product_scope:
+    - PR #72 feature implementation and documentation changes
+    - PR #73 release/changelog change
+release:
+  tag: v0.5.20
+  tag_target: 3c2bf79b6c9e53928f04b3382d0b0612ee022553
+  feature_pr: 72
+  feature_pr_final_head: bd4dccafabe176e91b88c1253d1b07e27bca6a10
+  feature_pr_merged_sha: 7b64b985b9a8d59f439fd1d15bee4e3ae571c785
+  release_pr: 73
+  release_pr_commit: 97c7f013328e023a82fd66d8cf8d523316bd1367
+  release_source_sha: 3c2bf79b6c9e53928f04b3382d0b0612ee022553
+  workflow_status: SUCCESS
+  workflow_url: https://github.com/fgpaz/mi-lsp/actions/runs/30244683628
+  release_url: https://github.com/fgpaz/mi-lsp/releases/tag/v0.5.20
+  canonical_rids_published: 6
+  checksums_published: true
 file_hashes:
-  - path: internal/embed/client.go
-    sha256: 272b4503c3c91c72d88cdbdb2ac6f4a47f59a864dc02938ef58922cf9ca8af25
-  - path: internal/embed/client_test.go
-    sha256: dddc92c9605ff01d8aa9cd46db15f3635c300e783b49ee3f998e6b59aa0aab1a
-  - path: internal/service/recall.go
-    sha256: 82d23ce4bbb988a8d82b965cfbd24ebcc15e5be0f9017ca866cbc822caa95a38
-  - path: internal/service/recall_test.go
-    sha256: a80c9324e1766fa29bb710c4acbcaa6d1b42c2c427f18340dcf005bb01de6c1c
-  - path: internal/service/source_validate.go
-    sha256: f06114452d660fb73ed6825f4dc80b42a64789df64116bf4dc64bb87a40b2b08
-  - path: internal/service/source_validate_test.go
-    sha256: 802b2618e43670cfcce802b1f26aeae9dee4c75b738983a69787d255c9b1f924
-  - path: internal/service/harness_validate.go
-    sha256: 8db6894881ff80a808afd0da3e000166eeff845f24e5b4834bfd04b72e6e9971
-  - path: .docs/wiki/04_RF/RF-SEM-001.md
-    sha256: 7b0642a1162cbc0a3c08ba1144223653a6027f4f212fa737dbe47873135f5a6b
-  - path: .docs/wiki/09_contratos/CT-NAV-WIKI.md
-    sha256: 321316ddd30c65a8a7b8d239af37156ffec327fb73b9f3a55e53d598a87e710f
-  - path: .docs/wiki/09_contratos_tecnicos.md
-    sha256: 365bda7b3ab016a8e871fbe2c4425686bc9fcef009ede0c1d906cbb068fdc890
-  - path: CHANGELOG.md
-    sha256: 72f58af5d62150d67bed351b1e4b0a4efe46b61b73afc6df5cae58d841f52bf6
-  - path: skills/mi-lsp/SKILL.md
-    sha256: 4bb875d91decf3f2a3d785811fecbd1b342cf4d1831ad6e11db267dffba1277f
-  - path: skills/mi-lsp/references/quickstart.md
-    sha256: 970b7584312b24e684c86cb9aeac522d9dfd766f7f7c971fe1b707f23e3401bb
+  # El manifiesto se excluye para evitar un hash recursivo.
   - path: .docs/auditoria/2026-07-26-mi-lsp-embeddings-auth-debt/command-status.yaml
-    sha256: 81239b485911a33e3be5cd51dcba3df1ff058d022edd59b3e424178a2f473530
+    sha256: f1ea4759b6e675bfcab675dad6927f424207d7fccc3779741f8156957466d001
   - path: .docs/auditoria/2026-07-26-mi-lsp-embeddings-auth-debt/fallback-chain.yaml
-    sha256: 66f6ad040332678ba94afc5cb858b565f492068eaf833134e47663737930fa9e
+    sha256: 94a3dad15f533617c9749e7261bc9a61eff6326b40ebde25339d95585710a3ad
   - path: .docs/auditoria/2026-07-26-mi-lsp-embeddings-auth-debt/model-selection.yaml
-    sha256: e8aaf49c8c74fb1905381f1c978ca199f1f5e6056170d7d231720cd1a685504a
+    sha256: 53094d7aca8848019f544c2669fd19c06d668497e4afd45b8f0dc8ec81c43b54
   - path: .docs/auditoria/2026-07-26-mi-lsp-embeddings-auth-debt/sanitized-summary.yaml
-    sha256: d742bbce6f2cf972370b2e6912ab323b2da0cd07fe929e7c1c564ff6f36b5629
+    sha256: 6dafd034c112b0546197b787e7ebfd261b00937177af2f1b2550fe42b21b4c58
   - path: .docs/auditoria/2026-07-26-mi-lsp-embeddings-auth-debt/session-contract.yaml
-    sha256: 30876c01c47a37efd435fdee69693471bf950ae6ec3c0e99e94f6753ac7017bc
+    sha256: c185267202284c3fd9a92ab4fb318b162b0789a5307e21a5f21c867f3e918c93
   - path: .docs/auditoria/2026-07-26-mi-lsp-embeddings-auth-debt/traceability-closure.yaml
-    sha256: 33efaa8de96e275096a60b292d314568ec3329f951cf9c4d0205eda70cc13016
+    sha256: 8879e0afcc5ed6a31a070a077e908013e6b03daeb33d30316d31acad49f9fd29
   - path: .docs/auditoria/2026-07-26-mi-lsp-embeddings-auth-debt/verdict.md
-    sha256: aa8a17a9c969e5dd2e1b0fb5aa6eda7385db98c7336b3e7800c12233c0f6cf46
+    sha256: 69e2cdad951a67cfe1541ec5bce48a0ca760ffa1c43070ea3dfa54fe487e470f
   - path: .docs/auditoria/2026-07-26-mi-lsp-embeddings-auth-debt/verdict.yaml
-    sha256: 6758d9d651e4765e92062b92f1780a467b03945920996a28012192a2b3d70870
+    sha256: cc23379442ca53634546366097616bedf9842bb0153bc148767bc1664fd85dea
   - path: .docs/auditoria/2026-07-26-mi-lsp-embeddings-auth-debt/verification-summary.yaml
-    sha256: 09cd86a1c87ceedeffa75efee833bbf9c2f6402f73d87d51747208c652e7894b
+    sha256: ca542b727be3b984db90f1257a8f96b310a977360915d1215045780b6afc33e1
   - path: .docs/auditoria/2026-07-26-mi-lsp-embeddings-auth-debt/worker-join.yaml
-    sha256: d2a2c3ad210381dd2c3bc1cd21d7c40285f434f28300aa1e7e3128f265d929cc
+    sha256: 6becff71a5b170493f101c386af4685dfedcb79f4c8dcf9359a5ca772a15dfa7
 cleanup:
-  status: pr-open-ready
+  status: ready_for_integrate_main
   reconciliation: PASS
   traceability_check: PASS
   traceability_audit: PASS
-  ae_pre_push: PASS
-  contractual_guard:
-    exit_code: 0
-    ok: true
-    branch: chore/release-v0.5.20
-    dirty_allowed: true
-    dirty_count: 12
-    diff_count: 12
-    ae_canon_status: ready
-  wrapper_guard:
-    exit_code: 0
-    verdict: Approved with waiver
-    head: 7b64b985b9a8d59f439fd1d15bee4e3ae571c785
-    base: 7b64b985b9a8d59f439fd1d15bee4e3ae571c785
-    fast_forward_safe: true
-    ahead_count: 0
-    behind_count: 0
-    blockers: []
-    expected_surfaces:
-      - canon-docs
-      - evidence-docs
-    warning_reviewed: unknown surface corresponds to declared CHANGELOG and audit artifacts
-  release_target: v0.5.20
-  binary_refresh: pending_post_v0.5.20
+  binary_refresh: completed
+  binary_refresh_verdict: PASS
+  branch_disposition: integrate-main
+  cleanup: auto-after-successful-integration
+  post_integration_devqa_health_required: false
+  post_integration_devqa_health_rationale: release de CLI/worker distribuible, no despliegue de microservicio/store
   raw_evidence_removed: true
   manifest_self_hash: omitted_to_avoid_recursive_hash
   product_paths_modified_by_supervisor: false
 scope:
-  tracked_paths_exact: 13
+  tracked_paths_exact: 11
   no_commit_this_turn: true
   no_push: true
   no_deploy: true
   no_release: true
   supervisor_writes_confined_to_audit_directory: true
-skill_distribution:
-  source: C:/Users/fgpaz/.agents/skills/mi-lsp
-  mirror: C:/repos/buho/assets/skills/mi-lsp
-  text_files: 7
-  binaries: 2
-  byte_identical: true
-summary:
-  verdict: PASS
-  sanitized: true
-  traceability_check: PASS
-  traceability_audit: PASS
-follow_up:
-  scope: release_metadata_correction
-  pr_number: 72
-  merged_sha: 7b64b985b9a8d59f439fd1d15bee4e3ae571c785
-  origin_main_sha: 7b64b985b9a8d59f439fd1d15bee4e3ae571c785
-  preexisting_tag: v0.5.19
-  preexisting_release: v0.5.19
-  preexisting_tag_target: 599c5fa5497d03a1b11f9620d8199d3ceca0afb0
-  preexisting_release_valid_for_fixes: false
-  semver_decision: v0.5.20
-  branch: chore/release-v0.5.20
-  release_target: v0.5.20
-  binary_refresh: pending_post_v0.5.20
-  allowed_paths_count: 12
-  changelog_ordering: PASS
-  historical_v0_5_19_tag_target: 599c5fa5497d03a1b11f9620d8199d3ceca0afb0
-  v0_5_20_available: true
-  traceability_check: PASS
-  traceability_audit: PASS
-  ae_pre_push: PASS
-history:
-  prior_product_scope:
-    changed_paths_count: 13
-    product_paths: 13
-    base_sha: 599c5fa5497d03a1b11f9620d8199d3ceca0afb0
-    head_sha: cdd29e55dfa2ca872fba134d927af28716114d64
-    release_target: v0.5.19
-    binary_refresh: pending_post_merge
-    traceability_check: PASS
-    traceability_audit: PASS
-    ae_pre_push: PASS
-  stale_guard_output:
-    head: 9a4259f...
-    ahead_count: 2
-    dirty_count: 10
-    diff_count: 24

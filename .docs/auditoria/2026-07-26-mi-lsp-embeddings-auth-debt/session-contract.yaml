@@ -1,25 +1,29 @@
 schema: ae-session-contract/v1
 session: 2026-07-26-mi-lsp-embeddings-auth-debt
 task_slug: mi-lsp-embeddings-auth-debt
-objective: Release metadata correction after PR #72 merged beyond preexisting v0.5.19.
+objective: Cierre documental post-release/readback de v0.5.20 para embeddings y auth debt.
 issue_or_waiver: tracker_none_waiver_not_applicable
 mode: STANDARD
 orchestration_depth: T2
-closure_profile: pr_open_then_integrate_main
-cleanup_policy: preserve_sanitized_artifacts_until_integrate_main
+closure_profile: integrate_main_then_auto_cleanup
+cleanup_policy: auto-after-successful-integration
 decision_lock:
   status: authorized
   source: explicit_user_request
-  current_turn_controls:
+  evidence_follow_up_controls:
     commit_local_made: false
     push: false
     deploy: false
     release: false
-    binary_refresh: false
+    binary_refresh_performed_in_evidence_follow_up: false
+    binary_refresh_session_state: completed
+    binary_refresh_verdict: PASS
   force_push: false
   pending_gates: []
 harness_adapter: claude_code
 selected_adapter: claude_code
+principal_model: orquestador
+principal_effort: high
 adapter_evidence_or_blocker:
   status: PASS
   adapter: claude_code
@@ -37,25 +41,33 @@ worker:
   worker_launch_owner: execution_supervisor
   child_supervisor_required: true
   root_worker_spawn_allowed: false
-  delegation_boundary: Evidence-only release metadata follow-up; no code, commit, push, deploy, release, or secrets.
+  delegation_boundary: Follow-up documental/evidencia; sin código, commit, push, deploy, release ni secretos.
   boundary_violation: false
 tracker:
   mode: none
   external_issue: not_applicable
-branch: chore/release-v0.5.20
+ticket_frontier:
+  mode: none
+  status: local_session_contract_authority
+  external_issue: not_applicable
+branch: chore/v0.5.20-readback-closure
 worktree_path: C:/repos/mios/mi-lsp/.claude/worktrees/embeddings-auth-debt
 base_ref: origin/main
-base_sha: 7b64b985b9a8d59f439fd1d15bee4e3ae571c785
-head_ref: chore/release-v0.5.20
-head_sha: 7b64b985b9a8d59f439fd1d15bee4e3ae571c785
-origin_main_sha: 7b64b985b9a8d59f439fd1d15bee4e3ae571c785
-required_reconciliation_target: origin/main@7b64b985b9a8d59f439fd1d15bee4e3ae571c785
+base_sha: 3c2bf79b6c9e53928f04b3382d0b0612ee022553
+head_ref: chore/v0.5.20-readback-closure
+head_sha: 3c2bf79b6c9e53928f04b3382d0b0612ee022553
+origin_main_sha: 3c2bf79b6c9e53928f04b3382d0b0612ee022553
+release_source_sha: 3c2bf79b6c9e53928f04b3382d0b0612ee022553
+released_product_sha: 3c2bf79b6c9e53928f04b3382d0b0612ee022553
+product_recompiled_by_follow_up: false
+required_reconciliation_target: origin/main@3c2bf79b6c9e53928f04b3382d0b0612ee022553
 reconciliation: PASS
 release_target: v0.5.20
-branch_disposition: active-followup
+branch_disposition: integrate-main
+post_integration_cleanup: auto-after-successful-integration
 handoff:
-  next_disposition: rerun_traceability_and_pre_push
-  status: pr-open-ready
+  next_disposition: integrate-main
+  status: ready
 sdd_anchors:
   - RF-SEM-001
   - CT-GRAPH-CLI/09_contratos_tecnicos
@@ -73,13 +85,29 @@ ae_contract:
     - evidence_normalization
     - contract_and_traceability
   adapter_evidence_or_blocker: model-selection.yaml and worker-join.yaml
+  principal_model: orquestador
+  principal_effort: high
+  worker_model: subagente
+  worker_effort: medium
+  fallback: none
+  boundary_violation: false
+  governance_status: ready
+  governance_waiver: none
 expected_scope:
-  changed_paths_count: 12
-  product_paths: 1
+  changed_paths_count: 11
+  product_paths: 0
   audit_artifacts_tracked: 11
 allowed_paths:
-  - CHANGELOG.md
-  - .docs/auditoria/2026-07-26-mi-lsp-embeddings-auth-debt/*.yaml
+  - .docs/auditoria/2026-07-26-mi-lsp-embeddings-auth-debt/audit-manifest.yaml
+  - .docs/auditoria/2026-07-26-mi-lsp-embeddings-auth-debt/command-status.yaml
+  - .docs/auditoria/2026-07-26-mi-lsp-embeddings-auth-debt/fallback-chain.yaml
+  - .docs/auditoria/2026-07-26-mi-lsp-embeddings-auth-debt/model-selection.yaml
+  - .docs/auditoria/2026-07-26-mi-lsp-embeddings-auth-debt/sanitized-summary.yaml
+  - .docs/auditoria/2026-07-26-mi-lsp-embeddings-auth-debt/session-contract.yaml
+  - .docs/auditoria/2026-07-26-mi-lsp-embeddings-auth-debt/traceability-closure.yaml
+  - .docs/auditoria/2026-07-26-mi-lsp-embeddings-auth-debt/verdict.yaml
+  - .docs/auditoria/2026-07-26-mi-lsp-embeddings-auth-debt/verification-summary.yaml
+  - .docs/auditoria/2026-07-26-mi-lsp-embeddings-auth-debt/worker-join.yaml
   - .docs/auditoria/2026-07-26-mi-lsp-embeddings-auth-debt/verdict.md
 forbidden_paths:
   - .git/**
@@ -118,73 +146,61 @@ required_evidence:
   - model-selection.yaml
   - fallback-chain.yaml
   - traceability-closure.yaml
-  - fresh_reconciliation_against_origin_main_7b64b985
+  - fresh_reconciliation_against_origin_main_3c2bf79
   - yaml_duplicate_key_validation
   - manifest_hash_validation
   - git_diff_check
-  - binary_refresh_pending_post_v0.5.20
+  - binary_refresh_completed
 stop_conditions:
   - real_diff_exceeds_allowed_paths
-  - forbidden_path_touched_without_explicit_waiver
+  - forbidden_path_touched
   - secrets_or_pii_or_phi_detected
-  - private_integration_touched
+  - private_integration_details_detected
   - force_push_requested_or_attempted
   - reconciliation_target_mismatch
-  - traceability_check_not_pass
-  - traceability_audit_not_pass
-  - ae_pre_push_not_pass
+  - verification_not_pass
   - stale_or_missing_fresh_verifier
   - deployment_or_release_execution_before_required_gates
 verification:
   yaml_duplicate_keys: PASS
   manifest_hashes: PASS
   git_diff_check: PASS
-  changelog_ordering: PASS
-  historical_v0_5_19_tag_target: 599c5fa5497d03a1b11f9620d8199d3ceca0afb0
-  v0_5_20_available: true
-  traceability_check: PASS
-  traceability_audit: PASS
-  ae_pre_push: PASS
+  exact_scope: PASS
   release_target: v0.5.20
-  binary_refresh: pending_post_v0.5.20
-no_push_deploy_release_in_current_turn: true
-secrets_policy: never_read_or_emitted
-language: es
-history:
-  prior_product_scope:
-    changed_paths_count: 13
-    base_sha: 599c5fa5497d03a1b11f9620d8199d3ceca0afb0
-    head_sha: cdd29e55dfa2ca872fba134d927af28716114d64
-    release_target: v0.5.19
-    binary_refresh: pending_post_merge
-    traceability_check: PASS
-    traceability_audit: PASS
-    ae_pre_push: PASS
-  stale_guard_output:
-    head: 9a4259f...
-    ahead_count: 2
-    dirty_count: 10
-    diff_count: 24
+  binary_refresh: completed
+  binary_refresh_performed_in_evidence_follow_up: false
+  binary_refresh_session_state: completed
+  binary_refresh_verdict: PASS
+  fresh_adversarial_verifier:
+    role: independent_adversarial_verifier
+    result: PASS
+    scope: .docs/auditoria/2026-07-26-mi-lsp-embeddings-auth-debt
+    checks:
+      yaml_duplicate_keys: PASS
+      manifest_hashes: PASS
+      git_diff_check: PASS
+      exact_scope_11: PASS
+      release_tag_sha: PASS
+      routing_fallback: PASS
+      sanitization: PASS
+    blocker: none
+  watchdog_retry_concurrency: not_applicable
+  post_integration_devqa_health_required: false
+  post_integration_devqa_health_rationale: release de CLI/worker distribuible, no despliegue de microservicio/store
 pre_push_guard:
   status: PASS
+  invocation: Windows PowerShell native equivalent; pwsh unavailable in PATH
+  read_only_execution: completed
+  exit_code: 0
   contractual_guard:
     exit_code: 0
     ok: true
-    branch: chore/release-v0.5.20
+    branch: chore/v0.5.20-readback-closure
     dirty_allowed: true
-    dirty_count: 12
-    diff_count: 12
+    dirty_count: 11
+    diff_count: 11
     ae_canon_status: ready
-  wrapper_guard:
-    exit_code: 0
-    verdict: Approved with waiver
-    head: 7b64b985b9a8d59f439fd1d15bee4e3ae571c785
-    base: 7b64b985b9a8d59f439fd1d15bee4e3ae571c785
-    fast_forward_safe: true
-    ahead_count: 0
-    behind_count: 0
-    blockers: []
-    expected_surfaces:
-      - canon-docs
-      - evidence-docs
-    warning_reviewed: unknown surface corresponds to declared CHANGELOG and audit artifacts
+  wrapper_guard: not_applicable
+no_push_deploy_release_in_current_turn: true
+secrets_policy: never_read_or_emitted
+language: es
