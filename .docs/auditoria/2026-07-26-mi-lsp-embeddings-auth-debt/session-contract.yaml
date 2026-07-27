@@ -1,7 +1,7 @@
 schema: ae-session-contract/v1
 session: 2026-07-26-mi-lsp-embeddings-auth-debt
 task_slug: mi-lsp-embeddings-auth-debt
-objective: Verificación post-rebase de embeddings auth fail-closed y fallback lexical.
+objective: Release metadata correction after PR #72 merged beyond preexisting v0.5.19.
 issue_or_waiver: tracker_none_waiver_not_applicable
 mode: STANDARD
 orchestration_depth: T2
@@ -11,7 +11,7 @@ decision_lock:
   status: authorized
   source: explicit_user_request
   current_turn_controls:
-    commit_local_made: true
+    commit_local_made: false
     push: false
     deploy: false
     release: false
@@ -37,23 +37,24 @@ worker:
   worker_launch_owner: execution_supervisor
   child_supervisor_required: true
   root_worker_spawn_allowed: false
-  delegation_boundary: Auditoría fresca y evidencia sanitizada; sin secretos, commit, push, deploy ni release.
+  delegation_boundary: Evidence-only release metadata follow-up; no code, commit, push, deploy, release, or secrets.
   boundary_violation: false
 tracker:
   mode: none
   external_issue: not_applicable
-branch: worktree-embeddings-auth-debt
+branch: chore/release-v0.5.20
 worktree_path: C:/repos/mios/mi-lsp/.claude/worktrees/embeddings-auth-debt
 base_ref: origin/main
-base_sha: 599c5fa5497d03a1b11f9620d8199d3ceca0afb0
-head_ref: cdd29e55dfa2ca872fba134d927af28716114d64
-head_sha: cdd29e55dfa2ca872fba134d927af28716114d64
-required_reconciliation_target: origin/main@599c5fa5497d03a1b11f9620d8199d3ceca0afb0
+base_sha: 7b64b985b9a8d59f439fd1d15bee4e3ae571c785
+head_ref: chore/release-v0.5.20
+head_sha: 7b64b985b9a8d59f439fd1d15bee4e3ae571c785
+origin_main_sha: 7b64b985b9a8d59f439fd1d15bee4e3ae571c785
+required_reconciliation_target: origin/main@7b64b985b9a8d59f439fd1d15bee4e3ae571c785
 reconciliation: PASS
-release_target: v0.5.19
-branch_disposition: pr-open
+release_target: v0.5.20
+branch_disposition: active-followup
 handoff:
-  next_disposition: integrate-main
+  next_disposition: rerun_traceability_and_pre_push
   status: pr-open-ready
 sdd_anchors:
   - RF-SEM-001
@@ -63,40 +64,27 @@ sdd_anchors:
 ae_contract:
   gateway_skill: ae-work
   selected_mode: STANDARD
-  decision_lock: commit_local_made_push_deploy_release_false
+  decision_lock: commit_push_deploy_release_false
   harness_adapter: claude_code
   orchestration_depth: T2
   worker_decision: spawned
   independent_axes:
-    - embedding_auth_validation
-    - lexical_fallback_regression
-    - source_validate_navigation
+    - release_metadata
+    - evidence_normalization
     - contract_and_traceability
   adapter_evidence_or_blocker: model-selection.yaml and worker-join.yaml
 expected_scope:
-  changed_paths_count: 13
+  changed_paths_count: 12
+  product_paths: 1
+  audit_artifacts_tracked: 11
 allowed_paths:
-  - internal/embed/client.go
-  - internal/embed/client_test.go
-  - internal/service/recall.go
-  - internal/service/recall_test.go
-  - internal/service/source_validate.go
-  - internal/service/source_validate_test.go
-  - internal/service/harness_validate.go
-  - .docs/wiki/04_RF/RF-SEM-001.md
-  - .docs/wiki/09_contratos/CT-NAV-WIKI.md
-  - .docs/wiki/09_contratos_tecnicos.md
   - CHANGELOG.md
-  - skills/mi-lsp/SKILL.md
-  - skills/mi-lsp/references/quickstart.md
-  - .docs/auditoria/2026-07-26-mi-lsp-embeddings-auth-debt/**
+  - .docs/auditoria/2026-07-26-mi-lsp-embeddings-auth-debt/*.yaml
+  - .docs/auditoria/2026-07-26-mi-lsp-embeddings-auth-debt/verdict.md
 forbidden_paths:
   - .git/**
   - .mi-lsp/**
   - .docs/raw/**
-  - .docs/wiki/_mi-lsp/read-model.toml
-  - .env
-  - .env.*
   - '**/*.pem'
   - '**/*.key'
   - '**/*.pfx'
@@ -104,7 +92,6 @@ forbidden_paths:
   - mi-pi
   - micro-proxy
   - private integrations
-  - user home except explicitly listed authorized distribution paths
 mi_lsp_preflight:
   alias: mi-lsp
   root: C:/repos/mios/mi-lsp/.claude/worktrees/embeddings-auth-debt
@@ -131,13 +118,11 @@ required_evidence:
   - model-selection.yaml
   - fallback-chain.yaml
   - traceability-closure.yaml
-  - fresh_reconciliation_against_origin_main_599c5fa
-  - traceability-check_PASS
-  - traceability-audit_PASS
-  - ae-pre-push_PASS
-  - linux_ci_backslash_scope_regression
-  - release_target_v0.5.19
-  - binary_refresh_pending_post_merge
+  - fresh_reconciliation_against_origin_main_7b64b985
+  - yaml_duplicate_key_validation
+  - manifest_hash_validation
+  - git_diff_check
+  - binary_refresh_pending_post_v0.5.20
 stop_conditions:
   - real_diff_exceeds_allowed_paths
   - forbidden_path_touched_without_explicit_waiver
@@ -151,118 +136,55 @@ stop_conditions:
   - stale_or_missing_fresh_verifier
   - deployment_or_release_execution_before_required_gates
 verification:
+  yaml_duplicate_keys: PASS
+  manifest_hashes: PASS
   git_diff_check: PASS
-  tracked_paths_exact: 13
-  product_paths: 13
-  audit_artifacts_tracked: 11
-  go_test_all: PASS
-  go_test_initial_transient_failure: internal/milx TestHostSingleInflight; fresh rerun PASS
-  go_test_race_scope_forms_id_parity_wsl_linux_arm64: PASS
-  go_vet_all: PASS
-  fresh_build_outside_repository: PASS
-  skills_smokes: PASS
-  auth_fail_closed: PASS
-  semantic_missing_key: SEM_API_KEY_MISSING
-  provider_calls: 0
-  lexical_fallback: PASS
-  source_validate_global: PASS
-  source_validate_ct_graph_cli: PASS
-  source_validate_non_source_scopes: BLOCKED_EXPECTED_SCOPE_NO_MATCH
-  validate_harness: PASS
-  root_exact_selector: PASS_WITH_ALLOW_CROSS_WORKSPACE
-  skill_sync_byte_identical: true
+  changelog_ordering: PASS
+  historical_v0_5_19_tag_target: 599c5fa5497d03a1b11f9620d8199d3ceca0afb0
+  v0_5_20_available: true
   traceability_check: PASS
   traceability_audit: PASS
   ae_pre_push: PASS
-  staticcheck: baseline_no_reproduction_no_diff_introduction
-  release_target: v0.5.19
-  binary_refresh: pending_post_merge
+  release_target: v0.5.20
+  binary_refresh: pending_post_v0.5.20
 no_push_deploy_release_in_current_turn: true
 secrets_policy: never_read_or_emitted
 language: es
-closure_refresh:
-  timestamp: '2026-07-27T03:05:00Z'
-  traceability_check: PASS
-  traceability_audit: PASS
-  ae_pre_push: PASS
-  base_sha: 599c5fa5497d03a1b11f9620d8199d3ceca0afb0
-  head_sha: cdd29e55dfa2ca872fba134d927af28716114d64
-  workspace_source: path
-  selector: C:/repos/mios/mi-lsp/.claude/worktrees/embeddings-auth-debt
-  workspace_root: C:/repos/mios/mi-lsp/.claude/worktrees/embeddings-auth-debt
-  index_path: .mi-lsp/index.db
-  no_drift: true
-
-pre_push:
-  ae_pre_push: PASS
-  scripts_guard:
-    exit_code: 0
-    ok: true
-    branch: worktree-embeddings-auth-debt
-    dirty_allowed: true
+history:
+  prior_product_scope:
+    changed_paths_count: 13
+    base_sha: 599c5fa5497d03a1b11f9620d8199d3ceca0afb0
+    head_sha: cdd29e55dfa2ca872fba134d927af28716114d64
+    release_target: v0.5.19
+    binary_refresh: pending_post_merge
+    traceability_check: PASS
+    traceability_audit: PASS
+    ae_pre_push: PASS
+  stale_guard_output:
+    head: 9a4259f...
+    ahead_count: 2
     dirty_count: 10
     diff_count: 24
-    ae_canon_status: ready
-  invoke_guard:
-    exit_code: 0
-    verdict: Approved with waiver
-    head: 9a4259f...
-    fast_forward_safe: true
-    ahead_count: 2
-    behind_count: 0
-    blockers: []
-    shared_skill_mi_lsp_in_sync: true
-    shared_skill_mi_lsp_sha256: F2AB6C3ED8B02A9F5E044DD0C6D8E1B6BBF794BC4EDD6D191843966E690C20A9
-    waiver_tracker_mode: none
-release_target: v0.5.19
-binary_refresh: pending_post_merge
-post_audit_evidence_commit_note: An eventual audit-evidence commit does not invalidate audited_product_head cdd29e55dfa2ca872fba134d927af28716114d64.
-
-pre_push:
-  ae_pre_push: PASS
-  scripts_guard:
-    exit_code: 0
-    ok: true
-    branch: worktree-embeddings-auth-debt
-    dirty_allowed: true
-    dirty_count: 10
-    diff_count: 24
-    ae_canon_status: ready
-  invoke_guard:
-    exit_code: 0
-    verdict: Approved with waiver
-    head: 9a4259f...
-    fast_forward_safe: true
-    ahead_count: 2
-    behind_count: 0
-    blockers: []
-    shared_skill_mi_lsp_in_sync: true
-    shared_skill_mi_lsp_sha256: F2AB6C3ED8B02A9F5E044DD0C6D8E1B6BBF794BC4EDD6D191843966E690C20A9
-    waiver_tracker_mode: none
-release_target: v0.5.19
-binary_refresh: pending_post_merge
-post_audit_evidence_commit_note: An eventual audit-evidence commit does not invalidate audited_product_head cdd29e55dfa2ca872fba134d927af28716114d64.
-
-findings:
-  ci_linux: normalizeHarnessScopePath used host-dependent filepath.ToSlash for backslash-scoped paths.
-  remedy: replace backslashes with forward slashes before filepath.ToSlash so .docs\wiki paths match on Linux.
-race_verification:
+pre_push_guard:
   status: PASS
-  runner: WSL Linux ARM64
-  go_version: 1.24.4
-  command: "go test -race ./internal/service -run TestValidateSourcePathScopeFormsAndIDParity -count=1"
-  result: "ok ... 2.674s"
-  coverage: internal/service/source_validate_test.go:186-206
-  coverage_detail: 'strings.ReplaceAll(path, "/", "\\")'
-staticcheck:
-  status: baseline
-  reproduction: false
-  introduced_by_diff: false
-
-pre_push_guard_warning:
-  unknown_surface_manual_review: audit artifacts and declared CHANGELOG/scope; no blocker
-ci_ubuntu_follow_up:
-  original: failed
-  rerun: pending_post_push
-release_target: v0.5.19
-binary_refresh: pending_post_merge
+  contractual_guard:
+    exit_code: 0
+    ok: true
+    branch: chore/release-v0.5.20
+    dirty_allowed: true
+    dirty_count: 12
+    diff_count: 12
+    ae_canon_status: ready
+  wrapper_guard:
+    exit_code: 0
+    verdict: Approved with waiver
+    head: 7b64b985b9a8d59f439fd1d15bee4e3ae571c785
+    base: 7b64b985b9a8d59f439fd1d15bee4e3ae571c785
+    fast_forward_safe: true
+    ahead_count: 0
+    behind_count: 0
+    blockers: []
+    expected_surfaces:
+      - canon-docs
+      - evidence-docs
+    warning_reviewed: unknown surface corresponds to declared CHANGELOG and audit artifacts
