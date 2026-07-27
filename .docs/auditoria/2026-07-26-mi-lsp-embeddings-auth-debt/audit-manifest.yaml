@@ -1,0 +1,99 @@
+schema: ae-audit-hygiene/v1
+retention_ttl_days: 14
+hash_algorithm: sha256
+session: 2026-07-26-mi-lsp-embeddings-auth-debt
+worktree: C:/repos/mios/mi-lsp/.claude/worktrees/embeddings-auth-debt
+sanitized: true
+base_sha: 599c5fa5497d03a1b11f9620d8199d3ceca0afb0
+head_sha: cdd29e55dfa2ca872fba134d927af28716114d64
+changed_paths_count: 12
+artifact_classes:
+  audit:
+    - .docs/auditoria/2026-07-26-mi-lsp-embeddings-auth-debt/**
+  product_diff:
+    - internal/embed/client.go
+    - internal/embed/client_test.go
+    - internal/service/recall.go
+    - internal/service/recall_test.go
+    - internal/service/source_validate.go
+    - internal/service/source_validate_test.go
+    - .docs/wiki/04_RF/RF-SEM-001.md
+    - .docs/wiki/09_contratos/CT-NAV-WIKI.md
+    - .docs/wiki/09_contratos_tecnicos.md
+    - CHANGELOG.md
+    - skills/mi-lsp/SKILL.md
+    - skills/mi-lsp/references/quickstart.md
+file_hashes:
+  - path: internal/embed/client.go
+    sha256: 272b4503c3c91c72d88cdbdb2ac6f4a47f59a864dc02938ef58922cf9ca8af25
+  - path: internal/embed/client_test.go
+    sha256: dddc92c9605ff01d8aa9cd46db15f3635c300e783b49ee3f998e6b59aa0aab1a
+  - path: internal/service/recall.go
+    sha256: 82d23ce4bbb988a8d82b965cfbd24ebcc15e5be0f9017ca866cbc822caa95a38
+  - path: internal/service/recall_test.go
+    sha256: a80c9324e1766fa29bb710c4acbcaa6d1b42c2c427f18340dcf005bb01de6c1c
+  - path: internal/service/source_validate.go
+    sha256: f06114452d660fb73ed6825f4dc80b42a64789df64116bf4dc64bb87a40b2b08
+  - path: internal/service/source_validate_test.go
+    sha256: 802b2618e43670cfcce802b1f26aeae9dee4c75b738983a69787d255c9b1f924
+  - path: .docs/wiki/04_RF/RF-SEM-001.md
+    sha256: 7b0642a1162cbc0a3c08ba1144223653a6027f4f212fa737dbe47873135f5a6b
+  - path: .docs/wiki/09_contratos/CT-NAV-WIKI.md
+    sha256: 321316ddd30c65a8a7b8d239af37156ffec327fb73b9f3a55e53d598a87e710f
+  - path: .docs/wiki/09_contratos_tecnicos.md
+    sha256: 365bda7b3ab016a8e871fbe2c4425686bc9fcef009ede0c1d906cbb068fdc890
+  - path: CHANGELOG.md
+    sha256: 7c31ef4e1587618545aca7070c3c7e14ab9268a15e01e2ebdb5af74771ccb6a0
+  - path: skills/mi-lsp/SKILL.md
+    sha256: 4bb875d91decf3f2a3d785811fecbd1b342cf4d1831ad6e11db267dffba1277f
+  - path: skills/mi-lsp/references/quickstart.md
+    sha256: 970b7584312b24e684c86cb9aeac522d9dfd766f7f7c971fe1b707f23e3401bb
+  - path: .docs/auditoria/2026-07-26-mi-lsp-embeddings-auth-debt/command-status.yaml
+    sha256: dd37bb7f1ec60600e0d0a3e1303edd44cdaba4d9986ea6298c09b213d36f45d2
+  - path: .docs/auditoria/2026-07-26-mi-lsp-embeddings-auth-debt/fallback-chain.yaml
+    sha256: 13a176e66f4ca4bb733244026c8e57a8a536511909d16e4fff882b3eb2438b1c
+  - path: .docs/auditoria/2026-07-26-mi-lsp-embeddings-auth-debt/model-selection.yaml
+    sha256: c0d2495813dc74b699e8c5b4ffc119e6ed58e6c2b9582d790e62e6912e04a1e6
+  - path: .docs/auditoria/2026-07-26-mi-lsp-embeddings-auth-debt/sanitized-summary.yaml
+    sha256: e6c9efc44c56ed268d85e6a0f2e334f58d0db9d7ac208946b61477ef428a4448
+  - path: .docs/auditoria/2026-07-26-mi-lsp-embeddings-auth-debt/session-contract.yaml
+    sha256: 3af4319ac24c51c9bd8df96a6e5abc813e9acf23f43fd59c7cbdab4ec42ffd43
+  - path: .docs/auditoria/2026-07-26-mi-lsp-embeddings-auth-debt/traceability-closure.yaml
+    sha256: 28adc36fb7369a0236c640b37fa0fff5b9bb12aa6558e9d838d47e734785fc4b
+  - path: .docs/auditoria/2026-07-26-mi-lsp-embeddings-auth-debt/verdict.md
+    sha256: e10fe21d477a2d0867e0768356fb80bd31a227e0c2bd3b12a6a872d73fd3aa0c
+  - path: .docs/auditoria/2026-07-26-mi-lsp-embeddings-auth-debt/verdict.yaml
+    sha256: 856f266a6b4ae0a4d69b5ecae936678607038649b007e972f46e12a070d89d1a
+  - path: .docs/auditoria/2026-07-26-mi-lsp-embeddings-auth-debt/verification-summary.yaml
+    sha256: 92b419f5d6f3c252675757793ddd0ce4ea44901ac013df2a475e31e480e952f0
+  - path: .docs/auditoria/2026-07-26-mi-lsp-embeddings-auth-debt/worker-join.yaml
+    sha256: 7c09e060dd3351a22e7a7e3b246556007011b8b634ea53e5cc84ea5e48aecf97
+cleanup:
+  status: pr-open-ready
+  reconciliation: PASS
+  traceability_check: PASS
+  traceability_audit: PASS
+  ae_pre_push: PASS
+  release_target: v0.5.19
+  binary_refresh: pending_post_merge
+  raw_evidence_removed: true
+  manifest_self_hash: omitted_to_avoid_recursive_hash
+  product_paths_modified_by_supervisor: false
+scope:
+  tracked_paths_exact: 12
+  no_commit_this_turn: true
+  no_push: true
+  no_deploy: true
+  no_release: true
+  supervisor_writes_confined_to_audit_directory: true
+skill_distribution:
+  source: C:/Users/fgpaz/.agents/skills/mi-lsp
+  mirror: C:/repos/buho/assets/skills/mi-lsp
+  text_files: 7
+  binaries: 2
+  byte_identical: true
+summary:
+  verdict: PASS
+  sanitized: true
+  traceability_check: PASS
+  traceability_audit: PASS
