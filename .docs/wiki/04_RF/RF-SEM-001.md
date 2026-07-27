@@ -79,17 +79,18 @@ encoding_format = "float"
 user_agent = "mi-lsp-embeddings/1.0"
 ```
 
-`api_key_env` nombra una variable de entorno. El valor real de la key nunca va en `project.toml`, logs, wiki, output de CLI ni evidencia; para ejecuciones locales usar env del shell o `mkey run`.
+`api_key_env` nombra una variable de entorno. El valor real de la key nunca va en `project.toml`, logs, wiki, output de CLI ni evidencia; para ejecuciones locales usar env del shell o `mkey run`. Si `api_key_env` es vacio o contiene solo whitespace, el endpoint OpenAI-compatible se trata explicitamente como endpoint sin autenticacion. Si contiene un nombre y el valor resuelto esta ausente, vacio o compuesto solo por whitespace, se devuelve `SEM_API_KEY_MISSING` antes de cualquier I/O de red. Un valor presente se envia unicamente como `Authorization: Bearer <valor>`; los mensajes publicos no incluyen el nombre de la variable ni su valor.
 
 ## 4. Process Steps (Happy Path)
 
 1. CLI recibe comando `nav recall` o similar.
 2. Core lee `.mi-lsp/project.toml` seccion `[embeddings]` si existe.
 3. Si `[embeddings]` no existe, falta `base_url`/`model`, o `enabled=false`, devuelve hint y no llama al backend.
-4. Si `base_url` + `model` existen y `enabled` esta omitido o `true`, carga cliente OpenAI-compatible con credenciales desde `api_key_env`.
-5. Ejecuta embedding del query o de chunks de wiki con timeout `timeout_ms`, payload `encoding_format = "float"` cuando no haya override y headers `Accept: application/json` + `User-Agent`.
-6. Si la llamada falla, registra warning y orienta el fallback canonico a `mi-lsp nav wiki search`; no existe fallback local oculto.
-7. Config efectiva se resuelve desde `.mi-lsp/project.toml` por operacion.
+4. Si `base_url` + `model` existen y `enabled` esta omitido o `true`, carga cliente OpenAI-compatible y resuelve `api_key_env` segun el contrato de autenticacion.
+5. Si `api_key_env` nombra una variable cuyo valor esta ausente, vacio o compuesto solo por whitespace, devuelve `SEM_API_KEY_MISSING` antes de construir o enviar una solicitud de red.
+6. Ejecuta embedding del query o de chunks de wiki con timeout `timeout_ms`, payload `encoding_format = "float"` cuando no haya override y headers `Accept: application/json` + `User-Agent`; solo agrega Bearer cuando el valor resuelto esta presente.
+7. Si la llamada falla, registra warning y orienta el fallback canonico a `mi-lsp nav wiki search`; no existe fallback local oculto.
+8. Config efectiva se resuelve desde `.mi-lsp/project.toml` por operacion.
 
 ## 5. Outputs
 
@@ -106,7 +107,7 @@ user_agent = "mi-lsp-embeddings/1.0"
 |---|---|---|---|
 | `SEM_INVALID_CONFIG` | config esta malformada | `project.toml [embeddings]` invalido | warning + fallback a `nav wiki search` |
 | `SEM_PROVIDER_UNREACHABLE` | backend no responde | timeout o error de red | warning + fallback a `nav wiki search` |
-| `SEM_API_KEY_MISSING` | api_key_env especificado pero env var vacia | variable nombrada en `api_key_env` no seteada | warning + fallback a `nav wiki search` |
+| `SEM_API_KEY_MISSING` | `api_key_env` nombra una variable pero su valor resuelto esta ausente, vacio o compuesto solo por whitespace | validacion local previa a cualquier I/O de red | warning + fallback seguro a `nav wiki search`; mensaje sin identificadores ni valores sensibles |
 | `SEM_DIMENSION_MISMATCH` | proveedor responde otra dimension | vector recibido no coincide con `dim` | error de embedding y fallback documental |
 
 ## 7. Special Cases and Variants
@@ -115,6 +116,9 @@ user_agent = "mi-lsp-embeddings/1.0"
 - Si hay `base_url` + `model` y `enabled` esta omitido, la config esta activa.
 - Si `enabled=false`, la config queda apagada aunque existan `base_url` + `model`.
 - Si `provider` es vacio o `null`, la compatibilidad se decide por `base_url` + `model`; no se habilita un proveedor local implicito.
+- Si `api_key_env` es vacio o whitespace, el endpoint OpenAI-compatible se usa sin autenticacion; no se exige una variable por default.
+- Si `api_key_env` contiene un nombre y el valor resuelto es ausente, vacio o whitespace, `SEM_API_KEY_MISSING` se determina antes de cualquier I/O de red; el caller degrada con warning a `nav wiki search`.
+- Los mensajes de error y warning no incluyen nombres de variables ni valores de credenciales, salvo identificadores publicos canonicos como `SEM_API_KEY_MISSING`.
 - Si backend esta accesible pero timeout en validacion, registra warning y orienta a `nav wiki search`.
 - Config puede ser override parcial por CLI flags (future expansion).
 - `encoding_format` omitido se resuelve a `float` para proveedores OpenAI-compatible que lo soportan.
@@ -151,6 +155,24 @@ Scenario: Caer a offline si backend no responde
   Then se registra warning de provider unreachable
   And la guidance recomienda `mi-lsp nav wiki search`
   And no se usa un fallback local oculto
+
+Scenario: Usar endpoint compatible sin autenticacion explicita
+  Given una config activa con `api_key_env` vacio o compuesto solo por whitespace
+  When ejecuto "mi-lsp nav recall 'query' --workspace <alias>"
+  Then la solicitud puede dirigirse al endpoint OpenAI-compatible sin header Bearer
+  And no se exige una variable de entorno por default
+
+Scenario: Rechazar key ausente antes de I/O de red
+  Given una config activa cuyo `api_key_env` nombra una variable ausente, vacia o whitespace
+  When ejecuto "mi-lsp nav recall 'query' --workspace <alias>"
+  Then devuelve `SEM_API_KEY_MISSING` antes de cualquier I/O de red
+  And el mensaje no incluye nombre ni valor sensible
+  And el caller degrada con warning a `mi-lsp nav wiki search`
+
+Scenario: Usar Bearer con key presente
+  Given una config activa cuyo `api_key_env` resuelve a un valor no vacio
+  When ejecuto "mi-lsp nav recall 'query' --workspace <alias>"
+  Then la solicitud usa `Authorization: Bearer <valor>`
 
 Scenario: Usar default offline si no hay config
   Given un workspace sin seccion [embeddings]

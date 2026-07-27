@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"os"
 	"strings"
@@ -30,6 +29,12 @@ type Client struct {
 	cfg        Config
 	httpClient *http.Client
 }
+
+// APIKeyMissingError reports that a configured API key environment variable has
+// no usable value. Its public text is intentionally stable and secret-free.
+type APIKeyMissingError struct{}
+
+func (*APIKeyMissingError) Error() string { return "SEM_API_KEY_MISSING" }
 
 // New creates a new embeddings client with the given config.
 // Defaults: BatchSize=32 (if ≤0), TimeoutMS=30000 (if ≤0).
@@ -85,10 +90,7 @@ func (c *Client) Embed(ctx context.Context, texts []string) ([][]float32, error)
 
 	// Process texts in batches
 	for i := 0; i < len(texts); i += c.cfg.BatchSize {
-		end := i + c.cfg.BatchSize
-		if end > len(texts) {
-			end = len(texts)
-		}
+		end := min(i+c.cfg.BatchSize, len(texts))
 		batch := texts[i:end]
 
 		embeddings, err := c.embedBatch(ctx, batch)
@@ -104,6 +106,15 @@ func (c *Client) Embed(ctx context.Context, texts []string) ([][]float32, error)
 
 // embedBatch sends a single batch to the endpoint and returns the embeddings.
 func (c *Client) embedBatch(ctx context.Context, batch []string) ([][]float32, error) {
+	apiKeyEnv := strings.TrimSpace(c.cfg.APIKeyEnv)
+	var apiKey string
+	if apiKeyEnv != "" {
+		apiKey = os.Getenv(apiKeyEnv)
+		if strings.TrimSpace(apiKey) == "" {
+			return nil, &APIKeyMissingError{}
+		}
+	}
+
 	payload := requestPayload{
 		Model:          c.cfg.Model,
 		Input:          batch,
@@ -125,12 +136,9 @@ func (c *Client) embedBatch(ctx context.Context, batch []string) ([][]float32, e
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("User-Agent", c.cfg.UserAgent)
 
-	// Set Authorization header if API key is available
-	if c.cfg.APIKeyEnv != "" {
-		apiKey := os.Getenv(c.cfg.APIKeyEnv)
-		if apiKey != "" {
-			req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", apiKey))
-		}
+	// Set Authorization only when APIKeyEnv names a non-empty environment value.
+	if apiKeyEnv != "" {
+		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", apiKey))
 	}
 
 	resp, err := c.httpClient.Do(req)
@@ -140,8 +148,7 @@ func (c *Client) embedBatch(ctx context.Context, batch []string) ([][]float32, e
 	defer resp.Body.Close()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
-		return nil, fmt.Errorf("embeddings endpoint returned %d: %s", resp.StatusCode, string(respBody))
+		return nil, fmt.Errorf("embeddings endpoint returned status %d", resp.StatusCode)
 	}
 
 	var respPayload responsePayload

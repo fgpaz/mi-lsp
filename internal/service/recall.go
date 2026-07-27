@@ -120,9 +120,6 @@ func (a *App) embedWorkspaceWiki(ctx context.Context, root string, progress func
 		EncodingFormat: project.Embeddings.EncodingFormat,
 		UserAgent:      project.Embeddings.UserAgent,
 	}
-	if cfg.APIKeyEnv == "" {
-		cfg.APIKeyEnv = "MI_LSP_EMBEDDINGS_API_KEY"
-	}
 	client := embed.New(cfg)
 
 	plan, planWarnings := buildWikiEmbeddingPlan(ctx, root, docs, existingEmbeddings, cfg)
@@ -385,9 +382,6 @@ func (a *App) recall(ctx context.Context, request model.CommandRequest) (model.E
 		EncodingFormat: project.Embeddings.EncodingFormat,
 		UserAgent:      project.Embeddings.UserAgent,
 	}
-	if cfg.APIKeyEnv == "" {
-		cfg.APIKeyEnv = "MI_LSP_EMBEDDINGS_API_KEY"
-	}
 	client := embed.New(cfg)
 
 	// Try to embed the query
@@ -416,8 +410,7 @@ func (a *App) recall(ctx context.Context, request model.CommandRequest) (model.E
 
 		warnings := []string{"embeddings unavailable; served lexical results"}
 		hint := "embeddings endpoint offline; results are from lexical search. Fix embeddings config to enable semantic search or use 'mi-lsp nav wiki search'."
-
-		return model.Envelope{
+		envelope := model.Envelope{
 			Ok:        true,
 			Workspace: registration.Name,
 			Backend:   "recall+lexical",
@@ -425,7 +418,14 @@ func (a *App) recall(ctx context.Context, request model.CommandRequest) (model.E
 			Warnings:  warnings,
 			Hint:      hint,
 			Stats:     model.Stats{Files: len(results)},
-		}, nil
+		}
+		var missingKey *embed.APIKeyMissingError
+		if errors.As(err, &missingKey) {
+			const code = "SEM_API_KEY_MISSING"
+			envelope.Error = &model.EnvelopeError{Kind: "embeddings", Code: code, Message: "embeddings unavailable; served lexical results"}
+			envelope.Warnings = append(envelope.Warnings, "code="+code)
+		}
+		return envelope, nil
 	}
 
 	// Load all embeddings

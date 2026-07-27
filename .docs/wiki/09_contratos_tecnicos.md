@@ -110,8 +110,9 @@ user_agent = "mi-lsp-embeddings/1.0"
 ```
 
 El cliente envia payload OpenAI-compatible con `encoding_format = "float"`, header `Accept: application/json`, `User-Agent` configurable y validacion estricta de dimension contra `dim`.
-API key resuelta via la environment variable nombrada en `api_key_env` (usualmente inyectada con `mkey run`).
-Sin configuracion activa, `nav recall` devuelve hint visible y no llama al proveedor; si key/provider/config falla, el fallback canonico es `mi-lsp nav wiki search`, sin modelo local oculto.
+`api_key_env` vacio o compuesto solo por whitespace significa explicitamente endpoint OpenAI-compatible sin autenticacion; no se aplica una variable de entorno por default. Cuando contiene un nombre, el valor resuelto ausente, vacio o whitespace produce `SEM_API_KEY_MISSING` antes de cualquier I/O de red. Un valor presente se envia como `Authorization: Bearer <valor>`.
+Los mensajes publicos de error y warning son sanitizados y no incluyen el nombre de `api_key_env` ni su valor, salvo identificadores publicos canonicos como `SEM_API_KEY_MISSING`. El caller degrada de forma segura a `mi-lsp nav wiki search` con warning cuando la autenticacion, el proveedor o la configuracion no permiten recall semantico; no existe modelo local oculto.
+Sin configuracion activa, `nav recall` devuelve hint visible y no llama al proveedor.
 
 `[recall.rerank_extension]` puede reordenar candidatos mediante comando local externo. El comando recibe stdin JSON versionado `mi-lsp-rerank-extension-v1` y devuelve stdout JSON con `indices` o `results[].index`; no se ejecuta via shell, no guarda payloads y cualquier falla preserva el orden semantico original con warning sanitizado.
 
@@ -148,7 +149,7 @@ La busqueda es **lexical-first** y siempre funciona sin proveedor de embeddings.
 
 ### Reglas parent vs leaf
 
-`skills plan --role parent` puede incluir routers (`tier=parent_router`, `audience=parent`) y skills de orquestacion; `skills plan --role leaf` y `search --audience leaf` excluyen routers parent. El plan mantiene `mi-lsp` en `always` cuando existe, fuerza intents minimos (`db-cli`, `mi-key-cli` cuando el task lo senala) y deniega por defecto familias ruidosas (`ceo`, `research`, `comms`) salvo senal explicita en el task. Bundles no se cargan por default: entran solo si el task los senala o quedan en `bundles_optional`.
+`skills plan --role parent` puede incluir routers (`tier=parent_router`, `audience=parent`) y skills de orquestacion; `skills plan --role leaf` y `search --audience leaf` excluyen routers parent. El plan mantiene `mi-lsp` en `always` cuando existe, fuerza intents minimos (`db-cli`, `mi-key-cli` cuando el task lo senala) y deniega por defecto familias ruidosas (`ceo`, `research`, `comms`) salvo senal explicita en el task. Bundles no se cargan por default: entran solo si el task lo senala o quedan en `bundles_optional`.
 
 ### Evidencia
 

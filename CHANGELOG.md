@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- `[embeddings]` now activates when `base_url` and `model` are present even if `enabled` is omitted; `enabled = false` remains the explicit kill switch.
+- `mi-lsp index`/`index.run` now attempt wiki embedding backfill after docs indexing and no-change incremental runs, so missing `wiki_chunk_embeddings` rows can be populated without forcing unrelated source changes.
+
+## [0.5.19] - 2026-07-26
+
+### Fixed
+
+- `[embeddings]` now activates when `base_url` and `model` are present even if `enabled` is omitted; `enabled = false` remains the explicit kill switch.
+- `mi-lsp index`/`index.run` now attempt wiki embedding backfill after docs indexing and no-change incremental runs, so missing `wiki_chunk_embeddings` rows can be populated without forcing unrelated source changes.
+- Embeddings auth now treats blank `api_key_env` as explicitly unauthenticated, rejects missing configured keys before network I/O with `SEM_API_KEY_MISSING`, and preserves safe lexical/warning degradation.
+- `nav wiki validate-source` now blocks an explicit scope that matches only non-source documents instead of returning unscoped `PASS/not_declared`.
+
+### Notes
+
+- Skills catalog selection remains best-effort; `mi-pi` and private configuration were not modified.
+
 ## [0.5.18] - 2026-07-25
 
 ### Added
@@ -121,12 +141,6 @@ Hardening of the v0.5.1-v0.5.3 follow-up code, found by a parallel adversarial c
 
 - `PATHS.md`: expanded with AE Programa Gateway and Subagent Orchestration Protocol (shared foundation for all harnesses)
 
-## [Unreleased]
-
-### Fixed
-
-- `[embeddings]` now activates when `base_url` and `model` are present even if `enabled` is omitted; `enabled = false` remains the explicit kill switch.
-- `mi-lsp index`/`index.run` now attempt wiki embedding backfill after docs indexing and no-change incremental runs, so missing `wiki_chunk_embeddings` rows can be populated without forcing unrelated source changes.
 
 ## [0.4.0] - 2026-05-31
 

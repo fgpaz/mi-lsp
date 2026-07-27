@@ -3,8 +3,11 @@ package embed
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 )
@@ -118,45 +121,95 @@ func TestAuthorizationHeaderPresent(t *testing.T) {
 	}
 }
 
-func TestAuthorizationHeaderAbsent(t *testing.T) {
-	authHeaderPresent := false
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Header.Get("Authorization") != "" {
-			authHeaderPresent = true
-		}
+func TestAPIKeyEnvMissingFailsBeforeTransport(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		value string
+	}{
+		{name: "unset"},
+		{name: "empty", value: ""},
+		{name: "whitespace", value: " \t\n "},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			envName := "MI_LSP_TEST_MISSING_" + strings.ToUpper(tc.name)
+			if tc.name == "unset" {
+				os.Unsetenv(envName)
+			} else {
+				t.Setenv(envName, tc.value)
+			}
 
-		resp := responsePayload{
-			Data: []responseData{
-				{Embedding: []float32{0.1, 0.2, 0.3, 0.4}},
-			},
-		}
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(resp)
-	}))
-	defer server.Close()
+			client := New(Config{BaseURL: "http://invalid.test", Model: "test-model", Dim: 4})
+			client.cfg.APIKeyEnv = envName
+			transportCalls := 0
+			client.httpClient.Transport = roundTripperFunc(func(*http.Request) (*http.Response, error) {
+				transportCalls++
+				return nil, errors.New("transport must not be called")
+			})
 
-	cfg := Config{
-		Provider:  "openai-compatible",
-		BaseURL:   server.URL,
-		Model:     "test-model",
-		APIKeyEnv: "TEST_API_KEY_EMPTY",
-		Dim:       4,
-		BatchSize: 32,
-		TimeoutMS: 5000,
+			_, err := client.Embed(context.Background(), []string{"test"})
+			var missing *APIKeyMissingError
+			if !errors.As(err, &missing) {
+				t.Fatalf("error = %T %v, want APIKeyMissingError", err, err)
+			}
+			if err.Error() != "SEM_API_KEY_MISSING" {
+				t.Fatalf("error = %q, want SEM_API_KEY_MISSING", err)
+			}
+			if strings.Contains(err.Error(), envName) || (tc.value != "" && strings.Contains(err.Error(), tc.value)) {
+				t.Fatalf("error leaked configuration or secret: %q", err)
+			}
+			if transportCalls != 0 {
+				t.Fatalf("transport calls = %d, want 0", transportCalls)
+			}
+		})
 	}
+}
 
-	// Don't set the env var, so it's empty
-	t.Setenv("TEST_API_KEY_EMPTY", "")
+func TestAPIKeyEnvWhitespaceIsUnauthenticated(t *testing.T) {
+	for _, apiKeyEnv := range []string{"", " \t\n "} {
+		t.Run("env="+apiKeyEnv, func(t *testing.T) {
+			transportCalls := 0
+			client := New(Config{BaseURL: "http://embeddings.test", Model: "test-model", Dim: 4, APIKeyEnv: apiKeyEnv})
+			client.httpClient.Transport = roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+				transportCalls++
+				if got := req.Header.Get("Authorization"); got != "" {
+					t.Fatalf("Authorization = %q, want absent", got)
+				}
+				return jsonResponse(`{"data":[{"embedding":[0.1,0.2,0.3,0.4]}]}`), nil
+			})
 
-	client := New(cfg)
-	_, err := client.Embed(context.Background(), []string{"test"})
+			if _, err := client.Embed(context.Background(), []string{"test"}); err != nil {
+				t.Fatalf("Embed failed: %v", err)
+			}
+			if transportCalls != 1 {
+				t.Fatalf("transport calls = %d, want 1", transportCalls)
+			}
+		})
+	}
+}
 
-	if err != nil {
+func TestAPIKeyEnvValueSetsBearer(t *testing.T) {
+	t.Setenv("MI_LSP_TEST_PRESENT", "test-key-123")
+	client := New(Config{BaseURL: "http://embeddings.test", Model: "test-model", Dim: 4, APIKeyEnv: "MI_LSP_TEST_PRESENT"})
+	client.httpClient.Transport = roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+		if got := req.Header.Get("Authorization"); got != "Bearer test-key-123" {
+			t.Fatalf("Authorization = %q, want Bearer header", got)
+		}
+		return jsonResponse(`{"data":[{"embedding":[0.1,0.2,0.3,0.4]}]}`), nil
+	})
+	if _, err := client.Embed(context.Background(), []string{"test"}); err != nil {
 		t.Fatalf("Embed failed: %v", err)
 	}
+}
 
-	if authHeaderPresent {
-		t.Error("Authorization header should not be set when env is empty")
+type roundTripperFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripperFunc) RoundTrip(req *http.Request) (*http.Response, error) { return f(req) }
+
+func jsonResponse(body string) *http.Response {
+	return &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     make(http.Header),
+		Body:       io.NopCloser(strings.NewReader(body)),
 	}
 }
 
@@ -310,9 +363,10 @@ func TestResponseFewerEmbeddingsThanInputs(t *testing.T) {
 	}
 }
 
-func TestNonSuccessStatusCode(t *testing.T) {
+func TestNonSuccessStatusCodeDoesNotExposeProviderBody(t *testing.T) {
+	const secretProviderBody = "PROVIDER_SECRET_BODY_DO_NOT_LEAK"
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		http.Error(w, "server error", http.StatusInternalServerError)
+		http.Error(w, secretProviderBody, http.StatusInternalServerError)
 	}))
 	defer server.Close()
 
@@ -331,6 +385,12 @@ func TestNonSuccessStatusCode(t *testing.T) {
 
 	if err == nil {
 		t.Fatal("expected error for non-2xx status code")
+	}
+	if strings.Contains(err.Error(), secretProviderBody) {
+		t.Fatalf("error leaked provider response body: %q", err)
+	}
+	if !strings.Contains(err.Error(), "status 500") {
+		t.Fatalf("error = %q, want sanitized status", err)
 	}
 }
 
