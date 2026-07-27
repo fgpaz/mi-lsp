@@ -4,10 +4,11 @@ hash_algorithm: sha256
 session: 2026-07-26-mi-lsp-embeddings-auth-debt
 worktree: C:/repos/mios/mi-lsp/.claude/worktrees/embeddings-auth-debt
 sanitized: true
-base_sha: 599c5fa5497d03a1b11f9620d8199d3ceca0afb0
-head_sha: cdd29e55dfa2ca872fba134d927af28716114d64
-changed_paths_count: 13
-product_paths: 13
+base_sha: 7b64b985b9a8d59f439fd1d15bee4e3ae571c785
+head_sha: 7b64b985b9a8d59f439fd1d15bee4e3ae571c785
+origin_main_sha: 7b64b985b9a8d59f439fd1d15bee4e3ae571c785
+changed_paths_count: 12
+product_paths: 1
 audit_artifacts_tracked: 11
 artifact_classes:
   audit:
@@ -48,39 +49,60 @@ file_hashes:
   - path: .docs/wiki/09_contratos_tecnicos.md
     sha256: 365bda7b3ab016a8e871fbe2c4425686bc9fcef009ede0c1d906cbb068fdc890
   - path: CHANGELOG.md
-    sha256: 7c31ef4e1587618545aca7070c3c7e14ab9268a15e01e2ebdb5af74771ccb6a0
+    sha256: 72f58af5d62150d67bed351b1e4b0a4efe46b61b73afc6df5cae58d841f52bf6
   - path: skills/mi-lsp/SKILL.md
     sha256: 4bb875d91decf3f2a3d785811fecbd1b342cf4d1831ad6e11db267dffba1277f
   - path: skills/mi-lsp/references/quickstart.md
     sha256: 970b7584312b24e684c86cb9aeac522d9dfd766f7f7c971fe1b707f23e3401bb
   - path: .docs/auditoria/2026-07-26-mi-lsp-embeddings-auth-debt/command-status.yaml
-    sha256: 42f7ec30cccb0d950677a4e9ee64bcd3919fefbde7c22a547d31d1aedf651001
+    sha256: 81239b485911a33e3be5cd51dcba3df1ff058d022edd59b3e424178a2f473530
   - path: .docs/auditoria/2026-07-26-mi-lsp-embeddings-auth-debt/fallback-chain.yaml
-    sha256: 13a176e66f4ca4bb733244026c8e57a8a536511909d16e4fff882b3eb2438b1c
+    sha256: 66f6ad040332678ba94afc5cb858b565f492068eaf833134e47663737930fa9e
   - path: .docs/auditoria/2026-07-26-mi-lsp-embeddings-auth-debt/model-selection.yaml
-    sha256: c0d2495813dc74b699e8c5b4ffc119e6ed58e6c2b9582d790e62e6912e04a1e6
+    sha256: e8aaf49c8c74fb1905381f1c978ca199f1f5e6056170d7d231720cd1a685504a
   - path: .docs/auditoria/2026-07-26-mi-lsp-embeddings-auth-debt/sanitized-summary.yaml
-    sha256: 050af9000c2aeab5ce884b8133d4b21303c28013daa865130de9f8a17628e10f
+    sha256: d742bbce6f2cf972370b2e6912ab323b2da0cd07fe929e7c1c564ff6f36b5629
   - path: .docs/auditoria/2026-07-26-mi-lsp-embeddings-auth-debt/session-contract.yaml
-    sha256: b5b850a3e2b26a0ca06198259172afa46c1bc90805cfac917c8b451f4d7b2486
+    sha256: 30876c01c47a37efd435fdee69693471bf950ae6ec3c0e99e94f6753ac7017bc
   - path: .docs/auditoria/2026-07-26-mi-lsp-embeddings-auth-debt/traceability-closure.yaml
-    sha256: e7133908b03bef4f6f73c8aebf40465e147e3896ea51edb6baeab4e7f2771d12
+    sha256: 33efaa8de96e275096a60b292d314568ec3329f951cf9c4d0205eda70cc13016
   - path: .docs/auditoria/2026-07-26-mi-lsp-embeddings-auth-debt/verdict.md
-    sha256: 5d1440770b8b2a5542d564576faab0a3a6061137e99fe1790c559ff8f92da7c9
+    sha256: aa8a17a9c969e5dd2e1b0fb5aa6eda7385db98c7336b3e7800c12233c0f6cf46
   - path: .docs/auditoria/2026-07-26-mi-lsp-embeddings-auth-debt/verdict.yaml
-    sha256: a7ca8e803273e72fcf19224a1612766d8ed6f1b096fca757b9b88b41def92d95
+    sha256: 6758d9d651e4765e92062b92f1780a467b03945920996a28012192a2b3d70870
   - path: .docs/auditoria/2026-07-26-mi-lsp-embeddings-auth-debt/verification-summary.yaml
-    sha256: 734ac7c62f5fb8873c1571d8e2aa85f67ecef2844b5907fef70659e25160fa91
+    sha256: 09cd86a1c87ceedeffa75efee833bbf9c2f6402f73d87d51747208c652e7894b
   - path: .docs/auditoria/2026-07-26-mi-lsp-embeddings-auth-debt/worker-join.yaml
-    sha256: c23917a15bc6b31ec1a28336f8758f2933154b677c2213361d761c7eb85c447c
+    sha256: d2a2c3ad210381dd2c3bc1cd21d7c40285f434f28300aa1e7e3128f265d929cc
 cleanup:
   status: pr-open-ready
   reconciliation: PASS
   traceability_check: PASS
   traceability_audit: PASS
   ae_pre_push: PASS
-  release_target: v0.5.19
-  binary_refresh: pending_post_merge
+  contractual_guard:
+    exit_code: 0
+    ok: true
+    branch: chore/release-v0.5.20
+    dirty_allowed: true
+    dirty_count: 12
+    diff_count: 12
+    ae_canon_status: ready
+  wrapper_guard:
+    exit_code: 0
+    verdict: Approved with waiver
+    head: 7b64b985b9a8d59f439fd1d15bee4e3ae571c785
+    base: 7b64b985b9a8d59f439fd1d15bee4e3ae571c785
+    fast_forward_safe: true
+    ahead_count: 0
+    behind_count: 0
+    blockers: []
+    expected_surfaces:
+      - canon-docs
+      - evidence-docs
+    warning_reviewed: unknown surface corresponds to declared CHANGELOG and audit artifacts
+  release_target: v0.5.20
+  binary_refresh: pending_post_v0.5.20
   raw_evidence_removed: true
   manifest_self_hash: omitted_to_avoid_recursive_hash
   product_paths_modified_by_supervisor: false
@@ -102,3 +124,39 @@ summary:
   sanitized: true
   traceability_check: PASS
   traceability_audit: PASS
+follow_up:
+  scope: release_metadata_correction
+  pr_number: 72
+  merged_sha: 7b64b985b9a8d59f439fd1d15bee4e3ae571c785
+  origin_main_sha: 7b64b985b9a8d59f439fd1d15bee4e3ae571c785
+  preexisting_tag: v0.5.19
+  preexisting_release: v0.5.19
+  preexisting_tag_target: 599c5fa5497d03a1b11f9620d8199d3ceca0afb0
+  preexisting_release_valid_for_fixes: false
+  semver_decision: v0.5.20
+  branch: chore/release-v0.5.20
+  release_target: v0.5.20
+  binary_refresh: pending_post_v0.5.20
+  allowed_paths_count: 12
+  changelog_ordering: PASS
+  historical_v0_5_19_tag_target: 599c5fa5497d03a1b11f9620d8199d3ceca0afb0
+  v0_5_20_available: true
+  traceability_check: PASS
+  traceability_audit: PASS
+  ae_pre_push: PASS
+history:
+  prior_product_scope:
+    changed_paths_count: 13
+    product_paths: 13
+    base_sha: 599c5fa5497d03a1b11f9620d8199d3ceca0afb0
+    head_sha: cdd29e55dfa2ca872fba134d927af28716114d64
+    release_target: v0.5.19
+    binary_refresh: pending_post_merge
+    traceability_check: PASS
+    traceability_audit: PASS
+    ae_pre_push: PASS
+  stale_guard_output:
+    head: 9a4259f...
+    ahead_count: 2
+    dirty_count: 10
+    diff_count: 24

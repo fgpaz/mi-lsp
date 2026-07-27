@@ -12,7 +12,7 @@ and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2
 - `[embeddings]` now activates when `base_url` and `model` are present even if `enabled` is omitted; `enabled = false` remains the explicit kill switch.
 - `mi-lsp index`/`index.run` now attempt wiki embedding backfill after docs indexing and no-change incremental runs, so missing `wiki_chunk_embeddings` rows can be populated without forcing unrelated source changes.
 
-## [0.5.19] - 2026-07-26
+## [0.5.20] - 2026-07-27
 
 ### Fixed
 
@@ -24,6 +24,13 @@ and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2
 ### Notes
 
 - Skills catalog selection remains best-effort; `mi-pi` and private configuration were not modified.
+
+## [0.5.19] - 2026-07-27
+
+### Fixed
+
+- Enforced Kernel v2 authority without README inference and regenerated the policy projections.
+- Made Go graph observation compatible with Git worktrees and required toolchains.
 
 ## [0.5.18] - 2026-07-25
 
