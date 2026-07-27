@@ -74,7 +74,7 @@ ae_contract:
     - contract_and_traceability
   adapter_evidence_or_blocker: model-selection.yaml and worker-join.yaml
 expected_scope:
-  changed_paths_count: 12
+  changed_paths_count: 13
 allowed_paths:
   - internal/embed/client.go
   - internal/embed/client_test.go
@@ -82,6 +82,7 @@ allowed_paths:
   - internal/service/recall_test.go
   - internal/service/source_validate.go
   - internal/service/source_validate_test.go
+  - internal/service/harness_validate.go
   - .docs/wiki/04_RF/RF-SEM-001.md
   - .docs/wiki/09_contratos/CT-NAV-WIKI.md
   - .docs/wiki/09_contratos_tecnicos.md
@@ -133,7 +134,8 @@ required_evidence:
   - fresh_reconciliation_against_origin_main_599c5fa
   - traceability-check_PASS
   - traceability-audit_PASS
-  - ae-pre-push_pending_fresh_run
+  - ae-pre-push_PASS
+  - linux_ci_backslash_scope_regression
   - release_target_v0.5.19
   - binary_refresh_pending_post_merge
 stop_conditions:
@@ -150,9 +152,12 @@ stop_conditions:
   - deployment_or_release_execution_before_required_gates
 verification:
   git_diff_check: PASS
-  tracked_paths_exact: 12
+  tracked_paths_exact: 13
+  product_paths: 13
+  audit_artifacts_tracked: 11
   go_test_all: PASS
   go_test_initial_transient_failure: internal/milx TestHostSingleInflight; fresh rerun PASS
+  go_test_race_scope_forms_id_parity_wsl_linux_arm64: PASS
   go_vet_all: PASS
   fresh_build_outside_repository: PASS
   skills_smokes: PASS
@@ -169,6 +174,7 @@ verification:
   traceability_check: PASS
   traceability_audit: PASS
   ae_pre_push: PASS
+  staticcheck: baseline_no_reproduction_no_diff_introduction
   release_target: v0.5.19
   binary_refresh: pending_post_merge
 no_push_deploy_release_in_current_turn: true
@@ -193,16 +199,16 @@ pre_push:
     exit_code: 0
     ok: true
     branch: worktree-embeddings-auth-debt
-    dirty_allowed: false
-    dirty_count: 0
-    diff_count: 12
+    dirty_allowed: true
+    dirty_count: 10
+    diff_count: 24
     ae_canon_status: ready
   invoke_guard:
     exit_code: 0
     verdict: Approved with waiver
-    head: cdd29e55dfa2ca872fba134d927af28716114d64
+    head: 9a4259f...
     fast_forward_safe: true
-    ahead_count: 1
+    ahead_count: 2
     behind_count: 0
     blockers: []
     shared_skill_mi_lsp_in_sync: true
@@ -218,16 +224,16 @@ pre_push:
     exit_code: 0
     ok: true
     branch: worktree-embeddings-auth-debt
-    dirty_allowed: false
-    dirty_count: 0
-    diff_count: 12
+    dirty_allowed: true
+    dirty_count: 10
+    diff_count: 24
     ae_canon_status: ready
   invoke_guard:
     exit_code: 0
     verdict: Approved with waiver
-    head: cdd29e55dfa2ca872fba134d927af28716114d64
+    head: 9a4259f...
     fast_forward_safe: true
-    ahead_count: 1
+    ahead_count: 2
     behind_count: 0
     blockers: []
     shared_skill_mi_lsp_in_sync: true
@@ -236,3 +242,27 @@ pre_push:
 release_target: v0.5.19
 binary_refresh: pending_post_merge
 post_audit_evidence_commit_note: An eventual audit-evidence commit does not invalidate audited_product_head cdd29e55dfa2ca872fba134d927af28716114d64.
+
+findings:
+  ci_linux: normalizeHarnessScopePath used host-dependent filepath.ToSlash for backslash-scoped paths.
+  remedy: replace backslashes with forward slashes before filepath.ToSlash so .docs\wiki paths match on Linux.
+race_verification:
+  status: PASS
+  runner: WSL Linux ARM64
+  go_version: 1.24.4
+  command: "go test -race ./internal/service -run TestValidateSourcePathScopeFormsAndIDParity -count=1"
+  result: "ok ... 2.674s"
+  coverage: internal/service/source_validate_test.go:186-206
+  coverage_detail: 'strings.ReplaceAll(path, "/", "\\")'
+staticcheck:
+  status: baseline
+  reproduction: false
+  introduced_by_diff: false
+
+pre_push_guard_warning:
+  unknown_surface_manual_review: audit artifacts and declared CHANGELOG/scope; no blocker
+ci_ubuntu_follow_up:
+  original: failed
+  rerun: pending_post_push
+release_target: v0.5.19
+binary_refresh: pending_post_merge

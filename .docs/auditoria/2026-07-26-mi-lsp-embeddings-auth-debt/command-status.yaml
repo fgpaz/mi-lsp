@@ -13,7 +13,7 @@ commands:
     command: git diff --name-only origin/main...HEAD
     exit_code: 0
     terminal_state: completed
-    tracked_paths_exact: 12
+    tracked_paths_exact: 13
   - order: 3
     command: go test ./... -count=1
     exit_code: 1
@@ -129,6 +129,54 @@ commands:
     text_files: 7
     binaries: 2
     byte_identical: true
+
+  - order: 23
+    command: gofmt -w internal/service/harness_validate.go
+    exit_code: 0
+    terminal_state: completed
+  - order: 24
+    command: go test ./internal/service -count=1
+    exit_code: 0
+    terminal_state: completed
+    fresh_verifier: true
+  - order: 25
+    command: go test ./... -count=1
+    exit_code: 0
+    terminal_state: completed
+    fresh_verifier: true
+  - order: 26
+    command: go vet ./...
+    exit_code: 0
+    terminal_state: completed
+    fresh_verifier: true
+  - order: 27
+    command: git diff --check
+    exit_code: 0
+    terminal_state: completed
+    fresh_verifier: true
+  - order: 28
+    command: go test -race ./... -count=1
+    terminal_state: not_supported_local
+    result: pending_ci_ubuntu
+    note: race verification is not supported on Windows ARM64
+
+  - order: 29
+    command: "go test -race ./internal/service -run TestValidateSourcePathScopeFormsAndIDParity -count=1"
+    exit_code: 0
+    terminal_state: completed
+    fresh_verifier: true
+    runner: WSL Linux ARM64
+    go_version: 1.24.4
+    result: "ok ... 2.674s"
+    coverage: internal/service/source_validate_test.go:186-206
+    coverage_detail: 'strings.ReplaceAll(path, "/", "\\")'
+    authoritative_for: linux_race_scope_regression
+  - order: 30
+    command: staticcheck baseline diagnostic comparison
+    terminal_state: completed
+    result: baseline_no_reproduction_no_diff_introduction
+    diagnostics: staticcheck
+
 checks:
   all_required_final_exit_codes_zero: true
   initial_transient_failure_reconciled: true
@@ -141,7 +189,9 @@ checks:
   vectors_recorded: false
   workspace_root: C:/repos/mios/mi-lsp/.claude/worktrees/embeddings-auth-debt
   selector: C:/repos/mios/mi-lsp/.claude/worktrees/embeddings-auth-debt
-  tracked_paths_exact: 12
+  tracked_paths_exact: 13
+  product_paths: 13
+  audit_artifacts_tracked: 11
   raw_docs_modified: false
   traceability_check: PASS
   traceability_audit: PASS
@@ -154,15 +204,15 @@ pre_push:
   scripts_guard_exit_code: 0
   scripts_guard_ok: true
   branch: worktree-embeddings-auth-debt
-  dirty_allowed: false
-  dirty_count: 0
-  diff_count: 12
+  dirty_allowed: true
+  dirty_count: 10
+  diff_count: 24
   ae_canon_status: ready
   invoke_guard_exit_code: 0
   invoke_guard_verdict: Approved with waiver
-  head: cdd29e55dfa2ca872fba134d927af28716114d64
+  head: 9a4259f...
   fast_forward_safe: true
-  ahead_count: 1
+  ahead_count: 2
   behind_count: 0
   blockers: []
   shared_skill_mi_lsp_in_sync: true
@@ -178,15 +228,15 @@ pre_push:
   scripts_guard_exit_code: 0
   scripts_guard_ok: true
   branch: worktree-embeddings-auth-debt
-  dirty_allowed: false
-  dirty_count: 0
-  diff_count: 12
+  dirty_allowed: true
+  dirty_count: 10
+  diff_count: 24
   ae_canon_status: ready
   invoke_guard_exit_code: 0
   invoke_guard_verdict: Approved with waiver
-  head: cdd29e55dfa2ca872fba134d927af28716114d64
+  head: 9a4259f...
   fast_forward_safe: true
-  ahead_count: 1
+  ahead_count: 2
   behind_count: 0
   blockers: []
   shared_skill_mi_lsp_in_sync: true
@@ -194,5 +244,13 @@ pre_push:
   waiver_tracker_mode: none
 status: pr-open-ready
 next_action: push/PR/CI/merge
+release_target: v0.5.19
+binary_refresh: pending_post_merge
+
+pre_push_guard_warning:
+  unknown_surface_manual_review: audit artifacts and declared CHANGELOG/scope; no blocker
+ci_ubuntu_follow_up:
+  original: failed
+  rerun: pending_post_push
 release_target: v0.5.19
 binary_refresh: pending_post_merge

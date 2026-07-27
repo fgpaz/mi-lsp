@@ -24,7 +24,9 @@ joined_evidence:
   sanitized_evidence: PASS
 traceability_check: PASS
 traceability_audit: PASS
-tracked_paths_exact: 12
+tracked_paths_exact: 13
+product_paths: 13
+audit_artifacts_tracked: 11
 skill_sync_text_files: 7
 skill_sync_byte_identical: true
 binary_refresh: pending_post_merge
@@ -38,7 +40,7 @@ pre_push:
   invoke_guard_exit_code: 0
   invoke_guard_verdict: Approved with waiver
   fast_forward_safe: true
-  ahead_count: 1
+  ahead_count: 2
   behind_count: 0
   blockers: []
   shared_skill_mi_lsp_in_sync: true
@@ -51,9 +53,37 @@ pre_push:
   invoke_guard_exit_code: 0
   invoke_guard_verdict: Approved with waiver
   fast_forward_safe: true
-  ahead_count: 1
+  ahead_count: 2
   behind_count: 0
   blockers: []
   shared_skill_mi_lsp_in_sync: true
   shared_skill_mi_lsp_sha256: F2AB6C3ED8B02A9F5E044DD0C6D8E1B6BBF794BC4EDD6D191843966E690C20A9
 next_action: push/PR/CI/merge
+
+findings:
+  ci_linux: deterministic scope mismatch for .docs\wiki paths caused by host-dependent filepath.ToSlash.
+  remedy: normalize backslashes to forward slashes before filepath.ToSlash.
+race_verification:
+  original_ci_ubuntu: failed
+  rerun: pending_post_push
+
+linux_race_verification:
+  status: PASS
+  runner: WSL Linux ARM64
+  go_version: 1.24.4
+  command: "go test -race ./internal/service -run TestValidateSourcePathScopeFormsAndIDParity -count=1"
+  result: "ok ... 2.674s"
+  coverage: internal/service/source_validate_test.go:186-206
+  coverage_detail: 'strings.ReplaceAll(path, "/", "\\")'
+staticcheck:
+  status: baseline
+  reproduction: false
+  introduced_by_diff: false
+
+pre_push_guard_warning:
+  unknown_surface_manual_review: audit artifacts and declared CHANGELOG/scope; no blocker
+ci_ubuntu_follow_up:
+  original: failed
+  rerun: pending_post_push
+release_target: v0.5.19
+binary_refresh: pending_post_merge

@@ -15,7 +15,9 @@ branch: worktree-embeddings-auth-debt
 worktree: C:/repos/mios/mi-lsp/.claude/worktrees/embeddings-auth-debt
 branch_disposition: pr-open
 tracker_mode: none
-changed_paths_count: 12
+changed_paths_count: 13
+product_paths: 13
+audit_artifacts_tracked: 11
 no_drift:
   status: scoped_diff
   verdict: PASS

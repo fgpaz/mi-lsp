@@ -273,7 +273,7 @@ func harnessRecordMatchesPaths(record model.DocRecord, paths []string) bool {
 }
 
 func normalizeHarnessScopePath(path string) string {
-	normalized := strings.TrimSpace(filepath.ToSlash(path))
+	normalized := strings.TrimSpace(filepath.ToSlash(strings.ReplaceAll(path, `\`, "/")))
 	for strings.HasPrefix(normalized, "./") {
 		normalized = strings.TrimPrefix(normalized, "./")
 	}
