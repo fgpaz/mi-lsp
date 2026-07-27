@@ -46,6 +46,23 @@ func (r *Registry) Remove(name string) error {
 	assertGoSymbol(t, items, "Remove", "method", "Registry", "public")
 }
 
+func TestGoGraphListDisablesVCSStamping(t *testing.T) {
+	args := goGraphListArgs(nil)
+	if !strings.Contains(" "+strings.Join(args, " ")+" ", " -buildvcs=false ") {
+		t.Fatalf("go list args must disable VCS stamping in worktrees: %v", args)
+	}
+}
+
+func TestGoGraphListEnvSupportsAutoToolchains(t *testing.T) {
+	env := goGraphListEnv("linux", "amd64")
+	joined := "\n" + strings.Join(env, "\n") + "\n"
+	for _, want := range []string{"GOPROXY=off", "GOSUMDB=sum.golang.org", "GOTOOLCHAIN=auto", "GOOS=linux", "GOARCH=amd64"} {
+		if !strings.Contains(joined, "\n"+want+"\n") {
+			t.Fatalf("go list env must contain %q: %v", want, env)
+		}
+	}
+}
+
 func TestObserveGoGraphCleanModule(t *testing.T) {
 	root := t.TempDir()
 	writeGoTestFile(t, root, "go.mod", "module example.com/graph\n\ngo 1.24.4\n")

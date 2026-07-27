@@ -1,4 +1,4 @@
-last_updated: "2026-07-24"
+last_updated: "2026-07-26"
 schema: "ae-repo-policy/v1"
 version: 1
 required: []
@@ -28,7 +28,6 @@ authority:
       - CLAUDE.md
       - AGENTS.md
       - .docs/ae/repo-policy.yaml
-      - .docs/raw/repo-policy.yaml
 
 repo:
   name: mi-lsp

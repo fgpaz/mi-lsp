@@ -633,17 +633,37 @@ func (b *goGraphBuilder) sourceFingerprint() model.GraphDigest {
 	return goGraphDigest([]byte(out.String()))
 }
 
-func goGraphList(ctx context.Context, dir string, tags []string, goos, goarch string) ([]goListPackage, error) {
-	args := []string{"list", "-deps", "-export", "-compiled", "-json", "-e", "-mod=readonly"}
+func goGraphListArgs(tags []string) []string {
+	args := []string{"list", "-buildvcs=false", "-deps", "-export", "-compiled", "-json", "-e", "-mod=readonly"}
 	if len(tags) > 0 {
 		args = append(args, "-tags", strings.Join(tags, ","))
 	}
-	args = append(args, "./...")
+	return append(args, "./...")
+}
+
+func goGraphListEnv(goos, goarch string) []string {
+	replaced := []string{"GOPROXY=", "GOSUMDB=", "GOTOOLCHAIN=", "GOOS=", "GOARCH="}
+	env := make([]string, 0, len(os.Environ())+5)
+	for _, value := range os.Environ() {
+		skip := false
+		for _, prefix := range replaced {
+			if strings.HasPrefix(value, prefix) {
+				skip = true
+				break
+			}
+		}
+		if !skip {
+			env = append(env, value)
+		}
+	}
+	return append(env, "GOPROXY=off", "GOSUMDB=sum.golang.org", "GOTOOLCHAIN=auto", "GOOS="+goos, "GOARCH="+goarch)
+}
+
+func goGraphList(ctx context.Context, dir string, tags []string, goos, goarch string) ([]goListPackage, error) {
+	args := goGraphListArgs(tags)
 	cmd := exec.CommandContext(ctx, "go", args...)
 	cmd.Dir = dir
-	env := os.Environ()
-	env = append(env, "GOPROXY=off", "GOSUMDB=off", "GOTOOLCHAIN=local", "GOOS="+goos, "GOARCH="+goarch)
-	cmd.Env = env
+	cmd.Env = goGraphListEnv(goos, goarch)
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		return nil, err

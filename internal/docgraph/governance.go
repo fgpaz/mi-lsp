@@ -82,6 +82,27 @@ var kernelV2TrackerProviders = map[string]kernelV2TrackerProviderSpec{
 }
 
 var kernelV2EnvNamePattern = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
+var kernelV2WindowsAbsolutePathPattern = regexp.MustCompile(`^[A-Za-z]:`)
+
+const (
+	kernelV2RepoPolicySchema        = "ae-repo-policy/v1"
+	kernelV2RepoPolicyVersion       = 1
+	kernelV2AuthoritySchema         = "ae-authority/v1"
+	kernelV2AuthorityVersion        = 1
+	kernelV2AuthorityAllowlist      = "v1"
+	kernelV2CanonicalRepoPolicyPath = ".docs/ae/repo-policy.yaml"
+)
+
+var kernelV2AuthorityModel = []string{"Kernel", "Team", "Repository", "Person", "Session"}
+
+var kernelV2AuthorityKeys = map[string]struct{}{
+	"schema": {}, "version": {}, "model": {}, "kernel": {}, "team": {},
+	"repository": {}, "person": {}, "session": {}, "allowlist": {},
+}
+
+var kernelV2ForbiddenAuthorityKeys = map[string]struct{}{
+	"org": {}, "organization": {}, "company": {}, "customer": {}, "business": {},
+}
 
 var (
 	errSafeFileMissing = errors.New("safe file missing")
@@ -503,7 +524,7 @@ func inspectKernelV2AECanon(root string, config model.GovernanceAECanon) model.A
 }
 
 func invalidKernelV2RepoPolicySlots(policy map[string]any) []string {
-	invalid := make([]string, 0)
+	invalid := invalidKernelV2AuthorityBindingSlots(policy)
 	for _, slot := range requiredKernelV2RepoPolicyStringSlots {
 		if !validKernelV2RepoPolicyString(lookupKernelV2RepoPolicyValue(policy, slot...)) {
 			invalid = append(invalid, strings.Join(slot, "."))
@@ -521,6 +542,126 @@ func invalidKernelV2RepoPolicySlots(policy map[string]any) []string {
 	}
 	if !validKernelV2Date(lookupKernelV2RepoPolicyValue(policy, "last_updated")) {
 		invalid = append(invalid, "last_updated")
+	}
+	return invalid
+}
+
+func invalidKernelV2AuthorityBindingSlots(policy map[string]any) []string {
+	invalid := make([]string, 0)
+	if policy["schema"] != kernelV2RepoPolicySchema {
+		invalid = append(invalid, "schema")
+	}
+	if policy["version"] != kernelV2RepoPolicyVersion {
+		invalid = append(invalid, "version")
+	}
+
+	authority, ok := policy["authority"].(map[string]any)
+	if !ok {
+		return append(invalid, "authority")
+	}
+	authorityNames := make([]string, 0, len(authority))
+	for name := range authority {
+		authorityNames = append(authorityNames, name)
+	}
+	sort.Strings(authorityNames)
+	for _, name := range authorityNames {
+		if _, forbidden := kernelV2ForbiddenAuthorityKeys[name]; forbidden {
+			invalid = append(invalid, "authority."+name+"#forbidden")
+			continue
+		}
+		if _, allowed := kernelV2AuthorityKeys[name]; !allowed {
+			invalid = append(invalid, "authority."+name+"#forbidden")
+		}
+	}
+	if authority["schema"] != kernelV2AuthoritySchema {
+		invalid = append(invalid, "authority.schema")
+	}
+	if authority["version"] != kernelV2AuthorityVersion {
+		invalid = append(invalid, "authority.version")
+	}
+	if !validKernelV2AuthorityModel(authority["model"]) {
+		invalid = append(invalid, "authority.model")
+	}
+	for _, layer := range []string{"kernel", "team", "repository", "person", "session"} {
+		if !validKernelV2AuthorityEntity(authority[layer]) {
+			invalid = append(invalid, "authority."+layer+".id")
+		}
+	}
+	invalid = append(invalid, invalidKernelV2AuthorityAllowlist(authority["allowlist"])...)
+	return invalid
+}
+
+func validKernelV2AuthorityModel(value any) bool {
+	model, ok := value.([]any)
+	if !ok || len(model) != len(kernelV2AuthorityModel) {
+		return false
+	}
+	for index, expected := range kernelV2AuthorityModel {
+		if model[index] != expected {
+			return false
+		}
+	}
+	return true
+}
+
+func validKernelV2AuthorityEntity(value any) bool {
+	entity, ok := value.(map[string]any)
+	if !ok || len(entity) != 1 {
+		return false
+	}
+	return validKernelV2RepoPolicyString(entity["id"])
+}
+
+func invalidKernelV2AuthorityAllowlist(value any) []string {
+	allowlist, ok := value.(map[string]any)
+	if !ok {
+		return []string{"authority.allowlist"}
+	}
+	invalid := make([]string, 0)
+	if allowlist["version"] != kernelV2AuthorityAllowlist {
+		invalid = append(invalid, "authority.allowlist.version")
+	}
+	paths, ok := allowlist["paths"].([]any)
+	if !ok || len(paths) == 0 {
+		return append(invalid, "authority.allowlist.paths")
+	}
+	seen := make(map[string]struct{}, len(paths))
+	policyIncluded := false
+	unsafePath := false
+	duplicate := false
+	for _, rawPath := range paths {
+		path, ok := rawPath.(string)
+		if !ok {
+			unsafePath = true
+			continue
+		}
+		path = strings.ReplaceAll(strings.TrimSpace(path), "\\", "/")
+		segments := strings.Split(path, "/")
+		if path == "" || strings.HasPrefix(path, "/") || kernelV2WindowsAbsolutePathPattern.MatchString(path) {
+			unsafePath = true
+			continue
+		}
+		for _, segment := range segments {
+			if segment == "" || segment == ".." {
+				unsafePath = true
+			}
+		}
+		if _, exists := seen[path]; exists {
+			duplicate = true
+		}
+		seen[path] = struct{}{}
+		if path == kernelV2CanonicalRepoPolicyPath {
+			policyIncluded = true
+		}
+	}
+	if unsafePath {
+		invalid = append(invalid, "authority.allowlist.paths#unsafe_path")
+	}
+	if duplicate {
+		invalid = append(invalid, "authority.allowlist.paths#duplicate")
+	}
+	if !policyIncluded {
+		invalid = append(invalid, "authority.allowlist.paths#policy_missing")
 	}
 	return invalid
 }

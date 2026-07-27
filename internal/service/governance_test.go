@@ -501,6 +501,92 @@ func TestInspectGovernanceReportsKernelV2SourceDefects(t *testing.T) {
 	}
 }
 
+func TestInspectGovernanceRejectsInvalidKernelV2AuthorityBinding(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		oldValue    string
+		newValue    string
+		missingSlot string
+	}{
+		{name: "policy schema", oldValue: "schema: ae-repo-policy/v1", newValue: "schema: ae-repo-policy/v2", missingSlot: "#schema"},
+		{name: "policy version", oldValue: "version: 1", newValue: "version: 2", missingSlot: "#version"},
+		{name: "authority schema", oldValue: "  schema: ae-authority/v1", newValue: "  schema: ae-authority/v2", missingSlot: "#authority.schema"},
+		{name: "authority version", oldValue: "  version: 1", newValue: "  version: 2", missingSlot: "#authority.version"},
+		{name: "authority model", oldValue: "    - Kernel", newValue: "    - Organization", missingSlot: "#authority.model"},
+		{name: "authority entity id", oldValue: "    id: test-repo", newValue: "    id: \"\"", missingSlot: "#authority.repository.id"},
+		{name: "forbidden organization layer", oldValue: "authority:\n  schema:", newValue: "authority:\n  org:\n    id: forbidden\n  schema:", missingSlot: "#authority.org#forbidden"},
+		{name: "unknown authority key", oldValue: "authority:\n  schema:", newValue: "authority:\n  extra: forbidden\n  schema:", missingSlot: "#authority.extra#forbidden"},
+		{name: "allowlist version", oldValue: "    version: v1", newValue: "    version: v2", missingSlot: "#authority.allowlist.version"},
+		{name: "allowlist must include policy", oldValue: "      - .docs/ae/repo-policy.yaml", newValue: "      - .docs/ae/other.yaml", missingSlot: "#authority.allowlist.paths#policy_missing"},
+		{name: "allowlist duplicate", oldValue: "      - AGENTS.md", newValue: "      - AGENTS.md\n      - AGENTS.md", missingSlot: "#authority.allowlist.paths#duplicate"},
+		{name: "allowlist unsafe path", oldValue: "      - AGENTS.md", newValue: "      - ../AGENTS.md", missingSlot: "#authority.allowlist.paths#unsafe_path"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ensureWritableTestHome(t)
+			root := t.TempDir()
+			kernelHome := t.TempDir()
+			t.Setenv("AE_KERNEL_HOME", kernelHome)
+			writeSpecBackendGovernanceFixture(t, root)
+			addKernelV2AECanonToGovernanceFixture(t, root)
+			writeKernelV2CanonModules(t, kernelHome)
+			writeKernelV2RepoPolicy(t, root)
+
+			policyPath := filepath.Join(root, ".docs", "ae", "repo-policy.yaml")
+			content, err := os.ReadFile(policyPath)
+			if err != nil {
+				t.Fatalf("read repo policy fixture: %v", err)
+			}
+			updated := strings.Replace(string(content), tc.oldValue, tc.newValue, 1)
+			if updated == string(content) {
+				t.Fatalf("repo policy fixture did not contain %q", tc.oldValue)
+			}
+			writeWorkspaceFile(t, root, ".docs/ae/repo-policy.yaml", updated)
+
+			status := docgraph.InspectGovernance(root, true)
+			if !status.Blocked || status.AECanon.Status != "missing" {
+				t.Fatalf("expected invalid authority binding to block governance, got %#v", status)
+			}
+			if !strings.Contains(strings.Join(status.AECanon.MissingModules, "\n"), tc.missingSlot) {
+				t.Fatalf("expected policy defect %q, got %#v", tc.missingSlot, status.AECanon.MissingModules)
+			}
+		})
+	}
+}
+
+func TestInspectGovernanceDoesNotAllowReadmeToOverrideKernelV2Authority(t *testing.T) {
+	ensureWritableTestHome(t)
+	root := t.TempDir()
+	kernelHome := t.TempDir()
+	t.Setenv("AE_KERNEL_HOME", kernelHome)
+	writeSpecBackendGovernanceFixture(t, root)
+	addKernelV2AECanonToGovernanceFixture(t, root)
+	writeKernelV2CanonModules(t, kernelHome)
+	writeKernelV2RepoPolicy(t, root)
+	writeWorkspaceFile(t, root, ".docs/ae/README.md", "```yaml\nae_canon:\n  mode: kernel_v3\n  source: local\n```\n")
+
+	status := docgraph.InspectGovernance(root, true)
+	if status.Blocked || status.AECanon.Status != "valid" {
+		t.Fatalf("README content must not override repository policy authority, got %#v", status)
+	}
+}
+
+func TestInspectGovernanceDoesNotDeriveKernelV2AuthorityFromReadme(t *testing.T) {
+	ensureWritableTestHome(t)
+	root := t.TempDir()
+	kernelHome := t.TempDir()
+	t.Setenv("AE_KERNEL_HOME", kernelHome)
+	writeSpecBackendGovernanceFixture(t, root)
+	addAEDeclarationToGovernanceFixture(t, root, ".docs/ae")
+	writeKernelV2CanonModules(t, kernelHome)
+	writeKernelV2RepoPolicy(t, root)
+	writeWorkspaceFile(t, root, ".docs/ae/README.md", "```yaml\nae_canon:\n  mode: kernel_v2\n  source: <kernel_home>/canon\n  repo_policy: .docs/ae/repo-policy.yaml\n```\n")
+
+	status := docgraph.InspectGovernance(root, true)
+	if !status.Blocked || status.AECanon.Reason != "ae_canon_legacy_mode_rejected" {
+		t.Fatalf("README must not create Kernel v2 authority, got %#v", status)
+	}
+}
+
 func TestInspectGovernanceAcceptsKernelV2TrackerProviders(t *testing.T) {
 	for _, tc := range []struct {
 		name     string
