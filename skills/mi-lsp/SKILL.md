@@ -120,6 +120,16 @@ Canonical wiki location is governed by `00_gobierno_documental.md` and `read-mod
 
 Use `nav recall --intent` when a knowledge wiki has embeddings configured and you need semantic candidates, not final authority. Embeddings recall discovers candidates; a `route` hit or route-only material is not a final source until you open the canonical doc or evidence it points to.
 
+### Embeddings authentication contract
+
+Authentication is explicit and fail-closed:
+
+- An empty or whitespace-only `api_key_env` means the endpoint is explicitly unauthenticated; send no authentication header.
+- When `api_key_env` names an environment variable whose value is missing, empty, or whitespace-only, return `SEM_API_KEY_MISSING` before network I/O.
+- Emit `Bearer` only when the resolved key is present; never emit an empty Bearer token.
+- Public errors are sanitized and must not expose provider response bodies, credentials, API keys, authorization headers, or other secret material.
+- If semantic recall is unavailable because of configuration, authentication, or provider failure, stay in the governed lexical/wiki lane with `nav wiki search` and report only a sanitized reason. Do not use an ungoverned fallback.
+
 ```powershell
 mi-lsp nav recall "what contract defines recall result fields?" --workspace <alias> --intent formula --format toon
 mi-lsp nav recall "collect citations for semantic fallback" --workspace <alias> --intent evidence --format toon

@@ -154,6 +154,57 @@ func TestValidateSourceUnmigratedDocsIgnored(t *testing.T) {
 	}
 }
 
+func TestValidateSourceScopedNonSourceDocBlocks(t *testing.T) {
+	alias, root := createHarnessWorkspace(t)
+	path := ".docs/wiki/09_contratos/CT-LEGACY.md"
+	writeWorkspaceFile(t, root, path, "# CT-LEGACY\n\nNo source protocol yet.\n")
+	replaceSourceDocs(t, root, []model.DocRecord{sourceDocRecord(path, "CT-LEGACY")}, nil, nil)
+
+	result := executeSourceValidationPayload(t, root, alias, map[string]any{"ids": "CT-LEGACY"})
+	if result.WikiSourceVerdict != "BLOCKED" || result.WikiSourceReadiness != "blocked" || result.NavigationReadiness != "blocked" {
+		t.Fatalf("scoped non-source result = %#v", result)
+	}
+	if len(result.WikiSourceBlockers) != 1 || result.WikiSourceBlockers[0] != "scope=no_match; ids=CT-LEGACY; required=governed wiki docs declaring SDD-WIKI-SOURCE-v1" {
+		t.Fatalf("blockers = %#v", result.WikiSourceBlockers)
+	}
+}
+
+func TestValidateSourceScopedMixedCorpusIgnoresNonSource(t *testing.T) {
+	alias, root := createHarnessWorkspace(t)
+	sourcePath := ".docs/wiki/09_contratos/CT-SOURCE.md"
+	legacyPath := ".docs/wiki/09_contratos/CT-LEGACY.md"
+	writeWorkspaceFile(t, root, sourcePath, validSourceDoc("CT-SOURCE", "CT-SOURCE.contract", "RF-QRY-016", "llm-first", ""))
+	writeWorkspaceFile(t, root, legacyPath, "# CT-LEGACY\n\nNo source protocol yet.\n")
+	replaceSourceDocs(t, root, []model.DocRecord{sourceDocRecord(sourcePath, "CT-SOURCE"), sourceDocRecord(legacyPath, "CT-LEGACY")}, []model.DocSourceBlock{sourceBlockRecord(sourcePath, "CT-SOURCE", "CT-SOURCE.contract")}, []model.DocSourceRecord{sourceRecord(sourcePath, "CT-SOURCE.contract", "RF-QRY-016")})
+
+	result := executeSourceValidationPayload(t, root, alias, map[string]any{"ids": "CT-SOURCE,CT-LEGACY"})
+	if result.WikiSourceVerdict != "PASS" || result.WikiSourceReadiness != "ready" || result.WikiSourceArtifactsReviewed != 1 {
+		t.Fatalf("mixed scoped result = %#v", result)
+	}
+}
+
+func TestValidateSourcePathScopeFormsAndIDParity(t *testing.T) {
+	alias, root := createHarnessWorkspace(t)
+	path := ".docs/wiki/09_contratos/CT-SOURCE.md"
+	writeWorkspaceFile(t, root, path, validSourceDoc("CT-SOURCE", "CT-SOURCE.contract", "RF-QRY-016", "llm-first", ""))
+	replaceSourceDocs(t, root, []model.DocRecord{sourceDocRecord(path, "CT-SOURCE")}, []model.DocSourceBlock{sourceBlockRecord(path, "CT-SOURCE", "CT-SOURCE.contract")}, []model.DocSourceRecord{sourceRecord(path, "CT-SOURCE.contract", "RF-QRY-016")})
+
+	forms := []string{path, "CT-SOURCE.md", "./" + path, strings.ReplaceAll(path, "/", "\\")}
+	for _, scopePath := range forms {
+		t.Run(scopePath, func(t *testing.T) {
+			result := executeSourceValidationPayload(t, root, alias, map[string]any{"paths": scopePath})
+			if result.WikiSourceVerdict != "PASS" || result.WikiSourceReadiness != "ready" || result.NavigationReadiness != "ready" || result.WikiSourceArtifactsReviewed != 1 {
+				t.Fatalf("path-scoped result = %#v", result)
+			}
+		})
+	}
+
+	byID := executeSourceValidationPayload(t, root, alias, map[string]any{"ids": "CT-SOURCE"})
+	if byID.WikiSourceVerdict != "PASS" || byID.WikiSourceReadiness != "ready" || byID.NavigationReadiness != "ready" || byID.WikiSourceArtifactsReviewed != 1 {
+		t.Fatalf("ID-scoped result = %#v", byID)
+	}
+}
+
 func TestValidateSourceAcceptsBothProtocolKeys(t *testing.T) {
 	for _, key := range []string{"wiki_source_protocol", "source_protocol"} {
 		t.Run(key, func(t *testing.T) {

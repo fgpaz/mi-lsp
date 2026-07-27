@@ -1,0 +1,14 @@
+schema: ae-fallback-chain/v1
+session: 2026-07-26-mi-lsp-embeddings-auth-debt
+fallback: none
+fallback_used: false
+orchestration_role: execution_supervisor
+worker_launch_owner: claude-code Agent
+child_supervisor_required: true
+root_worker_spawn_allowed: false
+boundary_violation: false
+sanitized: true
+notes:
+  - No se ejecutó una cadena de fallback de modelo.
+  - El primer fallo de suite fue transitorio en TestHostSingleInflight; el verificador fresco y la suite repetida pasaron.
+  - No se registran secretos, watchdogs ni reintentos no observados.

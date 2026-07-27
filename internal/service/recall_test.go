@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -834,13 +835,97 @@ func TestRecall_EmbeddingFallbackWarningIsSanitized(t *testing.T) {
 	}
 }
 
-func containsRecallWhy(values []string, target string) bool {
-	for _, value := range values {
-		if value == target {
-			return true
-		}
+func TestRecall_APIMissingCodeKeepsLexicalFallbackAndSkipsProvider(t *testing.T) {
+	var providerCalls atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		providerCalls.Add(1)
+		http.Error(w, "provider must not be reached", http.StatusInternalServerError)
+	}))
+	defer server.Close()
+
+	ensureWritableTestHome(t)
+	root := t.TempDir()
+	writeWorkspaceFile(t, root, "go.mod", "module wiki-api-key-missing-test\n\ngo 1.24\n")
+	writeWorkspaceFile(t, root, ".docs/wiki/lexical.md", "# Lexical\n\nLexical fallback target content.\n")
+
+	alias := "wiki-api-key-missing-" + filepath.Base(root)
+	app := New(root, nil)
+	initEnv, err := app.Execute(context.Background(), model.CommandRequest{
+		Operation: "workspace.init",
+		Payload:   map[string]any{"path": root, "alias": alias, "no_index": true},
+	})
+	if err != nil {
+		t.Fatalf("workspace.init: %v", err)
 	}
-	return false
+	if !initEnv.Ok {
+		t.Fatalf("workspace.init not ok")
+	}
+	defer func() { _ = workspace.RemoveWorkspace(alias) }()
+
+	proj, err := workspace.LoadProjectFile(root)
+	if err != nil {
+		t.Fatalf("LoadProjectFile: %v", err)
+	}
+	const apiKeyEnv = "MI_LSP_TEST_RECALL_API_KEY_MISSING"
+	t.Setenv(apiKeyEnv, "")
+	proj.Embeddings = &model.EmbeddingsBlock{
+		Enabled:   boolPtr(true),
+		Provider:  "openai",
+		BaseURL:   server.URL,
+		Model:     "fake",
+		Dim:       8,
+		APIKeyEnv: apiKeyEnv,
+	}
+	if err := workspace.SaveProjectFile(root, proj); err != nil {
+		t.Fatalf("SaveProjectFile: %v", err)
+	}
+	indexEnv, err := app.Execute(context.Background(), model.CommandRequest{
+		Operation: "index.run",
+		Context:   model.QueryOptions{Workspace: alias},
+		Payload:   map[string]any{"docs_only": true},
+	})
+	if err != nil {
+		t.Fatalf("index.run: %v", err)
+	}
+	if !indexEnv.Ok {
+		t.Fatalf("index.run not ok: %#v", indexEnv)
+	}
+
+	env, err := app.Execute(context.Background(), model.CommandRequest{
+		Operation: "nav.recall",
+		Context:   model.QueryOptions{Workspace: alias, MaxItems: 5},
+		Payload:   map[string]any{"query": "Lexical"},
+	})
+	if err != nil {
+		t.Fatalf("recall: %v", err)
+	}
+	if !env.Ok {
+		t.Fatalf("recall not ok: %#v", env)
+	}
+	results, ok := env.Items.([]model.RecallResult)
+	if !ok || len(results) == 0 {
+		t.Fatalf("lexical results = %#v, want non-empty []RecallResult", env.Items)
+	}
+	if !strings.Contains(env.Backend, "lexical") {
+		t.Fatalf("backend = %q, want lexical fallback", env.Backend)
+	}
+	if env.Error == nil || env.Error.Code != "SEM_API_KEY_MISSING" {
+		t.Fatalf("error = %#v, want canonical SEM_API_KEY_MISSING", env.Error)
+	}
+	warningText := strings.Join(env.Warnings, " ")
+	if !strings.Contains(warningText, "SEM_API_KEY_MISSING") {
+		t.Fatalf("warnings = %#v, want observable code", env.Warnings)
+	}
+	if strings.Contains(warningText, apiKeyEnv) {
+		t.Fatalf("warning leaked environment variable name: %q", warningText)
+	}
+	if got := providerCalls.Load(); got != 0 {
+		t.Fatalf("provider calls = %d, want 0", got)
+	}
+}
+
+func containsRecallWhy(values []string, target string) bool {
+	return slices.Contains(values, target)
 }
 
 func TestRecall_EmbeddingsExplicitFalseDisablesConfiguredBlock(t *testing.T) {

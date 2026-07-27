@@ -1,0 +1,256 @@
+schema: ae-command-status/v1
+session: 2026-07-26-mi-lsp-embeddings-auth-debt
+sanitized: true
+terminal_authority: true
+base_sha: 599c5fa5497d03a1b11f9620d8199d3ceca0afb0
+head_sha: cdd29e55dfa2ca872fba134d927af28716114d64
+commands:
+  - order: 1
+    command: git diff --check origin/main...HEAD
+    exit_code: 0
+    terminal_state: completed
+  - order: 2
+    command: git diff --name-only origin/main...HEAD
+    exit_code: 0
+    terminal_state: completed
+    tracked_paths_exact: 13
+  - order: 3
+    command: go test ./... -count=1
+    exit_code: 1
+    terminal_state: completed
+    result: transient_TestHostSingleInflight_failure
+  - order: 4
+    command: go test ./internal/milx -run TestHostSingleInflight -count=1 -v
+    exit_code: 0
+    terminal_state: completed
+    fresh_verifier: true
+  - order: 5
+    command: go test ./... -count=1 retry
+    exit_code: 0
+    terminal_state: completed
+    fresh_verifier: true
+  - order: 6
+    command: go vet ./...
+    exit_code: 0
+    terminal_state: completed
+  - order: 7
+    command: go build -o temporary-directory-outside-repository/mi-lsp.exe ./cmd/mi-lsp
+    exit_code: 0
+    terminal_state: completed
+    output_location: outside_repository
+  - order: 8
+    command: go run ./cmd/mi-lsp --no-daemon --format json skills list
+    exit_code: 0
+    terminal_state: completed
+    result: PASS
+    items: 360
+  - order: 9
+    command: go run ./cmd/mi-lsp --no-daemon --format json skills search embeddings --top-k 5
+    exit_code: 0
+    terminal_state: completed
+    result: PASS
+    items: 5
+  - order: 10
+    command: go run ./cmd/mi-lsp --no-daemon --format json skills plan --role parent --task sanitized --max-skills 5
+    exit_code: 0
+    terminal_state: completed
+    result: PASS
+    router_role: parent
+  - order: 11
+    command: go run ./cmd/mi-lsp --no-daemon --format json skills plan --role leaf --task sanitized --max-skills 5
+    exit_code: 0
+    terminal_state: completed
+    result: PASS
+    router_role: leaf
+  - order: 12
+    command: go test ./internal/embed -run auth-missing-key -count=1
+    exit_code: 0
+    terminal_state: completed
+    result: PASS
+  - order: 13
+    command: go test ./internal/service -run recall-missing-key -count=1
+    exit_code: 0
+    terminal_state: completed
+    result: PASS
+    observable_error: SEM_API_KEY_MISSING
+    provider_calls: 0
+    lexical_results_non_empty: true
+  - order: 14
+    command: go test ./internal/service -run source-validate-focused -count=1
+    exit_code: 0
+    terminal_state: completed
+    result: PASS
+  - order: 15
+    command: go run ./cmd/mi-lsp --allow-cross-workspace --no-daemon --format toon --workspace absolute-root index --docs-only
+    exit_code: 0
+    terminal_state: completed
+    result: PASS
+    docs: 146
+  - order: 16
+    command: go run ./cmd/mi-lsp --allow-cross-workspace --no-daemon --format toon --workspace absolute-root workspace status
+    exit_code: 0
+    terminal_state: completed
+    result: PASS
+  - order: 17
+    command: go run ./cmd/mi-lsp --allow-cross-workspace --no-daemon --format toon --workspace absolute-root nav governance
+    exit_code: 0
+    terminal_state: completed
+    result: PASS
+  - order: 18
+    command: go run ./cmd/mi-lsp --allow-cross-workspace --no-daemon --format toon --workspace absolute-root nav wiki validate-harness
+    exit_code: 0
+    terminal_state: completed
+    result: PASS
+    harness_readiness: ready
+  - order: 19
+    command: go run ./cmd/mi-lsp --allow-cross-workspace --no-daemon --format toon --workspace absolute-root nav wiki validate-source
+    exit_code: 0
+    terminal_state: completed
+    result: PASS
+    wiki_source_readiness: ready
+  - order: 20
+    command: validate-source --ids CT-GRAPH-CLI
+    exit_code: 0
+    terminal_state: completed
+    result: PASS
+    navigation_readiness: ready
+  - order: 21
+    command: validate-source --ids RF-SEM-001,CT-NAV-WIKI
+    exit_code: 0
+    terminal_state: completed
+    result: BLOCKED_EXPECTED_SCOPE_NO_MATCH
+    navigation_readiness: blocked
+  - order: 22
+    command: skill source mirror hash comparison
+    exit_code: 0
+    terminal_state: completed
+    result: PASS
+    source_files: 9
+    text_files: 7
+    binaries: 2
+    byte_identical: true
+
+  - order: 23
+    command: gofmt -w internal/service/harness_validate.go
+    exit_code: 0
+    terminal_state: completed
+  - order: 24
+    command: go test ./internal/service -count=1
+    exit_code: 0
+    terminal_state: completed
+    fresh_verifier: true
+  - order: 25
+    command: go test ./... -count=1
+    exit_code: 0
+    terminal_state: completed
+    fresh_verifier: true
+  - order: 26
+    command: go vet ./...
+    exit_code: 0
+    terminal_state: completed
+    fresh_verifier: true
+  - order: 27
+    command: git diff --check
+    exit_code: 0
+    terminal_state: completed
+    fresh_verifier: true
+  - order: 28
+    command: go test -race ./... -count=1
+    terminal_state: not_supported_local
+    result: pending_ci_ubuntu
+    note: race verification is not supported on Windows ARM64
+
+  - order: 29
+    command: "go test -race ./internal/service -run TestValidateSourcePathScopeFormsAndIDParity -count=1"
+    exit_code: 0
+    terminal_state: completed
+    fresh_verifier: true
+    runner: WSL Linux ARM64
+    go_version: 1.24.4
+    result: "ok ... 2.674s"
+    coverage: internal/service/source_validate_test.go:186-206
+    coverage_detail: 'strings.ReplaceAll(path, "/", "\\")'
+    authoritative_for: linux_race_scope_regression
+  - order: 30
+    command: staticcheck baseline diagnostic comparison
+    terminal_state: completed
+    result: baseline_no_reproduction_no_diff_introduction
+    diagnostics: staticcheck
+
+checks:
+  all_required_final_exit_codes_zero: true
+  initial_transient_failure_reconciled: true
+  no_stdout_or_stderr_persisted: true
+  secret_values_recorded: false
+  endpoints_recorded: false
+  headers_recorded: false
+  bodies_recorded: false
+  corpus_recorded: false
+  vectors_recorded: false
+  workspace_root: C:/repos/mios/mi-lsp/.claude/worktrees/embeddings-auth-debt
+  selector: C:/repos/mios/mi-lsp/.claude/worktrees/embeddings-auth-debt
+  tracked_paths_exact: 13
+  product_paths: 13
+  audit_artifacts_tracked: 11
+  raw_docs_modified: false
+  traceability_check: PASS
+  traceability_audit: PASS
+  ae_pre_push: PASS
+  release_target: v0.5.19
+  binary_refresh: pending_post_merge
+
+pre_push:
+  ae_pre_push: PASS
+  scripts_guard_exit_code: 0
+  scripts_guard_ok: true
+  branch: worktree-embeddings-auth-debt
+  dirty_allowed: true
+  dirty_count: 10
+  diff_count: 24
+  ae_canon_status: ready
+  invoke_guard_exit_code: 0
+  invoke_guard_verdict: Approved with waiver
+  head: 9a4259f...
+  fast_forward_safe: true
+  ahead_count: 2
+  behind_count: 0
+  blockers: []
+  shared_skill_mi_lsp_in_sync: true
+  shared_skill_mi_lsp_sha256: F2AB6C3ED8B02A9F5E044DD0C6D8E1B6BBF794BC4EDD6D191843966E690C20A9
+  waiver_tracker_mode: none
+status: pr-open-ready
+next_action: push/PR/CI/merge
+release_target: v0.5.19
+binary_refresh: pending_post_merge
+
+pre_push:
+  ae_pre_push: PASS
+  scripts_guard_exit_code: 0
+  scripts_guard_ok: true
+  branch: worktree-embeddings-auth-debt
+  dirty_allowed: true
+  dirty_count: 10
+  diff_count: 24
+  ae_canon_status: ready
+  invoke_guard_exit_code: 0
+  invoke_guard_verdict: Approved with waiver
+  head: 9a4259f...
+  fast_forward_safe: true
+  ahead_count: 2
+  behind_count: 0
+  blockers: []
+  shared_skill_mi_lsp_in_sync: true
+  shared_skill_mi_lsp_sha256: F2AB6C3ED8B02A9F5E044DD0C6D8E1B6BBF794BC4EDD6D191843966E690C20A9
+  waiver_tracker_mode: none
+status: pr-open-ready
+next_action: push/PR/CI/merge
+release_target: v0.5.19
+binary_refresh: pending_post_merge
+
+pre_push_guard_warning:
+  unknown_surface_manual_review: audit artifacts and declared CHANGELOG/scope; no blocker
+ci_ubuntu_follow_up:
+  original: failed
+  rerun: pending_post_push
+release_target: v0.5.19
+binary_refresh: pending_post_merge

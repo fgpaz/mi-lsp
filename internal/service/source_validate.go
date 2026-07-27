@@ -98,6 +98,21 @@ func (a *App) validateSource(ctx context.Context, request model.CommandRequest) 
 		return model.Envelope{}, err
 	}
 	docs := loadSourceDocs(registration.Root, scopedDocs)
+	if wikiSourceScopeRequested(request.Payload) && len(docs) == 0 {
+		hint := wikiSourceScopeHint(request.Payload)
+		result := model.WikiSourceValidationResult{
+			WikiSourceProtocol:  wikiSourceProtocolV1,
+			IndexFreshness:      "scope_empty",
+			GovernanceSync:      "in_sync",
+			WikiSourceReadiness: "blocked",
+			WikiSourceVerdict:   "BLOCKED",
+			WikiSourceBlockers:  []string{hint},
+			NavigationReadiness: "blocked",
+			NavigationBlockers:  []string{hint},
+		}
+		env := model.Envelope{Ok: true, Workspace: registration.Name, Backend: "wiki.source", Items: []model.WikiSourceValidationResult{result}, Warnings: warnings, Hint: hint}
+		return applyCoachPolicy(attachMemoryPointer(env, memory), request.Context), nil
+	}
 	reportedBlocks := filterSourceBlocksByDocs(blocks, docs)
 	reportedRecords := filterSourceRecordsByDocs(records, docs)
 	corpusBlocks := filterSourceBlocksByDocRecords(blocks, allWikiDocs)
@@ -229,10 +244,6 @@ func docRecordPathSet(docs []model.DocRecord) map[string]struct{} {
 		allowed[normalizeHarnessScopePath(doc.Path)] = struct{}{}
 	}
 	return allowed
-}
-
-func compileSourceValidation(root string, docs []sourceDoc, allDocs []model.DocRecord, indexedBlocks []model.DocSourceBlock, indexedRecords []model.DocSourceRecord) model.WikiSourceValidationResult {
-	return compileSourceValidationWithCorpus(root, docs, allDocs, indexedBlocks, indexedRecords, indexedBlocks, indexedRecords)
 }
 
 func compileSourceValidationWithCorpus(root string, docs []sourceDoc, allDocs []model.DocRecord, indexedBlocks []model.DocSourceBlock, indexedRecords []model.DocSourceRecord, corpusBlocks []model.DocSourceBlock, corpusRecords []model.DocSourceRecord) model.WikiSourceValidationResult {
@@ -511,7 +522,7 @@ func addSourceResolverKey(index map[string]struct{}, value string) {
 
 func sourceNormativeTableCount(content string) int {
 	count := 0
-	for _, line := range strings.Split(strings.ReplaceAll(content, "\r", ""), "\n") {
+	for line := range strings.SplitSeq(strings.ReplaceAll(content, "\r", ""), "\n") {
 		trimmed := strings.TrimSpace(line)
 		if strings.HasPrefix(trimmed, "|") && strings.HasSuffix(trimmed, "|") && !isSourceTableSeparator(trimmed) {
 			count++
@@ -525,7 +536,7 @@ func isSourceTableSeparator(line string) bool {
 	if line == "" {
 		return false
 	}
-	for _, part := range strings.Split(line, "|") {
+	for part := range strings.SplitSeq(line, "|") {
 		part = strings.TrimSpace(part)
 		if part == "" {
 			return false

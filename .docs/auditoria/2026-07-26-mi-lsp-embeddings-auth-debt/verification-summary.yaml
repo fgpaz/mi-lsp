@@ -1,0 +1,118 @@
+schema: ae-verification-summary/v1
+session: 2026-07-26-mi-lsp-embeddings-auth-debt
+language: es
+sanitized: true
+verdict: PASS
+scope:
+  changed_paths_count: 13
+  product_paths: 13
+  audit_artifacts_tracked: 11
+  tracked_paths_exact: true
+  product_paths_modified_by_supervisor: false
+checks:
+  git_diff_check: PASS
+  git_diff_paths_exact: PASS
+  go_test_all: PASS
+  go_test_transient_retry: PASS
+  go_vet_all: PASS
+  fresh_build_outside_repository: PASS
+  skills_catalog_list: PASS
+  skills_catalog_search: PASS
+  skills_plan_parent: PASS
+  skills_plan_leaf: PASS
+  auth_fail_closed: PASS
+  semantic_missing_key: SEM_API_KEY_MISSING
+  provider_calls: 0
+  lexical_fallback_non_empty: true
+  source_validate_global: PASS
+  source_validate_ct_graph_cli: PASS
+  source_validate_non_source_scopes: BLOCKED_EXPECTED_SCOPE_NO_MATCH
+  validate_harness: PASS
+  workspace_status: PASS
+  governance: PASS
+  root_exact_selector: PASS_WITH_ALLOW_CROSS_WORKSPACE
+  secret_hygiene: PASS
+  skill_sync: PASS
+  traceability_check: PASS
+  traceability_audit: PASS
+  ae_pre_push: PASS
+skill_sync:
+  source: C:/Users/fgpaz/.agents/skills/mi-lsp
+  mirror: C:/repos/buho/assets/skills/mi-lsp
+  files: 9
+  text_files: 7
+  binaries: 2
+  byte_identical: true
+  binary_refresh: pending_post_merge
+closure:
+  no_commit: true
+  no_push: true
+  no_deploy: true
+  no_release: true
+  release_target: v0.5.19
+  branch_disposition: pr-open
+  completion_target: integrate-main
+  sanitized: true
+validators:
+  workspace_source: path
+  selector: C:/repos/mios/mi-lsp/.claude/worktrees/embeddings-auth-debt
+  workspace_root: C:/repos/mios/mi-lsp/.claude/worktrees/embeddings-auth-debt
+  index_path: .mi-lsp/index.db
+  navigation_readiness: ready_for_passing_scopes
+  no_drift: true
+
+pre_push:
+  ae_pre_push: PASS
+  scripts_guard_exit_code: 0
+  invoke_guard_exit_code: 0
+  invoke_guard_verdict: Approved with waiver
+  fast_forward_safe: true
+  ahead_count: 2
+  behind_count: 0
+  blockers: []
+  shared_skill_mi_lsp_in_sync: true
+  shared_skill_mi_lsp_sha256: F2AB6C3ED8B02A9F5E044DD0C6D8E1B6BBF794BC4EDD6D191843966E690C20A9
+status: pr-open-ready
+next_action: push/PR/CI/merge
+
+pre_push:
+  ae_pre_push: PASS
+  scripts_guard_exit_code: 0
+  invoke_guard_exit_code: 0
+  invoke_guard_verdict: Approved with waiver
+  fast_forward_safe: true
+  ahead_count: 2
+  behind_count: 0
+  blockers: []
+  shared_skill_mi_lsp_in_sync: true
+  shared_skill_mi_lsp_sha256: F2AB6C3ED8B02A9F5E044DD0C6D8E1B6BBF794BC4EDD6D191843966E690C20A9
+status: pr-open-ready
+next_action: push/PR/CI/merge
+
+findings:
+  ci_linux: deterministic scope mismatch for .docs\wiki paths caused by host-dependent filepath.ToSlash.
+  remedy: normalize backslashes to forward slashes before filepath.ToSlash.
+race_verification:
+  original_ci_ubuntu: failed
+  rerun: pending_post_push
+
+linux_race_verification:
+  status: PASS
+  runner: WSL Linux ARM64
+  go_version: 1.24.4
+  command: "go test -race ./internal/service -run TestValidateSourcePathScopeFormsAndIDParity -count=1"
+  result: "ok ... 2.674s"
+  coverage: internal/service/source_validate_test.go:186-206
+  coverage_detail: 'strings.ReplaceAll(path, "/", "\\")'
+staticcheck:
+  status: baseline
+  reproduction: false
+  introduced_by_diff: false
+
+pre_push_guard_warning:
+  unknown_surface_manual_review: audit artifacts and declared CHANGELOG/scope; no blocker
+ci_ubuntu_follow_up:
+  original: failed
+  rerun: pending_post_push
+release_target: v0.5.19
+binary_refresh: pending_post_merge

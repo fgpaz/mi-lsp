@@ -1,0 +1,14 @@
+schema: ae-model-selection/v1
+session: 2026-07-26-mi-lsp-embeddings-auth-debt
+orchestration_role: execution_supervisor
+model: subagente
+effort: medium
+worker_decision: spawned
+worker_adapter_available: true
+worker_authorized_by_user: true
+fallback: none
+worker_launch_owner: claude-code Agent
+child_supervisor_required: true
+root_worker_spawn_allowed: false
+boundary_violation: false
+sanitized: true
