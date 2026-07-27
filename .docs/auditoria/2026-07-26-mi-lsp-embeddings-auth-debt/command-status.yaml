@@ -2,93 +2,222 @@ schema: ae-command-status/v1
 session: 2026-07-26-mi-lsp-embeddings-auth-debt
 sanitized: true
 terminal_authority: true
-base_sha: 7b64b985b9a8d59f439fd1d15bee4e3ae571c785
-head_sha: 7b64b985b9a8d59f439fd1d15bee4e3ae571c785
-origin_main_sha: 7b64b985b9a8d59f439fd1d15bee4e3ae571c785
+principal_model: orquestador
+principal_effort: high
+worker_model: subagente
+worker_effort: medium
+release_source_sha: 3c2bf79b6c9e53928f04b3382d0b0612ee022553
+released_product_sha: 3c2bf79b6c9e53928f04b3382d0b0612ee022553
+post_release_evidence_commit: not_created_this_turn
 commands:
   - order: 1
-    command: git diff --check
+    command: release tag/workflow and six canonical RIDs
     exit_code: 0
     terminal_state: completed
+    timed_out: false
+    cancelled: false
+    output_present: true
+    completion_signal: exit_code_0
+    secret_scan: PASS
+    duration: not_recorded
+    token_count: not_applicable
+    result: PASS
+    tag: v0.5.20
+    tag_target: 3c2bf79b6c9e53928f04b3382d0b0612ee022553
+    workflow_status: SUCCESS
+    canonical_rids_published: 6
+    checksums_published: true
+    done_textual_signal: false
+    silence: false
   - order: 2
+    command: Windows ARM64 installed version and bundled worker readback
+    exit_code: 0
+    terminal_state: completed
+    timed_out: false
+    cancelled: false
+    output_present: true
+    completion_signal: exit_code_0
+    secret_scan: PASS
+    duration: not_recorded
+    token_count: not_applicable
+    result: PASS
+    version: v0.5.20
+    protocol: mi-lsp-v1.1
+    worker_compatible: true
+    selected_worker_source: bundle
+    done_textual_signal: false
+    silence: false
+  - order: 3
+    command: WSL Linux ARM64 installed CLIs and self-contained worker readback
+    exit_code: 0
+    terminal_state: completed
+    timed_out: false
+    cancelled: false
+    output_present: true
+    completion_signal: exit_code_0
+    secret_scan: PASS
+    duration: not_recorded
+    token_count: not_applicable
+    result: PASS
+    cli_installations: 2
+    worker_selected_source: installed
+    worker_selected_compatible: true
+    protocol: mi-lsp-v1.1
+    dotnet_required: false
+    done_textual_signal: false
+    silence: false
+  - order: 4
+    command: skill source/mirror recursive hash and parity readback
+    exit_code: 0
+    terminal_state: completed
+    timed_out: false
+    cancelled: false
+    output_present: true
+    completion_signal: exit_code_0
+    secret_scan: PASS
+    duration: not_recorded
+    token_count: not_applicable
+    result: PASS
+    files_each: 9
+    recursive_parity: true
+    differences: none
+    done_textual_signal: false
+    silence: false
+  - order: 5
+    command: Pi wrapper skills list/search/plan readback
+    exit_code: 0
+    terminal_state: completed
+    timed_out: false
+    cancelled: false
+    output_present: true
+    completion_signal: exit_code_0
+    secret_scan: PASS
+    duration: not_recorded
+    token_count: not_applicable
+    result: PASS
+    list_ok: true
+    list_items: 360
+    search_ok: true
+    search_items: 5
+    plan_ok: true
+    plan_schema: mi-lsp-skill-plan/v1
+    plan_selected: 6
+    bounded: true
+    done_textual_signal: false
+    silence: false
+  - order: 6
+    command: Pi wrapper novel semantic search
+    exit_code: 0
+    terminal_state: completed
+    timed_out: false
+    cancelled: false
+    output_present: true
+    completion_signal: exit_code_0
+    secret_scan: PASS
+    duration: not_recorded
+    token_count: not_applicable
+    result: PASS
+    items: 3
+    warnings: none
+    why_values:
+      - lexical+embedding
+      - parent_router+lexical+embedding
+    semantic_contribution: true
+    done_textual_signal: false
+    silence: false
+  - order: 7
+    command: private local adapter listener and logon task status
+    exit_code: 0
+    terminal_state: completed
+    timed_out: false
+    cancelled: false
+    output_present: true
+    completion_signal: exit_code_0
+    secret_scan: PASS
+    duration: not_recorded
+    token_count: not_applicable
+    result: PASS
+    listener_active: true
+    logon_task_enabled: true
+    trigger: logon
+    private_details: withheld
+    done_textual_signal: false
+    silence: false
+  - order: 8
     command: strict YAML duplicate-key validation
     exit_code: 0
     terminal_state: completed
+    timed_out: false
+    cancelled: false
+    output_present: true
+    completion_signal: exit_code_0
+    secret_scan: PASS
+    duration: not_recorded
+    token_count: not_applicable
     result: PASS
-  - order: 3
+    silence: false
+  - order: 9
     command: audit manifest hash validation
     exit_code: 0
     terminal_state: completed
+    timed_out: false
+    cancelled: false
+    output_present: true
+    completion_signal: exit_code_0
+    secret_scan: PASS
+    duration: not_recorded
+    token_count: not_applicable
     result: PASS
+    silence: false
+  - order: 10
+    command: git diff --check and exact scope validation
+    exit_code: 0
+    terminal_state: completed
+    timed_out: false
+    cancelled: false
+    output_present: true
+    completion_signal: exit_code_0
+    secret_scan: PASS
+    duration: not_recorded
+    token_count: not_applicable
+    result: PASS
+    silence: false
+watchdog_retry_concurrency:
+  watchdog: not_applicable
+  retry_policy: not_applicable
+  practical_concurrency_cap: not_applicable
+  exclusive_paths: not_applicable
+  completion_registry: not_applicable
+  rationale: follow-up documental sin modificación de Router/workflow runtime
+  pertinent_probes: Pi CLI readbacks con timeout de proceso y salida JSON
+  probes_declared_pass: false
+completion_signals:
+  done_textual_signal_observed: false
+  done_textual_signal_applicable: false
+  json_ok_true_observed: true
+  authority: exit_code_0_plus_json_ok_true
+  silence: false
 checks:
   all_required_final_exit_codes_zero: true
   yaml_duplicate_keys: PASS
   manifest_hashes: PASS
   git_diff_check: PASS
+  exact_scope_11_artifacts: PASS
   secret_values_recorded: false
-  traceability_check: PASS
-  traceability_audit: PASS
-  ae_pre_push: PASS
-  contractual_guard:
-    exit_code: 0
-    ok: true
-    branch: chore/release-v0.5.20
-    dirty_allowed: true
-    dirty_count: 12
-    diff_count: 12
-    ae_canon_status: ready
-  wrapper_guard:
-    exit_code: 0
-    verdict: Approved with waiver
-    head: 7b64b985b9a8d59f439fd1d15bee4e3ae571c785
-    base: 7b64b985b9a8d59f439fd1d15bee4e3ae571c785
-    fast_forward_safe: true
-    ahead_count: 0
-    behind_count: 0
-    blockers: []
-    expected_surfaces:
-      - canon-docs
-      - evidence-docs
-    warning_reviewed: unknown surface corresponds to declared CHANGELOG and audit artifacts
-release_target: v0.5.20
-binary_refresh: pending_post_v0.5.20
-follow_up:
-  scope: release_metadata_correction
-  pr_number: 72
-  merged_sha: 7b64b985b9a8d59f439fd1d15bee4e3ae571c785
-  origin_main_sha: 7b64b985b9a8d59f439fd1d15bee4e3ae571c785
-  preexisting_tag: v0.5.19
-  preexisting_release: v0.5.19
-  preexisting_tag_target: 599c5fa5497d03a1b11f9620d8199d3ceca0afb0
-  preexisting_release_valid_for_fixes: false
-  semver_decision: v0.5.20
-  branch: chore/release-v0.5.20
-  release_target: v0.5.20
-  binary_refresh: pending_post_v0.5.20
-  allowed_paths_count: 12
-  changelog_ordering: PASS
-  historical_v0_5_19_tag_target: 599c5fa5497d03a1b11f9620d8199d3ceca0afb0
-  v0_5_20_available: true
-  allowed_tracked_paths:
-    - CHANGELOG.md
-    - .docs/auditoria/2026-07-26-mi-lsp-embeddings-auth-debt/*.yaml
-    - .docs/auditoria/2026-07-26-mi-lsp-embeddings-auth-debt/verdict.md
-  traceability_check: PASS
-  traceability_audit: PASS
-  ae_pre_push: PASS
-history:
-  prior_release:
-    release_target: v0.5.19
-    tag_target: 599c5fa5497d03a1b11f9620d8199d3ceca0afb0
-    product_base_sha: 599c5fa5497d03a1b11f9620d8199d3ceca0afb0
-    product_head_sha: cdd29e55dfa2ca872fba134d927af28716114d64
-    branch: worktree-embeddings-auth-debt
-    binary_refresh: pending_post_merge
-    traceability_check: PASS
-    traceability_audit: PASS
-    ae_pre_push: PASS
-    stale_guard:
-      head: 9a4259f...
-      ahead_count: 2
-      dirty_count: 10
-      diff_count: 24
+fresh_adversarial_verifier:
+  role: independent_adversarial_verifier
+  result: PASS
+  scope: .docs/auditoria/2026-07-26-mi-lsp-embeddings-auth-debt
+  checks:
+    yaml_duplicate_keys: PASS
+    manifest_hashes: PASS
+    git_diff_check: PASS
+    exact_scope_11: PASS
+    release_tag_sha: PASS
+    routing_fallback: PASS
+    sanitization: PASS
+  blocker: none
+binary_refresh: completed
+binary_refresh_verdict: PASS
+post_integration_devqa_health_required: false
+post_integration_devqa_health_rationale: release de CLI/worker distribuible, no despliegue de microservicio/store

@@ -2,86 +2,31 @@ schema: ae-verdict/v1
 session: 2026-07-26-mi-lsp-embeddings-auth-debt
 sanitized: true
 verdict: PASS
-status: reaudited-pass
-verdict_basis: fresh_reaudit_pass_with_pre_push_pending
-base_sha: 7b64b985b9a8d59f439fd1d15bee4e3ae571c785
-head_sha: 7b64b985b9a8d59f439fd1d15bee4e3ae571c785
-origin_main_sha: 7b64b985b9a8d59f439fd1d15bee4e3ae571c785
+status: terminal-reaudited-pass
+verdict_basis: readback post-release completo y verificación fresca del paquete
+release_source_sha: 3c2bf79b6c9e53928f04b3382d0b0612ee022553
+released_product_sha: 3c2bf79b6c9e53928f04b3382d0b0612ee022553
+product_recompiled_by_follow_up: false
+feature_pr_final_head: bd4dccafabe176e91b88c1253d1b07e27bca6a10
+feature_pr_merged_sha: 7b64b985b9a8d59f439fd1d15bee4e3ae571c785
+release_pr_commit: 97c7f013328e023a82fd66d8cf8d523316bd1367
 reconciliation: PASS
-tracked_paths_exact: 12
-product_paths: 1
+tracked_paths_exact: 11
+product_paths: 0
 audit_artifacts_tracked: 11
-product_paths_modified_by_supervisor: false
 verification:
   yaml_duplicate_keys: PASS
   diff_check: PASS
   manifest_hashes: PASS
-  traceability_check: PASS
-  traceability_audit: PASS
-  ae_pre_push: PASS
-  contractual_guard:
-    exit_code: 0
-    ok: true
-    branch: chore/release-v0.5.20
-    dirty_allowed: true
-    dirty_count: 12
-    diff_count: 12
-    ae_canon_status: ready
-  wrapper_guard:
-    exit_code: 0
-    verdict: Approved with waiver
-    head: 7b64b985b9a8d59f439fd1d15bee4e3ae571c785
-    base: 7b64b985b9a8d59f439fd1d15bee4e3ae571c785
-    fast_forward_safe: true
-    ahead_count: 0
-    behind_count: 0
-    blockers: []
-    expected_surfaces:
-      - canon-docs
-      - evidence-docs
-    warning_reviewed: unknown surface corresponds to declared CHANGELOG and audit artifacts
+  exact_scope: PASS
 closure:
   commit: false
   push: false
   deploy: false
   release: false
-follow_up:
-  scope: release_metadata_correction
-  pr_number: 72
-  merged_sha: 7b64b985b9a8d59f439fd1d15bee4e3ae571c785
-  origin_main_sha: 7b64b985b9a8d59f439fd1d15bee4e3ae571c785
-  preexisting_tag: v0.5.19
-  preexisting_release: v0.5.19
-  preexisting_tag_target: 599c5fa5497d03a1b11f9620d8199d3ceca0afb0
-  preexisting_release_valid_for_fixes: false
-  semver_decision: v0.5.20
-  branch: chore/release-v0.5.20
-  release_target: v0.5.20
-  binary_refresh: pending_post_v0.5.20
-  allowed_paths_count: 12
-  changelog_ordering: PASS
-  historical_v0_5_19_tag_target: 599c5fa5497d03a1b11f9620d8199d3ceca0afb0
-  v0_5_20_available: true
-  allowed_tracked_paths:
-    - CHANGELOG.md
-    - .docs/auditoria/2026-07-26-mi-lsp-embeddings-auth-debt/*.yaml
-    - .docs/auditoria/2026-07-26-mi-lsp-embeddings-auth-debt/verdict.md
-  traceability_check: PASS
-  traceability_audit: PASS
-  ae_pre_push: PASS
-history:
-  prior_release:
-    release_target: v0.5.19
-    tag_target: 599c5fa5497d03a1b11f9620d8199d3ceca0afb0
-    product_base_sha: 599c5fa5497d03a1b11f9620d8199d3ceca0afb0
-    product_head_sha: cdd29e55dfa2ca872fba134d927af28716114d64
-    branch: worktree-embeddings-auth-debt
-    binary_refresh: pending_post_merge
-    traceability_check: PASS
-    traceability_audit: PASS
-    ae_pre_push: PASS
-    stale_guard:
-      head: 9a4259f...
-      ahead_count: 2
-      dirty_count: 10
-      diff_count: 24
+  binary_refresh: completed
+  branch_disposition: integrate-main
+  cleanup: auto-after-successful-integration
+  post_integration_devqa_health_required: false
+  post_integration_devqa_health_rationale: release de CLI/worker distribuible, no despliegue de microservicio/store
+blockers: []
