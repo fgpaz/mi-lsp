@@ -1,11 +1,20 @@
 package daemon
 
 import (
+	"context"
+	"crypto/md5"
+	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/fgpaz/mi-lsp/internal/indexer"
 	"github.com/fgpaz/mi-lsp/internal/model"
+	"github.com/fgpaz/mi-lsp/internal/store"
+	"github.com/fgpaz/mi-lsp/internal/workspace"
 )
 
 func TestIsWatchableFile_ValidExtensions(t *testing.T) {
@@ -527,5 +536,198 @@ func TestManagerLazyWatchersDedupeAndCapRoots(t *testing.T) {
 	}
 	if stats.SkippedRootCount == 0 {
 		t.Fatalf("SkippedRootCount = %d, want eviction/skipped signal", stats.SkippedRootCount)
+	}
+}
+
+type deterministicWatcherTimer struct {
+	delay    time.Duration
+	callback func()
+	stopped  bool
+}
+
+func (timer *deterministicWatcherTimer) Stop() bool {
+	wasRunning := !timer.stopped
+	timer.stopped = true
+	return wasRunning
+}
+
+func (timer *deterministicWatcherTimer) fire() {
+	if timer.stopped {
+		return
+	}
+	timer.stopped = true
+	timer.callback()
+}
+
+func newTestBatchWatcher(timers *[]*deterministicWatcherTimer, reindex func(string) error) *FileWatcher {
+	return &FileWatcher{
+		debounceDur:  time.Millisecond,
+		pendingBatch: make(map[string]struct{}),
+		batchRetry:   make(map[string]int),
+		batchTimerFactory: func(delay time.Duration, callback func()) watcherTimer {
+			timer := &deterministicWatcherTimer{delay: delay, callback: callback}
+			*timers = append(*timers, timer)
+			return timer
+		},
+		reindexFileFn: reindex,
+	}
+}
+
+func TestWatcherBatchRetryUsesThreeImmediateRetries(t *testing.T) {
+	var timers []*deterministicWatcherTimer
+	calls := 0
+	watcher := newTestBatchWatcher(&timers, func(string) error {
+		calls++
+		if calls <= maxImmediateBatchRetries {
+			return &store.IndexLockError{Path: "index.lock"}
+		}
+		return nil
+	})
+	watcher.pendingBatch["file.ts"] = struct{}{}
+
+	watcher.flushBatch()
+
+	if calls != maxImmediateBatchRetries+1 {
+		t.Fatalf("reindex calls = %d, want initial call plus %d immediate retries", calls, maxImmediateBatchRetries)
+	}
+	if len(timers) != 0 {
+		t.Fatalf("deferred timers after eventual success = %d, want 0", len(timers))
+	}
+	if len(watcher.pendingBatch) != 0 {
+		t.Fatalf("pending batch after eventual success = %v, want empty", watcher.pendingBatch)
+	}
+}
+
+func TestWatcherBatchRetryStopsAfterOneDeferredFailure(t *testing.T) {
+	var timers []*deterministicWatcherTimer
+	calls := 0
+	watcher := newTestBatchWatcher(&timers, func(string) error {
+		calls++
+		return &store.IndexLockError{Path: "index.lock"}
+	})
+	watcher.pendingBatch["file.ts"] = struct{}{}
+
+	watcher.flushBatch()
+	if calls != maxImmediateBatchRetries+1 {
+		t.Fatalf("first batch calls = %d, want %d", calls, maxImmediateBatchRetries+1)
+	}
+	if len(timers) != 1 {
+		t.Fatalf("deferred timers after first exhausted batch = %d, want 1", len(timers))
+	}
+	if _, ok := watcher.pendingBatch["file.ts"]; !ok {
+		t.Fatal("contended file was dropped from pending batch")
+	}
+
+	timers[0].fire()
+	if calls != 2*(maxImmediateBatchRetries+1) {
+		t.Fatalf("deferred batch calls = %d, want %d", calls, 2*(maxImmediateBatchRetries+1))
+	}
+	if len(timers) != 1 {
+		t.Fatalf("deferred timers after deferred failure = %d, want 1", len(timers))
+	}
+	if _, ok := watcher.pendingBatch["file.ts"]; !ok {
+		t.Fatal("contended file was dropped after deferred failure")
+	}
+	if watcher.batchRetry["file.ts"] != maxDeferredBatchRetries+1 {
+		t.Fatalf("deferred retry state = %d, want exhausted state %d", watcher.batchRetry["file.ts"], maxDeferredBatchRetries+1)
+	}
+}
+
+func TestWatcherBatchRetryNewEventRearmsExhaustedCycle(t *testing.T) {
+	var timers []*deterministicWatcherTimer
+	watcher := newTestBatchWatcher(&timers, func(string) error {
+		return &store.IndexLockError{Path: "index.lock"}
+	})
+	watcher.pendingBatch["file.ts"] = struct{}{}
+
+	watcher.flushBatch()
+	timers[0].fire()
+	if len(timers) != 1 {
+		t.Fatalf("deferred timers after exhausted cycle = %d, want 1", len(timers))
+	}
+
+	watcher.scheduleBatchReindex("file.ts")
+	if len(timers) != 2 {
+		t.Fatalf("deferred timers after new event = %d, want 2", len(timers))
+	}
+	if watcher.batchRetry["file.ts"] != 0 {
+		t.Fatalf("retry state after new event = %d, want reset", watcher.batchRetry["file.ts"])
+	}
+}
+
+func TestWatcherForegroundIncrementalUpdatesFilesAndSymbolsTogether(t *testing.T) {
+	root := t.TempDir()
+	project := model.ProjectFile{
+		Project: model.ProjectBlock{Name: "watcher-atomic", Kind: model.WorkspaceKindSingle, DefaultRepo: "repo", Languages: []string{"typescript"}},
+		Repos:   []model.WorkspaceRepo{{ID: "repo", Name: "repo", Root: ".", RepositoryIdentity: "https://example.test/watcher-atomic", Languages: []string{"typescript"}}},
+	}
+	if err := workspace.SaveProjectFile(root, project); err != nil {
+		t.Fatalf("SaveProjectFile: %v", err)
+	}
+	write := func(relative, content string) {
+		t.Helper()
+		path := filepath.Join(root, filepath.FromSlash(relative))
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatalf("MkdirAll: %v", err)
+		}
+		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+			t.Fatalf("WriteFile %s: %v", relative, err)
+		}
+	}
+	write("package.json", "{}\n")
+	write("src/main.ts", "export function Before() {}\n")
+	write(".gitignore", ".mi-lsp/\n")
+	for _, args := range [][]string{{"init"}, {"config", "user.email", "test@example.com"}, {"config", "user.name", "mi-lsp-test"}, {"add", "."}, {"commit", "-m", "fixture"}} {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = root
+		if output, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, output)
+		}
+	}
+	initial, err := indexer.IndexWorkspace(context.Background(), root, true)
+	if err != nil {
+		t.Fatalf("IndexWorkspace: %v", err)
+	}
+	if len(initial.Files) == 0 {
+		t.Fatalf("IndexWorkspace indexed no files: %#v", initial)
+	}
+
+	write("src/main.ts", "export function After() {}\n")
+	watcher := &FileWatcher{workspaceRoot: root}
+	if err := watcher.reindexFile(filepath.Join(root, "src", "main.ts")); err != nil {
+		t.Fatalf("reindexFile: %v", err)
+	}
+
+	db, err := store.Open(root)
+	if err != nil {
+		t.Fatalf("store.Open: %v", err)
+	}
+	defer db.Close()
+	var hash string
+	if err := db.QueryRowContext(context.Background(), "SELECT content_hash FROM files WHERE file_path = ?", "src/main.ts").Scan(&hash); err != nil {
+		t.Fatalf("read file hash: %v", err)
+	}
+	wantHash := fmt.Sprintf("%x", md5.Sum([]byte("export function After() {}\n")))
+	if hash != wantHash {
+		t.Fatalf("content hash = %q, want %q", hash, wantHash)
+	}
+	symbols, err := store.SymbolsByFile(context.Background(), db, "src/main.ts", 100, 0)
+	if err != nil {
+		t.Fatalf("SymbolsByFile: %v", err)
+	}
+	if len(symbols) == 0 {
+		t.Fatal("watcher publication produced no symbols")
+	}
+	foundAfter := false
+	for _, symbol := range symbols {
+		if symbol.Name == "After" {
+			foundAfter = true
+		}
+		if symbol.Name == "Before" {
+			t.Fatalf("stale Before symbol remained after watcher publication: %#v", symbols)
+		}
+	}
+	if !foundAfter {
+		t.Fatalf("symbols = %#v, want After symbol", symbols)
 	}
 }

@@ -39,6 +39,11 @@ type Progress struct {
 
 type ProgressFunc func(context.Context, Progress) error
 
+type IndexJobPublication struct {
+	JobID string
+	Fence store.IndexJobFence
+}
+
 func IndexWorkspace(ctx context.Context, root string, clean bool) (Result, error) {
 	return IndexWorkspaceWithGeneration(ctx, root, clean, "")
 }
@@ -52,6 +57,17 @@ func IndexWorkspaceWithProgress(ctx context.Context, root string, clean bool, ge
 }
 
 func IndexWorkspaceWithGraphProgress(ctx context.Context, root string, clean bool, generationID string, progress ProgressFunc, graphOptions GraphIndexOptions) (Result, error) {
+	return indexWorkspaceWithGraphProgress(ctx, root, clean, generationID, progress, graphOptions, nil)
+}
+
+// IndexWorkspaceWithGraphProgressForJob is the explicit owner-bound full index
+// path. Its final catalog/docs/generation/graph publication uses one fenced
+// store transaction; it never falls through to the foreground publisher.
+func IndexWorkspaceWithGraphProgressForJob(ctx context.Context, root string, clean bool, generationID, jobID string, fence store.IndexJobFence, progress ProgressFunc, graphOptions GraphIndexOptions) (Result, error) {
+	return indexWorkspaceWithGraphProgress(ctx, root, clean, generationID, progress, graphOptions, &IndexJobPublication{JobID: jobID, Fence: fence})
+}
+
+func indexWorkspaceWithGraphProgress(ctx context.Context, root string, clean bool, generationID string, progress ProgressFunc, graphOptions GraphIndexOptions, publication *IndexJobPublication) (Result, error) {
 	started := time.Now()
 	projectFile, files, symbols, warnings, matcher, err := buildCatalog(ctx, root, progress)
 	if err != nil {
@@ -107,27 +123,36 @@ func IndexWorkspaceWithGraphProgress(ctx context.Context, root string, clean boo
 		} else if ok {
 			prior = &active
 		}
+		request := GraphAssemblyRequest{Batches: graphBatches, Docs: docs, DocEdges: docEdges, DocMentions: docMentions, CreatedAt: time.Now().UTC()}
+		var jobGraph *store.IndexJobGraphPublication
+		if len(graphBatches) != 0 {
+			if err := reportProgress(ctx, progress, Progress{Stage: "graph.activate", Files: len(files), Symbols: len(symbols), Docs: len(docs), Force: true}); err != nil {
+				return err
+			}
+			if publication != nil {
+				bundle, assembleErr := AssembleGraphObservationBatches(request)
+				if assembleErr != nil {
+					return fmt.Errorf("graph staging failed: %w", assembleErr)
+				}
+				graphGeneration = bundle.Generation
+				jobGraph = &store.IndexJobGraphPublication{GenerationID: &bundle.Generation.GenerationID, ExpectedPrior: prior, PublishedAt: request.CreatedAt, GraphCurrent: true, GraphBundle: &bundle}
+			} else {
+				graphGeneration, err = PublishGraphObservationBatches(ctx, db, request, prior)
+				if err != nil {
+					return fmt.Errorf("graph publication failed: %w", err)
+				}
+			}
+		}
+		if publication != nil {
+			return store.ReplaceWorkspaceIndexForJob(ctx, db, publication.JobID, generationID, projectFile, files, symbols, docs, docEdges, docMentions, sourceBlocks, sourceRecords, snapshot, publication.Fence, jobGraph)
+		}
 		if err := store.ReplaceWorkspaceIndex(ctx, db, generationID, projectFile, files, symbols, docs, docEdges, docMentions, sourceBlocks, sourceRecords, snapshot); err != nil {
 			return err
 		}
-		if err := store.SetGraphRuntimeState(ctx, db, store.GraphRuntimeStale, ""); err != nil {
-			return err
-		}
 		if len(graphBatches) == 0 {
-			return nil
+			return store.SetGraphRuntimeState(ctx, db, store.GraphRuntimeStale, "")
 		}
-		if err := reportProgress(ctx, progress, Progress{Stage: "graph.activate", Files: len(files), Symbols: len(symbols), Docs: len(docs), Force: true}); err != nil {
-			return err
-		}
-		graphGeneration, err = PublishGraphObservationBatches(ctx, db, GraphAssemblyRequest{Batches: graphBatches, Docs: docs, DocEdges: docEdges, DocMentions: docMentions, CreatedAt: time.Now().UTC()}, prior)
-		if err != nil {
-			_ = store.SetGraphRuntimeState(ctx, db, store.GraphRuntimeStale, "")
-			return fmt.Errorf("graph publication failed after legacy index publication: %w", err)
-		}
-		if err := store.SetGraphRuntimeState(ctx, db, store.GraphRuntimeFresh, generationID); err != nil {
-			return err
-		}
-		return nil
+		return store.SetGraphRuntimeState(ctx, db, store.GraphRuntimeFresh, generationID)
 	}); err != nil {
 		return Result{}, err
 	}
@@ -150,6 +175,15 @@ func IndexWorkspaceCatalogOnlyWithGeneration(ctx context.Context, root string, c
 }
 
 func IndexWorkspaceCatalogOnlyWithProgress(ctx context.Context, root string, clean bool, generationID string, progress ProgressFunc) (Result, error) {
+	return indexWorkspaceCatalogOnlyWithProgress(ctx, root, clean, generationID, progress, nil)
+}
+
+// IndexWorkspaceCatalogOnlyWithProgressForJob is the owner-bound catalog path.
+func IndexWorkspaceCatalogOnlyWithProgressForJob(ctx context.Context, root string, clean bool, generationID, jobID string, fence store.IndexJobFence, progress ProgressFunc) (Result, error) {
+	return indexWorkspaceCatalogOnlyWithProgress(ctx, root, clean, generationID, progress, &IndexJobPublication{JobID: jobID, Fence: fence})
+}
+
+func indexWorkspaceCatalogOnlyWithProgress(ctx context.Context, root string, clean bool, generationID string, progress ProgressFunc, publication *IndexJobPublication) (Result, error) {
 	started := time.Now()
 	projectFile, files, symbols, warnings, _, err := buildCatalog(ctx, root, progress)
 	if err != nil {
@@ -170,6 +204,9 @@ func IndexWorkspaceCatalogOnlyWithProgress(ctx context.Context, root string, cle
 		}
 		defer db.Close()
 
+		if publication != nil {
+			return store.ReplaceWorkspaceCatalogForJob(ctx, db, publication.JobID, generationID, projectFile, files, symbols, publication.Fence)
+		}
 		return store.ReplaceWorkspaceCatalog(ctx, db, generationID, projectFile, files, symbols)
 	}); err != nil {
 		return Result{}, err
@@ -254,6 +291,15 @@ func IndexWorkspaceDocsOnlyWithGeneration(ctx context.Context, root string, gene
 }
 
 func IndexWorkspaceDocsOnlyWithProgress(ctx context.Context, root string, generationID string, progress ProgressFunc) (Result, error) {
+	return indexWorkspaceDocsOnlyWithProgress(ctx, root, generationID, progress, nil)
+}
+
+// IndexWorkspaceDocsOnlyWithProgressForJob is the owner-bound docs publisher.
+func IndexWorkspaceDocsOnlyWithProgressForJob(ctx context.Context, root string, generationID, jobID string, fence store.IndexJobFence, progress ProgressFunc) (Result, error) {
+	return indexWorkspaceDocsOnlyWithProgress(ctx, root, generationID, progress, &IndexJobPublication{JobID: jobID, Fence: fence})
+}
+
+func indexWorkspaceDocsOnlyWithProgress(ctx context.Context, root string, generationID string, progress ProgressFunc, publication *IndexJobPublication) (Result, error) {
 	started := time.Now()
 	if err := reportProgress(ctx, progress, Progress{Stage: "docs.detect", Force: true}); err != nil {
 		return Result{}, err
@@ -296,6 +342,9 @@ func IndexWorkspaceDocsOnlyWithProgress(ctx context.Context, root string, genera
 		}
 		defer db.Close()
 
+		if publication != nil {
+			return store.ReplaceWorkspaceDocsForJob(ctx, db, publication.JobID, generationID, docs, docEdges, docMentions, sourceBlocks, sourceRecords, snapshot, publication.Fence)
+		}
 		return store.ReplaceWorkspaceDocs(ctx, db, generationID, docs, docEdges, docMentions, sourceBlocks, sourceRecords, snapshot)
 	}); err != nil {
 		return Result{}, err

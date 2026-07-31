@@ -117,43 +117,60 @@ func jsonBounded(v []string) (string, error) {
 
 // StageGraphGeneration validates a sealed bundle, then inserts the complete bundle in one transaction.
 func StageGraphGeneration(ctx context.Context, db *sql.DB, b *model.GraphBundle) error {
-	if ctx == nil || db == nil || b == nil || b.Generation.Status != model.GraphGenerationStaged {
+	if ctx == nil || db == nil {
+		return model.ErrGraphGenerationInvalid
+	}
+	t, err := beginGraphImmediate(ctx, db)
+	if err != nil {
+		return err
+	}
+	defer t.rollback(ctx)
+	if err := stageGraphGenerationConn(ctx, t.c, b); err != nil {
+		return err
+	}
+	return t.commit(ctx)
+}
+
+// StageGraphGenerationTx stages a sealed graph bundle on an existing transaction.
+// Owned index publication uses it to keep graph rows and publication terminality
+// inside one commit boundary.
+func StageGraphGenerationTx(ctx context.Context, tx *sql.Tx, b *model.GraphBundle) error {
+	if tx == nil {
+		return model.ErrGraphGenerationInvalid
+	}
+	return stageGraphGenerationConn(ctx, tx, b)
+}
+
+func stageGraphGenerationConn(ctx context.Context, q graphConn, b *model.GraphBundle) error {
+	if ctx == nil || q == nil || b == nil || b.Generation.Status != model.GraphGenerationStaged {
 		return model.ErrGraphGenerationInvalid
 	}
 	if err := b.Validate(); err != nil {
 		return err
 	}
-	t, e := beginGraphImmediate(ctx, db)
-	if e != nil {
-		return e
-	}
-	defer t.rollback(ctx)
 	g := b.Generation
-	_, e = t.c.ExecContext(ctx, `INSERT INTO graph_generations(generation_id,schema_version,workspace_identity,source_fingerprint,config_fingerprint,backend_manifest_digest,content_digest,status,node_count,edge_count,evidence_count,unresolved_count,previous_generation_id,created_at,published_at,error_code) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, digestArg(g.GenerationID), g.SchemaVersion, g.WorkspaceIdentity, digestArg(g.SourceFingerprint), digestArg(g.ConfigFingerprint), digestArg(g.BackendManifestDigest), digestArg(g.ContentDigest), model.GraphGenerationStaged, g.NodeCount, g.EdgeCount, g.EvidenceCount, g.UnresolvedCount, digestOrNil(g.PreviousGenerationID), g.CreatedAt.UTC().Format(time.RFC3339Nano), nil, nil)
-	if e != nil {
-		if !strings.Contains(strings.ToLower(e.Error()), "unique") && !strings.Contains(strings.ToLower(e.Error()), "constraint") {
-			return e
+	_, err := q.ExecContext(ctx, `INSERT INTO graph_generations(generation_id,schema_version,workspace_identity,source_fingerprint,config_fingerprint,backend_manifest_digest,content_digest,status,node_count,edge_count,evidence_count,unresolved_count,previous_generation_id,created_at,published_at,error_code) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, digestArg(g.GenerationID), g.SchemaVersion, g.WorkspaceIdentity, digestArg(g.SourceFingerprint), digestArg(g.ConfigFingerprint), digestArg(g.BackendManifestDigest), digestArg(g.ContentDigest), model.GraphGenerationStaged, g.NodeCount, g.EdgeCount, g.EvidenceCount, g.UnresolvedCount, digestOrNil(g.PreviousGenerationID), g.CreatedAt.UTC().Format(time.RFC3339Nano), nil, nil)
+	if err != nil {
+		if !strings.Contains(strings.ToLower(err.Error()), "unique") && !strings.Contains(strings.ToLower(err.Error()), "constraint") {
+			return err
 		}
-		existing, le := loadGeneration(ctx, t.c, g.GenerationID)
-		if le != nil {
+		existing, loadErr := loadGeneration(ctx, q, g.GenerationID)
+		if loadErr != nil || !generationMetadataEqual(existing, g) {
 			return model.ErrGraphGenerationCorrupt
 		}
-		if !generationMetadataEqual(existing, g) {
+		if _, loadErr = streamGraph(ctx, q, g.GenerationID, existing); loadErr != nil {
 			return model.ErrGraphGenerationCorrupt
 		}
-		if _, le = streamGraph(ctx, t.c, g.GenerationID, existing); le != nil {
-			return model.ErrGraphGenerationCorrupt
-		}
-		return t.commit(ctx)
+		return nil
 	}
 	for _, n := range b.Nodes {
-		if _, e = t.c.ExecContext(ctx, `INSERT INTO graph_nodes(generation_id,node_id,node_key,identity_schema,repository_identity,backend_type,language,project_or_module,owner_path,symbol_kind,semantic_identity,display_name,source_digest,claim_status,cross_rid,sort_key) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, digestArg(g.GenerationID), n.NodeID, digestArg(n.NodeKey), n.IdentitySchema, n.Identity.RepositoryIdentity, n.Identity.BackendType, n.Identity.Language, n.Identity.ProjectOrModule, n.Identity.OwnerPath, n.Identity.SymbolKind, n.Identity.SemanticIdentity, n.DisplayName, digestArg(n.SourceDigest), n.ClaimStatus, n.CrossRID, n.SortKey); e != nil {
-			return e
+		if _, err = q.ExecContext(ctx, `INSERT INTO graph_nodes(generation_id,node_id,node_key,identity_schema,repository_identity,backend_type,language,project_or_module,owner_path,symbol_kind,semantic_identity,display_name,source_digest,claim_status,cross_rid,sort_key) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, digestArg(g.GenerationID), n.NodeID, digestArg(n.NodeKey), n.IdentitySchema, n.Identity.RepositoryIdentity, n.Identity.BackendType, n.Identity.Language, n.Identity.ProjectOrModule, n.Identity.OwnerPath, n.Identity.SymbolKind, n.Identity.SemanticIdentity, n.DisplayName, digestArg(n.SourceDigest), n.ClaimStatus, n.CrossRID, n.SortKey); err != nil {
+			return err
 		}
 	}
 	for _, x := range b.Edges {
-		if _, e = t.c.ExecContext(ctx, `INSERT INTO graph_edges(generation_id,edge_id,edge_key,from_node_id,to_node_id,relation,claim_scope,claim_status,owner_path,source_backend,cross_rid) VALUES(?,?,?,?,?,?,?,?,?,?,?)`, digestArg(g.GenerationID), x.EdgeID, digestArg(x.EdgeKey), x.FromNodeID, x.ToNodeID, x.Relation, x.ClaimScope, x.ClaimStatus, x.OwnerPath, x.SourceBackend, x.CrossRID); e != nil {
-			return e
+		if _, err = q.ExecContext(ctx, `INSERT INTO graph_edges(generation_id,edge_id,edge_key,from_node_id,to_node_id,relation,claim_scope,claim_status,owner_path,source_backend,cross_rid) VALUES(?,?,?,?,?,?,?,?,?,?,?)`, digestArg(g.GenerationID), x.EdgeID, digestArg(x.EdgeKey), x.FromNodeID, x.ToNodeID, x.Relation, x.ClaimScope, x.ClaimStatus, x.OwnerPath, x.SourceBackend, x.CrossRID); err != nil {
+			return err
 		}
 	}
 	for _, x := range b.Evidence {
@@ -164,24 +181,24 @@ func StageGraphGeneration(ctx context.Context, db *sql.DB, b *model.GraphBundle)
 		if x.EdgeID != nil {
 			ei = *x.EdgeID
 		}
-		if _, e = t.c.ExecContext(ctx, `INSERT INTO graph_evidence(generation_id,evidence_id,evidence_key,subject_kind,node_id,edge_id,source_uri,start_line,start_column,end_line,end_column,backend,extractor_version,source_digest,claim_kind,observed_claim_digest,claim_status,cross_rid) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, digestArg(g.GenerationID), x.EvidenceID, digestArg(x.EvidenceKey), x.SubjectKind, ni, ei, x.SourceURI, x.StartLine, x.StartColumn, x.EndLine, x.EndColumn, x.Backend, x.ExtractorVersion, digestArg(x.SourceDigest), x.ClaimKind, digestArg(x.ObservedClaimDigest), x.ClaimStatus, x.CrossRID); e != nil {
-			return e
+		if _, err = q.ExecContext(ctx, `INSERT INTO graph_evidence(generation_id,evidence_id,evidence_key,subject_kind,node_id,edge_id,source_uri,start_line,start_column,end_line,end_column,backend,extractor_version,source_digest,claim_kind,observed_claim_digest,claim_status,cross_rid) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, digestArg(g.GenerationID), x.EvidenceID, digestArg(x.EvidenceKey), x.SubjectKind, ni, ei, x.SourceURI, x.StartLine, x.StartColumn, x.EndLine, x.EndColumn, x.Backend, x.ExtractorVersion, digestArg(x.SourceDigest), x.ClaimKind, digestArg(x.ObservedClaimDigest), x.ClaimStatus, x.CrossRID); err != nil {
+			return err
 		}
 	}
 	for _, x := range b.Unresolved {
-		cj, e := jsonBounded(x.Candidates)
-		if e != nil {
-			return e
+		candidates, err := jsonBounded(x.Candidates)
+		if err != nil {
+			return err
 		}
-		var sd any
+		var sourceDigest any
 		if x.SourceDigest != nil {
-			sd = digestArg(*x.SourceDigest)
+			sourceDigest = digestArg(*x.SourceDigest)
 		}
-		if _, e = t.c.ExecContext(ctx, `INSERT INTO graph_unresolved(generation_id,unresolved_id,unresolved_key,owner_path,subject_kind,selector_digest,reason_code,candidates_json,backend,source_digest,cross_rid,recovery_hint_code) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`, digestArg(g.GenerationID), x.UnresolvedID, digestArg(x.UnresolvedKey), x.OwnerPath, x.SubjectKind, digestArg(x.SelectorDigest), x.ReasonCode, cj, x.Backend, sd, x.CrossRID, x.RecoveryHintCode); e != nil {
-			return e
+		if _, err = q.ExecContext(ctx, `INSERT INTO graph_unresolved(generation_id,unresolved_id,unresolved_key,owner_path,subject_kind,selector_digest,reason_code,candidates_json,backend,source_digest,cross_rid,recovery_hint_code) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`, digestArg(g.GenerationID), x.UnresolvedID, digestArg(x.UnresolvedKey), x.OwnerPath, x.SubjectKind, digestArg(x.SelectorDigest), x.ReasonCode, candidates, x.Backend, sourceDigest, x.CrossRID, x.RecoveryHintCode); err != nil {
+			return err
 		}
 	}
-	return t.commit(ctx)
+	return nil
 }
 
 func loadGeneration(ctx context.Context, q graphConn, id model.GraphDigest) (model.GraphGeneration, error) {
