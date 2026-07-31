@@ -668,14 +668,40 @@ func normalizeWorkspaceRoot(path string) (string, error) {
 		return "", err
 	}
 	if !info.IsDir() {
-		root = filepath.Dir(root)
+		return "", errors.New("workspace root must be a directory")
 	}
 	return root, nil
 }
 
 func hasGitDir(path string) bool {
-	info, err := os.Stat(filepath.Join(path, ".git"))
-	return err == nil && info.IsDir()
+	gitPath := filepath.Join(path, ".git")
+	info, err := os.Stat(gitPath)
+	if err != nil {
+		return false
+	}
+	if info.IsDir() {
+		return true
+	}
+	if !info.Mode().IsRegular() {
+		return false
+	}
+	contents, err := os.ReadFile(gitPath)
+	if err != nil {
+		return false
+	}
+	line := strings.TrimSpace(strings.SplitN(string(contents), "\n", 2)[0])
+	if !strings.HasPrefix(strings.ToLower(line), "gitdir:") {
+		return false
+	}
+	gitDir := strings.TrimSpace(line[len("gitdir:"):])
+	if gitDir == "" {
+		return false
+	}
+	if !filepath.IsAbs(gitDir) {
+		gitDir = filepath.Join(path, gitDir)
+	}
+	gitDirInfo, err := os.Stat(filepath.Clean(gitDir))
+	return err == nil && gitDirInfo.IsDir()
 }
 
 func isIgnoredDirName(name string) bool {

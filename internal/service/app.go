@@ -213,7 +213,14 @@ func (a *App) normalizeWorkspaceRequest(request model.CommandRequest) (model.Com
 	if err != nil {
 		return request, nil, err
 	}
-	request.Context.Workspace = resolution.Registration.Name
+	// Synthetic Git resolutions have a physical root but no registry alias. Keep
+	// the root as the downstream selector so workspace operations do not turn
+	// the synthetic name into an alias lookup.
+	if resolution.Source == workspace.ResolutionSourceGitTopLevel && !workspaceAliasRegistered(resolution.Registration.Name) {
+		request.Context.Workspace = resolution.Registration.Root
+	} else {
+		request.Context.Workspace = resolution.Registration.Name
+	}
 	request.Context.WorkspaceSource = string(resolution.Source)
 	return request, resolution.Warnings, nil
 }
