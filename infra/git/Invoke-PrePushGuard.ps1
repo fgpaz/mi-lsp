@@ -35,6 +35,24 @@ function Add-Unique {
     }
 }
 
+function Resolve-SharedSkillRoot {
+    param(
+        [Parameter(Mandatory = $true)][string]$EnvironmentVariable,
+        [Parameter(Mandatory = $true)][string]$DefaultRoot
+    )
+
+    $explicitRoot = [Environment]::GetEnvironmentVariable($EnvironmentVariable)
+    if ([string]::IsNullOrWhiteSpace($explicitRoot)) {
+        return $DefaultRoot
+    }
+
+    $resolvedRoot = [Environment]::ExpandEnvironmentVariables($explicitRoot.Trim())
+    if (-not (Test-Path -LiteralPath $resolvedRoot -PathType Container)) {
+        throw "Explicit shared-skill root '$EnvironmentVariable' was not found: $resolvedRoot"
+    }
+    return $resolvedRoot
+}
+
 function Convert-StatusLine {
     param([string]$Line)
     if ($Line.Length -lt 4) {
@@ -188,29 +206,47 @@ if ($expected.Contains("shared-skill")) {
     if ($skillNames.Count -eq 0) {
         Add-Unique $blockers "SharedSkillName is required when ExpectedScope includes shared-skill"
     }
+    $defaultInstalledRoot = Join-Path $env:USERPROFILE ".agents\skills"
+    $sourceRoot = Resolve-SharedSkillRoot -EnvironmentVariable "AE_SKILL_SOURCE_ROOT" -DefaultRoot $defaultInstalledRoot
+    $mirrorRoot = Resolve-SharedSkillRoot -EnvironmentVariable "AE_SKILL_MIRROR_ROOT" -DefaultRoot "C:\repos\buho\assets\skills"
+    $installedRoot = Resolve-SharedSkillRoot -EnvironmentVariable "AE_SKILL_INSTALLED_ROOT" -DefaultRoot $defaultInstalledRoot
+
     foreach ($skillName in $skillNames) {
-        $globalSkill = Join-Path $env:USERPROFILE ".agents\skills\$skillName\SKILL.md"
-        $mirrorSkill = "C:\repos\buho\assets\skills\$skillName\SKILL.md"
-        if (-not (Test-Path -LiteralPath $globalSkill)) {
-            Add-Unique $blockers "Shared skill source not found: $globalSkill"
-            continue
-        }
-        if (-not (Test-Path -LiteralPath $mirrorSkill)) {
-            Add-Unique $blockers "Shared skill mirror not found: $mirrorSkill"
-            continue
-        }
-        $globalHash = (Get-FileHash -LiteralPath $globalSkill -Algorithm SHA256).Hash
-        $mirrorHash = (Get-FileHash -LiteralPath $mirrorSkill -Algorithm SHA256).Hash
-        $inSync = $globalHash -eq $mirrorHash
-        $sharedSkillMirrorChecks += [pscustomobject]@{
-            skill = $skillName
-            source = $globalSkill
-            mirror = $mirrorSkill
-            in_sync = $inSync
-            sha256 = if ($inSync) { $globalHash } else { "" }
-        }
-        if (-not $inSync) {
-            Add-Unique $blockers "Shared skill source and mirror differ: $skillName"
+        $skillRoots = @(
+            [pscustomobject]@{ Name = "source"; Root = $sourceRoot }
+            [pscustomobject]@{ Name = "installed"; Root = $installedRoot }
+            [pscustomobject]@{ Name = "mirror"; Root = $mirrorRoot }
+        )
+        for ($index = 0; $index -lt $skillRoots.Count - 1; $index++) {
+            $leftRoot = $skillRoots[$index]
+            $rightRoot = $skillRoots[$index + 1]
+            if ([IO.Path]::GetFullPath($leftRoot.Root).TrimEnd([char[]]"\/") -eq [IO.Path]::GetFullPath($rightRoot.Root).TrimEnd([char[]]"\/")) {
+                continue
+            }
+
+            $leftSkill = Join-Path $leftRoot.Root "$skillName\SKILL.md"
+            $rightSkill = Join-Path $rightRoot.Root "$skillName\SKILL.md"
+            if (-not (Test-Path -LiteralPath $leftSkill)) {
+                Add-Unique $blockers "Shared skill $($leftRoot.Name) not found: $leftSkill"
+                continue
+            }
+            if (-not (Test-Path -LiteralPath $rightSkill)) {
+                Add-Unique $blockers "Shared skill $($rightRoot.Name) not found: $rightSkill"
+                continue
+            }
+            $leftHash = (Get-FileHash -LiteralPath $leftSkill -Algorithm SHA256).Hash
+            $rightHash = (Get-FileHash -LiteralPath $rightSkill -Algorithm SHA256).Hash
+            $inSync = $leftHash -eq $rightHash
+            $sharedSkillMirrorChecks += [pscustomobject]@{
+                skill = $skillName
+                source = $leftSkill
+                mirror = $rightSkill
+                in_sync = $inSync
+                sha256 = if ($inSync) { $leftHash } else { "" }
+            }
+            if (-not $inSync) {
+                Add-Unique $blockers "Shared skill source and mirror differ: $skillName ($($leftRoot.Name) vs $($rightRoot.Name))"
+            }
         }
     }
 }
