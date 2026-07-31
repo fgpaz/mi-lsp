@@ -863,8 +863,7 @@ func resolveWorkspaceFromGitMarker(callerCWD string) (WorkspaceResolution, bool)
 		Source:    ResolutionSourceGitTopLevel,
 		Synthetic: true,
 		Warnings: []string{fmt.Sprintf(
-			"workspace omitted; Git marker detected at %q (%s) but git top-level resolution failed; using synthetic read-only root resolution",
-			marker.Root,
+			"workspace omitted; Git marker (%s) was detected but git top-level resolution failed; using synthetic read-only root resolution",
 			marker.Status,
 		)},
 	}, true
@@ -905,9 +904,10 @@ func resolveWorkspaceFromGitTopLevel(callerCWD string, registry model.RegistryFi
 			Kind: model.WorkspaceKindSingle,
 		}
 	}
-	registration.Root = gitRoot
+	displayRoot := gitRootDisplayRoot(callerCWD, gitRoot)
+	registration.Root = displayRoot
 	if strings.TrimSpace(registration.Name) == "" {
-		registration.Name = filepath.Base(gitRoot)
+		registration.Name = filepath.Base(displayRoot)
 	}
 	return WorkspaceResolution{
 		Registration: registration,
@@ -917,6 +917,34 @@ func resolveWorkspaceFromGitTopLevel(callerCWD string, registry model.RegistryFi
 			gitRoot,
 		)},
 	}, true
+}
+
+func gitRootDisplayRoot(callerCWD string, gitRoot string) string {
+	fallback := filepath.Clean(gitRoot)
+	callerAbsolute, err := filepath.Abs(strings.TrimSpace(callerCWD))
+	if err != nil {
+		return fallback
+	}
+	callerAbsolute = filepath.Clean(callerAbsolute)
+	canonicalCaller, callerErr := filepath.EvalSymlinks(callerAbsolute)
+	canonicalGitRoot, gitErr := filepath.EvalSymlinks(gitRoot)
+	if callerErr != nil || gitErr != nil {
+		return fallback
+	}
+	relative, err := filepath.Rel(filepath.Clean(canonicalGitRoot), filepath.Clean(canonicalCaller))
+	if err != nil || relative == ".." || strings.HasPrefix(relative, ".."+string(os.PathSeparator)) {
+		return fallback
+	}
+	depth := 0
+	for relative != "." && relative != "" {
+		relative = filepath.Dir(relative)
+		depth++
+	}
+	displayRoot := callerAbsolute
+	for i := 0; i < depth; i++ {
+		displayRoot = filepath.Dir(displayRoot)
+	}
+	return filepath.Clean(displayRoot)
 }
 
 func resolveWorkspaceFromCallerCWD(callerCWD string, registry model.RegistryFile) (WorkspaceResolution, bool) {

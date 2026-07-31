@@ -102,6 +102,9 @@ func OperationalWorkspaceStateDir(root string) string {
 	if err != nil {
 		absolute = filepath.Clean(root)
 	}
+	if evaluated, evalErr := filepath.EvalSymlinks(absolute); evalErr == nil {
+		absolute = evaluated
+	}
 	key := filepath.Clean(absolute)
 	if runtime.GOOS == "windows" || runtime.GOOS == "darwin" {
 		key = strings.ToLower(key)
