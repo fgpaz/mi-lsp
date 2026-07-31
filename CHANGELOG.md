@@ -12,6 +12,17 @@ and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2
 - `[embeddings]` now activates when `base_url` and `model` are present even if `enabled` is omitted; `enabled = false` remains the explicit kill switch.
 - `mi-lsp index`/`index.run` now attempt wiki embedding backfill after docs indexing and no-change incremental runs, so missing `wiki_chunk_embeddings` rows can be populated without forcing unrelated source changes.
 
+## [0.6.0] - 2026-07-31
+
+### Added
+
+- Index jobs now enforce ownership, fencing, publication, and safe cancellation rules so stale or cancelled jobs cannot publish results.
+- Added fail-closed workspace identity resolution and a non-mutating `probe` command for safe workspace checks.
+
+### Fixed
+
+- Stabilized index safety checks across platforms, including canonical workspace paths and process-liveness handling in CI.
+
 ## [0.5.20] - 2026-07-27
 
 ### Fixed
