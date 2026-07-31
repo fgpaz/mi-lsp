@@ -2,6 +2,9 @@ package service
 
 import (
 	"context"
+	"errors"
+	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -261,7 +264,7 @@ func TestOperationRequiresWorkspaceResolutionSkipsNavAllWorkspaces(t *testing.T)
 	}
 }
 
-func TestExecuteWorkspaceStatusInvalidExplicitAliasReturnsDiagnosticError(t *testing.T) {
+func TestExecuteWorkspaceStatusInvalidExplicitAliasFailsClosed(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("USERPROFILE", home)
@@ -280,31 +283,19 @@ func TestExecuteWorkspaceStatusInvalidExplicitAliasReturnsDiagnosticError(t *tes
 	registerServiceWorkspace(t, "caller-workspace", root)
 
 	app := New(root, nil)
-	env, err := app.Execute(context.Background(), model.CommandRequest{
+	_, err := app.Execute(context.Background(), model.CommandRequest{
 		Operation: "workspace.status",
 		Context: model.QueryOptions{
 			Workspace: "stale-alias",
 			CallerCWD: filepath.Join(root, "src"),
 		},
 	})
-	// AUD-03: When the requested alias doesn't exist but CallerCWD resolves unambiguously,
-	// we auto-correct instead of erroring. So this should now succeed.
-	if err != nil {
-		t.Fatalf("Execute(workspace.status) err = %v, want nil (auto-corrected)", err)
+	if err == nil {
+		t.Fatal("Execute(workspace.status) err = nil, want unknown alias failure")
 	}
-	if !env.Ok {
-		t.Fatalf("expected envelope.Ok=true after auto-correction, got %#v", env)
-	}
-	// Check that it auto-corrected to caller-workspace
-	if env.Workspace != "caller-workspace" {
-		t.Fatalf("expected workspace=caller-workspace after auto-correction, got %s", env.Workspace)
-	}
-	workspaces, err := workspace.ListWorkspaces()
-	if err != nil {
-		t.Fatalf("ListWorkspaces: %v", err)
-	}
-	if len(workspaces) != 1 || workspaces[0].Name != "caller-workspace" {
-		t.Fatalf("workspaces = %#v, want only caller-workspace", workspaces)
+	var selectorErr *workspace.WorkspaceSelectorError
+	if !errors.As(err, &selectorErr) || selectorErr.Code != workspace.WorkspaceSelectorNotFound {
+		t.Fatalf("err = %v, want %s", err, workspace.WorkspaceSelectorNotFound)
 	}
 }
 
@@ -359,7 +350,7 @@ func TestExecuteWorkspaceStatusPathWorkspaceUsesPathSafeNextSteps(t *testing.T) 
 	}
 }
 
-func TestExecuteNavGovernanceInvalidAliasReturnsCallerCWDDiagnostic(t *testing.T) {
+func TestExecuteNavGovernanceInvalidAliasFailsClosed(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("USERPROFILE", home)
@@ -379,31 +370,19 @@ func TestExecuteNavGovernanceInvalidAliasReturnsCallerCWDDiagnostic(t *testing.T
 	registerServiceWorkspace(t, "current-repo", root)
 
 	app := New(root, nil)
-	env, err := app.Execute(context.Background(), model.CommandRequest{
+	_, err := app.Execute(context.Background(), model.CommandRequest{
 		Operation: "nav.governance",
 		Context: model.QueryOptions{
 			Workspace: "missing-alias",
 			CallerCWD: filepath.Join(root, "src"),
 		},
 	})
-	// AUD-03: When the requested alias doesn't exist but CallerCWD resolves unambiguously,
-	// we auto-correct instead of erroring. So this should now succeed.
-	if err != nil {
-		t.Fatalf("Execute(nav.governance) err = %v, want nil (auto-corrected)", err)
+	if err == nil {
+		t.Fatal("Execute(nav.governance) err = nil, want unknown alias failure")
 	}
-	if !env.Ok {
-		t.Fatalf("expected envelope.Ok=true after auto-correction, got %#v", env)
-	}
-	// Check that it auto-corrected to current-repo
-	if env.Workspace != "current-repo" {
-		t.Fatalf("expected workspace=current-repo after auto-correction, got %s", env.Workspace)
-	}
-	workspaces, err := workspace.ListWorkspaces()
-	if err != nil {
-		t.Fatalf("ListWorkspaces: %v", err)
-	}
-	if len(workspaces) != 1 || workspaces[0].Name != "current-repo" {
-		t.Fatalf("workspaces = %#v, want only current-repo", workspaces)
+	var selectorErr *workspace.WorkspaceSelectorError
+	if !errors.As(err, &selectorErr) || selectorErr.Code != workspace.WorkspaceSelectorNotFound {
+		t.Fatalf("err = %v, want %s", err, workspace.WorkspaceSelectorNotFound)
 	}
 }
 
@@ -415,7 +394,6 @@ func TestExecuteWorkspaceStatusOmittedWorkspaceIgnoresUnrelatedLastWorkspace(t *
 	otherRoot := t.TempDir()
 	callerRoot := t.TempDir()
 	writeWorkspaceFile(t, otherRoot, "src/Legacy.cs", "class Legacy {}")
-	writeWorkspaceFile(t, callerRoot, ".git/HEAD", "ref: refs/heads/main")
 	writeWorkspaceFile(t, callerRoot, "Program.cs", "class RootProgram {}")
 	writeWorkspaceFile(t, callerRoot, "src/Program.cs", "class Program {}")
 	writeWorkspaceFile(t, callerRoot, "App.csproj", "<Project Sdk=\"Microsoft.NET.Sdk\" />")
@@ -462,6 +440,100 @@ func TestExecuteWorkspaceStatusOmittedWorkspaceIgnoresUnrelatedLastWorkspace(t *
 	joined := strings.Join(nextSteps, "\n")
 	if strings.Contains(joined, "--workspace legacy") || !strings.Contains(joined, "--workspace .") {
 		t.Fatalf("next_steps = %v, want path-safe steps and no legacy alias", nextSteps)
+	}
+}
+
+func TestExecuteWorkspaceStatusUnregisteredNestedGitWorktreeKeepsPhysicalRoot(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not available")
+	}
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+
+	container := t.TempDir()
+	parent := filepath.Join(container, "parent")
+	mustProbeGit(t, container, "init", "parent")
+	mustProbeGit(t, parent, "config", "user.email", "test@example.com")
+	mustProbeGit(t, parent, "config", "user.name", "Test User")
+	if err := os.WriteFile(filepath.Join(parent, "parent.go"), []byte("package parent\\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile(parent): %v", err)
+	}
+	mustProbeGit(t, parent, "add", ".")
+	mustProbeGit(t, parent, "commit", "-m", "parent")
+
+	worktreeRoot := filepath.Join(parent, ".claude", "worktrees", "feature")
+	if err := os.MkdirAll(filepath.Dir(worktreeRoot), 0o755); err != nil {
+		t.Fatalf("MkdirAll(worktree parent): %v", err)
+	}
+	mustProbeGit(t, parent, "worktree", "add", "--detach", worktreeRoot)
+	t.Cleanup(func() {
+		_ = runProbeGitBestEffort(parent, "worktree", "remove", "--force", worktreeRoot)
+		_ = runProbeGitBestEffort(parent, "worktree", "prune")
+	})
+	registerServiceWorkspace(t, "parent", parent)
+
+	env, err := New(parent, nil).Execute(context.Background(), model.CommandRequest{
+		Operation: "workspace.status",
+		Context:   model.QueryOptions{CallerCWD: worktreeRoot, AXI: true},
+	})
+	if err != nil {
+		t.Fatalf("Execute(workspace.status): %v", err)
+	}
+	item := singleStatusItem(t, env)
+	if item["root"] != worktreeRoot || item["workspace_root"] != worktreeRoot {
+		t.Fatalf("status roots = %#v, want physical worktree root %q", item, worktreeRoot)
+	}
+	if item["workspace_source"] != string(workspace.ResolutionSourceGitTopLevel) {
+		t.Fatalf("workspace_source = %#v, want %q", item["workspace_source"], workspace.ResolutionSourceGitTopLevel)
+	}
+	if !strings.Contains(strings.Join(env.Warnings, " "), "synthetic read-only root resolution") {
+		t.Fatalf("Warnings = %v, want synthetic-resolution warning", env.Warnings)
+	}
+}
+
+func TestExecuteWorkspaceStatusExplicitDotUsesGitAwareCallerRoot(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not available")
+	}
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+
+	container := t.TempDir()
+	parent := filepath.Join(container, "parent")
+	mustProbeGit(t, container, "init", "parent")
+	mustProbeGit(t, parent, "config", "user.email", "test@example.com")
+	mustProbeGit(t, parent, "config", "user.name", "Test User")
+	if err := os.WriteFile(filepath.Join(parent, "parent.go"), []byte("package parent\\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile(parent): %v", err)
+	}
+	mustProbeGit(t, parent, "add", ".")
+	mustProbeGit(t, parent, "commit", "-m", "parent")
+	worktreeRoot := filepath.Join(parent, ".claude", "worktrees", "feature")
+	if err := os.MkdirAll(filepath.Dir(worktreeRoot), 0o755); err != nil {
+		t.Fatalf("MkdirAll(worktree parent): %v", err)
+	}
+	mustProbeGit(t, parent, "worktree", "add", "--detach", worktreeRoot)
+	t.Cleanup(func() {
+		_ = runProbeGitBestEffort(parent, "worktree", "remove", "--force", worktreeRoot)
+		_ = runProbeGitBestEffort(parent, "worktree", "prune")
+	})
+	registerServiceWorkspace(t, "parent", parent)
+
+	env, err := New(parent, nil).Execute(context.Background(), model.CommandRequest{
+		Operation: "workspace.status",
+		Context:   model.QueryOptions{Workspace: ".", CallerCWD: worktreeRoot, ClientName: "codex", AXI: true},
+	})
+	if err != nil {
+		t.Fatalf("Execute(workspace.status --workspace .): %v", err)
+	}
+	item := singleStatusItem(t, env)
+	if item["root"] != worktreeRoot || item["workspace_root"] != worktreeRoot {
+		t.Fatalf("status roots = %#v, want physical worktree root %q", item, worktreeRoot)
+	}
+	if strings.Contains(strings.Join(env.Warnings, " "), "cross-workspace refused") {
+		t.Fatalf("Warnings = %v, explicit dot was incorrectly rejected", env.Warnings)
 	}
 }
 

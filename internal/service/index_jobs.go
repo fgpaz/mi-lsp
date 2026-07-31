@@ -18,6 +18,14 @@ import (
 
 var errIndexJobCanceled = errors.New("index job canceled")
 
+// indexJobProgressAfterMarkHook is a no-op production seam for deterministic
+// cancellation tests at the progress boundary.
+var indexJobProgressAfterMarkHook = func(context.Context, *sql.DB, string, indexer.Progress) error { return nil }
+
+// indexJobBeforeCancelHook is a no-op production seam for deterministic tests
+// of a terminal publication winning immediately before cooperative cancel.
+var indexJobBeforeCancelHook = func(context.Context, *sql.DB, string, store.IndexJobFence) error { return nil }
+
 var spawnDetachedIndexJobProcess = startDetachedIndexJobProcess
 
 func (a *App) indexStart(ctx context.Context, request model.CommandRequest) (model.Envelope, error) {
@@ -38,10 +46,10 @@ func (a *App) indexStart(ctx context.Context, request model.CommandRequest) (mod
 	}
 	defer db.Close()
 
-	job, err := store.CreateIndexJobUnchecked(ctx, db, registration.Name, registration.Root, mode, clean)
+	job, err := store.CreateIndexJob(ctx, db, registration.Name, registration.Root, mode, clean)
 	if err != nil {
 		if activeErr, ok := err.(*store.ActiveIndexJobError); ok {
-			return activeIndexJobEnvelope(registration, activeErr.Job), nil
+			return activeIndexJobEnvelope(registration, store.ControlPlaneIndexJob(activeErr.Job)), nil
 		}
 		return model.Envelope{}, err
 	}
@@ -49,7 +57,10 @@ func (a *App) indexStart(ctx context.Context, request model.CommandRequest) (mod
 	if !wait {
 		pid, spawnErr := a.spawnIndexJob(ctx, db, registration, job.JobID)
 		if spawnErr != nil {
-			_ = store.MarkIndexJobFailed(ctx, db, job.JobID, spawnErr.Error())
+			markErr := store.MarkIndexJobFailed(ctx, db, job.JobID, spawnErr.Error(), store.IndexJobFence{OwnerToken: job.OwnerToken, FencingToken: job.FencingToken})
+			if markErr != nil {
+				return model.Envelope{}, fmt.Errorf("%w; mark index job failed: %v", spawnErr, markErr)
+			}
 			return model.Envelope{}, spawnErr
 		}
 		job.PID = pid
@@ -60,7 +71,7 @@ func (a *App) indexStart(ctx context.Context, request model.CommandRequest) (mod
 			Workspace: registration.Name,
 			Backend:   "index-job",
 			Mode:      mode,
-			Items:     []store.IndexJob{job},
+			Items:     []store.IndexJob{store.ControlPlaneIndexJob(job)},
 			Warnings:  []string{"index job started asynchronously; use `mi-lsp index status " + job.JobID + "` to inspect progress"},
 		}, nil
 	}
@@ -74,7 +85,7 @@ func (a *App) indexStart(ctx context.Context, request model.CommandRequest) (mod
 		Workspace: registration.Name,
 		Backend:   "index-job",
 		Mode:      mode,
-		Items:     []store.IndexJob{resultJob},
+		Items:     []store.IndexJob{store.ControlPlaneIndexJob(resultJob)},
 		Stats:     result.Stats,
 		Warnings:  result.Warnings,
 	}, nil
@@ -88,7 +99,7 @@ func activeIndexJobEnvelope(registration model.WorkspaceRegistration, job store.
 		Workspace: registration.Name,
 		Backend:   "index-job",
 		Mode:      job.Mode,
-		Items:     []store.IndexJob{job},
+		Items:     []store.IndexJob{store.ControlPlaneIndexJob(job)},
 		Warnings: []string{
 			"index job already active; use `" + statusCommand + "` to inspect progress",
 			"backoff recommended: retry index.start after the active job finishes",
@@ -116,7 +127,7 @@ func (a *App) indexRunJob(ctx context.Context, request model.CommandRequest) (mo
 		Workspace: registration.Name,
 		Backend:   "index-job",
 		Mode:      job.Mode,
-		Items:     []store.IndexJob{job},
+		Items:     []store.IndexJob{store.ControlPlaneIndexJob(job)},
 		Stats:     result.Stats,
 		Warnings:  result.Warnings,
 	}, nil
@@ -149,7 +160,7 @@ func (a *App) indexStatus(ctx context.Context, request model.CommandRequest) (mo
 	if !ok {
 		return model.Envelope{Ok: true, Workspace: registration.Name, Backend: "index-job", Items: []store.IndexJob{}, Warnings: []string{"no index jobs found"}}, nil
 	}
-	return model.Envelope{Ok: true, Workspace: registration.Name, Backend: "index-job", Mode: job.Mode, Items: []store.IndexJob{job}}, nil
+	return model.Envelope{Ok: true, Workspace: registration.Name, Backend: "index-job", Mode: job.Mode, Items: []store.IndexJob{store.ControlPlaneIndexJob(job)}}, nil
 }
 
 func (a *App) indexCancel(ctx context.Context, request model.CommandRequest) (model.Envelope, error) {
@@ -167,6 +178,16 @@ func (a *App) indexCancel(ctx context.Context, request model.CommandRequest) (mo
 	}
 	defer db.Close()
 	force, _ := request.Payload["force"].(bool)
+	current, ok, err := store.GetIndexJob(ctx, db, jobID)
+	if err != nil {
+		return model.Envelope{}, err
+	}
+	if !ok {
+		return model.Envelope{}, fmt.Errorf("index job %s not found", jobID)
+	}
+	if current.Status != store.IndexJobQueued && current.Status != store.IndexJobRunning && current.Status != store.IndexJobPublishing && current.Status != store.IndexJobCancelRequested {
+		return model.Envelope{Ok: true, Workspace: registration.Name, Backend: "index-job", Mode: current.Mode, Items: []store.IndexJob{store.ControlPlaneIndexJob(current)}}, nil
+	}
 	job, err := store.CancelIndexJob(ctx, db, jobID, force)
 	if err != nil {
 		if err == sql.ErrNoRows {
@@ -178,7 +199,35 @@ func (a *App) indexCancel(ctx context.Context, request model.CommandRequest) (mo
 	if force {
 		warnings = append(warnings, "index job force-canceled; a live PID was terminated when present")
 	}
-	return model.Envelope{Ok: true, Workspace: registration.Name, Backend: "index-job", Mode: job.Mode, Items: []store.IndexJob{job}, Warnings: warnings}, nil
+	return model.Envelope{Ok: true, Workspace: registration.Name, Backend: "index-job", Mode: job.Mode, Items: []store.IndexJob{store.ControlPlaneIndexJob(job)}, Warnings: warnings}, nil
+}
+
+func markIndexJobCanceledCooperatively(ctx context.Context, db *sql.DB, jobID string, fence store.IndexJobFence) (store.IndexJob, error) {
+	markErr := store.MarkIndexJobCanceled(ctx, db, jobID, fence)
+	job, ok, getErr := store.GetIndexJob(ctx, db, jobID)
+	if getErr != nil {
+		return store.IndexJob{}, getErr
+	}
+	if !ok {
+		return store.IndexJob{}, fmt.Errorf("index job %s not found", jobID)
+	}
+	if markErr == nil {
+		return job, errIndexJobCanceled
+	}
+	if !errors.Is(markErr, store.ErrStaleIndexJobOwner) {
+		return job, markErr
+	}
+	// A publication may have committed and released the fence between the
+	// cancel request and this owner-bound CAS. Reconcile terminal state instead
+	// of propagating a stale-owner error from a successful job.
+	switch job.Status {
+	case store.IndexJobSucceeded:
+		return job, nil
+	case store.IndexJobCanceled:
+		return job, errIndexJobCanceled
+	default:
+		return job, markErr
+	}
 }
 
 func (a *App) runIndexJob(ctx context.Context, registration model.WorkspaceRegistration, jobID string) (store.IndexJob, indexer.Result, error) {
@@ -195,84 +244,66 @@ func (a *App) runIndexJob(ctx context.Context, registration model.WorkspaceRegis
 	if !ok {
 		return store.IndexJob{}, indexer.Result{}, fmt.Errorf("index job %s not found", jobID)
 	}
+	jobFence := store.IndexJobFence{OwnerToken: job.OwnerToken, FencingToken: job.FencingToken}
 	if job.Status == store.IndexJobCanceled {
 		return job, indexer.Result{Warnings: []string{"index job was already canceled"}}, nil
 	}
 	if job.Status == store.IndexJobSucceeded {
 		return job, indexer.Result{Warnings: []string{"index job already succeeded"}}, nil
 	}
+	if job.RequestedCancel || job.Status == store.IndexJobCancelRequested {
+		if err := indexJobBeforeCancelHook(ctx, db, jobID, jobFence); err != nil {
+			return store.IndexJob{}, indexer.Result{}, err
+		}
+		job, cancelErr := markIndexJobCanceledCooperatively(ctx, db, jobID, jobFence)
+		if cancelErr != nil && !errors.Is(cancelErr, errIndexJobCanceled) {
+			return store.IndexJob{}, indexer.Result{}, cancelErr
+		}
+		if job.Status == store.IndexJobSucceeded {
+			return job, indexer.Result{Warnings: []string{"index job already succeeded"}}, nil
+		}
+		return job, indexer.Result{Warnings: []string{"index job canceled before execution"}}, nil
+	}
 
 	var result indexer.Result
-	err = store.WithWorkspaceIndexLock(registration.Root, "index."+job.Mode, func() error {
-		if err := store.MarkIndexJobRunning(ctx, db, jobID, os.Getpid(), "indexing"); err != nil {
+	err = store.WithWorkspaceIndexLockOwned(registration.Root, "index."+job.Mode, jobFence.OwnerToken, func() error {
+		if err := store.MarkIndexJobRunning(ctx, db, jobID, os.Getpid(), "indexing", jobFence); err != nil {
 			return err
 		}
-		progress := newIndexJobProgressReporter(db, jobID)
+		progress := newIndexJobProgressReporter(db, jobID, jobFence)
 		if err := progress.report(ctx, indexer.Progress{Stage: "indexing", Force: true}); err != nil {
 			return err
 		}
 		switch job.Mode {
 		case store.IndexModeDocs:
-			result, err = indexer.IndexWorkspaceDocsOnlyWithProgress(ctx, registration.Root, job.GenerationID, progress.report)
+			result, err = indexer.IndexWorkspaceDocsOnlyWithProgressForJob(ctx, registration.Root, job.GenerationID, jobID, jobFence, progress.report)
 		case store.IndexModeCatalog:
-			result, err = indexer.IndexWorkspaceCatalogOnlyWithProgress(ctx, registration.Root, job.Clean, job.GenerationID, progress.report)
+			result, err = indexer.IndexWorkspaceCatalogOnlyWithProgressForJob(ctx, registration.Root, job.Clean, job.GenerationID, jobID, jobFence, progress.report)
 		default:
 			hasExistingCatalog := false
 			if stats, statsErr := store.WorkspaceStats(ctx, db); statsErr == nil {
 				hasExistingCatalog = stats.Files > 0 || stats.Symbols > 0
 			}
 			if !job.Clean && hasExistingCatalog {
-				result, err = indexer.IncrementalIndexWithGraphProgress(ctx, registration.Root, job.GenerationID, progress.report, indexer.GraphIndexOptions{RoslynObserver: a.graphObserver()})
+				result, err = indexer.IncrementalIndexWithGraphProgressForJob(ctx, registration.Root, job.GenerationID, jobID, jobFence, progress.report, indexer.GraphIndexOptions{RoslynObserver: a.graphObserver()})
+				if err != nil && (errors.Is(err, store.ErrStaleIndexJobOwner) || errors.Is(err, errIndexJobCanceled)) {
+					return err
+				}
 				if err == nil {
 					warning := "incremental=true"
 					if result.Stats.Files == 0 {
 						warning = "no changes detected"
 					}
 					result.Warnings = appendStringIfMissing(result.Warnings, warning)
-					result.Warnings, err = a.appendWikiEmbeddingWarnings(ctx, registration.Root, result.Warnings, progress.report)
-					if err != nil {
-						return err
-					}
-					if result.GraphNotApplicable {
-						if genErr := store.MarkIndexGenerationSkipped(ctx, db, jobID, "incremental catalog update has no graph-capable backend"); genErr != nil {
-							return genErr
-						}
-					} else {
-						freshness, freshnessErr := store.GraphFreshness(ctx, db, "")
-						if freshnessErr != nil {
-							return freshnessErr
-						}
-						if freshness.State != model.GraphFreshnessCurrent {
-							return fmt.Errorf("incremental index completed without a current graph generation: %s", freshness.ReasonCode)
-						}
-					}
-					if err := progress.report(ctx, indexer.Progress{Stage: "done", Files: result.Stats.Files, Symbols: result.Stats.Symbols, Docs: result.Docs, Force: true}); err != nil {
-						return err
-					}
-					return store.MarkIndexJobSucceeded(ctx, db, jobID, result.Stats.Files, result.Stats.Symbols, result.Docs)
+					// The incremental publisher applies file rows and performs the
+					// owner-bound terminal transition in one transaction, including
+					// the explicitly non-graph skipped-generation case.
+					return nil
 				}
 			}
-			result, err = indexer.IndexWorkspaceWithGraphProgress(ctx, registration.Root, job.Clean, job.GenerationID, progress.report, indexer.GraphIndexOptions{RoslynObserver: a.graphObserver()})
+			result, err = indexer.IndexWorkspaceWithGraphProgressForJob(ctx, registration.Root, job.Clean, job.GenerationID, jobID, jobFence, progress.report, indexer.GraphIndexOptions{RoslynObserver: a.graphObserver()})
 		}
-		if err != nil {
-			return err
-		}
-		if err := progress.report(ctx, indexer.Progress{Stage: "publishing", Files: result.Stats.Files, Symbols: result.Stats.Symbols, Docs: result.Docs, Force: true}); err != nil {
-			return err
-		}
-		if err := store.MarkIndexJobPhase(ctx, db, jobID, store.IndexJobPublishing, "publishing"); err != nil {
-			return err
-		}
-
-		// Post-publish: embed wiki chunks if applicable (for full/docs modes)
-		if job.Mode == store.IndexModeDocs || job.Mode == store.IndexModeFull {
-			result.Warnings, err = a.appendWikiEmbeddingWarnings(ctx, registration.Root, result.Warnings, progress.report)
-			if err != nil {
-				return err
-			}
-		}
-
-		return store.MarkIndexJobSucceeded(ctx, db, jobID, result.Stats.Files, result.Stats.Symbols, result.Docs)
+		return err
 	})
 	if err != nil {
 		if errors.Is(err, errIndexJobCanceled) {
@@ -283,8 +314,41 @@ func (a *App) runIndexJob(ctx context.Context, registration model.WorkspaceRegis
 			result.Warnings = appendStringIfMissing(result.Warnings, "index job canceled")
 			return job, result, nil
 		}
-		_ = store.MarkIndexJobFailed(ctx, db, jobID, err.Error())
+		if errors.Is(err, store.ErrStaleIndexJobOwner) {
+			current, ok, getErr := store.GetIndexJob(ctx, db, jobID)
+			if getErr != nil {
+				return store.IndexJob{}, indexer.Result{}, fmt.Errorf("read index job after stale owner: %w", getErr)
+			}
+			if !ok {
+				return store.IndexJob{}, indexer.Result{}, fmt.Errorf("index job %s not found after stale owner", jobID)
+			}
+			switch current.Status {
+			case store.IndexJobSucceeded:
+				result.Warnings = appendStringIfMissing(result.Warnings, "index job already succeeded")
+				return current, result, nil
+			case store.IndexJobCanceled:
+				result.Warnings = appendStringIfMissing(result.Warnings, "index job canceled")
+				return current, result, nil
+			default:
+				return current, result, store.ErrStaleIndexJobOwner
+			}
+		}
+		markErr := store.MarkIndexJobFailed(ctx, db, jobID, err.Error(), jobFence)
+		if markErr != nil {
+			return store.IndexJob{}, indexer.Result{}, fmt.Errorf("%w; mark index job failed: %v", err, markErr)
+		}
 		return store.IndexJob{}, indexer.Result{}, err
+	}
+
+	// Publication is terminal before embeddings begin. Embeddings only enrich
+	// recall data, so they run without the owner-bound progress reporter and
+	// cannot change a succeeded job back to failed.
+	if job.Mode == store.IndexModeDocs || job.Mode == store.IndexModeFull {
+		var embeddingErr error
+		result.Warnings, embeddingErr = a.appendWikiEmbeddingWarnings(ctx, registration.Root, result.Warnings, nil)
+		if embeddingErr != nil {
+			result.Warnings = appendStringIfMissing(result.Warnings, "embeddings unavailable after publication; index job succeeded")
+		}
 	}
 	job, _, err = store.GetIndexJob(ctx, db, jobID)
 	return job, result, err
@@ -293,6 +357,7 @@ func (a *App) runIndexJob(ctx context.Context, registration model.WorkspaceRegis
 type indexJobProgressReporter struct {
 	db              *sql.DB
 	jobID           string
+	fence           store.IndexJobFence
 	interval        time.Duration
 	cancelInterval  time.Duration
 	lastProgressAt  time.Time
@@ -300,10 +365,11 @@ type indexJobProgressReporter struct {
 	lastStage       string
 }
 
-func newIndexJobProgressReporter(db *sql.DB, jobID string) *indexJobProgressReporter {
+func newIndexJobProgressReporter(db *sql.DB, jobID string, fence store.IndexJobFence) *indexJobProgressReporter {
 	return &indexJobProgressReporter{
 		db:             db,
 		jobID:          jobID,
+		fence:          fence,
 		interval:       time.Second,
 		cancelInterval: 100 * time.Millisecond,
 	}
@@ -321,10 +387,8 @@ func (r *indexJobProgressReporter) report(ctx context.Context, progress indexer.
 			return err
 		}
 		if canceled {
-			if err := store.MarkIndexJobCanceled(ctx, r.db, r.jobID); err != nil {
-				return err
-			}
-			return errIndexJobCanceled
+			_, err := markIndexJobCanceledCooperatively(ctx, r.db, r.jobID, r.fence)
+			return err
 		}
 	}
 
@@ -338,8 +402,21 @@ func (r *indexJobProgressReporter) report(ctx context.Context, progress indexer.
 		Symbols:      progress.Symbols,
 		Docs:         progress.Docs,
 		FilesTotal:   progress.FilesTotal,
-	}); err != nil {
+	}, r.fence); err != nil {
 		return err
+	}
+	if err := indexJobProgressAfterMarkHook(ctx, r.db, r.jobID, progress); err != nil {
+		return err
+	}
+	canceled, err := store.IsIndexJobCancelRequested(ctx, r.db, r.jobID)
+	if err != nil {
+		return err
+	}
+	if canceled {
+		if err := store.MarkIndexJobCanceled(ctx, r.db, r.jobID, r.fence); err != nil {
+			return err
+		}
+		return errIndexJobCanceled
 	}
 	r.lastProgressAt = now
 	r.lastStage = progress.Stage
@@ -351,7 +428,15 @@ func (a *App) spawnIndexJob(ctx context.Context, db *sql.DB, registration model.
 	if err != nil {
 		return 0, err
 	}
-	if err := store.MarkIndexJobRunning(ctx, db, jobID, pid, "spawned"); err != nil {
+	job, ok, err := store.GetIndexJob(ctx, db, jobID)
+	if err != nil {
+		return pid, err
+	}
+	if !ok {
+		return pid, fmt.Errorf("index job %s not found after spawn", jobID)
+	}
+	fence := store.IndexJobFence{OwnerToken: job.OwnerToken, FencingToken: job.FencingToken}
+	if err := store.MarkIndexJobRunning(ctx, db, jobID, pid, "spawned", fence); err != nil {
 		return pid, err
 	}
 	return pid, nil

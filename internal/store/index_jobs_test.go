@@ -30,7 +30,8 @@ func TestCancelIndexJobForceTerminatesProcessAndMarksCanceled(t *testing.T) {
 		}
 	})
 
-	if err := MarkIndexJobRunning(ctx, db, job.JobID, cmd.Process.Pid, "indexing"); err != nil {
+	fence := IndexJobFence{OwnerToken: job.OwnerToken, FencingToken: job.FencingToken}
+	if err := MarkIndexJobRunning(ctx, db, job.JobID, cmd.Process.Pid, "indexing", fence); err != nil {
 		t.Fatalf("MarkIndexJobRunning: %v", err)
 	}
 
@@ -49,6 +50,17 @@ func TestCancelIndexJobForceTerminatesProcessAndMarksCanceled(t *testing.T) {
 	}
 	if processExists(cmd.Process.Pid) {
 		t.Fatalf("expected pid %d to be terminated", cmd.Process.Pid)
+	}
+}
+
+func TestCreateIndexJobReturnsOwnerFence(t *testing.T) {
+	db, root := seedTestDB(t)
+	job, err := CreateIndexJob(context.Background(), db, "fence", root, IndexModeFull, false)
+	if err != nil {
+		t.Fatalf("CreateIndexJob: %v", err)
+	}
+	if job.OwnerToken == "" || job.FencingToken <= 0 {
+		t.Fatalf("CreateIndexJob fence = owner=%q fencing=%d, want non-empty owner and positive fencing token", job.OwnerToken, job.FencingToken)
 	}
 }
 
@@ -82,7 +94,8 @@ func TestMarkIndexJobProgressUpdatesCountersStageAndTimestamp(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateIndexJob: %v", err)
 	}
-	if err := MarkIndexJobRunning(ctx, db, job.JobID, 12345, "indexing"); err != nil {
+	fence := IndexJobFence{OwnerToken: job.OwnerToken, FencingToken: job.FencingToken}
+	if err := MarkIndexJobRunning(ctx, db, job.JobID, os.Getpid(), "indexing", fence); err != nil {
 		t.Fatalf("MarkIndexJobRunning: %v", err)
 	}
 	before, _, err := GetIndexJob(ctx, db, job.JobID)
@@ -98,7 +111,7 @@ func TestMarkIndexJobProgressUpdatesCountersStageAndTimestamp(t *testing.T) {
 		Symbols:      11,
 		Docs:         0,
 		FilesTotal:   20,
-	}); err != nil {
+	}, fence); err != nil {
 		t.Fatalf("MarkIndexJobProgress: %v", err)
 	}
 
@@ -134,7 +147,8 @@ func TestCancelIndexJobForceRemovesMatchingDeadPIDLock(t *testing.T) {
 		}
 	})
 
-	if err := MarkIndexJobRunning(ctx, db, job.JobID, cmd.Process.Pid, "indexing"); err != nil {
+	fence := IndexJobFence{OwnerToken: job.OwnerToken, FencingToken: job.FencingToken}
+	if err := MarkIndexJobRunning(ctx, db, job.JobID, cmd.Process.Pid, "indexing", fence); err != nil {
 		t.Fatalf("MarkIndexJobRunning: %v", err)
 	}
 	lockDir := filepath.Join(root, ".mi-lsp")

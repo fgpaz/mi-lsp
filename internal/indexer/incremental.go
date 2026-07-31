@@ -150,6 +150,17 @@ func IncrementalIndex(ctx context.Context, workspaceRoot string) (Result, error)
 // happens before catalog writes so observer failures preserve the prior graph;
 // graph staging and activation retain their own transactional CAS guarantees.
 func IncrementalIndexWithGraphProgress(ctx context.Context, workspaceRoot, generationID string, progress ProgressFunc, graphOptions GraphIndexOptions) (Result, error) {
+	return incrementalIndexWithGraphProgress(ctx, workspaceRoot, generationID, progress, graphOptions, nil)
+}
+
+// IncrementalIndexWithGraphProgressForJob keeps file-row mutation separate from
+// the final owner-bound metadata/graph publication transaction. The final
+// transaction validates owner, fence, status, and cancellation again.
+func IncrementalIndexWithGraphProgressForJob(ctx context.Context, workspaceRoot, generationID, jobID string, fence store.IndexJobFence, progress ProgressFunc, graphOptions GraphIndexOptions) (Result, error) {
+	return incrementalIndexWithGraphProgress(ctx, workspaceRoot, generationID, progress, graphOptions, &IndexJobPublication{JobID: jobID, Fence: fence})
+}
+
+func incrementalIndexWithGraphProgress(ctx context.Context, workspaceRoot, generationID string, progress ProgressFunc, graphOptions GraphIndexOptions, publication *IndexJobPublication) (Result, error) {
 	started := time.Now()
 	indexPath := filepath.Join(workspaceRoot, ".mi-lsp", "index.db")
 	if _, err := os.Stat(indexPath); err != nil {
@@ -196,9 +207,6 @@ func IncrementalIndexWithGraphProgress(ctx context.Context, workspaceRoot, gener
 		return Result{}, err
 	}
 	if graphRepair {
-		if err := markIncrementalGraphStale(ctx, workspaceRoot); err != nil {
-			return Result{}, err
-		}
 		db, err := store.Open(workspaceRoot)
 		if err != nil {
 			return Result{}, fmt.Errorf("open database for graph facts: %w", err)
@@ -210,6 +218,11 @@ func IncrementalIndexWithGraphProgress(ctx context.Context, workspaceRoot, gener
 		}
 		graphBatches, graphOmissions, graphWarnings, err = ObserveGraph(ctx, workspaceRoot, projectFile, graphOptions, progress)
 		if err != nil {
+			if publication == nil {
+				if staleErr := markIncrementalGraphStale(ctx, workspaceRoot); staleErr != nil {
+					return Result{}, fmt.Errorf("incremental graph observation failed: %w; mark graph stale: %v", err, staleErr)
+				}
+			}
 			return Result{}, fmt.Errorf("incremental graph observation failed: %w", err)
 		}
 		if len(graphBatches) == 0 && !explicitlyNonGraphProject(projectFile) {
@@ -220,9 +233,11 @@ func IncrementalIndexWithGraphProgress(ctx context.Context, workspaceRoot, gener
 	processedFiles := 0
 	skippedFiles := 0
 	var allSymbols []model.SymbolRecord
+	var fileChanges []store.IncrementalFileChange
 	var graphGeneration model.GraphGeneration
 	graphCurrent := !graphRepair
 	graphNotApplicable := graphRepair && len(graphBatches) == 0
+	var jobGraphPublication *store.IndexJobGraphPublication
 	if err := store.WithWorkspaceWriteLock(workspaceRoot, func() error {
 		db, err := store.Open(workspaceRoot)
 		if err != nil {
@@ -242,9 +257,7 @@ func IncrementalIndexWithGraphProgress(ctx context.Context, workspaceRoot, gener
 			}
 			content, err := os.ReadFile(absPath)
 			if err != nil {
-				if err := store.DeleteFileSymbols(ctx, db, relPath); err != nil {
-					return fmt.Errorf("delete symbols for %s: %w", relPath, err)
-				}
+				fileChanges = append(fileChanges, store.IncrementalFileChange{FilePath: relPath, Deleted: true})
 				processedFiles++
 				continue
 			}
@@ -254,9 +267,10 @@ func IncrementalIndexWithGraphProgress(ctx context.Context, workspaceRoot, gener
 			}
 			repoID, repoName := ResolveRepoFromProjectFile(workspaceRoot, projectFile, relPath)
 			contentHash := fmt.Sprintf("%x", md5.Sum(content))
-			if err := store.ReplaceFileSymbols(ctx, db, relPath, repoID, repoName, language, contentHash, symbols); err != nil {
-				return fmt.Errorf("replace symbols for %s: %w", relPath, err)
-			}
+			fileChanges = append(fileChanges, store.IncrementalFileChange{
+				FilePath: relPath, RepoID: repoID, RepoName: repoName, Language: language,
+				ContentHash: contentHash, Symbols: symbols,
+			})
 			allSymbols = append(allSymbols, symbols...)
 			processedFiles++
 		}
@@ -265,26 +279,15 @@ func IncrementalIndexWithGraphProgress(ctx context.Context, workspaceRoot, gener
 			if languageFromExt(strings.ToLower(filepath.Ext(relPath))) == "" {
 				continue
 			}
-			if err := store.DeleteFileSymbols(ctx, db, relPath); err != nil {
-				return fmt.Errorf("delete symbols for %s: %w", relPath, err)
-			}
+			fileChanges = append(fileChanges, store.IncrementalFileChange{FilePath: relPath, Deleted: true})
 			processedFiles++
 		}
 
 		if graphRepair {
 			if len(graphBatches) != 0 {
-				if err := store.SetGraphRuntimeState(ctx, db, store.GraphRuntimeStale, ""); err != nil {
-					return fmt.Errorf("mark graph stale: %w", err)
-				}
 				prior, ok, err := store.ActiveGraphGeneration(ctx, db)
 				if err != nil {
 					return err
-				}
-				if !ok {
-					prior, ok, err = restoreDanglingActiveGraphPointer(ctx, db)
-					if err != nil {
-						return err
-					}
 				}
 				var expectedPrior *model.GraphDigest
 				if ok {
@@ -293,24 +296,40 @@ func IncrementalIndexWithGraphProgress(ctx context.Context, workspaceRoot, gener
 				if err := reportProgress(ctx, progress, Progress{Stage: "graph.activate", Files: processedFiles, Symbols: len(allSymbols), Docs: len(docs), Force: true}); err != nil {
 					return err
 				}
-				graphGeneration, err = PublishGraphObservationBatches(ctx, db, GraphAssemblyRequest{Batches: graphBatches, Docs: docs, DocEdges: docEdges, DocMentions: docMentions, CreatedAt: time.Now().UTC()}, expectedPrior)
-				if err != nil {
-					_ = store.SetGraphRuntimeState(ctx, db, store.GraphRuntimeStale, "")
-					return fmt.Errorf("incremental graph publication failed: %w", err)
+				request := GraphAssemblyRequest{Batches: graphBatches, Docs: docs, DocEdges: docEdges, DocMentions: docMentions, CreatedAt: time.Now().UTC()}
+				bundle, assembleErr := AssembleGraphObservationBatches(request)
+				if assembleErr != nil {
+					return fmt.Errorf("incremental graph staging failed: %w", assembleErr)
 				}
+				graphGeneration = bundle.Generation
+				jobGraphPublication = &store.IndexJobGraphPublication{GenerationID: &bundle.Generation.GenerationID, ExpectedPrior: expectedPrior, PublishedAt: request.CreatedAt, GraphCurrent: true, GraphBundle: &bundle, CatalogGeneration: catalogGeneration}
 				graphCurrent = true
 			}
 		}
 
-		if generationID != "" {
-			if err := publishIncrementalGeneration(ctx, db, generationID, processedFiles, len(allSymbols), len(docs), graphCurrent); err != nil {
+		if publication != nil {
+			if graphCurrent {
+				if jobGraphPublication == nil {
+					jobGraphPublication = &store.IndexJobGraphPublication{GraphCurrent: true}
+				}
+				if err := store.PublishIncrementalGenerationForJobWithChanges(ctx, db, publication.JobID, generationID, processedFiles, len(allSymbols), len(docs), publication.Fence, fileChanges, jobGraphPublication); err != nil {
+					return err
+				}
+			} else if graphNotApplicable {
+				jobGraphPublication = &store.IndexJobGraphPublication{GenerationSkippedReason: "incremental catalog update has no graph-capable backend"}
+				if err := store.PublishIncrementalGenerationForJobWithChanges(ctx, db, publication.JobID, generationID, processedFiles, len(allSymbols), len(docs), publication.Fence, fileChanges, jobGraphPublication); err != nil {
+					return err
+				}
+			}
+		} else if generationID != "" || graphRepair {
+			foregroundGraph := jobGraphPublication
+			if graphNotApplicable {
+				foregroundGraph = &store.IndexJobGraphPublication{GraphCurrent: false}
+			}
+			if err := store.PublishIncrementalGenerationWithChanges(ctx, db, generationID, processedFiles, len(allSymbols), len(docs), fileChanges, foregroundGraph); err != nil {
 				if graphCurrent {
 					_ = store.SetGraphRuntimeState(ctx, db, store.GraphRuntimeStale, "")
 				}
-				return err
-			}
-		} else if graphCurrent && graphRepair {
-			if err := store.SetGraphRuntimeState(ctx, db, store.GraphRuntimeFresh, catalogGeneration); err != nil {
 				return err
 			}
 		}
@@ -371,39 +390,6 @@ func markIncrementalGraphStale(ctx context.Context, workspaceRoot string) error 
 		return fmt.Errorf("mark graph stale: %w", err)
 	}
 	return nil
-}
-
-func restoreDanglingActiveGraphPointer(ctx context.Context, db *sql.DB) (model.GraphDigest, bool, error) {
-	rows, err := db.QueryContext(ctx, "SELECT lower(hex(generation_id)) FROM graph_generations WHERE status=? ORDER BY generation_id LIMIT 2", model.GraphGenerationActive)
-	if err != nil {
-		return model.GraphDigest{}, false, err
-	}
-	defer rows.Close()
-	var ids []model.GraphDigest
-	for rows.Next() {
-		var raw string
-		if err := rows.Scan(&raw); err != nil {
-			return model.GraphDigest{}, false, err
-		}
-		id, err := model.ParseGraphDigest(raw)
-		if err != nil {
-			return model.GraphDigest{}, false, fmt.Errorf("invalid dangling graph generation: %w", err)
-		}
-		ids = append(ids, id)
-	}
-	if err := rows.Err(); err != nil {
-		return model.GraphDigest{}, false, err
-	}
-	if len(ids) == 0 {
-		return model.GraphDigest{}, false, nil
-	}
-	if len(ids) != 1 {
-		return model.GraphDigest{}, false, model.ErrGraphPointerConflict
-	}
-	if _, err := db.ExecContext(ctx, "INSERT INTO workspace_meta(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value", "active_graph_generation_id", ids[0][:]); err != nil {
-		return model.GraphDigest{}, false, err
-	}
-	return ids[0], true, nil
 }
 
 func workspaceMetaValue(ctx context.Context, db *sql.DB, key string) (string, bool, error) {
@@ -487,40 +473,6 @@ func explicitlyNonGraphProject(project model.ProjectFile) bool {
 		return true
 	}
 	return false
-}
-
-func publishIncrementalGeneration(ctx context.Context, db *sql.DB, generationID string, files, symbols, docs int, graphCurrent bool) error {
-	if !graphCurrent {
-		// Explicitly non-graph work keeps the index generation pending so the
-		// caller can mark it skipped without claiming a current graph.
-		return nil
-	}
-	tx, err := db.BeginTx(ctx, nil)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = tx.Rollback() }()
-	now := time.Now().UTC().Format(time.RFC3339Nano)
-	if _, err := tx.ExecContext(ctx, `UPDATE index_generations SET status='published', files=?, symbols=?, docs=?, published_at=?, error=NULL WHERE generation_id=?`, files, symbols, docs, now, generationID); err != nil {
-		return err
-	}
-	metadata := map[string]string{
-		store.WorkspaceMetaLastIndexGeneration:     generationID,
-		store.WorkspaceMetaActiveCatalogGeneration: generationID,
-		"active_generation_mode":                   "catalog",
-		"active_generation_published_at":           now,
-		"active_generation_files":                  fmt.Sprintf("%d", files),
-		"active_generation_symbols":                fmt.Sprintf("%d", symbols),
-		"active_generation_docs":                   fmt.Sprintf("%d", docs),
-	}
-	metadata[store.GraphRuntimeStateMeta] = store.GraphRuntimeFresh
-	metadata[store.GraphCatalogGenerationMeta] = generationID
-	for key, value := range metadata {
-		if _, err := tx.ExecContext(ctx, "INSERT INTO workspace_meta(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value", key, value); err != nil {
-			return err
-		}
-	}
-	return tx.Commit()
 }
 
 func requiresFullReindex(paths []string) bool {

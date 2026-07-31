@@ -2,10 +2,13 @@ package store
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
@@ -44,14 +47,8 @@ func Open(root string) (*sql.DB, error) {
 	return db, nil
 }
 
-// OpenReadOnly opens a read-only connection pool to the workspace index database.
-// Uses PRAGMA query_only=ON to enforce read-only access and allows concurrent connections
-// (SetMaxOpenConns=8, SetMaxIdleConns=4) for improved query performance. WAL mode and busy_timeout
-// are still active from pragmas, so multiple readers can safely coexist.
-// Note: EnsureSchema is NOT called on read-only connections. The schema is expected to already exist.
-// If the schema does not exist (e.g., in a test where the DB was never initialized with Open()),
-// the first query will fail with "no such table" error. Tests should ensure the schema is initialized
-// before opening read-only connections, or use Open() for the initial setup.
+// OpenReadOnly preserves the established read-only pool for index consumers.
+// Probe uses OpenReadOnlyExisting below so it can remain strictly non-mutating.
 func OpenReadOnly(root string) (*sql.DB, error) {
 	stateDir := filepath.Join(root, ".mi-lsp")
 	if err := os.MkdirAll(stateDir, 0o755); err != nil {
@@ -69,6 +66,59 @@ func OpenReadOnly(root string) (*sql.DB, error) {
 		return nil, err
 	}
 	return db, nil
+}
+
+// OpenReadOnlyExisting opens only an existing SQLite file in real mode=ro.
+// The root argument is retained for call-site readability and future policy
+// checks; no filesystem operation is performed against it.
+func OpenReadOnlyExisting(root string, dbPath string) (*sql.DB, error) {
+	_ = root
+	if strings.TrimSpace(dbPath) == "" {
+		return nil, fmt.Errorf("read-only database path is required")
+	}
+	if info, err := os.Stat(dbPath); err != nil {
+		return nil, err
+	} else if info.IsDir() {
+		return nil, fmt.Errorf("read-only database path is a directory: %s", dbPath)
+	}
+	dsn := "file:" + filepath.ToSlash(dbPath) + "?mode=ro&immutable=1&_pragma=foreign_keys(ON)"
+	db, err := sql.Open(driverName, dsn)
+	if err != nil {
+		return nil, err
+	}
+	db.SetMaxOpenConns(1)
+	db.SetMaxIdleConns(1)
+	return db, nil
+}
+
+// OperationalWorkspaceStateDir is the machine-local state root for the
+// hybrid state model. It is intentionally not created by this helper.
+func OperationalWorkspaceStateDir(root string) string {
+	cache, err := os.UserCacheDir()
+	if err != nil || strings.TrimSpace(cache) == "" {
+		return ""
+	}
+	absolute, err := filepath.Abs(root)
+	if err != nil {
+		absolute = filepath.Clean(root)
+	}
+	if evaluated, evalErr := filepath.EvalSymlinks(absolute); evalErr == nil {
+		absolute = evaluated
+	}
+	key := filepath.Clean(absolute)
+	if runtime.GOOS == "windows" || runtime.GOOS == "darwin" {
+		key = strings.ToLower(key)
+	}
+	hash := sha256.Sum256([]byte(key))
+	return filepath.Join(cache, "mi-lsp", "workspaces", hex.EncodeToString(hash[:]))
+}
+
+func OperationalWorkspaceDBPath(root string) string {
+	dir := OperationalWorkspaceStateDir(root)
+	if dir == "" {
+		return ""
+	}
+	return filepath.Join(dir, "index.db")
 }
 
 func WithSQLiteReadRetry(ctx context.Context, fn func() error) error {

@@ -25,6 +25,7 @@ const (
 	ResolutionSourceExplicit      ResolutionSource = "explicit"
 	ResolutionSourcePath          ResolutionSource = "path"
 	ResolutionSourceCallerCWD     ResolutionSource = "caller_cwd"
+	ResolutionSourceGitTopLevel   ResolutionSource = "git_top_level"
 	ResolutionSourceLastWorkspace ResolutionSource = "last_workspace"
 )
 
@@ -32,6 +33,7 @@ type WorkspaceResolution struct {
 	Registration model.WorkspaceRegistration
 	Source       ResolutionSource
 	Warnings     []string
+	Synthetic    bool
 }
 
 type ExplicitWorkspaceCWDMismatch struct {
@@ -183,12 +185,32 @@ func RegistryPath() (string, error) {
 	return filepath.Join(dir, "registry.toml"), nil
 }
 
+func RegistryPathReadOnly() (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(home, registryDirName, "registry.toml"), nil
+}
+
 func LoadRegistry() (model.RegistryFile, error) {
-	registry := model.RegistryFile{Workspaces: map[string]model.WorkspaceRegistration{}}
 	path, err := RegistryPath()
 	if err != nil {
-		return registry, err
+		return model.RegistryFile{Workspaces: map[string]model.WorkspaceRegistration{}}, err
 	}
+	return loadRegistryAt(path)
+}
+
+func LoadRegistryReadOnly() (model.RegistryFile, error) {
+	path, err := RegistryPathReadOnly()
+	if err != nil {
+		return model.RegistryFile{Workspaces: map[string]model.WorkspaceRegistration{}}, err
+	}
+	return loadRegistryAt(path)
+}
+
+func loadRegistryAt(path string) (model.RegistryFile, error) {
+	registry := model.RegistryFile{Workspaces: map[string]model.WorkspaceRegistration{}}
 	if _, err := os.Stat(path); errors.Is(err, os.ErrNotExist) {
 		return registry, nil
 	} else if err != nil {
@@ -389,6 +411,20 @@ func GarbageCollectRegistry(apply bool) (WorkspacePruneReport, error) {
 }
 
 func ResolveWorkspace(nameOrPath string) (model.WorkspaceRegistration, error) {
+	// Preserve the legacy direct resolver's ability to inspect stale aliases;
+	// strict selector validation belongs to ResolveWorkspaceSelection and its
+	// read-only variant. Prune/doctor callers use this path to inspect roots.
+	if selector := strings.TrimSpace(nameOrPath); selector != "" {
+		if registry, err := LoadRegistry(); err == nil {
+			if registration, ok := registry.Workspaces[selector]; ok {
+				registration.Name = selector
+				if info, statErr := os.Stat(registration.Root); statErr == nil && !info.IsDir() {
+					return model.WorkspaceRegistration{}, &WorkspaceSelectorError{Code: WorkspaceSelectorNotDirectory, Selector: selector, Root: registration.Root}
+				}
+				return registration, nil
+			}
+		}
+	}
 	resolution, err := ResolveWorkspaceSelection(nameOrPath, "")
 	if err != nil {
 		return model.WorkspaceRegistration{}, err
@@ -397,7 +433,21 @@ func ResolveWorkspace(nameOrPath string) (model.WorkspaceRegistration, error) {
 }
 
 func ResolveWorkspaceSelection(nameOrPath string, callerCWD string) (WorkspaceResolution, error) {
-	registry, err := LoadRegistry()
+	return resolveWorkspaceSelection(nameOrPath, callerCWD, false)
+}
+
+func ResolveWorkspaceSelectionReadOnly(nameOrPath string, callerCWD string) (WorkspaceResolution, error) {
+	return resolveWorkspaceSelection(nameOrPath, callerCWD, true)
+}
+
+func resolveWorkspaceSelection(nameOrPath string, callerCWD string, readOnly bool) (WorkspaceResolution, error) {
+	var registry model.RegistryFile
+	var err error
+	if readOnly {
+		registry, err = LoadRegistryReadOnly()
+	} else {
+		registry, err = LoadRegistry()
+	}
 	if err != nil {
 		return WorkspaceResolution{}, err
 	}
@@ -406,40 +456,42 @@ func ResolveWorkspaceSelection(nameOrPath string, callerCWD string) (WorkspaceRe
 	if selector != "" {
 		if ws, ok := registry.Workspaces[selector]; ok {
 			ws.Name = selector
+			info, statErr := os.Stat(ws.Root)
+			if statErr != nil {
+				return WorkspaceResolution{}, &WorkspaceSelectorError{Code: WorkspaceSelectorStale, Selector: selector, Root: ws.Root, Cause: statErr}
+			}
+			if statErr == nil && !info.IsDir() {
+				return WorkspaceResolution{}, &WorkspaceSelectorError{Code: WorkspaceSelectorNotDirectory, Selector: selector, Root: ws.Root}
+			}
 			return WorkspaceResolution{Registration: ws, Source: ResolutionSourceExplicit}, nil
 		}
 		if resolvedPath, ok := resolveSelectorPath(selector, callerCWD); ok {
+			if info, statErr := os.Stat(resolvedPath); statErr != nil {
+				return WorkspaceResolution{}, &WorkspaceSelectorError{Code: WorkspaceSelectorStale, Selector: selector, Root: resolvedPath, Cause: statErr}
+			} else if !info.IsDir() {
+				return WorkspaceResolution{}, &WorkspaceSelectorError{Code: WorkspaceSelectorNotDirectory, Selector: selector, Root: resolvedPath}
+			}
 			registration, err := DetectWorkspace(resolvedPath)
 			if err != nil {
 				return WorkspaceResolution{}, err
 			}
 			return WorkspaceResolution{Registration: registration, Source: ResolutionSourcePath}, nil
 		}
-		// AUD-03: Try to auto-correct the alias when the cwd resolves unambiguously
-		if fallback, ok := resolveWorkspaceFromCallerCWD(callerCWD, registry); ok {
-			resolutionErr := &WorkspaceResolutionError{
-				Selector:          selector,
-				CallerCWD:         strings.TrimSpace(callerCWD),
-				Fallback:          fallback,
-				FallbackAvailable: true,
-				Warnings:          append([]string{}, fallback.Warnings...),
-			}
-			// Add note about auto-correction
-			resolutionErr.Warnings = append(resolutionErr.Warnings,
-				fmt.Sprintf("alias %q not found; auto-corrected to %q from caller cwd", selector, fallback.Registration.Name))
-			// Return the fallback with a warning instead of erroring out
-			return fallback, nil
-		}
-		return WorkspaceResolution{}, newWorkspaceResolutionError(selector, callerCWD, registry)
+		return WorkspaceResolution{}, &WorkspaceSelectorError{Code: WorkspaceSelectorNotFound, Selector: selector}
 	}
 
-	if resolution, ok := resolveWorkspaceFromCallerCWD(callerCWD, registry); ok {
+	if resolution, ok := resolveWorkspaceFromCallerCWDMode(callerCWD, registry); ok {
 		return resolution, nil
 	}
 
 	if registry.Defaults.LastWorkspace != "" {
 		if ws, ok := registry.Workspaces[registry.Defaults.LastWorkspace]; ok {
 			ws.Name = registry.Defaults.LastWorkspace
+			if info, statErr := os.Stat(ws.Root); statErr != nil {
+				return WorkspaceResolution{}, &WorkspaceSelectorError{Code: WorkspaceSelectorStale, Selector: ws.Name, Root: ws.Root, Cause: statErr}
+			} else if !info.IsDir() {
+				return WorkspaceResolution{}, &WorkspaceSelectorError{Code: WorkspaceSelectorNotDirectory, Selector: ws.Name, Root: ws.Root}
+			}
 			warnings := []string{
 				fmt.Sprintf("workspace omitted; no registered workspace matched caller cwd %q; falling back to last_workspace=%q", strings.TrimSpace(callerCWD), ws.Name),
 			}
@@ -787,6 +839,114 @@ func SaveProjectFile(root string, project model.ProjectFile) error {
 	return toml.NewEncoder(file).Encode(project)
 }
 
+func resolveWorkspaceFromCallerCWDMode(callerCWD string, registry model.RegistryFile) (WorkspaceResolution, bool) {
+	if resolution, ok := resolveWorkspaceFromGitTopLevel(callerCWD, registry); ok {
+		return resolution, true
+	}
+	if resolution, ok := resolveWorkspaceFromGitMarker(callerCWD); ok {
+		return resolution, true
+	}
+	return resolveWorkspaceFromCallerCWD(callerCWD, registry)
+}
+
+func resolveWorkspaceFromGitMarker(callerCWD string) (WorkspaceResolution, bool) {
+	marker, ok := inspectGitMarker(callerCWD)
+	if !ok {
+		return WorkspaceResolution{}, false
+	}
+	return WorkspaceResolution{
+		Registration: model.WorkspaceRegistration{
+			Name: filepath.Base(marker.Root),
+			Root: marker.Root,
+			Kind: model.WorkspaceKindSingle,
+		},
+		Source:    ResolutionSourceGitTopLevel,
+		Synthetic: true,
+		Warnings: []string{fmt.Sprintf(
+			"workspace omitted; Git marker (%s) was detected but git top-level resolution failed; using synthetic read-only root resolution",
+			marker.Status,
+		)},
+	}, true
+}
+
+func resolveWorkspaceFromGitTopLevel(callerCWD string, registry model.RegistryFile) (WorkspaceResolution, bool) {
+	gitRoot, ok := gitTopLevel(callerCWD)
+	if !ok {
+		return WorkspaceResolution{}, false
+	}
+	canonicalRoot, ok := normalizeComparablePath(gitRoot)
+	if !ok {
+		return WorkspaceResolution{}, false
+	}
+
+	registrations := make([]model.WorkspaceRegistration, 0)
+	for alias, registration := range registry.Workspaces {
+		registration.Name = alias
+		registeredRoot, rootOK := normalizeComparablePath(registration.Root)
+		if rootOK && registeredRoot == canonicalRoot {
+			registrations = append(registrations, registration)
+		}
+	}
+	if len(registrations) > 0 {
+		selection := selectAliasForRoot(registrations, registry.Defaults.LastWorkspace)
+		return WorkspaceResolution{
+			Registration: selection.Registration,
+			Source:       ResolutionSourceGitTopLevel,
+			Warnings:     selection.Warnings,
+		}, true
+	}
+
+	registration, _, detectErr := DetectWorkspaceLayout(gitRoot, "")
+	if detectErr != nil {
+		registration = model.WorkspaceRegistration{
+			Name: filepath.Base(gitRoot),
+			Root: gitRoot,
+			Kind: model.WorkspaceKindSingle,
+		}
+	}
+	displayRoot := gitRootDisplayRoot(callerCWD, gitRoot)
+	registration.Root = displayRoot
+	if strings.TrimSpace(registration.Name) == "" {
+		registration.Name = filepath.Base(displayRoot)
+	}
+	return WorkspaceResolution{
+		Registration: registration,
+		Source:       ResolutionSourceGitTopLevel,
+		Warnings: []string{fmt.Sprintf(
+			"workspace omitted; git top-level %q is not registered; using synthetic read-only root resolution",
+			gitRoot,
+		)},
+	}, true
+}
+
+func gitRootDisplayRoot(callerCWD string, gitRoot string) string {
+	fallback := filepath.Clean(gitRoot)
+	callerAbsolute, err := filepath.Abs(strings.TrimSpace(callerCWD))
+	if err != nil {
+		return fallback
+	}
+	callerAbsolute = filepath.Clean(callerAbsolute)
+	canonicalCaller, callerErr := filepath.EvalSymlinks(callerAbsolute)
+	canonicalGitRoot, gitErr := filepath.EvalSymlinks(gitRoot)
+	if callerErr != nil || gitErr != nil {
+		return fallback
+	}
+	relative, err := filepath.Rel(filepath.Clean(canonicalGitRoot), filepath.Clean(canonicalCaller))
+	if err != nil || relative == ".." || strings.HasPrefix(relative, ".."+string(os.PathSeparator)) {
+		return fallback
+	}
+	depth := 0
+	for relative != "." && relative != "" {
+		relative = filepath.Dir(relative)
+		depth++
+	}
+	displayRoot := callerAbsolute
+	for i := 0; i < depth; i++ {
+		displayRoot = filepath.Dir(displayRoot)
+	}
+	return filepath.Clean(displayRoot)
+}
+
 func resolveWorkspaceFromCallerCWD(callerCWD string, registry model.RegistryFile) (WorkspaceResolution, bool) {
 	normalizedCWD, ok := normalizeComparablePath(callerCWD)
 	if !ok {
@@ -889,7 +1049,7 @@ func ExplicitWorkspaceCWDMismatchFor(selector string, callerCWD string) (Explici
 	if err != nil {
 		return ExplicitWorkspaceCWDMismatch{}, false
 	}
-	cwdResolution, ok := resolveWorkspaceFromCallerCWD(callerCWD, mustLoadRegistry())
+	cwdResolution, ok := resolveWorkspaceFromCallerCWDMode(callerCWD, mustLoadRegistry())
 	if !ok {
 		return ExplicitWorkspaceCWDMismatch{}, false
 	}
@@ -957,19 +1117,121 @@ func resolveSelectorPath(selector string, callerCWD string) (string, bool) {
 }
 
 func normalizeComparablePath(path string) (string, bool) {
-	trimmed := strings.TrimSpace(path)
-	if trimmed == "" {
-		return "", false
-	}
-	absolute, err := filepath.Abs(trimmed)
-	if err != nil {
-		return "", false
-	}
-	return strings.ToLower(filepath.Clean(absolute)), true
+	return ComparableWorkspacePath(path)
 }
 
 func pathContains(cwd string, root string) bool {
 	return cwd == root || strings.HasPrefix(cwd, root+string(os.PathSeparator))
+}
+
+func gitTopLevel(root string) (string, bool) {
+	ctxRoot := strings.TrimSpace(root)
+	if ctxRoot == "" {
+		return "", false
+	}
+	command := exec.Command("git", "-C", ctxRoot, "rev-parse", "--show-toplevel")
+	output, err := command.Output()
+	if err != nil {
+		return "", false
+	}
+	topLevel := strings.TrimSpace(string(output))
+	if topLevel == "" {
+		return "", false
+	}
+	absolute, err := filepath.Abs(topLevel)
+	if err != nil {
+		return "", false
+	}
+	// Git has already established the physical repository top-level. Resolve
+	// links only for identity comparison; never turn an identity-read failure
+	// into lexical parent containment.
+	if evaluated, evalErr := filepath.EvalSymlinks(absolute); evalErr == nil {
+		absolute = evaluated
+	}
+	return filepath.Clean(absolute), true
+}
+
+type gitMarkerInspection struct {
+	Root   string
+	Status string
+}
+
+func gitMarkerRoot(path string) (string, bool) {
+	marker, ok := inspectGitMarker(path)
+	if !ok {
+		return "", false
+	}
+	return marker.Root, true
+}
+
+func inspectGitMarker(path string) (gitMarkerInspection, bool) {
+	trimmed := strings.TrimSpace(path)
+	if trimmed == "" {
+		return gitMarkerInspection{}, false
+	}
+	absolute, err := filepath.Abs(trimmed)
+	if err != nil {
+		return gitMarkerInspection{}, false
+	}
+	current := filepath.Clean(absolute)
+	if info, statErr := os.Stat(current); statErr == nil && !info.IsDir() {
+		current = filepath.Dir(current)
+	}
+	for {
+		markerPath := filepath.Join(current, ".git")
+		info, statErr := os.Lstat(markerPath)
+		if statErr == nil {
+			inspection := gitMarkerInspection{Root: current}
+			switch {
+			case info.IsDir():
+				inspection.Status = "directory marker"
+			case info.Mode().IsRegular():
+				contents, readErr := os.ReadFile(markerPath)
+				switch {
+				case readErr != nil:
+					inspection.Status = "inaccessible marker file"
+				case !parseGitDirMarker(contents):
+					inspection.Status = "malformed marker file"
+				case !gitMarkerTargetExists(current, contents):
+					inspection.Status = "marker target inaccessible"
+				default:
+					inspection.Status = "valid marker file"
+				}
+			default:
+				inspection.Status = "unsupported marker"
+			}
+			return inspection, true
+		}
+		if !errors.Is(statErr, os.ErrNotExist) {
+			return gitMarkerInspection{Root: current, Status: "inaccessible .git marker"}, true
+		}
+		parent := filepath.Dir(current)
+		if parent == current {
+			return gitMarkerInspection{}, false
+		}
+		current = parent
+	}
+}
+
+func parseGitDirMarker(contents []byte) bool {
+	value := strings.TrimSpace(string(contents))
+	if !strings.HasPrefix(value, "gitdir:") {
+		return false
+	}
+	target := strings.TrimSpace(strings.TrimPrefix(value, "gitdir:"))
+	return target != "" && !strings.ContainsAny(target, "\r\n")
+}
+
+func gitMarkerTargetExists(root string, contents []byte) bool {
+	value := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(string(contents)), "gitdir:"))
+	if value == "" {
+		return false
+	}
+	if !filepath.IsAbs(value) {
+		value = filepath.Join(root, value)
+	}
+	_, err := os.Stat(value)
+	return err == nil
 }
 
 func gitCommonDir(root string) (string, bool) {
