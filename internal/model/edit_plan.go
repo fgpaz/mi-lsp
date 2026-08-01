@@ -21,6 +21,7 @@ type EditPlanTarget struct {
 	Language     string          `json:"language,omitempty"`
 	Range        EditPlanRange   `json:"range"`
 	ExpectedHash string          `json:"expected_hash,omitempty"`
+	HashMode     string          `json:"hash_mode,omitempty"`
 	Symbol       *EditPlanSymbol `json:"symbol,omitempty"`
 }
 
@@ -49,11 +50,12 @@ type EditPlanOperation struct {
 }
 
 type EditPlanConstraints struct {
-	RequireCleanMatch bool     `json:"require_clean_match,omitempty"`
-	RequireEvidence   bool     `json:"require_evidence,omitempty"`
-	DenyPaths         []string `json:"deny_paths,omitempty"`
-	MaxFileBytes      int      `json:"max_file_bytes,omitempty"`
-	MaxDiffChars      int      `json:"max_diff_chars,omitempty"`
+	RequireCleanMatch      bool     `json:"require_clean_match,omitempty"`
+	RequireEvidence        bool     `json:"require_evidence,omitempty"`
+	DenyPaths              []string `json:"deny_paths,omitempty"`
+	MaxFileBytes           int      `json:"max_file_bytes,omitempty"`
+	MaxDiffChars           int      `json:"max_diff_chars,omitempty"`
+	EvidenceOnlyDirtyApply bool     `json:"evidence_only_dirty_apply,omitempty"`
 }
 
 type EditPlanResult struct {

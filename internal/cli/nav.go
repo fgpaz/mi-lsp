@@ -540,6 +540,7 @@ instead of claiming complete graph precision.`,
 	var editPlanIncludeContent bool
 	var editPlanApply bool
 	var editPlanExperimentalApply bool
+	var editPlanEvidenceOnlyDirtyApply bool
 	editPlanCommand := &cobra.Command{
 		Use:   "edit-plan",
 		Short: "Preview or experimentally apply a guarded patch packet",
@@ -567,11 +568,12 @@ Dry-run is the default. File writes require both --apply and
 				}
 			}
 			payload := map[string]any{
-				"packet":             string(data),
-				"strict":             editPlanStrict,
-				"include_content":    editPlanIncludeContent,
-				"apply":              editPlanApply,
-				"experimental_apply": editPlanExperimentalApply,
+				"packet":                    string(data),
+				"strict":                    editPlanStrict,
+				"include_content":           editPlanIncludeContent,
+				"apply":                     editPlanApply,
+				"experimental_apply":        editPlanExperimentalApply,
+				"evidence_only_dirty_apply": editPlanEvidenceOnlyDirtyApply,
 			}
 			return state.executeOperation(cmd, "nav.edit-plan", payload, true)
 		},
@@ -582,6 +584,7 @@ Dry-run is the default. File writes require both --apply and
 	editPlanCommand.Flags().BoolVar(&editPlanIncludeContent, "include-content", false, "Include target content evidence in the response")
 	editPlanCommand.Flags().BoolVar(&editPlanApply, "apply", false, "Write the generated diff to files when all guardrails pass")
 	editPlanCommand.Flags().BoolVar(&editPlanExperimentalApply, "experimental-apply", false, "Required companion flag for --apply")
+	editPlanCommand.Flags().BoolVar(&editPlanEvidenceOnlyDirtyApply, "evidence-only-dirty-apply", false, "Explicitly permit apply with pre-existing tracked unstaged changes outside .docs/auditoria/** targets; requires packet constraints.evidence_only_dirty_apply=true")
 
 	var traceAll bool
 	var traceSummary bool

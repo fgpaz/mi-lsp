@@ -71,6 +71,7 @@ func (a *App) editPlan(ctx context.Context, request model.CommandRequest) (model
 	includeContent, _ := request.Payload["include_content"].(bool)
 	applyRequested, _ := request.Payload["apply"].(bool)
 	experimentalApply, _ := request.Payload["experimental_apply"].(bool)
+	evidenceOnlyDirtyApply, _ := request.Payload["evidence_only_dirty_apply"].(bool)
 	if applyRequested && !experimentalApply {
 		return model.Envelope{}, errors.New("--apply requires --experimental-apply")
 	}
@@ -79,7 +80,10 @@ func (a *App) editPlan(ctx context.Context, request model.CommandRequest) (model
 	if err != nil {
 		return model.Envelope{}, err
 	}
-	targets, guardrails, evidence, err := validateEditPlanPacket(registration.Root, &packet, strict, applyRequested, includeContent)
+	if evidenceOnlyDirtyApply && !packet.Constraints.EvidenceOnlyDirtyApply {
+		return model.Envelope{}, errors.New("--evidence-only-dirty-apply requires constraints.evidence_only_dirty_apply=true")
+	}
+	targets, guardrails, evidence, err := validateEditPlanPacket(registration.Root, &packet, strict, applyRequested, includeContent, evidenceOnlyDirtyApply)
 	if err != nil {
 		return model.Envelope{}, err
 	}
@@ -115,7 +119,11 @@ func (a *App) editPlan(ctx context.Context, request model.CommandRequest) (model
 	mode := "dry_run"
 	applyStatus := model.EditPlanApplyStatus{Requested: applyRequested}
 	if applyRequested {
-		if err := requireCleanGitWorkspace(ctx, registration.Root); err != nil {
+		if evidenceOnlyDirtyApply {
+			if err := requireEvidenceOnlyDirtyGitWorkspace(ctx, registration.Root, targets); err != nil {
+				return model.Envelope{}, err
+			}
+		} else if err := requireCleanGitWorkspace(ctx, registration.Root); err != nil {
 			return model.Envelope{}, err
 		}
 		if err := revalidateEditPlanHashes(registration.Root, targets); err != nil {
@@ -172,7 +180,7 @@ func parseEditPlanPacket(packetText string, strict bool) (model.EditPlanRequest,
 	return packet, nil
 }
 
-func validateEditPlanPacket(root string, packet *model.EditPlanRequest, strict bool, applyRequested bool, includeContent bool) (map[string]editPlanResolvedTarget, []model.EditPlanGuardrail, []model.EditPlanEvidence, error) {
+func validateEditPlanPacket(root string, packet *model.EditPlanRequest, strict bool, applyRequested bool, includeContent bool, evidenceOnlyDirtyApply bool) (map[string]editPlanResolvedTarget, []model.EditPlanGuardrail, []model.EditPlanEvidence, error) {
 	version := editPlanVersion(packet)
 	switch version {
 	case model.EditPlanVersionV1, model.EditPlanVersionV2:
@@ -200,7 +208,11 @@ func validateEditPlanPacket(root string, packet *model.EditPlanRequest, strict b
 		guardrails = append(guardrails, model.EditPlanGuardrail{Code: "go_ast_only", Status: "active", Message: "edit-plan-v2 implements Go AST operations only; C#, TypeScript, and Python return language_not_supported"})
 	}
 	if applyRequested {
-		guardrails = append(guardrails, model.EditPlanGuardrail{Code: "apply_clean_git", Status: "active", Message: "apply requires a clean git workspace and revalidated hashes"})
+		code, message := "apply_clean_git", "apply requires a clean git workspace and revalidated hashes"
+		if evidenceOnlyDirtyApply {
+			code, message = "evidence_only_dirty_apply", "authorized evidence-only dirty apply permits only pre-existing tracked unstaged paths outside .docs/auditoria/** targets; staged and source/app paths are rejected"
+		}
+		guardrails = append(guardrails, model.EditPlanGuardrail{Code: code, Status: "active", Message: message})
 	}
 
 	targetIDs := map[string]struct{}{}
@@ -223,6 +235,9 @@ func validateEditPlanPacket(root string, packet *model.EditPlanRequest, strict b
 		info, err := os.Stat(absPath)
 		if err != nil {
 			return nil, nil, nil, fmt.Errorf("target %s: file must exist and be readable: %w", id, err)
+		}
+		if evidenceOnlyDirtyApply && !strings.HasPrefix(relPath, ".docs/auditoria/") {
+			return nil, nil, nil, fmt.Errorf("target %s: evidence-only dirty apply permits only .docs/auditoria/** targets", id)
 		}
 		if info.IsDir() {
 			return nil, nil, nil, fmt.Errorf("target %s: directories are not supported", id)
@@ -258,6 +273,10 @@ func validateEditPlanPacket(root string, packet *model.EditPlanRequest, strict b
 			packet.Targets[i].Range.EndLine = lineCount
 		}
 		actualHash := editPlanHash(before)
+		hashMode := strings.ToLower(strings.TrimSpace(target.HashMode))
+		if hashMode != "" && hashMode != "physical_bytes" {
+			return nil, nil, nil, fmt.Errorf("target %s: unsupported hash_mode %q; expected physical_bytes", id, target.HashMode)
+		}
 		expectedHash := strings.TrimSpace(target.ExpectedHash)
 		if expectedHash == "" {
 			if applyRequested || strict || packet.Constraints.RequireEvidence {
@@ -764,6 +783,40 @@ func countChangedEditPlanFiles(fileStates map[string]*editPlanFileState) int {
 		}
 	}
 	return count
+}
+
+func requireEvidenceOnlyDirtyGitWorkspace(ctx context.Context, root string, targets map[string]editPlanResolvedTarget) error {
+	cmd := exec.CommandContext(ctx, "git", "-C", root, "status", "--porcelain=v1", "--untracked-files=all")
+	output, err := cmd.Output()
+	if err != nil {
+		return fmt.Errorf("evidence-only dirty apply could not inspect git status: %w", err)
+	}
+	targetSet := map[string]bool{}
+	for _, target := range targets {
+		targetSet[target.RelPath] = true
+	}
+	for _, line := range strings.Split(strings.TrimSuffix(string(output), "\n"), "\n") {
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		if len(line) < 3 {
+			return errors.New("evidence-only dirty apply rejected malformed git status")
+		}
+		if line[0] != ' ' {
+			return errors.New("evidence-only dirty apply requires no staged files")
+		}
+		if line[1] == '?' {
+			return fmt.Errorf("evidence-only dirty apply requires pre-existing tracked dirty paths outside targets: %s", strings.TrimSpace(line[3:]))
+		}
+		path := strings.TrimSpace(line[3:])
+		if strings.HasPrefix(path, ".docs/auditoria/") && targetSet[path] {
+			return fmt.Errorf("evidence-only dirty apply target %s must be pre-existing and outside the target", path)
+		}
+		if strings.HasPrefix(path, "??") || strings.HasPrefix(path, ".docs/auditoria/") {
+			return fmt.Errorf("evidence-only dirty apply requires pre-existing tracked dirty paths outside targets: %s", path)
+		}
+	}
+	return nil
 }
 
 func requireCleanGitWorkspace(ctx context.Context, root string) error {

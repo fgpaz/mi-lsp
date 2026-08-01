@@ -14,6 +14,51 @@ import (
 	"github.com/fgpaz/mi-lsp/internal/model"
 )
 
+func TestEditPlanPhysicalBytesPreservesCRLFAndTerminalEOF(t *testing.T) {
+	root, name := setupTestWorkspace(t)
+	lines := make([]string, 126)
+	for i := range lines {
+		lines[i] = "line"
+	}
+	lines[62] = "purpose: old"
+	content := strings.Join(lines, "\r\n") + "\r\n"
+	path := ".docs/auditoria/2026-07-31-app-exit-lifecycle-fail-closed/single-closure-packet.yaml"
+	writeWorkspaceFile(t, root, path, content)
+	packet := model.EditPlanRequest{
+		Version:     model.EditPlanVersion,
+		Targets:     []model.EditPlanTarget{{ID: "closure", Path: path, Range: model.EditPlanRange{StartLine: 1, EndLine: 126}, ExpectedHash: testHash(content), HashMode: "physical_bytes"}},
+		Operations:  []model.EditPlanOperation{{ID: "replace", Kind: "replace_literal", TargetID: "closure", Find: "purpose: old", Replace: "purpose: new", MaxReplacements: 1}},
+		Constraints: model.EditPlanConstraints{RequireCleanMatch: true, RequireEvidence: true},
+	}
+	data, err := json.Marshal(packet)
+	if err != nil {
+		t.Fatal(err)
+	}
+	env, err := New(root, &fakeSemanticCaller{}).Execute(context.Background(), model.CommandRequest{Operation: "nav.edit-plan", Context: model.QueryOptions{Workspace: name}, Payload: map[string]any{"packet": string(data)}})
+	if err != nil {
+		t.Fatalf("physical CRLF packet rejected: %v", err)
+	}
+	result := env.Items.([]model.EditPlanResult)[0]
+	if got := result.Evidence[0].Value; got != "sha256:"+strings.TrimPrefix(testHash(content), "sha256:") {
+		t.Fatalf("hash evidence = %q", got)
+	}
+	if !strings.Contains(result.Evidence[1].Value, "1-126") {
+		t.Fatalf("range evidence = %q", result.Evidence[1].Value)
+	}
+}
+
+func TestEditPlanRejectsUnknownHashMode(t *testing.T) {
+	root, name := setupTestWorkspace(t)
+	content := "line\r\n"
+	writeWorkspaceFile(t, root, "closure.yaml", content)
+	packet := testEditPlanPacket(t, "closure.yaml", content, []model.EditPlanOperation{{ID: "op", Kind: "replace_literal", TargetID: "target-main", Find: "line", Replace: "LINE", MaxReplacements: 1}})
+	packet = strings.Replace(packet, `"expected_hash":"sha256:`, `"hash_mode":"normalized_lf","expected_hash":"sha256:`, 1)
+	_, err := New(root, &fakeSemanticCaller{}).Execute(context.Background(), model.CommandRequest{Operation: "nav.edit-plan", Context: model.QueryOptions{Workspace: name}, Payload: map[string]any{"packet": packet}})
+	if err == nil || !strings.Contains(err.Error(), "unsupported hash_mode") {
+		t.Fatalf("err = %v, want unsupported hash_mode", err)
+	}
+}
+
 func TestEditPlanDryRunDoesNotWrite(t *testing.T) {
 	root, name := setupTestWorkspace(t)
 	content := "package demo\n\nfunc Label() string { return \"old\" }\n"
@@ -104,6 +149,28 @@ func TestEditPlanApplyWritesOnlyWithExperimentalGate(t *testing.T) {
 	}
 	if !strings.Contains(string(got), `return "new"`) {
 		t.Fatalf("applied file = %q, want replacement", got)
+	}
+}
+
+func TestEditPlanEvidenceOnlyDirtyApplyAllowsPreExistingOutsideTarget(t *testing.T) {
+	root, name := setupTestWorkspace(t)
+	content := "old evidence\\n"
+	writeWorkspaceFile(t, root, ".docs/auditoria/evidence.txt", content)
+	writeWorkspaceFile(t, root, "src/preexisting.txt", "clean\\n")
+	initCleanGitWorkspace(t, root)
+	writeWorkspaceFile(t, root, "src/preexisting.txt", "dirty\\n")
+	packet := testEditPlanPacket(t, ".docs/auditoria/evidence.txt", content, []model.EditPlanOperation{{ID: "op", Kind: "replace_literal", TargetID: "target-main", Find: "old", Replace: "new"}})
+	packet = strings.Replace(packet, `"require_evidence":true`, `"require_evidence":true,"evidence_only_dirty_apply":true`, 1)
+	env, err := New(root, &fakeSemanticCaller{}).Execute(context.Background(), model.CommandRequest{Operation: "nav.edit-plan", Context: model.QueryOptions{Workspace: name}, Payload: map[string]any{"packet": packet, "apply": true, "experimental_apply": true, "evidence_only_dirty_apply": true}})
+	if err != nil {
+		t.Fatalf("evidence-only apply: %v", err)
+	}
+	if env.Mode != "applied" {
+		t.Fatalf("mode=%q, want applied", env.Mode)
+	}
+	got, _ := os.ReadFile(filepath.Join(root, ".docs/auditoria/evidence.txt"))
+	if !strings.Contains(string(got), "new") {
+		t.Fatalf("target not applied: %q", got)
 	}
 }
 

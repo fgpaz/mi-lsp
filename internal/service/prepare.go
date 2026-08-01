@@ -94,7 +94,7 @@ func (a *App) prepare(ctx context.Context, request model.CommandRequest) (model.
 		if parseErr != nil {
 			return preparationFailureEnvelope(request, evidence, "validation", "plan_invalid", "plan", false, started), nil
 		}
-		if _, _, _, validateErr := validateEditPlanPacket(root, &packet, false, false, false); validateErr != nil {
+		if _, _, _, validateErr := validateEditPlanPacket(root, &packet, false, false, false, false); validateErr != nil {
 			return preparationFailureEnvelope(request, evidence, "validation", "plan_invalid", "plan", false, started), nil
 		}
 		for _, target := range packet.Targets {
