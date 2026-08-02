@@ -87,6 +87,17 @@ func (a *App) verifyPreparation(root string, request model.CommandRequest) (mode
 		}
 		return preparationPacketResult(request, "PREPARATION_MISSING", "refresh_required", "refresh", nil, path), nil
 	}
+	// Legacy callers wrote SemanticPreparationEvidence directly. Keep this branch
+	// separate from the current packet parser: legacy evidence is readable readiness
+	// evidence only and can never become authorization.
+	var legacy model.SemanticPreparationEvidence
+	if json.Unmarshal(b, &legacy) == nil && legacy.Schema == semanticPreparationSchema {
+		if !validLegacyPreparationEvidence(root, evidenceRoot, request, legacy) {
+			return preparationPacketResult(request, "PACKET_TAMPERED", "refresh_required", "refresh", nil, path), nil
+		}
+		p := legacyPreparationPacket(root, evidenceRoot, legacy)
+		return preparationPacketResult(request, "PREPARATION_READY", "automatic", "continue", &p, path), nil
+	}
 	var p model.PreparationPacket
 	if json.Unmarshal(b, &p) != nil {
 		return preparationPacketResult(request, "PACKET_TAMPERED", "refresh_required", "refresh", nil, path), nil
@@ -225,6 +236,21 @@ func withinRootPhysical(root, path string) bool {
 	}
 	return withinRoot(r, candidate)
 }
+func validLegacyPreparationEvidence(root, evidenceRoot string, request model.CommandRequest, e model.SemanticPreparationEvidence) bool {
+	if e.WorkspaceRoot == "" || filepath.Clean(e.WorkspaceRoot) != root || e.Failure != nil || !strings.HasPrefix(e.TaskDigest, "sha256:") || !strings.HasPrefix(e.GovernanceDigest, "sha256:") || e.IndexGeneration == "" || !normalizedPreparationPaths(e.AllowedPaths) {
+		return false
+	}
+	if t := strings.TrimSpace(stringPayload(request.Payload, "task")); t != "" && preparationDigest(t) != e.TaskDigest {
+		return false
+	}
+	return e.WorkspaceRoot == evidenceRoot || filepath.Clean(evidenceRoot) == root
+}
+
+func legacyPreparationPacket(root, evidenceRoot string, e model.SemanticPreparationEvidence) model.PreparationPacket {
+	now := preparationNow()
+	return model.PreparationPacket{Schema: model.PreparationSchema, Workspace: model.PreparationWorkspace{CanonicalRoot: root, IdentityDigest: preparationDigest(root)}, Task: model.PreparationTask{Digest: e.TaskDigest, Intent: "legacy evidence-only"}, Scope: model.PreparationScope{AllowedPaths: e.AllowedPaths, DeniedClasses: []string{"authorization", "promotion", "protected_write"}, ReadOnly: true}, Lineage: model.PreparationLineage{PreparationID: preparationDigest(e.TaskDigest), CreatedAt: now, ExpiresAt: now.Add(15 * time.Minute)}, Evidence: model.PreparationEvidence{Root: evidenceRoot}, Status: "ready", Compatibility: "legacy", Semantic: model.PreparationSemantic{GovernanceDigest: e.GovernanceDigest, IndexDigest: e.IndexGeneration, PlanDigest: e.PlanDigest}}
+}
+
 func validPreparationPacket(p model.PreparationPacket) bool {
 	return p.Schema == model.PreparationSchema && p.Compatibility == "current" && p.Status == "ready" && p.Workspace.CanonicalRoot != "" && strings.HasPrefix(p.Workspace.IdentityDigest, "sha256:") && strings.HasPrefix(p.Task.Digest, "sha256:") && p.Task.Intent != "" && p.Scope.ReadOnly && len(p.Scope.DeniedClasses) > 0 && normalizedPreparationPaths(p.Scope.AllowedPaths) && !p.Lineage.CreatedAt.IsZero() && !p.Lineage.ExpiresAt.IsZero() && strings.HasPrefix(p.Semantic.GovernanceDigest, "sha256:") && (p.Semantic.IndexDigest != "" && (p.Semantic.IndexDigest == "unavailable" || strings.HasPrefix(p.Semantic.IndexDigest, "sha256:") || strings.TrimSpace(p.Semantic.IndexDigest) != ""))
 }

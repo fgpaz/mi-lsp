@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 )
@@ -179,5 +180,52 @@ func TestPreparationPacketTransferRequiredAndMissing(t *testing.T) {
 				t.Fatal(r.Code)
 			}
 		})
+	}
+}
+
+func TestPreparationPacketTP14RealLegacyEvidenceIsEvidenceOnly(t *testing.T) {
+	app, root, name, _ := packetMatrixFixture(t)
+	e := model.SemanticPreparationEvidence{Schema: semanticPreparationSchema, WorkspaceRoot: root, TaskDigest: preparationDigest("task"), GovernanceDigest: preparationGovernanceDigest(root), IndexGeneration: preparationIndexGeneration(root), AllowedPaths: []string{"src/Hello.cs"}}
+	path := filepath.Join(root, "legacy.json")
+	b, err := json.Marshal(e)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = os.WriteFile(path, b, 0644); err != nil {
+		t.Fatal(err)
+	}
+	env, err := app.verifyPreparation(root, model.CommandRequest{Context: model.QueryOptions{Workspace: name}, Payload: map[string]any{"packet_path": path, "evidence_root": root, "task": "task"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := env.Items.([]model.PreparationResult)[0]
+	if r.Code != "PREPARATION_READY" || !r.EvidenceOnly || !r.Transferable || r.Packet == nil || r.Packet.Compatibility != "legacy" || !r.Packet.Scope.ReadOnly {
+		t.Fatalf("legacy result = %+v", r)
+	}
+	if r.Packet.Scope.DeniedClasses[0] != "authorization" {
+		t.Fatalf("legacy packet elevated: %+v", r.Packet.Scope.DeniedClasses)
+	}
+}
+
+func TestPreparationPacketTP11OutputThroughDirectoryLinkRejected(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("junction variant covered by Windows acceptance runner")
+	}
+	app, root, name, _ := packetMatrixFixture(t)
+	outside := t.TempDir()
+	link := filepath.Join(root, "linked")
+	if err := os.Symlink(outside, link); err != nil {
+		t.Skipf("directory symlink unavailable: %v", err)
+	}
+	out := filepath.Join(link, "packet.json")
+	env, err := app.Execute(t.Context(), model.CommandRequest{Operation: "prepare.create", Context: model.QueryOptions{Workspace: name}, Payload: map[string]any{"task": "task", "output": out, "evidence_root": "linked"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := env.Items.([]model.PreparationResult)[0].Code; got != "PATH_SCOPE_MISMATCH" {
+		t.Fatalf("code=%s", got)
+	}
+	if _, err := os.Stat(filepath.Join(outside, "packet.json")); !os.IsNotExist(err) {
+		t.Fatalf("outside output exists: %v", err)
 	}
 }
