@@ -1,0 +1,32 @@
+schema: ae-closure-verdict/v1
+session: mi-lsp-megadiag-closure
+status: PASS
+review: PASS
+reviewer_findings: blockers repaired; release v0.6.1 publication pending
+worktree:
+  branch: fix/megadiag-closure
+  parent_base: 5d2ffbd99619f259d19d549788e7d60fc1bb6a6f
+  candidate_ref: refs/heads/fix/megadiag-closure
+  head_binding: resolve_at_gate
+  head_validation_command: git rev-parse refs/heads/fix/megadiag-closure
+  required_relation: git merge-base --is-ancestor origin/main HEAD
+  release_commit_self_reference_not_embedded: true
+  commit_state: committed_candidate
+  staged: false
+  worktree_clean_except_dynamic_pi_subagents_class: true
+  origin_main: 44adc236ef581d42549649d036732f11beb4fe9f
+  origin_main_is_ancestor: true
+  origin_main_drift: false
+  branch_disposition: commit-amend-publication-pending
+  local_state: ready_for_pre_push
+  publication: pending
+  commit_push_merge_deploy: commit-amend-only; no push/tag/release
+canonical_anchors: [CT-WORKSPACE-PROBE, RF-IDX-001, RF-IDX-004, TECH-PYTHON-BACKEND, CT-INDEX-JOB-OWNERSHIP, AE-RELEASE-DISTRIBUTION]
+noncanonical_diagnostic_labels: [DOC-01, DOC-02, REL-01, TOOL-01, INST-01, SCH-01]
+validation:
+  yaml_parse: PASS
+  hash_readback: PASS
+  nul_removed: true
+  broad_tests: NOT_RERUN
+  product_blockers: none
+residual_risks: [race unsupported Windows ARM64, symlink privilege skip, dynamic .pi-subagents retained]

@@ -1,0 +1,41 @@
+schema: ae-skill-mirror-parity/v1
+timestamp: 2026-08-02T16:50:01Z
+authority_role: repo skills/mi-lsp (canonical)
+mirror_role: C:/Users/fgpaz/.agents/skills/mi-lsp
+entries:
+  - authority: skills/mi-lsp/agents/openai.yaml
+    mirror: C:/Users/fgpaz/.agents/skills/mi-lsp/agents/openai.yaml
+    authority_sha256: ad756ad72d25621fe79c0e461df1c34fc2c362709edf9b2689f85a504b7bd16d
+    mirror_sha256: ad756ad72d25621fe79c0e461df1c34fc2c362709edf9b2689f85a504b7bd16d
+    byte_identical: true
+  - authority: skills/mi-lsp/references/compound-commands.md
+    mirror: C:/Users/fgpaz/.agents/skills/mi-lsp/references/compound-commands.md
+    authority_sha256: 5d8917838595664e33347fc320232392f4d16df9abb7009222ea81961616ea67
+    mirror_sha256: 5d8917838595664e33347fc320232392f4d16df9abb7009222ea81961616ea67
+    byte_identical: true
+  - authority: skills/mi-lsp/references/linux-worker-packaging-drift.md
+    mirror: C:/Users/fgpaz/.agents/skills/mi-lsp/references/linux-worker-packaging-drift.md
+    authority_sha256: 43a4be13afb1f2c441d54ad32a37821c04f20a302b6ee8413512d4e1a3bd0575
+    mirror_sha256: 43a4be13afb1f2c441d54ad32a37821c04f20a302b6ee8413512d4e1a3bd0575
+    byte_identical: true
+  - authority: skills/mi-lsp/references/quickstart.md
+    mirror: C:/Users/fgpaz/.agents/skills/mi-lsp/references/quickstart.md
+    authority_sha256: 970b7584312b24e684c86cb9aeac522d9dfd766f7f7c971fe1b707f23e3401bb
+    mirror_sha256: 970b7584312b24e684c86cb9aeac522d9dfd766f7f7c971fe1b707f23e3401bb
+    byte_identical: true
+  - authority: skills/mi-lsp/references/recipes.md
+    mirror: C:/Users/fgpaz/.agents/skills/mi-lsp/references/recipes.md
+    authority_sha256: 1945e56281f52542a962c7460d6c9e13cec8ac8f8369b31c7d1a3136e0170835
+    mirror_sha256: 1945e56281f52542a962c7460d6c9e13cec8ac8f8369b31c7d1a3136e0170835
+    byte_identical: true
+  - authority: skills/mi-lsp/references/runtime-drift.md
+    mirror: C:/Users/fgpaz/.agents/skills/mi-lsp/references/runtime-drift.md
+    authority_sha256: b758175818cd7f4f5d5978055943e94ad4a3f8d0dacb01bed012aeda60e18815
+    mirror_sha256: b758175818cd7f4f5d5978055943e94ad4a3f8d0dacb01bed012aeda60e18815
+    byte_identical: true
+  - authority: skills/mi-lsp/SKILL.md
+    mirror: C:/Users/fgpaz/.agents/skills/mi-lsp/SKILL.md
+    authority_sha256: 4bb875d91decf3f2a3d785811fecbd1b342cf4d1831ad6e11db267dffba1277f
+    mirror_sha256: 4bb875d91decf3f2a3d785811fecbd1b342cf4d1831ad6e11db267dffba1277f
+    byte_identical: true
+byte_identical: true

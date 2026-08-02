@@ -2,7 +2,10 @@ package cli
 
 import (
 	"context"
+	"errors"
+	"os"
 	"runtime/debug"
+	"syscall"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -34,9 +37,14 @@ Checks include:
 
 			// Populate daemon info if available
 			opts := &service.RunDoctorOptions{}
-			daemonVersion, watchedDirs := getDoctorDaemonInfo(ctx)
+			daemonVersion, watchedDirs, daemonState, daemonErrorKind, daemonErr := getDoctorDaemonInfo(ctx)
 			opts.DaemonVersion = daemonVersion
 			opts.DaemonWatchedDirs = watchedDirs
+			opts.DaemonState = daemonState
+			opts.DaemonErrorKind = daemonErrorKind
+			if daemonErr != nil {
+				opts.DaemonError = daemonErr.Error()
+			}
 
 			report, err := service.RunDoctor(ctx, opts)
 			if err != nil {
@@ -110,7 +118,7 @@ func extractExitCode(err error) int {
 }
 
 // getDoctorDaemonInfo tries to fetch daemon version and watched dirs.
-func getDoctorDaemonInfo(ctx context.Context) (string, int) {
+func getDoctorDaemonInfo(ctx context.Context) (string, int, service.DaemonState, service.DaemonErrorKind, error) {
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 
@@ -122,7 +130,10 @@ func getDoctorDaemonInfo(ctx context.Context) (string, int) {
 		},
 	})
 	if err != nil {
-		return "", 0
+		if isDaemonUnavailable(err) {
+			return "", 0, service.DaemonStateStopped, service.DaemonErrorUnavailable, err
+		}
+		return "", 0, service.DaemonStateUnknown, service.DaemonErrorCommunication, err
 	}
 
 	var version string
@@ -146,7 +157,7 @@ func getDoctorDaemonInfo(ctx context.Context) (string, int) {
 		}
 	}
 
-	return version, watchedDirs
+	return version, watchedDirs, service.DaemonStateRunning, service.DaemonErrorNone, nil
 }
 
 // getCLIVersionForComparison returns the CLI version for comparison with daemon.
@@ -174,4 +185,8 @@ func getVCSModifiedForDoctor() string {
 		}
 	}
 	return ""
+}
+
+func isDaemonUnavailable(err error) bool {
+	return errors.Is(err, os.ErrNotExist) || errors.Is(err, syscall.ECONNREFUSED)
 }

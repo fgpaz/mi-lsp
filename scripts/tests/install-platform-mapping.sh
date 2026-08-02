@@ -42,10 +42,15 @@ EOF
   cat >"$stub_dir/curl" <<EOF
 #!/usr/bin/env sh
 printf '%s\n' "\$*" >>'$TMP_ROOT/curl.log'
-printf '%s\n' '{"tag_name":"v0.0.0-test"}'
+printf '%s\n' '{"tag_name":"latest"}'
 EOF
 
   chmod +x "$stub_dir/uname" "$stub_dir/curl"
+  for tool in wget gh; do printf "#!/usr/bin/env sh
+printf '%s
+' "$*" >>'$TMP_ROOT/'$tool.log
+exit 97
+" >"$stub_dir/$tool"; chmod +x "$stub_dir/$tool"; done
 }
 
 run_supported() {
@@ -61,8 +66,11 @@ run_supported() {
   assert_contains "$output" "rid=$expected_rid"
   assert_contains "$output" "archive_rid=$expected_archive_rid"
   assert_contains "$output" "worker_rid=$expected_worker_rid"
-  assert_contains "$output" "archive=mi-lsp_0.0.0-test_${expected_archive_rid}.tar.gz"
-  [ -s "$TMP_ROOT/curl.log" ] || fail "$label did not resolve release metadata"
+  assert_contains "$output" "archive=mi-lsp_latest_${expected_archive_rid}.tar.gz"
+  [ ! -s "$TMP_ROOT/curl.log" ] || fail "$label invoked curl during dry-run"
+  [ ! -s "$TMP_ROOT/wget.log" ] || fail "$label invoked wget during dry-run"
+  [ ! -s "$TMP_ROOT/gh.log" ] || fail "$label invoked gh during dry-run"
+  [ ! -e "$TMP_ROOT/install" ] || fail "$label created install files"
 }
 
 mkdir -p "$TMP_ROOT"
@@ -94,8 +102,8 @@ run_offline_install() {
   bundle="$fixture/bundle"
   stub_dir="$fixture/bin"
   install_dir="$fixture/install"
-  archive="$fixture/mi-lsp_0.0.0-test_linux-x64.tar.gz"
-  checksums="$fixture/mi-lsp_0.0.0-test_checksums.txt"
+  archive="$fixture/mi-lsp_latest_linux-x64.tar.gz"
+  checksums="$fixture/mi-lsp_latest_checksums.txt"
   mkdir -p "$bundle/workers/linux-x64" "$stub_dir"
 
   cat >"$bundle/mi-lsp" <<'EOF'
@@ -129,7 +137,7 @@ while [ "$#" -gt 0 ]; do
   esac
 done
 case "$url" in
-  */releases/latest) printf '%s\n' '{"tag_name":"v0.0.0-test"}' ;;
+  */releases/latest) printf '%s\n' '{"tag_name":"latest"}' ;;
   *.tar.gz) cp "$MI_LSP_FIXTURE_ARCHIVE" "$out" ;;
   *_checksums.txt) cp "$MI_LSP_FIXTURE_CHECKSUMS" "$out" ;;
   *) echo "unexpected URL: $url" >&2; exit 1 ;;

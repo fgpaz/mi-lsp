@@ -42,6 +42,17 @@ evidence:
   - scripts/release/ae-release-binaries.ps1
 ```
 
+## v0.6.1 Preparation Status
+
+```toon
+doc_id: AE-RELEASE-DISTRIBUTION
+block_id: AE-RELEASE-DISTRIBUTION.v0.6.1-preparation
+status: implemented_and_verified
+publication: pending
+target: v0.6.1
+canonical_anchors: [CT-WORKSPACE-PROBE, RF-IDX-001, RF-IDX-004, TECH-PYTHON-BACKEND, CT-INDEX-JOB-OWNERSHIP]
+```
+
 ## Release Distribution Gate
 
 ```toon

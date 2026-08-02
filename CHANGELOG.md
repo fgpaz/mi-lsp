@@ -7,6 +7,13 @@ and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2
 
 ## [Unreleased]
 
+## [0.6.1] - Pending publication
+
+### Fixed
+
+- Hardened diagnostics installation, workspace probing, Python backend handling, and index-job ownership migrations.
+
+
 ### Fixed
 
 - `[embeddings]` now activates when `base_url` and `model` are present even if `enabled` is omitted; `enabled = false` remains the explicit kill switch.

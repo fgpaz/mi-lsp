@@ -1,6 +1,7 @@
 package worker
 
 import (
+	"os"
 	"testing"
 
 	"github.com/fgpaz/mi-lsp/internal/model"
@@ -34,9 +35,27 @@ func TestNewPyrightClientWithoutBinary(t *testing.T) {
 	}
 }
 
-func TestDetectPythonPath(t *testing.T) {
-	path := detectPythonPath()
-	if path == "" {
-		t.Errorf("detectPythonPath returned empty string")
+func TestDetectPythonPathPrecedence(t *testing.T) {
+	original := lookPath
+	t.Cleanup(func() { lookPath = original })
+	lookPath = func(name string) (string, error) {
+		if name == "python3" {
+			return `C:\Python\python.exe`, nil
+		}
+		return "", os.ErrNotExist
+	}
+	got, err := detectPythonPath()
+	if err != nil || got != `C:\Python\python.exe` {
+		t.Fatalf("got %q, %v", got, err)
+	}
+}
+
+func TestDetectPythonPathUnavailable(t *testing.T) {
+	original := lookPath
+	t.Cleanup(func() { lookPath = original })
+	lookPath = func(string) (string, error) { return "", os.ErrNotExist }
+	got, err := detectPythonPath()
+	if err == nil || got != "" {
+		t.Fatalf("got %q, %v; want explicit unavailable error", got, err)
 	}
 }

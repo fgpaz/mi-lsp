@@ -370,6 +370,44 @@ function Stop-ExistingDaemon {
     }
 }
 
+function Invoke-ConfinedActivation {
+    param([Parameter(Mandatory=$true)][string]$InstallRoot,[Parameter(Mandatory=$true)][string]$SourceCli,[Parameter(Mandatory=$true)][string]$SourceWorker,[Parameter(Mandatory=$true)][string]$Rid)
+    $root=(New-Item -ItemType Directory -Force -Path $InstallRoot).FullName.TrimEnd('\'); $workers=(New-Item -ItemType Directory -Force -Path (Join-Path $root 'workers')).FullName.TrimEnd('\')
+    $cli=Join-Path $root 'mi-lsp.exe'; $worker=Join-Path $workers $Rid
+    Assert-PathLexicallyUnder -Parent $root -Child $cli; Assert-PathLexicallyUnder -Parent $workers -Child $worker
+    $backup=Join-Path $root ('.mi-lsp-backup-'+[guid]::NewGuid().ToString('N')); New-Item -ItemType Directory -Path $backup | Out-Null
+    $oldCli=$false; $oldWorker=$false; $committed=$false
+    $testMode = $env:MI_LSP_INSTALL_TEST_MODE -eq 'activation'
+    try {
+        if (-not $testMode) { Stop-ExistingDaemon -CliPath $cli }
+        if (Test-Path -LiteralPath $cli) { Move-Item $cli (Join-Path $backup 'mi-lsp.exe'); $oldCli=$true }
+        if (Test-Path -LiteralPath $worker) { Move-Item $worker (Join-Path $backup 'worker'); $oldWorker=$true }
+        Copy-Item $SourceCli $cli -Force
+        $testCli = if ($testMode) { $testPath = $cli + '.ps1'; Copy-Item $cli $testPath -Force; $testPath } else { $cli }
+        if ($env:MI_LSP_INSTALL_FAIL_PHASE -eq 'cli-activation') { throw 'Injected failure after CLI activation.' }
+        New-Item -ItemType Directory -Force -Path $worker | Out-Null
+        Copy-Item (Join-Path $SourceWorker '*') $worker -Recurse -Force
+        if ($env:MI_LSP_INSTALL_FAIL_PHASE -eq 'worker-activation') { throw 'Injected failure after worker activation.' }
+        $invokeCli = { param([string[]]$Arguments) if ($testMode) { & (Get-Command pwsh -ErrorAction Stop).Source -NoProfile -File $testCli @Arguments } else { & $cli @Arguments } }
+        if (-not $testMode -and -not $SkipWorkerInstall) { & $cli worker install --rid $Rid --format compact | Out-Host; if ($LASTEXITCODE -ne 0) { throw "mi-lsp worker install failed for RID '$Rid'." } }
+        & $invokeCli @('version','--format','toon') | Out-Host; if ($LASTEXITCODE -ne 0) { throw 'mi-lsp version verification failed.' }
+        & $invokeCli @('worker','status','--format','compact') | Out-Host; if ($LASTEXITCODE -ne 0) { throw 'mi-lsp worker status verification failed.' }
+        $committed=$true
+    } finally {
+        if (-not $committed) {
+            if (Test-Path -LiteralPath $cli) { Remove-Item $cli -Force }; if (Test-Path -LiteralPath ($cli + '.ps1')) { Remove-Item ($cli + '.ps1') -Force }; if (Test-Path -LiteralPath $worker) { Remove-Item $worker -Recurse -Force }
+            if ($oldCli) { Move-Item (Join-Path $backup 'mi-lsp.exe') $cli }; if ($oldWorker) { Move-Item (Join-Path $backup 'worker') $worker }
+        }
+        if (Test-Path -LiteralPath $backup) { Remove-Item $backup -Recurse -Force }
+    }
+}
+
+if ($env:MI_LSP_INSTALL_TEST_MODE -eq 'activation') {
+    if ([string]::IsNullOrWhiteSpace($env:MI_LSP_TEST_INSTALL_ROOT) -or [string]::IsNullOrWhiteSpace($env:MI_LSP_TEST_SOURCE_CLI) -or [string]::IsNullOrWhiteSpace($env:MI_LSP_TEST_SOURCE_WORKER) -or [string]::IsNullOrWhiteSpace($env:MI_LSP_TEST_RID)) { throw 'Activation test mode requires test paths and RID.' }
+    Invoke-ConfinedActivation -InstallRoot $env:MI_LSP_TEST_INSTALL_ROOT -SourceCli $env:MI_LSP_TEST_SOURCE_CLI -SourceWorker $env:MI_LSP_TEST_SOURCE_WORKER -Rid $env:MI_LSP_TEST_RID
+    Write-Output 'PASS: activation test mode'; return
+}
+
 function Invoke-WithRetry {
     param(
         [Parameter(Mandatory = $true)][scriptblock]$Action,
@@ -395,6 +433,10 @@ if ([string]::IsNullOrWhiteSpace($Rid)) {
 }
 Assert-SupportedRid -Value $Rid
 
+if ($DryRun) {
+    [pscustomobject]@{ Repo=$Repo; Version='<network lookup skipped>'; Rid=$Rid; Archive='<not resolved>'; InstallDir=$InstallDir; DryRun=$true } | Format-List
+    return
+}
 $release = Get-Release -Repo $Repo
 $version = $release.tag_name.TrimStart('v')
 $archiveName = "mi-lsp_${version}_${Rid}.zip"
@@ -458,47 +500,9 @@ try {
     }
 
     New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
+    Invoke-ConfinedActivation -InstallRoot $InstallDir -SourceCli $sourceCli.FullName -SourceWorker $sourceWorkerDir.FullName -Rid $Rid
     $targetCli = Join-Path $InstallDir 'mi-lsp.exe'
-    $targetWorkersRoot = Join-Path $InstallDir 'workers'
-    $targetWorkerDir = Join-Path $targetWorkersRoot $Rid
-    New-Item -ItemType Directory -Force -Path $targetWorkersRoot | Out-Null
-    $resolvedWorkersRoot = (Resolve-Path -LiteralPath $targetWorkersRoot).Path.TrimEnd('\')
-    $resolvedWorkerDir = [System.IO.Path]::GetFullPath($targetWorkerDir)
-    if (-not $resolvedWorkerDir.StartsWith($resolvedWorkersRoot + '\', [System.StringComparison]::OrdinalIgnoreCase)) {
-        throw "Refusing to replace worker directory outside install workers root: $targetWorkerDir"
-    }
-
-    Stop-ExistingDaemon -CliPath $targetCli
-    if (Test-Path -LiteralPath $targetWorkerDir) {
-        Invoke-WithRetry -Description "Removing existing worker bundle" -Action {
-            Remove-Item -LiteralPath $targetWorkerDir -Recurse -Force
-        }
-    }
-    Invoke-WithRetry -Description "Copying mi-lsp executable" -Action {
-        Copy-Item -LiteralPath $sourceCli.FullName -Destination $targetCli -Force
-    }
-    Invoke-WithRetry -Description "Copying worker bundle" -Action {
-        Copy-Item -LiteralPath $sourceWorkerDir.FullName -Destination $targetWorkersRoot -Recurse -Force
-    }
-
     Ensure-Path -Directory $InstallDir
-    Stop-ExistingDaemon -CliPath $targetCli
-
-    if (-not $SkipWorkerInstall) {
-        & $targetCli worker install --rid $Rid --format compact | Out-Host
-        if ($LASTEXITCODE -ne 0) {
-            throw "mi-lsp worker install failed for RID '$Rid'."
-        }
-    }
-
-    & $targetCli version --format toon | Out-Host
-    if ($LASTEXITCODE -ne 0) {
-        throw 'mi-lsp version verification failed.'
-    }
-    & $targetCli worker status --format compact | Out-Host
-    if ($LASTEXITCODE -ne 0) {
-        throw 'mi-lsp worker status verification failed.'
-    }
 
     Write-Host "mi-lsp $($release.tag_name) installed at $targetCli"
 }

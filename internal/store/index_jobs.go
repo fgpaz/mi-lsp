@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -73,6 +74,10 @@ func (e *ActiveIndexJobError) Error() string {
 var (
 	ErrStaleIndexJobOwner        = errors.New("index job owner fence is stale or terminal state already won")
 	ErrInvalidIndexJobTransition = errors.New("invalid index job state transition")
+
+	// indexJobOwnershipMigrationHook is intentionally nil in production. Tests may
+	// use it to force a failure after a migration operation and verify rollback.
+	indexJobOwnershipMigrationHook func(string) error
 )
 
 type indexJobOwnership struct {
@@ -85,34 +90,75 @@ type indexJobOwnership struct {
 }
 
 func ensureIndexJobOwnershipSchema(db *sql.DB) error {
-	for _, migration := range []struct {
-		column string
-		ddl    string
-	}{
-		{column: "requested_cancel", ddl: `ALTER TABLE index_jobs ADD COLUMN requested_cancel INTEGER NOT NULL DEFAULT 0`},
-		{column: "publication_started", ddl: `ALTER TABLE index_jobs ADD COLUMN publication_started INTEGER NOT NULL DEFAULT 0`},
-	} {
-		if err := addIndexJobColumnConcurrent(db, migration.column, migration.ddl); err != nil {
+	const currentVersion = 1
+	// Durable, transactional, idempotent migration. A current version is a
+	// strict no-op; failed attempts roll back both DDL and the ledger.
+	for attempt := 0; attempt < 8; attempt++ {
+		tx, err := db.BeginTx(context.Background(), &sql.TxOptions{})
+		if err != nil {
+			if isSQLiteLockedError(err) {
+				time.Sleep(time.Duration(attempt+1) * 10 * time.Millisecond)
+				continue
+			}
 			return err
 		}
-	}
-	for _, statement := range []string{
-		`CREATE TABLE IF NOT EXISTS index_job_ownership (
-			workspace_root TEXT PRIMARY KEY,
-			job_id TEXT NOT NULL,
-			owner_token TEXT NOT NULL,
-			fencing_token INTEGER NOT NULL,
-			pid INTEGER NOT NULL DEFAULT 0,
-			acquired_at TEXT NOT NULL,
-			released_at TEXT
-		)`,
-		`CREATE INDEX IF NOT EXISTS idx_index_job_ownership_job ON index_job_ownership(job_id, released_at)`,
-	} {
-		if err := execIndexJobMigration(db, statement); err != nil {
-			return err
+		var rawVersion string
+		err = tx.QueryRowContext(context.Background(), "SELECT value FROM workspace_meta WHERE key='index_job_ownership_schema_version'").Scan(&rawVersion)
+		if errors.Is(err, sql.ErrNoRows) {
+			rawVersion = "0"
+			err = nil
 		}
+		if err == nil {
+			version, parseErr := strconv.Atoi(rawVersion)
+			if parseErr != nil || version < 0 {
+				err = fmt.Errorf("invalid index job ownership schema version %q", rawVersion)
+			} else if version > currentVersion {
+				err = fmt.Errorf("unsupported future index job ownership schema version %d", version)
+			} else if version == currentVersion {
+				_ = tx.Rollback()
+				return nil
+			}
+		}
+		if err == nil {
+			for _, c := range []struct{ name, definition string }{{"requested_cancel", "INTEGER NOT NULL DEFAULT 0"}, {"publication_started", "INTEGER NOT NULL DEFAULT 0"}} {
+				if err = ensureColumnTx(context.Background(), tx, "index_jobs", c.name, c.definition); err != nil {
+					break
+				}
+				if indexJobOwnershipMigrationHook != nil {
+					err = indexJobOwnershipMigrationHook("column:" + c.name)
+					if err != nil {
+						break
+					}
+				}
+			}
+		}
+		if err == nil {
+			_, err = tx.ExecContext(context.Background(), `CREATE TABLE IF NOT EXISTS index_job_ownership (workspace_root TEXT PRIMARY KEY, job_id TEXT NOT NULL, owner_token TEXT NOT NULL, fencing_token INTEGER NOT NULL, pid INTEGER NOT NULL DEFAULT 0, acquired_at TEXT NOT NULL, released_at TEXT)`)
+			if err == nil && indexJobOwnershipMigrationHook != nil {
+				err = indexJobOwnershipMigrationHook("table")
+			}
+		}
+		if err == nil {
+			_, err = tx.ExecContext(context.Background(), `CREATE INDEX IF NOT EXISTS idx_index_job_ownership_job ON index_job_ownership(job_id, released_at)`)
+		}
+		if err == nil {
+			_, err = tx.ExecContext(context.Background(), `INSERT INTO workspace_meta(key,value) VALUES ('index_job_ownership_schema_version',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`, strconv.Itoa(currentVersion))
+		}
+		if err == nil {
+			err = tx.Commit()
+		} else {
+			_ = tx.Rollback()
+		}
+		if err == nil {
+			return nil
+		}
+		if isSQLiteLockedError(err) || strings.Contains(strings.ToLower(err.Error()), "duplicate column") {
+			time.Sleep(time.Duration(attempt+1) * 10 * time.Millisecond)
+			continue
+		}
+		return err
 	}
-	return nil
+	return fmt.Errorf("index job ownership schema migration remained locked")
 }
 
 func addIndexJobColumnConcurrent(db *sql.DB, column string, ddl string) error {

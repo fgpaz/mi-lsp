@@ -1,0 +1,12 @@
+schema: ae-traceability-closure/v1
+session: mi-lsp-megadiag-closure
+target: v0.6.1
+status: PASS
+canonical_anchors: [CT-WORKSPACE-PROBE, RF-IDX-001, RF-IDX-004, TECH-PYTHON-BACKEND, CT-INDEX-JOB-OWNERSHIP, AE-RELEASE-DISTRIBUTION]
+noncanonical_diagnostic_labels: [DOC-01, DOC-02, REL-01, TOOL-01, INST-01, SCH-01]
+skill_mirror_parity: skill-mirror-parity.yaml
+skill_parity: seven exact repo authority/mirror paths; byte_identical true
+publication: pending
+local_status: ready_for_pre_push
+product_blockers: []
+nul_removed: true

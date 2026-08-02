@@ -1,0 +1,15 @@
+schema: ae-session-contract/v1
+session: mi-lsp-megadiag-closure
+worktree: C:\wt\mi-lsp-megadiag-integration
+branch: fix/megadiag-closure
+base: 5d2ffbd99619f259d19d549788e7d60fc1bb6a6f
+tracker: {mode: none, frontier: local-session-contract}
+target: v0.6.1
+publication: pending
+branch_disposition: commit-amend-publication-pending
+local_state: ready_for_pre_push
+canonical_anchors: [CT-WORKSPACE-PROBE, RF-IDX-001, RF-IDX-004, TECH-PYTHON-BACKEND, CT-INDEX-JOB-OWNERSHIP, AE-RELEASE-DISTRIBUTION]
+noncanonical_diagnostic_labels: [DOC-01, DOC-02, REL-01, TOOL-01, INST-01, SCH-01]
+product_blockers: []
+no_commit_push_merge_deploy: true
+nul_removed: true

@@ -18,10 +18,14 @@ import (
 
 // DoctorCheck represents a single diagnostic check result.
 type DoctorCheck struct {
-	ID       string `json:"id"`
-	Severity string `json:"severity"` // P1, P2, P3, or "ok"
-	OK       bool   `json:"ok"`
-	Detail   string `json:"detail"`
+	ID        string `json:"id"`
+	Severity  string `json:"severity"` // P1, P2, P3, or "ok"
+	OK        bool   `json:"ok"`
+	Detail    string `json:"detail"`
+	Status    string `json:"status"`
+	Reason    string `json:"reason"`
+	Required  bool   `json:"required"`
+	Available bool   `json:"available"`
 }
 
 // DoctorReport is the collection of all doctor checks.
@@ -33,10 +37,29 @@ type DoctorReport struct {
 }
 
 // RunDoctorOptions contains optional parameters for doctor checks.
+type DaemonState string
+
+const (
+	DaemonStateUnknown DaemonState = "unknown"
+	DaemonStateRunning DaemonState = "running"
+	DaemonStateStopped DaemonState = "stopped"
+)
+
+type DaemonErrorKind string
+
+const (
+	DaemonErrorNone          DaemonErrorKind = "none"
+	DaemonErrorUnavailable   DaemonErrorKind = "unavailable"
+	DaemonErrorCommunication DaemonErrorKind = "communication"
+)
+
 type RunDoctorOptions struct {
 	DaemonVersion     string
 	DaemonWatchedDirs int
 	DaemonStatus      any // raw daemon status response
+	DaemonError       string
+	DaemonState       DaemonState
+	DaemonErrorKind   DaemonErrorKind
 }
 
 // RunDoctor executes all read-only checks.
@@ -53,6 +76,7 @@ func RunDoctor(ctx context.Context, opts *RunDoctorOptions) (DoctorReport, error
 
 	// Run all checks
 	checks := []func(context.Context, *RunDoctorOptions) DoctorCheck{
+		checkDaemonConnectivity,
 		checkStaleAliases,
 		checkDaemonVersion,
 		checkDBSize,
@@ -64,8 +88,9 @@ func RunDoctor(ctx context.Context, opts *RunDoctorOptions) (DoctorReport, error
 
 	for _, checkFn := range checks {
 		check := checkFn(ctx, opts)
+		check = finalizeDoctorCheck(check)
 		report.Checks = append(report.Checks, check)
-		if check.Severity == "P1" && !check.OK {
+		if check.Required && (check.Status == "fail" || !check.Available) {
 			report.ExitCode = 1
 		}
 	}
@@ -113,6 +138,47 @@ func RunDoctor(ctx context.Context, opts *RunDoctorOptions) (DoctorReport, error
 	}
 
 	return report, nil
+}
+
+var doctorRequired = map[string]bool{
+	"stale-aliases": true, "daemon-version-drift": false, "daemon-db-size": false,
+	"watched-dirs-handle-limit": false, "binary-dirty": true, "governance-blocked": true,
+	"truncation-rate": false, "daemon-connectivity": false,
+}
+
+func finalizeDoctorCheck(check DoctorCheck) DoctorCheck {
+	check.Required = doctorRequired[check.ID]
+	if check.ID == "daemon-connectivity" && check.Available && !check.OK {
+		check.Required = true
+	}
+	// Availability is explicit for checks that can be unavailable; all other
+	// checks are available unless their constructor says otherwise.
+	if !check.Available && check.ID != "daemon-connectivity" && check.ID != "daemon-version-drift" && check.ID != "daemon-db-size" {
+		check.Available = true
+	}
+	check.Status, check.Reason = doctorStatus(check)
+	return check
+}
+
+func doctorStatus(check DoctorCheck) (string, string) {
+	if !check.Available && check.OK {
+		return "degraded", "unavailable"
+	}
+	if check.OK {
+		return "pass", ""
+	}
+	return "fail", "check_failed"
+}
+
+func checkDaemonConnectivity(ctx context.Context, opts *RunDoctorOptions) DoctorCheck {
+	const id = "daemon-connectivity"
+	if opts.DaemonErrorKind == DaemonErrorNone && opts.DaemonError == "" {
+		return DoctorCheck{ID: id, Severity: "P2", OK: true, Available: true, Detail: "Daemon communication succeeded"}
+	}
+	if opts.DaemonErrorKind == DaemonErrorUnavailable || opts.DaemonState == DaemonStateStopped {
+		return DoctorCheck{ID: id, Severity: "P2", OK: true, Available: false, Detail: "Daemon not running (optional)"}
+	}
+	return DoctorCheck{ID: id, Severity: "P1", OK: false, Available: true, Detail: "Daemon communication failed: " + opts.DaemonError}
 }
 
 // checkStaleAliases verifies that registry aliases point to existing paths.
@@ -171,10 +237,11 @@ func checkDaemonVersion(ctx context.Context, opts *RunDoctorOptions) DoctorCheck
 	// If daemon is not running, that's not a failure (daemon is optional)
 	if daemonVersion == "" {
 		return DoctorCheck{
-			ID:       id,
-			Severity: "P1",
-			OK:       true,
-			Detail:   "Daemon not running (optional)",
+			ID:        id,
+			Severity:  "P1",
+			OK:        true,
+			Available: false,
+			Detail:    "Daemon not running (optional)",
 		}
 	}
 
@@ -224,10 +291,11 @@ func checkDBSize(ctx context.Context, opts *RunDoctorOptions) DoctorCheck {
 	info, err := os.Stat(dbPath)
 	if errors.Is(err, os.ErrNotExist) {
 		return DoctorCheck{
-			ID:       id,
-			Severity: "P1",
-			OK:       true,
-			Detail:   "Database does not exist (daemon not yet initialized)",
+			ID:        id,
+			Severity:  "P1",
+			OK:        true,
+			Available: false,
+			Detail:    "Database does not exist (daemon not yet initialized)",
 		}
 	}
 	if err != nil {

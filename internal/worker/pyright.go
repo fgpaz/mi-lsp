@@ -10,9 +10,15 @@ import (
 	"github.com/fgpaz/mi-lsp/internal/model"
 )
 
+var lookPath = exec.LookPath
+
 // NewPyrightClient creates an LSPClient configured for Pyright.
 func NewPyrightClient(workspace model.WorkspaceRegistration) (*LSPClient, error) {
 	binary, err := findPyrightBinary(workspace.Root)
+	if err != nil {
+		return nil, err
+	}
+	pythonPath, err := detectPythonPath()
 	if err != nil {
 		return nil, err
 	}
@@ -20,7 +26,7 @@ func NewPyrightClient(workspace model.WorkspaceRegistration) (*LSPClient, error)
 		ServerCmd:  binary,
 		ServerArgs: []string{"--stdio"},
 		InitOptions: map[string]any{
-			"pythonPath": detectPythonPath(),
+			"pythonPath": pythonPath,
 		},
 	}
 	return NewLSPClient(config, workspace), nil
@@ -34,7 +40,7 @@ func CanUsePyright(workspaceRoot string) bool {
 
 func findPyrightBinary(workspaceRoot string) (string, error) {
 	// 1. pyright-langserver in PATH
-	if path, err := exec.LookPath("pyright-langserver"); err == nil {
+	if path, err := lookPath("pyright-langserver"); err == nil {
 		return path, nil
 	}
 
@@ -65,11 +71,11 @@ func findPyrightBinary(workspaceRoot string) (string, error) {
 	return "", errors.New("pyright-langserver is unavailable; install pyright via npm or pip")
 }
 
-func detectPythonPath() string {
+func detectPythonPath() (string, error) {
 	for _, name := range []string{"python3", "python"} {
-		if path, err := exec.LookPath(name); err == nil {
-			return path
+		if path, err := lookPath(name); err == nil {
+			return path, nil
 		}
 	}
-	return "python"
+	return "", errors.New("Python is unavailable: install Python 3 and ensure python3 or python is on PATH")
 }

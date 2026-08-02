@@ -1,0 +1,19 @@
+schema: ae-command-status/v1
+git_branch: fix/megadiag-closure
+candidate_ref: refs/heads/fix/megadiag-closure
+head_binding: resolve_at_gate
+head_validation_command: git rev-parse refs/heads/fix/megadiag-closure
+required_relation: git merge-base --is-ancestor origin/main HEAD
+parent_base: 5d2ffbd99619f259d19d549788e7d60fc1bb6a6f
+origin_main: 44adc236ef581d42549649d036732f11beb4fe9f
+origin_main_is_ancestor: true
+origin_main_drift: false
+commit_state: committed_candidate
+staged_files: []
+worktree_clean_except_dynamic_pi_subagents_class: true
+yaml_parse: PASS
+nul_removed: true
+local_state: ready_for_pre_push
+publication: pending
+broad_tests: NOT_RERUN
+commit_push_merge_deploy: NONE

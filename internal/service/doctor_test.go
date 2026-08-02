@@ -1,7 +1,9 @@
 package service
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"os"
 	"testing"
 	"time"
@@ -226,4 +228,76 @@ func contains(s, substr string) bool {
 		}
 	}
 	return false
+}
+
+func TestDoctorCheckStatusSemantics(t *testing.T) {
+	for _, tc := range []struct {
+		name, detail, wantStatus, wantReason string
+		required, ok                         bool
+	}{
+		{"required failure", "registry failed", "fail", "check_failed", true, false},
+		{"optional unavailable", "Daemon not running (optional)", "degraded", "unavailable", false, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			gotStatus, gotReason := doctorStatus(DoctorCheck{Detail: tc.detail, Required: tc.required, OK: tc.ok})
+			if gotStatus != tc.wantStatus || gotReason != tc.wantReason {
+				t.Fatalf("status=%q reason=%q, want %q/%q", gotStatus, gotReason, tc.wantStatus, tc.wantReason)
+			}
+		})
+	}
+}
+
+func TestRunDoctorRequiredFailureSetsExitCode(t *testing.T) {
+	check := DoctorCheck{ID: "stale-aliases", Severity: "P2", OK: false, Detail: "registry failed"}
+	check.Required = true
+	check.Status, check.Reason = doctorStatus(check)
+	if check.Status != "fail" || check.Reason != "check_failed" {
+		t.Fatalf("got %s/%s", check.Status, check.Reason)
+	}
+}
+
+func TestRunDoctorFinalizesMetadataAndDaemonError(t *testing.T) {
+	for _, tc := range []struct {
+		name, err, status, reason string
+		available                 bool
+		exit                      int
+		state                     DaemonState
+		kind                      DaemonErrorKind
+	}{
+		{"stopped", "connection refused", "degraded", "unavailable", false, 0, DaemonStateStopped, DaemonErrorUnavailable},
+		{"communication failure", "protocol timeout", "fail", "check_failed", true, 0, DaemonStateUnknown, DaemonErrorCommunication},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			report, err := RunDoctor(context.Background(), &RunDoctorOptions{DaemonError: tc.err, DaemonState: tc.state, DaemonErrorKind: tc.kind})
+			if err != nil {
+				t.Fatal(err)
+			}
+			var got DoctorCheck
+			for _, check := range report.Checks {
+				if check.ID == "daemon-connectivity" {
+					got = check
+				}
+			}
+			if got.Status != tc.status || got.Reason != tc.reason || got.Available != tc.available {
+				t.Fatalf("got %#v", got)
+			}
+			if tc.name == "communication failure" && report.ExitCode != 1 {
+				t.Fatalf("exit=%d, want 1", report.ExitCode)
+			}
+		})
+	}
+}
+
+func TestDoctorCheckJSONIncludesMetadata(t *testing.T) {
+	report, err := RunDoctor(context.Background(), &RunDoctorOptions{DaemonError: "connection refused"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := json.Marshal(report)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(data, []byte(`"status"`)) || !bytes.Contains(data, []byte(`"required"`)) || !bytes.Contains(data, []byte(`"available"`)) {
+		t.Fatalf("metadata missing: %s", data)
+	}
 }

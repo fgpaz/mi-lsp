@@ -40,6 +40,9 @@ detect_rid() {
   echo "${os_part}-${arch_part}"
 }
 
+if [ -z "$RID" ] && [ "${MI_LSP_INSTALL_TEST_MODE:-}" = activation ]; then
+  RID="${MI_LSP_TEST_RID:-}"
+fi
 if [ -z "$RID" ]; then
   RID="$(detect_rid)"
 fi
@@ -57,6 +60,7 @@ case "$RID" in
   osx-x64) archive_rid="darwin-x64" ;;
   osx-arm64) archive_rid="darwin-arm64" ;;
 esac
+
 
 require_cmd() {
   if ! command -v "$1" >/dev/null 2>&1; then
@@ -311,6 +315,23 @@ download() {
   return 1
 }
 
+activate_confined() {
+  test_root="$1"; test_cli="$2"; test_worker="$3"; test_rid="$4"
+  mkdir -p "$test_root/workers"; test_target="$test_root/mi-lsp"; test_worker_target="$test_root/workers/$test_rid"
+  case "$test_worker_target" in "$test_root/workers"/*) ;; *) return 1 ;; esac
+  test_backup="$test_root/.mi-lsp-backup.$$"; mkdir "$test_backup"; test_old_cli=0; test_old_worker=0; test_committed=0
+  test_rollback() { status=$?; if [ "$test_committed" -eq 0 ]; then [ ! -e "$test_target" ] || rm -f "$test_target"; [ ! -e "$test_worker_target" ] || find "$test_worker_target" -depth -type f -delete; [ "$test_old_cli" -eq 1 ] && mv "$test_backup/mi-lsp" "$test_target"; [ "$test_old_worker" -eq 1 ] && mv "$test_backup/worker" "$test_worker_target"; fi; find "$test_backup" -depth -type f -delete; find "$test_backup" -depth -type d -empty -delete; return "$status"; }
+  trap test_rollback EXIT INT TERM
+  [ -e "$test_target" ] && { mv "$test_target" "$test_backup/mi-lsp"; test_old_cli=1; }; [ -e "$test_worker_target" ] && { mv "$test_worker_target" "$test_backup/worker"; test_old_worker=1; }
+  cp "$test_cli" "$test_target"; chmod +x "$test_target"; [ "${MI_LSP_INSTALL_FAIL_PHASE:-}" = cli-activation ] && return 1
+  cp -R "$test_worker" "$test_worker_target"; [ "${MI_LSP_INSTALL_FAIL_PHASE:-}" = worker-activation ] && return 1; [ "${MI_LSP_INSTALL_FAIL_PHASE:-}" = status ] && return 1
+  test_committed=1; trap - EXIT INT TERM; find "$test_backup" -depth -type f -delete; find "$test_backup" -depth -type d -empty -delete
+}
+if [ "${MI_LSP_INSTALL_TEST_MODE:-}" = activation ]; then
+  : "${MI_LSP_TEST_INSTALL_ROOT:?required}"; : "${MI_LSP_TEST_SOURCE_CLI:?required}"; : "${MI_LSP_TEST_SOURCE_WORKER:?required}"; : "${MI_LSP_TEST_RID:?required}"
+  activate_confined "$MI_LSP_TEST_INSTALL_ROOT" "$MI_LSP_TEST_SOURCE_CLI" "$MI_LSP_TEST_SOURCE_WORKER" "$MI_LSP_TEST_RID"; echo 'PASS: activation test mode'; exit 0
+fi
+
 if [ -n "$VALIDATE_ARCHIVE" ]; then
   validate_tar_archive "$VALIDATE_ARCHIVE"
   echo "PASS: tar archive members are confined and link-free"
@@ -321,6 +342,22 @@ if [ -n "$VALIDATE_MANIFEST" ]; then
   [ -n "$VALIDATE_WORKER_ROOT" ] || { echo "--worker-root is required with --validate-worker-manifest." >&2; exit 2; }
   validate_worker_manifest "$VALIDATE_MANIFEST" "$VALIDATE_WORKER_ROOT" "$worker_rid"
   echo "PASS: worker manifest JSON, schema, RID, protocol, file_count, sizes, and hashes are valid"
+  exit 0
+fi
+
+if [ "$DRY_RUN" -eq 1 ]; then
+  version="latest"
+  archive="mi-lsp_${version}_${archive_rid}.tar.gz"
+  checksums="mi-lsp_${version}_checksums.txt"
+  printf "repo=%s
+version=%s
+rid=%s
+archive_rid=%s
+worker_rid=%s
+archive=%s
+checksums=%s
+install_dir=%s
+" "$REPO" "$version" "$RID" "$archive_rid" "$worker_rid" "$archive" "$checksums" "$INSTALL_DIR"
   exit 0
 fi
 
@@ -402,33 +439,39 @@ worker_manifest="$source_worker/worker-manifest.json"
 validate_worker_manifest "$worker_manifest" "$source_worker" "$worker_rid"
 
 mkdir -p "$INSTALL_DIR/workers"
-target="$INSTALL_DIR/mi-lsp"
-if [ -x "$target" ]; then
-  "$target" daemon stop --format compact >/dev/null 2>&1 || true
-fi
 workers_root="$(cd "$INSTALL_DIR/workers" && pwd -P)"
+target="$INSTALL_DIR/mi-lsp"
 target_worker="$workers_root/$worker_rid"
-case "$target_worker" in
-  "$workers_root"/*) ;;
-  *) echo "Refusing to replace worker directory outside install workers root: $target_worker" >&2; exit 1 ;;
-esac
-retry rm -rf "$target_worker"
-retry cp "$source_cli" "$target"
-retry cp -R "$source_worker" "$workers_root/"
-chmod +x "$target"
+case "$target_worker" in "$workers_root"/*) ;; *) echo "Refusing worker path" >&2; exit 1 ;; esac
+install_root="$(CDPATH= cd -P -- "$INSTALL_DIR" && pwd -P)"
+backup_root="$install_root/.mi-lsp-backup.$$"
+mkdir "$backup_root"
+old_cli=0; old_worker=0; activated=1
+safe_remove() { p="$1"; case "$p" in "$install_root"/*) ;; *) return 1 ;; esac; if [ -d "$p" ] && [ ! -L "$p" ]; then find "$p" -depth -type f -delete; find "$p" -depth -type d -delete; else rm -f "$p"; fi; }
+rollback() { status=$?; [ "$activated" -eq 1 ] && { [ ! -e "$target" ] || safe_remove "$target"; [ ! -e "$target_worker" ] || safe_remove "$target_worker"; [ "$old_cli" -eq 1 ] && mv "$backup_root/mi-lsp" "$target"; [ "$old_worker" -eq 1 ] && mv "$backup_root/worker" "$target_worker"; }; rmdir "$backup_root" 2>/dev/null || true; return "$status"; }
+trap rollback EXIT INT TERM
+if [ -x "$target" ]; then "$target" daemon stop --format compact >/dev/null 2>&1 || true; fi
+if [ -e "$target" ]; then mv "$target" "$backup_root/mi-lsp"; old_cli=1; fi
+if [ -e "$target_worker" ]; then mv "$target_worker" "$backup_root/worker"; old_worker=1; fi
+cp "$source_cli" "$target"; chmod +x "$target"
+[ "${MI_LSP_INSTALL_FAIL_PHASE:-}" = cli-activation ] && exit 1
+cp -R "$source_worker" "$target_worker"
+[ "${MI_LSP_INSTALL_FAIL_PHASE:-}" = worker-activation ] && exit 1
+[ "${MI_LSP_INSTALL_FAIL_PHASE:-}" = worker-install ] && exit 1
 "$target" daemon stop --format compact >/dev/null 2>&1 || true
 
 case ":$PATH:" in
   *":$INSTALL_DIR:"*) ;;
-  *)
-    echo "Add mi-lsp to PATH with:"
-    echo "  export PATH=\"$INSTALL_DIR:\$PATH\""
-    ;;
+  *) echo "Add mi-lsp to PATH with:"; echo "  export PATH=\"$INSTALL_DIR:\$PATH\"" ;;
 esac
 
-if [ "$SKIP_WORKER_INSTALL" -eq 0 ]; then
-  "$target" worker install --rid "$worker_rid" --format compact
-fi
+if [ "$SKIP_WORKER_INSTALL" -eq 0 ]; then "$target" worker install --rid "$worker_rid" --format compact; fi
 "$target" version --format toon
+[ "${MI_LSP_INSTALL_FAIL_PHASE:-}" = status ] && exit 1
 "$target" worker status --format compact
+safe_remove "$backup_root/mi-lsp" 2>/dev/null || true
+safe_remove "$backup_root/worker" 2>/dev/null || true
+rmdir "$backup_root"
+activated=0
+trap - EXIT INT TERM
 echo "mi-lsp $tag installed at $target"

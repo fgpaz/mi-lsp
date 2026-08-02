@@ -333,6 +333,12 @@ func TestConcurrentLegacyOwnershipMigration(t *testing.T) {
 		legacyDB.Close()
 		t.Fatalf("drop publication_started: %v", err)
 	}
+	// The fixture is deliberately legacy: advertise an older durable version
+	// so concurrent callers exercise the migration path rather than the strict
+	// current-version no-op.
+	if _, err := legacyDB.Exec(`UPDATE workspace_meta SET value = '0' WHERE key = 'index_job_ownership_schema_version'`); err != nil {
+		t.Fatalf("mark legacy ownership version: %v", err)
+	}
 	if err := legacyDB.Close(); err != nil {
 		t.Fatalf("close legacy fixture: %v", err)
 	}
@@ -1428,5 +1434,141 @@ func TestForegroundIncrementalPublicationUpdatesFilesAndSymbolsTogether(t *testi
 	}
 	if state != GraphRuntimeStale {
 		t.Fatalf("graph runtime state = %q, want stale for no graph publication", state)
+	}
+}
+
+func TestIndexJobOwnershipCurrentVersionIsStrictNoOp(t *testing.T) {
+	db, _ := seedTestDB(t)
+	defer db.Close()
+	if err := ensureIndexJobOwnershipSchema(db); err != nil {
+		t.Fatalf("prepare current schema: %v", err)
+	}
+	if _, err := db.Exec(`ALTER TABLE index_jobs DROP COLUMN requested_cancel`); err != nil {
+		t.Fatalf("drop requested_cancel: %v", err)
+	}
+	if _, err := db.Exec(`ALTER TABLE index_jobs DROP COLUMN publication_started`); err != nil {
+		t.Fatalf("drop publication_started: %v", err)
+	}
+	if _, err := db.Exec(`UPDATE workspace_meta SET value='1' WHERE key='index_job_ownership_schema_version'`); err != nil {
+		t.Fatalf("set current version: %v", err)
+	}
+	if err := ensureIndexJobOwnershipSchema(db); err != nil {
+		t.Fatalf("current-version no-op: %v", err)
+	}
+	for _, column := range []string{"requested_cancel", "publication_started"} {
+		has, err := tableHasColumn(db, "index_jobs", column)
+		if err != nil {
+			t.Fatalf("check %s: %v", column, err)
+		}
+		if has {
+			t.Fatalf("current-version call changed schema by restoring %s", column)
+		}
+	}
+}
+
+func TestIndexJobOwnershipFutureVersionRejected(t *testing.T) {
+	db, _ := seedTestDB(t)
+	defer db.Close()
+	if _, err := db.Exec(`INSERT INTO workspace_meta(key,value) VALUES ('index_job_ownership_schema_version','2') ON CONFLICT(key) DO UPDATE SET value=excluded.value`); err != nil {
+		t.Fatalf("set future version: %v", err)
+	}
+	if err := ensureIndexJobOwnershipSchema(db); err == nil {
+		t.Fatal("future schema version was accepted")
+	}
+}
+
+func TestIndexJobOwnershipMissingVersionMigratesAndPreservesRows(t *testing.T) {
+	db, root := seedTestDB(t)
+	defer db.Close()
+	job, err := CreateIndexJob(context.Background(), db, "migration-preserved", root, IndexModeFull, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`UPDATE index_job_ownership SET owner_token='owner', fencing_token=7, pid=123, acquired_at='now' WHERE workspace_root=?`, root); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`ALTER TABLE index_jobs DROP COLUMN requested_cancel`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`ALTER TABLE index_jobs DROP COLUMN publication_started`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`DELETE FROM workspace_meta WHERE key='index_job_ownership_schema_version'`); err != nil {
+		t.Fatal(err)
+	}
+	if err := ensureIndexJobOwnershipSchema(db); err != nil {
+		t.Fatal(err)
+	}
+	var version string
+	if err := db.QueryRow(`SELECT value FROM workspace_meta WHERE key='index_job_ownership_schema_version'`).Scan(&version); err != nil {
+		t.Fatal(err)
+	}
+	if version != "1" {
+		t.Fatalf("version=%q", version)
+	}
+	var jobs, owners int
+	if err := db.QueryRow(`SELECT count(*) FROM index_jobs WHERE job_id=?`, job.JobID).Scan(&jobs); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.QueryRow(`SELECT count(*) FROM index_job_ownership WHERE job_id=?`, job.JobID).Scan(&owners); err != nil {
+		t.Fatal(err)
+	}
+	if jobs != 1 || owners != 1 {
+		t.Fatalf("preserved rows jobs=%d owners=%d", jobs, owners)
+	}
+}
+
+func TestIndexJobOwnershipMigrationFailureRollsBackAtomically(t *testing.T) {
+	db, _ := seedTestDB(t)
+	defer db.Close()
+	if _, err := db.Exec(`ALTER TABLE index_jobs DROP COLUMN requested_cancel`); err != nil {
+		t.Fatal(err)
+	}
+	if has, err := tableHasColumn(db, "index_jobs", "publication_started"); err != nil {
+		t.Fatal(err)
+	} else if has {
+		if _, err := db.Exec(`ALTER TABLE index_jobs DROP COLUMN publication_started`); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := db.Exec(`DELETE FROM workspace_meta WHERE key='index_job_ownership_schema_version'`); err != nil {
+		t.Fatal(err)
+	}
+	var ownershipTable int
+	if err := db.QueryRow(`SELECT count(*) FROM sqlite_master WHERE type='table' AND name='index_job_ownership'`).Scan(&ownershipTable); err != nil {
+		t.Fatal(err)
+	}
+	if ownershipTable != 0 {
+		if _, err := db.Exec(`DROP TABLE index_job_ownership`); err != nil {
+			t.Fatal(err)
+		}
+	}
+	indexJobOwnershipMigrationHook = func(step string) error {
+		if step == "column:requested_cancel" {
+			return errors.New("injected migration failure")
+		}
+		return nil
+	}
+	defer func() { indexJobOwnershipMigrationHook = nil }()
+	if err := ensureIndexJobOwnershipSchema(db); err == nil {
+		t.Fatal("migration unexpectedly succeeded")
+	}
+	if has, err := tableHasColumn(db, "index_jobs", "requested_cancel"); err != nil {
+		t.Fatal(err)
+	} else if has {
+		t.Fatal("column survived rollback")
+	}
+	var count int
+	if err := db.QueryRow(`SELECT count(*) FROM sqlite_master WHERE type='table' AND name='index_job_ownership'`).Scan(&count); err != nil {
+		t.Fatal(err)
+	}
+	if count != 0 {
+		t.Fatal("ownership table survived rollback")
+	}
+	if err := db.QueryRow(`SELECT count(*) FROM workspace_meta WHERE key='index_job_ownership_schema_version'`).Scan(&count); err != nil {
+		t.Fatal(err)
+	}
+	if count != 0 {
+		t.Fatal("version ledger survived rollback")
 	}
 }
