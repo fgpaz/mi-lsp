@@ -1,6 +1,7 @@
 schema: traceability-closure/v1
 status: PASS
-release_target: v0.7.0-pending-publication
+release_target: v0.7.0-published
+post_release_scope: integrated
 anchors: [RF-QRY-019, CT-NAV-PREPARATION, TP-QRY-PREPARATION, TECH-SEMANTIC-PREPARATION]
 git_before: origin/main
 git_after: {candidate_ref: refs/heads/feat/portable-preparation-v1, resolve_at_gate: true}
@@ -12,7 +13,7 @@ implementation_evidence: [internal/cli/prepare.go, internal/service/prepare.go, 
 test_evidence: [internal/service/preparation_packet_matrix_test.go, internal/service/preparation_packet_test.go, internal/service/prepare_test.go, internal/skills/preparation_receipt_test.go]
 qa: {tests: 17/17 PASS}
 skill_parity: 7/7 PASS
-publication: v0.7.0 pending
+publication: v0.7.0 published; post-release verification PASS
 changed_paths:
   - .docs/auditoria/mi-lsp-portable-preparation-v1/assertions.yaml
   - .docs/auditoria/mi-lsp-portable-preparation-v1/audit-manifest.yaml

@@ -1,0 +1,17 @@
+schema: post-release-verification/v1
+status: PASS
+release: {version: v0.7.0, published_at: 2026-08-02T22:11:46Z, source_commit: 9c42512b97cb4561904b305d96edb3ac3270b0e4, tag: v0.7.0, tag_object: 35b3ef7b2941e74df3e7dad4de98842ac8417bb5, workflow_run: 30769198643, workflow_url: https://github.com/fgpaz/mi-lsp/actions/runs/30769198643, release_url: https://github.com/fgpaz/mi-lsp/releases/tag/v0.7.0}
+assets:
+  checksum_asset: mi-lsp_0.7.0_checksums.txt
+  digests:
+    mi-lsp_0.7.0_darwin-arm64.tar.gz: 1de817c639ac596deabd28b12f331403e5de1df6457138b7b2847dcab9af59ab
+    mi-lsp_0.7.0_darwin-x64.tar.gz: b5bf48c83586bb71d58edc60abe0a939a006e602e32d2c4a79db34a31811880f
+    mi-lsp_0.7.0_linux-arm64.tar.gz: d516eb5a102f411f67e390a37cafc1464f4180b6b0d62c8416debadfb4764544
+    mi-lsp_0.7.0_linux-x64.tar.gz: addf24465d0b3dc7a175179305fc6245ca7210e3f1c4c220042b9586692f1466
+    mi-lsp_0.7.0_win-arm64.zip: e0a54d442f06449e249cb8b035f07adf16e96698a77b09864e251b2d382ecc45
+    mi-lsp_0.7.0_win-x64.zip: 73d0707997a9bcad99898be5f43f2711ab34067ed3c0fe928a3b2b2dde6f6126
+  verified: 6/6
+verification: {worker: PASS, install: PASS, preparation: PASS, seed: PASS, governance: PASS, wiki: PASS, stale_aliases_removed: 5, doctor_required: PASS, optional_daemon: degraded}
+installed: {platform: windows-arm64, version: v0.7.0, provenance: verified}
+post_release_scope: integrated
+implementation_scope_count: 40

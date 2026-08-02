@@ -217,11 +217,11 @@ Hardening of the v0.5.1-v0.5.3 follow-up code, found by a parallel adversarial c
 - Repo-local indexing, service exploration, batch navigation, diff context, and cross-workspace search
 - Public governance docs, issue templates, CI workflow, and release automation
 
-## [0.7.0] - Pending publication
+## [0.7.0] - 2026-08-02
 
 ### Added
 
 - Portable preparation create/verify/refresh with typed drift and repair outcomes.
 - Legacy packet compatibility, seed receipts, and isolated skill/catalog preparation inputs.
 
-> This entry documents the release target; v0.7.0 has not been published.
+> Published release: https://github.com/fgpaz/mi-lsp/releases/tag/v0.7.0

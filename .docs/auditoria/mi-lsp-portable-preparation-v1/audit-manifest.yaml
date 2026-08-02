@@ -4,5 +4,5 @@ hash_algorithm: sha256
 artifact_classes: [session-contract, validation-output, sanitized-summary, verdict, parity]
 cleanup_status: complete
 verdict: PASS
-summary: Portable preparation docs, code, tests, skill mirror, and verification evidence are closed without raw transcripts or secrets; candidate ref remains symbolic until gate resolution.
+summary: Portable preparation docs, code, tests, skill mirror, and verification evidence are closed without raw transcripts or secrets; release v0.7.0 published and integrated; post-release evidence PASS.
 scope_summary: {total: 40, audit: 16, docs: 8, code: 9, changelog: 1, tests: 3, skills: 3}

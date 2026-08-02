@@ -14,7 +14,8 @@ forbidden_paths: [protected paths, harness broker, edit-plan apply, persistence 
 expected_scope: {changed_paths: 40, audit: 16, docs: 8, code: 9, changelog: 1, tests: 3, skills: 3}
 boundary: full portable-preparation feature only; no unrelated edits
 closure: reviewed
-release_target: v0.7.0-pending-publication
+release_target: v0.7.0-published
+post_release_scope: integrated
 allowed_paths:
   - .docs/auditoria/mi-lsp-portable-preparation-v1/assertions.yaml
   - .docs/auditoria/mi-lsp-portable-preparation-v1/audit-manifest.yaml

@@ -10,3 +10,6 @@ commands:
   qa_matrix: 17/17 passed
   skill_mirror_parity: 7/7 passed
   docs_harness_source_crossrefs: recorded as PASS in closure packet
+
+release: v0.7.0 published; workflow 30769198643 success
+post_release_scope: integrated
