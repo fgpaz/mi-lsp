@@ -155,6 +155,7 @@ func NewRootCommand() *cobra.Command {
 		newWorkspaceCommand(state),
 		newRegistryCommand(state),
 		newNavCommand(state),
+		newPrepareCommand(state),
 		newIndexCommand(state),
 		newInfoCommand(state),
 		newDaemonCommand(state),
