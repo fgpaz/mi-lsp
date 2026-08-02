@@ -208,17 +208,20 @@ func TestPreparationPacketTP14RealLegacyEvidenceIsEvidenceOnly(t *testing.T) {
 }
 
 func TestPreparationPacketTP11OutputThroughDirectoryLinkRejected(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("junction variant covered by Windows acceptance runner")
-	}
 	app, root, name, _ := packetMatrixFixture(t)
 	outside := t.TempDir()
 	link := filepath.Join(root, "linked")
-	if err := os.Symlink(outside, link); err != nil {
+	if runtime.GOOS == "windows" {
+		cmd := exec.Command("cmd", "/c", "mklink", "/J", link, outside)
+		output, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Skipf("directory junction unavailable: %v: %s", err, output)
+		}
+	} else if err := os.Symlink(outside, link); err != nil {
 		t.Skipf("directory symlink unavailable: %v", err)
 	}
-	out := filepath.Join(link, "packet.json")
-	env, err := app.Execute(t.Context(), model.CommandRequest{Operation: "prepare.create", Context: model.QueryOptions{Workspace: name}, Payload: map[string]any{"task": "task", "output": out, "evidence_root": "linked"}})
+	out := filepath.Join("linked", "packet.json")
+	env, err := app.Execute(t.Context(), model.CommandRequest{Operation: "prepare.create", Context: model.QueryOptions{Workspace: name}, Payload: map[string]any{"task": "task", "output": out, "evidence_root": root}})
 	if err != nil {
 		t.Fatal(err)
 	}
