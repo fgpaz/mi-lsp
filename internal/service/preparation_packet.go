@@ -48,7 +48,11 @@ func (a *App) preparationPacket(_ context.Context, request model.CommandRequest,
 	if ttl > 24*time.Hour {
 		ttl = 24 * time.Hour
 	}
-	p := model.PreparationPacket{Schema: model.PreparationSchema, Workspace: model.PreparationWorkspace{CanonicalRoot: root, IdentityDigest: preparationDigest(root)}, Task: model.PreparationTask{Digest: preparationDigest(task), Intent: stringPayload(payload, "intent")}, Scope: model.PreparationScope{AllowedPaths: paths, DeniedClasses: []string{"authorization", "promotion", "protected_write", "broker", "database_persistence"}, ReadOnly: true}, Lineage: model.PreparationLineage{PreparationID: preparationDigest(fmt.Sprintf("%s:%d", task, now.UnixNano())), CreatedAt: now, ExpiresAt: now.Add(ttl)}, Evidence: model.PreparationEvidence{Root: root}, Status: "ready", Compatibility: "current"}
+	evidenceRoot, err := preparationEvidenceRoot(root, payload, true)
+	if err != nil {
+		return preparationPacketResult(request, "PATH_SCOPE_MISMATCH", "forbidden", "stop", nil, ""), nil
+	}
+	p := model.PreparationPacket{Schema: model.PreparationSchema, Workspace: model.PreparationWorkspace{CanonicalRoot: root, IdentityDigest: preparationDigest(root)}, Task: model.PreparationTask{Digest: preparationDigest(task), Intent: stringPayload(payload, "intent")}, Scope: model.PreparationScope{AllowedPaths: paths, DeniedClasses: []string{"authorization", "promotion", "protected_write", "broker", "database_persistence"}, ReadOnly: true}, Lineage: model.PreparationLineage{PreparationID: preparationDigest(fmt.Sprintf("%s:%d", task, now.UnixNano())), CreatedAt: now, ExpiresAt: now.Add(ttl)}, Evidence: model.PreparationEvidence{Root: evidenceRoot}, Status: "ready", Compatibility: "current"}
 	p.Semantic.GovernanceDigest = preparationGovernanceDigest(root)
 	p.Semantic.IndexDigest = preparationIndexGeneration(root)
 	if v := firstPreparationPayload(payload, "plan"); v != "" {
@@ -59,33 +63,55 @@ func (a *App) preparationPacket(_ context.Context, request model.CommandRequest,
 	if output == "" {
 		return preparationPacketResult(request, "PREPARATION_READY", "automatic", "continue", &p, ""), nil
 	}
-	if err := writePreparation(root, output, p); err != nil {
+	if err := writePreparation(evidenceRoot, output, p); err != nil {
 		return preparationPacketResult(request, "PATH_SCOPE_MISMATCH", "forbidden", "stop", nil, ""), nil
 	}
 	return preparationPacketResult(request, "PREPARATION_READY", "automatic", "continue", &p, output), nil
 }
 func (a *App) verifyPreparation(root string, request model.CommandRequest) (model.Envelope, error) {
+	evidenceRoot, err := preparationEvidenceRoot(root, request.Payload, false)
+	if err != nil {
+		return preparationPacketResult(request, "PATH_SCOPE_MISMATCH", "forbidden", "stop", nil, ""), nil
+	}
 	path := stringPayload(request.Payload, "packet_path")
 	if !filepath.IsAbs(path) {
-		path = filepath.Join(root, path)
+		path = filepath.Join(evidenceRoot, path)
 	}
 	if !validPreparationPacketPath(root, path) {
 		return preparationPacketResult(request, "PATH_SCOPE_MISMATCH", "forbidden", "stop", nil, path), nil
 	}
 	b, err := os.ReadFile(path)
 	if err != nil {
+		if strings.TrimSpace(stringPayload(request.Payload, "parent_transfer_hint")) != "" {
+			return preparationPacketResult(request, "TRANSFER_REQUIRED", "parent_required", "request_transfer", nil, path), nil
+		}
 		return preparationPacketResult(request, "PREPARATION_MISSING", "refresh_required", "refresh", nil, path), nil
 	}
 	var p model.PreparationPacket
-	if json.Unmarshal(b, &p) != nil || !validPreparationPacket(p) || p.PacketDigest != packetDigest(p) {
+	if json.Unmarshal(b, &p) != nil {
 		return preparationPacketResult(request, "PACKET_TAMPERED", "refresh_required", "refresh", nil, path), nil
 	}
-	if filepath.Clean(p.Workspace.CanonicalRoot) != root {
+	if !validPreparationPacket(p) {
+		return preparationPacketResult(request, "PACKET_TAMPERED", "refresh_required", "refresh", nil, path), nil
+	}
+	if p.PacketDigest != packetDigest(p) {
+		return preparationPacketResult(request, "PACKET_TAMPERED", "refresh_required", "refresh", nil, path), nil
+	}
+	if filepath.Clean(p.Workspace.CanonicalRoot) != root || p.Workspace.IdentityDigest != preparationDigest(root) {
 		return preparationPacketResult(request, "WORKSPACE_MISMATCH", "parent_required", "request_transfer", &p, path), nil
+	}
+	if p.Evidence.Root == "" || !withinRootPhysical(root, p.Evidence.Root) || filepath.Clean(p.Evidence.Root) != filepath.Clean(evidenceRoot) {
+		return preparationPacketResult(request, "PATH_SCOPE_MISMATCH", "forbidden", "stop", &p, path), nil
 	}
 	if preparationNow().After(p.Lineage.ExpiresAt) {
 		p.Status = "stale"
 		return preparationPacketResult(request, "PACKET_EXPIRED", "refresh_required", "refresh", &p, path), nil
+	}
+	if raw, ok := request.Payload["affected_paths"]; ok {
+		requested, pathErr := preparationPaths(root, map[string]any{"affected_paths": raw})
+		if pathErr != nil || !preparationPathsSubset(requested, p.Scope.AllowedPaths) {
+			return preparationPacketResult(request, "PATH_SCOPE_MISMATCH", "forbidden", "stop", &p, path), nil
+		}
 	}
 	if t := strings.TrimSpace(stringPayload(request.Payload, "task")); t != "" && preparationDigest(t) != p.Task.Digest {
 		return preparationPacketResult(request, "TASK_DIGEST_MISMATCH", "refresh_required", "refresh", &p, path), nil
@@ -156,6 +182,9 @@ func writePreparation(root, out string, p model.PreparationPacket) error {
 	if !withinRootPhysical(root, full) {
 		return fmt.Errorf("output outside root")
 	}
+	if info, err := os.Lstat(full); err == nil && info.Mode()&os.ModeSymlink != 0 {
+		return fmt.Errorf("output symlink")
+	}
 	if err := os.MkdirAll(filepath.Dir(full), 0755); err != nil {
 		return err
 	}
@@ -190,14 +219,58 @@ func withinRootPhysical(root, path string) bool {
 			d = parent
 		}
 	}
-	return withinRoot(r, filepath.Join(d, filepath.Base(path)))
+	candidate := filepath.Join(d, filepath.Base(path))
+	if real, e := filepath.EvalSymlinks(candidate); e == nil {
+		candidate = real
+	}
+	return withinRoot(r, candidate)
 }
 func validPreparationPacket(p model.PreparationPacket) bool {
-	return p.Schema == model.PreparationSchema && p.Compatibility == "current" && p.Status == "ready" && p.Workspace.CanonicalRoot != "" && strings.HasPrefix(p.Workspace.IdentityDigest, "sha256:") && strings.HasPrefix(p.Task.Digest, "sha256:") && p.Task.Intent != "" && p.Scope.ReadOnly && len(p.Scope.DeniedClasses) > 0 && !p.Lineage.CreatedAt.IsZero() && !p.Lineage.ExpiresAt.IsZero() && strings.HasPrefix(p.Semantic.GovernanceDigest, "sha256:")
+	legacy := strings.HasPrefix(p.Schema, "mi-lsp-preparation/")
+	compat := p.Compatibility == "current" || p.Compatibility == "legacy" || p.Compatibility == ""
+	return legacy && compat && p.Status == "ready" && p.Workspace.CanonicalRoot != "" && strings.HasPrefix(p.Workspace.IdentityDigest, "sha256:") && strings.HasPrefix(p.Task.Digest, "sha256:") && p.Task.Intent != "" && p.Scope.ReadOnly && len(p.Scope.DeniedClasses) > 0 && normalizedPreparationPaths(p.Scope.AllowedPaths) && !p.Lineage.CreatedAt.IsZero() && !p.Lineage.ExpiresAt.IsZero() && strings.HasPrefix(p.Semantic.GovernanceDigest, "sha256:") && (p.Semantic.IndexDigest != "" && (p.Semantic.IndexDigest == "unavailable" || strings.HasPrefix(p.Semantic.IndexDigest, "sha256:") || strings.TrimSpace(p.Semantic.IndexDigest) != ""))
+}
+
+func normalizedPreparationPaths(paths []string) bool {
+	seen := map[string]bool{}
+	for _, p := range paths {
+		if p == "" || filepath.IsAbs(p) || strings.ContainsAny(p, "\x00\r\n") || seen[p] {
+			return false
+		}
+		seen[p] = true
+	}
+	return true
+}
+
+func preparationEvidenceRoot(root string, payload map[string]any, create bool) (string, error) {
+	v := strings.TrimSpace(stringPayload(payload, "evidence_root"))
+	if v == "" {
+		return root, nil
+	}
+	if !filepath.IsAbs(v) {
+		v = filepath.Join(root, v)
+	}
+	v = filepath.Clean(v)
+	if create {
+		if err := os.MkdirAll(v, 0755); err != nil {
+			return "", err
+		}
+	}
+	if info, err := os.Stat(v); err != nil || !info.IsDir() || !withinRootPhysical(root, v) {
+		return "", fmt.Errorf("evidence root outside workspace")
+	}
+	return filepath.EvalSymlinks(v)
 }
 func (a *App) refreshPreparation(root string, request model.CommandRequest) (model.Envelope, error) {
+	evidenceRoot, rootErr := preparationEvidenceRoot(root, request.Payload, true)
+	if rootErr != nil {
+		return preparationPacketResult(request, "PATH_SCOPE_MISMATCH", "forbidden", "stop", nil, ""), nil
+	}
 	old := stringPayload(request.Payload, "packet_path")
-	if !validPreparationPacketPath(root, old) {
+	if !filepath.IsAbs(old) {
+		old = filepath.Join(evidenceRoot, old)
+	}
+	if !validPreparationPacketPath(evidenceRoot, old) {
 		return preparationPacketResult(request, "PATH_SCOPE_MISMATCH", "forbidden", "stop", nil, old), nil
 	}
 	b, e := os.ReadFile(old)
@@ -206,7 +279,7 @@ func (a *App) refreshPreparation(root string, request model.CommandRequest) (mod
 		return preparationPacketResult(request, "PACKET_TAMPERED", "refresh_required", "refresh", nil, old), nil
 	}
 	out := stringPayload(request.Payload, "output")
-	if out == "" || !validPreparationPacketPath(root, filepath.Join(root, out)) {
+	if out == "" || !validPreparationPacketPath(evidenceRoot, filepath.Join(evidenceRoot, out)) {
 		return preparationPacketResult(request, "PREPARATION_OUTPUT_REQUIRED", "automatic", "stop", &p, old), nil
 	}
 	now := preparationNow()
@@ -216,9 +289,23 @@ func (a *App) refreshPreparation(root string, request model.CommandRequest) (mod
 	p.Lineage.ExpiresAt = now.Add(15 * time.Minute)
 	p.Semantic.GovernanceDigest = preparationGovernanceDigest(root)
 	p.Semantic.IndexDigest = preparationIndexGeneration(root)
+	p.Evidence.Root = evidenceRoot
 	p.PacketDigest = packetDigest(p)
-	if e = writePreparation(root, out, p); e != nil {
+	if e = writePreparation(evidenceRoot, out, p); e != nil {
 		return preparationPacketResult(request, "PATH_SCOPE_MISMATCH", "forbidden", "stop", nil, out), nil
 	}
 	return preparationPacketResult(request, "PREPARATION_READY", "automatic", "continue", &p, out), nil
+}
+
+func preparationPathsSubset(requested, allowed []string) bool {
+	set := map[string]bool{}
+	for _, p := range allowed {
+		set[filepath.ToSlash(filepath.Clean(p))] = true
+	}
+	for _, p := range requested {
+		if !set[filepath.ToSlash(filepath.Clean(p))] {
+			return false
+		}
+	}
+	return true
 }
