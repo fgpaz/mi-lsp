@@ -48,8 +48,13 @@ evidence:
 doc_id: AE-RELEASE-DISTRIBUTION
 block_id: AE-RELEASE-DISTRIBUTION.v0.6.1-preparation
 status: implemented_and_verified
-publication: pending
+publication: published
 target: v0.6.1
+tag: v0.6.1
+source_commit: 19ebf536301b49f8a50414c67e6fdaf9c80696ad
+workflow: https://github.com/fgpaz/mi-lsp/actions/runs/30758325618
+release: https://github.com/fgpaz/mi-lsp/releases/tag/v0.6.1
+evidence: .docs/auditoria/mi-lsp-megadiag-closure/post-release-verification.yaml
 canonical_anchors: [CT-WORKSPACE-PROBE, RF-IDX-001, RF-IDX-004, TECH-PYTHON-BACKEND, CT-INDEX-JOB-OWNERSHIP]
 ```
 

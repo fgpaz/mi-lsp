@@ -1,0 +1,69 @@
+schema: mi-lsp-post-release-verification/v1
+publication: published
+post_release_verified: PASS
+release:
+  tag: v0.6.1
+  release_source_commit: 19ebf536301b49f8a50414c67e6fdaf9c80696ad
+  url: https://github.com/fgpaz/mi-lsp/releases/tag/v0.6.1
+workflow:
+  id: 30758325618
+  url: https://github.com/fgpaz/mi-lsp/actions/runs/30758325618
+  status: success
+closure_documentation:
+  ref: refs/heads/fix/megadiag-closure
+  resolve_at_gate: true
+repository:
+  release_source_commit: 19ebf536301b49f8a50414c67e6fdaf9c80696ad
+  origin_main: 19ebf536301b49f8a50414c67e6fdaf9c80696ad
+  origin_main_is_ancestor: true
+assets:
+  - name: mi-lsp_0.6.1_checksums.txt
+    size: 574
+    sha256: fea5624268029b51d3201b747b17bdc1a84b1aac5c92dfa2a2adb139808a1658
+    checksum: PASS
+  - name: mi-lsp_0.6.1_darwin-arm64.tar.gz
+    size: 281276860
+    sha256: 5b57e0fb6d09834f60733fefcb025d4d9d8c9ef902273bb6a5784720fe13fcb3
+    checksum: PASS
+  - name: mi-lsp_0.6.1_darwin-x64.tar.gz
+    size: 281691689
+    sha256: 3f75d5c31591c3f9975596b8250803d49b273239836d1547045a0736f9604361
+    checksum: PASS
+  - name: mi-lsp_0.6.1_linux-arm64.tar.gz
+    size: 281027090
+    sha256: fc704f614f339fd346c243f31bcd0692b7a0a4e657a2faa203386a082fc5d0a4
+    checksum: PASS
+  - name: mi-lsp_0.6.1_linux-x64.tar.gz
+    size: 281575363
+    sha256: 713ada9c6faffd6bce02685e3553c8800cce38a9e167efc70a9552009fd79428
+    checksum: PASS
+  - name: mi-lsp_0.6.1_win-arm64.zip
+    size: 286062112
+    sha256: 5db6e80b61f17ca327422f686aadd285d11238d2a19d46a2cc963af7bcfe951a
+    checksum: PASS
+  - name: mi-lsp_0.6.1_win-x64.zip
+    size: 286721192
+    sha256: 39be4aa2f3146b5045e470381d4c03aa5f4d3b7a1b1aedc7408cce1857c59ba9
+    checksum: PASS
+archive_guard: PASS
+archive: mi-lsp_0.6.1_win-arm64.zip
+archive_extracted: PASS
+cli:
+  path: C:\Users\fgpaz\bin\mi-lsp.exe
+  sha256: 579f516d279df812644f1fe11925cb25a9b6c41af84d1fd6b1101ba3e8fc2ff7
+  version: v0.6.1
+  vcs_revision: 19ebf536301b49f8a50414c67e6fdaf9c80696ad
+  vcs_modified: false
+worker_manifest:
+  rid: win-arm64
+  file_count: 326
+  verdict: PASS
+  compatible: true
+smokes:
+  worker_status: PASS
+  doctor: PASS
+  governance: PASS
+  wiki_index_and_harness: PASS
+  bounded_search: PASS
+  regression_smoke: PASS
+overall: PASS

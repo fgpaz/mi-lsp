@@ -2,13 +2,16 @@ schema: ae-audit-hygiene/v1
 session: mi-lsp-megadiag-closure
 retention_ttl_days: 14
 hash_algorithm: sha256
-artifact_classes: [session-contract, audit-manifest, closure-verdict, command-status, hash-readback, traceability-closure, skill-mirror-parity]
+artifact_classes: [session-contract, audit-manifest, closure-verdict, command-status, hash-readback, traceability-closure, skill-mirror-parity, post-release-verification]
 cleanup_status: current-session-only
-sanitized_summary: Review blockers repaired; publication pending.
+sanitized_summary: Release v0.6.1 published; post-release verification PASS; branch cleanup pending.
 verdict: PASS
+release_status: integrated_and_released
+post_release_verification: PASS
 artifact_hashes:
-  session-contract.yaml: b46c79422aab36badb7634831a83332a05e082f8656db809d7ffe0c1d3ffac01
-  closure-verdict.yaml: 7974216b4cd82f0c288c5742309e82a3a421d59488584cc3f07dc6e78c21c4ee
-  command-status.yaml: d88ed66afefbdd8fc248e6df0609b01f34964e2ab7d16b6e9f755bd0d8d5914c
-  traceability-closure.yaml: eecaac52a7d67344e2a92c289b48732c6e49be828a42268b2c2f1a451ee7214e
+  session-contract.yaml: b37a323d7a916662c2780d81468f2a98c00f289e3bf5408b018d23301d72bc62
+  closure-verdict.yaml: b7883126930461173c9636e50b2f93828ba2eb69e4db392ecac074496fe14341
+  command-status.yaml: d2968f372772eddb796a229821fac1bb5f95b9a1d53e0696fecf72160e272751
+  traceability-closure.yaml: c34fab324b2eaaa89522e51916b1548893d81c36daa9ad7107895543837f2a6f
   skill-mirror-parity.yaml: ffe84122880697e89d5f1b4f32dc96f42c7ff55746ce0b94e5dceed74fa2c8a7
+  post-release-verification.yaml: 1860801f69fb6c7fe31a75b71b9a447b2f283deffaa37a2895a32d1dce79092c
