@@ -80,6 +80,9 @@ func (a *App) verifyPreparation(root string, request model.CommandRequest) (mode
 	if !validPreparationPacketPath(root, path) {
 		return preparationPacketResult(request, "PATH_SCOPE_MISMATCH", "forbidden", "stop", nil, path), nil
 	}
+	if err := preparationRejectReparsePath(evidenceRoot, path); err != nil {
+		return preparationPacketResult(request, "PATH_SCOPE_MISMATCH", "forbidden", "stop", nil, path), nil
+	}
 	b, err := os.ReadFile(path)
 	if err != nil {
 		if strings.TrimSpace(stringPayload(request.Payload, "parent_transfer_hint")) != "" {
@@ -196,11 +199,52 @@ func writePreparation(root, out string, p model.PreparationPacket) error {
 	if info, err := os.Lstat(full); err == nil && info.Mode()&os.ModeSymlink != 0 {
 		return fmt.Errorf("output symlink")
 	}
+	if err := preparationRejectReparsePath(root, full); err != nil {
+		return err
+	}
 	if err := os.MkdirAll(filepath.Dir(full), 0755); err != nil {
+		return err
+	}
+	if err := preparationRejectReparsePath(root, full); err != nil {
 		return err
 	}
 	b, _ := json.MarshalIndent(p, "", "  ")
 	return os.WriteFile(full, append(b, '\n'), 0644)
+}
+
+func preparationRejectReparsePath(root, target string) error {
+	root, target = filepath.Clean(root), filepath.Clean(target)
+	if !filepath.IsAbs(root) || !filepath.IsAbs(target) {
+		return fmt.Errorf("path outside declared root")
+	}
+	rel, err := filepath.Rel(root, target)
+	if err != nil {
+		return err
+	}
+	current := root
+	if reparse, err := preparationPathReparse(current); err == nil && reparse {
+		return fmt.Errorf("reparse root")
+	}
+	for _, part := range strings.Split(rel, string(os.PathSeparator)) {
+		if part == "." || part == "" {
+			continue
+		}
+		current = filepath.Join(current, part)
+		if _, err := os.Lstat(current); os.IsNotExist(err) {
+			break
+		}
+		if err != nil {
+			return err
+		}
+		reparse, err := preparationPathReparse(current)
+		if err != nil {
+			return err
+		}
+		if reparse {
+			return fmt.Errorf("reparse point in preparation path")
+		}
+	}
+	return nil
 }
 
 func validPreparationPacketPath(root, path string) bool {
@@ -294,10 +338,16 @@ func preparationEvidenceRoot(root string, payload map[string]any, create bool) (
 	if !explicit && !withinRoot(root, resolvedAncestor) {
 		return "", fmt.Errorf("evidence root outside workspace")
 	}
+	if err := preparationRejectReparsePath(ancestor, v); err != nil {
+		return "", err
+	}
 	if create {
 		if err := os.MkdirAll(v, 0755); err != nil {
 			return "", err
 		}
+	}
+	if err := preparationRejectReparsePath(ancestor, v); err != nil {
+		return "", err
 	}
 	info, err := os.Stat(v)
 	if err != nil || !info.IsDir() {
