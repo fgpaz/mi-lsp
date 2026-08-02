@@ -34,10 +34,12 @@ Commands operate directly against the skills root and catalog JSON
 
 func newSkillsIndexCommand(state *rootState) *cobra.Command {
 	var (
-		skillsRoot     string
-		catalogPath    string
-		seedPath       string
-		withEmbeddings bool
+		skillsRoot                                 string
+		catalogPath                                string
+		seedPath                                   string
+		withEmbeddings                             bool
+		preparationOutput, workspace, evidenceRoot string
+		scope                                      []string
 	)
 	cmd := &cobra.Command{
 		Use:   "index",
@@ -55,10 +57,16 @@ func newSkillsIndexCommand(state *rootState) *cobra.Command {
 			})
 			opts := state.queryOptions(cmd, "skills.index", nil)
 			if err != nil {
+				receiptItems := []any{}
+				if receipt, receiptErr := skills.WritePreparationReceipt(preparationOutput, workspace, evidenceRoot, scope, "", err); receiptErr != nil {
+					return receiptErr
+				} else if receipt != nil {
+					receiptItems = append(receiptItems, map[string]any{"preparation_receipt": receipt})
+				}
 				if printErr := state.printEnvelope(model.Envelope{
 					Ok:       false,
 					Backend:  "skills",
-					Items:    []any{},
+					Items:    receiptItems,
 					Warnings: []string{err.Error()},
 					Error: &model.EnvelopeError{
 						Code:    "skills_index_failed",
@@ -73,6 +81,11 @@ func newSkillsIndexCommand(state *rootState) *cobra.Command {
 			}
 
 			items := make([]any, 0, 1)
+			if receipt, receiptErr := skills.WritePreparationReceipt(preparationOutput, workspace, evidenceRoot, scope, path, nil); receiptErr != nil {
+				return receiptErr
+			} else if receipt != nil {
+				items = append(items, map[string]any{"preparation_receipt": receipt})
+			}
 			items = append(items, map[string]any{
 				"catalog_path":    path,
 				"skills_root":     cat.SkillsRoot,
@@ -109,6 +122,10 @@ func newSkillsIndexCommand(state *rootState) *cobra.Command {
 	cmd.Flags().StringVar(&catalogPath, "catalog", "", "Catalog JSON path (default: $HOME/.mi-lsp/skills/catalog.json or MI_LSP_SKILLS_CATALOG)")
 	cmd.Flags().StringVar(&seedPath, "seed", "", "Optional seed CSV path (default: embedded seed)")
 	cmd.Flags().BoolVar(&withEmbeddings, "with-embeddings", false, "Best-effort embedding of indexed skill text")
+	cmd.Flags().StringVar(&preparationOutput, "preparation-output", "", "Optional portable preparation receipt path")
+	cmd.Flags().StringVar(&workspace, "workspace", "", "Workspace metadata for preparation receipt")
+	cmd.Flags().StringVar(&evidenceRoot, "evidence-root", "", "Evidence root metadata for preparation receipt")
+	cmd.Flags().StringSliceVar(&scope, "scope", nil, "Scope metadata for preparation receipt")
 	return cmd
 }
 
