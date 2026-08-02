@@ -226,9 +226,7 @@ func withinRootPhysical(root, path string) bool {
 	return withinRoot(r, candidate)
 }
 func validPreparationPacket(p model.PreparationPacket) bool {
-	legacy := strings.HasPrefix(p.Schema, "mi-lsp-preparation/")
-	compat := p.Compatibility == "current" || p.Compatibility == "legacy" || p.Compatibility == ""
-	return legacy && compat && p.Status == "ready" && p.Workspace.CanonicalRoot != "" && strings.HasPrefix(p.Workspace.IdentityDigest, "sha256:") && strings.HasPrefix(p.Task.Digest, "sha256:") && p.Task.Intent != "" && p.Scope.ReadOnly && len(p.Scope.DeniedClasses) > 0 && normalizedPreparationPaths(p.Scope.AllowedPaths) && !p.Lineage.CreatedAt.IsZero() && !p.Lineage.ExpiresAt.IsZero() && strings.HasPrefix(p.Semantic.GovernanceDigest, "sha256:") && (p.Semantic.IndexDigest != "" && (p.Semantic.IndexDigest == "unavailable" || strings.HasPrefix(p.Semantic.IndexDigest, "sha256:") || strings.TrimSpace(p.Semantic.IndexDigest) != ""))
+	return p.Schema == model.PreparationSchema && p.Compatibility == "current" && p.Status == "ready" && p.Workspace.CanonicalRoot != "" && strings.HasPrefix(p.Workspace.IdentityDigest, "sha256:") && strings.HasPrefix(p.Task.Digest, "sha256:") && p.Task.Intent != "" && p.Scope.ReadOnly && len(p.Scope.DeniedClasses) > 0 && normalizedPreparationPaths(p.Scope.AllowedPaths) && !p.Lineage.CreatedAt.IsZero() && !p.Lineage.ExpiresAt.IsZero() && strings.HasPrefix(p.Semantic.GovernanceDigest, "sha256:") && (p.Semantic.IndexDigest != "" && (p.Semantic.IndexDigest == "unavailable" || strings.HasPrefix(p.Semantic.IndexDigest, "sha256:") || strings.TrimSpace(p.Semantic.IndexDigest) != ""))
 }
 
 func normalizedPreparationPaths(paths []string) bool {
@@ -247,20 +245,48 @@ func preparationEvidenceRoot(root string, payload map[string]any, create bool) (
 	if v == "" {
 		return root, nil
 	}
-	if !filepath.IsAbs(v) {
+	explicit := filepath.IsAbs(v)
+	if !explicit {
 		v = filepath.Join(root, v)
 	}
 	v = filepath.Clean(v)
+	ancestor := v
+	for {
+		if _, err := os.Lstat(ancestor); err == nil {
+			break
+		}
+		parent := filepath.Dir(ancestor)
+		if parent == ancestor {
+			return "", fmt.Errorf("evidence root unavailable")
+		}
+		ancestor = parent
+	}
+	resolvedAncestor, err := filepath.EvalSymlinks(ancestor)
+	if err != nil {
+		return "", err
+	}
+	if !explicit && !withinRoot(root, resolvedAncestor) {
+		return "", fmt.Errorf("evidence root outside workspace")
+	}
 	if create {
 		if err := os.MkdirAll(v, 0755); err != nil {
 			return "", err
 		}
 	}
-	if info, err := os.Stat(v); err != nil || !info.IsDir() || !withinRootPhysical(root, v) {
+	info, err := os.Stat(v)
+	if err != nil || !info.IsDir() {
+		return "", fmt.Errorf("evidence root unavailable")
+	}
+	resolved, err := filepath.EvalSymlinks(v)
+	if err != nil {
+		return "", err
+	}
+	if !explicit && !withinRoot(root, resolved) {
 		return "", fmt.Errorf("evidence root outside workspace")
 	}
-	return filepath.EvalSymlinks(v)
+	return filepath.Clean(resolved), nil
 }
+
 func (a *App) refreshPreparation(root string, request model.CommandRequest) (model.Envelope, error) {
 	evidenceRoot, rootErr := preparationEvidenceRoot(root, request.Payload, true)
 	if rootErr != nil {

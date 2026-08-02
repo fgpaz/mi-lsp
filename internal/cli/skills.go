@@ -58,7 +58,7 @@ func newSkillsIndexCommand(state *rootState) *cobra.Command {
 			opts := state.queryOptions(cmd, "skills.index", nil)
 			if err != nil {
 				receiptItems := []any{}
-				if receipt, receiptErr := skills.WritePreparationReceipt(preparationOutput, workspace, evidenceRoot, scope, "", err); receiptErr != nil {
+				if receipt, receiptErr := skills.WritePreparationReceipt(preparationOutput, workspace, evidenceRoot, scope, preparationOutput, err); receiptErr != nil {
 					return receiptErr
 				} else if receipt != nil {
 					receiptItems = append(receiptItems, map[string]any{"preparation_receipt": receipt})
@@ -81,7 +81,7 @@ func newSkillsIndexCommand(state *rootState) *cobra.Command {
 			}
 
 			items := make([]any, 0, 1)
-			if receipt, receiptErr := skills.WritePreparationReceipt(preparationOutput, workspace, evidenceRoot, scope, path, nil); receiptErr != nil {
+			if receipt, receiptErr := skills.WritePreparationReceipt(preparationOutput, workspace, evidenceRoot, scope, preparationOutput, nil); receiptErr != nil {
 				return receiptErr
 			} else if receipt != nil {
 				items = append(items, map[string]any{"preparation_receipt": receipt})
@@ -390,4 +390,12 @@ func skillPlanToItem(plan *skills.SkillPlan) (map[string]any, error) {
 		return nil, err
 	}
 	return item, nil
+}
+
+// newSeedCommand is the top-level compatibility surface for portable skill seeding.
+func newSeedCommand(state *rootState) *cobra.Command {
+	cmd := newSkillsIndexCommand(state)
+	cmd.Use = "seed"
+	cmd.Short = "Seed and index a local skill catalog"
+	return cmd
 }

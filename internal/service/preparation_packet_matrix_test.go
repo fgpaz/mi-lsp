@@ -147,7 +147,8 @@ func TestPreparationPacketCoreTP02To14(t *testing.T) {
 			p.PacketDigest = packetDigest(*p)
 		}},
 		{"13 tamper rejected", "PACKET_TAMPERED", func(_ *testing.T, p *model.PreparationPacket, _ map[string]any) { p.Task.Intent = "tampered" }},
-		{"14 legacy evidence only compatibility", "PREPARATION_READY", func(_ *testing.T, p *model.PreparationPacket, _ map[string]any) {
+		{"14 legacy evidence-only fixture rejected by current parser", "PACKET_TAMPERED", func(_ *testing.T, p *model.PreparationPacket, _ map[string]any) {
+			p.Schema = "semantic-preparation-evidence/v1"
 			p.Compatibility = "legacy"
 			p.PacketDigest = packetDigest(*p)
 		}},

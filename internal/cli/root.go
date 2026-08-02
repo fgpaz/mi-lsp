@@ -165,6 +165,7 @@ func NewRootCommand() *cobra.Command {
 		newProbeCommand(state),
 		newDoctorCommand(state),
 		newSkillsCommand(state),
+		newSeedCommand(state),
 	)
 	return root
 }

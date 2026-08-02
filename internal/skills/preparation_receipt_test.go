@@ -8,12 +8,13 @@ import (
 )
 
 func TestTP15PreparationReceiptPortableMetadata(t *testing.T) {
-	p := filepath.Join(t.TempDir(), "receipt.json")
-	r, err := WritePreparationReceipt(p, "/workspace", "/evidence", []string{"src"}, "/packet.json", nil)
+	d := t.TempDir()
+	p := filepath.Join(d, "receipt.json")
+	r, err := WritePreparationReceipt(p, d, d, []string{"src"}, "/packet.json", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if r.Schema != PreparationReceiptSchema || r.PreparationID == "" || r.PacketPath != "/packet.json" || r.Digest == "" || !r.Transferable {
+	if r.Schema != PreparationReceiptSchema || r.PreparationID == "" || r.PacketPath != p || r.Digest == "" || !r.Transferable {
 		t.Fatalf("bad receipt: %+v", r)
 	}
 	b, _ := os.ReadFile(p)
@@ -27,12 +28,13 @@ func TestTP15PreparationReceiptPortableMetadata(t *testing.T) {
 }
 
 func TestTP16SeedFailureIsReparableEvidenceOnly(t *testing.T) {
-	p := filepath.Join(t.TempDir(), "receipt.json")
-	r, err := WritePreparationReceipt(p, "w", "e", nil, "", os.ErrNotExist)
+	d := t.TempDir()
+	p := filepath.Join(d, "receipt.json")
+	r, err := WritePreparationReceipt(p, d, d, nil, "", os.ErrNotExist)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !r.EvidenceOnly || r.Repairability != "reparable" || r.RecommendedAction == "" || !r.Transferable {
+	if !r.EvidenceOnly || r.Repairability != "refresh_required" || r.RecommendedAction != "refresh" || r.Transferable {
 		t.Fatalf("bad failure receipt: %+v", r)
 	}
 }
