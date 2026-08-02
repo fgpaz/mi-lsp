@@ -89,3 +89,5 @@ evidence:
 
 - Ningun RF se considera cerrado si no tiene al menos un caso positivo y uno negativo trazado a un `TP-*`.
 - Los smoke tests manuales del repo deben seguir esta matriz aunque todavia no exista automatizacion completa.
+
+| RF-QRY-019 | FL-QRY-01 | TP-QRY-PREPARATION | TC-QRY-PREPARATION-01,02,14,16,17 | TC-QRY-PREPARATION-03..13,15 | ready |

@@ -1,116 +1,99 @@
 ---
-id: RF-QRY-019
-title: Inventariar evidencia operacional preview-first con nav evidence inventory
-implements:
-  - internal/cli/nav.go
-  - internal/cli/root.go
-  - internal/service/app.go
-  - internal/service/evidence_inventory.go
-tests:
-  - internal/cli/nav_test.go
-  - internal/cli/root_test.go
-  - internal/service/evidence_inventory_test.go
----
-
-```yaml
+doc_id: RF-QRY-019
+title: Preparar y verificar evidencia semántica portable
+layer: RF
+status: ready
+source_schema: SDD-WIKI-SOURCE-v1
+wiki_source_protocol: SDD-WIKI-SOURCE-v1
+normative_format: toon
 harness_protocol: SDD-HARNESS-v1
-id: "RF-QRY-019"
-kind: "support-doc"
-audience: "llm-first"
+id: RF-QRY-019
+kind: canonical-artifact
+audience: llm-first
 imports:
   - '[[00_gobierno_documental]]'
   - '[[FL-QRY-01]]'
-  - '[[CT-NAV-EVIDENCE]]'
+  - '[[CT-NAV-PREPARATION]]'
+  - '[[TP-QRY-PREPARATION]]'
 exports:
-  - 'RF-QRY-019'
+  - RF-QRY-019
+
 agent_must_read:
   - .docs/wiki/00_gobierno_documental.md
-  - .docs/wiki/03_FL/FL-QRY-01.md
   - .docs/wiki/04_RF/RF-QRY-019.md
-  - .docs/wiki/09_contratos/CT-NAV-EVIDENCE.md
+  - .docs/wiki/09_contratos/CT-NAV-PREPARATION.md
+  - .docs/wiki/06_pruebas/TP-QRY-PREPARATION.md
 agent_may_edit:
   - .docs/wiki/04_RF/RF-QRY-019.md
 agent_must_not_edit:
   - .docs/wiki/_mi-lsp/read-model.toml
+  - .docs/auditoria/
 verify:
   - mi-lsp nav governance --workspace mi-lsp --format toon
   - mi-lsp nav wiki validate-harness --workspace mi-lsp --format toon
+  - mi-lsp nav wiki validate-source --workspace mi-lsp --ids RF-QRY-019 --format toon
 stop_if:
   - governance_blocked=true
   - harness_verdict=BLOCKED
+  - preparation_grants_mutation_authority
+  - packet_writes_outside_validated_scope
 evidence:
-  - .docs/wiki/04_RF/RF-QRY-019.md
-  - .docs/wiki/09_contratos/CT-NAV-EVIDENCE.md
+  - .docs/wiki/09_contratos/CT-NAV-PREPARATION.md
+  - .docs/wiki/06_pruebas/TP-QRY-PREPARATION.md
+  - .docs/auditoria/mi-lsp-portable-preparation-v1/session-contract.yaml
+  - .docs/auditoria/mi-lsp-portable-preparation-v1/current-handoff.md
+
+---
+
+# RF-QRY-019 — Ciclo de preparación portable
+
+## [rf-qry-019-harness]
+
+```toon
+block_id: rf-qry-019-harness
+source_protocol: SDD-WIKI-SOURCE-v1
+harness_protocol: SDD-HARNESS-v1
+id: RF-QRY-019
+kind: functional-requirement
+audience: llm-first
+imports: [.docs/wiki/00_gobierno_documental.md, .docs/wiki/03_FL/FL-QRY-01.md, .docs/wiki/09_contratos/CT-NAV-PREPARATION.md]
+exports: [RF-QRY-019]
+agent_must_read: [.docs/wiki/00_gobierno_documental.md, .docs/wiki/04_RF/RF-QRY-019.md, .docs/wiki/09_contratos/CT-NAV-PREPARATION.md, .docs/wiki/06_pruebas/TP-QRY-PREPARATION.md]
+agent_may_edit: [.docs/wiki/04_RF/RF-QRY-019.md]
+agent_must_not_edit: [.docs/wiki/_mi-lsp/read-model.toml, .docs/auditoria/]
+verify: [mi-lsp nav governance --workspace mi-lsp --format toon, mi-lsp nav wiki validate-harness --workspace mi-lsp --format toon, mi-lsp nav wiki validate-source --workspace mi-lsp --ids RF-QRY-019 --format toon]
+stop_if: [governance_blocked=true, harness_verdict=BLOCKED, preparation_grants_mutation_authority, packet_writes_outside_validated_scope]
+evidence: [.docs/wiki/09_contratos/CT-NAV-PREPARATION.md, .docs/wiki/06_pruebas/TP-QRY-PREPARATION.md, .docs/auditoria/mi-lsp-portable-preparation-v1/session-contract.yaml, .docs/auditoria/mi-lsp-portable-preparation-v1/current-handoff.md]
+source_of_truth: this
 ```
 
-# RF-QRY-019 - Inventariar evidencia operacional preview-first con nav evidence inventory
+## [rf-qry-019-behavior]
 
-## Descripcion
+```toon
+block_id: rf-qry-019-behavior
+source_protocol: SDD-WIKI-SOURCE-v1
+kind: normative-requirement
+source_of_truth: RF-QRY-019
+actor: Skill|Agente|CLI
+origin: FL-QRY-01
+status: ready
+intentos: [read_only, source_mutation, artifact_create, artifact_promote, evidence_write, temp_internal]
+commands: [mi-lsp prepare create, mi-lsp prepare verify, mi-lsp prepare refresh]
+default_ttl: 15m
+max_ttl: 24h
+result_codes: [PREPARATION_READY, PREPARATION_MISSING, TRANSFER_REQUIRED, PACKET_EXPIRED, WORKSPACE_MISMATCH, TASK_DIGEST_MISMATCH, GOVERNANCE_DRIFT, INDEX_DRIFT, PLAN_DRIFT, PATH_SCOPE_MISMATCH, PACKET_TAMPERED]
+ownership: mi-lsp emits|serializes|verifies|refreshes evidence only
+forbidden: authorize|promote|protected_write|broker
+verify: [validate-harness, validate-source]
+evidence: [.docs/auditoria/mi-lsp-portable-preparation-v1/session-contract.yaml, .docs/auditoria/mi-lsp-portable-preparation-v1/current-handoff.md]
+```
 
-Exponer `mi-lsp nav evidence inventory <query>` como superficie agent-first para decidir el camino de lectura mas barato y seguro antes de abrir evidencia pesada. El comando debe resolver primero el anchor wiki canonico y luego inventariar raices conocidas bajo `.docs/auditoria` y `.docs/raw` usando solo metadata.
+## Contrato funcional
 
-## Actor principal
+`prepare create` produce un paquete portable ligado al workspace explícito, tarea, gobernanza, índice y plan; `verify` comprueba esa identidad y `refresh` renueva evidencia sin cambiar autoridad. Un recibo seed opcional aporta únicamente metadatos y digests. La preparación nunca autoriza una mutación, promoción, escritura protegida ni broker.
 
-Skill / Agente / CLI
+El `--workspace` explícito hace la operación independiente del CWD. Solo se escriben paquetes en un `--output` explícito y validado bajo el workspace o una raíz de evidencia declarada; los targets son relativos y se rechazan absolutos, traversal, symlink/junction y escapes de la raíz de evidencia. El digest propio se excluye de la serialización canónica.
 
-## FL origen
+## Trazabilidad
 
-FL-QRY-01
-
-## Estado
-
-implemented
-
-## TP asociado
-
-TP-QRY
-
-## Entradas
-
-- `<query>`: descripcion de tarea, evidencia, decision o reentry que el agente intenta resolver.
-- `--workspace <alias>`: workspace a inspeccionar.
-- `--full`: expande presupuesto de inventario sin cambiar autoridad.
-- `--format compact|toon|json|yaml|text`: formato de salida.
-
-## Salida
-
-El envelope debe usar `backend=evidence.inventory`, `mode=preview|full`, y `items[0]` con:
-
-- `canonical`: anchor y mini pack canonico wiki-first.
-- `recommended_read_path`: `route`, `wiki_search`, `wiki_pack`, `multi_read`, `manifest_verdict`, `targeted_raw` o `full_raw`.
-- `context_loading_profile`: `CL0_NONE|CL1_EXACT|CL2_OWNER_PACK|CL3_SUBSYSTEM|CL4_FULL_RUNTIME`.
-- `evidence_loading_profile`: `EL0_NONE|EL1_MANIFEST_VERDICT|EL2_SUMMARY_ASSERTIONS|EL3_TARGETED_RAW|EL4_FULL_RAW`.
-- `evidence_roots`: raices de evidencia con `summary_first`, `artifacts`, `heavy_artifacts`, `authority`, `next_queries` y conteos de archivos/bytes.
-
-## Reglas
-
-- El comando no depende del daemon y debe funcionar en camino directo.
-- La wiki canonica siempre precede a `.docs/raw` y `.docs/auditoria` como autoridad de tarea.
-- `manifest.yaml`, `verdict.md`, `issues.yaml`, assertions, summaries y hashes se recomiendan antes que `turns`, `logs`, `screenshots`, prompts o planes raw.
-- Prompts, planes historicos, turns, logs y screenshots se clasifican como `evidence_not_canon`; no son plantillas ni fuente de verdad funcional.
-- El output no puede incluir cuerpos de prompts, transcripciones, logs, OCR de screenshots, secretos, emails ni PHI.
-- Las rutas se reportan relativas al workspace y no se sigue evidencia fuera del root.
-- Si el scan excede presupuesto, devuelve `truncated=true` y `continuation` hacia la misma query con `--full`.
-
-## Data model
-
-- `QueryEnvelope`
-- `RouteCanonicalLane`
-- `EvidenceInventoryResult`
-- `EvidenceInventoryRoot`
-- `EvidenceArtifactStats`
-
-## Trazabilidad de tests
-
-- Positivo: `TP-QRY / TC-QRY-135`
-- Positivo: `TP-QRY / TC-QRY-136`
-- Positivo: `TP-QRY / TC-QRY-137`
-- Negativo: `TP-QRY / TC-QRY-138`
-- Positivo: `TP-QRY / TC-QRY-139`
-
-## Fuera de alcance
-
-- Borrar, mover, compactar o reescribir evidencia.
-- Leer o resumir contenido raw por defecto.
-- Hacer `workspace status --full` como camino default de reentry.
-- Probar cumplimiento funcional; el inventario orienta lectura, no cierra validacion.
+Los 17 casos de `TP-QRY-PREPARATION` cubren aceptación positiva, rechazo fail-closed y reparación sin elevar autoridad.

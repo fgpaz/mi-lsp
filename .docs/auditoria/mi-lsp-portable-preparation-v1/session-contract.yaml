@@ -1,0 +1,12 @@
+schema: ae-session-contract/v1
+session_id: mi-lsp-portable-preparation-v1
+mode: STRICT
+tracker:
+  mode: none
+  persistence: local-only
+worker_decision: spawned
+worker_adapter: pi
+anchors: [RF-QRY-019, CT-NAV-PREPARATION, TP-QRY-PREPARATION]
+scope: documentation-and-audit-only
+code_edits: forbidden
+closure: reviewed

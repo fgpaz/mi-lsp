@@ -354,3 +354,5 @@ Actualizar `07` y/o `TECH-*` cuando cambie cualquiera de estos puntos:
 - perfiles de exploracion docs-first o evidence-first como `nav ask` y `nav service`
 - embeddings backends, profiles, configuracion, migracion o recall contract
 - identidad/generations graph-native, adapters, publicacion/recovery, bounded query, federacion, context optimizer o MILX
+
+- [TECH-SEMANTIC-PREPARATION.md](07_tech/TECH-SEMANTIC-PREPARATION.md) - migración portable de preparación semántica

@@ -1,0 +1,15 @@
+schema: ae-audit-hygiene/v1
+retention_ttl_days: 14
+hash_algorithm: sha256
+artifact_classes: [session-contract, validation-output, handoff]
+cleanup_status: complete
+verdict: PASS
+summary: Documental portable preparation evidence references are concrete and validated.
+docs_ready: PASS
+validation: [RF-QRY-019 PASS, CT-NAV-PREPARATION PASS, TP-QRY-PREPARATION PASS, TECH-SEMANTIC-PREPARATION PASS]
+file_hashes:
+  .docs/wiki/04_RF/RF-QRY-019.md: e9f18a80d11e33304d9d0fdedd844b1557784335aa4e9c908d591e890564c098
+  .docs/wiki/09_contratos/CT-NAV-PREPARATION.md: 1cad5d401cf1db80b7c295659f9b5f4026593f8629504eb982b9daab702cff6c
+  .docs/wiki/06_pruebas/TP-QRY-PREPARATION.md: 2d8bee780f044d14a5fb9cb78c72c24c8b73d1ce192c4b54609434440c26f429
+  .docs/auditoria/mi-lsp-portable-preparation-v1/session-contract.yaml: 8aade1c03678d50190a9a0099e8b7c1135735788a154b1dfbe8010b7d6393f9a
+  .docs/auditoria/mi-lsp-portable-preparation-v1/current-handoff.md: 2e03249d206225f23ab9c232a6353a55e666a74b18667eb4fe4ec90c825b060a

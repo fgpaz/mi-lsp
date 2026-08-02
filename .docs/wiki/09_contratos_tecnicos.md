@@ -419,3 +419,5 @@ Actualizar `09` y/o `CT-*` cuando cambie cualquiera de estos puntos:
 - contrato explainable de `nav ask` o shortcut publico `init`
 - embeddings backends, profiles, configuracion, API key env, contrato recall
 - comandos/selectores/budgets/envelopes graph-native, federation, MILX framing/manifest/capabilities o no-MCP/no-network
+
+- [CT-NAV-PREPARATION.md](09_contratos/CT-NAV-PREPARATION.md) - ciclo portable de preparación, verificación y refresh de evidencia
