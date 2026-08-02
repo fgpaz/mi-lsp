@@ -1,0 +1,12 @@
+schema: command-status/v1
+status: PASS
+candidate_ref: refs/heads/feat/portable-preparation-v1 (symbolic; resolve at gate)
+commands:
+  targeted_tests: passed
+  full_tests: passed
+  go_vet: passed
+  cli_build: passed
+  race_windows_arm64: not-applicable; unsupported platform classification
+  qa_matrix: 17/17 passed
+  skill_mirror_parity: 7/7 passed
+  docs_harness_source_crossrefs: recorded as PASS in closure packet

@@ -1,0 +1,2 @@
+command: go build ./cmd/mi-lsp
+result: PASS

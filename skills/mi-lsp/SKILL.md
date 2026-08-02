@@ -719,3 +719,7 @@ For graph/change explanations, organize the answer with the seven available sect
 ## Fallback
 
 Keep `mi-lsp` first. An external fallback is allowed only when the result carries one of these visible reasons: `unsupported_operation`, `unavailable_binary`, `invalid_workspace`, or `explicit_incomplete`. A timeout is never a silent fallback trigger. Preserve preview sections, partial evidence, candidates, omissions, and heuristic labels; report the limitation and use the exact expansion command when one is emitted. If none of the four reasons is present, do not leave the `mi-lsp` lane.
+
+## Portable preparation
+
+Use `mi-lsp prepare create`, `mi-lsp prepare verify`, and `mi-lsp prepare refresh` with an explicit `--workspace` and validated `--output`/evidence root. Seed receipts contain metadata and digests only; typed drift results identify repairable conditions without widening authority. Evidence is observational and never authorizes writes, protected mutations, or promotions.

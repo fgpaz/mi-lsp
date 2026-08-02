@@ -1,21 +1,19 @@
-schema: ae-session-contract/v1
-session_id: mi-lsp-portable-preparation-v1
-mode: STRICT
-tracker: {mode: none, persistence: local-only}
-worker_decision: spawned
-worker_adapter: pi
-worker_boundary: {role: worker, delegation_boundary: portable-preparation feature closure, root_worker_spawn_allowed: false, child_supervisor_required: true}
-anchors: [RF-QRY-019, CT-NAV-PREPARATION, TP-QRY-PREPARATION]
-scope: full portable-preparation feature (docs+code+tests+skills+audit)
-code_edits: true
-allowed_paths_count: 40
-allowed_paths_source: git diff --name-only origin/main...HEAD (exact sorted list)
-forbidden_paths: [protected paths, harness broker, edit-plan apply, persistence DB, unrelated paths]
-expected_scope: {changed_paths: 40, audit: 16, docs: 8, code: 9, changelog: 1, tests: 3, skills: 3}
-boundary: full portable-preparation feature only; no unrelated edits
-closure: reviewed
+schema: traceability-closure/v1
+status: PASS
 release_target: v0.7.0-pending-publication
-allowed_paths:
+anchors: [RF-QRY-019, CT-NAV-PREPARATION, TP-QRY-PREPARATION, TECH-SEMANTIC-PREPARATION]
+git_before: origin/main
+git_after: {candidate_ref: refs/heads/feat/portable-preparation-v1, resolve_at_gate: true}
+changed_paths_count: 40
+changed_paths_source: git diff --name-only origin/main...HEAD (exact sorted list)
+no_drift_snapshot: {origin_main_ancestor_required: true, worktree_clean: true, dynamic_excluded: [.pi], candidate_sha: symbolic-only}
+implementation_review: {reviewer_run: 541bd2bf, reviewed_ref: a449abf}
+implementation_evidence: [internal/cli/prepare.go, internal/service/prepare.go, internal/service/preparation_packet.go, internal/model/preparation.go, internal/skills/preparation_receipt.go]
+test_evidence: [internal/service/preparation_packet_matrix_test.go, internal/service/preparation_packet_test.go, internal/service/prepare_test.go, internal/skills/preparation_receipt_test.go]
+qa: {tests: 17/17 PASS}
+skill_parity: 7/7 PASS
+publication: v0.7.0 pending
+changed_paths:
   - .docs/auditoria/mi-lsp-portable-preparation-v1/assertions.yaml
   - .docs/auditoria/mi-lsp-portable-preparation-v1/audit-manifest.yaml
   - .docs/auditoria/mi-lsp-portable-preparation-v1/build.txt

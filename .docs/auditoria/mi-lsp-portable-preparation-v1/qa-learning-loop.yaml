@@ -1,0 +1,6 @@
+schema: qa-learning-loop/v1
+status: PASS
+learnings:
+  - reparse-point and Windows junction coverage must remain explicit (TP11)
+  - preparation_not_registered is a harness blocker, not a product authorization
+  - evidence and seed receipts never grant authority

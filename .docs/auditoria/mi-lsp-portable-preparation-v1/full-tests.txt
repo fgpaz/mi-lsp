@@ -1,0 +1,3 @@
+command: go test ./... -count=1
+result: PASS
+full suite completed successfully; detailed raw transcript intentionally not retained

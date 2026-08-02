@@ -2,7 +2,7 @@
 doc_id: RF-QRY-019
 title: Preparar y verificar evidencia semántica portable
 layer: RF
-status: ready
+status: implemented_and_verified
 source_schema: SDD-WIKI-SOURCE-v1
 wiki_source_protocol: SDD-WIKI-SOURCE-v1
 normative_format: toon
@@ -97,3 +97,20 @@ El `--workspace` explícito hace la operación independiente del CWD. Solo se es
 ## Trazabilidad
 
 Los 17 casos de `TP-QRY-PREPARATION` cubren aceptación positiva, rechazo fail-closed y reparación sin elevar autoridad.
+
+
+## Cierre v0.7.0 — implementación y evidencia
+
+```toon
+block_id: closure-v070-evidence
+status: implemented_and_verified
+automation: automated
+result: 17/17 PASS
+tp11_windows_junction: PASS
+implementation: [internal/cli/prepare.go, internal/service/prepare.go, internal/service/preparation_packet.go, internal/model/preparation.go, internal/skills/preparation_receipt.go]
+tests: [internal/service/preparation_packet_matrix_test.go, internal/service/preparation_packet_test.go, internal/service/prepare_test.go, internal/skills/preparation_receipt_test.go]
+evidence_root: .docs/auditoria/mi-lsp-portable-preparation-v1/
+review: 541bd2bf
+head: a449abf
+authority: evidence_never_authorizes_writes_or_promotions
+```

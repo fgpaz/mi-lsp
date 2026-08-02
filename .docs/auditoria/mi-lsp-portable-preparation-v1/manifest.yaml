@@ -1,0 +1,9 @@
+schema: qa-evidence-manifest/v1
+status: PASS
+result: 17/17 PASS
+tp11_windows_junction: PASS
+cases:
+  range: TP01-TP17
+  implementation: [internal/cli/prepare.go, internal/service/prepare.go, internal/service/preparation_packet.go, internal/model/preparation.go, internal/skills/preparation_receipt.go]
+  tests: [internal/service/preparation_packet_matrix_test.go, internal/service/preparation_packet_test.go, internal/service/prepare_test.go, internal/skills/preparation_receipt_test.go]
+  commands: [go test ./internal/service ./internal/skills -count=1 -v, go test ./... -count=1, go vet ./..., go build ./cmd/mi-lsp]

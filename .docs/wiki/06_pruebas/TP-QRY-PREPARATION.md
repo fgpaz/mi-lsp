@@ -2,7 +2,7 @@
 doc_id: TP-QRY-PREPARATION
 title: Pruebas de preparación semántica portable
 layer: TP
-status: ready
+status: implemented_and_verified
 source_schema: SDD-WIKI-SOURCE-v1
 wiki_source_protocol: SDD-WIKI-SOURCE-v1
 normative_format: toon
@@ -164,3 +164,20 @@ evidence: [.docs/auditoria/mi-lsp-portable-preparation-v1/session-contract.yaml,
 ```
 
 Cada caso conserva exactamente el nombre recibido en el handoff. El oráculo común exige `code`, `repairable` y `recommended_action`; el stop condition es fail-closed ante autoridad implícita, path inseguro, digest no verificable o evidencia ausente. La aceptación se traza a RF-QRY-019 y CT-NAV-PREPARATION.
+
+
+## Cierre v0.7.0 — implementación y evidencia
+
+```toon
+block_id: closure-v070-evidence
+status: implemented_and_verified
+automation: automated
+result: 17/17 PASS
+tp11_windows_junction: PASS
+implementation: [internal/cli/prepare.go, internal/service/prepare.go, internal/service/preparation_packet.go, internal/model/preparation.go, internal/skills/preparation_receipt.go]
+tests: [internal/service/preparation_packet_matrix_test.go, internal/service/preparation_packet_test.go, internal/service/prepare_test.go, internal/skills/preparation_receipt_test.go]
+evidence_root: .docs/auditoria/mi-lsp-portable-preparation-v1/
+review: 541bd2bf
+head: a449abf
+authority: evidence_never_authorizes_writes_or_promotions
+```

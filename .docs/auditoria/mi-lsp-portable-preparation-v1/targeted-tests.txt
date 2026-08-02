@@ -1,0 +1,4 @@
+targeted packages: internal/service, internal/skills
+command: go test ./internal/service ./internal/skills -count=1 -v
+result: PASS
+acceptance: TP01-TP17 17/17 PASS; TP11 Windows junction PASS

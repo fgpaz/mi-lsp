@@ -2,7 +2,7 @@
 doc_id: CT-NAV-PREPARATION
 title: Contrato de preparación semántica portable
 layer: CT
-status: ready
+status: implemented_and_verified
 source_schema: SDD-WIKI-SOURCE-v1
 wiki_source_protocol: SDD-WIKI-SOURCE-v1
 normative_format: toon
@@ -112,3 +112,20 @@ evidence: [.docs/auditoria/mi-lsp-portable-preparation-v1/session-contract.yaml,
 ``` 
 ```
 La versión `mi-lsp-preparation/v1` es un sobre portable y determinista. `create` emite, `verify` valida y `refresh` vuelve a emitir evidencia; ninguna operación concede autoridad de escritura o promoción. Los fallos deben declarar si son reparables y una acción recomendada. La compatibilidad legacy conserva lectura, pero no amplía permisos.
+
+
+## Cierre v0.7.0 — implementación y evidencia
+
+```toon
+block_id: closure-v070-evidence
+status: implemented_and_verified
+automation: automated
+result: 17/17 PASS
+tp11_windows_junction: PASS
+implementation: [internal/cli/prepare.go, internal/service/prepare.go, internal/service/preparation_packet.go, internal/model/preparation.go, internal/skills/preparation_receipt.go]
+tests: [internal/service/preparation_packet_matrix_test.go, internal/service/preparation_packet_test.go, internal/service/prepare_test.go, internal/skills/preparation_receipt_test.go]
+evidence_root: .docs/auditoria/mi-lsp-portable-preparation-v1/
+review: 541bd2bf
+head: a449abf
+authority: evidence_never_authorizes_writes_or_promotions
+```

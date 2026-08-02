@@ -114,3 +114,13 @@ mi-lsp nav multi-read src/Service.cs:1-100 src/Controller.cs:50-150 src/Model.cs
 ```
 
 If that still implies too many separate calls, switch to `nav batch`.
+
+## Portable preparation recipe
+
+```powershell
+mi-lsp prepare create --workspace <alias> --output <validated-evidence-root>
+mi-lsp prepare verify --workspace <alias> --input <packet>
+mi-lsp prepare refresh --workspace <alias> --input <packet> --output <validated-evidence-root>
+```
+
+Keep seed receipts and catalogs isolated with explicit roots. Treat typed drift as repair guidance only: preparation evidence never authorizes writes, protected mutations, or promotions.

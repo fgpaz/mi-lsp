@@ -59,3 +59,20 @@ evidence: [.docs/auditoria/mi-lsp-portable-preparation-v1/]
 ```
 
 La preparación portable migra el paquete local de readiness a `mi-lsp-preparation/v1`; CT-NAV-PREPARATION define serialización, seguridad y códigos, RF-QRY-019 define el ciclo y TP-QRY-PREPARATION define sus 17 casos.
+
+
+## Cierre v0.7.0 — implementación y evidencia
+
+```toon
+block_id: closure-v070-evidence
+status: implemented_and_verified
+automation: automated
+result: 17/17 PASS
+tp11_windows_junction: PASS
+implementation: [internal/cli/prepare.go, internal/service/prepare.go, internal/service/preparation_packet.go, internal/model/preparation.go, internal/skills/preparation_receipt.go]
+tests: [internal/service/preparation_packet_matrix_test.go, internal/service/preparation_packet_test.go, internal/service/prepare_test.go, internal/skills/preparation_receipt_test.go]
+evidence_root: .docs/auditoria/mi-lsp-portable-preparation-v1/
+review: 541bd2bf
+head: a449abf
+authority: evidence_never_authorizes_writes_or_promotions
+```

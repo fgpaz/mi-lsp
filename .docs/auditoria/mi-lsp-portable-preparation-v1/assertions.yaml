@@ -1,0 +1,15 @@
+schema: qa-assertions/v1
+verdict: PASS
+assertions:
+  - id: A01
+    claim: portable create verify refresh are implemented
+    result: PASS
+  - id: A02
+    claim: typed drift and legacy compatibility are covered
+    result: PASS
+  - id: A03
+    claim: seed receipt and catalog isolation remain non-authoritative
+    result: PASS
+  - id: A04
+    claim: TP01-TP17 automated acceptance
+    result: PASS

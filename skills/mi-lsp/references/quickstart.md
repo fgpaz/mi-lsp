@@ -112,3 +112,7 @@ For source validation, `nav wiki validate-source` returns `BLOCKED` with `scope=
 For Go files, `nav context` / `nav refs` may use `gopls` when it is installed. If `gopls` is unavailable, accept only the runtime’s visible catalog/text partial evidence; do not silently switch tools.
 
 Allowed external fallback reasons are only `unsupported_operation`, `unavailable_binary`, `invalid_workspace`, and `explicit_incomplete`. `nav edit-plan` is a guarded patch preview/apply surface and is not a fallback for `nav prepare`. Do not use `rg`, `Grep`, `Glob`, or broad reads before `mi-lsp`; leave the lane only for one of those four visible reasons. Use 180/300-second soft/hard watchdogs, at most two smaller same-context recoveries without unchanged retry, six practical lanes with exclusive `allowed_paths`, fail-closed joins, fresh verification, and redacted evidence without prompts, transcripts, secrets, PII, PHI, argv, or raw patterns. Do not invent model/provider metadata.
+
+## Portable preparation
+
+For portable readiness, run `mi-lsp prepare create|verify|refresh --workspace <alias>` with an explicit output/evidence root. Seed receipts are metadata/digest inputs only; typed drift can be repaired, but evidence never authorizes writes or promotions.

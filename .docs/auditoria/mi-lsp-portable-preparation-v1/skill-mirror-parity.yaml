@@ -1,0 +1,33 @@
+schema: skill-mirror-parity/v1
+source_root: skills/mi-lsp
+mirror_root: C:/Users/fgpaz/.agents/skills/mi-lsp
+byte_identical: true
+files:
+  - path: SKILL.md
+    source_sha256: 31fa3c49c35a32099fa3c4b9cc8157af4776454ea28bc94afd67c5e0b8f06e06
+    mirror_sha256: 31fa3c49c35a32099fa3c4b9cc8157af4776454ea28bc94afd67c5e0b8f06e06
+    byte_identical: true
+  - path: agents/openai.yaml
+    source_sha256: ad756ad72d25621fe79c0e461df1c34fc2c362709edf9b2689f85a504b7bd16d
+    mirror_sha256: ad756ad72d25621fe79c0e461df1c34fc2c362709edf9b2689f85a504b7bd16d
+    byte_identical: true
+  - path: references/compound-commands.md
+    source_sha256: 5d8917838595664e33347fc320232392f4d16df9abb7009222ea81961616ea67
+    mirror_sha256: 5d8917838595664e33347fc320232392f4d16df9abb7009222ea81961616ea67
+    byte_identical: true
+  - path: references/linux-worker-packaging-drift.md
+    source_sha256: 43a4be13afb1f2c441d54ad32a37821c04f20a302b6ee8413512d4e1a3bd0575
+    mirror_sha256: 43a4be13afb1f2c441d54ad32a37821c04f20a302b6ee8413512d4e1a3bd0575
+    byte_identical: true
+  - path: references/quickstart.md
+    source_sha256: c44f96f17ecc61b3be24ed28f11fead1cb87825168913256f41e0155a388ea7e
+    mirror_sha256: c44f96f17ecc61b3be24ed28f11fead1cb87825168913256f41e0155a388ea7e
+    byte_identical: true
+  - path: references/recipes.md
+    source_sha256: 07cada63e0ff402567be564f262d405100206cbfed32eb9d713be1f564de239c
+    mirror_sha256: 07cada63e0ff402567be564f262d405100206cbfed32eb9d713be1f564de239c
+    byte_identical: true
+  - path: references/runtime-drift.md
+    source_sha256: b758175818cd7f4f5d5978055943e94ad4a3f8d0dacb01bed012aeda60e18815
+    mirror_sha256: b758175818cd7f4f5d5978055943e94ad4a3f8d0dacb01bed012aeda60e18815
+    byte_identical: true

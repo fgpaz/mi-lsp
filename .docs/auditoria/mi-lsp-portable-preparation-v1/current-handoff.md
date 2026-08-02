@@ -1,9 +1,7 @@
 # Handoff actual
 
-- Alcance: artefactos RF/CT/TP y mapeo TECH para preparaci髇 portable.
-- Anclas: RF-QRY-019, CT-NAV-PREPARATION, TP-QRY-PREPARATION.
-- Decisi髇: `mi-lsp` solo emite, serializa, verifica y refresca evidencia; nunca autoriza, promueve, escribe protegido ni act鷄 como broker.
-- Tracker: none; modo STRICT; worker decision spawned; adapter Pi.
-- docs_ready: PASS.
-- Validaci髇: reindex docs-only PASS; RF-QRY-019, CT-NAV-PREPARATION, TP-QRY-PREPARATION y TECH-SEMANTIC-PREPARATION harness/source PASS. Validaci髇 source global bloqueada por existentes fuera de alcance.
-- Evidencia concreta: `.docs/auditoria/mi-lsp-portable-preparation-v1/session-contract.yaml`, `.docs/auditoria/mi-lsp-portable-preparation-v1/current-handoff.md`.
+- Alcance: feature completa de preparaci贸n portable (docs+code+tests+skills+audit), 40 rutas exactas.
+- Cierre: `git_before: origin/main`; candidato simb贸lico `refs/heads/feat/portable-preparation-v1`, resoluble 煤nicamente en el gate.
+- Revisi贸n: implementaci贸n `541bd2bf` sobre `a449abf`; QA 17/17 PASS; paridad de skills 7/7 PASS.
+- Evidencia: `.docs/auditoria/mi-lsp-portable-preparation-v1/`; v0.7.0 pendiente de publicaci贸n.
+- No se incluyen SHA del candidato actual; `.pi` din谩mico queda excluido del snapshot de limpieza.
