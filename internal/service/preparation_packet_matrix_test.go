@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"github.com/fgpaz/mi-lsp/internal/model"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
 	"time"
@@ -44,7 +45,59 @@ func matrixVerify(t *testing.T, app *App, root, name string, p model.Preparation
 	return env.Items.([]model.PreparationResult)[0]
 }
 func TestPreparationPacketCoreTP01SeparateChildProcess(t *testing.T) {
-	t.Skip("CLI subprocess coverage is environment-dependent; packet is portable JSON")
+	const childEnv = "MI_LSP_PREPARATION_TP01_CHILD"
+	if os.Getenv(childEnv) == "1" {
+		root := os.Getenv("MI_LSP_PREPARATION_TP01_ROOT")
+		packetPath := os.Getenv("MI_LSP_PREPARATION_TP01_PACKET")
+		if root == "" || packetPath == "" {
+			t.Fatal("child preparation fixture is incomplete")
+		}
+		app := New(root, nil)
+		env, err := app.verifyPreparation(root, model.CommandRequest{
+			Context: model.QueryOptions{Workspace: "neutral-child"},
+			Payload: map[string]any{
+				"packet_path":   packetPath,
+				"evidence_root": root,
+				"task":          "task",
+			},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		results := env.Items.([]model.PreparationResult)
+		if len(results) != 1 || results[0].Code != "PREPARATION_READY" || !results[0].EvidenceOnly || !results[0].Transferable {
+			t.Fatalf("child verification result = %+v", results)
+		}
+		return
+	}
+
+	app, root, name, _ := packetMatrixFixture(t)
+	packetPath := filepath.Join(root, "portable-preparation.json")
+	env, err := app.Execute(t.Context(), model.CommandRequest{
+		Operation: "prepare.create",
+		Context:   model.QueryOptions{Workspace: name},
+		Payload: map[string]any{
+			"task":           "task",
+			"intent":         "read_only",
+			"output":         packetPath,
+			"evidence_root":  root,
+			"affected_paths": []string{"src/Hello.cs"},
+		},
+	})
+	if err != nil || !env.Ok {
+		t.Fatalf("parent create failed: env=%+v err=%v", env, err)
+	}
+
+	cmd := exec.Command(os.Args[0], "-test.run=^TestPreparationPacketCoreTP01SeparateChildProcess$")
+	cmd.Dir = t.TempDir()
+	cmd.Env = append(os.Environ(),
+		childEnv+"=1",
+		"MI_LSP_PREPARATION_TP01_ROOT="+root,
+		"MI_LSP_PREPARATION_TP01_PACKET="+packetPath,
+	)
+	if output, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("neutral child verification failed: %v\n%s", err, output)
+	}
 }
 func TestPreparationPacketCoreTP02To14(t *testing.T) {
 	tests := []struct {
