@@ -225,8 +225,10 @@ func incrementalIndexWithGraphProgress(ctx context.Context, workspaceRoot, gener
 			}
 			return Result{}, fmt.Errorf("incremental graph observation failed: %w", err)
 		}
+		// All-partial / gated observations yield zero stageable batches; catalog incremental
+		// must still proceed with graph stale (see full index path).
 		if len(graphBatches) == 0 && !explicitlyNonGraphProject(projectFile) {
-			return Result{}, fmt.Errorf("incremental graph observation produced no publishable generation")
+			graphWarnings = append(graphWarnings, "graph observation produced no stageable complete batch; publishing catalog with graph stale")
 		}
 	}
 

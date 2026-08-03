@@ -137,6 +137,9 @@ static void AssertGraphInvariants(GraphObservationBatch observation)
     var nodeRefs = observation.Nodes.Select(node => node.Ref).ToHashSet(StringComparer.Ordinal);
     Require(observation.Nodes.Select(node => node.Ref).Distinct(StringComparer.Ordinal).Count() == observation.Nodes.Count, "node refs collide");
     Require(observation.Nodes.All(node => node.Ref.StartsWith("roslyn:", StringComparison.Ordinal) && node.Ref[7..].Length == 64 && node.Ref[7..].All(Uri.IsHexDigit)), "node ref is not full SHA-256");
+    // tedi-agent-mcp regression: empty Name / bare DocCommentId "T:" must never become nodes
+    Require(observation.Nodes.All(node => !string.IsNullOrWhiteSpace(node.DisplayName) && node.DisplayName.Length <= 256 && node.DisplayName.All(ch => !char.IsControl(ch))), "node display_name is empty or unbounded");
+    Require(observation.Nodes.All(node => !string.IsNullOrWhiteSpace(node.Key.SemanticIdentity) && node.Key.SemanticIdentity is not ("T:" or "M:" or "F:" or "P:" or "E:" or "N:")), "node semantic_identity is bare/incomplete");
     foreach (var edge in observation.Edges)
     {
         Require(nodeRefs.Contains(edge.FromRef) && nodeRefs.Contains(edge.ToRef), "dangling edge endpoint");
@@ -329,6 +332,16 @@ try
     Require(topLevelObservation.Completeness == "partial", "top-level compiler failure was accepted as complete");
     Require(topLevelObservation.Omissions.Any(item => item.ReasonCode == "compiler_errors"), "top-level compiler failure lost typed omission");
     Require(topLevelObservation.Unresolved.Any(item => item.ReasonCode == "source_endpoint_missing"), "top-level missing declaration was not preserved as unresolved");
+    AssertGraphInvariants(topLevelObservation);
+
+    // Incomplete/error type symbols (empty Name, DocCommentId "T:") must be omitted, not sealed as nodes.
+    var incompleteTypeRoot = CreateFixture("incomplete-type", "namespace Fixture; public class Broken : MissingBase { public void Run() { } }");
+    roots.Add(incompleteTypeRoot);
+    var incompleteTypeObservation = await Observe(incompleteTypeRoot, Path.Combine(incompleteTypeRoot, "Fixture.csproj"));
+    Require(incompleteTypeObservation.Completeness == "partial", "incomplete base type fixture was accepted as complete");
+    Require(incompleteTypeObservation.Nodes.All(node => !string.IsNullOrWhiteSpace(node.DisplayName)), "empty display_name node escaped producer filter");
+    Require(incompleteTypeObservation.Nodes.All(node => node.Key.SemanticIdentity is not ("T:" or "M:")), "bare semantic_identity node escaped producer filter");
+    AssertGraphInvariants(incompleteTypeObservation);
 
     var multiFileRoot = CreateFixture("multi-file", "namespace Fixture; public partial class Split { public void First() { } }");
     roots.Add(multiFileRoot);

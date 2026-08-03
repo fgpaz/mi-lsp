@@ -2,7 +2,6 @@ package indexer
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -82,8 +81,11 @@ func indexWorkspaceWithGraphProgress(ctx context.Context, root string, clean boo
 	if err != nil {
 		return Result{}, err
 	}
+	// Complete-only staging may omit every Roslyn/Go batch (e.g. all projects partial due to
+	// compiler diagnostics). That is not a catalog failure: publish files/symbols/docs and mark
+	// graph stale. ObserveGraph already hard-fails on invalid seals / missing entrypoints.
 	if len(graphBatches) == 0 && !explicitlyNonGraphProject(projectFile) {
-		return Result{}, errors.New("graph observation produced no publishable generation")
+		warnings = append(warnings, "graph observation produced no stageable complete batch; publishing catalog with graph stale")
 	}
 	warnings = append(warnings, graphWarnings...)
 

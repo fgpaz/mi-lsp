@@ -7,6 +7,19 @@ and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2
 
 ## [Unreleased]
 
+## [0.7.1] - 2026-08-03
+
+### Fixed
+
+- Roslyn graph observation no longer emits incomplete/error type declarations with empty `display_name` or bare DocCommentId prefixes (`T:`, `M:`, …). Those nodes previously hard-failed index with `GPH_OBS_NODE_INVALID` / `selector_validation` on multi-project C# workspaces (for example multi-entrypoint csharp+typescript monorepos).
+- Full and incremental index now publish the catalog when every Roslyn/Go graph batch is partial/non-stageable (graph marked stale) instead of failing with `graph observation produced no publishable generation`.
+- Contract and model tests cover empty display names, project/module binding, and incomplete-type observation filtering.
+
+### Notes
+
+- **Worker refresh required**: install/update replaces `MiLsp.Worker` under the host RID (`mi-lsp worker install` or the release archive `workers/<rid>/`).
+- Graph native claims still require at least one **complete** Roslyn/Go observation; partial projects (for example open compiler diagnostics) remain omitted by design.
+
 ## [0.6.1] - 2026-08-01
 
 ### Fixed

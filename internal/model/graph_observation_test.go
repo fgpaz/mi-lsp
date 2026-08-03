@@ -155,6 +155,31 @@ func observationTestBatch() GraphObservationBatch {
 	return GraphObservationBatch{SchemaVersion: 1, WorkspaceIdentity: "https://github.com/acme/Repo", RepositoryIdentity: "github.com/acme/Repo", Backend: "roslyn", BackendVersion: "4.14", ExtractorVersion: "extractor-1", ProjectOrModule: "Src/App", SourceFingerprint: digestBytes([]byte("source")), ConfigFingerprint: digestBytes([]byte("config")), Completeness: GraphCompletenessComplete, Capabilities: []GraphObservationCapability{{Backend: "roslyn", Capability: "declarations", State: GraphObservationStatusStable}}, Coverage: []GraphObservationCoverage{{Backend: "roslyn", Capability: "declarations", Eligible: 1, Observed: 1}}, Nodes: []GraphObservationNode{{Ref: "N1", Key: key, DisplayName: "Widget", SourceDigest: nodeDigest, ClaimStatus: GraphRecordExact, Resolution: "roslyn"}}, Evidence: []GraphObservationEvidence{{Ref: "EV1", NodeRef: "N1", SourceURI: "Src/App/a.cs", Range: &r, Backend: "roslyn", ExtractorVersion: "extractor-1", SourceDigest: nodeDigest, ObservedDigest: digestBytes([]byte("observed")), ClaimKind: "declaration", Status: GraphRecordExact}}}
 }
 
+func TestGraphObservationNodeRejectsEmptyDisplayName(t *testing.T) {
+	// Regression for tedi-agent-mcp: Roslyn error/incomplete types with Name="" and
+	// DocCommentId "T:" must not seal (GPH_OBS_NODE_INVALID / display_name bounded).
+	b := observationTestBatch()
+	b.Nodes[0].DisplayName = ""
+	err := SealGraphObservationBatch(&b)
+	var ge *GraphObservationError
+	if err == nil || !errors.As(err, &ge) || ge.Code != "GPH_OBS_NODE_INVALID" {
+		t.Fatalf("got %v, want GPH_OBS_NODE_INVALID", err)
+	}
+	if ge.Message != "node violates canonical batch or matrix" {
+		t.Fatalf("message = %q", ge.Message)
+	}
+}
+
+func TestGraphObservationNodeProjectOrModuleMustMatchBatch(t *testing.T) {
+	b := observationTestBatch()
+	b.Nodes[0].Key.ProjectOrModule = "Src/Other.csproj"
+	err := SealGraphObservationBatch(&b)
+	var ge *GraphObservationError
+	if err == nil || !errors.As(err, &ge) || ge.Code != "GPH_OBS_NODE_INVALID" || ge.Message != "node violates canonical batch or matrix" {
+		t.Fatalf("got %v", err)
+	}
+}
+
 func TestGraphObservationContractAndRuntimeExclusion(t *testing.T) {
 	b := observationTestBatch()
 	if err := SealGraphObservationBatch(&b); err != nil {

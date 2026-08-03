@@ -593,7 +593,15 @@ public sealed class RoslynService
             var kind = Kind(symbol);
             if (string.IsNullOrWhiteSpace(kind)) return;
             symbol = CanonicalSymbol(symbol);
-            var identity = SemanticIdentity(symbol);
+            // Compiler/error and incomplete symbols can surface as type declarations with empty
+            // Name and DocCommentId "T:". Emitting them breaks GPH_OBS_NODE_INVALID (display_name
+            // must be bounded; incomplete identities collide on the same ref).
+            if (!IsObservableDeclarationSymbol(symbol, out var identity, out var displayName))
+            {
+                Partial = true;
+                AddOmission(path, kind, "unobservable_declaration", "inspect_candidates");
+                return;
+            }
             var reference = "roslyn:" + Sha256(identity);
             if (_refIdentities.TryGetValue(reference, out var registeredIdentity) && !string.Equals(registeredIdentity, identity, StringComparison.Ordinal))
             {
@@ -618,9 +626,46 @@ public sealed class RoslynService
 
             _refs[symbol] = reference;
             _refIdentities[reference] = identity;
-            _batch.Nodes.Add(new GraphObservationNode { Ref = reference, DisplayName = symbol.Name, SourceDigest = digest, Key = new GraphNodeKey { RepositoryIdentity = _batch.RepositoryIdentity, ProjectOrModule = _batch.ProjectOrModule, OwnerPath = path, SymbolKind = kind, SemanticIdentity = identity } });
+            _batch.Nodes.Add(new GraphObservationNode { Ref = reference, DisplayName = displayName, SourceDigest = digest, Key = new GraphNodeKey { RepositoryIdentity = _batch.RepositoryIdentity, ProjectOrModule = _batch.ProjectOrModule, OwnerPath = path, SymbolKind = kind, SemanticIdentity = identity } });
             AddEvidence(reference, null, path, location, digest, "declaration", identity);
             if (symbol.ContainingSymbol is { } containing && containing is not INamespaceSymbol { IsGlobalNamespace: true }) AddRelation(containing, symbol, "contains", location, path, digest);
+        }
+        /// <summary>
+        /// Returns false for error/incomplete symbols that cannot form a canonical observation node
+        /// (empty display name or bare DocCommentId prefixes like "T:").
+        /// </summary>
+        internal static bool IsObservableDeclarationSymbol(ISymbol symbol, out string identity, out string displayName)
+        {
+            identity = "";
+            displayName = "";
+            if (symbol is null || symbol is IErrorTypeSymbol)
+            {
+                return false;
+            }
+            displayName = symbol.Name?.Trim() ?? "";
+            if (displayName.Length == 0 || displayName.Length > 256)
+            {
+                return false;
+            }
+            for (var i = 0; i < displayName.Length; i++)
+            {
+                if (char.IsControl(displayName[i]))
+                {
+                    return false;
+                }
+            }
+            identity = SemanticIdentity(symbol)?.Trim() ?? "";
+            if (identity.Length == 0)
+            {
+                return false;
+            }
+            // Bare documentation prefixes without a type/member payload are not stageable identities.
+            if (identity is "T:" or "M:" or "F:" or "P:" or "E:" or "N:" ||
+                (identity.Length <= 2 && identity.EndsWith(':')))
+            {
+                return false;
+            }
+            return true;
         }
         private void AddTypeRelations()
         {

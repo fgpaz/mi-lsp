@@ -461,6 +461,9 @@ mi-lsp workspace doctor --format toon
 If the release changes CLI/daemon telemetry or `admin export`, refresh the `mi-lsp` binary and restart the daemon before trusting new fields in `access_events`.
 If `daemon status` reports missing executable metadata, an `executable_sha256` mismatch, or stale-daemon guidance, rebuild/install the CLI and run `mi-lsp daemon restart` before trusting daemon-backed results.
 Only replace `workers/<rid>/` when the release notes say the worker changed.
+
+**v0.7.1+ worker change:** Roslyn graph observation filters incomplete/error declaration nodes that previously failed index with `GPH_OBS_NODE_INVALID`. After upgrading the CLI, refresh the worker (`mi-lsp worker install` or extract `workers/<rid>/` from the release archive) before re-indexing multi-project C# workspaces. See [references/runtime-drift.md](references/runtime-drift.md) § Graph observation / index failures.
+
 ## Weekly release check
 
 At most once every 7 days, an agent may check whether a newer GitHub Release exists.

@@ -53,3 +53,10 @@ mi-lsp workspace status <alias> --format compact
 - `unsupported backend: gopls` means the running binary or daemon does not expose the Go optional backend
 - `gopls is unavailable` with catalog/text fallback means the running binary is current enough, but `gopls` is not installed on the machine
 - If Roslyn bootstrap fails, the user-facing remediation should point to `mi-lsp worker install`
+
+## Graph observation / index failures
+
+- `invalid graph observation: ... GPH_OBS_NODE_INVALID ... node violates canonical batch or matrix` with `stage=selector_validation` on `mi-lsp index` is a **provider/worker** failure, not a consumer-wiki problem. Prefer refreshing CLI **and** Roslyn worker (`mi-lsp worker install` or a release bundle that includes `workers/<rid>/`), then re-run `mi-lsp index --workspace <alias> --no-daemon`.
+- Empty `display_name` / bare DocCommentId identities (`T:`, `M:`, …) from incomplete/error types were a known producer bug fixed in **v0.7.1**; older workers can still fail seal on large multi-csproj solutions.
+- If index succeeds but warnings say `graph observation produced no stageable complete batch` / `graph omitted partial Roslyn observation`, the **catalog** is still usable (`index_ready` can be true) while the semantic **graph** stays stale. Fix compile errors or observe a complete project before expecting graph nav surfaces to be fresh.
+- Do not "fix" this class of failure by deleting `.mi-lsp/` alone or by editing consumer product/wiki code.
