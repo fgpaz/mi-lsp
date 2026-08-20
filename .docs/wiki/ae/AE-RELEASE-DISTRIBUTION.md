@@ -42,6 +42,24 @@ evidence:
   - scripts/release/ae-release-binaries.ps1
 ```
 
+## v0.7.2 Post-release Verification
+
+```toon
+doc_id: AE-RELEASE-DISTRIBUTION
+block_id: AE-RELEASE-DISTRIBUTION.v0.7.2-post-release
+status: published_and_verified
+publication: published
+target: v0.7.2
+source_commit: 6d96c8add7a1ded33e2efacc3eba850d7d5e293f
+tag_object: 5e19ca71bed94652dd5b2333455286017fd02dff
+workflow: https://github.com/fgpaz/mi-lsp/actions/runs/32405327176
+release: https://github.com/fgpaz/mi-lsp/releases/tag/v0.7.2
+evidence: .docs/auditoria/mi-lsp-release-v0.7.2/post-release-verification.yaml
+assets: 7/7 digests verified
+installed: windows-arm64 v0.7.2; provenance source_commit and tag verified
+checks: worker/install/preparation/seed/governance/wiki PASS; wsl_skip: true (not available)
+```
+
 ## v0.7.0 Post-release Verification
 
 ```toon
