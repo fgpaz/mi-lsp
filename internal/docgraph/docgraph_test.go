@@ -152,6 +152,70 @@ func TestIndexWorkspaceDocsExtractsAEDocID(t *testing.T) {
 	}
 }
 
+func TestIndexWorkspaceDocsExtractsWikiSourceDocID(t *testing.T) {
+	root := t.TempDir()
+	mustWriteDocgraphFile(t, filepath.Join(root, ".docs", "wiki", "_mi-lsp", "read-model.toml"), strings.Join([]string{
+		"version = 1",
+		"",
+		"[[family]]",
+		"  name = \"functional\"",
+		"  intent_keywords = [\"governance\", \"gobierno\"]",
+		"  paths = [\".docs/wiki/00_gobierno_documental.md\"]",
+	}, "\n"))
+	mustWriteDocgraphFile(t, filepath.Join(root, ".docs", "wiki", "00_gobierno_documental.md"), strings.Join([]string{
+		"# 00. Gobierno documental",
+		"",
+		"source_protocol: SDD-WIKI-SOURCE-v1",
+		"harness_protocol: SDD-HARNESS-v1",
+		"doc_id: ING-GOV-00-PROJ",
+		"audience: dual",
+		"imports:",
+		"  - Ingenieria/00_gobierno_documental.md",
+		"exports:",
+		"  - governance",
+		"",
+		"```toon",
+		"block_id: ING-GOV-00-PROJ.harness-contract",
+		"id: ING-GOV-00-PROJ",
+		"doc_id: ING-GOV-00-PROJ",
+		"kind: POLICY",
+		"source_of_truth: Ingenieria/00_gobierno_documental.md",
+		"verify:",
+		"  - test -f Ingenieria/00_gobierno_documental.md",
+		"evidence:",
+		"  - Ingenieria/00_gobierno_documental.md",
+		"```",
+	}, "\n"))
+
+	docs, _, mentions, blocks, _, warnings, err := IndexWorkspaceDocsWithSourcesWithProgress(context.Background(), root, nil, nil)
+	if err != nil {
+		t.Fatalf("IndexWorkspaceDocsWithSourcesWithProgress: %v", err)
+	}
+	if len(warnings) != 0 {
+		t.Fatalf("warnings = %#v", warnings)
+	}
+	if len(docs) != 1 {
+		t.Fatalf("docs = %#v", docs)
+	}
+	// The doc_id must come from wikisource.Parse, not from the regex.
+	if docs[0].DocID != "ING-GOV-00-PROJ" {
+		t.Fatalf("doc ID = %q, want ING-GOV-00-PROJ", docs[0].DocID)
+	}
+	if len(blocks) != 1 || blocks[0].DocID != "ING-GOV-00-PROJ" || blocks[0].BlockID != "ING-GOV-00-PROJ.harness-contract" {
+		t.Fatalf("source blocks = %#v", blocks)
+	}
+	found := false
+	for _, mention := range mentions {
+		if mention.MentionType == "doc_id" && mention.MentionValue == "ING-GOV-00-PROJ" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("missing ING-GOV-00-PROJ doc_id mention in %#v", mentions)
+	}
+}
+
 func TestIndexWorkspaceDocsExtractsWikiSourceBlocksAndRecords(t *testing.T) {
 	root := t.TempDir()
 	mustWriteDocgraphFile(t, filepath.Join(root, ".docs", "wiki", "_mi-lsp", "read-model.toml"), strings.Join([]string{

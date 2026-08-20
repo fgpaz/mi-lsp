@@ -352,3 +352,67 @@ func TestNavWikiPack_AllWorkspaces_NMiniPacks(t *testing.T) {
 		t.Fatalf("expected non-nil Items, got nil")
 	}
 }
+
+// TestNavWikiInventory_WorkspaceFilterWinsOverAllWorkspaces verifies that
+// when both all_workspaces=true and workspace=<alias> are present, the
+// workspace filter takes priority and only that single workspace is returned.
+func TestNavWikiInventory_WorkspaceFilterWinsOverAllWorkspaces(t *testing.T) {
+	alias1, alias2 := setupTwoWikiWorkspaces(t)
+
+	root1, _ := workspace.ResolveWorkspace(alias1)
+	app := New(root1.Root, nil)
+
+	// all_workspaces=true AND workspace=<one alias> — workspace filter must win.
+	env, err := app.Execute(context.Background(), model.CommandRequest{
+		Operation: "nav.wiki.inventory",
+		Context:   model.QueryOptions{Workspace: alias1, MaxItems: 10},
+		Payload: map[string]any{
+			"all_workspaces": true,
+			"workspace":      alias1,
+		},
+	})
+
+	if err != nil {
+		t.Fatalf("nav.wiki.inventory workspace filter: %v", err)
+	}
+
+	if !env.Ok {
+		t.Fatalf("expected Ok=true, got %v", env.Ok)
+	}
+
+	if env.Items == nil {
+		t.Fatalf("expected non-nil Items, got nil")
+	}
+
+	// Count items — should be exactly 1 (the filtered workspace), not 2.
+	items, ok := env.Items.([]any)
+	if !ok {
+		t.Fatalf("expected Items to be []any, got %T", env.Items)
+	}
+	if len(items) != 1 {
+		t.Fatalf("expected 1 item (workspace filter), got %d", len(items))
+	}
+
+	// Verify the returned item is for the filtered alias.
+	item, ok := items[0].(*model.WikiInventoryItem)
+	if !ok {
+		t.Fatalf("expected item to be *WikiInventoryItem, got %T", items[0])
+	}
+	if item.Alias != alias1 {
+		t.Fatalf("item.Alias = %q, want %q", item.Alias, alias1)
+	}
+	// Verify alias2 is NOT in the result set (workspace filter excludes others).
+	found := false
+	for _, it := range items {
+		if e := it.(*model.WikiInventoryItem); e.Alias == alias2 {
+			found = true
+		}
+	}
+	if found {
+		t.Fatalf("alias2 %q should not appear when workspace filter = %q", alias2, alias1)
+	}
+	// The env.Workspace field should also reflect the filtered alias.
+	if env.Workspace != alias1 {
+		t.Fatalf("expected Workspace = %q, got %q", alias1, env.Workspace)
+	}
+}

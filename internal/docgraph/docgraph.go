@@ -335,6 +335,11 @@ func IndexWorkspaceDocsWithSourcesWithProgressPrior(ctx context.Context, root st
 				}
 				docMentions, docEdges := extractReferences(root, candidate.relativePath, string(content))
 				sourceDoc := wikisource.Parse(candidate.relativePath, string(content), time.Now().Unix())
+				// Prefer explicit SDD doc_id from wikisource.Parse over regex fallback.
+				if strings.TrimSpace(sourceDoc.DocID) != "" {
+					docID = sourceDoc.DocID
+				}
+				doc.DocID = docID
 				mentions := append(docMentions, sourceDoc.Mentions...)
 				sourceBlocks := wikisource.SourceBlocks(sourceDoc, time.Now().Unix())
 				sourceRecords := wikisource.SourceRecords(sourceDoc, time.Now().Unix())

@@ -30,10 +30,19 @@ func (a *App) wikiInventory(ctx context.Context, request model.CommandRequest) (
 	if val, ok := request.Payload["workspace"].(string); ok && val != "" {
 		workspaceFilter = val
 	}
+	// Also check request.Context.Workspace (CLI --workspace flag)
+	if request.Context.Workspace != "" && workspaceFilter == "" {
+		workspaceFilter = request.Context.Workspace
+	}
 
 	// If not all-workspaces, require workspace filter
 	if !allWorkspaces && workspaceFilter == "" {
 		return model.Envelope{}, fmt.Errorf("--workspace must be specified when --all-workspaces=false")
+	}
+
+	// Workspace scope wins over all_workspaces: a target alias means single-workspace.
+	if workspaceFilter != "" {
+		return a.wikiInventorySingleWorkspace(ctx, workspaceFilter, withLayerCounts)
 	}
 
 	// Fan-out or single-workspace query

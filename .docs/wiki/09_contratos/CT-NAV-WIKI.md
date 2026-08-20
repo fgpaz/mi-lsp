@@ -291,6 +291,7 @@ readiness:
 - `nav wiki validate-harness` aplica el gate de gobernanza, lee el docgraph existente, abre los markdown gobernados y valida YAML frontmatter o fenced YAML con `harness_protocol: SDD-HARNESS-v1`.
 - `nav wiki validate-harness` resuelve imports, evidencia y links Obsidian links Obsidian de ejemplo contra `DocRecord`, `doc_id`, exports y paths del workspace.
 - `nav wiki validate-harness` debe usar todo el docgraph gobernado para resolver referencias, aunque la validacion este acotada a contratos `SDD-HARNESS-v1`; si un record agregado apunta al mismo ID que un contrato canonico, el agregado no debe generar falso `missing contract`.
+- `--ids <lista>` combina DocRecord.DocID, Title y basename del path; DocRecord.DocID se llena preferentemente con el `doc_id` de `wikisource.Parse` (SDD) sobre el fallback regex `firstDocID` (`FL|RS|RF|TP|TECH|CT|DB|AE`).
 - `nav wiki validate-source` aplica el gate de gobernanza, lee `doc_source_blocks`/`doc_source_records`, abre solo markdowns que declaran `SDD-WIKI-SOURCE-v1` y no bloquea el resto del corpus.
 - `nav wiki validate-source --paths <path[,path...]>` limita el scope a paths existentes; `--ids <doc-id[,doc-id...]>` limita el scope a IDs documentales/source. Los filtros son aditivos al workspace y no convierten un documento dual sin `SDD-WIKI-SOURCE-v1` en source artifact; si el scope solo coincide con documentos no fuente, se reporta `scope=no_match`.
 - Un scope sin coincidencias no es una lista vacía ambigua: devuelve `ok=true`, `wiki_source_verdict=BLOCKED`, `wiki_source_readiness=blocked`, `navigation_readiness=blocked` y `navigation_blockers` con `scope=no_match`, junto con un hint accionable.
@@ -322,16 +323,18 @@ extended_item_shape_adds:
   - layers: "{RS, FL, RF, TP, TECH, DB, CT} con counts"
 envelope_extension: "ct-nav-wiki-envelope-all-workspaces"
 semantics: |
-  Subcomando NUEVO. Sin argumentos requeridos, por defecto itera --all-workspaces.
+  Sin argumentos requeridos, por defecto itera --all-workspaces.
   Light mode: listado simple de alias + metadata básica.
   Con --with-layer-counts: expande cada item con layer-specific doc counts.
   Úsease para auditoría de cobertura documental cross-workspace.
+  Regla de prioridad: si --workspace o Context.Workspace es no vacío, el
+  modo single-workspace gana siempre sobre el fan-out de --all-workspaces; la
+  API no hace fan-out cuando hay un alias objetivo.
 ```
 
 ## Estado
 
-implemented (search, route, pack, trace, validate-harness, validate-source)
-new (inventory)
+implemented (search, route, pack, trace, validate-harness, validate-source, inventory)
 
 ## RF asociado
 

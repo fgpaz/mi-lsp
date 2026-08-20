@@ -1068,7 +1068,13 @@ Use --with-layer-counts to include per-layer documentation counts (RS, FL, RF, T
   mi-lsp nav wiki inventory --with-layer-counts --format toon
   mi-lsp nav wiki inventory --all-workspaces=false --workspace mi-lsp --format toon`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			payload := map[string]any{"all_workspaces": invAllWorkspaces}
+			allWorkspaces := invAllWorkspaces
+			// When --workspace is specified (or the flag differs from default),
+			// the intent is to scope to one workspace, so set all_workspaces=false.
+			if invWorkspace != "" {
+				allWorkspaces = false
+			}
+			payload := map[string]any{"all_workspaces": allWorkspaces}
 			if invWithLayerCounts {
 				payload["with_layer_counts"] = true
 			}
