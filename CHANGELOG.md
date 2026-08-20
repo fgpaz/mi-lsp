@@ -7,6 +7,8 @@ and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2
 
 ## [Unreleased]
 
+## [0.7.2] - 2026-08-20
+
 ### Fixed
 
 - `nav wiki inventory --workspace` now scops to a single workspace instead of fanning out when a target alias is specified (`--workspace` wins over `--all-workspaces` default).
