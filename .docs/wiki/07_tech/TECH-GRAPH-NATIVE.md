@@ -122,6 +122,12 @@ components:
   wiki_authority_bridge:
     owner: Docgraph-and-service
     rule: wiki-authority-before-code-evidence
+  knowledge_wiki_docs:
+    owner: Docgraph-and-indexer
+    canonical_paths: [wiki/, bibliotecas/, .docs/wiki/, docs/, README*.md]
+    docs_only_publish: documentation-graph-without-compiler-batches
+    doc_edge_kinds: [wikilink, embed, hierarchy, markdown_link]
+    map_command: nav.wiki.map
   federation:
     owner: Core-with-optional-daemon-cache
     authority: derived-view-only
@@ -167,6 +173,32 @@ publication:
   invisible_states: [staged, invalid]
   crash_rule: prior-valid-pointer-remains-or-is-restored
   query_time_migration: forbidden
+```
+
+```toon
+doc_id: TECH-GRAPH-NATIVE
+block_id: TECH-GRAPH-NATIVE.knowledge-wiki-docs-only
+kind: architecture-slice
+source_of_truth: this
+status: implemented
+docs_only:
+  publishes_graph: when_canonical_markdown_present
+  preserves_code_catalog: true
+  catalog_generation_pointer: reused_not_replaced
+wikilinks:
+  parse: "[[target]]"
+  embed: "![[target|alias]]"
+  resolve_under_wiki_slash: wiki/<name>.md
+structural_hierarchy: [dir-readme, wiki-00-gobierno]
+not_authority:
+  - Tedi JavaScript graph
+  - Tedi memory v1
+verify:
+  - go test ./internal/indexer ./internal/docgraph -count=1 -run 'TestCanonicalGraphDocAcceptsKnowledgeWikiPaths|TestExtractReferencesParsesWikilinks|TestAppendStructuralDocEdges'
+evidence:
+  - internal/indexer/indexer.go
+  - internal/indexer/graph_staging.go
+  - internal/docgraph/docgraph.go
 ```
 
 Adapters no conocen SQLite ni publican. Store no inventa identidad. Service no reextrae ni repara durante query. El daemon solo conserva warm state/cache y no cambia semantica.

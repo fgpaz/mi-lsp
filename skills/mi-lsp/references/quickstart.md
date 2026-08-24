@@ -35,7 +35,7 @@ If `mi-lsp workspace list` fails because the command is missing, return to the i
 For every supported goal-shaped request, start the query with `nav intent`; routing is automatic and has no opt-out. Bootstrap or `workspace status` may precede it when the CLI/workspace needs onboarding.
 
 1. `mi-lsp` or `workspace status` when you need the first onboarding/discovery pass
-2. `nav wiki search` when you need RF/FL/TP/CT/TECH/DB docs or traceability anchors
+2. `nav wiki search` when you need RF/FL/TP/CT/TECH/DB docs or traceability anchors; `nav wiki map` when you need the compact knowledge-wiki hub catalog
 3. `nav route` when you need the cheapest canonical orientation (no index needed, governance-first)
 4. `nav ask` when you need richer orientation, ownership, or docs-first evidence synthesis
 5. `nav recall --intent formula|evidence|route|explore|learning` when embeddings are configured and you need semantic wiki candidates
@@ -100,7 +100,7 @@ Start with the user’s goal in `nav intent`; supported graph/change intents are
 
 Supported intent lanes map to exposed commands: explain-change -> `explain-change`, affected-change -> `affected`, callers -> `callers`, callees -> `callees`, path-between -> `path`, explain-edge -> `explain`, and neighborhood -> `neighbors`. Use `related` only for its separate definition/callers/implementors/tests summary. Preview, timeout, silence, `DONE`, or `PASS` without fresh evidence is not PASS and never enables fallback.
 
-Direct and daemon-insensitive: `find`, `search`, `wiki search`, `intent`, `symbols`, `outline`, `overview`, `multi-read`, `route`, `pack`, `trace`, `governance`, `prepare`
+Direct and daemon-insensitive: `find`, `search`, `wiki search`, `wiki map`, `intent`, `symbols`, `outline`, `overview`, `multi-read`, `route`, `pack`, `trace`, `governance`, `prepare`
 Potentially daemon-backed: `refs`, `context`, `deps`, `related`, `service`, `workspace-map`, `diff-context`, `batch`, `callers`, `callees`, `path`, `explain`, `neighbors`, `affected`, `explain-change`
 
 If a cheap read is slow, suspect stale binary, stale index, or wrong PATH before suspecting daemon health. A timeout is visible incomplete evidence, never a silent fallback.

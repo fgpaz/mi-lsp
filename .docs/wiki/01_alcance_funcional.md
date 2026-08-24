@@ -32,10 +32,10 @@ evidence:
 El exito del producto en v1.3 se mide por estos resultados:
 - la CLI siempre responde aunque el daemon no este activo;
 - el primer uso puede resolverse con `mi-lsp init` sin onboarding largo;
-- `nav wiki` ofrece una entrada documental explicita para agentes que buscan RF/FL/TP/CT/TECH/DB;
+- `nav wiki` ofrece una entrada documental explicita para agentes que buscan RF/FL/TP/CT/TECH/DB, y `nav wiki map` un catálogo compacto de hubs de wikis de conocimiento (`wiki/` y `bibliotecas/`);
 - `nav ask` responde preguntas de intencion usando wiki + evidencia de codigo;
 - `nav pack` entrega el orden de lectura canonico para una tarea con preview/full;
-- el grafo nativo publica una topologia estable y compiler-first con `GraphGeneration` y `NodeKey` reproducibles;
+- el grafo nativo publica una topologia estable y compiler-first con `GraphGeneration` y `NodeKey` reproducibles; `index --docs-only` tambien puede publicar un grafo documental de markdown canonico en `wiki/` y `bibliotecas/`;
 - las consultas de grafo permiten consultar, explicar e inspeccionar impacto sin convertir el indice en un editor;
 - las extensiones `MILX-v1` se ejecutan aisladas y no pueden degradar la confiabilidad del core;
 - las superficies calientes de navegacion pueden devolver guidance tiny (`continuation`) y memoria de reentrada (`memory_pointer`) para ayudar a un harness a seguir explorando sin gastar muchos tokens;

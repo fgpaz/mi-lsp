@@ -28,6 +28,7 @@ mi-lsp nav search "pattern" --include-content --context-lines 30 --context-mode 
 ## `nav wiki`
 
 ```powershell
+mi-lsp nav wiki map --workspace <alias> --format toon
 mi-lsp nav wiki search "workflow masterformularios" --workspace <alias> --layer RF,FL,CT,TP --format toon
 mi-lsp nav wiki pack "workflow con masterformularios" --workspace <alias> --format toon
 mi-lsp nav wiki trace RF-QRY-003 --workspace <alias> --format toon

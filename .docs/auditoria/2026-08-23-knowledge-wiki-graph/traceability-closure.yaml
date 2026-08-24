@@ -1,0 +1,253 @@
+schema: ae-traceability-closure/v1
+session: 2026-08-23-knowledge-wiki-graph
+session_contract_path: .docs/auditoria/2026-08-23-knowledge-wiki-graph/session-contract.yaml
+language: es
+sanitized: true
+status: PASS
+tracker_mode: none
+force_push: false
+git_before:
+  branch: main
+  head_sha: f8ec5abaaa8398c82d18017fce4a3bee8e13fe67
+  upstream: origin/main
+  ahead: 0
+  behind: 0
+git_after:
+  branch: main
+  head_sha: f8ec5abaaa8398c82d18017fce4a3bee8e13fe67
+  upstream: origin/main
+  ahead: 0
+  behind: 0
+  dirty: true
+  note: WIP uncommitted on main; this skill does not commit or push
+changed_paths:
+  tracked:
+    - .docs/wiki/01_alcance_funcional.md
+    - .docs/wiki/03_FL.md
+    - .docs/wiki/03_FL/FL-GPH-01.md
+    - .docs/wiki/03_FL/FL-WIKI-01.md
+    - .docs/wiki/04_RF.md
+    - .docs/wiki/04_RF/RF-GPH-002.md
+    - .docs/wiki/04_RF/RF-GPH-003.md
+    - .docs/wiki/05_modelo_datos.md
+    - .docs/wiki/06_matriz_pruebas_RF.md
+    - .docs/wiki/06_pruebas/TP-GPH.md
+    - .docs/wiki/06_pruebas/TP-WIKI.md
+    - .docs/wiki/07_baseline_tecnica.md
+    - .docs/wiki/07_tech/TECH-GRAPH-NATIVE.md
+    - .docs/wiki/08_db/DB-DOC-INDEX.md
+    - .docs/wiki/08_modelo_fisico_datos.md
+    - .docs/wiki/09_contratos/CT-GRAPH-CLI.md
+    - .docs/wiki/09_contratos/CT-NAV-WIKI.md
+    - .docs/wiki/09_contratos_tecnicos.md
+    - CHANGELOG.md
+    - .gitignore
+    - internal/cli/nav.go
+    - internal/cli/nav_test.go
+    - internal/docgraph/docgraph.go
+    - internal/docgraph/docgraph_test.go
+    - internal/indexer/graph_staging.go
+    - internal/indexer/indexer.go
+    - internal/indexer/indexer_progress_test.go
+    - internal/service/app.go
+    - internal/store/index_jobs_ownership_test.go
+    - internal/store/index_publish.go
+    - skills/mi-lsp/SKILL.md
+    - skills/mi-lsp/references/compound-commands.md
+    - skills/mi-lsp/references/quickstart.md
+  untracked:
+    - .docs/wiki/04_RF/RF-WIKI-006.md
+    - internal/service/wiki_map.go
+    - internal/service/wiki_map_test.go
+    - .docs/auditoria/2026-08-23-knowledge-wiki-graph/session-contract.yaml
+    - .docs/auditoria/2026-08-23-knowledge-wiki-graph/traceability-closure.yaml
+    - .docs/auditoria/2026-08-23-knowledge-wiki-graph/audit-manifest.yaml
+  raw_paths: []
+  forbidden_hits: []
+scope_verdict: PASS
+traceability_chains:
+  reviewed_anchors:
+    - D-TEDI-017
+    - FL-WIKI-01
+    - FL-GPH-01
+    - RF-WIKI-006
+    - RF-GPH-002
+    - RF-GPH-003
+    - CT-NAV-WIKI
+    - CT-GRAPH-CLI
+    - TP-WIKI
+    - TP-GPH
+    - TECH-GRAPH-NATIVE
+    - DB-DOC-INDEX
+  missing_anchors: []
+  updated_paths:
+    - .docs/wiki/04_RF/RF-WIKI-006.md
+    - .docs/wiki/09_contratos/CT-NAV-WIKI.md
+    - .docs/wiki/07_tech/TECH-GRAPH-NATIVE.md
+    - .docs/wiki/06_pruebas/TP-WIKI.md
+    - .docs/wiki/06_pruebas/TP-GPH.md
+walk:
+  - 00_gobierno_documental.md
+  - 03_FL/FL-WIKI-01.md
+  - 03_FL/FL-GPH-01.md
+  - 04_RF/RF-WIKI-006.md
+  - 04_RF/RF-GPH-002.md
+  - 07_tech/TECH-GRAPH-NATIVE.md
+  - 08_db/DB-DOC-INDEX.md
+  - 09_contratos/CT-NAV-WIKI.md
+  - 09_contratos/CT-GRAPH-CLI.md
+  - 06_pruebas/TP-WIKI.md
+  - 06_pruebas/TP-GPH.md
+runtime_sensitive: false
+runtime_sensitive_rationale: no budgets, fallbacks, auth headers or live config changed
+data_or_contract_sensitive: true
+data_or_contract_evidence:
+  - .docs/wiki/05_modelo_datos.md
+  - .docs/wiki/08_db/DB-DOC-INDEX.md
+  - .docs/wiki/09_contratos/CT-NAV-WIKI.md
+  - .docs/wiki/09_contratos/CT-GRAPH-CLI.md
+authoring_skill_note: ps-trazabilidad verified; crear-modelo-de-datos not required because no schema/migration change, only documented existing doc_edge kinds and graph publish slice
+harness_verdict: PASS
+wiki_source_verdict: PASS
+harness_contracts_reviewed:
+  - RF-WIKI-006
+  - CT-NAV-WIKI
+  - CT-GRAPH-CLI
+  - TECH-GRAPH-NATIVE
+  - TP-WIKI
+  - TP-GPH
+wiki_source_artifacts_reviewed:
+  - .docs/wiki/04_RF/RF-WIKI-006.md
+  - .docs/wiki/09_contratos/CT-NAV-WIKI.md
+  - .docs/wiki/07_tech/TECH-GRAPH-NATIVE.md
+new_artifact_hardening:
+  - id: RF-WIKI-006
+    harness_contract: true
+    doc_id: true
+    block_id: true
+    toon: true
+    language: es
+core_product_promise_verdict: PASS
+core_product_promise_source:
+  - D-TEDI-017
+  - RF-WIKI-006
+expected_experience_oracle_verdict: NOT_APPLICABLE
+expected_experience_oracle_rationale: CLI/knowledge-wiki contract, not Tedi visual UX slice
+qa_learning_loop_verdict: NOT_APPLICABLE
+worker_join_verdict: NOT_APPLICABLE
+harness_scope_classification: targeted_pass_with_preexisting_debt
+preexisting_debt:
+  - id: ae_canon_kernel_v2_sources_missing
+    class: BLOCKED_PREEXISTING
+    owner: platform
+    next_action: restore kernel_home canon or record host waiver
+    recheck_rule: mi-lsp nav governance --workspace mi-lsp --format toon
+    oracle_key: ae_canon.status
+    undermines_current_promise: false
+    detail: index_sync=current; 00/read-model in_sync; only external kernel modules missing on this Mac
+board_sync:
+  mode: none
+  rationale: tracker.mode=none; no external cards
+canonical_horizon_ref: D-TEDI-017
+current_status: CURRENT
+scope_classification:
+  IN:
+    - nav wiki map
+    - docs-only documentation GraphGeneration
+    - wiki/ and bibliotecas/ as canonical graph markdown
+    - wikilink embed hierarchy doc_edges
+  OUT:
+    - Tedi memory v1
+    - Tedi JavaScript graph
+    - origin push
+    - force-push
+    - Gastos/Notas live systems
+business_context_freshness: not_applicable
+progressive_dependency_verdict: PASS
+later_hold_consumed: false
+later_hold_references: []
+pre_push_inputs:
+  issue_or_waiver: tracker.mode=none
+  evidence_path: .docs/auditoria/2026-08-23-knowledge-wiki-graph/traceability-closure.yaml
+  expected_scope: knowledge-wiki-graph
+  session_contract_path: .docs/auditoria/2026-08-23-knowledge-wiki-graph/session-contract.yaml
+  push_authorized: false
+no_drift_snapshot:
+  commands:
+    - git status --short --branch
+    - git diff --check
+    - git rev-list --left-right --count origin/main...HEAD
+  result: PASS
+  dirty_expected: true
+  new_unrelated_paths: false
+verification:
+  targeted_tests: PASS
+  targeted_test_commands:
+    - go test ./internal/cli -count=1 -run TestNavWikiMap
+    - go test ./internal/service -count=1 -run 'TestClassifyWikiMapHub|TestGroupWikiMapDocsOrder'
+    - go test ./internal/docgraph -count=1 -run 'TestExtractReferencesParsesWikilinks|TestAppendStructuralDocEdges'
+    - go test ./internal/indexer -count=1 -run 'TestCanonicalGraphDocAcceptsKnowledgeWikiPaths|TestDocsOnly'
+    - go test ./internal/store -count=1 -run TestFencedPublicationModeMatrix
+  git_diff_check: PASS
+  index_docs_only: PASS
+  index_docs: 155
+  index_sync: current
+  governance_blocked: true
+  governance_reason: kernel_v2_sources_missing
+  wiki_map_on_mi-lsp_repo: PASS
+  wiki_map_note: mi-lsp uses .docs/wiki not wiki/; map correctly returns no hubs
+completion_handoff:
+  target_skill: finishing-a-development-branch
+  status: ready_local_not_push
+  required_order: trace → audit → drift repair/rerun → tracker if applicable → prepush → integration → remote readback → cleanup
+  next_skill: ps-auditar-trazabilidad
+  mutations_authorized_this_packet: false
+  push: forbidden
+  commit: not_this_skill
+  remote_mutation: forbidden
+  durability_proof: this_packet
+  cleanup_authorization: separate
+  blockers: []
+shipped_behavior:
+  nav_wiki_map: compact hubs persona/proyectos/sistema/materia from wiki/ and bibliotecas/
+  docs_only_graph_publish: documentation GraphGeneration when canonical markdown present
+  canonical_docs: wiki/, bibliotecas/, .docs/wiki/, docs/
+  wikilinks: "[[target]] and ![[target|alias]] plus hierarchy edges"
+hashes:
+  algorithm: sha256
+  files:
+    .docs/wiki/01_alcance_funcional.md: 6b8347dba6311dbd48b48bb7c0bdc62c6d128b991e42a8db112f30dc23a2acd4
+    .docs/wiki/03_FL.md: 9f9c245a6d0522bb415deb3958cb485c891b6bc229394de545acdc6c7403f3cb
+    .docs/wiki/03_FL/FL-GPH-01.md: a7e46c2cb714584db38f6a13fe0afc1aca9201b6ef7507b19a554a4350174b11
+    .docs/wiki/03_FL/FL-WIKI-01.md: f54e0f481fd158c1d9a00e2663936c46ec8e21a1a23696878f4c7f43c2e218fb
+    .docs/wiki/04_RF.md: e3bfddd2e24ff565dd194bdfae59892bdca662eb7439beef6db72db35d88126d
+    .docs/wiki/04_RF/RF-GPH-002.md: c81a74cb2576667f4b26ef4f3dea9d09ff9bfbb3c1063bd9111848a1405825ff
+    .docs/wiki/04_RF/RF-GPH-003.md: 743e495dad9887d197ec0091302da5fc265a4f32d270d5fb85d2e26cef561652
+    .docs/wiki/04_RF/RF-WIKI-006.md: c74c50e3604244c8b921fdf9fa0323fbb150fb9d0d70d00a7fd99aab250885e7
+    .docs/wiki/05_modelo_datos.md: 870a91cbf1aebb5f6d3997d789b2cde843a8184f5c584734755b704b008476f7
+    .docs/wiki/06_matriz_pruebas_RF.md: 8630d4ef3d35882b6644550652df0e9cab7f93b2a97a2f09850cbcb796468863
+    .docs/wiki/06_pruebas/TP-GPH.md: 779064ccd35dc9672b435af57de25b6f693a36c613549c0c4965b4cbec54ebe1
+    .docs/wiki/06_pruebas/TP-WIKI.md: 1a30a3d1ee3409a37df1bcc0f967010848a0328ac1977773e25b65ef592310ee
+    .docs/wiki/07_baseline_tecnica.md: ffb0f8c4329252c0454153f8877a237648e72e4b3d3df108ddd23c904afba316
+    .docs/wiki/07_tech/TECH-GRAPH-NATIVE.md: 6754f33da8674366b0a1ecce672883091f9ca81ba441b6bcd22c19db760979c1
+    .docs/wiki/08_db/DB-DOC-INDEX.md: 4167581d523704624296f4f9f16216935fdd4de4efab80dd720508e72dfc8c00
+    .docs/wiki/08_modelo_fisico_datos.md: 67fa7fb0c560445dba91740895eda9cd55da7432fa1f596a29217611378cad71
+    .docs/wiki/09_contratos/CT-GRAPH-CLI.md: f919588cc6338b556f175ecd485cf91e3f3881827c3f16595819e6f1bcb7e367
+    .docs/wiki/09_contratos/CT-NAV-WIKI.md: 47988f0dd20a6d51866bd5871a8007dd23092555a7d0e1ad512ed0e3a8f73824
+    .docs/wiki/09_contratos_tecnicos.md: 515d447ba5e116a1c72dec33f41e8a1dd33b5a2878eb06b97834807a92f6b0b9
+    CHANGELOG.md: 63465ce8f1573083ea2cc0a821503362b2be4e99663de6b880ce458c19b16dec
+    internal/cli/nav.go: 98124402e80d20336ac8d05de7801bfc4d5dfe21d141fa9e85d0259cdeffd40f
+    internal/cli/nav_test.go: 03f730f8833279d4e7bf9b3f5998fe9c6d45e07e3234e3e735d214c0d108779f
+    internal/docgraph/docgraph.go: c1ebfecbdce0840cadbfb5813b4f93d756f26aee6a522ff680e5a58fe5fbad0c
+    internal/docgraph/docgraph_test.go: ab4ba5fca9f2b39573e6ef8a84c53943f71db54a29a09702270c75ad08b9f3fe
+    internal/indexer/graph_staging.go: cd5bd5eec76daa0c73cb1ad7fc0149cf50f36d270011d7c03bef72a014acf6e7
+    internal/indexer/indexer.go: 1b9172776a693af2823efe3e3161697e1917585dc41b72b672cf3db444cd39a8
+    internal/indexer/indexer_progress_test.go: 0dbe86ac509281a61017fe40e3ca30b470e7c870815a410d6f17ec43b321ee1c
+    internal/service/app.go: 0355ba5b99365f3a687ba0d90b5e617c58aa148bd5a124c2e2b3af6a552a177b
+    internal/service/wiki_map.go: 07936fa05466c36679bcefa203e22b3cb6253390fe827818923e1a419e59487e
+    internal/service/wiki_map_test.go: 32059ecfeb1e579ba3f5436d540254bc2e7bee30bfe9135ece84a0e792525b46
+    internal/store/index_jobs_ownership_test.go: 9f37b0866065e230e7d3ef62d00da5365c9a541de0ad3830c2f6d82bd13b9201
+    internal/store/index_publish.go: 19efb02ef5b6466609c8bd308222bd455a4162779695a88172396fab57cd16c5
+    skills/mi-lsp/SKILL.md: caa99952b9bf8fbb36619c8874ca7764820e2558f87e80fc5a2d8c7a844d336a
+    skills/mi-lsp/references/compound-commands.md: 396de0c34eef743d185f24c0d17b06ed8fd07a50c051f11e630dcb360095b3fa
+    skills/mi-lsp/references/quickstart.md: e7b03fb32488f53c5efea388d7007e7317d67e3d35bcb512975a72a295aa99b6

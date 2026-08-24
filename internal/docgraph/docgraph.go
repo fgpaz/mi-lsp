@@ -25,6 +25,7 @@ import (
 var (
 	docIDPattern        = regexp.MustCompile(`\b(?:FL|RS|RF|TP|TECH|CT|DB|AE)-[A-Z0-9-]+\b`)
 	markdownLinkPattern = regexp.MustCompile(`\[[^\]]+\]\(([^)]+)\)`)
+	wikiLinkPattern     = regexp.MustCompile(`!?\[\[([^\]|#]+)(?:\|[^\]]+)?\]\]`)
 	inlineCodePattern   = regexp.MustCompile("`([^`]+)`")
 	pascalSymbolPattern = regexp.MustCompile(`\b[A-Z][A-Za-z0-9_]+\b`)
 )
@@ -447,6 +448,7 @@ func IndexWorkspaceDocsWithSourcesWithProgressPrior(ctx context.Context, root st
 			edges = append(edges, edge)
 		}
 	}
+	edges = appendStructuralDocEdges(docs, edges)
 
 	sort.Slice(docs, func(i, j int) bool {
 		if docs[i].Family == docs[j].Family {
@@ -637,6 +639,24 @@ func extractReferences(root string, docPath string, content string) ([]model.Doc
 		addEdge(model.DocEdge{FromPath: docPath, ToPath: target, Kind: "markdown_link", Label: link})
 	}
 
+	for _, match := range wikiLinkPattern.FindAllStringSubmatch(content, -1) {
+		if len(match) < 2 {
+			continue
+		}
+		raw := strings.TrimSpace(match[0])
+		name := strings.TrimSpace(match[1])
+		if name == "" {
+			continue
+		}
+		kind := "wikilink"
+		if strings.HasPrefix(raw, "!") {
+			kind = "embed"
+		}
+		target := resolveWikilink(docPath, name)
+		addMention("doc_path", target)
+		addEdge(model.DocEdge{FromPath: docPath, ToPath: target, Kind: kind, Label: name})
+	}
+
 	for _, match := range inlineCodePattern.FindAllStringSubmatch(content, -1) {
 		if len(match) < 2 {
 			continue
@@ -672,6 +692,80 @@ func normalizeDocLink(docPath string, link string) string {
 		return filepath.ToSlash(filepath.Clean(filepath.Join(baseDir, filepath.FromSlash(link))))
 	}
 	return filepath.ToSlash(strings.TrimPrefix(link, "/"))
+}
+
+func resolveWikilink(docPath string, name string) string {
+	name = strings.TrimSpace(name)
+	name = strings.ReplaceAll(name, "\\", "/")
+	if name == "" {
+		return ""
+	}
+	if filepath.Ext(name) == "" {
+		name += ".md"
+	}
+	if strings.Contains(name, "/") {
+		return normalizeDocLink(docPath, name)
+	}
+	if strings.HasPrefix(filepath.ToSlash(docPath), "wiki/") {
+		return "wiki/" + name
+	}
+	dir := filepath.ToSlash(filepath.Dir(docPath))
+	if dir == "." || dir == "" {
+		return name
+	}
+	return dir + "/" + name
+}
+
+func appendStructuralDocEdges(docs []model.DocRecord, edges []model.DocEdge) []model.DocEdge {
+	paths := make(map[string]struct{}, len(docs))
+	for _, doc := range docs {
+		path := filepath.ToSlash(strings.TrimSpace(doc.Path))
+		if path == "" {
+			continue
+		}
+		paths[path] = struct{}{}
+	}
+	seen := map[string]struct{}{}
+	for _, edge := range edges {
+		key := edge.FromPath + "::" + edge.Kind + "::" + edge.ToPath
+		seen[key] = struct{}{}
+	}
+	add := func(from, to, kind string) {
+		if from == "" || to == "" || from == to {
+			return
+		}
+		if _, ok := paths[to]; !ok {
+			return
+		}
+		key := from + "::" + kind + "::" + to
+		if _, ok := seen[key]; ok {
+			return
+		}
+		seen[key] = struct{}{}
+		edges = append(edges, model.DocEdge{FromPath: from, ToPath: to, Kind: kind, Label: kind})
+	}
+	gobierno := ""
+	for candidate := range paths {
+		base := strings.ToLower(filepath.Base(candidate))
+		if strings.HasPrefix(candidate, "wiki/") && strings.HasPrefix(base, "00-gobierno") && strings.HasSuffix(base, ".md") {
+			gobierno = candidate
+			break
+		}
+	}
+	for path := range paths {
+		dir := filepath.ToSlash(filepath.Dir(path))
+		readme := "README.md"
+		if dir != "." && dir != "" {
+			readme = dir + "/README.md"
+		}
+		if path != readme {
+			add(path, readme, "hierarchy")
+		}
+		if gobierno != "" && path != gobierno && strings.HasPrefix(path, "wiki/") && !strings.Contains(strings.TrimPrefix(path, "wiki/"), "/") {
+			add(path, gobierno, "hierarchy")
+		}
+	}
+	return edges
 }
 
 func likelyCodePath(value string) bool {

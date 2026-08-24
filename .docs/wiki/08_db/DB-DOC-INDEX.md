@@ -64,7 +64,7 @@ Campos canonicos:
 Uso:
 - supporting docs explicitos
 - trazabilidad doc -> doc
-- prioridad de links markdown y doc IDs antes de heuristicas
+- prioridad de links markdown, wikilinks Obsidian (`wikilink`/`embed`), hierarchy estructural y doc IDs antes de heuristicas
 
 ### `doc_mentions`
 

@@ -18,7 +18,7 @@ Use `nav ask` without `--axi` for richer orientation questions when you need evi
 Prefer `nav search --include-content` for implementation questions.
 Use `nav context <file>:<line>` when you already have a line target; the older `nav context <file> <line>` form remains valid.
 For Go files, `nav context` / `nav refs` may use optional `gopls`; if `gopls` is missing, treat the catalog/text fallback with install guidance as valid partial evidence.
-Treat `nav wiki search|route|pack|trace` as the canonical documentation surface.
+Treat `nav wiki search|route|pack|trace|map` as the canonical documentation surface. Use `nav wiki map` for a compact knowledge-wiki hub catalog (`wiki/` numbered hubs plus `bibliotecas/`); it never returns full bodies.
 Treat `nav search` as a broad text surface: it may return canonical docs, but it may also return prompts, audits, `.docs/raw`, generated files, or other support artifacts.
 Do not decide documentation authority from `nav search` alone when a `nav wiki *` surface can answer the question.
 Treat `nav intent` as the first hybrid entry point: supported graph/change goals use the automatic deterministic planner; other natural capability questions follow `mode=docs`, while symbol-like questions follow `mode=code`.
@@ -100,7 +100,7 @@ Different worktree roots must not share runtime, watcher, or index state even wh
 
 When the task is asking "what is the canonical doc?", "which RS/RF/TP/CT/TECH/DB applies?", "what does the spec say?", or "how do I trace this requirement?", start from governance-backed wiki surfaces:
 
-1. `nav wiki inventory` when you do not yet know which workspace owns the question — it returns a light per-workspace catalog (alias, root, wiki_root, governance_blocked, docs_ready, doc_count, last_indexed_at). Add `--with-layer-counts` to see RS/FL/RF/TP/TECH/DB/CT counts per workspace before targeting one.
+1. `nav wiki inventory` when you do not yet know which workspace owns the question — it returns a light per-workspace catalog (alias, root, wiki_root, governance_blocked, docs_ready, doc_count, last_indexed_at). Add `--with-layer-counts` to see RS/FL/RF/TP/TECH/DB/CT counts per workspace before targeting one. For a knowledge wiki (`wiki/` + `bibliotecas/`), use `nav wiki map` for the compact hub catalog.
 2. `nav route` when you need the cheapest canonical anchor and do not want to depend on the index yet
 3. `nav wiki search` when you need canonical doc discovery by topic or ID
 4. `nav wiki pack` when you need the small reading set around the canonical anchor
@@ -110,7 +110,7 @@ Only drop to `nav search --include-content` when the question becomes implementa
 
 Use `--layer RS,RF,FL,TP,CT,TECH,DB` aggressively on `nav wiki search` to narrow the authority lane.
 
-The five `nav wiki *` subcommands (`search`, `route`, `trace`, `pack`, `inventory`) all accept `--all-workspaces` for fan-out across every registered workspace; items in the response carry `workspace:<alias>` and `stats` gains `workspaces_queried` / `workspaces_failed[]`. Use it when the question is "which workspaces talk about X?" before targeting one with `--workspace <alias>`. Cross-machine federation lives outside `mi-lsp` (see Hermes-side wrappers); the CLI stays per-host.
+The five `nav wiki *` subcommands (`search`, `route`, `trace`, `pack`, `inventory`) all accept `--all-workspaces` for fan-out across every registered workspace; items in the response carry `workspace:<alias>` and `stats` gains `workspaces_queried` / `workspaces_failed[]`. Use it when the question is "which workspaces talk about X?" before targeting one with `--workspace <alias>`. `nav wiki map` is single-workspace only. Cross-machine federation lives outside `mi-lsp` (see Hermes-side wrappers); the CLI stays per-host.
 If AXI preview is trimmed or `next_hint` asks for expansion, rerun with `--full` before inventing a broader command.
 Follow `next_queries` and `continuation.next` from wiki results before improvising `nav search`.
 
@@ -548,6 +548,7 @@ If `mi-lsp` is not on `PATH`, install it from Releases or repair `PATH` for the 
 Use these commands first:
 
 - Open the discovery home: `mi-lsp`
+- Knowledge-wiki hub map: `mi-lsp nav wiki map --workspace <alias> --format toon`
 - Wiki-first doc search: `mi-lsp nav wiki search "workflow masterformularios" --workspace <alias> --layer RS,RF,FL,CT,TP --format toon`
 - Wiki reading pack: `mi-lsp nav wiki pack "workflow con masterformularios" --workspace <alias> --format toon`
 - Cheapest canonical orientation (no index needed): `mi-lsp nav route "how is this workspace organized?" --workspace <alias> --format toon`
@@ -657,7 +658,7 @@ Use `mi-lsp` first for repo navigation, docs-first Q&A, symbol lookup, service a
 
 ## Routing model
 
-- Cheap reads stay direct (no daemon): `nav.find`, `nav.search`, `nav.wiki.search`, `nav.symbols`, `nav.outline`, `nav.overview`, `nav.multi-read`, `nav.intent`, `nav.trace`, `nav.route`, `nav.pack`, `nav.governance`, `nav.prepare`
+- Cheap reads stay direct (no daemon): `nav.find`, `nav.search`, `nav.wiki.search`, `nav.wiki.map`, `nav.symbols`, `nav.outline`, `nav.overview`, `nav.multi-read`, `nav.intent`, `nav.trace`, `nav.route`, `nav.pack`, `nav.governance`, `nav.prepare`
 - In workspaces `container`, prefer `--repo` for direct `nav.find`, `nav.search`, and `nav.intent` before escalating to semantic selectors.
 - Deep semantics may use the daemon: `nav.refs`, `nav.context`, `nav.deps`, `nav.related`, `nav.service`, `nav.workspace-map`, `nav.diff-context`, `nav.batch`, `nav.ask`, `nav.affected`, `nav.callers`, `nav.callees`, `nav.path`, `nav.explain`, `nav.neighbors`, `nav.explain-change`
 - `nav.edit-plan` is a separate guarded patch packet surface; it is not semantic preparation or a fallback lane.

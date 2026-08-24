@@ -13,6 +13,7 @@ imports:
   - '[[RF-WIKI-003]]'
   - '[[RF-WIKI-004]]'
   - '[[RF-WIKI-005]]'
+  - '[[RF-WIKI-006]]'
 exports:
   - 'TP-WIKI'
 agent_must_read:
@@ -22,6 +23,7 @@ agent_must_read:
   - .docs/wiki/04_RF/RF-WIKI-003.md
   - .docs/wiki/04_RF/RF-WIKI-004.md
   - .docs/wiki/04_RF/RF-WIKI-005.md
+  - .docs/wiki/04_RF/RF-WIKI-006.md
   - .docs/wiki/06_pruebas/TP-WIKI.md
 agent_may_edit:
   - .docs/wiki/06_pruebas/TP-WIKI.md
@@ -46,6 +48,7 @@ evidence:
 - RF-WIKI-003 (route --all-workspaces)
 - RF-WIKI-004 (trace --all-workspaces)
 - RF-WIKI-005 (pack --all-workspaces)
+- RF-WIKI-006 (map compacto de hubs)
 
 ## Casos
 
@@ -274,6 +277,42 @@ cases:
     given: "governance_blocked=true o index documental no listo"
     when: "se invoca una superficie wiki dirigida"
     then: "la operacion se detiene o degrada con diagnostico explicito; no usa fallback silencioso a contenido no gobernado"
+```
+
+```toon
+block_id: tp-wiki-rf-006-cases
+kind: test-cases
+rf: RF-WIKI-006
+title: "Casos para RF-WIKI-006 (nav wiki map)"
+source_of_truth: this
+verify: "go test ./internal/service ./internal/cli -count=1 -run 'TestClassifyWikiMapHub|TestGroupWikiMapDocsOrder|TestNavWikiMapCommandExists'"
+evidence: ".docs/wiki/06_pruebas/TP-WIKI.md"
+cases:
+  - id: TC-WIKI-029
+    type: positivo
+    given: "wiki/00-identidad.md, wiki/10-proyecto.md y bibliotecas/memorias/ficha.md"
+    when: "mi-lsp nav wiki map --workspace <alias> --format toon"
+    then: "backend=wiki.map; hubs en orden persona, proyectos, materia; cada doc tiene path y title; sin cuerpos markdown"
+  - id: TC-WIKI-030
+    type: positivo
+    given: "indice documental vacio pero wiki/ existe en disco"
+    when: "nav wiki map"
+    then: "walk de filesystem; warning de índice vacío; hubs no vacíos si hay markdown clasificable"
+  - id: TC-WIKI-031
+    type: positivo
+    given: "wiki/30-dashboard.md y wiki/20-proyectos-activos.md de primer nivel"
+    when: "classifyWikiMapHub"
+    then: "ambos clasifican a sistema; 24-aprendizaje anidado no entra"
+  - id: TC-WIKI-032
+    type: positivo
+    given: "token-budget menor que el catálogo completo"
+    when: "nav wiki map --token-budget N"
+    then: "recorta docs conservando orden de hubs; tokens_estimate <= N"
+  - id: TC-WIKI-033
+    type: negativo
+    given: "wiki/31-workers, wiki/32-contratos, yaml o .docs/wiki/00_gobierno_documental.md"
+    when: "classifyWikiMapHub"
+    then: "hub vacío; no aparecen en el mapa"
 ```
 
 ## Regla de mantenimiento

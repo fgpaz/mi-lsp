@@ -81,12 +81,6 @@ func indexWorkspaceWithGraphProgress(ctx context.Context, root string, clean boo
 	if err != nil {
 		return Result{}, err
 	}
-	// Complete-only staging may omit every Roslyn/Go batch (e.g. all projects partial due to
-	// compiler diagnostics). That is not a catalog failure: publish files/symbols/docs and mark
-	// graph stale. ObserveGraph already hard-fails on invalid seals / missing entrypoints.
-	if len(graphBatches) == 0 && !explicitlyNonGraphProject(projectFile) {
-		warnings = append(warnings, "graph observation produced no stageable complete batch; publishing catalog with graph stale")
-	}
 	warnings = append(warnings, graphWarnings...)
 
 	priorDocs := loadPriorDocSnapshot(ctx, root)
@@ -125,9 +119,16 @@ func indexWorkspaceWithGraphProgress(ctx context.Context, root string, clean boo
 		} else if ok {
 			prior = &active
 		}
-		request := GraphAssemblyRequest{Batches: graphBatches, Docs: docs, DocEdges: docEdges, DocMentions: docMentions, CreatedAt: time.Now().UTC()}
+		request, publishGraph := documentationGraphRequest(ctx, root, projectFile, graphBatches, docs, docEdges, docMentions, time.Now().UTC())
+		if len(graphBatches) == 0 && !explicitlyNonGraphProject(projectFile) {
+			if publishGraph {
+				warnings = append(warnings, "graph observation produced no stageable complete batch; publishing documentation graph")
+			} else {
+				warnings = append(warnings, "graph observation produced no stageable complete batch; publishing catalog with graph stale")
+			}
+		}
 		var jobGraph *store.IndexJobGraphPublication
-		if len(graphBatches) != 0 {
+		if publishGraph {
 			if err := reportProgress(ctx, progress, Progress{Stage: "graph.activate", Files: len(files), Symbols: len(symbols), Docs: len(docs), Force: true}); err != nil {
 				return err
 			}
@@ -151,7 +152,7 @@ func indexWorkspaceWithGraphProgress(ctx context.Context, root string, clean boo
 		if err := store.ReplaceWorkspaceIndex(ctx, db, generationID, projectFile, files, symbols, docs, docEdges, docMentions, sourceBlocks, sourceRecords, snapshot); err != nil {
 			return err
 		}
-		if len(graphBatches) == 0 {
+		if !publishGraph {
 			return store.SetGraphRuntimeState(ctx, db, store.GraphRuntimeStale, "")
 		}
 		return store.SetGraphRuntimeState(ctx, db, store.GraphRuntimeFresh, generationID)
@@ -337,6 +338,7 @@ func indexWorkspaceDocsOnlyWithProgress(ctx context.Context, root string, genera
 		return Result{}, err
 	}
 
+	var graphGeneration model.GraphGeneration
 	if err := store.WithWorkspaceWriteLock(root, func() error {
 		db, err := store.Open(root)
 		if err != nil {
@@ -344,23 +346,75 @@ func indexWorkspaceDocsOnlyWithProgress(ctx context.Context, root string, genera
 		}
 		defer db.Close()
 
-		if publication != nil {
-			return store.ReplaceWorkspaceDocsForJob(ctx, db, publication.JobID, generationID, docs, docEdges, docMentions, sourceBlocks, sourceRecords, snapshot, publication.Fence)
+		request, publishGraph := documentationGraphRequest(ctx, root, projectFile, nil, docs, docEdges, docMentions, time.Now().UTC())
+		var jobGraph *store.IndexJobGraphPublication
+		if publishGraph {
+			var prior *model.GraphDigest
+			if active, ok, activeErr := store.ActiveGraphGeneration(ctx, db); activeErr != nil {
+				return activeErr
+			} else if ok {
+				prior = &active
+			}
+			if err := reportProgress(ctx, progress, Progress{Stage: "graph.activate", Docs: len(docs), Force: true}); err != nil {
+				return err
+			}
+			if publication != nil {
+				bundle, assembleErr := AssembleGraphObservationBatches(request)
+				if assembleErr != nil {
+					return fmt.Errorf("graph staging failed: %w", assembleErr)
+				}
+				graphGeneration = bundle.Generation
+				catalogGeneration := ""
+				if activeCatalog, ok, metaErr := store.WorkspaceMetaValue(ctx, db, store.WorkspaceMetaActiveCatalogGeneration); metaErr != nil {
+					return metaErr
+				} else if ok {
+					catalogGeneration = activeCatalog
+				}
+				jobGraph = &store.IndexJobGraphPublication{GenerationID: &bundle.Generation.GenerationID, ExpectedPrior: prior, PublishedAt: request.CreatedAt, GraphCurrent: true, CatalogGeneration: catalogGeneration}
+				if prior == nil || *prior != bundle.Generation.GenerationID {
+					jobGraph.GraphBundle = &bundle
+				}
+			} else {
+				graphGeneration, err = PublishGraphObservationBatches(ctx, db, request, prior)
+				if err != nil {
+					return fmt.Errorf("graph publication failed: %w", err)
+				}
+			}
 		}
-		return store.ReplaceWorkspaceDocs(ctx, db, generationID, docs, docEdges, docMentions, sourceBlocks, sourceRecords, snapshot)
+		if publication != nil {
+			return store.ReplaceWorkspaceDocsForJob(ctx, db, publication.JobID, generationID, docs, docEdges, docMentions, sourceBlocks, sourceRecords, snapshot, publication.Fence, jobGraph)
+		}
+		if err := store.ReplaceWorkspaceDocs(ctx, db, generationID, docs, docEdges, docMentions, sourceBlocks, sourceRecords, snapshot); err != nil {
+			return err
+		}
+		if publishGraph {
+			catalogGeneration := generationID
+			if activeCatalog, ok, metaErr := store.WorkspaceMetaValue(ctx, db, store.WorkspaceMetaActiveCatalogGeneration); metaErr != nil {
+				return metaErr
+			} else if ok && activeCatalog != "" {
+				catalogGeneration = activeCatalog
+			}
+			return store.SetGraphRuntimeState(ctx, db, store.GraphRuntimeFresh, catalogGeneration)
+		}
+		return nil
 	}); err != nil {
 		return Result{}, err
 	}
 
 	warnings = appendIfMissing(warnings, "docs_only=true")
-	return Result{
+	result := Result{
 		Warnings: warnings,
 		Docs:     len(docs),
 		Stats: model.Stats{
 			Files: len(docs),
 			Ms:    time.Since(started).Milliseconds(),
 		},
-	}, nil
+	}
+	if graphGeneration.GenerationID != (model.GraphDigest{}) {
+		result.GraphGenerationID = graphGeneration.GenerationID.String()
+		result.GraphBackendManifest = graphGeneration.BackendManifestDigest.String()
+	}
+	return result, nil
 }
 
 func docsOnlyProjectFile(root string) (model.ProjectFile, error) {
@@ -429,4 +483,36 @@ func appendIfMissing(items []string, value string) []string {
 		}
 	}
 	return append(items, value)
+}
+
+func documentationGraphRequest(ctx context.Context, root string, project model.ProjectFile, batches []model.GraphObservationBatch, docs []model.DocRecord, docEdges []model.DocEdge, docMentions []model.DocMention, createdAt time.Time) (GraphAssemblyRequest, bool) {
+	req := GraphAssemblyRequest{
+		Batches:     batches,
+		Docs:        docs,
+		DocEdges:    docEdges,
+		DocMentions: docMentions,
+		CreatedAt:   createdAt,
+	}
+	if len(batches) != 0 {
+		return req, true
+	}
+	if !hasCanonicalGraphDocs(docs) {
+		return req, false
+	}
+	identity, err := workspace.ResolveRepositoryIdentity(ctx, root, project.Repos)
+	if err != nil {
+		return req, false
+	}
+	req.RepositoryIdentity = identity
+	req.WorkspaceIdentity = identity
+	return req, true
+}
+
+func hasCanonicalGraphDocs(docs []model.DocRecord) bool {
+	for _, doc := range docs {
+		if isCanonicalGraphDoc(doc.Path, doc.IsSnapshot) {
+			return true
+		}
+	}
+	return false
 }

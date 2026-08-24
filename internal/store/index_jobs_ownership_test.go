@@ -443,7 +443,7 @@ func TestFencedPublicationModeMatrix(t *testing.T) {
 			name: "docs",
 			mode: IndexModeDocs,
 			publish: func(job IndexJob, fence IndexJobFence) error {
-				return ReplaceWorkspaceDocsForJob(ctx, db, job.JobID, job.GenerationID, nil, nil, nil, nil, nil, snapshot, fence)
+				return ReplaceWorkspaceDocsForJob(ctx, db, job.JobID, job.GenerationID, nil, nil, nil, nil, nil, snapshot, fence, nil)
 			},
 		},
 		{

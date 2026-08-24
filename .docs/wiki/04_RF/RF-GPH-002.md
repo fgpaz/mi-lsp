@@ -80,6 +80,38 @@ Las transiciones validas son `staged -> active`, `active -> retired` y `staged -
 
 Los lectores abren una transaccion read-only y fijan un unico `generation_id` al inicio. Nunca combinan filas de dos generaciones.
 
+## Slice publicado: grafo documental docs-only
+
+```toon
+doc_id: RF-GPH-002
+block_id: RF-GPH-002.docs-only-knowledge-wiki
+kind: publication-slice
+source_of_truth: this
+status: implemented
+command: mi-lsp index --docs-only
+canonical_markdown:
+  - wiki/**
+  - bibliotecas/**
+  - .docs/wiki/**
+  - docs/**
+  - README*.md
+excluded: [.docs/raw/, .docs/auditoria/, old, archive, deprecated, historico, legacy]
+behavior:
+  - si hay docs canonicos, se publica GraphGeneration documental aunque no haya batches de compilador
+  - jobs fenced reusan CatalogGeneration activa y no la pisan con la generation de docs
+  - el catalogo de codigo no se reemplaza
+  - wiki map no publica el grafo; solo el indexer/publisher
+verify:
+  - go test ./internal/indexer -count=1 -run 'TestCanonicalGraphDocAcceptsKnowledgeWikiPaths|TestDocsOnly'
+stop_if:
+  - docs_only_replaces_code_catalog=true
+  - missing_canonical_docs_silently_claimed_as_graph_fresh=true
+evidence:
+  - internal/indexer/indexer.go
+  - internal/indexer/graph_staging.go
+  - internal/store/index_publish.go
+```
+
 ## 5. Migracion y compatibilidad
 
 - El schema graph-native se agrega sin destruir tablas legacy.

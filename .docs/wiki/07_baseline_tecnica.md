@@ -162,7 +162,7 @@ flowchart LR
 - El envelope de query puede agregar un bloque opcional `continuation`, tiny y machine-readable, para sugerir el mejor siguiente paso del harness sin requerir parsing de comandos raw.
 - El envelope de query puede agregar un bloque opcional `memory_pointer`, wiki-anchored, para reentrar rapido sobre cambios canonicos recientes y handoff relevante del workspace.
 - La memoria de reentrada repo-local se construye durante `mi-lsp index`, se persiste en `workspace_meta` y no se recompone completa en cada query del hot path.
-- `mi-lsp index --docs-only` y `mi-lsp index start --mode docs` reconstruyen `doc_records`, `doc_edges`, `doc_mentions` y `memory_pointer` sin reemplazar `files` ni `symbols`; se usan para recuperar corpus documental vacio sin pagar el costo de reindexar codigo.
+- `mi-lsp index --docs-only` y `mi-lsp index start --mode docs` reconstruyen `doc_records`, `doc_edges`, `doc_mentions` y `memory_pointer` sin reemplazar `files` ni `symbols`; se usan para recuperar corpus documental vacio sin pagar el costo de reindexar codigo. Si el corpus incluye markdown canonico (`wiki/`, `bibliotecas/`, `.docs/wiki/`, `docs/`), docs-only tambien puede publicar una `GraphGeneration` documental.
 - `nav ask`, `nav pack` y `nav route` deben compartir `profile + docs + ranking + route core` dentro de la misma request; no se acepta recomputacion duplicada del mismo corpus en el hot path.
 - `nav ask`, `nav pack` y `nav route` deben consultar el gate de gobernanza antes de seguir.
 - `nav pack` es docs-first y pack-first: clasifica la tarea, elige un anchor y arma un reading pack ordenado de lo mas global a lo mas especifico, empezando por `00` cuando la gobernanza es valida.
@@ -187,7 +187,7 @@ flowchart LR
 - SQLite repo-local es la autoridad de adjacency. Staging es invisible, el pointer swap es atomico y crash/migration rollback conserva la generation valida anterior.
 - Queries fijan una generation, son read-only, bounded y storage-backed; no cargan el grafo completo en RAM, no persisten closures y no migran durante query.
 - Roslyn se estabiliza primero, Go despues; tsserver/Pyright permanecen gated. Texto solo produce candidatos, doc mentions u omissions.
-- Wiki conserva autoridad sobre codigo. El grafo agrega evidencia o drift, nunca reemplaza canon.
+- Wiki conserva autoridad sobre codigo. El grafo agrega evidencia o drift, nunca reemplaza canon. En wikis de conocimiento, `wiki/` y `bibliotecas/` son markdown canonico del grafo; `nav wiki map` solo cataloga hubs y no sustituye `nav neighbors`.
 - Global graph es una vista derivativa de member generations. MILX-v1 ejecuta packs en proceso aislado, sin MCP/red/graph write.
 - Cada slice requiere `TP-GPH` y Victory Lab contra los dos comparadores fijados. Ver [[TECH-GRAPH-NATIVE]], [[DB-SYMBOL-EDGE-GRAPH]], [[CT-GRAPH-CLI]] y [[CT-MILX-V1]].
 

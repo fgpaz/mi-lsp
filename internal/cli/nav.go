@@ -1088,7 +1088,17 @@ Use --with-layer-counts to include per-layer documentation counts (RS, FL, RF, T
 	inventoryCommand.Flags().BoolVar(&invWithLayerCounts, "with-layer-counts", false, "Include doc counts per layer (RS, FL, RF, TP, TECH, DB, CT)")
 	inventoryCommand.Flags().StringVar(&invWorkspace, "workspace", "", "Limit to a single workspace alias (only valid when --all-workspaces=false)")
 
-	command.AddCommand(searchCommand, routeCommand, packCommand, traceCommand, validateHarnessCommand, validateSourceCommand, inventoryCommand)
+	mapCommand := &cobra.Command{
+		Use:   "map",
+		Short: "Compact hub catalog for a knowledge wiki (persona/proyectos/sistema/materia)",
+		Example: `  mi-lsp nav wiki map --workspace memoria-karen-cosas --format toon
+  mi-lsp nav wiki map --workspace memoria-karen-cosas --token-budget 800 --format toon`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return state.executeOperation(cmd, "nav.wiki.map", map[string]any{}, true)
+		},
+	}
+
+	command.AddCommand(searchCommand, routeCommand, packCommand, traceCommand, validateHarnessCommand, validateSourceCommand, inventoryCommand, mapCommand)
 	return command
 }
 

@@ -61,7 +61,7 @@ El store repo-local persiste catalogo y grafo documental; el target graph-native
   - target `graph_unresolved` con reason, selector digest, candidatos bounded y recovery hint
   - target `graph_migrations` y `graph_analysis` para rollback durable y cache derivativo; no autoridad
   - `doc_records` con `path`, `doc_id`, `layer`, `family`, `search_text`, `content_hash`, `indexed_at`
-  - `doc_edges` con `from_path`, `to_path`, `to_doc_id`, `kind`, `label`
+  - `doc_edges` con `from_path`, `to_path`, `to_doc_id`, `kind` (`markdown_link`, `wikilink`, `embed`, `hierarchy`, doc-id), `label`
   - `doc_mentions` con `doc_path`, `mention_type`, `mention_value`
   - `doc_source_blocks` con `doc_path`, `block_id`, `doc_id`, `kind`, `source_format`, `ordinal`, `start_line`, `end_line`, `content_hash`, `indexed_at`
   - `doc_source_records` con `doc_path`, `block_id`, `record_id`, `record_type`, `ordinal`, `start_line`, `end_line`, `content_hash`, `indexed_at`

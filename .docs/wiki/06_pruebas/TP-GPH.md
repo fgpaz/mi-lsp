@@ -153,6 +153,18 @@ cases:
     when: GraphUnresolved candidates are built
     then: trim, slash normalization, dedupe and lexical sort run before limits of 64 items and 4096 bytes
     evidence: internal/indexer/graph_staging.go; internal/indexer/graph_staging_test.go
+  - id: TC-GPH-073
+    type: positivo
+    given: paths wiki/10-chiamo.md y bibliotecas/memorias/ficha.md
+    when: isCanonicalGraphDoc
+    then: ambos son canonicos; .docs/raw y src/main.go no lo son
+    evidence: internal/indexer/indexer_progress_test.go
+  - id: TC-GPH-074
+    type: positivo
+    given: docs-only con markdown canonico y sin batches de compilador
+    when: documentationGraphRequest
+    then: publishGraph=true y se ensambla generation documental
+    evidence: internal/indexer/indexer.go
 ```
 
 ## TP-GPH-001 - Identidad, NodeKey y cross-RID
@@ -184,6 +196,7 @@ cases:
 | TC-GPH-012 | negativo | pointer conflict reintenta explicitamente; publish del mismo ID/payload es idempotente |
 | TC-GPH-013 | negativo | mismo generation ID con digest/counts distintos bloquea como corrupcion |
 | TC-GPH-014 | negativo | query-time migration o repair implicito falla el test de solo lectura |
+| TC-GPH-014A | positivo | `index --docs-only` publica GraphGeneration documental cuando hay markdown canonico en wiki/ o bibliotecas/ sin batches de compilador |
 
 ## TP-GPH-003 - Edges, adapters e incrementalidad
 
@@ -206,6 +219,8 @@ cases:
 | TC-GPH-022B | positivo | container con Go/C#/TS/Python observa Go una sola vez desde el root, procesa cada `.csproj`, omite `.sln`, comparte identidad y rebasa paths al namespace global; un proyecto Roslyn partial queda omission `backend_partial` sin bloquear batches completos |
 | TC-GPH-022C | negativo | backend elegible sin batch devuelve error y conserva el graph previo; workspace explicitamente non-graph devuelve `GraphNotApplicable` |
 | TC-GPH-022D | positivo | clean e incremental equivalentes, con mismo contenido/origin/toolchain/config, producen el mismo `GenerationID` y digest; `CreatedAt` queda fuera del ID |
+| TC-GPH-022E | positivo | `TestExtractReferencesParsesWikilinks`: `[[00-identidad-karen]]` y `![[12-cafe|cafe]]` emiten wikilink/embed hacia wiki/*.md |
+| TC-GPH-022F | positivo | `TestAppendStructuralDocEdgesLinksGobiernoAndReadme`: hierarchy hacia wiki/00-gobierno.md y README de bibliotecas/memorias |
 
 ## TP-GPH-004 - Navegacion bounded y determinista
 

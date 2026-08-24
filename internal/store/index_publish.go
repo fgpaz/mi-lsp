@@ -86,8 +86,8 @@ func ReplaceWorkspaceDocs(ctx context.Context, db *sql.DB, generationID string, 
 }
 
 // ReplaceWorkspaceDocsForJob is the fenced docs publication path.
-func ReplaceWorkspaceDocsForJob(ctx context.Context, db *sql.DB, jobID, generationID string, docs []model.DocRecord, edges []model.DocEdge, mentions []model.DocMention, sourceBlocks []model.DocSourceBlock, sourceRecords []model.DocSourceRecord, snapshot model.ReentryMemorySnapshot, fence IndexJobFence) error {
-	return publishOwned(ctx, db, jobID, generationID, "docs", 0, 0, len(docs), fence, nil, func(tx *sql.Tx) error {
+func ReplaceWorkspaceDocsForJob(ctx context.Context, db *sql.DB, jobID, generationID string, docs []model.DocRecord, edges []model.DocEdge, mentions []model.DocMention, sourceBlocks []model.DocSourceBlock, sourceRecords []model.DocSourceRecord, snapshot model.ReentryMemorySnapshot, fence IndexJobFence, graph *IndexJobGraphPublication) error {
+	return publishOwned(ctx, db, jobID, generationID, "docs", 0, 0, len(docs), fence, graph, func(tx *sql.Tx) error {
 		if err := replaceDocsWithSourcesTx(ctx, tx, docs, edges, mentions, sourceBlocks, sourceRecords); err != nil {
 			return err
 		}
@@ -308,7 +308,11 @@ func publishOwned(ctx context.Context, db *sql.DB, jobID, generationID, mode str
 				}
 			}
 			if graph.GraphCurrent {
-				if err := setGraphRuntimeStateTx(ctx, tx, GraphRuntimeFresh, generationID); err != nil {
+				catalogGeneration := generationID
+				if graph.CatalogGeneration != "" {
+					catalogGeneration = graph.CatalogGeneration
+				}
+				if err := setGraphRuntimeStateTx(ctx, tx, GraphRuntimeFresh, catalogGeneration); err != nil {
 					return err
 				}
 			} else if mode == "full" || mode == "incremental" {

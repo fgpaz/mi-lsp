@@ -37,12 +37,12 @@ Generar, validar y publicar un grafo nativo desde evidencia estructural disponib
 
 ## 2. Scope in/out
 
-- In: compilador/parser disponible, normalizacion de nodos y aristas, validacion de identidad, staging, publicacion atomica y conservacion de la generacion anterior para rollback.
+- In: compilador/parser disponible, normalizacion de nodos y aristas, validacion de identidad, staging, publicacion atomica y conservacion de la generacion anterior para rollback; `index --docs-only` puede publicar un grafo documental desde markdown canonico (`wiki/`, `bibliotecas/`, `.docs/wiki/`) sin batches de compilador.
 - Out: consultas, extensiones, RF/TP y cambios de autoridad documental; se derivan en olas posteriores.
 
 ## 3. Preconditions and postconditions
 
-- Preconditions: workspace con entrypoint resoluble y backend estructural que devuelva evidencia o `unresolved` explicito.
+- Preconditions: workspace con entrypoint resoluble y backend estructural que devuelva evidencia o `unresolved` explicito, o corpus docs-only con markdown canonico para el slice documental.
 - Postconditions: generacion identificable; cada nodo tiene `NodeKey` y origen; una publicacion fallida no reemplaza el snapshot activo.
 
 ## 4. Main sequence

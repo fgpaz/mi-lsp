@@ -84,6 +84,21 @@ func TestDocsOnlyIndexDoesNotRequireCodeProjectMarkers(t *testing.T) {
 	}
 }
 
+func TestCanonicalGraphDocAcceptsKnowledgeWikiPaths(t *testing.T) {
+	cases := map[string]bool{
+		"wiki/10-chiamo.md":                    true,
+		"bibliotecas/memorias/ficha.md":        true,
+		".docs/wiki/00_gobierno_documental.md": true,
+		".docs/raw/plans/x.md":                 false,
+		"src/main.go":                          false,
+	}
+	for path, want := range cases {
+		if got := isCanonicalGraphDoc(path, false); got != want {
+			t.Fatalf("isCanonicalGraphDoc(%q)=%v want %v", path, got, want)
+		}
+	}
+}
+
 func TestWalkWorkspaceIgnoresNestedMiLspState(t *testing.T) {
 	root := t.TempDir()
 	writeProgressTestFile(t, root, "src/App.cs", "namespace Demo; public class App { }\n")

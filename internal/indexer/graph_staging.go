@@ -129,10 +129,24 @@ func isCanonicalGraphDoc(path string, snapshot bool) bool {
 			return false
 		}
 	}
-	if strings.HasPrefix(lower, ".docs/wiki/") || strings.HasPrefix(lower, "docs/") || strings.HasPrefix(lower, "readme") {
+	if strings.HasPrefix(lower, ".docs/wiki/") || strings.HasPrefix(lower, "docs/") || strings.HasPrefix(lower, "wiki/") || strings.HasPrefix(lower, "bibliotecas/") || strings.HasPrefix(lower, "readme") {
 		return strings.HasSuffix(lower, ".md")
 	}
 	return false
+}
+
+func graphDocProjectModule(path string) string {
+	lower := strings.ToLower(filepath.ToSlash(strings.TrimSpace(path)))
+	switch {
+	case strings.HasPrefix(lower, "wiki/"):
+		return "wiki"
+	case strings.HasPrefix(lower, "bibliotecas/"):
+		return "bibliotecas"
+	case strings.HasPrefix(lower, "docs/"):
+		return "docs"
+	default:
+		return ".docs/wiki"
+	}
 }
 
 func graphDocSourceDigest(doc model.DocRecord) model.GraphDigest {
@@ -424,7 +438,7 @@ func assembleGraphBundle(input graphAssemblyInput) (model.GraphBundle, error) {
 	docSources := make(map[string]model.GraphDigest, len(input.docs))
 	docIDs := make(map[string][]string)
 	for _, doc := range input.docs {
-		identity, err := model.NewNodeKey(model.NodeKeyFields{RepositoryIdentity: input.repositoryIdentity, BackendType: "docgraph", Language: "markdown", ProjectOrModule: ".docs/wiki", OwnerPath: doc.Path, SymbolKind: "document", SemanticIdentity: firstNonEmptyGraph(doc.DocID, doc.Path)})
+		identity, err := model.NewNodeKey(model.NodeKeyFields{RepositoryIdentity: input.repositoryIdentity, BackendType: "docgraph", Language: "markdown", ProjectOrModule: graphDocProjectModule(doc.Path), OwnerPath: doc.Path, SymbolKind: "document", SemanticIdentity: firstNonEmptyGraph(doc.DocID, doc.Path)})
 		if err != nil {
 			return model.GraphBundle{}, err
 		}

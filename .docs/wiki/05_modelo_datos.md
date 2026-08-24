@@ -43,7 +43,7 @@ La base vigente distingue workspaces `single` de workspaces `container`, persist
 | SymbolRecord | Derivada | Indexer | `<repo>/.mi-lsp/index.db` | Declaracion liviana con `repo_id` y `repo` |
 | FileRecord | Derivada | Indexer | `<repo>/.mi-lsp/index.db` | Metadata de archivo indexado con ownership por repo |
 | DocRecord | Derivada | Doc indexer | `<repo>/.mi-lsp/index.db` | Documento indexado con `path`, `doc_id`, `layer`, `family` y texto de ranking |
-| DocEdge | Derivada | Doc indexer | `<repo>/.mi-lsp/index.db` | Relacion explicita documento -> documento por doc ID o link markdown |
+| DocEdge | Derivada | Doc indexer | `<repo>/.mi-lsp/index.db` | Relacion explicita documento -> documento por doc ID, link markdown, wikilink, embed u hierarchy |
 | DocMention | Derivada | Doc indexer | `<repo>/.mi-lsp/index.db` | Menciones explicitas desde docs hacia paths, simbolos o comandos |
 | DocSourceBlock | Derivada | Doc indexer | `<repo>/.mi-lsp/index.db` | Bloque `toon` normativo de un artefacto `SDD-WIKI-SOURCE-v1`, con `block_id`, `doc_id`, lineas y hash |
 | DocSourceRecord | Derivada | Doc indexer | `<repo>/.mi-lsp/index.db` | Record referenciable dentro de un bloque fuente, con `record_id`, `record_type`, lineas y hash |

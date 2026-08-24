@@ -7,6 +7,12 @@ and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2
 
 ## [Unreleased]
 
+### Added
+
+- `nav wiki map` publishes a compact knowledge-wiki hub catalog (persona/proyectos/sistema/materia) without full bodies.
+- `index --docs-only` can publish a documentation `GraphGeneration` when canonical markdown exists under `wiki/`, `bibliotecas/`, `.docs/wiki/` or `docs/`.
+- Docgraph parses Obsidian wikilinks (`[[...]]`, `![[...]]`) and adds structural hierarchy edges to gobierno/README.
+
 ## [0.7.2] - 2026-08-20
 
 ### Fixed

@@ -54,6 +54,31 @@ Representar relaciones dirigidas sin inflar precision ni ocultar ambiguedad. Tod
 
 Agregar un tipo exige version de schema, semantica de direccion, backends habilitados, evidencia minima y tests negativos. `doc_mentions` expresa una referencia documental; no convierte el documento en autoridad sobre una relacion de codigo.
 
+```toon
+doc_id: RF-GPH-003
+block_id: RF-GPH-003.knowledge-wiki-doc-edges
+kind: edge-taxonomy-slice
+source_of_truth: this
+status: implemented
+doc_edge_kinds:
+  - markdown_link
+  - wikilink
+  - embed
+  - hierarchy
+graph_relation_for_doc_edges: doc_mentions
+wikilink_syntax: "[[nombre]] y ![[nombre|alias]]"
+hierarchy:
+  - markdown en un directorio apunta a README.md de ese directorio si existe
+  - wiki/*.md de primer nivel apunta a wiki/00-gobierno*.md si existe
+verify:
+  - go test ./internal/docgraph -count=1 -run 'TestExtractReferencesParsesWikilinks|TestAppendStructuralDocEdges'
+stop_if:
+  - wikilink_promoted_to_compiler_exact_code_edge=true
+evidence:
+  - internal/docgraph/docgraph.go
+  - internal/docgraph/docgraph_test.go
+```
+
 ## 3. Estado y confianza
 
 | Estado | Significado | Puede presentarse como hecho del compilador |

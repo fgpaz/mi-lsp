@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/fgpaz/mi-lsp/internal/model"
 	"github.com/fgpaz/mi-lsp/internal/workspace"
 )
 
@@ -544,5 +545,50 @@ func TestExpandPatternSkipsIgnoredGlobAndExplicitPaths(t *testing.T) {
 	}
 	if !foundKeep {
 		t.Fatalf("expected keep.md, got %v", visited)
+	}
+}
+
+func TestExtractReferencesParsesWikilinks(t *testing.T) {
+	mentions, edges := extractReferences("/tmp", "wiki/10-chiamo.md", "Ver [[00-identidad-karen]] y ![[12-cafe|café]].")
+	if len(edges) < 2 {
+		t.Fatalf("edges=%v", edges)
+	}
+	kinds := map[string]string{}
+	for _, edge := range edges {
+		kinds[edge.Kind] = edge.ToPath
+	}
+	if kinds["wikilink"] != "wiki/00-identidad-karen.md" {
+		t.Fatalf("wikilink=%q kinds=%v", kinds["wikilink"], kinds)
+	}
+	if kinds["embed"] != "wiki/12-cafe.md" {
+		t.Fatalf("embed=%q kinds=%v", kinds["embed"], kinds)
+	}
+	if len(mentions) == 0 {
+		t.Fatal("expected mentions")
+	}
+}
+
+func TestAppendStructuralDocEdgesLinksGobiernoAndReadme(t *testing.T) {
+	docs := []model.DocRecord{
+		{Path: "wiki/00-gobierno.md"},
+		{Path: "wiki/10-chiamo.md"},
+		{Path: "bibliotecas/memorias/README.md"},
+		{Path: "bibliotecas/memorias/ficha.md"},
+	}
+	edges := appendStructuralDocEdges(docs, nil)
+	foundGobierno, foundReadme := false, false
+	for _, edge := range edges {
+		if edge.Kind != "hierarchy" {
+			continue
+		}
+		if edge.FromPath == "wiki/10-chiamo.md" && edge.ToPath == "wiki/00-gobierno.md" {
+			foundGobierno = true
+		}
+		if edge.FromPath == "bibliotecas/memorias/ficha.md" && edge.ToPath == "bibliotecas/memorias/README.md" {
+			foundReadme = true
+		}
+	}
+	if !foundGobierno || !foundReadme {
+		t.Fatalf("structural edges=%v gobierno=%v readme=%v", edges, foundGobierno, foundReadme)
 	}
 }

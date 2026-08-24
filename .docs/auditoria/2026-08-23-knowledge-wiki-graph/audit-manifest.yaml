@@ -1,0 +1,14 @@
+schema: ae-audit-hygiene/v1
+session: 2026-08-23-knowledge-wiki-graph
+retention_ttl_days: 14
+hash_algorithm: sha256
+language: es
+artifact_classes:
+  durable_keep:
+    - session-contract.yaml
+    - traceability-closure.yaml
+    - audit-manifest.yaml
+  raw_prune_after_14d: []
+cleanup_status: keep_durable
+sanitized: true
+secrets_present: false

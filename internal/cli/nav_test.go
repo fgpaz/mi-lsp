@@ -284,6 +284,17 @@ func TestNavWikiInventory_ExposesWithLayerCountsFlag(t *testing.T) {
 	}
 }
 
+func TestNavWikiMapCommandExists(t *testing.T) {
+	command := newNavCommand(&rootState{})
+	mapCmd, _, err := command.Find([]string{"wiki", "map"})
+	if err != nil {
+		t.Fatalf("find wiki map command: %v", err)
+	}
+	if mapCmd.Use != "map" {
+		t.Fatalf("wiki map Use=%q", mapCmd.Use)
+	}
+}
+
 func TestNavPackCommandsForwardExactOperationIDs(t *testing.T) {
 	var gotOperation string
 	var gotPreferDaemon bool

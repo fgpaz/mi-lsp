@@ -1,0 +1,168 @@
+schema: ae-session-contract/v1
+task_slug: knowledge-wiki-graph
+session_id: 2026-08-23-knowledge-wiki-graph
+issue_or_waiver: tracker.mode=none local_session_frontier
+base_ref: origin/main
+base_sha: f8ec5abaaa8398c82d18017fce4a3bee8e13fe67
+branch: main
+intended_branch: main
+worktree_path: /Users/jazmin/repos/mi-lsp
+mode: FAST
+tracker:
+  mode: none
+  persistence: local-only
+  external_issue: not_applicable
+ticket_frontier:
+  mode: none
+  status: local_session_contract_authority
+  external_issue: not_applicable
+touched_linear_issues: []
+decision_lock: D-TEDI-017
+locked_decisions:
+  - mi-lsp owns compiled knowledge-wiki graph; Tedi does not invent a JavaScript graph
+  - no Tedi memory v1
+  - Spanish documentation; technical identifiers exact
+  - tracker.mode=none
+  - no force-push
+  - this skill does not push
+harness_adapter: grok_workflows
+selected_adapter: grok_workflows
+orchestration_depth: T2
+closure_profile: local_fast_no_push
+worker_decision: none
+worker_adapter_available: true
+worker_authorized_by_user: true
+independent_axes:
+  - milsp-wiki-map
+  - milsp-docs-only-graph-publish
+why_no_worker: same-repo FAST leaf; parent already dispatched this bounded writer
+why_not_cheaper: wiki/code/contract sync across RF/CT/TP/TECH required durable packet
+adapter_evidence_or_blocker:
+  status: PASS
+  adapter: grok_workflows
+  boundary_violation: false
+worker_verdicts: []
+ae_contract:
+  gateway_skill: ps-trazabilidad
+  selected_mode: FAST
+  decision_lock: D-TEDI-017
+  harness_adapter: grok_workflows
+  orchestration_depth: T2
+  ledgers_required: false
+  runtime_target: local_cli
+  worker_decision: none
+  independent_axes:
+    - milsp-wiki-map
+    - milsp-docs-only-graph-publish
+  adapter_evidence_or_blocker: grok_workflows leaf
+  stop_before_functional_work: false
+anchors:
+  - D-TEDI-017
+  - RF-WIKI-006
+  - RF-WIKI
+  - RF-GPH-002
+  - RF-GPH-003
+  - CT-NAV-WIKI
+  - CT-GRAPH-CLI
+  - TP-WIKI
+  - TP-GPH
+  - TECH-GRAPH-NATIVE
+sdd_anchors:
+  - RF-WIKI-006
+  - CT-NAV-WIKI
+  - RF-GPH-002
+  - TECH-GRAPH-NATIVE
+expected_scope: knowledge-wiki map command, docs-only graph publish, wiki/ canonical docs, wikilinks, wiki sync, session packet
+allowed_paths:
+  - .docs/auditoria/2026-08-23-knowledge-wiki-graph/**
+  - .gitignore
+  - .docs/wiki/01_alcance_funcional.md
+  - .docs/wiki/03_FL.md
+  - .docs/wiki/03_FL/FL-GPH-01.md
+  - .docs/wiki/03_FL/FL-WIKI-01.md
+  - .docs/wiki/04_RF.md
+  - .docs/wiki/04_RF/RF-GPH-002.md
+  - .docs/wiki/04_RF/RF-GPH-003.md
+  - .docs/wiki/04_RF/RF-WIKI-006.md
+  - .docs/wiki/05_modelo_datos.md
+  - .docs/wiki/06_matriz_pruebas_RF.md
+  - .docs/wiki/06_pruebas/TP-GPH.md
+  - .docs/wiki/06_pruebas/TP-WIKI.md
+  - .docs/wiki/07_baseline_tecnica.md
+  - .docs/wiki/07_tech/TECH-GRAPH-NATIVE.md
+  - .docs/wiki/08_db/DB-DOC-INDEX.md
+  - .docs/wiki/08_modelo_fisico_datos.md
+  - .docs/wiki/09_contratos/CT-GRAPH-CLI.md
+  - .docs/wiki/09_contratos/CT-NAV-WIKI.md
+  - .docs/wiki/09_contratos_tecnicos.md
+  - CHANGELOG.md
+  - internal/cli/nav.go
+  - internal/cli/nav_test.go
+  - internal/docgraph/docgraph.go
+  - internal/docgraph/docgraph_test.go
+  - internal/indexer/graph_staging.go
+  - internal/indexer/indexer.go
+  - internal/indexer/indexer_progress_test.go
+  - internal/service/app.go
+  - internal/service/wiki_map.go
+  - internal/service/wiki_map_test.go
+  - internal/store/index_jobs_ownership_test.go
+  - internal/store/index_publish.go
+  - skills/mi-lsp/SKILL.md
+  - skills/mi-lsp/references/compound-commands.md
+  - skills/mi-lsp/references/quickstart.md
+forbidden_paths:
+  - .git/**
+  - .mi-lsp/**
+  - .docs/wiki/_mi-lsp/read-model.toml
+  - .env
+  - .env.*
+  - "**/*.pem"
+  - "**/*.key"
+  - "**/*.pfx"
+  - dist/**
+  - src/main/memory/**
+required_evidence:
+  - .docs/auditoria/2026-08-23-knowledge-wiki-graph/session-contract.yaml
+  - .docs/auditoria/2026-08-23-knowledge-wiki-graph/traceability-closure.yaml
+  - .docs/wiki/04_RF/RF-WIKI-006.md
+  - .docs/wiki/09_contratos/CT-NAV-WIKI.md
+  - targeted_go_tests
+waivers:
+  - id: no_push_this_skill
+    detail: operator forbade push; packet is local FAST closure only
+  - id: ae_canon_kernel_missing
+    detail: kernel_v2_sources_missing on this host is preexisting; not introduced by this slice
+  - id: tracker_none
+    detail: tracker.mode=none; no Linear/Plane mutation
+branch_disposition: integrate-main
+cleanup_policy: auto-after-successful-integration
+force_push: false
+no_push_deploy_release_in_current_turn: true
+language: es
+mi_lsp_preflight:
+  alias: mi-lsp
+  root: /Users/jazmin/repos/mi-lsp
+  cli_path: /Users/jazmin/.local/bin/mi-lsp
+  governance_blocked: true
+  docs_ready: true
+  doc_count: 155
+  index_status: docs_only_succeeded
+  index_sync: current
+  ae_canon:
+    status: missing
+    reason: kernel_v2_sources_missing
+    blocking: true
+    preexisting: true
+    roots:
+      - <kernel_home>/canon
+      - .docs/ae/repo-policy.yaml
+    source: kernel_v2
+  client_name: ps-trazabilidad
+  session_id: 2026-08-23-knowledge-wiki-graph
+stop_conditions:
+  - force_push_requested_or_attempted
+  - tedi_memory_v1_enabled
+  - secrets_or_pii_emitted
+  - push_from_this_skill
+secrets_policy: never_read_or_emitted

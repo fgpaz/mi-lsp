@@ -1,0 +1,499 @@
+schema: ae-independent-traceability-audit/v1
+captured_at: 2026-08-23T23:50:57-03:00
+task_slug: knowledge-wiki-graph
+session: 2026-08-23-knowledge-wiki-graph
+repo: mi-lsp
+auditor_role: independent_read_only_traceability_auditor
+audit_skill: ps-auditar-trazabilidad
+audit_depth: targeted_fast_same_repo
+git_mutations: none
+verdict: Approved
+final_verdict: Approved
+blocking_conclusion: false
+status: APPROVED_LOCAL_WIP_READY_FOR_AUTHORIZED_COMPLETION
+
+independence:
+  implementation_edits: false
+  canon_repairs: false
+  runtime_mutations: false
+  tracker_mutations: false
+  commit_push_or_pre_push: false
+  git_mutated: false
+  agent_browser_sessions_opened: 0
+  only_output: .docs/auditoria/2026-08-23-knowledge-wiki-graph/independent-traceability-audit.yaml
+
+harness_contract:
+  harness_protocol: SDD-HARNESS-v1
+  wiki_source_protocol: SDD-WIKI-SOURCE-v1
+  id: AUDIT-MILSP-KNOWLEDGE-WIKI-GRAPH-20260823
+  kind: independent-traceability-audit
+  audience: dual
+  imports:
+    - .docs/auditoria/2026-08-23-knowledge-wiki-graph/session-contract.yaml
+    - .docs/auditoria/2026-08-23-knowledge-wiki-graph/traceability-closure.yaml
+    - .docs/auditoria/2026-08-23-knowledge-wiki-graph/audit-manifest.yaml
+    - .docs/wiki/00_gobierno_documental.md
+    - .docs/wiki/_mi-lsp/read-model.toml
+    - .docs/wiki/04_RF/RF-WIKI-006.md
+    - .docs/wiki/09_contratos/CT-NAV-WIKI.md
+  exports:
+    - .docs/auditoria/2026-08-23-knowledge-wiki-graph/independent-traceability-audit.yaml
+  agent_must_read:
+    - /Users/jazmin/.agents/claude-skills/ps-auditar-trazabilidad/SKILL.md
+    - .docs/auditoria/2026-08-23-knowledge-wiki-graph/session-contract.yaml
+    - .docs/auditoria/2026-08-23-knowledge-wiki-graph/traceability-closure.yaml
+  agent_may_edit:
+    - .docs/auditoria/2026-08-23-knowledge-wiki-graph/independent-traceability-audit.yaml
+  agent_must_not_edit:
+    - internal/**
+    - .docs/wiki/**
+    - .git/**
+    - .env*
+    - dist/**
+    - src/main/memory/**
+  verify:
+    - git status --short --branch
+    - git diff --check
+    - git rev-list --left-right --count origin/main...HEAD
+    - go test ./internal/cli -count=1 -run TestNavWikiMap
+    - go test ./internal/service -count=1 -run 'TestClassifyWikiMapHub|TestGroupWikiMapDocsOrder'
+    - go test ./internal/docgraph -count=1 -run 'TestExtractReferencesParsesWikilinks|TestAppendStructuralDocEdges'
+    - go test ./internal/indexer -count=1 -run 'TestCanonicalGraphDocAcceptsKnowledgeWikiPaths|TestDocsOnly'
+    - go test ./internal/store -count=1 -run TestFencedPublicationModeMatrix
+    - mi-lsp nav governance --workspace mi-lsp --format toon
+    - mi-lsp nav wiki map --workspace mi-lsp --format toon
+  stop_if:
+    - force_push_requested_or_attempted
+    - tedi_memory_v1_enabled
+    - secrets_or_pii_emitted
+    - changed_path_outside_session_contract
+    - forbidden_path_hit
+    - packet_hashes_mismatch
+    - d_tedi_017_lock_broken
+  evidence:
+    - .docs/auditoria/2026-08-23-knowledge-wiki-graph/independent-traceability-audit.yaml
+
+target_repository_preflight:
+  verdict: PASS
+  source_repository: /Users/jazmin/repos/mi-lsp
+  target_repository: /Users/jazmin/repos/mi-lsp
+  worktree_path: /Users/jazmin/repos/mi-lsp
+  worktree_count: 1
+  unknown_writer: false
+  revalidation_key: 2026-08-23-knowledge-wiki-graph
+  ae_layer: repo
+  policy_paths:
+    AGENTS.md: 27e7e6a521fb55352374bab56671fb93db90e35b117e586cfc46fa96dae3c388
+    CLAUDE.md: 3e1620e13e596c8ea6eadbda264bfc64413dd39ccddb8d2353ad2d2e2df58f60
+    .docs/ae/repo-policy.yaml: 8a8262b6f5c455da7a6f7936e03d779d4cd03e3e7f32f941be6e00b711dffd6f
+  notes:
+    - ae_work_invoked_before_execution is absent from the session contract; FAST leaf dispatched by parent, recorded as AUDIT_DEBT not a current-scope product fail
+
+locks_reviewed:
+  - D-TEDI-017
+  - tracker.mode=none
+  - no_force_push
+  - no_tedi_memory_v1
+  - spanish_documentation_technical_identifiers_exact
+  - operator_authorized_origin_main
+  - operator_authorized_replace_/Applications/Tedi.app
+  - operator_authorized_replace_~/.local/bin/mi-lsp
+  - preserve_unrelated_dirty_only_if_secrets
+  - this_session_wip_may_ship
+  - this_skill_does_not_mutate_git
+
+scope_audited:
+  worktree: /Users/jazmin/repos/mi-lsp
+  branch: main
+  intended_branch: main
+  head_sha: f8ec5abaaa8398c82d18017fce4a3bee8e13fe67
+  origin_main_sha: f8ec5abaaa8398c82d18017fce4a3bee8e13fe67
+  ahead: 0
+  behind: 0
+  dirty: true
+  dirty_expected: true
+  runtime_sensitive: false
+  data_or_contract_sensitive: true
+  push_bound_in_session_contract: false
+  operator_later_authorized_origin_main: true
+  session_contract_reviewed: true
+  traceability_closure_reviewed: true
+  audit_manifest_reviewed: true
+  context_packet_present: false
+  expected_scope: knowledge-wiki map command, docs-only graph publish, wiki/ canonical docs, wikilinks, wiki sync, session packet
+
+session_and_scope_audit:
+  session_contract_path: .docs/auditoria/2026-08-23-knowledge-wiki-graph/session-contract.yaml
+  session_contract_sha256: 18c83603887bbac04ad6dd771a54d73dce1eeb044b0fd06280126a2507e7d309
+  yaml_valid: true
+  branch_matches: true
+  worktree_matches: true
+  head_sha_matches: true
+  base_sha_matches: true
+  issue_or_waiver: tracker.mode=none local_session_frontier
+  tracker_mode: none
+  tracker_provider: not_applicable
+  tracker_sync_needed: false
+  pj_crear_tarjeta_conf: absent
+  expected_scope_verdict: PASS
+  allowed_paths_verdict: PASS
+  forbidden_paths_verdict: PASS
+  uncovered_changed_paths: []
+  forbidden_hits: []
+  raw_paths: []
+  secrets_like_paths: []
+  unrelated_dirty_paths: []
+  force_push: false
+  git_snapshot:
+    tracked_modified: 33
+    untracked_before_this_audit: 6
+    staged: 0
+    raw_paths: 0
+    forbidden_hits: 0
+    outside_allowed_paths: 0
+
+traceability_closure_freshness:
+  path: .docs/auditoria/2026-08-23-knowledge-wiki-graph/traceability-closure.yaml
+  sha256: e8cf0f3e2a0374123797c9f624b3f84b766a8ecd0ed23d42b9dc191e82a05c1a
+  head_matches: true
+  git_after_matches: true
+  changed_paths_match_git: true
+  hash_recompute_verdict: PASS
+  gitignore_hash_in_packet: false
+  packet_vs_diff_on_closure: missing
+  overall_verdict: PASS
+  note: closure hashes matched 35/35 hashed product paths; .gitignore is in changed_paths but was not hashed; packet files themselves are untracked as declared
+
+packet_vs_diff:
+  method: path_list_only
+  command: git status --porcelain -uall compared to session-contract allowed_paths
+  verdict: PASS
+  context_packet_present: false
+  context_packet_stale: false
+  refresh_ran: false
+  uncovered_changed_paths: []
+  new_hubs: []
+  paths_fingerprint_at_verify: e793b04cc9467253fb831e5549c5fae94f8fd8d2a2e5229e088ac6df6c414eb7
+  paths_count: 39
+  packet_slice: session-contract allowed_paths
+  note: closure packet omitted packet_vs_diff; auditor recomputed coverage independently. Missing context-packet.yaml is AUDIT_DEBT for FAST because the session-contract allowlist covers every changed path.
+
+independent_progressive_scope:
+  canonical_horizon_ref: D-TEDI-017
+  current_status: CURRENT
+  current_count: 1
+  scope_classification:
+    IN:
+      - nav wiki map
+      - docs-only documentation GraphGeneration
+      - wiki/ and bibliotecas/ as canonical graph markdown
+      - wikilink embed hierarchy doc_edges
+    OUT:
+      - Tedi memory v1
+      - Tedi JavaScript graph
+      - force-push
+      - Gastos/Notas live systems
+      - git push from this audit skill
+  business_context_freshness: not_applicable
+  progressive_dependency_verdict: PASS
+  later_hold_consumed: false
+  later_hold_references: []
+  roadmap_as_canon: false
+  horizon_verdict: PASS
+
+d_tedi_017_lock:
+  source: /Users/jazmin/repos/tedi-desktop/.docs/wiki/91_decision_log.md
+  status: locked
+  claims_verified:
+    mi_lsp_owns_compiled_knowledge_wiki_graph: PASS
+    tedi_does_not_invent_javascript_graph: PASS
+    no_tedi_memory_v1: PASS
+    compact_hubs_persona_proyectos_sistema_materia: PASS
+    map_does_not_emit_full_bodies: PASS
+    wiki_and_bibliotecas_canonical: PASS
+    wikilinks_and_structural_edges: PASS
+    gastos_notas_not_federated: PASS
+  evidence:
+    - internal/service/wiki_map.go
+    - internal/service/wiki_map_test.go
+    - internal/cli/nav.go
+    - internal/indexer/indexer.go
+    - internal/indexer/graph_staging.go
+    - internal/docgraph/docgraph.go
+    - .docs/wiki/04_RF/RF-WIKI-006.md
+    - .docs/wiki/09_contratos/CT-NAV-WIKI.md
+    - .docs/wiki/07_tech/TECH-GRAPH-NATIVE.md
+
+governance_audit:
+  authority: .docs/wiki/00_gobierno_documental.md
+  authority_sha256: 3b06b307c6607e4ba9964fe73b69087781b6b2876eb2d5aa494e8f130dace1a1
+  projection: .docs/wiki/_mi-lsp/read-model.toml
+  projection_sha256: e3543dce9ac410a118f94ded38ab0270dcabb6a84ee815097887fe33ca985cd7
+  yaml_source_present: true
+  yaml_profile: spec_backend
+  projection_sync: in_sync
+  index_sync: current
+  docs_ready: true
+  governance_blocked: true
+  ae_canon_status: missing
+  ae_canon_reason: kernel_v2_sources_missing
+  ae_canon_blocking: true
+  preexisting: true
+  undermines_current_promise: false
+  class: BLOCKED_PREEXISTING
+  owner: platform
+  next_action: restore kernel_home canon or keep host waiver
+  recheck_rule: mi-lsp nav governance --workspace mi-lsp --format toon
+  oracle_key: ae_canon.status
+  verdict: PASS_WITH_PREEXISTING_DEBT
+  note: 00 YAML and read-model remain in_sync; only external kernel_v2 modules are missing. Session waiver ae_canon_kernel_missing accepted.
+
+traceability_chain:
+  walk:
+    - 00_gobierno_documental.md
+    - 03_FL/FL-WIKI-01.md
+    - 03_FL/FL-GPH-01.md
+    - 04_RF/RF-WIKI-006.md
+    - 04_RF/RF-GPH-002.md
+    - 04_RF/RF-GPH-003.md
+    - 07_tech/TECH-GRAPH-NATIVE.md
+    - 08_db/DB-DOC-INDEX.md
+    - 09_contratos/CT-NAV-WIKI.md
+    - 09_contratos/CT-GRAPH-CLI.md
+    - 06_pruebas/TP-WIKI.md
+    - 06_pruebas/TP-GPH.md
+  missing_anchors: []
+  fl_rf_tp_ct_sync: PASS
+  rf_wiki_006_indexed_in_04_rf: true
+  rf_wiki_006_in_test_matrix: true
+  crear_modelo_de_datos: not_applicable
+  crear_capa_tecnica_wiki: not_applicable
+  data_authoring_rationale: 05/08/DB only document existing doc_edge kinds (wikilink, embed, hierarchy); no schema or migration change
+
+harness_and_wiki_source:
+  harness_protocol: SDD-HARNESS-v1
+  wiki_source_protocol: SDD-WIKI-SOURCE-v1
+  live_validate_harness: BLOCKED_PREEXISTING_AE_CANON
+  live_validate_source: BLOCKED_PREEXISTING_AE_CANON
+  inspection_verdict: PASS
+  artifacts_reviewed:
+    - .docs/wiki/04_RF/RF-WIKI-006.md
+    - .docs/wiki/09_contratos/CT-NAV-WIKI.md
+    - .docs/wiki/07_tech/TECH-GRAPH-NATIVE.md
+    - .docs/wiki/06_pruebas/TP-WIKI.md
+  rf_wiki_006:
+    doc_id: true
+    block_id: true
+    toon: true
+    harness_contract: true
+    verify: true
+    stop_if: true
+    evidence: true
+    language: es
+  wiki_source_verdict: PASS
+  harness_verdict: PASS_INSPECTION_LIVE_VALIDATORS_BLOCKED_PREEXISTING
+  tables_reviewed: human_or_dual_indexes_only
+
+implementation_vs_canon:
+  wiki_map_backend: wiki.map
+  wiki_map_hub_order: [persona, proyectos, sistema, materia]
+  wiki_map_excludes_dot_docs_wiki: true
+  wiki_map_excludes_31_workers_32_contratos: true
+  wiki_map_hint_es: "no se encontraron hubs de wiki en wiki/ o bibliotecas/"
+  live_wiki_map_on_mi_lsp_repo: PASS
+  live_wiki_map_note: mi-lsp uses .docs/wiki not wiki/; empty hubs is correct
+  docs_only_uses_replace_workspace_docs: true
+  docs_only_reuses_active_catalog_generation: true
+  is_canonical_graph_doc_accepts_wiki_and_bibliotecas: true
+  wikilink_and_embed_parsed: true
+  structural_hierarchy_edges: true
+  tedi_memory_v1_in_diff: false
+  javascript_graph_invented: false
+  spanish_ui_hint: PASS
+  english_walk_warning: INFO
+
+verification:
+  targeted_tests: PASS
+  git_diff_check: PASS
+  hash_recompute: PASS
+  wiki_map_live: PASS
+  governance_live: BLOCKED_PREEXISTING
+  installed_cli: /Users/jazmin/.local/bin/mi-lsp
+  installed_version: v0.7.3-0.20260820190540-f8ec5abaaa83+dirty
+  targeted_test_commands:
+    - go test ./internal/cli -count=1 -run TestNavWikiMap
+    - go test ./internal/service -count=1 -run 'TestClassifyWikiMapHub|TestGroupWikiMapDocsOrder'
+    - go test ./internal/docgraph -count=1 -run 'TestExtractReferencesParsesWikilinks|TestAppendStructuralDocEdges'
+    - go test ./internal/indexer -count=1 -run 'TestCanonicalGraphDocAcceptsKnowledgeWikiPaths|TestDocsOnly'
+    - go test ./internal/store -count=1 -run TestFencedPublicationModeMatrix
+
+core_product_promise:
+  core_product_promise_verdict: PASS
+  expected_experience_oracle_verdict: NOT_APPLICABLE
+  expected_experience_oracle_rationale: CLI/knowledge-wiki contract, not Tedi visual UX
+  qa_learning_loop_verdict: NOT_APPLICABLE
+  worker_join_verdict: NOT_APPLICABLE
+  harness_scope_classification: targeted_pass_with_preexisting_debt
+  false_pass_audit:
+    screenshot_only: false
+    api_only_without_oracle: false
+    component_promoted_to_journey: false
+    memory_v1_claimed: false
+    ignored_feedback: false
+    verdict: PASS
+
+branch_and_worktree_audit:
+  worktrees: 1
+  current_branch: main
+  unknown_same_scope_branches: []
+  unmerged_unrelated:
+    - name: feat/macos-release-support
+      tip: 8fc5df1
+      classification: preexisting_unrelated
+      same_scope: false
+  main_is_integration_lane: true
+  dirty_on_main_expected: true
+  stash: empty
+
+completion_handoff_audit:
+  target_skill: finishing-a-development-branch
+  required_order: trace → audit → drift repair/rerun → tracker if applicable → prepush → integration → remote readback → cleanup
+  durability_proof: this_packet
+  mutations_authorized_this_packet: false
+  this_audit_push: forbidden
+  this_audit_commit: forbidden
+  this_audit_cleanup: forbidden
+  operator_authorized_origin_main: true
+  operator_authorized_replace_tedi_app: true
+  operator_authorized_replace_mi_lsp_bin: true
+  tedi_app_replace_in_this_repo: false
+  mi_lsp_bin_replace_this_skill: false
+  local_only_terminal_state: false
+  tracker_if_applicable: not_applicable
+  verdict: approved
+  note: session contract still records push_authorized=false for the trace skill; operator later authorized origin/main for the completion owner. This audit does not push.
+
+pre_push_readiness:
+  reviewed: true
+  executed: false
+  ready_for_next_owner: true
+  issue_or_waiver: tracker.mode=none
+  evidence_path: .docs/auditoria/2026-08-23-knowledge-wiki-graph/independent-traceability-audit.yaml
+  session_contract_path: .docs/auditoria/2026-08-23-knowledge-wiki-graph/session-contract.yaml
+  expected_scope: knowledge-wiki-graph
+  raw_paths_pending: false
+  force_push: false
+
+post_audit_no_drift:
+  expected_new_untracked:
+    - .docs/auditoria/2026-08-23-knowledge-wiki-graph/independent-traceability-audit.yaml
+  other_new_paths_forbidden: true
+  branch_movement: false
+  verdict: PASS_EXPECTED_AUDIT_OUTPUT_ONLY
+
+findings:
+  critical: []
+  high: []
+  medium: []
+  low:
+    - id: TRACE-PACKET-VS-DIFF-001
+      class: AUDIT_DEBT
+      lifecycle: OPEN
+      owner: completion-owner
+      severity: Low
+      title: Closure packet omitted packet_vs_diff
+      next_action: optional add packet_vs_diff block on closure; auditor already recomputed PASS
+      recheck_rule: compare git status paths to session-contract allowed_paths
+      oracle_key: packet_vs_diff.verdict
+      blocking: false
+    - id: TRACE-CONTEXT-PACKET-001
+      class: AUDIT_DEBT
+      lifecycle: OPEN
+      owner: completion-owner
+      severity: Low
+      title: context-packet.yaml absent
+      next_action: none required for FAST; allowlist coverage PASS
+      recheck_rule: ls .docs/auditoria/2026-08-23-knowledge-wiki-graph/context-packet.yaml
+      oracle_key: context_packet_present
+      blocking: false
+    - id: GOV-AE-CANON-001
+      class: BLOCKED_PREEXISTING
+      lifecycle: HELD
+      owner: platform
+      severity: Low
+      title: kernel_v2_sources_missing blocks live harness/source validators
+      next_action: restore kernel_home canon or keep host waiver
+      recheck_rule: mi-lsp nav governance --workspace mi-lsp --format toon
+      oracle_key: ae_canon.status
+      blocking: false
+      undermines_current_promise: false
+    - id: UX-WARN-EN-001
+      class: INFO
+      lifecycle: OPEN
+      owner: optional
+      severity: Low
+      title: wiki map walk warning is English while hint is Spanish
+      next_action: optional localize warning string
+      recheck_rule: grep filesystem walk internal/service/wiki_map.go
+      oracle_key: wiki_map_warning_language
+      blocking: false
+    - id: TP-BUDGET-001
+      class: INFO
+      lifecycle: OPEN
+      owner: optional
+      severity: Low
+      title: TC-WIKI-032 token-budget trim has implementation but no dedicated unit test
+      next_action: optional TestTrimWikiMapHubs
+      recheck_rule: go test ./internal/service -run TestTrim
+      oracle_key: tc_wiki_032
+      blocking: false
+    - id: TP-GPH-074-001
+      class: INFO
+      lifecycle: OPEN
+      owner: optional
+      severity: Low
+      title: TC-GPH-074 docs-only GraphGeneration lacks a dedicated assertion; TestDocsOnly only checks doc records
+      next_action: optional assert GraphGenerationID on docs-only
+      recheck_rule: go test ./internal/indexer -run TestDocsOnly
+      oracle_key: tc_gph_074
+      blocking: false
+
+preexisting_debt:
+  - id: ae_canon_kernel_v2_sources_missing
+    class: BLOCKED_PREEXISTING
+    owner: platform
+    next_action: restore kernel_home canon or record host waiver
+    recheck_rule: mi-lsp nav governance --workspace mi-lsp --format toon
+    oracle_key: ae_canon.status
+    undermines_current_promise: false
+
+card_provider:
+  resolved: none
+  tracker_mode: none
+  touched_cards: []
+  sync_needed: false
+  sync_executed: not_needed
+
+global_skills_touched: []
+agent_browser: none_opened
+
+required_remediations_before_closure: []
+blockers: []
+
+summary: >-
+  Independent FAST audit of mi-lsp knowledge-wiki-graph confirms D-TEDI-017.
+  nav wiki map catalogs compact hubs without bodies; docs-only can publish a
+  documentation GraphGeneration from wiki/ and bibliotecas/; wikilink/embed/hierarchy
+  edges are documented and tested. All 39 dirty paths sit inside the session
+  allowlist, closure hashes match, targeted Go tests pass, tracker is none, and
+  no force-push or Tedi memory v1 appears. Host AE canon remains preexisting
+  blocked and does not undermine this slice. This skill did not mutate git.
+  Operator origin/main plus binary replace remain for finishing-a-development-branch
+  after ps-pre-push.
+
+hashes:
+  algorithm: sha256
+  files:
+    .docs/auditoria/2026-08-23-knowledge-wiki-graph/session-contract.yaml: 18c83603887bbac04ad6dd771a54d73dce1eeb044b0fd06280126a2507e7d309
+    .docs/auditoria/2026-08-23-knowledge-wiki-graph/traceability-closure.yaml: e8cf0f3e2a0374123797c9f624b3f84b766a8ecd0ed23d42b9dc191e82a05c1a
+    .docs/auditoria/2026-08-23-knowledge-wiki-graph/audit-manifest.yaml: f0d51cbdd8d893b08d669d860ed797bcf6c4621544eb5d4780f90ce6a79c991a

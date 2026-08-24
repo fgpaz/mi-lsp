@@ -158,6 +158,26 @@ intent_routing:
 
 `nav graph stats` y `nav graph validate` son comandos read-only reales; `nav neighbors`, `nav callers`, `nav callees`, `nav path` y `nav explain` tambien tienen wiring CLI real. La consulta puede devolver `GPH_QUERY_BACKEND_UNAVAILABLE` o fallback explicito si no existe una generation publicada; eso es disponibilidad runtime, no ausencia del comando.
 
+```toon
+doc_id: CT-GRAPH-CLI
+block_id: CT-GRAPH-CLI.docs-only-generation-availability
+kind: availability-slice
+source_of_truth: this
+status: implemented
+docs_only_index:
+  may_publish_documentation_generation: true
+  requires_canonical_markdown: true
+  canonical_roots: [wiki/, bibliotecas/, .docs/wiki/, docs/]
+  does_not_replace_code_catalog: true
+neighbors:
+  knowledge_wiki: wikilinks_and_hierarchy_when_generation_published
+verify:
+  - go test ./internal/indexer -count=1 -run 'TestCanonicalGraphDocAcceptsKnowledgeWikiPaths'
+evidence:
+  - internal/indexer/indexer.go
+  - .docs/wiki/07_tech/TECH-GRAPH-NATIVE.md
+```
+
 ## Selector y flags comunes
 
 ```toon

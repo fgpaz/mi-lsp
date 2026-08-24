@@ -25,6 +25,8 @@
 /.docs/auditoria/**
 !/.docs/auditoria/2026-07-13-ae-kernel-v2-integration/
 !/.docs/auditoria/2026-07-13-ae-kernel-v2-integration/**
+!/.docs/auditoria/2026-08-23-knowledge-wiki-graph/
+!/.docs/auditoria/2026-08-23-knowledge-wiki-graph/**
 /.docs/tmp/
 /docs/plans/
 /docs/policies/
