@@ -53,7 +53,7 @@ func governanceInspectTarget(registration model.WorkspaceRegistration, project m
 	inspectRoot := registration.Root
 	autoSync := true
 	if len(project.Canons) > 0 {
-		return inspectRoot, false, nil
+		return inspectRoot, true, nil
 	}
 	producto := firstCanonLinkByRole(registration.CanonLinks, "producto")
 	if producto == nil {

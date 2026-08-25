@@ -304,8 +304,10 @@ func TestWikiRootResolvesRegistryCanonLink(t *testing.T) {
 	if item.ResolvedFrom != "registry.link" {
 		t.Fatalf("resolved_from = %q, want registry.link", item.ResolvedFrom)
 	}
-	if item.WikiRoot != ".docs/wiki" || item.GovernanceDoc != ".docs/wiki/00_gobierno_documental.md" {
-		t.Fatalf("paths = %#v", item)
+	wantRoot := portableTestRel(t, code, filepath.Join(wiki, ".docs", "wiki"))
+	wantGov := portableTestRel(t, code, filepath.Join(wiki, ".docs", "wiki", "00_gobierno_documental.md"))
+	if item.WikiRoot != wantRoot || item.GovernanceDoc != wantGov {
+		t.Fatalf("paths = %#v, want wiki_root=%q governance_doc=%q", item, wantRoot, wantGov)
 	}
 	if item.Workspace != codeAlias || item.ID != wikiAlias || item.Role != "producto" {
 		t.Fatalf("id/role/workspace = %#v", item)
@@ -362,11 +364,13 @@ func TestWikiRootRegistryLinkUsesTargetCanon(t *testing.T) {
 	if !ok || len(items) != 1 {
 		t.Fatalf("items = %#v", env.Items)
 	}
-	if items[0].WikiRoot != "Ingenieria" || items[0].ResolvedFrom != "registry.link" || items[0].ID != wikiAlias {
-		t.Fatalf("item = %#v", items[0])
+	wantRoot := portableTestRel(t, code, canon)
+	wantGov := portableTestRel(t, code, filepath.Join(canon, "00_gobierno_documental.md"))
+	if items[0].WikiRoot != wantRoot || items[0].ResolvedFrom != "registry.link" || items[0].ID != wikiAlias {
+		t.Fatalf("item = %#v, want wiki_root=%q", items[0], wantRoot)
 	}
-	if items[0].GovernanceDoc != "Ingenieria/00_gobierno_documental.md" {
-		t.Fatalf("governance_doc = %q", items[0].GovernanceDoc)
+	if items[0].GovernanceDoc != wantGov {
+		t.Fatalf("governance_doc = %q, want %q", items[0].GovernanceDoc, wantGov)
 	}
 	assertPortableWikiRootItems(t, parent, items)
 }
@@ -464,6 +468,79 @@ func TestGovernanceInspectsProductoCanonLink(t *testing.T) {
 	}
 	if !after.ModTime().Equal(before.ModTime()) {
 		t.Fatal("governance auto_sync wrote into the foreign canon workspace")
+	}
+}
+
+func portableTestRel(t *testing.T, fromRoot, absTarget string) string {
+	t.Helper()
+	rel, err := filepath.Rel(fromRoot, absTarget)
+	if err != nil {
+		t.Fatalf("Rel(%q, %q): %v", fromRoot, absTarget, err)
+	}
+	return filepath.ToSlash(rel)
+}
+
+func TestNavGovernanceWithCanonAutoSyncsInWorkspaceProjection(t *testing.T) {
+	ensureWritableTestHome(t)
+	parent := t.TempDir()
+	code := filepath.Join(parent, "code")
+	canon := filepath.Join(parent, "wiki-repo", "Ingenieria")
+	if err := os.MkdirAll(code, 0o755); err != nil {
+		t.Fatalf("mkdir code: %v", err)
+	}
+	if err := os.MkdirAll(canon, 0o755); err != nil {
+		t.Fatalf("mkdir canon: %v", err)
+	}
+	staging := t.TempDir()
+	writeSpecBackendGovernanceFixture(t, staging)
+	body, err := os.ReadFile(filepath.Join(staging, ".docs", "wiki", "00_gobierno_documental.md"))
+	if err != nil {
+		t.Fatalf("read fixture: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(canon, "00_gobierno_documental.md"), body, 0o644); err != nil {
+		t.Fatalf("write canon gobierno: %v", err)
+	}
+	if err := workspace.SaveProjectFile(code, model.ProjectFile{
+		Project: model.ProjectBlock{Name: "code", Kind: model.WorkspaceKindSingle},
+		Canons:  []model.WorkspaceCanon{{ID: "wiki", Root: "../wiki-repo/Ingenieria", Role: "producto"}},
+	}); err != nil {
+		t.Fatalf("SaveProjectFile: %v", err)
+	}
+	alias := "gov-canon-" + filepath.Base(parent)
+	if _, err := workspace.RegisterWorkspace(alias, model.WorkspaceRegistration{
+		Name: alias,
+		Root: code,
+		Kind: model.WorkspaceKindSingle,
+	}); err != nil {
+		t.Fatalf("RegisterWorkspace: %v", err)
+	}
+	t.Cleanup(func() { _ = workspace.RemoveWorkspace(alias) })
+
+	env, err := New(code, nil).Execute(context.Background(), model.CommandRequest{
+		Operation: "nav.governance",
+		Context:   model.QueryOptions{Workspace: alias},
+	})
+	if err != nil {
+		t.Fatalf("nav.governance: %v", err)
+	}
+	items, ok := env.Items.([]model.GovernanceStatus)
+	if !ok || len(items) != 1 {
+		t.Fatalf("items = %#v", env.Items)
+	}
+	if items[0].Blocked {
+		t.Fatalf("nav.governance with [[canon]] blocked: %#v", items[0])
+	}
+	if items[0].HumanDoc != "../wiki-repo/Ingenieria/00_gobierno_documental.md" {
+		t.Fatalf("HumanDoc = %q", items[0].HumanDoc)
+	}
+	if _, err := os.Stat(filepath.Join(code, ".docs", "wiki", "_mi-lsp", "read-model.toml")); err != nil {
+		t.Fatalf("expected in-workspace projection: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(canon, "_mi-lsp", "read-model.toml")); !os.IsNotExist(err) {
+		t.Fatalf("must not write into the canon tree, stat err=%v", err)
+	}
+	if _, err := os.Stat(filepath.Join(code, ".docs", "wiki", "00_gobierno_documental.md")); !os.IsNotExist(err) {
+		t.Fatalf("must not require a duplicate human doc under .docs/wiki")
 	}
 }
 

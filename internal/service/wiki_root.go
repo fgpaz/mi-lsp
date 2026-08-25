@@ -12,12 +12,12 @@ import (
 )
 
 const (
-	defaultWikiRootPath             = ".docs/wiki"
-	defaultGovernanceDocPath        = ".docs/wiki/00_gobierno_documental.md"
-	canonGovernanceFile             = "00_gobierno_documental.md"
-	wikiRootResolvedDefault         = "default"
-	wikiRootResolvedCanon           = "canon."
-	wikiRootResolvedRegistryLink    = "registry.link"
+	defaultWikiRootPath          = ".docs/wiki"
+	defaultGovernanceDocPath     = ".docs/wiki/00_gobierno_documental.md"
+	canonGovernanceFile          = "00_gobierno_documental.md"
+	wikiRootResolvedDefault      = "default"
+	wikiRootResolvedCanon        = "canon."
+	wikiRootResolvedRegistryLink = "registry.link"
 )
 
 func (a *App) wikiRoot(_ context.Context, request model.CommandRequest) (model.Envelope, error) {
@@ -92,7 +92,7 @@ func wikiRootItemsFromCanonLinks(registration model.WorkspaceRegistration, role 
 		if err != nil {
 			return nil, err
 		}
-		linkItems, err := wikiRootItemsForLinkedTarget(registration.Name, canonicalAlias, strings.TrimSpace(link.Role), target, targetProject, role)
+		linkItems, err := wikiRootItemsForLinkedTarget(registration, canonicalAlias, strings.TrimSpace(link.Role), target, targetProject, role)
 		if err != nil {
 			return nil, err
 		}
@@ -102,12 +102,12 @@ func wikiRootItemsFromCanonLinks(registration model.WorkspaceRegistration, role 
 	return items, nil
 }
 
-func wikiRootItemsForLinkedTarget(currentAlias, targetAlias, linkRole string, target model.WorkspaceRegistration, targetProject model.ProjectFile, requestedRole string) ([]model.WikiRootResolution, error) {
+func wikiRootItemsForLinkedTarget(current model.WorkspaceRegistration, targetAlias, linkRole string, target model.WorkspaceRegistration, targetProject model.ProjectFile, requestedRole string) ([]model.WikiRootResolution, error) {
 	if len(targetProject.Canons) == 0 {
-		item := defaultWikiRootItem(currentAlias)
-		item.Role = linkRole
-		item.ResolvedFrom = wikiRootResolvedRegistryLink
-		item.ID = targetAlias
+		item, err := registryLinkItem(current, targetAlias, linkRole, filepath.Join(target.Root, filepath.FromSlash(defaultWikiRootPath)))
+		if err != nil {
+			return nil, err
+		}
 		return []model.WikiRootResolution{item}, nil
 	}
 	filterRole := strings.TrimSpace(requestedRole)
@@ -125,25 +125,59 @@ func wikiRootItemsForLinkedTarget(currentAlias, targetAlias, linkRole string, ta
 		}
 	}
 	if len(matched) == 0 {
-		item := defaultWikiRootItem(currentAlias)
-		item.Role = linkRole
-		item.ResolvedFrom = wikiRootResolvedRegistryLink
-		item.ID = targetAlias
+		item, err := registryLinkItem(current, targetAlias, linkRole, filepath.Join(target.Root, filepath.FromSlash(defaultWikiRootPath)))
+		if err != nil {
+			return nil, err
+		}
 		return []model.WikiRootResolution{item}, nil
 	}
 	items := make([]model.WikiRootResolution, 0, len(matched))
 	for _, canon := range matched {
-		declared := portableRelativePath(canon.DeclaredRoot)
-		items = append(items, model.WikiRootResolution{
-			WikiRoot:      declared,
-			Role:          linkRole,
-			Workspace:     currentAlias,
-			GovernanceDoc: canonGovernanceDoc(declared),
-			ResolvedFrom:  wikiRootResolvedRegistryLink,
-			ID:            targetAlias,
-		})
+		item, err := registryLinkItem(current, targetAlias, linkRole, canon.AbsRoot)
+		if err != nil {
+			return nil, err
+		}
+		items = append(items, item)
 	}
 	return items, nil
+}
+
+func registryLinkItem(current model.WorkspaceRegistration, targetAlias, linkRole, absWikiRoot string) (model.WikiRootResolution, error) {
+	wikiRoot, err := portableRelPath(current.Root, absWikiRoot)
+	if err != nil {
+		return model.WikiRootResolution{}, err
+	}
+	governanceDoc, err := portableRelPath(current.Root, filepath.Join(absWikiRoot, canonGovernanceFile))
+	if err != nil {
+		return model.WikiRootResolution{}, err
+	}
+	return model.WikiRootResolution{
+		WikiRoot:      wikiRoot,
+		Role:          linkRole,
+		Workspace:     current.Name,
+		GovernanceDoc: governanceDoc,
+		ResolvedFrom:  wikiRootResolvedRegistryLink,
+		ID:            targetAlias,
+	}, nil
+}
+
+func portableRelPath(fromRoot, absTarget string) (string, error) {
+	fromAbs, err := filepath.Abs(fromRoot)
+	if err != nil {
+		return "", err
+	}
+	toAbs, err := filepath.Abs(absTarget)
+	if err != nil {
+		return "", err
+	}
+	rel, err := filepath.Rel(fromAbs, toAbs)
+	if err != nil {
+		return "", fmt.Errorf("cannot express linked wiki %q relative to workspace %q: %w; declare [[canon]] in project.toml instead of a registry link", absTarget, fromRoot, err)
+	}
+	if filepath.IsAbs(rel) || (len(rel) >= 2 && rel[1] == ':') {
+		return "", fmt.Errorf("cannot express linked wiki %q relative to workspace (different volume); declare [[canon]] in project.toml instead of a registry link", absTarget)
+	}
+	return filepath.ToSlash(rel), nil
 }
 
 func defaultWikiRootItem(alias string) model.WikiRootResolution {
