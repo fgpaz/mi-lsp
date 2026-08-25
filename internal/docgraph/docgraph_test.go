@@ -550,21 +550,24 @@ func TestExpandPatternSkipsIgnoredGlobAndExplicitPaths(t *testing.T) {
 
 func TestExtractReferencesParsesWikilinks(t *testing.T) {
 	mentions, edges := extractReferences("/tmp", "wiki/10-chiamo.md", "Ver [[00-identidad-karen]] y ![[12-cafe|café]].")
-	if len(edges) < 2 {
-		t.Fatalf("edges=%v", edges)
-	}
+	docs := []model.DocRecord{{Path: "wiki/10-chiamo.md"}, {Path: "wiki/00-identidad-karen.md"}, {Path: "wiki/12-cafe.md"}}
+	edges = resolveDocEdges(docs, edges, []string{"wiki/"})
 	kinds := map[string]string{}
 	for _, edge := range edges {
 		kinds[edge.Kind] = edge.ToPath
 	}
-	if kinds["wikilink"] != "wiki/00-identidad-karen.md" {
-		t.Fatalf("wikilink=%q kinds=%v", kinds["wikilink"], kinds)
+	if kinds["doc_wikilink"] != "wiki/00-identidad-karen.md" {
+		t.Fatalf("wikilink=%q kinds=%v", kinds["doc_wikilink"], kinds)
 	}
-	if kinds["embed"] != "wiki/12-cafe.md" {
-		t.Fatalf("embed=%q kinds=%v", kinds["embed"], kinds)
+	if kinds["doc_embed"] != "wiki/12-cafe.md" {
+		t.Fatalf("embed=%q kinds=%v", kinds["doc_embed"], kinds)
 	}
-	if len(mentions) == 0 {
-		t.Fatal("expected mentions")
+	foundAlias := false
+	for _, mention := range mentions {
+		foundAlias = foundAlias || mention.MentionType == model.DocMentionTypeAlias && mention.MentionValue == "café"
+	}
+	if !foundAlias {
+		t.Fatalf("alias mention missing: %v", mentions)
 	}
 }
 
@@ -578,7 +581,7 @@ func TestAppendStructuralDocEdgesLinksGobiernoAndReadme(t *testing.T) {
 	edges := appendStructuralDocEdges(docs, nil)
 	foundGobierno, foundReadme := false, false
 	for _, edge := range edges {
-		if edge.Kind != "hierarchy" {
+		if edge.Kind != "doc_hierarchy" {
 			continue
 		}
 		if edge.FromPath == "wiki/10-chiamo.md" && edge.ToPath == "wiki/00-gobierno.md" {
@@ -590,5 +593,166 @@ func TestAppendStructuralDocEdgesLinksGobiernoAndReadme(t *testing.T) {
 	}
 	if !foundGobierno || !foundReadme {
 		t.Fatalf("structural edges=%v gobierno=%v readme=%v", edges, foundGobierno, foundReadme)
+	}
+}
+
+func TestExtractReferencesSupportsObsidianFormsAndSkipsFences(t *testing.T) {
+	content := "---\nrelated: [[frontmatter#Heading]]\n---\n" +
+		"[[target]] [[nested/target.md#Section|Alias]] ![[embed]] [Guide](../docs/Guide%20One.md?mode=read#Part) [[#Local]]\n" +
+		"```md\n[[hidden]] [hidden](hidden.md)\n```\n" +
+		"[external](https://example.com/x) [[https://example.com/x]]"
+	mentions, edges := extractReferences(t.TempDir(), "wiki/source.md", content)
+
+	kinds := map[string]int{}
+	labels := map[string]bool{}
+	for _, edge := range edges {
+		kinds[edge.Kind]++
+		labels[edge.Label] = true
+		if strings.Contains(edge.Label, "hidden") || strings.Contains(edge.Label, "example.com") {
+			t.Fatalf("unexpected fenced/external edge: %#v", edge)
+		}
+	}
+	if kinds["doc_wikilink"] != 3 || kinds["doc_embed"] != 1 || kinds["doc_markdown_link"] != 1 {
+		t.Fatalf("edge kinds=%v edges=%#v", kinds, edges)
+	}
+	for _, label := range []string{"frontmatter#Heading", "nested/target.md#Section|Alias", "../docs/Guide%20One.md?mode=read#Part"} {
+		if !labels[label] {
+			t.Fatalf("raw label %q missing from %v", label, labels)
+		}
+	}
+	anchors, aliases := map[string]bool{}, map[string]bool{}
+	for _, mention := range mentions {
+		switch mention.MentionType {
+		case model.DocMentionTypeAnchor:
+			anchors[mention.MentionValue] = true
+		case model.DocMentionTypeAlias:
+			aliases[mention.MentionValue] = true
+		}
+	}
+	for _, anchor := range []string{"Heading", "Section", "Part", "Local"} {
+		if !anchors[anchor] {
+			t.Fatalf("anchor %q missing from %v", anchor, anchors)
+		}
+	}
+	if !aliases["Alias"] {
+		t.Fatalf("alias missing from %v", aliases)
+	}
+}
+
+func TestResolveDocEdgesUsesDeterministicPrecedence(t *testing.T) {
+	docs := []model.DocRecord{
+		{Path: "wiki/source.md"},
+		{Path: "wiki/target.md"},
+		{Path: "wiki/nested/target.md"},
+		{Path: "docs/Guide One.md"},
+		{Path: "wiki/Case.md"},
+	}
+	_, parsed := extractReferences(t.TempDir(), "wiki/source.md", "[[target]] [[nested/target]] [[Guide One]] [[CASE]]")
+	resolved := resolveDocEdges(docs, parsed, []string{"wiki/", "bibliotecas/"})
+	paths := map[string]bool{}
+	for _, edge := range resolved {
+		if edge.UnresolvedReason != "" {
+			t.Fatalf("unexpected unresolved edge: %#v", edge)
+		}
+		paths[edge.ToPath] = true
+	}
+	for _, path := range []string{"wiki/target.md", "wiki/nested/target.md", "docs/Guide One.md", "wiki/Case.md"} {
+		if !paths[path] {
+			t.Fatalf("resolved path %q missing from %v", path, paths)
+		}
+	}
+}
+
+func TestResolveDocEdgesLeavesAmbiguousBasenameAndDocIDUnresolved(t *testing.T) {
+	docs := []model.DocRecord{
+		{Path: "notes/source.md"},
+		{Path: "wiki/target.md", DocID: "RF-DUP-001"},
+		{Path: "docs/target.md", DocID: "RF-DUP-001"},
+	}
+	edges := []model.DocEdge{
+		{FromPath: "notes/source.md", ToPath: "target.md", Kind: "doc_wikilink", Label: "target"},
+		{FromPath: "notes/source.md", ToDocID: "RF-DUP-001", Kind: "doc_id", Label: "RF-DUP-001"},
+	}
+	resolved := resolveDocEdges(docs, edges, nil)
+	if len(resolved) != 2 {
+		t.Fatalf("resolved=%#v", resolved)
+	}
+	for _, edge := range resolved {
+		if edge.UnresolvedReason != "ambiguous_doc_target" || len(edge.Candidates) != 2 {
+			t.Fatalf("ambiguous edge not preserved: %#v", edge)
+		}
+		if edge.Candidates[0] != "docs/target.md" || edge.Candidates[1] != "wiki/target.md" {
+			t.Fatalf("candidates not deterministic: %v", edge.Candidates)
+		}
+	}
+}
+
+func TestKnowledgeWikiRootsAreIndexedAndLinksResolve(t *testing.T) {
+	root := t.TempDir()
+	write := func(relative, content string) {
+		path := filepath.Join(root, filepath.FromSlash(relative))
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("wiki/source.md", "# Source\n\n[[target#Details|Open target]]")
+	write("wiki/target.md", "# Target\n")
+	write("bibliotecas/topic.md", "# Topic\n")
+
+	docs, edges, mentions, warnings, err := IndexWorkspaceDocs(context.Background(), root, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(warnings) != 0 {
+		t.Fatalf("warnings=%v", warnings)
+	}
+	paths := map[string]bool{}
+	for _, doc := range docs {
+		paths[doc.Path] = true
+	}
+	for _, path := range []string{"wiki/source.md", "wiki/target.md", "bibliotecas/topic.md"} {
+		if !paths[path] {
+			t.Fatalf("indexed path %q missing from %v", path, paths)
+		}
+	}
+	foundResolved := false
+	for _, edge := range edges {
+		if edge.FromPath == "wiki/source.md" && edge.ToPath == "wiki/target.md" && edge.Kind == "doc_wikilink" {
+			foundResolved = true
+		}
+	}
+	if !foundResolved {
+		t.Fatalf("resolved wikilink missing from %#v", edges)
+	}
+	foundAnchor, foundAlias := false, false
+	for _, mention := range mentions {
+		foundAnchor = foundAnchor || mention.MentionType == model.DocMentionTypeAnchor && mention.MentionValue == "Details"
+		foundAlias = foundAlias || mention.MentionType == model.DocMentionTypeAlias && mention.MentionValue == "Open target"
+	}
+	if !foundAnchor || !foundAlias {
+		t.Fatalf("anchor=%v alias=%v mentions=%#v", foundAnchor, foundAlias, mentions)
+	}
+}
+
+func TestLoadProfileCanDisableAutomaticKnowledgeRoots(t *testing.T) {
+	root := t.TempDir()
+	path := ProfilePath(root)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("version = 1\n[wiki_map]\nenabled = false\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	profile, source, warnings := LoadProfile(root)
+	if source != "project" || len(warnings) != 0 {
+		t.Fatalf("source=%q warnings=%v", source, warnings)
+	}
+	for _, path := range profile.GenericDocs.Paths {
+		if strings.TrimSuffix(path, "/") == "wiki" || strings.TrimSuffix(path, "/") == "bibliotecas" {
+			t.Fatalf("disabled wiki root was appended: %v", profile.GenericDocs.Paths)
+		}
 	}
 }

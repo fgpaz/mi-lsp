@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/fgpaz/mi-lsp/internal/model"
 	"github.com/fgpaz/mi-lsp/internal/workspace"
@@ -128,5 +129,39 @@ func writeProgressTestFile(t *testing.T, root string, relativePath string, conte
 	}
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		t.Fatalf("write %s: %v", relativePath, err)
+	}
+}
+
+func TestDocsOnlyIndexWarnsWhenRepositoryIdentityIsUnavailable(t *testing.T) {
+	root := t.TempDir()
+	writeProgressTestFile(t, root, ".docs/wiki/00_gobierno_documental.md", "# Gobierno documental\n")
+	result, err := IndexWorkspaceDocsOnlyWithProgress(context.Background(), root, "", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const expected = "documentation graph omitted: repository identity unavailable; configure repository_identity or exactly one origin remote"
+	found := false
+	for _, warning := range result.Warnings {
+		if warning == expected {
+			found = true
+		}
+		if strings.Contains(warning, filepath.ToSlash(root)) || strings.Contains(warning, root) {
+			t.Fatalf("warning leaked workspace path: %q", warning)
+		}
+	}
+	if !found {
+		t.Fatalf("identity warning missing from %v", result.Warnings)
+	}
+}
+
+func TestDocumentationGraphRequestAcceptsExplicitRepositoryIdentity(t *testing.T) {
+	project := model.ProjectFile{Repos: []model.WorkspaceRepo{{ID: "main", RepositoryIdentity: "HTTPS://Example.com/acme/repo.git"}}}
+	docs := []model.DocRecord{{Path: "wiki/00-person.md"}}
+	request, publish, warning := documentationGraphRequest(context.Background(), t.TempDir(), project, nil, docs, nil, nil, time.Unix(1, 0))
+	if !publish || warning != "" {
+		t.Fatalf("publish=%v warning=%q", publish, warning)
+	}
+	if request.RepositoryIdentity != "example.com/acme/repo" {
+		t.Fatalf("repository identity=%q", request.RepositoryIdentity)
 	}
 }

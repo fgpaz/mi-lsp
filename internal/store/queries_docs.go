@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"database/sql"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -254,6 +255,45 @@ func ListDocRecords(ctx context.Context, db *sql.DB) ([]model.DocRecord, error) 
 	for rows.Next() {
 		var item model.DocRecord
 		if err := rows.Scan(&item.Path, &item.Title, &item.DocID, &item.Layer, &item.Family, &item.Snippet, &item.SearchText, &item.ContentHash, &item.IndexedAt, &item.IsSnapshot); err != nil {
+			return nil, err
+		}
+		items = append(items, item)
+	}
+	return items, rows.Err()
+}
+
+type DocRecordPath struct {
+	Path  string
+	Title string
+}
+
+func ListDocRecordsPaths(ctx context.Context, db *sql.DB, roots ...string) ([]DocRecordPath, error) {
+	query := `SELECT path, title FROM doc_records`
+	args := make([]any, 0, len(roots))
+	if len(roots) > 0 {
+		clauses := make([]string, 0, len(roots))
+		for _, root := range roots {
+			root = strings.TrimSuffix(filepath.ToSlash(root), "/")
+			if root == "" {
+				continue
+			}
+			clauses = append(clauses, "(path = ? OR instr(path, ?) = 1)")
+			args = append(args, root, root+"/")
+		}
+		if len(clauses) > 0 {
+			query += " WHERE " + strings.Join(clauses, " OR ")
+		}
+	}
+	query += ` ORDER BY family ASC, layer ASC, path ASC`
+	rows, err := QueryContextWithRetry(ctx, db, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := make([]DocRecordPath, 0)
+	for rows.Next() {
+		var item DocRecordPath
+		if err := rows.Scan(&item.Path, &item.Title); err != nil {
 			return nil, err
 		}
 		items = append(items, item)

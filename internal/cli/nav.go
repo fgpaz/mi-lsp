@@ -1094,7 +1094,7 @@ Use --with-layer-counts to include per-layer documentation counts (RS, FL, RF, T
 		Example: `  mi-lsp nav wiki map --workspace memoria-karen-cosas --format toon
   mi-lsp nav wiki map --workspace memoria-karen-cosas --token-budget 800 --format toon`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return state.executeOperation(cmd, "nav.wiki.map", map[string]any{}, true)
+			return state.executeNavOperation(cmd, "nav.wiki.map", map[string]any{}, false)
 		},
 	}
 

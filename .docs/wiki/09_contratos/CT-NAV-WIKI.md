@@ -38,8 +38,8 @@ mi-lsp nav wiki search <query> [--all-workspaces] --workspace <alias> [--layer R
 mi-lsp nav wiki route <task> [--all-workspaces] --workspace <alias> [--full] [--format compact|json|text|toon|yaml]
 mi-lsp nav wiki pack <task> [--all-workspaces] --workspace <alias> [--rf RF-*] [--fl FL-*] [--doc <path>] [--full] [--format compact|json|text|toon|yaml]
 mi-lsp nav wiki trace <DOC-ID|--all> [--all-workspaces] --workspace <alias> [--summary] [--format compact|json|text|toon|yaml]
+mi-lsp nav wiki map --workspace <alias> [--max-items N] [--token-budget N] [--format compact|json|text|toon|yaml]
 mi-lsp nav wiki inventory [--all-workspaces] --workspace <alias> [--with-layer-counts] [--format compact|json|text|toon|yaml]
-mi-lsp nav wiki map --workspace <alias> [--format compact|json|text|toon|yaml]
 mi-lsp nav wiki validate-harness --workspace <alias> [--format compact|json|text|toon|yaml]
 mi-lsp nav wiki validate-source --workspace <alias> [--paths <path[,path...]>] [--ids <doc-id[,doc-id...]>] [--format compact|json|text|toon|yaml]
 ```
@@ -345,23 +345,34 @@ subcommand: "nav wiki map"
 workspace: required_single_alias
 flag_all_workspaces: forbidden
 backend: wiki.map
+execution: direct_only
 item_shape:
-  - id: persona|proyectos|sistema|materia
-  - title: Persona|Proyectos|Sistema|Materia
+  - id: persona|proyectos|sistema|materia|custom
+  - title: string
+  - total_docs: int
   - docs: [{path, title}]
-hub_rules:
+default_hub_rules:
   persona: wiki/00-09 markdown de primer nivel
   proyectos: wiki/10-19
   sistema: wiki/20-30 de primer nivel o 30-dashboard
   materia: bibliotecas/**
+configuration:
+  source: .docs/wiki/_mi-lsp/read-model.toml
+  roots_default: [wiki/, bibliotecas/]
+  roots_custom: adicionales, ordenadas y deduplicadas después de defaults
+  custom_hubs: declaración ordenada; primer pattern coincidente gana; no mezcla defaults
+  enabled_false: mapa e indexado automático deshabilitados
 excluded: [wiki/31-workers, wiki/32-contratos, yaml, old, archive, deprecated, historico, legacy, .docs/wiki]
 sources:
-  preferred: doc_records clasificados
-  fallback: walk de wiki/ y bibliotecas/
-budgets: [Context.MaxItems, Context.TokenBudget]
+  preferred: SELECT path,title filtrado por roots configuradas
+  fallback: walk bounded con ignore, cancelación y symlink/reparse guard
+budgets:
+  allocation: round-robin estable por conteo
+  token_fit: búsqueda binaria
+  truncation: Envelope.Truncated + files=total_returned + total_docs + total_returned + truncation_reason + next_hint
 verify:
   - mi-lsp nav wiki map --workspace <alias> --format toon
-  - go test ./internal/cli ./internal/service -count=1 -run 'TestNavWikiMap|TestClassifyWikiMapHub'
+  - go test ./internal/cli ./internal/service -count=1 -run 'TestNavWikiMapUsesDirectExecution|TestClassifyWikiMapHubDefaultsRemainLocked|TestTrimWikiMapHubs|TestWalkWikiMapDocs'
 stop_if:
   - map_returns_full_bodies=true
 evidence:

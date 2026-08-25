@@ -1,7 +1,7 @@
 ---
 id: RF-GPH-007
 title: Integrar evidencia wiki-codigo sin invertir autoridad
-status: planned
+status: partial
 flows:
   - FL-GPH-02
 tests:
@@ -56,10 +56,12 @@ Usar el grafo para mejorar `nav ask`, `route`, `pack`, `context`, `affected`, `d
 ## 2. Modelo de enlace
 
 - Documentos canonicos son `GraphNode(kind=document)` con NodeKey basado en repository identity + owner path + doc ID estable.
-- Links markdown y doc IDs explicitos producen relaciones documentales exactas del docgraph existente.
-- `doc_mentions` enlaza documento a path/simbolo/comando cuando existe anchor explicito resoluble.
-- Enlaces por nombre/texto quedan `inferred` o unresolved; nunca se vuelven trazabilidad canonica por score.
-- Relaciones de codigo pueden verificar una promesa, pero no cambiar estado, prioridad o significado de un documento.
+- Wikilinks, embeds, links Markdown, doc IDs y jerarquía conservan relaciones distintas: `doc_wikilink`, `doc_embed`, `doc_markdown_link`, `doc_id` y `doc_hierarchy`.
+- La resolución documental es corpus-aware: path exacto, relativo al documento, relativo a roots de conocimiento y basename único; exact-case precede case-fold.
+- Anchors y alias se preservan como `doc_anchor` y `doc_alias`; un self-anchor no crea self-edge.
+- Basename o doc ID duplicado queda `ambiguous_doc_target` con candidatos sorted y bounded; nunca se elige el último ni se promueve por score.
+- `doc_mentions` enlaza documento a path/símbolo/comando de código cuando existe anchor explícito resoluble.
+- Relaciones de código pueden verificar una promesa, pero no cambiar estado, prioridad o significado de un documento.
 
 ## 3. Orden de autoridad en respuestas
 
@@ -76,7 +78,8 @@ Si canon y codigo discrepan, el resultado es `drift_detected` con ambas evidenci
 
 - `governance_blocked=true`, proyeccion stale, attribution manual/invalida o source harness BLOCKED detienen la respuesta graph-enriched normal y retornan diagnostico/reparacion.
 - Si el indice documental esta stale respecto de `00`/read-model, no se sirve un pack generico como equivalente.
-- Si el grafo de codigo esta ausente/stale, la respuesta docs-first sigue disponible y declara omission de evidencia de codigo.
+- Si el grafo de código está ausente/stale, la respuesta docs-first sigue disponible y declara omission de evidencia de código.
+- Sin `repository_identity` explícita ni exactamente un `origin`, el índice documental continúa pero omite la publicación del grafo con warning sanitizado y accionable; nunca deriva identidad del path local.
 - Si una relacion wiki-code es ambiguous, se muestran candidatos bounded sin elegir uno.
 
 ## 5. Context optimizer

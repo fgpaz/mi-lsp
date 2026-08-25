@@ -11,6 +11,14 @@ import (
 
 const ProtocolVersion = "mi-lsp-v1.1"
 
+// DocMentionType constants for wiki map knowledge references.
+const (
+	DocMentionTypeDocID   = "doc_id"
+	DocMentionTypeDocPath = "doc_path"
+	DocMentionTypeAnchor  = "doc_anchor"
+	DocMentionTypeAlias   = "doc_alias"
+)
+
 const (
 	WorkspaceKindSingle    = "single"
 	WorkspaceKindContainer = "container"
@@ -45,6 +53,11 @@ type Stats struct {
 	WorkspacesQueried     int      `json:"workspaces_queried,omitempty"`
 	WorkspacesFailed      []string `json:"workspaces_failed,omitempty"`
 	TruncatedPerWorkspace bool     `json:"truncated_per_workspace,omitempty"`
+	// TotalDocs and TotalReturned make wiki-map truncation explicit.
+	TotalDocs     int `json:"total_docs,omitempty"`
+	TotalReturned int `json:"total_returned,omitempty"`
+	// TruncationReason describes why wiki-map documents were omitted.
+	TruncationReason string `json:"truncation_reason,omitempty"`
 }
 
 // WikiInventoryItem represents a single workspace in the wiki inventory.
@@ -549,11 +562,13 @@ type WikiSourceRecordValidation struct {
 }
 
 type DocEdge struct {
-	FromPath string `json:"from_path"`
-	ToPath   string `json:"to_path,omitempty"`
-	ToDocID  string `json:"to_doc_id,omitempty"`
-	Kind     string `json:"kind"`
-	Label    string `json:"label,omitempty"`
+	FromPath         string   `json:"from_path"`
+	ToPath           string   `json:"to_path,omitempty"`
+	ToDocID          string   `json:"to_doc_id,omitempty"`
+	Kind             string   `json:"kind"`
+	Label            string   `json:"label,omitempty"`
+	Candidates       []string `json:"-"`
+	UnresolvedReason string   `json:"-"`
 }
 
 type DocMention struct {
@@ -594,6 +609,34 @@ type DocsReadProfile struct {
 	ReadingPack DocsReadingPackProfile `toml:"reading_pack"`
 	OwnerHints  []DocsOwnerHint        `toml:"owner_hint"`
 	Governance  DocsGovernanceProfile  `toml:"governance"`
+	WikiMap     *WikiMapConfig         `toml:"wiki_map,omitempty"`
+}
+
+// WikiMapConfig declares the knowledge-wiki hub catalog configuration.
+// When nil or absent, the locked D-TEDI-017 defaults are used.
+type WikiMapConfig struct {
+	// Enabled controls whether the custom wiki_map config is active.
+	// Default is true when the section is present.
+	Enabled *bool `toml:"enabled,omitempty"`
+	// Roots are additional safe directory roots appended to GenericDocs.Paths.
+	// Each root must be a relative safe path (no .. or absolute).
+	// A trailing / forces recursive directory walk.
+	Roots []string `toml:"roots,omitempty"`
+	// Hubs declare custom hub mappings. Order is preserved as output order.
+	// First matching hub wins.
+	Hubs []WikiMapHubConfig `toml:"hub,omitempty"`
+}
+
+// WikiMapHubConfig describes a single wiki map hub.
+type WikiMapHubConfig struct {
+	// ID is the hub identifier used in the output.
+	ID string `toml:"id"`
+	// Title is the human-readable hub title.
+	Title string `toml:"title"`
+	// Patterns are workspace-relative glob patterns matching docs in this hub.
+	// Slash-normalized; * ? [] follow path/filepath.Match per segment.
+	// Trailing /** means recursive prefix.
+	Patterns []string `toml:"patterns"`
 }
 
 type DocsReadFamily struct {

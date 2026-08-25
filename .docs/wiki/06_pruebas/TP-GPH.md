@@ -161,10 +161,10 @@ cases:
     evidence: internal/indexer/indexer_progress_test.go
   - id: TC-GPH-074
     type: positivo
-    given: docs-only con markdown canonico y sin batches de compilador
+    given: docs-only con Markdown canónico, identidad explícita o un único origin y sin batches de compilador
     when: documentationGraphRequest
-    then: publishGraph=true y se ensambla generation documental
-    evidence: internal/indexer/indexer.go
+    then: publishGraph=true y se ensambla generation documental; sin identidad publicable, docs continúa y devuelve warning sanitizado
+    evidence: internal/indexer/indexer.go; internal/indexer/indexer_progress_test.go
 ```
 
 ## TP-GPH-001 - Identidad, NodeKey y cross-RID
@@ -215,12 +215,12 @@ cases:
 | TC-GPH-020 | positivo | create/change/delete/rename reemplaza solo owners afectados y conserva snapshot equivalente al clean |
 | TC-GPH-021 | positivo | cambio de superficie recalcula fanout; uncertainty/config/backend drift fuerza full rebuild explicitamente |
 | TC-GPH-022 | negativo | cancel/crash/partial batch/provenance faltante descarta staging; stale_rate final es 0.0 |
-| TC-GPH-022A | negativo | identidad explicita divergente, origin local ausente/multiple/no normalizable o git ausente falla cerrado sin fallback ni mutacion de `project.toml` |
+| TC-GPH-022A | negativo | identidad explícita divergente u origin ausente/múltiple/no normalizable omite la publicación graph, conserva el índice docs y devuelve warning accionable sin fallback por path ni mutación de `project.toml` |
 | TC-GPH-022B | positivo | container con Go/C#/TS/Python observa Go una sola vez desde el root, procesa cada `.csproj`, omite `.sln`, comparte identidad y rebasa paths al namespace global; un proyecto Roslyn partial queda omission `backend_partial` sin bloquear batches completos |
 | TC-GPH-022C | negativo | backend elegible sin batch devuelve error y conserva el graph previo; workspace explicitamente non-graph devuelve `GraphNotApplicable` |
 | TC-GPH-022D | positivo | clean e incremental equivalentes, con mismo contenido/origin/toolchain/config, producen el mismo `GenerationID` y digest; `CreatedAt` queda fuera del ID |
-| TC-GPH-022E | positivo | `TestExtractReferencesParsesWikilinks`: `[[00-identidad-karen]]` y `![[12-cafe|cafe]]` emiten wikilink/embed hacia wiki/*.md |
-| TC-GPH-022F | positivo | `TestAppendStructuralDocEdgesLinksGobiernoAndReadme`: hierarchy hacia wiki/00-gobierno.md y README de bibliotecas/memorias |
+| TC-GPH-022E | positivo | `TestExtractReferencesSupportsObsidianFormsAndSkipsFences`: wikilinks, embeds, Markdown links, anchors y alias preservan tipo/raw target; externos/fences/self-anchor no crean edges falsos |
+| TC-GPH-022F | positivo | `TestAppendStructuralDocEdgesLinksGobiernoAndReadme`: `doc_hierarchy` enlaza wiki/00-gobierno.md y README de bibliotecas/memorias |
 
 ## TP-GPH-004 - Navegacion bounded y determinista
 
@@ -246,7 +246,7 @@ cases:
 | TC-GPH-031 | positivo | changed path resuelve seeds y direct impact con evidence path exacto |
 | TC-GPH-032 | positivo | transitive mode usa solo allowlist/direccion/costo y separa inferred |
 | TC-GPH-033 | positivo | tests/docs se agregan por edges/anchors; convenciones quedan heuristic |
-| TC-GPH-034 | negativo | relation textual, ambiguous o unresolved no infla positivos ni viola fixture negative |
+| TC-GPH-034 | negativo | basename/doc ID ambiguo produce `ambiguous_doc_target` con candidatos sorted/bounded; relation textual o unresolved no infla positivos ni viola fixture negative |
 | TC-GPH-035 | comparativo | precision/recall/F1/negative violations no regresan contra affected previo ni Graphify comparable |
 | TC-GPH-036 | positivo | docs canonicos siguen primeros y primary doc no cambia al enriquecer con codigo |
 | TC-GPH-037 | negativo | governance/projection stale bloquea; canon-code conflict produce drift, nunca override |

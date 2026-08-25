@@ -52,12 +52,12 @@ func TestFullIndexPublishesLocalGoGraph(t *testing.T) {
 	if err != nil || selectorKind != "semantic_identity" || len(docNodes) != 1 || docNodes[0].Identity.SymbolKind != "document" {
 		t.Fatalf("document selector: nodes=%d kind=%q err=%v", len(docNodes), selectorKind, err)
 	}
-	docEdges, err := snapshot.Edges(context.Background(), []int{docNodes[0].NodeID}, "out", []string{"doc_mentions"}, 10)
+	docEdges, err := snapshot.Edges(context.Background(), []int{docNodes[0].NodeID}, "out", []string{"doc_markdown_link"}, 10)
 	if err != nil || len(docEdges) != 1 || docEdges[0].SourceBackend != "docgraph" {
-		t.Fatalf("doc_mentions query: edges=%#v err=%v", docEdges, err)
+		t.Fatalf("doc_markdown_link query: edges=%#v err=%v", docEdges, err)
 	}
 	if refs, err := snapshot.EvidenceRefs(context.Background(), nil, &docEdges[0].EdgeID, 10); err != nil || len(refs) != 1 {
-		t.Fatalf("doc_mentions evidence: refs=%v err=%v", refs, err)
+		t.Fatalf("doc_markdown_link evidence: refs=%v err=%v", refs, err)
 	}
 }
 

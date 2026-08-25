@@ -6,7 +6,9 @@ import (
 	"crypto/sha1"
 	"encoding/hex"
 	"fmt"
+	"net/url"
 	"os"
+	pathpkg "path"
 	"path/filepath"
 	"regexp"
 	"runtime"
@@ -25,7 +27,7 @@ import (
 var (
 	docIDPattern        = regexp.MustCompile(`\b(?:FL|RS|RF|TP|TECH|CT|DB|AE)-[A-Z0-9-]+\b`)
 	markdownLinkPattern = regexp.MustCompile(`\[[^\]]+\]\(([^)]+)\)`)
-	wikiLinkPattern     = regexp.MustCompile(`!?\[\[([^\]|#]+)(?:\|[^\]]+)?\]\]`)
+	wikiLinkPattern     = regexp.MustCompile(`!?\[\[([^\]]+?)\]\]`)
 	inlineCodePattern   = regexp.MustCompile("`([^`]+)`")
 	pascalSymbolPattern = regexp.MustCompile(`\b[A-Z][A-Za-z0-9_]+\b`)
 )
@@ -204,16 +206,42 @@ func DefaultProfile() model.DocsReadProfile {
 func LoadProfile(root string) (model.DocsReadProfile, string, []string) {
 	profile := DefaultProfile()
 	path := ProfilePath(root)
-	if _, err := os.Stat(path); err == nil {
-		if _, err := toml.DecodeFile(path, &profile); err == nil {
-			if profile.Version == 0 {
-				profile.Version = 1
-			}
-			return profile, "project", nil
+	source := "default"
+	warnings := []string{}
+	if _, statErr := os.Stat(path); statErr == nil {
+		source = "project"
+		if _, decodeErr := toml.DecodeFile(path, &profile); decodeErr != nil {
+			profile = DefaultProfile()
+			source = "default"
+			warnings = append(warnings, "read-model_parse_failed_using_defaults")
+		} else if profile.Version == 0 {
+			profile.Version = 1
 		}
-		return DefaultProfile(), "default", []string{fmt.Sprintf("read-model parse failed; using defaults: %v", err)}
 	}
-	return profile, "default", nil
+	if profile.WikiMap != nil {
+		roots, rootWarnings := model.SafeRoots(profile.WikiMap.Roots)
+		profile.WikiMap.Roots = roots
+		warnings = append(warnings, rootWarnings...)
+		seenHubIDs := map[string]struct{}{}
+		hubs := make([]model.WikiMapHubConfig, 0, len(profile.WikiMap.Hubs))
+		for i, hub := range profile.WikiMap.Hubs {
+			hub.ID = strings.TrimSpace(hub.ID)
+			hub.Title = strings.TrimSpace(hub.Title)
+			patterns, patternWarnings := model.SafePatterns(hub.Patterns)
+			warnings = append(warnings, patternWarnings...)
+			_, duplicate := seenHubIDs[hub.ID]
+			if hub.ID == "" || hub.Title == "" || len(patterns) == 0 || duplicate {
+				warnings = append(warnings, fmt.Sprintf("wiki_map_hub_rejected_%d", i+1))
+				continue
+			}
+			hub.Patterns = patterns
+			seenHubIDs[hub.ID] = struct{}{}
+			hubs = append(hubs, hub)
+		}
+		profile.WikiMap.Hubs = hubs
+	}
+	profile.GenericDocs.Paths = model.AppendWikiMapRoots(profile.GenericDocs.Paths, &profile)
+	return profile, source, warnings
 }
 
 func IndexWorkspaceDocs(ctx context.Context, root string, matcher *workspace.IgnoreMatcher) ([]model.DocRecord, []model.DocEdge, []model.DocMention, []string, error) {
@@ -390,8 +418,6 @@ func IndexWorkspaceDocsWithSourcesWithProgressPrior(ctx context.Context, root st
 	mentions := make([]model.DocMention, 0)
 	sourceBlocks := make([]model.DocSourceBlock, 0)
 	sourceRecords := make([]model.DocSourceRecord, 0)
-	seenDocID := map[string]string{}
-	pendingDocIDEdges := make([]model.DocEdge, 0)
 	parsed := 0
 	skipped := 0
 
@@ -411,20 +437,11 @@ func IndexWorkspaceDocsWithSourcesWithProgressPrior(ctx context.Context, root st
 		} else {
 			parsed++
 		}
-		if result.doc.DocID != "" {
-			seenDocID[result.doc.DocID] = result.doc.Path
-		}
 		docs = append(docs, result.doc)
 		mentions = append(mentions, result.mentions...)
 		sourceBlocks = append(sourceBlocks, result.sourceBlocks...)
 		sourceRecords = append(sourceRecords, result.sourceRecords...)
-		for _, edge := range result.edges {
-			if edge.ToDocID != "" && edge.ToPath == "" {
-				pendingDocIDEdges = append(pendingDocIDEdges, edge)
-				continue
-			}
-			edges = append(edges, edge)
-		}
+		edges = append(edges, result.edges...)
 	}
 
 	if err := reportProgress(ctx, progress, Progress{
@@ -442,12 +459,7 @@ func IndexWorkspaceDocsWithSourcesWithProgressPrior(ctx context.Context, root st
 		warnings = append(warnings, fmt.Sprintf("docs_skip_reparse parsed=%d skipped=%d", parsed, skipped))
 	}
 
-	for _, edge := range pendingDocIDEdges {
-		if path := seenDocID[edge.ToDocID]; path != "" {
-			edge.ToPath = path
-			edges = append(edges, edge)
-		}
-	}
+	edges = resolveDocEdges(docs, edges, profile.EffectiveWikiMapRoots())
 	edges = appendStructuralDocEdges(docs, edges)
 
 	sort.Slice(docs, func(i, j int) bool {
@@ -600,7 +612,7 @@ func extractReferences(root string, docPath string, content string) ([]model.Doc
 	edges := make([]model.DocEdge, 0)
 	seenMentions := map[string]struct{}{}
 	seenEdges := map[string]struct{}{}
-	addMention := func(kind string, value string) {
+	addMention := func(kind, value string) {
 		value = strings.TrimSpace(value)
 		if value == "" {
 			return
@@ -621,50 +633,61 @@ func extractReferences(root string, docPath string, content string) ([]model.Doc
 		edges = append(edges, edge)
 	}
 
-	for _, match := range docIDPattern.FindAllString(content, -1) {
-		addMention("doc_id", match)
+	masked := maskFencedMarkdown(content)
+	for _, match := range docIDPattern.FindAllString(masked, -1) {
+		addMention(model.DocMentionTypeDocID, match)
 		addEdge(model.DocEdge{FromPath: docPath, ToDocID: match, Kind: "doc_id", Label: match})
 	}
-
-	for _, match := range markdownLinkPattern.FindAllStringSubmatch(content, -1) {
-		if len(match) < 2 {
+	for _, indexes := range markdownLinkPattern.FindAllStringSubmatchIndex(masked, -1) {
+		if len(indexes) < 4 || indexes[2] < 0 {
 			continue
 		}
-		link := strings.TrimSpace(match[1])
-		if link == "" || strings.HasPrefix(link, "http://") || strings.HasPrefix(link, "https://") {
+		rawTarget := strings.TrimSpace(content[indexes[2]:indexes[3]])
+		target, anchor, ok := parseLocalMarkdownTarget(rawTarget)
+		if !ok {
 			continue
 		}
-		target := normalizeDocLink(docPath, link)
-		addMention("doc_path", target)
-		addEdge(model.DocEdge{FromPath: docPath, ToPath: target, Kind: "markdown_link", Label: link})
+		if anchor != "" {
+			addMention(model.DocMentionTypeAnchor, anchor)
+		}
+		if target == "" {
+			continue
+		}
+		target = ensureMarkdownDocExtension(target)
+		addMention(model.DocMentionTypeDocPath, target)
+		addEdge(model.DocEdge{FromPath: docPath, ToPath: target, Kind: "doc_markdown_link", Label: rawTarget})
 	}
-
-	for _, match := range wikiLinkPattern.FindAllStringSubmatch(content, -1) {
-		if len(match) < 2 {
+	for _, indexes := range wikiLinkPattern.FindAllStringSubmatchIndex(masked, -1) {
+		if len(indexes) < 4 || indexes[2] < 0 {
 			continue
 		}
-		raw := strings.TrimSpace(match[0])
-		name := strings.TrimSpace(match[1])
-		if name == "" {
+		rawSyntax := content[indexes[0]:indexes[1]]
+		inner := strings.TrimSpace(content[indexes[2]:indexes[3]])
+		target, anchor, alias, ok := parseLocalWikilink(inner)
+		if !ok {
 			continue
 		}
-		kind := "wikilink"
-		if strings.HasPrefix(raw, "!") {
-			kind = "embed"
+		if anchor != "" {
+			addMention(model.DocMentionTypeAnchor, anchor)
 		}
-		target := resolveWikilink(docPath, name)
-		addMention("doc_path", target)
-		addEdge(model.DocEdge{FromPath: docPath, ToPath: target, Kind: kind, Label: name})
+		if alias != "" {
+			addMention(model.DocMentionTypeAlias, alias)
+		}
+		if target == "" {
+			continue
+		}
+		kind := "doc_wikilink"
+		if strings.HasPrefix(rawSyntax, "!") {
+			kind = "doc_embed"
+		}
+		addMention(model.DocMentionTypeDocPath, target)
+		addEdge(model.DocEdge{FromPath: docPath, ToPath: target, Kind: kind, Label: inner})
 	}
-
-	for _, match := range inlineCodePattern.FindAllStringSubmatch(content, -1) {
-		if len(match) < 2 {
+	for _, indexes := range inlineCodePattern.FindAllStringSubmatchIndex(masked, -1) {
+		if len(indexes) < 4 || indexes[2] < 0 {
 			continue
 		}
-		value := strings.TrimSpace(match[1])
-		if value == "" {
-			continue
-		}
+		value := strings.TrimSpace(content[indexes[2]:indexes[3]])
 		switch {
 		case strings.HasPrefix(value, "mi-lsp "):
 			addMention("command", value)
@@ -686,34 +709,234 @@ func extractReferences(root string, docPath string, content string) ([]model.Doc
 	return mentions, edges
 }
 
-func normalizeDocLink(docPath string, link string) string {
-	baseDir := filepath.ToSlash(filepath.Dir(docPath))
-	if strings.HasPrefix(link, "./") || strings.HasPrefix(link, "../") {
-		return filepath.ToSlash(filepath.Clean(filepath.Join(baseDir, filepath.FromSlash(link))))
+func parseLocalMarkdownTarget(raw string) (target, anchor string, ok bool) {
+	raw = strings.TrimSpace(raw)
+	if strings.HasPrefix(raw, "<") && strings.HasSuffix(raw, ">") {
+		raw = strings.TrimSpace(strings.TrimSuffix(strings.TrimPrefix(raw, "<"), ">"))
 	}
-	return filepath.ToSlash(strings.TrimPrefix(link, "/"))
+	if raw == "" || strings.HasPrefix(raw, "//") {
+		return "", "", false
+	}
+	parsed, err := url.Parse(raw)
+	if err != nil || parsed.IsAbs() || parsed.Host != "" {
+		return "", "", false
+	}
+	anchor, err = url.PathUnescape(parsed.Fragment)
+	if err != nil {
+		anchor = parsed.Fragment
+	}
+	target, err = url.PathUnescape(parsed.EscapedPath())
+	if err != nil {
+		return "", "", false
+	}
+	target = strings.ReplaceAll(strings.TrimSpace(target), "\\", "/")
+	return target, anchor, true
 }
 
-func resolveWikilink(docPath string, name string) string {
-	name = strings.TrimSpace(name)
-	name = strings.ReplaceAll(name, "\\", "/")
-	if name == "" {
+func parseLocalWikilink(inner string) (target, anchor, alias string, ok bool) {
+	targetPart := strings.TrimSpace(inner)
+	if pipe := strings.Index(targetPart, "|"); pipe >= 0 {
+		alias = strings.TrimSpace(targetPart[pipe+1:])
+		targetPart = strings.TrimSpace(targetPart[:pipe])
+	}
+	if hash := strings.Index(targetPart, "#"); hash >= 0 {
+		anchor = strings.TrimSpace(targetPart[hash+1:])
+		targetPart = strings.TrimSpace(targetPart[:hash])
+	}
+	if targetPart == "" {
+		return "", anchor, alias, anchor != ""
+	}
+	if strings.HasPrefix(targetPart, "//") {
+		return "", "", "", false
+	}
+	parsed, err := url.Parse(targetPart)
+	if err != nil || parsed.IsAbs() || parsed.Host != "" || parsed.RawQuery != "" || parsed.Fragment != "" {
+		return "", "", "", false
+	}
+	targetPart, err = url.PathUnescape(parsed.EscapedPath())
+	if err != nil {
+		return "", "", "", false
+	}
+	targetPart = ensureMarkdownDocExtension(strings.ReplaceAll(strings.TrimSpace(targetPart), "\\", "/"))
+	return targetPart, anchor, alias, targetPart != ""
+}
+
+func ensureMarkdownDocExtension(target string) string {
+	if target == "" || strings.HasSuffix(target, "/") || pathpkg.Ext(target) != "" {
+		return target
+	}
+	return target + ".md"
+}
+
+func maskFencedMarkdown(content string) string {
+	masked := []byte(content)
+	inFence := false
+	var fence byte
+	minimum := 0
+	for start := 0; start < len(masked); {
+		end := start
+		for end < len(masked) && masked[end] != '\n' {
+			end++
+		}
+		lineEnd := end
+		if lineEnd > start && masked[lineEnd-1] == '\r' {
+			lineEnd--
+		}
+		marker, count, rest, markerOK := markdownFence(string(masked[start:lineEnd]))
+		maskLine := inFence
+		if !inFence && markerOK {
+			inFence, fence, minimum, maskLine = true, marker, count, true
+		} else if inFence && markerOK && marker == fence && count >= minimum && strings.TrimSpace(rest) == "" {
+			inFence, maskLine = false, true
+		}
+		if maskLine {
+			for i := start; i < end; i++ {
+				if masked[i] != '\r' {
+					masked[i] = ' '
+				}
+			}
+		}
+		if end < len(masked) {
+			end++
+		}
+		start = end
+	}
+	return string(masked)
+}
+
+func markdownFence(line string) (marker byte, count int, rest string, ok bool) {
+	trimmed := strings.TrimLeft(line, " \t")
+	if len(trimmed) < 3 || (trimmed[0] != '`' && trimmed[0] != '~') {
+		return 0, 0, "", false
+	}
+	marker = trimmed[0]
+	for count < len(trimmed) && trimmed[count] == marker {
+		count++
+	}
+	if count < 3 {
+		return 0, 0, "", false
+	}
+	return marker, count, trimmed[count:], true
+}
+
+type docResolutionIndex struct {
+	exactPath  map[string]string
+	foldedPath map[string][]string
+	exactBase  map[string][]string
+	foldedBase map[string][]string
+	docIDs     map[string][]string
+}
+
+func resolveDocEdges(docs []model.DocRecord, edges []model.DocEdge, roots []string) []model.DocEdge {
+	index := newDocResolutionIndex(docs)
+	resolved := make([]model.DocEdge, 0, len(edges))
+	for _, edge := range edges {
+		edge.Candidates = nil
+		edge.UnresolvedReason = ""
+		var candidates []string
+		if edge.ToDocID != "" {
+			candidates = uniqueSortedDocPaths(index.docIDs[edge.ToDocID])
+		} else if edge.ToPath != "" {
+			candidates = index.resolvePath(edge.FromPath, edge.ToPath, roots)
+		}
+		switch len(candidates) {
+		case 1:
+			if candidates[0] == edge.FromPath {
+				continue
+			}
+			edge.ToPath = candidates[0]
+		case 0:
+			edge.UnresolvedReason = "missing_doc_target"
+		default:
+			edge.Candidates = candidates
+			edge.UnresolvedReason = "ambiguous_doc_target"
+		}
+		resolved = append(resolved, edge)
+	}
+	return resolved
+}
+
+func newDocResolutionIndex(docs []model.DocRecord) docResolutionIndex {
+	index := docResolutionIndex{
+		exactPath:  make(map[string]string, len(docs)),
+		foldedPath: make(map[string][]string, len(docs)),
+		exactBase:  make(map[string][]string),
+		foldedBase: make(map[string][]string),
+		docIDs:     make(map[string][]string),
+	}
+	for _, doc := range docs {
+		p := normalizeDocCandidate(doc.Path)
+		if p == "" {
+			continue
+		}
+		index.exactPath[p] = p
+		index.foldedPath[strings.ToLower(p)] = append(index.foldedPath[strings.ToLower(p)], p)
+		base := pathpkg.Base(p)
+		index.exactBase[base] = append(index.exactBase[base], p)
+		index.foldedBase[strings.ToLower(base)] = append(index.foldedBase[strings.ToLower(base)], p)
+		if doc.DocID != "" {
+			index.docIDs[doc.DocID] = append(index.docIDs[doc.DocID], p)
+		}
+	}
+	return index
+}
+
+func (index docResolutionIndex) resolvePath(fromPath, rawTarget string, roots []string) []string {
+	rawTarget = ensureMarkdownDocExtension(strings.ReplaceAll(strings.TrimSpace(rawTarget), "\\", "/"))
+	stages := []string{rawTarget}
+	if dir := pathpkg.Dir(filepath.ToSlash(fromPath)); dir != "." && dir != "" {
+		stages = append(stages, pathpkg.Join(dir, rawTarget))
+	}
+	for _, root := range roots {
+		stages = append(stages, pathpkg.Join(strings.TrimSuffix(filepath.ToSlash(root), "/"), rawTarget))
+	}
+	seen := map[string]struct{}{}
+	for _, candidate := range stages {
+		candidate = normalizeDocCandidate(candidate)
+		if candidate == "" {
+			continue
+		}
+		if _, ok := seen[candidate]; ok {
+			continue
+		}
+		seen[candidate] = struct{}{}
+		if exact, ok := index.exactPath[candidate]; ok {
+			return []string{exact}
+		}
+		if folded := uniqueSortedDocPaths(index.foldedPath[strings.ToLower(candidate)]); len(folded) > 0 {
+			return folded
+		}
+	}
+	base := pathpkg.Base(normalizeDocCandidate(rawTarget))
+	if base == "." || base == "" {
+		return nil
+	}
+	if exact := uniqueSortedDocPaths(index.exactBase[base]); len(exact) > 0 {
+		return exact
+	}
+	return uniqueSortedDocPaths(index.foldedBase[strings.ToLower(base)])
+}
+
+func normalizeDocCandidate(value string) string {
+	value = filepath.ToSlash(strings.TrimSpace(value))
+	value = strings.TrimPrefix(value, "/")
+	cleaned := pathpkg.Clean(value)
+	if cleaned == "." || cleaned == "" || cleaned == ".." || strings.HasPrefix(cleaned, "../") {
 		return ""
 	}
-	if filepath.Ext(name) == "" {
-		name += ".md"
+	return cleaned
+}
+
+func uniqueSortedDocPaths(paths []string) []string {
+	out := append([]string(nil), paths...)
+	sort.Strings(out)
+	result := make([]string, 0, len(out))
+	for _, p := range out {
+		if p != "" && (len(result) == 0 || result[len(result)-1] != p) {
+			result = append(result, p)
+		}
 	}
-	if strings.Contains(name, "/") {
-		return normalizeDocLink(docPath, name)
-	}
-	if strings.HasPrefix(filepath.ToSlash(docPath), "wiki/") {
-		return "wiki/" + name
-	}
-	dir := filepath.ToSlash(filepath.Dir(docPath))
-	if dir == "." || dir == "" {
-		return name
-	}
-	return dir + "/" + name
+	return result
 }
 
 func appendStructuralDocEdges(docs []model.DocRecord, edges []model.DocEdge) []model.DocEdge {
@@ -759,10 +982,10 @@ func appendStructuralDocEdges(docs []model.DocRecord, edges []model.DocEdge) []m
 			readme = dir + "/README.md"
 		}
 		if path != readme {
-			add(path, readme, "hierarchy")
+			add(path, readme, "doc_hierarchy")
 		}
 		if gobierno != "" && path != gobierno && strings.HasPrefix(path, "wiki/") && !strings.Contains(strings.TrimPrefix(path, "wiki/"), "/") {
-			add(path, gobierno, "hierarchy")
+			add(path, gobierno, "doc_hierarchy")
 		}
 	}
 	return edges

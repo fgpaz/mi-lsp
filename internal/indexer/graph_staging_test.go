@@ -951,3 +951,98 @@ func TestPublishGraphObservationBatchesIdempotentPathPreservesPointerCAS(t *test
 		t.Fatalf("generation rows=%d, want 1", generations)
 	}
 }
+
+func TestDocumentGraphPreservesRelationKinds(t *testing.T) {
+	docs := []model.DocRecord{
+		{Path: "wiki/source.md", DocID: "SOURCE", ContentHash: stagingDigest("source").String()},
+		{Path: "wiki/target.md", DocID: "TARGET", ContentHash: stagingDigest("target").String()},
+	}
+	kinds := []string{"doc_wikilink", "doc_embed", "doc_markdown_link", "doc_id", "doc_hierarchy"}
+	edges := make([]model.DocEdge, 0, len(kinds))
+	for _, kind := range kinds {
+		edges = append(edges, model.DocEdge{FromPath: "wiki/source.md", ToPath: "wiki/target.md", Kind: kind, Label: kind})
+	}
+	bundle, err := AssembleGraphObservationBatches(GraphAssemblyRequest{
+		Docs: docs, DocEdges: edges, RepositoryIdentity: "https://example.com/docs", CreatedAt: time.Unix(1, 0),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := bundle.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]bool{}
+	for _, edge := range bundle.Edges {
+		if edge.SourceBackend == "docgraph" {
+			got[edge.Relation] = true
+		}
+	}
+	for _, kind := range kinds {
+		if !got[kind] {
+			t.Fatalf("relation %q missing from %v", kind, got)
+		}
+	}
+}
+
+func TestDocumentGraphReportsBoundedAmbiguousAndMissingTargets(t *testing.T) {
+	docs := []model.DocRecord{
+		{Path: "wiki/source.md", ContentHash: stagingDigest("source").String()},
+		{Path: "wiki/a/target.md", DocID: "DUP", ContentHash: stagingDigest("a").String()},
+		{Path: "wiki/b/target.md", DocID: "DUP", ContentHash: stagingDigest("b").String()},
+	}
+	edges := []model.DocEdge{
+		{FromPath: "wiki/source.md", ToPath: "target.md", Kind: "doc_wikilink", Label: "target", Candidates: []string{"wiki/b/target.md", "wiki/a/target.md"}, UnresolvedReason: "ambiguous_doc_target"},
+		{FromPath: "wiki/source.md", ToPath: "missing.md", Kind: "doc_wikilink", Label: "missing", UnresolvedReason: "missing_doc_target"},
+		{FromPath: "wiki/source.md", ToDocID: "DUP", Kind: "doc_id", Label: "DUP"},
+	}
+	bundle, err := AssembleGraphObservationBatches(GraphAssemblyRequest{
+		Docs: docs, DocEdges: edges, RepositoryIdentity: "https://example.com/docs", CreatedAt: time.Unix(1, 0),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ambiguous, missing := 0, 0
+	for _, unresolved := range bundle.Unresolved {
+		switch unresolved.ReasonCode {
+		case "ambiguous_doc_target":
+			ambiguous++
+			if len(unresolved.Candidates) != 2 || unresolved.Candidates[0] != "wiki/a/target.md" || unresolved.Candidates[1] != "wiki/b/target.md" {
+				t.Fatalf("candidates=%v", unresolved.Candidates)
+			}
+		case "missing_doc_target":
+			missing++
+		}
+	}
+	if ambiguous != 2 || missing != 1 {
+		t.Fatalf("ambiguous=%d missing=%d unresolved=%#v", ambiguous, missing, bundle.Unresolved)
+	}
+}
+
+func TestDocumentGraphAssemblyRemainsDeterministicAndSkipsSelfEdges(t *testing.T) {
+	docs := []model.DocRecord{
+		{Path: "wiki/source.md", DocID: "SOURCE", ContentHash: stagingDigest("source").String()},
+		{Path: "wiki/target.md", DocID: "TARGET", ContentHash: stagingDigest("target").String()},
+	}
+	edges := []model.DocEdge{
+		{FromPath: "wiki/source.md", ToPath: "wiki/source.md", Kind: "doc_wikilink", Label: "#self"},
+		{FromPath: "wiki/source.md", ToPath: "wiki/target.md", Kind: "doc_wikilink", Label: "target"},
+	}
+	request := GraphAssemblyRequest{Docs: docs, DocEdges: edges, RepositoryIdentity: "https://example.com/docs", CreatedAt: time.Unix(1, 0)}
+	first, err := AssembleGraphObservationBatches(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.Docs[0], request.Docs[1] = request.Docs[1], request.Docs[0]
+	second, err := AssembleGraphObservationBatches(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.Generation.GenerationID != second.Generation.GenerationID {
+		t.Fatalf("generation changed: %s != %s", first.Generation.GenerationID, second.Generation.GenerationID)
+	}
+	for _, edge := range first.Edges {
+		if edge.FromNodeID == edge.ToNodeID && edge.SourceBackend == "docgraph" {
+			t.Fatalf("self edge published: %#v", edge)
+		}
+	}
+}

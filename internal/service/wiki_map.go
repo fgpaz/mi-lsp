@@ -3,20 +3,24 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
 	"time"
 
+	"github.com/fgpaz/mi-lsp/internal/docgraph"
 	"github.com/fgpaz/mi-lsp/internal/model"
 	"github.com/fgpaz/mi-lsp/internal/store"
+	"github.com/fgpaz/mi-lsp/internal/workspace"
 )
 
 type wikiMapHub struct {
-	ID    string       `json:"id"`
-	Title string       `json:"title"`
-	Docs  []wikiMapDoc `json:"docs"`
+	ID        string       `json:"id"`
+	Title     string       `json:"title"`
+	Docs      []wikiMapDoc `json:"docs"`
+	TotalDocs int          `json:"total_docs,omitempty"`
 }
 
 type wikiMapDoc struct {
@@ -41,9 +45,14 @@ func (a *App) wikiMap(ctx context.Context, request model.CommandRequest) (model.
 		return model.Envelope{}, err
 	}
 
-	docs, source, warnings := loadWikiMapDocs(ctx, registration)
-	hubs := groupWikiMapDocs(docs)
-	hubs = trimWikiMapHubs(hubs, request.Context.MaxItems, request.Context.TokenBudget)
+	profile, _, warnings := docgraph.LoadProfile(registration.Root)
+	docs, source, loadWarnings, loadErr := loadWikiMapDocs(ctx, registration, profile)
+	if loadErr != nil {
+		return model.Envelope{}, loadErr
+	}
+	warnings = append(warnings, loadWarnings...)
+	hubs := groupWikiMapDocs(docs, &profile)
+	hubs, trimStats := trimWikiMapHubs(hubs, request.Context.MaxItems, request.Context.TokenBudget)
 
 	env := model.Envelope{
 		Ok:        true,
@@ -60,95 +69,228 @@ func (a *App) wikiMap(ctx context.Context, request model.CommandRequest) (model.
 	if source == "walk" {
 		env.Warnings = appendStringIfMissing(env.Warnings, "wiki map used filesystem walk because the documentation index is empty")
 	}
-	if len(hubs) == 0 {
-		env.Hint = "no se encontraron hubs de wiki en wiki/ o bibliotecas/"
+	if trimStats != nil {
+		env.Stats.TotalDocs = trimStats.totalDocs
+		env.Stats.TotalReturned = trimStats.totalReturned
+		env.Stats.TruncationReason = trimStats.reason
+		if trimStats.hint != "" {
+			env.NextHint = &trimStats.hint
+		}
+		env.Truncated = trimStats.totalReturned < trimStats.totalDocs
+	}
+	if source == "disabled" {
+		env.Hint = "wiki map está deshabilitado por read-model.toml"
+	} else if len(hubs) == 0 {
+		env.Hint = "no se encontraron hubs en las raíces configuradas de wiki map"
 	}
 	return applyCoachPolicy(env, request.Context), nil
 }
 
-func loadWikiMapDocs(ctx context.Context, registration model.WorkspaceRegistration) ([]wikiMapDoc, string, []string) {
-	var warnings []string
+type wikiMapTrimStats struct {
+	totalDocs, totalReturned int
+	reason, hint             string
+}
+
+func loadWikiMapDocs(ctx context.Context, registration model.WorkspaceRegistration, profile model.DocsReadProfile) ([]wikiMapDoc, string, []string, error) {
+	if !profile.IsWikiMapEnabled() {
+		return nil, "disabled", nil, nil
+	}
+	warnings := []string{}
+	roots := profile.EffectiveWikiMapRoots()
 	db, err := openWorkspaceDB(registration, "wiki.map", true)
-	if err == nil {
+	if err != nil || db == nil {
+		warnings = append(warnings, "wiki_map_db_open_failed_fallback_walk")
+	} else {
 		defer db.Close()
-		records, listErr := store.ListDocRecords(ctx, db)
-		if listErr == nil && len(records) > 0 {
+		records, queryErr := store.ListDocRecordsPaths(ctx, db, roots...)
+		if queryErr != nil {
+			if ctx.Err() != nil {
+				return nil, "index", warnings, ctx.Err()
+			}
+			warnings = append(warnings, "wiki_map_db_query_failed_fallback_walk")
+		} else {
 			docs := make([]wikiMapDoc, 0, len(records))
 			for _, record := range records {
-				if classifyWikiMapHub(record.Path) == "" {
-					continue
+				if classifyWikiMapHub(record.Path, profile) != "" {
+					docs = append(docs, wikiMapDoc{Path: record.Path, Title: record.Title})
 				}
-				docs = append(docs, wikiMapDoc{Path: record.Path, Title: record.Title})
 			}
 			if len(docs) > 0 {
-				return docs, "index", warnings
+				return docs, "index", warnings, nil
 			}
 		}
 	}
-	return walkWikiMapDocs(registration.Root), "walk", warnings
+	docs, walkWarnings, walkErr := walkWikiMapDocs(ctx, registration.Root, profile)
+	warnings = append(warnings, walkWarnings...)
+	return docs, "walk", warnings, walkErr
 }
 
-func walkWikiMapDocs(root string) []wikiMapDoc {
-	docs := make([]wikiMapDoc, 0)
-	for _, dir := range []string{"wiki", "bibliotecas"} {
-		base := filepath.Join(root, dir)
-		_ = filepath.WalkDir(base, func(path string, entry os.DirEntry, err error) error {
-			if err != nil {
+func walkWikiMapDocs(ctx context.Context, root string, profile model.DocsReadProfile) ([]wikiMapDoc, []string, error) {
+	if !profile.IsWikiMapEnabled() {
+		return nil, nil, nil
+	}
+	matcher, matcherErr := workspace.LoadIgnoreMatcher(root, nil)
+	warnings := []string{}
+	if matcherErr != nil {
+		warnings = append(warnings, "wiki_map_ignore_matcher_unavailable")
+	}
+	byPath := map[string]wikiMapDoc{}
+	for _, configuredRoot := range profile.EffectiveWikiMapRoots() {
+		if err := ctx.Err(); err != nil {
+			return nil, warnings, err
+		}
+		base := filepath.Join(root, filepath.FromSlash(strings.TrimSuffix(configuredRoot, "/")))
+		info, statErr := os.Lstat(base)
+		if statErr != nil || !info.IsDir() {
+			warnings = appendStringIfMissing(warnings, "wiki_map_root_unavailable")
+			continue
+		}
+		if reparse, reparseErr := preparationPathReparse(base); reparseErr != nil || reparse {
+			warnings = appendStringIfMissing(warnings, "wiki_map_root_reparse_skipped")
+			continue
+		}
+		walkErr := filepath.WalkDir(base, func(path string, entry os.DirEntry, entryErr error) error {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+			if entryErr != nil {
+				warnings = appendStringIfMissing(warnings, "wiki_map_walk_entry_unavailable")
 				return nil
 			}
-			if entry.IsDir() {
-				if skipWikiMapDir(entry.Name()) {
+			if entry.Type()&os.ModeSymlink != 0 {
+				warnings = appendStringIfMissing(warnings, "wiki_map_symlink_skipped")
+				if entry.IsDir() {
 					return filepath.SkipDir
 				}
 				return nil
 			}
-			rel, relErr := filepath.Rel(root, path)
-			if relErr != nil {
-				return nil
-			}
-			rel = filepath.ToSlash(rel)
-			if !strings.EqualFold(filepath.Ext(rel), ".md") {
-				return nil
-			}
-			if classifyWikiMapHub(rel) == "" {
-				return nil
-			}
-			title := strings.TrimSuffix(filepath.Base(rel), filepath.Ext(rel))
-			if content, readErr := os.ReadFile(path); readErr == nil {
-				if extracted := firstMarkdownHeading(content); extracted != "" {
-					title = extracted
+			if reparse, reparseErr := preparationPathReparse(path); reparseErr != nil || reparse {
+				warnings = appendStringIfMissing(warnings, "wiki_map_reparse_skipped")
+				if entry.IsDir() {
+					return filepath.SkipDir
 				}
+				return nil
 			}
-			docs = append(docs, wikiMapDoc{Path: rel, Title: title})
+			if entry.IsDir() {
+				if matcher != nil && matcher.ShouldIgnore(root, path) {
+					return filepath.SkipDir
+				}
+				return nil
+			}
+			if matcher != nil && matcher.ShouldIgnore(root, path) {
+				return nil
+			}
+			relative, relErr := filepath.Rel(root, path)
+			if relErr != nil || !strings.EqualFold(filepath.Ext(relative), ".md") {
+				return nil
+			}
+			relative = filepath.ToSlash(relative)
+			if classifyWikiMapHub(relative, profile) == "" {
+				return nil
+			}
+			title, titleErr := readWikiMapTitle(path, relative)
+			if titleErr != nil {
+				warnings = appendStringIfMissing(warnings, "wiki_map_title_read_failed")
+			}
+			byPath[relative] = wikiMapDoc{Path: relative, Title: title}
 			return nil
 		})
+		if walkErr != nil {
+			if ctx.Err() != nil {
+				return nil, warnings, ctx.Err()
+			}
+			warnings = appendStringIfMissing(warnings, "wiki_map_walk_failed")
+		}
+	}
+	docs := make([]wikiMapDoc, 0, len(byPath))
+	for _, doc := range byPath {
+		docs = append(docs, doc)
 	}
 	sort.Slice(docs, func(i, j int) bool { return docs[i].Path < docs[j].Path })
-	return docs
+	return docs, warnings, nil
 }
 
-func groupWikiMapDocs(docs []wikiMapDoc) []wikiMapHub {
+func readWikiMapTitle(path, relative string) (string, error) {
+	fallback := strings.TrimSuffix(filepath.Base(relative), filepath.Ext(relative))
+	file, err := os.Open(path)
+	if err != nil {
+		return fallback, err
+	}
+	defer file.Close()
+	content, err := io.ReadAll(io.LimitReader(file, 64*1024))
+	if err != nil {
+		return fallback, err
+	}
+	if title := wikiMapFrontMatterTitle(content); title != "" {
+		return title, nil
+	}
+	if heading := firstMarkdownHeading(content); heading != "" {
+		return heading, nil
+	}
+	return fallback, nil
+}
+
+func wikiMapFrontMatterTitle(content []byte) string {
+	lines := strings.Split(string(content), "\n")
+	if len(lines) == 0 || strings.TrimSpace(lines[0]) != "---" {
+		return ""
+	}
+	for _, line := range lines[1:] {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "---" {
+			break
+		}
+		key, value, found := strings.Cut(trimmed, ":")
+		if found && strings.EqualFold(strings.TrimSpace(key), "title") {
+			return strings.Trim(strings.TrimSpace(value), "\"'")
+		}
+	}
+	return ""
+}
+
+func groupWikiMapDocs(docs []wikiMapDoc, profile *model.DocsReadProfile) []wikiMapHub {
+	if profile == nil || !profile.IsWikiMapEnabled() {
+		return nil
+	}
 	grouped := map[string][]wikiMapDoc{}
 	for _, doc := range docs {
-		hub := classifyWikiMapHub(doc.Path)
-		if hub == "" {
-			continue
+		hub := classifyWikiMapHub(doc.Path, *profile)
+		if hub != "" {
+			grouped[hub] = append(grouped[hub], doc)
 		}
-		grouped[hub] = append(grouped[hub], doc)
 	}
-	hubs := make([]wikiMapHub, 0, len(wikiMapHubOrder))
-	for _, meta := range wikiMapHubOrder {
-		items := grouped[meta.id]
+	hubs := make([]wikiMapHub, 0)
+	appendHub := func(id, title string) {
+		items := grouped[id]
 		if len(items) == 0 {
-			continue
+			return
 		}
 		sort.Slice(items, func(i, j int) bool { return items[i].Path < items[j].Path })
-		hubs = append(hubs, wikiMapHub{ID: meta.id, Title: meta.title, Docs: items})
+		hubs = append(hubs, wikiMapHub{ID: id, Title: title, Docs: items, TotalDocs: len(items)})
+	}
+	if profile.HasCustomHubs() {
+		for _, hub := range profile.WikiMap.Hubs {
+			appendHub(hub.ID, hub.Title)
+		}
+		return hubs
+	}
+	for _, hub := range wikiMapHubOrder {
+		appendHub(hub.id, hub.title)
 	}
 	return hubs
 }
 
-func classifyWikiMapHub(path string) string {
+func classifyWikiMapHub(path string, profile model.DocsReadProfile) string {
+	if !profile.IsWikiMapEnabled() {
+		return ""
+	}
+	if profile.HasCustomHubs() {
+		return profile.ClassifyWikiMapHubClassified(path)
+	}
+	return classifyWikiMapHubLocked(path)
+}
+
+func classifyWikiMapHubLocked(path string) string {
 	p := filepath.ToSlash(strings.TrimSpace(path))
 	lower := strings.ToLower(p)
 	if strings.HasSuffix(lower, ".yaml") || strings.HasSuffix(lower, ".yml") {
@@ -205,55 +347,76 @@ func wikiMapExcludedPath(path string) bool {
 	return false
 }
 
-func skipWikiMapDir(name string) bool {
-	lower := strings.ToLower(strings.TrimSpace(name))
-	switch lower {
-	case "old", "archive", "deprecated", "historico", "legacy":
-		return true
-	}
-	return strings.HasPrefix(lower, "31-workers") || strings.HasPrefix(lower, "32-contratos")
-}
-
-func trimWikiMapHubs(hubs []wikiMapHub, maxItems, tokenBudget int) []wikiMapHub {
-	if len(hubs) == 0 {
-		return hubs
-	}
+func trimWikiMapHubs(hubs []wikiMapHub, maxItems, tokenBudget int) ([]wikiMapHub, *wikiMapTrimStats) {
 	total := wikiMapDocCount(hubs)
 	limit := total
-	if maxItems > 0 && maxItems < limit {
+	maxLimited := maxItems > 0 && maxItems < limit
+	if maxLimited {
 		limit = maxItems
 	}
-	for limit > 0 {
-		trimmed := copyWikiMapHubs(hubs)
-		kept := 0
-		for i := range trimmed {
-			if kept >= limit {
-				trimmed[i].Docs = nil
+	tokenLimited := false
+	if tokenBudget > 0 && estimateWikiMapTokens(fairTrimByCount(hubs, limit)) > tokenBudget {
+		tokenLimited = true
+		low, high := 0, limit
+		for low < high {
+			mid := (low + high + 1) / 2
+			if estimateWikiMapTokens(fairTrimByCount(hubs, mid)) <= tokenBudget {
+				low = mid
+			} else {
+				high = mid - 1
+			}
+		}
+		limit = low
+	}
+	out := fairTrimByCount(hubs, limit)
+	stats := &wikiMapTrimStats{totalDocs: total, totalReturned: wikiMapDocCount(out)}
+	if stats.totalReturned < total {
+		switch {
+		case tokenLimited:
+			stats.reason = "token_budget"
+			stats.hint = "aumente --token-budget para incluir más documentos"
+		case maxLimited:
+			stats.reason = "max_items"
+			stats.hint = "aumente --max-items para incluir más documentos"
+		}
+	}
+	return out, stats
+}
+
+func fairTrimByCount(hubs []wikiMapHub, count int) []wikiMapHub {
+	if count < 0 {
+		count = 0
+	}
+	out := make([]wikiMapHub, len(hubs))
+	positions := make([]int, len(hubs))
+	for i, hub := range hubs {
+		total := len(hub.Docs)
+		if hub.TotalDocs > total {
+			total = hub.TotalDocs
+		}
+		out[i] = wikiMapHub{ID: hub.ID, Title: hub.Title, TotalDocs: total}
+	}
+	added := 0
+	for added < count {
+		progressed := false
+		for i := range hubs {
+			if added >= count {
+				break
+			}
+			if positions[i] >= len(hubs[i].Docs) {
 				continue
 			}
-			remain := limit - kept
-			if remain < len(trimmed[i].Docs) {
-				trimmed[i].Docs = trimmed[i].Docs[:remain]
-			}
-			kept += len(trimmed[i].Docs)
+			out[i].Docs = append(out[i].Docs, hubs[i].Docs[positions[i]])
+			positions[i]++
+			added++
+			progressed = true
 		}
-		trimmed = dropEmptyWikiMapHubs(trimmed)
-		if tokenBudget <= 0 || estimateWikiMapTokens(trimmed) <= tokenBudget {
-			return trimmed
+		if !progressed {
+			break
 		}
-		limit--
 	}
-	return nil
+	return dropEmptyWikiMapHubs(out)
 }
-
-func copyWikiMapHubs(hubs []wikiMapHub) []wikiMapHub {
-	out := make([]wikiMapHub, len(hubs))
-	for i, hub := range hubs {
-		out[i] = wikiMapHub{ID: hub.ID, Title: hub.Title, Docs: append([]wikiMapDoc(nil), hub.Docs...)}
-	}
-	return out
-}
-
 func dropEmptyWikiMapHubs(hubs []wikiMapHub) []wikiMapHub {
 	out := make([]wikiMapHub, 0, len(hubs))
 	for _, hub := range hubs {

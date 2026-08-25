@@ -91,7 +91,7 @@ source_of_truth: this
 status: implemented
 actor: Usuario|Skill|Agente|CLI
 origin: FL-WIKI-01
-command: mi-lsp nav wiki map --workspace <alias> [--token-budget N] [--format compact|json|text|toon|yaml]
+command: mi-lsp nav wiki map --workspace <alias> [--max-items N] [--token-budget N] [--format compact|json|text|toon|yaml]
 backend: wiki.map
 intent: mapa compacto de hubs para personalización diaria y Momento; nunca cuerpos completos
 locks:
@@ -115,25 +115,32 @@ excluded:
   - yaml
   - old|archive|deprecated|historico|legacy
   - .docs/wiki SDD del producto
+configuration:
+  source: .docs/wiki/_mi-lsp/read-model.toml
+  defaults: {enabled: true, roots: [wiki/, bibliotecas/], hubs: D-TEDI-017}
+  roots: "wiki/ y bibliotecas/ permanecen; roots configuradas se agregan de forma ordenada y deduplicada"
+  custom_hubs: "[[wiki_map.hub]] en orden declarado; primer patrón coincidente gana y no mezcla hubs default"
+  disabled: "enabled=false desactiva mapa y alta automática de raíces de conocimiento"
 sources:
-  preferred: doc_records indexados cuyo path clasifica a un hub
-  fallback: walk de wiki/ y bibliotecas/ si el índice no tiene hubs
+  preferred: query SQLite acotada a path,title y raíces configuradas
+  fallback: walk bounded de raíces configuradas si el índice falla o no contiene hubs
+  safety: ignore matcher, cancelación, symlink/reparse skip y warnings sanitizados
 envelope:
-  items: hubs[{id,title,docs[{path,title}]}]
-  stats: {files, ms, tokens_estimate}
-  warnings: walk si el índice documental está vacío
-  hint: no se encontraron hubs de wiki en wiki/ o bibliotecas/
+  items: hubs[{id,title,total_docs,docs[{path,title}]}]
+  stats: {files: total_returned, total_docs, total_returned, truncation_reason, ms, tokens_estimate}
+  truncated: true cuando total_returned < total_docs
+  next_hint: aumentar --max-items o --token-budget según el límite efectivo
 budgets:
-  max_items: Context.MaxItems recorta docs conservando orden de hubs
-  token_budget: Context.TokenBudget recorta docs hasta caber
+  max_items: asignación round-robin equitativa que conserva orden interno y de hubs
+  token_budget: búsqueda binaria del mayor conteo equitativo que cabe
 out_of_scope:
   - fan-out --all-workspaces
   - grafo de vecinos (lo publica el Graph Kernel, no este comando)
   - memoria propia de Tedi v1
   - Gastos y Notas vivos
 verify:
-  - go test ./internal/service -count=1 -run 'TestClassifyWikiMapHub|TestGroupWikiMapDocsOrder'
-  - go test ./internal/cli -count=1 -run 'TestNavWikiMapCommandExists'
+  - go test ./internal/service -count=1 -run 'TestClassifyWikiMapHubDefaultsRemainLocked|TestGroupWikiMapDocsUsesDefaultOrCustomDeclarationOrder|TestTrimWikiMapHubs|TestWalkWikiMapDocs'
+  - go test ./internal/cli -count=1 -run 'TestNavWikiMapUsesDirectExecution'
 stop_if:
   - map_emits_full_markdown_bodies=true
   - map_classifies_sdd_dot_docs_wiki_as_hub=true
@@ -156,11 +163,22 @@ positives:
   - TC-WIKI-030
   - TC-WIKI-031
   - TC-WIKI-032
+  - TC-WIKI-034
+  - TC-WIKI-036
+  - TC-WIKI-037
+  - TC-WIKI-039
+  - TC-WIKI-040
 negatives:
   - TC-WIKI-033
+  - TC-WIKI-035
+  - TC-WIKI-038
 invariants:
   - el mapa es catálogo, no lectura de ficha
-  - el orden de hubs es persona, proyectos, sistema, materia
+  - sin configuración, el orden de hubs es persona, proyectos, sistema, materia
+  - con hubs custom, solo se emiten los declarados y en ese orden
+  - ningún hub no vacío desaparece mientras el budget alcance una ronda
+  - truncation, totales y siguiente acción nunca se ocultan
+  - nav.wiki.map siempre ejecuta directo
   - Tedi no inventa un grafo en JavaScript a partir de este envelope
 verify:
   - mi-lsp nav wiki trace RF-WIKI-006 --workspace mi-lsp --format toon

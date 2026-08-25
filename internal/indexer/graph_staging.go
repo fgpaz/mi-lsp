@@ -178,6 +178,10 @@ func graphDocFactsDigest(docs []model.DocRecord, edges []model.DocEdge, mentions
 		b.text(6, edge.ToDocID)
 		b.text(7, edge.Kind)
 		b.text(8, edge.Label)
+		b.text(12, edge.UnresolvedReason)
+		for _, candidate := range edge.Candidates {
+			b.text(13, candidate)
+		}
 	}
 	for _, mention := range mentions {
 		b.text(9, mention.DocPath)
@@ -268,6 +272,7 @@ func prepareGraphInput(req GraphAssemblyRequest) (graphAssemblyInput, error) {
 	filterEdges := make([]model.DocEdge, 0, len(req.DocEdges))
 	for _, edge := range req.DocEdges {
 		edge.FromPath, edge.ToPath = filepath.ToSlash(strings.TrimSpace(edge.FromPath)), filepath.ToSlash(strings.TrimSpace(edge.ToPath))
+		edge.Candidates = normalizeGraphDocCandidates(edge.Candidates)
 		if _, ok := docPaths[edge.FromPath]; ok {
 			filterEdges = append(filterEdges, edge)
 		}
@@ -281,7 +286,7 @@ func prepareGraphInput(req GraphAssemblyRequest) (graphAssemblyInput, error) {
 	}
 	sort.Slice(filterEdges, func(i, j int) bool {
 		a, b := filterEdges[i], filterEdges[j]
-		for _, pair := range [][2]string{{a.FromPath, b.FromPath}, {a.ToPath, b.ToPath}, {a.ToDocID, b.ToDocID}, {a.Kind, b.Kind}, {a.Label, b.Label}} {
+		for _, pair := range [][2]string{{a.FromPath, b.FromPath}, {a.ToPath, b.ToPath}, {a.ToDocID, b.ToDocID}, {a.Kind, b.Kind}, {a.Label, b.Label}, {a.UnresolvedReason, b.UnresolvedReason}, {strings.Join(a.Candidates, "\x00"), strings.Join(b.Candidates, "\x00")}} {
 			if pair[0] != pair[1] {
 				return pair[0] < pair[1]
 			}
@@ -298,6 +303,25 @@ func prepareGraphInput(req GraphAssemblyRequest) (graphAssemblyInput, error) {
 		return false
 	})
 	return graphAssemblyInput{batches: unique, docs: docs, docEdges: filterEdges, docMentions: filterMentions, workspaceIdentity: workspaceIdentity, repositoryIdentity: repositoryIdentity, createdAt: createdAt}, nil
+}
+
+func normalizeGraphDocCandidates(candidates []string) []string {
+	items := append([]string(nil), candidates...)
+	for i := range items {
+		items[i] = filepath.ToSlash(strings.TrimSpace(items[i]))
+	}
+	sort.Strings(items)
+	out := make([]string, 0, len(items))
+	for _, item := range items {
+		if item == "" || len(out) > 0 && out[len(out)-1] == item {
+			continue
+		}
+		out = append(out, item)
+		if len(out) == 8 {
+			break
+		}
+	}
+	return out
 }
 
 func prepareGraphBatches(req GraphAssemblyRequest) ([]model.GraphObservationBatch, time.Time, error) {
@@ -534,8 +558,8 @@ func assembleGraphBundle(input graphAssemblyInput) (model.GraphBundle, error) {
 	}
 
 	docEvidence := make([]graphEvidenceCandidate, 0)
-	addDocEdge := func(ref string, from, to model.GraphDigest, owner, claim string, source model.GraphDigest, observed model.GraphDigest) {
-		observation := model.GraphObservationEdge{Ref: ref, Relation: "doc_mentions", Scope: "document", Status: claim, OwnerPath: owner, Backend: "docgraph", Resolution: "docgraph", SourceDigest: source}
+	addDocEdge := func(ref string, from, to model.GraphDigest, owner, relation, status string, source model.GraphDigest, observed model.GraphDigest) {
+		observation := model.GraphObservationEdge{Ref: ref, Relation: relation, Scope: "document", Status: status, OwnerPath: owner, Backend: "docgraph", Resolution: "docgraph", SourceDigest: source}
 		key := model.EdgeKey(from, to, observation.Relation, observation.Scope)
 		candidate := graphEdgeCandidate{key: key, from: from, to: to, edge: observation}
 		if old, ok := edgesByKey[key]; ok {
@@ -546,7 +570,15 @@ func assembleGraphBundle(input graphAssemblyInput) (model.GraphBundle, error) {
 			edgesByKey[key] = candidate
 		}
 		edgeRefs[graphScopedRef{batch: -1, ref: ref}] = key
-		docEvidence = append(docEvidence, graphEvidenceCandidate{subject: key, edgeKey: key, evidence: model.GraphObservationEvidence{Ref: ref, EdgeRef: ref, SourceURI: owner, Backend: "docgraph", ExtractorVersion: "docgraph/v1", SourceDigest: source, ObservedDigest: observed, ClaimKind: "doc_mentions", Status: claim}})
+		docEvidence = append(docEvidence, graphEvidenceCandidate{subject: key, edgeKey: key, evidence: model.GraphObservationEvidence{Ref: ref, EdgeRef: ref, SourceURI: owner, Backend: "docgraph", ExtractorVersion: "docgraph/v1", SourceDigest: source, ObservedDigest: observed, ClaimKind: relation, Status: status}})
+	}
+	boundedDocCandidates := func(paths []string) []string {
+		paths = append([]string(nil), paths...)
+		sort.Strings(paths)
+		if len(paths) > 8 {
+			paths = paths[:8]
+		}
+		return paths
 	}
 	for index, edge := range input.docEdges {
 		from, ok := docKeys[edge.FromPath]
@@ -563,17 +595,32 @@ func assembleGraphBundle(input graphAssemblyInput) (model.GraphBundle, error) {
 			if len(paths) == 1 {
 				targetPath = paths[0]
 			} else {
-				candidates := append([]string(nil), paths...)
+				candidates := boundedDocCandidates(paths)
 				docUnresolved = append(docUnresolved, graphDocUnresolved(fmt.Sprintf("doc-edge:%d", index), edge.FromPath, "doc_id", edge.ToDocID, map[bool]string{true: "ambiguous_doc_target", false: "missing_doc_target"}[len(paths) > 1], candidates, docSources[edge.FromPath]))
 				continue
 			}
 		}
 		if targetPath == "" {
-			docUnresolved = append(docUnresolved, graphDocUnresolved(fmt.Sprintf("doc-edge:%d", index), edge.FromPath, "doc_path", firstNonEmptyGraph(edge.ToPath, edge.ToDocID), "missing_doc_target", nil, docSources[edge.FromPath]))
+			reason := edge.UnresolvedReason
+			if reason == "" {
+				reason = "missing_doc_target"
+				if len(edge.Candidates) > 1 {
+					reason = "ambiguous_doc_target"
+				}
+			}
+			candidates := boundedDocCandidates(edge.Candidates)
+			docUnresolved = append(docUnresolved, graphDocUnresolved(fmt.Sprintf("doc-edge:%d", index), edge.FromPath, "doc_path", firstNonEmptyGraph(edge.ToPath, edge.ToDocID), reason, candidates, docSources[edge.FromPath]))
+			continue
+		}
+		if targetPath == edge.FromPath {
 			continue
 		}
 		to := docKeys[targetPath]
-		addDocEdge(fmt.Sprintf("doc-edge:%d", index), from, to, edge.FromPath, model.GraphRecordExact, docSources[edge.FromPath], graphDocClaimDigest(edge.Kind, edge.FromPath, targetPath, edge.Label, docSources[edge.FromPath]))
+		relation := edge.Kind
+		if relation != "doc_wikilink" && relation != "doc_embed" && relation != "doc_markdown_link" && relation != "doc_id" && relation != "doc_hierarchy" {
+			relation = "doc_mentions"
+		}
+		addDocEdge(fmt.Sprintf("doc-edge:%d", index), from, to, edge.FromPath, relation, model.GraphRecordExact, docSources[edge.FromPath], graphDocClaimDigest(edge.Kind, edge.FromPath, targetPath, edge.Label, docSources[edge.FromPath]))
 	}
 	for index, mention := range input.docMentions {
 		from, ok := docKeys[mention.DocPath]
@@ -616,7 +663,7 @@ func assembleGraphBundle(input graphAssemblyInput) (model.GraphBundle, error) {
 			docUnresolved = append(docUnresolved, graphDocUnresolved(fmt.Sprintf("doc-mention:%d", index), mention.DocPath, kind, value, reason, candidateNames, docSources[mention.DocPath]))
 			continue
 		}
-		addDocEdge(fmt.Sprintf("doc-mention:%d", index), from, candidates[0], mention.DocPath, model.GraphRecordExtracted, docSources[mention.DocPath], graphDocClaimDigest(kind, mention.DocPath, value, "", docSources[mention.DocPath]))
+		addDocEdge(fmt.Sprintf("doc-mention:%d", index), from, candidates[0], mention.DocPath, "doc_mentions", model.GraphRecordExtracted, docSources[mention.DocPath], graphDocClaimDigest(kind, mention.DocPath, value, "", docSources[mention.DocPath]))
 	}
 
 	edgeKeys := make([]model.GraphDigest, 0, len(edgesByKey))

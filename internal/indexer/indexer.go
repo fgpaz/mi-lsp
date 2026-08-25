@@ -119,7 +119,10 @@ func indexWorkspaceWithGraphProgress(ctx context.Context, root string, clean boo
 		} else if ok {
 			prior = &active
 		}
-		request, publishGraph := documentationGraphRequest(ctx, root, projectFile, graphBatches, docs, docEdges, docMentions, time.Now().UTC())
+		request, publishGraph, identityWarning := documentationGraphRequest(ctx, root, projectFile, graphBatches, docs, docEdges, docMentions, time.Now().UTC())
+		if identityWarning != "" {
+			warnings = appendIfMissing(warnings, identityWarning)
+		}
 		if len(graphBatches) == 0 && !explicitlyNonGraphProject(projectFile) {
 			if publishGraph {
 				warnings = append(warnings, "graph observation produced no stageable complete batch; publishing documentation graph")
@@ -346,7 +349,10 @@ func indexWorkspaceDocsOnlyWithProgress(ctx context.Context, root string, genera
 		}
 		defer db.Close()
 
-		request, publishGraph := documentationGraphRequest(ctx, root, projectFile, nil, docs, docEdges, docMentions, time.Now().UTC())
+		request, publishGraph, identityWarning := documentationGraphRequest(ctx, root, projectFile, nil, docs, docEdges, docMentions, time.Now().UTC())
+		if identityWarning != "" {
+			warnings = appendIfMissing(warnings, identityWarning)
+		}
 		var jobGraph *store.IndexJobGraphPublication
 		if publishGraph {
 			var prior *model.GraphDigest
@@ -485,7 +491,7 @@ func appendIfMissing(items []string, value string) []string {
 	return append(items, value)
 }
 
-func documentationGraphRequest(ctx context.Context, root string, project model.ProjectFile, batches []model.GraphObservationBatch, docs []model.DocRecord, docEdges []model.DocEdge, docMentions []model.DocMention, createdAt time.Time) (GraphAssemblyRequest, bool) {
+func documentationGraphRequest(ctx context.Context, root string, project model.ProjectFile, batches []model.GraphObservationBatch, docs []model.DocRecord, docEdges []model.DocEdge, docMentions []model.DocMention, createdAt time.Time) (GraphAssemblyRequest, bool, string) {
 	req := GraphAssemblyRequest{
 		Batches:     batches,
 		Docs:        docs,
@@ -494,18 +500,18 @@ func documentationGraphRequest(ctx context.Context, root string, project model.P
 		CreatedAt:   createdAt,
 	}
 	if len(batches) != 0 {
-		return req, true
+		return req, true, ""
 	}
 	if !hasCanonicalGraphDocs(docs) {
-		return req, false
+		return req, false, ""
 	}
 	identity, err := workspace.ResolveRepositoryIdentity(ctx, root, project.Repos)
 	if err != nil {
-		return req, false
+		return req, false, "documentation graph omitted: repository identity unavailable; configure repository_identity or exactly one origin remote"
 	}
 	req.RepositoryIdentity = identity
 	req.WorkspaceIdentity = identity
-	return req, true
+	return req, true, ""
 }
 
 func hasCanonicalGraphDocs(docs []model.DocRecord) bool {
