@@ -132,4 +132,4 @@ Local semantic CLI for large .NET/C# and TypeScript workspaces.
 **Status**: Generated from AE-POLICY-PROJECTION-V2
 **Last Updated**: 2026-08-25
 **Source**: repo-policy.yaml + template.agents
-<!-- kernel_version: 6f4da8b4 -->
+<!-- kernel_version: c30d9193 -->
