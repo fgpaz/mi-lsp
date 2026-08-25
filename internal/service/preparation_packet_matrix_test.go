@@ -14,6 +14,11 @@ import (
 func packetMatrixFixture(t *testing.T) (*App, string, string, model.PreparationPacket) {
 	t.Helper()
 	root, name := setupTestWorkspace(t)
+	canonical, err := canonicalPreparationRoot(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	root = canonical
 	writeWorkspaceFile(t, root, ".docs/wiki/00_gobierno_documental.md", "governance")
 	writeWorkspaceFile(t, root, ".docs/wiki/_mi-lsp/read-model.toml", "generation = 1")
 	p := model.PreparationPacket{Schema: model.PreparationSchema, Workspace: model.PreparationWorkspace{CanonicalRoot: root, IdentityDigest: preparationDigest(root)}, Task: model.PreparationTask{Digest: preparationDigest("task"), Intent: "intent"}, Scope: model.PreparationScope{AllowedPaths: []string{"src/Hello.cs"}, DeniedClasses: []string{"authorization"}, ReadOnly: true}, Lineage: model.PreparationLineage{PreparationID: "id", CreatedAt: time.Now().Add(-time.Minute), ExpiresAt: time.Now().Add(time.Hour)}, Evidence: model.PreparationEvidence{Root: root}, Status: "ready", Compatibility: "current"}
