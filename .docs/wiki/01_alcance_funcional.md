@@ -106,7 +106,7 @@ flowchart TD
 # 5. Areas funcionales de alto nivel
 
 - Gestion de workspaces: alta, inicializacion corta, descubrimiento, aliases, estado y warmup.
-- Navegacion y discovery: simbolos, referencias, outline, overview, contexto, dependencias, exploracion `nav wiki`, preguntas docs-first, reading packs canonicos, busqueda por intencion y resumen de servicios. En workspaces `container`, `find/search/intent` pueden acotar por `--repo` sin perder el modo directo. Federacion wiki cross-workspace: explorar wikis de multiples espacios de trabajo en una sola máquina con `--all-workspaces` y fan-out controlado. Ver [[FL-WIKI-01]].
+- Navegacion y discovery: simbolos, referencias, outline, overview, contexto, dependencias, exploracion `nav wiki`, preguntas docs-first, reading packs canonicos, busqueda por intencion y resumen de servicios. En workspaces `container`, `find/search/intent` pueden acotar por `--repo` sin perder el modo directo. Federacion wiki: `nav wiki-root` resuelve raíces `[[canon]]` externas o el default `.docs/wiki`; `--all-workspaces` recorre wikis de multiples espacios en una sola máquina con fan-out controlado. Ver [[FL-WIKI-01]] y [[RF-WKS-008]].
 - Indexacion repo-local: catalogo liviano de simbolos, archivos, metadatos del workspace y grafo documental; el grafo nativo se genera y publica con [[FL-GPH-01]].
 - El grafo nativo agrega consultas para consultar, explicar e impactar. Ver [[FL-GPH-02]].
 - Extensibilidad aislada: ejecucion de extensiones `MILX-v1` con limites de proceso, permisos y salida. Ver [[FL-GPH-03]].

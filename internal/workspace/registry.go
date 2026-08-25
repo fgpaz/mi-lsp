@@ -253,10 +253,20 @@ func RegisterWorkspace(name string, registration model.WorkspaceRegistration) (m
 	if registry.Workspaces == nil {
 		registry.Workspaces = map[string]model.WorkspaceRegistration{}
 	}
+	if existing, ok := registry.Workspaces[name]; ok {
+		registration = preserveCanonLinks(existing, registration)
+	}
 	registration.Name = name
 	registry.Workspaces[name] = registration
 	registry.Defaults.LastWorkspace = name
 	return registry, SaveRegistry(registry)
+}
+
+func preserveCanonLinks(existing, incoming model.WorkspaceRegistration) model.WorkspaceRegistration {
+	if len(incoming.CanonLinks) == 0 && len(existing.CanonLinks) > 0 {
+		incoming.CanonLinks = append([]model.WorkspaceCanonLink(nil), existing.CanonLinks...)
+	}
+	return incoming
 }
 
 func RemoveWorkspace(name string) error {

@@ -12,6 +12,7 @@ imports:
   - '[[RF-WIKI-004]]'
   - '[[RF-WIKI-005]]'
   - '[[RF-WIKI-006]]'
+  - '[[RF-WIKI-007]]'
 exports:
   - 'CT-NAV-WIKI'
 agent_must_read:
@@ -40,13 +41,15 @@ mi-lsp nav wiki pack <task> [--all-workspaces] --workspace <alias> [--rf RF-*] [
 mi-lsp nav wiki trace <DOC-ID|--all> [--all-workspaces] --workspace <alias> [--summary] [--format compact|json|text|toon|yaml]
 mi-lsp nav wiki inventory [--all-workspaces] --workspace <alias> [--with-layer-counts] [--format compact|json|text|toon|yaml]
 mi-lsp nav wiki map --workspace <alias> [--format compact|json|text|toon|yaml]
+mi-lsp nav wiki-root --workspace <alias> [--role producto|ecosistema|gobierno_local] [--format compact|json|text|toon|yaml]
+mi-lsp nav wiki root --workspace <alias> [--role producto|ecosistema|gobierno_local] [--format compact|json|text|toon|yaml]
 mi-lsp nav wiki validate-harness --workspace <alias> [--format compact|json|text|toon|yaml]
 mi-lsp nav wiki validate-source --workspace <alias> [--paths <path[,path...]>] [--ids <doc-id[,doc-id...]>] [--format compact|json|text|toon|yaml]
 ```
 
 ## Semantica
 
-`nav wiki` es la puerta documental explicita para agentes. `wiki search` usa el docgraph repo-local y el scorer owner-aware para devolver candidatos wiki, mientras `wiki route`, `wiki pack` y `wiki trace` reutilizan la semantica y el shape de `nav route`, `nav pack` y `nav trace`. `wiki map` publica un catálogo compacto de hubs de una wiki de conocimiento (`wiki/` numerada y `bibliotecas/`) sin cuerpos completos y sin fan-out `--all-workspaces`. `wiki validate-harness` compila readiness de contratos `SDD-HARNESS-v1` sobre los docs gobernados. `wiki validate-source` compila readiness de artefactos que declaran `wiki_source_protocol: SDD-WIKI-SOURCE-v1`; los docs no migrados no son bloqueantes. `wiki search` acepta `RS` como layer outcome y `wiki trace` acepta `RS-*`, `RF-*`, `TP-*`, doc IDs tecnicos exactos (`TECH-*`, `DB-*`, `CT-*`) y source IDs exactos; para IDs tecnicos debe preferir el documento cuyo `doc_id` coincide exactamente antes de usar menciones o fallbacks RF. `--all` sigue recorriendo el set RF canonico, y cuando necesita fallback a disco debe priorizar las rutas gobernadas por `00`/`read-model` antes de caer a layouts legacy.
+`nav wiki` es la puerta documental explicita para agentes. `wiki search` usa el docgraph repo-local y el scorer owner-aware para devolver candidatos wiki, mientras `wiki route`, `wiki pack` y `wiki trace` reutilizan la semantica y el shape de `nav route`, `nav pack` y `nav trace`. `wiki map` publica un catálogo compacto de hubs de una wiki de conocimiento (`wiki/` numerada y `bibliotecas/`) sin cuerpos completos y sin fan-out `--all-workspaces`. `wiki-root` (alias `wiki root`) publica la raíz portable; el envelope vive en [[CT-NAV-WIKI-ROOT]]. `wiki validate-harness` compila readiness de contratos `SDD-HARNESS-v1` sobre los docs gobernados. `wiki validate-source` compila readiness de artefactos que declaran `wiki_source_protocol: SDD-WIKI-SOURCE-v1`; los docs no migrados no son bloqueantes. `wiki search` acepta `RS` como layer outcome y `wiki trace` acepta `RS-*`, `RF-*`, `TP-*`, doc IDs tecnicos exactos (`TECH-*`, `DB-*`, `CT-*`) y source IDs exactos; para IDs tecnicos debe preferir el documento cuyo `doc_id` coincide exactamente antes de usar menciones o fallbacks RF. `--all` sigue recorriendo el set RF canonico, y cuando necesita fallback a disco debe priorizar las rutas gobernadas por `00`/`read-model` antes de caer a layouts legacy.
 
 ## Envelope `--all-workspaces`
 
@@ -374,8 +377,8 @@ semantics: |
 
 ## Estado
 
-implemented (search, route, pack, trace, validate-harness, validate-source, inventory, map)
+implemented (search, route, pack, trace, validate-harness, validate-source, inventory, map, wiki-root)
 
 ## RF asociado
 
-RF-QRY-016, RF-WIKI-001, RF-WIKI-002, RF-WIKI-003, RF-WIKI-004, RF-WIKI-005, RF-WIKI-006
+RF-QRY-016, RF-WIKI-001, RF-WIKI-002, RF-WIKI-003, RF-WIKI-004, RF-WIKI-005, RF-WIKI-006, RF-WIKI-007

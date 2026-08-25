@@ -145,6 +145,7 @@ func TestShouldUseDaemonPolicy(t *testing.T) {
 		{name: "wiki pack bypasses daemon", operation: "nav.wiki.pack", requested: true, want: false},
 		{name: "ask uses daemon", operation: "nav.ask", requested: true, want: true},
 		{name: "governance bypasses daemon", operation: "nav.governance", requested: true, want: false},
+		{name: "wiki-root bypasses daemon", operation: "nav.wiki-root", requested: true, want: false},
 		{name: "context keeps daemon", operation: "nav.context", requested: true, want: true},
 		{name: "refs keeps daemon", operation: "nav.refs", requested: true, want: true},
 		{name: "service keeps daemon", operation: "nav.service", requested: true, want: true},

@@ -15,6 +15,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/fgpaz/mi-lsp/internal/model"
+	"github.com/fgpaz/mi-lsp/internal/workspace"
 )
 
 var governanceYAMLBlockPattern = regexp.MustCompile("(?s)```(?:yaml|yml)\\s*(.*?)\\s*```")
@@ -91,7 +92,16 @@ const (
 	kernelV2AuthorityVersion        = 1
 	kernelV2AuthorityAllowlist      = "v1"
 	kernelV2CanonicalRepoPolicyPath = ".docs/ae/repo-policy.yaml"
+	defaultGovernanceRelPath        = ".docs/wiki/00_gobierno_documental.md"
+	defaultProjectionRelPath        = ".docs/wiki/_mi-lsp/read-model.toml"
+	canonGovernanceFileName         = "00_gobierno_documental.md"
 )
+
+var wellKnownGovernanceRelPaths = []string{
+	"Ingenieria/00_gobierno_documental.md",
+	"wiki/00_gobierno_documental.md",
+	"docs/00_gobierno_documental.md",
+}
 
 var kernelV2AuthorityModel = []string{"Kernel", "Team", "Repository", "Person", "Session"}
 
@@ -114,47 +124,240 @@ type aeKernelConfig struct {
 }
 
 func GovernanceDocPath(root string) string {
-	return filepath.Join(root, ".docs", "wiki", "00_gobierno_documental.md")
+	return filepath.Join(root, filepath.FromSlash(defaultGovernanceRelPath))
 }
 
 func resolveGovernanceDoc(root string) (string, string, model.DocsReadProfile, string) {
 	profile, source, _ := LoadProfile(root)
-	displayPath := filepath.ToSlash(filepath.Join(".docs", "wiki", "00_gobierno_documental.md"))
-	docPath := filepath.Join(root, filepath.FromSlash(displayPath))
+	canons, canonErr := loadProjectCanons(root)
+	displayPath := discoverGovernanceDisplayPath(root, canons, canonErr)
 	if source == "project" && strings.TrimSpace(profile.Governance.SourceDoc) != "" {
-		if safeDisplayPath, ok := safeGovernanceSourceDoc(root, profile.Governance.SourceDoc); ok {
+		if safeDisplayPath, ok := safeGovernanceSourceDoc(root, profile.Governance.SourceDoc, canons); ok {
 			displayPath = safeDisplayPath
-			docPath = filepath.Join(root, filepath.FromSlash(displayPath))
 		} else {
 			displayPath = "INVALID:" + filepath.ToSlash(strings.TrimSpace(profile.Governance.SourceDoc))
-			docPath = ""
 		}
 	}
-	return docPath, displayPath, profile, source
+	if strings.HasPrefix(displayPath, "INVALID:") {
+		return "", displayPath, profile, source
+	}
+	return absFromDeclared(root, displayPath), displayPath, profile, source
 }
 
-func safeGovernanceSourceDoc(root string, sourceDoc string) (string, bool) {
-	candidate := filepath.Clean(filepath.FromSlash(strings.TrimSpace(sourceDoc)))
-	if candidate == "." || candidate == "" || filepath.IsAbs(candidate) {
+func discoverGovernanceDisplayPath(root string, canons []workspace.ResolvedCanon, canonErr error) string {
+	if pathExists(filepath.Join(root, filepath.FromSlash(defaultGovernanceRelPath))) {
+		return defaultGovernanceRelPath
+	}
+
+	found := make([]string, 0, len(wellKnownGovernanceRelPaths))
+	for _, rel := range wellKnownGovernanceRelPaths {
+		if pathExists(filepath.Join(root, filepath.FromSlash(rel))) {
+			found = append(found, rel)
+		}
+	}
+	if len(found) > 1 {
+		return "INVALID:" + strings.Join(found, ", ")
+	}
+	if len(found) == 1 {
+		return found[0]
+	}
+
+	if canonErr != nil {
+		return "INVALID:" + canonErr.Error()
+	}
+	if len(canons) == 0 {
+		return defaultGovernanceRelPath
+	}
+	return canonGovernanceRelPath(canons)
+}
+
+func canonGovernanceRelPath(canons []workspace.ResolvedCanon) string {
+	preferred := make([]workspace.ResolvedCanon, 0, len(canons))
+	for _, canon := range canons {
+		if strings.EqualFold(canon.Role, "producto") {
+			preferred = append(preferred, canon)
+		}
+	}
+	if len(preferred) == 0 {
+		preferred = canons
+	}
+	paths := make([]string, 0, len(preferred))
+	seen := map[string]struct{}{}
+	for _, canon := range preferred {
+		rel := strings.TrimSuffix(filepath.ToSlash(strings.TrimSpace(canon.DeclaredRoot)), "/") + "/" + canonGovernanceFileName
+		key := strings.ToLower(rel)
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		paths = append(paths, rel)
+	}
+	if len(paths) == 1 {
+		return paths[0]
+	}
+	sort.SliceStable(paths, func(i, j int) bool {
+		return strings.ToLower(paths[i]) < strings.ToLower(paths[j])
+	})
+	return "INVALID:" + strings.Join(paths, ", ")
+}
+
+func safeGovernanceSourceDoc(root string, sourceDoc string, canons []workspace.ResolvedCanon) (string, bool) {
+	trimmed := strings.TrimSpace(sourceDoc)
+	if trimmed == "" || trimmed == "." || isAbsoluteDeclaredPath(trimmed) {
 		return "", false
 	}
-	absRoot, err := filepath.Abs(root)
-	if err != nil {
-		return "", false
-	}
-	absCandidate, err := filepath.Abs(filepath.Join(absRoot, candidate))
-	if err != nil {
-		return "", false
-	}
-	rel, err := filepath.Rel(absRoot, absCandidate)
-	if err != nil || rel == "." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) || rel == ".." || filepath.IsAbs(rel) {
+	rel, absCandidate, err := relativeFromWorkspace(root, trimmed)
+	if err != nil || rel == "." || rel == "" || filepath.IsAbs(rel) {
 		return "", false
 	}
 	normalizedRel := filepath.ToSlash(rel)
-	if !strings.HasPrefix(normalizedRel, ".docs/wiki/") {
+	if !pathEscapesWorkspace(normalizedRel) {
+		return normalizedRel, true
+	}
+	if pathInsideAnyCanon(absCandidate, canons) {
+		return normalizedRel, true
+	}
+	return "", false
+}
+
+func safeProjectionOutput(root string, output string, canons []workspace.ResolvedCanon) (string, bool) {
+	trimmed := strings.TrimSpace(output)
+	if trimmed == "" {
+		return defaultProjectionRelPath, true
+	}
+	if isAbsoluteDeclaredPath(trimmed) {
 		return "", false
 	}
-	return normalizedRel, true
+	rel, absCandidate, err := relativeFromWorkspace(root, trimmed)
+	if err != nil || rel == "." || rel == "" || filepath.IsAbs(rel) || pathEscapesWorkspace(filepath.ToSlash(rel)) {
+		return "", false
+	}
+	if pathInsideAnyCanon(absCandidate, canons) {
+		return "", false
+	}
+	return filepath.ToSlash(rel), true
+}
+
+func loadProjectCanons(root string) ([]workspace.ResolvedCanon, error) {
+	project, err := workspace.LoadProjectFile(root)
+	if err != nil {
+		return nil, err
+	}
+	if len(project.Canons) == 0 {
+		return nil, nil
+	}
+	return workspace.ResolveCanons(root, project)
+}
+
+func tryResolvedCanons(root string) []workspace.ResolvedCanon {
+	canons, err := loadProjectCanons(root)
+	if err != nil {
+		return nil
+	}
+	return canons
+}
+
+func relativeFromWorkspace(root, declared string) (string, string, error) {
+	absRoot, err := filepath.Abs(root)
+	if err != nil {
+		return "", "", err
+	}
+	absRoot = filepath.Clean(absRoot)
+	candidate := filepath.Clean(filepath.FromSlash(strings.TrimSpace(declared)))
+	if candidate == "." || candidate == "" || filepath.IsAbs(candidate) {
+		return "", "", errSafeFileInvalid
+	}
+	absCandidate, err := filepath.Abs(filepath.Join(absRoot, candidate))
+	if err != nil {
+		return "", "", err
+	}
+	absCandidate = filepath.Clean(absCandidate)
+	rel, err := filepath.Rel(absRoot, absCandidate)
+	if err != nil {
+		return "", "", err
+	}
+	return rel, absCandidate, nil
+}
+
+func absFromDeclared(root, declared string) string {
+	return filepath.Join(root, filepath.FromSlash(strings.TrimSpace(declared)))
+}
+
+func pathEscapesWorkspace(rel string) bool {
+	normalized := filepath.ToSlash(rel)
+	return normalized == ".." || strings.HasPrefix(normalized, "../")
+}
+
+func pathInsideAnyCanon(absPath string, canons []workspace.ResolvedCanon) bool {
+	for _, canon := range canons {
+		if pathHasDirPrefix(canon.AbsRoot, absPath) {
+			return true
+		}
+	}
+	return false
+}
+
+func pathHasDirPrefix(absRoot, absTarget string) bool {
+	root := filepath.ToSlash(filepath.Clean(absRoot))
+	target := filepath.ToSlash(filepath.Clean(absTarget))
+	if workspace.IsCaseInsensitivePlatform() {
+		root = strings.ToLower(root)
+		target = strings.ToLower(target)
+	}
+	if target == root {
+		return true
+	}
+	if !strings.HasSuffix(root, "/") {
+		root += "/"
+	}
+	return strings.HasPrefix(target, root)
+}
+
+func isAbsoluteDeclaredPath(path string) bool {
+	trimmed := strings.TrimSpace(path)
+	if trimmed == "" {
+		return false
+	}
+	if filepath.IsAbs(trimmed) {
+		return true
+	}
+	if strings.HasPrefix(trimmed, "/") {
+		return true
+	}
+	if strings.HasPrefix(trimmed, `\\`) || strings.HasPrefix(trimmed, "//") {
+		return true
+	}
+	if trimmed == "~" || strings.HasPrefix(trimmed, "~/") || strings.HasPrefix(trimmed, `~\`) {
+		return true
+	}
+	if len(trimmed) >= 2 && trimmed[1] == ':' {
+		drive := trimmed[0]
+		if (drive >= 'A' && drive <= 'Z') || (drive >= 'a' && drive <= 'z') {
+			return true
+		}
+	}
+	return false
+}
+
+func pathExists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
+}
+
+func invalidGovernanceSourceIssue(humanDoc string) string {
+	listed := strings.TrimPrefix(humanDoc, "INVALID:")
+	if strings.Contains(listed, ", ") && strings.Contains(listed, canonGovernanceFileName) {
+		return "multiple 00_gobierno_documental.md candidates found: " + listed + "; keep a single governance document or set governance.source_doc to one relative path that is in-workspace or inside a declared [[canon]] root"
+	}
+	return "invalid governance source_doc; it must be a relative path, in-workspace or inside a declared [[canon]] root, and not absolute"
+}
+
+func projectionOutputIssue(root, output string, canons []workspace.ResolvedCanon) string {
+	trimmed := strings.TrimSpace(output)
+	if _, absCandidate, err := relativeFromWorkspace(root, trimmed); err == nil && pathInsideAnyCanon(absCandidate, canons) {
+		return fmt.Sprintf("canon_root_read_only: projection.output %q is inside a declared [[canon]] root; set projection.output to a relative in-workspace path such as %s (auto_sync must not write into a foreign canon tree)", trimmed, defaultProjectionRelPath)
+	}
+	return fmt.Sprintf("projection.output %q is invalid; it must be a relative in-workspace path outside any [[canon]] root (for example %s), not absolute and not a parent escape", trimmed, defaultProjectionRelPath)
 }
 
 func isKnowledgeWikiProjection(profile model.DocsReadProfile, source string) bool {
@@ -169,9 +372,10 @@ func isKnowledgeWikiProjection(profile model.DocsReadProfile, source string) boo
 
 func InspectGovernance(root string, autoSync bool) model.GovernanceStatus {
 	docPath, humanDoc, projectionProfile, projectionSource := resolveGovernanceDoc(root)
+	canons := tryResolvedCanons(root)
 	status := model.GovernanceStatus{
 		HumanDoc:      humanDoc,
-		ProjectionDoc: filepath.ToSlash(filepath.Join(".docs", "wiki", "_mi-lsp", "read-model.toml")),
+		ProjectionDoc: defaultProjectionRelPath,
 		AllowedActions: []string{
 			"mi-lsp nav governance --workspace <alias> --format toon",
 			"mi-lsp index --workspace <alias>",
@@ -181,10 +385,10 @@ func InspectGovernance(root string, autoSync bool) model.GovernanceStatus {
 		status.Sync = "invalid"
 		status.IndexSync, status.IndexSyncDetails = inspectIndexSync(root)
 		status.AECanon = inspectAECanonFromProjection(root, "governance_invalid")
-		status.Issues = []string{"invalid governance source_doc; it must be a relative path under .docs/wiki/ and stay inside the workspace"}
+		status.Issues = []string{invalidGovernanceSourceIssue(humanDoc)}
 		status.Blocked = true
-		status.NextSteps = governanceRepairStepsFor(filepath.ToSlash(filepath.Join(".docs", "wiki", "00_gobierno_documental.md")), status.ProjectionDoc)
-		status.Summary = "Governance is blocked because the read-model source_doc points outside the governed wiki boundary."
+		status.NextSteps = governanceRepairStepsFor(defaultGovernanceRelPath, status.ProjectionDoc)
+		status.Summary = "Governance is blocked because the governance source_doc is invalid or ambiguous."
 		return status
 	}
 
@@ -201,6 +405,9 @@ func InspectGovernance(root string, autoSync bool) model.GovernanceStatus {
 	}
 
 	if isKnowledgeWikiProjection(projectionProfile, projectionSource) {
+		if safe, ok := safeProjectionOutput(root, projectionProfile.Governance.Projection.Output, canons); ok {
+			status.ProjectionDoc = safe
+		}
 		return inspectKnowledgeWikiGovernance(root, status, projectionProfile)
 	}
 
@@ -231,13 +438,17 @@ func InspectGovernance(root string, autoSync bool) model.GovernanceStatus {
 		source.Version = 1
 	}
 	if strings.TrimSpace(source.Projection.Output) == "" {
-		source.Projection.Output = status.ProjectionDoc
+		source.Projection.Output = defaultProjectionRelPath
+	}
+	if safeOutput, ok := safeProjectionOutput(root, source.Projection.Output, canons); ok {
+		status.ProjectionDoc = safeOutput
+		source.Projection.Output = safeOutput
 	}
 	if strings.TrimSpace(source.Projection.Format) == "" {
 		source.Projection.Format = "toml"
 	}
 
-	resolved, issues := validateAndResolveGovernance(source)
+	resolved, issues := validateAndResolveGovernance(source, root, canons)
 	status.Profile = source.Profile
 	status.Extends = source.Extends
 	status.EffectiveBase = resolved.Base
@@ -259,7 +470,7 @@ func InspectGovernance(root string, autoSync bool) model.GovernanceStatus {
 		return status
 	}
 
-	profile := buildDocsReadProfileFromGovernance(source, resolved)
+	profile := buildDocsReadProfileFromGovernance(source, resolved, status.HumanDoc)
 	rendered, err := encodeDocsReadProfile(profile)
 	if err != nil {
 		status.Sync = "invalid"
@@ -271,7 +482,19 @@ func InspectGovernance(root string, autoSync bool) model.GovernanceStatus {
 		return status
 	}
 
-	projectionAbs := ProfilePath(root)
+	projectionAbs := absFromDeclared(root, status.ProjectionDoc)
+	if abs, err := filepath.Abs(projectionAbs); err == nil {
+		projectionAbs = abs
+	}
+	if pathInsideAnyCanon(projectionAbs, canons) {
+		status.Sync = "invalid"
+		status.IndexSync, status.IndexSyncDetails = inspectIndexSync(root)
+		status.Issues = append(status.Issues, fmt.Sprintf("canon_root_read_only: projection.output %q is inside a declared [[canon]] root; set projection.output to a relative in-workspace path such as %s (auto_sync must not write into a foreign canon tree)", status.ProjectionDoc, defaultProjectionRelPath))
+		status.Blocked = true
+		status.NextSteps = governanceRepairStepsFor(status.HumanDoc, status.ProjectionDoc)
+		status.Summary = "Governance is blocked because read-model projection would write into a read-only [[canon]] root."
+		return status
+	}
 	projectionBytes, readErr := os.ReadFile(projectionAbs)
 	switch {
 	case readErr == nil && normalizedText(projectionBytes) == normalizedText(rendered):
@@ -1060,15 +1283,15 @@ func extractGovernanceYAMLBlock(content []byte) (string, error) {
 	return strings.TrimSpace(string(matches[1])), nil
 }
 
-func validateAndResolveGovernance(source model.GovernanceSource) (resolvedGovernanceProfile, []string) {
+func validateAndResolveGovernance(source model.GovernanceSource, root string, canons []workspace.ResolvedCanon) (resolvedGovernanceProfile, []string) {
 	issues := []string{}
 	profile := strings.TrimSpace(source.Profile)
 	if profile == "" {
 		issues = append(issues, "profile is required")
 	}
 
-	if strings.TrimSpace(source.Projection.Output) != filepath.ToSlash(filepath.Join(".docs", "wiki", "_mi-lsp", "read-model.toml")) {
-		issues = append(issues, "projection.output must be .docs/wiki/_mi-lsp/read-model.toml")
+	if _, ok := safeProjectionOutput(root, source.Projection.Output, canons); !ok {
+		issues = append(issues, projectionOutputIssue(root, source.Projection.Output, canons))
 	}
 	if strings.TrimSpace(strings.ToLower(source.Projection.Format)) != "toml" {
 		issues = append(issues, "projection.format must be toml")
@@ -1185,7 +1408,7 @@ func resolveGovernanceProfile(profile string, extends string, overlays []string)
 	}
 }
 
-func buildDocsReadProfileFromGovernance(source model.GovernanceSource, resolved resolvedGovernanceProfile) model.DocsReadProfile {
+func buildDocsReadProfileFromGovernance(source model.GovernanceSource, resolved resolvedGovernanceProfile, sourceDoc string) model.DocsReadProfile {
 	families := make([]model.DocsReadFamily, 0, 3)
 	for _, familyName := range []string{"functional", "technical", "ux"} {
 		paths := hierarchyPathsForFamily(source.Hierarchy, familyName)
@@ -1213,7 +1436,7 @@ func buildDocsReadProfileFromGovernance(source model.GovernanceSource, resolved 
 		},
 		OwnerHints: normalizeOwnerHints(source.OwnerHints),
 		Governance: model.DocsGovernanceProfile{
-			SourceDoc:            filepath.ToSlash(filepath.Join(".docs", "wiki", "00_gobierno_documental.md")),
+			SourceDoc:            resolvedGovernanceSourceDoc(sourceDoc),
 			SourceFormat:         "markdown+yaml",
 			Profile:              source.Profile,
 			Extends:              source.Extends,
@@ -1357,8 +1580,16 @@ func dedupeStrings(items []string) []string {
 	return out
 }
 
+func resolvedGovernanceSourceDoc(sourceDoc string) string {
+	trimmed := strings.TrimSpace(sourceDoc)
+	if trimmed == "" || strings.HasPrefix(trimmed, "INVALID:") {
+		return defaultGovernanceRelPath
+	}
+	return filepath.ToSlash(trimmed)
+}
+
 func governanceRepairSteps(projectionPath string) []string {
-	return governanceRepairStepsFor(filepath.ToSlash(filepath.Join(".docs", "wiki", "00_gobierno_documental.md")), projectionPath)
+	return governanceRepairStepsFor(defaultGovernanceRelPath, projectionPath)
 }
 
 func governanceRepairStepsFor(humanDoc string, projectionPath string) []string {
@@ -1385,7 +1616,10 @@ func inspectIndexSync(root string) (string, *model.GovernanceIndexSyncDetails) {
 	if err != nil {
 		details.Reason = "index database is missing"
 		governanceDocPath, _, _, _ := resolveGovernanceDoc(root)
-		for _, path := range []string{governanceDocPath, ProfilePath(root)} {
+		for _, path := range []string{governanceDocPath, DiscoverProfilePath(root)} {
+			if strings.TrimSpace(path) == "" {
+				continue
+			}
 			details.ComparedPaths = append(details.ComparedPaths, governanceComparedPath(root, path, time.Time{}))
 		}
 		return "missing", details
@@ -1394,7 +1628,10 @@ func inspectIndexSync(root string) (string, *model.GovernanceIndexSyncDetails) {
 	details.IndexModTime = latest.UTC().Format(time.RFC3339Nano)
 	state := "current"
 	governanceDocPath, _, _, _ := resolveGovernanceDoc(root)
-	for _, path := range []string{governanceDocPath, ProfilePath(root)} {
+	for _, path := range []string{governanceDocPath, DiscoverProfilePath(root)} {
+		if strings.TrimSpace(path) == "" {
+			continue
+		}
 		compared := governanceComparedPath(root, path, latest)
 		details.ComparedPaths = append(details.ComparedPaths, compared)
 		if compared.NewerThanIndex {
@@ -1424,10 +1661,14 @@ func governanceComparedPath(root string, path string, indexModTime time.Time) mo
 }
 
 func displayPath(root string, path string) string {
-	if rel, err := filepath.Rel(root, path); err == nil && rel != "." && !strings.HasPrefix(rel, "..") {
-		return filepath.ToSlash(rel)
+	if strings.TrimSpace(path) == "" {
+		return ""
 	}
-	return filepath.Clean(path)
+	rel, err := filepath.Rel(root, path)
+	if err != nil || rel == "." || filepath.IsAbs(rel) {
+		return filepath.ToSlash(filepath.Clean(path))
+	}
+	return filepath.ToSlash(rel)
 }
 
 func GovernanceReadinessSummary(status model.GovernanceStatus) string {

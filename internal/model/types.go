@@ -59,6 +59,16 @@ type WikiInventoryItem struct {
 	Layers            map[string]int `json:"layers,omitempty"`
 }
 
+// WikiRootResolution is one portable wiki-root item from nav.wiki-root.
+type WikiRootResolution struct {
+	WikiRoot      string `json:"wiki_root"`
+	Role          string `json:"role,omitempty"`
+	Workspace     string `json:"workspace,omitempty"`
+	GovernanceDoc string `json:"governance_doc"`
+	ResolvedFrom  string `json:"resolved_from"`
+	ID            string `json:"id,omitempty"`
+}
+
 type CoachAction struct {
 	Kind    string `json:"kind"`
 	Label   string `json:"label"`
@@ -785,12 +795,18 @@ type PackResult struct {
 	Host         string            `json:"host,omitempty"`
 }
 
+type WorkspaceCanonLink struct {
+	Alias string `toml:"alias" json:"alias"`
+	Role  string `toml:"role" json:"role"`
+}
+
 type WorkspaceRegistration struct {
-	Name      string   `json:"name,omitempty" toml:"-"`
-	Root      string   `json:"root" toml:"root"`
-	Languages []string `json:"languages,omitempty" toml:"languages"`
-	Kind      string   `json:"kind,omitempty" toml:"kind,omitempty"`
-	Solution  string   `json:"sln,omitempty" toml:"sln,omitempty"`
+	Name       string               `json:"name,omitempty" toml:"-"`
+	Root       string               `json:"root" toml:"root"`
+	Languages  []string             `json:"languages,omitempty" toml:"languages"`
+	Kind       string               `json:"kind,omitempty" toml:"kind,omitempty"`
+	Solution   string               `json:"sln,omitempty" toml:"sln,omitempty"`
+	CanonLinks []WorkspaceCanonLink `toml:"canon_link,omitempty" json:"canon_links,omitempty"`
 }
 
 type WorkspaceRepo struct {
@@ -800,6 +816,17 @@ type WorkspaceRepo struct {
 	RepositoryIdentity string   `json:"repository_identity,omitempty" toml:"repository_identity,omitempty"`
 	Languages          []string `json:"languages,omitempty" toml:"languages"`
 	DefaultEntrypoint  string   `json:"default_entrypoint,omitempty" toml:"default_entrypoint,omitempty"`
+}
+
+type WorkspaceCanon struct {
+	ID   string `json:"id" toml:"id"`
+	Root string `json:"root" toml:"root"`
+	Role string `json:"role" toml:"role"`
+	Mode string `json:"mode,omitempty" toml:"mode,omitempty"`
+}
+
+type CanonPolicyBlock struct {
+	EscapeMax *int `json:"escape_max,omitempty" toml:"escape_max,omitempty"`
 }
 
 type WorkspaceEntrypoint struct {
@@ -910,6 +937,8 @@ type ProjectFile struct {
 	Entrypoints []WorkspaceEntrypoint `toml:"entrypoint"`
 	Embeddings  *EmbeddingsBlock      `toml:"embeddings,omitempty" json:"embeddings,omitempty"`
 	Recall      *RecallBlock          `toml:"recall,omitempty" json:"recall,omitempty"`
+	Canons      []WorkspaceCanon      `toml:"canon"`
+	CanonPolicy *CanonPolicyBlock     `toml:"canon_policy,omitempty"`
 }
 
 type CommandRequest struct {

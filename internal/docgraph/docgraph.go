@@ -130,7 +130,36 @@ func BuildPriorDocSnapshot(
 }
 
 func ProfilePath(root string) string {
-	return filepath.Join(root, ".docs", "wiki", "_mi-lsp", "read-model.toml")
+	return filepath.Join(root, filepath.FromSlash(defaultProjectionRelPath))
+}
+
+func DiscoverProfilePath(root string) string {
+	defaultPath := ProfilePath(root)
+	if pathExists(defaultPath) {
+		return defaultPath
+	}
+	canons := tryResolvedCanons(root)
+	var producto, others []workspace.ResolvedCanon
+	for _, canon := range canons {
+		if strings.EqualFold(canon.Role, "producto") {
+			producto = append(producto, canon)
+		} else {
+			others = append(others, canon)
+		}
+	}
+	for _, group := range [][]workspace.ResolvedCanon{producto, others} {
+		for _, canon := range group {
+			candidate := filepath.Join(canon.AbsRoot, "_mi-lsp", "read-model.toml")
+			if pathExists(candidate) {
+				return candidate
+			}
+		}
+	}
+	ingenieria := filepath.Join(root, "Ingenieria", "_mi-lsp", "read-model.toml")
+	if pathExists(ingenieria) {
+		return ingenieria
+	}
+	return defaultPath
 }
 
 func DefaultProfile() model.DocsReadProfile {
@@ -203,7 +232,7 @@ func DefaultProfile() model.DocsReadProfile {
 
 func LoadProfile(root string) (model.DocsReadProfile, string, []string) {
 	profile := DefaultProfile()
-	path := ProfilePath(root)
+	path := DiscoverProfilePath(root)
 	if _, err := os.Stat(path); err == nil {
 		if _, err := toml.DecodeFile(path, &profile); err == nil {
 			if profile.Version == 0 {
@@ -242,6 +271,12 @@ func IndexWorkspaceDocsWithSourcesWithProgressPrior(ctx context.Context, root st
 	if err != nil {
 		return nil, nil, nil, nil, nil, warnings, err
 	}
+	canonCandidates, canonWarnings, canonErr := collectCanonDocCandidates(ctx, root, profile)
+	warnings = append(warnings, canonWarnings...)
+	if canonErr != nil {
+		return nil, nil, nil, nil, nil, warnings, canonErr
+	}
+	candidates = mergeDocCandidates(candidates, canonCandidates)
 	if err := reportProgress(ctx, progress, Progress{
 		Stage:      "docs.collect",
 		Path:       fmt.Sprintf("elapsed_ms=%d", time.Since(collectStarted).Milliseconds()),
@@ -534,6 +569,113 @@ func collectDocCandidates(ctx context.Context, root string, profile model.DocsRe
 		return items[i].priority < items[j].priority
 	})
 	return items, nil
+}
+
+func collectCanonDocCandidates(ctx context.Context, root string, profile model.DocsReadProfile) ([]docCandidate, []string, error) {
+	project, err := workspace.LoadProjectFile(root)
+	if err != nil {
+		return nil, []string{fmt.Sprintf("docs-only skipped declared [[canon]] roots: %v (fail-closed on those canon roots; local workspace docs were still indexed)", err)}, nil
+	}
+	if len(project.Canons) == 0 {
+		return nil, nil, nil
+	}
+	wsRoot, err := filepath.Abs(root)
+	if err != nil {
+		return nil, []string{fmt.Sprintf("docs-only skipped declared [[canon]] roots: %v (fail-closed on those canon roots; local workspace docs were still indexed)", err)}, nil
+	}
+	wsRoot = filepath.Clean(wsRoot)
+	items := make([]docCandidate, 0)
+	warnings := make([]string, 0)
+	for _, canon := range project.Canons {
+		if err := ctx.Err(); err != nil {
+			return nil, warnings, err
+		}
+		one := model.ProjectFile{Canons: []model.WorkspaceCanon{canon}, CanonPolicy: project.CanonPolicy}
+		resolved, resolveErr := workspace.ResolveCanons(wsRoot, one)
+		if resolveErr != nil {
+			warnings = append(warnings, fmt.Sprintf("docs-only skipped canon %q root %q: %v (fail-closed on that canon root; local workspace docs were still indexed)", strings.TrimSpace(canon.ID), strings.TrimSpace(canon.Root), resolveErr))
+			continue
+		}
+		for _, item := range resolved {
+			found, walkErr := walkCanonMarkdown(ctx, wsRoot, item, profile)
+			if walkErr != nil {
+				if err := ctx.Err(); err != nil {
+					return nil, warnings, err
+				}
+				warnings = append(warnings, fmt.Sprintf("docs-only skipped canon %q root %q: %v (fail-closed on that canon root; local workspace docs were still indexed)", item.ID, item.DeclaredRoot, walkErr))
+				continue
+			}
+			items = append(items, found...)
+		}
+	}
+	return items, warnings, nil
+}
+
+func walkCanonMarkdown(ctx context.Context, workspaceRoot string, canon workspace.ResolvedCanon, profile model.DocsReadProfile) ([]docCandidate, error) {
+	items := make([]docCandidate, 0)
+	err := filepath.WalkDir(canon.AbsRoot, func(path string, entry os.DirEntry, walkErr error) error {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if walkErr != nil {
+			return walkErr
+		}
+		if entry.Type()&os.ModeSymlink != 0 {
+			if entry.IsDir() {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if entry.IsDir() {
+			if entry.Name() == ".git" {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if !strings.EqualFold(filepath.Ext(entry.Name()), ".md") {
+			return nil
+		}
+		rel, err := filepath.Rel(workspaceRoot, path)
+		if err != nil {
+			return nil
+		}
+		rel = filepath.ToSlash(rel)
+		items = append(items, docCandidate{
+			path:         path,
+			relativePath: rel,
+			family:       "generic",
+			layer:        DetectLayerForPath(profile, rel),
+			priority:     100,
+		})
+		return nil
+	})
+	return items, err
+}
+
+func mergeDocCandidates(existing, extra []docCandidate) []docCandidate {
+	if len(extra) == 0 {
+		return existing
+	}
+	seen := make(map[string]docCandidate, len(existing)+len(extra))
+	for _, candidate := range existing {
+		seen[candidate.relativePath] = candidate
+	}
+	for _, candidate := range extra {
+		if current, ok := seen[candidate.relativePath]; !ok || candidate.priority < current.priority {
+			seen[candidate.relativePath] = candidate
+		}
+	}
+	items := make([]docCandidate, 0, len(seen))
+	for _, candidate := range seen {
+		items = append(items, candidate)
+	}
+	sort.Slice(items, func(i, j int) bool {
+		if items[i].priority == items[j].priority {
+			return items[i].relativePath < items[j].relativePath
+		}
+		return items[i].priority < items[j].priority
+	})
+	return items
 }
 
 func expandPattern(ctx context.Context, root string, pattern string, matcher *workspace.IgnoreMatcher, visit func(string)) error {

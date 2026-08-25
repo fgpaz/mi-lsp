@@ -1,0 +1,32 @@
+schema: ae-audit-verdict/v1
+session: 2026-08-25-canon-wiki-roots
+status: Approved
+language: es
+sanitized: true
+tracker_mode: none
+mode: targeted_fast
+packet_vs_diff:
+  method: path_list_only
+  verdict: PASS
+  context_packet_stale: false
+  uncovered_changed_paths: []
+  new_hubs: []
+  note: no ae-context-packet/v1 in session; coverage is the explicit allowed_paths list vs git status excluding AGENTS.md and CLAUDE.md (preexisting unrelated dirty)
+findings: []
+harness_verdict: PASS
+wiki_source_verdict: PASS
+core_product_promise_verdict: NOT_APPLICABLE
+expected_experience_oracle_verdict: NOT_APPLICABLE
+qa_learning_loop_verdict: NOT_APPLICABLE
+worker_join_verdict: PASS
+harness_scope_classification: targeted_pass_with_preexisting_debt
+preexisting_debt:
+  - AGENTS.md and CLAUDE.md were dirty before this task; excluded from this commit
+  - worktree C:/wt/mi-lsp-wiki-p0p1 on merged branch ae/wiki-navigation-p0-p1-20260824
+final_verdict: Approved
+completion_handoff:
+  target: finishing-a-development-branch
+  disposition: integrate-main
+  pre_push: ae-pre-push
+  remote_readback: required
+  cleanup: mandatory_deprecated

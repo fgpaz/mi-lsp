@@ -493,6 +493,8 @@ func compactItems(items any, compress bool) any {
 			compact = append(compact, entry)
 		}
 		return compact
+	case []model.WikiRootResolution:
+		return typed
 	case []map[string]any:
 		compact := make([]map[string]any, 0, len(typed))
 		for _, item := range typed {

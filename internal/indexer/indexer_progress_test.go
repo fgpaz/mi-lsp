@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/fgpaz/mi-lsp/internal/model"
+	"github.com/fgpaz/mi-lsp/internal/store"
 	"github.com/fgpaz/mi-lsp/internal/workspace"
 )
 
@@ -81,6 +82,51 @@ func TestDocsOnlyIndexDoesNotRequireCodeProjectMarkers(t *testing.T) {
 	}
 	if result.Docs == 0 {
 		t.Fatal("expected docs-only index to publish documentation records")
+	}
+}
+
+func TestDocsOnlyIndexIncludesDeclaredCanonRelativePaths(t *testing.T) {
+	parent := t.TempDir()
+	code := filepath.Join(parent, "code")
+	canon := filepath.Join(parent, "wiki-repo", "Ingenieria")
+	if err := os.MkdirAll(code, 0o755); err != nil {
+		t.Fatalf("mkdir code: %v", err)
+	}
+	writeProgressTestFile(t, code, "README.md", "# code\n")
+	writeProgressTestFile(t, canon, "foo.md", "# canon foo\n")
+	if err := workspace.SaveProjectFile(code, model.ProjectFile{
+		Project: model.ProjectBlock{Name: "code", Kind: model.WorkspaceKindSingle},
+		Canons:  []model.WorkspaceCanon{{ID: "wiki", Root: "../wiki-repo/Ingenieria", Role: "producto"}},
+	}); err != nil {
+		t.Fatalf("SaveProjectFile: %v", err)
+	}
+
+	result, err := IndexWorkspaceDocsOnly(context.Background(), code)
+	if err != nil {
+		t.Fatalf("IndexWorkspaceDocsOnly: %v", err)
+	}
+	if result.Docs == 0 {
+		t.Fatal("expected docs-only index to publish records")
+	}
+
+	db, err := store.Open(code)
+	if err != nil {
+		t.Fatalf("store.Open: %v", err)
+	}
+	defer db.Close()
+	docs, err := store.ListDocRecords(context.Background(), db)
+	if err != nil {
+		t.Fatalf("ListDocRecords: %v", err)
+	}
+	found := false
+	for _, doc := range docs {
+		if doc.Path == "../wiki-repo/Ingenieria/foo.md" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("ListDocRecords missing canon relative path, got %#v", docs)
 	}
 }
 

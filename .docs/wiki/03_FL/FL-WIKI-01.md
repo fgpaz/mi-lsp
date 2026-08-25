@@ -13,10 +13,12 @@ imports:
   - '[[RF-WIKI-004]]'
   - '[[RF-WIKI-005]]'
   - '[[RF-WIKI-006]]'
+  - '[[RF-WIKI-007]]'
 exports:
   - '[[TP-WIKI]]'
   - '[[TECH-WIKI-FANOUT]]'
   - '[[CT-NAV-WIKI]]'
+  - '[[CT-NAV-WIKI-ROOT]]'
 agent_must_read:
   - .docs/wiki/00_gobierno_documental.md
   - .docs/wiki/03_FL/FL-QRY-01.md
@@ -38,11 +40,11 @@ evidence:
 
 ## 1. Goal
 
-Federar consultas wiki (search, route, trace, pack, inventory) y publicar un mapa compacto de hubs (`nav wiki map`) across N workspaces registrados en `~/.mi-lsp/registry.toml` dentro de una máquina, y proporcionar un envelope TOON merge-friendly que Hermes pueda extender cross-máquina vía SSH/Tailscale sin que `mi-lsp` aprenda transporte de red. El flujo hereda la estructura y contratos de [[FL-QRY-01]] pero amplía el scope desde single-workspace a multi-workspace con fan-out paralelo y consolidación de resultados con trazabilidad por workspace.
+Federar consultas wiki (search, route, trace, pack, inventory), resolver la raíz portable con `nav wiki-root` (alias `nav wiki root`) y publicar un mapa compacto de hubs (`nav wiki map`) across N workspaces registrados en `~/.mi-lsp/registry.toml` dentro de una máquina, y proporcionar un envelope TOON merge-friendly que Hermes pueda extender cross-máquina vía SSH/Tailscale sin que `mi-lsp` aprenda transporte de red. El flujo hereda la estructura y contratos de [[FL-QRY-01]] pero amplía el scope desde single-workspace a multi-workspace con fan-out paralelo y consolidación de resultados con trazabilidad por workspace.
 
 ## 2. Scope in/out
 
-- In: `nav wiki` subcomandos (search, route, trace, pack, inventory) con flag `--all-workspaces`; `nav wiki map` es single-workspace y cataloga hubs `wiki/` + `bibliotecas/`, patrón AllWorkspaces con semaphore=4 reusado de `internal/service/ask.go`, federar contra todos los workspaces `docs_ready=true` en registry, envelope TOON con campo `workspace` por item, `host:""` como anclaje para extensión cross-máquina, stats de `workspaces_queried/failed`, timeout por workspace (30s heredado de `nav ask`).
+- In: `nav wiki` subcomandos (search, route, trace, pack, inventory) con flag `--all-workspaces`; `nav wiki-root` / `nav wiki root` resuelve la raíz portable (`[[canon]]`, `CanonLinks` o default `.docs/wiki`) sin fan-out; `nav wiki map` es single-workspace y cataloga hubs `wiki/` + `bibliotecas/`, patrón AllWorkspaces con semaphore=4 reusado de `internal/service/ask.go`, federar contra todos los workspaces `docs_ready=true` en registry, envelope TOON con campo `workspace` por item, `host:""` como anclaje para extensión cross-máquina, stats de `workspaces_queried/failed`, timeout por workspace (30s heredado de `nav ask`).
 - Out: edicion de workspaces, refactor de patrones de fan-out a nivel daemon, MCP/HTTP — mi-lsp permanece CLI puro.
 
 ## 3. Actors and ownership
@@ -121,6 +123,7 @@ Código nuevo/modificado según plan:
 - `internal/nav/wiki/search.go`, `route.go`, `trace.go`, `pack.go` — soporte federación (T8-T11)
 - `internal/nav/wiki/inventory.go` — nuevo subcomando (T12)
 - `internal/service/wiki_map.go` — `nav wiki map` (hubs persona/proyectos/sistema/materia)
+- `internal/service/wiki_root.go` — `nav wiki-root` / `nav wiki root` (raíz portable, `resolved_from`)
 - `output/formatter.go` — envelope con `workspace`/`host` (heredado de [[FL-QRY-01]], ampliación minimal)
 
 ## 9. Data touchpoints
@@ -139,6 +142,7 @@ Código nuevo/modificado según plan:
 - [[RF-WIKI-003]] consolidación de stats
 - [[RF-WIKI-004]] backward-compat single-workspace
 - [[RF-WIKI-005]] test coverage del fan-out bajo contaminación (workspaces fallidos)
+- [[RF-WIKI-007]] resolver la raíz portable con `nav wiki-root`
 
 ## 11. Decisiones normativas
 

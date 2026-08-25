@@ -126,8 +126,9 @@ block_id: CT-GOVERNANCE-AE-KERNEL-V2.path-safety
 kind: normative
 source_of_truth: internal/docgraph/governance.go
 rules:
-  path_traversal: reject absolute paths, dot paths, and parent escapes
-  governed_boundary: source_doc must remain below .docs/wiki/
+  path_traversal: reject absolute paths, dot paths, and extra parent escapes
+  governed_boundary: source_doc is a relative path in-workspace OR inside a declared [[canon]] root
+  projection_output: relative in-workspace path in the code workspace; never a foreign read-only [[canon]] root
   symlink: reject symlinked root, directory components, and files
   regular_file: require regular files for canon modules and repo policy
   external_kernel: resolve <kernel_home> from AE_KERNEL_HOME or local AE config without copying canon into repo

@@ -35,6 +35,7 @@ evidence:
 - RF-WKS-004
 - RF-WKS-005
 - RF-WKS-006
+- RF-WKS-008
 
 ## Casos
 
@@ -77,3 +78,9 @@ evidence:
 | TC-WKS-035 | negativo | RF-WKS-005 | `TestExecuteWorkspaceStatusAgentRejectsExplicitAliasOutsideCallerCWD`: caller agente con `--workspace` fuera del `caller_cwd` recibe `workspace_cross_workspace_refused` y hint hacia `--allow-cross-workspace` |
 | TC-WKS-036 | positivo | RF-WKS-005 | `TestExecuteWorkspaceStatusAgentAllowsExplicitCrossWorkspaceOverride`: `--allow-cross-workspace` permite el uso intencional y conserva warning auditable |
 | TC-WKS-037 | positivo | RF-WKS-004 | `TestWorkspaceHygieneReportsLiveReadinessIssuesWithoutPruning`: `workspace hygiene` reporta aliases vivos sin gobernanza/docs como `workspace_readiness_issues` y `--apply-safe` no los remueve |
+| TC-WKS-038 | positivo | RF-WKS-008 | `TestResolveCanonsRelativeFromWorkspaceRoot`: `[[canon]]` `root="../wiki-repo/Ingenieria"` se resuelve desde la raíz del workspace, no desde cwd ni `.mi-lsp/` |
+| TC-WKS-039 | positivo | RF-WKS-008 | `TestCanonLinksRoundTripSaveLoadRegistry` + `workspace link <alias> --role`: persiste `CanonLinks` en `registry.toml` |
+| TC-WKS-040 | positivo | RF-WKS-008 | `index --docs-only` recorre markdown `../` de roots `[[canon]]` válidos y omite roots inválidos con warning |
+| TC-WKS-041 | negativo | RF-WKS-008 | rechaza root absoluto, `~/`, UNC o `C:`; `escape_max` omitido=1 y `0` prohíbe parent escape extra |
+| TC-WKS-042 | negativo | RF-WKS-008 | `TestResolveCanonsRejectsSymlinkComponent`: symlink o junction en el path resuelto falla cerrado |
+| TC-WKS-043 | negativo | RF-WKS-008 | `TestIndexWorkspaceDocsSkipsCanonSymlinkMarkdown`: un `.md` symlink dentro del root `[[canon]]` no se indexa |

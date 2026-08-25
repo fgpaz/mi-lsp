@@ -1,0 +1,74 @@
+schema: ae-session-contract/v1
+task_slug: canon-wiki-roots
+session_id: 2026-08-25-canon-wiki-roots
+issue_or_waiver: tracker.mode=none local_session_frontier
+base_ref: origin/main
+base_sha: 825352e320206f401fef64d059e7aa3495d6dd5d
+branch: ae/canon-wiki-roots-20260825
+intended_branch: ae/canon-wiki-roots-20260825
+worktree_path: C:/repos/mios/mi-lsp
+mode: FAST
+tracker:
+  mode: none
+  persistence: local-only
+  external_issue: not_applicable
+ticket_frontier:
+  mode: none
+  status: local_session_contract_authority
+  external_issue: not_applicable
+touched_linear_issues: []
+locked_decisions:
+  - [[canon]] root is workspace-root relative, never cwd or .mi-lsp/
+  - absolute / ~/ / UNC / C: roots fail closed
+  - default parent-escape max is 1 via [canon_policy].escape_max
+  - mode read-only is enforced; no writes into foreign canon roots
+  - nav wiki-root protocol stays mi-lsp-v1.1; no Envelope field added
+  - tracker.mode=none
+  - no force-push
+  - completion_profile: full_cycle_to_origin_main
+harness_adapter: grok_workflows
+selected_adapter: grok_workflows
+orchestration_depth: T2
+closure_profile: governed_kernel_change
+worker_decision: spawned
+independent_axes:
+  - canon-config
+  - wiki-root
+  - governance-paths
+  - workspace-link-docs-only
+anchors:
+  - FL-BOOT-01
+  - FL-WIKI-01
+  - FL-IDX-01
+  - RF-WKS-008
+  - RF-WIKI-007
+  - CT-NAV-WIKI-ROOT
+  - CT-NAV-GOVERNANCE
+  - CT-GOVERNANCE-AE-KERNEL-V2
+  - TP-WKS
+  - TP-WIKI
+expected_scope: backend,canon-docs,shared-skill
+allowed_paths:
+  - .docs/auditoria/2026-08-25-canon-wiki-roots/**
+  - .gitignore
+  - .grok/workflows/canon-wiki-roots.rhai
+  - .docs/wiki/**
+  - CHANGELOG.md
+  - internal/**
+  - skills/mi-lsp/SKILL.md
+forbidden_paths:
+  - AGENTS.md
+  - CLAUDE.md
+  - .docs/raw/**
+  - secrets/**
+  - .env*
+branch_disposition: integrate-main
+cleanup_policy: auto-after-successful-integration
+completion_profile: full_cycle_to_origin_main
+secret_scan: required
+verify:
+  - go test ./internal/workspace ./internal/cli ./internal/service ./internal/docgraph ./internal/indexer ./internal/model -count=1
+stop_if:
+  - governance_blocked=true
+  - protocol_version_bumped=true
+  - absolute_paths_in_versioned_files=true

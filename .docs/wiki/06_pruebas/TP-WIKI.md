@@ -14,6 +14,7 @@ imports:
   - '[[RF-WIKI-004]]'
   - '[[RF-WIKI-005]]'
   - '[[RF-WIKI-006]]'
+  - '[[RF-WIKI-007]]'
 exports:
   - 'TP-WIKI'
 agent_must_read:
@@ -24,6 +25,7 @@ agent_must_read:
   - .docs/wiki/04_RF/RF-WIKI-004.md
   - .docs/wiki/04_RF/RF-WIKI-005.md
   - .docs/wiki/04_RF/RF-WIKI-006.md
+  - .docs/wiki/04_RF/RF-WIKI-007.md
   - .docs/wiki/06_pruebas/TP-WIKI.md
 agent_may_edit:
   - .docs/wiki/06_pruebas/TP-WIKI.md
@@ -49,6 +51,7 @@ evidence:
 - RF-WIKI-004 (trace --all-workspaces)
 - RF-WIKI-005 (pack --all-workspaces)
 - RF-WIKI-006 (map compacto de hubs)
+- RF-WIKI-007 (nav wiki-root)
 
 ## Casos
 
@@ -313,6 +316,37 @@ cases:
     given: "wiki/31-workers, wiki/32-contratos, yaml o .docs/wiki/00_gobierno_documental.md"
     when: "classifyWikiMapHub"
     then: "hub vacío; no aparecen en el mapa"
+```
+
+```toon
+block_id: tp-wiki-rf-007-cases
+kind: test-cases
+rf: RF-WIKI-007
+title: "Casos para RF-WIKI-007 (nav wiki-root)"
+source_of_truth: this
+verify: "go test ./internal/cli ./internal/service -count=1 -run 'TestNavWikiRootCommandExists|TestWikiRootResolvesCanonRelativeToWorkspaceRoot|TestWikiRootNoCanonDefaults|TestWikiRootRoleMissingMatchErrors'"
+evidence: ".docs/wiki/06_pruebas/TP-WIKI.md"
+cases:
+  - id: TC-WIKI-034
+    type: positivo
+    given: "[[canon]] id=wiki root=../wiki-repo/Ingenieria role=producto"
+    when: "mi-lsp nav wiki-root --workspace <alias> --format toon"
+    then: "backend=wiki-root; wiki_root=../wiki-repo/Ingenieria; resolved_from=canon.wiki; governance_doc=../wiki-repo/Ingenieria/00_gobierno_documental.md; paths portables"
+  - id: TC-WIKI-035
+    type: positivo
+    given: "project.toml sin [[canon]] ni CanonLinks"
+    when: "nav wiki-root"
+    then: "wiki_root=.docs/wiki; governance_doc=.docs/wiki/00_gobierno_documental.md; resolved_from=default; ok=true"
+  - id: TC-WIKI-036
+    type: positivo
+    given: "comando alias nav wiki root con --role producto"
+    when: "mi-lsp nav wiki root --workspace <alias> --role producto --format toon"
+    then: "operation=nav.wiki-root; filtra por role; envelope type sin cambio"
+  - id: TC-WIKI-037
+    type: negativo
+    given: "--role ecosistema sin [[canon]] ni link de ese role"
+    when: "nav wiki-root --role ecosistema"
+    then: "error fail-closed; no inventa default silencioso para ese role"
 ```
 
 ## Regla de mantenimiento

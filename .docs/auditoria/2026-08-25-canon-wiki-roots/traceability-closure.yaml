@@ -1,0 +1,113 @@
+schema: ae-traceability-closure/v1
+session: 2026-08-25-canon-wiki-roots
+session_contract_path: .docs/auditoria/2026-08-25-canon-wiki-roots/session-contract.yaml
+language: es
+sanitized: true
+status: PASS
+tracker_mode: none
+force_push: false
+completion_profile: full_cycle_to_origin_main
+learning_pass:
+  status: skipped_fast
+  route: skipped_fast
+git_before:
+  branch: main
+  head_sha: 825352e320206f401fef64d059e7aa3495d6dd5d
+  upstream: origin/main
+  ahead: 0
+  behind: 0
+git_after:
+  branch: ae/canon-wiki-roots-20260825
+  upstream: none
+  dirty: false
+  note: SHA filled after commit on this branch
+changed_paths:
+  excluded_unrelated:
+    - AGENTS.md
+    - CLAUDE.md
+  raw_paths: []
+  forbidden_hits: []
+scope_verdict: PASS
+traceability_chains:
+  reviewed_anchors:
+    - FL-BOOT-01
+    - FL-WIKI-01
+    - FL-IDX-01
+    - FL-GPH-01
+    - RF-WKS-008
+    - RF-WIKI-007
+    - CT-NAV-WIKI-ROOT
+    - CT-NAV-WIKI
+    - CT-NAV-GOVERNANCE
+    - CT-GOVERNANCE-AE-KERNEL-V2
+    - TP-WKS
+    - TP-WIKI
+  missing_anchors: []
+  updated_paths:
+    - .docs/wiki/03_FL/FL-BOOT-01.md
+    - .docs/wiki/03_FL/FL-WIKI-01.md
+    - .docs/wiki/03_FL/FL-IDX-01.md
+    - .docs/wiki/03_FL/FL-GPH-01.md
+    - .docs/wiki/04_RF/RF-WKS-008.md
+    - .docs/wiki/04_RF/RF-WIKI-007.md
+    - .docs/wiki/09_contratos/CT-NAV-WIKI-ROOT.md
+runtime_sensitive: false
+data_or_contract_sensitive: true
+data_or_contract_note: new CT-NAV-WIKI-ROOT and ProjectFile.Canons; no physical DB schema change
+harness_verdict: PASS
+wiki_source_verdict: PASS
+core_product_promise_verdict: NOT_APPLICABLE
+expected_experience_oracle_verdict: NOT_APPLICABLE
+qa_learning_loop_verdict: NOT_APPLICABLE
+worker_join_verdict: PASS
+harness_scope_classification: targeted_pass_with_preexisting_debt
+packet_vs_diff:
+  method: path_list_only
+  command: git status --short
+  verdict: PASS
+  uncovered_changed_paths: []
+  new_hubs: []
+  context_packet_stale: false
+  refresh_ran: false
+board_sync:
+  status: not_applicable
+  rationale: tracker.mode=none
+pre_push_inputs:
+  issue_or_waiver: tracker.mode=none local-only FAST
+  expected_scope:
+    - backend
+    - canon-docs
+    - shared-skill
+  session_contract_path: .docs/auditoria/2026-08-25-canon-wiki-roots/session-contract.yaml
+  evidence_path: .docs/auditoria/2026-08-25-canon-wiki-roots/traceability-closure.yaml
+no_drift_snapshot:
+  commands:
+    - git status --short --branch
+  result: pending_until_commit
+anti_hold:
+  hold_emitted: false
+  hold_reason: null
+completion_handoff:
+  target: finishing-a-development-branch
+  disposition: integrate-main
+  required_order: trace → audit → drift repair → prepush → integration → remote readback → cleanup
+  ae_pre_push: required
+  durability_proof: required
+  blockers: []
+verify_commands:
+  - go test ./internal/workspace ./internal/cli ./internal/service ./internal/docgraph ./internal/indexer ./internal/model -count=1
+verify_result: PASS
+canonical_horizon_ref: RF-WIKI-007
+current_status: CURRENT
+scope_classification:
+  IN:
+    - RF-WKS-008
+    - RF-WIKI-007
+    - CT-NAV-WIKI-ROOT
+  OUT:
+    - runtime Go worker changes
+    - protocol bump
+progressive_dependency_verdict: PASS
+later_hold_consumed: false
+later_hold_references: []
+business_context_freshness: not_applicable

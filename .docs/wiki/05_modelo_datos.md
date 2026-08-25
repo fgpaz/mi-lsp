@@ -36,8 +36,8 @@ La base vigente distingue workspaces `single` de workspaces `container`, persist
 
 | Entidad | Tipo | Owner | Persistencia | Descripcion |
 |---|---|---|---|---|
-| WorkspaceRegistration | Operativa | Core runtime | `~/.mi-lsp/registry.toml` | Alias, root, languages, `kind` y compatibilidad legacy |
-| ProjectConfig | Operativa | Workspace owner | `<repo>/.mi-lsp/project.toml` | Nombre local, ignores, `repos`, `entrypoints`, defaults, `[embeddings]` (`provider`, `base_url`, `model`, `dim`, `api_key_env`, `profile`, `batch_size`, `timeout_ms`, `encoding_format`, `user_agent`) y `[recall.rerank_extension]` (`enabled`, `command`, `args`, `timeout_ms`, `candidate_count`, `top_n`, `max_snippet_chars`); alias semantico de `ProjectFile` en codigo Go |
+| WorkspaceRegistration | Operativa | Core runtime | `~/.mi-lsp/registry.toml` | Alias, root, languages, `kind`, `CanonLinks` (`[[canon_link]]` alias+role vía `workspace link`) y compatibilidad legacy |
+| ProjectConfig | Operativa | Workspace owner | `<repo>/.mi-lsp/project.toml` | Nombre local, ignores, `repos`, `entrypoints`, defaults, `[[canon]]` (`id`, `root`, `role`, `mode`), `[canon_policy]` (`escape_max`), `[embeddings]` (`provider`, `base_url`, `model`, `dim`, `api_key_env`, `profile`, `batch_size`, `timeout_ms`, `encoding_format`, `user_agent`) y `[recall.rerank_extension]` (`enabled`, `command`, `args`, `timeout_ms`, `candidate_count`, `top_n`, `max_snippet_chars`); alias semantico de `ProjectFile` en codigo Go |
 | WorkspaceRepo | Operativa derivada | Core runtime | `<repo>/.mi-lsp/project.toml` | Repo hijo reconocido dentro de un workspace `container` |
 | WorkspaceEntrypoint | Operativa derivada | Core runtime | `<repo>/.mi-lsp/project.toml` | `.sln` o `.csproj` semanticamente enrutable |
 | SymbolRecord | Derivada | Indexer | `<repo>/.mi-lsp/index.db` | Declaracion liviana con `repo_id` y `repo` |
@@ -84,8 +84,8 @@ La base vigente distingue workspaces `single` de workspaces `container`, persist
 
 ## Relaciones y ownership
 
-- Un `WorkspaceRegistration` referencia un workspace `single` o `container`.
-- Un `ProjectConfig` puede contener muchos `WorkspaceRepo` y muchos `WorkspaceEntrypoint`.
+- Un `WorkspaceRegistration` referencia un workspace `single` o `container` y puede guardar `CanonLinks` hacia otro alias registrado.
+- Un `ProjectConfig` puede contener muchos `WorkspaceRepo`, muchos `WorkspaceEntrypoint` y cero o más `[[canon]]` con `[canon_policy]`.
 - Un `ProjectConfig` puede declarar `[embeddings]`; `api_key_env` nombra una variable de entorno, no guarda secretos.
 - Un `ProjectConfig` puede declarar `[recall.rerank_extension]` como hook local externo; no guarda payloads, respuestas de proveedor ni secretos.
 - Cada `FileRecord` y `SymbolRecord` pertenece a un `repo_id`.
@@ -171,6 +171,7 @@ Los cross-RIDs de nodo/edge/evidence son representaciones versionadas derivadas 
 | RF-WKS-002 | WorkspaceRegistration, ProjectConfig, SymbolRecord, FileRecord |
 | RF-WKS-003 | WorkspaceRegistration, ProjectConfig, QueryEnvelope |
 | RF-WKS-005 | GovernanceSource, GovernanceStatus, WorkspaceRegistration, QueryEnvelope |
+| RF-WKS-008 | ProjectConfig, WorkspaceRegistration, GovernanceSource |
 | RF-IDX-001 | SymbolRecord, FileRecord, DocRecord, DocEdge, DocMention, DocSourceBlock, DocSourceRecord, WorkspaceMeta |
 | RF-IDX-002 | SymbolRecord, FileRecord, DocRecord, DocEdge, DocMention, DocSourceBlock, DocSourceRecord, WorkspaceMeta |
 | RF-IDX-003 | GovernanceSource, DocsGovernanceProfile, DocsReadProfile, WorkspaceMeta |
@@ -199,6 +200,7 @@ Los cross-RIDs de nodo/edge/evidence son representaciones versionadas derivadas 
 | RF-QRY-012 | PackResult, PackDoc, PackTarget, DocRecord, DocEdge, DocsReadProfile, QueryEnvelope |
 | RF-QRY-013 | GovernanceStatus, DocsReadProfile, QueryEnvelope |
 | RF-QRY-016 | WikiSearchResult, HarnessValidationResult, WikiSourceValidationResult, DocRecord, DocSourceBlock, DocSourceRecord, QueryEnvelope |
+| RF-WIKI-007 | QueryEnvelope, ProjectConfig, WorkspaceRegistration |
 | RF-CS-001 | QueryEnvelope, RuntimeSnapshot, WorkspaceEntrypoint |
 | RF-DAE-001 | DaemonState |
 | RF-DAE-002 | RuntimeSnapshot, AccessEvent, DaemonState |

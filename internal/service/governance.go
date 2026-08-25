@@ -3,18 +3,22 @@ package service
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/fgpaz/mi-lsp/internal/docgraph"
 	"github.com/fgpaz/mi-lsp/internal/model"
+	"github.com/fgpaz/mi-lsp/internal/workspace"
 )
 
 func (a *App) governance(ctx context.Context, request model.CommandRequest) (model.Envelope, error) {
-	registration, _, resolutionWarnings, resolutionHint, err := a.resolvePreflightWorkspaceWithProject(request)
+	registration, project, resolutionWarnings, resolutionHint, err := a.resolvePreflightWorkspaceWithProject(request)
 	if err != nil {
 		return model.Envelope{}, err
 	}
-	status := docgraph.InspectGovernance(registration.Root, true)
+	inspectRoot, autoSync, inspectWarnings := governanceInspectTarget(registration, project)
+	status := docgraph.InspectGovernance(inspectRoot, autoSync)
 	warnings := append([]string{}, resolutionWarnings...)
+	warnings = append(warnings, inspectWarnings...)
 	warnings = append(warnings, status.Warnings...)
 	if status.Blocked {
 		warnings = append(warnings, status.Issues...)
@@ -45,12 +49,48 @@ func governanceHint(alias string, status model.GovernanceStatus) string {
 	return ""
 }
 
+func governanceInspectTarget(registration model.WorkspaceRegistration, project model.ProjectFile) (string, bool, []string) {
+	inspectRoot := registration.Root
+	autoSync := true
+	if len(project.Canons) > 0 {
+		return inspectRoot, false, nil
+	}
+	producto := firstCanonLinkByRole(registration.CanonLinks, "producto")
+	if producto == nil {
+		return inspectRoot, autoSync, nil
+	}
+	target, err := workspace.ResolveWorkspace(producto.Alias)
+	if err != nil {
+		return inspectRoot, autoSync, []string{fmt.Sprintf("producto canon link %q could not be resolved: %v", producto.Alias, err)}
+	}
+	targetProject, loadErr := workspace.LoadProjectFile(target.Root)
+	if loadErr != nil {
+		return inspectRoot, autoSync, []string{fmt.Sprintf("producto canon link %q could not load project.toml: %v", producto.Alias, loadErr)}
+	}
+	if readOnly, err := workspace.PathIsReadOnlyCanon(target.Root, targetProject, target.Root); err == nil && readOnly {
+		return target.Root, false, nil
+	}
+	return target.Root, false, nil
+}
+
+func firstCanonLinkByRole(links []model.WorkspaceCanonLink, role string) *model.WorkspaceCanonLink {
+	role = strings.TrimSpace(role)
+	for i := range links {
+		if strings.EqualFold(strings.TrimSpace(links[i].Role), role) {
+			link := links[i]
+			return &link
+		}
+	}
+	return nil
+}
+
 func (a *App) governanceGateEnvelope(ctx context.Context, request model.CommandRequest, operation string) (*model.Envelope, error) {
-	registration, _, err := a.resolveWorkspaceWithProject(request.Context.Workspace)
+	registration, project, err := a.resolveWorkspaceWithProject(request.Context.Workspace)
 	if err != nil {
 		return nil, err
 	}
-	status := docgraph.InspectGovernance(registration.Root, true)
+	inspectRoot, autoSync, _ := governanceInspectTarget(registration, project)
+	status := docgraph.InspectGovernance(inspectRoot, autoSync)
 	if !status.Blocked {
 		return nil, nil
 	}

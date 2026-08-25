@@ -295,6 +295,61 @@ func TestNavWikiMapCommandExists(t *testing.T) {
 	}
 }
 
+func TestNavWikiRootCommandExists(t *testing.T) {
+	var gotOperation string
+	var gotPreferDaemon bool
+	var gotPayload map[string]any
+	state := &rootState{executeOperationHook: func(_ *cobra.Command, operation string, payload map[string]any, preferDaemon bool) error {
+		gotOperation = operation
+		gotPreferDaemon = preferDaemon
+		gotPayload = payload
+		return nil
+	}}
+	command := newNavCommand(state)
+
+	wikiRoot, _, err := command.Find([]string{"wiki-root"})
+	if err != nil {
+		t.Fatalf("find wiki-root command: %v", err)
+	}
+	if wikiRoot.Flags().Lookup("role") == nil {
+		t.Fatal("wiki-root should expose --role")
+	}
+	if err := wikiRoot.Flags().Set("role", "producto"); err != nil {
+		t.Fatalf("set wiki-root --role: %v", err)
+	}
+	if err := wikiRoot.RunE(wikiRoot, nil); err != nil {
+		t.Fatalf("run wiki-root: %v", err)
+	}
+	if gotOperation != "nav.wiki-root" {
+		t.Fatalf("wiki-root operation = %q, want nav.wiki-root", gotOperation)
+	}
+	if !gotPreferDaemon {
+		t.Fatal("wiki-root preferDaemon should be true; daemon bypass is shouldUseDaemon")
+	}
+	if gotPayload["role"] != "producto" {
+		t.Fatalf("wiki-root payload role = %#v, want producto", gotPayload["role"])
+	}
+
+	alias, _, err := command.Find([]string{"wiki", "root"})
+	if err != nil {
+		t.Fatalf("find wiki root command: %v", err)
+	}
+	if alias.Flags().Lookup("role") == nil {
+		t.Fatal("wiki root should expose --role")
+	}
+	gotOperation = ""
+	gotPreferDaemon = false
+	if err := alias.RunE(alias, nil); err != nil {
+		t.Fatalf("run wiki root: %v", err)
+	}
+	if gotOperation != "nav.wiki-root" {
+		t.Fatalf("wiki root operation = %q, want nav.wiki-root", gotOperation)
+	}
+	if !gotPreferDaemon {
+		t.Fatal("wiki root preferDaemon should be true; daemon bypass is shouldUseDaemon")
+	}
+}
+
 func TestNavPackCommandsForwardExactOperationIDs(t *testing.T) {
 	var gotOperation string
 	var gotPreferDaemon bool

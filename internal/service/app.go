@@ -77,6 +77,8 @@ func (a *App) Execute(ctx context.Context, request model.CommandRequest) (model.
 		envelope, err = a.workspaceStatus(ctx, request)
 	case "workspace.remove":
 		envelope, err = a.workspaceRemove(request)
+	case "workspace.link":
+		envelope, err = a.workspaceLink(request)
 	case "workspace.warm":
 		envelope = model.Envelope{Ok: true, Backend: "daemon", Items: []string{}, Warnings: []string{"daemon is not running; warm is a no-op in direct mode"}}
 	case "index.start":
@@ -111,6 +113,8 @@ func (a *App) Execute(ctx context.Context, request model.CommandRequest) (model.
 		envelope, err = a.wikiInventory(ctx, request)
 	case "nav.wiki.map":
 		envelope, err = a.wikiMap(ctx, request)
+	case "nav.wiki-root":
+		envelope, err = a.wikiRoot(ctx, request)
 	case "nav.evidence.inventory":
 		envelope, err = a.evidenceInventory(ctx, request)
 	case "nav.governance":
@@ -194,14 +198,18 @@ func (a *App) normalizeWorkspaceRequest(request model.CommandRequest) (model.Com
 		if mismatch, ok := workspace.ExplicitWorkspaceCWDMismatchFor(selector, request.Context.CallerCWD); ok {
 			warnings = append(warnings, mismatch.Warning)
 			if isHarnessClientName(request.Context.ClientName) && !request.Context.AllowCrossWorkspace {
-				return request, nil, fmt.Errorf("workspace cross-workspace refused: --workspace %q resolves to root %q, but caller cwd %q is inside workspace %q at root %q; recommended command: mi-lsp %s --format toon; pass --allow-cross-workspace only when this cross-workspace query is intentional",
-					mismatch.Selector,
-					mismatch.SelectedRoot,
-					mismatch.CallerCWD,
-					mismatch.CWDWorkspaceAlias,
-					mismatch.CWDWorkspaceRoot,
-					recommendedWorkspaceCommand(request.Operation, mismatch.CWDWorkspaceAlias),
-				)
+				if cwdCanonLinkAllows(mismatch.CWDWorkspaceAlias, selector, "") {
+					warnings = append(warnings, fmt.Sprintf("workspace used a registry canon link to reach alias %q from cwd workspace %q", selector, mismatch.CWDWorkspaceAlias))
+				} else {
+					return request, nil, fmt.Errorf("workspace cross-workspace refused: --workspace %q resolves to root %q, but caller cwd %q is inside workspace %q at root %q; recommended command: mi-lsp %s --format toon; pass --allow-cross-workspace only when this cross-workspace query is intentional",
+						mismatch.Selector,
+						mismatch.SelectedRoot,
+						mismatch.CallerCWD,
+						mismatch.CWDWorkspaceAlias,
+						mismatch.CWDWorkspaceRoot,
+						recommendedWorkspaceCommand(request.Operation, mismatch.CWDWorkspaceAlias),
+					)
+				}
 			}
 		}
 		if strings.TrimSpace(request.Context.WorkspaceSource) == "" {
@@ -241,12 +249,24 @@ func operationRequiresWorkspaceResolution(request model.CommandRequest) bool {
 		return !allWorkspaces
 	case "index.run", "index.start":
 		return strings.TrimSpace(stringPayload(request.Payload, "path")) == ""
-	case "index.status", "index.cancel", "index.run-job", "workspace.status", "info", "nav.symbols", "nav.overview", "nav.outline", "nav.governance", "nav.route", "nav.wiki.route", "nav.ask", "nav.pack", "nav.wiki.pack", "nav.wiki.search", "nav.wiki.validate-harness", "nav.wiki.validate-source", "nav.wiki.inventory", "nav.wiki.map", "nav.evidence.inventory", "nav.service", "nav.refs", "nav.context", "nav.deps", "nav.multi-read", "nav.batch", "nav.related", "nav.workspace-map", "nav.diff-context", "nav.affected", "nav.flow-slice", "nav.change-pack", "nav.edit-plan", "nav.prepare", "prepare.create", "prepare.verify", "prepare.refresh", "nav.trace", "nav.wiki.trace", "nav.intent", "nav.recall", "nav.neighbors", "nav.callers", "nav.callees", "nav.path", "nav.explain", "nav.graph.stats", "nav.graph.status", "nav.graph.rank", "nav.graph.validate", "nav.graph-impact":
+	case "index.status", "index.cancel", "index.run-job", "workspace.status", "workspace.link", "info", "nav.symbols", "nav.overview", "nav.outline", "nav.governance", "nav.wiki-root", "nav.route", "nav.wiki.route", "nav.ask", "nav.pack", "nav.wiki.pack", "nav.wiki.search", "nav.wiki.validate-harness", "nav.wiki.validate-source", "nav.wiki.inventory", "nav.wiki.map", "nav.evidence.inventory", "nav.service", "nav.refs", "nav.context", "nav.deps", "nav.multi-read", "nav.batch", "nav.related", "nav.workspace-map", "nav.diff-context", "nav.affected", "nav.flow-slice", "nav.change-pack", "nav.edit-plan", "nav.prepare", "prepare.create", "prepare.verify", "prepare.refresh", "nav.trace", "nav.wiki.trace", "nav.intent", "nav.recall", "nav.neighbors", "nav.callers", "nav.callees", "nav.path", "nav.explain", "nav.graph.stats", "nav.graph.status", "nav.graph.rank", "nav.graph.validate", "nav.graph-impact":
 
 		return true
 	default:
 		return false
 	}
+}
+
+func cwdCanonLinkAllows(cwdAlias, selectedAlias, role string) bool {
+	registry, err := workspace.LoadRegistry()
+	if err != nil {
+		return false
+	}
+	_, cwd, ok := workspace.FindRegisteredWorkspace(registry, cwdAlias)
+	if !ok {
+		return false
+	}
+	return workspace.RegistrationHasCanonLink(cwd, selectedAlias, role)
 }
 
 func isHarnessClientName(clientName string) bool {

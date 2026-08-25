@@ -53,7 +53,7 @@ func TestGovernanceProjectionDerivesFunctionalStageOrder(t *testing.T) {
 			{ID: "tests", Layer: "06", Family: "functional", PackStage: "tests", Paths: []string{".docs/wiki/06_matriz_pruebas_RF.md"}},
 		},
 	}
-	profile := buildDocsReadProfileFromGovernance(source, resolvedGovernanceProfile{Base: "ordered_wiki"})
+	profile := buildDocsReadProfileFromGovernance(source, resolvedGovernanceProfile{Base: "ordered_wiki"}, "")
 	want := []string{"governance", "scope", "outcome", "architecture", "flow", "requirements", "tests"}
 	if !reflect.DeepEqual(profile.ReadingPack.FunctionalStageOrder, want) {
 		t.Fatalf("functional_stage_order = %v, want %v", profile.ReadingPack.FunctionalStageOrder, want)

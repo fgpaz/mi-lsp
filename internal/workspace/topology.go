@@ -202,6 +202,8 @@ func mergeProjectFile(existing model.ProjectFile, detected model.ProjectFile) mo
 	if len(merged.Entrypoints) == 0 {
 		merged.Entrypoints = detected.Entrypoints
 	}
+	merged.Canons = existing.Canons
+	merged.CanonPolicy = existing.CanonPolicy
 	return merged
 }
 

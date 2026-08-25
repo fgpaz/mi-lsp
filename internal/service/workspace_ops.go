@@ -57,6 +57,14 @@ func (a *App) registerWorkspace(ctx context.Context, request model.CommandReques
 	registration.Name = alias
 	project.Project.Name = alias
 	registration = workspace.ApplyProjectTopology(registration, project)
+	if existingProject, loadErr := workspace.LoadProjectFile(registration.Root); loadErr == nil {
+		if len(existingProject.Canons) > 0 {
+			project.Canons = existingProject.Canons
+		}
+		if existingProject.CanonPolicy != nil {
+			project.CanonPolicy = existingProject.CanonPolicy
+		}
+	}
 	if _, err := workspace.RegisterWorkspace(alias, registration); err != nil {
 		return model.Envelope{}, err
 	}
@@ -914,6 +922,54 @@ func applyWorkspaceStatusAXIView(item map[string]any, alias string, opts model.Q
 		delete(item, "entrypoints")
 	}
 	return item
+}
+
+func (a *App) workspaceLink(request model.CommandRequest) (model.Envelope, error) {
+	targetAlias := strings.TrimSpace(stringPayload(request.Payload, "alias"))
+	role := strings.TrimSpace(stringPayload(request.Payload, "role"))
+	if targetAlias == "" {
+		return model.Envelope{}, errors.New("alias is required; see --help for usage")
+	}
+	if err := workspace.ValidateCanonRole(role); err != nil {
+		return model.Envelope{}, err
+	}
+
+	current, err := a.ResolveWorkspace(request.Context.Workspace)
+	if err != nil {
+		return model.Envelope{}, err
+	}
+	registry, err := workspace.LoadRegistry()
+	if err != nil {
+		return model.Envelope{}, err
+	}
+	currentName, currentReg, ok := workspace.FindRegisteredWorkspace(registry, current.Name)
+	if !ok {
+		return model.Envelope{}, fmt.Errorf("workspace.link requires a registered workspace alias; %q is not in the registry; run mi-lsp init . --name <alias>", strings.TrimSpace(current.Name))
+	}
+	canonicalTarget, _, ok := workspace.FindRegisteredWorkspace(registry, targetAlias)
+	if !ok {
+		return model.Envelope{}, fmt.Errorf("workspace %q is not registered; register the canon workspace before linking", targetAlias)
+	}
+
+	updated, replacedAlias, idempotent := workspace.UpsertCanonLink(currentReg.CanonLinks, canonicalTarget, role)
+	currentReg.CanonLinks = updated
+	currentReg.Name = currentName
+	registry.Workspaces[currentName] = currentReg
+	if err := workspace.SaveRegistry(registry); err != nil {
+		return model.Envelope{}, err
+	}
+
+	warnings := []string{}
+	if replacedAlias != "" {
+		warnings = append(warnings, fmt.Sprintf("replaced canon link for role %s: %s -> %s", role, replacedAlias, canonicalTarget))
+	}
+	item := map[string]any{
+		"alias":      canonicalTarget,
+		"role":       role,
+		"workspace":  currentName,
+		"idempotent": idempotent,
+	}
+	return model.Envelope{Ok: true, Workspace: currentName, Backend: "registry", Items: []map[string]any{item}, Warnings: warnings}, nil
 }
 
 func (a *App) workspaceRemove(request model.CommandRequest) (model.Envelope, error) {

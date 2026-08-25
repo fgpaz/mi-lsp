@@ -216,6 +216,45 @@ func TestExecuteNavGovernanceAgentRejectsExplicitAliasOutsideCallerCWD(t *testin
 	}
 }
 
+func TestExecuteNavWikiRootAllowsRegistryCanonLinkWithoutOverride(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+
+	codeRoot := t.TempDir()
+	wikiRoot := t.TempDir()
+	writeWorkspaceFile(t, codeRoot, "src/Main.cs", "class Main {}")
+	writeWorkspaceFile(t, wikiRoot, "src/Wiki.cs", "class Wiki {}")
+
+	registerServiceWorkspace(t, "code-ws", codeRoot)
+	registerServiceWorkspace(t, "wiki-ws", wikiRoot)
+	if _, err := New(codeRoot, nil).Execute(context.Background(), model.CommandRequest{
+		Operation: "workspace.link",
+		Context:   model.QueryOptions{Workspace: "code-ws"},
+		Payload:   map[string]any{"alias": "wiki-ws", "role": "producto"},
+	}); err != nil {
+		t.Fatalf("workspace.link: %v", err)
+	}
+
+	env, err := New(codeRoot, nil).Execute(context.Background(), model.CommandRequest{
+		Operation: "nav.wiki-root",
+		Context: model.QueryOptions{
+			Workspace:  "wiki-ws",
+			CallerCWD:  filepath.Join(codeRoot, "src"),
+			ClientName: "codex",
+		},
+	})
+	if err != nil {
+		t.Fatalf("nav.wiki-root via canon link: %v", err)
+	}
+	if env.Workspace != "wiki-ws" {
+		t.Fatalf("env.Workspace = %q, want wiki-ws", env.Workspace)
+	}
+	if !strings.Contains(strings.Join(env.Warnings, " "), "registry canon link") {
+		t.Fatalf("Warnings = %v, want registry canon link warning", env.Warnings)
+	}
+}
+
 func TestExecuteWorkspaceStatusAgentAllowsExplicitCrossWorkspaceOverride(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)

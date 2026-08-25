@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -565,6 +566,101 @@ func TestExtractReferencesParsesWikilinks(t *testing.T) {
 	}
 	if len(mentions) == 0 {
 		t.Fatal("expected mentions")
+	}
+}
+
+func TestIndexWorkspaceDocsWalksDeclaredCanonRoots(t *testing.T) {
+	parent := t.TempDir()
+	code := filepath.Join(parent, "code")
+	canon := filepath.Join(parent, "wiki-repo", "Ingenieria")
+	if err := os.MkdirAll(code, 0o755); err != nil {
+		t.Fatalf("mkdir code: %v", err)
+	}
+	mustWriteDocgraphFile(t, filepath.Join(code, "README.md"), "# code\n")
+	mustWriteDocgraphFile(t, filepath.Join(canon, "foo.md"), "# canon foo\n")
+	mustWriteDocgraphFile(t, filepath.Join(canon, "00_gobierno_documental.md"), "# gobierno\n")
+	mustWriteDocgraphFile(t, filepath.Join(canon, ".git", "hidden.md"), "# should skip git\n")
+	if err := workspace.SaveProjectFile(code, model.ProjectFile{
+		Project: model.ProjectBlock{Name: "code", Kind: model.WorkspaceKindSingle},
+		Canons:  []model.WorkspaceCanon{{ID: "wiki", Root: "../wiki-repo/Ingenieria", Role: "producto"}},
+	}); err != nil {
+		t.Fatalf("SaveProjectFile: %v", err)
+	}
+
+	docs, _, _, warnings, err := IndexWorkspaceDocs(context.Background(), code, nil)
+	if err != nil {
+		t.Fatalf("IndexWorkspaceDocs: %v", err)
+	}
+	paths := map[string]struct{}{}
+	for _, doc := range docs {
+		paths[doc.Path] = struct{}{}
+	}
+	want := "../wiki-repo/Ingenieria/foo.md"
+	if _, ok := paths[want]; !ok {
+		t.Fatalf("missing canon doc %q in %#v warnings=%v", want, paths, warnings)
+	}
+	if _, ok := paths["../wiki-repo/Ingenieria/.git/hidden.md"]; ok {
+		t.Fatalf("indexed canon .git doc: %#v", paths)
+	}
+}
+
+func TestIndexWorkspaceDocsSkipsCanonSymlinkMarkdown(t *testing.T) {
+	parent := t.TempDir()
+	code := filepath.Join(parent, "code")
+	canon := filepath.Join(parent, "wiki-repo", "Ingenieria")
+	outside := filepath.Join(parent, "leaked.md")
+	if err := os.MkdirAll(code, 0o755); err != nil {
+		t.Fatalf("mkdir code: %v", err)
+	}
+	mustWriteDocgraphFile(t, filepath.Join(code, "README.md"), "# code\n")
+	mustWriteDocgraphFile(t, filepath.Join(canon, "foo.md"), "# canon foo\n")
+	mustWriteDocgraphFile(t, outside, "# leaked\n")
+	link := filepath.Join(canon, "secret.md")
+	if err := os.Symlink(outside, link); err != nil {
+		t.Skipf("symlink unavailable on %s: %v", runtime.GOOS, err)
+	}
+	if err := workspace.SaveProjectFile(code, model.ProjectFile{
+		Project: model.ProjectBlock{Name: "code", Kind: model.WorkspaceKindSingle},
+		Canons:  []model.WorkspaceCanon{{ID: "wiki", Root: "../wiki-repo/Ingenieria", Role: "producto"}},
+	}); err != nil {
+		t.Fatalf("SaveProjectFile: %v", err)
+	}
+	docs, _, _, _, err := IndexWorkspaceDocs(context.Background(), code, nil)
+	if err != nil {
+		t.Fatalf("IndexWorkspaceDocs: %v", err)
+	}
+	for _, doc := range docs {
+		if strings.HasSuffix(doc.Path, "secret.md") || strings.Contains(doc.Path, "leaked.md") {
+			t.Fatalf("indexed canon symlink markdown: %#v", docs)
+		}
+	}
+}
+
+func TestIndexWorkspaceDocsSkipsInvalidCanonRootWithWarning(t *testing.T) {
+	root := t.TempDir()
+	mustWriteDocgraphFile(t, filepath.Join(root, "README.md"), "# code\n")
+	if err := workspace.SaveProjectFile(root, model.ProjectFile{
+		Project: model.ProjectBlock{Name: "code", Kind: model.WorkspaceKindSingle},
+		Canons:  []model.WorkspaceCanon{{ID: "wiki", Root: "/abs/wiki", Role: "producto"}},
+	}); err != nil {
+		t.Fatalf("SaveProjectFile: %v", err)
+	}
+	docs, _, _, warnings, err := IndexWorkspaceDocs(context.Background(), root, nil)
+	if err != nil {
+		t.Fatalf("IndexWorkspaceDocs: %v", err)
+	}
+	foundLocal := false
+	for _, doc := range docs {
+		if doc.Path == "README.md" {
+			foundLocal = true
+		}
+	}
+	if !foundLocal {
+		t.Fatalf("local docs should still be indexed, got %#v", docs)
+	}
+	joined := strings.Join(warnings, " ")
+	if !strings.Contains(joined, "/abs/wiki") || !strings.Contains(joined, "fail-closed") {
+		t.Fatalf("warnings = %v, want skip of invalid canon root", warnings)
 	}
 }
 

@@ -535,7 +535,7 @@ func shouldUseDaemon(operation string, requested bool) bool {
 		return false
 	}
 	switch operation {
-	case "nav.find", "nav.wiki.search", "nav.wiki.validate-harness", "nav.wiki.validate-source", "nav.evidence.inventory", "nav.intent", "nav.symbols", "nav.outline", "nav.overview", "nav.multi-read", "nav.affected", "nav.edit-plan", "nav.trace", "nav.wiki.trace", "nav.wiki.pack", "nav.route", "nav.wiki.route", "nav.governance", "nav.workspace-map":
+	case "nav.find", "nav.wiki.search", "nav.wiki.validate-harness", "nav.wiki.validate-source", "nav.evidence.inventory", "nav.intent", "nav.symbols", "nav.outline", "nav.overview", "nav.multi-read", "nav.affected", "nav.edit-plan", "nav.trace", "nav.wiki.trace", "nav.wiki.pack", "nav.route", "nav.wiki.route", "nav.governance", "nav.wiki-root", "nav.workspace-map":
 		return false
 	default:
 		return true

@@ -252,6 +252,20 @@ Use --include-code-discovery to add code-based discovery hints.`,
 		},
 	}
 
+	var wikiRootRole string
+	wikiRootCommand := &cobra.Command{
+		Use:   "wiki-root",
+		Short: "Resolve the wiki root (canon or default .docs/wiki)",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			payload := map[string]any{}
+			if role := strings.TrimSpace(wikiRootRole); role != "" {
+				payload["role"] = role
+			}
+			return state.executeNavOperation(cmd, "nav.wiki-root", payload, true)
+		},
+	}
+	wikiRootCommand.Flags().StringVar(&wikiRootRole, "role", "", "Filter [[canon]] by role: producto, ecosistema, or gobierno_local")
+
 	var includeArchetype bool
 	serviceCommand := &cobra.Command{
 		Use:   "service <path>",
@@ -745,7 +759,7 @@ with their reason and preserve the same graph generation when available.`,
 	evidenceCommand := newNavEvidenceCommand(state)
 
 	graphCommands := newGraphQueryCommands(state)
-	command.AddCommand(symbolsCommand, findCommand, refsCommand, overviewCommand, outlineCommand, askCommand, recallCommand, packCommand, routeCommand, wikiCommand, evidenceCommand, governanceCommand, serviceCommand, searchCommand, contextCommand, depsCommand, multiReadCommand, batchCommand, relatedCommand, workspaceMapCommand, diffContextCommand, affectedCommand, flowSliceCommand, changePackCommand, prepareCommand, editPlanCommand, traceCommand, intentCommand, explainChangeCommand)
+	command.AddCommand(symbolsCommand, findCommand, refsCommand, overviewCommand, outlineCommand, askCommand, recallCommand, packCommand, routeCommand, wikiCommand, evidenceCommand, governanceCommand, wikiRootCommand, serviceCommand, searchCommand, contextCommand, depsCommand, multiReadCommand, batchCommand, relatedCommand, workspaceMapCommand, diffContextCommand, affectedCommand, flowSliceCommand, changePackCommand, prepareCommand, editPlanCommand, traceCommand, intentCommand, explainChangeCommand)
 	command.AddCommand(graphCommands...)
 	return command
 }
@@ -1098,7 +1112,21 @@ Use --with-layer-counts to include per-layer documentation counts (RS, FL, RF, T
 		},
 	}
 
-	command.AddCommand(searchCommand, routeCommand, packCommand, traceCommand, validateHarnessCommand, validateSourceCommand, inventoryCommand, mapCommand)
+	var wikiRootRole string
+	rootCommand := &cobra.Command{
+		Use:   "root",
+		Short: "Resolve the wiki root (canon or default .docs/wiki)",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			payload := map[string]any{}
+			if role := strings.TrimSpace(wikiRootRole); role != "" {
+				payload["role"] = role
+			}
+			return state.executeNavOperation(cmd, "nav.wiki-root", payload, true)
+		},
+	}
+	rootCommand.Flags().StringVar(&wikiRootRole, "role", "", "Filter [[canon]] by role: producto, ecosistema, or gobierno_local")
+
+	command.AddCommand(searchCommand, routeCommand, packCommand, traceCommand, validateHarnessCommand, validateSourceCommand, inventoryCommand, mapCommand, rootCommand)
 	return command
 }
 

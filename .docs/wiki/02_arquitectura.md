@@ -68,7 +68,7 @@ flowchart LR
 - `Workspace single`: un repo con un root semantico obvio. Ejemplo: `gastos`.
 - `Workspace container`: carpeta padre con muchos repos independientes. Ejemplo: `interbancarizacion_coelsa` sin depender de una `.sln` agregadora.
 - El `registry.toml` global sigue siendo liviano: alias, root, languages y `kind`.
-- La topologia detallada vive en `<repo>/.mi-lsp/project.toml` con `repo[]`, `entrypoint[]`, `default_repo` y `default_entrypoint`.
+- La topologia detallada vive en `<repo>/.mi-lsp/project.toml` con `repo[]`, `entrypoint[]`, `default_repo`, `default_entrypoint` y, cuando la wiki vive fuera del repo de código, `[[canon]]` `{id, root, role, mode}` resuelto desde la raíz del workspace (nunca desde `.mi-lsp/` ni cwd).
 - El contexto de query incluye `caller_cwd`; si `--workspace` se omite, la resolucion efectiva sigue `selector explicito > workspace registrado cuyo root contiene caller_cwd > last_workspace`.
 - El indice repo-local persiste ownership por repo (`repo_id`, `repo`) para archivos y simbolos.
 - El mismo indice repo-local persiste `DocRecord`, `DocEdge` y `DocMention` para `nav wiki`, `nav ask`, `nav pack`, `nav route` y `nav trace`.

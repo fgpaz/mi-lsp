@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/spf13/cobra"
 )
@@ -140,6 +141,28 @@ By default this command is a dry run. Use --apply to remove only aliases whose
 		},
 	}
 
-	command.AddCommand(addCommand, scanCommand, listCommand, doctorCommand, hygieneCommand, pruneCommand, warmCommand, statusCommand, removeCommand)
+	var linkRole string
+	linkCommand := &cobra.Command{
+		Use:   "link <alias>",
+		Short: "Link a registered canon workspace into the current workspace",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := requireArgs(args, 1, "alias"); err != nil {
+				return err
+			}
+			role := strings.TrimSpace(linkRole)
+			if role == "" {
+				return fmt.Errorf("--role is required; use producto, ecosistema, or gobierno_local")
+			}
+			payload := map[string]any{"alias": args[0], "role": role}
+			if state != nil && state.executeOperationHook != nil {
+				return state.executeOperationHook(cmd, "workspace.link", payload, false)
+			}
+			return state.executeOperation(cmd, "workspace.link", payload, false)
+		},
+	}
+	linkCommand.Flags().StringVar(&linkRole, "role", "", "Canon role: producto, ecosistema, or gobierno_local")
+	_ = linkCommand.MarkFlagRequired("role")
+
+	command.AddCommand(addCommand, scanCommand, listCommand, doctorCommand, hygieneCommand, pruneCommand, warmCommand, statusCommand, removeCommand, linkCommand)
 	return command
 }

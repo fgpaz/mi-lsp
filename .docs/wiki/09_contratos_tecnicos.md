@@ -69,7 +69,7 @@ El detalle por frontera vive en `09_contratos/`; contratos `accepted-design` no 
 - `init` pertenece a la CLI publica como shortcut de onboarding; no reemplaza `workspace add`, pero reutiliza su semantica base.
 - `nav ask` pertenece a la CLI publica y usa un contrato docs-first explainable, no un blob opaco ni una respuesta puramente textual.
 - `nav pack` pertenece a la CLI publica y usa un contrato de reading pack canonico, no una respuesta textual libre.
-- `nav wiki` pertenece a la CLI publica como superficie documental explicita para agentes; `search` devuelve candidatos wiki, `route|pack|trace` reutilizan las superficies canonicas existentes, `inventory` lista wikis, `map` publica un catálogo compacto de hubs de conocimiento, `validate-harness` compila readiness de contratos `SDD-HARNESS-v1` y `validate-source` compila readiness de artefactos `SDD-WIKI-SOURCE-v1`.
+- `nav wiki` pertenece a la CLI publica como superficie documental explicita para agentes; `search` devuelve candidatos wiki, `route|pack|trace` reutilizan las superficies canonicas existentes, `inventory` lista wikis, `map` publica un catálogo compacto de hubs de conocimiento, `wiki-root` (alias `nav wiki root`) publica la raíz portable, `validate-harness` compila readiness de contratos `SDD-HARNESS-v1` y `validate-source` compila readiness de artefactos `SDD-WIKI-SOURCE-v1`.
 - `nav affected` pertenece a la CLI publica como selector conservador de impacto git-aware; no reemplaza `nav diff-context` ni declara completitud semantica fuerte.
 - `nav edit-plan` pertenece a la CLI publica como superficie agent-first para convertir packets declarativos en diffs deterministas; dry-run es default y apply queda experimental con doble opt-in. Acepta `edit-plan-v1` textual y `edit-plan-v2` multi-lenguaje; en esta baseline el backend AST implementado es solo Go.
 - `nav governance` pertenece a la CLI publica y devuelve el estado efectivo de gobernanza del workspace.
@@ -241,10 +241,10 @@ Interpretación: el contrato define la superficie observable y las reglas de deg
 - `--axi` y `--classic` juntos deben fallar antes de ejecutar la operacion.
 - `worker status` debe conservar el mismo payload visible con y sin daemon; el daemon no puede reemplazar `items` por `RuntimeSnapshot`/`WorkerStatus` crudos.
 - `nav.find`, `nav.search`, `nav.intent`, `nav.symbols`, `nav.outline`, `nav.overview`, `nav.multi-read`, `nav.affected`, `nav.edit-plan`, `nav.evidence.inventory` y `nav.workspace-map` summary-first pertenecen a la superficie publica directa: no deben esperar daemon ni cambiar de comportamiento por su health.
-- `nav.wiki.search`, `nav.wiki.route`, `nav.wiki.pack`, `nav.wiki.trace`, `nav.wiki.inventory`, `nav.wiki.map`, `nav.wiki.validate-harness` y `nav.wiki.validate-source` pertenecen a la superficie publica directa y no deben esperar daemon.
+- `nav.wiki.search`, `nav.wiki.route`, `nav.wiki.pack`, `nav.wiki.trace`, `nav.wiki.inventory`, `nav.wiki.map`, `nav.wiki-root`, `nav.wiki.validate-harness` y `nav.wiki.validate-source` pertenecen a la superficie publica directa y no deben esperar daemon.
 - `nav.ask` tambien pertenece al hot path directo por default; la presencia del daemon no debe ser requisito para una primera respuesta docs-first util.
 - `index` puede degradar a full rebuild aun sin cambios git detectados cuando el runtime observa que `doc_records` no contiene docs canonicos pese a que la wiki existe en disco; el contrato visible no debe quedar en `no changes detected` en ese caso.
-- `index --docs-only` es un modo publico de recuperacion: reconstruye el corpus documental y la memoria de reentrada sin reemplazar el catalogo de codigo; si hay markdown canonico en `wiki/` o `bibliotecas/`, tambien puede publicar una `GraphGeneration` documental.
+- `index --docs-only` es un modo publico de recuperacion: reconstruye el corpus documental y la memoria de reentrada sin reemplazar el catalogo de codigo; si hay markdown canonico en `wiki/`, `bibliotecas/` o roots `[[canon]]` declarados, tambien puede publicar una `GraphGeneration` documental. Un root de canon inválido se omite con warning; el walker no escribe esas raíces.
 - `index [path]` es wrapper compatible de `index start --mode full --wait`; `--docs-only` equivale a `index start --mode docs --wait`.
 - `index start [path] --mode full|docs|catalog` crea un job durable. Por default retorna sin esperar; con `--wait` bloquea hasta completar.
 - `index status [job-id]` devuelve el ultimo job del workspace o el job pedido; mientras un job largo corre, `updated_at`, `current_stage`, `current_path`, `files_total` y los contadores deben reflejar progreso vivo.
@@ -280,6 +280,7 @@ Interpretación: el contrato define la superficie observable y las reglas de deg
 - [CT-NAV-GOVERNANCE.md](09_contratos/CT-NAV-GOVERNANCE.md)
 - [CT-NAV-ROUTE.md](09_contratos/CT-NAV-ROUTE.md)
 - [CT-NAV-WIKI.md](09_contratos/CT-NAV-WIKI.md) — `search|route|pack|trace` con `--all-workspaces` e nuevo subcomando `inventory`
+- [CT-NAV-WIKI-ROOT.md](09_contratos/CT-NAV-WIKI-ROOT.md) — `nav wiki-root` / `nav wiki root` con `resolved_from` portable
 - [CT-NAV-EDIT-PLAN.md](09_contratos/CT-NAV-EDIT-PLAN.md) - `nav edit-plan` con packet `edit-plan-v1/v2`, diff dry-run, Go AST y apply experimental
 - [CT-NAV-EVIDENCE.md](09_contratos/CT-NAV-EVIDENCE.md) - `nav evidence inventory` metadata-only para reentry/evidencia AE
 - [CT-NAV-RECALL.md](09_contratos/CT-NAV-RECALL.md)
@@ -292,6 +293,7 @@ Interpretación: el contrato define la superficie observable y las reglas de deg
 - `doctor [--workspace <alias>]`: comando unificado de diagnostico; sin args inspecciona workspace actual; reporta aliases duplicados, worktrees, paths stale, colisiones de casing, shadowing de binario y health de daemon/workers.
 - `nav recall <query> [--intent formula|evidence|route|explore|learning]`: busqueda semantica sobre wiki; ungated; responde `RecallResult[]` con `intent`, score, snippet y rango de lineas; si embeddings no disponibles, el fallback canonico es `nav wiki search`
 - `mi-lsp [--classic] [--axi] [--full]`: por default devuelve home content-first; `--classic` restaura help generica
+- `workspace.link <alias> --role producto|ecosistema|gobierno_local`: persiste `CanonLinks` hacia un alias registrado; no escribe roots de canon `read-only`
 - `workspace.remove`: elimina un workspace registrado de `registry.toml`
 - `workspace doctor`: alias del comando `doctor` raiz; diagnostica workspace actual.
 - `workspace hygiene [--apply-safe]`: diagnostica higiene agent-first del registry con `backend=registry-hygiene`; por default no muta y con `--apply-safe` solo remueve aliases stale/defaults invalidos mediante la logica segura existente. No borra directorios, worktrees, indices, ramas ni procesos. Aliases vivos con gobernanza bloqueada, `docs_ready=false`, `doc_count=0` o documento de gobernanza faltante se exponen como `workspace_readiness_issues` y solo se reparan con acciones manuales explicitas como `workspace remove <alias>`.
@@ -353,6 +355,7 @@ Interpretación: el contrato define la superficie observable y las reglas de deg
 - `--classic` global flag: restaura modo clasico en superficies AXI-default y prevalece sobre el env
 - `--full` global flag: expande surfaces AXI efectivas sin cambiar routing ni semantica base
 - `workspace add --no-index`: agrega workspace sin indexar
+- `workspace link <alias> --role producto|ecosistema|gobierno_local`: asocia el workspace actual con un alias de canon ya registrado; `nav wiki-root` y `nav governance` usan el link sin `--allow-cross-workspace`
 - `--compress` global flag: compresion agresiva de output
 
 ## Envelope `nav ask`
