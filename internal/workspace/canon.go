@@ -223,7 +223,7 @@ func absWorkspaceRoot(workspaceRoot string) (string, error) {
 	}
 	abs, err := filepath.Abs(trimmed)
 	if err != nil {
-		return "", errors.New("workspace root could not be resolved")
+		return "", fmt.Errorf("%w: verify workspace root is accessible", ErrCanonRootInspection)
 	}
 	return filepath.Clean(abs), nil
 }
