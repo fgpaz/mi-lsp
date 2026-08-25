@@ -535,7 +535,7 @@ func shouldUseDaemon(operation string, requested bool) bool {
 		return false
 	}
 	switch operation {
-	case "nav.find", "nav.wiki.search", "nav.wiki.validate-harness", "nav.wiki.validate-source", "nav.evidence.inventory", "nav.intent", "nav.symbols", "nav.outline", "nav.overview", "nav.multi-read", "nav.affected", "nav.edit-plan", "nav.trace", "nav.wiki.trace", "nav.wiki.pack", "nav.route", "nav.wiki.route", "nav.governance", "nav.wiki-root", "nav.workspace-map":
+	case "nav.find", "nav.wiki.search", "nav.wiki.validate-harness", "nav.wiki.validate-source", "nav.evidence.inventory", "nav.intent", "nav.symbols", "nav.outline", "nav.overview", "nav.multi-read", "nav.affected", "nav.edit-plan", "nav.trace", "nav.wiki.trace", "nav.wiki.pack", "nav.route", "nav.wiki.route", "nav.governance", "nav.wiki-root", "nav.workspace-map", "nav.wiki.map":
 		return false
 	default:
 		return true
@@ -568,7 +568,7 @@ func timeoutForOperation(operation string) time.Duration {
 		return indexer.IndexTimeout()
 	case "workspace.add", "workspace.init":
 		return 5 * time.Minute
-	case "nav.pack", "nav.ask", "nav.route", "nav.prepare", "nav.wiki.pack", "nav.wiki.search", "nav.affected", "nav.edit-plan":
+	case "nav.pack", "nav.ask", "nav.route", "nav.prepare", "nav.wiki.pack", "nav.wiki.search", "nav.wiki.map", "nav.affected", "nav.edit-plan":
 		return navHeavyTimeout()
 	default:
 		return 2 * time.Minute

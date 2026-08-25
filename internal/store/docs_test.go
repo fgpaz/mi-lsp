@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/fgpaz/mi-lsp/internal/model"
@@ -154,5 +155,26 @@ func TestReplaceDocsWithSources_RoundTrip(t *testing.T) {
 	}
 	if len(found) != 1 || found[0].Path != docPath {
 		t.Fatalf("source lookup = %#v", found)
+	}
+}
+
+func TestListDocRecordsPathsFiltersKnowledgeRootsWithoutSearchText(t *testing.T) {
+	db, _ := seedTestDB(t)
+	ctx := context.Background()
+	docs := []model.DocRecord{
+		{Path: "wiki/00-person.md", Title: "Person", Family: "generic", SearchText: strings.Repeat("heavy", 100)},
+		{Path: "wiki/10-project.md", Title: "Project", Family: "generic", SearchText: strings.Repeat("heavy", 100)},
+		{Path: "bibliotecas/topic.md", Title: "Topic", Family: "generic", SearchText: strings.Repeat("heavy", 100)},
+		{Path: ".docs/wiki/04_RF/RF-X.md", Title: "RF-X", Family: "functional", SearchText: strings.Repeat("heavy", 100)},
+	}
+	if err := ReplaceDocs(ctx, db, docs, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	items, err := ListDocRecordsPaths(ctx, db, "wiki/")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 2 || items[0].Path != "wiki/00-person.md" || items[1].Path != "wiki/10-project.md" {
+		t.Fatalf("items=%#v", items)
 	}
 }

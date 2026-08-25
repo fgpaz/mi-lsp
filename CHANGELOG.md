@@ -12,9 +12,25 @@ and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2
 - `nav wiki map` publishes a compact knowledge-wiki hub catalog (persona/proyectos/sistema/materia) without full bodies.
 - `index --docs-only` can publish a documentation `GraphGeneration` when canonical markdown exists under `wiki/`, `bibliotecas/`, `.docs/wiki/` or `docs/`.
 - Docgraph parses Obsidian wikilinks (`[[...]]`, `![[...]]`) and adds structural hierarchy edges to gobierno/README.
+
 - `.mi-lsp/project.toml` `[[canon]]` declares external wiki roots `{id, root, role, mode}` resolved from the workspace root (never `.mi-lsp/` or cwd); absolute/`~/`/UNC/`C:` roots fail closed and parent-escape max defaults to 1 via optional `[canon_policy] escape_max`.
 - `mi-lsp nav wiki-root` (alias `nav wiki root`) publishes portable `wiki_root`, `role`, `workspace`, `governance_doc`, `resolved_from` (`canon.<id>` | `default` | `registry.link`) and `id` without hardcoding `.docs/wiki`.
 - `mi-lsp workspace link <alias> --role` stores registry `CanonLinks`; `index --docs-only` walks declared `[[canon]]` roots as `../` relative markdown and skips invalid roots with a warning.
+
+
+- Wiki map supports additive configuration via `.docs/wiki/_mi-lsp/read-model.toml` section `[wiki_map]`: custom hubs with `[[wiki_map.hub]]`, optional additional `roots`, and `enabled` toggle. Default D-TEDI-017 hubs (persona/proyectos/sistema/materia) are preserved when config is absent.
+- Wiki map DB path uses a narrow `path,title` query instead of full-row scan; filesystem walk reads only bounded prefix for titles.
+- Wiki map enforces fair round-robin allocation across non-empty hubs; `Envelope.Truncated=true`, stats (`total_docs`, `total_returned`, `truncation_reason`) and `next_hint` expose every omission.
+- Docgraph excludes fenced code from link parsing; resolves paths corpus-wide with exact/source/root/basename precedence; preserves anchors and aliases as mentions; and reports duplicate basename/doc IDs as `ambiguous_doc_target` instead of choosing silently.
+- CLI `nav.wiki.map` is routed direct (not daemon) by default, matching other wiki read surfaces.
+- Doc edges preserve distinct relation kinds (`doc_wikilink`, `doc_embed`, `doc_markdown_link`, `doc_id`, `doc_hierarchy`) instead of collapsing to `doc_mentions`.
+
+### Fixed
+
+- Wiki map DB fallback now reports sanitized warnings for DB/walk/read/ignore/symlink/reparse failures instead of swallowing them.
+- Custom hub profiles emit only declared hubs in declaration order; profiles without custom hubs retain D-TEDI-017 defaults.
+- Knowledge roots are appended to the documentation read profile by default and can be disabled explicitly.
+- Missing repository identity now emits an actionable omission warning while preserving docs indexing; no path-derived identity fallback was added.
 
 ## [0.7.2] - 2026-08-20
 

@@ -288,7 +288,7 @@ kind: test-cases
 rf: RF-WIKI-006
 title: "Casos para RF-WIKI-006 (nav wiki map)"
 source_of_truth: this
-verify: "go test ./internal/service ./internal/cli -count=1 -run 'TestClassifyWikiMapHub|TestGroupWikiMapDocsOrder|TestNavWikiMapCommandExists'"
+verify: "go test ./internal/service ./internal/cli ./internal/docgraph ./internal/indexer -count=1 -run 'TestClassifyWikiMapHubDefaultsRemainLocked|TestGroupWikiMapDocsUsesDefaultOrCustomDeclarationOrder|TestTrimWikiMapHubs|TestWalkWikiMapDocs|TestNavWikiMapUsesDirectExecution|TestKnowledgeWikiRoots|TestDocumentGraph'"
 evidence: ".docs/wiki/06_pruebas/TP-WIKI.md"
 cases:
   - id: TC-WIKI-029
@@ -298,9 +298,9 @@ cases:
     then: "backend=wiki.map; hubs en orden persona, proyectos, materia; cada doc tiene path y title; sin cuerpos markdown"
   - id: TC-WIKI-030
     type: positivo
-    given: "indice documental vacio pero wiki/ existe en disco"
+    given: "índice documental vacío pero las raíces configuradas existen en disco"
     when: "nav wiki map"
-    then: "walk de filesystem; warning de índice vacío; hubs no vacíos si hay markdown clasificable"
+    then: "walk bounded; warning de fallback; ignore/symlink/reparse respetados; hubs no vacíos si hay Markdown clasificable"
   - id: TC-WIKI-031
     type: positivo
     given: "wiki/30-dashboard.md y wiki/20-proyectos-activos.md de primer nivel"
@@ -310,12 +310,47 @@ cases:
     type: positivo
     given: "token-budget menor que el catálogo completo"
     when: "nav wiki map --token-budget N"
-    then: "recorta docs conservando orden de hubs; tokens_estimate <= N"
+    then: "búsqueda binaria devuelve el mayor conteo equitativo que cabe; truncated=true; totales, reason y next_hint son explícitos"
   - id: TC-WIKI-033
     type: negativo
     given: "wiki/31-workers, wiki/32-contratos, yaml o .docs/wiki/00_gobierno_documental.md"
     when: "classifyWikiMapHub"
     then: "hub vacío; no aparecen en el mapa"
+  - id: TC-WIKI-034
+    type: positivo
+    given: "read-model.toml con roots y [[wiki_map.hub]] válidos"
+    when: "se carga el perfil y se ejecuta nav wiki map"
+    then: "wiki/ y bibliotecas/ permanecen, las roots extra se agregan; solo los hubs custom aparecen en orden declarado y gana el primer patrón coincidente"
+  - id: TC-WIKI-035
+    type: negativo
+    given: "roots o patterns absolutos, con traversal o glob malformado"
+    when: "se carga read-model.toml"
+    then: "se omiten con warnings estables que no exponen el valor rechazado"
+  - id: TC-WIKI-036
+    type: positivo
+    given: "hubs no vacíos de tamaños desbalanceados y max_items suficiente para una ronda"
+    when: "nav wiki map --max-items N"
+    then: "todos los hubs reciben representación; se conserva orden de docs y hubs; total_returned=N"
+  - id: TC-WIKI-037
+    type: positivo
+    given: "CLI nueva o un daemon anterior sin nav.wiki.map"
+    when: "mi-lsp nav wiki map"
+    then: "operation=nav.wiki.map se ejecuta directo con preferDaemon=false"
+  - id: TC-WIKI-038
+    type: negativo
+    given: "wiki_map.enabled=false"
+    when: "se indexa o consulta el mapa"
+    then: "no se agregan automáticamente wiki/ ni bibliotecas/ y el mapa devuelve hint de deshabilitado"
+  - id: TC-WIKI-039
+    type: positivo
+    given: "wikilinks, embeds y Markdown links con anchors/alias dentro y fuera de fences"
+    when: "docgraph extrae referencias"
+    then: "solo referencias fuera del fence generan edges; anchors/alias son menciones y self-anchor no genera self-edge"
+  - id: TC-WIKI-040
+    type: negativo
+    given: "basename o doc_id con múltiples documentos candidatos"
+    when: "docgraph y Graph Kernel resuelven el enlace"
+    then: "no eligen silenciosamente; ambiguous_doc_target contiene candidatos sorted y bounded"
 ```
 
 ```toon

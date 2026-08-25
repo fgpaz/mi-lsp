@@ -18,7 +18,12 @@ Use `nav ask` without `--axi` for richer orientation questions when you need evi
 Prefer `nav search --include-content` for implementation questions.
 Use `nav context <file>:<line>` when you already have a line target; the older `nav context <file> <line>` form remains valid.
 For Go files, `nav context` / `nav refs` may use optional `gopls`; if `gopls` is missing, treat the catalog/text fallback with install guidance as valid partial evidence.
+
+Treat `nav wiki search|route|pack|trace|map` as the canonical documentation surface. Use direct-only `nav wiki map` for a compact catalog; it never returns full bodies. Without `[wiki_map]`, D-TEDI-017 classifies persona (00-09 first level), proyectos (10-19), sistema (20-30 first level or 30-dashboard), and materia (`bibliotecas/**`). In `.docs/wiki/_mi-lsp/read-model.toml`, `roots` add safe knowledge roots, while ordered `[[wiki_map.hub]]` entries replace the default map classification; first matching pattern wins. `enabled=false` disables the map and automatic knowledge-root indexing. Filesystem fallback respects ignore, cancellation, symlink/reparse safety, and explicit truncation totals.
+
+
 Treat `nav wiki search|route|pack|trace|map|wiki-root` as the canonical documentation surface. Use `nav wiki-root` (alias `nav wiki root`) with `--format toon` before assuming `.docs/wiki`; inspect `resolved_from` (`canon.<id>` | `default` | `registry.link`). Use `nav wiki map` for a compact knowledge-wiki hub catalog (`wiki/` numbered hubs plus `bibliotecas/`); it never returns full bodies.
+
 Treat `nav search` as a broad text surface: it may return canonical docs, but it may also return prompts, audits, `.docs/raw`, generated files, or other support artifacts.
 Do not decide documentation authority from `nav search` alone when a `nav wiki *` surface can answer the question.
 Treat `nav intent` as the first hybrid entry point: supported graph/change goals use the automatic deterministic planner; other natural capability questions follow `mode=docs`, while symbol-like questions follow `mode=code`.

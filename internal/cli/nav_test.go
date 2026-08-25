@@ -384,3 +384,30 @@ func TestNavPackCommandsForwardExactOperationIDs(t *testing.T) {
 		})
 	}
 }
+
+func TestNavWikiMapUsesDirectExecution(t *testing.T) {
+	var operation string
+	preferDaemon := true
+	state := &rootState{executeOperationHook: func(_ *cobra.Command, got string, _ map[string]any, prefer bool) error {
+		operation = got
+		preferDaemon = prefer
+		return nil
+	}}
+	command := newNavCommand(state)
+	mapCommand, _, err := command.Find([]string{"wiki", "map"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if mapCommand == nil || mapCommand.RunE == nil {
+		t.Fatal("nav wiki map command is not executable")
+	}
+	if err := mapCommand.RunE(mapCommand, nil); err != nil {
+		t.Fatal(err)
+	}
+	if operation != "nav.wiki.map" || preferDaemon {
+		t.Fatalf("operation=%q preferDaemon=%v", operation, preferDaemon)
+	}
+	if shouldUseDaemon("nav.wiki.map", true) {
+		t.Fatal("root routing must keep nav.wiki.map direct")
+	}
+}

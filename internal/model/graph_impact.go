@@ -16,17 +16,22 @@ const (
 )
 
 var graphImpactRelations = map[string]GraphImpactRelation{
-	"calls":            {Relation: "calls", Direction: "in", ClaimStatuses: []string{GraphRecordExact, GraphRecordExtracted, GraphRecordInferred}, Cost: 1, Transitive: true},
-	"imports":          {Relation: "imports", Direction: "in", ClaimStatuses: []string{GraphRecordExact, GraphRecordExtracted, GraphRecordInferred}, Cost: 1, Transitive: true},
-	"implements":       {Relation: "implements", Direction: "in", ClaimStatuses: []string{GraphRecordExact, GraphRecordExtracted, GraphRecordInferred}, Cost: 1, Transitive: true},
-	"extends":          {Relation: "extends", Direction: "in", ClaimStatuses: []string{GraphRecordExact, GraphRecordExtracted, GraphRecordInferred}, Cost: 1, Transitive: true},
-	"tests":            {Relation: "tests", Direction: "in", ClaimStatuses: []string{GraphRecordExact, GraphRecordExtracted, GraphRecordInferred}, Cost: 1, Transitive: false},
-	"route_to_handler": {Relation: "route_to_handler", Direction: "in", ClaimStatuses: []string{GraphRecordExact, GraphRecordExtracted, GraphRecordInferred}, Cost: 1, Transitive: false},
-	"publishes":        {Relation: "publishes", Direction: "in", ClaimStatuses: []string{GraphRecordExact, GraphRecordExtracted, GraphRecordInferred}, Cost: 1, Transitive: false},
-	"consumes":         {Relation: "consumes", Direction: "in", ClaimStatuses: []string{GraphRecordExact, GraphRecordExtracted, GraphRecordInferred}, Cost: 1, Transitive: false},
-	"reads":            {Relation: "reads", Direction: "in", ClaimStatuses: []string{GraphRecordExact, GraphRecordExtracted, GraphRecordInferred}, Cost: 1, Transitive: false},
-	"writes":           {Relation: "writes", Direction: "in", ClaimStatuses: []string{GraphRecordExact, GraphRecordExtracted, GraphRecordInferred}, Cost: 1, Transitive: false},
-	"doc_mentions":     {Relation: "doc_mentions", Direction: "in", ClaimStatuses: []string{GraphRecordExact, GraphRecordExtracted, GraphRecordInferred}, Cost: 1, Transitive: false},
+	"calls":             {Relation: "calls", Direction: "in", ClaimStatuses: []string{GraphRecordExact, GraphRecordExtracted, GraphRecordInferred}, Cost: 1, Transitive: true},
+	"imports":           {Relation: "imports", Direction: "in", ClaimStatuses: []string{GraphRecordExact, GraphRecordExtracted, GraphRecordInferred}, Cost: 1, Transitive: true},
+	"implements":        {Relation: "implements", Direction: "in", ClaimStatuses: []string{GraphRecordExact, GraphRecordExtracted, GraphRecordInferred}, Cost: 1, Transitive: true},
+	"extends":           {Relation: "extends", Direction: "in", ClaimStatuses: []string{GraphRecordExact, GraphRecordExtracted, GraphRecordInferred}, Cost: 1, Transitive: true},
+	"tests":             {Relation: "tests", Direction: "in", ClaimStatuses: []string{GraphRecordExact, GraphRecordExtracted, GraphRecordInferred}, Cost: 1, Transitive: false},
+	"route_to_handler":  {Relation: "route_to_handler", Direction: "in", ClaimStatuses: []string{GraphRecordExact, GraphRecordExtracted, GraphRecordInferred}, Cost: 1, Transitive: false},
+	"publishes":         {Relation: "publishes", Direction: "in", ClaimStatuses: []string{GraphRecordExact, GraphRecordExtracted, GraphRecordInferred}, Cost: 1, Transitive: false},
+	"consumes":          {Relation: "consumes", Direction: "in", ClaimStatuses: []string{GraphRecordExact, GraphRecordExtracted, GraphRecordInferred}, Cost: 1, Transitive: false},
+	"reads":             {Relation: "reads", Direction: "in", ClaimStatuses: []string{GraphRecordExact, GraphRecordExtracted, GraphRecordInferred}, Cost: 1, Transitive: false},
+	"writes":            {Relation: "writes", Direction: "in", ClaimStatuses: []string{GraphRecordExact, GraphRecordExtracted, GraphRecordInferred}, Cost: 1, Transitive: false},
+	"doc_mentions":      {Relation: "doc_mentions", Direction: "in", ClaimStatuses: []string{GraphRecordExact, GraphRecordExtracted, GraphRecordInferred}, Cost: 1, Transitive: false},
+	"doc_wikilink":      {Relation: "doc_wikilink", Direction: "in", ClaimStatuses: []string{GraphRecordExact}, Cost: 1, Transitive: false},
+	"doc_embed":         {Relation: "doc_embed", Direction: "in", ClaimStatuses: []string{GraphRecordExact}, Cost: 1, Transitive: false},
+	"doc_markdown_link": {Relation: "doc_markdown_link", Direction: "in", ClaimStatuses: []string{GraphRecordExact}, Cost: 1, Transitive: false},
+	"doc_id":            {Relation: "doc_id", Direction: "in", ClaimStatuses: []string{GraphRecordExact}, Cost: 1, Transitive: false},
+	"doc_hierarchy":     {Relation: "doc_hierarchy", Direction: "in", ClaimStatuses: []string{GraphRecordExact}, Cost: 1, Transitive: false},
 }
 
 type GraphImpactRelation struct {
@@ -40,6 +45,10 @@ type GraphImpactRelation struct {
 func GraphImpactRelationSemantics(relation string) (GraphImpactRelation, bool) {
 	r, ok := graphImpactRelations[strings.ToLower(strings.TrimSpace(relation))]
 	return r, ok
+}
+
+func graphDocumentRelation(relation string) bool {
+	return relation == "doc_mentions" || relation == "doc_wikilink" || relation == "doc_embed" || relation == "doc_markdown_link" || relation == "doc_id" || relation == "doc_hierarchy"
 }
 
 func GraphImpactRelations() []GraphImpactRelation {
@@ -132,7 +141,7 @@ func (q GraphImpactRequest) Normalize() (GraphImpactRequest, error) {
 	}
 	if len(relations) == 0 {
 		for _, r := range GraphImpactRelations() {
-			if r.Relation == "doc_mentions" && !q.IncludeDocs {
+			if graphDocumentRelation(r.Relation) && !q.IncludeDocs {
 				continue
 			}
 			if r.Relation == "tests" && !q.IncludeTests {
