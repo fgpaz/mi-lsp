@@ -18,9 +18,9 @@ git_before:
   behind: 0
 git_after:
   branch: ae/canon-wiki-roots-20260825
+  head_sha: 615abe265b3cf41f8a1203f85a86c154cf8e2da8
   upstream: none
   dirty: false
-  note: SHA filled after commit on this branch
 changed_paths:
   excluded_unrelated:
     - AGENTS.md
@@ -83,7 +83,7 @@ pre_push_inputs:
 no_drift_snapshot:
   commands:
     - git status --short --branch
-  result: pending_until_commit
+  result: PASS after commit 615abe265b3cf41f8a1203f85a86c154cf8e2da8; remaining dirty only AGENTS.md CLAUDE.md excluded
 anti_hold:
   hold_emitted: false
   hold_reason: null
