@@ -183,7 +183,10 @@ foreach ($path in $rawDirty) {
     Add-Unique $blockers "Added or modified .docs/raw path is blocked: $path"
 }
 
-$expected = [System.Collections.Generic.HashSet[string]]::new([string[]]$ExpectedScope)
+$expected = [System.Collections.Generic.HashSet[string]]::new()
+foreach ($scopeItem in $ExpectedScope) {
+    [void]$expected.Add([string]$scopeItem)
+}
 foreach ($surface in $surfaces) {
     if ($surface -eq "unknown") {
         Add-Unique $warnings "Changed path has unknown surface; review scope manually"
