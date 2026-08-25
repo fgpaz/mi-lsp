@@ -19,15 +19,16 @@ const (
 )
 
 var (
-	ErrCanonRootAbsolute = errors.New("canon_root_absolute")
-	ErrCanonRootEscape   = errors.New("canon_root_escape")
-	ErrCanonRootSymlink  = errors.New("canon_root_symlink")
-	ErrCanonRootMissing  = errors.New("canon_root_missing")
-	ErrCanonRoleInvalid  = errors.New("canon_role_invalid")
-	ErrCanonModeInvalid  = errors.New("canon_mode_invalid")
-	ErrCanonIDDuplicate  = errors.New("canon_id_duplicate")
-	ErrCanonIDMissing    = errors.New("canon_id_missing")
-	ErrCanonRootReadOnly = errors.New("canon_root_read_only")
+	ErrCanonRootAbsolute   = errors.New("canon_root_absolute")
+	ErrCanonRootEscape     = errors.New("canon_root_escape")
+	ErrCanonRootSymlink    = errors.New("canon_root_symlink")
+	ErrCanonRootMissing    = errors.New("canon_root_missing")
+	ErrCanonRootInspection = errors.New("canon_root_inspection_failed")
+	ErrCanonRoleInvalid    = errors.New("canon_role_invalid")
+	ErrCanonModeInvalid    = errors.New("canon_mode_invalid")
+	ErrCanonIDDuplicate    = errors.New("canon_id_duplicate")
+	ErrCanonIDMissing      = errors.New("canon_id_missing")
+	ErrCanonRootReadOnly   = errors.New("canon_root_read_only")
 )
 
 var validCanonRoles = map[string]struct{}{
@@ -173,7 +174,10 @@ func resolveCanon(workspaceRoot string, canon model.WorkspaceCanon) (ResolvedCan
 	}
 	info, err := os.Lstat(absRoot)
 	if err != nil {
-		return ResolvedCanon{}, fmt.Errorf("%w: canon %q root could not be inspected; create the directory or fix the relative path from the workspace root", ErrCanonRootMissing, id)
+		if errors.Is(err, os.ErrNotExist) {
+			return ResolvedCanon{}, fmt.Errorf("%w: canon %q root does not exist; create the directory or fix the relative path from the workspace root", ErrCanonRootMissing, id)
+		}
+		return ResolvedCanon{}, fmt.Errorf("%w: canon %q root could not be inspected; verify filesystem access and use a valid relative path", ErrCanonRootInspection, id)
 	}
 	if !info.IsDir() {
 		return ResolvedCanon{}, fmt.Errorf("%w: canon %q root is not a directory; point [[canon]].root at a real directory", ErrCanonRootMissing, id)
@@ -195,11 +199,11 @@ func rejectCanonRootSymlinks(absRoot, id string) error {
 			if errors.Is(err, os.ErrNotExist) {
 				return fmt.Errorf("%w: canon %q root does not exist; create the directory or fix the relative path from the workspace root", ErrCanonRootMissing, id)
 			}
-			return fmt.Errorf("%w: canon %q root could not be inspected; create the directory or fix the relative path from the workspace root", ErrCanonRootMissing, id)
+			return fmt.Errorf("%w: canon %q root could not be inspected; verify filesystem access and use a valid relative path", ErrCanonRootInspection, id)
 		}
 		link, linkErr := canonComponentIsLink(info, current)
 		if linkErr != nil {
-			return fmt.Errorf("%w: canon %q root could not be inspected for a symlink or junction; point [[canon]].root at a real directory", ErrCanonRootSymlink, id)
+			return fmt.Errorf("%w: canon %q root could not be inspected for a symlink or junction; verify filesystem access and use a valid relative path", ErrCanonRootInspection, id)
 		}
 		if link {
 			return fmt.Errorf("%w: canon %q root is a symlink or junction; point [[canon]].root at a real directory", ErrCanonRootSymlink, id)

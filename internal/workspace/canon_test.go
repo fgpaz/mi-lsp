@@ -285,6 +285,32 @@ func TestResolveCanonsMissingSanitizesDiagnostic(t *testing.T) {
 	}
 }
 
+func TestResolveCanonsInspectionErrorWithNULComponent(t *testing.T) {
+	t.Parallel()
+	workspaceRoot := t.TempDir()
+	// On Windows, embedded NUL in a path component causes Lstat to fail
+	// with an I/O/inspection error rather than ErrNotExist.
+	declared := "..\\canon\\file" + "\x00" + ".txt"
+	_, err := ResolveCanons(workspaceRoot, model.ProjectFile{
+		Canons: []model.WorkspaceCanon{{ID: "wiki", Root: declared, Role: "producto"}},
+	})
+	if err == nil {
+		t.Fatal("expected non-nil inspection error")
+	}
+	if !errors.Is(err, ErrCanonRootInspection) {
+		t.Fatalf("error = %v, want %v", err, ErrCanonRootInspection)
+	}
+	if strings.Contains(err.Error(), declared) {
+		t.Fatalf("error %q must not echo NUL path %q", err, declared)
+	}
+	if strings.Contains(err.Error(), workspaceRoot) {
+		t.Fatalf("error %q must not include workspace root %q", err, workspaceRoot)
+	}
+	if !strings.Contains(err.Error(), "verify filesystem access") {
+		t.Fatalf("error %q should include actionable inspection guidance", err)
+	}
+}
+
 func TestResolveCanonsRejectsNonDirectoryWithoutPathLeak(t *testing.T) {
 	t.Parallel()
 	workspaceRoot := t.TempDir()
