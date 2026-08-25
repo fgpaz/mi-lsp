@@ -111,9 +111,8 @@ func TestValidateCanonDeclarationsRejectsAbsoluteRoots(t *testing.T) {
 			if err == nil || !errors.Is(err, ErrCanonRootAbsolute) {
 				t.Fatalf("error = %v, want %v", err, ErrCanonRootAbsolute)
 			}
-			declared := declaredCanonRoot(tt.root)
-			if !strings.Contains(err.Error(), declared) {
-				t.Fatalf("error %q should include declared path %q", err, declared)
+			if strings.Contains(err.Error(), tt.root) {
+				t.Fatalf("error %q must not echo sensitive root %q", err, tt.root)
 			}
 			if !strings.Contains(err.Error(), "../sibling") {
 				t.Fatalf("error %q should include a repair hint", err)
@@ -131,8 +130,8 @@ func TestValidateCanonDeclarationsEscapeMax(t *testing.T) {
 	if err == nil || !errors.Is(err, ErrCanonRootEscape) {
 		t.Fatalf("default max=1 error = %v, want %v", err, ErrCanonRootEscape)
 	}
-	if !strings.Contains(err.Error(), declared) {
-		t.Fatalf("error %q should include declared path", err)
+	if strings.Contains(err.Error(), declared) {
+		t.Fatalf("error %q must not echo excessive traversal %q", err, declared)
 	}
 	if !strings.Contains(err.Error(), "max is 1") {
 		t.Fatalf("error %q should include the max", err)
@@ -261,7 +260,7 @@ func TestResolveCanonsOmittedModeIsReadOnly(t *testing.T) {
 	}
 }
 
-func TestResolveCanonsMissingUsesDeclaredPath(t *testing.T) {
+func TestResolveCanonsMissingSanitizesDiagnostic(t *testing.T) {
 	t.Parallel()
 	workspaceRoot := t.TempDir()
 	declared := "../wiki-repo/Ingenieria"
@@ -271,12 +270,40 @@ func TestResolveCanonsMissingUsesDeclaredPath(t *testing.T) {
 	if err == nil || !errors.Is(err, ErrCanonRootMissing) {
 		t.Fatalf("error = %v, want %v", err, ErrCanonRootMissing)
 	}
-	if !strings.Contains(err.Error(), declared) {
-		t.Fatalf("error %q should include declared path", err)
+	if strings.Contains(err.Error(), declared) {
+		t.Fatalf("error %q must not echo missing root %q", err, declared)
 	}
 	abs := filepath.Clean(filepath.Join(workspaceRoot, filepath.FromSlash(declared)))
 	if strings.Contains(err.Error(), abs) {
 		t.Fatalf("error %q should not include absolute path %q", err, abs)
+	}
+	if strings.Contains(err.Error(), workspaceRoot) {
+		t.Fatalf("error %q must not include workspace root %q", err, workspaceRoot)
+	}
+	if !strings.Contains(err.Error(), "create the directory") || !strings.Contains(err.Error(), "fix the relative path") {
+		t.Fatalf("error %q should include actionable missing-root guidance", err)
+	}
+}
+
+func TestResolveCanonsRejectsNonDirectoryWithoutPathLeak(t *testing.T) {
+	t.Parallel()
+	workspaceRoot := t.TempDir()
+	declared := "../canon-file"
+	file := filepath.Join(filepath.Dir(workspaceRoot), "canon-file")
+	if err := os.WriteFile(file, []byte("not a directory"), 0o600); err != nil {
+		t.Fatalf("write canon file: %v", err)
+	}
+	_, err := ResolveCanons(workspaceRoot, model.ProjectFile{
+		Canons: []model.WorkspaceCanon{{ID: "wiki", Root: declared, Role: "producto"}},
+	})
+	if err == nil || !errors.Is(err, ErrCanonRootMissing) {
+		t.Fatalf("error = %v, want %v", err, ErrCanonRootMissing)
+	}
+	if strings.Contains(err.Error(), declared) || strings.Contains(err.Error(), workspaceRoot) || strings.Contains(err.Error(), file) {
+		t.Fatalf("error %q must not echo declared or resolved paths", err)
+	}
+	if !strings.Contains(err.Error(), "not a directory") || !strings.Contains(err.Error(), "point [[canon]].root at a real directory") {
+		t.Fatalf("error %q should include actionable not-directory guidance", err)
 	}
 }
 
@@ -298,8 +325,17 @@ func TestResolveCanonsRejectsSymlinkComponent(t *testing.T) {
 	if err == nil || !errors.Is(err, ErrCanonRootSymlink) {
 		t.Fatalf("error = %v, want %v", err, ErrCanonRootSymlink)
 	}
-	if !strings.Contains(err.Error(), declared) {
-		t.Fatalf("error %q should include declared path", err)
+	if strings.Contains(err.Error(), declared) {
+		t.Fatalf("error %q must not echo symlink root %q", err, declared)
+	}
+	if strings.Contains(err.Error(), workspaceRoot) {
+		t.Fatalf("error %q must not include workspace root %q", err, workspaceRoot)
+	}
+	if strings.Contains(err.Error(), realDir) {
+		t.Fatalf("error %q must not include resolved symlink target %q", err, realDir)
+	}
+	if !strings.Contains(err.Error(), "point [[canon]].root at a real directory") {
+		t.Fatalf("error %q should include actionable symlink guidance", err)
 	}
 }
 
@@ -324,8 +360,17 @@ func TestResolveCanonsRejectsJunctionComponent(t *testing.T) {
 	if err == nil || !errors.Is(err, ErrCanonRootSymlink) {
 		t.Fatalf("error = %v, want %v", err, ErrCanonRootSymlink)
 	}
-	if !strings.Contains(err.Error(), declared) {
-		t.Fatalf("error %q should include declared path", err)
+	if strings.Contains(err.Error(), declared) {
+		t.Fatalf("error %q must not echo junction root %q", err, declared)
+	}
+	if strings.Contains(err.Error(), workspaceRoot) {
+		t.Fatalf("error %q must not include workspace root %q", err, workspaceRoot)
+	}
+	if strings.Contains(err.Error(), realDir) {
+		t.Fatalf("error %q must not include resolved junction target %q", err, realDir)
+	}
+	if !strings.Contains(err.Error(), "point [[canon]].root at a real directory") {
+		t.Fatalf("error %q should include actionable junction guidance", err)
 	}
 }
 

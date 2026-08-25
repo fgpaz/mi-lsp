@@ -89,11 +89,11 @@ func ValidateCanonDeclarations(project model.ProjectFile) error {
 			return fmt.Errorf("%w: canon %q root is empty; declare a relative path from the workspace root (use ../sibling, not C:\\...)", ErrCanonRootAbsolute, id)
 		}
 		if canonDeclaredRootIsAbsolute(declared) {
-			return fmt.Errorf("%w: canon %q root %q is absolute; declare a relative path from the workspace root (use ../sibling, not C:\\... or /abs or \\\\server\\share or ~/)", ErrCanonRootAbsolute, id, declared)
+			return fmt.Errorf("%w: canon %q root must be relative to the workspace; use ../sibling, not an absolute, drive, UNC, or home path", ErrCanonRootAbsolute, id)
 		}
 		escapes := countCanonEscapes(declared)
 		if escapes > escapeMax {
-			return fmt.Errorf("%w: canon %q root %q has %d parent escapes, max is %d; raise [canon_policy].escape_max to allow %s", ErrCanonRootEscape, id, declared, escapes, escapeMax, declared)
+			return fmt.Errorf("%w: canon %q root has %d parent escapes, max is %d; raise [canon_policy].escape_max or use a relative directory within the allowed limit", ErrCanonRootEscape, id, escapes, escapeMax)
 		}
 	}
 	return nil
@@ -168,15 +168,15 @@ func resolveCanon(workspaceRoot string, canon model.WorkspaceCanon) (ResolvedCan
 	// Root is relative to the workspace root (the directory that contains
 	// .mi-lsp/project.toml), never to .mi-lsp/ and never to cwd.
 	absRoot := filepath.Clean(filepath.Join(workspaceRoot, filepath.FromSlash(declared)))
-	if err := rejectCanonRootSymlinks(absRoot, id, declared); err != nil {
+	if err := rejectCanonRootSymlinks(absRoot, id); err != nil {
 		return ResolvedCanon{}, err
 	}
 	info, err := os.Lstat(absRoot)
 	if err != nil {
-		return ResolvedCanon{}, fmt.Errorf("canon %q root %q could not be resolved: %w", id, declared, err)
+		return ResolvedCanon{}, fmt.Errorf("%w: canon %q root could not be inspected; create the directory or fix the relative path from the workspace root", ErrCanonRootMissing, id)
 	}
 	if !info.IsDir() {
-		return ResolvedCanon{}, fmt.Errorf("%w: canon %q root %q is not a directory; point [[canon]].root at a real directory", ErrCanonRootMissing, id, declared)
+		return ResolvedCanon{}, fmt.Errorf("%w: canon %q root is not a directory; point [[canon]].root at a real directory", ErrCanonRootMissing, id)
 	}
 	return ResolvedCanon{
 		ID:           id,
@@ -187,22 +187,22 @@ func resolveCanon(workspaceRoot string, canon model.WorkspaceCanon) (ResolvedCan
 	}, nil
 }
 
-func rejectCanonRootSymlinks(absRoot, id, declared string) error {
+func rejectCanonRootSymlinks(absRoot, id string) error {
 	current := filepath.Clean(absRoot)
 	for {
 		info, err := os.Lstat(current)
 		if err != nil {
 			if errors.Is(err, os.ErrNotExist) {
-				return fmt.Errorf("%w: canon %q root %q does not exist; create the directory or fix the relative path from the workspace root", ErrCanonRootMissing, id, declared)
+				return fmt.Errorf("%w: canon %q root does not exist; create the directory or fix the relative path from the workspace root", ErrCanonRootMissing, id)
 			}
-			return fmt.Errorf("canon %q root %q could not be resolved: %w", id, declared, err)
+			return fmt.Errorf("%w: canon %q root could not be inspected; create the directory or fix the relative path from the workspace root", ErrCanonRootMissing, id)
 		}
 		link, linkErr := canonComponentIsLink(info, current)
 		if linkErr != nil {
-			return fmt.Errorf("canon %q root %q could not be resolved: %w", id, declared, linkErr)
+			return fmt.Errorf("%w: canon %q root could not be inspected for a symlink or junction; point [[canon]].root at a real directory", ErrCanonRootSymlink, id)
 		}
 		if link {
-			return fmt.Errorf("%w: canon %q root %q is a symlink or junction; point [[canon]].root at a real directory", ErrCanonRootSymlink, id, declared)
+			return fmt.Errorf("%w: canon %q root is a symlink or junction; point [[canon]].root at a real directory", ErrCanonRootSymlink, id)
 		}
 		parent := filepath.Dir(current)
 		if parent == current {
@@ -219,7 +219,7 @@ func absWorkspaceRoot(workspaceRoot string) (string, error) {
 	}
 	abs, err := filepath.Abs(trimmed)
 	if err != nil {
-		return "", err
+		return "", errors.New("workspace root could not be resolved")
 	}
 	return filepath.Clean(abs), nil
 }

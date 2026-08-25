@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -259,8 +260,15 @@ func TestWikiRootInvalidCanonFailsClosed(t *testing.T) {
 	if err == nil {
 		t.Fatal("invalid [[canon]] must fail closed")
 	}
-	if !strings.Contains(err.Error(), "/abs/wiki") {
-		t.Fatalf("error %q should include the declared path", err)
+	if !errors.Is(err, workspace.ErrCanonRootAbsolute) {
+		t.Fatalf("error = %v, want %v", err, workspace.ErrCanonRootAbsolute)
+	}
+	message := err.Error()
+	if strings.Contains(message, "/abs/wiki") || strings.Contains(message, root) {
+		t.Fatalf("error %q must not echo supplied or workspace paths", message)
+	}
+	if !strings.Contains(message, "../sibling") || !strings.Contains(message, "relative") {
+		t.Fatalf("error %q should preserve actionable relative guidance", message)
 	}
 }
 

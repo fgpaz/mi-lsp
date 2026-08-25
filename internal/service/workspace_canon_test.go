@@ -213,5 +213,3 @@ func TestWorkspaceInitPreservesCanonLinks(t *testing.T) {
 		t.Fatalf("CanonLinks wiped by init: %#v", links)
 	}
 }
-
-
