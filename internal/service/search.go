@@ -17,6 +17,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/fgpaz/mi-lsp/internal/language"
 	"github.com/fgpaz/mi-lsp/internal/model"
 	"github.com/fgpaz/mi-lsp/internal/processutil"
 	"github.com/fgpaz/mi-lsp/internal/workspace"
@@ -571,12 +572,7 @@ func isIdentifierDeclaration(pattern string, text string) bool {
 }
 
 func isSourceSearchPath(path string) bool {
-	switch strings.ToLower(filepath.Ext(path)) {
-	case ".cs", ".ts", ".tsx", ".js", ".jsx", ".mts", ".cts", ".py", ".pyi", ".go":
-		return true
-	default:
-		return false
-	}
+	return language.IsSupportedCodePath(path)
 }
 
 func isDocumentationSearchPath(path string) bool {

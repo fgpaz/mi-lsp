@@ -75,6 +75,7 @@ type PriorDocSnapshot struct {
 	Mentions map[string][]model.DocMention
 	Blocks   map[string][]model.DocSourceBlock
 	Records  map[string][]model.DocSourceRecord
+	Bindings map[string][]model.DocArtifactBinding
 }
 
 // BuildPriorDocSnapshot indexes prior docs facts by path for skip-reparse reuse.
@@ -84,6 +85,7 @@ func BuildPriorDocSnapshot(
 	mentions []model.DocMention,
 	blocks []model.DocSourceBlock,
 	records []model.DocSourceRecord,
+	bindings []model.DocArtifactBinding,
 ) *PriorDocSnapshot {
 	if len(docs) == 0 {
 		return nil
@@ -94,6 +96,7 @@ func BuildPriorDocSnapshot(
 		Mentions: make(map[string][]model.DocMention),
 		Blocks:   make(map[string][]model.DocSourceBlock),
 		Records:  make(map[string][]model.DocSourceRecord),
+		Bindings: make(map[string][]model.DocArtifactBinding),
 	}
 	for _, doc := range docs {
 		if doc.Path == "" || doc.ContentHash == "" {
@@ -127,6 +130,12 @@ func BuildPriorDocSnapshot(
 			continue
 		}
 		prior.Records[record.DocPath] = append(prior.Records[record.DocPath], record)
+	}
+	for _, binding := range bindings {
+		if binding.DocPath == "" {
+			continue
+		}
+		prior.Bindings[binding.DocPath] = append(prior.Bindings[binding.DocPath], binding)
 	}
 	return prior
 }
@@ -290,8 +299,17 @@ func IndexWorkspaceDocsWithSourcesWithProgress(ctx context.Context, root string,
 // IndexWorkspaceDocsWithSourcesWithProgressPrior indexes docs and skips markdown/wiki-source
 // reparse when prior content_hash still matches the on-disk file bytes.
 func IndexWorkspaceDocsWithSourcesWithProgressPrior(ctx context.Context, root string, matcher *workspace.IgnoreMatcher, progress ProgressFunc, prior *PriorDocSnapshot) ([]model.DocRecord, []model.DocEdge, []model.DocMention, []model.DocSourceBlock, []model.DocSourceRecord, []string, error) {
-	profile, _, warnings := LoadProfile(root)
+	docs, edges, mentions, sourceBlocks, sourceRecords, warnings, err := IndexWorkspaceDocsWithSourcesWithProgressPriorWithBindings(ctx, root, matcher, progress, prior)
+	if err != nil {
+		return nil, nil, nil, nil, nil, nil, err
+	}
+	return docs, edges, mentions, sourceBlocks, sourceRecords, warnings, nil
+}
+
+// IndexWorkspaceDocsWithSourcesWithProgressPriorWithBindings indexes docs and returns bindings.
+func IndexWorkspaceDocsWithSourcesWithProgressPriorWithBindings(ctx context.Context, root string, matcher *workspace.IgnoreMatcher, progress ProgressFunc, prior *PriorDocSnapshot) ([]model.DocRecord, []model.DocEdge, []model.DocMention, []model.DocSourceBlock, []model.DocSourceRecord, []model.DocArtifactBinding, []string, error) {
 	collectStarted := time.Now()
+	profile, _, warnings := LoadProfile(root)
 	if err := reportProgress(ctx, progress, Progress{Stage: "docs.collect", Force: true}); err != nil {
 		return nil, nil, nil, nil, nil, warnings, err
 	}
@@ -325,6 +343,7 @@ func IndexWorkspaceDocsWithSourcesWithProgressPrior(ctx context.Context, root st
 		edges         []model.DocEdge
 		sourceBlocks  []model.DocSourceBlock
 		sourceRecords []model.DocSourceRecord
+		bindings      []model.DocArtifactBinding
 		skipped       bool
 		warning       string
 		err           error
@@ -378,6 +397,7 @@ func IndexWorkspaceDocsWithSourcesWithProgressPrior(ctx context.Context, root st
 							edges:         append([]model.DocEdge(nil), prior.Edges[candidate.relativePath]...),
 							sourceBlocks:  append([]model.DocSourceBlock(nil), prior.Blocks[candidate.relativePath]...),
 							sourceRecords: append([]model.DocSourceRecord(nil), prior.Records[candidate.relativePath]...),
+							bindings:      append([]model.DocArtifactBinding(nil), prior.Bindings[candidate.relativePath]...),
 							skipped:       true,
 						}
 						continue
@@ -407,6 +427,7 @@ func IndexWorkspaceDocsWithSourcesWithProgressPrior(ctx context.Context, root st
 				mentions := append(docMentions, sourceDoc.Mentions...)
 				sourceBlocks := wikisource.SourceBlocks(sourceDoc, time.Now().Unix())
 				sourceRecords := wikisource.SourceRecords(sourceDoc, time.Now().Unix())
+				bindings := wikisource.SourceBindings(sourceDoc, time.Now().Unix())
 				if fm := extractFrontMatter(content); fm != nil {
 					for _, impl := range fm.Implements {
 						impl = strings.TrimSpace(impl)
@@ -435,6 +456,7 @@ func IndexWorkspaceDocsWithSourcesWithProgressPrior(ctx context.Context, root st
 					edges:         docEdges,
 					sourceBlocks:  sourceBlocks,
 					sourceRecords: sourceRecords,
+					bindings:      bindings,
 				}
 			}
 		}()
@@ -453,12 +475,13 @@ func IndexWorkspaceDocsWithSourcesWithProgressPrior(ctx context.Context, root st
 	mentions := make([]model.DocMention, 0)
 	sourceBlocks := make([]model.DocSourceBlock, 0)
 	sourceRecords := make([]model.DocSourceRecord, 0)
+	bindings := make([]model.DocArtifactBinding, 0)
 	parsed := 0
 	skipped := 0
 
 	for _, result := range results {
 		if result.err != nil {
-			return nil, nil, nil, nil, nil, warnings, result.err
+			return nil, nil, nil, nil, nil, nil, warnings, result.err
 		}
 		if result.warning != "" {
 			warnings = append(warnings, result.warning)
@@ -476,6 +499,7 @@ func IndexWorkspaceDocsWithSourcesWithProgressPrior(ctx context.Context, root st
 		mentions = append(mentions, result.mentions...)
 		sourceBlocks = append(sourceBlocks, result.sourceBlocks...)
 		sourceRecords = append(sourceRecords, result.sourceRecords...)
+		bindings = append(bindings, result.bindings...)
 		edges = append(edges, result.edges...)
 	}
 
@@ -506,7 +530,7 @@ func IndexWorkspaceDocsWithSourcesWithProgressPrior(ctx context.Context, root st
 		}
 		return docs[i].Family < docs[j].Family
 	})
-	return docs, edges, mentions, sourceBlocks, sourceRecords, warnings, nil
+	return docs, edges, mentions, sourceBlocks, sourceRecords, bindings, warnings, nil
 }
 func reportProgress(ctx context.Context, progress ProgressFunc, value Progress) error {
 	if err := ctx.Err(); err != nil {

@@ -1,0 +1,5 @@
+[read_model]
+version = 1
+schema = "doc_source_blocks"
+bindings_table = "doc_artifact_bindings"
+index_directions = ["wiki_to_code", "code_to_wiki"]

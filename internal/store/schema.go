@@ -138,6 +138,30 @@ CREATE TABLE IF NOT EXISTS doc_source_records (
 );
 `
 
+const docArtifactBindingsDDL = `
+CREATE TABLE IF NOT EXISTS doc_artifact_bindings (
+    doc_path TEXT NOT NULL,
+    block_id TEXT NOT NULL,
+    doc_id TEXT NOT NULL DEFAULT '',
+    relation TEXT NOT NULL,
+    role TEXT NOT NULL DEFAULT '',
+    target_path TEXT NOT NULL,
+    target_symbol TEXT NOT NULL DEFAULT '',
+    target_kind TEXT NOT NULL,
+    authoring_origin TEXT NOT NULL DEFAULT 'canonical',
+    binding_status TEXT NOT NULL DEFAULT 'exact',
+    doc_lifecycle TEXT NOT NULL DEFAULT 'active',
+    superseded_by TEXT NOT NULL DEFAULT '',
+    ordinal INTEGER NOT NULL,
+    start_line INTEGER NOT NULL,
+    end_line INTEGER NOT NULL,
+    source_content_hash TEXT NOT NULL DEFAULT '',
+    binding_ref TEXT NOT NULL,
+    indexed_at INTEGER NOT NULL,
+    UNIQUE(doc_path, block_id, ordinal)
+);
+`
+
 const metaDDL = `
 CREATE TABLE IF NOT EXISTS workspace_meta (
     key TEXT PRIMARY KEY,
@@ -231,7 +255,7 @@ func EnsureSchema(db *sql.DB) error {
 	if err := graphSchemaPreflight(db); err != nil {
 		return err
 	}
-	statements := []string{reposDDL, entrypointsDDL, symbolsDDL, filesDDL, docsDDL, docsFtsDDL, docEdgesDDL, docMentionsDDL, docSourceBlocksDDL, docSourceRecordsDDL, metaDDL, indexJobsDDL, indexGenerationsDDL, wikiChunkEmbeddingsDDL, utilityEventsDDL}
+	statements := []string{reposDDL, entrypointsDDL, symbolsDDL, filesDDL, docsDDL, docsFtsDDL, docEdgesDDL, docMentionsDDL, docSourceBlocksDDL, docSourceRecordsDDL, docArtifactBindingsDDL, metaDDL, indexJobsDDL, indexGenerationsDDL, wikiChunkEmbeddingsDDL, utilityEventsDDL}
 	for _, stmt := range statements {
 		if _, err := db.Exec(stmt); err != nil {
 			return err
@@ -314,6 +338,11 @@ END`,
 		{table: "index_generations", column: "workspace_root", statement: `CREATE INDEX IF NOT EXISTS idx_index_generations_workspace ON index_generations(workspace_root, status, published_at);`, required: true},
 		{table: "wiki_chunk_embeddings", column: "doc_path", statement: `CREATE INDEX IF NOT EXISTS idx_wiki_chunk_embeddings_doc ON wiki_chunk_embeddings(doc_path);`, required: false},
 		{table: "utility_events", column: "candidate_node_key", statement: `CREATE INDEX IF NOT EXISTS idx_utility_events_scope ON utility_events(workspace_scope, intent, operation, candidate_node_key, occurred_at);`, required: true},
+		// Binding indexes
+		{table: "doc_artifact_bindings", column: "doc_path", statement: `CREATE INDEX IF NOT EXISTS idx_doc_artifact_bindings_doc ON doc_artifact_bindings(doc_path, block_id);`, required: true},
+		{table: "doc_artifact_bindings", column: "target_path", statement: `CREATE INDEX IF NOT EXISTS idx_doc_artifact_bindings_target ON doc_artifact_bindings(target_path, target_symbol);`, required: true},
+		{table: "doc_artifact_bindings", column: "relation", statement: `CREATE INDEX IF NOT EXISTS idx_doc_artifact_bindings_relation ON doc_artifact_bindings(relation, target_kind);`, required: true},
+		{table: "doc_artifact_bindings", column: "binding_ref", statement: `CREATE UNIQUE INDEX IF NOT EXISTS idx_doc_artifact_bindings_ref ON doc_artifact_bindings(binding_ref);`, required: true},
 	}
 
 	for _, index := range indexes {

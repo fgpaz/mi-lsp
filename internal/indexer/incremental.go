@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/fgpaz/mi-lsp/internal/language"
 	"github.com/fgpaz/mi-lsp/internal/model"
 	"github.com/fgpaz/mi-lsp/internal/processutil"
 	"github.com/fgpaz/mi-lsp/internal/store"
@@ -78,18 +79,11 @@ func ExtractFileSymbols(workspaceRoot string, filePath string, repoID string, re
 }
 
 func languageFromExt(ext string) string {
-	switch ext {
-	case ".cs":
-		return "csharp"
-	case ".ts", ".tsx", ".mts", ".cts":
-		return "typescript"
-	case ".js", ".jsx", ".mjs", ".cjs":
-		return "javascript"
-	case ".py", ".pyi":
-		return "python"
-	default:
-		return ""
+	lang, ok := language.ForPath(ext)
+	if ok {
+		return lang
 	}
+	return ""
 }
 
 func ResolveRepoFromProjectFile(workspaceRoot string, projectFile model.ProjectFile, filePath string) (string, string) {

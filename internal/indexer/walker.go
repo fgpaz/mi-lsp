@@ -4,21 +4,10 @@ import (
 	"context"
 	"io/fs"
 	"path/filepath"
-	"strings"
 
+	"github.com/fgpaz/mi-lsp/internal/language"
 	"github.com/fgpaz/mi-lsp/internal/workspace"
 )
-
-var supportedExtensions = map[string]struct{}{
-	".cs":  {},
-	".go":  {},
-	".js":  {},
-	".jsx": {},
-	".ts":  {},
-	".tsx": {},
-	".py":  {},
-	".pyi": {},
-}
 
 func WalkWorkspace(ctx context.Context, root string, matcher *workspace.IgnoreMatcher) ([]string, error) {
 	files := make([]string, 0, 256)
@@ -38,7 +27,7 @@ func WalkWorkspace(ctx context.Context, root string, matcher *workspace.IgnoreMa
 		if entry.IsDir() {
 			return nil
 		}
-		if _, ok := supportedExtensions[strings.ToLower(filepath.Ext(path))]; ok {
+		if language.IsSupportedCodePath(path) {
 			files = append(files, path)
 		}
 		return nil

@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/fgpaz/mi-lsp/internal/language"
 	"github.com/fgpaz/mi-lsp/internal/model"
 )
 
@@ -185,16 +186,13 @@ func nextRouteName(relPath string) string {
 }
 
 func languageForPath(path string) string {
-	switch strings.ToLower(filepath.Ext(path)) {
-	case ".cs":
-		return "csharp"
-	case ".go":
-		return "go"
-	case ".py", ".pyi":
-		return "python"
-	default:
-		return "typescript"
+	lang, ok := language.ForPath(path)
+	if ok {
+		return lang
 	}
+	// Fallback: treat unsupported extensions as TypeScript for backwards
+	// compatibility with callers that rely on extractTypeScript.
+	return "typescript"
 }
 
 func digest(content []byte) string {

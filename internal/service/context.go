@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/fgpaz/mi-lsp/internal/language"
 	"github.com/fgpaz/mi-lsp/internal/model"
 	"github.com/fgpaz/mi-lsp/internal/store"
 	"github.com/fgpaz/mi-lsp/internal/workspace"
@@ -136,12 +137,7 @@ func resolveContextBackendType(request model.CommandRequest) string {
 }
 
 func isSemanticContextFile(path string) bool {
-	switch strings.ToLower(filepath.Ext(path)) {
-	case ".cs", ".ts", ".tsx", ".js", ".jsx", ".mts", ".cts", ".py", ".pyi", ".go":
-		return true
-	default:
-		return false
-	}
+	return language.IsSupportedCodePath(path)
 }
 
 func buildContextSliceItem(workspaceRoot string, project model.ProjectFile, file string, line int, maxChars int) (map[string]any, []string, error) {

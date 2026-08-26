@@ -132,7 +132,7 @@ func TestReplaceDocsWithSources_RoundTrip(t *testing.T) {
 		ContentHash: "r1",
 		IndexedAt:   1,
 	}}
-	if err := ReplaceDocsWithSources(ctx, db, docs, nil, nil, blocks, records); err != nil {
+	if err := ReplaceDocsWithSources(ctx, db, docs, nil, nil, blocks, records, nil); err != nil {
 		t.Fatalf("ReplaceDocsWithSources: %v", err)
 	}
 	storedBlocks, err := ListDocSourceBlocks(ctx, db)
@@ -176,5 +176,166 @@ func TestListDocRecordsPathsFiltersKnowledgeRootsWithoutSearchText(t *testing.T)
 	}
 	if len(items) != 2 || items[0].Path != "wiki/00-person.md" || items[1].Path != "wiki/10-project.md" {
 		t.Fatalf("items=%#v", items)
+	}
+}
+
+func TestReplaceDocsWithSources_BindingsRoundTrip(t *testing.T) {
+	db, _ := seedTestDB(t)
+	ctx := context.Background()
+	docPath := ".docs/wiki/09_contratos/CT-BIND.md"
+	docs := []model.DocRecord{{Path: docPath, Title: "CT-BIND", DocID: "CT-BIND", Layer: "09", Family: "technical", SearchText: "binding test", IndexedAt: 1}}
+	bindings := []model.DocArtifactBinding{
+		{
+			DocPath:         docPath,
+			BlockID:         "CT-BIND.source",
+			DocID:           "CT-BIND",
+			Relation:        model.RelationImplements,
+			TargetPath:      "src/backend/ApiService.cs",
+			TargetKind:      model.TargetKindFile,
+			AuthoringOrigin: model.AuthoringOriginCanonical,
+			BindingStatus:   model.BindingStatusExact,
+			DocLifecycle:    model.DocLifecycleActive,
+			Ordinal:         1,
+			StartLine:       10,
+			EndLine:         20,
+			BindingRef:      model.WikiCodeBindingRef(docPath, "CT-BIND.source", "CT-BIND", model.RelationImplements, "src/backend/ApiService.cs", "", model.TargetKindFile),
+			IndexedAt:       1,
+		},
+	}
+	if err := ReplaceDocsWithSources(ctx, db, docs, nil, nil, nil, nil, bindings); err != nil {
+		t.Fatalf("ReplaceDocsWithSources: %v", err)
+	}
+	stored, err := ListDocArtifactBindings(ctx, db)
+	if err != nil {
+		t.Fatalf("ListDocArtifactBindings: %v", err)
+	}
+	if len(stored) != 1 {
+		t.Fatalf("expected 1 binding, got %d", len(stored))
+	}
+	if stored[0].TargetPath != "src/backend/ApiService.cs" {
+		t.Fatalf("TargetPath = %q, want %q", stored[0].TargetPath, "src/backend/ApiService.cs")
+	}
+}
+
+func TestBindingsForTarget(t *testing.T) {
+	db, _ := seedTestDB(t)
+	ctx := context.Background()
+	docPath := ".docs/wiki/00_test.md"
+	bindings := []model.DocArtifactBinding{
+		{
+			DocPath:      docPath,
+			BlockID:      "b1",
+			DocID:        "TECH-01",
+			Relation:     model.RelationImplements,
+			TargetPath:   "src/api/Service.cs",
+			TargetKind:   model.TargetKindFile,
+			AuthoringOrigin: model.AuthoringOriginCanonical,
+			BindingRef:  model.WikiCodeBindingRef(docPath, "b1", "TECH-01", model.RelationImplements, "src/api/Service.cs", "", model.TargetKindFile),
+			Ordinal:     1,
+			IndexedAt:   1,
+		},
+		{
+			DocPath:      docPath,
+			BlockID:      "b2",
+			DocID:        "TECH-02",
+			Relation:     model.RelationTests,
+			TargetPath:   "src/api/Service.cs",
+			TargetSymbol: "Validate",
+			TargetKind:   model.TargetKindSymbol,
+			AuthoringOrigin: model.AuthoringOriginCanonical,
+			BindingRef:  model.WikiCodeBindingRef(docPath, "b2", "TECH-02", model.RelationTests, "src/api/Service.cs", "Validate", model.TargetKindSymbol),
+			Ordinal:     2,
+			IndexedAt:   1,
+		},
+	}
+	if err := ReplaceDocsWithSources(ctx, db, nil, nil, nil, nil, nil, bindings); err != nil {
+		t.Fatalf("ReplaceDocsWithSources: %v", err)
+	}
+	results, err := BindingsForTarget(ctx, db, "src/api/Service.cs", "Validate")
+	if err != nil {
+		t.Fatalf("BindingsForTarget: %v", err)
+	}
+	if len(results) != 1 || results[0].TargetSymbol != "Validate" {
+		t.Fatalf("exact target lookup failed: %#v", results)
+	}
+}
+
+func TestBindingsForDocID(t *testing.T) {
+	db, _ := seedTestDB(t)
+	ctx := context.Background()
+	bindings := []model.DocArtifactBinding{
+		{
+			DocPath:      "wiki/00.md",
+			BlockID:      "b1",
+			DocID:        "RF-OLD-001",
+			Relation:     model.RelationImplements,
+			TargetPath:   "src/old.cs",
+			TargetKind:   model.TargetKindFile,
+			AuthoringOrigin: model.AuthoringOriginCanonical,
+			BindingRef:  model.WikiCodeBindingRef("wiki/00.md", "b1", "RF-OLD-001", model.RelationImplements, "src/old.cs", "", model.TargetKindFile),
+			Ordinal:     1,
+			IndexedAt:   1,
+		},
+	}
+	if err := ReplaceDocsWithSources(ctx, db, nil, nil, nil, nil, nil, bindings); err != nil {
+		t.Fatalf("ReplaceDocsWithSources: %v", err)
+	}
+	results, err := BindingsForDocID(ctx, db, "RF-OLD-001")
+	if err != nil {
+		t.Fatalf("BindingsForDocID: %v", err)
+	}
+	if len(results) != 1 || results[0].DocID != "RF-OLD-001" {
+		t.Fatalf("BindingsForDocID failed: %#v", results)
+	}
+}
+
+func TestReplaceDocsWithSources_FullReplacementRemovesDeletedBinding(t *testing.T) {
+	db, _ := seedTestDB(t)
+	ctx := context.Background()
+	docPath := ".docs/wiki/00_test.md"
+	bindings := []model.DocArtifactBinding{
+		{
+			DocPath:      docPath,
+			BlockID:      "b1",
+			DocID:        "TECH-01",
+			Relation:     model.RelationImplements,
+			TargetPath:   "src/keep.cs",
+			TargetKind:   model.TargetKindFile,
+			AuthoringOrigin: model.AuthoringOriginCanonical,
+			BindingRef:  model.WikiCodeBindingRef(docPath, "b1", "TECH-01", model.RelationImplements, "src/keep.cs", "", model.TargetKindFile),
+			Ordinal:     1,
+			IndexedAt:   1,
+		},
+	}
+	if err := ReplaceDocsWithSources(ctx, db, nil, nil, nil, nil, nil, bindings); err != nil {
+		t.Fatalf("first replace: %v", err)
+	}
+	// Replace with only one binding (deleted the other)
+	bindings2 := []model.DocArtifactBinding{
+		{
+			DocPath:      docPath,
+			BlockID:      "b1",
+			DocID:        "TECH-02",
+			Relation:     model.RelationImplements,
+			TargetPath:   "src/new.cs",
+			TargetKind:   model.TargetKindFile,
+			AuthoringOrigin: model.AuthoringOriginCanonical,
+			BindingRef:  model.WikiCodeBindingRef(docPath, "b1", "TECH-02", model.RelationImplements, "src/new.cs", "", model.TargetKindFile),
+			Ordinal:     1,
+			IndexedAt:   1,
+		},
+	}
+	if err := ReplaceDocsWithSources(ctx, db, nil, nil, nil, nil, nil, bindings2); err != nil {
+		t.Fatalf("second replace: %v", err)
+	}
+	stored, err := ListDocArtifactBindings(ctx, db)
+	if err != nil {
+		t.Fatalf("ListDocArtifactBindings: %v", err)
+	}
+	if len(stored) != 1 {
+		t.Fatalf("expected 1 binding after replacement, got %d", len(stored))
+	}
+	if stored[0].TargetPath != "src/new.cs" {
+		t.Fatalf("target should be src/new.cs, got %q", stored[0].TargetPath)
 	}
 }

@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/fgpaz/mi-lsp/internal/language"
 	"github.com/fgpaz/mi-lsp/internal/model"
 	"github.com/fgpaz/mi-lsp/internal/store"
 	"github.com/fgpaz/mi-lsp/internal/workspace"
@@ -376,22 +377,18 @@ func hasLanguage(registration model.WorkspaceRegistration, target string) bool {
 }
 
 func isTypeScriptFile(path string) bool {
-	extension := strings.ToLower(filepath.Ext(path))
-	switch extension {
-	case ".ts", ".tsx", ".js", ".jsx", ".mts", ".cts":
-		return true
-	default:
-		return false
-	}
+	lang, ok := language.ForPath(path)
+	return ok && lang == "typescript"
 }
 
 func isPythonFile(path string) bool {
-	ext := strings.ToLower(filepath.Ext(path))
-	return ext == ".py" || ext == ".pyi"
+	lang, ok := language.ForPath(path)
+	return ok && lang == "python"
 }
 
 func isGoFile(path string) bool {
-	return strings.EqualFold(filepath.Ext(path), ".go")
+	lang, ok := language.ForPath(path)
+	return ok && lang == "go"
 }
 
 func isOptionalSemanticBackend(backendType string) bool {

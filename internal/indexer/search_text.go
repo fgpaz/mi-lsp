@@ -4,6 +4,8 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+
+	"github.com/fgpaz/mi-lsp/internal/language"
 )
 
 var camelSplitRe = regexp.MustCompile(`([a-z])([A-Z])|([A-Z])([A-Z][a-z])`)
@@ -125,10 +127,8 @@ func extractMeaningfulPathSegments(filePath string) []string {
 	}
 	var result []string
 	for _, seg := range segments {
-		// Remove file extension
-		for _, ext := range []string{".go", ".ts", ".tsx", ".js", ".jsx", ".cs", ".py"} {
-			seg = strings.TrimSuffix(seg, ext)
-		}
+		// Remove known file extension
+		seg = language.StripKnownExtension(seg)
 		seg = strings.ToLower(seg)
 		if seg == "" || len(seg) < 3 {
 			continue

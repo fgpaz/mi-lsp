@@ -84,7 +84,7 @@ func indexWorkspaceWithGraphProgress(ctx context.Context, root string, clean boo
 	warnings = append(warnings, graphWarnings...)
 
 	priorDocs := loadPriorDocSnapshot(ctx, root)
-	docs, docEdges, docMentions, sourceBlocks, sourceRecords, docWarnings, err := docgraph.IndexWorkspaceDocsWithSourcesWithProgressPrior(ctx, root, matcher, func(ctx context.Context, progressValue docgraph.Progress) error {
+	docs, docEdges, docMentions, sourceBlocks, sourceRecords, bindings, docWarnings, err := docgraph.IndexWorkspaceDocsWithSourcesWithProgressPriorWithBindings(ctx, root, matcher, func(ctx context.Context, progressValue docgraph.Progress) error {
 		return reportProgress(ctx, progress, Progress{
 			Stage:      progressValue.Stage,
 			Path:       progressValue.Path,
@@ -150,9 +150,9 @@ func indexWorkspaceWithGraphProgress(ctx context.Context, root string, clean boo
 			}
 		}
 		if publication != nil {
-			return store.ReplaceWorkspaceIndexForJob(ctx, db, publication.JobID, generationID, projectFile, files, symbols, docs, docEdges, docMentions, sourceBlocks, sourceRecords, snapshot, publication.Fence, jobGraph)
+			return store.ReplaceWorkspaceIndexForJob(ctx, db, publication.JobID, generationID, projectFile, files, symbols, docs, docEdges, docMentions, sourceBlocks, sourceRecords, bindings, snapshot, publication.Fence, jobGraph)
 		}
-		if err := store.ReplaceWorkspaceIndex(ctx, db, generationID, projectFile, files, symbols, docs, docEdges, docMentions, sourceBlocks, sourceRecords, snapshot); err != nil {
+		if err := store.ReplaceWorkspaceIndex(ctx, db, generationID, projectFile, files, symbols, docs, docEdges, docMentions, sourceBlocks, sourceRecords, bindings, snapshot); err != nil {
 			return err
 		}
 		if !publishGraph {
@@ -324,7 +324,7 @@ func indexWorkspaceDocsOnlyWithProgress(ctx context.Context, root string, genera
 	}
 
 	priorDocs := loadPriorDocSnapshot(ctx, root)
-	docs, docEdges, docMentions, sourceBlocks, sourceRecords, warnings, err := docgraph.IndexWorkspaceDocsWithSourcesWithProgressPrior(ctx, root, matcher, func(ctx context.Context, progressValue docgraph.Progress) error {
+	docs, docEdges, docMentions, sourceBlocks, sourceRecords, bindings, warnings, err := docgraph.IndexWorkspaceDocsWithSourcesWithProgressPriorWithBindings(ctx, root, matcher, func(ctx context.Context, progressValue docgraph.Progress) error {
 		return reportProgress(ctx, progress, Progress{
 			Stage:      progressValue.Stage,
 			Path:       progressValue.Path,
@@ -388,9 +388,9 @@ func indexWorkspaceDocsOnlyWithProgress(ctx context.Context, root string, genera
 			}
 		}
 		if publication != nil {
-			return store.ReplaceWorkspaceDocsForJob(ctx, db, publication.JobID, generationID, docs, docEdges, docMentions, sourceBlocks, sourceRecords, snapshot, publication.Fence, jobGraph)
+			return store.ReplaceWorkspaceDocsForJob(ctx, db, publication.JobID, generationID, docs, docEdges, docMentions, sourceBlocks, sourceRecords, bindings, snapshot, publication.Fence, jobGraph)
 		}
-		if err := store.ReplaceWorkspaceDocs(ctx, db, generationID, docs, docEdges, docMentions, sourceBlocks, sourceRecords, snapshot); err != nil {
+		if err := store.ReplaceWorkspaceDocs(ctx, db, generationID, docs, docEdges, docMentions, sourceBlocks, sourceRecords, bindings, snapshot); err != nil {
 			return err
 		}
 		if publishGraph {
@@ -461,7 +461,11 @@ func loadPriorDocSnapshot(ctx context.Context, root string) *docgraph.PriorDocSn
 	if err != nil {
 		return nil
 	}
-	return docgraph.BuildPriorDocSnapshot(docs, edges, mentions, blocks, records)
+	bindings, err := store.ListDocArtifactBindings(ctx, db)
+	if err != nil {
+		return nil
+	}
+	return docgraph.BuildPriorDocSnapshot(docs, edges, mentions, blocks, records, bindings)
 }
 
 func reportProgress(ctx context.Context, progress ProgressFunc, value Progress) error {

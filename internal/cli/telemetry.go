@@ -3,12 +3,12 @@ package cli
 import (
 	"fmt"
 	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/fgpaz/mi-lsp/internal/daemon"
+	"github.com/fgpaz/mi-lsp/internal/language"
 	"github.com/fgpaz/mi-lsp/internal/model"
 	"github.com/fgpaz/mi-lsp/internal/telemetry"
 )
@@ -134,30 +134,22 @@ func inferTelemetryBackend(request model.CommandRequest) string {
 }
 
 func isSemanticTelemetryFile(path string) bool {
-	switch strings.ToLower(filepath.Ext(path)) {
-	case ".cs", ".ts", ".tsx", ".js", ".jsx", ".mts", ".cts", ".py", ".pyi", ".go":
-		return true
-	default:
-		return false
-	}
+	return language.IsSupportedCodePath(path)
 }
 
 func isTypeScriptTelemetryFile(path string) bool {
-	switch strings.ToLower(filepath.Ext(path)) {
-	case ".ts", ".tsx", ".js", ".jsx", ".mts", ".cts":
-		return true
-	default:
-		return false
-	}
+	lang, ok := language.ForPath(path)
+	return ok && lang == "typescript"
 }
 
 func isPythonTelemetryFile(path string) bool {
-	ext := strings.ToLower(filepath.Ext(path))
-	return ext == ".py" || ext == ".pyi"
+	lang, ok := language.ForPath(path)
+	return ok && lang == "python"
 }
 
 func isGoTelemetryFile(path string) bool {
-	return strings.EqualFold(filepath.Ext(path), ".go")
+	lang, ok := language.ForPath(path)
+	return ok && lang == "go"
 }
 
 func firstNonEmpty(values ...string) string {

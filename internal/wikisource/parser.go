@@ -11,6 +11,597 @@ import (
 	"github.com/fgpaz/mi-lsp/internal/model"
 )
 
+// Locked field/value vocabulary for artifact_bindings objects.
+var canonicalArtifactFields = map[string]struct{}{
+	"doc_path": {}, "block_id": {}, "doc_id": {},
+	"relation": {}, "role": {},
+	"target_path": {}, "target_symbol": {}, "target_kind": {},
+	"authoring_origin": {}, "binding_status": {}, "doc_lifecycle": {}, "superseded_by": {},
+	"ordinal": {}, "start_line": {}, "end_line": {},
+	"source_content_hash": {},
+}
+
+// Locked relations.
+var validRelations = map[string]struct{}{
+	model.RelationImplements: {},
+	model.RelationTests:      {},
+	model.RelationConfigures: {},
+	model.RelationOperates:   {},
+}
+
+// Locked target kinds.
+var validTargetKinds = map[string]struct{}{
+	model.TargetKindFile:   {},
+	model.TargetKindSymbol: {},
+	model.TargetKindTest:   {},
+	model.TargetKindConfig: {},
+}
+
+// ParsedBinding is an intermediate representation for binding artifacts.
+type ParsedBinding struct {
+	DocPath         string
+	BlockID         string
+	DocID           string
+	Relation        string
+	Role            string
+	TargetPath      string
+	TargetSymbol    string
+	TargetKind      string
+	AuthoringOrigin string
+	BindingStatus   string
+	DocLifecycle    string
+	SupersededBy    string
+	Ordinal         int
+	StartLine       int
+	EndLine         int
+	SourceContentHash string
+}
+
+// validateBindingPath rejects unsafe paths at parse time.
+func validateBindingPath(p string) bool {
+	p = strings.TrimSpace(p)
+	if p == "" {
+		return false
+	}
+	if strings.Contains(p, "\x00") {
+		return false
+	}
+	if strings.Contains(p, "\n") || strings.Contains(p, "\r") {
+		return false
+	}
+	// Reject absolute paths
+	if strings.HasPrefix(p, "/") {
+		return false
+	}
+	// Reject syntactic traversal escaping
+	if strings.HasPrefix(p, "../") || p == ".." {
+		return false
+	}
+	// Also check for embedded .. segments that would escape
+	if strings.Contains(p, "/../") || strings.HasSuffix(p, "/..") {
+		return false
+	}
+	return true
+}
+
+// normalizeRelation maps legacy role/type values to the locked relation vocabulary.
+func normalizeRelation(role string, targetKind string) string {
+	switch strings.ToLower(role) {
+	case "implementation":
+		return model.RelationImplements
+	case "test":
+		return model.RelationTests
+	case "config":
+		return model.RelationConfigures
+	case "compiler", "supervisor", "entrypoint", "adapter":
+		return model.RelationOperates
+	}
+	// If target_kind is test, default to tests
+	if targetKind == model.TargetKindTest {
+		return model.RelationTests
+	}
+	// Default to operates for explicit code_links (no relation specified)
+	return model.RelationOperates
+}
+
+// parseCanonicalArtifactBinding extracts one artifact_bindings object entry.
+// sourceDocPath is the authoritative doc path (from ParsedDoc.SourcePath).
+// If the author supplies doc_path, it is accepted only when it does not conflict
+// with sourceDocPath; otherwise sourceDocPath is used for the binding's DocPath.
+func parseCanonicalArtifactBinding(entry map[string]string, blockID string, docID string, sourceDocPath string, startLine int, endLine int, contentHash string) *ParsedBinding {
+	// Author-supplied doc_path is optional provenance. SourceDocPath is authoritative.
+	path := sourceDocPath
+	if v, ok := entry["doc_path"]; ok {
+		if v != "" && v != sourceDocPath {
+			// Conflicting author-supplied doc_path: reject the binding entry.
+			return nil
+		}
+		path = v
+	}
+	if !validateBindingPath(path) {
+		return nil
+	}
+
+	targetPath, ok := entry["target_path"]
+	if !ok || !validateBindingPath(targetPath) {
+		return nil
+	}
+
+	relation := strings.TrimSpace(entry["relation"])
+	if relation == "" {
+		// For code_links, default to operates
+		relation = model.RelationOperates
+	}
+	if _, valid := validRelations[relation]; !valid {
+		return nil
+	}
+
+	targetKind := strings.TrimSpace(entry["target_kind"])
+	if targetKind == "" {
+		targetKind = model.TargetKindFile
+	}
+	if _, valid := validTargetKinds[targetKind]; !valid {
+		return nil
+	}
+
+	role := strings.TrimSpace(entry["role"])
+	if role == "" {
+		role = entry["type"] // fall back to legacy 'type' field
+	}
+	if role != "" {
+		relation = normalizeRelation(role, targetKind)
+	}
+
+	targetSymbol := strings.TrimSpace(entry["target_symbol"])
+	ordinal := 1
+	if v, ok := entry["ordinal"]; ok {
+		if i := parseInt(v); i > 0 {
+			ordinal = i
+		}
+	}
+
+	startLineInt := startLine
+	endLineInt := endLine
+	if v, ok := entry["start_line"]; ok {
+		if i := parseInt(v); i > 0 {
+			startLineInt = i
+		}
+	}
+	if v, ok := entry["end_line"]; ok {
+		if i := parseInt(v); i > 0 {
+			endLineInt = i
+		}
+	}
+
+	contentHashVal := contentHash
+	if v, ok := entry["source_content_hash"]; ok {
+		contentHashVal = v
+	}
+
+	// Extract lifecycle and redirect fields from canonical artifact_bindings.
+	docLifecycle := strings.TrimSpace(entry["doc_lifecycle"])
+	if docLifecycle == "" {
+		docLifecycle = model.DocLifecycleActive
+	}
+	supersededBy := strings.TrimSpace(entry["superseded_by"])
+
+	// Extract binding_status and authoring_origin; default when absent.
+	bindingStatus := strings.TrimSpace(entry["binding_status"])
+	if bindingStatus == "" {
+		bindingStatus = model.BindingStatusExact
+	}
+	authoringOrigin := strings.TrimSpace(entry["authoring_origin"])
+	if authoringOrigin == "" {
+		authoringOrigin = model.AuthoringOriginCanonical
+	}
+
+	return &ParsedBinding{
+		DocPath:           strings.ReplaceAll(path, "\\", "/"),
+		BlockID:           blockID,
+		DocID:             docID,
+		Relation:          relation,
+		Role:              strings.ToLower(role),
+		TargetPath:        strings.ReplaceAll(targetPath, "\\", "/"),
+		TargetSymbol:      targetSymbol,
+		TargetKind:        targetKind,
+		AuthoringOrigin:   authoringOrigin,
+		BindingStatus:     bindingStatus,
+		DocLifecycle:      docLifecycle,
+		SupersededBy:      supersededBy,
+		Ordinal:           ordinal,
+		StartLine:         startLineInt,
+		EndLine:           endLineInt,
+		SourceContentHash: contentHashVal,
+	}
+}
+
+// parseInt is a safe string-to-int converter for field values.
+func parseInt(s string) int {
+	var out int
+	for _, r := range s {
+		if r >= '0' && r <= '9' {
+			out = out*10 + int(r-'0')
+		} else {
+			return 0
+		}
+	}
+	return out
+}
+
+// extractCanonicalArtifactBindings extracts artifact_bindings objects from TOON block content.
+// sourceDocPath is the authoritative path of the source document.
+func extractCanonicalArtifactBindings(content string, blockID string, docID string, sourceDocPath string) []ParsedBinding {
+	bindings := make([]ParsedBinding, 0)
+	contentHash := digest([]byte(content))
+
+	// Find artifact_bindings: [ ... ] or artifact_bindings: [...]
+	// Also handle top-level artifact_bindings key
+	lines := strings.Split(strings.ReplaceAll(content, "\r", ""), "\n")
+	inArtifactBindings := false
+	currentObjects := []map[string]string{}
+	current := map[string]string{}
+	objectBraceDepth := 0
+
+	flushObject := func() {
+		if len(current) > 0 {
+			currentObjects = append(currentObjects, current)
+			current = map[string]string{}
+		}
+	}
+
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+
+		// Detect start of artifact_bindings
+		if !inArtifactBindings {
+			if key, value, ok := splitKeyValue(trimmed); ok {
+				if key == "artifact_bindings" {
+					inArtifactBindings = true
+					// Check if inline array follows
+					if strings.HasPrefix(value, "[") {
+						// parse inline content
+						inner := strings.Trim(value, "[]")
+						// Simple inline parsing: collect key:value pairs until ]
+						partialLines := strings.Split(inner, "}")
+						for _, part := range partialLines {
+							part = strings.TrimSpace(part)
+							if part == "" {
+								continue
+							}
+							if obj, err := parseInlineObject(part + "}"); err == nil {
+								currentObjects = append(currentObjects, obj)
+							}
+						}
+					}
+					continue
+				}
+			}
+			// Also check for bare [ starting an array
+			if trimmed == "[" {
+				inArtifactBindings = true
+				continue
+			}
+			continue
+		}
+
+		// We're inside artifact_bindings
+		if trimmed == "]" {
+			// end of array
+			inArtifactBindings = false
+			flushObject()
+			currentObjects = nil
+			continue
+		}
+		if trimmed == "" {
+			continue
+		}
+		if strings.HasPrefix(trimmed, "-") {
+			// new object entry
+			flushObject()
+			trimmed = strings.TrimPrefix(trimmed, "-")
+			trimmed = strings.TrimSpace(trimmed)
+		}
+		if strings.Contains(trimmed, "{") {
+			objectBraceDepth++
+			continue
+		}
+		if strings.Contains(trimmed, "}") {
+			objectBraceDepth--
+			if objectBraceDepth <= 0 {
+				flushObject()
+				objectBraceDepth = 0
+				continue
+			}
+		}
+		// key: value inside object
+		if key, value, ok := splitKeyValue(trimmed); ok {
+			if _, valid := canonicalArtifactFields[key]; valid {
+				current[key] = value
+			}
+			// Also accept legacy fields for convenience in inline objects
+			if key == "type" {
+				current["type"] = value
+			}
+		}
+	}
+
+	// Build bindings from collected objects
+	for _, obj := range currentObjects {
+		if binding := parseCanonicalArtifactBinding(obj, blockID, docID, sourceDocPath, 0, 0, contentHash); binding != nil {
+			bindings = append(bindings, *binding)
+		}
+	}
+
+	return bindings
+}
+
+// parseInlineObject parses a single artifact_bindings object from inline text.
+func parseInlineObject(raw string) (map[string]string, error) {
+	result := map[string]string{}
+	raw = strings.TrimSpace(raw)
+	if strings.HasPrefix(raw, "{") {
+		raw = strings.TrimPrefix(raw, "{")
+	}
+	if strings.HasSuffix(raw, "}") {
+		raw = strings.TrimSuffix(raw, "}")
+	}
+	if raw == "" {
+		return nil, nil
+	}
+	parts := strings.Split(raw, ",")
+	for _, part := range parts {
+		if key, value, ok := splitKeyValue(strings.TrimSpace(part)); ok {
+			if _, valid := canonicalArtifactFields[key]; valid {
+				result[key] = value
+			}
+		}
+	}
+	return result, nil
+}
+
+// extractLegacyBindings normalizes legacy alias fields into ParsedBinding.
+// sourceDocPath is the authoritative path of the source document (replaces the
+// previous practice of using docID as DocPath).
+func extractLegacyBindings(content string, blockID string, docID string, kind string, sourceDocPath string) []ParsedBinding {
+	bindings := make([]ParsedBinding, 0)
+	contentHash := digest([]byte(content))
+	startLine := 0
+
+	// Check for implementation_anchors (legacy)
+	for i, value := range keyValues(content, "implementation_anchors") {
+		if !validateBindingPath(value) {
+			continue
+		}
+		bindings = append(bindings, ParsedBinding{
+			DocPath:           sourceDocPath,
+			BlockID:           blockID,
+			DocID:             docID,
+			Relation:          model.RelationImplements,
+			TargetPath:        strings.ReplaceAll(value, "\\", "/"),
+			TargetKind:        model.TargetKindFile,
+			AuthoringOrigin:   model.AuthoringOriginLegacy,
+			BindingStatus:     model.BindingStatusExact,
+			DocLifecycle:      model.DocLifecycleActive,
+			SupersededBy:      "",
+			Ordinal:           i + 1,
+			StartLine:         startLine,
+			EndLine:           startLine,
+			SourceContentHash: contentHash,
+		})
+	}
+
+	// Check for code_links (legacy, defaults to operates)
+	for i, value := range keyValues(content, "code_links") {
+		if !validateBindingPath(value) {
+			continue
+		}
+		bindings = append(bindings, ParsedBinding{
+			DocPath:           sourceDocPath,
+			BlockID:           blockID,
+			DocID:             docID,
+			Relation:          model.RelationOperates,
+			TargetPath:        strings.ReplaceAll(value, "\\", "/"),
+			TargetKind:        model.TargetKindFile,
+			AuthoringOrigin:   model.AuthoringOriginLegacy,
+			BindingStatus:     model.BindingStatusExact,
+			DocLifecycle:      model.DocLifecycleActive,
+			SupersededBy:      "",
+			Ordinal:           i + 1,
+			StartLine:         startLine,
+			EndLine:           startLine,
+			SourceContentHash: contentHash,
+		})
+	}
+
+	// Check for test_links (legacy, maps to tests)
+	for i, value := range keyValues(content, "test_links") {
+		if !validateBindingPath(value) {
+			continue
+		}
+		bindings = append(bindings, ParsedBinding{
+			DocPath:           sourceDocPath,
+			BlockID:           blockID,
+			DocID:             docID,
+			Relation:          model.RelationTests,
+			TargetPath:        strings.ReplaceAll(value, "\\", "/"),
+			TargetKind:        model.TargetKindTest,
+			AuthoringOrigin:   model.AuthoringOriginLegacy,
+			BindingStatus:     model.BindingStatusExact,
+			DocLifecycle:      model.DocLifecycleActive,
+			SupersededBy:      "",
+			Ordinal:           i + 1,
+			StartLine:         startLine,
+			EndLine:           startLine,
+			SourceContentHash: contentHash,
+		})
+	}
+
+	// Check for implements (legacy key)
+	for i, value := range keyValues(content, "implements") {
+		if !validateBindingPath(value) {
+			continue
+		}
+		bindings = append(bindings, ParsedBinding{
+			DocPath:           sourceDocPath,
+			BlockID:           blockID,
+			DocID:             docID,
+			Relation:          model.RelationImplements,
+			TargetPath:        strings.ReplaceAll(value, "\\", "/"),
+			TargetKind:        model.TargetKindFile,
+			AuthoringOrigin:   model.AuthoringOriginLegacy,
+			BindingStatus:     model.BindingStatusExact,
+			DocLifecycle:      model.DocLifecycleActive,
+			SupersededBy:      "",
+			Ordinal:           i + 1,
+			StartLine:         startLine,
+			EndLine:           startLine,
+			SourceContentHash: contentHash,
+		})
+	}
+
+	// Check for tests (legacy key)
+	for i, value := range keyValues(content, "tests") {
+		if !validateBindingPath(value) {
+			continue
+		}
+		bindings = append(bindings, ParsedBinding{
+			DocPath:           sourceDocPath,
+			BlockID:           blockID,
+			DocID:             docID,
+			Relation:          model.RelationTests,
+			TargetPath:        strings.ReplaceAll(value, "\\", "/"),
+			TargetKind:        model.TargetKindTest,
+			AuthoringOrigin:   model.AuthoringOriginLegacy,
+			BindingStatus:     model.BindingStatusExact,
+			DocLifecycle:      model.DocLifecycleActive,
+			SupersededBy:      "",
+			Ordinal:           i + 1,
+			StartLine:         startLine,
+			EndLine:           startLine,
+			SourceContentHash: contentHash,
+		})
+	}
+
+	return bindings
+}
+
+// ExtractBindings parses canonical and legacy binding declarations from a document.
+// Returns all parsed bindings in deterministic order.
+func ExtractBindings(parsed ParsedDoc) []ParsedBinding {
+	allBindings := make([]ParsedBinding, 0)
+	sourceDocPath := parsed.SourcePath
+	if sourceDocPath == "" {
+		sourceDocPath = parsed.DocPath
+	}
+
+	// Process canonical artifact_bindings first
+	for _, block := range parsed.Blocks {
+		canonical := extractCanonicalArtifactBindings(block.Content, block.BlockID, parsed.DocID, sourceDocPath)
+		allBindings = append(allBindings, canonical...)
+		// Then legacy keys within the block
+		legacy := extractLegacyBindings(block.Content, block.BlockID, parsed.DocID, block.Kind, sourceDocPath)
+		allBindings = append(allBindings, legacy...)
+	}
+
+	// Legacy keys in document header (outside blocks)
+	hasBlocks := len(parsed.Blocks) > 0
+	var header string
+	if hasBlocks {
+		header = sourceHeader(parsed.Blocks[0].Content)
+		for _, block := range parsed.Blocks {
+			header += "\n" + block.Content
+		}
+	} else {
+		header = sourceHeader("")
+	}
+	headerBindings := extractLegacyBindings(header, "", parsed.DocID, "", sourceDocPath)
+	allBindings = append(allBindings, headerBindings...)
+
+	return allBindings
+}
+
+// SourceBindings converts parsed bindings into model.DocArtifactBinding rows.
+// It assigns stable binding refs and deterministic ordering.
+func SourceBindings(parsed ParsedDoc, indexedAt int64) []model.DocArtifactBinding {
+	parsedBindings := ExtractBindings(parsed)
+	bindings := make([]model.DocArtifactBinding, 0, len(parsedBindings))
+
+	for i, pb := range parsedBindings {
+		binding := model.DocArtifactBinding{
+			DocPath:           pb.DocPath,
+			BlockID:           pb.BlockID,
+			DocID:             pb.DocID,
+			Relation:          pb.Relation,
+			Role:              pb.Role,
+			TargetPath:        pb.TargetPath,
+			TargetSymbol:      pb.TargetSymbol,
+			TargetKind:        pb.TargetKind,
+			AuthoringOrigin:   pb.AuthoringOrigin,
+			BindingStatus:     pb.BindingStatus,
+			DocLifecycle:      pb.DocLifecycle,
+			SupersededBy:      pb.SupersededBy,
+			Ordinal:           pb.Ordinal,
+			StartLine:         pb.StartLine,
+			EndLine:           pb.EndLine,
+			SourceContentHash: pb.SourceContentHash,
+			IndexedAt:         indexedAt,
+		}
+		// Compute binding ref only from identity fields
+		binding.BindingRef = model.WikiCodeBindingRef(
+			docPathFromRecord(pb.DocPath, pb.DocID),
+			pb.BlockID,
+			pb.DocID,
+			pb.Relation,
+			pb.TargetPath,
+			pb.TargetSymbol,
+			pb.TargetKind,
+		)
+		// Override ordinal for ordering
+		binding.Ordinal = i + 1
+		bindings = append(bindings, binding)
+	}
+
+	// Deterministic sort: doc path, block, ordinal, relation, target path, symbol, role
+	sort.Slice(bindings, func(i, j int) bool {
+		a, b := bindings[i], bindings[j]
+		if a.DocPath != b.DocPath {
+			return a.DocPath < b.DocPath
+		}
+		if a.BlockID != b.BlockID {
+			return a.BlockID < b.BlockID
+		}
+		if a.Ordinal != b.Ordinal {
+			return a.Ordinal < b.Ordinal
+		}
+		if a.Relation != b.Relation {
+			return a.Relation < b.Relation
+		}
+		if a.TargetPath != b.TargetPath {
+			return a.TargetPath < b.TargetPath
+		}
+		if a.TargetSymbol != b.TargetSymbol {
+			return a.TargetSymbol < b.TargetSymbol
+		}
+		return a.Role < b.Role
+	})
+
+	// Re-assign ordinals after sorting
+	for i := range bindings {
+		bindings[i].Ordinal = i + 1
+	}
+
+	return bindings
+}
+
+// docPathFromRecord returns the canonical path key used in binding identity.
+func docPathFromRecord(docPath string, docID string) string {
+	if docPath != "" {
+		return docPath
+	}
+	return docID
+}
+
+
 const ProtocolV1 = "SDD-WIKI-SOURCE-v1"
 
 var (
@@ -30,6 +621,9 @@ type ParsedDoc struct {
 	Blocks          []ParsedBlock
 	Records         []ParsedRecord
 	Mentions        []model.DocMention
+	// SourcePath is the original path supplied to Parse(), used as the
+	// authoritative DocPath for bindings when the author does not supply one.
+	SourcePath string
 }
 
 type ParsedBlock struct {
@@ -56,7 +650,8 @@ type ParsedRecord struct {
 }
 
 func Parse(docPath string, content string, indexedAt int64) ParsedDoc {
-	parsed := ParsedDoc{DocPath: filepath.ToSlash(docPath)}
+	canonicalPath := filepath.ToSlash(docPath)
+	parsed := ParsedDoc{DocPath: canonicalPath, SourcePath: canonicalPath}
 	if !DeclaresSource(content) {
 		return parsed
 	}

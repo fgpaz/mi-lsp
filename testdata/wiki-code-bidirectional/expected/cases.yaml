@@ -1,0 +1,115 @@
+cases:
+  - id: wiki_to_code_direct
+    expect:
+      - resolved_symbol
+      - tests
+    description: "Wiki→codigo: RF-DEMO-001 devuelve direct_code con runDemo resuelto y test"
+    direction: wiki_to_code
+    source: RF-DEMO-001
+    expected_direct:
+      - path: src/demo/service.mjs
+        symbol: runDemo
+        relation: implements
+    expected_tests:
+      - path: test/demo/service.test.mjs
+        relation: tests
+
+  - id: code_to_wiki_reverse
+    expect:
+      - RF-DEMO-001
+      - FL-DEMO-001
+    description: "Codigo→wiki: runDemo devuelve RF-DEMO-001 y FL-DEMO-001 como cadena documental"
+    direction: code_to_wiki
+    selector: runDemo
+
+  - id: helper_supporting_only
+    expect:
+      - supporting_code
+    description: "helper.mjs se clasifica como supporting_code, no como implementacion directa"
+    direction: code_to_wiki
+    selector: src/demo/helper.mjs
+    expected_origin: catalog_observed
+
+  - id: graph_stale
+    expect:
+      - direct_binding_preserved
+    description: "Con graph stale, el binding directo de RF-DEMO-001 sigue disponible"
+    direction: wiki_to_code
+    source: RF-DEMO-001
+    graph_status: stale
+
+  - id: unmapped
+    expect:
+      - unmapped_changed_code
+    description: "unmapped.mjs no tiene binding wiki y se clasifica como unmapped_changed_code"
+    direction: code_to_wiki
+    selector: src/demo/unmapped.mjs
+
+  - id: planned_binding
+    expect:
+      - stored
+      - non_navigable
+    description: "RF-DEMO-PLANNED almacena el binding pero no es navegable"
+    direction: wiki_to_code
+    source: RF-DEMO-PLANNED
+    expected_navigable: false
+
+  - id: retired_exclusion
+    expect:
+      - active_search_excluded
+      - explicit_redirect
+    description: "RF-DEMO-LEGACY se excluye de busquedas activas; lookup por ID devuelve redirect"
+    direction: wiki_to_code
+    source: RF-DEMO-LEGACY
+    lifecycle: retired
+    superseded_by: RF-DEMO-001
+
+  - id: duplicate_doc_id
+    expect:
+      - fail_closed
+    description: "IDs duplicados se rechazan; el fixture basico es valido"
+    note: "generado por acceptance tests T9 desde una mutation temporal, no por el fixture basico"
+
+  - id: ambiguous_symbol
+    expect:
+      - candidates_bounded
+    description: "Dos modulos exportan resolveConflict; el resolver retorna candidatos"
+    direction: code_to_wiki
+    selector: resolveConflict
+    sources:
+      - src/demo/ambiguous-a.mjs
+      - src/demo/ambiguous-b.mjs
+
+  - id: missing_path
+    expect:
+      - missing_path
+    description: "src/demo/does-not-exist.mjs no existe; no se presenta fallback textual como hecho"
+    direction: wiki_to_code
+    source: RF-DEMO-AMBIGUOUS
+    expected_omission:
+      - path: src/demo/does-not-exist.mjs
+        status: missing_path
+
+  - id: decoy_raw_excluded
+    expect:
+      - not_in_evidence
+    description: "Menciones en .docs/raw no se promocionan como evidencia canonica"
+    note: ".docs/raw/decoy.md menciona runDemo y RF-DEMO-001 pero se excluye"
+
+  - id: decoy_audit_excluded
+    expect:
+      - not_in_evidence
+    description: "Menciones en .docs/auditoria no se promocionan como evidencia canonica"
+    note: ".docs/auditoria/decoy.md menciona runDemo y RF-DEMO-001 pero se excluye"
+
+  - id: unsafe_target_excluded
+    expect:
+      - blocked_unsafe
+    description: "Path syntactically unsafe (p.ej. ../../etc/passwd) se rechaza sin crear archivo"
+    note: "se lista como input negativo; el fixture no crea archivos fuera del workspace"
+
+  - id: duplicate_id_rejected
+    expect:
+      - fail_closed
+    description: "IDs duplicados son un fallo de validacion; el fixture basico no tiene duplicados"
+    note: "las mutaciones temporales en T9 generan duplicados para probar fail_closed"

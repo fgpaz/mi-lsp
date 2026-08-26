@@ -42,12 +42,12 @@ type IncrementalFileChange struct {
 
 // ReplaceWorkspaceIndex is the foreground, no-job publication path. It has no
 // ownership capability by design; job workers must use ReplaceWorkspaceIndexForJob.
-func ReplaceWorkspaceIndex(ctx context.Context, db *sql.DB, generationID string, project model.ProjectFile, files []model.FileRecord, symbols []model.SymbolRecord, docs []model.DocRecord, edges []model.DocEdge, mentions []model.DocMention, sourceBlocks []model.DocSourceBlock, sourceRecords []model.DocSourceRecord, snapshot model.ReentryMemorySnapshot) error {
+func ReplaceWorkspaceIndex(ctx context.Context, db *sql.DB, generationID string, project model.ProjectFile, files []model.FileRecord, symbols []model.SymbolRecord, docs []model.DocRecord, edges []model.DocEdge, mentions []model.DocMention, sourceBlocks []model.DocSourceBlock, sourceRecords []model.DocSourceRecord, bindings []model.DocArtifactBinding, snapshot model.ReentryMemorySnapshot) error {
 	return publishForeground(ctx, db, func(tx *sql.Tx) error {
 		if err := replaceCatalogTx(ctx, tx, project, files, symbols); err != nil {
 			return err
 		}
-		if err := replaceDocsWithSourcesTx(ctx, tx, docs, edges, mentions, sourceBlocks, sourceRecords); err != nil {
+		if err := replaceDocsWithSourcesTx(ctx, tx, docs, edges, mentions, sourceBlocks, sourceRecords, bindings); err != nil {
 			return err
 		}
 		if err := saveReentrySnapshot(ctx, tx, snapshot); err != nil {
@@ -60,12 +60,12 @@ func ReplaceWorkspaceIndex(ctx context.Context, db *sql.DB, generationID string,
 // ReplaceWorkspaceIndexForJob is the fenced full-index publication path. The
 // owner/state/cancellation CAS, index pointers, and optional graph pointer are
 // committed or rolled back together.
-func ReplaceWorkspaceIndexForJob(ctx context.Context, db *sql.DB, jobID, generationID string, project model.ProjectFile, files []model.FileRecord, symbols []model.SymbolRecord, docs []model.DocRecord, edges []model.DocEdge, mentions []model.DocMention, sourceBlocks []model.DocSourceBlock, sourceRecords []model.DocSourceRecord, snapshot model.ReentryMemorySnapshot, fence IndexJobFence, graph *IndexJobGraphPublication) error {
+func ReplaceWorkspaceIndexForJob(ctx context.Context, db *sql.DB, jobID, generationID string, project model.ProjectFile, files []model.FileRecord, symbols []model.SymbolRecord, docs []model.DocRecord, edges []model.DocEdge, mentions []model.DocMention, sourceBlocks []model.DocSourceBlock, sourceRecords []model.DocSourceRecord, bindings []model.DocArtifactBinding, snapshot model.ReentryMemorySnapshot, fence IndexJobFence, graph *IndexJobGraphPublication) error {
 	return publishOwned(ctx, db, jobID, generationID, "full", len(files), len(symbols), len(docs), fence, graph, func(tx *sql.Tx) error {
 		if err := replaceCatalogTx(ctx, tx, project, files, symbols); err != nil {
 			return err
 		}
-		if err := replaceDocsWithSourcesTx(ctx, tx, docs, edges, mentions, sourceBlocks, sourceRecords); err != nil {
+		if err := replaceDocsWithSourcesTx(ctx, tx, docs, edges, mentions, sourceBlocks, sourceRecords, bindings); err != nil {
 			return err
 		}
 		return saveReentrySnapshot(ctx, tx, snapshot)
@@ -73,9 +73,9 @@ func ReplaceWorkspaceIndexForJob(ctx context.Context, db *sql.DB, jobID, generat
 }
 
 // ReplaceWorkspaceDocs is the foreground, no-job docs publication path.
-func ReplaceWorkspaceDocs(ctx context.Context, db *sql.DB, generationID string, docs []model.DocRecord, edges []model.DocEdge, mentions []model.DocMention, sourceBlocks []model.DocSourceBlock, sourceRecords []model.DocSourceRecord, snapshot model.ReentryMemorySnapshot) error {
+func ReplaceWorkspaceDocs(ctx context.Context, db *sql.DB, generationID string, docs []model.DocRecord, edges []model.DocEdge, mentions []model.DocMention, sourceBlocks []model.DocSourceBlock, sourceRecords []model.DocSourceRecord, bindings []model.DocArtifactBinding, snapshot model.ReentryMemorySnapshot) error {
 	return publishForeground(ctx, db, func(tx *sql.Tx) error {
-		if err := replaceDocsWithSourcesTx(ctx, tx, docs, edges, mentions, sourceBlocks, sourceRecords); err != nil {
+		if err := replaceDocsWithSourcesTx(ctx, tx, docs, edges, mentions, sourceBlocks, sourceRecords, bindings); err != nil {
 			return err
 		}
 		if err := saveReentrySnapshot(ctx, tx, snapshot); err != nil {
@@ -86,9 +86,9 @@ func ReplaceWorkspaceDocs(ctx context.Context, db *sql.DB, generationID string, 
 }
 
 // ReplaceWorkspaceDocsForJob is the fenced docs publication path.
-func ReplaceWorkspaceDocsForJob(ctx context.Context, db *sql.DB, jobID, generationID string, docs []model.DocRecord, edges []model.DocEdge, mentions []model.DocMention, sourceBlocks []model.DocSourceBlock, sourceRecords []model.DocSourceRecord, snapshot model.ReentryMemorySnapshot, fence IndexJobFence, graph *IndexJobGraphPublication) error {
+func ReplaceWorkspaceDocsForJob(ctx context.Context, db *sql.DB, jobID, generationID string, docs []model.DocRecord, edges []model.DocEdge, mentions []model.DocMention, sourceBlocks []model.DocSourceBlock, sourceRecords []model.DocSourceRecord, bindings []model.DocArtifactBinding, snapshot model.ReentryMemorySnapshot, fence IndexJobFence, graph *IndexJobGraphPublication) error {
 	return publishOwned(ctx, db, jobID, generationID, "docs", 0, 0, len(docs), fence, graph, func(tx *sql.Tx) error {
-		if err := replaceDocsWithSourcesTx(ctx, tx, docs, edges, mentions, sourceBlocks, sourceRecords); err != nil {
+		if err := replaceDocsWithSourcesTx(ctx, tx, docs, edges, mentions, sourceBlocks, sourceRecords, bindings); err != nil {
 			return err
 		}
 		return saveReentrySnapshot(ctx, tx, snapshot)

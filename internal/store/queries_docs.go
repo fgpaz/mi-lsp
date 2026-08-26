@@ -11,7 +11,7 @@ import (
 )
 
 func ReplaceDocs(ctx context.Context, db *sql.DB, docs []model.DocRecord, edges []model.DocEdge, mentions []model.DocMention) error {
-	return ReplaceDocsWithSources(ctx, db, docs, edges, mentions, nil, nil)
+	return ReplaceDocsWithSources(ctx, db, docs, edges, mentions, nil, nil, nil)
 }
 
 // DocContentHashes returns path -> content_hash for the current docs snapshot.
@@ -36,7 +36,7 @@ func DocContentHashes(ctx context.Context, db *sql.DB) (map[string]string, error
 	return out, rows.Err()
 }
 
-func ReplaceDocsWithSources(ctx context.Context, db *sql.DB, docs []model.DocRecord, edges []model.DocEdge, mentions []model.DocMention, sourceBlocks []model.DocSourceBlock, sourceRecords []model.DocSourceRecord) error {
+func ReplaceDocsWithSources(ctx context.Context, db *sql.DB, docs []model.DocRecord, edges []model.DocEdge, mentions []model.DocMention, sourceBlocks []model.DocSourceBlock, sourceRecords []model.DocSourceRecord, bindings []model.DocArtifactBinding) error {
 	if unchanged, err := docsSnapshotUnchanged(ctx, db, docs); err != nil {
 		return err
 	} else if unchanged {
@@ -49,7 +49,7 @@ func ReplaceDocsWithSources(ctx context.Context, db *sql.DB, docs []model.DocRec
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	if err := replaceDocsWithSourcesTx(ctx, tx, docs, edges, mentions, sourceBlocks, sourceRecords); err != nil {
+	if err := replaceDocsWithSourcesTx(ctx, tx, docs, edges, mentions, sourceBlocks, sourceRecords, bindings); err != nil {
 		return err
 	}
 	return tx.Commit()
@@ -69,15 +69,39 @@ func docsSnapshotUnchanged(ctx context.Context, db *sql.DB, docs []model.DocReco
 			return false, nil
 		}
 	}
+	// Also check that source blocks and bindings are not stale.
+	// If doc_records are unchanged, source blocks and bindings must also be
+	// present (they are always re-published alongside docs). A zero-length
+	// sources/blocks/binds list on an otherwise identical docs snapshot means
+	// an index run that produced nothing (e.g. no wiki-source protocol), which
+	// counts as changed.
+	blocks, err := ListDocSourceBlocks(ctx, db)
+	if err != nil {
+		return false, err
+	}
+	if len(blocks) == 0 {
+		// If we expected docs, a zero-blocks state may indicate drift.
+		// Conservatively report changed.
+		if len(docs) > 0 {
+			return false, nil
+		}
+	}
+	bindings, err := ListDocArtifactBindings(ctx, db)
+	if err != nil {
+		return false, err
+	}
+	if len(bindings) == 0 && len(docs) > 0 {
+		return false, nil
+	}
 	return true, nil
 }
 
 func replaceDocsTx(ctx context.Context, tx *sql.Tx, docs []model.DocRecord, edges []model.DocEdge, mentions []model.DocMention) error {
-	return replaceDocsWithSourcesTx(ctx, tx, docs, edges, mentions, nil, nil)
+	return replaceDocsWithSourcesTx(ctx, tx, docs, edges, mentions, nil, nil, nil)
 }
 
-func replaceDocsWithSourcesTx(ctx context.Context, tx *sql.Tx, docs []model.DocRecord, edges []model.DocEdge, mentions []model.DocMention, sourceBlocks []model.DocSourceBlock, sourceRecords []model.DocSourceRecord) error {
-	for _, table := range []string{"doc_source_records", "doc_source_blocks", "doc_mentions", "doc_edges", "doc_records"} {
+func replaceDocsWithSourcesTx(ctx context.Context, tx *sql.Tx, docs []model.DocRecord, edges []model.DocEdge, mentions []model.DocMention, sourceBlocks []model.DocSourceBlock, sourceRecords []model.DocSourceRecord, bindings []model.DocArtifactBinding) error {
+	for _, table := range []string{"doc_artifact_bindings", "doc_source_records", "doc_source_blocks", "doc_mentions", "doc_edges", "doc_records"} {
 		if _, err := tx.ExecContext(ctx, "DELETE FROM "+table); err != nil {
 			return err
 		}
@@ -158,6 +182,22 @@ func replaceDocsWithSourcesTx(ctx context.Context, tx *sql.Tx, docs []model.DocR
 		defer stmt.Close()
 		for _, record := range sourceRecords {
 			if _, err := stmt.ExecContext(ctx, record.DocPath, record.BlockID, record.RecordID, record.RecordType, record.Ordinal, record.StartLine, record.EndLine, record.ContentHash, record.IndexedAt); err != nil {
+				return err
+			}
+		}
+	}
+
+	if len(bindings) > 0 {
+		stmt, err := tx.PrepareContext(ctx, `
+			INSERT OR REPLACE INTO doc_artifact_bindings(doc_path, block_id, doc_id, relation, role, target_path, target_symbol, target_kind, authoring_origin, binding_status, doc_lifecycle, superseded_by, ordinal, start_line, end_line, source_content_hash, binding_ref, indexed_at)
+			VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		`)
+		if err != nil {
+			return err
+		}
+		defer stmt.Close()
+		for _, binding := range bindings {
+			if _, err := stmt.ExecContext(ctx, binding.DocPath, binding.BlockID, binding.DocID, binding.Relation, binding.Role, binding.TargetPath, binding.TargetSymbol, binding.TargetKind, binding.AuthoringOrigin, binding.BindingStatus, binding.DocLifecycle, binding.SupersededBy, binding.Ordinal, binding.StartLine, binding.EndLine, binding.SourceContentHash, binding.BindingRef, binding.IndexedAt); err != nil {
 				return err
 			}
 		}
@@ -553,4 +593,203 @@ func VerifySymbolExists(ctx context.Context, db *sql.DB, filePath string, symbol
 		return model.SymbolRecord{}, false, err
 	}
 	return item, true, nil
+}
+
+// ListDocArtifactBindings returns all active bindings for diagnostics use.
+func ListDocArtifactBindings(ctx context.Context, db *sql.DB) ([]model.DocArtifactBinding, error) {
+	rows, err := QueryContextWithRetry(ctx, db, `
+		SELECT doc_path, block_id, doc_id, relation, role, target_path, target_symbol, target_kind,
+		       authoring_origin, binding_status, doc_lifecycle, superseded_by, ordinal, start_line, end_line,
+		       source_content_hash, binding_ref, indexed_at
+		FROM doc_artifact_bindings
+		ORDER BY doc_path ASC, ordinal ASC, target_path ASC
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := make([]model.DocArtifactBinding, 0)
+	for rows.Next() {
+		var item model.DocArtifactBinding
+		if err := rows.Scan(&item.DocPath, &item.BlockID, &item.DocID, &item.Relation, &item.Role,
+			&item.TargetPath, &item.TargetSymbol, &item.TargetKind, &item.AuthoringOrigin,
+			&item.BindingStatus, &item.DocLifecycle, &item.SupersededBy, &item.Ordinal,
+			&item.StartLine, &item.EndLine, &item.SourceContentHash, &item.BindingRef, &item.IndexedAt); err != nil {
+			return nil, err
+		}
+		items = append(items, item)
+	}
+	return items, rows.Err()
+}
+
+// BindingsForDoc returns bindings for specific document paths.
+func BindingsForDoc(ctx context.Context, db *sql.DB, docPaths []string) ([]model.DocArtifactBinding, error) {
+	if len(docPaths) == 0 {
+		return nil, nil
+	}
+	args := make([]any, 0, len(docPaths))
+	clauses := make([]string, 0, len(docPaths))
+	for _, p := range docPaths {
+		clauses = append(clauses, "doc_path = ?")
+		args = append(args, p)
+	}
+	rows, err := QueryContextWithRetry(ctx, db, `SELECT doc_path, block_id, doc_id, relation, role, target_path, target_symbol, target_kind,
+		authoring_origin, binding_status, doc_lifecycle, superseded_by, ordinal, start_line, end_line,
+		source_content_hash, binding_ref, indexed_at
+		FROM doc_artifact_bindings WHERE `+strings.Join(clauses, " OR ")+`
+		ORDER BY doc_path ASC, ordinal ASC`, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := make([]model.DocArtifactBinding, 0)
+	for rows.Next() {
+		var item model.DocArtifactBinding
+		if err := rows.Scan(&item.DocPath, &item.BlockID, &item.DocID, &item.Relation, &item.Role,
+			&item.TargetPath, &item.TargetSymbol, &item.TargetKind, &item.AuthoringOrigin,
+			&item.BindingStatus, &item.DocLifecycle, &item.SupersededBy, &item.Ordinal,
+			&item.StartLine, &item.EndLine, &item.SourceContentHash, &item.BindingRef, &item.IndexedAt); err != nil {
+			return nil, err
+		}
+		items = append(items, item)
+	}
+	return items, rows.Err()
+}
+
+// BindingsForDocBlock returns bindings for a specific doc_path and block_id.
+func BindingsForDocBlock(ctx context.Context, db *sql.DB, docPath string, blockID string) ([]model.DocArtifactBinding, error) {
+	rows, err := QueryContextWithRetry(ctx, db, `
+		SELECT doc_path, block_id, doc_id, relation, role, target_path, target_symbol, target_kind,
+		       authoring_origin, binding_status, doc_lifecycle, superseded_by, ordinal, start_line, end_line,
+		       source_content_hash, binding_ref, indexed_at
+		FROM doc_artifact_bindings
+		WHERE doc_path = ? AND block_id = ?
+		ORDER BY ordinal ASC
+	`, docPath, blockID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := make([]model.DocArtifactBinding, 0)
+	for rows.Next() {
+		var item model.DocArtifactBinding
+		if err := rows.Scan(&item.DocPath, &item.BlockID, &item.DocID, &item.Relation, &item.Role,
+			&item.TargetPath, &item.TargetSymbol, &item.TargetKind, &item.AuthoringOrigin,
+			&item.BindingStatus, &item.DocLifecycle, &item.SupersededBy, &item.Ordinal,
+			&item.StartLine, &item.EndLine, &item.SourceContentHash, &item.BindingRef, &item.IndexedAt); err != nil {
+			return nil, err
+		}
+		items = append(items, item)
+	}
+	return items, rows.Err()
+}
+
+// BindingsForTarget returns wiki bindings for an exact target path and optional symbol.
+func BindingsForTarget(ctx context.Context, db *sql.DB, targetPath string, targetSymbol string) ([]model.DocArtifactBinding, error) {
+	if targetSymbol != "" {
+		rows, err := QueryContextWithRetry(ctx, db, `
+			SELECT doc_path, block_id, doc_id, relation, role, target_path, target_symbol, target_kind,
+			       authoring_origin, binding_status, doc_lifecycle, superseded_by, ordinal, start_line, end_line,
+			       source_content_hash, binding_ref, indexed_at
+			FROM doc_artifact_bindings
+			WHERE target_path = ? AND target_symbol = ?
+			ORDER BY relation ASC, doc_path ASC
+		`, targetPath, targetSymbol)
+		if err != nil {
+			return nil, err
+		}
+		defer rows.Close()
+		items := make([]model.DocArtifactBinding, 0)
+		for rows.Next() {
+			var item model.DocArtifactBinding
+			if err := rows.Scan(&item.DocPath, &item.BlockID, &item.DocID, &item.Relation, &item.Role,
+				&item.TargetPath, &item.TargetSymbol, &item.TargetKind, &item.AuthoringOrigin,
+				&item.BindingStatus, &item.DocLifecycle, &item.SupersededBy, &item.Ordinal,
+				&item.StartLine, &item.EndLine, &item.SourceContentHash, &item.BindingRef, &item.IndexedAt); err != nil {
+				return nil, err
+			}
+			items = append(items, item)
+		}
+		return items, rows.Err()
+	}
+	rows, err := QueryContextWithRetry(ctx, db, `
+		SELECT doc_path, block_id, doc_id, relation, role, target_path, target_symbol, target_kind,
+		       authoring_origin, binding_status, doc_lifecycle, superseded_by, ordinal, start_line, end_line,
+		       source_content_hash, binding_ref, indexed_at
+		FROM doc_artifact_bindings
+		WHERE target_path = ?
+		ORDER BY relation ASC, doc_path ASC
+	`, targetPath)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := make([]model.DocArtifactBinding, 0)
+	for rows.Next() {
+		var item model.DocArtifactBinding
+		if err := rows.Scan(&item.DocPath, &item.BlockID, &item.DocID, &item.Relation, &item.Role,
+			&item.TargetPath, &item.TargetSymbol, &item.TargetKind, &item.AuthoringOrigin,
+			&item.BindingStatus, &item.DocLifecycle, &item.SupersededBy, &item.Ordinal,
+			&item.StartLine, &item.EndLine, &item.SourceContentHash, &item.BindingRef, &item.IndexedAt); err != nil {
+			return nil, err
+		}
+		items = append(items, item)
+	}
+	return items, rows.Err()
+}
+
+// BindingsForDocID returns bindings by old doc ID (historical lookup).
+func BindingsForDocID(ctx context.Context, db *sql.DB, docID string) ([]model.DocArtifactBinding, error) {
+	rows, err := QueryContextWithRetry(ctx, db, `
+		SELECT doc_path, block_id, doc_id, relation, role, target_path, target_symbol, target_kind,
+		       authoring_origin, binding_status, doc_lifecycle, superseded_by, ordinal, start_line, end_line,
+		       source_content_hash, binding_ref, indexed_at
+		FROM doc_artifact_bindings
+		WHERE doc_id = ?
+		ORDER BY doc_path ASC, ordinal ASC
+	`, docID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := make([]model.DocArtifactBinding, 0)
+	for rows.Next() {
+		var item model.DocArtifactBinding
+		if err := rows.Scan(&item.DocPath, &item.BlockID, &item.DocID, &item.Relation, &item.Role,
+			&item.TargetPath, &item.TargetSymbol, &item.TargetKind, &item.AuthoringOrigin,
+			&item.BindingStatus, &item.DocLifecycle, &item.SupersededBy, &item.Ordinal,
+			&item.StartLine, &item.EndLine, &item.SourceContentHash, &item.BindingRef, &item.IndexedAt); err != nil {
+			return nil, err
+		}
+		items = append(items, item)
+	}
+	return items, rows.Err()
+}
+
+// BindingsForRelationKind returns bindings filtered by relation and target_kind for diagnostics only.
+func BindingsForRelationKind(ctx context.Context, db *sql.DB, relation string, targetKind string) ([]model.DocArtifactBinding, error) {
+	rows, err := QueryContextWithRetry(ctx, db, `
+		SELECT doc_path, block_id, doc_id, relation, role, target_path, target_symbol, target_kind,
+		       authoring_origin, binding_status, doc_lifecycle, superseded_by, ordinal, start_line, end_line,
+		       source_content_hash, binding_ref, indexed_at
+		FROM doc_artifact_bindings
+		WHERE relation = ? AND target_kind = ?
+		ORDER BY doc_path ASC, ordinal ASC
+	`, relation, targetKind)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := make([]model.DocArtifactBinding, 0)
+	for rows.Next() {
+		var item model.DocArtifactBinding
+		if err := rows.Scan(&item.DocPath, &item.BlockID, &item.DocID, &item.Relation, &item.Role,
+			&item.TargetPath, &item.TargetSymbol, &item.TargetKind, &item.AuthoringOrigin,
+			&item.BindingStatus, &item.DocLifecycle, &item.SupersededBy, &item.Ordinal,
+			&item.StartLine, &item.EndLine, &item.SourceContentHash, &item.BindingRef, &item.IndexedAt); err != nil {
+			return nil, err
+		}
+		items = append(items, item)
+	}
+	return items, rows.Err()
 }
