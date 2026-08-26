@@ -9,10 +9,12 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/fgpaz/mi-lsp/internal/docgraph"
 	"github.com/fgpaz/mi-lsp/internal/language"
 	"github.com/fgpaz/mi-lsp/internal/model"
 	"github.com/fgpaz/mi-lsp/internal/processutil"
@@ -123,11 +125,19 @@ func gitChangedFiles(ctx context.Context, workspaceRoot string) (changed []strin
 			continue
 		}
 		filePath = filepath.ToSlash(filePath)
+		if strings.Contains(filePath, " -> ") && (strings.Contains(status, "R") || strings.Contains(status, "C")) {
+			parts := strings.SplitN(filePath, " -> ", 2)
+			if len(parts) == 2 {
+				deleted = append(deleted, filepath.ToSlash(strings.TrimSpace(parts[0])))
+				changed = append(changed, filepath.ToSlash(strings.TrimSpace(parts[1])))
+				continue
+			}
+		}
 
 		switch status {
-		case " M", "M ", "MM", "A ", " A", "AA", "??":
+		case " M", "M ", "MM", "A ", " A", "AA", "??", "R ", " R", "RM", "RC", "C ", " C":
 			changed = append(changed, filePath)
-		case " D", "D ", "DD":
+		case " D", "D ", "DD", "RD", "DR":
 			deleted = append(deleted, filePath)
 		}
 	}
@@ -156,6 +166,391 @@ func IncrementalIndexWithGraphProgressForJob(ctx context.Context, workspaceRoot,
 
 func incrementalIndexWithGraphProgress(ctx context.Context, workspaceRoot, generationID string, progress ProgressFunc, graphOptions GraphIndexOptions, publication *IndexJobPublication) (Result, error) {
 	started := time.Now()
+	if err := ctx.Err(); err != nil {
+		return Result{}, err
+	}
+	indexPath := filepath.Join(workspaceRoot, ".mi-lsp", "index.db")
+	if _, err := os.Stat(indexPath); err != nil {
+		return Result{}, fmt.Errorf("index.db not found; fallback to full index")
+	}
+	if err := ctx.Err(); err != nil {
+		return Result{}, err
+	}
+	needsRecovery, err := docIndexNeedsRecovery(ctx, workspaceRoot)
+	if err != nil {
+		return Result{}, err
+	}
+	if needsRecovery {
+		return Result{}, fmt.Errorf("canonical docs missing from index; fallback to full index")
+	}
+
+	changedFiles, deletedFiles := gitChangedFiles(ctx, workspaceRoot)
+	if err := ctx.Err(); err != nil {
+		return Result{}, err
+	}
+	hasChanges := len(changedFiles) != 0 || len(deletedFiles) != 0
+	if requiresFullReindex(changedFiles) || requiresFullReindex(deletedFiles) {
+		return Result{}, fmt.Errorf("governance/read-model/config changed; fallback to full index")
+	}
+
+	var docChangedPaths, docDeletedPaths, codeChangedPaths, codeDeletedPaths []string
+	for _, path := range changedFiles {
+		if isDocPath(path) {
+			docChangedPaths = append(docChangedPaths, path)
+		} else {
+			codeChangedPaths = append(codeChangedPaths, path)
+		}
+	}
+	for _, path := range deletedFiles {
+		if isDocPath(path) {
+			docDeletedPaths = append(docDeletedPaths, path)
+		} else {
+			codeDeletedPaths = append(codeDeletedPaths, path)
+		}
+	}
+	hasDocChanges := len(docChangedPaths) > 0 || len(docDeletedPaths) > 0
+	hasCodeChanges := len(codeChangedPaths) > 0 || len(codeDeletedPaths) > 0
+	if strings.TrimSpace(generationID) == "" && (hasDocChanges || hasCodeChanges) {
+		generationID = fmt.Sprintf("idxgen-incremental-%d", time.Now().UnixNano())
+	}
+
+	registration, err := workspace.DetectWorkspace(workspaceRoot)
+	if err != nil {
+		if !hasChanges {
+			return Result{GraphNotApplicable: true, Warnings: []string{"incremental: no supported graph workspace detected"}, Stats: model.Stats{Ms: time.Since(started).Milliseconds()}}, nil
+		}
+		return Result{}, fmt.Errorf("detect workspace: %w", err)
+	}
+	projectFile, err := workspace.LoadProjectTopology(workspaceRoot, registration)
+	if err != nil {
+		return Result{}, fmt.Errorf("load project: %w", err)
+	}
+	matcher, err := workspace.LoadIgnoreMatcher(workspaceRoot, projectFile.Ignore.ExtraPatterns)
+	if err != nil {
+		return Result{}, fmt.Errorf("load ignore matcher: %w", err)
+	}
+
+	var graphBatches []model.GraphObservationBatch
+	var graphOmissions []model.GraphObservationOmission
+	var graphWarnings []string
+	var docs []model.DocRecord
+	var docEdges []model.DocEdge
+	var docMentions []model.DocMention
+	graphRepair, catalogGeneration, err := incrementalGraphRepairState(ctx, workspaceRoot, hasCodeChanges)
+	if err != nil {
+		return Result{}, err
+	}
+	// A document mutation invalidates the graph facts used by observation. Do
+	// not observe or publish a graph until a later run sees the final docs.
+	observeGraph := graphRepair && !hasDocChanges
+	if observeGraph {
+		db, err := store.Open(workspaceRoot)
+		if err != nil {
+			return Result{}, fmt.Errorf("open database for graph facts: %w", err)
+		}
+		docs, docEdges, docMentions, err = loadIncrementalGraphFacts(ctx, db)
+		_ = db.Close()
+		if err != nil {
+			return Result{}, err
+		}
+		graphBatches, graphOmissions, graphWarnings, err = ObserveGraph(ctx, workspaceRoot, projectFile, graphOptions, progress)
+		if err != nil {
+			if publication == nil {
+				if staleErr := markIncrementalGraphStale(ctx, workspaceRoot); staleErr != nil {
+					return Result{}, fmt.Errorf("incremental graph observation failed: %w; mark graph stale: %v", err, staleErr)
+				}
+			}
+			return Result{}, fmt.Errorf("incremental graph observation failed: %w", err)
+		}
+		if len(graphBatches) == 0 && !explicitlyNonGraphProject(projectFile) {
+			graphWarnings = append(graphWarnings, "graph observation produced no stageable complete batch; publishing catalog with graph stale")
+		}
+	}
+
+	processedFiles := 0
+	skippedFiles := 0
+	processedDocs := 0
+	var allSymbols []model.SymbolRecord
+	var fileChanges []store.IncrementalFileChange
+	var docChanges []store.IncrementalDocChange
+	var graphGeneration model.GraphGeneration
+	graphCurrent := !hasDocChanges && !graphRepair
+	graphNotApplicable := false
+	var jobGraphPublication *store.IndexJobGraphPublication
+
+	if err := store.WithWorkspaceWriteLock(workspaceRoot, func() error {
+		db, err := store.Open(workspaceRoot)
+		if err != nil {
+			return fmt.Errorf("open database: %w", err)
+		}
+		defer db.Close()
+
+		for _, relPath := range codeChangedPaths {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+			absPath := filepath.Join(workspaceRoot, filepath.FromSlash(relPath))
+			if matcher.ShouldIgnore(workspaceRoot, absPath) {
+				skippedFiles++
+				continue
+			}
+			if languageFromExt(strings.ToLower(filepath.Ext(relPath))) == "" {
+				skippedFiles++
+				continue
+			}
+			content, readErr := os.ReadFile(absPath)
+			if readErr != nil {
+				graphWarnings = append(graphWarnings, fmt.Sprintf("code read failed for %s: %v", relPath, readErr))
+				skippedFiles++
+				continue
+			}
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+			symbols, language, extractErr := ExtractFileSymbols(workspaceRoot, relPath, "", "")
+			if extractErr != nil {
+				return fmt.Errorf("extract symbols for %s: %w", relPath, extractErr)
+			}
+			repoID, repoName := ResolveRepoFromProjectFile(workspaceRoot, projectFile, relPath)
+			fileChanges = append(fileChanges, store.IncrementalFileChange{
+				FilePath: relPath, RepoID: repoID, RepoName: repoName, Language: language,
+				ContentHash: fmt.Sprintf("%x", md5.Sum(content)), Symbols: symbols,
+			})
+			allSymbols = append(allSymbols, symbols...)
+			processedFiles++
+		}
+		for _, relPath := range codeDeletedPaths {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+			if languageFromExt(strings.ToLower(filepath.Ext(relPath))) == "" {
+				continue
+			}
+			fileChanges = append(fileChanges, store.IncrementalFileChange{FilePath: relPath, Deleted: true})
+			processedFiles++
+		}
+
+		if hasDocChanges {
+			docsResult, reconcileErr := ReconcileDocs(ctx, workspaceRoot)
+			if reconcileErr != nil {
+				return fmt.Errorf("reconcile docs: %w", reconcileErr)
+			}
+			graphWarnings = append(graphWarnings, docsResult.Warnings...)
+			for _, path := range docsResult.ExcludedAlive {
+				graphWarnings = append(graphWarnings, fmt.Sprintf("doc excluded: %s", path))
+			}
+			for _, path := range docsResult.Concurrent {
+				graphWarnings = append(graphWarnings, fmt.Sprintf("doc concurrent change: %s", path))
+			}
+			profile, _, profileWarnings := docgraph.LoadProfile(workspaceRoot)
+			graphWarnings = append(graphWarnings, profileWarnings...)
+			replacePaths := append([]string(nil), docsResult.New...)
+			replacePaths = append(replacePaths, docsResult.Changed...)
+			pending, buildWarnings := buildDocChangesContext(ctx, workspaceRoot, replacePaths, model.ParserVersion, docsResult.AuthorityConfigHash, docsResult.StoredStates)
+			graphWarnings = append(graphWarnings, buildWarnings...)
+			parsedReplacements := make([]store.IncrementalDocChange, 0, len(pending))
+			for _, change := range pending {
+				if err := ctx.Err(); err != nil {
+					return err
+				}
+				parsedDoc, parsedEdges, parsedMentions, parsedBlocks, parsedRecords, parsedBindings, warning, parseErr := docgraph.ParseSingleDoc(workspaceRoot, change.Path, change.Content, profile)
+				if warning != "" {
+					graphWarnings = append(graphWarnings, fmt.Sprintf("doc parse warning for %s: %s", change.Path, warning))
+				}
+				if parseErr != nil {
+					graphWarnings = append(graphWarnings, fmt.Sprintf("doc parse failed for %s: %v", change.Path, parseErr))
+					continue
+				}
+				if change.State == nil || change.State.ContentSHA256 == "" || change.State.ContentSHA256 != stableContentSHA256(change.Content) {
+					graphWarnings = append(graphWarnings, fmt.Sprintf("doc parse failed for %s: stable content hash mismatch", change.Path))
+					continue
+				}
+				change.Doc = &parsedDoc
+				change.Edges = parsedEdges
+				change.Mentions = parsedMentions
+				change.Blocks = parsedBlocks
+				change.Records = parsedRecords
+				change.Bindings = parsedBindings
+				change.State.Lifecycle = lifecycleFromBindings(parsedBindings, change.State.Lifecycle)
+				parsedReplacements = append(parsedReplacements, change)
+			}
+
+			deletePaths := make(map[string]struct{}, len(docsResult.Deleted))
+			for _, path := range docsResult.Deleted {
+				if err := ctx.Err(); err != nil {
+					return err
+				}
+				absPath := filepath.Join(workspaceRoot, filepath.FromSlash(path))
+				info, statErr := os.Lstat(absPath)
+				if statErr == nil && info != nil {
+					graphWarnings = append(graphWarnings, fmt.Sprintf("doc deletion skipped for %s: disk still present (no positive proof)", path))
+					continue
+				}
+				if !os.IsNotExist(statErr) {
+					graphWarnings = append(graphWarnings, fmt.Sprintf("doc deletion skipped for %s: cannot prove disk absence: %v", path, statErr))
+					continue
+				}
+				deletePaths[path] = struct{}{}
+			}
+
+			replacementPaths := make(map[string]struct{}, len(parsedReplacements))
+			for _, change := range parsedReplacements {
+				replacementPaths[change.Path] = struct{}{}
+			}
+			for path := range replacementPaths {
+				delete(deletePaths, path)
+			}
+			if len(parsedReplacements) > 0 || len(deletePaths) > 0 {
+				existingDocs, existingEdges, _, factsErr := loadIncrementalGraphFacts(ctx, db)
+				if factsErr != nil {
+					return factsErr
+				}
+				effective := make([]model.DocRecord, 0, len(existingDocs)+len(parsedReplacements))
+				for _, doc := range existingDocs {
+					if doc.IsSnapshot {
+						continue
+					}
+					if state, ok := docsResult.StoredStates[doc.Path]; ok && state.Lifecycle == model.DocLifecycleRetired {
+						continue
+					}
+					if _, deleted := deletePaths[doc.Path]; deleted {
+						continue
+					}
+					if _, replaced := replacementPaths[doc.Path]; replaced {
+						continue
+					}
+					effective = append(effective, doc)
+				}
+				for _, change := range parsedReplacements {
+					effective = append(effective, *change.Doc)
+				}
+				sort.Slice(effective, func(i, j int) bool { return effective[i].Path < effective[j].Path })
+				rawEdges := make([]model.DocEdge, 0)
+				for _, change := range parsedReplacements {
+					rawEdges = append(rawEdges, change.Edges...)
+				}
+				// Existing edges are intentionally not re-published here: only
+				// outgoing edges owned by changed documents may be replaced.
+				_ = existingEdges
+				resolved := docgraph.ResolveDocEdges(effective, rawEdges, profile)
+				byOwner := make(map[string][]model.DocEdge, len(replacementPaths))
+				for _, edge := range resolved {
+					if _, changed := replacementPaths[edge.FromPath]; changed {
+						byOwner[edge.FromPath] = append(byOwner[edge.FromPath], edge)
+					}
+				}
+				for i := range parsedReplacements {
+					parsedReplacements[i].Edges = byOwner[parsedReplacements[i].Path]
+				}
+			}
+			docChanges = append(docChanges, parsedReplacements...)
+			deleteKeys := make([]string, 0, len(deletePaths))
+			for path := range deletePaths {
+				deleteKeys = append(deleteKeys, path)
+			}
+			sort.Strings(deleteKeys)
+			for _, path := range deleteKeys {
+				docChanges = append(docChanges, store.IncrementalDocChange{Action: "delete", Path: path, Proof: "disk-absent"})
+			}
+			processedDocs = len(parsedReplacements)
+		}
+
+		if observeGraph && len(graphBatches) != 0 {
+			prior, ok, priorErr := store.ActiveGraphGeneration(ctx, db)
+			if priorErr != nil {
+				return priorErr
+			}
+			var expectedPrior *model.GraphDigest
+			if ok {
+				expectedPrior = &prior
+			}
+			if err := reportProgress(ctx, progress, Progress{Stage: "graph.activate", Files: processedFiles, Symbols: len(allSymbols), Docs: len(docs), Force: true}); err != nil {
+				return err
+			}
+			request := GraphAssemblyRequest{Batches: graphBatches, Docs: docs, DocEdges: docEdges, DocMentions: docMentions, CreatedAt: time.Now().UTC()}
+			bundle, assembleErr := AssembleGraphObservationBatches(request)
+			if assembleErr != nil {
+				return fmt.Errorf("incremental graph staging failed: %w", assembleErr)
+			}
+			graphGeneration = bundle.Generation
+			jobGraphPublication = &store.IndexJobGraphPublication{GenerationID: &bundle.Generation.GenerationID, ExpectedPrior: expectedPrior, PublishedAt: request.CreatedAt, GraphCurrent: true, GraphBundle: &bundle, CatalogGeneration: catalogGeneration}
+			graphCurrent = true
+		} else if observeGraph {
+			graphNotApplicable = true
+			graphCurrent = false
+		}
+
+		hasFileMutation := len(fileChanges) != 0
+		hasDocMutation := len(docChanges) != 0
+		if publication != nil {
+			switch {
+			case hasDocChanges && hasFileMutation:
+				return store.PublishIncrementalGenerationForJobWithFileAndDocChanges(ctx, db, publication.JobID, generationID, processedFiles, len(allSymbols), processedDocs, publication.Fence, fileChanges, docChanges)
+			case hasDocMutation:
+				return store.PublishIncrementalDocsGenerationForJob(ctx, db, publication.JobID, generationID, docChanges, publication.Fence)
+			case hasFileMutation:
+				if graphCurrent || graphNotApplicable {
+					var graph *store.IndexJobGraphPublication
+					if graphCurrent {
+						graph = jobGraphPublication
+					}
+					return store.PublishIncrementalGenerationForJobWithChanges(ctx, db, publication.JobID, generationID, processedFiles, len(allSymbols), processedDocs, publication.Fence, fileChanges, graph)
+				}
+				return store.PublishIncrementalGenerationForJobWithFileAndDocChanges(ctx, db, publication.JobID, generationID, processedFiles, len(allSymbols), processedDocs, publication.Fence, fileChanges, nil)
+			case observeGraph && graphCurrent:
+				return store.PublishIncrementalGenerationForJobWithChanges(ctx, db, publication.JobID, generationID, 0, 0, len(docs), publication.Fence, nil, jobGraphPublication)
+			case hasDocChanges:
+				return store.CompleteIncrementalDocsJobForJob(ctx, db, publication.JobID, generationID, publication.Fence)
+			default:
+				return store.PublishIncrementalGenerationForJobWithChanges(ctx, db, publication.JobID, generationID, 0, 0, 0, publication.Fence, nil, &store.IndexJobGraphPublication{GenerationSkippedReason: "no incremental changes"})
+			}
+		}
+
+		switch {
+		case hasDocMutation && hasFileMutation:
+			return store.PublishIncrementalGenerationWithFileAndDocChanges(ctx, db, generationID, processedFiles, len(allSymbols), processedDocs, fileChanges, docChanges)
+		case hasDocMutation:
+			return store.PublishIncrementalDocsGeneration(ctx, db, generationID, docChanges)
+		case hasFileMutation:
+			if graphCurrent || graphNotApplicable {
+				var graph *store.IndexJobGraphPublication
+				if graphCurrent {
+					graph = jobGraphPublication
+				}
+				return store.PublishIncrementalGenerationWithChanges(ctx, db, generationID, processedFiles, len(allSymbols), processedDocs, fileChanges, graph)
+			}
+			return store.PublishIncrementalGenerationWithFileAndDocChanges(ctx, db, generationID, processedFiles, len(allSymbols), processedDocs, fileChanges, nil)
+		case observeGraph && graphCurrent:
+			return store.PublishIncrementalGenerationWithChanges(ctx, db, generationID, 0, 0, len(docs), nil, jobGraphPublication)
+		default:
+			return nil
+		}
+	}); err != nil {
+		return Result{}, err
+	}
+
+	warnings := append([]string{}, graphWarnings...)
+	warnings = append(warnings, fmt.Sprintf("incremental: processed %d files, skipped %d", processedFiles, skippedFiles))
+	result := Result{Files: []model.FileRecord{}, Symbols: allSymbols, Docs: processedDocs, Warnings: warnings, GraphOmissions: graphOmissions, GraphNotApplicable: graphNotApplicable, Stats: model.Stats{Files: processedFiles, Symbols: len(allSymbols), TotalDocs: processedDocs, TotalReturned: processedDocs, Ms: time.Since(started).Milliseconds()}}
+	if graphGeneration.GenerationID != (model.GraphDigest{}) {
+		result.GraphGenerationID = graphGeneration.GenerationID.String()
+		result.GraphBackendManifest = graphGeneration.BackendManifestDigest.String()
+	}
+	return result, nil
+}
+
+func publishIncrementalDocsForPublication(ctx context.Context, db *sql.DB, generationID string, changes []store.IncrementalDocChange, publication *IndexJobPublication) error {
+	if publication != nil {
+		return store.PublishIncrementalDocsGenerationForJob(ctx, db, publication.JobID, generationID, changes, publication.Fence)
+	}
+	return store.PublishIncrementalDocsGeneration(ctx, db, generationID, changes)
+}
+
+// legacyIncrementalIndexWithGraphProgress is retained only as a source-level
+// compatibility reference for the pre-T4 implementation. All callers use the
+// hardened implementation above.
+func legacyIncrementalIndexWithGraphProgress(ctx context.Context, workspaceRoot, generationID string, progress ProgressFunc, graphOptions GraphIndexOptions, publication *IndexJobPublication) (Result, error) {
+	started := time.Now()
 	indexPath := filepath.Join(workspaceRoot, ".mi-lsp", "index.db")
 	if _, err := os.Stat(indexPath); err != nil {
 		return Result{}, fmt.Errorf("index.db not found; fallback to full index")
@@ -171,7 +566,7 @@ func incrementalIndexWithGraphProgress(ctx context.Context, workspaceRoot, gener
 	changedFiles, deletedFiles := gitChangedFiles(ctx, workspaceRoot)
 	hasChanges := len(changedFiles) != 0 || len(deletedFiles) != 0
 	if requiresFullReindex(changedFiles) || requiresFullReindex(deletedFiles) {
-		return Result{}, fmt.Errorf("documentation or read-model changed; fallback to full index")
+		return Result{}, fmt.Errorf("governance/read-model/config changed; fallback to full index")
 	}
 
 	registration, err := workspace.DetectWorkspace(workspaceRoot)
@@ -234,6 +629,32 @@ func incrementalIndexWithGraphProgress(ctx context.Context, workspaceRoot, gener
 	graphCurrent := !graphRepair
 	graphNotApplicable := graphRepair && len(graphBatches) == 0
 	var jobGraphPublication *store.IndexJobGraphPublication
+
+	// Classify changed and deleted files into doc paths and code paths
+	// BEFORE the existing symbol loop so docs and code can be handled separately.
+	var docChangedPaths []string
+	var docDeletedPaths []string
+	var codeChangedPaths []string
+	var codeDeletedPaths []string
+
+	for _, p := range changedFiles {
+		if isDocPath(p) {
+			docChangedPaths = append(docChangedPaths, p)
+		} else {
+			codeChangedPaths = append(codeChangedPaths, p)
+		}
+	}
+	for _, p := range deletedFiles {
+		if isDocPath(p) {
+			docDeletedPaths = append(docDeletedPaths, p)
+		} else {
+			codeDeletedPaths = append(codeDeletedPaths, p)
+		}
+	}
+
+	hasDocChanges := len(docChangedPaths) > 0 || len(docDeletedPaths) > 0
+	hasCodeChanges := len(codeChangedPaths) > 0 || len(codeDeletedPaths) > 0
+
 	if err := store.WithWorkspaceWriteLock(workspaceRoot, func() error {
 		db, err := store.Open(workspaceRoot)
 		if err != nil {
@@ -241,7 +662,8 @@ func incrementalIndexWithGraphProgress(ctx context.Context, workspaceRoot, gener
 		}
 		defer db.Close()
 
-		for _, relPath := range changedFiles {
+		// === CODE PATH: process code changes (symbols, files) ===
+		for _, relPath := range codeChangedPaths {
 			absPath := filepath.Join(workspaceRoot, filepath.FromSlash(relPath))
 			if matcher.ShouldIgnore(workspaceRoot, absPath) {
 				skippedFiles++
@@ -271,12 +693,99 @@ func incrementalIndexWithGraphProgress(ctx context.Context, workspaceRoot, gener
 			processedFiles++
 		}
 
-		for _, relPath := range deletedFiles {
+		for _, relPath := range codeDeletedPaths {
 			if languageFromExt(strings.ToLower(filepath.Ext(relPath))) == "" {
 				continue
 			}
 			fileChanges = append(fileChanges, store.IncrementalFileChange{FilePath: relPath, Deleted: true})
 			processedFiles++
+		}
+
+		// === DOCS PATH: reconcile and publish doc changes ===
+		if hasDocChanges {
+			docsResult, err := ReconcileDocs(ctx, workspaceRoot)
+			if err != nil {
+				return fmt.Errorf("reconcile docs: %w", err)
+			}
+
+			// Parse new and changed documents.
+			if len(docsResult.New) > 0 || len(docsResult.Changed) > 0 {
+				profile, _, _ := docgraph.LoadProfile(workspaceRoot)
+				newOrChanged := append([]string(nil), docsResult.New...)
+				newOrChanged = append(newOrChanged, docsResult.Changed...)
+				docChanges := buildDocChanges(workspaceRoot, newOrChanged, model.ParserVersion, docsResult.AuthorityConfigHash)
+
+				// Parse each change using the bounded single-doc parser.
+				for i := range docChanges {
+					c := &docChanges[i]
+					if c.Action != "replace" {
+						continue
+					}
+					absPath := filepath.Join(workspaceRoot, filepath.FromSlash(c.Path))
+					content, err := os.ReadFile(absPath)
+					if err != nil {
+						graphWarnings = append(graphWarnings, fmt.Sprintf("doc parse failed for %s: %v", c.Path, err))
+						c.Doc = nil
+						continue
+					}
+					parsedDoc, parsedEdges, parsedMentions, parsedBlocks, parsedRecords, parsedBindings, warn, parseErr := docgraph.ParseSingleDoc(workspaceRoot, c.Path, content, profile)
+					if warn != "" {
+						graphWarnings = append(graphWarnings, "doc_parse: "+warn)
+					}
+					if parseErr != nil {
+						graphWarnings = append(graphWarnings, fmt.Sprintf("doc parse error for %s: %v", c.Path, parseErr))
+						continue
+					}
+					c.Doc = &parsedDoc
+					c.Edges = parsedEdges
+					c.Mentions = parsedMentions
+					c.Blocks = parsedBlocks
+					c.Records = parsedRecords
+					c.Bindings = parsedBindings
+				}
+
+				validDocChanges := make([]store.IncrementalDocChange, 0, len(docChanges))
+				for _, change := range docChanges {
+					if change.Action == "replace" && change.Doc != nil && change.State != nil {
+						validDocChanges = append(validDocChanges, change)
+					}
+				}
+				if len(validDocChanges) > 0 {
+					if err := publishIncrementalDocsForPublication(ctx, db, generationID, validDocChanges, publication); err != nil {
+						return fmt.Errorf("publish incremental docs: %w", err)
+					}
+				}
+			}
+
+			// Handle deletions: positive proof required.
+			if len(docsResult.Deleted) > 0 {
+				var delChanges []store.IncrementalDocChange
+				for _, p := range docsResult.Deleted {
+					absPath := filepath.Join(workspaceRoot, filepath.FromSlash(p))
+					if store.IsDiskAbsent(absPath) {
+						delChanges = append(delChanges, store.IncrementalDocChange{
+							Action: "delete",
+							Path:   p,
+							Proof:  "disk-absent",
+						})
+					} else {
+						graphWarnings = append(graphWarnings, fmt.Sprintf("delete skipped for %s: disk still present (no positive proof)", p))
+					}
+				}
+				if len(delChanges) > 0 {
+					if err := publishIncrementalDocsForPublication(ctx, db, generationID, delChanges, publication); err != nil {
+						return fmt.Errorf("publish incremental docs delete: %w", err)
+					}
+				}
+			}
+
+			// Retain previous rows for excluded, concurrent, and parse-failed paths.
+			for _, p := range docsResult.ExcludedAlive {
+				graphWarnings = append(graphWarnings, fmt.Sprintf("doc excluded: %s", p))
+			}
+			for _, p := range docsResult.Concurrent {
+				graphWarnings = append(graphWarnings, fmt.Sprintf("doc concurrent change: %s", p))
+			}
 		}
 
 		if graphRepair {
@@ -475,13 +984,16 @@ func requiresFullReindex(paths []string) bool {
 	for _, path := range paths {
 		normalized := filepath.ToSlash(strings.ToLower(path))
 		base := filepath.Base(normalized)
-		if strings.HasPrefix(normalized, ".docs/") || strings.HasPrefix(normalized, "docs/") {
+		// Governance, read-model, and config files always require full reindex.
+		if base == "read-model.toml" && (strings.Contains(normalized, "/_mi-lsp/") || strings.HasPrefix(normalized, "_mi-lsp/")) {
 			return true
 		}
+		// Governance doc changes require full reindex.
+		if base == "00_gobierno_documental.md" || base == "07_baseline_tecnica.md" {
+			return true
+		}
+		// README changes require full reindex (high fanout).
 		if strings.HasPrefix(normalized, "readme") && strings.HasSuffix(normalized, ".md") {
-			return true
-		}
-		if base == "read-model.toml" && strings.Contains(normalized, ".docs/wiki/_mi-lsp/") {
 			return true
 		}
 	}

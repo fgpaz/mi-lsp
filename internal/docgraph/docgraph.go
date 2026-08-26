@@ -403,52 +403,10 @@ func IndexWorkspaceDocsWithSourcesWithProgressPriorWithBindings(ctx context.Cont
 						continue
 					}
 				}
-				title := extractTitle(content)
-				docID := firstDocID(title + "\n" + string(content))
-				doc := model.DocRecord{
-					Path:        candidate.relativePath,
-					Title:       title,
-					DocID:       docID,
-					Layer:       candidate.layer,
-					Family:      candidate.family,
-					Snippet:     extractSnippet(content),
-					SearchText:  normalizeSearchText(title + "\n" + candidate.relativePath + "\n" + string(content)),
-					ContentHash: contentHash,
-					IndexedAt:   time.Now().Unix(),
-					IsSnapshot:  isSnapshotPath(candidate.relativePath),
-				}
-				docMentions, docEdges := extractReferences(root, candidate.relativePath, string(content))
-				sourceDoc := wikisource.Parse(candidate.relativePath, string(content), time.Now().Unix())
-				// Prefer explicit SDD doc_id from wikisource.Parse over regex fallback.
-				if strings.TrimSpace(sourceDoc.DocID) != "" {
-					docID = sourceDoc.DocID
-				}
-				doc.DocID = docID
-				mentions := append(docMentions, sourceDoc.Mentions...)
-				sourceBlocks := wikisource.SourceBlocks(sourceDoc, time.Now().Unix())
-				sourceRecords := wikisource.SourceRecords(sourceDoc, time.Now().Unix())
-				bindings := wikisource.SourceBindings(sourceDoc, time.Now().Unix())
-				if fm := extractFrontMatter(content); fm != nil {
-					for _, impl := range fm.Implements {
-						impl = strings.TrimSpace(impl)
-						if impl != "" {
-							mentions = append(mentions, model.DocMention{
-								DocPath:      candidate.relativePath,
-								MentionType:  "implements",
-								MentionValue: impl,
-							})
-						}
-					}
-					for _, test := range fm.Tests {
-						test = strings.TrimSpace(test)
-						if test != "" {
-							mentions = append(mentions, model.DocMention{
-								DocPath:      candidate.relativePath,
-								MentionType:  "test_file",
-								MentionValue: test,
-							})
-						}
-					}
+				doc, docEdges, mentions, sourceBlocks, sourceRecords, bindings, parseErr := parseDocContent(root, candidate.relativePath, content, profile)
+				if parseErr != nil {
+					results[i] = docWorkResult{warning: fmt.Sprintf("doc parse failed for %s: %v", candidate.relativePath, parseErr)}
+					continue
 				}
 				results[i] = docWorkResult{
 					doc:           doc,
@@ -532,6 +490,139 @@ func IndexWorkspaceDocsWithSourcesWithProgressPriorWithBindings(ctx context.Cont
 	})
 	return docs, edges, mentions, sourceBlocks, sourceRecords, bindings, warnings, nil
 }
+
+// ParseSingleDoc parses a single markdown document and returns its complete
+// doc artifact model. It shares the exact same parsing logic as the full-index
+// parser, accepting the workspace root, repo-relative path, and pre-loaded
+// profile. The caller is responsible for reading the file content and passing
+// it; this function only does the parsing (title, doc_id, edges, mentions,
+// blocks, records, bindings). Layer and family always come from
+// profile/path classification.
+//
+// Returns (DocRecord, edges, mentions, sourceBlocks, sourceRecords, bindings,
+// warning, error). A non-empty warning indicates a non-fatal parse issue.
+func ParseSingleDoc(
+	root string,
+	relPath string,
+	content []byte,
+	profile model.DocsReadProfile,
+) (model.DocRecord, []model.DocEdge, []model.DocMention, []model.DocSourceBlock, []model.DocSourceRecord, []model.DocArtifactBinding, string, error) {
+	doc, edges, mentions, sourceBlocks, sourceRecords, bindings, err := parseDocContent(root, relPath, content, profile)
+	return doc, edges, mentions, sourceBlocks, sourceRecords, bindings, "", err
+}
+
+// parseDocContent is the one document parser used by both full and incremental
+// indexing. Classification is derived from the same profile/path precedence as
+// collectDocCandidates; callers cannot accidentally publish empty layer or
+// family values.
+func parseDocContent(
+	root string,
+	relPath string,
+	content []byte,
+	profile model.DocsReadProfile,
+) (model.DocRecord, []model.DocEdge, []model.DocMention, []model.DocSourceBlock, []model.DocSourceRecord, []model.DocArtifactBinding, error) {
+	if strings.TrimSpace(relPath) == "" {
+		return model.DocRecord{}, nil, nil, nil, nil, nil, fmt.Errorf("document path is empty")
+	}
+	family, layer := classifyDocPath(profile, relPath)
+	contentHash := digest(content)
+	title := extractTitle(content)
+	docID := firstDocID(title + "\n" + string(content))
+	now := time.Now().Unix()
+	doc := model.DocRecord{
+		Path:        relPath,
+		Title:       title,
+		DocID:       docID,
+		Layer:       layer,
+		Family:      family,
+		Snippet:     extractSnippet(content),
+		SearchText:  normalizeSearchText(title + "\n" + relPath + "\n" + string(content)),
+		ContentHash: contentHash,
+		IndexedAt:   now,
+		IsSnapshot:  isSnapshotPath(relPath),
+	}
+
+	docMentions, docEdges := extractReferences(root, relPath, string(content))
+	sourceDoc := wikisource.Parse(relPath, string(content), now)
+	if strings.TrimSpace(sourceDoc.DocID) != "" {
+		doc.DocID = sourceDoc.DocID
+	}
+
+	mentions := append(docMentions, sourceDoc.Mentions...)
+	sourceBlocks := wikisource.SourceBlocks(sourceDoc, now)
+	sourceRecords := wikisource.SourceRecords(sourceDoc, now)
+	bindings := wikisource.SourceBindings(sourceDoc, now)
+	if fm := extractFrontMatter(content); fm != nil {
+		for _, impl := range fm.Implements {
+			impl = strings.TrimSpace(impl)
+			if impl != "" {
+				mentions = append(mentions, model.DocMention{DocPath: relPath, MentionType: "implements", MentionValue: impl})
+			}
+		}
+		for _, test := range fm.Tests {
+			test = strings.TrimSpace(test)
+			if test != "" {
+				mentions = append(mentions, model.DocMention{DocPath: relPath, MentionType: "test_file", MentionValue: test})
+			}
+		}
+	}
+	return doc, docEdges, mentions, sourceBlocks, sourceRecords, bindings, nil
+}
+
+func classifyDocPath(profile model.DocsReadProfile, relPath string) (string, string) {
+	normalized := filepath.ToSlash(strings.TrimPrefix(strings.TrimSpace(relPath), "./"))
+	for _, family := range profile.Families {
+		for _, pattern := range family.Paths {
+			if matchesDocProfilePath(normalized, pattern) {
+				name := strings.TrimSpace(family.Name)
+				if name == "" {
+					name = "generic"
+				}
+				return name, nonEmptyDocLayer(DetectLayerForPath(profile, normalized))
+			}
+		}
+	}
+	return "generic", nonEmptyDocLayer(DetectLayerForPath(profile, normalized))
+}
+
+func nonEmptyDocLayer(layer string) string {
+	if strings.TrimSpace(layer) == "" {
+		return "generic"
+	}
+	return layer
+}
+
+func matchesDocProfilePath(relPath, pattern string) bool {
+	relPath = filepath.ToSlash(strings.TrimPrefix(strings.TrimSpace(relPath), "./"))
+	pattern = filepath.ToSlash(strings.TrimPrefix(strings.TrimSpace(pattern), "./"))
+	if relPath == "" || pattern == "" {
+		return false
+	}
+	if strings.HasSuffix(pattern, "/") {
+		prefix := strings.TrimSuffix(pattern, "/")
+		return relPath == prefix || strings.HasPrefix(relPath, prefix+"/")
+	}
+	if marker := strings.Index(pattern, "/**"); marker >= 0 {
+		prefix := strings.TrimSuffix(pattern[:marker], "/")
+		if relPath == prefix || strings.HasPrefix(relPath, prefix+"/") {
+			return true
+		}
+	}
+	if strings.ContainsAny(pattern, "*?[") {
+		matched, err := filepath.Match(filepath.FromSlash(pattern), filepath.FromSlash(relPath))
+		return err == nil && matched
+	}
+	return relPath == pattern
+}
+
+// ResolveDocEdges applies full-index path/doc-id resolution and structural
+// edges against the supplied effective document set. Incremental callers use
+// this after replacements/deletes have been folded into that set.
+func ResolveDocEdges(docs []model.DocRecord, edges []model.DocEdge, profile model.DocsReadProfile) []model.DocEdge {
+	resolved := resolveDocEdges(docs, edges, profile.EffectiveWikiMapRoots())
+	return appendStructuralDocEdges(docs, resolved)
+}
+
 func reportProgress(ctx context.Context, progress ProgressFunc, value Progress) error {
 	if err := ctx.Err(); err != nil {
 		return err
@@ -553,6 +644,9 @@ type docCandidate struct {
 func collectDocCandidates(ctx context.Context, root string, profile model.DocsReadProfile, matcher *workspace.IgnoreMatcher) ([]docCandidate, error) {
 	seen := map[string]docCandidate{}
 	addCandidate := func(absPath string, family string, priority int) {
+		if strings.TrimSpace(family) == "" {
+			family = "generic"
+		}
 		if matcher != nil && matcher.ShouldIgnore(root, absPath) {
 			return
 		}

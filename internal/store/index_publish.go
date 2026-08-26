@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/fgpaz/mi-lsp/internal/model"
@@ -514,4 +515,144 @@ func publishGenerationTx(ctx context.Context, tx *sql.Tx, generationID string, m
 	metadata["active_generation_symbols"] = strconv.Itoa(symbols)
 	metadata["active_generation_docs"] = strconv.Itoa(docs)
 	return UpsertWorkspaceMetaMap(ctx, tx, metadata)
+}
+
+// ========================
+// Incremental Document Publication (T4)
+// ========================
+
+func requireIncrementalGenerationID(generationID string) error {
+	if strings.TrimSpace(generationID) == "" {
+		return fmt.Errorf("incremental document publication requires a non-empty generation id")
+	}
+	return nil
+}
+
+func setActiveDocsGenerationTx(ctx context.Context, tx *sql.Tx, generationID string) error {
+	if err := requireIncrementalGenerationID(generationID); err != nil {
+		return err
+	}
+	for _, key := range []string{WorkspaceMetaActiveDocsGeneration, WorkspaceMetaActiveMemoryGeneration} {
+		if _, err := tx.ExecContext(ctx, `INSERT INTO workspace_meta(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`, key, generationID); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// PublishIncrementalDocsGeneration publishes a complete incremental document
+// change set in one foreground transaction. It never changes the catalog
+// pointer and never publishes a graph generation.
+func PublishIncrementalDocsGeneration(ctx context.Context, db *sql.DB, generationID string, changes []IncrementalDocChange) error {
+	if err := requireIncrementalGenerationID(generationID); err != nil {
+		return err
+	}
+	return publishForeground(ctx, db, func(tx *sql.Tx) error {
+		return publishIncrementalDocsTx(ctx, tx, generationID, changes)
+	})
+}
+
+// PublishIncrementalDocsGenerationForJob is the fenced docs-only variant. The
+// owner transaction uses the supported "docs" mode, not a synthetic mode that
+// publishGenerationForJobTx cannot activate.
+func PublishIncrementalDocsGenerationForJob(ctx context.Context, db *sql.DB, jobID, generationID string, changes []IncrementalDocChange, fence IndexJobFence) error {
+	if err := requireIncrementalGenerationID(generationID); err != nil {
+		return err
+	}
+	jobGraph := &IndexJobGraphPublication{}
+	return publishOwned(ctx, db, jobID, generationID, "docs", 0, 0, len(changes), fence, jobGraph, func(tx *sql.Tx) error {
+		actual, err := applyIncrementalDocChangesTx(ctx, tx, changes)
+		if err != nil {
+			return err
+		}
+		if !actual {
+			jobGraph.GenerationSkippedReason = "no document changes"
+			return nil
+		}
+		return setGraphRuntimeStateTx(ctx, tx, GraphRuntimeStale, "")
+	})
+}
+
+// CompleteIncrementalDocsJobForJob closes a docs-mode job without advancing a
+// pointer when reconciliation produced only excluded, concurrent, or failed
+// paths. The generation row is marked skipped inside the same owner fence.
+func CompleteIncrementalDocsJobForJob(ctx context.Context, db *sql.DB, jobID, generationID string, fence IndexJobFence) error {
+	if err := requireIncrementalGenerationID(generationID); err != nil {
+		return err
+	}
+	return publishOwned(ctx, db, jobID, generationID, "docs", 0, 0, 0, fence, &IndexJobGraphPublication{GenerationSkippedReason: "no document changes"}, func(tx *sql.Tx) error {
+		return nil
+	})
+}
+
+// PublishIncrementalGenerationWithFileAndDocChanges commits code rows,
+// document rows, catalog/docs pointers, and graph staleness as one foreground
+// transaction. It is used for mixed code+document updates.
+func PublishIncrementalGenerationWithFileAndDocChanges(ctx context.Context, db *sql.DB, generationID string, files, symbols, docs int, fileChanges []IncrementalFileChange, docChanges []IncrementalDocChange) error {
+	if err := requireIncrementalGenerationID(generationID); err != nil {
+		return err
+	}
+	return publishForeground(ctx, db, func(tx *sql.Tx) error {
+		if err := applyIncrementalFileChangesTx(ctx, tx, fileChanges); err != nil {
+			return err
+		}
+		actualDocs := false
+		var err error
+		if len(docChanges) > 0 {
+			actualDocs, err = applyIncrementalDocChangesTx(ctx, tx, docChanges)
+			if err != nil {
+				return err
+			}
+		}
+		if err := publishIncrementalGenerationTx(ctx, tx, generationID, files, symbols, docs, nil); err != nil {
+			return err
+		}
+		if actualDocs {
+			return setActiveDocsGenerationTx(ctx, tx, generationID)
+		}
+		return nil
+	})
+}
+
+// PublishIncrementalGenerationForJobWithFileAndDocChanges is the single owner
+// transaction for mixed code+document jobs. File rows, complete document rows,
+// generation pointers, graph stale state, and terminal ownership are committed
+// or rolled back together.
+func PublishIncrementalGenerationForJobWithFileAndDocChanges(ctx context.Context, db *sql.DB, jobID, generationID string, files, symbols, docs int, fence IndexJobFence, fileChanges []IncrementalFileChange, docChanges []IncrementalDocChange) error {
+	if err := requireIncrementalGenerationID(generationID); err != nil {
+		return err
+	}
+	return publishOwned(ctx, db, jobID, generationID, "incremental", files, symbols, docs, fence, nil, func(tx *sql.Tx) error {
+		if err := applyIncrementalFileChangesTx(ctx, tx, fileChanges); err != nil {
+			return err
+		}
+		actualDocs := false
+		var err error
+		if len(docChanges) > 0 {
+			actualDocs, err = applyIncrementalDocChangesTx(ctx, tx, docChanges)
+			if err != nil {
+				return err
+			}
+		}
+		if actualDocs {
+			if err := setActiveDocsGenerationTx(ctx, tx, generationID); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
+func publishIncrementalDocsTx(ctx context.Context, tx *sql.Tx, generationID string, changes []IncrementalDocChange) error {
+	if err := requireIncrementalGenerationID(generationID); err != nil {
+		return err
+	}
+	actual, err := applyIncrementalDocChangesTx(ctx, tx, changes)
+	if err != nil || !actual {
+		return err
+	}
+	if err := setActiveDocsGenerationTx(ctx, tx, generationID); err != nil {
+		return err
+	}
+	return setGraphRuntimeStateTx(ctx, tx, GraphRuntimeStale, "")
 }

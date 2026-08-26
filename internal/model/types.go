@@ -1270,3 +1270,40 @@ type RuntimeSnapshot struct {
 	MemoryBytes uint64    `json:"memory_bytes,omitempty"`
 	SnapshotAt  time.Time `json:"snapshot_at"`
 }
+
+// DocArtifactState captures the last known filesystem state for a canonical
+// document so the indexer can detect edits, renames, and deletions without
+// re-parsing unchanged content. A path absent from a scan is *not* deletion;
+// positive deletion requires disk absence or an authoritative scope/ignore
+// change.
+type DocArtifactState struct {
+	// Path is the repo-relative POSIX key used as the primary index (e.g. "wiki/00_test.md").
+	Path                string `json:"path"`
+	Size                int64  `json:"size"`
+	MtimeNsec           int64  `json:"mtime_nsec"`
+	ContentSHA256       string `json:"content_sha256"`
+	ParserVersion       string `json:"parser_version"`
+	AuthorityConfigHash string `json:"authority_config_hash"`
+	IndexedAt           int64  `json:"indexed_at,omitempty"`
+	LastDocsGenAt       int64  `json:"last_docs_gen_at,omitempty"`
+	Lifecycle           string `json:"lifecycle,omitempty"` // "active" | "deprecated" | "retired"
+}
+
+// ParserVersion is the canonical parser version string used in
+// DocArtifactState and hashing.
+const ParserVersion = "wiki-source-v1"
+
+// ErrConcurrentChange is returned when a file's size or mtime changes between
+// stat and read, indicating a concurrent mutation.
+type ErrConcurrentChange struct {
+	Path             string
+	StoredMtimeNsec  int64
+	StoredSize       int64
+	CurrentMtimeNsec int64
+	CurrentSize      int64
+	Attempt          int
+}
+
+func (e *ErrConcurrentChange) Error() string {
+	return "concurrent change detected: " + e.Path
+}

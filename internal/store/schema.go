@@ -226,6 +226,23 @@ CREATE TABLE IF NOT EXISTS index_generations (
 );
 `
 
+const docArtifactStatesDDL = `
+CREATE TABLE IF NOT EXISTS doc_artifact_states (
+    path TEXT PRIMARY KEY,
+    size INTEGER NOT NULL DEFAULT 0,
+    mtime_nsec INTEGER NOT NULL DEFAULT 0,
+    content_sha256 TEXT NOT NULL DEFAULT '',
+    parser_version TEXT NOT NULL DEFAULT '',
+    authority_config_hash TEXT NOT NULL DEFAULT '',
+    indexed_at INTEGER NOT NULL DEFAULT 0,
+    last_docs_gen_at INTEGER NOT NULL DEFAULT 0,
+    lifecycle TEXT NOT NULL DEFAULT 'active'
+);
+`
+
+// idx_doc_artifact_states_lifecycle provides fast lookups for non-active states.
+const docArtifactStatesLifecycleIdxDDL = `CREATE INDEX IF NOT EXISTS idx_doc_artifact_states_lifecycle ON doc_artifact_states(lifecycle);`
+
 const wikiChunkEmbeddingsDDL = `
 CREATE TABLE IF NOT EXISTS wiki_chunk_embeddings (
     doc_path        TEXT NOT NULL,
@@ -255,7 +272,7 @@ func EnsureSchema(db *sql.DB) error {
 	if err := graphSchemaPreflight(db); err != nil {
 		return err
 	}
-	statements := []string{reposDDL, entrypointsDDL, symbolsDDL, filesDDL, docsDDL, docsFtsDDL, docEdgesDDL, docMentionsDDL, docSourceBlocksDDL, docSourceRecordsDDL, docArtifactBindingsDDL, metaDDL, indexJobsDDL, indexGenerationsDDL, wikiChunkEmbeddingsDDL, utilityEventsDDL}
+	statements := []string{reposDDL, entrypointsDDL, symbolsDDL, filesDDL, docsDDL, docsFtsDDL, docEdgesDDL, docMentionsDDL, docSourceBlocksDDL, docSourceRecordsDDL, docArtifactBindingsDDL, docArtifactStatesDDL, metaDDL, indexJobsDDL, indexGenerationsDDL, wikiChunkEmbeddingsDDL, utilityEventsDDL}
 	for _, stmt := range statements {
 		if _, err := db.Exec(stmt); err != nil {
 			return err
@@ -343,6 +360,7 @@ END`,
 		{table: "doc_artifact_bindings", column: "target_path", statement: `CREATE INDEX IF NOT EXISTS idx_doc_artifact_bindings_target ON doc_artifact_bindings(target_path, target_symbol);`, required: true},
 		{table: "doc_artifact_bindings", column: "relation", statement: `CREATE INDEX IF NOT EXISTS idx_doc_artifact_bindings_relation ON doc_artifact_bindings(relation, target_kind);`, required: true},
 		{table: "doc_artifact_bindings", column: "binding_ref", statement: `CREATE UNIQUE INDEX IF NOT EXISTS idx_doc_artifact_bindings_ref ON doc_artifact_bindings(binding_ref);`, required: true},
+		{table: "doc_artifact_states", column: "lifecycle", statement: docArtifactStatesLifecycleIdxDDL, required: true},
 	}
 
 	for _, index := range indexes {
