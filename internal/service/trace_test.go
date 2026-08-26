@@ -11,6 +11,31 @@ import (
 	"github.com/fgpaz/mi-lsp/internal/workspace"
 )
 
+func TestLiveTraceScopeKeepsExplicitHistoricalRedirectSelectors(t *testing.T) {
+	request := model.CommandRequest{Operation: "nav.wiki.trace", Payload: map[string]any{"rf": "RF-OLD"}}
+	env := model.Envelope{Items: []model.TraceResult{{
+		DocID: "RF-OLD",
+		LookupStatus: &model.WikiLookupStatus{Path: ".docs/wiki/_retired/RF-OLD.md"},
+	}}}
+	scope, ok := liveTraceScope(request, env)
+	if !ok || len(scope.DocIDs) != 1 || scope.DocIDs[0] != "RF-OLD" || len(scope.DocPaths) != 1 {
+		t.Fatalf("explicit historical trace scope=%+v ok=%v", scope, ok)
+	}
+
+	request.Payload = map[string]any{"all": true}
+	scope, ok = liveTraceScope(request, env)
+	if !ok || len(scope.DocPaths) != 0 || len(scope.DocIDs) != 0 {
+		t.Fatalf("default trace scope retained retired doc: %+v ok=%v", scope, ok)
+	}
+
+	sourceRequest := model.CommandRequest{Operation: "nav.trace", Context: model.QueryOptions{Workspace: "workspace"}, Payload: map[string]any{"rf": "CT-SOURCE.contract"}}
+	sourceEnv := model.Envelope{Items: []model.TraceResult{{DocID: "CT-SOURCE.CONTRACT", LookupStatus: &model.WikiLookupStatus{Path: ".docs/wiki/09_contratos/CT-SOURCE.md", BlockID: "CT-SOURCE.contract"}, Explicit: []model.TraceLink{{File: ".docs/wiki/09_contratos/CT-SOURCE.md", Source: "doc_source", Kind: "wiki-source"}}}}}
+	sourceScope, ok := liveTraceScope(sourceRequest, sourceEnv)
+	if !ok || len(sourceScope.Blocks) != 1 || sourceScope.Blocks[0].BlockID != "CT-SOURCE.contract" || len(sourceScope.DocPaths) != 0 {
+		t.Fatalf("source block trace scope=%+v ok=%v", sourceScope, ok)
+	}
+}
+
 func TestNavTraceFindsRFEmbeddedInAggregateDoc(t *testing.T) {
 	alias := "trace-embedded-rf-" + filepath.Base(t.TempDir())
 	root := createFunctionalPackWorkspaceFixture(t, alias)

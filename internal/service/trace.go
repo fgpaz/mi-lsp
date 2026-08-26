@@ -33,11 +33,10 @@ func (a *App) trace(ctx context.Context, request model.CommandRequest) (model.En
 	if err != nil {
 		return model.Envelope{}, err
 	}
-	db, err := openWorkspaceDB(registration, "nav.trace", false) // readWrite for test compatibility
-	if err != nil {
-		return model.Envelope{}, err
+	db, _ := openLiveWikiCodeDB(registration)
+	if db != nil {
+		defer db.Close()
 	}
-	defer db.Close()
 
 	docID, _ := request.Payload["rf"].(string)
 	allRFs, _ := request.Payload["all"].(bool)
@@ -83,9 +82,13 @@ func (a *App) traceRF(ctx context.Context, root string, db *sql.DB, rfID string)
 		return nil, nil
 	}
 
-	mentioningDocs, err := store.FindDocRecordsByMention(ctx, db, "doc_id", traceID)
-	if err != nil {
-		return nil, err
+	mentioningDocs := []model.DocRecord{}
+	if db != nil {
+		var err error
+		mentioningDocs, err = store.FindDocRecordsByMention(ctx, db, "doc_id", traceID)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	kind := classifyTraceID(traceID)
@@ -102,13 +105,18 @@ func (a *App) traceRF(ctx context.Context, root string, db *sql.DB, rfID string)
 		return nil, nil
 	}
 
-	implValues, err := store.GetMentionsByType(ctx, db, doc.Path, "implements")
-	if err != nil {
-		return nil, err
-	}
-	testValues, err := store.GetMentionsByType(ctx, db, doc.Path, "test_file")
-	if err != nil {
-		return nil, err
+	implValues := []string{}
+	testValues := []string{}
+	if db != nil {
+		var err error
+		implValues, err = store.GetMentionsByType(ctx, db, doc.Path, "implements")
+		if err != nil {
+			return nil, err
+		}
+		testValues, err = store.GetMentionsByType(ctx, db, doc.Path, "test_file")
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	explicit := make([]model.TraceLink, 0, len(implValues))
@@ -120,13 +128,19 @@ func (a *App) traceRF(ctx context.Context, root string, db *sql.DB, rfID string)
 			Source: "wiki-marker",
 		}
 		if symbol != "" {
-			_, found, _ := store.VerifySymbolExists(ctx, db, file, symbol)
-			link.Verified = found
+			found := false
+			if db != nil {
+				_, found, _ = store.VerifySymbolExists(ctx, db, file, symbol)
+			}
+			link.Verified = found || (db == nil && traceFileExists(root, file))
 			if found {
 				link.Kind = "symbol"
 			}
 		} else {
-			syms, _ := store.SymbolsByFile(ctx, db, file, 1, 0)
+			syms := []model.SymbolRecord{}
+			if db != nil {
+				syms, _ = store.SymbolsByFile(ctx, db, file, 1, 0)
+			}
 			link.Verified = len(syms) > 0 || traceFileExists(root, file)
 			link.Kind = "file"
 		}
@@ -140,7 +154,10 @@ func (a *App) traceRF(ctx context.Context, root string, db *sql.DB, rfID string)
 			Source: "wiki-marker",
 			Kind:   "test",
 		}
-		syms, _ := store.SymbolsByFile(ctx, db, testFile, 1, 0)
+		syms := []model.SymbolRecord{}
+		if db != nil {
+			syms, _ = store.SymbolsByFile(ctx, db, testFile, 1, 0)
+		}
 		link.Verified = len(syms) > 0 || traceFileExists(root, testFile)
 		tests = append(tests, link)
 	}
@@ -148,7 +165,7 @@ func (a *App) traceRF(ctx context.Context, root string, db *sql.DB, rfID string)
 	tests = dedupeTraceLinks(tests)
 
 	inferred := make([]model.TraceLink, 0)
-	if len(explicit) == 0 && kind == traceKindRF {
+	if len(explicit) == 0 && kind == traceKindRF && db != nil {
 		inferred = a.inferTraceLinks(ctx, db, doc)
 	}
 
@@ -178,6 +195,9 @@ func (a *App) traceRF(ctx context.Context, root string, db *sql.DB, rfID string)
 }
 
 func traceSourceID(ctx context.Context, db *sql.DB, traceID string) (*model.TraceResult, error) {
+	if db == nil {
+		return nil, nil
+	}
 	docs, err := store.FindDocRecordsBySourceID(ctx, db, traceID)
 	if err != nil {
 		return nil, err
@@ -234,9 +254,13 @@ func resolveTraceUnknownDoc(root string, traceID string, mentioningDocs []model.
 }
 
 func resolveTraceRFDoc(ctx context.Context, root string, db *sql.DB, traceID string, mentioningDocs []model.DocRecord) (*model.DocRecord, error) {
-	rfDocs, err := store.GetRFDocRecords(ctx, db)
-	if err != nil {
-		return nil, err
+	rfDocs := []model.DocRecord{}
+	if db != nil {
+		var err error
+		rfDocs, err = store.GetRFDocRecords(ctx, db)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	var doc *model.DocRecord
@@ -585,6 +609,9 @@ func traceRSDocFromDisk(root string, traceID string) (model.DocRecord, bool) {
 }
 
 func (a *App) traceAllRFs(ctx context.Context, workspaceName string, root string, db *sql.DB) ([]model.TraceResult, error) {
+	if db == nil {
+		return []model.TraceResult{}, nil
+	}
 	rfDocs, err := store.GetRFDocRecords(ctx, db)
 	if err != nil {
 		return nil, err
@@ -1137,12 +1164,11 @@ func (a *App) traceAllWorkspaces(ctx context.Context, request model.CommandReque
 
 	// Fan-out across all workspaces
 	fanOutResult, err := nav.FanOutWiki(ctx, nav.WikiFanOutOptions{}, func(ctx context.Context, ws model.WorkspaceRegistration) (items []any, stats map[string]any, err error) {
-		// Open this workspace's DB
-		db, err := openWorkspaceDB(ws, "nav.trace", false) // readWrite for test compatibility
-		if err != nil {
-			return nil, nil, fmt.Errorf("failed to open DB for workspace %s: %w", ws.Name, err)
+		// Open this workspace's DB without creating or repairing it.
+		db, _ := openLiveWikiCodeDB(ws)
+		if db != nil {
+			defer db.Close()
 		}
-		defer db.Close()
 
 		var results []model.TraceResult
 

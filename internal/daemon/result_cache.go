@@ -85,6 +85,9 @@ func cacheGenerationValue(generation any) string {
 }
 
 func indexGeneration(workspaceRoot string) (string, string, error) {
+	// PreparationCacheIdentity snapshots all published domains, including the
+	// T4 active docs generation. A successful docs publication therefore rotates
+	// this identity without purging unrelated cache entries by hand.
 	return service.PreparationCacheIdentity(workspaceRoot)
 }
 

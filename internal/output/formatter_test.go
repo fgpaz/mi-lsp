@@ -7,6 +7,33 @@ import (
 	"github.com/fgpaz/mi-lsp/internal/model"
 )
 
+func TestRenderStructuredFormatsExposeWikiCodeContextAdditively(t *testing.T) {
+	base := model.Envelope{Ok: true, Backend: "trace", Items: []model.TraceResult{{DocID: "RF-LIVE-001", Title: "Live", Status: "indexed", Explicit: []model.TraceLink{}, Inferred: []model.TraceLink{}, Tests: []model.TraceLink{}, Drift: []model.TraceDrift{}}}}
+	absent, err := Render(base, "json", false)
+	if err != nil {
+		t.Fatalf("render absent context: %v", err)
+	}
+	if strings.Contains(string(absent), "wiki_code_context") {
+		t.Fatalf("absent context was serialized: %s", absent)
+	}
+
+	base.WikiCodeContext = &model.WikiCodeContext{
+		PrimaryDoc:      model.DocRecord{Path: ".docs/wiki/04_RF/RF-LIVE-001.md", DocID: "RF-LIVE-001"},
+		Freshness:       model.WikiCodeFreshness{DocsManifest: model.FreshnessCurrent, Bindings: model.FreshnessCurrent, Catalog: model.FreshnessCurrent, Graph: model.FreshnessUnknown, Authority: model.FreshnessCurrent},
+		Provenance:      model.WikiCodeProvenance{Backend: "wiki-code-resolver", QueryOnly: true},
+		DeterminismDigest: "digest",
+	}
+	for _, format := range []string{"compact", "json", "toon", "yaml"} {
+		rendered, renderErr := Render(base, format, false)
+		if renderErr != nil {
+			t.Fatalf("render %s: %v", format, renderErr)
+		}
+		if !strings.Contains(string(rendered), "wiki_code_context") {
+			t.Fatalf("format %s omitted additive bridge field: %s", format, rendered)
+		}
+	}
+}
+
 func TestRenderCompact_ServiceSurfaceSummary(t *testing.T) {
 	env := model.Envelope{
 		Ok:      true,

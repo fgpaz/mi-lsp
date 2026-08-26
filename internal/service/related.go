@@ -30,6 +30,9 @@ type symbolNeighborhood struct {
 	Implementors   []symbolWithContent   `json:"implementors,omitempty"`
 	Callers        []symbolWithContent   `json:"callers,omitempty"`
 	Tests          []symbolWithContent   `json:"tests,omitempty"`
+	// WikiContext is the bounded reverse wiki projection for the exact
+	// definition. The full bridge remains on Envelope.WikiCodeContext.
+	WikiContext []model.WikiCodeWikiContextItem `json:"wiki_context,omitempty"`
 }
 
 func (a *App) related(ctx context.Context, request model.CommandRequest) (model.Envelope, error) {
@@ -38,7 +41,7 @@ func (a *App) related(ctx context.Context, request model.CommandRequest) (model.
 	if err != nil {
 		return model.Envelope{}, err
 	}
-	memory, _ := loadReentryMemory(ctx, registration.Root)
+	memory, _ := loadLiveWikiCodeMemory(ctx, registration.Root)
 
 	symbolName, _ := request.Payload["symbol"].(string)
 	if symbolName == "" {
@@ -52,16 +55,19 @@ func (a *App) related(ctx context.Context, request model.CommandRequest) (model.
 	neighborhood := symbolNeighborhood{Symbol: symbolName, GraphRanks: make([]model.GraphRank, 0)}
 	backend := "catalog"
 
-	// Open catalog DB
-	db, err := openWorkspaceDB(registration, "nav.related", true)
-	if err != nil {
-		return model.Envelope{}, fmt.Errorf("opening catalog: %w", err)
+	// Open the existing catalog read-only; a related query must not create or
+	// repair the workspace index.
+	db, _ := openLiveWikiCodeDB(registration)
+	if db != nil {
+		defer db.Close()
 	}
-	defer db.Close()
 
 	// 1. Find definition in catalog
-	symbols, err := store.FindSymbols(ctx, db, symbolName, "", true, 5, 0)
-	if err == nil && len(symbols) > 0 {
+	var symbols []model.SymbolRecord
+	if db != nil {
+		symbols, _ = store.FindSymbols(ctx, db, symbolName, "", true, 5, 0)
+	}
+	if len(symbols) > 0 {
 		def := symbolToContent(registration.Root, symbols[0], request.Context.Full)
 		neighborhood.Definition = &def
 	}
@@ -86,6 +92,9 @@ func (a *App) related(ctx context.Context, request model.CommandRequest) (model.
 	// remain authoritative. Utility can only affect final ties in GraphRank.
 	utilityIntent := stringPayload(request.Payload, "utility_intent")
 	if strings.TrimSpace(stringPayload(request.Payload, "utility_signal")) != "" {
+		if db == nil {
+			return model.Envelope{}, &model.GraphQueryError{Code: "GPH_QUERY_UTILITY_INVALID", Message: "utility signal requires an active graph generation"}
+		}
 		if active, ok, activeErr := store.ActiveGraphGeneration(ctx, db); activeErr != nil || !ok {
 			return model.Envelope{}, &model.GraphQueryError{Code: "GPH_QUERY_UTILITY_INVALID", Message: "utility signal requires an active graph generation"}
 		} else if generation, generationErr := store.ValidateGraphGeneration(ctx, db, active); generationErr != nil {

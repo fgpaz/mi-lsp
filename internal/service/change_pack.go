@@ -28,6 +28,11 @@ type ChangePackPacket struct {
 	Backend          string           `json:"backend,omitempty"`
 	ImpactFiles      int              `json:"impact_files,omitempty"`
 	ImpactSymbols    int              `json:"impact_symbols,omitempty"`
+	// Live bridge classification is additive; the complete context remains on
+	// Envelope.WikiCodeContext so the packet does not embed it twice.
+	Classification   string           `json:"classification,omitempty"`
+	Classifications  []string         `json:"classifications,omitempty"`
+	NextQueries      []string         `json:"next_queries,omitempty"`
 }
 
 func (a *App) changePack(ctx context.Context, request model.CommandRequest) (model.Envelope, error) {

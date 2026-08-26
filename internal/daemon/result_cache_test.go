@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -10,6 +11,7 @@ import (
 
 	"github.com/fgpaz/mi-lsp/internal/model"
 	"github.com/fgpaz/mi-lsp/internal/service"
+	"github.com/fgpaz/mi-lsp/internal/store"
 )
 
 func TestCacheGenerationValueEncodesStringsWithoutFmtArtifacts(t *testing.T) {
@@ -467,4 +469,63 @@ func TestResultCacheDebugLogging(t *testing.T) {
 		t.Fatal("expected cache hit with debug logging enabled")
 	}
 	// Test just verifies no panic occurs with debug enabled
+}
+
+func TestResultCacheGenerationChangeIsAMiss(t *testing.T) {
+	rc := newResultCache()
+	args := map[string]any{"query": "wiki"}
+	oldKey, err := resultCacheKey("/workspace", "nav.search", "docs-generation-1", args)
+	if err != nil {
+		t.Fatal(err)
+	}
+	newKey, err := resultCacheKey("/workspace", "nav.search", "docs-generation-2", args)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rc.set(oldKey, []byte(`{"generation":1}`), time.Minute)
+	if _, ok := rc.get(newKey); ok {
+		t.Fatal("query result from a previous docs generation was served")
+	}
+}
+
+func TestResultCacheIdentityIncludesPublishedDocsGeneration(t *testing.T) {
+	root := t.TempDir()
+	db, err := store.Open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	ctx := context.Background()
+	if err := store.UpsertWorkspaceMeta(ctx, db, store.WorkspaceMetaActiveDocsGeneration, "docs-generation-1"); err != nil {
+		t.Fatal(err)
+	}
+	_, first, err := indexGeneration(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.UpsertWorkspaceMeta(ctx, db, store.WorkspaceMetaActiveDocsGeneration, "docs-generation-2"); err != nil {
+		t.Fatal(err)
+	}
+	_, second, err := indexGeneration(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first == second || first == "" || second == "" {
+		t.Fatalf("cache generations = %q, %q, want distinct non-empty identities", first, second)
+	}
+}
+
+func TestResultCacheWorkspaceIdentitySeparatesWorktrees(t *testing.T) {
+	args := map[string]any{"query": "wiki"}
+	left, err := resultCacheKey("/worktrees/left", "nav.search", "docs-generation-1", args)
+	if err != nil {
+		t.Fatal(err)
+	}
+	right, err := resultCacheKey("/worktrees/right", "nav.search", "docs-generation-1", args)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if left == right {
+		t.Fatal("different worktrees reused a result-cache identity")
+	}
 }

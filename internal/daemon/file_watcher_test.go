@@ -15,6 +15,7 @@ import (
 	"github.com/fgpaz/mi-lsp/internal/model"
 	"github.com/fgpaz/mi-lsp/internal/store"
 	"github.com/fgpaz/mi-lsp/internal/workspace"
+	"github.com/fsnotify/fsnotify"
 )
 
 func TestIsWatchableFile_ValidExtensions(t *testing.T) {
@@ -23,12 +24,17 @@ func TestIsWatchableFile_ValidExtensions(t *testing.T) {
 		want     bool
 	}{
 		{"file.cs", true},
-		{"file.go", false},
+		{"file.go", true},
 		{"file.ts", true},
 		{"file.tsx", true},
+		{"file.mts", true},
+		{"file.cts", true},
 		{"file.js", true},
 		{"file.jsx", true},
+		{"file.mjs", true},
+		{"file.cjs", true},
 		{"file.py", true},
+		{"file.pyi", true},
 	}
 
 	for _, tt := range tests {
@@ -46,7 +52,6 @@ func TestIsWatchableFile_InvalidExtensions(t *testing.T) {
 		filename string
 		want     bool
 	}{
-		{"file.go", false},
 		{"file.md", false},
 		{"file.txt", false},
 		{"file.json", false},
@@ -74,8 +79,9 @@ func TestIsWatchableFile_CaseInsensitive(t *testing.T) {
 		{"File.CS", true},
 		{"file.Ts", true},
 		{"File.TSX", true},
+		{"file.MTS", true},
 		{"FILE.JS", true},
-		{"file.Go", false},
+		{"file.Go", true},
 	}
 
 	for _, tt := range tests {
@@ -95,7 +101,7 @@ func TestIsWatchableFile_WithPaths(t *testing.T) {
 	}{
 		{"/path/to/file.cs", true},
 		{"C:\\path\\to\\file.ts", true},
-		{"/path/to/file.go", false},
+		{"/path/to/file.go", true},
 		{"./src/file.tsx", true},
 		{"../sibling/file.jsx", true},
 	}
@@ -119,7 +125,7 @@ func TestIsWatchableFile_EdgeCases(t *testing.T) {
 		{".", false},
 		{".cs", true},
 		{".ts", true},
-		{".go", false},
+		{".go", true},
 	}
 
 	for _, tt := range tests {
@@ -294,8 +300,8 @@ func TestShouldSkipDir_EdgeCases(t *testing.T) {
 }
 
 func TestIsWatchableFile_AllWatchableExtensions(t *testing.T) {
-	// Verify all watchable extensions are correctly recognized
-	watchable := []string{".cs", ".ts", ".tsx", ".js", ".jsx", ".py"}
+	// Verify all registry-backed code extensions are correctly recognized.
+	watchable := []string{".cs", ".go", ".ts", ".tsx", ".mts", ".cts", ".js", ".jsx", ".mjs", ".cjs", ".py", ".pyi"}
 
 	for _, ext := range watchable {
 		filename := "test" + ext
@@ -307,7 +313,7 @@ func TestIsWatchableFile_AllWatchableExtensions(t *testing.T) {
 }
 
 func TestIsWatchableFile_NonWatchableExtensions(t *testing.T) {
-	nonWatchable := []string{".go", ".md", ".txt", ".json", ".yaml", ".rb", ".php", ".cpp", ".h"}
+	nonWatchable := []string{".md", ".txt", ".json", ".yaml", ".rb", ".php", ".cpp", ".h"}
 
 	for _, ext := range nonWatchable {
 		filename := "test" + ext
@@ -359,7 +365,7 @@ func TestIsWatchableFile_MultipleDotsInFilename(t *testing.T) {
 	}{
 		{"file.min.js", true},   // last extension is .js
 		{"file.test.ts", true},  // last extension is .ts
-		{"file.spec.go", false}, // last extension is .go
+		{"file.spec.go", true},  // last extension is .go
 		{"file.tar.gz", false},  // last extension is .gz
 		{"file.min.css", false}, // last extension is .css
 	}
@@ -408,7 +414,7 @@ func TestWatchableExtensionsMap(t *testing.T) {
 	}
 
 	// Verify expected extensions are in the map
-	expectedExts := []string{".cs", ".ts", ".tsx", ".js", ".jsx", ".py"}
+	expectedExts := []string{".cs", ".go", ".ts", ".tsx", ".mts", ".cts", ".js", ".jsx", ".mjs", ".cjs", ".py", ".pyi"}
 	for _, ext := range expectedExts {
 		if _, ok := watchableExtensions[ext]; !ok {
 			t.Errorf("watchableExtensions missing %q", ext)
@@ -729,5 +735,115 @@ func TestWatcherForegroundIncrementalUpdatesFilesAndSymbolsTogether(t *testing.T
 	}
 	if !foundAfter {
 		t.Fatalf("symbols = %#v, want After symbol", symbols)
+	}
+}
+
+func TestClassifyWatchPathRoutesCanonicalDomainsAndExclusions(t *testing.T) {
+	root := t.TempDir()
+	tests := []struct {
+		path string
+		want watchDomain
+	}{
+		{filepath.Join(root, "src", "main.mts"), watchDomainCode},
+		{filepath.Join(root, ".docs", "wiki", "guide.md"), watchDomainDocs},
+		{filepath.Join(root, ".docs", "wiki", "00_gobierno_documental.md"), watchDomainAuthorityConfig},
+		{filepath.Join(root, ".docs", "wiki", "_mi-lsp", "read-model.toml"), watchDomainAuthorityConfig},
+		{filepath.Join(root, ".gitignore"), watchDomainAuthorityConfig},
+		{filepath.Join(root, ".docs", "raw", "draft.md"), ""},
+		{filepath.Join(root, ".docs", "auditoria", "report.md"), ""},
+		{filepath.Join(root, ".mi-lsp", "index.db"), ""},
+		{filepath.Join(root, "dist", "bundle.js"), ""},
+		{filepath.Join(root, "notes.txt"), ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.path, func(t *testing.T) {
+			if got := classifyWatchPath(root, tt.path); got != tt.want {
+				t.Fatalf("classifyWatchPath(%q) = %q, want %q", tt.path, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestWatcherEventPathsPreserveRenameAndDeleteSemantics(t *testing.T) {
+	changed, deleted := watcherEventPaths(watcherEvent{path: ".docs/wiki/old.md", op: fsnotify.Rename})
+	if len(changed) != 0 || len(deleted) != 1 || deleted[0] != ".docs/wiki/old.md" {
+		t.Fatalf("rename paths changed=%#v deleted=%#v", changed, deleted)
+	}
+	changed, deleted = watcherEventPaths(watcherEvent{path: ".docs/wiki/new.md", op: fsnotify.Create})
+	if len(changed) != 1 || len(deleted) != 0 || changed[0] != ".docs/wiki/new.md" {
+		t.Fatalf("create paths changed=%#v deleted=%#v", changed, deleted)
+	}
+}
+
+func TestWatcherBatchPreservesRenameDeleteAndCoalescesPaths(t *testing.T) {
+	var timers []*deterministicWatcherTimer
+	var calls []string
+	watcher := newTestBatchWatcher(&timers, func(path string) error {
+		calls = append(calls, path)
+		return nil
+	})
+	watcher.scheduleBatchEvent(fsnotify.Event{Name: ".docs/wiki/old.md", Op: fsnotify.Rename})
+	watcher.scheduleBatchEvent(fsnotify.Event{Name: ".docs/wiki/new.md", Op: fsnotify.Create})
+	watcher.scheduleBatchEvent(fsnotify.Event{Name: ".docs/wiki/new.md", Op: fsnotify.Write})
+	if len(watcher.pendingBatch) != 2 {
+		t.Fatalf("pending paths = %d, want 2", len(watcher.pendingBatch))
+	}
+	if watcher.pendingOps[".docs/wiki/old.md"] != fsnotify.Rename {
+		t.Fatalf("old event op = %v, want rename", watcher.pendingOps[".docs/wiki/old.md"])
+	}
+	if watcher.pendingOps[".docs/wiki/new.md"] != fsnotify.Create|fsnotify.Write {
+		t.Fatalf("new event op = %v, want create|write", watcher.pendingOps[".docs/wiki/new.md"])
+	}
+	watcher.flushBatch()
+	if len(calls) != 2 || calls[0] != ".docs/wiki/new.md" || calls[1] != ".docs/wiki/old.md" {
+		t.Fatalf("coalesced calls = %#v, want sorted new/old paths", calls)
+	}
+}
+
+func TestWatcherFailedRefreshRemainsPendingWithDiagnostic(t *testing.T) {
+	var timers []*deterministicWatcherTimer
+	watcher := newTestBatchWatcher(&timers, func(string) error {
+		return fmt.Errorf("parse failed")
+	})
+	watcher.pendingBatch[".docs/wiki/guide.md"] = struct{}{}
+	watcher.flushBatch()
+	if _, ok := watcher.pendingBatch[".docs/wiki/guide.md"]; !ok {
+		t.Fatal("failed refresh was removed from pending work")
+	}
+	diagnostics := watcher.PendingDiagnostics()
+	if !strings.Contains(diagnostics[".docs/wiki/guide.md"], "parse failed") {
+		t.Fatalf("diagnostics = %#v, want parse failure", diagnostics)
+	}
+}
+
+func TestWatcherLostEventRemainsVisibleForQueryOverlay(t *testing.T) {
+	watcher := &FileWatcher{batchDiagnostics: make(map[string]watcherDiagnostic)}
+	watcher.recordLostEvent("queue overflow")
+	if !watcher.LostEvents() {
+		t.Fatal("lost event marker was not retained")
+	}
+	diagnostics := watcher.PendingDiagnostics()
+	if !strings.Contains(diagnostics["<watcher>"], "lost_event") {
+		t.Fatalf("diagnostics = %#v, want lost-event marker for overlay freshness", diagnostics)
+	}
+}
+
+func TestWatcherWorktreeStateIsDistinct(t *testing.T) {
+	leftRoot := t.TempDir()
+	rightRoot := t.TempDir()
+	left, err := NewFileWatcher(model.WorkspaceRegistration{Name: "left", Root: leftRoot}, time.Millisecond)
+	if err != nil {
+		t.Fatal(err)
+	}
+	right, err := NewFileWatcher(model.WorkspaceRegistration{Name: "right", Root: rightRoot}, time.Millisecond)
+	if err != nil {
+		left.Stop()
+		t.Fatal(err)
+	}
+	defer left.Stop()
+	defer right.Stop()
+	left.scheduleBatchReindex(filepath.Join(leftRoot, "src", "main.go"))
+	if len(right.pendingBatch) != 0 {
+		t.Fatalf("right worktree inherited pending state: %#v", right.pendingBatch)
 	}
 }

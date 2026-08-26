@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/fgpaz/mi-lsp/internal/docgraph"
+	"github.com/fgpaz/mi-lsp/internal/livecontext"
 	"github.com/fgpaz/mi-lsp/internal/model"
 	"github.com/fgpaz/mi-lsp/internal/store"
 )
@@ -88,6 +89,34 @@ func (a *App) prepare(ctx context.Context, request model.CommandRequest) (model.
 		evidence.Warnings = append(evidence.Warnings, "pack returned a non-success envelope")
 	}
 
+	// Reuse the already-built pack anchor for one bridge pass. This keeps
+	// preparation additive without routing/packing a second time.
+	var bridgeContext *model.WikiCodeContext
+	if packErr == nil && packEnv.Ok {
+		bridgeRequest := child
+		bridgeRequest.Operation = "nav.pack"
+		scope, ok := livePackScope(bridgeRequest, packEnv)
+		if !ok {
+			if path := extractWikiPrimaryPath("nav.route", routeEnv.Items); path != "" {
+				scope = livecontext.WikiCodeScope{Kind: model.ScopeExactWiki, DocPaths: []string{path}}
+				ok = true
+			}
+		}
+		if ok {
+			bridgeBegin := time.Now()
+			resolved, bridgeErr := a.buildLiveWikiCodeContextForRequest(ctx, bridgeRequest, scope, packEnv.GraphFreshness)
+			evidence.Timings["wiki_code_context"] = time.Since(bridgeBegin).Milliseconds()
+			if bridgeErr != nil {
+				warningEnv := appendLiveWikiCodeWarning(model.Envelope{Warnings: evidence.Warnings}, bridgeErr)
+				evidence.Warnings = warningEnv.Warnings
+			} else {
+				setLivePreferredPrimary(&resolved, livePreferredPrimary(bridgeRequest, packEnv))
+				sanitizeLiveWikiCodeContext(&resolved)
+				bridgeContext = &resolved
+			}
+		}
+	}
+
 	begin = time.Now()
 	if planText != "" {
 		packet, parseErr := parseEditPlanPacket(planText, false)
@@ -129,7 +158,7 @@ func (a *App) prepare(ctx context.Context, request model.CommandRequest) (model.
 	if evidence.Failure != nil {
 		warnings = append(warnings, evidence.Failure.Kind+"/"+evidence.Failure.Code)
 	}
-	return model.Envelope{Ok: evidence.Failure == nil, Workspace: registration.Name, Backend: "semantic-preparation", Items: []model.SemanticPreparationEvidence{evidence}, Warnings: warnings, Stats: model.Stats{Ms: evidence.TotalMS}}, nil
+	return model.Envelope{Ok: evidence.Failure == nil, Workspace: registration.Name, Backend: "semantic-preparation", Items: []model.SemanticPreparationEvidence{evidence}, Warnings: warnings, Stats: model.Stats{Ms: evidence.TotalMS}, WikiCodeContext: bridgeContext}, nil
 }
 
 func preparationFailureEnvelope(request model.CommandRequest, evidence model.SemanticPreparationEvidence, kind, code, stage string, retryable bool, started time.Time) model.Envelope {

@@ -10,6 +10,18 @@ import (
 	"github.com/fgpaz/mi-lsp/internal/model"
 )
 
+func TestPrepareBridgeScopeReusesPackPrimary(t *testing.T) {
+	request := model.CommandRequest{Operation: "nav.pack", Context: model.QueryOptions{Workspace: "workspace"}, Payload: map[string]any{"task": "prepare"}}
+	pack := model.Envelope{Items: []model.PackResult{{
+		PrimaryDoc: ".docs/wiki/04_RF/RF-PREPARE.md",
+		Docs:       []model.PackDoc{{Path: ".docs/wiki/04_RF/RF-PREPARE.md", DocID: "RF-PREPARE"}},
+	}}}
+	scope, ok := livePackScope(request, pack)
+	if !ok || len(scope.DocPaths) != 1 || scope.DocPaths[0] != ".docs/wiki/04_RF/RF-PREPARE.md" {
+		t.Fatalf("prepare bridge scope=%+v ok=%v", scope, ok)
+	}
+}
+
 func TestNavPrepareEvidenceIsReadOnlyAndBoundsAllowedPaths(t *testing.T) {
 	root, alias := setupTestWorkspace(t)
 	writeWorkspaceFile(t, root, filepath.Join(".docs", "wiki", "00_gobierno_documental.md"), "governance")

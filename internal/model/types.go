@@ -836,6 +836,9 @@ type PackResult struct {
 	LookupStatus *WikiLookupStatus `json:"lookup_status,omitempty"`
 	Workspace    string            `json:"workspace,omitempty"`
 	Host         string            `json:"host,omitempty"`
+	// WikiCodeContext is populated per item only for federated pack results;
+	// single-workspace packs use Envelope.WikiCodeContext.
+	WikiCodeContext *WikiCodeContext `json:"wiki_code_context,omitempty"`
 }
 
 type WorkspaceCanonLink struct {
@@ -1173,6 +1176,9 @@ type TraceResult struct {
 	LookupStatus     *WikiLookupStatus `json:"lookup_status,omitempty"`
 	Workspace        string            `json:"workspace,omitempty"`
 	Host             string            `json:"host,omitempty"`
+	// WikiCodeContext is populated per item only for federated trace results;
+	// single-workspace traces use Envelope.WikiCodeContext.
+	WikiCodeContext  *WikiCodeContext `json:"wiki_code_context,omitempty"`
 }
 
 // RouteDoc is a single document in a canonical or discovery route lane.

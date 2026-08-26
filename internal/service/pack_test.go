@@ -50,6 +50,47 @@ func createFunctionalPackWorkspaceFixture(t *testing.T, alias string) string {
 	return root
 }
 
+func TestFilterRetiredPackQueryPreservesExplicitHistoricalRequests(t *testing.T) {
+	query := &docQueryContext{
+		docs: []model.DocRecord{{Path: ".docs/wiki/_retired/RF-OLD.md"}, {Path: ".docs/wiki/04_RF/RF-NEW.md"}},
+		docByPath: map[string]model.DocRecord{
+			".docs/wiki/_retired/RF-OLD.md": {Path: ".docs/wiki/_retired/RF-OLD.md"},
+			".docs/wiki/04_RF/RF-NEW.md":    {Path: ".docs/wiki/04_RF/RF-NEW.md"},
+		},
+		ranked: []scoredDoc{{record: model.DocRecord{Path: ".docs/wiki/_retired/RF-OLD.md"}}, {record: model.DocRecord{Path: ".docs/wiki/04_RF/RF-NEW.md"}}},
+		rankedByPath: map[string]scoredDoc{
+			".docs/wiki/_retired/RF-OLD.md": {record: model.DocRecord{Path: ".docs/wiki/_retired/RF-OLD.md"}},
+			".docs/wiki/04_RF/RF-NEW.md":    {record: model.DocRecord{Path: ".docs/wiki/04_RF/RF-NEW.md"}},
+		},
+	}
+	filterRetiredPackQuery(query, model.CommandRequest{Operation: "nav.pack", Payload: map[string]any{"task": "read"}})
+	if len(query.docs) != 1 || query.docs[0].Path != ".docs/wiki/04_RF/RF-NEW.md" {
+		t.Fatalf("default pack docs=%+v", query.docs)
+	}
+	filterRetiredPackQuery(query, model.CommandRequest{Operation: "nav.pack", Payload: map[string]any{"rf": "RF-OLD"}})
+	if len(query.docs) != 1 {
+		t.Fatalf("filtered query cannot restore retired docs: %+v", query.docs)
+	}
+}
+
+func TestLivePackScopeExcludesRetiredDocsUnlessExplicit(t *testing.T) {
+	request := model.CommandRequest{Operation: "nav.pack", Payload: map[string]any{"task": "read pack"}}
+	env := model.Envelope{Items: []model.PackResult{{
+		PrimaryDoc: ".docs/wiki/_retired/RF-OLD.md",
+		Docs: []model.PackDoc{{Path: ".docs/wiki/_retired/RF-OLD.md", DocID: "RF-OLD"}},
+	}}}
+	scope, ok := livePackScope(request, env)
+	if ok || len(scope.DocPaths) != 0 || len(scope.DocIDs) != 0 {
+		t.Fatalf("default pack scope retained retired doc: %+v ok=%v", scope, ok)
+	}
+
+	request.Payload["rf"] = "RF-OLD"
+	scope, ok = livePackScope(request, env)
+	if !ok || len(scope.DocPaths) != 1 || len(scope.DocIDs) != 1 {
+		t.Fatalf("explicit pack scope did not retain historical selector: %+v ok=%v", scope, ok)
+	}
+}
+
 func TestNavPackPreviewUsesRouteCoreAnchorAndShortPack(t *testing.T) {
 	alias := "pack-func-" + filepath.Base(t.TempDir())
 	root := createFunctionalPackWorkspaceFixture(t, alias)

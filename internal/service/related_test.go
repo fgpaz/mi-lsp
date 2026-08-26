@@ -12,6 +12,30 @@ import (
 	"github.com/fgpaz/mi-lsp/internal/model"
 )
 
+func TestLiveRelatedScopeUsesExactDefinitionIdentity(t *testing.T) {
+	definition := &symbolWithContent{File: "src/service.go", Name: "Run"}
+	scope, ok := liveRelatedScope(model.Envelope{Items: []symbolNeighborhood{{Definition: definition}}})
+	if !ok || scope.Kind != model.ScopeReverseCode || scope.TargetPath != "src/service.go" || scope.TargetSymbol != "Run" {
+		t.Fatalf("related scope=%+v ok=%v", scope, ok)
+	}
+
+	scope, ok = liveRelatedScope(model.Envelope{Items: []symbolNeighborhood{{Definition: &symbolWithContent{File: "/tmp/service.go", Name: "Run"}}}})
+	if ok || scope.TargetPath != "" {
+		t.Fatalf("absolute related definition leaked into scope: %+v ok=%v", scope, ok)
+	}
+}
+
+func TestRelatedIncludesAdditiveWikiContextProjection(t *testing.T) {
+	result := model.WikiCodeContext{WikiContext: []model.WikiCodeWikiContextItem{{Path: ".docs/wiki/04_RF/RF-LIVE-001.md", DocID: "RF-LIVE-001"}}}
+	env := model.Envelope{Items: []symbolNeighborhood{{Symbol: "Run"}}}
+	items := env.Items.([]symbolNeighborhood)
+	items[0].WikiContext = append([]model.WikiCodeWikiContextItem(nil), result.WikiContext...)
+	env.Items = items
+	if got := env.Items.([]symbolNeighborhood)[0].WikiContext; len(got) != 1 || got[0].DocID != "RF-LIVE-001" {
+		t.Fatalf("wiki_context=%+v", got)
+	}
+}
+
 func TestRelatedWithoutActiveGenerationIsExplicitAndNonBlocking(t *testing.T) {
 	root, alias := setupTestWorkspace(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)

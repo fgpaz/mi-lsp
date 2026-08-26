@@ -7,6 +7,15 @@ import (
 	"github.com/spf13/cobra"
 )
 
+func TestNavBridgeCommandsKeepExistingPublicNames(t *testing.T) {
+	command := newNavCommand(&rootState{})
+	for _, path := range [][]string{{"trace"}, {"pack"}, {"related"}, {"neighbors"}, {"prepare"}, {"change-pack"}, {"wiki", "trace"}, {"wiki", "pack"}} {
+		if _, _, err := command.Find(path); err != nil {
+			t.Fatalf("bridge command %v is not available: %v", path, err)
+		}
+	}
+}
+
 func TestNavCommandExposesRepoScopeFlags(t *testing.T) {
 	command := newNavCommand(&rootState{})
 

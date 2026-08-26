@@ -149,6 +149,17 @@ func IncrementalIndex(ctx context.Context, workspaceRoot string) (Result, error)
 	return IncrementalIndexWithGraphProgress(ctx, workspaceRoot, "", nil, GraphIndexOptions{})
 }
 
+// IncrementalIndexWithPaths applies an explicit watcher change set. Unlike
+// IncrementalIndex, it does not consult Git status: fsnotify events are the
+// authoritative input for this background pass, while query-time overlay and
+// reconciliation remain responsible for events that were lost before delivery.
+func IncrementalIndexWithPaths(ctx context.Context, workspaceRoot string, changedFiles, deletedFiles []string) (Result, error) {
+	return incrementalIndexWithGraphProgressAndChanges(ctx, workspaceRoot, "", nil, GraphIndexOptions{}, nil, &incrementalChangeSet{
+		changed: normalizeIncrementalPaths(workspaceRoot, changedFiles),
+		deleted: normalizeIncrementalPaths(workspaceRoot, deletedFiles),
+	})
+}
+
 // IncrementalIndexWithGraphProgress updates the catalog and, when needed,
 // republishes a complete graph generation before returning success. Observation
 // happens before catalog writes so observer failures preserve the prior graph;
@@ -165,6 +176,17 @@ func IncrementalIndexWithGraphProgressForJob(ctx context.Context, workspaceRoot,
 }
 
 func incrementalIndexWithGraphProgress(ctx context.Context, workspaceRoot, generationID string, progress ProgressFunc, graphOptions GraphIndexOptions, publication *IndexJobPublication) (Result, error) {
+	return incrementalIndexWithGraphProgressAndChanges(ctx, workspaceRoot, generationID, progress, graphOptions, publication, nil)
+}
+
+// incrementalChangeSet is intentionally private: the watcher only supplies
+// normalized paths and the publication/ownership contract remains in T4.
+type incrementalChangeSet struct {
+	changed []string
+	deleted []string
+}
+
+func incrementalIndexWithGraphProgressAndChanges(ctx context.Context, workspaceRoot, generationID string, progress ProgressFunc, graphOptions GraphIndexOptions, publication *IndexJobPublication, changes *incrementalChangeSet) (Result, error) {
 	started := time.Now()
 	if err := ctx.Err(); err != nil {
 		return Result{}, err
@@ -184,9 +206,15 @@ func incrementalIndexWithGraphProgress(ctx context.Context, workspaceRoot, gener
 		return Result{}, fmt.Errorf("canonical docs missing from index; fallback to full index")
 	}
 
-	changedFiles, deletedFiles := gitChangedFiles(ctx, workspaceRoot)
-	if err := ctx.Err(); err != nil {
-		return Result{}, err
+	var changedFiles, deletedFiles []string
+	if changes != nil {
+		changedFiles = append([]string(nil), changes.changed...)
+		deletedFiles = append([]string(nil), changes.deleted...)
+	} else {
+		changedFiles, deletedFiles = gitChangedFiles(ctx, workspaceRoot)
+		if err := ctx.Err(); err != nil {
+			return Result{}, err
+		}
 	}
 	hasChanges := len(changedFiles) != 0 || len(deletedFiles) != 0
 	if requiresFullReindex(changedFiles) || requiresFullReindex(deletedFiles) {
@@ -195,19 +223,29 @@ func incrementalIndexWithGraphProgress(ctx context.Context, workspaceRoot, gener
 
 	var docChangedPaths, docDeletedPaths, codeChangedPaths, codeDeletedPaths []string
 	for _, path := range changedFiles {
+		if isExcludedIncrementalPath(path) {
+			continue
+		}
 		if isDocPath(path) {
 			docChangedPaths = append(docChangedPaths, path)
 		} else {
+			// Preserve the existing graph-observation behavior for project/config
+			// files such as go.mod; only registry-backed source paths are later
+			// mutated in the catalog loop.
 			codeChangedPaths = append(codeChangedPaths, path)
 		}
 	}
 	for _, path := range deletedFiles {
+		if isExcludedIncrementalPath(path) {
+			continue
+		}
 		if isDocPath(path) {
 			docDeletedPaths = append(docDeletedPaths, path)
 		} else {
 			codeDeletedPaths = append(codeDeletedPaths, path)
 		}
 	}
+	hasChanges = len(docChangedPaths) != 0 || len(docDeletedPaths) != 0 || len(codeChangedPaths) != 0 || len(codeDeletedPaths) != 0
 	hasDocChanges := len(docChangedPaths) > 0 || len(docDeletedPaths) > 0
 	hasCodeChanges := len(codeChangedPaths) > 0 || len(codeDeletedPaths) > 0
 	if strings.TrimSpace(generationID) == "" && (hasDocChanges || hasCodeChanges) {
@@ -291,6 +329,9 @@ func incrementalIndexWithGraphProgress(ctx context.Context, workspaceRoot, gener
 			}
 			absPath := filepath.Join(workspaceRoot, filepath.FromSlash(relPath))
 			if matcher.ShouldIgnore(workspaceRoot, absPath) {
+				if changes != nil {
+					return fmt.Errorf("code path ignored for %s", relPath)
+				}
 				skippedFiles++
 				continue
 			}
@@ -300,9 +341,10 @@ func incrementalIndexWithGraphProgress(ctx context.Context, workspaceRoot, gener
 			}
 			content, readErr := os.ReadFile(absPath)
 			if readErr != nil {
-				graphWarnings = append(graphWarnings, fmt.Sprintf("code read failed for %s: %v", relPath, readErr))
-				skippedFiles++
-				continue
+				// A watcher event that cannot be read is not a current input.
+				// Return the error so the queue preserves it for retry/diagnostics
+				// instead of publishing a generation from a partial batch.
+				return fmt.Errorf("code read failed for %s: %w", relPath, readErr)
 			}
 			if err := ctx.Err(); err != nil {
 				return err
@@ -638,6 +680,9 @@ func legacyIncrementalIndexWithGraphProgress(ctx context.Context, workspaceRoot,
 	var codeDeletedPaths []string
 
 	for _, p := range changedFiles {
+		if isExcludedIncrementalPath(p) {
+			continue
+		}
 		if isDocPath(p) {
 			docChangedPaths = append(docChangedPaths, p)
 		} else {
@@ -645,6 +690,9 @@ func legacyIncrementalIndexWithGraphProgress(ctx context.Context, workspaceRoot,
 		}
 	}
 	for _, p := range deletedFiles {
+		if isExcludedIncrementalPath(p) {
+			continue
+		}
 		if isDocPath(p) {
 			docDeletedPaths = append(docDeletedPaths, p)
 		} else {
@@ -980,24 +1028,107 @@ func explicitlyNonGraphProject(project model.ProjectFile) bool {
 	return false
 }
 
+// IsAuthorityConfigPath reports whether a path can change canonical document
+// discovery or another high-fanout authority input. The watcher uses the same
+// predicate as incremental indexing so a config event cannot be mistaken for
+// an ordinary document edit.
+func IsAuthorityConfigPath(path string) bool {
+	normalized := strings.ToLower(normalizeIncrementalPath(path))
+	if normalized == "" || isExcludedIncrementalPath(normalized) {
+		return false
+	}
+	base := filepath.Base(normalized)
+	if base == "read-model.toml" && hasPathSegment(normalized, "_mi-lsp") {
+		return true
+	}
+	switch base {
+	case "00_gobierno_documental.md", "07_baseline_tecnica.md", ".gitignore", ".gitattributes", ".gitmodules", ".milspignore":
+		return true
+	case "project.toml":
+		return strings.HasPrefix(normalized, ".mi-lsp/")
+	}
+	// README changes have broad structural fanout in the T4 pipeline.
+	return strings.HasPrefix(normalized, "readme") && strings.HasSuffix(normalized, ".md")
+}
+
 func requiresFullReindex(paths []string) bool {
 	for _, path := range paths {
-		normalized := filepath.ToSlash(strings.ToLower(path))
-		base := filepath.Base(normalized)
-		// Governance, read-model, and config files always require full reindex.
-		if base == "read-model.toml" && (strings.Contains(normalized, "/_mi-lsp/") || strings.HasPrefix(normalized, "_mi-lsp/")) {
-			return true
-		}
-		// Governance doc changes require full reindex.
-		if base == "00_gobierno_documental.md" || base == "07_baseline_tecnica.md" {
-			return true
-		}
-		// README changes require full reindex (high fanout).
-		if strings.HasPrefix(normalized, "readme") && strings.HasSuffix(normalized, ".md") {
+		if IsAuthorityConfigPath(path) {
 			return true
 		}
 	}
 	return false
+}
+
+func hasPathSegment(path, want string) bool {
+	for _, segment := range strings.Split(strings.Trim(path, "/"), "/") {
+		if segment == want {
+			return true
+		}
+	}
+	return false
+}
+
+func isExcludedIncrementalPath(path string) bool {
+	parts := strings.Split(strings.ToLower(strings.Trim(normalizeIncrementalPath(path), "/")), "/")
+	for index, part := range parts {
+		if part == ".mi-lsp" || part == ".git" || part == ".worktrees" {
+			return true
+		}
+		if part == ".docs" && index+1 < len(parts) {
+			switch parts[index+1] {
+			case "raw", "auditoria", "temp":
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func normalizeIncrementalPath(path string) string {
+	path = strings.TrimSpace(strings.ReplaceAll(path, "\\", "/"))
+	if path == "" || strings.ContainsRune(path, 0) {
+		return ""
+	}
+	clean := filepath.ToSlash(filepath.Clean(filepath.FromSlash(path)))
+	clean = strings.TrimPrefix(clean, "./")
+	if clean == "." || clean == "" {
+		return ""
+	}
+	return clean
+}
+
+func normalizeIncrementalPaths(root string, paths []string) []string {
+	absRoot, _ := filepath.Abs(root)
+	seen := make(map[string]struct{}, len(paths))
+	result := make([]string, 0, len(paths))
+	for _, path := range paths {
+		path = strings.TrimSpace(path)
+		if path == "" {
+			continue
+		}
+		if filepath.IsAbs(path) {
+			rel, err := filepath.Rel(absRoot, filepath.Clean(path))
+			if err != nil || filepath.IsAbs(rel) || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+				continue
+			}
+			path = rel
+		}
+		path = normalizeIncrementalPath(path)
+		if path == "" || path == ".." || strings.HasPrefix(path, "../") || isExcludedIncrementalPath(path) {
+			continue
+		}
+		if !language.IsSupportedCodePath(path) && !isDocPath(path) && !IsAuthorityConfigPath(path) {
+			continue
+		}
+		if _, ok := seen[path]; ok {
+			continue
+		}
+		seen[path] = struct{}{}
+		result = append(result, path)
+	}
+	sort.Strings(result)
+	return result
 }
 
 func docIndexNeedsRecovery(ctx context.Context, workspaceRoot string) (bool, error) {

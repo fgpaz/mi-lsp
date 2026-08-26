@@ -2,6 +2,22 @@ package service
 
 import "testing"
 
+func TestChangePackLiveTargetsPreserveChangedSymbolsAndPaths(t *testing.T) {
+	packet := ChangePackPacket{
+		ChangedPaths: []string{"src/other.go", "src/service.go", "src/service.go"},
+		ChangedSymbols: []DiffSymbol{{File: "src/service.go", Name: "Run"}},
+	}
+	targets := changePackLiveTargets(packet)
+	if len(targets) != 2 || targets[0].path != "src/other.go" || targets[0].symbol != "" || targets[1].path != "src/service.go" || targets[1].symbol != "Run" {
+		t.Fatalf("live change targets=%+v", targets)
+	}
+
+	unsafe := changePackLiveTargets(ChangePackPacket{ChangedPaths: []string{"../outside.go", "/tmp/outside.go"}})
+	if len(unsafe) != 0 {
+		t.Fatalf("unsafe changed path entered bridge scope: %+v", unsafe)
+	}
+}
+
 func TestBuildChangePackContinuationEmitsBatch(t *testing.T) {
 	packet := ChangePackPacket{
 		ChangedPaths: []string{"internal/service/app.go"},

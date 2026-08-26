@@ -434,3 +434,50 @@ func TestReconcileDocs_WithAuthorityConfigHash(t *testing.T) {
 		t.Fatal("ReconcileDocs should set AuthorityConfigHash")
 	}
 }
+
+func TestIncrementalPathDrivenRefreshClassifiesMixedCodeAndCanonicalDocs(t *testing.T) {
+	changed := normalizeIncrementalPaths("/workspace", []string{
+		"/workspace/src/main.mts",
+		".docs/wiki/guide.md",
+		".docs/wiki/guide.md",
+		".docs/raw/draft.md",
+	})
+	deleted := normalizeIncrementalPaths("/workspace", []string{"/workspace/.docs/wiki/old.md"})
+	if len(changed) != 2 || changed[0] != ".docs/wiki/guide.md" || changed[1] != "src/main.mts" {
+		t.Fatalf("normalized changed paths = %#v", changed)
+	}
+	if len(deleted) != 1 || deleted[0] != ".docs/wiki/old.md" {
+		t.Fatalf("normalized deleted paths = %#v", deleted)
+	}
+}
+
+func TestIncrementalAuthorityConfigFanoutUsesExplicitPredicate(t *testing.T) {
+	tests := map[string]bool{
+		".docs/wiki/00_gobierno_documental.md":       true,
+		".docs/wiki/07_baseline_tecnica.md":          true,
+		".docs/wiki/_mi-lsp/read-model.toml":         true,
+		".gitignore":                                 true,
+		".milspignore":                               true,
+		"README.md":                                  true,
+		".docs/wiki/09_contratos_tecnicos.md":        false,
+		".docs/raw/00_gobierno_documental.md":       false,
+		".docs/auditoria/read-model.toml":            false,
+		".mi-lsp/index.db":                           false,
+	}
+	for path, want := range tests {
+		if got := IsAuthorityConfigPath(path); got != want {
+			t.Fatalf("IsAuthorityConfigPath(%q) = %v, want %v", path, got, want)
+		}
+	}
+}
+
+func TestIncrementalUnknownAndExcludedPathsNeverBecomeCurrentInputs(t *testing.T) {
+	for _, path := range []string{".docs/raw/draft.md", ".docs/auditoria/report.md", ".mi-lsp/index.db", ".git/HEAD", "notes.txt"} {
+		if isExcludedIncrementalPath(path) {
+			continue
+		}
+		if languageFromExt(filepath.Ext(path)) != "" {
+			t.Fatalf("unknown path %q became a code input", path)
+		}
+	}
+}

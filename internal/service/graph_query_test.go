@@ -9,6 +9,25 @@ import (
 	"github.com/fgpaz/mi-lsp/internal/store"
 )
 
+func TestLiveOverlayBoundProducesContinuationMarker(t *testing.T) {
+	overlay := model.WikiCodeOverlay{Omissions: []model.WikiCodeOmission{{Code: model.OmissionUnknownDocument, Reason: "exact scope document bound exceeded"}}}
+	if !liveOverlayWasTruncated(overlay) {
+		t.Fatal("bounded overlay was not marked truncated")
+	}
+}
+
+func TestLiveNeighborsScopeAcceptsWikiAndCodeSelectors(t *testing.T) {
+	wiki, ok := liveNeighborsScope(model.CommandRequest{Operation: "nav.neighbors", Payload: map[string]any{"selector": "RF-LIVE-001"}})
+	if !ok || wiki.Kind != model.ScopeExactWiki || len(wiki.DocIDs) != 1 || wiki.DocIDs[0] != "RF-LIVE-001" {
+		t.Fatalf("wiki neighbor scope=%+v ok=%v", wiki, ok)
+	}
+
+	code, ok := liveNeighborsScope(model.CommandRequest{Operation: "nav.neighbors", Payload: map[string]any{"selector": "src/service.go#Run"}})
+	if !ok || code.Kind != model.ScopeReverseCode || code.TargetPath != "src/service.go" || code.TargetSymbol != "Run" {
+		t.Fatalf("code neighbor scope=%+v ok=%v", code, ok)
+	}
+}
+
 func TestGraphRequestFromPayloadDefaultsAndOperationOverrides(t *testing.T) {
 	request := model.CommandRequest{Operation: "nav.callers", Context: model.QueryOptions{TokenBudget: 0}, Payload: map[string]any{
 		"selector":     "pkg.Widget",

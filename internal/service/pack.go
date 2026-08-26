@@ -45,7 +45,7 @@ func (a *App) pack(ctx context.Context, request model.CommandRequest) (model.Env
 	if err != nil {
 		return model.Envelope{}, err
 	}
-	memory, _ := loadReentryMemory(ctx, registration.Root)
+	memory, _ := loadLiveWikiCodeMemory(ctx, registration.Root)
 
 	task, _ := request.Payload["task"].(string)
 	task = strings.TrimSpace(task)
@@ -57,8 +57,9 @@ func (a *App) pack(ctx context.Context, request model.CommandRequest) (model.Env
 		return model.Envelope{}, fmt.Errorf("task is required")
 	}
 
-	query := loadDocQueryContext(ctx, registration, task)
+	query := loadPackQueryContext(ctx, registration, task)
 	defer query.Close()
+	filterRetiredPackQuery(query, request)
 	if query.dbErr != nil {
 		return model.Envelope{}, query.dbErr
 	}
@@ -195,6 +196,78 @@ func (a *App) pack(ctx context.Context, request model.CommandRequest) (model.Env
 	env = attachMemoryPointer(env, memory)
 	env.Continuation = buildPackContinuation(operation, task, result, request.Context, memory)
 	return applyCoachPolicy(applyAXIPreviewHints(env, request.Context, "preview mode: rerun with --full for slices"), request.Context), nil
+}
+
+func filterRetiredPackQuery(query *docQueryContext, request model.CommandRequest) {
+	if query == nil || livePackHistoricalSelector(query, request) {
+		return
+	}
+	filteredDocs := make([]model.DocRecord, 0, len(query.docs))
+	for _, doc := range query.docs {
+		if !isRetiredWikiPath(doc.Path) {
+			filteredDocs = append(filteredDocs, doc)
+		}
+	}
+	query.docs = filteredDocs
+	for path := range query.docByPath {
+		if isRetiredWikiPath(path) {
+			delete(query.docByPath, path)
+		}
+	}
+	filteredRanked := make([]scoredDoc, 0, len(query.ranked))
+	for _, item := range query.ranked {
+		if !isRetiredWikiPath(item.record.Path) {
+			filteredRanked = append(filteredRanked, item)
+		}
+	}
+	query.ranked = filteredRanked
+	for path := range query.rankedByPath {
+		if isRetiredWikiPath(path) {
+			delete(query.rankedByPath, path)
+		}
+	}
+}
+
+func livePackHistoricalSelector(query *docQueryContext, request model.CommandRequest) bool {
+	if value, ok := request.Payload["historical"].(bool); ok && value {
+		return true
+	}
+	if docPath := stringPayload(request.Payload, "doc"); isRetiredWikiPath(docPath) {
+		return true
+	}
+	for _, key := range []string{"rf", "fl"} {
+		selector := strings.TrimSpace(stringPayload(request.Payload, key))
+		if selector == "" {
+			continue
+		}
+		for _, doc := range query.docs {
+			if strings.EqualFold(strings.TrimSpace(doc.DocID), selector) && isRetiredWikiPath(doc.Path) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func loadPackQueryContext(ctx context.Context, registration model.WorkspaceRegistration, task string) *docQueryContext {
+	if _, err := os.Stat(store.WorkspaceDBPath(registration.Root)); err == nil {
+		return loadDocQueryContext(ctx, registration, task)
+	}
+	profile, profileSource, profileWarnings := docgraph.LoadProfile(registration.Root)
+	rankingTask, rankingNormalized := queryRankingTask(task)
+	return &docQueryContext{
+		registration:      registration,
+		task:              task,
+		rankingTask:       rankingTask,
+		rankingNormalized: rankingNormalized,
+		profile:           profile,
+		profileSource:     profileSource,
+		profileWarnings:   append([]string{}, profileWarnings...),
+		family:            docgraph.MatchFamily(rankingTask, profile),
+		docByPath:         map[string]model.DocRecord{},
+		ftsScores:         map[string]float64{},
+		rankedByPath:      map[string]scoredDoc{},
+	}
 }
 
 func ensurePackAnchorFirst(root string, task string, primary model.DocRecord, docs []model.PackDoc, full bool) ([]model.PackDoc, []string) {
@@ -678,8 +751,9 @@ func (a *App) wikiPackAllWorkspaces(ctx context.Context, request model.CommandRe
 
 	fanOutResult, err := nav.FanOutWiki(ctx, fanOutOpts, func(subCtx context.Context, ws model.WorkspaceRegistration) ([]any, map[string]any, error) {
 		// Query the doc index for this workspace
-		query := loadDocQueryContext(subCtx, ws, task)
+		query := loadPackQueryContext(subCtx, ws, task)
 		defer query.Close()
+		filterRetiredPackQuery(query, request)
 		if query.dbErr != nil {
 			return nil, map[string]any{}, query.dbErr
 		}
