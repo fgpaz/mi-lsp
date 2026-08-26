@@ -3,16 +3,19 @@ package daemon
 import (
 	"context"
 	"crypto/md5"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/fgpaz/mi-lsp/internal/indexer"
 	"github.com/fgpaz/mi-lsp/internal/model"
+	"github.com/fgpaz/mi-lsp/internal/service"
 	"github.com/fgpaz/mi-lsp/internal/store"
 	"github.com/fgpaz/mi-lsp/internal/workspace"
 	"github.com/fsnotify/fsnotify"
@@ -846,4 +849,104 @@ func TestWatcherWorktreeStateIsDistinct(t *testing.T) {
 	if len(right.pendingBatch) != 0 {
 		t.Fatalf("right worktree inherited pending state: %#v", right.pendingBatch)
 	}
+}
+
+func TestWikiCodeVerticalDirectDaemonParityByDigest(t *testing.T) {
+	root := newDaemonWikiCodeVerticalFixture(t)
+	request := model.CommandRequest{
+		ProtocolVersion: model.ProtocolVersion,
+		Operation:       "nav.trace",
+		Context:         model.QueryOptions{Workspace: root, MaxItems: 32, TokenBudget: 20_000},
+		Payload:         map[string]any{"rf": "RF-DEMO-001"},
+	}
+	direct, err := service.New(root, nil).Execute(context.Background(), request)
+	if err != nil {
+		t.Fatalf("direct trace: %v", err)
+	}
+	routed, err := (&Server{app: service.New(root, nil)}).handleRequest(request)
+	if err != nil {
+		t.Fatalf("daemon trace: %v", err)
+	}
+	if direct.WikiCodeContext == nil || routed.WikiCodeContext == nil {
+		t.Fatalf("bridge context missing: direct=%#v routed=%#v", direct.WikiCodeContext, routed.WikiCodeContext)
+	}
+	if direct.WikiCodeContext.DeterminismDigest == "" || routed.WikiCodeContext.DeterminismDigest == "" {
+		t.Fatalf("bridge digest missing: direct=%#v routed=%#v", direct.WikiCodeContext, routed.WikiCodeContext)
+	}
+	if direct.WikiCodeContext.DeterminismDigest != routed.WikiCodeContext.DeterminismDigest {
+		t.Fatalf("direct/daemon digest mismatch: direct=%q routed=%q", direct.WikiCodeContext.DeterminismDigest, routed.WikiCodeContext.DeterminismDigest)
+	}
+	canonicalDirect := model.WikiCodeContextDigest(*direct.WikiCodeContext)
+	canonicalRouted := model.WikiCodeContextDigest(*routed.WikiCodeContext)
+	if canonicalDirect != canonicalRouted {
+		t.Fatalf("canonical direct/daemon digest mismatch: direct=%q routed=%q", canonicalDirect, canonicalRouted)
+	}
+	left, _ := json.Marshal(direct.WikiCodeContext.DirectCode)
+	right, _ := json.Marshal(routed.WikiCodeContext.DirectCode)
+	if string(left) != string(right) {
+		t.Fatalf("direct/daemon direct evidence differs: direct=%s routed=%s", left, right)
+	}
+}
+
+func newDaemonWikiCodeVerticalFixture(t *testing.T) string {
+	t.Helper()
+	_, thisFile, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("runtime.Caller failed")
+	}
+	repoRoot := filepath.Clean(filepath.Join(filepath.Dir(thisFile), "..", ".."))
+	source := filepath.Join(repoRoot, "testdata", "wiki-code-bidirectional")
+	root := t.TempDir()
+	if err := copyDaemonWikiCodeVerticalTree(source, root); err != nil {
+		t.Fatalf("copy T3 fixture: %v", err)
+	}
+	project := model.ProjectFile{
+		Project: model.ProjectBlock{Name: "wiki-code-daemon", Kind: model.WorkspaceKindSingle, DefaultRepo: "repo", Languages: []string{"javascript", "typescript"}},
+		Repos: []model.WorkspaceRepo{{ID: "repo", Name: "repo", Root: ".", RepositoryIdentity: "https://example.com/wiki-code-daemon", Languages: []string{"javascript", "typescript"}}},
+	}
+	if err := workspace.SaveProjectFile(root, project); err != nil {
+		t.Fatalf("SaveProjectFile: %v", err)
+	}
+	if _, err := indexer.IndexWorkspaceWithGeneration(context.Background(), root, true, "wiki-code-daemon-baseline"); err != nil {
+		t.Fatalf("IndexWorkspace: %v", err)
+	}
+	return root
+}
+
+func copyDaemonWikiCodeVerticalTree(source, destination string) error {
+	entries, err := os.ReadDir(source)
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(destination, 0o755); err != nil {
+		return err
+	}
+	for _, entry := range entries {
+		srcPath := filepath.Join(source, entry.Name())
+		dstPath := filepath.Join(destination, entry.Name())
+		info, err := entry.Info()
+		if err != nil {
+			return err
+		}
+		if info.Mode()&os.ModeSymlink != 0 {
+			return fmt.Errorf("fixture contains unsupported symlink %s", entry.Name())
+		}
+		if entry.IsDir() {
+			if err := copyDaemonWikiCodeVerticalTree(srcPath, dstPath); err != nil {
+				return err
+			}
+			continue
+		}
+		content, err := os.ReadFile(srcPath)
+		if err != nil {
+			return err
+		}
+		if err := os.MkdirAll(filepath.Dir(dstPath), 0o755); err != nil {
+			return err
+		}
+		if err := os.WriteFile(dstPath, content, 0o644); err != nil {
+			return err
+		}
+	}
+	return nil
 }

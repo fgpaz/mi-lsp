@@ -417,6 +417,39 @@ func TestRenderStructuredFormats_PreserveWikiSourceFields(t *testing.T) {
 	}
 }
 
+func TestRenderWikiCodeContextPreservesFreshnessCostAndCanonicalDigest(t *testing.T) {
+	env := model.Envelope{
+		Ok:        true,
+		Backend:   "wiki-code-resolver",
+		Workspace: "wiki-code-fixture",
+		Items:     []model.TraceResult{{DocID: "RF-DEMO-001"}},
+		WikiCodeContext: &model.WikiCodeContext{
+			PrimaryDoc: model.DocRecord{Path: ".docs/wiki/04_RF/RF-DEMO-001.md", DocID: "RF-DEMO-001"},
+			DirectCode: []model.WikiCodeEvidence{{Path: "src/demo/service.mjs", Symbol: "runDemo", Relation: model.RelationImplements, Status: model.WikiCodeStatusResolvedSymbol}},
+			Tests:      []model.WikiCodeEvidence{{Path: "test/demo/service.test.mjs", Relation: model.RelationTests}},
+			Freshness: model.WikiCodeFreshness{DocsManifest: model.FreshnessCurrent, Bindings: model.FreshnessOverlay, Catalog: model.FreshnessCurrent, Graph: model.FreshnessStale, Authority: model.FreshnessCurrent},
+			Cost: model.WikiCodeResolveCost{MetadataChecked: 1, FilesHashed: 1, FilesParsed: 1, CatalogQueries: 2},
+			Provenance: model.WikiCodeProvenance{Backend: "wiki-code-resolver", QueryOnly: true},
+			DeterminismDigest: "digest-v1",
+		},
+	}
+	for _, format := range []string{"compact", "json", "toon", "yaml"} {
+		rendered, err := Render(env, format, false)
+		if err != nil {
+			t.Fatalf("Render(%s): %v", format, err)
+		}
+		text := string(rendered)
+		for _, want := range []string{"freshness", "cost", "determinism_digest", "runDemo", "service.test.mjs"} {
+			if !strings.Contains(text, want) {
+				t.Fatalf("Render(%s) omitted %q: %s", format, want, text)
+			}
+		}
+		if strings.Contains(text, "/tmp/") || strings.Contains(text, "C:\\") || strings.Contains(text, "\\\\") {
+			t.Fatalf("Render(%s) leaked host path: %s", format, text)
+		}
+	}
+}
+
 func TestRenderFormats_IncludeCoachBlock(t *testing.T) {
 	env := model.Envelope{
 		Ok:        true,
