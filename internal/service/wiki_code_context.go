@@ -88,6 +88,12 @@ func BuildWikiCodeContext(ctx context.Context, db *sql.DB, primary model.DocReco
 			}
 			seenTargets := make(map[string]struct{})
 			for _, edge := range edges {
+				// A graph materialization self-edge is metadata, not navigable
+				// evidence. The shared resolver applies the same rule to support
+				// expansion; keep this compatibility projection aligned.
+				if edge.FromNodeID == edge.ToNodeID {
+					continue
+				}
 				target, err := snapshot.Node(ctx, edge.ToNodeID)
 				if err != nil {
 					return model.WikiCodeContext{}, err
@@ -117,7 +123,7 @@ func BuildWikiCodeContext(ctx context.Context, db *sql.DB, primary model.DocReco
 					continue
 				}
 				ctxResult.GraphPaths = append(ctxResult.GraphPaths, model.WikiCodeGraphPath{From: from, To: to, Relation: edge.Relation, ClaimStatus: edge.ClaimStatus, EdgeRef: edge.CrossRID, EvidenceRefs: refs})
-				ctxResult.CodeEvidence = append(ctxResult.CodeEvidence, model.WikiCodeEvidence{Path: target.Identity.OwnerPath, Symbol: target.Identity.SemanticIdentity, Kind: target.Identity.SymbolKind, Language: target.Identity.Language, ClaimStatus: target.ClaimStatus, SourceDigest: target.SourceDigest.String(), EvidenceRefs: refs})
+				ctxResult.CodeEvidence = append(ctxResult.CodeEvidence, model.WikiCodeEvidence{Path: target.Identity.OwnerPath, Symbol: target.Identity.SemanticIdentity, Kind: target.Identity.SymbolKind, Language: target.Identity.Language, ClaimStatus: target.ClaimStatus, SourceDigest: target.SourceDigest.String(), EvidenceRefs: refs, Origin: "graph_observed", ObservedOrigin: "graph_observed", Status: "supporting", ResolutionStatus: "supporting", Relation: edge.Relation})
 			}
 			appendUnresolvedMentionOmissions(ctx, primary, mentions, snapshot, &ctxResult)
 		}

@@ -278,3 +278,13 @@ func TestBuildWikiCodeContextDeterministicDocsOnly(t *testing.T) {
 		}
 	}
 }
+
+func TestBuildWikiCodeContextMarksCompatibilityGraphEvidenceAsObserved(t *testing.T) {
+	context := model.WikiCodeContext{
+		CodeEvidence: []model.WikiCodeEvidence{{Path: "src/service.mjs", Origin: "graph_observed", ObservedOrigin: "graph_observed", Status: "supporting"}},
+	}
+	model.SortWikiCodeContext(&context)
+	if context.CodeEvidence[0].Origin != "graph_observed" || context.CodeEvidence[0].Status != "supporting" {
+		t.Fatalf("compatibility provenance = %#v", context.CodeEvidence)
+	}
+}
