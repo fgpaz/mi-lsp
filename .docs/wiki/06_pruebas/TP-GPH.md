@@ -165,6 +165,14 @@ cases:
     when: documentationGraphRequest
     then: publishGraph=true y se ensambla generation documental; sin identidad publicable, docs continúa y devuelve warning sanitizado
     evidence: internal/indexer/indexer.go; internal/indexer/indexer_progress_test.go
+  - id: TC-GPH-075
+    type: negativo
+    status: verificado
+    given: el smoke de Gastos de v0.8.0 encuentra referencias de declaración Roslyn duplicadas con la misma identidad
+    when: se normaliza el batch y se repite el workspace real
+    then: la prueba de contrato deduplica solo registros contractualmente idénticos; una misma referencia con identidad distinta sigue fallando cerrado
+    oracle: prueba de contrato y rerun del workspace real de Gastos
+    evidence: worker-dotnet/MiLsp.Worker/RoslynService.cs; worker-dotnet/MiLsp.Worker.ContractTests/Program.cs
 ```
 
 ## TP-GPH-001 - Identidad, NodeKey y cross-RID

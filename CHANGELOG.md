@@ -7,6 +7,12 @@ and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2
 
 ## [Unreleased]
 
+## [0.8.1] - 2026-08-27
+
+### Fixed
+
+- Roslyn duplicate declaration references no longer block real multi-project indexing.
+
 ## [0.8.0] - 2026-08-27
 
 ### Added

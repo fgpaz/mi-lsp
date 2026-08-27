@@ -156,6 +156,39 @@ static void AssertGraphInvariants(GraphObservationBatch observation)
 static string Sha256Text(string value)
     => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(value))).ToLowerInvariant();
 
+static void AssertExactDuplicateNodeNormalization()
+{
+    const string reference = "roslyn:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+
+    static GraphObservationNode CreateNode(string semanticIdentity)
+        => new()
+        {
+            Ref = reference,
+            Key = new GraphNodeKey
+            {
+                RepositoryIdentity = "example.invalid/repo",
+                BackendType = "roslyn",
+                Language = "csharp",
+                ProjectOrModule = "Fixture.csproj",
+                OwnerPath = "Fixture.cs",
+                SymbolKind = "type",
+                SemanticIdentity = semanticIdentity
+            },
+            DisplayName = "Fixture",
+            SourceDigest = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            ClaimStatus = "exact",
+            Resolution = "roslyn"
+        };
+
+    var batch = new GraphObservationBatch { Nodes = [CreateNode("T:Fixture"), CreateNode("T:Fixture")] };
+    RoslynService.NormalizeObservationIdsForContract(batch);
+    Require(batch.Nodes.Count == 1, "exact semantic duplicate nodes were not normalized");
+
+    var collision = new GraphObservationBatch { Nodes = [CreateNode("T:Fixture"), CreateNode("T:Other")] };
+    RoslynService.NormalizeObservationIdsForContract(collision);
+    Require(collision.Nodes.Count == 2, "same-ref different-identity collision was masked");
+}
+
 static void AssertEdgeEvidenceStableUnderReordering()
 {
     const string sourceDigest = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
@@ -278,6 +311,7 @@ GraphObservationBatch? emittedCompilerError = null;
 GraphObservationBatch? emittedCanceled = null;
 try
 {
+    AssertExactDuplicateNodeNormalization();
     AssertEdgeEvidenceStableUnderReordering();
     await AssertNestedProjectUsesRepoRelativeModule();
 

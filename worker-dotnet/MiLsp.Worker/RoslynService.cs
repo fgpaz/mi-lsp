@@ -362,6 +362,7 @@ public sealed class RoslynService
         }
 
         batch.Completeness = partial ? "partial" : "complete";
+        NormalizeObservationIds(batch);
         foreach (var capability in GraphCapabilities)
         {
             var observed = capability == "declarations" ? batch.Nodes.Count : batch.Edges.Count(edge => edge.Relation == capability);
@@ -369,7 +370,6 @@ public sealed class RoslynService
             var omitted = batch.Omissions.Count(item => item.Capability == capability);
             batch.Coverage.Add(new GraphObservationCoverage { Capability = capability, Eligible = observed + unresolved + omitted, Observed = observed, Unresolved = unresolved, Omitted = omitted });
         }
-        NormalizeObservationIds(batch);
         batch.Capabilities = batch.Capabilities.OrderBy(item => item.Capability, StringComparer.Ordinal).ToList();
         batch.Coverage = batch.Coverage.OrderBy(item => item.Capability, StringComparer.Ordinal).ToList();
         batch.Nodes = batch.Nodes.OrderBy(item => item.Ref, StringComparer.Ordinal).ToList();
@@ -449,8 +449,43 @@ public sealed class RoslynService
         }
     }
 
+    private readonly record struct GraphObservationNodeContract(
+        string Ref,
+        string RepositoryIdentity,
+        string BackendType,
+        string Language,
+        string ProjectOrModule,
+        string OwnerPath,
+        string SymbolKind,
+        string SemanticIdentity,
+        string DisplayName,
+        string SourceDigest,
+        string ClaimStatus,
+        string Resolution);
+
+    private static GraphObservationNodeContract GetNodeContract(GraphObservationNode node)
+    {
+        var key = node.Key;
+        return new GraphObservationNodeContract(
+            node.Ref,
+            key.RepositoryIdentity,
+            key.BackendType,
+            key.Language,
+            key.ProjectOrModule,
+            key.OwnerPath,
+            key.SymbolKind,
+            key.SemanticIdentity,
+            node.DisplayName,
+            node.SourceDigest,
+            node.ClaimStatus,
+            node.Resolution);
+    }
+
     private static void NormalizeObservationIds(GraphObservationBatch batch)
     {
+        var seenNodeContracts = new HashSet<GraphObservationNodeContract>();
+        batch.Nodes = batch.Nodes.Where(node => seenNodeContracts.Add(GetNodeContract(node))).ToList();
+
         var orderedEdges = batch.Edges
             .OrderBy(edge => edge.Relation, StringComparer.Ordinal)
             .ThenBy(edge => edge.FromRef, StringComparer.Ordinal)
@@ -607,6 +642,21 @@ public sealed class RoslynService
             {
                 Partial = true;
                 AddOmission(path, kind, "declaration_ref_collision", "inspect_candidates");
+                return;
+            }
+
+            if (_refIdentities.TryGetValue(reference, out var canonicalIdentity) && string.Equals(canonicalIdentity, identity, StringComparison.Ordinal))
+            {
+                _refs[symbol] = reference;
+                var existing = _batch.Nodes.First(node => node.Ref == reference);
+                if (string.Equals(existing.Key.OwnerPath, path, StringComparison.Ordinal))
+                {
+                    AddEvidence(reference, null, path, location, digest, "declaration", identity);
+                }
+                else
+                {
+                    AddOmission(path, kind, "additional_owner_evidence", "inspect_candidates");
+                }
                 return;
             }
 

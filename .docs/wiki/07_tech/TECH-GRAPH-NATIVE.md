@@ -271,7 +271,7 @@ En un container el modulo Go se observa una sola vez desde el checkout (`go.mod`
 
 ## Observacion Roslyn, sellado y normalizacion de unresolved
 
-El worker entrega el `GraphObservationBatch` ya canonico pero no sellado. El adapter puede validar canonicalidad de entrada; el core, despues del rebase al namespace global, es el unico owner de `SealGraphObservationBatch` y del gate `ReadyForStaging`. No se acepta que un batch no canonico o no sellado llegue al store.
+El worker entrega el `GraphObservationBatch` ya canonico pero no sellado. El adapter puede validar canonicalidad de entrada; el core, despues del rebase al namespace global, es el unico owner de `SealGraphObservationBatch` y del gate `ReadyForStaging`. No se acepta que un batch no canonico o no sellado llegue al store. En Roslyn, instancias repetidas de simbolos semánticamente equivalentes emiten un unico nodo canonico y su evidencia; los registros exactamente duplicados se normalizan defensivamente, mientras que una misma referencia con identidad contractual distinta sigue siendo invalida y falla cerrado.
 
 ```toon
 harness_protocol: SDD-HARNESS-v1
