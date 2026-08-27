@@ -117,3 +117,80 @@ El selector de contexto usa budgets y produce un reading pack ordenado por autor
 - Mismo primary doc con y sin graph enrichment; menor token count solo si conserva cadena obligatoria.
 - Precision/recall de links wiki-code y 30 repeticiones de determinismo/token budget.
 - `TP-GPH / TP-GPH-005 / TC-GPH-036..038`.
+
+## 10. Puente bidireccional wiki ↔ código (slice implementado)
+
+```toon
+doc_id: RF-GPH-007
+block_id: RF-GPH-007.live-bidirectional-bridge
+kind: wiki-code-bridge-contract
+source_of_truth: this
+status: implemented_slice
+scope: [nav.trace, nav.wiki.trace, nav.pack, nav.wiki.pack, nav.related, nav.neighbors, nav.prepare, nav.change-pack]
+semantics:
+  direction: [wiki_to_code, code_to_wiki]
+  freshness: bounded_fresh
+  read_your_writes: true
+  query_only: true
+result_lanes:
+  direct_code:
+    source: exact_active_declared_binding
+    statuses: [resolved_symbol, resolved_file]
+    authority: wiki_declaration_plus_current_target
+  tests:
+    source: exact_binding_with_relation_tests_or_target_kind_test
+    separate_from: direct_code
+  supporting_code:
+    source: graph_observed
+    relations: [imports, calls, references, tests]
+    gate: graph_freshness_current
+    never_promoted_to: direct_code
+  candidates:
+    source: bounded_lexical_lookup
+    status: candidate_only
+    never_promoted_to: direct_code
+reverse:
+  match: exact_target_path_then_optional_symbol
+  output: [doc_id, path, block_id, relation, role, binding_ref, linked_documentary_parents]
+  parent_source: existing_doc_edges_only
+authority:
+  wiki: authoritative
+  sqlite_bindings: derived_read_model
+  graph_and_catalog: derived_evidence
+  cache: derived_only
+  primary_doc: preserved_when_graph_enrichment_is_added
+lifecycle:
+  planned: nonnavigable_by_default
+  retired: excluded_by_default
+  historical: explicit_id_or_path_returns_bounded_superseded_by_redirect
+  raw_and_audit: excluded_from_canonical_authority
+freshness_domains:
+  - docs_manifest
+  - bindings
+  - catalog
+  - graph
+  - authority
+stale_graph:
+  direct_code_and_tests: preserved
+  supporting_code: omitted_with_typed_graph_stale
+overlay:
+  storage: ram_only
+  digest: explicit_and_deterministic
+  watcher: acceleration_only
+graph_v1: consumed_read_only_subset_only
+compatibility:
+  existing_fields: preserved
+  direct_daemon: same_canonical_items_order_omissions_and_digest
+  no_new_public_command: true
+  query_writes: forbidden
+verify:
+  - "FINAL_VERIFY e1835ee: go test ./... PASS (28 paquetes)"
+  - "wiki-code-bridge-runner/v1: PASS; direct/reverse precision and recall PASS"
+evidence:
+  - internal/model/wiki_code_context.go
+  - internal/livecontext/overlay.go
+  - internal/service/wiki_code_bindings.go
+  - internal/service/app.go
+  - internal/service/wiki_code_vertical_test.go
+  - .docs/wiki/06_pruebas/TP-GPH.md
+```

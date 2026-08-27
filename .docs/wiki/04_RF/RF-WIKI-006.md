@@ -119,7 +119,7 @@ configuration:
   source: .docs/wiki/_mi-lsp/read-model.toml
   defaults: {enabled: true, roots: [wiki/, bibliotecas/], hubs: D-TEDI-017}
   roots: "wiki/ y bibliotecas/ permanecen; roots configuradas se agregan de forma ordenada y deduplicada"
-  custom_hubs: "[[wiki_map.hub]] en orden declarado; primer patrón coincidente gana y no mezcla hubs default"
+  custom_hubs: "[[CT-NAV-WIKI|wiki_map.hub]] en orden declarado; primer patrón coincidente gana y no mezcla hubs default"
   disabled: "enabled=false desactiva mapa y alta automática de raíces de conocimiento"
 sources:
   preferred: query SQLite acotada a path,title y raíces configuradas

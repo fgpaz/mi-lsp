@@ -66,7 +66,7 @@ doc_edge_kinds:
   - embed
   - hierarchy
 graph_relation_for_doc_edges: doc_mentions
-wikilink_syntax: "[[nombre]] y ![[nombre|alias]]"
+wikilink_syntax: "enlace Obsidian por target, con alias y embed opcionales"
 hierarchy:
   - markdown en un directorio apunta a README.md de ese directorio si existe
   - wiki/*.md de primer nivel apunta a wiki/00-gobierno*.md si existe
@@ -137,3 +137,67 @@ Debe conservar `reason_code`, input/selector sanitizado, candidatos bounded, bac
 - Precision/recall por relation; `negative_violations=0` es gate independiente.
 - Validacion de orden, deduplicacion, cross-RID y cero dangling edges en 30 reruns.
 - `TP-GPH / TP-GPH-003 / TC-GPH-015..018`.
+
+## 10. Binding declarado y provenance del puente live
+
+```toon
+doc_id: RF-GPH-003
+block_id: RF-GPH-003.declared-binding-provenance
+kind: declared-binding-contract
+source_of_truth: this
+status: implemented_slice
+scope:
+  canonical_declaration: artifact_bindings
+  persisted_projection: doc_artifact_bindings
+  path_semantics: repository_relative_posix
+  source_range: [start_line, end_line]
+  identity_fields: [doc_path, block_id, doc_id, relation, target_path, target_symbol, target_kind, binding_ref]
+provenance_fields:
+  - authoring_origin
+  - binding_status
+  - doc_lifecycle
+  - superseded_by
+  - source_content_hash
+  - start_line
+  - end_line
+vocabulary:
+  relation: [implements, tests, configures, operates]
+  target_kind: [file, symbol, test, config]
+  authoring_origin: [canonical, legacy]
+  binding_status: [exact, planned]
+  doc_lifecycle: [active, deprecated, retired]
+resolution_order:
+  - exact_declared_binding
+  - current_target_path_and_hash
+  - catalog_exact_symbol
+  - lsp_or_graph_supporting_evidence_when_available
+  - bounded_lexical_candidates
+candidate_rule:
+  textual_candidate: candidate_only
+  provenance: text_candidate
+  direct_edge: forbidden
+  semantic_relation_from_text: forbidden
+graph_v1: consumed_read_only_subset_only
+legacy:
+  aliases: [implementation_anchors, code_links, test_links, implements, tests]
+  normalization: derived_binding_with_authoring_origin_legacy
+  authority: advisory
+lifecycle:
+  planned: stored_but_non_navigable
+  retired: history_only_by_default
+  explicit_historical: bounded_redirect_when_superseded_by_exists
+invariants:
+  exact_binding_precedes_graph_lsp_and_lexical
+  candidates_never_become_direct_edges: true
+  source_digest_and_binding_ref_are_stable: true
+  query_writes: forbidden
+verify:
+  - "FINAL_VERIFY e1835ee: go test ./... PASS (28 paquetes)"
+  - "wiki-code-bridge-runner/v1: status PASS; inventory=37; stable_digest_runs=30"
+evidence:
+  - internal/wikisource/parser.go
+  - internal/model/wiki_code_binding.go
+  - internal/service/wiki_code_bindings.go
+  - internal/store/schema.go
+  - .docs/wiki/06_pruebas/TP-GPH.md
+```

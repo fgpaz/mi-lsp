@@ -186,8 +186,8 @@ docs_only:
   preserves_code_catalog: true
   catalog_generation_pointer: reused_not_replaced
 wikilinks:
-  parse: "[[target]]"
-  embed: "![[target|alias]]"
+  parse: "target de enlace Obsidian"
+  embed: "target embebido con alias opcional"
   resolve_under_wiki_slash: wiki/<name>.md
 structural_hierarchy: [dir-readme, wiki-00-gobierno]
 not_authority:
@@ -201,7 +201,67 @@ evidence:
   - internal/docgraph/docgraph.go
 ```
 
-Adapters no conocen SQLite ni publican. Store no inventa identidad. Service no reextrae ni repara durante query. El daemon solo conserva warm state/cache y no cambia semantica.
+Los adapters no conocen SQLite ni publican. Store no inventa identidad. Durante una query, la mutación persistente, la migración, la reparación y la publicación siguen prohibidas; el servicio solo puede reconciliar archivos canónicos relevantes en un overlay acotado de RAM. El daemon únicamente conserva warm state/cache y no cambia la semántica.
+
+## Consulta live y overlay efímero
+
+```toon
+doc_id: TECH-GRAPH-NATIVE
+block_id: TECH-GRAPH-NATIVE.live-query-overlay
+kind: runtime-contract
+source_of_truth: this
+status: implemented_slice
+query:
+  persistent_mutation: forbidden
+  schema_migration: forbidden
+  repair: forbidden
+  publication: forbidden
+  source_mutation: forbidden
+  lock_acquisition: forbidden
+snapshot:
+  docs_generation: pinned_at_request_start
+  catalog_generation: pinned_at_request_start
+  graph_generation: pinned_at_request_start_when_current
+  fixed: true
+  immutable: true
+overlay:
+  allowed: bounded_deterministic_relevant_file_parsing
+  storage: ram_only
+  scope: query_relevant_canonical_documents
+  parser: existing_wikisource_parser_only
+  max_documents: {exact_wiki: 16, reverse_code: 256}
+  max_bytes: 4194304
+  unchanged_inputs: reuse_published_rows_without_body_parse
+  changed_inputs: parse_new_changed_or_racy_only
+  deletion: positive_disk_absence_only
+  excluded_alive: omission_without_tombstone
+  tombstones: request_view_only
+  digest: required_deterministic
+  digest_excludes: [timestamps, cost_counters, host_paths]
+freshness:
+  domains: [docs_manifest, bindings, catalog, graph, authority]
+  statuses: [current, overlay, stale, unknown, concurrent_change]
+cost:
+  explicit: true
+  counters: [metadata_checked, files_hashed, files_parsed, unchanged_reused, bytes_read]
+watcher:
+  role: acceleration_only
+  correctness: query_overlay_covers_lost_events
+  source_mutation: forbidden
+compatibility:
+  graph_v1: consumed_read_only_subset
+  wiki_authority: unchanged
+verify:
+  - "FINAL_VERIFY e1835ee: go test ./... PASS (28 paquetes)"
+  - "wiki-code-bridge-runner/v1: PASS; dirty overlay p95=75ms"
+evidence:
+  - internal/livecontext/manifest.go
+  - internal/livecontext/overlay.go
+  - internal/service/app.go
+  - internal/store/doc_artifact_state.go
+  - .docs/wiki/06_pruebas/TP-GPH.md
+```
+
 
 ## Identidad VCS y fan-out de observacion
 

@@ -44,7 +44,7 @@ Federar consultas wiki (search, route, trace, pack, inventory), resolver la raí
 
 ## 2. Scope in/out
 
-- In: `nav wiki` subcomandos (search, route, trace, pack, inventory) con flag `--all-workspaces`; `nav wiki-root` / `nav wiki root` resuelve la raíz portable (`[[canon]]`, `CanonLinks` o default `.docs/wiki`) sin fan-out; `nav wiki map` es single-workspace y cataloga hubs `wiki/` + `bibliotecas/`, patrón AllWorkspaces con semaphore=4 reusado de `internal/service/ask.go`, federar contra todos los workspaces `docs_ready=true` en registry, envelope TOON con campo `workspace` por item, `host:""` como anclaje para extensión cross-máquina, stats de `workspaces_queried/failed`, timeout por workspace (30s heredado de `nav ask`).
+- In: `nav wiki` subcomandos (search, route, trace, pack, inventory) con flag `--all-workspaces`; `nav wiki-root` / `nav wiki root` resuelve la raíz portable (`[[RF-WKS-008|canon]]`, `CanonLinks` o default `.docs/wiki`) sin fan-out; `nav wiki map` es single-workspace y cataloga hubs `wiki/` + `bibliotecas/`, patrón AllWorkspaces con semaphore=4 reusado de `internal/service/ask.go`, federar contra todos los workspaces `docs_ready=true` en registry, envelope TOON con campo `workspace` por item, `host:""` como anclaje para extensión cross-máquina, stats de `workspaces_queried/failed`, timeout por workspace (30s heredado de `nav ask`).
 - Out: edicion de workspaces, refactor de patrones de fan-out a nivel daemon, MCP/HTTP — mi-lsp permanece CLI puro.
 
 ## 3. Actors and ownership

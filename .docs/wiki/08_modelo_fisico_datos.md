@@ -80,6 +80,64 @@ El store repo-local persiste catalogo y grafo documental; el target graph-native
   - no crea tablas nuevas; `[recall.rerank_extension]` vive en `.mi-lsp/project.toml`
   - no persiste query, snippets, stdin/stdout, stderr, provider responses, tokens ni secretos
 
+## Cierre físico del puente wiki ↔ código
+
+```toon
+doc_id: 08_modelo_fisico_datos
+block_id: 08_modelo_fisico_datos.wiki-code-binding-state
+kind: physical-schema-contract
+source_of_truth: this
+status: implemented_slice
+bindings:
+  table: doc_artifact_bindings
+  owner: doc_path
+  identity: [doc_path, block_id, relation, target_path, target_symbol, target_kind, binding_ref]
+  provenance: [authoring_origin, binding_status, doc_lifecycle, superseded_by, source_content_hash, start_line, end_line]
+  indexes:
+    - idx_doc_artifact_bindings_doc: [doc_path, block_id]
+    - idx_doc_artifact_bindings_target: [target_path, target_symbol]
+    - idx_doc_artifact_bindings_relation: [relation, target_kind]
+    - idx_doc_artifact_bindings_ref: [binding_ref, unique]
+artifact_states:
+  table: doc_artifact_states
+  primary_key: path
+  fields: [size, mtime_nsec, content_sha256, parser_version, authority_config_hash, indexed_at, last_docs_gen_at, lifecycle]
+  lifecycle_index: lifecycle
+ownership:
+  document_owned_tables: [doc_artifact_bindings, doc_source_records, doc_source_blocks, doc_mentions, doc_edges, doc_records, doc_artifact_states]
+  replace_delete_scope: explicit_repo_relative_path
+  shrink_guard: unrelated_owner_rows_must_remain_unchanged
+generations:
+  per_domain:
+    docs: active_docs_generation_id
+    memory: active_memory_generation_id
+    catalog: active_catalog_generation_id
+    graph: active_graph_generation_id
+    graph_rollback: previous_graph_generation_id
+  docs_refresh: [docs, memory]
+  docs_refresh_preserves: [catalog]
+  docs_refresh_marks: [graph_stale]
+deletions:
+  positive_proof: [disk_absent, scope_changed]
+  excluded_alive: omission_without_delete
+  retired: historical_state_preserved
+query_access:
+  snapshot: fixed_at_request_start
+  sqlite: read_only
+  writes: forbidden
+  migrations_repairs_publication: forbidden
+  derived_views: [catalog, graph, cache]
+verify:
+  - "FINAL_VERIFY e1835ee: go test ./... PASS (28 paquetes)"
+  - "wiki-code-bridge-runner/v1: no_query_writes PASS"
+evidence:
+  - internal/store/schema.go
+  - internal/store/doc_artifact_state.go
+  - internal/store/queries_incremental.go
+  - internal/store/index_publish.go
+  - .docs/wiki/06_pruebas/TP-GPH.md
+```
+
 ## Reglas de consistencia y retencion
 
 - `index.db` debe tolerar reconstruccion completa con `mi-lsp index --clean` sin borrar el DB antes del publish.

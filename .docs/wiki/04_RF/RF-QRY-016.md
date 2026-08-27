@@ -136,3 +136,55 @@ TP-QRY
 - Trace: `internal/service/trace.go`
 - Compatibilidad `--repo`: `internal/service/wiki_compat.go`
 - Contrato: `.docs/wiki/09_contratos/CT-NAV-WIKI.md`
+
+## Puente wiki ↔ código en superficies existentes
+
+```toon
+doc_id: RF-QRY-016
+block_id: RF-QRY-016.live-wiki-code-bridge
+kind: additive-navigation-contract
+source_of_truth: this
+status: implemented_slice
+surfaces:
+  nav.trace: additive_wiki_code_context
+  nav.wiki.trace: additive_wiki_code_context
+  nav.pack: additive_wiki_code_context
+  nav.wiki.pack: additive_wiki_code_context
+  nav.related: additive_wiki_context_on_existing_neighborhood
+  nav.neighbors: additive_bounded_mixed_context
+  nav.prepare: reuses_existing_pack_anchor_and_bridge_context
+  nav.change-pack: additive_classification_and_next_queries
+path_bearing_records:
+  bindings: [doc_path, target_path, target_symbol, block_id, source_content_hash]
+  evidence: [path, doc_path, source_doc, source_block, source_line]
+  reverse_wiki: [doc_id, path, block_id, binding_ref, parents]
+  control: [direction, freshness, omissions, continuation, next_cursor, truncated]
+semantics:
+  direction: [wiki_to_code, code_to_wiki]
+  freshness: bounded_fresh_per_domain
+  read_your_writes: request_scoped_overlay
+  graph_support: optional_and_current_only
+compatibility:
+  existing_command_names: preserved
+  existing_fields: preserved
+  additive_nested_field: wiki_code_context
+  no_new_public_command: true
+  direct_daemon: canonical_items_order_omissions_and_digest_match
+  query_writes: forbidden
+authority:
+  canonical_wiki: unchanged
+  catalog_graph_sqlite: derived_only
+  raw_and_audit: never_primary
+verify:
+  - "FINAL_VERIFY e1835ee: go test ./... PASS (28 paquetes)"
+  - "wiki-code-bridge-runner/v1: PASS; inventory=37"
+evidence:
+  - internal/service/app.go
+  - internal/service/trace.go
+  - internal/service/pack.go
+  - internal/service/related.go
+  - internal/service/prepare.go
+  - internal/service/change_pack.go
+  - internal/model/wiki_code_context.go
+  - .docs/wiki/06_pruebas/TP-QRY.md
+```

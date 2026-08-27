@@ -65,6 +65,6 @@ Definir el contrato visible de `mi-lsp nav governance`.
 ## Reglas
 
 - El comando siempre esta permitido, incluso cuando el repo esta bloqueado.
-- `human_doc` y `projection_doc` siguen las rutas declaradas (`governance.source_doc` y `projection.output`): relativas, in-workspace o, para `source_doc`, dentro de un root `[[canon]]` declarado.
+- `human_doc` y `projection_doc` siguen las rutas declaradas (`governance.source_doc` y `projection.output`): relativas, in-workspace o, para `source_doc`, dentro de un root `[[RF-WKS-008|canon]]` declarado.
 - Puede auto-sincronizar `read-model.toml` en el workspace de código, pero no debe escribir un root de canon `read-only` y no debe ocultar que hace falta reindex si `index_sync=stale`.
 - Si la gobernanza es invalida, `nav ask` y `nav pack` deben devolver el mismo estado bloqueado en vez de continuar.

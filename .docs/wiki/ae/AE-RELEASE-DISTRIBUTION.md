@@ -47,6 +47,10 @@ evidence:
 ```toon
 doc_id: AE-RELEASE-DISTRIBUTION
 block_id: AE-RELEASE-DISTRIBUTION.v0.7.2-post-release
+kind: release-verification
+source_of_truth: this
+verify:
+  - mi-lsp nav wiki validate-source --workspace <alias> --ids AE-RELEASE-DISTRIBUTION --format toon
 status: published_and_verified
 publication: published
 target: v0.7.2
@@ -65,6 +69,10 @@ checks: worker/install/preparation/seed/governance/wiki PASS; wsl_skip: true (no
 ```toon
 doc_id: AE-RELEASE-DISTRIBUTION
 block_id: AE-RELEASE-DISTRIBUTION.v0.7.0-post-release
+kind: release-verification
+source_of_truth: this
+verify:
+  - mi-lsp nav wiki validate-source --workspace <alias> --ids AE-RELEASE-DISTRIBUTION --format toon
 status: published_and_verified
 publication: published
 target: v0.7.0
@@ -83,6 +91,10 @@ checks: worker/install/preparation/seed/governance/wiki PASS; stale_aliases_remo
 ```toon
 doc_id: AE-RELEASE-DISTRIBUTION
 block_id: AE-RELEASE-DISTRIBUTION.v0.6.1-preparation
+kind: release-verification
+source_of_truth: this
+verify:
+  - mi-lsp nav wiki validate-source --workspace <alias> --ids AE-RELEASE-DISTRIBUTION --format toon
 status: implemented_and_verified
 publication: published
 target: v0.6.1

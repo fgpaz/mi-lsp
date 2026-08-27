@@ -449,3 +449,122 @@ features:
 ```
 
 El mapa F1-F11 demuestra cobertura automatizada del árbol actual, y la campaña Harness-first fue ejecutada una única vez sobre `9bb3163` con binario real, provenance limpia (`vcs.modified=false`), RSS acotado y paridad direct/daemon por digest exacto. El registro sanitizado vive en `campaign_record` y en el paquete de cierre trazado; la salida raw permanece como evidencia externa temporal y no se promueve.
+
+## TP-GPH-T10 - Cierre ejecutado del puente wiki ↔ código
+
+```toon
+doc_id: TP-GPH
+block_id: TP-GPH.t10-live-wiki-code-bridge
+kind: executed-acceptance-map
+source_of_truth: this
+status: implemented_and_executed
+verification_basis:
+  branch: main
+  code_commit: e1835ee
+  implementation_commits: [d1c8e4a, badedb8, a910ac0, edf09dc, e2361a8]
+  repair_commit: e1835ee
+  go_test_all: PASS
+  go_test_packages: 28
+  git_diff_check: PASS
+  binary_sha256: 2f7d94cd1eec05b0055184cc05452725831e5b65404c4a095b7bc01717c36a1
+campaign:
+  schema: wiki-code-bridge-runner/v1
+  status: PASS
+  case_inventory_count: 37
+  case_inventory:
+    - full_index_fixture_baseline
+    - reverse_lookup
+    - supporting_only
+    - graph_stale
+    - edit_binding_overlay
+    - remove_binding_tombstone
+    - add_binding_reverse
+    - delete_rename_target
+    - fail_closed_inputs
+    - raw_audit_decoys
+    - unmapped_changed_code
+    - modern_js_extensions
+    - lost_watcher_event
+    - direct_daemon_parity
+    - no_query_writes
+    - same_tick_rewrite
+    - unknown_state_omission
+    - stable_digest_30
+    - cost_counters
+    - graph_v1_alias_normalization
+    - planned_binding
+    - retired_exclusion_redirect
+    - duplicate_doc_ids
+    - active_retired_transition
+    - governance_imports_self_export
+    - graph_v1_phase_ordering
+    - legacy_advisory
+    - mjs_find_related
+    - wiki_to_code_direct_precision
+    - code_to_wiki_reverse_recall
+    - false_direct_implementation_edges
+    - raw_audit_primary_results
+    - warm_mixed_neighbors_p95
+    - warm_direct_binding_lookup_p95
+    - stable_digest_runs
+    - dirty_single_file_overlay_target
+    - latency_campaign_complete
+  stable_digest_runs: 30
+  stable_digest: 0f32b7e85bb0bcbd727424321e0a272c27e6a94aca6c11c78bd12541bd9255a2
+  residual_risks: []
+acceptance:
+  overlay_read_your_writes: PASS
+  overlay_cases: [edit_binding_overlay, remove_binding_tombstone, add_binding_reverse, delete_rename_target, lost_watcher_event, same_tick_rewrite]
+  stale_graph: PASS_direct_evidence_preserved_with_typed_omission
+  modern_js_extensions: PASS
+  no_query_writes: PASS
+  direct_daemon_parity: PASS
+  deterministic_output: PASS_30_runs
+  direct_precision: {value: 1.0, status: PASS}
+  reverse_recall: {value: 1.0, status: PASS}
+  planned_non_navigable: PASS
+  retired_default_exclusion_and_historical_redirect: PASS
+  raw_audit_exclusion: PASS
+  fail_closed_inputs_and_unmapped_classification: PASS
+cost:
+  bindings_examined: 3
+  bytes_read: 3047
+  catalog_queries: 5
+  files_checked: 3
+  files_hashed: 4
+  files_parsed: 1
+  metadata_checked: 1
+  output_token_estimate: 210
+  semantic_backend_calls: 0
+  symbols_checked: 1
+latency_ms:
+  samples: 30
+  warm_direct_binding_lookup_p95: {value: 80, target: 100, status: PASS}
+  warm_mixed_neighbors_p95: {value: 69, target: 1000, status: PASS}
+  dirty_single_file_overlay_p95: {value: 75, target: 250, status: PASS}
+  cold_direct_lookup: 85.657
+  cold_reverse_lookup: 79.018
+  warm_reverse_lookup_p95: 83
+validator_boundary:
+  governance: PASS_in_sync_valid
+  full_workspace_validate_harness: BLOCKED_preexisting_content_drift
+  full_workspace_validate_source: BLOCKED_preexisting_content_drift
+  not_claimed_as_pass: [full_workspace_validate_harness, full_workspace_validate_source]
+  next_action: parent_repairs_and_reruns_targeted_and_full_validators
+verification_semantics:
+  sanitized_runner_metrics_are_evidence: true
+  raw_prompt_plan_and_host_paths_are_not_authority: true
+  graph_v1: consumed_read_only_subset_only
+verify:
+  - "FINAL_VERIFY code basis e1835ee: go test ./... PASS; git diff --check PASS"
+  - "sanitized FINAL_VERIFY result: wiki-code-bridge-runner/v1 PASS; inventory=37"
+evidence:
+  - internal/service/wiki_code_vertical_test.go
+  - internal/livecontext/overlay_test.go
+  - internal/livecontext/manifest_test.go
+  - internal/indexer/wiki_code_incremental_test.go
+  - internal/store/index_publish_test.go
+  - internal/store/queries_incremental.go
+  - internal/service/wiki_code_bindings_test.go
+  - .docs/wiki/06_pruebas/TP-GPH.md
+```

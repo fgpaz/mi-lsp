@@ -12,6 +12,8 @@ and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2
 - `nav wiki map` publishes a compact knowledge-wiki hub catalog (persona/proyectos/sistema/materia) without full bodies.
 - `index --docs-only` can publish a documentation `GraphGeneration` when canonical markdown exists under `wiki/`, `bibliotecas/`, `.docs/wiki/` or `docs/`.
 - Docgraph parses Obsidian wikilinks (`[[...]]`, `![[...]]`) and adds structural hierarchy edges to gobierno/README.
+- Existing trace/pack/related/neighbors/prepare/change-pack surfaces now expose additive bidirectional wiki↔code context with exact direct/test/supporting lanes, freshness, provenance, omissions, and continuation.
+- Relevant canonical edits are reconciled in a bounded request-scoped memory overlay without query-time writes, migrations, repairs, or publication; direct and daemon-aware paths preserve canonical compatibility.
 
 - `.mi-lsp/project.toml` `[[canon]]` declares external wiki roots `{id, root, role, mode}` resolved from the workspace root (never `.mi-lsp/` or cwd); absolute/`~/`/UNC/`C:` roots fail closed and parent-escape max defaults to 1 via optional `[canon_policy] escape_max`.
 - `mi-lsp nav wiki-root` (alias `nav wiki root`) publishes portable `wiki_root`, `role`, `workspace`, `governance_doc`, `resolved_from` (`canon.<id>` | `default` | `registry.link`) and `id` without hardcoding `.docs/wiki`.

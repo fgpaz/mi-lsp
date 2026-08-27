@@ -323,6 +323,66 @@ continuation:
 
 Ordering canonico: distance, confidence class (`exact`, `extracted`, `inferred`, `heuristic`), relation, display casefold + original, NodeKey/edge key y evidence digest. Timings, host path y daemon runtime metadata quedan fuera del determinism digest.
 
+## Envelope aditivo del puente wiki ↔ código
+
+```toon
+doc_id: CT-GRAPH-CLI
+block_id: CT-GRAPH-CLI.live-wiki-code-envelope
+kind: additive-output-contract
+source_of_truth: this
+status: implemented_slice
+applies_to: [nav.trace, nav.wiki.trace, nav.pack, nav.wiki.pack, nav.related, nav.neighbors, nav.prepare, nav.change-pack]
+existing_shape: preserved
+additive_fields:
+  context: [wiki_code_context, direction, overlay_digest, doc_generation_id, code_generation_id, determinism_digest]
+  evidence: [direct_code, tests, supporting_code, candidates, wiki_context, graph_paths]
+  status: [resolved_symbol, resolved_file, missing_path, missing_symbol, ambiguous_symbol, graph_stale, graph_unavailable, unsafe_target, concurrent_change]
+  provenance: [origin, authoring_origin, observed_origin, source_doc, source_block, source_line, binding_ref, evidence_refs]
+  freshness:
+    domains: [docs_manifest, bindings, catalog, graph, authority]
+    values: [current, overlay, stale, unknown, concurrent_change]
+  omissions: [code, source, reason, candidates, owner]
+  continuation: [truncated, next_cursor, direction, cursor, remaining]
+  classification: [classification, classifications]
+  cost: [bindings_examined, files_checked, files_hashed, files_parsed, metadata_checked, unchanged_reused, bytes_read, symbols_checked, catalog_queries, graph_nodes_visited, graph_edges_visited]
+path_bearing_records:
+  paths: repository_relative_only
+  binding_identity: [doc_path, target_path, target_symbol, block_id]
+  reverse_identity: [doc_id, path, block_id, binding_ref]
+classification_values: [direct_sdd_binding, supporting_code, shared_technical_binding, generated_or_vendor, mechanical_no_sdd_impact, unmapped_changed_code]
+semantics:
+  direct_code: exact_active_declared_binding
+  tests: separate_lane_never_direct_code
+  supporting_code: graph_observed_only_when_graph_current
+  candidates: bounded_text_only_never_direct_edge
+  omissions: typed_and_visible
+  continuation: required_when_bridge_result_is_truncated
+parity:
+  direct_daemon: same_canonical_items_order_status_provenance_freshness_omissions_and_digest
+  daemon_unavailable: direct_fallback_with_explicit_warning
+query:
+  sqlite_reads: pinned_snapshot
+  writes: forbidden
+  migrations: forbidden
+  repair: forbidden
+  publication: forbidden
+compatibility:
+  no_new_public_command: true
+  graph_v1: consumed_read_only_subset
+  wiki_authority: unchanged
+verify:
+  - "FINAL_VERIFY e1835ee: go test ./... PASS (28 paquetes)"
+  - "wiki-code-bridge-runner/v1: direct-daemon parity PASS; no_query_writes PASS"
+evidence:
+  - internal/model/wiki_code_context.go
+  - internal/model/types.go
+  - internal/service/app.go
+  - internal/service/wiki_code_bindings.go
+  - internal/service/wiki_code_vertical_test.go
+  - .docs/wiki/06_pruebas/TP-GPH.md
+```
+
+
 ## Canonicalizacion de GraphUnresolved y candidatos
 
 ```toon

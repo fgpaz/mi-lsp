@@ -278,3 +278,99 @@ queries:
 ```
 
 Los casos TC-QRY-140 a TC-QRY-146 son cobertura implementada del contrato y sus pruebas; no son resultados de campaña. `campaign_status=NOT_RUN` hasta ejecutar el runner autorizado.
+
+## TP-QRY-T10 - Cierre ejecutado de integración wiki ↔ código
+
+```toon
+doc_id: TP-QRY
+block_id: TP-QRY.t10-live-wiki-code-surfaces
+kind: executed-acceptance-map
+source_of_truth: this
+status: implemented_and_executed
+verification_basis:
+  code_commit: e1835ee
+  governance: PASS_in_sync_valid
+  go_test_all: PASS
+  go_test_packages: 28
+  git_diff_check: PASS
+  binary_sha256: 2f7d94cd1eec05b0055184cc05452725831e5b65404c4a095b7bc01717c36a1
+bridge_campaign:
+  schema: wiki-code-bridge-runner/v1
+  status: PASS
+  case_inventory_count: 37
+  stable_digest_runs: 30
+  stable_digest: 0f32b7e85bb0bcbd727424321e0a272c27e6a94aca6c11c78bd12541bd9255a2
+surfaces:
+  nav.trace_and_nav.wiki.trace:
+    status: PASS
+    behavior: additive_path_bearing_wiki_code_context
+  nav.pack_and_nav.wiki.pack:
+    status: PASS
+    behavior: additive_primary_doc_and_binding_context
+  nav.related:
+    status: PASS
+    behavior: additive_reverse_wiki_context_for_exact_definition
+  nav.neighbors:
+    status: PASS
+    behavior: additive_bounded_mixed_context
+  nav.prepare:
+    status: PASS
+    behavior: reuses_existing_pack_anchor_without_second_route_pack
+  nav.change-pack:
+    status: PASS
+    behavior: additive_classification_and_next_queries
+path_bearing_records:
+  binding: [doc_path, target_path, target_symbol, block_id, binding_ref]
+  direct_code: [path, symbol, doc_id, doc_path, source_doc, source_block, source_line]
+  reverse_wiki: [doc_id, path, block_id, relation, role, binding_ref]
+  control: [direction, freshness, omissions, continuation, truncated]
+acceptance:
+  edit_add_remove_delete_overlay: PASS
+  stale_graph_direct_binding: PASS
+  modern_js_extensions: PASS
+  zero_query_writes: PASS
+  direct_daemon_parity: PASS
+  deterministic_30_runs: PASS
+  planned_and_retired_policy: PASS
+  raw_audit_exclusion: PASS
+  exact_and_reverse_precision_recall: PASS
+cost:
+  bindings_examined: 3
+  bytes_read: 3047
+  catalog_queries: 5
+  files_checked: 3
+  files_hashed: 4
+  files_parsed: 1
+  metadata_checked: 1
+  output_token_estimate: 210
+  semantic_backend_calls: 0
+latency_ms:
+  warm_direct_binding_lookup_p95: {value: 80, target: 100, status: PASS}
+  warm_mixed_neighbors_p95: {value: 69, target: 1000, status: PASS}
+  dirty_single_file_overlay_p95: {value: 75, target: 250, status: PASS}
+  cold_direct_lookup: 85.657
+  cold_reverse_lookup: 79.018
+  warm_reverse_lookup_p95: 83
+compatibility:
+  existing_harness_first_campaign: NOT_RUN
+  no_new_public_command: true
+  query_writes: forbidden
+  graph_v1: consumed_read_only_subset_only
+verification_semantics:
+  sanitized_runner_metrics_are_evidence: true
+  raw_prompt_plan_and_host_paths_are_not_authority: true
+  full_workspace_validators: BLOCKED_preexisting_content_drift
+verify:
+  - "FINAL_VERIFY code basis e1835ee: go test ./... PASS; git diff --check PASS"
+  - "sanitized FINAL_VERIFY result: wiki-code-bridge-runner/v1 PASS; inventory=37"
+evidence:
+  - internal/service/app.go
+  - internal/service/trace.go
+  - internal/service/pack.go
+  - internal/service/related.go
+  - internal/service/prepare.go
+  - internal/service/change_pack.go
+  - internal/service/wiki_code_vertical_test.go
+  - internal/indexer/wiki_code_incremental_test.go
+  - .docs/wiki/06_pruebas/TP-QRY.md
+```

@@ -117,9 +117,9 @@ no_canon:
   resolved_from: default
   error: false
 paths: portable relative with /; never absolute
-role_flag: filtra [[canon]] o CanonLinks por role; si no hay match, error
+role_flag: filtra [[RF-WKS-008|canon]] o CanonLinks por role; si no hay match, error
 precedence:
-  - project [[canon]]
+  - project [[RF-WKS-008|canon]]
   - registry CanonLinks
   - default .docs/wiki
 out_of_scope:
@@ -154,7 +154,7 @@ negatives:
   - TC-WIKI-037
 invariants:
   - nav wiki-root y nav wiki root son el mismo operation nav.wiki-root
-  - sin [[canon]] no hay error; default es .docs/wiki
+  - sin [[RF-WKS-008|canon]] no hay error; default es .docs/wiki
   - la salida nunca incluye paths absolutos
   - consumers resuelven wiki_root con este comando, no con un path fijo
 verify:

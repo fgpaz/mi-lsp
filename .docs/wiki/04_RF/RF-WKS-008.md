@@ -1,4 +1,4 @@
-# RF-WKS-008 - Declarar raíces de wiki externas con `[[canon]]`
+# RF-WKS-008 - Declarar raíces de wiki externas con `[[RF-WKS-008|canon]]`
 
 ```yaml
 harness_protocol: SDD-HARNESS-v1
@@ -100,7 +100,7 @@ command: mi-lsp workspace link <alias> --role producto|ecosistema|gobierno_local
 project_file: .mi-lsp/project.toml
 workspace_root: directorio que contiene .mi-lsp/project.toml
 canon_table:
-  syntax: '[[canon]]'
+  syntax: '[[RF-WKS-008|canon]]'
   fields: {id, root, role, mode}
   resolve_relative_to: workspace_root
   never_resolve_from: [.mi-lsp/, cwd]
@@ -125,11 +125,11 @@ no_canon:
   resolved_from: default
   error: false
 governance:
-  source_doc: relative in-workspace OR inside declared [[canon]] root
+  source_doc: relative in-workspace OR inside declared [[RF-WKS-008|canon]] root
   unique_00_gobierno: one 00_gobierno_documental.md outside .docs/wiki is enough
   projection_output: stays in the code workspace; never a read-only foreign canon root
 index_docs_only:
-  walks: declared [[canon]] roots as ../relative markdown
+  walks: declared [[RF-WKS-008|canon]] roots as ../relative markdown
   invalid_root: skip with warning; do not write that root
 registry:
   command: mi-lsp workspace link <alias> --role
@@ -167,7 +167,7 @@ negatives:
   - TC-WKS-042
 invariants:
   - root se resuelve desde la raíz del workspace, no desde cwd ni .mi-lsp/
-  - ids de [[canon]] son únicos
+  - ids de [[RF-WKS-008|canon]] son únicos
   - mode omitido equivale a read-only
   - index --docs-only no escribe un root de canon inválido
 verify:

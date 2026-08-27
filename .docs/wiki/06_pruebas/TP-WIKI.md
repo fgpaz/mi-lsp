@@ -318,7 +318,7 @@ cases:
     then: "hub vacío; no aparecen en el mapa"
   - id: TC-WIKI-034
     type: positivo
-    given: "read-model.toml con roots y [[wiki_map.hub]] válidos"
+    given: "read-model.toml con roots y hubs declarados en wiki_map.hub válidos"
     when: "se carga el perfil y se ejecuta nav wiki map"
     then: "wiki/ y bibliotecas/ permanecen, las roots extra se agregan; solo los hubs custom aparecen en orden declarado y gana el primer patrón coincidente"
   - id: TC-WIKI-035
@@ -364,12 +364,12 @@ evidence: ".docs/wiki/06_pruebas/TP-WIKI.md"
 cases:
   - id: TC-WIKI-034
     type: positivo
-    given: "[[canon]] id=wiki root=../wiki-repo/Ingenieria role=producto"
+    given: "declaración canon con id=wiki, root=../wiki-repo/Ingenieria y role=producto"
     when: "mi-lsp nav wiki-root --workspace <alias> --format toon"
     then: "backend=wiki-root; wiki_root=../wiki-repo/Ingenieria; resolved_from=canon.wiki; governance_doc=../wiki-repo/Ingenieria/00_gobierno_documental.md; paths portables"
   - id: TC-WIKI-035
     type: positivo
-    given: "project.toml sin [[canon]] ni CanonLinks"
+    given: "project.toml sin declaración canon ni CanonLinks"
     when: "nav wiki-root"
     then: "wiki_root=.docs/wiki; governance_doc=.docs/wiki/00_gobierno_documental.md; resolved_from=default; ok=true"
   - id: TC-WIKI-036
@@ -379,7 +379,7 @@ cases:
     then: "operation=nav.wiki-root; filtra por role; envelope type sin cambio"
   - id: TC-WIKI-037
     type: negativo
-    given: "--role ecosistema sin [[canon]] ni link de ese role"
+    given: "--role ecosistema sin declaración canon ni link de ese role"
     when: "nav wiki-root --role ecosistema"
     then: "error fail-closed; no inventa default silencioso para ese role"
 ```
@@ -388,3 +388,93 @@ cases:
 
 - Ningun RF-WIKI-* se considera completamente especificado si no tiene al menos 4 test cases positivos trazados en TP-WIKI.
 - Cada TC-WIKI-* debe ser navegable desde `nav wiki trace TC-WIKI-XXX`.
+
+## TP-WIKI-T10 - Cierre ejecutado del puente documental
+
+```toon
+doc_id: TP-WIKI
+block_id: TP-WIKI.t10-live-wiki-code-bridge
+kind: executed-acceptance-map
+source_of_truth: this
+status: implemented_and_executed
+verification_basis:
+  code_commit: e1835ee
+  go_test_all: PASS
+  go_test_packages: 28
+  git_diff_check: PASS
+  binary_sha256: 2f7d94cd1eec05b0055184cc05452725831e5b65404c4a095b7bc01717c36a1
+bridge_campaign:
+  schema: wiki-code-bridge-runner/v1
+  status: PASS
+  case_inventory_count: 37
+  stable_digest_runs: 30
+  stable_digest: 0f32b7e85bb0bcbd727424321e0a272c27e6a94aca6c11c78bd12541bd9255a2
+surfaces:
+  trace: [nav.trace, nav.wiki.trace]
+  pack: [nav.pack, nav.wiki.pack]
+  nav.wiki.trace:
+    status: PASS
+    result: path_bearing_direct_tests_supporting_and_omissions_are_additive
+  nav.wiki.pack:
+    status: PASS
+    result: existing_pack_primary_doc_and_bridge_context_preserved
+bridge_not_attached_in_this_slice: [nav.wiki.search, nav.wiki.route]
+identity_policy: governed_document_identity_remains_primary
+records:
+  path_bearing: true
+  fields: [doc_id, path, block_id, target_path, target_symbol, relation, role, binding_ref]
+  no_fabricated_record_id: true
+policy:
+  wiki_authority: canonical
+  catalog_graph_sqlite: derived
+  raw_and_audit: excluded_from_primary_results
+  planned: nonnavigable_by_default
+  retired: excluded_by_default
+  historical: explicit_old_id_or_path_redirect
+acceptance:
+  edit_add_remove_delete_overlay: PASS
+  stale_graph_and_unknown_state_omissions: PASS
+  modern_js_extensions: PASS
+  no_query_writes: PASS
+  direct_daemon_parity: PASS
+  deterministic_30_runs: PASS
+  latency_and_cost: PASS
+cost:
+  bindings_examined: 3
+  bytes_read: 3047
+  catalog_queries: 5
+  files_checked: 3
+  files_hashed: 4
+  files_parsed: 1
+  metadata_checked: 1
+  semantic_backend_calls: 0
+latency_ms:
+  samples: 30
+  warm_direct_binding_lookup_p95: {value: 80, target: 100, status: PASS}
+  warm_mixed_neighbors_p95: {value: 69, target: 1000, status: PASS}
+  dirty_single_file_overlay_p95: {value: 75, target: 250, status: PASS}
+  cold_direct_lookup: 85.657
+  cold_reverse_lookup: 79.018
+  warm_reverse_lookup_p95: 83
+validator_boundary:
+  governance: PASS_in_sync_valid
+  full_workspace_validate_harness: BLOCKED_preexisting_content_drift
+  full_workspace_validate_source: BLOCKED_preexisting_content_drift
+  not_claimed_as_pass: [full_workspace_validate_harness, full_workspace_validate_source]
+  next_action: parent_repairs_and_reruns_targeted_and_full_validators
+verification_semantics:
+  sanitized_runner_metrics_are_evidence: true
+  raw_prompt_plan_and_host_paths_are_not_authority: true
+  graph_v1: consumed_read_only_subset_only
+verify:
+  - "FINAL_VERIFY code basis e1835ee: go test ./... PASS; git diff --check PASS"
+  - "sanitized FINAL_VERIFY result: wiki-code-bridge-runner/v1 PASS; inventory=37"
+evidence:
+  - internal/service/app.go
+  - internal/service/trace.go
+  - internal/service/pack.go
+  - internal/service/wiki_code_vertical_test.go
+  - internal/service/wiki_code_bindings_test.go
+  - internal/indexer/wiki_code_incremental_test.go
+  - .docs/wiki/06_pruebas/TP-WIKI.md
+```

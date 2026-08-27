@@ -54,6 +54,60 @@ mi-lsp nav wiki validate-source --workspace <alias> [--paths <path[,path...]>] [
 
 `nav wiki` es la puerta documental explicita para agentes. `wiki search` usa el docgraph repo-local y el scorer owner-aware para devolver candidatos wiki, mientras `wiki route`, `wiki pack` y `wiki trace` reutilizan la semantica y el shape de `nav route`, `nav pack` y `nav trace`. `wiki map` publica un catálogo compacto de hubs de una wiki de conocimiento (`wiki/` numerada y `bibliotecas/`) sin cuerpos completos y sin fan-out `--all-workspaces`. `wiki-root` (alias `wiki root`) publica la raíz portable; el envelope vive en [[CT-NAV-WIKI-ROOT]]. `wiki validate-harness` compila readiness de contratos `SDD-HARNESS-v1` sobre los docs gobernados. `wiki validate-source` compila readiness de artefactos que declaran `wiki_source_protocol: SDD-WIKI-SOURCE-v1`; los docs no migrados no son bloqueantes. `wiki search` acepta `RS` como layer outcome y `wiki trace` acepta `RS-*`, `RF-*`, `TP-*`, doc IDs tecnicos exactos (`TECH-*`, `DB-*`, `CT-*`) y source IDs exactos; para IDs tecnicos debe preferir el documento cuyo `doc_id` coincide exactamente antes de usar menciones o fallbacks RF. `--all` sigue recorriendo el set RF canonico, y cuando necesita fallback a disco debe priorizar las rutas gobernadas por `00`/`read-model` antes de caer a layouts legacy.
 
+## Integración aditiva del puente wiki ↔ código
+
+```toon
+doc_id: CT-NAV-WIKI
+block_id: CT-NAV-WIKI.live-wiki-code-surfaces
+kind: additive-navigation-contract
+source_of_truth: this
+status: implemented_slice
+surfaces:
+  trace: [nav.trace, nav.wiki.trace]
+  pack: [nav.pack, nav.wiki.pack]
+  code_context: [nav.related, nav.neighbors]
+  preparation: [nav.prepare]
+  impact: [nav.change-pack]
+path_bearing_records:
+  bindings: [doc_path, target_path, target_symbol, block_id, binding_ref]
+  context: [path, doc_path, source_doc, source_block, source_line, doc_id]
+  control: [direction, status, provenance, freshness, omissions, continuation, classification, cost]
+semantics:
+  direction: [wiki_to_code, code_to_wiki]
+  freshness: bounded_fresh_per_domain
+  read_your_writes: request_scoped_ram_overlay
+  exact: declared_binding_before_graph_or_lexical
+  tests: separate_from_direct_code
+  supporting: graph_current_only
+  candidates: never_direct_edges
+compatibility:
+  existing_envelopes: preserved
+  additive_field: wiki_code_context
+  no_new_public_command: true
+  direct_daemon: same_canonical_items_order_omissions_and_digest
+  query_writes: forbidden
+authority:
+  canonical_wiki: unchanged
+  index_catalog_graph: derived_only
+  raw_and_audit: excluded_from_primary_results
+lifecycle:
+  planned: nonnavigable_by_default
+  retired: excluded_by_default
+  historical: explicit_old_id_or_path_redirect_only
+verify:
+  - "FINAL_VERIFY e1835ee: go test ./... PASS (28 paquetes)"
+  - "wiki-code-bridge-runner/v1: PASS; inventory=37"
+evidence:
+  - internal/service/app.go
+  - internal/service/trace.go
+  - internal/service/pack.go
+  - internal/service/related.go
+  - internal/service/prepare.go
+  - internal/service/change_pack.go
+  - internal/model/wiki_code_context.go
+  - .docs/wiki/06_pruebas/TP-WIKI.md
+```
+
 ## Envelope `--all-workspaces`
 
 ```toon

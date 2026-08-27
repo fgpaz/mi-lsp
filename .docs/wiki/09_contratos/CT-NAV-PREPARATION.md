@@ -118,6 +118,12 @@ La versión `mi-lsp-preparation/v1` es un sobre portable y determinista. `create
 
 ```toon
 block_id: closure-v070-evidence
+kind: executed-acceptance-map
+source_of_truth: this
+verify:
+  - mi-lsp nav wiki validate-source --workspace <alias> --ids CT-NAV-PREPARATION --format toon
+evidence:
+  - .docs/auditoria/mi-lsp-portable-preparation-v1/traceability-closure.yaml
 status: implemented_and_verified
 automation: automated
 result: 17/17 PASS

@@ -33,7 +33,7 @@ Construir o refrescar el indice repo-local del workspace de manera incremental, 
 
 ## 2. Scope in/out
 
-- In: scan de archivos, respeto de ignores por defaults + `.gitignore` + `.milspignore` + `project.toml` honrando orden y re-includes negados, escritura en SQLite, ownership por `repo_id`, actualizacion por `content_hash`, indexacion de docs `.md` incluyendo roots `[[canon]]` en `index --docs-only`, warnings de ruido evidente.
+- In: scan de archivos, respeto de ignores por defaults + `.gitignore` + `.milspignore` + `project.toml` honrando orden y re-includes negados, escritura en SQLite, ownership por `repo_id`, actualizacion por `content_hash`, indexacion de docs `.md` incluyendo roots `[[RF-WKS-008|canon]]` en `index --docs-only`, warnings de ruido evidente.
 - Out: persistencia semantica completa de refs y jerarquias C#.
 
 ## 3. Main sequence

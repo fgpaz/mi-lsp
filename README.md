@@ -77,6 +77,8 @@ mi-lsp nav wiki search "billing retry" --workspace myapp --format toon
 - `nav pack` returns a small reading order for a task.
 - `nav wiki search` searches governed RF, FL, TP, CT, TECH, and DB documents directly.
 
+Existing `trace`, `pack`, `related`, `neighbors`, `prepare`, and `change-pack` commands can also return additive wiki↔code context. Relevant canonical edits are reconciled in a bounded request-scoped memory overlay, while existing fields and command names remain compatible; query handling stays read-only.
+
 ### Harness-first intent routing
 
 For supported intents, `mi-lsp` is the mandatory first route; there is no opt-out to bypass it. The local planner keeps the response bounded and makes every fallback explicit.

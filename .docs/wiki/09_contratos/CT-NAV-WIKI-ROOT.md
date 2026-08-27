@@ -69,7 +69,7 @@ item_shape:
   workspace: alias of the queried workspace
   governance_doc: portable relative path to 00_gobierno_documental.md
   resolved_from: canon.<id> | default | registry.link
-  id: [[canon]] id or linked alias; empty on default
+  id: [[RF-WKS-008|canon]] id or linked alias; empty on default
 paths: never absolute
 verify:
   - mi-lsp nav wiki-root --workspace <alias> --format toon
@@ -86,8 +86,8 @@ evidence:
 ## Reglas
 
 - El comando publica raíces portables para que skills y agentes no hardcodeen `.docs/wiki`.
-- Sin `[[canon]]` ni `CanonLinks`, `wiki_root=.docs/wiki`, `governance_doc=.docs/wiki/00_gobierno_documental.md` y `resolved_from=default`; no es error.
-- Con `[[canon]]`, `resolved_from=canon.<id>` y `wiki_root` es el `root` declarado (ejemplo: `../wiki-repo/Ingenieria`).
+- Sin `[[RF-WKS-008|canon]]` ni `CanonLinks`, `wiki_root=.docs/wiki`, `governance_doc=.docs/wiki/00_gobierno_documental.md` y `resolved_from=default`; no es error.
+- Con `[[RF-WKS-008|canon]]`, `resolved_from=canon.<id>` y `wiki_root` es el `root` declarado (ejemplo: `../wiki-repo/Ingenieria`).
 - Con `workspace link`, `resolved_from=registry.link`.
 - `--role` filtra por rol declarado; un rol sin coincidencia es error.
 - Un único `00_gobierno_documental.md` fuera de `.docs/wiki` basta; no hace falta duplicar el documento humano.
