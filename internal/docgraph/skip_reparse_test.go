@@ -42,7 +42,7 @@ func TestIndexWorkspaceDocsSkipReparseByContentHash(t *testing.T) {
 	if len(firstDocs) < 2 {
 		t.Fatalf("expected at least 2 docs, got %d", len(firstDocs))
 	}
-	prior := BuildPriorDocSnapshot(firstDocs, firstEdges, firstMentions, firstBlocks, firstRecords)
+	prior := BuildPriorDocSnapshot(firstDocs, firstEdges, firstMentions, firstBlocks, firstRecords, nil)
 	if prior == nil {
 		t.Fatal("expected prior snapshot")
 	}
@@ -103,7 +103,7 @@ func TestIndexWorkspaceDocsSkipReparseByContentHash(t *testing.T) {
 }
 
 func TestBuildPriorDocSnapshotNilWhenEmpty(t *testing.T) {
-	if got := BuildPriorDocSnapshot(nil, nil, nil, nil, nil); got != nil {
+	if got := BuildPriorDocSnapshot(nil, nil, nil, nil, nil, nil); got != nil {
 		t.Fatalf("expected nil prior for empty docs, got %#v", got)
 	}
 }

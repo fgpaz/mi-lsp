@@ -1754,4 +1754,3 @@ func isRFOrFLDoc(doc model.DocRecord) bool {
 	lower := strings.ToLower(normalizeWikiPath(doc.Path))
 	return strings.Contains(lower, "/04_rf/") || strings.Contains(lower, "/03_fl/")
 }
-

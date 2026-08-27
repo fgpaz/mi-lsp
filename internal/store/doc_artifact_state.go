@@ -108,6 +108,9 @@ func statFile(path string) (mtimeAndSize, error) {
 // contract without exporting filesystem stamp types or changing production
 // callers.
 var (
+	// racilyCleanNow remains a package-local compatibility seam for callers
+	// that used to control wall-clock age; RacilyClean intentionally does not
+	// consult it for metadata reuse.
 	racilyCleanNow      = time.Now
 	racilyCleanStatPath = statFile
 )
@@ -116,9 +119,20 @@ func sameMtimeAndSize(left, right mtimeAndSize) bool {
 	return left.mtimeNsec == right.mtimeNsec && left.size == right.size
 }
 
-func safelyOlderThanRacyWindow(stamp mtimeAndSize, now time.Time) bool {
-	nowNsec := now.UnixNano()
-	return stamp.mtimeNsec <= nowNsec && nowNsec-stamp.mtimeNsec > racilyCleanWindow()
+// safelyReadAfterStoredMtime reports whether the persisted successful
+// read/index timestamp is definitely later than the persisted file mtime.
+// IndexedAt is stored as Unix seconds, so a same-second value is intentionally
+// treated as too coarse and requires a body hash.
+func safelyReadAfterStoredMtime(state model.DocArtifactState) bool {
+	const maxUnixSecondsForNsec = int64(9223372036)
+	if state.IndexedAt <= 0 || state.IndexedAt > maxUnixSecondsForNsec {
+		return false
+	}
+	indexedAtNsec := state.IndexedAt * int64(time.Second)
+	if indexedAtNsec <= state.MtimeNsec {
+		return false
+	}
+	return indexedAtNsec-state.MtimeNsec > racilyCleanWindow()
 }
 
 func concurrentChangeError(absolutePath string, stored model.DocArtifactState, current mtimeAndSize, attempt int) error {
@@ -138,10 +152,11 @@ func concurrentChangeError(absolutePath string, stored model.DocArtifactState, c
 
 // RacilyClean compares a stored artifact state against the current filesystem
 // state. A metadata match is safe to reuse without reading the body only when
-// its mtime is older than racilyCleanWindow. Recent metadata matches are read
-// and hashed so same-size/same-mtime rewrites are detected. Metadata changes
-// use stat-before/read/stat-after and retry exactly once when the file is
-// unstable; a second unstable read returns ErrConcurrentChange.
+// the stored successful read/index time is safely after the stored mtime.
+// Missing or too-coarse index timestamps force a body hash so recent
+// same-size/same-mtime rewrites are detected. Metadata changes use
+// stat-before/read/stat-after and retry exactly once when the file is unstable;
+// a second unstable read returns ErrConcurrentChange.
 func RacilyClean(
 	ctx context.Context,
 	absolutePath string,
@@ -168,7 +183,7 @@ func RacilyClean(
 		}
 
 		metadataEqual := before.mtimeNsec == storedState.MtimeNsec && before.size == storedState.Size
-		if metadataEqual && storedState.ContentSHA256 != "" && safelyOlderThanRacyWindow(before, racilyCleanNow()) {
+		if metadataEqual && storedState.ContentSHA256 != "" && safelyReadAfterStoredMtime(storedState) {
 			return "", true, nil
 		}
 

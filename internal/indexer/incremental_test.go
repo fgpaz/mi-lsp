@@ -234,7 +234,7 @@ func setupIncrementalGraphFixture(t *testing.T) string {
 			t.Fatalf("git %v: %v\n%s", args, err, output)
 		}
 	}
-	if _, err := IndexWorkspace(context.Background(), root, true); err != nil {
+	if _, err := IndexWorkspaceWithGeneration(context.Background(), root, true, "gen-baseline"); err != nil {
 		t.Fatalf("initial IndexWorkspace: %v", err)
 	}
 	return root
@@ -257,6 +257,19 @@ func mustWriteIncrementalFile(t *testing.T, path string, content string) {
 // generation while preserving catalog generation and marking graph stale.
 func TestIncrementalIndexDocsAddPublishesDocsGeneration(t *testing.T) {
 	root := setupIncrementalGraphFixture(t)
+	ctx := context.Background()
+	db, err := store.Open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	baselineCatalog, ok, err := store.WorkspaceMetaValue(ctx, db, store.WorkspaceMetaActiveCatalogGeneration)
+	if err != nil || !ok || baselineCatalog == "" {
+		db.Close()
+		t.Fatalf("baseline catalog generation: err=%v ok=%v val=%q", err, ok, baselineCatalog)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
 
 	// Create a new wiki doc that git will see as changed (using add).
 	docPath := filepath.Join(root, ".docs", "wiki", "05_new_doc.md")
@@ -273,14 +286,16 @@ func TestIncrementalIndexDocsAddPublishesDocsGeneration(t *testing.T) {
 		t.Fatalf("git add: %v\n%s", err, out)
 	}
 
-	ctx := context.Background()
 	result, err := IncrementalIndex(ctx, root)
 	if err != nil {
 		t.Fatalf("IncrementalIndex: %v", err)
 	}
+	if result.Docs == 0 {
+		t.Fatalf("IncrementalIndex published %d docs, want at least one", result.Docs)
+	}
 
 	// Verify docs generation advanced.
-	db, err := store.Open(root)
+	db, err = store.Open(root)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -295,8 +310,8 @@ func TestIncrementalIndexDocsAddPublishesDocsGeneration(t *testing.T) {
 
 	// Catalog generation should be unchanged.
 	catalogVal, ok, err := store.WorkspaceMetaValue(ctx, db, store.WorkspaceMetaActiveCatalogGeneration)
-	if err != nil || !ok || catalogVal == "" {
-		t.Fatalf("catalog generation should exist: err=%v ok=%v val=%q", err, ok, catalogVal)
+	if err != nil || !ok || catalogVal != baselineCatalog {
+		t.Fatalf("catalog generation changed: err=%v ok=%v val=%q want unchanged %q", err, ok, catalogVal, baselineCatalog)
 	}
 
 	// Graph should be stale (docs changes mark graph stale).

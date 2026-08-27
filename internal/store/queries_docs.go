@@ -3,7 +3,9 @@ package store
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -37,10 +39,11 @@ func DocContentHashes(ctx context.Context, db *sql.DB) (map[string]string, error
 }
 
 func ReplaceDocsWithSources(ctx context.Context, db *sql.DB, docs []model.DocRecord, edges []model.DocEdge, mentions []model.DocMention, sourceBlocks []model.DocSourceBlock, sourceRecords []model.DocSourceRecord, bindings []model.DocArtifactBinding) error {
-	if unchanged, err := docsSnapshotUnchanged(ctx, db, docs); err != nil {
+	if unchanged, err := docsSnapshotUnchanged(ctx, db, docs, edges, mentions, sourceBlocks, sourceRecords, bindings); err != nil {
 		return err
 	} else if unchanged {
-		// Content hashes match the current snapshot; skip wholesale rewrite.
+		// The complete requested snapshot matches the current rows; skip the
+		// wholesale rewrite while retaining the existing publication telemetry.
 		return nil
 	}
 	tx, err := db.BeginTx(ctx, nil)
@@ -55,45 +58,119 @@ func ReplaceDocsWithSources(ctx context.Context, db *sql.DB, docs []model.DocRec
 	return tx.Commit()
 }
 
-func docsSnapshotUnchanged(ctx context.Context, db *sql.DB, docs []model.DocRecord) (bool, error) {
-	existing, err := DocContentHashes(ctx, db)
+// docsSnapshotUnchanged compares every row family in the requested document
+// snapshot. IndexedAt is publication telemetry and is deliberately excluded
+// from the semantic keys, while all other persisted fields participate in the
+// deterministic, order-independent comparison. Keeping source and binding
+// rows in the comparison prevents a docs-only fast path from hiding drift or
+// skipping a binding/source-only publication.
+func docsSnapshotUnchanged(ctx context.Context, db *sql.DB, docs []model.DocRecord, edges []model.DocEdge, mentions []model.DocMention, sourceBlocks []model.DocSourceBlock, sourceRecords []model.DocSourceRecord, bindings []model.DocArtifactBinding) (bool, error) {
+	existingDocs, err := ListDocRecords(ctx, db)
 	if err != nil {
 		return false, err
 	}
-	if len(existing) != len(docs) {
-		return false, nil
+	existingEdges, err := ListDocEdges(ctx, db)
+	if err != nil {
+		return false, err
 	}
-	for _, doc := range docs {
-		hash, ok := existing[doc.Path]
-		if !ok || hash != doc.ContentHash {
-			return false, nil
+	existingMentions, err := ListDocMentions(ctx, db)
+	if err != nil {
+		return false, err
+	}
+	existingBlocks, err := ListDocSourceBlocks(ctx, db)
+	if err != nil {
+		return false, err
+	}
+	existingRecords, err := ListDocSourceRecords(ctx, db)
+	if err != nil {
+		return false, err
+	}
+	existingBindings, err := ListDocArtifactBindings(ctx, db)
+	if err != nil {
+		return false, err
+	}
+
+	return equalSnapshotRows(normalizedDocRecords(existingDocs), normalizedDocRecords(docs)) &&
+		equalSnapshotRows(normalizedDocEdges(existingEdges), normalizedDocEdges(edges)) &&
+		equalSnapshotRows(normalizedDocMentions(existingMentions), normalizedDocMentions(mentions)) &&
+		equalSnapshotRows(normalizedDocSourceBlocks(existingBlocks), normalizedDocSourceBlocks(sourceBlocks)) &&
+		equalSnapshotRows(normalizedDocSourceRecords(existingRecords), normalizedDocSourceRecords(sourceRecords)) &&
+		equalSnapshotRows(normalizedDocArtifactBindings(existingBindings), normalizedDocArtifactBindings(bindings)), nil
+}
+
+func equalSnapshotRows(existing, requested []string) bool {
+	if len(existing) != len(requested) {
+		return false
+	}
+	for i := range existing {
+		if existing[i] != requested[i] {
+			return false
 		}
 	}
-	// Also check that source blocks and bindings are not stale.
-	// If doc_records are unchanged, source blocks and bindings must also be
-	// present (they are always re-published alongside docs). A zero-length
-	// sources/blocks/binds list on an otherwise identical docs snapshot means
-	// an index run that produced nothing (e.g. no wiki-source protocol), which
-	// counts as changed.
-	blocks, err := ListDocSourceBlocks(ctx, db)
-	if err != nil {
-		return false, err
+	return true
+}
+
+func snapshotRowKey(value any) string {
+	encoded, _ := json.Marshal(value)
+	return string(encoded)
+}
+
+func normalizedDocRecords(rows []model.DocRecord) []string {
+	keys := make([]string, 0, len(rows))
+	for _, row := range rows {
+		row.IndexedAt = 0
+		keys = append(keys, snapshotRowKey(row))
 	}
-	if len(blocks) == 0 {
-		// If we expected docs, a zero-blocks state may indicate drift.
-		// Conservatively report changed.
-		if len(docs) > 0 {
-			return false, nil
-		}
+	sort.Strings(keys)
+	return keys
+}
+
+func normalizedDocEdges(rows []model.DocEdge) []string {
+	keys := make([]string, 0, len(rows))
+	for _, row := range rows {
+		keys = append(keys, snapshotRowKey(row))
 	}
-	bindings, err := ListDocArtifactBindings(ctx, db)
-	if err != nil {
-		return false, err
+	sort.Strings(keys)
+	return keys
+}
+
+func normalizedDocMentions(rows []model.DocMention) []string {
+	keys := make([]string, 0, len(rows))
+	for _, row := range rows {
+		keys = append(keys, snapshotRowKey(row))
 	}
-	if len(bindings) == 0 && len(docs) > 0 {
-		return false, nil
+	sort.Strings(keys)
+	return keys
+}
+
+func normalizedDocSourceBlocks(rows []model.DocSourceBlock) []string {
+	keys := make([]string, 0, len(rows))
+	for _, row := range rows {
+		row.IndexedAt = 0
+		keys = append(keys, snapshotRowKey(row))
 	}
-	return true, nil
+	sort.Strings(keys)
+	return keys
+}
+
+func normalizedDocSourceRecords(rows []model.DocSourceRecord) []string {
+	keys := make([]string, 0, len(rows))
+	for _, row := range rows {
+		row.IndexedAt = 0
+		keys = append(keys, snapshotRowKey(row))
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+func normalizedDocArtifactBindings(rows []model.DocArtifactBinding) []string {
+	keys := make([]string, 0, len(rows))
+	for _, row := range rows {
+		row.IndexedAt = 0
+		keys = append(keys, snapshotRowKey(row))
+	}
+	sort.Strings(keys)
+	return keys
 }
 
 func replaceDocsTx(ctx context.Context, tx *sql.Tx, docs []model.DocRecord, edges []model.DocEdge, mentions []model.DocMention) error {

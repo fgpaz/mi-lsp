@@ -10,6 +10,21 @@ import (
 	"github.com/fgpaz/mi-lsp/internal/model"
 )
 
+const completeTestContentSHA256 = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+func completeTestArtifactState(path string) *model.DocArtifactState {
+	return &model.DocArtifactState{
+		Path:                path,
+		Size:                1,
+		MtimeNsec:           1,
+		ContentSHA256:       completeTestContentSHA256,
+		ParserVersion:       model.ParserVersion,
+		AuthorityConfigHash: completeTestContentSHA256,
+		IndexedAt:           2,
+		Lifecycle:           model.DocLifecycleActive,
+	}
+}
+
 func TestPublishIncrementalDocsGeneration_AdvancesDocsGeneration(t *testing.T) {
 	db, _ := seedTestDB(t)
 	ctx := context.Background()
@@ -55,13 +70,7 @@ func TestPublishIncrementalDocsGeneration_AdvancesDocsGeneration(t *testing.T) {
 				IndexedAt:       time.Now().Unix(),
 			},
 		},
-		State: &model.DocArtifactState{
-			Path:                "wiki/00_test.md",
-			ContentSHA256:       "hash-1",
-			ParserVersion:       model.ParserVersion,
-			AuthorityConfigHash: "config",
-			Lifecycle:           model.DocLifecycleActive,
-		},
+		State: completeTestArtifactState("wiki/00_test.md"),
 	}
 
 	if err := PublishIncrementalDocsGeneration(ctx, db, genID, []IncrementalDocChange{change}); err != nil {
@@ -106,11 +115,7 @@ func TestPublishIncrementalDocsGeneration_NoCatalogChange(t *testing.T) {
 			ContentHash: "hash-1",
 			IndexedAt:   time.Now().Unix(),
 		},
-		State: &model.DocArtifactState{
-			Path:          "wiki/00_test.md",
-			ContentSHA256: "hash-1",
-			Lifecycle:     model.DocLifecycleActive,
-		},
+		State: completeTestArtifactState("wiki/00_test.md"),
 	}
 
 	if err := PublishIncrementalDocsGeneration(ctx, db, genID, []IncrementalDocChange{change}); err != nil {
@@ -205,13 +210,7 @@ func TestPublishIncrementalDocsGeneration_PlannedBindingRoundTrip(t *testing.T) 
 				IndexedAt:       time.Now().Unix(),
 			},
 		},
-		State: &model.DocArtifactState{
-			Path:                "wiki/02_binding_test.md",
-			ContentSHA256:       "hash-1",
-			ParserVersion:       model.ParserVersion,
-			AuthorityConfigHash: "config",
-			Lifecycle:           model.DocLifecycleActive,
-		},
+		State: completeTestArtifactState("wiki/02_binding_test.md"),
 	}
 
 	if err := PublishIncrementalDocsGeneration(ctx, db, genID, []IncrementalDocChange{change}); err != nil {
@@ -245,9 +244,8 @@ func TestShrinkGuard_NoUnexplainedLoss(t *testing.T) {
 	change := IncrementalDocChange{
 		Action: "replace",
 		Path:   "wiki/a.md",
-		Doc: &model.DocRecord{
-			Path: "wiki/a.md", Title: "A", ContentHash: "h1", IndexedAt: 1,
-		},
+		Doc:   &model.DocRecord{Path: "wiki/a.md", Title: "A", ContentHash: "h1", IndexedAt: 1},
+		State: completeTestArtifactState("wiki/a.md"),
 	}
 	if err := PublishIncrementalDocsGeneration(ctx, db, "gen-1", []IncrementalDocChange{change}); err != nil {
 		t.Fatalf("first publish: %v", err)
@@ -269,6 +267,7 @@ func TestPublishIncrementalDocsGeneration_ReplacePreservesUnrelated(t *testing.T
 			Path: "wiki/a.md", Title: "A", ContentHash: "h1", IndexedAt: 1,
 		},
 		Blocks: []model.DocSourceBlock{{DocPath: "wiki/a.md", BlockID: "b1", SourceFormat: "SDD"}},
+		State:  completeTestArtifactState("wiki/a.md"),
 	}
 	if err := PublishIncrementalDocsGeneration(ctx, db, "gen-1", []IncrementalDocChange{change1}); err != nil {
 		t.Fatalf("first publish: %v", err)
@@ -279,9 +278,8 @@ func TestPublishIncrementalDocsGeneration_ReplacePreservesUnrelated(t *testing.T
 	change2 := IncrementalDocChange{
 		Action: "replace",
 		Path:   "wiki/b.md",
-		Doc: &model.DocRecord{
-			Path: "wiki/b.md", Title: "B", ContentHash: "h2", IndexedAt: 1,
-		},
+		Doc:   &model.DocRecord{Path: "wiki/b.md", Title: "B", ContentHash: "h2", IndexedAt: 1},
+		State: completeTestArtifactState("wiki/b.md"),
 	}
 	if err := PublishIncrementalDocsGeneration(ctx, db, "gen-2", []IncrementalDocChange{change2}); err != nil {
 		t.Fatalf("second publish: %v", err)
@@ -306,7 +304,7 @@ func TestPublishIncrementalDocsGeneration_ReplacePreservesUnrelated(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	count := 0
+	count = 0
 	for rows.Next() {
 		count++
 	}
@@ -393,7 +391,7 @@ func TestPublishIncrementalDocsGenerationForJob_UsesDocsMode(t *testing.T) {
 	if err := MarkIndexJobRunning(ctx, db, job.JobID, os.Getpid(), "indexing", fence); err != nil {
 		t.Fatal(err)
 	}
-	change := IncrementalDocChange{Action: "replace", Path: "wiki/job.md", Doc: &model.DocRecord{Path: "wiki/job.md", Title: "job", ContentHash: "hash"}, State: &model.DocArtifactState{Path: "wiki/job.md", ContentSHA256: "hash", Lifecycle: model.DocLifecycleActive}}
+	change := IncrementalDocChange{Action: "replace", Path: "wiki/job.md", Doc: &model.DocRecord{Path: "wiki/job.md", Title: "job", ContentHash: "hash"}, State: completeTestArtifactState("wiki/job.md")}
 	if err := PublishIncrementalDocsGenerationForJob(ctx, db, job.JobID, job.GenerationID, []IncrementalDocChange{change}, fence); err != nil {
 		t.Fatal(err)
 	}
@@ -419,7 +417,7 @@ func TestPublishIncrementalGenerationWithFileAndDocChanges_Atomic(t *testing.T) 
 	if err := UpsertDocArtifactState(ctx, db, model.DocArtifactState{Path: "wiki/old.md", ContentSHA256: "old", Lifecycle: model.DocLifecycleActive}); err != nil {
 		t.Fatal(err)
 	}
-	if err := PublishIncrementalGenerationWithFileAndDocChanges(ctx, db, "mixed-gen", 1, 1, 1, []IncrementalFileChange{{FilePath: "src/main.go", RepoID: "repo", RepoName: "repo", Language: "go", ContentHash: "new", Symbols: []model.SymbolRecord{{FilePath: "src/main.go", Name: "New", Kind: "function", Language: "go"}}}}, []IncrementalDocChange{{Action: "replace", Path: "wiki/new.md", Doc: &model.DocRecord{Path: "wiki/new.md", Title: "new", ContentHash: "new"}, State: &model.DocArtifactState{Path: "wiki/new.md", ContentSHA256: "new", Lifecycle: model.DocLifecycleActive}}}); err != nil {
+	if err := PublishIncrementalGenerationWithFileAndDocChanges(ctx, db, "mixed-gen", 1, 1, 1, []IncrementalFileChange{{FilePath: "src/main.go", RepoID: "repo", RepoName: "repo", Language: "go", ContentHash: "new", Symbols: []model.SymbolRecord{{FilePath: "src/main.go", Name: "New", Kind: "function", Language: "go"}}}}, []IncrementalDocChange{{Action: "replace", Path: "wiki/new.md", Doc: &model.DocRecord{Path: "wiki/new.md", Title: "new", ContentHash: "new"}, State: completeTestArtifactState("wiki/new.md")}}); err != nil {
 		t.Fatal(err)
 	}
 	var symbolName string
@@ -456,7 +454,7 @@ func TestPublishIncrementalGenerationForJobWithFileAndDocChanges_RollsBackBefore
 	}
 	restore := SetIndexPublicationBeforeCommitHookForTest(func() error { return errors.New("abort before commit") })
 	defer restore()
-	err = PublishIncrementalGenerationForJobWithFileAndDocChanges(ctx, db, job.JobID, job.GenerationID, 1, 1, 1, fence, []IncrementalFileChange{{FilePath: "src/main.go", RepoID: "repo", RepoName: "repo", Language: "go", ContentHash: "new"}}, []IncrementalDocChange{{Action: "replace", Path: "wiki/new.md", Doc: &model.DocRecord{Path: "wiki/new.md", Title: "new", ContentHash: "new"}, State: &model.DocArtifactState{Path: "wiki/new.md", ContentSHA256: "new", Lifecycle: model.DocLifecycleActive}}})
+	err = PublishIncrementalGenerationForJobWithFileAndDocChanges(ctx, db, job.JobID, job.GenerationID, 1, 1, 1, fence, []IncrementalFileChange{{FilePath: "src/main.go", RepoID: "repo", RepoName: "repo", Language: "go", ContentHash: "new"}}, []IncrementalDocChange{{Action: "replace", Path: "wiki/new.md", Doc: &model.DocRecord{Path: "wiki/new.md", Title: "new", ContentHash: "new"}, State: completeTestArtifactState("wiki/new.md")}})
 	if err == nil {
 		t.Fatal("publication should fail at the commit seam")
 	}

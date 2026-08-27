@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 
 	"github.com/fgpaz/mi-lsp/internal/model"
@@ -43,6 +44,39 @@ func TestExecuteBatchOp_SimpleNavFind(t *testing.T) {
 	if !result.Envelope.Ok {
 		t.Errorf("batch result Envelope.Ok = false, want true")
 	}
+
+	if result.DurationMS < 1 {
+		t.Errorf("batch result DurationMS = %d, want at least 1", result.DurationMS)
+	}
+	if result.Envelope.Stats.Ms < result.DurationMS {
+		t.Errorf("batch result Envelope.Stats.Ms = %d, want at least DurationMS=%d", result.Envelope.Stats.Ms, result.DurationMS)
+	}
+}
+
+func TestExecuteBatchOp_DurationMSSurvivesJSONRoundTrip(t *testing.T) {
+	root, name := setupTestWorkspace(t)
+	app := New(root, nil)
+
+	result := app.executeBatchOp(context.Background(), batchOperation{
+		ID:     "json-duration",
+		Op:     "workspace.status",
+		Params: map[string]any{},
+	}, model.QueryOptions{Workspace: name})
+	if result.DurationMS < 1 {
+		t.Fatalf("batch result DurationMS = %d, want at least 1", result.DurationMS)
+	}
+
+	encoded, err := json.Marshal(result)
+	if err != nil {
+		t.Fatalf("marshal batch result: %v", err)
+	}
+	var decoded batchResult
+	if err := json.Unmarshal(encoded, &decoded); err != nil {
+		t.Fatalf("unmarshal batch result: %v", err)
+	}
+	if decoded.DurationMS != result.DurationMS {
+		t.Fatalf("round-tripped DurationMS = %d, want %d", decoded.DurationMS, result.DurationMS)
+	}
 }
 
 func TestExecuteBatchOp_GeneratesIDFromOp(t *testing.T) {
@@ -62,6 +96,49 @@ func TestExecuteBatchOp_GeneratesIDFromOp(t *testing.T) {
 
 	if result.ID != "nav.find" {
 		t.Errorf("batch result ID = %q, want nav.find (generated from Op)", result.ID)
+	}
+}
+
+func TestBatch_SequentialResultsIncludePerOperationTiming(t *testing.T) {
+	root, name := setupTestWorkspace(t)
+	app := New(root, nil)
+
+	response, err := app.batch(context.Background(), model.CommandRequest{
+		Operation: "nav.batch",
+		Context:   model.QueryOptions{Workspace: name},
+		Payload: map[string]any{
+			"operations": `[{
+				"id":"status-1","op":"workspace.status","params":{}
+			},{
+				"id":"status-2","op":"workspace.status","params":{}
+			}]`,
+			"sequential": true,
+		},
+	})
+	if err != nil {
+		t.Fatalf("batch: %v", err)
+	}
+	if !response.Ok {
+		t.Fatal("batch response Envelope.Ok = false, want true")
+	}
+
+	results, ok := response.Items.([]batchResult)
+	if !ok {
+		t.Fatalf("batch response Items has type %T, want []batchResult", response.Items)
+	}
+	if len(results) != 2 {
+		t.Fatalf("batch result count = %d, want 2", len(results))
+	}
+	for _, result := range results {
+		if result.Error != "" {
+			t.Errorf("batch result %q Error = %q, want empty", result.ID, result.Error)
+		}
+		if result.DurationMS < 1 {
+			t.Errorf("batch result %q DurationMS = %d, want at least 1", result.ID, result.DurationMS)
+		}
+		if result.Envelope.Stats.Ms < result.DurationMS {
+			t.Errorf("batch result %q Envelope.Stats.Ms = %d, want at least DurationMS=%d", result.ID, result.Envelope.Stats.Ms, result.DurationMS)
+		}
 	}
 }
 

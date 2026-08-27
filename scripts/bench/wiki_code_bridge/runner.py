@@ -21,7 +21,7 @@ import sys
 import tempfile
 import time
 from pathlib import Path
-from typing import Any, Callable, Iterable, Mapping
+from typing import Any, Iterable, Mapping
 
 SCHEMA = "wiki-code-bridge-runner/v1"
 RUNS = 30
@@ -177,17 +177,26 @@ def _command_prefix(binary: Path, root: Path) -> list[str]:
     ]
 
 
-def run_command(binary: Path, root: Path, args: Iterable[str], timeout: float) -> Mapping[str, Any]:
+def run_command(
+    binary: Path,
+    root: Path,
+    args: Iterable[str],
+    timeout: float,
+    *,
+    input_data: bytes | None = None,
+) -> Mapping[str, Any]:
     argv = _command_prefix(binary, root) + list(args)
+    run_kwargs: dict[str, Any] = {
+        "cwd": str(root),
+        "stdout": subprocess.PIPE,
+        "stderr": subprocess.PIPE,
+        "timeout": timeout,
+        "check": False,
+    }
+    if input_data is not None:
+        run_kwargs["input"] = input_data
     try:
-        completed = subprocess.run(
-            argv,
-            cwd=str(root),
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            timeout=timeout,
-            check=False,
-        )
+        completed = subprocess.run(argv, **run_kwargs)
     except FileNotFoundError as exc:
         raise RunnerBlocked("binary_unavailable") from exc
     except subprocess.TimeoutExpired as exc:
@@ -291,11 +300,29 @@ def _public_projection(envelope: Mapping[str, Any]) -> dict[str, Any]:
     return sanitize_value(projection)
 
 
+def _item_file(item: Mapping[str, Any]) -> str | None:
+    """Extract a result path from the supported direct and nested shapes.
+
+    Catalog responses use ``file_path`` while compact/semantic projections may
+    use ``file`` or ``definition.file``. The precedence is fixed so a malformed
+    response containing more than one shape is still interpreted deterministically.
+    """
+    for value in (item.get("file"), item.get("file_path")):
+        if isinstance(value, str) and value:
+            return value
+    definition = item.get("definition")
+    if isinstance(definition, Mapping):
+        value = definition.get("file")
+        if isinstance(value, str) and value:
+            return value
+    return None
+
+
 def _related_definition(envelope: Mapping[str, Any]) -> str | None:
     for item in _items(envelope.get("items")):
-        definition = item.get("definition")
-        if isinstance(definition, Mapping) and isinstance(definition.get("file"), str):
-            return definition["file"]
+        path = _item_file(item)
+        if path is not None:
+            return path
     return None
 
 
@@ -363,14 +390,200 @@ def p95(samples: Iterable[float]) -> float:
     return round(values[index], 3)
 
 
-def measured(fn: Callable[[], Any]) -> tuple[float, list[Any]]:
+def operation_stats_ms(envelope: Mapping[str, Any]) -> float:
+    """Return validated per-operation latency from a command envelope."""
+    if not isinstance(envelope, Mapping):
+        raise RunnerBlocked("operation_stats_missing")
+    stats = envelope.get("stats")
+    if not isinstance(stats, Mapping) or "ms" not in stats:
+        raise RunnerBlocked("operation_stats_missing")
+    value = stats["ms"]
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise RunnerFailure("operation_stats_invalid")
+    numeric = float(value)
+    if not math.isfinite(numeric) or numeric < 0:
+        raise RunnerFailure("operation_stats_invalid")
+    return numeric
+
+
+def _batch_duration_ms(item: Mapping[str, Any]) -> float:
+    """Return a validated explicit per-operation batch duration."""
+    if "duration_ms" not in item:
+        raise RunnerBlocked("batch_duration_missing")
+    value = item["duration_ms"]
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise RunnerFailure("batch_duration_invalid")
+    try:
+        numeric = float(value)
+    except (OverflowError, ValueError) as exc:
+        raise RunnerFailure("batch_duration_invalid") from exc
+    if not math.isfinite(numeric) or numeric < 0:
+        raise RunnerFailure("batch_duration_invalid")
+    return numeric
+
+
+def _validate_nested_batch_stats(envelope: Mapping[str, Any], duration_ms: float) -> None:
+    """Cross-check optional nested stats without making it the timing source."""
+    if "stats" not in envelope or envelope["stats"] is None:
+        return
+    stats = envelope["stats"]
+    if not isinstance(stats, Mapping):
+        raise RunnerFailure("batch_stats_invalid")
+    if "ms" not in stats:
+        return
+    value = stats["ms"]
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise RunnerFailure("batch_stats_invalid")
+    try:
+        nested_ms = float(value)
+    except (OverflowError, ValueError) as exc:
+        raise RunnerFailure("batch_stats_invalid") from exc
+    if not math.isfinite(nested_ms) or nested_ms < 0:
+        raise RunnerFailure("batch_stats_invalid")
+    if nested_ms > duration_ms:
+        raise RunnerFailure("batch_duration_mismatch")
+
+
+def build_batch_operations(operation: str, params: Mapping[str, Any]) -> list[dict[str, Any]]:
+    """Build one deterministic sequential warm campaign of exactly 30 calls."""
+    if not isinstance(operation, str) or not operation:
+        raise RunnerFailure("batch_operation_invalid")
+    if operation == "nav.batch":
+        raise RunnerFailure("batch_recursion_forbidden")
+    if not isinstance(params, Mapping):
+        raise RunnerFailure("batch_params_invalid")
+    return [
+        {"id": f"warm-{index:02d}", "op": operation, "params": dict(params)}
+        for index in range(RUNS)
+    ]
+
+
+def run_sequential_batch(
+    binary: Path,
+    root: Path,
+    operations: Iterable[Mapping[str, Any]],
+) -> Mapping[str, Any]:
+    """Run one no-daemon CLI process for a validated 30-operation campaign."""
+    try:
+        batch_operations = list(operations)
+    except TypeError as exc:
+        raise RunnerFailure("batch_operations_invalid") from exc
+    if len(batch_operations) != RUNS:
+        raise RunnerFailure("batch_operation_count_invalid")
+    for operation in batch_operations:
+        if not isinstance(operation, Mapping):
+            raise RunnerFailure("batch_operation_invalid")
+        if operation.get("op") == "nav.batch":
+            raise RunnerFailure("batch_recursion_forbidden")
+    try:
+        encoded = json.dumps(batch_operations, sort_keys=True, separators=(",", ":"))
+    except (TypeError, ValueError) as exc:
+        raise RunnerFailure("batch_request_invalid") from exc
+    return run_command(
+        binary,
+        root,
+        [
+            "nav",
+            "batch",
+            "--sequential",
+            "--max-items",
+            str(RUNS),
+            "--max-chars",
+            "10485760",
+        ],
+        DEFAULT_TIMEOUT_SECONDS,
+        input_data=encoded.encode("utf-8"),
+    )
+
+
+def extract_batch_stats(
+    batch: Mapping[str, Any],
+    operations: Iterable[Mapping[str, Any]],
+) -> list[float]:
+    """Validate a sequential batch and return its inner operation timings."""
+    if not isinstance(batch, Mapping):
+        raise RunnerBlocked("batch_result_missing")
+    try:
+        expected = list(operations)
+    except TypeError as exc:
+        raise RunnerFailure("batch_operations_invalid") from exc
+    if len(expected) != RUNS:
+        raise RunnerFailure("batch_operation_count_invalid")
+    for operation in expected:
+        if not isinstance(operation, Mapping):
+            raise RunnerFailure("batch_operation_invalid")
+        if "id" not in operation or "op" not in operation:
+            raise RunnerBlocked("batch_operation_identity_missing")
+        if operation["op"] == "nav.batch":
+            raise RunnerFailure("batch_recursion_forbidden")
+
+    if "ok" not in batch:
+        raise RunnerBlocked("batch_ok_missing")
+    if batch["ok"] is not True:
+        raise RunnerFailure("batch_failed")
+    if "truncated" in batch:
+        truncated = batch["truncated"]
+        if not isinstance(truncated, bool):
+            raise RunnerFailure("batch_truncated_invalid")
+        if truncated:
+            raise RunnerFailure("batch_truncated")
+    omissions = batch.get("omissions")
+    if omissions is not None:
+        if not isinstance(omissions, list):
+            raise RunnerFailure("batch_omissions_invalid")
+        for omission in omissions:
+            if not isinstance(omission, Mapping):
+                raise RunnerFailure("batch_omission_invalid")
+            if omission.get("error_code") in ("max_items", "char_budget"):
+                raise RunnerFailure("batch_omitted")
+    if "items" not in batch:
+        raise RunnerBlocked("batch_items_missing")
+    items = batch["items"]
+    if not isinstance(items, list):
+        raise RunnerFailure("batch_items_invalid")
+    if len(items) != RUNS:
+        raise RunnerFailure("batch_length_invalid")
+
     samples: list[float] = []
-    values: list[Any] = []
-    for _ in range(RUNS):
-        started = time.perf_counter_ns()
-        values.append(fn())
-        samples.append((time.perf_counter_ns() - started) / 1_000_000.0)
-    return p95(samples), values
+    for expected_operation, item in zip(expected, items):
+        if not isinstance(item, Mapping):
+            if item is None:
+                raise RunnerBlocked("batch_item_missing")
+            raise RunnerFailure("batch_item_invalid")
+        if "id" not in item or "op" not in item:
+            raise RunnerBlocked("batch_item_identity_missing")
+        if item["id"] != expected_operation["id"] or item["op"] != expected_operation["op"]:
+            raise RunnerFailure("batch_order_invalid")
+        if item.get("error") not in (None, ""):
+            raise RunnerFailure("batch_item_error")
+        if "envelope" not in item:
+            raise RunnerBlocked("batch_envelope_missing")
+        envelope = item["envelope"]
+        if envelope is None:
+            raise RunnerBlocked("batch_envelope_missing")
+        if not isinstance(envelope, Mapping):
+            raise RunnerFailure("batch_envelope_invalid")
+        if "ok" not in envelope:
+            raise RunnerBlocked("batch_envelope_ok_missing")
+        if envelope["ok"] is not True:
+            raise RunnerFailure("batch_envelope_failed")
+        duration_ms = _batch_duration_ms(item)
+        _validate_nested_batch_stats(envelope, duration_ms)
+        samples.append(duration_ms)
+    return samples
+
+
+def measured_stats(
+    binary: Path,
+    root: Path,
+    operation: str,
+    params: Mapping[str, Any],
+) -> tuple[float, list[float]]:
+    """Run one sequential batch and compute p95 from explicit item durations."""
+    operations = build_batch_operations(operation, params)
+    batch = run_sequential_batch(binary, root, operations)
+    samples = extract_batch_stats(batch, operations)
+    return p95(samples), samples
 
 
 def latency_result(samples_p95: float | None, target_ms: float, metric: str) -> dict[str, Any]:
@@ -459,9 +672,10 @@ def run_campaign(binary: str | Path, fixture: str | Path, *, runs: int = RUNS) -
         find_projection = sanitize_value({
             "ok": find.get("ok") is True,
             "files": sorted(
-                str(item.get("file"))
+                path
                 for item in _items(find.get("items"))
-                if isinstance(item.get("file"), str)
+                for path in [_item_file(item)]
+                if path is not None
             ),
             "symbols": sorted(
                 str(item.get("name"))
@@ -502,9 +716,9 @@ def run_campaign(binary: str | Path, fixture: str | Path, *, runs: int = RUNS) -
         query(binary_path, baseline_root, ["nav", "related", "runDemo", "--depth", "definition"])
         cold_reverse_ms = round((time.perf_counter_ns() - cold_reverse_started) / 1_000_000.0, 3)
 
-        warm_direct_p95, _ = measured(lambda: query(binary_path, baseline_root, ["nav", "wiki", "trace", "RF-DEMO-001"]))
-        warm_reverse_p95, _ = measured(lambda: query(binary_path, baseline_root, ["nav", "related", "runDemo", "--depth", "definition"]))
-        mixed_neighbors_p95, _ = measured(lambda: query(binary_path, baseline_root, ["nav", "neighbors", "RF-DEMO-001", "--depth", "1", "--limit", "20"]))
+        warm_direct_p95, _ = measured_stats(binary_path, baseline_root, "nav.wiki.trace", {"rf": "RF-DEMO-001"})
+        warm_reverse_p95, _ = measured_stats(binary_path, baseline_root, "nav.related", {"symbol": "runDemo", "depth": "definition"})
+        mixed_neighbors_p95, _ = measured_stats(binary_path, baseline_root, "nav.neighbors", {"selector": "RF-DEMO-001", "depth": 1, "limit": 20})
         acceptance["warm_direct_binding_lookup_p95"] = latency_result(warm_direct_p95, DIRECT_LOOKUP_TARGET_MS, "warm_direct_binding_lookup")
         acceptance["warm_mixed_neighbors_p95"] = latency_result(mixed_neighbors_p95, MIXED_NEIGHBORS_TARGET_MS, "warm_mixed_neighbors")
         acceptance["latency_campaign_complete"] = _status("PASS", samples=RUNS, cold_direct_lookup_ms=cold_direct_ms, cold_reverse_lookup_ms=cold_reverse_ms, warm_reverse_lookup_p95_ms=warm_reverse_p95)
@@ -523,7 +737,7 @@ def run_campaign(binary: str | Path, fixture: str | Path, *, runs: int = RUNS) -
         overlay_ok = dirty_projection.get("implementation_paths") == [UNMAPPED_PATH] and dirty_projection.get("implementation_symbols") == ["standaloneFeature"]
         acceptance["edit_binding_overlay"] = _status("PASS" if overlay_ok else "FAIL", projection=dirty_projection)
         acceptance["lost_watcher_event"] = _status("PASS" if overlay_ok else "FAIL", projection=dirty_projection)
-        dirty_p95, _ = measured(lambda: query(binary_path, dirty_root, ["nav", "wiki", "trace", "RF-DEMO-001"]))
+        dirty_p95, _ = measured_stats(binary_path, dirty_root, "nav.wiki.trace", {"rf": "RF-DEMO-001"})
         acceptance["dirty_single_file_overlay_target"] = latency_result(dirty_p95, DIRTY_OVERLAY_TARGET_MS, "dirty_single_file_overlay")
         if dirty_p95 > DIRTY_OVERLAY_TARGET_MS:
             residual_risks.append("dirty_single_file_overlay_target_unmet")
@@ -627,9 +841,10 @@ def main(argv: list[str] | None = None) -> int:
         summary = blocked_summary(str(exc))
         exit_code = 2
     except RunnerFailure as exc:
-        summary = blocked_summary("campaign_failure")
+        reason_code = getattr(exc, "code", None) or str(exc) or "campaign_failure"
+        summary = blocked_summary(reason_code)
         summary["status"] = "FAIL"
-        summary["residual_risks"] = ["campaign_failure"]
+        summary["residual_risks"] = [reason_code]
         exit_code = 1
     encoded = json.dumps(sanitize_value(summary), ensure_ascii=False, sort_keys=True, indent=2) + "\n"
     if args.output:

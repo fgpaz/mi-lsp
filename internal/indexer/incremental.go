@@ -701,7 +701,6 @@ func legacyIncrementalIndexWithGraphProgress(ctx context.Context, workspaceRoot,
 	}
 
 	hasDocChanges := len(docChangedPaths) > 0 || len(docDeletedPaths) > 0
-	hasCodeChanges := len(codeChangedPaths) > 0 || len(codeDeletedPaths) > 0
 
 	if err := store.WithWorkspaceWriteLock(workspaceRoot, func() error {
 		db, err := store.Open(workspaceRoot)

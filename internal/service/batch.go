@@ -20,10 +20,11 @@ type batchOperation struct {
 }
 
 type batchResult struct {
-	ID       string         `json:"id"`
-	Op       string         `json:"op"`
-	Envelope model.Envelope `json:"envelope"`
-	Error    string         `json:"error,omitempty"`
+	ID         string         `json:"id"`
+	Op         string         `json:"op"`
+	DurationMS int64          `json:"duration_ms"`
+	Envelope   model.Envelope `json:"envelope"`
+	Error      string         `json:"error,omitempty"`
 }
 
 func (a *App) batch(ctx context.Context, request model.CommandRequest) (model.Envelope, error) {
@@ -114,11 +115,23 @@ func (a *App) executeBatchOp(ctx context.Context, op batchOperation, queryOpts m
 		Payload:         op.Params,
 	}
 
+	operationStarted := time.Now()
 	envelope, err := a.Execute(ctx, subRequest)
+	operationMS := time.Since(operationStarted).Milliseconds()
+	if operationMS < 1 {
+		operationMS = 1
+	}
+	// Keep each batch result envelope self-describing for parity and benchmark
+	// consumers, even when an inner execution path omits its own timing.
+	if envelope.Stats.Ms < operationMS {
+		envelope.Stats.Ms = operationMS
+	}
+
 	result := batchResult{
-		ID:       id,
-		Op:       op.Op,
-		Envelope: envelope,
+		ID:         id,
+		Op:         op.Op,
+		DurationMS: operationMS,
+		Envelope:   envelope,
 	}
 	if err != nil {
 		result.Error = err.Error()

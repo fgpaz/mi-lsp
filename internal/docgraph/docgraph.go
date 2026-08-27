@@ -299,7 +299,7 @@ func IndexWorkspaceDocsWithSourcesWithProgress(ctx context.Context, root string,
 // IndexWorkspaceDocsWithSourcesWithProgressPrior indexes docs and skips markdown/wiki-source
 // reparse when prior content_hash still matches the on-disk file bytes.
 func IndexWorkspaceDocsWithSourcesWithProgressPrior(ctx context.Context, root string, matcher *workspace.IgnoreMatcher, progress ProgressFunc, prior *PriorDocSnapshot) ([]model.DocRecord, []model.DocEdge, []model.DocMention, []model.DocSourceBlock, []model.DocSourceRecord, []string, error) {
-	docs, edges, mentions, sourceBlocks, sourceRecords, warnings, err := IndexWorkspaceDocsWithSourcesWithProgressPriorWithBindings(ctx, root, matcher, progress, prior)
+	docs, edges, mentions, sourceBlocks, sourceRecords, _, warnings, err := IndexWorkspaceDocsWithSourcesWithProgressPriorWithBindings(ctx, root, matcher, progress, prior)
 	if err != nil {
 		return nil, nil, nil, nil, nil, nil, err
 	}
@@ -311,16 +311,16 @@ func IndexWorkspaceDocsWithSourcesWithProgressPriorWithBindings(ctx context.Cont
 	collectStarted := time.Now()
 	profile, _, warnings := LoadProfile(root)
 	if err := reportProgress(ctx, progress, Progress{Stage: "docs.collect", Force: true}); err != nil {
-		return nil, nil, nil, nil, nil, warnings, err
+		return nil, nil, nil, nil, nil, nil, warnings, err
 	}
 	candidates, err := collectDocCandidates(ctx, root, profile, matcher)
 	if err != nil {
-		return nil, nil, nil, nil, nil, warnings, err
+		return nil, nil, nil, nil, nil, nil, warnings, err
 	}
 	canonCandidates, canonWarnings, canonErr := collectCanonDocCandidates(ctx, root, profile)
 	warnings = append(warnings, canonWarnings...)
 	if canonErr != nil {
-		return nil, nil, nil, nil, nil, warnings, canonErr
+		return nil, nil, nil, nil, nil, nil, warnings, canonErr
 	}
 	candidates = mergeDocCandidates(candidates, canonCandidates)
 	if err := reportProgress(ctx, progress, Progress{
@@ -329,12 +329,12 @@ func IndexWorkspaceDocsWithSourcesWithProgressPriorWithBindings(ctx context.Cont
 		FilesTotal: len(candidates),
 		Force:      true,
 	}); err != nil {
-		return nil, nil, nil, nil, nil, warnings, err
+		return nil, nil, nil, nil, nil, nil, warnings, err
 	}
 
 	readStarted := time.Now()
 	if err := reportProgress(ctx, progress, Progress{Stage: "docs.read", FilesTotal: len(candidates), Force: true}); err != nil {
-		return nil, nil, nil, nil, nil, warnings, err
+		return nil, nil, nil, nil, nil, nil, warnings, err
 	}
 
 	type docWorkResult struct {
@@ -425,7 +425,7 @@ func IndexWorkspaceDocsWithSourcesWithProgressPriorWithBindings(ctx context.Cont
 	close(jobs)
 	wg.Wait()
 	if err := ctx.Err(); err != nil {
-		return nil, nil, nil, nil, nil, warnings, err
+		return nil, nil, nil, nil, nil, nil, warnings, err
 	}
 
 	docs := make([]model.DocRecord, 0, len(candidates))
@@ -470,7 +470,7 @@ func IndexWorkspaceDocsWithSourcesWithProgressPriorWithBindings(ctx context.Cont
 		Skipped:    skipped,
 		Force:      true,
 	}); err != nil {
-		return nil, nil, nil, nil, nil, warnings, err
+		return nil, nil, nil, nil, nil, nil, warnings, err
 	}
 	if skipped > 0 {
 		warnings = append(warnings, fmt.Sprintf("docs_skip_reparse parsed=%d skipped=%d", parsed, skipped))

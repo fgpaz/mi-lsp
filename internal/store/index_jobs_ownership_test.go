@@ -436,14 +436,14 @@ func TestFencedPublicationModeMatrix(t *testing.T) {
 			name: "full",
 			mode: IndexModeFull,
 			publish: func(job IndexJob, fence IndexJobFence) error {
-				return ReplaceWorkspaceIndexForJob(ctx, db, job.JobID, job.GenerationID, model.ProjectFile{}, nil, nil, nil, nil, nil, nil, nil, snapshot, fence, nil)
+				return ReplaceWorkspaceIndexForJob(ctx, db, job.JobID, job.GenerationID, model.ProjectFile{}, nil, nil, nil, nil, nil, nil, nil, nil, snapshot, fence, nil)
 			},
 		},
 		{
 			name: "docs",
 			mode: IndexModeDocs,
 			publish: func(job IndexJob, fence IndexJobFence) error {
-				return ReplaceWorkspaceDocsForJob(ctx, db, job.JobID, job.GenerationID, nil, nil, nil, nil, nil, snapshot, fence, nil)
+				return ReplaceWorkspaceDocsForJob(ctx, db, job.JobID, job.GenerationID, nil, nil, nil, nil, nil, nil, snapshot, fence, nil)
 			},
 		},
 		{
@@ -508,7 +508,7 @@ func TestStaleOrCanceledFencePreservesPointersAndRuntime(t *testing.T) {
 	if err := MarkIndexJobRunning(ctx, db, baseline.JobID, 0, "indexing", baselineFence); err != nil {
 		t.Fatalf("MarkIndexJobRunning baseline: %v", err)
 	}
-	if err := ReplaceWorkspaceIndexForJob(ctx, db, baseline.JobID, baseline.GenerationID, model.ProjectFile{}, nil, nil, nil, nil, nil, nil, nil, model.ReentryMemorySnapshot{SnapshotBuiltAt: time.Now().UTC()}, baselineFence, nil); err != nil {
+	if err := ReplaceWorkspaceIndexForJob(ctx, db, baseline.JobID, baseline.GenerationID, model.ProjectFile{}, nil, nil, nil, nil, nil, nil, nil, nil, model.ReentryMemorySnapshot{SnapshotBuiltAt: time.Now().UTC()}, baselineFence, nil); err != nil {
 		t.Fatalf("baseline publication: %v", err)
 	}
 
@@ -844,7 +844,7 @@ func TestFencedGraphPointerActivation(t *testing.T) {
 
 	bundle := testGraphBundle(t)
 	graphID := bundle.Generation.GenerationID
-	if err := ReplaceWorkspaceIndexForJob(ctx, db, job.JobID, job.GenerationID, model.ProjectFile{}, nil, nil, nil, nil, nil, nil, nil, model.ReentryMemorySnapshot{SnapshotBuiltAt: time.Now().UTC()}, fence, &IndexJobGraphPublication{
+	if err := ReplaceWorkspaceIndexForJob(ctx, db, job.JobID, job.GenerationID, model.ProjectFile{}, nil, nil, nil, nil, nil, nil, nil, nil, model.ReentryMemorySnapshot{SnapshotBuiltAt: time.Now().UTC()}, fence, &IndexJobGraphPublication{
 		GenerationID:  &graphID,
 		ExpectedPrior: nil,
 		PublishedAt:   time.Now().UTC(),
@@ -891,7 +891,7 @@ func TestFencedGraphExpectedPriorActivation(t *testing.T) {
 	}
 	priorBundle := testGraphBundle(t)
 	priorID := priorBundle.Generation.GenerationID
-	if err := ReplaceWorkspaceIndexForJob(ctx, db, first.JobID, first.GenerationID, model.ProjectFile{}, nil, nil, nil, nil, nil, nil, nil, model.ReentryMemorySnapshot{SnapshotBuiltAt: time.Now().UTC()}, firstFence, &IndexJobGraphPublication{
+	if err := ReplaceWorkspaceIndexForJob(ctx, db, first.JobID, first.GenerationID, model.ProjectFile{}, nil, nil, nil, nil, nil, nil, nil, nil, model.ReentryMemorySnapshot{SnapshotBuiltAt: time.Now().UTC()}, firstFence, &IndexJobGraphPublication{
 		GenerationID: &priorID,
 		PublishedAt:  time.Now().UTC(),
 		GraphCurrent: true,
@@ -917,7 +917,7 @@ func TestFencedGraphExpectedPriorActivation(t *testing.T) {
 	if candidateID == priorID {
 		t.Fatal("candidate graph reused prior generation id")
 	}
-	if err := ReplaceWorkspaceIndexForJob(ctx, db, second.JobID, second.GenerationID, model.ProjectFile{}, nil, nil, nil, nil, nil, nil, nil, model.ReentryMemorySnapshot{SnapshotBuiltAt: time.Now().UTC()}, secondFence, &IndexJobGraphPublication{
+	if err := ReplaceWorkspaceIndexForJob(ctx, db, second.JobID, second.GenerationID, model.ProjectFile{}, nil, nil, nil, nil, nil, nil, nil, nil, model.ReentryMemorySnapshot{SnapshotBuiltAt: time.Now().UTC()}, secondFence, &IndexJobGraphPublication{
 		GenerationID:  &candidateID,
 		ExpectedPrior: &priorID,
 		PublishedAt:   time.Now().UTC(),
@@ -957,7 +957,7 @@ func TestStaleOrCanceledGraphFencePreservesPointerAndRuntime(t *testing.T) {
 	}
 	baselineBundle := testGraphBundle(t)
 	baselineGraphID := baselineBundle.Generation.GenerationID
-	if err := ReplaceWorkspaceIndexForJob(ctx, db, baseline.JobID, baseline.GenerationID, model.ProjectFile{}, nil, nil, nil, nil, nil, nil, nil, model.ReentryMemorySnapshot{SnapshotBuiltAt: time.Now().UTC()}, baselineFence, &IndexJobGraphPublication{
+	if err := ReplaceWorkspaceIndexForJob(ctx, db, baseline.JobID, baseline.GenerationID, model.ProjectFile{}, nil, nil, nil, nil, nil, nil, nil, nil, model.ReentryMemorySnapshot{SnapshotBuiltAt: time.Now().UTC()}, baselineFence, &IndexJobGraphPublication{
 		GenerationID: &baselineGraphID,
 		PublishedAt:  time.Now().UTC(),
 		GraphCurrent: true,
@@ -985,7 +985,7 @@ func TestStaleOrCanceledGraphFencePreservesPointerAndRuntime(t *testing.T) {
 	staleBundle := testGraphBundle(t)
 	staleGraphID := staleBundle.Generation.GenerationID
 	wrongFence := IndexJobFence{OwnerToken: "stale-owner", FencingToken: stale.FencingToken}
-	if err := ReplaceWorkspaceIndexForJob(ctx, db, stale.JobID, stale.GenerationID, model.ProjectFile{}, nil, nil, nil, nil, nil, nil, nil, model.ReentryMemorySnapshot{SnapshotBuiltAt: time.Now().UTC()}, wrongFence, &IndexJobGraphPublication{
+	if err := ReplaceWorkspaceIndexForJob(ctx, db, stale.JobID, stale.GenerationID, model.ProjectFile{}, nil, nil, nil, nil, nil, nil, nil, nil, model.ReentryMemorySnapshot{SnapshotBuiltAt: time.Now().UTC()}, wrongFence, &IndexJobGraphPublication{
 		GenerationID: &staleGraphID,
 		PublishedAt:  time.Now().UTC(),
 		GraphCurrent: true,
@@ -1007,7 +1007,7 @@ func TestStaleOrCanceledGraphFencePreservesPointerAndRuntime(t *testing.T) {
 	if _, err := RequestIndexJobCancelByID(ctx, db, canceled.JobID); err != nil {
 		t.Fatalf("RequestIndexJobCancelByID canceled: %v", err)
 	}
-	if err := ReplaceWorkspaceIndexForJob(ctx, db, canceled.JobID, canceled.GenerationID, model.ProjectFile{}, nil, nil, nil, nil, nil, nil, nil, model.ReentryMemorySnapshot{SnapshotBuiltAt: time.Now().UTC()}, canceledFence, &IndexJobGraphPublication{
+	if err := ReplaceWorkspaceIndexForJob(ctx, db, canceled.JobID, canceled.GenerationID, model.ProjectFile{}, nil, nil, nil, nil, nil, nil, nil, nil, model.ReentryMemorySnapshot{SnapshotBuiltAt: time.Now().UTC()}, canceledFence, &IndexJobGraphPublication{
 		GenerationID: &canceledGraphID,
 		PublishedAt:  time.Now().UTC(),
 		GraphCurrent: true,
@@ -1190,7 +1190,7 @@ func TestCancelPublicationRaceAtCommitBoundary(t *testing.T) {
 		indexJobCancelBeforeCASHook = func() error { return nil }
 		publicationDone := make(chan error, 1)
 		go func() {
-			publicationDone <- ReplaceWorkspaceIndexForJob(ctx, db, job.JobID, job.GenerationID, model.ProjectFile{}, nil, nil, nil, nil, nil, nil, nil, model.ReentryMemorySnapshot{SnapshotBuiltAt: time.Now().UTC()}, fence, nil)
+			publicationDone <- ReplaceWorkspaceIndexForJob(ctx, db, job.JobID, job.GenerationID, model.ProjectFile{}, nil, nil, nil, nil, nil, nil, nil, nil, model.ReentryMemorySnapshot{SnapshotBuiltAt: time.Now().UTC()}, fence, nil)
 		}()
 		<-entered
 		canceled, err := RequestIndexJobCancel(ctx, db, job.JobID)
@@ -1233,7 +1233,7 @@ func TestCancelPublicationRaceAtCommitBoundary(t *testing.T) {
 		cancelDone := make(chan IndexJob, 1)
 		cancelErr := make(chan error, 1)
 		go func() {
-			publicationDone <- ReplaceWorkspaceIndexForJob(ctx, db, job.JobID, job.GenerationID, model.ProjectFile{}, nil, nil, nil, nil, nil, nil, nil, model.ReentryMemorySnapshot{SnapshotBuiltAt: time.Now().UTC()}, fence, nil)
+			publicationDone <- ReplaceWorkspaceIndexForJob(ctx, db, job.JobID, job.GenerationID, model.ProjectFile{}, nil, nil, nil, nil, nil, nil, nil, nil, model.ReentryMemorySnapshot{SnapshotBuiltAt: time.Now().UTC()}, fence, nil)
 		}()
 		<-publicationEntered
 		go func() {
@@ -1281,7 +1281,7 @@ func TestCancelPublicationRaceNeverEndsFailed(t *testing.T) {
 	cancelDone := make(chan error, 1)
 	go func() {
 		<-start
-		publicationDone <- ReplaceWorkspaceIndexForJob(ctx, db, job.JobID, job.GenerationID, model.ProjectFile{}, nil, nil, nil, nil, nil, nil, nil, model.ReentryMemorySnapshot{SnapshotBuiltAt: time.Now().UTC()}, fence, nil)
+		publicationDone <- ReplaceWorkspaceIndexForJob(ctx, db, job.JobID, job.GenerationID, model.ProjectFile{}, nil, nil, nil, nil, nil, nil, nil, nil, model.ReentryMemorySnapshot{SnapshotBuiltAt: time.Now().UTC()}, fence, nil)
 	}()
 	go func() {
 		<-start

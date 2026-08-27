@@ -188,7 +188,7 @@ func TestRacilyClean_UnchangedOldSkipsBodyRead(t *testing.T) {
 	got, reused, err := RacilyClean(context.Background(), testFile, func() ([]byte, error) {
 		reads++
 		return os.ReadFile(testFile)
-	}, model.DocArtifactState{Path: "old.md", Size: st.size, MtimeNsec: st.mtimeNsec, ContentSHA256: hex.EncodeToString(hash[:])})
+	}, model.DocArtifactState{Path: "old.md", Size: st.size, MtimeNsec: st.mtimeNsec, ContentSHA256: hex.EncodeToString(hash[:]), IndexedAt: time.Now().Unix()})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -203,17 +203,20 @@ func TestRacilyClean_UnchangedReuse(t *testing.T) {
 	if err := os.WriteFile(testFile, []byte("content"), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	old := time.Now().Add(-time.Hour)
+	if err := os.Chtimes(testFile, old, old); err != nil {
+		t.Fatal(err)
+	}
 	st, err := statFile(testFile)
 	if err != nil {
 		t.Fatal(err)
 	}
 	stored := model.DocArtifactState{
-		Path:        "unchanged.md",
-		Size:        st.size,
-		MtimeNsec:   st.mtimeNsec,
-		ContentSHA256: "5fc8a3a3e0e3c6f0c6d2e0e8a3f0c6d2e0e3c6f0c6d2e0e3c6f0c6d2e0e3c6f0", // placeholder
+		Path:      "unchanged.md",
+		Size:      st.size,
+		MtimeNsec: st.mtimeNsec,
+		IndexedAt: time.Now().Unix(),
 	}
-	// Compute the actual hash of "content"
 	h := sha256.Sum256([]byte("content"))
 	stored.ContentSHA256 = hex.EncodeToString(h[:])
 
@@ -232,6 +235,35 @@ func TestRacilyClean_UnchangedReuse(t *testing.T) {
 	}
 }
 
+func TestRacilyClean_MissingIndexedAtDoesNotTrustMetadata(t *testing.T) {
+	root := t.TempDir()
+	testFile := filepath.Join(root, "missing-index-time.md")
+	content := []byte("stable")
+	if err := os.WriteFile(testFile, content, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	old := time.Now().Add(-time.Hour)
+	if err := os.Chtimes(testFile, old, old); err != nil {
+		t.Fatal(err)
+	}
+	st, err := statFile(testFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	hash := sha256.Sum256(content)
+	reads := 0
+	_, reused, err := RacilyClean(context.Background(), testFile, func() ([]byte, error) {
+		reads++
+		return os.ReadFile(testFile)
+	}, model.DocArtifactState{Path: "missing-index-time.md", Size: st.size, MtimeNsec: st.mtimeNsec, ContentSHA256: hex.EncodeToString(hash[:])})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reused || reads != 1 {
+		t.Fatalf("missing IndexedAt result reused=%v reads=%d; want hashed verification", reused, reads)
+	}
+}
+
 func TestRacilyClean_SameSizeSameMtimeRecentRewrite(t *testing.T) {
 	root := t.TempDir()
 	testFile := filepath.Join(root, "rewrite.md")
@@ -244,10 +276,12 @@ func TestRacilyClean_SameSizeSameMtimeRecentRewrite(t *testing.T) {
 		t.Fatal(err)
 	}
 	stored := model.DocArtifactState{
-		Path:        "rewrite.md",
-		Size:        st.size,
-		MtimeNsec:   st.mtimeNsec,
+		Path:         "rewrite.md",
+		Size:         st.size,
+		MtimeNsec:    st.mtimeNsec,
 		ContentSHA256: "oldhash",
+		// A same-second index timestamp is too coarse to trust metadata alone.
+		IndexedAt: time.Unix(0, st.mtimeNsec).Unix(),
 	}
 
 	ctx := context.Background()
@@ -318,26 +352,22 @@ func TestRacilyClean_SecondConcurrentMutation(t *testing.T) {
 
 	previousStat := racilyCleanStatPath
 	calls := 0
-	racilyCleanStatPath = func(path string) (mtimeAndSize, error) {
+	stamps := []mtimeAndSize{
+		{mtimeNsec: st.mtimeNsec, size: st.size},
+		{mtimeNsec: st.mtimeNsec + 1, size: st.size + 1},
+		{mtimeNsec: st.mtimeNsec + 1, size: st.size + 1},
+		{mtimeNsec: st.mtimeNsec + 2, size: st.size + 2},
+	}
+	racilyCleanStatPath = func(string) (mtimeAndSize, error) {
 		calls++
-		stamp, statErr := previousStat(path)
-		if statErr != nil {
-			return stamp, statErr
-		}
-		if calls == 2 || calls == 4 {
-			if writeErr := os.WriteFile(path, []byte{byte('a' + calls)}, 0o644); writeErr != nil {
-				return mtimeAndSize{}, writeErr
-			}
-			return previousStat(path)
-		}
-		return stamp, nil
+		return stamps[calls-1], nil
 	}
 	t.Cleanup(func() { racilyCleanStatPath = previousStat })
 
 	reads := 0
 	_, _, err = RacilyClean(context.Background(), testFile, func() ([]byte, error) {
 		reads++
-		return os.ReadFile(testFile)
+		return []byte("content"), nil
 	}, stored)
 	if err == nil {
 		t.Fatal("expected ErrConcurrentChange for second concurrent mutation")
@@ -347,6 +377,9 @@ func TestRacilyClean_SecondConcurrentMutation(t *testing.T) {
 	}
 	if reads != 2 {
 		t.Fatalf("expected exactly one retry (2 reads), got %d", reads)
+	}
+	if calls != len(stamps) {
+		t.Fatalf("stat calls=%d, want %d deterministic before/after stamps", calls, len(stamps))
 	}
 }
 

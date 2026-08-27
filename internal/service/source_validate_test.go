@@ -389,7 +389,7 @@ func replaceSourceDocs(t *testing.T, root string, docs []model.DocRecord, blocks
 		t.Fatalf("store.Open: %v", err)
 	}
 	defer func() { _ = db.Close() }()
-	if err := store.ReplaceDocsWithSources(context.Background(), db, docs, nil, nil, blocks, records); err != nil {
+	if err := store.ReplaceDocsWithSources(context.Background(), db, docs, nil, nil, blocks, records, nil); err != nil {
 		t.Fatalf("ReplaceDocsWithSources: %v", err)
 	}
 }

@@ -158,6 +158,19 @@ func seedCatalogSymbol(t *testing.T, root string, project model.ProjectFile, fil
 	}
 }
 
+func TestExecutePublishesServiceStatsMilliseconds(t *testing.T) {
+	env, err := New("", nil).Execute(context.Background(), model.CommandRequest{Operation: "workspace.warm"})
+	if err != nil {
+		t.Fatalf("workspace.warm: %v", err)
+	}
+	if !env.Ok {
+		t.Fatalf("workspace.warm envelope = %#v, want ok=true", env)
+	}
+	if env.Stats.Ms < 1 {
+		t.Fatalf("workspace.warm stats.ms = %d, want at least 1", env.Stats.Ms)
+	}
+}
+
 func TestSearchPattern_GoFallback(t *testing.T) {
 	root, name := setupTestWorkspace(t)
 	app := New(root, nil)

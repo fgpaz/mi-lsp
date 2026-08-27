@@ -154,8 +154,14 @@ func TestOverlayEditAddDeleteAndRemovedDeclarationTombstone(t *testing.T) {
 		TargetPath: "src/old.go", TargetSymbol: "Old", TargetKind: model.TargetKindSymbol,
 		BindingRef: model.WikiCodeBindingRef("docs/change.md", "RF-OVERLAY-001.core", "RF-OVERLAY-001", model.RelationImplements, "src/old.go", "Old", model.TargetKindSymbol),
 	}
-	if got := EffectiveBindings([]model.DocArtifactBinding{oldBinding}, edited); len(got) != 0 {
-		t.Fatalf("removed declaration remained active: %+v", got)
+	got := EffectiveBindings([]model.DocArtifactBinding{oldBinding}, edited)
+	if len(got) != 1 || got[0].TargetPath != "src/new.go" || got[0].TargetSymbol != "New" {
+		t.Fatalf("edited effective bindings=%+v, want the new binding only", got)
+	}
+	for _, binding := range got {
+		if binding.TargetPath == "src/old.go" && binding.TargetSymbol == "Old" {
+			t.Fatalf("removed old binding remained active: %+v", got)
+		}
 	}
 	if err := os.Remove(docPath); err != nil {
 		t.Fatal(err)
@@ -409,7 +415,7 @@ func TestOverlayQueryDoesNotWriteSQLite(t *testing.T) {
 func TestOverlayUsesCanonicalIgnoreMatcher(t *testing.T) {
 	root := t.TempDir()
 	profile := overlayTestProfile()
-	writeOverlayFile(t, root, ".gitignore", "docs/ignored.md\n")
+	writeOverlayFile(t, root, ".gitignore", []byte("docs/ignored.md\n"))
 	writeOverlayFile(t, root, "src/current.go", []byte("package current\n"))
 	writeOverlayFile(t, root, "docs/ignored.md", overlayDoc("src/current.go", "Ignored"))
 	matcher, err := workspace.LoadIgnoreMatcher(root, nil)

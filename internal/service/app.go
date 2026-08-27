@@ -11,6 +11,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/fgpaz/mi-lsp/internal/indexer"
 	"github.com/fgpaz/mi-lsp/internal/livecontext"
@@ -52,6 +53,7 @@ func (a *App) ResolveWorkspace(nameOrPath string) (model.WorkspaceRegistration, 
 }
 
 func (a *App) Execute(ctx context.Context, request model.CommandRequest) (model.Envelope, error) {
+	started := time.Now()
 	normalizedRequest, resolutionWarnings, err := a.normalizeWorkspaceRequest(request)
 	if err != nil {
 		return model.Envelope{}, err
@@ -191,6 +193,13 @@ func (a *App) Execute(ctx context.Context, request model.CommandRequest) (model.
 	}
 	for _, warning := range resolutionWarnings {
 		envelope.Warnings = appendStringIfMissing(envelope.Warnings, warning)
+	}
+	serviceMS := time.Since(started).Milliseconds()
+	if serviceMS < 1 {
+		serviceMS = 1
+	}
+	if envelope.Stats.Ms < serviceMS {
+		envelope.Stats.Ms = serviceMS
 	}
 	return envelope, nil
 }
@@ -591,7 +600,7 @@ func liveTraceScope(request model.CommandRequest, env model.Envelope) (liveconte
 			}
 		}
 	}
-	return scope, len(scope.DocIDs) > 0 || len(scope.DocPaths) > 0 || len(scope.Blocks) > 0
+	return scope, len(scope.DocIDs) > 0 || len(scope.DocPaths) > 0 || len(scope.Blocks) > 0 || len(traceResults) > 0
 }
 
 func liveTracePathFromID(request model.CommandRequest, docID string) string {
@@ -768,11 +777,12 @@ func addLiveWikiSelector(scope *livecontext.WikiCodeScope, selector string, requ
 	if selector == "" {
 		return
 	}
-	if isLiveWikiSelector(selector) {
+	normalized := strings.ReplaceAll(selector, "\\", "/")
+	if strings.HasPrefix(normalized, ".docs/wiki/") || strings.HasSuffix(strings.ToLower(normalized), ".md") {
 		addLiveWikiPath(scope, selector, request)
-	} else {
-		scope.DocIDs = appendLiveUnique(scope.DocIDs, selector)
+		return
 	}
+	scope.DocIDs = appendLiveUnique(scope.DocIDs, selector)
 }
 
 func addLiveWikiPath(scope *livecontext.WikiCodeScope, value string, request model.CommandRequest) {

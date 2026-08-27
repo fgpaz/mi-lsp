@@ -62,6 +62,9 @@ func TestGraphQueryDaemonParityUsesCanonicalServiceEnvelope(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%s daemon: %v", request.Operation, err)
 		}
+		// stats.ms is measured execution telemetry and can vary across equivalent routes;
+		// normalize only that timing field before the byte-identical semantic comparison.
+		direct.Stats.Ms, routed.Stats.Ms = 0, 0
 		direct.Backend, routed.Backend = "", ""
 		left, _ := json.Marshal(direct)
 		right, _ := json.Marshal(routed)

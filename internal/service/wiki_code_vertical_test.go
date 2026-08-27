@@ -196,8 +196,10 @@ func TestWikiCodeVerticalOverlayReadYourWritesAndFailClosedInputs(t *testing.T) 
 		if len(implementation) != 1 || implementation[0].Path != "src/demo/unmapped.mjs" || implementation[0].Symbol != "standaloneFeature" {
 			t.Fatalf("edited direct_code=%#v, want overlay target", got.DirectCode)
 		}
-		if containsWikiCodePath(got.DirectCode, wikiCodeVerticalServicePath) {
-			t.Fatalf("old binding survived edit overlay=%#v", got.DirectCode)
+		for _, item := range got.DirectCode {
+			if item.Relation == model.RelationImplements && item.Path == wikiCodeVerticalServicePath && item.Symbol == wikiCodeVerticalServiceSymbol {
+				t.Fatalf("old binding survived edit overlay=%#v", got.DirectCode)
+			}
 		}
 		if got.Freshness.Bindings != model.FreshnessOverlay {
 			t.Fatalf("edited binding freshness=%q, want overlay", got.Freshness.Bindings)
@@ -853,4 +855,3 @@ func reflectStringMapEqual(left, right map[string]string) bool {
 	}
 	return true
 }
-

@@ -79,7 +79,8 @@ func TestWikiCodeResolverForwardStatusesAndCandidateOrdering(t *testing.T) {
 		bridgeBinding(docPath, "status", doc.DocID, model.RelationImplements, "src/ambiguous.mjs", "Duplicate", model.TargetKindSymbol, 2),
 		bridgeBinding(docPath, "status", doc.DocID, model.RelationImplements, "src/present.mjs", "Present", model.TargetKindSymbol, 3),
 		bridgeBinding(docPath, "status", doc.DocID, model.RelationImplements, "src/present.mjs", "", model.TargetKindFile, 4),
-		bridgeBinding(docPath, "status", doc.DocID, model.RelationImplements, "../outside.mjs", "", model.TargetKindFile, 5),
+		bridgeBinding(docPath, "status", doc.DocID, model.RelationImplements, "src/missing.mjs", "", model.TargetKindFile, 5),
+		bridgeBinding(docPath, "status", doc.DocID, model.RelationImplements, "../outside.mjs", "", model.TargetKindFile, 6),
 	}
 	if err := store.ReplaceDocsWithSources(context.Background(), db, []model.DocRecord{doc}, nil, nil, nil, nil, bindings); err != nil {
 		t.Fatal(err)
@@ -405,4 +406,3 @@ func hasBridgeOmission(context model.WikiCodeContext, code string) bool {
 	}
 	return false
 }
-

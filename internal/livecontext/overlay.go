@@ -658,10 +658,10 @@ func buildExactOverlay(ctx context.Context, root string, req OverlayRequest, sco
 		}
 	}
 	if len(paths) == 0 {
-		for _, id := range scope.DocIDs {
+		for range scope.DocIDs {
 			appendOmission(overlay, model.WikiCodeOmission{Code: model.OmissionUnknownDocument, Reason: "document selector is not present in the published snapshot"})
 		}
-		for _, block := range scope.Blocks {
+		for range scope.Blocks {
 			appendOmission(overlay, model.WikiCodeOmission{Code: model.OmissionUnknownDocument, Reason: "block selector is not present in the published snapshot"})
 		}
 		state.manifestReady = true

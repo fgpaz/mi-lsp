@@ -217,6 +217,105 @@ func TestReplaceDocsWithSources_BindingsRoundTrip(t *testing.T) {
 	}
 }
 
+func TestReplaceDocsWithSources_BindingOnlyChangePublishes(t *testing.T) {
+	db, _ := seedTestDB(t)
+	ctx := context.Background()
+	docPath := "wiki/09_contratos/CT-BINDING-ONLY.md"
+	docs := []model.DocRecord{{Path: docPath, Title: "CT-BINDING-ONLY", DocID: "CT-BINDING-ONLY", Layer: "09", Family: "technical", SearchText: "binding-only", ContentHash: "doc-hash", IndexedAt: 1}}
+	binding := model.DocArtifactBinding{
+		DocPath:         docPath,
+		BlockID:         "CT-BINDING-ONLY.source",
+		DocID:           "CT-BINDING-ONLY",
+		Relation:        model.RelationImplements,
+		TargetPath:      "src/old.cs",
+		TargetKind:      model.TargetKindFile,
+		AuthoringOrigin: model.AuthoringOriginCanonical,
+		BindingStatus:   model.BindingStatusExact,
+		DocLifecycle:    model.DocLifecycleActive,
+		Ordinal:         1,
+		StartLine:       1,
+		EndLine:         2,
+		BindingRef:      model.WikiCodeBindingRef(docPath, "CT-BINDING-ONLY.source", "CT-BINDING-ONLY", model.RelationImplements, "src/old.cs", "", model.TargetKindFile),
+		IndexedAt:       1,
+	}
+	if err := ReplaceDocsWithSources(ctx, db, docs, nil, nil, nil, nil, []model.DocArtifactBinding{binding}); err != nil {
+		t.Fatalf("initial ReplaceDocsWithSources: %v", err)
+	}
+
+	updated := binding
+	updated.TargetPath = "src/new.cs"
+	updated.BindingRef = model.WikiCodeBindingRef(docPath, "CT-BINDING-ONLY.source", "CT-BINDING-ONLY", model.RelationImplements, updated.TargetPath, "", model.TargetKindFile)
+	updated.IndexedAt = 2
+	docs[0].IndexedAt = 2
+	if err := ReplaceDocsWithSources(ctx, db, docs, nil, nil, nil, nil, []model.DocArtifactBinding{updated}); err != nil {
+		t.Fatalf("binding-only ReplaceDocsWithSources: %v", err)
+	}
+	stored, err := ListDocArtifactBindings(ctx, db)
+	if err != nil {
+		t.Fatalf("ListDocArtifactBindings: %v", err)
+	}
+	if len(stored) != 1 || stored[0].TargetPath != "src/new.cs" {
+		t.Fatalf("binding-only publication stored=%+v, want new target", stored)
+	}
+}
+
+func TestReplaceDocsWithSources_RepairsStaleSourceAndBindingDrift(t *testing.T) {
+	db, _ := seedTestDB(t)
+	ctx := context.Background()
+	docPath := "wiki/09_contratos/CT-DRIFT.md"
+	docs := []model.DocRecord{{Path: docPath, Title: "CT-DRIFT", DocID: "CT-DRIFT", Layer: "09", Family: "technical", SearchText: "drift", ContentHash: "doc-hash", IndexedAt: 1}}
+	block := model.DocSourceBlock{DocPath: docPath, BlockID: "CT-DRIFT.source", DocID: "CT-DRIFT", Kind: "contract", SourceFormat: "SDD", Ordinal: 1, StartLine: 1, EndLine: 4, ContentHash: "block-hash", IndexedAt: 1}
+	record := model.DocSourceRecord{DocPath: docPath, BlockID: block.BlockID, RecordID: "RF-DRIFT-001", RecordType: "RF", Ordinal: 1, StartLine: 2, EndLine: 3, ContentHash: "record-hash", IndexedAt: 1}
+	binding := model.DocArtifactBinding{
+		DocPath:         docPath,
+		BlockID:         block.BlockID,
+		DocID:           docs[0].DocID,
+		Relation:        model.RelationImplements,
+		TargetPath:      "src/current.cs",
+		TargetKind:      model.TargetKindFile,
+		AuthoringOrigin: model.AuthoringOriginCanonical,
+		BindingStatus:   model.BindingStatusExact,
+		DocLifecycle:    model.DocLifecycleActive,
+		Ordinal:         1,
+		StartLine:       1,
+		EndLine:         4,
+		SourceContentHash: block.ContentHash,
+		BindingRef:      model.WikiCodeBindingRef(docPath, block.BlockID, docs[0].DocID, model.RelationImplements, "src/current.cs", "", model.TargetKindFile),
+		IndexedAt:       1,
+	}
+	if err := ReplaceDocsWithSources(ctx, db, docs, nil, nil, []model.DocSourceBlock{block}, []model.DocSourceRecord{record}, []model.DocArtifactBinding{binding}); err != nil {
+		t.Fatalf("initial ReplaceDocsWithSources: %v", err)
+	}
+	if _, err := db.ExecContext(ctx, "UPDATE doc_source_blocks SET content_hash=? WHERE doc_path=? AND block_id=?", "stale-block", docPath, block.BlockID); err != nil {
+		t.Fatalf("stale source update: %v", err)
+	}
+	if _, err := db.ExecContext(ctx, "UPDATE doc_artifact_bindings SET target_path=?, binding_ref=? WHERE doc_path=? AND block_id=?", "src/stale.cs", "stale-binding", docPath, block.BlockID); err != nil {
+		t.Fatalf("stale binding update: %v", err)
+	}
+
+	docs[0].IndexedAt = 2
+	block.IndexedAt = 2
+	record.IndexedAt = 2
+	binding.IndexedAt = 2
+	if err := ReplaceDocsWithSources(ctx, db, docs, nil, nil, []model.DocSourceBlock{block}, []model.DocSourceRecord{record}, []model.DocArtifactBinding{binding}); err != nil {
+		t.Fatalf("drift repair ReplaceDocsWithSources: %v", err)
+	}
+	storedBlocks, err := ListDocSourceBlocks(ctx, db)
+	if err != nil {
+		t.Fatalf("ListDocSourceBlocks: %v", err)
+	}
+	storedBindings, err := ListDocArtifactBindings(ctx, db)
+	if err != nil {
+		t.Fatalf("ListDocArtifactBindings: %v", err)
+	}
+	if len(storedBlocks) != 1 || storedBlocks[0].ContentHash != block.ContentHash {
+		t.Fatalf("stale source drift remained: %+v", storedBlocks)
+	}
+	if len(storedBindings) != 1 || storedBindings[0].TargetPath != binding.TargetPath || storedBindings[0].BindingRef != binding.BindingRef {
+		t.Fatalf("stale binding drift remained: %+v", storedBindings)
+	}
+}
+
 func TestBindingsForTarget(t *testing.T) {
 	db, _ := seedTestDB(t)
 	ctx := context.Background()

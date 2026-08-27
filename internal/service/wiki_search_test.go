@@ -220,6 +220,7 @@ func TestNavWikiSearchFindsExactSourceRecordID(t *testing.T) {
 		nil,
 		[]model.DocSourceBlock{sourceBlockRecord(path, "CT-SOURCE", "CT-SOURCE.contract")},
 		[]model.DocSourceRecord{sourceRecord(path, "CT-SOURCE.contract", "RF-QRY-016")},
+		nil,
 	); err != nil {
 		t.Fatalf("ReplaceDocsWithSources: %v", err)
 	}

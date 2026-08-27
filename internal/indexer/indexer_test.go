@@ -2,8 +2,9 @@ package indexer
 
 import (
 	"path/filepath"
-	"strings"
 	"testing"
+
+	"github.com/fgpaz/mi-lsp/internal/language"
 )
 
 // TestModernExtensionWalk verifies that all four modern JS/TS module extensions
@@ -12,7 +13,7 @@ func TestModernExtensionWalk(t *testing.T) {
 	extensions := []string{".js", ".jsx", ".mjs", ".cjs", ".ts", ".tsx", ".mts", ".cts"}
 	for _, ext := range extensions {
 		// Simulate the check done in WalkWorkspace.
-		if !IsSupportedCodePath("file" + ext) {
+		if !language.IsSupportedCodePath("file" + ext) {
 			t.Errorf("WalkWorkspace should include %s files", ext)
 		}
 	}
@@ -22,7 +23,7 @@ func TestModernExtensionWalk(t *testing.T) {
 func TestModernExtensionWalkCaseInsensitive(t *testing.T) {
 	testCases := []string{".JS", ".MJS", ".MTS", ".CTS", ".JSX", ".TSX"}
 	for _, ext := range testCases {
-		if !IsSupportedCodePath("file" + ext) {
+		if !language.IsSupportedCodePath("file" + ext) {
 			t.Errorf("WalkWorkspace should include %s files (case-insensitive)", ext)
 		}
 	}
@@ -58,7 +59,7 @@ func extensionsFromRegistry() []string {
 		".txt", ".json", ".md", ".scss", ".css"}
 	var result []string
 	for _, ext := range all {
-		if IsSupportedCodePath("file" + ext) {
+		if language.IsSupportedCodePath("file" + ext) {
 			result = append(result, ext)
 		}
 	}
@@ -146,7 +147,7 @@ func TestExtractMeaningfulPathSegmentsModernExts(t *testing.T) {
 		{"src/foo.cts", "foo"},
 		{"src/foo.js", "foo"},
 		{"src/foo.ts", "foo"},
-		{"src/foo.js.config", "config"}, // .config is not a known source ext
+		{"src/foo.js.config", "foo.js.config"}, // .config is not a known source ext
 	}
 	for _, f := range files {
 		segments := extractMeaningfulPathSegments(filepath.Join("/tmp", f.path))
@@ -161,23 +162,16 @@ func TestExtractMeaningfulPathSegmentsModernExts(t *testing.T) {
 			t.Errorf("extractMeaningfulPathSegments(%q) missing segment %q; got %v", f.path, f.want, segments)
 		}
 	}
-	// Verify that .config (unknown ext) is NOT stripped
+	// Verify that .config (unknown ext) is NOT stripped.
 	got := extractMeaningfulPathSegments("/tmp/src/foo.js.config")
 	found := false
 	for _, s := range got {
-		if strings.Contains(s, "js.config") {
+		if s == "foo.js.config" {
 			found = true
 			break
 		}
 	}
-	if !found && len(got) > 0 {
-		// At least verify the file base is present without a partial ext strip
-		for _, s := range got {
-			if s == "js.config" || s == "foo.js.config" {
-				found = true
-				break
-			}
-		}
+	if !found {
+		t.Fatalf("extractMeaningfulPathSegments(%q) lost unknown suffix; got %v", "src/foo.js.config", got)
 	}
-	_ = found
 }

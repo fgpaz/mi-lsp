@@ -289,7 +289,7 @@ func extractCanonicalArtifactBindings(content string, blockID string, docID stri
 			// end of array
 			inArtifactBindings = false
 			flushObject()
-			currentObjects = nil
+			objectBraceDepth = 0
 			continue
 		}
 		if trimmed == "" {
@@ -324,6 +324,7 @@ func extractCanonicalArtifactBindings(content string, blockID string, docID stri
 			}
 		}
 	}
+	flushObject()
 
 	// Build bindings from collected objects
 	for _, obj := range currentObjects {

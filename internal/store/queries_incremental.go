@@ -267,7 +267,7 @@ func insertDocReplaceTx(ctx context.Context, tx *sql.Tx, change IncrementalDocCh
 		}
 		if _, err := tx.ExecContext(ctx, `
 			INSERT OR REPLACE INTO doc_source_records(doc_path, block_id, record_id, record_type, ordinal, start_line, end_line, content_hash, indexed_at)
-			VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)
 		`, record.DocPath, record.BlockID, record.RecordID, record.RecordType, record.Ordinal,
 			record.StartLine, record.EndLine, record.ContentHash, record.IndexedAt); err != nil {
 			return err
