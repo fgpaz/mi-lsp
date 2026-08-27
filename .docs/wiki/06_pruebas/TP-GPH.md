@@ -466,7 +466,7 @@ verification_basis:
   go_test_all: PASS
   go_test_packages: 28
   git_diff_check: PASS
-  binary_sha256: 2f7d94cd1eec05b0055184cc05452725831e5b65404c4a095b7bc01717c36a1
+  binary_sha256: 2f7d94cd1eec05b0055184cc05452725831e5b65404c4a095b7bc01717c36a1a
 campaign:
   schema: wiki-code-bridge-runner/v1
   status: PASS
@@ -547,10 +547,11 @@ latency_ms:
   warm_reverse_lookup_p95: 83
 validator_boundary:
   governance: PASS_in_sync_valid
-  full_workspace_validate_harness: BLOCKED_preexisting_content_drift
-  full_workspace_validate_source: BLOCKED_preexisting_content_drift
-  not_claimed_as_pass: [full_workspace_validate_harness, full_workspace_validate_source]
-  next_action: parent_repairs_and_reruns_targeted_and_full_validators
+  full_workspace_validate_harness: PASS_124_contracts_858_links_0_blockers
+  full_workspace_validate_source: PASS_31_artifacts_71_records_0_blockers
+  canonical_drift_repaired: true
+  verification_scope: full_workspace
+  next_action: none
 verification_semantics:
   sanitized_runner_metrics_are_evidence: true
   raw_prompt_plan_and_host_paths_are_not_authority: true

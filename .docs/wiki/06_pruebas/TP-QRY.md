@@ -293,7 +293,7 @@ verification_basis:
   go_test_all: PASS
   go_test_packages: 28
   git_diff_check: PASS
-  binary_sha256: 2f7d94cd1eec05b0055184cc05452725831e5b65404c4a095b7bc01717c36a1
+  binary_sha256: 2f7d94cd1eec05b0055184cc05452725831e5b65404c4a095b7bc01717c36a1a
 bridge_campaign:
   schema: wiki-code-bridge-runner/v1
   status: PASS
@@ -359,7 +359,9 @@ compatibility:
 verification_semantics:
   sanitized_runner_metrics_are_evidence: true
   raw_prompt_plan_and_host_paths_are_not_authority: true
-  full_workspace_validators: BLOCKED_preexisting_content_drift
+  full_workspace_validators: PASS_after_canonical_drift_repair
+  full_workspace_harness: PASS_124_contracts_858_links_0_blockers
+  full_workspace_source: PASS_31_artifacts_71_records_0_blockers
 verify:
   - "FINAL_VERIFY code basis e1835ee: go test ./... PASS; git diff --check PASS"
   - "sanitized FINAL_VERIFY result: wiki-code-bridge-runner/v1 PASS; inventory=37"
