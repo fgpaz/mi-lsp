@@ -85,6 +85,7 @@ Canonical doc location follows governance and `read-model`, not a fixed path ass
 | Read code around a known line | `nav context path/to/file.cs:42` or `nav context path/to/file.cs 42` |
 | Search text and see the matching code | `nav search "pattern" --include-content` |
 | Read several files/ranges together | `nav multi-read ...` |
+| Inspect additive wiki↔code context | Existing `nav.trace`, `nav.wiki.trace`, `nav.pack`, `nav.wiki.pack`, `nav.related`, `nav.neighbors`, `nav.prepare`, and `nav.change-pack` surfaces with `wiki_code_context` |
 | Do mixed search + read + context in one shot | `nav batch` |
 
 ## Search syntax reminder
@@ -102,6 +103,8 @@ Supported intent lanes map to exposed commands: explain-change -> `explain-chang
 
 Direct and daemon-insensitive: `find`, `search`, `wiki search`, `wiki map`, `intent`, `symbols`, `outline`, `overview`, `multi-read`, `route`, `pack`, `trace`, `governance`, `prepare`
 Potentially daemon-backed: `refs`, `context`, `deps`, `related`, `service`, `workspace-map`, `diff-context`, `batch`, `callers`, `callees`, `path`, `explain`, `neighbors`, `affected`, `explain-change`
+
+When a listed surface returns `wiki_code_context`, preserve its separate `direct_code`, `tests`, `supporting_code`, and `candidates` lanes together with every typed omission; do not collapse omissions into absence.
 
 If a cheap read is slow, suspect stale binary, stale index, or wrong PATH before suspecting daemon health. A timeout is visible incomplete evidence, never a silent fallback.
 In container workspaces, prefer `--repo` for direct `find`, `search`, or `intent` before reaching for semantic selectors.

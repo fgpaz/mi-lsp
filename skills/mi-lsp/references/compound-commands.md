@@ -62,6 +62,22 @@ mi-lsp nav related MyService --depth callers,tests --workspace <alias> --format 
 - Best one-call deep-dive for a symbol
 - Prefer over `refs` plus several manual reads
 
+## Wiki↔code context bridge
+
+The existing `nav.trace`, `nav.wiki.trace`, `nav.pack`, `nav.wiki.pack`, `nav.related`, `nav.neighbors`, `nav.prepare`, and `nav.change-pack` surfaces may add the `wiki_code_context` envelope field. This is additive; no public command is introduced and the existing envelope remains compatible.
+
+`wiki_code_context` uses these exact top-level JSON fields from `internal/model/wiki_code_context.go`: `primary_doc`, `authority_chain`, `code_evidence`, `graph_paths`, `drift`, `omissions`, `direct_code`, `tests`, `supporting_code`, `candidates`, `wiki_context`, `direction`, `freshness`, `overlay_digest`, `cost`, `classification`, `classifications`, `next_queries`, `next_cursor`, `continuation`, `doc_generation_id`, `code_generation_id`, `provenance`, `token_budget`, `token_used`, `truncated`, and `determinism_digest`.
+
+Lane semantics are strict:
+
+- `direct_code` contains exact active wiki-to-code bindings only.
+- `tests` contains exact test bindings separately from implementation bindings.
+- `supporting_code` contains graph-observed supporting evidence only when the graph is current.
+- `candidates` contains bounded lexical candidates only; candidates are never direct claims.
+- `wiki_context` is the canonical code-to-wiki projection. Each item has `doc_id`, `path`, `block_id`, `relation`, `role`, `binding_ref`, `status`, `superseded_by`, `start_line`, `end_line`, `origin`, `authoring_origin`, `classification`, and recursive `parents` items with the same fields.
+
+Typed omission items expose `code`, `source`, `reason`, `candidates`, `owner`, `status`, `doc_id`, `doc_path`, `block_id`, and `binding_ref`. Fields marked optional by the implementation may be omitted when empty. Planned bindings are nonnavigable; retired bindings stay excluded unless an explicit historical ID/path requests a bounded `superseded_by` redirect. See [runtime-drift.md](runtime-drift.md) for freshness and omission interpretation.
+
 ## Intent planner and bounded graph commands
 
 Use `nav intent` first, and mandatorily for every supported goal-shaped request. Supported intents route automatically without a routing opt-out and return a bounded preview. `explain-change` is an intent/operation of `nav intent`; the user's request need not contain that literal alias. Preserve every available section, especially `change`, `affected`, `callers`, `callees`, `tests`, `contracts`, and `wiki`, together with graph, evidence, fallbacks, candidates, and omissions. Use the exact `expansions[].command` as the second query and read its `reason`.

@@ -584,6 +584,14 @@ Use these commands first:
 
 Prefer these over repeated `Get-Content`, plain `rg`, or one-file-at-a-time reads.
 
+## Live wiki-code context (read-only)
+
+- Treat `wiki_code_context` as additive output on `nav.trace`, `nav.wiki.trace`, `nav.pack`, `nav.wiki.pack`, `nav.related`, `nav.neighbors`, `nav.prepare`, and `nav.change-pack`; do not introduce a public command.
+- Preserve separate lanes: `direct_code` for exact active bindings, `tests` for exact test bindings, `supporting_code` only for graph-observed evidence when the graph is current, and bounded lexical `candidates` that are never direct claims. In code-to-wiki results, `wiki_context` is the canonical reverse projection.
+- Treat the wiki as authority. SQLite, bindings, catalog, graph, and cache are derived; query handling is read-only. A request-scoped RAM-only overlay provides read-your-writes and a deterministic `overlay_digest`; a watcher only accelerates observation.
+- Report independent freshness for `docs_manifest`, `bindings`, `catalog`, `graph`, and `authority`. A stale graph retains exact direct/tests and emits a typed `graph_stale` omission for missing `supporting_code`; preserve all drift and omission evidence. Planned bindings are nonnavigable; retired bindings are excluded by default and appear only for an explicit old ID/path as a bounded `superseded_by` redirect. Raw and audit artifacts are not authority.
+- Use [compound-commands.md](references/compound-commands.md) for the schema and fields, and [runtime-drift.md](references/runtime-drift.md) for freshness and drift interpretation.
+
 ## Minimal workflow
 
 1. Bootstrap or verify the workspace.

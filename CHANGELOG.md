@@ -7,6 +7,8 @@ and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-08-27
+
 ### Added
 
 - `nav wiki map` publishes a compact knowledge-wiki hub catalog (persona/proyectos/sistema/materia) without full bodies.

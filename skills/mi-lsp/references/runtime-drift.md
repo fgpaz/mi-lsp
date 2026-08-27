@@ -24,6 +24,10 @@ mi-lsp worker status --format compact
 - `nav.ask` and summary-first `nav.workspace-map` should stay direct and should not auto-start the daemon.
 - If a direct query in a container workspace returns `backend=router`, suspect missing scope before suspecting runtime drift and rerun with `--repo`.
 
+## Wiki↔code bridge freshness
+
+For `wiki_code_context`, freshness is reported independently for `docs_manifest`, `bindings`, `catalog`, `graph`, and `authority`. Per-domain freshness is result semantics, not a binary or daemon drift verdict. A stale graph preserves exact `direct_code` and `tests`, omits `supporting_code`, and emits a typed `graph_stale` omission for that omission. Absence is not proof and does not authorize a fallback.
+
 ## Fallback discipline
 
 Keep `mi-lsp` first. An external fallback is permitted only when the visible reason is one of `unsupported_operation`, `unavailable_binary`, `invalid_workspace`, or `explicit_incomplete`. A timeout, silence, `DONE`, or `PASS` without fresh evidence must remain visible as incomplete evidence; it is never a silent fallback trigger. If the runtime returns labeled catalog/text/heuristic evidence, preserve that label and do not present it as semantic certainty. Use 180/300-second soft/hard watchdogs, at most two same-context recoveries with a smaller packet and no unchanged retry, at most six practical lanes with exclusive `allowed_paths`, fail-closed joins, and fresh verification. Redact prompts, transcripts, secrets, PII, PHI, argv, and raw patterns; do not invent model/provider metadata.
