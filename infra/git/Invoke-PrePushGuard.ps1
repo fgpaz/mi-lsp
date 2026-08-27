@@ -6,7 +6,9 @@ param(
     [string[]]$TraceabilityEvidence,
     [string[]]$SharedSkillName,
     [switch]$DryRun,
-    [switch]$Json
+    [switch]$Json,
+    [ValidateSet("solo", "governed")]
+    [string]$CollaborationMode = "governed"
 )
 
 $ErrorActionPreference = "Stop"
@@ -38,11 +40,14 @@ function Add-Unique {
 function Resolve-SharedSkillRoot {
     param(
         [Parameter(Mandatory = $true)][string]$EnvironmentVariable,
-        [Parameter(Mandatory = $true)][string]$DefaultRoot
+        [AllowNull()][AllowEmptyString()][string]$DefaultRoot
     )
 
     $explicitRoot = [Environment]::GetEnvironmentVariable($EnvironmentVariable)
     if ([string]::IsNullOrWhiteSpace($explicitRoot)) {
+        if ([string]::IsNullOrWhiteSpace($DefaultRoot)) {
+            throw "No explicit or default shared-skill root is available for '$EnvironmentVariable'"
+        }
         return $DefaultRoot
     }
 
@@ -87,6 +92,107 @@ function Get-Surface {
     }
 }
 
+function Get-SecretScan {
+    param([Parameter(Mandatory = $true)][string]$Range)
+
+    $patterns = [ordered]@{
+        pem_private_key_header = '-----BEGIN(?: [A-Z0-9]+)* PRIVATE KEY-----'
+        github_classic_token = '\bgh(?:p|o|u|s|r)_[A-Za-z0-9]{36}\b'
+        github_fine_grained_token = '\bgithub_pat_[A-Za-z0-9_]{20,}\b'
+        aws_access_key_id = '\b(?:AKIA|ASIA)[0-9A-Z]{16}\b'
+        slack_token = '\bxox(?:[abcdprs]-|e\.xox[abcdprs]-)[A-Za-z0-9-]{10,}\b'
+        stripe_live_secret = '\bsk_live_[A-Za-z0-9]{20,}\b'
+        openai_project_token = '\bsk-proj-[A-Za-z0-9_-]{20,}\b'
+    }
+    $ruleCounts = [ordered]@{}
+    foreach ($ruleId in $patterns.Keys) {
+        $ruleCounts[$ruleId] = 0
+    }
+
+    $scanError = $false
+    $scannedAddedLines = 0
+    try {
+        $numstat = Invoke-Git diff --no-ext-diff --no-textconv --numstat $Range '--'
+        if ($numstat.ExitCode -ne 0) {
+            $scanError = $true
+        }
+        if (-not $scanError) {
+            foreach ($rawLine in @($numstat.Output)) {
+                $line = [string]$rawLine
+                if ($line -match '^(?:git\s*:\s*)?(fatal|error|warning):') {
+                    $scanError = $true
+                    break
+                }
+                $columns = $line -split "`t", 3
+                if (($columns.Count -ge 2 -and $columns[0] -eq '-' -and $columns[1] -eq '-') -or
+                    $line -match '^-[ \t]+-[ \t]+') {
+                    $scanError = $true
+                    break
+                }
+            }
+        }
+
+        if (-not $scanError) {
+            $diff = Invoke-Git diff --no-ext-diff --no-textconv --no-color --unified=0 $Range '--'
+            if ($diff.ExitCode -ne 0) {
+                $scanError = $true
+            }
+            if (-not $scanError) {
+                foreach ($rawLine in @($diff.Output)) {
+                    $line = [string]$rawLine
+                    if ($line -match '^(?:git\s*:\s*)?(fatal|error|warning):' -or
+                        $line -match '^Binary files .* differ$' -or
+                        $line -eq 'GIT binary patch' -or
+                        $line -match '^(literal|delta) [0-9]+$') {
+                        $scanError = $true
+                        break
+                    }
+                    if ($line.StartsWith('+') -and $line -notmatch '^\+\+\+ ') {
+                        $scannedAddedLines++
+                        $addedText = $line.Substring(1)
+                        foreach ($ruleId in $patterns.Keys) {
+                            $ruleMatches = [regex]::Matches(
+                                $addedText,
+                                [string]$patterns[$ruleId],
+                                [System.Text.RegularExpressions.RegexOptions]::IgnoreCase
+                            )
+                            $ruleCounts[$ruleId] += $ruleMatches.Count
+                        }
+                    }
+                }
+            }
+        }
+    }
+    catch {
+        $scanError = $true
+    }
+
+    if ($scanError) {
+        foreach ($ruleId in $patterns.Keys) {
+            $ruleCounts[$ruleId] = 0
+        }
+        return [pscustomobject]@{
+            status = 'error'
+            range = $Range
+            scanned_added_lines = 0
+            match_count = 0
+            rule_counts = $ruleCounts
+        }
+    }
+
+    $matchCount = 0
+    foreach ($ruleId in $patterns.Keys) {
+        $matchCount += $ruleCounts[$ruleId]
+    }
+    return [pscustomobject]@{
+        status = if ($matchCount -gt 0) { 'blocked' } else { 'passed' }
+        range = $Range
+        scanned_added_lines = $scannedAddedLines
+        match_count = $matchCount
+        rule_counts = $ruleCounts
+    }
+}
+
 $blockers = [System.Collections.Generic.List[string]]::new()
 $warnings = [System.Collections.Generic.List[string]]::new()
 $sharedSkillMirrorChecks = @()
@@ -115,6 +221,21 @@ if (-not $fastForwardSafe) {
 $ahead = @((Invoke-Git log --oneline origin/main..HEAD -n 50).Output)
 $behind = @((Invoke-Git log --oneline HEAD..origin/main -n 50).Output)
 
+$secretsScan = Get-SecretScan -Range "origin/main..HEAD"
+if ($secretsScan.status -eq "blocked") {
+    Add-Unique $blockers "High-confidence secret detected in added content; see secrets_scan rule counts"
+} elseif ($secretsScan.status -eq "error") {
+    Add-Unique $blockers "Secrets scan failed closed for origin/main..HEAD"
+}
+
+$hasIssue = $false
+$hasWaiver = $false
+$evidence = @()
+$changes = @()
+$surfaces = [System.Collections.Generic.HashSet[string]]::new()
+
+if ($CollaborationMode -eq "governed") {
+    # Keep historical direct-main, input, surface, and shared-skill checks governed-only.
 if ($branch -eq "main") {
     Add-Unique $blockers "direct push from local main is not allowed by repo policy"
 }
@@ -209,7 +330,18 @@ if ($expected.Contains("shared-skill")) {
     if ($skillNames.Count -eq 0) {
         Add-Unique $blockers "SharedSkillName is required when ExpectedScope includes shared-skill"
     }
-    $defaultInstalledRoot = Join-Path $env:USERPROFILE ".agents\skills"
+    $defaultInstalledRoot = $null
+    if ([string]::IsNullOrWhiteSpace($env:AE_SKILL_SOURCE_ROOT) -or
+        [string]::IsNullOrWhiteSpace($env:AE_SKILL_INSTALLED_ROOT)) {
+        $userProfileRoot = [Environment]::GetFolderPath([Environment+SpecialFolder]::UserProfile)
+        if ([string]::IsNullOrWhiteSpace($userProfileRoot)) {
+            $userProfileRoot = if (-not [string]::IsNullOrWhiteSpace($env:USERPROFILE)) { $env:USERPROFILE } else { $env:HOME }
+        }
+        if ([string]::IsNullOrWhiteSpace($userProfileRoot)) {
+            throw "Unable to resolve the default user profile for shared skills"
+        }
+        $defaultInstalledRoot = Join-Path $userProfileRoot ".agents\skills"
+    }
     $sourceRoot = Resolve-SharedSkillRoot -EnvironmentVariable "AE_SKILL_SOURCE_ROOT" -DefaultRoot $defaultInstalledRoot
     $mirrorRoot = Resolve-SharedSkillRoot -EnvironmentVariable "AE_SKILL_MIRROR_ROOT" -DefaultRoot "C:\repos\buho\assets\skills"
     $installedRoot = Resolve-SharedSkillRoot -EnvironmentVariable "AE_SKILL_INSTALLED_ROOT" -DefaultRoot $defaultInstalledRoot
@@ -264,19 +396,22 @@ if (Test-Path -LiteralPath "src") {
 foreach ($path in $dangerous) {
     Add-Unique $blockers "Dangerous untracked/build artifact under src: $path"
 }
+}
 
 $verdict = "Approved"
 if ($blockers.Count -gt 0) {
     $verdict = "Blocked"
-} elseif ($hasWaiver) {
+} elseif ($CollaborationMode -eq "governed" -and $hasWaiver) {
     $verdict = "Approved with waiver"
 }
 
 $report = [pscustomobject]@{
     verdict = $verdict
+    collaboration_mode = $CollaborationMode
     branch = $branch
     head = $head
     fast_forward_safe = $fastForwardSafe
+    secrets_scan = $secretsScan
     ahead_count = $ahead.Count
     behind_count = $behind.Count
     expected_scope = @($ExpectedScope)
@@ -294,8 +429,10 @@ if ($Json) {
     $report | ConvertTo-Json -Depth 8
 } else {
     "PrePushGuard verdict: $verdict"
+    "collaboration_mode: $CollaborationMode"
     "branch: $branch"
     "fast_forward_safe: $fastForwardSafe"
+    "secrets_scan: status=$($secretsScan.status), match_count=$($secretsScan.match_count)"
     "expected_scope: $($ExpectedScope -join ',')"
     "traceability_evidence: $($evidence -join ',')"
     if ($warnings.Count -gt 0) {
