@@ -172,7 +172,8 @@ cases:
     when: se normaliza el batch y se repite el workspace real
     then: la prueba de contrato deduplica solo registros contractualmente idénticos; una misma referencia con identidad distinta sigue fallando cerrado
     oracle: prueba de contrato y rerun del workspace real de Gastos
-    evidence: worker-dotnet/MiLsp.Worker/RoslynService.cs; worker-dotnet/MiLsp.Worker.ContractTests/Program.cs
+    release_readback: el artefacto publicado v0.8.1 linux-x64 en d0da7243fe012eba8bbb41b312ca292643ae8a59 indexó el clon temporal rastreado de Gastos en f9dd97e86888761e05ff9cf751c7b151f6854813 con 1278 archivos y 15656 símbolos; GPH_OBS_REF_DUPLICATE ausente
+    evidence: worker-dotnet/MiLsp.Worker/RoslynService.cs; worker-dotnet/MiLsp.Worker.ContractTests/Program.cs; .docs/auditoria/2026-08-26-live-wiki-code-bridge/release-readback-v0.8.1.yaml
 ```
 
 ## TP-GPH-001 - Identidad, NodeKey y cross-RID
