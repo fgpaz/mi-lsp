@@ -24,6 +24,56 @@ mi-lsp worker status --format compact
 - `nav.ask` and summary-first `nav.workspace-map` should stay direct and should not auto-start the daemon.
 - If a direct query in a container workspace returns `backend=router`, suspect missing scope before suspecting runtime drift and rerun with `--repo`.
 
+## Skill catalog domains and freshness
+
+Keep the physical skill audit and the runtime catalog as separate domains and
+label each observation by its stage:
+
+- `370` is the **pre-cutover physical audit observation**: 288 top-level
+  packages, including the 16 retired wrappers, plus 5 hidden `.system`
+  packages, 7 `generico-setup/assets` templates, and 70 category packages.
+- `354` is the **post-cutover physical audit observation**, after deleting
+  those wrappers: 272 top-level packages, plus 5 hidden `.system` packages,
+  7 `generico-setup/assets` templates, and 70 category packages.
+- `356` is the **dated 2026-08-26 runtime snapshot** at
+  `/home/tesla/.mi-lsp/skills/catalog.json`; it is not a physical filesystem
+  count.
+
+These are different stages, domains, and timestamps, so the observations are
+not contemporaneous. The difference between `354` and `356` is not an
+arithmetic residual and does not prove package loss or corruption: scan
+filtering, snapshot timing, and normalized-ID deduplication semantics differ.
+
+The runtime path is `ScanSkillsRoot` followed by `BuildCatalog`. The scan walks
+the configured skills root, does not descend into hidden directories (except
+the root itself), skips credential-looking paths with warnings, and records
+parse failures as warnings while omitting those results. `BuildCatalog` merges
+seed classification and keys scanned records by normalized ID, so duplicate
+IDs collapse to one catalog record rather than becoming independent entries.
+
+Keep these categories distinct when interpreting a future same-snapshot audit:
+
+- **Hidden:** the five `.system/**/SKILL.md` packages are outside the runtime
+  scan because of the hidden-directory rule.
+- **Credential-looking:** paths matching the scan's protected-name/path rules
+  are skipped and warned; this is a safety exclusion, not evidence of a
+  missing package.
+- **Parse-failure:** a file can be physically present while its scan result is
+  omitted with a parse warning.
+- **Duplicate-ID:** multiple successful scans can map to one normalized catalog
+  ID; this is a catalog-key collision, not an additional physical package.
+- **Template/asset scope:** the seven current
+  `generico-setup/assets/**/SKILL.md` templates belong to the physical audit
+  domain. Their absence from the dated catalog supports temporal drift, not a
+  `ScanSkillsRoot` asset filter.
+
+Do not compute `354` versus `356`, `370` versus `356`, or any other
+arithmetic residual from these sources. A coherent reconciliation requires a
+deliberately captured same-snapshot physical audit and runtime index; this
+reference only labels the domains and preserves the existing filters. Do not
+refresh or mutate the generated catalog or runtime state while diagnosing
+drift.
+
 ## Wiki↔code bridge freshness
 
 For `wiki_code_context`, freshness is reported independently for `docs_manifest`, `bindings`, `catalog`, `graph`, and `authority`. Per-domain freshness is result semantics, not a binary or daemon drift verdict. A stale graph preserves exact `direct_code` and `tests`, omits `supporting_code`, and emits a typed `graph_stale` omission for that omission. Absence is not proof and does not authorize a fallback.

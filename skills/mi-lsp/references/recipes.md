@@ -2,6 +2,144 @@
 
 Use this reference when the task is goal-shaped instead of command-shaped.
 
+## Bounded intent-first recipes
+
+These recipes compose existing `mi-lsp` commands; they do not add another
+router or recipe abstraction. Keep the returned envelope, warnings, omissions,
+and canonical lane visible. Use the smallest bounded expansion that answers the
+intent, and treat the canonical wiki as the final authority.
+
+### R2 — Evidence reentry
+
+Use this before loading a large prompt, transcript, log, or screenshot. Start
+with the metadata-only inventory and follow its recommended canonical/evidence
+path:
+
+```powershell
+mi-lsp nav evidence inventory <query>
+```
+
+The envelope is `backend: evidence.inventory` with one
+`evidenceInventoryResult` containing `query`, `mode`, `recommended_read_path`,
+`context_loading_profile`, `evidence_loading_profile`, `canonical`, optional
+`lookup_status`, `evidence_roots`, and `next_queries`. Each root may expose its
+artifact type, verdict, summary, `files`/`bytes`/`estimated_raw_tokens` stats,
+and authority. Raw prompt, transcript, log, screenshot, secret, and PHI
+content is omitted.
+
+Keep `truncated=true` visible and use `continuation.next` to continue the same
+inventory operation in full mode; do not silently broaden the query. This is a
+direct/no-daemon read. If a root or lookup is unavailable, preserve its
+`lookup_status`, omission, warning, and next query rather than treating
+absence as proof. Inventory metadata recommends a read; it does not replace
+the canonical artifact or authorize a write.
+
+### R4 — Governance validation chain
+
+Run the governance check before the two named wiki validators, in this order:
+
+```powershell
+mi-lsp nav governance
+mi-lsp nav wiki validate-harness
+mi-lsp nav wiki validate-source
+```
+
+The governance result is `GovernanceStatus`: preserve `blocked`, `sync`,
+`index_sync`, `issues`, `warnings`, `allowed_actions`, `next_steps`, and any
+returned `index_sync_details`. The harness result is
+`HarnessValidationResult`: `harness_protocol`, `harness_readiness`,
+`harness_verdict`, `harness_blockers`, `harness_warnings`,
+`harness_contracts_reviewed`, `harness_links_reviewed`,
+`harness_evidence_required`, `harness_evidence_found`,
+`harness_docs_missing_contract`, and `harness_docs_unknown_audience`. The
+source result is `WikiSourceValidationResult`: `wiki_source_protocol`,
+`index_freshness`, `governance_sync`, `wiki_source_readiness`,
+`wiki_source_verdict`, `wiki_source_blockers`, `wiki_source_warnings`,
+`wiki_source_artifacts_reviewed`, `wiki_source_blocks_reviewed`,
+`wiki_source_records_reviewed`, `wiki_source_tables_reviewed`,
+`navigation_readiness`, `navigation_blockers`, and `documents`. There is no
+`in_sync` boolean contract.
+
+Proceed only when `blocked=false`, the reported sync/read-model state is
+acceptable, and both validator verdicts are not `BLOCKED` with no unowned
+blocker. Otherwise stop the dependent read, retain the diagnostics, and route
+to the returned repair/next-step guidance. Keep direct execution, warnings,
+and truncation visible; this chain validates the canonical route and source
+contracts but does not turn a validator result into permission to mutate
+protected files.
+
+### R5 — Change-impact pack
+
+Use this for a bounded change-context packet before expanding into affected
+surfaces, tests, and wiki reads:
+
+```powershell
+mi-lsp nav change-pack [ref] [--path <path>] [--limit N]
+```
+
+The result is a `ChangePackPacket` with `ref`, `changed_files`,
+`changed_paths`, `changed_symbols`, `affected`, `read_first`, `hub_risk`,
+`wiki_must_read`, `suggested_tests`, `batch_next`, `generation_id`, `backend`,
+optional `determinism_digest`, `impact_files`, `impact_symbols`,
+`classification`, `classifications`, and `next_queries`. `hub_risk` is an
+optional advisory object; do not invent a flat `hub_risk_score`.
+
+Keep changed-path, affected, test, and wiki evidence bounded by `--limit`.
+When a diff and generation are available, preserve their digest and coverage;
+when either is missing, keep the warning or omission explicit instead of
+claiming determinism or complete impact. Follow `batch_next`/`next_queries`
+only as bounded continuations. The packet is impact guidance, not a canonical
+authority and not a write plan.
+
+### R1 — Skill-plan routing
+
+Use this when a request needs more than one skill and role-aware selection is
+required:
+
+```powershell
+mi-lsp skills plan --role <parent|leaf> --task <text> [--token-budget N] [--max-skills N]
+```
+
+The envelope is `backend: skills` with one `items[0]` matching
+`mi-lsp-skill-plan/v1`: `schema`, `role`, `task`,
+`budget{max_skills,token_budget}`, `always`, `routers`, `selected`,
+`bundles_optional`, `deny_families`, `warnings`, and `why_not_cheaper`.
+There is no `estimated_tokens` field. Selected IDs must resolve in the
+catalog; parent routers belong only on parent plans, and leaf plans exclude
+parent routers. Bounds and forced-intent exceptions follow `BuildPlan`.
+
+Keep catalog/build warnings and any bounded error envelope visible. Do not
+silently replace the planner with a daemon, external subagent, or invented
+schema, and do not broaden the selected set when a catalog item is omitted.
+The plan constrains routing cost; it does not supersede canonical wiki,
+governance, or task-specific authority.
+
+### R3 — Knowledge map then conditional recall
+
+Orient a knowledge wiki with its bounded hub map first, then use semantic recall
+only when its optional embedding dependency is available:
+
+```powershell
+mi-lsp nav wiki map --workspace <alias>
+mi-lsp nav recall <query> --workspace <alias> --intent <formula|evidence|route|explore|learning> [--map]
+```
+
+The first envelope is `backend: wiki.map` with deterministically ordered hubs.
+The map may return empty items or hubs; keep any surfaced warnings or hint
+visible.
+The second is `backend: recall` for semantic results or `backend: recall+lexical`
+when an embedding request fails. Each `RecallResult` carries
+`query`, `intent`, `archivo` (the result path), `heading`, `score`, `snippet`,
+`start_line`, `end_line`, and `why`.
+
+Keep the map-first step bounded and run recall conditionally. When embeddings
+are not configured, preserve the direct `recall` response with empty items and
+its hint to use `nav wiki search`; when an endpoint fails after configuration,
+preserve the `recall+lexical` backend, warning/hint, and
+`why: lexical_fallback`. Recall is direct and has no governance or daemon
+requirement. It is candidate discovery only: verify any candidate against the
+canonical wiki before relying on it.
+
 ## Canonical wiki / traceability discovery
 
 ```powershell

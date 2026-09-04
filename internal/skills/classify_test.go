@@ -73,9 +73,9 @@ func TestClassifyCriticalAndHighToken(t *testing.T) {
 	if rec.TokenCostClass != TokenCostHigh {
 		t.Fatalf("mi-lsp token_cost_class = %q, want high", rec.TokenCostClass)
 	}
-	imp := Classify("impeccable-polish", SeedRow{ID: "impeccable-polish", Family: FamilyFrontendDesign}, nil)
+	imp := Classify("impeccable", SeedRow{ID: "impeccable", Family: FamilyFrontendDesign}, nil)
 	if imp.TokenCostClass != TokenCostHigh {
-		t.Fatalf("impeccable-polish token_cost_class = %q, want high", imp.TokenCostClass)
+		t.Fatalf("impeccable token_cost_class = %q, want high", imp.TokenCostClass)
 	}
 }
 
@@ -102,7 +102,37 @@ func TestLoadEmbeddedSeedCount(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}
-	if len(rows) < 300 {
-		t.Fatalf("seed rows = %d, want >= 300", len(rows))
+	if len(rows) < 280 {
+		t.Fatalf("seed rows = %d, want >= 280", len(rows))
+	}
+
+	seedMap := SeedMap(rows)
+	checks := []struct {
+		id          string
+		wantPresent bool
+	}{
+		{id: "impeccable", wantPresent: true},
+		{id: "impeccable-adapt", wantPresent: false},
+		{id: "impeccable-audit", wantPresent: false},
+		{id: "impeccable-bolder", wantPresent: false},
+		{id: "impeccable-clarify", wantPresent: false},
+		{id: "impeccable-colorize", wantPresent: false},
+		{id: "impeccable-critique", wantPresent: false},
+		{id: "impeccable-delight", wantPresent: false},
+		{id: "impeccable-distill", wantPresent: false},
+		{id: "impeccable-extract", wantPresent: false},
+		{id: "impeccable-harden", wantPresent: false},
+		{id: "impeccable-normalize", wantPresent: false},
+		{id: "impeccable-onboard", wantPresent: false},
+		{id: "impeccable-optimize", wantPresent: false},
+		{id: "impeccable-polish", wantPresent: false},
+		{id: "impeccable-quieter", wantPresent: false},
+		{id: "impeccable-teach-impeccable", wantPresent: false},
+	}
+	for _, check := range checks {
+		_, present := seedMap[check.id]
+		if present != check.wantPresent {
+			t.Errorf("seed map entry %q present = %t, want %t", check.id, present, check.wantPresent)
+		}
 	}
 }
