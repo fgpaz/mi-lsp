@@ -417,6 +417,10 @@ type GraphUnresolved struct {
 	SourceDigest     *GraphDigest `json:"source_digest,omitempty"`
 	CrossRID         string       `json:"cross_rid"`
 	RecoveryHintCode string       `json:"recovery_hint_code,omitempty"`
+	SourceDocument   string       `json:"source_document,omitempty"`
+	SourceBlock      string       `json:"source_block,omitempty"`
+	TargetKind       string       `json:"target_kind,omitempty"`
+	TargetValue      string       `json:"target_value,omitempty"`
 }
 type GraphMigration struct {
 	MigrationID             string       `json:"migration_id"`
@@ -579,12 +583,75 @@ func GraphUnresolvedKey(u GraphUnresolved) GraphDigest {
 	return digestBytes(w.Bytes())
 }
 
+// NormalizeGraphUnresolvedContext canonicalizes optional diagnostic context
+// fields without changing the unresolved identity key.
+func NormalizeGraphUnresolvedContext(u *GraphUnresolved) error {
+	if u == nil {
+		return ErrGraphUnresolved
+	}
+	for _, field := range []struct {
+		value *string
+		name  string
+	}{
+		{&u.SourceDocument, "source_document"},
+		{&u.SourceBlock, "source_block"},
+		{&u.TargetKind, "target_kind"},
+		{&u.TargetValue, "target_value"},
+	} {
+		normalized, err := normalizeText(*field.value)
+		if err != nil {
+			return err
+		}
+		if *field.value != "" && normalized == "" {
+			return graphErr("GPH_IDENTITY_FIELD_MISSING", field.name, "field is required")
+		}
+		*field.value = normalized
+	}
+	return nil
+}
+
+func validateGraphUnresolvedContext(u GraphUnresolved) error {
+	if err := NormalizeGraphUnresolvedContext(&u); err != nil {
+		return ErrGraphUnresolved
+	}
+	total := 0
+	if u.SourceDocument != "" {
+		if _, err := slashPath(u.SourceDocument, "source_document"); err != nil {
+			return ErrGraphUnresolved
+		}
+		total += len(u.SourceDocument)
+	}
+	for _, field := range []struct {
+		value string
+		name  string
+	}{
+		{u.SourceBlock, "source_block"},
+		{u.TargetKind, "target_kind"},
+		{u.TargetValue, "target_value"},
+	} {
+		if field.value == "" {
+			continue
+		}
+		if _, err := required(field.value, field.name); err != nil {
+			return ErrGraphUnresolved
+		}
+		total += len(field.value)
+	}
+	if total > maxCandidateBytes {
+		return ErrGraphUnresolved
+	}
+	return nil
+}
+
 // ValidateGraphUnresolved validates an unresolved claim and its canonical key.
 func ValidateGraphUnresolved(u GraphUnresolved) error {
 	if u.UnresolvedID < 0 || u.OwnerPath == "" || u.SubjectKind == "" || u.ReasonCode == "" || u.Backend == "" || len(u.Candidates) > maxUnresolvedCandidates {
 		return ErrGraphUnresolved
 	}
 	if _, err := slashPath(u.OwnerPath, "owner_path"); err != nil {
+		return ErrGraphUnresolved
+	}
+	if err := validateGraphUnresolvedContext(u); err != nil {
 		return ErrGraphUnresolved
 	}
 	total := 0
@@ -731,7 +798,11 @@ func (b *GraphBundle) validate(requireSealed bool) error {
 			return ErrGraphEvidenceInvalid
 		}
 	}
-	for i, u := range b.Unresolved {
+	for i := range b.Unresolved {
+		if err := NormalizeGraphUnresolvedContext(&b.Unresolved[i]); err != nil {
+			return ErrGraphUnresolved
+		}
+		u := b.Unresolved[i]
 		if u.UnresolvedID != i || u.GenerationID != g.GenerationID || ValidateGraphUnresolved(u) != nil {
 			return ErrGraphUnresolved
 		}
@@ -893,7 +964,14 @@ func (h *GraphContentHasher) AddEvidence(e GraphEvidence) error {
 	h.text(14, e.CrossRID)
 	return nil
 }
-func (h *GraphContentHasher) AddUnresolved(u GraphUnresolved) error {
+func (h *GraphContentHasher) addUnresolved(u GraphUnresolved, includeProvenance bool) error {
+	if includeProvenance {
+		normalized := u
+		if err := NormalizeGraphUnresolvedContext(&normalized); err != nil {
+			return err
+		}
+		u = normalized
+	}
 	if e := h.begin(3); e != nil {
 		return e
 	}
@@ -912,7 +990,24 @@ func (h *GraphContentHasher) AddUnresolved(u GraphUnresolved) error {
 	}
 	h.text(10, u.CrossRID)
 	h.text(11, u.RecoveryHintCode)
+	if includeProvenance {
+		h.text(12, u.SourceDocument)
+		h.text(13, u.SourceBlock)
+		h.text(14, u.TargetKind)
+		h.text(15, u.TargetValue)
+	}
 	return nil
+}
+
+func (h *GraphContentHasher) AddUnresolved(u GraphUnresolved) error {
+	return h.addUnresolved(u, true)
+}
+
+// AddUnresolvedLegacy emits the exact pre-provenance unresolved framing used
+// by schema_version=1 generations sealed before diagnostic context joined the
+// content digest. It is only for replacement-time compatibility validation.
+func (h *GraphContentHasher) AddUnresolvedLegacy(u GraphUnresolved) error {
+	return h.addUnresolved(u, false)
 }
 func (h *GraphContentHasher) Sum() (GraphDigest, error) {
 	if h == nil || h.h == nil {

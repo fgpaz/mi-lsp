@@ -1,6 +1,7 @@
 package output
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -18,9 +19,9 @@ func TestRenderStructuredFormatsExposeWikiCodeContextAdditively(t *testing.T) {
 	}
 
 	base.WikiCodeContext = &model.WikiCodeContext{
-		PrimaryDoc:      model.DocRecord{Path: ".docs/wiki/04_RF/RF-LIVE-001.md", DocID: "RF-LIVE-001"},
-		Freshness:       model.WikiCodeFreshness{DocsManifest: model.FreshnessCurrent, Bindings: model.FreshnessCurrent, Catalog: model.FreshnessCurrent, Graph: model.FreshnessUnknown, Authority: model.FreshnessCurrent},
-		Provenance:      model.WikiCodeProvenance{Backend: "wiki-code-resolver", QueryOnly: true},
+		PrimaryDoc:        model.DocRecord{Path: ".docs/wiki/04_RF/RF-LIVE-001.md", DocID: "RF-LIVE-001"},
+		Freshness:         model.WikiCodeFreshness{DocsManifest: model.FreshnessCurrent, Bindings: model.FreshnessCurrent, Catalog: model.FreshnessCurrent, Graph: model.FreshnessUnknown, Authority: model.FreshnessCurrent},
+		Provenance:        model.WikiCodeProvenance{Backend: "wiki-code-resolver", QueryOnly: true},
 		DeterminismDigest: "digest",
 	}
 	for _, format := range []string{"compact", "json", "toon", "yaml"} {
@@ -424,12 +425,12 @@ func TestRenderWikiCodeContextPreservesFreshnessCostAndCanonicalDigest(t *testin
 		Workspace: "wiki-code-fixture",
 		Items:     []model.TraceResult{{DocID: "RF-DEMO-001"}},
 		WikiCodeContext: &model.WikiCodeContext{
-			PrimaryDoc: model.DocRecord{Path: ".docs/wiki/04_RF/RF-DEMO-001.md", DocID: "RF-DEMO-001"},
-			DirectCode: []model.WikiCodeEvidence{{Path: "src/demo/service.mjs", Symbol: "runDemo", Relation: model.RelationImplements, Status: model.WikiCodeStatusResolvedSymbol}},
-			Tests:      []model.WikiCodeEvidence{{Path: "test/demo/service.test.mjs", Relation: model.RelationTests}},
-			Freshness: model.WikiCodeFreshness{DocsManifest: model.FreshnessCurrent, Bindings: model.FreshnessOverlay, Catalog: model.FreshnessCurrent, Graph: model.FreshnessStale, Authority: model.FreshnessCurrent},
-			Cost: model.WikiCodeResolveCost{MetadataChecked: 1, FilesHashed: 1, FilesParsed: 1, CatalogQueries: 2},
-			Provenance: model.WikiCodeProvenance{Backend: "wiki-code-resolver", QueryOnly: true},
+			PrimaryDoc:        model.DocRecord{Path: ".docs/wiki/04_RF/RF-DEMO-001.md", DocID: "RF-DEMO-001"},
+			DirectCode:        []model.WikiCodeEvidence{{Path: "src/demo/service.mjs", Symbol: "runDemo", Relation: model.RelationImplements, Status: model.WikiCodeStatusResolvedSymbol}},
+			Tests:             []model.WikiCodeEvidence{{Path: "test/demo/service.test.mjs", Relation: model.RelationTests}},
+			Freshness:         model.WikiCodeFreshness{DocsManifest: model.FreshnessCurrent, Bindings: model.FreshnessOverlay, Catalog: model.FreshnessCurrent, Graph: model.FreshnessStale, Authority: model.FreshnessCurrent},
+			Cost:              model.WikiCodeResolveCost{MetadataChecked: 1, FilesHashed: 1, FilesParsed: 1, CatalogQueries: 2},
+			Provenance:        model.WikiCodeProvenance{Backend: "wiki-code-resolver", QueryOnly: true},
 			DeterminismDigest: "digest-v1",
 		},
 	}
@@ -516,5 +517,62 @@ func TestRenderFormats_IncludeCoachBlock(t *testing.T) {
 	}
 	if !strings.Contains(text, "memory_pointer: doc_id=RF-QRY-010 reentry_op=nav.search stale=true") {
 		t.Fatalf("expected text render to include memory pointer, got %s", text)
+	}
+}
+func TestRenderOmissionTypedDiagnosticsUsesExplicitFields(t *testing.T) {
+	env := model.Envelope{
+		Ok:      true,
+		Backend: "graph",
+		Omissions: []model.EnvelopeOmission{{
+			Input:          "milsp:unresolved:v1:synthetic",
+			Reason:         "missing_doc_target",
+			ErrorCode:      "inspect_doc_graph_reference",
+			OwnerPath:      "docs/RF-SYNTHETIC.md",
+			SourceDocument: "docs/RF-SYNTHETIC.md",
+			SourceBlock:    "frontmatter",
+			TargetKind:     "document",
+			TargetValue:    "TP-SYNTHETIC-001",
+		}},
+	}
+	textRendered, err := Render(env, "text", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(textRendered)
+	for _, field := range []string{"owner_path=docs/RF-SYNTHETIC.md", "source_document=docs/RF-SYNTHETIC.md", "source_block=frontmatter", "target_kind=document", "target_value=TP-SYNTHETIC-001"} {
+		if !strings.Contains(text, field) {
+			t.Fatalf("text omission missing %q: %s", field, text)
+		}
+	}
+	jsonRendered, err := Render(env, "json", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	jsonText := string(jsonRendered)
+	var decoded model.Envelope
+	if err := json.Unmarshal(jsonRendered, &decoded); err != nil {
+		t.Fatalf("decode rendered JSON: %v", err)
+	}
+	if len(decoded.Omissions) != 1 {
+		t.Fatalf("expected one JSON omission, got %d: %s", len(decoded.Omissions), jsonText)
+	}
+	omission := decoded.Omissions[0]
+	for field, value := range map[string]string{
+		"owner_path":      omission.OwnerPath,
+		"source_document": omission.SourceDocument,
+		"source_block":    omission.SourceBlock,
+		"target_kind":     omission.TargetKind,
+		"target_value":    omission.TargetValue,
+	} {
+		expected := map[string]string{
+			"owner_path":      "docs/RF-SYNTHETIC.md",
+			"source_document": "docs/RF-SYNTHETIC.md",
+			"source_block":    "frontmatter",
+			"target_kind":     "document",
+			"target_value":    "TP-SYNTHETIC-001",
+		}[field]
+		if value != expected {
+			t.Fatalf("json omission %s = %q, want %q: %s", field, value, expected, jsonText)
+		}
 	}
 }

@@ -286,9 +286,9 @@ func ObserveGoGraph(ctx context.Context, req GoGraphObservationRequest) (model.G
 	}
 	req.RepositoryIdentity, _ = model.NormalizeRepositoryIdentity(req.RepositoryIdentity)
 	modPath := filepath.Join(root, filepath.FromSlash(project))
-	modInfo, err := os.Stat(modPath)
-	if err != nil || modInfo.IsDir() {
-		return empty, goGraphError("GPH_GO_MOD_MISSING", "project_or_module", "selected go.mod is missing")
+	modInfo, err := os.Lstat(modPath)
+	if err != nil || !modInfo.Mode().IsRegular() {
+		return empty, goGraphError("GPH_GO_MOD_MISSING", "project_or_module", "selected go.mod is missing or not a regular file")
 	}
 	rootReal, err := filepath.EvalSymlinks(root)
 	if err != nil || !goGraphInside(rootReal, mustEvalSymlinks(modPath)) {
@@ -449,8 +449,16 @@ func validateGoGraphRequest(req GoGraphObservationRequest) (string, string, stri
 	if err != nil || filepath.Base(project) != "go.mod" {
 		return "", "", "", "", nil, goGraphError("GPH_GO_MOD_INVALID", "project_or_module", "project_or_module must be an exact relative go.mod path")
 	}
-	if !goGraphInside(root, filepath.Join(root, filepath.FromSlash(project))) {
-		return "", "", "", "", nil, goGraphError("GPH_GO_MOD_OUTSIDE_ROOT", "project_or_module", "selected go.mod is outside root")
+	projectPath := filepath.Join(root, filepath.FromSlash(project))
+	if !goGraphInside(root, projectPath) {
+		return "", "", "", "", nil, goGraphError("GPH_GO_MOD_OUTSIDE_ROOT", "project_or_module", "selected go module is outside root")
+	}
+	if rootReal, evalErr := filepath.EvalSymlinks(root); evalErr == nil && !goGraphInside(rootReal, mustEvalSymlinks(projectPath)) {
+		return "", "", "", "", nil, goGraphError("GPH_GO_MOD_OUTSIDE_ROOT", "project_or_module", "selected go module resolves outside root")
+	}
+	modInfo, statErr := os.Lstat(projectPath)
+	if statErr != nil || !modInfo.Mode().IsRegular() {
+		return "", "", "", "", nil, goGraphError("GPH_GO_MOD_MISSING", "project_or_module", "selected go.mod is missing or not a regular file")
 	}
 	identity, err := model.NormalizeRepositoryIdentity(req.RepositoryIdentity)
 	if err != nil {
@@ -534,15 +542,21 @@ func (b *goGraphBuilder) addPackageIssue(p *goGraphPackage, reason string) {
 }
 
 func goGraphRelative(path string) (string, error) {
-	if strings.TrimSpace(path) == "" || filepath.IsAbs(path) {
+	raw := strings.TrimSpace(path)
+	if strings.Contains(raw, "\\") {
+		return "", errors.New("backslash path separators unsupported")
+	}
+	if raw == "" || filepath.IsAbs(raw) || (len(raw) > 1 && raw[1] == ':') {
 		return "", errors.New("absolute or empty path")
 	}
-	clean := filepath.Clean(path)
+	for _, part := range strings.Split(raw, "/") {
+		if part == ".." {
+			return "", errors.New("outside path")
+		}
+	}
+	clean := filepath.Clean(filepath.FromSlash(raw))
 	if clean == "." || clean == ".." || strings.HasPrefix(clean, ".."+string(filepath.Separator)) {
 		return "", errors.New("outside path")
-	}
-	if strings.Contains(path, "\\") && filepath.Separator == '/' {
-		clean = filepath.FromSlash(strings.ReplaceAll(path, "\\", "/"))
 	}
 	return filepath.ToSlash(clean), nil
 }

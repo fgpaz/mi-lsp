@@ -118,7 +118,13 @@ evidence:
 
 ## 7. GraphUnresolved
 
-Debe conservar `reason_code`, input/selector sanitizado, candidatos bounded, backend, owner path, generation, source digest, cross-RID y `recovery_hint`. No contiene payload arbitrario, secretos ni raw compiler logs. Los unresolved participan en stats y explican recall perdido.
+Debe conservar `reason_code`, input/selector sanitizado, candidatos bounded, backend, owner path, generation, source digest, cross-RID y `recovery_hint`. Puede incluir, como contexto diagnóstico nullable (persistido como `null`/ausente cuando no aplica), `source_document`, `source_block`, `target_kind` y `target_value`. Si se informan, se validan como texto UTF-8 válido y sin caracteres de control; la proyección persistida recorta espacios, y `source_document` además debe ser un path relativo con `/`. El contexto completo queda acotado a 4096 bytes y los candidatos a 64 elementos/4096 bytes.
+
+Los cuatro campos de contexto de `GraphUnresolved` son diagnósticos: participan, con framing determinista y orden estable, en el `content_digest` y en el digest de facts que alimenta los fingerprints `source`/`config`/`backend` y, por tanto, el `generation_id`; no participan en `GraphUnresolvedKey` ni en `UnresolvedRID`: la identidad unresolved usa `owner_path`, `subject_kind`, `selector_digest`, `reason_code`, candidatos, backend, `source_digest` y `recovery_hint`. En consecuencia, enriquecer la atribución cambia los digests de contenido/facts/generación, pero no cambia key/RID, y `target_value` conserva los IDs canónicos `TP-*` sin sustituirlos por un path.
+
+En una `DocMention` canónica que resuelve a un único destino, `SourceBlock` se recorta antes del hashing y participa, con framing y orden deterministas, tanto en el digest de claim de la mención como en el mention portion de `graphDocFactsDigest`; un cambio exclusivo de `SourceBlock` cambia los digests `content`/`facts` y los fingerprints `source`/`config`/`backend`/`generation`, mientras que whitespace exterior y orden de entrada canónicos conservan la identidad. Este caso resuelto no crea ni modifica `GraphUnresolvedKey`/`UnresolvedRID`; esos IDs siguen reservados para claims unresolved.
+
+`missing_doc_target` y `missing_code_target` solo describen un destino elegible que el contrato exige y que no pudo resolverse; sus diagnósticos quedan tipados y bounded. Una omisión tipada (`local`, `lambda`, `anonymous`, `synthesized_or_implicitly_declared`, `external` o `unsupported`) no es un unresolved: no crea edge ni falsa incompletitud. No contiene payload arbitrario, secretos ni raw compiler logs. Los unresolved participan en stats y explican recall perdido.
 
 ## 8. Errores tipados
 

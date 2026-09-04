@@ -432,3 +432,52 @@ func relaxedHarnessContract(audience string, id string) string {
 		"```",
 	}, "\n")
 }
+func TestCompileHarnessAllowsEmptyImportsOnlyForValidatedGovernanceRoot(t *testing.T) {
+	root := t.TempDir()
+	writeSpecBackendGovernanceFixture(t, root)
+	writeWorkspaceFile(t, root, "artifacts/synthetic.txt", "bounded")
+	governance := harnessDoc{
+		record:  harnessDocRecord(".docs/wiki/00_gobierno_documental.md", "GOVERNANCE-SYNTHETIC"),
+		content: "synthetic governance contract",
+		contract: &harnessContract{
+			HarnessProtocol:  harnessProtocolV1,
+			ID:               "GOVERNANCE-SYNTHETIC",
+			Kind:             "governance",
+			Audience:         "human",
+			Exports:          []string{"GOVERNANCE-SYNTHETIC"},
+			AgentMustRead:    []string{"governance"},
+			AgentMayEdit:     []string{"none"},
+			AgentMustNotEdit: []string{"secrets"},
+			Verify:           []string{"synthetic"},
+			StopIf:           []string{"invalid"},
+			Evidence:         []string{"artifacts/synthetic.txt"},
+		},
+	}
+	result := compileHarnessValidation(root, []harnessDoc{governance}, []harnessDoc{governance})
+	if result.HarnessVerdict == "BLOCKED" || strings.Contains(strings.Join(result.HarnessBlockers, " | "), "missing imports") {
+		t.Fatalf("validated governance root was blocked for empty imports: %#v", result)
+	}
+}
+
+func TestCompileHarnessKeepsEmptyImportsBlockedOutsideValidatedGovernanceRoot(t *testing.T) {
+	root := t.TempDir()
+	writeSpecBackendGovernanceFixture(t, root)
+	doc := harnessDoc{
+		record:  harnessDocRecord(".docs/wiki/09_contratos/CT-SYNTHETIC.md", "CT-SYNTHETIC"),
+		content: "synthetic contract",
+		contract: &harnessContract{
+			HarnessProtocol:  harnessProtocolV1,
+			ID:               "CT-SYNTHETIC",
+			Kind:             "contract",
+			Audience:         "human",
+			Exports:          []string{"CT-SYNTHETIC"},
+			AgentMustRead:    []string{"contract"},
+			AgentMayEdit:     []string{"none"},
+			AgentMustNotEdit: []string{"secrets"},
+		},
+	}
+	result := compileHarnessValidation(root, []harnessDoc{doc}, []harnessDoc{doc})
+	if !strings.Contains(strings.Join(result.HarnessBlockers, " | "), "missing imports") {
+		t.Fatalf("non-governance empty imports did not remain blocked: %#v", result)
+	}
+}

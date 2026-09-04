@@ -44,7 +44,7 @@ La base vigente distingue workspaces `single` de workspaces `container`, persist
 | FileRecord | Derivada | Indexer | `<repo>/.mi-lsp/index.db` | Metadata de archivo indexado con ownership por repo |
 | DocRecord | Derivada | Doc indexer | `<repo>/.mi-lsp/index.db` | Documento indexado con `path`, `doc_id`, `layer`, `family` y texto de ranking |
 | DocEdge | Derivada | Doc indexer | `<repo>/.mi-lsp/index.db` | Relacion explicita documento -> documento por doc ID, link markdown, wikilink, embed u hierarchy |
-| DocMention | Derivada | Doc indexer | `<repo>/.mi-lsp/index.db` | Menciones explicitas desde docs hacia paths, simbolos o comandos |
+| DocMention | Derivada | Doc indexer | `<repo>/.mi-lsp/index.db` | Mención explícita desde docs hacia paths, símbolos, comandos o IDs documentales; conserva `source_block` opcional y las referencias `TP-*` pueden resolver un documento exacto |
 | DocSourceBlock | Derivada | Doc indexer | `<repo>/.mi-lsp/index.db` | Bloque `toon` normativo de un artefacto `SDD-WIKI-SOURCE-v1`, con `block_id`, `doc_id`, lineas y hash |
 | DocSourceRecord | Derivada | Doc indexer | `<repo>/.mi-lsp/index.db` | Record referenciable dentro de un bloque fuente, con `record_id`, `record_type`, lineas y hash |
 | WikiChunkEmbedding | Derivada | Doc indexer | `<repo>/.mi-lsp/index.db` | Chunk wiki enriquecido con metadata, hash de contenido/prefix, BLOB float32, `embedding_model`, `embedding_dim`, heading, snippet y rango de lineas |
@@ -58,7 +58,7 @@ La base vigente distingue workspaces `single` de workspaces `container`, persist
 | GraphNode | Derivada | Graph Kernel | `<repo>/.mi-lsp/index.db` | Nodo tipado con `node_id` local, `NodeKey` BLOB(32), identity fields, owner, generation, provenance y cross-RID |
 | GraphEdge | Derivada | Graph Kernel | `<repo>/.mi-lsp/index.db` | Relacion dirigida y tipada entre NodeKeys existentes en la misma generation |
 | GraphEvidence | Derivada | Backend/Graph Kernel | `<repo>/.mi-lsp/index.db` | Observacion versionada con source URI/range/digest, backend, claim, status, generation y cross-RID |
-| GraphUnresolved | Derivada | Backend/Validator | `<repo>/.mi-lsp/index.db` | Identidad, edge o target no publicable con reason code, candidatos bounded y recovery hint |
+| GraphUnresolved | Derivada | Backend/Validator | `<repo>/.mi-lsp/index.db` | Identidad, edge o target no publicable con reason code, candidatos bounded y recovery hint; provenance documental nullable (`source_document`, `source_block`, `target_kind`, `target_value`), acotada y expuesta de forma sanitizada |
 | GraphMigration | Operativa derivada | SQLite Publisher | `<repo>/.mi-lsp/index.db` | Ventana de schema, preflight, checksums, dual-read/write y rollback metadata |
 | GraphAnalysis | Derivada descartable | Core/MILX Host | `<repo>/.mi-lsp/index.db` o cache local | Resultado de algoritmo/pack keyeado por generation, extension y parametros; nunca autoridad primaria |
 | GlobalGraphSnapshot | Derivada descartable | Core/Daemon opcional | Estado global local | Vista sellada de member workspaces/generations y cross-edges; no escribe stores miembros |
@@ -90,6 +90,7 @@ La base vigente distingue workspaces `single` de workspaces `container`, persist
 - Un `ProjectConfig` puede declarar `[recall.rerank_extension]` como hook local externo; no guarda payloads, respuestas de proveedor ni secretos.
 - Cada `FileRecord` y `SymbolRecord` pertenece a un `repo_id`.
 - Cada `DocRecord` puede tener muchos `DocEdge`, `DocMention`, `DocSourceBlock` y `DocSourceRecord`.
+- Una `DocMention` conserva `source_block` opcional para atribución; una referencia `TP-*` se resuelve solo contra un `DocRecord.doc_id` exacto y único. Si falta o hay más de un target, no deriva edge y produce `GraphUnresolved` tipado con `missing_doc_target` o `ambiguous_doc_target`.
 - Un `WikiChunkEmbedding` pertenece a un chunk documental y se invalida cuando cambia metadata-prefix, texto enriquecido, content hash, modelo o dimension.
 - Un `GovernanceSource` manda sobre el `DocsReadProfile`; la proyeccion ejecutable no redefine la autoridad humana.
 - Un `DocsOwnerHint` vive en `GovernanceSource` y se proyecta al `DocsReadProfile`; no redefine la gobernanza, solo refina ranking documental repo-especifico.
@@ -101,6 +102,8 @@ La base vigente distingue workspaces `single` de workspaces `container`, persist
 - Un `ServiceSurfaceSummary` se deriva de `SymbolRecord`, `FileRecord` y evidencia textual scoped al path pedido.
 - Un `GraphGeneration` contiene muchos `GraphNode`, `GraphEdge`, `GraphEvidence` y `GraphUnresolved`; solo una generation sellada puede ser activa por workspace/schema.
 - `GraphEdge` referencia dos `GraphNode` de la misma generation y una o mas `GraphEvidence`; unresolved nunca se materializa como endpoint fantasma.
+- El contexto de `GraphUnresolved` (`source_document`, `source_block`, `target_kind`, `target_value`) es derivado, nullable y bounded; no participa en `UnresolvedKey` ni `CrossRID` y no convierte un unresolved en endpoint.
+- Aunque no define identidad, el contexto de `GraphUnresolved` participa, con framing determinista y orden estable, en los digests de contenido y facts que alimentan los fingerprints de source/config/backend y el `generation_id`.
 - `GraphMigration` gobierna compatibilidad entre schema legacy y graph-native; no modifica el significado de las entidades.
 - `GraphAnalysis` y `ContextPack` se derivan de generation(s), authority/profile digest, pack/extension version y parameters digest; invalidar cualquiera invalida el cache.
 - `GlobalGraphSnapshot` referencia member generations inmutables por `(workspace_identity, generation_id)` y resuelve cross-edges por cross-RID sin adquirir ownership de sus datos.
@@ -134,7 +137,7 @@ Los cross-RIDs de nodo/edge/evidence son representaciones versionadas derivadas 
 
 - `staged`: completa en escritura, aun invisible para readers
 - `active`: snapshot unico seleccionado por el puntero del workspace
-- `retired`: snapshot validado anterior, retenido para rollback
+- `retired`: snapshot validado anterior, retenido para rollback o reactivación canónica
 - `invalid`: staging rechazado o incompleto; nunca consultable
 
 ### Backend / claim
@@ -149,6 +152,7 @@ Los cross-RIDs de nodo/edge/evidence son representaciones versionadas derivadas 
 - `registry.toml` no contiene topologia detallada del container.
 - `project.toml` es la fuente local para `repo[]`, `entrypoint[]`, `default_repo` y `default_entrypoint`.
 - `SymbolRecord`, `FileRecord` y `DocRecord` son reconstruibles y nunca persisten ASTs ni refs profundas.
+- `DocMention` y `GraphUnresolved` son entidades derivadas, reconstruibles y read-only respecto de la wiki; exponen diagnóstico, no autoridad ni mutación del canon.
 - `RuntimeSnapshot` y `AccessEvent` deben ser suficientes para explicar por que un acceso fue warm, cold o ambiguo.
 - `QueryEnvelope` siempre incluye `backend`, `warnings`, `stats` y `truncated`; si hay ambiguedad, el `backend` canonico es `router`.
 - `QueryEnvelope` puede agregar `mode` cuando la superficie publica distingue variantes estables (`nav.intent docs|code`).

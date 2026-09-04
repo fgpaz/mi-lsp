@@ -175,6 +175,11 @@ type EnvelopeOmission struct {
 	Reason         string `json:"reason,omitempty"`
 	ErrorCode      string `json:"error_code,omitempty"`
 	RequestedRange string `json:"requested_range,omitempty"`
+	OwnerPath      string `json:"owner_path,omitempty"`
+	SourceDocument string `json:"source_document,omitempty"`
+	SourceBlock    string `json:"source_block,omitempty"`
+	TargetKind     string `json:"target_kind,omitempty"`
+	TargetValue    string `json:"target_value,omitempty"`
 }
 
 type EnvelopeMetrics struct {
@@ -585,6 +590,7 @@ type DocMention struct {
 	DocPath      string `json:"doc_path"`
 	MentionType  string `json:"mention_type"`
 	MentionValue string `json:"mention_value"`
+	SourceBlock  string `json:"source_block,omitempty"`
 }
 
 type DocSourceBlock struct {
@@ -1178,7 +1184,7 @@ type TraceResult struct {
 	Host             string            `json:"host,omitempty"`
 	// WikiCodeContext is populated per item only for federated trace results;
 	// single-workspace traces use Envelope.WikiCodeContext.
-	WikiCodeContext  *WikiCodeContext `json:"wiki_code_context,omitempty"`
+	WikiCodeContext *WikiCodeContext `json:"wiki_code_context,omitempty"`
 }
 
 // RouteDoc is a single document in a canonical or discovery route lane.

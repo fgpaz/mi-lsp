@@ -3,7 +3,10 @@ package indexer
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"reflect"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -88,6 +91,112 @@ func TestObserveGraphUsesExactRoslynProjectEntrypoint(t *testing.T) {
 	want := GraphObservationRequest{RepositoryIdentity: "github.com/acme/repo", EntrypointID: "project", EntrypointPath: "src/Fixture.csproj", EntrypointKind: model.EntrypointKindProject, Backend: "roslyn"}
 	if got.RepositoryIdentity != want.RepositoryIdentity || got.EntrypointID != want.EntrypointID || got.EntrypointPath != want.EntrypointPath || got.EntrypointKind != want.EntrypointKind || got.Backend != want.Backend || len(batches) != 1 {
 		t.Fatalf("request=%#v batches=%d", got, len(batches))
+	}
+}
+func TestObserveGraphResolvesAutoDetectedGoEntrypointThroughTopology(t *testing.T) {
+	root := t.TempDir()
+	writeProgressTestFile(t, root, "runtime/go.mod", "module example.test/runtime\n\ngo 1.24\n")
+	writeProgressTestFile(t, root, "runtime/main.go", "package runtime\nfunc Run() {}\n")
+	project := model.ProjectFile{
+		Project: model.ProjectBlock{
+			Name:              "nested-go",
+			Kind:              model.WorkspaceKindSingle,
+			DefaultRepo:       "runtime",
+			DefaultEntrypoint: "runtime::runtime-go-mod",
+		},
+		Repos: []model.WorkspaceRepo{{
+			ID:                 "runtime",
+			Name:               "runtime",
+			Root:               "runtime",
+			RepositoryIdentity: "https://example.com/nested-go",
+			Languages:          []string{"go"},
+			DefaultEntrypoint:  "runtime::runtime-go-mod",
+		}},
+		Entrypoints: []model.WorkspaceEntrypoint{{
+			ID:      "runtime::runtime-go-mod",
+			RepoID:  "runtime",
+			Path:    "runtime/go.mod",
+			Kind:    model.EntrypointKindProject,
+			Default: true,
+		}},
+	}
+
+	batches, omissions, _, err := ObserveGraph(context.Background(), root, project, GraphIndexOptions{}, nil)
+	if err != nil {
+		t.Fatalf("ObserveGraph: %v", err)
+	}
+	if len(batches) != 1 {
+		t.Fatalf("batches=%d, want one auto-detected Go observation", len(batches))
+	}
+	if batches[0].ProjectOrModule != "go.mod" {
+		t.Fatalf("Go project/module=%q, want repo-local go.mod", batches[0].ProjectOrModule)
+	}
+	for _, omission := range omissions {
+		if omission.ReasonCode == "go_module_missing" {
+			t.Fatalf("auto-detected Go module was omitted: %#v", omissions)
+		}
+	}
+}
+
+func TestObserveGraphRejectsUnknownOrUnsafeGoTopologyEntrypoint(t *testing.T) {
+	tests := []struct {
+		name           string
+		defaultID      string
+		entrypointID   string
+		entrypointPath string
+	}{
+		{name: "unknown ID", defaultID: "runtime::missing-go-mod"},
+		{name: "malformed ID", defaultID: "runtime::"},
+		{name: "missing generated ID", defaultID: "runtime::runtime-go-mod"},
+		{name: "unsafe declared path", defaultID: "runtime::runtime-go-mod", entrypointID: "runtime::runtime-go-mod", entrypointPath: "../go.mod"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			root := t.TempDir()
+			writeProgressTestFile(t, root, "runtime/go.mod", "module example.test/runtime\n\ngo 1.24\n")
+			writeProgressTestFile(t, root, "runtime/main.go", "package runtime\nfunc Run() {}\n")
+			project := model.ProjectFile{
+				Project: model.ProjectBlock{
+					Name:              "nested-go",
+					Kind:              model.WorkspaceKindSingle,
+					DefaultRepo:       "runtime",
+					DefaultEntrypoint: test.defaultID,
+				},
+				Repos: []model.WorkspaceRepo{{
+					ID:                 "runtime",
+					Name:               "runtime",
+					Root:               "runtime",
+					RepositoryIdentity: "https://example.com/nested-go",
+					Languages:          []string{"go"},
+					DefaultEntrypoint:  test.defaultID,
+				}},
+			}
+			if test.entrypointID != "" {
+				project.Entrypoints = []model.WorkspaceEntrypoint{{
+					ID:     test.entrypointID,
+					RepoID: "runtime",
+					Path:   test.entrypointPath,
+					Kind:   model.EntrypointKindProject,
+				}}
+			}
+
+			batches, omissions, _, err := ObserveGraph(context.Background(), root, project, GraphIndexOptions{}, nil)
+			if err != nil {
+				t.Fatalf("ObserveGraph: %v", err)
+			}
+			if len(batches) != 0 {
+				t.Fatalf("batches=%d, want no observation for unresolvable topology entrypoint", len(batches))
+			}
+			foundMissing := false
+			for _, omission := range omissions {
+				if omission.ReasonCode == "go_module_missing" {
+					foundMissing = true
+				}
+			}
+			if !foundMissing {
+				t.Fatalf("omissions=%#v, want go_module_missing", omissions)
+			}
+		})
 	}
 }
 
@@ -271,5 +380,62 @@ func TestObserveGraphGatesUnsupportedLanguageWithoutClaims(t *testing.T) {
 	}
 	if omissions[0].Backend != "tsserver" || omissions[0].ReasonCode != "backend_gated" {
 		t.Fatalf("omission = %#v", omissions[0])
+	}
+}
+func TestGraphGoModuleAcceptsNestedSelectorAndPreservesRootFallback(t *testing.T) {
+	root := t.TempDir()
+	writeProgressTestFile(t, root, "runtime/go.mod", "module example.test/runtime\n\ngo 1.24\n")
+	if got := graphGoModule(root, "runtime/go.mod"); got != "runtime/go.mod" {
+		t.Fatalf("nested module selector = %q, want runtime/go.mod", got)
+	}
+	writeProgressTestFile(t, root, "go.mod", "module example.test/root\n\ngo 1.24\n")
+	if got := graphGoModule(root, ""); got != "go.mod" {
+		t.Fatalf("root fallback = %q, want go.mod", got)
+	}
+	if err := os.MkdirAll(filepath.Join(root, "directory", "go.mod"), 0o755); err != nil {
+		t.Fatalf("mkdir non-regular selector: %v", err)
+	}
+	writeProgressTestFile(t, root, "target/go.mod", "module example.test/target\n\ngo 1.24\n")
+	if err := os.MkdirAll(filepath.Join(root, "link"), 0o755); err != nil {
+		t.Fatalf("mkdir symlink parent: %v", err)
+	}
+	selectors := []string{"missing/go.mod", "directory/go.mod", "../go.mod", "/tmp/go.mod", "runtime/../outside/go.mod", "runtime\\go.mod"}
+	if err := os.Symlink(filepath.Join("..", "target", "go.mod"), filepath.Join(root, "link", "go.mod")); err == nil {
+		selectors = append(selectors, "link/go.mod")
+	} else {
+		t.Logf("symlink selector unavailable: %v", err)
+	}
+	for _, selector := range selectors {
+		if got := graphGoModule(root, selector); got != "" {
+			t.Fatalf("invalid explicit selector %q accepted as %q", selector, got)
+		}
+	}
+}
+
+func TestGraphSafeRelativeModuleRejectsDriveRelativeAndAcceptsNormalRelative(t *testing.T) {
+	root := t.TempDir()
+	writeProgressTestFile(t, root, "runtime/go.mod", "module example.test/runtime\n\ngo 1.24\n")
+	if got, safe := graphSafeRelativeModule(root, "runtime/go.mod"); !safe || got != "runtime/go.mod" {
+		t.Fatalf("normal relative module = %q, safe=%v; want runtime/go.mod,true", got, safe)
+	}
+	if runtime.GOOS != "windows" {
+		// A colon is a valid POSIX filename, so create the path to ensure the
+		// rejection is exercised before filesystem resolution rather than only
+		// because the path is absent.
+		writeProgressTestFile(t, root, "C:foo/go.mod", "module example.test/drive-relative\n\ngo 1.24\n")
+	}
+	if got, safe := graphSafeRelativeModule(root, "C:foo/go.mod"); safe {
+		t.Fatalf("drive-relative module accepted as %q", got)
+	}
+}
+
+func TestGraphGoModuleRejectsGoWorkSelectorAndFallback(t *testing.T) {
+	root := t.TempDir()
+	writeProgressTestFile(t, root, "go.work", "go 1.24\nuse ./runtime\n")
+	if got := graphGoModule(root, ""); got != "" {
+		t.Fatalf("go.work-only fallback = %q, want no module", got)
+	}
+	if got := graphGoModule(root, "go.work"); got != "" {
+		t.Fatalf("go.work selector = %q, want no module", got)
 	}
 }

@@ -143,16 +143,16 @@ cases:
     evidence: worker-dotnet/MiLsp.Worker/RoslynService.cs; worker-dotnet/MiLsp.Worker.ContractTests/Program.cs
   - id: TC-GPH-071
     type: negativo
-    given: an eligible endpoint is genuinely missing
-    when: graph assembly materializes unresolved records
-    then: GraphUnresolved is sorted and deduplicated by key before IDs and CrossRID are assigned
-    evidence: internal/indexer/graph_staging.go
+    given: un endpoint elegible está realmente ausente
+    when: el ensamblado del grafo materializa registros unresolved
+    then: "GraphUnresolved se ordena y deduplica por key antes de asignar IDs y CrossRID; source_document, source_block, target_kind y target_value son contexto nullable, acotado y sanitizado cuando se expone, no cambian UnresolvedKey/CrossRID, pero una modificación solo de provenance debe cambiar los digests de contenido/facts y los fingerprints de source/config/backend/generation."
+    evidence: internal/indexer/graph_staging.go; internal/model/graph.go; internal/store/graph_query.go; internal/store/graph_store_test.go
   - id: TC-GPH-072
     type: negativo
-    given: documentation candidates contain whitespace, backslashes or duplicates
-    when: GraphUnresolved candidates are built
-    then: trim, slash normalization, dedupe and lexical sort run before limits of 64 items and 4096 bytes
-    evidence: internal/indexer/graph_staging.go; internal/indexer/graph_staging_test.go
+    given: candidatos documentales contienen whitespace, backslashes o duplicados, o una mención trae un ID TP-*
+    when: se construyen los candidatos, menciones y diagnósticos GraphUnresolved
+    then: "trim, normalización a slash, deduplicación y orden léxico ocurren antes de los límites de 64 elementos y 4096 bytes; una mención TP-* se resuelve por coincidencia exacta de DocRecord.doc_id: un único target publica nodo/edge y el SourceBlock de la mención resuelta se normaliza antes de entrar al digest de claim y al mention portion del digest de facts; cambiar solo ese SourceBlock cambia content/facts y los fingerprints source/config/backend/generation, mientras whitespace y orden de entrada canónicos permanecen estables; un target faltante o duplicado queda GraphUnresolved con reason_code=missing_doc_target|ambiguous_doc_target, target_kind=document, target_value solicitado y candidatos bounded. La persistencia conserva source_block en reemplazos full e incremental y el round-trip de GraphUnresolved mantiene valores presentes y NULL."
+    evidence: internal/indexer/graph_staging.go; internal/indexer/graph_staging_test.go; internal/store/graph_store_test.go
   - id: TC-GPH-073
     type: positivo
     given: paths wiki/10-chiamo.md y bibliotecas/memorias/ficha.md
@@ -187,7 +187,7 @@ cases:
 | TC-GPH-001 | positivo | golden vectors validan payload length-prefixed, SHA-256 BLOB(32), hex externo y cross-RID |
 | TC-GPH-002 | positivo | relocation de root, CRLF/LF y cambio solo de rango conservan NodeKey; cambio semantico lo cambia |
 | TC-GPH-003 | positivo | 30 reruns y RIDs soportados producen identidad/cross-RID byte-identical |
-| TC-GPH-004 | negativo | repository identity/campo requerido ausente, path absoluto/traversal o backend inestable queda unresolved |
+| TC-GPH-004 | negativo | repository identity/campo requerido ausente, path absoluto/traversal o selector Go con backslash rechazado antes de normalización queda unresolved |
 | TC-GPH-005 | negativo | colision simulada del digest con tupla distinta invalida la generation y no rehasha con sal |
 | TC-GPH-006 | negativo | Unicode no NFC, version desconocida, case/path conflictivo o simbolo anonimo sin anchor no se publica |
 

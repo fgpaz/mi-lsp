@@ -6,9 +6,9 @@
 
 Wiki is the only source of truth.
 
-1. **Context** — wiki anchor + mi-lsp implication graph + architecture decisions from wiki (reuse session context-packet).
+1. **Context** — wiki anchor + mi-lsp implication graph + architecture decisions from wiki: query live at decision boundaries; never reuse a context snapshot.
 2. **Build** — gate-free; implement **all** code/docs for the goal (no C2 tests/builds/lints). Lanes are not completion.
-3. **IMPLEMENTATION_COMPLETE** — parent only, when inventory is green.
+3. **IMPLEMENTATION_COMPLETE** — parent only, when `implementation_frontier` is green and writers are idle.
 4. **Verify once** — single FINAL_VERIFY wave (build/tests/impact map); not per lane. FAST local: collapsed `verify_packet`.
 5. **Wiki close** — update wiki if drift. Drift is wiki vs shipped behavior, not omitted `.docs/wiki` files. Product-visible shipped work without RS/FL/RF/TP/TECH coverage is drift; FAST still runs `ps-asistente-wiki` plus targeted `ps-trazabilidad` then `ps-auditar-trazabilidad` at FAST depth when that drift exists or the operator asked for ciclo AE / `full_cycle_to_origin_main`. Collapsed `verify_packet` compresses C2; it does not replace wiki routing or FAST-depth trace/audit. Skip targeted wiki+trace only for mechanical no-wiki-impact diffs (typo/format/no user-visible behavior). Do not wait to be re-asked.
 6. **Full cycle default** — verify_packet (collapsed or full trace/audit) → close drifts → pre-push → integrate `origin/main` → **always** sanitize deprecated branches/worktrees → learning route (`ps-wiki-aprendizaje` only with pilot/qa inputs; else friction/skipped_fast). Next session: `ps-contexto` reentry of last classification + open friction (do not re-ask).
@@ -32,22 +32,29 @@ The principal session is **Chief of Staff**, not a leaf implementer.
 - **Flujos** = mi-lsp implication graph around the task (`nav flow-slice`, `change-pack`, `related`, `neighbors`, `affected`, `explain-change`) — not wiki `FL-*` alone.
 - Load **architecture decisions** from the wiki; never re-decide or forget locks already documented.
 - Route-first mi-lsp: prefer `nav batch` + `nav multi-read`; depth `policy` for kernel/skill-only (skip product/UX/negocio gates).
-- Session SoT: context-packet + goal-phase (indexed by session-state). `mi-lsp prepare` is not session SoT.
+- Session SoT: goal intent + selectors/scope locks + locked decisions + goal-phase. Graph topology/bindings/readiness are queried live at boundaries, never stored as session SoT.
 
 ## mi-lsp diet (token-cheap nav)
 
 Workspace: `mi-lsp`. Default `--format toon` (leaves: prefer `--profile harness-micro --compress`).
 
 Preferred commands only:
-1. `mi-lsp nav search <pattern>`
-2. `mi-lsp nav find <symbol>`
-3. `mi-lsp nav related <symbol>` / `nav flow-slice --selector <s>` / `nav neighbors <s>`
-4. `mi-lsp nav route <task>` / `nav change-pack` when diff-scoped
-5. `mi-lsp nav batch` / `nav multi-read` to cut process starts
-6. `mi-lsp skills plan --role parent --task "..."` when multi-skill routing is unclear
-7. `mi-lsp nav evidence inventory` at close reentry; `nav governance` only when governance matters
+- **Goal-shaped navigation** starts with `mi-lsp nav intent "<goal>"`.
+  - Follow the exact `continuation.next` command when it is emitted.
+  - Use the exact `expansions[].command` when an expansion is requested, preserving its reason.
+- **Literal non-goal operations** remain direct:
+  - `mi-lsp nav wiki <query>` for canonical wiki/document operations.
+  - `mi-lsp nav route <task>` for a literal route request.
+  - `mi-lsp nav search <pattern>` for a literal text/search request.
+- Follow the returned bounded continuation before widening a query; do not invent a broader command.
 
-Fallback: mi-lsp → rg → Read. Do not treat mi-lsp as a governance ritual on every task.
+Allowed fallback codes are exactly:
+- `unsupported_operation`
+- `unavailable_binary`
+- `invalid_workspace`
+- `explicit_incomplete`
+
+Fallback requires one visible `reason_code` from this list and a separate bounded detail; do not use a generic fallback chain.
 
 ## FAST same-repo ceremony (almost zero)
 
@@ -132,4 +139,4 @@ Local semantic CLI for large .NET/C# and TypeScript workspaces.
 **Status**: Generated from AE-POLICY-PROJECTION-V2
 **Last Updated**: 2026-08-25
 **Source**: repo-policy.yaml + template.claude
-<!-- kernel_version: c30d9193 -->
+<!-- kernel_version: 4c1c26f2 -->

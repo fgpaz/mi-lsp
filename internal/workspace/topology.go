@@ -447,8 +447,10 @@ func detectRepo(workspaceRoot string, repoRoot string) (repoDetection, error) {
 	languages := map[string]struct{}{}
 	solutions := make([]string, 0)
 	projects := make([]string, 0)
+	goModules := make([]string, 0)
 	maxDepth := strings.Count(repoRoot, string(os.PathSeparator)) + 4
 
+	repoRootReal, _ := filepath.EvalSymlinks(repoRoot)
 	err = filepath.WalkDir(repoRoot, func(current string, entry fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
@@ -464,6 +466,12 @@ func detectRepo(workspaceRoot string, repoRoot string) (repoDetection, error) {
 				return fs.SkipDir
 			}
 			return nil
+		}
+		if repoRootReal != "" {
+			currentReal, evalErr := filepath.EvalSymlinks(current)
+			if evalErr != nil || !workspacePathInside(repoRootReal, currentReal) {
+				return nil
+			}
 		}
 		relPath, relErr := filepath.Rel(workspaceRoot, current)
 		if relErr != nil {
@@ -487,6 +495,7 @@ func detectRepo(workspaceRoot string, repoRoot string) (repoDetection, error) {
 		switch strings.ToLower(entry.Name()) {
 		case "go.mod", "go.work":
 			languages["go"] = struct{}{}
+			goModules = append(goModules, relPath)
 		case "package.json", "tsconfig.json", "next.config.js", "next.config.ts", "vite.config.ts":
 			languages["typescript"] = struct{}{}
 		case "pyproject.toml", "setup.py", "setup.cfg", "requirements.txt", "poetry.lock", "pipfile", "pipfile.lock":
@@ -500,6 +509,10 @@ func detectRepo(workspaceRoot string, repoRoot string) (repoDetection, error) {
 
 	languageList := mapKeys(languages)
 	slices.Sort(languageList)
+	slices.Sort(goModules)
+	if len(solutions) == 0 && len(projects) == 0 {
+		projects = append(projects, goModules...)
+	}
 	entrypoints := buildEntrypoints(repoID, relRoot, solutions, projects)
 	defaultEntrypoint := defaultEntrypointID(entrypoints)
 	return repoDetection{
@@ -513,6 +526,13 @@ func detectRepo(workspaceRoot string, repoRoot string) (repoDetection, error) {
 		entrypoints: entrypoints,
 		hasMarkers:  len(languageList) > 0 || len(entrypoints) > 0,
 	}, nil
+}
+func workspacePathInside(root, path string) bool {
+	if root == "" || path == "" {
+		return false
+	}
+	relative, err := filepath.Rel(filepath.Clean(root), filepath.Clean(path))
+	return err == nil && relative != ".." && !strings.HasPrefix(relative, ".."+string(filepath.Separator)) && !filepath.IsAbs(relative)
 }
 
 func buildProjectFile(root string, explicitName string, kind string, detections []repoDetection) model.ProjectFile {

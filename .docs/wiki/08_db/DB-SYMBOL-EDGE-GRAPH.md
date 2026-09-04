@@ -65,7 +65,7 @@ Volver a [08_modelo_fisico_datos.md](../08_modelo_fisico_datos.md).
 
 ## Resumen y ownership
 
-Este documento reemplaza la propuesta monolitica `symbol_edges` por el schema graph-native target de `index.db`. `08_modelo_fisico_datos.md` conserva ownership y safety stance; aqui vive el mecanismo fisico. `accepted-design` no afirma que las tablas existan en el binario actual.
+Este documento reemplaza la propuesta monolítica `symbol_edges` por el schema graph-native v1 de `index.db`. `08_modelo_fisico_datos.md` conserva ownership y safety stance; aquí vive el mecanismo físico. El slice P0-P2 del schema v1 ya se persiste y publica en el binario vigente; `accepted-design` conserva el contrato aceptado para las extensiones que quedan fuera de ese slice.
 
 ```toon
 doc_id: DB-SYMBOL-EDGE-GRAPH
@@ -186,6 +186,12 @@ tables:
       - cross_rid-TEXT
   graph_unresolved:
     primary_key: [generation_id, unresolved_id]
+    unique: [generation_id, unresolved_key]
+    identity:
+      surrogate: unresolved_id-generation-local-deterministic-ordinal
+      key: hash-of-[owner_path, subject_kind, selector_digest, reason_code, candidates, backend, source_digest, recovery_hint_code]
+      cross_rid: UnresolvedRID(unresolved_key)
+      excludes: [source_document, source_block, target_kind, target_value]
     fields:
       - unresolved_id-INTEGER-deterministic-ordinal
       - unresolved_key-BLOB32
@@ -198,7 +204,17 @@ tables:
       - source_digest-BLOB32-nullable
       - cross_rid-TEXT
       - recovery_hint_code-TEXT-nullable
+      - source_document-TEXT-nullable-bounded-sanitized-repo-relative
+      - source_block-TEXT-nullable-bounded-sanitized
+      - target_kind-TEXT-nullable-bounded-sanitized
+      - target_value-TEXT-nullable-bounded-sanitized
+    diagnostics:
+      candidates_max_items: 64
+      candidates_max_bytes: 4096
+      context_total_max_bytes: 4096
+      unavailable: NULL
 ```
+`node_id`, `edge_id`, `evidence_id` y `unresolved_id` son ordinales locales deterministas dentro de una generation. En `graph_unresolved`, `unresolved_key` se deriva de los campos de la reclamación y `cross_rid` de ese key; `source_document`, `source_block`, `target_kind` y `target_value` son contexto diagnóstico y quedan fuera de ambas identidades, pero los cuatro campos se incluyen con framing determinista en `content_digest` y `facts_digest`, y por tanto en los fingerprints `source`/`config`/`backend` y `generation_id`. Las FKs se validan durante staging y antes del pointer swap.
 
 ## Migraciones y analysis cache
 
@@ -243,7 +259,6 @@ indexes:
   - graph_analysis-generation-extension-operation
 ```
 
-`node_id`, `edge_id`, `evidence_id` y `unresolved_id` son ordinals locales deterministas dentro de una generation. Identidad portable vive en keys/cross-RIDs. FKs se validan durante staging y antes del pointer swap.
 
 ## Staging, publish y recovery
 
@@ -260,31 +275,56 @@ evidence:
 staging:
   transaction: write-generation-records
   visibility: excluded-from-default-readers
-  copy_forward: SQL-insert-select-for-unchanged-owners
-  owner_replacement: delete-and-insert-inside-staged-generation
+  copy_forward: accepted-design-SQL-insert-select-for-unchanged-owners
+  owner_replacement: accepted-design-delete-and-insert-inside-staged-generation
+  owner_replacement_preserves: [source_document, source_block, target_kind, target_value]
+  graph_unresolved_context:
+    fields: [source_document, source_block, target_kind, target_value]
+    persistence: carried-through-staging-validation-publish
+    policy: bounded-sanitized; unavailable-null
+  incremental_graph_refresh_path: complete-bundle-reassembly-before-stage
+  incremental_docs_only_path: publish-docs-and-mark-graph-stale-no-graph-stage
 validation:
   - generation-content-digest-and-counts
   - NodeKey-uniqueness-and-collision-payload-compare
   - edge-endpoints-and-relation-kind
   - evidence-subject-digest-provenance
+  - unresolved-key-cross-rid-id-exclude-diagnostic-context
+  - unresolved-diagnostic-context-bounded-sanitized
   - cross-RID-format-and-conflicts
   - source-config-backend-fingerprints
+  active_prior_replacement:
+    current: strict_generation_validation
+    legacy:
+      schema_version: 1
+      pointer_equals_non_nil_expected_prior: true
+      active_row_count: 1
+      structural_checks: [rows, counts, FKs, enums, JSON, edge-evidence]
+      digest_framing: pre-provenance-unresolved-fields-only
+      action: retire_prior_and_activate_new_atomically
+    unknown_digest_or_corruption: blocked
 publish:
   transaction: BEGIN-IMMEDIATE
   compare_and_swap: expected-prior-active-pointer
   actions:
     - prior-active-to-retired
     - staged-to-active
+    - graph-unresolved-context-columns-committed-with-generation
     - workspace-meta-active-pointer-to-new
     - workspace-meta-previous-pointer-to-prior
-  commit_before-success-response: true
+  commit_before_success_response: true
 recovery:
   inspect: [nonterminal-migrations, staged-generations, pointer-target-seal, dead-owner]
   incomplete-staging: mark-invalid-and-clean-only-that-generation
   invalid-pointer: restore-previous-valid-or-block-graph-queries
   choose-by-latest-timestamp: forbidden
-```
+La ruta `full` fenced (`ReplaceWorkspaceIndexForJob`) entrega el bundle graph-native al staging y mantiene sus columnas de contexto dentro de la misma transacción que catálogo, documentos, memoria y pointer graph. La ruta `full` foreground publica el grafo con `PublishGraphObservationBatches` antes de `ReplaceWorkspaceIndex`; por eso la activación del grafo y la transacción posterior de catálogo, documentos y memoria son separadas. En el refresco gráfico incremental y en los cambios de código, la ruta vigente (`PublishIncrementalGenerationWithChanges` y su variante fenced) reensambla un bundle completo antes de `StageGraphGenerationTx`; no usa un writer alternativo que pueda perder el contexto. La ruta incremental docs-only publica los cambios documentales, marca el grafo stale y no hace staging gráfico. `ValidateGraphGeneration` rehidrata esas columnas, vuelve a validar el registro tipado y solo después permite el compare-and-swap del pointer.
 
+La regla de copy-forward/reemplazo por owner del diseño aceptado conserva el mismo payload de diagnóstico: si una fila se copia o se reinsertan filas del owner dentro de staging, `source_document`, `source_block`, `target_kind` y `target_value` viajan con ella, sin entrar en `unresolved_key`, `Cross-RID` ni en el ordinal local. La consulta de omisiones limita la salida a 50 filas, sanea rutas/texto y omite o devuelve `NULL` cuando el valor no está disponible.
+
+Para el docgraph, una mención con un TP canónico exacto resuelve un único nodo `GraphNode(kind=document)`; si falta o hay más de un destino, permanece como `GraphUnresolved` tipado con `target_kind=document`, `target_value` y, cuando existen, `source_document`/`source_block`.
+
+Para la observación Go, una topología `single` o repo seleccionada puede declarar en `DefaultEntrypoint` un selector de módulo repo-local explícito (`go.mod`) o un ID de `WorkspaceEntrypoint`. Un ID se resuelve por coincidencia exacta de repo y entrypoint, se rebasa desde su ruta workspace-relative al root del repo seleccionado y se revalida como un `go.mod` repo-local, seguro y regular. Un selector explícito inseguro (absoluto, con `\`, `..`, basename inválido, symlink, directorio, archivo inexistente u otra entrada no regular), o un ID desconocido o malformado, falla cerrado y omite Go sin activar el fallback. El fallback a `go.mod` en la raíz del repo solo aplica cuando el selector está vacío; un root solo con `go.work` no selecciona módulo ni se envía a `ObserveGoGraph`. `go.work` se rechaza como selector de grafo. En topología `container` se consulta la raíz del workspace con ese fallback; no se elige un módulo por timestamp ni se acepta una ruta absoluta o fuera del root.
 ## Migracion v0 a v1
 
 ```toon
@@ -340,6 +380,7 @@ queries:
   owner-invalidation: generation-owner-path-index
   evidence-for-edge-or-node: subject-index
   unresolved-stats: generation-owner-reason-index
+  unresolved-diagnostics: generation-owner-reason-index; max-rows-50; typed-sanitized-context
 rules:
   reader-transaction: fixes-one-generation
   frontier: bounded-page-at-a-time

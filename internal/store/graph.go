@@ -89,12 +89,25 @@ func generationMetadataEqual(a, b model.GraphGeneration) bool {
 		previousEqual = *a.PreviousGenerationID == *b.PreviousGenerationID
 	}
 	return a.GenerationID == b.GenerationID && a.SchemaVersion == b.SchemaVersion &&
-		a.WorkspaceIdentity == b.WorkspaceIdentity && a.RepositoryIdentity == b.RepositoryIdentity &&
-		a.SourceFingerprint == b.SourceFingerprint && a.ConfigFingerprint == b.ConfigFingerprint &&
+		a.WorkspaceIdentity == b.WorkspaceIdentity && a.SourceFingerprint == b.SourceFingerprint &&
+		a.ConfigFingerprint == b.ConfigFingerprint &&
 		a.BackendManifestDigest == b.BackendManifestDigest && a.ContentDigest == b.ContentDigest &&
 		a.Status == b.Status && a.ErrorCode == b.ErrorCode && a.NodeCount == b.NodeCount &&
 		a.EdgeCount == b.EdgeCount && a.EvidenceCount == b.EvidenceCount && a.UnresolvedCount == b.UnresolvedCount && previousEqual &&
 		a.CreatedAt.Equal(b.CreatedAt)
+}
+
+// graphGenerationImmutableMetadataEqual compares only metadata that remains
+// fixed across staging and activation. Status, publication timestamps, the
+// previous-generation link, and the candidate creation time are publication
+// metadata and may differ on an active duplicate restage.
+func graphGenerationImmutableMetadataEqual(a, b model.GraphGeneration) bool {
+	return a.GenerationID == b.GenerationID && a.SchemaVersion == b.SchemaVersion &&
+		a.WorkspaceIdentity == b.WorkspaceIdentity &&
+		a.SourceFingerprint == b.SourceFingerprint && a.ConfigFingerprint == b.ConfigFingerprint &&
+		a.BackendManifestDigest == b.BackendManifestDigest && a.ContentDigest == b.ContentDigest &&
+		a.ErrorCode == b.ErrorCode && a.NodeCount == b.NodeCount && a.EdgeCount == b.EdgeCount &&
+		a.EvidenceCount == b.EvidenceCount && a.UnresolvedCount == b.UnresolvedCount
 }
 func scanDigest(v []byte) (model.GraphDigest, error) {
 	var d model.GraphDigest
@@ -155,7 +168,32 @@ func stageGraphGenerationConn(ctx context.Context, q graphConn, b *model.GraphBu
 			return err
 		}
 		existing, loadErr := loadGeneration(ctx, q, g.GenerationID)
-		if loadErr != nil || !generationMetadataEqual(existing, g) {
+		if loadErr != nil {
+			return model.ErrGraphGenerationCorrupt
+		}
+		if existing.Status == model.GraphGenerationActive {
+			if !graphGenerationImmutableMetadataEqual(existing, g) {
+				return model.ErrGraphGenerationCorrupt
+			}
+			if _, validationErr := validateGraphGenerationConn(ctx, q, g.GenerationID); validationErr != nil {
+				return model.ErrGraphGenerationCorrupt
+			}
+			return nil
+		}
+		if existing.Status == model.GraphGenerationRetired {
+			// A canonical generation may be observed again after a different
+			// topology/backend generation temporarily became active. Reuse the
+			// immutable graph rows only when the retired row is an exact,
+			// independently validated match; mismatches remain corruption.
+			if !graphGenerationImmutableMetadataEqual(existing, g) {
+				return model.ErrGraphGenerationCorrupt
+			}
+			if _, validationErr := validateGraphGenerationConn(ctx, q, g.GenerationID); validationErr != nil {
+				return model.ErrGraphGenerationCorrupt
+			}
+			return nil
+		}
+		if !generationMetadataEqual(existing, g) {
 			return model.ErrGraphGenerationCorrupt
 		}
 		if _, loadErr = streamGraph(ctx, q, g.GenerationID, existing); loadErr != nil {
@@ -194,11 +232,19 @@ func stageGraphGenerationConn(ctx context.Context, q graphConn, b *model.GraphBu
 		if x.SourceDigest != nil {
 			sourceDigest = digestArg(*x.SourceDigest)
 		}
-		if _, err = q.ExecContext(ctx, `INSERT INTO graph_unresolved(generation_id,unresolved_id,unresolved_key,owner_path,subject_kind,selector_digest,reason_code,candidates_json,backend,source_digest,cross_rid,recovery_hint_code) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`, digestArg(g.GenerationID), x.UnresolvedID, digestArg(x.UnresolvedKey), x.OwnerPath, x.SubjectKind, digestArg(x.SelectorDigest), x.ReasonCode, candidates, x.Backend, sourceDigest, x.CrossRID, x.RecoveryHintCode); err != nil {
+		if _, err = q.ExecContext(ctx, `INSERT INTO graph_unresolved(generation_id,unresolved_id,unresolved_key,owner_path,subject_kind,selector_digest,reason_code,candidates_json,backend,source_digest,cross_rid,recovery_hint_code,source_document,source_block,target_kind,target_value) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, digestArg(g.GenerationID), x.UnresolvedID, digestArg(x.UnresolvedKey), x.OwnerPath, x.SubjectKind, digestArg(x.SelectorDigest), x.ReasonCode, candidates, x.Backend, sourceDigest, x.CrossRID, x.RecoveryHintCode, nullableGraphText(x.SourceDocument), nullableGraphText(x.SourceBlock), nullableGraphText(x.TargetKind), nullableGraphText(x.TargetValue)); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+func nullableGraphText(value string) any {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return nil
+	}
+	return value
 }
 
 func loadGeneration(ctx context.Context, q graphConn, id model.GraphDigest) (model.GraphGeneration, error) {
@@ -253,7 +299,18 @@ func loadGeneration(ctx context.Context, q graphConn, id model.GraphDigest) (mod
 	return g, nil
 }
 
+type graphContentValidationMode uint8
+
+const (
+	graphContentValidationCurrent graphContentValidationMode = iota
+	graphContentValidationLegacy
+)
+
 func streamGraph(ctx context.Context, q graphConn, id model.GraphDigest, g model.GraphGeneration) (model.GraphDigest, error) {
+	return streamGraphWithMode(ctx, q, id, g, graphContentValidationCurrent)
+}
+
+func streamGraphWithMode(ctx context.Context, q graphConn, id model.GraphDigest, g model.GraphGeneration, mode graphContentValidationMode) (model.GraphDigest, error) {
 	h, e := model.NewGraphContentHasher(g.NodeCount, g.EdgeCount, g.EvidenceCount, g.UnresolvedCount)
 	if e != nil {
 		return model.GraphDigest{}, e
@@ -407,7 +464,7 @@ func streamGraph(ctx context.Context, q graphConn, id model.GraphDigest, g model
 		return model.GraphDigest{}, e
 	}
 	rows.Close()
-	rows, e = q.QueryContext(ctx, `SELECT unresolved_id,unresolved_key,owner_path,subject_kind,selector_digest,reason_code,candidates_json,backend,source_digest,cross_rid,recovery_hint_code FROM graph_unresolved WHERE generation_id=? ORDER BY unresolved_id`, digestArg(id))
+	rows, e = q.QueryContext(ctx, `SELECT unresolved_id,unresolved_key,owner_path,subject_kind,selector_digest,reason_code,candidates_json,backend,source_digest,cross_rid,recovery_hint_code,source_document,source_block,target_kind,target_value FROM graph_unresolved WHERE generation_id=? ORDER BY unresolved_id`, digestArg(id))
 	if e != nil {
 		return model.GraphDigest{}, e
 	}
@@ -416,8 +473,8 @@ func streamGraph(ctx context.Context, q graphConn, id model.GraphDigest, g model
 		var x model.GraphUnresolved
 		var uk, sel, sd []byte
 		var cj string
-		var hint sql.NullString
-		if e = rows.Scan(&x.UnresolvedID, &uk, &x.OwnerPath, &x.SubjectKind, &sel, &x.ReasonCode, &cj, &x.Backend, &sd, &x.CrossRID, &hint); e != nil {
+		var hint, sourceDocument, sourceBlock, targetKind, targetValue sql.NullString
+		if e = rows.Scan(&x.UnresolvedID, &uk, &x.OwnerPath, &x.SubjectKind, &sel, &x.ReasonCode, &cj, &x.Backend, &sd, &x.CrossRID, &hint, &sourceDocument, &sourceBlock, &targetKind, &targetValue); e != nil {
 			return model.GraphDigest{}, e
 		}
 		x.GenerationID = id
@@ -439,13 +496,33 @@ func streamGraph(ctx context.Context, q graphConn, id model.GraphDigest, g model
 		if hint.Valid {
 			x.RecoveryHintCode = hint.String
 		}
+		if sourceDocument.Valid {
+			x.SourceDocument = sourceDocument.String
+		}
+		if sourceBlock.Valid {
+			x.SourceBlock = sourceBlock.String
+		}
+		if targetKind.Valid {
+			x.TargetKind = targetKind.String
+		}
+		if targetValue.Valid {
+			x.TargetValue = targetValue.String
+		}
+		if e = model.NormalizeGraphUnresolvedContext(&x); e != nil {
+			return model.GraphDigest{}, e
+		}
 		if e = json.Unmarshal([]byte(cj), &x.Candidates); e != nil {
 			return model.GraphDigest{}, e
 		}
 		if ve := model.ValidateGraphUnresolved(x); ve != nil {
 			return model.GraphDigest{}, ve
 		}
-		if e = h.AddUnresolved(x); e != nil {
+		if mode == graphContentValidationLegacy {
+			e = h.AddUnresolvedLegacy(x)
+		} else {
+			e = h.AddUnresolved(x)
+		}
+		if e != nil {
 			return model.GraphDigest{}, e
 		}
 	}
@@ -525,6 +602,10 @@ func (s *GraphReadSnapshot) Close() error {
 }
 
 func validateGraphGenerationConn(ctx context.Context, q graphConn, id model.GraphDigest) (model.GraphGeneration, error) {
+	return validateGraphGenerationWithMode(ctx, q, id, graphContentValidationCurrent)
+}
+
+func validateGraphGenerationWithMode(ctx context.Context, q graphConn, id model.GraphDigest, mode graphContentValidationMode) (model.GraphGeneration, error) {
 	g, e := loadGeneration(ctx, q, id)
 	if e != nil {
 		return g, e
@@ -532,7 +613,7 @@ func validateGraphGenerationConn(ctx context.Context, q graphConn, id model.Grap
 	if g.SourceFingerprint == (model.GraphDigest{}) || g.ConfigFingerprint == (model.GraphDigest{}) || g.BackendManifestDigest == (model.GraphDigest{}) {
 		return g, fmt.Errorf("%w: fingerprints", model.ErrGraphGenerationCorrupt)
 	}
-	d, e := streamGraph(ctx, q, id, g)
+	d, e := streamGraphWithMode(ctx, q, id, g, mode)
 	if e != nil || d != g.ContentDigest {
 		return g, fmt.Errorf("%w: content", model.ErrGraphGenerationCorrupt)
 	}
@@ -562,6 +643,134 @@ func validateGraphGenerationConn(ctx context.Context, q graphConn, id model.Grap
 		}
 	}
 	return g, nil
+}
+
+const graphGenerationAncestryMaxDepth = 1024
+
+// validateGraphGenerationAncestry checks both the persisted target history and
+// the history that activation would create for a staged target. The first
+// walk catches corruption already stored on the target; the optional second
+// walk substitutes the active predecessor that staged activation will assign.
+// Every ancestor is independently validated, but legacy content framing is
+// accepted for historical rows just as replacement validation accepts it.
+func validateGraphGenerationAncestry(ctx context.Context, q graphConn, id model.GraphDigest, targetWorkspaceIdentity string, replacement *model.GraphDigest, replaceTargetPrevious bool) error {
+	if ctx == nil || q == nil {
+		return model.ErrGraphGenerationInvalid
+	}
+	normalized, err := model.NormalizeRepositoryIdentity(targetWorkspaceIdentity)
+	if err != nil || normalized != targetWorkspaceIdentity {
+		return fmt.Errorf("%w: target workspace identity", model.ErrGraphGenerationCorrupt)
+	}
+	if err := walkGraphGenerationAncestry(ctx, q, id, targetWorkspaceIdentity, nil, false); err != nil {
+		return err
+	}
+	if !replaceTargetPrevious {
+		return nil
+	}
+	return walkGraphGenerationAncestry(ctx, q, id, targetWorkspaceIdentity, replacement, true)
+}
+
+func walkGraphGenerationAncestry(ctx context.Context, q graphConn, id model.GraphDigest, targetWorkspaceIdentity string, replacement *model.GraphDigest, replaceTargetPrevious bool) error {
+	seen := make(map[model.GraphDigest]struct{}, graphGenerationAncestryMaxDepth)
+	current := id
+	for depth := 0; ; depth++ {
+		if depth >= graphGenerationAncestryMaxDepth {
+			return fmt.Errorf("%w: predecessor chain exceeds %d generations", model.ErrGraphGenerationCorrupt, graphGenerationAncestryMaxDepth)
+		}
+		if _, ok := seen[current]; ok {
+			return fmt.Errorf("%w: predecessor cycle at %s", model.ErrGraphGenerationCorrupt, current)
+		}
+		seen[current] = struct{}{}
+		generation, err := loadGeneration(ctx, q, current)
+		if err != nil {
+			return fmt.Errorf("%w: predecessor %s: %v", model.ErrGraphGenerationCorrupt, current, err)
+		}
+		if generation.WorkspaceIdentity != targetWorkspaceIdentity {
+			return fmt.Errorf("%w: predecessor %s workspace identity", model.ErrGraphGenerationCorrupt, current)
+		}
+		if depth > 0 {
+			if generation.Status != model.GraphGenerationActive && generation.Status != model.GraphGenerationRetired {
+				return fmt.Errorf("%w: predecessor %s has invalid status %q", model.ErrGraphGenerationCorrupt, current, generation.Status)
+			}
+			if err := validateGraphGenerationAncestryRecord(ctx, q, current, targetWorkspaceIdentity, generation); err != nil {
+				return err
+			}
+		}
+		previous := generation.PreviousGenerationID
+		if depth == 0 && replaceTargetPrevious {
+			previous = replacement
+		}
+		if previous == nil {
+			return nil
+		}
+		if *previous == (model.GraphDigest{}) {
+			return fmt.Errorf("%w: predecessor %s is zero", model.ErrGraphGenerationCorrupt, current)
+		}
+		current = *previous
+	}
+}
+
+func validateGraphGenerationAncestryRecord(ctx context.Context, q graphConn, id model.GraphDigest, targetWorkspaceIdentity string, generation model.GraphGeneration) error {
+	if generation.WorkspaceIdentity != targetWorkspaceIdentity {
+		return fmt.Errorf("%w: predecessor %s workspace identity", model.ErrGraphGenerationCorrupt, id)
+	}
+	if generation.SchemaVersion != 1 || generation.RepositoryIdentity != generation.WorkspaceIdentity {
+		return fmt.Errorf("%w: predecessor %s metadata", model.ErrGraphGenerationCorrupt, id)
+	}
+	normalized, err := model.NormalizeRepositoryIdentity(generation.WorkspaceIdentity)
+	if err != nil || normalized != generation.WorkspaceIdentity {
+		return fmt.Errorf("%w: predecessor %s workspace identity", model.ErrGraphGenerationCorrupt, id)
+	}
+	if _, err := validateGraphGenerationWithMode(ctx, q, id, graphContentValidationCurrent); err == nil {
+		return nil
+	}
+	if _, err := validateGraphGenerationWithMode(ctx, q, id, graphContentValidationLegacy); err != nil {
+		return fmt.Errorf("%w: predecessor %s content", model.ErrGraphGenerationCorrupt, id)
+	}
+	return nil
+}
+
+type graphPriorValidation uint8
+
+const (
+	graphPriorCurrentValid graphPriorValidation = iota + 1
+	graphPriorLegacyValidForReplacement
+)
+
+// validateActiveGraphPriorForReplacement is the sole policy for validating an
+// active generation before replacement. Legacy acceptance is intentionally
+// narrow: the pointer must equal the non-nil expected prior, exactly one
+// active row must exist, every persisted row must pass structural validation,
+// schema_version must remain 1, and only the exact pre-provenance content
+// digest may differ from the current framing. No rows are repaired here.
+func validateActiveGraphPriorForReplacement(ctx context.Context, q graphConn, activePointer []byte, expectedPrior *model.GraphDigest, activeRows int) (graphPriorValidation, error) {
+	if len(activePointer) != 32 || activeRows != 1 {
+		return 0, model.ErrGraphPointerConflict
+	}
+	oldID, err := scanDigest(activePointer)
+	if err != nil {
+		return 0, model.ErrGraphPointerConflict
+	}
+	if expectedPrior != nil && oldID != *expectedPrior {
+		return 0, model.ErrGraphPointerConflict
+	}
+	current, currentErr := validateGraphGenerationConn(ctx, q, oldID)
+	currentIdentity, currentIdentityErr := model.NormalizeRepositoryIdentity(current.WorkspaceIdentity)
+	if currentErr == nil && current.Status == model.GraphGenerationActive && current.SchemaVersion == 1 && current.RepositoryIdentity == current.WorkspaceIdentity && currentIdentityErr == nil && currentIdentity == current.WorkspaceIdentity {
+		return graphPriorCurrentValid, nil
+	}
+	// A nil expected prior is permitted only for the existing dangling-pointer
+	// repair path. Legacy framing is replacement-only and requires an exact CAS
+	// against the non-nil active pointer.
+	if expectedPrior == nil {
+		return 0, model.ErrGraphPointerConflict
+	}
+	legacy, legacyErr := validateGraphGenerationWithMode(ctx, q, oldID, graphContentValidationLegacy)
+	legacyIdentity, legacyIdentityErr := model.NormalizeRepositoryIdentity(legacy.WorkspaceIdentity)
+	if legacyErr == nil && legacy.Status == model.GraphGenerationActive && legacy.SchemaVersion == 1 && legacy.RepositoryIdentity == legacy.WorkspaceIdentity && legacyIdentityErr == nil && legacyIdentity == legacy.WorkspaceIdentity {
+		return graphPriorLegacyValidForReplacement, nil
+	}
+	return 0, model.ErrGraphPointerConflict
 }
 
 func activeGraphGenerationConn(ctx context.Context, q graphConn) (model.GraphDigest, bool, error) {
@@ -751,23 +960,39 @@ func ActivateGraphGenerationAt(ctx context.Context, db *sql.DB, id model.GraphDi
 		return model.ErrGraphPointerConflict
 	}
 	if len(old) > 0 {
+		if _, err := validateActiveGraphPriorForReplacement(ctx, t.c, old, expectedPrior, activeRows); err != nil {
+			return err
+		}
 		oldID, err := scanDigest(old)
 		if err != nil {
 			return model.ErrGraphPointerConflict
 		}
-		oldGeneration, err := validateGraphGenerationConn(ctx, t.c, oldID)
-		if err != nil || oldGeneration.Status != model.GraphGenerationActive {
-			return model.ErrGraphPointerConflict
+		if err := validateGraphGenerationAncestry(ctx, t.c, oldID, g.WorkspaceIdentity, nil, false); err != nil {
+			return err
 		}
 	}
 	if g.Status == model.GraphGenerationActive {
 		if len(old) != len(digestArg(id)) || string(old) != string(digestArg(id)) {
 			return model.ErrGraphPointerConflict
 		}
+		if err := validateGraphGenerationAncestry(ctx, t.c, id, g.WorkspaceIdentity, nil, false); err != nil {
+			return err
+		}
 		return t.commit(ctx)
 	}
-	if g.Status != model.GraphGenerationStaged {
+	if g.Status != model.GraphGenerationStaged && g.Status != model.GraphGenerationRetired {
 		return model.ErrGraphGenerationInvalid
+	}
+	var proposedPrevious *model.GraphDigest
+	if len(old) > 0 {
+		previous, err := scanDigest(old)
+		if err != nil {
+			return model.ErrGraphPointerConflict
+		}
+		proposedPrevious = &previous
+	}
+	if err := validateGraphGenerationAncestry(ctx, t.c, id, g.WorkspaceIdentity, proposedPrevious, g.Status == model.GraphGenerationStaged); err != nil {
+		return err
 	}
 	if len(old) > 0 {
 		r, e := t.c.ExecContext(ctx, "UPDATE graph_generations SET status=? WHERE generation_id=? AND status=?", model.GraphGenerationRetired, old, model.GraphGenerationActive)
@@ -782,7 +1007,17 @@ func ActivateGraphGenerationAt(ctx context.Context, db *sql.DB, id model.GraphDi
 			return model.ErrGraphPointerConflict
 		}
 	}
-	r, e := t.c.ExecContext(ctx, "UPDATE graph_generations SET status=?,published_at=?,previous_generation_id=? WHERE generation_id=? AND status=?", model.GraphGenerationActive, publishedAt.UTC().Format(time.RFC3339Nano), old, digestArg(id), model.GraphGenerationStaged)
+	var r sql.Result
+	if g.Status == model.GraphGenerationRetired {
+		// A retired canonical snapshot is immutable history. Reactivation may
+		// change only publication state; never rewrite its predecessor link,
+		// otherwise replaying A after B can create an A<->B history cycle.
+		r, e = t.c.ExecContext(ctx, "UPDATE graph_generations SET status=?,published_at=? WHERE generation_id=? AND status=?", model.GraphGenerationActive, publishedAt.UTC().Format(time.RFC3339Nano), digestArg(id), model.GraphGenerationRetired)
+	} else {
+		// Only a newly staged row receives the currently active generation as
+		// its predecessor.
+		r, e = t.c.ExecContext(ctx, "UPDATE graph_generations SET status=?,published_at=?,previous_generation_id=? WHERE generation_id=? AND status=?", model.GraphGenerationActive, publishedAt.UTC().Format(time.RFC3339Nano), old, digestArg(id), model.GraphGenerationStaged)
+	}
 	if e != nil {
 		return e
 	}

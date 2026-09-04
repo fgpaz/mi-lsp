@@ -307,7 +307,7 @@ func compileSourceValidationWithCorpus(root string, docs []sourceDoc, allDocs []
 		if strings.TrimSpace(parsed.Audience) == "" {
 			addDocBlocker("missing audience")
 		}
-		if len(parsed.Imports) == 0 {
+		if len(parsed.Imports) == 0 && !validatedGovernanceRoot(root, doc.record.Path) {
 			addDocBlocker("missing imports")
 		}
 		if len(parsed.Exports) == 0 {

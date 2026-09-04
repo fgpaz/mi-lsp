@@ -556,13 +556,13 @@ func parseDocContent(
 		for _, impl := range fm.Implements {
 			impl = strings.TrimSpace(impl)
 			if impl != "" {
-				mentions = append(mentions, model.DocMention{DocPath: relPath, MentionType: "implements", MentionValue: impl})
+				mentions = append(mentions, model.DocMention{DocPath: relPath, MentionType: "implements", MentionValue: impl, SourceBlock: "frontmatter"})
 			}
 		}
 		for _, test := range fm.Tests {
 			test = strings.TrimSpace(test)
 			if test != "" {
-				mentions = append(mentions, model.DocMention{DocPath: relPath, MentionType: "test_file", MentionValue: test})
+				mentions = append(mentions, model.DocMention{DocPath: relPath, MentionType: "test_file", MentionValue: test, SourceBlock: "frontmatter"})
 			}
 		}
 	}
@@ -1519,7 +1519,18 @@ func parseYAMLArray(yamlContent string, key string) []string {
 		trimmed := strings.TrimSpace(line)
 		if strings.HasPrefix(trimmed, key+":") {
 			value := strings.TrimSpace(strings.TrimPrefix(trimmed, key+":"))
-			if value != "" && !strings.HasPrefix(value, "[") {
+			if value != "" && strings.HasPrefix(value, "[") {
+				if strings.HasSuffix(value, "]") {
+					for _, item := range strings.Split(strings.TrimSpace(value[1:len(value)-1]), ",") {
+						item = strings.Trim(strings.TrimSpace(item), "\"'")
+						if item != "" {
+							result = append(result, item)
+						}
+					}
+				}
+				return result
+			}
+			if value != "" {
 				result = append(result, value)
 				return result
 			}
@@ -1528,12 +1539,12 @@ func parseYAMLArray(yamlContent string, key string) []string {
 		}
 		if inArray {
 			if strings.HasPrefix(trimmed, "- ") {
-				item := strings.TrimSpace(strings.TrimPrefix(trimmed, "- "))
+				item := strings.Trim(strings.TrimSpace(strings.TrimPrefix(trimmed, "- ")), "\"'")
 				if item != "" {
 					result = append(result, item)
 				}
 			} else if trimmed != "" && !strings.HasPrefix(line, " ") && !strings.HasPrefix(line, "\t") {
-				break
+				return result
 			}
 		}
 	}

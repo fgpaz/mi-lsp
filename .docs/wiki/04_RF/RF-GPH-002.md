@@ -63,10 +63,10 @@ Estados permitidos:
 
 - `staged`: escritura completa pero invisible para queries normales.
 - `active`: unica generacion seleccionada por `active_graph_generation_id`.
-- `retired`: generacion inmutable anterior, elegible para rollback durante retencion.
+- `retired`: generacion inmutable anterior, elegible para rollback o reactivación canónica durante retencion.
 - `invalid`: staging rechazado; nunca elegible para query.
 
-Las transiciones validas son `staged -> active`, `active -> retired` y `staged -> invalid`. No se reactiva una generacion alterando sus filas: rollback mueve el puntero a un snapshot inmutable ya validado.
+Las transiciones válidas son `staged -> active`, `active -> retired`, `staged -> invalid` y `retired -> active`. Una generación canónica retirada, exacta, inmutable y estrictamente validada puede transicionar `retired -> active` mediante CAS atómico preservando su predecesor histórico inmutable (sin reescribir `previous_generation_id`), mientras que solo un nuevo snapshot `staged` recibe el puntero activo actual como su predecesor; filas retiradas arbitrarias, mutadas o corruptas nunca se reactivan ni alteran el puntero del workspace.
 
 ## 4. Secuencia de publicacion
 

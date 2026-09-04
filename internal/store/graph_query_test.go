@@ -202,3 +202,61 @@ func TestGraphBatchHydrationReturnsNodesAndEvidenceWithoutPerItemCalls(t *testin
 		t.Fatalf("evidence=%+v err=%v", evidence, err)
 	}
 }
+func TestUnresolvedOmissionsStayCappedAndCarryBoundedContext(t *testing.T) {
+	ctx := context.Background()
+	db, _ := seedTestDB(t)
+	defer db.Close()
+	bundle := testGraphBundle(t)
+	bundle.Unresolved = make([]model.GraphUnresolved, 51)
+	for i := range bundle.Unresolved {
+		u := model.GraphUnresolved{
+			GenerationID:     bundle.Generation.GenerationID,
+			UnresolvedID:     i,
+			OwnerPath:        "docs/RF-SYNTHETIC-" + string(rune('A'+i%26)) + ".md",
+			SubjectKind:      "document",
+			SelectorDigest:   model.GraphDigest{byte(i + 1)},
+			ReasonCode:       "missing_doc_target",
+			Backend:          "docgraph",
+			SourceDocument:   "docs/RF-SYNTHETIC.md",
+			SourceBlock:      "frontmatter",
+			TargetKind:       "document",
+			TargetValue:      "TP-SYNTHETIC-" + string(rune('A'+i%26)),
+			RecoveryHintCode: "inspect_doc_graph_reference",
+		}
+		u.UnresolvedKey = model.GraphUnresolvedKey(u)
+		u.CrossRID = model.UnresolvedRID(u.UnresolvedKey)
+		bundle.Unresolved[i] = u
+	}
+	bundle.Generation.UnresolvedCount = len(bundle.Unresolved)
+	if err := bundle.SealIDs(); err != nil {
+		t.Fatal(err)
+	}
+	if err := StageGraphGeneration(ctx, db, &bundle); err != nil {
+		t.Fatal(err)
+	}
+	if err := ActivateGraphGeneration(ctx, db, bundle.Generation.GenerationID, nil); err != nil {
+		t.Fatal(err)
+	}
+	snapshot, err := BeginGraphQuerySnapshot(ctx, db, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer snapshot.Close()
+	omissions, err := snapshot.UnresolvedOmissions(ctx, 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(omissions) != 50 {
+		t.Fatalf("omissions = %d, want output cap 50", len(omissions))
+	}
+	if omissions[0].Input == "" || omissions[0].OwnerPath == "" || omissions[0].SourceDocument == "" || omissions[0].SourceBlock != "frontmatter" || omissions[0].TargetKind != "document" || omissions[0].TargetValue == "" || omissions[0].Path != "" || omissions[0].RequestedRange != "" || omissions[0].Reason != "missing_doc_target" || omissions[0].ErrorCode != "inspect_doc_graph_reference" {
+		t.Fatalf("typed omission mapping lost context: %#v", omissions[0])
+	}
+	for _, omission := range omissions {
+		for _, value := range []string{omission.Input, omission.Path, omission.Reason, omission.ErrorCode, omission.RequestedRange, omission.OwnerPath, omission.SourceDocument, omission.SourceBlock, omission.TargetKind, omission.TargetValue} {
+			if strings.ContainsAny(value, "\r\n\t") {
+				t.Fatalf("unsanitized omission value %q", value)
+			}
+		}
+	}
+}

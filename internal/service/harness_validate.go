@@ -444,7 +444,7 @@ func compileHarnessValidation(root string, docs []harnessDoc, corpus []harnessDo
 			result.HarnessBlockers = append(result.HarnessBlockers, docLabel+": unknown harness audience")
 		}
 
-		for _, field := range missingHarnessFields(contract) {
+		for _, field := range missingHarnessFields(contract, validatedGovernanceRoot(root, doc.record.Path)) {
 			result.HarnessBlockers = append(result.HarnessBlockers, docLabel+": missing "+field)
 		}
 		if audience == "llm-first" || audience == "unknown" {
@@ -515,7 +515,7 @@ func compileHarnessValidation(root string, docs []harnessDoc, corpus []harnessDo
 	return result
 }
 
-func missingHarnessFields(contract *harnessContract) []string {
+func missingHarnessFields(contract *harnessContract, governanceRoot ...bool) []string {
 	missing := []string{}
 	if strings.TrimSpace(contract.ID) == "" {
 		missing = append(missing, "id")
@@ -526,7 +526,8 @@ func missingHarnessFields(contract *harnessContract) []string {
 	if strings.TrimSpace(contract.Audience) == "" {
 		missing = append(missing, "audience")
 	}
-	if len(trimmedNonEmpty(contract.Imports)) == 0 {
+	allowEmptyImports := len(governanceRoot) > 0 && governanceRoot[0]
+	if len(trimmedNonEmpty(contract.Imports)) == 0 && !allowEmptyImports {
 		missing = append(missing, "imports")
 	}
 	if len(trimmedNonEmpty(contract.Exports)) == 0 {
@@ -542,6 +543,15 @@ func missingHarnessFields(contract *harnessContract) []string {
 		missing = append(missing, "agent_must_not_edit")
 	}
 	return missing
+}
+func validatedGovernanceRoot(root, docPath string) bool {
+	status := docgraph.InspectGovernance(root, false)
+	if status.Blocked || strings.TrimSpace(status.HumanDoc) == "" {
+		return false
+	}
+	candidate := filepath.ToSlash(strings.TrimSpace(docPath))
+	authority := filepath.ToSlash(strings.TrimSpace(status.HumanDoc))
+	return candidate != "" && candidate == authority
 }
 
 func normalizeHarnessAudience(audience string) string {

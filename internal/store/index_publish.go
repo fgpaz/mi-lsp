@@ -414,15 +414,18 @@ func activateGraphGenerationTx(ctx context.Context, tx *sql.Tx, id model.GraphDi
 	if metaErr != nil && metaErr != sql.ErrNoRows {
 		return metaErr
 	}
-	if g.Status == model.GraphGenerationActive && len(old) > 0 && string(old) == string(digestArg(id)) {
-		if expectedPrior != nil && g.PreviousGenerationID != nil && *g.PreviousGenerationID != *expectedPrior {
-			return model.ErrGraphPointerConflict
-		}
-		return nil
-	}
 	var activeRows int
 	if err := tx.QueryRowContext(ctx, "SELECT COUNT(*) FROM graph_generations WHERE status=?", model.GraphGenerationActive).Scan(&activeRows); err != nil {
 		return err
+	}
+	if g.Status == model.GraphGenerationActive && len(old) > 0 && string(old) == string(digestArg(id)) {
+		if _, err := validateActiveGraphPriorForReplacement(ctx, tx, old, expectedPrior, activeRows); err != nil {
+			return err
+		}
+		if err := validateGraphGenerationAncestry(ctx, tx, id, g.WorkspaceIdentity, nil, false); err != nil {
+			return err
+		}
+		return nil
 	}
 	// A missing pointer with exactly one active generation is a repairable
 	// dangling-pointer state. Resolve that prior generation inside this same
@@ -440,14 +443,32 @@ func activateGraphGenerationTx(ctx context.Context, tx *sql.Tx, id model.GraphDi
 		return model.ErrGraphPointerConflict
 	}
 	if len(old) > 0 {
+		if _, err := validateActiveGraphPriorForReplacement(ctx, tx, old, expectedPrior, activeRows); err != nil {
+			return err
+		}
 		oldID, err := scanDigest(old)
 		if err != nil {
 			return model.ErrGraphPointerConflict
 		}
-		oldGeneration, err := validateGraphGenerationConn(ctx, tx, oldID)
-		if err != nil || oldGeneration.Status != model.GraphGenerationActive {
+		if err := validateGraphGenerationAncestry(ctx, tx, oldID, g.WorkspaceIdentity, nil, false); err != nil {
+			return err
+		}
+	}
+	if g.Status != model.GraphGenerationStaged && g.Status != model.GraphGenerationRetired {
+		return model.ErrGraphGenerationInvalid
+	}
+	var proposedPrevious *model.GraphDigest
+	if len(old) > 0 {
+		previous, err := scanDigest(old)
+		if err != nil {
 			return model.ErrGraphPointerConflict
 		}
+		proposedPrevious = &previous
+	}
+	if err := validateGraphGenerationAncestry(ctx, tx, id, g.WorkspaceIdentity, proposedPrevious, g.Status == model.GraphGenerationStaged); err != nil {
+		return err
+	}
+	if len(old) > 0 {
 		result, err := tx.ExecContext(ctx, "UPDATE graph_generations SET status=? WHERE generation_id=? AND status=?", model.GraphGenerationRetired, old, model.GraphGenerationActive)
 		if err != nil {
 			return err
@@ -460,10 +481,17 @@ func activateGraphGenerationTx(ctx context.Context, tx *sql.Tx, id model.GraphDi
 			return model.ErrGraphPointerConflict
 		}
 	}
-	if g.Status != model.GraphGenerationStaged {
-		return model.ErrGraphGenerationInvalid
+	var result sql.Result
+	if g.Status == model.GraphGenerationRetired {
+		// A retired canonical snapshot is immutable history. Reactivation may
+		// change only publication state; never rewrite its predecessor link,
+		// otherwise replaying A after B can create an A<->B history cycle.
+		result, err = tx.ExecContext(ctx, "UPDATE graph_generations SET status=?,published_at=? WHERE generation_id=? AND status=?", model.GraphGenerationActive, publishedAt.UTC().Format(time.RFC3339Nano), digestArg(id), model.GraphGenerationRetired)
+	} else {
+		// Only a newly staged row receives the currently active generation as
+		// its predecessor.
+		result, err = tx.ExecContext(ctx, "UPDATE graph_generations SET status=?,published_at=?,previous_generation_id=? WHERE generation_id=? AND status=?", model.GraphGenerationActive, publishedAt.UTC().Format(time.RFC3339Nano), old, digestArg(id), model.GraphGenerationStaged)
 	}
-	result, err := tx.ExecContext(ctx, "UPDATE graph_generations SET status=?,published_at=?,previous_generation_id=? WHERE generation_id=? AND status=?", model.GraphGenerationActive, publishedAt.UTC().Format(time.RFC3339Nano), old, digestArg(id), model.GraphGenerationStaged)
 	if err != nil {
 		return err
 	}

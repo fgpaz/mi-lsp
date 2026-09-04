@@ -30,13 +30,13 @@ evidence:
 ## Proposito y alcance
 
 Este documento resume los stores fisicos de `mi-lsp`, su ownership y el ciclo de vida de los datos.
-El store repo-local persiste catalogo y grafo documental; el target graph-native agrega generations, adjacency, evidence, unresolved, migration/rollback y analysis cache sin crear otro store autoritativo. El detalle fisico vive en [[DB-SYMBOL-EDGE-GRAPH]].
+El store repo-local persiste catálogo y grafo documental; el slice graph-native v1 ya agrega y usa generations, adjacency, evidence, unresolved, migration/rollback y analysis cache sin crear otro store autoritativo. El detalle físico vive en [[DB-SYMBOL-EDGE-GRAPH]].
 
 ## Inventario de stores
 
 | Store | Ubicacion | Owner logico | Proposito |
 |---|---|---|---|
-| Workspace index DB | `<repo>/.mi-lsp/index.db` | Workspace owner | Catalogo, docgraph y target graph-native repo-local; SQLite es autoridad de adjacency |
+| Workspace index DB | `<repo>/.mi-lsp/index.db` | Workspace owner | Catálogo, docgraph y graph-native v1 repo-local; SQLite es autoridad de adjacency |
 | Workspace index lock | `<repo>/.mi-lsp/index.lock` | Workspace owner | Lock interproceso con PID owner para evitar dos indexaciones simultaneas y recuperar locks stale |
 | Workspace index job logs | `<repo>/.mi-lsp/index-jobs/*.log` | Workspace owner | stdout/stderr de procesos detached de `index start` |
 | Workspace config | `<repo>/.mi-lsp/project.toml` | Workspace owner | Overrides locales, ignores y topologia `single|container` |
@@ -54,17 +54,17 @@ El store repo-local persiste catalogo y grafo documental; el target graph-native
   - `workspace_entrypoints`
   - `files` con `repo_id`, `repo_name`, `content_hash`
   - `symbols` con `repo_id`, `repo_name`
-  - target `graph_generations` con identity/schema/fingerprints/digest/status/counts y prior pointer
-  - target `graph_nodes` con surrogate local, `NodeKey` BLOB(32), identity fields, owner, status y cross-RID
-  - target `graph_edges` con endpoints de la misma generation, relation, status, owner/backend y cross-RID
-  - target `graph_evidence` con subject node/edge, source range/digest, backend/version, claim y cross-RID
-  - target `graph_unresolved` con reason, selector digest, candidatos bounded y recovery hint
-  - target `graph_migrations` y `graph_analysis` para rollback durable y cache derivativo; no autoridad
+  - `graph_generations` con identity/schema/fingerprints/digest/status/counts y prior pointer
+  - `graph_nodes` con surrogate local, `NodeKey` BLOB(32), identity fields, owner, status y cross-RID
+  - `graph_edges` con endpoints de la misma generation, relation, status, owner/backend y cross-RID
+  - `graph_evidence` con subject node/edge, source range/digest, backend/version, claim y cross-RID
+  - `graph_unresolved` con reason, selector digest, candidatos bounded (máximo 64 y 4096 bytes), recovery hint y contexto diagnóstico nullable (`source_document` repo-relative, `source_block`, `target_kind`, `target_value`) con máximo total de 4096 bytes
+  - `graph_migrations` y `graph_analysis` para rollback durable y cache derivativo; no autoridad
   - `doc_records` con `path`, `doc_id`, `layer`, `family`, `search_text`, `content_hash`, `indexed_at`
   - `doc_edges` con `from_path`, `to_path`, `to_doc_id`, `kind` (`markdown_link`, `wikilink`, `embed`, `hierarchy`, doc-id), `label`
-  - `doc_mentions` con `doc_path`, `mention_type`, `mention_value`
-  - `doc_source_blocks` con `doc_path`, `block_id`, `doc_id`, `kind`, `source_format`, `ordinal`, `start_line`, `end_line`, `content_hash`, `indexed_at`
-  - `doc_source_records` con `doc_path`, `block_id`, `record_id`, `record_type`, `ordinal`, `start_line`, `end_line`, `content_hash`, `indexed_at`
+  - `doc_mentions` con `doc_path`, `mention_type`, `mention_value` y `source_block` opcional
+  - `doc_source_blocks` con `doc_path` (`source_document`), `block_id` (`source_block`), `doc_id`, `kind`, `source_format`, `ordinal`, `start_line`, `end_line`, `content_hash`, `indexed_at`
+  - `doc_source_records` con `doc_path` (`source_document`), `block_id` (`source_block`), `record_id`, `record_type`, `ordinal`, `start_line`, `end_line`, `content_hash`, `indexed_at`
   - `wiki_chunk_embeddings` con `doc_path`, `chunk_id`, `start_line`, `end_line`, `heading_text`, `snippet`, `content_hash`, `embedding` (BLOB float32 LE), `embedding_model`, `embedding_dim`, `indexed_at`
   - `index_jobs` con `job_id`, `generation_id`, workspace, `mode`, `status`, `phase`, `current_stage`, `current_path`, `files_total`, `pid`, `requested_cancel`, `error`, contadores y timestamps
   - `index_generations` con `generation_id`, `job_id`, workspace, `mode`, `status`, contadores, `created_at`, `published_at` y `error`
@@ -145,16 +145,19 @@ evidence:
 - Si `index.lock` apunta a un PID inexistente, el siguiente index puede removerlo y continuar; si el PID sigue vivo, la operacion falla con owner visible.
 - `index_jobs` es durable para observabilidad operacional; solo puede existir un job activo por workspace (`queued`, `running`, `publishing`, `cancel_requested`), y los jobs largos deben mantener fresco `updated_at` con `current_stage`, `current_path`, `files_total` y contadores parciales.
 - `index_generations` registra el candidato de publish. Los punteros activos viven en `workspace_meta`: `active_catalog_generation_id`, `active_docs_generation_id`, `active_memory_generation_id` y `last_index_generation_id`.
-- El target graph-native agrega `graph_schema_version`, `active_graph_generation_id` y `previous_graph_generation_id`; cada reader fija una generation y nunca mezcla snapshots.
-- Staging graph-native es invisible; valida NodeKey, colisiones, endpoints, evidence, digests y cross-RID antes del compare-and-swap atomico del pointer.
-- La migracion graph-native es additive y transaccional. Dual-read/write existe solo durante una ventana explicita; query-time migration y conversion destructiva estan prohibidas.
-- Crash/cancel limpia solo staging incompleto y conserva/restaura la generation valida anterior. Retencion mantiene active + rollback probado durante la ventana de release.
+- El graph-native v1 agrega `graph_schema_version`, `active_graph_generation_id` y `previous_graph_generation_id`; cada reader fija una generation y nunca mezcla snapshots.
+- Staging graph-native es invisible; valida NodeKey, colisiones, endpoints, evidence, digests y cross-RID antes del compare-and-swap atómico del pointer. `graph_unresolved` conserva `source_document`, `source_block`, `target_kind` y `target_value` como contexto diagnóstico bounded/sanitized, excluido de `unresolved_key`, `Cross-RID` y del ordinal local.
+- Aunque son diagnósticos, `source_document`, `source_block`, `target_kind` y `target_value` participan, con framing determinista y orden estable, en los digests de contenido y facts que alimentan los fingerprints de source/config/backend y el `generation_id`; permanecen fuera de `UnresolvedKey` y `CrossRID`.
+- La observación Go en una topología `single` o repo seleccionada usa `DefaultEntrypoint` como un selector de módulo repo-local explícito (`go.mod`) o como un ID de `WorkspaceEntrypoint`. Un ID se resuelve por coincidencia exacta de repo y entrypoint, se rebasa desde su ruta workspace-relative al root del repo seleccionado y se revalida como un `go.mod` repo-local, seguro y regular. Un selector explícito inseguro (absoluto, con `\`, `..`, basename inválido, symlink, directorio, archivo inexistente u otra entrada no regular), o un ID desconocido o malformado, falla cerrado y omite Go sin activar el fallback. El fallback a `go.mod` en la raíz del repo solo aplica cuando el selector está vacío; un root solo con `go.work` no selecciona módulo ni intenta extracción. `go.work` se rechaza como selector de grafo. En `container` se consulta la raíz del workspace con ese fallback y no se elige un módulo por timestamp ni se acepta una ruta absoluta o fuera del root.
+- Un selector Go explícito con `\` se rechaza antes de cualquier normalización de separadores; solo el selector vacío habilita el fallback a `go.mod` raíz.
+- La migración graph-native es aditiva y transaccional. Dual-read/write existe solo durante una ventana explícita; query-time migration y conversión destructiva están prohibidas.
+- Crash/cancel limpia solo staging incompleto y conserva/restaura la generation válida anterior. Retención mantiene active + rollback probado durante la ventana de release.
 - `graph_analysis` es cache derivativo keyeado por generation/extension/params/authority digest; MILX y packs no escriben nodes/edges primarios.
-- La publicacion `full` reemplaza catalogo, grafo documental y memoria de reentrada en una unica transaccion SQLite. Un crash antes del commit conserva la generacion activa previa.
-- La publicacion `docs` reemplaza docs + memoria en una unica transaccion y no toca `files`, `symbols`, `workspace_repos` ni `workspace_entrypoints`.
-- La publicacion `catalog` reemplaza solo catalogo de codigo y no toca docs ni memoria.
-- Las migraciones aditivas de `index.db` deben crear `repo_id` y `repo_name` en `files`/`symbols` antes de crear indices que dependan de esas columnas.
-- `doc_records`, `doc_edges`, `doc_mentions`, `doc_source_blocks` y `doc_source_records` deben refrescarse como un bloque consistente dentro de una sola transaccion.
+- La ruta full fenced (`ReplaceWorkspaceIndexForJob`) reemplaza catálogo, grafo documental y memoria de reentrada en una única transacción SQLite cuando recibe la publicación graph; la ruta foreground publica el grafo con `PublishGraphObservationBatches` antes de `ReplaceWorkspaceIndex`, por lo que sus transacciones son separadas. Un crash antes de cada commit conserva la generación activa previa.
+- La publicación `docs` reemplaza docs + memoria en una única transacción y no toca `files`, `symbols`, `workspace_repos` ni `workspace_entrypoints`.
+- La publicación `catalog` reemplaza solo catálogo de código y no toca docs ni memoria.
+- Las migraciones aditivas de `index.db` deben crear `repo_id` y `repo_name` en `files`/`symbols` antes de crear índices que dependan de esas columnas.
+- `doc_records`, `doc_edges`, `doc_mentions`, `doc_source_blocks`, `doc_source_records` y `doc_artifact_bindings` deben refrescarse como un bloque consistente dentro de una sola transacción; `source_block` conserva la proveniencia del bloque que declaró la mención.
 - `mi-lsp index --docs-only` puede ejecutar `ReplaceWorkspaceDocs` sin tocar `files`, `symbols`, `workspace_repos` ni `workspace_entrypoints`.
 - Las tablas `doc_source_*` son aditivas y reconstruibles; no requieren migracion destructiva ni `PRAGMA user_version`.
 - El snapshot repo-local de reentrada (`memory_snapshot_json`) se reconstruye en `mi-lsp index`; `workspace status --full` puede refrescarlo con una pasada docs-only solamente cuando el snapshot esta stale, `auto_sync` esta habilitado y la gobernanza no esta bloqueada.
@@ -191,11 +194,11 @@ evidence:
 
 ### Queries
 
-- `SymbolContainingLine(file, line)`: devuelve el simbolo mas chico que encierra un archivo + linea dados. Usado por `nav context` y `nav diff-context`.
+- `SymbolContainingLine(file, line)`: devuelve el símbolo más chico que encierra un archivo + línea dados. Usado por `nav context` y `nav diff-context`.
 - Graph selectors: lookup por `node_key`/cross-RID y scoped-name dentro de una generation fija.
 - Graph adjacency: frontiers inbound/outbound por `(generation, endpoint, relation)` con depth/result/token bounds.
-- Graph evidence/unresolved: lookup por subject u owner/reason; siempre generation-aware.
-- La propuesta `symbol_edges` queda supersedida por `graph_generations/nodes/edges/evidence/unresolved`; no se usa como fuente autoritativa de migracion.
+- Graph evidence/unresolved: lookup por subject u owner/reason; siempre generation-aware. Las omisiones unresolved se limitan a 50 filas y exponen contexto tipado saneado cuando está disponible.
+- La propuesta `symbol_edges` queda supersedida por `graph_generations/nodes/edges/evidence/unresolved`; no se usa como fuente autoritativa de migración.
 - `ListDocRecords()`: devuelve el corpus documental ordenado por familia/capa.
 - `DocEdgesFrom(path)`: devuelve relaciones explicitas salientes para priorizar supporting docs.
 - `DocMentionsForPath(path)`: devuelve menciones a codigo o comandos derivadas de un documento.
@@ -212,10 +215,11 @@ evidence:
 - `ReplaceWorkspaceIndex(generation_id, ...)`: publica catalogo, docs, memoria y punteros de generacion en una unica transaccion.
 - `ReplaceWorkspaceDocs(generation_id, ...)`: publica docs, memoria y punteros docs/memory en una unica transaccion.
 - `ReplaceWorkspaceCatalog(generation_id, ...)`: publica solo catalogo y puntero catalog.
-- Target `StageGraphGeneration(...)`: copy-forward de owners intactos + reemplazo de owners invalidados dentro de staging.
-- Target `ValidateGraphGeneration(...)`: sella counts/digest y rechaza collision, dangling, stale evidence o cross-RID conflict.
-- Target `PublishGraphGeneration(expected_prior, next)`: compare-and-swap atomico; actualiza active/previous y estados.
-- Target `RecoverGraphState()`: resuelve migration/staging/pointer no terminal sin elegir por timestamp.
+- `StageGraphGeneration(ctx, db, bundle)` y `StageGraphGenerationTx(ctx, tx, bundle)`: validan y persisten un bundle graph-native sellado; solo el refresco gráfico incremental y los cambios de código reensamblan el bundle completo antes de staging.
+- `PublishIncrementalDocsGeneration(...)` y su variante fenced reemplazan solo los owners documentales explícitos, avanzan docs/memoria, marcan el grafo stale y no hacen staging de una generación graph-native.
+- `ValidateGraphGeneration(...)`: sella counts/digest y rechaza colisión, dangling, stale evidence, contexto diagnóstico inválido o conflicto de cross-RID.
+- `ActivateGraphGeneration(expected_prior, next)`: compare-and-swap atómico; actualiza active/previous y estados.
+- `RecoverGraphState()`: resuelve migration/staging/pointer no terminal sin elegir por timestamp y conserva el contexto tipado de las filas válidas.
 - `index_jobs`: `CreateIndexJob`, `MarkIndexJobRunning`, `MarkIndexJobProgress`, `MarkIndexJobSucceeded`, `MarkIndexJobFailed`, `RequestIndexJobCancel`, `CancelIndexJob`.
 
 ## Riesgos operativos observados

@@ -103,6 +103,7 @@ CREATE TABLE IF NOT EXISTS doc_mentions (
     doc_path TEXT NOT NULL,
     mention_type TEXT NOT NULL,
     mention_value TEXT NOT NULL,
+    source_block TEXT,
     UNIQUE(doc_path, mention_type, mention_value)
 );
 `
@@ -264,7 +265,7 @@ const graphGenerationsDDL = `CREATE TABLE IF NOT EXISTS graph_generations (gener
 const graphNodesDDL = `CREATE TABLE IF NOT EXISTS graph_nodes (generation_id BLOB NOT NULL CHECK(length(generation_id)=32), node_id INTEGER NOT NULL CHECK(node_id>=0), node_key BLOB NOT NULL CHECK(length(node_key)=32), identity_schema TEXT NOT NULL, repository_identity TEXT NOT NULL, backend_type TEXT NOT NULL, language TEXT NOT NULL, project_or_module TEXT NOT NULL, owner_path TEXT NOT NULL, symbol_kind TEXT NOT NULL, semantic_identity TEXT NOT NULL, display_name TEXT NOT NULL, source_digest BLOB NOT NULL CHECK(length(source_digest)=32), claim_status TEXT NOT NULL, cross_rid TEXT NOT NULL, sort_key TEXT NOT NULL, PRIMARY KEY(generation_id,node_id), UNIQUE(generation_id,node_key), FOREIGN KEY(generation_id) REFERENCES graph_generations(generation_id) ON DELETE CASCADE);`
 const graphEdgesDDL = `CREATE TABLE IF NOT EXISTS graph_edges (generation_id BLOB NOT NULL CHECK(length(generation_id)=32), edge_id INTEGER NOT NULL CHECK(edge_id>=0), edge_key BLOB NOT NULL CHECK(length(edge_key)=32), from_node_id INTEGER NOT NULL CHECK(from_node_id>=0), to_node_id INTEGER NOT NULL CHECK(to_node_id>=0), relation TEXT NOT NULL, claim_scope TEXT NOT NULL, claim_status TEXT NOT NULL, owner_path TEXT NOT NULL, source_backend TEXT NOT NULL, cross_rid TEXT NOT NULL, PRIMARY KEY(generation_id,edge_id), UNIQUE(generation_id,edge_key), FOREIGN KEY(generation_id) REFERENCES graph_generations(generation_id) ON DELETE CASCADE, FOREIGN KEY(generation_id,from_node_id) REFERENCES graph_nodes(generation_id,node_id) ON DELETE CASCADE, FOREIGN KEY(generation_id,to_node_id) REFERENCES graph_nodes(generation_id,node_id) ON DELETE CASCADE);`
 const graphEvidenceDDL = `CREATE TABLE IF NOT EXISTS graph_evidence (generation_id BLOB NOT NULL CHECK(length(generation_id)=32), evidence_id INTEGER NOT NULL CHECK(evidence_id>=0), evidence_key BLOB NOT NULL CHECK(length(evidence_key)=32), subject_kind TEXT NOT NULL CHECK(subject_kind IN ('node','edge')), node_id INTEGER, edge_id INTEGER, source_uri TEXT NOT NULL, start_line INTEGER CHECK(start_line IS NULL OR start_line>=0), start_column INTEGER CHECK(start_column IS NULL OR start_column>=0), end_line INTEGER CHECK(end_line IS NULL OR end_line>=0), end_column INTEGER CHECK(end_column IS NULL OR end_column>=0), backend TEXT NOT NULL, extractor_version TEXT NOT NULL, source_digest BLOB NOT NULL CHECK(length(source_digest)=32), claim_kind TEXT NOT NULL, observed_claim_digest BLOB NOT NULL CHECK(length(observed_claim_digest)=32), claim_status TEXT NOT NULL, cross_rid TEXT NOT NULL, CHECK((subject_kind='node' AND node_id IS NOT NULL AND edge_id IS NULL) OR (subject_kind='edge' AND node_id IS NULL AND edge_id IS NOT NULL)), PRIMARY KEY(generation_id,evidence_id), UNIQUE(generation_id,evidence_key), FOREIGN KEY(generation_id) REFERENCES graph_generations(generation_id) ON DELETE CASCADE, FOREIGN KEY(generation_id,node_id) REFERENCES graph_nodes(generation_id,node_id) ON DELETE CASCADE, FOREIGN KEY(generation_id,edge_id) REFERENCES graph_edges(generation_id,edge_id) ON DELETE CASCADE);`
-const graphUnresolvedDDL = `CREATE TABLE IF NOT EXISTS graph_unresolved (generation_id BLOB NOT NULL CHECK(length(generation_id)=32), unresolved_id INTEGER NOT NULL CHECK(unresolved_id>=0), unresolved_key BLOB NOT NULL CHECK(length(unresolved_key)=32), owner_path TEXT NOT NULL, subject_kind TEXT NOT NULL, selector_digest BLOB NOT NULL CHECK(length(selector_digest)=32), reason_code TEXT NOT NULL, candidates_json TEXT NOT NULL, backend TEXT NOT NULL, source_digest BLOB CHECK(source_digest IS NULL OR length(source_digest)=32), cross_rid TEXT NOT NULL, recovery_hint_code TEXT, PRIMARY KEY(generation_id,unresolved_id), UNIQUE(generation_id,unresolved_key), FOREIGN KEY(generation_id) REFERENCES graph_generations(generation_id) ON DELETE CASCADE);`
+const graphUnresolvedDDL = `CREATE TABLE IF NOT EXISTS graph_unresolved (generation_id BLOB NOT NULL CHECK(length(generation_id)=32), unresolved_id INTEGER NOT NULL CHECK(unresolved_id>=0), unresolved_key BLOB NOT NULL CHECK(length(unresolved_key)=32), owner_path TEXT NOT NULL, subject_kind TEXT NOT NULL, selector_digest BLOB NOT NULL CHECK(length(selector_digest)=32), reason_code TEXT NOT NULL, candidates_json TEXT NOT NULL, backend TEXT NOT NULL, source_digest BLOB CHECK(source_digest IS NULL OR length(source_digest)=32), cross_rid TEXT NOT NULL, recovery_hint_code TEXT, source_document TEXT, source_block TEXT, target_kind TEXT, target_value TEXT, PRIMARY KEY(generation_id,unresolved_id), UNIQUE(generation_id,unresolved_key), FOREIGN KEY(generation_id) REFERENCES graph_generations(generation_id) ON DELETE CASCADE);`
 const graphMigrationsDDL = `CREATE TABLE IF NOT EXISTS graph_migrations (migration_id TEXT PRIMARY KEY, from_version INTEGER NOT NULL, to_version INTEGER NOT NULL, status TEXT NOT NULL CHECK(status IN ('prepared','applying','validated','committed','rolled_back','failed')), preflight_digest BLOB NOT NULL CHECK(length(preflight_digest)=32), backup_digest BLOB NOT NULL CHECK(length(backup_digest)=32), prior_active_generation_id BLOB CHECK(prior_active_generation_id IS NULL OR length(prior_active_generation_id)=32), started_at TEXT NOT NULL, completed_at TEXT, error_code TEXT, FOREIGN KEY(prior_active_generation_id) REFERENCES graph_generations(generation_id) ON DELETE RESTRICT);`
 const graphAnalysisDDL = `CREATE TABLE IF NOT EXISTS graph_analysis (analysis_key BLOB NOT NULL CHECK(length(analysis_key)=32) PRIMARY KEY, generation_id BLOB NOT NULL CHECK(length(generation_id)=32), extension_id TEXT NOT NULL, extension_version TEXT NOT NULL, executable_digest BLOB NOT NULL CHECK(length(executable_digest)=32), operation TEXT NOT NULL, parameters_digest BLOB NOT NULL CHECK(length(parameters_digest)=32), authority_profile_digest BLOB NOT NULL CHECK(length(authority_profile_digest)=32), output_schema TEXT NOT NULL, result_json_bounded TEXT NOT NULL, result_digest BLOB NOT NULL CHECK(length(result_digest)=32), provenance_json_sanitized TEXT NOT NULL, omissions_json_sanitized TEXT NOT NULL, status TEXT NOT NULL, created_at TEXT NOT NULL, FOREIGN KEY(generation_id) REFERENCES graph_generations(generation_id) ON DELETE CASCADE);`
 
@@ -316,6 +317,9 @@ END`,
 		return err
 	}
 	if err := ensureColumn(db, "doc_records", "is_snapshot", "INTEGER NOT NULL DEFAULT 0"); err != nil {
+		return err
+	}
+	if err := ensureColumn(db, "doc_mentions", "source_block", "TEXT"); err != nil {
 		return err
 	}
 	if err := ensureColumn(db, "index_jobs", "clean", "INTEGER NOT NULL DEFAULT 0"); err != nil {
@@ -429,6 +433,20 @@ func graphTableDefinitionCompatible(name, actual, expected string) bool {
 	if actual == expected {
 		return true
 	}
+	if name == "graph_unresolved" {
+		// Diagnostic context columns are additive and nullable. Strip them
+		// from the expected contract so legacy v1 tables can be migrated below.
+		for _, column := range []string{
+			", source_document text",
+			", source_block text",
+			", target_kind text",
+			", target_value text",
+		} {
+			expected = strings.ReplaceAll(expected, column, "")
+			actual = strings.ReplaceAll(actual, column, "")
+		}
+		return actual == expected
+	}
 	if name != "graph_analysis" {
 		return false
 	}
@@ -528,16 +546,19 @@ func ensureGraphSchemaTx(ctx context.Context, tx interface {
 		}
 	}
 	// These columns are additive and intentionally migrated inside the same
-	// transaction as graph bootstrap. This handles both a fresh database and
-	// an existing v1 graph_analysis table without changing its sqlite_master
-	// definition used by the compatibility preflight.
-	for _, column := range []struct{ name, definition string }{
-		{"algorithm", "TEXT NOT NULL DEFAULT 'bounded-deterministic-v1'"},
-		{"algorithm_version", "TEXT NOT NULL DEFAULT '1'"},
-		{"profile", "TEXT NOT NULL DEFAULT 'exact-extracted-only'"},
-		{"determinism_digest", "TEXT NOT NULL DEFAULT ''"},
+	// transaction as graph bootstrap. This handles both fresh databases and
+	// existing v1 graph_analysis and graph_unresolved tables.
+	for _, column := range []struct{ table, name, definition string }{
+		{"graph_analysis", "algorithm", "TEXT NOT NULL DEFAULT 'bounded-deterministic-v1'"},
+		{"graph_analysis", "algorithm_version", "TEXT NOT NULL DEFAULT '1'"},
+		{"graph_analysis", "profile", "TEXT NOT NULL DEFAULT 'exact-extracted-only'"},
+		{"graph_analysis", "determinism_digest", "TEXT NOT NULL DEFAULT ''"},
+		{"graph_unresolved", "source_document", "TEXT"},
+		{"graph_unresolved", "source_block", "TEXT"},
+		{"graph_unresolved", "target_kind", "TEXT"},
+		{"graph_unresolved", "target_value", "TEXT"},
 	} {
-		if err := ensureColumnTx(ctx, tx, "graph_analysis", column.name, column.definition); err != nil {
+		if err := ensureColumnTx(ctx, tx, column.table, column.name, column.definition); err != nil {
 			return err
 		}
 	}

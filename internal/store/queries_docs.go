@@ -218,15 +218,15 @@ func replaceDocsWithSourcesTx(ctx context.Context, tx *sql.Tx, docs []model.DocR
 
 	if len(mentions) > 0 {
 		stmt, err := tx.PrepareContext(ctx, `
-			INSERT OR REPLACE INTO doc_mentions(doc_path, mention_type, mention_value)
-			VALUES(?, ?, ?)
+			INSERT OR REPLACE INTO doc_mentions(doc_path, mention_type, mention_value, source_block)
+			VALUES(?, ?, ?, ?)
 		`)
 		if err != nil {
 			return err
 		}
 		defer stmt.Close()
 		for _, mention := range mentions {
-			if _, err := stmt.ExecContext(ctx, mention.DocPath, mention.MentionType, mention.MentionValue); err != nil {
+			if _, err := stmt.ExecContext(ctx, mention.DocPath, mention.MentionType, mention.MentionValue, nullableDocMentionSourceBlock(mention.SourceBlock)); err != nil {
 				return err
 			}
 		}
@@ -284,6 +284,13 @@ func replaceDocsWithSourcesTx(ctx context.Context, tx *sql.Tx, docs []model.DocR
 		return err
 	}
 	return nil
+}
+func nullableDocMentionSourceBlock(value string) any {
+	value = sanitizeGraphOmissionText(value)
+	if value == "" {
+		return nil
+	}
+	return value
 }
 
 func ListDocSourceBlocks(ctx context.Context, db *sql.DB) ([]model.DocSourceBlock, error) {
@@ -495,8 +502,43 @@ func ListDocEdges(ctx context.Context, db *sql.DB) ([]model.DocEdge, error) {
 	return items, rows.Err()
 }
 
+func queryDocMentions(ctx context.Context, db *sql.DB, query string, legacyQuery string, args ...any) (*sql.Rows, bool, error) {
+	rows, err := QueryContextWithRetry(ctx, db, query, args...)
+	if err == nil || !isSQLiteMissingColumnError(err, "source_block") {
+		return rows, false, err
+	}
+	if rows != nil {
+		_ = rows.Close()
+	}
+	rows, err = QueryContextWithRetry(ctx, db, legacyQuery, args...)
+	return rows, true, err
+}
+
+func scanDocMention(scanner interface{ Scan(...any) error }, legacy bool) (model.DocMention, error) {
+	var item model.DocMention
+	if legacy {
+		if err := scanner.Scan(&item.DocPath, &item.MentionType, &item.MentionValue); err != nil {
+			return model.DocMention{}, err
+		}
+		return item, nil
+	}
+	var sourceBlock sql.NullString
+	if err := scanner.Scan(&item.DocPath, &item.MentionType, &item.MentionValue, &sourceBlock); err != nil {
+		return model.DocMention{}, err
+	}
+	if sourceBlock.Valid {
+		item.SourceBlock = sanitizeGraphOmissionText(sourceBlock.String)
+	}
+	return item, nil
+}
+
 func DocMentionsForPath(ctx context.Context, db *sql.DB, docPath string) ([]model.DocMention, error) {
-	rows, err := QueryContextWithRetry(ctx, db, `
+	rows, legacyProjection, err := queryDocMentions(ctx, db, `
+		SELECT doc_path, mention_type, mention_value, source_block
+		FROM doc_mentions
+		WHERE doc_path = ?
+		ORDER BY mention_type ASC, mention_value ASC
+	`, `
 		SELECT doc_path, mention_type, mention_value
 		FROM doc_mentions
 		WHERE doc_path = ?
@@ -508,9 +550,9 @@ func DocMentionsForPath(ctx context.Context, db *sql.DB, docPath string) ([]mode
 	defer rows.Close()
 	items := make([]model.DocMention, 0)
 	for rows.Next() {
-		var item model.DocMention
-		if err := rows.Scan(&item.DocPath, &item.MentionType, &item.MentionValue); err != nil {
-			return nil, err
+		item, scanErr := scanDocMention(rows, legacyProjection)
+		if scanErr != nil {
+			return nil, scanErr
 		}
 		items = append(items, item)
 	}
@@ -519,7 +561,11 @@ func DocMentionsForPath(ctx context.Context, db *sql.DB, docPath string) ([]mode
 
 // ListDocMentions returns all document mentions for prior-snapshot reuse during docs index.
 func ListDocMentions(ctx context.Context, db *sql.DB) ([]model.DocMention, error) {
-	rows, err := QueryContextWithRetry(ctx, db, `
+	rows, legacyProjection, err := queryDocMentions(ctx, db, `
+		SELECT doc_path, mention_type, mention_value, source_block
+		FROM doc_mentions
+		ORDER BY doc_path ASC, mention_type ASC, mention_value ASC
+	`, `
 		SELECT doc_path, mention_type, mention_value
 		FROM doc_mentions
 		ORDER BY doc_path ASC, mention_type ASC, mention_value ASC
@@ -530,9 +576,9 @@ func ListDocMentions(ctx context.Context, db *sql.DB) ([]model.DocMention, error
 	defer rows.Close()
 	items := make([]model.DocMention, 0)
 	for rows.Next() {
-		var item model.DocMention
-		if err := rows.Scan(&item.DocPath, &item.MentionType, &item.MentionValue); err != nil {
-			return nil, err
+		item, scanErr := scanDocMention(rows, legacyProjection)
+		if scanErr != nil {
+			return nil, scanErr
 		}
 		items = append(items, item)
 	}

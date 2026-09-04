@@ -98,6 +98,115 @@ func TestAssembleCanonicalDocumentationSupplement(t *testing.T) {
 		t.Fatalf("excluded docs changed code-only graph: %v", err)
 	}
 }
+func TestAssembleGraphWhitespaceCanonicalizationPreservesIdentityAndTPMiss(t *testing.T) {
+	batch := stagingBatch("go", "src/go", false)
+	batch.Capabilities = append(batch.Capabilities, model.GraphObservationCapability{Backend: "go", Capability: "calls", State: model.GraphObservationStatusStable})
+	batch.Coverage = append(batch.Coverage, model.GraphObservationCoverage{Backend: "go", Capability: "calls", Eligible: 1, Unresolved: 1})
+	batch.Unresolved = append(batch.Unresolved, model.GraphObservationUnresolved{Ref: "U1", OwnerPath: "src/go/main.go", SubjectKind: "file", Capability: "calls", SelectorDigest: stagingDigest("batch-unresolved"), ReasonCode: "missing_symbol", Candidates: []string{"Widget"}, Backend: "go", RecoveryHintCode: "retry"})
+	if err := model.SealGraphObservationBatch(&batch); err != nil {
+		t.Fatal(err)
+	}
+	rawBatch := batch
+	rawBatch.WorkspaceIdentity = " " + rawBatch.WorkspaceIdentity + " "
+	rawBatch.RepositoryIdentity = "\t" + rawBatch.RepositoryIdentity + "\t"
+	rawBatch.BackendVersion = " " + rawBatch.BackendVersion + " "
+	rawBatch.ProjectOrModule = " " + rawBatch.ProjectOrModule + " "
+	rawBatch.Nodes = append([]model.GraphObservationNode(nil), batch.Nodes...)
+	rawBatch.Nodes[0].DisplayName = " " + rawBatch.Nodes[0].DisplayName + " "
+	rawBatch.Unresolved = append([]model.GraphObservationUnresolved(nil), batch.Unresolved...)
+	rawBatch.Unresolved[0].Candidates = append([]string(nil), batch.Unresolved[0].Candidates...)
+	rawBatch.Unresolved[0].Ref = " U1 "
+	rawBatch.Unresolved[0].OwnerPath = " src/go/main.go "
+	rawBatch.Unresolved[0].SubjectKind = " file "
+	rawBatch.Unresolved[0].Capability = " calls "
+	rawBatch.Unresolved[0].ReasonCode = " missing_symbol "
+	rawBatch.Unresolved[0].Backend = " GO "
+	rawBatch.Unresolved[0].RecoveryHintCode = " retry "
+	rawBatch.Unresolved[0].Candidates[0] = " Widget "
+	digestBatch := cloneGraphObservationBatchForAssembly(rawBatch)
+	if err := model.SealGraphObservationBatch(&digestBatch); err != nil {
+		t.Fatalf("seal canonical digest copy: %v", err)
+	}
+	rawBatch.Digest = digestBatch.Digest
+
+	source := stagingDoc(".docs/wiki/source.md", "DOC-SOURCE")
+	clean := GraphAssemblyRequest{
+		Batches: []model.GraphObservationBatch{batch},
+		Docs:    []model.DocRecord{source},
+		DocEdges: []model.DocEdge{{
+			FromPath: source.Path,
+			ToDocID:  "TP-MISSING-001",
+			Kind:     "doc_id",
+			Label:    "TP-MISSING-001",
+		}},
+		DocMentions: []model.DocMention{{
+			DocPath:      source.Path,
+			MentionType:  "test_file",
+			MentionValue: "TP-MISSING-001",
+			SourceBlock:  "frontmatter",
+		}},
+		CreatedAt: time.Unix(1, 0).UTC(),
+	}
+	raw := clean
+	raw.Batches = []model.GraphObservationBatch{rawBatch}
+	raw.DocEdges = []model.DocEdge{{
+		FromPath:         " " + source.Path + " ",
+		ToDocID:          " \tTP-MISSING-001\t ",
+		Kind:             " doc_id ",
+		Label:            " \tTP-MISSING-001 ",
+		UnresolvedReason: " ",
+	}}
+	raw.DocMentions = []model.DocMention{{
+		DocPath:      " " + source.Path + " ",
+		MentionType:  " test_file ",
+		MentionValue: " \tTP-MISSING-001\t ",
+		SourceBlock:  " frontmatter ",
+	}}
+
+	canonical, err := AssembleGraphObservationBatches(clean)
+	if err != nil {
+		t.Fatalf("canonical assembly: %v", err)
+	}
+	whitespace, err := AssembleGraphObservationBatches(raw)
+	if err != nil {
+		t.Fatalf("whitespace assembly: %v", err)
+	}
+	if !reflect.DeepEqual(canonical, whitespace) {
+		t.Fatalf("whitespace-equivalent request changed assembled graph:\ncanonical=%+v\nwhitespace=%+v", canonical, whitespace)
+	}
+	if canonical.Generation.SourceFingerprint != whitespace.Generation.SourceFingerprint ||
+		canonical.Generation.ConfigFingerprint != whitespace.Generation.ConfigFingerprint ||
+		canonical.Generation.BackendManifestDigest != whitespace.Generation.BackendManifestDigest ||
+		canonical.Generation.ContentDigest != whitespace.Generation.ContentDigest ||
+		canonical.Generation.GenerationID != whitespace.Generation.GenerationID {
+		t.Fatal("whitespace-equivalent request changed a generation identity digest")
+	}
+	if len(whitespace.Unresolved) != 3 {
+		t.Fatalf("unresolved count=%d, want batch, edge, and mention claims", len(whitespace.Unresolved))
+	}
+	tpMissCount := 0
+	foundBatchClaim := false
+	for _, unresolved := range whitespace.Unresolved {
+		if unresolved.UnresolvedKey == (model.GraphDigest{}) || unresolved.CrossRID != model.UnresolvedRID(unresolved.UnresolvedKey) {
+			t.Fatalf("unresolved identity is not stable: %+v", unresolved)
+		}
+		if unresolved.ReasonCode == "missing_doc_target" && unresolved.TargetValue == "TP-MISSING-001" {
+			tpMissCount++
+		}
+		if unresolved.ReasonCode == "missing_symbol" {
+			if unresolved.OwnerPath != "src/go/main.go" || unresolved.Backend != "go" || unresolved.RecoveryHintCode != "retry" || len(unresolved.Candidates) != 1 || unresolved.Candidates[0] != "Widget" {
+				t.Fatalf("batch unresolved claim was not normalized canonically: %+v", unresolved)
+			}
+			foundBatchClaim = true
+		}
+	}
+	if tpMissCount != 2 {
+		t.Fatalf("TP misses=%d, want edge and mention unresolved claims", tpMissCount)
+	}
+	if !foundBatchClaim {
+		t.Fatalf("missing canonical batch unresolved claim in %+v", whitespace.Unresolved)
+	}
+}
 
 func TestAssembleDocumentationMentionsFailsClosed(t *testing.T) {
 	first := stagingBatch("go", "src/a", false)
@@ -1044,5 +1153,382 @@ func TestDocumentGraphAssemblyRemainsDeterministicAndSkipsSelfEdges(t *testing.T
 		if edge.FromNodeID == edge.ToNodeID && edge.SourceBackend == "docgraph" {
 			t.Fatalf("self edge published: %#v", edge)
 		}
+	}
+}
+func TestAssembleGraphResolvesCanonicalTPDocumentMention(t *testing.T) {
+	batch := stagingBatch("go", "src/go", false)
+	if err := model.SealGraphObservationBatch(&batch); err != nil {
+		t.Fatal(err)
+	}
+	source := stagingDoc(".docs/wiki/RF-SYNTHETIC.md", "RF-SYNTHETIC")
+	target := stagingDoc(".docs/wiki/TP-SYNTHETIC.md", "TP-SYNTHETIC-001")
+	mention := model.DocMention{DocPath: source.Path, MentionType: "test_file", MentionValue: "TP-SYNTHETIC-001"}
+	bundle, err := AssembleGraphObservationBatches(GraphAssemblyRequest{Batches: []model.GraphObservationBatch{batch}, Docs: []model.DocRecord{source, target}, DocMentions: []model.DocMention{mention}, CreatedAt: time.Unix(1, 0)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var sourceID, targetID int
+	for _, node := range bundle.Nodes {
+		switch node.Identity.OwnerPath {
+		case source.Path:
+			sourceID = node.NodeID
+		case target.Path:
+			targetID = node.NodeID
+		}
+	}
+	found := false
+	for _, edge := range bundle.Edges {
+		if edge.Relation == "doc_mentions" && edge.FromNodeID == sourceID && edge.ToNodeID == targetID {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("canonical TP mention did not resolve to document node: %+v", bundle.Edges)
+	}
+	if len(bundle.Unresolved) != 0 || mention.MentionValue != "TP-SYNTHETIC-001" {
+		t.Fatalf("canonical TP mention changed or remained unresolved: value=%q unresolved=%+v", mention.MentionValue, bundle.Unresolved)
+	}
+}
+func TestResolvedDocumentMentionSourceBlockChangesAllIdentityDigests(t *testing.T) {
+	batch := stagingBatch("go", "src/go", false)
+	if err := model.SealGraphObservationBatch(&batch); err != nil {
+		t.Fatal(err)
+	}
+	source := stagingDoc(".docs/wiki/RF-SYNTHETIC.md", "RF-SYNTHETIC")
+	targetA := stagingDoc(".docs/wiki/TP-A.md", "TP-SYNTHETIC-A")
+	targetB := stagingDoc(".docs/wiki/TP-B.md", "TP-SYNTHETIC-B")
+	canonicalMentions := []model.DocMention{
+		{DocPath: source.Path, MentionType: "test_file", MentionValue: targetA.DocID, SourceBlock: "frontmatter"},
+		{DocPath: source.Path, MentionType: "test_file", MentionValue: targetB.DocID, SourceBlock: "requirements"},
+		{DocPath: source.Path, MentionType: "test_file", MentionValue: "TP-MISSING-001", SourceBlock: "missing-target"},
+	}
+	request := func(docs []model.DocRecord, mentions []model.DocMention) GraphAssemblyRequest {
+		return GraphAssemblyRequest{
+			Batches:     []model.GraphObservationBatch{batch},
+			Docs:        docs,
+			DocMentions: mentions,
+			CreatedAt:   time.Unix(1, 0).UTC(),
+		}
+	}
+	canonical, err := AssembleGraphObservationBatches(request(
+		[]model.DocRecord{source, targetA, targetB},
+		canonicalMentions,
+	))
+	if err != nil {
+		t.Fatal(err)
+	}
+	whitespaceAndReordered, err := AssembleGraphObservationBatches(request(
+		[]model.DocRecord{targetB, source, targetA},
+		[]model.DocMention{
+			{DocPath: " " + source.Path + " ", MentionType: " test_file ", MentionValue: " TP-MISSING-001 ", SourceBlock: " missing-target "},
+			{DocPath: " " + source.Path + " ", MentionType: " test_file ", MentionValue: " " + targetB.DocID + " ", SourceBlock: " requirements "},
+			{DocPath: " " + source.Path + " ", MentionType: " test_file ", MentionValue: " " + targetA.DocID + " ", SourceBlock: " frontmatter "},
+		},
+	))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(canonical, whitespaceAndReordered) {
+		t.Fatalf("canonical-equivalent mention input changed assembled graph:\ncanonical=%+v\nwhitespace/reordered=%+v", canonical, whitespaceAndReordered)
+	}
+	changedMentions := append([]model.DocMention(nil), canonicalMentions...)
+	changedMentions[0].SourceBlock = "appendix"
+	changed, err := AssembleGraphObservationBatches(request(
+		[]model.DocRecord{source, targetA, targetB},
+		changedMentions,
+	))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(canonical.Edges) != 2 || len(changed.Edges) != 2 || len(canonical.Unresolved) != 1 || len(changed.Unresolved) != 1 {
+		t.Fatalf("mention resolution changed unexpectedly: canonical edges/unresolved=%d/%d changed=%d/%d", len(canonical.Edges), len(canonical.Unresolved), len(changed.Edges), len(changed.Unresolved))
+	}
+	beforeFacts := graphDocFactsDigest([]model.DocRecord{source, targetA, targetB}, nil, canonicalMentions, canonical.Unresolved)
+	afterFacts := graphDocFactsDigest([]model.DocRecord{source, targetA, targetB}, nil, changedMentions, changed.Unresolved)
+	if beforeFacts == afterFacts {
+		t.Fatal("resolved mention SourceBlock did not alter document facts digest")
+	}
+	if canonical.Generation.ContentDigest == changed.Generation.ContentDigest ||
+		canonical.Generation.SourceFingerprint == changed.Generation.SourceFingerprint ||
+		canonical.Generation.ConfigFingerprint == changed.Generation.ConfigFingerprint ||
+		canonical.Generation.BackendManifestDigest == changed.Generation.BackendManifestDigest ||
+		canonical.Generation.GenerationID == changed.Generation.GenerationID {
+		t.Fatal("resolved mention SourceBlock did not alter the complete generation identity chain")
+	}
+	var canonicalMissing, changedMissing model.GraphUnresolved
+	for _, unresolved := range canonical.Unresolved {
+		if unresolved.TargetValue == "TP-MISSING-001" {
+			canonicalMissing = unresolved
+		}
+	}
+	for _, unresolved := range changed.Unresolved {
+		if unresolved.TargetValue == "TP-MISSING-001" {
+			changedMissing = unresolved
+		}
+	}
+	if canonicalMissing.UnresolvedKey == (model.GraphDigest{}) || canonicalMissing.UnresolvedKey != changedMissing.UnresolvedKey ||
+		canonicalMissing.CrossRID != changedMissing.CrossRID ||
+		canonicalMissing.CrossRID != model.UnresolvedRID(canonicalMissing.UnresolvedKey) {
+		t.Fatalf("unrelated unresolved identity changed: canonical=%+v changed=%+v", canonicalMissing, changedMissing)
+	}
+}
+
+func TestAssembleGraphReportsMissingAndAmbiguousCanonicalTPDocuments(t *testing.T) {
+	batch := stagingBatch("go", "src/go", false)
+	if err := model.SealGraphObservationBatch(&batch); err != nil {
+		t.Fatal(err)
+	}
+	source := stagingDoc(".docs/wiki/RF-SYNTHETIC.md", "RF-SYNTHETIC")
+	missing := model.DocMention{DocPath: source.Path, MentionType: "test_file", MentionValue: "TP-MISSING-001"}
+	missingBundle, err := AssembleGraphObservationBatches(GraphAssemblyRequest{Batches: []model.GraphObservationBatch{batch}, Docs: []model.DocRecord{source}, DocMentions: []model.DocMention{missing}, CreatedAt: time.Unix(1, 0)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(missingBundle.Unresolved) != 1 || missingBundle.Unresolved[0].ReasonCode != "missing_doc_target" || missingBundle.Unresolved[0].TargetKind != "document" || missingBundle.Unresolved[0].TargetValue != "TP-MISSING-001" || len(missingBundle.Unresolved[0].Candidates) != 0 {
+		t.Fatalf("missing canonical TP diagnostic = %+v", missingBundle.Unresolved)
+	}
+	duplicateA := stagingDoc(".docs/wiki/TP-a.md", "TP-DUPLICATE-001")
+	duplicateB := stagingDoc(".docs/wiki/TP-b.md", "TP-DUPLICATE-001")
+	ambiguous := model.DocMention{DocPath: source.Path, MentionType: "test_file", MentionValue: "TP-DUPLICATE-001"}
+	ambiguousBundle, err := AssembleGraphObservationBatches(GraphAssemblyRequest{Batches: []model.GraphObservationBatch{batch}, Docs: []model.DocRecord{source, duplicateB, duplicateA}, DocMentions: []model.DocMention{ambiguous}, CreatedAt: time.Unix(1, 0)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(ambiguousBundle.Unresolved) != 1 {
+		t.Fatalf("ambiguous canonical TP unresolved = %+v", ambiguousBundle.Unresolved)
+	}
+	u := ambiguousBundle.Unresolved[0]
+	if u.ReasonCode != "ambiguous_doc_target" || u.TargetKind != "document" || u.TargetValue != "TP-DUPLICATE-001" || !reflect.DeepEqual(u.Candidates, []string{duplicateA.Path, duplicateB.Path}) {
+		t.Fatalf("ambiguous canonical TP diagnostic = %+v", u)
+	}
+}
+func TestAssembleGraphCarriesDocumentMentionBlockAttribution(t *testing.T) {
+	batch := stagingBatch("go", "src/go", false)
+	if err := model.SealGraphObservationBatch(&batch); err != nil {
+		t.Fatal(err)
+	}
+	source := stagingDoc(".docs/wiki/RF-SYNTHETIC.md", "RF-SYNTHETIC")
+	mention := model.DocMention{DocPath: source.Path, MentionType: "test_file", MentionValue: "TP-MISSING-001", SourceBlock: "frontmatter"}
+	bundle, err := AssembleGraphObservationBatches(GraphAssemblyRequest{Batches: []model.GraphObservationBatch{batch}, Docs: []model.DocRecord{source}, DocMentions: []model.DocMention{mention}, CreatedAt: time.Unix(1, 0)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(bundle.Unresolved) != 1 || bundle.Unresolved[0].OwnerPath != source.Path || bundle.Unresolved[0].SourceDocument != source.Path || bundle.Unresolved[0].SourceBlock != "frontmatter" {
+		t.Fatalf("document mention attribution = %+v", bundle.Unresolved)
+	}
+}
+func TestGraphUnresolvedProvenanceChangesFactsContentAndGeneration(t *testing.T) {
+	batch := stagingBatch("go", "src/go", false)
+	if err := model.SealGraphObservationBatch(&batch); err != nil {
+		t.Fatal(err)
+	}
+	source := stagingDoc(".docs/wiki/RF-SYNTHETIC.md", "RF-SYNTHETIC")
+	mention := model.DocMention{DocPath: source.Path, MentionType: "test_file", MentionValue: "TP-MISSING-001", SourceBlock: "frontmatter"}
+	request := GraphAssemblyRequest{
+		Batches:     []model.GraphObservationBatch{batch},
+		Docs:        []model.DocRecord{source},
+		DocMentions: []model.DocMention{mention},
+		CreatedAt:   time.Unix(1, 0),
+	}
+	before, err := AssembleGraphObservationBatches(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mention.SourceBlock = "requirements"
+	request.DocMentions = []model.DocMention{mention}
+	after, err := AssembleGraphObservationBatches(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(before.Unresolved) != 1 || len(after.Unresolved) != 1 {
+		t.Fatalf("unresolved counts: before=%d after=%d", len(before.Unresolved), len(after.Unresolved))
+	}
+	if before.Unresolved[0].UnresolvedKey != after.Unresolved[0].UnresolvedKey || before.Unresolved[0].CrossRID != after.Unresolved[0].CrossRID {
+		t.Fatal("provenance-only change altered unresolved identity")
+	}
+	if before.Unresolved[0].SourceBlock != "frontmatter" || after.Unresolved[0].SourceBlock != "requirements" {
+		t.Fatalf("provenance was not preserved: before=%+v after=%+v", before.Unresolved[0], after.Unresolved[0])
+	}
+	beforeFacts := graphDocFactsDigest(request.Docs, nil, []model.DocMention{{DocPath: source.Path, MentionType: "test_file", MentionValue: "TP-MISSING-001", SourceBlock: "frontmatter"}}, before.Unresolved)
+	afterFacts := graphDocFactsDigest(request.Docs, nil, request.DocMentions, after.Unresolved)
+	if beforeFacts == afterFacts {
+		t.Fatal("provenance-only change did not alter document facts digest")
+	}
+	if before.Generation.ContentDigest == after.Generation.ContentDigest {
+		t.Fatal("provenance-only change did not alter content digest")
+	}
+	if before.Generation.SourceFingerprint == after.Generation.SourceFingerprint || before.Generation.ConfigFingerprint == after.Generation.ConfigFingerprint || before.Generation.BackendManifestDigest == after.Generation.BackendManifestDigest || before.Generation.GenerationID == after.Generation.GenerationID {
+		t.Fatal("provenance-only change did not alter generation fingerprints")
+	}
+}
+
+func TestGraphUnresolvedDuplicateProvenanceIsDeterministicAndPrefersSourceBlock(t *testing.T) {
+	batch := stagingBatch("go", "src/go", false)
+	if err := model.SealGraphObservationBatch(&batch); err != nil {
+		t.Fatal(err)
+	}
+	source := stagingDoc(".docs/wiki/RF-SYNTHETIC.md", "RF-SYNTHETIC")
+	parserMention := model.DocMention{DocPath: source.Path, MentionType: "test_file", MentionValue: "TP-MISSING-001"}
+	frontMatterMention := parserMention
+	frontMatterMention.SourceBlock = "frontmatter"
+	request := func(mentions []model.DocMention) GraphAssemblyRequest {
+		return GraphAssemblyRequest{
+			Batches:     []model.GraphObservationBatch{batch},
+			Docs:        []model.DocRecord{source},
+			DocMentions: mentions,
+			CreatedAt:   time.Unix(1, 0),
+		}
+	}
+	fromParserFirst, err := AssembleGraphObservationBatches(request([]model.DocMention{parserMention, frontMatterMention}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	fromFrontMatterFirst, err := AssembleGraphObservationBatches(request([]model.DocMention{frontMatterMention, parserMention}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(fromParserFirst, fromFrontMatterFirst) {
+		t.Fatalf("duplicate provenance changed with input order:\nparser first=%+v\nfrontmatter first=%+v", fromParserFirst.Unresolved, fromFrontMatterFirst.Unresolved)
+	}
+	if len(fromParserFirst.Unresolved) != 1 {
+		t.Fatalf("duplicate source-protocol mentions produced %d unresolved claims", len(fromParserFirst.Unresolved))
+	}
+	claim := fromParserFirst.Unresolved[0]
+	if claim.SourceDocument != source.Path || claim.SourceBlock != "frontmatter" || claim.TargetKind != "document" || claim.TargetValue != "TP-MISSING-001" {
+		t.Fatalf("duplicate provenance lost canonical attribution: %+v", claim)
+	}
+	if claim.UnresolvedKey != model.GraphUnresolvedKey(claim) || claim.CrossRID != model.UnresolvedRID(claim.UnresolvedKey) {
+		t.Fatalf("duplicate provenance changed unresolved identity: %+v", claim)
+	}
+}
+
+func TestPublishGraphObservationBatchesReactivatesCanonicalGenerationAfterDocumentationDetour(t *testing.T) {
+	ctx := context.Background()
+	db, err := store.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	docs := []model.DocRecord{stagingDoc(".docs/wiki/guide.md", "DOC-GUIDE")}
+	batch := stagingBatch("go", "src/go", true)
+	if err := model.SealGraphObservationBatch(&batch); err != nil {
+		t.Fatal(err)
+	}
+	fullRequest := func(createdAt time.Time) GraphAssemblyRequest {
+		return GraphAssemblyRequest{
+			Batches:   []model.GraphObservationBatch{batch},
+			Docs:      docs,
+			CreatedAt: createdAt,
+		}
+	}
+	docsRequest := GraphAssemblyRequest{
+		Docs:               docs,
+		WorkspaceIdentity:  batch.WorkspaceIdentity,
+		RepositoryIdentity: batch.RepositoryIdentity,
+		CreatedAt:          time.Unix(101, 0).UTC(),
+	}
+
+	// Seed a canonical full graph, then publish the documentation-only graph
+	// that a failed topology observation would have made active.
+	full, err := PublishGraphObservationBatches(ctx, db, fullRequest(time.Unix(100, 0).UTC()), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	docsOnly, err := PublishGraphObservationBatches(ctx, db, docsRequest, &full.GenerationID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if full.GenerationID == docsOnly.GenerationID ||
+		full.ContentDigest == docsOnly.ContentDigest ||
+		full.SourceFingerprint == docsOnly.SourceFingerprint ||
+		full.ConfigFingerprint == docsOnly.ConfigFingerprint ||
+		full.BackendManifestDigest == docsOnly.BackendManifestDigest {
+		t.Fatalf("documentation-only and Go generations collided: full=%+v docs=%+v", full, docsOnly)
+	}
+	for _, generation := range []model.GraphGeneration{full, docsOnly} {
+		if _, err := store.ValidateGraphGeneration(ctx, db, generation.GenerationID); err != nil {
+			t.Fatalf("generation %s failed validation: %v", generation.GenerationID, err)
+		}
+	}
+
+	// Re-observing the unchanged Go source must reuse its stable canonical ID
+	// while replacing the documentation detour, rather than treating the
+	// retired equivalent row as corruption.
+	replayed, err := PublishGraphObservationBatches(ctx, db, fullRequest(time.Unix(102, 0).UTC()), &docsOnly.GenerationID)
+	if err != nil {
+		t.Fatalf("replaying unchanged Go observation: %v", err)
+	}
+	if replayed.GenerationID != full.GenerationID ||
+		replayed.ContentDigest != full.ContentDigest ||
+		replayed.SourceFingerprint != full.SourceFingerprint ||
+		replayed.ConfigFingerprint != full.ConfigFingerprint ||
+		replayed.BackendManifestDigest != full.BackendManifestDigest {
+		t.Fatalf("replayed generation identity changed: first=%+v replayed=%+v", full, replayed)
+	}
+	active, ok, err := store.ActiveGraphGeneration(ctx, db)
+	if err != nil || !ok || active != full.GenerationID {
+		t.Fatalf("active generation=%x ok=%v err=%v, want %x", active, ok, err, full.GenerationID)
+	}
+	if _, err := store.ValidateGraphGeneration(ctx, db, active); err != nil {
+		t.Fatalf("replayed active generation validation: %v", err)
+	}
+	var fullPrevious, docsPrevious []byte
+	if err := db.QueryRowContext(ctx, "SELECT previous_generation_id FROM graph_generations WHERE generation_id = ?", full.GenerationID[:]).Scan(&fullPrevious); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.QueryRowContext(ctx, "SELECT previous_generation_id FROM graph_generations WHERE generation_id = ?", docsOnly.GenerationID[:]).Scan(&docsPrevious); err != nil {
+		t.Fatal(err)
+	}
+	if len(fullPrevious) != 0 || string(docsPrevious) != string(full.GenerationID[:]) {
+		t.Fatalf("retired replay rewrote ancestry: full.previous=%x docs.previous=%x", fullPrevious, docsPrevious)
+	}
+	var workspacePrevious []byte
+	if err := db.QueryRowContext(ctx, "SELECT value FROM workspace_meta WHERE key = ?", "previous_graph_generation_id").Scan(&workspacePrevious); err != nil {
+		t.Fatal(err)
+	}
+	if string(workspacePrevious) != string(docsOnly.GenerationID[:]) {
+		t.Fatalf("workspace rollback pointer=%x, want docs-only %x", workspacePrevious, docsOnly.GenerationID)
+	}
+	var ancestryCycles int
+	if err := db.QueryRowContext(ctx, `SELECT count(*) FROM graph_generations a JOIN graph_generations b ON a.previous_generation_id=b.generation_id AND b.previous_generation_id=a.generation_id`).Scan(&ancestryCycles); err != nil {
+		t.Fatal(err)
+	}
+	if ancestryCycles != 0 {
+		t.Fatalf("graph history contains %d direct ancestry cycles", ancestryCycles)
+	}
+	var activeRows, generations int
+	if err := db.QueryRowContext(ctx, "SELECT count(*) FROM graph_generations WHERE status = ?", model.GraphGenerationActive).Scan(&activeRows); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.QueryRowContext(ctx, "SELECT count(*) FROM graph_generations").Scan(&generations); err != nil {
+		t.Fatal(err)
+	}
+	if activeRows != 1 || generations != 2 {
+		t.Fatalf("graph history active=%d generations=%d, want 1 active and 2 immutable rows", activeRows, generations)
+	}
+
+	// A stale pointer remains a strict CAS conflict and cannot activate a
+	// canonical equivalent through the idempotent path.
+	wrongPrior := stagingDigest("wrong-prior")
+	if _, err := PublishGraphObservationBatches(ctx, db, fullRequest(time.Unix(103, 0).UTC()), &wrongPrior); !errors.Is(err, model.ErrGraphPointerConflict) {
+		t.Fatalf("stale pointer error=%v, want %v", err, model.ErrGraphPointerConflict)
+	}
+	active, ok, err = store.ActiveGraphGeneration(ctx, db)
+	if err != nil || !ok || active != full.GenerationID {
+		t.Fatalf("active generation changed after stale CAS: %x ok=%v err=%v", active, ok, err)
+	}
+
+	// Persisted same-ID metadata tampering is still corruption, not a reason to
+	// accept or silently restage the candidate.
+	if _, err := db.ExecContext(ctx, "UPDATE graph_generations SET source_fingerprint = zeroblob(32) WHERE generation_id = ?", full.GenerationID[:]); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := PublishGraphObservationBatches(ctx, db, fullRequest(time.Unix(104, 0).UTC()), &full.GenerationID); !errors.Is(err, model.ErrGraphGenerationCorrupt) {
+		t.Fatalf("same-ID metadata mismatch error=%v, want %v", err, model.ErrGraphGenerationCorrupt)
+	}
+	active, ok, err = store.ActiveGraphGeneration(ctx, db)
+	if err != nil || !ok || active != full.GenerationID {
+		t.Fatalf("active pointer changed after corruption: %x ok=%v err=%v", active, ok, err)
 	}
 }

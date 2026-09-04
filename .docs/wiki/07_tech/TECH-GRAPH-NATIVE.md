@@ -158,7 +158,7 @@ evidence:
 sequence:
   - resolve-one-repository-identity-explicit-then-local-vcs-origin-fail-closed
   - compute-source-and-config-fingerprints
-  - container-go-observe-once-from-workspace-root
+  - container-go-observe-once-from-workspace-root-go-mod-fallback; selected-repo-go-observe-from-safe-explicit-or-root-entrypoint
   - container-csharp-fanout-over-declared-csproj-entrypoints-only
   - collect-GraphObservationBatch-per-owner
   - derive-NodeKeys-edge-keys-evidence-and-unresolved
@@ -171,8 +171,20 @@ sequence:
 publication:
   visible_states: [active, explicitly-selected-retired]
   invisible_states: [staged, invalid]
+  transitions: [staged_to_active, active_to_retired, staged_to_invalid, retired_to_active]
+  reactivation_rule: exact_immutable_canonical_only_preserving_predecessor_via_cas
   crash_rule: prior-valid-pointer-remains-or-is-restored
   query_time_migration: forbidden
+  prior_validation_on_replacement:
+    current_digest: strict_graph_generation_validation
+    legacy_digest:
+      schema_version: 1
+      pointer_equals_non_nil_expected_prior: true
+      active_row_count: 1
+      structural_validation: strict_rows_counts_fks_enums_json_and_edge_evidence
+      framing: pre-provenance-unresolved-fields-only
+      action: retire_prior_and_activate_new_atomically
+    unknown_digest_or_corruption: blocked
 ```
 
 ```toon
@@ -267,7 +279,8 @@ evidence:
 
 `ResolveRepositoryIdentity` normaliza todas las identidades explicitas y exige que sean una sola; si faltan, ejecuta unicamente `git -C <workspace> rev-parse --show-toplevel` y `git -C <git-root> config --local --get-all remote.origin.url`. Se exige exactamente un origin HTTPS/SSH normalizable; no hay fetch, red, alias, basename ni fallback de path. La identidad resuelta es simultaneamente `WorkspaceIdentity` y `RepositoryIdentity` para todos los batches y queda en la generation, sin escribir `.mi-lsp/project.toml`.
 
-En un container el modulo Go se observa una sola vez desde el checkout (`go.mod`/`go.work` en el root), aunque existan repos logicos Go anidados. Roslyn recibe un request por cada `.csproj` declarado, ordenado y deduplicado; las soluciones nunca son batches. `ProjectOrModule` es relativo al repo logico y `EntrypointPath` relativo al workspace; `RepoRoot` separa ambos namespaces. Antes de sellar, el core rebasa `ProjectOrModule`, owners, evidence, unresolved y omissions al namespace global del checkout. Un proyecto Roslyn parcial se procesa pero no se publica: queda omission `backend_partial`; otros batches completos pueden publicarse. Si no queda ningun batch publicable, el workspace elegible falla cerrado. TypeScript y Python permanecen como omissions `backend_gated` sin claims.
+En un container, el módulo Go se observa una sola vez desde el checkout y usa el fallback del root (`go.mod`). En una topología single/no-container con un repo Go seleccionado, el core puede elegir el `go.mod` configurado como ruta de módulo repo-local exacta o resolver un ID de `WorkspaceEntrypoint` mediante coincidencia exacta de repo y entrypoint; para un ID, rebasa la ruta workspace-relative declarada al root del repo seleccionado y revalida que el resultado sea un `go.mod` repo-local, seguro y regular. Solo cuando no hay selector explícito se usa el fallback del root del repo (`go.mod`); cualquier selector explícito faltante, ID desconocido/malformado, no regular, symlink o inseguro se diagnostica y omite, sin sustituirse silenciosamente por ese fallback. `go.work` no es compatible con la observación de grafo y se rechaza. La ruta declarada se mantiene relativa al workspace para la topología, mientras el batch recibe el selector repo-local rebasado.
+- Todo selector Go explícito que contenga el separador `\` se rechaza antes de cualquier normalización de separadores; el fallback a `go.mod` solo aplica al selector vacío.
 
 ## Observacion Roslyn, sellado y normalizacion de unresolved
 
@@ -319,19 +332,59 @@ symbol_resolution:
     - external
     - unsupported
   unresolved: eligible_endpoints_really_missing_only
+  go_entrypoint:
+    container: workspace_root_fallback_only
+    selected_repo: exact_configured_nested_or_root_fallback
+    explicit_nested: selected_repo_only
+    accepted: [relative_go.mod]
+    selector_form: repo_local_path_or_workspace_entrypoint_id
+    entrypoint_ids: resolve_exact_repo_and_entrypoint
+    entrypoint_rebase: workspace_relative_to_selected_repo_root
+    entrypoint_revalidate: safe_repo_local_go_mod_before_observation
+    unknown_or_malformed_ids: fail_closed
+    declared_entrypoint: workspace_relative
+    selected_module: repo_root_relative
+    fallback_when: selector_empty_only
+    invalid_explicit: missing_non_regular_or_unsafe_diagnosed_omission_no_fallback
+    backslash_rejected_before_normalization: true
 graph_unresolved:
   order: key
   dedupe: key
   assign_ids: after_sort_and_dedupe
   cross_rid: derived_from_key
-candidate_normalization:
-  trim: true
-  slash_normalization: filepath.ToSlash
-  dedupe: true
-  sort: lexical
-  max_count: 64
-  max_bytes: 4096
+  diagnostic_context:
+    fields: [source_document, source_block, target_kind, target_value]
+    nullable: true
+    validation: [utf8_valid, no_control_chars]
+    persistence_trim: whitespace
+    source_document_path: relative_slash_only
+    max_bytes: 4096
+    privacy: [no_arbitrary_payload, no_secrets, no_raw_compiler_logs]
+    excluded_from: [unresolved_key, unresolved_rid]
+    included_in: [content_digest, facts_digest, source_fingerprint, config_fingerprint, backend_manifest_digest, generation_id]
+    key_fields: [owner_path, subject_kind, selector_digest, reason_code, candidates, backend, source_digest, recovery_hint]
+    target_value_preserves_canonical_tp_ids: true
+  reason_contract:
+    missing_doc_target: required_document_target_unresolved
+    missing_code_target: required_code_target_unresolved
+    typed_omissions: omission_without_unresolved_or_edge
+  candidate_normalization:
+    trim: true
+    slash_normalization: filepath.ToSlash
+    dedupe: true
+    sort: lexical
+    max_count: 64
+    max_bytes: 4096
+doc_mention:
+  source_block:
+    normalize_before_hashing: trim
+    included_in: [claim_digest, facts_digest, content_digest, source_fingerprint, config_fingerprint, backend_manifest_digest, generation_id]
+    input_order: lexical_after_normalization
+    canonical_equivalents: [outer_whitespace, input_order]
+    unresolved_ids: excluded
+
 ```
+
 
 La regla de elegibilidad separa una omision tipada —sin falso edge ni falsa incompletitud— de un endpoint que el contrato si exige y que realmente no pudo resolverse. `GraphUnresolved` se ordena y deduplica por `key` antes de asignar `UnresolvedID`, `UnresolvedKey` y `CrossRID`; los candidatos documentales se normalizan antes de entrar en ese key.
 

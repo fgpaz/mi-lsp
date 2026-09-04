@@ -34,6 +34,31 @@ type GraphAssemblyRequest struct {
 	CreatedAt          time.Time
 }
 
+func cloneGraphObservationBatchForAssembly(batch model.GraphObservationBatch) model.GraphObservationBatch {
+	clone := batch
+	clone.Capabilities = append([]model.GraphObservationCapability(nil), batch.Capabilities...)
+	clone.Coverage = append([]model.GraphObservationCoverage(nil), batch.Coverage...)
+	clone.Nodes = append([]model.GraphObservationNode(nil), batch.Nodes...)
+	clone.Edges = append([]model.GraphObservationEdge(nil), batch.Edges...)
+	clone.Evidence = append([]model.GraphObservationEvidence(nil), batch.Evidence...)
+	clone.Unresolved = append([]model.GraphObservationUnresolved(nil), batch.Unresolved...)
+	clone.Omissions = append([]model.GraphObservationOmission(nil), batch.Omissions...)
+	if batch.ResourceStats != nil {
+		stats := *batch.ResourceStats
+		clone.ResourceStats = &stats
+	}
+	for i := range clone.Evidence {
+		if batch.Evidence[i].Range != nil {
+			r := *batch.Evidence[i].Range
+			clone.Evidence[i].Range = &r
+		}
+	}
+	for i := range clone.Unresolved {
+		clone.Unresolved[i].Candidates = append([]string(nil), batch.Unresolved[i].Candidates...)
+	}
+	return clone
+}
+
 type graphAssemblyInput struct {
 	batches            []model.GraphObservationBatch
 	docs               []model.DocRecord
@@ -66,7 +91,7 @@ func (b *graphDigestBuilder) sum() model.GraphDigest {
 	return d
 }
 
-func aggregateGraphDigest(prefix string, batches []model.GraphObservationBatch, kind byte, docs []model.DocRecord, docEdges []model.DocEdge, docMentions []model.DocMention) model.GraphDigest {
+func aggregateGraphDigest(prefix string, batches []model.GraphObservationBatch, kind byte, docs []model.DocRecord, docEdges []model.DocEdge, docMentions []model.DocMention, unresolved []model.GraphUnresolved) model.GraphDigest {
 	b := newGraphDigestBuilder(prefix)
 	b.frame(240, []byte{kind})
 	for _, batch := range batches {
@@ -97,8 +122,8 @@ func aggregateGraphDigest(prefix string, batches []model.GraphObservationBatch, 
 			}
 		}
 	}
-	if len(docs) != 0 {
-		b.digest(250, graphDocFactsDigest(docs, docEdges, docMentions))
+	if len(docs) != 0 || len(unresolved) != 0 {
+		b.digest(250, graphDocFactsDigest(docs, docEdges, docMentions, unresolved))
 	}
 	return b.sum()
 }
@@ -165,7 +190,7 @@ func graphDocSourceDigest(doc model.DocRecord) model.GraphDigest {
 	return b.sum()
 }
 
-func graphDocFactsDigest(docs []model.DocRecord, edges []model.DocEdge, mentions []model.DocMention) model.GraphDigest {
+func graphDocFactsDigest(docs []model.DocRecord, edges []model.DocEdge, mentions []model.DocMention, unresolved []model.GraphUnresolved) model.GraphDigest {
 	b := newGraphDigestBuilder("MILSP-DOC-FACTS/v1")
 	for _, doc := range docs {
 		b.text(1, doc.Path)
@@ -187,6 +212,13 @@ func graphDocFactsDigest(docs []model.DocRecord, edges []model.DocEdge, mentions
 		b.text(9, mention.DocPath)
 		b.text(10, mention.MentionType)
 		b.text(11, mention.MentionValue)
+		b.text(12, strings.TrimSpace(mention.SourceBlock))
+	}
+	for _, value := range unresolved {
+		b.text(14, value.SourceDocument)
+		b.text(15, value.SourceBlock)
+		b.text(16, value.TargetKind)
+		b.text(17, value.TargetValue)
 	}
 	return b.sum()
 }
@@ -196,11 +228,19 @@ func prepareGraphInput(req GraphAssemblyRequest) (graphAssemblyInput, error) {
 		return graphAssemblyInput{}, errGraphAssemblyInvalid
 	}
 	createdAt := req.CreatedAt.Round(0).UTC()
-	batches := append([]model.GraphObservationBatch(nil), req.Batches...)
+	batches := make([]model.GraphObservationBatch, len(req.Batches))
 	workspaceIdentity, repositoryIdentity := "", ""
-	for i := range batches {
-		if err := batches[i].Validate(); err != nil {
-			return graphAssemblyInput{}, fmt.Errorf("batch %d validation: %w", i, err)
+	for i, rawBatch := range req.Batches {
+		batches[i] = cloneGraphObservationBatchForAssembly(rawBatch)
+		expectedDigest := batches[i].Digest
+		if expectedDigest == (model.GraphDigest{}) {
+			return graphAssemblyInput{}, fmt.Errorf("batch %d validation: %w", i, model.ErrGraphObservationInvalid)
+		}
+		if err := model.SealGraphObservationBatch(&batches[i]); err != nil {
+			return graphAssemblyInput{}, fmt.Errorf("batch %d normalization: %w", i, err)
+		}
+		if batches[i].Digest != expectedDigest {
+			return graphAssemblyInput{}, fmt.Errorf("batch %d validation: %w", i, model.ErrGraphObservationInvalid)
 		}
 		if err := batches[i].ReadyForStaging(); err != nil {
 			return graphAssemblyInput{}, fmt.Errorf("batch %d staging gate: %w", i, err)
@@ -271,7 +311,12 @@ func prepareGraphInput(req GraphAssemblyRequest) (graphAssemblyInput, error) {
 	}
 	filterEdges := make([]model.DocEdge, 0, len(req.DocEdges))
 	for _, edge := range req.DocEdges {
-		edge.FromPath, edge.ToPath = filepath.ToSlash(strings.TrimSpace(edge.FromPath)), filepath.ToSlash(strings.TrimSpace(edge.ToPath))
+		edge.FromPath = filepath.ToSlash(strings.TrimSpace(edge.FromPath))
+		edge.ToPath = filepath.ToSlash(strings.TrimSpace(edge.ToPath))
+		edge.ToDocID = strings.TrimSpace(edge.ToDocID)
+		edge.Kind = strings.TrimSpace(edge.Kind)
+		edge.Label = strings.TrimSpace(edge.Label)
+		edge.UnresolvedReason = strings.TrimSpace(edge.UnresolvedReason)
 		edge.Candidates = normalizeGraphDocCandidates(edge.Candidates)
 		if _, ok := docPaths[edge.FromPath]; ok {
 			filterEdges = append(filterEdges, edge)
@@ -280,6 +325,9 @@ func prepareGraphInput(req GraphAssemblyRequest) (graphAssemblyInput, error) {
 	filterMentions := make([]model.DocMention, 0, len(req.DocMentions))
 	for _, mention := range req.DocMentions {
 		mention.DocPath = filepath.ToSlash(strings.TrimSpace(mention.DocPath))
+		mention.MentionType = strings.TrimSpace(mention.MentionType)
+		mention.MentionValue = strings.TrimSpace(mention.MentionValue)
+		mention.SourceBlock = strings.TrimSpace(mention.SourceBlock)
 		if _, ok := docPaths[mention.DocPath]; ok {
 			filterMentions = append(filterMentions, mention)
 		}
@@ -295,7 +343,7 @@ func prepareGraphInput(req GraphAssemblyRequest) (graphAssemblyInput, error) {
 	})
 	sort.Slice(filterMentions, func(i, j int) bool {
 		a, b := filterMentions[i], filterMentions[j]
-		for _, pair := range [][2]string{{a.DocPath, b.DocPath}, {a.MentionType, b.MentionType}, {a.MentionValue, b.MentionValue}} {
+		for _, pair := range [][2]string{{a.DocPath, b.DocPath}, {a.MentionType, b.MentionType}, {a.MentionValue, b.MentionValue}, {a.SourceBlock, b.SourceBlock}} {
 			if pair[0] != pair[1] {
 				return pair[0] < pair[1]
 			}
@@ -322,6 +370,21 @@ func normalizeGraphDocCandidates(candidates []string) []string {
 		}
 	}
 	return out
+}
+
+func normalizeGraphUnresolvedForAssembly(u *model.GraphUnresolved) error {
+	if u == nil {
+		return model.ErrGraphUnresolved
+	}
+	if err := model.NormalizeGraphUnresolvedContext(u); err != nil {
+		return err
+	}
+	u.OwnerPath = filepath.ToSlash(strings.TrimSpace(u.OwnerPath))
+	u.SubjectKind = strings.TrimSpace(u.SubjectKind)
+	u.ReasonCode = strings.TrimSpace(u.ReasonCode)
+	u.Backend = strings.TrimSpace(u.Backend)
+	u.RecoveryHintCode = strings.TrimSpace(u.RecoveryHintCode)
+	return nil
 }
 
 func prepareGraphBatches(req GraphAssemblyRequest) ([]model.GraphObservationBatch, time.Time, error) {
@@ -378,6 +441,37 @@ func graphStringSliceLess(a, b []string) bool {
 	return len(a) < len(b)
 }
 
+// Prefer the most informative provenance when identity-equivalent claims collide.
+func graphUnresolvedContextLess(a, b model.GraphUnresolved) bool {
+	aFields := [...]string{a.SourceDocument, a.SourceBlock, a.TargetKind, a.TargetValue}
+	bFields := [...]string{b.SourceDocument, b.SourceBlock, b.TargetKind, b.TargetValue}
+	aPresent, bPresent := 0, 0
+	for i := range aFields {
+		if aFields[i] != "" {
+			aPresent++
+		}
+		if bFields[i] != "" {
+			bPresent++
+		}
+	}
+	if aPresent != bPresent {
+		return aPresent > bPresent
+	}
+	for i := range aFields {
+		if aFields[i] == bFields[i] {
+			continue
+		}
+		if aFields[i] == "" {
+			return false
+		}
+		if bFields[i] == "" {
+			return true
+		}
+		return aFields[i] < bFields[i]
+	}
+	return false
+}
+
 func graphRangeLess(a, b *model.GraphObservationRange) bool {
 	if a == nil || b == nil {
 		return a == nil && b != nil
@@ -403,13 +497,16 @@ func firstNonEmptyGraph(values ...string) string {
 	return ""
 }
 
-func graphDocClaimDigest(kind, from, to, label string, source model.GraphDigest) model.GraphDigest {
+func graphDocClaimDigest(kind, from, to, label string, source model.GraphDigest, sourceBlocks ...string) model.GraphDigest {
 	b := newGraphDigestBuilder("MILSP-DOC-CLAIM/v1")
 	b.text(1, kind)
 	b.text(2, from)
 	b.text(3, to)
 	b.text(4, label)
 	b.digest(5, source)
+	if len(sourceBlocks) > 0 {
+		b.text(6, strings.TrimSpace(sourceBlocks[0]))
+	}
 	return b.sum()
 }
 
@@ -447,11 +544,38 @@ func canonicalGraphDocCandidates(candidates []string) []string {
 	}
 	return bounded
 }
+func isCanonicalGraphTPID(value string) bool {
+	if !strings.HasPrefix(value, "TP-") || len(value) <= len("TP-") {
+		return false
+	}
+	for _, r := range value[len("TP-"):] {
+		if (r < 'A' || r > 'Z') && (r < 'a' || r > 'z') && (r < '0' || r > '9') && r != '.' && r != '_' && r != '-' {
+			return false
+		}
+	}
+	return true
+}
 
-func graphDocUnresolved(ref, owner, kind, value, reason string, candidates []string, source model.GraphDigest) graphUnresolvedCandidate {
+func graphDocUnresolved(ref, owner, kind, value, reason string, candidates []string, source model.GraphDigest, sourceBlocks ...string) (graphUnresolvedCandidate, error) {
+	owner = filepath.ToSlash(strings.TrimSpace(owner))
+	kind = strings.TrimSpace(kind)
+	value = strings.TrimSpace(value)
+	reason = strings.TrimSpace(reason)
 	candidates = canonicalGraphDocCandidates(candidates)
-	u := model.GraphUnresolved{OwnerPath: owner, SubjectKind: "document", SelectorDigest: graphDocClaimDigest(kind, owner, value, reason, source), ReasonCode: reason, Candidates: candidates, Backend: "docgraph", SourceDigest: &source, RecoveryHintCode: "inspect_doc_graph_reference"}
-	return graphUnresolvedCandidate{key: model.GraphUnresolvedKey(u), unresolved: u, ref: ref}
+	targetKind := kind
+	if strings.HasPrefix(targetKind, "doc_") {
+		targetKind = "document"
+	}
+	sourceBlock := ""
+	if len(sourceBlocks) > 0 {
+		sourceBlock = strings.TrimSpace(sourceBlocks[0])
+	}
+	u := model.GraphUnresolved{OwnerPath: owner, SubjectKind: "document", Candidates: candidates, ReasonCode: reason, Backend: "docgraph", SourceDigest: &source, SourceDocument: owner, SourceBlock: sourceBlock, TargetKind: targetKind, TargetValue: value, RecoveryHintCode: "inspect_doc_graph_reference"}
+	if err := normalizeGraphUnresolvedForAssembly(&u); err != nil {
+		return graphUnresolvedCandidate{}, err
+	}
+	u.SelectorDigest = graphDocClaimDigest(kind, u.OwnerPath, u.TargetValue, u.ReasonCode, source)
+	return graphUnresolvedCandidate{key: model.GraphUnresolvedKey(u), unresolved: u, ref: ref}, nil
 }
 
 func assembleGraphBundle(input graphAssemblyInput) (model.GraphBundle, error) {
@@ -596,7 +720,11 @@ func assembleGraphBundle(input graphAssemblyInput) (model.GraphBundle, error) {
 				targetPath = paths[0]
 			} else {
 				candidates := boundedDocCandidates(paths)
-				docUnresolved = append(docUnresolved, graphDocUnresolved(fmt.Sprintf("doc-edge:%d", index), edge.FromPath, "doc_id", edge.ToDocID, map[bool]string{true: "ambiguous_doc_target", false: "missing_doc_target"}[len(paths) > 1], candidates, docSources[edge.FromPath]))
+				candidate, err := graphDocUnresolved(fmt.Sprintf("doc-edge:%d", index), edge.FromPath, "doc_id", edge.ToDocID, map[bool]string{true: "ambiguous_doc_target", false: "missing_doc_target"}[len(paths) > 1], candidates, docSources[edge.FromPath])
+				if err != nil {
+					return model.GraphBundle{}, err
+				}
+				docUnresolved = append(docUnresolved, candidate)
 				continue
 			}
 		}
@@ -609,7 +737,11 @@ func assembleGraphBundle(input graphAssemblyInput) (model.GraphBundle, error) {
 				}
 			}
 			candidates := boundedDocCandidates(edge.Candidates)
-			docUnresolved = append(docUnresolved, graphDocUnresolved(fmt.Sprintf("doc-edge:%d", index), edge.FromPath, "doc_path", firstNonEmptyGraph(edge.ToPath, edge.ToDocID), reason, candidates, docSources[edge.FromPath]))
+			candidate, err := graphDocUnresolved(fmt.Sprintf("doc-edge:%d", index), edge.FromPath, "doc_path", firstNonEmptyGraph(edge.ToPath, edge.ToDocID), reason, candidates, docSources[edge.FromPath])
+			if err != nil {
+				return model.GraphBundle{}, err
+			}
+			docUnresolved = append(docUnresolved, candidate)
 			continue
 		}
 		if targetPath == edge.FromPath {
@@ -629,6 +761,26 @@ func assembleGraphBundle(input graphAssemblyInput) (model.GraphBundle, error) {
 		}
 		kind := strings.ToLower(strings.TrimSpace(mention.MentionType))
 		value := strings.TrimSpace(mention.MentionValue)
+		if isCanonicalGraphTPID(value) {
+			paths := docIDs[value]
+			if len(paths) == 1 {
+				targetPath := paths[0]
+				if targetPath != mention.DocPath {
+					addDocEdge(fmt.Sprintf("doc-mention:%d", index), from, docKeys[targetPath], mention.DocPath, "doc_mentions", model.GraphRecordExtracted, docSources[mention.DocPath], graphDocClaimDigest(kind, mention.DocPath, targetPath, value, docSources[mention.DocPath], mention.SourceBlock))
+				}
+				continue
+			}
+			reason := "missing_doc_target"
+			if len(paths) > 1 {
+				reason = "ambiguous_doc_target"
+			}
+			candidate, err := graphDocUnresolved(fmt.Sprintf("doc-mention:%d", index), mention.DocPath, "document", value, reason, boundedDocCandidates(paths), docSources[mention.DocPath], mention.SourceBlock)
+			if err != nil {
+				return model.GraphBundle{}, err
+			}
+			docUnresolved = append(docUnresolved, candidate)
+			continue
+		}
 		var candidates []model.GraphDigest
 		var candidateNames []string
 		switch kind {
@@ -660,10 +812,14 @@ func assembleGraphBundle(input graphAssemblyInput) (model.GraphBundle, error) {
 					candidateNames = append(candidateNames, nodesByKey[key].identity.OwnerPath)
 				}
 			}
-			docUnresolved = append(docUnresolved, graphDocUnresolved(fmt.Sprintf("doc-mention:%d", index), mention.DocPath, kind, value, reason, candidateNames, docSources[mention.DocPath]))
+			candidate, err := graphDocUnresolved(fmt.Sprintf("doc-mention:%d", index), mention.DocPath, kind, value, reason, candidateNames, docSources[mention.DocPath], mention.SourceBlock)
+			if err != nil {
+				return model.GraphBundle{}, err
+			}
+			docUnresolved = append(docUnresolved, candidate)
 			continue
 		}
-		addDocEdge(fmt.Sprintf("doc-mention:%d", index), from, candidates[0], mention.DocPath, "doc_mentions", model.GraphRecordExtracted, docSources[mention.DocPath], graphDocClaimDigest(kind, mention.DocPath, value, "", docSources[mention.DocPath]))
+		addDocEdge(fmt.Sprintf("doc-mention:%d", index), from, candidates[0], mention.DocPath, "doc_mentions", model.GraphRecordExtracted, docSources[mention.DocPath], graphDocClaimDigest(kind, mention.DocPath, value, "", docSources[mention.DocPath], mention.SourceBlock))
 	}
 
 	edgeKeys := make([]model.GraphDigest, 0, len(edgesByKey))
@@ -764,7 +920,10 @@ func assembleGraphBundle(input graphAssemblyInput) (model.GraphBundle, error) {
 				d := *observed.SourceDigest
 				sourceDigest = &d
 			}
-			u := model.GraphUnresolved{OwnerPath: observed.OwnerPath, SubjectKind: observed.SubjectKind, SelectorDigest: observed.SelectorDigest, ReasonCode: observed.ReasonCode, Candidates: append([]string(nil), observed.Candidates...), Backend: observed.Backend, SourceDigest: sourceDigest, RecoveryHintCode: observed.RecoveryHintCode}
+			u := model.GraphUnresolved{OwnerPath: observed.OwnerPath, SubjectKind: observed.SubjectKind, SelectorDigest: observed.SelectorDigest, ReasonCode: observed.ReasonCode, Candidates: append([]string(nil), observed.Candidates...), Backend: observed.Backend, SourceDigest: sourceDigest, SourceDocument: observed.OwnerPath, TargetKind: observed.SubjectKind, RecoveryHintCode: observed.RecoveryHintCode}
+			if err := normalizeGraphUnresolvedForAssembly(&u); err != nil {
+				return model.GraphBundle{}, err
+			}
 			unresolved = append(unresolved, graphUnresolvedCandidate{key: model.GraphUnresolvedKey(u), unresolved: u, ref: observed.Ref})
 		}
 	}
@@ -784,6 +943,12 @@ func assembleGraphBundle(input graphAssemblyInput) (model.GraphBundle, error) {
 			return a.unresolved.ReasonCode < b.unresolved.ReasonCode
 		}
 		if !graphStringSliceLess(a.unresolved.Candidates, b.unresolved.Candidates) && !graphStringSliceLess(b.unresolved.Candidates, a.unresolved.Candidates) {
+			if graphUnresolvedContextLess(a.unresolved, b.unresolved) {
+				return true
+			}
+			if graphUnresolvedContextLess(b.unresolved, a.unresolved) {
+				return false
+			}
 			return a.ref < b.ref
 		}
 		return graphStringSliceLess(a.unresolved.Candidates, b.unresolved.Candidates)
@@ -803,7 +968,7 @@ func assembleGraphBundle(input graphAssemblyInput) (model.GraphBundle, error) {
 	}
 
 	repository := input.repositoryIdentity
-	bundle := model.GraphBundle{Generation: model.GraphGeneration{SchemaVersion: 1, WorkspaceIdentity: input.workspaceIdentity, RepositoryIdentity: repository, SourceFingerprint: aggregateGraphDigest("MILSP-G3-SOURCE/v1", batches, 1, input.docs, input.docEdges, input.docMentions), ConfigFingerprint: aggregateGraphDigest("MILSP-G3-CONFIG/v1", batches, 2, input.docs, input.docEdges, input.docMentions), BackendManifestDigest: aggregateGraphDigest("MILSP-G3-BACKEND-MANIFEST/v1", batches, 3, input.docs, input.docEdges, input.docMentions), Status: model.GraphGenerationStaged, NodeCount: len(nodes), EdgeCount: len(edges), EvidenceCount: len(evidenceRecords), UnresolvedCount: len(unresolvedRecords), CreatedAt: createdAt}, Nodes: nodes, Edges: edges, Evidence: evidenceRecords, Unresolved: unresolvedRecords}
+	bundle := model.GraphBundle{Generation: model.GraphGeneration{SchemaVersion: 1, WorkspaceIdentity: input.workspaceIdentity, RepositoryIdentity: repository, SourceFingerprint: aggregateGraphDigest("MILSP-G3-SOURCE/v1", batches, 1, input.docs, input.docEdges, input.docMentions, unresolvedRecords), ConfigFingerprint: aggregateGraphDigest("MILSP-G3-CONFIG/v1", batches, 2, input.docs, input.docEdges, input.docMentions, unresolvedRecords), BackendManifestDigest: aggregateGraphDigest("MILSP-G3-BACKEND-MANIFEST/v1", batches, 3, input.docs, input.docEdges, input.docMentions, unresolvedRecords), Status: model.GraphGenerationStaged, NodeCount: len(nodes), EdgeCount: len(edges), EvidenceCount: len(evidenceRecords), UnresolvedCount: len(unresolvedRecords), CreatedAt: createdAt}, Nodes: nodes, Edges: edges, Evidence: evidenceRecords, Unresolved: unresolvedRecords}
 	if err := bundle.SealIDs(); err != nil {
 		return model.GraphBundle{}, err
 	}

@@ -324,3 +324,90 @@ func TestGraphContentHasherRejectsOrderAndCounts(t *testing.T) {
 		t.Fatal("accepted missing evidence")
 	}
 }
+func TestGraphUnresolvedContextIsBoundedAndPreservesIdentity(t *testing.T) {
+	u := GraphUnresolved{
+		OwnerPath:        ".docs/wiki/RF-SYNTHETIC.md",
+		SubjectKind:      "document",
+		SelectorDigest:   digestBytes([]byte("selector")),
+		ReasonCode:       "missing_doc_target",
+		Backend:          "docgraph",
+		SourceDocument:   ".docs/wiki/RF-SYNTHETIC.md",
+		SourceBlock:      "frontmatter",
+		TargetKind:       "document",
+		TargetValue:      "TP-SYNTHETIC-001",
+		RecoveryHintCode: "inspect_doc_graph_reference",
+	}
+	u.UnresolvedKey = GraphUnresolvedKey(u)
+	u.CrossRID = UnresolvedRID(u.UnresolvedKey)
+	if err := ValidateGraphUnresolved(u); err != nil {
+		t.Fatal(err)
+	}
+	changed := u
+	changed.TargetValue = "TP-SYNTHETIC-002"
+	if GraphUnresolvedKey(changed) != u.UnresolvedKey {
+		t.Fatal("diagnostic context changed unresolved identity")
+	}
+	oversized := u
+	oversized.SourceDocument = strings.Repeat("x", maxCandidateBytes+1)
+	oversized.UnresolvedKey = GraphUnresolvedKey(oversized)
+	oversized.CrossRID = UnresolvedRID(oversized.UnresolvedKey)
+	if err := ValidateGraphUnresolved(oversized); !errors.Is(err, ErrGraphUnresolved) {
+		t.Fatalf("oversized source document accepted: %v", err)
+	}
+}
+func TestGraphContentHasherIncludesUnresolvedContextWithoutChangingIdentity(t *testing.T) {
+	u := GraphUnresolved{
+		UnresolvedID:     0,
+		OwnerPath:        ".docs/wiki/RF-SYNTHETIC.md",
+		SubjectKind:      "document",
+		SelectorDigest:   digestBytes([]byte("selector")),
+		ReasonCode:       "missing_doc_target",
+		Backend:          "docgraph",
+		SourceDocument:   ".docs/wiki/RF-SYNTHETIC.md",
+		SourceBlock:      "frontmatter",
+		TargetKind:       "document",
+		TargetValue:      "TP-SYNTHETIC-001",
+		RecoveryHintCode: "inspect_doc_graph_reference",
+	}
+	u.UnresolvedKey = GraphUnresolvedKey(u)
+	u.CrossRID = UnresolvedRID(u.UnresolvedKey)
+	contentDigest := func(value GraphUnresolved) (GraphDigest, error) {
+		h, err := NewGraphContentHasher(0, 0, 0, 1)
+		if err != nil {
+			return GraphDigest{}, err
+		}
+		if err = h.AddUnresolved(value); err != nil {
+			return GraphDigest{}, err
+		}
+		return h.Sum()
+	}
+	base, err := contentDigest(u)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cases := []struct {
+		name   string
+		mutate func(*GraphUnresolved)
+	}{
+		{name: "source_document", mutate: func(value *GraphUnresolved) { value.SourceDocument = ".docs/wiki/OTHER.md" }},
+		{name: "source_block", mutate: func(value *GraphUnresolved) { value.SourceBlock = "requirements" }},
+		{name: "target_kind", mutate: func(value *GraphUnresolved) { value.TargetKind = "test_file" }},
+		{name: "target_value", mutate: func(value *GraphUnresolved) { value.TargetValue = "TP-SYNTHETIC-002" }},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			changed := u
+			tc.mutate(&changed)
+			if GraphUnresolvedKey(changed) != u.UnresolvedKey || UnresolvedRID(GraphUnresolvedKey(changed)) != u.CrossRID {
+				t.Fatal("diagnostic context changed unresolved identity")
+			}
+			got, err := contentDigest(changed)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got == base {
+				t.Fatalf("content digest did not change for %s", tc.name)
+			}
+		})
+	}
+}

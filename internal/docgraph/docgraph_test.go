@@ -852,3 +852,26 @@ func TestLoadProfileCanDisableAutomaticKnowledgeRoots(t *testing.T) {
 		}
 	}
 }
+func TestParseSingleDocPreservesCanonicalTPTestMention(t *testing.T) {
+	content := []byte("---\n" +
+		"doc_id: RF-SYNTHETIC\n" +
+		"tests:\n" +
+		"  - TP-SYNTHETIC-001\n" +
+		"---\n\n# Synthetic requirement\n")
+	_, _, mentions, _, _, _, _, err := ParseSingleDoc(t.TempDir(), ".docs/wiki/RF-SYNTHETIC.md", content, model.DocsReadProfile{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var found bool
+	for _, mention := range mentions {
+		if mention.MentionType == "test_file" {
+			found = true
+			if mention.MentionValue != "TP-SYNTHETIC-001" {
+				t.Fatalf("canonical TP mention = %q, want TP-SYNTHETIC-001", mention.MentionValue)
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("canonical TP test mention missing: %#v", mentions)
+	}
+}

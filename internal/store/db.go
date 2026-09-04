@@ -207,6 +207,36 @@ func IsLockedError(err error) bool {
 		strings.Contains(message, "sql logic error: database is locked")
 }
 
+// isSQLiteMissingColumnError reports only the explicitly requested additive
+// columns that SQLite says are absent. Callers use this fail-closed
+// classification to select a legacy projection without hiding malformed SQL,
+// missing required columns, or other backend failures.
+func isSQLiteMissingColumnError(err error, columns ...string) bool {
+	if err == nil || len(columns) == 0 {
+		return false
+	}
+	message := strings.ToLower(strings.TrimSpace(err.Error()))
+	const marker = "no such column:"
+	index := strings.Index(message, marker)
+	if index < 0 {
+		return false
+	}
+	missing := strings.TrimSpace(message[index+len(marker):])
+	if end := strings.IndexAny(missing, " \t\r\n(,;"); end >= 0 {
+		missing = missing[:end]
+	}
+	missing = strings.Trim(missing, "`\"'[]")
+	if dot := strings.LastIndexByte(missing, '.'); dot >= 0 {
+		missing = missing[dot+1:]
+	}
+	for _, column := range columns {
+		if strings.EqualFold(missing, strings.TrimSpace(column)) {
+			return true
+		}
+	}
+	return false
+}
+
 func QuarantineCorruptDB(root string) (string, error) {
 	source := WorkspaceDBPath(root)
 	if _, err := os.Stat(source); err != nil {

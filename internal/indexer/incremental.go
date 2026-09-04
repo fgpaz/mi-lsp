@@ -980,24 +980,10 @@ func loadIncrementalGraphFacts(ctx context.Context, db *sql.DB) ([]model.DocReco
 	}
 	_ = rows.Close()
 
-	mentions := make([]model.DocMention, 0)
-	rows, err = db.QueryContext(ctx, `SELECT doc_path, mention_type, mention_value FROM doc_mentions ORDER BY doc_path, mention_type, mention_value`)
+	mentions, err := store.ListDocMentions(ctx, db)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("list graph document mentions: %w", err)
 	}
-	for rows.Next() {
-		var mention model.DocMention
-		if err := rows.Scan(&mention.DocPath, &mention.MentionType, &mention.MentionValue); err != nil {
-			_ = rows.Close()
-			return nil, nil, nil, fmt.Errorf("scan graph document mention: %w", err)
-		}
-		mentions = append(mentions, mention)
-	}
-	if err := rows.Err(); err != nil {
-		_ = rows.Close()
-		return nil, nil, nil, fmt.Errorf("read graph document mentions: %w", err)
-	}
-	_ = rows.Close()
 	return docs, edges, mentions, nil
 }
 

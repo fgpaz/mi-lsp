@@ -241,9 +241,9 @@ func insertDocReplaceTx(ctx context.Context, tx *sql.Tx, change IncrementalDocCh
 			return fmt.Errorf("mention owner %q does not match document %q", mention.DocPath, path)
 		}
 		if _, err := tx.ExecContext(ctx, `
-			INSERT OR REPLACE INTO doc_mentions(doc_path, mention_type, mention_value)
-			VALUES(?, ?, ?)
-		`, mention.DocPath, mention.MentionType, mention.MentionValue); err != nil {
+			INSERT OR REPLACE INTO doc_mentions(doc_path, mention_type, mention_value, source_block)
+			VALUES(?, ?, ?, ?)
+		`, mention.DocPath, mention.MentionType, mention.MentionValue, nullableDocMentionSourceBlock(mention.SourceBlock)); err != nil {
 			return err
 		}
 	}

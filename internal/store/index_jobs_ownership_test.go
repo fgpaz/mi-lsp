@@ -337,6 +337,7 @@ func TestConcurrentLegacyOwnershipMigration(t *testing.T) {
 	// so concurrent callers exercise the migration path rather than the strict
 	// current-version no-op.
 	if _, err := legacyDB.Exec(`UPDATE workspace_meta SET value = '0' WHERE key = 'index_job_ownership_schema_version'`); err != nil {
+		legacyDB.Close()
 		t.Fatalf("mark legacy ownership version: %v", err)
 	}
 	if err := legacyDB.Close(); err != nil {
@@ -356,26 +357,50 @@ func TestConcurrentLegacyOwnershipMigration(t *testing.T) {
 			t.Fatalf("configure migration connection %d: %v", i, err)
 		}
 	}
+	defer func() {
+		for _, connection := range connections {
+			_ = connection.Close()
+		}
+	}()
+
+	// Hold the first caller after its deferred transaction has read the legacy
+	// version while every other caller is already in flight. This deterministically
+	// recreates the read-to-DDL upgrade contention that previously exhausted the
+	// short migration retry loop. With BEGIN IMMEDIATE, the other callers wait
+	// before their version read and then observe the committed migration.
+	versionRead := make(chan struct{})
+	releaseVersionRead := make(chan struct{})
+	var holdVersionRead sync.Once
+	indexJobOwnershipMigrationHook = func(step string) error {
+		if step == "version-read" {
+			holdVersionRead.Do(func() {
+				close(versionRead)
+				<-releaseVersionRead
+			})
+		}
+		return nil
+	}
+	defer func() { indexJobOwnershipMigrationHook = nil }()
+
 	start := make(chan struct{})
+	started := make(chan struct{}, workers)
 	errs := make(chan error, workers)
 	for _, connection := range connections {
 		go func(db *sql.DB) {
 			<-start
+			started <- struct{}{}
 			errs <- ensureIndexJobOwnershipSchema(db)
 		}(connection)
 	}
 	close(start)
-	for i := 0; i < workers; i++ {
-		if err := <-errs; err != nil {
-			for _, connection := range connections {
-				_ = connection.Close()
-			}
-			t.Fatalf("concurrent legacy migration: %v", err)
-		}
+	for range workers {
+		<-started
 	}
-	for _, connection := range connections {
-		if err := connection.Close(); err != nil {
-			t.Fatalf("close migration connection: %v", err)
+	<-versionRead
+	close(releaseVersionRead)
+	for range workers {
+		if err := <-errs; err != nil {
+			t.Fatalf("concurrent legacy migration: %v", err)
 		}
 	}
 
@@ -392,6 +417,27 @@ func TestConcurrentLegacyOwnershipMigration(t *testing.T) {
 		if !hasColumn {
 			t.Fatalf("migrated index_jobs missing %s", column)
 		}
+	}
+	var version string
+	if err := migrated.QueryRow(`SELECT value FROM workspace_meta WHERE key='index_job_ownership_schema_version'`).Scan(&version); err != nil {
+		t.Fatalf("read migrated ownership schema version: %v", err)
+	}
+	if version != "1" {
+		t.Fatalf("migrated ownership schema version = %q, want 1", version)
+	}
+	var ownershipTable int
+	if err := migrated.QueryRow(`SELECT count(*) FROM sqlite_master WHERE type='table' AND name='index_job_ownership'`).Scan(&ownershipTable); err != nil {
+		t.Fatalf("check ownership table: %v", err)
+	}
+	if ownershipTable != 1 {
+		t.Fatalf("ownership table count = %d, want 1", ownershipTable)
+	}
+	var ownershipIndex int
+	if err := migrated.QueryRow(`SELECT count(*) FROM sqlite_master WHERE type='index' AND name='idx_index_job_ownership_job'`).Scan(&ownershipIndex); err != nil {
+		t.Fatalf("check ownership index: %v", err)
+	}
+	if ownershipIndex != 1 {
+		t.Fatalf("ownership index count = %d, want 1", ownershipIndex)
 	}
 }
 
@@ -941,6 +987,105 @@ func TestFencedGraphExpectedPriorActivation(t *testing.T) {
 	catalogGeneration, ok, err := WorkspaceMetaValue(ctx, db, GraphCatalogGenerationMeta)
 	if err != nil || !ok || catalogGeneration != second.GenerationID {
 		t.Fatalf("graph catalog generation = %q ok=%v err=%v, want %q", catalogGeneration, ok, err, second.GenerationID)
+	}
+}
+func TestFencedGraphPublicationRejectsRetiredTargetAncestryCorruption(t *testing.T) {
+	ctx := context.Background()
+	for _, kind := range []string{"self_cycle", "multi_node_cycle", "dangling_predecessor", "zero_predecessor", "cross_workspace"} {
+		t.Run(kind, func(t *testing.T) {
+			db, root := seedTestDB(t)
+			first, second := seedRetiredGraphPairForAncestryTest(t, ctx, db)
+			var previous []byte
+			disableForeignKeys := false
+			switch kind {
+			case "self_cycle":
+				previous = digestArg(first.Generation.GenerationID)
+			case "multi_node_cycle":
+				previous = digestArg(second.Generation.GenerationID)
+			case "dangling_predecessor":
+				previous = digestArg(model.GraphDigest{0x7f})
+				disableForeignKeys = true
+			case "zero_predecessor":
+				previous = make([]byte, 32)
+				disableForeignKeys = true
+			case "cross_workspace":
+				cross := stageCrossWorkspaceRetiredGraphForAncestryTest(t, ctx, db)
+				previous = digestArg(cross.Generation.GenerationID)
+			}
+			setGraphPreviousForAncestryTest(t, db, first.Generation.GenerationID, previous, disableForeignKeys)
+
+			job, err := CreateIndexJob(ctx, db, "retired-ancestry-"+kind, root, IndexModeFull, false)
+			if err != nil {
+				t.Fatalf("create job: %v", err)
+			}
+			fence := IndexJobFence{OwnerToken: job.OwnerToken, FencingToken: job.FencingToken}
+			if err := MarkIndexJobRunning(ctx, db, job.JobID, 0, "indexing", fence); err != nil {
+				t.Fatalf("mark job running: %v", err)
+			}
+			graphID := first.Generation.GenerationID
+			err = PublishIncrementalGenerationForJob(ctx, db, job.JobID, job.GenerationID, 0, 0, 0, fence, &IndexJobGraphPublication{
+				GenerationID:  &graphID,
+				ExpectedPrior: &second.Generation.GenerationID,
+				PublishedAt:   time.Unix(5, 0).UTC(),
+				GraphCurrent:  true,
+			})
+			if !errors.Is(err, model.ErrGraphGenerationCorrupt) {
+				t.Fatalf("fenced retired ancestry %s error=%v, want graph corruption", kind, err)
+			}
+			if got, ok, err := ActiveGraphGeneration(ctx, db); err != nil || !ok || got != second.Generation.GenerationID {
+				t.Fatalf("active pointer after %s = %x ok=%v err=%v, want %x", kind, got, ok, err, second.Generation.GenerationID)
+			}
+			if got := graphStatusForTest(t, db, first.Generation.GenerationID); got != model.GraphGenerationRetired {
+				t.Fatalf("retired target status after %s=%q", kind, got)
+			}
+			if got := graphStatusForTest(t, db, second.Generation.GenerationID); got != model.GraphGenerationActive {
+				t.Fatalf("active prior status after %s=%q", kind, got)
+			}
+		})
+	}
+}
+
+func TestFencedGraphPublicationRejectsCorruptActivePriorAncestry(t *testing.T) {
+	ctx := context.Background()
+	for _, kind := range []string{"active_self_cycle", "active_cross_workspace"} {
+		t.Run(kind, func(t *testing.T) {
+			db, root := seedTestDB(t)
+			first, second := seedRetiredGraphPairForAncestryTest(t, ctx, db)
+			switch kind {
+			case "active_self_cycle":
+				setGraphPreviousForAncestryTest(t, db, second.Generation.GenerationID, digestArg(second.Generation.GenerationID), false)
+			case "active_cross_workspace":
+				cross := stageCrossWorkspaceRetiredGraphForAncestryTest(t, ctx, db)
+				setGraphPreviousForAncestryTest(t, db, second.Generation.GenerationID, digestArg(cross.Generation.GenerationID), false)
+			}
+			job, err := CreateIndexJob(ctx, db, "active-prior-ancestry-"+kind, root, IndexModeFull, false)
+			if err != nil {
+				t.Fatalf("create job: %v", err)
+			}
+			fence := IndexJobFence{OwnerToken: job.OwnerToken, FencingToken: job.FencingToken}
+			if err := MarkIndexJobRunning(ctx, db, job.JobID, 0, "indexing", fence); err != nil {
+				t.Fatalf("mark job running: %v", err)
+			}
+			graphID := first.Generation.GenerationID
+			err = PublishIncrementalGenerationForJob(ctx, db, job.JobID, job.GenerationID, 0, 0, 0, fence, &IndexJobGraphPublication{
+				GenerationID:  &graphID,
+				ExpectedPrior: &second.Generation.GenerationID,
+				PublishedAt:   time.Unix(5, 0).UTC(),
+				GraphCurrent:  true,
+			})
+			if !errors.Is(err, model.ErrGraphGenerationCorrupt) {
+				t.Fatalf("fenced active prior ancestry %s error=%v, want graph corruption", kind, err)
+			}
+			if got, ok, err := ActiveGraphGeneration(ctx, db); err != nil || !ok || got != second.Generation.GenerationID {
+				t.Fatalf("active pointer after %s = %x ok=%v err=%v, want %x", kind, got, ok, err, second.Generation.GenerationID)
+			}
+			if got := graphStatusForTest(t, db, first.Generation.GenerationID); got != model.GraphGenerationRetired {
+				t.Fatalf("retired target status after %s=%q", kind, got)
+			}
+			if got := graphStatusForTest(t, db, second.Generation.GenerationID); got != model.GraphGenerationActive {
+				t.Fatalf("active prior status after %s=%q", kind, got)
+			}
+		})
 	}
 }
 

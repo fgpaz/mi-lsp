@@ -370,6 +370,21 @@ func renderEnvelopeOmission(omission model.EnvelopeOmission) string {
 	if omission.RequestedRange != "" {
 		parts = append(parts, "requested_range="+omission.RequestedRange)
 	}
+	if omission.OwnerPath != "" {
+		parts = append(parts, "owner_path="+omission.OwnerPath)
+	}
+	if omission.SourceDocument != "" {
+		parts = append(parts, "source_document="+omission.SourceDocument)
+	}
+	if omission.SourceBlock != "" {
+		parts = append(parts, "source_block="+omission.SourceBlock)
+	}
+	if omission.TargetKind != "" {
+		parts = append(parts, "target_kind="+omission.TargetKind)
+	}
+	if omission.TargetValue != "" {
+		parts = append(parts, "target_value="+omission.TargetValue)
+	}
 	return strings.Join(parts, " ")
 }
 

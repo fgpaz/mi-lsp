@@ -57,9 +57,9 @@ Usar el grafo para mejorar `nav ask`, `route`, `pack`, `context`, `affected`, `d
 
 - Documentos canonicos son `GraphNode(kind=document)` con NodeKey basado en repository identity + owner path + doc ID estable.
 - Wikilinks, embeds, links Markdown, doc IDs y jerarquía conservan relaciones distintas: `doc_wikilink`, `doc_embed`, `doc_markdown_link`, `doc_id` y `doc_hierarchy`.
-- La resolución documental es corpus-aware: path exacto, relativo al documento, relativo a roots de conocimiento y basename único; exact-case precede case-fold.
+- La resolución documental es corpus-aware y aplica una ruta de ID canónico exacto antes de cualquier candidato débil: un `doc_id` canónico exacto —incluidos los IDs `TP-*`— se consulta primero en el índice documental y una coincidencia única resuelve directamente a `GraphNode(kind=document)`. Solo después, y para selectores que no son IDs canónicos, se consideran path exacto, relativo al documento, relativo a roots de conocimiento, basename único y texto acotado; exact-case precede case-fold.
 - Anchors y alias se preservan como `doc_anchor` y `doc_alias`; un self-anchor no crea self-edge.
-- Basename o doc ID duplicado queda `ambiguous_doc_target` con candidatos sorted y bounded; nunca se elige el último ni se promueve por score.
+- Un `doc_id` canónico faltante queda `missing_doc_target`; un ID duplicado o ambiguo queda `ambiguous_doc_target`. Ambos permanecen como unresolved tipado, con candidatos sorted y bounded (vacíos cuando falta el ID); nunca se elige el último ni se promueve por score.
 - `doc_mentions` enlaza documento a path/símbolo/comando de código cuando existe anchor explícito resoluble.
 - Relaciones de código pueden verificar una promesa, pero no cambiar estado, prioridad o significado de un documento.
 
@@ -132,6 +132,19 @@ semantics:
   freshness: bounded_fresh
   read_your_writes: true
   query_only: true
+document_resolution:
+  canonical_document_id:
+    exact: true
+    includes: ["TP-*"]
+    target: document_node
+    precedence: first
+  weaker_candidates: [exact_path, document_relative_path, knowledge_root_path, unique_basename, bounded_text]
+  unresolved:
+    missing_id: missing_doc_target
+    duplicate_or_ambiguous_id: ambiguous_doc_target
+    candidates: sorted_bounded
+    score_promotion: forbidden
+  preserve_tp_ids: true
 result_lanes:
   direct_code:
     source: exact_active_declared_binding

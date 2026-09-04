@@ -131,6 +131,43 @@ func scanGraphNode(scanner interface{ Scan(...any) error }, generation model.Gra
 
 const graphNodeSelect = `SELECT node_id,node_key,identity_schema,repository_identity,backend_type,language,project_or_module,owner_path,symbol_kind,semantic_identity,display_name,source_digest,claim_status,cross_rid,sort_key FROM graph_nodes WHERE generation_id=?`
 
+const (
+	graphUnresolvedOmissionsSelect       = `SELECT cross_rid,owner_path,subject_kind,reason_code,recovery_hint_code,source_document,source_block,target_kind,target_value FROM graph_unresolved WHERE generation_id=? ORDER BY unresolved_id LIMIT ?`
+	graphUnresolvedOmissionsLegacySelect = `SELECT cross_rid,owner_path,subject_kind,reason_code,recovery_hint_code FROM graph_unresolved WHERE generation_id=? ORDER BY unresolved_id LIMIT ?`
+)
+
+var graphUnresolvedOmissionContextColumns = [...]string{
+	"source_document",
+	"source_block",
+	"target_kind",
+	"target_value",
+}
+
+func graphUnresolvedOmissionCapabilityError(err error) bool {
+	return isSQLiteMissingColumnError(err, graphUnresolvedOmissionContextColumns[:]...)
+}
+
+func scanGraphUnresolvedOmission(scanner interface{ Scan(...any) error }, legacy bool) (model.EnvelopeOmission, error) {
+	var crossRID, owner, subjectKind, reason, hint, sourceDocument, sourceBlock, targetKind, targetValue sql.NullString
+	if legacy {
+		if err := scanner.Scan(&crossRID, &owner, &subjectKind, &reason, &hint); err != nil {
+			return model.EnvelopeOmission{}, err
+		}
+	} else if err := scanner.Scan(&crossRID, &owner, &subjectKind, &reason, &hint, &sourceDocument, &sourceBlock, &targetKind, &targetValue); err != nil {
+		return model.EnvelopeOmission{}, err
+	}
+	return model.EnvelopeOmission{
+		Input:          sanitizeGraphOmissionText(crossRID.String),
+		Reason:         sanitizeGraphOmissionText(reason.String),
+		ErrorCode:      sanitizeGraphOmissionText(hint.String),
+		OwnerPath:      sanitizeGraphOmissionPath(owner.String),
+		SourceDocument: sanitizeGraphOmissionPath(sourceDocument.String),
+		SourceBlock:    sanitizeGraphOmissionText(sourceBlock.String),
+		TargetKind:     sanitizeGraphOmissionText(targetKind.String),
+		TargetValue:    sanitizeGraphOmissionText(targetValue.String),
+	}, nil
+}
+
 func (s *GraphQuerySnapshot) Node(ctx context.Context, id int) (model.GraphNodeRecord, error) {
 	if s == nil || s.closed || ctx == nil || id < 0 {
 		return model.GraphNodeRecord{}, model.ErrGraphGenerationInvalid
@@ -574,20 +611,57 @@ func (s *GraphQuerySnapshot) UnresolvedOmissions(ctx context.Context, max int) (
 	if max > 50 {
 		max = 50
 	}
-	rows, err := s.query(ctx, `SELECT cross_rid,reason_code,recovery_hint_code FROM graph_unresolved WHERE generation_id=? ORDER BY unresolved_id LIMIT ?`, digestArg(s.generation.GenerationID), max)
+	rows, err := s.query(ctx, graphUnresolvedOmissionsSelect, digestArg(s.generation.GenerationID), max)
+	legacyProjection := false
+	if err != nil && graphUnresolvedOmissionCapabilityError(err) {
+		legacyProjection = true
+		if rows != nil {
+			_ = rows.Close()
+		}
+		rows, err = s.query(ctx, graphUnresolvedOmissionsLegacySelect, digestArg(s.generation.GenerationID), max)
+	}
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 	omissions := []model.EnvelopeOmission{}
 	for rows.Next() {
-		var crossRID, reason, hint sql.NullString
-		if err := rows.Scan(&crossRID, &reason, &hint); err != nil {
-			return nil, err
+		omission, scanErr := scanGraphUnresolvedOmission(rows, legacyProjection)
+		if scanErr != nil {
+			return nil, scanErr
 		}
-		omissions = append(omissions, model.EnvelopeOmission{Input: crossRID.String, Reason: reason.String, ErrorCode: hint.String})
+		omissions = append(omissions, omission)
 	}
 	return omissions, rows.Err()
+}
+
+const graphOmissionMaxTextBytes = 4096
+
+func sanitizeGraphOmissionText(value string) string {
+	value = strings.TrimSpace(value)
+	if len(value) > graphOmissionMaxTextBytes {
+		value = value[:graphOmissionMaxTextBytes]
+	}
+	for _, r := range value {
+		if r < 0x20 || r == 0x7f {
+			return ""
+		}
+	}
+	return value
+}
+
+func sanitizeGraphOmissionPath(value string) string {
+	value = sanitizeGraphOmissionText(value)
+	value = strings.ReplaceAll(value, "\\", "/")
+	if value == "" || strings.HasPrefix(value, "/") || strings.HasPrefix(value, "//") || (len(value) > 1 && value[1] == ':') {
+		return ""
+	}
+	for _, part := range strings.Split(value, "/") {
+		if part == ".." {
+			return ""
+		}
+	}
+	return value
 }
 
 func (s *GraphQuerySnapshot) Validate(ctx context.Context) (model.GraphGeneration, error) {

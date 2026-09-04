@@ -840,3 +840,64 @@ func assertGoSymbol(t *testing.T, items []model.SymbolRecord, name string, kind 
 	}
 	t.Fatalf("symbol %s/%s not found in %#v", name, kind, items)
 }
+func TestValidateGoGraphRequestAcceptsNestedModuleAndRejectsEscapes(t *testing.T) {
+	root := t.TempDir()
+	writeGoTestFile(t, root, "runtime/go.mod", "module example.test/runtime\n\ngo 1.24\n")
+	req := GoGraphObservationRequest{Root: root, RepositoryIdentity: "https://example.test/repo", ProjectOrModule: "runtime/go.mod"}
+	gotRoot, gotProject, _, _, _, err := validateGoGraphRequest(req)
+	if err != nil {
+		t.Fatalf("nested module rejected: %v", err)
+	}
+	wantRoot, err := filepath.Abs(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if gotRoot != wantRoot || gotProject != "runtime/go.mod" {
+		t.Fatalf("validated request = (%q, %q), want (%q, runtime/go.mod)", gotRoot, gotProject, wantRoot)
+	}
+	writeGoTestFile(t, root, "go.mod", "module example.test/root\n\ngo 1.24\n")
+	backslashReq := req
+	backslashReq.ProjectOrModule = "runtime\\go.mod"
+	if _, project, _, _, _, err := validateGoGraphRequest(backslashReq); err == nil || project != "" {
+		t.Fatalf("backslash module selector accepted or normalized: project=%q err=%v", project, err)
+	}
+	if _, err := ObserveGoGraph(context.Background(), backslashReq); err == nil {
+		t.Fatal("backslash module selector accepted by graph observer")
+	}
+	if _, project, _, _, _, err := validateGoGraphRequest(GoGraphObservationRequest{Root: root, RepositoryIdentity: req.RepositoryIdentity, ProjectOrModule: "go.mod"}); err != nil || project != "go.mod" {
+		t.Fatalf("root module request = %q, %v", project, err)
+	}
+	writeGoTestFile(t, root, "target/go.mod", "module example.test/target\n\ngo 1.24\n")
+	inRootLink := filepath.Join(root, "target-link.go.mod")
+	if err := os.Symlink(filepath.Join("target", "go.mod"), inRootLink); err != nil {
+		t.Fatal(err)
+	}
+	symlinkReq := GoGraphObservationRequest{Root: root, RepositoryIdentity: req.RepositoryIdentity, ProjectOrModule: "target-link.go.mod"}
+	if _, _, _, _, _, err := validateGoGraphRequest(symlinkReq); err == nil {
+		t.Fatal("in-root go.mod symlink accepted by request validation")
+	}
+	if _, err := ObserveGoGraph(context.Background(), symlinkReq); err == nil {
+		t.Fatal("in-root go.mod symlink accepted by graph observer")
+	}
+	outside := t.TempDir()
+	writeGoTestFile(t, outside, "go.mod", "module example.test/outside\n\ngo 1.24\n")
+	link := filepath.Join(root, "escape")
+	if err := os.Symlink(outside, link); err != nil {
+		t.Fatal(err)
+	}
+	for _, selector := range []string{"../go.mod", filepath.Join(outside, "go.mod"), "escape/go.mod", "runtime/../../outside/go.mod"} {
+		if _, _, _, _, _, err := validateGoGraphRequest(GoGraphObservationRequest{Root: root, RepositoryIdentity: req.RepositoryIdentity, ProjectOrModule: selector}); err == nil {
+			t.Fatalf("unsafe module selector accepted: %q", selector)
+		}
+	}
+}
+
+func TestValidateGoGraphRequestRejectsGoWork(t *testing.T) {
+	root := t.TempDir()
+	writeGoTestFile(t, root, "go.work", "go 1.24\nuse ./runtime\n")
+	_, _, _, _, _, err := validateGoGraphRequest(GoGraphObservationRequest{Root: root, RepositoryIdentity: "example.test/work", ProjectOrModule: "go.work"})
+	graphErr, ok := err.(*model.GraphObservationError)
+	if !ok || graphErr.Code != "GPH_GO_MOD_INVALID" {
+		t.Fatalf("go.work request error = %#v (%T), want GPH_GO_MOD_INVALID", err, err)
+	}
+}

@@ -238,3 +238,45 @@ func hasLanguage(languages []string, expected string) bool {
 	}
 	return false
 }
+func TestDetectWorkspaceLayoutSurfacesNestedGoModuleEntrypoint(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "runtime", ".git"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "runtime", "go.mod"), []byte("module example.test/runtime\n\ngo 1.24\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "runtime", "main.go"), []byte("package runtime\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	_, first, err := DetectWorkspaceLayout(root, "nested-go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(first.Repos) != 1 {
+		t.Fatalf("repos = %#v", first.Repos)
+	}
+	repo := first.Repos[0]
+	if repo.ID != "runtime" || repo.Name != "runtime" || repo.Root != "runtime" || !hasLanguage(repo.Languages, "go") || repo.DefaultEntrypoint != "runtime::runtime-go-mod" {
+		t.Fatalf("nested module repo = %#v", repo)
+	}
+	found := false
+	for _, entrypoint := range first.Entrypoints {
+		if entrypoint.RepoID == repo.ID && entrypoint.Path == "runtime/go.mod" && entrypoint.Kind == model.EntrypointKindProject {
+			found = true
+		}
+		if filepath.IsAbs(entrypoint.Path) || entrypoint.Path == "../go.mod" {
+			t.Fatalf("unsafe module entrypoint = %#v", entrypoint)
+		}
+	}
+	if !found {
+		t.Fatalf("nested go.mod entrypoint missing: %#v", first.Entrypoints)
+	}
+	_, second, err := DetectWorkspaceLayout(root, "nested-go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(second.Repos) != 1 || second.Repos[0].ID != repo.ID || second.Repos[0].Root != repo.Root || second.Repos[0].DefaultEntrypoint != repo.DefaultEntrypoint {
+		t.Fatalf("repository identity changed: first=%#v second=%#v", first.Repos, second.Repos)
+	}
+}

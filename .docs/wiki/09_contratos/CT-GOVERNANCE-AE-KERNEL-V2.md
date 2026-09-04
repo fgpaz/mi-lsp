@@ -60,6 +60,17 @@ normative:
     - AE-EVIDENCE-POLICY.md
     - AE-POLICY-PROJECTION.md
   states: [valid, missing, mismatch]
+  imports_rule:
+    applies_to: [SDD-HARNESS-v1, SDD-WIKI-SOURCE-v1]
+    required: true
+    root_empty_exception:
+      source_document: exact governance status HumanDoc
+      default_path: .docs/wiki/00_gobierno_documental.md
+      allowed_when:
+        - governance_source_is_unique_and_validated
+        - contract_path_matches_exact_governance_source
+      value: []
+    non_root_empty: blocked
 verify:
   - inspect governance status and projection round-trip
 stop_if:
@@ -70,6 +81,8 @@ evidence:
   - .docs/wiki/00_gobierno_documental.md
   - .docs/wiki/_mi-lsp/read-model.toml
 ```
+
+`imports` sigue siendo un campo requerido para contratos `SDD-HARNESS-v1` y `SDD-WIKI-SOURCE-v1`. La única excepción admite `imports: []` en el documento de gobernanza que el estado de gobernanza identifica sin ambigüedad y valida (`governance_source_is_unique_and_validated`), cuando la ruta del contrato coincide exactamente con esa fuente. Todo contrato que no sea esa raíz y declare imports vacíos permanece bloqueado; la compuerta general continúa siendo fail-closed.
 
 ## Repository policy slots
 

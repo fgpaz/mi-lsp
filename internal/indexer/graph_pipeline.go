@@ -110,16 +110,18 @@ func ObserveGraph(ctx context.Context, root string, project model.ProjectFile, o
 			module = graphRootGoModule(root)
 		} else {
 			selected := goRepos[0]
-			module = graphGoModule(selected.root, selected.repo.DefaultEntrypoint)
+			configured, selectorOK := graphGoModuleSelector(root, project, selected.repo)
+			if selectorOK {
+				module = graphGoModule(selected.root, configured)
+			}
 		}
 		if module == "" {
 			omissions = append(omissions, graphOmissionForRepo("go", "declarations", "go_module_missing", "declare_go_module", goRepos[0].repo))
-			warnings = append(warnings, "graph omitted Go: no explicit go.mod or go.work entrypoint")
+			warnings = append(warnings, "graph omitted Go: no explicit go.mod entrypoint")
 		} else {
 			requestRoot := root
 			if project.Project.Kind != model.WorkspaceKindContainer {
 				requestRoot = goRepos[0].root
-				module = graphGoModule(requestRoot, goRepos[0].repo.DefaultEntrypoint)
 			}
 			batch, observeErr := ObserveGoGraph(ctx, GoGraphObservationRequest{Root: requestRoot, RepositoryIdentity: identity, ProjectOrModule: module})
 			if observeErr != nil {
@@ -322,30 +324,116 @@ func graphGoRepos(root string, project model.ProjectFile, targets []graphObserva
 	}
 	return result
 }
+func graphGoModuleSelector(workspaceRoot string, project model.ProjectFile, repo model.WorkspaceRepo) (string, bool) {
+	configured := strings.TrimSpace(repo.DefaultEntrypoint)
+	if configured == "" {
+		return "", true
+	}
+	for _, entrypoint := range project.Entrypoints {
+		if !strings.EqualFold(strings.TrimSpace(entrypoint.RepoID), strings.TrimSpace(repo.ID)) || !strings.EqualFold(strings.TrimSpace(entrypoint.ID), configured) {
+			continue
+		}
+		workspacePath, safe := graphSafeRelativeModule(workspaceRoot, entrypoint.Path)
+		if !safe {
+			return "", false
+		}
+		workspaceRootAbs, err := filepath.Abs(workspaceRoot)
+		if err != nil {
+			return "", false
+		}
+		repoRoot := filepath.Join(workspaceRoot, filepath.FromSlash(normalizeRepoRoot(repo.Root)))
+		repoRootAbs, err := filepath.Abs(repoRoot)
+		if err != nil {
+			return "", false
+		}
+		modulePath := filepath.Join(workspaceRootAbs, filepath.FromSlash(workspacePath))
+		localPath, err := filepath.Rel(repoRootAbs, modulePath)
+		if err != nil || localPath == ".." || strings.HasPrefix(localPath, ".."+string(filepath.Separator)) || filepath.IsAbs(localPath) {
+			return "", false
+		}
+		localPath = filepath.ToSlash(filepath.Clean(localPath))
+		if _, safe := graphSafeRelativeModule(repoRoot, localPath); !safe {
+			return "", false
+		}
+		return localPath, true
+	}
+	if strings.Contains(configured, "::") {
+		return "", false
+	}
+	return configured, true
+}
 
 func graphRootGoModule(root string) string {
-	for _, name := range []string{"go.mod", "go.work"} {
-		path := filepath.Join(root, name)
-		if info, err := os.Stat(path); err == nil && info.Mode().IsRegular() {
-			return name
+	return graphGoModule(root, "")
+}
+
+func graphGoModule(repoRoot, configured string) string {
+	repoRoot = filepath.Clean(strings.TrimSpace(repoRoot))
+	rawConfigured := strings.TrimSpace(configured)
+	if rawConfigured != "" {
+		normalized, safe := graphSafeRelativeModule(repoRoot, rawConfigured)
+		if !safe || filepath.Base(normalized) != "go.mod" {
+			return ""
 		}
+		path := filepath.Join(repoRoot, filepath.FromSlash(normalized))
+		if info, err := os.Lstat(path); err == nil && info.Mode().IsRegular() {
+			return normalized
+		}
+		return ""
+	}
+	path := filepath.Join(repoRoot, "go.mod")
+	if _, safe := graphSafeRelativeModule(repoRoot, "go.mod"); !safe {
+		return ""
+	}
+	if info, err := os.Lstat(path); err == nil && info.Mode().IsRegular() {
+		return "go.mod"
 	}
 	return ""
 }
 
-func graphGoModule(repoRoot, configured string) string {
-	configured = filepath.ToSlash(strings.TrimSpace(configured))
-	if configured == "go.mod" || configured == "go.work" {
-		if _, err := os.Stat(filepath.Join(repoRoot, filepath.FromSlash(configured))); err == nil {
-			return configured
+func graphSafeRelativeModule(repoRoot, configured string) (string, bool) {
+	configured = strings.TrimSpace(configured)
+	driveRelative := len(configured) >= 2 &&
+		((configured[0] >= 'A' && configured[0] <= 'Z') || (configured[0] >= 'a' && configured[0] <= 'z')) &&
+		configured[1] == ':' &&
+		(len(configured) == 2 || (configured[2] != '/' && configured[2] != '\\'))
+	if configured == "" || strings.ContainsRune(configured, 0) || strings.Contains(configured, "\\") || filepath.IsAbs(configured) || driveRelative {
+		return "", false
+	}
+	for _, part := range strings.Split(configured, "/") {
+		if part == ".." {
+			return "", false
 		}
 	}
-	for _, name := range []string{"go.mod", "go.work"} {
-		if _, err := os.Stat(filepath.Join(repoRoot, name)); err == nil {
-			return name
-		}
+	clean := filepath.Clean(configured)
+	if filepath.Base(clean) != "go.mod" {
+		return "", false
 	}
-	return ""
+	if clean == "." || clean == ".." || strings.HasPrefix(clean, ".."+string(filepath.Separator)) {
+		return "", false
+	}
+	root, err := filepath.Abs(repoRoot)
+	if err != nil {
+		return "", false
+	}
+	path := filepath.Join(root, clean)
+	relative, err := filepath.Rel(root, path)
+	if err != nil || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) || filepath.IsAbs(relative) {
+		return "", false
+	}
+	rootReal, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		return "", false
+	}
+	pathReal, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		return "", false
+	}
+	relativeReal, err := filepath.Rel(rootReal, pathReal)
+	if err != nil || relativeReal == ".." || strings.HasPrefix(relativeReal, ".."+string(filepath.Separator)) || filepath.IsAbs(relativeReal) {
+		return "", false
+	}
+	return filepath.ToSlash(clean), true
 }
 
 func rebaseGraphObservationBatch(batch *model.GraphObservationBatch, repoRoot string) error {

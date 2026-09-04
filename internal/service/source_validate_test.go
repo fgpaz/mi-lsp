@@ -9,6 +9,7 @@ import (
 	"github.com/fgpaz/mi-lsp/internal/model"
 	"github.com/fgpaz/mi-lsp/internal/output"
 	"github.com/fgpaz/mi-lsp/internal/store"
+	"github.com/fgpaz/mi-lsp/internal/wikisource"
 )
 
 func TestValidateSourceValidArtifact(t *testing.T) {
@@ -459,4 +460,33 @@ func validSourceDoc(docID string, blockID string, recordID string, audience stri
 		"",
 		tail,
 	}, "\n")
+}
+func TestCompileSourceAllowsEmptyImportsOnlyForValidatedGovernanceRoot(t *testing.T) {
+	root := t.TempDir()
+	writeSpecBackendGovernanceFixture(t, root)
+	path := ".docs/wiki/00_gobierno_documental.md"
+	content := strings.Replace(validSourceDoc("GOVERNANCE-SYNTHETIC", "GOVERNANCE-SYNTHETIC.block", "GOVERNANCE-SYNTHETIC.record", "human", ""), "imports:\n  - '[[00_gobierno_documental]]'", "imports: []", 1)
+	parsed := wikisource.Parse(path, content, 1)
+	doc := sourceDoc{record: sourceDocRecord(path, "GOVERNANCE-SYNTHETIC"), content: content, parsed: parsed}
+	blocks := []model.DocSourceBlock{sourceBlockRecord(path, "GOVERNANCE-SYNTHETIC", "GOVERNANCE-SYNTHETIC.block")}
+	records := []model.DocSourceRecord{sourceRecord(path, "GOVERNANCE-SYNTHETIC.block", "GOVERNANCE-SYNTHETIC.record")}
+	result := compileSourceValidationWithCorpus(root, []sourceDoc{doc}, []model.DocRecord{doc.record}, blocks, records, blocks, records)
+	if result.WikiSourceVerdict == "BLOCKED" || strings.Contains(strings.Join(result.WikiSourceBlockers, " | "), "missing imports") {
+		t.Fatalf("validated governance root was blocked for empty imports: %#v", result)
+	}
+}
+
+func TestCompileSourceKeepsEmptyImportsBlockedOutsideValidatedGovernanceRoot(t *testing.T) {
+	root := t.TempDir()
+	writeSpecBackendGovernanceFixture(t, root)
+	path := ".docs/wiki/09_contratos/CT-SYNTHETIC.md"
+	content := strings.Replace(validSourceDoc("CT-SYNTHETIC", "CT-SYNTHETIC.block", "CT-SYNTHETIC.record", "human", ""), "imports:\n  - '[[00_gobierno_documental]]'", "imports: []", 1)
+	parsed := wikisource.Parse(path, content, 1)
+	doc := sourceDoc{record: sourceDocRecord(path, "CT-SYNTHETIC"), content: content, parsed: parsed}
+	blocks := []model.DocSourceBlock{sourceBlockRecord(path, "CT-SYNTHETIC", "CT-SYNTHETIC.block")}
+	records := []model.DocSourceRecord{sourceRecord(path, "CT-SYNTHETIC.block", "CT-SYNTHETIC.record")}
+	result := compileSourceValidationWithCorpus(root, []sourceDoc{doc}, []model.DocRecord{doc.record}, blocks, records, blocks, records)
+	if !strings.Contains(strings.Join(result.WikiSourceBlockers, " | "), "missing imports") {
+		t.Fatalf("non-governance empty imports did not remain blocked: %#v", result)
+	}
 }

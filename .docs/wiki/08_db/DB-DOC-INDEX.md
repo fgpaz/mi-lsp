@@ -72,6 +72,7 @@ Campos canonicos:
 - `doc_path`
 - `mention_type`
 - `mention_value`
+- `source_block` (nullable)
 
 Tipos actuales:
 - `doc_id`
@@ -89,6 +90,8 @@ Tipos actuales:
 Uso:
 - derivar evidencia de codigo para `nav ask`
 - futuras ayudas de navegacion y onboarding
+
+La identidad de una mención sigue siendo la clave única `(doc_path, mention_type, mention_value)`; `source_block` es proveniencia opcional del bloque que la declaró y no altera esa identidad. `doc_path` es el `source_document` de la mención en el índice documental.
 
 ### `doc_source_blocks`
 
@@ -109,6 +112,8 @@ Uso:
 - soporte para `nav wiki validate-source`
 - degradacion compatible via `doc_mentions.block_id`
 
+En esta tabla, `doc_path` identifica el `source_document` y `block_id` identifica el `source_block` normativo; ambos forman la proveniencia exacta del bloque y no deben confundirse con la identidad de una mención.
+
 ### `doc_source_records`
 
 Campos canonicos:
@@ -126,6 +131,8 @@ Uso:
 - lookup exacto de records referenciables (`RF-*`, `CT-*`, `TECH-*`, etc.) embebidos en bloques fuente
 - soporte para `nav wiki search <record_id>` y `nav wiki trace <record_id>`
 - degradacion compatible via `doc_mentions.record_id`
+
+Un record conserva la misma proveniencia `(doc_path, block_id)` del bloque que lo contiene. El `record_id` permite resolver el record referenciable; no convierte una fila de `doc_mentions` en una identidad de `GraphUnresolved`.
 
 ## Binding y estado de artefactos del puente wiki ↔ código
 
@@ -159,8 +166,13 @@ generation_domains:
   graph: active_graph_generation_id
   graph_rollback: previous_graph_generation_id
 publication:
-  full_and_docs_only: atomic_docs_sources_bindings_state_transaction
-  incremental_docs: advances_docs_and_memory_only
+  full_and_docs_only: atomic_docs_sources_bindings_transaction
+  incremental_docs: advances_docs_memory_and_changed_artifact_states
+  incremental_owner_replacement: explicit_doc_path-preserves-source-block-provenance
+  source_provenance:
+    source_document: doc_path
+    source_block: [doc_source_blocks.block_id, doc_mentions.source_block]
+    unavailable: NULL
   catalog_pointer_on_docs_refresh: preserved
   graph_on_docs_refresh: stale_not_published
   query_time_publication: forbidden
@@ -192,18 +204,19 @@ evidence:
 
 ## Estrategia de refresco
 
-- `ReplaceDocs()` reemplaza el snapshot documental completo en una sola transaccion y preserva compatibilidad llamando a la variante sin source rows.
-- `ReplaceDocsWithSources()` reemplaza `doc_records`, `doc_edges`, `doc_mentions`, `doc_source_blocks` y `doc_source_records` en una sola transaccion.
-- `ReplaceWorkspaceDocs()` reemplaza el snapshot documental, source rows y `memory_snapshot_json` en una sola transaccion; actualiza `active_docs_generation_id` y `active_memory_generation_id` cuando hay job/generacion.
-- `index --docs-only` y `index start --mode docs` ejecutan esa publicacion sin modificar el catalogo de codigo.
-- `ReplaceWorkspaceIndex()` publica catalogo, docs y memoria juntos para evitar estados mixtos tras un crash o cancelacion.
+- `ReplaceDocs()` reemplaza el snapshot documental completo en una sola transacción y preserva compatibilidad llamando a la variante sin source rows.
+- `ReplaceDocsWithSources()` reemplaza `doc_records`, `doc_edges`, `doc_mentions`, `doc_source_blocks`, `doc_source_records` y `doc_artifact_bindings` en una sola transacción.
+- `ReplaceWorkspaceDocs()` reemplaza el snapshot documental, source rows, bindings y `memory_snapshot_json` en una sola transacción; actualiza `active_docs_generation_id` y `active_memory_generation_id` cuando hay job/generación.
+- `index --docs-only` y `index start --mode docs` ejecutan esa publicación sin modificar el catálogo de código.
+- `ReplaceWorkspaceIndex()` publica catálogo, docs y memoria juntos para evitar estados mixtos tras un crash o cancelación.
+- La publicación incremental (`applyIncrementalDocChangesTx`) elimina y reinserta solo los owners documentales explícitos; conserva `doc_mentions.source_block`, `doc_source_blocks.block_id` y `doc_source_records.block_id` de cada documento reemplazado, y deja intactos los owners no afectados.
 - Cambios en docs o en `read-model.toml` fuerzan full re-index.
-- `workspace_meta.doc_count` guarda un agregado simple para diagnostico.
+- `workspace_meta.doc_count` guarda un agregado simple para diagnóstico.
 
 ## Operaciones de lectura
 
 - `CountDocRecords()` alimenta `workspace status.doc_count` y `docs_index_ready`.
-- `FindDocRecordsByMention("doc_id", value)` resuelve documentos agregados que mencionan un RF/FL sin tener ese ID como `doc_records.doc_id` primario.
+- Una mención con un `TP-*` canónico exacto resuelve el documento cuyo `doc_records.doc_id` coincide una sola vez; si falta o es ambiguo, el docgraph conserva un `GraphUnresolved` tipado con `target_kind=document`, `target_value` igual al TP y la proveniencia `source_document`/`source_block` cuando está disponible, sin reutilizar la identidad de la fila `doc_mentions`.
 
 ## No objetivos
 
