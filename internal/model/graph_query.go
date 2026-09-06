@@ -127,25 +127,28 @@ func (q GraphQueryRequest) Normalize() (GraphQueryRequest, error) {
 }
 
 type GraphQueryItem struct {
-	Kind            string   `json:"kind"`
-	CrossRID        string   `json:"cross_rid"`
-	Display         string   `json:"display"`
-	Status          string   `json:"status"`
-	Distance        int      `json:"distance"`
-	EvidenceRefs    []string `json:"evidence_refs,omitempty"`
-	NodeKey         string   `json:"node_key,omitempty"`
-	EdgeKey         string   `json:"edge_key,omitempty"`
-	EdgeCrossRID    string   `json:"edge_cross_rid,omitempty"`
-	ConfidenceClass string   `json:"confidence_class,omitempty"`
-	NodeID          int      `json:"node_id,omitempty"`
-	EdgeID          int      `json:"edge_id,omitempty"`
-	Relation        string   `json:"relation,omitempty"`
-	FromNodeKey     string   `json:"from_node_key,omitempty"`
-	ToNodeKey       string   `json:"to_node_key,omitempty"`
-	FromCrossRID    string   `json:"from_cross_rid,omitempty"`
-	ToCrossRID      string   `json:"to_cross_rid,omitempty"`
-	SymbolKind      string   `json:"symbol_kind,omitempty"`
-	OwnerPath       string   `json:"owner_path,omitempty"`
+	Kind             string   `json:"kind"`
+	CrossRID         string   `json:"cross_rid"`
+	Display          string   `json:"display"`
+	Status           string   `json:"status"`
+	Distance         int      `json:"distance"`
+	EvidenceRefs     []string `json:"evidence_refs,omitempty"`
+	NodeKey          string   `json:"node_key,omitempty"`
+	EdgeKey          string   `json:"edge_key,omitempty"`
+	EdgeCrossRID     string   `json:"edge_cross_rid,omitempty"`
+	ConfidenceClass  string   `json:"confidence_class,omitempty"`
+	NodeID           int      `json:"node_id,omitempty"`
+	EdgeID           int      `json:"edge_id,omitempty"`
+	Relation         string   `json:"relation,omitempty"`
+	FromNodeKey      string   `json:"from_node_key,omitempty"`
+	ToNodeKey        string   `json:"to_node_key,omitempty"`
+	FromCrossRID     string   `json:"from_cross_rid,omitempty"`
+	ToCrossRID       string   `json:"to_cross_rid,omitempty"`
+	SymbolKind       string   `json:"symbol_kind,omitempty"`
+	OwnerPath        string   `json:"owner_path,omitempty"`
+	DocID            string   `json:"doc_id,omitempty"`
+	DestinationPath  string   `json:"destination_path,omitempty"`
+	DestinationDocID string   `json:"destination_doc_id,omitempty"`
 }
 
 type GraphQueryStats struct {

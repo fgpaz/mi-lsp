@@ -735,6 +735,43 @@ func TestExtractReferencesSupportsObsidianFormsAndSkipsFences(t *testing.T) {
 	}
 }
 
+func TestExtractReferencesSemanticRelations(t *testing.T) {
+	content := "---\nrelated: [[frontmatter]]\n---\n" +
+		"- related: [[RF-DG-TARGET]]\n" +
+		"- depends: [decisión](decision.md)\n" +
+		"- supports: [[support.md#Motivo|motivo]]\n" +
+		"- contradicts: [[contradiction.md]]\n" +
+		"- supersedes: [[source.md]]\n" +
+		"```md\n- related: [[hidden.md]]\n```\n"
+	mentions, edges := extractReferences(t.TempDir(), "wiki/source.md", content)
+	if len(mentions) == 0 {
+		t.Fatal("expected structural mentions")
+	}
+	semantic := map[string]model.DocEdge{}
+	for _, edge := range edges {
+		if strings.HasPrefix(edge.Kind, "doc_") && edge.Kind != "doc_wikilink" && edge.Kind != "doc_markdown_link" {
+			semantic[edge.Kind] = edge
+		}
+	}
+	for _, kind := range []string{"doc_related", "doc_depends", "doc_supports", "doc_contradicts", "doc_supersedes"} {
+		if _, ok := semantic[kind]; !ok {
+			t.Fatalf("missing semantic edge %q: %#v", kind, edges)
+		}
+	}
+	if semantic["doc_related"].ToDocID != "RF-DG-TARGET" {
+		t.Fatalf("doc_id target=%#v", semantic["doc_related"])
+	}
+	resolved := resolveDocEdges([]model.DocRecord{{Path: "wiki/source.md"}, {Path: "wiki/decision.md"}, {Path: "wiki/contradiction.md"}}, edges, []string{"wiki/"})
+	for _, edge := range resolved {
+		if edge.Label == "hidden.md" || (semanticDocumentRelation(edge.Kind) && edge.Label == "frontmatter") {
+			t.Fatalf("fenced/frontmatter relation survived: %#v", edge)
+		}
+		if edge.Kind == "doc_supersedes" {
+			t.Fatalf("self semantic edge should be skipped: %#v", edge)
+		}
+	}
+}
+
 func TestResolveDocEdgesUsesDeterministicPrecedence(t *testing.T) {
 	docs := []model.DocRecord{
 		{Path: "wiki/source.md"},

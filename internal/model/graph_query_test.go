@@ -6,14 +6,14 @@ import (
 )
 
 func TestGraphQueryRequestNormalizeDefaultsAndRelations(t *testing.T) {
-	q, err := (GraphQueryRequest{Operation: " nav.neighbors ", Relations: []string{"calls", " CALLS ", "references"}}).Normalize()
+	q, err := (GraphQueryRequest{Operation: " nav.neighbors ", Relations: []string{"calls", " CALLS ", "references", "doc_related"}}).Normalize()
 	if err != nil {
 		t.Fatal(err)
 	}
 	if q.Depth != GraphQueryDefaultDepth || q.Limit != GraphQueryDefaultLimit || q.TokenBudget != GraphQueryDefaultToken || q.Direction != "both" {
 		t.Fatalf("defaults=%+v", q)
 	}
-	if len(q.Relations) != 2 || q.Relations[0] != "calls" || q.Relations[1] != "references" {
+	if len(q.Relations) != 3 || q.Relations[0] != "calls" || q.Relations[1] != "doc_related" || q.Relations[2] != "references" {
 		t.Fatalf("relations=%v", q.Relations)
 	}
 }

@@ -602,6 +602,13 @@ func graphItemsFromEdgeWorks(ctx context.Context, s *store.GraphQuerySnapshot, w
 
 func graphNodeItemHydrated(n model.GraphNodeRecord, distance int, edge *model.GraphEdgeRecord, hydration graphHydration) (model.GraphQueryItem, error) {
 	item := model.GraphQueryItem{Kind: "node", CrossRID: n.CrossRID, Display: n.DisplayName, Status: n.ClaimStatus, ConfidenceClass: confidenceClass(n.ClaimStatus), Distance: distance, NodeKey: n.NodeKey.String(), NodeID: n.NodeID, SymbolKind: n.Identity.SymbolKind, OwnerPath: n.Identity.OwnerPath}
+	if n.Identity.SymbolKind == "document" {
+		item.DestinationPath = n.Identity.OwnerPath
+		if n.Identity.SemanticIdentity != n.Identity.OwnerPath {
+			item.DocID = n.Identity.SemanticIdentity
+			item.DestinationDocID = n.Identity.SemanticIdentity
+		}
+	}
 	if edge != nil {
 		item.Kind = "edge"
 		item.EdgeKey = edge.EdgeKey.String()
@@ -627,6 +634,13 @@ func graphNodeItemHydrated(n model.GraphNodeRecord, distance int, edge *model.Gr
 
 func graphNodeItem(s *store.GraphQuerySnapshot, ctx context.Context, n model.GraphNodeRecord, distance int, edge *model.GraphEdgeRecord) (model.GraphQueryItem, error) {
 	item := model.GraphQueryItem{Kind: "node", CrossRID: n.CrossRID, Display: n.DisplayName, Status: n.ClaimStatus, ConfidenceClass: confidenceClass(n.ClaimStatus), Distance: distance, NodeKey: n.NodeKey.String(), NodeID: n.NodeID, SymbolKind: n.Identity.SymbolKind, OwnerPath: n.Identity.OwnerPath}
+	if n.Identity.SymbolKind == "document" {
+		item.DestinationPath = n.Identity.OwnerPath
+		if n.Identity.SemanticIdentity != n.Identity.OwnerPath {
+			item.DocID = n.Identity.SemanticIdentity
+			item.DestinationDocID = n.Identity.SemanticIdentity
+		}
+	}
 	var evidenceNodeID = &n.NodeID
 	var evidenceEdgeID *int
 	if edge != nil {
@@ -667,7 +681,15 @@ func graphEdgeItem(s *store.GraphQuerySnapshot, ctx context.Context, edge model.
 		return model.GraphQueryItem{}, err
 	}
 	refs, err := s.EvidenceRefs(ctx, nil, &edge.EdgeID, 32)
-	return model.GraphQueryItem{Kind: "edge", CrossRID: edge.CrossRID, EdgeCrossRID: edge.CrossRID, EdgeKey: edge.EdgeKey.String(), EdgeID: edge.EdgeID, Relation: edge.Relation, Status: edge.ClaimStatus, ConfidenceClass: confidenceClass(edge.ClaimStatus), Distance: 0, EvidenceRefs: refs, FromNodeKey: from.NodeKey.String(), ToNodeKey: to.NodeKey.String(), FromCrossRID: from.CrossRID, ToCrossRID: to.CrossRID, OwnerPath: edge.OwnerPath}, err
+	item := model.GraphQueryItem{Kind: "edge", CrossRID: edge.CrossRID, EdgeCrossRID: edge.CrossRID, EdgeKey: edge.EdgeKey.String(), EdgeID: edge.EdgeID, Relation: edge.Relation, Status: edge.ClaimStatus, ConfidenceClass: confidenceClass(edge.ClaimStatus), Distance: 0, EvidenceRefs: refs, FromNodeKey: from.NodeKey.String(), ToNodeKey: to.NodeKey.String(), FromCrossRID: from.CrossRID, ToCrossRID: to.CrossRID, OwnerPath: edge.OwnerPath}
+	if to.Identity.SymbolKind == "document" {
+		item.DestinationPath = to.Identity.OwnerPath
+		if to.Identity.SemanticIdentity != to.Identity.OwnerPath {
+			item.DocID = to.Identity.SemanticIdentity
+			item.DestinationDocID = to.Identity.SemanticIdentity
+		}
+	}
+	return item, err
 }
 
 func confidenceClass(status string) string {

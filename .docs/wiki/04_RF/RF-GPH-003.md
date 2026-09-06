@@ -207,3 +207,7 @@ evidence:
   - internal/store/schema.go
   - .docs/wiki/06_pruebas/TP-GPH.md
 ```
+
+## Relaciones documentales explícitas
+
+La extracción Markdown persiste, mediante `DocEdge.Kind`, las relaciones `doc_related`, `doc_depends`, `doc_supports`, `doc_contradicts` y `doc_supersedes`. Solo se reconocen como líneas de lista con un wikilink o markdown-link local; frontmatter, cercas, similitud y embeddings no producen estas aristas. La resolución conserva rutas, `doc_id` y estado unresolved para destinos ausentes o ambiguos.

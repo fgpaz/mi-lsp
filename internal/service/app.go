@@ -1387,7 +1387,7 @@ func (a *App) graphQuery(ctx context.Context, request model.CommandRequest) (mod
 	}
 	db, err := openWorkspaceDB(registration, request.Operation, true)
 	if err != nil {
-		return model.Envelope{}, store.SanitizeGraphQueryError(err)
+		return model.Envelope{}, graphQueryErrorForWorkspace(store.SanitizeGraphQueryError(err), registration.Name)
 	}
 	defer db.Close()
 	envelope, err := GraphQuery(ctx, db, q)
@@ -1395,11 +1395,29 @@ func (a *App) graphQuery(ctx context.Context, request model.CommandRequest) (mod
 		if fallback, ok := liveNeighborsStaleFallback(ctx, request, q, db, registration, err); ok {
 			return fallback, nil
 		}
-		return model.Envelope{}, store.SanitizeGraphQueryError(err)
+		return model.Envelope{}, graphQueryErrorForWorkspace(store.SanitizeGraphQueryError(err), registration.Name)
 	}
 	envelope.Workspace = registration.Name
 	envelope.Backend = "sqlite-direct"
 	return envelope, nil
+}
+
+func graphQueryRecoveryHint(workspace string) string {
+	alias := strings.TrimSpace(workspace)
+	if alias == "" {
+		alias = "<alias>"
+	}
+	return fmt.Sprintf("safe recovery (no automatic rebuild): run 'mi-lsp index --workspace %s --docs-only' for the documentation graph or 'mi-lsp index --workspace %s' for the full graph; textual wiki search remains available with 'mi-lsp nav wiki search <query> --workspace %s'", alias, alias, alias)
+}
+
+func graphQueryErrorForWorkspace(err error, workspace string) error {
+	var graphErr *model.GraphQueryError
+	if err == nil || !errors.As(err, &graphErr) || graphErr.Code != "GPH_QUERY_GRAPH_INVALID" || !strings.Contains(strings.ToLower(graphErr.Message), "stale") {
+		return err
+	}
+	graphErr.Message = "graph catalog is stale; graph queries are unavailable until the index is refreshed"
+	graphErr.Hint = graphQueryRecoveryHint(workspace)
+	return err
 }
 
 func liveNeighborsStaleFallback(ctx context.Context, request model.CommandRequest, q model.GraphQueryRequest, db *sql.DB, registration model.WorkspaceRegistration, queryErr error) (model.Envelope, bool) {
@@ -1421,6 +1439,7 @@ func liveNeighborsStaleFallback(ctx context.Context, request model.CommandReques
 			return model.Envelope{}, false
 		}
 	}
+	hint := graphQueryRecoveryHint(registration.Name)
 	return model.Envelope{
 		Ok:             true,
 		Workspace:      registration.Name,
@@ -1428,6 +1447,8 @@ func liveNeighborsStaleFallback(ctx context.Context, request model.CommandReques
 		Mode:           "query_only",
 		Items:          []model.GraphQueryItem{},
 		Warnings:       []string{"graph neighbors unavailable; bridge served with stale graph freshness"},
+		Hint:           "graph neighbors are unavailable while the graph catalog is stale; textual wiki navigation remains available",
+		NextHint:       &hint,
 		Operation:      q.Operation,
 		GenerationID:   freshness.GenerationID,
 		GraphFreshness: &freshness,

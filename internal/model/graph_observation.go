@@ -183,7 +183,7 @@ func observationCapability(s string) bool {
 	if s == "declarations" {
 		return true
 	}
-	for _, v := range []string{"contains", "imports", "references", "calls", "implements", "extends", "tests", "route_to_handler", "publishes", "consumes", "reads", "writes", "doc_mentions", "doc_wikilink", "doc_embed", "doc_markdown_link", "doc_id", "doc_hierarchy"} {
+	for _, v := range []string{"contains", "imports", "references", "calls", "implements", "extends", "tests", "route_to_handler", "publishes", "consumes", "reads", "writes", "doc_mentions", "doc_wikilink", "doc_embed", "doc_markdown_link", "doc_id", "doc_hierarchy", "doc_related", "doc_depends", "doc_supports", "doc_contradicts", "doc_supersedes"} {
 		if s == v {
 			return true
 		}

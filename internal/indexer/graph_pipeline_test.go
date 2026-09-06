@@ -52,7 +52,7 @@ func TestFullIndexPublishesLocalGoGraph(t *testing.T) {
 	}
 	defer snapshot.Close()
 	docNodes, selectorKind, err := snapshot.ResolveGraphSelector(context.Background(), ".docs/wiki/guide.md")
-	if err != nil || selectorKind != "semantic_identity" || len(docNodes) != 1 || docNodes[0].Identity.SymbolKind != "document" {
+	if err != nil || selectorKind != "doc_path" || len(docNodes) != 1 || docNodes[0].Identity.SymbolKind != "document" {
 		t.Fatalf("document selector: nodes=%d kind=%q err=%v", len(docNodes), selectorKind, err)
 	}
 	docEdges, err := snapshot.Edges(context.Background(), []int{docNodes[0].NodeID}, "out", []string{"doc_markdown_link"}, 10)

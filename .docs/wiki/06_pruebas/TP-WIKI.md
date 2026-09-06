@@ -283,6 +283,34 @@ cases:
 ```
 
 ```toon
+block_id: tp-wiki-knowledge-navigation-v1
+kind: test-cases
+source_of_truth: this
+evidence: .docs/wiki/09_contratos/CT-NAV-WIKI.md
+verify:
+  - mi-lsp nav wiki search "motivo de la decisión" --workspace <alias> --top 5 --format toon
+  - mi-lsp nav wiki map --workspace <alias> --max-items 12 --format toon
+  - mi-lsp nav wiki search "sustitución" --workspace <alias> --include-content --top 5 --format toon
+  - mi-lsp nav multi-read .docs/wiki/04_RF/RF-WIKI-006.md:1-120 --workspace <alias> --format toon
+cases:
+  - id: TC-WIKI-041
+    type: positivo
+    given: "wiki Markdown canónica con referencias textuales sobre decisiones, fuentes, sustituciones y aprendizajes"
+    when: "se ejecuta el flujo search -> map -> search -> multi-read sin proveedor semántico"
+    then: "search devuelve coincidencias textuales bounded, map devuelve hubs sin cuerpos y multi-read devuelve solo el rango solicitado; no se reporta semantic recall"
+  - id: TC-WIKI-042
+    type: negativo
+    given: "el catálogo documental está stale"
+    when: "se ejecuta nav graph stats o una consulta de vecinos"
+    then: "stats falla cerrado con GPH_QUERY_GRAPH_INVALID; neighbors puede degradar explícitamente a mode=query_only sin claims graph; next_hint orienta a index --docs-only o index completo, sin rebuild destructivo ni bloqueo de wiki search/map"
+  - id: TC-WIKI-043
+    type: negativo
+    given: "el alias solicitado no está registrado o su root ya no existe"
+    when: "se ejecuta una superficie wiki dirigida"
+    then: "devuelve diagnóstico explícito de workspace ausente; no finge federación ni reindexa otro repositorio"
+```
+
+```toon
 block_id: tp-wiki-rf-006-cases
 kind: test-cases
 rf: RF-WIKI-006
@@ -479,3 +507,13 @@ evidence:
   - internal/indexer/wiki_code_incremental_test.go
   - .docs/wiki/06_pruebas/TP-WIKI.md
 ```
+
+## TP-WIKI-GRAPH-001 — grafo documental explícito
+
+- **Dado** un Markdown con listas `related`, `depends`, `supports`, `contradicts` y `supersedes`, **cuando** se indexa, **entonces** se conservan las cinco relaciones como aristas tipadas y no como `doc_mentions`.
+- **Dado** un destino por `doc_id` o ruta relativa, **cuando** se consulta `nav.neighbors` por ID o ruta, **entonces** se resuelve el documento, se exponen relación, destino y status, y una colisión de ID queda ambigua sin auto-selección.
+- **Dado** un ciclo, un destino roto o una generación stale, **cuando** se navega con profundidad, budget y cursor, **entonces** la expansión queda acotada, el unresolved es visible y permanece disponible el fallback textual.
+- **Dado** un documento genérico bajo `wiki/` o `bibliotecas/` sin ID SDD, **cuando** se indexa, **entonces** la identidad de ruta basta para navegarlo.
+- **Contrato de escritura:** incluir `doc_id`, `summary`, `status` y líneas de relación explícitas; actualizar antes de duplicar un ID; `supersedes` conserva el historial.
+
+Fixtures: `testdata/documentary-graph/software/.docs/wiki/` y `testdata/documentary-graph/generic/{wiki,bibliotecas}/`.

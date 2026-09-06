@@ -32,6 +32,11 @@ var graphImpactRelations = map[string]GraphImpactRelation{
 	"doc_markdown_link": {Relation: "doc_markdown_link", Direction: "in", ClaimStatuses: []string{GraphRecordExact}, Cost: 1, Transitive: false},
 	"doc_id":            {Relation: "doc_id", Direction: "in", ClaimStatuses: []string{GraphRecordExact}, Cost: 1, Transitive: false},
 	"doc_hierarchy":     {Relation: "doc_hierarchy", Direction: "in", ClaimStatuses: []string{GraphRecordExact}, Cost: 1, Transitive: false},
+	"doc_related":       {Relation: "doc_related", Direction: "in", ClaimStatuses: []string{GraphRecordExact}, Cost: 1, Transitive: false},
+	"doc_depends":       {Relation: "doc_depends", Direction: "in", ClaimStatuses: []string{GraphRecordExact}, Cost: 1, Transitive: false},
+	"doc_supports":      {Relation: "doc_supports", Direction: "in", ClaimStatuses: []string{GraphRecordExact}, Cost: 1, Transitive: false},
+	"doc_contradicts":   {Relation: "doc_contradicts", Direction: "in", ClaimStatuses: []string{GraphRecordExact}, Cost: 1, Transitive: false},
+	"doc_supersedes":    {Relation: "doc_supersedes", Direction: "in", ClaimStatuses: []string{GraphRecordExact}, Cost: 1, Transitive: false},
 }
 
 type GraphImpactRelation struct {
@@ -48,7 +53,7 @@ func GraphImpactRelationSemantics(relation string) (GraphImpactRelation, bool) {
 }
 
 func graphDocumentRelation(relation string) bool {
-	return relation == "doc_mentions" || relation == "doc_wikilink" || relation == "doc_embed" || relation == "doc_markdown_link" || relation == "doc_id" || relation == "doc_hierarchy"
+	return relation == "doc_mentions" || relation == "doc_wikilink" || relation == "doc_embed" || relation == "doc_markdown_link" || relation == "doc_id" || relation == "doc_hierarchy" || relation == "doc_related" || relation == "doc_depends" || relation == "doc_supports" || relation == "doc_contradicts" || relation == "doc_supersedes"
 }
 
 func GraphImpactRelations() []GraphImpactRelation {

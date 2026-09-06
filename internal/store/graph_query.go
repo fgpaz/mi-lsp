@@ -17,6 +17,14 @@ var (
 	ErrGraphQuerySelectorAmbiguous = errors.New("GPH_QUERY_SELECTOR_AMBIGUOUS")
 )
 
+func graphCatalogStaleError() *model.GraphQueryError {
+	return &model.GraphQueryError{
+		Code:    "GPH_QUERY_GRAPH_INVALID",
+		Message: "graph catalog is stale; graph queries are unavailable until the index is refreshed",
+		Hint:    "safe recovery (no automatic rebuild): run 'mi-lsp index --workspace <alias> --docs-only' for the documentation graph or 'mi-lsp index --workspace <alias>' for the full graph; textual wiki search remains available",
+	}
+}
+
 type GraphQuerySnapshot struct {
 	tx               *sql.Tx
 	generation       model.GraphGeneration
@@ -39,7 +47,7 @@ func BeginGraphQuerySnapshot(ctx context.Context, db *sql.DB, generation string)
 		return fail(err)
 	}
 	if state != GraphRuntimeFresh {
-		return fail(&model.GraphQueryError{Code: "GPH_QUERY_GRAPH_INVALID", Message: "graph catalog is stale"})
+		return fail(graphCatalogStaleError())
 	}
 	graphCatalogGeneration, graphBound, err := workspaceMetaValueConn(ctx, tx, GraphCatalogGenerationMeta)
 	if err != nil {
@@ -50,7 +58,7 @@ func BeginGraphQuerySnapshot(ctx context.Context, db *sql.DB, generation string)
 		return fail(err)
 	}
 	if graphBound && catalogBound && graphCatalogGeneration != activeCatalogGeneration {
-		return fail(&model.GraphQueryError{Code: "GPH_QUERY_GRAPH_INVALID", Message: "graph catalog is stale"})
+		return fail(graphCatalogStaleError())
 	}
 	var id model.GraphDigest
 	if strings.TrimSpace(generation) == "" {
@@ -294,6 +302,16 @@ func (s *GraphQuerySnapshot) ResolveGraphSelector(ctx context.Context, selector 
 		}
 	}
 	queries = append(queries,
+		struct {
+			kind string
+			sql  string
+			arg  any
+		}{"doc_path", graphNodeSelect + " AND symbol_kind='document' AND owner_path=? ORDER BY node_key LIMIT 51", selector},
+		struct {
+			kind string
+			sql  string
+			arg  any
+		}{"doc_id", graphNodeSelect + " AND symbol_kind='document' AND semantic_identity=? ORDER BY node_key LIMIT 51", selector},
 		struct {
 			kind string
 			sql  string

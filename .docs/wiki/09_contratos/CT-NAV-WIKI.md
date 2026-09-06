@@ -346,7 +346,8 @@ readiness:
 ## Diagnosticos
 
 - Si `governance_blocked=true`, `wiki search` devuelve `backend=governance` y no ejecuta ranking documental.
-- Si `doc_records` esta vacio, `wiki search` devuelve `backend=wiki.search`, `items=[]` y un hint hacia `mi-lsp index --workspace <alias> --docs-only`.
+- Si `doc_records` está vacío, `wiki search` devuelve `backend=wiki.search`, `items=[]` y un hint hacia `mi-lsp index --workspace <alias> --docs-only`.
+- Si el catálogo Graph está stale (estado de runtime o generaciones de catálogo divergentes), `nav graph stats|status|validate` falla cerrado con `error.code=GPH_QUERY_GRAPH_INVALID`; las consultas de vecinos pueden degradar a un envelope explícito `mode=query_only` sin claims graph. En ambos casos el diagnóstico incluye `next_hint` hacia `mi-lsp index --workspace <alias> --docs-only` (grafo documental) o `mi-lsp index --workspace <alias>` (grafo completo). No se ejecuta un rebuild automático; `nav wiki search` y `nav wiki map` siguen disponibles.
 - Si `--layer` contiene valores desconocidos, se ignoran y se devuelven warnings con los layers validos.
 - `--repo` no pertenece a `nav wiki`; para compatibilidad, `nav ask|route|pack --repo <x>` lo acepta, lo ignora para docs y sugiere `nav wiki`.
 - `nav wiki trace RS-*` devuelve identidad documental (`doc_id`, `layer=RS`, `stage=outcome`) y no rellena el campo legacy `rf`; `nav wiki trace --all` permanece RF-only.
@@ -364,6 +365,19 @@ readiness:
 - `nav wiki search|route|pack|trace` expone `lookup_status` de forma aditiva con `query`, `workspace`, `index_freshness`, `governance_sync`, `match_kind`, IDs exactos (`doc_id`, `block_id`, `record_id`), `path`, `layer`, `stage`, `rank_reason`, totales, razon y `next_hint` valido cuando la preview no muestra todo.
 - `match_kind` distingue `canonical_indexed_id`, `alias_read_model_routing`, `mentions_content_fallback`, `content_fallback` y `true_absence`; no debe reportar ausencia si encontro identidad canonica pero la traza downstream queda incompleta.
 - `TraceResult` puede agregar `confidence`, `confidence_reason` y `status_reason` de forma aditiva para diferenciar evidencia fuerte, fallback a disco, cobertura parcial y ausencia real; estos campos explican el veredicto pero no reemplazan `status`, `lookup_status` ni la evidencia `wiki-source`.
+
+## Ejemplo documental sin embeddings
+
+Para una pregunta sobre decisiones, fuentes o sustituciones, el flujo textual bounded es:
+
+```text
+mi-lsp nav wiki search "motivo de la decisión" --workspace <alias> --top 5 --format toon
+mi-lsp nav wiki map --workspace <alias> --max-items 12 --format toon
+mi-lsp nav wiki search "sustitución" --workspace <alias> --include-content --top 5 --format toon
+mi-lsp nav multi-read .docs/wiki/04_RF/RF-WIKI-006.md:1-120 --workspace <alias> --format toon
+```
+
+La búsqueda es textual y el mapa es un catálogo de hubs; v1 no implementa embeddings ni `nav recall`. Si Graph está stale, se conserva este flujo y se repara de forma explícita con `mi-lsp index --workspace <alias> --docs-only` o con un index completo según la necesidad.
 
 ## Contract `wiki inventory`
 
@@ -450,3 +464,21 @@ implemented (search, route, pack, trace, validate-harness, validate-source, inve
 ## RF asociado
 
 RF-QRY-016, RF-WIKI-001, RF-WIKI-002, RF-WIKI-003, RF-WIKI-004, RF-WIKI-005, RF-WIKI-006, RF-WIKI-007
+
+## Grafo documental explícito
+
+Las listas Markdown pueden declarar relaciones documentales sin frontmatter:
+
+```markdown
+- related: [[RF-DG-DECISION]]
+- depends: [decisión](decision.md)
+- supports: [[decision.md]]
+- contradicts: [[alternativa.md]]
+- supersedes: [[historia.md]]
+```
+
+`nav.neighbors` reutiliza la generación publicada y acepta como selector un `doc_id` o una ruta (`.docs/wiki/...`, `wiki/...` o `bibliotecas/...`). `--edge doc_related` (y las otras cuatro relaciones) filtra la consulta. Cada item conserva `relation`, `status`, `owner_path` (destino) y `doc_id` cuando existe; los targets faltantes o ambiguos aparecen como omisiones, nunca como inferencias. La consulta respeta `--depth`, `--limit`, `--token-budget` y `--cursor`; ciclos quedan acotados por el presupuesto. Si el catálogo está stale, el contrato conserva el fallback textual de `nav wiki search`.
+
+Flujo recomendado: `nav wiki search "concepto"` → `nav neighbors RF-DG-DECISION --edge doc_related` → `nav multi-read .docs/wiki/04_RF/RF-GPH-003.md ...`.
+
+Contrato de escritura para futuras skills: declarar `doc_id`, `summary` y `status`; escribir relaciones explícitas en listas; actualizar antes de crear otro documento con el mismo ID; `supersedes` preserva el historial y no lo oculta.

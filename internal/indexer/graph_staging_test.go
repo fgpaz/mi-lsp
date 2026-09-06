@@ -1093,6 +1093,35 @@ func TestDocumentGraphPreservesRelationKinds(t *testing.T) {
 	}
 }
 
+func TestStageGraphPreservesDocumentarySemanticKinds(t *testing.T) {
+	docs := []model.DocRecord{
+		{Path: "wiki/source.md", DocID: "SOURCE", ContentHash: stagingDigest("source").String()},
+		{Path: "wiki/target.md", DocID: "TARGET", ContentHash: stagingDigest("target").String()},
+	}
+	kinds := []string{"doc_related", "doc_depends", "doc_supports", "doc_contradicts", "doc_supersedes"}
+	edges := make([]model.DocEdge, 0, len(kinds))
+	for _, kind := range kinds {
+		edges = append(edges, model.DocEdge{FromPath: "wiki/source.md", ToPath: "wiki/target.md", Kind: kind, Label: kind})
+	}
+	bundle, err := AssembleGraphObservationBatches(GraphAssemblyRequest{
+		Docs: docs, DocEdges: edges, RepositoryIdentity: "https://example.com/docs", CreatedAt: time.Unix(1, 0),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]bool{}
+	for _, edge := range bundle.Edges {
+		if edge.SourceBackend == "docgraph" {
+			got[edge.Relation] = true
+		}
+	}
+	for _, kind := range kinds {
+		if !got[kind] {
+			t.Fatalf("semantic relation %q was coerced or omitted: %v", kind, got)
+		}
+	}
+}
+
 func TestDocumentGraphReportsBoundedAmbiguousAndMissingTargets(t *testing.T) {
 	docs := []model.DocRecord{
 		{Path: "wiki/source.md", ContentHash: stagingDigest("source").String()},

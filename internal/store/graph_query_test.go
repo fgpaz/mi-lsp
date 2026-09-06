@@ -42,6 +42,33 @@ func TestBeginGraphQuerySnapshotRejectsCatalogGenerationMismatch(t *testing.T) {
 	}
 }
 
+func TestBeginGraphQuerySnapshotStaleErrorIncludesSafeRecoveryHint(t *testing.T) {
+	ctx := context.Background()
+	db, _ := seedTestDB(t)
+	defer db.Close()
+	bundle := testGraphBundle(t)
+	if err := StageGraphGeneration(ctx, db, &bundle); err != nil {
+		t.Fatal(err)
+	}
+	if err := ActivateGraphGeneration(ctx, db, bundle.Generation.GenerationID, nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := SetGraphRuntimeState(ctx, db, GraphRuntimeStale, ""); err != nil {
+		t.Fatal(err)
+	}
+	dbSnapshot, err := BeginGraphQuerySnapshot(ctx, db, "")
+	if dbSnapshot != nil {
+		t.Fatal("stale graph query unexpectedly opened a snapshot")
+	}
+	graphErr, ok := err.(*model.GraphQueryError)
+	if !ok || graphErr.Code != "GPH_QUERY_GRAPH_INVALID" {
+		t.Fatalf("stale error=%T %v", err, err)
+	}
+	if !strings.Contains(graphErr.Hint, "--docs-only") || !strings.Contains(graphErr.Hint, "no automatic rebuild") {
+		t.Fatalf("stale hint=%q", graphErr.Hint)
+	}
+}
+
 func TestBeginGraphQuerySnapshotAcceptsActiveAndRetiredOnly(t *testing.T) {
 	ctx := context.Background()
 	db, _ := seedTestDB(t)
@@ -144,6 +171,63 @@ func TestGraphSelectorIndexesAreGenerationScopedAndUsable(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Fatalf("semantic selector did not use the generation-scoped index")
+}
+
+func TestDocumentGraphNeighborsByDocIDAndPath(t *testing.T) {
+	ctx := context.Background()
+	db, _ := seedTestDB(t)
+	defer db.Close()
+	bundle := testGraphBundle(t)
+	for _, doc := range []struct {
+		path  string
+		docID string
+	}{
+		{path: "wiki/decision.md", docID: "RF-DG-DECISION"},
+		{path: "wiki/duplicate.md", docID: "RF-DG-DUP"},
+		{path: "wiki/duplicate-copy.md", docID: "RF-DG-DUP"},
+	} {
+		identity, err := model.NewNodeKey(model.NodeKeyFields{RepositoryIdentity: bundle.Generation.RepositoryIdentity, BackendType: "docgraph", Language: "markdown", ProjectOrModule: "wiki", OwnerPath: doc.path, SymbolKind: "document", SemanticIdentity: doc.docID})
+		if err != nil {
+			t.Fatal(err)
+		}
+		key, err := identity.Hash()
+		if err != nil {
+			t.Fatal(err)
+		}
+		bundle.Nodes = append(bundle.Nodes, model.GraphNodeRecord{NodeID: len(bundle.Nodes), IdentitySchema: "milsp-node-key/v1", Identity: identity, NodeKey: key, DisplayName: doc.path, SourceDigest: key, ClaimStatus: model.GraphRecordExact, CrossRID: model.NodeRID(key), SortKey: doc.path})
+	}
+	bundle.Generation.NodeCount = len(bundle.Nodes)
+	bundle.Generation.GenerationID = model.GraphDigest{}
+	bundle.Generation.ContentDigest = model.GraphDigest{}
+	for i := range bundle.Nodes {
+		bundle.Nodes[i].GenerationID = model.GraphDigest{}
+	}
+	if err := bundle.SealIDs(); err != nil {
+		t.Fatal(err)
+	}
+	if err := StageGraphGeneration(ctx, db, &bundle); err != nil {
+		t.Fatal(err)
+	}
+	if err := ActivateGraphGeneration(ctx, db, bundle.Generation.GenerationID, nil); err != nil {
+		t.Fatal(err)
+	}
+	snapshot, err := BeginGraphQuerySnapshot(ctx, db, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer snapshot.Close()
+	byPath, _, err := snapshot.ResolveGraphSelector(ctx, "wiki/decision.md")
+	if err != nil || len(byPath) != 1 || byPath[0].Identity.OwnerPath != "wiki/decision.md" {
+		t.Fatalf("path selector=%+v err=%v", byPath, err)
+	}
+	byID, _, err := snapshot.ResolveGraphSelector(ctx, "RF-DG-DECISION")
+	if err != nil || len(byID) != 1 || byID[0].Identity.SemanticIdentity != "RF-DG-DECISION" {
+		t.Fatalf("doc id selector=%+v err=%v", byID, err)
+	}
+	ambiguous, _, err := snapshot.ResolveGraphSelector(ctx, "RF-DG-DUP")
+	if err != nil || len(ambiguous) != 2 {
+		t.Fatalf("duplicate doc id selector=%+v err=%v", ambiguous, err)
+	}
 }
 
 func TestGraphEdgesBothUsesSharedFairBudget(t *testing.T) {

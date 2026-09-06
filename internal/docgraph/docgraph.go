@@ -25,11 +25,12 @@ import (
 )
 
 var (
-	docIDPattern        = regexp.MustCompile(`\b(?:FL|RS|RF|TP|TECH|CT|DB|AE)-[A-Z0-9-]+\b`)
-	markdownLinkPattern = regexp.MustCompile(`\[[^\]]+\]\(([^)]+)\)`)
-	wikiLinkPattern     = regexp.MustCompile(`!?\[\[([^\]]+?)\]\]`)
-	inlineCodePattern   = regexp.MustCompile("`([^`]+)`")
-	pascalSymbolPattern = regexp.MustCompile(`\b[A-Z][A-Za-z0-9_]+\b`)
+	docIDPattern            = regexp.MustCompile(`\b(?:FL|RS|RF|TP|TECH|CT|DB|AE)-[A-Z0-9-]+\b`)
+	markdownLinkPattern     = regexp.MustCompile(`\[[^\]]+\]\(([^)]+)\)`)
+	wikiLinkPattern         = regexp.MustCompile(`!?\[\[([^\]]+?)\]\]`)
+	inlineCodePattern       = regexp.MustCompile("`([^`]+)`")
+	pascalSymbolPattern     = regexp.MustCompile(`\b[A-Z][A-Za-z0-9_]+\b`)
+	semanticRelationPattern = regexp.MustCompile(`(?i)^\s*[-*+]\s+(related|depends|supports|contradicts|supersedes)\s*:\s*(.*?)\s*$`)
 )
 
 func isSnapshotPath(path string) bool {
@@ -943,6 +944,70 @@ func extractReferences(root string, docPath string, content string) ([]model.Doc
 		addMention(model.DocMentionTypeDocPath, target)
 		addEdge(model.DocEdge{FromPath: docPath, ToPath: target, Kind: kind, Label: inner})
 	}
+	// Semantic relations are intentionally parsed from Markdown list items rather
+	// than frontmatter. The link syntax is still parsed by the same local target
+	// helpers used by structural document edges.
+	frontMatter := false
+	firstLine := true
+	for _, line := range strings.Split(masked, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if firstLine {
+			if trimmed == "" {
+				continue
+			}
+			firstLine = false
+			frontMatter = trimmed == "---"
+			continue
+		}
+		if frontMatter {
+			if trimmed == "---" || trimmed == "..." {
+				frontMatter = false
+			}
+			continue
+		}
+		match := semanticRelationPattern.FindStringSubmatch(line)
+		if len(match) != 3 {
+			continue
+		}
+		relation := strings.ToLower(strings.TrimSpace(match[1]))
+		link := strings.TrimSpace(match[2])
+		var target, label string
+		var toDocID string
+		if strings.HasPrefix(link, "[[") && strings.HasSuffix(link, "]]") {
+			inner := strings.TrimSpace(strings.TrimSuffix(strings.TrimPrefix(link, "[["), "]]"))
+			parsedTarget, _, _, ok := parseLocalWikilink(inner)
+			if !ok || parsedTarget == "" {
+				continue
+			}
+			label = inner
+			docIDTarget := strings.TrimSuffix(parsedTarget, ".md")
+			if docIDPattern.FindString(docIDTarget) == docIDTarget {
+				toDocID = docIDTarget
+			} else {
+				target = parsedTarget
+			}
+		} else if strings.HasPrefix(link, "[") {
+			open := strings.Index(link, "](")
+			if open <= 0 || !strings.HasSuffix(link, ")") {
+				continue
+			}
+			rawTarget := strings.TrimSpace(link[open+2 : len(link)-1])
+			parsedTarget, _, ok := parseLocalMarkdownTarget(rawTarget)
+			if !ok || parsedTarget == "" {
+				continue
+			}
+			target = ensureMarkdownDocExtension(parsedTarget)
+			label = rawTarget
+		} else {
+			continue
+		}
+		if target != "" {
+			if normalizeDocCandidate(target) == normalizeDocCandidate(docPath) {
+				continue
+			}
+		}
+		addEdge(model.DocEdge{FromPath: docPath, ToPath: target, ToDocID: toDocID, Kind: "doc_" + relation, Label: label})
+	}
 	for _, indexes := range inlineCodePattern.FindAllStringSubmatchIndex(masked, -1) {
 		if len(indexes) < 4 || indexes[2] < 0 {
 			continue
@@ -1098,6 +1163,12 @@ func resolveDocEdges(docs []model.DocRecord, edges []model.DocEdge, roots []stri
 			candidates = uniqueSortedDocPaths(index.docIDs[edge.ToDocID])
 		} else if edge.ToPath != "" {
 			candidates = index.resolvePath(edge.FromPath, edge.ToPath, roots)
+			if len(candidates) == 0 && semanticDocumentRelation(edge.Kind) {
+				id := strings.TrimSuffix(pathpkg.Base(normalizeDocCandidate(edge.ToPath)), ".md")
+				if id != "" {
+					candidates = uniqueSortedDocPaths(index.docIDs[id])
+				}
+			}
 		}
 		switch len(candidates) {
 		case 1:
@@ -1175,6 +1246,15 @@ func (index docResolutionIndex) resolvePath(fromPath, rawTarget string, roots []
 		return exact
 	}
 	return uniqueSortedDocPaths(index.foldedBase[strings.ToLower(base)])
+}
+
+func semanticDocumentRelation(kind string) bool {
+	switch kind {
+	case "doc_related", "doc_depends", "doc_supports", "doc_contradicts", "doc_supersedes":
+		return true
+	default:
+		return false
+	}
 }
 
 func normalizeDocCandidate(value string) string {

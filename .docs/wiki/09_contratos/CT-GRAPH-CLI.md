@@ -622,3 +622,9 @@ parity:
 ## Sync
 
 RF owners: `[[RF-GPH-005]]`, `[[RF-GPH-006]]`, `[[RF-GPH-007]]`, `[[RF-GPH-009]]`, `[[RF-GPH-011]]`. Tests: `[[TP-GPH]]`. Runtime: `[[TECH-GRAPH-NATIVE]]`. Store: `[[DB-SYMBOL-EDGE-GRAPH]]`.
+
+## Relaciones documentales explícitas
+
+Además de `doc_wikilink`, `doc_embed`, `doc_markdown_link`, `doc_id` y `doc_hierarchy`, la generación acepta exactamente `doc_related`, `doc_depends`, `doc_supports`, `doc_contradicts` y `doc_supersedes`. Se extraen de listas Markdown (`- related: [[Destino]]` o `- depends: [Destino](ruta.md)`), no de YAML frontmatter. No se crean relaciones por similitud ni por embeddings.
+
+Ejemplo: `mi-lsp nav neighbors RF-DG-DECISION --edge doc_related --depth 2 --format toon`. También es válido `mi-lsp nav neighbors .docs/wiki/04_RF/RF-GPH-003.md --edge doc_depends`. El payload muestra la relación, el status y el destino (`owner_path` y `doc_id` cuando existe); `--direction in|out|both`, cursor y budgets siguen siendo los del comando común. `nav.path` y `nav.explain` operan sobre las mismas aristas. Un destino ausente o con `doc_id` duplicado se reporta como unresolved y no se selecciona automáticamente.

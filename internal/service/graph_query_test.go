@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -168,6 +169,17 @@ func TestGraphRankRequestRejectsInvalidUtilityCandidate(t *testing.T) {
 	graphErr, ok := err.(*model.GraphQueryError)
 	if !ok || graphErr.Code != "GPH_QUERY_UTILITY_INVALID" {
 		t.Fatalf("err=%T %v, want typed utility validation", err, err)
+	}
+}
+
+func TestGraphQueryStaleErrorIncludesWorkspaceRecoveryHint(t *testing.T) {
+	err := graphQueryErrorForWorkspace(&model.GraphQueryError{Code: "GPH_QUERY_GRAPH_INVALID", Message: "graph catalog is stale"}, "wiki-demo")
+	graphErr, ok := err.(*model.GraphQueryError)
+	if !ok {
+		t.Fatalf("error=%T %v", err, err)
+	}
+	if !strings.Contains(graphErr.Hint, "mi-lsp index --workspace wiki-demo --docs-only") || !strings.Contains(graphErr.Hint, "nav wiki search <query> --workspace wiki-demo") {
+		t.Fatalf("workspace stale hint=%q", graphErr.Hint)
 	}
 }
 

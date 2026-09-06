@@ -125,3 +125,7 @@ Items se ordenan por distance, relation, display-name casefold + original, NodeK
 - Tests de selector ambiguo/ausente, generation retired/invalid, cursor stale y cada budget.
 - Prueba de solo lectura por hash/mtime lógico de tablas antes/despues.
 - `TP-GPH / TP-GPH-004 / TC-GPH-023..030`.
+
+## 8. Navegación documental
+
+`nav.neighbors`, `nav.path` y `nav.explain` consumen las mismas aristas documentales publicadas. Los selectores aceptan `doc_id` o ruta de documento; `--edge` puede filtrar `doc_related`, `doc_depends`, `doc_supports`, `doc_contradicts` y `doc_supersedes`. El envelope conserva relación, status, ruta destino y `doc_id`; depth, limit, token budget y cursor acotan ciclos y expansiones. Un grafo stale bloquea solo la consulta graph-native y mantiene la búsqueda textual.

@@ -749,7 +749,7 @@ func assembleGraphBundle(input graphAssemblyInput) (model.GraphBundle, error) {
 		}
 		to := docKeys[targetPath]
 		relation := edge.Kind
-		if relation != "doc_wikilink" && relation != "doc_embed" && relation != "doc_markdown_link" && relation != "doc_id" && relation != "doc_hierarchy" {
+		if relation != "doc_wikilink" && relation != "doc_embed" && relation != "doc_markdown_link" && relation != "doc_id" && relation != "doc_hierarchy" && relation != "doc_related" && relation != "doc_depends" && relation != "doc_supports" && relation != "doc_contradicts" && relation != "doc_supersedes" {
 			relation = "doc_mentions"
 		}
 		addDocEdge(fmt.Sprintf("doc-edge:%d", index), from, to, edge.FromPath, relation, model.GraphRecordExact, docSources[edge.FromPath], graphDocClaimDigest(edge.Kind, edge.FromPath, targetPath, edge.Label, docSources[edge.FromPath]))
