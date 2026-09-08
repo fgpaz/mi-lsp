@@ -8,6 +8,8 @@ description: Use when a folder-based agent should navigate code with the mi-lsp 
 Use this skill when you want local semantic navigation with `mi-lsp` without introducing an MCP dependency.
 If the skill is installed but the binary is missing, bootstrap the CLI first instead of abandoning the flow.
 
+For an explicitly authorized isolated graph QA run (not a routine query), follow [R6 — Authorized isolated graph QA](references/recipes.md#r6--authorized-isolated-graph-qa). Keep its setup at the start of authorized verification; it is not a hidden build/C2 preflight.
+
 If `mi-lsp` is missing from `PATH`, use the one-command bootstrap in the `Install bootstrap` section before using `rg`, `Grep`, `Glob`, or broad file reads.
 The intended first path is: install or verify CLI -> `mi-lsp init . --name <alias>` -> `nav intent` for every supported goal-shaped request, then the emitted bounded operation; use `nav ask` / `nav pack` / `nav search --include-content` only when the intent lane does not apply.
 
