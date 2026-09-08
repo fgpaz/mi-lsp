@@ -182,11 +182,28 @@ func validateCanonicalRoot(absRoot string) error {
 	if err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
 		return ErrCanonicalDiscovery
 	}
+	// Check every existing ancestor as well as the final directory. On Windows,
+	// Lstat reports directory junctions as non-directories, so the IsDir check
+	// rejects those reparse points without relying on path spelling.
+	for ancestor := filepath.Dir(filepath.Clean(absRoot)); ; {
+		ancestorInfo, ancestorErr := os.Lstat(ancestor)
+		if ancestorErr != nil || !ancestorInfo.IsDir() || ancestorInfo.Mode()&os.ModeSymlink != 0 {
+			return ErrCanonicalDiscovery
+		}
+		parent := filepath.Dir(ancestor)
+		if parent == ancestor {
+			break
+		}
+		ancestor = parent
+	}
 	physical, err := filepath.EvalSymlinks(absRoot)
 	if err != nil {
 		return ErrCanonicalDiscovery
 	}
-	if filepath.Clean(physical) != absRoot {
+	// Windows may change case or expand a short path during evaluation; compare
+	// directory identity rather than requiring equivalent path spellings.
+	physicalInfo, err := os.Stat(physical)
+	if err != nil || !physicalInfo.IsDir() || !os.SameFile(info, physicalInfo) {
 		return ErrCanonicalDiscovery
 	}
 	return nil

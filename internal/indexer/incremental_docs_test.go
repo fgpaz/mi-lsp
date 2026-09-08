@@ -199,7 +199,8 @@ func TestCollectCanonicalRoots_FromProfile(t *testing.T) {
 		Families: []model.DocsReadFamily{{Name: "functional", Paths: []string{".docs/wiki/03_FL/"}}},
 	}
 
-	roots := collectCanonicalRoots("/workspace", profile)
+	root := t.TempDir()
+	roots := collectCanonicalRoots(root, profile)
 	if len(roots) == 0 {
 		t.Fatal("expected at least one canonical root")
 	}

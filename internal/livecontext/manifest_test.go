@@ -12,6 +12,35 @@ import (
 	"github.com/fgpaz/mi-lsp/internal/model"
 )
 
+func TestValidateCanonicalRootRejectsSymlinkAncestor(t *testing.T) {
+	base := t.TempDir()
+	realParent := filepath.Join(base, "real-parent")
+	realRoot := filepath.Join(realParent, "wiki")
+	if err := os.MkdirAll(realRoot, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := validateCanonicalRoot(realRoot); err != nil {
+		t.Fatalf("direct real root rejected: %v", err)
+	}
+
+	targetParent := t.TempDir()
+	targetRoot := filepath.Join(targetParent, "wiki")
+	if err := os.MkdirAll(targetRoot, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	aliasParent := filepath.Join(base, "alias-parent")
+	if err := os.MkdirAll(aliasParent, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	ancestorLink := filepath.Join(aliasParent, "linked-parent")
+	if err := os.Symlink(targetParent, ancestorLink); err != nil {
+		t.Skipf("symlink creation unavailable: %v", err)
+	}
+	if err := validateCanonicalRoot(filepath.Join(ancestorLink, "wiki")); err == nil {
+		t.Fatal("canonical root accepted a directory below a symlink ancestor")
+	}
+}
+
 func TestDiscoverCanonicalManifestExcludesRawAuditAndSymlinkDocs(t *testing.T) {
 	root := t.TempDir()
 	profile := model.DocsReadProfile{Version: 1, GenericDocs: model.DocsGenericFallback{Paths: []string{".docs/"}}}

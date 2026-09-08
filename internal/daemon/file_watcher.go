@@ -244,7 +244,7 @@ func (fw *FileWatcher) scheduleBatchReindex(filePath string) {
 
 func (fw *FileWatcher) scheduleBatchEvent(event fsnotify.Event) {
 	filePath := strings.TrimSpace(strings.ReplaceAll(event.Name, "\\", "/"))
-	filePath = filepath.Clean(filepath.FromSlash(filePath))
+	filePath = filepath.ToSlash(filepath.Clean(filepath.FromSlash(filePath)))
 	if filePath == "" || filePath == "." || !isWatchableFileForRoot(fw.workspaceRoot, filePath) {
 		return
 	}

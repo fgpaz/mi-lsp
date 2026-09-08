@@ -510,13 +510,14 @@ func TestReconcileDocs_WithAuthorityConfigHash(t *testing.T) {
 }
 
 func TestIncrementalPathDrivenRefreshClassifiesMixedCodeAndCanonicalDocs(t *testing.T) {
-	changed := normalizeIncrementalPaths("/workspace", []string{
-		"/workspace/src/main.mts",
+	root := t.TempDir()
+	changed := normalizeIncrementalPaths(root, []string{
+		filepath.Join(root, "src", "main.mts"),
 		".docs/wiki/guide.md",
 		".docs/wiki/guide.md",
 		".docs/raw/draft.md",
 	})
-	deleted := normalizeIncrementalPaths("/workspace", []string{"/workspace/.docs/wiki/old.md"})
+	deleted := normalizeIncrementalPaths(root, []string{filepath.Join(root, ".docs", "wiki", "old.md")})
 	if len(changed) != 2 || changed[0] != ".docs/wiki/guide.md" || changed[1] != "src/main.mts" {
 		t.Fatalf("normalized changed paths = %#v", changed)
 	}

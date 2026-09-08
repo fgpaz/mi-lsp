@@ -103,7 +103,8 @@ func TestWikiCodeIncrementalFixturePathNormalizationAndLanguageContract(t *testi
 			t.Fatalf("languageFromExt(%q)=%q, want %q", item.path, got, item.want)
 		}
 	}
-	paths := normalizeIncrementalPaths("/workspace", []string{"/workspace/src/demo/service.mjs", "src/demo/service.mjs", "src/demo/service.mjs"})
+	root := t.TempDir()
+	paths := normalizeIncrementalPaths(root, []string{filepath.Join(root, "src", "demo", "service.mjs"), "src/demo/service.mjs", "src/demo/service.mjs"})
 	if len(paths) != 1 || paths[0] != "src/demo/service.mjs" {
 		t.Fatalf("normalized paths=%#v", paths)
 	}
