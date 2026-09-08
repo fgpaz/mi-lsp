@@ -78,6 +78,8 @@ Las transiciones válidas son `staged -> active`, `active -> retired`, `staged -
 6. Commit; solo despues devolver exito al caller.
 7. Aplicar retencion/cleanup en una transaccion posterior que nunca borra el unico rollback valido.
 
+En observaciones Go, `complete` significa completo para la superficie soportada declarada: exclusiones previstas como targets externos o kinds no representables se conservan como omisiones tipadas y no degradan la observación. Un fallo real de parseo, carga de tipos, lectura de fuentes, cancelación o endpoint local elegible ausente permanece `partial`/`unresolved` y no es stageable. Un job owner-bound sin cambios deja su generación candidata en `skipped` dentro de la misma transacción y no mueve el puntero de catálogo. Si el runtime ya tiene un graph válido, conserva su puntero y binding; si requiere reparación, puede stagear/activar el snapshot graph reparado y marcar el runtime `fresh`, siempre conservando el binding del catálogo activo y las garantías de fence/CAS.
+
 Los lectores abren una transaccion read-only y fijan un unico `generation_id` al inicio. Nunca combinan filas de dos generaciones.
 
 ## Slice publicado: grafo documental docs-only

@@ -188,12 +188,13 @@ exports:
 verify:
   - go test ./internal/store -run 'Test(ReplaceWorkspaceIndexPublishesGenerationMetadata|StageGraphGenerationIsAtomicAndInitiallyInvisible|PublishGraphObservationBatchesIdempotentPathPreservesPointerCAS)'
   - go test ./internal/indexer -run 'Test(FullIndexPublishesLocalGoGraph|IncrementalIndexPublishesNewGraphGenerationAfterFileChange|IncrementalIndexObservationFailureLeavesGraphStale)'
-  - go test ./internal/service -run 'TestIndexStartPopulatesWikiChunkEmbeddings|TestRecall_.*Embedding'
+  - go test ./internal/service -run 'TestIndexStartNoChangeGraphRepairPreservesCatalogBinding|TestIndexStartPopulatesWikiChunkEmbeddings|TestRecall_.*Embedding'
 evidence:
   - internal/store/store_test.go
   - internal/store/graph_store_test.go
   - internal/indexer/graph_pipeline_test.go
   - internal/indexer/incremental_test.go
+  - internal/service/index_jobs_test.go
   - internal/service/recall_test.go
 records:
   - id: CT-IDX-PUBLISH-001
@@ -212,6 +213,9 @@ records:
   - id: CT-IDX-PUBLISH-005
     type: terminal
     rule: terminal update requires expected state, active owner fence and RowsAffected=1; zero rows is a stale rejection
+  - id: CT-IDX-PUBLISH-006
+    type: no-op
+    rule: owner-bound full-to-incremental completion with no file or document mutations marks its candidate generation skipped and never rewrites the active catalog pointer; it preserves a valid graph binding or activates only an explicitly repaired graph snapshot under the same fence, while cancellation, failure, and fence loss remain non-publishing outcomes
 ```
 
 ## 4. Watcher y lock interproceso

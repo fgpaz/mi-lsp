@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync/atomic"
@@ -18,6 +19,97 @@ import (
 	"github.com/fgpaz/mi-lsp/internal/store"
 	"github.com/fgpaz/mi-lsp/internal/workspace"
 )
+
+func TestIndexStartNoChangeGraphRepairPreservesCatalogBinding(t *testing.T) {
+	ensureWritableTestHome(t)
+	root := t.TempDir()
+	alias := "index-cli-noop-repair-" + filepath.Base(root)
+	writeWorkspaceFile(t, root, "go.mod", "module example.com/cli-noop-repair\n\ngo 1.23\n")
+	writeWorkspaceFile(t, root, "main.go", "package main\nfunc Normalize() {}\nfunc main() { Normalize() }\n")
+	writeWorkspaceFile(t, root, ".gitignore", ".mi-lsp/\n")
+	for _, args := range [][]string{{"init", "--quiet"}, {"remote", "add", "origin", "https://example.com/cli-noop-repair.git"}, {"config", "user.email", "test@example.com"}, {"config", "user.name", "mi-lsp-test"}, {"add", "."}, {"commit", "--quiet", "-m", "fixture"}} {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = root
+		if output, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\\n%s", args, err, output)
+		}
+	}
+
+	ctx := context.Background()
+	app := New(root, nil)
+	initEnv, err := app.Execute(ctx, model.CommandRequest{
+		Operation: "workspace.init",
+		Payload:   map[string]any{"path": root, "alias": alias, "no_index": true},
+	})
+	if err != nil || !initEnv.Ok {
+		t.Fatalf("workspace.init: ok=%v err=%v", initEnv.Ok, err)
+	}
+	t.Cleanup(func() { _ = workspace.RemoveWorkspace(alias) })
+
+	first, err := app.Execute(ctx, model.CommandRequest{
+		Operation: "index.start",
+		Context:   model.QueryOptions{Workspace: alias},
+		Payload:   map[string]any{"mode": "full", "clean": true, "wait": true},
+	})
+	if err != nil || !first.Ok {
+		t.Fatalf("first index.start: ok=%v err=%v", first.Ok, err)
+	}
+	db, err := store.Open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	catalogBefore, ok, err := store.WorkspaceMetaValue(ctx, db, store.WorkspaceMetaActiveCatalogGeneration)
+	if err != nil || !ok || catalogBefore == "" {
+		db.Close()
+		t.Fatalf("initial catalog generation: value=%q ok=%v err=%v", catalogBefore, ok, err)
+	}
+	if err := store.SetGraphRuntimeState(ctx, db, store.GraphRuntimeStale, ""); err != nil {
+		db.Close()
+		t.Fatalf("mark graph stale: %v", err)
+	}
+	_ = db.Close()
+
+	second, err := app.Execute(ctx, model.CommandRequest{
+		Operation: "index.start",
+		Context:   model.QueryOptions{Workspace: alias},
+		Payload:   map[string]any{"mode": "full", "clean": false, "wait": true},
+	})
+	if err != nil || !second.Ok {
+		t.Fatalf("unchanged index.start: ok=%v err=%v", second.Ok, err)
+	}
+	jobs, ok := second.Items.([]store.IndexJob)
+	if !ok || len(jobs) != 1 || jobs[0].Status != store.IndexJobSucceeded {
+		t.Fatalf("unchanged index job = %#v, want one succeeded job", second.Items)
+	}
+	if !strings.Contains(strings.Join(second.Warnings, " "), "no changes detected") {
+		t.Fatalf("unchanged index warnings = %q, want no changes detected", strings.Join(second.Warnings, " "))
+	}
+
+	db, err = store.Open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	catalogAfter, ok, err := store.WorkspaceMetaValue(ctx, db, store.WorkspaceMetaActiveCatalogGeneration)
+	if err != nil || !ok || catalogAfter != catalogBefore {
+		t.Fatalf("catalog generation changed on graph-only no-op repair: before=%q after=%q ok=%v err=%v", catalogBefore, catalogAfter, ok, err)
+	}
+	if state, err := store.GraphRuntimeState(ctx, db); err != nil || state != store.GraphRuntimeFresh {
+		t.Fatalf("graph runtime state=%q err=%v, want fresh", state, err)
+	}
+	snapshot, err := store.BeginGraphQuerySnapshot(ctx, db, "")
+	if err != nil {
+		t.Fatalf("graph query after unchanged CLI job: %v", err)
+	}
+	defer snapshot.Close()
+	nodes, kind, err := snapshot.ResolveGraphSelector(ctx, "func:example.com/cli-noop-repair:Normalize")
+	if err != nil || kind != "semantic_identity" || len(nodes) != 1 {
+		t.Fatalf("Normalize selector: nodes=%d kind=%q err=%v", len(nodes), kind, err)
+	}
+	if edges, err := snapshot.Edges(ctx, []int{nodes[0].NodeID}, "in", []string{"calls"}, 10); err != nil || len(edges) == 0 {
+		t.Fatalf("positive calls after unchanged CLI job: edges=%d err=%v", len(edges), err)
+	}
+}
 
 func TestRunIndexJobHonorsCooperativeCancelDuringProgress(t *testing.T) {
 	ensureWritableTestHome(t)

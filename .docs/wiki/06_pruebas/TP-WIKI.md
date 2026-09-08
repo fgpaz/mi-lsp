@@ -87,6 +87,114 @@ cases:
     given: "búsqueda --all-workspaces con >10 hits globales"
     when: "mi-lsp nav wiki search 'wiki' --all-workspaces --top-global 10 --format toon"
     then: "envelope retorna máximo 10 items totales; truncated=true; cada item anotado con workspace"
+
+  - id: TC-WIKI-044
+    type: positivo
+    given: "DocRecord con doc_id exacto y otro documento que solo referencia ese ID en su contenido"
+    when: "se ejecuta nav wiki search con el ID explícito"
+    then: "el documento dueño aparece antes que la referencia; la referencia no recibe autoridad canónica por mención"
+
+  - id: TC-WIKI-045
+    type: positivo
+    given: "coincidencias exactas de doc_id/block_id/record_id junto con candidatos owner-aware y paths repetidos"
+    when: "se ejecuta nav wiki search con --top 1 o con --offset N"
+    then: "la secuencia se deduplica por path, conserva la resolución source exacta y aplica offset/top una sola vez sin overflow"
+
+  - id: TC-WIKI-046
+    type: positivo
+    given: "candidatos en varias capas y una búsqueda con --layer"
+    when: "se ejecuta nav wiki search con filtro de capa, offset y límite"
+    then: "el filtro se aplica antes de paginar; en workspace único, total_matches cuenta todos los candidatos elegibles y shown_matches los emitidos por el servicio antes de límites posteriores del envelope; el fanout no expone esos campos por workspace"
+
+  - id: TC-WIKI-047
+    type: positivo
+    given: "un DocRecord dueño con doc_id RF-X-1, una referencia textual completa a RF-X-1, una declaración source exacta y un documento RF-X-10"
+    when: "se ejecuta nav wiki search 'RF-X-1'"
+    then: "se conservan dueño, referencia completa y source; puntuación de frase, [[RF-X-1]] y RF-X-1.md son referencias válidas, mientras RF-X-10, RF-X-1-EXTRA, RF-X-1_EXTRA, RF-X-1.extra, RF-X-1.md.EXTRA y RF X 1 quedan fuera; la secuencia mantiene score/orden de los candidatos admitidos"
+
+  - id: TC-WIKI-048
+    type: negativo
+    given: "App.Execute sobre SQLite no vacío con candidato AE-MAINTENANCE sin tokens de la query y otro candidato con evidencia doc_id/search_text"
+    when: "se ejecuta nav wiki search con una query natural y después con 'totally-absent-term'"
+    then: "solo se admite evidencia FTS o léxica real, incluida una coincidencia legítima en doc_id; el no-hit devuelve items=[] y el hint diagnóstico existente"
+
+  - id: TC-WIKI-049
+    type: positivo
+    given: "App.Execute sobre SQLite temporal con perfil knowledge/wiki y dos Markdown sin doc_id, mismo heading y paths distintos"
+    when: "se ejecuta nav wiki search por tokens del heading"
+    then: "ambos documentos se conservan por path/provenance sin forzar un ID de software, y line/evidence apunta al Markdown canónico de cada resultado"
+
+  - id: TC-WIKI-050
+    type: positivo
+    given: "App.Execute sobre SQLite con block_id dotted CT-SOURCE.contract, record_id no software SOURCE-ALPHA y candidato que solo contiene 'contract'"
+    when: "se ejecuta nav wiki search con cada identificador source exacto"
+    then: "cada declaración source se conserva aunque no tenga texto coincidente; el candidato con solo 'contract' no entra y lookup_status conserva block_id/record_id exactos"
+
+  - id: TC-WIKI-051
+    type: regresion
+    given: "SQLite no vacío y query route Tier1 no coincidente 'totally absent route task'"
+    when: "se ejecuta nav wiki route"
+    then: "route mantiene envelope/backend route y orientación canónica; la admisión search-only no altera fallback ni alias de route"
+
+  - id: TC-WIKI-061
+    type: positivo
+    given: "SQLite temporal con un candidato parcial elevado por owner_hint y otro candidato con cobertura completa de una query natural de varios términos"
+    when: "se ejecuta nav wiki search con la query natural"
+    then: "la cobertura completa y la evidencia heading/body ordenan primero al candidato completo; el candidato parcial con routing hint legítimo permanece visible cuando conserva evidencia léxica"
+
+  - id: TC-WIKI-062
+    type: positivo
+    given: "Markdown canónico con frontmatter, heading y pasaje corporal que contienen los términos consultados"
+    when: "se ejecuta nav wiki search con esa query natural"
+    then: "evidence y start_line/end_line apuntan a líneas reales con heading/pasaje útil, no a doc_id/imports como única evidencia, y el rango incluye como máximo un vecino contiguo por lado"
+
+  - id: TC-WIKI-063
+    type: positivo
+    given: "Markdown y DocRecord con cache y daemon en un pasaje corporal después de frontmatter y metadatos Harness"
+    when: "se consulta nav wiki search con cache daemon y caché daemon"
+    then: "ambas queries naturales tienen cobertura y evidencia corporal equivalentes; el rango apunta al pasaje real y no a metadatos. La igualdad de identificadores permanece literal: ID-ñ coincide consigo mismo, no con ID-n"
+
+  - id: TC-WIKI-064
+    type: regresion
+    given: "candidatos naturales admitidos y una query literal de DocID/source exacta"
+    when: "se ejecutan ambas búsquedas, incluyendo --all-workspaces"
+    then: "la búsqueda natural usa el score local para la paginación y el merge global, mientras DocID/source conserva precedencia, lookup_status, counts, layer y offset previos"
+
+  - id: TC-WIKI-065
+    type: positivo
+    given: "la misma consulta natural ejecutada varias veces sobre el mismo índice y sobre workspaces con resultados equivalentes"
+    when: "se comparan scores, paths, workspaces y rangos"
+    then: "la salida es determinista; los empates se ordenan por path y después doc_id, y el merge global usa exactamente el score emitido"
+
+  - id: TC-WIKI-066
+    type: negativo
+    given: "DocRecord vigente cuyo Markdown fue eliminado o quedó stale después del indexado"
+    when: "se ejecuta nav wiki search"
+    then: "el item y su snippet indexado permanecen, pero line/evidence/rango se omiten sin fabricar una cita ni declarar frescura actual"
+
+  - id: TC-WIKI-067
+    type: positivo
+    given: "Markdown con RF-X-1.extra, RF-X-1.md, RF-X-1-EXTRA y RF-X-10"
+    when: "se indexa y se busca RF-X-1"
+    then: "solo la referencia completa RF-X-1 y su enlace .md son válidos; las continuaciones y el prefijo distinto permanecen separados"
+
+  - id: TC-WIKI-068
+    type: negativo
+    given: "índice documental heredado sin versión vigente del extractor y mención persistida"
+    when: "se busca el DocID"
+    then: "la mención solo se admite tras confirmar el Markdown canónico, su hash y el límite de lectura; evidencia ausente o stale se omite con advertencia"
+
+  - id: TC-WIKI-069
+    type: positivo
+    given: "snapshot actual con bytes sin cambios"
+    when: "se ejecuta indexación documental explícita"
+    then: "se conserva el skip-reparse por content_hash y la versión vigente se publica atómicamente con el snapshot"
+
+  - id: TC-WIKI-070
+    type: negativo
+    given: "publicación documental marcada para cancelación o con error antes del commit"
+    when: "finaliza la publicación"
+    then: "las filas y la versión del snapshot se revierten juntas; no se adelanta la confianza del índice"
 ```
 
 ```toon
@@ -517,3 +625,88 @@ evidence:
 - **Contrato de escritura:** incluir `doc_id`, `summary`, `status` y líneas de relación explícitas; actualizar antes de duplicar un ID; `supersedes` conserva el historial.
 
 Fixtures: `testdata/documentary-graph/software/.docs/wiki/` y `testdata/documentary-graph/generic/{wiki,bibliotecas}/`.
+
+```toon
+block_id: tp-wiki-document-identity-cases
+kind: test-cases
+rf: RF-WIKI-001
+source_of_truth: this
+identity_evidence_precedence: [yaml_frontmatter_doc_id, leading_harness_doc_id, leading_harness_id, source_protocol_doc_id, legacy_id_leading_title, exact_filename_stem]
+references_are_not_ownership: [imports, wikilinks, body_ids, source_block_id, source_record_id]
+cases:
+  - id: TC-WIKI-052
+    type: regresion
+    given: "importador legacy con id propio y una referencia [[TECH-DAEMON-GOBERNANZA]]"
+    when: "se extrae el DocRecord"
+    then: "DocID es el id propio; la importación permanece como mención/arista y no como propietario canónico"
+  - id: TC-WIKI-053
+    type: negativo
+    given: "Markdown sin declaración propia, H1 descriptivo, links y ejemplos de id en el cuerpo"
+    when: "se extrae el DocRecord"
+    then: "DocID queda vacío y la identidad por path/título se conserva"
+  - id: TC-WIKI-054
+    type: positivo
+    given: "frontmatter doc_id explícito, id fallback, ID Unicode/no estándar y referencias de cuerpo"
+    when: "se extrae el DocRecord"
+    then: "doc_id declarado prevalece; id Unicode se conserva sin normalización ni regex de familias"
+  - id: TC-WIKI-055
+    type: negativo
+    given: "dos declaraciones de identidad contradictorias"
+    when: "se extrae el DocRecord"
+    then: "DocID queda vacío; no se elige silenciosamente una declaración"
+  - id: TC-WIKI-056
+    type: positivo
+    given: "documento SDD con owner CT-OWNER, block_id distinto y record_id distinto"
+    when: "se indexa"
+    then: "DocRecord conserva CT-OWNER y source block/record conservan sus IDs y menciones separadas"
+  - id: TC-WIKI-057
+    type: regresion
+    given: "DocRecord previo con owner incorrecto pero mismo content_hash"
+    when: "se ejecuta index docs-only y el reemplazo atómico existente"
+    then: "la extracción vigente sustituye Docs, source tables y FTS sin snapshot parcial; no hay reindex automático desde navegación"
+  - id: TC-WIKI-058
+    type: negativo
+    given: "frontmatter o fenced Harness YAML sin cierre"
+    when: "se extrae el documento"
+    then: "el recorrido termina de forma acotada y no inventa DocID desde el cuerpo"
+  - id: TC-WIKI-059
+    type: negativo
+    given: "declaraciones doc_id duplicadas con valores distintos, frente a duplicados idénticos"
+    when: "se extrae el documento"
+    then: "el conflicto queda sin propietario; el duplicado idéntico permanece estable"
+  - id: TC-WIKI-060
+    type: regresion
+    given: "SQLite publicado desde extracción docgraph fresca con owner e importer reales"
+    when: "App.Execute ejecuta nav.wiki.search por el owner"
+    then: "owner exacto aparece una vez y el importer conserva su DocID propio como referencia, sin duplicar autoridad canónica"
+refresh_command: "mi-lsp index --workspace <alias> --docs-only"
+verification_note: "La verificación usa una fixture SQLite completa, extracción docgraph fresca y confirma owner exacto más referencia importer."
+```
+
+```toon
+doc_id: TP-WIKI
+block_id: tp-wiki-rf-001-implementation-oracles
+kind: implementation-oracle-map
+source_of_truth: this
+rf: RF-WIKI-001
+implementation_paths:
+  relevance_and_line_evidence: [internal/service/wiki_search.go, internal/store/queries_docs.go]
+  identity_and_references: [internal/docidentity/identity.go, internal/docgraph/docgraph.go, internal/wikisource/parser.go]
+  publication_and_freshness: [internal/store/index_publish.go, internal/store/meta.go, internal/store/doc_snapshot.go, internal/store/queries_incremental.go]
+  indexer_wiring: [internal/indexer/indexer.go]
+test_oracles:
+  search: internal/service/wiki_search_test.go
+  identity: [internal/docidentity/identity_test.go, internal/docgraph/identity_test.go, internal/docgraph/reference_identity_test.go]
+  parser: internal/wikisource/parser_test.go
+  snapshot: [internal/indexer/indexer_test.go, internal/store/doc_identity_snapshot_test.go]
+  declared_cases: [TC-WIKI-044..070]
+trace_rules:
+  owner_identity: "doc_id declarado precede imports, wikilinks, body IDs, block_id y record_id"
+  source_identity: "block_id y record_id permanecen separados del propietario DocRecord"
+  natural_query: "solo evidencia FTS/léxica admite; routing hints solo ordenan"
+  snapshot_trust: "marker vigente habilita menciones; marker ausente/antiguo exige hash y lectura canónica acotada"
+  graph_boundary: "atomicidad documental no promete atomicidad de activación graph"
+validation_basis: attested_prior_review_without_reexecution
+canonical_evidence: source_and_test_paths
+not_canonical: [temporary_logs, installed_index, live_refresh, embeddings]
+```

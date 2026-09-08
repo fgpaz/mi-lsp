@@ -1,10 +1,17 @@
 package indexer
 
 import (
+	"context"
+	"errors"
+	"os"
 	"path/filepath"
 	"testing"
 
+	"github.com/fgpaz/mi-lsp/internal/docgraph"
 	"github.com/fgpaz/mi-lsp/internal/language"
+	"github.com/fgpaz/mi-lsp/internal/model"
+	"github.com/fgpaz/mi-lsp/internal/store"
+	"github.com/fgpaz/mi-lsp/internal/workspace"
 )
 
 // TestModernExtensionWalk verifies that all four modern JS/TS module extensions
@@ -50,6 +57,172 @@ func TestWalkerSupportedExtensionsAreSubsetOfRegistry(t *testing.T) {
 		if !found {
 			t.Errorf("registry missing %q that walkers rely on", ext)
 		}
+	}
+}
+
+func TestLoadPriorDocSnapshotKeepsGoodOwnerAndContentHashWithBadOldMentions(t *testing.T) {
+	root := t.TempDir()
+	path := ".docs/wiki/04_RF/RF-SNAPSHOT-OWNER.md"
+	content := "---\ndoc_id: RF-SNAPSHOT-OWNER\n---\n# RF-SNAPSHOT-OWNER\n\nCurrent owner content.\n"
+	if err := writeFileRoot(root, path, content); err != nil {
+		t.Fatal(err)
+	}
+	matcher, err := workspace.LoadIgnoreMatcher(root, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	docs, edges, mentions, blocks, records, bindings, _, err := docgraph.IndexWorkspaceDocsWithSourcesWithProgressPriorWithBindings(context.Background(), root, matcher, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	oldMentions := append(append([]model.DocMention(nil), mentions...), model.DocMention{
+		DocPath: path, MentionType: model.DocMentionTypeDocID, MentionValue: "RF-OLD-MENTION",
+	})
+	db, err := store.Open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if err := store.ReplaceWorkspaceDocsWithReferenceSnapshot(context.Background(), db, "snapshot-good", docs, edges, oldMentions, blocks, records, bindings, model.ReentryMemorySnapshot{}); err != nil {
+		t.Fatal(err)
+	}
+
+	prior, err := loadPriorDocSnapshot(context.Background(), root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if prior == nil {
+		t.Fatal("expected current published snapshot")
+	}
+	stored, ok := prior.Docs[path]
+	if !ok || stored.DocID != "RF-SNAPSHOT-OWNER" || stored.ContentHash == "" {
+		t.Fatalf("snapshot owner/hash = %#v, want current owner and content hash", stored)
+	}
+	foundOldMention := false
+	for _, mention := range prior.Mentions[path] {
+		if mention.MentionValue == "RF-OLD-MENTION" {
+			foundOldMention = true
+			break
+		}
+	}
+	if !foundOldMention {
+		t.Fatalf("published prior mentions lost synthetic old mention: %#v", prior.Mentions[path])
+	}
+}
+
+func TestLoadPriorDocSnapshotRejectsMissingOrOldIdentityMarker(t *testing.T) {
+	for _, marker := range []struct {
+		name  string
+		value string
+	}{
+		{name: "missing", value: ""},
+		{name: "old", value: "legacy-extraction-version"},
+	} {
+		t.Run(marker.name, func(t *testing.T) {
+			root := t.TempDir()
+			db, err := store.Open(root)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer db.Close()
+			if err := store.ReplaceDocsWithSources(context.Background(), db, []model.DocRecord{{Path: "wiki/legacy.md", Title: "Legacy", DocID: "RF-LEGACY", ContentHash: "content"}}, nil, nil, nil, nil, nil); err != nil {
+				t.Fatal(err)
+			}
+			if marker.value != "" {
+				if err := store.UpsertWorkspaceMeta(context.Background(), db, store.WorkspaceMetaDocIdentitySnapshotVersion, marker.value); err != nil {
+					t.Fatal(err)
+				}
+			}
+			prior, err := loadPriorDocSnapshot(context.Background(), root)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if prior != nil {
+				t.Fatalf("untrusted %s identity marker returned prior snapshot: %#v", marker.name, prior)
+			}
+		})
+	}
+}
+
+func TestLoadPriorDocSnapshotReusesCurrentUnchangedSnapshot(t *testing.T) {
+	root := t.TempDir()
+	path := ".docs/wiki/04_RF/RF-SNAPSHOT-REUSE.md"
+	content := "---\ndoc_id: RF-SNAPSHOT-REUSE\n---\n# RF-SNAPSHOT-REUSE\n\nUnchanged snapshot content.\n"
+	if err := writeFileRoot(root, path, content); err != nil {
+		t.Fatal(err)
+	}
+	matcher, err := workspace.LoadIgnoreMatcher(root, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	firstDocs, firstEdges, firstMentions, firstBlocks, firstRecords, firstBindings, _, err := docgraph.IndexWorkspaceDocsWithSourcesWithProgressPriorWithBindings(context.Background(), root, matcher, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	db, err := store.Open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.ReplaceWorkspaceDocsWithReferenceSnapshot(context.Background(), db, "snapshot-reuse", firstDocs, firstEdges, firstMentions, firstBlocks, firstRecords, firstBindings, model.ReentryMemorySnapshot{}); err != nil {
+		db.Close()
+		t.Fatal(err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+	prior, err := loadPriorDocSnapshot(context.Background(), root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if prior == nil {
+		t.Fatal("expected current snapshot for unchanged reuse")
+	}
+	parsed, skipped := 0, 0
+	progress := func(_ context.Context, value docgraph.Progress) error {
+		if value.Stage == "docs.read" {
+			parsed, skipped = value.Parsed, value.Skipped
+		}
+		return nil
+	}
+	secondDocs, _, _, _, _, _, _, err := docgraph.IndexWorkspaceDocsWithSourcesWithProgressPriorWithBindings(context.Background(), root, matcher, progress, prior)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(secondDocs) != 1 || parsed != 0 || skipped != 1 || secondDocs[0].DocID != "RF-SNAPSHOT-REUSE" {
+		t.Fatalf("unchanged snapshot reuse docs=%#v parsed=%d skipped=%d", secondDocs, parsed, skipped)
+	}
+}
+
+func TestFailedDocSnapshotPublicationLeavesIdentityTrustInvalid(t *testing.T) {
+	root := t.TempDir()
+	db, err := store.Open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if err := store.UpsertWorkspaceMeta(context.Background(), db, store.WorkspaceMetaDocIdentitySnapshotVersion, "legacy-extraction-version"); err != nil {
+		t.Fatal(err)
+	}
+	job, err := store.CreateIndexJob(context.Background(), db, "snapshot-failure", root, store.IndexModeDocs, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fence := store.IndexJobFence{OwnerToken: job.OwnerToken, FencingToken: job.FencingToken}
+	if err := store.MarkIndexJobRunning(context.Background(), db, job.JobID, os.Getpid(), "indexing", fence); err != nil {
+		t.Fatal(err)
+	}
+	restore := store.SetIndexPublicationBeforeCommitHookForTest(func() error { return errors.New("abort snapshot publication") })
+	defer restore()
+	err = store.ReplaceWorkspaceDocsForJobWithReferenceSnapshot(context.Background(), db, job.JobID, job.GenerationID, nil, nil, nil, nil, nil, nil, model.ReentryMemorySnapshot{}, fence, nil)
+	if err == nil {
+		t.Fatal("failed publication unexpectedly succeeded")
+	}
+	current, err := store.DocIdentitySnapshotCurrent(context.Background(), db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if current {
+		t.Fatal("failed publication advanced identity trust")
 	}
 }
 

@@ -177,17 +177,30 @@ func Use() int {
 	}
 }
 
-func TestObserveGoGraphTopLevelEmbeddedFieldRemainsUnresolved(t *testing.T) {
+func TestObserveGoGraphTopLevelEmbeddedFieldIsStageable(t *testing.T) {
 	root := t.TempDir()
 	writeGoTestFile(t, root, "go.mod", "module example.com/topleveltarget\n\ngo 1.24.4\n")
+	writeGoTestFile(t, root, "dep/dep.go", `package dep
+
+type Qualified struct{ Value int }
+`)
 	writeGoTestFile(t, root, "main.go", `package topleveltarget
 
+import "example.com/topleveltarget/dep"
+
 type Embedded struct{ Value int }
-type Top struct{ Embedded }
+type Generic[T any] struct{ Value T }
+type Top struct {
+	*Embedded
+	dep.Qualified
+	Generic[int]
+}
+type EmbeddedInterface interface{ Use() int }
+type Contract interface{ EmbeddedInterface }
 
 func Use() int {
 	var top Top
-	return top.Embedded.Value
+	return top.Embedded.Value + top.Qualified.Value + top.Generic.Value
 }
 `)
 	batch, err := ObserveGoGraph(context.Background(), GoGraphObservationRequest{
@@ -198,11 +211,22 @@ func Use() int {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if batch.Completeness != model.GraphCompletenessPartial || batch.ReadyForStaging() == nil {
-		t.Fatalf("missing top-level field endpoint was not preserved: completeness=%q omissions=%#v unresolved=%#v", batch.Completeness, batch.Omissions, batch.Unresolved)
+	if batch.Completeness != model.GraphCompletenessComplete {
+		t.Fatalf("embedded field made a valid observation partial: omissions=%#v unresolved=%#v", batch.Omissions, batch.Unresolved)
 	}
-	if !hasOmission(batch, "declarations", "embedded_field_unsupported") || !hasUnresolved(batch, "references", "local_target_missing_ref") {
-		t.Fatalf("missing top-level field diagnostics: omissions=%#v unresolved=%#v", batch.Omissions, batch.Unresolved)
+	if err := batch.ReadyForStaging(); err != nil {
+		t.Fatalf("embedded field observation is not stageable: %v", err)
+	}
+	if hasUnresolved(batch, "references", "local_target_missing_ref") {
+		t.Fatalf("embedded field retained obsolete unresolved diagnostics: omissions=%#v unresolved=%#v", batch.Omissions, batch.Unresolved)
+	}
+	for _, name := range []string{"Embedded", "Qualified", "Generic"} {
+		if _, ok := graphNodeByIdentity(batch, "field:example.com/topleveltarget:Top:"+name); !ok {
+			t.Fatalf("embedded field declaration %s was not emitted: nodes=%d", name, len(batch.Nodes))
+		}
+	}
+	if _, ok := graphNodeByIdentity(batch, "field:example.com/topleveltarget:Contract:EmbeddedInterface"); ok {
+		t.Fatal("embedded interface entry was incorrectly emitted as a struct field")
 	}
 }
 

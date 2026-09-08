@@ -921,6 +921,23 @@ func (b *goGraphBuilder) extractFileDeclarations(p *goGraphPackage, f *goGraphFi
 		}
 	}
 }
+func goEmbeddedFieldIdent(expr ast.Expr) *ast.Ident {
+	switch typed := expr.(type) {
+	case *ast.Ident:
+		return typed
+	case *ast.StarExpr:
+		return goEmbeddedFieldIdent(typed.X)
+	case *ast.SelectorExpr:
+		return typed.Sel
+	case *ast.IndexExpr:
+		return goEmbeddedFieldIdent(typed.X)
+	case *ast.IndexListExpr:
+		return goEmbeddedFieldIdent(typed.X)
+	default:
+		return nil
+	}
+}
+
 func (b *goGraphBuilder) extractTypeFields(p *goGraphPackage, f *goGraphFile, ts *ast.TypeSpec, typeRef string) {
 	var fields *ast.FieldList
 	interfaceFields := false
@@ -936,7 +953,30 @@ func (b *goGraphBuilder) extractTypeFields(p *goGraphPackage, f *goGraphFile, ts
 	for _, field := range fields.List {
 		names := field.Names
 		if len(names) == 0 {
-			b.addOmission(f.rel, "field", "declarations", "embedded_field_unsupported")
+			if interfaceFields {
+				// Embedded interface entries are type references, not struct
+				// fields. Keep them as an explicit supported omission.
+				b.addOmission(f.rel, "field", "declarations", "embedded_field_unsupported")
+				continue
+			}
+			// An embedded field is still a declaration owned by this type. Keep
+			// its AST identity so go/types can resolve selectors such as
+			// outer.Embedded without manufacturing an unresolved endpoint.
+			ident := goEmbeddedFieldIdent(field.Type)
+			if ident == nil {
+				b.addOmission(f.rel, "field", "declarations", "embedded_field_unsupported")
+				continue
+			}
+			name := ident.Name
+			identity := "field:" + p.list.ImportPath + ":" + ts.Name.Name + ":" + name
+			ref := b.addNode(p, f, field, "field", identity, name, ts.Name.Name, model.GraphRecordExtracted, "go/ast")
+			if ref != "" {
+				// go/types assigns an embedded Var the position of the
+				// underlying identifier, not the pointer/star, selector, or
+				// generic wrapper expression.
+				p.posRefs[ident.Pos()] = ref
+				b.addEdge(typeRef, ref, "contains", f.rel, goGraphRange(p.fset, field.Pos(), field.End()), goGraphDigest(f.data), model.GraphRecordExtracted, "go/ast")
+			}
 			continue
 		}
 		for _, name := range names {

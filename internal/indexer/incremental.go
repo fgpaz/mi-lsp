@@ -274,7 +274,7 @@ func incrementalIndexWithGraphProgressAndChanges(ctx context.Context, workspaceR
 	var docs []model.DocRecord
 	var docEdges []model.DocEdge
 	var docMentions []model.DocMention
-	graphRepair, catalogGeneration, err := incrementalGraphRepairState(ctx, workspaceRoot, hasCodeChanges)
+	graphRepair, _, err := incrementalGraphRepairState(ctx, workspaceRoot, hasCodeChanges)
 	if err != nil {
 		return Result{}, err
 	}
@@ -515,7 +515,7 @@ func incrementalIndexWithGraphProgressAndChanges(ctx context.Context, workspaceR
 				return fmt.Errorf("incremental graph staging failed: %w", assembleErr)
 			}
 			graphGeneration = bundle.Generation
-			jobGraphPublication = &store.IndexJobGraphPublication{GenerationID: &bundle.Generation.GenerationID, ExpectedPrior: expectedPrior, PublishedAt: request.CreatedAt, GraphCurrent: true, GraphBundle: &bundle, CatalogGeneration: catalogGeneration}
+			jobGraphPublication = &store.IndexJobGraphPublication{GenerationID: &bundle.Generation.GenerationID, ExpectedPrior: expectedPrior, PublishedAt: request.CreatedAt, GraphCurrent: true, GraphBundle: &bundle}
 			graphCurrent = true
 		} else if observeGraph {
 			graphNotApplicable = true
@@ -540,11 +540,11 @@ func incrementalIndexWithGraphProgressAndChanges(ctx context.Context, workspaceR
 				}
 				return store.PublishIncrementalGenerationForJobWithFileAndDocChanges(ctx, db, publication.JobID, generationID, processedFiles, len(allSymbols), processedDocs, publication.Fence, fileChanges, nil)
 			case observeGraph && graphCurrent:
-				return store.PublishIncrementalGenerationForJobWithChanges(ctx, db, publication.JobID, generationID, 0, 0, len(docs), publication.Fence, nil, jobGraphPublication)
+				return store.PublishIncrementalGraphRepairForJob(ctx, db, publication.JobID, generationID, publication.Fence, jobGraphPublication)
 			case hasDocChanges:
 				return store.CompleteIncrementalDocsJobForJob(ctx, db, publication.JobID, generationID, publication.Fence)
 			default:
-				return store.PublishIncrementalGenerationForJobWithChanges(ctx, db, publication.JobID, generationID, 0, 0, 0, publication.Fence, nil, &store.IndexJobGraphPublication{GenerationSkippedReason: "no incremental changes"})
+				return store.PublishIncrementalGenerationForJobNoChanges(ctx, db, publication.JobID, generationID, publication.Fence)
 			}
 		}
 

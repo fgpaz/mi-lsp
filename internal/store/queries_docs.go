@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"unicode"
 
 	"github.com/fgpaz/mi-lsp/internal/model"
 )
@@ -178,6 +179,12 @@ func replaceDocsTx(ctx context.Context, tx *sql.Tx, docs []model.DocRecord, edge
 }
 
 func replaceDocsWithSourcesTx(ctx context.Context, tx *sql.Tx, docs []model.DocRecord, edges []model.DocEdge, mentions []model.DocMention, sourceBlocks []model.DocSourceBlock, sourceRecords []model.DocSourceRecord, bindings []model.DocArtifactBinding) error {
+	// Any unversioned documentary writer invalidates trust before replacing
+	// mention facts. Extractor-backed publishers stamp it again after this tx
+	// body completes successfully.
+	if err := invalidateDocIdentitySnapshotTx(ctx, tx); err != nil {
+		return err
+	}
 	for _, table := range []string{"doc_artifact_bindings", "doc_source_records", "doc_source_blocks", "doc_mentions", "doc_edges", "doc_records"} {
 		if _, err := tx.ExecContext(ctx, "DELETE FROM "+table); err != nil {
 			return err
@@ -636,19 +643,17 @@ func FTSSearchDocs(ctx context.Context, db *sql.DB, question string, limit int) 
 		limit = 20
 	}
 
-	// Build FTS5-safe query: split into words >= 2 chars, join with OR
-	words := strings.Fields(strings.ToLower(question))
+	// Build FTS5-safe query: split punctuation into token boundaries, keep
+	// words >= 2 chars, and join with OR. SearchText normalizes identifiers
+	// such as RF-001 to separate tokens, so removing separators would turn an
+	// otherwise searchable identifier into the unmatched token RF001.
+	words := strings.FieldsFunc(strings.ToLower(question), func(r rune) bool {
+		return !unicode.IsLetter(r) && !unicode.IsDigit(r)
+	})
 	terms := make([]string, 0, len(words))
-	for _, w := range words {
-		// Strip non-alphanumeric characters that break FTS5 syntax
-		clean := strings.Map(func(r rune) rune {
-			if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r > 127 {
-				return r
-			}
-			return -1
-		}, w)
-		if len(clean) >= 2 {
-			terms = append(terms, clean)
+	for _, term := range words {
+		if len(term) >= 2 {
+			terms = append(terms, term)
 		}
 	}
 	if len(terms) == 0 {

@@ -6,6 +6,8 @@ import (
 	"errors"
 	"os"
 	"strings"
+
+	"github.com/fgpaz/mi-lsp/internal/docidentity"
 )
 
 type metaExecutor interface {
@@ -14,6 +16,28 @@ type metaExecutor interface {
 
 type metaQueryer interface {
 	QueryRowContext(context.Context, string, ...any) *sql.Row
+}
+
+const WorkspaceMetaDocIdentitySnapshotVersion = "doc_identity_snapshot_version"
+
+func stampDocIdentitySnapshotTx(ctx context.Context, tx *sql.Tx) error {
+	return UpsertWorkspaceMeta(ctx, tx, WorkspaceMetaDocIdentitySnapshotVersion, docidentity.ExtractionVersion)
+}
+
+func invalidateDocIdentitySnapshotTx(ctx context.Context, tx *sql.Tx) error {
+	_, err := tx.ExecContext(ctx, "DELETE FROM workspace_meta WHERE key = ?", WorkspaceMetaDocIdentitySnapshotVersion)
+	return err
+}
+
+// DocIdentitySnapshotCurrent reports whether persisted document mentions were
+// produced by the current extractor grammar. Database errors are returned,
+// rather than being treated as an unversioned snapshot.
+func DocIdentitySnapshotCurrent(ctx context.Context, db *sql.DB) (bool, error) {
+	value, ok, err := WorkspaceMetaValue(ctx, db, WorkspaceMetaDocIdentitySnapshotVersion)
+	if err != nil {
+		return false, err
+	}
+	return ok && value == docidentity.ExtractionVersion, nil
 }
 
 func UpsertWorkspaceMeta(ctx context.Context, exec metaExecutor, key string, value string) error {

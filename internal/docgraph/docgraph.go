@@ -19,6 +19,7 @@ import (
 
 	"github.com/BurntSushi/toml"
 
+	"github.com/fgpaz/mi-lsp/internal/docidentity"
 	"github.com/fgpaz/mi-lsp/internal/model"
 	"github.com/fgpaz/mi-lsp/internal/wikisource"
 	"github.com/fgpaz/mi-lsp/internal/workspace"
@@ -385,23 +386,31 @@ func IndexWorkspaceDocsWithSourcesWithProgressPriorWithBindings(ctx context.Cont
 				contentHash := digest(content)
 				if prior != nil {
 					if prev, ok := prior.Docs[candidate.relativePath]; ok && prev.ContentHash == contentHash {
-						doc := prev
-						doc.Path = candidate.relativePath
-						doc.Layer = candidate.layer
-						doc.Family = candidate.family
-						doc.ContentHash = contentHash
-						doc.IsSnapshot = isSnapshotPath(candidate.relativePath)
-						// Preserve title/snippet/search_text/doc_id/IndexedAt from prior; content is identical.
-						results[i] = docWorkResult{
-							doc:           doc,
-							mentions:      append([]model.DocMention(nil), prior.Mentions[candidate.relativePath]...),
-							edges:         append([]model.DocEdge(nil), prior.Edges[candidate.relativePath]...),
-							sourceBlocks:  append([]model.DocSourceBlock(nil), prior.Blocks[candidate.relativePath]...),
-							sourceRecords: append([]model.DocSourceRecord(nil), prior.Records[candidate.relativePath]...),
-							bindings:      append([]model.DocArtifactBinding(nil), prior.Bindings[candidate.relativePath]...),
-							skipped:       true,
+						currentID, identityDeclared := wikisource.DocumentIdentity(string(content))
+						if !identityDeclared {
+							currentID = legacyDocumentID(candidate.relativePath, extractTitle(content))
 						}
-						continue
+						if currentID == prev.DocID {
+							doc := prev
+							doc.Path = candidate.relativePath
+							doc.Layer = candidate.layer
+							doc.Family = candidate.family
+							doc.ContentHash = contentHash
+							doc.IsSnapshot = isSnapshotPath(candidate.relativePath)
+							// Preserve title/snippet/search_text/doc_id/IndexedAt from prior; content is identical.
+							results[i] = docWorkResult{
+								doc:           doc,
+								mentions:      append([]model.DocMention(nil), prior.Mentions[candidate.relativePath]...),
+								edges:         append([]model.DocEdge(nil), prior.Edges[candidate.relativePath]...),
+								sourceBlocks:  append([]model.DocSourceBlock(nil), prior.Blocks[candidate.relativePath]...),
+								sourceRecords: append([]model.DocSourceRecord(nil), prior.Records[candidate.relativePath]...),
+								bindings:      append([]model.DocArtifactBinding(nil), prior.Bindings[candidate.relativePath]...),
+								skipped:       true,
+							}
+							continue
+						}
+						// The bytes are unchanged, but the ownership rules changed;
+						// reparse so an old body-derived identity cannot persist.
 					}
 				}
 				doc, docEdges, mentions, sourceBlocks, sourceRecords, bindings, parseErr := parseDocContent(root, candidate.relativePath, content, profile)
@@ -528,7 +537,10 @@ func parseDocContent(
 	family, layer := classifyDocPath(profile, relPath)
 	contentHash := digest(content)
 	title := extractTitle(content)
-	docID := firstDocID(title + "\n" + string(content))
+	docID, identityDeclared := wikisource.DocumentIdentity(string(content))
+	if !identityDeclared {
+		docID = legacyDocumentID(relPath, title)
+	}
 	now := time.Now().Unix()
 	doc := model.DocRecord{
 		Path:        relPath,
@@ -545,8 +557,16 @@ func parseDocContent(
 
 	docMentions, docEdges := extractReferences(root, relPath, string(content))
 	sourceDoc := wikisource.Parse(relPath, string(content), now)
-	if strings.TrimSpace(sourceDoc.DocID) != "" {
+	if strings.TrimSpace(sourceDoc.DocID) != "" && !identityDeclared {
 		doc.DocID = sourceDoc.DocID
+	}
+	if !sourceDoc.DeclaresSource {
+		metadata := wikisource.MetadataReferences(string(content))
+		if len(metadata) > 0 {
+			metadataMentions, metadataEdges := extractReferences(root, relPath, strings.Join(metadata, "\n"))
+			docMentions = append(docMentions, metadataMentions...)
+			docEdges = append(docEdges, metadataEdges...)
+		}
 	}
 
 	mentions := append(docMentions, sourceDoc.Mentions...)
@@ -895,7 +915,7 @@ func extractReferences(root string, docPath string, content string) ([]model.Doc
 	}
 
 	masked := maskFencedMarkdown(content)
-	for _, match := range docIDPattern.FindAllString(masked, -1) {
+	for _, match := range docidentity.Extract(masked) {
 		addMention(model.DocMentionTypeDocID, match)
 		addEdge(model.DocEdge{FromPath: docPath, ToDocID: match, Kind: "doc_id", Label: match})
 	}
@@ -981,7 +1001,8 @@ func extractReferences(root string, docPath string, content string) ([]model.Doc
 			}
 			label = inner
 			docIDTarget := strings.TrimSuffix(parsedTarget, ".md")
-			if docIDPattern.FindString(docIDTarget) == docIDTarget {
+			matches := docidentity.Extract(docIDTarget)
+			if len(matches) == 1 && strings.EqualFold(matches[0], docIDTarget) {
 				toDocID = docIDTarget
 			} else {
 				target = parsedTarget
@@ -1492,8 +1513,30 @@ func normalizeSearchText(value string) string {
 }
 
 func firstDocID(value string) string {
-	if match := docIDPattern.FindString(value); match != "" {
-		return match
+	matches := docidentity.Extract(value)
+	if len(matches) > 0 {
+		return matches[0]
+	}
+	return ""
+}
+
+// legacyDocumentID preserves the narrow pre-envelope convention for older
+// documents: a known ID may be the complete H1 (or H1 prefix separated by a
+// title delimiter), or the complete filename stem. Arbitrary body mentions
+// and prose such as "See RF-X" are never ownership evidence.
+func legacyDocumentID(relPath, title string) string {
+	trimmedTitle := strings.TrimSpace(title)
+	matches := docidentity.Extract(trimmedTitle)
+	if len(matches) > 0 && strings.HasPrefix(strings.ToLower(trimmedTitle), strings.ToLower(matches[0])) {
+		match := matches[0]
+		candidate := strings.TrimSpace(trimmedTitle[len(match):])
+		if candidate == "" || strings.HasPrefix(candidate, "-") || strings.HasPrefix(candidate, ":") || strings.HasPrefix(candidate, "|") || strings.HasPrefix(candidate, "—") || strings.HasPrefix(candidate, "–") {
+			return match
+		}
+	}
+	base := strings.TrimSuffix(pathpkg.Base(filepath.ToSlash(strings.TrimSpace(relPath))), filepath.Ext(filepath.ToSlash(strings.TrimSpace(relPath))))
+	if matches := docidentity.Extract(base); len(matches) == 1 && strings.EqualFold(matches[0], base) {
+		return base
 	}
 	return ""
 }

@@ -66,11 +66,16 @@ evidence:
 1. La CLI recibe `nav wiki search <pattern> --all-workspaces [--layer X] [--include-content] [--top N] [--offset M]`.
 2. El core itera sobre workspaces registrados con `docs_ready=true` con semaphore=4.
 3. Para cada workspace, ejecuta la busqueda local contra `.mi-lsp/index.db` (tablas `doc_records`/`doc_edges`/`doc_mentions`).
-4. Calcula ranking por hit: `score = doc_evidence*10 + code_evidence*5`.
-5. Fusion los resultados globales, ordena por score descendente, aplica `--offset` y `--top`.
+4. Para una query natural, calcula un score local y determinista por cobertura léxica de términos y evidencia de heading/passage/search_text; owner_hint, family, layer y owner-prefix solo desempatan o enrutan y no desplazan cobertura completa por sí solos. Las queries DocID/source exactas conservan su precedencia canónica.
+5. Fusiona los resultados globales usando el mismo score emitido por cada workspace, ordena por score descendente y resuelve empates por path y doc_id antes de aplicar los límites globales.
 6. Cada item incluye campo `workspace: <alias>` anotando su origen.
 7. El truncador aplica presupuesto y devuelve envelope estable.
 8. La CLI devuelve resultado en formato solicitado.
+9. Las menciones de DocID se consideran confiables solo cuando el índice documental porta la versión vigente del extractor literal. Un índice heredado puede conservar referencias únicamente si el Markdown canónico existe, está dentro del workspace, no excede el límite de lectura y su hash coincide; de lo contrario, la coincidencia se omite y se informa como no verificada.
+
+### Gramática literal soportada
+
+Los identificadores estándar usan `FL|RS|RF|TP|TECH|CT|DB|AE` seguido de segmentos alfanuméricos separados por guiones. Se aceptan puntuación terminal y el sufijo `.md` en enlaces Markdown; no se aceptan continuaciones arbitrarias como `.extra`, `.md.EXTRA`, ni se confunden `RF-X-1`, `RF-X-1-EXTRA` y `RF-X-10`. La identidad propietaria del documento permanece separada de sus referencias.
 
 ## 5. Outputs
 
@@ -98,7 +103,8 @@ evidence:
 - Si `--include-content`, adjuntar texto completo del documento a cada item (aumenta payload).
 - Si `--top=0`, ignorar limite (peligroso; reservar para uso interno).
 - `--offset` sin `--top` aplica default `--top=50`.
-- Ranking compatible con `nav ask` (score = doc_evidence*10 + code_evidence*5).
+- El ranking de `nav wiki search` es search-local y no modifica el scorer compartido de `nav ask`, `nav route` o `nav pack`; su score expuesto coincide con el orden natural y el merge global.
+- La evidencia de línea se lee del Markdown canónico, incluye como máximo un vecino contiguo por lado y omite rango/evidence cuando el archivo falta; `snippet` indexado queda como fallback transparente.
 
 ## 8. Data Model Impact
 
@@ -131,10 +137,44 @@ Scenario: Aplicar offset y top correctamente
 
 ## 10. Test Traceability
 
-- Positivo: `TP-WIKI / TC-WIKI-001`
-- Positivo: `TP-WIKI / TC-WIKI-002`
-- Positivo: `TP-WIKI / TC-WIKI-003`
-- Negativo: `TP-WIKI / TC-WIKI-004`
+- Base federada: `TP-WIKI / TC-WIKI-001..004`.
+- Identidad, ownership y source IDs: `TP-WIKI / TC-WIKI-044..060`.
+- Relevancia natural, evidencia de líneas, diacríticos, límites literales y stale fallback: `TP-WIKI / TC-WIKI-061..068`.
+- Snapshot documental, marcador de extractor y rollback: `TP-WIKI / TC-WIKI-069..070`.
+
+```toon
+doc_id: RF-WIKI-001
+block_id: rf-wiki-001-implementation-trace
+kind: implementation-trace
+source_of_truth: this
+requirement: RF-WIKI-001
+implementation:
+  search_admission_ranking_and_evidence:
+    - internal/service/wiki_search.go
+    - internal/store/queries_docs.go
+  identity_and_source_extraction:
+    - internal/docidentity/identity.go
+    - internal/docgraph/docgraph.go
+    - internal/wikisource/parser.go
+  snapshot_publication_and_freshness:
+    - internal/store/index_publish.go
+    - internal/store/meta.go
+    - internal/store/doc_snapshot.go
+    - internal/store/queries_incremental.go
+    - internal/indexer/indexer.go
+oracles:
+  service_search: internal/service/wiki_search_test.go
+  identity: [internal/docidentity/identity_test.go, internal/docgraph/identity_test.go, internal/docgraph/reference_identity_test.go]
+  source_parser: internal/wikisource/parser_test.go
+  snapshot: [internal/indexer/indexer_test.go, internal/store/doc_identity_snapshot_test.go]
+  declared_cases: [.docs/wiki/06_pruebas/TP-WIKI.md, .docs/wiki/06_matriz_pruebas_RF.md]
+validation_basis: attested_prior_review_without_reexecution
+canonical_evidence: source_and_test_paths
+not_canonical: [temporary_logs, installed_index, live_refresh, embeddings]
+limitations:
+  graph_activation_atomicity: not_promised_by_document_snapshot_marker
+  legacy_mentions: bounded_source_hash_confirmation_when_marker_is_stale
+```
 
 ## 11. No Ambiguities Left
 
@@ -145,7 +185,7 @@ Scenario: Aplicar offset y top correctamente
 - Decisiones cerradas:
   - semaphore=4 como default para fan-out
   - timeout 30s por workspace
-  - ranking: doc_evidence*10 + code_evidence*5
+  - ranking: score search-local determinista por cobertura y evidencia de contenido; no hereda owner_hint como autoridad
 - TODO explicit = 0
 - Fuera de alcance:
   - transporte de red (SSH, HTTP); CLI puro

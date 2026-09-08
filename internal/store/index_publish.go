@@ -44,6 +44,17 @@ type IncrementalFileChange struct {
 // ReplaceWorkspaceIndex is the foreground, no-job publication path. It has no
 // ownership capability by design; job workers must use ReplaceWorkspaceIndexForJob.
 func ReplaceWorkspaceIndex(ctx context.Context, db *sql.DB, generationID string, project model.ProjectFile, files []model.FileRecord, symbols []model.SymbolRecord, docs []model.DocRecord, edges []model.DocEdge, mentions []model.DocMention, sourceBlocks []model.DocSourceBlock, sourceRecords []model.DocSourceRecord, bindings []model.DocArtifactBinding, snapshot model.ReentryMemorySnapshot) error {
+	return replaceWorkspaceIndex(ctx, db, generationID, project, files, symbols, docs, edges, mentions, sourceBlocks, sourceRecords, bindings, snapshot, false)
+}
+
+// ReplaceWorkspaceIndexWithReferenceSnapshot is the extractor-backed full
+// publication path. It stamps the matcher version in the same transaction as
+// the document facts, so failed or canceled publications cannot advance trust.
+func ReplaceWorkspaceIndexWithReferenceSnapshot(ctx context.Context, db *sql.DB, generationID string, project model.ProjectFile, files []model.FileRecord, symbols []model.SymbolRecord, docs []model.DocRecord, edges []model.DocEdge, mentions []model.DocMention, sourceBlocks []model.DocSourceBlock, sourceRecords []model.DocSourceRecord, bindings []model.DocArtifactBinding, snapshot model.ReentryMemorySnapshot) error {
+	return replaceWorkspaceIndex(ctx, db, generationID, project, files, symbols, docs, edges, mentions, sourceBlocks, sourceRecords, bindings, snapshot, true)
+}
+
+func replaceWorkspaceIndex(ctx context.Context, db *sql.DB, generationID string, project model.ProjectFile, files []model.FileRecord, symbols []model.SymbolRecord, docs []model.DocRecord, edges []model.DocEdge, mentions []model.DocMention, sourceBlocks []model.DocSourceBlock, sourceRecords []model.DocSourceRecord, bindings []model.DocArtifactBinding, snapshot model.ReentryMemorySnapshot, versioned bool) error {
 	return publishForeground(ctx, db, func(tx *sql.Tx) error {
 		if err := replaceCatalogTx(ctx, tx, project, files, symbols); err != nil {
 			return err
@@ -53,6 +64,11 @@ func ReplaceWorkspaceIndex(ctx context.Context, db *sql.DB, generationID string,
 		}
 		if err := saveReentrySnapshot(ctx, tx, snapshot); err != nil {
 			return err
+		}
+		if versioned {
+			if err := stampDocIdentitySnapshotTx(ctx, tx); err != nil {
+				return err
+			}
 		}
 		return publishGenerationTx(ctx, tx, generationID, "full", len(files), len(symbols), len(docs))
 	})
@@ -62,6 +78,16 @@ func ReplaceWorkspaceIndex(ctx context.Context, db *sql.DB, generationID string,
 // owner/state/cancellation CAS, index pointers, and optional graph pointer are
 // committed or rolled back together.
 func ReplaceWorkspaceIndexForJob(ctx context.Context, db *sql.DB, jobID, generationID string, project model.ProjectFile, files []model.FileRecord, symbols []model.SymbolRecord, docs []model.DocRecord, edges []model.DocEdge, mentions []model.DocMention, sourceBlocks []model.DocSourceBlock, sourceRecords []model.DocSourceRecord, bindings []model.DocArtifactBinding, snapshot model.ReentryMemorySnapshot, fence IndexJobFence, graph *IndexJobGraphPublication) error {
+	return replaceWorkspaceIndexForJob(ctx, db, jobID, generationID, project, files, symbols, docs, edges, mentions, sourceBlocks, sourceRecords, bindings, snapshot, fence, graph, false)
+}
+
+// ReplaceWorkspaceIndexForJobWithReferenceSnapshot is the owner-bound,
+// extractor-backed full publication path.
+func ReplaceWorkspaceIndexForJobWithReferenceSnapshot(ctx context.Context, db *sql.DB, jobID, generationID string, project model.ProjectFile, files []model.FileRecord, symbols []model.SymbolRecord, docs []model.DocRecord, edges []model.DocEdge, mentions []model.DocMention, sourceBlocks []model.DocSourceBlock, sourceRecords []model.DocSourceRecord, bindings []model.DocArtifactBinding, snapshot model.ReentryMemorySnapshot, fence IndexJobFence, graph *IndexJobGraphPublication) error {
+	return replaceWorkspaceIndexForJob(ctx, db, jobID, generationID, project, files, symbols, docs, edges, mentions, sourceBlocks, sourceRecords, bindings, snapshot, fence, graph, true)
+}
+
+func replaceWorkspaceIndexForJob(ctx context.Context, db *sql.DB, jobID, generationID string, project model.ProjectFile, files []model.FileRecord, symbols []model.SymbolRecord, docs []model.DocRecord, edges []model.DocEdge, mentions []model.DocMention, sourceBlocks []model.DocSourceBlock, sourceRecords []model.DocSourceRecord, bindings []model.DocArtifactBinding, snapshot model.ReentryMemorySnapshot, fence IndexJobFence, graph *IndexJobGraphPublication, versioned bool) error {
 	return publishOwned(ctx, db, jobID, generationID, "full", len(files), len(symbols), len(docs), fence, graph, func(tx *sql.Tx) error {
 		if err := replaceCatalogTx(ctx, tx, project, files, symbols); err != nil {
 			return err
@@ -69,12 +95,30 @@ func ReplaceWorkspaceIndexForJob(ctx context.Context, db *sql.DB, jobID, generat
 		if err := replaceDocsWithSourcesTx(ctx, tx, docs, edges, mentions, sourceBlocks, sourceRecords, bindings); err != nil {
 			return err
 		}
-		return saveReentrySnapshot(ctx, tx, snapshot)
+		if err := saveReentrySnapshot(ctx, tx, snapshot); err != nil {
+			return err
+		}
+		if versioned {
+			if err := stampDocIdentitySnapshotTx(ctx, tx); err != nil {
+				return err
+			}
+		}
+		return nil
 	})
 }
 
 // ReplaceWorkspaceDocs is the foreground, no-job docs publication path.
 func ReplaceWorkspaceDocs(ctx context.Context, db *sql.DB, generationID string, docs []model.DocRecord, edges []model.DocEdge, mentions []model.DocMention, sourceBlocks []model.DocSourceBlock, sourceRecords []model.DocSourceRecord, bindings []model.DocArtifactBinding, snapshot model.ReentryMemorySnapshot) error {
+	return replaceWorkspaceDocs(ctx, db, generationID, docs, edges, mentions, sourceBlocks, sourceRecords, bindings, snapshot, false)
+}
+
+// ReplaceWorkspaceDocsWithReferenceSnapshot is the extractor-backed docs-only
+// publication path. The trust marker is committed with the complete snapshot.
+func ReplaceWorkspaceDocsWithReferenceSnapshot(ctx context.Context, db *sql.DB, generationID string, docs []model.DocRecord, edges []model.DocEdge, mentions []model.DocMention, sourceBlocks []model.DocSourceBlock, sourceRecords []model.DocSourceRecord, bindings []model.DocArtifactBinding, snapshot model.ReentryMemorySnapshot) error {
+	return replaceWorkspaceDocs(ctx, db, generationID, docs, edges, mentions, sourceBlocks, sourceRecords, bindings, snapshot, true)
+}
+
+func replaceWorkspaceDocs(ctx context.Context, db *sql.DB, generationID string, docs []model.DocRecord, edges []model.DocEdge, mentions []model.DocMention, sourceBlocks []model.DocSourceBlock, sourceRecords []model.DocSourceRecord, bindings []model.DocArtifactBinding, snapshot model.ReentryMemorySnapshot, versioned bool) error {
 	return publishForeground(ctx, db, func(tx *sql.Tx) error {
 		if err := replaceDocsWithSourcesTx(ctx, tx, docs, edges, mentions, sourceBlocks, sourceRecords, bindings); err != nil {
 			return err
@@ -82,17 +126,40 @@ func ReplaceWorkspaceDocs(ctx context.Context, db *sql.DB, generationID string, 
 		if err := saveReentrySnapshot(ctx, tx, snapshot); err != nil {
 			return err
 		}
+		if versioned {
+			if err := stampDocIdentitySnapshotTx(ctx, tx); err != nil {
+				return err
+			}
+		}
 		return publishGenerationTx(ctx, tx, generationID, "docs", 0, 0, len(docs))
 	})
 }
 
 // ReplaceWorkspaceDocsForJob is the fenced docs publication path.
 func ReplaceWorkspaceDocsForJob(ctx context.Context, db *sql.DB, jobID, generationID string, docs []model.DocRecord, edges []model.DocEdge, mentions []model.DocMention, sourceBlocks []model.DocSourceBlock, sourceRecords []model.DocSourceRecord, bindings []model.DocArtifactBinding, snapshot model.ReentryMemorySnapshot, fence IndexJobFence, graph *IndexJobGraphPublication) error {
+	return replaceWorkspaceDocsForJob(ctx, db, jobID, generationID, docs, edges, mentions, sourceBlocks, sourceRecords, bindings, snapshot, fence, graph, false)
+}
+
+// ReplaceWorkspaceDocsForJobWithReferenceSnapshot is the owner-bound,
+// extractor-backed docs-only publication path.
+func ReplaceWorkspaceDocsForJobWithReferenceSnapshot(ctx context.Context, db *sql.DB, jobID, generationID string, docs []model.DocRecord, edges []model.DocEdge, mentions []model.DocMention, sourceBlocks []model.DocSourceBlock, sourceRecords []model.DocSourceRecord, bindings []model.DocArtifactBinding, snapshot model.ReentryMemorySnapshot, fence IndexJobFence, graph *IndexJobGraphPublication) error {
+	return replaceWorkspaceDocsForJob(ctx, db, jobID, generationID, docs, edges, mentions, sourceBlocks, sourceRecords, bindings, snapshot, fence, graph, true)
+}
+
+func replaceWorkspaceDocsForJob(ctx context.Context, db *sql.DB, jobID, generationID string, docs []model.DocRecord, edges []model.DocEdge, mentions []model.DocMention, sourceBlocks []model.DocSourceBlock, sourceRecords []model.DocSourceRecord, bindings []model.DocArtifactBinding, snapshot model.ReentryMemorySnapshot, fence IndexJobFence, graph *IndexJobGraphPublication, versioned bool) error {
 	return publishOwned(ctx, db, jobID, generationID, "docs", 0, 0, len(docs), fence, graph, func(tx *sql.Tx) error {
 		if err := replaceDocsWithSourcesTx(ctx, tx, docs, edges, mentions, sourceBlocks, sourceRecords, bindings); err != nil {
 			return err
 		}
-		return saveReentrySnapshot(ctx, tx, snapshot)
+		if err := saveReentrySnapshot(ctx, tx, snapshot); err != nil {
+			return err
+		}
+		if versioned {
+			if err := stampDocIdentitySnapshotTx(ctx, tx); err != nil {
+				return err
+			}
+		}
+		return nil
 	})
 }
 
@@ -139,6 +206,33 @@ func PublishIncrementalGenerationWithChanges(ctx context.Context, db *sql.DB, ge
 func PublishIncrementalGenerationForJobWithChanges(ctx context.Context, db *sql.DB, jobID, generationID string, files, symbols, docs int, fence IndexJobFence, changes []IncrementalFileChange, graph *IndexJobGraphPublication) error {
 	return publishOwned(ctx, db, jobID, generationID, "incremental", files, symbols, docs, fence, graph, func(tx *sql.Tx) error {
 		return applyIncrementalFileChangesTx(ctx, tx, changes)
+	})
+}
+
+// PublishIncrementalGenerationForJobNoChanges closes an owner-bound incremental
+// pass without touching catalog or graph freshness metadata. The candidate
+// generation is marked skipped inside the same fence transaction; cancellation,
+// failure, and stale fences therefore cannot turn a no-op into a publication.
+func PublishIncrementalGenerationForJobNoChanges(ctx context.Context, db *sql.DB, jobID, generationID string, fence IndexJobFence) error {
+	return publishOwned(ctx, db, jobID, generationID, "incremental", 0, 0, 0, fence, &IndexJobGraphPublication{
+		GenerationSkippedReason: "no incremental changes",
+	}, func(*sql.Tx) error {
+		return nil
+	})
+}
+
+// PublishIncrementalGraphRepairForJob activates a repaired graph snapshot while
+// leaving the owner job's unchanged catalog generation candidate skipped. This
+// keeps graph_catalog_generation_id bound to the prior active catalog instead
+// of manufacturing a new catalog generation for a graph-only repair.
+func PublishIncrementalGraphRepairForJob(ctx context.Context, db *sql.DB, jobID, generationID string, fence IndexJobFence, graph *IndexJobGraphPublication) error {
+	if graph == nil || graph.GenerationID == nil {
+		return ErrStaleIndexJobOwner
+	}
+	graph.GenerationSkippedReason = "no incremental changes"
+	graph.GraphCurrent = true
+	return publishOwned(ctx, db, jobID, generationID, "incremental", 0, 0, 0, fence, graph, func(*sql.Tx) error {
+		return nil
 	})
 }
 
@@ -293,33 +387,36 @@ func publishOwned(ctx context.Context, db *sql.DB, jobID, generationID, mode str
 		return err
 	}
 	if graph != nil {
-		if graph.GenerationSkippedReason == "" {
-			if graph.GraphBundle != nil {
-				if err := StageGraphGenerationTx(ctx, tx, graph.GraphBundle); err != nil {
+		if graph.GraphBundle != nil {
+			if err := StageGraphGenerationTx(ctx, tx, graph.GraphBundle); err != nil {
+				return err
+			}
+		}
+		if graph.GenerationID != nil {
+			publishedAt := graph.PublishedAt
+			if publishedAt.IsZero() {
+				publishedAt = time.Now().UTC()
+			}
+			if err := activateGraphGenerationTx(ctx, tx, *graph.GenerationID, graph.ExpectedPrior, publishedAt); err != nil {
+				return err
+			}
+		}
+		if graph.GraphCurrent {
+			catalogGeneration := graph.CatalogGeneration
+			if catalogGeneration == "" {
+				if err := tx.QueryRowContext(ctx, "SELECT value FROM workspace_meta WHERE key=?", WorkspaceMetaActiveCatalogGeneration).Scan(&catalogGeneration); err != nil && err != sql.ErrNoRows {
 					return err
 				}
 			}
-			if graph.GenerationID != nil {
-				publishedAt := graph.PublishedAt
-				if publishedAt.IsZero() {
-					publishedAt = time.Now().UTC()
-				}
-				if err := activateGraphGenerationTx(ctx, tx, *graph.GenerationID, graph.ExpectedPrior, publishedAt); err != nil {
-					return err
-				}
+			if catalogGeneration == "" {
+				catalogGeneration = generationID
 			}
-			if graph.GraphCurrent {
-				catalogGeneration := generationID
-				if graph.CatalogGeneration != "" {
-					catalogGeneration = graph.CatalogGeneration
-				}
-				if err := setGraphRuntimeStateTx(ctx, tx, GraphRuntimeFresh, catalogGeneration); err != nil {
-					return err
-				}
-			} else if mode == "full" || mode == "incremental" {
-				if err := setGraphRuntimeStateTx(ctx, tx, GraphRuntimeStale, ""); err != nil {
-					return err
-				}
+			if err := setGraphRuntimeStateTx(ctx, tx, GraphRuntimeFresh, catalogGeneration); err != nil {
+				return err
+			}
+		} else if graph.GenerationSkippedReason == "" && (mode == "full" || mode == "incremental") {
+			if err := setGraphRuntimeStateTx(ctx, tx, GraphRuntimeStale, ""); err != nil {
+				return err
 			}
 		}
 	} else if mode == "full" || mode == "incremental" {

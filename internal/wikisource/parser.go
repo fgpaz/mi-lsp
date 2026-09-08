@@ -39,21 +39,21 @@ var validTargetKinds = map[string]struct{}{
 
 // ParsedBinding is an intermediate representation for binding artifacts.
 type ParsedBinding struct {
-	DocPath         string
-	BlockID         string
-	DocID           string
-	Relation        string
-	Role            string
-	TargetPath      string
-	TargetSymbol    string
-	TargetKind      string
-	AuthoringOrigin string
-	BindingStatus   string
-	DocLifecycle    string
-	SupersededBy    string
-	Ordinal         int
-	StartLine       int
-	EndLine         int
+	DocPath           string
+	BlockID           string
+	DocID             string
+	Relation          string
+	Role              string
+	TargetPath        string
+	TargetSymbol      string
+	TargetKind        string
+	AuthoringOrigin   string
+	BindingStatus     string
+	DocLifecycle      string
+	SupersededBy      string
+	Ordinal           int
+	StartLine         int
+	EndLine           int
 	SourceContentHash string
 }
 
@@ -602,12 +602,10 @@ func docPathFromRecord(docPath string, docID string) string {
 	return docID
 }
 
-
 const ProtocolV1 = "SDD-WIKI-SOURCE-v1"
 
 var (
-	toonFencePattern      = regexp.MustCompile("(?ms)^```toon\\s*$\\n(.*?)^```\\s*$")
-	wikiSourceDeclPattern = regexp.MustCompile(`(?m)^\s*(?:wiki_source_protocol|source_protocol):\s*SDD-WIKI-SOURCE-v1\s*$`)
+	toonFencePattern = regexp.MustCompile("(?ms)^```toon\\s*$\\n(.*?)^```\\s*$")
 )
 
 type ParsedDoc struct {
@@ -657,9 +655,20 @@ func Parse(docPath string, content string, indexedAt int64) ParsedDoc {
 		return parsed
 	}
 	header := sourceHeader(content)
+	// Some canonical documents put the source envelope in the leading TOON
+	// block rather than frontmatter. Include that bounded block in the header
+	// view so its owner and imports remain source metadata, not body examples.
+	for _, block := range leadingIdentityBlocks(content) {
+		if hasSourceProtocol(block) {
+			header += "\n" + block
+		}
+	}
 	parsed.DeclaresSource = true
 	parsed.SourceProtocol = firstNonEmpty(firstKeyValue(header, "wiki_source_protocol"), firstKeyValue(header, "source_protocol"))
 	parsed.DocID = firstNonEmpty(firstKeyValue(header, "doc_id"), firstKeyValue(header, "id"))
+	if _, declared, ambiguous := metadataIdentity(header); declared && ambiguous {
+		parsed.DocID = ""
+	}
 	parsed.HarnessProtocol = firstKeyValue(header, "harness_protocol")
 	parsed.Audience = firstKeyValue(header, "audience")
 	parsed.Imports = uniqueValues(append(keyValues(header, "imports"), keyValues(header, "links.imports")...))
@@ -806,7 +815,258 @@ func SourceRecords(parsed ParsedDoc, indexedAt int64) []model.DocSourceRecord {
 }
 
 func DeclaresSource(content string) bool {
-	return wikiSourceDeclPattern.MatchString(content)
+	return leadingSourceDeclaration(content)
+}
+
+func leadingSourceDeclaration(content string) bool {
+	for _, block := range leadingIdentityBlocks(content) {
+		if hasSourceProtocol(block) {
+			return true
+		}
+	}
+	lines := strings.Split(strings.ReplaceAll(content, "\r", ""), "\n")
+	seenHeading := false
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" {
+			continue
+		}
+		if strings.HasPrefix(trimmed, "#") {
+			if !seenHeading && strings.HasPrefix(trimmed, "# ") {
+				seenHeading = true
+				continue
+			}
+			return false
+		}
+		key, value, ok := splitKeyValue(trimmed)
+		if !ok {
+			return false
+		}
+		if (key == "source_protocol" || key == "wiki_source_protocol") && value == ProtocolV1 {
+			return true
+		}
+	}
+	return false
+}
+
+// DocumentIdentity returns the explicitly declared owner of a document. It
+// only considers the bounded metadata envelopes that the repository supports:
+// YAML frontmatter and a leading fenced Harness YAML block. Source documents
+// retain the existing SDD parser as their source of identity. Body references,
+// imports, and records are deliberately not candidates for document ownership.
+// The declared result is true when an owner field was present, including an
+// empty or ambiguous declaration; callers must not fall back to body scanning
+// in that case.
+func DocumentIdentity(content string) (id string, declared bool) {
+	identities := make([]string, 0, 2)
+	declarations := false
+	for _, block := range leadingIdentityBlocks(content) {
+		blockID, blockDeclared, ambiguous := metadataIdentity(block)
+		if !blockDeclared {
+			continue
+		}
+		declarations = true
+		if ambiguous {
+			return "", true
+		}
+		identities = append(identities, blockID)
+	}
+	if declarations {
+		for _, candidate := range identities {
+			if candidate == "" {
+				continue
+			}
+			if id != "" && id != candidate {
+				return "", true
+			}
+			id = candidate
+		}
+		return id, true
+	}
+
+	if DeclaresSource(content) {
+		if _, declared, ambiguous := metadataIdentity(sourceHeader(content)); declared && ambiguous {
+			return "", true
+		}
+		parsed := Parse("", content, 0)
+		if parsed.DocID != "" {
+			return parsed.DocID, true
+		}
+	}
+	return "", false
+}
+
+// MetadataReferences returns links declared by a leading supported metadata
+// envelope. These values are references only; callers must not use them as a
+// document owner.
+func MetadataReferences(content string) []string {
+	values := make([]string, 0)
+	for _, block := range leadingIdentityBlocks(content) {
+		values = append(values, keyValues(block, "imports")...)
+		values = append(values, keyValues(block, "links.imports")...)
+		values = append(values, keyValues(block, "exports")...)
+		values = append(values, keyValues(block, "links.exports")...)
+	}
+	return uniqueValues(values)
+}
+
+func leadingIdentityBlocks(content string) []string {
+	lines := strings.Split(strings.ReplaceAll(content, "\r", ""), "\n")
+	blocks := make([]string, 0, 2)
+	seenHeading := false
+	for i := 0; i < len(lines); {
+		trimmed := strings.TrimSpace(lines[i])
+		if trimmed == "" {
+			i++
+			continue
+		}
+		if trimmed == "---" && len(blocks) == 0 {
+			start := i + 1
+			closed := false
+			for j := start; j < len(lines); j++ {
+				if strings.TrimSpace(lines[j]) == "---" {
+					blocks = append(blocks, strings.Join(lines[start:j], "\n"))
+					i = j + 1
+					closed = true
+					break
+				}
+			}
+			if !closed {
+				break
+			}
+			continue
+		}
+		if strings.HasPrefix(trimmed, "#") {
+			if !seenHeading && strings.HasPrefix(trimmed, "# ") {
+				seenHeading = true
+				i++
+				continue
+			}
+			break
+		}
+		if strings.EqualFold(trimmed, "```yaml") || strings.EqualFold(trimmed, "```yml") || strings.EqualFold(trimmed, "```toon") {
+			start := i + 1
+			closed := false
+			for j := start; j < len(lines); j++ {
+				if strings.TrimSpace(lines[j]) == "```" {
+					block := strings.Join(lines[start:j], "\n")
+					if !supportedMetadataProtocol(block) {
+						return blocks
+					}
+					blocks = append(blocks, block)
+					i = j + 1
+					closed = true
+					break
+				}
+			}
+			if !closed {
+				break
+			}
+			continue
+		}
+		break
+	}
+	return blocks
+}
+
+func supportedMetadataProtocol(content string) bool {
+	return hasHarnessProtocol(content) || hasSourceProtocol(content)
+}
+
+func hasHarnessProtocol(content string) bool {
+	for _, line := range strings.Split(content, "\n") {
+		if strings.HasPrefix(line, " ") || strings.HasPrefix(line, "\t") {
+			continue
+		}
+		key, value, ok := splitKeyValue(strings.TrimSpace(line))
+		if ok && key == "harness_protocol" && value == "SDD-HARNESS-v1" {
+			return true
+		}
+	}
+	return false
+}
+
+func hasSourceProtocol(content string) bool {
+	for _, line := range strings.Split(content, "\n") {
+		if strings.HasPrefix(line, " ") || strings.HasPrefix(line, "\t") {
+			continue
+		}
+		key, value, ok := splitKeyValue(strings.TrimSpace(line))
+		if ok && (key == "source_protocol" || key == "wiki_source_protocol") && value == ProtocolV1 {
+			return true
+		}
+	}
+	return false
+}
+
+func metadataIdentity(content string) (id string, declared bool, ambiguous bool) {
+	var docIDs, ids []string
+	for _, line := range strings.Split(content, "\n") {
+		if strings.TrimSpace(line) == "" || strings.HasPrefix(strings.TrimSpace(line), "#") || strings.HasPrefix(line, " ") || strings.HasPrefix(line, "\t") {
+			continue
+		}
+		key, value, ok := splitKeyValue(strings.TrimSpace(line))
+		if !ok {
+			continue
+		}
+		value = ownerScalar(value)
+		switch key {
+		case "doc_id":
+			declared = true
+			docIDs = append(docIDs, value)
+		case "id":
+			declared = true
+			ids = append(ids, value)
+		}
+	}
+	if !sameDeclaredValue(docIDs) {
+		return "", declared, true
+	}
+	// doc_id is the explicit owner field; id is a compatibility fallback and
+	// may also occur in source metadata for a record. Do not let that fallback
+	// shadow an explicit doc_id in the same envelope.
+	if len(docIDs) > 0 {
+		return docIDs[0], declared, false
+	}
+	if !sameDeclaredValue(ids) {
+		return "", declared, true
+	}
+	if len(ids) > 0 {
+		return ids[0], declared, false
+	}
+	return "", declared, false
+}
+
+func ownerScalar(value string) string {
+	value = strings.TrimSpace(value)
+	if strings.HasPrefix(value, "#") {
+		return ""
+	}
+	if idx := strings.Index(value, " #"); idx >= 0 {
+		value = strings.TrimSpace(value[:idx])
+	}
+	if value == "|" || value == ">" {
+		return ""
+	}
+	if len(value) >= 2 && (value[0] == '\'' || value[0] == '"') {
+		quote := value[0]
+		if end := strings.IndexByte(value[1:], quote); end >= 0 {
+			return value[1 : end+1]
+		}
+	}
+	return strings.Trim(strings.TrimSpace(value), `"'`)
+}
+
+func sameDeclaredValue(values []string) bool {
+	if len(values) < 2 {
+		return true
+	}
+	for _, value := range values[1:] {
+		if value != values[0] {
+			return false
+		}
+	}
+	return true
 }
 
 func RecordType(id string) string {

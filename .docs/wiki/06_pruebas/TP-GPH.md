@@ -217,7 +217,7 @@ cases:
 | TC-GPH-016 | positivo | Go emite declarations/contains/imports y solo promueve calls/references cuando types/gopls resuelve; `typeCheckAll` comparte importer/cache para conservar identidad de paquetes importados |
 | TC-GPH-016A | positivo | `TestObserveGoGraphSharesExportImporterIdentity`: imports de libreria estandar mantienen identidad coherente y el batch limpio permanece completo y stageable |
 | TC-GPH-016B | negativo | `TestObserveGoGraphLocalTargetsAreUnsupported`: declaraciones locales no representadas se registran como omission `unsupported_symbol_kind`; no crean unresolved ni alteran completeness/ReadyForStaging |
-| TC-GPH-016C | negativo | `TestObserveGoGraphTopLevelEmbeddedFieldRemainsUnresolved`: un endpoint local elegible pero ausente conserva `partial` y el rechazo de `ReadyForStaging`; no se promueve ni se relaja el gate |
+| TC-GPH-016C | positivo | `TestObserveGoGraphTopLevelEmbeddedFieldIsStageable`: un campo embebido declarado por AST se materializa como endpoint `field` con evidencia y `contains`; la observación conserva `complete` y pasa `ReadyForStaging`, mientras type-load, parseo, cancelación y endpoints realmente ausentes siguen `partial` y fail-closed |
 | TC-GPH-017 | negativo | tsserver ausente/experimental produce omission; texto no crea edge semantica |
 | TC-GPH-018 | negativo | Pyright ausente/experimental y extractor lexical producen candidatos/unresolved, no compiler facts |
 | TC-GPH-019 | negativo | ambiguous, stale o endpoint missing produce GraphUnresolved; validacion confirma cero dangling edges |
@@ -228,6 +228,7 @@ cases:
 | TC-GPH-022B | positivo | container con Go/C#/TS/Python observa Go una sola vez desde el root, procesa cada `.csproj`, omite `.sln`, comparte identidad y rebasa paths al namespace global; un proyecto Roslyn partial queda omission `backend_partial` sin bloquear batches completos |
 | TC-GPH-022C | negativo | backend elegible sin batch devuelve error y conserva el graph previo; workspace explicitamente non-graph devuelve `GraphNotApplicable` |
 | TC-GPH-022D | positivo | clean e incremental equivalentes, con mismo contenido/origin/toolchain/config, producen el mismo `GenerationID` y digest; `CreatedAt` queda fuera del ID |
+| TC-GPH-022G | positivo | `TestIndexStartNoChangeGraphRepairPreservesCatalogBinding`: un job owner-bound full que deriva en incremental sin cambios marca su generation candidata como `skipped` y no mueve el catálogo; con graph válido conserva pointer/binding y con graph stale repara solo el snapshot graph bajo el mismo fence, dejando disponibles las queries positivas; cancelación, fallo o pérdida de fence no publica |
 | TC-GPH-022E | positivo | `TestExtractReferencesSupportsObsidianFormsAndSkipsFences`: wikilinks, embeds, Markdown links, anchors y alias preservan tipo/raw target; externos/fences/self-anchor no crean edges falsos |
 | TC-GPH-022F | positivo | `TestAppendStructuralDocEdgesLinksGobiernoAndReadme`: `doc_hierarchy` enlaza wiki/00-gobierno.md y README de bibliotecas/memorias |
 

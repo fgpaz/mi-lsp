@@ -106,6 +106,65 @@ func TestIncrementalIndexNoChangesPreservesCurrentGraph(t *testing.T) {
 	}
 }
 
+func TestIncrementalIndexForJobNoChangesPreservesGraphAndQueries(t *testing.T) {
+	root := setupIncrementalGraphFixture(t)
+	ctx := context.Background()
+	db, err := store.Open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	before, ok, err := store.ActiveGraphGeneration(ctx, db)
+	if err != nil || !ok {
+		db.Close()
+		t.Fatalf("initial active graph=%s ok=%v err=%v", before, ok, err)
+	}
+	job, err := store.CreateIndexJob(ctx, db, "incremental-job-noop", root, store.IndexModeFull, false)
+	if err != nil {
+		db.Close()
+		t.Fatalf("CreateIndexJob: %v", err)
+	}
+	fence := store.IndexJobFence{OwnerToken: job.OwnerToken, FencingToken: job.FencingToken}
+	if err := store.MarkIndexJobRunning(ctx, db, job.JobID, 0, "indexing", fence); err != nil {
+		db.Close()
+		t.Fatalf("MarkIndexJobRunning: %v", err)
+	}
+	_ = db.Close()
+
+	result, err := IncrementalIndexWithGraphProgressForJob(ctx, root, job.GenerationID, job.JobID, fence, nil, GraphIndexOptions{})
+	if err != nil {
+		t.Fatalf("IncrementalIndexWithGraphProgressForJob: %v", err)
+	}
+	if result.Stats.Files != 0 {
+		t.Fatalf("job no-op processed %d files, want 0", result.Stats.Files)
+	}
+
+	db, err = store.Open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	after, ok, err := store.ActiveGraphGeneration(ctx, db)
+	if err != nil || !ok || after != before {
+		t.Fatalf("active graph=%s ok=%v err=%v, want unchanged %s", after, ok, err, before)
+	}
+	if state, err := store.GraphRuntimeState(ctx, db); err != nil || state != store.GraphRuntimeFresh {
+		t.Fatalf("graph runtime state=%q err=%v, want fresh", state, err)
+	}
+	snapshot, err := store.BeginGraphQuerySnapshot(ctx, db, "")
+	if err != nil {
+		t.Fatalf("BeginGraphQuerySnapshot after job no-op: %v", err)
+	}
+	defer snapshot.Close()
+	nodes, kind, err := snapshot.ResolveGraphSelector(ctx, "func:example.com/incremental-graph:main")
+	if err != nil || kind != "semantic_identity" || len(nodes) != 1 {
+		t.Fatalf("main selector: nodes=%d kind=%q err=%v", len(nodes), kind, err)
+	}
+	edges, err := snapshot.Edges(ctx, []int{nodes[0].NodeID}, "out", []string{"calls"}, 10)
+	if err != nil || len(edges) == 0 {
+		t.Fatalf("calls after job no-op: edges=%d err=%v", len(edges), err)
+	}
+}
+
 func TestIncrementalIndexRepairsMissingGraphOnNoChanges(t *testing.T) {
 	root := setupIncrementalGraphFixture(t)
 	db, err := store.Open(root)
@@ -225,7 +284,7 @@ func setupIncrementalGraphFixture(t *testing.T) string {
 		t.Fatal(err)
 	}
 	mustWriteIncrementalFile(t, filepath.Join(root, "go.mod"), "module example.com/incremental-graph\n\ngo 1.23\n")
-	mustWriteIncrementalFile(t, filepath.Join(root, "main.go"), "package main\nfunc main() {}\n")
+	mustWriteIncrementalFile(t, filepath.Join(root, "main.go"), "package main\nfunc target() {}\nfunc main() { target() }\n")
 	mustWriteIncrementalFile(t, filepath.Join(root, ".gitignore"), ".mi-lsp/\n")
 	for _, args := range [][]string{{"init"}, {"config", "user.email", "test@example.com"}, {"config", "user.name", "mi-lsp-test"}, {"add", "."}, {"commit", "-m", "fixture"}} {
 		cmd := exec.Command("git", args...)
@@ -468,16 +527,16 @@ func TestIncrementalPathDrivenRefreshClassifiesMixedCodeAndCanonicalDocs(t *test
 
 func TestIncrementalAuthorityConfigFanoutUsesExplicitPredicate(t *testing.T) {
 	tests := map[string]bool{
-		".docs/wiki/00_gobierno_documental.md":       true,
-		".docs/wiki/07_baseline_tecnica.md":          true,
-		".docs/wiki/_mi-lsp/read-model.toml":         true,
-		".gitignore":                                 true,
-		".milspignore":                               true,
-		"README.md":                                  true,
-		".docs/wiki/09_contratos_tecnicos.md":        false,
-		".docs/raw/00_gobierno_documental.md":       false,
-		".docs/auditoria/read-model.toml":            false,
-		".mi-lsp/index.db":                           false,
+		".docs/wiki/00_gobierno_documental.md": true,
+		".docs/wiki/07_baseline_tecnica.md":    true,
+		".docs/wiki/_mi-lsp/read-model.toml":   true,
+		".gitignore":                           true,
+		".milspignore":                         true,
+		"README.md":                            true,
+		".docs/wiki/09_contratos_tecnicos.md":  false,
+		".docs/raw/00_gobierno_documental.md":  false,
+		".docs/auditoria/read-model.toml":      false,
+		".mi-lsp/index.db":                     false,
 	}
 	for path, want := range tests {
 		if got := IsAuthorityConfigPath(path); got != want {

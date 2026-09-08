@@ -503,5 +503,10 @@ func applyIncrementalDocChangesTx(ctx context.Context, tx *sql.Tx, changes []Inc
 	if err := ensureUnrelatedDocRowsStable(before, after); err != nil {
 		return false, err
 	}
+	if actual {
+		if err := invalidateDocIdentitySnapshotTx(ctx, tx); err != nil {
+			return false, err
+		}
+	}
 	return actual, nil
 }

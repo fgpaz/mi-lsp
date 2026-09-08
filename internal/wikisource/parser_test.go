@@ -43,6 +43,18 @@ func assertMention(t *testing.T, parsed ParsedDoc, kind string, value string) {
 	t.Fatalf("missing mention %s=%s in %#v", kind, value, parsed.Mentions)
 }
 
+func TestParserLeadingToonSourceEnvelope(t *testing.T) {
+	content := "# Leading TOON source\n\n```toon\nwiki_source_protocol: SDD-WIKI-SOURCE-v1\nid: RF-TOON-001\nblock_id: RF-TOON-001.core\nartifact_bindings:\n  - target_kind: symbol\n    relation: implements\n    target_path: src/toon/service.go\n    target_symbol: Serve\n```\n"
+	parsed := Parse(".docs/wiki/04_RF/RF-TOON-001.md", content, 1)
+	if !parsed.DeclaresSource || parsed.DocID != "RF-TOON-001" {
+		t.Fatalf("leading TOON source identity=%#v", parsed)
+	}
+	bindings := SourceBindings(parsed, 1)
+	if len(bindings) != 1 || bindings[0].DocID != "RF-TOON-001" || bindings[0].TargetPath != "src/toon/service.go" || bindings[0].TargetSymbol != "Serve" {
+		t.Fatalf("leading TOON bindings=%#v", bindings)
+	}
+}
+
 func TestParserCanonicalArtifactBinding(t *testing.T) {
 	content := `# Test
 wiki_source_protocol: SDD-WIKI-SOURCE-v1

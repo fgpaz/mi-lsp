@@ -54,6 +54,34 @@ mi-lsp nav wiki validate-source --workspace <alias> [--paths <path[,path...]>] [
 
 `nav wiki` es la puerta documental explicita para agentes. `wiki search` usa el docgraph repo-local y el scorer owner-aware para devolver candidatos wiki, mientras `wiki route`, `wiki pack` y `wiki trace` reutilizan la semantica y el shape de `nav route`, `nav pack` y `nav trace`. `wiki map` publica un catálogo compacto de hubs de una wiki de conocimiento (`wiki/` numerada y `bibliotecas/`) sin cuerpos completos y sin fan-out `--all-workspaces`. `wiki-root` (alias `wiki root`) publica la raíz portable; el envelope vive en [[CT-NAV-WIKI-ROOT]]. `wiki validate-harness` compila readiness de contratos `SDD-HARNESS-v1` sobre los docs gobernados. `wiki validate-source` compila readiness de artefactos que declaran `wiki_source_protocol: SDD-WIKI-SOURCE-v1`; los docs no migrados no son bloqueantes. `wiki search` acepta `RS` como layer outcome y `wiki trace` acepta `RS-*`, `RF-*`, `TP-*`, doc IDs tecnicos exactos (`TECH-*`, `DB-*`, `CT-*`) y source IDs exactos; para IDs tecnicos debe preferir el documento cuyo `doc_id` coincide exactamente antes de usar menciones o fallbacks RF. `--all` sigue recorriendo el set RF canonico, y cuando necesita fallback a disco debe priorizar las rutas gobernadas por `00`/`read-model` antes de caer a layouts legacy.
 
+### Frescura de menciones literales
+
+`doc_mentions` de tipo `doc_id` solo tiene autoridad de búsqueda cuando `workspace_meta.doc_identity_snapshot_version` coincide con la versión vigente del extractor. La publicación full o docs-only respaldada por el extractor actualiza ese marcador dentro de la misma transacción que reemplaza documentos, edges, menciones, bloques, records y bindings; cualquier escritor documental no versionado lo invalida. Si falta o es antigua, la búsqueda confirma cada candidato contra su Markdown canónico (ruta segura dentro del workspace, tamaño acotado y `content_hash` coincidente) usando la misma gramática literal; las fuentes ausentes o stale se informan como no verificadas y no se convierten en hits.
+
+La gramática admite IDs estándar con segmentos alfanuméricos separados por guiones, puntuación terminal y `.md` en enlaces; rechaza continuaciones como `.extra` y `.md.EXTRA`, y mantiene distintos `RF-X-1`, `RF-X-1-EXTRA` y `RF-X-10`. La identidad propietaria (`doc_id`) no se deriva de las referencias.
+
+### Límite de atomicidad documental y grafo
+
+El marcador `workspace_meta.doc_identity_snapshot_version` y las familias documentales (Docs, edges, mentions, source blocks/records, bindings, FTS y memoria de reentrada) se publican atómicamente solo en las rutas respaldadas por el extractor vigente. Esta garantía es del snapshot documental: no equivale a una garantía de activación del puntero/generación Graph en la misma transacción para la ruta foreground. Las variantes fenced de job pueden incluir una publicación graph explícita en su transacción; la ruta foreground puede activar graph por separado y dejarlo stale. No se debe declarar que el marker vuelve atómica la activación graph ni que `docs-only` valida graph, recall o embeddings.
+
+```toon
+doc_id: CT-NAV-WIKI
+block_id: ct-nav-wiki-document-snapshot-boundary
+kind: atomicity-boundary
+source_of_truth: this
+marker: workspace_meta.doc_identity_snapshot_version
+atomic_document_families: [doc_records, doc_edges, doc_mentions, doc_source_blocks, doc_source_records, doc_artifact_bindings, fts, reentry_memory]
+foreground_graph_activation: separate_or_stale_allowed
+fenced_job_graph_activation: same_transaction_when_explicit_graph_publication_is_supplied
+not_guaranteed: [docs_and_graph_single_transaction_for_all_paths, installed_index, live_refresh, embeddings]
+evidence:
+  - internal/store/index_publish.go
+  - internal/store/meta.go
+  - internal/store/doc_snapshot.go
+  - internal/indexer/indexer.go
+  - internal/indexer/indexer_test.go
+```
+
 ## Integración aditiva del puente wiki ↔ código
 
 ```toon
@@ -193,6 +221,44 @@ semantics: |
   Sin --all-workspaces: busca en workspace específico (default actual).
   Con --all-workspaces: itera todos los aliases registrados, ejecuta query en paralelo,
   agrega workspace a cada item, mergea items, mantiene truncated_per_workspace.
+  En cada workspace, la secuencia elegible se ensambla completa y de forma determinista:
+  primero el DocRecord cuyo doc_id coincide exactamente, después las coincidencias exactas
+  de doc_source_blocks/doc_source_records y, por último, el orden owner-aware existente.
+  La deduplicación es por path, el filtro de capa se aplica antes de offset/top y la
+  paginación se aplica una sola vez. En el workspace único, total_matches cuenta toda
+  la secuencia elegible y shown_matches los items emitidos por el servicio antes de
+  cualquier límite posterior del envelope; el fanout no promete esos campos por
+  workspace. Una declaración source exacta no promociona referencias textuales ni
+  reemplaza una autoridad documental ambigua.
+  La admisión de relevancia es exclusiva de search y no cambia route, ask o pack:
+  una query con forma de identificador conserva únicamente el DocRecord cuyo doc_id
+  coincide de forma completa, declaraciones source exactas y referencias que contienen
+  el identificador completo con límites de identidad (incluye [[ID]], enlaces ID.md y
+  puntuación de frase como `RF-X-1.` o `RF-X-1,`, pero bloquea RF-X-1 frente a
+  RF-X-1-EXTRA, RF-X-1_EXTRA, RF-X-1.extra, RF-X-1.md.EXTRA o RF X 1).
+  La igualdad exacta de un DocRecord.DocID declarado activa este modo aun para IDs
+  no software, con puntos, guiones bajos o Unicode; no se inventa una gramática para
+  IDs desconocidos fuera de las formas soportadas. Una query natural exige evidencia
+  FTS o léxica real en doc_id, title, search_text o path; familia, layer, owner-prefix
+  y owner_hint son señales de ordenación, no evidencia de admisión.
+  El esquema vigente no declara alias de búsqueda explícitos en DocsReadProfile; por
+  tanto, los alias de route Tier1 siguen orientando consultas sin índice o sin hit, pero
+  no fuerzan resultados en una búsqueda literal. El soporte Markdown sin doc_id se
+  conserva mediante title/search_text/path y su identidad de evidencia. En queries
+  naturales, la comparación léxica local descompone Unicode mediante NFD y elimina
+  marcas diacríticas: cache y caché son equivalentes para cobertura, ranking y selección
+  de evidencia. Esta normalización no modifica la igualdad literal de DocID/source IDs
+  ni el ranking compartido de route, ask o pack.
+  Search aplica después de la admisión un score local y determinista:
+  cobertura de tokens, heading, passage/snippet y search_text prevalecen sobre owner_hint,
+  family, layer y owner-prefix cuando estos solo expresan routing; el score emitido es el
+  mismo usado para ordenar y fusionar workspaces. Los empates se resuelven por path y luego
+  doc_id. La evidencia de salida se selecciona de líneas reales del path canónico, prioriza
+  la mayor cobertura de query y texto significativo. A igual cobertura, el cuerpo prevalece
+  sobre frontmatter y metadatos Harness; los bloques TOON del cuerpo siguen siendo evidencia
+  válida y los metadatos se conservan como fallback si no hay un pasaje útil. Incluye como
+  máximo una línea contigua antes/después y omite el rango si el archivo falta o está stale; snippet/index permanece
+  como fallback transparente sin inventar autoridad ni frescura.
 ```
 
 ## Filtros de capa
@@ -354,17 +420,22 @@ readiness:
 - `nav wiki validate-harness` aplica el gate de gobernanza, lee el docgraph existente, abre los markdown gobernados y valida YAML frontmatter o fenced YAML con `harness_protocol: SDD-HARNESS-v1`.
 - `nav wiki validate-harness` resuelve imports, evidencia y links Obsidian links Obsidian de ejemplo contra `DocRecord`, `doc_id`, exports y paths del workspace.
 - `nav wiki validate-harness` debe usar todo el docgraph gobernado para resolver referencias, aunque la validacion este acotada a contratos `SDD-HARNESS-v1`; si un record agregado apunta al mismo ID que un contrato canonico, el agregado no debe generar falso `missing contract`.
-- `--ids <lista>` combina DocRecord.DocID, Title y basename del path; DocRecord.DocID se llena preferentemente con el `doc_id` de `wikisource.Parse` (SDD) sobre el fallback regex `firstDocID` (`FL|RS|RF|TP|TECH|CT|DB|AE`).
+- `--ids <lista>` combina DocRecord.DocID, Title y basename del path; DocRecord.DocID se llena preferentemente con identidad declarada en frontmatter/Harness/SDD y solo después con la compatibilidad legacy acotada (H1 ID-leading o basename exacto), nunca con el primer ID encontrado en el cuerpo.
 - `nav wiki validate-source` aplica el gate de gobernanza, lee `doc_source_blocks`/`doc_source_records`, abre solo markdowns que declaran `SDD-WIKI-SOURCE-v1` y no bloquea el resto del corpus.
 - `nav wiki validate-source --paths <path[,path...]>` limita el scope a paths existentes; `--ids <doc-id[,doc-id...]>` limita el scope a IDs documentales/source. Los filtros son aditivos al workspace y no convierten un documento dual sin `SDD-WIKI-SOURCE-v1` en source artifact; si el scope solo coincide con documentos no fuente, se reporta `scope=no_match`.
 - Un scope sin coincidencias no es una lista vacía ambigua: devuelve `ok=true`, `wiki_source_verdict=BLOCKED`, `wiki_source_readiness=blocked`, `navigation_readiness=blocked` y `navigation_blockers` con `scope=no_match`, junto con un hint accionable.
 - `nav wiki search`, `route`, `pack` y `trace` son superficies dirigidas y owner-aware. Una preview puede devolver `next_queries`/`next_hint`, pero no debe ocultar truncation, omisiones, stale index ni graph context no disponible.
+- `wiki search` aplica admisión de relevancia local: las queries con forma de ID requieren identidad completa o referencia completa con límites (se aceptan enlaces Markdown y el sufijo `.md`); las queries naturales requieren FTS o solapamiento léxico real en `doc_id`, título, texto o path. `family`, `layer`, `owner_prefix` y `owner_hint` no bastan por sí solos y un no-hit devuelve `items=[]` con su diagnóstico/hint existente.
+- No existe un campo de alias de búsqueda explícito en el esquema actual de `DocsReadProfile`; los alias de orientación Tier1 de `wiki route` no se inyectan en resultados literales de `wiki search`.
 - `nav wiki search <id>` resuelve coincidencias exactas en `doc_source_blocks.doc_id`, `doc_source_blocks.block_id` y `doc_source_records.record_id` antes del ranking textual.
 - `nav wiki search` debe exponer evidencia de linea cuando esta disponible: `line_start`/`line_end` en el item o rangos equivalentes dentro de `snippet/content`; los rangos deben apuntar al markdown canonico devuelto en `path`.
 - `nav wiki trace <id>` puede devolver evidencia `wiki-source` para source IDs exactos aunque no sean `RS-*`, `RF-*` o `TP-*`.
 - `nav wiki search|route|pack|trace` expone `lookup_status` de forma aditiva con `query`, `workspace`, `index_freshness`, `governance_sync`, `match_kind`, IDs exactos (`doc_id`, `block_id`, `record_id`), `path`, `layer`, `stage`, `rank_reason`, totales, razon y `next_hint` valido cuando la preview no muestra todo.
 - `match_kind` distingue `canonical_indexed_id`, `alias_read_model_routing`, `mentions_content_fallback`, `content_fallback` y `true_absence`; no debe reportar ausencia si encontro identidad canonica pero la traza downstream queda incompleta.
 - `TraceResult` puede agregar `confidence`, `confidence_reason` y `status_reason` de forma aditiva para diferenciar evidencia fuerte, fallback a disco, cobertura parcial y ausencia real; estos campos explican el veredicto pero no reemplazan `status`, `lookup_status` ni la evidencia `wiki-source`.
+- La propiedad de `DocRecord.doc_id` se extrae con precedencia documental: YAML frontmatter o bloque YAML Harness inicial con `doc_id` (y `id` como fallback compatible), seguido del encabezado explícito `SDD-WIKI-SOURCE-v1`; solo los documentos legacy con un H1 que comienza por un ID conocido o con basename exactamente igual conservan esa compatibilidad. Imports, wikilinks, menciones, cuerpos y `doc_source_records.record_id` son referencias, no propietarios.
+- Un `doc_id` no estándar o Unicode declarado es válido. Declaraciones de propietario contradictorias dejan el ID vacío, sin elegir silenciosamente una de ellas. Un Markdown enlazado sin declaración propia conserva identidad por `path/title/search_text`, no por el ID enlazado.
+- La corrección de un índice ya publicado requiere el comando explícito soportado `mi-lsp index --workspace <alias> --docs-only`; la navegación no reindexa automáticamente. Esa operación vuelve a extraer el documento y publica el snapshot derivado (Docs, edges/mentions, source blocks/records y FTS) mediante reemplazo atómico. No se afirma una migración global ni se incluyen embeddings.
 
 ## Ejemplo documental sin embeddings
 

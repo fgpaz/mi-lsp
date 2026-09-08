@@ -34,7 +34,7 @@ Esta capa existe para que la respuesta docs-first y los reading packs canonicos 
 
 ## Pipeline
 
-1. `workspace init` o `index` construye `doc_records`, `doc_edges`, `doc_mentions`, `doc_source_blocks` y `doc_source_records`; `index --docs-only` reconstruye solo esas tablas y la memoria de reentrada.
+1. `workspace init` o `index` construye `doc_records`, `doc_edges`, `doc_mentions`, `doc_source_blocks` y `doc_source_records`; `index --docs-only` reconstruye solo esas tablas y la memoria de reentrada. Las publicaciones respaldadas por el extractor vigente estampan `workspace_meta.doc_identity_snapshot_version` dentro de la misma transacción documental; escritores documentales no versionados lo invalidan.
 2. `docgraph.LoadProfile()` carga `.docs/wiki/_mi-lsp/read-model.toml` si existe; si no, usa el perfil embebido.
 3. `nav wiki search` rankea `doc_records` y filtra por capas documentales explicitas (`RS`, `RF`, `FL`, `TP`, `CT`, `TECH`, `DB`).
 4. `nav ask`, `nav route` y `nav pack` normalizan preguntas de inventario de anclas para quitar meta-terminos SDD (`RS`, `RF`, `FL`, `CT`, `TECH`, `DB`, `TP`) del ranking cuando esos tokens expresan formato/capa y no dominio funcional.
@@ -101,3 +101,31 @@ Ese modo permite usar `nav ask` en repos sin gobierno documental estricto, aunqu
 - El incremental por archivo no alcanza para docs: cambios documentales se tratan como disparador de full re-index.
 - La recuperacion operacional de un corpus documental vacio debe preferir `mi-lsp index --docs-only`, porque preserva el catalogo de codigo y recompone `memory_pointer`.
 - No se usan embeddings ni servicios externos en esta version.
+
+## Boundary de snapshot documental
+
+La confianza de `doc_mentions` de tipo `doc_id` depende del marker de versión del extractor. Cuando falta o es antiguo, `nav wiki search` confirma la mención contra el Markdown canónico con ruta segura, límite de lectura y `content_hash`; si no puede confirmar, omite la mención y emite advertencia. El snapshot documental es atómico para sus familias documentales, pero no promete que la activación foreground del Graph comparta la misma transacción. Las variantes fenced de job pueden recibir una publicación graph explícita dentro de su transacción. Docs-only no valida por sí mismo graph, recall, embeddings ni índice instalado/live.
+
+```toon
+doc_id: TECH-WIKI-AWARE-SEARCH
+block_id: tech-wiki-aware-search-snapshot-boundary
+kind: technical-boundary
+source_of_truth: this
+implementation:
+  - internal/docidentity/identity.go
+  - internal/service/wiki_search.go
+  - internal/store/index_publish.go
+  - internal/store/meta.go
+  - internal/store/doc_snapshot.go
+  - internal/store/queries_incremental.go
+  - internal/indexer/indexer.go
+oracles:
+  - internal/service/wiki_search_test.go
+  - internal/docidentity/identity_test.go
+  - internal/docgraph/identity_test.go
+  - internal/docgraph/reference_identity_test.go
+  - internal/wikisource/parser_test.go
+  - internal/indexer/indexer_test.go
+  - internal/store/doc_identity_snapshot_test.go
+non_claims: [graph_foreground_atomicity, installed_index, live_refresh, embeddings]
+```

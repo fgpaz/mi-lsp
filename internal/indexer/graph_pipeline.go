@@ -128,7 +128,7 @@ func ObserveGraph(ctx context.Context, root string, project model.ProjectFile, o
 				return nil, omissions, warnings, fmt.Errorf("go graph observation failed: %w", observeErr)
 			}
 			if err := batch.ReadyForStaging(); err != nil {
-				return nil, omissions, warnings, fmt.Errorf("go graph observation is not stageable: %w", err)
+				return nil, omissions, warnings, fmt.Errorf("go graph observation is not stageable: %w (%s)", err, graphObservationBatchDiagnostics(batch))
 			}
 			batches = append(batches, batch)
 		}
@@ -499,6 +499,33 @@ func graphOmissionForRepo(backend, capability, reason, recovery string, repo mod
 	omission.Ref = "omission:" + repo.ID + ":" + backend + ":" + reason
 	omission.OwnerPath = normalizeRepoRoot(repo.Root)
 	return omission
+}
+
+func graphObservationBatchDiagnostics(batch model.GraphObservationBatch) string {
+	reasons := make(map[string]struct{}, len(batch.Omissions)+len(batch.Unresolved))
+	for _, omission := range batch.Omissions {
+		if omission.ReasonCode != "" {
+			reasons[omission.ReasonCode] = struct{}{}
+		}
+	}
+	for _, unresolved := range batch.Unresolved {
+		if unresolved.ReasonCode != "" {
+			reasons[unresolved.ReasonCode] = struct{}{}
+		}
+	}
+	codes := make([]string, 0, len(reasons))
+	for code := range reasons {
+		codes = append(codes, code)
+	}
+	sort.Strings(codes)
+	declarations := "missing"
+	for _, coverage := range batch.Coverage {
+		if coverage.Capability == "declarations" {
+			declarations = fmt.Sprintf("eligible=%d observed=%d omitted=%d unresolved=%d", coverage.Eligible, coverage.Observed, coverage.Omitted, coverage.Unresolved)
+			break
+		}
+	}
+	return fmt.Sprintf("completeness=%q nodes=%d unresolved=%d omissions=%d reasons=%s declarations=%s", batch.Completeness, len(batch.Nodes), len(batch.Unresolved), len(batch.Omissions), strings.Join(codes, ","), declarations)
 }
 
 func graphPartialOmission(target graphObservationTarget, batch model.GraphObservationBatch) model.GraphObservationOmission {
