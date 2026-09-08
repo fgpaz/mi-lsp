@@ -23,10 +23,10 @@ import (
 )
 
 const (
-	wikiCodeDefaultLimit      = 50
-	wikiCodeMaxLimit          = 500
+	wikiCodeDefaultLimit       = 50
+	wikiCodeMaxLimit           = 500
 	wikiCodeDefaultTokenBudget = 4000
-	wikiCodeMaxTokenBudget    = 20000
+	wikiCodeMaxTokenBudget     = 20000
 )
 
 // WikiCodeResolveRequest is the bounded, direction-aware input to the shared
@@ -55,24 +55,24 @@ type WikiCodeResolveRequest struct {
 	AllowRetired       bool
 	Historical         bool
 
-	GraphSnapshot    *store.GraphQuerySnapshot
-	GraphFreshness   model.GraphFreshness
+	GraphSnapshot     *store.GraphQuerySnapshot
+	GraphFreshness    model.GraphFreshness
 	GraphFreshnessPtr *model.GraphFreshness
 }
 
 type wikiCodeResolver struct {
-	root            string
-	db              *sql.DB
-	req             WikiCodeResolveRequest
+	root             string
+	db               *sql.DB
+	req              WikiCodeResolveRequest
 	docs             []model.DocRecord
 	docsByPath       map[string]model.DocRecord
 	docsByID         map[string][]model.DocRecord
 	docsLoaded       bool
 	catalogAvailable bool
 	ignoreMatcher    *workspace.IgnoreMatcher
-	graphState      string
-	graphGeneration string
-	result          *model.WikiCodeContext
+	graphState       string
+	graphGeneration  string
+	result           *model.WikiCodeContext
 }
 
 // ResolveWikiCodeContext is the package-level entry point used by adapters that
@@ -578,7 +578,7 @@ func (r *wikiCodeResolver) bindingInScope(binding model.DocArtifactBinding) bool
 		if targetPath == "" || canonicalBridgePath(binding.TargetPath) != targetPath {
 			return false
 		}
-		if symbol := strings.TrimSpace(r.req.TargetSymbol); symbol != "" && strings.TrimSpace(binding.TargetSymbol) != symbol {
+		if symbol := strings.TrimSpace(r.req.TargetSymbol); symbol != "" && !bridgeSymbolsEquivalentForPath(binding.TargetPath, r.req.TargetPath, binding.TargetSymbol, symbol) {
 			return false
 		}
 		return true
@@ -801,7 +801,7 @@ func (r *wikiCodeResolver) resolveBinding(ctx context.Context, binding model.Doc
 	evidence := model.WikiCodeEvidence{
 		Path: binding.TargetPath, Symbol: binding.TargetSymbol, Kind: binding.TargetKind,
 		ClaimStatus: model.GraphRecordExact,
-		Origin: "wiki_declared_path", AuthoringOrigin: binding.AuthoringOrigin, ObservedOrigin: "",
+		Origin:      "wiki_declared_path", AuthoringOrigin: binding.AuthoringOrigin, ObservedOrigin: "",
 		DocID: binding.DocID, DocPath: binding.DocPath, BlockID: binding.BlockID,
 		Relation: binding.Relation, Role: binding.Role, BindingRef: binding.BindingRef,
 		StartLine: binding.StartLine, EndLine: binding.EndLine, SourceDoc: binding.DocPath,
@@ -891,7 +891,7 @@ func (r *wikiCodeResolver) resolveBinding(ctx context.Context, binding model.Doc
 		return evidence, omission(model.WikiCodeStatusCatalogUnavailable, "symbol catalog query failed", nil), nil
 	}
 	r.result.Cost.SymbolsChecked += len(symbols)
-	matched := exactBridgeSymbols(symbols, binding.TargetSymbol)
+	matched := exactBridgeSymbols(symbols, binding.TargetPath, binding.TargetSymbol)
 	if len(matched) == 1 {
 		symbol := matched[0]
 		if symbol.FileHash != "" && !bridgeHashMatches(symbol.FileHash, hashes) {
@@ -1087,7 +1087,7 @@ func (r *wikiCodeResolver) resolveReverse(ctx context.Context, bindings []model.
 		if canonicalBridgePath(binding.TargetPath) != targetPath {
 			continue
 		}
-		if targetSymbol != "" && strings.TrimSpace(binding.TargetSymbol) != targetSymbol {
+		if targetSymbol != "" && !bridgeSymbolsEquivalentForPath(binding.TargetPath, targetPath, binding.TargetSymbol, targetSymbol) {
 			continue
 		}
 		if !r.bindingNavigable(binding) {
@@ -1238,7 +1238,9 @@ func (r *wikiCodeResolver) addClassification(classification string) {
 		}
 	}
 	r.result.Classifications = append(r.result.Classifications, classification)
-	sort.SliceStable(r.result.Classifications, func(i, j int) bool { return classificationOrder(r.result.Classifications[i]) < classificationOrder(r.result.Classifications[j]) })
+	sort.SliceStable(r.result.Classifications, func(i, j int) bool {
+		return classificationOrder(r.result.Classifications[i]) < classificationOrder(r.result.Classifications[j])
+	})
 }
 
 func classificationOrder(value string) int {
@@ -1375,11 +1377,22 @@ func evidenceStrings(items []model.WikiCodeEvidence) []string {
 	return out
 }
 
-func exactBridgeSymbols(items []model.SymbolRecord, target string) []model.SymbolRecord {
+func exactBridgeSymbols(items []model.SymbolRecord, targetPath, target string) []model.SymbolRecord {
 	target = strings.TrimSpace(target)
 	matched := make([]model.SymbolRecord, 0)
 	for _, item := range items {
-		if item.Name == target || item.QualifiedName == target {
+		identities, valid := catalogBridgeIdentities(item)
+		if !valid {
+			continue
+		}
+		matchedByIdentity := false
+		for _, identity := range identities {
+			if bridgeSymbolsEquivalentForPath(item.FilePath, targetPath, identity, target) {
+				matchedByIdentity = true
+				break
+			}
+		}
+		if matchedByIdentity {
 			matched = append(matched, item)
 		}
 	}
@@ -1387,6 +1400,153 @@ func exactBridgeSymbols(items []model.SymbolRecord, target string) []model.Symbo
 		return compareWikiStringTuple([]string{matched[i].FilePath, matched[i].QualifiedName, matched[i].Name, fmt.Sprintf("%09d", matched[i].StartLine)}, []string{matched[j].FilePath, matched[j].QualifiedName, matched[j].Name, fmt.Sprintf("%09d", matched[j].StartLine)}) < 0
 	})
 	return matched
+}
+
+func catalogBridgeIdentities(item model.SymbolRecord) ([]string, bool) {
+	qualified := strings.TrimSpace(item.QualifiedName)
+	identities := make([]string, 0, 2)
+	if qualified != "" {
+		if separator := strings.LastIndex(qualified, "::"); separator >= 0 {
+			prefix := strings.TrimSpace(qualified[:separator])
+			suffix := strings.TrimSpace(qualified[separator+2:])
+			canonicalFile, fileErr := normalizeTargetPath(item.FilePath)
+			canonicalPrefix, prefixErr := normalizeTargetPath(prefix)
+			if suffix == "" || strings.Contains(suffix, "::") || fileErr != nil || prefixErr != nil || canonicalFile != canonicalPrefix {
+				// An inconsistent/unsafe/malformed qualified catalog row cannot
+				// fall back to Name, because that would turn corrupt provenance
+				// into a match.
+				return nil, false
+			}
+			qualified = suffix
+		}
+		if qualified != "" {
+			identities = append(identities, qualified)
+		}
+	}
+	if name := strings.TrimSpace(item.Name); name != "" && (len(identities) == 0 || identities[0] != name) {
+		identities = append(identities, name)
+	}
+	return identities, len(identities) > 0
+}
+
+// bridgeSymbolsEquivalent compares a catalog symbol with the compact symbol
+// identity declared by wiki bindings. A binding may list a receiver spelling
+// and an adjacent helper (for example "(*App).intent; extractIntentSelector")
+// while the catalog exposes the concrete Go identity as "App.intent". This is
+// an identity normalization only; it never turns a path into graph evidence.
+func bridgeSymbolsEquivalent(declared, target string) bool {
+	declared = strings.TrimSpace(declared)
+	target = strings.TrimSpace(target)
+	if declared == "" || target == "" {
+		return declared == target
+	}
+	lefts := strings.Split(declared, ";")
+	normalizedLefts := make([]string, 0, len(lefts))
+	for _, left := range lefts {
+		left, ok := normalizeBridgeSymbol(left)
+		if !ok {
+			return false
+		}
+		normalizedLefts = append(normalizedLefts, left)
+	}
+	rights := strings.Split(target, ";")
+	normalizedRights := make([]string, 0, len(rights))
+	for _, right := range rights {
+		right, ok := normalizeBridgeSymbol(right)
+		if !ok {
+			return false
+		}
+		normalizedRights = append(normalizedRights, right)
+	}
+	for _, left := range normalizedLefts {
+		for _, right := range normalizedRights {
+			if left == right {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func normalizeBridgeSymbol(value string) (string, bool) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return "", false
+	}
+	receiverStart := strings.HasPrefix(value, "(*")
+	receiverClose := -1
+	if len(value) >= 2 {
+		receiverClose = strings.Index(value[2:], ").")
+		if receiverClose >= 0 {
+			receiverClose += 2
+		}
+	}
+	if receiverStart {
+		if receiverClose < 0 {
+			return "", false
+		}
+		receiver := strings.TrimSpace(value[2:receiverClose])
+		member := strings.TrimSpace(value[receiverClose+2:])
+		if receiver == "" || member == "" || strings.ContainsAny(receiver, "()") {
+			return "", false
+		}
+		return receiver + "." + strings.TrimPrefix(member, "."), true
+	}
+	if receiverClose >= 0 {
+		return "", false
+	}
+	return value, true
+}
+
+func bridgeSymbolsEquivalentForPath(bindingPath, targetPath, bindingSymbol, targetSymbol string) bool {
+	canonicalTarget, targetErr := normalizeTargetPath(targetPath)
+	canonicalBinding, bindingErr := normalizeTargetPath(bindingPath)
+	if targetErr != nil || bindingErr != nil || canonicalTarget != canonicalBinding {
+		return false
+	}
+	if strings.TrimSpace(targetSymbol) == "" {
+		return true
+	}
+	bindingCandidates, bindingOK := bridgeSymbolCandidatesForPath(bindingSymbol, canonicalTarget)
+	targetCandidates, targetOK := bridgeSymbolCandidatesForPath(targetSymbol, canonicalTarget)
+	if !bindingOK || !targetOK {
+		return false
+	}
+	for _, bindingCandidate := range bindingCandidates {
+		for _, targetCandidate := range targetCandidates {
+			if bridgeSymbolsEquivalent(bindingCandidate, targetCandidate) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func bridgeSymbolCandidatesForPath(value, canonicalPath string) ([]string, bool) {
+	parts := strings.Split(value, ";")
+	candidates := make([]string, 0, len(parts))
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			return nil, false
+		}
+		if separator := strings.LastIndex(part, "::"); separator >= 0 {
+			if separator == 0 || separator+2 >= len(part) {
+				return nil, false
+			}
+			prefix := strings.TrimSpace(part[:separator])
+			canonicalPrefix, err := normalizeTargetPath(prefix)
+			if err != nil || canonicalPrefix != canonicalPath {
+				return nil, false
+			}
+			part = strings.TrimSpace(part[separator+2:])
+			if part == "" {
+				return nil, false
+			}
+		}
+		candidates = append(candidates, part)
+	}
+	return candidates, len(candidates) > 0
 }
 
 func bridgeSymbolLabel(item model.SymbolRecord) string {

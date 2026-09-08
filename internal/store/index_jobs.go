@@ -29,29 +29,30 @@ const (
 )
 
 type IndexJob struct {
-	JobID           string `json:"job_id"`
-	GenerationID    string `json:"generation_id"`
-	WorkspaceName   string `json:"workspace"`
-	WorkspaceRoot   string `json:"workspace_root"`
-	Mode            string `json:"mode"`
-	Clean           bool   `json:"clean,omitempty"`
-	Status          string `json:"status"`
-	Phase           string `json:"phase,omitempty"`
-	CurrentStage    string `json:"current_stage,omitempty"`
-	CurrentPath     string `json:"current_path,omitempty"`
-	FilesTotal      int    `json:"files_total,omitempty"`
-	PID             int    `json:"pid,omitempty"`
-	RequestedCancel bool   `json:"requested_cancel,omitempty"`
-	Error           string `json:"error,omitempty"`
-	Files           int    `json:"files,omitempty"`
-	Symbols         int    `json:"symbols,omitempty"`
-	Docs            int    `json:"docs,omitempty"`
-	CreatedAt       string `json:"created_at"`
-	StartedAt       string `json:"started_at,omitempty"`
-	FinishedAt      string `json:"finished_at,omitempty"`
-	UpdatedAt       string `json:"updated_at"`
-	OwnerToken      string `json:"-"`
-	FencingToken    int64  `json:"-"`
+	JobID              string `json:"job_id"`
+	GenerationID       string `json:"generation_id"`
+	WorkspaceName      string `json:"workspace"`
+	WorkspaceRoot      string `json:"workspace_root"`
+	Mode               string `json:"mode"`
+	EntrypointSelector string `json:"entrypoint,omitempty"`
+	Clean              bool   `json:"clean,omitempty"`
+	Status             string `json:"status"`
+	Phase              string `json:"phase,omitempty"`
+	CurrentStage       string `json:"current_stage,omitempty"`
+	CurrentPath        string `json:"current_path,omitempty"`
+	FilesTotal         int    `json:"files_total,omitempty"`
+	PID                int    `json:"pid,omitempty"`
+	RequestedCancel    bool   `json:"requested_cancel,omitempty"`
+	Error              string `json:"error,omitempty"`
+	Files              int    `json:"files,omitempty"`
+	Symbols            int    `json:"symbols,omitempty"`
+	Docs               int    `json:"docs,omitempty"`
+	CreatedAt          string `json:"created_at"`
+	StartedAt          string `json:"started_at,omitempty"`
+	FinishedAt         string `json:"finished_at,omitempty"`
+	UpdatedAt          string `json:"updated_at"`
+	OwnerToken         string `json:"-"`
+	FencingToken       int64  `json:"-"`
 }
 
 type IndexJobProgress struct {
@@ -217,6 +218,14 @@ func isSQLiteLockedError(err error) bool {
 }
 
 func indexJobSelectColumns(db *sql.DB) (string, error) {
+	hasEntrypointColumn, err := tableHasColumn(db, "index_jobs", "entrypoint_selector")
+	if err != nil {
+		return "", err
+	}
+	entrypointSelector := "entrypoint_selector"
+	if !hasEntrypointColumn {
+		entrypointSelector = "'' AS entrypoint_selector"
+	}
 	hasCancelColumn, err := tableHasColumn(db, "index_jobs", "requested_cancel")
 	if err != nil {
 		return "", err
@@ -225,9 +234,9 @@ func indexJobSelectColumns(db *sql.DB) (string, error) {
 	if !hasCancelColumn {
 		requestedCancel = "0 AS requested_cancel"
 	}
-	return fmt.Sprintf(`job_id, generation_id, workspace_name, workspace_root, mode, clean, status, phase, pid, %s, COALESCE(error, ''),
+	return fmt.Sprintf(`job_id, generation_id, workspace_name, workspace_root, mode, %s, clean, status, phase, pid, %s, COALESCE(error, ''),
 	       COALESCE(current_stage, ''), COALESCE(current_path, ''), files_total,
-	       files, symbols, docs, created_at, COALESCE(started_at, ''), COALESCE(finished_at, ''), updated_at`, requestedCancel), nil
+	       files, symbols, docs, created_at, COALESCE(started_at, ''), COALESCE(finished_at, ''), updated_at`, entrypointSelector, requestedCancel), nil
 }
 
 func loadIndexJobOwnership(ctx context.Context, tx *sql.Tx, workspaceRoot string) (indexJobOwnership, error) {
@@ -345,14 +354,18 @@ func NormalizeIndexMode(mode string) (string, error) {
 }
 
 func CreateIndexJob(ctx context.Context, db *sql.DB, workspaceName string, workspaceRoot string, mode string, clean bool) (IndexJob, error) {
-	return createIndexJob(ctx, db, workspaceName, workspaceRoot, mode, clean, true)
+	return CreateIndexJobWithEntrypoint(ctx, db, workspaceName, workspaceRoot, mode, clean, "")
+}
+
+func CreateIndexJobWithEntrypoint(ctx context.Context, db *sql.DB, workspaceName string, workspaceRoot string, mode string, clean bool, entrypointSelector string) (IndexJob, error) {
+	return createIndexJob(ctx, db, workspaceName, workspaceRoot, mode, clean, entrypointSelector, true)
 }
 
 func CreateIndexJobUnchecked(ctx context.Context, db *sql.DB, workspaceName string, workspaceRoot string, mode string, clean bool) (IndexJob, error) {
-	return createIndexJob(ctx, db, workspaceName, workspaceRoot, mode, clean, false)
+	return createIndexJob(ctx, db, workspaceName, workspaceRoot, mode, clean, "", false)
 }
 
-func createIndexJob(ctx context.Context, db *sql.DB, workspaceName string, workspaceRoot string, mode string, clean bool, checkActive bool) (IndexJob, error) {
+func createIndexJob(ctx context.Context, db *sql.DB, workspaceName string, workspaceRoot string, mode string, clean bool, entrypointSelector string, checkActive bool) (IndexJob, error) {
 	_ = checkActive // reservation and job creation are always guarded atomically
 	normalizedMode, err := NormalizeIndexMode(mode)
 	if err != nil {
@@ -364,16 +377,17 @@ func createIndexJob(ctx context.Context, db *sql.DB, workspaceName string, works
 
 	now := time.Now().UTC().Format(time.RFC3339Nano)
 	job := IndexJob{
-		JobID:         newIndexID("idxjob"),
-		GenerationID:  newIndexID("idxgen"),
-		WorkspaceName: workspaceName,
-		WorkspaceRoot: workspaceRoot,
-		Mode:          normalizedMode,
-		Clean:         clean,
-		Status:        IndexJobQueued,
-		Phase:         "queued",
-		CreatedAt:     now,
-		UpdatedAt:     now,
+		JobID:              newIndexID("idxjob"),
+		GenerationID:       newIndexID("idxgen"),
+		WorkspaceName:      workspaceName,
+		WorkspaceRoot:      workspaceRoot,
+		Mode:               normalizedMode,
+		EntrypointSelector: strings.TrimSpace(entrypointSelector),
+		Clean:              clean,
+		Status:             IndexJobQueued,
+		Phase:              "queued",
+		CreatedAt:          now,
+		UpdatedAt:          now,
 	}
 
 	tx, err := db.BeginTx(ctx, nil)
@@ -383,9 +397,9 @@ func createIndexJob(ctx context.Context, db *sql.DB, workspaceName string, works
 	defer func() { _ = tx.Rollback() }()
 
 	if _, err := tx.ExecContext(ctx, `
-		INSERT INTO index_jobs(job_id, generation_id, workspace_name, workspace_root, mode, clean, status, phase, created_at, updated_at)
-		VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-	`, job.JobID, job.GenerationID, job.WorkspaceName, job.WorkspaceRoot, job.Mode, boolToInt(job.Clean), job.Status, job.Phase, job.CreatedAt, job.UpdatedAt); err != nil {
+		INSERT INTO index_jobs(job_id, generation_id, workspace_name, workspace_root, mode, entrypoint_selector, clean, status, phase, created_at, updated_at)
+		VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`, job.JobID, job.GenerationID, job.WorkspaceName, job.WorkspaceRoot, job.Mode, job.EntrypointSelector, boolToInt(job.Clean), job.Status, job.Phase, job.CreatedAt, job.UpdatedAt); err != nil {
 		return IndexJob{}, err
 	}
 
@@ -519,7 +533,7 @@ func reserveIndexJobTx(ctx context.Context, tx *sql.Tx, job IndexJob) error {
 
 func loadIndexJobTx(ctx context.Context, tx *sql.Tx, jobID string) (IndexJob, error) {
 	return scanIndexJobRow(tx.QueryRowContext(ctx, `
-		SELECT job_id, generation_id, workspace_name, workspace_root, mode, clean, status, phase, pid, requested_cancel, COALESCE(error, ''),
+		SELECT job_id, generation_id, workspace_name, workspace_root, mode, COALESCE(entrypoint_selector, ''), clean, status, phase, pid, requested_cancel, COALESCE(error, ''),
 		       COALESCE(current_stage, ''), COALESCE(current_path, ''), files_total,
 		       files, symbols, docs, created_at, COALESCE(started_at, ''), COALESCE(finished_at, ''), updated_at
 		FROM index_jobs WHERE job_id = ?
@@ -528,7 +542,7 @@ func loadIndexJobTx(ctx context.Context, tx *sql.Tx, jobID string) (IndexJob, er
 
 func loadActiveIndexJobTx(ctx context.Context, tx *sql.Tx, workspaceRoot string, excludeJobID string) (IndexJob, error) {
 	return scanIndexJobRow(tx.QueryRowContext(ctx, `
-		SELECT job_id, generation_id, workspace_name, workspace_root, mode, clean, status, phase, pid, requested_cancel, COALESCE(error, ''),
+		SELECT job_id, generation_id, workspace_name, workspace_root, mode, COALESCE(entrypoint_selector, ''), clean, status, phase, pid, requested_cancel, COALESCE(error, ''),
 		       COALESCE(current_stage, ''), COALESCE(current_path, ''), files_total,
 		       files, symbols, docs, created_at, COALESCE(started_at, ''), COALESCE(finished_at, ''), updated_at
 		FROM index_jobs
@@ -1303,6 +1317,7 @@ func scanIndexJob(scanner indexJobScanner) (IndexJob, error) {
 		&job.WorkspaceName,
 		&job.WorkspaceRoot,
 		&job.Mode,
+		&job.EntrypointSelector,
 		&clean,
 		&job.Status,
 		&job.Phase,

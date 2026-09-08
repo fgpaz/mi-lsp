@@ -667,7 +667,7 @@ func FTSSearchDocs(ctx context.Context, db *sql.DB, question string, limit int) 
 		FROM doc_records_fts
 		JOIN doc_records dr ON dr.rowid = doc_records_fts.rowid
 		WHERE doc_records_fts MATCH ?
-		ORDER BY rank
+		ORDER BY rank ASC, dr.path ASC
 		LIMIT ?
 	`, matchQuery, limit)
 	if err != nil {

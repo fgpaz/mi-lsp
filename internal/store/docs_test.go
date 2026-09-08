@@ -54,6 +54,35 @@ func TestFTSSearchDocs_StemmerMatch(t *testing.T) {
 	}
 }
 
+func TestFTSSearchDocs_TieOrderingIsPathDeterministic(t *testing.T) {
+	db, _ := seedTestDB(t)
+	ctx := context.Background()
+	docs := []model.DocRecord{
+		{Path: ".docs/wiki/04_RF/RF-ZZZ.md", Title: "ZZZ", DocID: "RF-ZZZ", SearchText: "shared target"},
+		{Path: ".docs/wiki/04_RF/RF-AAA.md", Title: "AAA", DocID: "RF-AAA", SearchText: "shared target"},
+	}
+	if err := ReplaceDocs(ctx, db, docs, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	first, _, err := FTSSearchDocs(ctx, db, "shared target", 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(first) != 2 || first[0].Path != ".docs/wiki/04_RF/RF-AAA.md" || first[1].Path != ".docs/wiki/04_RF/RF-ZZZ.md" {
+		t.Fatalf("tie order=%#v, want path order", first)
+	}
+	if err := ReplaceDocs(ctx, db, []model.DocRecord{docs[1], docs[0]}, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	second, _, err := FTSSearchDocs(ctx, db, "shared target", 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(second) != 2 || second[0].Path != first[0].Path || second[1].Path != first[1].Path {
+		t.Fatalf("tie order changed after insertion reorder=%#v first=%#v", second, first)
+	}
+}
+
 func TestFTSSearchDocs_GracefulDegradation(t *testing.T) {
 	db, _ := seedTestDB(t)
 	ctx := context.Background()
@@ -267,21 +296,21 @@ func TestReplaceDocsWithSources_RepairsStaleSourceAndBindingDrift(t *testing.T) 
 	block := model.DocSourceBlock{DocPath: docPath, BlockID: "CT-DRIFT.source", DocID: "CT-DRIFT", Kind: "contract", SourceFormat: "SDD", Ordinal: 1, StartLine: 1, EndLine: 4, ContentHash: "block-hash", IndexedAt: 1}
 	record := model.DocSourceRecord{DocPath: docPath, BlockID: block.BlockID, RecordID: "RF-DRIFT-001", RecordType: "RF", Ordinal: 1, StartLine: 2, EndLine: 3, ContentHash: "record-hash", IndexedAt: 1}
 	binding := model.DocArtifactBinding{
-		DocPath:         docPath,
-		BlockID:         block.BlockID,
-		DocID:           docs[0].DocID,
-		Relation:        model.RelationImplements,
-		TargetPath:      "src/current.cs",
-		TargetKind:      model.TargetKindFile,
-		AuthoringOrigin: model.AuthoringOriginCanonical,
-		BindingStatus:   model.BindingStatusExact,
-		DocLifecycle:    model.DocLifecycleActive,
-		Ordinal:         1,
-		StartLine:       1,
-		EndLine:         4,
+		DocPath:           docPath,
+		BlockID:           block.BlockID,
+		DocID:             docs[0].DocID,
+		Relation:          model.RelationImplements,
+		TargetPath:        "src/current.cs",
+		TargetKind:        model.TargetKindFile,
+		AuthoringOrigin:   model.AuthoringOriginCanonical,
+		BindingStatus:     model.BindingStatusExact,
+		DocLifecycle:      model.DocLifecycleActive,
+		Ordinal:           1,
+		StartLine:         1,
+		EndLine:           4,
 		SourceContentHash: block.ContentHash,
-		BindingRef:      model.WikiCodeBindingRef(docPath, block.BlockID, docs[0].DocID, model.RelationImplements, "src/current.cs", "", model.TargetKindFile),
-		IndexedAt:       1,
+		BindingRef:        model.WikiCodeBindingRef(docPath, block.BlockID, docs[0].DocID, model.RelationImplements, "src/current.cs", "", model.TargetKindFile),
+		IndexedAt:         1,
 	}
 	if err := ReplaceDocsWithSources(ctx, db, docs, nil, nil, []model.DocSourceBlock{block}, []model.DocSourceRecord{record}, []model.DocArtifactBinding{binding}); err != nil {
 		t.Fatalf("initial ReplaceDocsWithSources: %v", err)
@@ -322,29 +351,29 @@ func TestBindingsForTarget(t *testing.T) {
 	docPath := ".docs/wiki/00_test.md"
 	bindings := []model.DocArtifactBinding{
 		{
-			DocPath:      docPath,
-			BlockID:      "b1",
-			DocID:        "TECH-01",
-			Relation:     model.RelationImplements,
-			TargetPath:   "src/api/Service.cs",
-			TargetKind:   model.TargetKindFile,
+			DocPath:         docPath,
+			BlockID:         "b1",
+			DocID:           "TECH-01",
+			Relation:        model.RelationImplements,
+			TargetPath:      "src/api/Service.cs",
+			TargetKind:      model.TargetKindFile,
 			AuthoringOrigin: model.AuthoringOriginCanonical,
-			BindingRef:  model.WikiCodeBindingRef(docPath, "b1", "TECH-01", model.RelationImplements, "src/api/Service.cs", "", model.TargetKindFile),
-			Ordinal:     1,
-			IndexedAt:   1,
+			BindingRef:      model.WikiCodeBindingRef(docPath, "b1", "TECH-01", model.RelationImplements, "src/api/Service.cs", "", model.TargetKindFile),
+			Ordinal:         1,
+			IndexedAt:       1,
 		},
 		{
-			DocPath:      docPath,
-			BlockID:      "b2",
-			DocID:        "TECH-02",
-			Relation:     model.RelationTests,
-			TargetPath:   "src/api/Service.cs",
-			TargetSymbol: "Validate",
-			TargetKind:   model.TargetKindSymbol,
+			DocPath:         docPath,
+			BlockID:         "b2",
+			DocID:           "TECH-02",
+			Relation:        model.RelationTests,
+			TargetPath:      "src/api/Service.cs",
+			TargetSymbol:    "Validate",
+			TargetKind:      model.TargetKindSymbol,
 			AuthoringOrigin: model.AuthoringOriginCanonical,
-			BindingRef:  model.WikiCodeBindingRef(docPath, "b2", "TECH-02", model.RelationTests, "src/api/Service.cs", "Validate", model.TargetKindSymbol),
-			Ordinal:     2,
-			IndexedAt:   1,
+			BindingRef:      model.WikiCodeBindingRef(docPath, "b2", "TECH-02", model.RelationTests, "src/api/Service.cs", "Validate", model.TargetKindSymbol),
+			Ordinal:         2,
+			IndexedAt:       1,
 		},
 	}
 	if err := ReplaceDocsWithSources(ctx, db, nil, nil, nil, nil, nil, bindings); err != nil {
@@ -364,16 +393,16 @@ func TestBindingsForDocID(t *testing.T) {
 	ctx := context.Background()
 	bindings := []model.DocArtifactBinding{
 		{
-			DocPath:      "wiki/00.md",
-			BlockID:      "b1",
-			DocID:        "RF-OLD-001",
-			Relation:     model.RelationImplements,
-			TargetPath:   "src/old.cs",
-			TargetKind:   model.TargetKindFile,
+			DocPath:         "wiki/00.md",
+			BlockID:         "b1",
+			DocID:           "RF-OLD-001",
+			Relation:        model.RelationImplements,
+			TargetPath:      "src/old.cs",
+			TargetKind:      model.TargetKindFile,
 			AuthoringOrigin: model.AuthoringOriginCanonical,
-			BindingRef:  model.WikiCodeBindingRef("wiki/00.md", "b1", "RF-OLD-001", model.RelationImplements, "src/old.cs", "", model.TargetKindFile),
-			Ordinal:     1,
-			IndexedAt:   1,
+			BindingRef:      model.WikiCodeBindingRef("wiki/00.md", "b1", "RF-OLD-001", model.RelationImplements, "src/old.cs", "", model.TargetKindFile),
+			Ordinal:         1,
+			IndexedAt:       1,
 		},
 	}
 	if err := ReplaceDocsWithSources(ctx, db, nil, nil, nil, nil, nil, bindings); err != nil {
@@ -394,16 +423,16 @@ func TestReplaceDocsWithSources_FullReplacementRemovesDeletedBinding(t *testing.
 	docPath := ".docs/wiki/00_test.md"
 	bindings := []model.DocArtifactBinding{
 		{
-			DocPath:      docPath,
-			BlockID:      "b1",
-			DocID:        "TECH-01",
-			Relation:     model.RelationImplements,
-			TargetPath:   "src/keep.cs",
-			TargetKind:   model.TargetKindFile,
+			DocPath:         docPath,
+			BlockID:         "b1",
+			DocID:           "TECH-01",
+			Relation:        model.RelationImplements,
+			TargetPath:      "src/keep.cs",
+			TargetKind:      model.TargetKindFile,
 			AuthoringOrigin: model.AuthoringOriginCanonical,
-			BindingRef:  model.WikiCodeBindingRef(docPath, "b1", "TECH-01", model.RelationImplements, "src/keep.cs", "", model.TargetKindFile),
-			Ordinal:     1,
-			IndexedAt:   1,
+			BindingRef:      model.WikiCodeBindingRef(docPath, "b1", "TECH-01", model.RelationImplements, "src/keep.cs", "", model.TargetKindFile),
+			Ordinal:         1,
+			IndexedAt:       1,
 		},
 	}
 	if err := ReplaceDocsWithSources(ctx, db, nil, nil, nil, nil, nil, bindings); err != nil {
@@ -412,16 +441,16 @@ func TestReplaceDocsWithSources_FullReplacementRemovesDeletedBinding(t *testing.
 	// Replace with only one binding (deleted the other)
 	bindings2 := []model.DocArtifactBinding{
 		{
-			DocPath:      docPath,
-			BlockID:      "b1",
-			DocID:        "TECH-02",
-			Relation:     model.RelationImplements,
-			TargetPath:   "src/new.cs",
-			TargetKind:   model.TargetKindFile,
+			DocPath:         docPath,
+			BlockID:         "b1",
+			DocID:           "TECH-02",
+			Relation:        model.RelationImplements,
+			TargetPath:      "src/new.cs",
+			TargetKind:      model.TargetKindFile,
 			AuthoringOrigin: model.AuthoringOriginCanonical,
-			BindingRef:  model.WikiCodeBindingRef(docPath, "b1", "TECH-02", model.RelationImplements, "src/new.cs", "", model.TargetKindFile),
-			Ordinal:     1,
-			IndexedAt:   1,
+			BindingRef:      model.WikiCodeBindingRef(docPath, "b1", "TECH-02", model.RelationImplements, "src/new.cs", "", model.TargetKindFile),
+			Ordinal:         1,
+			IndexedAt:       1,
 		},
 	}
 	if err := ReplaceDocsWithSources(ctx, db, nil, nil, nil, nil, nil, bindings2); err != nil {

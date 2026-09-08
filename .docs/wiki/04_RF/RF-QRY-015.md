@@ -1,3 +1,7 @@
+---
+doc_id: RF-QRY-015
+---
+
 # RF-QRY-015 - Reutilizar el motor de routing canonico internamente desde nav ask y nav pack
 
 ```yaml

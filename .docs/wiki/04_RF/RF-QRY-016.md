@@ -1,4 +1,5 @@
 ---
+doc_id: RF-QRY-016
 id: RF-QRY-016
 title: Explorar la wiki con una superficie dedicada para agentes
 implements:

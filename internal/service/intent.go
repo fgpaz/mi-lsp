@@ -25,6 +25,7 @@ type intentMatch struct {
 var (
 	intentDocIDPattern  = regexp.MustCompile(`\b(?:FL|RS|RF|TP|TECH|CT|DB)-[A-Z0-9-]+\b`)
 	intentSymbolPattern = regexp.MustCompile(`\b[A-Z][A-Za-z0-9_]{2,}\b`)
+	intentPathPattern   = regexp.MustCompile(`(?:^|[\s"'(\[])((?:[A-Za-z]:[\\/]|[\\/])?[^\s"')\]]+[\\/][^\s"')\]]+)`)
 )
 
 func (a *App) intent(ctx context.Context, request model.CommandRequest) (model.Envelope, error) {
@@ -588,6 +589,9 @@ func extractIntentArguments(question string, payload map[string]any, operation s
 }
 
 func extractIntentSelector(question string) string {
+	if path, pathSupplied := extractIntentPathSelector(question); pathSupplied {
+		return path
+	}
 	matches := intentSymbolPattern.FindAllString(question, -1)
 	ignored := map[string]struct{}{"Callers": {}, "Caller": {}, "Callees": {}, "Callee": {}, "Explain": {}, "Edge": {}, "Path": {}, "Between": {}, "Neighborhood": {}, "Related": {}, "Change": {}, "Impact": {}, "What": {}, "Who": {}}
 	for i := len(matches) - 1; i >= 0; i-- {
@@ -598,6 +602,42 @@ func extractIntentSelector(question string) string {
 		return candidate
 	}
 	return ""
+}
+
+func extractIntentPathSelector(question string) (string, bool) {
+	for _, token := range strings.Fields(question) {
+		raw := strings.Trim(token, "\"'()[]")
+		if !strings.ContainsAny(raw, `/\\`) {
+			continue
+		}
+		normalized, ok := intentSafeWorkspaceRelativePath(raw)
+		if !ok || strings.Contains(normalized, "://") {
+			return "", true
+		}
+	}
+	matches := intentPathPattern.FindAllStringSubmatch(question, -1)
+	if len(matches) == 0 {
+		return "", false
+	}
+	candidates := make(map[string]struct{}, len(matches))
+	for _, match := range matches {
+		if len(match) != 2 {
+			continue
+		}
+		raw := strings.TrimSpace(match[1])
+		normalized, ok := intentSafeWorkspaceRelativePath(raw)
+		if !ok || strings.Contains(normalized, "://") {
+			return "", true
+		}
+		candidates[normalized] = struct{}{}
+	}
+	if len(candidates) != 1 {
+		return "", true
+	}
+	for candidate := range candidates {
+		return candidate, true
+	}
+	return "", true
 }
 
 func (a *App) planGraphIntent(ctx context.Context, request model.CommandRequest, registration model.WorkspaceRegistration, project model.ProjectFile, scopedRepo *model.WorkspaceRepo, plan *model.IntentPlan, warnings *[]string) {

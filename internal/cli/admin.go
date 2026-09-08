@@ -104,6 +104,7 @@ func newExportCommand(state *rootState) *cobra.Command {
 		byClientFlag       bool
 		byHintFlag         bool
 		byFailureStageFlag bool
+		attributionFlag    bool
 	)
 
 	command := &cobra.Command{
@@ -182,6 +183,9 @@ func newExportCommand(state *rootState) *cobra.Command {
 					summary.ByOperationPercentiles = daemon.ComputeOperationPercentiles(events)
 				} else if !percentileFlag {
 					summary.ByOperationPercentiles = nil
+				}
+				if !attributionFlag {
+					summary.Attribution = nil
 				}
 				body, err := renderExportSummary(summary, formatFlag)
 				if err != nil {
@@ -271,6 +275,7 @@ func newExportCommand(state *rootState) *cobra.Command {
 	command.Flags().BoolVar(&byClientFlag, "by-client", false, "Show client breakdown (requires --summary)")
 	command.Flags().BoolVar(&byHintFlag, "by-hint", false, "Show hint-code breakdown (requires --summary)")
 	command.Flags().BoolVar(&byFailureStageFlag, "by-failure-stage", false, "Show failure-stage breakdown (requires --summary)")
+	command.Flags().BoolVar(&attributionFlag, "attribution", false, "Include client/session attribution coverage and failure/latency candidates (requires --summary)")
 
 	return command
 }

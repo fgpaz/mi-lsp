@@ -96,14 +96,15 @@ type Coach struct {
 }
 
 type ContinuationTarget struct {
-	Op     string                `json:"op"`
-	Query  string                `json:"query,omitempty"`
-	Repo   string                `json:"repo,omitempty"`
-	Path   string                `json:"path,omitempty"`
-	Symbol string                `json:"symbol,omitempty"`
-	DocID  string                `json:"doc_id,omitempty"`
-	Full   bool                  `json:"full,omitempty"`
-	Batch  []ContinuationBatchOp `json:"batch,omitempty"`
+	Op        string                `json:"op"`
+	Query     string                `json:"query,omitempty"`
+	Workspace string                `json:"workspace,omitempty"`
+	Repo      string                `json:"repo,omitempty"`
+	Path      string                `json:"path,omitempty"`
+	Symbol    string                `json:"symbol,omitempty"`
+	DocID     string                `json:"doc_id,omitempty"`
+	Full      bool                  `json:"full,omitempty"`
+	Batch     []ContinuationBatchOp `json:"batch,omitempty"`
 }
 
 // ContinuationBatchOp is one budgeted sub-operation when continuation.next.op is nav.batch.

@@ -785,20 +785,24 @@ func TestWatcherBatchPreservesRenameDeleteAndCoalescesPaths(t *testing.T) {
 		calls = append(calls, path)
 		return nil
 	})
+	// The watcher stores cleaned native paths, including on Windows. Keep slash
+	// inputs and a native-path write to exercise normalization and coalescing.
+	oldPath := filepath.Clean(filepath.FromSlash(".docs/wiki/old.md"))
+	newPath := filepath.Clean(filepath.FromSlash(".docs/wiki/new.md"))
 	watcher.scheduleBatchEvent(fsnotify.Event{Name: ".docs/wiki/old.md", Op: fsnotify.Rename})
 	watcher.scheduleBatchEvent(fsnotify.Event{Name: ".docs/wiki/new.md", Op: fsnotify.Create})
-	watcher.scheduleBatchEvent(fsnotify.Event{Name: ".docs/wiki/new.md", Op: fsnotify.Write})
+	watcher.scheduleBatchEvent(fsnotify.Event{Name: newPath, Op: fsnotify.Write})
 	if len(watcher.pendingBatch) != 2 {
 		t.Fatalf("pending paths = %d, want 2", len(watcher.pendingBatch))
 	}
-	if watcher.pendingOps[".docs/wiki/old.md"] != fsnotify.Rename {
-		t.Fatalf("old event op = %v, want rename", watcher.pendingOps[".docs/wiki/old.md"])
+	if watcher.pendingOps[oldPath] != fsnotify.Rename {
+		t.Fatalf("old event op = %v, want rename", watcher.pendingOps[oldPath])
 	}
-	if watcher.pendingOps[".docs/wiki/new.md"] != fsnotify.Create|fsnotify.Write {
-		t.Fatalf("new event op = %v, want create|write", watcher.pendingOps[".docs/wiki/new.md"])
+	if watcher.pendingOps[newPath] != fsnotify.Create|fsnotify.Write {
+		t.Fatalf("new event op = %v, want create|write", watcher.pendingOps[newPath])
 	}
 	watcher.flushBatch()
-	if len(calls) != 2 || calls[0] != ".docs/wiki/new.md" || calls[1] != ".docs/wiki/old.md" {
+	if len(calls) != 2 || filepath.Clean(calls[0]) != newPath || filepath.Clean(calls[1]) != oldPath {
 		t.Fatalf("coalesced calls = %#v, want sorted new/old paths", calls)
 	}
 }

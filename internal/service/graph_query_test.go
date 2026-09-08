@@ -10,10 +10,42 @@ import (
 	"github.com/fgpaz/mi-lsp/internal/store"
 )
 
-func TestLiveOverlayBoundProducesContinuationMarker(t *testing.T) {
+func TestLiveOverlayBoundMarksTruncationWithoutSyntheticContinuation(t *testing.T) {
+	result := model.WikiCodeContext{}
 	overlay := model.WikiCodeOverlay{Omissions: []model.WikiCodeOmission{{Code: model.OmissionUnknownDocument, Reason: "exact scope document bound exceeded"}}}
-	if !liveOverlayWasTruncated(overlay) {
+	applyLiveOverlayTruncation(&result, overlay)
+	if !result.Truncated {
 		t.Fatal("bounded overlay was not marked truncated")
+	}
+	if result.NextCursor != "" || result.Continuation != nil {
+		t.Fatalf("bounded overlay fabricated continuation: next_cursor=%q continuation=%+v", result.NextCursor, result.Continuation)
+	}
+}
+
+func TestLiveOverlayUnboundedDoesNotChangeTruncation(t *testing.T) {
+	overlay := model.WikiCodeOverlay{Omissions: []model.WikiCodeOmission{{Code: model.OmissionUnknownDocument, Reason: "selected document is absent"}}}
+	result := model.WikiCodeContext{}
+	applyLiveOverlayTruncation(&result, overlay)
+	if result.Truncated {
+		t.Fatal("unbounded overlay was marked truncated")
+	}
+	result.Truncated = true
+	applyLiveOverlayTruncation(&result, overlay)
+	if !result.Truncated {
+		t.Fatal("unbounded overlay cleared existing truncation")
+	}
+}
+
+func TestLiveOverlayBoundPreservesResolverContinuation(t *testing.T) {
+	continuation := &model.WikiCodeContextContinuation{Direction: model.WikiCodeDirectionCodeToWiki, Cursor: "code_to_wiki:10", Remaining: 2}
+	result := model.WikiCodeContext{NextCursor: continuation.Cursor, Continuation: continuation}
+	overlay := model.WikiCodeOverlay{Omissions: []model.WikiCodeOmission{{Code: model.OmissionUnknownDocument, Reason: "reverse scope document bound exceeded"}}}
+	applyLiveOverlayTruncation(&result, overlay)
+	if !result.Truncated {
+		t.Fatal("bounded overlay was not marked truncated")
+	}
+	if result.NextCursor != continuation.Cursor || result.Continuation != continuation || result.Continuation.Remaining != 2 {
+		t.Fatalf("resolver continuation changed: next_cursor=%q continuation=%+v", result.NextCursor, result.Continuation)
 	}
 }
 

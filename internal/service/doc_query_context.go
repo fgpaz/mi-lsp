@@ -4,6 +4,9 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"os"
+	"path"
+	"path/filepath"
 	"strings"
 
 	"github.com/fgpaz/mi-lsp/internal/docgraph"
@@ -116,7 +119,7 @@ func (q *docQueryContext) canonicalRoute(opts model.QueryOptions, includeDiscove
 		return result
 	}
 	primary := q.ranked[0]
-	anchorDoc := model.RouteDoc{
+	rankedAnchor := model.RouteDoc{
 		Path:   primary.record.Path,
 		Title:  primary.record.Title,
 		DocID:  primary.record.DocID,
@@ -125,25 +128,62 @@ func (q *docQueryContext) canonicalRoute(opts model.QueryOptions, includeDiscove
 		Why:    strings.Join(primary.reason, ","),
 		Stage:  "anchor",
 	}
-	if canonical.AnchorDoc.DocID != "" && canonical.AnchorDoc.Path != "" {
-		if doc, ok := q.docByPath[canonical.AnchorDoc.Path]; ok {
-			primary = scoredDoc{
-				record: doc,
-				score:  primary.score,
-				reason: []string{"explicit_doc_id=" + canonical.AnchorDoc.DocID, "tier1_anchor_preserved"},
+	anchorDoc := rankedAnchor
+	if canonical.AnchorDoc.Path != "" && tier1AnchorIsGovernanceOwned(q.registration.Root, q.profile, canonical.AnchorDoc.Path) && !rankedDocIsDeclaredOwner(q, primary, canonical) {
+		if canonical.AnchorDoc.DocID != "" {
+			if doc, ok := q.docByPath[canonical.AnchorDoc.Path]; ok {
+				primary = scoredDoc{
+					record: doc,
+					score:  primary.score,
+					reason: []string{"explicit_doc_id=" + canonical.AnchorDoc.DocID, "tier1_anchor_preserved"},
+				}
+				anchorDoc = canonical.AnchorDoc
+				if anchorDoc.Title == "" {
+					anchorDoc.Title = doc.Title
+				}
+				if anchorDoc.Layer == "" {
+					anchorDoc.Layer = doc.Layer
+				}
+				if anchorDoc.Family == "" {
+					anchorDoc.Family = doc.Family
+				}
+				anchorDoc.Stage = "anchor"
+				result.Why = append(result.Why, "tier2=explicit_anchor_preserved")
+			} else {
+				// The Tier1 governance anchor exists on disk even though the
+				// docs index has not indexed it. Keep the canonical anchor: a
+				// document that only mentions the ID in body text must not
+				// impersonate document identity (RF-QRY-014). Indexed docs
+				// stay as tier2 preview only.
+				anchorDoc = canonical.AnchorDoc
+				anchorDoc.Stage = "anchor"
+				result.Why = append(result.Why, "tier2=anchor_not_indexed")
 			}
+		} else {
+			// Tier1 declared a governance-owned anchor without an explicit
+			// doc ID. Preserve it over ranked discovery so a mention-bearing
+			// artifact cannot take the anchor seat (RF-QRY-014).
 			anchorDoc = canonical.AnchorDoc
-			if anchorDoc.Title == "" {
-				anchorDoc.Title = doc.Title
-			}
-			if anchorDoc.Layer == "" {
-				anchorDoc.Layer = doc.Layer
-			}
-			if anchorDoc.Family == "" {
-				anchorDoc.Family = doc.Family
-			}
 			anchorDoc.Stage = "anchor"
-			result.Why = append(result.Why, "tier2=explicit_anchor_preserved")
+			if doc, ok := q.docByPath[canonical.AnchorDoc.Path]; ok {
+				primary = scoredDoc{
+					record: doc,
+					score:  primary.score,
+					reason: []string{"tier1_anchor_preserved"},
+				}
+				if anchorDoc.Title == "" {
+					anchorDoc.Title = doc.Title
+				}
+				if anchorDoc.Layer == "" {
+					anchorDoc.Layer = doc.Layer
+				}
+				if anchorDoc.Family == "" {
+					anchorDoc.Family = doc.Family
+				}
+				result.Why = append(result.Why, "tier2=anchor_preserved")
+			} else {
+				result.Why = append(result.Why, "tier2=anchor_not_indexed")
+			}
 		}
 	}
 	result.Canonical.AnchorDoc = anchorDoc
@@ -152,6 +192,9 @@ func (q *docQueryContext) canonicalRoute(opts model.QueryOptions, includeDiscove
 
 	preview := make([]model.RouteDoc, 0, 2)
 	seen := map[string]struct{}{primary.record.Path: {}}
+	if anchorDoc.Path != "" {
+		seen[anchorDoc.Path] = struct{}{}
+	}
 	for _, candidate := range q.ranked[1:] {
 		if len(preview) >= 2 {
 			break
@@ -177,6 +220,90 @@ func (q *docQueryContext) canonicalRoute(opts model.QueryOptions, includeDiscove
 	return result
 }
 
+func rankedDocIsDeclaredOwner(q *docQueryContext, candidate scoredDoc, canonical model.RouteCanonicalLane) bool {
+	if q == nil || candidate.record.Path == "" || candidate.record.Path == canonical.AnchorDoc.Path || canonical.AnchorDoc.DocID != "" {
+		return false
+	}
+	for _, reason := range candidate.reason {
+		if strings.HasPrefix(reason, "owner_hint=") {
+			return true
+		}
+	}
+	if !governanceHierarchyDeclaresPath(q.profile, candidate.record.Path) {
+		return false
+	}
+	// A suffix-less query must not silently bind one of several versioned
+	// siblings. An explicit full DocID or an owner hint is required in that
+	// ambiguous case.
+	ownerKey := versionedDocOwnerKey(candidate.record.DocID)
+	if ownerKey == "" {
+		return true
+	}
+	matches := 0
+	for _, doc := range q.docs {
+		if versionedDocOwnerKey(doc.DocID) == ownerKey {
+			matches++
+		}
+	}
+	if matches > 1 && !strings.Contains(normalizeRankingText(q.rankingTask), normalizeRankingText(candidate.record.DocID)) {
+		return false
+	}
+	return true
+}
+
+func versionedDocOwnerKey(docID string) string {
+	parts := strings.Split(strings.TrimSpace(docID), "-")
+	if len(parts) < 2 {
+		return ""
+	}
+	suffix := strings.ToUpper(parts[len(parts)-1])
+	if suffix == "" {
+		return ""
+	}
+	if !strings.HasPrefix(suffix, "V") {
+		return ""
+	}
+	suffix = strings.TrimPrefix(suffix, "V")
+	if suffix == "" {
+		return ""
+	}
+	for _, char := range suffix {
+		if char < '0' || char > '9' {
+			return ""
+		}
+	}
+	return strings.Join(parts[:len(parts)-1], "-")
+}
+
+func governanceHierarchyDeclaresPath(profile model.DocsReadProfile, docPath string) bool {
+	normalized := strings.ToLower(filepath.ToSlash(strings.TrimSpace(docPath)))
+	if normalized == "" {
+		return false
+	}
+	for _, item := range profile.Governance.Hierarchy {
+		for _, pattern := range item.Paths {
+			pattern = strings.ToLower(filepath.ToSlash(strings.TrimSpace(pattern)))
+			if pattern == "" {
+				continue
+			}
+			if strings.HasSuffix(pattern, "/**") && strings.HasPrefix(normalized, strings.TrimSuffix(pattern, "**")) {
+				return true
+			}
+			if strings.ContainsAny(pattern, "*?[") {
+				matched, err := path.Match(pattern, normalized)
+				if err == nil && matched {
+					return true
+				}
+				continue
+			}
+			if normalized == pattern {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 func (q *docQueryContext) primaryDoc(routeResult model.RouteResult) (scoredDoc, bool) {
 	if anchorPath := strings.TrimSpace(routeResult.Canonical.AnchorDoc.Path); anchorPath != "" {
 		if candidate, ok := q.rankedByPath[anchorPath]; ok {
@@ -189,9 +316,76 @@ func (q *docQueryContext) primaryDoc(routeResult model.RouteResult) (scoredDoc, 
 				reason: []string{"route_anchor=" + anchorPath},
 			}, true
 		}
+		// Keep a governance route anchor distinct from an unrelated ranked
+		// artifact when the canonical document is not indexed yet.
+		return scoredDoc{
+			record: model.DocRecord{
+				Path:    anchorPath,
+				Title:   routeResult.Canonical.AnchorDoc.Title,
+				DocID:   routeResult.Canonical.AnchorDoc.DocID,
+				Layer:   routeResult.Canonical.AnchorDoc.Layer,
+				Family:  routeResult.Canonical.AnchorDoc.Family,
+			},
+			score:  1,
+			reason: []string{"route_anchor=" + anchorPath},
+		}, true
 	}
 	if len(q.ranked) > 0 {
 		return q.ranked[0], true
 	}
 	return scoredDoc{}, false
+}
+
+// tier1AnchorIsGovernanceOwned reports whether the Tier1 anchor path is
+// declared by the workspace read model (family paths, governance hierarchy,
+// governance source doc, or Tier1's documented fallback anchors) and exists
+// on disk. Mere file existence is not canonical authority: an arbitrary file
+// that only mentions an ID is never preserved as the anchor.
+func tier1AnchorIsGovernanceOwned(root string, profile model.DocsReadProfile, anchorPath string) bool {
+	trimmed := strings.TrimSpace(anchorPath)
+	if trimmed == "" || root == "" {
+		return false
+	}
+	normalized := strings.ToLower(filepath.ToSlash(trimmed))
+	declared := false
+	isDeclaredPattern := func(pattern string) bool {
+		pattern = strings.ToLower(filepath.ToSlash(strings.TrimSpace(pattern)))
+		if pattern == "" {
+			return false
+		}
+		if strings.HasSuffix(pattern, "/**") {
+			return strings.HasPrefix(normalized, strings.TrimSuffix(pattern, "**"))
+		}
+		if strings.ContainsAny(pattern, "*?[") {
+			matched, err := path.Match(pattern, normalized)
+			return err == nil && matched
+		}
+		return normalized == pattern
+	}
+	for _, family := range profile.Families {
+		for _, pattern := range family.Paths {
+			if isDeclaredPattern(pattern) {
+				declared = true
+			}
+		}
+	}
+	for _, item := range profile.Governance.Hierarchy {
+		for _, pattern := range item.Paths {
+			if isDeclaredPattern(pattern) {
+				declared = true
+			}
+		}
+	}
+	if strings.EqualFold(trimmed, strings.TrimSpace(profile.Governance.SourceDoc)) {
+		declared = true
+	}
+	// Tier1's documented fallback anchors.
+	if strings.EqualFold(normalized, ".docs/wiki/00_gobierno_documental.md") || strings.EqualFold(normalized, "readme.md") {
+		declared = true
+	}
+	if !declared {
+		return false
+	}
+	info, err := os.Stat(filepath.Join(root, filepath.FromSlash(trimmed)))
+	return err == nil && !info.IsDir()
 }

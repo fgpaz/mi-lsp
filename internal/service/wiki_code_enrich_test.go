@@ -3,6 +3,8 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"reflect"
 	"testing"
 
 	"github.com/fgpaz/mi-lsp/internal/indexer"
@@ -81,6 +83,65 @@ func TestEnrichWikiCodeContextNormalIndexPreservesEnvelopeAndAuthority(t *testin
 	}
 	if !env.Ok || env.WikiCodeContext == nil || env.WikiCodeContext.PrimaryDoc.Path != ".docs/wiki/02_arquitectura.md" || len(env.WikiCodeContext.CodeEvidence) == 0 {
 		t.Fatalf("workspace-map did not enrich: %#v", env)
+	}
+}
+
+func TestEnrichWikiCodeContextMatchesDirectBuilderAndRejectsUnavailablePrimaries(t *testing.T) {
+	root, app := newWikiCodeEnrichFixture(t)
+	ctx := context.Background()
+	db, err := store.Open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	docs, err := store.ListDocRecords(ctx, db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var primary model.DocRecord
+	for _, doc := range docs {
+		if doc.Path == ".docs/wiki/04_RF/RF-GPH-007.md" {
+			primary = doc
+			break
+		}
+	}
+	if primary.Path == "" {
+		t.Fatalf("primary document not indexed: %#v", docs)
+	}
+	base := model.Envelope{Ok: true, Backend: "catalog", Items: []map[string]any{{"primary_doc": primary.Path}}}
+	direct, err := BuildWikiCodeContext(ctx, db, primary, defaultWikiCodeTokenBudget)
+	if err != nil {
+		t.Fatal(err)
+	}
+	enriched := app.enrichWikiCodeContext(ctx, model.CommandRequest{Operation: "nav.pack", Context: model.QueryOptions{Workspace: root}}, base)
+	if enriched.WikiCodeContext == nil || !reflect.DeepEqual(direct, *enriched.WikiCodeContext) {
+		t.Fatalf("enriched context differs from direct context: direct=%#v enriched=%#v", direct, enriched.WikiCodeContext)
+	}
+
+	if err := store.SetGraphRuntimeState(ctx, db, store.GraphRuntimeStale, ""); err != nil {
+		t.Fatal(err)
+	}
+	directStale, err := BuildWikiCodeContext(ctx, db, primary, defaultWikiCodeTokenBudget)
+	if err != nil {
+		t.Fatal(err)
+	}
+	enrichedStale := app.enrichWikiCodeContext(ctx, model.CommandRequest{Operation: "nav.pack", Context: model.QueryOptions{Workspace: root}}, base)
+	if enrichedStale.WikiCodeContext == nil || !reflect.DeepEqual(directStale, *enrichedStale.WikiCodeContext) || !hasWikiOmission(enrichedStale.WikiCodeContext, "GPH_WIKI_GRAPH_STALE") {
+		t.Fatalf("unavailable graph changed enriched/direct result: direct=%#v enriched=%#v", directStale, enrichedStale.WikiCodeContext)
+	}
+
+	rawPrimary := model.DocRecord{Path: ".docs/raw/task.md"}
+	if _, err := BuildWikiCodeContext(ctx, db, rawPrimary, defaultWikiCodeTokenBudget); err == nil {
+		t.Fatal("direct builder accepted a non-canonical primary")
+	} else {
+		var contextErr *model.WikiCodeContextError
+		if !errors.As(err, &contextErr) || contextErr.Code != "GPH_WIKI_PRIMARY_INVALID" {
+			t.Fatalf("direct rejection error=%v, want GPH_WIKI_PRIMARY_INVALID", err)
+		}
+	}
+	raw := app.enrichWikiCodeContext(ctx, model.CommandRequest{Operation: "nav.pack", Context: model.QueryOptions{Workspace: root}}, model.Envelope{Ok: true, Backend: "catalog", Items: []map[string]any{{"primary_doc": rawPrimary.Path}}})
+	if raw.WikiCodeContext != nil {
+		t.Fatalf("enrichment attached a non-canonical primary: %#v", raw.WikiCodeContext)
 	}
 }
 

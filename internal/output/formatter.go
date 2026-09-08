@@ -405,6 +405,9 @@ func renderContinuationTarget(target model.ContinuationTarget) string {
 	if target.Symbol != "" {
 		parts = append(parts, "symbol="+target.Symbol)
 	}
+	if target.Workspace != "" {
+		parts = append(parts, "workspace="+target.Workspace)
+	}
 	if target.Full {
 		parts = append(parts, "full=true")
 	}

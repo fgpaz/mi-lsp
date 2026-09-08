@@ -5,6 +5,7 @@ import "github.com/spf13/cobra"
 func newIndexCommand(state *rootState) *cobra.Command {
 	var clean bool
 	var docsOnly bool
+	var entrypoint string
 	command := &cobra.Command{
 		Use:   "index [path]",
 		Short: "Index the current or selected workspace into repo-local SQLite",
@@ -19,11 +20,12 @@ Supports C#, TypeScript, and Go via built-in tree-sitter parsers.`,
 			if docsOnly {
 				mode = "docs"
 			}
-			return state.executeOperation(cmd, "index.start", map[string]any{"path": path, "clean": clean, "docs_only": docsOnly, "mode": mode, "wait": true}, false)
+			return state.executeOperation(cmd, "index.start", map[string]any{"path": path, "clean": clean, "docs_only": docsOnly, "mode": mode, "entrypoint": entrypoint, "wait": true}, false)
 		},
 	}
 	command.Flags().BoolVar(&clean, "clean", false, "Reset the workspace index before indexing")
 	command.Flags().BoolVar(&docsOnly, "docs-only", false, "Rebuild only the documentation graph and reentry memory")
+	command.Flags().StringVar(&entrypoint, "entrypoint", "", "Select a declared entrypoint ID or safe repository-relative Go/C# path")
 	command.AddCommand(newIndexStartCommand(state), newIndexStatusCommand(state), newIndexCancelCommand(state), newIndexRunJobCommand(state))
 	return command
 }
@@ -32,6 +34,7 @@ func newIndexStartCommand(state *rootState) *cobra.Command {
 	var mode string
 	var clean bool
 	var wait bool
+	var entrypoint string
 	command := &cobra.Command{
 		Use:   "start [path]",
 		Short: "Start an index job for a workspace",
@@ -40,12 +43,13 @@ func newIndexStartCommand(state *rootState) *cobra.Command {
 			if len(args) > 0 {
 				path = args[0]
 			}
-			return state.executeOperation(cmd, "index.start", map[string]any{"path": path, "mode": mode, "clean": clean, "wait": wait}, false)
+			return state.executeOperation(cmd, "index.start", map[string]any{"path": path, "mode": mode, "clean": clean, "entrypoint": entrypoint, "wait": wait}, false)
 		},
 	}
 	command.Flags().StringVar(&mode, "mode", "full", "Index mode: full|docs|catalog")
 	command.Flags().BoolVar(&clean, "clean", false, "Force a full replacement publish for the selected mode")
 	command.Flags().BoolVar(&wait, "wait", false, "Run the job in the current process and wait for completion")
+	command.Flags().StringVar(&entrypoint, "entrypoint", "", "Select a declared entrypoint ID or safe repository-relative Go/C# path")
 	return command
 }
 

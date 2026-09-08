@@ -369,7 +369,7 @@ func extractLegacyBindings(content string, blockID string, docID string, kind st
 	startLine := 0
 
 	// Check for implementation_anchors (legacy)
-	for i, value := range keyValues(content, "implementation_anchors") {
+	for i, value := range legacyBindingKeyValues(content, "implementation_anchors") {
 		if !validateBindingPath(value) {
 			continue
 		}
@@ -392,7 +392,7 @@ func extractLegacyBindings(content string, blockID string, docID string, kind st
 	}
 
 	// Check for code_links (legacy, defaults to operates)
-	for i, value := range keyValues(content, "code_links") {
+	for i, value := range legacyBindingKeyValues(content, "code_links") {
 		if !validateBindingPath(value) {
 			continue
 		}
@@ -415,7 +415,7 @@ func extractLegacyBindings(content string, blockID string, docID string, kind st
 	}
 
 	// Check for test_links (legacy, maps to tests)
-	for i, value := range keyValues(content, "test_links") {
+	for i, value := range legacyBindingKeyValues(content, "test_links") {
 		if !validateBindingPath(value) {
 			continue
 		}
@@ -438,7 +438,7 @@ func extractLegacyBindings(content string, blockID string, docID string, kind st
 	}
 
 	// Check for implements (legacy key)
-	for i, value := range keyValues(content, "implements") {
+	for i, value := range legacyBindingKeyValues(content, "implements") {
 		if !validateBindingPath(value) {
 			continue
 		}
@@ -461,7 +461,7 @@ func extractLegacyBindings(content string, blockID string, docID string, kind st
 	}
 
 	// Check for tests (legacy key)
-	for i, value := range keyValues(content, "tests") {
+	for i, value := range legacyBindingKeyValues(content, "tests") {
 		if !validateBindingPath(value) {
 			continue
 		}
@@ -486,6 +486,51 @@ func extractLegacyBindings(content string, blockID string, docID string, kind st
 	return bindings
 }
 
+// legacyBindingKeyValues reads only declaration-level legacy lists. Nested
+// response metadata (for example wiki_code_context.tests) is not a binding.
+func legacyBindingKeyValues(content string, key string) []string {
+	lines := strings.Split(strings.ReplaceAll(content, "\r", ""), "\n")
+	values := make([]string, 0)
+	inList := false
+	listItemIndent := -1
+	keyPrefix := key + ":"
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		indent := len(line) - len(strings.TrimLeft(line, " \t"))
+		if indent == 0 && strings.HasPrefix(trimmed, keyPrefix) {
+			raw := strings.TrimSpace(strings.TrimPrefix(trimmed, keyPrefix))
+			if raw != "" && raw != "[]" {
+				values = append(values, splitInlineValues(raw)...)
+			}
+			inList = raw == "" || raw == "[]"
+			listItemIndent = -1
+			continue
+		}
+		if inList {
+			if indent == 0 {
+				inList = false
+				listItemIndent = -1
+				continue
+			}
+			if !strings.HasPrefix(trimmed, "- ") {
+				// A mapping child before the first item means this is nested
+				// response metadata, not a flat legacy declaration list.
+				if listItemIndent < 0 {
+					inList = false
+				}
+				continue
+			}
+			if listItemIndent < 0 {
+				listItemIndent = indent
+			}
+			if indent == listItemIndent {
+				values = append(values, strings.TrimSpace(strings.TrimPrefix(trimmed, "- ")))
+			}
+		}
+	}
+	return values
+}
+
 // ExtractBindings parses canonical and legacy binding declarations from a document.
 // Returns all parsed bindings in deterministic order.
 func ExtractBindings(parsed ParsedDoc) []ParsedBinding {
@@ -504,18 +549,9 @@ func ExtractBindings(parsed ParsedDoc) []ParsedBinding {
 		allBindings = append(allBindings, legacy...)
 	}
 
-	// Legacy keys in document header (outside blocks)
-	hasBlocks := len(parsed.Blocks) > 0
-	var header string
-	if hasBlocks {
-		header = sourceHeader(parsed.Blocks[0].Content)
-		for _, block := range parsed.Blocks {
-			header += "\n" + block.Content
-		}
-	} else {
-		header = sourceHeader("")
-	}
-	headerBindings := extractLegacyBindings(header, "", parsed.DocID, "", sourceDocPath)
+	// Legacy keys in the original document header (outside blocks). Block
+	// declarations were already extracted above and are not reinterpreted here.
+	headerBindings := extractLegacyBindings(parsed.Header, "", parsed.DocID, "", sourceDocPath)
 	allBindings = append(allBindings, headerBindings...)
 
 	return allBindings
@@ -605,11 +641,15 @@ func docPathFromRecord(docPath string, docID string) string {
 const ProtocolV1 = "SDD-WIKI-SOURCE-v1"
 
 var (
-	toonFencePattern = regexp.MustCompile("(?ms)^```toon\\s*$\\n(.*?)^```\\s*$")
+	toonFencePattern      = regexp.MustCompile("(?ms)^```toon\\s*$\\n(.*?)^```\\s*$")
+	wikiSourceDeclPattern = regexp.MustCompile(`(?m)^\s*(?:wiki_source_protocol|source_protocol):\s*SDD-WIKI-SOURCE-v1\s*$`)
 )
 
 type ParsedDoc struct {
-	DocPath         string
+	DocPath string
+	// Header preserves the original declaration-level source text so binding
+	// extraction does not reconstruct it from block bodies.
+	Header          string
 	DeclaresSource  bool
 	SourceProtocol  string
 	DocID           string
@@ -655,9 +695,10 @@ func Parse(docPath string, content string, indexedAt int64) ParsedDoc {
 		return parsed
 	}
 	header := sourceHeader(content)
-	// Some canonical documents put the source envelope in the leading TOON
-	// block rather than frontmatter. Include that bounded block in the header
-	// view so its owner and imports remain source metadata, not body examples.
+	parsed.Header = header
+	// Canonical source envelopes may live in a leading TOON block. Include
+	// those bounded declarations for source metadata, while retaining the
+	// original header for declaration-level legacy binding extraction.
 	for _, block := range leadingIdentityBlocks(content) {
 		if hasSourceProtocol(block) {
 			header += "\n" + block
@@ -912,6 +953,11 @@ func MetadataReferences(content string) []string {
 
 func leadingIdentityBlocks(content string) []string {
 	lines := strings.Split(strings.ReplaceAll(content, "\r", ""), "\n")
+	// A BOM is part of the first line's encoding marker, not part of a
+	// frontmatter delimiter or metadata key.
+	if len(lines) > 0 {
+		lines[0] = strings.TrimPrefix(lines[0], "\ufeff")
+	}
 	blocks := make([]string, 0, 2)
 	seenHeading := false
 	for i := 0; i < len(lines); {
@@ -963,6 +1009,38 @@ func leadingIdentityBlocks(content string) []string {
 				break
 			}
 			continue
+		}
+
+		// Some legacy documents put a bounded, un-fenced metadata envelope
+		// immediately after their title. Only direct key/value lines belong to
+		// this envelope; indented mappings and prose terminate it, preventing
+		// nested records or body examples from becoming owners.
+		if _, _, ok := splitKeyValue(trimmed); ok && !strings.HasPrefix(lines[i], " ") && !strings.HasPrefix(lines[i], "\t") {
+			start := i
+			hasOwner := false
+			for i < len(lines) {
+				line := lines[i]
+				lineTrimmed := strings.TrimSpace(line)
+				if lineTrimmed == "" {
+					i++
+					continue
+				}
+				if strings.HasPrefix(line, " ") || strings.HasPrefix(line, "\t") || strings.HasPrefix(lineTrimmed, "#") {
+					break
+				}
+				key, _, ok := splitKeyValue(lineTrimmed)
+				if !ok {
+					break
+				}
+				if key == "id" || key == "doc_id" {
+					hasOwner = true
+				}
+				i++
+			}
+			if hasOwner {
+				blocks = append(blocks, strings.Join(lines[start:i], "\n"))
+				continue
+			}
 		}
 		break
 	}
@@ -1067,6 +1145,164 @@ func sameDeclaredValue(values []string) bool {
 		}
 	}
 	return true
+}
+
+
+// DeclaredDocID returns an owner declaration from an actual leading metadata
+// region only. It intentionally does not scan arbitrary body text, where
+// linked or illustrative IDs are references rather than document identity.
+func DeclaredDocID(content string) string {
+	lines := strings.Split(strings.ReplaceAll(content, "\r", ""), "\n")
+	if len(lines) > 0 {
+		lines[0] = strings.TrimPrefix(lines[0], "\ufeff")
+	}
+	start := firstNonBlankLine(lines)
+	if start >= len(lines) {
+		return ""
+	}
+	if lines[start] == "---" {
+		end := start + 1
+		for ; end < len(lines) && lines[end] != "---"; end++ {
+		}
+		if end == len(lines) {
+			return ""
+		}
+		return declaredIDFromYAML(lines[start+1 : end])
+	}
+
+	// Legacy source/harness docs commonly put the YAML contract in a fenced
+	// block immediately after the title, e.g. 07_baseline_tecnica.md.
+	if yamlFence(lines[start]) {
+		if id := declaredIDFromYAMLFence(lines, start); id != "" {
+			return id
+		}
+	}
+	if start < len(lines) && isMarkdownHeading(lines[start]) {
+		start++
+		for start < len(lines) && strings.TrimSpace(lines[start]) == "" {
+			start++
+		}
+		if start < len(lines) && yamlFence(lines[start]) {
+			if id := declaredIDFromYAMLFence(lines, start); id != "" {
+				return id
+			}
+		}
+	}
+
+	// Non-fenced SDD-WIKI-SOURCE headers are a contiguous leading key block
+	// after an optional title. Stop at the first prose/heading line.
+	var docID, legacyID string
+	metadataStarted := false
+	for i := start; i < len(lines); i++ {
+		line := lines[i]
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" {
+			continue
+		}
+		if strings.HasPrefix(trimmed, "#") {
+			break
+		}
+		if strings.HasPrefix(line, " ") || strings.HasPrefix(line, "\t") {
+			if metadataStarted && strings.HasPrefix(trimmed, "-") {
+				continue
+			}
+			break
+		}
+		key, value, ok := splitKeyValue(line)
+		if !ok {
+			break
+		}
+		metadataStarted = true
+		switch key {
+		case "doc_id":
+			if docID == "" {
+				docID = cleanScalar(value)
+			}
+		case "id":
+			if legacyID == "" {
+				legacyID = cleanScalar(value)
+			}
+		}
+	}
+	if docID != "" {
+		return docID
+	}
+	return legacyID
+}
+
+func firstNonBlankLine(lines []string) int {
+	for i, line := range lines {
+		if strings.TrimSpace(line) != "" {
+			return i
+		}
+	}
+	return len(lines)
+}
+
+func isMarkdownHeading(line string) bool {
+	trimmed := strings.TrimSpace(line)
+	return strings.HasPrefix(trimmed, "#")
+}
+
+func yamlFence(line string) bool {
+	trimmed := strings.TrimSpace(line)
+	return trimmed == "```yaml" || trimmed == "```yml"
+}
+
+func declaredIDFromYAMLFence(lines []string, start int) string {
+	end := start + 1
+	for ; end < len(lines) && strings.TrimSpace(lines[end]) != "```"; end++ {
+	}
+	if end == len(lines) {
+		return ""
+	}
+	// A leading YAML example is not a legacy document contract.
+	contract := false
+	for _, line := range lines[start+1 : end] {
+		if strings.TrimSpace(line) != line {
+			continue
+		}
+		key, value, ok := splitKeyValue(line)
+		value = cleanScalar(value)
+		if ok && ((key == "harness_protocol" && value == "SDD-HARNESS-v1") ||
+			((key == "source_protocol" || key == "wiki_source_protocol") && value == ProtocolV1)) {
+			contract = true
+		}
+	}
+	if !contract {
+		return ""
+	}
+	return declaredIDFromYAML(lines[start+1 : end])
+}
+
+func declaredIDFromYAML(lines []string) string {
+	var docID, legacyID string
+	for _, line := range lines {
+		if strings.TrimSpace(line) == "" || strings.HasPrefix(strings.TrimSpace(line), "#") {
+			continue
+		}
+		if strings.HasPrefix(line, " ") || strings.HasPrefix(line, "\t") {
+			continue
+		}
+		key, value, ok := splitKeyValue(line)
+		if !ok {
+			continue
+		}
+		switch key {
+		case "doc_id":
+			if docID == "" {
+				docID = cleanScalar(value)
+			}
+		case "id":
+			if legacyID == "" {
+				legacyID = cleanScalar(value)
+			}
+		}
+	}
+	if docID != "" {
+		return docID
+	}
+	return legacyID
 }
 
 func RecordType(id string) string {

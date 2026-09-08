@@ -25,6 +25,14 @@ func BuildWikiCodeContext(ctx context.Context, db *sql.DB, primary model.DocReco
 		return model.WikiCodeContext{}, model.NewWikiCodeContextError("GPH_WIKI_PRIMARY_INVALID", "primary document must be an active canonical wiki document")
 	}
 
+	docs, err := store.ListDocRecords(ctx, db)
+	if err != nil {
+		return model.WikiCodeContext{}, err
+	}
+	return buildWikiCodeContextWithDocs(ctx, db, primary, tokenBudget, docs)
+}
+
+func buildWikiCodeContextWithDocs(ctx context.Context, db *sql.DB, primary model.DocRecord, tokenBudget int, docs []model.DocRecord) (model.WikiCodeContext, error) {
 	generation, _, _ := store.WorkspaceMetaValue(ctx, db, store.WorkspaceMetaActiveDocsGeneration)
 	ctxResult := model.WikiCodeContext{
 		PrimaryDoc:      primary,
@@ -38,10 +46,6 @@ func BuildWikiCodeContext(ctx context.Context, db *sql.DB, primary model.DocReco
 		Provenance:      model.WikiCodeProvenance{Backend: "sqlite-direct", DocsGeneration: generation, QueryOnly: true},
 	}
 
-	docs, err := store.ListDocRecords(ctx, db)
-	if err != nil {
-		return model.WikiCodeContext{}, err
-	}
 	mentions, _ := store.DocMentionsForPath(ctx, db, primary.Path)
 
 	byPath := make(map[string]model.DocRecord, len(docs))

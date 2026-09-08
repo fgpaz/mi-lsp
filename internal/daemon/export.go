@@ -62,6 +62,49 @@ type OperationPercentiles struct {
 	P99Ms     int64  `json:"p99_ms"`
 }
 
+type ClientAttribution struct {
+	Client       string `json:"client"`
+	Events       int    `json:"events"`
+	RealSessions int    `json:"real_sessions"`
+	Class        string `json:"class"`
+}
+
+type RepeatedFailure struct {
+	Operation   string `json:"operation"`
+	ErrorCode   string `json:"error_code,omitempty"`
+	Occurrences int    `json:"occurrences"`
+	Sessions    int    `json:"sessions"`
+}
+
+type SlowOperation struct {
+	Operation string `json:"operation"`
+	Events    int    `json:"events"`
+	P50Ms     int64  `json:"p50_ms"`
+	P95Ms     int64  `json:"p95_ms"`
+}
+
+// AttributionCoverage aggregates client and session attribution over the
+// queried window. Cohorts use client names and session presence only:
+// workspace names are never proof of real or test work, and demo-prefixed
+// workspaces can only be labeled candidates. Bounded and leak-free: no raw
+// patterns, transcripts, argv, or error text, and no cost or token estimates.
+type AttributionCoverage struct {
+	Events                   int                 `json:"events"`
+	ByClientClass            map[string]int      `json:"by_client_class"`
+	Clients                  []ClientAttribution `json:"clients"`
+	RealSessions             int                 `json:"real_sessions"`
+	EventsInRealSessions     int                 `json:"events_in_real_sessions"`
+	EventsUnknownSession     int                 `json:"events_unknown_session"`
+	Cohorts                  map[string]int      `json:"cohorts"`
+	CohortBasis              string              `json:"cohort_basis"`
+	WorkspaceCandidateEvents int                 `json:"workspace_candidate_events"`
+	WorkspaceCandidateNote   string              `json:"workspace_candidate_note"`
+	NavigationFailures       int                 `json:"navigation_failures"`
+	RepeatedFailures         []RepeatedFailure   `json:"repeated_failures"`
+	SlowOperations           []SlowOperation     `json:"slow_operations"`
+	Notes                    []string            `json:"notes"`
+}
+
 type UsageRecommendation struct {
 	ID       string   `json:"id"`
 	Severity string   `json:"severity"`
@@ -83,6 +126,7 @@ type ExportSummary struct {
 	ByBackend              []BackendHistogram       `json:"by_backend,omitempty"`
 	ByOperationPercentiles []OperationPercentiles   `json:"by_operation_percentiles,omitempty"`
 	Recommendations        []UsageRecommendation    `json:"recommendations,omitempty"`
+	Attribution            *AttributionCoverage     `json:"attribution,omitempty"`
 }
 
 func QueryAccessEvents(store *TelemetryStore, query ExportQuery) ([]model.AccessEvent, error) {
@@ -232,6 +276,28 @@ type summaryAccumulator struct {
 	hintBuckets         map[string]*bucket
 	failureStageBuckets map[string]*bucket
 	errorMap            map[string]*errorBucket
+	attr                attributionAccumulator
+}
+
+type failureKeyEntry struct {
+	operation string
+	code      string
+	count     int
+	sessions  map[string]struct{}
+}
+
+type attributionAccumulator struct {
+	classCounts     map[string]int
+	clientEvents    map[string]int
+	clientRawName   map[string]string
+	clientSessions  map[string]map[string]struct{}
+	cohortCounts    map[string]int
+	realSessions    map[string]struct{}
+	eventsInSession int
+	eventsNoSession int
+	wsCandidates    int
+	navFailures     int
+	failures        map[string]*failureKeyEntry
 }
 
 type errorBucket struct {
@@ -252,7 +318,77 @@ func newSummaryAccumulator() *summaryAccumulator {
 		hintBuckets:         map[string]*bucket{},
 		failureStageBuckets: map[string]*bucket{},
 		errorMap:            map[string]*errorBucket{},
+		attr: attributionAccumulator{
+			classCounts:    map[string]int{},
+			clientEvents:   map[string]int{},
+			clientRawName:  map[string]string{},
+			clientSessions: map[string]map[string]struct{}{},
+			cohortCounts:   map[string]int{},
+			realSessions:   map[string]struct{}{},
+			failures:       map[string]*failureKeyEntry{},
+		},
 	}
+}
+
+// meaningfulClient reports whether the client name denotes a real user
+// rather than a manual CLI invocation or a blank/absent client. manual-cli
+// and blank names are treated as unknown attribution, never as real work.
+func meaningfulClient(clientName string) bool {
+	name := strings.ToLower(strings.TrimSpace(clientName))
+	return name != "" && name != "manual-cli"
+}
+
+func clientClass(clientName string) string {
+	if meaningfulClient(clientName) {
+		return "known"
+	}
+	return "unknown"
+}
+
+func realSession(sessionID string) bool {
+	return strings.TrimSpace(sessionID) != ""
+}
+
+var testClientMarkers = []string{"test", "qa", "e2e", "ci", "fixture", "mock"}
+
+var systemClientMarkers = []string{"system", "daemon", "internal", "health", "monitor", "cron", "scheduled", "mi-lsp"}
+
+func clientHasMarker(name string, markers []string) bool {
+	for _, marker := range markers {
+		if strings.Contains(name, marker) {
+			return true
+		}
+	}
+	return false
+}
+
+// clientCohort assigns a cautious cohort from client name and session
+// presence alone. Workspace names are never consulted: a workspace name is
+// not proof of real or test work, and demo-prefixed workspaces can only ever
+// be labeled candidates.
+func clientCohort(clientName string, sessionID string) string {
+	name := strings.ToLower(strings.TrimSpace(clientName))
+	if !meaningfulClient(clientName) {
+		return "unknown"
+	}
+	switch {
+	case clientHasMarker(name, systemClientMarkers):
+		return "system"
+	case clientHasMarker(name, testClientMarkers):
+		return "test"
+	case !realSession(sessionID):
+		return "unknown"
+	default:
+		return "work"
+	}
+}
+
+func attributionClientKey(clientName string) string {
+	trimmed := strings.TrimSpace(clientName)
+	if trimmed == "" {
+		return "(blank)"
+	}
+	return trimmed
 }
 
 func (a *summaryAccumulator) add(raw model.AccessEvent) {
@@ -267,6 +403,44 @@ func (a *summaryAccumulator) add(raw model.AccessEvent) {
 		updateBucket(a.hintBuckets, event.HintCode, event)
 	}
 	updateBucket(a.failureStageBuckets, safeKey(event.FailureStage, "none"), event)
+
+	// Attribution covers every event, not only error-bearing events. Error
+	// details remain opt-in below, while coverage/session/cohort metrics retain
+	// successful and no-error operations in the queried denominator.
+	clientKey := attributionClientKey(event.ClientName)
+	a.attr.classCounts[clientClass(event.ClientName)]++
+	a.attr.clientEvents[clientKey]++
+	a.attr.clientRawName[clientKey] = strings.TrimSpace(event.ClientName)
+	cohort := clientCohort(event.ClientName, event.SessionID)
+	a.attr.cohortCounts[cohort]++
+	if realSession(event.SessionID) {
+		a.attr.realSessions[event.SessionID] = struct{}{}
+		a.attr.eventsInSession++
+		if a.attr.clientSessions[clientKey] == nil {
+			a.attr.clientSessions[clientKey] = map[string]struct{}{}
+		}
+		a.attr.clientSessions[clientKey][event.SessionID] = struct{}{}
+	} else {
+		a.attr.eventsNoSession++
+	}
+	if strings.Contains(strings.ToLower(telemetry.WorkspaceDisplay(event)), "demo") {
+		a.attr.wsCandidates++
+	}
+	if !event.Success && strings.HasPrefix(event.Operation, "nav.") {
+		a.attr.navFailures++
+	}
+	if !event.Success {
+		failureKey := event.Operation + "|" + safeKey(event.ErrorCode, "unknown")
+		failure := a.attr.failures[failureKey]
+		if failure == nil {
+			failure = &failureKeyEntry{operation: event.Operation, code: safeKey(event.ErrorCode, ""), sessions: map[string]struct{}{}}
+			a.attr.failures[failureKey] = failure
+		}
+		failure.count++
+		if realSession(event.SessionID) {
+			failure.sessions[event.SessionID] = struct{}{}
+		}
+	}
 
 	if event.Error == "" && event.ErrorCode == "" {
 		return
@@ -335,7 +509,109 @@ func (a *summaryAccumulator) summary() ExportSummary {
 	}
 	summary.TopErrors = topErrors
 	summary.Recommendations = ComputeUsageRecommendations(summary)
+	summary.Attribution = a.buildAttribution()
 	return summary
+}
+
+func (a *summaryAccumulator) buildAttribution() *AttributionCoverage {
+	attr := &AttributionCoverage{
+		Events:                 a.total,
+		ByClientClass:          map[string]int{},
+		Cohorts:                map[string]int{},
+		RealSessions:           len(a.attr.realSessions),
+		EventsInRealSessions:   a.attr.eventsInSession,
+		EventsUnknownSession:   a.attr.eventsNoSession,
+		CohortBasis:            "cohorts use client name and session presence only; workspace names are not proof of real or test work",
+		WorkspaceCandidateNote: "demo-prefixed workspaces are counted as candidates only, never as confirmed test or work usage",
+	}
+	for class, count := range a.attr.classCounts {
+		attr.ByClientClass[class] = count
+	}
+	for cohort, count := range a.attr.cohortCounts {
+		attr.Cohorts[cohort] = count
+	}
+	attr.WorkspaceCandidateEvents = a.attr.wsCandidates
+	attr.NavigationFailures = a.attr.navFailures
+
+	clients := make([]ClientAttribution, 0, len(a.attr.clientEvents))
+	for key, events := range a.attr.clientEvents {
+		clients = append(clients, ClientAttribution{
+			Client:       key,
+			Events:       events,
+			RealSessions: len(a.attr.clientSessions[key]),
+			Class:        clientClass(a.attr.clientRawName[key]),
+		})
+	}
+	sort.Slice(clients, func(i, j int) bool {
+		if clients[i].Events == clients[j].Events {
+			return clients[i].Client < clients[j].Client
+		}
+		return clients[i].Events > clients[j].Events
+	})
+	if len(clients) > 20 {
+		clients = clients[:20]
+	}
+	attr.Clients = clients
+
+	failures := make([]RepeatedFailure, 0, len(a.attr.failures))
+	for _, entry := range a.attr.failures {
+		if entry.count < 2 {
+			continue
+		}
+		failures = append(failures, RepeatedFailure{
+			Operation:   entry.operation,
+			ErrorCode:   entry.code,
+			Occurrences: entry.count,
+			Sessions:    len(entry.sessions),
+		})
+	}
+	sort.Slice(failures, func(i, j int) bool {
+		if failures[i].Occurrences == failures[j].Occurrences {
+			if failures[i].Operation == failures[j].Operation {
+				return failures[i].ErrorCode < failures[j].ErrorCode
+			}
+			return failures[i].Operation < failures[j].Operation
+		}
+		return failures[i].Occurrences > failures[j].Occurrences
+	})
+	if len(failures) > 10 {
+		failures = failures[:10]
+	}
+	attr.RepeatedFailures = failures
+
+	slow := make([]SlowOperation, 0, len(a.operationBuckets))
+	for op, bucket := range a.operationBuckets {
+		if bucket.ops < 3 {
+			continue
+		}
+		latencies := append([]int64(nil), bucket.latencies...)
+		sort.Slice(latencies, func(i, j int) bool { return latencies[i] < latencies[j] })
+		p95 := percentile(latencies, 0.95)
+		if p95 >= 5000 {
+			slow = append(slow, SlowOperation{
+				Operation: op,
+				Events:    bucket.ops,
+				P50Ms:     percentile(latencies, 0.50),
+				P95Ms:     p95,
+			})
+		}
+	}
+	sort.Slice(slow, func(i, j int) bool {
+		if slow[i].P95Ms == slow[j].P95Ms {
+			return slow[i].Operation < slow[j].Operation
+		}
+		return slow[i].P95Ms > slow[j].P95Ms
+	})
+	if len(slow) > 5 {
+		slow = slow[:5]
+	}
+	attr.SlowOperations = slow
+
+	attr.Notes = []string{
+		"events per session is a distribution metric, not a repeat count; real_sessions counts distinct session ids",
+		"model cost is owned by the native Pi integration; this telemetry is complementary and reports no token or cost estimates",
+	}
+	return attr
 }
 
 func ComputeUsageRecommendations(summary ExportSummary) []UsageRecommendation {
@@ -681,6 +957,46 @@ func RenderSummaryTable(summary ExportSummary) string {
 				label = e.ErrorKind + "/" + label
 			}
 			fmt.Fprintf(&b, "  %dx %q (%s)\n", e.Count, label, strings.Join(e.Workspaces, ", "))
+		}
+	}
+	if summary.Attribution != nil {
+		a := summary.Attribution
+		fmt.Fprintf(&b, "\n Attribution (client/session based; workspace names are not proof of real or test work):\n")
+		fmt.Fprintf(&b, "  events=%d real_sessions=%d events_in_real_sessions=%d events_unknown_session=%d\n", a.Events, a.RealSessions, a.EventsInRealSessions, a.EventsUnknownSession)
+		names := make([]string, 0, len(a.Cohorts))
+		for name := range a.Cohorts {
+			names = append(names, name)
+		}
+		sort.Strings(names)
+		parts := make([]string, 0, len(names))
+		for _, name := range names {
+			parts = append(parts, fmt.Sprintf("%s=%d", name, a.Cohorts[name]))
+		}
+		fmt.Fprintf(&b, "  cohorts: %s\n", strings.Join(parts, " "))
+		parts = parts[:0]
+		for _, class := range []string{"known", "unknown"} {
+			if count, ok := a.ByClientClass[class]; ok {
+				parts = append(parts, fmt.Sprintf("%s=%d", class, count))
+			}
+		}
+		fmt.Fprintf(&b, "  client classes: %s\n", strings.Join(parts, " "))
+		for _, client := range a.Clients {
+			fmt.Fprintf(&b, "  client %-30s events=%d real_sessions=%d class=%s\n", client.Client, client.Events, client.RealSessions, client.Class)
+		}
+		if a.NavigationFailures > 0 {
+			fmt.Fprintf(&b, "  navigation failures: %d\n", a.NavigationFailures)
+		}
+		for _, rf := range a.RepeatedFailures {
+			fmt.Fprintf(&b, "  repeated failure candidate: %s code=%s occurrences=%d sessions=%d\n", rf.Operation, safeKey(rf.ErrorCode, "unknown"), rf.Occurrences, rf.Sessions)
+		}
+		for _, slow := range a.SlowOperations {
+			fmt.Fprintf(&b, "  slow operation candidate: %s events=%d p50_ms=%d p95_ms=%d\n", slow.Operation, slow.Events, slow.P50Ms, slow.P95Ms)
+		}
+		if a.WorkspaceCandidateEvents > 0 {
+			fmt.Fprintf(&b, "  workspace candidates (demo-named, candidates only): %d\n", a.WorkspaceCandidateEvents)
+		}
+		for _, note := range a.Notes {
+			fmt.Fprintf(&b, "  note: %s\n", note)
 		}
 	}
 	if len(summary.Recommendations) > 0 {

@@ -28,8 +28,8 @@ func (r testArtifactStates) ListDocArtifactStates(context.Context) ([]model.DocA
 
 func overlayTestProfile() model.DocsReadProfile {
 	return model.DocsReadProfile{
-		Version: 1,
-		Families: []model.DocsReadFamily{{Name: "functional", Paths: []string{"docs/"}}},
+		Version:     1,
+		Families:    []model.DocsReadFamily{{Name: "functional", Paths: []string{"docs/"}}},
 		GenericDocs: model.DocsGenericFallback{},
 	}
 }
@@ -86,7 +86,7 @@ func overlayStateFor(t *testing.T, root, relative string, content []byte, profil
 
 func overlayRequest(root string, profile model.DocsReadProfile, scope model.WikiCodeScope, states []model.DocArtifactState) OverlayRequest {
 	return OverlayRequest{
-		WorkspaceRoot: root,
+		WorkspaceRoot:  root,
 		BaseGeneration: "docs=g0",
 		Profile:        &profile,
 		Scope:          scope,
@@ -172,6 +172,97 @@ func TestOverlayEditAddDeleteAndRemovedDeclarationTombstone(t *testing.T) {
 	}
 	if len(deleted.Tombstones) != 1 || deleted.ChangedInputs[0].Classification != DocChangeDeleted {
 		t.Fatalf("deleted overlay=%+v", deleted)
+	}
+}
+
+func TestReverseManifestPrioritizesExactCanonicalOwnerBeyondBudget(t *testing.T) {
+	entries := []manifestEntry{
+		{CanonicalManifestEntry: CanonicalManifestEntry{Path: ".docs/wiki/00-unrelated.md"}},
+		{CanonicalManifestEntry: CanonicalManifestEntry{Path: ".docs/wiki/01-unrelated.md"}},
+		{CanonicalManifestEntry: CanonicalManifestEntry{Path: ".docs/wiki/99-owner.md"}},
+	}
+	scope := model.WikiCodeScope{Kind: model.ScopeReverseCode, TargetPath: "src/owner.go", TargetSymbol: "Owner"}
+	bindings := []model.DocArtifactBinding{
+		{
+			DocPath: ".docs/wiki/99-owner.md", DocID: "RF-OWNER-001", Relation: model.RelationImplements,
+			TargetPath: "src/owner.go", TargetSymbol: "src/owner.go::Owner", TargetKind: model.TargetKindSymbol,
+			AuthoringOrigin: model.AuthoringOriginCanonical, BindingStatus: model.BindingStatusExact,
+			DocLifecycle: model.DocLifecycleActive,
+		},
+	}
+	ordered := prioritizeReverseManifestEntries(context.Background(), nil, entries, scope, &overlayState{bindings: bindings})
+	if len(ordered) != len(entries) || ordered[0].Path != ".docs/wiki/99-owner.md" {
+		t.Fatalf("exact canonical owner was not promoted: %+v", ordered)
+	}
+	if !reverseBindingOwnerMatches(bindings[0], scope) {
+		t.Fatal("expected canonical live binding to prove the owner")
+	}
+}
+
+func TestReverseManifestDoesNotPromoteNonCanonicalOrInexactOwner(t *testing.T) {
+	entries := []manifestEntry{
+		{CanonicalManifestEntry: CanonicalManifestEntry{Path: ".docs/wiki/00-first.md"}},
+		{CanonicalManifestEntry: CanonicalManifestEntry{Path: ".docs/wiki/99-not-owner.md"}},
+	}
+	scope := model.WikiCodeScope{Kind: model.ScopeReverseCode, TargetPath: "src/owner.go", TargetSymbol: "Owner"}
+	bindings := []model.DocArtifactBinding{
+		{DocPath: ".docs/raw/not-owner.md", Relation: model.RelationImplements, TargetPath: "src/owner.go", TargetSymbol: "Owner", TargetKind: model.TargetKindSymbol, BindingStatus: model.BindingStatusExact, DocLifecycle: model.DocLifecycleActive},
+		{DocPath: ".docs/wiki/99-not-owner.md", Relation: model.RelationImplements, TargetPath: "src/other.go", TargetSymbol: "Owner", TargetKind: model.TargetKindSymbol, BindingStatus: model.BindingStatusExact, DocLifecycle: model.DocLifecycleActive},
+	}
+	ordered := prioritizeReverseManifestEntries(context.Background(), nil, entries, scope, &overlayState{bindings: bindings})
+	if ordered[0].Path != ".docs/wiki/00-first.md" {
+		t.Fatalf("inexact/non-canonical binding changed ordering: %+v", ordered)
+	}
+}
+
+func TestReverseManifestRanksHigherFTSScoreBeforeLexicalPath(t *testing.T) {
+	root := t.TempDir()
+	db, err := store.Open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	docs := []model.DocRecord{
+		{Path: ".docs/wiki/04_RF/RF-AAA-HINT.md", Title: "AAA", DocID: "RF-AAA-HINT", SearchText: "src fts"},
+		{Path: ".docs/wiki/04_RF/RF-ZZZ-OWNER.md", Title: "ZZZ", DocID: "RF-ZZZ-OWNER", SearchText: strings.Repeat("src fts owner mjs ", 8)},
+	}
+	if err := store.ReplaceDocs(context.Background(), db, docs, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	entries := []manifestEntry{
+		{CanonicalManifestEntry: CanonicalManifestEntry{Path: docs[0].Path}},
+		{CanonicalManifestEntry: CanonicalManifestEntry{Path: docs[1].Path}},
+	}
+	scope := model.WikiCodeScope{Kind: model.ScopeReverseCode, TargetPath: "src/fts/owner.mjs"}
+	ordered := prioritizeReverseManifestEntries(context.Background(), db, entries, scope, &overlayState{states: map[string]model.DocArtifactState{}})
+	if len(ordered) != 2 || ordered[0].Path != docs[1].Path {
+		t.Fatalf("higher FTS score lost to lexical path ordering=%#v", ordered)
+	}
+}
+
+func TestReverseManifestExactBindingOutranksFTSHint(t *testing.T) {
+	root := t.TempDir()
+	db, err := store.Open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	docs := []model.DocRecord{
+		{Path: ".docs/wiki/04_RF/RF-AAA-EXACT.md", Title: "AAA", DocID: "RF-AAA-EXACT", SearchText: "src fts owner mjs"},
+		{Path: ".docs/wiki/04_RF/RF-ZZZ-HINT.md", Title: "ZZZ", DocID: "RF-ZZZ-HINT", SearchText: strings.Repeat("src fts owner mjs ", 8)},
+	}
+	if err := store.ReplaceDocs(context.Background(), db, docs, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	entries := []manifestEntry{
+		{CanonicalManifestEntry: CanonicalManifestEntry{Path: docs[0].Path}},
+		{CanonicalManifestEntry: CanonicalManifestEntry{Path: docs[1].Path}},
+	}
+	scope := model.WikiCodeScope{Kind: model.ScopeReverseCode, TargetPath: "src/fts/owner.mjs"}
+	binding := model.DocArtifactBinding{DocPath: docs[0].Path, Relation: model.RelationImplements, TargetPath: scope.TargetPath, TargetKind: model.TargetKindFile, BindingStatus: model.BindingStatusExact, DocLifecycle: model.DocLifecycleActive, AuthoringOrigin: model.AuthoringOriginCanonical}
+	ordered := prioritizeReverseManifestEntries(context.Background(), db, entries, scope, &overlayState{states: map[string]model.DocArtifactState{}, bindings: []model.DocArtifactBinding{binding}})
+	if len(ordered) != 2 || ordered[0].Path != docs[0].Path {
+		t.Fatalf("exact binding did not outrank FTS hint=%#v", ordered)
 	}
 }
 
@@ -331,10 +422,10 @@ func TestOverlayDeterministicOrderingAndDigest(t *testing.T) {
 func TestOverlayDigestExcludesTimestampsAndCostTelemetry(t *testing.T) {
 	base := model.WikiCodeOverlay{
 		BaseGeneration: "docs=g0",
-		Mode: model.OverlayModeRAMOnly,
-		Scope: model.WikiCodeScope{Kind: model.ScopeExactWiki, DocPaths: []string{"docs/current.md"}},
-		Additions: []model.DocArtifactBinding{{DocPath: "docs/current.md", TargetPath: "src/current.go", BindingRef: "ref", IndexedAt: 10}},
-		ChangedInputs: []model.WikiCodeChangedInput{{Path: "docs/current.md", Classification: DocChangeChanged, Status: string(ReadStatusStable)}},
+		Mode:           model.OverlayModeRAMOnly,
+		Scope:          model.WikiCodeScope{Kind: model.ScopeExactWiki, DocPaths: []string{"docs/current.md"}},
+		Additions:      []model.DocArtifactBinding{{DocPath: "docs/current.md", TargetPath: "src/current.go", BindingRef: "ref", IndexedAt: 10}},
+		ChangedInputs:  []model.WikiCodeChangedInput{{Path: "docs/current.md", Classification: DocChangeChanged, Status: string(ReadStatusStable)}},
 	}
 	first := OverlayDigest(base)
 	base.Additions[0].IndexedAt = 9999
@@ -423,11 +514,11 @@ func TestOverlayUsesCanonicalIgnoreMatcher(t *testing.T) {
 		t.Fatal(err)
 	}
 	overlay, err := BuildOverlay(context.Background(), OverlayRequest{
-		WorkspaceRoot: root,
+		WorkspaceRoot:  root,
 		BaseGeneration: "docs=g0",
-		Profile: &profile,
-		Matcher: matcher,
-		Scope: model.WikiCodeScope{Kind: model.ScopeReverseCode, TargetPath: "src/current.go"},
+		Profile:        &profile,
+		Matcher:        matcher,
+		Scope:          model.WikiCodeScope{Kind: model.ScopeReverseCode, TargetPath: "src/current.go"},
 	})
 	if err != nil {
 		t.Fatal(err)

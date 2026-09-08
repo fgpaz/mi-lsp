@@ -205,10 +205,14 @@ func (a *App) Execute(ctx context.Context, request model.CommandRequest) (model.
 }
 
 var liveWikiCodeOperations = map[string]bool{
+	"nav.ask":         true,
+	"nav.route":       true,
+	"nav.wiki.route":  true,
 	"nav.trace":       true,
 	"nav.wiki.trace":  true,
 	"nav.pack":        true,
 	"nav.wiki.pack":   true,
+	"nav.context":     true,
 	"nav.related":     true,
 	"nav.neighbors":   true,
 	"nav.prepare":     true,
@@ -315,19 +319,19 @@ func (a *App) buildLiveWikiCodeContextForRequest(ctx context.Context, request mo
 	}
 
 	resolveRequest := WikiCodeResolveRequest{
-		Direction:        liveWikiCodeDirection(scope),
-		WorkspaceRoot:    registration.Root,
-		DB:               db,
-		DocSelectors:     appendLiveWikiSelectors(scope),
-		DocIDs:           append([]string(nil), scope.DocIDs...),
-		DocPaths:         append([]string(nil), scope.DocPaths...),
-		TargetPath:       scope.TargetPath,
-		TargetSymbol:     scope.TargetSymbol,
-		Limit:            request.Context.MaxItems,
-		TokenBudget:      request.Context.TokenBudget,
-		Cursor:           stringPayload(request.Payload, "cursor"),
-		GraphSnapshot:    graphSnapshot,
-		GraphFreshness:   graphFreshness,
+		Direction:         liveWikiCodeDirection(scope),
+		WorkspaceRoot:     registration.Root,
+		DB:                db,
+		DocSelectors:      appendLiveWikiSelectors(scope),
+		DocIDs:            append([]string(nil), scope.DocIDs...),
+		DocPaths:          append([]string(nil), scope.DocPaths...),
+		TargetPath:        scope.TargetPath,
+		TargetSymbol:      scope.TargetSymbol,
+		Limit:             request.Context.MaxItems,
+		TokenBudget:       request.Context.TokenBudget,
+		Cursor:            stringPayload(request.Payload, "cursor"),
+		GraphSnapshot:     graphSnapshot,
+		GraphFreshness:    graphFreshness,
 		GraphFreshnessPtr: nil,
 	}
 	result, err := ResolveWikiCodeContext(ctx, registration.Root, db, resolveRequest, overlay)
@@ -345,17 +349,29 @@ func (a *App) buildLiveWikiCodeContextForRequest(ctx context.Context, request mo
 		result.CodeEvidence = append(result.CodeEvidence, result.Tests...)
 		result.CodeEvidence = append(result.CodeEvidence, result.SupportingCode...)
 	}
-	if liveOverlayWasTruncated(overlay) {
-		result.Truncated = true
-		if result.NextCursor == "" {
-			result.NextCursor = liveWikiCodeDirection(scope) + ":overlay"
-		}
-		if result.Continuation == nil {
-			result.Continuation = &model.WikiCodeContextContinuation{Direction: liveWikiCodeDirection(scope), Cursor: result.NextCursor}
-		}
-	}
+	applyLiveOverlayTruncation(&result, overlay)
 	sanitizeLiveWikiCodeContext(&result)
 	return result, nil
+}
+
+func applyLiveOverlayTruncation(result *model.WikiCodeContext, overlay model.WikiCodeOverlay) {
+	if result == nil || !liveOverlayWasTruncated(overlay) {
+		return
+	}
+	// Overlay bounds are reported as typed omissions. They make the result
+	// incomplete, but do not provide a resumable cursor: only the resolver owns
+	// valid NextCursor and Continuation values.
+	result.Truncated = true
+}
+
+func liveOverlayWasTruncated(overlay model.WikiCodeOverlay) bool {
+	for _, omission := range overlay.Omissions {
+		reason := strings.ToLower(strings.TrimSpace(omission.Reason))
+		if strings.Contains(reason, "bound") || strings.Contains(reason, "truncated") || strings.Contains(reason, "omitted") {
+			return true
+		}
+	}
+	return false
 }
 
 func appendLiveGovernanceAuthority(ctx context.Context, db *sql.DB, result *model.WikiCodeContext) {
@@ -408,16 +424,6 @@ func openLiveWikiCodeDB(registration model.WorkspaceRegistration) (*sql.DB, erro
 	db.SetMaxOpenConns(8)
 	db.SetMaxIdleConns(4)
 	return db, nil
-}
-
-func liveOverlayWasTruncated(overlay model.WikiCodeOverlay) bool {
-	for _, omission := range overlay.Omissions {
-		reason := strings.ToLower(strings.TrimSpace(omission.Reason))
-		if strings.Contains(reason, "bound") || strings.Contains(reason, "truncated") || strings.Contains(reason, "omitted") {
-			return true
-		}
-	}
-	return false
 }
 
 func ensureLivePrimaryDocument(result *model.WikiCodeContext, scope livecontext.WikiCodeScope, overlay model.WikiCodeOverlay) {
@@ -490,8 +496,13 @@ func (a *App) enrichLiveWikiCodeContext(ctx context.Context, request model.Comma
 	if request.Operation == "nav.prepare" && env.WikiCodeContext != nil {
 		return env
 	}
-	if all, _ := request.Payload["all_workspaces"].(bool); all && (request.Operation == "nav.trace" || request.Operation == "nav.wiki.trace" || request.Operation == "nav.pack" || request.Operation == "nav.wiki.pack") {
-		return a.enrichLiveWikiCodeContextAllWorkspaces(ctx, request, env)
+	if all, _ := request.Payload["all_workspaces"].(bool); all {
+		if request.Operation == "nav.ask" {
+			return env
+		}
+		if request.Operation == "nav.trace" || request.Operation == "nav.wiki.trace" || request.Operation == "nav.pack" || request.Operation == "nav.wiki.pack" {
+			return a.enrichLiveWikiCodeContextAllWorkspaces(ctx, request, env)
+		}
 	}
 	if request.Operation == "nav.change-pack" {
 		return a.enrichLiveChangePackContext(ctx, request, env)
@@ -534,10 +545,14 @@ func appendLiveWikiCodeWarning(env model.Envelope, err error) model.Envelope {
 
 func liveWikiCodeScope(request model.CommandRequest, env model.Envelope) (livecontext.WikiCodeScope, bool) {
 	switch request.Operation {
+	case "nav.ask", "nav.route", "nav.wiki.route":
+		return liveDocumentScope(request, env)
 	case "nav.trace", "nav.wiki.trace":
 		return liveTraceScope(request, env)
 	case "nav.pack", "nav.wiki.pack":
 		return livePackScope(request, env)
+	case "nav.context":
+		return liveContextScope(request, env)
 	case "nav.related":
 		return liveRelatedScope(env)
 	case "nav.neighbors":
@@ -545,6 +560,47 @@ func liveWikiCodeScope(request model.CommandRequest, env model.Envelope) (liveco
 	default:
 		return livecontext.WikiCodeScope{}, false
 	}
+}
+
+func liveDocumentScope(request model.CommandRequest, env model.Envelope) (livecontext.WikiCodeScope, bool) {
+	var path string
+	switch request.Operation {
+	case "nav.route", "nav.wiki.route":
+		if results, ok := env.Items.([]model.RouteResult); ok && len(results) > 0 {
+			path = normalizeLiveBridgePath(results[0].Canonical.AnchorDoc.Path)
+			if path == "" && results[0].LookupStatus != nil {
+				path = normalizeLiveBridgePath(results[0].LookupStatus.Path)
+			}
+		}
+	case "nav.ask":
+		if results, ok := env.Items.([]model.AskResult); ok && len(results) > 0 {
+			path = normalizeLiveBridgePath(results[0].PrimaryDoc.Path)
+		}
+	}
+	if path == "" {
+		path = extractWikiPrimaryPath(request.Operation, env.Items)
+	}
+	if path == "" || !model.CanonicalWikiAuthority(path) {
+		return livecontext.WikiCodeScope{}, false
+	}
+	return livecontext.WikiCodeScope{Kind: model.ScopeExactWiki, DocPaths: []string{path}}, true
+}
+
+func liveContextScope(request model.CommandRequest, env model.Envelope) (livecontext.WikiCodeScope, bool) {
+	path := normalizeLiveBridgePath(stringPayload(request.Payload, "file"))
+	if path == "" || isLiveWikiSelector(path) || (!strings.Contains(path, "/") && filepath.Ext(path) == "") {
+		return livecontext.WikiCodeScope{}, false
+	}
+	var symbol string
+	if items, ok := env.Items.([]map[string]any); ok && len(items) > 0 {
+		for _, key := range []string{"qualified_name", "name", "symbol"} {
+			if value, ok := items[0][key].(string); ok && strings.TrimSpace(value) != "" {
+				symbol = strings.TrimSpace(value)
+				break
+			}
+		}
+	}
+	return livecontext.WikiCodeScope{Kind: model.ScopeReverseCode, TargetPath: path, TargetSymbol: symbol}, true
 }
 
 func liveTraceScope(request model.CommandRequest, env model.Envelope) (livecontext.WikiCodeScope, bool) {
@@ -1296,6 +1352,13 @@ func (a *App) indexWorkspace(ctx context.Context, request model.CommandRequest) 
 	}
 	clean, _ := request.Payload["clean"].(bool)
 	docsOnly, _ := request.Payload["docs_only"].(bool)
+	entrypointSelector := strings.TrimSpace(stringPayload(request.Payload, "entrypoint"))
+	if docsOnly {
+		if err := validateIndexEntrypointMode(store.IndexModeDocs, entrypointSelector); err != nil {
+			return model.Envelope{}, err
+		}
+	}
+	graphOptions := indexer.GraphIndexOptions{RoslynObserver: a.graphObserver(), EntrypointSelector: entrypointSelector}
 
 	var envelope model.Envelope
 	err = store.WithWorkspaceIndexLock(registration.Root, "index.run", func() error {
@@ -1315,7 +1378,7 @@ func (a *App) indexWorkspace(ctx context.Context, request model.CommandRequest) 
 		// Try incremental index if clean=false and index.db exists
 		var result indexer.Result
 		incremental := false
-		if !clean {
+		if !clean && entrypointSelector == "" {
 			result, err = indexer.IncrementalIndex(ctx, registration.Root)
 			if err == nil && result.Stats.Files > 0 {
 				// Incremental succeeded and found changes
@@ -1335,14 +1398,18 @@ func (a *App) indexWorkspace(ctx context.Context, request model.CommandRequest) 
 
 		// Fall back to full index if incremental didn't succeed
 		if !incremental {
-			result, err = indexer.IndexWorkspaceWithGraphProgress(ctx, registration.Root, clean, "", nil, indexer.GraphIndexOptions{RoslynObserver: a.graphObserver()})
+			result, err = indexer.IndexWorkspaceWithGraphProgress(ctx, registration.Root, clean, "", nil, graphOptions)
 			if err != nil {
 				if store.IsCorruptionError(err) {
 					backupPath, backupErr := store.QuarantineCorruptDB(registration.Root)
 					if backupErr != nil {
 						return fmt.Errorf("%w; corrupt db quarantine failed: %v", err, backupErr)
 					}
-					result, err = indexer.IndexWorkspace(ctx, registration.Root, true)
+					if entrypointSelector == "" {
+						result, err = indexer.IndexWorkspace(ctx, registration.Root, true)
+					} else {
+						result, err = indexer.IndexWorkspaceWithGraphProgress(ctx, registration.Root, true, "", nil, graphOptions)
+					}
 					if err != nil {
 						return fmt.Errorf("%w; rebuild after quarantining %s also failed: %v", err, backupPath, err)
 					}
@@ -1614,7 +1681,7 @@ func (a *App) search(ctx context.Context, request model.CommandRequest) (model.E
 		envelope := *scopeEnvelope
 		envelope.Coach = buildSearchScopeCoach(registration.Name, pattern, includeContent, useRegex, envelope)
 		envelope = attachMemoryPointer(envelope, memory)
-		envelope.Continuation = buildSearchContinuation(pattern, project, stringPayload(request.Payload, "repo"), nil, memory)
+		envelope.Continuation = buildSearchContinuation(pattern, project, stringPayload(request.Payload, "repo"), nil, request.Context, memory)
 		return applyCoachPolicy(envelope, request.Context), nil
 	}
 	if shouldDegradeUnscopedContainerSearch(project, request, includeContent) {
@@ -1702,7 +1769,7 @@ func (a *App) search(ctx context.Context, request model.CommandRequest) (model.E
 	env := model.Envelope{Ok: true, Workspace: registration.Name, Backend: "text", Items: items, Warnings: warnings, Hint: hint, NextHint: nextHint, Stats: model.Stats{Files: len(items)}}
 	env.Coach = buildSearchCoach(registration.Name, project, pattern, includeContent, stringPayload(request.Payload, "repo"), useRegex, regexAutoHealed, searchDiagnostics.TimedOut, items, request.Context)
 	env = attachMemoryPointer(env, memory)
-	env.Continuation = buildSearchContinuation(pattern, project, stringPayload(request.Payload, "repo"), items, memory)
+	env.Continuation = buildSearchContinuation(pattern, project, stringPayload(request.Payload, "repo"), items, request.Context, memory)
 	if isAXIPreview(request.Context) && env.NextHint == nil {
 		env = applyAXIPreviewHints(env, request.Context, axiPreviewSummaryHint)
 	}

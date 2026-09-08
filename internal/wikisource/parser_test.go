@@ -217,6 +217,91 @@ tests:
 	}
 }
 
+func TestParserLegacyBindingsIgnoreNestedContextLists(t *testing.T) {
+	content := `# NestedContext
+wiki_source_protocol: SDD-WIKI-SOURCE-v1
+doc_id: CT-NESTED-001
+
+` + "```toon" + `
+block_id: CT-NESTED-001.core
+wiki_code_context:
+  tests:
+    - separate_from_direct_code
+  direct_code:
+    - src/ignored.md
+tests:
+  - test/top-level-block.cs
+    - separate_nested_after_valid
+artifact_bindings:
+  - relation: tests
+    target_kind: test
+    target_path: test/canonical.cs
+` + "```"
+	parsed := Parse(".docs/wiki/09_contratos/CT-NESTED-001.md", content, 1)
+	bindings := SourceBindings(parsed, 100)
+	seen := make(map[string]bool)
+	for _, binding := range bindings {
+		seen[binding.TargetPath] = true
+		if binding.TargetPath == "separate_from_direct_code" || binding.TargetPath == "separate_nested_after_valid" {
+			t.Fatalf("nested metadata value became a legacy binding: %#v", binding)
+		}
+	}
+	for _, expected := range []string{"test/top-level-block.cs", "test/canonical.cs"} {
+		if !seen[expected] {
+			t.Fatalf("expected binding %q in %#v", expected, bindings)
+		}
+	}
+}
+
+func TestParserLegacyHeaderOnlyBindings(t *testing.T) {
+	content := `# HeaderOnly
+wiki_source_protocol: SDD-WIKI-SOURCE-v1
+doc_id: TECH-HEADER
+implements: src/header/Implementation
+tests: src/header/TestSuite
+`
+	bindings := SourceBindings(Parse("wiki/header-only.md", content, 1), 100)
+	if len(bindings) != 2 {
+		t.Fatalf("header-only bindings=%#v, want two declarations", bindings)
+	}
+	if bindings[0].TargetPath != "src/header/Implementation" || bindings[1].TargetPath != "src/header/TestSuite" {
+		t.Fatalf("header-only paths=%#v", bindings)
+	}
+}
+
+func TestParserLegacyHeaderAndMultipleBlocksNoDuplicateBindings(t *testing.T) {
+	content := `# HeaderAndBlocks
+wiki_source_protocol: SDD-WIKI-SOURCE-v1
+doc_id: TECH-HEADER-BLOCKS
+implements: src/header/Implementation
+
+` + "```toon" + `
+block_id: first
+tests: src/tests/First
+` + "```" + `
+
+` + "```toon" + `
+block_id: second
+code_links: src/links/Second
+` + "```"
+	bindings := SourceBindings(Parse("wiki/header-blocks.md", content, 1), 100)
+	if len(bindings) != 3 {
+		t.Fatalf("header+blocks bindings=%#v, want exactly three", bindings)
+	}
+	seenPath := make(map[string]bool)
+	seenRef := make(map[string]bool)
+	for _, binding := range bindings {
+		if seenPath[binding.TargetPath] {
+			t.Fatalf("duplicate binding path=%q bindings=%#v", binding.TargetPath, bindings)
+		}
+		seenPath[binding.TargetPath] = true
+		if seenRef[binding.BindingRef] {
+			t.Fatalf("duplicate binding_ref=%q bindings=%#v", binding.BindingRef, bindings)
+		}
+		seenRef[binding.BindingRef] = true
+	}
+}
+
 func TestParserIdOnlyRecord(t *testing.T) {
 	content := `# IdOnly
 wiki_source_protocol: SDD-WIKI-SOURCE-v1

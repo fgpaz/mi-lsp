@@ -196,6 +196,9 @@ func (s *rootState) queryOptions(cmd *cobra.Command, operation string, payload m
 }
 
 func (s *rootState) executeOperation(cmd *cobra.Command, operation string, payload map[string]any, preferDaemon bool) error {
+	if s.executeOperationHook != nil {
+		return s.executeOperationHook(cmd, operation, payload, preferDaemon)
+	}
 	opts := s.queryOptions(cmd, operation, payload)
 	if offset, ok := offsetFromPayload(payload); ok {
 		opts.Offset = offset

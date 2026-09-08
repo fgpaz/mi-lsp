@@ -53,6 +53,41 @@ func TestCancelIndexJobForceTerminatesProcessAndMarksCanceled(t *testing.T) {
 	}
 }
 
+func TestCreateIndexJobPersistsEntrypointSelector(t *testing.T) {
+	db, root := seedTestDB(t)
+	ctx := context.Background()
+	job, err := CreateIndexJobWithEntrypoint(ctx, db, "selector", root, IndexModeFull, false, "go.mod")
+	if err != nil {
+		t.Fatalf("CreateIndexJobWithEntrypoint: %v", err)
+	}
+	loaded, ok, err := GetIndexJob(ctx, db, job.JobID)
+	if err != nil || !ok {
+		t.Fatalf("GetIndexJob: ok=%v err=%v", ok, err)
+	}
+	if loaded.EntrypointSelector != "go.mod" {
+		t.Fatalf("entrypoint selector=%q, want go.mod", loaded.EntrypointSelector)
+	}
+}
+
+func TestGetIndexJobReadsLegacySchemaWithoutEntrypointColumn(t *testing.T) {
+	db, root := seedTestDB(t)
+	ctx := context.Background()
+	job, err := CreateIndexJob(ctx, db, "legacy", root, IndexModeFull, false)
+	if err != nil {
+		t.Fatalf("CreateIndexJob: %v", err)
+	}
+	if _, err := db.Exec("ALTER TABLE index_jobs DROP COLUMN entrypoint_selector"); err != nil {
+		t.Fatalf("drop entrypoint_selector: %v", err)
+	}
+	loaded, ok, err := GetIndexJob(ctx, db, job.JobID)
+	if err != nil || !ok {
+		t.Fatalf("GetIndexJob: ok=%v err=%v", ok, err)
+	}
+	if loaded.EntrypointSelector != "" {
+		t.Fatalf("legacy entrypoint selector=%q, want empty", loaded.EntrypointSelector)
+	}
+}
+
 func TestCreateIndexJobReturnsOwnerFence(t *testing.T) {
 	db, root := seedTestDB(t)
 	job, err := CreateIndexJob(context.Background(), db, "fence", root, IndexModeFull, false)

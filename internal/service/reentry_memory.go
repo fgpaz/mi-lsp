@@ -72,7 +72,7 @@ func attachMemoryPointer(env model.Envelope, memory *loadedReentryMemory) model.
 
 func buildStatusContinuation(opts model.QueryOptions, memory *loadedReentryMemory) *model.Continuation {
 	if isAXIPreview(opts) {
-		next := model.ContinuationTarget{Op: "workspace.status", Full: true}
+		next := model.ContinuationTarget{Op: "workspace.status", Full: true, Workspace: strings.TrimSpace(opts.Workspace)}
 		continuation := &model.Continuation{Reason: "expand_preview", Next: next}
 		if memory != nil && memory.Snapshot.BestReentry.Op != "" {
 			alternate := memory.Snapshot.BestReentry
@@ -80,33 +80,36 @@ func buildStatusContinuation(opts model.QueryOptions, memory *loadedReentryMemor
 		}
 		return continuation
 	}
-	return buildMemoryFallbackContinuation(memory, false)
+	return buildMemoryFallbackContinuation(memory, false, strings.TrimSpace(opts.Workspace))
 }
 
-func buildSearchContinuation(pattern string, project model.ProjectFile, repoSelector string, items []map[string]any, memory *loadedReentryMemory) *model.Continuation {
+func buildSearchContinuation(pattern string, project model.ProjectFile, repoSelector string, items []map[string]any, opts model.QueryOptions, memory *loadedReentryMemory) *model.Continuation {
 	if repoSelector == "" && len(items) > 0 {
 		if repo := searchSingleVisibleRepo(project, items); repo != "" {
 			return &model.Continuation{
 				Reason: "narrow_scope",
 				Next: model.ContinuationTarget{
-					Op:    "nav.search",
-					Query: pattern,
-					Repo:  repo,
+					Op:        "nav.search",
+					Query:     pattern,
+					Repo:      repo,
+					Workspace: strings.TrimSpace(opts.Workspace),
 				},
 			}
 		}
 	}
-	return buildMemoryFallbackContinuation(memory, true)
+	return buildMemoryFallbackContinuation(memory, true, strings.TrimSpace(opts.Workspace))
 }
 
 func buildAskContinuation(question string, project model.ProjectFile, result model.AskResult, warnings []string, opts model.QueryOptions, previewTrimmed bool, memory *loadedReentryMemory) *model.Continuation {
+	workspace := strings.TrimSpace(opts.Workspace)
 	if isAXIPreview(opts) && previewTrimmed {
 		return &model.Continuation{
 			Reason: "expand_preview",
 			Next: model.ContinuationTarget{
-				Op:    "nav.ask",
-				Query: question,
-				Full:  true,
+				Op:        "nav.ask",
+				Query:     question,
+				Full:      true,
+				Workspace: workspace,
 			},
 		}
 	}
@@ -115,73 +118,88 @@ func buildAskContinuation(question string, project model.ProjectFile, result mod
 			return &model.Continuation{
 				Reason: "low_evidence",
 				Next: model.ContinuationTarget{
-					Op:    "nav.pack",
-					Query: question,
-					DocID: strings.TrimSpace(result.PrimaryDoc.DocID),
-					Path:  strings.TrimSpace(result.PrimaryDoc.Path),
-					Full:  true,
+					Op:        "nav.pack",
+					Query:     question,
+					DocID:     strings.TrimSpace(result.PrimaryDoc.DocID),
+					Path:      strings.TrimSpace(result.PrimaryDoc.Path),
+					Full:      true,
+					Workspace: workspace,
 				},
 			}
 		}
 		return &model.Continuation{
 			Reason: "low_evidence",
 			Next: model.ContinuationTarget{
-				Op:    "nav.search",
-				Query: bestAskCoachSearchQuery(question, result),
-				Repo:  askRepoScope(project, result.CodeEvidence),
-				DocID: strings.TrimSpace(result.PrimaryDoc.DocID),
-				Path:  strings.TrimSpace(result.PrimaryDoc.Path),
+				Op:        "nav.search",
+				Query:     bestAskCoachSearchQuery(question, result),
+				Repo:      askRepoScope(project, result.CodeEvidence),
+				DocID:     strings.TrimSpace(result.PrimaryDoc.DocID),
+				Path:      strings.TrimSpace(result.PrimaryDoc.Path),
+				Workspace: workspace,
 			},
 		}
 	}
 	if strings.TrimSpace(result.PrimaryDoc.Path) != "" {
+		target := askDocSearchTarget(result.PrimaryDoc)
+		target.Workspace = workspace
 		return &model.Continuation{
 			Reason: "follow_doc",
-			Next:   askDocSearchTarget(result.PrimaryDoc),
+			Next:   target,
 		}
 	}
-	return buildMemoryFallbackContinuation(memory, true)
+	return buildMemoryFallbackContinuation(memory, true, workspace)
 }
 
 func buildPackContinuation(operation string, task string, result model.PackResult, opts model.QueryOptions, memory *loadedReentryMemory) *model.Continuation {
 	if !opts.Full {
+		docID := ""
+		if len(result.Docs) > 0 {
+			docID = strings.TrimSpace(result.Docs[0].DocID)
+		}
 		return &model.Continuation{
 			Reason: "expand_preview",
 			Next: model.ContinuationTarget{
-				Op:    normalizePackOperation(operation),
-				Query: task,
-				DocID: strings.TrimSpace(result.PrimaryDoc),
-				Full:  true,
+				Op:        normalizePackOperation(operation),
+				Query:     task,
+				DocID:     docID,
+				Full:      true,
+				Workspace: strings.TrimSpace(opts.Workspace),
 			},
 		}
 	}
 	if len(result.Docs) > 0 {
+		target := packDocSearchTarget(result.Docs[0])
+		target.Workspace = strings.TrimSpace(opts.Workspace)
 		return &model.Continuation{
 			Reason: "follow_doc",
-			Next:   packDocSearchTarget(result.Docs[0]),
+			Next:   target,
 		}
 	}
-	return buildMemoryFallbackContinuation(memory, true)
+	return buildMemoryFallbackContinuation(memory, true, strings.TrimSpace(opts.Workspace))
 }
 
 func buildRouteContinuation(task string, result model.RouteResult, opts model.QueryOptions, memory *loadedReentryMemory) *model.Continuation {
+	workspace := strings.TrimSpace(opts.Workspace)
 	if !opts.Full {
 		return &model.Continuation{
 			Reason: "expand_preview",
 			Next: model.ContinuationTarget{
-				Op:    "nav.pack",
-				Query: task,
-				DocID: strings.TrimSpace(result.Canonical.AnchorDoc.DocID),
+				Op:        "nav.pack",
+				Query:     task,
+				DocID:     strings.TrimSpace(result.Canonical.AnchorDoc.DocID),
+				Workspace: workspace,
 			},
 		}
 	}
 	if strings.TrimSpace(result.Canonical.AnchorDoc.Path) != "" {
+		target := routeDocSearchTarget(result.Canonical.AnchorDoc)
+		target.Workspace = workspace
 		return &model.Continuation{
 			Reason: "follow_doc",
-			Next:   routeDocSearchTarget(result.Canonical.AnchorDoc),
+			Next:   target,
 		}
 	}
-	return buildMemoryFallbackContinuation(memory, true)
+	return buildMemoryFallbackContinuation(memory, true, workspace)
 }
 
 func buildRelatedContinuation(symbol string, opts model.QueryOptions, memory *loadedReentryMemory) *model.Continuation {
@@ -189,13 +207,14 @@ func buildRelatedContinuation(symbol string, opts model.QueryOptions, memory *lo
 		return &model.Continuation{
 			Reason: "expand_preview",
 			Next: model.ContinuationTarget{
-				Op:     "nav.related",
-				Symbol: symbol,
-				Full:   true,
+				Op:        "nav.related",
+				Symbol:    symbol,
+				Full:      true,
+				Workspace: strings.TrimSpace(opts.Workspace),
 			},
 		}
 	}
-	return buildMemoryFallbackContinuation(memory, true)
+	return buildMemoryFallbackContinuation(memory, true, strings.TrimSpace(opts.Workspace))
 }
 
 func buildWorkspaceMapContinuation(opts model.QueryOptions, memory *loadedReentryMemory) *model.Continuation {
@@ -203,37 +222,46 @@ func buildWorkspaceMapContinuation(opts model.QueryOptions, memory *loadedReentr
 		return &model.Continuation{
 			Reason: "expand_preview",
 			Next: model.ContinuationTarget{
-				Op:   "nav.workspace-map",
-				Full: true,
+				Op:        "nav.workspace-map",
+				Full:      true,
+				Workspace: strings.TrimSpace(opts.Workspace),
 			},
 		}
 	}
-	return buildMemoryFallbackContinuation(memory, true)
+	return buildMemoryFallbackContinuation(memory, true, strings.TrimSpace(opts.Workspace))
 }
 
 func buildServiceContinuation(memory *loadedReentryMemory) *model.Continuation {
-	return buildMemoryFallbackContinuation(memory, true)
+	return buildMemoryFallbackContinuation(memory, true, "")
 }
 
-func buildMemoryFallbackContinuation(memory *loadedReentryMemory, allowSnapshotReentry bool) *model.Continuation {
+func buildMemoryFallbackContinuation(memory *loadedReentryMemory, allowSnapshotReentry bool, workspace string) *model.Continuation {
 	if memory == nil {
 		return nil
 	}
+	workspace = strings.TrimSpace(workspace)
 	reason := "recent_change"
 	if strings.TrimSpace(memory.Snapshot.Handoff) != "" {
 		reason = "handoff_reentry"
 	}
 	if memory.Stale {
-		next := model.ContinuationTarget{Op: "workspace.status", Full: true}
+		next := model.ContinuationTarget{Op: "workspace.status", Full: true, Workspace: workspace}
 		continuation := &model.Continuation{Reason: reason, Next: next}
 		if allowSnapshotReentry && memory.Snapshot.BestReentry.Op != "" {
 			alternate := memory.Snapshot.BestReentry
+			if strings.TrimSpace(alternate.Workspace) == "" {
+				alternate.Workspace = workspace
+			}
 			continuation.Alternate = &alternate
 		}
 		return continuation
 	}
 	if allowSnapshotReentry && memory.Snapshot.BestReentry.Op != "" {
-		return &model.Continuation{Reason: reason, Next: memory.Snapshot.BestReentry}
+		best := memory.Snapshot.BestReentry
+		if strings.TrimSpace(best.Workspace) == "" {
+			best.Workspace = workspace
+		}
+		return &model.Continuation{Reason: reason, Next: best}
 	}
 	return nil
 }

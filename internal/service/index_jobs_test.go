@@ -111,6 +111,20 @@ func TestIndexStartNoChangeGraphRepairPreservesCatalogBinding(t *testing.T) {
 	}
 }
 
+func TestIndexEntrypointSelectorRequiresFullMode(t *testing.T) {
+	for _, mode := range []string{store.IndexModeDocs, store.IndexModeCatalog} {
+		if err := validateIndexEntrypointMode(mode, "go.mod"); err == nil {
+			t.Fatalf("mode %q accepted --entrypoint, want rejection", mode)
+		}
+	}
+	if err := validateIndexEntrypointMode(store.IndexModeFull, "go.mod"); err != nil {
+		t.Fatalf("full mode rejected --entrypoint: %v", err)
+	}
+	if err := validateIndexEntrypointMode(store.IndexModeDocs, ""); err != nil {
+		t.Fatalf("docs mode without selector rejected: %v", err)
+	}
+}
+
 func TestRunIndexJobHonorsCooperativeCancelDuringProgress(t *testing.T) {
 	ensureWritableTestHome(t)
 	root := t.TempDir()

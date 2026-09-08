@@ -485,7 +485,7 @@ func TestPackReentryMemoryPreservesOperationContract(t *testing.T) {
 			if pointer == nil || pointer.ReentryOp != operation {
 				t.Fatalf("memory pointer = %#v, want reentry_op %q", pointer, operation)
 			}
-			continuation := buildMemoryFallbackContinuation(memory, true)
+			continuation := buildMemoryFallbackContinuation(memory, true, "")
 			if continuation == nil || continuation.Next.Op != operation {
 				t.Fatalf("memory continuation = %#v, want operation %q", continuation, operation)
 			}

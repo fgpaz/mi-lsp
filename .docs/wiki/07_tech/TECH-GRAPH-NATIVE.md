@@ -279,8 +279,9 @@ evidence:
 
 `ResolveRepositoryIdentity` normaliza todas las identidades explicitas y exige que sean una sola; si faltan, ejecuta unicamente `git -C <workspace> rev-parse --show-toplevel` y `git -C <git-root> config --local --get-all remote.origin.url`. Se exige exactamente un origin HTTPS/SSH normalizable; no hay fetch, red, alias, basename ni fallback de path. La identidad resuelta es simultaneamente `WorkspaceIdentity` y `RepositoryIdentity` para todos los batches y queda en la generation, sin escribir `.mi-lsp/project.toml`.
 
-En un container, el módulo Go se observa una sola vez desde el checkout y usa el fallback del root (`go.mod`). En una topología single/no-container con un repo Go seleccionado, el core puede elegir el `go.mod` configurado como ruta de módulo repo-local exacta o resolver un ID de `WorkspaceEntrypoint` mediante coincidencia exacta de repo y entrypoint; para un ID, rebasa la ruta workspace-relative declarada al root del repo seleccionado y revalida que el resultado sea un `go.mod` repo-local, seguro y regular. Solo cuando no hay selector explícito se usa el fallback del root del repo (`go.mod`); cualquier selector explícito faltante, ID desconocido/malformado, no regular, symlink o inseguro se diagnostica y omite, sin sustituirse silenciosamente por ese fallback. `go.work` no es compatible con la observación de grafo y se rechaza. La ruta declarada se mantiene relativa al workspace para la topología, mientras el batch recibe el selector repo-local rebasado.
-- Todo selector Go explícito que contenga el separador `\` se rechaza antes de cualquier normalización de separadores; el fallback a `go.mod` solo aplica al selector vacío.
+En un container, el módulo Go se observa una sola vez desde el checkout y usa el fallback del root (`go.mod`). En una topología single/no-container con un repo Go seleccionado, el core puede elegir el `go.mod` configurado como ruta de módulo repo-local exacta o resolver un ID de `WorkspaceEntrypoint` mediante coincidencia exacta de repo y entrypoint; para un ID, rebasa la ruta workspace-relative declarada al root del repo seleccionado y revalida que el resultado sea un `go.mod` repo-local, seguro y regular. Un `--entrypoint` explícito puede seleccionar además una ruta segura existente (`go.mod` o `.csproj`) dentro del repositorio resuelto; su backend se determina por el tipo solicitado (Go o Roslyn) y nunca se sustituye silenciosamente por otro default. Las soluciones `.sln` explícitas fallan cerrado porque no existe un helper autoritativo de membresía de proyectos. Solo cuando no hay selector explícito se conserva el fallback vigente del root del repo (`go.mod`) y la selección C# configurada. Un selector explícito faltante, ID desconocido/malformado, no regular, symlink o inseguro falla cerrado con diagnóstico accionable. `go.work` no es compatible con la observación de grafo y se rechaza. La ruta declarada se mantiene relativa al workspace para la topología, mientras el batch recibe el selector repo-local rebasado.
+- Todo selector explícito que contenga el separador `\` se rechaza antes de cualquier normalización de separadores; el fallback a `go.mod` solo aplica al selector vacío.
+- Los campos embebidos Go de structs (`T`, `*T`, `pkg.T`, `*pkg.T` e instanciaciones genéricas) se emiten como declaraciones respaldadas por `go/types` (`*types.Var`) y conservan una referencia tipada al tipo embebido cuando es local. Si falta información del compilador, se registra omisión o unresolved y el batch permanece parcial; `ReadyForStaging` no se relaja.
 
 ## Observacion Roslyn, sellado y normalizacion de unresolved
 
@@ -345,8 +346,14 @@ symbol_resolution:
     declared_entrypoint: workspace_relative
     selected_module: repo_root_relative
     fallback_when: selector_empty_only
-    invalid_explicit: missing_non_regular_or_unsafe_diagnosed_omission_no_fallback
+    invalid_explicit: typed_actionable_error_no_fallback
     backslash_rejected_before_normalization: true
+  csharp_entrypoint:
+    accepted: [declared_or_safe_relative_csproj]
+    solution_selection: typed_unavailable_no_membership_helper
+    backend: roslyn
+    scope: selected_repo_and_entrypoint_only
+    invalid_explicit: typed_actionable_error_no_fallback
 graph_unresolved:
   order: key
   dedupe: key

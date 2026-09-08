@@ -256,6 +256,8 @@ type goGraphBuilder struct {
 	packages           map[string]*goGraphPackage
 	local              map[string]*goGraphPackage
 	objectRefs         map[types.Object]string
+	embeddedFields     map[*ast.Field]struct{}
+	embeddedFieldBases map[ast.Node]struct{}
 	nodes              map[string]model.GraphObservationNode
 	edges              map[string]model.GraphObservationEdge
 	edgeDigests        map[string]model.GraphDigest
@@ -272,7 +274,7 @@ type goGraphBuilder struct {
 	sourceDomain       []byte
 }
 
-const goGraphExtractorVersion = "go-compiler-observation-v1"
+const goGraphExtractorVersion = "go-compiler-observation-v2"
 
 func goGraphError(code, field, message string) error {
 	return &model.GraphObservationError{Code: code, Field: field, Message: message}
@@ -315,7 +317,7 @@ func ObserveGoGraph(ctx context.Context, req GoGraphObservationRequest) (model.G
 	configDigest := goGraphConfigDigest(modBytes, sumDigestBytes, modulePath, project, nil, tags, goos, goarch, os.Getenv("CGO_ENABLED"), os.Getenv("GOFLAGS"))
 	builder := &goGraphBuilder{
 		root: root, moduleRoot: moduleRoot, modulePath: modulePath,
-		packages: map[string]*goGraphPackage{}, local: map[string]*goGraphPackage{}, objectRefs: map[types.Object]string{},
+		packages: map[string]*goGraphPackage{}, local: map[string]*goGraphPackage{}, objectRefs: map[types.Object]string{}, embeddedFields: map[*ast.Field]struct{}{}, embeddedFieldBases: map[ast.Node]struct{}{},
 		nodes: map[string]model.GraphObservationNode{}, edges: map[string]model.GraphObservationEdge{}, edgeDigests: map[string]model.GraphDigest{}, omissions: map[string]model.GraphObservationOmission{},
 		unresolved: map[string]model.GraphObservationUnresolved{}, evidenceOrd: map[string]int{}, evidenceKeys: map[string]bool{}, exports: map[string]string{}, importCache: map[string]*types.Package{}, initOrdinals: map[string]int{}, typeErrorPositions: map[string][]token.Pos{},
 		sourceDomain: []byte(fmt.Sprintf("go-graph-source-v1:%d:%s:%d:%x;", len(project), project, len(modBytes), modBytes)),
@@ -416,6 +418,7 @@ func ObserveGoGraph(ctx context.Context, req GoGraphObservationRequest) (model.G
 	builder.extractDeclarations()
 	builder.extractImportsAndContains()
 	builder.typeCheckAll(ctx)
+	builder.extractTypedEmbeddedFields()
 	builder.extractTypedRelations(ctx)
 	if ctx.Err() != nil {
 		builder.partial = true
@@ -954,28 +957,12 @@ func (b *goGraphBuilder) extractTypeFields(p *goGraphPackage, f *goGraphFile, ts
 		names := field.Names
 		if len(names) == 0 {
 			if interfaceFields {
-				// Embedded interface entries are type references, not struct
-				// fields. Keep them as an explicit supported omission.
 				b.addOmission(f.rel, "field", "declarations", "embedded_field_unsupported")
-				continue
-			}
-			// An embedded field is still a declaration owned by this type. Keep
-			// its AST identity so go/types can resolve selectors such as
-			// outer.Embedded without manufacturing an unresolved endpoint.
-			ident := goEmbeddedFieldIdent(field.Type)
-			if ident == nil {
-				b.addOmission(f.rel, "field", "declarations", "embedded_field_unsupported")
-				continue
-			}
-			name := ident.Name
-			identity := "field:" + p.list.ImportPath + ":" + ts.Name.Name + ":" + name
-			ref := b.addNode(p, f, field, "field", identity, name, ts.Name.Name, model.GraphRecordExtracted, "go/ast")
-			if ref != "" {
-				// go/types assigns an embedded Var the position of the
-				// underlying identifier, not the pointer/star, selector, or
-				// generic wrapper expression.
-				p.posRefs[ident.Pos()] = ref
-				b.addEdge(typeRef, ref, "contains", f.rel, goGraphRange(p.fset, field.Pos(), field.End()), goGraphDigest(f.data), model.GraphRecordExtracted, "go/ast")
+			} else {
+				b.embeddedFields[field] = struct{}{}
+				if base := goGraphEmbeddedFieldBase(field.Type); base != nil {
+					b.embeddedFieldBases[base] = struct{}{}
+				}
 			}
 			continue
 		}
@@ -996,6 +983,194 @@ func (b *goGraphBuilder) extractTypeFields(p *goGraphPackage, f *goGraphFile, ts
 			}
 		}
 	}
+}
+
+func (b *goGraphBuilder) extractTypedEmbeddedFields() {
+	paths := make([]string, 0, len(b.local))
+	for path := range b.local {
+		paths = append(paths, path)
+	}
+	sort.Strings(paths)
+	for _, importPath := range paths {
+		p := b.local[importPath]
+		if p == nil {
+			continue
+		}
+		for i := range p.files {
+			f := &p.files[i]
+			for _, decl := range f.file.Decls {
+				gen, ok := decl.(*ast.GenDecl)
+				if !ok || gen.Tok != token.TYPE {
+					continue
+				}
+				for _, spec := range gen.Specs {
+					ts, ok := spec.(*ast.TypeSpec)
+					if !ok {
+						continue
+					}
+					syntaxStruct, syntaxOK := ts.Type.(*ast.StructType)
+					if !syntaxOK {
+						continue
+					}
+					fields := syntaxStruct.Fields
+					structType := goGraphCheckedStructType(p, ts)
+					typeRef := b.findDecl(p, "type", "type:"+p.list.ImportPath+":"+ts.Name.Name)
+					for _, field := range fields.List {
+						if _, embedded := b.embeddedFields[field]; !embedded {
+							continue
+						}
+						if p.info == nil || structType == nil {
+							b.partial = true
+							b.addOmission(f.rel, "field", "declarations", "embedded_field_type_info_missing")
+							continue
+						}
+						fieldObject := goGraphEmbeddedFieldObject(p.info, structType, field)
+						if fieldObject == nil || !fieldObject.IsField() || !fieldObject.Embedded() || fieldObject.Name() == "" {
+							b.partial = true
+							b.addOmission(f.rel, "field", "declarations", "embedded_field_type_info_missing")
+							continue
+						}
+						identity := "field:" + p.list.ImportPath + ":" + ts.Name.Name + ":" + fieldObject.Name()
+						ref := b.addNode(p, f, field, "field", identity, fieldObject.Name(), ts.Name.Name, model.GraphRecordExact, "go/types")
+						if ref == "" {
+							b.partial = true
+							b.addOmission(f.rel, "field", "declarations", "embedded_field_type_info_missing")
+							continue
+						}
+						p.posRefs[fieldObject.Pos()] = ref
+						b.objectRefs[fieldObject] = ref
+						b.addEdge(typeRef, ref, "contains", f.rel, goGraphRange(p.fset, field.Pos(), field.End()), goGraphDigest(f.data), model.GraphRecordExtracted, "go/ast")
+						b.addEmbeddedFieldTypeReference(p, f, field, ref)
+					}
+				}
+			}
+		}
+	}
+}
+
+func goGraphCheckedStructType(p *goGraphPackage, ts *ast.TypeSpec) *types.Struct {
+	if p == nil || p.pkg == nil || p.info == nil || ts == nil || ts.Name == nil {
+		return nil
+	}
+	object := p.info.Defs[ts.Name]
+	if object == nil {
+		object = p.pkg.Scope().Lookup(ts.Name.Name)
+	}
+	if object == nil {
+		return nil
+	}
+	returnType := object.Type()
+	if returnType == nil {
+		return nil
+	}
+	structType, _ := returnType.Underlying().(*types.Struct)
+	return structType
+}
+
+func goGraphEmbeddedFieldBase(expr ast.Expr) ast.Node {
+	switch typed := expr.(type) {
+	case *ast.Ident:
+		return typed
+	case *ast.ParenExpr:
+		return goGraphEmbeddedFieldBase(typed.X)
+	case *ast.StarExpr:
+		return goGraphEmbeddedFieldBase(typed.X)
+	case *ast.SelectorExpr:
+		return typed
+	case *ast.IndexExpr:
+		return goGraphEmbeddedFieldBase(typed.X)
+	case *ast.IndexListExpr:
+		return goGraphEmbeddedFieldBase(typed.X)
+	default:
+		return nil
+	}
+}
+
+func goGraphEmbeddedFieldObject(info *types.Info, structType *types.Struct, field *ast.Field) *types.Var {
+	if info == nil || structType == nil || field == nil {
+		return nil
+	}
+	base := goGraphEmbeddedFieldBase(field.Type)
+	if base == nil {
+		return nil
+	}
+	if ident, ok := base.(*ast.Ident); ok {
+		if object, ok := info.Defs[ident].(*types.Var); ok && object.IsField() && object.Embedded() {
+			return object
+		}
+		if object, ok := info.Uses[ident].(*types.Var); ok && object.IsField() && object.Embedded() {
+			return object
+		}
+	}
+	basePos := base.Pos()
+	if selector, ok := base.(*ast.SelectorExpr); ok {
+		basePos = selector.Sel.Pos()
+	}
+	for index := 0; index < structType.NumFields(); index++ {
+		object := structType.Field(index)
+		if object != nil && object.Pos() == basePos && object.IsField() && object.Embedded() {
+			return object
+		}
+	}
+	return nil
+}
+
+func goGraphEmbeddedFieldTarget(fieldType types.Type) *types.TypeName {
+	for fieldType != nil {
+		fieldType = types.Unalias(fieldType)
+		switch typed := fieldType.(type) {
+		case *types.Pointer:
+			fieldType = typed.Elem()
+		case *types.Named:
+			return typed.Obj()
+		default:
+			return nil
+		}
+	}
+	return nil
+}
+
+func (b *goGraphBuilder) addEmbeddedFieldTypeReference(p *goGraphPackage, f *goGraphFile, field *ast.Field, fieldRef string) {
+	if p == nil || f == nil || p.info == nil || field == nil || field.Type == nil {
+		b.partial = true
+		owner := ""
+		var source *model.GraphDigest
+		if f != nil {
+			owner = f.rel
+		}
+		if p != nil && f != nil && field != nil {
+			source = b.targetSourceDigest(p, field.Pos())
+		}
+		b.addUnresolved(owner, "field", "references", "embedded_field_type_info_missing", source)
+		return
+	}
+	targetObject := goGraphEmbeddedFieldTarget(p.info.TypeOf(field.Type))
+	if targetObject == nil {
+		b.partial = true
+		b.addUnresolved(f.rel, "field", "references", "embedded_field_type_info_missing", b.targetSourceDigest(p, field.Pos()))
+		return
+	}
+	targetRef := b.objectRefs[targetObject]
+	if targetRef == "" && targetObject.Pkg() != nil {
+		if targetPackage := b.local[targetObject.Pkg().Path()]; targetPackage != nil {
+			targetRef = targetPackage.posRefs[targetObject.Pos()]
+			if targetRef == "" {
+				b.partial = true
+				b.addUnresolved(f.rel, "field", "references", "local_target_missing_ref", b.targetSourceDigest(targetPackage, targetObject.Pos()))
+				return
+			}
+		}
+	}
+	if targetRef == "" {
+		if targetObject.Pkg() == nil || b.local[targetObject.Pkg().Path()] == nil {
+			b.addOmission(f.rel, "field", "references", "external_target")
+		} else {
+			b.partial = true
+			b.addUnresolved(f.rel, "field", "references", "local_target_missing_ref", b.targetSourceDigest(p, field.Pos()))
+		}
+		return
+	}
+	b.addEdge(fieldRef, targetRef, "references", f.rel, goGraphRange(p.fset, field.Type.Pos(), field.Type.End()), goGraphDigest(f.data), model.GraphRecordExact, "go/types")
 }
 
 func goGraphReceiverText(fs *token.FileSet, data []byte, recv *ast.FieldList) string {
@@ -1347,6 +1522,17 @@ func (b *goGraphBuilder) extractTypedRelations(ctx context.Context) {
 			}
 			ast.Inspect(f.file, func(n ast.Node) bool {
 				if n == nil {
+					return true
+				}
+				if field, ok := n.(*ast.Field); ok {
+					if _, embedded := b.embeddedFields[field]; embedded {
+						return true
+					}
+				}
+				if _, base := b.embeddedFieldBases[n]; base {
+					if _, selector := n.(*ast.SelectorExpr); selector {
+						return false
+					}
 					return true
 				}
 				owner := b.ownerFor(p, n.Pos())

@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/fgpaz/mi-lsp/internal/indexer"
@@ -28,6 +29,13 @@ var indexJobBeforeCancelHook = func(context.Context, *sql.DB, string, store.Inde
 
 var spawnDetachedIndexJobProcess = startDetachedIndexJobProcess
 
+func validateIndexEntrypointMode(mode, selector string) error {
+	if strings.TrimSpace(selector) != "" && mode != store.IndexModeFull {
+		return errors.New("--entrypoint is supported only for full index mode")
+	}
+	return nil
+}
+
 func (a *App) indexStart(ctx context.Context, request model.CommandRequest) (model.Envelope, error) {
 	registration, err := a.resolveIndexWorkspace(request)
 	if err != nil {
@@ -39,6 +47,10 @@ func (a *App) indexStart(ctx context.Context, request model.CommandRequest) (mod
 	}
 	wait, _ := request.Payload["wait"].(bool)
 	clean, _ := request.Payload["clean"].(bool)
+	entrypointSelector := strings.TrimSpace(stringPayload(request.Payload, "entrypoint"))
+	if err := validateIndexEntrypointMode(mode, entrypointSelector); err != nil {
+		return model.Envelope{}, err
+	}
 
 	db, err := openWorkspaceDB(registration, "index.start", false) // readWrite
 	if err != nil {
@@ -46,7 +58,7 @@ func (a *App) indexStart(ctx context.Context, request model.CommandRequest) (mod
 	}
 	defer db.Close()
 
-	job, err := store.CreateIndexJob(ctx, db, registration.Name, registration.Root, mode, clean)
+	job, err := store.CreateIndexJobWithEntrypoint(ctx, db, registration.Name, registration.Root, mode, clean, entrypointSelector)
 	if err != nil {
 		if activeErr, ok := err.(*store.ActiveIndexJobError); ok {
 			return activeIndexJobEnvelope(registration, store.ControlPlaneIndexJob(activeErr.Job)), nil
@@ -280,12 +292,13 @@ func (a *App) runIndexJob(ctx context.Context, registration model.WorkspaceRegis
 		case store.IndexModeCatalog:
 			result, err = indexer.IndexWorkspaceCatalogOnlyWithProgressForJob(ctx, registration.Root, job.Clean, job.GenerationID, jobID, jobFence, progress.report)
 		default:
+			graphOptions := indexer.GraphIndexOptions{RoslynObserver: a.graphObserver(), EntrypointSelector: job.EntrypointSelector}
 			hasExistingCatalog := false
 			if stats, statsErr := store.WorkspaceStats(ctx, db); statsErr == nil {
 				hasExistingCatalog = stats.Files > 0 || stats.Symbols > 0
 			}
-			if !job.Clean && hasExistingCatalog {
-				result, err = indexer.IncrementalIndexWithGraphProgressForJob(ctx, registration.Root, job.GenerationID, jobID, jobFence, progress.report, indexer.GraphIndexOptions{RoslynObserver: a.graphObserver()})
+			if !job.Clean && job.EntrypointSelector == "" && hasExistingCatalog {
+				result, err = indexer.IncrementalIndexWithGraphProgressForJob(ctx, registration.Root, job.GenerationID, jobID, jobFence, progress.report, graphOptions)
 				if err != nil && (errors.Is(err, store.ErrStaleIndexJobOwner) || errors.Is(err, errIndexJobCanceled)) {
 					return err
 				}
@@ -301,7 +314,7 @@ func (a *App) runIndexJob(ctx context.Context, registration model.WorkspaceRegis
 					return nil
 				}
 			}
-			result, err = indexer.IndexWorkspaceWithGraphProgressForJob(ctx, registration.Root, job.Clean, job.GenerationID, jobID, jobFence, progress.report, indexer.GraphIndexOptions{RoslynObserver: a.graphObserver()})
+			result, err = indexer.IndexWorkspaceWithGraphProgressForJob(ctx, registration.Root, job.Clean, job.GenerationID, jobID, jobFence, progress.report, graphOptions)
 		}
 		return err
 	})

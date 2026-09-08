@@ -64,6 +64,217 @@ func TestFullIndexPublishesLocalGoGraph(t *testing.T) {
 	}
 }
 
+func TestObserveGraphExplicitGoEntrypointOverridesCSharpDefault(t *testing.T) {
+	root := t.TempDir()
+	writeProgressTestFile(t, root, "go.mod", "module example.com/mixed\n\ngo 1.23\n")
+	writeProgressTestFile(t, root, "main.go", "package main\nfunc main() {}\n")
+	project := model.ProjectFile{
+		Project: model.ProjectBlock{Name: "mixed", Kind: model.WorkspaceKindSingle, DefaultRepo: "repo", DefaultEntrypoint: "repo::solution"},
+		Repos:   []model.WorkspaceRepo{{ID: "repo", Name: "repo", Root: ".", RepositoryIdentity: "https://example.com/mixed", Languages: []string{"csharp", "go"}, DefaultEntrypoint: "repo::solution"}},
+		Entrypoints: []model.WorkspaceEntrypoint{
+			{ID: "repo::solution", RepoID: "repo", Path: "src/App.sln", Kind: model.EntrypointKindSolution},
+			{ID: "repo::go-mod", RepoID: "repo", Path: "go.mod", Kind: model.EntrypointKindProject},
+		},
+	}
+	for _, selector := range []string{"repo::go-mod", "go.mod"} {
+		t.Run(selector, func(t *testing.T) {
+			batches, omissions, _, err := ObserveGraph(context.Background(), root, project, GraphIndexOptions{EntrypointSelector: selector}, nil)
+			if err != nil {
+				t.Fatalf("ObserveGraph: %v", err)
+			}
+			if len(batches) != 1 || batches[0].Backend != "go" || batches[0].ProjectOrModule != "go.mod" {
+				t.Fatalf("batches=%#v, want one explicit Go go.mod observation", batches)
+			}
+			if len(omissions) != 0 {
+				t.Fatalf("omissions=%#v, want none", omissions)
+			}
+		})
+	}
+}
+
+func TestObserveGraphAbsentEntrypointPreservesCSharpDefaultAndOmitsGo(t *testing.T) {
+	root := t.TempDir()
+	writeProgressTestFile(t, root, "go.mod", "module example.com/mixed\n\ngo 1.23\n")
+	writeProgressTestFile(t, root, "src/App.csproj", "<Project />")
+	project := model.ProjectFile{
+		Project: model.ProjectBlock{Name: "mixed", Kind: model.WorkspaceKindSingle, DefaultRepo: "repo", DefaultEntrypoint: "repo::solution"},
+		Repos:   []model.WorkspaceRepo{{ID: "repo", Name: "repo", Root: ".", RepositoryIdentity: "https://example.com/mixed", Languages: []string{"csharp", "go"}, DefaultEntrypoint: "repo::solution"}},
+		Entrypoints: []model.WorkspaceEntrypoint{
+			{ID: "repo::solution", RepoID: "repo", Path: "src/App.sln", Kind: model.EntrypointKindSolution},
+			{ID: "repo::project", RepoID: "repo", Path: "src/App.csproj", Kind: model.EntrypointKindProject},
+		},
+	}
+	batches, omissions, _, err := ObserveGraph(context.Background(), root, project, GraphIndexOptions{RoslynObserver: func(_ context.Context, request GraphObservationRequest) (model.GraphObservationBatch, error) {
+		return stagingBatch("roslyn", request.ProjectOrModule, false), nil
+	}}, nil)
+	if err != nil {
+		t.Fatalf("ObserveGraph: %v", err)
+	}
+	if len(batches) != 1 || batches[0].Backend != "roslyn" {
+		t.Fatalf("batches=%#v, want one Roslyn default observation", batches)
+	}
+	foundGoOmission := false
+	for _, omission := range omissions {
+		if omission.Backend == "go" && omission.ReasonCode == "go_module_missing" {
+			foundGoOmission = true
+		}
+	}
+	if !foundGoOmission {
+		t.Fatalf("omissions=%#v, want the unchanged Go omission", omissions)
+	}
+}
+
+func TestObserveGraphRejectsUnknownExplicitEntrypoint(t *testing.T) {
+	project := model.ProjectFile{
+		Project: model.ProjectBlock{Name: "go", Kind: model.WorkspaceKindSingle, DefaultRepo: "repo"},
+		Repos:   []model.WorkspaceRepo{{ID: "repo", Name: "repo", Root: ".", Languages: []string{"go"}}},
+	}
+	_, _, _, err := ObserveGraph(context.Background(), t.TempDir(), project, GraphIndexOptions{EntrypointSelector: "missing::entrypoint"}, nil)
+	var observationErr *model.GraphObservationError
+	if !errors.As(err, &observationErr) || observationErr.Code != "GPH_ENTRYPOINT_NOT_FOUND" {
+		t.Fatalf("error=%v, want GPH_ENTRYPOINT_NOT_FOUND", err)
+	}
+}
+
+func TestObserveGraphExplicitCSharpProjectSelectsOneRoslynRequest(t *testing.T) {
+	root := t.TempDir()
+	writeProgressTestFile(t, root, "backend/src/App.csproj", "<Project />")
+	project := model.ProjectFile{
+		Project:     model.ProjectBlock{Name: "cs", Kind: model.WorkspaceKindSingle, DefaultRepo: "backend"},
+		Repos:       []model.WorkspaceRepo{{ID: "backend", Name: "backend", Root: "backend", RepositoryIdentity: "https://example.com/cs", Languages: []string{"csharp"}}},
+		Entrypoints: []model.WorkspaceEntrypoint{{ID: "backend::app", RepoID: "backend", Path: "backend/src/App.csproj", Kind: model.EntrypointKindProject}},
+	}
+	requests := make([]GraphObservationRequest, 0, 1)
+	batches, _, _, err := ObserveGraph(context.Background(), root, project, GraphIndexOptions{EntrypointSelector: "backend::app", RoslynObserver: func(_ context.Context, request GraphObservationRequest) (model.GraphObservationBatch, error) {
+		requests = append(requests, request)
+		return stagingBatch("roslyn", request.ProjectOrModule, false), nil
+	}}, nil)
+	if err != nil {
+		t.Fatalf("ObserveGraph: %v", err)
+	}
+	if len(requests) != 1 || len(batches) != 1 || requests[0].EntrypointID != "backend::app" || requests[0].ProjectOrModule != "src/App.csproj" {
+		t.Fatalf("requests=%#v batches=%#v, want one selected project request", requests, batches)
+	}
+}
+
+func TestObserveGraphExplicitSolutionFailsClosedWithoutMembershipHelper(t *testing.T) {
+	root := t.TempDir()
+	writeProgressTestFile(t, root, "App.sln", "Microsoft Visual Studio Solution File\n")
+	project := model.ProjectFile{
+		Project:     model.ProjectBlock{Name: "cs", Kind: model.WorkspaceKindSingle, DefaultRepo: "repo"},
+		Repos:       []model.WorkspaceRepo{{ID: "repo", Name: "repo", Root: ".", RepositoryIdentity: "https://example.com/cs", Languages: []string{"csharp"}}},
+		Entrypoints: []model.WorkspaceEntrypoint{{ID: "repo::solution", RepoID: "repo", Path: "App.sln", Kind: model.EntrypointKindSolution}},
+	}
+	_, _, _, err := ObserveGraph(context.Background(), root, project, GraphIndexOptions{EntrypointSelector: "repo::solution"}, nil)
+	var observationErr *model.GraphObservationError
+	if !errors.As(err, &observationErr) || observationErr.Code != "GPH_ENTRYPOINT_SOLUTION_UNAVAILABLE" {
+		t.Fatalf("error=%v, want GPH_ENTRYPOINT_SOLUTION_UNAVAILABLE", err)
+	}
+}
+
+func TestObserveGraphRejectsExplicitSelectorSafetyAndTopologyFailures(t *testing.T) {
+	tests := []struct {
+		name     string
+		selector string
+		setup    func(*testing.T, string)
+		project  model.ProjectFile
+		wantCode string
+	}{
+		{
+			name: "unknown", selector: "missing::entrypoint",
+			project:  model.ProjectFile{Project: model.ProjectBlock{Kind: model.WorkspaceKindSingle}, Repos: []model.WorkspaceRepo{{ID: "repo", Root: ".", Languages: []string{"go"}}}},
+			wantCode: "GPH_ENTRYPOINT_NOT_FOUND",
+		},
+		{
+			name: "unsupported kind", selector: "README.md",
+			setup:    func(t *testing.T, root string) { writeProgressTestFile(t, root, "README.md", "readme") },
+			project:  model.ProjectFile{Project: model.ProjectBlock{Kind: model.WorkspaceKindSingle}, Repos: []model.WorkspaceRepo{{ID: "repo", Root: ".", Languages: []string{"go"}}}},
+			wantCode: "GPH_ENTRYPOINT_NOT_FOUND",
+		},
+		{
+			name: "traversal", selector: "../go.mod",
+			project:  model.ProjectFile{Project: model.ProjectBlock{Kind: model.WorkspaceKindSingle}, Repos: []model.WorkspaceRepo{{ID: "repo", Root: ".", Languages: []string{"go"}}}},
+			wantCode: "GPH_ENTRYPOINT_NOT_FOUND",
+		},
+		{
+			name: "absolute", selector: filepath.Join(string(filepath.Separator), "outside", "go.mod"),
+			project:  model.ProjectFile{Project: model.ProjectBlock{Kind: model.WorkspaceKindSingle}, Repos: []model.WorkspaceRepo{{ID: "repo", Root: ".", Languages: []string{"go"}}}},
+			wantCode: "GPH_ENTRYPOINT_NOT_FOUND",
+		},
+		{
+			name: "go.work", selector: "go.work",
+			setup:    func(t *testing.T, root string) { writeProgressTestFile(t, root, "go.work", "go 1.23\n") },
+			project:  model.ProjectFile{Project: model.ProjectBlock{Kind: model.WorkspaceKindSingle}, Repos: []model.WorkspaceRepo{{ID: "repo", Root: ".", Languages: []string{"go"}}}},
+			wantCode: "GPH_ENTRYPOINT_NOT_FOUND",
+		},
+		{
+			name: "unknown repo id", selector: "missing::go",
+			setup:    func(t *testing.T, root string) { writeProgressTestFile(t, root, "go.mod", "module example.com/go\n") },
+			project:  model.ProjectFile{Project: model.ProjectBlock{Kind: model.WorkspaceKindSingle}, Repos: []model.WorkspaceRepo{{ID: "repo", Root: ".", Languages: []string{"go"}}}, Entrypoints: []model.WorkspaceEntrypoint{{ID: "missing::go", RepoID: "missing", Path: "go.mod", Kind: model.EntrypointKindProject}}},
+			wantCode: "GPH_ENTRYPOINT_REPO_NOT_FOUND",
+		},
+		{
+			name: "language mismatch", selector: "go.mod",
+			setup:    func(t *testing.T, root string) { writeProgressTestFile(t, root, "go.mod", "module example.com/go\n") },
+			project:  model.ProjectFile{Project: model.ProjectBlock{Kind: model.WorkspaceKindSingle}, Repos: []model.WorkspaceRepo{{ID: "repo", Root: ".", Languages: []string{"csharp"}}}},
+			wantCode: "GPH_ENTRYPOINT_LANGUAGE_MISMATCH",
+		},
+		{
+			name: "declared path outside repo", selector: "repo::foreign",
+			setup: func(t *testing.T, root string) {
+				writeProgressTestFile(t, root, "foreign/go.mod", "module example.com/foreign\n")
+			},
+			project:  model.ProjectFile{Project: model.ProjectBlock{Kind: model.WorkspaceKindSingle}, Repos: []model.WorkspaceRepo{{ID: "repo", Root: "backend", Languages: []string{"go"}}}, Entrypoints: []model.WorkspaceEntrypoint{{ID: "repo::foreign", RepoID: "repo", Path: "foreign/go.mod", Kind: model.EntrypointKindProject}}},
+			wantCode: "GPH_ENTRYPOINT_REPO_MISMATCH",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			root := t.TempDir()
+			if test.setup != nil {
+				test.setup(t, root)
+			}
+			_, _, _, err := ObserveGraph(context.Background(), root, test.project, GraphIndexOptions{EntrypointSelector: test.selector}, nil)
+			var observationErr *model.GraphObservationError
+			if !errors.As(err, &observationErr) || observationErr.Code != test.wantCode {
+				t.Fatalf("error=%v, want %s", err, test.wantCode)
+			}
+		})
+	}
+}
+
+func TestObserveGraphRejectsAmbiguousRepositoryRelativeEntrypoint(t *testing.T) {
+	root := t.TempDir()
+	writeProgressTestFile(t, root, "a/go.mod", "module example.com/a\n")
+	writeProgressTestFile(t, root, "b/go.mod", "module example.com/b\n")
+	project := model.ProjectFile{
+		Project: model.ProjectBlock{Kind: model.WorkspaceKindContainer},
+		Repos: []model.WorkspaceRepo{
+			{ID: "a", Root: "a", Languages: []string{"go"}},
+			{ID: "b", Root: "b", Languages: []string{"go"}},
+		},
+	}
+	_, _, _, err := ObserveGraph(context.Background(), root, project, GraphIndexOptions{EntrypointSelector: "go.mod"}, nil)
+	var observationErr *model.GraphObservationError
+	if !errors.As(err, &observationErr) || observationErr.Code != "GPH_ENTRYPOINT_AMBIGUOUS" {
+		t.Fatalf("error=%v, want GPH_ENTRYPOINT_AMBIGUOUS", err)
+	}
+}
+
+func TestObserveGraphRejectsExplicitSymlinkEntrypoint(t *testing.T) {
+	root := t.TempDir()
+	writeProgressTestFile(t, root, "target/go.mod", "module example.com/target\n")
+	if err := os.Symlink(filepath.Join("..", "target", "go.mod"), filepath.Join(root, "link-go.mod")); err != nil {
+		t.Skipf("symlink unavailable: %v", err)
+	}
+	project := model.ProjectFile{Project: model.ProjectBlock{Kind: model.WorkspaceKindSingle}, Repos: []model.WorkspaceRepo{{ID: "repo", Root: ".", Languages: []string{"go"}}}}
+	_, _, _, err := ObserveGraph(context.Background(), root, project, GraphIndexOptions{EntrypointSelector: "link-go.mod"}, nil)
+	var observationErr *model.GraphObservationError
+	if !errors.As(err, &observationErr) || observationErr.Code != "GPH_ENTRYPOINT_NOT_FOUND" {
+		t.Fatalf("error=%v, want GPH_ENTRYPOINT_NOT_FOUND", err)
+	}
+}
+
 func TestObserveGraphUsesExactRoslynProjectEntrypoint(t *testing.T) {
 	project := model.ProjectFile{
 		Project:     model.ProjectBlock{Name: "cs-fixture", Kind: model.WorkspaceKindSingle, DefaultRepo: "repo", DefaultEntrypoint: "project"},

@@ -1,3 +1,8 @@
+---
+doc_id: 00_gobierno_documental
+kind: governance
+---
+
 # 00. Gobierno documental
 
 ## Proposito

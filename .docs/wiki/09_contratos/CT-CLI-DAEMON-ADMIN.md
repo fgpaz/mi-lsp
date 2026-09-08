@@ -65,8 +65,8 @@ Comandos canonicos:
 
 - `workspace add|scan|list|warm|status|remove|doctor|hygiene|prune`
 - `nav symbols|find|refs|overview|outline|service|search|context|deps|ask|pack|prepare|batch|related|workspace-map|diff-context|affected|trace|intent`
-- `index [path] [--clean] [--docs-only]`
-- `index start|status|cancel`
+- `index [path] [--clean] [--docs-only] [--entrypoint <id|repo-relative-path>]`
+- `index start|status|cancel` (`start` admite `--entrypoint <id|repo-relative-path>`)
 - `info`
 - `doctor` (alias unificado para diagnostico workspace-aware)
 - `daemon start|stop|status|restart|open|logs [--tail N]`
@@ -155,8 +155,8 @@ note: "max_inflight raised from 16 to 48; max_workers raised from 3 to 6 for sus
 Input:
 
 ```text
-mi-lsp index [path] [--workspace <alias>] [--clean] [--docs-only]
-mi-lsp index start [path] [--workspace <alias>] [--mode full|docs|catalog] [--clean] [--wait]
+mi-lsp index [path] [--workspace <alias>] [--clean] [--docs-only] [--entrypoint <id|repo-relative-path>]
+mi-lsp index start [path] [--workspace <alias>] [--mode full|docs|catalog] [--clean] [--wait] [--entrypoint <id|repo-relative-path>]
 mi-lsp index status [job-id] [--workspace <alias>]
 mi-lsp index cancel <job-id> [--workspace <alias>] [--force]
 
@@ -168,6 +168,7 @@ Reglas:
 
 - `index [path]` es wrapper de compatibilidad que ejecuta `index start --mode full --wait`; con `--docs-only`, ejecuta `--mode docs --wait`.
 - `index start` crea un registro durable en `index_jobs` sin consultar primero jobs activos; sin `--wait` lanza un proceso detached y retorna el `job_id`; con `--wait` bloquea hasta que la indexacion complete. Si hay competencia, el runner queda serializado por `.mi-lsp/index.lock` y el resultado se inspecciona con `index status`.
+- `--entrypoint` selecciona un ID declarado o una ruta relativa segura del repositorio a la entrada solicitada en modo `full`. Go acepta `go.mod` y dirige la observación al backend `go`; C# acepta proyectos `.csproj` declarados o rutas seguras compatibles y dirige la observación a Roslyn; las soluciones `.sln` explícitas fallan cerrado porque no existe un helper de membresía autoritativo. No aplica a `docs`/`catalog`. Sin el flag se conservan exactamente los defaults actuales y no se infiere un módulo Go. El selector se persiste con el job y se rechazan rutas absolutas, traversal, symlinks, `go.work`, tipos no compatibles o repositorios no coincidentes.
 - `index status` consulta el ultimo job del workspace si no se pasa `job-id`.
 - `index status.phase` conserva `indexing` durante el trabajo pesado y solo pasa a `publishing` en el cierre/publicacion final.
 - `index status` expone progreso vivo en `current_stage`, `current_path`, `files_total`, `files`, `symbols`, `docs` y `updated_at`; esos campos deben refrescarse durante catalogo/docs/embeddings antes de publicar. En embeddings, `current_stage=embeddings` y `current_path` incluye `N/M chunks embedded`.
@@ -251,6 +252,8 @@ Reglas:
 El summary puede incluir un bloque aditivo `recommendations` para usage-doctor. Cada item debe derivarse de telemetria agregada y sanitizada (`hint_code`, `failure_stage`, `truncation_rate`, latencias, breakdowns y conteos), incluir accion sugerida y razon breve, y nunca copiar query cruda, argv, payloads, paths sensibles ni contenido de archivos.
 
 Sin `--limit` explicito, el summary agrega toda la ventana filtrada mediante acumulacion streaming desde `daemon.db`; no debe cargar todos los eventos crudos en memoria. Si el usuario pasa `--limit`, el summary conserva la semantica de muestra acotada. `--by-backend`, `--percentile`, `--by-route`, `--by-client`, `--by-hint` y `--by-failure-stage` siguen siendo opt-in de visualizacion. `--format json` y `--format compact` deben serializar `ExportSummary` como JSON válido; `--format toon` usa TOON y la salida humana tabular queda reservada para formatos text/csv compatibles.
+
+`--summary --attribution` es un bloque aditivo y opt-in (requiere binario actualizado): expone cobertura de atribucion por cliente y sesion sin copiar eventos crudos, patrones, argv, transcripts ni texto de error. Denominadores y limites: `client_name` vacio o `manual-cli` cuenta como atribucion desconocida; `real_sessions` cuenta IDs de sesion distintos y nunca es un conteo de repeticiones por sesion; los cohortes `work`/`test`/`system`/`unknown` son heuristicas derivadas solo de marcadores de nombre de cliente y presencia de sesion, no prueba de trabajo real por evento; los workspaces con prefijo `demo` solo se etiquetan como candidatos; `repeated_failures` y `slow_operations` son candidatos agregados, no repeticiones probadas ni tokens desperdiciados; la telemetria mi-lsp no estima costo ni ahorro de tokens (el costo de modelo pertenece a la integracion nativa Pi) y nunca reporta costo cero para costo desconocido. Uso recomendado: bajo demanda durante analisis y en cierre de ciclo.
 
 ### `daemon logs`
 

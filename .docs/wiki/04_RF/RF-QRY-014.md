@@ -1,3 +1,7 @@
+---
+doc_id: RF-QRY-014
+---
+
 # RF-QRY-014 - Resolver el documento canonico minimo para una tarea spec-driven
 
 ```yaml

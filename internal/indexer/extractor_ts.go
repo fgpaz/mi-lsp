@@ -45,10 +45,10 @@ func ExtractCatalog(root string, repo model.WorkspaceRepo, absolutePath string, 
 	if language == "python" {
 		return extractPython(repo, relPath, hash, content), fileRecord
 	}
-	return extractTypeScript(repo, relPath, hash, lines), fileRecord
+	return extractTypeScript(repo, relPath, hash, lines, language), fileRecord
 }
 
-func extractTypeScript(repo model.WorkspaceRepo, relPath, hash string, lines []string) []model.SymbolRecord {
+func extractTypeScript(repo model.WorkspaceRepo, relPath, hash string, lines []string, sourceLanguage string) []model.SymbolRecord {
 	items := make([]model.SymbolRecord, 0)
 	addIfMatch := func(kind string, pattern *regexp.Regexp, line string, lineNumber int) {
 		match := pattern.FindStringSubmatch(line)
@@ -68,7 +68,7 @@ func extractTypeScript(repo model.WorkspaceRepo, relPath, hash string, lines []s
 			EndLine:       lineNumber,
 			QualifiedName: relPath + "::" + name,
 			SignatureHash: digest([]byte(relPath + ":" + name + ":" + kind)),
-			Language:      "typescript",
+			Language:      sourceLanguage,
 			FileHash:      hash,
 			SearchText:    searchText,
 		})
@@ -93,7 +93,7 @@ func extractTypeScript(repo model.WorkspaceRepo, relPath, hash string, lines []s
 			EndLine:       1,
 			QualifiedName: relPath + "::route",
 			SignatureHash: digest([]byte(relPath + ":route")),
-			Language:      "typescript",
+			Language:      sourceLanguage,
 			FileHash:      hash,
 			SearchText:    searchText,
 		})

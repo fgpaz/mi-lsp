@@ -1107,7 +1107,7 @@ func TestIndexStartWithoutWaitReturnsSpawnedJobWithoutRunningInline(t *testing.T
 	env, err := app.Execute(context.Background(), model.CommandRequest{
 		Operation: "index.start",
 		Context:   model.QueryOptions{Workspace: alias},
-		Payload:   map[string]any{"mode": "full"},
+		Payload:   map[string]any{"mode": "full", "entrypoint": "src/App.csproj"},
 	})
 	if err != nil {
 		t.Fatalf("index.start: %v", err)
@@ -1121,6 +1121,9 @@ func TestIndexStartWithoutWaitReturnsSpawnedJobWithoutRunningInline(t *testing.T
 	}
 	if jobs[0].Status != store.IndexJobRunning || jobs[0].Phase != "spawned" || jobs[0].PID != 4242 {
 		t.Fatalf("job = %+v, want running spawned pid 4242", jobs[0])
+	}
+	if jobs[0].EntrypointSelector != "src/App.csproj" {
+		t.Fatalf("job entrypoint=%q, want src/App.csproj", jobs[0].EntrypointSelector)
 	}
 }
 

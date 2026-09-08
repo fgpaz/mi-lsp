@@ -32,7 +32,8 @@ type GraphObservationRequest struct {
 type GraphObserver func(context.Context, GraphObservationRequest) (model.GraphObservationBatch, error)
 
 type GraphIndexOptions struct {
-	RoslynObserver GraphObserver
+	RoslynObserver     GraphObserver
+	EntrypointSelector string
 }
 
 type graphObservationTarget struct {
@@ -54,12 +55,26 @@ func ObserveGraph(ctx context.Context, root string, project model.ProjectFile, o
 	}
 	_, configErr := os.Stat(workspace.ProjectConfigPath(root))
 	targets, ok := graphObservationTargets(root, project, configErr == nil)
-	if project.Project.Kind == model.WorkspaceKindContainer && !ok {
+	if project.Project.Kind == model.WorkspaceKindContainer && !ok && strings.TrimSpace(options.EntrypointSelector) == "" {
 		return nil, []model.GraphObservationOmission{{Backend: "roslyn", Capability: "declarations", ReasonCode: "ambiguous_repository", RecoveryHintCode: "select_repo"}}, []string{"graph omitted: container topology does not explicitly select one authoritative repository"}, nil
 	}
-	if !ok {
+	if !ok && strings.TrimSpace(options.EntrypointSelector) == "" {
 		return nil, nil, nil, errGraphTopologyAmbiguous
 	}
+
+	var explicitSelection *graphExplicitSelection
+	if selector := strings.TrimSpace(options.EntrypointSelector); selector != "" {
+		selection, err := resolveGraphExplicitSelection(root, project, selector)
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		explicitSelection = &selection
+		targets = graphTargetsForExplicitSelection(root, selection)
+		if len(targets) == 0 && selection.Backend == "roslyn" {
+			return nil, nil, nil, &model.GraphObservationError{Code: "GPH_ENTRYPOINT_UNAVAILABLE", Field: "entrypoint", Message: "explicit C# entrypoint has no eligible project file"}
+		}
+	}
+
 	goRepos := graphGoRepos(root, project, targets)
 	csharpTargets := make([]graphObservationTarget, 0)
 	csharpDeclared := false
@@ -87,7 +102,16 @@ func ObserveGraph(ctx context.Context, root string, project model.ProjectFile, o
 			csharpTargets = append(csharpTargets, target)
 		}
 	}
-	if csharpDeclared && len(csharpTargets) == 0 {
+	if explicitSelection != nil {
+		if explicitSelection.Backend == "go" {
+			goRepos = []graphGoRepo{{repo: explicitSelection.Repo, root: explicitSelection.RepoRoot}}
+			csharpTargets = nil
+		} else {
+			goRepos = nil
+			csharpTargets = targets
+		}
+	}
+	if csharpDeclared && len(csharpTargets) == 0 && explicitSelection == nil {
 		return nil, nil, nil, errors.New("no eligible C# project entrypoint was declared")
 	}
 
@@ -106,21 +130,30 @@ func ObserveGraph(ctx context.Context, root string, project model.ProjectFile, o
 
 	if len(goRepos) > 0 {
 		module := ""
-		if project.Project.Kind == model.WorkspaceKindContainer {
-			module = graphRootGoModule(root)
-		} else {
+		if explicitSelection != nil {
 			selected := goRepos[0]
-			configured, selectorOK := graphGoModuleSelector(root, project, selected.repo)
+			configured, selectorOK := graphGoModuleSelector(root, project, selected.repo, &explicitSelection.Entrypoint)
 			if selectorOK {
 				module = graphGoModule(selected.root, configured)
 			}
+		} else if project.Project.Kind == model.WorkspaceKindContainer {
+			module = graphRootGoModule(root)
+		} else {
+			selected := goRepos[0]
+			configured, selectorOK := graphGoModuleSelector(root, project, selected.repo, nil)
+			if selectorOK {
+				module = graphGoModule(selected.root, configured)
+			}
+		}
+		if explicitSelection != nil && module == "" {
+			return nil, nil, nil, &model.GraphObservationError{Code: "GPH_ENTRYPOINT_INVALID", Field: "entrypoint", Message: "explicit entrypoint must resolve to a safe regular go.mod within the selected repository"}
 		}
 		if module == "" {
 			omissions = append(omissions, graphOmissionForRepo("go", "declarations", "go_module_missing", "declare_go_module", goRepos[0].repo))
 			warnings = append(warnings, "graph omitted Go: no explicit go.mod entrypoint")
 		} else {
 			requestRoot := root
-			if project.Project.Kind != model.WorkspaceKindContainer {
+			if project.Project.Kind != model.WorkspaceKindContainer || explicitSelection != nil {
 				requestRoot = goRepos[0].root
 			}
 			batch, observeErr := ObserveGoGraph(ctx, GoGraphObservationRequest{Root: requestRoot, RepositoryIdentity: identity, ProjectOrModule: module})
@@ -128,7 +161,7 @@ func ObserveGraph(ctx context.Context, root string, project model.ProjectFile, o
 				return nil, omissions, warnings, fmt.Errorf("go graph observation failed: %w", observeErr)
 			}
 			if err := batch.ReadyForStaging(); err != nil {
-				return nil, omissions, warnings, fmt.Errorf("go graph observation is not stageable: %w (%s)", err, graphObservationBatchDiagnostics(batch))
+				return nil, omissions, warnings, wrapGoObservationStageError(batch, err)
 			}
 			batches = append(batches, batch)
 		}
@@ -291,6 +324,164 @@ type graphGoRepo struct {
 	root string
 }
 
+type graphExplicitSelection struct {
+	Repo       model.WorkspaceRepo
+	RepoRoot   string
+	Entrypoint model.WorkspaceEntrypoint
+	Backend    string
+}
+
+func resolveGraphExplicitSelection(root string, project model.ProjectFile, selector string) (graphExplicitSelection, error) {
+	entrypoint, found := workspace.FindEntrypoint(project, selector)
+	if !found {
+		workspacePath, safe := graphSafeExplicitPath(root, selector)
+		if !safe {
+			matches := make([]string, 0, len(project.Repos))
+			for _, candidateRepo := range project.Repos {
+				localPath, localSafe := graphSafeExplicitPath(filepath.Join(root, filepath.FromSlash(normalizeRepoRoot(candidateRepo.Root))), selector)
+				if !localSafe {
+					continue
+				}
+				matches = append(matches, filepath.ToSlash(filepath.Join(filepath.FromSlash(normalizeRepoRoot(candidateRepo.Root)), filepath.FromSlash(localPath))))
+			}
+			if len(matches) == 1 {
+				workspacePath, safe = matches[0], true
+			} else if len(matches) > 1 {
+				return graphExplicitSelection{}, &model.GraphObservationError{Code: "GPH_ENTRYPOINT_AMBIGUOUS", Field: "entrypoint", Message: "explicit repository-relative entrypoint matches multiple repositories; use a declared entrypoint ID or workspace-relative path"}
+			}
+		}
+		if !safe {
+			return graphExplicitSelection{}, &model.GraphObservationError{Code: "GPH_ENTRYPOINT_NOT_FOUND", Field: "entrypoint", Message: "explicit entrypoint was not found; select a declared entrypoint or an existing safe repository-relative Go/C# path"}
+		}
+		repo, repoFound := workspace.FindRepoByFile(project, root, workspacePath)
+		if !repoFound {
+			return graphExplicitSelection{}, &model.GraphObservationError{Code: "GPH_ENTRYPOINT_REPO_NOT_FOUND", Field: "entrypoint", Message: "explicit entrypoint is outside every selected repository"}
+		}
+		kind := model.EntrypointKindProject
+		if strings.EqualFold(filepath.Ext(filepath.FromSlash(workspacePath)), ".sln") {
+			kind = model.EntrypointKindSolution
+		}
+		entrypoint = model.WorkspaceEntrypoint{ID: workspacePath, RepoID: repo.ID, Path: workspacePath, Kind: kind}
+	}
+
+	repo, repoFound := workspace.FindRepo(project, entrypoint.RepoID)
+	if !repoFound {
+		return graphExplicitSelection{}, &model.GraphObservationError{Code: "GPH_ENTRYPOINT_REPO_NOT_FOUND", Field: "entrypoint", Message: "explicit entrypoint references an undeclared repository"}
+	}
+	repoRoot := filepath.Join(root, filepath.FromSlash(normalizeRepoRoot(repo.Root)))
+	if entrypoint.Kind == model.EntrypointKindSolution || strings.EqualFold(filepath.Ext(filepath.FromSlash(entrypoint.Path)), ".sln") {
+		return graphExplicitSelection{}, &model.GraphObservationError{Code: "GPH_ENTRYPOINT_SOLUTION_UNAVAILABLE", Field: "entrypoint", Message: "explicit C# solution selection is unavailable; select a declared or safe repository-relative .csproj"}
+	}
+	if !graphExplicitPathBelongsToRepo(root, repoRoot, entrypoint.Path) {
+		return graphExplicitSelection{}, &model.GraphObservationError{Code: "GPH_ENTRYPOINT_REPO_MISMATCH", Field: "entrypoint", Message: "explicit entrypoint path does not physically belong to its declared repository"}
+	}
+	backend := graphEntrypointBackend(entrypoint)
+	if backend == "" {
+		return graphExplicitSelection{}, &model.GraphObservationError{Code: "GPH_ENTRYPOINT_UNSUPPORTED", Field: "entrypoint", Message: "explicit entrypoint is not a supported Go module or C# project; explicit solutions are unavailable"}
+	}
+	if backend == "go" && !hasLanguage(repo, "go") {
+		return graphExplicitSelection{}, &model.GraphObservationError{Code: "GPH_ENTRYPOINT_LANGUAGE_MISMATCH", Field: "entrypoint", Message: "explicit Go entrypoint belongs to a repository without Go support"}
+	}
+	if backend == "roslyn" && !hasLanguage(repo, "csharp") && !hasLanguage(repo, "cs") && !hasLanguage(repo, "dotnet") {
+		return graphExplicitSelection{}, &model.GraphObservationError{Code: "GPH_ENTRYPOINT_LANGUAGE_MISMATCH", Field: "entrypoint", Message: "explicit C# entrypoint belongs to a repository without C# support"}
+	}
+	return graphExplicitSelection{Repo: repo, RepoRoot: repoRoot, Entrypoint: entrypoint, Backend: backend}, nil
+}
+
+func graphExplicitPathBelongsToRepo(workspaceRoot, repoRoot, configured string) bool {
+	workspacePath, safe := graphSafeExplicitPath(workspaceRoot, configured)
+	if !safe {
+		return false
+	}
+	workspaceRootReal, err := filepath.EvalSymlinks(workspaceRoot)
+	if err != nil {
+		return false
+	}
+	repoRootReal, err := filepath.EvalSymlinks(repoRoot)
+	if err != nil {
+		return false
+	}
+	candidateReal, err := filepath.EvalSymlinks(filepath.Join(workspaceRoot, filepath.FromSlash(workspacePath)))
+	if err != nil {
+		return false
+	}
+	if _, err := filepath.Rel(workspaceRootReal, candidateReal); err != nil {
+		return false
+	}
+	relative, err := filepath.Rel(repoRootReal, candidateReal)
+	return err == nil && relative != ".." && !strings.HasPrefix(relative, ".."+string(filepath.Separator)) && !filepath.IsAbs(relative)
+}
+
+func graphSafeExplicitPath(root, configured string) (string, bool) {
+	configured = strings.TrimSpace(configured)
+	driveRelative := len(configured) >= 2 &&
+		((configured[0] >= 'A' && configured[0] <= 'Z') || (configured[0] >= 'a' && configured[0] <= 'z')) &&
+		configured[1] == ':' && (len(configured) == 2 || (configured[2] != '/' && configured[2] != '\\'))
+	if configured == "" || strings.ContainsRune(configured, 0) || strings.Contains(configured, "\\") || filepath.IsAbs(configured) || driveRelative {
+		return "", false
+	}
+	for _, part := range strings.Split(configured, "/") {
+		if part == ".." {
+			return "", false
+		}
+	}
+	clean := filepath.Clean(configured)
+	if clean == "." || clean == ".." || strings.HasPrefix(clean, ".."+string(filepath.Separator)) {
+		return "", false
+	}
+	rootAbs, err := filepath.Abs(root)
+	if err != nil {
+		return "", false
+	}
+	candidate := filepath.Join(rootAbs, clean)
+	relative, err := filepath.Rel(rootAbs, candidate)
+	if err != nil || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) || filepath.IsAbs(relative) {
+		return "", false
+	}
+	rootReal, err := filepath.EvalSymlinks(rootAbs)
+	if err != nil {
+		return "", false
+	}
+	candidateReal, err := filepath.EvalSymlinks(candidate)
+	if err != nil {
+		return "", false
+	}
+	relativeReal, err := filepath.Rel(rootReal, candidateReal)
+	if err != nil || relativeReal == ".." || strings.HasPrefix(relativeReal, ".."+string(filepath.Separator)) || filepath.IsAbs(relativeReal) {
+		return "", false
+	}
+	info, err := os.Lstat(candidate)
+	if err != nil || !info.Mode().IsRegular() {
+		return "", false
+	}
+	ext := strings.ToLower(filepath.Ext(clean))
+	if ext != ".csproj" && ext != ".sln" && strings.ToLower(filepath.Base(clean)) != "go.mod" {
+		return "", false
+	}
+	return filepath.ToSlash(clean), true
+}
+
+func graphEntrypointBackend(entrypoint model.WorkspaceEntrypoint) string {
+	path := filepath.ToSlash(strings.TrimSpace(entrypoint.Path))
+	if strings.EqualFold(filepath.Base(filepath.FromSlash(path)), "go.mod") {
+		if entrypoint.Kind != model.EntrypointKindProject {
+			return ""
+		}
+		return "go"
+	}
+	if strings.EqualFold(filepath.Ext(filepath.FromSlash(path)), ".csproj") {
+		return "roslyn"
+	}
+	return ""
+}
+
+func graphTargetsForExplicitSelection(root string, selection graphExplicitSelection) []graphObservationTarget {
+	if selection.Backend != "roslyn" {
+		return nil
+	}
+	return graphCSharpProjects(root, selection.Repo, []model.WorkspaceEntrypoint{selection.Entrypoint})
+}
+
 func graphGoRepos(root string, project model.ProjectFile, targets []graphObservationTarget) []graphGoRepo {
 	if project.Project.Kind != model.WorkspaceKindContainer {
 		selected := strings.TrimSpace(project.Project.DefaultRepo)
@@ -324,8 +515,33 @@ func graphGoRepos(root string, project model.ProjectFile, targets []graphObserva
 	}
 	return result
 }
-func graphGoModuleSelector(workspaceRoot string, project model.ProjectFile, repo model.WorkspaceRepo) (string, bool) {
+func graphGoModuleSelector(workspaceRoot string, project model.ProjectFile, repo model.WorkspaceRepo, explicit *model.WorkspaceEntrypoint) (string, bool) {
 	configured := strings.TrimSpace(repo.DefaultEntrypoint)
+	if explicit != nil {
+		workspacePath, safe := graphSafeRelativeModule(workspaceRoot, explicit.Path)
+		if !safe {
+			return "", false
+		}
+		repoRoot := filepath.Join(workspaceRoot, filepath.FromSlash(normalizeRepoRoot(repo.Root)))
+		repoRootAbs, err := filepath.Abs(repoRoot)
+		if err != nil {
+			return "", false
+		}
+		workspaceRootAbs, err := filepath.Abs(workspaceRoot)
+		if err != nil {
+			return "", false
+		}
+		modulePath := filepath.Join(workspaceRootAbs, filepath.FromSlash(workspacePath))
+		localPath, err := filepath.Rel(repoRootAbs, modulePath)
+		if err != nil || localPath == ".." || strings.HasPrefix(localPath, ".."+string(filepath.Separator)) || filepath.IsAbs(localPath) {
+			return "", false
+		}
+		localPath = filepath.ToSlash(filepath.Clean(localPath))
+		if _, safe := graphSafeRelativeModule(repoRoot, localPath); !safe {
+			return "", false
+		}
+		return localPath, true
+	}
 	if configured == "" {
 		return "", true
 	}

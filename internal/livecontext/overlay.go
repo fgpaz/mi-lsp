@@ -230,10 +230,10 @@ func buildOverlay(ctx context.Context, req OverlayRequest) (model.WikiCodeOverla
 	}
 
 	overlay := model.WikiCodeOverlay{
-		Mode:      model.OverlayModeRAMOnly,
-		Status:    model.OverlayStatusUnknown,
-		Scope:     scope,
-		Freshness: model.WikiCodeFreshness{DocsManifest: model.FreshnessUnknown, Bindings: model.FreshnessUnknown, Catalog: model.FreshnessUnknown, Graph: model.FreshnessUnknown, Authority: model.FreshnessUnknown},
+		Mode:          model.OverlayModeRAMOnly,
+		Status:        model.OverlayStatusUnknown,
+		Scope:         scope,
+		Freshness:     model.WikiCodeFreshness{DocsManifest: model.FreshnessUnknown, Bindings: model.FreshnessUnknown, Catalog: model.FreshnessUnknown, Graph: model.FreshnessUnknown, Authority: model.FreshnessUnknown},
 		ChangedInputs: make([]model.WikiCodeChangedInput, 0),
 		Additions:     make([]model.DocArtifactBinding, 0),
 		Tombstones:    make([]model.BindingTombstone, 0),
@@ -322,7 +322,7 @@ func buildOverlay(ctx context.Context, req OverlayRequest) (model.WikiCodeOverla
 			appendOmission(&overlay, model.WikiCodeOmission{Code: model.OmissionUnknownDocument, Reason: "exact wiki scope could not be reconciled"})
 		}
 	} else {
-		if err := buildReverseOverlay(ctx, absRoot, req, &scope, &overlay, &state, maxDocs, maxBytes); err != nil {
+		if err := buildReverseOverlay(ctx, absRoot, req, &scope, &overlay, &state, db, maxDocs, maxBytes); err != nil {
 			if errors.Is(err, ErrInvalidScope) || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 				return model.WikiCodeOverlay{}, err
 			}
@@ -727,7 +727,7 @@ func buildExactOverlay(ctx context.Context, root string, req OverlayRequest, sco
 	return nil
 }
 
-func buildReverseOverlay(ctx context.Context, root string, req OverlayRequest, scope *model.WikiCodeScope, overlay *model.WikiCodeOverlay, state *overlayState, maxDocs int, maxBytes int64) error {
+func buildReverseOverlay(ctx context.Context, root string, req OverlayRequest, scope *model.WikiCodeScope, overlay *model.WikiCodeOverlay, state *overlayState, db *sql.DB, maxDocs int, maxBytes int64) error {
 	if _, _, err := SafeResolveTarget(root, scope.TargetPath); err != nil {
 		appendOmission(overlay, model.WikiCodeOmission{Code: model.OmissionUnsafeTarget, TargetPath: scope.TargetPath, Reason: "reverse target is unsafe"})
 		return nil
@@ -738,6 +738,10 @@ func buildReverseOverlay(ctx context.Context, root string, req OverlayRequest, s
 	}
 	state.manifestReady = true
 	overlay.Cost.MetadataChecked += len(entries)
+	// Prefer exact active canonical owners and bounded cold candidates before
+	// applying the reverse document bound. Candidate ranking only controls reads;
+	// the resolver still requires an exact live binding before returning an owner.
+	entries = prioritizeReverseManifestEntries(ctx, db, entries, *scope, state)
 	if len(entries) > maxDocs && maxDocs > 0 {
 		// Metadata reconciliation is intentionally complete; only changed body
 		// reads are bounded. The deterministic suffix is represented as a typed
@@ -785,6 +789,181 @@ func buildReverseOverlay(ctx context.Context, root string, req OverlayRequest, s
 		}
 	}
 	return nil
+}
+
+func prioritizeReverseManifestEntries(ctx context.Context, db *sql.DB, entries []manifestEntry, scope model.WikiCodeScope, state *overlayState) []manifestEntry {
+	if len(entries) < 2 || state == nil {
+		return entries
+	}
+	exactOwners := make(map[string]struct{})
+	for _, binding := range state.bindings {
+		if reverseBindingOwnerMatches(binding, scope) {
+			exactOwners[normalizePublicPath(binding.DocPath)] = struct{}{}
+		}
+	}
+	ftsOwners := make(map[string]float64)
+	for _, candidate := range reverseColdCandidateOwners(ctx, db, entries, scope, state) {
+		ftsOwners[candidate.path] = candidate.score
+	}
+	metadataOwners := make(map[string]struct{})
+	for _, path := range reverseMetadataCandidateOwners(entries, state) {
+		metadataOwners[path] = struct{}{}
+	}
+
+	// Assign every manifest path to exactly one ranked class. A lower class
+	// cannot union with a higher class for the same path, and unknown paths stay
+	// in the bounded remainder rather than being treated as new owners.
+	type rankedEntry struct {
+		entry manifestEntry
+		class int
+		score float64
+	}
+	ranked := make(map[string]rankedEntry, len(entries))
+	for _, entry := range entries {
+		path := normalizePublicPath(entry.Path)
+		class := 4 // unknown/unclassified/rest
+		if _, ok := exactOwners[path]; ok {
+			class = 1
+		} else if score, ok := ftsOwners[path]; ok {
+			class = 2
+			candidate, exists := ranked[path]
+			if !exists || class < candidate.class {
+				ranked[path] = rankedEntry{entry: entry, class: class, score: score}
+			}
+			continue
+		} else if _, ok := metadataOwners[path]; ok {
+			class = 3
+		}
+		candidate, exists := ranked[path]
+		if !exists || class < candidate.class {
+			ranked[path] = rankedEntry{entry: entry, class: class}
+		}
+	}
+	ordered := make([]rankedEntry, 0, len(ranked))
+	for _, candidate := range ranked {
+		ordered = append(ordered, candidate)
+	}
+	sort.SliceStable(ordered, func(i, j int) bool {
+		if ordered[i].class != ordered[j].class {
+			return ordered[i].class < ordered[j].class
+		}
+		if ordered[i].class == 2 && ordered[i].score != ordered[j].score {
+			return ordered[i].score > ordered[j].score
+		}
+		return normalizePublicPath(ordered[i].entry.Path) < normalizePublicPath(ordered[j].entry.Path)
+	})
+	result := make([]manifestEntry, 0, len(ordered))
+	for _, candidate := range ordered {
+		result = append(result, candidate.entry)
+	}
+	return result
+}
+
+func reverseMetadataCandidateOwners(entries []manifestEntry, state *overlayState) []string {
+	if state == nil {
+		return nil
+	}
+	owners := make([]string, 0)
+	for _, entry := range entries {
+		if reverseEntryIsNewOrChanged(entry, state) {
+			owners = append(owners, normalizePublicPath(entry.Path))
+		}
+	}
+	return owners
+}
+
+func reverseEntryIsNewOrChanged(entry manifestEntry, state *overlayState) bool {
+	prior, known := state.states[entry.Path]
+	if !known {
+		return false
+	}
+	return prior.Size != entry.Size || prior.MtimeNsec != entry.MtimeNsec ||
+		prior.ParserVersion != model.ParserVersion ||
+		prior.AuthorityConfigHash != store.AuthorityConfigDigestForProfile(state.profile, nil)
+}
+
+type reverseFTSCandidate struct {
+	path  string
+	score float64
+}
+
+func reverseColdCandidateOwners(ctx context.Context, db *sql.DB, entries []manifestEntry, scope model.WikiCodeScope, state *overlayState) []reverseFTSCandidate {
+	if db == nil || strings.TrimSpace(scope.TargetPath) == "" || state == nil {
+		return nil
+	}
+	query := strings.ReplaceAll(normalizePublicPath(scope.TargetPath), "/", " ")
+	if query == "" {
+		return nil
+	}
+	matches, scores, err := store.FTSSearchDocs(ctx, db, query, 64)
+	if err != nil {
+		return nil
+	}
+	manifest := make(map[string]manifestEntry, len(entries))
+	for _, entry := range entries {
+		manifest[normalizePublicPath(entry.Path)] = entry
+	}
+	owners := make([]reverseFTSCandidate, 0, len(matches))
+	seen := make(map[string]struct{}, len(matches))
+	for _, doc := range matches {
+		path := normalizePublicPath(doc.Path)
+		_, ok := manifest[path]
+		if !ok || !model.CanonicalWikiAuthority(path) {
+			continue
+		}
+		if _, ok := seen[path]; ok {
+			continue
+		}
+		seen[path] = struct{}{}
+		owners = append(owners, reverseFTSCandidate{path: path, score: scores[path]})
+	}
+	sort.SliceStable(owners, func(i, j int) bool {
+		if owners[i].score != owners[j].score {
+			return owners[i].score > owners[j].score
+		}
+		return owners[i].path < owners[j].path
+	})
+	return owners
+}
+
+// reverseBindingOwnerMatches proves only a safe target-path owner candidate;
+// symbol identity remains the service resolver's responsibility.
+func reverseBindingOwnerMatches(binding model.DocArtifactBinding, scope model.WikiCodeScope) bool {
+	if !model.CanonicalWikiAuthority(binding.DocPath) || isRetiredBindingPath(binding.DocPath) {
+		return false
+	}
+	if binding.TargetPath != normalizePublicPath(scope.TargetPath) {
+		return false
+	}
+	if binding.BindingStatus != "" && !strings.EqualFold(strings.TrimSpace(binding.BindingStatus), model.BindingStatusExact) {
+		return false
+	}
+	if binding.DocLifecycle != "" && !strings.EqualFold(strings.TrimSpace(binding.DocLifecycle), model.DocLifecycleActive) {
+		return false
+	}
+	origin := strings.TrimSpace(binding.AuthoringOrigin)
+	if origin != "" && !strings.EqualFold(origin, model.AuthoringOriginCanonical) && !strings.EqualFold(origin, model.AuthoringOriginLegacy) {
+		return false
+	}
+	return reverseBindingRelationAllowed(binding.Relation) && reverseBindingTargetKindAllowed(binding.TargetKind)
+}
+
+func reverseBindingRelationAllowed(relation string) bool {
+	switch strings.ToLower(strings.TrimSpace(relation)) {
+	case model.RelationImplements, model.RelationTests, model.RelationConfigures, model.RelationOperates:
+		return true
+	default:
+		return false
+	}
+}
+
+func reverseBindingTargetKindAllowed(kind string) bool {
+	switch strings.ToLower(strings.TrimSpace(kind)) {
+	case model.TargetKindFile, model.TargetKindSymbol, model.TargetKindTest, model.TargetKindConfig:
+		return true
+	default:
+		return false
+	}
 }
 
 func reverseEntryNeedsRead(entry manifestEntry, state *overlayState) bool {

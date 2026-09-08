@@ -1,3 +1,7 @@
+---
+doc_id: TECH-DOC-ROUTER
+---
+
 # TECH-DOC-ROUTER
 
 ```yaml

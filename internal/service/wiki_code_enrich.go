@@ -84,7 +84,7 @@ func (a *App) enrichWikiCodeContext(ctx context.Context, request model.CommandRe
 		return env
 	}
 
-	codeContext, err := BuildWikiCodeContext(ctx, db, primary, budget)
+	codeContext, err := buildWikiCodeContextWithDocs(ctx, db, primary, budget, docs)
 	if err != nil {
 		env.Warnings = appendStringIfMissing(env.Warnings, "wiki-code context unavailable: "+err.Error())
 		return env

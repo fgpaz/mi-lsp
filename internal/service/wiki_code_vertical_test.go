@@ -56,7 +56,7 @@ func TestWikiCodeVerticalAcceptanceCaseInventoryIsClosed(t *testing.T) {
 }
 
 func TestWikiCodeVerticalFixtureBaselineReverseAndModernJavaScript(t *testing.T) {
-	root, app := newWikiCodeVerticalFixture(t)
+	root, app := newWikiCodeVerticalFixtureWithGovernedSource(t)
 	ctx := context.Background()
 
 	forward := wikiCodeVerticalContext(t, app, root, livecontext.WikiCodeScope{
@@ -88,7 +88,38 @@ func TestWikiCodeVerticalFixtureBaselineReverseAndModernJavaScript(t *testing.T)
 		Payload:   map[string]any{"rf": "RF-DEMO-001"},
 	})
 	if err != nil || traceEnv.WikiCodeContext == nil || len(wikiCodeVerticalImplementations(traceEnv.WikiCodeContext.DirectCode)) != 1 {
-		t.Fatalf("integrated nav.wiki.trace context=%#v err=%v", traceEnv.WikiCodeContext, err)
+		t.Fatalf("integrated nav.wiki.trace context=%#v err=%v envelope=%s", traceEnv.WikiCodeContext, err, wikiCodeVerticalEnvelopeDiagnostics(traceEnv))
+	}
+
+	routeEnv, err := app.Execute(ctx, model.CommandRequest{
+		Operation: "nav.route",
+		Context:   model.QueryOptions{Workspace: root, MaxItems: 32, TokenBudget: 20_000},
+		Payload:   map[string]any{"task": "RF-DEMO-001"},
+	})
+	if err != nil || routeEnv.WikiCodeContext == nil || len(wikiCodeVerticalImplementations(routeEnv.WikiCodeContext.DirectCode)) != 1 {
+		t.Fatalf("integrated nav.route context=%#v err=%v envelope=%s", routeEnv.WikiCodeContext, err, wikiCodeVerticalEnvelopeDiagnostics(routeEnv))
+	}
+
+	askEnv, err := app.Execute(ctx, model.CommandRequest{
+		Operation: "nav.ask",
+		Context:   model.QueryOptions{Workspace: root, MaxItems: 32, TokenBudget: 20_000},
+		Payload:   map[string]any{"question": "RF-DEMO-001"},
+	})
+	if err != nil || askEnv.WikiCodeContext == nil || len(wikiCodeVerticalImplementations(askEnv.WikiCodeContext.DirectCode)) != 1 {
+		t.Fatalf("integrated nav.ask context=%#v err=%v envelope=%s", askEnv.WikiCodeContext, err, wikiCodeVerticalEnvelopeDiagnostics(askEnv))
+	}
+
+	contextEnv, err := app.Execute(ctx, model.CommandRequest{
+		Operation: "nav.context",
+		Context:   model.QueryOptions{Workspace: root, MaxItems: 32, TokenBudget: 20_000, BackendHint: "catalog"},
+		Payload:   map[string]any{"file": wikiCodeVerticalServicePath, "line": 1},
+	})
+	if err != nil || contextEnv.WikiCodeContext == nil || !containsWikiCodeDocID(contextEnv.WikiCodeContext.WikiContext, "RF-DEMO-001") {
+		t.Fatalf("integrated nav.context reverse owner=%#v err=%v envelope=%s", contextEnv.WikiCodeContext, err, wikiCodeVerticalEnvelopeDiagnostics(contextEnv))
+	}
+	contextItems, ok := contextEnv.Items.([]map[string]any)
+	if !ok || len(contextItems) != 1 || contextItems[0]["qualified_name"] != wikiCodeVerticalServicePath+"::"+wikiCodeVerticalServiceSymbol {
+		t.Fatalf("integrated nav.context catalog identity=%#v, want %s::%s", contextEnv.Items, wikiCodeVerticalServicePath, wikiCodeVerticalServiceSymbol)
 	}
 
 	db, err := store.OpenReadOnlyExisting(root, store.WorkspaceDBPath(root))
@@ -156,8 +187,8 @@ func TestWikiCodeVerticalFixtureBaselineReverseAndModernJavaScript(t *testing.T)
 	for _, item := range findItems {
 		if item.FilePath == wikiCodeVerticalServicePath && item.Name == wikiCodeVerticalServiceSymbol {
 			foundMJS = true
-			if item.Language != "typescript" {
-				t.Fatalf("mjs symbol language=%q, want catalog extractor language typescript", item.Language)
+			if item.Language != "javascript" {
+				t.Fatalf("mjs symbol language=%q, want catalog extractor language javascript", item.Language)
 			}
 		}
 	}
@@ -180,6 +211,177 @@ func TestWikiCodeVerticalFixtureBaselineReverseAndModernJavaScript(t *testing.T)
 	if relatedEnv.WikiCodeContext == nil || !containsWikiCodeDocID(relatedEnv.WikiCodeContext.WikiContext, "RF-DEMO-001") {
 		t.Fatalf("nav.related wiki context=%#v, want RF-DEMO-001", relatedEnv.WikiCodeContext)
 	}
+}
+
+func TestWikiCodeVerticalColdReverseOwnerBeyondBudgetUsesOverlayAndResolver(t *testing.T) {
+	root := newWikiCodeVerticalColdReverseFixture(t)
+	targetPath := "src/cold/owner.mjs"
+	targetSymbol := targetPath + "::runCold"
+	ownerPath := ".docs/wiki/04_RF/RF-ZZZ-COLD-OWNER.md"
+	ownerFile := filepath.Join(root, filepath.FromSlash(ownerPath))
+	updated := strings.Join([]string{
+		"# Cold owner",
+		"wiki_source_protocol: SDD-WIKI-SOURCE-v1",
+		"id: RF-ZZZ-COLD-OWNER",
+		"",
+		"```toon",
+		"block_id: RF-ZZZ-COLD-OWNER.bindings",
+		"artifact_bindings:",
+		"  - relation: implements",
+		"    target_kind: symbol",
+		"    target_path: " + targetPath,
+		"    target_symbol: " + targetSymbol,
+		"```",
+		"",
+	}, "\n")
+	writeWikiCodeVerticalFile(t, ownerFile, updated)
+
+	db := mustOpenVerticalReadOnlyDB(t, root)
+	defer db.Close()
+	scope := livecontext.WikiCodeScope{Kind: model.ScopeReverseCode, TargetPath: targetPath, TargetSymbol: targetSymbol}
+	overlay, err := livecontext.BuildOverlay(context.Background(), livecontext.OverlayRequest{
+		WorkspaceRoot: root,
+		DB:            db,
+		Scope:         scope,
+		MaxDocuments:  50,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	foundAddition := false
+	var ownerBinding model.DocArtifactBinding
+	for _, binding := range overlay.Additions {
+		if binding.DocPath == ownerPath && binding.TargetPath == targetPath && binding.TargetSymbol == targetSymbol {
+			foundAddition = true
+			ownerBinding = binding
+		}
+	}
+	if !foundAddition {
+		t.Fatalf("cold owner was not promoted into bounded overlay additions=%#v omissions=%#v", overlay.Additions, overlay.Omissions)
+	}
+	resolved, err := ResolveWikiCodeContext(context.Background(), root, db, WikiCodeResolveRequest{
+		Direction: model.WikiCodeDirectionCodeToWiki, WorkspaceRoot: root,
+		TargetPath: targetPath, TargetSymbol: targetSymbol, Limit: 20,
+	}, overlay)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ownerMatches := 0
+	for _, item := range resolved.WikiContext {
+		if item.DocID != "RF-ZZZ-COLD-OWNER" {
+			continue
+		}
+		ownerMatches++
+		if ownerBinding.BindingRef == "" || item.BindingRef != ownerBinding.BindingRef || item.Path != ownerPath || item.Status != model.WikiCodeStatusResolvedSymbol {
+			t.Fatalf("cold owner resolution=%#v, want fixture binding ref %q, path %q and resolved_symbol status", item, ownerBinding.BindingRef, ownerPath)
+		}
+	}
+	if ownerMatches != 1 {
+		t.Fatalf("cold owner matches=%d, want exactly one owner after overlay=%#v", ownerMatches, resolved)
+	}
+}
+
+func TestWikiCodeVerticalNewCanonicalOwnerBeyondBudgetRemainsTypedUnknown(t *testing.T) {
+	root := newWikiCodeVerticalColdReverseFixture(t)
+	targetPath := "src/cold/owner.mjs"
+	targetSymbol := targetPath + "::runCold"
+	ownerPath := ".docs/wiki/04_RF/RF-ZZZ-COLD-NEW.md"
+	writeWikiCodeVerticalFile(t, filepath.Join(root, filepath.FromSlash(".docs/wiki/04_RF/RF-ZZZ-COLD-WRONG.md")), strings.Join([]string{
+		"# Wrong cold owner",
+		"wiki_source_protocol: SDD-WIKI-SOURCE-v1",
+		"id: RF-ZZZ-COLD-WRONG",
+		"",
+		"```toon",
+		"block_id: RF-ZZZ-COLD-WRONG.bindings",
+		"artifact_bindings:",
+		"  - relation: implements",
+		"    target_kind: symbol",
+		"    target_path: src/cold/other.mjs",
+		"    target_symbol: " + targetSymbol,
+		"```",
+		"",
+	}, "\n"))
+	writeWikiCodeVerticalFile(t, filepath.Join(root, filepath.FromSlash(ownerPath)), strings.Join([]string{
+		"# New cold owner",
+		"wiki_source_protocol: SDD-WIKI-SOURCE-v1",
+		"id: RF-ZZZ-COLD-NEW",
+		"",
+		"```toon",
+		"block_id: RF-ZZZ-COLD-NEW.bindings",
+		"artifact_bindings:",
+		"  - relation: implements",
+		"    target_kind: symbol",
+		"    target_path: " + targetPath,
+		"    target_symbol: " + targetSymbol,
+		"```",
+		"",
+	}, "\n"))
+	db := mustOpenVerticalReadOnlyDB(t, root)
+	defer db.Close()
+	scope := livecontext.WikiCodeScope{Kind: model.ScopeReverseCode, TargetPath: targetPath, TargetSymbol: targetSymbol}
+	overlay, err := livecontext.BuildOverlay(context.Background(), livecontext.OverlayRequest{WorkspaceRoot: root, DB: db, Scope: scope, MaxDocuments: 50})
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, binding := range overlay.Additions {
+		if binding.DocPath == ownerPath && binding.TargetPath == targetPath && binding.TargetSymbol == targetSymbol {
+			found = true
+		}
+	}
+	if found {
+		t.Fatalf("unknown new owner was promoted without bounded proof additions=%#v", overlay.Additions)
+	}
+	unknownOwner := false
+	for _, omission := range overlay.Omissions {
+		if omission.Path == ownerPath && omission.Code == model.OmissionUnknownDocument {
+			unknownOwner = true
+		}
+	}
+	if !unknownOwner {
+		t.Fatalf("new owner was not reported as typed unknown omissions=%#v", overlay.Omissions)
+	}
+	if overlay.Cost.FilesParsed > 50 || overlay.Cost.BytesRead > livecontext.DefaultOverlayMaxBytes {
+		t.Fatalf("metadata candidate lane exceeded bounds cost=%#v", overlay.Cost)
+	}
+	resolved, err := ResolveWikiCodeContext(context.Background(), root, db, WikiCodeResolveRequest{Direction: model.WikiCodeDirectionCodeToWiki, WorkspaceRoot: root, TargetPath: targetPath, TargetSymbol: targetSymbol, Limit: 20}, overlay)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if containsWikiCodeDocID(resolved.WikiContext, "RF-ZZZ-COLD-NEW") || containsWikiCodeDocID(resolved.WikiContext, "RF-ZZZ-COLD-WRONG") {
+		t.Fatalf("unknown/wrong-target owners=%#v", resolved.WikiContext)
+	}
+}
+
+func newWikiCodeVerticalColdReverseFixture(t *testing.T) string {
+	t.Helper()
+	_, thisFile, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("runtime.Caller failed")
+	}
+	repoRoot := filepath.Clean(filepath.Join(filepath.Dir(thisFile), "..", ".."))
+	source := filepath.Join(repoRoot, "testdata", "wiki-code-bidirectional")
+	root := t.TempDir()
+	if err := copyWikiCodeVerticalTree(source, root); err != nil {
+		t.Fatalf("copy T3 fixture: %v", err)
+	}
+	writeWikiCodeVerticalFile(t, filepath.Join(root, filepath.FromSlash("src/cold/owner.mjs")), "export function runCold() { return 1; }\n")
+	for index := 0; index < 60; index++ {
+		path := filepath.Join(root, filepath.FromSlash(fmt.Sprintf(".docs/wiki/04_RF/RF-%03d-COLD-PREFIX.md", index)))
+		writeWikiCodeVerticalFile(t, path, fmt.Sprintf("# Prefix %03d\nwiki_source_protocol: SDD-WIKI-SOURCE-v1\nid: RF-%03d-COLD-PREFIX\n\n", index, index))
+	}
+	writeWikiCodeVerticalFile(t, filepath.Join(root, filepath.FromSlash(".docs/wiki/04_RF/RF-ZZZ-COLD-OWNER.md")), "# Cold owner\nwiki_source_protocol: SDD-WIKI-SOURCE-v1\nid: RF-ZZZ-COLD-OWNER\n\nReferenced target src/cold/owner.mjs for the cold owner.\n")
+	project := model.ProjectFile{
+		Project: model.ProjectBlock{Name: "wiki-code-cold-reverse", Kind: model.WorkspaceKindSingle, DefaultRepo: "repo", Languages: []string{"javascript", "typescript"}},
+		Repos:   []model.WorkspaceRepo{{ID: "repo", Name: "repo", Root: ".", RepositoryIdentity: "https://example.com/wiki-code-cold-reverse", Languages: []string{"javascript", "typescript"}}},
+	}
+	if err := workspace.SaveProjectFile(root, project); err != nil {
+		t.Fatalf("SaveProjectFile: %v", err)
+	}
+	if _, err := indexer.IndexWorkspaceWithGeneration(context.Background(), root, true, "wiki-code-cold-reverse-baseline"); err != nil {
+		t.Fatalf("index cold reverse fixture: %v", err)
+	}
+	return root
 }
 
 func TestWikiCodeVerticalOverlayReadYourWritesAndFailClosedInputs(t *testing.T) {
@@ -335,9 +537,9 @@ func TestWikiCodeVerticalOverlayReadYourWritesAndFailClosedInputs(t *testing.T) 
 		}
 		concurrentDB := mustOpenVerticalReadOnlyDB(t, root)
 		concurrent, err := ResolveWikiCodeContext(context.Background(), root, concurrentDB, WikiCodeResolveRequest{
-			Direction:    model.WikiCodeDirectionWikiToCode,
+			Direction:     model.WikiCodeDirectionWikiToCode,
 			WorkspaceRoot: root,
-			DocPaths:     []string{wikiCodeVerticalRFPath},
+			DocPaths:      []string{wikiCodeVerticalRFPath},
 		}, concurrentOverlay)
 		concurrentDB.Close()
 		if err != nil {
@@ -457,10 +659,10 @@ func TestWikiCodeVerticalGraphV1CompatibilityAndMetrics(t *testing.T) {
 	}
 	db := mustOpenVerticalReadOnlyDB(t, root)
 	historical, err := ResolveWikiCodeContext(context.Background(), root, db, WikiCodeResolveRequest{
-		Direction:        model.WikiCodeDirectionCodeToWiki,
-		TargetPath:       wikiCodeVerticalServicePath,
-		TargetSymbol:     "legacyRun",
-		DocSelectors:     []string{"RF-DEMO-LEGACY"},
+		Direction:    model.WikiCodeDirectionCodeToWiki,
+		TargetPath:   wikiCodeVerticalServicePath,
+		TargetSymbol: "legacyRun",
+		DocSelectors: []string{"RF-DEMO-LEGACY"},
 	}, model.WikiCodeOverlay{})
 	if err != nil {
 		db.Close()
@@ -643,6 +845,14 @@ func TestWikiCodeVerticalDuplicateDocIDsAndGovernanceSelfEdgesFailClosed(t *test
 }
 
 func newWikiCodeVerticalFixture(t *testing.T) (string, *App) {
+	return newWikiCodeVerticalFixtureWithGovernance(t, false)
+}
+
+func newWikiCodeVerticalFixtureWithGovernedSource(t *testing.T) (string, *App) {
+	return newWikiCodeVerticalFixtureWithGovernance(t, true)
+}
+
+func newWikiCodeVerticalFixtureWithGovernance(t *testing.T, governedSource bool) (string, *App) {
 	t.Helper()
 	_, thisFile, _, ok := runtime.Caller(0)
 	if !ok {
@@ -654,9 +864,15 @@ func newWikiCodeVerticalFixture(t *testing.T) (string, *App) {
 	if err := copyWikiCodeVerticalTree(source, root); err != nil {
 		t.Fatalf("copy T3 fixture: %v", err)
 	}
+	if governedSource {
+		// Reuse the canonical test governance fixture only for the integrated
+		// command path; the baseline fixture intentionally remains invalid so
+		// negative governance cases keep their original behavior.
+		writeSpecBackendGovernanceFixture(t, root)
+	}
 	project := model.ProjectFile{
 		Project: model.ProjectBlock{Name: "wiki-code-vertical", Kind: model.WorkspaceKindSingle, DefaultRepo: "repo", Languages: []string{"javascript", "typescript"}},
-		Repos: []model.WorkspaceRepo{{ID: "repo", Name: "repo", Root: ".", RepositoryIdentity: "https://example.com/wiki-code-vertical", Languages: []string{"javascript", "typescript"}}},
+		Repos:   []model.WorkspaceRepo{{ID: "repo", Name: "repo", Root: ".", RepositoryIdentity: "https://example.com/wiki-code-vertical", Languages: []string{"javascript", "typescript"}}},
 	}
 	if err := workspace.SaveProjectFile(root, project); err != nil {
 		t.Fatalf("SaveProjectFile: %v", err)
@@ -665,6 +881,14 @@ func newWikiCodeVerticalFixture(t *testing.T) (string, *App) {
 		t.Fatalf("index T3 fixture: %v", err)
 	}
 	return root, New(root, nil)
+}
+
+func wikiCodeVerticalEnvelopeDiagnostics(env model.Envelope) string {
+	warnings := append([]string(nil), env.Warnings...)
+	if len(warnings) > 4 {
+		warnings = append(warnings[:4], "<more>")
+	}
+	return fmt.Sprintf("ok=%t backend=%q hint=%q warnings=%q", env.Ok, env.Backend, env.Hint, warnings)
 }
 
 func copyWikiCodeVerticalTree(source, destination string) error {

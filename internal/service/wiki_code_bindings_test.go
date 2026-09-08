@@ -15,6 +15,148 @@ import (
 	"github.com/fgpaz/mi-lsp/internal/store"
 )
 
+func TestBridgeSymbolsEquivalentNormalizesGoReceiverAndCompositeDeclarations(t *testing.T) {
+	for _, test := range []struct {
+		declared string
+		target   string
+		want     bool
+	}{
+		{declared: "(*App).intent; extractIntentSelector", target: "App.intent", want: true},
+		{declared: "App.intent", target: "App.intent", want: true},
+		{declared: "(*Other).intent", target: "App.intent", want: false},
+		{declared: "runDemo", target: "RunDemo", want: false},
+	} {
+		if got := bridgeSymbolsEquivalent(test.declared, test.target); got != test.want {
+			t.Fatalf("bridgeSymbolsEquivalent(%q, %q)=%v, want %v", test.declared, test.target, got, test.want)
+		}
+	}
+}
+
+func TestBridgeSymbolsEquivalentForPathUsesVerifiedQualifiedFileAlias(t *testing.T) {
+	const servicePath = "src/demo/service.mjs"
+	for _, test := range []struct {
+		name          string
+		bindingPath   string
+		targetPath    string
+		bindingSymbol string
+		targetSymbol  string
+		want          bool
+	}{
+		{name: "qualified producer identity", bindingPath: servicePath, targetPath: servicePath, bindingSymbol: "runDemo", targetSymbol: servicePath + "::runDemo", want: true},
+		{name: "both qualified identities", bindingPath: servicePath, targetPath: servicePath, bindingSymbol: servicePath + "::runDemo", targetSymbol: servicePath + "::runDemo", want: true},
+		{name: "qualified binding and short query", bindingPath: servicePath, targetPath: servicePath, bindingSymbol: servicePath + "::runDemo", targetSymbol: "runDemo", want: true},
+		{name: "short binding and qualified query", bindingPath: servicePath, targetPath: servicePath, bindingSymbol: "runDemo", targetSymbol: servicePath + "::runDemo", want: true},
+		{name: "qualified different file rejected", bindingPath: servicePath, targetPath: servicePath, bindingSymbol: "runDemo", targetSymbol: "src/other.mjs::runDemo", want: false},
+		{name: "unsafe qualified prefix rejected", bindingPath: servicePath, targetPath: servicePath, bindingSymbol: "runDemo", targetSymbol: "../" + servicePath + "::runDemo", want: false},
+		{name: "unsafe binding qualified prefix rejected", bindingPath: servicePath, targetPath: servicePath, bindingSymbol: "../" + servicePath + "::runDemo", targetSymbol: "runDemo", want: false},
+		{name: "basename qualified prefix rejected", bindingPath: servicePath, targetPath: servicePath, bindingSymbol: "runDemo", targetSymbol: "service.mjs::runDemo", want: false},
+		{name: "malformed binding qualified prefix rejected", bindingPath: servicePath, targetPath: servicePath, bindingSymbol: "::runDemo", targetSymbol: "runDemo", want: false},
+		{name: "malformed query qualified prefix rejected", bindingPath: servicePath, targetPath: servicePath, bindingSymbol: "runDemo", targetSymbol: servicePath + "::", want: false},
+		{name: "Go receiver remains supported", bindingPath: servicePath, targetPath: servicePath, bindingSymbol: "(*App).intent; extractIntentSelector", targetSymbol: "App.intent", want: true},
+		{name: "malformed pointer receiver on binding rejected", bindingPath: servicePath, targetPath: servicePath, bindingSymbol: "(*App.intent", targetSymbol: "App.intent", want: false},
+		{name: "malformed pointer receiver on query rejected", bindingPath: servicePath, targetPath: servicePath, bindingSymbol: "App.intent", targetSymbol: "(*App.intent", want: false},
+		{name: "malformed receiver boundary on binding rejected", bindingPath: servicePath, targetPath: servicePath, bindingSymbol: "App).intent", targetSymbol: "App).intent", want: false},
+		{name: "malformed receiver boundary on query rejected", bindingPath: servicePath, targetPath: servicePath, bindingSymbol: "App).intent", targetSymbol: "App).intent", want: false},
+		{name: "empty symbol preserves path-only scope", bindingPath: servicePath, targetPath: servicePath, bindingSymbol: "runDemo", targetSymbol: "", want: true},
+		{name: "different receiver rejected", bindingPath: servicePath, targetPath: servicePath, bindingSymbol: "(*Other).intent", targetSymbol: "App.intent", want: false},
+		{name: "extensionless qualified path", bindingPath: "docs/README", targetPath: "docs/README", bindingSymbol: "docs/README::Section", targetSymbol: "Section", want: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if got := bridgeSymbolsEquivalentForPath(test.bindingPath, test.targetPath, test.bindingSymbol, test.targetSymbol); got != test.want {
+				t.Fatalf("bridgeSymbolsEquivalentForPath(%q, %q, %q, %q)=%v, want %v", test.bindingPath, test.targetPath, test.bindingSymbol, test.targetSymbol, got, test.want)
+			}
+		})
+	}
+}
+
+func TestExactBridgeSymbolsUsesVerifiedCatalogFilePathAndReceiverIdentity(t *testing.T) {
+	items := []model.SymbolRecord{
+		{FilePath: "internal/service/intent.go", Name: "intent", QualifiedName: "internal/service/intent.go::App.intent"},
+		{FilePath: "internal/service/wiki_code_enrich.go", Name: "enrichWikiCodeContext", QualifiedName: "internal/service/wiki_code_enrich.go::App.enrichWikiCodeContext"},
+		{FilePath: "internal/service/other.go", Name: "intent", QualifiedName: "internal/service/other.go::App.intent"},
+		{FilePath: "internal/service/intent.go", Name: "intent", QualifiedName: "internal/service/intent.go::Other.intent"},
+		{FilePath: "internal/service/intent.go", Name: "intent", QualifiedName: "internal/service/intent.go::"},
+		{FilePath: "internal/service/intent.go", Name: "intent", QualifiedName: "internal/service/intent.go::   "},
+		{FilePath: "internal/service/intent.go", Name: "intent", QualifiedName: "internal/service/intent.go::App::intent"},
+		{FilePath: "internal/service/intent.go", Name: "intent", QualifiedName: "internal/service/other.go::App.intent"},
+		{FilePath: "internal/service/intent.go", Name: "intent", QualifiedName: "../intent.go::App.intent"},
+	}
+	matched := exactBridgeSymbols(items, "internal/service/intent.go", "(*App).intent")
+	if len(matched) != 1 || matched[0].FilePath != "internal/service/intent.go" || matched[0].QualifiedName != "internal/service/intent.go::App.intent" {
+		t.Fatalf("qualified receiver matches=%#v, want only verified intent.go App.intent", matched)
+	}
+	qualified := exactBridgeSymbols(items, "internal/service/intent.go", "internal/service/intent.go::(*App).intent")
+	if len(qualified) != 1 || qualified[0].FilePath != "internal/service/intent.go" {
+		t.Fatalf("qualified target did not match verified catalog identity=%#v", qualified)
+	}
+	enrich := exactBridgeSymbols(items, "internal/service/wiki_code_enrich.go", "(*App).enrichWikiCodeContext")
+	if len(enrich) != 1 || enrich[0].FilePath != "internal/service/wiki_code_enrich.go" {
+		t.Fatalf("enrichment receiver match=%#v", enrich)
+	}
+	shortMatches := exactBridgeSymbols(items, "internal/service/intent.go", "intent")
+	wantQualified := map[string]bool{
+		"internal/service/intent.go::App.intent":   true,
+		"internal/service/intent.go::Other.intent": true,
+	}
+	if len(shortMatches) != len(wantQualified) {
+		t.Fatalf("short-name matches=%#v, want both valid receivers to preserve ambiguity", shortMatches)
+	}
+	for _, item := range shortMatches {
+		if item.FilePath != "internal/service/intent.go" || !wantQualified[item.QualifiedName] {
+			t.Fatalf("unexpected or duplicate short-name candidate=%#v", item)
+		}
+		delete(wantQualified, item.QualifiedName)
+	}
+	malformedCatalog := exactBridgeSymbols(items[4:], "internal/service/intent.go", "intent")
+	if len(malformedCatalog) != 0 {
+		t.Fatalf("malformed qualified catalog identities fell back to Name=%#v", malformedCatalog)
+	}
+	inconsistent := exactBridgeSymbols(items, "internal/service/intent.go", "(*App).intent")
+	if len(inconsistent) != 1 || inconsistent[0].QualifiedName != "internal/service/intent.go::App.intent" {
+		t.Fatalf("inconsistent qualified rows were not rejected before Name fallback=%#v", inconsistent)
+	}
+}
+
+func TestWikiCodeResolverForwardResolvesQualifiedGoReceiverFromCatalog(t *testing.T) {
+	root := t.TempDir()
+	content := []byte("package service\n\ntype App struct{}\n\nfunc (a *App) intent() {}\n")
+	enrichContent := []byte("package service\n\nfunc (a *App) enrichWikiCodeContext() {}\n")
+	writeBridgeTestFile(t, root, "internal/service/intent.go", string(content))
+	writeBridgeTestFile(t, root, "internal/service/wiki_code_enrich.go", string(enrichContent))
+	db := bridgeTestDB(t, root)
+	docPath := ".docs/wiki/09_contratos/CT-NAV-INTENT.md"
+	doc := model.DocRecord{Path: docPath, DocID: "CT-NAV-INTENT", Layer: "09", Family: "contract"}
+	binding := bridgeBinding(docPath, "bindings", doc.DocID, model.RelationImplements, "internal/service/intent.go", "(*App).intent", model.TargetKindSymbol, 1)
+	enrichBinding := bridgeBinding(docPath, "bindings", doc.DocID, model.RelationImplements, "internal/service/wiki_code_enrich.go", "(*App).enrichWikiCodeContext", model.TargetKindSymbol, 2)
+	if err := store.ReplaceDocsWithSources(context.Background(), db, []model.DocRecord{doc}, nil, nil, nil, nil, []model.DocArtifactBinding{binding, enrichBinding}); err != nil {
+		t.Fatal(err)
+	}
+	project := model.ProjectFile{Project: model.ProjectBlock{Name: "bridge", Kind: model.WorkspaceKindSingle}, Repos: []model.WorkspaceRepo{{ID: "main", Name: "main", Root: "."}}}
+	file := model.FileRecord{FilePath: "internal/service/intent.go", RepoID: "main", Language: "go", ContentHash: bridgeSHA1(content)}
+	enrichFile := model.FileRecord{FilePath: "internal/service/wiki_code_enrich.go", RepoID: "main", Language: "go", ContentHash: bridgeSHA1(enrichContent)}
+	files := []model.FileRecord{file, enrichFile}
+	symbols := []model.SymbolRecord{
+		{FilePath: file.FilePath, RepoID: "main", Name: "intent", QualifiedName: "internal/service/intent.go::App.intent", Kind: "method", Language: "go", StartLine: 5, EndLine: 5, FileHash: file.ContentHash},
+		{FilePath: enrichFile.FilePath, RepoID: "main", Name: "enrichWikiCodeContext", QualifiedName: "internal/service/wiki_code_enrich.go::App.enrichWikiCodeContext", Kind: "method", Language: "go", StartLine: 3, EndLine: 3, FileHash: enrichFile.ContentHash},
+		{FilePath: "internal/service/other.go", RepoID: "main", Name: "intent", QualifiedName: "internal/service/other.go::Other.intent", Kind: "method", Language: "go", StartLine: 5, EndLine: 5, FileHash: file.ContentHash},
+	}
+	if err := store.ReplaceCatalog(context.Background(), db, project, files, symbols); err != nil {
+		t.Fatal(err)
+	}
+	got, err := ResolveWikiCodeContext(context.Background(), root, db, WikiCodeResolveRequest{Direction: model.WikiCodeDirectionWikiToCode, DocSelectors: []string{docPath}, TokenBudget: 20_000}, model.WikiCodeOverlay{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got.DirectCode) != 2 {
+		t.Fatalf("qualified Go receiver forward result=%#v omissions=%#v", got.DirectCode, got.Omissions)
+	}
+	for _, evidence := range got.DirectCode {
+		if evidence.Status != model.WikiCodeStatusResolvedSymbol || (evidence.Path != file.FilePath && evidence.Path != enrichFile.FilePath) {
+			t.Fatalf("qualified receiver evidence=%#v", got.DirectCode)
+		}
+	}
+}
+
 func TestWikiCodeResolverForwardSeparatesDirectTestsAndGraphSupporting(t *testing.T) {
 	root := t.TempDir()
 	writeBridgeTestFile(t, root, "src/service.mjs", "export function runDemo() { return helper(); }\n")

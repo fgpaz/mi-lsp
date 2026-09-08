@@ -1,3 +1,7 @@
+---
+doc_id: RF-QRY-011
+---
+
 # RF-QRY-011 - Resolver intencion en modo hibrido docs|code con scope opcional de repo
 
 ```yaml

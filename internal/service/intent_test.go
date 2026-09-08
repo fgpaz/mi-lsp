@@ -41,6 +41,37 @@ func TestClassifySupportedIntentRoutesAllT3Operations(t *testing.T) {
 	}
 }
 
+func TestExtractIntentSelectorSupportsExplicitRelativePathsWithoutGuessing(t *testing.T) {
+	tests := []struct {
+		name     string
+		question string
+		payload  map[string]any
+		want     string
+	}{
+		{"slash path", "show neighborhood of internal/service/wiki_code_context.go", nil, "internal/service/wiki_code_context.go"},
+		{"backslash path", `show neighborhood of internal\service\wiki_code_context.go`, nil, "internal/service/wiki_code_context.go"},
+		{"mixed case quoted path", `show neighborhood of "Internal\Service\Wiki_Code_Context.Go"`, nil, "Internal/Service/Wiki_Code_Context.Go"},
+		{"unchanged symbol", "show neighborhood of HandleRequest", nil, "HandleRequest"},
+		{"explicit payload wins", "show neighborhood of internal/service/wiki_code_context.go", map[string]any{"selector": "HandleRequest"}, "HandleRequest"},
+		{"ambiguous paths", "show neighborhood of internal/service/one.go and internal/service/two.go", nil, ""},
+		{"unsafe absolute path", "show neighborhood of /etc/Private.go", nil, ""},
+		{"unsafe shell path", "show neighborhood of internal/private;Secret.go", nil, ""},
+		{"unsafe url", "show neighborhood of https://example.test/Private.go", nil, ""},
+		{"missing selector", "show neighborhood of", nil, ""},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			route, ok := classifySupportedIntent(test.question, test.payload)
+			if !ok || route.Operation != "neighborhood" {
+				t.Fatalf("route=%+v ok=%v", route, ok)
+			}
+			if got := route.Arguments["selector"]; got != test.want {
+				t.Fatalf("selector=%q, want %q; arguments=%+v", got, test.want, route.Arguments)
+			}
+		})
+	}
+}
+
 func TestIntentExpansionCommandsUseExecutableCLIOperations(t *testing.T) {
 	tests := []struct {
 		name string

@@ -1,4 +1,5 @@
 ---
+doc_id: RF-QRY-001
 id: RF-QRY-001
 title: Emitir envelope estable y truncacion determinista
 implements:

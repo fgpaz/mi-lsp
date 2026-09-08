@@ -96,7 +96,12 @@ func (a *App) pack(ctx context.Context, request model.CommandRequest) (model.Env
 		}
 		result.NextQueries = buildPackNextQueries(operation, registration.Name, task, request.Context.Full, result.Docs)
 		result.LookupStatus = packLookupStatusForOperation(ctx, query, registration.Name, task, result, operation)
-		hint := fmt.Sprintf("documentation index is empty; route resolved from governance. Rerun mi-lsp index --workspace %s for full pack", registration.Name)
+		var hint string
+		if len(docs) == 0 {
+			hint = fmt.Sprintf("documentation index is empty; route resolved from governance. Rerun mi-lsp index --workspace %s for full pack", registration.Name)
+		} else {
+			hint = fmt.Sprintf("docs index has %d records but none are indexed canonical wiki docs; route resolved from governance. Rerun mi-lsp index --workspace %s for full pack", len(docs), registration.Name)
+		}
 		warnings = appendStringIfMissing(warnings, hint)
 		env := model.Envelope{
 			Ok:        true,
@@ -125,6 +130,32 @@ func (a *App) pack(ctx context.Context, request model.CommandRequest) (model.Env
 
 	primary, ok := selectPackPrimary(hardAnchor, docs, query.docByPath, query.ranked)
 	if !ok {
+		tier1Docs := routeCanonicalToPackDocs(routeResult.Canonical)
+		if hardAnchor.DocPath != "" && hardAnchor.DocID == "" && hardAnchor.DocPath == routeResult.Canonical.AnchorDoc.Path && len(tier1Docs) > 0 {
+			// The route-core anchor exists under governance but the docs
+			// index has not indexed it. Serve the Tier1 governance route
+			// rather than stalling or letting a mention-ranked artifact
+			// take the anchor seat (RF-QRY-015).
+			result.Docs = tier1Docs
+			result.PrimaryDoc = routeResult.Canonical.AnchorDoc.Path
+			result.Why = append(result.Why, "tier1=anchor_not_indexed")
+			result.NextQueries = buildPackNextQueries(operation, registration.Name, task, request.Context.Full, result.Docs)
+			result.LookupStatus = packLookupStatusForOperation(ctx, query, registration.Name, task, result, operation)
+			hint := fmt.Sprintf("canonical anchor %s is not in the docs index; serving governance route. Rerun mi-lsp index --workspace %s for full pack", routeResult.Canonical.AnchorDoc.Path, registration.Name)
+			warnings = appendStringIfMissing(warnings, hint)
+			env := model.Envelope{
+				Ok:        true,
+				Workspace: registration.Name,
+				Backend:   "pack",
+				Items:     []model.PackResult{result},
+				Warnings:  warnings,
+				Hint:      hint,
+			}
+			env = applyWikiRepoCompatHint(env, request, operation, registration.Name, task)
+			env = attachMemoryPointer(env, memory)
+			env.Continuation = buildPackContinuation(operation, task, result, request.Context, memory)
+			return applyCoachPolicy(env, request.Context), nil
+		}
 		warnings = appendStringIfMissing(warnings, "no documentation pack candidates matched the task")
 		result.NextQueries = buildPackNextQueries(operation, registration.Name, task, request.Context.Full, result.Docs)
 		result.LookupStatus = packLookupStatusForOperation(ctx, query, registration.Name, task, result, operation)
@@ -791,7 +822,12 @@ func (a *App) wikiPackAllWorkspaces(ctx context.Context, request model.CommandRe
 			}
 			result.NextQueries = buildPackNextQueries(operation, ws.Name, task, request.Context.Full, result.Docs)
 			result.LookupStatus = packLookupStatusForOperation(subCtx, query, ws.Name, task, result, operation)
-			hint := fmt.Sprintf("documentation index is empty; route resolved from governance. Rerun mi-lsp index --workspace %s for full pack", ws.Name)
+			var hint string
+			if len(docs) == 0 {
+				hint = fmt.Sprintf("documentation index is empty; route resolved from governance. Rerun mi-lsp index --workspace %s for full pack", ws.Name)
+			} else {
+				hint = fmt.Sprintf("docs index has %d records but none are indexed canonical wiki docs; route resolved from governance. Rerun mi-lsp index --workspace %s for full pack", len(docs), ws.Name)
+			}
 			warnings = appendStringIfMissing(warnings, hint)
 
 			itemsAny := []any{result}

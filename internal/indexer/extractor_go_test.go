@@ -230,6 +230,115 @@ func Use() int {
 	}
 }
 
+
+func TestObserveGoGraphEmbeddedFieldsBecomeCompilerBackedDeclarations(t *testing.T) {
+	root := t.TempDir()
+	writeGoTestFile(t, root, "go.mod", "module example.com/topleveltarget\n\ngo 1.24.4\n")
+	writeGoTestFile(t, root, "sub/sub.go", "package sub\ntype External struct{ Value int }\n")
+	writeGoTestFile(t, root, "main.go", `package topleveltarget
+
+import "example.com/topleveltarget/sub"
+
+type Embedded struct{ Value int }
+type Other struct{ Name string }
+type One struct{ Embedded }
+type Two struct{ *Embedded }
+type Three struct{ *Other }
+type Grouped struct {
+	A, B int
+	Embedded
+}
+type Qualified struct{ sub.External }
+type Argument struct{}
+type Generic[T any] struct{ Value T }
+type UsesGeneric struct{ Generic[Argument] }
+
+func Use() int {
+	var one One
+	var two Two
+	var three Three
+	var grouped Grouped
+	var qualified Qualified
+	return one.Embedded.Value + two.Embedded.Value + len(three.Other.Name) + grouped.Embedded.Value + qualified.External.Value
+}
+`)
+	batch, err := ObserveGoGraph(context.Background(), GoGraphObservationRequest{
+		Root:               root,
+		RepositoryIdentity: "https://example.com/topleveltarget",
+		ProjectOrModule:    "go.mod",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if batch.Completeness != model.GraphCompletenessComplete {
+		t.Fatalf("embedded declarations made graph partial: omissions=%#v unresolved=%#v", batch.Omissions, batch.Unresolved)
+	}
+	if err := batch.ReadyForStaging(); err != nil {
+		t.Fatalf("embedded declarations are not stageable: %v", err)
+	}
+	embeddedIdentities := []string{
+		"field:example.com/topleveltarget:One:Embedded",
+		"field:example.com/topleveltarget:Two:Embedded",
+		"field:example.com/topleveltarget:Three:Other",
+		"field:example.com/topleveltarget:Grouped:Embedded",
+		"field:example.com/topleveltarget:Qualified:External",
+		"field:example.com/topleveltarget:UsesGeneric:Generic",
+	}
+	for _, identity := range embeddedIdentities {
+		node, ok := graphNodeByIdentity(batch, identity)
+		if !ok {
+			t.Fatalf("missing embedded field declaration %q", identity)
+		}
+		if node.ClaimStatus != model.GraphRecordExact || node.Resolution != "go/types" {
+			t.Fatalf("embedded declaration %q has invalid provenance: claim=%q resolution=%q", identity, node.ClaimStatus, node.Resolution)
+		}
+		contains := false
+		for _, edge := range batch.Edges {
+			if edge.Relation == "contains" && edge.ToRef == node.Ref {
+				if edge.Status != model.GraphRecordExtracted || edge.Resolution != "go/ast" {
+					t.Fatalf("embedded declaration %q has invalid containment provenance: claim=%q resolution=%q", identity, edge.Status, edge.Resolution)
+				}
+				contains = true
+			}
+		}
+		if !contains {
+			t.Fatalf("embedded declaration %q has no contains edge", identity)
+		}
+	}
+	if hasOmission(batch, "declarations", "embedded_field_unsupported") {
+		t.Fatalf("supported embedded fields remained omitted: %#v", batch.Omissions)
+	}
+	if !hasGraphReferenceBetween(t, batch, "field:example.com/topleveltarget:One:Embedded", "type:example.com/topleveltarget:Embedded") ||
+		!hasGraphReferenceBetween(t, batch, "field:example.com/topleveltarget:Two:Embedded", "type:example.com/topleveltarget:Embedded") ||
+		!hasGraphReferenceBetween(t, batch, "field:example.com/topleveltarget:Three:Other", "type:example.com/topleveltarget:Other") ||
+		!hasGraphReferenceBetween(t, batch, "field:example.com/topleveltarget:Grouped:Embedded", "type:example.com/topleveltarget:Embedded") ||
+		!hasGraphReferenceBetween(t, batch, "field:example.com/topleveltarget:Qualified:External", "type:example.com/topleveltarget/sub:External") ||
+		!hasGraphReferenceBetween(t, batch, "field:example.com/topleveltarget:UsesGeneric:Generic", "type:example.com/topleveltarget:Argument") {
+		t.Fatalf("embedded target references missing: %#v", batch.Edges)
+	}
+	one, _ := graphNodeByIdentity(batch, "field:example.com/topleveltarget:One:Embedded")
+	two, _ := graphNodeByIdentity(batch, "field:example.com/topleveltarget:Two:Embedded")
+	if one.Ref == two.Ref {
+		t.Fatal("embedded declarations from different owners collided")
+	}
+}
+
+func TestObserveGoGraphEmbeddedFieldWithoutCompilerInfoRemainsPartial(t *testing.T) {
+	root := t.TempDir()
+	writeGoTestFile(t, root, "go.mod", "module example.com/embeddedpartial\n\ngo 1.24.4\n")
+	writeGoTestFile(t, root, "main.go", `package embeddedpartial
+
+type Top struct{ Missing }
+`)
+	batch, err := ObserveGoGraph(context.Background(), GoGraphObservationRequest{Root: root, RepositoryIdentity: "https://example.com/embeddedpartial", ProjectOrModule: "go.mod"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if batch.Completeness != model.GraphCompletenessPartial || batch.ReadyForStaging() == nil {
+		t.Fatalf("compiler-unavailable embedded field was not kept partial: completeness=%q omissions=%#v unresolved=%#v", batch.Completeness, batch.Omissions, batch.Unresolved)
+	}
+}
+
 func hasUnresolved(batch model.GraphObservationBatch, capability, reason string) bool {
 	for _, unresolved := range batch.Unresolved {
 		if unresolved.Capability == capability && unresolved.ReasonCode == reason {
@@ -328,6 +437,21 @@ func graphNodeByIdentity(batch model.GraphObservationBatch, identity string) (mo
 		}
 	}
 	return model.GraphObservationNode{}, false
+}
+
+func hasGraphReferenceBetween(t *testing.T, batch model.GraphObservationBatch, fromIdentity, toIdentity string) bool {
+	t.Helper()
+	from, fromOK := graphNodeByIdentity(batch, fromIdentity)
+	to, toOK := graphNodeByIdentity(batch, toIdentity)
+	if !fromOK || !toOK {
+		return false
+	}
+	for _, edge := range batch.Edges {
+		if edge.Relation == "references" && edge.FromRef == from.Ref && edge.ToRef == to.Ref {
+			return true
+		}
+	}
+	return false
 }
 
 func writeGoTestFile(t *testing.T, root, name, content string) {

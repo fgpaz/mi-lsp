@@ -1541,6 +1541,84 @@ func legacyDocumentID(relPath, title string) string {
 	return ""
 }
 
+// authoritativeDocumentID extracts only an owner identity. Body-wide ID
+// scanning is deliberately excluded: references, examples, and links belong
+// to extractReferences, not to document identity.
+func authoritativeDocumentID(relPath string, content []byte) string {
+	if declared := wikisource.DeclaredDocID(string(content)); declared != "" {
+		return declared
+	}
+	if title := extractLeadingTitle(content); title != "" {
+		if exact := canonicalOwnerDocID(title); exact != "" {
+			return exact
+		}
+		if prefix := canonicalOwnerDocIDTitlePrefix(title); prefix != "" {
+			return prefix
+		}
+	}
+	base := strings.TrimSuffix(filepath.Base(filepath.ToSlash(relPath)), filepath.Ext(filepath.ToSlash(relPath)))
+	return canonicalOwnerDocID(base)
+}
+
+func extractLeadingTitle(content []byte) string {
+	text := strings.TrimPrefix(strings.ReplaceAll(string(content), "\r", ""), "\ufeff")
+	lines := strings.Split(text, "\n")
+	start := 0
+	for start < len(lines) && strings.TrimSpace(lines[start]) == "" {
+		start++
+	}
+	if start < len(lines) && strings.TrimSpace(lines[start]) == "---" {
+		start++
+		for start < len(lines) && strings.TrimSpace(lines[start]) != "---" {
+			start++
+		}
+		if start >= len(lines) {
+			return ""
+		}
+		start++
+		for start < len(lines) && strings.TrimSpace(lines[start]) == "" {
+			start++
+		}
+	}
+	if start >= len(lines) || strings.HasPrefix(strings.TrimSpace(lines[start]), "```") {
+		return ""
+	}
+	trimmed := strings.TrimSpace(lines[start])
+	if strings.HasPrefix(trimmed, "#") {
+		return strings.TrimSpace(strings.TrimLeft(trimmed, "#"))
+	}
+	return ""
+}
+
+func canonicalOwnerDocID(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return ""
+	}
+	if match := docIDPattern.FindString(value); match == value {
+		return value
+	}
+	return ""
+}
+
+func canonicalOwnerDocIDTitlePrefix(value string) string {
+	value = strings.TrimSpace(value)
+	match := docIDPattern.FindString(value)
+	if match == "" || !strings.HasPrefix(value, match) {
+		return ""
+	}
+	remainder := strings.TrimSpace(strings.TrimPrefix(value, match))
+	if remainder == "" {
+		return match
+	}
+	for _, separator := range []string{"-", "—", ":"} {
+		if strings.HasPrefix(remainder, separator) {
+			return match
+		}
+	}
+	return ""
+}
+
 func MatchFamily(question string, profile model.DocsReadProfile) string {
 	normalized := normalizeSearchText(question)
 	bestFamily := "technical"
