@@ -785,13 +785,13 @@ func TestWatcherBatchPreservesRenameDeleteAndCoalescesPaths(t *testing.T) {
 		calls = append(calls, path)
 		return nil
 	})
-	// The watcher stores cleaned native paths, including on Windows. Keep slash
-	// inputs and a native-path write to exercise normalization and coalescing.
-	oldPath := filepath.Clean(filepath.FromSlash(".docs/wiki/old.md"))
-	newPath := filepath.Clean(filepath.FromSlash(".docs/wiki/new.md"))
-	watcher.scheduleBatchEvent(fsnotify.Event{Name: ".docs/wiki/old.md", Op: fsnotify.Rename})
-	watcher.scheduleBatchEvent(fsnotify.Event{Name: ".docs/wiki/new.md", Op: fsnotify.Create})
-	watcher.scheduleBatchEvent(fsnotify.Event{Name: newPath, Op: fsnotify.Write})
+	// Storage and callback paths are slash-canonical on every platform. Keep
+	// mixed slash/native inputs to exercise normalization and coalescing.
+	oldPath := ".docs/wiki/old.md"
+	newPath := ".docs/wiki/new.md"
+	watcher.scheduleBatchEvent(fsnotify.Event{Name: oldPath, Op: fsnotify.Rename})
+	watcher.scheduleBatchEvent(fsnotify.Event{Name: newPath, Op: fsnotify.Create})
+	watcher.scheduleBatchEvent(fsnotify.Event{Name: filepath.FromSlash(newPath), Op: fsnotify.Write})
 	if len(watcher.pendingBatch) != 2 {
 		t.Fatalf("pending paths = %d, want 2", len(watcher.pendingBatch))
 	}
@@ -802,7 +802,7 @@ func TestWatcherBatchPreservesRenameDeleteAndCoalescesPaths(t *testing.T) {
 		t.Fatalf("new event op = %v, want create|write", watcher.pendingOps[newPath])
 	}
 	watcher.flushBatch()
-	if len(calls) != 2 || filepath.Clean(calls[0]) != newPath || filepath.Clean(calls[1]) != oldPath {
+	if len(calls) != 2 || calls[0] != newPath || calls[1] != oldPath {
 		t.Fatalf("coalesced calls = %#v, want sorted new/old paths", calls)
 	}
 }
