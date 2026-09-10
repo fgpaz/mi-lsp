@@ -116,6 +116,12 @@ no_canon:
   governance_doc: .docs/wiki/00_gobierno_documental.md
   resolved_from: default
   error: false
+declared_canon_governance:
+  source: source_doc existente y validado del read-model aplicable
+  missing_source: governance_doc vacío y warning explícito; nunca un nombre inventado
+  profile_paths: relativos al canon propietario; precedencia local sin cambios
+  downstream_contract: "[[CT-NAV-WIKI]] conserva el ancla gobernada en route/pack aunque no esté indexada"
+  combined_oracle: TestDeclaredCanonUnindexedAnchorSurvivesRankedSupport
 paths: portable relative with /; never absolute
 role_flag: filtra [[RF-WKS-008|canon]] o CanonLinks por role; si no hay match, error
 precedence:

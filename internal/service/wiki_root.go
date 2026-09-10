@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/fgpaz/mi-lsp/internal/docgraph"
 	"github.com/fgpaz/mi-lsp/internal/model"
 	"github.com/fgpaz/mi-lsp/internal/workspace"
 )
@@ -34,11 +35,18 @@ func (a *App) wikiRoot(_ context.Context, request model.CommandRequest) (model.E
 	if err != nil {
 		return model.Envelope{}, err
 	}
+	warnings := []string{}
+	for _, item := range items {
+		if item.GovernanceDoc == "" {
+			warnings = append(warnings, fmt.Sprintf("governance source unresolved for canon %q; no document path asserted", item.ID))
+		}
+	}
 	return model.Envelope{
 		Ok:        true,
 		Workspace: registration.Name,
 		Backend:   "wiki-root",
 		Items:     items,
+		Warnings:  warnings,
 	}, nil
 }
 
@@ -60,11 +68,12 @@ func wikiRootItemsFromCanons(registration model.WorkspaceRegistration, project m
 	items := make([]model.WikiRootResolution, 0, len(resolved))
 	for _, canon := range resolved {
 		declared := portableRelativePath(canon.DeclaredRoot)
+		canonGovernance, _ := docgraph.ResolvedCanonGovernanceDocument(registration.Root, canon.AbsRoot)
 		items = append(items, model.WikiRootResolution{
 			WikiRoot:      declared,
 			Role:          canon.Role,
 			Workspace:     registration.Name,
-			GovernanceDoc: canonGovernanceDoc(declared),
+			GovernanceDoc: canonGovernance,
 			ResolvedFrom:  wikiRootResolvedCanon + canon.ID,
 			ID:            canon.ID,
 		})

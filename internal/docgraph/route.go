@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/fgpaz/mi-lsp/internal/model"
+	"github.com/fgpaz/mi-lsp/internal/wikisource"
 )
 
 // Tier1CanonicalRoute builds a canonical route from governance/profile alone.
@@ -15,6 +16,7 @@ import (
 // the read-model and the root docs that exist on the filesystem.
 // This implements the fail-closed canonical semantics for RF-QRY-014.
 func Tier1CanonicalRoute(question string, profile model.DocsReadProfile, root string) (model.RouteCanonicalLane, []string) {
+	profile = RouteReadProfile(root, profile)
 	family := MatchFamily(question, profile)
 	why := []string{"tier1=governance_profile", "family=" + family}
 
@@ -22,10 +24,14 @@ func Tier1CanonicalRoute(question string, profile model.DocsReadProfile, root st
 	explicitDocID := firstDocID(question)
 	explicitAnchorID := ""
 	if explicitDocID != "" {
-		if explicitPath := containingDocForExplicitID(root, profile, explicitDocID); explicitPath != "" {
+		explicitPath, matchedID, ambiguous := containingDocForExplicitID(root, profile, explicitDocID)
+		if ambiguous {
+			return model.RouteCanonicalLane{Family: family}, append(why, "ambiguous_doc_id="+explicitDocID)
+		}
+		if explicitPath != "" {
 			anchorPath = explicitPath
 			family = "functional"
-			explicitAnchorID = explicitDocID
+			explicitAnchorID = matchedID
 			why = append(why, "explicit_doc_id="+explicitDocID, "anchor=containing_doc")
 		}
 	}
@@ -54,38 +60,82 @@ func Tier1CanonicalRoute(question string, profile model.DocsReadProfile, root st
 	}, why
 }
 
-func containingDocForExplicitID(root string, profile model.DocsReadProfile, docID string) string {
+// matchedID is empty for a versioned filename alias: resolving a governed
+// path must not claim that a suffix-less query is the document's identity.
+func containingDocForExplicitID(root string, profile model.DocsReadProfile, docID string) (path, matchedID string, ambiguous bool) {
 	if docID == "" {
-		return ""
+		return "", "", false
 	}
 	searchPaths := explicitDocSearchPaths(profile, docID)
-	if len(searchPaths) == 0 {
-		searchPaths = fallbackExplicitDocSearchPaths(docID)
+	for _, item := range profile.Governance.Hierarchy {
+		searchPaths = append(searchPaths, item.Paths...)
 	}
+	roots, err := CanonicalWikiRoots(root)
+	if err != nil {
+		return "", "", false
+	}
+	for _, canonRoot := range roots {
+		searchPaths = append(searchPaths, strings.TrimSuffix(canonRoot, "/")+"/")
+	}
+	// Workspace-local hierarchy paths (e.g. canon/**) are also declared
+	// authority. Allow them through containment without adding a root scan.
+	allowedRoots := append(append([]string(nil), roots...), ".")
+	owners := map[string]struct{}{}
+	aliases := map[string]struct{}{}
+	visited := map[string]bool{}
+	legacy := ""
 	for _, pattern := range searchPaths {
-		var found string
 		_ = expandPattern(context.Background(), root, pattern, nil, func(absPath string) {
-			if found != "" {
+			rel, err := filepath.Rel(root, absPath)
+			if err != nil {
+				return
+			}
+			rel = filepath.ToSlash(rel)
+			if visited[rel] {
+				return
+			}
+			visited[rel] = true
+			if !safeRouteDocument(root, rel, allowedRoots) {
 				return
 			}
 			content, err := os.ReadFile(absPath)
 			if err != nil {
 				return
 			}
-			if !docContainsExplicitID(string(content), docID) {
+			if owner, declared := wikisource.DocumentIdentity(string(content)); declared {
+				if owner != "" && strings.EqualFold(owner, docID) {
+					owners[rel] = struct{}{}
+				} else if owner != "" && strings.EqualFold(strings.TrimSuffix(filepath.Base(rel), filepath.Ext(rel)), docID) {
+					version := strings.TrimPrefix(strings.ToUpper(owner), strings.ToUpper(docID)+"-V")
+					if version != strings.ToUpper(owner) && version != "" && strings.Trim(version, "0123456789") == "" {
+						aliases[rel] = struct{}{}
+					}
+				}
 				return
 			}
-			rel, err := filepath.Rel(root, absPath)
-			if err != nil {
-				return
+			// Preserve legacy embedded SDD tables, not arbitrary body mentions
+			// in newly declared knowledge-wiki roots.
+			if legacy == "" && strings.HasPrefix(rel, ".docs/wiki/") && docContainsExplicitID(string(content), docID) {
+				legacy = rel
 			}
-			found = filepath.ToSlash(rel)
 		})
-		if found != "" {
-			return found
-		}
 	}
-	return ""
+	if len(owners) > 1 {
+		return "", "", true
+	}
+	for owner := range owners {
+		return owner, docID, false
+	}
+	if legacy != "" {
+		return legacy, docID, false
+	}
+	if len(aliases) > 1 {
+		return "", "", true
+	}
+	for alias := range aliases {
+		return alias, "", false
+	}
+	return "", "", false
 }
 
 func explicitDocSearchPaths(profile model.DocsReadProfile, docID string) []string {
@@ -216,6 +266,9 @@ func docIDPrefix(docID string) string {
 }
 
 func docContainsExplicitID(content string, docID string) bool {
+	if owner, declared := wikisource.DocumentIdentity(content); declared {
+		return owner != "" && strings.EqualFold(owner, docID)
+	}
 	for _, match := range docIDPattern.FindAllString(content, -1) {
 		if strings.EqualFold(match, docID) {
 			return true
@@ -227,6 +280,8 @@ func docContainsExplicitID(content string, docID string) bool {
 // canonicalAnchorForFamily returns the best canonical anchor path for a family.
 // It checks the filesystem so Tier 1 stays honest about what actually exists.
 func canonicalAnchorForFamily(family string, profile model.DocsReadProfile, root string) string {
+	roots, _ := CanonicalWikiRoots(root)
+	roots = append(roots, ".") // Explicit workspace-local profile paths remain authoritative.
 	for _, f := range profile.Families {
 		if f.Name != family {
 			continue
@@ -236,16 +291,14 @@ func canonicalAnchorForFamily(family string, profile model.DocsReadProfile, root
 			if strings.HasSuffix(path, "/") || strings.ContainsAny(path, "*?") {
 				continue
 			}
-			absPath := filepath.Join(root, filepath.FromSlash(path))
-			if _, err := os.Stat(absPath); err == nil {
+			if safeRouteDocument(root, path, roots) {
 				return path
 			}
 		}
 	}
 
 	// Fallback: governance doc is always the safe canonical anchor
-	govPath := ".docs/wiki/00_gobierno_documental.md"
-	if _, err := os.Stat(filepath.Join(root, filepath.FromSlash(govPath))); err == nil {
+	if govPath, err := ResolvedGovernanceDocument(root); err == nil {
 		return govPath
 	}
 
@@ -266,17 +319,28 @@ func buildTier1PreviewPack(family string, profile model.DocsReadProfile, root st
 
 	preview := make([]model.RouteDoc, 0, 2)
 	seen := map[string]struct{}{anchorPath: {}}
+	roots, _ := CanonicalWikiRoots(root)
+	roots = append(roots, ".") // Only declared stage paths are checked; no workspace scan.
 
 	for _, stage := range stageOrder {
 		if len(preview) >= 2 {
 			break
 		}
-		for _, path := range canonicalPathsForStage(stage) {
+		paths := []string{}
+		for _, item := range profile.Governance.Hierarchy {
+			if item.PackStage == stage {
+				paths = append(paths, item.Paths...)
+			}
+		}
+		if len(paths) == 0 {
+			paths = canonicalPathsForStage(stage)
+		}
+		for _, path := range paths {
 			if _, exists := seen[path]; exists {
 				continue
 			}
 			absPath := filepath.Join(root, filepath.FromSlash(path))
-			if _, err := os.Stat(absPath); err == nil {
+			if safeRouteDocument(root, path, roots) {
 				doc := model.RouteDoc{
 					Path:   path,
 					Stage:  stage,

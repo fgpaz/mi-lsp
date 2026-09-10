@@ -570,9 +570,13 @@ func assertPortableWikiRootItems(t *testing.T, forbiddenRoot string, items []mod
 		t.Fatalf("absolute workspace path leaked into items JSON: %s", text)
 	}
 	for _, item := range items {
+		if item.WikiRoot == "" {
+			t.Fatalf("empty wiki root in %#v", item)
+		}
 		for _, path := range []string{item.WikiRoot, item.GovernanceDoc} {
 			if path == "" {
-				t.Fatalf("empty portable path in %#v", item)
+				// A declared canon without a resolved source must not invent a file.
+				continue
 			}
 			if filepath.IsAbs(path) || strings.HasPrefix(path, "/") || strings.HasPrefix(path, `\\`) {
 				t.Fatalf("absolute path in item: %#v", item)

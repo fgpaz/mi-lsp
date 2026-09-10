@@ -35,6 +35,7 @@ type docQueryContext struct {
 
 func loadDocQueryContext(ctx context.Context, registration model.WorkspaceRegistration, task string) *docQueryContext {
 	profile, profileSource, profileWarnings := docgraph.LoadProfile(registration.Root)
+	profile = docgraph.RouteReadProfile(registration.Root, profile)
 	rankingTask, rankingNormalized := queryRankingTask(task)
 	query := &docQueryContext{
 		registration:      registration,
@@ -102,7 +103,26 @@ func (q *docQueryContext) routeTask() string {
 }
 
 func (q *docQueryContext) canonicalRoute(opts model.QueryOptions, includeDiscovery bool) model.RouteResult {
-	canonical, tier1Why := docgraph.Tier1CanonicalRoute(q.routeTask(), q.profile, q.registration.Root)
+	owners := exactPackOwners(q.docs, strings.TrimSpace(q.task))
+	if len(owners) == 1 && !docgraph.DeclaresDocumentID(q.registration.Root, owners[0].Path, owners[0].DocID) {
+		// An inferred legacy index ID must not displace a governed aggregate
+		// that contains the requested embedded record.
+		owners = nil
+	}
+	canonical := model.RouteCanonicalLane{}
+	tier1Why := []string{}
+	if len(owners) == 1 {
+		owner := owners[0]
+		canonical = model.RouteCanonicalLane{
+			AnchorDoc: model.RouteDoc{Path: owner.Path, DocID: owner.DocID, Title: owner.Title, Family: owner.Family, Layer: owner.Layer, Stage: "anchor", Why: "exact_indexed_owner"},
+			Family:    owner.Family, Authoritative: true,
+		}
+		tier1Why = append(tier1Why, "anchor=exact_indexed_owner")
+	} else if len(owners) > 1 {
+		tier1Why = append(tier1Why, "ambiguous_doc_id="+strings.TrimSpace(q.task))
+	} else {
+		canonical, tier1Why = docgraph.Tier1CanonicalRoute(q.routeTask(), q.profile, q.registration.Root)
+	}
 	result := model.RouteResult{
 		Task:      q.task,
 		Mode:      "preview",
@@ -115,7 +135,7 @@ func (q *docQueryContext) canonicalRoute(opts model.QueryOptions, includeDiscove
 	if opts.Full {
 		result.Mode = "full"
 	}
-	if q.dbErr != nil || len(q.ranked) == 0 {
+	if q.dbErr != nil || len(q.ranked) == 0 || len(owners) > 1 {
 		return result
 	}
 	primary := q.ranked[0]
@@ -129,7 +149,7 @@ func (q *docQueryContext) canonicalRoute(opts model.QueryOptions, includeDiscove
 		Stage:  "anchor",
 	}
 	anchorDoc := rankedAnchor
-	if canonical.AnchorDoc.Path != "" && tier1AnchorIsGovernanceOwned(q.registration.Root, q.profile, canonical.AnchorDoc.Path) && !rankedDocIsDeclaredOwner(q, primary, canonical) {
+	if canonical.AnchorDoc.Path != "" && (len(owners) == 1 || tier1AnchorIsGovernanceOwned(q.registration.Root, q.profile, canonical.AnchorDoc.Path)) && !rankedDocIsDeclaredOwner(q, primary, canonical) {
 		if canonical.AnchorDoc.DocID != "" {
 			if doc, ok := q.docByPath[canonical.AnchorDoc.Path]; ok {
 				primary = scoredDoc{
@@ -320,11 +340,11 @@ func (q *docQueryContext) primaryDoc(routeResult model.RouteResult) (scoredDoc, 
 		// artifact when the canonical document is not indexed yet.
 		return scoredDoc{
 			record: model.DocRecord{
-				Path:    anchorPath,
-				Title:   routeResult.Canonical.AnchorDoc.Title,
-				DocID:   routeResult.Canonical.AnchorDoc.DocID,
-				Layer:   routeResult.Canonical.AnchorDoc.Layer,
-				Family:  routeResult.Canonical.AnchorDoc.Family,
+				Path:   anchorPath,
+				Title:  routeResult.Canonical.AnchorDoc.Title,
+				DocID:  routeResult.Canonical.AnchorDoc.DocID,
+				Layer:  routeResult.Canonical.AnchorDoc.Layer,
+				Family: routeResult.Canonical.AnchorDoc.Family,
 			},
 			score:  1,
 			reason: []string{"route_anchor=" + anchorPath},
