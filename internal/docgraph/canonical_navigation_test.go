@@ -10,6 +10,35 @@ import (
 	"github.com/fgpaz/mi-lsp/internal/workspace"
 )
 
+func TestGovernedFilenameAliasDoesNotInventDocumentIdentity(t *testing.T) {
+	for _, tc := range []struct {
+		name, owner                         string
+		duplicate, wantAlias, wantAmbiguous bool
+	}{
+		{name: "versioned", owner: "AE-SYNTHETIC-V2", wantAlias: true},
+		{name: "other-owner", owner: "OTHER-001"},
+		{name: "numeric-owner", owner: "12"},
+		{name: "empty-owner"},
+		{name: "ambiguous", owner: "AE-SYNTHETIC-V2", duplicate: true, wantAmbiguous: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			root := t.TempDir()
+			navigationWrite(t, root, "canon/AE-SYNTHETIC.md", "---\ndoc_id: "+tc.owner+"\n---\n# Gobierno\n")
+			if tc.duplicate {
+				navigationWrite(t, root, "other/AE-SYNTHETIC.md", "---\ndoc_id: AE-SYNTHETIC-V3\n---\n# Otro gobierno\n")
+			}
+			profile := model.DocsReadProfile{Governance: model.DocsGovernanceProfile{Hierarchy: []model.GovernanceHierarchyItem{{Layer: "AE", Paths: []string{"canon/**", "other/**"}}}}}
+			path, id, ambiguous := containingDocForExplicitID(root, profile, "AE-SYNTHETIC")
+			if id != "" || ambiguous != tc.wantAmbiguous || (path != "") != tc.wantAlias {
+				t.Fatalf("filename alias became identity or lost ambiguity: path=%q id=%q ambiguous=%v", path, id, ambiguous)
+			}
+			if tc.wantAlias && path != "canon/AE-SYNTHETIC.md" {
+				t.Fatalf("alias path = %q", path)
+			}
+		})
+	}
+}
+
 func navigationCanonFixture(t *testing.T, external bool) (string, string) {
 	t.Helper()
 	parent := t.TempDir()
@@ -74,7 +103,7 @@ func TestDeclaredCanonNavigationUsesProfileAndFrontmatter(t *testing.T) {
 			if err != nil || gov != declared+"/governance.md" {
 				t.Fatalf("governance=%q err=%v", gov, err)
 			}
-			resolved := routeReadProfile(root, profile)
+			resolved := RouteReadProfile(root, profile)
 			if resolved.Families[0].Paths[0] != declared+"/50-flows/" || profile.Families[0].Paths[0] != "50-flows/" {
 				t.Fatalf("profile rebasing mutated input or used wrong root: %#v", resolved.Families)
 			}

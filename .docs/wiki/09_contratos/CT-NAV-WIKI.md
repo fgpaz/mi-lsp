@@ -292,12 +292,20 @@ semantics: |
 
 ## Roots declarados e identidad de packs
 
-- Un canon declarado puede usar `wiki/`, una ruta relativa externa u otro layout, sin exigir carpetas `03_FL` ni reclasificar documentos `generic` para que el índice sea utilizable.
-- Un selector que coincide exactamente con `DocRecord.DocID` y con la identidad declarada del documento elige ese propietario antes de rankings, referencias o fallbacks a `README.md`. Un ID legacy inferido de una mención no desplaza al agregado gobernado que contiene el registro solicitado. Dos paths propietarios del mismo ID producen ambigüedad explícita; `--doc` permite seleccionar el path. Un `--rf`/`--fl` sin propietario no debe transformarse en un candidato rankeado ajeno.
-- En Tier 1, el frontmatter y los metadatos de identidad declarados prevalecen sobre menciones del cuerpo. Una declaración vacía o conflictiva no autoriza fallback a una mención. Los registros embebidos legacy de `.docs/wiki` conservan compatibilidad.
-- Las rutas del read-model propio de un canon se interpretan desde su raíz, tanto en Tier 1 como en la selección canónica del servicio; la proyección local conserva precedencia. No se reindexa, mueve canon ni cambia autoridad para resolver navegación.
-- Un ancla gobernada no indexada conserva su lugar en route/pack; los documentos indexados que sólo la mencionan son apoyo, no propietarios. El pack devuelve el fallback de gobierno con `tier1=anchor_not_indexed` y diagnóstico explícito: no promete un slice indexado completo. La regla también aplica a canons externos con read-model relativo.
-- El contrato del documento de gobierno resoluble y su ausencia explícita vive en [[CT-NAV-WIKI-ROOT]].
+```toon
+block_id: CT-NAV-WIKI-DECLARED-CANONS
+roots: admite wiki/ y rutas externas declaradas sin imponer carpetas 03_FL ni reclasificar documentos generic
+exact_owner: coincidencia de DocRecord.DocID e identidad declarada antes de rankings y menciones
+ambiguous_owner: dos paths propietarios producen ambigüedad explícita; --doc selecciona el path
+unresolved_selector: --rf/--fl sin propietario no se transforma en un candidato rankeado ajeno
+identity: frontmatter y metadatos declarados prevalecen; declaración vacía o conflictiva no autoriza una mención
+legacy: ID inferido no desplaza al agregado gobernado; registros embebidos de .docs/wiki mantienen compatibilidad
+versioned_filename_alias: basename gobernado sin sufijo puede resolver el path de un ID con -V y versión numérica; no atribuye ese ID al query ni elige entre alias ambiguos
+profile_paths: relativos al canon en Tier 1, selección canónica del servicio y gate de gobierno; proyección local conserva precedencia
+unindexed_anchor: conserva ancla gobernada; menciones indexadas son apoyo; tier1=anchor_not_indexed explícito sin prometer slice indexado completo
+mutation: no reindexa, mueve canon ni cambia autoridad
+source_contract: "[[CT-NAV-WIKI-ROOT]]"
+```
 
 ## Contract `wiki pack`
 

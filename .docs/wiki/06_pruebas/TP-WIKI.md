@@ -535,12 +535,14 @@ oracles:
   unresolved_explicit_selector: TestPackExplicitUnknownIdentifierDoesNotFallBackToRankedDocs
   legacy_embedded_owner: [TestCanonicalNavigationPreservesLegacyEmbeddedFlow, TestPackInferredLegacyIDDoesNotOverrideRouteAnchor]
   unindexed_local_external_anchor_with_ranked_support: TestDeclaredCanonUnindexedAnchorSurvivesRankedSupport
+  versioned_filename_without_inferred_identity: TestGovernedFilenameAliasDoesNotInventDocumentIdentity
 combined_case:
   given: canon local o externo con read-model relativo y source_doc real; sólo el documento de apoyo está indexado
   when: wiki-root y pack preview/full para el ID declarado del ancla
   then: gobierno real y ancla conservados; apoyo no promovido; tier1=anchor_not_indexed explícito
 implementation:
   - internal/docgraph/canonical_navigation.go
+  - internal/docgraph/governance.go
   - internal/docgraph/route.go
   - internal/service/doc_query_context.go
   - internal/service/pack.go

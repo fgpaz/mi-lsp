@@ -129,6 +129,7 @@ func GovernanceDocPath(root string) string {
 
 func resolveGovernanceDoc(root string) (string, string, model.DocsReadProfile, string) {
 	profile, source, _ := LoadProfile(root)
+	profile.Governance.SourceDoc = routeProfilePath(root, profile.Governance.SourceDoc)
 	canons, canonErr := loadProjectCanons(root)
 	displayPath := discoverGovernanceDisplayPath(root, canons, canonErr)
 	if source == "project" && strings.TrimSpace(profile.Governance.SourceDoc) != "" {

@@ -24,14 +24,14 @@ func Tier1CanonicalRoute(question string, profile model.DocsReadProfile, root st
 	explicitDocID := firstDocID(question)
 	explicitAnchorID := ""
 	if explicitDocID != "" {
-		explicitPath, ambiguous := containingDocForExplicitID(root, profile, explicitDocID)
+		explicitPath, matchedID, ambiguous := containingDocForExplicitID(root, profile, explicitDocID)
 		if ambiguous {
 			return model.RouteCanonicalLane{Family: family}, append(why, "ambiguous_doc_id="+explicitDocID)
 		}
 		if explicitPath != "" {
 			anchorPath = explicitPath
 			family = "functional"
-			explicitAnchorID = explicitDocID
+			explicitAnchorID = matchedID
 			why = append(why, "explicit_doc_id="+explicitDocID, "anchor=containing_doc")
 		}
 	}
@@ -60,9 +60,11 @@ func Tier1CanonicalRoute(question string, profile model.DocsReadProfile, root st
 	}, why
 }
 
-func containingDocForExplicitID(root string, profile model.DocsReadProfile, docID string) (string, bool) {
+// matchedID is empty for a versioned filename alias: resolving a governed
+// path must not claim that a suffix-less query is the document's identity.
+func containingDocForExplicitID(root string, profile model.DocsReadProfile, docID string) (path, matchedID string, ambiguous bool) {
 	if docID == "" {
-		return "", false
+		return "", "", false
 	}
 	searchPaths := explicitDocSearchPaths(profile, docID)
 	for _, item := range profile.Governance.Hierarchy {
@@ -70,12 +72,16 @@ func containingDocForExplicitID(root string, profile model.DocsReadProfile, docI
 	}
 	roots, err := CanonicalWikiRoots(root)
 	if err != nil {
-		return "", false
+		return "", "", false
 	}
 	for _, canonRoot := range roots {
 		searchPaths = append(searchPaths, strings.TrimSuffix(canonRoot, "/")+"/")
 	}
+	// Workspace-local hierarchy paths (e.g. canon/**) are also declared
+	// authority. Allow them through containment without adding a root scan.
+	allowedRoots := append(append([]string(nil), roots...), ".")
 	owners := map[string]struct{}{}
+	aliases := map[string]struct{}{}
 	visited := map[string]bool{}
 	legacy := ""
 	for _, pattern := range searchPaths {
@@ -89,7 +95,7 @@ func containingDocForExplicitID(root string, profile model.DocsReadProfile, docI
 				return
 			}
 			visited[rel] = true
-			if !safeRouteDocument(root, rel, roots) {
+			if !safeRouteDocument(root, rel, allowedRoots) {
 				return
 			}
 			content, err := os.ReadFile(absPath)
@@ -99,6 +105,11 @@ func containingDocForExplicitID(root string, profile model.DocsReadProfile, docI
 			if owner, declared := wikisource.DocumentIdentity(string(content)); declared {
 				if owner != "" && strings.EqualFold(owner, docID) {
 					owners[rel] = struct{}{}
+				} else if owner != "" && strings.EqualFold(strings.TrimSuffix(filepath.Base(rel), filepath.Ext(rel)), docID) {
+					version := strings.TrimPrefix(strings.ToUpper(owner), strings.ToUpper(docID)+"-V")
+					if version != strings.ToUpper(owner) && version != "" && strings.Trim(version, "0123456789") == "" {
+						aliases[rel] = struct{}{}
+					}
 				}
 				return
 			}
@@ -110,12 +121,21 @@ func containingDocForExplicitID(root string, profile model.DocsReadProfile, docI
 		})
 	}
 	if len(owners) > 1 {
-		return "", true
+		return "", "", true
 	}
 	for owner := range owners {
-		return owner, false
+		return owner, docID, false
 	}
-	return legacy, false
+	if legacy != "" {
+		return legacy, docID, false
+	}
+	if len(aliases) > 1 {
+		return "", "", true
+	}
+	for alias := range aliases {
+		return alias, "", false
+	}
+	return "", "", false
 }
 
 func explicitDocSearchPaths(profile model.DocsReadProfile, docID string) []string {
@@ -261,6 +281,7 @@ func docContainsExplicitID(content string, docID string) bool {
 // It checks the filesystem so Tier 1 stays honest about what actually exists.
 func canonicalAnchorForFamily(family string, profile model.DocsReadProfile, root string) string {
 	roots, _ := CanonicalWikiRoots(root)
+	roots = append(roots, ".") // Explicit workspace-local profile paths remain authoritative.
 	for _, f := range profile.Families {
 		if f.Name != family {
 			continue
@@ -299,6 +320,7 @@ func buildTier1PreviewPack(family string, profile model.DocsReadProfile, root st
 	preview := make([]model.RouteDoc, 0, 2)
 	seen := map[string]struct{}{anchorPath: {}}
 	roots, _ := CanonicalWikiRoots(root)
+	roots = append(roots, ".") // Only declared stage paths are checked; no workspace scan.
 
 	for _, stage := range stageOrder {
 		if len(preview) >= 2 {

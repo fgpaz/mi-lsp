@@ -218,7 +218,10 @@ audit_chain = [".docs/auditoria/"]
 				if err != nil || !env.Ok {
 					t.Fatalf("pack: err=%v envelope=%#v", err, env)
 				}
-				packs := env.Items.([]model.PackResult)
+				packs, ok := env.Items.([]model.PackResult)
+				if !ok {
+					t.Fatalf("pack did not pass governance gate: %#v", env)
+				}
 				if len(packs) != 1 || packs[0].PrimaryDoc != canonPath+"/flows/start.md" || len(packs[0].Docs) == 0 || packs[0].Docs[0].DocID != "RF-SYNTHETIC-UNINDEXED" || !strings.Contains(strings.Join(packs[0].Why, " "), "tier1=anchor_not_indexed") {
 					t.Fatalf("support replaced unindexed declared anchor: %#v", env)
 				}
