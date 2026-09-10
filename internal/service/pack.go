@@ -80,7 +80,7 @@ func (a *App) pack(ctx context.Context, request model.CommandRequest) (model.Env
 	}
 
 	warnings := append([]string{}, profileWarnings...)
-	if canonicalWikiExists(registration.Root) && !hasIndexedCanonicalDocs(docs) {
+	if canonicalWikiExists(registration.Root) && !hasIndexedCanonicalDocs(docs, registration.Root) {
 		// Use Tier 1 canonical routing to produce a governed pack preview
 		// instead of stalling with empty docs (RF-QRY-015).
 		canonical, tier1Why := docgraph.Tier1CanonicalRoute(query.routeTask(), profile, registration.Root)
@@ -119,7 +119,7 @@ func (a *App) pack(ctx context.Context, request model.CommandRequest) (model.Env
 
 	// Route core backbone (RF-QRY-015): resolve canonical anchor for this task
 	routeResult := query.canonicalRoute(request.Context, false)
-	hardAnchor, family := resolvePackAnchor(request.Payload, task, docs, query.docByPath, profile)
+	hardAnchor, family := resolvePackAnchor(request.Payload, task, docs, query.docByPath, profile, registration.Root)
 	result.Family = family
 
 	// Inject route core anchor when no explicit override is present (--rf/--fl/--doc always wins)
@@ -155,6 +155,11 @@ func (a *App) pack(ctx context.Context, request model.CommandRequest) (model.Env
 			env = attachMemoryPointer(env, memory)
 			env.Continuation = buildPackContinuation(operation, task, result, request.Context, memory)
 			return applyCoachPolicy(env, request.Context), nil
+		}
+		if len(exactPackOwners(docs, hardAnchor.DocID)) > 1 {
+			message := "ambiguous document identifier " + hardAnchor.DocID + "; use --doc to select an owner path"
+			warnings = appendStringIfMissing(warnings, message)
+			result.Why = append(result.Why, message)
 		}
 		warnings = appendStringIfMissing(warnings, "no documentation pack candidates matched the task")
 		result.NextQueries = buildPackNextQueries(operation, registration.Name, task, request.Context.Full, result.Docs)
@@ -347,7 +352,7 @@ func ensurePackAnchorFirst(root string, task string, primary model.DocRecord, do
 	return append([]model.PackDoc{anchor}, remaining...), warnings
 }
 
-func resolvePackAnchor(payload map[string]any, task string, docs []model.DocRecord, docByPath map[string]model.DocRecord, profile model.DocsReadProfile) (packAnchor, string) {
+func resolvePackAnchor(payload map[string]any, task string, docs []model.DocRecord, docByPath map[string]model.DocRecord, profile model.DocsReadProfile, roots ...string) (packAnchor, string) {
 	anchor := packAnchor{}
 	if docPath := strings.TrimSpace(stringPayload(payload, "doc")); docPath != "" {
 		normalized := filepath.ToSlash(strings.TrimPrefix(docPath, "./"))
@@ -366,7 +371,29 @@ func resolvePackAnchor(payload map[string]any, task string, docs []model.DocReco
 		anchor.DocID = strings.ToUpper(fl)
 		return anchor, "functional"
 	}
+	if owners := exactPackOwners(docs, strings.TrimSpace(task)); len(owners) > 0 {
+		if len(owners) == 1 && len(roots) > 0 && !docgraph.DeclaresDocumentID(roots[0], owners[0].Path, owners[0].DocID) {
+			return anchor, docgraph.MatchFamily(task, profile)
+		}
+		anchor.DocID = strings.TrimSpace(task)
+		return anchor, owners[0].Family
+	}
 	return anchor, docgraph.MatchFamily(task, profile)
+}
+
+func exactPackOwners(docs []model.DocRecord, id string) []model.DocRecord {
+	owners := []model.DocRecord{}
+	seen := map[string]bool{}
+	if id == "" {
+		return owners
+	}
+	for _, doc := range docs {
+		if strings.EqualFold(doc.DocID, id) && !seen[doc.Path] {
+			owners = append(owners, doc)
+			seen[doc.Path] = true
+		}
+	}
+	return owners
 }
 
 func selectPackPrimary(anchor packAnchor, docs []model.DocRecord, docByPath map[string]model.DocRecord, ranked []scoredDoc) (model.DocRecord, bool) {
@@ -375,11 +402,11 @@ func selectPackPrimary(anchor packAnchor, docs []model.DocRecord, docByPath map[
 		return doc, ok
 	}
 	if anchor.DocID != "" {
-		for _, doc := range docs {
-			if strings.EqualFold(doc.DocID, anchor.DocID) {
-				return doc, true
-			}
+		owners := exactPackOwners(docs, anchor.DocID)
+		if len(owners) == 1 {
+			return owners[0], true
 		}
+		return model.DocRecord{}, false
 	}
 	for _, candidate := range ranked {
 		if candidate.record.Family != "generic" {
@@ -643,14 +670,27 @@ func choosePackDocForStage(stage packStage, candidates []model.DocRecord, primar
 }
 
 func canonicalWikiExists(root string) bool {
-	info, err := os.Stat(filepath.Join(root, ".docs", "wiki"))
-	return err == nil && info.IsDir()
+	roots, err := docgraph.CanonicalWikiRoots(root)
+	return err == nil && len(roots) > 0
 }
 
-func hasIndexedCanonicalDocs(docs []model.DocRecord) bool {
+func hasIndexedCanonicalDocs(docs []model.DocRecord, workspaceRoots ...string) bool {
+	roots := []string{".docs/wiki"}
+	if len(workspaceRoots) > 0 {
+		var err error
+		roots, err = docgraph.CanonicalWikiRoots(workspaceRoots[0])
+		if err != nil {
+			return false
+		}
+	}
 	for _, doc := range docs {
-		if strings.HasPrefix(doc.Path, ".docs/wiki/") && doc.Family != "generic" {
-			return true
+		path := filepath.ToSlash(filepath.Clean(doc.Path))
+		for _, root := range roots {
+			root = strings.TrimSuffix(filepath.ToSlash(filepath.Clean(root)), "/")
+			inside := strings.HasPrefix(path, root+"/") || (root == "." && !filepath.IsAbs(path) && path != ".." && !strings.HasPrefix(path, "../"))
+			if inside && (root != ".docs/wiki" || doc.Family != "generic") {
+				return true
+			}
 		}
 	}
 	return false
@@ -810,7 +850,7 @@ func (a *App) wikiPackAllWorkspaces(ctx context.Context, request model.CommandRe
 
 		warnings := append([]string{}, profileWarnings...)
 
-		if canonicalWikiExists(ws.Root) && !hasIndexedCanonicalDocs(docs) {
+		if canonicalWikiExists(ws.Root) && !hasIndexedCanonicalDocs(docs, ws.Root) {
 			// Use Tier 1 canonical routing to produce a governed pack preview
 			canonical, tier1Why := docgraph.Tier1CanonicalRoute(task, profile, ws.Root)
 			tier1Docs := routeCanonicalToPackDocs(canonical)
@@ -840,7 +880,7 @@ func (a *App) wikiPackAllWorkspaces(ctx context.Context, request model.CommandRe
 
 		// Route core backbone (RF-QRY-015): resolve canonical anchor for this task
 		routeResult := query.canonicalRoute(request.Context, false)
-		hardAnchor, family := resolvePackAnchor(request.Payload, task, docs, query.docByPath, profile)
+		hardAnchor, family := resolvePackAnchor(request.Payload, task, docs, query.docByPath, profile, ws.Root)
 		result.Family = family
 
 		// Inject route core anchor when no explicit override is present (--rf/--fl/--doc always wins)
@@ -851,6 +891,9 @@ func (a *App) wikiPackAllWorkspaces(ctx context.Context, request model.CommandRe
 
 		primary, ok := selectPackPrimary(hardAnchor, docs, query.docByPath, query.ranked)
 		if !ok {
+			if len(exactPackOwners(docs, hardAnchor.DocID)) > 1 {
+				result.Why = append(result.Why, "ambiguous document identifier "+hardAnchor.DocID+"; use --doc to select an owner path")
+			}
 			warnings = appendStringIfMissing(warnings, "no documentation pack candidates matched the task")
 			result.LookupStatus = packLookupStatusForOperation(subCtx, query, ws.Name, task, result, operation)
 

@@ -520,6 +520,35 @@ cases:
     then: "error fail-closed; no inventa default silencioso para ese role"
 ```
 
+## Regresiones de roots declarados y propietarios documentales
+
+Cobertura de [[RF-WIKI-007]], [[CT-NAV-WIKI-ROOT]] y [[CT-NAV-WIKI]], con fixtures sintéticos; no se usa corpus de consumidores ni servicios vivos.
+
+```toon
+block_id: TP-WIKI-DECLARED-CANON-REGRESSIONS
+oracles:
+  declared_owner_and_relative_profile: TestDeclaredCanonNavigationUsesProfileAndFrontmatter
+  reject_mentions_empty_and_other_owner: TestDeclaredCanonNavigationDoesNotPromoteMentions
+  explicit_ambiguity: [TestDeclaredCanonNavigationReportsDuplicateOwners, TestNavPackDeclaredKnowledgeCanonRejectsDuplicateOwners]
+  real_missing_and_unsafe_governance: [TestDeclaredCanonNavigationMissingAndUnsafeGovernance, TestWikiRootDeclaredKnowledgeCanonUsesActualGovernance]
+  indexed_generic_preview_full_substantive_slice: TestNavPackDeclaredKnowledgeCanonUsesExactOwner
+  unresolved_explicit_selector: TestPackExplicitUnknownIdentifierDoesNotFallBackToRankedDocs
+  legacy_embedded_owner: [TestCanonicalNavigationPreservesLegacyEmbeddedFlow, TestPackInferredLegacyIDDoesNotOverrideRouteAnchor]
+  unindexed_local_external_anchor_with_ranked_support: TestDeclaredCanonUnindexedAnchorSurvivesRankedSupport
+combined_case:
+  given: canon local o externo con read-model relativo y source_doc real; sólo el documento de apoyo está indexado
+  when: wiki-root y pack preview/full para el ID declarado del ancla
+  then: gobierno real y ancla conservados; apoyo no promovido; tier1=anchor_not_indexed explícito
+implementation:
+  - internal/docgraph/canonical_navigation.go
+  - internal/docgraph/route.go
+  - internal/service/doc_query_context.go
+  - internal/service/pack.go
+  - internal/service/wiki_root.go
+```
+
+Implementación de los oráculos: `internal/docgraph/canonical_navigation_test.go`, `internal/service/canonical_navigation_test.go`, `internal/service/wiki_root_test.go`. La existencia de los tests no acredita ejecución ni instalación; sus resultados corresponden a la FINAL_VERIFY del owner.
+
 ## Regla de mantenimiento
 
 - Ningun RF-WIKI-* se considera completamente especificado si no tiene al menos 4 test cases positivos trazados en TP-WIKI.
