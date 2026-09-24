@@ -56,7 +56,7 @@ export async function run(payload, deps = {}) {
     state.advised = true;
     writeState(sessionId, state, env);
     const hint = await callSuggest(
-      { event: "post_tool", tool: payload?.tool_name, consecutive: state.consecutiveRaw },
+      { tool: payload?.tool_name, args: payload?.tool_input || {} },
       { ...deps, env, cwd: payload?.cwd || process.cwd() },
     );
     return {

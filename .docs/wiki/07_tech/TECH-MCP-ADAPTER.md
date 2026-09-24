@@ -118,21 +118,26 @@ Timeout, silencio, `DONE` o `PASS` sin diagnóstico fresco no son un quinto cód
 `nav suggest` devuelve una sugerencia acotada de un comando `nav` que la CLI ya expone. No reemplaza a `nav intent`, no abre un router externo y no es fallback. Las puertas que lo invocan usan argv, no un shell:
 
 ```text
-mi-lsp nav suggest --event user_prompt [--prompt TEXT]
-mi-lsp nav suggest --event post_tool --tool NAME --consecutive N
+mi-lsp nav suggest --format json --tool Read|Grep|Glob --args <json>
 ```
 
-La salida útil es una sola línea `mi-lsp nav …`, o JSON con `command` separado de `hint` o `suggested_command`. Cualquier otro texto se ignora. El comando y el motivo no se concatenan en un string de shell.
+La salida útil es el envelope JSON. El comando está en `items[0].argv`, separado de `reason`. Un prompt de usuario no es una herramienta Read/Grep/Glob: la llamada sin `--tool` responde vacía y el hook puede mostrar una sola línea estática `mi-lsp nav intent "<goal>"`. Cualquier otro texto se ignora. El comando y el motivo no se concatenan en un string de shell.
 
 ## Integraciones del repositorio
 
 Las integraciones bajo [`integrations/`](../../../integrations/) (Claude Code, Pi, Grok, Codex y Cursor) obedecen esta misma decisión. Cada puerta de host es opcional: configura o invoca `mi-lsp mcp` y, cuando hace falta un equivalente de una lectura cruda, `mi-lsp nav suggest`. Si ninguna puerta está instalada, la CLI sigue siendo la autoridad y el camino usable. Fallan abiertas. No incorporan caché, índice, worker ni estado propio.
 
-Un contador de bucle, un prefetch o un archivo de sesión son estado propio. No forman parte de esta decisión mientras no aparezcan en «Excepciones» con el RSS medido. No se porta a este repo un router externo, un cliente de modelo ni un runtime de hooks ajeno: eso no es la puerta.
+Un prefetch, una caché de respuestas o un runtime de hooks ajeno no forman parte de esta decisión. No se porta a este repo un router externo ni un cliente de modelo. La única excepción aceptada está abajo.
 
 ## Excepciones
 
-Ninguna.
+El hook PostToolUse de Claude Code guarda un contador de sesión. Hace falta para avisar una sola vez al tercer Read, Grep o Glob seguido, y para no repetir el aviso hasta que una llamada mi-lsp reinicie la racha. Sin ese recuerdo el aviso no distingue la tercera lectura de la primera. No es caché de navegación, no es índice y no hay worker residente.
+
+El archivo es un JSON de dos campos, `consecutiveRaw` y `advised`, bajo `MI_LSP_CLAUDE_STATE_DIR` o el temporal del sistema, un archivo por sesión. El costo medido queda en la tabla. El proceso del hook termina con el evento.
+
+| Excepción | Qué se midió | Costo | Fecha |
+|---|---|---|---|
+| Contador PostToolUse | archivo tras tres eventos Read en un directorio temporal, y RSS del proceso Node que ejecutó ese hook | archivo 35 bytes (`consecutiveRaw` y `advised`). RSS del proceso Node: 56000512 bytes. El contador no abre índice ni worker; el RSS es el intérprete del hook, no un caché de mi-lsp | 2026-09-24 |
 
 ## Consecuencias
 

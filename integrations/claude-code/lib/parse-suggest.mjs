@@ -19,13 +19,29 @@ function hintFromJson(text) {
   if (!text.startsWith("{")) return null;
   try {
     const parsed = JSON.parse(text);
-    const candidate = parsed?.command ?? parsed?.hint ?? parsed?.suggested_command;
+    const item = Array.isArray(parsed?.items) ? parsed.items[0] : null;
+    const fromArgv = hintFromArgv(item?.argv);
+    if (fromArgv) return fromArgv;
+    const candidate = item?.command ?? parsed?.command ?? parsed?.hint ?? parsed?.suggested_command;
     if (typeof candidate !== "string") return null;
     const line = stripLabel(candidate.trim());
-    return isShortCommand(line) ? line : null;
+    const qualified = line.startsWith("nav ") ? `mi-lsp ${line}` : line;
+    return isShortCommand(qualified) ? qualified : null;
   } catch {
     return null;
   }
+}
+
+function hintFromArgv(argv) {
+  if (!Array.isArray(argv) || argv.length === 0) return null;
+  const parts = argv.map((part) => quoteArg(String(part)));
+  const line = `mi-lsp ${parts.join(" ")}`;
+  return isShortCommand(line) ? line : null;
+}
+
+function quoteArg(text) {
+  if (/^[\w./:\\-]+$/.test(text)) return text;
+  return `"${text.replace(/"/g, '\\"')}"`;
 }
 
 function stripLabel(line) {

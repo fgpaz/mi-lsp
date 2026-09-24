@@ -20,17 +20,18 @@ export function suggestTimeoutMs(env = process.env) {
 }
 
 /**
- * @param {{event?: string, prompt?: string, tool?: string, consecutive?: number}} input
+ * Argv for the real CLI: `nav suggest --format json [--tool NAME --args JSON]`.
+ * A user prompt has no Read/Grep/Glob payload, so it stays a bare suggest call.
+ * Tool arguments travel as one JSON element, never as a shell string.
+ * @param {{tool?: string, args?: object}} input
  * @returns {string[]}
  */
 export function buildSuggestArgv(input = {}) {
-  const argv = ["nav", "suggest"];
-  if (input.event) argv.push("--event", String(input.event));
-  const prompt = input.prompt ? String(input.prompt).slice(0, 400) : "";
-  if (prompt) argv.push("--prompt", prompt);
-  if (input.tool) argv.push("--tool", String(input.tool));
-  if (Number.isFinite(input.consecutive) && input.consecutive > 0) {
-    argv.push("--consecutive", String(input.consecutive));
+  const argv = ["nav", "suggest", "--format", "json"];
+  const tool = String(input.tool || "").trim();
+  if (tool) {
+    argv.push("--tool", tool);
+    argv.push("--args", JSON.stringify(input.args && typeof input.args === "object" ? input.args : {}));
   }
   return argv;
 }

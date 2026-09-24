@@ -8,17 +8,15 @@ import { callSuggest } from "../lib/suggest-call.mjs";
 
 export async function run(payload, deps = {}) {
   try {
-    const prompt = String(payload?.prompt ?? payload?.user_prompt ?? "");
-    const hint = await callSuggest(
-      { event: "user_prompt", prompt },
-      { ...deps, cwd: payload?.cwd || process.cwd() },
-    );
-    if (!hint) return { continue: true };
+    const prompt = String(payload?.prompt ?? payload?.user_prompt ?? "").trim();
+    const hint = await callSuggest({}, { ...deps, cwd: payload?.cwd || process.cwd() });
+    const line = hint || (hint === "" && prompt ? 'mi-lsp nav intent "<goal>"' : "");
+    if (!line) return { continue: true };
     return {
       continue: true,
       hookSpecificOutput: {
         hookEventName: "UserPromptSubmit",
-        additionalContext: hint,
+        additionalContext: line,
       },
     };
   } catch {

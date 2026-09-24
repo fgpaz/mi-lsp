@@ -347,7 +347,7 @@ The CLI is the authority. Run `mi-lsp` through the host shell tool:
 
 `MI_LSP_BIN`, when set, must point at the real executable (`mi-lsp.exe` on Windows). A `.cmd` or `.bat` shim is not a valid override and is not the Windows release artifact.
 
-`mi-lsp workspace which` reports the resolved workspace and the executable in use. It does not change the registry. `mi-lsp nav suggest` names one existing `nav` command. Hosts pass `--event user_prompt` or `--event post_tool` by argv. Keep `command` separate from `hint` or `suggested_command`. It does not replace `nav intent`.
+`mi-lsp workspace which` reports the resolved workspace and the executable in use. It does not change the registry. `mi-lsp nav suggest --tool Read|Grep|Glob --args '<json>'` names one existing `nav` command. Hosts pass `--tool` and `--args` by argv and read `items[0].argv`. It does not replace `nav intent`.
 
 Global `--max-chars` caps rendered output. `0` means unset. A positive value wins over AXI defaults. Truncation keeps `continuation.next` and a truncation marker.
 

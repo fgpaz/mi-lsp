@@ -11,7 +11,19 @@ export async function callSuggest(input, { env = process.env, execImpl = runComm
       env,
     });
     if (!outcome || outcome.spawnFailed || outcome.timedOut || outcome.code !== 0) return null;
-    return parseSuggestHint(outcome.stdout);
+    const text = String(outcome.stdout || "").replace(/^\uFEFF/, "").trim();
+    if (!text) return "";
+    const hint = parseSuggestHint(outcome.stdout);
+    if (hint) return hint;
+    if (text.startsWith("{")) {
+      try {
+        const parsed = JSON.parse(text);
+        if (parsed && Array.isArray(parsed.items) && parsed.items.length === 0) return "";
+      } catch {
+        return null;
+      }
+    }
+    return null;
   } catch {
     return null;
   }

@@ -48,6 +48,10 @@ test("parseSuggestHint keeps one nav command or the static intent line", () => {
   assert.equal(parseSuggestHint('mi-lsp nav intent "<goal>"'), 'mi-lsp nav intent "<goal>"');
   assert.equal(parseSuggestHint('hint: mi-lsp nav route "daemon"'), 'mi-lsp nav route "daemon"');
   assert.equal(parseSuggestHint('{"command":"mi-lsp nav search \\\"token\\\""}'), 'mi-lsp nav search "token"');
+  assert.equal(
+    parseSuggestHint('{"ok":true,"items":[{"command":"nav multi-read","argv":["nav","multi-read","C:\\\\repos\\\\app.go:10-20"]}]}'),
+    "mi-lsp nav multi-read C:\\repos\\app.go:10-20",
+  );
   assert.equal(parseSuggestHint(""), null);
   assert.equal(parseSuggestHint("{not-json"), null);
   assert.equal(parseSuggestHint("read the file yourself"), null);
@@ -80,12 +84,21 @@ test("UserPromptSubmit forwards the static one-line nav intent hint", async () =
   assert.equal(result.hookSpecificOutput.additionalContext, 'mi-lsp nav intent "<goal>"');
 });
 
-test("UserPromptSubmit stays silent on empty, garbage, and non-zero suggest", async () => {
-  for (const mode of ["empty", "garbage", "exit1"]) {
+test("UserPromptSubmit uses the static intent line when suggest succeeds empty", async () => {
+  const env = tempEnv({ MI_LSP_NODE_FIXTURE: fixture, FAKE_MILSP_MODE: "empty" });
+  const result = await runPrompt({ prompt: "anything" }, { env });
+  assert.equal(result.hookSpecificOutput.additionalContext, 'mi-lsp nav intent "<goal>"');
+});
+
+test("UserPromptSubmit stays silent on garbage, a non-zero suggest, and an empty prompt", async () => {
+  for (const mode of ["garbage", "exit1"]) {
     const env = tempEnv({ MI_LSP_NODE_FIXTURE: fixture, FAKE_MILSP_MODE: mode });
     const result = await runPrompt({ prompt: "anything" }, { env });
     assert.deepEqual(result, { continue: true });
   }
+  const env = tempEnv({ MI_LSP_NODE_FIXTURE: fixture, FAKE_MILSP_MODE: "empty" });
+  const blank = await runPrompt({ prompt: "  " }, { env });
+  assert.deepEqual(blank, { continue: true });
 });
 
 test("UserPromptSubmit fails open on timeout and a missing binary", async () => {
@@ -104,7 +117,7 @@ test("UserPromptSubmit fails open on timeout and a missing binary", async () => 
   assert.deepEqual(gone, { continue: true });
 });
 
-test("UserPromptSubmit passes the prompt as one argv element", async () => {
+test("UserPromptSubmit calls nav suggest without putting the prompt on argv", async () => {
   const argvOut = path.join(mkdtempSync(path.join(os.tmpdir(), "milsp-prompt-")), "argv.json");
   const prompt = 'use && not a shell';
   const env = tempEnv({
@@ -114,8 +127,8 @@ test("UserPromptSubmit passes the prompt as one argv element", async () => {
   });
   await runPrompt({ prompt }, { env });
   const argv = JSON.parse(readFileSync(argvOut, "utf8"));
-  assert.deepEqual(argv.slice(0, 4), ["nav", "suggest", "--event", "user_prompt"]);
-  assert.equal(argv.at(-1), prompt);
+  assert.deepEqual(argv, ["nav", "suggest", "--format", "json"]);
+  assert.equal(argv.includes(prompt), false);
 });
 
 test("classifyToolCall: raw tools, mi-lsp tools, and the mi-lsp CLI", () => {
