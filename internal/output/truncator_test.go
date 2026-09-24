@@ -1,6 +1,9 @@
 package output
 
 import (
+	"bytes"
+	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -107,6 +110,143 @@ func TestApplyEnvelopeLimits_TruncationRecordsOmissions(t *testing.T) {
 	if got.Omissions[0].ErrorCode != "max_items" {
 		t.Fatalf("omission error_code = %q, want max_items", got.Omissions[0].ErrorCode)
 	}
+}
+
+func TestCapRenderedLeavesShortTextUnchanged(t *testing.T) {
+	in := []byte("ok=true backend=nav\ncontinuation: reason=low_evidence\n  next nav.related\n")
+	if !bytes.Equal(CapRendered(in, 0), in) || !bytes.Equal(CapRendered(in, -5), in) {
+		t.Fatal("non-positive maxChars changed the text")
+	}
+	if !bytes.Equal(CapRendered(in, len(in)), in) || !bytes.Equal(CapRendered(in, len(in)+10), in) {
+		t.Fatal("short text changed")
+	}
+}
+
+func TestCapRenderedTextKeepsContinuationAndWindowsPath(t *testing.T) {
+	const winPath = `C:\repos\mios\file.go`
+	env := cappedContinuationEnvelope(winPath)
+	rendered, err := Render(env, "text", false)
+	if err != nil {
+		t.Fatalf("render text: %v", err)
+	}
+	const maxChars = 180
+	if len(rendered) <= maxChars {
+		t.Fatalf("fixture is not over budget: %d", len(rendered))
+	}
+	capped := CapRendered(rendered, maxChars)
+	text := string(capped)
+	marker := fmt.Sprintf("...[truncated %d chars; continuation preserved]...", len(rendered)-maxChars)
+	if !strings.Contains(text, marker) {
+		t.Fatalf("missing marker %q in %s", marker, text)
+	}
+	if !strings.Contains(text, "continuation: reason=low_evidence") || !strings.Contains(text, "next nav.related") {
+		t.Fatalf("continuation.next dropped: %s", text)
+	}
+	if !strings.Contains(text, "path="+winPath) {
+		t.Fatalf("windows path dropped or interpreted: %s", text)
+	}
+	if strings.Contains(text, "C:\r") || strings.Contains(text, "SHOULD_DROP_MP") {
+		t.Fatalf("cap interpreted escapes or kept the suffix: %s", text)
+	}
+}
+
+func TestCapRenderedJSONKeepsContinuationAndWindowsPath(t *testing.T) {
+	const winPath = `C:\repos\mios\file.go`
+	env := cappedContinuationEnvelope(winPath)
+	rendered, err := Render(env, "json", false)
+	if err != nil {
+		t.Fatalf("render json: %v", err)
+	}
+	const maxChars = 220
+	if len(rendered) <= maxChars {
+		t.Fatalf("fixture is not over budget: %d", len(rendered))
+	}
+	capped := CapRendered(rendered, maxChars)
+	text := string(capped)
+	marker := fmt.Sprintf("...[truncated %d chars; continuation preserved]...", len(rendered)-maxChars)
+	if !strings.Contains(text, marker) {
+		t.Fatalf("missing marker %q in %s", marker, text)
+	}
+	if strings.Contains(text, "\r") || strings.Contains(text, "SHOULD_DROP_MP") {
+		t.Fatalf("cap interpreted escapes or kept the suffix: %s", text)
+	}
+	if !strings.Contains(text, `C:\\repos\\mios\\file.go`) {
+		t.Fatalf("json path escapes changed: %s", text)
+	}
+	got := decodeCappedContinuation(t, text)
+	if got.Next.Op != "nav.related" || got.Next.Path != winPath || got.Reason != "low_evidence" {
+		t.Fatalf("continuation = %+v", got)
+	}
+}
+
+func TestCapRenderedKeepsContinuationWhenItExceedsBudget(t *testing.T) {
+	const winPath = `C:\repos\mios\file.go`
+	env := cappedContinuationEnvelope(winPath)
+	env.Continuation.Next.Query = strings.Repeat("y", 400)
+	for _, format := range []string{"text", "json"} {
+		t.Run(format, func(t *testing.T) {
+			rendered, err := Render(env, format, false)
+			if err != nil {
+				t.Fatalf("render %s: %v", format, err)
+			}
+			const maxChars = 40
+			capped := CapRendered(rendered, maxChars)
+			text := string(capped)
+			if len(capped) <= maxChars {
+				t.Fatalf("continuation was truncated to the budget: %d", len(capped))
+			}
+			if !strings.Contains(text, fmt.Sprintf("...[truncated %d chars; continuation preserved]...", len(rendered)-maxChars)) {
+				t.Fatalf("missing marker in %s", text)
+			}
+			if format == "text" {
+				if !strings.Contains(text, "next nav.related") || !strings.Contains(text, "path="+winPath) || !strings.Contains(text, strings.Repeat("y", 400)) {
+					t.Fatalf("text continuation was cut: %s", text)
+				}
+				return
+			}
+			got := decodeCappedContinuation(t, text)
+			if got.Next.Op != "nav.related" || got.Next.Path != winPath || got.Next.Query != strings.Repeat("y", 400) {
+				t.Fatalf("json continuation was cut: %+v", got.Next)
+			}
+		})
+	}
+}
+
+func cappedContinuationEnvelope(winPath string) model.Envelope {
+	return model.Envelope{
+		Ok:        true,
+		Backend:   "nav",
+		Workspace: "mi-lsp",
+		Items:     []map[string]any{{"name": "status"}},
+		Hint:      strings.Repeat("x", 4000),
+		Continuation: &model.Continuation{
+			Reason: "low_evidence",
+			Next: model.ContinuationTarget{
+				Op:     "nav.related",
+				Path:   winPath,
+				Symbol: "Widget",
+			},
+		},
+		MemoryPointer: &model.MemoryPointer{DocID: "SHOULD_DROP_MP", Why: "after continuation"},
+	}
+}
+
+func decodeCappedContinuation(t *testing.T, text string) model.Continuation {
+	t.Helper()
+	idx := strings.LastIndex(text, `"continuation"`)
+	if idx < 0 {
+		t.Fatalf("missing continuation in %s", text)
+	}
+	rest := strings.TrimLeft(text[idx+len(`"continuation"`):], " \t\r\n")
+	if !strings.HasPrefix(rest, ":") {
+		t.Fatalf("continuation is not a key: %s", rest)
+	}
+	rest = strings.TrimLeft(rest[1:], " \t\r\n")
+	var got model.Continuation
+	if err := json.NewDecoder(strings.NewReader(rest)).Decode(&got); err != nil {
+		t.Fatalf("decode continuation: %v\n%s", err, text)
+	}
+	return got
 }
 
 func TestApplyEnvelopeLimits_CharBudgetRecordsOmission(t *testing.T) {

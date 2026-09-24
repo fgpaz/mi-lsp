@@ -295,6 +295,7 @@ El struct `internal/service/config.go` centraliza todos los valores hardcodeados
 - `workspace list` y `workspace status` deben salir desde registry + `project.toml` normalizado cuando la topologia cacheada ya tiene `repo[]` y `entrypoint[]`, sin redescubrir child repos en el hot path; preservan todos los aliases registrados aunque compartan root fisico. La redeteccion pesada queda como fallback para bootstrap o `project.toml` incompleto.
 - `workspace list --group-by-root` agrupa aliases por root exacto y expone `root`, `alias_count`, `aliases`, `canonical_alias`, `selection_reason`, `kind` y warnings sin mutar registry.
 - `workspace doctor` es no mutante y diagnostica aliases que comparten root exacto, familias de worktrees por `git common dir`, paths stale, readiness documental/gobernanza de aliases vivos, colisiones case-insensitive en el tree Git, shadowing de binario, `health`, `next_actions` y comandos sugeridos.
+- `workspace which` es el resolver de solo lectura (workspace efectivo y ejecutable en uso). `MI_LSP_BIN`, si está definido, debe apuntar al ejecutable real (`mi-lsp.exe` en Windows); un shim `.cmd` no es válido. `nav suggest` no reemplaza a `nav intent`. El detalle de la puerta opcional `mi-lsp mcp` vive en [[TECH-MCP-ADAPTER]].
 - `workspace hygiene` reutiliza diagnosticos de doctor y la poda segura existente para una superficie agent-first: por default no muta; con `--apply-safe` solo limpia aliases stale/defaults invalidos del registry. Nunca borra worktrees, roots, indices, ramas ni procesos; aliases vivos con gobernanza bloqueada, `docs_ready=false` o `doc_count=0` quedan como `workspace_readiness_issues` con acciones manuales.
 - `workspace prune --stale --dry-run|--apply` limpia solamente entradas del `registry.toml` cuyo root ya no existe; nunca borra worktrees, directorios ni indices repo-locales.
 - `workspace status --no-auto-sync` permite diagnostico read-only para smokes cross-workspace: reporta la proyeccion stale/bloqueada sin escribir `read-model.toml` en repos externos.
@@ -343,6 +344,7 @@ Los comandos `nav ask/search/find --all-workspaces` implementan un patrón de pa
 - [TECH-DOC-ROUTER.md](07_tech/TECH-DOC-ROUTER.md)
 - [TECH-SEMANTIC-RECALL.md](07_tech/TECH-SEMANTIC-RECALL.md)
 - [TECH-GRAPH-NATIVE.md](07_tech/TECH-GRAPH-NATIVE.md)
+- [TECH-MCP-ADAPTER.md](07_tech/TECH-MCP-ADAPTER.md)
 
 ## Change triggers
 
@@ -358,5 +360,6 @@ Actualizar `07` y/o `TECH-*` cuando cambie cualquiera de estos puntos:
 - perfiles de exploracion docs-first o evidence-first como `nav ask` y `nav service`
 - embeddings backends, profiles, configuracion, migracion o recall contract
 - identidad/generations graph-native, adapters, publicacion/recovery, bounded query, federacion, context optimizer o MILX
+- puerta `mi-lsp mcp`, su presupuesto de 20 MB RSS, o estado propio en `integrations/`
 
 - [TECH-SEMANTIC-PREPARATION.md](07_tech/TECH-SEMANTIC-PREPARATION.md) - migración portable de preparación semántica

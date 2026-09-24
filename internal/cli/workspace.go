@@ -163,6 +163,6 @@ By default this command is a dry run. Use --apply to remove only aliases whose
 	linkCommand.Flags().StringVar(&linkRole, "role", "", "Canon role: producto, ecosistema, or gobierno_local")
 	_ = linkCommand.MarkFlagRequired("role")
 
-	command.AddCommand(addCommand, scanCommand, listCommand, doctorCommand, hygieneCommand, pruneCommand, warmCommand, statusCommand, removeCommand, linkCommand)
+	command.AddCommand(addCommand, scanCommand, listCommand, doctorCommand, hygieneCommand, pruneCommand, warmCommand, statusCommand, removeCommand, linkCommand, newWorkspaceWhichCommand(state))
 	return command
 }

@@ -129,12 +129,14 @@ type MemoryPointer struct {
 }
 
 type EnvelopeError struct {
-	Kind      string `json:"kind,omitempty"`
-	Code      string `json:"code,omitempty"`
-	Message   string `json:"message,omitempty"`
-	Stage     string `json:"stage,omitempty"`
-	HintCode  string `json:"hint_code,omitempty"`
-	Retryable bool   `json:"retryable,omitempty"`
+	Kind       string `json:"kind,omitempty"`
+	Code       string `json:"code,omitempty"`
+	Message    string `json:"message,omitempty"`
+	Stage      string `json:"stage,omitempty"`
+	HintCode   string `json:"hint_code,omitempty"`
+	Retryable  bool   `json:"retryable,omitempty"`
+	ReasonCode string `json:"reason_code,omitempty"`
+	Detail     string `json:"detail,omitempty"`
 }
 
 // StableError is a terminal error whose public text is already a stable code.

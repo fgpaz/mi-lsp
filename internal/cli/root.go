@@ -166,6 +166,7 @@ func NewRootCommand() *cobra.Command {
 		newDoctorCommand(state),
 		newSkillsCommand(state),
 		newSeedCommand(state),
+		newMCPCommand(state),
 	)
 	return root
 }
@@ -329,6 +330,7 @@ func buildCLIErrorEnvelope(request model.CommandRequest, route string, err error
 		Error:     &envErr,
 		Warnings:  errorWarnings(envErr),
 	}
+	ensureFallbackReason(&env)
 	var graphErr *model.GraphQueryError
 	if errors.As(err, &graphErr) {
 		if len(graphErr.Candidates) > 0 {
@@ -704,10 +706,12 @@ func (s *rootState) printEnvelope(envelope model.Envelope, opts model.QueryOptio
 func (s *rootState) printPreparedEnvelope(envelope model.Envelope, opts model.QueryOptions) error {
 	// Set profile based on resolved value from root state
 	envelope.Profile = resolveProfile(s.profile, s.clientName)
+	ensureFallbackReason(&envelope)
 	rendered, err := output.Render(envelope, opts.Format, opts.Compress)
 	if err != nil {
 		return err
 	}
+	rendered = output.CapRendered(rendered, opts.MaxChars)
 	_, err = fmt.Fprintln(os.Stdout, string(rendered))
 	return err
 }

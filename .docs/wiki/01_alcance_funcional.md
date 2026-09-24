@@ -105,7 +105,7 @@ flowchart TD
 
 # 5. Areas funcionales de alto nivel
 
-- Gestion de workspaces: alta, inicializacion corta, descubrimiento, aliases, estado y warmup.
+- Gestion de workspaces: alta, inicializacion corta, descubrimiento, aliases, estado y warmup. `workspace which` resuelve el alias o root y el ejecutable en uso sin mutar el registry. `nav suggest` sugiere un comando `nav` que la CLI ya expone.
 - Navegacion y discovery: simbolos, referencias, outline, overview, contexto, dependencias, exploracion `nav wiki`, preguntas docs-first, reading packs canonicos, busqueda por intencion y resumen de servicios. En workspaces `container`, `find/search/intent` pueden acotar por `--repo` sin perder el modo directo. Federacion wiki: `nav wiki-root` resuelve raíces `[[canon]]` externas o el default `.docs/wiki`; `--all-workspaces` recorre wikis de multiples espacios en una sola máquina con fan-out controlado. Ver [[FL-WIKI-01]] y [[RF-WKS-008]].
 - Indexacion repo-local: catalogo liviano de simbolos, archivos, metadatos del workspace y grafo documental; el grafo nativo se genera y publica con [[FL-GPH-01]].
 - El grafo nativo agrega consultas para consultar, explicar e impactar. Ver [[FL-GPH-02]].
@@ -113,11 +113,12 @@ flowchart TD
 - Enrutamiento semantico: Roslyn para semantica profunda C#; tree-sitter/ripgrep para TS/Next y texto; Pyright para Python cuando este disponible; extractor AST nativo para Go con enriquecimiento `gopls` opcional; fallback catalog/text visible cuando la semantica profunda no esta disponible.
 - Formateo de salida: envelopes JSON compactos, truncacion determinista y warnings explicitos.
 - Operacion runtime: daemon opcional, worker install explicito y fallback cuando faltan dependencias.
+- Puerta local opcional: `mi-lsp mcp` expone la misma CLI por stdio. No es un segundo producto. Ver [[TECH-MCP-ADAPTER]]. Cada puerta de host bajo `integrations/` es opcional.
 
 # 6. Fuera de alcance / Evolucion futura
 
 - Edicion y refactor semantico seguro.
-- MCP server, dashboard web o GUI remota.
+- Un servidor MCP persistente de terceros, dashboard web o GUI remota. La puerta local opcional `mi-lsp mcp` no es ese servidor.
 - Semantica TypeScript profunda equivalente a C# mediante `tsserver`.
 - Soporte activo para lenguajes fuera de C#/TS/Python/Go en v1.
 - Persistencia semantica completa de referencias y jerarquias C# en SQLite.

@@ -124,6 +124,7 @@ evidence:
 - Si `nav search` agota presupuesto o timeout interno despues de encontrar resultados parciales seguros, debe devolver `ok=true`, preservar los `items` parciales, agregar warning tipado de timeout, `next_hint` accionable para acotar/reintentar y `coach.trigger=search_timeout`.
 - Si el daemon falla y el fallback directo responde, el envelope emite `hint: "daemon_unavailable; served from local text index"`.
 - `--format`, `--max-items`, `--max-chars` y `--token-budget` explicitos ganan sobre defaults AXI.
+- `--max-chars` es global. `0` o ausente no es tope explicito; si hay `token_budget` mayor que cero, el truncador puede derivar `token_budget * 4`. Un valor explicito mayor que cero es el tope de caracteres. El recorte deja `truncated=true`, un marcador de truncacion y `continuation.next` cuando esa continuacion existia.
 - `mi-lsp version` usa el mismo envelope estable cuando se pasa `--format compact|json|toon|yaml`; sin `--format` explicito usa `text` legible y no requiere workspace ni daemon.
 
 ## 8. Data Model Impact

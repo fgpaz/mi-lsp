@@ -86,7 +86,8 @@ flowchart LR
 
 | Modulo | Responsabilidad |
 |---|---|
-| CLI | Parseo de comandos, flags globales, selectors semanticos y shortcut `init` |
+| CLI | Parseo de comandos, flags globales, selectors semanticos y shortcut `init`. Autoridad unica de navegacion. |
+| Puerta MCP | `mi-lsp mcp`: adaptador stdio fino y sin estado sobre la CLI. No indexa, no cachea y no reemplaza al comando. Ver [[TECH-MCP-ADAPTER]]. |
 | Daemon global Go | Routing, health, telemetry, governance UI y sharing entre clientes |
 | Governance UI | Consola workspace-first con visibilidad de `kind`, repos y entrypoints |
 | Core Go | Discovery de workspace, indexacion repo-local, routing semantico, truncacion, `nav wiki`, `nav ask`, `nav pack` y service exploration |
@@ -187,3 +188,21 @@ El límite explícito: mi-lsp **NO maneja** cross-máquina. La federación wiki 
 - `FL-GPH-01`: generar y publicar el grafo nativo con `GraphGeneration` y `NodeKey`.
 - `FL-GPH-02`: consultar, explicar e inspeccionar impacto sobre un snapshot publicado.
 - `FL-GPH-03`: ejecutar extensiones `MILX-v1` en un host aislado y tolerante a fallos.
+
+## Puerta MCP
+
+```toon
+doc_id: 02_arquitectura
+block_id: architecture-mcp-door
+source_of_truth: TECH-MCP-ADAPTER
+status: accepted
+date: 2026-09-24
+---
+DECISIONS
+
+1. `mi-lsp mcp` solo expone capacidades que la CLI ya tiene, como herramientas MCP bien descritas. Es un adaptador fino y sin estado sobre los mismos caminos. La CLI sigue siendo la autoridad y sigue funcionando si la puerta MCP falla.
+2. La puerta y las integraciones del repositorio no agregan caches, indices, workers en segundo plano ni estado propio. El trabajo pesado queda en el daemon compartido. Una excepcion exige mejora clara de usabilidad y su costo medido escrito en TECH-MCP-ADAPTER.
+3. El presupuesto es 20 MB de RSS o menos por sesion de `mi-lsp mcp`, medido y registrado en TECH-MCP-ADAPTER. El mismo principio cubre `integrations/`.
+```
+
+Detalle y medición: [[TECH-MCP-ADAPTER]].

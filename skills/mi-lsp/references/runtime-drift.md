@@ -80,7 +80,7 @@ For `wiki_code_context`, freshness is reported independently for `docs_manifest`
 
 ## Fallback discipline
 
-Keep `mi-lsp` first. An external fallback is permitted only when the visible reason is one of `unsupported_operation`, `unavailable_binary`, `invalid_workspace`, or `explicit_incomplete`. A timeout, silence, `DONE`, or `PASS` without fresh evidence must remain visible as incomplete evidence; it is never a silent fallback trigger. If the runtime returns labeled catalog/text/heuristic evidence, preserve that label and do not present it as semantic certainty. Use 180/300-second soft/hard watchdogs, at most two same-context recoveries with a smaller packet and no unchanged retry, at most six practical lanes with exclusive `allowed_paths`, fail-closed joins, and fresh verification. Redact prompts, transcripts, secrets, PII, PHI, argv, and raw patterns; do not invent model/provider metadata.
+Keep `mi-lsp` first. An external fallback is permitted only when the visible `reason_code` is one of `unsupported_operation`, `unavailable_binary`, `invalid_workspace`, or `explicit_incomplete`, with a separate sanitized `detail`. A timeout, silence, `DONE`, or `PASS` without fresh evidence must remain visible as incomplete evidence; it is never a silent fallback trigger. If the runtime returns labeled catalog/text/heuristic evidence, preserve that label and do not present it as semantic certainty. Use 180/300-second soft/hard watchdogs, at most two same-context recoveries with a smaller packet and no unchanged retry, at most six practical lanes with exclusive `allowed_paths`, fail-closed joins, and fresh verification. Redact prompts, transcripts, secrets, PII, PHI, argv, and raw patterns; do not invent model/provider metadata.
 
 ## After rebuild or reinstall
 
@@ -95,6 +95,9 @@ mi-lsp workspace status <alias> --format compact
 
 - Prefer the canonical installed binary on `PATH`
 - For this repo's local release flow, treat `dist/<rid>/mi-lsp(.exe)` plus the installed copy under the chosen install dir as canonical
+- On Windows the release artifact is `mi-lsp.exe`. A `.cmd` shim is not the product
+- `MI_LSP_BIN`, when set, must point at that real executable; if it points at a shim or a missing file, treat the result as `unavailable_binary` with its separate `detail`
+- `mi-lsp workspace which` is the read-only check for the resolved workspace and the executable in use
 - Do not assume the repo-root `mi-lsp.exe` is the active binary unless `Get-Command mi-lsp` proves it
 - Use `cli_path` from `mi-lsp worker status --format compact` to confirm which executable answered the probe
 - Use `executable_sha256` from `mi-lsp daemon status --format toon` to confirm the daemon is running the same build content as the invoking CLI; path differences alone can be benign for `go run`

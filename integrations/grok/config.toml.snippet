@@ -1,0 +1,8 @@
+# Pegá esto en ~/.grok/config.toml, o en .grok/config.toml del proyecto.
+# Equivale a: grok mcp add --scope user mi-lsp -- mi-lsp mcp
+# En Windows, si `mi-lsp` es un .cmd, command tiene que ser el .exe real.
+
+[mcp_servers.mi-lsp]
+command = "mi-lsp"
+args = ["mcp"]
+enabled = true

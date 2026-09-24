@@ -5,7 +5,7 @@ description: Use when a folder-based agent should navigate code with the mi-lsp 
 
 # mi-lsp
 
-Use this skill when you want local semantic navigation with `mi-lsp` without introducing an MCP dependency.
+Use this skill when you want local semantic navigation with the `mi-lsp` CLI. The CLI is the authority. `mi-lsp mcp` and each host door under `integrations/` are optional; do not require them, and do not treat a host door as a second router.
 If the skill is installed but the binary is missing, bootstrap the CLI first instead of abandoning the flow.
 
 For an explicitly authorized isolated graph QA run (not a routine query), follow [R6 — Authorized isolated graph QA](references/recipes.md#r6--authorized-isolated-graph-qa). Keep its setup at the start of authorized verification; it is not a hidden build/C2 preflight.
@@ -176,7 +176,7 @@ If the provider, key, or embeddings config fails, do not expect a hidden BGE fal
 mi-lsp nav wiki search "<query>" --workspace <alias> --format toon
 ```
 
-This is an intentional governed `mi-lsp` lane, not an external fallback. External fallback reasons remain limited to `unsupported_operation`, `unavailable_binary`, `invalid_workspace`, and `explicit_incomplete`.
+This is an intentional governed `mi-lsp` lane, not an external fallback. External fallback reasons remain limited to `unsupported_operation`, `unavailable_binary`, `invalid_workspace`, and `explicit_incomplete`, each with a separate sanitized `detail`.
 
 ## Preparation versus edit planning
 
@@ -337,13 +337,19 @@ In cross-workspace `nav find` / `nav search` results, structured formats may inc
 
 ## Tool binding
 
-Run `mi-lsp` through the host shell tool, not through a custom MCP tool:
+The CLI is the authority. Run `mi-lsp` through the host shell tool:
 
 - Codex: `functions.shell_command`
 - Claude Code: shell/Bash tool
 - Other skill-based agents: the local terminal/shell tool they already expose
 
-Do not wait for a dedicated `mi-lsp` MCP integration. `mi-lsp` is a CLI-first tool.
+`mi-lsp mcp` is an optional stdio door over the same commands. Host doors in [integrations/](../../integrations/) are optional. If a door is missing or fails, keep using the CLI. Do not invent a second command surface.
+
+`MI_LSP_BIN`, when set, must point at the real executable (`mi-lsp.exe` on Windows). A `.cmd` or `.bat` shim is not a valid override and is not the Windows release artifact.
+
+`mi-lsp workspace which` reports the resolved workspace and the executable in use. It does not change the registry. `mi-lsp nav suggest` names one existing `nav` command. Hosts pass `--event user_prompt` or `--event post_tool` by argv. Keep `command` separate from `hint` or `suggested_command`. It does not replace `nav intent`.
+
+Global `--max-chars` caps rendered output. `0` means unset. A positive value wins over AXI defaults. Truncation keeps `continuation.next` and a truncation marker.
 
 ## Install bootstrap
 
@@ -376,6 +382,8 @@ Installer rules:
 - Darwin archives map to worker RIDs `osx-x64` and `osx-arm64`; do not map Darwin to a Linux archive.
 - Archives come from GitHub Releases latest and must pass SHA256 verification before extraction.
 - The install must keep `workers/<rid>/` next to the `mi-lsp` binary or run `mi-lsp worker install`.
+- Windows releases for `win-x64` and `win-arm64` ship `mi-lsp.exe`. A `.cmd` shim is not the product.
+- `MI_LSP_BIN`, when set, must point at that real executable, not at a `.cmd` or `.bat` shim.
 - `install-agent` requires `npx` and uses `npx skills add fgpaz/mi-lsp --skill mi-lsp -g -a codex -a claude-code -y`; it has no folder-copy fallback.
 
 Verify the install:
@@ -556,6 +564,8 @@ If `mi-lsp` is not on `PATH`, install it from Releases or repair `PATH` for the 
 Use these commands first:
 
 - Open the discovery home: `mi-lsp`
+- Resolve workspace and executable: `mi-lsp workspace which --format toon`
+- Suggest one existing nav command: `mi-lsp nav suggest --workspace <alias> --format toon`
 - Resolve wiki root: `mi-lsp nav wiki-root --workspace <alias> --format toon` (alias `nav wiki root`; add `--role producto` when `[[canon]]` is declared)
 - Knowledge-wiki hub map: `mi-lsp nav wiki map --workspace <alias> --format toon`
 - Wiki-first doc search: `mi-lsp nav wiki search "workflow masterformularios" --workspace <alias> --layer RS,RF,FL,CT,TP --format toon`
@@ -671,7 +681,7 @@ Use `mi-lsp` first for repo navigation, docs-first Q&A, symbol lookup, service a
 - Use `nav trace` to inspect RS/RF/TP evidence; RF remains the implementation-link path, while RS returns the outcome document identity.
 - Use `workspace-map`, `search --include-content`, and `multi-read` before broad raw file reads.
 - Use `related`, `context`, `refs`, and `deps` when you need semantic depth.
-- Use plain `rg`, `Grep`, `Glob`, or broad raw reads only when the runtime visibly reports `unsupported_operation`, `unavailable_binary`, `invalid_workspace`, or `explicit_incomplete`; state which condition applies.
+- Use plain `rg`, `Grep`, `Glob`, or broad raw reads only when the runtime visibly reports `unsupported_operation`, `unavailable_binary`, `invalid_workspace`, or `explicit_incomplete` together with a separate `detail`; state which condition applies.
 
 ## Routing model
 
@@ -704,6 +714,8 @@ mi-lsp workspace warm --workspace <alias>
 When you want clean governance and telemetry attribution, set:
 - `MI_LSP_CLIENT_NAME`
 - `MI_LSP_SESSION_ID`
+
+Set `MI_LSP_BIN` only to override which executable answers. It must be the real binary, never a Windows `.cmd` shim.
 
 ## When to open references
 
@@ -739,7 +751,7 @@ For graph/change explanations, organize the answer with the seven available sect
 
 ## Fallback
 
-Keep `mi-lsp` first. An external fallback is allowed only when the result carries one of these visible reasons: `unsupported_operation`, `unavailable_binary`, `invalid_workspace`, or `explicit_incomplete`. A timeout is never a silent fallback trigger. Preserve preview sections, partial evidence, candidates, omissions, and heuristic labels; report the limitation and use the exact expansion command when one is emitted. If none of the four reasons is present, do not leave the `mi-lsp` lane.
+Keep `mi-lsp` first. An external fallback is allowed only when the result carries one of these visible `reason_code` values: `unsupported_operation`, `unavailable_binary`, `invalid_workspace`, or `explicit_incomplete`, plus a separate bounded `detail`. The canonical details are `the requested operation is not supported`, `the required backend binary is unavailable`, `the requested workspace is invalid`, and `the result is explicitly incomplete`. Do not merge the detail into the code and do not replace it with raw input. A timeout is never a silent fallback trigger. Preserve preview sections, partial evidence, candidates, omissions, and heuristic labels; report the limitation and use the exact expansion command when one is emitted. If none of the four reasons is present, do not leave the `mi-lsp` lane. Host doors under `integrations/` stay optional.
 
 ## Portable preparation
 

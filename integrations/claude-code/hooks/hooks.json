@@ -1,0 +1,29 @@
+{
+  "description": "Advisory mi-lsp hooks. UserPromptSubmit and PostToolUse call mi-lsp nav suggest via argv spawn and fail open: timeouts, a missing binary, bad JSON, and thrown errors still exit 0 with continue true.",
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/user-prompt-submit.mjs\"",
+            "timeout": 6
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/post-tool-use.mjs\"",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  }
+}

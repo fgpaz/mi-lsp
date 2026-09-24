@@ -1,0 +1,16 @@
+{
+  "name": "mi-lsp",
+  "description": "Catálogo local del plugin de Claude Code para mi-lsp.",
+  "owner": {
+    "name": "Gabriel Paz"
+  },
+  "plugins": [
+    {
+      "name": "mi-lsp",
+      "source": "./integrations/claude-code",
+      "description": "Servidor MCP nativo mi-lsp mcp y hooks advisory (UserPromptSubmit, PostToolUse) que fallan abiertos.",
+      "version": "0.1.0",
+      "license": "MIT"
+    }
+  ]
+}

@@ -7,6 +7,19 @@ and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2
 
 ## [Unreleased]
 
+### Added
+
+- Optional `mi-lsp mcp` stdio door over the existing CLI. The CLI stays the authority. Each host door under `integrations/` is optional and is not a second navigation product. The protocol remains `mi-lsp-v1.1`.
+- `workspace which` reports the resolved workspace and the executable in use. It does not change the registry. `workspace doctor` remains the broader hygiene report.
+- `nav suggest` returns a bounded suggestion of an existing `nav` command, with `command` and `reason` kept separate. It does not replace `nav intent` and it is not an external fallback.
+- Global `--max-chars`. `0` means no explicit character cap. A positive value is the cap and wins over AXI defaults. Truncation keeps `continuation.next` and a truncation marker.
+- Terminal external failures expose exactly one `reason_code` — `unsupported_operation`, `unavailable_binary`, `invalid_workspace`, or `explicit_incomplete` — plus a separate canonical `detail`. The detail is not raw input.
+- `MI_LSP_BIN`, when set, must point at the real executable (`mi-lsp.exe` on Windows, `mi-lsp` elsewhere). A `.cmd` or `.bat` shim is not a valid override.
+
+### Notes
+
+- Windows releases for `win-x64` and `win-arm64` ship `mi-lsp.exe`. A `.cmd` shim is not the product.
+
 ## [0.8.1] - 2026-08-27
 
 ### Fixed

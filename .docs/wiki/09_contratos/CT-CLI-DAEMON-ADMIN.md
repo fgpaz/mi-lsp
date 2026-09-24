@@ -63,8 +63,9 @@ Define la frontera entre clientes locales y el runtime compartido: CLI publica, 
 
 Comandos canonicos:
 
-- `workspace add|scan|list|warm|status|remove|doctor|hygiene|prune`
-- `nav symbols|find|refs|overview|outline|service|search|context|deps|ask|pack|prepare|batch|related|workspace-map|diff-context|affected|trace|intent`
+- `workspace add|scan|list|warm|status|remove|doctor|hygiene|prune|which`
+- `nav symbols|find|refs|overview|outline|service|search|context|deps|ask|pack|prepare|batch|related|workspace-map|diff-context|affected|trace|intent|suggest`
+- `mcp` (puerta stdio opcional; la decision de arquitectura vive en [[TECH-MCP-ADAPTER]] y no se reabre aqui)
 - `index [path] [--clean] [--docs-only] [--entrypoint <id|repo-relative-path>]`
 - `index start|status|cancel` (`start` admite `--entrypoint <id|repo-relative-path>`)
 - `info`
@@ -108,7 +109,7 @@ Flags globales minimos:
 - `--format compact|json|text|toon|yaml`
 - `--token-budget`
 - `--max-items`
-- `--max-chars`
+- `--max-chars` (global; `0` = sin tope explicito; un valor `> 0` es el tope de caracteres y gana sobre defaults AXI; el recorte conserva `continuation.next` y un marcador de truncacion)
 - `--client-name`
 - `--session-id`
 - `--backend`
@@ -123,6 +124,42 @@ Flags especificos:
 - `nav search --regex`
 - `nav affected --from-git-diff --changed-ref <ref> --stdin --include-tests --include-docs --quiet --test-command <cmd>`
 - `nav service --include-archetype`
+
+```toon
+block_id: CT-CLI-DAEMON-ADMIN.native-plugin-surface
+description: "Superficie publica de la puerta nativa; la autoridad sigue siendo la CLI"
+authority: CLI
+protocol: mi-lsp-v1.1
+decision: TECH-MCP-ADAPTER
+commands:
+  mcp: "adaptador stdio opcional sobre comandos ya existentes; no indexa ni reemplaza a la CLI"
+  workspace_which: "solo lectura; workspace resuelto y ruta del ejecutable en uso; no muta el registry"
+  nav_suggest: "sugerencia acotada; --event user_prompt [--prompt] o --event post_tool --tool --consecutive; salida mi-lsp nav … o JSON command separado de hint/suggested_command; no reemplaza nav intent"
+binary_override:
+  name: MI_LSP_BIN
+  must_point_at: real_executable
+  windows: mi-lsp.exe
+  cmd_shim: not_valid
+max_chars:
+  flag: --max-chars
+  scope: global
+  unset: 0
+  explicit_positive: hard_character_cap
+  truncation_keeps: [continuation.next, truncation_marker]
+terminal_fallback:
+  fields: [reason_code, detail]
+  detail: separate_canonical_sanitized_never_raw_input
+  allowlist:
+    - {reason_code: unsupported_operation, detail: "the requested operation is not supported"}
+    - {reason_code: unavailable_binary, detail: "the required backend binary is unavailable"}
+    - {reason_code: invalid_workspace, detail: "the requested workspace is invalid"}
+    - {reason_code: explicit_incomplete, detail: "the result is explicitly incomplete"}
+  source: [CT-NAV-INTENT, CT-GRAPH-CLI]
+host_doors:
+  path: integrations/
+  optional: true
+  authority: CLI
+```
 
 ### Workspace mismatch guard
 

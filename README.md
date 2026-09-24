@@ -6,7 +6,7 @@
 
 **Stop wasting your agent's context on repository discovery.**
 
-`mi-lsp` is a local CLI that finds relevant code, reads exact file ranges, and follows your repository's canonical documentation. It works with Claude Code, Codex, terminal scripts, and other skill-based agents. No MCP server is required.
+`mi-lsp` is a local CLI that finds relevant code, reads exact file ranges, and follows your repository's canonical documentation. It works with Claude Code, Codex, terminal scripts, and other skill-based agents. No MCP server is required. Optional host doors, including `mi-lsp mcp`, call the same CLI. The CLI remains the authority.
 
 [Install](#install) · [See it work](#see-it-work) · [Documentation](#learn-more) · [Releases](https://github.com/fgpaz/mi-lsp/releases)
 
@@ -37,6 +37,8 @@ curl -fsSL https://raw.githubusercontent.com/fgpaz/mi-lsp/main/scripts/install/i
 ```
 
 The installers select a published Windows, Linux, or macOS bundle, verify its SHA256 checksum, keep the bundled C# worker beside the CLI, and run installation probes.
+
+Windows releases for `win-x64` and `win-arm64` ship a real `mi-lsp.exe`. A `.cmd` shim is not the product and is not a substitute for that executable. If you set `MI_LSP_BIN`, it must point at the real executable (`mi-lsp.exe` on Windows). It must not point at a `.cmd` or `.bat` shim.
 
 ## See it work
 
@@ -126,7 +128,7 @@ Public installers support Windows, Linux, and macOS. Source builds and contribut
 
 Current limits:
 
-- no MCP transport;
+- `mi-lsp mcp` is an optional local stdio door, not a required transport and not a second CLI; host doors under [integrations/](integrations/) are optional;
 - no semantic editing or automated refactoring;
 - no remote or multi-host daemon sharing;
 - no authenticated remote governance UI;
@@ -142,11 +144,16 @@ Use $mi-lsp to find the canonical docs for daemon routing before changing code.
 Use $mi-lsp to read only the relevant ranges for OrderHandler and its tests.
 ```
 
-For shared attribution across several local agents, set `MI_LSP_CLIENT_NAME` and `MI_LSP_SESSION_ID` before running commands.
+For shared attribution across several local agents, set `MI_LSP_CLIENT_NAME` and `MI_LSP_SESSION_ID` before running commands. Set `MI_LSP_BIN` only when a host must override `PATH`, and only to the real executable.
+
+`mi-lsp workspace which` reports the resolved workspace and the executable in use. `mi-lsp nav suggest` suggests one existing `nav` command. A terminal failure carries one `reason_code` (`unsupported_operation`, `unavailable_binary`, `invalid_workspace`, or `explicit_incomplete`) and a separate `detail`. Global `--max-chars` caps output; `0` means unset. See [host doors](docs/policies/mi-lsp-host-doors.md).
 
 ## Learn more
 
 - [Agent skill and command guide](skills/mi-lsp/SKILL.md)
+- [Optional host doors](docs/policies/mi-lsp-host-doors.md)
+- [Host integrations](integrations/)
+- [MCP door decision](.docs/wiki/07_tech/TECH-MCP-ADAPTER.md)
 - [Quickstart](skills/mi-lsp/references/quickstart.md)
 - [Compound command recipes](skills/mi-lsp/references/compound-commands.md)
 - [Functional scope](.docs/wiki/01_alcance_funcional.md)
