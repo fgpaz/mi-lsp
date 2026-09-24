@@ -9,6 +9,7 @@ imports:
   - '[[00_gobierno_documental]]'
   - '[[FL-BOOT-01]]'
   - '[[RF-WKS-008]]'
+  - '[[RF-WKS-009]]'
 exports:
   - 'FL-BOOT-01'
 agent_must_read:
@@ -34,7 +35,7 @@ Registrar o inicializar un workspace `single` o `container` y dejar lista su top
 
 ## 2. Scope in/out
 
-- In: deteccion de root, alias opcional, clasificacion `single|container`, deteccion de repos hijos y `entrypoints`, creacion de `.mi-lsp/`, persistencia de `project.toml` incluyendo `[[RF-WKS-008|canon]]` y `[canon_policy]`, alta en registry global minimo, `workspace link <alias> --role` para asociar un workspace de canon, `init` como happy path corto, resolucion centralizada del modo efectivo AXI/classic via defaults por superficie + `--axi` + `--classic` + `MI_LSP_AXI=1`, home content-first cuando se invoca `mi-lsp` sin subcomando salvo `--classic`, comando `version` sin workspace para provenance del ejecutable, y la precedencia `workspace explicito > workspace por caller_cwd > last_workspace`.
+- In: deteccion de root, alias opcional, clasificacion `single|container`, deteccion de repos hijos y `entrypoints`, creacion de `.mi-lsp/`, persistencia de `project.toml` incluyendo `[[RF-WKS-008|canon]]` y `[canon_policy]`, alta en registry global minimo, `workspace link <alias> --role` para asociar un workspace de canon, `init` como happy path corto, resolucion centralizada del modo efectivo AXI/classic via defaults por superficie + `--axi` + `--classic` + `MI_LSP_AXI=1`, home content-first cuando se invoca `mi-lsp` sin subcomando salvo `--classic`, comando `version` sin workspace para provenance del ejecutable, `workspace which` como resolucion de solo lectura del workspace efectivo y el ejecutable en uso sin mutar el registry, y la precedencia `workspace explicito > workspace por caller_cwd > last_workspace`.
 - Out: descarga automatica de worker y setup remoto.
 
 ## 3. Main sequence
@@ -93,3 +94,4 @@ sequenceDiagram
 - RF-WKS-005 aplicar gate de gobernanza al inicio de toda tarea
 - RF-WKS-006 exponer provenance del binario con `mi-lsp version`
 - RF-WKS-008 declarar raíces de wiki externas con `[[RF-WKS-008|canon]]` y `workspace link --role`
+- RF-WKS-009 resolver workspace y ejecutable en uso con `workspace which` (solo lectura)

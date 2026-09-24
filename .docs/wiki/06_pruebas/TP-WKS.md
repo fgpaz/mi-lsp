@@ -36,6 +36,7 @@ evidence:
 - RF-WKS-005
 - RF-WKS-006
 - RF-WKS-008
+- RF-WKS-009
 
 ## Casos
 
@@ -84,3 +85,7 @@ evidence:
 | TC-WKS-041 | negativo | RF-WKS-008 | rechaza root absoluto, `~/`, UNC o `C:`; `escape_max` omitido=1 y `0` prohíbe parent escape extra |
 | TC-WKS-042 | negativo | RF-WKS-008 | `TestResolveCanonsRejectsSymlinkComponent`: symlink o junction en el path resuelto falla cerrado |
 | TC-WKS-043 | negativo | RF-WKS-008 | `TestIndexWorkspaceDocsSkipsCanonSymlinkMarkdown`: un `.md` symlink dentro de una raíz `[[RF-WKS-008|canon]]` no se indexa |
+| TC-WKS-044 | positivo | RF-WKS-009 | `TestWorkspaceWhichCommandDoesNotUseDaemon`: `workspace which` existe, expone `--cwd` y nunca dispara el hook de ejecucion de operacion (no toca daemon) |
+| TC-WKS-045 | positivo | RF-WKS-009 | `TestWorkspaceWhichPreservesWindowsBackslashPath` + `TestLiteralWorkspacePathDoesNotUnquoteJSONEscapes`: un root Windows con backslash simple se conserva literal en la salida JSON, sin colapsar segmentos ni interpretar `\r`/`\m`/`\p` como escapes |
+| TC-WKS-046 | positivo | RF-WKS-009 | `TestWorkspaceWhichResolvesCWDAndPathSelector`: resuelve por `--workspace` explicito (alias o path), por cwd dentro del root registrado y por `last_workspace`, con `source` correcto en cada caso |
+| TC-WKS-047 | negativo | RF-WKS-009 | documentado en `internal/cli/workspace_which.go:68,89` (`resolveWorkspaceWhich`): un `--workspace` explicito no registrado, o la ausencia de selector con cwd fuera de cualquier root y sin `last_workspace` configurado, devuelven error explicito; sin test Go nombrado que cubra ambas ramas de error (gap residual, ver auditoria) |

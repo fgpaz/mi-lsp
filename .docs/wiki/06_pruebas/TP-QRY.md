@@ -50,6 +50,7 @@ evidence:
 - RF-QRY-015
 - RF-QRY-016
 - RF-QRY-017
+- RF-QRY-020
 
 ## Casos
 
@@ -222,6 +223,15 @@ evidence:
 | TC-QRY-137 | positivo | RF-QRY-019 | `TestNavCommandExposesEvidenceInventory` y `TestShouldUseDaemonPolicy/evidence inventory bypasses daemon`: CLI expone `nav evidence inventory` y preserva ejecucion directa sin daemon |
 | TC-QRY-138 | negativo | RF-QRY-019 | `TestEvidenceInventoryPrefersManifestVerdictAndCountsHeavyArtifacts`: prompts/logs/transcripts con secretos o PHI de fixture no aparecen en JSON ni TOON |
 | TC-QRY-139 | positivo | RF-QRY-019 | `go test ./internal/cli ./internal/service ./internal/output ./internal/reentry`: el contrato compila con render TOON `tokens_est` y sin regresion de reentry/output |
+| TC-QRY-147 | positivo | RF-QRY-001 | `TestEnsureFallbackReasonMapsTerminalFailures` + `TestEnsureFallbackReasonKeepsAllowedCodeAndSanitizesDetail`: fallos terminales externos mapean a un `reason_code` de la allowlist cerrada y conservan `detail` sanitizado en un campo separado |
+| TC-QRY-148 | positivo | RF-QRY-001 | `TestWriteProcessFailureKeepsHumanLineAndTrailer`: un fallo de proceso que nunca llego a envelope conserva la linea humana primero y agrega un unico trailer `reason_code=... detail=...` |
+| TC-QRY-149 | negativo | RF-QRY-001 | `TestEnsureFallbackReasonReplacesUnknownCodeAndBoundsDetail`: un `reason_code` fuera de la allowlist se reemplaza por la clasificacion derivada y el `detail` se acota a 300 caracteres |
+| TC-QRY-150 | negativo | RF-QRY-001 | `TestWriteProcessFailureDetailDoesNotEchoSecrets` + `TestEnsureFallbackReasonIgnoresSuccessAndPreservesWindowsPath`: el `detail` nunca hace eco de tokens/secrets/argv crudos y un envelope exitoso no se toca |
+| TC-QRY-151 | positivo | RF-QRY-001 | `TestCapRenderedTextKeepsContinuationAndWindowsPath` + `TestCapRenderedJSONKeepsContinuationAndWindowsPath`: `--max-chars` recorta preservando `continuation.next` intacto y los backslashes de paths Windows |
+| TC-QRY-152 | negativo | RF-QRY-001 | `TestCapRenderedKeepsContinuationWhenItExceedsBudget`: si el bloque de `continuation` por si solo excede `--max-chars`, se conserva completo en vez de cortarlo a medias |
+| TC-QRY-153 | positivo | RF-QRY-020 | `TestSuggestNav`: Read/Grep/Glob con selector de simbolo mapean a un item `nav multi-read|search|find` con `argv`/`reason` separados y preservan backslashes Windows; Glob de path y tools desconocidas devuelven `items=[]` sin error |
+| TC-QRY-154 | positivo | RF-QRY-020 | `TestNavSuggestCommandEnvelope`: el comando expone `--tool`/`--args`, ejecuta local sin pasar por el dispatch de daemon y devuelve envelope estable `ok=true` |
+| TC-QRY-155 | negativo | RF-QRY-020 | `TestSuggestNav/invalid_json`: `--args` con JSON invalido devuelve error explicito en vez de degradar en silencio |
 
 ## TP-QRY Harness-first: planes, preview y telemetría
 

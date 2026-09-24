@@ -6,9 +6,11 @@ implements:
   - internal/model/types.go
   - internal/output/formatter.go
   - internal/output/truncator.go
+  - internal/cli/reason.go
 tests:
   - internal/output/formatter_test.go
   - internal/output/truncator_test.go
+  - internal/cli/reason_test.go
 ---
 
 # RF-QRY-001 - Emitir envelope estable y truncacion determinista
@@ -124,8 +126,9 @@ evidence:
 - Si `nav search` agota presupuesto o timeout interno despues de encontrar resultados parciales seguros, debe devolver `ok=true`, preservar los `items` parciales, agregar warning tipado de timeout, `next_hint` accionable para acotar/reintentar y `coach.trigger=search_timeout`.
 - Si el daemon falla y el fallback directo responde, el envelope emite `hint: "daemon_unavailable; served from local text index"`.
 - `--format`, `--max-items`, `--max-chars` y `--token-budget` explicitos ganan sobre defaults AXI.
-- `--max-chars` es global. `0` o ausente no es tope explicito; si hay `token_budget` mayor que cero, el truncador puede derivar `token_budget * 4`. Un valor explicito mayor que cero es el tope de caracteres. El recorte deja `truncated=true`, un marcador de truncacion y `continuation.next` cuando esa continuacion existia.
+- `--max-chars` es global. `0` o ausente no es tope explicito; si hay `token_budget` mayor que cero, el truncador puede derivar `token_budget * 4`. Un valor explicito mayor que cero es el tope de caracteres. El recorte deja `truncated=true`, un marcador de truncacion y `continuation.next` cuando esa continuacion existia. Si el bloque de `continuation` por si solo excede `--max-chars`, se conserva completo en vez de cortarlo a medias.
 - `mi-lsp version` usa el mismo envelope estable cuando se pasa `--format compact|json|toon|yaml`; sin `--format` explicito usa `text` legible y no requiere workspace ni daemon.
+- Un fallo terminal externo agrega `error.reason_code` desde la allowlist cerrada en [[CT-NAV-INTENT]] y [[CT-GRAPH-CLI]] (`unsupported_operation`, `unavailable_binary`, `invalid_workspace`, `explicit_incomplete`), mas `error.detail` sanitizado y acotado a 300 caracteres en un campo separado; un `reason_code` fuera de la allowlist se reemplaza por la clasificacion derivada del mensaje/codigo/kind. Un fallo de proceso que nunca llego a formar un envelope imprime la linea humana primero y agrega un unico trailer `reason_code=... detail=...`; el detalle nunca hace eco de tokens, secrets ni argv crudos.
 
 ## 8. Data Model Impact
 
@@ -164,6 +167,13 @@ Scenario: Exponer provenance del binario
   Then la respuesta incluye "backend=version"
   And "items[0]" incluye "goos", "goarch", "protocol_version", "worker_rid", "cli_path", "executable_sha256" y metadata VCS cuando esta disponible
   And no requiere workspace registrado ni daemon activo
+
+Scenario: Mapear un fallo terminal a reason_code y detail separados
+  Given un fallo terminal externo con un mensaje que menciona un workspace invalido
+  When la CLI construye el envelope de error
+  Then "error.reason_code" es uno de "unsupported_operation", "unavailable_binary", "invalid_workspace" o "explicit_incomplete"
+  And "error.detail" es un campo distinto, sanitizado y acotado a 300 caracteres
+  And un "reason_code" fuera de esa lista se reemplaza por la clasificacion derivada
 ```
 
 ## 10. Test Traceability
@@ -174,7 +184,13 @@ Scenario: Exponer provenance del binario
 - Positivo: `TP-QRY / TC-QRY-106`
 - Positivo: `TP-QRY / TC-QRY-108`
 - Positivo: `TP-QRY / TC-QRY-109`
+- Positivo: `TP-QRY / TC-QRY-147`
+- Positivo: `TP-QRY / TC-QRY-148`
+- Positivo: `TP-QRY / TC-QRY-151`
 - Negativo: `TP-QRY / TC-QRY-003`
+- Negativo: `TP-QRY / TC-QRY-149`
+- Negativo: `TP-QRY / TC-QRY-150`
+- Negativo: `TP-QRY / TC-QRY-152`
 
 ## 11. No Ambiguities Left
 

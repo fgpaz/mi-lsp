@@ -105,7 +105,7 @@ flowchart TD
 
 # 5. Areas funcionales de alto nivel
 
-- Gestion de workspaces: alta, inicializacion corta, descubrimiento, aliases, estado y warmup. `workspace which` resuelve el alias o root y el ejecutable en uso sin mutar el registry. `nav suggest` sugiere un comando `nav` que la CLI ya expone.
+- Gestion de workspaces: alta, inicializacion corta, descubrimiento, aliases, estado y warmup. `workspace which` resuelve el alias o root y el ejecutable en uso sin mutar el registry. Ver [[RF-WKS-009]]. `nav suggest` sugiere un comando `nav` que la CLI ya expone. Ver [[RF-QRY-020]].
 - Navegacion y discovery: simbolos, referencias, outline, overview, contexto, dependencias, exploracion `nav wiki`, preguntas docs-first, reading packs canonicos, busqueda por intencion y resumen de servicios. En workspaces `container`, `find/search/intent` pueden acotar por `--repo` sin perder el modo directo. Federacion wiki: `nav wiki-root` resuelve raíces `[[canon]]` externas o el default `.docs/wiki`; `--all-workspaces` recorre wikis de multiples espacios en una sola máquina con fan-out controlado. Ver [[FL-WIKI-01]] y [[RF-WKS-008]].
 - Indexacion repo-local: catalogo liviano de simbolos, archivos, metadatos del workspace y grafo documental; el grafo nativo se genera y publica con [[FL-GPH-01]].
 - El grafo nativo agrega consultas para consultar, explicar e impactar. Ver [[FL-GPH-02]].

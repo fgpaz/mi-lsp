@@ -90,6 +90,12 @@ El objetivo es 20 MB de RSS o menos por sesión de `mi-lsp mcp`. La medición se
 
 La celda de RSS medido se completa con el working set de una sesión que ya respondió `initialize` y `tools/list`, sin cargar un índice dentro del proceso MCP.
 
+## Latencia de referencia (no comparable con un baseline previo)
+
+En la misma sesión de evidencia de esta puerta se corrió `nav overview --workspace mi-lsp --format toon` contra un daemon ya caliente (pid vivo, no reiniciado), tres calentamientos y veinte llamadas cronometradas, todas exit 0. Metodo nearest-rank `ceil(p*n)` sobre esas veinte muestras. p50 232.484 ms; p95 373.564 ms; minimo 199.928 ms; maximo 385.836 ms. Evidencia: `.docs/raw/reportes/2026-09-24-native-plugin-surface.md`.
+
+Este numero no es una linea base nueva del backend `catalog`/`daemon` de `nav overview`, ni de la puerta MCP: no hubo `tools/call` en la sesion MCP, y la llamada cronometrada fue la CLI directa contra el daemon, no `mi-lsp mcp`. Tampoco es comparable de forma estricta contra una corrida anterior con el mismo comando que reporto p50 4677.136 ms / p95 6102.285 ms: el binario cliente cambio, el daemon es el mismo proceso sin reiniciar, y esa corrida anterior no archivo el tamano del payload. Se deja el numero como evidencia puntual del working set de la sesion, no como SLA ni como regla de aceptacion.
+
 ## Presupuesto global `--max-chars`
 
 `--max-chars` es un flag global de la CLI, no un presupuesto privado de la puerta. El default `0` significa que no hay tope explícito: si `--token-budget` es mayor que cero, el truncador puede derivar un tope de `token_budget * 4`. Un valor explícito mayor que cero es el tope de caracteres y gana sobre los defaults AXI, igual que `--format`, `--max-items` y `--token-budget`.

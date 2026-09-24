@@ -7,6 +7,8 @@ and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-09-24
+
 ### Added
 
 - Optional `mi-lsp mcp` stdio door over the existing CLI. The CLI stays the authority. Each host door under `integrations/` is optional and is not a second navigation product. The protocol remains `mi-lsp-v1.1`.
@@ -15,6 +17,11 @@ and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2
 - Global `--max-chars`. `0` means no explicit character cap. A positive value is the cap and wins over AXI defaults. Truncation keeps `continuation.next` and a truncation marker.
 - Terminal external failures expose exactly one `reason_code` — `unsupported_operation`, `unavailable_binary`, `invalid_workspace`, or `explicit_incomplete` — plus a separate canonical `detail`. The detail is not raw input.
 - `MI_LSP_BIN`, when set, must point at the real executable (`mi-lsp.exe` on Windows, `mi-lsp` elsewhere). A `.cmd` or `.bat` shim is not a valid override.
+
+### Changed
+
+- README rewritten for first-time readers: pitch, five-minute quickstart, task-to-command table, host doors, measured footprint and troubleshooting.
+- The per-push `Tests` GitHub Actions workflow was removed; validation runs locally. The tag-only `Release` workflow is unchanged.
 
 ### Notes
 
