@@ -2,7 +2,6 @@
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 ![Go Version](https://img.shields.io/badge/go-1.24+-00ADD8?logo=go)
-[![CI](https://github.com/fgpaz/mi-lsp/actions/workflows/test.yml/badge.svg)](https://github.com/fgpaz/mi-lsp/actions/workflows/test.yml)
 
 **A local CLI that answers "where is X" and "what does the spec say" without an agent burning its context window to find out.**
 
