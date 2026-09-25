@@ -79,7 +79,7 @@ evidence:
 - El gate corre al inicio de toda tarea spec-driven, no solo de tareas documentales.
 - `workspace status` y `nav governance` siguen disponibles aun en `blocked mode`.
 - El policy layer (`AGENTS.md`, `CLAUDE.md`, skills) debe respetar este gate aunque el usuario no lo mencione.
-- Si `--workspace <alias>` explicito apunta a un root distinto del workspace registrado que contiene el `caller_cwd`, el alias explicito gana y el warning debe mostrar el desvio para evitar respuestas desde otro worktree.
+- Si `--workspace <alias>` explicito apunta a un root distinto del workspace registrado que contiene el `caller_cwd`, el CLI humano (`manual-cli`) conserva el alias explicito y el warning muestra ambos roots. Un caller harness, incluido un nombre normalizado (`root`, `builtin_child`, `mi-lsp-mcp`, `pi-chief`, `grok-measure-leaf`), recibe `workspace_cross_workspace_refused` salvo `--allow-cross-workspace`. El detalle de la atribución está en `07_baseline_tecnica.md`.
 
 ## 6. Data Model Impact
 
