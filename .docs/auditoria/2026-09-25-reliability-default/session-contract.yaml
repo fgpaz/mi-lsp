@@ -1,0 +1,45 @@
+schema: ae-session-contract/v1
+task_slug: 2026-09-25-reliability-default
+base_ref: d0c052db53833d9a00a4e9c8476334c0ccb8fa04
+base_sha: d0c052db53833d9a00a4e9c8476334c0ccb8fa04
+branch: main
+worktree_path: C:/repos/mios/mi-lsp
+tracker_mode: none
+expected_scope:
+  - harness workspace mismatch refusal with human manual-cli warning preserved
+  - unknown alias stays a failure and exposes continuation.next for the cwd workspace
+  - read-side known burst marking in admin export
+  - empty hint_code falls back to error.code or explicit_incomplete
+  - workers_at_capacity on a successful call that entered with a full worker pool
+wiki_close: RF-WKS-005 special case aligned with 07_baseline_tecnica.md
+allowed_paths:
+  - .docs/wiki/04_RF/RF-WKS-005.md
+  - .docs/wiki/07_baseline_tecnica.md
+  - .docs/auditoria/2026-09-25-reliability-default/**
+  - CHANGELOG.md
+  - internal/cli/root.go
+  - internal/daemon/**
+  - internal/mcp/tools.go
+  - internal/model/types.go
+  - internal/service/app.go
+  - internal/service/harness_client.go
+  - internal/service/harness_client_test.go
+  - internal/telemetry/**
+  - internal/workspace/registry.go
+  - internal/workspace/resolution_continuation_test.go
+forbidden_paths:
+  - .grok/workflows/**
+  - .pi-subagents/**
+  - .docs/raw/**
+sdd_anchors:
+  - RF-WKS-005
+  - FL-BOOT-01
+  - 07_baseline_tecnica
+  - TC-WKS-035
+  - TC-WKS-036
+touched_cards: not_applicable
+branch_disposition: integrated
+cleanup_policy: already-clean
+unrelated_untracked:
+  - .grok/workflows/native-plugin-surface.rhai
+  - .pi-subagents/

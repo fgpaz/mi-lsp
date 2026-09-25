@@ -1,0 +1,25 @@
+schema: verify_packet/v1
+mode: collapsed_fast
+fresh_verifier: true
+verifier_ref: 01a0d8ae-53da-7d91-9624-472e44ce86c0
+head_sha: f78f1ec34d65e507179e8f00852463a4f5551bd8
+commands:
+  - command: go test ./...
+    exit_code: 0
+  - command: go build -o bin/mi-lsp.exe ./cmd/mi-lsp
+    exit_code: 0
+failing_packages: []
+github_actions: not_run
+live_graph_vs_diff:
+  command: mi-lsp nav affected --from-git-diff --workspace mi-lsp --format toon
+  generation_id: 68deae39067d64e885e620f695eac8c5a33d4e7f492ef6267f4123b9b7aa3e5f
+  determinism_digest: 7e45c7a571bd240ee5d0c35eee0e38a2578f698b83d59ab5399474b43303f343
+  primary_doc: RF-WKS-005
+  verdict: PASS
+  note: committed paths d0c052d..f78f1ec are the reliability slice; untracked .grok and .pi-subagents are outside scope
+graph_validation:
+  result: NOT_APPLICABLE
+  reason: the diff does not change graph schema, generation, or MILX
+learning_pass:
+  route: skipped_fast
+  reason: no pilot-result.yaml and no qa-learning-loop.yaml; ps-wiki-aprendizaje was not invented

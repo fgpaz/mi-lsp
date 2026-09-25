@@ -1,0 +1,9 @@
+schema: ps-auditar-trazabilidad/v1
+auditor: independent
+auditor_ref: 01a0d8b3-e754-7b01-9a52-96e54fad3840
+head_sha_audited: f78f1ec34d65e507179e8f00852463a4f5551bd8
+verdict: Approved
+findings: []
+live_graph_vs_diff: PASS
+raw_as_durable_evidence: false
+daemon_restart_claimed: false
