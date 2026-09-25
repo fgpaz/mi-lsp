@@ -206,3 +206,19 @@ DECISIONS
 ```
 
 Detalle y medición: [[TECH-MCP-ADAPTER]].
+
+## Memoria del daemon
+
+```toon
+doc_id: 02_arquitectura
+block_id: architecture-daemon-memory
+status: accepted
+date: 2026-09-25
+---
+DECISIONS
+
+1. Un runtime de lenguaje por workspace lo comparten todos los harness. No se levanta una copia por cliente.
+2. El runtime idle se cierra al vencer el TTL. El default es 30m y baja a la mitad si el proceso pasa el soft limit.
+3. La caché de resultados queda acotada. El proceso nuevo del daemon toma GOMEMLIMIT (default 96MiB) y no se reinicia un daemon ya vivo para aplicarlo.
+4. El language server del editor no es el de mi-lsp. Observar su memoria no autoriza apagarlo desde mi-lsp.
+```

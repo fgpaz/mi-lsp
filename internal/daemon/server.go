@@ -51,6 +51,7 @@ func NewServer(repoRoot string, maxWorkers int, idleTimeout time.Duration) (*Ser
 }
 
 func NewServerWithOptions(repoRoot string, maxWorkers int, idleTimeout time.Duration, options StartOptions) (*Server, error) {
+	ApplyDaemonMemoryPolicy()
 	options = NormalizeStartOptions(options)
 	listener, err := listenDaemon()
 	if err != nil {

@@ -48,6 +48,10 @@ type accessDecision struct {
 	PlannerOutcome       string `json:"planner_outcome,omitempty"`
 	SafeDegradeReason    string `json:"safe_degrade_reason,omitempty"`
 	GuardrailTrigger     string `json:"guardrail_trigger,omitempty"`
+	FallbackReasonCode   string `json:"fallback_reason_code,omitempty"`
+	ResultEmpty          bool   `json:"result_empty,omitempty"`
+	PartialResult        bool   `json:"partial_result,omitempty"`
+	StaleGraph           bool   `json:"stale_graph,omitempty"`
 }
 
 var decisionFieldKinds = map[string]byte{
@@ -61,16 +65,18 @@ var decisionFieldKinds = map[string]byte{
 	"requested_backend": 's', "result_backend": 's', "backend_fallback_taken": 'b',
 	"fallback_from": 's', "fallback_to": 's', "runtime_error_code": 's',
 	"planner_path": 's', "planner_outcome": 's', "safe_degrade_reason": 's',
-	"guardrail_trigger": 's',
+	"guardrail_trigger": 's', "fallback_reason_code": 's',
+	"result_empty": 'b', "partial_result": 'b', "stale_graph": 'b',
 }
 
 var decisionCodeFields = map[string]struct{}{
-	"coach_trigger":       {},
-	"continuation_reason": {},
-	"guardrail_trigger":   {},
-	"planner_outcome":     {},
-	"runtime_error_code":  {},
-	"safe_degrade_reason": {},
+	"coach_trigger":        {},
+	"continuation_reason":  {},
+	"guardrail_trigger":    {},
+	"planner_outcome":      {},
+	"runtime_error_code":   {},
+	"safe_degrade_reason":  {},
+	"fallback_reason_code": {},
 }
 
 const maxStableTelemetryCodeLength = 64
@@ -140,6 +146,7 @@ var stableTelemetryCodeAllowlist = map[string]struct{}{
 	"governance_blocked":                        {},
 	"gopls_generic":                             {},
 	"invalid_range":                             {},
+	"invalid_workspace":                         {},
 	"language_not_supported":                    {},
 	"low_confidence":                            {},
 	"low_evidence":                              {},
@@ -192,6 +199,8 @@ var stableTelemetryCodeAllowlist = map[string]struct{}{
 	"text_generic":                              {},
 	"token_budget":                              {},
 	"tsserver_generic":                          {},
+	"unavailable_binary":                        {},
+	"unsupported_operation":                     {},
 	"validation_failed":                         {},
 	"warning_present":                           {},
 	"workspace_cross_workspace_refused":         {},
@@ -199,13 +208,14 @@ var stableTelemetryCodeAllowlist = map[string]struct{}{
 	"workspace_unresolved":                      {},
 }
 
-func sanitizePersistedAccessFields(repo string, warnings []string, errorText, errorCode, hintCode, backend string) (string, []string, string, string, string) {
+func sanitizePersistedAccessFields(repo string, warnings []string, errorText, errorCode, hintCode, fallbackReasonCode, backend string) (string, []string, string, string, string, string) {
 	if strings.TrimSpace(repo) != "" {
 		repo = "selected"
 	}
 
 	safeErrorCode := stableTelemetryCode(errorCode)
 	safeHintCode := stableTelemetryCode(hintCode)
+	safeFallbackReasonCode := stableTelemetryCode(fallbackReasonCode)
 	codes := make([]string, 0, len(warnings))
 	seen := make(map[string]struct{}, len(warnings))
 	for _, warning := range warnings {
@@ -230,7 +240,7 @@ func sanitizePersistedAccessFields(repo string, warnings []string, errorText, er
 			safeError = stableTelemetryCode("operation_error")
 		}
 	}
-	return repo, codes, safeError, safeErrorCode, safeHintCode
+	return repo, codes, safeError, safeErrorCode, safeHintCode, safeFallbackReasonCode
 }
 
 func firstStableCode(values ...string) string {
@@ -318,8 +328,23 @@ func decisionTokenAllowed(value string, event model.AccessEvent) bool {
 	case "repo", "unknown", "owner", "legacy", "none", "direct", "daemon", "direct_fallback", "router_error", "narrowed_repo", "router", "text", "roslyn", "tsserver", "pyright", "planner", "intent", "catalog", "worker", "governance", "docs", "code", "ask", "literal", "regex", "present", "low_evidence", "scope_preview", "nav.search", "nav.find", "nav.intent", "nav.refs", "nav.context", "nav.related", "nav.workspace-map", "nav.wiki.pack":
 		return true
 	default:
-		return value == "intent:docs" || value == "intent:code"
+		return value == "intent:docs" || value == "intent:code" || strings.HasPrefix(value, "nav.") || strings.HasPrefix(value, "workspace.") || strings.HasPrefix(value, "index.")
 	}
+}
+
+func memoryOrGraphStale(envelope model.Envelope) bool {
+	if envelope.MemoryPointer != nil && envelope.MemoryPointer.Stale {
+		return true
+	}
+	if envelope.GraphFreshness != nil && strings.EqualFold(strings.TrimSpace(envelope.GraphFreshness.State), model.GraphFreshnessStale) {
+		return true
+	}
+	for _, warning := range envelope.Warnings {
+		if strings.Contains(strings.ToLower(warning), "stale") {
+			return true
+		}
+	}
+	return false
 }
 
 // IntentFromRequestEnvelope extracts only the allowlisted intent token. It handles
@@ -332,6 +357,54 @@ func IntentFromRequestEnvelope(request model.CommandRequest, envelope model.Enve
 		return model.SanitizeUtilityIntent(intent)
 	}
 	return "unknown"
+}
+
+// firstIntentFallbackReasonCode returns the first non-empty terminal
+// IntentFallback.ReasonCode found among the response items, in any of the
+// shapes an intent response is carried in (typed in-process plans, or
+// JSON-decoded map/[]any forms replayed from a cache envelope). The caller
+// still runs the result through stableTelemetryCode before persisting it.
+func firstIntentFallbackReasonCode(items any) string {
+	switch typed := items.(type) {
+	case []model.IntentPlan:
+		for _, plan := range typed {
+			for _, fallback := range plan.Fallbacks {
+				if code := strings.TrimSpace(fallback.ReasonCode); code != "" {
+					return code
+				}
+			}
+		}
+	case model.IntentPlan:
+		for _, fallback := range typed.Fallbacks {
+			if code := strings.TrimSpace(fallback.ReasonCode); code != "" {
+				return code
+			}
+		}
+	case []any:
+		for _, item := range typed {
+			if code := firstIntentFallbackReasonCode(item); code != "" {
+				return code
+			}
+		}
+	case []map[string]any:
+		for _, item := range typed {
+			if code := firstIntentFallbackReasonCode(item); code != "" {
+				return code
+			}
+		}
+	case map[string]any:
+		rawFallbacks, _ := typed["fallbacks"].([]any)
+		for _, raw := range rawFallbacks {
+			entry, ok := raw.(map[string]any)
+			if !ok {
+				continue
+			}
+			if code, ok := entry["reason_code"].(string); ok && strings.TrimSpace(code) != "" {
+				return strings.TrimSpace(code)
+			}
+		}
+	}
+	return ""
 }
 
 func intentFromItems(items any) string {
@@ -408,8 +481,13 @@ func EnrichAccessEvent(event model.AccessEvent, request model.CommandRequest, en
 	if strings.TrimSpace(event.TruncationReason) == "" {
 		event.TruncationReason = deriveTruncationReason(event.Truncated, count, request.Context)
 	}
+	fallback := stableTelemetryCode(event.FallbackReasonCode)
+	if fallback == "" {
+		fallback = stableTelemetryCode(rawFallbackReasonCode(envelope))
+		event.FallbackReasonCode = fallback
+	}
 	if strings.TrimSpace(event.DecisionJSON) == "" {
-		event.DecisionJSON = buildDecisionJSON(event.Route, request, focusOp, focusPayload, envelope)
+		event.DecisionJSON = buildDecisionJSON(event.Route, request, focusOp, focusPayload, envelope, fallback)
 	}
 	return NormalizeAccessEvent(event)
 }
@@ -558,7 +636,15 @@ func deriveTruncationReason(truncated bool, count int, opts model.QueryOptions) 
 	}
 }
 
-func buildDecisionJSON(route string, request model.CommandRequest, focusOp string, payload map[string]any, envelope model.Envelope) string {
+func rawFallbackReasonCode(envelope model.Envelope) string {
+	code := firstIntentFallbackReasonCode(envelope.Items)
+	if code == "" && envelope.Error != nil {
+		code = envelope.Error.ReasonCode
+	}
+	return code
+}
+
+func buildDecisionJSON(route string, request model.CommandRequest, focusOp string, payload map[string]any, envelope model.Envelope, fallbackReasonCode string) string {
 	pattern := payloadStr(payload, "pattern")
 	selectorPresent := strings.TrimSpace(payloadStr(payload, "repo")) != ""
 	requestedBackend := deriveRequestedBackend(request, focusOp, payload)
@@ -613,6 +699,10 @@ func buildDecisionJSON(route string, request model.CommandRequest, focusOp strin
 		decision.MemoryPointerPresent = true
 		decision.MemoryStale = envelope.MemoryPointer.Stale
 	}
+	decision.FallbackReasonCode = fallbackReasonCode
+	decision.ResultEmpty = envelopeItemCount(envelope.Items) == 0
+	decision.PartialResult = envelope.Truncated
+	decision.StaleGraph = memoryOrGraphStale(envelope)
 	body, err := json.Marshal(decision)
 	if err != nil {
 		return ""

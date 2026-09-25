@@ -1148,8 +1148,12 @@ type AccessEvent struct {
 	FailureStage     string    `json:"failure_stage,omitempty"`
 	HintCode         string    `json:"hint_code,omitempty"`
 	TruncationReason string    `json:"truncation_reason,omitempty"`
-	DecisionJSON     string    `json:"decision_json,omitempty"`
-	DecisionHash     string    `json:"decision_hash,omitempty"`
+	// FallbackReasonCode is the closed-set intent-fallback reason code (see
+	// ValidIntentFallbackReasonCode) taken by this operation, when any. It is
+	// sanitized against the same allowlist at both write and read time.
+	FallbackReasonCode string `json:"fallback_reason_code,omitempty"`
+	DecisionJSON       string `json:"decision_json,omitempty"`
+	DecisionHash       string `json:"decision_hash,omitempty"`
 }
 
 // TraceLink represents a spec-to-code link, either explicit (wiki marker) or inferred (heuristic).

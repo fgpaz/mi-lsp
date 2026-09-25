@@ -7,6 +7,12 @@ and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2
 
 ## [Unreleased]
 
+### Added
+
+- `mi-lsp admin usage-report --since 7d` prints JSON only: harness usage, continuation follow-through, fallback reason rates, latency percentiles, and empty, partial, and stale-graph signals. It does not store query bodies.
+- `mi-lsp admin missed-report --since 7d` reads up to 120 local harness JSONL files and reports missed, acceptable, or unknown tool-call patterns. Edit and Write never count. The report keeps pattern shape and repo name, never prompt text or full paths.
+- A new daemon process applies `MI_LSP_DAEMON_GOMEMLIMIT` (default 96MiB). `MI_LSP_DAEMON_GOGC` applies only when set. The already-running daemon is left untouched.
+
 ### Fixed
 
 - An unknown workspace alias still fails with `invalid_workspace`. When the caller cwd is already a registered workspace, the envelope carries `continuation.next` for that alias and does not run the query there.
