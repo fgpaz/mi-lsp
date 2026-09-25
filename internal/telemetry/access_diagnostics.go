@@ -148,6 +148,7 @@ var stableTelemetryCodeAllowlist = map[string]struct{}{
 	"missing_expected_hash":                     {},
 	"missing_symbol":                            {},
 	"nav_generic":                               {},
+	"explicit_incomplete":                       {},
 	"narrow_scope":                              {},
 	"no_matches":                                {},
 	"no_matches_refinable":                      {},
@@ -396,6 +397,13 @@ func EnrichAccessEvent(event model.AccessEvent, request model.CommandRequest, en
 	}
 	if strings.TrimSpace(event.HintCode) == "" {
 		event.HintCode = deriveHintCode(envelope)
+	}
+	if strings.TrimSpace(event.HintCode) == "" && (opErr != nil || envelope.Error != nil || !event.Success) {
+		if envelope.Error != nil && strings.TrimSpace(envelope.Error.Code) != "" {
+			event.HintCode = stableTelemetryCode(envelope.Error.Code)
+		} else {
+			event.HintCode = "explicit_incomplete"
+		}
 	}
 	if strings.TrimSpace(event.TruncationReason) == "" {
 		event.TruncationReason = deriveTruncationReason(event.Truncated, count, request.Context)

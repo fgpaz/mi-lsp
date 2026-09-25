@@ -331,6 +331,15 @@ func buildCLIErrorEnvelope(request model.CommandRequest, route string, err error
 		Warnings:  errorWarnings(envErr),
 	}
 	ensureFallbackReason(&env)
+	if continuation, detail, ok := workspace.ContinuationForUnresolvedSelector(request.Operation, err); ok && env.Error != nil {
+		env.Continuation = continuation
+		env.Error.Kind = "workspace"
+		env.Error.Code = "workspace_resolution_failed"
+		env.Error.Stage = "selector_validation"
+		env.Error.HintCode = "workspace_resolution_failed"
+		env.Error.ReasonCode = "invalid_workspace"
+		env.Error.Detail = detail
+	}
 	var graphErr *model.GraphQueryError
 	if errors.As(err, &graphErr) {
 		if len(graphErr.Candidates) > 0 {

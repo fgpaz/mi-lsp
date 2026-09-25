@@ -193,6 +193,9 @@ type EnvelopeMetrics struct {
 	RuntimeCreated     bool  `json:"runtime_created,omitempty"`
 	RuntimeColdStartMs int64 `json:"runtime_cold_start_ms,omitempty"`
 	SQLiteWriteMs      int64 `json:"sqlite_write_ms,omitempty"`
+	WorkersInUse       int   `json:"workers_in_use,omitempty"`
+	WorkerSlots        int   `json:"worker_slots,omitempty"`
+	WorkersAtCapacity  bool  `json:"workers_at_capacity,omitempty"`
 }
 
 type Envelope struct {

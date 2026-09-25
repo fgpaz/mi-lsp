@@ -7,6 +7,14 @@ and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2
 
 ## [Unreleased]
 
+### Fixed
+
+- An unknown workspace alias still fails with `invalid_workspace`. When the caller cwd is already a registered workspace, the envelope carries `continuation.next` for that alias and does not run the query there.
+- Harness mismatch refusal now follows the client that actually called. `manual-cli` stays a warning. `root`, `builtin_child`, `mi-lsp-mcp`, and derived names such as `pi-chief` or `grok-measure-leaf` are harnesses and get `workspace_cross_workspace_refused` unless `--allow-cross-workspace` is set.
+- A backend failure without `hint_code` keeps the stable `error.code`, or `explicit_incomplete` when there is no code.
+- `admin export` marks six or more repeats of the same `hint_code` and `workspace_input` in one minute as a known burst. Stored rows are unchanged, and the first failure of each minute still counts.
+- A successful call that entered with the worker slots already full reports `workers_at_capacity` and `latency_ms`. `max_inflight` still rejects immediately.
+
 ## [0.9.0] - 2026-09-24
 
 ### Added

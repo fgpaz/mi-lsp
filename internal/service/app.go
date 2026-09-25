@@ -1315,15 +1315,6 @@ func cwdCanonLinkAllows(cwdAlias, selectedAlias, role string) bool {
 	return workspace.RegistrationHasCanonLink(cwd, selectedAlias, role)
 }
 
-func isHarnessClientName(clientName string) bool {
-	switch strings.ToLower(strings.TrimSpace(clientName)) {
-	case "claude-code", "codex", "claude-ai", "opencode", "copilot", "jetbrains", "cursor", "neovim", "emacs", "vim":
-		return true
-	default:
-		return false
-	}
-}
-
 func recommendedWorkspaceCommand(operation string, alias string) string {
 	alias = strings.TrimSpace(alias)
 	switch strings.TrimSpace(operation) {

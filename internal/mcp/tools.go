@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"os"
 	"strconv"
 	"strings"
 )
@@ -622,9 +623,13 @@ type kv struct {
 }
 
 func baseFlags() []kv {
+	clientName := ClientName
+	if override := strings.TrimSpace(os.Getenv("MI_LSP_CLIENT_NAME")); override != "" {
+		clientName = override
+	}
 	return []kv{
 		{flag: "format", val: "toon"},
-		{flag: "client-name", val: ClientName},
+		{flag: "client-name", val: clientName},
 	}
 }
 

@@ -406,6 +406,15 @@ func (m *Manager) reapIdle() {
 	m.enforceIdleMemoryBoundsLocked(now)
 }
 
+func (m *Manager) WorkerCapacity() (inUse int, slots int) {
+	if m == nil {
+		return 0, 0
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return len(m.runtimes), m.maxWorkers
+}
+
 func (m *Manager) getOrCreate(workspace model.WorkspaceRegistration, request model.WorkerRequest, markActive bool) (*managedRuntime, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
