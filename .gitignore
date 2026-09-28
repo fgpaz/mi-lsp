@@ -38,6 +38,8 @@
 
 /.goreleaser/
 /.playwright-mcp/
+/.grok/workflows/
+/.pi-subagents/
 /.tmp/
 *.log
 
