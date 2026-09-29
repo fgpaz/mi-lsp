@@ -33,7 +33,9 @@ func ProbeWorkspace(ctx context.Context, options model.ProbeOptions) (model.Prob
 	resolution, err := workspace.ResolveWorkspaceSelectionReadOnly(selector, callerCWD)
 	if err != nil {
 		var selectorErr *workspace.WorkspaceSelectorError
-		if selector != "" || errors.As(err, &selectorErr) {
+		var resolutionErr *workspace.WorkspaceResolutionError
+		noSelectorResolution := errors.As(err, &resolutionErr) && strings.TrimSpace(resolutionErr.Selector) == ""
+		if selector != "" || (errors.As(err, &selectorErr) && !noSelectorResolution) {
 			return report, err
 		}
 		report.Status = model.ProbeStatusAbsent

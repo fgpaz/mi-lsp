@@ -71,7 +71,7 @@ type WorkspaceResolutionError struct {
 func (e *WorkspaceResolutionError) Error() string {
 	selector := strings.TrimSpace(e.Selector)
 	if selector == "" {
-		return workspaceResolutionNotFoundMessage
+		return workspaceResolutionNotFoundMessage + "; pass --workspace <alias> or configure an explicit default workspace"
 	}
 	message := fmt.Sprintf("workspace %q is not registered and path does not exist", selector)
 	if e.FallbackAvailable {
@@ -545,7 +545,7 @@ func resolveWorkspaceSelection(nameOrPath string, callerCWD string, readOnly boo
 		}
 	}
 
-	return WorkspaceResolution{}, errors.New("no workspace specified and no default workspace configured")
+	return WorkspaceResolution{}, &WorkspaceResolutionError{CallerCWD: strings.TrimSpace(callerCWD)}
 }
 
 func newWorkspaceResolutionError(selector string, callerCWD string, registry model.RegistryFile) error {

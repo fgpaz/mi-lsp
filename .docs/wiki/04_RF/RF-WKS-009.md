@@ -83,7 +83,7 @@ evidence:
 | Codigo | Causa | Trigger | Respuesta esperada |
 |---|---|---|---|
 | (sin codigo tipado propio) | workspace explicito no registrado | `--workspace <selector>` no matchea ningun alias ni root | error explicito `workspace "<selector>" is not registered`; se clasifica como `invalid_workspace` por el mapeo de fallback compartido |
-| (sin codigo tipado propio) | sin selector y sin default | no hay `--workspace`, el cwd no cae dentro de ningun root registrado y `last_workspace` esta vacio o invalido | error explicito `no workspace specified and no default workspace configured`; se clasifica como `invalid_workspace` |
+| `WKS_SELECTOR_NOT_FOUND` vía `WorkspaceResolutionError` en resolución omitida del registry | sin selector y sin default | no hay `--workspace`, el cwd no cae dentro de ningún root registrado y `last_workspace` está vacío o ausente | error tipado cuyo texto incluye `workspace not found in registry and path does not exist` y la acción `pass --workspace <alias> or configure an explicit default workspace`; se clasifica como `invalid_workspace`. `workspace which` conserva el error explícito `no workspace specified and no default workspace configured` |
 
 ## 6. Special Cases and Variants
 
