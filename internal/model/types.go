@@ -511,6 +511,7 @@ type WikiSearchResult struct {
 
 type HarnessValidationResult struct {
 	HarnessProtocol            string   `json:"harness_protocol"`
+	IndexFreshness             string   `json:"index_freshness,omitempty"`
 	HarnessReadiness           string   `json:"harness_readiness"`
 	HarnessVerdict             string   `json:"harness_verdict"`
 	HarnessBlockers            []string `json:"harness_blockers,omitempty"`

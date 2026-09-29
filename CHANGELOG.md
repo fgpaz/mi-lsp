@@ -15,6 +15,7 @@ and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2
 
 ### Fixed
 
+- Docs-only indexing regression coverage now exercises create/change/delete discovery across consecutive reindexes. Wiki validators detect indexed-content hash drift and on-disk path references absent from the index (`index_freshness=stale`), resolve path-style `[[05_RF/X.md]]` links under `.docs/wiki/`, and reject missing source evidence files. `validate-harness --paths` remains the bounded alternative to the global legacy-contract verdict.
 - An unknown workspace alias still fails with `invalid_workspace`. When the caller cwd is already a registered workspace, the envelope carries `continuation.next` for that alias and does not run the query there.
 - Harness mismatch refusal now follows the client that actually called. `manual-cli` stays a warning. `root`, `builtin_child`, `mi-lsp-mcp`, and derived names such as `pi-chief` or `grok-measure-leaf` are harnesses and get `workspace_cross_workspace_refused` unless `--allow-cross-workspace` is set.
 - A backend failure without `hint_code` keeps the stable `error.code`, or `explicit_incomplete` when there is no code.

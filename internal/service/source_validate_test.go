@@ -27,6 +27,41 @@ func TestValidateSourceValidArtifact(t *testing.T) {
 	}
 }
 
+func TestValidateSourceMissingEvidenceFileBlocks(t *testing.T) {
+	alias, root := createHarnessWorkspace(t)
+	path := ".docs/wiki/09_contratos/CT-SOURCE.md"
+	content := strings.Replace(validSourceDoc("CT-SOURCE", "CT-SOURCE.contract", "RF-QRY-016", "llm-first", ""), ".docs/wiki/09_contratos/CT-SOURCE.md", ".docs/evidence/verification/missing.yaml", 1)
+	writeWorkspaceFile(t, root, path, content)
+	replaceSourceDocs(t, root, []model.DocRecord{sourceDocRecord(path, "CT-SOURCE")}, []model.DocSourceBlock{sourceBlockRecord(path, "CT-SOURCE", "CT-SOURCE.contract")}, []model.DocSourceRecord{sourceRecord(path, "CT-SOURCE.contract", "RF-QRY-016")})
+
+	result := executeSourceValidation(t, root, alias)
+	if result.WikiSourceVerdict != "BLOCKED" {
+		t.Fatalf("verdict = %q, want BLOCKED for missing evidence", result.WikiSourceVerdict)
+	}
+	if !strings.Contains(strings.Join(result.WikiSourceBlockers, " | "), "evidence not found .docs/evidence/verification/missing.yaml") {
+		t.Fatalf("missing evidence blocker absent: %#v", result.WikiSourceBlockers)
+	}
+}
+
+func TestValidateSourceDiskOnlyWikiImportReportsStaleIndex(t *testing.T) {
+	alias, root := createHarnessWorkspace(t)
+	path := ".docs/wiki/09_contratos/CT-SOURCE.md"
+	content := strings.Replace(validSourceDoc("CT-SOURCE", "CT-SOURCE.contract", "RF-QRY-016", "llm-first", ""), "[[00_gobierno_documental]]", "[[05_RF/CONTRACT.md]]", 1)
+	writeWorkspaceFile(t, root, path, content)
+	writeWorkspaceFile(t, root, ".docs/wiki/05_RF/CONTRACT.md", "# Contract\n")
+	record := sourceDocRecord(path, "CT-SOURCE")
+	record.ContentHash = "previous-index-hash"
+	replaceSourceDocs(t, root, []model.DocRecord{record}, []model.DocSourceBlock{sourceBlockRecord(path, "CT-SOURCE", "CT-SOURCE.contract")}, []model.DocSourceRecord{sourceRecord(path, "CT-SOURCE.contract", "RF-QRY-016")})
+
+	result := executeSourceValidation(t, root, alias)
+	if result.IndexFreshness != "stale" || result.WikiSourceVerdict == "BLOCKED" {
+		t.Fatalf("existing path-style import should diagnose stale index without blocking: %#v", result)
+	}
+	if strings.Contains(strings.Join(result.WikiSourceBlockers, " | "), "broken import") {
+		t.Fatalf("existing import reported broken: %#v", result.WikiSourceBlockers)
+	}
+}
+
 func TestValidateSourceMissingBlockIDBlocks(t *testing.T) {
 	alias, root := createHarnessWorkspace(t)
 	path := ".docs/wiki/09_contratos/CT-SOURCE.md"
@@ -464,6 +499,7 @@ func validSourceDoc(docID string, blockID string, recordID string, audience stri
 func TestCompileSourceAllowsEmptyImportsOnlyForValidatedGovernanceRoot(t *testing.T) {
 	root := t.TempDir()
 	writeSpecBackendGovernanceFixture(t, root)
+	writeWorkspaceFile(t, root, ".docs/wiki/09_contratos/CT-SOURCE.md", "# Evidence fixture\n")
 	path := ".docs/wiki/00_gobierno_documental.md"
 	content := strings.Replace(validSourceDoc("GOVERNANCE-SYNTHETIC", "GOVERNANCE-SYNTHETIC.block", "GOVERNANCE-SYNTHETIC.record", "human", ""), "imports:\n  - '[[00_gobierno_documental]]'", "imports: []", 1)
 	parsed := wikisource.Parse(path, content, 1)

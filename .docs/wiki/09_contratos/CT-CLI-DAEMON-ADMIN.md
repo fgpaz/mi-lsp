@@ -213,7 +213,7 @@ Reglas:
 - `index cancel --force` puede terminar el PID vivo del job, marcarlo `canceled` y remover el `.mi-lsp/index.lock` si pertenece a ese PID ya muerto; se reserva para jobs colgados.
 - `workspace.add`, `init` usan **hibrido smart-sync** (FD1): indexan sincronicamente dentro de `SmartSyncTimeout` (`MI_LSP_INDEX_SYNC_TIMEOUT`, 20s) para preservar el contrato init-then-query; si una primera indexacion grande lo excede, degradan a background y devuelven `job_id` con warning. `--background`/`background:true` fuerza async inmediato; `--wait`/`wait:true` fuerza sync completo (`IndexTimeout`, `MI_LSP_INDEX_TIMEOUT` default 30min); con `[embeddings]` activo el wrapper de index puede elevar ese presupuesto por corpus/batches o por `[embeddings].index_timeout_ms`; `--no-index` omite indexacion.
 - sin `--docs-only`, indexa catalogo de codigo y grafo documental, con incremental git-aware cuando corresponde.
-- con `--docs-only`, reconstruye `doc_records`, `doc_edges`, `doc_mentions` y `memory_pointer` sin reemplazar `files` ni `symbols`.
+- con `--docs-only`, reconstruye `doc_records`, `doc_edges`, `doc_mentions` y `memory_pointer` sin reemplazar `files` ni `symbols`; cada invocación vuelve a descubrir el corpus actual y publica create/change/delete, incluso sin cambios Git detectables.
 - toda indexacion toma `.mi-lsp/index.lock`; si ya existe, la operacion debe fallar con mensaje accionable que incluya el lock owner cuando este disponible.
 - locks con PID inexistente se consideran stale y pueden recuperarse automaticamente.
 - la publicacion full de catalogo + docs + memoria es all-or-nothing dentro de SQLite.
