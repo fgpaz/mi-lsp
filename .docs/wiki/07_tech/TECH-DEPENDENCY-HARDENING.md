@@ -149,6 +149,7 @@ audit:
 | Artefacto local `bin/workers` viejo | probe superficial verde pero consultas Roslyn fallan | en source repo preferir `dev-local`; no tratar `bin/workers/<rid>` como bundle canonico |
 | Release parcial por RID | una maquina ARM64 o x64 sigue ejecutando revision vieja | `ae-release-binaries.ps1` debe construir todos los RIDs, refrescar local/WSL y publicar tag limpio para que GitHub Releases entregue assets nuevos |
 | Binario Windows lockeado por daemon | `Copy-Item` falla sobre `C:\Users\fgpaz\bin\mi-lsp.exe` | `install-local.ps1` detiene el daemon existente antes de copiar y reintenta reemplazo/remocion |
+| Reemplazo local Unix del CLI en ejecución | sobrescribir el ejecutable causa `ETXTBSY` o deja un archivo truncado | `install-local.sh` prepara CLI y worker junto al destino, activa el CLI mediante rename y conserva ambos artefactos anteriores para rollback |
 
 ## Related docs
 
