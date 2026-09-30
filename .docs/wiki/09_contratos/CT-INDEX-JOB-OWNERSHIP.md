@@ -216,6 +216,11 @@ records:
   - id: CT-IDX-PUBLISH-006
     type: no-op
     rule: owner-bound full-to-incremental completion with no file or document mutations marks its candidate generation skipped and never rewrites the active catalog pointer; it preserves a valid graph binding or activates only an explicitly repaired graph snapshot under the same fence, while cancellation, failure, and fence loss remain non-publishing outcomes
+  - id: CT-IDX-PUBLISH-007
+    type: readiness
+    name: catalog-generation-snapshot
+    source: active_catalog_generation_id OR atomic ReplaceCatalog metadata indexed_at + total_files
+    rule: WorkspaceCatalogReady accepts an active versioned catalog pointer or the complete metadata pair written by replaceCatalogTx (including total_files=0); schema-only and partial metadata are not ready, and readiness never inspects row counts. Without either signal nav.find returns index_not_ready; a workspace DB open/read failure returns the existing workspace_db_open_failed error. A transient unregistered root is readable only when a real catalog publication is ready.
 ```
 
 ## 4. Watcher y lock interproceso

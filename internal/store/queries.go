@@ -97,8 +97,8 @@ func replaceCatalogTx(ctx context.Context, tx *sql.Tx, project model.ProjectFile
 	}
 
 	metadata := map[string]string{
-		"indexed_at":         fmt.Sprintf("%d", time.Now().Unix()),
-		"total_files":        fmt.Sprintf("%d", len(files)),
+		WorkspaceMetaIndexedAt: fmt.Sprintf("%d", time.Now().Unix()),
+		WorkspaceMetaTotalFiles: fmt.Sprintf("%d", len(files)),
 		"total_symbols":      fmt.Sprintf("%d", len(symbols)),
 		"workspace_kind":     project.Project.Kind,
 		"default_repo":       project.Project.DefaultRepo,

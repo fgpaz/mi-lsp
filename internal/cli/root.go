@@ -313,7 +313,17 @@ func (s *rootState) executeOperation(cmd *cobra.Command, operation string, paylo
 		}
 		return envelopePrintedError{err: err}
 	}
-	return s.printPreparedEnvelope(finalEnvelope, request.Context)
+	if printErr := s.printPreparedEnvelope(finalEnvelope, request.Context); printErr != nil {
+		return printErr
+	}
+	if !finalEnvelope.Ok {
+		code := "operation_failed"
+		if finalEnvelope.Error != nil && strings.TrimSpace(finalEnvelope.Error.Code) != "" {
+			code = strings.TrimSpace(finalEnvelope.Error.Code)
+		}
+		return envelopePrintedError{err: errors.New(code)}
+	}
+	return nil
 }
 
 func (s *rootState) refreshMultiReadPaths(ctx context.Context, request model.CommandRequest) (bool, error) {

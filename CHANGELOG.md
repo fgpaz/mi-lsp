@@ -18,6 +18,7 @@ and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2
 
 ### Fixed
 
+- `nav.find` distinguishes a valid zero-match result from an absent or incomplete index using either `active_catalog_generation_id` or the atomic `indexed_at` + `total_files` catalog metadata pair, including empty catalog-only publications. Schema-only or partial metadata is not ready. A transient unregistered root is queryable when its catalog is published; otherwise it gets `workspace_resolution_failed`. Textual `nav.search` still works without an index.
 - Docs-only indexing regression coverage now exercises create/change/delete discovery across consecutive reindexes. Wiki validators detect indexed-content hash drift and on-disk path references absent from the index (`index_freshness=stale`), resolve path-style `[[05_RF/X.md]]` links under `.docs/wiki/`, and reject missing source evidence files. `validate-harness --paths` remains the bounded alternative to the global legacy-contract verdict.
 - An unknown workspace alias still fails with `invalid_workspace`. When the caller cwd is already a registered workspace, the envelope carries `continuation.next` for that alias and does not run the query there.
 - Harness mismatch refusal now follows the client that actually called. `manual-cli` stays a warning. `root`, `builtin_child`, `mi-lsp-mcp`, and derived names such as `pi-chief` or `grok-measure-leaf` are harnesses and get `workspace_cross_workspace_refused` unless `--allow-cross-workspace` is set.

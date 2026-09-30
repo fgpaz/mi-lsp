@@ -92,7 +92,7 @@ evidence:
 | `items` | lista | usuario/skill | resultado truncado o completo |
 | `truncated` | bool | usuario/skill | explicita recorte |
 | `warnings` | lista | usuario/skill | contexto de degradacion o frescura |
-| `hint` | string/null | usuario/skill | diagnóstico cuando `items=[]` o daemon no disponible (omitempty) |
+| `hint` | string/null | usuario/skill | diagnóstico accionable cuando `items=[]`, el índice no está listo o el daemon no está disponible (omitempty) |
 | `next_hint` | string/null | usuario/skill | sugerencia para pedir mas detalle |
 | `coach` | objeto/null | usuario/skill | guidance explicito y machine-readable para rerun, refine, narrow o expand |
 | `continuation` | objeto/null | usuario/skill | siguiente paso tiny y machine-readable para el harness |
@@ -106,6 +106,9 @@ evidence:
 | `QRY_WORKSPACE_UNRESOLVED` | workspace invalido | alias/path no resoluble | abortar con `ok=false` |
 | `QRY_INVALID_BUDGET` | flags invalidos | algun presupuesto es `<= 0` | abortar con error tipado |
 | `QRY_RENDER_FAILED` | fallo de serializacion | formatter no puede construir output | abortar con error explicito |
+| `workspace_resolution_failed` | path existente todavía no registrado y sin catálogo listo | `nav.find` recibe el path explícito con consulta cross-workspace habilitada y no hay evidencia de catálogo completo | `ok=false`; error `Kind=workspace`, `Code=workspace_resolution_failed`, `Stage=workspace_resolution`, `HintCode=workspace_resolution_failed`, `ReasonCode=invalid_workspace`; `Detail` y `NextHint` instruyen registrar e indexar ese root y reintentar |
+| `index_not_ready` | workspace sin evidencia de catálogo completo | `nav.find` no encuentra `active_catalog_generation_id` ni el par completo y atómico `indexed_at` + `total_files` | `ok=false`; error `Kind=index`, `Code=index_not_ready`, `Stage=catalog`; conservar `HintCode=index_not_ready`, `ReasonCode=explicit_incomplete`, `Detail` accionable y `NextHint` con el comando para indexar el workspace y reintentar |
+| `workspace_db_open_failed` | no se pudo leer el estado de generación | el store no puede determinar readiness | `ok=false`; error `Kind=index`, `Stage=catalog`, `HintCode=workspace_db_open_failed`, `ReasonCode=explicit_incomplete`; fallar cerrado sin devolver cero coincidencias |
 
 ## 7. Special Cases and Variants
 
@@ -116,6 +119,12 @@ evidence:
 - En AXI preview, `coach.actions` se reduce a una sola accion para limitar costo de salida.
 - `continuation` es aditivo y opcional: no reemplaza `coach`, `next_hint` ni `next_queries`.
 - `memory_pointer` es aditivo y opcional: nunca persiste texto largo ni reemplaza `workspace status --full`.
+- Cuando `nav.find` no obtiene items, la respuesta distingue una búsqueda válida sin coincidencias de un índice ausente o incompleto. Hay catálogo listo si existe `active_catalog_generation_id` o metadata transaccional completa `indexed_at` + `total_files`, escrita por `ReplaceCatalog`; esta última también cubre catálogos sin generación versionada y `total_files=0`. Un esquema sin esos campos o metadata parcial no basta. Sin ambas señales devuelve `index_not_ready`; no inspecciona conteos de filas para inferir completitud.
+- Un path existente todavía no registrado se permite si su catálogo publicado aporta una de esas señales de readiness. Si no está registrado ni tiene catálogo listo, devuelve `workspace_resolution_failed`, `Kind=workspace`, `Stage=workspace_resolution`, `HintCode=workspace_resolution_failed` y `ReasonCode=invalid_workspace`; su `Detail` y `NextHint` usan el root y patrón recibidos para sugerir el registro, indexación y reintento exactos. Para un workspace registrado sin ninguna señal de catálogo listo, devuelve `index_not_ready`, `Kind=index`, `Stage=catalog`, `HintCode=index_not_ready` y `ReasonCode=explicit_incomplete`; `NextHint` indica el comando para indexar el workspace y reintentar.
+- Si no se puede abrir/leer el estado del workspace, devuelve `workspace_db_open_failed` con `Kind=index`, `Stage=catalog`, `HintCode=workspace_db_open_failed`, `ReasonCode=explicit_incomplete` y falla cerrada. La readiness por metadata no garantiza frescura respecto de cambios posteriores en disco; se mantiene la política previa de warnings stale, sin ampliar detección stale para una búsqueda vacía sin señal confiable.
+- Para el workspace registrado, el literal de `NextHint` es: “Index the registered workspace with `mi-lsp index --workspace '<alias>'` and retry `mi-lsp nav find '<pattern>' --workspace '<alias>'`.”
+- Para un path no registrado, `Detail` y `NextHint` dicen: “Workspace is not registered. Run `mi-lsp workspace add '<root shell-quoted>'` to register and index it, then retry `mi-lsp nav find '<pattern shell-quoted>' --workspace '<root shell-quoted>'`.” Los argumentos se citan dinámicamente según las reglas de la CLI.
+- La CLI JSON conserva intacto el envelope de error aunque salga con código distinto de cero. MCP conserva el mismo diagnóstico en `structuredContent` y presenta error más `next` en el texto renderizado. En perfiles compactos, `NextHint` deriva del origen accionable del error.
 - `--classic` prevalece sobre defaults por superficie y sobre `MI_LSP_AXI=1`.
 - `--axi` y `--classic` juntos deben rechazarse antes de ejecutar la query.
 - `compact` usa keys cortos y JSON sin whitespace innecesario.

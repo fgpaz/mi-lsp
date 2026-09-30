@@ -157,6 +157,168 @@ func TestNavFindRefreshesStaleCandidateBeforeReturningSymbols(t *testing.T) {
 	}
 }
 
+func TestFind_RegisteredWorkspaceWithoutIndexReturnsReadinessError(t *testing.T) {
+	root, name := setupTestWorkspace(t)
+	app := New(root, nil)
+
+	env, err := app.Execute(context.Background(), model.CommandRequest{
+		Operation: "nav.find",
+		Context:   model.QueryOptions{Workspace: name, MaxItems: 10},
+		Payload:   map[string]any{"pattern": "NeverIndexed"},
+	})
+	if err != nil {
+		t.Fatalf("nav.find: %v", err)
+	}
+	if env.Ok {
+		t.Fatal("Ok = true, want false for a registered workspace without a published catalog")
+	}
+	if env.Error == nil || env.Error.Code != "index_not_ready" || env.Error.HintCode != "index_not_ready" {
+		t.Fatalf("error = %+v, want index_not_ready with matching hint", env.Error)
+	}
+	if env.Error.ReasonCode != "explicit_incomplete" || !strings.Contains(env.Error.Detail, "mi-lsp index --workspace '") || !strings.Contains(env.Error.Detail, name) {
+		t.Fatalf("readiness guidance = %+v", env.Error)
+	}
+	if env.NextHint == nil || !strings.Contains(*env.NextHint, "mi-lsp nav find 'NeverIndexed' --workspace '") || !strings.Contains(*env.NextHint, name) {
+		t.Fatalf("next_hint = %v, want actionable index/find guidance", env.NextHint)
+	}
+	if items, ok := env.Items.([]model.SymbolRecord); !ok || len(items) != 0 {
+		t.Fatalf("items = %#v, want an empty symbol slice", env.Items)
+	}
+}
+
+func TestFind_UnregisteredRepositoryReturnsRegistrationGuidance(t *testing.T) {
+	ensureWritableTestHome(t)
+	root := t.TempDir()
+	if output, err := exec.Command("git", "-C", root, "init", "--quiet").CombinedOutput(); err != nil {
+		t.Fatalf("git init: %v: %s", err, output)
+	}
+	writeWorkspaceFile(t, root, "sample.go", "package sample\nfunc NeedleSymbol() {}\n")
+	app := New(root, nil)
+
+	env, err := app.Execute(context.Background(), model.CommandRequest{
+		Operation: "nav.find",
+		Context:   model.QueryOptions{Workspace: root, AllowCrossWorkspace: true, MaxItems: 10},
+		Payload:   map[string]any{"pattern": "NeedleSymbol", "exact": true},
+	})
+	if err != nil {
+		t.Fatalf("nav.find: %v", err)
+	}
+	if env.Ok || env.Error == nil || env.Error.Code != "workspace_resolution_failed" {
+		t.Fatalf("envelope = %+v, want a typed workspace registration error", env)
+	}
+	if env.NextHint == nil || !strings.Contains(*env.NextHint, "mi-lsp workspace add '") || !strings.Contains(*env.NextHint, root) || !strings.Contains(*env.NextHint, "mi-lsp nav find 'NeedleSymbol'") {
+		t.Fatalf("next_hint = %v, want exact registration and retry commands", env.NextHint)
+	}
+}
+
+func TestFind_UnregisteredIndexedRepositoryRemainsQueryable(t *testing.T) {
+	ensureWritableTestHome(t)
+	root := t.TempDir()
+	if output, err := exec.Command("git", "-C", root, "init", "--quiet").CombinedOutput(); err != nil {
+		t.Fatalf("git init: %v: %s", err, output)
+	}
+	if output, err := exec.Command("git", "-C", root, "remote", "add", "origin", "https://example.com/fixture").CombinedOutput(); err != nil {
+		t.Fatalf("git remote add origin: %v: %s", err, output)
+	}
+	writeWorkspaceFile(t, root, "sample.go", "package sample\nfunc NeedleSymbol() {}\n")
+	if _, err := indexer.IndexWorkspaceWithGeneration(context.Background(), root, true, "unregistered-find-generation"); err != nil {
+		t.Fatalf("IndexWorkspaceWithGeneration: %v", err)
+	}
+	app := New(root, nil)
+
+	env, err := app.Execute(context.Background(), model.CommandRequest{
+		Operation: "nav.find",
+		Context:   model.QueryOptions{Workspace: root, AllowCrossWorkspace: true, MaxItems: 10},
+		Payload:   map[string]any{"pattern": "NeedleSymbol", "exact": true},
+	})
+	if err != nil {
+		t.Fatalf("nav.find: %v", err)
+	}
+	items, ok := env.Items.([]model.SymbolRecord)
+	if !env.Ok || !ok || len(items) != 1 || items[0].Name != "NeedleSymbol" {
+		t.Fatalf("envelope = %+v, want published symbols from the transient workspace", env)
+	}
+}
+
+func TestFind_RegisteredWorkspaceWithUnpublishedDatabaseReturnsReadinessError(t *testing.T) {
+	root, name := setupTestWorkspace(t)
+	db, err := store.Open(root)
+	if err != nil {
+		t.Fatalf("store.Open: %v", err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatalf("store.Close: %v", err)
+	}
+	app := New(root, nil)
+
+	env, err := app.Execute(context.Background(), model.CommandRequest{
+		Operation: "nav.find",
+		Context:   model.QueryOptions{Workspace: name, MaxItems: 10},
+		Payload:   map[string]any{"pattern": "NeverIndexed"},
+	})
+	if err != nil {
+		t.Fatalf("nav.find: %v", err)
+	}
+	if env.Error == nil || env.Error.Code != "index_not_ready" || env.Ok {
+		t.Fatalf("envelope = %+v, want index_not_ready for an unpublished database", env)
+	}
+}
+
+func TestFind_IndexedWorkspaceWithoutMatchesReturnsSuccess(t *testing.T) {
+	root, name := setupTestWorkspace(t)
+	if err := workspace.SaveProjectFile(root, testProject(name)); err != nil {
+		t.Fatalf("SaveProjectFile: %v", err)
+	}
+	if _, err := indexer.IndexWorkspaceCatalogOnly(context.Background(), root, true); err != nil {
+		t.Fatalf("IndexWorkspaceCatalogOnly: %v", err)
+	}
+	app := New(root, nil)
+
+	env, err := app.Execute(context.Background(), model.CommandRequest{
+		Operation: "nav.find",
+		Context:   model.QueryOptions{Workspace: name, MaxItems: 10},
+		Payload:   map[string]any{"pattern": "NeverIndexed", "exact": true},
+	})
+	if err != nil {
+		t.Fatalf("nav.find: %v", err)
+	}
+	if !env.Ok || env.Error != nil {
+		t.Fatalf("envelope = %+v, want a successful empty result", env)
+	}
+	if items, ok := env.Items.([]model.SymbolRecord); !ok || len(items) != 0 {
+		t.Fatalf("items = %#v, want an empty symbol slice", env.Items)
+	}
+}
+
+func TestFind_IndexedCatalogWithNoFilesReturnsSuccess(t *testing.T) {
+	root, name := setupTestWorkspace(t)
+	if err := os.Remove(filepath.Join(root, "src", "Hello.cs")); err != nil {
+		t.Fatalf("remove source file: %v", err)
+	}
+	if err := workspace.SaveProjectFile(root, testProject(name)); err != nil {
+		t.Fatalf("SaveProjectFile: %v", err)
+	}
+	if _, err := indexer.IndexWorkspaceCatalogOnly(context.Background(), root, true); err != nil {
+		t.Fatalf("IndexWorkspaceCatalogOnly: %v", err)
+	}
+	app := New(root, nil)
+
+	env, err := app.Execute(context.Background(), model.CommandRequest{
+		Operation: "nav.find",
+		Context:   model.QueryOptions{Workspace: name, MaxItems: 10},
+		Payload:   map[string]any{"pattern": "NeverIndexed", "exact": true},
+	})
+	if err != nil {
+		t.Fatalf("nav.find: %v", err)
+	}
+	if !env.Ok || env.Error != nil {
+		t.Fatalf("envelope = %+v, want a successful empty result for a published empty catalog", env)
+	}
+	if items, ok := env.Items.([]model.SymbolRecord); !ok || len(items) != 0 {
+		t.Fatalf("items = %#v, want an empty symbol slice", env.Items)
+	}
+}
+
 func saveDetectedFixtureProjectWithIdentity(t *testing.T, root, alias string) model.ProjectFile {
 	t.Helper()
 	if output, err := exec.Command("git", "-C", root, "init", "--quiet").CombinedOutput(); err != nil {

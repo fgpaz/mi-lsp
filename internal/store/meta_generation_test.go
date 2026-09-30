@@ -5,6 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/fgpaz/mi-lsp/internal/model"
 )
 
 func TestReadWorkspaceGenerationSnapshotIsReadOnlyWhenDBAbsent(t *testing.T) {
@@ -38,5 +40,52 @@ func TestReadWorkspaceGenerationSnapshotUsesActiveMetadata(t *testing.T) {
 	want := WorkspaceMetaLastIndexGeneration + "=g-last\x00" + WorkspaceMetaActiveDocsGeneration + "=g-docs"
 	if got != want {
 		t.Fatalf("snapshot = %q, want %q", got, want)
+	}
+}
+
+func TestWorkspaceCatalogReadyRecognizesCompleteCatalogWithoutGenerationID(t *testing.T) {
+	root := t.TempDir()
+	db, err := Open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	project := model.ProjectFile{Project: model.ProjectBlock{Name: "empty", Kind: model.WorkspaceKindSingle}}
+	if err := ReplaceCatalog(context.Background(), db, project, []model.FileRecord{}, []model.SymbolRecord{}); err != nil {
+		db.Close()
+		t.Fatal(err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	ready, err := WorkspaceCatalogReady(context.Background(), root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !ready {
+		t.Fatal("catalog readiness = false, want true for a published zero-file catalog")
+	}
+}
+
+func TestWorkspaceCatalogReadyRejectsPartialLegacyPublicationMetadata(t *testing.T) {
+	root := t.TempDir()
+	db, err := Open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := UpsertWorkspaceMeta(context.Background(), db, WorkspaceMetaIndexedAt, "123"); err != nil {
+		db.Close()
+		t.Fatal(err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	ready, err := WorkspaceCatalogReady(context.Background(), root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ready {
+		t.Fatal("catalog readiness = true, want false for partial publication metadata")
 	}
 }

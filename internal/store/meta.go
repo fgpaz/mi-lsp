@@ -18,7 +18,11 @@ type metaQueryer interface {
 	QueryRowContext(context.Context, string, ...any) *sql.Row
 }
 
-const WorkspaceMetaDocIdentitySnapshotVersion = "doc_identity_snapshot_version"
+const (
+	WorkspaceMetaDocIdentitySnapshotVersion = "doc_identity_snapshot_version"
+	WorkspaceMetaIndexedAt                  = "indexed_at"
+	WorkspaceMetaTotalFiles                 = "total_files"
+)
 
 func stampDocIdentitySnapshotTx(ctx context.Context, tx *sql.Tx) error {
 	return UpsertWorkspaceMeta(ctx, tx, WorkspaceMetaDocIdentitySnapshotVersion, docidentity.ExtractionVersion)
@@ -54,9 +58,35 @@ func UpsertWorkspaceMetaMap(ctx context.Context, exec metaExecutor, metadata map
 	return nil
 }
 
-// ReadWorkspaceGenerationSnapshot reads active generation metadata without creating
-// the workspace database or changing its state. It is safe to call for an absent DB.
+// WorkspaceCatalogReady reports whether an active catalog generation exists or
+// the legacy catalog publication markers were committed. It is safe for absent
+// databases and never creates or mutates workspace state.
+func WorkspaceCatalogReady(ctx context.Context, root string) (bool, error) {
+	snapshot, err := readWorkspaceMetaSnapshot(ctx, root, []string{
+		WorkspaceMetaIndexedAt,
+		WorkspaceMetaTotalFiles,
+		WorkspaceMetaActiveCatalogGeneration,
+	})
+	if err != nil {
+		return false, err
+	}
+	return workspaceMetaSnapshotHas(snapshot, WorkspaceMetaActiveCatalogGeneration) ||
+		(workspaceMetaSnapshotHas(snapshot, WorkspaceMetaIndexedAt) && workspaceMetaSnapshotHas(snapshot, WorkspaceMetaTotalFiles)), nil
+}
+
+// ReadWorkspaceGenerationSnapshot reads active generation metadata without
+// creating the workspace database or changing its state. It is safe to call for
+// an absent DB.
 func ReadWorkspaceGenerationSnapshot(ctx context.Context, root string) (string, error) {
+	return readWorkspaceMetaSnapshot(ctx, root, []string{
+		WorkspaceMetaLastIndexGeneration,
+		WorkspaceMetaActiveCatalogGeneration,
+		WorkspaceMetaActiveDocsGeneration,
+		WorkspaceMetaActiveMemoryGeneration,
+	})
+}
+
+func readWorkspaceMetaSnapshot(ctx context.Context, root string, keys []string) (string, error) {
 	path := WorkspaceDBPath(root)
 	if _, err := os.Stat(path); err != nil {
 		if errors.Is(err, os.ErrNotExist) {
@@ -69,7 +99,6 @@ func ReadWorkspaceGenerationSnapshot(ctx context.Context, root string) (string, 
 		return "unavailable", err
 	}
 	defer db.Close()
-	keys := []string{WorkspaceMetaLastIndexGeneration, WorkspaceMetaActiveCatalogGeneration, WorkspaceMetaActiveDocsGeneration, WorkspaceMetaActiveMemoryGeneration}
 	values := make([]string, 0, len(keys))
 	for _, key := range keys {
 		value, ok, err := WorkspaceMetaValue(ctx, db, key)
@@ -84,6 +113,15 @@ func ReadWorkspaceGenerationSnapshot(ctx context.Context, root string) (string, 
 		return "none", nil
 	}
 	return strings.Join(values, "\x00"), nil
+}
+
+func workspaceMetaSnapshotHas(snapshot string, key string) bool {
+	for _, value := range strings.Split(snapshot, "\x00") {
+		if strings.HasPrefix(value, key+"=") && len(value) > len(key)+1 {
+			return true
+		}
+	}
+	return false
 }
 
 func WorkspaceMetaValue(ctx context.Context, db *sql.DB, key string) (string, bool, error) {

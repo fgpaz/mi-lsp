@@ -52,6 +52,88 @@ func TestResultFromExecPreservesSearchMatchInStructuredAndCompactText(t *testing
 	}
 }
 
+func TestResultFromExecPreservesFindNoMatchAndIndexErrors(t *testing.T) {
+	indexHint := "Index the registered workspace with `mi-lsp index --workspace <workspace>` and retry `mi-lsp nav find <pattern> --workspace <workspace>`."
+	tests := []struct {
+		name     string
+		stdout   string
+		wantCode string
+		wantHit  bool
+	}{
+		{
+			name:    "valid catalog with a match",
+			stdout:  `{"ok":true,"operation":"nav.find","workspace":"demo","backend":"catalog","items":[{"file_path":"sample.go","line":3,"name":"NeedleSymbol","kind":"function","language":"go"}],"truncated":false}`,
+			wantHit: true,
+		},
+		{
+			name:   "valid catalog with no matches",
+			stdout: `{"ok":true,"operation":"nav.find","workspace":"demo","backend":"catalog","items":[],"truncated":false}`,
+		},
+		{
+			name:     "registered workspace without catalog generation",
+			stdout:   `{"ok":false,"operation":"nav.find","workspace":"demo","backend":"catalog","items":[],"error":{"kind":"index","code":"index_not_ready","message":"index_not_ready","stage":"catalog","hint_code":"index_not_ready","reason_code":"explicit_incomplete","detail":"` + indexHint + `"},"next_hint":"` + indexHint + `","truncated":false}`,
+			wantCode: "index_not_ready",
+		},
+		{
+			name:     "catalog generation state unavailable",
+			stdout:   `{"ok":false,"operation":"nav.find","workspace":"demo","backend":"catalog","items":[],"error":{"kind":"index","code":"workspace_db_open_failed","message":"workspace_db_open_failed","stage":"catalog","hint_code":"workspace_db_open_failed","reason_code":"explicit_incomplete","detail":"` + indexHint + `"},"next_hint":"` + indexHint + `","truncated":false}`,
+			wantCode: "workspace_db_open_failed",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			result := resultFromExec(ExecResult{Stdout: tc.stdout})
+			if result.StructuredContent == nil {
+				t.Fatal("structured find envelope missing from MCP result")
+			}
+			if result.StructuredContent.Workspace != "demo" || result.StructuredContent.Backend != "catalog" {
+				t.Fatalf("structured envelope lost workspace/backend: %#v", result.StructuredContent)
+			}
+			items, ok := result.StructuredContent.Items.([]any)
+			if !ok {
+				t.Fatalf("structured items = %#v, want array", result.StructuredContent.Items)
+			}
+			if tc.wantCode == "" {
+				if result.IsError || !result.StructuredContent.Ok || result.StructuredContent.Error != nil {
+					t.Fatalf("zero-match result = %#v, want success without error", result)
+				}
+				if tc.wantHit {
+					if len(items) != 1 || len(result.Content) != 1 || !strings.Contains(result.Content[0].Text, "NeedleSymbol") || !strings.Contains(result.Content[0].Text, "sample.go:3") {
+						t.Fatalf("compact find result lost the symbol match: %#v", result.Content)
+					}
+					return
+				}
+				if len(items) != 0 {
+					t.Fatalf("zero-match structured items = %#v, want empty array", items)
+				}
+				if len(result.Content) != 1 {
+					t.Fatalf("zero-match content = %#v, want one compact block", result.Content)
+				}
+				if strings.Contains(result.Content[0].Text, "index_not_ready") {
+					t.Fatalf("zero-match compact output contains an index error: %q", result.Content[0].Text)
+				}
+				return
+			}
+			if !result.IsError || result.StructuredContent.Ok {
+				t.Fatalf("index error result = %#v, want MCP error and ok=false", result)
+			}
+			if result.StructuredContent.Error == nil || result.StructuredContent.Error.Code != tc.wantCode {
+				t.Fatalf("structured error = %#v, want code %q", result.StructuredContent.Error, tc.wantCode)
+			}
+			if result.StructuredContent.Error.ReasonCode != "explicit_incomplete" || result.StructuredContent.Error.Detail != indexHint {
+				t.Fatalf("structured reason/detail = %#v, want explicit_incomplete and actionable hint", result.StructuredContent.Error)
+			}
+			if result.StructuredContent.NextHint == nil || *result.StructuredContent.NextHint != indexHint {
+				t.Fatalf("structured next_hint = %#v, want actionable index command", result.StructuredContent.NextHint)
+			}
+			if len(result.Content) != 1 || !strings.Contains(result.Content[0].Text, tc.wantCode) || !strings.Contains(result.Content[0].Text, "mi-lsp index --workspace <workspace>") {
+				t.Fatalf("compact error content lost typed error or hint: %#v", result.Content)
+			}
+		})
+	}
+}
+
 func TestBuildArgvRequestsJSONForStructuredMCPResults(t *testing.T) {
 	argv, err := BuildArgv("nav_search", map[string]any{"query": "SearchResult"})
 	if err != nil {
