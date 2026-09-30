@@ -1015,6 +1015,7 @@ func TestIndexRunDocsOnlyRebuildsDocsWithoutReplacingCatalog(t *testing.T) {
 	}
 	writeWorkspaceFile(t, root, "src/App.csproj", `<Project Sdk="Microsoft.NET.Sdk"></Project>`)
 	writeSpecBackendGovernanceFixture(t, root)
+	writeWorkspaceFile(t, root, ".docs/wiki/04_RF/RF-IDX-008.md", "# RF-IDX-008\n\nThis document will be deleted.\n")
 	writeWorkspaceFile(t, root, ".docs/wiki/04_RF/RF-IDX-009.md", "# RF-IDX-009\n\nRebuild docs without touching code catalog.\n")
 
 	if _, err := workspace.RegisterWorkspace(alias, model.WorkspaceRegistration{
@@ -1056,6 +1057,40 @@ func TestIndexRunDocsOnlyRebuildsDocsWithoutReplacingCatalog(t *testing.T) {
 	}
 	if len(docs) == 0 {
 		t.Fatalf("expected docs to be rebuilt")
+	}
+
+	writeWorkspaceFile(t, root, ".docs/wiki/04_RF/RF-IDX-009.md", "# RF-IDX-009\n\nUpdated doc content.\n")
+	writeWorkspaceFile(t, root, ".docs/wiki/04_RF/RF-IDX-010.md", "# RF-IDX-010\n\nNew doc content.\n")
+	if err := os.Remove(filepath.Join(root, ".docs/wiki/04_RF/RF-IDX-008.md")); err != nil {
+		t.Fatalf("remove indexed doc: %v", err)
+	}
+	if _, err := app.Execute(context.Background(), model.CommandRequest{
+		Operation: "index.run",
+		Context:   model.QueryOptions{Workspace: alias},
+		Payload:   map[string]any{"docs_only": true},
+	}); err != nil {
+		t.Fatalf("second index.run --docs-only: %v", err)
+	}
+	docs, err = store.ListDocRecords(context.Background(), db)
+	if err != nil {
+		t.Fatalf("ListDocRecords after reindex: %v", err)
+	}
+	paths := map[string]bool{}
+	updatedFound := false
+	for _, doc := range docs {
+		paths[doc.Path] = true
+		if doc.Path == ".docs/wiki/04_RF/RF-IDX-009.md" && strings.Contains(doc.SearchText, "updated doc content") {
+			updatedFound = true
+		}
+	}
+	if !paths[".docs/wiki/04_RF/RF-IDX-010.md"] {
+		t.Fatal("docs-only reindex did not discover the new markdown file")
+	}
+	if !updatedFound {
+		t.Fatal("docs-only reindex did not refresh the modified markdown content")
+	}
+	if paths[".docs/wiki/04_RF/RF-IDX-008.md"] {
+		t.Fatal("docs-only reindex retained the deleted markdown file")
 	}
 }
 

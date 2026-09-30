@@ -272,6 +272,10 @@ func compileSourceValidationWithCorpus(root string, docs []sourceDoc, allDocs []
 	for _, doc := range docs {
 		parsed := doc.parsed
 		label := sourceDocLabel(doc)
+		if !indexedDocContentIsCurrent(doc.record, doc.content) {
+			result.IndexFreshness = "stale"
+			result.WikiSourceWarnings = append(result.WikiSourceWarnings, label+": index stale; indexed content differs from the on-disk markdown")
+		}
 		detail := model.WikiSourceDocumentValidation{
 			DocID:           parsed.DocID,
 			Path:            doc.record.Path,
@@ -314,7 +318,12 @@ func compileSourceValidationWithCorpus(root string, docs []sourceDoc, allDocs []
 			addDocBlocker("missing exports")
 		}
 		for _, ref := range parsed.Imports {
-			if !harnessRefExists(root, docIndex, doc.record.Path, ref) {
+			exists, diskOnly := harnessRefStatus(root, docIndex, doc.record.Path, ref)
+			if diskOnly {
+				result.IndexFreshness = "stale"
+				result.WikiSourceWarnings = append(result.WikiSourceWarnings, label+": index stale; reference exists on disk but is not indexed: "+ref)
+			}
+			if !exists {
 				addDocBlocker("broken import " + ref)
 			}
 		}
@@ -354,8 +363,23 @@ func compileSourceValidationWithCorpus(root string, docs []sourceDoc, allDocs []
 				blockBlockers = append(blockBlockers, "block missing evidence")
 			}
 			for _, ref := range block.Imports {
-				if !harnessRefExists(root, docIndex, doc.record.Path, ref) {
+				exists, diskOnly := harnessRefStatus(root, docIndex, doc.record.Path, ref)
+				if diskOnly {
+					result.IndexFreshness = "stale"
+					result.WikiSourceWarnings = append(result.WikiSourceWarnings, label+": index stale; reference exists on disk but is not indexed: "+ref)
+				}
+				if !exists {
 					blockBlockers = append(blockBlockers, "broken block import "+ref)
+				}
+			}
+			for _, evidence := range block.Evidence {
+				exists, diskOnly := harnessRefStatus(root, docIndex, doc.record.Path, evidence)
+				if diskOnly {
+					result.IndexFreshness = "stale"
+					result.WikiSourceWarnings = append(result.WikiSourceWarnings, label+": index stale; evidence exists on disk but is not indexed: "+evidence)
+				}
+				if !exists {
+					blockBlockers = append(blockBlockers, "evidence not found "+evidence)
 				}
 			}
 			for _, blocker := range blockBlockers {

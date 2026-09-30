@@ -152,7 +152,9 @@ required_targets:
   public_install_contract:
     latest_release: GitHub releases/latest
     checksum_asset: mi-lsp_<version>_checksums.txt
-    archive_layout: mi-lsp(.exe) plus workers/<rid> inside the release archive
+    archive_layout: real mi-lsp executable plus workers/<rid> inside the release archive
+    windows_executable: mi-lsp.exe for win-x64 and win-arm64
+    windows_cmd_shim: not_a_release_artifact
     agent_install: npx skills add fgpaz/mi-lsp --skill mi-lsp -g -a codex -a claude-code -y
     macos_mapping: install.sh resolves darwin-* release archives and maps bundled workers to osx-*; explicit darwin-* and osx-* aliases remain accepted
     worker_manifest_validation: install.sh requires a Python 3 JSON parser and validates schema, RID, protocol, file_count, paths, sizes, and SHA-256 hashes before install
@@ -178,6 +180,7 @@ stop_if:
   - worker verification accepts a WorkersRoot that is not exactly the six allowlisted RID directories
   - worker protocol probe reads are unbounded before timeout enforcement
   - public install script references an asset name not produced by GoReleaser
+  - a Windows release artifact for win-x64 or win-arm64 is only a .cmd shim and does not contain mi-lsp.exe
   - install.sh maps a Darwin host or darwin-*|osx-* alias to an archive/worker RID pair not produced by the release
   - release-platform-mapping runs without literal `pwsh` in release mode (same executable contract as GoReleaser verification)
   - public install script extracts before checksum verification

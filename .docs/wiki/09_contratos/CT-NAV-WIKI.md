@@ -354,6 +354,7 @@ semantics: |
   "items": [
     {
       "harness_protocol": "SDD-HARNESS-v1",
+      "index_freshness": "current",
       "harness_readiness": "ready",
       "harness_verdict": "PASS",
       "harness_blockers": [],
@@ -374,6 +375,7 @@ Veredictos:
 - `PASS`: no hay blockers.
 - `WARN`: no hay blockers y existen warnings no bloqueantes; por ejemplo contratos `human` o `dual` con `verify`, `stop_if` o `evidence` vacios.
 - `BLOCKED`: faltan contratos requeridos, hay imports/links rotos, conflictos `agent_may_edit` vs `agent_must_not_edit`, audience desconocida o faltan `verify`/`stop_if`/`evidence` en docs `llm-first`.
+- `--paths` o `--ids` acota los documentos cuyo contrato se juzga; el corpus completo sigue disponible para resolver referencias. El modo global sin filtros conserva el veredicto del corpus entero.
 
 ## Envelope `wiki validate-source`
 
@@ -401,7 +403,7 @@ Veredictos:
 
 - `PASS`: los artefactos fuente declarados tienen `doc_id`, fences `toon`, `block_id` y filas typed publicadas.
 - `WARN`: no hay blockers, pero quedan warnings no bloqueantes.
-- `BLOCKED`: falta `doc_id`, hay `doc_id` duplicado, falta fence `toon`, falta `block_id`, hay tabla Markdown normativa sin excepcion o faltan filas de navegacion en `doc_source_blocks`.
+- `BLOCKED`: falta `doc_id`, hay `doc_id` duplicado, falta fence `toon`, falta `block_id`, hay tabla Markdown normativa sin excepcion, faltan filas de navegacion en `doc_source_blocks` o la evidencia declarada no existe en disco.
 
 ```toon
 block_id: ct-nav-wiki-validate-source-scope
@@ -423,6 +425,8 @@ no_match:
 readiness:
   exact_claims: "only source-declared artifacts"
   non_source_docs: "not implicitly promoted and not corpus blockers"
+  evidence: "every declared evidence path must resolve to a file in the workspace"
+  stale_index: "an on-disk wiki file absent from the index or whose indexed content hash changed is reported stale, not as a broken reference"
   diagnostics: "hint and blocker are visible"
 ```
 
@@ -435,7 +439,8 @@ readiness:
 - `--repo` no pertenece a `nav wiki`; para compatibilidad, `nav ask|route|pack --repo <x>` lo acepta, lo ignora para docs y sugiere `nav wiki`.
 - `nav wiki trace RS-*` devuelve identidad documental (`doc_id`, `layer=RS`, `stage=outcome`) y no rellena el campo legacy `rf`; `nav wiki trace --all` permanece RF-only.
 - `nav wiki validate-harness` aplica el gate de gobernanza, lee el docgraph existente, abre los markdown gobernados y valida YAML frontmatter o fenced YAML con `harness_protocol: SDD-HARNESS-v1`.
-- `nav wiki validate-harness` resuelve imports, evidencia y links Obsidian links Obsidian de ejemplo contra `DocRecord`, `doc_id`, exports y paths del workspace.
+- `nav wiki validate-harness` resuelve imports, evidencia y links Obsidian de ejemplo contra `DocRecord`, `doc_id`, exports y paths del workspace; las referencias con forma de ruta también se prueban bajo `.docs/wiki/` cuando corresponde.
+- Si un archivo de wiki existe en disco pero no coincide con el índice documental (no está indexado o difiere el content hash), validate-harness y validate-source reportan `index_freshness=stale` y un diagnóstico de reindexación, no un enlace/import roto derivado de ausencia en el índice.
 - `nav wiki validate-harness` debe usar todo el docgraph gobernado para resolver referencias, aunque la validacion este acotada a contratos `SDD-HARNESS-v1`; si un record agregado apunta al mismo ID que un contrato canonico, el agregado no debe generar falso `missing contract`.
 - `--ids <lista>` combina DocRecord.DocID, Title y basename del path; DocRecord.DocID se llena preferentemente con identidad declarada en frontmatter/Harness/SDD y solo después con la compatibilidad legacy acotada (H1 ID-leading o basename exacto), nunca con el primer ID encontrado en el cuerpo.
 - `nav wiki validate-source` aplica el gate de gobernanza, lee `doc_source_blocks`/`doc_source_records`, abre solo markdowns que declaran `SDD-WIKI-SOURCE-v1` y no bloquea el resto del corpus.

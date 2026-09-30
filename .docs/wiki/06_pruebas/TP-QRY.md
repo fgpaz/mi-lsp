@@ -50,6 +50,8 @@ evidence:
 - RF-QRY-015
 - RF-QRY-016
 - RF-QRY-017
+- RF-QRY-020
+- RF-QRY-021
 
 ## Casos
 
@@ -89,12 +91,12 @@ evidence:
 | TC-QRY-013A | positivo | RF-QRY-001 | `nav.search` agrega `coach.trigger=no_matches_refinable` cuando la query no matchea pero tiene rerun accionable |
 | TC-QRY-014 | positivo | RF-QRY-004 | lee multiples rangos en una sola invocacion con truncacion por presupuesto |
 | TC-QRY-014A | positivo/negativo | RF-QRY-002, RF-QRY-004 | `nav.multi-read` inspecciona sólo sus paths explícitos en modo de solo lectura, respeta WAL y refresca catálogo/`doc_records` bajo límite de 250 ms; ante error/deadline previo al commit, sirve el snapshot publicado y advierte sin escritura de fondo |
-| TC-QRY-140 | positivo | RF-QRY-020 | `mi-lsp mcp` inicializa JSON-RPC/NDJSON por stdio, acepta ping y termina limpio al llegar EOF |
-| TC-QRY-141 | positivo | RF-QRY-020 | `tools/list` publica las 13 operaciones de navegación con schemas compatibles con las operaciones CLI |
-| TC-QRY-142 | positivo | RF-QRY-020 | `tools/call nav_search` entrega envelope JSON en `structuredContent` y vista compacta con workspace primero en `content[0].text`; el formato CLI explícito no altera el contrato |
-| TC-QRY-143 | negativo | RF-QRY-020 | workspace inválido permanece fail-closed y entrega la sugerencia exacta para registrarlo o escanear cwd |
-| TC-QRY-144 | negativo | RF-QRY-020 | framing contiene sólo mensajes de protocolo en stdout; logs quedan en stderr y línea sobre 8 MiB se rechaza |
-| TC-QRY-145 | comparativo | RF-QRY-020 | primera llamada fría `nav_search` se mide de forma reproducible; target <5 s, no declarar PASS sin datos del checkout actual |
+| TC-QRY-156 | positivo | RF-QRY-021 | `mi-lsp mcp` inicializa JSON-RPC/NDJSON por stdio, acepta ping y termina limpio al llegar EOF |
+| TC-QRY-157 | positivo | RF-QRY-021 | `tools/list` publica las 13 operaciones de navegación con schemas compatibles con las operaciones CLI |
+| TC-QRY-158 | positivo | RF-QRY-021 | `tools/call nav_search` entrega envelope JSON en `structuredContent` y vista compacta con workspace primero en `content[0].text`; el formato CLI explícito no altera el contrato |
+| TC-QRY-159 | negativo | RF-QRY-021 | workspace inválido permanece fail-closed y entrega la sugerencia exacta para registrarlo o escanear cwd |
+| TC-QRY-160 | negativo | RF-QRY-021 | framing contiene sólo mensajes de protocolo en stdout; logs quedan en stderr y línea sobre 8 MiB se rechaza |
+| TC-QRY-161 | comparativo | RF-QRY-021 | primera llamada fría `nav_search` se mide de forma reproducible; target <5 s, no declarar PASS sin datos del checkout actual |
 | TC-QRY-015 | positivo | RF-QRY-004 | incluye numeros de linea en contenido leido |
 | TC-QRY-016 | negativo | RF-QRY-004 | rechaza path traversal (`../../../etc/passwd`) |
 | TC-QRY-017 | positivo | RF-QRY-005 | ejecuta batch con operaciones paralelas y retorna todos los resultados |
@@ -235,6 +237,15 @@ evidence:
 | TC-QRY-137 | positivo | RF-QRY-019 | `TestNavCommandExposesEvidenceInventory` y `TestShouldUseDaemonPolicy/evidence inventory bypasses daemon`: CLI expone `nav evidence inventory` y preserva ejecucion directa sin daemon |
 | TC-QRY-138 | negativo | RF-QRY-019 | `TestEvidenceInventoryPrefersManifestVerdictAndCountsHeavyArtifacts`: prompts/logs/transcripts con secretos o PHI de fixture no aparecen en JSON ni TOON |
 | TC-QRY-139 | positivo | RF-QRY-019 | `go test ./internal/cli ./internal/service ./internal/output ./internal/reentry`: el contrato compila con render TOON `tokens_est` y sin regresion de reentry/output |
+| TC-QRY-147 | positivo | RF-QRY-001 | `TestEnsureFallbackReasonMapsTerminalFailures` + `TestEnsureFallbackReasonKeepsAllowedCodeAndSanitizesDetail`: fallos terminales externos mapean a un `reason_code` de la allowlist cerrada y conservan `detail` sanitizado en un campo separado |
+| TC-QRY-148 | positivo | RF-QRY-001 | `TestWriteProcessFailureKeepsHumanLineAndTrailer`: un fallo de proceso que nunca llego a envelope conserva la linea humana primero y agrega un unico trailer `reason_code=... detail=...` |
+| TC-QRY-149 | negativo | RF-QRY-001 | `TestEnsureFallbackReasonReplacesUnknownCodeAndBoundsDetail`: un `reason_code` fuera de la allowlist se reemplaza por la clasificacion derivada y el `detail` se acota a 300 caracteres |
+| TC-QRY-150 | negativo | RF-QRY-001 | `TestWriteProcessFailureDetailDoesNotEchoSecrets` + `TestEnsureFallbackReasonIgnoresSuccessAndPreservesWindowsPath`: el `detail` nunca hace eco de tokens/secrets/argv crudos y un envelope exitoso no se toca |
+| TC-QRY-151 | positivo | RF-QRY-001 | `TestCapRenderedTextKeepsContinuationAndWindowsPath` + `TestCapRenderedJSONKeepsContinuationAndWindowsPath`: `--max-chars` recorta preservando `continuation.next` intacto y los backslashes de paths Windows |
+| TC-QRY-152 | negativo | RF-QRY-001 | `TestCapRenderedKeepsContinuationWhenItExceedsBudget`: si el bloque de `continuation` por si solo excede `--max-chars`, se conserva completo en vez de cortarlo a medias |
+| TC-QRY-153 | positivo | RF-QRY-020 | `TestSuggestNav`: Read/Grep/Glob con selector de simbolo mapean a un item `nav multi-read|search|find` con `argv`/`reason` separados y preservan backslashes Windows; Glob de path y tools desconocidas devuelven `items=[]` sin error |
+| TC-QRY-154 | positivo | RF-QRY-020 | `TestNavSuggestCommandEnvelope`: el comando expone `--tool`/`--args`, ejecuta local sin pasar por el dispatch de daemon y devuelve envelope estable `ok=true` |
+| TC-QRY-155 | negativo | RF-QRY-020 | `TestSuggestNav/invalid_json`: `--args` con JSON invalido devuelve error explicito en vez de degradar en silencio |
 
 ## TP-QRY Harness-first: planes, preview y telemetría
 

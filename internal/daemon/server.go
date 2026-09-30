@@ -51,6 +51,7 @@ func NewServer(repoRoot string, maxWorkers int, idleTimeout time.Duration) (*Ser
 }
 
 func NewServerWithOptions(repoRoot string, maxWorkers int, idleTimeout time.Duration, options StartOptions) (*Server, error) {
+	ApplyDaemonMemoryPolicy()
 	options = NormalizeStartOptions(options)
 	listener, err := listenDaemon()
 	if err != nil {
@@ -208,6 +209,10 @@ func (s *Server) handleConnectionContext(ctx context.Context, conn net.Conn) {
 		return
 	}
 	started := time.Now()
+	workersInUse, workerSlots := 0, 0
+	if s.manager != nil {
+		workersInUse, workerSlots = s.manager.WorkerCapacity()
+	}
 	if s.isBackpressureLimited(request) && !s.tryAcquireInflight() {
 		response := s.backpressureEnvelope(request)
 		s.recordAccess(request, response, nil, time.Since(started))
@@ -221,7 +226,17 @@ func (s *Server) handleConnectionContext(ctx context.Context, conn net.Conn) {
 	if err != nil {
 		response = daemonErrorEnvelope(request, err, "daemon")
 	}
-	s.recordAccess(request, response, err, time.Since(started))
+	elapsed := time.Since(started)
+	if response.Ok && workerSlots > 0 && workersInUse >= workerSlots {
+		if response.Metrics == nil {
+			response.Metrics = &model.EnvelopeMetrics{}
+		}
+		response.Metrics.WorkersInUse = workersInUse
+		response.Metrics.WorkerSlots = workerSlots
+		response.Metrics.WorkersAtCapacity = true
+		response.Warnings = append(response.Warnings, fmt.Sprintf("workers_at_capacity: in_use=%d max=%d latency_ms=%d", workersInUse, workerSlots, elapsed.Milliseconds()))
+	}
+	s.recordAccess(request, response, err, elapsed)
 	_ = worker.WriteFrame(conn, response)
 }
 
@@ -625,7 +640,7 @@ func daemonErrorEnvelope(request model.CommandRequest, err error, fallbackKind s
 			envErr.Code = info.Code
 		}
 	}
-	return model.Envelope{
+	env := model.Envelope{
 		Ok:        false,
 		Workspace: request.Context.Workspace,
 		Backend:   backend,
@@ -633,6 +648,17 @@ func daemonErrorEnvelope(request model.CommandRequest, err error, fallbackKind s
 		Warnings:  []string{envErr.Kind + "/" + envErr.Code},
 		Error:     &envErr,
 	}
+	if continuation, detail, ok := workspace.ContinuationForUnresolvedSelector(request.Operation, err); ok {
+		env.Continuation = continuation
+		env.Error.Kind = "workspace"
+		env.Error.Code = "workspace_resolution_failed"
+		env.Error.Stage = "selector_validation"
+		env.Error.HintCode = "workspace_resolution_failed"
+		env.Error.ReasonCode = "invalid_workspace"
+		env.Error.Detail = detail
+		env.Warnings = []string{"workspace/workspace_resolution_failed"}
+	}
+	return env
 }
 
 func probeDaemon(ctx context.Context) (model.DaemonState, error) {

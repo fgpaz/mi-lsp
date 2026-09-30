@@ -129,12 +129,14 @@ type MemoryPointer struct {
 }
 
 type EnvelopeError struct {
-	Kind      string `json:"kind,omitempty"`
-	Code      string `json:"code,omitempty"`
-	Message   string `json:"message,omitempty"`
-	Stage     string `json:"stage,omitempty"`
-	HintCode  string `json:"hint_code,omitempty"`
-	Retryable bool   `json:"retryable,omitempty"`
+	Kind       string `json:"kind,omitempty"`
+	Code       string `json:"code,omitempty"`
+	Message    string `json:"message,omitempty"`
+	Stage      string `json:"stage,omitempty"`
+	HintCode   string `json:"hint_code,omitempty"`
+	Retryable  bool   `json:"retryable,omitempty"`
+	ReasonCode string `json:"reason_code,omitempty"`
+	Detail     string `json:"detail,omitempty"`
 }
 
 // StableError is a terminal error whose public text is already a stable code.
@@ -191,6 +193,9 @@ type EnvelopeMetrics struct {
 	RuntimeCreated     bool  `json:"runtime_created,omitempty"`
 	RuntimeColdStartMs int64 `json:"runtime_cold_start_ms,omitempty"`
 	SQLiteWriteMs      int64 `json:"sqlite_write_ms,omitempty"`
+	WorkersInUse       int   `json:"workers_in_use,omitempty"`
+	WorkerSlots        int   `json:"worker_slots,omitempty"`
+	WorkersAtCapacity  bool  `json:"workers_at_capacity,omitempty"`
 }
 
 type Envelope struct {
@@ -506,6 +511,7 @@ type WikiSearchResult struct {
 
 type HarnessValidationResult struct {
 	HarnessProtocol            string   `json:"harness_protocol"`
+	IndexFreshness             string   `json:"index_freshness,omitempty"`
 	HarnessReadiness           string   `json:"harness_readiness"`
 	HarnessVerdict             string   `json:"harness_verdict"`
 	HarnessBlockers            []string `json:"harness_blockers,omitempty"`
@@ -1143,8 +1149,12 @@ type AccessEvent struct {
 	FailureStage     string    `json:"failure_stage,omitempty"`
 	HintCode         string    `json:"hint_code,omitempty"`
 	TruncationReason string    `json:"truncation_reason,omitempty"`
-	DecisionJSON     string    `json:"decision_json,omitempty"`
-	DecisionHash     string    `json:"decision_hash,omitempty"`
+	// FallbackReasonCode is the closed-set intent-fallback reason code (see
+	// ValidIntentFallbackReasonCode) taken by this operation, when any. It is
+	// sanitized against the same allowlist at both write and read time.
+	FallbackReasonCode string `json:"fallback_reason_code,omitempty"`
+	DecisionJSON       string `json:"decision_json,omitempty"`
+	DecisionHash       string `json:"decision_hash,omitempty"`
 }
 
 // TraceLink represents a spec-to-code link, either explicit (wiki marker) or inferred (heuristic).

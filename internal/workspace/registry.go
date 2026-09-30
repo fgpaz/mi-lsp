@@ -71,7 +71,7 @@ type WorkspaceResolutionError struct {
 func (e *WorkspaceResolutionError) Error() string {
 	selector := strings.TrimSpace(e.Selector)
 	if selector == "" {
-		return workspaceResolutionNotFoundMessage
+		return workspaceResolutionNotFoundMessage + "; pass --workspace <alias> or configure an explicit default workspace"
 	}
 	message := fmt.Sprintf("workspace %q is not registered and path does not exist", selector)
 	if e.FallbackAvailable {
@@ -87,12 +87,41 @@ func (e *WorkspaceResolutionError) Error() string {
 	return message + "; run `mi-lsp workspace list --group-by-root` or `mi-lsp workspace doctor`"
 }
 
+func (e *WorkspaceResolutionError) Unwrap() error {
+	if e == nil {
+		return nil
+	}
+	return &WorkspaceSelectorError{Code: WorkspaceSelectorNotFound, Selector: e.Selector}
+}
+
 func AsWorkspaceResolutionError(err error) (*WorkspaceResolutionError, bool) {
 	var resolutionErr *WorkspaceResolutionError
 	if errors.As(err, &resolutionErr) {
 		return resolutionErr, true
 	}
 	return nil, false
+}
+
+// ContinuationForUnresolvedSelector is the one next command when an unknown
+// alias fails and the caller cwd already sits in a registered workspace.
+// The failed call is not executed against that workspace.
+func ContinuationForUnresolvedSelector(operation string, err error) (*model.Continuation, string, bool) {
+	resolution, ok := AsWorkspaceResolutionError(err)
+	if !ok || resolution == nil || !resolution.FallbackAvailable {
+		return nil, "", false
+	}
+	alias := strings.TrimSpace(resolution.Fallback.Registration.Name)
+	if alias == "" {
+		return nil, "", false
+	}
+	detail := fmt.Sprintf("caller cwd resolves to workspace %s; rerun with --workspace %s", alias, alias)
+	return &model.Continuation{
+		Reason: "cwd_workspace_available",
+		Next: model.ContinuationTarget{
+			Op:        strings.TrimSpace(operation),
+			Workspace: alias,
+		},
+	}, detail, true
 }
 
 type WorkspaceRootGroup struct {
@@ -501,6 +530,9 @@ func resolveWorkspaceSelection(nameOrPath string, callerCWD string, readOnly boo
 			}
 			return WorkspaceResolution{Registration: registration, Source: ResolutionSourcePath}, nil
 		}
+		if strings.TrimSpace(callerCWD) != "" {
+			return WorkspaceResolution{}, newWorkspaceResolutionError(selector, callerCWD, registry)
+		}
 		return WorkspaceResolution{}, &WorkspaceSelectorError{Code: WorkspaceSelectorNotFound, Selector: selector}
 	}
 
@@ -527,7 +559,7 @@ func resolveWorkspaceSelection(nameOrPath string, callerCWD string, readOnly boo
 		}
 	}
 
-	return WorkspaceResolution{}, errors.New("no workspace specified and no default workspace configured")
+	return WorkspaceResolution{}, &WorkspaceResolutionError{CallerCWD: strings.TrimSpace(callerCWD)}
 }
 
 func registeredWorkspaceForRoot(root string, registry model.RegistryFile) (model.WorkspaceRegistration, aliasSelection, bool) {

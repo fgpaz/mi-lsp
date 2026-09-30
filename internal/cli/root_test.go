@@ -47,6 +47,14 @@ func TestNoDaemonFlagIsPersistent(t *testing.T) {
 	}
 }
 
+func TestVerbosePreservesExplicitAgentFormat(t *testing.T) {
+	state := &rootState{verbose: true, format: "agent", formatExplicit: true, clientName: "codex"}
+	profile, format := state.outputProfile("agent")
+	if format != "agent" || profile != model.OutputProfileAgent {
+		t.Fatalf("outputProfile() = (%q, %q), want explicit agent and agent profile", format, profile)
+	}
+}
+
 func TestNoDaemonForcesRelatedToLocalAppWithoutTouchingDaemon(t *testing.T) {
 	localCalled := false
 	daemonCalled := false

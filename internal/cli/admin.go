@@ -74,7 +74,7 @@ Provides runtime dashboards, access logs, and workspace status.`,
 	}
 
 	exportCommand := newExportCommand(state)
-	command.AddCommand(statusCommand, openCommand, exportCommand)
+	command.AddCommand(statusCommand, openCommand, exportCommand, newUsageReportCommand(), newMissedReportCommand())
 	return command
 }
 

@@ -1,0 +1,9 @@
+{
+  "name": "mi-lsp",
+  "version": "0.1.0",
+  "description": "Servidor MCP nativo de mi-lsp (comando mi-lsp, argumento mcp) para Grok.",
+  "author": {
+    "name": "Gabriel Paz"
+  },
+  "license": "MIT"
+}

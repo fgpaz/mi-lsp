@@ -127,6 +127,17 @@ type ExportSummary struct {
 	ByOperationPercentiles []OperationPercentiles   `json:"by_operation_percentiles,omitempty"`
 	Recommendations        []UsageRecommendation    `json:"recommendations,omitempty"`
 	Attribution            *AttributionCoverage     `json:"attribution,omitempty"`
+	KnownBursts            []KnownBurst             `json:"known_bursts,omitempty"`
+}
+
+// KnownBurst is a read-side mark. The stored access_events rows stay.
+// The first failure in each minute still counts in the normal totals.
+type KnownBurst struct {
+	HintCode       string `json:"hint_code"`
+	WorkspaceInput string `json:"workspace_input"`
+	Minute         string `json:"minute"`
+	Count          int    `json:"count"`
+	Noise          int    `json:"noise"`
 }
 
 func QueryAccessEvents(store *TelemetryStore, query ExportQuery) ([]model.AccessEvent, error) {
@@ -277,6 +288,13 @@ type summaryAccumulator struct {
 	failureStageBuckets map[string]*bucket
 	errorMap            map[string]*errorBucket
 	attr                attributionAccumulator
+	burstSamples        []burstSample
+}
+
+type burstSample struct {
+	at    time.Time
+	hint  string
+	input string
 }
 
 type failureKeyEntry struct {
@@ -426,6 +444,13 @@ func (a *summaryAccumulator) add(raw model.AccessEvent) {
 	if strings.Contains(strings.ToLower(telemetry.WorkspaceDisplay(event)), "demo") {
 		a.attr.wsCandidates++
 	}
+	if !event.Success && strings.TrimSpace(event.HintCode) != "" {
+		a.burstSamples = append(a.burstSamples, burstSample{
+			at:    event.OccurredAt,
+			hint:  event.HintCode,
+			input: strings.TrimSpace(event.WorkspaceInput),
+		})
+	}
 	if !event.Success && strings.HasPrefix(event.Operation, "nav.") {
 		a.attr.navFailures++
 	}
@@ -508,9 +533,44 @@ func (a *summaryAccumulator) summary() ExportSummary {
 		topErrors = topErrors[:10]
 	}
 	summary.TopErrors = topErrors
+	summary.KnownBursts = knownBursts(a.burstSamples)
 	summary.Recommendations = ComputeUsageRecommendations(summary)
 	summary.Attribution = a.buildAttribution()
 	return summary
+}
+
+const knownBurstPerMinute = 6
+
+func knownBursts(samples []burstSample) []KnownBurst {
+	if len(samples) == 0 {
+		return nil
+	}
+	counts := map[string]*KnownBurst{}
+	order := make([]string, 0)
+	for _, sample := range samples {
+		if sample.at.IsZero() || strings.TrimSpace(sample.hint) == "" {
+			continue
+		}
+		minute := sample.at.UTC().Truncate(time.Minute).Format(time.RFC3339)
+		key := sample.hint + "\x00" + sample.input + "\x00" + minute
+		burst, ok := counts[key]
+		if !ok {
+			burst = &KnownBurst{HintCode: sample.hint, WorkspaceInput: sample.input, Minute: minute}
+			counts[key] = burst
+			order = append(order, key)
+		}
+		burst.Count++
+	}
+	out := make([]KnownBurst, 0)
+	for _, key := range order {
+		burst := counts[key]
+		if burst.Count < knownBurstPerMinute {
+			continue
+		}
+		burst.Noise = burst.Count - 1
+		out = append(out, *burst)
+	}
+	return out
 }
 
 func (a *summaryAccumulator) buildAttribution() *AttributionCoverage {
@@ -663,6 +723,20 @@ func ComputeUsageRecommendations(summary ExportSummary) []UsageRecommendation {
 			Reason:   "workspace selectors failed to resolve; run hygiene before handing aliases to agents",
 			Command:  "mi-lsp workspace hygiene --format toon",
 			Evidence: []string{fmt.Sprintf("workspace_resolution_failed ops=%d", stat.Ops)},
+		})
+	}
+
+	noise := 0
+	for _, burst := range summary.KnownBursts {
+		noise += burst.Noise
+	}
+	if noise > 0 {
+		add(UsageRecommendation{
+			ID:       "known_hint_burst",
+			Severity: "low",
+			Reason:   "the same hint_code and workspace_input repeated at least 6 times in one minute; repeats are read-side noise and the first failure of each minute stays a real failure",
+			Command:  "mi-lsp admin export --since 1d --summary --by-hint --format toon",
+			Evidence: []string{fmt.Sprintf("known_burst_noise=%d groups=%d", noise, len(summary.KnownBursts))},
 		})
 	}
 

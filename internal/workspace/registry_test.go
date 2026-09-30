@@ -485,6 +485,32 @@ func TestResolveWorkspaceSelectionPathUsesRegisteredRootIdentity(t *testing.T) {
 	}
 }
 
+func TestResolveWorkspaceSelectionOmittedSelectorWithoutDefaultIsTypedNotFound(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+
+	unmatched := t.TempDir()
+	_, err := ResolveWorkspaceSelection("", unmatched)
+	if err == nil {
+		t.Fatal("omitted selector resolved without a registered workspace or default")
+	}
+	var resolutionErr *WorkspaceResolutionError
+	if !errors.As(err, &resolutionErr) {
+		t.Fatalf("err = %T, want *WorkspaceResolutionError", err)
+	}
+	var selectorErr *WorkspaceSelectorError
+	if !errors.As(err, &selectorErr) || selectorErr.Code != WorkspaceSelectorNotFound {
+		t.Fatalf("err = %v, want %s", err, WorkspaceSelectorNotFound)
+	}
+	message := err.Error()
+	for _, want := range []string{"not found", "--workspace", "explicit default"} {
+		if !strings.Contains(message, want) {
+			t.Fatalf("error = %q, want %q", message, want)
+		}
+	}
+}
+
 func TestResolveWorkspaceSelectionFallsBackToLastWorkspaceWhenCWDDoesNotMatch(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)

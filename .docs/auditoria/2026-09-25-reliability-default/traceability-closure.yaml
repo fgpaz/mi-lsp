@@ -1,0 +1,165 @@
+schema: traceability-closure/v1
+session_contract_path: .docs/auditoria/2026-09-25-reliability-default/session-contract.yaml
+task_slug: 2026-09-25-reliability-default
+derived_summary: .docs/auditoria/2026-09-25-reliability-default/sanitized-summary.md
+verify_packet: .docs/auditoria/2026-09-25-reliability-default/verify-packet.yaml
+git_before:
+  branch: main
+  head_sha: d0c052db53833d9a00a4e9c8476334c0ccb8fa04
+  upstream: origin/main
+git_after:
+  branch: main
+  head_sha: f78f1ec34d65e507179e8f00852463a4f5551bd8
+  upstream: origin/main
+  ahead: 1
+  note: closure files in this directory are the pending commit after audit
+changed_paths:
+  tracked:
+    - .docs/raw/reportes/2026-09-24-fiabilidad.md
+    - .docs/wiki/04_RF/RF-WKS-005.md
+    - .docs/wiki/07_baseline_tecnica.md
+    - CHANGELOG.md
+    - internal/cli/root.go
+    - internal/daemon/export.go
+    - internal/daemon/export_burst_test.go
+    - internal/daemon/lifecycle.go
+    - internal/daemon/server.go
+    - internal/mcp/tools.go
+    - internal/model/types.go
+    - internal/service/app.go
+    - internal/service/harness_client.go
+    - internal/service/harness_client_test.go
+    - internal/telemetry/access_diagnostics.go
+    - internal/telemetry/hint_fallback_test.go
+    - internal/workspace/registry.go
+    - internal/workspace/resolution_continuation_test.go
+  pending_closure:
+    - .docs/auditoria/2026-09-25-reliability-default/session-contract.yaml
+    - .docs/auditoria/2026-09-25-reliability-default/traceability-closure.yaml
+    - .docs/auditoria/2026-09-25-reliability-default/sanitized-summary.md
+    - .docs/auditoria/2026-09-25-reliability-default/verify-packet.yaml
+  raw_not_durable:
+    - .docs/raw/reportes/2026-09-24-fiabilidad.md
+  forbidden_hits: []
+  unrelated_untracked:
+    - .grok/workflows/native-plugin-surface.rhai
+    - .pi-subagents/
+scope_verdict: PASS
+traceability_chains:
+  reviewed:
+    - FL-BOOT-01
+    - RF-WKS-005
+    - TC-WKS-035
+    - TC-WKS-036
+    - 07_baseline_tecnica
+  missing_anchors: []
+  updated_paths:
+    - .docs/wiki/04_RF/RF-WKS-005.md
+    - .docs/wiki/07_baseline_tecnica.md
+    - CHANGELOG.md
+runtime_sensitive: true
+runtime_evidence:
+  - fresh go test ./... exit 0 on f78f1ec
+  - harness refusal smoke recorded in sanitized-summary.md
+  - shared daemon pid 43908 remains v0.9.0 and was not restarted
+data_or_contract_sensitive: false
+data_authoring: not_applicable
+data_rationale: no schema, migration, or physical data model change
+harness_verdict: PASS
+wiki_source_verdict: PASS
+wiki_source_note: RF-WKS-005 keeps its existing harness frontmatter; the special-case sentence was aligned, not a new artifact
+core_product_promise_verdict: NOT_APPLICABLE
+expected_experience_oracle_verdict: NOT_APPLICABLE
+qa_learning_loop_verdict: NOT_APPLICABLE
+worker_join_verdict: NOT_APPLICABLE
+harness_scope_classification: targeted_pass
+journey_applicability: not_applicable
+journey_rationale: workspace selector behavior for agents and the human CLI; no new user-facing journey
+adr_change_control:
+  schema: ae-adr-change-control/v1
+  kind: derived_closure_projection
+  projection: ae-adr-propagation-closure/v1
+  result: not_applicable
+  rationale: no ADR file and no declared impact_target row of an ae-adr-change-control/v1 ADR is in the diff; architecture-mcp-door was not edited
+canonical_horizon_ref: not_applicable
+current_status: not_applicable
+scope_classification:
+  IN:
+    - harness mismatch refusal and unknown-alias continuation
+  OUT:
+    - daemon restart
+    - MCP product work
+    - Pi integration
+business_context_freshness: not_applicable
+progressive_dependency_verdict: not_applicable
+later_hold_consumed: false
+later_hold_references: []
+board_sync: not_applicable
+tracker_mode: none
+live_graph_vs_diff:
+  verdict: PASS
+  generation_id: 68deae39067d64e885e620f695eac8c5a33d4e7f492ef6267f4123b9b7aa3e5f
+  primary_doc: RF-WKS-005
+  covered_committed_paths: d0c052d..f78f1ec
+graph_validation:
+  result: NOT_APPLICABLE
+  reason: graph schema and MILX were not in the diff
+sdd_graph_coverage:
+  verdict: PASS
+  unmapped_changed_code: []
+  changed_artifacts:
+    - path: internal/service/harness_client.go
+      classification: direct_sdd_binding
+      binding: RF-WKS-005
+    - path: internal/service/app.go
+      classification: direct_sdd_binding
+      binding: RF-WKS-005
+    - path: internal/workspace/registry.go
+      classification: direct_sdd_binding
+      binding: RF-WKS-005
+    - path: internal/cli/root.go
+      classification: supporting_code
+    - path: internal/daemon/server.go
+      classification: supporting_code
+    - path: internal/daemon/export.go
+      classification: supporting_code
+    - path: internal/daemon/lifecycle.go
+      classification: supporting_code
+    - path: internal/telemetry/access_diagnostics.go
+      classification: supporting_code
+    - path: internal/mcp/tools.go
+      classification: supporting_code
+    - path: internal/model/types.go
+      classification: supporting_code
+learning_pass:
+  route: skipped_fast
+  reason: no pilot or QA learning-loop inputs
+pre_push_inputs:
+  issue: not_applicable
+  waiver: tracker none, local-only tracker
+  evidence_path: .docs/auditoria/2026-09-25-reliability-default/sanitized-summary.md
+  expected_scope: session-contract.yaml expected_scope
+  session_contract_path: .docs/auditoria/2026-09-25-reliability-default/session-contract.yaml
+completion_handoff:
+  target_skill: finishing-a-development-branch
+  disposition: integrate-main
+  order:
+    - trace
+    - audit
+    - prepush
+    - integration
+    - remote readback
+    - cleanup
+  ae_pre_push_before_push: true
+  durability_proof: origin/main readback after push
+  authorized_mutations:
+    - commit closure packet
+    - push origin main
+  cleanup: already-clean
+  blockers: []
+no_drift_snapshot:
+  command: git status --short --branch
+  expected_extra:
+    - .docs/auditoria/2026-09-25-reliability-default/
+    - .grok/workflows/native-plugin-surface.rhai
+    - .pi-subagents/

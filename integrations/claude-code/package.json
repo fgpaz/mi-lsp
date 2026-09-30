@@ -1,0 +1,14 @@
+{
+  "name": "mi-lsp-claude-code",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Claude Code plugin: native mi-lsp MCP server plus fail-open advisory hooks.",
+  "type": "module",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "test": "node --test tests/*.test.mjs"
+  }
+}

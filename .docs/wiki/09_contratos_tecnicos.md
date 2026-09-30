@@ -51,11 +51,11 @@ El detalle por frontera vive en `09_contratos/`; contratos `accepted-design` no 
 
 ## Boundaries y ownership
 
-- La CLI publica es la frontera estable para humanos, skills y wrappers.
+- La CLI publica es la frontera estable para humanos, skills y wrappers. `mi-lsp mcp` es una puerta stdio opcional sobre esa misma CLI; cada puerta de host en `integrations/` tambien es opcional. La decision vive en [[TECH-MCP-ADAPTER]] y el inventario de comandos en [[CT-CLI-DAEMON-ADMIN]]. El protocolo sigue siendo `mi-lsp-v1.1`.
 - AXI es parte de la CLI publica como overlay selectivo por superficie: no todo comando entra en AXI por default.
 - El repo publica una skill curada en `skills/mi-lsp/` para herramientas compatibles con skills; esa skill documenta buenas practicas de uso, pero no redefine la semantica del CLI.
 - La instalacion publica vive fuera del contrato runtime: `scripts/install/install.ps1|sh` instala/actualiza la CLI desde GitHub `releases/latest`, y `scripts/install/install-agent.ps1|sh` agrega la skill via `npx skills add`.
-- Los instaladores publicos deben mapear solo RIDs publicados (`win-x64`, `win-arm64`, `linux-x64`, `linux-arm64`), verificar `mi-lsp_<version>_checksums.txt` antes de extraer y preservar `workers/<rid>/` junto al binario.
+- Los instaladores publicos deben mapear solo RIDs publicados (`win-x64`, `win-arm64`, `linux-x64`, `linux-arm64`), verificar `mi-lsp_<version>_checksums.txt` antes de extraer y preservar `workers/<rid>/` junto al binario. En Windows el artefacto publicado es `mi-lsp.exe`; un shim `.cmd` no es el producto.
 - El daemon comparte estado entre clientes pero no redefine la CLI publica.
 - `daemon start` mantiene `start.guard` persistente y nunca lo elimina; bajo su lock OS exclusivo (`LockFileEx` en Windows, `flock` en Unix) serializa crear, inspeccionar, recuperar y `Close` de `start.lock`. `start.lock` conserva `O_CREATE|O_EXCL`, se rellena con metadata versionada `pid+nonce` y el descriptor se cierra después de sincronizarla. Solo se recupera un owner muerto; owner vivo o metadata desconocida se preservan, los errores son fail-closed, un lock legacy vacío solo se recupera después de 5 minutos y `Close` elimina únicamente bajo guard cuando coinciden `pid+nonce`. PID válido: `1..math.MaxInt32`; en Windows, `ACCESS_DENIED` y cualquier error ambiguo cuentan como owner vivo, y solo `ERROR_INVALID_PARAMETER` prueba inexistencia.
 - La UI/admin es una vista local del daemon; no es API publica remota.
@@ -86,7 +86,7 @@ El detalle por frontera vive en `09_contratos/`; contratos `accepted-design` no 
 - Los simbolos locales, lambda, anonymous y synthesized/implicit no elegibles se expresan como omissions tipadas; solo endpoints elegibles realmente faltantes generan `GraphUnresolved`.
 - `GraphUnresolved` se ordena y deduplica por `key` antes de asignar IDs. Sus candidatos se trim, normalizan a slash, deduplican, ordenan y limitan a 64 elementos/4096 bytes; el contexto `source_document`, `source_block`, `target_kind` y `target_value` es nullable, acotado y no altera `UnresolvedKey` ni `CrossRID`.
 - El contexto diagnóstico de `GraphUnresolved` queda fuera de `UnresolvedKey`/`CrossRID`, pero participa, con framing determinista y orden estable, en los digests de contenido y facts y en los fingerprints de source/config/backend que gobiernan el `generation_id`.
-- `MILX-v1` es un contrato stdio local aislado, no MCP. No admite graph/wiki write, network, secrets o process spawn en v1.
+- `MILX-v1` es un contrato stdio local aislado, no MCP. No admite graph/wiki write, network, secrets o process spawn en v1. No es la puerta `mi-lsp mcp`.
 - Federation lista member generations y unavailable members; un global snapshot es derivativo y nunca cambia stores miembros ni autoridad wiki.
 
 ## Configuracion de embeddings

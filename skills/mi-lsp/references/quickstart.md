@@ -18,6 +18,8 @@ mi-lsp worker status --format compact
 
 If the bundle was moved after extraction, run `mi-lsp worker install`.
 
+Windows bundles for `win-x64` and `win-arm64` contain `mi-lsp.exe`. A `.cmd` shim is not the product. If `MI_LSP_BIN` is set, it must point at that real executable. Confirm the executable with `mi-lsp workspace which` before blaming the daemon. `mi-lsp nav suggest` only names an existing `nav` command; it does not replace `nav intent`.
+
 ## First-use bootstrap
 
 ```powershell
@@ -114,7 +116,7 @@ If `nav recall` cannot use configured embeddings because config, key, or provide
 For source validation, `nav wiki validate-source` returns `BLOCKED` with `scope=no_match` for non-source-only or unmatched scopes. Canonical source IDs, canonical source paths, and mixed valid source ID/path scopes return `ready`; pass `--ids` and/or `--paths` explicitly.
 For Go files, `nav context` / `nav refs` may use `gopls` when it is installed. If `gopls` is unavailable, accept only the runtime’s visible catalog/text partial evidence; do not silently switch tools.
 
-Allowed external fallback reasons are only `unsupported_operation`, `unavailable_binary`, `invalid_workspace`, and `explicit_incomplete`. `nav edit-plan` is a guarded patch preview/apply surface and is not a fallback for `nav prepare`. Do not use `rg`, `Grep`, `Glob`, or broad reads before `mi-lsp`; leave the lane only for one of those four visible reasons. Use 180/300-second soft/hard watchdogs, at most two smaller same-context recoveries without unchanged retry, six practical lanes with exclusive `allowed_paths`, fail-closed joins, fresh verification, and redacted evidence without prompts, transcripts, secrets, PII, PHI, argv, or raw patterns. Do not invent model/provider metadata.
+Allowed external fallback reasons are only `unsupported_operation`, `unavailable_binary`, `invalid_workspace`, and `explicit_incomplete`, each with a separate sanitized `detail`. Global `--max-chars` caps output; `0` means unset and truncation must keep `continuation.next`. `nav edit-plan` is a guarded patch preview/apply surface and is not a fallback for `nav prepare`. Do not use `rg`, `Grep`, `Glob`, or broad reads before `mi-lsp`; leave the lane only for one of those four visible reasons. Use 180/300-second soft/hard watchdogs, at most two smaller same-context recoveries without unchanged retry, six practical lanes with exclusive `allowed_paths`, fail-closed joins, fresh verification, and redacted evidence without prompts, transcripts, secrets, PII, PHI, argv, or raw patterns. Do not invent model/provider metadata.
 
 ## Portable preparation
 

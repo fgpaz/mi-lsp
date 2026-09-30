@@ -398,6 +398,16 @@ func buildCLIErrorEnvelope(request model.CommandRequest, route string, err error
 		Error:     &envErr,
 		Warnings:  errorWarnings(envErr),
 	}
+	ensureFallbackReason(&env)
+	if continuation, detail, ok := workspace.ContinuationForUnresolvedSelector(request.Operation, err); ok && env.Error != nil {
+		env.Continuation = continuation
+		env.Error.Kind = "workspace"
+		env.Error.Code = "workspace_resolution_failed"
+		env.Error.Stage = "selector_validation"
+		env.Error.HintCode = "workspace_resolution_failed"
+		env.Error.ReasonCode = "invalid_workspace"
+		env.Error.Detail = detail
+	}
 	var graphErr *model.GraphQueryError
 	if errors.As(err, &graphErr) {
 		if len(graphErr.Candidates) > 0 {
@@ -842,12 +852,14 @@ func (s *rootState) printPreparedEnvelope(envelope model.Envelope, opts model.Qu
 	// Set profile based on resolved value from root state
 	format := opts.Format
 	envelope.Profile, format = s.outputProfile(format)
+	ensureFallbackReason(&envelope)
 	renderStarted := time.Now()
 	rendered, err := output.Render(envelope, format, opts.Compress)
 	traceCLITiming("output.render", time.Since(renderStarted), s.verbose)
 	if err != nil {
 		return err
 	}
+	rendered = output.CapRendered(rendered, opts.MaxChars)
 	writeStarted := time.Now()
 	_, err = fmt.Fprintln(os.Stdout, string(rendered))
 	traceCLITiming("output.write", time.Since(writeStarted), s.verbose)
@@ -855,12 +867,10 @@ func (s *rootState) printPreparedEnvelope(envelope model.Envelope, opts model.Qu
 }
 
 func (s *rootState) outputProfile(format string) (model.OutputProfile, string) {
-	if s.verbose && (!s.formatExplicit || format == "agent") {
+	if s.verbose && !s.formatExplicit {
 		if format == "agent" {
 			format = "compact"
 		}
-	}
-	if s.verbose && (!s.formatExplicit || format != s.format) {
 		return model.OutputProfileHuman, format
 	}
 	return resolveProfile(s.profile, s.clientName), format

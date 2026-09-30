@@ -69,6 +69,16 @@ func TestHarnessRefExistsStripsCodeEvidenceLineRange(t *testing.T) {
 	}
 }
 
+func TestHarnessRefStatusResolvesPathStyleWikiLinkAsStale(t *testing.T) {
+	root := t.TempDir()
+	writeWorkspaceFile(t, root, ".docs/wiki/05_RF/CONTRACT.md", "# Contract\n")
+
+	exists, diskOnly := harnessRefStatus(root, map[string]struct{}{}, ".docs/wiki/04_RF/OWNER.md", "[[05_RF/CONTRACT.md]]")
+	if !exists || !diskOnly {
+		t.Fatalf("path-style wiki link status = (%v, %v), want existing on disk but absent from index", exists, diskOnly)
+	}
+}
+
 func TestHarnessRefExistsKeepsExtensionlessDocRefs(t *testing.T) {
 	root := t.TempDir()
 	writeWorkspaceFile(t, root, ".docs/wiki/09_contratos/CT-HARNESS.md", "# CT-HARNESS\n")
@@ -89,6 +99,25 @@ func TestValidateHarnessMissingContractBlocks(t *testing.T) {
 	}
 	if len(result.HarnessDocsMissingContract) != 1 || result.HarnessDocsMissingContract[0] != "CT-HARNESS" {
 		t.Fatalf("missing contract docs = %#v", result.HarnessDocsMissingContract)
+	}
+}
+
+func TestValidateHarnessDiskOnlyPathLinkReportsStaleIndex(t *testing.T) {
+	alias, root := createHarnessWorkspace(t)
+	content := validHarnessContract("llm-first", "CT-HARNESS", "artifacts/harness/evidence.md", "Related: [[05_RF/CONTRACT.md]].")
+	writeHarnessDoc(t, root, ".docs/wiki/09_contratos/CT-HARNESS.md", content)
+	writeWorkspaceFile(t, root, ".docs/wiki/05_RF/CONTRACT.md", "# Contract\n")
+	writeWorkspaceFile(t, root, "artifacts/harness/evidence.md", "verified")
+	record := harnessDocRecord(".docs/wiki/09_contratos/CT-HARNESS.md", "CT-HARNESS")
+	record.ContentHash = "previous-index-hash"
+	replaceHarnessDocs(t, root, []model.DocRecord{record})
+
+	result := executeHarnessValidation(t, root, alias)
+	if result.IndexFreshness != "stale" || result.HarnessVerdict == "BLOCKED" {
+		t.Fatalf("disk-only path link should diagnose stale index without broken-link blocker: %#v", result)
+	}
+	if strings.Contains(strings.Join(result.HarnessBlockers, " | "), "broken import/link [[05_RF/CONTRACT.md]]") {
+		t.Fatalf("existing path-style wiki link reported broken: %#v", result.HarnessBlockers)
 	}
 }
 
@@ -177,6 +206,10 @@ func TestValidateHarnessScopedIDsFilterBeforeLoadingDocs(t *testing.T) {
 		harnessDocRecord(".docs/wiki/09_contratos/CT-GLOBAL.md", "CT-GLOBAL"),
 	})
 
+	global := executeHarnessValidation(t, root, alias)
+	if global.HarnessVerdict != "BLOCKED" {
+		t.Fatalf("unscoped legacy corpus verdict = %#v, want BLOCKED", global)
+	}
 	result := executeHarnessValidationPayload(t, root, alias, map[string]any{"ids": "ct-pilot"})
 	if result.HarnessVerdict != "PASS" || result.HarnessContractsReviewed != 1 {
 		t.Fatalf("scoped verdict = %#v, want one passing contract", result)

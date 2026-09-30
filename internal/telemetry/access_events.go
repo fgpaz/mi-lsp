@@ -82,7 +82,7 @@ func NormalizeAccessEvent(event model.AccessEvent) model.AccessEvent {
 		event.TruncationReason = "none"
 	}
 	event.WarningCount = warningCount
-	event.Repo, event.Warnings, event.Error, event.ErrorCode, event.HintCode = sanitizePersistedAccessFields(event.Repo, event.Warnings, event.Error, event.ErrorCode, event.HintCode, event.Backend)
+	event.Repo, event.Warnings, event.Error, event.ErrorCode, event.HintCode, event.FallbackReasonCode = sanitizePersistedAccessFields(event.Repo, event.Warnings, event.Error, event.ErrorCode, event.HintCode, event.FallbackReasonCode, event.Backend)
 	event.DecisionJSON = normalizeDecisionJSON(event.DecisionJSON, event)
 	return event
 }

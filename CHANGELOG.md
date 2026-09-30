@@ -12,6 +12,38 @@ and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2
 - `mi-lsp mcp` exposes the existing navigation operations through a local JSON-RPC/NDJSON stdio process, with structured JSON and compact agent text responses.
 - Agent-consumed navigation output now defaults to a compact response that names the selected workspace; `--verbose` adds detail, while explicit output formats retain their existing behavior.
 - `nav.multi-read` and `nav.affected` can refresh requested/changed files incrementally before reading published data; impact refresh does not rebuild graph generations, and unresolved seeds may require full reindexing.
+- `mi-lsp admin usage-report --since 7d` prints JSON only: harness usage, continuation follow-through, fallback reason rates, latency percentiles, and empty, partial, and stale-graph signals. It does not store query bodies.
+- `mi-lsp admin missed-report --since 7d` reads up to 120 local harness JSONL files and reports missed, acceptable, or unknown tool-call patterns. Edit and Write never count. The report keeps pattern shape and repo name, never prompt text or full paths.
+- A new daemon process applies `MI_LSP_DAEMON_GOMEMLIMIT` (default 96MiB). `MI_LSP_DAEMON_GOGC` applies only when set. The already-running daemon is left untouched.
+
+### Fixed
+
+- Docs-only indexing regression coverage now exercises create/change/delete discovery across consecutive reindexes. Wiki validators detect indexed-content hash drift and on-disk path references absent from the index (`index_freshness=stale`), resolve path-style `[[05_RF/X.md]]` links under `.docs/wiki/`, and reject missing source evidence files. `validate-harness --paths` remains the bounded alternative to the global legacy-contract verdict.
+- An unknown workspace alias still fails with `invalid_workspace`. When the caller cwd is already a registered workspace, the envelope carries `continuation.next` for that alias and does not run the query there.
+- Harness mismatch refusal now follows the client that actually called. `manual-cli` stays a warning. `root`, `builtin_child`, `mi-lsp-mcp`, and derived names such as `pi-chief` or `grok-measure-leaf` are harnesses and get `workspace_cross_workspace_refused` unless `--allow-cross-workspace` is set.
+- A backend failure without `hint_code` keeps the stable `error.code`, or `explicit_incomplete` when there is no code.
+- `admin export` marks six or more repeats of the same `hint_code` and `workspace_input` in one minute as a known burst. Stored rows are unchanged, and the first failure of each minute still counts.
+- A successful call that entered with the worker slots already full reports `workers_at_capacity` and `latency_ms`. `max_inflight` still rejects immediately.
+
+## [0.9.0] - 2026-09-24
+
+### Added
+
+- Optional `mi-lsp mcp` stdio door over the existing CLI. The CLI stays the authority. Each host door under `integrations/` is optional and is not a second navigation product. The protocol remains `mi-lsp-v1.1`.
+- `workspace which` reports the resolved workspace and the executable in use. It does not change the registry. `workspace doctor` remains the broader hygiene report.
+- `nav suggest` returns a bounded suggestion of an existing `nav` command, with `command` and `reason` kept separate. It does not replace `nav intent` and it is not an external fallback.
+- Global `--max-chars`. `0` means no explicit character cap. A positive value is the cap and wins over AXI defaults. Truncation keeps `continuation.next` and a truncation marker.
+- Terminal external failures expose exactly one `reason_code` — `unsupported_operation`, `unavailable_binary`, `invalid_workspace`, or `explicit_incomplete` — plus a separate canonical `detail`. The detail is not raw input.
+- `MI_LSP_BIN`, when set, must point at the real executable (`mi-lsp.exe` on Windows, `mi-lsp` elsewhere). A `.cmd` or `.bat` shim is not a valid override.
+
+### Changed
+
+- README rewritten for first-time readers: pitch, five-minute quickstart, task-to-command table, host doors, measured footprint and troubleshooting.
+- The per-push `Tests` GitHub Actions workflow was removed; validation runs locally. The tag-only `Release` workflow is unchanged.
+
+### Notes
+
+- Windows releases for `win-x64` and `win-arm64` ship `mi-lsp.exe`. A `.cmd` shim is not the product.
 
 ## [0.8.1] - 2026-08-27
 

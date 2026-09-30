@@ -414,6 +414,7 @@ func candidateHarnessYAMLBlocks(content string) []string {
 func compileHarnessValidation(root string, docs []harnessDoc, corpus []harnessDoc) model.HarnessValidationResult {
 	result := model.HarnessValidationResult{
 		HarnessProtocol: harnessProtocolV1,
+		IndexFreshness:  "current",
 		HarnessVerdict:  "PASS",
 	}
 	docIndex := buildHarnessDocIndex(corpus)
@@ -423,6 +424,10 @@ func compileHarnessValidation(root string, docs []harnessDoc, corpus []harnessDo
 
 	for _, doc := range docs {
 		docLabel := harnessDocLabel(doc.record)
+		if doc.content != "" && !indexedDocContentIsCurrent(doc.record, doc.content) {
+			result.IndexFreshness = "stale"
+			result.HarnessWarnings = append(result.HarnessWarnings, docLabel+": index stale; indexed content differs from the on-disk markdown")
+		}
 		if doc.content == "" {
 			result.HarnessBlockers = append(result.HarnessBlockers, docLabel+": unreadable markdown")
 			continue
@@ -475,7 +480,12 @@ func compileHarnessValidation(root string, docs []harnessDoc, corpus []harnessDo
 
 		for _, ref := range append(trimmedNonEmpty(contract.Imports), doc.links...) {
 			result.HarnessLinksReviewed++
-			if !harnessRefExists(root, docIndex, doc.record.Path, ref) {
+			exists, diskOnly := harnessRefStatus(root, docIndex, doc.record.Path, ref)
+			if diskOnly {
+				result.IndexFreshness = "stale"
+				result.HarnessWarnings = append(result.HarnessWarnings, docLabel+": index stale; reference exists on disk but is not indexed: "+ref)
+			}
+			if !exists {
 				result.HarnessBlockers = append(result.HarnessBlockers, docLabel+": broken import/link "+ref)
 			}
 		}
@@ -485,7 +495,12 @@ func compileHarnessValidation(root string, docs []harnessDoc, corpus []harnessDo
 				seenRequired[evidence] = struct{}{}
 				result.HarnessEvidenceRequired = append(result.HarnessEvidenceRequired, evidence)
 			}
-			if harnessRefExists(root, docIndex, doc.record.Path, evidence) {
+			exists, diskOnly := harnessRefStatus(root, docIndex, doc.record.Path, evidence)
+			if diskOnly {
+				result.IndexFreshness = "stale"
+				result.HarnessWarnings = append(result.HarnessWarnings, docLabel+": index stale; evidence exists on disk but is not indexed: "+evidence)
+			}
+			if exists {
 				if _, ok := seenFound[evidence]; !ok {
 					seenFound[evidence] = struct{}{}
 					result.HarnessEvidenceFound = append(result.HarnessEvidenceFound, evidence)
@@ -616,18 +631,20 @@ func addHarnessIndexKey(index map[string]struct{}, value string) {
 }
 
 func harnessRefExists(root string, index map[string]struct{}, fromPath string, ref string) bool {
+	exists, _ := harnessRefStatus(root, index, fromPath, ref)
+	return exists
+}
+
+func harnessRefStatus(root string, index map[string]struct{}, fromPath string, ref string) (exists bool, diskOnly bool) {
 	ref = strings.TrimSpace(ref)
 	if ref == "" || ref == "." || strings.EqualFold(ref, "none") || strings.EqualFold(ref, "n/a") {
-		return true
+		return true, false
 	}
 	if strings.HasPrefix(ref, "http://") || strings.HasPrefix(ref, "https://") {
-		return true
+		return true, false
 	}
 	if kernelV2CanonReferenceExists(root, ref) {
-		return true
-	}
-	if _, ok := index[normalizeHarnessRef(ref)]; ok {
-		return true
+		return true, false
 	}
 	if strings.HasPrefix(ref, "[[") && strings.HasSuffix(ref, "]]") {
 		ref = strings.TrimSuffix(strings.TrimPrefix(ref, "[["), "]]")
@@ -636,7 +653,14 @@ func harnessRefExists(root string, index map[string]struct{}, fromPath string, r
 	ref = strings.Split(ref, "#")[0]
 	ref = strings.TrimSpace(ref)
 	if ref == "" {
-		return true
+		return true, false
+	}
+	// A canonical block ID may contain a dot (e.g. CT-GLOBAL.contract).
+	// Resolve it as an indexed ID before interpreting its suffix as a file extension.
+	if !strings.ContainsAny(ref, "/\\") && !strings.HasPrefix(ref, ".") {
+		if _, ok := index[normalizeHarnessRef(ref)]; ok {
+			return true, false
+		}
 	}
 	path := filepath.ToSlash(ref)
 	path = stripHarnessLineSuffix(path)
@@ -646,19 +670,20 @@ func harnessRefExists(root string, index map[string]struct{}, fromPath string, r
 	if filepath.Ext(path) == "" {
 		path += ".md"
 	}
-	if _, ok := index[normalizeHarnessRef(path)]; ok {
-		return true
-	}
 	candidates := []string{path}
 	if !strings.Contains(path, "/") {
+		candidates = append(candidates, filepath.ToSlash(filepath.Join(".docs", "wiki", path)))
+	} else if !strings.HasPrefix(path, "../") && !strings.HasPrefix(path, ".docs/wiki/") {
 		candidates = append(candidates, filepath.ToSlash(filepath.Join(".docs", "wiki", path)))
 	}
 	for _, candidate := range candidates {
 		if _, err := os.Stat(filepath.Join(root, filepath.FromSlash(candidate))); err == nil {
-			return true
+			_, indexed := index[normalizeHarnessRef(candidate)]
+			// Evidence outside the governed wiki is not part of the docs index.
+			return true, isGovernedWikiDocPath(candidate) && !indexed
 		}
 	}
-	return false
+	return false, false
 }
 
 func kernelV2CanonReferenceExists(root string, ref string) bool {
