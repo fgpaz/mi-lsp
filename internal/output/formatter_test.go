@@ -60,6 +60,90 @@ func TestRenderCompact_ServiceSurfaceSummary(t *testing.T) {
 	}
 }
 
+func TestRenderAgent_SymbolResultsAreCompactAndResultFirst(t *testing.T) {
+	env := model.Envelope{
+		Ok:        true,
+		Workspace: "mi-lsp",
+		Backend:   "catalog+text",
+		Items: []model.SymbolRecord{
+			{Name: "Render", Kind: "function", FilePath: "internal/output/formatter.go", StartLine: 39},
+			{Name: "renderAgent", Kind: "function", FilePath: "internal/output/formatter.go", StartLine: 67},
+		},
+		Warnings: []string{"index refresh available"},
+		Coach:    &model.Coach{Trigger: "success", Message: "verbose coaching should be omitted"},
+	}
+
+	rendered, err := Render(env, "agent", false)
+	if err != nil {
+		t.Fatalf("render agent: %v", err)
+	}
+	text := string(rendered)
+	if len(rendered) >= 600 {
+		t.Fatalf("expected concise result under 600 bytes, got %d: %s", len(rendered), text)
+	}
+	if !strings.HasPrefix(text, "workspace=mi-lsp\nfunction Render internal/output/formatter.go:39") {
+		t.Fatalf("expected workspace and results first, got %q", text)
+	}
+	if strings.Contains(text, "verbose coaching") || strings.Contains(text, "backend=") {
+		t.Fatalf("agent output included non-actionable envelope detail: %s", text)
+	}
+	if !strings.Contains(text, "warning: index refresh available") {
+		t.Fatalf("expected actionable warning, got %s", text)
+	}
+}
+
+func TestRenderAgent_PreservesActionableFailure(t *testing.T) {
+	nextHint := "mi-lsp workspace add /tmp/project --no-index"
+	env := model.Envelope{
+		Ok:        false,
+		Workspace: "",
+		Items:     []model.SymbolRecord{},
+		NextHint:  &nextHint,
+		Error: &model.EnvelopeError{
+			Kind: "workspace", Code: "workspace_unresolved", Message: "run mi-lsp workspace add .",
+		},
+	}
+
+	rendered, err := Render(env, "agent", false)
+	if err != nil {
+		t.Fatalf("render agent failure: %v", err)
+	}
+	if !strings.Contains(string(rendered), "error: kind=workspace code=workspace_unresolved") || !strings.Contains(string(rendered), "run mi-lsp workspace add .") {
+		t.Fatalf("expected actionable failure details, got %s", rendered)
+	}
+	if !strings.Contains(string(rendered), "next: "+nextHint) {
+		t.Fatalf("expected next hint command, got %s", rendered)
+	}
+}
+
+func TestRenderAgent_TextSearchMatchesStayCompact(t *testing.T) {
+	env := model.Envelope{
+		Ok:        true,
+		Workspace: "mi-lsp-src",
+		Items: []map[string]any{
+			{"file": "internal/service/search.go", "line": 101, "text": "func searchPatternScopedWithDiagnostics(ctx context.Context, workspaceRoot string)"},
+			{"file": "internal/service/search.go", "line": 152, "text": "items := make([]map[string]any, 0, min(limit, 16))"},
+			{"file": "internal/cli/nav.go", "line": 49, "text": "render output compactly for agent callers"},
+			{"file": "internal/output/formatter.go", "line": 82, "text": "return []byte(renderAgent(env)), nil"},
+			{"file": "internal/output/formatter_test.go", "line": 120, "text": "TestRenderAgent_TextSearchMatchesStayCompact"},
+		},
+	}
+
+	rendered, err := Render(env, "agent", false)
+	if err != nil {
+		t.Fatalf("render agent search: %v", err)
+	}
+	text := string(rendered)
+	if len(rendered) >= 600 {
+		t.Fatalf("expected five search matches under 600 bytes, got %d: %s", len(rendered), text)
+	}
+	for _, want := range []string{"workspace=mi-lsp-src", "internal/service/search.go:101", "internal/output/formatter_test.go:120", "…"} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("expected output to contain %q, got %s", want, text)
+		}
+	}
+}
+
 func TestRenderText_ServiceSurfaceSummary(t *testing.T) {
 	env := model.Envelope{
 		Ok:        true,

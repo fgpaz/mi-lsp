@@ -2,6 +2,7 @@ package service
 
 import (
 	"database/sql"
+	"time"
 
 	"github.com/fgpaz/mi-lsp/internal/model"
 	"github.com/fgpaz/mi-lsp/internal/store"
@@ -28,6 +29,8 @@ func (e *workspaceDBOpenError) Unwrap() error {
 // If readOnly is true, uses OpenReadOnly for concurrent read access.
 // Otherwise, uses Open for write access (serialized).
 func openWorkspaceDB(registration model.WorkspaceRegistration, operation string, readOnly bool) (*sql.DB, error) {
+	started := time.Now()
+	defer traceServiceTiming("db_open", started)
 	var db *sql.DB
 	var err error
 	if readOnly {

@@ -297,8 +297,16 @@ func publishForeground(ctx context.Context, db *sql.DB, body func(*sql.Tx) error
 	if err := body(tx); err != nil {
 		return err
 	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	if err := tx.Commit(); err != nil {
 		return err
+	}
+	// Query-triggered refreshes carry a deadline. Do not run ancillary
+	// maintenance outside that budget after the committed snapshot is visible.
+	if _, bounded := ctx.Deadline(); bounded {
+		return nil
 	}
 	_ = PublishIndexPragmaOptimize(db)
 	return nil

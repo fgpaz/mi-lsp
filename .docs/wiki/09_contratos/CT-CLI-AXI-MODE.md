@@ -53,7 +53,9 @@ Define el overlay selectivo por superficie de onboarding/discovery AXI sobre la 
 ## Reglas de contrato
 
 - Por default, `mi-lsp` sin subcomando devuelve un home content-first; `--classic` restaura help generica.
-- En AXI efectivo y sin `--format` explicito, la salida por defecto de discovery es TOON.
+- En AXI efectivo y sin `--format` explícito, discovery usa TOON cuando no aplica el despacho compacto de consumidores agente.
+- Para consumidores agente (stdout no TTY, `MI_LSP_CLIENT_NAME` configurado o cliente identificado como MCP), la salida implícita de navegación usa formato `agent`, con el workspace como primera línea y resultado compacto. `--verbose` pide detalle ampliado; cualquier `--format` explícito prevalece y conserva el formato seleccionado.
+- En una respuesta exitosa del formato `agent`, se priorizan filas breves de resultado y no se agregan bloques de coach/gobernanza ni continuaciones automáticas. Las omisiones o errores accionables sí permanecen visibles.
 - En AXI preview, la respuesta puede anunciar expansion con `next_hint: rerun with --full for expanded detail`.
 - En AXI preview, el envelope puede incluir `continuation.next`, pero `continuation.alternate` debe omitirse para no inflar la salida.
 - `--full` no cambia routing, backend ni estructura base del envelope; solo expande disclosure.

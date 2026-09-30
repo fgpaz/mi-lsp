@@ -10,6 +10,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/fgpaz/mi-lsp/internal/docgraph"
 	"github.com/fgpaz/mi-lsp/internal/model"
@@ -132,15 +133,34 @@ func (a *App) intent(ctx context.Context, request model.CommandRequest) (model.E
 
 func (a *App) intentDocs(ctx context.Context, request model.CommandRequest, registration model.WorkspaceRegistration, question string, topN int, offset int, scopedRepo *model.WorkspaceRepo, scopeWarnings []string) (model.Envelope, error) {
 	query := loadDocQueryContext(ctx, registration, question)
-	defer query.Close()
+	defer func() { _ = query.Close() }()
 	if query.dbErr != nil {
 		return model.Envelope{}, query.dbErr
 	}
 
 	route := query.canonicalRoute(request.Context, false)
+	refreshWarnings := []string{}
+	if paths := routeDocCandidatePaths(query, route, min(max(topN, 1), 5)); len(paths) > 0 {
+		refreshed, refreshErr := RefreshQueryPaths(ctx, registration.Root, paths, 500*time.Millisecond)
+		if refreshErr != nil {
+			refreshWarnings = append(refreshWarnings, "intent document refresh unavailable; using the currently published snapshot: "+sanitizeIntentError(refreshErr))
+		} else if refreshed {
+			freshQuery := loadDocQueryContext(ctx, registration, question)
+			if freshQuery.dbErr == nil {
+				_ = query.Close()
+				query = freshQuery
+				route = query.canonicalRoute(request.Context, false)
+				refreshWarnings = append(refreshWarnings, "intent document candidates refreshed from the published snapshot")
+			} else {
+				_ = freshQuery.Close()
+				refreshWarnings = append(refreshWarnings, "intent document refresh committed but the published snapshot could not be reopened; using prior query results")
+			}
+		}
+	}
 	items := buildIntentDocItems(registration.Name, question, route, query.ranked, topN, offset)
 	warnings := append([]string{}, scopeWarnings...)
 	warnings = append(warnings, query.profileWarnings...)
+	warnings = append(warnings, refreshWarnings...)
 	if scopedRepo != nil {
 		warnings = append(warnings, "repo selector applies only to code mode; ignored after docs classification")
 	}

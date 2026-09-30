@@ -9,6 +9,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/fgpaz/mi-lsp/internal/model"
 	"github.com/fgpaz/mi-lsp/internal/workspace"
 )
 
@@ -78,13 +79,25 @@ func TestEffectiveAXI_AskImplementationStaysClassic(t *testing.T) {
 	}
 }
 
-func TestEffectiveFormat_DefaultSearchUsesTOON(t *testing.T) {
-	state := &rootState{format: "compact"}
+func TestEffectiveFormat_DefaultSearchUsesTOONForTTY(t *testing.T) {
+	t.Setenv("MI_LSP_CLIENT_NAME", "")
+	tty := true
+	state := &rootState{format: "compact", stdoutIsTerminal: &tty}
 	cmd := testAXICommand()
 	axiEnabled := state.effectiveAXI(cmd, "nav.search", map[string]any{"pattern": "AXI"})
 
 	if got := state.effectiveFormat(cmd, "nav.search", map[string]any{"pattern": "AXI"}, axiEnabled); got != "toon" {
 		t.Fatalf("effectiveFormat() = %q, want toon", got)
+	}
+}
+
+func TestEffectiveFormat_DefaultSearchUsesAgentForNonTTY(t *testing.T) {
+	t.Setenv("MI_LSP_CLIENT_NAME", "")
+	tty := false
+	state := &rootState{format: "compact", clientName: "manual-cli", stdoutIsTerminal: &tty}
+	cmd := testAXICommand()
+	if got := state.effectiveFormat(cmd, "nav.search", map[string]any{"pattern": "AXI"}, false); got != "agent" {
+		t.Fatalf("effectiveFormat() = %q, want agent", got)
 	}
 }
 
@@ -102,7 +115,9 @@ func TestEffectiveFormat_ExplicitFormatWinsInAXIMode(t *testing.T) {
 }
 
 func TestEffectiveFormat_ClassicSearchKeepsCompact(t *testing.T) {
-	state := &rootState{format: "compact", classic: true}
+	t.Setenv("MI_LSP_CLIENT_NAME", "")
+	tty := true
+	state := &rootState{format: "compact", classic: true, stdoutIsTerminal: &tty}
 	cmd := testAXICommand()
 	if err := cmd.Flags().Set("classic", "true"); err != nil {
 		t.Fatalf("set classic: %v", err)
@@ -124,8 +139,85 @@ func TestEffectiveMaxItems_DefaultSearchNarrows(t *testing.T) {
 	}
 }
 
+func TestImplicitAgentFormatSelection(t *testing.T) {
+	tests := []struct {
+		name         string
+		client       string
+		configured   bool
+		terminal     bool
+		format       string
+		verbose      bool
+		wantImplicit bool
+	}{
+		{name: "configured client", client: "codex", configured: true, terminal: true, wantImplicit: true},
+		{name: "non terminal", client: "manual-cli", terminal: false, wantImplicit: true},
+		{name: "MCP client", client: "native-mcp", terminal: true, wantImplicit: true},
+		{name: "interactive human", client: "manual-cli", terminal: true, wantImplicit: false},
+		{name: "explicit format", client: "codex", configured: true, terminal: false, format: "json", wantImplicit: false},
+		{name: "verbose", client: "codex", configured: true, terminal: false, verbose: true, wantImplicit: false},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			cmd := testAXICommand()
+			cmd.Flags().Bool("verbose", false, "")
+			if test.format != "" {
+				if err := cmd.Flags().Set("format", test.format); err != nil {
+					t.Fatalf("set format: %v", err)
+				}
+			}
+			if test.verbose {
+				if err := cmd.Flags().Set("verbose", "true"); err != nil {
+					t.Fatalf("set verbose: %v", err)
+				}
+			}
+			if got := implicitAgentFormat(cmd, test.client, test.configured, test.terminal); got != test.wantImplicit {
+				t.Fatalf("implicitAgentFormat() = %t, want %t", got, test.wantImplicit)
+			}
+		})
+	}
+}
+
+func TestVerbosePreservesProfileForExplicitJSONFormat(t *testing.T) {
+	state := &rootState{verbose: true, format: "json", formatExplicit: true, clientName: "codex"}
+	profile, format := state.outputProfile("json")
+	if format != "json" || profile != model.OutputProfileAgent {
+		t.Fatalf("outputProfile() = (%q, %q), want explicit json and prior agent profile", format, profile)
+	}
+}
+
+func TestTextNavigationOperationsSkipDaemon(t *testing.T) {
+	for _, operation := range []string{"nav.find", "nav.search", "nav.multi-read"} {
+		if shouldUseDaemon(operation, true) {
+			t.Errorf("shouldUseDaemon(%q, true) = true, want false", operation)
+		}
+	}
+}
+
+func TestMultiReadPathsExtractFileTargets(t *testing.T) {
+	got := multiReadPaths(map[string]any{"args": []any{"internal/cli/root.go:1-10", "README.md:4-8", "missing-range"}})
+	want := []string{"internal/cli/root.go", "README.md"}
+	if len(got) != len(want) {
+		t.Fatalf("multiReadPaths() = %#v, want %#v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("multiReadPaths() = %#v, want %#v", got, want)
+		}
+	}
+}
+
+func TestWorkspaceRecoveryCommandUsesResolvedInputs(t *testing.T) {
+	got := workspaceRecoveryCommand(model.QueryOptions{CallerCWD: "/work/project", Workspace: "project-alias"})
+	want := "mi-lsp workspace add '/work/project' --name 'project-alias' --no-index"
+	if got != want {
+		t.Fatalf("workspaceRecoveryCommand() = %q, want %q", got, want)
+	}
+}
+
 func TestEffectiveMaxItems_ClassicSearchKeepsConfiguredValue(t *testing.T) {
-	state := &rootState{maxItems: 50, classic: true}
+	t.Setenv("MI_LSP_CLIENT_NAME", "")
+	tty := true
+	state := &rootState{maxItems: 50, classic: true, stdoutIsTerminal: &tty}
 	cmd := testAXICommand()
 	if err := cmd.Flags().Set("classic", "true"); err != nil {
 		t.Fatalf("set classic: %v", err)

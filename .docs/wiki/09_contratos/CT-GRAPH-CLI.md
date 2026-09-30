@@ -58,6 +58,8 @@ Volver a [09_contratos_tecnicos.md](../09_contratos_tecnicos.md).
 
 Contrato de CLI para consultar generations publicadas y enrutar intenciones graph-native. La CLI es publica; daemon, SQLite y adapters son internos. La superficie de comandos esta implementada en el runtime actual; la disponibilidad de una generation o backend graph concreto puede degradar de forma visible y no convierte heuristica en equivalencia exacta.
 
+Antes de leer el grafo, `nav.affected` inspecciona solo los paths explícitos en modo de solo lectura, respetando WAL, y compara hashes. Con límite de 1 s, un cambio refresca catálogo y `doc_records` sincrónicamente, mediante publicación transaccional; no ejecuta extractores graph/Roslyn ni crea escrituras de fondo. El commit comprueba el contexto y omite `PRAGMA optimize` bajo deadline. Si falla o vence antes del commit, la consulta conserva el snapshot disponible y advierte. Si el commit termina, el refresh se considera exitoso aunque el deadline venza después. Si el graph read está stale, `nav.affected` no eleva heurísticas a impacto graph-native: las devuelve con `confidence=0`, sin generation/evidence graph, y emite el comando `mi-lsp index --workspace "<alias>"`; un seed que siga sin resolver permanece como omission tipada.
+
 ## Comandos v1
 
 ```toon

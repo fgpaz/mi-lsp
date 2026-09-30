@@ -283,6 +283,7 @@ func TestResolveWorkspaceSelectionReadOnlyFailsClosedForMalformedGitMarkers(t *t
 			mustCreateDir(t, worktreeRoot)
 			if tc.markerDir {
 				mustCreateDir(t, filepath.Join(worktreeRoot, ".git"))
+				writeRegistryTestFile(t, filepath.Join(worktreeRoot, ".git", "HEAD"), "ref: refs/heads/main\n")
 			} else {
 				writeRegistryTestFile(t, filepath.Join(worktreeRoot, ".git"), tc.markerFile)
 			}
@@ -318,6 +319,14 @@ func TestResolveWorkspaceSelectionReadOnlyFailsClosedForMalformedGitMarkers(t *t
 				t.Fatalf("normal resolved root = %q, want %q", normal.Registration.Root, worktreeRoot)
 			}
 		})
+	}
+}
+
+func TestInspectGitMarkerRejectsEmptyGitDirectory(t *testing.T) {
+	root := t.TempDir()
+	mustCreateDir(t, filepath.Join(root, ".git"))
+	if marker, ok := inspectGitMarker(root); ok {
+		t.Fatalf("inspectGitMarker accepted empty directory as %#v", marker)
 	}
 }
 
@@ -435,6 +444,44 @@ func TestResolveWorkspaceSelectionUsesProjectNameForSameRootAliases(t *testing.T
 	}
 	if !strings.Contains(strings.Join(resolution.Warnings, " "), "multiple registry aliases") {
 		t.Fatalf("Warnings = %v, want multiple registry aliases message", resolution.Warnings)
+	}
+}
+
+func TestResolveWorkspaceSelectionPathUsesRegisteredRootIdentity(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+
+	root := t.TempDir()
+	mustCreateDir(t, filepath.Join(root, "src"))
+	if err := SaveProjectFile(root, model.ProjectFile{
+		Project: model.ProjectBlock{Name: "canonical-project", Kind: model.WorkspaceKindSingle},
+	}); err != nil {
+		t.Fatalf("SaveProjectFile(root): %v", err)
+	}
+	registerTestWorkspace(t, "alias-one", root)
+	registerTestWorkspace(t, "canonical-project", root)
+
+	byCWD, err := ResolveWorkspaceSelection("", filepath.Join(root, "src"))
+	if err != nil {
+		t.Fatalf("ResolveWorkspaceSelection(cwd): %v", err)
+	}
+	byPath, err := ResolveWorkspaceSelection(root, "")
+	if err != nil {
+		t.Fatalf("ResolveWorkspaceSelection(path): %v", err)
+	}
+	byAlias, err := ResolveWorkspaceSelection("alias-one", "")
+	if err != nil {
+		t.Fatalf("ResolveWorkspaceSelection(alias): %v", err)
+	}
+	if byCWD.Registration.Name != "canonical-project" || byPath.Registration.Name != byCWD.Registration.Name {
+		t.Fatalf("cwd alias = %q, path alias = %q; want canonical-project for both", byCWD.Registration.Name, byPath.Registration.Name)
+	}
+	if filepath.Clean(byPath.Registration.Root) != filepath.Clean(root) || filepath.Clean(byAlias.Registration.Root) != filepath.Clean(root) {
+		t.Fatalf("roots differ: cwd=%q path=%q alias=%q", byCWD.Registration.Root, byPath.Registration.Root, byAlias.Registration.Root)
+	}
+	if byAlias.Registration.Name != byCWD.Registration.Name {
+		t.Fatalf("explicit alias = %q, want canonical identity %q", byAlias.Registration.Name, byCWD.Registration.Name)
 	}
 }
 

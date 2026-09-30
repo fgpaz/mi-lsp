@@ -54,13 +54,17 @@ func (a *App) ResolveWorkspace(nameOrPath string) (model.WorkspaceRegistration, 
 
 func (a *App) Execute(ctx context.Context, request model.CommandRequest) (model.Envelope, error) {
 	started := time.Now()
+	defer traceServiceTiming("total", started)
+	resolveStarted := time.Now()
 	normalizedRequest, resolutionWarnings, err := a.normalizeWorkspaceRequest(request)
+	traceServiceTiming("workspace_resolve", resolveStarted)
 	if err != nil {
 		return model.Envelope{}, err
 	}
 	request = normalizedRequest
 
 	var envelope model.Envelope
+	operationStarted := time.Now()
 	switch request.Operation {
 	case "workspace.add":
 		envelope, err = a.workspaceAdd(ctx, request)
@@ -183,14 +187,17 @@ func (a *App) Execute(ctx context.Context, request model.CommandRequest) (model.
 	default:
 		err = fmt.Errorf("unknown operation %q; run mi-lsp --help for available commands", request.Operation)
 	}
+	traceServiceTiming("operation", operationStarted)
 	if err != nil {
 		return model.Envelope{}, err
 	}
+	enrichmentStarted := time.Now()
 	if liveWikiCodeOperation(request.Operation) {
 		envelope = a.enrichLiveWikiCodeContext(ctx, request, envelope)
 	} else {
 		envelope = a.enrichWikiCodeContext(ctx, request, envelope)
 	}
+	traceServiceTiming("context_enrichment", enrichmentStarted)
 	for _, warning := range resolutionWarnings {
 		envelope.Warnings = appendStringIfMissing(envelope.Warnings, warning)
 	}
@@ -1602,29 +1609,61 @@ func (a *App) find(ctx context.Context, request model.CommandRequest) (model.Env
 	if err != nil {
 		return model.Envelope{}, err
 	}
-	defer db.Close()
 	queryLimit := request.Context.MaxItems
 	sqlOffset := offset
 	if scopedRepo != nil {
 		queryLimit = max((offset+request.Context.MaxItems)*10, 100)
 		sqlOffset = 0
 	}
-	items, err := store.FindSymbols(ctx, db, pattern, kind, exact, queryLimit, sqlOffset)
+	query := func(db *sql.DB) ([]model.SymbolRecord, error) {
+		items, err := store.FindSymbols(ctx, db, pattern, kind, exact, queryLimit, sqlOffset)
+		if err != nil {
+			return nil, err
+		}
+		items = filterSymbolsByRepo(items, scopedRepo)
+		if offset > 0 {
+			if offset >= len(items) {
+				items = []model.SymbolRecord{}
+			} else {
+				items = items[offset:]
+			}
+		}
+		if request.Context.MaxItems > 0 && len(items) > request.Context.MaxItems {
+			items = items[:request.Context.MaxItems]
+		}
+		return items, nil
+	}
+	items, err := query(db)
+	closeErr := db.Close()
 	if err != nil {
 		return model.Envelope{}, err
 	}
-	items = filterSymbolsByRepo(items, scopedRepo)
-	if offset > 0 {
-		if offset >= len(items) {
-			items = []model.SymbolRecord{}
-		} else {
-			items = items[offset:]
+	if closeErr != nil {
+		return model.Envelope{}, closeErr
+	}
+	warnings := append([]string(nil), scopeWarnings...)
+	if len(items) > 0 {
+		paths := make([]string, 0, len(items))
+		for _, item := range items {
+			paths = append(paths, item.FilePath)
+		}
+		refreshed, refreshErr := RefreshQueryPaths(ctx, registration.Root, paths, 250*time.Millisecond)
+		if refreshErr != nil {
+			warnings = appendStringIfMissing(warnings, "query catalog refresh unavailable; using the currently published snapshot: "+sanitizeIntentError(refreshErr))
+		} else if refreshed {
+			db, err = openWorkspaceDB(registration, "nav.find", true)
+			if err != nil {
+				warnings = appendStringIfMissing(warnings, "query catalog refreshed but could not reopen the published snapshot: "+sanitizeIntentError(err))
+			} else {
+				items, err = query(db)
+				_ = db.Close()
+				if err != nil {
+					return model.Envelope{}, err
+				}
+			}
 		}
 	}
-	if request.Context.MaxItems > 0 && len(items) > request.Context.MaxItems {
-		items = items[:request.Context.MaxItems]
-	}
-	return model.Envelope{Ok: true, Workspace: registration.Name, Backend: "catalog", Items: items, Stats: model.Stats{Symbols: len(items)}, Warnings: scopeWarnings}, nil
+	return model.Envelope{Ok: true, Workspace: registration.Name, Backend: "catalog", Items: items, Stats: model.Stats{Symbols: len(items)}, Warnings: warnings}, nil
 }
 
 func (a *App) overview(ctx context.Context, request model.CommandRequest) (model.Envelope, error) {

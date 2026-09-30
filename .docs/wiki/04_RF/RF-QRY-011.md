@@ -59,6 +59,8 @@ evidence:
 5. En `mode=code`, el sistema mantiene el ranking BM25 actual sobre `search_text` enriquecido del catalogo con boosts por nombre/kind.
 6. Devuelve un envelope `backend=intent` con `mode=docs|code`.
 7. Como `nav intent` pertenece a la superficie AXI-default, la primera page puede ser mas estrecha por default y debe incluir guidance de expansion via `--full` salvo `--classic`.
+8. Para una salida implícita consumida por agentes, la CLI presenta el workspace elegido primero y una forma compacta; `--verbose` amplía el detalle. Un `--format` explícito conserva el formato solicitado.
+9. Para los candidatos Markdown de `nav.intent`, se permite refrescar hasta cinco paths bajo presupuesto de 500 ms. Si se publica el catálogo, se recarga y vuelve a puntuar una sola vez; ante error/deadline se devuelven los resultados calculados en memoria con warning. El refresco no reconstruye el grafo.
 
 ## 4. Typed Errors
 

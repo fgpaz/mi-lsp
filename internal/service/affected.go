@@ -102,6 +102,24 @@ func (a *App) affected(ctx context.Context, request model.CommandRequest) (model
 		return applyCoachPolicy(attachMemoryPointer(env, memory), request.Context), nil
 	}
 
+	orderedInputs := make([]affectedInput, 0, len(inputs))
+	for _, input := range inputs {
+		orderedInputs = append(orderedInputs, input)
+	}
+	sort.Slice(orderedInputs, func(i, j int) bool {
+		return orderedInputs[i].Path < orderedInputs[j].Path
+	})
+	refreshPaths := make([]string, 0, len(orderedInputs))
+	for _, input := range orderedInputs {
+		refreshPaths = append(refreshPaths, input.Path)
+	}
+	refreshed, refreshErr := RefreshQueryPaths(ctx, registration.Root, refreshPaths, queryFreshnessRefreshTimeout)
+	if refreshErr != nil {
+		warnings = appendStringIfMissing(warnings, "query catalog refresh unavailable; using the currently published snapshot: "+sanitizeIntentError(refreshErr))
+	} else if refreshed {
+		warnings = appendStringIfMissing(warnings, "query catalog refreshed; graph impact still uses its published graph snapshot")
+	}
+
 	var db *sql.DB
 	db, err = openWorkspaceDB(registration, "nav.affected", true)
 	if err != nil {
@@ -110,18 +128,11 @@ func (a *App) affected(ctx context.Context, request model.CommandRequest) (model
 		defer db.Close()
 	}
 
-	orderedInputs := make([]affectedInput, 0, len(inputs))
-	for _, input := range inputs {
-		orderedInputs = append(orderedInputs, input)
-	}
-	sort.Slice(orderedInputs, func(i, j int) bool {
-		return orderedInputs[i].Path < orderedInputs[j].Path
-	})
-
 	var items []AffectedItem
 	seenItems := map[string]struct{}{}
 	symbolEvidenceCount := 0
 	graphUsed := false
+	graphStaleFallback := false
 	legacyHeuristic := false
 	var graphGenerationID string
 	var graphSchemaVersion int
@@ -157,8 +168,12 @@ func (a *App) affected(ctx context.Context, request model.CommandRequest) (model
 				warnings = appendStringIfMissing(warnings, omission.Code+": "+omission.Reason)
 			}
 		}
-		if graphErr != nil && !graphImpactCanFallback(graphErr) {
+		if graphErr != nil && !graphImpactCanFallback(graphErr) && !isGraphImpactStaleError(graphErr) {
 			return model.Envelope{}, graphErr
+		}
+		if isGraphImpactStaleError(graphErr) {
+			graphStaleFallback = true
+			warnings = appendStringIfMissing(warnings, fmt.Sprintf("GPH_IMPACT_GRAPH_STALE: serving changed-path heuristics only; rebuild graph with mi-lsp index --workspace %q", registration.Name))
 		}
 	}
 	if !graphUsed && db != nil {
@@ -188,6 +203,10 @@ func (a *App) affected(ctx context.Context, request model.CommandRequest) (model
 		if !graphUsed {
 			legacyClass = "legacy"
 		}
+		if graphStaleFallback {
+			legacyClass = "heuristic"
+			confidence = 0
+		}
 		addAffectedItem(&items, seenItems, AffectedItem{
 			Kind:            kind,
 			Path:            input.Path,
@@ -211,6 +230,9 @@ func (a *App) affected(ctx context.Context, request model.CommandRequest) (model
 				addAffectedItem(&items, seenItems, docItem)
 			}
 		}
+	}
+	if graphStaleFallback {
+		items = markAffectedItemsHeuristic(items)
 	}
 	if graphUsed && legacyHeuristic {
 		warnings = appendStringIfMissing(warnings, "legacy path/test/doc suggestions are heuristic and not graph facts")
@@ -246,6 +268,18 @@ func (a *App) affected(ctx context.Context, request model.CommandRequest) (model
 		},
 	}
 	return applyCoachPolicy(attachMemoryPointer(env, memory), request.Context), nil
+}
+
+func markAffectedItemsHeuristic(items []AffectedItem) []AffectedItem {
+	for i := range items {
+		items[i].Confidence = 0
+		items[i].ConfidenceClass = "heuristic"
+		items[i].GenerationID = ""
+		items[i].CrossRID = ""
+		items[i].EvidencePath = nil
+		items[i].Omissions = nil
+	}
+	return items
 }
 
 func affectedPathsFromPayload(value any) []string {
@@ -385,6 +419,11 @@ func graphImpactCanFallback(err error) bool {
 	default:
 		return false
 	}
+}
+
+func isGraphImpactStaleError(err error) bool {
+	var graphErr *model.GraphQueryError
+	return errors.As(err, &graphErr) && graphErr.Code == "GPH_IMPACT_GRAPH_STALE"
 }
 
 func affectedGraphItemKind(item model.GraphImpactItem) string {

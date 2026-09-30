@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/md5"
 	"database/sql"
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -23,9 +24,10 @@ import (
 )
 
 var (
-	gitPath     string
-	gitResolved bool
-	gitOnce     sync.Once
+	gitPath                      string
+	gitResolved                  bool
+	gitOnce                      sync.Once
+	refreshCatalogBeforeLockHook func()
 )
 
 // resolveGitBinary resolves the git binary from MI_LSP_GIT env var or PATH.
@@ -157,7 +159,104 @@ func IncrementalIndexWithPaths(ctx context.Context, workspaceRoot string, change
 	return incrementalIndexWithGraphProgressAndChanges(ctx, workspaceRoot, "", nil, GraphIndexOptions{}, nil, &incrementalChangeSet{
 		changed: normalizeIncrementalPaths(workspaceRoot, changedFiles),
 		deleted: normalizeIncrementalPaths(workspaceRoot, deletedFiles),
+	}, false)
+}
+
+// IncrementalCatalogWithPaths refreshes an explicit query change set without
+// rebuilding the graph. The catalog generation is published transactionally;
+// graph freshness then reports stale until a graph-capable indexing pass runs.
+func IncrementalCatalogWithPaths(ctx context.Context, workspaceRoot string, changedFiles []string) (Result, error) {
+	return incrementalIndexWithGraphProgressAndChanges(ctx, workspaceRoot, "", nil, GraphIndexOptions{}, nil, &incrementalChangeSet{
+		changed: normalizeIncrementalPaths(workspaceRoot, changedFiles),
+	}, true)
+}
+
+// RefreshCatalogPaths publishes only the supplied already-cataloged code
+// files. It avoids project discovery and schema migration on query hot paths.
+func RefreshCatalogPaths(ctx context.Context, workspaceRoot string, changedFiles []string) (Result, error) {
+	if err := ctx.Err(); err != nil {
+		return Result{}, err
+	}
+	root, err := filepath.Abs(workspaceRoot)
+	if err != nil {
+		return Result{}, err
+	}
+	paths := normalizeIncrementalPaths(root, changedFiles)
+	generationID := fmt.Sprintf("idxgen-query-%d", time.Now().UnixNano())
+	var refreshed Result
+	if refreshCatalogBeforeLockHook != nil {
+		refreshCatalogBeforeLockHook()
+	}
+	err = store.WithWorkspaceWriteLockContext(ctx, root, func() error {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		db, err := store.OpenExistingForScopedRefresh(root)
+		if err != nil {
+			return err
+		}
+		defer db.Close()
+		changes := make([]store.IncrementalFileChange, 0, len(paths))
+		symbolCount := 0
+		for _, relPath := range paths {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+			if isDocPath(relPath) || languageFromExt(strings.ToLower(filepath.Ext(relPath))) == "" {
+				continue
+			}
+			absPath := filepath.Join(root, filepath.FromSlash(relPath))
+			var repoID, repoName string
+			err = db.QueryRowContext(ctx, `SELECT repo_id, repo_name FROM files WHERE file_path=?`, relPath).Scan(&repoID, &repoName)
+			if errors.Is(err, sql.ErrNoRows) {
+				continue
+			}
+			if err != nil {
+				return err
+			}
+			info, statErr := os.Stat(absPath)
+			if os.IsNotExist(statErr) {
+				changes = append(changes, store.IncrementalFileChange{FilePath: relPath, Deleted: true})
+				continue
+			}
+			if statErr != nil {
+				return statErr
+			}
+			if info.Size() > 4*1024*1024 {
+				return fmt.Errorf("scoped refresh deferred: file exceeds the automatic refresh size budget")
+			}
+			content, readErr := os.ReadFile(absPath)
+			if os.IsNotExist(readErr) {
+				changes = append(changes, store.IncrementalFileChange{FilePath: relPath, Deleted: true})
+				continue
+			}
+			if readErr != nil {
+				return readErr
+			}
+			symbols, file := ExtractCatalog(root, model.WorkspaceRepo{ID: repoID, Name: repoName}, absPath, content)
+			changes = append(changes, store.IncrementalFileChange{
+				FilePath: relPath, RepoID: repoID, RepoName: repoName, Language: file.Language,
+				ContentHash: file.ContentHash, Symbols: symbols,
+			})
+			symbolCount += len(symbols)
+		}
+		if len(changes) == 0 {
+			return errors.New("no existing code catalog rows were eligible for scoped refresh")
+		}
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if err := store.PublishIncrementalGenerationWithFileAndDocChanges(ctx, db, generationID, len(changes), symbolCount, 0, changes, nil); err != nil {
+			return err
+		}
+		refreshed = Result{Stats: model.Stats{Files: len(changes), Symbols: symbolCount}}
+		return nil
 	})
+	if err != nil {
+		return Result{}, err
+	}
+	refreshed.Warnings = []string{"query catalog refreshed; graph remains stale until graph-capable indexing"}
+	return refreshed, nil
 }
 
 // IncrementalIndexWithGraphProgress updates the catalog and, when needed,
@@ -176,7 +275,7 @@ func IncrementalIndexWithGraphProgressForJob(ctx context.Context, workspaceRoot,
 }
 
 func incrementalIndexWithGraphProgress(ctx context.Context, workspaceRoot, generationID string, progress ProgressFunc, graphOptions GraphIndexOptions, publication *IndexJobPublication) (Result, error) {
-	return incrementalIndexWithGraphProgressAndChanges(ctx, workspaceRoot, generationID, progress, graphOptions, publication, nil)
+	return incrementalIndexWithGraphProgressAndChanges(ctx, workspaceRoot, generationID, progress, graphOptions, publication, nil, false)
 }
 
 // incrementalChangeSet is intentionally private: the watcher only supplies
@@ -186,7 +285,7 @@ type incrementalChangeSet struct {
 	deleted []string
 }
 
-func incrementalIndexWithGraphProgressAndChanges(ctx context.Context, workspaceRoot, generationID string, progress ProgressFunc, graphOptions GraphIndexOptions, publication *IndexJobPublication, changes *incrementalChangeSet) (Result, error) {
+func incrementalIndexWithGraphProgressAndChanges(ctx context.Context, workspaceRoot, generationID string, progress ProgressFunc, graphOptions GraphIndexOptions, publication *IndexJobPublication, changes *incrementalChangeSet, skipGraphObservation bool) (Result, error) {
 	started := time.Now()
 	if err := ctx.Err(); err != nil {
 		return Result{}, err
@@ -280,7 +379,7 @@ func incrementalIndexWithGraphProgressAndChanges(ctx context.Context, workspaceR
 	}
 	// A document mutation invalidates the graph facts used by observation. Do
 	// not observe or publish a graph until a later run sees the final docs.
-	observeGraph := graphRepair && !hasDocChanges
+	observeGraph := graphRepair && !hasDocChanges && !skipGraphObservation
 	if observeGraph {
 		db, err := store.Open(workspaceRoot)
 		if err != nil {
@@ -572,6 +671,9 @@ func incrementalIndexWithGraphProgressAndChanges(ctx context.Context, workspaceR
 	}
 
 	warnings := append([]string{}, graphWarnings...)
+	if skipGraphObservation && graphRepair && hasChanges {
+		warnings = append(warnings, "incremental: query catalog refreshed; graph remains stale until a graph-capable index pass publishes a new generation")
+	}
 	warnings = append(warnings, fmt.Sprintf("incremental: processed %d files, skipped %d", processedFiles, skippedFiles))
 	result := Result{Files: []model.FileRecord{}, Symbols: allSymbols, Docs: processedDocs, Warnings: warnings, GraphOmissions: graphOmissions, GraphNotApplicable: graphNotApplicable, Stats: model.Stats{Files: processedFiles, Symbols: len(allSymbols), TotalDocs: processedDocs, TotalReturned: processedDocs, Ms: time.Since(started).Milliseconds()}}
 	if graphGeneration.GenerationID != (model.GraphDigest{}) {

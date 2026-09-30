@@ -72,16 +72,29 @@ evidence:
 | TC-QRY-011 | negativo | RF-QRY-003 | devuelve warning accionable si no hay catalogo util o no se encuentra evidencia suficiente bajo el path |
 | TC-QRY-012 | positivo | RF-QRY-002 | `nav context` sobre `ts/tsx` devuelve `slice_text` y warning si `tsserver` no esta disponible |
 | TC-QRY-013 | positivo | RF-QRY-002 | `nav search` sin matches devuelve `ok=true` e insinua `--regex` cuando el patron parece regex |
+| TC-QRY-013J | positivo | RF-QRY-002 | En consumo agente (cliente configurado, MCP o stdout no TTY), `nav find/search/multi-read` elige respuesta compacta con workspace primero y límite de resultados; `--verbose` amplía y `--format` explícito conserva contrato |
 | TC-QRY-013B | positivo | RF-QRY-002 | `nav search` incluye docs gobernados y artefactos repo-locales ocultos aun cuando el repo use directorios hidden, para que un `index --docs-only` deje visibles IDs `RF-*` y `TP-*` en la superficie textual directa |
 | TC-QRY-013C | positivo | RF-QRY-002, RF-QRY-016 | `nav search` literal symbol-like emite `coach.trigger=symbol_query_detected` con acciones `nav find --exact` y `nav related` |
 | TC-QRY-013D | positivo | RF-QRY-002, RF-QRY-016 | `nav search` symbol-like ordena declaraciones/implementaciones fuente antes que docs, tests, backups y generados |
 | TC-QRY-013E | positivo | RF-QRY-002 | `nav context` sobre C# conserva `slice_text` y degrada a catalog/text con warning `backend_runtime/process_spawn_access_denied` si Roslyn no arranca |
 | TC-QRY-013F | positivo | RF-QRY-002 | `nav search` cae a Go search con warning tipado si `rg` falla por permisos o arranque de proceso |
 | TC-QRY-013H | positivo | RF-QRY-002 | `nav search` con `rg --hidden` preserva `.docs` pero excluye caches/dependencias generadas (`.git`, `.next`, `.turbo`, `node_modules`, `bin/obj`, venvs, worktrees temporales) para evitar latencia espuria |
+| TC-QRY-013K | positivo | RF-QRY-002 | `nav.search` procesa archivos en paralelo y la selección acotada mantiene los primeros resultados por ruta y línea en orden determinista |
+| TC-QRY-013L | positivo/negativo | RF-QRY-002 | `nav.find` limita refresh de candidatos a 32 archivos, 4 MiB por archivo y 16 MiB totales bajo 250 ms; tras publicar cambios repite la consulta y ante error sirve el snapshot publicado con advertencia |
+| TC-QRY-013M | positivo/negativo | RF-QRY-002, RF-QRY-011 | `nav.route`/`nav.intent` refrescan hasta cinco candidatos Markdown bajo 500 ms; sólo tras commit recargan y vuelven a puntuar una vez, y ante fallo conservan resultado en memoria con warning |
+| TC-QRY-013N | concurrencia/compatibilidad | RF-QRY-002 | la lectura/extracción ocurre bajo writer lock cancelable; una petición que esperó el lock usa bytes actuales y un hash dialecto desconocido preserva la fila legacy |
+| TC-QRY-013O | positivo/negativo | RF-QRY-002, RF-GPH-006 | `nav.find` reconcilia un archivo ausente sólo para el path/fila consultados, repite la consulta tras el tombstone y deja stale el grafo sin generar evidencia graph-native |
 | TC-QRY-013I | positivo | RF-QRY-002, RF-QRY-016 | `nav search` symbol-like en AXI preview acota el sobre-muestreo usado para ranking, manteniendo `--full`/clasico con el limite amplio |
 | TC-QRY-013G | positivo | RF-QRY-002 | `TestParseContextTargetAcceptsFileLineShorthand`: `nav context` acepta `file.go:123` y devuelve guidance corregida si la linea es invalida |
 | TC-QRY-013A | positivo | RF-QRY-001 | `nav.search` agrega `coach.trigger=no_matches_refinable` cuando la query no matchea pero tiene rerun accionable |
 | TC-QRY-014 | positivo | RF-QRY-004 | lee multiples rangos en una sola invocacion con truncacion por presupuesto |
+| TC-QRY-014A | positivo/negativo | RF-QRY-002, RF-QRY-004 | `nav.multi-read` inspecciona sólo sus paths explícitos en modo de solo lectura, respeta WAL y refresca catálogo/`doc_records` bajo límite de 250 ms; ante error/deadline previo al commit, sirve el snapshot publicado y advierte sin escritura de fondo |
+| TC-QRY-140 | positivo | RF-QRY-020 | `mi-lsp mcp` inicializa JSON-RPC/NDJSON por stdio, acepta ping y termina limpio al llegar EOF |
+| TC-QRY-141 | positivo | RF-QRY-020 | `tools/list` publica las 13 operaciones de navegación con schemas compatibles con las operaciones CLI |
+| TC-QRY-142 | positivo | RF-QRY-020 | `tools/call nav_search` entrega envelope JSON en `structuredContent` y vista compacta con workspace primero en `content[0].text`; el formato CLI explícito no altera el contrato |
+| TC-QRY-143 | negativo | RF-QRY-020 | workspace inválido permanece fail-closed y entrega la sugerencia exacta para registrarlo o escanear cwd |
+| TC-QRY-144 | negativo | RF-QRY-020 | framing contiene sólo mensajes de protocolo en stdout; logs quedan en stderr y línea sobre 8 MiB se rechaza |
+| TC-QRY-145 | comparativo | RF-QRY-020 | primera llamada fría `nav_search` se mide de forma reproducible; target <5 s, no declarar PASS sin datos del checkout actual |
 | TC-QRY-015 | positivo | RF-QRY-004 | incluye numeros de linea en contenido leido |
 | TC-QRY-016 | negativo | RF-QRY-004 | rechaza path traversal (`../../../etc/passwd`) |
 | TC-QRY-017 | positivo | RF-QRY-005 | ejecuta batch con operaciones paralelas y retorna todos los resultados |

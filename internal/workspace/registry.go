@@ -465,13 +465,17 @@ func resolveWorkspaceSelection(nameOrPath string, callerCWD string, readOnly boo
 	selector := strings.TrimSpace(nameOrPath)
 	if selector != "" {
 		if ws, ok := registry.Workspaces[selector]; ok {
-			ws.Name = selector
 			info, statErr := os.Stat(ws.Root)
 			if statErr != nil {
 				return WorkspaceResolution{}, &WorkspaceSelectorError{Code: WorkspaceSelectorStale, Selector: selector, Root: ws.Root, Cause: statErr}
 			}
 			if statErr == nil && !info.IsDir() {
 				return WorkspaceResolution{}, &WorkspaceSelectorError{Code: WorkspaceSelectorNotDirectory, Selector: selector, Root: ws.Root}
+			}
+			if registered, _, found := registeredWorkspaceForRoot(ws.Root, registry); found {
+				ws = registered
+			} else {
+				ws.Name = selector
 			}
 			return WorkspaceResolution{Registration: ws, Source: ResolutionSourceExplicit}, nil
 		}
@@ -481,9 +485,19 @@ func resolveWorkspaceSelection(nameOrPath string, callerCWD string, readOnly boo
 			} else if !info.IsDir() {
 				return WorkspaceResolution{}, &WorkspaceSelectorError{Code: WorkspaceSelectorNotDirectory, Selector: selector, Root: resolvedPath}
 			}
+			if registered, selection, found := registeredWorkspaceForRoot(resolvedPath, registry); found {
+				return WorkspaceResolution{Registration: registered, Source: ResolutionSourcePath, Warnings: selection.Warnings}, nil
+			}
 			registration, err := DetectWorkspace(resolvedPath)
 			if err != nil {
 				return WorkspaceResolution{}, err
+			}
+			if registered, selection, found := registeredWorkspaceForRoot(registration.Root, registry); found {
+				return WorkspaceResolution{
+					Registration: registered,
+					Source:       ResolutionSourcePath,
+					Warnings:     selection.Warnings,
+				}, nil
 			}
 			return WorkspaceResolution{Registration: registration, Source: ResolutionSourcePath}, nil
 		}
@@ -514,6 +528,27 @@ func resolveWorkspaceSelection(nameOrPath string, callerCWD string, readOnly boo
 	}
 
 	return WorkspaceResolution{}, errors.New("no workspace specified and no default workspace configured")
+}
+
+func registeredWorkspaceForRoot(root string, registry model.RegistryFile) (model.WorkspaceRegistration, aliasSelection, bool) {
+	canonicalRoot, ok := normalizeComparablePath(root)
+	if !ok {
+		return model.WorkspaceRegistration{}, aliasSelection{}, false
+	}
+	registrations := make([]model.WorkspaceRegistration, 0)
+	for alias, registration := range registry.Workspaces {
+		registeredRoot, rootOK := normalizeComparablePath(registration.Root)
+		if !rootOK || registeredRoot != canonicalRoot {
+			continue
+		}
+		registration.Name = alias
+		registrations = append(registrations, registration)
+	}
+	if len(registrations) == 0 {
+		return model.WorkspaceRegistration{}, aliasSelection{}, false
+	}
+	selection := selectAliasForRoot(registrations, registry.Defaults.LastWorkspace)
+	return selection.Registration, selection, true
 }
 
 func newWorkspaceResolutionError(selector string, callerCWD string, registry model.RegistryFile) error {
@@ -1194,6 +1229,9 @@ func inspectGitMarker(path string) (gitMarkerInspection, bool) {
 			inspection := gitMarkerInspection{Root: current}
 			switch {
 			case info.IsDir():
+				if !validGitDirectoryMarker(markerPath) {
+					return gitMarkerInspection{}, false
+				}
 				inspection.Status = "directory marker"
 			case info.Mode().IsRegular():
 				contents, readErr := os.ReadFile(markerPath)
@@ -1221,6 +1259,26 @@ func inspectGitMarker(path string) (gitMarkerInspection, bool) {
 		}
 		current = parent
 	}
+}
+
+func validGitDirectoryMarker(path string) bool {
+	head, err := os.ReadFile(filepath.Join(path, "HEAD"))
+	if err != nil {
+		return false
+	}
+	value := strings.TrimSpace(string(head))
+	if strings.HasPrefix(value, "ref: refs/") {
+		return !strings.Contains(value, "..")
+	}
+	if len(value) != 40 && len(value) != 64 {
+		return false
+	}
+	for _, r := range value {
+		if !(r >= '0' && r <= '9' || r >= 'a' && r <= 'f' || r >= 'A' && r <= 'F') {
+			return false
+		}
+	}
+	return true
 }
 
 func parseGitDirMarker(contents []byte) bool {

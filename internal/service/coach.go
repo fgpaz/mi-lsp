@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 	"unicode"
 
 	"github.com/fgpaz/mi-lsp/internal/model"
@@ -29,6 +30,8 @@ var coachSearchStopwords = map[string]struct{}{
 }
 
 func applyCoachPolicy(env model.Envelope, opts model.QueryOptions) model.Envelope {
+	started := time.Now()
+	defer traceServiceTiming("coach", started)
 	if env.Coach == nil {
 		return applyContinuationPolicy(env, opts)
 	}

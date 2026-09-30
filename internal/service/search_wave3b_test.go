@@ -97,15 +97,11 @@ func TestSearchPatternRg_UsesDefaultIgnoreGlobs(t *testing.T) {
 
 func TestSearchPatternRg_UsesDeterministicPathSort(t *testing.T) {
 	args := buildRipgrepArgs("needle", false, ".")
-	for i, arg := range args {
+	for _, arg := range args {
 		if arg == "--sort" {
-			if i+1 >= len(args) || args[i+1] != "path" {
-				t.Fatalf("--sort argument = %#v, want --sort path", args[i:])
-			}
-			return
+			t.Fatalf("ripgrep path sort disables parallel traversal; deterministic selection is applied after scanning: %#v", args)
 		}
 	}
-	t.Fatalf("buildRipgrepArgs missing deterministic path sort: %#v", args)
 }
 
 func TestSearchPatternRg_BoundedResultsUsePathOrder(t *testing.T) {

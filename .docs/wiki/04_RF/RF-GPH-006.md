@@ -103,7 +103,9 @@ Los flags y campos existentes de RF-QRY-017 permanecen; se agregan generation, e
 | `GPH_IMPACT_RELATION_UNSUPPORTED` | relation sin semantica | reject filtro |
 | `GPH_IMPACT_BUDGET_EXCEEDED` | frontier supera budget | truncation + continuation |
 | `GPH_IMPACT_BASELINE_REGRESSION` | precision/correctness peor | FAIL del gate |
-| `GPH_IMPACT_GRAPH_STALE` | source digest difiere | bloquear graph-native |
+| `GPH_IMPACT_GRAPH_STALE` | source digest difiere | `nav.affected`: warning stale explícito y fallback heurístico; `nav.diff-context`: propagar error tipado; wrappers `change-pack` e `intent`: conservar su superficie de warning/error sanitizado, sin fallback heurístico stale |
+
+Antes de resolver seeds, `nav.affected` revisa solo los paths explícitos y, si cambiaron, refresca catálogo y `doc_records` con límite de 1 s. La actualización es síncrona, transaccional y no reconstruye la generation del grafo ni inicia escrituras de fondo. Si la generation graph-native está stale, solo `nav.affected` conserva resultados heurísticos con `confidence=0`, omite claims graph-native y emite un warning explícito `GPH_IMPACT_GRAPH_STALE` con el comando `mi-lsp index --workspace "<alias>"`. `nav.diff-context` propaga el error tipado `GPH_IMPACT_GRAPH_STALE`. `change-pack` e `intent` consumen ese fallo en su wrapper: no heredan el fallback heurístico de `nav.affected` y conservan su respuesta de warning/error sanitizado (`INTENT_DIFF_UNAVAILABLE` en intent con `graph_query_error`). Si un seed sigue sin resolverse, permanece como omission; no se infiere owner ni se presenta la heurística como evidencia graph-native. La reconciliación scoped de un archivo ausente desde `nav.find` también deja stale el grafo; hasta reindexar, ninguna respuesta debe atribuirle evidencia graph-native.
 
 ## 8. Aceptacion y trazabilidad
 

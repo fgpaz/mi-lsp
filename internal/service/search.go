@@ -3,6 +3,7 @@ package service
 import (
 	"bufio"
 	"bytes"
+	"container/heap"
 	"context"
 	"errors"
 	"fmt"
@@ -86,6 +87,26 @@ type searchMatch struct {
 	Text string
 }
 
+type searchMatchHeap []searchMatch
+
+func (h searchMatchHeap) Len() int           { return len(h) }
+func (h searchMatchHeap) Less(i, j int) bool { return searchMatchLess(h[j], h[i]) }
+func (h searchMatchHeap) Swap(i, j int)      { h[i], h[j] = h[j], h[i] }
+func (h *searchMatchHeap) Push(value any)    { *h = append(*h, value.(searchMatch)) }
+func (h *searchMatchHeap) Pop() any {
+	items := *h
+	last := items[len(items)-1]
+	*h = items[:len(items)-1]
+	return last
+}
+
+func searchMatchLess(left, right searchMatch) bool {
+	if left.File != right.File {
+		return left.File < right.File
+	}
+	return left.Line < right.Line
+}
+
 type searchPatternDiagnostics struct {
 	RipgrepFallbackCode string
 	TimedOut            bool
@@ -150,8 +171,8 @@ func searchPatternRgWithDiagnostics(ctx context.Context, workspaceRoot string, s
 	scanner := bufio.NewScanner(stdout)
 	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 
-	items := make([]map[string]any, 0, min(limit, 16))
-	reachedLimit := false
+	matches := &searchMatchHeap{}
+	heap.Init(matches)
 	for scanner.Scan() {
 		line := scanner.Text()
 		if line == "" {
@@ -169,28 +190,27 @@ func searchPatternRgWithDiagnostics(ctx context.Context, workspaceRoot string, s
 		if shouldSkipSearchResultPath(relativeFile) {
 			continue
 		}
-		item := map[string]any{
-			"file": relativeFile,
-			"line": lineNumber,
-			"text": match[3],
-		}
-		if repo, ok := workspace.FindRepoByFile(project, workspaceRoot, match[1]); ok {
-			item["repo"] = repo.Name
-		}
-		items = append(items, item)
-		if len(items) >= limit {
-			reachedLimit = true
-			cancel()
-			break
+		candidate := searchMatch{File: relativeFile, Line: lineNumber, Text: match[3]}
+		if matches.Len() < limit {
+			heap.Push(matches, candidate)
+		} else if searchMatchLess(candidate, (*matches)[0]) {
+			heap.Pop(matches)
+			heap.Push(matches, candidate)
 		}
 	}
 
 	scanErr := scanner.Err()
 	waitErr := command.Wait()
-
-	if reachedLimit {
-		return items, nil
+	sort.Slice(*matches, func(i, j int) bool { return searchMatchLess((*matches)[i], (*matches)[j]) })
+	items := make([]map[string]any, 0, matches.Len())
+	for _, result := range *matches {
+		item := map[string]any{"file": result.File, "line": result.Line, "text": result.Text}
+		if repo, ok := workspace.FindRepoByFile(project, workspaceRoot, filepath.Join(workspaceRoot, filepath.FromSlash(result.File))); ok {
+			item["repo"] = repo.Name
+		}
+		items = append(items, item)
 	}
+
 	if scanErr != nil {
 		if ctx.Err() != nil {
 			if !errors.Is(ctx.Err(), context.DeadlineExceeded) {
@@ -288,7 +308,6 @@ func isRegexParseError(err error) bool {
 
 func buildRipgrepArgs(pattern string, useRegex bool, searchRoot string) []string {
 	args := []string{
-		"--sort", "path",
 		"--line-number", "--no-heading", "--color", "never", "--hidden",
 		"--glob", "!.mi-lsp/**",
 		"--glob", "!**/.mi-lsp/**",

@@ -47,6 +47,8 @@ func Render(env model.Envelope, format string, compress bool) ([]byte, error) {
 		return json.MarshalIndent(env, "", "  ")
 	case "text":
 		return []byte(renderText(env)), nil
+	case "agent":
+		return []byte(renderAgent(env)), nil
 	case "toon":
 		compact := env
 		compact.Items = compactItems(env.Items, compress)
@@ -69,6 +71,88 @@ func Render(env model.Envelope, format string, compress bool) ([]byte, error) {
 		compact.Stats.TokensEstimate = (len(rendered) + 3) / 4
 		return rendered, nil
 	}
+}
+
+// renderAgent emits a result-first, human-readable summary for agent consumers.
+// The structured formats remain full-fidelity; this format is intentionally a
+// separate opt-in surface for callers that need compact output.
+func renderAgent(env model.Envelope) string {
+	lines := []string{"workspace=" + env.Workspace}
+	switch items := env.Items.(type) {
+	case []model.SymbolRecord:
+		for _, item := range items {
+			lines = append(lines, fmt.Sprintf("%s %s %s:%d", item.Kind, item.Name, item.FilePath, item.StartLine))
+		}
+	case []model.ServiceSurfaceSummary:
+		for _, item := range items {
+			lines = append(lines, fmt.Sprintf("service %s %s", item.Service, item.Path))
+		}
+	case []model.GovernanceStatus:
+		for _, item := range items {
+			if item.Blocked {
+				lines = append(lines, "governance blocked=true")
+			}
+			for _, issue := range item.Issues {
+				if strings.TrimSpace(issue) != "" {
+					lines = append(lines, "governance issue: "+strings.TrimSpace(issue))
+				}
+			}
+		}
+	case []map[string]any:
+		for _, item := range items {
+			file, _ := item["file"].(string)
+			line, _ := item["line"].(int)
+			if text, ok := item["text"].(string); ok {
+				text = compactAgentText(text, 56)
+				if file != "" && line > 0 {
+					lines = append(lines, fmt.Sprintf("%s:%d %s", file, line, text))
+				} else if text != "" {
+					lines = append(lines, text)
+				}
+				continue
+			}
+			encoded, err := json.Marshal(item)
+			if err == nil {
+				lines = append(lines, string(encoded))
+			}
+		}
+	default:
+		if env.Items != nil {
+			encoded, err := json.Marshal(compactItems(env.Items, true))
+			if err == nil {
+				lines = append(lines, string(encoded))
+			}
+		}
+	}
+	if env.Error != nil {
+		lines = append(lines, renderEnvelopeError(*env.Error))
+	}
+	for _, warning := range env.Warnings {
+		if strings.TrimSpace(warning) != "" {
+			lines = append(lines, "warning: "+strings.TrimSpace(warning))
+		}
+	}
+	for _, omission := range env.Omissions {
+		lines = append(lines, renderEnvelopeOmission(omission))
+	}
+	if env.Truncated {
+		lines = append(lines, "truncated=true")
+	}
+	if env.NextHint != nil && strings.TrimSpace(*env.NextHint) != "" {
+		lines = append(lines, "next: "+compactAgentText(*env.NextHint, 240))
+	} else if env.Continuation != nil && (env.Error != nil || env.Truncated) {
+		lines = append(lines, "next "+renderContinuationTarget(env.Continuation.Next))
+	}
+	return strings.Join(lines, "\n")
+}
+
+func compactAgentText(value string, maxRunes int) string {
+	value = strings.Join(strings.Fields(value), " ")
+	runes := []rune(value)
+	if len(runes) <= maxRunes {
+		return value
+	}
+	return string(runes[:maxRunes-1]) + "…"
 }
 
 // envelopeToMap converts an Envelope to map[string]any via JSON roundtrip.

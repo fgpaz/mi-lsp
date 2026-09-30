@@ -127,7 +127,7 @@ func TestShouldUseDaemonPolicy(t *testing.T) {
 		want      bool
 	}{
 		{name: "find bypasses daemon", operation: "nav.find", requested: true, want: false},
-		{name: "search uses daemon", operation: "nav.search", requested: true, want: true},
+		{name: "search bypasses daemon for direct text search", operation: "nav.search", requested: true, want: false},
 		{name: "prepare uses daemon", operation: "nav.prepare", requested: true, want: true},
 		{name: "wiki search bypasses daemon", operation: "nav.wiki.search", requested: true, want: false},
 		{name: "wiki validate harness bypasses daemon", operation: "nav.wiki.validate-harness", requested: true, want: false},

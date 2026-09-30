@@ -90,6 +90,7 @@ identity:
 ```
 
 La raíz mostrada conserva una forma estable y legible para el usuario. La identidad física se calcula de forma absoluta, limpia y, cuando el path existe, con evaluación de symlink/junction. La comparación solo ignora casing en plataformas con semántica de filesystem insensible al casing. Dos paths físicamente distintos no se agrupan por una normalización que solo baje a minúsculas.
+La respuesta para agentes identifica en su primera línea el workspace seleccionado. Esto hace visible el alias o selector efectivo sin modificar la identidad física ni la resolución fail-closed.
 
 ## [RF-WKS-007-B03] Resolución fail-closed
 
@@ -127,6 +128,7 @@ resolution:
 ```
 
 Un selector explícito inválido o stale nunca puede convertirse silenciosamente en el workspace del `caller_cwd`. La resolución omitida conserva la precedencia contextual existente y expone `source` y warnings suficientes para auditoría.
+Los aliases heredados que apunten a la misma raíz física siguen siendo válidos y se conservan; la presentación compacta no los migra, elimina ni redirige. Un alias explícito desconocido o stale sigue fallando sin sustituirse por el workspace del cwd.
 
 ## [RF-WKS-007-B04] Estado híbrido portable/local
 

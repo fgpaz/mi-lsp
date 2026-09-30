@@ -12,6 +12,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/fgpaz/mi-lsp/internal/indexer"
 	"github.com/fgpaz/mi-lsp/internal/model"
 	"github.com/fgpaz/mi-lsp/internal/store"
 	"github.com/fgpaz/mi-lsp/internal/workspace"
@@ -105,6 +106,54 @@ func testProject(name string) model.ProjectFile {
 			Kind:    model.EntrypointKindProject,
 			Default: true,
 		}},
+	}
+}
+
+func TestNavFindRefreshesStaleCandidateBeforeReturningSymbols(t *testing.T) {
+	root, name := setupTestWorkspace(t)
+	if err := workspace.SaveProjectFile(root, testProject(name)); err != nil {
+		t.Fatalf("SaveProjectFile: %v", err)
+	}
+	if _, err := indexer.IndexWorkspaceCatalogOnly(context.Background(), root, true); err != nil {
+		t.Fatalf("IndexWorkspaceCatalogOnly: %v", err)
+	}
+	writeWorkspaceFile(t, root, "src/Hello.cs", "namespace Demo;\npublic class NewWorld {\n    public void Greet() { }\n}\n")
+	app := New(root, nil)
+	find := func(pattern string) model.Envelope {
+		t.Helper()
+		env, err := app.Execute(context.Background(), model.CommandRequest{
+			Operation: "nav.find",
+			Context:   model.QueryOptions{Workspace: name, MaxItems: 10},
+			Payload:   map[string]any{"pattern": pattern, "exact": true},
+		})
+		if err != nil {
+			t.Fatalf("nav.find(%q): %v", pattern, err)
+		}
+		return env
+	}
+	if stale := find("HelloWorld"); len(stale.Items.([]model.SymbolRecord)) != 0 {
+		t.Fatalf("stale symbol still returned after scoped refresh: %#v", stale.Items)
+	}
+	current := find("NewWorld")
+	items, ok := current.Items.([]model.SymbolRecord)
+	if !ok || len(items) != 1 || items[0].Name != "NewWorld" {
+		t.Fatalf("new symbol was not discoverable after refresh: %#v", current.Items)
+	}
+	if err := os.Remove(filepath.Join(root, "src", "Hello.cs")); err != nil {
+		t.Fatalf("remove indexed source: %v", err)
+	}
+	deleted := find("NewWorld")
+	if items, ok := deleted.Items.([]model.SymbolRecord); !ok || len(items) != 0 {
+		t.Fatalf("deleted source symbol remained in find results: %#v", deleted.Items)
+	}
+	db, err := store.Open(root)
+	if err != nil {
+		t.Fatalf("store.Open after deleting source: %v", err)
+	}
+	defer db.Close()
+	state, err := store.GraphRuntimeState(context.Background(), db)
+	if err != nil || state != store.GraphRuntimeStale {
+		t.Fatalf("graph runtime state after source deletion=%q err=%v, want stale", state, err)
 	}
 }
 
@@ -810,21 +859,21 @@ func TestNavSearch_RgAccessDeniedFallsBackToGoSearch(t *testing.T) {
 	}
 }
 
-func TestSearchPatternRg_RespectsLimitOnStreamedOutput(t *testing.T) {
+func TestSearchPatternRg_SelectsPathSortedLimitFromUnorderedStream(t *testing.T) {
 	root, name := setupTestWorkspace(t)
 	project := testProject(name)
 
 	scriptPath := filepath.Join(root, "fake-rg-limit")
 	scriptBody := "#!/bin/sh\n" +
-		"printf '%s:1:first match\\n' \"" + root + "/src/one.ts\"\n" +
-		"printf '%s:2:second match\\n' \"" + root + "/src/two.ts\"\n" +
-		"printf '%s:3:third match\\n' \"" + root + "/src/three.ts\"\n"
+		"printf '%s:3:third match\\n' \"" + root + "/src/two.ts\"\n" +
+		"printf '%s:2:second match\\n' \"" + root + "/src/three.ts\"\n" +
+		"printf '%s:1:first match\\n' \"" + root + "/src/one.ts\"\n"
 	if runtime.GOOS == "windows" {
 		scriptPath += ".cmd"
 		scriptBody = "@echo off\r\n" +
-			"echo " + root + "\\src\\one.ts:1:first match\r\n" +
-			"echo " + root + "\\src\\two.ts:2:second match\r\n" +
-			"echo " + root + "\\src\\three.ts:3:third match\r\n"
+			"echo " + root + "\\src\\two.ts:3:third match\r\n" +
+			"echo " + root + "\\src\\three.ts:2:second match\r\n" +
+			"echo " + root + "\\src\\one.ts:1:first match\r\n"
 	}
 	if err := os.WriteFile(scriptPath, []byte(scriptBody), 0o755); err != nil {
 		t.Fatalf("write fake rg limit script: %v", err)
@@ -840,8 +889,8 @@ func TestSearchPatternRg_RespectsLimitOnStreamedOutput(t *testing.T) {
 	if got, _ := items[0]["file"].(string); got != "src/one.ts" {
 		t.Fatalf("first item file = %q, want src/one.ts", got)
 	}
-	if got, _ := items[1]["file"].(string); got != "src/two.ts" {
-		t.Fatalf("second item file = %q, want src/two.ts", got)
+	if got, _ := items[1]["file"].(string); got != "src/three.ts" {
+		t.Fatalf("second item file = %q, want src/three.ts", got)
 	}
 }
 

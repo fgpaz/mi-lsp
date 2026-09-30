@@ -6,7 +6,7 @@
 
 **Stop wasting your agent's context on repository discovery.**
 
-`mi-lsp` is a local CLI that finds relevant code, reads exact file ranges, and follows your repository's canonical documentation. It works with Claude Code, Codex, terminal scripts, and other skill-based agents. No MCP server is required.
+`mi-lsp` is a local CLI that finds relevant code, reads exact file ranges, and follows your repository's canonical documentation. It works with Claude Code, Codex, terminal scripts, and other skill-based agents. Agent clients can use the optional local stdio MCP server; the CLI itself does not require a long-running server.
 
 [Install](#install) · [See it work](#see-it-work) · [Documentation](#learn-more) · [Releases](https://github.com/fgpaz/mi-lsp/releases)
 
@@ -112,6 +112,10 @@ Repositories without formal governance can still use text search, the code catal
 
 Cheap reads such as `nav search`, `nav multi-read`, and `nav wiki search` run directly. The daemon improves warm-state performance; it does not change the public CLI contract.
 
+`nav.multi-read` and `nav.affected` check only the paths supplied to that request before reading published data. If a hash changed, they can synchronously refresh catalog and documentation records under request limits of 250 ms and 1 s, respectively. Impact refresh does not rebuild the graph generation, so unresolved graph seeds may remain until a full reindex. A refresh failure before commit keeps the published data available and reports the limitation; no background write is left running.
+
+When output is consumed by an agent (for example, when stdout is not a terminal or `MI_LSP_CLIENT_NAME` is set), navigation uses a compact `agent` response by default. It reports the selected workspace first and limits `find`, `search`, and `multi-read` to five results. Successful responses omit coach and governance blocks; use `--verbose` for more detail. An explicit `--format json|toon|yaml|compact` always selects that format and preserves its existing response shape.
+
 ## Compatibility and limits
 
 Public release bundles currently cover:
@@ -126,7 +130,7 @@ Public installers support Windows, Linux, and macOS. Source builds and contribut
 
 Current limits:
 
-- no MCP transport;
+- no remote or HTTP MCP transport; `mi-lsp mcp` is a local stdio process;
 - no semantic editing or automated refactoring;
 - no remote or multi-host daemon sharing;
 - no authenticated remote governance UI;

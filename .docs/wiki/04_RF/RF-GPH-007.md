@@ -95,7 +95,7 @@ El selector de contexto usa budgets y produce un reading pack ordenado por autor
 - Cero inversiones de autoridad wiki en fixtures negativos.
 - La respuesta docs-only y la enriquecida comparten la misma autoridad primaria.
 - Un cambio de ranking no altera IDs o evidencia.
-- Query es read-only y daemon-optional.
+- La consulta del snapshot grafo es read-only y daemon-optional. `nav.affected` inspecciona solo los paths explícitos y puede refrescar catálogo/`doc_records` antes del graph read (límite de 1 s), pero no reconstruye la generation graph-native. Si el graph read no puede respaldar impacto por stale, entrega como máximo heurísticas `confidence=0`, omite claims graph-native y muestra en el warning `mi-lsp index --workspace "<alias>"`; un timeout/fallo antes del commit conserva la evidencia publicada y se declara como limitación.
 - Paths `.docs/raw` y `.docs/auditoria` no se promueven a canon por conectividad.
 - Imports externos, incluyendo Graphify, son advisory y no autoridad.
 

@@ -47,6 +47,25 @@ func Open(root string) (*sql.DB, error) {
 	return db, nil
 }
 
+// OpenExistingForScopedRefresh opens an existing index without schema checks
+// or migrations. It is reserved for bounded query-time file publications.
+func OpenExistingForScopedRefresh(root string) (*sql.DB, error) {
+	path := WorkspaceDBPath(root)
+	if info, err := os.Stat(path); err != nil {
+		return nil, err
+	} else if info.IsDir() {
+		return nil, fmt.Errorf("workspace database path is a directory: %s", path)
+	}
+	dsn := "file:" + filepath.ToSlash(path) + "?mode=rw&_pragma=foreign_keys(ON)"
+	db, err := sql.Open(driverName, dsn)
+	if err != nil {
+		return nil, err
+	}
+	db.SetMaxOpenConns(1)
+	db.SetMaxIdleConns(1)
+	return db, nil
+}
+
 // OpenReadOnly preserves the established read-only pool for index consumers.
 // Probe uses OpenReadOnlyExisting below so it can remain strictly non-mutating.
 func OpenReadOnly(root string) (*sql.DB, error) {
@@ -82,6 +101,29 @@ func OpenReadOnlyExisting(root string, dbPath string) (*sql.DB, error) {
 		return nil, fmt.Errorf("read-only database path is a directory: %s", dbPath)
 	}
 	dsn := "file:" + filepath.ToSlash(dbPath) + "?mode=ro&immutable=1&_pragma=foreign_keys(ON)"
+	db, err := sql.Open(driverName, dsn)
+	if err != nil {
+		return nil, err
+	}
+	db.SetMaxOpenConns(1)
+	db.SetMaxIdleConns(1)
+	return db, nil
+}
+
+// OpenReadOnlyExistingWithWAL opens an existing database in read-only mode
+// while honoring committed WAL frames. Callers that need strict filesystem
+// immutability must use OpenReadOnlyExisting instead.
+func OpenReadOnlyExistingWithWAL(root string, dbPath string) (*sql.DB, error) {
+	_ = root
+	if strings.TrimSpace(dbPath) == "" {
+		return nil, fmt.Errorf("read-only database path is required")
+	}
+	if info, err := os.Stat(dbPath); err != nil {
+		return nil, err
+	} else if info.IsDir() {
+		return nil, fmt.Errorf("read-only database path is a directory: %s", dbPath)
+	}
+	dsn := "file:" + filepath.ToSlash(dbPath) + "?mode=ro&_pragma=foreign_keys(ON)"
 	db, err := sql.Open(driverName, dsn)
 	if err != nil {
 		return nil, err

@@ -7,6 +7,12 @@ and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2
 
 ## [Unreleased]
 
+### Added
+
+- `mi-lsp mcp` exposes the existing navigation operations through a local JSON-RPC/NDJSON stdio process, with structured JSON and compact agent text responses.
+- Agent-consumed navigation output now defaults to a compact response that names the selected workspace; `--verbose` adds detail, while explicit output formats retain their existing behavior.
+- `nav.multi-read` and `nav.affected` can refresh requested/changed files incrementally before reading published data; impact refresh does not rebuild graph generations, and unresolved seeds may require full reindexing.
+
 ## [0.8.1] - 2026-08-27
 
 ### Fixed

@@ -2,14 +2,12 @@ package service
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"path/filepath"
 	"testing"
 
 	"github.com/fgpaz/mi-lsp/internal/indexer"
 	"github.com/fgpaz/mi-lsp/internal/model"
-	"github.com/fgpaz/mi-lsp/internal/store"
 	"github.com/fgpaz/mi-lsp/internal/workspace"
 )
 
@@ -194,7 +192,7 @@ func TestNavAffectedUsesPublishedGoGraphForCallerImpact(t *testing.T) {
 	}
 }
 
-func TestNavAffectedBlocksTypedStaleGraph(t *testing.T) {
+func TestNavAffectedFallsBackToHeuristicsWhenRefreshMakesGraphStale(t *testing.T) {
 	ensureWritableTestHome(t)
 	root := t.TempDir()
 	alias := "affected-stale-" + filepath.Base(root)
@@ -203,7 +201,7 @@ func TestNavAffectedBlocksTypedStaleGraph(t *testing.T) {
 		t.Fatal(err)
 	}
 	writeWorkspaceFile(t, root, "go.mod", "module example.com/affectedstale\n\ngo 1.23\n")
-	writeWorkspaceFile(t, root, "subject.go", "package affectedstale\nfunc Subject() {}\n")
+	writeWorkspaceFile(t, root, "internal/service/subject.go", "package service\nfunc Subject() {}\n")
 	if _, err := indexer.IndexWorkspaceWithGraphProgress(context.Background(), root, true, "", nil, indexer.GraphIndexOptions{}); err != nil {
 		t.Fatal(err)
 	}
@@ -211,19 +209,48 @@ func TestNavAffectedBlocksTypedStaleGraph(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = workspace.RemoveWorkspace(alias) })
-	db, err := store.Open(root)
+	writeWorkspaceFile(t, root, "internal/service/subject.go", "package service\nfunc Subject() { println(\"changed\") }\n")
+	env, err := New(root, nil).Execute(context.Background(), model.CommandRequest{Operation: "nav.affected", Context: model.QueryOptions{Workspace: alias}, Payload: map[string]any{"paths": []string{"internal/service/subject.go"}, "include_tests": true, "include_docs": true}})
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("nav.affected: %v", err)
 	}
-	defer db.Close()
-	if err := store.SetGraphRuntimeState(context.Background(), db, store.GraphRuntimeStale, ""); err != nil {
-		t.Fatal(err)
+	if env.Backend != "git+catalog+heuristic" || env.GenerationID != "" {
+		t.Fatalf("backend=%q generation=%q, want heuristic-only response without graph generation", env.Backend, env.GenerationID)
 	}
+	if !containsWarning(env.Warnings, "GPH_IMPACT_GRAPH_STALE") || !containsWarning(env.Warnings, "mi-lsp index --workspace") {
+		t.Fatalf("warnings=%v, want stale-graph reason and rebuild command", env.Warnings)
+	}
+	items := affectedItemsFromEnvelope(t, env)
+	var source *AffectedItem
+	for i := range items {
+		if items[i].Path == "internal/service/subject.go" {
+			source = &items[i]
+			break
+		}
+	}
+	if source == nil || source.Confidence != 0 || source.ConfidenceClass != "heuristic" || source.GenerationID != "" || len(source.EvidencePath) != 0 {
+		t.Fatalf("stale graph returned non-heuristic source evidence: %#v", source)
+	}
+	seenTest, seenDoc := false, false
+	for _, item := range items {
+		seenTest = seenTest || item.Kind == "test"
+		seenDoc = seenDoc || item.Kind == "doc"
+		if item.Confidence != 0 || item.ConfidenceClass != "heuristic" || item.GenerationID != "" || item.CrossRID != "" || len(item.EvidencePath) != 0 || len(item.Omissions) != 0 {
+			t.Fatalf("stale graph item retained native confidence or evidence: %#v", item)
+		}
+	}
+	if !seenTest || !seenDoc {
+		t.Fatalf("include_tests/include_docs suggestions missing: %#v", items)
+	}
+}
 
-	_, err = New(root, nil).Execute(context.Background(), model.CommandRequest{Operation: "nav.affected", Context: model.QueryOptions{Workspace: alias}, Payload: map[string]any{"paths": []string{"subject.go"}}})
-	var graphErr *model.GraphQueryError
-	if !errors.As(err, &graphErr) || graphErr.Code != "GPH_IMPACT_GRAPH_STALE" {
-		t.Fatalf("nav.affected error = %v, want typed GPH_IMPACT_GRAPH_STALE", err)
+func TestGraphImpactStaleRemainsFatalToSharedGraphFallbackPolicy(t *testing.T) {
+	err := &model.GraphQueryError{Code: "GPH_IMPACT_GRAPH_STALE", Message: "graph catalog is stale"}
+	if graphImpactCanFallback(err) {
+		t.Fatal("stale graph error was allowed through the shared fallback policy")
+	}
+	if !isGraphImpactStaleError(err) {
+		t.Fatal("stale graph error was not recognized for nav.affected-only fallback")
 	}
 }
 

@@ -27,10 +27,11 @@ evidence:
   - .docs/wiki/01_alcance_funcional.md
 ```
 
-`mi-lsp` es una CLI semantica local para proyectos no-monorepo, orientada a agentes y desarrolladores que necesitan navegar codigo con alta confiabilidad y bajo consumo de tokens. Resuelve el problema de depender de un MCP persistente para discovery en repos grandes y heterogeneos: ofrece semantica profunda C# con Roslyn, catalogos locales para TypeScript/JavaScript y Python, y catalogacion AST nativa para Go con enriquecimiento opcional via `gopls`.
+`mi-lsp` es una CLI semántica local para proyectos y repos heterogéneos, orientada a agentes y desarrolladores que necesitan navegar código con alta confiabilidad y bajo consumo de tokens. Ofrece semántica profunda C# con Roslyn, catálogos locales para TypeScript/JavaScript y Python, y catalogación AST nativa para Go con enriquecimiento opcional vía `gopls`. El CLI puede operar solo o como proceso MCP local sobre stdio; ambos caminos usan las mismas operaciones y el mismo workspace local.
 
 El exito del producto en v1.3 se mide por estos resultados:
 - la CLI siempre responde aunque el daemon no este activo;
+- el mismo servicio de navegación está disponible mediante CLI y un servidor MCP local sobre stdio, sin requerir un proceso MCP persistente;
 - el primer uso puede resolverse con `mi-lsp init` sin onboarding largo;
 - `nav wiki` ofrece una entrada documental explicita para agentes que buscan RF/FL/TP/CT/TECH/DB, y `nav wiki map` un catálogo compacto de hubs de wikis de conocimiento (`wiki/` y `bibliotecas/`);
 - `nav ask` responde preguntas de intencion usando wiki + evidencia de codigo;
@@ -41,11 +42,12 @@ El exito del producto en v1.3 se mide por estos resultados:
 - las superficies calientes de navegacion pueden devolver guidance tiny (`continuation`) y memoria de reentrada (`memory_pointer`) para ayudar a un harness a seguir explorando sin gastar muchos tokens;
 - `nav intent` agrega un modo hibrido `docs|code`: las consultas capability-like deben devolver docs canonicos owner-aware y las consultas symbol-like deben seguir devolviendo matches de catalogo/codigo;
 - las consultas semanticas C# entregan contexto util y compacto en repos grandes;
+- clientes compatibles con MCP pueden llamar las mismas operaciones de navegación por un proceso local stdio, con workspace visible y resultados estructurados;
 - la salida es estable, breve y apta para skills/LLMs sin arrastrar blobs innecesarios.
 
 # 2. Propuesta de valor
 
-- Reemplaza la dependencia de un servidor MCP persistente por una CLI directa con daemon opcional.
+- Ofrece una CLI directa con daemon opcional y una puerta local MCP sobre stdio para clientes que usan ese protocolo.
 - Mantiene una puerta de entrada corta para onboarding: `init -> nav ask`.
 - Agrega un reading pack canonico (`nav pack`) para reducir round-trips al estudiar la wiki en orden spec-driven.
 - Agrega `nav wiki` para hacer obvia la exploracion documental y guiar a pack/trace/multi-read/ask.
@@ -117,7 +119,7 @@ flowchart TD
 # 6. Fuera de alcance / Evolucion futura
 
 - Edicion y refactor semantico seguro.
-- MCP server, dashboard web o GUI remota.
+- MCP remoto/HTTP, dashboard web o GUI remota.
 - Semantica TypeScript profunda equivalente a C# mediante `tsserver`.
 - Soporte activo para lenguajes fuera de C#/TS/Python/Go en v1.
 - Persistencia semantica completa de referencias y jerarquias C# en SQLite.

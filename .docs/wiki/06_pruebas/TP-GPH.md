@@ -254,6 +254,9 @@ cases:
 | Caso | Tipo | Descripcion / oraculo |
 |---|---|---|
 | TC-GPH-031 | positivo | changed path resuelve seeds y direct impact con evidence path exacto |
+| TC-GPH-031A | positivo | `nav.affected` inspecciona sólo paths explícitos respetando WAL; si cambiaron, publica catálogo/`doc_records` antes de resolver seeds y no reconstruye graph generation |
+| TC-GPH-031B | negativo | En `nav.affected`, error/deadline antes del commit conserva evidencia publicada y emite warning sin escritura en background; graph stale produce solo heurísticas `confidence=0`, sin generation/evidencia graph-native, y el warning explícito `GPH_IMPACT_GRAPH_STALE` contiene `mi-lsp index --workspace "<alias>"` |
+| TC-GPH-031C | negativo | Con graph stale, `nav.diff-context` propaga `GPH_IMPACT_GRAPH_STALE`; wrappers `change-pack` e `intent` no producen fallback heurístico stale y conservan warning/error sanitizado, incluido `INTENT_DIFF_UNAVAILABLE` y `graph_query_error` para intent |
 | TC-GPH-032 | positivo | transitive mode usa solo allowlist/direccion/costo y separa inferred |
 | TC-GPH-033 | positivo | tests/docs se agregan por edges/anchors; convenciones quedan heuristic |
 | TC-GPH-034 | negativo | basename/doc ID ambiguo produce `ambiguous_doc_target` con candidatos sorted/bounded; relation textual o unresolved no infla positivos ni viola fixture negative |

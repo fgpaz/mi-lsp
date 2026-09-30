@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/fgpaz/mi-lsp/internal/model"
 	"github.com/fgpaz/mi-lsp/internal/nav"
@@ -116,10 +117,29 @@ func (a *App) route(ctx context.Context, request model.CommandRequest) (model.En
 	includeDiscovery := includeCodeDiscovery || request.Context.Full
 
 	query := loadDocQueryContext(ctx, registration, task)
-	defer query.Close()
+	defer func() { _ = query.Close() }()
 	result := query.canonicalRoute(request.Context, includeDiscovery)
+	refreshWarnings := []string{}
+	if paths := routeDocCandidatePaths(query, result, 5); len(paths) > 0 {
+		refreshed, refreshErr := RefreshQueryPaths(ctx, registration.Root, paths, 500*time.Millisecond)
+		if refreshErr != nil {
+			refreshWarnings = append(refreshWarnings, "route document refresh unavailable; using the currently published snapshot: "+sanitizeIntentError(refreshErr))
+		} else if refreshed {
+			freshQuery := loadDocQueryContext(ctx, registration, task)
+			if freshQuery.dbErr == nil {
+				_ = query.Close()
+				query = freshQuery
+				result = query.canonicalRoute(request.Context, includeDiscovery)
+				refreshWarnings = append(refreshWarnings, "route document candidates refreshed from the published snapshot")
+			} else {
+				_ = freshQuery.Close()
+				refreshWarnings = append(refreshWarnings, "route document refresh committed but the published snapshot could not be reopened; using the prior query results")
+			}
+		}
+	}
 	result.LookupStatus = routeLookupStatus(ctx, query, registration.Name, task, result, "nav.wiki.route")
 	warnings := append([]string{}, query.profileWarnings...)
+	warnings = append(warnings, refreshWarnings...)
 
 	env := model.Envelope{
 		Ok:        true,

@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
+	"sort"
 	"strings"
 	"time"
 
@@ -39,6 +41,8 @@ type rootState struct {
 	classic              bool
 	full                 bool
 	profile              string
+	stdoutIsTerminal     *bool
+	formatExplicit       bool
 	telemetry            *CLITelemetry
 	retentionRun         bool
 	noAutoDaemon         bool
@@ -105,10 +109,11 @@ func NewRootCommand() *cobra.Command {
 			return cmd.Help()
 		},
 		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+			state.formatExplicit = flagChanged(cmd, "format")
 			switch state.format {
-			case "compact", "json", "text", "toon", "yaml":
+			case "agent", "compact", "json", "text", "toon", "yaml":
 			default:
-				return fmt.Errorf("invalid --format %q; valid options: compact, json, text, toon, yaml", state.format)
+				return fmt.Errorf("invalid --format %q; valid options: agent, compact, json, text, toon, yaml", state.format)
 			}
 			if cmd.Flags().Changed("token-budget") && state.tokenBudget <= 0 {
 				return fmt.Errorf("--token-budget must be > 0")
@@ -128,12 +133,15 @@ func NewRootCommand() *cobra.Command {
 			if !flagChanged(cmd, "format") && state.axi {
 				state.format = "toon"
 			}
+			if state.usesImplicitAgentFormat(cmd) {
+				state.format = "agent"
+			}
 			return nil
 		},
 	}
 
 	root.PersistentFlags().StringVar(&state.workspace, "workspace", "", "Workspace alias or path")
-	root.PersistentFlags().StringVar(&state.format, "format", "compact", "Output format: compact|json|text|toon|yaml")
+	root.PersistentFlags().StringVar(&state.format, "format", "compact", "Output format: agent|compact|json|text|toon|yaml")
 	root.PersistentFlags().IntVar(&state.tokenBudget, "token-budget", service.DefaultConfig().DefaultTokenBudget, "Approximate output token budget")
 	root.PersistentFlags().IntVar(&state.maxItems, "max-items", service.DefaultConfig().DefaultMaxItems, "Maximum items in response")
 	root.PersistentFlags().IntVar(&state.maxChars, "max-chars", 0, "Maximum output characters")
@@ -161,6 +169,7 @@ func NewRootCommand() *cobra.Command {
 		newDaemonCommand(state),
 		newAdminCommand(state),
 		newWorkerCommand(state),
+		newMCPCommand(state),
 		newVersionCommand(state),
 		newProbeCommand(state),
 		newDoctorCommand(state),
@@ -236,6 +245,7 @@ func (s *rootState) executeOperation(cmd *cobra.Command, operation string, paylo
 	)
 	daemonFailed := false
 	if useDaemon {
+		routeStarted := time.Now()
 		if s.daemonExecute != nil {
 			// Test hooks receive the operation context directly; the production
 			// client applies daemonAttemptTimeout only while dialing.
@@ -252,12 +262,25 @@ func (s *rootState) executeOperation(cmd *cobra.Command, operation string, paylo
 		} else {
 			route = "daemon"
 		}
+		traceCLITiming("daemon.execute", time.Since(routeStarted), s.verbose)
 	}
 	if !useDaemon || daemonFailed {
+		refreshWarning := ""
+		if !daemonFailed && request.Operation == "nav.multi-read" {
+			_, refreshErr := s.refreshMultiReadPaths(ctx, request)
+			if refreshErr != nil {
+				refreshWarning = "query index refresh deferred: " + refreshErr.Error()
+			}
+		}
+		serviceStarted := time.Now()
 		if s.appExecute != nil {
 			envelope, err = s.appExecute(ctx, request)
 		} else {
 			envelope, err = s.app.Execute(ctx, request)
+		}
+		traceCLITiming("service.execute", time.Since(serviceStarted), s.verbose)
+		if refreshWarning != "" {
+			envelope.Warnings = append(envelope.Warnings, refreshWarning)
 		}
 		if err == nil && daemonFailed && envelope.Hint == "" {
 			envelope.Hint = "daemon_unavailable; served from local text index"
@@ -272,7 +295,9 @@ func (s *rootState) executeOperation(cmd *cobra.Command, operation string, paylo
 	if err != nil {
 		envelope = buildCLIErrorEnvelope(request, route, err)
 	}
+	limitStarted := time.Now()
 	finalEnvelope := output.ApplyEnvelopeLimits(envelope, request.Context)
+	traceCLITiming("output.limits", time.Since(limitStarted), s.verbose)
 
 	// Best-effort telemetry: direct/direct_fallback record at the caller.
 	// Daemon-served requests are recorded canonically inside the daemon.
@@ -289,6 +314,50 @@ func (s *rootState) executeOperation(cmd *cobra.Command, operation string, paylo
 		return envelopePrintedError{err: err}
 	}
 	return s.printPreparedEnvelope(finalEnvelope, request.Context)
+}
+
+func (s *rootState) refreshMultiReadPaths(ctx context.Context, request model.CommandRequest) (bool, error) {
+	paths := multiReadPaths(request.Payload)
+	if len(paths) == 0 {
+		return false, nil
+	}
+	workspaceStarted := time.Now()
+	resolution, err := workspace.ResolveWorkspaceSelectionReadOnly(request.Context.Workspace, request.Context.CallerCWD)
+	traceCLITiming("workspace.resolve", time.Since(workspaceStarted), s.verbose)
+	if err != nil {
+		return false, nil
+	}
+	refreshStarted := time.Now()
+	refreshed, err := service.RefreshQueryPaths(ctx, resolution.Registration.Root, paths, 250*time.Millisecond)
+	traceCLITiming("index.refresh", time.Since(refreshStarted), s.verbose)
+	return refreshed, err
+}
+
+func multiReadPaths(payload map[string]any) []string {
+	raw, ok := payload["args"]
+	if !ok {
+		return nil
+	}
+	var args []string
+	switch values := raw.(type) {
+	case []string:
+		args = values
+	case []any:
+		for _, value := range values {
+			if arg, ok := value.(string); ok {
+				args = append(args, arg)
+			}
+		}
+	}
+	paths := make([]string, 0, len(args))
+	for _, arg := range args {
+		separator := strings.LastIndex(arg, ":")
+		if separator <= 0 {
+			continue
+		}
+		paths = append(paths, filepath.Clean(arg[:separator]))
+	}
+	return paths
 }
 
 func (s *rootState) executeGraphOperation(cmd *cobra.Command, operation string, payload map[string]any, preferDaemon bool) error {
@@ -338,7 +407,40 @@ func buildCLIErrorEnvelope(request model.CommandRequest, route string, err error
 			env.NextHint = &graphErr.Hint
 		}
 	}
+	if env.Error != nil && (env.Error.Kind == "workspace" || strings.Contains(strings.ToLower(env.Error.Code), "workspace") || isWorkspaceErrorMessage(env.Error.Message)) {
+		if command := workspaceRecoveryCommand(request.Context); command != "" {
+			env.NextHint = &command
+		}
+	}
 	return env
+}
+
+func workspaceRecoveryCommand(opts model.QueryOptions) string {
+	cwd := strings.TrimSpace(opts.CallerCWD)
+	if cwd == "" {
+		return "mi-lsp workspace scan"
+	}
+	selector := strings.TrimSpace(opts.Workspace)
+	root := cwd
+	alias := selector
+	if filepath.IsAbs(selector) {
+		root = selector
+		alias = filepath.Base(filepath.Clean(selector))
+	} else if selector != "" && (strings.ContainsAny(selector, `/\\`) || selector == "." || selector == "..") {
+		root = filepath.Clean(filepath.Join(cwd, selector))
+		alias = filepath.Base(root)
+	}
+	if alias == "" || !intentSafeWorkspaceAlias(alias) {
+		alias = filepath.Base(filepath.Clean(root))
+	}
+	if alias == "" || alias == "." || alias == string(filepath.Separator) {
+		return "mi-lsp workspace scan"
+	}
+	return "mi-lsp workspace add " + shellCommandArgument(root) + " --name " + shellCommandArgument(alias) + " --no-index"
+}
+
+func shellCommandArgument(value string) string {
+	return "'" + strings.ReplaceAll(value, "'", "'\\''") + "'"
 }
 
 func inferErrorBackend(request model.CommandRequest, route string) string {
@@ -512,10 +614,37 @@ func (s *rootState) effectiveFormat(cmd *cobra.Command, operation string, payloa
 	if cmd != nil && cmd.Flags().Changed("format") {
 		return s.format
 	}
+	if s.usesImplicitAgentFormat(cmd) {
+		return "agent"
+	}
 	if axiEnabled {
 		return "toon"
 	}
 	return s.format
+}
+
+func (s *rootState) usesImplicitAgentFormat(cmd *cobra.Command) bool {
+	if s == nil || s.verbose || flagChanged(cmd, "format") {
+		return false
+	}
+	stdoutIsTerminal := false
+	if s.stdoutIsTerminal != nil {
+		stdoutIsTerminal = *s.stdoutIsTerminal
+	} else if stdoutInfo, err := os.Stdout.Stat(); err == nil {
+		stdoutIsTerminal = stdoutInfo.Mode()&os.ModeCharDevice != 0
+	}
+	clientConfigured := strings.TrimSpace(os.Getenv("MI_LSP_CLIENT_NAME")) != "" || flagChanged(cmd, "client-name")
+	return implicitAgentFormat(cmd, s.clientName, clientConfigured, stdoutIsTerminal)
+}
+
+func implicitAgentFormat(cmd *cobra.Command, clientName string, clientConfigured bool, stdoutIsTerminal bool) bool {
+	if flagChanged(cmd, "format") || flagChanged(cmd, "verbose") {
+		return false
+	}
+	if strings.Contains(strings.ToLower(strings.TrimSpace(clientName)), "mcp") || clientConfigured {
+		return true
+	}
+	return !stdoutIsTerminal
 }
 
 func (s *rootState) effectiveMaxItems(cmd *cobra.Command, operation string, axiEnabled bool, fullEnabled bool) int {
@@ -530,6 +659,14 @@ func (s *rootState) effectiveMaxItems(cmd *cobra.Command, operation string, axiE
 			}
 		}
 	}
+	if s.usesImplicitAgentFormat(cmd) && !fullEnabled {
+		switch operation {
+		case "nav.search", "nav.intent", "nav.find", "nav.multi-read":
+			if s.maxItems > 5 {
+				return 5
+			}
+		}
+	}
 	return s.maxItems
 }
 
@@ -538,7 +675,7 @@ func shouldUseDaemon(operation string, requested bool) bool {
 		return false
 	}
 	switch operation {
-	case "nav.find", "nav.wiki.search", "nav.wiki.validate-harness", "nav.wiki.validate-source", "nav.evidence.inventory", "nav.intent", "nav.symbols", "nav.outline", "nav.overview", "nav.multi-read", "nav.affected", "nav.edit-plan", "nav.trace", "nav.wiki.trace", "nav.wiki.pack", "nav.route", "nav.wiki.route", "nav.governance", "nav.wiki-root", "nav.workspace-map", "nav.wiki.map":
+	case "nav.find", "nav.search", "nav.wiki.search", "nav.wiki.validate-harness", "nav.wiki.validate-source", "nav.evidence.inventory", "nav.intent", "nav.symbols", "nav.outline", "nav.overview", "nav.multi-read", "nav.affected", "nav.edit-plan", "nav.trace", "nav.wiki.trace", "nav.wiki.pack", "nav.route", "nav.wiki.route", "nav.governance", "nav.wiki-root", "nav.workspace-map", "nav.wiki.map":
 		return false
 	default:
 		return true
@@ -703,13 +840,40 @@ func (s *rootState) printEnvelope(envelope model.Envelope, opts model.QueryOptio
 
 func (s *rootState) printPreparedEnvelope(envelope model.Envelope, opts model.QueryOptions) error {
 	// Set profile based on resolved value from root state
-	envelope.Profile = resolveProfile(s.profile, s.clientName)
-	rendered, err := output.Render(envelope, opts.Format, opts.Compress)
+	format := opts.Format
+	envelope.Profile, format = s.outputProfile(format)
+	renderStarted := time.Now()
+	rendered, err := output.Render(envelope, format, opts.Compress)
+	traceCLITiming("output.render", time.Since(renderStarted), s.verbose)
 	if err != nil {
 		return err
 	}
+	writeStarted := time.Now()
 	_, err = fmt.Fprintln(os.Stdout, string(rendered))
+	traceCLITiming("output.write", time.Since(writeStarted), s.verbose)
 	return err
+}
+
+func (s *rootState) outputProfile(format string) (model.OutputProfile, string) {
+	if s.verbose && (!s.formatExplicit || format == "agent") {
+		if format == "agent" {
+			format = "compact"
+		}
+	}
+	if s.verbose && (!s.formatExplicit || format != s.format) {
+		return model.OutputProfileHuman, format
+	}
+	return resolveProfile(s.profile, s.clientName), format
+}
+
+func traceCLITiming(stage string, duration time.Duration, verbose bool) {
+	if !verbose && !envBool("MI_LSP_TIMING") {
+		return
+	}
+	data, err := json.Marshal(map[string]any{"stage": stage, "duration_ms": float64(duration.Microseconds()) / 1000})
+	if err == nil {
+		fmt.Fprintln(os.Stderr, string(data))
+	}
 }
 
 func envBool(name string) bool {
@@ -874,17 +1038,53 @@ func (s *rootState) resolveHomeWorkspace(registrations []model.WorkspaceRegistra
 }
 
 func resolveRegisteredWorkspaceByRoot(cwd string, registrations []model.WorkspaceRegistration) (model.WorkspaceRegistration, model.ProjectFile, bool) {
-	_ = registrations
 	resolution, err := workspace.ResolveWorkspaceSelection("", cwd)
 	if err != nil || resolution.Source != workspace.ResolutionSourceCallerCWD {
 		return model.WorkspaceRegistration{}, model.ProjectFile{}, false
 	}
 	registration := resolution.Registration
+	registered := make([]model.WorkspaceRegistration, 0, len(registrations))
+	resolvedRoot := comparableWorkspaceRoot(registration.Root)
+	for _, candidate := range registrations {
+		if comparableWorkspaceRoot(candidate.Root) == resolvedRoot {
+			registered = append(registered, candidate)
+		}
+	}
+	if len(registered) == 0 {
+		return model.WorkspaceRegistration{}, model.ProjectFile{}, false
+	}
+	registeredAliasFound := false
+	for _, candidate := range registered {
+		if candidate.Name == registration.Name {
+			registration = candidate
+			registeredAliasFound = true
+			break
+		}
+	}
+	if !registeredAliasFound {
+		sort.Slice(registered, func(i, j int) bool { return registered[i].Name < registered[j].Name })
+		registration = registered[0]
+	}
 	project, err := workspace.LoadProjectTopology(registration.Root, registration)
 	if err != nil {
 		return model.WorkspaceRegistration{}, model.ProjectFile{}, false
 	}
 	return workspace.ApplyProjectTopology(registration, project), project, true
+}
+
+func comparableWorkspaceRoot(root string) string {
+	if strings.TrimSpace(root) == "" {
+		return ""
+	}
+	absolute, err := filepath.Abs(root)
+	if err == nil {
+		root = absolute
+	}
+	root = filepath.Clean(root)
+	if runtime.GOOS == "windows" {
+		return strings.ToLower(root)
+	}
+	return root
 }
 
 func probeDaemonHome(parent context.Context) (model.DaemonState, bool) {

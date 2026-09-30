@@ -202,6 +202,10 @@ If the pattern is regex-like, keep it quoted and add `--regex`.
 
 ## Output formats
 
+When stdout is not a terminal, `MI_LSP_CLIENT_NAME` is set, or the client name identifies MCP, navigation uses the compact `agent` format by default. The response starts with the selected `workspace`; `find`, `search`, and `multi-read` return at most five results in this implicit mode. On success, coach/governance blocks and automatic continuations are omitted. Use `--verbose` to request more detail. An explicit `--format` always wins and preserves the selected format's response shape, including JSON used by scripts.
+
+For clients that speak MCP, launch the optional local server with `mi-lsp mcp [--workspace <alias|path>]`. It reads JSON-RPC/NDJSON from stdin and writes protocol messages only to stdout. Each tool call returns the complete JSON envelope in `structuredContent` and compact agent text in `content[0].text`; when no workspace is supplied, resolution starts from the server process's current directory.
+
 | Format | Flag | Typical size | When to use |
 |--------|------|-------------|-------------|
 | TOON | `--format toon` | ~20-40% smaller | **Recommended default** — best token savings, arrays compress most |

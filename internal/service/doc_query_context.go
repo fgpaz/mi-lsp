@@ -92,6 +92,40 @@ func (q *docQueryContext) Close() error {
 	return q.db.Close()
 }
 
+func routeDocCandidatePaths(query *docQueryContext, route model.RouteResult, limit int) []string {
+	if limit <= 0 {
+		limit = 5
+	}
+	paths := make([]string, 0, limit)
+	seen := make(map[string]struct{}, limit)
+	add := func(path string) {
+		path = filepath.ToSlash(strings.TrimSpace(path))
+		if path == "" || !strings.EqualFold(filepath.Ext(path), ".md") || len(paths) >= limit {
+			return
+		}
+		if _, exists := seen[path]; exists {
+			return
+		}
+		seen[path] = struct{}{}
+		paths = append(paths, path)
+	}
+	add(route.Canonical.AnchorDoc.Path)
+	for _, doc := range route.Canonical.PreviewPack {
+		add(doc.Path)
+	}
+	if route.Discovery != nil {
+		for _, doc := range route.Discovery.Docs {
+			add(doc.Path)
+		}
+	}
+	if query != nil {
+		for _, item := range query.ranked {
+			add(item.record.Path)
+		}
+	}
+	return paths
+}
+
 func (q *docQueryContext) routeTask() string {
 	if q == nil {
 		return ""

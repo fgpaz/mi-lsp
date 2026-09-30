@@ -2,9 +2,14 @@ package indexer
 
 import (
 	"context"
+	"crypto/md5"
+	"crypto/sha1"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
+	"sync"
 	"testing"
 
 	"github.com/fgpaz/mi-lsp/internal/model"
@@ -297,6 +302,115 @@ func setupIncrementalGraphFixture(t *testing.T) string {
 		t.Fatalf("initial IndexWorkspace: %v", err)
 	}
 	return root
+}
+
+func TestIncrementalCatalogWithPathsDoesNotRequireRoslynAndLeavesGraphStale(t *testing.T) {
+	root := setupIncrementalGraphFixture(t)
+	db, err := store.Open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	before, ok, err := store.ActiveGraphGeneration(context.Background(), db)
+	if err != nil || !ok {
+		db.Close()
+		t.Fatalf("initial active graph=%s ok=%v err=%v", before, ok, err)
+	}
+	_ = db.Close()
+
+	project := model.ProjectFile{
+		Project:     model.ProjectBlock{Name: "incremental-graph", Kind: model.WorkspaceKindSingle, DefaultRepo: "repo", DefaultEntrypoint: "repo::worker", Languages: []string{"csharp", "go"}},
+		Repos:       []model.WorkspaceRepo{{ID: "repo", Name: "repo", Root: ".", RepositoryIdentity: "https://example.com/incremental-graph", Languages: []string{"csharp", "go"}, DefaultEntrypoint: "repo::worker"}},
+		Entrypoints: []model.WorkspaceEntrypoint{{ID: "repo::worker", RepoID: "repo", Path: "Worker.csproj", Kind: model.EntrypointKindProject, Default: true}},
+	}
+	if err := workspace.SaveProjectFile(root, project); err != nil {
+		t.Fatalf("SaveProjectFile: %v", err)
+	}
+	content := "package main\nfunc target() { println(\"fresh\") }\nfunc main() { target() }\n"
+	mustWriteIncrementalFile(t, filepath.Join(root, "main.go"), content)
+	result, err := IncrementalCatalogWithPaths(context.Background(), root, []string{"main.go"})
+	if err != nil {
+		t.Fatalf("IncrementalCatalogWithPaths: %v", err)
+	}
+	if !strings.Contains(strings.Join(result.Warnings, " "), "graph remains stale") {
+		t.Fatalf("warnings=%v, want an explicit stale graph warning", result.Warnings)
+	}
+	db, err = store.Open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	var gotHash string
+	if err := db.QueryRow(`SELECT content_hash FROM files WHERE file_path=?`, "main.go").Scan(&gotHash); err != nil {
+		t.Fatalf("read refreshed catalog hash: %v", err)
+	}
+	if wantHash := fmt.Sprintf("%x", md5.Sum([]byte(content))); gotHash != wantHash {
+		t.Fatalf("catalog hash=%q, want refreshed hash %q", gotHash, wantHash)
+	}
+	after, ok, err := store.ActiveGraphGeneration(context.Background(), db)
+	if err != nil || !ok || after != before {
+		t.Fatalf("active graph=%s ok=%v err=%v, want preserved graph %s", after, ok, err, before)
+	}
+	if state, err := store.GraphRuntimeState(context.Background(), db); err != nil || state != store.GraphRuntimeStale {
+		t.Fatalf("graph runtime state=%q err=%v, want stale", state, err)
+	}
+}
+
+func TestRefreshCatalogPathsReadsSourceAfterAcquiringWriteLock(t *testing.T) {
+	root := setupIncrementalGraphFixture(t)
+	lockReady := make(chan struct{})
+	releaseLock := make(chan struct{})
+	lockDone := make(chan error, 1)
+	var releaseOnce sync.Once
+	release := func() { releaseOnce.Do(func() { close(releaseLock) }) }
+	go func() {
+		lockDone <- store.WithWorkspaceWriteLock(root, func() error {
+			close(lockReady)
+			<-releaseLock
+			return nil
+		})
+	}()
+	<-lockReady
+	defer release()
+
+	beforeLock := make(chan struct{})
+	previousHook := refreshCatalogBeforeLockHook
+	refreshCatalogBeforeLockHook = func() { close(beforeLock) }
+	t.Cleanup(func() { refreshCatalogBeforeLockHook = previousHook })
+	type refreshOutcome struct {
+		result Result
+		err    error
+	}
+	refreshed := make(chan refreshOutcome, 1)
+	go func() {
+		result, err := RefreshCatalogPaths(context.Background(), root, []string{"main.go"})
+		refreshed <- refreshOutcome{result: result, err: err}
+	}()
+	<-beforeLock
+	content := "package main\nfunc target() { println(\"edited while waiting\") }\nfunc main() { target() }\n"
+	mustWriteIncrementalFile(t, filepath.Join(root, "main.go"), content)
+	release()
+	if err := <-lockDone; err != nil {
+		t.Fatalf("release workspace write lock: %v", err)
+	}
+	outcome := <-refreshed
+	if outcome.err != nil {
+		t.Fatalf("RefreshCatalogPaths: %v", outcome.err)
+	}
+	if outcome.result.Stats.Files != 1 {
+		t.Fatalf("refreshed files=%d, want 1", outcome.result.Stats.Files)
+	}
+	db, err := store.Open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	var gotHash string
+	if err := db.QueryRow(`SELECT content_hash FROM files WHERE file_path=?`, "main.go").Scan(&gotHash); err != nil {
+		t.Fatal(err)
+	}
+	if wantHash := fmt.Sprintf("%x", sha1.Sum([]byte(content))); gotHash != wantHash {
+		t.Fatalf("published hash=%q, want hash of edit made while waiting %q", gotHash, wantHash)
+	}
 }
 
 func mustWriteIncrementalFile(t *testing.T, path string, content string) {

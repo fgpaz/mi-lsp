@@ -10,6 +10,7 @@ import (
 	"errors"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/fgpaz/mi-lsp/internal/model"
 	"github.com/fgpaz/mi-lsp/internal/store"
@@ -63,6 +64,8 @@ func decodeGraphImpactCursor(raw string) (graphImpactCursor, error) {
 }
 
 func GraphImpact(ctx context.Context, db *sql.DB, request model.GraphImpactRequest) (model.GraphImpactEnvelope, error) {
+	started := time.Now()
+	defer traceServiceTiming("graph_impact", started)
 	if ctx == nil || db == nil {
 		return model.GraphImpactEnvelope{}, &model.GraphQueryError{Code: "GPH_QUERY_BACKEND_UNAVAILABLE", Message: "graph backend is unavailable"}
 	}

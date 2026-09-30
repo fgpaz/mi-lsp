@@ -74,6 +74,8 @@ TP-QRY
 - `--quiet`: conserva items estables pero omite hints no esenciales.
 - `--test-command`: sobreescribe el comando de prueba inferido.
 
+Antes de leer el grafo, `nav.affected` comprueba solo los paths explícitos, en modo de solo lectura y respetando cambios ya confirmados en WAL. Con límite de 1 s, compara hashes y refresca sincrónicamente solo catálogo y `doc_records`; no ejecuta extractores de grafo/Roslyn ni genera escrituras en segundo plano. La publicación es transaccional, verifica el contexto antes del commit y omite `PRAGMA optimize` bajo deadline. Si el refresh falla o vence, se conserva la evidencia publicada y se informa la limitación. Un commit completado cuenta como refresh exitoso aunque el deadline venza inmediatamente después. Si la generation de grafo no puede respaldar el impacto por stale, la salida se limita a heurísticas con `confidence=0`, omite generation/evidencia graph-native y emite el comando de reconstrucción `mi-lsp index --workspace "<alias>"`.
+
 ## Salida
 
 Cada item debe exponer:
