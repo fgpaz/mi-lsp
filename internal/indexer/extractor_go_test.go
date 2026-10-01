@@ -2,10 +2,14 @@ package indexer
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
+	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/fgpaz/mi-lsp/internal/model"
 )
@@ -50,6 +54,93 @@ func TestGoGraphListDisablesVCSStamping(t *testing.T) {
 	args := goGraphListArgs(nil)
 	if !strings.Contains(" "+strings.Join(args, " ")+" ", " -buildvcs=false ") {
 		t.Fatalf("go list args must disable VCS stamping in worktrees: %v", args)
+	}
+}
+
+func TestGoGraphListDecodesOutputAndReturnsProcessError(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("shell process fixture requires Linux")
+	}
+	root := t.TempDir()
+	bin := filepath.Join(root, "bin")
+	if err := os.Mkdir(bin, 0700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	fakeGo := filepath.Join(bin, "go")
+	for _, tc := range []struct {
+		name       string
+		script     string
+		wantErr    bool
+		wantImport string
+	}{
+		{name: "success", script: "#!/bin/sh\nprintf '{\"ImportPath\":\"example.test/p\"}\\n'\n", wantImport: "example.test/p"},
+		{name: "process error", script: "#!/bin/sh\nprintf '{\"ImportPath\":\"example.test/p\"}\\n'\nexit 7\n", wantErr: true, wantImport: "example.test/p"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if err := os.WriteFile(fakeGo, []byte(tc.script), 0700); err != nil {
+				t.Fatal(err)
+			}
+			packages, err := goGraphList(context.Background(), root, nil, "linux", "amd64")
+			if (err != nil) != tc.wantErr {
+				t.Fatalf("goGraphList error = %v, wantErr %v", err, tc.wantErr)
+			}
+			if len(packages) != 1 || packages[0].ImportPath != tc.wantImport {
+				t.Fatalf("goGraphList packages = %#v", packages)
+			}
+		})
+	}
+}
+
+func TestGoGraphListCancellationClosesInheritedStdout(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("shell process fixture requires Linux")
+	}
+	root := t.TempDir()
+	pidFile := filepath.Join(root, "child.pid")
+	bin := filepath.Join(root, "bin")
+	if err := os.Mkdir(bin, 0700); err != nil {
+		t.Fatal(err)
+	}
+	script := "#!/bin/sh\nsleep 30 &\necho $! > \"$CHILD_PID_FILE\"\nprintf '{ }\\n'\nwait\n"
+	if err := os.WriteFile(filepath.Join(bin, "go"), []byte(script), 0700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("CHILD_PID_FILE", pidFile)
+	t.Cleanup(func() {
+		data, err := os.ReadFile(pidFile)
+		if err != nil {
+			return
+		}
+		pid, err := strconv.Atoi(strings.TrimSpace(string(data)))
+		if err == nil {
+			if child, err := os.FindProcess(pid); err == nil {
+				_ = child.Kill()
+			}
+		}
+	})
+	ctx, cancel := context.WithTimeout(context.Background(), 150*time.Millisecond)
+	defer cancel()
+
+	started := time.Now()
+	_, err := goGraphList(ctx, root, nil, "linux", "amd64")
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("goGraphList error = %v, want deadline exceeded", err)
+	}
+	if elapsed := time.Since(started); elapsed > 2*time.Second {
+		t.Fatalf("goGraphList cancellation took %s", elapsed)
+	}
+	data, err := os.ReadFile(pidFile)
+	if err != nil {
+		t.Fatalf("read descendant PID: %v", err)
+	}
+	pid, err := strconv.Atoi(strings.TrimSpace(string(data)))
+	if err != nil {
+		t.Fatalf("parse descendant PID: %v", err)
+	}
+	if _, err := os.FindProcess(pid); err != nil {
+		t.Fatalf("find fixture descendant: %v", err)
 	}
 }
 
@@ -229,7 +320,6 @@ func Use() int {
 		t.Fatal("embedded interface entry was incorrectly emitted as a struct field")
 	}
 }
-
 
 func TestObserveGoGraphEmbeddedFieldsBecomeCompilerBackedDeclarations(t *testing.T) {
 	root := t.TempDir()

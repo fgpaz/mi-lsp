@@ -19,6 +19,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/fgpaz/mi-lsp/internal/model"
 )
@@ -681,6 +682,7 @@ func goGraphList(ctx context.Context, dir string, tags []string, goos, goarch st
 	cmd := exec.CommandContext(ctx, "go", args...)
 	cmd.Dir = dir
 	cmd.Env = goGraphListEnv(goos, goarch)
+	cmd.WaitDelay = 250 * time.Millisecond
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		return nil, err
@@ -689,23 +691,40 @@ func goGraphList(ctx context.Context, dir string, tags []string, goos, goarch st
 	if err := cmd.Start(); err != nil {
 		return nil, err
 	}
+
 	var packages []goListPackage
-	dec := json.NewDecoder(stdout)
-	for {
-		var p goListPackage
-		e := dec.Decode(&p)
-		if e == io.EOF {
-			break
+	decodeDone := make(chan error, 1)
+	go func() {
+		dec := json.NewDecoder(stdout)
+		for {
+			var p goListPackage
+			err := dec.Decode(&p)
+			if err == io.EOF {
+				decodeDone <- nil
+				return
+			}
+			if err != nil {
+				decodeDone <- err
+				return
+			}
+			packages = append(packages, p)
 		}
-		if e != nil {
-			_ = cmd.Wait()
-			return packages, e
-		}
-		packages = append(packages, p)
+	}()
+
+	var decodeErr error
+	select {
+	case decodeErr = <-decodeDone:
+	case <-ctx.Done():
+		// Close the read end to interrupt Decode even if a descendant inherited stdout.
+		_ = stdout.Close()
+		decodeErr = <-decodeDone
 	}
 	waitErr := cmd.Wait()
 	if ctx.Err() != nil {
 		return packages, ctx.Err()
+	}
+	if decodeErr != nil {
+		return packages, decodeErr
 	}
 	return packages, waitErr
 }
