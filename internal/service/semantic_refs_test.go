@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/fgpaz/mi-lsp/internal/model"
 	"github.com/fgpaz/mi-lsp/internal/store"
@@ -463,5 +464,61 @@ func TestFindRefsOtherLanguageHitsStayDegradedText(t *testing.T) {
 	}
 	if !env.Degraded || env.Reason != model.ReasonSemanticEmptyTextHits || env.Backend != "text" {
 		t.Fatalf("env = degraded %v reason %q backend %q", env.Degraded, env.Reason, env.Backend)
+	}
+}
+
+func TestFindRefsSemanticTimeoutFallsBackToTextAndCoolsDown(t *testing.T) {
+	t.Setenv("MI_LSP_REFS_TIMEOUT", "200ms")
+	root, alias := setupRefsWorkspace(t, []string{"go"}, false, map[string]string{"demo.go": goSource}, goRefsSymbols())
+	release := make(chan struct{})
+	t.Cleanup(func() { close(release) })
+	fake := &fakeSemanticCaller{callFn: func(ctx context.Context, _ model.WorkspaceRegistration, _ model.WorkerRequest) (model.WorkerResponse, error) {
+		<-release
+		return model.WorkerResponse{Ok: true, Backend: "gopls"}, nil
+	}}
+	app := New(root, fake)
+	request := model.CommandRequest{Operation: "nav.refs", Context: model.QueryOptions{Workspace: alias, MaxItems: 20}, Payload: map[string]any{"symbol": "Target"}}
+
+	started := time.Now()
+	env, err := app.Execute(context.Background(), request)
+	if err != nil {
+		t.Fatalf("nav.refs: %v", err)
+	}
+	if elapsed := time.Since(started); elapsed > 4*time.Second {
+		t.Fatalf("timeout fallback took %s", elapsed)
+	}
+	if !env.Ok || !env.Degraded || env.Reason != model.ReasonLSPError || env.FallbackUsed != "text" || env.Backend != "text" || len(envItems(t, env)) == 0 {
+		t.Fatalf("env = ok %v degraded %v reason %q fallback %q backend %q items %d", env.Ok, env.Degraded, env.Reason, env.FallbackUsed, env.Backend, len(envItems(t, env)))
+	}
+	if !strings.Contains(strings.Join(env.Warnings, " "), "semantic backend timed out after") {
+		t.Fatalf("missing timeout warning: %v", env.Warnings)
+	}
+
+	env, err = app.Execute(context.Background(), request)
+	if err != nil {
+		t.Fatalf("second nav.refs: %v", err)
+	}
+	if len(fake.calls) != 1 {
+		t.Fatalf("cooldown must skip the backend on the next call, calls = %d", len(fake.calls))
+	}
+	if env.Backend != "text" || !env.Degraded || env.Reason != model.ReasonLSPError || !strings.Contains(strings.Join(env.Warnings, " "), "cooldown") {
+		t.Fatalf("second env = backend %q degraded %v reason %q warnings %v", env.Backend, env.Degraded, env.Reason, env.Warnings)
+	}
+}
+
+func TestRefsSemanticTimeoutConfiguration(t *testing.T) {
+	t.Setenv("MI_LSP_REFS_TIMEOUT", "")
+	if got := refsSemanticTimeout(context.Background()); got != 8*time.Second {
+		t.Fatalf("default = %s, want 8s", got)
+	}
+	t.Setenv("MI_LSP_REFS_TIMEOUT", "3")
+	if got := refsSemanticTimeout(context.Background()); got != 3*time.Second {
+		t.Fatalf("plain seconds = %s, want 3s", got)
+	}
+	t.Setenv("MI_LSP_REFS_TIMEOUT", "1m")
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	if got := refsSemanticTimeout(ctx); got >= 2*time.Second || got < time.Second {
+		t.Fatalf("shorter ctx deadline must cap the timeout, got %s", got)
 	}
 }

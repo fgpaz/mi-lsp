@@ -3,9 +3,11 @@ package service
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -20,7 +22,69 @@ const (
 	maxRefsContextWidth = 400
 	// maxRefsTextCandidates bounds the raw rg hits ranked by the text fallback.
 	maxRefsTextCandidates = 2000
+
+	defaultRefsTimeout  = 8 * time.Second
+	refsTimeoutCooldown = 2 * time.Minute
+	// refsTextBudget bounds the text fallback; refsTimedOutTextBudget is the
+	// tighter bound used right after the semantic backend already spent its own.
+	refsTextBudget         = 5 * time.Second
+	refsTimedOutTextBudget = 1500 * time.Millisecond
 )
+
+// semanticTimeoutError reports that the semantic backend did not answer in time.
+type semanticTimeoutError struct{ After time.Duration }
+
+func (e *semanticTimeoutError) Error() string {
+	return fmt.Sprintf("semantic backend timed out after %s", e.After.Round(time.Second))
+}
+
+// refsSemanticTimeout reads MI_LSP_REFS_TIMEOUT (a duration like "8s" or plain
+// seconds), defaulting to 8s, and never exceeds 3/4 of a shorter ctx deadline so
+// the text fallback keeps some budget.
+func refsSemanticTimeout(ctx context.Context) time.Duration {
+	timeout := defaultRefsTimeout
+	if raw := strings.TrimSpace(os.Getenv("MI_LSP_REFS_TIMEOUT")); raw != "" {
+		if parsed, err := time.ParseDuration(raw); err == nil && parsed > 0 {
+			timeout = parsed
+		} else if seconds, err := strconv.ParseFloat(raw, 64); err == nil && seconds > 0 {
+			timeout = time.Duration(seconds * float64(time.Second))
+		}
+	}
+	if deadline, ok := ctx.Deadline(); ok {
+		if reserved := time.Until(deadline) * 3 / 4; reserved < timeout {
+			timeout = reserved
+		}
+	}
+	return timeout
+}
+
+// callSemanticWorker calls the semantic backend; find_refs gets a deadline.
+// On expiry it just stops waiting (a daemon-owned worker keeps warming up).
+func (a *App) callSemanticWorker(ctx context.Context, registration model.WorkspaceRegistration, request model.WorkerRequest, method string) (model.WorkerResponse, error) {
+	if method != "find_refs" {
+		return a.Semantic.Call(ctx, registration, request)
+	}
+	timeout := refsSemanticTimeout(ctx)
+	type callResult struct {
+		response model.WorkerResponse
+		err      error
+	}
+	done := make(chan callResult, 1)
+	go func() {
+		response, err := a.Semantic.Call(ctx, registration, request)
+		done <- callResult{response, err}
+	}()
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+	select {
+	case result := <-done:
+		return result.response, result.err
+	case <-timer.C:
+		return model.WorkerResponse{}, &semanticTimeoutError{After: timeout}
+	case <-ctx.Done():
+		return model.WorkerResponse{}, ctx.Err()
+	}
+}
 
 var identifierPattern = regexp.MustCompile(`^\w+$`)
 
@@ -92,7 +156,10 @@ func (a *App) anchorRefsRequest(ctx context.Context, registration model.Workspac
 	if found {
 		return withRefsAnchor(request, def.FilePath, def.StartLine), nil
 	}
-	fallback, err := a.textReferenceFallback(ctx, registration, request, nil)
+	// The anchor search only picks a language, so keep it short.
+	anchorCtx, cancel := context.WithTimeout(ctx, refsTimedOutTextBudget)
+	defer cancel()
+	fallback, err := a.textReferenceFallback(anchorCtx, registration, request, nil)
 	if err != nil {
 		return request, nil
 	}

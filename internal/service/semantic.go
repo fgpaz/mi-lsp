@@ -82,15 +82,27 @@ func (a *App) semanticCore(ctx context.Context, registration model.WorkspaceRegi
 		EntrypointType:  target.Entrypoint.Kind,
 		Payload:         payload,
 	}
-	response, err := a.Semantic.Call(ctx, registration, workerRequest)
+	response, err := a.callSemanticWorker(ctx, registration, workerRequest, method)
 	if err != nil {
 		if method == "find_refs" || (isOptionalSemanticBackend(backendType) && request.Context.BackendHint == "") {
 			warnings := append([]string{}, target.Warnings...)
-			warnings = append(warnings, semanticBackendWarning(backendType, err))
+			fallbackCtx := ctx
+			var timeoutErr *semanticTimeoutError
+			if errors.As(err, &timeoutErr) {
+				warnings = append(warnings, fmt.Sprintf("semantic backend timed out after %ds; served from text", int(timeoutErr.After.Seconds())))
+				if request.Context.BackendHint == "" {
+					a.markBackendCooldown(registration.Root, workerRequest.RepoRoot, backendType, fmt.Sprintf("%s timed out recently; using text fallback for this repo until cooldown expires", backendType), refsTimeoutCooldown)
+				}
+				var cancel context.CancelFunc
+				fallbackCtx, cancel = context.WithTimeout(ctx, refsTimedOutTextBudget)
+				defer cancel()
+			} else {
+				warnings = append(warnings, semanticBackendWarning(backendType, err))
+			}
 			if shouldCooldownSemanticBackend(backendType, err) {
 				a.markBackendCooldown(registration.Root, workerRequest.RepoRoot, backendType, fmt.Sprintf("%s unavailable recently; using catalog fallback for this repo until cooldown expires", backendType), 5*time.Minute)
 			}
-			env, fallbackErr := a.semanticFallback(ctx, registration, request, method, "catalog", warnings)
+			env, fallbackErr := a.semanticFallback(fallbackCtx, registration, request, method, "catalog", warnings)
 			if method == "find_refs" {
 				markRefsFallback(&env, semanticFailureReason(err))
 			}
@@ -271,12 +283,18 @@ func (a *App) textReferenceFallback(ctx context.Context, registration model.Work
 	pattern, useRegex := refsTextPattern(symbol)
 	// Search wide: matches are ordered by path, so a narrow limit would let
 	// docs and other non-code hits crowd out the code usages before filtering.
-	hits, err := searchPattern(ctx, registration.Root, project, pattern, useRegex, maxRefsTextCandidates)
+	searchCtx, cancel := withSearchTimeout(ctx, refsTextBudget)
+	defer cancel()
+	diagnostics := &searchPatternDiagnostics{}
+	hits, err := searchPatternScopedWithDiagnostics(searchCtx, registration.Root, registration.Root, project, pattern, useRegex, maxRefsTextCandidates, diagnostics)
 	if err != nil {
 		return model.Envelope{}, err
 	}
 	items, codeOnly := rankRefsTextHits(hits, refsSymbolBackend(request), request.Context.MaxItems)
 	warnings = append(warnings, "served from text fallback; results are textual occurrences, not semantic references")
+	if diagnostics.TimedOut {
+		warnings = append(warnings, "text search stopped at its time budget; results may be partial")
+	}
 	env := model.Envelope{Ok: true, Workspace: registration.Name, Backend: "text", Items: items, Warnings: warnings, Stats: model.Stats{Files: len(items)}}
 	if !codeOnly && len(items) > 0 {
 		env.MarkDegraded(model.ReasonLanguageUnsupported, model.FallbackText)
