@@ -149,6 +149,9 @@ def build_milsp(binary, case, alias, fmt):
     sub = {"definition": ["nav", "find", query, "--exact"], "refs": ["nav", "refs", query],
            "literal": ["nav", "search", query], "intent": ["nav", "intent", query]}[qtype]
     cmd = [binary] + sub + ["--workspace", alias]
+    # BENCH_MILSP_EXTRA_ARGS (p. ej. "--no-daemon") mide el binario candidato
+    # sin depender del daemon global, que puede correr otra versión.
+    cmd += os.environ.get("BENCH_MILSP_EXTRA_ARGS", "").split()
     if fmt:
         cmd += ["--format", fmt]
     return cmd
