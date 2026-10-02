@@ -737,11 +737,11 @@ func TestIntentMixedPutsStrongCodeBeforeDocs(t *testing.T) {
 	if !ok || len(items) == 0 {
 		t.Fatalf("items=%T %#v", env.Items, env.Items)
 	}
-	if items[0]["kind"] != "code" || items[0]["file"] != "internal/workspace/registry.go" || items[0]["origin"] != model.ItemOriginCatalog || items[0]["symbol_kind"] != "function" {
+	if items[0]["result_kind"] != "code" || items[0]["file"] != "internal/workspace/registry.go" || items[0]["origin"] != model.ItemOriginCatalog || items[0]["kind"] != "function" {
 		t.Fatalf("first item=%#v want strong registry.go code match", items[0])
 	}
 	for _, item := range items {
-		if item["kind"] != "code" && item["kind"] != "doc" {
+		if item["result_kind"] != "code" && item["result_kind"] != "doc" {
 			t.Fatalf("item without code|doc kind: %#v", item)
 		}
 	}
@@ -763,7 +763,7 @@ func TestIntentDocsQuestionWithoutCodeSignalsStaysDocs(t *testing.T) {
 }
 
 func TestIntentMixWithCodeWithoutCatalogReturnsDocsUntouched(t *testing.T) {
-	docs := model.Envelope{Ok: true, Mode: "docs", Items: []map[string]any{{"kind": "doc", "doc_path": "a.md"}}}
+	docs := model.Envelope{Ok: true, Mode: "docs", Items: []map[string]any{{"result_kind": "doc", "doc_path": "a.md"}}}
 	got := New(t.TempDir(), nil).intentMixWithCode(context.Background(), model.WorkspaceRegistration{Name: "demo", Root: t.TempDir()}, "where is RegistryLock implemented", 10, 0, nil, docs)
 	if got.Mode != "docs" || len(got.Items.([]map[string]any)) != 1 {
 		t.Fatalf("envelope=%+v want docs untouched", got)

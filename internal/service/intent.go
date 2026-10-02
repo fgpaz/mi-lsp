@@ -133,16 +133,16 @@ func intentCodeSearch(ctx context.Context, db *sql.DB, tokens []string, topN int
 	return scored, nil
 }
 
-// intentCodeItem is the stable code item of nav.intent (primitives-v1): kind is
-// "code" and the catalog symbol kind moves to symbol_kind.
+// intentCodeItem is the stable code item of nav.intent (primitives-v1):
+// result_kind discriminates code vs doc items; kind keeps the catalog symbol kind.
 func intentCodeItem(match intentMatch) map[string]any {
 	return map[string]any{
-		"kind":           "code",
+		"result_kind":    "code",
 		"origin":         model.ItemOriginCatalog,
 		"file":           match.Symbol.FilePath,
 		"line":           match.Symbol.StartLine,
 		"symbol":         match.Symbol.Name,
-		"symbol_kind":    match.Symbol.Kind,
+		"kind":           match.Symbol.Kind,
 		"qualified_name": match.Symbol.QualifiedName,
 		"score":          fmt.Sprintf("%.2f", match.Score),
 		"evidence":       match.Evidence,
@@ -571,7 +571,7 @@ func buildIntentDocItems(workspaceName string, question string, route model.Rout
 		items := make([]map[string]any, 0, end-offset)
 		for _, candidate := range ranked[offset:end] {
 			items = append(items, map[string]any{
-				"kind":         "doc",
+				"result_kind":  "doc",
 				"origin":       intentDocOrigin,
 				"doc_path":     candidate.record.Path,
 				"doc_id":       candidate.record.DocID,
@@ -598,7 +598,7 @@ func buildIntentDocItems(workspaceName string, question string, route model.Rout
 	items := make([]map[string]any, 0, end-offset)
 	for idx, doc := range routeDocs[offset:end] {
 		items = append(items, map[string]any{
-			"kind":         "doc",
+			"result_kind":  "doc",
 			"origin":       intentDocOrigin,
 			"doc_path":     doc.Path,
 			"doc_id":       doc.DocID,

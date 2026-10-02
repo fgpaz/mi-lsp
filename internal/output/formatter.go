@@ -637,6 +637,9 @@ func compactItems(items any, compress bool) any {
 			if item.Workspace != "" {
 				entry["workspace"] = item.Workspace
 			}
+			if item.Origin != "" {
+				entry["origin"] = item.Origin
+			}
 			compact = append(compact, entry)
 		}
 		return compact
