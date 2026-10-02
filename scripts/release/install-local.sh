@@ -75,9 +75,16 @@ require_cmd() {
   fi
 }
 
+paths_overlap() {
+  case "$1" in "$2"|"$2"/*) return 0 ;; esac
+  case "$2" in "$1"/*) return 0 ;; esac
+  return 1
+}
+
 cleanup_staging() {
   [ -z "${stage_root:-}" ] || rm -rf "$stage_root"
   [ -z "${worker_stage_root:-}" ] || rm -rf "$worker_stage_root"
+  [ -z "${global_stage_root:-}" ] || rm -rf "$global_stage_root"
 }
 
 if [ -z "$RID" ]; then
@@ -133,15 +140,44 @@ case "$target_worker" in
   *) echo "Refusing to replace worker directory outside install workers root: $target_worker" >&2; exit 1 ;;
 esac
 
-# Stage every replacement beside its destination: rename stays on the same
-# filesystem, so replacing a running executable never truncates it in place.
-stage_root="$(mktemp -d "$install_root/.mi-lsp-stage.XXXXXX")"
+stage_root=""
 worker_stage_root=""
+global_stage_root=""
+global_worker_dir=""
 trap cleanup_staging EXIT
 trap 'exit 129' HUP
 trap 'exit 130' INT
 trap 'exit 143' TERM
+if [ "$SKIP_WORKER_REFRESH" -eq 0 ]; then
+  global_home="$(CDPATH= cd "$HOME" && pwd -P)"
+  global_workers_root="$global_home/.mi-lsp/workers"
+  if [ -d "$global_home/.mi-lsp" ]; then
+    global_dot_dir="$(CDPATH= cd "$global_home/.mi-lsp" && pwd -P)"
+    global_workers_root="$global_dot_dir/workers"
+  fi
+  if [ -d "$global_workers_root" ]; then
+    global_workers_root="$(CDPATH= cd "$global_workers_root" && pwd -P)"
+  fi
+  global_worker_dir="$global_workers_root/$RID"
+  if paths_overlap "$target" "$global_worker_dir" || paths_overlap "$target_worker" "$global_worker_dir"; then
+    echo "Refusing overlapping install destinations: local assets '$target' and '$target_worker' conflict with global worker '$global_worker_dir'." >&2
+    exit 1
+  fi
+  mkdir -p "$global_workers_root"
+  global_workers_root="$(CDPATH= cd "$global_workers_root" && pwd -P)"
+  global_worker_dir="$global_workers_root/$RID"
+  if paths_overlap "$target" "$global_worker_dir" || paths_overlap "$target_worker" "$global_worker_dir"; then
+    echo "Refusing overlapping install destinations: local assets '$target' and '$target_worker' conflict with global worker '$global_worker_dir'." >&2
+    exit 1
+  fi
+fi
+# Stage every replacement beside its destination: rename stays on the same
+# filesystem, so replacing a running executable never truncates it in place.
+stage_root="$(mktemp -d "$install_root/.mi-lsp-stage.XXXXXX")"
 worker_stage_root="$(mktemp -d "$workers_root/.mi-lsp-stage.$RID.XXXXXX")"
+if [ "$SKIP_WORKER_REFRESH" -eq 0 ]; then
+  global_stage_root="$(mktemp -d "$global_workers_root/.mi-lsp-stage.$RID.XXXXXX")"
+fi
 staged_cli="$stage_root/mi-lsp"
 staged_worker="$worker_stage_root/worker"
 cp "$source_cli" "$staged_cli"
@@ -151,11 +187,14 @@ find "$staged_worker" -type f -name 'MiLsp.Worker' -exec chmod +x {} \; 2>/dev/n
 
 backup_root="$stage_root/backup"
 worker_backup_root="$worker_stage_root/backup"
+global_worker_backup="$global_stage_root/worker"
 mkdir "$backup_root" "$worker_backup_root"
 old_cli=0
 old_worker=0
+old_global_worker=0
 new_cli=0
 new_worker=0
+new_global_worker=0
 committed=0
 rollback() {
   status=$?
@@ -164,13 +203,15 @@ rollback() {
   if [ "$committed" -eq 0 ]; then
     if [ "$new_cli" -eq 1 ] && { [ -e "$target" ] || [ -L "$target" ]; }; then rm -f "$target" || restore_failed=1; fi
     if [ "$new_worker" -eq 1 ] && { [ -e "$target_worker" ] || [ -L "$target_worker" ]; }; then rm -rf "$target_worker" || restore_failed=1; fi
+    if [ "$new_global_worker" -eq 1 ] && { [ -e "$global_worker_dir" ] || [ -L "$global_worker_dir" ]; }; then rm -rf "$global_worker_dir" || restore_failed=1; fi
     if [ "$old_cli" -eq 1 ] && [ "$new_cli" -eq 1 ]; then mv "$backup_root/mi-lsp" "$target" || restore_failed=1; fi
     if [ "$old_worker" -eq 1 ]; then mv "$worker_backup_root/worker" "$target_worker" || restore_failed=1; fi
+    if [ "$old_global_worker" -eq 1 ] && { [ -e "$global_worker_backup" ] || [ -L "$global_worker_backup" ]; }; then mv "$global_worker_backup" "$global_worker_dir" || restore_failed=1; fi
   fi
   if [ "$restore_failed" -eq 0 ]; then
     cleanup_staging || status=1
   else
-    echo "Rollback was incomplete; previous assets remain in '$backup_root' and '$worker_backup_root'." >&2
+    echo "Rollback was incomplete; previous assets may remain in '$backup_root', '$worker_backup_root', and '$global_stage_root'." >&2
     status=1
   fi
   return "$status"
@@ -195,6 +236,11 @@ mv "$staged_worker" "$target_worker"
 [ "${MI_LSP_INSTALL_FAIL_PHASE:-}" = worker-activation ] && exit 1
 
 if [ "$SKIP_WORKER_REFRESH" -eq 0 ]; then
+  if [ -e "$global_worker_dir" ] || [ -L "$global_worker_dir" ]; then
+    old_global_worker=1
+    mv "$global_worker_dir" "$global_worker_backup"
+  fi
+  new_global_worker=1
   (cd "$install_root" && "$target" worker install --rid "$RID" --format compact)
 fi
 (cd "$install_root" && "$target" version --format toon && "$target" worker status --format compact)

@@ -27,7 +27,13 @@ cat >"$TMP_ROOT/dist/linux-x64/mi-lsp" <<'CLI'
 #!/usr/bin/env sh
 case "$*" in
   'daemon stop --format compact') printf 'daemon-stop\n' >>"$MI_LSP_TEST_LOG" ;;
-  'worker install --rid linux-x64 --format compact') printf 'worker-install\n' >>"$MI_LSP_TEST_LOG" ;;
+  'worker install --rid linux-x64 --format compact')
+    printf 'worker-install\n' >>"$MI_LSP_TEST_LOG"
+    mkdir -p "$HOME/.mi-lsp/workers/linux-x64"
+    printf 'partial-global-worker\n' >"$HOME/.mi-lsp/workers/linux-x64/MiLsp.Worker"
+    [ "${MI_LSP_TEST_WORKER_FAIL:-0}" != 1 ] || exit 1
+    printf 'new-global-worker\n' >"$HOME/.mi-lsp/workers/linux-x64/MiLsp.Worker"
+    ;;
   'version --format toon')
     printf 'version\n' >>"$MI_LSP_TEST_LOG"
     [ "${MI_LSP_TEST_PAUSE:-0}" != 1 ] || { : >"$MI_LSP_TEST_READY"; sleep 30; }
@@ -62,14 +68,19 @@ reset_case() {
   : >"$TMP_ROOT/cli.log"
   rm -f "$TMP_ROOT/ready"
   rm -rf "$TMP_ROOT/home"
-  mkdir -p "$TMP_ROOT/home"
+  mkdir -p "$TMP_ROOT/home/.mi-lsp/workers/linux-x64"
+  printf 'old-global-worker\n' >"$TMP_ROOT/home/.mi-lsp/workers/linux-x64/MiLsp.Worker"
 }
-assert_old_assets() {
+assert_local_assets() {
   cmp "$TMP_ROOT/old-mi-lsp" "$TMP_ROOT/install/mi-lsp" >/dev/null 2>&1 || fail 'previous CLI was not restored byte-for-byte'
   [ "$(cat "$TMP_ROOT/install/workers/linux-x64/MiLsp.Worker")" = old-worker ] || fail 'previous worker was lost'
 }
+assert_old_assets() {
+  assert_local_assets
+  [ "$(cat "$TMP_ROOT/home/.mi-lsp/workers/linux-x64/MiLsp.Worker")" = old-global-worker ] || fail 'previous global worker was lost'
+}
 assert_no_stages() {
-  [ -z "$(find "$TMP_ROOT/install" "$TMP_ROOT/install/workers" -maxdepth 1 -name '.mi-lsp-stage.*' -print -quit)" ] || fail 'staging directory leaked'
+  [ -z "$(find "$TMP_ROOT/install" "$TMP_ROOT/install/workers" "$TMP_ROOT/home/.mi-lsp/workers" -maxdepth 1 -name '.mi-lsp-stage.*' -print -quit)" ] || fail 'staging directory leaked'
 }
 
 # An actual running ELF stays executable while atomic rename replaces its pathname.
@@ -109,11 +120,44 @@ for phase in worker-staged cli-activation worker-activation status; do
   assert_no_stages
 done
 
-# CLI status failure also rolls back; daemon-stop failure is intentionally non-fatal.
+# Refresh success activates all destinations; partial refresh and failed status restore the global worker too.
+reset_case
+run_installer >/dev/null
+[ "$(cat "$TMP_ROOT/home/.mi-lsp/workers/linux-x64/MiLsp.Worker")" = new-global-worker ] || fail 'global worker refresh was not activated'
+[ "$(cat "$TMP_ROOT/install/workers/linux-x64/MiLsp.Worker")" = new-worker ] || fail 'bundled worker was not activated'
+assert_no_stages
+
+reset_case
+if HOME="$TMP_ROOT/home" PATH="$TMP_ROOT/bin:$PATH" MI_LSP_TEST_LOG="$TMP_ROOT/cli.log" MI_LSP_TEST_WORKER_FAIL=1 \
+    sh "$INSTALLER" --rid linux-x64 --install-dir "$TMP_ROOT/install" --out-dir "$TMP_ROOT/dist" \
+    --skip-build >/dev/null 2>&1; then fail 'partial worker install unexpectedly succeeded'; fi
+assert_old_assets
+assert_no_stages
+
+reset_case
+rm -rf "$TMP_ROOT/home/.mi-lsp/workers/linux-x64"
+if HOME="$TMP_ROOT/home" PATH="$TMP_ROOT/bin:$PATH" MI_LSP_TEST_LOG="$TMP_ROOT/cli.log" MI_LSP_TEST_WORKER_FAIL=1 \
+    sh "$INSTALLER" --rid linux-x64 --install-dir "$TMP_ROOT/install" --out-dir "$TMP_ROOT/dist" \
+    --skip-build >/dev/null 2>&1; then fail 'partial worker install with no previous global worker unexpectedly succeeded'; fi
+[ ! -e "$TMP_ROOT/home/.mi-lsp/workers/linux-x64" ] && [ ! -L "$TMP_ROOT/home/.mi-lsp/workers/linux-x64" ] || fail 'failed install left a new global worker behind'
+assert_local_assets
+assert_no_stages
+
+reset_case
+rm -rf "$TMP_ROOT/home/.mi-lsp/workers/linux-x64"
+ln -s "$TMP_ROOT/missing-global-worker" "$TMP_ROOT/home/.mi-lsp/workers/linux-x64"
+if HOME="$TMP_ROOT/home" PATH="$TMP_ROOT/bin:$PATH" MI_LSP_TEST_LOG="$TMP_ROOT/cli.log" MI_LSP_TEST_WORKER_FAIL=1 \
+    sh "$INSTALLER" --rid linux-x64 --install-dir "$TMP_ROOT/install" --out-dir "$TMP_ROOT/dist" \
+    --skip-build >/dev/null 2>&1; then fail 'partial worker install with a dangling global symlink unexpectedly succeeded'; fi
+[ -L "$TMP_ROOT/home/.mi-lsp/workers/linux-x64" ] || fail 'global worker symlink was not restored'
+[ "$(readlink "$TMP_ROOT/home/.mi-lsp/workers/linux-x64")" = "$TMP_ROOT/missing-global-worker" ] || fail 'global worker symlink target changed'
+assert_local_assets
+assert_no_stages
+
 reset_case
 if HOME="$TMP_ROOT/home" PATH="$TMP_ROOT/bin:$PATH" MI_LSP_TEST_LOG="$TMP_ROOT/cli.log" MI_LSP_TEST_STATUS_FAIL=1 \
     sh "$INSTALLER" --rid linux-x64 --install-dir "$TMP_ROOT/install" --out-dir "$TMP_ROOT/dist" \
-    --skip-build --skip-worker-refresh >/dev/null 2>&1; then fail 'failed worker status unexpectedly succeeded'; fi
+    --skip-build >/dev/null 2>&1; then fail 'failed worker status unexpectedly succeeded'; fi
 assert_old_assets
 assert_no_stages
 
@@ -144,7 +188,7 @@ assert_no_stages
 reset_case
 HOME="$TMP_ROOT/home" PATH="$TMP_ROOT/bin:$PATH" MI_LSP_TEST_LOG="$TMP_ROOT/cli.log" MI_LSP_TEST_PAUSE=1 \
   MI_LSP_TEST_READY="$TMP_ROOT/ready" sh "$INSTALLER" --rid linux-x64 --install-dir "$TMP_ROOT/install" \
-  --out-dir "$TMP_ROOT/dist" --skip-build --skip-worker-refresh >/dev/null 2>&1 &
+  --out-dir "$TMP_ROOT/dist" --skip-build >/dev/null 2>&1 &
 installer_pid=$!
 count=0
 while [ ! -e "$TMP_ROOT/ready" ] && kill -0 "$installer_pid" 2>/dev/null; do
