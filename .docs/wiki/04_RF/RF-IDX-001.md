@@ -124,6 +124,7 @@ evidence:
 - Override: `MI_LSP_AUTOINDEX=0` (también `false`, `off`, `no`) desactiva el job en segundo plano; las lecturas siguen cayendo a texto. Igual que `MI_LSP_REFS_TIMEOUT` y `MI_LSP_AUTOINDEX_TIMEOUT`, se lee en el proceso que ejecuta la consulta: si la consulta pasa por el daemon, cuenta el entorno con el que arrancó el daemon; para aplicarlo desde el cliente, usar `--no-daemon` o reiniciar el daemon con la variable.
 - Nunca escribe el registry (`registry.toml`): la autosanación solo toca `<root>/.mi-lsp/`.
 - Cuarentena: si `index.db` está corrupta, el write-side del índice la renombra a `index.db.corrupt-<unixts>` junto con sus `-wal` y `-shm`, crea una base nueva y reconstruye; conserva como máximo las 2 cuarentenas más recientes y solo opera dentro de `<root>/.mi-lsp/`. Un fallo al marcar el job como fallido se registra aunque el contexto haya vencido.
+- Concurrencia: solo la corrupción real (`malformed`, `not a database` y similares) justifica la cuarentena; una tabla faltante se repara con `EnsureSchema`. El rename se serializa con `<root>/.mi-lsp/quarantine.lock` (creación exclusiva, caduca a 30 s) y se vuelve a sondear la base dentro del lock; un proceso sin lock nunca renombra. Errores transitorios de apertura o un job ya activo no escriben el marcador de backoff. Una `index.db` ausente, de 0 bytes o sin tablas se informa como `index_not_ready`, no como `index_schema_broken`.
 
 ## 7. Data Model Impact
 
