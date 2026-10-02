@@ -53,6 +53,7 @@ Permitir que un cliente MCP local invoque las operaciones de navegación de `mi-
 - El parsing de una línea está limitado a 8 MiB. No se agrega un timeout propio del servidor a cada solicitud; la operación usa el contexto de la consulta.
 - Una solicitud con JSON/JSON-RPC inválido recibe un error de protocolo estructurado y no debe cerrar el proceso para las solicitudes válidas posteriores.
 - `tools/list` publica estas trece herramientas: `nav_intent`, `nav_route`, `nav_pack`, `nav_wiki`, `nav_search`, `nav_find`, `nav_refs`, `nav_related`, `nav_flow_slice`, `nav_change_pack`, `nav_affected`, `nav_multi_read` y `nav_overview`.
+- `nav_refs` acepta `symbol`, `file`, `repo`, `entrypoint`, `project`, `solution` y `context` (entero 0 a 5: líneas de contexto antes y después de cada referencia, equivalente a `nav refs --context`). Su envelope conserva los campos aditivos `degraded`, `reason`, `fallback_used` e `items[].origin`; una referencia nunca vuelve como falso vacío sino con el fallback de texto tipificado ([[RF-QRY-002]]).
 - Las llamadas ejecutan el binario CLI y devuelven su envelope; la puerta no mantiene un proceso de consulta stateful entre llamadas. Los esquemas publicados describen los argumentos admitidos por cada operación y no duplican una implementación alternativa de navegación.
 
 ## Workspace y salida
@@ -69,4 +70,4 @@ El proceso MCP es local y opcional; no abre un listener HTTP, no realiza llamada
 
 ## Compatibilidad y trazabilidad
 
-El transporte MCP expone operaciones existentes y no altera su semántica. Los formatos explícitos del CLI y consumidores JSON de scripts mantienen compatibilidad. `TP-QRY` cubre handshake, inventario de herramientas, respuesta compacta/estructurada, resolución de workspace, limpieza de stdout y latencia fría.
+El transporte MCP expone operaciones existentes y no altera su semántica. Los formatos explícitos del CLI y consumidores JSON de scripts mantienen compatibilidad. `TP-QRY` cubre handshake, inventario de herramientas, respuesta compacta/estructurada, resolución de workspace, limpieza de stdout, latencia fría y el argumento `context` de `nav_refs` (TC-QRY-177).

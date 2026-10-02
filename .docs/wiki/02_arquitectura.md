@@ -77,7 +77,7 @@ flowchart LR
 - `nav wiki search`, `nav ask`, `nav pack` y `nav route` comparten un contexto request-local de docs/profile/ranking para evitar recomputacion dentro de una misma request.
 - El envelope de query puede agregar un bloque opcional `coach` query-level para guidance explicito cuando hay rerun/refinement claro.
 - El mismo envelope puede agregar `continuation` y `memory_pointer` con costo bajo para orientar al harness en la siguiente busqueda o reentrada.
-- El doc router comparte un scorer owner-aware para `nav wiki search`, `nav route`, `nav ask` y `nav pack`, y `nav.intent` clasifica primero `mode=docs|code` antes de elegir entre docs canonicos o BM25 de simbolos.
+- El doc router comparte un scorer owner-aware para `nav wiki search`, `nav route`, `nav ask` y `nav pack`, y `nav.intent` clasifica primero `mode=docs|code` antes de elegir entre docs canonicos o BM25 de simbolos; con señales de codigo en una pregunta documental agrega codigo del catalogo en `mode=mixed`.
 - `nav ask` rankea docs primero y usa el codigo como evidencia; `nav pack` usa la misma base para construir reading packs global -> especifico; `nav service` agrega evidencia scoped a un path usando catalogo y busqueda textual.
 - El pipeline graph-native es compiler-first: produce `GraphGeneration` determinista, `NodeKey` estable y aristas explicables desde los backends disponibles; publicar es un paso versionado y reemplazable.
 - Las extensiones `MILX-v1` solo leen el snapshot publicado y devuelven resultados declarativos desde un host aislado; no comparten memoria ni escriben el indice principal.

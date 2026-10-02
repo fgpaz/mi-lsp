@@ -40,7 +40,7 @@ El exito del producto en v1.3 se mide por estos resultados:
 - las consultas de grafo permiten consultar, explicar e inspeccionar impacto sin convertir el indice en un editor;
 - las extensiones `MILX-v1` se ejecutan aisladas y no pueden degradar la confiabilidad del core;
 - las superficies calientes de navegacion pueden devolver guidance tiny (`continuation`) y memoria de reentrada (`memory_pointer`) para ayudar a un harness a seguir explorando sin gastar muchos tokens;
-- `nav intent` agrega un modo hibrido `docs|code`: las consultas capability-like deben devolver docs canonicos owner-aware y las consultas symbol-like deben seguir devolviendo matches de catalogo/codigo;
+- `nav intent` agrega un modo hibrido `docs|code|mixed` (`mixed` cuando la pregunta trae señales de codigo: matches de codigo fuertes primero, luego docs): las consultas capability-like deben devolver docs canonicos owner-aware y las consultas symbol-like deben seguir devolviendo matches de catalogo/codigo;
 - las consultas semanticas C# entregan contexto util y compacto en repos grandes;
 - clientes compatibles con MCP pueden llamar las mismas operaciones de navegación por un proceso local stdio, con workspace visible y resultados estructurados;
 - la salida es estable, breve y apta para skills/LLMs sin arrastrar blobs innecesarios.
