@@ -450,7 +450,7 @@ func (a *App) intentMixWithCode(ctx context.Context, registration model.Workspac
 	lexical := hasIntentCodeSignals(question)
 	if lexical {
 		if ready, readyErr := store.WorkspaceCatalogReady(ctx, registration.Root); readyErr != nil {
-			return intentCatalogUnavailable(docs, question, lexical, readyErr)
+			return intentCatalogUnavailable(docs, question, lexical, withCatalogRoot(registration.Root, readyErr))
 		} else if !ready {
 			return intentCatalogUnavailable(docs, question, lexical, errIntentCatalogNotPublished)
 		}
@@ -463,7 +463,7 @@ func (a *App) intentMixWithCode(ctx context.Context, registration model.Workspac
 	lexical = lexical || intentCatalogNameSignal(ctx, db, question)
 	scored, err := intentCodeSearch(ctx, db, terms, intentQuestionIdentifiers(question), topN, offset, scopedRepo)
 	if err != nil {
-		return intentCatalogUnavailable(docs, question, lexical, err)
+		return intentCatalogUnavailable(docs, question, lexical, withCatalogRoot(registration.Root, err))
 	}
 	if len(scored) == 0 {
 		return docs
@@ -508,7 +508,7 @@ func (a *App) intentCodeFallback(ctx context.Context, request model.CommandReque
 	if err != nil {
 		env = intentEmptyDocsEnvelope(registration, scopeWarnings)
 	}
-	return intentCatalogUnavailable(env, question, true, cause)
+	return intentCatalogUnavailable(env, question, true, withCatalogRoot(registration.Root, cause))
 }
 
 // intentCatalogUnavailable keeps the docs answer but, for a code question,
