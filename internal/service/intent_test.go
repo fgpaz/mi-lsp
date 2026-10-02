@@ -1024,3 +1024,43 @@ func TestIntentCatalogUnavailableClassifiesSchemaAndSkipsNonCodeQuestions(t *tes
 		t.Fatalf("plain=%+v want untouched docs", plain)
 	}
 }
+
+func TestIntentCodeQuestionWithUnpublishedCatalogIsDegradedNotSilent(t *testing.T) {
+	root, alias := setupTestWorkspace(t)
+	db, err := store.Open(root) // schema exists but no catalog was ever published
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = db.Close()
+	for _, question := range []string{"where is textReferenceFallback implemented", "where is the registry lock implemented"} {
+		env, err := New(root, nil).Execute(context.Background(), model.CommandRequest{
+			Operation: "nav.intent",
+			Context:   model.QueryOptions{Workspace: alias},
+			Payload:   map[string]any{"question": question, "top": 10},
+		})
+		if err != nil {
+			t.Fatalf("%q: %v", question, err)
+		}
+		if !env.Ok || !env.Degraded || env.Reason != model.ReasonIndexNotReady || env.FallbackUsed != "" {
+			t.Fatalf("%q: ok=%v degraded=%v reason=%q fallback=%q want ok degraded index_not_ready", question, env.Ok, env.Degraded, env.Reason, env.FallbackUsed)
+		}
+		if !strings.Contains(strings.Join(env.Warnings, " "), "mi-lsp nav search") {
+			t.Fatalf("%q: warnings=%v want nav search suggestion", question, env.Warnings)
+		}
+	}
+}
+
+func TestIntentCodeQuestionWithMissingDatabaseIsOkAndDegraded(t *testing.T) {
+	root, alias := setupTestWorkspace(t) // no .mi-lsp/index.db at all
+	env, err := New(root, nil).Execute(context.Background(), model.CommandRequest{
+		Operation: "nav.intent",
+		Context:   model.QueryOptions{Workspace: alias},
+		Payload:   map[string]any{"question": "where is textReferenceFallback implemented", "top": 10},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !env.Ok || !env.Degraded || env.Reason == "" {
+		t.Fatalf("ok=%v degraded=%v reason=%q want ok:true degraded with a classified reason", env.Ok, env.Degraded, env.Reason)
+	}
+}

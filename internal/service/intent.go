@@ -72,14 +72,24 @@ func (a *App) intent(ctx context.Context, request model.CommandRequest) (model.E
 	if mode == "docs" {
 		env, docsErr := a.intentDocs(ctx, request, registration, question, topN, offset, scopedRepo, scopeWarnings)
 		if docsErr != nil {
+			if hasIntentCodeSignals(question) {
+				return intentCatalogUnavailable(intentEmptyDocsEnvelope(registration, scopeWarnings), question, true, docsErr), nil
+			}
 			return model.Envelope{}, model.NewStableError(sanitizeIntentError(docsErr))
 		}
 		return a.intentMixWithCode(ctx, registration, question, topN, offset, scopedRepo, env), nil
 	}
 
+	if ready, readyErr := store.WorkspaceCatalogReady(ctx, registration.Root); readyErr != nil || !ready {
+		cause := readyErr
+		if cause == nil {
+			cause = errIntentCatalogNotPublished
+		}
+		return a.intentCodeFallback(ctx, request, registration, question, topN, offset, scopedRepo, scopeWarnings, cause), nil
+	}
 	db, err := openWorkspaceDB(registration, "nav.intent", true)
 	if err != nil {
-		return model.Envelope{}, model.NewStableError(sanitizeIntentError(err))
+		return a.intentCodeFallback(ctx, request, registration, question, topN, offset, scopedRepo, scopeWarnings, err), nil
 	}
 	defer db.Close()
 
@@ -90,6 +100,9 @@ func (a *App) intent(ctx context.Context, request model.CommandRequest) (model.E
 
 	scored, err := intentCodeSearch(ctx, db, terms, intentQuestionIdentifiers(question), topN, offset, scopedRepo)
 	if err != nil {
+		if isIndexSchemaBrokenError(err) {
+			return a.intentCodeFallback(ctx, request, registration, question, topN, offset, scopedRepo, scopeWarnings, err), nil
+		}
 		return model.Envelope{}, model.NewStableError("intent_search_failed")
 	}
 	if len(scored) == 0 {
@@ -435,6 +448,13 @@ func (a *App) intentMixWithCode(ctx context.Context, registration model.Workspac
 		return docs
 	}
 	lexical := hasIntentCodeSignals(question)
+	if lexical {
+		if ready, readyErr := store.WorkspaceCatalogReady(ctx, registration.Root); readyErr != nil {
+			return intentCatalogUnavailable(docs, question, lexical, readyErr)
+		} else if !ready {
+			return intentCatalogUnavailable(docs, question, lexical, errIntentCatalogNotPublished)
+		}
+	}
 	db, err := openWorkspaceDB(registration, "nav.intent", true)
 	if err != nil {
 		return intentCatalogUnavailable(docs, question, lexical, err)
@@ -473,6 +493,22 @@ func (a *App) intentMixWithCode(ctx context.Context, registration model.Workspac
 	docs.Mode = "mixed"
 	docs.Stats = model.Stats{Files: len(docItems), Symbols: len(strong) + len(weak)}
 	return docs
+}
+
+var errIntentCatalogNotPublished = errors.New("catalog not published")
+
+func intentEmptyDocsEnvelope(registration model.WorkspaceRegistration, warnings []string) model.Envelope {
+	return model.Envelope{Ok: true, Workspace: registration.Name, Backend: "intent", Mode: "docs", Items: []map[string]any{}, Warnings: append([]string{}, warnings...)}
+}
+
+// intentCodeFallback answers a code question whose catalog cannot be used with
+// the docs it can still find (or none), ok:true and marked degraded.
+func (a *App) intentCodeFallback(ctx context.Context, request model.CommandRequest, registration model.WorkspaceRegistration, question string, topN int, offset int, scopedRepo *model.WorkspaceRepo, scopeWarnings []string, cause error) model.Envelope {
+	env, err := a.intentDocs(ctx, request, registration, question, topN, offset, scopedRepo, scopeWarnings)
+	if err != nil {
+		env = intentEmptyDocsEnvelope(registration, scopeWarnings)
+	}
+	return intentCatalogUnavailable(env, question, true, cause)
 }
 
 // intentCatalogUnavailable keeps the docs answer but, for a code question,
