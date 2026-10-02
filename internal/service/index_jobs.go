@@ -52,7 +52,7 @@ func (a *App) indexStart(ctx context.Context, request model.CommandRequest) (mod
 		return model.Envelope{}, err
 	}
 
-	db, err := openWorkspaceDB(registration, "index.start", false) // readWrite
+	db, err := openWorkspaceDBForIndex(registration, "index.start")
 	if err != nil {
 		return model.Envelope{}, err
 	}
@@ -130,7 +130,15 @@ func (a *App) indexRunJob(ctx context.Context, request model.CommandRequest) (mo
 	if jobID == "" {
 		return model.Envelope{}, errors.New("job_id is required")
 	}
+	if autoIndexJobProcess() {
+		var stop func()
+		ctx, stop = startAutoIndexJobGuards(ctx, registration.Root)
+		defer stop()
+	}
 	job, result, err := a.runIndexJob(ctx, registration, jobID)
+	if autoIndexJobProcess() {
+		recordAutoIndexResult(registration.Root, job, err)
+	}
 	if err != nil {
 		return model.Envelope{}, err
 	}
@@ -243,7 +251,7 @@ func markIndexJobCanceledCooperatively(ctx context.Context, db *sql.DB, jobID st
 }
 
 func (a *App) runIndexJob(ctx context.Context, registration model.WorkspaceRegistration, jobID string) (store.IndexJob, indexer.Result, error) {
-	db, err := openWorkspaceDB(registration, "index.run-job", false) // readWrite
+	db, err := openWorkspaceDBForIndex(registration, "index.run-job")
 	if err != nil {
 		return store.IndexJob{}, indexer.Result{}, err
 	}
@@ -346,7 +354,8 @@ func (a *App) runIndexJob(ctx context.Context, registration model.WorkspaceRegis
 				return current, result, store.ErrStaleIndexJobOwner
 			}
 		}
-		markErr := store.MarkIndexJobFailed(ctx, db, jobID, err.Error(), jobFence)
+		// A timed-out or canceled context must not prevent recording the failure.
+		markErr := store.MarkIndexJobFailed(context.WithoutCancel(ctx), db, jobID, err.Error(), jobFence)
 		if markErr != nil {
 			return store.IndexJob{}, indexer.Result{}, fmt.Errorf("%w; mark index job failed: %v", err, markErr)
 		}
@@ -437,7 +446,11 @@ func (r *indexJobProgressReporter) report(ctx context.Context, progress indexer.
 }
 
 func (a *App) spawnIndexJob(ctx context.Context, db *sql.DB, registration model.WorkspaceRegistration, jobID string) (int, error) {
-	pid, err := spawnDetachedIndexJobProcess(registration, jobID)
+	return a.spawnIndexJobWith(ctx, db, registration, jobID, spawnDetachedIndexJobProcess)
+}
+
+func (a *App) spawnIndexJobWith(ctx context.Context, db *sql.DB, registration model.WorkspaceRegistration, jobID string, spawn func(model.WorkspaceRegistration, string) (int, error)) (int, error) {
+	pid, err := spawn(registration, jobID)
 	if err != nil {
 		return 0, err
 	}
@@ -456,6 +469,20 @@ func (a *App) spawnIndexJob(ctx context.Context, db *sql.DB, registration model.
 }
 
 func startDetachedIndexJobProcess(registration model.WorkspaceRegistration, jobID string) (int, error) {
+	return startDetachedIndexJobProcessWithEnv(registration, jobID, registration.Name, nil)
+}
+
+// startDetachedAutoIndexJobProcess spawns the self-heal job with capped
+// resources. The workspace is selected by root so the child never needs a
+// registry alias; the child lowers its own priority (see startAutoIndexJobGuards).
+func startDetachedAutoIndexJobProcess(registration model.WorkspaceRegistration, jobID string) (int, error) {
+	return startDetachedIndexJobProcessWithEnv(registration, jobID, registration.Root, []string{
+		autoIndexEnvJob + "=1",
+		"GOMAXPROCS=2",
+	})
+}
+
+func startDetachedIndexJobProcessWithEnv(registration model.WorkspaceRegistration, jobID string, selector string, extraEnv []string) (int, error) {
 	executable, err := os.Executable()
 	if err != nil {
 		return 0, err
@@ -470,13 +497,13 @@ func startDetachedIndexJobProcess(registration model.WorkspaceRegistration, jobI
 	}
 	defer logFile.Close()
 
-	cmd := exec.CommandContext(context.Background(), executable, "--workspace", registration.Name, "--format", "json", "index", "run-job", jobID)
+	cmd := exec.CommandContext(context.Background(), executable, "--workspace", selector, "--format", "json", "index", "run-job", jobID)
 	if neutralCWD := detachedIndexJobCWD(); neutralCWD != "" {
 		cmd.Dir = neutralCWD
 	}
 	cmd.Stdout = logFile
 	cmd.Stderr = logFile
-	cmd.Env = append(os.Environ(), "MI_LSP_CLIENT_NAME=mi-lsp-index-job")
+	cmd.Env = append(append(os.Environ(), "MI_LSP_CLIENT_NAME=mi-lsp-index-job"), extraEnv...)
 	processutil.ConfigureDetachedCommand(cmd)
 	if err := cmd.Start(); err != nil {
 		return 0, err

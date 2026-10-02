@@ -1632,27 +1632,10 @@ func (a *App) find(ctx context.Context, request model.CommandRequest) (model.Env
 		return model.Envelope{}, err
 	}
 	pattern, _ := request.Payload["pattern"].(string)
-	workspaceSelector := shellQuoteArg(registration.Name)
 	patternSelector := shellQuoteArg(pattern)
 	catalogReady, stateErr := store.WorkspaceCatalogReady(ctx, registration.Root)
-	indexAction := "Workspace has no published catalog. Run `mi-lsp index --workspace " + workspaceSelector + "`, then retry `mi-lsp nav find " + patternSelector + " --workspace " + workspaceSelector + "`."
 	if stateErr != nil {
-		return model.Envelope{
-			Ok:        false,
-			Workspace: registration.Name,
-			Backend:   "catalog",
-			Items:     []model.SymbolRecord{},
-			NextHint:  &indexAction,
-			Error: &model.EnvelopeError{
-				Kind:       "index",
-				Code:       "workspace_db_open_failed",
-				Message:    "workspace_db_open_failed",
-				Stage:      "catalog",
-				HintCode:   "workspace_db_open_failed",
-				ReasonCode: "explicit_incomplete",
-				Detail:     "Could not read the workspace index state. " + indexAction,
-			},
-		}, nil
+		return a.findTextFallback(ctx, registration, project, request, pattern, classifyCatalogUnavailable(stateErr)), nil
 	}
 	if !catalogReady {
 		if !workspaceAliasRegistered(registration.Name) {
@@ -1676,22 +1659,7 @@ func (a *App) find(ctx context.Context, request model.CommandRequest) (model.Env
 				},
 			}, nil
 		}
-		return model.Envelope{
-			Ok:        false,
-			Workspace: registration.Name,
-			Backend:   "catalog",
-			Items:     []model.SymbolRecord{},
-			NextHint:  &indexAction,
-			Error: &model.EnvelopeError{
-				Kind:       "index",
-				Code:       "index_not_ready",
-				Message:    "index_not_ready",
-				Stage:      "catalog",
-				HintCode:   "index_not_ready",
-				ReasonCode: "explicit_incomplete",
-				Detail:     indexAction,
-			},
-		}, nil
+		return a.findTextFallback(ctx, registration, project, request, pattern, model.ReasonIndexNotReady), nil
 	}
 	kind, _ := request.Payload["kind"].(string)
 	exact, _ := request.Payload["exact"].(bool)
@@ -1702,6 +1670,9 @@ func (a *App) find(ctx context.Context, request model.CommandRequest) (model.Env
 	}
 	db, err := openWorkspaceDB(registration, "nav.find", true) // readOnly
 	if err != nil {
+		if isIndexSchemaBrokenError(err) {
+			return a.findTextFallback(ctx, registration, project, request, pattern, model.ReasonIndexSchemaBroken), nil
+		}
 		return model.Envelope{}, err
 	}
 	queryLimit := request.Context.MaxItems
@@ -1731,6 +1702,9 @@ func (a *App) find(ctx context.Context, request model.CommandRequest) (model.Env
 	items, err := query(db)
 	closeErr := db.Close()
 	if err != nil {
+		if isIndexSchemaBrokenError(err) {
+			return a.findTextFallback(ctx, registration, project, request, pattern, model.ReasonIndexSchemaBroken), nil
+		}
 		return model.Envelope{}, err
 	}
 	if closeErr != nil {

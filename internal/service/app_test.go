@@ -157,32 +157,53 @@ func TestNavFindRefreshesStaleCandidateBeforeReturningSymbols(t *testing.T) {
 	}
 }
 
-func TestFind_RegisteredWorkspaceWithoutIndexReturnsReadinessError(t *testing.T) {
+func TestFind_RegisteredWorkspaceWithoutIndexServesTextAndDegrades(t *testing.T) {
 	root, name := setupTestWorkspace(t)
+	t.Setenv("MI_LSP_AUTOINDEX", "0")
 	app := New(root, nil)
 
 	env, err := app.Execute(context.Background(), model.CommandRequest{
 		Operation: "nav.find",
 		Context:   model.QueryOptions{Workspace: name, MaxItems: 10},
-		Payload:   map[string]any{"pattern": "NeverIndexed"},
+		Payload:   map[string]any{"pattern": "HelloWorld"},
 	})
 	if err != nil {
 		t.Fatalf("nav.find: %v", err)
 	}
-	if env.Ok {
-		t.Fatal("Ok = true, want false for a registered workspace without a published catalog")
+	if !env.Ok || env.Error != nil || env.Backend != "text" {
+		t.Fatalf("envelope = %+v, want ok text answer", env)
 	}
-	if env.Error == nil || env.Error.Code != "index_not_ready" || env.Error.HintCode != "index_not_ready" {
-		t.Fatalf("error = %+v, want index_not_ready with matching hint", env.Error)
+	if !env.Degraded || env.Reason != model.ReasonIndexNotReady || env.FallbackUsed != model.FallbackText {
+		t.Fatalf("degraded/reason/fallback = %v/%q/%q", env.Degraded, env.Reason, env.FallbackUsed)
 	}
-	if env.Error.ReasonCode != "explicit_incomplete" || !strings.Contains(env.Error.Detail, "mi-lsp index --workspace '") || !strings.Contains(env.Error.Detail, name) {
-		t.Fatalf("readiness guidance = %+v", env.Error)
+	items, ok := env.Items.([]map[string]any)
+	if !ok || len(items) == 0 {
+		t.Fatalf("items = %#v, want text hits", env.Items)
 	}
-	if env.NextHint == nil || !strings.Contains(*env.NextHint, "mi-lsp nav find 'NeverIndexed' --workspace '") || !strings.Contains(*env.NextHint, name) {
-		t.Fatalf("next_hint = %v, want actionable index/find guidance", env.NextHint)
+	if items[0]["origin"] != model.ItemOriginText || items[0]["file"] != "src/Hello.cs" || items[0]["kind"] != "declaration" {
+		t.Fatalf("first item = %#v", items[0])
 	}
-	if items, ok := env.Items.([]model.SymbolRecord); !ok || len(items) != 0 {
-		t.Fatalf("items = %#v, want an empty symbol slice", env.Items)
+	if len(env.Warnings) == 0 || !strings.Contains(env.Warnings[0], "catalog unavailable (index_not_ready); served from text; background reindex skipped") {
+		t.Fatalf("warnings = %v", env.Warnings)
+	}
+}
+
+func TestFind_RegisteredWorkspaceWithoutIndexAndNoTextHitsIsEmptySuccess(t *testing.T) {
+	root, name := setupTestWorkspace(t)
+	t.Setenv("MI_LSP_AUTOINDEX", "0")
+	app := New(root, nil)
+
+	env, err := app.Execute(context.Background(), model.CommandRequest{
+		Operation: "nav.find",
+		Context:   model.QueryOptions{Workspace: name, MaxItems: 10},
+		Payload:   map[string]any{"pattern": "NeverIndexedAnywhere"},
+	})
+	if err != nil {
+		t.Fatalf("nav.find: %v", err)
+	}
+	items, ok := env.Items.([]map[string]any)
+	if !env.Ok || !ok || len(items) != 0 || !env.Degraded || env.Reason != model.ReasonNoMatches {
+		t.Fatalf("envelope = %+v, want ok:true, empty items, degraded no_matches", env)
 	}
 }
 
@@ -241,8 +262,9 @@ func TestFind_UnregisteredIndexedRepositoryRemainsQueryable(t *testing.T) {
 	}
 }
 
-func TestFind_RegisteredWorkspaceWithUnpublishedDatabaseReturnsReadinessError(t *testing.T) {
+func TestFind_RegisteredWorkspaceWithUnpublishedDatabaseServesText(t *testing.T) {
 	root, name := setupTestWorkspace(t)
+	t.Setenv("MI_LSP_AUTOINDEX", "0")
 	db, err := store.Open(root)
 	if err != nil {
 		t.Fatalf("store.Open: %v", err)
@@ -255,13 +277,13 @@ func TestFind_RegisteredWorkspaceWithUnpublishedDatabaseReturnsReadinessError(t 
 	env, err := app.Execute(context.Background(), model.CommandRequest{
 		Operation: "nav.find",
 		Context:   model.QueryOptions{Workspace: name, MaxItems: 10},
-		Payload:   map[string]any{"pattern": "NeverIndexed"},
+		Payload:   map[string]any{"pattern": "Greet"},
 	})
 	if err != nil {
 		t.Fatalf("nav.find: %v", err)
 	}
-	if env.Error == nil || env.Error.Code != "index_not_ready" || env.Ok {
-		t.Fatalf("envelope = %+v, want index_not_ready for an unpublished database", env)
+	if !env.Ok || !env.Degraded || env.Reason != model.ReasonIndexNotReady {
+		t.Fatalf("envelope = %+v, want degraded index_not_ready text answer", env)
 	}
 }
 
