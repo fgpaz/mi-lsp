@@ -84,6 +84,25 @@ func classifyCatalogUnavailable(err error) string {
 }
 
 func isIndexSchemaBrokenError(err error) bool {
+	return errorTextContains(err, "no such table", "no such column", "has no column named") || isIndexCorruptionError(err)
+}
+
+// isIndexCorruptionError is the strict subset that justifies quarantining the
+// database. A missing table is NOT corruption: EnsureSchema recreates it, and a
+// concurrent first-run process may be creating the schema right now.
+func isIndexCorruptionError(err error) bool {
+	return errorTextContains(err,
+		"malformed",
+		"not a database",
+		"disk image",
+		"database corrupt",
+		"sqlite_corrupt",
+		"sqlite_notadb",
+		"file is encrypted",
+	)
+}
+
+func errorTextContains(err error, markers ...string) bool {
 	if err == nil {
 		return false
 	}
@@ -92,23 +111,47 @@ func isIndexSchemaBrokenError(err error) bool {
 	if errors.As(err, &openErr) && openErr.cause != nil {
 		text += " " + strings.ToLower(openErr.cause.Error())
 	}
-	for _, marker := range []string{
-		"no such table",
-		"no such column",
-		"has no column named",
-		"malformed",
-		"not a database",
-		"disk image",
-		"database corrupt",
-		"sqlite_corrupt",
-		"sqlite_notadb",
-		"file is encrypted",
-	} {
+	for _, marker := range markers {
 		if strings.Contains(text, marker) {
 			return true
 		}
 	}
 	return false
+}
+
+// catalogHasNoTables reports whether index.db is absent-in-effect: empty file
+// or a database without any user table (fresh, e.g. `workspace add --no-index`).
+// Unreadable files are not "empty": they are broken.
+func catalogHasNoTables(root string) bool {
+	info, err := os.Stat(store.WorkspaceDBPath(root))
+	if err != nil {
+		return false
+	}
+	if info.Size() == 0 {
+		return true
+	}
+	db, err := store.OpenReadOnly(root)
+	if err != nil {
+		return false
+	}
+	defer db.Close()
+	var tables int
+	if err := db.QueryRow(`SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'`).Scan(&tables); err != nil {
+		return false
+	}
+	return tables == 0
+}
+
+// workspaceDBReadable reports whether index.db answers a trivial query, i.e. it
+// is not (or no longer) corrupt.
+func workspaceDBReadable(root string) bool {
+	db, err := store.OpenReadOnly(root)
+	if err != nil {
+		return false
+	}
+	defer db.Close()
+	var tables int
+	return db.QueryRow(`SELECT count(*) FROM sqlite_master`).Scan(&tables) == nil
 }
 
 type autoIndexMarker struct {
@@ -173,7 +216,12 @@ func (a *App) triggerAutoIndex(ctx context.Context, registration model.Workspace
 	}
 	db, err := openWorkspaceDBForIndex(registration, "index.auto")
 	if err != nil {
-		writeAutoIndexMarker(registration.Root, autoIndexStatusFailed, now)
+		// Only a confirmed-corrupt database that could not be quarantined is a
+		// persistent failure; transient open errors (locks, concurrent first
+		// run) must not start a backoff.
+		if isIndexCorruptionError(err) {
+			writeAutoIndexMarker(registration.Root, autoIndexStatusFailed, now)
+		}
 		return autoIndexOutcomeSkipped
 	}
 	defer db.Close()
@@ -183,7 +231,7 @@ func (a *App) triggerAutoIndex(ctx context.Context, registration model.Workspace
 		if errors.As(err, &activeErr) {
 			return autoIndexOutcomeAlreadyRunning
 		}
-		writeAutoIndexMarker(registration.Root, autoIndexStatusFailed, now)
+		// Job creation errors are not tied to the catalog; never back off.
 		return autoIndexOutcomeSkipped
 	}
 	if _, err := a.spawnIndexJobWith(ctx, db, registration, job.JobID, spawnDetachedAutoIndexJobProcess); err != nil {
@@ -195,16 +243,40 @@ func (a *App) triggerAutoIndex(ctx context.Context, registration model.Workspace
 	return autoIndexOutcomeStarted
 }
 
+// Corruption is confirmed by retrying before the database is moved away, so a
+// process that merely raced a concurrent first-run creation never quarantines
+// the fresh index.db the other process just created.
+var (
+	corruptionConfirmAttempts = 3
+	corruptionConfirmDelay    = 150 * time.Millisecond
+)
+
 // openWorkspaceDBForIndex is the write-side open used by index jobs. When the
-// database cannot be opened because it is corrupt, it is quarantined and a
+// database stays unopenable because it is corrupt, it is quarantined and a
 // fresh one is created so the rebuild can proceed.
 func openWorkspaceDBForIndex(registration model.WorkspaceRegistration, operation string) (*sql.DB, error) {
 	db, err := openWorkspaceDB(registration, operation, false) // readWrite
 	if err == nil {
 		return db, nil
 	}
-	if !isIndexSchemaBrokenError(err) {
+	if !isIndexCorruptionError(err) {
 		return nil, err
+	}
+	for attempt := 0; attempt < corruptionConfirmAttempts; attempt++ {
+		time.Sleep(corruptionConfirmDelay)
+		retryDB, retryErr := openWorkspaceDB(registration, operation, false) // readWrite
+		if retryErr == nil {
+			return retryDB, nil
+		}
+		if !isIndexCorruptionError(retryErr) {
+			return nil, retryErr
+		}
+		err = retryErr
+	}
+	// Last guard right before the rename: another process may have replaced the
+	// corrupt file with a healthy one in the meantime.
+	if workspaceDBReadable(registration.Root) {
+		return openWorkspaceDB(registration, operation, false) // readWrite
 	}
 	if quarantineErr := quarantineWorkspaceDB(registration.Root, time.Now()); quarantineErr != nil {
 		return nil, err
@@ -303,6 +375,10 @@ func recordAutoIndexResult(root string, job store.IndexJob, err error) {
 // findTextFallback answers nav.find from text when the catalog cannot. The
 // result is ok:true and degraded; it is never an empty failure.
 func (a *App) findTextFallback(ctx context.Context, registration model.WorkspaceRegistration, project model.ProjectFile, request model.CommandRequest, pattern string, reason string) model.Envelope {
+	if reason == model.ReasonIndexSchemaBroken && catalogHasNoTables(registration.Root) {
+		// A fresh or empty index.db is simply not built yet.
+		reason = model.ReasonIndexNotReady
+	}
 	outcome := a.triggerAutoIndex(ctx, registration)
 	limit := request.Context.MaxItems
 	items := []map[string]any{}

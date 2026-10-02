@@ -136,6 +136,9 @@ func TestQuarantineWorkspaceDBKeepsTwoNewest(t *testing.T) {
 }
 
 func TestOpenWorkspaceDBForIndexQuarantinesCorruptDB(t *testing.T) {
+	oldDelay := corruptionConfirmDelay
+	corruptionConfirmDelay = time.Millisecond
+	t.Cleanup(func() { corruptionConfirmDelay = oldDelay })
 	root := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(root, ".mi-lsp"), 0o755); err != nil {
 		t.Fatal(err)
@@ -319,5 +322,135 @@ func TestWordBoundaryPattern(t *testing.T) {
 	}
 	if got := wordBoundaryPattern("operator+"); got != `\boperator\+` {
 		t.Fatalf("got %q", got)
+	}
+}
+
+func TestMissingTableIsNotCorruption(t *testing.T) {
+	missing := errors.New("SQL logic error: no such table: symbols (1)")
+	if isIndexCorruptionError(missing) {
+		t.Fatal("a missing table must not justify quarantine")
+	}
+	if !isIndexSchemaBrokenError(missing) {
+		t.Fatal("a missing table is still a broken schema for reads")
+	}
+	if !isIndexCorruptionError(errors.New("database disk image is malformed")) {
+		t.Fatal("malformed must count as corruption")
+	}
+}
+
+func TestCatalogHasNoTables(t *testing.T) {
+	root := t.TempDir()
+	if catalogHasNoTables(root) {
+		t.Fatal("absent db is not an empty db")
+	}
+	if err := os.MkdirAll(filepath.Join(root, ".mi-lsp"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(store.WorkspaceDBPath(root), nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if !catalogHasNoTables(root) {
+		t.Fatal("zero-byte db must count as having no tables")
+	}
+	if !workspaceDBReadable(root) {
+		t.Fatal("zero-byte db is a valid empty database")
+	}
+
+	if err := os.WriteFile(store.WorkspaceDBPath(root), []byte(strings.Repeat("garbage ", 500)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if catalogHasNoTables(root) || workspaceDBReadable(root) {
+		t.Fatal("a corrupt file is neither empty nor readable")
+	}
+
+	healthy := t.TempDir()
+	db, err := store.Open(healthy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = db.Close()
+	if catalogHasNoTables(healthy) {
+		t.Fatal("a database with a schema has tables")
+	}
+	if !workspaceDBReadable(healthy) {
+		t.Fatal("a fresh schema database is readable")
+	}
+}
+
+func TestFind_EmptyIndexDBIsIndexNotReady(t *testing.T) {
+	root, name := setupTestWorkspace(t)
+	if err := os.MkdirAll(filepath.Join(root, ".mi-lsp"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(store.WorkspaceDBPath(root), nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	env, err := New(root, nil).Execute(context.Background(), model.CommandRequest{
+		Operation: "nav.find",
+		Context:   model.QueryOptions{Workspace: name, MaxItems: 10},
+		Payload:   map[string]any{"pattern": "HelloWorld", "exact": true},
+	})
+	if err != nil {
+		t.Fatalf("nav.find: %v", err)
+	}
+	if !env.Ok || env.Reason != model.ReasonIndexNotReady {
+		t.Fatalf("envelope = %+v, want ok with reason index_not_ready", env)
+	}
+}
+
+func TestTriggerAutoIndexTransientOpenErrorDoesNotBackOff(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv(autoIndexEnvEnable, "1")
+	// A directory in place of index.db makes the open fail without being corruption.
+	if err := os.MkdirAll(store.WorkspaceDBPath(root), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	app := New(root, nil)
+	got := app.triggerAutoIndex(context.Background(), model.WorkspaceRegistration{Name: "x", Root: root})
+	if got != autoIndexOutcomeSkipped {
+		t.Fatalf("trigger = %q, want skipped", got)
+	}
+	if _, ok := readAutoIndexMarker(root); ok {
+		t.Fatal("a non-corruption open error must not write a failed marker")
+	}
+}
+
+func TestQuarantinePruneGroupsSetsByTimestamp(t *testing.T) {
+	stateDir := t.TempDir()
+	for _, stamp := range []string{"10", "20", "30"} {
+		for _, suffix := range []string{"", "-wal", "-shm"} {
+			if err := os.WriteFile(filepath.Join(stateDir, "index.db.corrupt-"+stamp+suffix), []byte("x"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	pruneQuarantinedDBs(stateDir, 2)
+	entries, _ := os.ReadDir(stateDir)
+	if len(entries) != 6 {
+		t.Fatalf("kept %d files, want 2 full sets (6 files)", len(entries))
+	}
+	for _, suffix := range []string{"", "-wal", "-shm"} {
+		if _, err := os.Stat(filepath.Join(stateDir, "index.db.corrupt-10"+suffix)); !errors.Is(err, os.ErrNotExist) {
+			t.Fatalf("oldest set file with suffix %q must be removed", suffix)
+		}
+	}
+}
+
+func TestTextDeclarationNameIsMatchedIdentifier(t *testing.T) {
+	tests := []struct {
+		file, text, symbol string
+		exact              bool
+		want               string
+	}{
+		{"a.go", "func New(config Config) *Server {", "New(config", true, "New"},
+		{"a.go", "type apiResponse[T any] struct {", "apiResponse[T", false, "apiResponse"},
+		{"a.go", "func NewAllowlistFrom(x int) {", "NewAllowlist", false, "NewAllowlistFrom"},
+		{"a.go", "func NewAllowlist(x int) {", "NewAllowlist", true, "NewAllowlist"},
+	}
+	for _, tt := range tests {
+		name, _, ok := newTextDeclarationMatcher(tt.symbol, tt.exact).match(tt.file, tt.text)
+		if !ok || name != tt.want {
+			t.Errorf("match(%q, %q) name = %q ok=%v, want %q", tt.text, tt.symbol, name, ok, tt.want)
+		}
 	}
 }

@@ -143,14 +143,15 @@ func (m *textDeclarationMatcher) match(file string, text string) (name string, k
 		return "", "", false
 	}
 	for _, declaration := range m.byLang[lang] {
-		groups := declaration.re.FindStringSubmatch(text)
-		if groups == nil {
+		span := declaration.re.FindStringSubmatchIndex(text)
+		if span == nil {
 			continue
 		}
-		name = groups[1]
-		if m.exact && name != m.symbol {
+		captured := text[span[2]:span[3]]
+		if m.exact && captured != m.symbol {
 			continue
 		}
+		name = identifierAt(text, span[2], captured)
 		kind = declaration.kind
 		if declaration.kindFn != nil {
 			kind = declaration.kindFn(text)
@@ -158,6 +159,26 @@ func (m *textDeclarationMatcher) match(file string, text string) (name string, k
 		return name, kind, true
 	}
 	return "", "", false
+}
+
+// identifierAt returns the identifier token that starts at the captured span,
+// extended to the left over identifier characters. Symbols containing
+// metacharacters ("New(config") thus report the declared identifier ("New")
+// instead of the raw pattern slice. When no identifier starts there, the
+// captured text is returned.
+func identifierAt(text string, start int, captured string) string {
+	begin := start
+	for begin > 0 && isWordRune(rune(text[begin-1])) {
+		begin--
+	}
+	end := start
+	for end < len(text) && isWordRune(rune(text[end])) {
+		end++
+	}
+	if end == begin {
+		return captured
+	}
+	return text[begin:end]
 }
 
 func isFindableCodeFile(file string) bool {
