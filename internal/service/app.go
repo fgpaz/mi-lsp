@@ -56,7 +56,7 @@ func (a *App) Execute(ctx context.Context, request model.CommandRequest) (model.
 	started := time.Now()
 	defer traceServiceTiming("total", started)
 	resolveStarted := time.Now()
-	normalizedRequest, resolutionWarnings, err := a.normalizeWorkspaceRequest(request)
+	normalizedRequest, resolutionWarnings, err := a.normalizeWorkspaceRequest(ctx, request)
 	traceServiceTiming("workspace_resolve", resolveStarted)
 	if err != nil {
 		return model.Envelope{}, err
@@ -1241,10 +1241,19 @@ func sortLiveClassifications(values []string) {
 	})
 }
 
-func (a *App) normalizeWorkspaceRequest(request model.CommandRequest) (model.CommandRequest, []string, error) {
+func (a *App) normalizeWorkspaceRequest(ctx context.Context, request model.CommandRequest) (model.CommandRequest, []string, error) {
 	if !operationRequiresWorkspaceResolution(request) {
 		return request, nil, nil
 	}
+	autoRegisterWarnings := a.autoRegisterWorkspace(ctx, request)
+	request, warnings, err := a.resolveWorkspaceRequest(request)
+	if err != nil {
+		return request, nil, err
+	}
+	return request, append(autoRegisterWarnings, warnings...), nil
+}
+
+func (a *App) resolveWorkspaceRequest(request model.CommandRequest) (model.CommandRequest, []string, error) {
 	if strings.TrimSpace(request.Context.Workspace) != "" {
 		selector := strings.TrimSpace(request.Context.Workspace)
 		warnings := []string{}

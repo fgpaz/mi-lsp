@@ -49,6 +49,7 @@ type rootState struct {
 	noDaemon             bool
 	compress             bool
 	allowCrossWorkspace  bool
+	noAutoRegister       bool
 	executeOperationHook func(*cobra.Command, string, map[string]any, bool) error
 	appExecute           func(context.Context, model.CommandRequest) (model.Envelope, error)
 	daemonExecute        func(context.Context, model.CommandRequest) (model.Envelope, error)
@@ -158,6 +159,8 @@ func NewRootCommand() *cobra.Command {
 	root.PersistentFlags().BoolVar(&state.compress, "compress", false, "Aggressive compression: strips parent, scope, implements from compact output")
 	root.PersistentFlags().BoolVar(&state.allowCrossWorkspace, "allow-cross-workspace", false, "Allow an explicit --workspace alias to target a different root than the caller cwd")
 
+	root.PersistentFlags().BoolVar(&state.noAutoRegister, "no-auto-register", false, "Do not register the git root of the cwd or requested path as a workspace on first query (also MI_LSP_NO_AUTO_REGISTER=1)")
+
 	root.AddCommand(
 		newInitCommand(state),
 		newWorkspaceCommand(state),
@@ -201,6 +204,7 @@ func (s *rootState) queryOptions(cmd *cobra.Command, operation string, payload m
 		BackendHint:         s.backendHint,
 		AllowCrossWorkspace: s.allowCrossWorkspace,
 		Compress:            s.compress,
+		NoAutoRegister:      s.noAutoRegister || workspace.AutoRegisterDisabledByEnv(),
 	}
 }
 

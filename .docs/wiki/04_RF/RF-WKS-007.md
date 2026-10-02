@@ -113,7 +113,7 @@ resolution:
   omitted_selector:
     git_top_level: determine_first_in_normal_and_read_only
     registered_git_root: exact_canonical_match_preferred
-    unregistered_git_root: synthetic_read_only_root
+    unregistered_git_root: auto_register_then_resolve  # ver RF-WKS-007-B03 auto-registro; synthetic_read_only_root solo con opt-out
     lexical_parent_fallback_for_git: forbidden
     non_git_directory: preserve_registered_containment
     precedence: [git_top_level, caller_cwd, same_root_alias_policy, last_workspace]
@@ -129,6 +129,18 @@ resolution:
 
 Un selector explícito inválido o stale nunca puede convertirse silenciosamente en el workspace del `caller_cwd`. La resolución omitida conserva la precedencia contextual existente y expone `source` y warnings suficientes para auditoría.
 Los aliases heredados que apunten a la misma raíz física siguen siendo válidos y se conservan; la presentación compacta no los migra, elimina ni redirige. Un alias explícito desconocido o stale sigue fallando sin sustituirse por el workspace del cwd.
+
+### Auto-registro en la primera consulta
+
+Las operaciones que requieren workspace (`nav.*`, `index.*`, `info`, `workspace.status`) ejecutan un único camino compartido por CLI y daemon (`App.Execute`, `internal/service/auto_register.go` y `internal/workspace/autoregister.go`), de modo que sirve igual a `mi-lsp mcp`, al plugin claude-code-milsp y al hijo persistente de mi-mcp.
+
+- Si el cwd (selector omitido) o la ruta pedida (selector que no es alias pero sí una ruta existente) cae dentro de un repo git sin registrar, se persiste en `registry.toml` la raíz git, con el mismo estado que `init` (registro más `.mi-lsp/project.toml` solo si no existía; un `project.toml` existente nunca se modifica). No cambia `last_workspace`.
+- Nunca se registra `$HOME`, la raíz del filesystem ni directorios fuera de un repo git. `probe` sigue siendo read-only y no registra.
+- Nombre: basename de la raíz. Si ese alias pertenece a otra raíz, se usa `<basename>-<hash sha256 de la raíz, 6 hex>` (determinista, se alarga ante colisión); nunca se pisa un alias existente. Si la raíz ya está registrada con otro alias, se reutiliza ese alias.
+- La respuesta sale de inmediato (catálogo o texto, posiblemente parcial) y el indexado completo corre como job `index.start` en background, deduplicado por raíz (un único job activo por raíz aunque lleguen consultas concurrentes).
+- La respuesta incluye los warnings `auto_registered: ...` y `auto_register_index: ...`; un fallo de auto-registro se informa como `auto_register_failed: ...` sin bloquear la consulta.
+- `registry.toml` se escribe de forma atómica (archivo temporal más rename) y los ciclos leer-modificar-escribir toman un lock de archivo (`registry.lock`) entre procesos.
+- Opt-out: flag global `--no-auto-register` o variable `MI_LSP_NO_AUTO_REGISTER=1`; el CLI propaga ambos al daemon vía `no_auto_register` en el contexto de la request. Con opt-out se conserva la resolución sintética read-only.
 
 ## [RF-WKS-007-B04] Estado híbrido portable/local
 

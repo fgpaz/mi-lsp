@@ -483,6 +483,7 @@ func TestExecuteWorkspaceStatusOmittedWorkspaceIgnoresUnrelatedLastWorkspace(t *
 }
 
 func TestExecuteWorkspaceStatusUnregisteredNestedGitWorktreeKeepsPhysicalRoot(t *testing.T) {
+	t.Setenv(workspace.AutoRegisterEnvVar, "1") // covers the opt-out path: no implicit registration
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("git not available")
 	}
