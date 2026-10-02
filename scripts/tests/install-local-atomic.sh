@@ -82,6 +82,9 @@ assert_old_assets() {
 assert_no_stages() {
   [ -z "$(find "$TMP_ROOT/install" "$TMP_ROOT/install/workers" "$TMP_ROOT/home/.mi-lsp/workers" -maxdepth 1 -name '.mi-lsp-stage.*' -print -quit)" ] || fail 'staging directory leaked'
 }
+assert_global_worker_unchanged() {
+  [ "$(cat "$TMP_ROOT/home/.mi-lsp/workers/linux-x64/MiLsp.Worker")" = old-global-worker ] || fail 'global worker changed after rejected overlapping install'
+}
 
 # An actual running ELF stays executable while atomic rename replaces its pathname.
 reset_case
@@ -119,6 +122,24 @@ for phase in worker-staged cli-activation worker-activation status; do
   assert_old_assets
   assert_no_stages
 done
+
+# Overlapping local/global destinations are rejected before replacing any asset.
+reset_case
+if HOME="$TMP_ROOT/home" PATH="$TMP_ROOT/bin:$PATH" MI_LSP_TEST_LOG="$TMP_ROOT/cli.log" \
+    sh "$INSTALLER" --rid linux-x64 --install-dir "$TMP_ROOT/home/.mi-lsp" --out-dir "$TMP_ROOT/dist" \
+    --skip-build >/dev/null 2>&1; then fail 'identical local/global worker destination unexpectedly accepted'; fi
+assert_global_worker_unchanged
+[ ! -e "$TMP_ROOT/home/.mi-lsp/mi-lsp" ] || fail 'overlap rejection installed a CLI'
+assert_no_stages
+
+reset_case
+if HOME="$TMP_ROOT/home" PATH="$TMP_ROOT/bin:$PATH" MI_LSP_TEST_LOG="$TMP_ROOT/cli.log" \
+    sh "$INSTALLER" --rid linux-x64 --install-dir "$TMP_ROOT/home/.mi-lsp/workers/linux-x64" --out-dir "$TMP_ROOT/dist" \
+    --skip-build >/dev/null 2>&1; then fail 'CLI nested inside global worker destination unexpectedly accepted'; fi
+assert_global_worker_unchanged
+[ ! -e "$TMP_ROOT/home/.mi-lsp/workers/linux-x64/mi-lsp" ] || fail 'overlap rejection installed a CLI inside the global worker'
+[ ! -e "$TMP_ROOT/home/.mi-lsp/workers/linux-x64/workers" ] || fail 'overlap rejection mutated the global worker directory'
+assert_no_stages
 
 # Refresh success activates all destinations; partial refresh and failed status restore the global worker too.
 reset_case

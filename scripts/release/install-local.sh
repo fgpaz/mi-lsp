@@ -130,6 +130,28 @@ if [ -z "$worker_binary" ] || [ ! -s "$worker_binary" ]; then
   exit 1
 fi
 
+if [ "$SKIP_WORKER_REFRESH" -eq 0 ] && [ -d "$INSTALL_DIR" ]; then
+  pre_global_home="$(CDPATH= cd "$HOME" && pwd -P)"
+  pre_global_workers="$pre_global_home/.mi-lsp/workers"
+  if [ -d "$pre_global_home/.mi-lsp" ]; then
+    pre_global_dot_dir="$(CDPATH= cd "$pre_global_home/.mi-lsp" && pwd -P)"
+    pre_global_workers="$pre_global_dot_dir/workers"
+  fi
+  if [ -d "$pre_global_workers" ]; then
+    pre_global_workers="$(CDPATH= cd "$pre_global_workers" && pwd -P)"
+  fi
+  pre_global_worker="$pre_global_workers/$RID"
+  pre_install_root="$(CDPATH= cd "$INSTALL_DIR" && pwd -P)"
+  pre_workers_root="$pre_install_root/workers"
+  if [ -d "$pre_workers_root" ]; then
+    pre_workers_root="$(CDPATH= cd "$pre_workers_root" && pwd -P)"
+  fi
+  if paths_overlap "$pre_install_root/mi-lsp" "$pre_global_worker" || paths_overlap "$pre_workers_root/$RID" "$pre_global_worker"; then
+    echo "Refusing overlapping install destinations: local assets '$pre_install_root/mi-lsp' and '$pre_workers_root/$RID' conflict with global worker '$pre_global_worker'." >&2
+    exit 1
+  fi
+fi
+
 mkdir -p "$INSTALL_DIR/workers"
 install_root="$(CDPATH= cd "$INSTALL_DIR" && pwd -P)"
 workers_root="$(CDPATH= cd "$INSTALL_DIR/workers" && pwd -P)"
