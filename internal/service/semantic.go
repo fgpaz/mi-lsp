@@ -41,7 +41,7 @@ func (a *App) semanticCore(ctx context.Context, registration model.WorkspaceRegi
 	if backendType == "catalog" || backendType == "text" {
 		env, err := a.semanticFallback(ctx, registration, request, method, backendType, target.Warnings)
 		if method == "find_refs" && request.Context.BackendHint == "" {
-			env.MarkDegraded(model.ReasonLanguageUnsupported, model.FallbackText)
+			markRefsFallback(&env, model.ReasonLanguageUnsupported)
 		}
 		env.Stats.Ms = time.Since(started).Milliseconds()
 		return env, err
@@ -52,7 +52,7 @@ func (a *App) semanticCore(ctx context.Context, registration model.WorkspaceRegi
 			warnings = append(warnings, reason)
 			env, fallbackErr := a.semanticFallback(ctx, registration, request, method, "catalog", warnings)
 			if method == "find_refs" {
-				env.MarkDegraded(model.ReasonLSPError, model.FallbackText)
+				markRefsFallback(&env, model.ReasonLSPError)
 			}
 			env.Stats.Ms = time.Since(started).Milliseconds()
 			return env, fallbackErr
@@ -92,7 +92,7 @@ func (a *App) semanticCore(ctx context.Context, registration model.WorkspaceRegi
 			}
 			env, fallbackErr := a.semanticFallback(ctx, registration, request, method, "catalog", warnings)
 			if method == "find_refs" {
-				env.MarkDegraded(semanticFailureReason(err), model.FallbackText)
+				markRefsFallback(&env, semanticFailureReason(err))
 			}
 			env.Stats.Ms = time.Since(started).Milliseconds()
 			return env, fallbackErr
@@ -269,12 +269,19 @@ func (a *App) textReferenceFallback(ctx context.Context, registration model.Work
 		return model.Envelope{}, errors.New("symbol is required")
 	}
 	pattern, useRegex := refsTextPattern(symbol)
-	items, err := searchPattern(ctx, registration.Root, project, pattern, useRegex, request.Context.MaxItems)
+	// Search wide: matches are ordered by path, so a narrow limit would let
+	// docs and other non-code hits crowd out the code usages before filtering.
+	hits, err := searchPattern(ctx, registration.Root, project, pattern, useRegex, maxRefsTextCandidates)
 	if err != nil {
 		return model.Envelope{}, err
 	}
+	items, codeOnly := rankRefsTextHits(hits, refsSymbolBackend(request), request.Context.MaxItems)
 	warnings = append(warnings, "served from text fallback; results are textual occurrences, not semantic references")
-	return model.Envelope{Ok: true, Workspace: registration.Name, Backend: "text", Items: items, Warnings: warnings, Stats: model.Stats{Files: len(items)}}, nil
+	env := model.Envelope{Ok: true, Workspace: registration.Name, Backend: "text", Items: items, Warnings: warnings, Stats: model.Stats{Files: len(items)}}
+	if !codeOnly && len(items) > 0 {
+		env.MarkDegraded(model.ReasonLanguageUnsupported, model.FallbackText)
+	}
+	return env, nil
 }
 
 func resolveBackendType(registration model.WorkspaceRegistration, request model.CommandRequest, method string) string {

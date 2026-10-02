@@ -18,6 +18,8 @@ const (
 	maxRefsContextLines = 5
 	maxRefsContextBytes = 2 << 20
 	maxRefsContextWidth = 400
+	// maxRefsTextCandidates bounds the raw rg hits ranked by the text fallback.
+	maxRefsTextCandidates = 2000
 )
 
 var identifierPattern = regexp.MustCompile(`^\w+$`)
@@ -48,7 +50,7 @@ func (a *App) findRefs(ctx context.Context, registration model.WorkspaceRegistra
 		if fallbackErr != nil {
 			return model.Envelope{}, err
 		}
-		fallback.MarkDegraded(semanticFailureReason(err), model.FallbackText)
+		markRefsFallback(&fallback, semanticFailureReason(err))
 		env = fallback
 	case env.Backend == "router":
 		return env, nil
@@ -64,9 +66,9 @@ func (a *App) findRefs(ctx context.Context, registration model.WorkspaceRegistra
 		case len(refsItems(fallback)) > 0:
 			fallback.Warnings = append(env.Warnings, fallback.Warnings...)
 			if env.Ok {
-				fallback.MarkDegraded(model.ReasonSemanticEmptyTextHits, model.FallbackText)
+				markRefsFallback(&fallback, model.ReasonSemanticEmptyTextHits)
 			} else {
-				fallback.MarkDegraded(model.ReasonLSPError, model.FallbackText)
+				markRefsFallback(&fallback, model.ReasonLSPError)
 			}
 			env = fallback
 		case !env.Ok:
@@ -104,7 +106,6 @@ func (a *App) anchorRefsRequest(ctx context.Context, registration model.Workspac
 			return withRefsAnchor(request, file, intFromAny(item["line"], 1)), nil
 		}
 	}
-	fallback.MarkDegraded(model.ReasonLanguageUnsupported, model.FallbackText)
 	return request, &fallback
 }
 
@@ -356,4 +357,85 @@ func backendForRegistration(registration model.WorkspaceRegistration) string {
 
 func backendLabel(registration model.WorkspaceRegistration, request model.CommandRequest) string {
 	return resolveBackendType(registration, request, "find_refs")
+}
+
+// markRefsFallback records why the text fallback answered, keeping
+// language_unsupported when the hits are non-code files.
+func markRefsFallback(env *model.Envelope, reason string) {
+	if env.Reason == model.ReasonLanguageUnsupported {
+		return
+	}
+	env.MarkDegraded(reason, model.FallbackText)
+}
+
+// refsSymbolBackend is the backend of the symbol's language when known (explicit
+// hint or anchor file), or "" when any code language is acceptable.
+func refsSymbolBackend(request model.CommandRequest) string {
+	if hint := strings.ToLower(strings.TrimSpace(request.Context.BackendHint)); hint != "" {
+		return hint
+	}
+	if file, _ := request.Payload["file"].(string); strings.TrimSpace(file) != "" {
+		if backendType, ok := backendForSourcePath(file); ok {
+			return backendType
+		}
+	}
+	return ""
+}
+
+// rankRefsTextHits keeps only code files of the symbol's language (any code
+// language when unknown), dropping hidden directories such as .docs/. Non-code
+// hits are returned only when no code file mentions the symbol; codeOnly
+// reports which of the two happened.
+func rankRefsTextHits(hits []map[string]any, backendType string, limit int) (items []map[string]any, codeOnly bool) {
+	if limit <= 0 {
+		limit = DefaultConfig().DefaultSearchLimit
+	}
+	var matching, nonCode []map[string]any
+	anyCode := false
+	for _, hit := range hits {
+		file, _ := hit["file"].(string)
+		if isHiddenRefsPath(file) {
+			continue
+		}
+		fileBackend, isCode := backendForSourcePath(file)
+		if !isCode {
+			if language.IsSupportedCodePath(file) {
+				anyCode = true
+				if backendType == "" {
+					matching = append(matching, hit)
+				}
+				continue
+			}
+			nonCode = append(nonCode, hit)
+			continue
+		}
+		anyCode = true
+		if backendType == "" || backendType == "catalog" || backendType == "text" || fileBackend == backendType {
+			matching = append(matching, hit)
+		}
+	}
+	switch {
+	case len(matching) > 0:
+		items, codeOnly = matching, true
+	case anyCode:
+		items, codeOnly = []map[string]any{}, true
+	default:
+		items, codeOnly = nonCode, false
+	}
+	if len(items) > limit {
+		items = items[:limit]
+	}
+	if items == nil {
+		items = []map[string]any{}
+	}
+	return items, codeOnly
+}
+
+func isHiddenRefsPath(path string) bool {
+	for _, segment := range strings.Split(filepath.ToSlash(path), "/") {
+		if strings.HasPrefix(segment, ".") && segment != "." && segment != ".." {
+			return true
+		}
+	}
+	return false
 }

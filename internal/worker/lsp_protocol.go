@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/url"
 	"path/filepath"
 	"runtime"
 	"strconv"
@@ -65,12 +66,25 @@ func buildFileURI(absPath string) string {
 	return "file://" + absPath
 }
 
-// uriToPath converts a file:// URI back to a local path.
+// uriToPath converts a file:// URI back to a local absolute path, decoding
+// percent-escapes. On Windows the leading slash of /C:/x is dropped.
 func uriToPath(uri string) string {
-	path := strings.TrimPrefix(uri, "file:///")
-	path = strings.TrimPrefix(path, "file://")
-	path = filepath.FromSlash(path)
-	return path
+	if !strings.HasPrefix(uri, "file://") {
+		return filepath.FromSlash(uri)
+	}
+	path := ""
+	if parsed, err := url.Parse(uri); err == nil {
+		path = parsed.Path
+		if parsed.Host != "" && !strings.EqualFold(parsed.Host, "localhost") {
+			path = "/" + parsed.Host + path
+		}
+	} else {
+		path = strings.TrimPrefix(uri, "file://")
+	}
+	if len(path) >= 3 && path[0] == '/' && path[2] == ':' {
+		path = path[1:]
+	}
+	return filepath.FromSlash(path)
 }
 
 // lspPositionMap converts 1-based line/column to LSP 0-based position map.

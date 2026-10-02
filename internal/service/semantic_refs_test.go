@@ -354,3 +354,71 @@ func TestFindRefsRoslynWithoutEntrypointFallsBackToText(t *testing.T) {
 		t.Fatalf("env = ok %v degraded %v reason %q items %d", env.Ok, env.Degraded, env.Reason, len(envItems(t, env)))
 	}
 }
+
+func TestFindRefsTextFallbackRanksCodeOfSymbolLanguage(t *testing.T) {
+	files := map[string]string{
+		"src/Repo.cs":              "class JournalRepository {}\n",
+		"src/Other.cs":             "var r = new JournalRepository();\n",
+		"src/helper.go":            "package x\n// JournalRepository mention\n",
+		".docs/auditoria/run.yaml": "subject: JournalRepository\n",
+		"docs/note.md":             "JournalRepository notes\n",
+	}
+	symbols := []model.SymbolRecord{{FilePath: "src/Repo.cs", Name: "JournalRepository", Kind: "class", StartLine: 1, EndLine: 1, Language: "csharp"}}
+	root, alias := setupRefsWorkspace(t, []string{"csharp"}, true, files, symbols)
+	fake := &fakeSemanticCaller{callFn: func(context.Context, model.WorkspaceRegistration, model.WorkerRequest) (model.WorkerResponse, error) {
+		return model.WorkerResponse{}, errors.New("roslyn worker crashed")
+	}}
+
+	env := runRefs(t, root, alias, fake, map[string]any{"symbol": "JournalRepository"})
+
+	var got []string
+	for _, item := range envItems(t, env) {
+		got = append(got, item["file"].(string))
+	}
+	if strings.Join(got, ",") != "src/Other.cs,src/Repo.cs" {
+		t.Fatalf("files = %v, want only the .cs usages", got)
+	}
+	if env.Reason != model.ReasonLSPError {
+		t.Fatalf("reason = %q, want lsp_error", env.Reason)
+	}
+}
+
+func TestFindRefsTextFallbackNonCodeOnlyWhenNoCodeHits(t *testing.T) {
+	files := map[string]string{
+		".docs/auditoria/run.yaml": "subject: Widget\n",
+		"docs/note.md":             "Widget notes\n",
+		"cfg/app.yaml":             "name: Widget\n",
+	}
+	root, alias := setupRefsWorkspace(t, []string{"csharp"}, false, files, nil)
+
+	env := runRefs(t, root, alias, &fakeSemanticCaller{}, map[string]any{"symbol": "Widget"})
+
+	var got []string
+	for _, item := range envItems(t, env) {
+		got = append(got, item["file"].(string))
+	}
+	if strings.Join(got, ",") != "cfg/app.yaml,docs/note.md" || env.Reason != model.ReasonLanguageUnsupported {
+		t.Fatalf("files = %v reason %q, want visible non-code hits with language_unsupported", got, env.Reason)
+	}
+}
+
+func TestFindRefsNormalizesSemanticPaths(t *testing.T) {
+	root, alias := setupRefsWorkspace(t, []string{"go"}, false, map[string]string{"demo.go": goSource}, goRefsSymbols())
+	outside := filepath.Join(t.TempDir(), "elsewhere.go")
+	fake := &fakeSemanticCaller{callFn: func(context.Context, model.WorkspaceRegistration, model.WorkerRequest) (model.WorkerResponse, error) {
+		return model.WorkerResponse{Ok: true, Backend: "gopls", Items: []map[string]any{
+			{"file": filepath.Join(root, "pkg", "demo.go"), "line": 1},
+			{"file": "demo.go", "line": 6},
+			{"file": outside, "line": 2},
+		}}, nil
+	}}
+
+	items := envItems(t, runRefs(t, root, alias, fake, map[string]any{"symbol": "Target"}))
+
+	want := []string{"pkg/demo.go", "demo.go", outside}
+	for i, item := range items {
+		if item["file"] != want[i] {
+			t.Errorf("item %d file = %v, want %v", i, item["file"], want[i])
+		}
+	}
+}
