@@ -1,0 +1,78 @@
+{
+  "schema": 1,
+  "repos": {
+    "mi-lsp": {
+      "root": "mi-lsp",
+      "language": "go",
+      "globs": ["*.go"],
+      "def_regex": "^func (\\(.*\\) )?{sym}\\(|^type {sym}\\b"
+    },
+    "mi-gateway": {
+      "root": "mi-gateway",
+      "language": "go",
+      "globs": ["*.go"],
+      "def_regex": "^func (\\(.*\\) )?{sym}\\(|^type {sym}\\b"
+    },
+    "pi-subagents": {
+      "root": "pi-subagents",
+      "language": "typescript",
+      "globs": ["*.ts", "*.tsx"],
+      "def_regex": "^\\s*(export )?(default )?(declare )?(abstract )?(async )?(function\\*?|class|interface|type|const|let|enum) {sym}\\b"
+    },
+    "tedi-memory": {
+      "root": "tedi-memory",
+      "language": "csharp",
+      "globs": ["*.cs"],
+      "def_regex": "\\b(class|interface|record|struct|enum)\\s+{sym}\\b"
+    }
+  },
+  "cases": [
+    {"id": "mi-lsp.def.LoadRegistry", "repo": "mi-lsp", "type": "definition", "query": "LoadRegistry", "expected": ["internal/workspace/registry.go:225"]},
+    {"id": "mi-lsp.def.SaveRegistry", "repo": "mi-lsp", "type": "definition", "query": "SaveRegistry", "expected": ["internal/workspace/registry.go:261"]},
+    {"id": "mi-lsp.def.GarbageCollectRegistry", "repo": "mi-lsp", "type": "definition", "query": "GarbageCollectRegistry", "expected": ["internal/workspace/registry.go:432"]},
+    {"id": "mi-lsp.def.ResolveWorkspace", "repo": "mi-lsp", "type": "definition", "query": "ResolveWorkspace", "expected": ["internal/workspace/registry.go:516", "internal/service/app.go:51"]},
+    {"id": "mi-lsp.refs.LoadRegistry", "repo": "mi-lsp", "type": "refs", "query": "LoadRegistry"},
+    {"id": "mi-lsp.refs.SaveRegistry", "repo": "mi-lsp", "type": "refs", "query": "SaveRegistry"},
+    {"id": "mi-lsp.refs.GarbageCollectRegistry", "repo": "mi-lsp", "type": "refs", "query": "GarbageCollectRegistry"},
+    {"id": "mi-lsp.refs.ResolveWorkspace", "repo": "mi-lsp", "type": "refs", "query": "ResolveWorkspace"},
+    {"id": "mi-lsp.lit.registry_lock_timeout", "repo": "mi-lsp", "type": "literal", "query": "registry_lock_timeout"},
+    {"id": "mi-lsp.intent.gc", "repo": "mi-lsp", "type": "intent", "query": "where is the workspace registry garbage collected", "expected_files": ["internal/workspace/registry.go"]},
+    {"id": "mi-lsp.intent.lock", "repo": "mi-lsp", "type": "intent", "query": "how does the registry file lock time out when another process holds it", "expected_files": ["internal/workspace/registry_lock.go"]},
+
+    {"id": "mi-gateway.def.NewTranscriptTracker", "repo": "mi-gateway", "type": "definition", "query": "NewTranscriptTracker", "expected": ["adapters/herdrclaude/transcript.go:57"]},
+    {"id": "mi-gateway.def.NewHTTPAdapter", "repo": "mi-gateway", "type": "definition", "query": "NewHTTPAdapter", "expected": ["httpapi/adapter.go:29"]},
+    {"id": "mi-gateway.def.NewAllowlist", "repo": "mi-gateway", "type": "definition", "query": "NewAllowlist", "expected": ["channels/telegram/botapi/allowlist.go:19"]},
+    {"id": "mi-gateway.def.ExternalKey", "repo": "mi-gateway", "type": "definition", "query": "ExternalKey", "expected": ["channels/telegram/botapi/allowlist.go:41"]},
+    {"id": "mi-gateway.refs.NewTranscriptTracker", "repo": "mi-gateway", "type": "refs", "query": "NewTranscriptTracker"},
+    {"id": "mi-gateway.refs.NewHTTPAdapter", "repo": "mi-gateway", "type": "refs", "query": "NewHTTPAdapter"},
+    {"id": "mi-gateway.refs.NewAllowlist", "repo": "mi-gateway", "type": "refs", "query": "NewAllowlist"},
+    {"id": "mi-gateway.refs.ExternalKey", "repo": "mi-gateway", "type": "refs", "query": "ExternalKey"},
+    {"id": "mi-gateway.lit.message_id", "repo": "mi-gateway", "type": "literal", "query": "message_id"},
+    {"id": "mi-gateway.intent.submit", "repo": "mi-gateway", "type": "intent", "query": "where does the gateway accept a submitted message and deduplicate it by message id", "expected_files": ["gateway/service.go"]},
+    {"id": "mi-gateway.intent.allowlist", "repo": "mi-gateway", "type": "intent", "query": "how is the telegram chat allowlist built and checked", "expected_files": ["channels/telegram/botapi/allowlist.go"]},
+
+    {"id": "pi-subagents.def.resolvePiLaunchToolPlan", "repo": "pi-subagents", "type": "definition", "query": "resolvePiLaunchToolPlan", "expected": ["src/runs/shared/child-tool-plan.ts:297"]},
+    {"id": "pi-subagents.def.supervisorChannelDir", "repo": "pi-subagents", "type": "definition", "query": "supervisorChannelDir", "expected": ["src/runs/shared/child-tool-plan.ts:81"]},
+    {"id": "pi-subagents.def.ChildSessionEvent", "repo": "pi-subagents", "type": "definition", "query": "ChildSessionEvent", "expected": ["src/runs/shared/child-session.ts:18"]},
+    {"id": "pi-subagents.def.PiLaunchToolPlan", "repo": "pi-subagents", "type": "definition", "query": "PiLaunchToolPlan", "expected": ["src/runs/shared/child-tool-plan.ts:157"]},
+    {"id": "pi-subagents.refs.resolvePiLaunchToolPlan", "repo": "pi-subagents", "type": "refs", "query": "resolvePiLaunchToolPlan"},
+    {"id": "pi-subagents.refs.supervisorChannelDir", "repo": "pi-subagents", "type": "refs", "query": "supervisorChannelDir"},
+    {"id": "pi-subagents.refs.ChildSessionEvent", "repo": "pi-subagents", "type": "refs", "query": "ChildSessionEvent"},
+    {"id": "pi-subagents.refs.PiLaunchToolPlan", "repo": "pi-subagents", "type": "refs", "query": "PiLaunchToolPlan"},
+    {"id": "pi-subagents.lit.budget_exhausted", "repo": "pi-subagents", "type": "literal", "query": "budget_exhausted"},
+    {"id": "pi-subagents.intent.toolplan", "repo": "pi-subagents", "type": "intent", "query": "where is the tool plan for a pi child launch resolved", "expected_files": ["src/runs/shared/child-tool-plan.ts"]},
+    {"id": "pi-subagents.intent.settlement", "repo": "pi-subagents", "type": "intent", "query": "where is a workflow settled as partial when the turn budget is exceeded", "expected_files": ["src/workflows/workflow-settlement.ts"]},
+
+    {"id": "tedi-memory.def.IEmbeddingProvider", "repo": "tedi-memory", "type": "definition", "query": "IEmbeddingProvider", "expected": ["src/Tedi.Memory.Infrastructure/EmbeddingServices.cs:33"]},
+    {"id": "tedi-memory.def.WorkspaceStore", "repo": "tedi-memory", "type": "definition", "query": "WorkspaceStore", "expected": ["src/Tedi.Memory.Infrastructure/Persistence/Repositories/PersistenceStores.cs:42"]},
+    {"id": "tedi-memory.def.ProjectionRebuilder", "repo": "tedi-memory", "type": "definition", "query": "ProjectionRebuilder", "expected": ["src/Tedi.Memory.Infrastructure/Persistence/Services/ProjectionAndReadServices.cs:11"]},
+    {"id": "tedi-memory.def.JournalRepository", "repo": "tedi-memory", "type": "definition", "query": "JournalRepository", "expected": ["src/Tedi.Memory.Infrastructure/Persistence/Repositories/JournalRepository.cs:6"]},
+    {"id": "tedi-memory.refs.IEmbeddingProvider", "repo": "tedi-memory", "type": "refs", "query": "IEmbeddingProvider"},
+    {"id": "tedi-memory.refs.WorkspaceStore", "repo": "tedi-memory", "type": "refs", "query": "WorkspaceStore"},
+    {"id": "tedi-memory.refs.ProjectionRebuilder", "repo": "tedi-memory", "type": "refs", "query": "ProjectionRebuilder"},
+    {"id": "tedi-memory.refs.JournalRepository", "repo": "tedi-memory", "type": "refs", "query": "JournalRepository"},
+    {"id": "tedi-memory.lit.outbox_messages", "repo": "tedi-memory", "type": "literal", "query": "outbox_messages"},
+    {"id": "tedi-memory.intent.relevance", "repo": "tedi-memory", "type": "intent", "query": "where are memory relevance scores and usage factors computed", "expected_files": ["src/Tedi.Memory.Application/MemoryRelevance.cs"]},
+    {"id": "tedi-memory.intent.device", "repo": "tedi-memory", "type": "intent", "query": "how are device credentials stored and looked up for authentication", "expected_files": ["src/Tedi.Memory.Infrastructure/DeviceAuthentication.cs"]}
+  ]
+}
