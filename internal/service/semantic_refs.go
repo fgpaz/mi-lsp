@@ -382,43 +382,37 @@ func refsSymbolBackend(request model.CommandRequest) string {
 	return ""
 }
 
-// rankRefsTextHits keeps only code files of the symbol's language (any code
-// language when unknown), dropping hidden directories such as .docs/. Non-code
-// hits are returned only when no code file mentions the symbol; codeOnly
-// reports which of the two happened.
+// rankRefsTextHits keeps code files of the symbol's language (any code
+// language when unknown), dropping hidden directories such as .docs/. When the
+// symbol's own language has no hits, code hits in other languages are returned
+// instead. Non-code hits are returned only when no code file mentions the
+// symbol; codeOnly reports which of the two happened.
 func rankRefsTextHits(hits []map[string]any, backendType string, limit int) (items []map[string]any, codeOnly bool) {
 	if limit <= 0 {
 		limit = DefaultConfig().DefaultSearchLimit
 	}
-	var matching, nonCode []map[string]any
-	anyCode := false
+	anyLanguage := backendType == "" || backendType == "catalog" || backendType == "text"
+	var matching, otherCode, nonCode []map[string]any
 	for _, hit := range hits {
 		file, _ := hit["file"].(string)
 		if isHiddenRefsPath(file) {
 			continue
 		}
-		fileBackend, isCode := backendForSourcePath(file)
-		if !isCode {
-			if language.IsSupportedCodePath(file) {
-				anyCode = true
-				if backendType == "" {
-					matching = append(matching, hit)
-				}
-				continue
-			}
+		fileBackend, hasBackend := backendForSourcePath(file)
+		switch {
+		case !language.IsSupportedCodePath(file):
 			nonCode = append(nonCode, hit)
-			continue
-		}
-		anyCode = true
-		if backendType == "" || backendType == "catalog" || backendType == "text" || fileBackend == backendType {
+		case anyLanguage || (hasBackend && fileBackend == backendType):
 			matching = append(matching, hit)
+		default:
+			otherCode = append(otherCode, hit)
 		}
 	}
 	switch {
 	case len(matching) > 0:
 		items, codeOnly = matching, true
-	case anyCode:
-		items, codeOnly = []map[string]any{}, true
+	case len(otherCode) > 0:
+		items, codeOnly = otherCode, true
 	default:
 		items, codeOnly = nonCode, false
 	}

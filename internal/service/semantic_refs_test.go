@@ -422,3 +422,46 @@ func TestFindRefsNormalizesSemanticPaths(t *testing.T) {
 		}
 	}
 }
+
+func TestRankRefsTextHitsFallsBackToOtherLanguageCode(t *testing.T) {
+	hits := []map[string]any{
+		{"file": ".docs/a.yaml"},
+		{"file": "docs/note.md"},
+		{"file": "web/app.ts"},
+		{"file": "tools/run.py"},
+	}
+
+	items, codeOnly := rankRefsTextHits(hits, "gopls", 10)
+	if !codeOnly || len(items) != 2 || items[0]["file"] != "web/app.ts" || items[1]["file"] != "tools/run.py" {
+		t.Fatalf("items = %v codeOnly %v, want other-language code hits only", items, codeOnly)
+	}
+
+	hits = append(hits, map[string]any{"file": "pkg/x.go"})
+	items, _ = rankRefsTextHits(hits, "gopls", 10)
+	if len(items) != 1 || items[0]["file"] != "pkg/x.go" {
+		t.Fatalf("items = %v, want only the symbol-language hit when present", items)
+	}
+
+	items, _ = rankRefsTextHits(nil, "gopls", 10)
+	if items == nil || len(items) != 0 {
+		t.Fatalf("items = %#v, want empty non-nil slice when rg finds nothing", items)
+	}
+}
+
+func TestFindRefsOtherLanguageHitsStayDegradedText(t *testing.T) {
+	files := map[string]string{"demo.go": goSource, "web/app.ts": "export const x = Orphan();\n"}
+	root, alias := setupRefsWorkspace(t, []string{"go"}, false, files, nil)
+	fake := &fakeSemanticCaller{callFn: func(context.Context, model.WorkspaceRegistration, model.WorkerRequest) (model.WorkerResponse, error) {
+		return model.WorkerResponse{Ok: true, Backend: "gopls"}, nil
+	}}
+
+	env := runRefs(t, root, alias, fake, map[string]any{"symbol": "Orphan", "file": "demo.go"})
+
+	items := envItems(t, env)
+	if len(items) != 1 || items[0]["file"] != "web/app.ts" || items[0]["origin"] != "text" {
+		t.Fatalf("items = %#v, want the .ts text hit", items)
+	}
+	if !env.Degraded || env.Reason != model.ReasonSemanticEmptyTextHits || env.Backend != "text" {
+		t.Fatalf("env = degraded %v reason %q backend %q", env.Degraded, env.Reason, env.Backend)
+	}
+}
