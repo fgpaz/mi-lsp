@@ -169,7 +169,7 @@ var toolCatalog = []toolSpec{
 	{
 		name: "nav_refs",
 		description: "Find semantic references (usages) of a known symbol in one call. " +
-			"Prefer this over grepping the symbol name across the repo by hand — it resolves through the language backend (roslyn/tsserver/pyright/gopls) rather than plain text matching.",
+			"Prefer this over grepping the symbol name across the repo by hand — it resolves through the language backend (roslyn/tsserver/pyright/gopls) chosen by the symbol's language and falls back to word-boundary text matches (degraded=true, reason set, origin per item) instead of returning a false empty.",
 		schema: obj([]string{"symbol"}, props(map[string]propSchema{
 			"symbol":     pString("Symbol name to find references for."),
 			"file":       pString("Anchor file for backends that resolve by position."),
@@ -177,6 +177,7 @@ var toolCatalog = []toolSpec{
 			"entrypoint": pString("Semantic entrypoint ID or path."),
 			"project":    pString("Explicit project path override."),
 			"solution":   pString("Explicit solution path override."),
+			"context":    pInt("Lines of context (0-5) before and after each reference."),
 		})),
 	},
 	{
@@ -479,6 +480,7 @@ func buildRefs(args map[string]any) ([]string, error) {
 		flagSpec{key: "entrypoint", kind: kindString},
 		flagSpec{key: "project", kind: kindString},
 		flagSpec{key: "solution", kind: kindString},
+		flagSpec{key: "context", kind: kindInt},
 	)
 	if err != nil {
 		return nil, err
