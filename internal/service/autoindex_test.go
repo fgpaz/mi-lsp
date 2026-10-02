@@ -235,15 +235,81 @@ func TestFind_SchemaBrokenCatalogServesTextAndStartsReindex(t *testing.T) {
 	}
 }
 
-func TestTextFindItemsRanksDeclarationsFirst(t *testing.T) {
-	hits := []map[string]any{
-		{"file": "a.go", "line": 3, "text": "\treturn Widget{}"},
-		{"file": "b.go", "line": 1, "text": "type Widget struct {"},
-		{"file": "c.cs", "line": 9, "text": "    public static void Widget(int x)"},
+func TestTextDeclarationMatcherKindsAndExact(t *testing.T) {
+	tests := []struct {
+		file, text, symbol string
+		exact              bool
+		wantKind           string
+		wantOK             bool
+	}{
+		{"a.go", "func NewAllowlist(entries []PeerChat) Allowlist {", "NewAllowlist", true, "func", true},
+		{"a.go", "func (a *Allowlist) Allow(id int) bool {", "Allow", true, "method", true},
+		{"a.go", "type Widget struct {", "Widget", true, "type", true},
+		{"a.go", "type Reader interface {", "Reader", true, "interface", true},
+		{"a.go", "const Limit = 3", "Limit", true, "const", true},
+		{"a.go", "\treturn NewAllowlist(nil)", "NewAllowlist", true, "", false},
+		{"a.go", "func NewAllowlistFrom(x int) {", "NewAllowlist", true, "", false},
+		{"a.go", "func NewAllowlistFrom(x int) {", "NewAllowlist", false, "func", true},
+		{"a.ts", "export function load(x: number) {", "load", true, "func", true},
+		{"a.ts", "export interface Options {", "Options", true, "interface", true},
+		{"a.ts", "  async fetch(url: string) {", "fetch", true, "method", true},
+		{"a.ts", "  fetch(url);", "fetch", true, "", false},
+		{"a.cs", "public sealed record Person(string Name);", "Person", true, "record", true},
+		{"a.cs", "    public void Greet() { }", "Greet", true, "method", true},
+		{"a.cs", "    public string Title { get; set; }", "Title", true, "property", true},
+		{"a.py", "    async def run(self):", "run", true, "func", true},
+		{"a.py", "class Job:", "Job", true, "class", true},
+		{"a.py", "x = Job()", "Job", true, "", false},
+		{"a.md", "func NewAllowlist(", "NewAllowlist", true, "", false},
 	}
-	items := textFindItems("Widget", hits)
-	if len(items) != 3 || items[0]["file"] != "b.go" || items[1]["file"] != "c.cs" || items[2]["file"] != "a.go" {
-		t.Fatalf("ranking = %#v", items)
+	for _, tt := range tests {
+		matcher := newTextDeclarationMatcher(tt.symbol, tt.exact)
+		_, kind, ok := matcher.match(tt.file, tt.text)
+		if ok != tt.wantOK || kind != tt.wantKind {
+			t.Errorf("match(%q, %q, exact=%v) = %q,%v want %q,%v", tt.file, tt.text, tt.exact, kind, ok, tt.wantKind, tt.wantOK)
+		}
+	}
+}
+
+func TestFind_TextFallbackReturnsOnlyDeclarations(t *testing.T) {
+	root, name := setupTestWorkspace(t)
+	writeWorkspaceFile(t, root, "pkg/allow.go", "package pkg\n\nfunc NewAllowlist(n int) int {\n\treturn n\n}\n")
+	writeWorkspaceFile(t, root, "pkg/use.go", "package pkg\n\nfunc use() int {\n\treturn NewAllowlist(1)\n}\n")
+	writeWorkspaceFile(t, root, ".docs/wiki/note.go", "func NewAllowlist(x int) {}\n")
+	writeWorkspaceFile(t, root, "README.md", "call NewAllowlist here\n")
+	app := New(root, nil)
+
+	find := func(pattern string, exact bool) []map[string]any {
+		env, err := app.Execute(context.Background(), model.CommandRequest{
+			Operation: "nav.find",
+			Context:   model.QueryOptions{Workspace: name, MaxItems: 10},
+			Payload:   map[string]any{"pattern": pattern, "exact": exact},
+		})
+		if err != nil || !env.Ok {
+			t.Fatalf("nav.find: env=%+v err=%v", env, err)
+		}
+		items, _ := env.Items.([]map[string]any)
+		return items
+	}
+
+	items := find("NewAllowlist", true)
+	if len(items) != 1 || items[0]["file"] != "pkg/allow.go" || items[0]["kind"] != "func" || items[0]["name"] != "NewAllowlist" || items[0]["origin"] != model.ItemOriginText {
+		t.Fatalf("exact declaration items = %#v, want only pkg/allow.go func", items)
+	}
+
+	// No declaration: plain occurrences, code files only (no README, no .docs).
+	items = find("use", true)
+	if len(items) != 1 || items[0]["file"] != "pkg/use.go" {
+		t.Fatalf("declaration of use = %#v", items)
+	}
+	items = find("n", true)
+	for _, item := range items {
+		if item["kind"] != "text_match" && item["kind"] != "func" {
+			t.Fatalf("unexpected item %#v", item)
+		}
+		if f := item["file"].(string); strings.HasSuffix(f, ".md") || strings.HasPrefix(f, ".docs/") {
+			t.Fatalf("non-code file leaked: %#v", item)
+		}
 	}
 }
 

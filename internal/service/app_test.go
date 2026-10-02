@@ -180,7 +180,7 @@ func TestFind_RegisteredWorkspaceWithoutIndexServesTextAndDegrades(t *testing.T)
 	if !ok || len(items) == 0 {
 		t.Fatalf("items = %#v, want text hits", env.Items)
 	}
-	if items[0]["origin"] != model.ItemOriginText || items[0]["file"] != "src/Hello.cs" || items[0]["kind"] != "declaration" {
+	if items[0]["origin"] != model.ItemOriginText || items[0]["file"] != "src/Hello.cs" || items[0]["kind"] != "class" {
 		t.Fatalf("first item = %#v", items[0])
 	}
 	if len(env.Warnings) == 0 || !strings.Contains(env.Warnings[0], "catalog unavailable (index_not_ready); served from text; background reindex skipped") {

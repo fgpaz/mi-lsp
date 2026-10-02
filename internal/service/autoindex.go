@@ -308,15 +308,21 @@ func (a *App) findTextFallback(ctx context.Context, registration model.Workspace
 	items := []map[string]any{}
 	warnings := []string{fmt.Sprintf("catalog unavailable (%s); served from text; %s", reason, outcome)}
 	if strings.TrimSpace(pattern) != "" {
-		fetch := 100
-		if limit > 0 {
-			fetch = max(limit*5, 100)
-		}
-		hits, err := searchPattern(ctx, registration.Root, project, wordBoundaryPattern(pattern), true, fetch)
+		exact, _ := request.Payload["exact"].(bool)
+		matcher := newTextDeclarationMatcher(pattern, exact)
+		// Declarations only; plain occurrences are the last resort.
+		hits, err := searchPattern(ctx, registration.Root, project, matcher.searchRe, true, 500)
 		if err != nil {
 			warnings = append(warnings, "text search failed: "+sanitizeIntentError(err))
 		}
-		items = textFindItems(pattern, hits)
+		items = matcher.declarationItems(hits)
+		if len(items) == 0 {
+			hits, err = searchPattern(ctx, registration.Root, project, wordBoundaryPattern(pattern), true, 300)
+			if err != nil {
+				warnings = append(warnings, "text search failed: "+sanitizeIntentError(err))
+			}
+			items = matcher.occurrenceItems(hits)
+		}
 		if offset := intFromAny(request.Payload["offset"], 0); offset > 0 {
 			if offset >= len(items) {
 				items = []map[string]any{}
@@ -358,40 +364,4 @@ func wordBoundaryPattern(pattern string) string {
 
 func isWordRune(r rune) bool {
 	return r == '_' || (r >= '0' && r <= '9') || (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z')
-}
-
-// textFindItems turns text hits into find-shaped items, declaration-looking
-// lines first, preserving file/line order inside each group.
-func textFindItems(pattern string, hits []map[string]any) []map[string]any {
-	declaration := declarationLinePattern(pattern)
-	declarations := make([]map[string]any, 0, len(hits))
-	others := make([]map[string]any, 0, len(hits))
-	for _, hit := range hits {
-		text := strings.TrimSpace(stringFromMap(hit, "text"))
-		item := map[string]any{
-			"name":      pattern,
-			"kind":      "text_match",
-			"file":      stringFromMap(hit, "file"),
-			"line":      hit["line"],
-			"signature": text,
-			"text":      text,
-			"origin":    model.ItemOriginText,
-		}
-		if declaration.MatchString(text) {
-			item["kind"] = "declaration"
-			declarations = append(declarations, item)
-		} else {
-			others = append(others, item)
-		}
-	}
-	return append(declarations, others...)
-}
-
-// declarationLinePattern is a small cross-language heuristic: a declaration
-// keyword before the symbol, or a modifier-led member declaration.
-func declarationLinePattern(pattern string) *regexp.Regexp {
-	quoted := wordBoundaryPattern(pattern)
-	keyword := `\b(?:func|type|class|interface|struct|enum|record|trait|impl|def|fn|function|const|let|var|namespace|module|object)\b[^=;\n]{0,80}?` + quoted
-	member := `^\s*(?:public|private|protected|internal|static|async|override|virtual|export|abstract)\b[^=;\n]{0,80}?` + quoted + `\s*[(<{:=]`
-	return regexp.MustCompile(`(?:` + keyword + `)|(?:` + member + `)`)
 }
