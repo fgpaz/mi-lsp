@@ -997,3 +997,30 @@ func TestIntentFileLevelRankingPrefersFileNamedAfterTheQuestion(t *testing.T) {
 		t.Fatalf("settlement rank=%d want top 2 (matches=%+v)", rank, matches)
 	}
 }
+
+func TestIntentMixWithCodeMarksDegradedWhenCatalogUnavailableForCodeQuestion(t *testing.T) {
+	docs := model.Envelope{Ok: true, Mode: "docs", Items: []map[string]any{{"result_kind": "doc", "doc_path": "a.md"}}}
+	registration := model.WorkspaceRegistration{Name: "demo", Root: t.TempDir()}
+	got := New(t.TempDir(), nil).intentMixWithCode(context.Background(), registration, "where is textReferenceFallback implemented", 10, 0, nil, docs)
+	if !got.Ok || got.Mode != "docs" || len(got.Items.([]map[string]any)) != 1 {
+		t.Fatalf("envelope=%+v want docs kept", got)
+	}
+	if !got.Degraded || got.Reason != model.ReasonIndexNotReady || got.FallbackUsed != "" {
+		t.Fatalf("degraded=%v reason=%q fallback=%q want degraded index_not_ready without fallback", got.Degraded, got.Reason, got.FallbackUsed)
+	}
+	if len(got.Warnings) != 1 || !strings.Contains(got.Warnings[0], "mi-lsp nav search textReferenceFallback") {
+		t.Fatalf("warnings=%v want nav search suggestion", got.Warnings)
+	}
+}
+
+func TestIntentCatalogUnavailableClassifiesSchemaAndSkipsNonCodeQuestions(t *testing.T) {
+	docs := model.Envelope{Ok: true, Mode: "docs"}
+	broken := intentCatalogUnavailable(docs, "where is RegistryLock", true, errors.New("no such table: symbols"))
+	if broken.Reason != model.ReasonIndexSchemaBroken || !broken.Degraded {
+		t.Fatalf("broken=%+v want index_schema_broken", broken)
+	}
+	plain := intentCatalogUnavailable(docs, "how does governance work", false, errors.New("unable to open"))
+	if plain.Degraded || plain.Reason != "" || len(plain.Warnings) != 0 {
+		t.Fatalf("plain=%+v want untouched docs", plain)
+	}
+}

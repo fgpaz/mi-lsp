@@ -437,12 +437,15 @@ func (a *App) intentMixWithCode(ctx context.Context, registration model.Workspac
 	lexical := hasIntentCodeSignals(question)
 	db, err := openWorkspaceDB(registration, "nav.intent", true)
 	if err != nil {
-		return docs
+		return intentCatalogUnavailable(docs, question, lexical, err)
 	}
 	defer db.Close()
 	lexical = lexical || intentCatalogNameSignal(ctx, db, question)
 	scored, err := intentCodeSearch(ctx, db, terms, intentQuestionIdentifiers(question), topN, offset, scopedRepo)
-	if err != nil || len(scored) == 0 {
+	if err != nil {
+		return intentCatalogUnavailable(docs, question, lexical, err)
+	}
+	if len(scored) == 0 {
 		return docs
 	}
 	docItems, _ := docs.Items.([]map[string]any)
@@ -469,6 +472,26 @@ func (a *App) intentMixWithCode(ctx context.Context, registration model.Workspac
 	docs.Items = merged
 	docs.Mode = "mixed"
 	docs.Stats = model.Stats{Files: len(docItems), Symbols: len(strong) + len(weak)}
+	return docs
+}
+
+// intentCatalogUnavailable keeps the docs answer but, for a code question,
+// marks it degraded (classified reason, no code fallback) so the caller does not
+// read the missing code hits as "nothing found".
+func intentCatalogUnavailable(docs model.Envelope, question string, codeQuestion bool, err error) model.Envelope {
+	if !codeQuestion {
+		return docs
+	}
+	docs.MarkDegraded(classifyCatalogUnavailable(err), "")
+	search := "mi-lsp nav search <identifier>"
+	for _, field := range strings.Fields(question) {
+		field = strings.Trim(field, ".,;:!?()[]{}\"'`")
+		if (intentCamelCasePattern.MatchString(field) || strings.Contains(field, "_")) && intentSafeCLIValue(field) && !strings.ContainsAny(field, "/:") {
+			search = "mi-lsp nav search " + field
+			break
+		}
+	}
+	docs.Warnings = dedupeStrings(append(docs.Warnings, "code catalog unavailable ("+docs.Reason+"); only wiki docs are shown, try `"+search+"` for code hits"))
 	return docs
 }
 
