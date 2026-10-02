@@ -531,6 +531,8 @@ func (b *GraphObservationBatch) validateCore() error {
 			}
 		}
 	}
+	nodeEvidence := make(map[string]struct{}, len(nodes))
+	edgeEvidence := make(map[string]struct{}, len(edges))
 	for _, v := range b.Evidence {
 		if e := add(v.Ref); e != nil {
 			return e
@@ -549,6 +551,7 @@ func (b *GraphObservationBatch) validateCore() error {
 			owner = n.Key.OwnerPath
 			digest = n.SourceDigest
 			claim = "declaration"
+			nodeEvidence[v.NodeRef] = struct{}{}
 		} else {
 			e, ok := edges[v.EdgeRef]
 			if !ok {
@@ -557,6 +560,7 @@ func (b *GraphObservationBatch) validateCore() error {
 			owner = e.OwnerPath
 			digest = e.SourceDigest
 			claim = e.Relation
+			edgeEvidence[v.EdgeRef] = struct{}{}
 		}
 		if v.ClaimKind != claim || v.Status != func() string {
 			if v.NodeRef != "" {
@@ -571,24 +575,12 @@ func (b *GraphObservationBatch) validateCore() error {
 		}
 	}
 	for _, n := range nodes {
-		found := false
-		for _, v := range b.Evidence {
-			if v.NodeRef == n.Ref {
-				found = true
-			}
-		}
-		if !found {
+		if _, found := nodeEvidence[n.Ref]; !found {
 			return observationErr("GPH_OBS_EVIDENCE_MISSING", "nodes", "node requires evidence")
 		}
 	}
 	for _, edge := range edges {
-		found := false
-		for _, v := range b.Evidence {
-			if v.EdgeRef == edge.Ref {
-				found = true
-			}
-		}
-		if !found {
+		if _, found := edgeEvidence[edge.Ref]; !found {
 			return observationErr("GPH_OBS_EVIDENCE_MISSING", "edges", "edge requires evidence")
 		}
 	}
