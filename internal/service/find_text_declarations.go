@@ -151,7 +151,7 @@ func (m *textDeclarationMatcher) match(file string, text string) (name string, k
 		if m.exact && captured != m.symbol {
 			continue
 		}
-		name = identifierAt(text, span[2], captured)
+		name = identifierAt(text, span[2], captured, m.symbol)
 		kind = declaration.kind
 		if declaration.kindFn != nil {
 			kind = declaration.kindFn(text)
@@ -164,9 +164,9 @@ func (m *textDeclarationMatcher) match(file string, text string) (name string, k
 // identifierAt returns the identifier token that starts at the captured span,
 // extended to the left over identifier characters. Symbols containing
 // metacharacters ("New(config") thus report the declared identifier ("New")
-// instead of the raw pattern slice. When no identifier starts there, the
-// captured text is returned.
-func identifierAt(text string, start int, captured string) string {
+// instead of the raw pattern slice. When no identifier is there, the name is
+// the captured text (or the symbol) stripped of its non-identifier characters.
+func identifierAt(text string, start int, captured string, symbol string) string {
 	begin := start
 	for begin > 0 && isWordRune(rune(text[begin-1])) {
 		begin--
@@ -175,10 +175,23 @@ func identifierAt(text string, start int, captured string) string {
 	for end < len(text) && isWordRune(rune(text[end])) {
 		end++
 	}
-	if end == begin {
-		return captured
+	if end > begin {
+		return text[begin:end]
 	}
-	return text[begin:end]
+	if stripped := stripNonIdentifier(captured); stripped != "" {
+		return stripped
+	}
+	return stripNonIdentifier(symbol)
+}
+
+func stripNonIdentifier(value string) string {
+	var builder strings.Builder
+	for _, r := range value {
+		if r < 128 && isWordRune(r) {
+			builder.WriteRune(r)
+		}
+	}
+	return builder.String()
 }
 
 func isFindableCodeFile(file string) bool {

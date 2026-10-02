@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math/rand"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -76,11 +77,46 @@ func autoIndexJobProcess() bool {
 // classifyCatalogUnavailable maps a catalog read error to a primitives-v2
 // reason code. Corruption and schema errors are index_schema_broken; anything
 // else (absent, locked, unreadable) is index_not_ready.
+//
+// When the error carries its workspace root (see withCatalogRoot), a missing,
+// empty or table-less index.db is index_not_ready, not schema-broken.
 func classifyCatalogUnavailable(err error) string {
 	if isIndexSchemaBrokenError(err) {
+		if root := catalogErrorRoot(err); root != "" && catalogHasNoTables(root) {
+			return model.ReasonIndexNotReady
+		}
 		return model.ReasonIndexSchemaBroken
 	}
 	return model.ReasonIndexNotReady
+}
+
+type catalogRootError struct {
+	root string
+	err  error
+}
+
+func (e *catalogRootError) Error() string { return e.err.Error() }
+func (e *catalogRootError) Unwrap() error { return e.err }
+
+// withCatalogRoot attaches the workspace root to a catalog read error so
+// classifyCatalogUnavailable can tell an empty database from a broken one.
+func withCatalogRoot(root string, err error) error {
+	if err == nil || root == "" {
+		return err
+	}
+	return &catalogRootError{root: root, err: err}
+}
+
+func catalogErrorRoot(err error) string {
+	var rooted *catalogRootError
+	if errors.As(err, &rooted) {
+		return rooted.root
+	}
+	var openErr *workspaceDBOpenError
+	if errors.As(err, &openErr) {
+		return openErr.root
+	}
+	return ""
 }
 
 func isIndexSchemaBrokenError(err error) bool {
@@ -119,13 +155,13 @@ func errorTextContains(err error, markers ...string) bool {
 	return false
 }
 
-// catalogHasNoTables reports whether index.db is absent-in-effect: empty file
-// or a database without any user table (fresh, e.g. `workspace add --no-index`).
-// Unreadable files are not "empty": they are broken.
+// catalogHasNoTables reports whether index.db is absent-in-effect: missing,
+// empty file or a database without any user table (fresh, e.g.
+// `workspace add --no-index`). Unreadable files are not "empty": they are broken.
 func catalogHasNoTables(root string) bool {
 	info, err := os.Stat(store.WorkspaceDBPath(root))
 	if err != nil {
-		return false
+		return errors.Is(err, os.ErrNotExist)
 	}
 	if info.Size() == 0 {
 		return true
@@ -245,15 +281,52 @@ func (a *App) triggerAutoIndex(ctx context.Context, registration model.Workspace
 
 // Corruption is confirmed by retrying before the database is moved away, so a
 // process that merely raced a concurrent first-run creation never quarantines
-// the fresh index.db the other process just created.
+// the fresh index.db the other process just created. The guard and the rename
+// are serialized by quarantine.lock and re-probe the file inside the lock.
 var (
 	corruptionConfirmAttempts = 3
 	corruptionConfirmDelay    = 150 * time.Millisecond
+	quarantineLockStale       = 30 * time.Second
 )
 
+const quarantineLockName = "quarantine.lock"
+
+// jitteredDelay spreads concurrent processes so they do not all re-check at the
+// same instant.
+func jitteredDelay(base time.Duration) time.Duration {
+	if base <= 0 {
+		return 0
+	}
+	return base + time.Duration(rand.Int63n(int64(base)))
+}
+
+// acquireQuarantineLock takes <root>/.mi-lsp/quarantine.lock with O_EXCL. A
+// lock older than quarantineLockStale is considered abandoned. It never blocks:
+// ok=false means another process holds it.
+func acquireQuarantineLock(root string) (release func(), ok bool) {
+	path := filepath.Join(root, ".mi-lsp", quarantineLockName)
+	for attempt := 0; attempt < 2; attempt++ {
+		file, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o644)
+		if err == nil {
+			_, _ = file.WriteString(strconv.Itoa(os.Getpid()))
+			_ = file.Close()
+			return func() { _ = os.Remove(path) }, true
+		}
+		if !errors.Is(err, os.ErrExist) {
+			return nil, false
+		}
+		info, statErr := os.Stat(path)
+		if statErr != nil || time.Since(info.ModTime()) < quarantineLockStale {
+			return nil, false
+		}
+		_ = os.Remove(path)
+	}
+	return nil, false
+}
+
 // openWorkspaceDBForIndex is the write-side open used by index jobs. When the
-// database stays unopenable because it is corrupt, it is quarantined and a
-// fresh one is created so the rebuild can proceed.
+// database stays unopenable because it is corrupt, it is quarantined (by one
+// process at a time) and a fresh one is created so the rebuild can proceed.
 func openWorkspaceDBForIndex(registration model.WorkspaceRegistration, operation string) (*sql.DB, error) {
 	db, err := openWorkspaceDB(registration, operation, false) // readWrite
 	if err == nil {
@@ -262,9 +335,10 @@ func openWorkspaceDBForIndex(registration model.WorkspaceRegistration, operation
 	if !isIndexCorruptionError(err) {
 		return nil, err
 	}
+	reopen := func() (*sql.DB, error) { return openWorkspaceDB(registration, operation, false) } // readWrite
 	for attempt := 0; attempt < corruptionConfirmAttempts; attempt++ {
-		time.Sleep(corruptionConfirmDelay)
-		retryDB, retryErr := openWorkspaceDB(registration, operation, false) // readWrite
+		time.Sleep(jitteredDelay(corruptionConfirmDelay))
+		retryDB, retryErr := reopen()
 		if retryErr == nil {
 			return retryDB, nil
 		}
@@ -273,15 +347,29 @@ func openWorkspaceDBForIndex(registration model.WorkspaceRegistration, operation
 		}
 		err = retryErr
 	}
-	// Last guard right before the rename: another process may have replaced the
-	// corrupt file with a healthy one in the meantime.
-	if workspaceDBReadable(registration.Root) {
-		return openWorkspaceDB(registration, operation, false) // readWrite
-	}
-	if quarantineErr := quarantineWorkspaceDB(registration.Root, time.Now()); quarantineErr != nil {
+	release, locked := acquireQuarantineLock(registration.Root)
+	if !locked {
+		// Another process is repairing: never rename; wait for its fresh db.
+		for attempt := 0; attempt < corruptionConfirmAttempts; attempt++ {
+			time.Sleep(jitteredDelay(corruptionConfirmDelay))
+			if retryDB, retryErr := reopen(); retryErr == nil {
+				return retryDB, nil
+			} else {
+				err = retryErr
+			}
+		}
 		return nil, err
 	}
-	return openWorkspaceDB(registration, operation, false) // readWrite
+	defer release()
+	// Re-probe inside the lock: a process that held it before us may already
+	// have replaced the corrupt file with a healthy one.
+	if workspaceDBReadable(registration.Root) {
+		return reopen()
+	}
+	if quarantineErr := quarantineWorkspaceDB(registration.Root, time.Now()); quarantineErr != nil && !errors.Is(quarantineErr, os.ErrNotExist) {
+		return nil, err
+	}
+	return reopen()
 }
 
 var quarantineSuffixes = []string{"", "-wal", "-shm"}

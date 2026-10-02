@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -340,8 +341,8 @@ func TestMissingTableIsNotCorruption(t *testing.T) {
 
 func TestCatalogHasNoTables(t *testing.T) {
 	root := t.TempDir()
-	if catalogHasNoTables(root) {
-		t.Fatal("absent db is not an empty db")
+	if !catalogHasNoTables(root) {
+		t.Fatal("a missing db counts as having no tables")
 	}
 	if err := os.MkdirAll(filepath.Join(root, ".mi-lsp"), 0o755); err != nil {
 		t.Fatal(err)
@@ -452,5 +453,157 @@ func TestTextDeclarationNameIsMatchedIdentifier(t *testing.T) {
 		if !ok || name != tt.want {
 			t.Errorf("match(%q, %q) name = %q ok=%v, want %q", tt.text, tt.symbol, name, ok, tt.want)
 		}
+	}
+}
+
+func TestClassifyCatalogUnavailableUsesRootForEmptyDB(t *testing.T) {
+	missingTable := errors.New("no such table: symbols")
+	empty := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(empty, ".mi-lsp"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(store.WorkspaceDBPath(empty), nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got := classifyCatalogUnavailable(withCatalogRoot(empty, missingTable)); got != model.ReasonIndexNotReady {
+		t.Fatalf("empty db = %q, want index_not_ready", got)
+	}
+	if got := classifyCatalogUnavailable(withCatalogRoot(t.TempDir(), missingTable)); got != model.ReasonIndexNotReady {
+		t.Fatalf("missing db = %q, want index_not_ready", got)
+	}
+	if got := classifyCatalogUnavailable(&workspaceDBOpenError{cause: missingTable, root: empty}); got != model.ReasonIndexNotReady {
+		t.Fatalf("open error on empty db = %q, want index_not_ready", got)
+	}
+
+	partial := t.TempDir()
+	db, err := store.Open(partial)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec("DROP TABLE symbols"); err != nil {
+		t.Fatal(err)
+	}
+	_ = db.Close()
+	if got := classifyCatalogUnavailable(withCatalogRoot(partial, missingTable)); got != model.ReasonIndexSchemaBroken {
+		t.Fatalf("partial schema = %q, want index_schema_broken", got)
+	}
+
+	corrupt := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(corrupt, ".mi-lsp"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(store.WorkspaceDBPath(corrupt), []byte(strings.Repeat("garbage ", 500)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got := classifyCatalogUnavailable(withCatalogRoot(corrupt, errors.New("file is not a database"))); got != model.ReasonIndexSchemaBroken {
+		t.Fatalf("corrupt db = %q, want index_schema_broken", got)
+	}
+	// Without a root the classification keeps its previous behavior.
+	if got := classifyCatalogUnavailable(missingTable); got != model.ReasonIndexSchemaBroken {
+		t.Fatalf("rootless = %q, want index_schema_broken", got)
+	}
+}
+
+func TestQuarantineLockIsExclusiveAndExpires(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, ".mi-lsp"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	release, ok := acquireQuarantineLock(root)
+	if !ok {
+		t.Fatal("first acquire must succeed")
+	}
+	if _, second := acquireQuarantineLock(root); second {
+		t.Fatal("second acquire must fail while held")
+	}
+	release()
+	releaseAgain, ok := acquireQuarantineLock(root)
+	if !ok {
+		t.Fatal("acquire after release must succeed")
+	}
+	releaseAgain()
+
+	// A stale lock is taken over.
+	lockPath := filepath.Join(root, ".mi-lsp", quarantineLockName)
+	if err := os.WriteFile(lockPath, []byte("999999"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	old := time.Now().Add(-2 * quarantineLockStale)
+	if err := os.Chtimes(lockPath, old, old); err != nil {
+		t.Fatal(err)
+	}
+	releaseStale, ok := acquireQuarantineLock(root)
+	if !ok {
+		t.Fatal("a stale lock must be taken over")
+	}
+	releaseStale()
+}
+
+func TestOpenWorkspaceDBForIndexDoesNotRenameWhenLockHeld(t *testing.T) {
+	oldDelay := corruptionConfirmDelay
+	corruptionConfirmDelay = time.Millisecond
+	t.Cleanup(func() { corruptionConfirmDelay = oldDelay })
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, ".mi-lsp"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(store.WorkspaceDBPath(root), []byte(strings.Repeat("garbage ", 500)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	release, ok := acquireQuarantineLock(root)
+	if !ok {
+		t.Fatal("lock")
+	}
+	defer release()
+	if _, err := openWorkspaceDBForIndex(model.WorkspaceRegistration{Name: "x", Root: root}, "test"); err == nil {
+		t.Fatal("a process without the lock must not repair the database")
+	}
+	if matches, _ := filepath.Glob(store.WorkspaceDBPath(root) + ".corrupt-*"); len(matches) != 0 {
+		t.Fatalf("quarantined without the lock: %v", matches)
+	}
+}
+
+func TestConcurrentColdStartNeverQuarantinesFreshDB(t *testing.T) {
+	oldDelay := corruptionConfirmDelay
+	corruptionConfirmDelay = 2 * time.Millisecond
+	t.Cleanup(func() { corruptionConfirmDelay = oldDelay })
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, ".mi-lsp"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(store.WorkspaceDBPath(root), []byte(strings.Repeat("garbage ", 500)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	registration := model.WorkspaceRegistration{Name: "x", Root: root}
+	var wg sync.WaitGroup
+	for i := 0; i < 6; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if db, err := openWorkspaceDBForIndex(registration, "test"); err == nil {
+				_ = db.Close()
+			}
+		}()
+	}
+	wg.Wait()
+	matches, _ := filepath.Glob(store.WorkspaceDBPath(root) + ".corrupt-*")
+	if len(matches) != 1 {
+		t.Fatalf("quarantine files = %v, want exactly the one corrupt original", matches)
+	}
+	if !workspaceDBReadable(root) {
+		t.Fatal("the surviving index.db must be the healthy fresh one")
+	}
+}
+
+func TestTextDeclarationNameFallsBackToStrippedIdentifier(t *testing.T) {
+	name, _, ok := newTextDeclarationMatcher("(a", true).match("a.go", "func (a *App) find() {")
+	if ok && name != "a" {
+		t.Fatalf("name = %q, want a valid identifier", name)
+	}
+	if got := identifierAt("func (a *App) find()", 5, "(a", "(a"); got != "a" {
+		t.Fatalf("identifierAt = %q, want %q", got, "a")
+	}
+	if got := identifierAt("x (", 2, "(", "("); got != "" {
+		t.Fatalf("identifierAt without identifier = %q, want empty", got)
 	}
 }
