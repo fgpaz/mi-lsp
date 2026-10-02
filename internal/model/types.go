@@ -458,6 +458,7 @@ type ServiceSurfaceSummary struct {
 
 type SymbolRecord struct {
 	ID            int64  `json:"id,omitempty"`
+	Origin        string `json:"origin,omitempty"`
 	FilePath      string `json:"file_path"`
 	RepoID        string `json:"repo_id,omitempty"`
 	RepoName      string `json:"repo,omitempty"`

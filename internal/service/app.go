@@ -1732,6 +1732,9 @@ func (a *App) find(ctx context.Context, request model.CommandRequest) (model.Env
 			}
 		}
 	}
+	for i := range items {
+		items[i].Origin = model.ItemOriginCatalog
+	}
 	return model.Envelope{Ok: true, Workspace: registration.Name, Backend: "catalog", Items: items, Stats: model.Stats{Symbols: len(items)}, Warnings: warnings}, nil
 }
 
