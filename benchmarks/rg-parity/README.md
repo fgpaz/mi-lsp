@@ -13,6 +13,8 @@ python3 benchmarks/rg-parity/bench.py \
 
 Opciones útiles: `--repos-root` (por defecto `~/repos/mios`, donde viven los repos), `--only <substring>` para correr solo los casos cuyo id lo contenga, `--cases` para usar otro archivo de casos.
 
+Variable `BENCH_MILSP_EXTRA_ARGS`: argumentos extra para cada llamada a mi-lsp (por ejemplo `--no-daemon`, para no medir un daemon global de otra versión). La corrida final usó `MI_LSP_AUTOINDEX=0 BENCH_MILSP_EXTRA_ARGS=--no-daemon`, para que el autoindex no altere el estado de los repos durante la medición.
+
 Salida en `<out>`:
 
 - `<label>.json`: resultado crudo por caso (comandos, items normalizados como `archivo:línea`, bytes, latencias, error).

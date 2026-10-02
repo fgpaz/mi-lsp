@@ -54,7 +54,7 @@ evidence:
 
 1. La CLI recibe `mi-lsp nav intent <question>`.
 2. El core clasifica la pregunta en `mode=docs` o `mode=code`.
-3. Si la pregunta trae señales de código (ver sección 5) y el catálogo contiene símbolos o archivos que coinciden con sus tokens, el modo es `mixed`: los matches de código fuertes van primero, luego los documentos y al final los matches de código débiles, todo acotado a `top`.
+3. Si la pregunta trae señales de código (ver sección 5) y el catálogo contiene símbolos o archivos que coinciden con sus tokens, el modo es `mixed`: los matches de código fuertes van primero, luego los documentos y al final los matches de código débiles, todo acotado a `top`. El código se rankea por archivo: cada token pesa por su rareza (IDF) y según dónde coincide (nombre de archivo, segmento de ruta, símbolo, padre), con bonus por cubrir más tokens de la pregunta y penalización para archivos de test.
 4. Si el usuario envio `--repo`, el core valida el selector; en `mode=code` acota el universo al repo hijo seleccionado del workspace `container`, y en `mode=docs` puede ignorarlo con warning visible.
 5. En `mode=docs`, el sistema usa el scorer owner-aware documental compartido con `nav route/ask/pack`.
 6. En `mode=code`, el sistema mantiene el ranking BM25 actual sobre `search_text` enriquecido del catalogo con boosts por nombre/kind.
