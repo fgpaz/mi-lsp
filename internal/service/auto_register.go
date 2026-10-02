@@ -3,9 +3,15 @@ package service
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/fgpaz/mi-lsp/internal/model"
 	"github.com/fgpaz/mi-lsp/internal/workspace"
+)
+
+const (
+	autoRegisterIndexAttempts   = 8
+	autoRegisterIndexRetryDelay = 150 * time.Millisecond
 )
 
 // autoRegisterWorkspace is the single entry point shared by the CLI and the
@@ -25,6 +31,9 @@ func (a *App) autoRegisterWorkspace(ctx context.Context, request model.CommandRe
 		return nil
 	}
 	warnings := []string{fmt.Sprintf("auto_registered: workspace %q registered at %s on first query (opt out: --no-auto-register or %s=1)", result.Alias, result.Root, workspace.AutoRegisterEnvVar)}
+	if !result.HasCommits {
+		return append(warnings, "auto_register_index_skipped: repository has no commits yet; not indexing until the first commit (results use text search)")
+	}
 	// store.CreateIndexJob refuses a second active job per root, which dedups
 	// concurrent first queries; the job runs in a detached process.
 	indexRequest := model.CommandRequest{
@@ -32,7 +41,21 @@ func (a *App) autoRegisterWorkspace(ctx context.Context, request model.CommandRe
 		Context:   model.QueryOptions{Workspace: result.Alias, CallerCWD: request.Context.CallerCWD},
 		Payload:   map[string]any{},
 	}
-	envelope, indexErr := a.indexStart(ctx, indexRequest)
+	// Concurrent first queries may hold the fresh SQLite file while its schema
+	// is created; a short bounded retry keeps the start from failing spuriously.
+	var envelope model.Envelope
+	var indexErr error
+	for attempt := 0; attempt < autoRegisterIndexAttempts; attempt++ {
+		envelope, indexErr = a.indexStart(ctx, indexRequest)
+		if indexErr == nil || indexErr.Error() != workspaceDBOpenErrorCode {
+			break
+		}
+		select {
+		case <-ctx.Done():
+			attempt = autoRegisterIndexAttempts
+		case <-time.After(autoRegisterIndexRetryDelay):
+		}
+	}
 	switch {
 	case indexErr != nil:
 		warnings = append(warnings, "auto_register_index_failed: "+indexErr.Error())

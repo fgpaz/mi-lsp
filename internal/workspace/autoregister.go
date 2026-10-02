@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -21,6 +22,8 @@ type AutoRegisterResult struct {
 	Registered bool
 	Alias      string
 	Root       string
+	// HasCommits is false for a repo without HEAD, which cannot be indexed yet.
+	HasCommits bool
 }
 
 // AutoRegisterDisabledByEnv reports whether the environment opts out of
@@ -82,7 +85,7 @@ func AutoRegisterWorkspace(selector string, callerCWD string) (AutoRegisterResul
 				return err
 			}
 		}
-		result = AutoRegisterResult{Registered: true, Alias: alias, Root: registration.Root}
+		result = AutoRegisterResult{Registered: true, Alias: alias, Root: registration.Root, HasCommits: gitHasHead(registration.Root)}
 		return nil
 	})
 	return result, err
@@ -171,4 +174,8 @@ func autoRegisterAlias(root string, registry model.RegistryFile) string {
 			return candidate
 		}
 	}
+}
+
+func gitHasHead(root string) bool {
+	return exec.Command("git", "-C", root, "rev-parse", "--verify", "--quiet", "HEAD").Run() == nil
 }

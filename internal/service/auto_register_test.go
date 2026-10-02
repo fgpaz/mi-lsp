@@ -16,6 +16,11 @@ import (
 
 func autoRegisterFixture(t *testing.T) (repo string, spawns *atomic.Int32) {
 	t.Helper()
+	return autoRegisterFixtureCommits(t, true)
+}
+
+func autoRegisterFixtureCommits(t *testing.T, commit bool) (repo string, spawns *atomic.Int32) {
+	t.Helper()
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("USERPROFILE", home)
@@ -29,6 +34,13 @@ func autoRegisterFixture(t *testing.T) (repo string, spawns *atomic.Int32) {
 	}
 	if err := os.WriteFile(filepath.Join(repo, "main.go"), []byte("package main\nfunc Hello() {}\n"), 0o644); err != nil {
 		t.Fatal(err)
+	}
+	if commit {
+		for _, args := range [][]string{{"add", "-A"}, {"-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "i"}} {
+			if out, err := exec.Command("git", append([]string{"-C", repo}, args...)...).CombinedOutput(); err != nil {
+				t.Fatalf("git %v: %v %s", args, err, out)
+			}
+		}
 	}
 	if resolved, err := filepath.EvalSymlinks(repo); err == nil {
 		repo = resolved
@@ -126,5 +138,20 @@ func TestExecuteAutoRegisterConcurrentQueriesIndexOnce(t *testing.T) {
 	registry, _ := workspace.LoadRegistry()
 	if len(registry.Workspaces) != 1 || spawns.Load() != 1 {
 		t.Fatalf("workspaces=%d spawns=%d, want 1/1", len(registry.Workspaces), spawns.Load())
+	}
+}
+
+func TestExecuteAutoRegisterSkipsIndexWithoutCommits(t *testing.T) {
+	repo, spawns := autoRegisterFixtureCommits(t, false)
+	env, err := New(repo, nil).Execute(context.Background(), model.CommandRequest{
+		Operation: "nav.search",
+		Context:   model.QueryOptions{CallerCWD: repo},
+		Payload:   map[string]any{"pattern": "Hello"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if spawns.Load() != 0 || !hasAutoWarning(env, "auto_register_index_skipped:") || hasAutoWarning(env, "auto_register_index:") {
+		t.Fatalf("spawns=%d warnings=%v", spawns.Load(), env.Warnings)
 	}
 }

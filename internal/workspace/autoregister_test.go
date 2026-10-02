@@ -1,6 +1,7 @@
 package workspace
 
 import (
+	"errors"
 	"github.com/fgpaz/mi-lsp/internal/model"
 	"os"
 	"os/exec"
@@ -8,6 +9,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 )
 
 func autoRegisterHome(t *testing.T) string {
@@ -289,4 +291,53 @@ func registryWith(aliases map[string]string) model.RegistryFile {
 		registry.Workspaces[alias] = registrationFor(alias, root)
 	}
 	return registry
+}
+
+func TestAutoRegisterReportsMissingHead(t *testing.T) {
+	home := autoRegisterHome(t)
+	repo := autoRegisterGitRepo(t, filepath.Join(home, "empty"))
+	result, err := AutoRegisterWorkspace("", repo)
+	if err != nil || !result.Registered || result.HasCommits {
+		t.Fatalf("result = %+v, %v; want registered without commits", result, err)
+	}
+	for _, args := range [][]string{{"add", "-A"}, {"-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--allow-empty", "-m", "i"}} {
+		if out, err := exec.Command("git", append([]string{"-C", repo}, args...)...).CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v %s", args, err, out)
+		}
+	}
+	if !gitHasHead(repo) {
+		t.Fatal("gitHasHead must be true after the first commit")
+	}
+}
+
+func TestAutoRegisterLockTimeoutWithLiveHolder(t *testing.T) {
+	home := autoRegisterHome(t)
+	repo := autoRegisterGitRepo(t, filepath.Join(home, "locked"))
+	old := registryLockTimeout
+	registryLockTimeout = 150 * time.Millisecond
+	t.Cleanup(func() { registryLockTimeout = old })
+
+	held := make(chan struct{})
+	release := make(chan struct{})
+	done := make(chan error, 1)
+	go func() {
+		done <- WithRegistryLock(func() error {
+			close(held)
+			<-release
+			return nil
+		})
+	}()
+	<-held
+	_, err := AutoRegisterWorkspace("", repo)
+	var timeoutErr *RegistryLockTimeoutError
+	if !errors.As(err, &timeoutErr) || timeoutErr.Code() != "registry_lock_timeout" {
+		t.Fatalf("err = %v, want registry_lock_timeout", err)
+	}
+	close(release)
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	if result, err := AutoRegisterWorkspace("", repo); err != nil || !result.Registered {
+		t.Fatalf("after release = %+v, %v", result, err)
+	}
 }

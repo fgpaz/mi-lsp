@@ -938,25 +938,34 @@ func (a *App) workspaceLink(request model.CommandRequest) (model.Envelope, error
 	if err != nil {
 		return model.Envelope{}, err
 	}
-	registry, err := workspace.LoadRegistry()
-	if err != nil {
-		return model.Envelope{}, err
-	}
-	currentName, currentReg, ok := workspace.FindRegisteredWorkspace(registry, current.Name)
-	if !ok {
-		return model.Envelope{}, fmt.Errorf("workspace.link requires a registered workspace alias; %q is not in the registry; run mi-lsp init . --name <alias>", strings.TrimSpace(current.Name))
-	}
-	canonicalTarget, _, ok := workspace.FindRegisteredWorkspace(registry, targetAlias)
-	if !ok {
-		return model.Envelope{}, fmt.Errorf("workspace %q is not registered; register the canon workspace before linking", targetAlias)
-	}
-
-	updated, replacedAlias, idempotent := workspace.UpsertCanonLink(currentReg.CanonLinks, canonicalTarget, role)
-	currentReg.CanonLinks = updated
-	currentReg.Name = currentName
-	registry.Workspaces[currentName] = currentReg
-	if err := workspace.SaveRegistry(registry); err != nil {
-		return model.Envelope{}, err
+	var (
+		currentName     string
+		canonicalTarget string
+		replacedAlias   string
+		idempotent      bool
+	)
+	lockErr := workspace.WithRegistryLock(func() error {
+		registry, err := workspace.LoadRegistry()
+		if err != nil {
+			return err
+		}
+		name, currentReg, ok := workspace.FindRegisteredWorkspace(registry, current.Name)
+		if !ok {
+			return fmt.Errorf("workspace.link requires a registered workspace alias; %q is not in the registry; run mi-lsp init . --name <alias>", strings.TrimSpace(current.Name))
+		}
+		target, _, ok := workspace.FindRegisteredWorkspace(registry, targetAlias)
+		if !ok {
+			return fmt.Errorf("workspace %q is not registered; register the canon workspace before linking", targetAlias)
+		}
+		updated, replaced, same := workspace.UpsertCanonLink(currentReg.CanonLinks, target, role)
+		currentReg.CanonLinks = updated
+		currentReg.Name = name
+		registry.Workspaces[name] = currentReg
+		currentName, canonicalTarget, replacedAlias, idempotent = name, target, replaced, same
+		return workspace.SaveRegistry(registry)
+	})
+	if lockErr != nil {
+		return model.Envelope{}, lockErr
 	}
 
 	warnings := []string{}
