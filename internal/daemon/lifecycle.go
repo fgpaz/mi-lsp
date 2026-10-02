@@ -644,11 +644,14 @@ func backendsForWorkspace(workspace model.WorkspaceRegistration) []string {
 			if worker.CanUsePyright(workspace.Root) {
 				items = appendIfMissing(items, "pyright")
 			}
+		case "go":
+			if worker.CanUseGopls(workspace.Root) {
+				items = appendIfMissing(items, "gopls")
+			}
 		}
 	}
-	if len(items) == 0 {
-		items = append(items, "roslyn")
-	}
+	// Roslyn is warmed only for C# workspaces; a Go/TS/Python repo never pays
+	// for the .NET worker.
 	return items
 }
 
