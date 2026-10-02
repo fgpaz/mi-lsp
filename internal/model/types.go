@@ -281,18 +281,17 @@ type IntentOmission struct {
 	Candidates []string `json:"candidates,omitempty"`
 }
 
-// Primitive result reason codes (primitives-v1). They are a closed set so
-// scripts can switch on Envelope.Reason instead of parsing warnings.
+// Primitive result reason codes (primitives-v2). Versioned catalog so scripts
+// can switch on Envelope.Reason instead of parsing warnings; consumers map
+// unknown values to "unknown". Distinct from EnvelopeError.ReasonCode.
 const (
 	ReasonIndexNotReady         = "index_not_ready"
 	ReasonIndexSchemaBroken     = "index_schema_broken"
-	ReasonIndexStale            = "index_stale"
 	ReasonLSPUnavailable        = "lsp_unavailable"
 	ReasonLSPError              = "lsp_error"
 	ReasonSemanticEmptyTextHits = "semantic_empty_text_hits"
 	ReasonLanguageUnsupported   = "language_unsupported"
 	ReasonNoMatches             = "no_matches"
-	ReasonWorkspaceNotFound     = "workspace_not_found"
 	FallbackCatalog             = "catalog"
 	FallbackText                = "text"
 	ItemOriginSemantic          = "semantic"

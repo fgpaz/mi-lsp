@@ -44,7 +44,7 @@ func shouldSuggestWorkerInstall(err error) bool {
 	return telemetry.IsRoslynWorkerBootstrapText(err.Error())
 }
 
-// semanticFailureReason maps a semantic backend failure to a primitives-v1
+// semanticFailureReason maps a semantic backend failure to a primitives-v2
 // reason code: a missing binary is lsp_unavailable, everything else lsp_error.
 func semanticFailureReason(err error) string {
 	if err == nil {

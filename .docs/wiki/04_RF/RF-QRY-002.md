@@ -83,7 +83,7 @@ evidence:
 4. Para queries semanticas o compuestas, la CLI intenta enviar la request al daemon global si esta disponible.
 5. Si el daemon responde, enruta al backend adecuado y devuelve el envelope.
 6. Si el daemon no responde o no aplica, la CLI ejecuta fallback directo y emite `hint: "daemon_unavailable; served from local text index"` en el envelope.
-7. Si el backend primario no esta disponible, el core usa un backend degradado, registra warnings y marca el envelope con `degraded=true`, `reason` tipificado y `fallback_used` (conjunto cerrado en [[RF-QRY-001]], contrato `primitives-v1`).
+7. Si el backend primario no esta disponible, el core usa un backend degradado, registra warnings y marca el envelope con `degraded=true`, `reason` tipificado y `fallback_used` (catálogo versionado en [[RF-QRY-001]], contrato `primitives-v2`).
 
 ## 4. Typed Errors
 

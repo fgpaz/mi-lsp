@@ -407,7 +407,7 @@ func isIntentCodePath(lowerPath string) bool {
 	return ok
 }
 
-// intentCodeItem is the stable code item of nav.intent (primitives-v1):
+// intentCodeItem is the stable code item of nav.intent (primitives-v2):
 // result_kind discriminates code vs doc items; kind keeps the catalog symbol kind.
 func intentCodeItem(match intentMatch) map[string]any {
 	return map[string]any{

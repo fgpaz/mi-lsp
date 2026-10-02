@@ -116,21 +116,19 @@ evidence:
 | `index_not_ready` | workspace sin evidencia de catálogo completo | `nav.find` no encuentra `active_catalog_generation_id` ni el par completo y atómico `indexed_at` + `total_files` | ya no es error terminal: `nav.find` responde `ok=true`, `backend=text`, `degraded=true`, `reason=index_not_ready`, `fallback_used=text` con items `origin=text` y dispara un único reindex completo en segundo plano (ver [[RF-IDX-001]]) |
 | `workspace_db_open_failed` | no se pudo leer el estado de generación | el store no puede determinar readiness | ya no es error terminal: misma respuesta degradada a texto con `reason=index_not_ready` (o `index_schema_broken` si la base está corrupta o con esquema roto); nunca se devuelven cero coincidencias sin marcar `degraded` |
 
-### 6.1 Razones tipificadas (contrato `primitives-v1`)
+### 6.1 Razones tipificadas (contrato `primitives-v2`)
 
-El campo `reason` pertenece a un conjunto cerrado para que scripts y agentes ramifiquen sin parsear `warnings`. Es aditivo: los consumidores previos que ignoran `degraded`, `reason`, `fallback_used` y `items[].origin` siguen funcionando.
+El campo `reason` pertenece a un catálogo versionado (`primitives-v2`) para que scripts y agentes ramifiquen sin parsear `warnings`; un consumidor mapea cualquier valor desconocido a `unknown`. Es independiente de `error.reason_code` (allowlist cerrada `unsupported_operation|unavailable_binary|invalid_workspace|explicit_incomplete`), que solo aparece con `ok=false` y no se mezcla con `reason`. `reason` vacío significa resultado de fidelidad completa; `reason=no_matches` con `degraded` ausente significa que la vía completa corrió y no encontró nada. Es aditivo: los consumidores previos que ignoran `degraded`, `reason`, `fallback_used` y `items[].origin` siguen funcionando.
 
 | `reason` | Significado |
 |---|---|
 | `index_not_ready` | no hay catálogo publicado o no se pudo leer; respondió texto |
 | `index_schema_broken` | `index.db` corrupta o con esquema roto; respondió texto y la base se pone en cuarentena al reindexar |
-| `index_stale` | el catálogo existe pero está desfasado respecto del disco |
 | `lsp_unavailable` | falta el binario o runtime del backend semántico (roslyn/tsserver/pyright/gopls) |
 | `lsp_error` | el backend semántico falló o devolvió error |
 | `semantic_empty_text_hits` | el backend semántico devolvió vacío pero la verificación textual encontró coincidencias |
 | `language_unsupported` | el archivo o símbolo no tiene backend semántico para su lenguaje |
-| `no_matches` | ninguna vía encontró coincidencias; el vacío está verificado y es un resultado válido |
-| `workspace_not_found` | el workspace no resuelve |
+| `no_matches` | ninguna vía encontró coincidencias; el vacío está verificado y es un resultado válido (`degraded=true` solo si faltaba el catálogo y respondió texto) |
 
 `fallback_used` toma `catalog` o `text`; `items[].origin` toma `semantic`, `catalog`, `text` o `wiki`. Las superficies que no degradan omiten `degraded`, `reason` y `fallback_used`.
 

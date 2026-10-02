@@ -156,7 +156,7 @@ Los cross-RIDs de nodo/edge/evidence son representaciones versionadas derivadas 
 - `RuntimeSnapshot` y `AccessEvent` deben ser suficientes para explicar por que un acceso fue warm, cold o ambiguo.
 - `QueryEnvelope` siempre incluye `backend`, `warnings`, `stats` y `truncated`; si hay ambiguedad, el `backend` canonico es `router`.
 - `QueryEnvelope` puede agregar `mode` cuando la superficie publica distingue variantes estables (`nav.intent docs|code|mixed`).
-- `QueryEnvelope` puede agregar `degraded`, `reason` (conjunto cerrado `primitives-v1`: `index_not_ready`, `index_schema_broken`, `index_stale`, `lsp_unavailable`, `lsp_error`, `semantic_empty_text_hits`, `language_unsupported`, `no_matches`, `workspace_not_found`) y `fallback_used` (`catalog|text`); sus items pueden agregar `origin` (`semantic|catalog|text|wiki`). Son aditivos y no se persisten.
+- `QueryEnvelope` puede agregar `degraded`, `reason` (catálogo versionado `primitives-v2`: `index_not_ready`, `index_schema_broken`, `lsp_unavailable`, `lsp_error`, `semantic_empty_text_hits`, `language_unsupported`, `no_matches`; independiente de `error.reason_code`) y `fallback_used` (`catalog|text`); sus items pueden agregar `origin` (`semantic|catalog|text|wiki`). Son aditivos y no se persisten.
 - `AskResult` nunca debe invertir prioridad: la wiki rankea primero y el codigo actua como evidencia o verificacion.
 - `PackResult` debe preservar el orden canonico global -> especifico y no degradar silenciosamente a docs genericos cuando la wiki canonica existe pero el indice documental esta vacio.
 - `ServiceSurfaceSummary` no persiste score de completitud ni conclusion final de auditoria.

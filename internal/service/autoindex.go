@@ -73,7 +73,7 @@ func autoIndexJobProcess() bool {
 	return os.Getenv(autoIndexEnvJob) == "1"
 }
 
-// classifyCatalogUnavailable maps a catalog read error to a primitives-v1
+// classifyCatalogUnavailable maps a catalog read error to a primitives-v2
 // reason code. Corruption and schema errors are index_schema_broken; anything
 // else (absent, locked, unreadable) is index_not_ready.
 func classifyCatalogUnavailable(err error) string {
