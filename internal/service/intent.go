@@ -12,16 +12,26 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/fgpaz/mi-lsp/internal/docgraph"
 	"github.com/fgpaz/mi-lsp/internal/model"
 	"github.com/fgpaz/mi-lsp/internal/store"
 )
 
+// intentMatch is one file-level code match: Symbol is the best symbol of the
+// file, Matched/Total count the distinct query terms found in the file versus
+// the terms known to the catalog.
 type intentMatch struct {
 	Symbol   model.SymbolRecord
 	Score    float64
 	Evidence string
+	Matched  int
+	Total    int
+	Exact    bool
+	// Named is true when a multi-part file name (workflow-settlement.ts) is
+	// fully covered by query terms.
+	Named bool
 }
 
 var (
@@ -73,12 +83,12 @@ func (a *App) intent(ctx context.Context, request model.CommandRequest) (model.E
 	}
 	defer db.Close()
 
-	tokens := intentCodeTokens(question)
-	if len(tokens) == 0 {
+	terms := intentTerms(question)
+	if len(terms) == 0 {
 		return model.Envelope{Ok: true, Workspace: registration.Name, Backend: "intent", Mode: "code", Items: []map[string]any{}, Warnings: []string{"query produced no tokens after normalization"}}, nil
 	}
 
-	scored, err := intentCodeSearch(ctx, db, tokens, topN, offset, scopedRepo)
+	scored, err := intentCodeSearch(ctx, db, terms, intentQuestionIdentifiers(question), topN, offset, scopedRepo)
 	if err != nil {
 		return model.Envelope{}, model.NewStableError("intent_search_failed")
 	}
@@ -103,34 +113,298 @@ func (a *App) intent(ctx context.Context, request model.CommandRequest) (model.E
 	return applyAXIPreviewHints(env, request.Context, axiPreviewSummaryHint), nil
 }
 
-// intentCodeSearch runs the catalog search for already-normalized tokens and
-// returns the BM25-ranked page.
-func intentCodeSearch(ctx context.Context, db *sql.DB, tokens []string, topN int, offset int, scopedRepo *model.WorkspaceRepo) ([]intentMatch, error) {
-	queryLimit := max(topN*5, 100)
-	sqlOffset := offset
-	if scopedRepo != nil {
-		queryLimit = max((offset+topN)*10, 100)
-		sqlOffset = 0
+const (
+	intentTermFetchLimit = 600
+	intentRescoreFiles   = 40
+	intentFileWeightBase = 2.0
+	intentFileWeightPath = 1.2
+	intentFileWeightName = 1.0
+	intentFileWeightRel  = 0.6
+	intentStemCoverBonus = 1.4
+)
+
+// intentCodeSearch ranks catalog files for the question terms. Pass 1 gathers
+// candidate symbols per term and computes each term's IDF over files; pass 2
+// reloads every symbol of the best files and scores them at file level (see
+// scoreIntentFiles). The result has one match per file, best first.
+func intentCodeSearch(ctx context.Context, db *sql.DB, terms []intentTerm, identifiers []string, topN int, offset int, scopedRepo *model.WorkspaceRepo) ([]intentMatch, error) {
+	var totalFiles int
+	if err := db.QueryRowContext(ctx, "SELECT COUNT(DISTINCT file_path) FROM symbols").Scan(&totalFiles); err != nil {
+		return nil, err
 	}
-	candidates, err := store.IntentSearch(ctx, db, tokens, queryLimit, sqlOffset)
+	if totalFiles == 0 {
+		return nil, nil
+	}
+	seen := map[string]struct{}{}
+	candidates := []model.SymbolRecord{}
+	known := make([]intentTerm, 0, len(terms))
+	idfs := make([]float64, 0, len(terms))
+	for _, term := range terms {
+		rows, truncated, err := fetchIntentTermSymbols(ctx, db, term, intentTermFetchLimit)
+		if err != nil {
+			return nil, err
+		}
+		files := map[string]struct{}{}
+		for _, row := range rows {
+			if !intentSymbolMatchesTerm(row, term) {
+				continue
+			}
+			files[row.FilePath] = struct{}{}
+			key := fmt.Sprintf("%s|%s|%d", row.FilePath, row.QualifiedName, row.StartLine)
+			if _, dup := seen[key]; !dup {
+				seen[key] = struct{}{}
+				candidates = append(candidates, row)
+			}
+		}
+		df := len(files)
+		if truncated {
+			df = max(df, countIntentTermFiles(ctx, db, term))
+		}
+		if df == 0 {
+			continue
+		}
+		known = append(known, term)
+		idfs = append(idfs, math.Log(1+(float64(totalFiles)-float64(df)+0.5)/(float64(df)+0.5)))
+	}
+	candidates = filterSymbolsByRepo(candidates, scopedRepo)
+	if len(known) == 0 || len(candidates) == 0 {
+		return nil, nil
+	}
+	first := scoreIntentFiles(candidates, known, idfs, identifiers)
+	if len(first) > intentRescoreFiles {
+		first = first[:intentRescoreFiles]
+	}
+	paths := make([]string, len(first))
+	for i, match := range first {
+		paths[i] = match.Symbol.FilePath
+	}
+	full, err := fetchIntentFileSymbols(ctx, db, paths)
 	if err != nil {
 		return nil, err
 	}
-	candidates = filterSymbolsByRepo(candidates, scopedRepo)
+	scored := scoreIntentFiles(filterSymbolsByRepo(full, scopedRepo), known, idfs, identifiers)
 	if offset > 0 {
-		if offset >= len(candidates) {
+		if offset >= len(scored) {
 			return nil, nil
 		}
-		candidates = candidates[offset:]
+		scored = scored[offset:]
 	}
-	if len(candidates) == 0 {
-		return nil, nil
-	}
-	scored := scoreBM25(candidates, tokens)
 	if len(scored) > topN {
 		scored = scored[:topN]
 	}
 	return scored, nil
+}
+
+const intentSymbolSelect = `SELECT file_path, COALESCE(repo_id, ''), COALESCE(repo_name, ''), name, kind, start_line, COALESCE(qualified_name, ''), COALESCE(parent, ''), COALESCE(signature, '') FROM symbols`
+
+func scanIntentSymbols(rows *sql.Rows) ([]model.SymbolRecord, error) {
+	defer rows.Close()
+	symbols := []model.SymbolRecord{}
+	for rows.Next() {
+		var sym model.SymbolRecord
+		if err := rows.Scan(&sym.FilePath, &sym.RepoID, &sym.RepoName, &sym.Name, &sym.Kind, &sym.StartLine, &sym.QualifiedName, &sym.Parent, &sym.Signature); err != nil {
+			return nil, err
+		}
+		symbols = append(symbols, sym)
+	}
+	return symbols, rows.Err()
+}
+
+func intentTermWhere(term intentTerm) (string, []any) {
+	clauses := make([]string, 0, len(term.Patterns))
+	args := make([]any, 0, len(term.Patterns)*3)
+	for _, pattern := range term.Patterns {
+		clauses = append(clauses, "(lower(name) LIKE ? OR lower(file_path) LIKE ? OR lower(COALESCE(parent, '')) LIKE ?)")
+		like := "%" + pattern + "%"
+		args = append(args, like, like, like)
+	}
+	return strings.Join(clauses, " OR "), args
+}
+
+// fetchIntentTermSymbols returns up to limit symbols whose name, path or parent
+// contains one of the term patterns; truncated reports that more rows exist.
+func fetchIntentTermSymbols(ctx context.Context, db *sql.DB, term intentTerm, limit int) ([]model.SymbolRecord, bool, error) {
+	where, args := intentTermWhere(term)
+	rows, err := db.QueryContext(ctx, intentSymbolSelect+" WHERE "+where+" ORDER BY file_path, start_line LIMIT ?", append(args, limit+1)...)
+	if err != nil {
+		return nil, false, err
+	}
+	symbols, err := scanIntentSymbols(rows)
+	if err != nil {
+		return nil, false, err
+	}
+	if len(symbols) > limit {
+		return symbols[:limit], true, nil
+	}
+	return symbols, false, nil
+}
+
+func countIntentTermFiles(ctx context.Context, db *sql.DB, term intentTerm) int {
+	where, args := intentTermWhere(term)
+	var count int
+	if err := db.QueryRowContext(ctx, "SELECT COUNT(DISTINCT file_path) FROM symbols WHERE "+where, args...).Scan(&count); err != nil {
+		return 0
+	}
+	return count
+}
+
+func fetchIntentFileSymbols(ctx context.Context, db *sql.DB, paths []string) ([]model.SymbolRecord, error) {
+	if len(paths) == 0 {
+		return nil, nil
+	}
+	args := make([]any, len(paths))
+	for i, path := range paths {
+		args[i] = path
+	}
+	rows, err := db.QueryContext(ctx, intentSymbolSelect+" WHERE file_path IN ("+strings.TrimRight(strings.Repeat("?,", len(paths)), ",")+") ORDER BY file_path, start_line LIMIT 50000", args...)
+	if err != nil {
+		return nil, err
+	}
+	return scanIntentSymbols(rows)
+}
+
+// scoreIntentFiles scores symbols grouped by file. For every term matched in a
+// file the file earns idf x weight (file name 2.0, other path segment 1.2,
+// symbol name 1.0, parent/qualified 0.6; the best one counts), multiplied by a coverage bonus of
+// 1 + matched/total, halved for test files and non-code files and boosted for an
+// exact symbol-name match or when the file name is fully covered by terms. The item symbol is the best matching symbol of the
+// file. Ties break by file path so the order is deterministic.
+func scoreIntentFiles(symbols []model.SymbolRecord, terms []intentTerm, idfs []float64, identifiers []string) []intentMatch {
+	byFile := map[string][]model.SymbolRecord{}
+	order := []string{}
+	for _, sym := range symbols {
+		if _, ok := byFile[sym.FilePath]; !ok {
+			order = append(order, sym.FilePath)
+		}
+		byFile[sym.FilePath] = append(byFile[sym.FilePath], sym)
+	}
+	identifierSet := stringSet(identifiers...)
+	matches := make([]intentMatch, 0, len(order))
+	for _, file := range order {
+		fileLower := strings.ToLower(file)
+		fileParts := intentFieldParts(file)
+		stem := fileLower[strings.LastIndex(fileLower, "/")+1:]
+		if dot := strings.Index(stem, "."); dot > 0 {
+			stem = stem[:dot]
+		}
+		stemParts := intentFieldParts(stem)
+		weights := make([]float64, len(terms))
+		var best model.SymbolRecord
+		bestScore, bestExact, haveBest := -1.0, false, false
+		for _, sym := range byFile[file] {
+			nameLower := strings.ToLower(sym.Name)
+			nameParts := intentFieldParts(sym.Name)
+			relatedText := sym.Parent + " " + intentQualifiedTail(sym.QualifiedName)
+			related := strings.ToLower(relatedText)
+			relatedParts := intentFieldParts(relatedText)
+			symScore := 0.0
+			for i, term := range terms {
+				switch {
+				case intentTermMatches(term, nameLower, nameParts):
+					symScore += idfs[i] * intentFileWeightName
+					weights[i] = math.Max(weights[i], intentFileWeightName)
+				case intentTermMatches(term, related, relatedParts):
+					symScore += idfs[i] * intentFileWeightRel
+					weights[i] = math.Max(weights[i], intentFileWeightRel)
+				}
+			}
+			_, exact := identifierSet[nameLower]
+			if !haveBest || (exact && !bestExact) || (exact == bestExact && symScore > bestScore) {
+				best, bestScore, bestExact, haveBest = sym, symScore, exact, true
+			}
+		}
+		matched, score := 0, 0.0
+		words := []string{}
+		for i, term := range terms {
+			if intentTermMatches(term, stem, stemParts) {
+				weights[i] = math.Max(weights[i], intentFileWeightBase)
+			} else if intentTermMatches(term, fileLower, fileParts) {
+				weights[i] = math.Max(weights[i], intentFileWeightPath)
+			}
+			if weights[i] == 0 {
+				continue
+			}
+			matched++
+			score += idfs[i] * weights[i]
+			words = append(words, term.Word)
+		}
+		if matched == 0 {
+			continue
+		}
+		score *= 1 + float64(matched)/float64(len(terms))
+		if isIntentTestPath(fileLower) || !isIntentCodePath(fileLower) {
+			score *= 0.5
+		}
+		named := intentStemFullyCovered(terms, stemParts)
+		if named {
+			score *= intentStemCoverBonus
+		}
+		if bestExact {
+			score *= 1.5
+		}
+		matches = append(matches, intentMatch{Symbol: best, Score: score, Evidence: "terms=" + strings.Join(words, ","), Matched: matched, Total: len(terms), Exact: bestExact, Named: named && len(stemParts) >= 2})
+	}
+	sort.SliceStable(matches, func(i, j int) bool {
+		if matches[i].Score != matches[j].Score {
+			return matches[i].Score > matches[j].Score
+		}
+		return matches[i].Symbol.FilePath < matches[j].Symbol.FilePath
+	})
+	return matches
+}
+
+// intentStemFullyCovered reports that every part of the file name ("workflow",
+// "settlement" in workflow-settlement.ts) is matched by some query term: the
+// file is named after what the question asks for.
+func intentStemFullyCovered(terms []intentTerm, stemParts []string) bool {
+	if len(stemParts) == 0 {
+		return false
+	}
+	for _, part := range stemParts {
+		covered := false
+		for _, term := range terms {
+			if intentTermMatches(term, part, []string{part}) {
+				covered = true
+				break
+			}
+		}
+		if !covered {
+			return false
+		}
+	}
+	return true
+}
+
+func intentQualifiedTail(qualified string) string {
+	if index := strings.LastIndex(qualified, "::"); index >= 0 {
+		return qualified[index+2:]
+	}
+	return qualified
+}
+
+func isIntentTestPath(lowerPath string) bool {
+	base := lowerPath[strings.LastIndex(lowerPath, "/")+1:]
+	if strings.Contains(base, "_test.") || strings.Contains(base, ".test.") || strings.Contains(base, ".spec.") {
+		return true
+	}
+	padded := "/" + lowerPath
+	for _, segment := range []string{"/tests/", "/test/", "/__tests__/"} {
+		if strings.Contains(padded, segment) {
+			return true
+		}
+	}
+	return strings.Contains(padded, ".tests/")
+}
+
+var intentCodeExtensions = stringSet(".go", ".cs", ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".py", ".rs", ".java", ".kt", ".rb", ".php", ".swift", ".c", ".cc", ".cpp", ".h", ".hpp")
+
+func isIntentCodePath(lowerPath string) bool {
+	index := strings.LastIndex(lowerPath, ".")
+	if index < 0 {
+		return false
+	}
+	_, ok := intentCodeExtensions[lowerPath[index:]]
+	return ok
 }
 
 // intentCodeItem is the stable code item of nav.intent (primitives-v1):
@@ -152,11 +426,12 @@ func intentCodeItem(match intentMatch) map[string]any {
 
 // intentMixWithCode upgrades a docs answer to mode "mixed" when the question is
 // about code: it also runs the catalog search and merges strong code matches
-// before the docs and weak ones after. Without a usable catalog or code hits it
+// before the docs and weak ones after. Without code signals in the question
+// only strong matches are merged. Without a usable catalog or code hits it
 // returns the docs envelope untouched.
 func (a *App) intentMixWithCode(ctx context.Context, registration model.WorkspaceRegistration, question string, topN int, offset int, scopedRepo *model.WorkspaceRepo, docs model.Envelope) model.Envelope {
-	tokens := intentCodeTokens(question)
-	if len(tokens) == 0 {
+	terms := intentTerms(question)
+	if len(terms) == 0 {
 		return docs
 	}
 	lexical := hasIntentCodeSignals(question)
@@ -165,24 +440,24 @@ func (a *App) intentMixWithCode(ctx context.Context, registration model.Workspac
 		return docs
 	}
 	defer db.Close()
-	if !lexical && !intentCatalogNameSignal(ctx, db, question) {
-		return docs
-	}
-	scored, err := intentCodeSearch(ctx, db, tokens, topN, offset, scopedRepo)
+	lexical = lexical || intentCatalogNameSignal(ctx, db, question)
+	scored, err := intentCodeSearch(ctx, db, terms, intentQuestionIdentifiers(question), topN, offset, scopedRepo)
 	if err != nil || len(scored) == 0 {
 		return docs
 	}
 	docItems, _ := docs.Items.([]map[string]any)
 	strong, weak := []map[string]any{}, []map[string]any{}
-	identifiers := intentQuestionIdentifiers(question)
 	strongLimit := max(1, topN*2/3)
 	for _, match := range scored {
 		item := intentCodeItem(match)
-		if len(strong) < strongLimit && isStrongIntentCodeMatch(match, tokens, identifiers) {
+		if len(strong) < strongLimit && isStrongIntentCodeMatch(match) {
 			strong = append(strong, item)
-		} else {
+		} else if lexical {
 			weak = append(weak, item)
 		}
+	}
+	if len(strong) == 0 && len(weak) == 0 {
+		return docs
 	}
 	merged := make([]map[string]any, 0, len(strong)+len(docItems)+len(weak))
 	merged = append(merged, strong...)
@@ -246,83 +521,6 @@ func (a *App) intentDocs(ctx context.Context, request model.CommandRequest, regi
 	return applyAXIPreviewHints(env, request.Context, axiPreviewSummaryHint), nil
 }
 
-func scoreBM25(symbols []model.SymbolRecord, tokens []string) []intentMatch {
-	// Compute document frequency per token
-	docFreq := make(map[string]int)
-	for _, sym := range symbols {
-		seen := make(map[string]struct{})
-		searchLower := strings.ToLower(sym.SearchText)
-		for _, token := range tokens {
-			if strings.Contains(searchLower, token) {
-				if _, ok := seen[token]; !ok {
-					docFreq[token]++
-					seen[token] = struct{}{}
-				}
-			}
-		}
-	}
-
-	totalDocs := float64(len(symbols))
-	scored := make([]intentMatch, 0, len(symbols))
-
-	for _, sym := range symbols {
-		score := 0.0
-		evidence := ""
-		searchLower := strings.ToLower(sym.SearchText)
-		nameLower := strings.ToLower(sym.Name)
-
-		for _, token := range tokens {
-			if !strings.Contains(searchLower, token) {
-				continue
-			}
-
-			count := float64(strings.Count(searchLower, token))
-
-			// IDF: log(N / df)
-			idf := 1.0
-			if df, ok := docFreq[token]; ok && df > 0 {
-				idf = 1.0 + math.Log(totalDocs/float64(df))
-			}
-
-			termScore := count * idf
-
-			// Positional boosts
-			if strings.Contains(nameLower, token) {
-				termScore *= 3.0
-				if evidence == "" {
-					evidence = "name_match"
-				}
-			}
-			kindLower := strings.ToLower(sym.Kind)
-			if strings.Contains(kindLower, token) {
-				termScore *= 2.0
-			}
-			if sym.Parent != "" && strings.Contains(strings.ToLower(sym.Parent), token) {
-				termScore *= 1.5
-			}
-
-			score += termScore
-		}
-
-		if score > 0 {
-			if evidence == "" {
-				evidence = "search_text_match"
-			}
-			scored = append(scored, intentMatch{
-				Symbol:   sym,
-				Score:    score,
-				Evidence: evidence,
-			})
-		}
-	}
-
-	sort.Slice(scored, func(i, j int) bool {
-		return scored[i].Score > scored[j].Score
-	})
-
-	return scored
-}
-
 func intentSnippet(sym model.SymbolRecord) string {
 	if sym.Signature != "" {
 		return sym.Signature
@@ -384,36 +582,121 @@ func intentCodeWords(question string) []string {
 	return words
 }
 
-// intentCodeTokens returns the catalog search tokens: the words plus a light
-// stem for inflected forms ("collected" also matches "collect").
-func intentCodeTokens(question string) []string {
-	words := intentCodeWords(question)
-	if len(words) == 0 {
-		return docgraph.QuestionTokens(question)
-	}
-	seen := make(map[string]struct{}, len(words))
-	for _, word := range words {
-		seen[word] = struct{}{}
-	}
-	tokens := append([]string{}, words...)
-	for _, word := range words {
-		stem := intentStem(word)
-		if _, dup := seen[stem]; dup || stem == word {
-			continue
-		}
-		seen[stem] = struct{}{}
-		tokens = append(tokens, stem)
-	}
-	return tokens
+// intentTerm is one distinct query term with the lowercase patterns that match
+// it in names and paths (stem and cheap aliases). Patterns shorter than four
+// letters only match a whole identifier part.
+type intentTerm struct {
+	Word     string
+	Patterns []string
 }
 
-func intentStem(word string) string {
-	for _, suffix := range []string{"ing", "ed", "es", "s"} {
-		if len(word) >= len(suffix)+4 && strings.HasSuffix(word, suffix) {
-			return strings.TrimSuffix(word, suffix)
+var intentTermAliases = map[string][]string{
+	"deduplicate": {"dedup"}, "deduplicated": {"dedup"}, "deduplication": {"dedup"}, "dedupe": {"dedup"}, "duplicate": {"dedup", "duplicat"},
+	"garbage": {"gc"}, "built": {"build"}, "settled": {"settle", "settl"},
+}
+
+// intentTerms returns the distinct, stemmed terms of the question.
+func intentTerms(question string) []intentTerm {
+	seen := map[string]struct{}{}
+	terms := []intentTerm{}
+	for _, word := range intentCodeWords(question) {
+		patterns := intentTermPatterns(word)
+		if _, dup := seen[patterns[0]]; dup {
+			continue
+		}
+		seen[patterns[0]] = struct{}{}
+		terms = append(terms, intentTerm{Word: word, Patterns: patterns})
+	}
+	return terms
+}
+
+func intentTermPatterns(word string) []string {
+	patterns := []string{intentStem(word)}
+	for _, alias := range intentTermAliases[word] {
+		if !intentContainsString(patterns, alias) {
+			patterns = append(patterns, alias)
 		}
 	}
+	return patterns
+}
+
+func intentContainsString(values []string, value string) bool {
+	for _, candidate := range values {
+		if candidate == value {
+			return true
+		}
+	}
+	return false
+}
+
+// intentStem strips common English suffixes ("collected" -> "collect",
+// "entries" -> "entry", "submitted" -> "submit"). Stems act as substring
+// patterns, so over-stemming ("settled" -> "settl") still matches "settle".
+func intentStem(word string) string {
+	if len(word) >= 7 && strings.HasSuffix(word, "ies") {
+		return strings.TrimSuffix(word, "ies") + "y"
+	}
+	if len(word) >= 9 && strings.HasSuffix(word, "ation") {
+		return strings.TrimSuffix(word, "ation")
+	}
+	for _, suffix := range []string{"ing", "ed", "es", "s"} {
+		if len(word) < len(suffix)+4 || !strings.HasSuffix(word, suffix) || strings.HasSuffix(word, "ss") {
+			continue
+		}
+		stem := strings.TrimSuffix(word, suffix)
+		if suffix == "es" && !strings.HasSuffix(stem, "s") && !strings.HasSuffix(stem, "x") && !strings.HasSuffix(stem, "z") && !strings.HasSuffix(stem, "ch") && !strings.HasSuffix(stem, "sh") {
+			continue // "scores" -> "score" through the plain "s" rule
+		}
+		if suffix == "ing" || suffix == "ed" {
+			if n := len(stem); n >= 2 && stem[n-1] == stem[n-2] && !strings.ContainsAny(stem[n-1:], "lsz") {
+				stem = stem[:n-1]
+			}
+		}
+		return stem
+	}
 	return word
+}
+
+// intentFieldParts splits an identifier or path into lowercase parts
+// (CamelCase, snake_case, separators).
+func intentFieldParts(value string) []string {
+	spaced := intentCamelBoundary.ReplaceAllString(value, "$1$3 $2$4")
+	return intentWordPattern.FindAllString(strings.ToLower(spaced), -1)
+}
+
+// intentTermMatches reports whether a lowercase field (with its parts) matches
+// any pattern of the term: patterns of six or more letters match as a
+// substring, four or five letters as the prefix of a part ("turn" does not hit
+// "returned"), and shorter ones only as a whole part.
+func intentTermMatches(term intentTerm, lower string, parts []string) bool {
+	for _, pattern := range term.Patterns {
+		switch {
+		case len(pattern) >= 6:
+			if strings.Contains(lower, pattern) {
+				return true
+			}
+		case len(pattern) >= 4:
+			for _, part := range parts {
+				if strings.HasPrefix(part, pattern) {
+					return true
+				}
+			}
+		default:
+			if intentContainsString(parts, pattern) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func intentSymbolMatchesTerm(sym model.SymbolRecord, term intentTerm) bool {
+	for _, field := range []string{sym.Name, sym.FilePath, sym.Parent} {
+		if field != "" && intentTermMatches(term, strings.ToLower(field), intentFieldParts(field)) {
+			return true
+		}
+	}
+	return false
 }
 
 // hasIntentCodeSignals reports lexical evidence that a question is about code:
@@ -458,14 +741,20 @@ func intentCatalogNameSignal(ctx context.Context, db *sql.DB, question string) b
 	return db.QueryRowContext(ctx, "SELECT 1 FROM files WHERE "+strings.Join(clauses, " OR ")+" LIMIT 1", fileArgs...).Scan(&found) == nil
 }
 
-// intentQuestionIdentifiers returns lowercase identifier-like words of the
-// question (last segment of dotted names) used for exact symbol name matches.
+// intentQuestionIdentifiers returns the lowercase identifier-like words of the
+// question (CamelCase, snake_case, dotted or path names, or a capitalized word that
+// is not the first one; for paths their last segment)
+// used for exact symbol-name matches. In a one- or two-word question every word
+// counts.
 func intentQuestionIdentifiers(question string) []string {
+	fields := strings.Fields(question)
 	identifiers := []string{}
-	for _, field := range strings.Fields(question) {
+	for position, field := range fields {
 		field = strings.Trim(field, ".,;:!?()[]{}\"'`")
-		if index := strings.LastIndexAny(field, "./\\"); index >= 0 {
+		if index := strings.LastIndexAny(field, "./\\"); index >= 0 && index < len(field)-1 {
 			field = field[index+1:]
+		} else if len(fields) > 2 && !intentCamelCasePattern.MatchString(field) && !strings.Contains(field, "_") && !(position > 0 && startsWithUpper(field)) {
+			continue
 		}
 		if len(field) >= 3 {
 			identifiers = append(identifiers, strings.ToLower(field))
@@ -474,27 +763,18 @@ func intentQuestionIdentifiers(question string) []string {
 	return identifiers
 }
 
-// isStrongIntentCodeMatch is true for an exact symbol-name match or when the
-// symbol name hits a query token and at least two distinct tokens are covered
-// by name, parent and file path together.
-func isStrongIntentCodeMatch(match intentMatch, tokens []string, identifiers []string) bool {
-	name := strings.ToLower(match.Symbol.Name)
-	for _, identifier := range identifiers {
-		if identifier == name {
-			return true
-		}
+func startsWithUpper(value string) bool {
+	return value != "" && unicode.IsUpper([]rune(value)[0])
+}
+
+// isStrongIntentCodeMatch is true for an exact symbol-name match, a file named
+// after the question (multi-part name fully covered) or when the file covers at least half of the distinct catalog-known terms and at least
+// two of them.
+func isStrongIntentCodeMatch(match intentMatch) bool {
+	if match.Exact || match.Named {
+		return true
 	}
-	if match.Evidence != "name_match" {
-		return false
-	}
-	haystack := name + " " + strings.ToLower(match.Symbol.Parent) + " " + strings.ToLower(match.Symbol.FilePath)
-	covered := 0
-	for _, token := range tokens {
-		if strings.Contains(haystack, token) {
-			covered++
-		}
-	}
-	return covered >= 2
+	return match.Matched >= 2 && match.Matched*2 >= match.Total
 }
 
 func classifyIntentMode(question string, profile model.DocsReadProfile) string {
