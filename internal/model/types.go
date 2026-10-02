@@ -204,6 +204,9 @@ type Envelope struct {
 	Workspace          string              `json:"workspace,omitempty"`
 	Backend            string              `json:"backend,omitempty"`
 	Mode               string              `json:"mode,omitempty"`
+	Degraded           bool                `json:"degraded,omitempty"`
+	Reason             string              `json:"reason,omitempty"`
+	FallbackUsed       string              `json:"fallback_used,omitempty"`
 	Items              any                 `json:"items"`
 	Error              *EnvelopeError      `json:"error,omitempty"`
 	Omissions          []EnvelopeOmission  `json:"omissions,omitempty"`
@@ -276,6 +279,32 @@ type IntentOmission struct {
 	Section    string   `json:"section,omitempty"`
 	Reason     string   `json:"reason"`
 	Candidates []string `json:"candidates,omitempty"`
+}
+
+// Primitive result reason codes (primitives-v1). They are a closed set so
+// scripts can switch on Envelope.Reason instead of parsing warnings.
+const (
+	ReasonIndexNotReady         = "index_not_ready"
+	ReasonIndexSchemaBroken     = "index_schema_broken"
+	ReasonIndexStale            = "index_stale"
+	ReasonLSPUnavailable        = "lsp_unavailable"
+	ReasonLSPError              = "lsp_error"
+	ReasonSemanticEmptyTextHits = "semantic_empty_text_hits"
+	ReasonLanguageUnsupported   = "language_unsupported"
+	ReasonNoMatches             = "no_matches"
+	ReasonWorkspaceNotFound     = "workspace_not_found"
+	FallbackCatalog             = "catalog"
+	FallbackText                = "text"
+	ItemOriginSemantic          = "semantic"
+	ItemOriginCatalog           = "catalog"
+	ItemOriginText              = "text"
+)
+
+// MarkDegraded records that a lower-fidelity path answered the request.
+func (e *Envelope) MarkDegraded(reason string, fallback string) {
+	e.Degraded = true
+	e.Reason = reason
+	e.FallbackUsed = fallback
 }
 
 const (

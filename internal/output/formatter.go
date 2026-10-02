@@ -78,6 +78,12 @@ func Render(env model.Envelope, format string, compress bool) ([]byte, error) {
 // separate opt-in surface for callers that need compact output.
 func renderAgent(env model.Envelope) string {
 	lines := []string{"workspace=" + env.Workspace}
+	if env.Degraded {
+		lines[0] += " backend=" + env.Backend + " degraded=true reason=" + env.Reason
+		if env.FallbackUsed != "" {
+			lines[0] += " fallback_used=" + env.FallbackUsed
+		}
+	}
 	switch items := env.Items.(type) {
 	case []model.SymbolRecord:
 		for _, item := range items {
