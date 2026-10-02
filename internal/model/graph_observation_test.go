@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -334,6 +335,44 @@ func addGraphObservationEdge(b *GraphObservationBatch, relation, status, resolut
 	b.Evidence = append(b.Evidence, graphObservationEvidence("EV2", nil, &e, b.ExtractorVersion))
 	b.Capabilities = append(b.Capabilities, GraphObservationCapability{Backend: b.Backend, Capability: relation, State: GraphObservationStatusStable})
 	b.Coverage = append(b.Coverage, GraphObservationCoverage{Backend: b.Backend, Capability: relation, Eligible: 1, Observed: 1})
+}
+
+func TestGraphObservationEvidenceRequiredForEveryNode(t *testing.T) {
+	b := observationTestBatch()
+	b.Evidence = nil
+	err := SealGraphObservationBatch(&b)
+	var ge *GraphObservationError
+	if err == nil || !errors.As(err, &ge) || ge.Code != "GPH_OBS_EVIDENCE_MISSING" || ge.Field != "nodes" {
+		t.Fatalf("got %v, want missing node evidence", err)
+	}
+}
+
+func TestGraphObservationEvidenceIndexLargeBatch(t *testing.T) {
+	const count = 7666
+	b := graphObservationGoBatch()
+	b.Nodes = make([]GraphObservationNode, count)
+	b.Evidence = make([]GraphObservationEvidence, 0, count*2)
+	for i := range b.Nodes {
+		n := graphObservationNode(fmt.Sprintf("N%d", i), "go", "go", "type", fmt.Sprintf("acme.Widget%d", i), GraphRecordExtracted, "go/ast")
+		b.Nodes[i] = n
+		b.Evidence = append(b.Evidence, graphObservationEvidence(fmt.Sprintf("EVN%d", i), &n, nil, b.ExtractorVersion))
+	}
+	b.Edges = make([]GraphObservationEdge, count)
+	for i := range b.Edges {
+		e := GraphObservationEdge{Ref: fmt.Sprintf("E%d", i), FromRef: b.Nodes[i].Ref, ToRef: b.Nodes[i].Ref, Relation: "contains", Scope: "symbol", Status: GraphRecordExtracted, OwnerPath: "Src/App/a.cs", Backend: b.Backend, Resolution: "go/ast", SourceDigest: digestBytes([]byte(fmt.Sprintf("edge-%d", i)))}
+		b.Edges[i] = e
+		b.Evidence = append(b.Evidence, graphObservationEvidence(fmt.Sprintf("EVE%d", i), nil, &e, b.ExtractorVersion))
+	}
+	b.Capabilities = append(b.Capabilities, GraphObservationCapability{Backend: "go", Capability: "contains", State: GraphObservationStatusStable})
+	b.Coverage[0].Eligible = count
+	b.Coverage[0].Observed = count
+	b.Coverage = append(b.Coverage, GraphObservationCoverage{Backend: "go", Capability: "contains", Eligible: count, Observed: count})
+	if err := SealGraphObservationBatch(&b); err != nil {
+		t.Fatalf("seal large evidence batch: %v", err)
+	}
+	if err := b.Validate(); err != nil {
+		t.Fatalf("validate large evidence batch: %v", err)
+	}
 }
 
 func TestGraphObservationEdgeEvidenceRequired(t *testing.T) {
