@@ -654,3 +654,134 @@ func TestGraphOmissionReasonNeverCrossesPlannerEnvelopeRaw(t *testing.T) {
 		}
 	}
 }
+
+func TestIntentCodeTokensDropStopwordsAndSplitIdentifiers(t *testing.T) {
+	tokens := intentCodeTokens("where is the workspace registry garbage collected")
+	joined := " " + strings.Join(tokens, " ") + " "
+	for _, want := range []string{"workspace", "registry", "garbage", "collected", "collect"} {
+		if !strings.Contains(joined, " "+want+" ") {
+			t.Fatalf("tokens=%v missing %q", tokens, want)
+		}
+	}
+	for _, noise := range []string{"where", "the", "is"} {
+		if strings.Contains(joined, " "+noise+" ") {
+			t.Fatalf("tokens=%v keep stopword %q", tokens, noise)
+		}
+	}
+	split := intentCodeTokens("donde se llama HandleDaemon_error en internal/service/app.go")
+	joined = " " + strings.Join(split, " ") + " "
+	for _, want := range []string{"handle", "daemon", "error", "internal", "service", "app"} {
+		if !strings.Contains(joined, " "+want+" ") {
+			t.Fatalf("split tokens=%v missing %q", split, want)
+		}
+	}
+	if strings.Contains(joined, " donde ") || strings.Contains(joined, " llama ") {
+		t.Fatalf("split tokens=%v keep spanish stopwords", split)
+	}
+}
+
+func TestHasIntentCodeSignals(t *testing.T) {
+	for question, want := range map[string]bool{
+		"how does WorkspaceRegistry garbage collect":     true,
+		"why is index_not_ready returned":                true,
+		"what calls service.Execute":                     true,
+		"explain internal/workspace/registry.go":         true,
+		"which struct holds the registry lock":           true,
+		"where is the lock implemented":                  true,
+		"donde se define el lock del registry":           true,
+		"How does the governance model work":             false,
+		"what requirements cover the onboarding journey": false,
+	} {
+		if got := hasIntentCodeSignals(question); got != want {
+			t.Errorf("hasIntentCodeSignals(%q)=%v want %v", question, got, want)
+		}
+	}
+}
+
+func intentMixedFixture(t *testing.T) (string, string) {
+	t.Helper()
+	root, alias := setupTestWorkspace(t)
+	db, err := store.Open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	symbols := []model.SymbolRecord{
+		{FilePath: "internal/workspace/registry.go", RepoID: "main", RepoName: "main", Name: "CollectGarbage", Kind: "function", StartLine: 40, EndLine: 60, QualifiedName: "internal/workspace/registry.go::CollectGarbage", Language: "go", SearchText: "collect garbage function workspace registry"},
+		{FilePath: "internal/other/render.go", RepoID: "main", RepoName: "main", Name: "RenderWorkspace", Kind: "function", StartLine: 5, EndLine: 9, QualifiedName: "internal/other/render.go::RenderWorkspace", Language: "go", SearchText: "render workspace function render"},
+	}
+	files := []model.FileRecord{
+		{FilePath: "internal/workspace/registry.go", RepoID: "main", RepoName: "main", Language: "go"},
+		{FilePath: "internal/other/render.go", RepoID: "main", RepoName: "main", Language: "go"},
+	}
+	if err := store.ReplaceCatalog(context.Background(), db, testProject(alias), files, symbols); err != nil {
+		t.Fatal(err)
+	}
+	return root, alias
+}
+
+func TestIntentMixedPutsStrongCodeBeforeDocs(t *testing.T) {
+	root, alias := intentMixedFixture(t)
+	env, err := New(root, nil).Execute(context.Background(), model.CommandRequest{
+		Operation: "nav.intent",
+		Context:   model.QueryOptions{Workspace: alias},
+		Payload:   map[string]any{"question": "where is the workspace registry garbage collected", "top": 10},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if env.Mode != "mixed" {
+		t.Fatalf("mode=%q want mixed (items=%#v)", env.Mode, env.Items)
+	}
+	items, ok := env.Items.([]map[string]any)
+	if !ok || len(items) == 0 {
+		t.Fatalf("items=%T %#v", env.Items, env.Items)
+	}
+	if items[0]["kind"] != "code" || items[0]["file"] != "internal/workspace/registry.go" || items[0]["origin"] != model.ItemOriginCatalog || items[0]["symbol_kind"] != "function" {
+		t.Fatalf("first item=%#v want strong registry.go code match", items[0])
+	}
+	for _, item := range items {
+		if item["kind"] != "code" && item["kind"] != "doc" {
+			t.Fatalf("item without code|doc kind: %#v", item)
+		}
+	}
+}
+
+func TestIntentDocsQuestionWithoutCodeSignalsStaysDocs(t *testing.T) {
+	root, alias := intentMixedFixture(t)
+	env, err := New(root, nil).Execute(context.Background(), model.CommandRequest{
+		Operation: "nav.intent",
+		Context:   model.QueryOptions{Workspace: alias},
+		Payload:   map[string]any{"question": "how does the governance approval process work", "top": 10},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if env.Mode != "docs" {
+		t.Fatalf("mode=%q want docs", env.Mode)
+	}
+}
+
+func TestIntentMixWithCodeWithoutCatalogReturnsDocsUntouched(t *testing.T) {
+	docs := model.Envelope{Ok: true, Mode: "docs", Items: []map[string]any{{"kind": "doc", "doc_path": "a.md"}}}
+	got := New(t.TempDir(), nil).intentMixWithCode(context.Background(), model.WorkspaceRegistration{Name: "demo", Root: t.TempDir()}, "where is RegistryLock implemented", 10, 0, nil, docs)
+	if got.Mode != "docs" || len(got.Items.([]map[string]any)) != 1 {
+		t.Fatalf("envelope=%+v want docs untouched", got)
+	}
+}
+
+func TestIsStrongIntentCodeMatch(t *testing.T) {
+	tokens := []string{"workspace", "registry", "garbage"}
+	exact := intentMatch{Symbol: model.SymbolRecord{Name: "RegistryLock", FilePath: "x.go"}, Evidence: "search_text_match"}
+	if !isStrongIntentCodeMatch(exact, tokens, []string{"registrylock"}) {
+		t.Fatal("exact name must be strong")
+	}
+	near := intentMatch{Symbol: model.SymbolRecord{Name: "CollectGarbage", FilePath: "internal/workspace/registry.go"}, Evidence: "name_match"}
+	if !isStrongIntentCodeMatch(near, tokens, nil) {
+		t.Fatal("name hit plus path coverage must be strong")
+	}
+	weak := intentMatch{Symbol: model.SymbolRecord{Name: "Other", FilePath: "internal/workspace/registry.go"}, Evidence: "search_text_match"}
+	if isStrongIntentCodeMatch(weak, tokens, nil) {
+		t.Fatal("path-only match must be weak")
+	}
+}

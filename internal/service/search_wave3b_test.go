@@ -506,3 +506,32 @@ func TestEnrichSearchResultsWithContent_WarnsOnMissingIndexedFile(t *testing.T) 
 		t.Fatalf("content_warning = %#v, want stale_index_file_missing", got)
 	}
 }
+
+func TestSearchMatchColumnLiteralAndRegex(t *testing.T) {
+	if got := searchMatchColumn("needle", false)("héllo needle"); got != 7 {
+		t.Fatalf("literal col=%d want 7 (rune based)", got)
+	}
+	if got := searchMatchColumn(`ne+dle`, true)("xx needle"); got != 4 {
+		t.Fatalf("regex col=%d want 4", got)
+	}
+	if got := searchMatchColumn("(", true)("anything"); got != 0 {
+		t.Fatalf("invalid regex col=%d want 0", got)
+	}
+	if got := searchMatchColumn("absent", false)("anything"); got != 0 {
+		t.Fatalf("missing match col=%d want 0", got)
+	}
+}
+
+func TestSearchFallbackItemsCarryTextOriginAndColumn(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "a.txt"), []byte("zz needle here\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	items, err := searchPatternFallback(context.Background(), root, root, model.ProjectFile{}, "needle", false, 10)
+	if err != nil || len(items) != 1 {
+		t.Fatalf("items=%v err=%v", items, err)
+	}
+	if items[0]["origin"] != model.ItemOriginText || items[0]["col"] != 4 {
+		t.Fatalf("item=%#v want origin text and col 4", items[0])
+	}
+}

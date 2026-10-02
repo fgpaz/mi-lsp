@@ -17,6 +17,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/fgpaz/mi-lsp/internal/language"
 	"github.com/fgpaz/mi-lsp/internal/model"
@@ -203,8 +204,12 @@ func searchPatternRgWithDiagnostics(ctx context.Context, workspaceRoot string, s
 	waitErr := command.Wait()
 	sort.Slice(*matches, func(i, j int) bool { return searchMatchLess((*matches)[i], (*matches)[j]) })
 	items := make([]map[string]any, 0, matches.Len())
+	locate := searchMatchColumn(pattern, useRegex)
 	for _, result := range *matches {
-		item := map[string]any{"file": result.File, "line": result.Line, "text": result.Text}
+		item := map[string]any{"file": result.File, "line": result.Line, "text": result.Text, "origin": model.ItemOriginText}
+		if col := locate(result.Text); col > 0 {
+			item["col"] = col
+		}
 		if repo, ok := workspace.FindRepoByFile(project, workspaceRoot, filepath.Join(workspaceRoot, filepath.FromSlash(result.File))); ok {
 			item["repo"] = repo.Name
 		}
@@ -351,6 +356,7 @@ func searchPatternFallbackWithDiagnostics(ctx context.Context, workspaceRoot str
 		return nil, err
 	}
 	items := make([]map[string]any, 0, len(rawMatches))
+	locate := searchMatchColumn(pattern, useRegex)
 	for _, m := range rawMatches {
 		relativeFile, relErr := makeRelative(workspaceRoot, m.File)
 		if relErr != nil {
@@ -360,9 +366,13 @@ func searchPatternFallbackWithDiagnostics(ctx context.Context, workspaceRoot str
 			continue
 		}
 		item := map[string]any{
-			"file": relativeFile,
-			"line": m.Line,
-			"text": m.Text,
+			"file":   relativeFile,
+			"line":   m.Line,
+			"text":   m.Text,
+			"origin": model.ItemOriginText,
+		}
+		if col := locate(m.Text); col > 0 {
+			item["col"] = col
 		}
 		if repo, ok := workspace.FindRepoByFile(project, workspaceRoot, m.File); ok {
 			item["repo"] = repo.Name
@@ -373,6 +383,34 @@ func searchPatternFallbackWithDiagnostics(ctx context.Context, workspaceRoot str
 		return searchTimeoutResult(diagnostics, items)
 	}
 	return items, nil
+}
+
+// searchMatchColumn returns a locator that gives the 1-based rune column of the
+// first match of pattern in a line (0 when unknown). The agent renderer uses it
+// to center long snippets on the match instead of cutting the line head.
+func searchMatchColumn(pattern string, useRegex bool) func(string) int {
+	var re *regexp.Regexp
+	if useRegex {
+		compiled, err := regexp.Compile(pattern)
+		if err != nil {
+			return func(string) int { return 0 }
+		}
+		re = compiled
+	}
+	return func(text string) int {
+		index := -1
+		if re != nil {
+			if loc := re.FindStringIndex(text); loc != nil {
+				index = loc[0]
+			}
+		} else if pattern != "" {
+			index = strings.Index(text, pattern)
+		}
+		if index < 0 {
+			return 0
+		}
+		return utf8.RuneCountInString(text[:index]) + 1
+	}
 }
 
 var searchPatternGoAfterMatch func()

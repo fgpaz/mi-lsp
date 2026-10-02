@@ -671,6 +671,9 @@ func implicitAgentFormat(cmd *cobra.Command, clientName string, clientConfigured
 	return !stdoutIsTerminal
 }
 
+// implicitAgentSearchMaxItems is the default nav.search cap in implicit agent format.
+const implicitAgentSearchMaxItems = 20
+
 func (s *rootState) effectiveMaxItems(cmd *cobra.Command, operation string, axiEnabled bool, fullEnabled bool) int {
 	if cmd != nil && cmd.Flags().Changed("max-items") {
 		return s.maxItems
@@ -685,7 +688,13 @@ func (s *rootState) effectiveMaxItems(cmd *cobra.Command, operation string, axiE
 	}
 	if s.usesImplicitAgentFormat(cmd) && !fullEnabled {
 		switch operation {
-		case "nav.search", "nav.intent", "nav.find", "nav.multi-read":
+		case "nav.search":
+			// Agent search lines are compact (grouped by file), so a wider
+			// default window stays cheaper than rg while avoiding false misses.
+			if s.maxItems > implicitAgentSearchMaxItems {
+				return implicitAgentSearchMaxItems
+			}
+		case "nav.intent", "nav.find", "nav.multi-read":
 			if s.maxItems > 5 {
 				return 5
 			}

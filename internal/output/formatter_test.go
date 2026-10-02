@@ -137,7 +137,7 @@ func TestRenderAgent_TextSearchMatchesStayCompact(t *testing.T) {
 	if len(rendered) >= 600 {
 		t.Fatalf("expected five search matches under 600 bytes, got %d: %s", len(rendered), text)
 	}
-	for _, want := range []string{"workspace=mi-lsp-src", "internal/service/search.go:101", "internal/output/formatter_test.go:120", "…"} {
+	for _, want := range []string{"workspace=mi-lsp-src", "internal/service/search.go\n  101: ", "  152: ", "internal/output/formatter_test.go:120"} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("expected output to contain %q, got %s", want, text)
 		}
