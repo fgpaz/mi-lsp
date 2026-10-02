@@ -73,7 +73,7 @@ func (a *App) intent(ctx context.Context, request model.CommandRequest) (model.E
 		env, docsErr := a.intentDocs(ctx, request, registration, question, topN, offset, scopedRepo, scopeWarnings)
 		if docsErr != nil {
 			if hasIntentCodeSignals(question) {
-				return intentCatalogUnavailable(intentEmptyDocsEnvelope(registration, scopeWarnings), question, true, docsErr), nil
+				return intentCatalogUnavailable(intentEmptyDocsEnvelope(registration, scopeWarnings), question, true, withCatalogRoot(registration.Root, docsErr)), nil
 			}
 			return model.Envelope{}, model.NewStableError(sanitizeIntentError(docsErr))
 		}
