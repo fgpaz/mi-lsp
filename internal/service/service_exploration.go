@@ -26,7 +26,7 @@ var (
 )
 
 func (a *App) serviceSummary(ctx context.Context, request model.CommandRequest) (model.Envelope, error) {
-	registration, project, err := a.resolveWorkspaceWithProject(request.Context.Workspace)
+	registration, project, err := a.resolveWorkspaceWithProjectForNavigation(request)
 	if err != nil {
 		return model.Envelope{}, err
 	}

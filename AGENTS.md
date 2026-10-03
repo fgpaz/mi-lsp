@@ -26,6 +26,7 @@ The principal session is **Chief of Staff**, not a leaf implementer.
 - Leaf dispatch is ROI-positive: spawn when separable ownership and expected value beat orchestration cost. Adapter availability alone never forces a worker.
 - If spawn is blocked: announce owner_surface + rule + how_to_unblock. Silent multi-axis parent-implement is forbidden.
 - `$writing-plans` is for orchestrator→leaf task packets only, not a human-facing ceremony.
+- **Operator-facing language**: answer what the operator asked first, in their language and words; name lanes by what they do ("the lane fixing compaction"), never by pane/lane/test codes alone; orchestration detail (screens, statuses, watchers, retries) only on request. A lane — herdr, another session or an in-harness subagent — is reported as goal, stage and result.
 
 ## Context rules (ps-contexto)
 
@@ -34,9 +35,9 @@ The principal session is **Chief of Staff**, not a leaf implementer.
 - Route-first mi-lsp: prefer `nav batch` + `nav multi-read`; depth `policy` for kernel/skill-only (skip product/UX/negocio gates).
 - Session SoT: goal intent + selectors/scope locks + locked decisions + goal-phase. Graph topology/bindings/readiness are queried live at boundaries, never stored as session SoT.
 
-## mi-lsp diet (token-cheap nav)
+## Native context entry and four mi-lsp modes
 
-Workspace: `mi-lsp`. Default `--format toon` (leaves: prefer `--profile harness-micro --compress`).
+For every real work task, enter through the native `ps-contexto` and `mi-lsp` skills and actually invoke the tool; skill availability or a text mention is not tool-use evidence. The native harness owns invocation, lifecycle, and monitoring. `ps-contexto` obtains the minimum useful cheap bounded live context (wiki anchor and decisions, scope locks, and a small implication slice), then supplies exact follow-up queries for implementation. Greetings, status chat, and repeated literal getters do not restart a full workflow; no full-wiki/status/governance preflight is required for every task.
 
 Preferred commands only:
 - **Goal-shaped navigation** starts with `mi-lsp nav intent "<goal>"`.
@@ -55,6 +56,16 @@ Allowed fallback codes are exactly:
 - `explicit_incomplete`
 
 Fallback requires one visible `reason_code` from this list and a separate bounded detail; do not use a generic fallback chain.
+Goal-shaped requests start with cheap `mi-lsp nav intent "<goal>"` discovery, then consume the exact emitted `continuation.next`, `expansions[].command`, or literal supported executable `next_queries` values when emitted; these field names are not an exclusive whitelist. Inspect actual returned values; do not execute query terms or derive commands from prose. Do not invent a closed follow-up operation whitelist. Literal named mi-lsp/wiki/code commands go direct. Select the smallest applicable mode:
+
+1. **Canonical wiki** — read governed wiki roots and architecture decisions; wiki remains the authority.
+2. **General linked documentation/knowledge ("Obsidian-like")** — follow existing map, root, and linked metadata; do not fabricate SDD/RS requirements or promote notes to canon.
+3. **LSP/code graphs** — use LSP symbols and references plus graph callers, callees, and tests; do not eagerly load the full graph.
+4. **Combined bidirectional traversal** — traverse either direction through existing `wiki_code_context` lanes, keeping the node/link set bounded.
+
+Readers follow bounded nodes and links, not repeated broad `rg` scans. Preserve typed fallback reasons and honest `unavailable`/`partial` results; distinguish candidates, declared bindings, and observed runtime data; surface stale graph state; and retain documented boundaries and wiki architecture locks. If mi-lsp is unavailable, use the existing fallback path only with that typed reason and no invented command or public API.
+
+A real invocation must produce runtime evidence only through existing native invocation plus mi-lsp session/operation evidence; do not add a recorder, fabricate savings, rewrite directives with tool regexes, or make a mandatory hook. After implementation, the goal owner performs one goal-level wiki drift check and owns any meaningful wiki update (no-op writes are forbidden), then `ps-trazabilidad`, then the independent read-only `ps-auditar-trazabilidad`. Keep one owner skill at a time, no per-leaf tests/audits, no second full-suite authorization, and no automatic push or deletion authority.
 
 ## FAST same-repo ceremony (almost zero)
 
@@ -68,11 +79,11 @@ Fallback requires one visible `reason_code` from this list and a separate bounde
 ## Kernel Fast Runtime v3
 
 ```toon
-policy_revision: kernel-fast-governance-v3
+policy_revision: kernel-fast-governance-v4
 execution_mode: FAST
 closure_profile: governed_kernel_change
 build_loop: {tests: false, audits: false, traceability: false, evidence: false, structural_check_max_seconds: 0, c2_validation: false}
-final_verify: {count: 1, method: impact_map, fresh_verifier: required, single_wave: true}
+final_verify: {count: 1, method: impact_map, fresh_verifier: required, single_wave: true, trace_audit: combined_single_pass, forbid_duplicate_evidence_tours: true}
 evidence: {mode: only_publish, packet: single_closure_packet, durable_before_publish: false}
 ```
 
@@ -139,4 +150,4 @@ Local semantic CLI for large .NET/C# and TypeScript workspaces.
 **Status**: Generated from AE-POLICY-PROJECTION-V2
 **Last Updated**: 2026-08-25
 **Source**: repo-policy.yaml + template.agents
-<!-- kernel_version: 4c1c26f2 -->
+<!-- kernel_version: 908b4f44 -->

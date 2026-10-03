@@ -13,31 +13,31 @@ import (
 // ChangePackPacket is a one-shot harness packet for PR/diff understanding:
 // changed symbols, ranked affected surfaces, hub/community risk, and next reads.
 type ChangePackPacket struct {
-	Ref              string           `json:"ref,omitempty"`
-	ChangedFiles     int              `json:"changed_files"`
-	ChangedPaths     []string         `json:"changed_paths,omitempty"`
-	ChangedSymbols   []DiffSymbol     `json:"changed_symbols,omitempty"`
-	Affected         []AffectedItem   `json:"affected,omitempty"`
-	ReadFirst        []FlowSliceRead  `json:"read_first,omitempty"`
-	HubRisk          *HubRisk         `json:"hub_risk,omitempty"`
-	WikiMustRead     []string         `json:"wiki_must_read,omitempty"`
-	SuggestedTests   []string         `json:"suggested_tests,omitempty"`
-	BatchNext        []batchOperation `json:"batch_next,omitempty"`
-	GenerationID     string           `json:"generation_id,omitempty"`
-	Determinism      string           `json:"determinism_digest,omitempty"`
-	Backend          string           `json:"backend,omitempty"`
-	ImpactFiles      int              `json:"impact_files,omitempty"`
-	ImpactSymbols    int              `json:"impact_symbols,omitempty"`
+	Ref            string           `json:"ref,omitempty"`
+	ChangedFiles   int              `json:"changed_files"`
+	ChangedPaths   []string         `json:"changed_paths,omitempty"`
+	ChangedSymbols []DiffSymbol     `json:"changed_symbols,omitempty"`
+	Affected       []AffectedItem   `json:"affected,omitempty"`
+	ReadFirst      []FlowSliceRead  `json:"read_first,omitempty"`
+	HubRisk        *HubRisk         `json:"hub_risk,omitempty"`
+	WikiMustRead   []string         `json:"wiki_must_read,omitempty"`
+	SuggestedTests []string         `json:"suggested_tests,omitempty"`
+	BatchNext      []batchOperation `json:"batch_next,omitempty"`
+	GenerationID   string           `json:"generation_id,omitempty"`
+	Determinism    string           `json:"determinism_digest,omitempty"`
+	Backend        string           `json:"backend,omitempty"`
+	ImpactFiles    int              `json:"impact_files,omitempty"`
+	ImpactSymbols  int              `json:"impact_symbols,omitempty"`
 	// Live bridge classification is additive; the complete context remains on
 	// Envelope.WikiCodeContext so the packet does not embed it twice.
-	Classification   string           `json:"classification,omitempty"`
-	Classifications  []string         `json:"classifications,omitempty"`
-	NextQueries      []string         `json:"next_queries,omitempty"`
+	Classification  string   `json:"classification,omitempty"`
+	Classifications []string `json:"classifications,omitempty"`
+	NextQueries     []string `json:"next_queries,omitempty"`
 }
 
 func (a *App) changePack(ctx context.Context, request model.CommandRequest) (model.Envelope, error) {
 	started := time.Now()
-	registration, _, err := a.resolveWorkspaceWithProject(request.Context.Workspace)
+	registration, _, err := a.resolveWorkspaceWithProjectForNavigation(request)
 	if err != nil {
 		return model.Envelope{}, err
 	}

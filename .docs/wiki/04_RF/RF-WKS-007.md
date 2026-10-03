@@ -13,6 +13,7 @@ imports:
   - '[[RF-WKS-001]]'
   - '[[RF-WKS-005]]'
   - '[[RF-WKS-006]]'
+  - '[[TP-WKS]]'
   - '[[CT-WORKSPACE-PROBE]]'
   - '[[TP-WKS-PROBE]]'
 exports:
@@ -23,10 +24,12 @@ agent_must_read:
   - .docs/wiki/04_RF/RF-WKS-005.md
   - .docs/wiki/04_RF/RF-WKS-006.md
   - .docs/wiki/04_RF/RF-WKS-007.md
+  - .docs/wiki/06_pruebas/TP-WKS.md
   - .docs/wiki/09_contratos/CT-WORKSPACE-PROBE.md
   - .docs/wiki/06_pruebas/TP-WKS-PROBE.md
 agent_may_edit:
   - .docs/wiki/04_RF/RF-WKS-007.md
+  - .docs/wiki/06_pruebas/TP-WKS.md
   - .docs/wiki/09_contratos/CT-WORKSPACE-PROBE.md
   - .docs/wiki/06_pruebas/TP-WKS-PROBE.md
 agent_must_not_edit:
@@ -43,6 +46,7 @@ stop_if:
   - probe_side_effects=true
 evidence:
   - .docs/wiki/04_RF/RF-WKS-007.md
+  - .docs/wiki/06_pruebas/TP-WKS.md
   - .docs/wiki/09_contratos/CT-WORKSPACE-PROBE.md
   - .docs/wiki/06_pruebas/TP-WKS-PROBE.md
 ---
@@ -113,7 +117,7 @@ resolution:
   omitted_selector:
     git_top_level: determine_first_in_normal_and_read_only
     registered_git_root: exact_canonical_match_preferred
-    unregistered_git_root: synthetic_read_only_root
+    unregistered_git_root: auto_register_then_resolve  # ver RF-WKS-007-B03 auto-registro; synthetic_read_only_root solo con opt-out
     lexical_parent_fallback_for_git: forbidden
     non_git_directory: preserve_registered_containment
     precedence: [git_top_level, caller_cwd, same_root_alias_policy, last_workspace]
@@ -129,6 +133,12 @@ resolution:
 
 Un selector explícito inválido o stale nunca puede convertirse silenciosamente en el workspace del `caller_cwd`. La resolución omitida conserva la precedencia contextual existente y expone `source` y warnings suficientes para auditoría.
 Los aliases heredados que apunten a la misma raíz física siguen siendo válidos y se conservan; la presentación compacta no los migra, elimina ni redirige. Un alias explícito desconocido o stale sigue fallando sin sustituirse por el workspace del cwd.
+
+### Auto-registro en la primera consulta
+
+Las operaciones que requieren workspace (`nav.*`, `index.*`, `info`, `workspace.status`) ejecutan un único camino compartido por CLI y daemon (`App.Execute`, `internal/service/auto_register.go` y `internal/workspace/autoregister.go`), de modo que sirve igual a `mi-lsp mcp`, al plugin claude-code-milsp y al hijo persistente de mi-mcp.
+
+La especificación normativa del auto-registro, incluida la respuesta cuando el repo aún no tiene commits y el alcance del opt-out, está agrupada en el bloque TOON `RF-WKS-007-B08`. Los casos de verificación se definen normativamente en `TP-WKS` (`TC-WKS-048..060`). El enlace al flag CLI se apoya en evidencia de código; `TC-WKS-049` no declara cobertura E2E de su propagación.
 
 ## [RF-WKS-007-B04] Estado híbrido portable/local
 
@@ -220,3 +230,76 @@ format_oracle: dynamic_touched_go_gofmt_from_git_diff
 ```
 
 Las pruebas cubren snapshots antes/después de parent, worktree, home y fixtures temporales, alias inexistente y stale, resolución contextual sin selector, casing por plataforma, symlink/junction cuando el host lo permite, DB inexistente y apertura read-only sin WAL/SHM. Toda prueba que observe una mutación del filesystem o registry hace fallar el batch. La única oracle de formato para todos los Go tocados es la orden dinámica y no mutante declarada en `verify`: descubre el conjunto completo desde Git, no usa listas manuales y nunca escribe archivos.
+
+## [RF-WKS-007-B08] Auto-registro en la primera consulta
+
+```toon
+block_id: RF-WKS-007-B08
+kind: normative
+source_of_truth: RF-WKS-007
+verify:
+  - go test -count=1 ./internal/service ./internal/workspace
+  - mi-lsp nav wiki validate-source --workspace mi-lsp --format toon
+evidence:
+  - .docs/wiki/04_RF/RF-WKS-007.md
+  - .docs/wiki/06_pruebas/TP-WKS.md
+  - internal/cli/root.go
+  - internal/service/auto_register.go
+  - internal/service/auto_register_test.go
+  - internal/workspace/autoregister.go
+  - internal/workspace/autoregister_test.go
+  - internal/workspace/registry.go
+  - internal/workspace/registry_test.go
+operations_requiring_workspace: [nav.*, index.*, info, workspace.status]
+selector:
+  omitted: caller_cwd
+  requested_path: existing_path_that_is_not_a_registered_alias
+  auto_register_only_inside_unregistered_git_repository: true
+registration:
+  root: git_top_level
+  project_toml:
+    create_only_if_missing: true
+    preserve_existing: true
+  last_workspace_changed: false
+  excluded: [$HOME, filesystem_root, path_outside_git_repository]
+  probe_registers: false
+alias:
+  default: git_root_basename
+  collision: deterministic_basename_plus_sha256_root_prefix
+  collision_suffix_expands_if_needed: true
+  overwrite_existing_alias: forbidden
+  alias_for_same_root: reuse_existing
+query_with_commits:
+  response: immediate
+  response_content: [catalog_or_text, possibly_partial]
+  index_start: background_deduplicated_by_root
+query_without_commits:
+  registration_persisted: true
+  query_continues: true
+  response_mode: text_search
+  index_start: forbidden
+  warning: auto_register_index_skipped
+  warning_message: "repository has no commits yet; not indexing until the first commit (results use text search)"
+registration_failure:
+  query_blocked: false
+  warning: auto_register_failed
+registry:
+  write: atomic_temp_file_then_rename
+  read_modify_write_lock: registry.lock
+  permissions:
+    new_file_mode_argument: "0600"
+    existing_file_mode: preserve_existing_permission_bits
+    test_assertion_scope: non_windows_checks_new_mode_and_explicit_0600_update
+    source_behavior: internal/workspace/registry.go
+    test_binding: TestSaveRegistryPreservesRestrictivePermissions
+opt_out:
+  environment_variable: MI_LSP_NO_AUTO_REGISTER=1
+  cli_option: --no-auto-register
+  cli_source_evidence: internal/cli/root.go
+  cli_mapping: QueryOptions.NoAutoRegister
+  cli_request_path: CommandRequest.Context.NoAutoRegister
+  daemon_request_path: executeOperation_passes_request_to_daemon.ExecuteWithDialTimeout
+  cli_daemon_e2e_coverage: pending_no_automated_oracle
+  service_test_inputs: [request.Context.NoAutoRegister, MI_LSP_NO_AUTO_REGISTER=1]
+case_ids: [TC-WKS-048, TC-WKS-049, TC-WKS-050, TC-WKS-051, TC-WKS-052, TC-WKS-053, TC-WKS-054, TC-WKS-055, TC-WKS-056, TC-WKS-057, TC-WKS-058, TC-WKS-059, TC-WKS-060]
+```

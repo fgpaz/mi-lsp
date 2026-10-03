@@ -35,7 +35,7 @@ func (a *App) wikiSearch(ctx context.Context, request model.CommandRequest) (mod
 		return a.wikiSearchAllWorkspaces(ctx, request)
 	}
 
-	registration, _, err := a.resolveWorkspaceWithProject(request.Context.Workspace)
+	registration, _, err := a.resolveWorkspaceWithProjectForNavigation(request)
 	if err != nil {
 		return model.Envelope{}, err
 	}

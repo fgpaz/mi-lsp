@@ -187,6 +187,7 @@ func TestFind_RegisteredWorkspaceWithoutIndexReturnsReadinessError(t *testing.T)
 }
 
 func TestFind_UnregisteredRepositoryReturnsRegistrationGuidance(t *testing.T) {
+	t.Setenv(workspace.AutoRegisterEnvVar, "1") // covers the opt-out path: no implicit registration
 	ensureWritableTestHome(t)
 	root := t.TempDir()
 	if output, err := exec.Command("git", "-C", root, "init", "--quiet").CombinedOutput(); err != nil {

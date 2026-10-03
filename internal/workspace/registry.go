@@ -266,15 +266,55 @@ func SaveRegistry(registry model.RegistryFile) error {
 	if err != nil {
 		return err
 	}
-	file, err := os.Create(path)
+	mode := os.FileMode(0o600)
+	if info, statErr := os.Stat(path); statErr == nil {
+		mode = info.Mode().Perm()
+	} else if !os.IsNotExist(statErr) {
+		return statErr
+	}
+	// Write to a sibling temp file and rename so readers and concurrent
+	// writers never observe a truncated registry.
+	tmp, err := os.CreateTemp(filepath.Dir(path), "registry-*.toml.tmp")
 	if err != nil {
 		return err
 	}
-	defer file.Close()
-	return toml.NewEncoder(file).Encode(registry)
+	tmpPath := tmp.Name()
+	if err := toml.NewEncoder(tmp).Encode(registry); err != nil {
+		_ = tmp.Close()
+		_ = os.Remove(tmpPath)
+		return err
+	}
+	if err := tmp.Sync(); err != nil {
+		_ = tmp.Close()
+		_ = os.Remove(tmpPath)
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		_ = os.Remove(tmpPath)
+		return err
+	}
+	if err := os.Chmod(tmpPath, mode); err != nil {
+		_ = os.Remove(tmpPath)
+		return err
+	}
+	if err := os.Rename(tmpPath, path); err != nil {
+		_ = os.Remove(tmpPath)
+		return err
+	}
+	return nil
 }
 
 func RegisterWorkspace(name string, registration model.WorkspaceRegistration) (model.RegistryFile, error) {
+	var registry model.RegistryFile
+	err := WithRegistryLock(func() error {
+		var inner error
+		registry, inner = registerWorkspaceLocked(name, registration)
+		return inner
+	})
+	return registry, err
+}
+
+func registerWorkspaceLocked(name string, registration model.WorkspaceRegistration) (model.RegistryFile, error) {
 	registry, err := LoadRegistry()
 	if err != nil {
 		return registry, err
@@ -299,6 +339,10 @@ func preserveCanonLinks(existing, incoming model.WorkspaceRegistration) model.Wo
 }
 
 func RemoveWorkspace(name string) error {
+	return WithRegistryLock(func() error { return removeWorkspaceLocked(name) })
+}
+
+func removeWorkspaceLocked(name string) error {
 	registry, err := LoadRegistry()
 	if err != nil {
 		return err
@@ -314,6 +358,16 @@ func RemoveWorkspace(name string) error {
 }
 
 func PruneStaleWorkspaces(apply bool) (WorkspacePruneReport, error) {
+	var report WorkspacePruneReport
+	err := WithRegistryLock(func() error {
+		var inner error
+		report, inner = pruneStaleWorkspacesLocked(apply)
+		return inner
+	})
+	return report, err
+}
+
+func pruneStaleWorkspacesLocked(apply bool) (WorkspacePruneReport, error) {
 	registry, err := LoadRegistry()
 	if err != nil {
 		return WorkspacePruneReport{}, err
@@ -376,6 +430,16 @@ func PruneStaleWorkspaces(apply bool) (WorkspacePruneReport, error) {
 }
 
 func GarbageCollectRegistry(apply bool) (WorkspacePruneReport, error) {
+	var report WorkspacePruneReport
+	err := WithRegistryLock(func() error {
+		var inner error
+		report, inner = garbageCollectRegistryLocked(apply)
+		return inner
+	})
+	return report, err
+}
+
+func garbageCollectRegistryLocked(apply bool) (WorkspacePruneReport, error) {
 	registry, err := LoadRegistry()
 	if err != nil {
 		return WorkspacePruneReport{}, err

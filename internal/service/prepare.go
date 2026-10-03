@@ -29,7 +29,7 @@ func (a *App) prepare(ctx context.Context, request model.CommandRequest) (model.
 		Timings:      map[string]int64{},
 	}
 
-	registration, _, err := a.resolveWorkspaceWithProject(request.Context.Workspace)
+	registration, _, err := a.resolveWorkspaceWithProjectForNavigation(request)
 	if err != nil {
 		return preparationFailureEnvelope(request, evidence, "workspace", "workspace_resolution_failed", "selector_validation", false, started), nil
 	}

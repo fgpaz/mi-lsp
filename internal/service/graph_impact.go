@@ -307,7 +307,7 @@ func (a *App) graphImpact(ctx context.Context, request model.CommandRequest) (mo
 	if err != nil {
 		return model.Envelope{}, err
 	}
-	registration, _, err := a.resolveWorkspaceWithProject(request.Context.Workspace)
+	registration, _, err := a.resolveWorkspaceWithProjectForNavigation(request)
 	if err != nil {
 		return model.Envelope{}, &model.GraphQueryError{Code: "GPH_QUERY_BACKEND_UNAVAILABLE", Message: "graph backend is unavailable"}
 	}

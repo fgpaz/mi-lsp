@@ -29,6 +29,8 @@ evidence:
 
 ## Cobertura vigente
 
+La tabla es un índice humano derivado; para RF-WKS-007, el binding normativo de RF, FL, TP y casos reside en el bloque TOON `RF-WKS-007-MATRIX`, y las definiciones de cada caso nuevo residen únicamente en los bloques TOON de `TP-WKS`.
+
 | RF | FL origen | TP | Casos positivos minimos | Casos negativos minimos | Estado |
 |---|---|---|---|---|---|
 | RF-WKS-001 | FL-BOOT-01 | TP-WKS | TC-WKS-001, TC-WKS-002, TC-WKS-004, TC-WKS-005, TC-WKS-026 | TC-WKS-003 | ready |
@@ -37,6 +39,7 @@ evidence:
 | RF-WKS-004 | FL-BOOT-01 | TP-WKS | TC-WKS-011, TC-WKS-012, TC-WKS-016, TC-WKS-017, TC-WKS-018, TC-WKS-021, TC-WKS-022, TC-WKS-031, TC-WKS-032, TC-WKS-034 | TC-WKS-013 | implemented |
 | RF-WKS-005 | FL-BOOT-01 | TP-WKS | TC-WKS-014, TC-WKS-019, TC-WKS-020 | TC-WKS-015 | implemented |
 | RF-WKS-006 | FL-BOOT-01 | TP-WKS | TC-WKS-027, TC-WKS-028 | - | implemented |
+| RF-WKS-007 | FL-BOOT-01 | TP-WKS | TC-WKS-048, TC-WKS-049, TC-WKS-050, TC-WKS-051, TC-WKS-052, TC-WKS-053, TC-WKS-054, TC-WKS-056, TC-WKS-058, TC-WKS-059 | TC-WKS-055, TC-WKS-057, TC-WKS-060 | implemented |
 | RF-WKS-008 | FL-BOOT-01 | TP-WKS | TC-WKS-038, TC-WKS-039, TC-WKS-040 | TC-WKS-041, TC-WKS-042, TC-WKS-043 | implemented |
 | RF-WKS-009 | FL-BOOT-01 | TP-WKS | TC-WKS-044, TC-WKS-045, TC-WKS-046 | TC-WKS-047 | implemented |
 | RF-IDX-001 | FL-IDX-01 | TP-IDX | TC-IDX-001, TC-IDX-002, TC-IDX-004, TC-IDX-005, TC-IDX-012, TC-IDX-020, TC-IDX-022, TC-IDX-023, TC-IDX-025 | TC-IDX-003, TC-IDX-006, TC-IDX-021 | ready |
@@ -90,6 +93,25 @@ evidence:
 | RF-SEM-002 | FL-SEM-01 | TP-SEM | TC-SEM-004, TC-SEM-005 | TC-SEM-006 | ready |
 | RF-SEM-003 | FL-SEM-01 | TP-SEM | TC-SEM-007, TC-SEM-008 | TC-SEM-009 | ready |
 | RF-SEM-004 | FL-SEM-01 | TP-SEM | TC-SEM-010, TC-SEM-011 | TC-SEM-012, TC-SEM-013, TC-SEM-014 | ready |
+
+```toon
+block_id: RF-WKS-007-MATRIX
+kind: normative
+source_of_truth: normative
+verify:
+  - go test -count=1 ./internal/service ./internal/workspace
+evidence:
+  - .docs/wiki/03_FL.md
+  - .docs/wiki/04_RF/RF-WKS-007.md
+  - .docs/wiki/06_pruebas/TP-WKS.md
+  - internal/service/auto_register_test.go
+  - internal/workspace/autoregister_test.go
+requirement_id: RF-WKS-007
+flow_id: FL-BOOT-01
+test_plan_id: TP-WKS
+positive_case_ids: [TC-WKS-048, TC-WKS-049, TC-WKS-050, TC-WKS-051, TC-WKS-052, TC-WKS-053, TC-WKS-054, TC-WKS-056, TC-WKS-058, TC-WKS-059]
+negative_case_ids: [TC-WKS-055, TC-WKS-057, TC-WKS-060]
+```
 
 ## Regla de mantenimiento
 

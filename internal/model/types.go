@@ -43,6 +43,7 @@ type QueryOptions struct {
 	BackendHint         string `json:"backend_hint,omitempty"`
 	AllowCrossWorkspace bool   `json:"allow_cross_workspace,omitempty"`
 	Compress            bool   `json:"compress,omitempty"`
+	NoAutoRegister      bool   `json:"no_auto_register,omitempty"`
 }
 
 type Stats struct {

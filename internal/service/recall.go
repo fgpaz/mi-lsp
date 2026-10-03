@@ -336,7 +336,7 @@ type scoredChunk struct {
 // recall handles semantic search over wiki chunks via embeddings or lexical fallback.
 func (a *App) recall(ctx context.Context, request model.CommandRequest) (model.Envelope, error) {
 	// Resolve workspace (same pattern as search/ask, NO governance gate)
-	registration, project, err := a.resolveWorkspaceWithProject(request.Context.Workspace)
+	registration, project, err := a.resolveWorkspaceWithProjectForNavigation(request)
 	if err != nil {
 		return model.Envelope{}, err
 	}

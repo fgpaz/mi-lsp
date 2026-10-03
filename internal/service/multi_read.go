@@ -33,7 +33,7 @@ type multiReadItem struct {
 
 func (a *App) multiRead(ctx context.Context, request model.CommandRequest) (model.Envelope, error) {
 	started := time.Now()
-	registration, _, err := a.resolveWorkspaceWithProject(request.Context.Workspace)
+	registration, _, err := a.resolveWorkspaceWithProjectForNavigation(request)
 	if err != nil {
 		return model.Envelope{}, err
 	}

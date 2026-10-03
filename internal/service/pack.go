@@ -41,7 +41,7 @@ func (a *App) pack(ctx context.Context, request model.CommandRequest) (model.Env
 		return a.wikiPackAllWorkspaces(ctx, request, operation)
 	}
 
-	registration, _, err := a.resolveWorkspaceWithProject(request.Context.Workspace)
+	registration, _, err := a.resolveWorkspaceWithProjectForNavigation(request)
 	if err != nil {
 		return model.Envelope{}, err
 	}

@@ -1,31 +1,52 @@
-# TP-WKS
-
-```yaml
+---
+doc_id: TP-WKS
+source_schema: SDD-WIKI-SOURCE-v1
+wiki_source_protocol: SDD-WIKI-SOURCE-v1
+source_kind: canonical-test-plan
+normative_format: toon
 harness_protocol: SDD-HARNESS-v1
-id: "TP-WKS"
-kind: "support-doc"
-audience: "llm-first"
+id: TP-WKS
+kind: test-plan
+audience: llm-first
 imports:
   - '[[00_gobierno_documental]]'
-  - '[[TP-WKS]]'
+  - '[[RF-WKS-007]]'
 exports:
-  - 'TP-WKS'
+  - TP-WKS
 agent_must_read:
   - .docs/wiki/00_gobierno_documental.md
+  - .docs/wiki/03_FL.md
+  - .docs/wiki/04_RF/RF-WKS-007.md
+  - .docs/wiki/06_matriz_pruebas_RF.md
   - .docs/wiki/06_pruebas/TP-WKS.md
 agent_may_edit:
   - .docs/wiki/06_pruebas/TP-WKS.md
 agent_must_not_edit:
   - .docs/wiki/_mi-lsp/read-model.toml
 verify:
+  - go test -count=1 ./internal/service ./internal/workspace
   - mi-lsp nav governance --workspace mi-lsp --format toon
   - mi-lsp nav wiki validate-harness --workspace mi-lsp --format toon
+  - mi-lsp nav wiki validate-source --workspace mi-lsp --format toon
 stop_if:
+  - any_test_failed=true
   - governance_blocked=true
   - harness_verdict=BLOCKED
+  - wiki_source_verdict=BLOCKED
 evidence:
+  - .docs/wiki/03_FL.md
+  - .docs/wiki/04_RF/RF-WKS-007.md
+  - .docs/wiki/06_matriz_pruebas_RF.md
   - .docs/wiki/06_pruebas/TP-WKS.md
-```
+  - internal/service/auto_register_test.go
+  - internal/workspace/autoregister_test.go
+---
+
+# TP-WKS
+
+wiki_source_table_exception: true
+
+La tabla de casos `TC-WKS-001..047` se conserva como índice humano histórico; los casos nuevos `TC-WKS-048..060` tienen autoridad únicamente en sus bloques TOON normativos, sin duplicarse en esa tabla.
 
 ## Cobertura objetivo
 
@@ -35,6 +56,7 @@ evidence:
 - RF-WKS-004
 - RF-WKS-005
 - RF-WKS-006
+- RF-WKS-007
 - RF-WKS-008
 - RF-WKS-009
 
@@ -89,3 +111,306 @@ evidence:
 | TC-WKS-045 | positivo | RF-WKS-009 | `TestWorkspaceWhichPreservesWindowsBackslashPath` + `TestLiteralWorkspacePathDoesNotUnquoteJSONEscapes`: un root Windows con backslash simple se conserva literal en la salida JSON, sin colapsar segmentos ni interpretar `\r`/`\m`/`\p` como escapes |
 | TC-WKS-046 | positivo | RF-WKS-009 | `TestWorkspaceWhichResolvesCWDAndPathSelector`: resuelve por `--workspace` explicito (alias o path), por cwd dentro del root registrado y por `last_workspace`, con `source` correcto en cada caso |
 | TC-WKS-047 | negativo | RF-WKS-009 | documentado en `internal/cli/workspace_which.go:68,89` (`resolveWorkspaceWhich`): un `--workspace` explicito no registrado, o la ausencia de selector con cwd fuera de cualquier root y sin `last_workspace` configurado, devuelven error explicito; sin test Go nombrado que cubra ambas ramas de error (gap residual, ver auditoria) |
+
+## Casos normativos de auto-registro
+
+Los casos `TC-WKS-048..060` se definen únicamente en estos bloques TOON; las filas históricas `TC-WKS-001..047` permanecen intactas en la tabla anterior.
+
+### TC-WKS-048
+
+```toon
+block_id: TC-WKS-048
+kind: normative
+source_of_truth: normative
+verify:
+  - go test -count=1 ./internal/service -run '^TestExecuteAutoRegisterSkipsIndexWithoutCommits$'
+evidence:
+  - internal/service/auto_register_test.go
+case_id: TC-WKS-048
+case_type: positive
+requirement_id: RF-WKS-007
+test_bindings:
+  - file: internal/service/auto_register_test.go
+    test: TestExecuteAutoRegisterSkipsIndexWithoutCommits
+expected:
+  auto_register_warning: auto_register_index_skipped
+  query_continues: true
+  index_start: forbidden
+```
+
+### TC-WKS-049
+
+```toon
+block_id: TC-WKS-049
+kind: normative
+source_of_truth: normative
+verify:
+  - go test -count=1 ./internal/service -run '^TestExecuteAutoRegisterOptOut$'
+evidence:
+  - internal/service/auto_register_test.go
+case_id: TC-WKS-049
+case_type: positive
+requirement_id: RF-WKS-007
+test_bindings:
+  - file: internal/service/auto_register_test.go
+    test: TestExecuteAutoRegisterOptOut
+coverage_scope:
+  covered_inputs: [request.Context.NoAutoRegister, MI_LSP_NO_AUTO_REGISTER=1]
+  cli_flag_to_daemon_e2e: pending_no_automated_oracle
+expected:
+  auto_register: disabled
+  index_start: disabled
+```
+
+### TC-WKS-050
+
+```toon
+block_id: TC-WKS-050
+kind: normative
+source_of_truth: normative
+verify:
+  - go test -count=1 ./internal/service -run '^TestExecuteAutoRegistersOnFirstQuery$'
+evidence:
+  - internal/service/auto_register_test.go
+case_id: TC-WKS-050
+case_type: positive
+requirement_id: RF-WKS-007
+test_bindings:
+  - file: internal/service/auto_register_test.go
+    test: TestExecuteAutoRegistersOnFirstQuery
+expected:
+  first_query_registers: true
+  index_start: one_background_job
+  repeated_query_duplicate_job: false
+```
+
+### TC-WKS-051
+
+```toon
+block_id: TC-WKS-051
+kind: normative
+source_of_truth: normative
+verify:
+  - go test -count=1 ./internal/workspace -run 'TestAutoRegisterNameCollisionUsesDeterministicSuffix|TestAutoRegisterReusesExistingAliasForSameRoot'
+evidence:
+  - internal/workspace/autoregister_test.go
+case_id: TC-WKS-051
+case_type: positive
+requirement_id: RF-WKS-007
+test_bindings:
+  - file: internal/workspace/autoregister_test.go
+    test: TestAutoRegisterNameCollisionUsesDeterministicSuffix
+  - file: internal/workspace/autoregister_test.go
+    test: TestAutoRegisterReusesExistingAliasForSameRoot
+expected:
+  collision_alias: deterministic_suffix
+  existing_alias_for_same_root: reused
+  existing_alias_overwrite: forbidden
+```
+
+### TC-WKS-052
+
+```toon
+block_id: TC-WKS-052
+kind: normative
+source_of_truth: normative
+verify:
+  - go test -count=1 ./internal/service -run '^TestExecuteAutoRegisterConcurrentQueriesIndexOnce$'
+evidence:
+  - internal/service/auto_register_test.go
+case_id: TC-WKS-052
+case_type: positive
+requirement_id: RF-WKS-007
+test_bindings:
+  - file: internal/service/auto_register_test.go
+    test: TestExecuteAutoRegisterConcurrentQueriesIndexOnce
+expected:
+  concurrent_queries_same_root: one_registration
+  index_start: one_background_job
+```
+
+### TC-WKS-053
+
+```toon
+block_id: TC-WKS-053
+kind: normative
+source_of_truth: normative
+verify:
+  - go test -count=1 ./internal/workspace -run '^TestAutoRegisterRetriesAfterProjectCreationFailure$'
+  - go test -count=1 ./internal/service -run '^TestExecuteRetriesPartialAutoRegistrationAndStartsIndex$'
+evidence:
+  - internal/workspace/autoregister_test.go
+  - internal/service/auto_register_test.go
+case_id: TC-WKS-053
+case_type: positive
+requirement_id: RF-WKS-007
+test_bindings:
+  - file: internal/workspace/autoregister_test.go
+    test: TestAutoRegisterRetriesAfterProjectCreationFailure
+  - file: internal/service/auto_register_test.go
+    test: TestExecuteRetriesPartialAutoRegistrationAndStartsIndex
+expected:
+  failed_project_creation_leaves_partial_registration: false
+  retry_completes_registration: true
+  index_start_after_recovery: true
+```
+
+### TC-WKS-054
+
+```toon
+block_id: TC-WKS-054
+kind: normative
+source_of_truth: normative
+verify:
+  - go test -count=1 ./internal/service -run '^TestExecuteAutoRegisterFailureDoesNotBlockNavMultiRead$'
+evidence:
+  - internal/service/auto_register_test.go
+case_id: TC-WKS-054
+case_type: positive
+requirement_id: RF-WKS-007
+test_bindings:
+  - file: internal/service/auto_register_test.go
+    test: TestExecuteAutoRegisterFailureDoesNotBlockNavMultiRead
+expected:
+  nav_multi_read_completes: true
+  auto_register_failure_reported_as_warning: true
+  registry_persisted_on_failure: false
+```
+
+### TC-WKS-055
+
+```toon
+block_id: TC-WKS-055
+kind: normative
+source_of_truth: normative
+verify:
+  - go test -count=1 ./internal/workspace -run '^TestAutoRegisterByRequestedPath$'
+evidence:
+  - internal/workspace/autoregister_test.go
+case_id: TC-WKS-055
+case_type: negative
+requirement_id: RF-WKS-007
+test_bindings:
+  - file: internal/workspace/autoregister_test.go
+    test: TestAutoRegisterByRequestedPath
+expected:
+  unknown_alias_or_nonexistent_path: not_registered
+```
+
+### TC-WKS-056
+
+```toon
+block_id: TC-WKS-056
+kind: normative
+source_of_truth: normative
+verify:
+  - go test -count=1 ./internal/workspace -run '^TestAutoRegisterByRequestedPath$'
+evidence:
+  - internal/workspace/autoregister_test.go
+case_id: TC-WKS-056
+case_type: positive
+requirement_id: RF-WKS-007
+test_bindings:
+  - file: internal/workspace/autoregister_test.go
+    test: TestAutoRegisterByRequestedPath
+expected:
+  requested_existing_git_repository: registered
+  alias: derived_from_git_root
+```
+
+### TC-WKS-057
+
+```toon
+block_id: TC-WKS-057
+kind: normative
+source_of_truth: normative
+verify:
+  - go test -count=1 ./internal/workspace -run 'TestAutoRegisterNeverRegistersHomeOrRoot|TestAutoRegisterSkipsNonGitDirectory'
+evidence:
+  - internal/workspace/autoregister_test.go
+case_id: TC-WKS-057
+case_type: negative
+requirement_id: RF-WKS-007
+test_bindings:
+  - file: internal/workspace/autoregister_test.go
+    test: TestAutoRegisterNeverRegistersHomeOrRoot
+  - file: internal/workspace/autoregister_test.go
+    test: TestAutoRegisterSkipsNonGitDirectory
+expected:
+  home_registered: false
+  filesystem_root_registered: false
+  non_git_directory_registered: false
+```
+
+### TC-WKS-058
+
+```toon
+block_id: TC-WKS-058
+kind: normative
+source_of_truth: normative
+verify:
+  - go test -count=1 ./internal/workspace -run 'TestAutoRegisterKeepsExistingProjectToml|TestAutoRegisterFirstQueryInUnregisteredGitRepo|TestSaveRegistryPreservesRestrictivePermissions'
+evidence:
+  - internal/workspace/autoregister_test.go
+  - internal/workspace/registry.go
+  - internal/workspace/registry_test.go
+case_id: TC-WKS-058
+case_type: positive
+requirement_id: RF-WKS-007
+test_bindings:
+  - file: internal/workspace/autoregister_test.go
+    test: TestAutoRegisterKeepsExistingProjectToml
+  - file: internal/workspace/autoregister_test.go
+    test: TestAutoRegisterFirstQueryInUnregisteredGitRepo
+  - file: internal/workspace/registry_test.go
+    test: TestSaveRegistryPreservesRestrictivePermissions
+expected:
+  existing_project_toml_overwritten: false
+  last_workspace_changed: false
+  new_registry_mode_argument: "0600"
+  existing_registry_permission_bits: preserved
+  permission_test_scope: non_windows_checks_mode_0600_on_create_and_after_explicit_chmod
+```
+
+### TC-WKS-059
+
+```toon
+block_id: TC-WKS-059
+kind: normative
+source_of_truth: normative
+verify:
+  - go test -count=1 ./internal/workspace -run '^TestAutoRegisterTwoProcesses$'
+evidence:
+  - internal/workspace/autoregister_test.go
+case_id: TC-WKS-059
+case_type: positive
+requirement_id: RF-WKS-007
+test_bindings:
+  - file: internal/workspace/autoregister_test.go
+    test: TestAutoRegisterTwoProcesses
+expected:
+  process_count: 2
+  roots: distinct_same_basename
+  registry_entries_survive: true
+```
+
+### TC-WKS-060
+
+```toon
+block_id: TC-WKS-060
+kind: normative
+source_of_truth: normative
+verify:
+  - go test -count=1 ./internal/workspace -run '^TestAutoRegisterLockTimeoutWithLiveHolder$'
+evidence:
+  - internal/workspace/autoregister_test.go
+case_id: TC-WKS-060
+case_type: negative
+requirement_id: RF-WKS-007
+test_bindings:
+  - file: internal/workspace/autoregister_test.go
+    test: TestAutoRegisterLockTimeoutWithLiveHolder
+expected:
+  live_holder_timeout_error: registry_lock_timeout
+  retry_after_lock_release: succeeds
+```
