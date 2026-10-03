@@ -19,6 +19,13 @@ func (a *App) semantic(ctx context.Context, request model.CommandRequest, method
 	if err != nil {
 		return model.Envelope{}, err
 	}
+	if method == "find_refs" {
+		return a.findRefs(ctx, registration, project, request)
+	}
+	return a.semanticCore(ctx, registration, project, request, method)
+}
+
+func (a *App) semanticCore(ctx context.Context, registration model.WorkspaceRegistration, project model.ProjectFile, request model.CommandRequest, method string) (model.Envelope, error) {
 	backendType := resolveBackendType(registration, request, method)
 	started := time.Now()
 
@@ -33,6 +40,9 @@ func (a *App) semantic(ctx context.Context, request model.CommandRequest, method
 
 	if backendType == "catalog" || backendType == "text" {
 		env, err := a.semanticFallback(ctx, registration, request, method, backendType, target.Warnings)
+		if method == "find_refs" && request.Context.BackendHint == "" {
+			markRefsFallback(&env, model.ReasonLanguageUnsupported)
+		}
 		env.Stats.Ms = time.Since(started).Milliseconds()
 		return env, err
 	}
@@ -41,6 +51,9 @@ func (a *App) semantic(ctx context.Context, request model.CommandRequest, method
 			warnings := append([]string{}, target.Warnings...)
 			warnings = append(warnings, reason)
 			env, fallbackErr := a.semanticFallback(ctx, registration, request, method, "catalog", warnings)
+			if method == "find_refs" {
+				markRefsFallback(&env, model.ReasonLSPError)
+			}
 			env.Stats.Ms = time.Since(started).Milliseconds()
 			return env, fallbackErr
 		}
@@ -69,15 +82,30 @@ func (a *App) semantic(ctx context.Context, request model.CommandRequest, method
 		EntrypointType:  target.Entrypoint.Kind,
 		Payload:         payload,
 	}
-	response, err := a.Semantic.Call(ctx, registration, workerRequest)
+	response, err := a.callSemanticWorker(ctx, registration, workerRequest, method)
 	if err != nil {
-		if isOptionalSemanticBackend(backendType) && request.Context.BackendHint == "" {
+		if method == "find_refs" || (isOptionalSemanticBackend(backendType) && request.Context.BackendHint == "") {
 			warnings := append([]string{}, target.Warnings...)
-			warnings = append(warnings, semanticBackendWarning(backendType, err))
+			fallbackCtx := ctx
+			var timeoutErr *semanticTimeoutError
+			if errors.As(err, &timeoutErr) {
+				warnings = append(warnings, fmt.Sprintf("semantic backend timed out after %ds; served from text", int(timeoutErr.After.Seconds())))
+				if request.Context.BackendHint == "" {
+					a.markBackendCooldown(registration.Root, workerRequest.RepoRoot, backendType, fmt.Sprintf("%s timed out recently; using text fallback for this repo until cooldown expires", backendType), refsTimeoutCooldown)
+				}
+				var cancel context.CancelFunc
+				fallbackCtx, cancel = context.WithTimeout(ctx, refsTimedOutTextBudget)
+				defer cancel()
+			} else {
+				warnings = append(warnings, semanticBackendWarning(backendType, err))
+			}
 			if shouldCooldownSemanticBackend(backendType, err) {
 				a.markBackendCooldown(registration.Root, workerRequest.RepoRoot, backendType, fmt.Sprintf("%s unavailable recently; using catalog fallback for this repo until cooldown expires", backendType), 5*time.Minute)
 			}
-			env, fallbackErr := a.semanticFallback(ctx, registration, request, method, "catalog", warnings)
+			env, fallbackErr := a.semanticFallback(fallbackCtx, registration, request, method, "catalog", warnings)
+			if method == "find_refs" {
+				markRefsFallback(&env, semanticFailureReason(err))
+			}
 			env.Stats.Ms = time.Since(started).Milliseconds()
 			return env, fallbackErr
 		}
@@ -252,12 +280,26 @@ func (a *App) textReferenceFallback(ctx context.Context, registration model.Work
 	if symbol == "" {
 		return model.Envelope{}, errors.New("symbol is required")
 	}
-	items, err := searchPattern(ctx, registration.Root, project, symbol, false, request.Context.MaxItems)
+	pattern, useRegex := refsTextPattern(symbol)
+	// Search wide: matches are ordered by path, so a narrow limit would let
+	// docs and other non-code hits crowd out the code usages before filtering.
+	searchCtx, cancel := withSearchTimeout(ctx, refsTextBudget)
+	defer cancel()
+	diagnostics := &searchPatternDiagnostics{}
+	hits, err := searchPatternScopedWithDiagnostics(searchCtx, registration.Root, registration.Root, project, pattern, useRegex, maxRefsTextCandidates, diagnostics)
 	if err != nil {
 		return model.Envelope{}, err
 	}
+	items, codeOnly := rankRefsTextHits(hits, refsSymbolBackend(request), request.Context.MaxItems)
 	warnings = append(warnings, "served from text fallback; results are textual occurrences, not semantic references")
-	return model.Envelope{Ok: true, Workspace: registration.Name, Backend: "text", Items: items, Warnings: warnings, Stats: model.Stats{Files: len(items)}}, nil
+	if diagnostics.TimedOut {
+		warnings = append(warnings, "text search stopped at its time budget; results may be partial")
+	}
+	env := model.Envelope{Ok: true, Workspace: registration.Name, Backend: "text", Items: items, Warnings: warnings, Stats: model.Stats{Files: len(items)}}
+	if !codeOnly && len(items) > 0 {
+		env.MarkDegraded(model.ReasonLanguageUnsupported, model.FallbackText)
+	}
+	return env, nil
 }
 
 func resolveBackendType(registration model.WorkspaceRegistration, request model.CommandRequest, method string) string {
@@ -269,6 +311,15 @@ func resolveBackendType(registration model.WorkspaceRegistration, request model.
 		return "roslyn"
 	}
 	file, _ := request.Payload["file"].(string)
+	if method == "find_refs" {
+		if strings.TrimSpace(file) == "" {
+			return backendForRegistration(registration)
+		}
+		if backendType, ok := backendForSourcePath(file); ok {
+			return backendType
+		}
+		return "text"
+	}
 	if isTypeScriptFile(file) {
 		return "tsserver"
 	}
@@ -276,15 +327,6 @@ func resolveBackendType(registration model.WorkspaceRegistration, request model.
 		return "pyright"
 	}
 	if isGoFile(file) {
-		return "gopls"
-	}
-	if method == "find_refs" && !hasLanguage(registration, "csharp") && hasLanguage(registration, "typescript") {
-		return "tsserver"
-	}
-	if method == "find_refs" && hasLanguage(registration, "python") && !hasLanguage(registration, "csharp") && !hasLanguage(registration, "typescript") {
-		return "pyright"
-	}
-	if method == "find_refs" && hasLanguage(registration, "go") && !hasLanguage(registration, "csharp") && !hasLanguage(registration, "typescript") && !hasLanguage(registration, "python") {
 		return "gopls"
 	}
 	return "roslyn"

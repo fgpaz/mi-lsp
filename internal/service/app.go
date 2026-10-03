@@ -1293,11 +1293,20 @@ func (a *App) resolveWorkspaceRequest(request model.CommandRequest) (model.Comma
 		warnings := []string{}
 		if mismatch, ok := workspace.ExplicitWorkspaceCWDMismatchFor(selector, request.Context.CallerCWD); ok {
 			warnings = append(warnings, mismatch.Warning)
-			if isHarnessClientName(request.Context.ClientName) && !request.Context.AllowCrossWorkspace {
-				if cwdCanonLinkAllows(mismatch.CWDWorkspaceAlias, selector, "") {
+			if isHarnessClientName(request.Context.ClientName) {
+				switch {
+				case cwdCanonLinkAllows(mismatch.CWDWorkspaceAlias, selector, ""):
 					warnings = append(warnings, fmt.Sprintf("workspace used a registry canon link to reach alias %q from cwd workspace %q", selector, mismatch.CWDWorkspaceAlias))
-				} else {
-					return request, nil, fmt.Errorf("workspace cross-workspace refused: --workspace %q resolves to root %q, but caller cwd %q is inside workspace %q at root %q; recommended command: mi-lsp %s --format toon; pass --allow-cross-workspace only when this cross-workspace query is intentional",
+				case !crossWorkspaceOperationIsWrite(request.Operation):
+					// Reads never need --allow-cross-workspace: the mismatch
+					// warning above already names both roots. Their write side
+					// effects (background reindex) stay gated.
+					request.Context.CrossWorkspaceRead = true
+				case request.Context.AllowCrossWorkspace:
+					recordCrossWorkspaceOverride(request.Operation, request.Context.ClientName, mismatch.Selector, mismatch.SelectedRoot, mismatch.CallerCWD)
+					warnings = append(warnings, "--allow-cross-workspace override used for write operation "+request.Operation+"; recorded in ~/.mi-lsp/"+crossWorkspaceOverrideLog)
+				default:
+					return request, nil, fmt.Errorf("workspace cross-workspace refused: --workspace %q resolves to root %q, but caller cwd %q is inside workspace %q at root %q; recommended command: mi-lsp %s --format toon; pass --allow-cross-workspace only when this cross-workspace write is intentional",
 						mismatch.Selector,
 						mismatch.SelectedRoot,
 						mismatch.CallerCWD,
@@ -1632,27 +1641,10 @@ func (a *App) find(ctx context.Context, request model.CommandRequest) (model.Env
 		return model.Envelope{}, err
 	}
 	pattern, _ := request.Payload["pattern"].(string)
-	workspaceSelector := shellQuoteArg(registration.Name)
 	patternSelector := shellQuoteArg(pattern)
 	catalogReady, stateErr := store.WorkspaceCatalogReady(ctx, registration.Root)
-	indexAction := "Workspace has no published catalog. Run `mi-lsp index --workspace " + workspaceSelector + "`, then retry `mi-lsp nav find " + patternSelector + " --workspace " + workspaceSelector + "`."
 	if stateErr != nil {
-		return model.Envelope{
-			Ok:        false,
-			Workspace: registration.Name,
-			Backend:   "catalog",
-			Items:     []model.SymbolRecord{},
-			NextHint:  &indexAction,
-			Error: &model.EnvelopeError{
-				Kind:       "index",
-				Code:       "workspace_db_open_failed",
-				Message:    "workspace_db_open_failed",
-				Stage:      "catalog",
-				HintCode:   "workspace_db_open_failed",
-				ReasonCode: "explicit_incomplete",
-				Detail:     "Could not read the workspace index state. " + indexAction,
-			},
-		}, nil
+		return a.findTextFallback(ctx, registration, project, request, pattern, classifyCatalogUnavailable(stateErr)), nil
 	}
 	if !catalogReady {
 		if !workspaceAliasRegistered(registration.Name) {
@@ -1676,22 +1668,7 @@ func (a *App) find(ctx context.Context, request model.CommandRequest) (model.Env
 				},
 			}, nil
 		}
-		return model.Envelope{
-			Ok:        false,
-			Workspace: registration.Name,
-			Backend:   "catalog",
-			Items:     []model.SymbolRecord{},
-			NextHint:  &indexAction,
-			Error: &model.EnvelopeError{
-				Kind:       "index",
-				Code:       "index_not_ready",
-				Message:    "index_not_ready",
-				Stage:      "catalog",
-				HintCode:   "index_not_ready",
-				ReasonCode: "explicit_incomplete",
-				Detail:     indexAction,
-			},
-		}, nil
+		return a.findTextFallback(ctx, registration, project, request, pattern, model.ReasonIndexNotReady), nil
 	}
 	kind, _ := request.Payload["kind"].(string)
 	exact, _ := request.Payload["exact"].(bool)
@@ -1702,6 +1679,9 @@ func (a *App) find(ctx context.Context, request model.CommandRequest) (model.Env
 	}
 	db, err := openWorkspaceDB(registration, "nav.find", true) // readOnly
 	if err != nil {
+		if isIndexSchemaBrokenError(err) {
+			return a.findTextFallback(ctx, registration, project, request, pattern, model.ReasonIndexSchemaBroken), nil
+		}
 		return model.Envelope{}, err
 	}
 	queryLimit := request.Context.MaxItems
@@ -1731,6 +1711,9 @@ func (a *App) find(ctx context.Context, request model.CommandRequest) (model.Env
 	items, err := query(db)
 	closeErr := db.Close()
 	if err != nil {
+		if isIndexSchemaBrokenError(err) {
+			return a.findTextFallback(ctx, registration, project, request, pattern, model.ReasonIndexSchemaBroken), nil
+		}
 		return model.Envelope{}, err
 	}
 	if closeErr != nil {
@@ -1757,6 +1740,9 @@ func (a *App) find(ctx context.Context, request model.CommandRequest) (model.Env
 				}
 			}
 		}
+	}
+	for i := range items {
+		items[i].Origin = model.ItemOriginCatalog
 	}
 	return model.Envelope{Ok: true, Workspace: registration.Name, Backend: "catalog", Items: items, Stats: model.Stats{Symbols: len(items)}, Warnings: warnings}, nil
 }

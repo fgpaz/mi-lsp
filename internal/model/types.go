@@ -44,6 +44,10 @@ type QueryOptions struct {
 	AllowCrossWorkspace bool   `json:"allow_cross_workspace,omitempty"`
 	Compress            bool   `json:"compress,omitempty"`
 	NoAutoRegister      bool   `json:"no_auto_register,omitempty"`
+	// CrossWorkspaceRead is set in-process when a harness read targets a
+	// workspace outside the caller cwd; it gates side-effect writes such as
+	// the background reindex. Never serialized.
+	CrossWorkspaceRead bool `json:"-"`
 }
 
 type Stats struct {
@@ -204,6 +208,9 @@ type Envelope struct {
 	Workspace          string              `json:"workspace,omitempty"`
 	Backend            string              `json:"backend,omitempty"`
 	Mode               string              `json:"mode,omitempty"`
+	Degraded           bool                `json:"degraded,omitempty"`
+	Reason             string              `json:"reason,omitempty"`
+	FallbackUsed       string              `json:"fallback_used,omitempty"`
 	Items              any                 `json:"items"`
 	Error              *EnvelopeError      `json:"error,omitempty"`
 	Omissions          []EnvelopeOmission  `json:"omissions,omitempty"`
@@ -276,6 +283,31 @@ type IntentOmission struct {
 	Section    string   `json:"section,omitempty"`
 	Reason     string   `json:"reason"`
 	Candidates []string `json:"candidates,omitempty"`
+}
+
+// Primitive result reason codes (primitives-v2). Versioned catalog so scripts
+// can switch on Envelope.Reason instead of parsing warnings; consumers map
+// unknown values to "unknown". Distinct from EnvelopeError.ReasonCode.
+const (
+	ReasonIndexNotReady         = "index_not_ready"
+	ReasonIndexSchemaBroken     = "index_schema_broken"
+	ReasonLSPUnavailable        = "lsp_unavailable"
+	ReasonLSPError              = "lsp_error"
+	ReasonSemanticEmptyTextHits = "semantic_empty_text_hits"
+	ReasonLanguageUnsupported   = "language_unsupported"
+	ReasonNoMatches             = "no_matches"
+	FallbackCatalog             = "catalog"
+	FallbackText                = "text"
+	ItemOriginSemantic          = "semantic"
+	ItemOriginCatalog           = "catalog"
+	ItemOriginText              = "text"
+)
+
+// MarkDegraded records that a lower-fidelity path answered the request.
+func (e *Envelope) MarkDegraded(reason string, fallback string) {
+	e.Degraded = true
+	e.Reason = reason
+	e.FallbackUsed = fallback
 }
 
 const (
@@ -429,6 +461,7 @@ type ServiceSurfaceSummary struct {
 
 type SymbolRecord struct {
 	ID            int64  `json:"id,omitempty"`
+	Origin        string `json:"origin,omitempty"`
 	FilePath      string `json:"file_path"`
 	RepoID        string `json:"repo_id,omitempty"`
 	RepoName      string `json:"repo,omitempty"`

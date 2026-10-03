@@ -90,7 +90,7 @@ payload:
   full: optional_preview_expansion_flag
 response:
   backend: intent|planner
-  mode: docs|code|preview
+  mode: docs|code|mixed|preview
   fields: [items, warnings, stats]
 ```
 
@@ -98,11 +98,11 @@ response:
 
 ## Semántica legacy
 
-`nav intent` conserva `backend=intent` y expone `mode=docs|code`.
+`nav intent` conserva `backend=intent` y expone `mode=docs|code|mixed`.
 
 - `mode=docs`: consultas capability-like, contract-like, flow-like o docs-first. Usa el scorer documental owner-aware compartido con `nav route`, `nav ask` y `nav pack`.
 - `mode=code`: consultas symbol-like o implementation-like. Conserva el ranking BM25 actual sobre `search_text`.
-- El contrato no mezcla documentos y símbolos en la misma lista.
+- `mode=mixed` (aditivo): cuando la pregunta trae señales de código y el catálogo coincide, la lista combina matches de código fuertes primero, luego documentos y al final matches de código débiles. El código se rankea por archivo (IDF por token, peso por nombre de archivo > segmento de ruta > símbolo > padre, bonus por cobertura, tests penalizados). Cada item lleva `result_kind=code|doc`; `kind` conserva el tipo de símbolo y `origin` es `catalog` (código) o `wiki` (documento). Fuera de `mixed`, el contrato no mezcla documentos y símbolos en la misma lista.
 - La ruta documental no interpola la pregunta original en `next_queries`: continúa únicamente con `doc_id`/rutas canónicas o con un diagnóstico fijo de workspace.
 
 ## Ejecución y deadlines

@@ -81,6 +81,7 @@ context retrieval, dependency analysis, and service exploration.`,
 	var refsEntrypoint string
 	var refsSolution string
 	var refsProject string
+	var refsContext int
 	refsCommand := &cobra.Command{
 		Use:   "refs <symbol>",
 		Short: "Find references via the semantic backend",
@@ -88,8 +89,14 @@ context retrieval, dependency analysis, and service exploration.`,
 			if err := requireArgs(args, 1, "symbol"); err != nil {
 				return err
 			}
+			if refsContext < 0 || refsContext > 5 {
+				return fmt.Errorf("--context must be between 0 and 5, got %d", refsContext)
+			}
 			payload := semanticPayload(refsRepo, refsEntrypoint, refsSolution, refsProject)
 			payload["symbol"] = args[0]
+			if refsContext > 0 {
+				payload["context"] = refsContext
+			}
 			if refsFile != "" {
 				payload["file"] = refsFile
 			}
@@ -101,6 +108,7 @@ context retrieval, dependency analysis, and service exploration.`,
 	}
 	refsCommand.Flags().StringVar(&refsFile, "file", "", "Anchor file for backends that resolve references by position")
 	refsCommand.Flags().IntVar(&refsLine, "line", 0, "Anchor line for backends that resolve references by position")
+	refsCommand.Flags().IntVar(&refsContext, "context", 0, "Lines of context (0-5) before and after each reference")
 	attachSemanticSelectorFlags(refsCommand, &refsRepo, &refsEntrypoint, &refsSolution, &refsProject)
 
 	overviewCommand := &cobra.Command{

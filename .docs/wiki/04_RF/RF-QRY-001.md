@@ -11,6 +11,8 @@ tests:
   - internal/output/formatter_test.go
   - internal/output/truncator_test.go
   - internal/cli/reason_test.go
+  - internal/service/app_test.go
+  - internal/service/autoindex_test.go
 ---
 
 # RF-QRY-001 - Emitir envelope estable y truncacion determinista
@@ -97,7 +99,11 @@ evidence:
 | `coach` | objeto/null | usuario/skill | guidance explicito y machine-readable para rerun, refine, narrow o expand |
 | `continuation` | objeto/null | usuario/skill | siguiente paso tiny y machine-readable para el harness |
 | `memory_pointer` | objeto/null | usuario/skill | puntero de reentrada wiki-aware con costo minimo |
-| `mode` | string/null | usuario/skill | subtipo publico de la respuesta cuando la superficie expone variantes como `nav.intent (docs|code)` |
+| `mode` | string/null | usuario/skill | subtipo publico de la respuesta cuando la superficie expone variantes como `nav.intent (docs|code|mixed)` |
+| `degraded` | bool | usuario/skill | `true` cuando respondio una via de menor fidelidad (texto en lugar de catalogo o semantica); omitido cuando es `false` (omitempty) |
+| `reason` | string/null | usuario/skill | razon tipificada de la degradacion o del vacio, del conjunto cerrado de la seccion 6.1 (omitempty) |
+| `fallback_used` | string/null | usuario/skill | via que respondio en lugar de la primaria: `catalog` o `text` (omitempty) |
+| `items[].origin` | string/null | usuario/skill | procedencia por item: `semantic`, `catalog`, `text` o `wiki`; aditivo por item |
 
 ## 6. Typed Errors
 
@@ -107,8 +113,24 @@ evidence:
 | `QRY_INVALID_BUDGET` | flags invalidos | algun presupuesto es `<= 0` | abortar con error tipado |
 | `QRY_RENDER_FAILED` | fallo de serializacion | formatter no puede construir output | abortar con error explicito |
 | `workspace_resolution_failed` | path existente todavía no registrado y sin catálogo listo | `nav.find` recibe el path explícito con consulta cross-workspace habilitada y no hay evidencia de catálogo completo | `ok=false`; error `Kind=workspace`, `Code=workspace_resolution_failed`, `Stage=workspace_resolution`, `HintCode=workspace_resolution_failed`, `ReasonCode=invalid_workspace`; `Detail` y `NextHint` instruyen registrar e indexar ese root y reintentar |
-| `index_not_ready` | workspace sin evidencia de catálogo completo | `nav.find` no encuentra `active_catalog_generation_id` ni el par completo y atómico `indexed_at` + `total_files` | `ok=false`; error `Kind=index`, `Code=index_not_ready`, `Stage=catalog`; conservar `HintCode=index_not_ready`, `ReasonCode=explicit_incomplete`, `Detail` accionable y `NextHint` con el comando para indexar el workspace y reintentar |
-| `workspace_db_open_failed` | no se pudo leer el estado de generación | el store no puede determinar readiness | `ok=false`; error `Kind=index`, `Stage=catalog`, `HintCode=workspace_db_open_failed`, `ReasonCode=explicit_incomplete`; fallar cerrado sin devolver cero coincidencias |
+| `index_not_ready` | workspace sin evidencia de catálogo completo | `nav.find` no encuentra `active_catalog_generation_id` ni el par completo y atómico `indexed_at` + `total_files` | ya no es error terminal: `nav.find` responde `ok=true`, `backend=text`, `degraded=true`, `reason=index_not_ready`, `fallback_used=text` con items `origin=text` y dispara un único reindex completo en segundo plano (ver [[RF-IDX-001]]) |
+| `workspace_db_open_failed` | no se pudo leer el estado de generación | el store no puede determinar readiness | ya no es error terminal: misma respuesta degradada a texto con `reason=index_not_ready` (o `index_schema_broken` si la base está corrupta o con esquema roto); nunca se devuelven cero coincidencias sin marcar `degraded` |
+
+### 6.1 Razones tipificadas (contrato `primitives-v2`)
+
+El campo `reason` pertenece a un catálogo versionado (`primitives-v2`) para que scripts y agentes ramifiquen sin parsear `warnings`; un consumidor mapea cualquier valor desconocido a `unknown`. Es independiente de `error.reason_code` (allowlist cerrada `unsupported_operation|unavailable_binary|invalid_workspace|explicit_incomplete`), que solo aparece con `ok=false` y no se mezcla con `reason`. `reason` vacío significa resultado de fidelidad completa; `reason=no_matches` con `degraded` ausente significa que la vía completa corrió y no encontró nada. Es aditivo: los consumidores previos que ignoran `degraded`, `reason`, `fallback_used` y `items[].origin` siguen funcionando.
+
+| `reason` | Significado |
+|---|---|
+| `index_not_ready` | no hay catálogo publicado o no se pudo leer; respondió texto |
+| `index_schema_broken` | `index.db` corrupta o con esquema roto; respondió texto y la base se pone en cuarentena al reindexar |
+| `lsp_unavailable` | falta el binario o runtime del backend semántico (roslyn/tsserver/pyright/gopls) |
+| `lsp_error` | el backend semántico falló o devolvió error |
+| `semantic_empty_text_hits` | el backend semántico devolvió vacío pero la verificación textual encontró coincidencias |
+| `language_unsupported` | el archivo o símbolo no tiene backend semántico para su lenguaje |
+| `no_matches` | ninguna vía encontró coincidencias; el vacío está verificado y es un resultado válido (`degraded=true` solo si faltaba el catálogo y respondió texto) |
+
+`fallback_used` toma `catalog` o `text`; `items[].origin` toma `semantic`, `catalog`, `text` o `wiki`. Las superficies que no degradan omiten `degraded`, `reason` y `fallback_used`.
 
 ## 7. Special Cases and Variants
 
@@ -119,10 +141,10 @@ evidence:
 - En AXI preview, `coach.actions` se reduce a una sola accion para limitar costo de salida.
 - `continuation` es aditivo y opcional: no reemplaza `coach`, `next_hint` ni `next_queries`.
 - `memory_pointer` es aditivo y opcional: nunca persiste texto largo ni reemplaza `workspace status --full`.
-- Cuando `nav.find` no obtiene items, la respuesta distingue una búsqueda válida sin coincidencias de un índice ausente o incompleto. Hay catálogo listo si existe `active_catalog_generation_id` o metadata transaccional completa `indexed_at` + `total_files`, escrita por `ReplaceCatalog`; esta última también cubre catálogos sin generación versionada y `total_files=0`. Un esquema sin esos campos o metadata parcial no basta. Sin ambas señales devuelve `index_not_ready`; no inspecciona conteos de filas para inferir completitud.
-- Un path existente todavía no registrado se permite si su catálogo publicado aporta una de esas señales de readiness. Si no está registrado ni tiene catálogo listo, devuelve `workspace_resolution_failed`, `Kind=workspace`, `Stage=workspace_resolution`, `HintCode=workspace_resolution_failed` y `ReasonCode=invalid_workspace`; su `Detail` y `NextHint` usan el root y patrón recibidos para sugerir el registro, indexación y reintento exactos. Para un workspace registrado sin ninguna señal de catálogo listo, devuelve `index_not_ready`, `Kind=index`, `Stage=catalog`, `HintCode=index_not_ready` y `ReasonCode=explicit_incomplete`; `NextHint` indica el comando para indexar el workspace y reintentar.
-- Si no se puede abrir/leer el estado del workspace, devuelve `workspace_db_open_failed` con `Kind=index`, `Stage=catalog`, `HintCode=workspace_db_open_failed`, `ReasonCode=explicit_incomplete` y falla cerrada. La readiness por metadata no garantiza frescura respecto de cambios posteriores en disco; se mantiene la política previa de warnings stale, sin ampliar detección stale para una búsqueda vacía sin señal confiable.
-- Para el workspace registrado, el literal de `NextHint` es: “Index the registered workspace with `mi-lsp index --workspace '<alias>'` and retry `mi-lsp nav find '<pattern>' --workspace '<alias>'`.”
+- Cuando `nav.find` no puede usar el catálogo, no devuelve un vacío falso: responde `ok=true` con items de texto (`origin=text`, declaraciones primero, patrón acotado por límites de palabra), `backend=text`, `degraded=true`, `reason` tipificado y `fallback_used=text`, más un warning `catalog unavailable (<reason>); served from text; <resultado del reindex>`. Si el texto tampoco encuentra nada, devuelve `ok=true`, `items=[]` y `reason=no_matches` con `degraded=true`, porque sin catálogo el vacío no está verificado por el índice. Hay catálogo listo si existe `active_catalog_generation_id` o metadata transaccional completa `indexed_at` + `total_files`, escrita por `ReplaceCatalog`; esta última también cubre catálogos sin generación versionada y `total_files=0`. Un esquema sin esos campos o metadata parcial no basta, y no se inspeccionan conteos de filas para inferir completitud. Con catálogo listo, un vacío es un resultado válido sin `degraded`.
+- Razón de la degradación de `nav.find`: `index_schema_broken` cuando la apertura o consulta falla por corrupción o esquema roto (`no such table`, `malformed`, `not a database`, etc.); `index_not_ready` en el resto (catálogo ausente, bloqueado o ilegible). Los items del catálogo llevan `origin=catalog`.
+- Un path existente todavía no registrado se permite si su catálogo publicado aporta una de esas señales de readiness. Si no está registrado ni tiene catálogo listo, devuelve `workspace_resolution_failed`, `Kind=workspace`, `Stage=workspace_resolution`, `HintCode=workspace_resolution_failed` y `ReasonCode=invalid_workspace`; su `Detail` y `NextHint` usan el root y patrón recibidos para sugerir el registro, indexación y reintento exactos. Este es el único caso de `nav.find` sin catálogo que sigue siendo `ok=false`.
+- El reindex de autosanación es un único job completo en segundo plano, deduplicado y con backoff tras fallo; nunca escribe el registry. Detalle operativo en [[RF-IDX-001]]. La readiness por metadata no garantiza frescura respecto de cambios posteriores en disco; se mantiene la política previa de warnings stale.
 - Para un path no registrado, `Detail` y `NextHint` dicen: “Workspace is not registered. Run `mi-lsp workspace add '<root shell-quoted>'` to register and index it, then retry `mi-lsp nav find '<pattern shell-quoted>' --workspace '<root shell-quoted>'`.” Los argumentos se citan dinámicamente según las reglas de la CLI.
 - La CLI JSON conserva intacto el envelope de error aunque salga con código distinto de cero. MCP conserva el mismo diagnóstico en `structuredContent` y presenta error más `next` en el texto renderizado. En perfiles compactos, `NextHint` deriva del origen accionable del error.
 - `--classic` prevalece sobre defaults por superficie y sobre `MI_LSP_AXI=1`.
@@ -132,6 +154,7 @@ evidence:
 - `toon` no debe fallar por controles no imprimibles dentro de strings: reemplaza todo control excepto tab, newline y carriage-return por escapes ASCII visibles (`\u0000`, `\u001f`, etc.) y agrega una unica advertencia `toon output sanitized unsafe control characters` cuando ocurre. El comportamiento `compact`/JSON queda compatible y no comparte esta sanitizacion.
 - `yaml` serializa el envelope en YAML estándar; útil para lectura humana o parsers YAML.
 - Si `items=[]`, el envelope emite `hint` con diagnóstico de causa (patron no encontrado, timeout, regex-like sin `--regex`).
+- Cada item de `nav search` incluye `origin=text` y `col` (columna de la primera coincidencia, base 1 en runas) cuando la puede calcular. En formato agent implícito (salida no interactiva o cliente agente), `nav search` usa tope por defecto de 20 items (`--max-items` explícito gana; AXI y los demás `nav.*` conservan 5). El renderer agent muestra un snippet de hasta 160 runas con ventana centrada en la coincidencia (marca el recorte con `…`), agrupa en un encabezado de archivo los hits consecutivos del mismo archivo (`  <línea>: <texto>`), agrega `[in <caller>]` cuando el item trae `caller` y `(origin=<x>)` cuando el origen no es `text`. Con `degraded=true` el encabezado agrega `backend=<b> degraded=true reason=<r> fallback_used=<f>`.
 - Si `nav search` agota presupuesto o timeout interno despues de encontrar resultados parciales seguros, debe devolver `ok=true`, preservar los `items` parciales, agregar warning tipado de timeout, `next_hint` accionable para acotar/reintentar y `coach.trigger=search_timeout`.
 - Si el daemon falla y el fallback directo responde, el envelope emite `hint: "daemon_unavailable; served from local text index"`.
 - `--format`, `--max-items`, `--max-chars` y `--token-budget` explicitos ganan sobre defaults AXI.
@@ -183,6 +206,19 @@ Scenario: Mapear un fallo terminal a reason_code y detail separados
   Then "error.reason_code" es uno de "unsupported_operation", "unavailable_binary", "invalid_workspace" o "explicit_incomplete"
   And "error.detail" es un campo distinto, sanitizado y acotado a 300 caracteres
   And un "reason_code" fuera de esa lista se reemplaza por la clasificacion derivada
+
+Scenario: Degradar a texto sin falso vacio cuando falta el catalogo
+  Given un workspace registrado sin catalogo publicado
+  When ejecuto "mi-lsp nav find HelloWorld --workspace gastos --format json"
+  Then "ok" es "true" y "backend" es "text"
+  And "degraded" es "true", "reason" es "index_not_ready" y "fallback_used" es "text"
+  And cada item incluye "origin" igual a "text"
+  And "warnings" indica que se lanzo o se omitio el reindex en segundo plano
+
+Scenario: Distinguir un vacio verificado de un vacio sin indice
+  Given un workspace registrado sin catalogo publicado
+  When ejecuto "mi-lsp nav find SimboloInexistente --workspace gastos --format json"
+  Then "ok" es "true", "items" es vacio, "degraded" es "true" y "reason" es "no_matches"
 ```
 
 ## 10. Test Traceability
@@ -196,10 +232,16 @@ Scenario: Mapear un fallo terminal a reason_code y detail separados
 - Positivo: `TP-QRY / TC-QRY-147`
 - Positivo: `TP-QRY / TC-QRY-148`
 - Positivo: `TP-QRY / TC-QRY-151`
+- Positivo: `TP-QRY / TC-QRY-171`
+- Positivo: `TP-QRY / TC-QRY-172`
+- Positivo: `TP-QRY / TC-QRY-182`
+- Positivo: `TP-QRY / TC-QRY-183`
+- Positivo: `TP-QRY / TC-QRY-184`
 - Negativo: `TP-QRY / TC-QRY-003`
 - Negativo: `TP-QRY / TC-QRY-149`
 - Negativo: `TP-QRY / TC-QRY-150`
 - Negativo: `TP-QRY / TC-QRY-152`
+- Negativo: `TP-QRY / TC-QRY-176`
 
 ## 11. No Ambiguities Left
 

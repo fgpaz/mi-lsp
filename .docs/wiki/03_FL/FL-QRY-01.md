@@ -63,7 +63,8 @@ El mismo servicio de navegación está disponible mediante `mi-lsp mcp`, un proc
 - Si se uso `nav pack`, la respuesta deja visible el reading pack canonico, sus stages y sus targets o slices segun preview/full.
 - Si se uso `nav wiki search`, la respuesta deja visible candidatos documentales por capa y `next_queries` concretos para pack/trace/multi-read/ask.
 - Si se uso `nav evidence inventory`, la respuesta deja visible anchor canonico, `recommended_read_path`, perfiles CL/EL y raices de evidencia con conteos/bytes sin contenido raw.
-- Si se uso `nav intent`, la respuesta deja visible `mode=docs|code`: capability-like -> docs canonicos owner-aware; symbol-like -> ranking BM25 de catalogo.
+- Si se uso `nav intent`, la respuesta deja visible `mode=docs|code|mixed`: capability-like -> docs canonicos owner-aware; symbol-like -> ranking BM25 de catalogo; pregunta con señales de codigo -> `mixed` (codigo fuerte primero, luego docs), con `result_kind` y `origin` por item.
+- Una superficie con fallback (`nav find`, `nav refs`) nunca deja un vacio falso: o responde con la via alternativa marcada `degraded=true` + `reason` + `fallback_used`, o devuelve un vacio verificado con `reason=no_matches`.
 - Si se uso una lectura barata de catalogo/texto, la respuesta no queda bloqueada por health del daemon.
 - Si el workspace se resolvio por fallback (`same-root alias ambiguity` o `last_workspace`), la respuesta deja warning visible con el alias seleccionado.
 
@@ -99,7 +100,7 @@ sequenceDiagram
         C->>DG: clasifica tarea, elige anchor y ordena reading pack canonico
         DG-->>C: docs + stages + targets/slices
     else nav intent
-        C->>DG: clasifica query en mode=docs|code
+        C->>DG: clasifica query en mode=docs|code|mixed
         alt docs
             DG-->>C: docs canonicos owner-aware + evidence
         else code
@@ -128,6 +129,8 @@ sequenceDiagram
 | Operacion de catalogo/texto (`find/search/intent/symbols/outline/overview/multi-read/pack`) | ejecuta directo y no depende de health del daemon |
 | Presupuesto agotado | `truncated=true` + `next_hint` |
 | Backend degradado (`tsserver`, `pyright` o `gopls` ausente; worker Roslyn no disponible) | `warnings` explicitos y backend alternativo `catalog|text` |
+| `nav find` sin catalogo publicado, ilegible o con esquema roto | `ok=true`, `backend=text`, items `origin=text`, `degraded=true`, `reason=index_not_ready|index_schema_broken`, `fallback_used=text` y un unico reindex completo en segundo plano; nunca un vacio falso |
+| `nav refs` con backend semantico ausente, con error o vacio | fallback de texto con limites de palabra, `degraded=true`, `reason=lsp_unavailable|lsp_error|semantic_empty_text_hits|language_unsupported`; si nada coincide, `reason=no_matches` verificado |
 | Catalogo ausente para `nav service` | degradacion a evidencia textual con warning |
 | `nav ask` sin corpus documental fuerte | degradacion a fallback generico/textual con warning y `coach` de refinamiento |
 | `nav wiki search` con docgraph vacio | `backend=wiki.search`, `items=[]` y hint hacia `index --docs-only` |
@@ -164,7 +167,7 @@ sequenceDiagram
 - RF-QRY-003 resumen evidence-first de servicio sin score fuerte
 - RF-QRY-010 preguntas docs-first guiadas por wiki con evidencia de codigo
 - RF-QRY-011 busqueda de simbolos por intencion con scope opcional de repo
-- RF-QRY-011 busqueda hibrida por intencion con `mode=docs|code`
+- RF-QRY-011 busqueda hibrida por intencion con `mode=docs|code|mixed`
 - RF-QRY-012 reading pack canonico docs-first para una tarea
 - RF-QRY-014 comando publico nav route para resolver documento canonico minimo
 - RF-QRY-015 reutilizacion interna del route core desde ask y pack

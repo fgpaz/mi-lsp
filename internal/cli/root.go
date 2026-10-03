@@ -512,13 +512,26 @@ func classifyEnvelopeError(request model.CommandRequest, backend string, route s
 		return result
 	}
 
+	var observationErr *model.GraphObservationError
+	if errors.As(err, &observationErr) {
+		applyGraphObservationError(&result, observationErr)
+		return result
+	}
+
 	if strings.TrimSpace(backend) != "" {
 		info := telemetry.ClassifyErrorInfo(backend, message, nil)
 		if strings.TrimSpace(info.Kind) != "" {
 			result.Kind = info.Kind
 		}
-		if strings.TrimSpace(info.Code) != "" && info.Code != "_generic" {
-			result.Code = info.Code
+		if code := strings.TrimSpace(info.Code); code != "" && code != "_generic" {
+			if strings.EqualFold(backend, "index") && code == "index_generic" {
+				// Never surface an unclassified index failure as a generic code.
+				result.Code = "index_failed"
+				result.HintCode = "index_failed"
+				result.Detail = message
+			} else {
+				result.Code = code
+			}
 		}
 	}
 
@@ -564,6 +577,22 @@ func classifyEnvelopeError(request model.CommandRequest, backend string, route s
 		result.HintCode = "validation_failed"
 	}
 	return result
+}
+
+// applyGraphObservationError types a graph observation failure: the lowercase
+// observation code, the graph_observation stage and the offending field.
+func applyGraphObservationError(result *model.EnvelopeError, observationErr *model.GraphObservationError) {
+	code := strings.ToLower(strings.TrimSpace(observationErr.Code))
+	if code == "" {
+		code = "graph_observation_failed"
+	}
+	result.Kind = "backend_runtime"
+	result.Code = code
+	result.Message = observationErr.Message
+	result.Stage = "graph_observation"
+	result.HintCode = code
+	result.ReasonCode = "explicit_incomplete"
+	result.Detail = "field=" + strings.TrimSpace(observationErr.Field) + "; " + observationErr.Message
 }
 
 func errorWarnings(err model.EnvelopeError) []string {
@@ -671,6 +700,9 @@ func implicitAgentFormat(cmd *cobra.Command, clientName string, clientConfigured
 	return !stdoutIsTerminal
 }
 
+// implicitAgentSearchMaxItems is the default nav.search cap in implicit agent format.
+const implicitAgentSearchMaxItems = 20
+
 func (s *rootState) effectiveMaxItems(cmd *cobra.Command, operation string, axiEnabled bool, fullEnabled bool) int {
 	if cmd != nil && cmd.Flags().Changed("max-items") {
 		return s.maxItems
@@ -685,7 +717,13 @@ func (s *rootState) effectiveMaxItems(cmd *cobra.Command, operation string, axiE
 	}
 	if s.usesImplicitAgentFormat(cmd) && !fullEnabled {
 		switch operation {
-		case "nav.search", "nav.intent", "nav.find", "nav.multi-read":
+		case "nav.search":
+			// Agent search lines are compact (grouped by file), so a wider
+			// default window stays cheaper than rg while avoiding false misses.
+			if s.maxItems > implicitAgentSearchMaxItems {
+				return implicitAgentSearchMaxItems
+			}
+		case "nav.intent", "nav.find", "nav.multi-read":
 			if s.maxItems > 5 {
 				return 5
 			}

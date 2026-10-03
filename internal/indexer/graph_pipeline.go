@@ -44,6 +44,10 @@ type graphObservationTarget struct {
 	WorkspaceEntrypointPath string
 }
 
+// graphIdentityUnavailableWarning is the sanitized, actionable warning emitted
+// when the graph is omitted because no repository identity can be resolved.
+const graphIdentityUnavailableWarning = "graph not published: repository identity unavailable (set exactly one git remote origin or declare repository_identity)"
+
 var errGraphTopologyAmbiguous = errors.New("graph topology is ambiguous; no repository was selected")
 
 // ObserveGraph runs local Go observation and the externally supplied Roslyn
@@ -120,7 +124,17 @@ func ObserveGraph(ctx context.Context, root string, project model.ProjectFile, o
 		var err error
 		identity, err = workspace.ResolveRepositoryIdentity(ctx, root, project.Repos)
 		if err != nil {
-			return nil, nil, nil, &model.GraphObservationError{Code: "GPH_IDENTITY_UNAVAILABLE", Field: "repository_identity", Message: "repository identity could not be resolved"}
+			if explicitSelection != nil {
+				return nil, nil, nil, &model.GraphObservationError{Code: "GPH_IDENTITY_UNAVAILABLE", Field: "repository_identity", Message: "repository identity could not be resolved"}
+			}
+			// RF-GPH-007: without an explicit repository_identity or exactly one
+			// origin, the catalog/docs index continues and only the graph
+			// publication is omitted. Identity is never derived from the path.
+			backend := "go"
+			if len(goRepos) == 0 {
+				backend = "roslyn"
+			}
+			return nil, []model.GraphObservationOmission{graphOmission(backend, "declarations", "identity_unavailable", "declare_repository_identity")}, []string{graphIdentityUnavailableWarning}, nil
 		}
 	}
 

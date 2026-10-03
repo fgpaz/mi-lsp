@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/fgpaz/mi-lsp/internal/model"
 	"github.com/fgpaz/mi-lsp/internal/telemetry"
 )
 
@@ -41,4 +42,22 @@ func shouldSuggestWorkerInstall(err error) bool {
 		return false
 	}
 	return telemetry.IsRoslynWorkerBootstrapText(err.Error())
+}
+
+// semanticFailureReason maps a semantic backend failure to a primitives-v2
+// reason code: a missing binary is lsp_unavailable, everything else lsp_error.
+func semanticFailureReason(err error) string {
+	if err == nil {
+		return model.ReasonLSPError
+	}
+	message := strings.ToLower(err.Error())
+	if strings.Contains(message, "file is required") {
+		return model.ReasonLSPError
+	}
+	for _, marker := range []string{"unavailable", "executable file not found", "not found in $path", "node is required", "no such file or directory"} {
+		if strings.Contains(message, marker) {
+			return model.ReasonLSPUnavailable
+		}
+	}
+	return model.ReasonLSPError
 }

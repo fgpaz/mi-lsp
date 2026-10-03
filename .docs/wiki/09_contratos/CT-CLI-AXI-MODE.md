@@ -82,4 +82,4 @@ El item principal del home puede incluir:
 - `nav pack`: conserva `PackResult`, entrega `mode=preview|full` y usa `--full` para materializar slices del mismo pack
 - `nav workspace-map`: agrega `mode=preview|full` y `next_steps` solo cuando se fuerza AXI
 - `nav search`: mantiene envelope estable y agrega guidance de expansion via `next_hint`; puede ademas exponer `continuation`/`memory_pointer` cuando ayudan a reentrar con pocos tokens
-- `nav intent`: mantiene `backend=intent`, agrega `mode=docs|code`, usa preview/full sin mezclar docs y simbolos en la misma lista y anuncia `--full` via `next_hint`
+- `nav intent`: mantiene `backend=intent`, agrega `mode=docs|code|mixed`, usa preview/full sin mezclar docs y simbolos salvo en `mode=mixed` y anuncia `--full` via `next_hint`

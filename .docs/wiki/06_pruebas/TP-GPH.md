@@ -174,6 +174,12 @@ cases:
     oracle: prueba de contrato y rerun del workspace real de Gastos
     release_readback: el artefacto publicado v0.8.1 linux-x64 en d0da7243fe012eba8bbb41b312ca292643ae8a59 indexó el clon temporal rastreado de Gastos en f9dd97e86888761e05ff9cf751c7b151f6854813 con 1278 archivos y 15656 símbolos; GPH_OBS_REF_DUPLICATE ausente
     evidence: worker-dotnet/MiLsp.Worker/RoslynService.cs; worker-dotnet/MiLsp.Worker.ContractTests/Program.cs; .docs/auditoria/2026-08-26-live-wiki-code-bridge/release-readback-v0.8.1.yaml
+  - id: TC-GPH-076
+    type: negativo
+    given: repo git con código Go, sin remote origin ni repository_identity declarada, con HOME y registry aislados
+    when: mi-lsp index (selección automática) y, aparte, con entrypoint explícito
+    then: el índice responde ok=true, publica catálogo y docs y omite el grafo con warning accionable (sin derivar identidad del path); con entrypoint explícito sigue siendo error; los errores de grafo salen tipados (code gph_*, stage graph_observation) y ningún error de index queda como index_generic (fallback index_failed)
+    evidence: internal/indexer/graph_identity_unavailable_test.go; internal/cli/index_error_classification_test.go; internal/daemon/error_classification_test.go
 ```
 
 ## TP-GPH-001 - Identidad, NodeKey y cross-RID

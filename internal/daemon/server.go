@@ -632,12 +632,30 @@ func daemonErrorEnvelope(request model.CommandRequest, err error, fallbackKind s
 		envErr.Stage = "transport"
 		envErr.HintCode = "daemon_transport_failed"
 		envErr.Retryable = true
+	} else if observationErr := (*model.GraphObservationError)(nil); errors.As(err, &observationErr) {
+		code := strings.ToLower(strings.TrimSpace(observationErr.Code))
+		if code == "" {
+			code = "graph_observation_failed"
+		}
+		envErr.Kind = "backend_runtime"
+		envErr.Code = code
+		envErr.Message = observationErr.Message
+		envErr.Stage = "graph_observation"
+		envErr.HintCode = code
+		envErr.ReasonCode = "explicit_incomplete"
+		envErr.Detail = "field=" + strings.TrimSpace(observationErr.Field) + "; " + observationErr.Message
 	} else if info := telemetry.ClassifyErrorInfo(backend, message, nil); strings.TrimSpace(info.Kind) != "" || strings.TrimSpace(info.Code) != "" {
 		if strings.TrimSpace(info.Kind) != "" {
 			envErr.Kind = info.Kind
 		}
-		if strings.TrimSpace(info.Code) != "" && info.Code != "_generic" {
-			envErr.Code = info.Code
+		if code := strings.TrimSpace(info.Code); code != "" && code != "_generic" {
+			if backend == "index" && code == "index_generic" {
+				envErr.Code = "index_failed"
+				envErr.HintCode = "index_failed"
+				envErr.Detail = message
+			} else {
+				envErr.Code = code
+			}
 		}
 	}
 	env := model.Envelope{

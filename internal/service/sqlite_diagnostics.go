@@ -12,6 +12,7 @@ const workspaceDBOpenErrorCode = "workspace_db_open_failed"
 
 type workspaceDBOpenError struct {
 	cause error
+	root  string
 }
 
 func (e *workspaceDBOpenError) Error() string {
@@ -41,7 +42,7 @@ func openWorkspaceDB(registration model.WorkspaceRegistration, operation string,
 	if err != nil {
 		// Keep the underlying cause for local classification, but never expose
 		// workspace roots, database paths, or driver text through Error().
-		return nil, &workspaceDBOpenError{cause: err}
+		return nil, &workspaceDBOpenError{cause: err, root: registration.Root}
 	}
 	return db, nil
 }

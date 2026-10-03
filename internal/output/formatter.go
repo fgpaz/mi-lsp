@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"unicode"
 
 	toon "github.com/toon-format/toon-go"
 	"gopkg.in/yaml.v3"
@@ -78,6 +79,12 @@ func Render(env model.Envelope, format string, compress bool) ([]byte, error) {
 // separate opt-in surface for callers that need compact output.
 func renderAgent(env model.Envelope) string {
 	lines := []string{"workspace=" + env.Workspace}
+	if env.Degraded {
+		lines[0] += " backend=" + env.Backend + " degraded=true reason=" + env.Reason
+		if env.FallbackUsed != "" {
+			lines[0] += " fallback_used=" + env.FallbackUsed
+		}
+	}
 	switch items := env.Items.(type) {
 	case []model.SymbolRecord:
 		for _, item := range items {
@@ -99,23 +106,7 @@ func renderAgent(env model.Envelope) string {
 			}
 		}
 	case []map[string]any:
-		for _, item := range items {
-			file, _ := item["file"].(string)
-			line, _ := item["line"].(int)
-			if text, ok := item["text"].(string); ok {
-				text = compactAgentText(text, 56)
-				if file != "" && line > 0 {
-					lines = append(lines, fmt.Sprintf("%s:%d %s", file, line, text))
-				} else if text != "" {
-					lines = append(lines, text)
-				}
-				continue
-			}
-			encoded, err := json.Marshal(item)
-			if err == nil {
-				lines = append(lines, string(encoded))
-			}
-		}
+		lines = append(lines, renderAgentMapItems(items)...)
 	default:
 		if env.Items != nil {
 			encoded, err := json.Marshal(compactItems(env.Items, true))
@@ -144,6 +135,134 @@ func renderAgent(env model.Envelope) string {
 		lines = append(lines, "next "+renderContinuationTarget(env.Continuation.Next))
 	}
 	return strings.Join(lines, "\n")
+}
+
+// agentSnippetRunes is the per-hit snippet budget in the agent format.
+const agentSnippetRunes = 160
+
+// renderAgentMapItems renders map items for the agent format. Search-like items
+// (file + line + text) use a rg-compatible but cheaper layout:
+//
+//	file:line text            single hit for a file (same shape as rg)
+//	file                      two or more consecutive hits for the same file:
+//	  line: text [in caller] (origin=x)
+//
+// The snippet is windowed around item["col"] (1-based rune column of the
+// match) when the line is longer than agentSnippetRunes. "[in name]" is added
+// when the item has a caller; "(origin=x)" only when origin is not "text".
+// Items without text fall back to one JSON line each.
+func renderAgentMapItems(items []map[string]any) []string {
+	lines := make([]string, 0, len(items))
+	for i := 0; i < len(items); i++ {
+		item := items[i]
+		file, _ := item["file"].(string)
+		line := agentInt(item["line"])
+		text, hasText := item["text"].(string)
+		if !hasText {
+			if encoded, err := json.Marshal(item); err == nil {
+				lines = append(lines, string(encoded))
+			}
+			continue
+		}
+		snippet := agentItemText(item, text)
+		if file == "" || line <= 0 {
+			if snippet != "" {
+				lines = append(lines, snippet)
+			}
+			continue
+		}
+		run := 1
+		for i+run < len(items) && agentSameFileHit(items[i+run], file) {
+			run++
+		}
+		if run == 1 {
+			lines = append(lines, fmt.Sprintf("%s:%d %s", file, line, snippet))
+			continue
+		}
+		lines = append(lines, file)
+		for _, hit := range items[i : i+run] {
+			hitLine := agentInt(hit["line"])
+			hitText, _ := hit["text"].(string)
+			lines = append(lines, fmt.Sprintf("  %d: %s", hitLine, agentItemText(hit, hitText)))
+		}
+		i += run - 1
+	}
+	return lines
+}
+
+func agentInt(value any) int {
+	switch typed := value.(type) {
+	case int:
+		return typed
+	case float64:
+		return int(typed)
+	}
+	return 0
+}
+
+func agentSameFileHit(item map[string]any, file string) bool {
+	other, _ := item["file"].(string)
+	line := agentInt(item["line"])
+	_, hasText := item["text"].(string)
+	return hasText && other == file && line > 0
+}
+
+func agentItemText(item map[string]any, text string) string {
+	col := agentInt(item["col"])
+	snippet := windowAgentText(text, col, agentSnippetRunes)
+	if caller := agentCallerName(item["caller"]); caller != "" {
+		snippet += " [in " + caller + "]"
+	}
+	if origin, _ := item["origin"].(string); origin != "" && origin != model.ItemOriginText {
+		snippet += " (origin=" + origin + ")"
+	}
+	return snippet
+}
+
+func agentCallerName(value any) string {
+	switch caller := value.(type) {
+	case string:
+		return strings.TrimSpace(caller)
+	case map[string]any:
+		name, _ := caller["name"].(string)
+		return strings.TrimSpace(name)
+	}
+	return ""
+}
+
+// windowAgentText trims leading whitespace, collapses inner whitespace and, when
+// the text exceeds maxRunes, keeps a window around the 1-based rune column col
+// (head of the line when col is unknown), marking cut sides with "…".
+func windowAgentText(text string, col int, maxRunes int) string {
+	runes := []rune(text)
+	lead := 0
+	for lead < len(runes) && unicode.IsSpace(runes[lead]) {
+		lead++
+	}
+	runes = runes[lead:]
+	if col > 0 {
+		col -= lead
+	}
+	if len(runes) <= maxRunes {
+		return strings.Join(strings.Fields(string(runes)), " ")
+	}
+	start := 0
+	if col > 1 {
+		start = max(0, col-1-maxRunes/4)
+	}
+	start = min(start, len(runes)-maxRunes)
+	end := start + maxRunes
+	from, to := start, end
+	prefix, suffix := "", ""
+	if start > 0 {
+		prefix = "…"
+		from++
+	}
+	if end < len(runes) {
+		suffix = "…"
+		to--
+	}
+	return prefix + strings.Join(strings.Fields(string(runes[from:to])), " ") + suffix
 }
 
 func compactAgentText(value string, maxRunes int) string {
@@ -517,6 +636,9 @@ func compactItems(items any, compress bool) any {
 			}
 			if item.Workspace != "" {
 				entry["workspace"] = item.Workspace
+			}
+			if item.Origin != "" {
+				entry["origin"] = item.Origin
 			}
 			compact = append(compact, entry)
 		}

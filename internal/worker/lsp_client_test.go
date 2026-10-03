@@ -3,6 +3,7 @@ package worker
 import (
 	"bytes"
 	"encoding/json"
+	"runtime"
 	"testing"
 )
 
@@ -56,6 +57,22 @@ func TestURIToPath(t *testing.T) {
 		result := uriToPath(tt.input)
 		if !bytes.Contains([]byte(result), []byte(tt.containsCheck)) {
 			t.Errorf("uriToPath(%s) = %s, expected to contain %s", tt.input, result, tt.containsCheck)
+		}
+	}
+}
+
+func TestURIToPathKeepsAbsoluteRootAndDecodes(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("unix path semantics")
+	}
+	tests := map[string]string{
+		"file:///home/user/file.py":       "/home/user/file.py",
+		"file:///home/user/my%20dir/a.go": "/home/user/my dir/a.go",
+		"file://localhost/tmp/a.ts":       "/tmp/a.ts",
+	}
+	for input, want := range tests {
+		if got := uriToPath(input); got != want {
+			t.Errorf("uriToPath(%s) = %q, want %q", input, got, want)
 		}
 	}
 }

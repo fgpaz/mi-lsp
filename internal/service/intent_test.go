@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -652,5 +653,414 @@ func TestGraphOmissionReasonNeverCrossesPlannerEnvelopeRaw(t *testing.T) {
 		if got != "graph_unresolved" && got != "GPH_QUERY_PRIVATE" && got != "graph_omission" {
 			t.Fatalf("code=%q produced unexpected stable reason %q", code, got)
 		}
+	}
+}
+
+func intentTermWords(terms []intentTerm) string {
+	words := make([]string, len(terms))
+	for i, term := range terms {
+		words[i] = term.Word
+	}
+	return " " + strings.Join(words, " ") + " "
+}
+
+func TestIntentTermsDropStopwordsAndSplitIdentifiers(t *testing.T) {
+	terms := intentTerms("where is the workspace registry garbage collected")
+	joined := intentTermWords(terms)
+	for _, want := range []string{"workspace", "registry", "garbage", "collected"} {
+		if !strings.Contains(joined, " "+want+" ") {
+			t.Fatalf("terms=%v missing %q", terms, want)
+		}
+	}
+	for _, noise := range []string{"where", "the", "is"} {
+		if strings.Contains(joined, " "+noise+" ") {
+			t.Fatalf("terms=%v keep stopword %q", terms, noise)
+		}
+	}
+	if terms[3].Patterns[0] != "collect" {
+		t.Fatalf("collected patterns=%v want stem collect", terms[3].Patterns)
+	}
+	split := intentTerms("donde se llama HandleDaemon_error en internal/service/app.go")
+	joined = intentTermWords(split)
+	for _, want := range []string{"handle", "daemon", "error", "internal", "service", "app"} {
+		if !strings.Contains(joined, " "+want+" ") {
+			t.Fatalf("split terms=%v missing %q", split, want)
+		}
+	}
+	if strings.Contains(joined, " donde ") || strings.Contains(joined, " llama ") {
+		t.Fatalf("split terms=%v keep spanish stopwords", split)
+	}
+}
+
+func TestIntentStemAndAliases(t *testing.T) {
+	for word, want := range map[string]string{
+		"collected": "collect", "scores": "score", "settled": "settl", "submitted": "submit",
+		"entries": "entry", "checked": "check", "class": "class", "registry": "registry",
+	} {
+		if got := intentStem(word); got != want {
+			t.Errorf("intentStem(%q)=%q want %q", word, got, want)
+		}
+	}
+	dedup := intentTerm{Word: "deduplicate", Patterns: intentTermPatterns("deduplicate")}
+	if !intentTermMatches(dedup, "dedupmessage", intentFieldParts("DedupMessage")) {
+		t.Fatalf("deduplicate must match Dedup*: %v", dedup.Patterns)
+	}
+	garbage := intentTerm{Word: "garbage", Patterns: intentTermPatterns("garbage")}
+	if !intentTermMatches(garbage, "gcregistry", intentFieldParts("GCRegistry")) || intentTermMatches(garbage, "msgcount", intentFieldParts("msgcount")) {
+		t.Fatalf("gc alias must match only the whole part: %v", garbage.Patterns)
+	}
+}
+
+func TestHasIntentCodeSignals(t *testing.T) {
+	for question, want := range map[string]bool{
+		"how does WorkspaceRegistry garbage collect":     true,
+		"why is index_not_ready returned":                true,
+		"what calls service.Execute":                     true,
+		"explain internal/workspace/registry.go":         true,
+		"which struct holds the registry lock":           true,
+		"where is the lock implemented":                  true,
+		"donde se define el lock del registry":           true,
+		"How does the governance model work":             false,
+		"what requirements cover the onboarding journey": false,
+	} {
+		if got := hasIntentCodeSignals(question); got != want {
+			t.Errorf("hasIntentCodeSignals(%q)=%v want %v", question, got, want)
+		}
+	}
+}
+
+func intentMixedFixture(t *testing.T) (string, string) {
+	t.Helper()
+	root, alias := setupTestWorkspace(t)
+	db, err := store.Open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	symbols := []model.SymbolRecord{
+		{FilePath: "internal/workspace/registry.go", RepoID: "main", RepoName: "main", Name: "CollectGarbage", Kind: "function", StartLine: 40, EndLine: 60, QualifiedName: "internal/workspace/registry.go::CollectGarbage", Language: "go", SearchText: "collect garbage function workspace registry"},
+		{FilePath: "internal/other/render.go", RepoID: "main", RepoName: "main", Name: "RenderWorkspace", Kind: "function", StartLine: 5, EndLine: 9, QualifiedName: "internal/other/render.go::RenderWorkspace", Language: "go", SearchText: "render workspace function render"},
+	}
+	files := []model.FileRecord{
+		{FilePath: "internal/workspace/registry.go", RepoID: "main", RepoName: "main", Language: "go"},
+		{FilePath: "internal/other/render.go", RepoID: "main", RepoName: "main", Language: "go"},
+	}
+	if err := store.ReplaceCatalog(context.Background(), db, testProject(alias), files, symbols); err != nil {
+		t.Fatal(err)
+	}
+	return root, alias
+}
+
+func TestIntentMixedPutsStrongCodeBeforeDocs(t *testing.T) {
+	root, alias := intentMixedFixture(t)
+	env, err := New(root, nil).Execute(context.Background(), model.CommandRequest{
+		Operation: "nav.intent",
+		Context:   model.QueryOptions{Workspace: alias},
+		Payload:   map[string]any{"question": "where is the workspace registry garbage collected", "top": 10},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if env.Mode != "mixed" {
+		t.Fatalf("mode=%q want mixed (items=%#v)", env.Mode, env.Items)
+	}
+	items, ok := env.Items.([]map[string]any)
+	if !ok || len(items) == 0 {
+		t.Fatalf("items=%T %#v", env.Items, env.Items)
+	}
+	if items[0]["result_kind"] != "code" || items[0]["file"] != "internal/workspace/registry.go" || items[0]["origin"] != model.ItemOriginCatalog || items[0]["kind"] != "function" {
+		t.Fatalf("first item=%#v want strong registry.go code match", items[0])
+	}
+	for _, item := range items {
+		if item["result_kind"] != "code" && item["result_kind"] != "doc" {
+			t.Fatalf("item without code|doc kind: %#v", item)
+		}
+	}
+}
+
+func TestIntentDocsQuestionWithoutCodeSignalsStaysDocs(t *testing.T) {
+	root, alias := intentMixedFixture(t)
+	env, err := New(root, nil).Execute(context.Background(), model.CommandRequest{
+		Operation: "nav.intent",
+		Context:   model.QueryOptions{Workspace: alias},
+		Payload:   map[string]any{"question": "how does the governance approval process work", "top": 10},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if env.Mode != "docs" {
+		t.Fatalf("mode=%q want docs", env.Mode)
+	}
+}
+
+func TestIntentMixWithCodeWithoutCatalogReturnsDocsUntouched(t *testing.T) {
+	docs := model.Envelope{Ok: true, Mode: "docs", Items: []map[string]any{{"result_kind": "doc", "doc_path": "a.md"}}}
+	got := New(t.TempDir(), nil).intentMixWithCode(context.Background(), model.WorkspaceRegistration{Name: "demo", Root: t.TempDir()}, "where is RegistryLock implemented", 10, 0, nil, docs)
+	if got.Mode != "docs" || len(got.Items.([]map[string]any)) != 1 {
+		t.Fatalf("envelope=%+v want docs untouched", got)
+	}
+}
+
+func TestIsStrongIntentCodeMatch(t *testing.T) {
+	if !isStrongIntentCodeMatch(intentMatch{Exact: true, Matched: 1, Total: 5}) {
+		t.Fatal("exact symbol name must be strong")
+	}
+	if !isStrongIntentCodeMatch(intentMatch{Named: true, Matched: 2, Total: 9}) {
+		t.Fatal("a file named after the question must be strong")
+	}
+	if !isStrongIntentCodeMatch(intentMatch{Matched: 2, Total: 4}) {
+		t.Fatal("50% coverage must be strong")
+	}
+	if isStrongIntentCodeMatch(intentMatch{Matched: 1, Total: 4}) || isStrongIntentCodeMatch(intentMatch{Matched: 1, Total: 2}) {
+		t.Fatal("low coverage must be weak")
+	}
+	if isStrongIntentCodeMatch(intentMatch{Matched: 1, Total: 1}) {
+		t.Fatal("a single covered term is not strong without an exact name")
+	}
+}
+
+func TestIntentQuestionIdentifiersOnlyKeepIdentifierLikeWords(t *testing.T) {
+	got := strings.Join(intentQuestionIdentifiers("where does the gateway call NewServer or dedup_message in gateway/service.go"), ",")
+	if got != "newserver,dedup_message" {
+		t.Fatalf("identifiers=%q", got)
+	}
+	if got := strings.Join(intentQuestionIdentifiers("RegistryLock"), ","); got != "registrylock" {
+		t.Fatalf("short question identifiers=%q", got)
+	}
+}
+
+func TestIsIntentTestPath(t *testing.T) {
+	for path, want := range map[string]bool{
+		"internal/workspace/registry_test.go": true, "src/app.test.ts": true, "src/Tests/helper.cs": false,
+		"pkg/tests/helper.go": true, "internal/workspace/registry.go": false, "src/latest.go": false,
+	} {
+		if got := isIntentTestPath(strings.ToLower(path)); got != want && path != "src/Tests/helper.cs" {
+			t.Errorf("isIntentTestPath(%q)=%v want %v", path, got, want)
+		}
+	}
+	if !isIntentTestPath(strings.ToLower("src/Tests/helper.cs")) {
+		t.Error("Tests/ directory must count as test path")
+	}
+}
+
+func intentRankingFixture(t *testing.T, symbols []model.SymbolRecord) (*sql.DB, string) {
+	t.Helper()
+	root, alias := setupTestWorkspace(t)
+	db, err := store.Open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	seen := map[string]bool{}
+	files := []model.FileRecord{}
+	for i := range symbols {
+		symbols[i].RepoID, symbols[i].RepoName, symbols[i].Language = "main", "main", "go"
+		if symbols[i].QualifiedName == "" {
+			symbols[i].QualifiedName = symbols[i].FilePath + "::" + symbols[i].Name
+		}
+		if !seen[symbols[i].FilePath] {
+			seen[symbols[i].FilePath] = true
+			files = append(files, model.FileRecord{FilePath: symbols[i].FilePath, RepoID: "main", RepoName: "main", Language: "go"})
+		}
+	}
+	if err := store.ReplaceCatalog(context.Background(), db, testProject(alias), files, symbols); err != nil {
+		t.Fatal(err)
+	}
+	return db, alias
+}
+
+func intentRankedFiles(t *testing.T, db *sql.DB, question string, topN int) []intentMatch {
+	t.Helper()
+	matches, err := intentCodeSearch(context.Background(), db, intentTerms(question), intentQuestionIdentifiers(question), topN, 0, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return matches
+}
+
+func TestIntentFileLevelRankingPrefersRareTermCoverageOverCommonTermRepetition(t *testing.T) {
+	symbols := []model.SymbolRecord{}
+	// Generic terms ("message", "types") repeat in many symbols of a types file.
+	for i, name := range []string{"MessageKind", "MessageEnvelope", "MessagePayload", "MessageHeader", "MessageFlags", "MessageTypes", "MessageOptions"} {
+		symbols = append(symbols, model.SymbolRecord{FilePath: "botapi/types.go", Name: name, Kind: "type", StartLine: i + 1, EndLine: i + 1})
+	}
+	// Filler files make "message" common and "dedup"/"accept" rare.
+	for i := 0; i < 8; i++ {
+		symbols = append(symbols, model.SymbolRecord{FilePath: fmt.Sprintf("adapter/file%d.go", i), Name: fmt.Sprintf("SendMessage%d", i), Kind: "function", StartLine: 1, EndLine: 2})
+	}
+	symbols = append(symbols,
+		model.SymbolRecord{FilePath: "gateway/service.go", Name: "AcceptSubmitted", Kind: "function", StartLine: 30, EndLine: 60},
+		model.SymbolRecord{FilePath: "gateway/service.go", Name: "dedupByID", Kind: "function", StartLine: 70, EndLine: 90},
+		model.SymbolRecord{FilePath: "gateway/service_test.go", Name: "TestAcceptSubmittedDedup", Kind: "function", StartLine: 5, EndLine: 9},
+	)
+	db, _ := intentRankingFixture(t, symbols)
+
+	matches := intentRankedFiles(t, db, "where does the gateway accept a submitted message and deduplicate it by message id", 5)
+	if len(matches) == 0 {
+		t.Fatal("no matches")
+	}
+	if matches[0].Symbol.FilePath != "gateway/service.go" {
+		t.Fatalf("first file=%q want gateway/service.go (matches=%+v)", matches[0].Symbol.FilePath, matches)
+	}
+	if matches[0].Symbol.Name != "AcceptSubmitted" && matches[0].Symbol.Name != "dedupByID" {
+		t.Fatalf("best symbol=%q want one of the matching symbols", matches[0].Symbol.Name)
+	}
+	if !isStrongIntentCodeMatch(matches[0]) {
+		t.Fatalf("first match must be strong: %+v", matches[0])
+	}
+	seen := map[string]bool{}
+	for _, match := range matches {
+		if seen[match.Symbol.FilePath] {
+			t.Fatalf("duplicate file %q: one item per file", match.Symbol.FilePath)
+		}
+		seen[match.Symbol.FilePath] = true
+	}
+	var testScore, srcScore float64
+	for _, match := range matches {
+		switch match.Symbol.FilePath {
+		case "gateway/service_test.go":
+			testScore = match.Score
+		case "gateway/service.go":
+			srcScore = match.Score
+		}
+	}
+	if testScore >= srcScore {
+		t.Fatalf("test file score %.2f must be below source %.2f", testScore, srcScore)
+	}
+}
+
+func TestIntentFileLevelRankingFindsRegistryGarbageCollection(t *testing.T) {
+	symbols := []model.SymbolRecord{
+		{FilePath: "internal/workspace/registry.go", Name: "GarbageCollectRegistry", Kind: "function", StartLine: 40, EndLine: 80},
+		{FilePath: "internal/workspace/registry.go", Name: "loadRegistry", Kind: "function", StartLine: 10, EndLine: 30},
+		{FilePath: "internal/workspace/registry_lock.go", Name: "acquireLock", Kind: "function", StartLine: 12, EndLine: 40},
+		{FilePath: "internal/workspace/autoregister.go", Name: "AutoRegister", Kind: "function", StartLine: 3, EndLine: 9},
+		{FilePath: "internal/service/workspace_map.go", Name: "WorkspaceMap", Kind: "function", StartLine: 3, EndLine: 9},
+		{FilePath: "internal/service/workspace_status.go", Name: "WorkspaceStatus", Kind: "function", StartLine: 3, EndLine: 9},
+		{FilePath: "README.md", Name: "Workspace registry", Kind: "heading", StartLine: 1, EndLine: 2},
+	}
+	db, _ := intentRankingFixture(t, symbols)
+	matches := intentRankedFiles(t, db, "where is the workspace registry garbage collected", 5)
+	if len(matches) == 0 || matches[0].Symbol.FilePath != "internal/workspace/registry.go" || matches[0].Symbol.Name != "GarbageCollectRegistry" {
+		t.Fatalf("matches=%+v want registry.go/GarbageCollectRegistry first", matches)
+	}
+	lock := intentRankedFiles(t, db, "how does the registry file lock time out when another process holds it", 5)
+	if len(lock) == 0 || lock[0].Symbol.FilePath != "internal/workspace/registry_lock.go" {
+		t.Fatalf("lock matches=%+v want registry_lock.go first", lock)
+	}
+	for _, match := range matches {
+		if match.Symbol.FilePath == "README.md" && match.Score >= matches[0].Score {
+			t.Fatalf("non-code file outranks code: %+v", matches)
+		}
+	}
+}
+
+func TestIntentFileLevelRankingExactSymbolNameWins(t *testing.T) {
+	symbols := []model.SymbolRecord{
+		{FilePath: "pkg/a/rate_limiter.go", Name: "TokenBucket", Kind: "type", StartLine: 4, EndLine: 20},
+		{FilePath: "pkg/b/other.go", Name: "NewTokenBucketPool", Kind: "function", StartLine: 4, EndLine: 20},
+		{FilePath: "pkg/b/other.go", Name: "Refill", Kind: "function", StartLine: 30, EndLine: 40},
+	}
+	db, _ := intentRankingFixture(t, symbols)
+	matches := intentRankedFiles(t, db, "who uses TokenBucket", 5)
+	if len(matches) < 2 || !matches[0].Exact || matches[0].Symbol.Name != "TokenBucket" || matches[0].Symbol.FilePath != "pkg/a/rate_limiter.go" {
+		t.Fatalf("matches=%+v want exact-name file first", matches)
+	}
+	if !isStrongIntentCodeMatch(matches[0]) || matches[1].Exact {
+		t.Fatalf("only the exact-name file is exact: %+v", matches)
+	}
+}
+
+func TestIntentFileLevelRankingPrefersFileNamedAfterTheQuestion(t *testing.T) {
+	symbols := []model.SymbolRecord{
+		{FilePath: "src/workflows/workflow-settlement.ts", Name: "WorkflowSettlementPlan", Kind: "type", StartLine: 3, EndLine: 9},
+		{FilePath: "src/runs/executor.ts", Name: "settleWorkflowSteerInbox", Kind: "function", StartLine: 3, EndLine: 9},
+		{FilePath: "src/runs/executor.ts", Name: "partialBudgetTurn", Kind: "function", StartLine: 12, EndLine: 19},
+		{FilePath: "src/runs/other.ts", Name: "budgetPartial", Kind: "function", StartLine: 3, EndLine: 9},
+		{FilePath: "src/runs/returned.ts", Name: "returnedValue", Kind: "function", StartLine: 3, EndLine: 9},
+	}
+	db, _ := intentRankingFixture(t, symbols)
+	matches := intentRankedFiles(t, db, "where is a workflow settled as partial when the turn budget is exceeded", 5)
+	rank := -1
+	for i, match := range matches {
+		if match.Symbol.FilePath == "src/workflows/workflow-settlement.ts" {
+			rank = i
+			if !match.Named || !isStrongIntentCodeMatch(match) {
+				t.Fatalf("settlement file must be Named and strong: %+v", match)
+			}
+		}
+		if match.Symbol.FilePath == "src/runs/returned.ts" {
+			t.Fatalf("\"turn\" must not match inside \"returned\": %+v", match)
+		}
+	}
+	if rank < 0 || rank > 1 {
+		t.Fatalf("settlement rank=%d want top 2 (matches=%+v)", rank, matches)
+	}
+}
+
+func TestIntentMixWithCodeMarksDegradedWhenCatalogUnavailableForCodeQuestion(t *testing.T) {
+	docs := model.Envelope{Ok: true, Mode: "docs", Items: []map[string]any{{"result_kind": "doc", "doc_path": "a.md"}}}
+	registration := model.WorkspaceRegistration{Name: "demo", Root: t.TempDir()}
+	got := New(t.TempDir(), nil).intentMixWithCode(context.Background(), registration, "where is textReferenceFallback implemented", 10, 0, nil, docs)
+	if !got.Ok || got.Mode != "docs" || len(got.Items.([]map[string]any)) != 1 {
+		t.Fatalf("envelope=%+v want docs kept", got)
+	}
+	if !got.Degraded || got.Reason != model.ReasonIndexNotReady || got.FallbackUsed != "" {
+		t.Fatalf("degraded=%v reason=%q fallback=%q want degraded index_not_ready without fallback", got.Degraded, got.Reason, got.FallbackUsed)
+	}
+	if len(got.Warnings) != 1 || !strings.Contains(got.Warnings[0], "mi-lsp nav search textReferenceFallback") {
+		t.Fatalf("warnings=%v want nav search suggestion", got.Warnings)
+	}
+}
+
+func TestIntentCatalogUnavailableClassifiesSchemaAndSkipsNonCodeQuestions(t *testing.T) {
+	docs := model.Envelope{Ok: true, Mode: "docs"}
+	broken := intentCatalogUnavailable(docs, "where is RegistryLock", true, errors.New("no such table: symbols"))
+	if broken.Reason != model.ReasonIndexSchemaBroken || !broken.Degraded {
+		t.Fatalf("broken=%+v want index_schema_broken", broken)
+	}
+	plain := intentCatalogUnavailable(docs, "how does governance work", false, errors.New("unable to open"))
+	if plain.Degraded || plain.Reason != "" || len(plain.Warnings) != 0 {
+		t.Fatalf("plain=%+v want untouched docs", plain)
+	}
+}
+
+func TestIntentCodeQuestionWithUnpublishedCatalogIsDegradedNotSilent(t *testing.T) {
+	root, alias := setupTestWorkspace(t)
+	db, err := store.Open(root) // schema exists but no catalog was ever published
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = db.Close()
+	for _, question := range []string{"where is textReferenceFallback implemented", "where is the registry lock implemented"} {
+		env, err := New(root, nil).Execute(context.Background(), model.CommandRequest{
+			Operation: "nav.intent",
+			Context:   model.QueryOptions{Workspace: alias},
+			Payload:   map[string]any{"question": question, "top": 10},
+		})
+		if err != nil {
+			t.Fatalf("%q: %v", question, err)
+		}
+		if !env.Ok || !env.Degraded || env.Reason != model.ReasonIndexNotReady || env.FallbackUsed != "" {
+			t.Fatalf("%q: ok=%v degraded=%v reason=%q fallback=%q want ok degraded index_not_ready", question, env.Ok, env.Degraded, env.Reason, env.FallbackUsed)
+		}
+		if !strings.Contains(strings.Join(env.Warnings, " "), "mi-lsp nav search") {
+			t.Fatalf("%q: warnings=%v want nav search suggestion", question, env.Warnings)
+		}
+	}
+}
+
+func TestIntentCodeQuestionWithMissingDatabaseIsOkAndDegraded(t *testing.T) {
+	root, alias := setupTestWorkspace(t) // no .mi-lsp/index.db at all
+	env, err := New(root, nil).Execute(context.Background(), model.CommandRequest{
+		Operation: "nav.intent",
+		Context:   model.QueryOptions{Workspace: alias},
+		Payload:   map[string]any{"question": "where is textReferenceFallback implemented", "top": 10},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !env.Ok || !env.Degraded || env.Reason == "" {
+		t.Fatalf("ok=%v degraded=%v reason=%q want ok:true degraded with a classified reason", env.Ok, env.Degraded, env.Reason)
 	}
 }
