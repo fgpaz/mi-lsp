@@ -607,3 +607,47 @@ func TestTextDeclarationNameFallsBackToStrippedIdentifier(t *testing.T) {
 		t.Fatalf("identifierAt without identifier = %q, want empty", got)
 	}
 }
+
+func TestCrossWorkspaceReadDoesNotStartReindexWithoutOverride(t *testing.T) {
+	root, name := setupTestWorkspace(t)
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	t.Setenv(autoIndexEnvEnable, "1")
+	registration := model.WorkspaceRegistration{Name: name, Root: root}
+	spawned := 0
+	old := spawnDetachedAutoIndexJobProcess
+	spawnDetachedAutoIndexJobProcess = func(model.WorkspaceRegistration, string) (int, error) {
+		spawned++
+		return os.Getpid(), nil
+	}
+	t.Cleanup(func() { spawnDetachedAutoIndexJobProcess = old })
+	app := New(root, nil)
+	request := model.CommandRequest{Operation: "nav.find", Context: model.QueryOptions{
+		Workspace: name, CallerCWD: t.TempDir(), ClientName: "codex", CrossWorkspaceRead: true,
+	}}
+	logPath := filepath.Join(home, ".mi-lsp", crossWorkspaceOverrideLog)
+
+	got := app.crossWorkspaceAwareAutoIndex(context.Background(), registration, request)
+	if !strings.HasPrefix(got, autoIndexOutcomeSkipped) || !strings.Contains(got, "cross-workspace read") {
+		t.Fatalf("outcome = %q, want skipped for cross-workspace read", got)
+	}
+	if spawned != 0 {
+		t.Fatalf("spawned %d reindex processes, want 0", spawned)
+	}
+	if _, err := os.Stat(logPath); err == nil {
+		t.Fatal("a skipped reindex must not record an override")
+	}
+
+	request.Context.AllowCrossWorkspace = true
+	if got := app.crossWorkspaceAwareAutoIndex(context.Background(), registration, request); got != autoIndexOutcomeStarted {
+		t.Fatalf("outcome with override = %q, want started", got)
+	}
+	if spawned != 1 {
+		t.Fatalf("spawned %d reindex processes with override, want 1", spawned)
+	}
+	data, err := os.ReadFile(logPath)
+	if err != nil || !strings.Contains(string(data), `"operation":"`+autoIndexOverrideOperation+`"`) {
+		t.Fatalf("override log = %s (err %v), want %s entry", data, err, autoIndexOverrideOperation)
+	}
+}

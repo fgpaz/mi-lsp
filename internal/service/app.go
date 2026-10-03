@@ -1299,7 +1299,9 @@ func (a *App) resolveWorkspaceRequest(request model.CommandRequest) (model.Comma
 					warnings = append(warnings, fmt.Sprintf("workspace used a registry canon link to reach alias %q from cwd workspace %q", selector, mismatch.CWDWorkspaceAlias))
 				case !crossWorkspaceOperationIsWrite(request.Operation):
 					// Reads never need --allow-cross-workspace: the mismatch
-					// warning above already names both roots.
+					// warning above already names both roots. Their write side
+					// effects (background reindex) stay gated.
+					request.Context.CrossWorkspaceRead = true
 				case request.Context.AllowCrossWorkspace:
 					recordCrossWorkspaceOverride(request.Operation, request.Context.ClientName, mismatch.Selector, mismatch.SelectedRoot, mismatch.CallerCWD)
 					warnings = append(warnings, "--allow-cross-workspace override used for write operation "+request.Operation+"; recorded in ~/.mi-lsp/"+crossWorkspaceOverrideLog)

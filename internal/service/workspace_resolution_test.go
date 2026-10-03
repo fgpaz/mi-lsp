@@ -674,3 +674,32 @@ func singleStatusItem(t *testing.T, env model.Envelope) map[string]any {
 	}
 	return item
 }
+
+func TestCrossWorkspaceReadIsMarkedForSideEffectGating(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+
+	mainRoot := t.TempDir()
+	worktreeRoot := t.TempDir()
+	writeWorkspaceFile(t, mainRoot, "src/Main.cs", "class Main {}")
+	writeWorkspaceFile(t, worktreeRoot, "src/Feature.cs", "class Feature {}")
+
+	registerServiceWorkspace(t, "mi-lsp-main", mainRoot)
+	registerServiceWorkspace(t, "mi-lsp-feature", worktreeRoot)
+
+	cross, _, err := New(mainRoot, nil).resolveWorkspaceRequest(model.CommandRequest{
+		Operation: "nav.find",
+		Context:   model.QueryOptions{Workspace: "mi-lsp-main", CallerCWD: filepath.Join(worktreeRoot, "src"), ClientName: "codex"},
+	})
+	if err != nil || !cross.Context.CrossWorkspaceRead {
+		t.Fatalf("cross-workspace read: err = %v, CrossWorkspaceRead = %v, want marked", err, cross.Context.CrossWorkspaceRead)
+	}
+	same, _, err := New(mainRoot, nil).resolveWorkspaceRequest(model.CommandRequest{
+		Operation: "nav.find",
+		Context:   model.QueryOptions{Workspace: "mi-lsp-main", CallerCWD: filepath.Join(mainRoot, "src"), ClientName: "codex"},
+	})
+	if err != nil || same.Context.CrossWorkspaceRead {
+		t.Fatalf("same-workspace read: err = %v, CrossWorkspaceRead = %v, want unmarked", err, same.Context.CrossWorkspaceRead)
+	}
+}

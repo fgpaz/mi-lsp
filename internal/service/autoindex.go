@@ -460,6 +460,23 @@ func recordAutoIndexResult(root string, job store.IndexJob, err error) {
 	}
 }
 
+// crossWorkspaceAwareAutoIndex starts the background reindex unless the
+// request is a harness read of another workspace: that reindex is a write in
+// a workspace the caller did not open, so it needs --allow-cross-workspace and
+// each override use is recorded like any other cross-workspace write.
+func (a *App) crossWorkspaceAwareAutoIndex(ctx context.Context, registration model.WorkspaceRegistration, request model.CommandRequest) string {
+	if request.Context.CrossWorkspaceRead {
+		if !request.Context.AllowCrossWorkspace {
+			return autoIndexOutcomeSkipped + " (cross-workspace read; run mi-lsp index from that workspace or pass --allow-cross-workspace)"
+		}
+		recordCrossWorkspaceOverride(autoIndexOverrideOperation, request.Context.ClientName, request.Context.Workspace, registration.Root, request.Context.CallerCWD)
+	}
+	return a.triggerAutoIndex(ctx, registration)
+}
+
+// autoIndexOverrideOperation names the background reindex in overrides.log.
+const autoIndexOverrideOperation = "index.autoindex"
+
 // findTextFallback answers nav.find from text when the catalog cannot. The
 // result is ok:true and degraded; it is never an empty failure.
 func (a *App) findTextFallback(ctx context.Context, registration model.WorkspaceRegistration, project model.ProjectFile, request model.CommandRequest, pattern string, reason string) model.Envelope {
@@ -467,7 +484,7 @@ func (a *App) findTextFallback(ctx context.Context, registration model.Workspace
 		// A fresh or empty index.db is simply not built yet.
 		reason = model.ReasonIndexNotReady
 	}
-	outcome := a.triggerAutoIndex(ctx, registration)
+	outcome := a.crossWorkspaceAwareAutoIndex(ctx, registration, request)
 	limit := request.Context.MaxItems
 	items := []map[string]any{}
 	warnings := []string{fmt.Sprintf("catalog unavailable (%s); served from text; %s", reason, outcome)}
