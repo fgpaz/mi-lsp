@@ -1293,11 +1293,18 @@ func (a *App) resolveWorkspaceRequest(request model.CommandRequest) (model.Comma
 		warnings := []string{}
 		if mismatch, ok := workspace.ExplicitWorkspaceCWDMismatchFor(selector, request.Context.CallerCWD); ok {
 			warnings = append(warnings, mismatch.Warning)
-			if isHarnessClientName(request.Context.ClientName) && !request.Context.AllowCrossWorkspace {
-				if cwdCanonLinkAllows(mismatch.CWDWorkspaceAlias, selector, "") {
+			if isHarnessClientName(request.Context.ClientName) {
+				switch {
+				case cwdCanonLinkAllows(mismatch.CWDWorkspaceAlias, selector, ""):
 					warnings = append(warnings, fmt.Sprintf("workspace used a registry canon link to reach alias %q from cwd workspace %q", selector, mismatch.CWDWorkspaceAlias))
-				} else {
-					return request, nil, fmt.Errorf("workspace cross-workspace refused: --workspace %q resolves to root %q, but caller cwd %q is inside workspace %q at root %q; recommended command: mi-lsp %s --format toon; pass --allow-cross-workspace only when this cross-workspace query is intentional",
+				case !crossWorkspaceOperationIsWrite(request.Operation):
+					// Reads never need --allow-cross-workspace: the mismatch
+					// warning above already names both roots.
+				case request.Context.AllowCrossWorkspace:
+					recordCrossWorkspaceOverride(request.Operation, request.Context.ClientName, mismatch.Selector, mismatch.SelectedRoot, mismatch.CallerCWD)
+					warnings = append(warnings, "--allow-cross-workspace override used for write operation "+request.Operation+"; recorded in ~/.mi-lsp/"+crossWorkspaceOverrideLog)
+				default:
+					return request, nil, fmt.Errorf("workspace cross-workspace refused: --workspace %q resolves to root %q, but caller cwd %q is inside workspace %q at root %q; recommended command: mi-lsp %s --format toon; pass --allow-cross-workspace only when this cross-workspace write is intentional",
 						mismatch.Selector,
 						mismatch.SelectedRoot,
 						mismatch.CallerCWD,

@@ -150,7 +150,7 @@ func TestExecuteWorkspaceStatusExplicitAliasWinsOverCallerCWDWithWarning(t *test
 	}
 }
 
-func TestExecuteWorkspaceStatusAgentRejectsExplicitAliasOutsideCallerCWD(t *testing.T) {
+func TestExecuteWorkspaceStatusAgentReadsExplicitAliasOutsideCallerCWDWithWarning(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("USERPROFILE", home)
@@ -164,7 +164,7 @@ func TestExecuteWorkspaceStatusAgentRejectsExplicitAliasOutsideCallerCWD(t *test
 	registerServiceWorkspace(t, "mi-lsp-feature", worktreeRoot)
 
 	app := New(mainRoot, nil)
-	_, err := app.Execute(context.Background(), model.CommandRequest{
+	env, err := app.Execute(context.Background(), model.CommandRequest{
 		Operation: "workspace.status",
 		Context: model.QueryOptions{
 			Workspace:  "mi-lsp-main",
@@ -172,18 +172,21 @@ func TestExecuteWorkspaceStatusAgentRejectsExplicitAliasOutsideCallerCWD(t *test
 			ClientName: "codex",
 		},
 	})
-	if err == nil {
-		t.Fatal("Execute(workspace.status) err = nil, want workspace cross-workspace refusal")
+	if err != nil {
+		t.Fatalf("Execute(workspace.status) err = %v, want read to proceed without --allow-cross-workspace", err)
 	}
-	if !strings.Contains(err.Error(), "workspace cross-workspace refused") {
-		t.Fatalf("err = %v, want workspace cross-workspace refusal", err)
+	if env.Workspace != "mi-lsp-main" {
+		t.Fatalf("env.Workspace = %q, want mi-lsp-main", env.Workspace)
 	}
-	if !strings.Contains(err.Error(), "--allow-cross-workspace") {
-		t.Fatalf("err = %v, want override hint", err)
+	if !strings.Contains(strings.Join(env.Warnings, " "), "workspace mismatch") {
+		t.Fatalf("Warnings = %v, want mismatch warning naming both roots", env.Warnings)
+	}
+	if _, statErr := os.Stat(filepath.Join(home, ".mi-lsp", crossWorkspaceOverrideLog)); statErr == nil {
+		t.Fatal("a read must not record an override")
 	}
 }
 
-func TestExecuteNavGovernanceAgentRejectsExplicitAliasOutsideCallerCWD(t *testing.T) {
+func TestExecuteNavGovernanceAgentReadsExplicitAliasOutsideCallerCWDWithWarning(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("USERPROFILE", home)
@@ -196,23 +199,90 @@ func TestExecuteNavGovernanceAgentRejectsExplicitAliasOutsideCallerCWD(t *testin
 	registerServiceWorkspace(t, "mi-lsp-main", mainRoot)
 	registerServiceWorkspace(t, "mi-lsp-feature", worktreeRoot)
 
-	app := New(mainRoot, nil)
-	_, err := app.Execute(context.Background(), model.CommandRequest{
+	request := model.CommandRequest{
 		Operation: "nav.governance",
 		Context: model.QueryOptions{
 			Workspace:  "mi-lsp-main",
 			CallerCWD:  filepath.Join(worktreeRoot, "src"),
 			ClientName: "codex",
 		},
+	}
+	resolved, warnings, err := New(mainRoot, nil).resolveWorkspaceRequest(request)
+	if err != nil {
+		t.Fatalf("resolveWorkspaceRequest(nav.governance) err = %v, want read to proceed", err)
+	}
+	if resolved.Context.Workspace != "mi-lsp-main" {
+		t.Fatalf("Workspace = %q, want mi-lsp-main", resolved.Context.Workspace)
+	}
+	if !strings.Contains(strings.Join(warnings, " "), "workspace mismatch") {
+		t.Fatalf("warnings = %v, want mismatch warning", warnings)
+	}
+}
+
+func TestCrossWorkspaceWriteAgentStillRefusedWithoutOverride(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+
+	mainRoot := t.TempDir()
+	worktreeRoot := t.TempDir()
+	writeWorkspaceFile(t, mainRoot, "src/Main.cs", "class Main {}")
+	writeWorkspaceFile(t, worktreeRoot, "src/Feature.cs", "class Feature {}")
+
+	registerServiceWorkspace(t, "mi-lsp-main", mainRoot)
+	registerServiceWorkspace(t, "mi-lsp-feature", worktreeRoot)
+
+	for _, operation := range []string{"index.start", "workspace.link", "prepare.create"} {
+		_, _, err := New(mainRoot, nil).resolveWorkspaceRequest(model.CommandRequest{
+			Operation: operation,
+			Context: model.QueryOptions{
+				Workspace:  "mi-lsp-main",
+				CallerCWD:  filepath.Join(worktreeRoot, "src"),
+				ClientName: "codex",
+			},
+		})
+		if err == nil || !strings.Contains(err.Error(), "workspace cross-workspace refused") || !strings.Contains(err.Error(), "--allow-cross-workspace") {
+			t.Fatalf("%s err = %v, want cross-workspace refusal with override hint", operation, err)
+		}
+	}
+}
+
+func TestCrossWorkspaceWriteAgentOverrideIsRecorded(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+
+	mainRoot := t.TempDir()
+	worktreeRoot := t.TempDir()
+	writeWorkspaceFile(t, mainRoot, "src/Main.cs", "class Main {}")
+	writeWorkspaceFile(t, worktreeRoot, "src/Feature.cs", "class Feature {}")
+
+	registerServiceWorkspace(t, "mi-lsp-main", mainRoot)
+	registerServiceWorkspace(t, "mi-lsp-feature", worktreeRoot)
+
+	_, warnings, err := New(mainRoot, nil).resolveWorkspaceRequest(model.CommandRequest{
+		Operation: "index.start",
+		Context: model.QueryOptions{
+			Workspace:           "mi-lsp-main",
+			CallerCWD:           filepath.Join(worktreeRoot, "src"),
+			ClientName:          "codex",
+			AllowCrossWorkspace: true,
+		},
 	})
-	if err == nil {
-		t.Fatal("Execute(nav.governance) err = nil, want workspace cross-workspace refusal")
+	if err != nil {
+		t.Fatalf("index.start with override: %v", err)
 	}
-	if !strings.Contains(err.Error(), "workspace cross-workspace refused") {
-		t.Fatalf("err = %v, want workspace cross-workspace refusal", err)
+	if !strings.Contains(strings.Join(warnings, " "), "override used for write operation index.start") {
+		t.Fatalf("warnings = %v, want override-used warning", warnings)
 	}
-	if !strings.Contains(err.Error(), "mi-lsp nav governance --workspace mi-lsp-feature --format toon") {
-		t.Fatalf("err = %v, want nav governance recommendation", err)
+	data, readErr := os.ReadFile(filepath.Join(home, ".mi-lsp", crossWorkspaceOverrideLog))
+	if readErr != nil {
+		t.Fatalf("override log: %v", readErr)
+	}
+	for _, want := range []string{`"override":"allow-cross-workspace"`, `"operation":"index.start"`, `"client":"codex"`} {
+		if !strings.Contains(string(data), want) {
+			t.Fatalf("override log = %s, want %s", data, want)
+		}
 	}
 }
 
