@@ -81,6 +81,29 @@ paths_overlap() {
   return 1
 }
 
+resolve_path() {
+  path="$1"
+  case "$path" in /*) ;; *) path="$PWD/$path" ;; esac
+  suffix=""
+  while [ ! -e "$path" ] && [ ! -L "$path" ]; do
+    name=${path##*/}
+    parent=${path%/*}
+    [ -n "$parent" ] || parent=/
+    suffix="/$name$suffix"
+    path="$parent"
+  done
+  if [ -d "$path" ]; then
+    path="$(CDPATH= cd "$path" && pwd -P)"
+  else
+    name=${path##*/}
+    parent=${path%/*}
+    [ -n "$parent" ] || parent=/
+    parent="$(CDPATH= cd "$parent" && pwd -P)"
+    path="$parent/$name"
+  fi
+  printf '%s%s\n' "$path" "$suffix"
+}
+
 cleanup_staging() {
   [ -z "${stage_root:-}" ] || rm -rf "$stage_root"
   [ -z "${worker_stage_root:-}" ] || rm -rf "$worker_stage_root"
@@ -130,24 +153,14 @@ if [ -z "$worker_binary" ] || [ ! -s "$worker_binary" ]; then
   exit 1
 fi
 
-if [ "$SKIP_WORKER_REFRESH" -eq 0 ] && [ -d "$INSTALL_DIR" ]; then
-  pre_global_home="$(CDPATH= cd "$HOME" && pwd -P)"
-  pre_global_workers="$pre_global_home/.mi-lsp/workers"
-  if [ -d "$pre_global_home/.mi-lsp" ]; then
-    pre_global_dot_dir="$(CDPATH= cd "$pre_global_home/.mi-lsp" && pwd -P)"
-    pre_global_workers="$pre_global_dot_dir/workers"
-  fi
-  if [ -d "$pre_global_workers" ]; then
-    pre_global_workers="$(CDPATH= cd "$pre_global_workers" && pwd -P)"
-  fi
-  pre_global_worker="$pre_global_workers/$RID"
-  pre_install_root="$(CDPATH= cd "$INSTALL_DIR" && pwd -P)"
-  pre_workers_root="$pre_install_root/workers"
-  if [ -d "$pre_workers_root" ]; then
-    pre_workers_root="$(CDPATH= cd "$pre_workers_root" && pwd -P)"
-  fi
-  if paths_overlap "$pre_install_root/mi-lsp" "$pre_global_worker" || paths_overlap "$pre_workers_root/$RID" "$pre_global_worker"; then
-    echo "Refusing overlapping install destinations: local assets '$pre_install_root/mi-lsp' and '$pre_workers_root/$RID' conflict with global worker '$pre_global_worker'." >&2
+if [ "$SKIP_WORKER_REFRESH" -eq 0 ]; then
+  pre_global_home="$(resolve_path "$HOME")"
+  pre_global_worker="$(resolve_path "$pre_global_home/.mi-lsp/workers/$RID")"
+  pre_install_root="$(resolve_path "$INSTALL_DIR")"
+  pre_local_cli="$(resolve_path "$pre_install_root/mi-lsp")"
+  pre_local_worker="$(resolve_path "$pre_install_root/workers/$RID")"
+  if paths_overlap "$pre_local_cli" "$pre_global_worker" || paths_overlap "$pre_local_worker" "$pre_global_worker"; then
+    echo "Refusing overlapping install destinations: local assets '$pre_local_cli' and '$pre_local_worker' conflict with global worker '$pre_global_worker'." >&2
     exit 1
   fi
 fi

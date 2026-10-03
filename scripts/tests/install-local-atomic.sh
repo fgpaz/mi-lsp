@@ -141,6 +141,18 @@ assert_global_worker_unchanged
 [ ! -e "$TMP_ROOT/home/.mi-lsp/workers/linux-x64/workers" ] || fail 'overlap rejection mutated the global worker directory'
 assert_no_stages
 
+reset_case
+new_nested_install="$TMP_ROOT/home/.mi-lsp/workers/linux-x64/new-install"
+if HOME="$TMP_ROOT/home" PATH="$TMP_ROOT/bin:$PATH" MI_LSP_TEST_LOG="$TMP_ROOT/cli.log" \
+    sh "$INSTALLER" --rid linux-x64 --install-dir "$new_nested_install" --out-dir "$TMP_ROOT/dist" \
+    --skip-build >"$TMP_ROOT/nested.out" 2>"$TMP_ROOT/nested.err"; then
+  fail 'nonexistent install directory nested inside global worker unexpectedly accepted'
+fi
+grep -q 'Refusing overlapping install destinations' "$TMP_ROOT/nested.err" || fail 'nested install rejection did not explain the overlap'
+[ ! -e "$new_nested_install" ] || fail 'overlap rejection created the nonexistent install directory'
+assert_global_worker_unchanged
+assert_no_stages
+
 # Refresh success activates all destinations; partial refresh and failed status restore the global worker too.
 reset_case
 run_installer >/dev/null
