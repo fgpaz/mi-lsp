@@ -27,7 +27,7 @@ func (a *App) validateSource(ctx context.Context, request model.CommandRequest) 
 		return *blockedEnv, nil
 	}
 
-	registration, _, err := a.resolveWorkspaceWithProject(request.Context.Workspace)
+	registration, _, err := a.resolveWorkspaceWithProjectForNavigation(request)
 	if err != nil {
 		return model.Envelope{}, err
 	}

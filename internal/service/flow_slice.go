@@ -14,19 +14,19 @@ import (
 // FlowSlicePacket is a one-shot harness packet for understanding a code flow
 // with minimal tokens: path + local neighborhood + ranked read targets.
 type FlowSlicePacket struct {
-	From           string              `json:"from,omitempty"`
-	To             string              `json:"to,omitempty"`
-	Selector       string              `json:"selector,omitempty"`
-	Path           any                 `json:"path,omitempty"`
-	Callers        any                 `json:"callers,omitempty"`
-	Callees        any                 `json:"callees,omitempty"`
-	Neighbors      any                 `json:"neighbors,omitempty"`
-	ReadFirst      []FlowSliceRead     `json:"read_first,omitempty"`
-	HubRisk        *HubRisk            `json:"hub_risk,omitempty"`
-	BatchNext      []batchOperation    `json:"batch_next,omitempty"`
-	GenerationID   string              `json:"generation_id,omitempty"`
-	Determinism    string              `json:"determinism_digest,omitempty"`
-	TokenHints     FlowSliceTokenHints `json:"token_hints,omitempty"`
+	From         string              `json:"from,omitempty"`
+	To           string              `json:"to,omitempty"`
+	Selector     string              `json:"selector,omitempty"`
+	Path         any                 `json:"path,omitempty"`
+	Callers      any                 `json:"callers,omitempty"`
+	Callees      any                 `json:"callees,omitempty"`
+	Neighbors    any                 `json:"neighbors,omitempty"`
+	ReadFirst    []FlowSliceRead     `json:"read_first,omitempty"`
+	HubRisk      *HubRisk            `json:"hub_risk,omitempty"`
+	BatchNext    []batchOperation    `json:"batch_next,omitempty"`
+	GenerationID string              `json:"generation_id,omitempty"`
+	Determinism  string              `json:"determinism_digest,omitempty"`
+	TokenHints   FlowSliceTokenHints `json:"token_hints,omitempty"`
 }
 
 type FlowSliceRead struct {
@@ -45,7 +45,7 @@ type FlowSliceTokenHints struct {
 
 func (a *App) flowSlice(ctx context.Context, request model.CommandRequest) (model.Envelope, error) {
 	started := time.Now()
-	registration, _, err := a.resolveWorkspaceWithProject(request.Context.Workspace)
+	registration, _, err := a.resolveWorkspaceWithProjectForNavigation(request)
 	if err != nil {
 		return model.Envelope{}, err
 	}

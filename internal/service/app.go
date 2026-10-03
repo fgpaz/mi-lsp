@@ -1246,11 +1246,45 @@ func (a *App) normalizeWorkspaceRequest(ctx context.Context, request model.Comma
 		return request, nil, nil
 	}
 	autoRegisterWarnings := a.autoRegisterWorkspace(ctx, request)
+	if request.Context.Workspace == "" && strings.HasPrefix(request.Operation, "nav.") && hasAutoRegisterFailureWarning(autoRegisterWarnings) {
+		request.Context.WorkspaceSource = "auto_register_failed"
+		return request, autoRegisterWarnings, nil
+	}
 	request, warnings, err := a.resolveWorkspaceRequest(request)
 	if err != nil {
 		return request, nil, err
 	}
 	return request, append(autoRegisterWarnings, warnings...), nil
+}
+
+func hasAutoRegisterFailureWarning(warnings []string) bool {
+	for _, warning := range warnings {
+		if strings.HasPrefix(warning, "auto_register_failed:") {
+			return true
+		}
+	}
+	return false
+}
+
+func (a *App) resolveWorkspaceWithProjectForNavigation(request model.CommandRequest) (model.WorkspaceRegistration, model.ProjectFile, error) {
+	if request.Context.WorkspaceSource != "auto_register_failed" {
+		return a.resolveWorkspaceWithProject(request.Context.Workspace)
+	}
+	resolution, err := workspace.ResolveWorkspaceSelectionReadOnly("", request.Context.CallerCWD)
+	if err != nil {
+		return model.WorkspaceRegistration{}, model.ProjectFile{}, err
+	}
+	registration := resolution.Registration
+	project, err := workspace.LoadProjectTopology(registration.Root, registration)
+	if err != nil {
+		stateInfo, stateErr := os.Stat(workspace.WorkspaceStateDir(registration.Root))
+		if stateErr != nil || stateInfo.IsDir() {
+			return model.WorkspaceRegistration{}, model.ProjectFile{}, err
+		}
+		project = model.ProjectFile{Project: model.ProjectBlock{Name: registration.Name, Kind: registration.Kind}}
+	}
+	registration = workspace.ApplyProjectTopology(registration, project)
+	return registration, project, nil
 }
 
 func (a *App) resolveWorkspaceRequest(request model.CommandRequest) (model.CommandRequest, []string, error) {
@@ -1455,7 +1489,7 @@ func (a *App) graphQuery(ctx context.Context, request model.CommandRequest) (mod
 	if err != nil {
 		return model.Envelope{}, err
 	}
-	registration, _, err := a.resolveWorkspaceWithProject(request.Context.Workspace)
+	registration, _, err := a.resolveWorkspaceWithProjectForNavigation(request)
 	if err != nil {
 		return model.Envelope{}, &model.GraphQueryError{Code: "GPH_QUERY_BACKEND_UNAVAILABLE", Message: "graph backend is unavailable"}
 	}
@@ -1559,7 +1593,7 @@ func (a *App) info(ctx context.Context, name string) (model.Envelope, error) {
 }
 
 func (a *App) symbols(ctx context.Context, request model.CommandRequest) (model.Envelope, error) {
-	registration, _, err := a.resolveWorkspaceWithProject(request.Context.Workspace)
+	registration, _, err := a.resolveWorkspaceWithProjectForNavigation(request)
 	if err != nil {
 		return model.Envelope{}, err
 	}
@@ -1593,7 +1627,7 @@ func (a *App) find(ctx context.Context, request model.CommandRequest) (model.Env
 		return a.findAllWorkspaces(ctx, request)
 	}
 
-	registration, project, err := a.resolveWorkspaceWithProject(request.Context.Workspace)
+	registration, project, err := a.resolveWorkspaceWithProjectForNavigation(request)
 	if err != nil {
 		return model.Envelope{}, err
 	}
@@ -1728,7 +1762,7 @@ func (a *App) find(ctx context.Context, request model.CommandRequest) (model.Env
 }
 
 func (a *App) overview(ctx context.Context, request model.CommandRequest) (model.Envelope, error) {
-	registration, _, err := a.resolveWorkspaceWithProject(request.Context.Workspace)
+	registration, _, err := a.resolveWorkspaceWithProjectForNavigation(request)
 	if err != nil {
 		return model.Envelope{}, err
 	}
@@ -1765,7 +1799,7 @@ func (a *App) search(ctx context.Context, request model.CommandRequest) (model.E
 		return a.searchAllWorkspaces(ctx, request)
 	}
 
-	registration, project, err := a.resolveWorkspaceWithProject(request.Context.Workspace)
+	registration, project, err := a.resolveWorkspaceWithProjectForNavigation(request)
 	if err != nil {
 		return model.Envelope{}, err
 	}

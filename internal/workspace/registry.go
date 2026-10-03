@@ -266,6 +266,12 @@ func SaveRegistry(registry model.RegistryFile) error {
 	if err != nil {
 		return err
 	}
+	mode := os.FileMode(0o600)
+	if info, statErr := os.Stat(path); statErr == nil {
+		mode = info.Mode().Perm()
+	} else if !os.IsNotExist(statErr) {
+		return statErr
+	}
 	// Write to a sibling temp file and rename so readers and concurrent
 	// writers never observe a truncated registry.
 	tmp, err := os.CreateTemp(filepath.Dir(path), "registry-*.toml.tmp")
@@ -287,7 +293,7 @@ func SaveRegistry(registry model.RegistryFile) error {
 		_ = os.Remove(tmpPath)
 		return err
 	}
-	if err := os.Chmod(tmpPath, 0o644); err != nil {
+	if err := os.Chmod(tmpPath, mode); err != nil {
 		_ = os.Remove(tmpPath)
 		return err
 	}

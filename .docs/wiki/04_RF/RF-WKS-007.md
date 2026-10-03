@@ -13,6 +13,7 @@ imports:
   - '[[RF-WKS-001]]'
   - '[[RF-WKS-005]]'
   - '[[RF-WKS-006]]'
+  - '[[TP-WKS]]'
   - '[[CT-WORKSPACE-PROBE]]'
   - '[[TP-WKS-PROBE]]'
 exports:
@@ -23,10 +24,12 @@ agent_must_read:
   - .docs/wiki/04_RF/RF-WKS-005.md
   - .docs/wiki/04_RF/RF-WKS-006.md
   - .docs/wiki/04_RF/RF-WKS-007.md
+  - .docs/wiki/06_pruebas/TP-WKS.md
   - .docs/wiki/09_contratos/CT-WORKSPACE-PROBE.md
   - .docs/wiki/06_pruebas/TP-WKS-PROBE.md
 agent_may_edit:
   - .docs/wiki/04_RF/RF-WKS-007.md
+  - .docs/wiki/06_pruebas/TP-WKS.md
   - .docs/wiki/09_contratos/CT-WORKSPACE-PROBE.md
   - .docs/wiki/06_pruebas/TP-WKS-PROBE.md
 agent_must_not_edit:
@@ -43,6 +46,7 @@ stop_if:
   - probe_side_effects=true
 evidence:
   - .docs/wiki/04_RF/RF-WKS-007.md
+  - .docs/wiki/06_pruebas/TP-WKS.md
   - .docs/wiki/09_contratos/CT-WORKSPACE-PROBE.md
   - .docs/wiki/06_pruebas/TP-WKS-PROBE.md
 ---
@@ -134,13 +138,7 @@ Los aliases heredados que apunten a la misma raíz física siguen siendo válido
 
 Las operaciones que requieren workspace (`nav.*`, `index.*`, `info`, `workspace.status`) ejecutan un único camino compartido por CLI y daemon (`App.Execute`, `internal/service/auto_register.go` y `internal/workspace/autoregister.go`), de modo que sirve igual a `mi-lsp mcp`, al plugin claude-code-milsp y al hijo persistente de mi-mcp.
 
-- Si el cwd (selector omitido) o la ruta pedida (selector que no es alias pero sí una ruta existente) cae dentro de un repo git sin registrar, se persiste en `registry.toml` la raíz git, con el mismo estado que `init` (registro más `.mi-lsp/project.toml` solo si no existía; un `project.toml` existente nunca se modifica). No cambia `last_workspace`.
-- Nunca se registra `$HOME`, la raíz del filesystem ni directorios fuera de un repo git. `probe` sigue siendo read-only y no registra.
-- Nombre: basename de la raíz. Si ese alias pertenece a otra raíz, se usa `<basename>-<hash sha256 de la raíz, 6 hex>` (determinista, se alarga ante colisión); nunca se pisa un alias existente. Si la raíz ya está registrada con otro alias, se reutiliza ese alias.
-- La respuesta sale de inmediato (catálogo o texto, posiblemente parcial) y el indexado completo corre como job `index.start` en background, deduplicado por raíz (un único job activo por raíz aunque lleguen consultas concurrentes).
-- La respuesta incluye los warnings `auto_registered: ...` y `auto_register_index: ...`; un fallo de auto-registro se informa como `auto_register_failed: ...` sin bloquear la consulta.
-- `registry.toml` se escribe de forma atómica (archivo temporal más rename) y los ciclos leer-modificar-escribir toman un lock de archivo (`registry.lock`) entre procesos.
-- Opt-out: flag global `--no-auto-register` o variable `MI_LSP_NO_AUTO_REGISTER=1`; el CLI propaga ambos al daemon vía `no_auto_register` en el contexto de la request. Con opt-out se conserva la resolución sintética read-only.
+La especificación normativa del auto-registro, incluida la respuesta cuando el repo aún no tiene commits y el alcance del opt-out, está agrupada en el bloque TOON `RF-WKS-007-B08`. Los casos de verificación se definen normativamente en `TP-WKS` (`TC-WKS-048..060`). El enlace al flag CLI se apoya en evidencia de código; `TC-WKS-049` no declara cobertura E2E de su propagación.
 
 ## [RF-WKS-007-B04] Estado híbrido portable/local
 
@@ -232,3 +230,76 @@ format_oracle: dynamic_touched_go_gofmt_from_git_diff
 ```
 
 Las pruebas cubren snapshots antes/después de parent, worktree, home y fixtures temporales, alias inexistente y stale, resolución contextual sin selector, casing por plataforma, symlink/junction cuando el host lo permite, DB inexistente y apertura read-only sin WAL/SHM. Toda prueba que observe una mutación del filesystem o registry hace fallar el batch. La única oracle de formato para todos los Go tocados es la orden dinámica y no mutante declarada en `verify`: descubre el conjunto completo desde Git, no usa listas manuales y nunca escribe archivos.
+
+## [RF-WKS-007-B08] Auto-registro en la primera consulta
+
+```toon
+block_id: RF-WKS-007-B08
+kind: normative
+source_of_truth: RF-WKS-007
+verify:
+  - go test -count=1 ./internal/service ./internal/workspace
+  - mi-lsp nav wiki validate-source --workspace mi-lsp --format toon
+evidence:
+  - .docs/wiki/04_RF/RF-WKS-007.md
+  - .docs/wiki/06_pruebas/TP-WKS.md
+  - internal/cli/root.go
+  - internal/service/auto_register.go
+  - internal/service/auto_register_test.go
+  - internal/workspace/autoregister.go
+  - internal/workspace/autoregister_test.go
+  - internal/workspace/registry.go
+  - internal/workspace/registry_test.go
+operations_requiring_workspace: [nav.*, index.*, info, workspace.status]
+selector:
+  omitted: caller_cwd
+  requested_path: existing_path_that_is_not_a_registered_alias
+  auto_register_only_inside_unregistered_git_repository: true
+registration:
+  root: git_top_level
+  project_toml:
+    create_only_if_missing: true
+    preserve_existing: true
+  last_workspace_changed: false
+  excluded: [$HOME, filesystem_root, path_outside_git_repository]
+  probe_registers: false
+alias:
+  default: git_root_basename
+  collision: deterministic_basename_plus_sha256_root_prefix
+  collision_suffix_expands_if_needed: true
+  overwrite_existing_alias: forbidden
+  alias_for_same_root: reuse_existing
+query_with_commits:
+  response: immediate
+  response_content: [catalog_or_text, possibly_partial]
+  index_start: background_deduplicated_by_root
+query_without_commits:
+  registration_persisted: true
+  query_continues: true
+  response_mode: text_search
+  index_start: forbidden
+  warning: auto_register_index_skipped
+  warning_message: "repository has no commits yet; not indexing until the first commit (results use text search)"
+registration_failure:
+  query_blocked: false
+  warning: auto_register_failed
+registry:
+  write: atomic_temp_file_then_rename
+  read_modify_write_lock: registry.lock
+  permissions:
+    new_file_mode_argument: "0600"
+    existing_file_mode: preserve_existing_permission_bits
+    test_assertion_scope: non_windows_checks_new_mode_and_explicit_0600_update
+    source_behavior: internal/workspace/registry.go
+    test_binding: TestSaveRegistryPreservesRestrictivePermissions
+opt_out:
+  environment_variable: MI_LSP_NO_AUTO_REGISTER=1
+  cli_option: --no-auto-register
+  cli_source_evidence: internal/cli/root.go
+  cli_mapping: QueryOptions.NoAutoRegister
+  cli_request_path: CommandRequest.Context.NoAutoRegister
+  daemon_request_path: executeOperation_passes_request_to_daemon.ExecuteWithDialTimeout
+  cli_daemon_e2e_coverage: pending_no_automated_oracle
+  service_test_inputs: [request.Context.NoAutoRegister, MI_LSP_NO_AUTO_REGISTER=1]
+case_ids: [TC-WKS-048, TC-WKS-049, TC-WKS-050, TC-WKS-051, TC-WKS-052, TC-WKS-053, TC-WKS-054, TC-WKS-055, TC-WKS-056, TC-WKS-057, TC-WKS-058, TC-WKS-059, TC-WKS-060]
+```

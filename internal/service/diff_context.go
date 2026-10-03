@@ -44,7 +44,7 @@ type DiffImpact struct {
 
 func (a *App) diffContext(ctx context.Context, request model.CommandRequest) (model.Envelope, error) {
 	// 1. Resolve workspace
-	registration, project, err := a.resolveWorkspaceWithProject(request.Context.Workspace)
+	registration, project, err := a.resolveWorkspaceWithProjectForNavigation(request)
 	if err != nil {
 		return model.Envelope{}, err
 	}

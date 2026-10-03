@@ -13,6 +13,46 @@ import (
 	"github.com/fgpaz/mi-lsp/internal/store"
 )
 
+func TestSaveRegistryPreservesRestrictivePermissions(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+
+	registry := model.RegistryFile{Workspaces: map[string]model.WorkspaceRegistration{"first": {Root: t.TempDir()}}}
+	if err := SaveRegistry(registry); err != nil {
+		t.Fatalf("SaveRegistry(create): %v", err)
+	}
+	path, err := RegistryPathReadOnly()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if runtime.GOOS != "windows" {
+		info, err := os.Stat(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := info.Mode().Perm(); got != 0o600 {
+			t.Fatalf("new registry permissions = %#o, want 0600", got)
+		}
+	}
+	if err := os.Chmod(path, 0o600); err != nil {
+		t.Fatalf("Chmod(0600): %v", err)
+	}
+	registry.Workspaces["second"] = model.WorkspaceRegistration{Root: t.TempDir()}
+	if err := SaveRegistry(registry); err != nil {
+		t.Fatalf("SaveRegistry(update): %v", err)
+	}
+	if runtime.GOOS != "windows" {
+		info, err := os.Stat(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := info.Mode().Perm(); got != 0o600 {
+			t.Fatalf("updated registry permissions = %#o, want preserved 0600", got)
+		}
+	}
+}
+
 func TestResolveWorkspaceSelectionRejectsStaleLastWorkspace(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)

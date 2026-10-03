@@ -96,6 +96,62 @@ func TestExecuteAutoRegistersOnFirstQuery(t *testing.T) {
 	}
 }
 
+func TestExecuteRetriesPartialAutoRegistrationAndStartsIndex(t *testing.T) {
+	repo, spawns := autoRegisterFixture(t)
+	stateDir := workspace.WorkspaceStateDir(repo)
+	if err := os.WriteFile(stateDir, []byte("blocks directory creation"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	app := New(repo, nil)
+	request := model.CommandRequest{
+		Operation: "nav.search",
+		Context:   model.QueryOptions{CallerCWD: repo},
+		Payload:   map[string]any{"pattern": "Hello"},
+	}
+	first, err := app.Execute(context.Background(), request)
+	if err != nil {
+		t.Fatalf("first nav.search: %v", err)
+	}
+	if !hasAutoWarning(first, "auto_register_failed:") || hasAutoWarning(first, "auto_registered:") {
+		t.Fatalf("first warnings = %v; want incomplete registration failure", first.Warnings)
+	}
+	if err := os.Remove(stateDir); err != nil {
+		t.Fatal(err)
+	}
+
+	second, err := app.Execute(context.Background(), request)
+	if err != nil {
+		t.Fatalf("retry nav.search: %v", err)
+	}
+	if !hasAutoWarning(second, "auto_registered:") || !hasAutoWarning(second, "auto_register_index:") || spawns.Load() != 1 {
+		t.Fatalf("retry warnings = %v spawns=%d; want recovery and one index", second.Warnings, spawns.Load())
+	}
+}
+
+func TestExecuteAutoRegisterFailureDoesNotBlockNavMultiRead(t *testing.T) {
+	repo, _ := autoRegisterFixture(t)
+	if err := os.WriteFile(filepath.Join(repo, "README.md"), []byte("query remains available\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	stateDir := workspace.WorkspaceStateDir(repo)
+	if err := os.WriteFile(stateDir, []byte("blocks directory creation"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	env, err := New(repo, nil).Execute(context.Background(), model.CommandRequest{
+		Operation: "nav.multi-read",
+		Context:   model.QueryOptions{CallerCWD: repo},
+		Payload:   map[string]any{"items": []string{"README.md:1-1"}},
+	})
+	if err != nil || !env.Ok || env.Stats.Files != 1 || !hasAutoWarning(env, "auto_register_failed:") {
+		t.Fatalf("nav.multi-read = %+v, %v; want successful read and auto-register warning", env, err)
+	}
+	registry, err := workspace.LoadRegistryReadOnly()
+	if err != nil || len(registry.Workspaces) != 0 {
+		t.Fatalf("failed navigation persisted workspace: %+v, %v", registry.Workspaces, err)
+	}
+}
+
 func TestExecuteAutoRegisterOptOut(t *testing.T) {
 	for name, setup := range map[string]func(*testing.T, *model.QueryOptions){
 		"flag": func(_ *testing.T, o *model.QueryOptions) { o.NoAutoRegister = true },

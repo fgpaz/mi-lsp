@@ -23,7 +23,7 @@ const (
 
 func (a *App) contextQuery(ctx context.Context, request model.CommandRequest) (model.Envelope, error) {
 	started := time.Now()
-	registration, project, err := a.resolveWorkspaceWithProject(request.Context.Workspace)
+	registration, project, err := a.resolveWorkspaceWithProjectForNavigation(request)
 	if err != nil {
 		return model.Envelope{}, err
 	}

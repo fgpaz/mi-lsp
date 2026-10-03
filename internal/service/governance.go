@@ -85,7 +85,7 @@ func firstCanonLinkByRole(links []model.WorkspaceCanonLink, role string) *model.
 }
 
 func (a *App) governanceGateEnvelope(ctx context.Context, request model.CommandRequest, operation string) (*model.Envelope, error) {
-	registration, project, err := a.resolveWorkspaceWithProject(request.Context.Workspace)
+	registration, project, err := a.resolveWorkspaceWithProjectForNavigation(request)
 	if err != nil {
 		return nil, err
 	}

@@ -17,7 +17,7 @@ import (
 var preparationNow = time.Now
 
 func (a *App) preparationPacket(_ context.Context, request model.CommandRequest, action string) (model.Envelope, error) {
-	reg, _, err := a.resolveWorkspaceWithProject(request.Context.Workspace)
+	reg, _, err := a.resolveWorkspaceWithProjectForNavigation(request)
 	if err != nil {
 		return model.Envelope{}, err
 	}

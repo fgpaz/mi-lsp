@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/BurntSushi/toml"
+
 	"github.com/fgpaz/mi-lsp/internal/model"
 )
 
@@ -75,15 +77,19 @@ func AutoRegisterWorkspace(selector string, callerCWD string) (AutoRegisterResul
 		registration.Name = alias
 		project.Project.Name = alias
 		registration = ApplyProjectTopology(registration, project)
+		// Persist the project file first so a failure cannot leave a registry entry
+		// that makes later auto-registration calls skip the missing file.
+		if _, statErr := os.Stat(ProjectConfigPath(registration.Root)); statErr != nil {
+			if !os.IsNotExist(statErr) {
+				return statErr
+			}
+			if err := saveAutoRegisterProjectFile(registration.Root, project); err != nil {
+				return err
+			}
+		}
 		registry.Workspaces[alias] = registration
 		if err := SaveRegistry(registry); err != nil {
 			return err
-		}
-		// Same persisted state as `init`, but an existing project.toml is canon: keep it.
-		if _, statErr := os.Stat(ProjectConfigPath(registration.Root)); os.IsNotExist(statErr) {
-			if err := SaveProjectFile(registration.Root, project); err != nil {
-				return err
-			}
 		}
 		result = AutoRegisterResult{Registered: true, Alias: alias, Root: registration.Root, HasCommits: gitHasHead(registration.Root)}
 		return nil
@@ -174,6 +180,38 @@ func autoRegisterAlias(root string, registry model.RegistryFile) string {
 			return candidate
 		}
 	}
+}
+
+func saveAutoRegisterProjectFile(root string, project model.ProjectFile) error {
+	stateDir := WorkspaceStateDir(root)
+	if err := os.MkdirAll(stateDir, 0o755); err != nil {
+		return err
+	}
+	path := ProjectConfigPath(root)
+	file, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
+	if err != nil {
+		if !os.IsExist(err) {
+			return err
+		}
+		info, statErr := os.Stat(path)
+		if statErr != nil {
+			return statErr
+		}
+		if !info.Mode().IsRegular() {
+			return fmt.Errorf("project config path is not a regular file: %s", path)
+		}
+		return nil
+	}
+	if err := toml.NewEncoder(file).Encode(project); err != nil {
+		_ = file.Close()
+		_ = os.Remove(path)
+		return err
+	}
+	if err := file.Close(); err != nil {
+		_ = os.Remove(path)
+		return err
+	}
+	return nil
 }
 
 func gitHasHead(root string) bool {

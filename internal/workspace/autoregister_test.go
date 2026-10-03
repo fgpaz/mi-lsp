@@ -171,6 +171,37 @@ func TestAutoRegisterReusesExistingAliasForSameRoot(t *testing.T) {
 	}
 }
 
+func TestAutoRegisterRetriesAfterProjectCreationFailure(t *testing.T) {
+	home := autoRegisterHome(t)
+	repo := autoRegisterGitRepo(t, filepath.Join(home, "partial"))
+	if err := os.WriteFile(WorkspaceStateDir(repo), []byte("blocks directory creation"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if result, err := AutoRegisterWorkspace("", repo); err == nil || result.Registered {
+		t.Fatalf("first call = %+v, %v; want project file creation failure", result, err)
+	}
+	registry, err := LoadRegistry()
+	if err != nil || len(registry.Workspaces) != 0 {
+		t.Fatalf("failed project creation left a registry entry: %+v, %v", registry.Workspaces, err)
+	}
+	if err := os.Remove(WorkspaceStateDir(repo)); err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := AutoRegisterWorkspace("", repo)
+	if err != nil || !result.Registered || result.Alias != "partial" {
+		t.Fatalf("retry = %+v, %v; want recovered registration", result, err)
+	}
+	if _, err := os.Stat(ProjectConfigPath(repo)); err != nil {
+		t.Fatalf("project.toml not recovered: %v", err)
+	}
+	registry, err = LoadRegistry()
+	if err != nil || len(registry.Workspaces) != 1 || registry.Workspaces["partial"].Root != repo {
+		t.Fatalf("recovered registry = %+v, %v", registry.Workspaces, err)
+	}
+}
+
 func TestAutoRegisterKeepsExistingProjectToml(t *testing.T) {
 	home := autoRegisterHome(t)
 	repo := autoRegisterGitRepo(t, filepath.Join(home, "canon"))

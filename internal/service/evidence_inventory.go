@@ -74,7 +74,7 @@ func (a *App) evidenceInventory(ctx context.Context, request model.CommandReques
 		return *blockedEnv, nil
 	}
 
-	registration, _, err := a.resolveWorkspaceWithProject(request.Context.Workspace)
+	registration, _, err := a.resolveWorkspaceWithProjectForNavigation(request)
 	if err != nil {
 		return model.Envelope{}, err
 	}

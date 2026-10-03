@@ -36,7 +36,7 @@ func (a *App) ask(ctx context.Context, request model.CommandRequest) (model.Enve
 		return *blockedEnv, nil
 	}
 
-	registration, project, err := a.resolveWorkspaceWithProject(request.Context.Workspace)
+	registration, project, err := a.resolveWorkspaceWithProjectForNavigation(request)
 	if err != nil {
 		return model.Envelope{}, err
 	}
