@@ -58,6 +58,7 @@ Documenta la postura de hardening de dependencias y bootstrap del worker .NET, i
 - Compatibilidad minima significa que el worker responde al probe `status` con `protocol_version` aceptado por la CLI; ese probe queda reservado para `worker status` y diagnostico explicito.
 - `worker install` debe copiar el bundle por RID cuando existe; solo usa `dotnet publish` como ruta de desarrollo o remediacion desde source.
 - El empaquetado local/release debe materializar `dist/<rid>/mi-lsp(.exe)` + `dist/<rid>/workers/<rid>/` para que la CLI instalada vea el mismo layout que en validacion.
+- `scripts/release/install-local.sh` debe tratar la CLI, el bundle local y `~/.mi-lsp/workers/<rid>` como una sola activación: preservar el worker global anterior hasta que `worker install`, `version` y `worker status` terminen, y restaurarlo ante fallos o señales. El directorio global corresponde a `os.UserHomeDir()/.mi-lsp/workers/<rid>`; si se solapa con un destino local, la instalación debe rechazarse antes de reemplazar archivos.
 - Los instaladores publicos `scripts/install/install.ps1|sh` deben consumir el asset GoReleaser por RID y preservar ese mismo layout despues de verificar checksum.
 - El bundle del worker debe copiar el directorio completo de `dotnet publish` por RID; `PublishSingleFile` no es una variante soportada para Roslyn/MSBuild porque rompe la carga de dependencias en consultas semanticas reales.
 - Los artefactos locales `bin/workers/<rid>` dentro del repo no se consideran bundle de distribucion canonico para consultas; se evita preferirlos por encima del fallback `dev-local`.
@@ -149,6 +150,7 @@ audit:
 | Artefacto local `bin/workers` viejo | probe superficial verde pero consultas Roslyn fallan | en source repo preferir `dev-local`; no tratar `bin/workers/<rid>` como bundle canonico |
 | Release parcial por RID | una maquina ARM64 o x64 sigue ejecutando revision vieja | `ae-release-binaries.ps1` debe construir todos los RIDs, refrescar local/WSL y publicar tag limpio para que GitHub Releases entregue assets nuevos |
 | Binario Windows lockeado por daemon | `Copy-Item` falla sobre `C:\Users\fgpaz\bin\mi-lsp.exe` | `install-local.ps1` detiene el daemon existente antes de copiar y reintenta reemplazo/remocion |
+| Reemplazo local Unix del CLI en ejecución | sobrescribir el ejecutable causa `ETXTBSY` o deja un archivo truncado | `install-local.sh` prepara CLI y worker junto al destino, activa el CLI mediante rename y conserva ambos artefactos anteriores para rollback |
 
 ## Related docs
 
