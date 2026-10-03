@@ -140,10 +140,10 @@ func TestFindRefsUsesCatalogLanguageAndAnchor(t *testing.T) {
 
 	env := runRefs(t, root, alias, fake, map[string]any{"symbol": "Target"})
 
-	if len(fake.calls) != 1 || fake.calls[0].BackendType != "gopls" {
-		t.Fatalf("calls = %#v, want a single gopls call (no roslyn)", fake.calls)
+	if len(fake.requests()) != 1 || fake.requests()[0].BackendType != "gopls" {
+		t.Fatalf("calls = %#v, want a single gopls call (no roslyn)", fake.requests())
 	}
-	payload := fake.calls[0].Payload
+	payload := fake.requests()[0].Payload
 	if payload["file"] != "demo.go" || intFromAny(payload["line"], 0) != 3 {
 		t.Fatalf("anchor payload = %#v, want catalog definition demo.go:3", payload)
 	}
@@ -231,8 +231,8 @@ func TestFindRefsRoslynErrorFallsBackToText(t *testing.T) {
 
 	env := runRefs(t, root, alias, fake, map[string]any{"symbol": "Helper"})
 
-	if fake.calls[0].BackendType != "roslyn" {
-		t.Fatalf("backend = %q, want roslyn for a C# symbol", fake.calls[0].BackendType)
+	if fake.requests()[0].BackendType != "roslyn" {
+		t.Fatalf("backend = %q, want roslyn for a C# symbol", fake.requests()[0].BackendType)
 	}
 	items := envItems(t, env)
 	if !env.Ok || !env.Degraded || env.Reason != model.ReasonLSPError || env.FallbackUsed != "text" || len(items) == 0 {
@@ -276,8 +276,8 @@ func TestFindRefsNonCodeFileIsLanguageUnsupported(t *testing.T) {
 			}
 		})
 	}
-	if len(fake.calls) != 0 {
-		t.Fatalf("no semantic backend should start for non-code files, got %#v", fake.calls)
+	if len(fake.requests()) != 0 {
+		t.Fatalf("no semantic backend should start for non-code files, got %#v", fake.requests())
 	}
 }
 
@@ -348,8 +348,8 @@ func TestFindRefsRoslynWithoutEntrypointFallsBackToText(t *testing.T) {
 
 	env := runRefs(t, root, alias, fake, map[string]any{"symbol": "Helper"})
 
-	if len(fake.calls) != 0 {
-		t.Fatalf("no worker call expected without entrypoint, got %#v", fake.calls)
+	if len(fake.requests()) != 0 {
+		t.Fatalf("no worker call expected without entrypoint, got %#v", fake.requests())
 	}
 	if !env.Ok || !env.Degraded || env.Reason != model.ReasonLSPError || len(envItems(t, env)) != 1 {
 		t.Fatalf("env = ok %v degraded %v reason %q items %d", env.Ok, env.Degraded, env.Reason, len(envItems(t, env)))
@@ -498,8 +498,8 @@ func TestFindRefsSemanticTimeoutFallsBackToTextAndCoolsDown(t *testing.T) {
 	if err != nil {
 		t.Fatalf("second nav.refs: %v", err)
 	}
-	if len(fake.calls) != 1 {
-		t.Fatalf("cooldown must skip the backend on the next call, calls = %d", len(fake.calls))
+	if len(fake.requests()) != 1 {
+		t.Fatalf("cooldown must skip the backend on the next call, calls = %d", len(fake.requests()))
 	}
 	if env.Backend != "text" || !env.Degraded || env.Reason != model.ReasonLSPError || !strings.Contains(strings.Join(env.Warnings, " "), "cooldown") {
 		t.Fatalf("second env = backend %q degraded %v reason %q warnings %v", env.Backend, env.Degraded, env.Reason, env.Warnings)
