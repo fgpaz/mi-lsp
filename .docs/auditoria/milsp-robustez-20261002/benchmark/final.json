@@ -17,8 +17,8 @@
       "bytes_compact": 307.5,
       "bytes_default": 121.5,
       "bytes_rg": 188.75,
-      "ms_mi": 16.275,
-      "ms_rg": 6.525,
+      "ms_mi": 16.55,
+      "ms_rg": 6.65,
       "false_empty": 0,
       "errors": 0,
       "error_codes": {}
@@ -34,8 +34,8 @@
       "bytes_compact": 467.25,
       "bytes_default": 194.0,
       "bytes_rg": 117.75,
-      "ms_mi": 22.125,
-      "ms_rg": 6.725,
+      "ms_mi": 22.25,
+      "ms_rg": 6.525,
       "false_empty": 0,
       "errors": 0,
       "error_codes": {}
@@ -51,8 +51,8 @@
       "bytes_compact": 333.5,
       "bytes_default": 117.5,
       "bytes_rg": 107.0,
-      "ms_mi": 69.675,
-      "ms_rg": 8.7,
+      "ms_mi": 69.525,
+      "ms_rg": 8.675,
       "false_empty": 0,
       "errors": 0,
       "error_codes": {}
@@ -68,8 +68,8 @@
       "bytes_compact": 2737.5,
       "bytes_default": 2549.5,
       "bytes_rg": 3317.5,
-      "ms_mi": 47.4,
-      "ms_rg": 7.05,
+      "ms_mi": 47.55,
+      "ms_rg": 7.1,
       "false_empty": 0,
       "errors": 0,
       "error_codes": {}
@@ -85,8 +85,8 @@
       "bytes_compact": 1754.75,
       "bytes_default": 1574.25,
       "bytes_rg": 6755.5,
-      "ms_mi": 30.725,
-      "ms_rg": 6.625,
+      "ms_mi": 28.875,
+      "ms_rg": 6.65,
       "false_empty": 0,
       "errors": 0,
       "error_codes": {}
@@ -102,8 +102,8 @@
       "bytes_compact": 1954.5,
       "bytes_default": 1791.5,
       "bytes_rg": 25477.5,
-      "ms_mi": 346.4,
-      "ms_rg": 9.45,
+      "ms_mi": 337.20000000000005,
+      "ms_rg": 9.1,
       "false_empty": 0,
       "errors": 0,
       "error_codes": {}
@@ -119,7 +119,7 @@
       "bytes_compact": 2294.0,
       "bytes_default": 586.0,
       "bytes_rg": 4210.0,
-      "ms_mi": 30.7,
+      "ms_mi": 33.1,
       "ms_rg": 6.0,
       "false_empty": 0,
       "errors": 0,
@@ -136,8 +136,8 @@
       "bytes_compact": 1762.0,
       "bytes_default": 552.0,
       "bytes_rg": 1998.0,
-      "ms_mi": 31.75,
-      "ms_rg": 5.9,
+      "ms_mi": 30.9,
+      "ms_rg": 5.35,
       "false_empty": 0,
       "errors": 0,
       "error_codes": {}
@@ -153,8 +153,8 @@
       "bytes_compact": 2111.0,
       "bytes_default": 671.0,
       "bytes_rg": 2117.0,
-      "ms_mi": 85.7,
-      "ms_rg": 7.5,
+      "ms_mi": 92.3,
+      "ms_rg": 7.2,
       "false_empty": 0,
       "errors": 0,
       "error_codes": {}
@@ -170,8 +170,8 @@
       "bytes_compact": 5733.5,
       "bytes_default": 2931.5,
       "bytes_rg": 3643.5,
-      "ms_mi": 682.25,
-      "ms_rg": 6.125,
+      "ms_mi": 676.525,
+      "ms_rg": 6.15,
       "false_empty": 0,
       "errors": 0,
       "error_codes": {}
@@ -187,8 +187,8 @@
       "bytes_compact": 2238.75,
       "bytes_default": 2131.875,
       "bytes_rg": 1743.375,
-      "ms_mi": 1380.2625,
-      "ms_rg": 5.9375,
+      "ms_mi": 1329.575,
+      "ms_rg": 5.5375,
       "false_empty": 0,
       "errors": 0,
       "error_codes": {}
@@ -204,8 +204,8 @@
       "bytes_compact": 5827.0,
       "bytes_default": 2546.75,
       "bytes_rg": 3447.25,
-      "ms_mi": 8139.825,
-      "ms_rg": 7.125,
+      "ms_mi": 8136.925,
+      "ms_rg": 7.45,
       "false_empty": 0,
       "errors": 0,
       "error_codes": {}
@@ -231,7 +231,7 @@
           "."
         ],
         "bytes": 87,
-        "ms": 7.8,
+        "ms": 8.2,
         "rc": 0,
         "items": 1
       },
@@ -254,7 +254,7 @@
         "backend": "text",
         "truncated": false,
         "items": 1,
-        "ms": 27.3,
+        "ms": 30.7,
         "bytes_json": 634,
         "bytes_compact": 500,
         "bytes_default": 264,
@@ -288,7 +288,7 @@
           "."
         ],
         "bytes": 92,
-        "ms": 8.0,
+        "ms": 7.9,
         "rc": 0,
         "items": 1
       },
@@ -345,7 +345,7 @@
           "."
         ],
         "bytes": 109,
-        "ms": 7.3,
+        "ms": 9.1,
         "rc": 0,
         "items": 1
       },
@@ -368,7 +368,7 @@
         "backend": "text",
         "truncated": false,
         "items": 1,
-        "ms": 29.0,
+        "ms": 27.4,
         "bytes_json": 688,
         "bytes_compact": 554,
         "bytes_default": 286,
@@ -402,7 +402,7 @@
           "."
         ],
         "bytes": 235,
-        "ms": 8.5,
+        "ms": 6.9,
         "rc": 0,
         "items": 2
       },
@@ -425,7 +425,7 @@
         "backend": "text",
         "truncated": false,
         "items": 2,
-        "ms": 26.4,
+        "ms": 28.5,
         "bytes_json": 1068,
         "bytes_compact": 850,
         "bytes_default": 410,
@@ -462,7 +462,7 @@
           "."
         ],
         "bytes": 3617,
-        "ms": 7.1,
+        "ms": 7.0,
         "rc": 0,
         "items": 46
       },
@@ -484,7 +484,7 @@
         "backend": "gopls",
         "truncated": false,
         "items": 37,
-        "ms": 1540.4,
+        "ms": 1373.1,
         "bytes_json": 6981,
         "bytes_compact": 4476,
         "bytes_default": 4697,
@@ -554,7 +554,7 @@
           "."
         ],
         "bytes": 1816,
-        "ms": 7.0,
+        "ms": 6.9,
         "rc": 0,
         "items": 21
       },
@@ -576,7 +576,7 @@
         "backend": "gopls",
         "truncated": false,
         "items": 16,
-        "ms": 1462.0,
+        "ms": 1359.3,
         "bytes_json": 3092,
         "bytes_compact": 1994,
         "bytes_default": 2026,
@@ -625,7 +625,7 @@
           "."
         ],
         "bytes": 1075,
-        "ms": 7.5,
+        "ms": 6.9,
         "rc": 0,
         "items": 11
       },
@@ -647,7 +647,7 @@
         "backend": "text",
         "truncated": false,
         "items": 11,
-        "ms": 1389.9,
+        "ms": 1373.1,
         "bytes_json": 2916,
         "bytes_compact": 2157,
         "bytes_default": 1129,
@@ -691,7 +691,7 @@
           "."
         ],
         "bytes": 3695,
-        "ms": 7.1,
+        "ms": 6.8,
         "rc": 0,
         "items": 38
       },
@@ -713,7 +713,7 @@
         "backend": "gopls",
         "truncated": false,
         "items": 25,
-        "ms": 1446.0,
+        "ms": 1464.1,
         "bytes_json": 4896,
         "bytes_compact": 3195,
         "bytes_default": 3308,
@@ -770,7 +770,7 @@
           "."
         ],
         "bytes": 589,
-        "ms": 6.9,
+        "ms": 6.6,
         "rc": 0,
         "items": 5
       },
@@ -792,7 +792,7 @@
         "backend": "text",
         "truncated": false,
         "items": 5,
-        "ms": 32.0,
+        "ms": 31.9,
         "bytes_json": 2273,
         "bytes_compact": 1739,
         "bytes_default": 539,
@@ -835,7 +835,7 @@
           "."
         ],
         "bytes": 10960,
-        "ms": 7.4,
+        "ms": 8.1,
         "rc": 0,
         "top_files": [
           "internal/workspace/registry.go",
@@ -863,7 +863,7 @@
         "backend": "intent",
         "truncated": false,
         "items": 3,
-        "ms": 29.9,
+        "ms": 27.1,
         "bytes_json": 1746,
         "bytes_compact": 1303,
         "bytes_default": 1103,
@@ -911,7 +911,7 @@
           "."
         ],
         "bytes": 14173,
-        "ms": 8.3,
+        "ms": 8.4,
         "rc": 0,
         "top_files": [
           "internal/docgraph/governance.go",
@@ -939,7 +939,7 @@
         "backend": "intent",
         "truncated": false,
         "items": 3,
-        "ms": 31.5,
+        "ms": 26.3,
         "bytes_json": 1746,
         "bytes_compact": 1303,
         "bytes_default": 1103,
@@ -974,7 +974,7 @@
           "."
         ],
         "bytes": 131,
-        "ms": 6.3,
+        "ms": 5.3,
         "rc": 0,
         "items": 1
       },
@@ -997,7 +997,7 @@
         "backend": "catalog",
         "truncated": false,
         "items": 1,
-        "ms": 16.7,
+        "ms": 15.4,
         "bytes_json": 960,
         "bytes_compact": 363,
         "bytes_default": 89,
@@ -1031,7 +1031,7 @@
           "."
         ],
         "bytes": 84,
-        "ms": 5.6,
+        "ms": 5.1,
         "rc": 0,
         "items": 1
       },
@@ -1054,7 +1054,7 @@
         "backend": "catalog",
         "truncated": false,
         "items": 1,
-        "ms": 16.3,
+        "ms": 15.2,
         "bytes_json": 968,
         "bytes_compact": 310,
         "bytes_default": 67,
@@ -1088,7 +1088,7 @@
           "."
         ],
         "bytes": 93,
-        "ms": 5.1,
+        "ms": 4.9,
         "rc": 0,
         "items": 1
       },
@@ -1111,7 +1111,7 @@
         "backend": "catalog",
         "truncated": false,
         "items": 1,
-        "ms": 15.9,
+        "ms": 15.3,
         "bytes_json": 879,
         "bytes_compact": 317,
         "bytes_default": 84,
@@ -1145,7 +1145,7 @@
           "."
         ],
         "bytes": 111,
-        "ms": 5.2,
+        "ms": 4.8,
         "rc": 0,
         "items": 1
       },
@@ -1168,7 +1168,7 @@
         "backend": "catalog",
         "truncated": false,
         "items": 1,
-        "ms": 15.3,
+        "ms": 15.4,
         "bytes_json": 1098,
         "bytes_compact": 334,
         "bytes_default": 83,
@@ -1204,7 +1204,7 @@
           "."
         ],
         "bytes": 1108,
-        "ms": 5.9,
+        "ms": 4.0,
         "rc": 0,
         "items": 10
       },
@@ -1226,7 +1226,7 @@
         "backend": "gopls",
         "truncated": false,
         "items": 10,
-        "ms": 1372.9,
+        "ms": 1196.3,
         "bytes_json": 3344,
         "bytes_compact": 2243,
         "bytes_default": 2221,
@@ -1291,7 +1291,7 @@
         "backend": "gopls",
         "truncated": false,
         "items": 4,
-        "ms": 1233.7,
+        "ms": 1207.2,
         "bytes_json": 1222,
         "bytes_compact": 793,
         "bytes_default": 718,
@@ -1328,7 +1328,7 @@
           "."
         ],
         "bytes": 1296,
-        "ms": 4.4,
+        "ms": 4.1,
         "rc": 0,
         "items": 6
       },
@@ -1350,7 +1350,7 @@
         "backend": "gopls",
         "truncated": false,
         "items": 6,
-        "ms": 1295.8,
+        "ms": 1300.3,
         "bytes_json": 1925,
         "bytes_compact": 1272,
         "bytes_default": 1215,
@@ -1389,7 +1389,7 @@
           "."
         ],
         "bytes": 841,
-        "ms": 4.2,
+        "ms": 4.3,
         "rc": 0,
         "items": 7
       },
@@ -1411,7 +1411,7 @@
         "backend": "gopls",
         "truncated": false,
         "items": 8,
-        "ms": 1301.4,
+        "ms": 1363.2,
         "bytes_json": 2657,
         "bytes_compact": 1780,
         "bytes_default": 1741,
@@ -1451,7 +1451,7 @@
           "."
         ],
         "bytes": 3407,
-        "ms": 4.9,
+        "ms": 4.1,
         "rc": 0,
         "items": 27
       },
@@ -1473,7 +1473,7 @@
         "backend": "text",
         "truncated": false,
         "items": 5,
-        "ms": 31.5,
+        "ms": 29.9,
         "bytes_json": 2319,
         "bytes_compact": 1785,
         "bytes_default": 565,
@@ -1520,7 +1520,7 @@
           "."
         ],
         "bytes": 1150,
-        "ms": 5.8,
+        "ms": 5.2,
         "rc": 0,
         "top_files": [
           "channels/telegram/adapter/adapter_test.go",
@@ -1548,7 +1548,7 @@
         "backend": "intent",
         "truncated": true,
         "items": 5,
-        "ms": 30.5,
+        "ms": 29.6,
         "bytes_json": 2906,
         "bytes_compact": 2334,
         "bytes_default": 2173,
@@ -1594,7 +1594,7 @@
           "."
         ],
         "bytes": 739,
-        "ms": 5.0,
+        "ms": 4.9,
         "rc": 0,
         "top_files": [
           "channels/telegram/cmd/telegram-channel/poll_test.go",
@@ -1622,7 +1622,7 @@
         "backend": "intent",
         "truncated": true,
         "items": 5,
-        "ms": 31.0,
+        "ms": 32.5,
         "bytes_json": 2651,
         "bytes_compact": 2079,
         "bytes_default": 1918,
@@ -1661,7 +1661,7 @@
           "."
         ],
         "bytes": 82,
-        "ms": 8.7,
+        "ms": 8.5,
         "rc": 0,
         "items": 1
       },
@@ -1684,7 +1684,7 @@
         "backend": "catalog",
         "truncated": false,
         "items": 1,
-        "ms": 69.6,
+        "ms": 69.3,
         "bytes_json": 778,
         "bytes_compact": 276,
         "bytes_default": 95,
@@ -1743,7 +1743,7 @@
         "backend": "catalog",
         "truncated": false,
         "items": 1,
-        "ms": 69.2,
+        "ms": 69.4,
         "bytes_json": 765,
         "bytes_compact": 272,
         "bytes_default": 91,
@@ -1779,7 +1779,7 @@
           "."
         ],
         "bytes": 75,
-        "ms": 8.3,
+        "ms": 8.4,
         "rc": 0,
         "items": 1
       },
@@ -1802,7 +1802,7 @@
         "backend": "catalog",
         "truncated": false,
         "items": 1,
-        "ms": 69.5,
+        "ms": 69.9,
         "bytes_json": 752,
         "bytes_compact": 268,
         "bytes_default": 87,
@@ -1861,7 +1861,7 @@
         "backend": "catalog",
         "truncated": false,
         "items": 3,
-        "ms": 70.4,
+        "ms": 69.5,
         "bytes_json": 1902,
         "bytes_compact": 518,
         "bytes_default": 197,
@@ -1901,7 +1901,7 @@
           "."
         ],
         "bytes": 4779,
-        "ms": 7.4,
+        "ms": 7.5,
         "rc": 0,
         "items": 40
       },
@@ -1923,7 +1923,7 @@
         "backend": "text",
         "truncated": false,
         "items": 40,
-        "ms": 8144.1,
+        "ms": 8140.2,
         "bytes_json": 12594,
         "bytes_compact": 9034,
         "bytes_default": 4073,
@@ -1998,7 +1998,7 @@
           "."
         ],
         "bytes": 2799,
-        "ms": 6.6,
+        "ms": 7.5,
         "rc": 0,
         "items": 14
       },
@@ -2020,7 +2020,7 @@
         "backend": "text",
         "truncated": false,
         "items": 14,
-        "ms": 8140.3,
+        "ms": 8135.6,
         "bytes_json": 5221,
         "bytes_compact": 4225,
         "bytes_default": 1726,
@@ -2069,7 +2069,7 @@
           "."
         ],
         "bytes": 5189,
-        "ms": 7.3,
+        "ms": 7.4,
         "rc": 0,
         "items": 23
       },
@@ -2091,7 +2091,7 @@
         "backend": "text",
         "truncated": false,
         "items": 23,
-        "ms": 8138.4,
+        "ms": 8134.9,
         "bytes_json": 9740,
         "bytes_compact": 7853,
         "bytes_default": 3288,
@@ -2149,7 +2149,7 @@
           "."
         ],
         "bytes": 1022,
-        "ms": 7.2,
+        "ms": 7.4,
         "rc": 0,
         "items": 11
       },
@@ -2171,7 +2171,7 @@
         "backend": "text",
         "truncated": false,
         "items": 11,
-        "ms": 8136.5,
+        "ms": 8137.0,
         "bytes_json": 3000,
         "bytes_compact": 2196,
         "bytes_default": 1100,
@@ -2216,7 +2216,7 @@
           "."
         ],
         "bytes": 2117,
-        "ms": 7.5,
+        "ms": 7.2,
         "rc": 0,
         "items": 14
       },
@@ -2238,7 +2238,7 @@
         "backend": "text",
         "truncated": false,
         "items": 5,
-        "ms": 85.7,
+        "ms": 92.3,
         "bytes_json": 2645,
         "bytes_compact": 2111,
         "bytes_default": 671,
@@ -2285,7 +2285,7 @@
           "."
         ],
         "bytes": 23931,
-        "ms": 9.4,
+        "ms": 8.5,
         "rc": 0,
         "top_files": [
           "src/runs/foreground/subagent-executor.ts",
@@ -2313,7 +2313,7 @@
         "backend": "intent",
         "truncated": true,
         "items": 5,
-        "ms": 335.3,
+        "ms": 323.3,
         "bytes_json": 2477,
         "bytes_compact": 1905,
         "bytes_default": 1742,
@@ -2363,7 +2363,7 @@
           "."
         ],
         "bytes": 27024,
-        "ms": 9.5,
+        "ms": 9.7,
         "rc": 0,
         "top_files": [
           "src/runs/foreground/subagent-executor.ts",
@@ -2391,7 +2391,7 @@
         "backend": "intent",
         "truncated": true,
         "items": 5,
-        "ms": 357.5,
+        "ms": 351.1,
         "bytes_json": 2576,
         "bytes_compact": 2004,
         "bytes_default": 1841,
@@ -2428,7 +2428,7 @@
           "."
         ],
         "bytes": 93,
-        "ms": 6.3,
+        "ms": 6.8,
         "rc": 0,
         "items": 1
       },
@@ -2451,7 +2451,7 @@
         "backend": "catalog",
         "truncated": false,
         "items": 1,
-        "ms": 16.1,
+        "ms": 16.8,
         "bytes_json": 833,
         "bytes_compact": 292,
         "bytes_default": 106,
@@ -2485,7 +2485,7 @@
           "."
         ],
         "bytes": 217,
-        "ms": 5.8,
+        "ms": 6.8,
         "rc": 0,
         "items": 1
       },
@@ -2508,7 +2508,7 @@
         "backend": "catalog",
         "truncated": false,
         "items": 1,
-        "ms": 16.8,
+        "ms": 16.0,
         "bytes_json": 889,
         "bytes_compact": 309,
         "bytes_default": 123,
@@ -2542,7 +2542,7 @@
           "."
         ],
         "bytes": 226,
-        "ms": 6.9,
+        "ms": 5.9,
         "rc": 0,
         "items": 1
       },
@@ -2565,7 +2565,7 @@
         "backend": "catalog",
         "truncated": false,
         "items": 1,
-        "ms": 16.0,
+        "ms": 16.7,
         "bytes_json": 916,
         "bytes_compact": 318,
         "bytes_default": 132,
@@ -2622,7 +2622,7 @@
         "backend": "catalog",
         "truncated": false,
         "items": 1,
-        "ms": 16.2,
+        "ms": 16.7,
         "bytes_json": 896,
         "bytes_compact": 311,
         "bytes_default": 125,
@@ -2658,7 +2658,7 @@
           "."
         ],
         "bytes": 5288,
-        "ms": 6.2,
+        "ms": 6.6,
         "rc": 0,
         "items": 36
       },
@@ -2680,7 +2680,7 @@
         "backend": "text",
         "truncated": false,
         "items": 36,
-        "ms": 679.6,
+        "ms": 677.2,
         "bytes_json": 11489,
         "bytes_compact": 8815,
         "bytes_default": 3969,
@@ -2749,7 +2749,7 @@
           "."
         ],
         "bytes": 4726,
-        "ms": 5.4,
+        "ms": 6.2,
         "rc": 0,
         "items": 22
       },
@@ -2771,7 +2771,7 @@
         "backend": "text",
         "truncated": false,
         "items": 22,
-        "ms": 678.7,
+        "ms": 675.3,
         "bytes_json": 8276,
         "bytes_compact": 6768,
         "bytes_default": 3867,
@@ -2826,7 +2826,7 @@
           "."
         ],
         "bytes": 2718,
-        "ms": 6.4,
+        "ms": 5.5,
         "rc": 0,
         "items": 16
       },
@@ -2848,7 +2848,7 @@
         "backend": "text",
         "truncated": false,
         "items": 16,
-        "ms": 683.8,
+        "ms": 676.9,
         "bytes_json": 5282,
         "bytes_compact": 4203,
         "bytes_default": 2245,
@@ -2897,7 +2897,7 @@
           "."
         ],
         "bytes": 1842,
-        "ms": 6.5,
+        "ms": 6.3,
         "rc": 0,
         "items": 11
       },
@@ -2919,7 +2919,7 @@
         "backend": "text",
         "truncated": false,
         "items": 11,
-        "ms": 686.9,
+        "ms": 676.7,
         "bytes_json": 3997,
         "bytes_compact": 3148,
         "bytes_default": 1645,
@@ -2984,7 +2984,7 @@
         "backend": "text",
         "truncated": false,
         "items": 5,
-        "ms": 30.7,
+        "ms": 33.1,
         "bytes_json": 2859,
         "bytes_compact": 2294,
         "bytes_default": 586,
@@ -3031,7 +3031,7 @@
           "."
         ],
         "bytes": 4966,
-        "ms": 6.5,
+        "ms": 7.2,
         "rc": 0,
         "top_files": [
           "src/Tedi.Memory.Application/MemoryUseCases.cs",
@@ -3059,7 +3059,7 @@
         "backend": "intent",
         "truncated": true,
         "items": 5,
-        "ms": 52.8,
+        "ms": 53.1,
         "bytes_json": 3540,
         "bytes_compact": 2814,
         "bytes_default": 2635,
@@ -3105,7 +3105,7 @@
           "."
         ],
         "bytes": 1669,
-        "ms": 7.6,
+        "ms": 7.0,
         "rc": 0,
         "top_files": [
           "tests/Api.Tests/ApiSmokeTests.cs",
