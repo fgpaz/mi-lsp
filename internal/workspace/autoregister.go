@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	"github.com/BurntSushi/toml"
@@ -18,6 +19,10 @@ import (
 // truthy value ("1", "true", "yes", "on").
 const AutoRegisterEnvVar = "MI_LSP_NO_AUTO_REGISTER"
 
+// AutoRegisterModeEnvVar explicitly permits implicit registration outside the
+// default scope when set to "force".
+const AutoRegisterModeEnvVar = "MI_LSP_AUTOREGISTER"
+
 // AutoRegisterResult describes what AutoRegisterWorkspace did. A zero value
 // means nothing was registered (opted out, no candidate, or already known).
 type AutoRegisterResult struct {
@@ -26,6 +31,7 @@ type AutoRegisterResult struct {
 	Root       string
 	// HasCommits is false for a repo without HEAD, which cannot be indexed yet.
 	HasCommits bool
+	Forced     bool
 }
 
 // AutoRegisterDisabledByEnv reports whether the environment opts out of
@@ -40,12 +46,29 @@ func AutoRegisterDisabledByEnv() bool {
 
 // AutoRegisterWorkspace persists a registry entry for the Git root that
 // contains the requested selector path (or the caller cwd when selector is
-// empty), if that root is not registered yet. It never registers $HOME, the
-// filesystem root, or directories outside a Git repository, never overwrites
-// an existing alias, and never touches an existing project.toml.
+// empty), if that root is not registered yet. By default it only registers roots
+// inside $HOME and outside the temp directory, and resolves linked worktrees
+// through a registered main root.
+// MI_LSP_AUTOREGISTER=force explicitly bypasses those scope restrictions. It
+// never registers $HOME or the filesystem root, never overwrites an existing
+// alias, and never touches an existing project.toml.
 func AutoRegisterWorkspace(selector string, callerCWD string) (AutoRegisterResult, error) {
 	root, ok := autoRegisterCandidateRoot(selector, callerCWD)
 	if !ok {
+		return AutoRegisterResult{}, nil
+	}
+	force := strings.EqualFold(strings.TrimSpace(os.Getenv(AutoRegisterModeEnvVar)), "force")
+	if isLinkedWorktree, commonDir, valid := linkedWorktree(root); valid && isLinkedWorktree && !force {
+		registry, err := LoadRegistryReadOnly()
+		if err != nil {
+			return AutoRegisterResult{}, err
+		}
+		if mainRoot, found := registeredMainWorktree(commonDir, registry); found {
+			return AutoRegisterResult{Alias: mainRoot.Name, Root: mainRoot.Root}, nil
+		}
+		return AutoRegisterResult{}, &WorkspaceSelectorError{Code: "invalid_workspace", Root: root, Cause: fmt.Errorf("linked worktree has no registered main repository")}
+	}
+	if !force && !autoRegisterDefaultRootEligible(root) {
 		return AutoRegisterResult{}, nil
 	}
 	// Cheap read-only precheck so the common (already registered) path takes no lock.
@@ -91,7 +114,7 @@ func AutoRegisterWorkspace(selector string, callerCWD string) (AutoRegisterResul
 		if err := SaveRegistry(registry); err != nil {
 			return err
 		}
-		result = AutoRegisterResult{Registered: true, Alias: alias, Root: registration.Root, HasCommits: gitHasHead(registration.Root)}
+		result = AutoRegisterResult{Registered: true, Alias: alias, Root: registration.Root, HasCommits: gitHasHead(registration.Root), Forced: force}
 		return nil
 	})
 	return result, err
@@ -123,6 +146,91 @@ func autoRegisterCandidateRoot(selector string, callerCWD string) (string, bool)
 		return "", false
 	}
 	return root, true
+}
+
+func autoRegisterDefaultRootEligible(root string) bool {
+	home, err := os.UserHomeDir()
+	if err != nil || strings.TrimSpace(home) == "" {
+		return false
+	}
+	rootPath, rootOK := normalizeComparablePath(root)
+	homePath, homeOK := normalizeComparablePath(home)
+	if !rootOK || !homeOK {
+		return false
+	}
+	tempRoots := []string{os.TempDir()}
+	if runtime.GOOS != "windows" {
+		tempRoots = append(tempRoots, string(filepath.Separator)+"tmp")
+	}
+	for _, tempRoot := range tempRoots {
+		if tempPath, ok := normalizeComparablePath(tempRoot); ok && pathContains(rootPath, tempPath) {
+			return false
+		}
+	}
+	return rootPath == homePath || pathContains(rootPath, homePath)
+}
+
+func linkedWorktree(root string) (bool, string, bool) {
+	root = strings.TrimSpace(root)
+	if root == "" {
+		return false, "", false
+	}
+	root, err := filepath.Abs(root)
+	if err != nil {
+		return false, "", false
+	}
+	gitPath := func(args ...string) (string, bool) {
+		commandArgs := append([]string{"-C", root, "rev-parse"}, args...)
+		out, err := exec.Command("git", commandArgs...).Output()
+		if err != nil {
+			return "", false
+		}
+		path := strings.TrimSpace(string(out))
+		if path == "" {
+			return "", false
+		}
+		if !filepath.IsAbs(path) {
+			path = filepath.Join(root, path)
+		}
+		path, err = filepath.Abs(path)
+		if err != nil {
+			return "", false
+		}
+		if evaluated, evalErr := filepath.EvalSymlinks(path); evalErr == nil {
+			path = evaluated
+		}
+		return filepath.Clean(path), true
+	}
+	gitDir, ok := gitPath("--absolute-git-dir")
+	if !ok {
+		return false, "", false
+	}
+	commonDir, ok := gitPath("--path-format=absolute", "--git-common-dir")
+	if !ok {
+		// --path-format was added after older supported Git versions; the
+		// legacy relative result is rooted at the worktree path above.
+		commonDir, ok = gitPath("--git-common-dir")
+	}
+	if !ok {
+		return false, "", false
+	}
+	gitDir, gitDirOK := normalizeComparablePath(gitDir)
+	commonDir, commonDirOK := normalizeComparablePath(commonDir)
+	if !gitDirOK || !commonDirOK {
+		return false, "", false
+	}
+	return gitDir != commonDir, commonDir, true
+}
+
+func registeredMainWorktree(commonDir string, registry model.RegistryFile) (model.WorkspaceRegistration, bool) {
+	for alias, registration := range registry.Workspaces {
+		linked, registeredCommon, ok := linkedWorktree(registration.Root)
+		if ok && !linked && registeredCommon == commonDir {
+			registration.Name = alias
+			return registration, true
+		}
+	}
+	return model.WorkspaceRegistration{}, false
 }
 
 func autoRegisterForbiddenRoot(root string) bool {

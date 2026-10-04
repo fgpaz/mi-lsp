@@ -17,9 +17,7 @@ func TestResolveWorkspaceSelectionReadOnlyFailsClosedForExplicitSelectors(t *tes
 	t.Setenv("HOME", home)
 	t.Setenv("USERPROFILE", home)
 	caller := t.TempDir()
-	stale := filepath.Join(t.TempDir(), "stale")
 	registerTestWorkspace(t, "live", t.TempDir())
-	registerTestWorkspace(t, "stale", stale)
 
 	for _, resolve := range []struct {
 		name string
@@ -43,10 +41,16 @@ func TestResolveWorkspaceSelectionReadOnlyFailsClosedForExplicitSelectors(t *tes
 		name string
 		fn   func(string, string) (WorkspaceResolution, error)
 	}{
-		{name: "normal", fn: ResolveWorkspaceSelection},
 		{name: "read-only", fn: ResolveWorkspaceSelectionReadOnly},
+		{name: "normal", fn: ResolveWorkspaceSelection},
 	} {
 		t.Run(resolve.name+" stale", func(t *testing.T) {
+			home := t.TempDir()
+			t.Setenv("HOME", home)
+			t.Setenv("USERPROFILE", home)
+			caller := t.TempDir()
+			stale := filepath.Join(t.TempDir(), "stale")
+			registerTestWorkspace(t, "stale", stale)
 			if _, err := resolve.fn("stale", caller); err == nil {
 				t.Fatal("stale explicit alias should fail closed")
 			} else {

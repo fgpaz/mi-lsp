@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -18,6 +19,8 @@ import (
 )
 
 const registryDirName = ".mi-lsp"
+
+var registryRootStat = os.Stat
 
 type ResolutionSource string
 
@@ -357,6 +360,13 @@ func removeWorkspaceLocked(name string) error {
 	return SaveRegistry(registry)
 }
 
+func sanitizedRegistryRootError(err error) string {
+	if errors.Is(err, os.ErrPermission) {
+		return "permission denied; root retained"
+	}
+	return "root status unavailable; root retained"
+}
+
 func PruneStaleWorkspaces(apply bool) (WorkspacePruneReport, error) {
 	var report WorkspacePruneReport
 	err := WithRegistryLock(func() error {
@@ -391,25 +401,20 @@ func pruneStaleWorkspacesLocked(apply bool) (WorkspacePruneReport, error) {
 	for _, name := range names {
 		ws := registry.Workspaces[name]
 		if strings.TrimSpace(ws.Root) == "" {
-			candidate := WorkspaceStalePath{Alias: name, Root: ws.Root, Error: "empty root"}
-			report.Candidates = append(report.Candidates, candidate)
-			if apply {
-				delete(registry.Workspaces, name)
-				report.Removed = append(report.Removed, candidate)
-			}
+			report.Skipped = append(report.Skipped, WorkspaceStalePath{Alias: name, Root: ws.Root, Error: "empty root cannot be classified as missing"})
 			continue
 		}
-		if _, statErr := os.Stat(ws.Root); statErr == nil {
+		if _, statErr := registryRootStat(ws.Root); statErr == nil {
 			continue
 		} else if errors.Is(statErr, os.ErrNotExist) {
-			candidate := WorkspaceStalePath{Alias: name, Root: ws.Root, Error: statErr.Error()}
+			candidate := WorkspaceStalePath{Alias: name, Root: ws.Root, Error: "root does not exist"}
 			report.Candidates = append(report.Candidates, candidate)
 			if apply {
 				delete(registry.Workspaces, name)
 				report.Removed = append(report.Removed, candidate)
 			}
 		} else {
-			report.Skipped = append(report.Skipped, WorkspaceStalePath{Alias: name, Root: ws.Root, Error: statErr.Error()})
+			report.Skipped = append(report.Skipped, WorkspaceStalePath{Alias: name, Root: ws.Root, Error: sanitizedRegistryRootError(statErr)})
 		}
 	}
 	report.RemovedCount = len(report.Removed)
@@ -436,6 +441,9 @@ func GarbageCollectRegistry(apply bool) (WorkspacePruneReport, error) {
 		report, inner = garbageCollectRegistryLocked(apply)
 		return inner
 	})
+	if err == nil && (report.RemovedCount > 0 || len(report.Skipped) > 0) {
+		log.Printf("[mi-lsp:registry-gc] removed=%d skipped=%d", report.RemovedCount, len(report.Skipped))
+	}
 	return report, err
 }
 
@@ -463,15 +471,10 @@ func garbageCollectRegistryLocked(apply bool) (WorkspacePruneReport, error) {
 	for _, name := range names {
 		ws := registry.Workspaces[name]
 		if strings.TrimSpace(ws.Root) == "" {
-			candidate := WorkspaceStalePath{Alias: name, Root: ws.Root, Error: "empty root"}
-			report.Candidates = append(report.Candidates, candidate)
-			if apply {
-				delete(registry.Workspaces, name)
-				report.Removed = append(report.Removed, candidate)
-			}
+			report.Skipped = append(report.Skipped, WorkspaceStalePath{Alias: name, Root: ws.Root, Error: "empty root cannot be classified as missing"})
 			continue
 		}
-		if _, statErr := os.Stat(ws.Root); statErr == nil {
+		if _, statErr := registryRootStat(ws.Root); statErr == nil {
 			continue
 		} else if errors.Is(statErr, os.ErrNotExist) {
 			candidate := WorkspaceStalePath{Alias: name, Root: ws.Root, Error: "path not found"}
@@ -481,7 +484,7 @@ func garbageCollectRegistryLocked(apply bool) (WorkspacePruneReport, error) {
 				report.Removed = append(report.Removed, candidate)
 			}
 		} else {
-			report.Skipped = append(report.Skipped, WorkspaceStalePath{Alias: name, Root: ws.Root, Error: statErr.Error()})
+			report.Skipped = append(report.Skipped, WorkspaceStalePath{Alias: name, Root: ws.Root, Error: sanitizedRegistryRootError(statErr)})
 		}
 	}
 	report.RemovedCount = len(report.Removed)
@@ -491,11 +494,11 @@ func garbageCollectRegistryLocked(apply bool) (WorkspacePruneReport, error) {
 		if data, err := os.ReadFile(registryPath); err == nil {
 			if err := os.WriteFile(backupPath, data, 0o644); err != nil {
 				// If backup fails, still try to save but add a warning
-				report.Warnings = append(report.Warnings, "failed to create backup: "+err.Error())
+				report.Warnings = append(report.Warnings, "failed to create registry backup; registry update continued")
 			}
 		} else {
 			// If we can't read the original, add a warning but continue
-			report.Warnings = append(report.Warnings, "failed to read registry for backup: "+err.Error())
+			report.Warnings = append(report.Warnings, "failed to read registry for backup; registry update continued")
 		}
 		// Clear LastWorkspace if it's being removed
 		if registry.Defaults.LastWorkspace != "" {
@@ -514,10 +517,33 @@ func garbageCollectRegistryLocked(apply bool) (WorkspacePruneReport, error) {
 }
 
 func ResolveWorkspace(nameOrPath string) (model.WorkspaceRegistration, error) {
-	// Preserve the legacy direct resolver's ability to inspect stale aliases;
-	// strict selector validation belongs to ResolveWorkspaceSelection and its
-	// read-only variant. Prune/doctor callers use this path to inspect roots.
-	if selector := strings.TrimSpace(nameOrPath); selector != "" {
+	selector := strings.TrimSpace(nameOrPath)
+	if selector == "" {
+		resolution, err := ResolveWorkspaceSelection("", "")
+		if err != nil {
+			return model.WorkspaceRegistration{}, err
+		}
+		return resolution.Registration, nil
+	}
+	snapshot, err := LoadRegistryReadOnly()
+	if err != nil {
+		return model.WorkspaceRegistration{}, err
+	}
+	var staleSelector *WorkspaceSelectorError
+	if ws, ok := snapshot.Workspaces[selector]; selector != "" && ok && strings.TrimSpace(ws.Root) != "" {
+		if _, statErr := os.Stat(ws.Root); errors.Is(statErr, os.ErrNotExist) {
+			staleSelector = &WorkspaceSelectorError{Code: WorkspaceSelectorStale, Selector: selector, Root: ws.Root, Cause: statErr}
+		}
+	}
+	if _, err := GarbageCollectRegistry(true); err != nil {
+		return model.WorkspaceRegistration{}, err
+	}
+	if staleSelector != nil {
+		return model.WorkspaceRegistration{}, staleSelector
+	}
+	// Preserve the legacy direct resolver for live aliases; strict selector
+	// validation belongs to ResolveWorkspaceSelection.
+	if selector != "" {
 		if registry, err := LoadRegistry(); err == nil {
 			if registration, ok := registry.Workspaces[selector]; ok {
 				registration.Name = selector
@@ -536,14 +562,47 @@ func ResolveWorkspace(nameOrPath string) (model.WorkspaceRegistration, error) {
 }
 
 func ResolveWorkspaceSelection(nameOrPath string, callerCWD string) (WorkspaceResolution, error) {
-	return resolveWorkspaceSelection(nameOrPath, callerCWD, false)
+	return resolveWorkspaceSelection(nameOrPath, callerCWD, false, false)
 }
 
 func ResolveWorkspaceSelectionReadOnly(nameOrPath string, callerCWD string) (WorkspaceResolution, error) {
-	return resolveWorkspaceSelection(nameOrPath, callerCWD, true)
+	return resolveWorkspaceSelection(nameOrPath, callerCWD, true, false)
 }
 
-func resolveWorkspaceSelection(nameOrPath string, callerCWD string, readOnly bool) (WorkspaceResolution, error) {
+func ResolveWorkspaceSelectionReadOnlyPhysical(nameOrPath string, callerCWD string) (WorkspaceResolution, error) {
+	return resolveWorkspaceSelection(nameOrPath, callerCWD, true, true)
+}
+
+func resolveWorkspaceSelection(nameOrPath string, callerCWD string, readOnly bool, preserveLinkedRoot bool) (WorkspaceResolution, error) {
+	selector := strings.TrimSpace(nameOrPath)
+	var staleSelector *WorkspaceSelectorError
+	var staleLastWorkspace *WorkspaceSelectorError
+	if !readOnly {
+		snapshot, err := LoadRegistryReadOnly()
+		if err != nil {
+			return WorkspaceResolution{}, err
+		}
+		if ws, ok := snapshot.Workspaces[selector]; selector != "" && ok {
+			if strings.TrimSpace(ws.Root) != "" {
+				if _, statErr := os.Stat(ws.Root); statErr != nil {
+					staleSelector = &WorkspaceSelectorError{Code: WorkspaceSelectorStale, Selector: selector, Root: ws.Root, Cause: statErr}
+				}
+			}
+		}
+		if selector == "" && snapshot.Defaults.LastWorkspace != "" {
+			if ws, ok := snapshot.Workspaces[snapshot.Defaults.LastWorkspace]; ok && strings.TrimSpace(ws.Root) != "" {
+				if _, statErr := os.Stat(ws.Root); statErr != nil {
+					staleLastWorkspace = &WorkspaceSelectorError{Code: WorkspaceSelectorStale, Selector: snapshot.Defaults.LastWorkspace, Root: ws.Root, Cause: statErr}
+				}
+			}
+		}
+		if _, err := GarbageCollectRegistry(true); err != nil {
+			return WorkspaceResolution{}, err
+		}
+		if staleSelector != nil {
+			return WorkspaceResolution{}, staleSelector
+		}
+	}
 	var registry model.RegistryFile
 	var err error
 	if readOnly {
@@ -555,15 +614,16 @@ func resolveWorkspaceSelection(nameOrPath string, callerCWD string, readOnly boo
 		return WorkspaceResolution{}, err
 	}
 
-	selector := strings.TrimSpace(nameOrPath)
 	if selector != "" {
 		if ws, ok := registry.Workspaces[selector]; ok {
-			info, statErr := os.Stat(ws.Root)
-			if statErr != nil {
-				return WorkspaceResolution{}, &WorkspaceSelectorError{Code: WorkspaceSelectorStale, Selector: selector, Root: ws.Root, Cause: statErr}
-			}
-			if statErr == nil && !info.IsDir() {
-				return WorkspaceResolution{}, &WorkspaceSelectorError{Code: WorkspaceSelectorNotDirectory, Selector: selector, Root: ws.Root}
+			if strings.TrimSpace(ws.Root) != "" {
+				info, statErr := os.Stat(ws.Root)
+				if statErr != nil {
+					return WorkspaceResolution{}, &WorkspaceSelectorError{Code: WorkspaceSelectorStale, Selector: selector, Root: ws.Root, Cause: statErr}
+				}
+				if !info.IsDir() {
+					return WorkspaceResolution{}, &WorkspaceSelectorError{Code: WorkspaceSelectorNotDirectory, Selector: selector, Root: ws.Root}
+				}
 			}
 			if registered, _, found := registeredWorkspaceForRoot(ws.Root, registry); found {
 				ws = registered
@@ -580,6 +640,20 @@ func resolveWorkspaceSelection(nameOrPath string, callerCWD string, readOnly boo
 			}
 			if registered, selection, found := registeredWorkspaceForRoot(resolvedPath, registry); found {
 				return WorkspaceResolution{Registration: registered, Source: ResolutionSourcePath, Warnings: selection.Warnings}, nil
+			}
+			if gitRoot, gitOK := gitTopLevel(resolvedPath); gitOK {
+				if linked, commonDir, valid := linkedWorktree(gitRoot); valid && linked {
+					if registration, selection, found := registeredWorkspaceForRoot(gitRoot, registry); found {
+						return WorkspaceResolution{Registration: registration, Source: ResolutionSourcePath, Warnings: selection.Warnings}, nil
+					}
+					if preserveLinkedRoot {
+						return linkedWorktreeInspectionResolution(gitRoot), nil
+					}
+					if registration, found := registeredMainWorktree(commonDir, registry); found {
+						return WorkspaceResolution{Registration: registration, Source: ResolutionSourcePath, Warnings: []string{"linked worktree resolved to its registered main repository"}}, nil
+					}
+					return WorkspaceResolution{}, &WorkspaceSelectorError{Code: "invalid_workspace", Selector: selector, Root: gitRoot}
+				}
 			}
 			registration, err := DetectWorkspace(resolvedPath)
 			if err != nil {
@@ -600,10 +674,18 @@ func resolveWorkspaceSelection(nameOrPath string, callerCWD string, readOnly boo
 		return WorkspaceResolution{}, &WorkspaceSelectorError{Code: WorkspaceSelectorNotFound, Selector: selector}
 	}
 
-	if resolution, ok := resolveWorkspaceFromCallerCWDMode(callerCWD, registry); ok {
+	if resolution, ok := resolveWorkspaceFromCallerCWDMode(callerCWD, registry, preserveLinkedRoot); ok {
 		return resolution, nil
 	}
+	if root, ok := gitTopLevel(callerCWD); ok {
+		if linked, _, valid := linkedWorktree(root); valid && linked {
+			return WorkspaceResolution{}, &WorkspaceSelectorError{Code: "invalid_workspace", Root: root, Cause: errors.New("linked worktree main repository is not registered")}
+		}
+	}
 
+	if staleLastWorkspace != nil {
+		return WorkspaceResolution{}, staleLastWorkspace
+	}
 	if registry.Defaults.LastWorkspace != "" {
 		if ws, ok := registry.Workspaces[registry.Defaults.LastWorkspace]; ok {
 			ws.Name = registry.Defaults.LastWorkspace
@@ -661,7 +743,18 @@ func newWorkspaceResolutionError(selector string, callerCWD string, registry mod
 }
 
 func ListWorkspaces() ([]model.WorkspaceRegistration, error) {
-	registry, err := LoadRegistry()
+	if _, err := GarbageCollectRegistry(true); err != nil {
+		return nil, err
+	}
+	return listWorkspacesWithoutGC()
+}
+
+func ListWorkspacesReadOnly() ([]model.WorkspaceRegistration, error) {
+	return listWorkspacesWithoutGC()
+}
+
+func listWorkspacesWithoutGC() ([]model.WorkspaceRegistration, error) {
+	registry, err := LoadRegistryReadOnly()
 	if err != nil {
 		return nil, err
 	}
@@ -681,6 +774,10 @@ func GroupWorkspacesByRoot() ([]WorkspaceRootGroup, error) {
 	if err != nil {
 		return nil, err
 	}
+	return groupWorkspacesByRoot(workspaces), nil
+}
+
+func groupWorkspacesByRoot(workspaces []model.WorkspaceRegistration) []WorkspaceRootGroup {
 	grouped := map[string][]model.WorkspaceRegistration{}
 	displayRoot := map[string]string{}
 	for _, ws := range workspaces {
@@ -727,18 +824,15 @@ func GroupWorkspacesByRoot() ([]WorkspaceRootGroup, error) {
 			Warnings:        warnings,
 		})
 	}
-	return groups, nil
+	return groups
 }
 
 func DoctorWorkspaces() (WorkspaceDoctorReport, error) {
-	workspaces, err := ListWorkspaces()
+	workspaces, err := listWorkspacesWithoutGC()
 	if err != nil {
 		return WorkspaceDoctorReport{}, err
 	}
-	groups, err := GroupWorkspacesByRoot()
-	if err != nil {
-		return WorkspaceDoctorReport{}, err
-	}
+	groups := groupWorkspacesByRoot(workspaces)
 	report := WorkspaceDoctorReport{}
 	for _, group := range groups {
 		if group.AliasCount > 1 {
@@ -980,19 +1074,27 @@ func SaveProjectFile(root string, project model.ProjectFile) error {
 	return toml.NewEncoder(file).Encode(project)
 }
 
-func resolveWorkspaceFromCallerCWDMode(callerCWD string, registry model.RegistryFile) (WorkspaceResolution, bool) {
-	if resolution, ok := resolveWorkspaceFromGitTopLevel(callerCWD, registry); ok {
+func resolveWorkspaceFromCallerCWDMode(callerCWD string, registry model.RegistryFile, preserveLinkedRoot bool) (WorkspaceResolution, bool) {
+	if resolution, ok := resolveWorkspaceFromGitTopLevel(callerCWD, registry, preserveLinkedRoot); ok {
 		return resolution, true
 	}
-	if resolution, ok := resolveWorkspaceFromGitMarker(callerCWD); ok {
+	if resolution, ok := resolveWorkspaceFromGitMarker(callerCWD, preserveLinkedRoot); ok {
 		return resolution, true
 	}
 	return resolveWorkspaceFromCallerCWD(callerCWD, registry)
 }
 
-func resolveWorkspaceFromGitMarker(callerCWD string) (WorkspaceResolution, bool) {
+func resolveWorkspaceFromGitMarker(callerCWD string, preserveLinkedRoot bool) (WorkspaceResolution, bool) {
 	marker, ok := inspectGitMarker(callerCWD)
 	if !ok {
+		return WorkspaceResolution{}, false
+	}
+	if linked, _, valid := linkedWorktree(marker.Root); valid && linked {
+		return WorkspaceResolution{}, false
+	}
+	// A worktree-shaped gitdir pointer is not enough to trust a physical root
+	// when Git could not validate it. Let registered containment resolve it.
+	if markerPointsToLinkedWorktree(marker.Root) && !preserveLinkedRoot {
 		return WorkspaceResolution{}, false
 	}
 	return WorkspaceResolution{
@@ -1010,9 +1112,45 @@ func resolveWorkspaceFromGitMarker(callerCWD string) (WorkspaceResolution, bool)
 	}, true
 }
 
-func resolveWorkspaceFromGitTopLevel(callerCWD string, registry model.RegistryFile) (WorkspaceResolution, bool) {
+func markerPointsToLinkedWorktree(root string) bool {
+	contents, err := os.ReadFile(filepath.Join(root, ".git"))
+	if err != nil || !parseGitDirMarker(contents) {
+		return false
+	}
+	target := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(string(contents)), "gitdir:"))
+	target = strings.ReplaceAll(target, `\`, "/")
+	target = strings.Trim(target, "/")
+	return strings.Contains("/"+target+"/", "/.git/worktrees/")
+}
+
+func linkedWorktreeInspectionResolution(root string) WorkspaceResolution {
+	return WorkspaceResolution{
+		Registration: model.WorkspaceRegistration{
+			Name: filepath.Base(root),
+			Root: root,
+			Kind: model.WorkspaceKindSingle,
+		},
+		Source:    ResolutionSourceGitTopLevel,
+		Synthetic: true,
+		Warnings:  []string{"workspace omitted; linked worktree is not registered; using synthetic read-only root resolution"},
+	}
+}
+
+func resolveWorkspaceFromGitTopLevel(callerCWD string, registry model.RegistryFile, preserveLinkedRoot bool) (WorkspaceResolution, bool) {
 	gitRoot, ok := gitTopLevel(callerCWD)
 	if !ok {
+		return WorkspaceResolution{}, false
+	}
+	if linked, commonDir, valid := linkedWorktree(gitRoot); valid && linked {
+		if registration, _, found := registeredWorkspaceForRoot(gitRoot, registry); found {
+			return WorkspaceResolution{Registration: registration, Source: ResolutionSourceGitTopLevel}, true
+		}
+		if preserveLinkedRoot {
+			return linkedWorktreeInspectionResolution(gitRoot), true
+		}
+		if registration, found := registeredMainWorktree(commonDir, registry); found {
+			return WorkspaceResolution{Registration: registration, Source: ResolutionSourceGitTopLevel, Warnings: []string{"linked worktree resolved to its registered main repository"}}, true
+		}
 		return WorkspaceResolution{}, false
 	}
 	canonicalRoot, ok := normalizeComparablePath(gitRoot)
@@ -1190,7 +1328,7 @@ func ExplicitWorkspaceCWDMismatchFor(selector string, callerCWD string) (Explici
 	if err != nil {
 		return ExplicitWorkspaceCWDMismatch{}, false
 	}
-	cwdResolution, ok := resolveWorkspaceFromCallerCWDMode(callerCWD, mustLoadRegistry())
+	cwdResolution, ok := resolveWorkspaceFromCallerCWDMode(callerCWD, mustLoadRegistry(), false)
 	if !ok {
 		return ExplicitWorkspaceCWDMismatch{}, false
 	}
@@ -1283,13 +1421,39 @@ func gitTopLevel(root string) (string, bool) {
 	if err != nil {
 		return "", false
 	}
-	// Git has already established the physical repository top-level. Resolve
-	// links only for identity comparison; never turn an identity-read failure
-	// into lexical parent containment.
 	if evaluated, evalErr := filepath.EvalSymlinks(absolute); evalErr == nil {
 		absolute = evaluated
 	}
-	return filepath.Clean(absolute), true
+	gitRoot := filepath.Clean(absolute)
+
+	// A lexical marker may identify the physical root of a linked worktree,
+	// but only after Git has confirmed that the caller belongs to a repository.
+	caller, err := filepath.Abs(ctxRoot)
+	if err != nil {
+		return "", false
+	}
+	if evaluated, evalErr := filepath.EvalSymlinks(caller); evalErr == nil {
+		caller = evaluated
+	}
+	caller = filepath.Clean(caller)
+	if !pathContains(caller, gitRoot) {
+		return "", false
+	}
+	if marker, ok := inspectGitMarker(ctxRoot); ok {
+		markerRoot, markerErr := filepath.Abs(marker.Root)
+		if markerErr == nil {
+			if evaluated, evalErr := filepath.EvalSymlinks(markerRoot); evalErr == nil {
+				markerRoot = evaluated
+			}
+			markerRoot = filepath.Clean(markerRoot)
+			if pathContains(caller, markerRoot) {
+				if linked, _, valid := linkedWorktree(markerRoot); valid && linked {
+					return markerRoot, true
+				}
+			}
+		}
+	}
+	return gitRoot, true
 }
 
 type gitMarkerInspection struct {

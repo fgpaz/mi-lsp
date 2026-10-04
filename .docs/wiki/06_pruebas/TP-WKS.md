@@ -24,7 +24,7 @@ agent_may_edit:
 agent_must_not_edit:
   - .docs/wiki/_mi-lsp/read-model.toml
 verify:
-  - go test -count=1 ./internal/service ./internal/workspace
+  - go test -count=1 ./internal/service ./internal/workspace ./internal/cli
   - mi-lsp nav governance --workspace mi-lsp --format toon
   - mi-lsp nav wiki validate-harness --workspace mi-lsp --format toon
   - mi-lsp nav wiki validate-source --workspace mi-lsp --format toon
@@ -416,4 +416,129 @@ test_bindings:
 expected:
   live_holder_timeout_error: registry_lock_timeout
   retry_after_lock_release: succeeds
+```
+
+### TC-WKS-064
+
+```toon
+block_id: TC-WKS-064
+kind: normative
+source_of_truth: normative
+verify:
+  - go test -count=1 ./internal/workspace -run 'TestAutoRegisterLinkedWorktreeUsesRegisteredMainRoot|TestAutoRegisterLinkedWorktreeWithoutRegisteredMainFailsClosed'
+  - go test -count=1 ./internal/service -run '^TestExecuteLinkedWorktreeWithoutRegisteredMainDoesNotIndex$'
+evidence:
+  - internal/workspace/autoregister_test.go
+  - internal/service/auto_register_test.go
+case_id: TC-WKS-064
+case_type: positive_and_negative
+requirement_id: RF-WKS-007
+test_bindings:
+  - file: internal/workspace/autoregister_test.go
+    test: TestAutoRegisterLinkedWorktreeUsesRegisteredMainRoot
+  - file: internal/workspace/autoregister_test.go
+    test: TestAutoRegisterLinkedWorktreeWithoutRegisteredMainFailsClosed
+  - file: internal/service/auto_register_test.go
+    test: TestExecuteLinkedWorktreeWithoutRegisteredMainDoesNotIndex
+expected:
+  registered_main: resolve_without_worktree_registration
+  unregistered_main: explicit_incomplete_reason_code_invalid_workspace_without_index
+  registry_consistent: true
+```
+
+### TC-WKS-065
+
+```toon
+block_id: TC-WKS-065
+kind: normative
+source_of_truth: normative
+verify:
+  - go test -count=1 ./internal/workspace -run 'TestAutoRegisterForceBypassesDefaultScope|TestAutoRegisterTempRootIsDeniedEvenWhenHomeContainsRepo|TestGarbageCollectRegistryRetainsRootsWithAmbiguousErrors|TestPruneStaleWorkspacesDryRunAndApply'
+  - go test -count=1 ./internal/service -run '^TestExecuteAutoRegisterForceOverrideIsReported$'
+evidence:
+  - internal/workspace/autoregister_test.go
+  - internal/workspace/registry_test.go
+  - internal/service/auto_register_test.go
+case_id: TC-WKS-065
+case_type: positive_and_negative
+requirement_id: RF-WKS-007
+test_bindings:
+  - file: internal/workspace/autoregister_test.go
+    test: TestAutoRegisterForceBypassesDefaultScope
+  - file: internal/workspace/autoregister_test.go
+    test: TestAutoRegisterTempRootIsDeniedEvenWhenHomeContainsRepo
+  - file: internal/workspace/registry_test.go
+    test: TestGarbageCollectRegistryRetainsRootsWithAmbiguousErrors
+  - file: internal/workspace/registry_test.go
+    test: TestPruneStaleWorkspacesDryRunAndApply
+  - file: internal/service/auto_register_test.go
+    test: TestExecuteAutoRegisterForceOverrideIsReported
+expected:
+  outside_HOME_default_registration: false
+  temporary_HOME_default_registration: false
+  force_override: explicit_and_reported
+  prune_only_definitely_missing_root: true
+  ambiguous_errors_and_empty_roots: retained
+  existing_directories_and_worktrees_deleted: false
+```
+
+### TC-WKS-066
+
+```toon
+block_id: TC-WKS-066
+kind: normative
+source_of_truth: normative
+verify:
+  - go test -count=1 ./internal/cli -run '^TestWorkspacePruneDefaultsToSafeStalePreview$'
+evidence:
+  - internal/cli/workspace.go
+  - internal/cli/workspace_test.go
+case_id: TC-WKS-066
+case_type: positive
+requirement_id: RF-WKS-007
+test_bindings:
+  - file: internal/cli/workspace_test.go
+    test: TestWorkspacePruneDefaultsToSafeStalePreview
+expected:
+  command_without_flags: accepted
+  stale_only: true
+  default_mode: dry_run
+  compatibility_flag_stale: accepted
+```
+
+### TC-WKS-067
+
+```toon
+block_id: TC-WKS-067
+kind: normative
+source_of_truth: normative
+verify:
+  - go test -count=1 ./internal/workspace ./internal/service -run 'TestListWorkspacesGarbageCollectsMissingRoots|TestResolveWorkspaceSelectionRejectsStaleLastWorkspace|TestProbeNestedGitWorktreeDoesNotReadLexicalParentState|TestExecuteWorkspaceStatusUnregisteredNestedGitWorktreeKeepsPhysicalRoot'
+evidence:
+  - internal/workspace/registry.go
+  - internal/workspace/registry_test.go
+  - internal/service/workspace_ops.go
+case_id: TC-WKS-067
+case_type: positive
+requirement_id: RF-WKS-007
+test_bindings:
+  - file: internal/workspace/registry_test.go
+    test: TestListWorkspacesGarbageCollectsMissingRoots
+  - file: internal/workspace/registry_test.go
+    test: TestResolveWorkspaceSelectionRejectsStaleLastWorkspace
+  - file: internal/service/probe_test.go
+    test: TestProbeNestedGitWorktreeDoesNotReadLexicalParentState
+  - file: internal/service/workspace_resolution_test.go
+    test: TestExecuteWorkspaceStatusUnregisteredNestedGitWorktreeKeepsPhysicalRoot
+  - file: internal/service/workspace_resolution_test.go
+    test: TestExecuteWorkspaceStatusExplicitDotUsesGitAwareCallerRoot
+expected:
+  public_list_gc_persisted: true
+  ordinary_resolution_gc_persisted: true
+  ordinary_read_only_unregistered_linked_worktree_with_registered_main: resolve_main_alias
+  stale_last_selector_error_preserved: WKS_SELECTOR_STALE
+  read_only_resolution_and_doctor_hygiene_preview_mutate_registry: false
+  ordinary_resolution_git_failure_for_linked_marker: registered_containment_only
+  status_probe_preserve_unregistered_linked_worktree_physical_root_without_registration_or_index: true
+  status_probe_git_failure_preserve_physical_root_without_parent_state_inspection: true
 ```

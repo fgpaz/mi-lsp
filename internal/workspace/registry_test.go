@@ -1,7 +1,9 @@
 package workspace
 
 import (
+	"bytes"
 	"errors"
+	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -54,31 +56,30 @@ func TestSaveRegistryPreservesRestrictivePermissions(t *testing.T) {
 }
 
 func TestResolveWorkspaceSelectionRejectsStaleLastWorkspace(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("HOME", home)
-	t.Setenv("USERPROFILE", home)
-
-	caller := t.TempDir()
-	staleRoot := filepath.Join(t.TempDir(), "missing-workspace")
-	registerTestWorkspace(t, "stale", staleRoot)
-	registry, err := LoadRegistry()
-	if err != nil {
-		t.Fatalf("LoadRegistry: %v", err)
-	}
-	registry.Defaults.LastWorkspace = "stale"
-	if err := SaveRegistry(registry); err != nil {
-		t.Fatalf("SaveRegistry: %v", err)
-	}
-
 	for _, resolve := range []struct {
 		name string
 		fn   func(string, string) (WorkspaceResolution, error)
 	}{
-		{name: "normal", fn: ResolveWorkspaceSelection},
 		{name: "read-only", fn: ResolveWorkspaceSelectionReadOnly},
+		{name: "normal", fn: ResolveWorkspaceSelection},
 	} {
 		t.Run(resolve.name, func(t *testing.T) {
-			_, err := resolve.fn("", caller)
+			home := t.TempDir()
+			t.Setenv("HOME", home)
+			t.Setenv("USERPROFILE", home)
+			caller := t.TempDir()
+			staleRoot := filepath.Join(t.TempDir(), "missing-workspace")
+			registerTestWorkspace(t, "stale", staleRoot)
+			registry, err := LoadRegistry()
+			if err != nil {
+				t.Fatalf("LoadRegistry: %v", err)
+			}
+			registry.Defaults.LastWorkspace = "stale"
+			if err := SaveRegistry(registry); err != nil {
+				t.Fatalf("SaveRegistry: %v", err)
+			}
+
+			_, err = resolve.fn("", caller)
 			if err == nil {
 				t.Fatal("stale last_workspace resolved successfully")
 			}
@@ -86,7 +87,40 @@ func TestResolveWorkspaceSelectionRejectsStaleLastWorkspace(t *testing.T) {
 			if !errors.As(err, &selectorErr) || selectorErr.Code != WorkspaceSelectorStale {
 				t.Fatalf("error = %v, want %s", err, WorkspaceSelectorStale)
 			}
+			registry, loadErr := LoadRegistryReadOnly()
+			if loadErr != nil {
+				t.Fatal(loadErr)
+			}
+			_, remains := registry.Workspaces["stale"]
+			if resolve.name == "normal" && remains {
+				t.Fatal("normal resolution must GC stale alias after preserving stale-last error")
+			}
+			if resolve.name == "read-only" && !remains {
+				t.Fatal("read-only resolution must preserve stale alias")
+			}
 		})
+	}
+}
+
+func TestListWorkspacesGarbageCollectsMissingRoots(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	registerTestWorkspace(t, "stale", filepath.Join(t.TempDir(), "missing-workspace"))
+
+	workspaces, err := ListWorkspaces()
+	if err != nil {
+		t.Fatalf("ListWorkspaces: %v", err)
+	}
+	if len(workspaces) != 0 {
+		t.Fatalf("ListWorkspaces = %#v, want stale root removed", workspaces)
+	}
+	registry, err := LoadRegistryReadOnly()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, exists := registry.Workspaces["stale"]; exists {
+		t.Fatal("ListWorkspaces did not persist GC removal")
 	}
 }
 
@@ -212,19 +246,8 @@ func TestResolveWorkspaceSelectionReadOnlyUsesGitTopLevelIdentity(t *testing.T) 
 	if resolution.Source != ResolutionSourceGitTopLevel {
 		t.Fatalf("Source = %q, want %q", resolution.Source, ResolutionSourceGitTopLevel)
 	}
-	worktreeIdentity, err := InspectWorkspaceIdentity(worktreeRoot)
-	if err != nil {
-		t.Fatalf("InspectWorkspaceIdentity(worktree): %v", err)
-	}
-	resolvedIdentity, err := InspectWorkspaceIdentity(resolution.Registration.Root)
-	if err != nil {
-		t.Fatalf("InspectWorkspaceIdentity(resolved): %v", err)
-	}
-	if resolvedIdentity.ComparableRoot != worktreeIdentity.ComparableRoot {
-		t.Fatalf("resolved root = %q, want worktree root %q", resolvedIdentity.ComparableRoot, worktreeIdentity.ComparableRoot)
-	}
-	if parentIdentity, _ := InspectWorkspaceIdentity(parent); parentIdentity.ComparableRoot == resolvedIdentity.ComparableRoot {
-		t.Fatal("unregistered Git worktree collapsed to lexical parent")
+	if resolution.Registration.Name != "parent" || filepath.Clean(resolution.Registration.Root) != filepath.Clean(parent) {
+		t.Fatalf("unregistered linked worktree resolved to %+v, want registered main workspace at %q", resolution.Registration, parent)
 	}
 
 	if !hasGitDir(worktreeRoot) {
@@ -276,25 +299,19 @@ func TestResolveWorkspaceSelectionReadOnlyFailsClosedWhenGitRevParseFails(t *tes
 	registerTestWorkspace(t, "parent", parent)
 	installFailingGit(t)
 
-	resolution, err := ResolveWorkspaceSelectionReadOnly("", worktreeRoot)
+	readOnly, err := ResolveWorkspaceSelectionReadOnly("", worktreeRoot)
 	if err != nil {
 		t.Fatalf("ResolveWorkspaceSelectionReadOnly: %v", err)
 	}
-	if resolution.Source != ResolutionSourceGitTopLevel {
-		t.Fatalf("Source = %q, want %q", resolution.Source, ResolutionSourceGitTopLevel)
-	}
-	if filepath.Clean(resolution.Registration.Root) != filepath.Clean(worktreeRoot) {
-		t.Fatalf("resolved root = %q, want synthetic marker root %q", resolution.Registration.Root, worktreeRoot)
-	}
-	if strings.Contains(strings.Join(resolution.Warnings, " "), filepath.Clean(parent)) {
-		t.Fatalf("Warnings = %v, unexpectedly mention lexical parent", resolution.Warnings)
+	if readOnly.Registration.Name != "parent" || filepath.Clean(readOnly.Registration.Root) != filepath.Clean(parent) {
+		t.Fatalf("read-only resolution = %+v, want registered containment at %q", readOnly.Registration, parent)
 	}
 	normal, err := ResolveWorkspaceSelection("", worktreeRoot)
 	if err != nil {
 		t.Fatalf("ResolveWorkspaceSelection: %v", err)
 	}
-	if filepath.Clean(normal.Registration.Root) != filepath.Clean(worktreeRoot) {
-		t.Fatalf("normal resolved root = %q, want %q", normal.Registration.Root, worktreeRoot)
+	if normal.Registration.Name != "parent" || filepath.Clean(normal.Registration.Root) != filepath.Clean(parent) {
+		t.Fatalf("ordinary resolution = %+v, want registered containment at %q", normal.Registration, parent)
 	}
 }
 
@@ -691,14 +708,18 @@ func TestPruneStaleWorkspacesDryRunAndApply(t *testing.T) {
 	if !dryRun.DryRun {
 		t.Fatal("dry run report should have DryRun=true")
 	}
-	if len(dryRun.Candidates) != 2 || dryRun.Candidates[0].Alias != "empty" || dryRun.Candidates[1].Alias != "stale" {
-		t.Fatalf("dry run candidates = %#v, want empty + stale", dryRun.Candidates)
-	}
-	if _, err := ResolveWorkspace("stale"); err != nil {
-		t.Fatalf("dry run removed stale alias: %v", err)
+	if len(dryRun.Candidates) != 1 || dryRun.Candidates[0].Alias != "stale" || len(dryRun.Skipped) != 1 || dryRun.Skipped[0].Alias != "empty" {
+		t.Fatalf("dry run candidates=%#v skipped=%#v, want stale candidate and empty skipped", dryRun.Candidates, dryRun.Skipped)
 	}
 	if _, err := ResolveWorkspaceSelectionReadOnly("stale", ""); err == nil {
 		t.Fatal("read-only explicit stale selector should fail closed")
+	}
+	stillRegistered, err := LoadRegistryReadOnly()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := stillRegistered.Workspaces["stale"]; !ok {
+		t.Fatal("dry run removed stale alias")
 	}
 
 	applied, err := PruneStaleWorkspaces(true)
@@ -708,17 +729,78 @@ func TestPruneStaleWorkspacesDryRunAndApply(t *testing.T) {
 	if applied.DryRun {
 		t.Fatal("apply report should have DryRun=false")
 	}
-	if applied.RemovedCount != 2 || len(applied.Removed) != 2 {
-		t.Fatalf("applied removed = %#v count=%d, want empty + stale", applied.Removed, applied.RemovedCount)
+	if applied.RemovedCount != 1 || len(applied.Removed) != 1 || applied.Removed[0].Alias != "stale" || len(applied.Skipped) != 1 || applied.Skipped[0].Alias != "empty" {
+		t.Fatalf("applied removed=%#v skipped=%#v count=%d, want stale only", applied.Removed, applied.Skipped, applied.RemovedCount)
 	}
 	if _, err := ResolveWorkspace("stale"); err == nil {
 		t.Fatal("stale alias should be removed after apply")
 	}
-	if _, err := ResolveWorkspace("empty"); err == nil {
-		t.Fatal("empty-root alias should be removed after apply")
+	if _, err := ResolveWorkspace("empty"); err != nil {
+		t.Fatalf("empty-root alias must be retained because it is ambiguous: %v", err)
 	}
 	if _, err := ResolveWorkspace("live"); err != nil {
 		t.Fatalf("live alias should remain: %v", err)
+	}
+}
+
+func TestGarbageCollectRegistryRetainsRootsWithAmbiguousErrors(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	live := t.TempDir()
+	missing := filepath.Join(t.TempDir(), "missing")
+	denied := filepath.Join(t.TempDir(), "denied")
+	registry := model.RegistryFile{Workspaces: map[string]model.WorkspaceRegistration{
+		"live":    {Name: "live", Root: live},
+		"missing": {Name: "missing", Root: missing},
+		"denied":  {Name: "denied", Root: denied},
+		"empty":   {Name: "empty", Root: ""},
+	}}
+	if err := SaveRegistry(registry); err != nil {
+		t.Fatal(err)
+	}
+	oldStat := registryRootStat
+	registryRootStat = func(path string) (os.FileInfo, error) {
+		if path == denied {
+			return nil, os.ErrPermission
+		}
+		return os.Stat(path)
+	}
+	t.Cleanup(func() { registryRootStat = oldStat })
+
+	var logs bytes.Buffer
+	previousLogOutput := log.Writer()
+	log.SetOutput(&logs)
+	t.Cleanup(func() { log.SetOutput(previousLogOutput) })
+	report, err := GarbageCollectRegistry(true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(logs.String(), denied) || !strings.Contains(logs.String(), "removed=1 skipped=2") {
+		t.Fatalf("registry gc log is not sanitized or missing counts: %q", logs.String())
+	}
+	if report.RemovedCount != 1 || report.Removed[0].Alias != "missing" {
+		t.Fatalf("removed = %#v; want only definitely missing root", report.Removed)
+	}
+	if len(report.Skipped) != 2 {
+		t.Fatalf("skipped = %#v; want denied and empty roots retained", report.Skipped)
+	}
+	for _, skipped := range report.Skipped {
+		if strings.Contains(skipped.Error, denied) {
+			t.Fatalf("skipped error leaked the root path: %#v", skipped)
+		}
+	}
+	registry, err = LoadRegistryReadOnly()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, alias := range []string{"live", "denied", "empty"} {
+		if _, ok := registry.Workspaces[alias]; !ok {
+			t.Fatalf("ambiguous/live alias %q was removed", alias)
+		}
+	}
+	if _, ok := registry.Workspaces["missing"]; ok {
+		t.Fatal("definitely missing alias was retained")
 	}
 }
 

@@ -1243,6 +1243,12 @@ func sortLiveClassifications(values []string) {
 }
 
 func (a *App) normalizeWorkspaceRequest(ctx context.Context, request model.CommandRequest) (model.CommandRequest, []string, error) {
+	// Status is a read-only inspection and must resolve the original caller cwd
+	// in workspaceStatus, before ordinary navigation can collapse a linked tree
+	// to its registered main repository.
+	if request.Operation == "workspace.status" {
+		return request, nil, nil
+	}
 	if !operationRequiresWorkspaceResolution(request) {
 		return request, nil, nil
 	}

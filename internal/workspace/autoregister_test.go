@@ -14,13 +14,22 @@ import (
 
 func autoRegisterHome(t *testing.T) string {
 	t.Helper()
-	home := t.TempDir()
+	home, err := os.MkdirTemp(".", ".mi-lsp-autoregister-test-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	home, err = filepath.Abs(home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(home) })
 	if resolved, err := filepath.EvalSymlinks(home); err == nil {
 		home = resolved
 	}
 	t.Setenv("HOME", home)
 	t.Setenv("USERPROFILE", home)
 	t.Setenv(AutoRegisterEnvVar, "")
+	t.Setenv(AutoRegisterModeEnvVar, "")
 	return home
 }
 
@@ -73,6 +82,118 @@ func TestAutoRegisterFirstQueryInUnregisteredGitRepo(t *testing.T) {
 	again, err := AutoRegisterWorkspace("", sub)
 	if err != nil || again.Registered {
 		t.Fatalf("second call = %+v, %v; want no-op", again, err)
+	}
+}
+
+func TestAutoRegisterLinkedWorktreeUsesRegisteredMainRoot(t *testing.T) {
+	home := autoRegisterHome(t)
+	main := autoRegisterGitRepo(t, filepath.Join(home, "repo"))
+	for _, args := range [][]string{{"add", "-A"}, {"-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--allow-empty", "-m", "initial"}} {
+		if out, err := exec.Command("git", append([]string{"-C", main}, args...)...).CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v %s", args, err, out)
+		}
+	}
+	linked := filepath.Join(home, "linked")
+	if out, err := exec.Command("git", "-C", main, "worktree", "add", "-q", "--detach", linked).CombinedOutput(); err != nil {
+		t.Fatalf("git worktree add: %v %s", err, out)
+	}
+	if _, err := RegisterWorkspace("main-repo", registrationFor("main-repo", main)); err != nil {
+		t.Fatal(err)
+	}
+	result, err := AutoRegisterWorkspace("", linked)
+	if err != nil || result.Registered || result.Alias != "main-repo" || result.Root != main {
+		t.Fatalf("linked registration = %+v, %v; want registered main root", result, err)
+	}
+	registry, err := LoadRegistry()
+	if err != nil || len(registry.Workspaces) != 1 {
+		t.Fatalf("registry = %+v, %v; linked root must not add alias", registry.Workspaces, err)
+	}
+	resolution, err := ResolveWorkspaceSelectionReadOnly("", linked)
+	if err != nil || resolution.Registration.Name != "main-repo" || resolution.Registration.Root != main {
+		t.Fatalf("linked resolution = %+v, %v; want registered main root", resolution, err)
+	}
+	resolution, err = ResolveWorkspaceSelectionReadOnly(linked, "")
+	if err != nil || resolution.Registration.Name != "main-repo" {
+		t.Fatalf("explicit linked path resolution = %+v, %v; want registered main root", resolution, err)
+	}
+}
+
+func TestAutoRegisterLinkedWorktreeWithoutRegisteredMainFailsClosed(t *testing.T) {
+	home := autoRegisterHome(t)
+	main := autoRegisterGitRepo(t, filepath.Join(home, "repo"))
+	for _, args := range [][]string{{"add", "-A"}, {"-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--allow-empty", "-m", "initial"}} {
+		if out, err := exec.Command("git", append([]string{"-C", main}, args...)...).CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v %s", args, err, out)
+		}
+	}
+	linked := filepath.Join(home, "linked")
+	if out, err := exec.Command("git", "-C", main, "worktree", "add", "-q", "--detach", linked).CombinedOutput(); err != nil {
+		t.Fatalf("git worktree add: %v %s", err, out)
+	}
+	_, err := AutoRegisterWorkspace("", linked)
+	var selectorErr *WorkspaceSelectorError
+	if !errors.As(err, &selectorErr) || selectorErr.Code != "invalid_workspace" {
+		t.Fatalf("err = %v, want explicit invalid_workspace", err)
+	}
+	registry, _ := LoadRegistryReadOnly()
+	if len(registry.Workspaces) != 0 {
+		t.Fatalf("unregistered linked root was persisted: %+v", registry.Workspaces)
+	}
+	_, err = ResolveWorkspaceSelectionReadOnly("", linked)
+	if !errors.As(err, &selectorErr) || selectorErr.Code != "invalid_workspace" || !strings.Contains(err.Error(), "explicit_incomplete: reason_code=invalid_workspace") {
+		t.Fatalf("linked resolution error = %v; want explicit_incomplete invalid_workspace", err)
+	}
+}
+
+func TestAutoRegisterTempRootIsDeniedEvenWhenHomeContainsRepo(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	t.Setenv(AutoRegisterEnvVar, "")
+	t.Setenv(AutoRegisterModeEnvVar, "")
+	repo := autoRegisterGitRepo(t, filepath.Join(home, "repo"))
+	if result, err := AutoRegisterWorkspace("", repo); err != nil || result.Registered {
+		t.Fatalf("temporary HOME registration = %+v, %v; want default no-op", result, err)
+	}
+	registry, err := LoadRegistryReadOnly()
+	if err != nil || len(registry.Workspaces) != 0 {
+		t.Fatalf("default temporary-HOME registry = %+v, %v; want unchanged", registry.Workspaces, err)
+	}
+	t.Setenv(AutoRegisterModeEnvVar, "force")
+	result, err := AutoRegisterWorkspace("", repo)
+	if err != nil || !result.Registered || !result.Forced {
+		t.Fatalf("forced temporary root = %+v, %v; want explicit force bypass", result, err)
+	}
+}
+
+func TestAutoRegisterForceBypassesDefaultScope(t *testing.T) {
+	home := autoRegisterHome(t)
+	repo := autoRegisterGitRepo(t, filepath.Join(t.TempDir(), "outside-home"))
+	if result, err := AutoRegisterWorkspace("", repo); err != nil || result.Registered {
+		t.Fatalf("outside HOME default = %+v, %v; want no-op", result, err)
+	}
+	sibling, err := os.MkdirTemp(filepath.Dir(home), filepath.Base(home)+"-sibling-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(sibling) })
+	siblingRepo := autoRegisterGitRepo(t, filepath.Join(sibling, "repo"))
+	if result, err := AutoRegisterWorkspace("", siblingRepo); err != nil || result.Registered {
+		t.Fatalf("HOME-prefix sibling = %+v, %v; want no-op", result, err)
+	}
+	linkedPath := filepath.Join(home, "outside-link")
+	if err := os.Symlink(repo, linkedPath); err == nil {
+		if result, err := AutoRegisterWorkspace("", linkedPath); err != nil || result.Registered {
+			t.Fatalf("symlink into outside HOME = %+v, %v; want no-op", result, err)
+		}
+	}
+	t.Setenv(AutoRegisterModeEnvVar, "force")
+	result, err := AutoRegisterWorkspace("", repo)
+	if err != nil || !result.Registered || !result.Forced {
+		t.Fatalf("forced registration = %+v, %v", result, err)
+	}
+	if !strings.HasPrefix(home, string(filepath.Separator)) {
+		t.Fatal("invalid test home")
 	}
 }
 

@@ -245,11 +245,11 @@ func TestRegistryGCWithEmptyRoot(t *testing.T) {
 		t.Fatalf("GarbageCollectRegistry failed: %v", err)
 	}
 
-	// Empty roots cannot identify a workspace and are safe prune candidates.
-	if len(report.Candidates) != 1 || report.Candidates[0].Alias != "empty" {
-		t.Errorf("expected empty root candidate, got %#v", report.Candidates)
+	// Empty roots are ambiguous and must be retained.
+	if len(report.Candidates) != 0 {
+		t.Errorf("expected no empty-root candidates, got %#v", report.Candidates)
 	}
-	if len(report.Skipped) != 0 {
-		t.Errorf("expected no skipped roots, got %#v", report.Skipped)
+	if len(report.Skipped) != 1 || report.Skipped[0].Alias != "empty" {
+		t.Errorf("expected empty root to be skipped, got %#v", report.Skipped)
 	}
 }

@@ -1676,8 +1676,12 @@ func TestWorkspaceHygieneReportsSafeActionsWithoutMutation(t *testing.T) {
 	if !ok || len(safeActions) != 1 || safeActions[0]["id"] != "prune_stale_aliases" {
 		t.Fatalf("safe_actions = %#v, want prune_stale_aliases", items[0]["safe_actions"])
 	}
-	if _, err := workspace.ResolveWorkspace("stale"); err != nil {
-		t.Fatalf("dry-run hygiene removed stale alias: %v", err)
+	registry, err := workspace.LoadRegistryReadOnly()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, exists := registry.Workspaces["stale"]; !exists {
+		t.Fatal("dry-run hygiene removed stale alias")
 	}
 }
 

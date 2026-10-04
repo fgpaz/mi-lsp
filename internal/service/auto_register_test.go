@@ -21,10 +21,19 @@ func autoRegisterFixture(t *testing.T) (repo string, spawns *atomic.Int32) {
 
 func autoRegisterFixtureCommits(t *testing.T, commit bool) (repo string, spawns *atomic.Int32) {
 	t.Helper()
-	home := t.TempDir()
+	home, err := os.MkdirTemp(".", ".mi-lsp-service-autoregister-test-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	home, err = filepath.Abs(home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(home) })
 	t.Setenv("HOME", home)
 	t.Setenv("USERPROFILE", home)
 	t.Setenv(workspace.AutoRegisterEnvVar, "")
+	t.Setenv(workspace.AutoRegisterModeEnvVar, "")
 	repo = filepath.Join(home, "proj")
 	if err := os.MkdirAll(repo, 0o755); err != nil {
 		t.Fatal(err)
@@ -53,6 +62,20 @@ func autoRegisterFixtureCommits(t *testing.T, commit bool) (repo string, spawns 
 	}
 	t.Cleanup(func() { spawnDetachedIndexJobProcess = old })
 	return repo, spawns
+}
+
+func autoRegisterGitRepoOutsideHome(t *testing.T) string {
+	t.Helper()
+	repo := t.TempDir()
+	for _, args := range [][]string{{"init", "-q"}, {"-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--allow-empty", "-m", "initial"}} {
+		if out, err := exec.Command("git", append([]string{"-C", repo}, args...)...).CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v %s", args, err, out)
+		}
+	}
+	if resolved, err := filepath.EvalSymlinks(repo); err == nil {
+		repo = resolved
+	}
+	return repo
 }
 
 func hasAutoWarning(env model.Envelope, prefix string) bool {
@@ -149,6 +172,47 @@ func TestExecuteAutoRegisterFailureDoesNotBlockNavMultiRead(t *testing.T) {
 	registry, err := workspace.LoadRegistryReadOnly()
 	if err != nil || len(registry.Workspaces) != 0 {
 		t.Fatalf("failed navigation persisted workspace: %+v, %v", registry.Workspaces, err)
+	}
+}
+
+func TestExecuteLinkedWorktreeWithoutRegisteredMainDoesNotIndex(t *testing.T) {
+	repo, spawns := autoRegisterFixture(t)
+	linked := filepath.Join(filepath.Dir(repo), "linked")
+	if out, err := exec.Command("git", "-C", repo, "worktree", "add", "-q", "--detach", linked).CombinedOutput(); err != nil {
+		t.Fatalf("git worktree add: %v %s", err, out)
+	}
+	_, err := New(repo, nil).Execute(context.Background(), model.CommandRequest{
+		Operation: "nav.search",
+		Context:   model.QueryOptions{CallerCWD: linked},
+		Payload:   map[string]any{"pattern": "Hello"},
+	})
+	if err == nil || !strings.Contains(err.Error(), "explicit_incomplete: reason_code=invalid_workspace") {
+		t.Fatalf("linked query error = %v; want explicit_incomplete invalid_workspace", err)
+	}
+	registry, loadErr := workspace.LoadRegistryReadOnly()
+	if loadErr != nil || len(registry.Workspaces) != 0 || spawns.Load() != 0 {
+		t.Fatalf("registry=%+v loadErr=%v index spawns=%d; want no registration or index", registry.Workspaces, loadErr, spawns.Load())
+	}
+}
+
+func TestExecuteAutoRegisterForceOverrideIsReported(t *testing.T) {
+	_, spawns := autoRegisterFixture(t)
+	repo := autoRegisterGitRepoOutsideHome(t)
+	t.Setenv(workspace.AutoRegisterModeEnvVar, "force")
+	env, err := New(repo, nil).Execute(context.Background(), model.CommandRequest{
+		Operation: "nav.search",
+		Context:   model.QueryOptions{CallerCWD: repo},
+		Payload:   map[string]any{"pattern": "initial"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !hasAutoWarning(env, "auto_register_force:") || !hasAutoWarning(env, "auto_registered:") {
+		t.Fatalf("force bypass was not registered and reported: %v", env.Warnings)
+	}
+	registry, err := workspace.LoadRegistryReadOnly()
+	if err != nil || len(registry.Workspaces) != 1 || spawns.Load() != 1 {
+		t.Fatalf("registry=%+v err=%v index spawns=%d; want forced registration and one index", registry.Workspaces, err, spawns.Load())
 	}
 }
 

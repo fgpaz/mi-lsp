@@ -7,6 +7,30 @@ import (
 	"github.com/spf13/cobra"
 )
 
+func TestWorkspacePruneDefaultsToSafeStalePreview(t *testing.T) {
+	var gotOperation string
+	var gotPayload map[string]any
+	state := &rootState{executeOperationHook: func(_ *cobra.Command, operation string, payload map[string]any, _ bool) error {
+		gotOperation = operation
+		gotPayload = payload
+		return nil
+	}}
+	command := newWorkspaceCommand(state)
+	prune, _, err := command.Find([]string{"prune"})
+	if err != nil {
+		t.Fatalf("find workspace prune command: %v", err)
+	}
+	if prune.Flags().Lookup("stale") == nil {
+		t.Fatal("workspace prune must retain the --stale compatibility flag")
+	}
+	if err := prune.RunE(prune, nil); err != nil {
+		t.Fatalf("workspace prune without flags: %v", err)
+	}
+	if gotOperation != "workspace.prune" || gotPayload["stale"] != true || gotPayload["apply"] != false {
+		t.Fatalf("operation=%q payload=%#v; want stale-only dry-run", gotOperation, gotPayload)
+	}
+}
+
 func TestWorkspaceLinkCommandExistsAndRequiresRole(t *testing.T) {
 	var gotOperation string
 	var gotPreferDaemon bool
