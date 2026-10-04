@@ -65,3 +65,33 @@ evidence:
 | TC-DAE-024 | negativo | RF-DAE-002 | `daemon perf-smoke` devuelve `ok=false` tipado si working set, private bytes o handles superan el umbral configurado |
 | TC-DAE-025 | positivo | RF-DAE-002 | `admin export --format toon` y `admin export --summary --format toon` serializan telemetria agent-readable sin payloads crudos |
 | TC-DAE-026 | positivo | RF-DAE-002 | `admin export --summary` agrega `recommendations` y usage-doctor actions derivadas de telemetria sanitizada sin cambiar raw events ni exponer payloads |
+| TC-DAE-027 | positivo | RF-DAE-005 | `mi-lsp stats --by-client --days 7 --format json` agrupa llamadas e informa éxito, p50/p90 de latencia y bytes, y fallback sin contenido de consultas |
+| TC-DAE-028 | negativo | RF-DAE-005 | `--days 0` se rechaza; fallo de almacenamiento/consulta no se representa falsamente como actividad cero |
+
+```toon
+block_id: tp-dae-stats-cases
+kind: planned-test-map
+source_of_truth: RF-DAE-005
+status: planned_not_executed
+campaign_status: NOT_RUN
+imports:
+  - .docs/wiki/04_RF/RF-DAE-005.md
+cases:
+  by_client_aggregates:
+    id: TC-DAE-027
+    status: planned
+    oracle: [calls_and_ok_pct, p50_p90_latency, p50_p90_bytes, fallback_pct, no_query_content]
+  invalid_days_and_storage_failure:
+    id: TC-DAE-028
+    status: planned
+    oracle: [nonpositive_days_rejected, storage_error_not_reported_as_empty_usage]
+verify:
+  - authorized FINAL_VERIFY runs bounded stats aggregation tests
+stop_if:
+  - stats_exposes_query_or_file_content
+  - storage_failure_is_presented_as_zero_activity
+evidence:
+  - internal/cli/stats.go
+  - internal/daemon/state_store.go
+  - .docs/wiki/06_pruebas/TP-DAE.md
+```
