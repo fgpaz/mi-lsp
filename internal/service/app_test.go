@@ -1211,7 +1211,6 @@ func TestIndexRunDocsOnlyRebuildsDocsWithoutReplacingCatalog(t *testing.T) {
 		t.Fatalf("SaveProjectFile: %v", err)
 	}
 	writeWorkspaceFile(t, root, "src/App.csproj", `<Project Sdk="Microsoft.NET.Sdk"></Project>`)
-	writeSpecBackendGovernanceFixture(t, root)
 	writeWorkspaceFile(t, root, ".docs/wiki/04_RF/RF-IDX-008.md", "# RF-IDX-008\n\nThis document will be deleted.\n")
 	writeWorkspaceFile(t, root, ".docs/wiki/04_RF/RF-IDX-009.md", "# RF-IDX-009\n\nRebuild docs without touching code catalog.\n")
 
@@ -1306,7 +1305,6 @@ func TestIndexStartWaitCreatesSucceededJobAndGeneration(t *testing.T) {
 	}
 	writeWorkspaceFile(t, root, "go.mod", "module example.com/fixture\n\ngo 1.23\n")
 	writeWorkspaceFile(t, root, "main.go", "package main\n\nfunc main() {}\n")
-	writeSpecBackendGovernanceFixture(t, root)
 
 	if _, err := workspace.RegisterWorkspace(alias, model.WorkspaceRegistration{
 		Name:      alias,
@@ -1457,7 +1455,6 @@ func TestWorkspaceStatusWarnsWhenDocsOnlyRecoveryLeavesCodeCatalogAbsent(t *test
 		t.Fatalf("SaveProjectFile: %v", err)
 	}
 	writeWorkspaceFile(t, root, "src/App.csproj", `<Project Sdk="Microsoft.NET.Sdk"></Project>`)
-	writeSpecBackendGovernanceFixture(t, root)
 	writeWorkspaceFile(t, root, ".docs/wiki/04_RF/RF-IDX-010.md", "# RF-IDX-010\n\nDocs-only recovery should warn when code catalog is absent.\n")
 
 	if _, err := workspace.RegisterWorkspace(alias, model.WorkspaceRegistration{
