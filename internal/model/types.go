@@ -40,6 +40,7 @@ type QueryOptions struct {
 	Verbose             bool   `json:"verbose,omitempty"`
 	ClientName          string `json:"client_name,omitempty"`
 	SessionID           string `json:"session_id,omitempty"`
+	Harness             string `json:"harness,omitempty"`
 	BackendHint         string `json:"backend_hint,omitempty"`
 	AllowCrossWorkspace bool   `json:"allow_cross_workspace,omitempty"`
 	Compress            bool   `json:"compress,omitempty"`
@@ -1183,6 +1184,13 @@ type AccessEvent struct {
 	FailureStage     string    `json:"failure_stage,omitempty"`
 	HintCode         string    `json:"hint_code,omitempty"`
 	TruncationReason string    `json:"truncation_reason,omitempty"`
+	// BytesOut is the size in bytes of the response written to the caller
+	// (envelope JSON or grep stdout). It never carries content.
+	BytesOut int `json:"bytes_out,omitempty"`
+	// Harness is the agent role/harness reported through MI_LSP_HARNESS
+	// (for example the subagent agent_type). Free of content by contract.
+	Harness string `json:"harness,omitempty"`
+	QStages int    `json:"q_stages,omitempty"`
 	// FallbackReasonCode is the closed-set intent-fallback reason code (see
 	// ValidIntentFallbackReasonCode) taken by this operation, when any. It is
 	// sanitized against the same allowlist at both write and read time.

@@ -178,6 +178,9 @@ func NewRootCommand() *cobra.Command {
 		newDoctorCommand(state),
 		newSkillsCommand(state),
 		newSeedCommand(state),
+		newGrepCommand(state),
+		newStatsCommand(),
+		newUsageReportCommand(),
 	)
 	return root
 }
@@ -201,6 +204,7 @@ func (s *rootState) queryOptions(cmd *cobra.Command, operation string, payload m
 		Verbose:             s.verbose,
 		ClientName:          s.clientName,
 		SessionID:           s.sessionID,
+		Harness:             telemetry.HarnessFromEnv(),
 		BackendHint:         s.backendHint,
 		AllowCrossWorkspace: s.allowCrossWorkspace,
 		Compress:            s.compress,
