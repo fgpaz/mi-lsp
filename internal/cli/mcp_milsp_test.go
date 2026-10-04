@@ -8,6 +8,7 @@ import (
 )
 
 func TestMCPMilspBuildArgv(t *testing.T) {
+	t.Setenv("MI_LSP_CLIENT_NAME", "")
 	got, err := mcp.BuildArgv("milsp", map[string]any{
 		"q": "sym Run | read", "contract_version": "q-v1", "workspace": "ws",
 		"budget": 1000, "session_id": "s1",

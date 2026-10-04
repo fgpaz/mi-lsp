@@ -142,11 +142,18 @@ func (a *App) callSemanticWorker(ctx context.Context, registration model.Workspa
 	done := make(chan callResult, 1)
 	go func() {
 		response, err := a.Semantic.Call(callCtx, registration, request)
-		cancelCall()
 		if warmup {
 			a.finishTSRefsWarmup(registration, request, warmupState, err)
 		}
 		done <- callResult{response, err}
+	}()
+	timedOut := false
+	defer func() {
+		// A timed-out warm-up is deliberately allowed to continue in its own
+		// bounded context; all other exits release the semantic call context.
+		if !timedOut || !warmup {
+			cancelCall()
+		}
 	}()
 	timer := time.NewTimer(timeout)
 	defer timer.Stop()
@@ -154,8 +161,10 @@ func (a *App) callSemanticWorker(ctx context.Context, registration model.Workspa
 	case result := <-done:
 		return result.response, result.err
 	case <-timer.C:
+		timedOut = true
 		return model.WorkerResponse{}, &semanticTimeoutError{After: timeout, Warmup: warmup}
 	case <-ctx.Done():
+		timedOut = true
 		return model.WorkerResponse{}, ctx.Err()
 	}
 }
@@ -318,8 +327,7 @@ func (a *App) finalizeRefs(ctx context.Context, registration model.WorkspaceRegi
 	a.attachRefCallers(ctx, registration, items, symbol)
 	attachRefContext(registration.Root, items, contextLines)
 	env.Items = items
-	if len(items) == 0 {
-		env.Ok = true
+	if len(items) == 0 && env.Ok {
 		env.Degraded = false
 		env.FallbackUsed = ""
 		env.Reason = model.ReasonNoMatches

@@ -22,7 +22,7 @@ func TestQItemProjectionFieldsYMarcadores(t *testing.T) {
 	it := QItem{ID: "s1:a.go#F@11111111", Name: "F", File: "a.go", Line: 4, Stale: true, Seen: true, Text: "x y"}
 	row := it.Project([]string{"name", "text"})
 	raw, _ := json.Marshal(row)
-	if string(raw) != `{"name":"F","text":"x y","stale":true,"seen":true}` {
+	if string(raw) != `{"name":"F","text":"x y","rev":"rev:11111111","stale":true,"seen":true}` {
 		t.Fatalf("got %s", raw)
 	}
 	if _, ok := row.Get("file"); ok {

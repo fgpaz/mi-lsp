@@ -302,6 +302,12 @@ func (a *App) textReferenceFallback(ctx context.Context, registration model.Work
 		warnings = append(warnings, "text search stopped at its time budget; results may be partial")
 	}
 	env := model.Envelope{Ok: true, Workspace: registration.Name, Backend: "text", Items: items, Warnings: warnings, Stats: model.Stats{Files: len(items)}}
+	if diagnostics.TimedOut {
+		env.Ok = false
+		env.Partial = len(items) > 0
+		env.Reason = "timeout"
+		env.Error = &model.EnvelopeError{Kind: "semantic", Code: "timeout", ReasonCode: "timeout", Message: "text reference search timed out", Stage: "text_search"}
+	}
 	if !codeOnly && len(items) > 0 {
 		env.MarkDegraded(model.ReasonLanguageUnsupported, model.FallbackText)
 	}
