@@ -283,6 +283,64 @@ En un container, el módulo Go se observa una sola vez desde el checkout y usa e
 - Todo selector explícito que contenga el separador `\` se rechaza antes de cualquier normalización de separadores; el fallback a `go.mod` solo aplica al selector vacío.
 - Los campos embebidos Go de structs (`T`, `*T`, `pkg.T`, `*pkg.T` e instanciaciones genéricas) se emiten como declaraciones respaldadas por `go/types` (`*types.Var`) y conservan una referencia tipada al tipo embebido cuando es local. Si falta información del compilador, se registra omisión o unresolved y el batch permanece parcial; `ReadyForStaging` no se relaja.
 
+## Frontera pública de Git y generaciones
+
+`mi-lsp nav git-frontier --workspace <alias> --format json [--base <ref>]` expone una instantánea read-only para consumidores que necesitan comparar el checkout observado con las generaciones publicadas. No indexa, repara ni muta el workspace.
+
+```toon
+harness_protocol: SDD-HARNESS-v1
+source_protocol: SDD-WIKI-SOURCE-v1
+doc_id: TECH-GRAPH-NATIVE
+block_id: TECH-GRAPH-NATIVE.git-frontier
+kind: public-read-contract
+audience: llm-first
+source_of_truth: this
+status: implemented_slice
+imports:
+  - .docs/wiki/04_RF/RF-GPH-007.md
+  - .docs/wiki/06_pruebas/TP-GPH.md
+command: mi-lsp nav git-frontier --workspace <alias> --format json [--base <ref>]
+result:
+  git_commit: resolved_HEAD_or_null
+  git_base: resolved_explicit_base_or_upstream_then_origin_main_or_null
+  git_frontier: sha256_protocol_v1_or_null
+  generations: {docs: published_id_or_null, catalog: published_id_or_null, graph: published_id_or_null}
+  generation_reasons: typed_reason_per_missing_generation_or_freshness
+  coherence: [coherent, degraded, incompatible]
+  graph_freshness: [current, stale, unavailable]
+  unavailable: typed_reason_by_unavailable_field
+frontier_digest:
+  domain_separator: mi-lsp-git-frontier-v1
+  fields: [base, merge_base, head, committed_diff_since_merge_base, tracked_diff_against_HEAD, untracked_nonignored_files]
+  diff_mode: [binary, no_external_diff]
+  untracked_paths: normalized_slash_and_sorted
+  untracked_content: regular_file_bytes_or_symlink_target_without_following
+  framing: length_prefixed_name_and_content_size
+  algorithm: sha256
+read_semantics:
+  resolve_workspace: read_only
+  index_database: open_existing_read_only
+  refresh_repair_or_reindex: forbidden
+  missing_evidence: null_plus_typed_reason
+  inferred_generation_ids: forbidden
+coherence_rule:
+  coherent: docs_and_catalog_published_and_graph_current
+  incompatible: explicit_invalid_graph_generation_only
+  otherwise: degraded
+freshness_mapping:
+  current: graph_current
+  stale: graph_stale_or_lagging
+  unavailable: absent_or_unreadable_or_invalid_freshness
+verify:
+  - .docs/wiki/06_pruebas/TP-GPH.md::TC-GPH-077
+  - .docs/wiki/06_pruebas/TP-GPH.md::TC-GPH-078
+evidence:
+  - internal/cli/git_frontier.go
+  - internal/cli/git_frontier_test.go
+```
+
+`unavailable` nunca equivale a éxito: los consumidores comparan solo datos observados y fallan cerrado si el digest, una generación o la frescura requerida no está disponible. Los oráculos y casos negativos están en [[TP-GPH]].
+
 ## Observacion Roslyn, sellado y normalizacion de unresolved
 
 El worker entrega el `GraphObservationBatch` ya canonico pero no sellado. El adapter puede validar canonicalidad de entrada; el core, despues del rebase al namespace global, es el unico owner de `SealGraphObservationBatch` y del gate `ReadyForStaging`. No se acepta que un batch no canonico o no sellado llegue al store. En Roslyn, instancias repetidas de simbolos semánticamente equivalentes emiten un unico nodo canonico y su evidencia; los registros exactamente duplicados se normalizan defensivamente, mientras que una misma referencia con identidad contractual distinta sigue siendo invalida y falla cerrado.

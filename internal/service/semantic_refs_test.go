@@ -5,6 +5,8 @@ import (
 	"errors"
 	"path/filepath"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -140,10 +142,11 @@ func TestFindRefsUsesCatalogLanguageAndAnchor(t *testing.T) {
 
 	env := runRefs(t, root, alias, fake, map[string]any{"symbol": "Target"})
 
-	if len(fake.requests()) != 1 || fake.requests()[0].BackendType != "gopls" {
-		t.Fatalf("calls = %#v, want a single gopls call (no roslyn)", fake.requests())
+	calls := fake.requests()
+	if len(calls) != 1 || calls[0].BackendType != "gopls" {
+		t.Fatalf("calls = %#v, want a single gopls call (no roslyn)", calls)
 	}
-	payload := fake.requests()[0].Payload
+	payload := calls[0].Payload
 	if payload["file"] != "demo.go" || intFromAny(payload["line"], 0) != 3 {
 		t.Fatalf("anchor payload = %#v, want catalog definition demo.go:3", payload)
 	}
@@ -231,8 +234,9 @@ func TestFindRefsRoslynErrorFallsBackToText(t *testing.T) {
 
 	env := runRefs(t, root, alias, fake, map[string]any{"symbol": "Helper"})
 
-	if fake.requests()[0].BackendType != "roslyn" {
-		t.Fatalf("backend = %q, want roslyn for a C# symbol", fake.requests()[0].BackendType)
+	calls := fake.requests()
+	if calls[0].BackendType != "roslyn" {
+		t.Fatalf("backend = %q, want roslyn for a C# symbol", calls[0].BackendType)
 	}
 	items := envItems(t, env)
 	if !env.Ok || !env.Degraded || env.Reason != model.ReasonLSPError || env.FallbackUsed != "text" || len(items) == 0 {
@@ -276,8 +280,8 @@ func TestFindRefsNonCodeFileIsLanguageUnsupported(t *testing.T) {
 			}
 		})
 	}
-	if len(fake.requests()) != 0 {
-		t.Fatalf("no semantic backend should start for non-code files, got %#v", fake.requests())
+	if calls := fake.requests(); len(calls) != 0 {
+		t.Fatalf("no semantic backend should start for non-code files, got %#v", calls)
 	}
 }
 
@@ -348,8 +352,8 @@ func TestFindRefsRoslynWithoutEntrypointFallsBackToText(t *testing.T) {
 
 	env := runRefs(t, root, alias, fake, map[string]any{"symbol": "Helper"})
 
-	if len(fake.requests()) != 0 {
-		t.Fatalf("no worker call expected without entrypoint, got %#v", fake.requests())
+	if calls := fake.requests(); len(calls) != 0 {
+		t.Fatalf("no worker call expected without entrypoint, got %#v", calls)
 	}
 	if !env.Ok || !env.Degraded || env.Reason != model.ReasonLSPError || len(envItems(t, env)) != 1 {
 		t.Fatalf("env = ok %v degraded %v reason %q items %d", env.Ok, env.Degraded, env.Reason, len(envItems(t, env)))
@@ -498,11 +502,113 @@ func TestFindRefsSemanticTimeoutFallsBackToTextAndCoolsDown(t *testing.T) {
 	if err != nil {
 		t.Fatalf("second nav.refs: %v", err)
 	}
-	if len(fake.requests()) != 1 {
-		t.Fatalf("cooldown must skip the backend on the next call, calls = %d", len(fake.requests()))
+	if calls := fake.requests(); len(calls) != 1 {
+		t.Fatalf("cooldown must skip the backend on the next call, calls = %d", len(calls))
 	}
 	if env.Backend != "text" || !env.Degraded || env.Reason != model.ReasonLSPError || !strings.Contains(strings.Join(env.Warnings, " "), "cooldown") {
 		t.Fatalf("second env = backend %q degraded %v reason %q warnings %v", env.Backend, env.Degraded, env.Reason, env.Warnings)
+	}
+}
+
+func TestFindRefsTSWarmupReturnsDegradedTextFallback(t *testing.T) {
+	t.Setenv("MI_LSP_REFS_TIMEOUT", "8s")
+	source := "export function Target() { return 1; }\nexport function Caller() { return Target(); }\n"
+	root, alias := setupRefsWorkspace(t, []string{"typescript"}, false, map[string]string{"src/app.ts": source}, []model.SymbolRecord{
+		{FilePath: "src/app.ts", Name: "Target", Kind: "function", StartLine: 1, EndLine: 1, Language: "typescript"},
+	})
+	release := make(chan struct{})
+	t.Cleanup(func() { close(release) })
+	fake := &fakeSemanticCaller{callFn: func(context.Context, model.WorkspaceRegistration, model.WorkerRequest) (model.WorkerResponse, error) {
+		<-release
+		return model.WorkerResponse{Ok: true, Backend: "tsserver"}, nil
+	}}
+	app := New(root, fake)
+	request := model.CommandRequest{Operation: "nav.refs", Context: model.QueryOptions{Workspace: alias, MaxItems: 20}, Payload: map[string]any{"symbol": "Target"}}
+
+	env, err := app.Execute(context.Background(), request)
+	if err != nil {
+		t.Fatalf("nav.refs: %v", err)
+	}
+	items := envItems(t, env)
+	if !env.Ok || !env.Degraded || env.Backend != "text" || env.FallbackUsed != "text" || len(items) == 0 {
+		t.Fatalf("cold result lost its degraded text status: ok=%v degraded=%v backend=%q fallback=%q items=%d", env.Ok, env.Degraded, env.Backend, env.FallbackUsed, len(items))
+	}
+	if items[0]["origin"] != model.ItemOriginText {
+		t.Fatalf("fallback origin = %#v, want text", items[0]["origin"])
+	}
+	if !strings.Contains(strings.Join(env.Warnings, " "), "tsserver is still warming") {
+		t.Fatalf("missing warm-up warning: %v", env.Warnings)
+	}
+}
+
+func TestTSRefsWarmupSurvivesRequestAndEnablesSemanticRetry(t *testing.T) {
+	source := "export function Target() { return 1; }\n"
+	root, alias := setupRefsWorkspace(t, []string{"typescript"}, false, map[string]string{"src/app.ts": source}, []model.SymbolRecord{
+		{FilePath: "src/app.ts", Name: "Target", Kind: "function", StartLine: 1, EndLine: 1, Language: "typescript"},
+	})
+	release := make(chan struct{})
+	var releaseOnce sync.Once
+	releaseWarmup := func() { releaseOnce.Do(func() { close(release) }) }
+	t.Cleanup(releaseWarmup)
+	started := make(chan struct{})
+	probeCancellation := make(chan struct{})
+	backgroundContextErr := make(chan error, 1)
+	warmupFinished := make(chan struct{})
+	var calls atomic.Int32
+	fake := &fakeSemanticCaller{callFn: func(ctx context.Context, _ model.WorkspaceRegistration, _ model.WorkerRequest) (model.WorkerResponse, error) {
+		if calls.Add(1) == 1 {
+			close(started)
+			<-probeCancellation
+			backgroundContextErr <- ctx.Err()
+			if ctx.Err() != nil {
+				return model.WorkerResponse{}, ctx.Err()
+			}
+			<-release
+			close(warmupFinished)
+		}
+		return model.WorkerResponse{Ok: true, Backend: "tsserver", Items: []map[string]any{{"file": "src/app.ts", "line": 1, "origin": "semantic"}}}, nil
+	}}
+	app := New(root, fake)
+	request := model.CommandRequest{Operation: "nav.refs", Context: model.QueryOptions{Workspace: alias, MaxItems: 20}, Payload: map[string]any{"symbol": "Target"}}
+	ctx, cancel := context.WithCancel(context.Background())
+	first, err := app.Execute(ctx, request)
+	if err != nil {
+		cancel()
+		t.Fatalf("first nav.refs: %v", err)
+	}
+	select {
+	case <-started:
+	case <-time.After(time.Second):
+		cancel()
+		t.Fatal("tsserver warm-up did not start")
+	}
+	cancel()
+	close(probeCancellation)
+	if ctxErr := <-backgroundContextErr; ctxErr != nil {
+		t.Fatalf("request cancellation reached detached tsserver warm-up: %v", ctxErr)
+	}
+	if !first.Degraded || first.Backend != "text" || first.FallbackUsed != "text" || len(envItems(t, first)) == 0 {
+		t.Fatalf("first result must be visibly degraded text: degraded=%v backend=%q fallback=%q", first.Degraded, first.Backend, first.FallbackUsed)
+	}
+	releaseWarmup()
+	<-warmupFinished
+
+	second, err := app.Execute(context.Background(), request)
+	if err != nil {
+		t.Fatalf("second nav.refs: %v", err)
+	}
+	secondItems := envItems(t, second)
+	if second.Backend != "tsserver" || second.Degraded || len(secondItems) == 0 || secondItems[0]["origin"] != model.ItemOriginSemantic || calls.Load() != 2 {
+		t.Fatalf("semantic retry = backend %q degraded %v items %#v calls %d", second.Backend, second.Degraded, secondItems, calls.Load())
+	}
+}
+
+func TestSemanticRefsFallbackBudgetForWarmup(t *testing.T) {
+	if got := semanticRefsFallbackBudget(&semanticTimeoutError{Warmup: true}); got != 1200*time.Millisecond {
+		t.Fatalf("warm-up fallback budget = %s, want 1.2s", got)
+	}
+	if got := semanticRefsFallbackBudget(&semanticTimeoutError{}); got != refsTimedOutTextBudget {
+		t.Fatalf("regular fallback budget = %s, want %s", got, refsTimedOutTextBudget)
 	}
 }
 

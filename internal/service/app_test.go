@@ -61,8 +61,10 @@ type fakeSemanticCaller struct {
 }
 
 func (f *fakeSemanticCaller) Call(ctx context.Context, workspace model.WorkspaceRegistration, request model.WorkerRequest) (model.WorkerResponse, error) {
+	recorded := request
+	recorded.Payload = clonePayload(request.Payload)
 	f.mu.Lock()
-	f.calls = append(f.calls, request)
+	f.calls = append(f.calls, recorded)
 	f.mu.Unlock()
 	if f.callFn != nil {
 		return f.callFn(ctx, workspace, request)
@@ -624,8 +626,8 @@ func TestNavContext_NonCodeFileReturnsTextSliceWithoutSemanticCall(t *testing.T)
 	if env.Backend != "text" {
 		t.Fatalf("backend = %q, want text", env.Backend)
 	}
-	if len(semantic.requests()) != 0 {
-		t.Fatalf("semantic caller should not be used for non-code files, got %d calls", len(semantic.requests()))
+	if calls := semantic.requests(); len(calls) != 0 {
+		t.Fatalf("semantic caller should not be used for non-code files, got %d calls", len(calls))
 	}
 
 	items, ok := env.Items.([]map[string]any)
@@ -709,11 +711,12 @@ func TestNavContext_MergesSemanticMetadataWithSlice(t *testing.T) {
 	if _, ok := item["slice_text"].(string); !ok {
 		t.Fatalf("slice_text missing from %#v", item)
 	}
-	if len(semantic.requests()) != 1 {
-		t.Fatalf("semantic caller calls = %d, want 1", len(semantic.requests()))
+	calls := semantic.requests()
+	if len(calls) != 1 {
+		t.Fatalf("semantic caller calls = %d, want 1", len(calls))
 	}
-	if semantic.requests()[0].BackendType != "roslyn" {
-		t.Fatalf("backend type = %q, want roslyn", semantic.requests()[0].BackendType)
+	if calls[0].BackendType != "roslyn" {
+		t.Fatalf("backend type = %q, want roslyn", calls[0].BackendType)
 	}
 }
 
@@ -2276,8 +2279,8 @@ func TestSemanticTsserverCooldownSkipsRepeatedFailedStarts(t *testing.T) {
 	if env.Backend != "text" {
 		t.Fatalf("first backend = %q, want text fallback", env.Backend)
 	}
-	if len(fake.requests()) != 1 {
-		t.Fatalf("first call count = %d, want 1", len(fake.requests()))
+	if calls := fake.requests(); len(calls) != 1 {
+		t.Fatalf("first call count = %d, want 1", len(calls))
 	}
 
 	env, err = app.Execute(context.Background(), request)
@@ -2287,8 +2290,8 @@ func TestSemanticTsserverCooldownSkipsRepeatedFailedStarts(t *testing.T) {
 	if env.Backend != "catalog" && env.Backend != "text" {
 		t.Fatalf("second backend = %q, want fallback backend", env.Backend)
 	}
-	if len(fake.requests()) != 1 {
-		t.Fatalf("cooldown should skip repeated tsserver start, call count = %d, want 1", len(fake.requests()))
+	if calls := fake.requests(); len(calls) != 1 {
+		t.Fatalf("cooldown should skip repeated tsserver start, call count = %d, want 1", len(calls))
 	}
 	if !strings.Contains(strings.Join(env.Warnings, " "), "cooldown") {
 		t.Fatalf("expected cooldown warning, got %v", env.Warnings)

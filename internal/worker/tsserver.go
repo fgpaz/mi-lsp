@@ -233,7 +233,7 @@ func (c *TsserverClient) sendEvent(command string, arguments map[string]any) (in
 		"command":   command,
 		"arguments": arguments,
 	}
-	return c.sequence, writeTSFrame(c.stdin, message)
+	return c.sequence, writeTSServerRequest(c.stdin, message)
 }
 
 func (c *TsserverClient) sendRequest(ctx context.Context, command string, arguments map[string]any) (json.RawMessage, error) {
@@ -261,17 +261,22 @@ func (c *TsserverClient) sendRequest(ctx context.Context, command string, argume
 	}
 }
 
-func writeTSFrame(writer io.Writer, payload any) error {
+// writeTSServerRequest envía solicitudes JSON delimitadas por línea; las
+// respuestas de tsserver mantienen el framing Content-Length de readTSFrame.
+func writeTSServerRequest(writer io.Writer, payload any) error {
 	body, err := json.Marshal(payload)
 	if err != nil {
 		return err
 	}
-	header := fmt.Sprintf("Content-Length: %d\r\n\r\n", len(body))
-	if _, err := writer.Write([]byte(header)); err != nil {
+	body = append(body, '\n')
+	written, err := writer.Write(body)
+	if err != nil {
 		return err
 	}
-	_, err = writer.Write(body)
-	return err
+	if written != len(body) {
+		return io.ErrShortWrite
+	}
+	return nil
 }
 
 func readTSFrame(reader *bufio.Reader) (tsserverEnvelope, error) {
@@ -285,8 +290,8 @@ func readTSFrame(reader *bufio.Reader) (tsserverEnvelope, error) {
 		if line == "" {
 			break
 		}
-		if strings.HasPrefix(strings.ToLower(line), "content-length:") {
-			value := strings.TrimSpace(strings.TrimPrefix(line, "Content-Length:"))
+		if separator := strings.IndexByte(line, ':'); separator >= 0 && strings.EqualFold(strings.TrimSpace(line[:separator]), "Content-Length") {
+			value := strings.TrimSpace(line[separator+1:])
 			contentLength, err = strconv.Atoi(value)
 			if err != nil {
 				return tsserverEnvelope{}, err

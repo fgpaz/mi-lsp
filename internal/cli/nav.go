@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -26,6 +27,21 @@ func newNavCommand(state *rootState) *cobra.Command {
 Includes text search, symbol lookup, outline, references,
 context retrieval, dependency analysis, and service exploration.`,
 	}
+
+	var gitFrontierBase string
+	gitFrontierCommand := &cobra.Command{
+		Use:   "git-frontier",
+		Short: "Report git and index generations for the current workspace",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if len(args) > 0 {
+				return fmt.Errorf("git-frontier does not accept positional arguments")
+			}
+			cwd, _ := os.Getwd()
+			result := newGitFrontierResult(cmd.Context(), state.workspace, cwd, gitFrontierBase)
+			return json.NewEncoder(cmd.OutOrStdout()).Encode(result)
+		},
+	}
+	gitFrontierCommand.Flags().StringVar(&gitFrontierBase, "base", "", "Git base ref; defaults to upstream or origin/main")
 
 	symbolsCommand := &cobra.Command{
 		Use:   "symbols <file>",
@@ -767,7 +783,7 @@ with their reason and preserve the same graph generation when available.`,
 	evidenceCommand := newNavEvidenceCommand(state)
 
 	graphCommands := newGraphQueryCommands(state)
-	command.AddCommand(symbolsCommand, findCommand, refsCommand, overviewCommand, outlineCommand, askCommand, recallCommand, packCommand, routeCommand, wikiCommand, evidenceCommand, governanceCommand, wikiRootCommand, serviceCommand, searchCommand, contextCommand, depsCommand, multiReadCommand, batchCommand, relatedCommand, workspaceMapCommand, diffContextCommand, affectedCommand, flowSliceCommand, changePackCommand, prepareCommand, editPlanCommand, traceCommand, intentCommand, explainChangeCommand, newNavSuggestCommand(state))
+	command.AddCommand(gitFrontierCommand, symbolsCommand, findCommand, refsCommand, overviewCommand, outlineCommand, askCommand, recallCommand, packCommand, routeCommand, wikiCommand, evidenceCommand, governanceCommand, wikiRootCommand, serviceCommand, searchCommand, contextCommand, depsCommand, multiReadCommand, batchCommand, relatedCommand, workspaceMapCommand, diffContextCommand, affectedCommand, flowSliceCommand, changePackCommand, prepareCommand, editPlanCommand, traceCommand, intentCommand, explainChangeCommand, newNavSuggestCommand(state))
 	command.AddCommand(graphCommands...)
 	return command
 }
