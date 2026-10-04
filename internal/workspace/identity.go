@@ -43,6 +43,8 @@ func (e *WorkspaceSelectorError) Error() string {
 		return fmt.Sprintf("workspace selector %q was not found", selector)
 	case WorkspaceSelectorNotDirectory:
 		return fmt.Sprintf("workspace selector %q is not a directory", selector)
+	case "invalid_workspace":
+		return "explicit_incomplete: reason_code=invalid_workspace; linked worktree has no registered main repository"
 	default:
 		if selector == "" {
 			return "workspace selector failed"

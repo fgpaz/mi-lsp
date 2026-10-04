@@ -381,7 +381,7 @@ func workspaceHygieneWarnings(report workspace.WorkspaceDoctorReport) []string {
 }
 
 func (a *App) enrichWorkspaceReadiness(ctx context.Context, report workspace.WorkspaceDoctorReport) workspace.WorkspaceDoctorReport {
-	registrations, err := workspace.ListWorkspaces()
+	registrations, err := workspace.ListWorkspacesReadOnly()
 	if err != nil {
 		return report
 	}
@@ -724,16 +724,26 @@ func (a *App) workspaceStatus(ctx context.Context, request model.CommandRequest)
 }
 
 func (a *App) resolveWorkspaceStatusTarget(request model.CommandRequest) (model.WorkspaceRegistration, model.ProjectFile, string, string, []string, string, error) {
-	resolution, err := workspace.ResolveWorkspaceSelection(request.Context.Workspace, request.Context.CallerCWD)
+	resolution, err := workspace.ResolveWorkspaceSelectionReadOnlyPhysical(request.Context.Workspace, request.Context.CallerCWD)
 	if err != nil {
 		return model.WorkspaceRegistration{}, model.ProjectFile{}, "", "", nil, "", err
 	}
 	registration := resolution.Registration
 	source := firstNonEmpty(request.Context.WorkspaceSource, string(resolution.Source))
 	selector := registration.Name
-	warnings := []string{}
+	warnings := append([]string{}, resolution.Warnings...)
 	hint := ""
 	var project model.ProjectFile
+
+	if requestedSelector := strings.TrimSpace(request.Context.Workspace); requestedSelector != "" && strings.TrimSpace(request.Context.CallerCWD) != "" {
+		if callerResolution, callerErr := workspace.ResolveWorkspaceSelectionReadOnlyPhysical("", request.Context.CallerCWD); callerErr == nil {
+			selectedRoot, selectedOK := workspace.ComparableWorkspacePath(registration.Root)
+			callerRoot, callerOK := workspace.ComparableWorkspacePath(callerResolution.Registration.Root)
+			if selectedOK && callerOK && selectedRoot != callerRoot {
+				warnings = append(warnings, fmt.Sprintf("workspace mismatch: --workspace %q resolves to %q, but caller cwd %q is inside workspace %q at %q; use --workspace %s for the current repo or pass --allow-cross-workspace if this cross-workspace query is intentional", requestedSelector, registration.Root, strings.TrimSpace(request.Context.CallerCWD), callerResolution.Registration.Name, callerResolution.Registration.Root, callerResolution.Registration.Name))
+			}
+		}
+	}
 
 	if source == string(workspace.ResolutionSourceLastWorkspace) {
 		if root, ok := callerWorkspaceRoot(request.Context.CallerCWD); ok && !sameWorkspaceStatusPath(root, registration.Root) {

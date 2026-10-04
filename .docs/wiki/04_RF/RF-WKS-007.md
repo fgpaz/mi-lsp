@@ -114,10 +114,18 @@ resolution:
   explicit_path:
     missing: error
     stale_registration: error
+    linked_worktree:
+      main_registered: resolve_main_alias_without_worktree_registration
+      ordinary_read_only_unregistered: resolve_main_alias_when_available
+      status_probe: preserve_physical_root_read_only_without_registration_or_index
+      main_unregistered: explicit_incomplete_invalid_workspace_without_index
   omitted_selector:
     git_top_level: determine_first_in_normal_and_read_only
     registered_git_root: exact_canonical_match_preferred
-    unregistered_git_root: auto_register_then_resolve  # ver RF-WKS-007-B03 auto-registro; synthetic_read_only_root solo con opt-out
+    unregistered_git_root: auto_register_then_resolve_within_home_only
+    linked_worktree: resolve_registered_main_root_without_registering_worktree
+    linked_worktree_main_unregistered: explicit_incomplete_invalid_workspace_without_index
+    synthetic_read_only_root: forbidden_for_linked_worktree
     lexical_parent_fallback_for_git: forbidden
     non_git_directory: preserve_registered_containment
     precedence: [git_top_level, caller_cwd, same_root_alias_policy, last_workspace]
@@ -134,11 +142,13 @@ resolution:
 Un selector explícito inválido o stale nunca puede convertirse silenciosamente en el workspace del `caller_cwd`. La resolución omitida conserva la precedencia contextual existente y expone `source` y warnings suficientes para auditoría.
 Los aliases heredados que apunten a la misma raíz física siguen siendo válidos y se conservan; la presentación compacta no los migra, elimina ni redirige. Un alias explícito desconocido o stale sigue fallando sin sustituirse por el workspace del cwd.
 
+Cuando el `caller_cwd` o un path explícito está dentro de un linked worktree, la resolución compara `git dir` y `git common dir` como rutas absolutas, canónicas y normalizadas. Si el root principal está registrado, devuelve ese alias y no crea ni indexa un alias para el linked worktree. Si no lo está, devuelve `explicit_incomplete` con `reason_code=invalid_workspace` y no inicia indexación. `MI_LSP_AUTOREGISTER=force` opta explícitamente por registrar el linked worktree como raíz física independiente.
+
 ### Auto-registro en la primera consulta
 
 Las operaciones que requieren workspace (`nav.*`, `index.*`, `info`, `workspace.status`) ejecutan un único camino compartido por CLI y daemon (`App.Execute`, `internal/service/auto_register.go` y `internal/workspace/autoregister.go`), de modo que sirve igual a `mi-lsp mcp`, al plugin claude-code-milsp y al hijo persistente de mi-mcp.
 
-La especificación normativa del auto-registro, incluida la respuesta cuando el repo aún no tiene commits y el alcance del opt-out, está agrupada en el bloque TOON `RF-WKS-007-B08`. Los casos de verificación se definen normativamente en `TP-WKS` (`TC-WKS-048..060`). El enlace al flag CLI se apoya en evidencia de código; `TC-WKS-049` no declara cobertura E2E de su propagación.
+La especificación normativa del auto-registro, incluida la respuesta cuando el repo aún no tiene commits, el alcance del opt-out, linked worktrees, force y GC del registry, está agrupada en el bloque TOON `RF-WKS-007-B08`. Los casos de verificación se definen normativamente en `TP-WKS` (`TC-WKS-048..060`, `TC-WKS-064..066`). El enlace al flag CLI se apoya en evidencia de código; `TC-WKS-049` no declara cobertura E2E de su propagación.
 
 ## [RF-WKS-007-B04] Estado híbrido portable/local
 
@@ -238,14 +248,20 @@ block_id: RF-WKS-007-B08
 kind: normative
 source_of_truth: RF-WKS-007
 verify:
-  - go test -count=1 ./internal/service ./internal/workspace
+  - go test -count=1 ./internal/service ./internal/workspace ./internal/cli
   - mi-lsp nav wiki validate-source --workspace mi-lsp --format toon
 evidence:
   - .docs/wiki/04_RF/RF-WKS-007.md
   - .docs/wiki/06_pruebas/TP-WKS.md
   - internal/cli/root.go
+  - internal/cli/workspace.go
+  - internal/cli/workspace_test.go
   - internal/service/auto_register.go
   - internal/service/auto_register_test.go
+  - internal/service/probe.go
+  - internal/service/probe_test.go
+  - internal/service/workspace_ops.go
+  - internal/service/workspace_resolution_test.go
   - internal/workspace/autoregister.go
   - internal/workspace/autoregister_test.go
   - internal/workspace/registry.go
@@ -255,13 +271,37 @@ selector:
   omitted: caller_cwd
   requested_path: existing_path_that_is_not_a_registered_alias
   auto_register_only_inside_unregistered_git_repository: true
+  auto_register_default_scope: inside_HOME_only
+  outside_HOME_or_tmp: no_auto_register_by_default
+  linked_worktree:
+    identify_by: normalized_absolute_canonical_git_common_dir_and_git_dir
+    when_main_registered: resolve_main_alias_without_worktree_registration
+    when_main_unregistered: explicit_incomplete_reason_code_invalid_workspace_without_index
+    force_override: MI_LSP_AUTOREGISTER=force
+    force_bypass: default_scope_and_linked_worktree_restrictions
+    force_log: required_unambiguous_warning
+registry_gc:
+  triggers: [workspace_list, workspace_resolve]
+  removable_only_when: root_is_definitively_missing
+  ambiguous_permission_or_io_errors: retain_and_report_skipped
+  cleanup_log: sanitized_counts_without_paths
+  empty_root: retain_and_report_skipped
+  stale_selector_diagnostic: capture_before_gc_and_preserve_WKS_SELECTOR_STALE
+  diagnostic_snapshot_without_gc: [workspace_doctor, workspace_hygiene_preview, workspace_hygiene_readiness, read_only_resolution]
+  ordinary_read_only_git_failure_for_linked_marker: registered_containment_only
+  status_probe_linked_worktree: preserve_physical_root_read_only_without_registration_or_index
+  status_probe_git_failure_for_linked_marker: preserve_physical_root_without_parent_state_inspection
+  forbidden_side_effects: [delete_directory, delete_cache, delete_worktree]
+  manual_command: mi-lsp workspace prune --stale
 registration:
   root: git_top_level
   project_toml:
     create_only_if_missing: true
     preserve_existing: true
   last_workspace_changed: false
-  excluded: [$HOME, filesystem_root, path_outside_git_repository]
+  default_excluded: [$HOME, filesystem_root, path_outside_git_repository, path_outside_HOME, path_inside_temp_dir]
+  force_bypasses: [path_outside_HOME, path_inside_temp_dir, linked_worktree_default_resolution]
+  force_never_bypasses: [$HOME, filesystem_root, path_outside_git_repository]
   probe_registers: false
 alias:
   default: git_root_basename
@@ -301,5 +341,5 @@ opt_out:
   daemon_request_path: executeOperation_passes_request_to_daemon.ExecuteWithDialTimeout
   cli_daemon_e2e_coverage: pending_no_automated_oracle
   service_test_inputs: [request.Context.NoAutoRegister, MI_LSP_NO_AUTO_REGISTER=1]
-case_ids: [TC-WKS-048, TC-WKS-049, TC-WKS-050, TC-WKS-051, TC-WKS-052, TC-WKS-053, TC-WKS-054, TC-WKS-055, TC-WKS-056, TC-WKS-057, TC-WKS-058, TC-WKS-059, TC-WKS-060]
+case_ids: [TC-WKS-048, TC-WKS-049, TC-WKS-050, TC-WKS-051, TC-WKS-052, TC-WKS-053, TC-WKS-054, TC-WKS-055, TC-WKS-056, TC-WKS-057, TC-WKS-058, TC-WKS-059, TC-WKS-060, TC-WKS-064, TC-WKS-065, TC-WKS-066, TC-WKS-067]
 ```
