@@ -186,12 +186,14 @@ func runAnnotated(ctx context.Context, rgPath string, opts Options, info argInfo
 		return Result{ExitCode: 2, Mode: "raw"}
 	}
 
+	annotationCtx, cancelAnnotation := context.WithTimeout(ctx, opts.Budget)
+	defer cancelAnnotation()
 	proc := &processor{
 		cwd:    opts.Cwd,
 		info:   info,
 		m:      newMatcher(info),
 		budget: opts.Budget,
-		ctx:    ctx,
+		ctx:    annotationCtx,
 	}
 	result := Result{Mode: "annotated"}
 	if root, ok := resolveCatalogRoot(searchStart(info, opts.Cwd)); ok {

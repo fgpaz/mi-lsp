@@ -1190,6 +1190,7 @@ type AccessEvent struct {
 	// Harness is the agent role/harness reported through MI_LSP_HARNESS
 	// (for example the subagent agent_type). Free of content by contract.
 	Harness string `json:"harness,omitempty"`
+	QStages int    `json:"q_stages,omitempty"`
 	// FallbackReasonCode is the closed-set intent-fallback reason code (see
 	// ValidIntentFallbackReasonCode) taken by this operation, when any. It is
 	// sanitized against the same allowlist at both write and read time.

@@ -179,6 +179,7 @@ func NewRootCommand() *cobra.Command {
 		newSkillsCommand(state),
 		newSeedCommand(state),
 		newGrepCommand(state),
+		newStatsCommand(),
 		newUsageReportCommand(),
 	)
 	return root
