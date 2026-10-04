@@ -9,6 +9,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/fgpaz/mi-lsp/internal/language"
@@ -24,6 +25,7 @@ const (
 	maxRefsTextCandidates = 2000
 
 	defaultRefsTimeout  = 8 * time.Second
+	tsRefsWarmupTimeout = 500 * time.Millisecond
 	refsTimeoutCooldown = 2 * time.Minute
 	// refsTextBudget bounds the text fallback; refsTimedOutTextBudget is the
 	// tighter bound used right after the semantic backend already spent its own.
@@ -32,10 +34,69 @@ const (
 )
 
 // semanticTimeoutError reports that the semantic backend did not answer in time.
-type semanticTimeoutError struct{ After time.Duration }
+type semanticTimeoutError struct {
+	After  time.Duration
+	Warmup bool
+}
+
+type tsRefsWarmupState struct {
+	mu    sync.RWMutex
+	ready bool
+}
+
+func (s *tsRefsWarmupState) markReady() {
+	s.mu.Lock()
+	s.ready = true
+	s.mu.Unlock()
+}
+
+func (s *tsRefsWarmupState) isReady() bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.ready
+}
+
+func (a *App) beginTSRefsWarmup(registration model.WorkspaceRegistration, request model.WorkerRequest) (*tsRefsWarmupState, bool) {
+	if request.BackendType != "tsserver" {
+		return nil, false
+	}
+	key := strings.Join([]string{registration.Root, request.RepoRoot, request.EntrypointID, request.BackendType}, "\x00")
+	state := &tsRefsWarmupState{}
+	actual, loaded := a.tsRefsWarmups.LoadOrStore(key, state)
+	state, _ = actual.(*tsRefsWarmupState)
+	if state == nil {
+		return nil, false
+	}
+	return state, !loaded && !state.isReady()
+}
+
+func (a *App) finishTSRefsWarmup(registration model.WorkspaceRegistration, request model.WorkerRequest, state *tsRefsWarmupState, err error) {
+	if state == nil {
+		return
+	}
+	if err == nil {
+		state.markReady()
+		a.clearBackendCooldown(registration.Root, request.RepoRoot, request.BackendType)
+		return
+	}
+	cooldown, reason := refsTimeoutCooldown, "tsserver warm-up failed; using fallback until cooldown expires"
+	if shouldCooldownSemanticBackend(request.BackendType, err) {
+		cooldown, reason = 5*time.Minute, "tsserver is unavailable; using fallback until cooldown expires"
+	}
+	a.markBackendCooldown(registration.Root, request.RepoRoot, request.BackendType, reason, cooldown)
+	key := strings.Join([]string{registration.Root, request.RepoRoot, request.EntrypointID, request.BackendType}, "\x00")
+	a.tsRefsWarmups.CompareAndDelete(key, state)
+}
 
 func (e *semanticTimeoutError) Error() string {
 	return fmt.Sprintf("semantic backend timed out after %s", e.After.Round(time.Second))
+}
+
+func semanticRefsFallbackBudget(timeout *semanticTimeoutError) time.Duration {
+	if timeout != nil && timeout.Warmup {
+		return 1200 * time.Millisecond
+	}
+	return refsTimedOutTextBudget
 }
 
 // refsSemanticTimeout reads MI_LSP_REFS_TIMEOUT (a duration like "8s" or plain
@@ -65,22 +126,35 @@ func (a *App) callSemanticWorker(ctx context.Context, registration model.Workspa
 		return a.Semantic.Call(ctx, registration, request)
 	}
 	timeout := refsSemanticTimeout(ctx)
+	warmupState, warmup := a.beginTSRefsWarmup(registration, request)
+	callCtx := ctx
+	cancelCall := func() {}
+	if warmup {
+		callCtx, cancelCall = context.WithTimeout(context.WithoutCancel(ctx), defaultRefsTimeout)
+		if timeout > tsRefsWarmupTimeout {
+			timeout = tsRefsWarmupTimeout
+		}
+	}
 	type callResult struct {
 		response model.WorkerResponse
 		err      error
 	}
 	done := make(chan callResult, 1)
 	go func() {
-		response, err := a.Semantic.Call(ctx, registration, request)
+		response, err := a.Semantic.Call(callCtx, registration, request)
+		if warmup {
+			a.finishTSRefsWarmup(registration, request, warmupState, err)
+		}
 		done <- callResult{response, err}
 	}()
 	timer := time.NewTimer(timeout)
 	defer timer.Stop()
 	select {
 	case result := <-done:
+		cancelCall()
 		return result.response, result.err
 	case <-timer.C:
-		return model.WorkerResponse{}, &semanticTimeoutError{After: timeout}
+		return model.WorkerResponse{}, &semanticTimeoutError{After: timeout, Warmup: warmup}
 	case <-ctx.Done():
 		return model.WorkerResponse{}, ctx.Err()
 	}

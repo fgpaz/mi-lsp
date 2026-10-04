@@ -1,0 +1,175 @@
+packet:
+  id: milsp-frontier-20261003
+  purpose: cierre_sanitizado
+  repository: mi-lsp
+  branch: feat/milsp-frontier-20261003
+  head: 461f01afd80d3727d0abf3c0ac9885d1b28e749b
+  verification_basis_head: 461f01afd80d3727d0abf3c0ac9885d1b28e749b
+  tracker: none
+  tracker_mode: local-only
+  session_contract: waived_by_same_repo_FAST_repository_policy
+  source_authority: .docs/wiki
+  confidentiality:
+    raw_logs_included: false
+    secrets_included: false
+    pii_included: false
+    phi_included: false
+
+scope_and_authority:
+  authorization_source: milsp-fase2-A-milsp.md (coordinator brief, section 3)
+  authorized_scope:
+    - public git_frontier and generation/coherence/freshness tuple
+    - cold TypeScript refs with persistent warm-up and real semantic quality
+    - code, tests, benchmark, wiki and this single sanitized closure packet
+  commit: authorized_as_required_for_requested_push_and_PR
+  push: authorized_after_audit_and_pre_push_guard
+  pull_request_mutation: authorized_create_PR_after_push
+  merge: reserved_for_mios_mcp_lsp_jefe
+  branch_worktree_or_stash_deletion: not_authorized
+  owner: principal_coordinator
+  preservation:
+    stash: "stash@{0}: preserve-frontier-before-origin-main-rebase-20261003; retained"
+    branch_disposition: pr-open_after_authorized_publication
+    active_pr: not_created_yet
+    cleanup_state: active_followup_pending_coordinator_merge
+    branches_and_worktrees: retained
+  cleanup_authority: none
+  pre_push_guard:
+    command: pwsh -NoProfile -File infra/git/Invoke-PrePushGuard.ps1 -CollaborationMode solo
+    verdict: Approved
+    fast_forward_safe: true
+    secrets_scan: passed_zero_matches
+  completion_handoff:
+    disposition: authorized_push_and_PR
+    merge_owner: mios-mcp-lsp-jefe
+    preserve_worktree_and_branch_while_PR_open: true
+    remote_publish: pending_execution
+
+reported_verification:
+  provenance: independent_verifier_native_agent_reports_relayed_by_goal_owner
+  go_race:
+    command: go_test_race_all_packages
+    result: PASS
+    internal_service_elapsed_seconds: 183.197
+    basis_head: 461f01afd80d3727d0abf3c0ac9885d1b28e749b
+    binary_sha256: b922e46427d3d6df0a5eea27901d85cf46b25557287b92b28cc50ab7374a375d
+    go_hash: b1ca41c8ed7d478ed0b7405545af3523e5bca5e347ffad85f20da8a98a58b9ee
+    rerun_by_packet_author: false
+  ts_cold_refs:
+    runs: 5
+    accepted_runs: 5
+    result: PASS
+    cold_latency_median_ms: 652.05
+    cold_latency_max_ms: 928.51
+    semantic_reference_count: 13
+    expected_reference_count: 6
+    expected_references_present: 6
+    posterior_latency_range_ms: [103.43, 2872.51]
+    posterior_latencies_ms: [105.06, 103.43, 610.01, 2872.51, 2039.85]
+    under_2s_target_applies_to: first_response_only
+    degraded_false_omission: supported_by_primitives_v2_omitempty_contract
+    rerun_by_packet_author: false
+  frontier:
+    mismatch: INVALIDATED
+    unavailable_fail_closed: PASS
+    reported_pre_evidence_docfix_digest17: 0e9881d1626d72651a6c1ace5afd599789f2684b694118c474e9f0b7ce27dfed
+    final_digest17: not_recomputed_after_evidence_docfix
+  trace_audit:
+    prior_status: WITHFOLLOWUPS
+    only_reported_followup: declared_evidence_bindings_in_two_RF_documents
+    binding_followup_applied: true
+    independent_targeted_audit: APPROVED_WITH_FOLLOWUPS
+    followups:
+      - TC-GPH-077_partial_automated_coverage
+      - TC-GPH-078_planned_extended_assertions
+    packet_corrections:
+      - accepted_benchmark_posterior_latency_range_corrected
+      - authorization_and_provenance_aligned_with_brief_and_verifier
+    final_audit_readback: PASS
+    audited_implementation_go_hash: b1ca41c8ed7d478ed0b7405545af3523e5bca5e347ffad85f20da8a98a58b9ee
+    no_test_status_promoted: true
+
+trace_runtime:
+  nav_wiki_trace:
+    RF-GPH-007: found_but_trace_incomplete
+    RF-QRY-002: found_but_trace_incomplete
+    coverage: 0
+    explicit_links: []
+    test_links: []
+    graph_freshness: unknown
+    docs_generation: none
+  wiki_search_index: empty_or_unavailable
+  implication_graph: partial
+  unavailable_selectors_fallback: declared_source_metadata_and_direct_document_reads
+  inferred_edges_added: false
+  rule: preserve declared bindings separately from observed support; do not invent RS, ADR, or business-impact links
+
+path_trace:
+  - path: .docs/wiki/04_RF/RF-GPH-007.md
+    declared: [FL-GPH-02, TP-GPH]
+    evidence_binding: added git-frontier command, navigation, and test paths to its existing evidence block
+    status: partial
+  - path: .docs/wiki/04_RF/RF-QRY-002.md
+    declared: [FL-QRY-01, RF-QRY-002 implements/tests/evidence metadata]
+    evidence_binding: worker implementation and framing-test paths are declared
+    status: contract_and_binding_updated
+  - path: .docs/wiki/06_pruebas/TP-GPH.md
+    declared: [RF-GPH-007, TECH-GRAPH-NATIVE, TC-GPH-077, TC-GPH-078]
+    observed: implementation evidence and test coverage references
+    status: TC-GPH-077_partial; TC-GPH-078_planned
+  - path: .docs/wiki/06_pruebas/TP-QRY.md
+    declared: [RF-QRY-002, TC-QRY-192, TC-QRY-193]
+    observed: warm-up/framing contract and benchmark acceptance criteria
+    status: contracts_preserved; benchmark_result_recorded_above
+  - path: .docs/wiki/07_tech/TECH-GRAPH-NATIVE.md
+    declared: [RF-GPH-007, TP-GPH, TC-GPH-077, TC-GPH-078]
+    observed: direct git-frontier implementation and test evidence
+    status: document_accepted-design; git-frontier_block_implemented_slice
+  - path: benchmarks/rg-parity/README.md
+    declared: []
+    observed: supporting instructions for TC-QRY-193
+    status: support_only
+  - path: benchmarks/rg-parity/bench_ts_cold_refs.py
+    declared: [TP-QRY/TC-QRY-193]
+    observed: isolated daemon, cold latency, warm-up and semantic-quality measurement
+    status: benchmark_reported_pass_5_of_5
+  - path: internal/cli/nav.go
+    declared: [RF-GPH-007_evidence, RF-QRY-016_implements]
+    observed: public CLI command registration and routing
+    status: declaration_added_to_RF-GPH-007
+  - path: internal/cli/git_frontier.go
+    declared: [RF-GPH-007_evidence, TECH-GRAPH-NATIVE, TP-GPH/TC-GPH-077_and_078]
+    observed: public read-only frontier implementation
+    status: implementation_slice; acceptance_not_promoted
+  - path: internal/cli/git_frontier_test.go
+    declared: [RF-GPH-007_evidence, TECH-GRAPH-NATIVE, TP-GPH/TC-GPH-077_and_078]
+    observed: focused frontier tests
+    status: TC-GPH-077_partial; TC-GPH-078_planned
+  - path: internal/service/app.go
+    declared: [RF-GPH-007_evidence, RF-QRY-016_implements]
+    observed: application wiring and runtime support
+    status: supporting_implementation
+  - path: internal/service/app_test.go
+    declared: [RF-QRY-002_tests, RF-QRY-016_tests]
+    observed: service tests and fake-caller synchronization/snapshots
+    status: go_race_gate_reported_pass
+  - path: internal/service/semantic.go
+    declared: [RF-QRY-002_implements]
+    observed: semantic request routing
+    status: go_race_gate_reported_pass
+  - path: internal/service/semantic_refs.go
+    declared: [RF-QRY-002_implements, FL-QRY-01]
+    observed: tsserver warm-up, fallback, timeout and cooldown behavior
+    status: go_race_gate_reported_pass
+  - path: internal/service/semantic_refs_test.go
+    declared: [RF-QRY-002_tests, TP-QRY/TC-QRY-192]
+    observed: fake warm-up/fallback/retry cases
+    status: tests_reported_pass; not a runtime benchmark by themselves
+  - path: internal/worker/tsserver.go
+    declared: [RF-QRY-002_implements_and_evidence]
+    observed: stdin JSONL requests and stdout Content-Length response framing
+    status: declaration_added_to_RF-QRY-002
+  - path: internal/worker/tsserver_test.go
+    declared: [RF-QRY-002_tests_and_evidence, TP-QRY/TC-QRY-192]
+    observed: JSONL, short-write, Content-Length, case-insensitive header and missing-header cases
+    status: declaration_added; gate_result_reported_pass

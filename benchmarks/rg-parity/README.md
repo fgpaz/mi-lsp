@@ -52,6 +52,27 @@ Los repos son workspaces registrados en mi-lsp y se consultan con `cwd` en la ra
 - Error: salida distinta de cero, `ok:false` o timeout; se registra el código (`error.code`, `timeout`, `invalid_json`, `exit_N`).
 - Falso vacío: el oráculo de rg tiene resultados (o, en intent, hay archivo esperado) y mi-lsp devuelve 0 items o error.
 
+## Latencia fría de refs TypeScript
+
+`bench_ts_cold_refs.py` separa la latencia de la primera respuesta de la calidad semántica posterior. Para cada intento crea un `HOME` temporal, copia allí el registro existente (sin modificar el registro del usuario), inicia un daemon aislado desde la raíz del workspace y ejecuta dos consultas en la misma App persistente. No indexa ni registra workspaces. La primera respuesta puede ser un fallback textual degradado durante el warm-up: su latencia se informa, pero no cuenta como calidad semántica. La segunda consulta debe devolver `backend=tsserver`, items exclusivamente `origin=semantic` y todas las referencias esperadas explícitas; el campo `degraded` ausente o explícitamente `false` cuenta como no degradado según `primitives-v2` (`omitempty`), pero `null` no cuenta como `false`. El proceso y runtime TypeScript deben estar disponibles antes de ejecutar el benchmark:
+
+```bash
+python3 benchmarks/rg-parity/bench_ts_cold_refs.py \
+  --milsp <binario-mi-lsp> --workspace pi-subagents \
+  --workspace-root ~/repos/mios/pi-subagents \
+  --symbol resolvePiLaunchToolPlan \
+  --file src/runs/shared/child-tool-plan.ts \
+  --expected-ref src/api/preflight.ts:403 \
+  --expected-ref src/runs/shared/child-launch.ts:194 \
+  --expected-ref src/runs/background/async-execution.ts:1157 \
+  --expected-ref src/runs/background/async-execution.ts:1977 \
+  --expected-ref src/runs/background/subagent-runner.ts:817 \
+  --expected-ref src/runs/background/subagent-runner.ts:1177 \
+  --npm-prefix /tmp/milsp-ts-runtime --runs 5
+```
+
+`--expected-ref` se puede repetir para ampliar el oráculo; los seis valores del ejemplo corresponden a call sites TypeScript reales del checkout curado y se comprueban todos, no solo uno. Si una referencia se mueve, actualiza explícitamente el oráculo. `--npm-prefix` es opcional cuando el runtime ya se resuelve por las rutas habituales. El JSON separa `first_latency_under_2s`, `warmup_observation`, `warmup_success` y `semantic_quality`; esta última incluye las ubicaciones esperadas presentes y ausentes. Una primera respuesta degradada de texto sí puede cumplir el umbral de latencia cuando el fallback está tipado (`fallback_used=text`, reason presente, origins solo `text`); nunca cuenta como warm-up semántico ni como calidad. La aceptación global requiere la primera latencia válida menor de 2000 ms, warm-up semántico posterior en la misma App y todas las referencias esperadas en resultados exclusivamente semánticos no degradados. Envelope inicial inválido/no tipado, warm-up fallido o referencias esperadas ausentes producen rechazo con causas explícitas. `degraded_flag_present` distingue la omisión contractual de `false` de un `degraded: null`, que se rechaza. El arranque/parada del daemon queda fuera de la latencia de consulta y se informa por separado. Este benchmark se prepara para FINAL_VERIFY y no se ejecuta durante BUILD.
+
 ## Notas
 
 - Los resultados dependen del estado del índice de cada workspace al momento de correr. Si un workspace no tiene catálogo publicado, `nav find` devuelve `index_not_ready`; eso cuenta como falso vacío y como error.

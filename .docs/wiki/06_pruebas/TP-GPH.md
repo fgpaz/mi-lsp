@@ -180,6 +180,21 @@ cases:
     when: mi-lsp index (selección automática) y, aparte, con entrypoint explícito
     then: el índice responde ok=true, publica catálogo y docs y omite el grafo con warning accionable (sin derivar identidad del path); con entrypoint explícito sigue siendo error; los errores de grafo salen tipados (code gph_*, stage graph_observation) y ningún error de index queda como index_generic (fallback index_failed)
     evidence: internal/indexer/graph_identity_unavailable_test.go; internal/cli/index_error_classification_test.go; internal/daemon/error_classification_test.go
+  - id: TC-GPH-077
+    type: positivo
+    status: partial
+    given: repo git con base y HEAD resolubles, cambios comprometidos, tracked staged/unstaged y archivos untracked no ignorados
+    when: mi-lsp nav git-frontier se ejecuta dos veces en el mismo snapshot
+    then: git_commit, git_base y git_frontier se resuelven; git_frontier es determinista e incorpora base, merge-base, HEAD, diff committed, diff tracked contra HEAD y contenidos untracked por ruta normalizada; cada clase de cambio altera el digest y la lectura no escribe ni repara el índice
+    status_detail: la prueba existente cubre repetibilidad, diff committed, tracked unstaged y untracked; faltan asserts del envelope público, staged, generaciones y ausencia de escrituras
+    evidence: internal/cli/git_frontier_test.go; internal/cli/git_frontier.go
+  - id: TC-GPH-078
+    type: negativo
+    status: planned
+    given: workspace no resoluble, Git/HEAD/base inaccesible, DB ausente o generación/frescura no publicada
+    when: mi-lsp nav git-frontier consulta la frontera pública
+    then: campos sin evidencia permanecen null o unavailable, coherence/freshness no simulan PASS y unavailable/generation_reasons llevan códigos tipados; no se derivan IDs ni digests de timestamps, paths o valores por defecto
+    evidence: internal/cli/git_frontier.go
 ```
 
 ## TP-GPH-001 - Identidad, NodeKey y cross-RID

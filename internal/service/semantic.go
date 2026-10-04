@@ -89,12 +89,18 @@ func (a *App) semanticCore(ctx context.Context, registration model.WorkspaceRegi
 			fallbackCtx := ctx
 			var timeoutErr *semanticTimeoutError
 			if errors.As(err, &timeoutErr) {
-				warnings = append(warnings, fmt.Sprintf("semantic backend timed out after %ds; served from text", int(timeoutErr.After.Seconds())))
+				if timeoutErr.Warmup {
+					warnings = append(warnings, "tsserver is still warming; returned bounded text results while semantic refs continue warming")
+				} else {
+					warnings = append(warnings, fmt.Sprintf("semantic backend timed out after %s; served from text", timeoutErr.After.Round(time.Millisecond)))
+				}
 				if request.Context.BackendHint == "" {
-					a.markBackendCooldown(registration.Root, workerRequest.RepoRoot, backendType, fmt.Sprintf("%s timed out recently; using text fallback for this repo until cooldown expires", backendType), refsTimeoutCooldown)
+					if !timeoutErr.Warmup {
+						a.markBackendCooldown(registration.Root, workerRequest.RepoRoot, backendType, fmt.Sprintf("%s timed out recently; using text fallback for this repo until cooldown expires", backendType), refsTimeoutCooldown)
+					}
 				}
 				var cancel context.CancelFunc
-				fallbackCtx, cancel = context.WithTimeout(ctx, refsTimedOutTextBudget)
+				fallbackCtx, cancel = context.WithTimeout(ctx, semanticRefsFallbackBudget(timeoutErr))
 				defer cancel()
 			} else {
 				warnings = append(warnings, semanticBackendWarning(backendType, err))
