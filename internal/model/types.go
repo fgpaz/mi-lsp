@@ -123,6 +123,7 @@ type Continuation struct {
 	Reason    string              `json:"reason"`
 	Next      ContinuationTarget  `json:"next"`
 	Alternate *ContinuationTarget `json:"alternate,omitempty"`
+	Cursor    string              `json:"cursor,omitempty"`
 }
 
 type MemoryPointer struct {
@@ -230,6 +231,9 @@ type Envelope struct {
 	GraphSchemaVersion int                 `json:"graph_schema_version,omitempty"`
 	DeterminismDigest  string              `json:"determinism_digest,omitempty"`
 	GraphFreshness     *GraphFreshness     `json:"graph_freshness,omitempty"`
+	Budget             *QBudget            `json:"budget,omitempty"`
+	Stages             []QStage            `json:"stages,omitempty"`
+	SessionMark        int64               `json:"session_mark,omitempty"`
 	Profile            OutputProfile       `json:"-"`
 }
 
