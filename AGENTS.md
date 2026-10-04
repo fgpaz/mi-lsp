@@ -65,7 +65,7 @@ Goal-shaped requests start with cheap `mi-lsp nav intent "<goal>"` discovery, th
 
 Readers follow bounded nodes and links, not repeated broad `rg` scans. Preserve typed fallback reasons and honest `unavailable`/`partial` results; distinguish candidates, declared bindings, and observed runtime data; surface stale graph state; and retain documented boundaries and wiki architecture locks. If mi-lsp is unavailable, use the existing fallback path only with that typed reason and no invented command or public API.
 
-A real invocation must produce runtime evidence only through existing native invocation plus mi-lsp session/operation evidence; do not add a recorder, fabricate savings, rewrite directives with tool regexes, or make a mandatory hook. After implementation, the goal owner performs one goal-level wiki drift check and owns any meaningful wiki update (no-op writes are forbidden), then `ps-trazabilidad`, then the independent read-only `ps-auditar-trazabilidad`. Keep one owner skill at a time, no per-leaf tests/audits, no second full-suite authorization, and no automatic push or deletion authority.
+A real invocation must produce runtime evidence only through existing native invocation plus mi-lsp session/operation evidence; do not add a recorder, fabricate savings, rewrite directives with tool regexes, or make a mandatory hook. An opt-out tool adapter is allowed: a hook may redirect a native search to a better equivalent only if it falls back to the original command and can be disabled by an environment variable; it must not fabricate evidence or savings, become mandatory, rewrite directives, or act as a recorder. After implementation, the goal owner performs one goal-level wiki drift check and owns any meaningful wiki update (no-op writes are forbidden), then `ps-trazabilidad`, then the independent read-only `ps-auditar-trazabilidad`. Keep one owner skill at a time, no per-leaf tests/audits, no second full-suite authorization, and no automatic push or deletion authority.
 
 ## FAST same-repo ceremony (almost zero)
 
@@ -150,4 +150,4 @@ Local semantic CLI for large .NET/C# and TypeScript workspaces.
 **Status**: Generated from AE-POLICY-PROJECTION-V2
 **Last Updated**: 2026-08-25
 **Source**: repo-policy.yaml + template.agents
-<!-- kernel_version: 908b4f44 -->
+<!-- kernel_version: 9feb898c -->
