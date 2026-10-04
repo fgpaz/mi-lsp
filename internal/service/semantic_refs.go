@@ -142,6 +142,7 @@ func (a *App) callSemanticWorker(ctx context.Context, registration model.Workspa
 	done := make(chan callResult, 1)
 	go func() {
 		response, err := a.Semantic.Call(callCtx, registration, request)
+		cancelCall()
 		if warmup {
 			a.finishTSRefsWarmup(registration, request, warmupState, err)
 		}
@@ -151,7 +152,6 @@ func (a *App) callSemanticWorker(ctx context.Context, registration model.Workspa
 	defer timer.Stop()
 	select {
 	case result := <-done:
-		cancelCall()
 		return result.response, result.err
 	case <-timer.C:
 		return model.WorkerResponse{}, &semanticTimeoutError{After: timeout, Warmup: warmup}

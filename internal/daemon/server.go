@@ -35,6 +35,7 @@ type Server struct {
 	stopped     chan struct{}
 	stopOnce    sync.Once
 	resultCache *resultCache
+	qSessions   *service.SessionState
 }
 
 // generateAdminToken creates a random 32-byte hex token for admin authentication.
@@ -71,6 +72,7 @@ func NewServerWithOptions(repoRoot string, maxWorkers int, idleTimeout time.Dura
 		inflight:    make(chan struct{}, options.MaxInflight),
 		stopped:     make(chan struct{}),
 		resultCache: newResultCache(),
+		qSessions:   newQSessionState(),
 		state: model.DaemonState{
 			PID:             os.Getpid(),
 			Endpoint:        defaultEndpoint(),
@@ -222,7 +224,19 @@ func (s *Server) handleConnectionContext(ctx context.Context, conn net.Conn) {
 	if s.isBackpressureLimited(request) {
 		defer s.releaseInflight()
 	}
-	response, err := s.handleRequestContext(ctx, request)
+	requestCtx := ctx
+	if request.Operation == "q" {
+		var cancel context.CancelFunc
+		requestCtx, cancel = context.WithCancel(ctx)
+		defer cancel()
+		go func() {
+			var probe [1]byte
+			if _, readErr := conn.Read(probe[:]); readErr != nil {
+				cancel()
+			}
+		}()
+	}
+	response, err := s.handleRequestContext(requestCtx, request)
 	if err != nil {
 		response = daemonErrorEnvelope(request, err, "daemon")
 	}
@@ -253,6 +267,8 @@ func (s *Server) handleRequestContext(ctx context.Context, request model.Command
 	}
 
 	switch request.Operation {
+	case "q":
+		return s.app.ExecuteQ(ctx, request, s.qSessions)
 	case "system.status":
 		// Default to 5 recent accesses for token efficiency.
 		// Opt-in to 20 with --telemetry flag or full context.
@@ -573,7 +589,7 @@ func isGraphQueryOperation(operation string) bool {
 
 func (s *Server) isBackpressureLimited(request model.CommandRequest) bool {
 	switch request.Operation {
-	case "nav.refs", "nav.context", "nav.deps", "nav.related", "nav.service", "nav.diff-context", "nav.batch", "nav.search", "nav.find", "nav.neighbors", "nav.callers", "nav.callees", "nav.path", "nav.explain", "nav.graph.stats", "nav.graph.status", "nav.graph.rank", "nav.graph.validate", "nav.intent", "nav.flow-slice", "nav.change-pack", "workspace.warm":
+	case "q", "nav.refs", "nav.context", "nav.deps", "nav.related", "nav.service", "nav.diff-context", "nav.batch", "nav.search", "nav.find", "nav.neighbors", "nav.callers", "nav.callees", "nav.path", "nav.explain", "nav.graph.stats", "nav.graph.status", "nav.graph.rank", "nav.graph.validate", "nav.intent", "nav.flow-slice", "nav.change-pack", "workspace.warm":
 		return true
 	case "nav.workspace-map":
 		return request.Context.Full

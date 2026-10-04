@@ -52,6 +52,8 @@ evidence:
 - RF-QRY-017
 - RF-QRY-020
 - RF-QRY-021
+- RF-QRY-022
+- RF-QRY-023
 - RF-QRY-024
 
 ## Casos
@@ -129,9 +131,16 @@ evidence:
 | TC-QRY-190 | negativo | RF-QRY-011 | `TestIntentMixWithCodeMarksDegradedWhenCatalogUnavailableForCodeQuestion` + `TestIntentCatalogUnavailableClassifiesSchemaAndSkipsNonCodeQuestions` + `TestIntentCodeQuestionWithUnpublishedCatalogIsDegradedNotSilent` + `TestIntentCodeQuestionWithMissingDatabaseIsOkAndDegraded`: `nav intent` con pregunta de código y catálogo no publicado, ausente o roto responde `ok=true`, docs, `degraded=true` y reason clasificado; sin señales de código no marca |
 | TC-QRY-191 | negativo | RF-IDX-001 | `TestClassifyCatalogUnavailableUsesRootForEmptyDB` + `TestCatalogHasNoTables` + `TestQuarantineLockIsExclusiveAndExpires` + `TestOpenWorkspaceDBForIndexDoesNotRenameWhenLockHeld` + `TestConcurrentColdStartNeverQuarantinesFreshDB` + `TestQuarantinePruneGroupsSetsByTimestamp`: base vacía = `index_not_ready`; cuarentena serializada por lock, nunca sobre una base fresca; poda por juegos |
 | TC-QRY-192 | positivo/negativo | RF-QRY-002 | `TestFindRefsTSWarmupReturnsDegradedTextFallback` + `TestTSRefsWarmupSurvivesRequestAndEnablesSemanticRetry`: en cold start la primera respuesta puede usar texto solo con `degraded=true`, `fallback_used=text` y `origin=text`; cancelar la petición no cancela el warm-up desacoplado y una consulta posterior devuelve backend/`origin=semantic` cuando este ya está listo. El protocolo asimétrico se cubre con `TestWriteTSServerRequestUsesJSONLines`, `TestWriteTSServerRequestRejectsShortWrite`, `TestReadTSFrameParsesContentLengthFramedOutput`, `TestReadTSFrameParsesCaseInsensitiveContentLength` y `TestReadTSFrameRejectsMissingContentLength`. Las pruebas con fake verifican estados y el framing, no miden rendimiento del runtime real; el objetivo <2 s requiere ejecutar el benchmark con Node y `typescript/lib/tsserver.js` disponibles y no se considera PASS por rapidez del fallback textual.\n| TC-QRY-193 | positivo/negativo | RF-QRY-002 | `benchmarks/rg-parity/bench_ts_cold_refs.py`: en un `HOME` aislado, informa `first_latency_under_2s`, `warmup_success` y `semantic_quality` por separado, con dos consultas en la misma App/daemon. Un fallback textual inicial solo cuenta para latencia si está tipado (`fallback_used=text`, reason presente, items `origin=text`); no cuenta como warm-up ni calidad. La aceptación global exige warm-up posterior con backend `tsserver`, `degraded` ausente o `false` según `primitives-v2` ([[RF-QRY-001]]), items solo semánticos y todas las referencias esperadas reales del oráculo presentes; un valor `null` no equivale a `false`.
-| TC-QRY-194 | positivo | RF-QRY-024 | `mi-lsp grep --rg-compat` preserva exactamente stdout y exit code del proceso rg para matches, ausencia de matches y error de argumentos |
-| TC-QRY-195 | positivo | RF-QRY-024 | `mi-lsp grep` anota solo coincidencias de código indexado en modo agente; sin índice, en archivos no-code o en modos de salida incompatibles devuelve la salida rg pura |
-| TC-QRY-196 | negativo | RF-QRY-024 | timeout o error de anotación no modifica ni suprime salida de rg, y la telemetría no guarda patrón ni texto encontrado |
+| TC-QRY-194 | positivo | RF-QRY-022 | IDs q-v1 incluyen workspace_id/kind/path, separan rev SHA-256 completa, escapan segmentos RFC 3986 y permanecen estables al cambiar contenido; el rev cambia y stale se informa |
+| TC-QRY-195 | positivo/negativo | RF-QRY-022 | resolver un id legacy dentro del workspace produce identidad q-v1 `stale:true`; id sin match produce `missing:true`; un workspace_id distinto falla cerrado |
+| TC-QRY-196 | positivo/negativo | RF-QRY-022 | `read` memoriza ID/rev por sesión sin texto crudo; repetición da `seen:true`, `fresh` retorna texto, `changed since` compara snapshot y LRU/idle limita estado |
+| TC-QRY-197 | positivo/negativo | RF-QRY-023 | parser q acepta quoting, opciones globales y máximo ocho etapas; sintaxis/verbos no soportados producen `stage_failed` tipado |
+| TC-QRY-198 | positivo/negativo | RF-QRY-022, RF-QRY-023 | timeout/cancelación end-to-end, prioridad cancelled > timeout > stage_failed, partial preservable, cursor HMAC/TTL/generation, y max_bytes medido sobre envelope completo con clipping UTF-8 |
+| TC-QRY-199 | positivo/compatibilidad | RF-QRY-023 | CLI `mi-lsp q`, dispatch daemon/directo y MCP Go `milsp` comparten contract_version q-v1; `milsp` precede el catálogo y los 13 `nav_*` permanecen disponibles |
+| TC-QRY-200 | positivo/compatibilidad | RF-QRY-023 | recetas iniciales y 13 alias nav tienen expansión q-v1 versionada, entradas válidas y errores tipados para nombres/argumentos inválidos |
+| TC-QRY-201 | positivo | RF-QRY-024 | `mi-lsp grep --rg-compat` preserva exactamente stdout y exit code del proceso rg para matches, ausencia de matches y error de argumentos |
+| TC-QRY-202 | positivo | RF-QRY-024 | `mi-lsp grep` anota solo coincidencias de código indexado en modo agente; sin índice, en archivos no-code o en modos de salida incompatibles devuelve la salida rg pura |
+| TC-QRY-203 | negativo | RF-QRY-024 | timeout o error de anotación no modifica ni suprime salida de rg, y la telemetría no guarda patrón ni texto encontrado |
 | TC-QRY-015 | positivo | RF-QRY-004 | incluye numeros de linea en contenido leido |
 | TC-QRY-016 | negativo | RF-QRY-004 | rechaza path traversal (`../../../etc/passwd`) |
 | TC-QRY-017 | positivo | RF-QRY-005 | ejecuta batch con operaciones paralelas y retorna todos los resultados |
@@ -450,15 +459,15 @@ imports:
   - .docs/wiki/04_RF/RF-QRY-024.md
 cases:
   rg_compat_exact_output:
-    id: TC-QRY-194
+    id: TC-QRY-201
     status: planned
     oracle: [stdout_byte_equal_to_rg, exit_code_equal_to_rg]
   indexed_match_annotation:
-    id: TC-QRY-195
+    id: TC-QRY-202
     status: planned
     oracle: [only_match_lines_annotated, rg_selection_and_order_preserved, no_index_raw_fallback]
   annotation_failure_and_privacy:
-    id: TC-QRY-196
+    id: TC-QRY-203
     status: planned
     oracle: [rg_output_and_exit_code_preserved, no_pattern_or_match_text_in_telemetry]
 verify:
