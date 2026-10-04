@@ -22,20 +22,23 @@ type QEdge struct {
 
 // QItem es el ítem interno de las primitivas. Se proyecta a QRow antes de salir.
 type QItem struct {
-	ID        string
-	Kind      string
-	Name      string
-	File      string
-	Line      int
-	EndLine   int
-	Origin    string
-	Lang      string
-	Parent    string
-	Signature string
-	Title     string
-	Layer     string
-	Score     int
-	Text      string
+	ID            string
+	Revision      string
+	TruncatedItem bool
+	Kind          string
+	Name          string
+	File          string
+	Line          int
+	EndLine       int
+	Origin        string
+	Lang          string
+	Parent        string
+	Signature     string
+	Title         string
+	Layer         string
+	Score         int
+	Text          string
+	Read          bool
 	// Estado de resolución y de sesión.
 	Stale   bool
 	Missing bool
@@ -45,8 +48,11 @@ type QItem struct {
 	In   string
 }
 
-// Rev devuelve el rev8 del id, si lo trae.
+// Rev devuelve la revisión SHA-256 separada del identificador.
 func (it QItem) Rev() string {
+	if it.Revision != "" {
+		return strings.TrimPrefix(it.Revision, "rev:")
+	}
 	if parsed, err := ParseID(it.ID); err == nil {
 		return parsed.Rev
 	}
@@ -54,7 +60,7 @@ func (it QItem) Rev() string {
 }
 
 // QFieldNames son los campos proyectables.
-var QFieldNames = []string{"id", "kind", "name", "file", "line", "end_line", "origin", "lang", "parent", "signature", "title", "layer", "score", "text", "edge", "in", "rev", "stale", "missing", "seen"}
+var QFieldNames = []string{"id", "rev", "kind", "name", "file", "path", "line", "end_line", "origin", "lang", "parent", "signature", "title", "layer", "score", "text", "edge", "in", "stale", "missing", "seen", "truncated_item"}
 
 // QFieldValid indica si name es un campo conocido de ítem.
 func QFieldValid(name string) bool {
@@ -103,13 +109,18 @@ func (it QItem) Field(name string) (any, bool) {
 		return it.In, it.In != ""
 	case "rev":
 		rev := it.Rev()
-		return rev, rev != ""
+		if rev == "" {
+			return nil, false
+		}
+		return "rev:" + rev, true
+	case "truncated_item":
+		return it.TruncatedItem, it.TruncatedItem
 	case "stale":
-		return true, it.Stale
+		return it.Stale, it.Stale
 	case "missing":
-		return true, it.Missing
+		return it.Missing, it.Missing
 	case "seen":
-		return true, it.Seen
+		return it.Seen, it.Seen
 	}
 	return nil, false
 }
@@ -121,8 +132,8 @@ type QRow struct {
 }
 
 // Project arma la fila de un ítem. fields vacío usa QDefaultFields. Siempre se
-// agregan los marcadores de estado (stale, missing, seen), y con la proyección
-// por defecto también edge, in y text cuando existen.
+// agregan los marcadores de estado (stale, missing, seen); edge e in se proyectan
+// por defecto y text solo tras `read`.
 func (it QItem) Project(fields []string) QRow {
 	row := QRow{vals: map[string]any{}}
 	add := func(name string) {
@@ -140,15 +151,21 @@ func (it QItem) Project(fields []string) QRow {
 		}
 		add("edge")
 		add("in")
-		add("text")
+		if it.Read {
+			add("text")
+		}
 	} else {
 		for _, name := range fields {
 			add(name)
 		}
 	}
+	if it.Stale || it.Seen {
+		add("rev")
+	}
 	add("stale")
 	add("missing")
 	add("seen")
+	add("truncated_item")
 	return row
 }
 

@@ -52,6 +52,8 @@ evidence:
 - RF-QRY-017
 - RF-QRY-020
 - RF-QRY-021
+- RF-QRY-022
+- RF-QRY-023
 
 ## Casos
 
@@ -277,6 +279,13 @@ evidence:
 | TC-QRY-153 | positivo | RF-QRY-020 | `TestSuggestNav`: Read/Grep/Glob con selector de simbolo mapean a un item `nav multi-read|search|find` con `argv`/`reason` separados y preservan backslashes Windows; Glob de path y tools desconocidas devuelven `items=[]` sin error |
 | TC-QRY-154 | positivo | RF-QRY-020 | `TestNavSuggestCommandEnvelope`: el comando expone `--tool`/`--args`, ejecuta local sin pasar por el dispatch de daemon y devuelve envelope estable `ok=true` |
 | TC-QRY-155 | negativo | RF-QRY-020 | `TestSuggestNav/invalid_json`: `--args` con JSON invalido devuelve error explicito en vez de degradar en silencio |
+| TC-QRY-194 | positivo | RF-QRY-022 | IDs q-v1 incluyen workspace_id/kind/path, separan rev SHA-256 completa, escapan segmentos RFC 3986 y permanecen estables al cambiar contenido; el rev cambia y stale se informa |
+| TC-QRY-195 | positivo/negativo | RF-QRY-022 | resolver un id legacy dentro del workspace produce identidad q-v1 `stale:true`; id sin match produce `missing:true`; un workspace_id distinto falla cerrado |
+| TC-QRY-196 | positivo/negativo | RF-QRY-022 | `read` memoriza ID/rev por sesión sin texto crudo; repetición da `seen:true`, `fresh` retorna texto, `changed since` compara snapshot y LRU/idle limita estado |
+| TC-QRY-197 | positivo/negativo | RF-QRY-023 | parser q acepta quoting, opciones globales y máximo ocho etapas; sintaxis/verbos no soportados producen `stage_failed` tipado |
+| TC-QRY-198 | positivo/negativo | RF-QRY-022, RF-QRY-023 | timeout/cancelación end-to-end, prioridad cancelled > timeout > stage_failed, partial preservable, cursor HMAC/TTL/generation, y max_bytes medido sobre envelope completo con clipping UTF-8 |
+| TC-QRY-199 | positivo/compatibilidad | RF-QRY-023 | CLI `mi-lsp q`, dispatch daemon/directo y MCP Go `milsp` comparten contract_version q-v1; `milsp` precede el catálogo y los 13 `nav_*` permanecen disponibles |
+| TC-QRY-200 | positivo/compatibilidad | RF-QRY-023 | recetas iniciales y 13 alias nav tienen expansión q-v1 versionada, entradas válidas y errores tipados para nombres/argumentos inválidos |
 
 ## TP-QRY Harness-first: planes, preview y telemetría
 

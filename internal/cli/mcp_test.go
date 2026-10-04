@@ -98,6 +98,11 @@ func TestMCPBuildArgv(t *testing.T) {
 		want []string
 	}{
 		{
+			tool: "milsp",
+			args: map[string]any{"q": "sym Run | read", "contract_version": "q-v1", "workspace": "ws", "budget": 1000, "session_id": "s1"},
+			want: []string{"q", "sym Run | read", "--format", "json", "--client-name", "mi-lsp-mcp", "--budget", "1000", "--session-id", "s1", "--workspace", "ws"},
+		},
+		{
 			tool: "nav_intent",
 			args: map[string]any{"question": "how does X work", "workspace": "ws", "top": 5, "offset": 2, "repo": "child"},
 			want: []string{"nav", "intent", "how does X work", "--format", "json", "--client-name", "mi-lsp-mcp", "--top", "5", "--offset", "2", "--repo", "child", "--workspace", "ws"},
@@ -346,7 +351,7 @@ func TestMCPToolSchemas(t *testing.T) {
 		t.Fatalf("ToolList: %v", err)
 	}
 	want := []string{
-		"nav_intent", "nav_route", "nav_pack", "nav_wiki", "nav_search", "nav_find",
+		"milsp", "nav_intent", "nav_route", "nav_pack", "nav_wiki", "nav_search", "nav_find",
 		"nav_refs", "nav_related", "nav_flow_slice", "nav_change_pack", "nav_affected",
 		"nav_multi_read", "nav_overview",
 	}
@@ -355,6 +360,7 @@ func TestMCPToolSchemas(t *testing.T) {
 	}
 	prefer := regexp.MustCompile(`(?i)Prefer this|Use when|DEFAULT first move`)
 	required := map[string][]string{
+		"milsp":           {"q"},
 		"nav_intent":      {"question"},
 		"nav_route":       {"task"},
 		"nav_pack":        {"task"},
@@ -455,10 +461,10 @@ func TestMCPStdioHandshake(t *testing.T) {
 	}
 	listResult := objectField(t, listMsg, "result")
 	tools, ok := listResult["tools"].([]any)
-	if !ok || len(tools) != 13 {
+	if !ok || len(tools) != 14 {
 		t.Fatalf("tools = %#v", listResult["tools"])
 	}
-	if tools[0].(map[string]any)["name"] != "nav_intent" {
+	if tools[0].(map[string]any)["name"] != "milsp" {
 		t.Fatalf("first tool = %#v", tools[0])
 	}
 	if tools[len(tools)-1].(map[string]any)["name"] != "nav_overview" {

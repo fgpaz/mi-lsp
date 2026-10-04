@@ -43,7 +43,7 @@ func TestQRowLine(t *testing.T) {
 	if !strings.HasPrefix(line, "s1:a.go#F@11111111  func  F  a.go:4") || !strings.Contains(line, "edge=callers<") {
 		t.Fatalf("line = %q", line)
 	}
-	text := QItem{ID: "r1:a.go:1-2@11111111", File: "a.go", Line: 1, Text: "l1\nl2"}.Project(nil).Line()
+	text := QItem{ID: "r1:a.go:1-2@11111111", File: "a.go", Line: 1, Text: "l1\nl2", Read: true}.Project(nil).Line()
 	if !strings.Contains(text, "\n    l1\n    l2") {
 		t.Fatalf("texto con sangría: %q", text)
 	}

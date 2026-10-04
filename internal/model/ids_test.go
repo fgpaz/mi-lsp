@@ -49,7 +49,7 @@ func TestParseIDCampos(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if id.Scheme != "s1" || id.File != "internal/a.go" || id.Name != "T.M" || id.Sig != "0f1e" || id.Rev != "deadbeef" {
+	if id.Scheme != IDSchemeSymbol || id.File != "internal/a.go" || id.Name != "T.M" || id.Sig != "0f1e" || id.Rev != "deadbeef" {
 		t.Fatalf("campos inesperados: %+v", id)
 	}
 	r, err := ParseID("r1:a/b.go:3-9@00112233")
@@ -137,5 +137,32 @@ func TestResolveSymbolIDSobrecargas(t *testing.T) {
 	rec, _, state = ResolveSymbolID(ID{Scheme: "s1", File: "a.cs", Name: "C.M", Rev: "11111111"}, cands, revOf)
 	if state != IDStateFresh || rec.StartLine != 1 {
 		t.Fatalf("sin sig debe elegir por rev: %+v %v", rec, state)
+	}
+}
+
+func TestStableQIDSeparatesIdentityAndRevision(t *testing.T) {
+	workspace := strings.Repeat("a", 64)
+	record := SymbolRecord{FilePath: "internal/service/app file.go", Name: "Execute", Parent: "App", QualifiedName: "internal/service/app file.go::App.Execute"}
+	rev := RevOf("func Execute() {}")
+	id := StableSymbolID(workspace, record, rev, false)
+	if strings.Contains(id.String(), "@") || strings.Contains(id.String(), "rev:") {
+		t.Fatalf("revision leaked into identity: %s", id.String())
+	}
+	if !strings.Contains(id.String(), "/internal/service/app%20file.go#App.Execute") {
+		t.Fatalf("path encoding: %s", id.String())
+	}
+	parsed, err := ParseID(id.String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if parsed.WorkspaceID != workspace || parsed.File != record.FilePath || parsed.Name != "App.Execute" {
+		t.Fatalf("parsed identity: %+v", parsed)
+	}
+	if id.Rev != rev {
+		t.Fatalf("revision=%s want %s", id.Rev, rev)
+	}
+	other := StableSymbolID(strings.Repeat("b", 64), record, rev, false)
+	if id.String() == other.String() {
+		t.Fatal("workspace identity must distinguish identical file/symbol names")
 	}
 }
