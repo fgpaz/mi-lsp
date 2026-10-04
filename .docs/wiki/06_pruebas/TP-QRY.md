@@ -480,4 +480,3 @@ evidence:
   - internal/cli/grep.go
   - .docs/wiki/06_pruebas/TP-QRY.md
 ```
-

@@ -64,6 +64,7 @@ Define el modelo canonico del daemon global, su governance UI workspace-first y 
 - Un runtime vivo por `(workspace_root, backend_type, entrypoint_id)`.
 - Aliases duplicados del mismo `workspace_root` pueden compartir runtime si backend y entrypoint coinciden.
 - Worktrees distintos del mismo repositorio no comparten runtime porque su `workspace_root` fisico es distinto aunque compartan `git common dir`.
+- El auto-registro identifica un linked worktree comparando rutas absolutas, canónicas y normalizadas de `git dir` y `git common dir`. Por defecto resuelve el workspace principal si ya está registrado, sin registrar ni indexar la raíz física del linked worktree; si no existe esa entrada, responde `explicit_incomplete` (`reason_code=invalid_workspace`) sin indexar. `MI_LSP_AUTOREGISTER=force` registra el linked worktree como root físico separado y deja un warning explícito.
 - Pools separados por backend:
   - `roslyn`
   - `tsserver`
@@ -113,7 +114,7 @@ result_cache:
 - Requests pesadas daemon-aware se acotan con `max_inflight`; saturacion devuelve `daemon/backpressure_busy`.
 - Result cache LRU (256 entradas, TTL 10 min): cachea read-only ops (nav.ask/search/pack/governance/route) keyed por sha256(workspace_root + generacion(mtime index.db) + op + payload canonico sin session_id). Sin error-caching. Disable con `MI_LSP_DAEMON_RESULT_CACHE=0`. Stats en `system.status.result_cache: {hits, misses, entries}`. Los logs HIT/MISS son diagnostico opt-in con `MI_LSP_DAEMON_RESULT_CACHE_DEBUG`; no forman parte del hot path normal.
 - Ranking owner-aware aplica `canonical_ceiling`: un owner canónico positivo no puede quedar debajo de ruido FTS de README genérico.
-- Workspace hygiene considera aliases con root vacío candidatos de poda segura para evitar selectores permanentemente rotos.
+- Workspace hygiene conserva aliases con root vacío como casos ambiguos; la recolección automática y `workspace prune --stale` solo remueven aliases cuando la raíz está definitivamente inexistente. Permisos y otros errores de I/O se reportan de forma sanitizada y no se borran directorios, cachés ni worktrees.
 - SQLite conserva un handle de escritura serializado (`MaxOpenConns=1`) y separa consultas en un pool read-only acotado (8 open/4 idle). Cada conexion de lectura recibe `_pragma=query_only(ON)` y `_pragma=foreign_keys(ON)` desde el DSN modernc antes de entrar al pool.
 - Presupuesto SLO local: `daemon perf-smoke` valida callers paralelos contra working set, private bytes y handles; cualquier excedente debe devolver envelope `ok=false` tipado y dejar warning accionable, no un pass degradado.
 

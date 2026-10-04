@@ -30,7 +30,7 @@ func ProbeWorkspace(ctx context.Context, options model.ProbeOptions) (model.Prob
 	report.Workspace.Selector = selector
 	report.Workspace.SelectorKind = selectorKind(selector)
 
-	resolution, err := workspace.ResolveWorkspaceSelectionReadOnly(selector, callerCWD)
+	resolution, err := workspace.ResolveWorkspaceSelectionReadOnlyPhysical(selector, callerCWD)
 	if err != nil {
 		var selectorErr *workspace.WorkspaceSelectorError
 		var resolutionErr *workspace.WorkspaceResolutionError

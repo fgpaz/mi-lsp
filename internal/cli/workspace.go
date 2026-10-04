@@ -83,22 +83,19 @@ branches, indexes, or running processes.`,
 	var pruneDryRun bool
 	pruneCommand := &cobra.Command{
 		Use:   "prune",
-		Short: "Prune stale workspace aliases from the registry",
-		Long: `Prune stale workspace aliases from the global registry.
+		Short: "Prune definitely missing workspace aliases from the registry",
+		Long: `Prune workspace aliases whose roots are definitely missing.
 
-By default this command is a dry run. Use --apply to remove only aliases whose
+By default this command previews candidates. Use --apply to remove only aliases whose
 		registered root no longer exists. It never deletes files or Git worktrees.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if !pruneStale {
-				return fmt.Errorf("workspace prune requires --stale")
-			}
 			if pruneApply && cmd.Flags().Changed("dry-run") && pruneDryRun {
 				return fmt.Errorf("--apply cannot be combined with --dry-run")
 			}
 			return state.executeOperation(cmd, "workspace.prune", map[string]any{"stale": pruneStale, "apply": pruneApply}, false)
 		},
 	}
-	pruneCommand.Flags().BoolVar(&pruneStale, "stale", false, "Prune aliases whose registered root no longer exists")
+	pruneCommand.Flags().BoolVar(&pruneStale, "stale", true, "Compatibility flag; prune aliases whose registered root no longer exists")
 	pruneCommand.Flags().BoolVar(&pruneApply, "apply", false, "Apply the prune instead of previewing it")
 	pruneCommand.Flags().BoolVar(&pruneDryRun, "dry-run", true, "Preview prune candidates without mutating the registry")
 

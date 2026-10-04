@@ -31,6 +31,9 @@ func (a *App) autoRegisterWorkspace(ctx context.Context, request model.CommandRe
 		return nil
 	}
 	warnings := []string{fmt.Sprintf("auto_registered: workspace %q registered at %s on first query (opt out: --no-auto-register or %s=1)", result.Alias, result.Root, workspace.AutoRegisterEnvVar)}
+	if result.Forced {
+		warnings = append(warnings, "auto_register_force: explicit MI_LSP_AUTOREGISTER=force override bypassed default registration scope")
+	}
 	if !result.HasCommits {
 		return append(warnings, "auto_register_index_skipped: repository has no commits yet; not indexing until the first commit (results use text search)")
 	}
