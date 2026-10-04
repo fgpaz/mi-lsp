@@ -47,7 +47,7 @@ Estado: congelado; cualquier cambio incompatible requiere `q-v2`. Este contrato 
 
 ## 1. Frontera y superficies
 
-mi-lsp es el motor local de consultas y adapta la misma ejecución al daemon, CLI y MCP Go. El host MCP que invoque `milsp` conserva la propiedad del sandbox y de `execute`; este contrato no agrega ni modifica código de mi-mcp. La consulta es de solo lectura: no indexa, registra workspaces, escribe archivos ni usa red. Se preservan las herramientas `nav_*` existentes.
+mi-lsp es el motor local de consultas y adapta la misma ejecución al daemon, CLI y MCP Go. El sandbox y `execute` son propiedad de mi-mcp; mi-lsp es proveedor y expone `milsp.q(...)` por su manifiesto de proveedor. Este contrato no agrega ni modifica código de mi-mcp. La consulta es de solo lectura: no indexa, registra workspaces, escribe archivos ni usa red. Se preservan las herramientas `nav_*` existentes.
 
 - CLI: `mi-lsp q "<pipeline>" [--workspace <alias|ruta>] [--format json|compact|toon]`.
 - MCP Go: una herramienta `milsp` con `q`, `workspace`, `budget`, `max_bytes`, `timeout_ms`, `session_id`, `page` y `fresh` opcionales; `contract_version: "q-v1"` siempre está presente en el envelope y en `tools/list`.
