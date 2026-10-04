@@ -342,16 +342,19 @@ func (s *TelemetryStore) recordAccessDirectInternal(runID int64, event model.Acc
 		normalized.HintCode,
 		normalized.TruncationReason,
 		normalized.DecisionJSON,
+		normalized.BytesOut,
+		normalized.Harness,
+		normalized.QStages,
 	}
 	if isDirect {
 		_, err := s.execWithRetry(
-			`INSERT INTO access_events(daemon_run_id, occurred_at, client_name, session_id, seq, workspace, workspace_input, workspace_root, workspace_alias, repo, operation, backend, route, format, token_budget, max_items, max_chars, compress, success, latency_ms, warnings_json, runtime_key, entrypoint_id, error_text, error_kind, error_code, truncated, result_count, warning_count, pattern_mode, routing_outcome, failure_stage, hint_code, truncation_reason, decision_json) VALUES (NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			`INSERT INTO access_events(daemon_run_id, occurred_at, client_name, session_id, seq, workspace, workspace_input, workspace_root, workspace_alias, repo, operation, backend, route, format, token_budget, max_items, max_chars, compress, success, latency_ms, warnings_json, runtime_key, entrypoint_id, error_text, error_kind, error_code, truncated, result_count, warning_count, pattern_mode, routing_outcome, failure_stage, hint_code, truncation_reason, decision_json, bytes_out, harness, q_stages) VALUES (NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			args...,
 		)
 		return err
 	} else {
 		_, err := s.execWithRetry(
-			`INSERT INTO access_events(daemon_run_id, occurred_at, client_name, session_id, seq, workspace, workspace_input, workspace_root, workspace_alias, repo, operation, backend, route, format, token_budget, max_items, max_chars, compress, success, latency_ms, warnings_json, runtime_key, entrypoint_id, error_text, error_kind, error_code, truncated, result_count, warning_count, pattern_mode, routing_outcome, failure_stage, hint_code, truncation_reason, decision_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			`INSERT INTO access_events(daemon_run_id, occurred_at, client_name, session_id, seq, workspace, workspace_input, workspace_root, workspace_alias, repo, operation, backend, route, format, token_budget, max_items, max_chars, compress, success, latency_ms, warnings_json, runtime_key, entrypoint_id, error_text, error_kind, error_code, truncated, result_count, warning_count, pattern_mode, routing_outcome, failure_stage, hint_code, truncation_reason, decision_json, bytes_out, harness, q_stages) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			append([]any{runID}, args...)...,
 		)
 		return err
@@ -447,6 +450,9 @@ func (s *TelemetryStore) initSchema() error {
 			hint_code TEXT,
 			truncation_reason TEXT,
 			decision_json TEXT,
+			bytes_out INTEGER,
+			harness TEXT,
+			q_stages INTEGER,
 			FOREIGN KEY(daemon_run_id) REFERENCES daemon_runs(id)
 		)`,
 	}
@@ -484,6 +490,9 @@ func (s *TelemetryStore) initSchema() error {
 		`ALTER TABLE access_events ADD COLUMN hint_code TEXT`,
 		`ALTER TABLE access_events ADD COLUMN truncation_reason TEXT`,
 		`ALTER TABLE access_events ADD COLUMN decision_json TEXT`,
+		`ALTER TABLE access_events ADD COLUMN bytes_out INTEGER`,
+		`ALTER TABLE access_events ADD COLUMN harness TEXT`,
+		`ALTER TABLE access_events ADD COLUMN q_stages INTEGER`,
 	} {
 		_, _ = s.db.Exec(migration)
 	}
@@ -612,7 +621,7 @@ func (s *TelemetryStore) RecentAccesses(limit int) ([]model.AccessEvent, error) 
 	err := retryTelemetrySQLite(func() error {
 		var queryErr error
 		rows, queryErr = s.db.Query(
-			`SELECT id, occurred_at, COALESCE(client_name, ''), COALESCE(session_id, ''), COALESCE(seq, 0), COALESCE(workspace, ''), COALESCE(workspace_input, ''), COALESCE(workspace_root, ''), COALESCE(workspace_alias, ''), COALESCE(repo, ''), operation, COALESCE(backend, ''), COALESCE(route, ''), COALESCE(format, ''), COALESCE(token_budget, 0), COALESCE(max_items, 0), COALESCE(max_chars, 0), COALESCE(compress, 0), success, latency_ms, COALESCE(warnings_json, '[]'), COALESCE(runtime_key, ''), COALESCE(entrypoint_id, ''), COALESCE(error_text, ''), COALESCE(error_kind, ''), COALESCE(error_code, ''), COALESCE(truncated, 0), COALESCE(result_count, 0), COALESCE(warning_count, 0), COALESCE(pattern_mode, ''), COALESCE(routing_outcome, ''), COALESCE(failure_stage, ''), COALESCE(hint_code, ''), COALESCE(truncation_reason, ''), COALESCE(decision_json, '') FROM access_events ORDER BY occurred_at DESC, id DESC LIMIT ?`,
+			`SELECT id, occurred_at, COALESCE(client_name, ''), COALESCE(session_id, ''), COALESCE(seq, 0), COALESCE(workspace, ''), COALESCE(workspace_input, ''), COALESCE(workspace_root, ''), COALESCE(workspace_alias, ''), COALESCE(repo, ''), operation, COALESCE(backend, ''), COALESCE(route, ''), COALESCE(format, ''), COALESCE(token_budget, 0), COALESCE(max_items, 0), COALESCE(max_chars, 0), COALESCE(compress, 0), success, latency_ms, COALESCE(warnings_json, '[]'), COALESCE(runtime_key, ''), COALESCE(entrypoint_id, ''), COALESCE(error_text, ''), COALESCE(error_kind, ''), COALESCE(error_code, ''), COALESCE(truncated, 0), COALESCE(result_count, 0), COALESCE(warning_count, 0), COALESCE(pattern_mode, ''), COALESCE(routing_outcome, ''), COALESCE(failure_stage, ''), COALESCE(hint_code, ''), COALESCE(truncation_reason, ''), COALESCE(decision_json, ''), COALESCE(bytes_out, 0), COALESCE(harness, ''), COALESCE(q_stages, 0) FROM access_events ORDER BY occurred_at DESC, id DESC LIMIT ?`,
 			limit,
 		)
 		return queryErr
@@ -705,7 +714,7 @@ func scanAccessEvent(rows *sql.Rows) (model.AccessEvent, error) {
 		truncationReason string
 		decisionJSON     string
 	)
-	if err := rows.Scan(&item.ID, &occurredAt, &item.ClientName, &item.SessionID, &item.Seq, &item.Workspace, &item.WorkspaceInput, &item.WorkspaceRoot, &item.WorkspaceAlias, &item.Repo, &item.Operation, &item.Backend, &item.Route, &item.Format, &item.TokenBudget, &item.MaxItems, &item.MaxChars, &compress, &success, &item.LatencyMs, &warningsJSON, &item.RuntimeKey, &item.EntrypointID, &item.Error, &item.ErrorKind, &item.ErrorCode, &truncated, &resultCount, &warningCount, &patternMode, &routingOutcome, &failureStage, &hintCode, &truncationReason, &decisionJSON); err != nil {
+	if err := rows.Scan(&item.ID, &occurredAt, &item.ClientName, &item.SessionID, &item.Seq, &item.Workspace, &item.WorkspaceInput, &item.WorkspaceRoot, &item.WorkspaceAlias, &item.Repo, &item.Operation, &item.Backend, &item.Route, &item.Format, &item.TokenBudget, &item.MaxItems, &item.MaxChars, &compress, &success, &item.LatencyMs, &warningsJSON, &item.RuntimeKey, &item.EntrypointID, &item.Error, &item.ErrorKind, &item.ErrorCode, &truncated, &resultCount, &warningCount, &patternMode, &routingOutcome, &failureStage, &hintCode, &truncationReason, &decisionJSON, &item.BytesOut, &item.Harness, &item.QStages); err != nil {
 		return model.AccessEvent{}, err
 	}
 	item.OccurredAt = time.Unix(occurredAt, 0)

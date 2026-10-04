@@ -430,6 +430,8 @@ func (s *Server) recordAccess(request model.CommandRequest, response model.Envel
 		Workspace:      firstNonEmpty(response.Workspace, request.Context.Workspace),
 		RuntimeKey:     telemetry.RuntimeKeyForOperation(request, response),
 		EntrypointID:   firstNonEmpty(payloadString(request.Payload, "entrypoint"), payloadString(request.Payload, "solution"), payloadString(request.Payload, "project_path")),
+		BytesOut:       telemetry.EnvelopeBytes(response),
+		Harness:        telemetry.SanitizeHarness(request.Context.Harness),
 	}
 	if operationErr != nil {
 		event.Error = operationErr.Error()

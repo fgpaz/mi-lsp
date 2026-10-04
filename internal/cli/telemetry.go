@@ -58,12 +58,24 @@ func (t *CLITelemetry) RecordOperation(request model.CommandRequest, envelope mo
 		LatencyMs:      latency.Milliseconds(),
 		Warnings:       envelope.Warnings,
 		RuntimeKey:     telemetry.RuntimeKeyForOperation(request, envelope),
+		BytesOut:       telemetry.EnvelopeBytes(envelope),
+		Harness:        telemetry.SanitizeHarness(request.Context.Harness),
 	}
 	if opErr != nil {
 		event.Error = opErr.Error()
 	}
 	event = telemetry.EnrichAccessEvent(event, request, envelope, opErr)
 
+	if err := t.store.RecordAccessDirect(event); err != nil && t.verbose {
+		fmt.Fprintf(os.Stderr, "mi-lsp: telemetry record failed: %v\n", err)
+	}
+}
+
+// RecordEvent stores a prebuilt access event. It is best-effort like RecordOperation.
+func (t *CLITelemetry) RecordEvent(event model.AccessEvent) {
+	if t == nil || t.store == nil {
+		return
+	}
 	if err := t.store.RecordAccessDirect(event); err != nil && t.verbose {
 		fmt.Fprintf(os.Stderr, "mi-lsp: telemetry record failed: %v\n", err)
 	}
