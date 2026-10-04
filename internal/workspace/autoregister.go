@@ -223,12 +223,25 @@ func linkedWorktree(root string) (bool, string, bool) {
 }
 
 func registeredMainWorktree(commonDir string, registry model.RegistryFile) (model.WorkspaceRegistration, bool) {
+	lastWorkspace := registry.Defaults.LastWorkspace
+	var selected model.WorkspaceRegistration
+	selectedAlias := ""
 	for alias, registration := range registry.Workspaces {
 		linked, registeredCommon, ok := linkedWorktree(registration.Root)
-		if ok && !linked && registeredCommon == commonDir {
-			registration.Name = alias
+		if !ok || linked || registeredCommon != commonDir {
+			continue
+		}
+		registration.Name = alias
+		if alias == lastWorkspace {
 			return registration, true
 		}
+		if selectedAlias == "" || alias < selectedAlias {
+			selected = registration
+			selectedAlias = alias
+		}
+	}
+	if selectedAlias != "" {
+		return selected, true
 	}
 	return model.WorkspaceRegistration{}, false
 }
