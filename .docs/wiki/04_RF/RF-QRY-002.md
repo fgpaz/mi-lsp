@@ -13,6 +13,7 @@ implements:
   - internal/service/autoindex.go
   - internal/daemon/lifecycle.go
   - internal/worker/gopls.go
+  - internal/worker/tsserver.go
   - internal/telemetry/access_events.go
   - internal/telemetry/access_diagnostics.go
 tests:
@@ -24,6 +25,7 @@ tests:
   - internal/service/autoindex_test.go
   - internal/service/semantic_refs_test.go
   - internal/worker/gopls_test.go
+  - internal/worker/tsserver_test.go
   - internal/cli/root_maxitems_test.go
 ---
 
@@ -52,6 +54,8 @@ stop_if:
   - harness_verdict=BLOCKED
 evidence:
   - .docs/wiki/04_RF/RF-QRY-002.md
+  - internal/worker/tsserver.go
+  - internal/worker/tsserver_test.go
 ```
 
 # RF-QRY-002 - Resolver routing con fallback de daemon y backend
@@ -114,7 +118,7 @@ evidence:
 - `nav.find` decide si puede declarar cero coincidencias usando una generación publicada (`active_catalog_generation_id`) o metadata completa de `ReplaceCatalog` (`indexed_at` + `total_files`, ambos escritos atómicamente, incluso `total_files=0`). Un esquema sin esos campos o metadata parcial no basta. La ausencia de filas no demuestra completitud; un root transitorio puede responder si su catálogo se publicó con una de esas señales.
 - `nav.find` sin catálogo publicado, con base ilegible o con esquema roto responde desde texto (`ok=true`, `backend=text`, `degraded=true`, `reason=index_not_ready|index_schema_broken`) y lanza un único reindex completo en segundo plano; ver [[RF-IDX-001]]. Nunca responde un vacío sin marcarlo como degradado.
 - `nav.refs` elige el backend por el lenguaje del símbolo y no por el primer lenguaje del workspace: definición en el catálogo, si no el primer hit de texto, si no los lenguajes registrados. Roslyn se usa solo para C#. Cuando no hay `--file`, inyecta el ancla de la definición para `gopls` y `tsserver`, que resuelven por posición. `--file` explícito se enruta por la extensión del archivo; una extensión sin backend semántico cae a `backend=text` con `reason=language_unsupported`.
-- `nav.refs` nunca devuelve un falso vacío: cualquier error del backend (`reason=lsp_unavailable` si falta el binario o runtime, `lsp_error` en el resto) o un resultado semántico vacío vuelve a consultar por texto con límites de palabra. Si el texto encuentra coincidencias tras un vacío semántico, la razón es `semantic_empty_text_hits`; si tampoco encuentra, el vacío es válido con `reason=no_matches`. Cada item lleva `origin` (`semantic` o `text`) y, cuando el catálogo conoce el símbolo contenedor, `caller {name, kind, line}`. El backend semántico de `nav.refs` tiene un plazo (`MI_LSP_REFS_TIMEOUT`, por defecto 8 s): si lo agota, responde el texto con `reason=lsp_error` y ese backend queda 2 minutos en enfriamiento antes de volver a intentarse. El texto prioriza los archivos de código del lenguaje del símbolo, después otros lenguajes de código y solo sin código cae a archivos no código (`language_unsupported`).
+- `nav.refs` nunca devuelve un falso vacío: cualquier error del backend (`reason=lsp_unavailable` si falta el binario o runtime, `lsp_error` en el resto) o un resultado semántico vacío vuelve a consultar por texto con límites de palabra. Si el texto encuentra coincidencias tras un vacío semántico, la razón es `semantic_empty_text_hits`; si tampoco encuentra, el vacío es válido con `reason=no_matches`. Cada item lleva `origin` (`semantic` o `text`) y, cuando el catálogo conoce el símbolo contenedor, `caller {name, kind, line}`. El backend semántico de `nav.refs` tiene un plazo (`MI_LSP_REFS_TIMEOUT`, por defecto 8 s): si lo agota, responde el texto con `reason=lsp_error` y ese backend queda 2 minutos en enfriamiento antes de volver a intentarse. Excepción acotada para `tsserver`: una primera espera de hasta 500 ms entrega resultados de texto tipados mientras el proceso sigue calentándose; la llamada semántica continúa desacoplada del contexto de la petición y tiene un deadline propio máximo de 8 s. El fallback de texto dispone de un presupuesto de 1,2 s; la expiración de la primera espera no activa el enfriamiento para permitir que una llamada posterior use la semántica ya disponible. La salida permanece `degraded=true`, `fallback_used=text` y `items[].origin=text`; nunca presenta el fallback como resultado semántico. El objetivo de menos de 2 s se valida en un checkout y host reproducibles, no se presume por configuración. La cobertura de fallback textual tipado, supervivencia del warm-up a la cancelación y retry semántico está en [[TP-QRY]] (TC-QRY-192). El protocolo de `tsserver` es asimétrico: solicitudes JSON terminadas en salto de línea por `stdin` y respuestas con `Content-Length` por `stdout`. `bench_ts_cold_refs.py` mide por separado la primera latencia y la calidad semántica de una consulta posterior en la misma App de un daemon aislado; solo acepta esta última si `backend=tsserver`, `degraded` ausente o `false` según `primitives-v2` ([[RF-QRY-001]]), todos los items son semánticos y están presentes las referencias esperadas. Una primera respuesta de texto tipada puede cumplir solo `first_latency_under_2s`; no prueba warm-up ni calidad. La aceptación global exige `warmup_success` y todas las referencias esperadas reales en la respuesta semántica posterior; ver [[TP-QRY]] (TC-QRY-193). El texto prioriza los archivos de código del lenguaje del símbolo, después otros lenguajes de código y solo sin código cae a archivos no código (`language_unsupported`).
 - `nav.refs --context N` (0 a 5, también `context` en la herramienta MCP `nav_refs`) agrega N líneas de contexto antes y después de cada referencia; un valor fuera de rango se rechaza antes de ejecutar.
 - Localización de `gopls` (`internal/worker/gopls.go`), en este orden: `MI_LSP_GOPLS_PATH`, `PATH`, `GOBIN`, `GOPATH/bin`, `~/go/bin` y `bin/` o `.bin/` del workspace. Si ninguno existe, `nav.refs` degrada con `reason=lsp_unavailable`.
 - El warm del daemon es por lenguaje del workspace e incluye `gopls` para Go; ya no calienta Roslyn por defecto, de modo que un repo Go, TypeScript o Python no paga el worker .NET (`backendsForWorkspace`).

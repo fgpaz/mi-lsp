@@ -32,6 +32,7 @@ type App struct {
 	Semantic        SemanticCaller
 	Config          Config
 	backendCooldown sync.Map
+	tsRefsWarmups   sync.Map
 }
 
 type semanticTarget struct {

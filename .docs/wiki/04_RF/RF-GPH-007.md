@@ -205,5 +205,20 @@ evidence:
   - internal/service/wiki_code_bindings.go
   - internal/service/app.go
   - internal/service/wiki_code_vertical_test.go
+  - internal/cli/git_frontier.go
+  - internal/cli/nav.go
+  - internal/cli/git_frontier_test.go
   - .docs/wiki/06_pruebas/TP-GPH.md
 ```
+
+## 11. Frontera pública de Git y generaciones
+
+`mi-lsp nav git-frontier [--base <ref>] --workspace <alias> --format json` devuelve un único objeto estable de lectura, sin refrescar ni crear el índice:
+
+- `git_commit` y `git_base` son hashes resueltos; `git_frontier` es SHA-256 del protocolo `mi-lsp-git-frontier-v1`, que incorpora base, HEAD, diff comprometido desde el merge-base, diff tracked del working tree y archivos untracked no ignorados ordenados por ruta normalizada.
+- `generations` contiene `docs`, `catalog` y `graph` como ID publicado o `null`; jamás deriva IDs de timestamps, contadores o estado runtime.
+- `coherence` es `coherent` solo si docs y catálogo están publicados y el grafo está current; en caso contrario es `degraded`. `incompatible` se reserva para evidencia explícitamente inválida.
+- `graph_freshness` es `current`, `stale` o `unavailable`, derivado del runtime state y de la generación publicada. Los campos ausentes se explican en `generation_reasons` o `unavailable` mediante códigos tipados. Si falta Git, la base o la DB, la salida conserva `null` y declara el motivo; no inventa una frontera ni una generación.
+- La lectura de generaciones es read-only. El comando no reindexa, no reconstruye el grafo ni altera datos de workspace.
+
+Este objeto da a consumidores como `ps-contexto` y `live-graph-vs-diff.mjs` los valores actuales que deben compararse con su observación; un valor unavailable no satisface la evidencia requerida para un PASS. La cobertura de determinismo, componentes del digest y estados unavailable se especifica en [[TP-GPH]] (TC-GPH-077 y TC-GPH-078).
