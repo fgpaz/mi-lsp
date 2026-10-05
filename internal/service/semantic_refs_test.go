@@ -220,6 +220,20 @@ func TestFindRefsEmptySemanticAndTextIsNoMatches(t *testing.T) {
 	}
 }
 
+func TestFinalizeRefsPreservesEmptyTimeoutFailure(t *testing.T) {
+	env := model.Envelope{
+		Ok:      false,
+		Backend: "text",
+		Reason:  "timeout",
+		Error:   &model.EnvelopeError{Code: "timeout", ReasonCode: "timeout"},
+		Items:   []map[string]any{},
+	}
+	got := (&App{}).finalizeRefs(context.Background(), model.WorkspaceRegistration{}, env, "Target", 0, time.Now())
+	if got.Ok || got.Reason != "timeout" || got.Error == nil || got.Error.Code != "timeout" {
+		t.Fatalf("finalizeRefs converted timeout into success: %+v", got)
+	}
+}
+
 func TestFindRefsRoslynErrorFallsBackToText(t *testing.T) {
 	files := map[string]string{"A.cs": "class A {\n  void Run() { Helper(); }\n  void Helper() {}\n}\n"}
 	symbols := []model.SymbolRecord{

@@ -41,11 +41,17 @@ Los repos son workspaces registrados en mi-lsp y se consultan con `cwd` en la ra
 | literal | `nav search <texto>` | `rg -n -F <texto>` | resultado de rg sobre archivos de código |
 | intent | `nav intent "<pregunta>"` | `rg -i -c` con las palabras de la pregunta, archivos ordenados por coincidencias | `expected_files` del caso |
 
+Para definition/refs/literal, la puntuación de mi-lsp se limita a los mismos globs
+`repos[repo].globs` que usa el oráculo `rg`. `nav search` también puede devolver
+coincidencias válidas en Markdown, JSON u otros archivos fuera del corpus de código;
+se conservan en la salida cruda y se reportan como `out_of_scope_items`, pero no se
+cuentan como falsos positivos ni como hits del benchmark de código.
+
 ## Métricas
 
 - Se ejecuta con `MI_LSP_CLIENT_NAME=bench` y `MI_LSP_SESSION_ID=bench-<label>`, flags por defecto (sin `--full`), y se registra `truncated`.
 - Puntuación con `--format json`; los bytes se miden además con `--format compact` y sin `--format`. Bytes de rg = stdout.
-- Precisión = |mi ∩ oráculo| / |mi|, recall = |mi ∩ oráculo| / |oráculo|, comparando `archivo:línea`. Si mi-lsp devuelve items sin línea se compara por archivo y se marca `line_missing`.
+- Precisión = |mi_scope ∩ oráculo| / |mi_scope|, recall = |mi_scope ∩ oráculo| / |oráculo|, comparando `archivo:línea`; `mi_scope` contiene solo resultados que coinciden con los globs de código del repositorio. Los resultados restantes se conservan, pero se reportan como `out_of_scope_items`. Si mi-lsp devuelve items sin línea se compara por archivo y se marca `line_missing`.
 - Precisión queda sin valor cuando mi-lsp devuelve 0 items. En los resúmenes se promedia solo sobre casos con valor; un error cuenta recall 0.
 - intent: hit@5 = el archivo esperado aparece entre los primeros 5 archivos distintos (campos `file`, `file_path`, `path` o `doc_path`). Para rg, entre los 5 archivos con más coincidencias.
 - Latencia: mediana de 3 corridas de pared, en ms. Timeout de 30 s por comando.

@@ -85,6 +85,21 @@ func obj(required []string, properties map[string]propSchema) jsonSchema {
 
 var toolCatalog = []toolSpec{
 	{
+		name:        "milsp",
+		description: "Prefer this for multi-step semantic q-v1 pipelines. Run sym, text, docs, id, diff; edges, where, limit, uniq, sort; read, fields, count. Examples: `sym Execute exact | edges callers depth=2`; `text MI_LSP_REFS_TIMEOUT type=go | read ±2`; `docs semantic navigation`; `id ws:<workspace_id>/symbol/...#...`; `diff ref=HEAD | edges callers`; `@who-calls App.Execute`. Options include workspace, budget, max_bytes, timeout_ms, session_id, page, fresh. Returns the complete q-v1 envelope.",
+		schema: obj([]string{"q"}, props(map[string]propSchema{
+			"q":                pString("q-v1 pipeline. Maximum eight stages, joined by |."),
+			"contract_version": pEnum("Provider contract version.", "q-v1"),
+			"budget":           pInt("Approximate item budget (default 2000, maximum 12000)."),
+			"max_bytes":        pInt("Maximum serialized envelope bytes (default 262144, minimum 1024)."),
+			"timeout_ms":       pInt("End-to-end timeout from 1 to 30000 ms."),
+			"session_id":       pString("Explicit session identity for q-v1 memory."),
+			"page":             pString("Opaque q-v1 continuation cursor."),
+			"fresh":            pBool("Return remembered text again."),
+			"dedupe":           pBool("Opt in to session-scoped result deduplication."),
+		})),
+	},
+	{
 		name: "nav_intent",
 		description: "Resolve an open-ended goal in hybrid docs|code mode (BM25 over wiki + symbol metadata). " +
 			"This is the DEFAULT first move for an exploratory question such as 'how does X work', 'what governs Y', " +
@@ -257,6 +272,8 @@ func BuildArgv(name string, args map[string]any) ([]string, error) {
 		args = map[string]any{}
 	}
 	switch name {
+	case "milsp":
+		return buildMilsp(args)
 	case "nav_intent":
 		return buildIntent(args)
 	case "nav_route":
@@ -286,6 +303,39 @@ func BuildArgv(name string, args map[string]any) ([]string, error) {
 	default:
 		return nil, fmt.Errorf("%w: %s", ErrUnknownTool, name)
 	}
+}
+
+func buildMilsp(args map[string]any) ([]string, error) {
+	if raw, exists := args["contract_version"]; exists && raw != nil {
+		version, ok := raw.(string)
+		if !ok {
+			return nil, fmt.Errorf("contract_version must be a string")
+		}
+		if version != "" && version != "q-v1" {
+			return nil, fmt.Errorf("unsupported q contract_version %q", version)
+		}
+	}
+	pos, err := onePos(args, "q")
+	if err != nil {
+		return nil, err
+	}
+	if _, ok := args["session_id"]; !ok {
+		withSession := make(map[string]any, len(args)+1)
+		for k, v := range args {
+			withSession[k] = v
+		}
+		withSession["session_id"] = fmt.Sprintf("mcp-go-%d", os.Getpid())
+		args = withSession
+	}
+	flags, err := flagsThenWorkspace(args,
+		flagSpec{key: "budget", kind: kindInt}, flagSpec{key: "max_bytes", flag: "max-bytes", kind: kindInt},
+		flagSpec{key: "timeout_ms", flag: "timeout-ms", kind: kindInt}, flagSpec{key: "session_id", flag: "session-id", kind: kindString},
+		flagSpec{key: "page", kind: kindString}, flagSpec{key: "fresh", kind: kindBool}, flagSpec{key: "dedupe", kind: kindBool},
+	)
+	if err != nil {
+		return nil, err
+	}
+	return assemble([]string{"q"}, pos, flags), nil
 }
 
 func buildIntent(args map[string]any) ([]string, error) {
