@@ -172,6 +172,12 @@ def safe_cmd(cmd, binary):
     return ["mi-lsp" if part == binary else part for part in cmd]
 
 
+def in_language_scope(file, repo):
+    """La puntuación se limita a los mismos globs de código que consulta rg."""
+    name = Path(file).name
+    return any(Path(name).match(glob) for glob in repo["globs"])
+
+
 def round_or_none(value, digits=4):
     return None if value is None else round(value, digits)
 
@@ -221,8 +227,14 @@ def run_case(case, repos, repos_root, binary, label):
     result["milsp"]["sample_items"] = ["%s:%s" % (f, ln) if ln else f for f, ln in items[:MAX_STORED_ITEMS]]
 
     # --- puntuacion ---
+    # nav.search también busca documentación y otros archivos admitidos. El
+    # oráculo rg está acotado a los globs de código del repo; comparar todos
+    # los resultados de mi-lsp con ese oráculo penaliza aciertos fuera de scope.
+    scored_items = [(file, line) for file, line in items if in_language_scope(file, repo)]
+    result["milsp"]["scored_items"] = len(scored_items)
+    result["milsp"]["out_of_scope_items"] = len(items) - len(scored_items)
     mi_files_ordered = []
-    for file, _ in items:
+    for file, _ in scored_items:
         if file not in mi_files_ordered:
             mi_files_ordered.append(file)
     if qtype == "intent":
@@ -233,13 +245,13 @@ def run_case(case, repos, repos_root, binary, label):
         result["precision"] = None
         result["recall"] = None
     else:
-        mi_set = set(items if all(ln for _, ln in items) else [])
-        if items and not mi_set:
+        mi_set = set(scored_items if all(ln for _, ln in scored_items) else [])
+        if scored_items and not mi_set:
             # items sin linea: no se puede puntuar por file:line; se compara por archivo
             oracle_files = {f for f, _ in oracle}
-            inter = len({f for f, _ in items} & oracle_files)
+            inter = len({f for f, _ in scored_items} & oracle_files)
             result["milsp"]["line_missing"] = True
-            result["precision"] = round_or_none(inter / len({f for f, _ in items}))
+            result["precision"] = round_or_none(inter / len({f for f, _ in scored_items}))
             result["recall"] = round_or_none(inter / len(oracle_files)) if oracle_files else None
         else:
             inter = len(mi_set & oracle)
@@ -247,7 +259,7 @@ def run_case(case, repos, repos_root, binary, label):
             result["recall"] = round_or_none(inter / len(oracle)) if oracle else None
         if not ok:
             result["recall"] = 0.0 if oracle else None
-        result["false_empty"] = bool(oracle) and ((not ok) or len(items) == 0)
+        result["false_empty"] = bool(oracle) and ((not ok) or len(scored_items) == 0)
         if qtype == "definition":
             expected = set(case.get("expected", []))
             mi_strs = {"%s:%s" % pair for pair in items}

@@ -66,7 +66,9 @@ La tabla es un índice humano derivado; para RF-WKS-007, el binding normativo de
 | RF-QRY-019 | FL-QRY-01 | TP-QRY | TC-QRY-135, TC-QRY-136, TC-QRY-137, TC-QRY-139 | TC-QRY-138 | implemented |
 | RF-QRY-020 | FL-QRY-01 | TP-QRY | TC-QRY-153, TC-QRY-154 | TC-QRY-155 | implemented |
 | RF-QRY-021 | FL-QRY-01 | TP-QRY | TC-QRY-156, TC-QRY-157, TC-QRY-158, TC-QRY-177 | TC-QRY-159, TC-QRY-160 | implemented / performance target pending TC-QRY-161 |
-| RF-QRY-024 | FL-QRY-01 | TP-QRY | TC-QRY-194, TC-QRY-195 | TC-QRY-196 | implemented; verification pendiente |
+| RF-QRY-022 | FL-QRY-01 | TP-QRY | TC-QRY-194 | TC-QRY-195, TC-QRY-196, TC-QRY-198 | implemented; verification pendiente |
+| RF-QRY-023 | FL-QRY-01 | TP-QRY | TC-QRY-199, TC-QRY-200 | TC-QRY-197, TC-QRY-198 | implemented; verification pendiente |
+| RF-QRY-024 | FL-QRY-01 | TP-QRY | TC-QRY-201, TC-QRY-202 | TC-QRY-203 | implemented; verification pendiente |
 | RF-GPH-001 | FL-GPH-01 | TP-GPH / TP-GPH-001 | TC-GPH-001, TC-GPH-002, TC-GPH-003 | TC-GPH-004, TC-GPH-005, TC-GPH-006 | planned |
 | RF-GPH-002 | FL-GPH-01 | TP-GPH / TP-GPH-002 | TC-GPH-007, TC-GPH-008, TC-GPH-010, TC-GPH-011, TC-GPH-012 | TC-GPH-009, TC-GPH-013, TC-GPH-014 | planned |
 | RF-GPH-003 | FL-GPH-01 | TP-GPH / TP-GPH-003 | TC-GPH-015, TC-GPH-016 | TC-GPH-017, TC-GPH-018, TC-GPH-019 | planned |
