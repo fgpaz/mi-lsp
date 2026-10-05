@@ -26,6 +26,13 @@ and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2
 - `admin export` marks six or more repeats of the same `hint_code` and `workspace_input` in one minute as a known burst. Stored rows are unchanged, and the first failure of each minute still counts.
 - A successful call that entered with the worker slots already full reports `workers_at_capacity` and `latency_ms`. `max_inflight` still rejects immediately.
 
+## [0.10.1] - 2026-10-05
+
+### Added
+
+- `mi-lsp provider-manifest --format json` publica el manifiesto `mi-mcp-provider/v1` de `milsp.q`, con versión derivada del binario y sin iniciar daemon, registrar workspaces, escribir archivos ni usar red.
+- Manifiesto versionado en `integrations/mi-mcp/provider-manifest.json` y cobertura de contrato/esquema/flags Cobra frente al comando.
+
 ## [0.9.0] - 2026-09-24
 
 ### Added

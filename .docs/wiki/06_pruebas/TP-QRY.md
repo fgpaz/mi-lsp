@@ -56,6 +56,7 @@ evidence:
 - RF-QRY-023
 - RF-QRY-024
 
+
 ## Casos
 
 | Caso | Tipo | RF | Descripcion |
@@ -138,6 +139,7 @@ evidence:
 | TC-QRY-198 | positivo/negativo | RF-QRY-022, RF-QRY-023 | timeout/cancelación end-to-end, prioridad cancelled > timeout > stage_failed, partial preservable, cursor HMAC/TTL/generation, y max_bytes medido sobre envelope completo con clipping UTF-8 |
 | TC-QRY-199 | positivo/compatibilidad | RF-QRY-023 | CLI `mi-lsp q`, dispatch daemon/directo y MCP Go `milsp` comparten contract_version q-v1; `milsp` precede el catálogo y los 13 `nav_*` permanecen disponibles |
 | TC-QRY-200 | positivo/compatibilidad | RF-QRY-023 | recetas iniciales y 13 alias nav tienen expansión q-v1 versionada, entradas válidas y errores tipados para nombres/argumentos inválidos |
+| TC-QRY-204 | positivo/compatibilidad | RF-QRY-023 | `TestProviderManifestCommandPrintsContractAndRealQFlags`: `provider-manifest --format json` emite el contrato mínimo, verifica que el schema refleja flags Cobra reales de `q` y coincide con el manifiesto integrado salvo `provider_version`; no arranca daemon ni requiere red |
 | TC-QRY-201 | positivo | RF-QRY-024 | `mi-lsp grep --rg-compat` preserva exactamente stdout y exit code del proceso rg para matches, ausencia de matches y error de argumentos |
 | TC-QRY-202 | positivo | RF-QRY-024 | `mi-lsp grep` anota solo coincidencias de código indexado en modo agente; sin índice, en archivos no-code o en modos de salida incompatibles devuelve la salida rg pura |
 | TC-QRY-203 | negativo | RF-QRY-024 | timeout o error de anotación no modifica ni suprime salida de rg, y la telemetría no guarda patrón ni texto encontrado |

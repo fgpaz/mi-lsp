@@ -53,7 +53,15 @@ mi-lsp es el motor local de consultas y adapta la misma ejecución al daemon, CL
 - MCP Go: una herramienta `milsp` con `q`, `workspace`, `budget`, `max_bytes`, `timeout_ms`, `session_id`, `page` y `fresh` opcionales; `contract_version: "q-v1"` siempre está presente en el envelope y en `tools/list`.
 - Helper del host: `milsp.q(pipeline, {workspace, budget, max_bytes, timeout_ms, session_id, page, fresh, signal})` devuelve el envelope q-v1. El host es responsable de propagar su cancelación a `signal`.
 
-## 2. Identidad y revisión de ítems
+## 2. Manifiesto de proveedor mi-mcp
+
+El comando `mi-lsp provider-manifest` (alias explícito `--format json`; JSON por defecto) imprime un único objeto JSON limpio por stdout. No inicia daemon, no registra workspaces, no escribe archivos ni usa red. `provider_version` deriva de la versión del binario que expone `mi-lsp --version`, sin el prefijo `v`; en builds de desarrollo conserva el valor de esa fuente. `min_provider_version` es `0.10.0`.
+
+El contrato fijo es `format: mi-mcp-provider/v1`, `namespace: milsp`, `contracts.q: q-v1`, `auth: none`, y una operación `q` de efecto `read`. La invocación usa `mi-lsp` con `--format json --client-name mi-mcp --no-auto-register` antes del subcomando. `input_schema` requiere `pipeline` y permite únicamente `pipeline`, `workspace`, `budget`, `max_bytes`, `timeout_ms`, `session_id`, `page`, `fresh` y `dedupe`; los campos opcionales corresponden a opciones de q-v1 disponibles en CLI (workspace puede ser global). `signal` no forma parte del schema porque se procesa en el host y no es argv. La salida referencia este contrato como q-v1.
+
+El archivo publicado `integrations/mi-mcp/provider-manifest.json` mantiene el mismo objeto salvo `provider_version`, fijado en `0.10.1` para esa distribución. El test compara ambos tras normalizar ese campo y descubre las flags desde Cobra para que una divergencia del CLI falle.
+
+## 3. Identidad y revisión de ítems
 
 `id` es identidad, no versión: `ws:<workspace_id>/<kind>/<path>#<symbol>`. `rev` es un campo separado con forma `rev:<64 hex minúsculas>` (SHA-256 del contenido normalizado a LF). No se adjunta `@rev` al id q-v1.
 
@@ -64,7 +72,7 @@ mi-lsp es el motor local de consultas y adapta la misma ejecución al daemon, CL
 - Un id q-v1 recibido se resuelve solo dentro del workspace seleccionado; el workspace dentro del id debe coincidir o se devuelve `stage_failed` (sin acceso cruzado implícito). Si cambió el contenido, se re-resuelve por identidad y devuelve `stale: true`, `id` sin cambios y `rev` actual. Si no existe devuelve `{id, missing:true}` como resultado tipado, no como texto de fallback.
 - IDs legacy `s1:`, `r1:` y `d1:` se aceptan únicamente como entrada transicional: se resuelven por su ruta/nombre/doc_id en el workspace explícito, se emite el id q-v1 canónico y `stale:true`. No se generan IDs legacy.
 
-## 3. Gramática y primitivas
+## 4. Gramática y primitivas
 
 ```text
 pipeline := stage ("|" stage)*                 ; 1–8 etapas
@@ -81,7 +89,7 @@ Salidas: `read [±N|ctx=N|full]`, `fields a,b,…`, `count`. Meta: `describe [ve
 
 Presupuesto por defecto `budget=2000` tokens; máximo 12000, estimado como bytes serializados/4. `fields` por defecto es `id,kind,name,file,line,origin`; `text` solo aparece después de `read`. `edges` limita fan-out a 50 por fuente y 200 por etapa. Orden final/paginable determinista por ruta y línea, con desempate por id.
 
-## 4. Envelope, etapas y errores
+## 5. Envelope, etapas y errores
 
 Todo resultado contiene `contract_version:"q-v1"`, `operation:"q"`, `ok`, `workspace`, `items`, `stages`, `budget`, `session_mark` y, cuando corresponda, `partial`, `reason`, `fallback_used`, `error`, `continuation` y `truncated`. Cada etapa informa `{verb,in,out,ms,truncated,reason?}`.
 
@@ -91,7 +99,7 @@ Los únicos `error.code` terminales q-v1 son `timeout`, `cancelled`, `cursor_inv
 - La precedencia de fallas simultáneas es `cancelled` > `timeout` > `stage_failed`; una falla de cursor o snapshot impide aplicar esa página y se devuelve su código específico. Una etapa degradada registrable no borra resultados previos ni falsea `ok`.
 - Cancelación y deadline son end-to-end desde el caller, daemon y etapa; se revisan antes/después de cada etapa y durante fan-out. Default de reloj 10 s; `timeout_ms` admite 1–30000 ms. Al faltar el daemon, el fallback directo mantiene el mismo contrato y marca `route=direct_fallback`.
 
-## 5. Bytes, paginación y snapshot
+## 6. Bytes, paginación y snapshot
 
 `max_bytes` (MCP/helper) se mide sobre el envelope JSON UTF-8 completo serializado, incluidos metadatos, etapas, errores y continuación; no solo sobre `items`. Default 262144 bytes, mínimo admitido 1024. La respuesta jamás supera el límite.
 
@@ -99,13 +107,13 @@ El cursor es opaco, autenticado con HMAC y ligado a consulta canónica, workspac
 
 Si el envelope proyectado supera `max_bytes`, se quitan ítems completos del final y se emite continuación. Si un solo ítem excede el límite, se recorta primero su campo `text` en límite UTF-8, se agrega `truncated_item:true` y se reserva espacio para envelope/diagnósticos. Si aun así no cabe, se omite y se informa `max_bytes_item_exceeded` en `reason`/`error` sin devolver una respuesta mayor al límite. No se corta JSON a mitad de ítem.
 
-## 6. Sesiones y caché
+## 7. Sesiones y caché
 
 `session_id` explícito identifica el estado; MCP genera uno por proceso solo cuando el caller no lo proporciona. `session_mark` es monotónico por sesión. Se guardan por sesión (LRU máximo 200, idle 30 min) las identidades/revisiones de ítems entregados con texto. `read` repetido puede devolver `{id,rev,seen:true}` sin texto; `fresh` fuerza texto. `changed since=<mark>` lista identidades vistas cuyo contenido cambió, con revisión actual.
 
 La caché/dedupe es opt-in (`dedupe=true`); por defecto nunca altera contenido, orden, estado de sesión ni respuesta. Si se activa, su clave contiene session_id, generación y etapa canónica. Cancelación no deja un resultado parcial cacheado.
 
-## 7. Recetas y compatibilidad
+## 8. Recetas y compatibilidad
 
 Las recetas son pipelines versionadas `@name`; cada una conserva su expansión declarada y puede referenciar `contract_version`. Las recetas iniciales son `@who-calls`, `@trace`, `@find-def`, `@explain`, `@impact`/`@explain-change`; las `nav_*` existentes permanecen compatibles. La herramienta nueva Go publica `milsp` y su gramática/seis ejemplos en la descripción; no altera respuestas de herramientas anteriores.
 
