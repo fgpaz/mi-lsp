@@ -1,0 +1,74 @@
+{
+  "format": "mi-mcp-provider/v1",
+  "namespace": "milsp",
+  "provider_version": "0.10.1",
+  "min_provider_version": "0.10.0",
+  "contracts": {
+    "q": "q-v1"
+  },
+  "auth": "none",
+  "invocation": {
+    "kind": "cli",
+    "command": "mi-lsp",
+    "fixed_args": [
+      "--format",
+      "json",
+      "--client-name",
+      "mi-mcp",
+      "--no-auto-register"
+    ]
+  },
+  "operations": [
+    {
+      "name": "q",
+      "effect": "read",
+      "contract": "q-v1",
+      "input_schema": {
+        "type": "object",
+        "required": [
+          "pipeline"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "pipeline": {
+            "type": "string",
+            "minLength": 1
+          },
+          "workspace": {
+            "type": "string"
+          },
+          "budget": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 12000
+          },
+          "max_bytes": {
+            "type": "integer",
+            "minimum": 1024
+          },
+          "timeout_ms": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 30000
+          },
+          "session_id": {
+            "type": "string"
+          },
+          "page": {
+            "type": "string"
+          },
+          "fresh": {
+            "type": "boolean"
+          },
+          "dedupe": {
+            "type": "boolean"
+          }
+        }
+      },
+      "output": {
+        "contract_version": "q-v1",
+        "ref": "mi-lsp .docs/wiki/09_contratos/CT-Q-V1.md"
+      }
+    }
+  ]
+}

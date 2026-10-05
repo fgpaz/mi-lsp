@@ -69,4 +69,10 @@ Las recetas iniciales son pipelines versionadas `@who-calls`, `@trace`, `@find-d
 - Cursor completo: firma inválida, expiración >10 minutos y cambio de generation se distinguen; orden estable `(path,line,id)`.
 - Bytes medidos sobre el envelope serializado; ítems completos; clipping UTF-8 y marcador/razón tipados.
 - Recetas iniciales y los trece alias se resuelven de forma determinista; cada pipeline fuente está versionada en `internal/query/recipes/*.q`.
-- Casos: TP-QRY-197 a TP-QRY-200.
+- Casos: TP-QRY-197 a TP-QRY-200 y TC-QRY-204.
+
+## Descubrimiento del proveedor mi-mcp
+
+`mi-lsp provider-manifest --format json` publica por stdout el manifiesto `mi-mcp-provider/v1` del proveedor `milsp`, con versión propia derivada de la misma versión que `mi-lsp --version` (sin prefijo `v`) y versión mínima `0.10.0`. El formato por defecto es JSON y no inicia el daemon, registra workspaces, escribe archivos ni usa red. La única operación publicada es `q` con contrato `q-v1` y efecto `read`; la invocación fija `--no-auto-register`. El esquema de entrada describe el pipeline y opciones reales de `mi-lsp q`; las decisiones completas y los límites están en [[CT-Q-V1]].
+
+El manifiesto versionado en `integrations/mi-mcp/provider-manifest.json` es el mismo contrato, salvo `provider_version`, cuyo valor al publicar esta integración es `0.10.1`. El test del comando verifica los campos normativos, comprueba las propiedades frente a flags Cobra existentes y compara la salida con ese archivo.
