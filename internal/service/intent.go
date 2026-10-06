@@ -40,16 +40,28 @@ var (
 	intentPathPattern   = regexp.MustCompile(`(?:^|[\s"'(\[])((?:[A-Za-z]:[\\/]|[\\/])?[^\s"')\]]+[\\/][^\s"')\]]+)`)
 )
 
-func (a *App) intent(ctx context.Context, request model.CommandRequest) (model.Envelope, error) {
+func (a *App) intent(ctx context.Context, request model.CommandRequest) (env model.Envelope, err error) {
+	var root string
+	defer func() {
+		if err != nil || root == "" {
+			return
+		}
+		env = annotatePublishedQuery(root, env)
+	}()
+
 	registration, project, err := a.resolveWorkspaceWithProjectForNavigation(request)
 	if err != nil {
 		return model.Envelope{}, model.NewStableError("intent_workspace_invalid")
 	}
+	root = registration.Root
 
 	question, _ := request.Payload["question"].(string)
 	question = strings.TrimSpace(question)
 	if question == "" {
 		return model.Envelope{}, model.NewStableError("intent_question_required")
+	}
+	if decision, ok := decisionIntentEnvelope(registration, question); ok {
+		return decision, nil
 	}
 
 	topN := intFromAny(request.Payload["top"], 10)
@@ -114,7 +126,7 @@ func (a *App) intent(ctx context.Context, request model.CommandRequest) (model.E
 		items[i] = intentCodeItem(match)
 	}
 
-	env := model.Envelope{
+	env = model.Envelope{
 		Ok:        true,
 		Workspace: registration.Name,
 		Backend:   "intent",
