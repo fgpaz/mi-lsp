@@ -1,8 +1,10 @@
 package cli
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
+	"os"
 	"regexp"
 	"strings"
 
@@ -45,15 +47,46 @@ func ensureFallbackReason(env *model.Envelope) {
 	}
 }
 
+// JSONFormatRequested reports whether this process was started with --format json.
+func JSONFormatRequested() bool {
+	args := os.Args[1:]
+	for i, arg := range args {
+		if arg == "--format=json" {
+			return true
+		}
+		if arg == "--format" && i+1 < len(args) && args[i+1] == "json" {
+			return true
+		}
+	}
+	return false
+}
+
 // WriteProcessFailure prints a CLI failure that never became an envelope.
-// The human error line stays first; a single trailer follows for plugins.
+// With --format json the writer receives one envelope (ok false, error.reason_code).
+// Otherwise the human error line stays first and a single trailer follows.
 func WriteProcessFailure(w io.Writer, err error) {
 	if err == nil || w == nil {
 		return
 	}
-	fmt.Fprintln(w, err)
 	code := classifyFallbackReason("", "", err.Error())
 	detail := fallbackDetail(err.Error(), "", code)
+	if JSONFormatRequested() {
+		payload := model.Envelope{
+			Ok: false,
+			Error: &model.EnvelopeError{
+				ReasonCode: code,
+				Detail:     detail,
+			},
+		}
+		encoded, encErr := json.Marshal(payload)
+		if encErr != nil {
+			fmt.Fprintf(w, "reason_code=%s detail=%s\n", code, detail)
+			return
+		}
+		fmt.Fprintf(w, "%s\n", encoded)
+		return
+	}
+	fmt.Fprintln(w, err)
 	fmt.Fprintf(w, "reason_code=%s detail=%s\n", code, detail)
 }
 
