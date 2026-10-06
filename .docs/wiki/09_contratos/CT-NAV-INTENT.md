@@ -18,6 +18,7 @@ imports:
   - RF-QRY-014
   - RF-QRY-015
   - RF-QRY-016
+  - RF-QRY-025
   - TP-QRY
   - CT-GRAPH-CLI
   - TECH-DOC-ROUTER
@@ -488,9 +489,16 @@ diagnostics:
 - Las expansiones planner preservan el `--repo` seleccionado dentro de `arguments` y en el comando. Una expansión `affected-change` con rutas explícitas conserva esas rutas y su quoting determinista; no las sustituye por `--from-git-diff`.
 - Los warnings de catálogo/SQLite que cruzan el envelope planner usan códigos estables y nunca incluyen `err.Error()`, roots, rutas de DB, secretos o PII.
 
+## Generación publicada, mapa de decisiones y sensibilidad
+
+Antes de la búsqueda ordinaria, si la pregunta es exactamente un id `D-` seguido de dígitos, `nav intent` lee `wiki/90-mapa-ids.md` del workspace. Si la fila existe, responde ese rango con `origin=decision-map` y no continúa al intent normal. Sin mapa, con mapa ilegible o sin esa fila, sigue el intent de siempre.
+
+El envelope publica `generation_id` del snapshot de la generación ya publicada, el mismo de `q` y `nav multi-read`, salvo que otra ruta ya lo hubiera fijado. Cada ítem con archivo trae `sensibilidad` del frontmatter, vacía si no hay marca. mi-lsp no filtra. Ver [[RF-QRY-025]].
+
 ## RF y TP asociados
 
 - RF-QRY-001
+- RF-QRY-025
 - RF-QRY-011
 - RF-QRY-014
 - RF-QRY-015

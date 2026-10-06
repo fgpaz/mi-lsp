@@ -55,6 +55,7 @@ evidence:
 - RF-QRY-022
 - RF-QRY-023
 - RF-QRY-024
+- RF-QRY-025
 
 
 ## Casos
@@ -143,6 +144,10 @@ evidence:
 | TC-QRY-201 | positivo | RF-QRY-024 | `mi-lsp grep --rg-compat` preserva exactamente stdout y exit code del proceso rg para matches, ausencia de matches y error de argumentos |
 | TC-QRY-202 | positivo | RF-QRY-024 | `mi-lsp grep` anota solo coincidencias de código indexado en modo agente; sin índice, en archivos no-code o en modos de salida incompatibles devuelve la salida rg pura |
 | TC-QRY-203 | negativo | RF-QRY-024 | timeout o error de anotación no modifica ni suprime salida de rg, y la telemetría no guarda patrón ni texto encontrado |
+| TC-QRY-205 | positivo | RF-QRY-025 | `q`, `nav intent` y `nav multi-read` publican el mismo `generation_id` del snapshot publicado (`last_index`, `active_catalog`, `active_docs`, `active_memory`) |
+| TC-QRY-206 | positivo | RF-QRY-025 | `nav intent` con un id `D-<dígitos>` presente en `wiki/90-mapa-ids.md` lee ese rango antes de buscar y marca `origin=decision-map` |
+| TC-QRY-207 | negativo | RF-QRY-025 | sin mapa, con mapa ilegible o con un id que no está en la tabla, `nav intent` sigue el camino ordinario |
+| TC-QRY-208 | positivo | RF-QRY-025 | cada resultado trae `sensibilidad` del frontmatter y queda vacía si no hay marca; mi-lsp no descarta ítems por esa marca |
 | TC-QRY-015 | positivo | RF-QRY-004 | incluye numeros de linea en contenido leido |
 | TC-QRY-016 | negativo | RF-QRY-004 | rechaza path traversal (`../../../etc/passwd`) |
 | TC-QRY-017 | positivo | RF-QRY-005 | ejecuta batch con operaciones paralelas y retorna todos los resultados |
@@ -482,3 +487,34 @@ evidence:
   - internal/cli/grep.go
   - .docs/wiki/06_pruebas/TP-QRY.md
 ```
+
+```toon
+block_id: tp-qry-025-published-snapshot
+kind: planned-test-map
+source_of_truth: RF-QRY-025
+status: planned_not_executed
+campaign_status: NOT_RUN
+imports:
+  - .docs/wiki/04_RF/RF-QRY-025.md
+cases:
+  shared_generation:
+    id: TC-QRY-205
+    status: planned
+  decision_map_hit:
+    id: TC-QRY-206
+    status: planned
+  decision_map_miss:
+    id: TC-QRY-207
+    status: planned
+  sensibilidad_passthrough:
+    id: TC-QRY-208
+    status: planned
+verify:
+  - q, nav intent y nav multi-read comparten generation_id de la generación publicada
+stop_if:
+  - mi-lsp filtra resultados por sensibilidad
+evidence:
+  - .docs/wiki/06_pruebas/TP-QRY.md
+  - .docs/wiki/04_RF/RF-QRY-025.md
+```
+

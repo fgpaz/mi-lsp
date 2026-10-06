@@ -70,6 +70,8 @@ evidence:
 | `items` | lista | usuario/skill | array con file, lines, content para cada rango |
 | `truncated` | bool | usuario/skill | explicita recorte si hay mas contenido |
 | `warnings` | lista | usuario/skill | paths fuera del workspace o archivos no encontrados |
+| `generation_id` | string | usuario/skill | snapshot de la generación publicada, el mismo de `q` y `nav intent` ([[RF-QRY-025]]) |
+| `items[].sensibilidad` | string | usuario/skill | marca del frontmatter; vacía si no hay marca; mi-lsp no filtra |
 
 ## 6. Typed Errors
 

@@ -26,6 +26,14 @@ and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2
 - `admin export` marks six or more repeats of the same `hint_code` and `workspace_input` in one minute as a known burst. Stored rows are unchanged, and the first failure of each minute still counts.
 - A successful call that entered with the worker slots already full reports `workers_at_capacity` and `latency_ms`. `max_inflight` still rejects immediately.
 
+## [0.10.2] - 2026-10-06
+
+### Added
+
+- `q`, `nav intent` y `nav multi-read` publican el mismo `generation_id` de la generación ya publicada (`last_index`, `active_catalog`, `active_docs`, `active_memory`) para cachear.
+- `nav intent` con un id de decisión (`D-056`) resuelve el rango en `wiki/90-mapa-ids.md` y lo lee antes de buscar (`origin=decision-map`); sin mapa o sin esa fila sigue el intent normal.
+- Cada resultado de esas superficies trae `sensibilidad` del frontmatter (vacía si no hay marca). mi-lsp no filtra; el filtro queda en mi-mcp.
+
 ## [0.10.1] - 2026-10-05
 
 ### Added
