@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/fgpaz/mi-lsp/internal/model"
+	"github.com/fgpaz/mi-lsp/internal/store"
 )
 
 type fileRange struct {
@@ -23,12 +24,13 @@ type fileRange struct {
 }
 
 type multiReadItem struct {
-	File      string `json:"file"`
-	StartLine int    `json:"start_line"`
-	EndLine   int    `json:"end_line"`
-	Content   string `json:"content"`
-	LineCount int    `json:"line_count"`
-	Truncated bool   `json:"truncated,omitempty"`
+	File         string `json:"file"`
+	StartLine    int    `json:"start_line"`
+	EndLine      int    `json:"end_line"`
+	Content      string `json:"content"`
+	LineCount    int    `json:"line_count"`
+	Truncated    bool   `json:"truncated,omitempty"`
+	Sensibilidad string `json:"sensibilidad"`
 }
 
 func (a *App) multiRead(ctx context.Context, request model.CommandRequest) (model.Envelope, error) {
@@ -97,23 +99,26 @@ func (a *App) multiRead(ctx context.Context, request model.CommandRequest) (mode
 			})
 			// Include error as content so caller knows which file failed
 			items = append(items, multiReadItem{
-				File:      safeWorkspacePath(registration.Root, absFile),
-				StartLine: fr.StartLine,
-				EndLine:   fr.EndLine,
-				Content:   "error: missing or unreadable file",
-				LineCount: 0,
+				File:         safeWorkspacePath(registration.Root, absFile),
+				StartLine:    fr.StartLine,
+				EndLine:      fr.EndLine,
+				Content:      "error: missing or unreadable file",
+				LineCount:    0,
+				Sensibilidad: "",
 			})
 			continue
 		}
 
 		totalChars += len(content)
+		relFile := safeWorkspacePath(registration.Root, absFile)
 		items = append(items, multiReadItem{
-			File:      safeWorkspacePath(registration.Root, absFile),
-			StartLine: fr.StartLine,
-			EndLine:   fr.EndLine,
-			Content:   content,
-			LineCount: lineCount,
-			Truncated: itemTruncated,
+			File:         relFile,
+			StartLine:    fr.StartLine,
+			EndLine:      fr.EndLine,
+			Content:      content,
+			LineCount:    lineCount,
+			Truncated:    itemTruncated,
+			Sensibilidad: frontmatterSensibilidad(registration.Root, relFile),
 		})
 
 		if totalChars >= maxChars {
@@ -129,6 +134,7 @@ func (a *App) multiRead(ctx context.Context, request model.CommandRequest) (mode
 	}
 	nextHint := multiReadNextHint(omissions, maxItems, maxChars)
 
+	generation, _ := store.ReadWorkspaceGenerationSnapshot(ctx, registration.Root)
 	return model.Envelope{
 		Ok:           true,
 		Workspace:    registration.Name,
@@ -138,6 +144,7 @@ func (a *App) multiRead(ctx context.Context, request model.CommandRequest) (mode
 		Truncated:    truncated,
 		NextHint:     nextHint,
 		Continuation: multiReadContinuation(omissions),
+		GenerationID: generation,
 		Stats:        model.Stats{Files: len(items), Ms: time.Since(started).Milliseconds()},
 	}, nil
 }

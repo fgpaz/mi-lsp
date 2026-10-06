@@ -203,7 +203,7 @@ func (a *App) ExecuteQ(ctx context.Context, request model.CommandRequest, sessio
 	used := 0
 	truncated := false
 	for _, item := range items {
-		row := item.Project(pipeline.Fields)
+		row := item.Project(pipeline.Fields).With("sensibilidad", frontmatterSensibilidad(registration.Root, item.File))
 		itemBytes := row.JSONSize()
 		if used+itemBytes > budget*4 {
 			truncated = true
@@ -962,7 +962,11 @@ func qBoundEnvelope(env model.Envelope, items []model.QItem, fields []string, ma
 			candidate.TruncatedItem = true
 			for n := len(candidate.Text); n > 0; n = n / 2 {
 				candidate.Text = truncateQText(candidate.Text, n)
-				rows[0] = candidate.Project(fields)
+				sensibilidad, _ := rows[0].Get("sensibilidad")
+				if sensibilidad == nil {
+					sensibilidad = ""
+				}
+				rows[0] = candidate.Project(fields).With("sensibilidad", sensibilidad)
 				env.Items = rows
 				data, _ = json.Marshal(env)
 				if len(data) <= maxBytes {

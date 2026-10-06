@@ -175,6 +175,18 @@ func (r QRow) Get(name string) (any, bool) {
 	return value, ok
 }
 
+// With fija un campo de salida, incluso si el valor va vacío.
+func (r QRow) With(name string, value any) QRow {
+	if r.vals == nil {
+		r.vals = map[string]any{}
+	}
+	if _, exists := r.vals[name]; !exists {
+		r.keys = append(r.keys, name)
+	}
+	r.vals[name] = value
+	return r
+}
+
 // Keys devuelve las claves en orden.
 func (r QRow) Keys() []string { return append([]string(nil), r.keys...) }
 
