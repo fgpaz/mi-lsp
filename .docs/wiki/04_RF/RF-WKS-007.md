@@ -146,7 +146,7 @@ Cuando el `caller_cwd` o un path explícito está dentro de un linked worktree, 
 
 ### Auto-registro en la primera consulta
 
-Las operaciones que requieren workspace (`nav.*`, `index.*`, `info`, `workspace.status`) ejecutan un único camino compartido por CLI y daemon (`App.Execute`, `internal/service/auto_register.go` y `internal/workspace/autoregister.go`), de modo que sirve igual a `mi-lsp mcp`, al plugin claude-code-milsp y al hijo persistente de mi-mcp.
+Las operaciones que requieren workspace (`nav.*`, `index.*`, `info`, `workspace.status`) ejecutan un único camino compartido por CLI y daemon (`App.Execute`, `internal/service/auto_register.go` y `internal/workspace/autoregister.go`), de modo que sirve igual a `mi-lsp mcp`, al plugin milsp y al hijo persistente de mi-mcp.
 
 La especificación normativa del auto-registro, incluida la respuesta cuando el repo aún no tiene commits, el alcance del opt-out, linked worktrees, force y GC del registry, está agrupada en el bloque TOON `RF-WKS-007-B08`. Los casos de verificación se definen normativamente en `TP-WKS` (`TC-WKS-048..060`, `TC-WKS-064..066`). El enlace al flag CLI se apoya en evidencia de código; `TC-WKS-049` no declara cobertura E2E de su propagación.
 
