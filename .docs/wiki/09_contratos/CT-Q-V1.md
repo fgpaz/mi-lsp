@@ -16,6 +16,7 @@ imports:
   - '[[00_gobierno_documental]]'
   - '[[RF-QRY-022]]'
   - '[[RF-QRY-023]]'
+  - '[[RF-QRY-025]]'
   - '[[TP-QRY]]'
 exports:
   - CT-Q-V1
@@ -24,6 +25,7 @@ agent_must_read:
   - .docs/wiki/09_contratos/CT-Q-V1.md
   - .docs/wiki/04_RF/RF-QRY-022.md
   - .docs/wiki/04_RF/RF-QRY-023.md
+  - .docs/wiki/04_RF/RF-QRY-025.md
 agent_may_edit:
   - .docs/wiki/09_contratos/CT-Q-V1.md
 agent_must_not_edit:
@@ -92,6 +94,8 @@ Presupuesto por defecto `budget=2000` tokens; máximo 12000, estimado como bytes
 ## 5. Envelope, etapas y errores
 
 Todo resultado contiene `contract_version:"q-v1"`, `operation:"q"`, `ok`, `workspace`, `items`, `stages`, `budget`, `session_mark` y, cuando corresponda, `partial`, `reason`, `fallback_used`, `error`, `continuation` y `truncated`. Cada etapa informa `{verb,in,out,ms,truncated,reason?}`.
+
+El envelope también publica `generation_id`: el snapshot de la generación ya publicada (`last_index`, `active_catalog`, `active_docs`, `active_memory`), el mismo que usan `nav intent` y `nav multi-read`, para que el consumidor cachee contra esa generación. Cada ítem agrega `sensibilidad` desde el frontmatter del archivo; va vacía si no hay marca. mi-lsp no filtra por ese campo. El detalle compartido está en [[RF-QRY-025]].
 
 Los únicos `error.code` terminales q-v1 son `timeout`, `cancelled`, `cursor_invalid`, `cursor_expired`, `snapshot_changed`, `stage_failed` y `max_bytes_item_exceeded`. El error incluye `stage` cuando aplica y detalle acotado/sanitizado. No se inventan códigos alternativos para estas condiciones. Errores de sintaxis/opción inválida usan `stage_failed` con posición y expectativa.
 
