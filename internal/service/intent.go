@@ -60,6 +60,9 @@ func (a *App) intent(ctx context.Context, request model.CommandRequest) (env mod
 	if question == "" {
 		return model.Envelope{}, model.NewStableError("intent_question_required")
 	}
+	if pair, kinetic := kineticProject(registration.Root); kinetic {
+		return a.kineticIntent(ctx, request, registration, question, pair), nil
+	}
 	if decision, ok := decisionIntentEnvelope(registration, question); ok {
 		return decision, nil
 	}

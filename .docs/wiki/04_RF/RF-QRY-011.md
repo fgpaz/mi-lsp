@@ -53,7 +53,7 @@ evidence:
 ## 3. Process Steps (Happy Path)
 
 1. La CLI recibe `mi-lsp nav intent <question>`.
-2. El core clasifica la pregunta en `mode=docs` o `mode=code`.
+2. El core clasifica la pregunta en `mode=docs` o `mode=code`. En un proyecto cinético (par `modelo.md`/`acciones.md` bajo `wiki/`, sin manifiesto de producto) `nav intent` permanece en `mode=docs`.
 3. Si la pregunta trae señales de código (ver sección 5) y el catálogo contiene símbolos o archivos que coinciden con sus tokens, el modo es `mixed`: los matches de código fuertes van primero, luego los documentos y al final los matches de código débiles, todo acotado a `top`. El código se rankea por archivo: cada token pesa por su rareza (IDF) y según dónde coincide (nombre de archivo, segmento de ruta, símbolo, padre), con bonus por cubrir más tokens de la pregunta y penalización para archivos de test. Si la pregunta tiene señales de código y el catálogo no está publicado, falta, está vacío o roto, `nav intent` no responde con un vacío silencioso ni con `ok=false`: devuelve `ok=true` con los documentos que encuentre, `degraded=true`, `reason=index_not_ready` (o `index_schema_broken` si la base está corrupta) y un warning que sugiere `mi-lsp nav search <identificador>`. Las preguntas sin señales de código no se marcan.
 4. Si el usuario envio `--repo`, el core valida el selector; en `mode=code` acota el universo al repo hijo seleccionado del workspace `container`, y en `mode=docs` puede ignorarlo con warning visible.
 5. En `mode=docs`, el sistema usa el scorer owner-aware documental compartido con `nav route/ask/pack`.

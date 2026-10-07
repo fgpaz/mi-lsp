@@ -656,6 +656,7 @@ Use --all for the RF set only, --summary for tabular view.`,
 
 	var intentTop int
 	var intentRepo string
+	var intentCasos string
 	intentCommand := &cobra.Command{
 		Use:   "intent <question>",
 		Short: "Resolve intent in docs-or-code mode",
@@ -684,11 +685,15 @@ Examples:
 			if intentRepo != "" {
 				payload["repo"] = intentRepo
 			}
+			if intentCasos != "" {
+				payload["casos"] = intentCasos
+			}
 			return state.executeOperation(cmd, "nav.intent", payload, true)
 		},
 	}
 	intentCommand.Flags().IntVar(&intentTop, "top", 10, "Maximum number of results")
 	intentCommand.Flags().Int("offset", 0, "Skip first N results (for pagination)")
+	intentCommand.Flags().StringVar(&intentCasos, "casos", "", "Directorio de casos JSONL para un proyecto cinético")
 	attachCatalogRepoFlag(intentCommand, &intentRepo)
 
 	var flowSliceFrom string

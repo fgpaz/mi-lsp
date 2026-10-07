@@ -493,6 +493,8 @@ diagnostics:
 
 Antes de la búsqueda ordinaria, si la pregunta es exactamente un id `D-` seguido de dígitos, `nav intent` lee `wiki/90-mapa-ids.md` del workspace. Si la fila existe, responde ese rango con `origin=decision-map` y no continúa al intent normal. Sin mapa, con mapa ilegible o sin esa fila, sigue el intent de siempre.
 
+Un proyecto cinético (directorio bajo `wiki/` con `modelo.md` y `acciones.md`, y sin manifiesto de producto en la raíz ni en un hijo directo) responde `nav intent` en `mode=docs`. Recorre cosa, acción y casos (`--casos`, `MI_LSP_CASOS`, o `~/repos/mios/home/casos`) y cierra con un ítem `wiki_close` (`al_dia` o `drift`).
+
 El envelope publica `generation_id` del snapshot de la generación ya publicada, el mismo de `q` y `nav multi-read`, salvo que otra ruta ya lo hubiera fijado. Cada ítem con archivo trae `sensibilidad` del frontmatter, vacía si no hay marca. mi-lsp no filtra. Ver [[RF-QRY-025]].
 
 ## RF y TP asociados

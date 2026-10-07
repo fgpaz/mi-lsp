@@ -148,6 +148,8 @@ evidence:
 | TC-QRY-206 | positivo | RF-QRY-025 | `nav intent` con un id `D-<dígitos>` presente en `wiki/90-mapa-ids.md` lee ese rango antes de buscar y marca `origin=decision-map` |
 | TC-QRY-207 | negativo | RF-QRY-025 | sin mapa, con mapa ilegible o con un id que no está en la tabla, `nav intent` sigue el camino ordinario |
 | TC-QRY-208 | positivo | RF-QRY-025 | cada resultado trae `sensibilidad` del frontmatter y queda vacía si no hay marca; mi-lsp no descarta ítems por esa marca |
+| TC-QRY-209 | positivo | RF-QRY-011 | `TestKineticPromoverLinksActionCaseAndDecision` y `TestKineticDecisionQuestionStaysDocs`: en un proyecto cinético `nav intent` queda en `mode=docs` y enlaza acción, caso y decisión |
+| TC-QRY-210 | negativo | RF-QRY-011 | `TestKineticUnknownActionMarksCatalogDrift` y `TestKineticDetectsWikiWithoutProductManifest`: una acción fuera del catálogo marca `wiki_close` `drift`; `go.mod` deja de ser cinético |
 | TC-QRY-015 | positivo | RF-QRY-004 | incluye numeros de linea en contenido leido |
 | TC-QRY-016 | negativo | RF-QRY-004 | rechaza path traversal (`../../../etc/passwd`) |
 | TC-QRY-017 | positivo | RF-QRY-005 | ejecuta batch con operaciones paralelas y retorna todos los resultados |
