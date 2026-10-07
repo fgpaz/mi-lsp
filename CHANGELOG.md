@@ -10,7 +10,6 @@ and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2
 ### Added
 
 - `mi-lsp mcp` exposes the existing navigation operations through a local JSON-RPC/NDJSON stdio process, with structured JSON and compact agent text responses.
-- Un proyecto cinético (`wiki/` con `modelo.md` y `acciones.md`, sin manifiesto de producto en la raíz) mantiene `nav intent` en `mode=docs`: enlaza cosa, acción y casos (`MI_LSP_CASOS` o `--casos`, default `~/repos/mios/home/casos`) y publica `wiki_close`.
 - Agent-consumed navigation output now defaults to a compact response that names the selected workspace; `--verbose` adds detail, while explicit output formats retain their existing behavior.
 - `nav.multi-read` and `nav.affected` can refresh requested/changed files incrementally before reading published data; impact refresh does not rebuild graph generations, and unresolved seeds may require full reindexing.
 - `mi-lsp admin usage-report --since 7d` prints JSON only: harness usage, continuation follow-through, fallback reason rates, latency percentiles, and empty, partial, and stale-graph signals. It does not store query bodies.
@@ -26,6 +25,12 @@ and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2
 - A backend failure without `hint_code` keeps the stable `error.code`, or `explicit_incomplete` when there is no code.
 - `admin export` marks six or more repeats of the same `hint_code` and `workspace_input` in one minute as a known burst. Stored rows are unchanged, and the first failure of each minute still counts.
 - A successful call that entered with the worker slots already full reports `workers_at_capacity` and `latency_ms`. `max_inflight` still rejects immediately.
+
+## [0.10.4] - 2026-10-07
+
+### Added
+
+- Un proyecto cinético (`wiki/` con `modelo.md` y `acciones.md`, sin manifiesto de producto en la raíz) mantiene `nav intent` en `mode=docs`: enlaza cosa, acción y casos (`MI_LSP_CASOS` o `--casos`, default `~/repos/mios/home/casos`) y publica `wiki_close`.
 
 ## [0.10.2] - 2026-10-06
 
