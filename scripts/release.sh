@@ -31,7 +31,9 @@ if ! [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z]+)?$ ]]; then
   exit 2
 fi
 
-root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# Default root is the repo that contains this script. MI_LSP_ROOT points at
+# another checkout (used to build a tagged commit without dirtying it).
+root="${MI_LSP_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 cd "$root"
 
 find_goreleaser() {
