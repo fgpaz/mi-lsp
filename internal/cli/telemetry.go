@@ -136,6 +136,9 @@ func inferTelemetryBackend(request model.CommandRequest) string {
 		if isGoTelemetryFile(file) {
 			return "gopls"
 		}
+		if isRustTelemetryFile(file) {
+			return "rust-analyzer"
+		}
 		if request.Operation == "nav.context" && !isSemanticTelemetryFile(file) {
 			return "text"
 		}
@@ -162,6 +165,11 @@ func isPythonTelemetryFile(path string) bool {
 func isGoTelemetryFile(path string) bool {
 	lang, ok := language.ForPath(path)
 	return ok && lang == "go"
+}
+
+func isRustTelemetryFile(path string) bool {
+	lang, ok := language.ForPath(path)
+	return ok && lang == "rust"
 }
 
 func firstNonEmpty(values ...string) string {

@@ -60,6 +60,8 @@ func shouldCooldownSemanticBackend(backendType string, err error) bool {
 		return strings.Contains(message, "pyright") && strings.Contains(message, "unavailable")
 	case "gopls":
 		return strings.Contains(message, "gopls") && strings.Contains(message, "unavailable")
+	case "rust-analyzer":
+		return strings.Contains(message, "rust-analyzer") && strings.Contains(message, "unavailable")
 	default:
 		return false
 	}

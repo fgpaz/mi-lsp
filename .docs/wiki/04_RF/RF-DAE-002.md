@@ -73,7 +73,7 @@ evidence:
 | `max_items` | entero | no | CLI | > 0 cuando se explicita | RF-DAE-002 |
 | `max_chars` | entero | no | CLI | >= 0 | RF-DAE-002 |
 | `compress` | booleano | no | CLI | default `false` | RF-DAE-002 |
-| `backend_type` | enum | derivado | daemon | `roslyn`, `tsserver`, `text`, `tree-sitter`, `daemon` | RF-DAE-002 |
+| `backend_type` | enum | derivado | daemon | `roslyn`, `tsserver`, `pyright`, `gopls`, `rust-analyzer`, `catalog`, `text`, `tree-sitter`, `daemon` | RF-DAE-002 |
 | `tail` | entero | no | UI/CLI | > 0 y acotado | RF-DAE-002 |
 
 ## 4. Process Steps (Happy Path)

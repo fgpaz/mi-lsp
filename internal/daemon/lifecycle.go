@@ -648,6 +648,10 @@ func backendsForWorkspace(workspace model.WorkspaceRegistration) []string {
 			if worker.CanUseGopls(workspace.Root) {
 				items = appendIfMissing(items, "gopls")
 			}
+		case "rust":
+			if worker.CanUseRustAnalyzer(workspace.Root) {
+				items = appendIfMissing(items, "rust-analyzer")
+			}
 		}
 	}
 	// Roslyn is warmed only for C# workspaces; a Go/TS/Python repo never pays

@@ -109,6 +109,7 @@ func TestResolveBackendTypeFindRefsBySymbolLanguage(t *testing.T) {
 		want         string
 	}{
 		{"go file", csharp, "pkg/a.go", "gopls"},
+		{"Rust file", csharp, "src/lib.rs", "rust-analyzer"},
 		{"ts file", csharp, "src/a.ts", "tsserver"},
 		{"tsx file", csharp, "src/a.tsx", "tsserver"},
 		{"js file", csharp, "src/a.js", "tsserver"},
@@ -118,6 +119,7 @@ func TestResolveBackendTypeFindRefsBySymbolLanguage(t *testing.T) {
 		{"markdown file is unsupported", csharp, "README.md", "text"},
 		{"yaml file is unsupported", csharp, "ci.yaml", "text"},
 		{"go-only registration", model.WorkspaceRegistration{Languages: []string{"go"}}, "", "gopls"},
+		{"Rust-only registration", model.WorkspaceRegistration{Languages: []string{"rust"}}, "", "rust-analyzer"},
 		{"dominant registration language", model.WorkspaceRegistration{Languages: []string{"typescript", "csharp"}}, "", "tsserver"},
 		{"empty registration never starts roslyn", model.WorkspaceRegistration{}, "", "text"},
 	}
@@ -131,6 +133,37 @@ func TestResolveBackendTypeFindRefsBySymbolLanguage(t *testing.T) {
 	}
 	if got := resolveBackendType(model.WorkspaceRegistration{Languages: []string{"go"}}, model.CommandRequest{Payload: map[string]any{}}, "get_deps"); got != "roslyn" {
 		t.Fatalf("get_deps backend = %q, want roslyn", got)
+	}
+}
+
+func TestFindRefsUsesRustAnalyzerAndCatalogAnchor(t *testing.T) {
+	root, alias := setupRefsWorkspace(t, []string{"rust"}, false, map[string]string{"src/lib.rs": "pub fn run() {}\n"}, []model.SymbolRecord{{
+		FilePath: "src/lib.rs", Name: "run", Kind: "function", StartLine: 1, EndLine: 1, Language: "rust", QualifiedName: "src/lib.rs::run",
+	}})
+	fake := &fakeSemanticCaller{callFn: func(_ context.Context, _ model.WorkspaceRegistration, request model.WorkerRequest) (model.WorkerResponse, error) {
+		if request.BackendType != "rust-analyzer" {
+			t.Fatalf("backend = %q, want rust-analyzer", request.BackendType)
+		}
+		return model.WorkerResponse{Ok: true, Backend: "rust-analyzer", Items: []map[string]any{{"file": filepath.Join(root, "src/lib.rs"), "line": 1, "column": 8}}}, nil
+	}}
+
+	env := runRefs(t, root, alias, fake, map[string]any{"symbol": "run"})
+	calls := fake.requests()
+	if len(calls) != 1 || calls[0].BackendType != "rust-analyzer" {
+		t.Fatalf("calls = %#v, want a single rust-analyzer call", calls)
+	}
+	if calls[0].Payload["file"] != "src/lib.rs" || intFromAny(calls[0].Payload["line"], 0) != 1 {
+		t.Fatalf("anchor payload = %#v, want src/lib.rs:1", calls[0].Payload)
+	}
+	if env.Backend != "rust-analyzer" || env.Degraded || len(envItems(t, env)) != 1 {
+		t.Fatalf("env = backend %q degraded %v items %d", env.Backend, env.Degraded, len(envItems(t, env)))
+	}
+}
+
+func TestResolveContextBackendTypeUsesRustAnalyzer(t *testing.T) {
+	request := model.CommandRequest{Payload: map[string]any{"file": "src/lib.rs"}}
+	if got := resolveContextBackendType(request); got != "rust-analyzer" {
+		t.Fatalf("resolveContextBackendType(.rs) = %q, want rust-analyzer", got)
 	}
 }
 

@@ -137,4 +137,4 @@ Scenario: Rechazar simbolo no encontrado
   - rastreo transitive completo
 - Dependencias externas explicitas:
   - catalogo sintactico local
-  - backend semantico opcional (Roslyn, tsserver, pyright, gopls); Go conserva catalogo AST nativo cuando `gopls` no esta disponible
+  - backend semantico opcional (Roslyn, tsserver, pyright, gopls, rust-analyzer); Go conserva catalogo AST nativo y Rust un catalogo lexical cuando sus backends semanticos no estan disponibles

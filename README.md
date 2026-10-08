@@ -76,7 +76,7 @@ mi-lsp nav multi-read src/billing/retry.go:20-80 tests/billing/retry_test.go:10-
 
 ![Illustrative terminal demo: initialize a repository, search for billing retry, and read two exact file ranges](docs/assets/readme/daily-flow-demo.gif)
 
-The query and paths above are illustrative; use whatever your own search returns. `multi-read` batches several file ranges into one call — no separate "open file" round-trip per result.
+The query and paths above are illustrative; use whatever your own search returns. `multi-read` batches several file ranges into one call — no separate "open file" round-trip per result. Rust repositories are detected from `Cargo.toml` (including Cargo workspaces) and indexed for catalog/search navigation.
 
 ## Core concepts
 
@@ -84,7 +84,7 @@ The query and paths above are illustrative; use whatever your own search returns
 |---|---|
 | **Workspace** | A repo (or a parent folder holding several independent repos — a "container" workspace) registered under an alias. `mi-lsp workspace which` reports the resolved alias, root, and the executable in use, without mutating anything. |
 | **Index** | A repo-local SQLite catalog (`.mi-lsp/index.db`) of symbols, files, and the wiki graph. Built by `init`/`index`; queried directly without a daemon. |
-| **Daemon (optional)** | A per-user background process that keeps semantic workers (Roslyn, `tsserver`, `gopls`, `pyright`) warm across terminals and agents for lower-latency queries. If it is down or stale, cheap reads (`search`, `multi-read`, `wiki search`) still work directly against the index; deeper semantic surfaces fall back visibly instead of failing silently. |
+| **Daemon (optional)** | A per-user background process that keeps semantic workers (Roslyn, `tsserver`, `gopls`, `pyright`, `rust-analyzer`) warm across terminals and agents for lower-latency queries. If it is down or stale, cheap reads (`search`, `multi-read`, `wiki search`) still work directly against the index; deeper semantic surfaces fall back visibly instead of failing silently. |
 | **Wiki / canon navigation** | `nav wiki *` treats a repo's canonical documentation (RS/RF/FL/TP/CT/TECH/DB) as authority. `nav ask`/`nav pack`/`nav route` rank canonical docs first and use code only as supporting evidence. |
 | **TOON format and budgets** | `--format toon` is the recommended default output format — smaller than JSON, easy to parse (`key: value` scalars, `key[N]{cols}:` arrays). `--token-budget` and `--max-chars` (global; `0` = unset) bound how much comes back; truncation always leaves `continuation.next` and a truncation marker instead of silently dropping content. |
 | **Continuation** | Most envelopes carry a `continuation` block. Prefer `continuation.next` over improvising a wider query. |
@@ -158,7 +158,7 @@ More detail: [`TROUBLESHOOTING.md`](TROUBLESHOOTING.md).
 
 Public release bundles cover Windows (`win-x64`, `win-arm64`), Linux (`linux-x64`, `linux-arm64`), and macOS (`darwin-x64`, `darwin-arm64`). Source builds are documented in [CONTRIBUTING.md](CONTRIBUTING.md).
 
-- C# gets the deepest semantics, through a bundled Roslyn worker. TypeScript/JavaScript and Python use local catalogs with optional `tsserver`/`pyright-langserver` enrichment. Go uses a native AST catalog with optional `gopls` enrichment — not Roslyn-level semantics.
+- C# gets the deepest semantics, through a bundled Roslyn worker. TypeScript/JavaScript and Python use local catalogs with optional `tsserver`/`pyright-langserver` enrichment. Go uses a native AST catalog with optional `gopls` enrichment; Rust uses a lexical catalog with optional `rust-analyzer` references/context. These backends do not claim Roslyn-level semantics.
 - No semantic editing or automated refactoring, no remote or multi-host daemon sharing, no authenticated remote governance UI.
 - No remote or HTTP MCP transport; `mi-lsp mcp` is a local stdio process.
 - `mi-lsp mcp` and every door under `integrations/` are optional; the CLI is never a second product waiting behind them.

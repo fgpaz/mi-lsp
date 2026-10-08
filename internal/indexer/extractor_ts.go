@@ -45,6 +45,9 @@ func ExtractCatalog(root string, repo model.WorkspaceRepo, absolutePath string, 
 	if language == "python" {
 		return extractPython(repo, relPath, hash, content), fileRecord
 	}
+	if language == "rust" {
+		return extractRust(repo, relPath, hash, content), fileRecord
+	}
 	return extractTypeScript(repo, relPath, hash, lines, language), fileRecord
 }
 

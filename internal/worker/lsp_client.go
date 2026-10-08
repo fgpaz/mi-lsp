@@ -2,6 +2,7 @@ package worker
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -27,22 +28,39 @@ type LSPConfig struct {
 
 // LSPClient implements RuntimeClient via a standard LSP server.
 type LSPClient struct {
-	config    LSPConfig
-	workspace model.WorkspaceRegistration
-	cmd       *exec.Cmd
-	stdin     io.WriteCloser
-	stdout    *bufio.Reader
-	mu        sync.Mutex
-	seqID     int
-	started   bool
-	openDocs  map[string]openedDocument
-	openOrder []string
+	config             LSPConfig
+	workspace          model.WorkspaceRegistration
+	cmd                *exec.Cmd
+	stdin              io.WriteCloser
+	stdout             *bufio.Reader
+	mu                 sync.Mutex
+	seqID              int
+	started            bool
+	semanticWarmupDone bool
+	openDocs           map[string]openedDocument
+	openOrder          []string
 }
 
 const (
 	maxLSPDocumentBytes = 2 << 20
 	maxLSPOpenDocuments = 32
 )
+
+var lspContentModified = errors.New("LSP content modified")
+
+var lspContentModifiedRetryBackoff = []time.Duration{
+	100 * time.Millisecond,
+	200 * time.Millisecond,
+	400 * time.Millisecond,
+	800 * time.Millisecond,
+	1600 * time.Millisecond,
+}
+
+var rustAnalyzerWarmupBackoff = []time.Duration{
+	250 * time.Millisecond,
+	500 * time.Millisecond,
+	1000 * time.Millisecond,
+}
 
 type openedDocument struct {
 	modTime time.Time
@@ -205,7 +223,7 @@ func (c *LSPClient) findReferences(ctx context.Context, request model.WorkerRequ
 		"context":      map[string]any{"includeDeclaration": true},
 	}
 
-	result, err := c.sendRequest("textDocument/references", params)
+	result, err := c.sendSemanticRequest("textDocument/references", params)
 	if err != nil {
 		return model.WorkerResponse{}, err
 	}
@@ -251,7 +269,7 @@ func (c *LSPClient) getContext(ctx context.Context, request model.WorkerRequest)
 		"position":     lspPositionMap(line, col),
 	}
 
-	result, err := c.sendRequest("textDocument/hover", params)
+	result, err := c.sendSemanticRequest("textDocument/hover", params)
 	if err != nil {
 		return model.WorkerResponse{}, err
 	}
@@ -378,18 +396,57 @@ func (c *LSPClient) backendName() string {
 	return base
 }
 
+func (c *LSPClient) sendSemanticRequest(method string, params any) (json.RawMessage, error) {
+	result, err := c.sendRequest(method, params)
+	if c.semanticWarmupDone || c.backendName() != "rust-analyzer" {
+		return result, err
+	}
+	c.semanticWarmupDone = true
+	for _, delay := range rustAnalyzerWarmupBackoff {
+		if err != nil || !emptyLSPQueryResult(method, result) {
+			return result, err
+		}
+		time.Sleep(delay)
+		result, err = c.sendRequest(method, params)
+	}
+	return result, err
+}
+
+func emptyLSPQueryResult(method string, result json.RawMessage) bool {
+	trimmed := bytes.TrimSpace(result)
+	if len(trimmed) == 0 || bytes.Equal(trimmed, []byte("null")) {
+		return true
+	}
+	switch method {
+	case "textDocument/references":
+		var locations []json.RawMessage
+		return json.Unmarshal(trimmed, &locations) == nil && len(locations) == 0
+	case "textDocument/hover":
+		var hover lspHoverResult
+		return json.Unmarshal(trimmed, &hover) == nil && strings.TrimSpace(hover.Contents.Value) == ""
+	default:
+		return false
+	}
+}
+
 func (c *LSPClient) sendRequest(method string, params any) (json.RawMessage, error) {
-	c.seqID++
-	req := lspRequest{
-		JSONRPC: "2.0",
-		ID:      c.seqID,
-		Method:  method,
-		Params:  params,
+	for attempt := 0; ; attempt++ {
+		c.seqID++
+		req := lspRequest{
+			JSONRPC: "2.0",
+			ID:      c.seqID,
+			Method:  method,
+			Params:  params,
+		}
+		if err := writeLSPMessage(c.stdin, req); err != nil {
+			return nil, err
+		}
+		result, err := c.readResponse(c.seqID)
+		if !errors.Is(err, lspContentModified) || attempt >= len(lspContentModifiedRetryBackoff) {
+			return result, err
+		}
+		time.Sleep(lspContentModifiedRetryBackoff[attempt])
 	}
-	if err := writeLSPMessage(c.stdin, req); err != nil {
-		return nil, err
-	}
-	return c.readResponse(c.seqID)
 }
 
 func (c *LSPClient) sendNotification(method string, params any) error {
@@ -419,7 +476,11 @@ func (c *LSPClient) readResponse(id int) (json.RawMessage, error) {
 			continue
 		}
 		if resp.Error != nil {
-			return nil, fmt.Errorf("LSP error %d: %s", resp.Error.Code, resp.Error.Message)
+			err := fmt.Errorf("LSP error %d: %s", resp.Error.Code, resp.Error.Message)
+			if resp.Error.Code == -32801 {
+				return nil, fmt.Errorf("%w: %s", lspContentModified, err)
+			}
+			return nil, err
 		}
 		return resp.Result, nil
 	}

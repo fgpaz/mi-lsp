@@ -341,11 +341,14 @@ func resolveBackendType(registration model.WorkspaceRegistration, request model.
 	if isGoFile(file) {
 		return "gopls"
 	}
+	if isRustFile(file) {
+		return "rust-analyzer"
+	}
 	return "roslyn"
 }
 
 func targetForRepo(project model.ProjectFile, repo model.WorkspaceRepo, backendType string, method string) (semanticTarget, *model.Envelope, error) {
-	if backendType == "tsserver" || backendType == "pyright" || backendType == "gopls" {
+	if backendType == "tsserver" || backendType == "pyright" || backendType == "gopls" || backendType == "rust-analyzer" {
 		return semanticTarget{Repo: repo, Entrypoint: explicitEntrypoint(repo, repo.Root, "repo"), Synthetic: true}, nil, nil
 	}
 	entrypoint, ok := workspace.DefaultEntrypointForRepo(project, repo.ID)
@@ -445,9 +448,14 @@ func isGoFile(path string) bool {
 	return ok && lang == "go"
 }
 
+func isRustFile(path string) bool {
+	lang, ok := language.ForPath(path)
+	return ok && lang == "rust"
+}
+
 func isOptionalSemanticBackend(backendType string) bool {
 	switch backendType {
-	case "tsserver", "pyright", "gopls":
+	case "tsserver", "pyright", "gopls", "rust-analyzer":
 		return true
 	default:
 		return false

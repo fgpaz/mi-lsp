@@ -24,6 +24,8 @@ func NewRuntimeClient(repoRoot string, workspace model.WorkspaceRegistration, re
 		return NewPyrightClient(runtimeWorkspaceForRequest(workspace, request))
 	case "gopls":
 		return NewGoplsClient(runtimeWorkspaceForRequest(workspace, request))
+	case "rust-analyzer":
+		return NewRustAnalyzerClient(runtimeWorkspaceForRequest(workspace, request))
 	default:
 		return nil, ErrUnsupportedBackend(backendType)
 	}

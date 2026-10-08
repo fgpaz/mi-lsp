@@ -133,6 +133,9 @@ func resolveContextBackendType(request model.CommandRequest) string {
 	if isGoFile(file) {
 		return "gopls"
 	}
+	if isRustFile(file) {
+		return "rust-analyzer"
+	}
 	return "roslyn"
 }
 

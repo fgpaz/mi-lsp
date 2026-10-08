@@ -56,6 +56,8 @@ El detalle operativo y de subsistemas vive en `07_tech/`; `accepted-design` no e
 | Service exploration profile | Subsistema Go | Query/runtime | Agregar evidencia observable por path de servicio usando catalogo + texto |
 | TS semantic backend | Runtime opcional | TS semantic backend | Semantica TS/JS via `tsserver` cuando exista |
 | Python indexer | Subsistema Go | Discovery backend | Indexacion Python lexical acotada para catalogo repo-local |
+| Rust indexer | Subsistema Go | Discovery backend | Indexacion lexical acotada de declaraciones Rust en catalogo repo-local |
+| Rust semantic backend | Runtime opcional | Rust semantic backend | Semantica LSP via `rust-analyzer` cuando exista |
 | Pyright semantic backend | Runtime opcional | Python semantic backend | Semantica Python via `pyright-langserver` |
 | Governance UI | HTTP loopback local | Runtime supervision | Estado, accesos, memoria y diagnostico |
 | File watcher (fsnotify) | Subsistema daemon | Pre-fetch | Re-indexa archivos modificados en background |
@@ -72,7 +74,7 @@ El detalle operativo y de subsistemas vive en `07_tech/`; `accepted-design` no e
 
 - `github.com/fsnotify/fsnotify` v1.9.0+ (file watcher para pre-fetch daemon)
 - `ripgrep` opcional (busqueda de texto; fallback Go nativo si no existe)
-- SDK/runtime de cada backend (Roslyn/.NET, Node/tsserver, Pyright)
+- SDK/runtime de cada backend (Roslyn/.NET, Node/tsserver, Pyright, gopls y rust-analyzer)
 - `.docs/wiki/00_gobierno_documental.md` obligatorio como fuente humana de gobernanza
 - `.docs/wiki/_mi-lsp/read-model.toml` obligatorio como proyeccion versionada del gobierno documental
 
@@ -99,6 +101,7 @@ flowchart LR
     RP --> RW[Roslyn worker]
     RP --> TW[tsserver opcional]
     RP --> PW[Pyright opcional]
+    RP --> RAW[rust-analyzer opcional]
     D --> GD[~/.mi-lsp/daemon state + db]
 ```
 
@@ -171,10 +174,11 @@ flowchart LR
 - `nav governance` es la superficie primaria de diagnostico del perfil efectivo, sync, blockers y stale index; cuando compara `00`/`read-model` contra `index.db`, expone timestamps y razon para que el agente no tenga que inferir el bloqueo.
 - Aun con `read_model=default`, un workspace inicializado con docs minimas utiles bajo `.docs/wiki/07_*.md`, `.docs/wiki/08_*.md` o `.docs/wiki/09_*.md` debe poder resolver una respuesta docs-first razonable sin requerir `read-model.toml` custom.
 - La UI de gobernanza es unica, local a loopback y debe abrirse enfocando workspace, sin duplicar instancias.
-- C# profundo se resuelve con Roslyn; TS/JS, Python y Go tienen backends semanticos opcionales (`tsserver`, `pyright`, `gopls`) con fallback catalog/text.
+- C# profundo se resuelve con Roslyn; TS/JS, Python, Go y Rust tienen backends semanticos opcionales (`tsserver`, `pyright`, `gopls`, `rust-analyzer`) con fallback catalog/text.
 - Go se detecta e indexa con un extractor AST nativo para que `mi-lsp` pueda navegar su propio codigo Go desde el catalogo repo-local, aun sin `gopls`; cuando `gopls` existe, `nav context` y `nav refs` pueden enriquecer la respuesta via LSP.
 - La observación Go acepta `DefaultEntrypoint` como selector repo-local (`go.mod`, `runtime/go.mod`) o como ID de `WorkspaceEntrypoint`: para un ID exige resolver la coincidencia exacta de repo y entrypoint declarados, rebasa la ruta workspace-relative al root del repo seleccionado y vuelve a validar que el resultado sea un `go.mod` repo-local, seguro y regular. En ae-kernel, el repo seleccionado `runtime` puede usar `default_entrypoint=runtime::runtime-go-mod` y termina observando `go.mod` relativo a ese repo. Solo cuando no hay selector el fallback es determinista a `go.mod` en la raíz; cualquier ID desconocido o malformado, selector explícito ausente, no regular, symlink o inseguro falla cerrado, produce omisión Go y no activa fallback. `go.work` no es compatible con la extracción de grafo y se rechaza; en topología `container`, se ignora el selector anidado y se usa la raíz del workspace con ese mismo fallback; elegir el módulo Go no reduce el catálogo general, por lo que el TypeScript y la documentación del root siguen indexándose.
 - Python se indexa con un extractor lexical acotado por lineas para mantener el catalogo repo-local cancelable; semantica profunda opcional via `pyright-langserver` cuando exista.
+- Rust se detecta por `Cargo.toml` o archivos `.rs`; los workspaces Cargo conservan sus crates miembros bajo un root y el catálogo lexical indexa declaraciones comunes. `nav context` y `nav refs` usan `rust-analyzer` opcional, con fallback visible a catálogo/texto.
 - `nav context` es slice-first: el core arma un bloque legible por lineas y luego superpone enriquecimiento semantico o de catalogo cuando exista.
 - `nav service` usa evidencia observable, no score fuerte de completitud; cuando el catalogo bajo el path es mayoritariamente Go, perfila `go-package`, evita scans .NET y detecta evidencia Go acotada (`net/http`, routers tipo chi/gin/fiber, Cobra y workers) filtrando falsos positivos obvios de tests, fixtures y literales string/raw.
 - `nav route` es la superficie publica de routing de bajo token: resuelve `anchor_doc + mini_pack_preview` con semantica fail-closed y canonical lane autoritativa. `nav ask` y `nav pack` reutilizan este motor internamente.
@@ -330,7 +334,7 @@ El struct `internal/service/config.go` centraliza todos los valores hardcodeados
 - `nav.find`, `nav.symbols`, `nav.overview` y `nav.intent` aceptan `--offset` para paginacion cursor-like sobre queries SQL; `nav.search` queda fuera de ese contrato porque sigue siendo rg/text-backed.
 - `nav service` debe funcionar sin Roslyn y seguir entregando evidencia util incluso cuando el catalogo es parcial; para paquetes Go debe apoyarse en catalogo antes que en patrones textuales .NET y solo luego sumar patrones Go language-aware.
 - `nav context` acepta `file line` y `file:line`; sobre archivos no semanticos no debe depender de Roslyn, `tsserver`, Pyright ni `gopls`.
-- Si `tsserver`, `pyright` o `gopls` ya fallaron por indisponibilidad en la misma sesion/runtime, el core puede entrar en cooldown corto y degradar directamente a catalog/text.
+- Si `tsserver`, `pyright`, `gopls` o `rust-analyzer` ya fallaron por indisponibilidad en la misma sesion/runtime, el core puede entrar en cooldown corto y degradar directamente a catalog/text.
 - `mi-lsp doctor` es el comando unificado de diagnostico: sin args inspecciona el workspace actual; con `--workspace <alias>` inspecciona ese workspace. Reporta alias duplicados, worktrees, paths stale, colisiones de casing, shadowing de binario, health de daemon/workers y next actions.
 
 ## Fan-out de comandos wiki
@@ -345,6 +349,7 @@ Los comandos `nav ask/search/find --all-workspaces` implementan un patrón de pa
 - [TECH-TS-BACKEND.md](07_tech/TECH-TS-BACKEND.md)
 - [TECH-DEPENDENCY-HARDENING.md](07_tech/TECH-DEPENDENCY-HARDENING.md)
 - [TECH-PYTHON-BACKEND.md](07_tech/TECH-PYTHON-BACKEND.md)
+- [TECH-RUST-BACKEND.md](07_tech/TECH-RUST-BACKEND.md)
 - [TECH-SERVICE-EXPLORATION.md](07_tech/TECH-SERVICE-EXPLORATION.md)
 - [TECH-WIKI-AWARE-SEARCH.md](07_tech/TECH-WIKI-AWARE-SEARCH.md)
 - [TECH-GOVERNANCE-PROFILES.md](07_tech/TECH-GOVERNANCE-PROFILES.md)
@@ -363,6 +368,7 @@ Actualizar `07` y/o `TECH-*` cuando cambie cualquiera de estos puntos:
 - dependencia obligatoria del worker o estrategia de instalacion
 - backend semantico TS/JS
 - backend semantico Python (Pyright)
+- backend semantico Rust (`rust-analyzer`)
 - estrategia de hardening de dependencias o bootstrap runtime
 - perfiles de exploracion docs-first o evidence-first como `nav ask` y `nav service`
 - embeddings backends, profiles, configuracion, migracion o recall contract
