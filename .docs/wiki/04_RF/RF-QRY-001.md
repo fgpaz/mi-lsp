@@ -124,7 +124,7 @@ El campo `reason` pertenece a un catálogo versionado (`primitives-v2`) para que
 |---|---|
 | `index_not_ready` | no hay catálogo publicado o no se pudo leer; respondió texto |
 | `index_schema_broken` | `index.db` corrupta o con esquema roto; respondió texto y la base se pone en cuarentena al reindexar |
-| `lsp_unavailable` | falta el binario o runtime del backend semántico (roslyn/tsserver/pyright/gopls) |
+| `lsp_unavailable` | falta el binario o runtime del backend semántico (roslyn/tsserver/pyright/gopls/rust-analyzer) |
 | `lsp_error` | el backend semántico falló o devolvió error |
 | `semantic_empty_text_hits` | el backend semántico devolvió vacío pero la verificación textual encontró coincidencias |
 | `language_unsupported` | el archivo o símbolo no tiene backend semántico para su lenguaje |

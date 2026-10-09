@@ -482,6 +482,8 @@ func backendForLanguage(lang string) (string, bool) {
 	switch strings.ToLower(lang) {
 	case "go":
 		return "gopls", true
+	case "rust":
+		return "rust-analyzer", true
 	case "typescript", "javascript":
 		return "tsserver", true
 	case "python":

@@ -16,6 +16,8 @@ tests:
   - internal/indexer/indexer_progress_test.go
   - internal/workspace/gitignore_test.go
   - internal/indexer/extractor_python_test.go
+  - internal/indexer/extractor_rust_test.go
+  - internal/workspace/rust_topology_test.go
   - internal/service/autoindex_test.go
 ---
 
@@ -113,6 +115,7 @@ evidence:
 - Para Go (`.go`), el extractor usa `go/parser`/AST nativo para catalogar funciones, métodos, tipos, structs, interfaces, consts y vars. Un módulo anidado puede conservarse como entrypoint con ruta exacta relativa al workspace (por ejemplo, `runtime/go.mod`); el selector del observador puede ser la ruta repo-local explícitamente configurada (`go.mod`) o un ID de `WorkspaceEntrypoint`. Un ID se resuelve con coincidencia exacta de repo y entrypoint, se rebasa la ruta workspace-relative al root del repo seleccionado y se revalida como `go.mod` repo-local seguro y regular. IDs desconocidos o malformados, rutas inseguras, absolutas, con `..`, fuera del root, inexistentes, no regulares o con symlink final fallan cerrado y producen omisión/diagnóstico (`""`) sin activar el fallback; `go.work` se rechaza como selector.
 - Si el selector Go repo-local está vacío, la selección permanece determinista en `go.mod` del root. Un root solo con `go.work` no selecciona Go ni se envía al parser de `go.mod`; el contenido raíz no relacionado sigue indexándose y conserva su ownership; el indexador no sustituye este fallback por descubrimiento recursivo arbitrario.
 - Para Python (`.py`, `.pyi`), el extractor usa una pasada lexical acotada por lineas e indentacion. Prioriza catalogo navegable y cancelabilidad por archivo; formas no reconocidas quedan cubiertas por `nav search` textual o Pyright opcional.
+- Para Rust (`.rs`), el extractor lexical acotado cataloga funciones, métodos, tipos, traits, módulos, constantes, estáticos y macros comunes sin compilar crates; formas no reconocidas conservan `FileRecord` y `nav search` textual.
 - `index cancel` sin `--force` marca `requested_cancel`; el worker debe detenerse cooperativamente al volver al loop de indexacion. `--force` queda como escape para procesos colgados y debe limpiar el lock asociado si el PID ya no vive.
 - `.mi-lsp/**` es estado operacional del workspace, no input indexable. El walker y los matchers deben excluirlo tambien cuando aparece anidado dentro de repos hijos o cuando `.gitignore` intenta re-incluirlo con `!`.
 ### 6.1 Autosanación del índice desde lecturas (`nav.find`)

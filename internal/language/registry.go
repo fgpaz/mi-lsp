@@ -9,17 +9,19 @@ import (
 // registry pairs extension -> language for all supported source-code files.
 var registry = map[string]string{
 	// JavaScript
-	".js":   "javascript",
-	".jsx":  "javascript",
-	".mjs":  "javascript",
-	".cjs":  "javascript",
+	".js":  "javascript",
+	".jsx": "javascript",
+	".mjs": "javascript",
+	".cjs": "javascript",
 	// TypeScript
-	".ts":   "typescript",
-	".tsx":  "typescript",
-	".mts":  "typescript",
-	".cts":  "typescript",
+	".ts":  "typescript",
+	".tsx": "typescript",
+	".mts": "typescript",
+	".cts": "typescript",
 	// C#
 	".cs": "csharp",
+	// Rust
+	".rs": "rust",
 	// Go
 	".go": "go",
 	// Python

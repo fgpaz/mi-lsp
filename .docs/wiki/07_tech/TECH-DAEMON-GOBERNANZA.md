@@ -68,7 +68,10 @@ Define el modelo canonico del daemon global, su governance UI workspace-first y 
 - Pools separados por backend:
   - `roslyn`
   - `tsserver`
-- El warm de un workspace es por lenguaje detectado (`roslyn` para C#, `tsserver`, `pyright`, `gopls` para Go) y ya no calienta Roslyn por defecto en repos sin C#.
+  - `pyright`
+  - `gopls`
+  - `rust-analyzer`
+- El warm de un workspace es por lenguaje detectado (`roslyn` para C#, `tsserver`, `pyright`, `gopls` para Go y `rust-analyzer` para Rust) y ya no calienta Roslyn por defecto en repos sin C#.
 - Politica por defecto:
   - `max_workers = 6` (era 3)
   - `idle_timeout = 30m`

@@ -187,6 +187,7 @@ var stableTelemetryCodeAllowlist = map[string]struct{}{
 	"repo_selector_invalid":                     {},
 	"repository_identity_missing":               {},
 	"roslyn_generic":                            {},
+	"rust-analyzer_generic":                     {},
 	"roslyn_worker_bootstrap":                   {},
 	"runtime_state_unavailable":                 {},
 	"scope_narrowing_available":                 {},

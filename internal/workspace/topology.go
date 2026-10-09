@@ -12,9 +12,11 @@ import (
 )
 
 type repoDetection struct {
-	repo        model.WorkspaceRepo
-	entrypoints []model.WorkspaceEntrypoint
-	hasMarkers  bool
+	repo              model.WorkspaceRepo
+	entrypoints       []model.WorkspaceEntrypoint
+	hasMarkers        bool
+	cargoRootManifest bool
+	cargoWorkspace    bool
 }
 
 func DetectWorkspace(path string) (model.WorkspaceRegistration, error) {
@@ -41,7 +43,7 @@ func DetectWorkspaceLayout(path string, explicitName string) (model.WorkspaceReg
 	kind := model.WorkspaceKindSingle
 	detections := []repoDetection{}
 	switch {
-	case rootHasGit || (rootDetection.hasMarkers && len(childDetections) == 0):
+	case rootHasGit || rootDetection.cargoRootManifest || (rootDetection.hasMarkers && len(childDetections) == 0):
 		detections = append(detections, rootDetection)
 	case len(childDetections) > 0:
 		kind = model.WorkspaceKindContainer
@@ -448,6 +450,9 @@ func detectRepo(workspaceRoot string, repoRoot string) (repoDetection, error) {
 	solutions := make([]string, 0)
 	projects := make([]string, 0)
 	goModules := make([]string, 0)
+	rustManifests := make([]string, 0)
+	cargoRootManifest := false
+	cargoWorkspace := false
 	maxDepth := strings.Count(repoRoot, string(os.PathSeparator)) + 4
 
 	repoRootReal, _ := filepath.EvalSymlinks(repoRoot)
@@ -491,11 +496,20 @@ func detectRepo(workspaceRoot string, repoRoot string) (repoDetection, error) {
 			languages["typescript"] = struct{}{}
 		case ".py", ".pyi":
 			languages["python"] = struct{}{}
+		case ".rs":
+			languages["rust"] = struct{}{}
 		}
 		switch strings.ToLower(entry.Name()) {
 		case "go.mod", "go.work":
 			languages["go"] = struct{}{}
 			goModules = append(goModules, relPath)
+		case "cargo.toml":
+			languages["rust"] = struct{}{}
+			rustManifests = append(rustManifests, relPath)
+			if filepath.Clean(current) == filepath.Join(repoRoot, "Cargo.toml") {
+				cargoRootManifest = true
+				cargoWorkspace = declaresCargoWorkspace(current)
+			}
 		case "package.json", "tsconfig.json", "next.config.js", "next.config.ts", "vite.config.ts":
 			languages["typescript"] = struct{}{}
 		case "pyproject.toml", "setup.py", "setup.cfg", "requirements.txt", "poetry.lock", "pipfile", "pipfile.lock":
@@ -510,8 +524,10 @@ func detectRepo(workspaceRoot string, repoRoot string) (repoDetection, error) {
 	languageList := mapKeys(languages)
 	slices.Sort(languageList)
 	slices.Sort(goModules)
+	slices.Sort(rustManifests)
 	if len(solutions) == 0 && len(projects) == 0 {
 		projects = append(projects, goModules...)
+		projects = append(projects, rustManifests...)
 	}
 	entrypoints := buildEntrypoints(repoID, relRoot, solutions, projects)
 	defaultEntrypoint := defaultEntrypointID(entrypoints)
@@ -523,10 +539,27 @@ func detectRepo(workspaceRoot string, repoRoot string) (repoDetection, error) {
 			Languages:         languageList,
 			DefaultEntrypoint: defaultEntrypoint,
 		},
-		entrypoints: entrypoints,
-		hasMarkers:  len(languageList) > 0 || len(entrypoints) > 0,
+		entrypoints:       entrypoints,
+		hasMarkers:        len(languageList) > 0 || len(entrypoints) > 0,
+		cargoRootManifest: cargoRootManifest,
+		cargoWorkspace:    cargoWorkspace,
 	}, nil
 }
+
+func declaresCargoWorkspace(path string) bool {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return false
+	}
+	for _, line := range strings.Split(string(data), "\n") {
+		line = strings.TrimSpace(strings.SplitN(line, "#", 2)[0])
+		if line == "[workspace]" {
+			return true
+		}
+	}
+	return false
+}
+
 func workspacePathInside(root, path string) bool {
 	if root == "" || path == "" {
 		return false
