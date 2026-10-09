@@ -155,6 +155,9 @@ var stableTelemetryCodeAllowlist = map[string]struct{}{
 	"missing_expected_hash":                     {},
 	"missing_symbol":                            {},
 	"nav_generic":                               {},
+	"nav_find_index_absent":                     {},
+	"nav_find_index_broken":                     {},
+	"nav_find_index_unreadable":                 {},
 	"explicit_incomplete":                       {},
 	"narrow_scope":                              {},
 	"no_matches":                                {},
@@ -181,6 +184,10 @@ var stableTelemetryCodeAllowlist = map[string]struct{}{
 	"qry_edit_plan_language_not_supported":      {},
 	"qry_edit_plan_overlap":                     {},
 	"qry_edit_plan_unsafe_path":                 {},
+	"q_execute_failed":                          {},
+	"q_parse_failed":                            {},
+	"q_projection_failed":                       {},
+	"q_workspace_failed":                        {},
 	"read_error":                                {},
 	"regex_auto_healed":                         {},
 	"regex_suspected":                           {},
@@ -456,6 +463,17 @@ func EnrichAccessEvent(event model.AccessEvent, request model.CommandRequest, en
 			event.HintCode = strings.TrimSpace(envelope.Error.HintCode)
 		}
 	}
+	if code, stage := qFailureTelemetryCode(request.Operation, envelope.Error); code != "" {
+		event.ErrorKind = "q"
+		event.ErrorCode = code
+		event.FailureStage = stage
+	}
+	if code := navFindCatalogTelemetryCode(request.Operation, envelope.Warnings); code != "" {
+		event.ErrorKind = "catalog"
+		event.ErrorCode = code
+		event.FailureStage = "catalog"
+		event.HintCode = code
+	}
 
 	event.ResultCount = count
 	event.Truncated = envelope.Truncated
@@ -491,6 +509,36 @@ func EnrichAccessEvent(event model.AccessEvent, request model.CommandRequest, en
 		event.DecisionJSON = buildDecisionJSON(event.Route, request, focusOp, focusPayload, envelope, fallback)
 	}
 	return NormalizeAccessEvent(event)
+}
+
+func qFailureTelemetryCode(operation string, failure *model.EnvelopeError) (string, string) {
+	if !strings.EqualFold(strings.TrimSpace(operation), "q") || failure == nil || !strings.EqualFold(strings.TrimSpace(failure.Kind), "q") {
+		return "", ""
+	}
+	switch strings.ToLower(strings.TrimSpace(failure.Stage)) {
+	case "parse":
+		return "q_parse_failed", "parse"
+	case "workspace", "workspace_resolution":
+		return "q_workspace_failed", "workspace"
+	case "projection":
+		return "q_projection_failed", "projection"
+	default:
+		return "q_execute_failed", "execute"
+	}
+}
+
+func navFindCatalogTelemetryCode(operation string, warnings []string) string {
+	if !strings.EqualFold(strings.TrimSpace(operation), "nav.find") {
+		return ""
+	}
+	for _, warning := range warnings {
+		for _, code := range []string{"nav_find_index_absent", "nav_find_index_unreadable", "nav_find_index_broken"} {
+			if strings.Contains(warning, "telemetry_code="+code) {
+				return code
+			}
+		}
+	}
+	return ""
 }
 
 func telemetryFocus(request model.CommandRequest) (string, map[string]any) {

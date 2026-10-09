@@ -67,6 +67,8 @@ evidence:
 | TC-DAE-026 | positivo | RF-DAE-002 | `admin export --summary` agrega `recommendations` y usage-doctor actions derivadas de telemetria sanitizada sin cambiar raw events ni exponer payloads |
 | TC-DAE-027 | positivo | RF-DAE-005 | `mi-lsp stats --by-client --days 7 --format json` agrupa llamadas e informa éxito, p50/p90 de latencia y bytes, y fallback sin contenido de consultas |
 | TC-DAE-028 | negativo | RF-DAE-005 | `--days 0` se rechaza; fallo de almacenamiento/consulta no se representa falsamente como actividad cero |
+| TC-DAE-029 | positivo | RF-DAE-002 | `TestClientCohortTreatsBenchAsTestAndManualCLIAsUnknown` y `TestSummaryAttributionDoesNotCountBenchOrManualCLIAsWork`: `bench` queda en `test`, `manual-cli`/cliente vacío en `unknown`, y ninguno suma a `work` |
+| TC-DAE-030 | positivo | RF-DAE-002 | `TestEnrichAccessEventAssignsTypedQFailureCodes`, `TestEnrichAccessEventTypesNavFindCatalogFallback` y `TestCatalogTelemetryErrorCodeDistinguishesCatalogStates`: q se tipa por etapa y `nav.find` distingue índice ausente/ilegible/roto sin persistir consulta cruda |
 
 ```toon
 block_id: tp-dae-stats-cases

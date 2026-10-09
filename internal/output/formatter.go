@@ -3,6 +3,7 @@ package output
 import (
 	"encoding/json"
 	"fmt"
+	"runtime"
 	"strings"
 	"unicode"
 
@@ -293,22 +294,112 @@ func renderTOON(env model.Envelope) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+	if env.Continuation != nil {
+		continuation := map[string]any{
+			"next":   continuationTargetCommand(env.Continuation.Next, env.Continuation.Cursor),
+			"reason": env.Continuation.Reason,
+		}
+		if env.Continuation.Alternate != nil {
+			continuation["alternate"] = continuationTargetCommand(*env.Continuation.Alternate, "")
+		}
+		if env.Continuation.Cursor != "" {
+			continuation["cursor"] = env.Continuation.Cursor
+		}
+		m["continuation"] = continuation
+	}
 	if sanitizeTOONMap(m) {
 		appendTOONWarning(m, "toon output sanitized unsafe control characters")
 	}
-	out, err := toon.Marshal(m)
+	continuation := m["continuation"]
+	delete(m, "continuation")
+	out, err := marshalTOONMap(m, continuation)
 	if err != nil {
 		return nil, err
 	}
-	// Update token estimate in the map and re-marshal to include it
+	// Update token estimate in the map and re-marshal to include it.
 	if stats, ok := m["stats"].(map[string]any); ok {
 		stats["tokens_est"] = (len(out) + 3) / 4
-		out, err = toon.Marshal(m)
+		out, err = marshalTOONMap(m, continuation)
 		if err != nil {
 			return nil, err
 		}
 	}
 	return out, nil
+}
+
+func marshalTOONMap(m map[string]any, continuation any) ([]byte, error) {
+	if continuation == nil {
+		return toon.Marshal(m)
+	}
+	first, err := toon.Marshal(map[string]any{"continuation": continuation})
+	if err != nil {
+		return nil, err
+	}
+	rest, err := toon.Marshal(m)
+	if err != nil {
+		return nil, err
+	}
+	if len(first) > 0 && first[len(first)-1] != '\n' {
+		first = append(first, '\n')
+	}
+	return append(first, rest...), nil
+}
+
+func continuationTargetCommand(target model.ContinuationTarget, cursor string) string {
+	if strings.TrimSpace(target.Op) == "" {
+		return ""
+	}
+	parts := append([]string{"mi-lsp"}, strings.Split(target.Op, ".")...)
+	argument := ""
+	switch target.Op {
+	case "q":
+		argument = target.Query
+	case "nav.refs":
+		argument = firstNonEmptyContinuationArg(target.Symbol, target.Query)
+	case "nav.multi-read":
+		argument = target.Path
+	case "nav.batch":
+		if encoded, err := json.Marshal(target.Batch); err == nil {
+			argument = string(encoded)
+		}
+	default:
+		argument = firstNonEmptyContinuationArg(target.Query, target.Symbol, target.Path, target.DocID)
+	}
+	if argument != "" {
+		parts = append(parts, quoteContinuationArg(argument))
+	}
+	if target.Op == "nav.wiki.pack" && target.DocID != "" {
+		parts = append(parts, "--doc", quoteContinuationArg(target.DocID))
+	}
+	if target.Workspace != "" {
+		parts = append(parts, "--workspace", quoteContinuationArg(target.Workspace))
+	}
+	if target.Repo != "" {
+		parts = append(parts, "--repo", quoteContinuationArg(target.Repo))
+	}
+	if target.Full {
+		parts = append(parts, "--full")
+	}
+	if target.Op == "q" && cursor != "" {
+		parts = append(parts, "--page", quoteContinuationArg(cursor))
+	}
+	return strings.Join(parts, " ")
+}
+
+func firstNonEmptyContinuationArg(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return value
+		}
+	}
+	return ""
+}
+
+func quoteContinuationArg(value string) string {
+	if runtime.GOOS == "windows" {
+		return "'" + strings.ReplaceAll(value, "'", "''") + "'"
+	}
+	return "'" + strings.ReplaceAll(value, "'", "'\\''") + "'"
 }
 
 func sanitizeTOONMap(m map[string]any) bool {
