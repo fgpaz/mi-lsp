@@ -380,14 +380,17 @@ func clientHasMarker(name string, markers []string) bool {
 	return false
 }
 
-// clientCohort assigns a cautious cohort from client name and session
-// presence alone. Workspace names are never consulted: a workspace name is
-// not proof of real or test work, and demo-prefixed workspaces can only ever
-// be labeled candidates.
-func clientCohort(clientName string, sessionID string) string {
+// clientCohort assigns a cautious cohort from client name, session presence,
+// and whether the event is the benchmark operation. Workspace names are never
+// consulted: a workspace name is not proof of real or test work, and
+// demo-prefixed workspaces can only ever be labeled candidates.
+func clientCohort(clientName string, sessionID string, operation string) string {
 	name := strings.ToLower(strings.TrimSpace(clientName))
 	if !meaningfulClient(clientName) {
 		return "unknown"
+	}
+	if strings.EqualFold(strings.TrimSpace(operation), "bench") {
+		return "test"
 	}
 	switch {
 	case clientHasMarker(name, systemClientMarkers):
@@ -429,7 +432,7 @@ func (a *summaryAccumulator) add(raw model.AccessEvent) {
 	a.attr.classCounts[clientClass(event.ClientName)]++
 	a.attr.clientEvents[clientKey]++
 	a.attr.clientRawName[clientKey] = strings.TrimSpace(event.ClientName)
-	cohort := clientCohort(event.ClientName, event.SessionID)
+	cohort := clientCohort(event.ClientName, event.SessionID, event.Operation)
 	a.attr.cohortCounts[cohort]++
 	if realSession(event.SessionID) {
 		a.attr.realSessions[event.SessionID] = struct{}{}

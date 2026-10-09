@@ -1660,7 +1660,8 @@ func (a *App) find(ctx context.Context, request model.CommandRequest) (model.Env
 	patternSelector := shellQuoteArg(pattern)
 	catalogReady, stateErr := store.WorkspaceCatalogReady(ctx, registration.Root)
 	if stateErr != nil {
-		return a.findTextFallback(ctx, registration, project, request, pattern, classifyCatalogUnavailable(stateErr)), nil
+		code := catalogTelemetryErrorCode(stateErr, registration.Root, catalogReady)
+		return a.findTextFallback(ctx, registration, project, request, pattern, classifyCatalogUnavailable(stateErr), code), nil
 	}
 	if !catalogReady {
 		if !workspaceAliasRegistered(registration.Name) {
@@ -1684,7 +1685,7 @@ func (a *App) find(ctx context.Context, request model.CommandRequest) (model.Env
 				},
 			}, nil
 		}
-		return a.findTextFallback(ctx, registration, project, request, pattern, model.ReasonIndexNotReady), nil
+		return a.findTextFallback(ctx, registration, project, request, pattern, model.ReasonIndexNotReady, catalogTelemetryErrorCode(nil, registration.Root, false)), nil
 	}
 	kind, _ := request.Payload["kind"].(string)
 	exact, _ := request.Payload["exact"].(bool)
@@ -1695,10 +1696,7 @@ func (a *App) find(ctx context.Context, request model.CommandRequest) (model.Env
 	}
 	db, err := openWorkspaceDB(registration, "nav.find", true) // readOnly
 	if err != nil {
-		if isIndexSchemaBrokenError(err) {
-			return a.findTextFallback(ctx, registration, project, request, pattern, model.ReasonIndexSchemaBroken), nil
-		}
-		return model.Envelope{}, err
+		return a.findTextFallback(ctx, registration, project, request, pattern, classifyCatalogUnavailable(err), catalogTelemetryErrorCode(err, registration.Root, true)), nil
 	}
 	queryLimit := request.Context.MaxItems
 	sqlOffset := offset
@@ -1727,13 +1725,10 @@ func (a *App) find(ctx context.Context, request model.CommandRequest) (model.Env
 	items, err := query(db)
 	closeErr := db.Close()
 	if err != nil {
-		if isIndexSchemaBrokenError(err) {
-			return a.findTextFallback(ctx, registration, project, request, pattern, model.ReasonIndexSchemaBroken), nil
-		}
-		return model.Envelope{}, err
+		return a.findTextFallback(ctx, registration, project, request, pattern, classifyCatalogUnavailable(err), catalogTelemetryErrorCode(err, registration.Root, true)), nil
 	}
 	if closeErr != nil {
-		return model.Envelope{}, closeErr
+		return a.findTextFallback(ctx, registration, project, request, pattern, model.ReasonIndexNotReady, catalogTelemetryErrorCode(closeErr, registration.Root, true)), nil
 	}
 	warnings := append([]string(nil), scopeWarnings...)
 	if len(items) > 0 && !request.Context.NoIndexRefresh {
@@ -1747,12 +1742,12 @@ func (a *App) find(ctx context.Context, request model.CommandRequest) (model.Env
 		} else if refreshed {
 			db, err = openWorkspaceDB(registration, "nav.find", true)
 			if err != nil {
-				warnings = appendStringIfMissing(warnings, "query catalog refreshed but could not reopen the published snapshot: "+sanitizeIntentError(err))
+				warnings = appendStringIfMissing(warnings, "query catalog refreshed but could not reopen the published snapshot: "+sanitizeIntentError(err)+"; telemetry_code="+catalogTelemetryErrorCode(err, registration.Root, true))
 			} else {
 				items, err = query(db)
 				_ = db.Close()
 				if err != nil {
-					return model.Envelope{}, err
+					return a.findTextFallback(ctx, registration, project, request, pattern, classifyCatalogUnavailable(err), catalogTelemetryErrorCode(err, registration.Root, true)), nil
 				}
 			}
 		}

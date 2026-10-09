@@ -153,6 +153,7 @@ evidence:
 | TC-QRY-211 | positivo/negativo | RF-QRY-023 | `TestParseCanonicalUsageRecipes` y `TestExecuteQCanonicalUsageRecipes` validan y ejecutan literalmente las tres recetas de CT-Q-V1; `TestParseErrorsExplainPositionExpectationAndCanonicalExample` verifica posición, expectativa y ejemplo correcto; los alias inequívocos de `caller`, `callee`, `context=N` y `max-bytes=N` se normalizan |
 | TC-QRY-212 | negativo | RF-QRY-023 | `TestExecuteQUnresolvedAliasSuggestsWorkspaceFromCallerCWD`, `TestExecuteQMissingCatalogNamesExplicitIndexCommandWithoutCreatingIt` y `TestExecuteQUnregisteredPathSuggestsAddWithoutRegistering`: q propone alias/registro/índice según el caso y no crea ni reindexa estado |
 | TC-QRY-213 | negativo | RF-QRY-024 | `TestResolveCatalogTargetUsesRegisteredAliasWithoutIndex` y `TestResolveCatalogTargetSuggestsExplicitRegistrationWhenUnscoped`: grep identifica alias por path/cwd o propone add `--no-index` e index explícitos, sin mutar registry ni crear índice |
+| TC-QRY-214 | positivo | RF-QRY-001 | `TestTOONContinuationIsFirstAndNextIsExecutable` y `TestTOONQContinuationIncludesPageCursorInCommand`: TOON antepone la continuación y entrega un comando ejecutable de una línea; JSON conserva el destino estructurado |
 | TC-QRY-015 | positivo | RF-QRY-004 | incluye numeros de linea en contenido leido |
 | TC-QRY-016 | negativo | RF-QRY-004 | rechaza path traversal (`../../../etc/passwd`) |
 | TC-QRY-017 | positivo | RF-QRY-005 | ejecuta batch con operaciones paralelas y retorna todos los resultados |

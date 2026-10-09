@@ -7,10 +7,14 @@ and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-10-09
+
 ### Changed
 
 - `q` parse failures now report a position, expected syntax, and canonical example; common unambiguous forms (`caller`, `callee`, `context=N`, `max-bytes=N`) are accepted. Workspace resolution and nested reads remain read-only: missing aliases or indexes get explicit recovery commands, never silent registration or refresh.
 - `grep` identifies a registered workspace even when its catalog is missing and prints an explicit index command; unregistered targets get a suggested `workspace add --no-index` command.
+- Telemetry attribution keeps `manual-cli` unknown and assigns the `bench` operation to the test cohort; q-stage and `nav.find` catalog failures receive bounded typed codes without storing raw queries.
+- TOON responses put `continuation` first and render `continuation.next` as a single executable CLI command; JSON keeps its structured target.
 
 ## [0.11.0] - 2026-10-08
 

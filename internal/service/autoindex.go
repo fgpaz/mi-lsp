@@ -90,6 +90,22 @@ func classifyCatalogUnavailable(err error) string {
 	return model.ReasonIndexNotReady
 }
 
+func catalogTelemetryErrorCode(err error, root string, ready bool) string {
+	if err == nil {
+		if !ready {
+			return "nav_find_index_absent"
+		}
+		return ""
+	}
+	if root != "" && catalogHasNoTables(root) {
+		return "nav_find_index_absent"
+	}
+	if isIndexSchemaBrokenError(err) {
+		return "nav_find_index_broken"
+	}
+	return "nav_find_index_unreadable"
+}
+
 type catalogRootError struct {
 	root string
 	err  error
@@ -482,7 +498,7 @@ const autoIndexOverrideOperation = "index.autoindex"
 
 // findTextFallback answers nav.find from text when the catalog cannot. The
 // result is ok:true and degraded; it is never an empty failure.
-func (a *App) findTextFallback(ctx context.Context, registration model.WorkspaceRegistration, project model.ProjectFile, request model.CommandRequest, pattern string, reason string) model.Envelope {
+func (a *App) findTextFallback(ctx context.Context, registration model.WorkspaceRegistration, project model.ProjectFile, request model.CommandRequest, pattern string, reason string, telemetryCodes ...string) model.Envelope {
 	if reason == model.ReasonIndexSchemaBroken && catalogHasNoTables(registration.Root) {
 		// A fresh or empty index.db is simply not built yet.
 		reason = model.ReasonIndexNotReady
@@ -491,6 +507,9 @@ func (a *App) findTextFallback(ctx context.Context, registration model.Workspace
 	limit := request.Context.MaxItems
 	items := []map[string]any{}
 	warnings := []string{fmt.Sprintf("catalog unavailable (%s); served from text; %s", reason, outcome)}
+	if len(telemetryCodes) > 0 && strings.TrimSpace(telemetryCodes[0]) != "" {
+		warnings[0] += "; telemetry_code=" + telemetryCodes[0]
+	}
 	if strings.TrimSpace(pattern) != "" {
 		exact, _ := request.Payload["exact"].(bool)
 		matcher := newTextDeclarationMatcher(pattern, exact)

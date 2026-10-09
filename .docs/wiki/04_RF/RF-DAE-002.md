@@ -4,11 +4,16 @@ title: Compartir runtimes, governance UI y telemetria local
 implements:
   - internal/daemon/server.go
   - internal/daemon/admin.go
+  - internal/daemon/export.go
   - internal/daemon/perf_smoke.go
   - internal/daemon/log_tail.go
+  - internal/service/app.go
+  - internal/service/autoindex.go
+  - internal/telemetry/access_diagnostics.go
 tests:
-  - internal/daemon/server_test.go
-  - internal/daemon/admin_test.go
+  - internal/daemon/export_test.go
+  - internal/service/autoindex_test.go
+  - internal/telemetry/access_diagnostics_test.go
 ---
 
 ```yaml
@@ -87,6 +92,7 @@ evidence:
 7. Si se exceden `max_workers` o `idle_timeout`, el daemon aplica eviction LRU.
 8. `admin export --format toon` y `admin export --summary --format toon` serializan telemetria local en formato agent-readable sin cambiar el origen canonico (`daemon.db`).
 9. Cuando una query degrada de backend por falla runtime, la telemetria guarda solo metadata causal sanitizada (`requested_backend`, `result_backend`, `backend_fallback_taken`, `fallback_from`, `fallback_to`, `runtime_error_code`).
+10. `admin export --summary --attribution` conserva `manual-cli` y el cliente vacío en `unknown`; la operación `bench` se atribuye a `test`, nunca a `work`. Los fallos q se tipan por etapa (`q_parse_failed`, `q_execute_failed`, `q_workspace_failed`, `q_projection_failed`) y el fallback de `nav.find` distingue índice ausente, ilegible y roto (`nav_find_index_absent`, `nav_find_index_unreadable`, `nav_find_index_broken`). Solo se persisten códigos y etapas sanitizados, nunca consultas crudas.
 
 ## 5. Outputs
 

@@ -11,9 +11,16 @@ implements:
   - internal/daemon/export.go
   - internal/daemon/log_tail.go
   - internal/daemon/state_store.go
+  - internal/output/formatter.go
+  - internal/service/app.go
+  - internal/service/autoindex.go
+  - internal/telemetry/access_diagnostics.go
 tests:
   - internal/daemon/export_test.go
   - internal/daemon/log_tail_test.go
+  - internal/output/formatter_test.go
+  - internal/service/autoindex_test.go
+  - internal/telemetry/access_diagnostics_test.go
 ---
 
 # CT-CLI-DAEMON-ADMIN
@@ -263,6 +270,7 @@ Envelope comun:
 Reglas de formato:
 
 - `--format toon` debe recibir el envelope como mapa JSON-compatible y sanitizado recursivamente justo antes de `toon.Marshal`.
+- Si existe `continuation`, TOON la serializa antes del resto del envelope y `continuation.next` contiene un comando CLI ejecutable en una sola línea; JSON conserva el objeto `ContinuationTarget`.
 - La sanitizacion TOON reemplaza controles no imprimibles, excepto tab/newline/carriage-return, por escapes ASCII visibles (`\u0000`, `\u001f`, etc.).
 - Cuando la sanitizacion cambia al menos un string, `warnings` debe agregar una unica entrada `toon output sanitized unsafe control characters`.
 - `--format compact`/JSON mantiene su comportamiento compatible existente y no debe depender de la sanitizacion TOON.
@@ -290,7 +298,9 @@ El summary puede incluir un bloque aditivo `recommendations` para usage-doctor. 
 
 Sin `--limit` explicito, el summary agrega toda la ventana filtrada mediante acumulacion streaming desde `daemon.db`; no debe cargar todos los eventos crudos en memoria. Si el usuario pasa `--limit`, el summary conserva la semantica de muestra acotada. `--by-backend`, `--percentile`, `--by-route`, `--by-client`, `--by-hint` y `--by-failure-stage` siguen siendo opt-in de visualizacion. `--format json` y `--format compact` deben serializar `ExportSummary` como JSON válido; `--format toon` usa TOON y la salida humana tabular queda reservada para formatos text/csv compatibles.
 
-`--summary --attribution` es un bloque aditivo y opt-in (requiere binario actualizado): expone cobertura de atribucion por cliente y sesion sin copiar eventos crudos, patrones, argv, transcripts ni texto de error. Denominadores y limites: `client_name` vacio o `manual-cli` cuenta como atribucion desconocida; `real_sessions` cuenta IDs de sesion distintos y nunca es un conteo de repeticiones por sesion; los cohortes `work`/`test`/`system`/`unknown` son heuristicas derivadas solo de marcadores de nombre de cliente y presencia de sesion, no prueba de trabajo real por evento; los workspaces con prefijo `demo` solo se etiquetan como candidatos; `repeated_failures` y `slow_operations` son candidatos agregados, no repeticiones probadas ni tokens desperdiciados; la telemetria mi-lsp no estima costo ni ahorro de tokens (el costo de modelo pertenece a la integracion nativa Pi) y nunca reporta costo cero para costo desconocido. Uso recomendado: bajo demanda durante analisis y en cierre de ciclo.
+`--summary --attribution` es un bloque aditivo y opt-in (requiere binario actualizado): expone cobertura de atribucion por cliente y sesion sin copiar eventos crudos, patrones, argv, transcripts ni texto de error. Denominadores y limites: `client_name` vacio o `manual-cli` cuenta como atribucion desconocida; `real_sessions` cuenta IDs de sesion distintos y nunca es un conteo de repeticiones por sesion; los cohortes `work`/`test`/`system`/`unknown` son heuristicas derivadas de marcadores de nombre, presencia de sesion y operación `bench` (que cuenta como `test`, nunca como `work`), no prueba de trabajo real por evento; los workspaces con prefijo `demo` solo se etiquetan como candidatos; `repeated_failures` y `slow_operations` son candidatos agregados, no repeticiones probadas ni tokens desperdiciados; la telemetria mi-lsp no estima costo ni ahorro de tokens (el costo de modelo pertenece a la integracion nativa Pi) y nunca reporta costo cero para costo desconocido. Uso recomendado: bajo demanda durante analisis y en cierre de ciclo.
+
+La telemetria asigna `q_parse_failed`, `q_execute_failed`, `q_workspace_failed` o `q_projection_failed` según `error.stage` de q, sin cambiar los códigos públicos congelados de q-v1. El fallback de `nav.find` agrega `nav_find_index_absent`, `nav_find_index_unreadable` o `nav_find_index_broken` según el estado del catálogo. Estos códigos son agregados sanitizados: nunca se persisten consultas crudas ni diagnósticos SQLite.
 
 ### `daemon logs`
 
