@@ -7,6 +7,11 @@ and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2
 
 ## [Unreleased]
 
+### Changed
+
+- `q` parse failures now report a position, expected syntax, and canonical example; common unambiguous forms (`caller`, `callee`, `context=N`, `max-bytes=N`) are accepted. Workspace resolution and nested reads remain read-only: missing aliases or indexes get explicit recovery commands, never silent registration or refresh.
+- `grep` identifies a registered workspace even when its catalog is missing and prints an explicit index command; unregistered targets get a suggested `workspace add --no-index` command.
+
 ## [0.11.0] - 2026-10-08
 
 ### Added

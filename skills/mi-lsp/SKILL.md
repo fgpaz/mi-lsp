@@ -200,6 +200,16 @@ If the pattern contains spaces, quote the whole pattern: `mi-lsp nav search "for
 Do not write several bare words after `nav search`; PowerShell will split them into separate arguments and the CLI will reject the command.
 If the pattern is regex-like, keep it quoted and add `--regex`.
 
+## q-v1 recipes
+
+For bounded semantic pipelines, use `mi-lsp q "<pipeline>" --workspace <alias>` or `execute` with `milsp.q({ pipeline, workspace })`. Keep the workspace explicit. These three recipes cover symbol callers, indexed text, and governed docs; tests parse these exact strings:
+
+- `sym "App.Execute" exact | edges callers depth=2 | read ±3`
+- `text "MI_LSP_REFS_TIMEOUT" type=go | limit 5 | read ±2`
+- `docs "RF-QRY-001" | limit 3 | read`
+
+A parse error names the character position, what was expected, and one canonical example. Correct that stage; do not improvise more syntax. Workspace errors name the probable registered alias or say to run `mi-lsp workspace add <path> --name <alias> --no-index`; an absent index gets `mi-lsp index --workspace <alias>`. Queries never register or reindex silently.
+
 ## Output formats
 
 When stdout is not a terminal, `MI_LSP_CLIENT_NAME` is set, or the client name identifies MCP, navigation uses the compact `agent` format by default. The response starts with the selected `workspace`; `find`, `search`, and `multi-read` return at most five results in this implicit mode. On success, coach/governance blocks and automatic continuations are omitted. Use `--verbose` to request more detail. An explicit `--format` always wins and preserves the selected format's response shape, including JSON used by scripts.

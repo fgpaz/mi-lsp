@@ -45,6 +45,21 @@ evidence:
 
 ## Resultado requerido
 
+```toon
+doc_id: RF-QRY-023
+block_id: RF-QRY-023.q-execution
+kind: normative
+source_of_truth: this
+verify:
+  - go test ./internal/query ./internal/service ./internal/grepx
+  - mi-lsp nav wiki validate-source --workspace mi-lsp --ids RF-QRY-023 --format toon
+evidence:
+  - .docs/wiki/04_RF/RF-QRY-023.md
+  - .docs/wiki/09_contratos/CT-Q-V1.md
+  - internal/query/parser_test.go
+  - internal/service/primitives_q_test.go
+```
+
 Ofrecer una sola gramática de pipelines semánticas `q-v1` mediante CLI, daemon y herramienta MCP Go `milsp`. La frontera del proveedor, envelope, errores, paginación y bytes es normativa en [[CT-Q-V1]]. El sandbox y `execute` pertenecen a mi-mcp; mi-lsp es proveedor y expone `milsp.q(...)` por su manifiesto de proveedor.
 
 ## Gramática y ejecución
@@ -61,9 +76,12 @@ El cursor es opaco y autenticado, ligado a consulta canónica, workspace, genera
 
 Las recetas iniciales son pipelines versionadas `@who-calls`, `@trace`, `@find-def`, `@explain`, `@impact` y `@explain-change`. También hay recetas de compatibilidad `@nav-intent`, `@nav-route`, `@nav-pack`, `@nav-wiki`, `@nav-search`, `@nav-find`, `@nav-refs`, `@nav-related`, `@nav-flow-slice`, `@nav-change-pack`, `@nav-affected`, `@nav-multi-read` y `@nav-overview`. El expansionado conserva `contract_version`; una receta desconocida o argumentos faltantes fallan con `stage_failed` tipado.
 
+Los ejemplos de uso se limitan a las tres recetas canónicas de [[CT-Q-V1]]. Los errores de parse identifican carácter, expectativa y ejemplo correcto. La resolución de workspace es de solo lectura: propone el alias que coincide con cwd/ruta registrada, indica `workspace add ... --no-index` si falta registro e `index --workspace <alias>` si falta índice; nunca registra ni reindexa en silencio.
+
 ## Aceptación
 
-- Gramática quoted, opciones, pipelines de máximo ocho etapas, errores de sintaxis posicionales y `describe` hasta 600 tokens.
+- Gramática quoted, opciones, pipelines de máximo ocho etapas, errores de sintaxis con posición de carácter, expectativa y ejemplo canónico, y `describe` hasta 600 tokens.
+- Las tres recetas canónicas de [[CT-Q-V1]] pasan por el parser en pruebas Go; q no crea workspaces ni reindexa al resolver o consultar.
 - CLI agrega exactamente el subcomando `q`; daemon atiende la operación, registra límites y usa el mismo executor que fallback directo.
 - `milsp` es la primera herramienta MCP, su schema valida opciones q-v1 y las trece herramientas previas siguen listadas.
 - Cursor completo: firma inválida, expiración >10 minutos y cambio de generation se distinguen; orden estable `(path,line,id)`.

@@ -52,14 +52,14 @@ behavior:
   - Por defecto anotar únicamente líneas de match de archivos de código indexados cuando stdout va directamente al agente.
   - Añadir a la línea un sufijo tabulado ⟦clase símbolo⟧; clase es def, ref, com o str y símbolo es el qualified_name contenedor cuando exista.
   - Si no hay catálogo, el archivo no es código soportado o ningún match pertenece a código indexado, entregar la salida original de rg.
-  - Si no hay índice, emitir una sola advertencia index_not_ready por stderr y no registrar automáticamente el workspace.
+  - Resolver por cwd/ruta la mejor workspace registrada sin mutar el registry. Si no hay catálogo, emitir por stderr una guía única con alias y `mi-lsp index --workspace <alias>`; si no está registrado, recomendar `mi-lsp workspace add <ruta> --name <alias> --no-index` y luego indexar explícitamente. No registrar ni reindexar en silencio.
   - Ante timeout, catálogo inválido o fallo recuperado del anotador, conservar íntegra la salida de rg y su exit code.
   - --rg-compat entrega salida rg pura; --annotate fuerza anotación incluso si stdout está redirigido.
   - Los modos de salida incompatibles con anotación (-l, -c, --json, --files, -o, --vimgrep) se mantienen como rg puro salvo --annotate explícito.
   - La telemetría registra operación grep y bytes de salida, nunca patrón, texto de match ni contenido de archivo.
 outputs:
   stdout: coincidencias de rg, potencialmente anotadas por línea
-  stderr: errores originales de rg y advertencia local única cuando falta el índice
+  stderr: errores originales de rg y advertencia local única que nombra el alias probable, la ausencia de registro o el índice faltante
   exit_status: código original de rg
 implementation_bindings:
   - internal/grepx/
@@ -69,6 +69,12 @@ verification:
   - TP-QRY/TC-QRY-192
   - TP-QRY/TC-QRY-193
   - TP-QRY/TC-QRY-194
+verify:
+  - go test ./internal/grepx
+  - mi-lsp nav wiki validate-source --workspace mi-lsp --ids RF-QRY-024 --format toon
+evidence:
+  - .docs/wiki/04_RF/RF-QRY-024.md
+  - internal/grepx/catalog_test.go
 stop_gates:
   - No alterar salida o código de salida en --rg-compat.
   - Nunca hacer que una falla de anotación convierta un éxito/fallo de rg en otro resultado.

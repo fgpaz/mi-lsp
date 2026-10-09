@@ -45,6 +45,7 @@ type QueryOptions struct {
 	AllowCrossWorkspace bool   `json:"allow_cross_workspace,omitempty"`
 	Compress            bool   `json:"compress,omitempty"`
 	NoAutoRegister      bool   `json:"no_auto_register,omitempty"`
+	NoIndexRefresh      bool   `json:"-"`
 	// CrossWorkspaceRead is set in-process when a harness read targets a
 	// workspace outside the caller cwd; it gates side-effect writes such as
 	// the background reindex. Never serialized.

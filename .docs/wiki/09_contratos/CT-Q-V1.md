@@ -45,6 +45,20 @@ evidence:
 
 # CT-Q-V1 — Contrato congelado de consultas q-v1
 
+```toon
+doc_id: CT-Q-V1
+block_id: CT-Q-V1.q-contract
+kind: normative
+source_of_truth: this
+verify:
+  - go test ./internal/query ./internal/service
+  - mi-lsp nav wiki validate-source --workspace mi-lsp --ids CT-Q-V1 --format toon
+evidence:
+  - .docs/wiki/09_contratos/CT-Q-V1.md
+  - internal/query/parser_test.go
+  - internal/service/primitives_q_test.go
+```
+
 Estado: congelado; cualquier cambio incompatible requiere `q-v2`. Este contrato precede y gobierna las implementaciones F1, F5, F2 y F4 de mi-lsp. `contract_version` es exactamente `q-v1`.
 
 ## 1. Frontera y superficies
@@ -87,7 +101,13 @@ Fuentes: `sym <nombre|glob> [kind=] [exact] [repo=]`, `text <patrón> [regex] [p
 
 Transformaciones: `edges <refs|callers|callees|impl> [depth=1..3]`, `docs` sin query, `where <campo><op><valor>` (`=`, `!=`, `~`, `!~`; campos `path`, `name`, `kind`, `origin`, `lang`, `layer`), `limit N`, `uniq`, `sort <campo>`.
 
-Salidas: `read [±N|ctx=N|full]`, `fields a,b,…`, `count`. Meta: `describe [verbo|@receta]` con gramática/recetas en ≤600 tokens. Máximo ocho etapas. Las fuentes mantienen su origen y nunca degradan un vacío semántico a resultado de texto no relacionado.
+Salidas: `read [±N|ctx=N|full]`, `fields a,b,…`, `count`. Meta: `describe [verbo|@receta]` con gramática/recetas en ≤600 tokens. Máximo ocho etapas. Las fuentes mantienen su origen y nunca degradan un vacío semántico a resultado de texto no relacionado. Se aceptan alias inequívocos: `edges caller`/`callee`, `read context=N` y `max-bytes=N` equivalen a `callers`/`callees`, `ctx=N` y `max_bytes=N`.
+
+Recetas de uso canónicas (también se prueban literalmente en Go):
+
+- `sym "App.Execute" exact | edges callers depth=2 | read ±3`
+- `text "MI_LSP_REFS_TIMEOUT" type=go | limit 5 | read ±2`
+- `docs "RF-QRY-001" | limit 3 | read`
 
 Presupuesto por defecto `budget=2000` tokens; máximo 12000, estimado como bytes serializados/4. `fields` por defecto es `id,kind,name,file,line,origin`; `text` solo aparece después de `read`. `edges` limita fan-out a 50 por fuente y 200 por etapa. Orden final/paginable determinista por ruta y línea, con desempate por id.
 
@@ -97,9 +117,10 @@ Todo resultado contiene `contract_version:"q-v1"`, `operation:"q"`, `ok`, `works
 
 El envelope también publica `generation_id`: el snapshot de la generación ya publicada (`last_index`, `active_catalog`, `active_docs`, `active_memory`), el mismo que usan `nav intent` y `nav multi-read`, para que el consumidor cachee contra esa generación. Cada ítem agrega `sensibilidad` desde el frontmatter del archivo; va vacía si no hay marca. mi-lsp no filtra por ese campo. El detalle compartido está en [[RF-QRY-025]].
 
-Los únicos `error.code` terminales q-v1 son `timeout`, `cancelled`, `cursor_invalid`, `cursor_expired`, `snapshot_changed`, `stage_failed` y `max_bytes_item_exceeded`. El error incluye `stage` cuando aplica y detalle acotado/sanitizado. No se inventan códigos alternativos para estas condiciones. Errores de sintaxis/opción inválida usan `stage_failed` con posición y expectativa.
+Los únicos `error.code` terminales q-v1 son `timeout`, `cancelled`, `cursor_invalid`, `cursor_expired`, `snapshot_changed`, `stage_failed` y `max_bytes_item_exceeded`. El error incluye `stage` cuando aplica y detalle acotado/sanitizado. No se inventan códigos alternativos para estas condiciones. Errores de sintaxis/opción inválida usan `stage_failed` con posición de carácter, expectativa concreta y un único ejemplo canónico: `sym "App.Execute" exact | edges callers depth=2 | read ±3`.
 
 - Una falla después de producir resultados preservables devuelve `ok:true`, `partial:true`, `reason` igual al código de la primera falla y `items` de la última salida completa; `stages` registra las etapas realizadas. Sin resultado preservable devuelve `ok:false`. `fallback_used` refleja solo fallback realmente ejecutado.
+- Workspace se resuelve en modo de solo lectura. Si falla, se sugiere el alias registrado probable por cwd/ruta; si no está registrado, el detalle indica `mi-lsp workspace add <ruta> --name <alias> --no-index`; si falta el índice, indica `mi-lsp index --workspace <alias>`. No se registra ni reindexa en silencio.
 - La precedencia de fallas simultáneas es `cancelled` > `timeout` > `stage_failed`; una falla de cursor o snapshot impide aplicar esa página y se devuelve su código específico. Una etapa degradada registrable no borra resultados previos ni falsea `ok`.
 - Cancelación y deadline son end-to-end desde el caller, daemon y etapa; se revisan antes/después de cada etapa y durante fan-out. Default de reloj 10 s; `timeout_ms` admite 1–30000 ms. Al faltar el daemon, el fallback directo mantiene el mismo contrato y marca `route=direct_fallback`.
 

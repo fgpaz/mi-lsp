@@ -465,6 +465,9 @@ func recordAutoIndexResult(root string, job store.IndexJob, err error) {
 // a workspace the caller did not open, so it needs --allow-cross-workspace and
 // each override use is recorded like any other cross-workspace write.
 func (a *App) crossWorkspaceAwareAutoIndex(ctx context.Context, registration model.WorkspaceRegistration, request model.CommandRequest) string {
+	if request.Context.NoIndexRefresh {
+		return autoIndexOutcomeSkipped + " (read-only q query; run mi-lsp index explicitly when needed)"
+	}
 	if request.Context.CrossWorkspaceRead {
 		if !request.Context.AllowCrossWorkspace {
 			return autoIndexOutcomeSkipped + " (cross-workspace read; run mi-lsp index from that workspace or pass --allow-cross-workspace)"
