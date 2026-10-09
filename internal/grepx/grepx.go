@@ -20,8 +20,8 @@ import (
 // DefaultBudget is the annotation time budget (grep-v1).
 const DefaultBudget = 300 * time.Millisecond
 
-// NoIndexNotice is the single stderr line printed when matches fell in code
-// files but no catalog was available.
+// NoIndexNotice is the generic fallback when a code match has no resolvable
+// workspace or catalog. More specific cases name the alias and repair command.
 const NoIndexNotice = "mi-lsp: sin índice (index_not_ready)"
 
 // Options configures one grep run.
@@ -195,10 +195,11 @@ func runAnnotated(ctx context.Context, rgPath string, opts Options, info argInfo
 		budget: opts.Budget,
 		ctx:    annotationCtx,
 	}
+	target := resolveCatalogTarget(searchStart(info, opts.Cwd), opts.Cwd)
 	result := Result{Mode: "annotated"}
-	if root, ok := resolveCatalogRoot(searchStart(info, opts.Cwd)); ok {
-		proc.cat = newCatalog(root)
-		result.Workspace = root
+	if target.root != "" {
+		proc.cat = newCatalog(target.root)
+		result.Workspace = target.workspace
 		defer proc.cat.close()
 	}
 
@@ -218,8 +219,10 @@ func runAnnotated(ctx context.Context, rgPath string, opts Options, info argInfo
 	result.Matches = proc.matches
 	result.Annotated = proc.annotated
 	if proc.sawCode && (proc.cat == nil || proc.cat.err != nil) {
-		fmt.Fprintln(opts.Stderr, NoIndexNotice)
+		fmt.Fprintln(opts.Stderr, catalogTargetNotice(target))
 		result.Mode = "no_index"
+	} else if proc.sawCode && !target.registered {
+		fmt.Fprintln(opts.Stderr, catalogTargetNotice(target))
 	}
 	return result
 }

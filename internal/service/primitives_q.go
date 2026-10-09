@@ -18,6 +18,7 @@ import (
 	"github.com/fgpaz/mi-lsp/internal/model"
 	"github.com/fgpaz/mi-lsp/internal/query"
 	"github.com/fgpaz/mi-lsp/internal/store"
+	"github.com/fgpaz/mi-lsp/internal/workspace"
 )
 
 const qDefaultTimeout = 10 * time.Second
@@ -80,13 +81,35 @@ func (a *App) ExecuteQ(ctx context.Context, request model.CommandRequest, sessio
 	}
 	qctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
-	registration, _, err := a.resolveWorkspaceWithProjectForNavigation(request)
+	request.Context.NoAutoRegister = true
+	request.Context.NoIndexRefresh = true
+	resolution, err := workspace.ResolveWorkspaceSelectionReadOnly(request.Context.Workspace, request.Context.CallerCWD)
 	if err != nil {
-		return qFailureFor("stage_failed", "workspace", err, request.Context.Workspace), nil
+		return qWorkspaceResolutionFailure(request, err), nil
+	}
+	registration := resolution.Registration
+	project, err := workspace.LoadProjectTopology(registration.Root, registration)
+	if err != nil {
+		return qFailureFor("stage_failed", "workspace", err, registration.Name), nil
+	}
+	registration = workspace.ApplyProjectTopology(registration, project)
+	request.Context.Workspace = registration.Name
+	if qNeedsCatalog(pipeline) {
+		if !qWorkspaceRegistered(registration) {
+			alias := strings.TrimSpace(registration.Name)
+			if alias == "" {
+				alias = filepath.Base(filepath.Clean(registration.Root))
+			}
+			detail := fmt.Sprintf("workspace no registrado: corré mi-lsp workspace add %s --name %s --no-index; después corré mi-lsp index --workspace %s", shellQuoteArg(registration.Root), shellQuoteArg(alias), shellQuoteArg(alias))
+			return qFailureFor("stage_failed", "workspace", errors.New(detail), alias), nil
+		}
+		ready, readyErr := store.WorkspaceCatalogReady(ctx, registration.Root)
+		if readyErr != nil || !ready {
+			detail := fmt.Sprintf("índice ausente o no publicado: corré mi-lsp index --workspace %s", shellQuoteArg(registration.Name))
+			return qFailureFor("stage_failed", "workspace", errors.New(detail), registration.Name), nil
+		}
 	}
 	wid := model.WorkspaceID(registration.Root)
-	request.Context.Workspace = registration.Name
-	request.Context.NoAutoRegister = true
 	request.Context.MaxItems = max(request.Context.MaxItems, 200)
 	generation, _ := store.ReadWorkspaceGenerationSnapshot(qctx, registration.Root)
 	pageToken := stringPayload(request.Payload, "page")
@@ -284,11 +307,74 @@ func qFailure(code, stage string, err error) model.Envelope {
 	detail := "q operation failed"
 	if err != nil {
 		detail = err.Error()
-		if len(detail) > 240 {
-			detail = detail[:240]
+		if len(detail) > 500 {
+			detail = detail[:500]
 		}
 	}
 	return model.Envelope{ContractVersion: "q-v1", Operation: "q", Ok: false, Items: model.QItems{}, Stages: []model.QStage{}, Budget: &model.QBudget{Requested: 2000}, Reason: code, Error: &model.EnvelopeError{Kind: "q", Code: code, ReasonCode: code, Message: code, Stage: stage, Detail: detail}}
+}
+
+func qNeedsCatalog(pipeline query.Pipeline) bool {
+	for _, stage := range pipeline.Stages {
+		switch stage.Verb {
+		case "sym", "edges", "id", "diff", "changed":
+			return true
+		}
+	}
+	return false
+}
+
+func qWorkspaceRegistered(registration model.WorkspaceRegistration) bool {
+	registry, err := workspace.LoadRegistryReadOnly()
+	if err != nil {
+		return false
+	}
+	registered, ok := registry.Workspaces[registration.Name]
+	return ok && filepath.Clean(registered.Root) == filepath.Clean(registration.Root)
+}
+
+func qWorkspaceResolutionFailure(request model.CommandRequest, err error) model.Envelope {
+	selector := strings.TrimSpace(request.Context.Workspace)
+	alias := ""
+	detail := err.Error()
+	if resolution, ok := workspace.AsWorkspaceResolutionError(err); ok {
+		if resolution.FallbackAvailable {
+			alias = strings.TrimSpace(resolution.Fallback.Registration.Name)
+			detail = fmt.Sprintf("workspace %q no resuelto; por caller cwd la opción probable es el alias %q; repetí con --workspace %s", selector, alias, shellQuoteArg(alias))
+		} else if cwd := strings.TrimSpace(resolution.CallerCWD); cwd != "" {
+			root, suggestedAlias := qWorkspaceCandidate(cwd)
+			alias = suggestedAlias
+			detail = fmt.Sprintf("no registrado: corré mi-lsp workspace add %s --name %s --no-index; después corré mi-lsp index --workspace %s", shellQuoteArg(root), shellQuoteArg(alias), shellQuoteArg(alias))
+		} else {
+			detail = "workspace sin resolver: pasá --workspace <alias> o consultá `mi-lsp workspace list --group-by-root`"
+		}
+	}
+	return qFailureFor("stage_failed", "workspace", errors.New(detail), alias)
+}
+
+func qWorkspaceCandidate(cwd string) (string, string) {
+	root := filepath.Clean(cwd)
+	if detected, err := workspace.DetectWorkspace(root); err == nil {
+		root = detected.Root
+		if alias := strings.TrimSpace(detected.Name); alias != "" {
+			return root, alias
+		}
+	}
+	for current := root; ; current = filepath.Dir(current) {
+		if _, err := os.Stat(filepath.Join(current, ".git")); err == nil {
+			root = current
+			break
+		}
+		parent := filepath.Dir(current)
+		if parent == current {
+			break
+		}
+	}
+	alias := filepath.Base(root)
+	if alias == "" || alias == "." || alias == string(filepath.Separator) {
+		alias = "workspace"
+	}
+	return root, alias
 }
 func qEnvReason(env model.Envelope) string {
 	if env.Error != nil || !env.Ok {

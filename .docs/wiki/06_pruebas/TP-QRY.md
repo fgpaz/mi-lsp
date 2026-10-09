@@ -136,13 +136,13 @@ evidence:
 | TC-QRY-194 | positivo | RF-QRY-022 | IDs q-v1 incluyen workspace_id/kind/path, separan rev SHA-256 completa, escapan segmentos RFC 3986 y permanecen estables al cambiar contenido; el rev cambia y stale se informa |
 | TC-QRY-195 | positivo/negativo | RF-QRY-022 | resolver un id legacy dentro del workspace produce identidad q-v1 `stale:true`; id sin match produce `missing:true`; un workspace_id distinto falla cerrado |
 | TC-QRY-196 | positivo/negativo | RF-QRY-022 | `read` memoriza ID/rev por sesión sin texto crudo; repetición da `seen:true`, `fresh` retorna texto, `changed since` compara snapshot y LRU/idle limita estado |
-| TC-QRY-197 | positivo/negativo | RF-QRY-023 | parser q acepta quoting, opciones globales y máximo ocho etapas; sintaxis/verbos no soportados producen `stage_failed` tipado |
+| TC-QRY-197 | positivo/negativo | RF-QRY-023 | parser q acepta quoting, opciones globales y máximo ocho etapas; sintaxis/verbos no soportados producen `stage_failed` con posición de carácter, expectativa y ejemplo canónico |
 | TC-QRY-198 | positivo/negativo | RF-QRY-022, RF-QRY-023 | timeout/cancelación end-to-end, prioridad cancelled > timeout > stage_failed, partial preservable, cursor HMAC/TTL/generation, y max_bytes medido sobre envelope completo con clipping UTF-8 |
 | TC-QRY-199 | positivo/compatibilidad | RF-QRY-023 | CLI `mi-lsp q`, dispatch daemon/directo y MCP Go `milsp` comparten contract_version q-v1; `milsp` precede el catálogo y los 13 `nav_*` permanecen disponibles |
 | TC-QRY-200 | positivo/compatibilidad | RF-QRY-023 | recetas iniciales y 13 alias nav tienen expansión q-v1 versionada, entradas válidas y errores tipados para nombres/argumentos inválidos |
 | TC-QRY-204 | positivo/compatibilidad | RF-QRY-023 | `TestProviderManifestCommandPrintsContractAndRealQFlags`: `provider-manifest --format json` emite el contrato mínimo, verifica que el schema refleja flags Cobra reales de `q` y coincide con el manifiesto integrado salvo `provider_version`; no arranca daemon ni requiere red |
 | TC-QRY-201 | positivo | RF-QRY-024 | `mi-lsp grep --rg-compat` preserva exactamente stdout y exit code del proceso rg para matches, ausencia de matches y error de argumentos |
-| TC-QRY-202 | positivo | RF-QRY-024 | `mi-lsp grep` anota solo coincidencias de código indexado en modo agente; sin índice, en archivos no-code o en modos de salida incompatibles devuelve la salida rg pura |
+| TC-QRY-202 | positivo | RF-QRY-024 | `mi-lsp grep` anota solo coincidencias de código indexado en modo agente; sin índice o registro mantiene la salida rg pura y stderr nombra el alias probable o los comandos explícitos para registrar/indexar |
 | TC-QRY-203 | negativo | RF-QRY-024 | timeout o error de anotación no modifica ni suprime salida de rg, y la telemetría no guarda patrón ni texto encontrado |
 | TC-QRY-205 | positivo | RF-QRY-025 | `q`, `nav intent` y `nav multi-read` publican el mismo `generation_id` del snapshot publicado (`last_index`, `active_catalog`, `active_docs`, `active_memory`) |
 | TC-QRY-206 | positivo | RF-QRY-025 | `nav intent` con un id `D-<dígitos>` presente en `wiki/90-mapa-ids.md` lee ese rango antes de buscar y marca `origin=decision-map` |
@@ -150,6 +150,9 @@ evidence:
 | TC-QRY-208 | positivo | RF-QRY-025 | cada resultado trae `sensibilidad` del frontmatter y queda vacía si no hay marca; mi-lsp no descarta ítems por esa marca |
 | TC-QRY-209 | positivo | RF-QRY-011 | `TestKineticPromoverLinksActionCaseAndDecision` y `TestKineticDecisionQuestionStaysDocs`: en un proyecto cinético `nav intent` queda en `mode=docs` y enlaza acción, caso y decisión |
 | TC-QRY-210 | negativo | RF-QRY-011 | `TestKineticUnknownActionMarksCatalogDrift` y `TestKineticDetectsWikiWithoutProductManifest`: una acción fuera del catálogo marca `wiki_close` `drift`; `go.mod` deja de ser cinético |
+| TC-QRY-211 | positivo/negativo | RF-QRY-023 | `TestParseCanonicalUsageRecipes` y `TestExecuteQCanonicalUsageRecipes` validan y ejecutan literalmente las tres recetas de CT-Q-V1; `TestParseErrorsExplainPositionExpectationAndCanonicalExample` verifica posición, expectativa y ejemplo correcto; los alias inequívocos de `caller`, `callee`, `context=N` y `max-bytes=N` se normalizan |
+| TC-QRY-212 | negativo | RF-QRY-023 | `TestExecuteQUnresolvedAliasSuggestsWorkspaceFromCallerCWD`, `TestExecuteQMissingCatalogNamesExplicitIndexCommandWithoutCreatingIt` y `TestExecuteQUnregisteredPathSuggestsAddWithoutRegistering`: q propone alias/registro/índice según el caso y no crea ni reindexa estado |
+| TC-QRY-213 | negativo | RF-QRY-024 | `TestResolveCatalogTargetUsesRegisteredAliasWithoutIndex` y `TestResolveCatalogTargetSuggestsExplicitRegistrationWhenUnscoped`: grep identifica alias por path/cwd o propone add `--no-index` e index explícitos, sin mutar registry ni crear índice |
 | TC-QRY-015 | positivo | RF-QRY-004 | incluye numeros de linea en contenido leido |
 | TC-QRY-016 | negativo | RF-QRY-004 | rechaza path traversal (`../../../etc/passwd`) |
 | TC-QRY-017 | positivo | RF-QRY-005 | ejecuta batch con operaciones paralelas y retorna todos los resultados |

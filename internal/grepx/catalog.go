@@ -3,10 +3,13 @@ package grepx
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
+	"github.com/fgpaz/mi-lsp/internal/model"
 	"github.com/fgpaz/mi-lsp/internal/store"
 	"github.com/fgpaz/mi-lsp/internal/workspace"
 )
@@ -161,21 +164,29 @@ func (f *fileSymbols) startingAt(line int) []symbolSpan {
 	return out
 }
 
-// resolveCatalogRoot finds the workspace root whose index.db covers start.
-// Order: nearest ancestor with .mi-lsp/index.db up to the git toplevel, then a
-// read-only registry lookup. It never registers or writes anything.
-func resolveCatalogRoot(start string) (string, bool) {
+type catalogTarget struct {
+	root       string
+	workspace  string
+	alias      string
+	registered bool
+	indexed    bool
+}
+
+// resolveCatalogTarget selects the nearest local index first, then the most
+// specific registered workspace even when its index is absent. It is read-only.
+func resolveCatalogTarget(start string, cwd string) catalogTarget {
 	dir := start
 	if info, err := os.Stat(dir); err == nil && !info.IsDir() {
 		dir = filepath.Dir(dir)
 	}
-	dir, err := filepath.Abs(dir)
-	if err != nil {
-		return "", false
+	if absolute, err := filepath.Abs(dir); err == nil {
+		dir = absolute
 	}
 	for current := dir; ; {
 		if hasIndex(current) {
-			return current, true
+			target := targetForRoot(current, cwd)
+			target.indexed = true
+			return target
 		}
 		if _, err := os.Stat(filepath.Join(current, ".git")); err == nil {
 			break
@@ -186,24 +197,93 @@ func resolveCatalogRoot(start string) (string, bool) {
 		}
 		current = parent
 	}
+	if registration, ok := registeredWorkspaceForPath(dir, cwd); ok {
+		return catalogTarget{root: registration.Root, workspace: registration.Name, alias: registration.Name, registered: true, indexed: hasIndex(registration.Root)}
+	}
+	root := inferredWorkspaceRoot(dir)
+	return catalogTarget{root: root, workspace: root, indexed: hasIndex(root)}
+}
+
+func targetForRoot(root string, cwd string) catalogTarget {
+	if registration, ok := registeredWorkspaceForPath(root, cwd); ok {
+		return catalogTarget{root: root, workspace: registration.Name, alias: registration.Name, registered: true, indexed: hasIndex(root)}
+	}
+	return catalogTarget{root: root, workspace: root, indexed: hasIndex(root)}
+}
+
+func registeredWorkspaceForPath(path string, cwd string) (model.WorkspaceRegistration, bool) {
 	registry, err := workspace.LoadRegistryReadOnly()
 	if err != nil {
-		return "", false
+		return model.WorkspaceRegistration{}, false
 	}
-	best := ""
+	bestRoot := ""
 	for _, registration := range registry.Workspaces {
-		root := filepath.Clean(registration.Root)
-		if root == "" || !pathWithin(root, dir) || !hasIndex(root) {
+		root, err := filepath.Abs(filepath.Clean(registration.Root))
+		if err != nil || root == "" || !pathWithin(root, path) {
 			continue
 		}
-		if len(root) > len(best) {
-			best = root
+		if len(root) > len(bestRoot) {
+			bestRoot = root
 		}
 	}
-	if best == "" {
-		return "", false
+	if bestRoot == "" {
+		return model.WorkspaceRegistration{}, false
 	}
-	return best, true
+	if resolution, err := workspace.ResolveWorkspaceSelectionReadOnly(bestRoot, cwd); err == nil {
+		return resolution.Registration, true
+	}
+	aliases := make([]string, 0)
+	for alias, registration := range registry.Workspaces {
+		root, err := filepath.Abs(filepath.Clean(registration.Root))
+		if err == nil && root == bestRoot {
+			aliases = append(aliases, alias)
+		}
+	}
+	sort.Strings(aliases)
+	if len(aliases) == 0 {
+		return model.WorkspaceRegistration{}, false
+	}
+	registration := registry.Workspaces[aliases[0]]
+	registration.Name = aliases[0]
+	return registration, true
+}
+
+func inferredWorkspaceRoot(dir string) string {
+	for current := dir; ; {
+		if _, err := os.Stat(filepath.Join(current, ".git")); err == nil {
+			return current
+		}
+		parent := filepath.Dir(current)
+		if parent == current {
+			break
+		}
+		current = parent
+	}
+	if detected, err := workspace.DetectWorkspace(dir); err == nil {
+		return detected.Root
+	}
+	return dir
+}
+
+func catalogTargetNotice(target catalogTarget) string {
+	if target.registered && target.alias != "" {
+		if !target.indexed {
+			return fmt.Sprintf("mi-lsp: índice ausente para workspace %q; corré `mi-lsp index --workspace %s`", target.alias, shellQuote(target.alias))
+		}
+		return fmt.Sprintf("mi-lsp: índice no disponible para workspace %q; verificá `mi-lsp workspace status %s --full` o corré `mi-lsp index --workspace %s`", target.alias, shellQuote(target.alias), shellQuote(target.alias))
+	}
+	if target.root == "" {
+		return NoIndexNotice
+	}
+	alias := filepath.Base(filepath.Clean(target.root))
+	if alias == "" || alias == "." || alias == string(filepath.Separator) {
+		alias = "workspace"
+	}
+	return fmt.Sprintf("mi-lsp: workspace no registrado; corré `mi-lsp workspace add %s --name %s --no-index` y luego `mi-lsp index --workspace %s`", shellQuote(target.root), shellQuote(alias), shellQuote(alias))
+}
+
+func shellQuote(value string) string {
+	return "'" + strings.ReplaceAll(value, "'", "'\\''") + "'"
 }
 
 func hasIndex(root string) bool {

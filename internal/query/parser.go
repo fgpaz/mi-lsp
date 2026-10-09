@@ -5,6 +5,7 @@ import (
 	"strconv"
 	"strings"
 	"unicode"
+	"unicode/utf8"
 )
 
 const ContractVersion = "q-v1"
@@ -28,27 +29,65 @@ type Pipeline struct {
 	Fields    []string
 }
 
+const canonicalParseExample = `sym "App.Execute" exact | edges callers depth=2 | read ±3`
+
+type pipelinePart struct {
+	text  string
+	start int
+}
+
+type pipelineToken struct {
+	text  string
+	start int
+}
+
+type parseIssue struct {
+	offset   int
+	expected string
+	cause    error
+}
+
+func (e *parseIssue) Error() string {
+	if e != nil && e.cause != nil {
+		return e.cause.Error()
+	}
+	return "q syntax error"
+}
+
 func Parse(input string) (Pipeline, error) {
 	parts, err := splitPipeline(input)
 	if err != nil {
-		return Pipeline{}, err
+		issue, ok := err.(*parseIssue)
+		if !ok {
+			issue = &parseIssue{expected: "una pipeline q-v1 válida", cause: err}
+		}
+		return Pipeline{}, formatParseIssue(input, issue)
 	}
-	if len(parts) == 0 || len(parts) > MaxStages {
-		return Pipeline{}, fmt.Errorf("q: se admiten de 1 a %d etapas", MaxStages)
+	if len(parts) == 0 {
+		return Pipeline{}, formatParseIssue(input, &parseIssue{expected: "una pipeline de 1 a 8 etapas", cause: fmt.Errorf("pipeline vacía")})
+	}
+	if len(parts) > MaxStages {
+		return Pipeline{}, formatParseIssue(input, &parseIssue{offset: parts[MaxStages].start, expected: fmt.Sprintf("un máximo de %d etapas", MaxStages), cause: fmt.Errorf("q: se admiten de 1 a %d etapas", MaxStages)})
 	}
 	p := Pipeline{Budget: 2000, MaxBytes: 262144}
-	for index, raw := range parts {
-		tokens, err := tokenize(raw)
+	for index, part := range parts {
+		tokens, err := tokenize(part.text, part.start)
 		if err != nil {
-			return Pipeline{}, fmt.Errorf("q: %d: %w", index+1, err)
+			issue := err.(*parseIssue)
+			issue.expected = "comillas cerradas"
+			return Pipeline{}, formatParseIssue(input, issue)
 		}
 		if len(tokens) == 0 {
-			return Pipeline{}, fmt.Errorf("q: etapa %d vacía", index+1)
+			return Pipeline{}, formatParseIssue(input, &parseIssue{offset: part.start, expected: "una etapa no vacía", cause: fmt.Errorf("q: etapa %d vacía", index+1)})
 		}
-		stage := Stage{Verb: strings.ToLower(tokens[0]), Options: map[string]string{}, Flags: map[string]bool{}}
+		stage := Stage{Verb: strings.ToLower(tokens[0].text), Options: map[string]string{}, Flags: map[string]bool{}}
+		var stageArgs []pipelineToken
 		for _, token := range tokens[1:] {
-			if eq := strings.IndexByte(token, '='); eq > 0 {
-				key, value := strings.ToLower(token[:eq]), token[eq+1:]
+			if eq := strings.IndexByte(token.text, '='); eq > 0 {
+				key, value := strings.ToLower(token.text[:eq]), token.text[eq+1:]
+				if key == "max-bytes" {
+					key = "max_bytes"
+				}
 				switch key {
 				case "budget":
 					p.Budget, err = strconv.Atoi(value)
@@ -66,36 +105,148 @@ func Parse(input string) (Pipeline, error) {
 					stage.Options[key] = value
 				}
 				if err != nil {
-					return Pipeline{}, fmt.Errorf("q: opción %s inválida", key)
+					expected := key + "=<valor válido>"
+					if key == "budget" {
+						expected = "budget=N, con N entre 1 y 12000"
+					} else if key == "max_bytes" {
+						expected = "max_bytes=N, con N de al menos 1024"
+					}
+					return Pipeline{}, formatParseIssue(input, &parseIssue{offset: token.start, expected: expected, cause: fmt.Errorf("q: opción %s inválida", key)})
 				}
-			} else if token == "exact" || token == "regex" || token == "full" || token == "fresh" {
-				stage.Flags[token] = true
-				if token == "fresh" {
+			} else if token.text == "exact" || token.text == "regex" || token.text == "full" || token.text == "fresh" {
+				stage.Flags[token.text] = true
+				if token.text == "fresh" {
 					p.Fresh = true
 				}
 			} else {
-				stage.Args = append(stage.Args, token)
+				stage.Args = append(stage.Args, token.text)
+				stageArgs = append(stageArgs, token)
+			}
+		}
+		if stage.Verb == "edges" && len(stage.Args) > 0 {
+			switch stage.Args[0] {
+			case "ref":
+				stage.Args[0] = "refs"
+			case "caller":
+				stage.Args[0] = "callers"
+			case "callee":
+				stage.Args[0] = "callees"
+			}
+		}
+		if stage.Verb == "read" {
+			if ctx := stage.Options["context"]; ctx != "" && stage.Options["ctx"] == "" {
+				stage.Options["ctx"] = ctx
 			}
 		}
 		if err := validateStage(stage); err != nil {
-			return Pipeline{}, fmt.Errorf("q: etapa %d: %w", index+1, err)
+			offset := part.start + len(part.text)
+			if len(stageArgs) > 0 {
+				offset = stageArgs[len(stageArgs)-1].start
+			}
+			if strings.Contains(err.Error(), "verbo desconocido") {
+				offset = tokens[0].start
+			} else if strings.Contains(err.Error(), "requiere") && len(stageArgs) == 0 {
+				offset = part.start + len(part.text)
+			}
+			if strings.Contains(err.Error(), "edges requiere") && len(stageArgs) > 0 {
+				offset = stageArgs[0].start
+			}
+			return Pipeline{}, formatParseIssue(input, &parseIssue{offset: offset, expected: expectedForStageError(stage.Verb, err), cause: fmt.Errorf("q: etapa %d: %w", index+1, err)})
 		}
 		p.Stages = append(p.Stages, stage)
 	}
 	if p.Budget < 1 || p.Budget > 12000 {
-		return Pipeline{}, fmt.Errorf("q: budget debe estar entre 1 y 12000")
+		return Pipeline{}, formatParseIssue(input, &parseIssue{offset: len(input), expected: "budget=N, con N entre 1 y 12000", cause: fmt.Errorf("q: budget debe estar entre 1 y 12000")})
 	}
 	if p.MaxBytes < 1024 {
-		return Pipeline{}, fmt.Errorf("q: max_bytes mínimo 1024")
+		return Pipeline{}, formatParseIssue(input, &parseIssue{offset: len(input), expected: "max_bytes=N, con N de al menos 1024", cause: fmt.Errorf("q: max_bytes mínimo 1024")})
 	}
 	if p.Fields != nil {
 		for _, field := range p.Fields {
 			if !fieldAllowed(field) {
-				return Pipeline{}, fmt.Errorf("q: campo desconocido %q", field)
+				return Pipeline{}, formatParseIssue(input, &parseIssue{offset: len(input), expected: "un campo permitido: id, rev, kind, name, file, line, text, title", cause: fmt.Errorf("q: campo desconocido %q", field)})
 			}
 		}
 	}
-	return expandRecipes(p)
+	expanded, err := expandRecipes(p)
+	if err != nil {
+		return Pipeline{}, formatParseIssue(input, &parseIssue{offset: len(input), expected: "una receta q-v1 existente con su argumento documentado", cause: err})
+	}
+	return expanded, nil
+}
+
+func formatParseIssue(input string, issue *parseIssue) error {
+	if issue == nil {
+		return fmt.Errorf("q: sintaxis inválida. Ejemplo canónico: %s", canonicalParseExample)
+	}
+	if issue.expected == "" {
+		issue.expected = "una pipeline q-v1 válida"
+	}
+	if issue.cause == nil {
+		issue.cause = fmt.Errorf("sintaxis inválida")
+	}
+	offset := issue.offset
+	if offset < 0 {
+		offset = 0
+	}
+	if offset > len(input) {
+		offset = len(input)
+	}
+	position := utf8.RuneCountInString(input[:offset]) + 1
+	return fmt.Errorf("q: posición %d: %v; se esperaba %s. Ejemplo canónico: %s", position, issue.cause, issue.expected, canonicalParseExample)
+}
+
+func expectedForStageError(verb string, err error) string {
+	message := strings.ToLower(err.Error())
+	switch {
+	case strings.Contains(message, "verbo desconocido"):
+		return "un verbo q-v1: sym, text, docs, id, diff, changed, edges, where, limit, uniq, sort, read, fields, count o describe"
+	case strings.Contains(message, "edges requiere"):
+		return "edges refs|callers|callees|impl"
+	case strings.Contains(message, "read espera"):
+		return "read ±N, read ctx=N, read full o read file:a-b"
+	case strings.Contains(message, "limit requiere"):
+		return "limit N, con N entero no negativo"
+	case strings.Contains(message, "sort"):
+		return "sort <campo> [asc|desc]"
+	case strings.Contains(message, "where"):
+		return "where <campo><op><valor>, con op =, !=, ~ o !~"
+	case strings.Contains(message, "campo"):
+		return "un campo permitido para " + verb
+	case strings.Contains(message, "requiere argumento") || strings.Contains(message, "requiere al menos"):
+		return expectedStageInput(verb)
+	case strings.Contains(message, "recibe") || strings.Contains(message, "no recibe"):
+		return "la cantidad de argumentos documentada para " + verb
+	case strings.Contains(message, "depth"):
+		return "depth=1, depth=2 o depth=3"
+	case strings.Contains(message, "since"):
+		return "changed since=<mark>, con mark entero"
+	default:
+		return "los argumentos documentados para " + verb
+	}
+}
+
+func expectedStageInput(verb string) string {
+	switch verb {
+	case "sym":
+		return `sym "<símbolo o glob>"`
+	case "text":
+		return `text "<patrón>"`
+	case "where":
+		return "where <campo><op><valor>"
+	case "sort":
+		return "sort <campo> [asc|desc]"
+	case "fields":
+		return "fields <campo,campo>"
+	case "id":
+		return "id <identificador>"
+	case "edges":
+		return "edges refs|callers|callees|impl"
+	case "limit":
+		return "limit N"
+	default:
+		return "un argumento válido para " + verb
+	}
 }
 
 func whereFieldAllowed(field string) bool {
@@ -123,11 +274,17 @@ func splitCSV(value string) []string {
 	return out
 }
 
-func splitPipeline(s string) ([]string, error) {
-	var out []string
+func splitPipeline(s string) ([]pipelinePart, error) {
+	var out []pipelinePart
 	start := 0
 	quote := rune(0)
+	quoteStart := 0
 	escaped := false
+	appendPart := func(raw string, rawStart int) {
+		trimmed := strings.TrimSpace(raw)
+		left := len(raw) - len(strings.TrimLeftFunc(raw, unicode.IsSpace))
+		out = append(out, pipelinePart{text: trimmed, start: rawStart + left})
+	}
 	for i, r := range s {
 		if escaped {
 			escaped = false
@@ -145,34 +302,37 @@ func splitPipeline(s string) ([]string, error) {
 		}
 		if r == '\'' || r == '"' {
 			quote = r
+			quoteStart = i
 			continue
 		}
 		if r == '|' {
-			out = append(out, strings.TrimSpace(s[start:i]))
+			appendPart(s[start:i], start)
 			start = i + 1
 		}
 	}
 	if quote != 0 {
-		return nil, fmt.Errorf("comillas sin cerrar")
+		return nil, &parseIssue{offset: quoteStart, expected: "comillas cerradas", cause: fmt.Errorf("comillas sin cerrar")}
 	}
-	out = append(out, strings.TrimSpace(s[start:]))
+	appendPart(s[start:], start)
 	return out, nil
 }
 
-func tokenize(s string) ([]string, error) {
-	var tokens []string
+func tokenize(s string, base int) ([]pipelineToken, error) {
+	var tokens []pipelineToken
 	var b strings.Builder
 	quote := rune(0)
+	quoteStart := 0
 	escaped := false
 	active := false
+	tokenStart := 0
 	flush := func() {
 		if active {
-			tokens = append(tokens, b.String())
+			tokens = append(tokens, pipelineToken{text: b.String(), start: tokenStart})
 			b.Reset()
 			active = false
 		}
 	}
-	for _, r := range s {
+	for i, r := range s {
 		if escaped {
 			b.WriteRune(r)
 			escaped = false
@@ -191,7 +351,11 @@ func tokenize(s string) ([]string, error) {
 			continue
 		}
 		if r == '\'' || r == '"' {
+			if !active {
+				tokenStart = base + i
+			}
 			quote = r
+			quoteStart = base + i
 			active = true
 			continue
 		}
@@ -199,11 +363,14 @@ func tokenize(s string) ([]string, error) {
 			flush()
 			continue
 		}
+		if !active {
+			tokenStart = base + i
+		}
 		b.WriteRune(r)
 		active = true
 	}
 	if quote != 0 {
-		return nil, fmt.Errorf("comillas sin cerrar")
+		return nil, &parseIssue{offset: quoteStart, expected: "comillas cerradas", cause: fmt.Errorf("comillas sin cerrar")}
 	}
 	flush()
 	return tokens, nil

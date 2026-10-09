@@ -21,6 +21,48 @@ func TestParseRejectsMalformedOrOversizedPipeline(t *testing.T) {
 		}
 	}
 }
+
+func TestParseErrorsExplainPositionExpectationAndCanonicalExample(t *testing.T) {
+	for _, input := range []string{`symbol Execute`, `sym Execute | edges callers depth=4`, `sym "unfinished`} {
+		_, err := Parse(input)
+		if err == nil {
+			t.Fatalf("Parse(%q) succeeded", input)
+		}
+		message := err.Error()
+		for _, want := range []string{"posición ", "se esperaba ", `Ejemplo canónico: sym "App.Execute" exact | edges callers depth=2 | read ±3`} {
+			if !strings.Contains(message, want) {
+				t.Errorf("Parse(%q) error %q lacks %q", input, message, want)
+			}
+		}
+	}
+}
+
+func TestParseCanonicalUsageRecipes(t *testing.T) {
+	for _, recipe := range []string{
+		`sym "App.Execute" exact | edges callers depth=2 | read ±3`,
+		`text "MI_LSP_REFS_TIMEOUT" type=go | limit 5 | read ±2`,
+		`docs "RF-QRY-001" | limit 3 | read`,
+	} {
+		if _, err := Parse(recipe); err != nil {
+			t.Errorf("canonical q recipe %q: %v", recipe, err)
+		}
+	}
+}
+
+func TestParseAcceptsCommonUnambiguousNearMisses(t *testing.T) {
+	for _, recipe := range []string{`sym App.Execute | edges callee`, `sym App.Execute | edges caller | read context=3 max-bytes=4096`} {
+		parsed, err := Parse(recipe)
+		if err != nil {
+			t.Errorf("Parse(%q): %v", recipe, err)
+			continue
+		}
+		if strings.Contains(recipe, "max-bytes=") {
+			if parsed.MaxBytes != 4096 || parsed.Stages[1].Args[0] != "callers" || parsed.Stages[2].Options["ctx"] != "3" {
+				t.Errorf("Parse(%q) did not normalize aliases: %#v", recipe, parsed)
+			}
+		}
+	}
+}
 func TestRecipesHaveVersionedSourcesAndExpand(t *testing.T) {
 	want := []string{"explain", "explain-change", "find-def", "impact", "nav-affected", "nav-change-pack", "nav-find", "nav-flow-slice", "nav-intent", "nav-multi-read", "nav-overview", "nav-pack", "nav-refs", "nav-related", "nav-route", "nav-search", "nav-wiki", "trace", "who-calls"}
 	got := RecipeList()

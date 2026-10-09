@@ -1243,6 +1243,11 @@ func sortLiveClassifications(values []string) {
 }
 
 func (a *App) normalizeWorkspaceRequest(ctx context.Context, request model.CommandRequest) (model.CommandRequest, []string, error) {
+	// q marks its nested reads as strictly read-only after resolving the scope
+	// through the registry's read-only path.
+	if request.Context.NoIndexRefresh {
+		return request, nil, nil
+	}
 	// Status is a read-only inspection and must resolve the original caller cwd
 	// in workspaceStatus, before ordinary navigation can collapse a linked tree
 	// to its registered main repository.
@@ -1274,10 +1279,14 @@ func hasAutoRegisterFailureWarning(warnings []string) bool {
 }
 
 func (a *App) resolveWorkspaceWithProjectForNavigation(request model.CommandRequest) (model.WorkspaceRegistration, model.ProjectFile, error) {
-	if request.Context.WorkspaceSource != "auto_register_failed" {
+	if !request.Context.NoIndexRefresh && request.Context.WorkspaceSource != "auto_register_failed" {
 		return a.resolveWorkspaceWithProject(request.Context.Workspace)
 	}
-	resolution, err := workspace.ResolveWorkspaceSelectionReadOnly("", request.Context.CallerCWD)
+	selector := request.Context.Workspace
+	if request.Context.WorkspaceSource == "auto_register_failed" {
+		selector = ""
+	}
+	resolution, err := workspace.ResolveWorkspaceSelectionReadOnly(selector, request.Context.CallerCWD)
 	if err != nil {
 		return model.WorkspaceRegistration{}, model.ProjectFile{}, err
 	}
@@ -1727,7 +1736,7 @@ func (a *App) find(ctx context.Context, request model.CommandRequest) (model.Env
 		return model.Envelope{}, closeErr
 	}
 	warnings := append([]string(nil), scopeWarnings...)
-	if len(items) > 0 {
+	if len(items) > 0 && !request.Context.NoIndexRefresh {
 		paths := make([]string, 0, len(items))
 		for _, item := range items {
 			paths = append(paths, item.FilePath)
