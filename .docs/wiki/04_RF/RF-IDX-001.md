@@ -5,6 +5,7 @@ implements:
   - internal/cli/index.go
   - internal/service/index_jobs.go
   - internal/indexer/indexer.go
+  - internal/indexer/incremental.go
   - internal/store/index_jobs.go
   - internal/store/index_publish.go
   - internal/service/autoindex.go
@@ -14,6 +15,7 @@ tests:
   - internal/store/index_jobs_test.go
   - internal/store/index_lock_test.go
   - internal/indexer/indexer_progress_test.go
+  - internal/indexer/incremental_graph_repair_test.go
   - internal/workspace/gitignore_test.go
   - internal/indexer/extractor_python_test.go
   - internal/indexer/extractor_rust_test.go
@@ -107,6 +109,7 @@ evidence:
 - El indice guarda ownership por repo incluso en `container`.
 - Si el indice detecta ruido en `.docs`, `old/`, `temp/` u otros paths no ignorados, debe sugerir `.milspignore`.
 - Si la wiki canonica existe en disco pero `doc_records` quedo solo con docs `generic`, un `index` incremental sin cambios detectados debe degradar a full re-index en vez de responder `no changes detected`.
+- Si el índice incremental encuentra un grafo stale o inválido sin cambios de catálogo, intenta repararlo; cuando Roslyn no aporta un batch completo, publica un grafo documental si hay Markdown canónico e identidad de repositorio. Si no puede restaurar la frescura, el job falla con un error tipado y no responde `no changes detected` como éxito.
 - Si el proceso cae antes del commit de publicacion, SQLite debe conservar el estado previo y el job queda diagnosticable como stale/failed en la siguiente inspeccion.
 - Los entrypoints auxiliares bajo `.docs/` o `template(s)` no deben convertirse en el default semantico solo por estar presentes en el repo.
 - El indice documental resuelve primero links markdown y doc IDs explicitos; las heuristicas solo completan contexto, no reemplazan trazabilidad explicita.
@@ -148,6 +151,8 @@ evidence:
 - Positivo: `TP-IDX / TC-IDX-001`
 - Positivo: `TP-IDX / TC-IDX-012`
 - Positivo: `TP-IDX / TC-IDX-025`
+- Positivo: `TP-IDX / TC-IDX-026`
+- Negativo: `TP-IDX / TC-IDX-027`
 - Positivo: `TP-QRY / TC-QRY-172`
 - Positivo: `TP-QRY / TC-QRY-173`
 - Positivo: `TP-QRY / TC-QRY-174`

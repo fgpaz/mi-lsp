@@ -7,6 +7,12 @@ and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2
 
 ## [Unreleased]
 
+## [0.12.1] - 2026-10-09
+
+### Fixed
+
+- Incremental/full reindex now repairs stale graph state with a documentation-only generation when complete semantic batches are unavailable, and returns a typed error when an existing graph cannot be brought current.
+
 ## [0.12.0] - 2026-10-09
 
 ### Changed
