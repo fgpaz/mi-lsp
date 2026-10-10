@@ -83,6 +83,7 @@ evidence:
 
 - `daemon start` es idempotente: si ya hay una instancia saludable, la reutiliza.
 - `daemon status` puede devolver `down` sin considerarse error fatal.
+- `admin_token` se conserva para autenticación interna, pero nunca se imprime en claro: las salidas CLI que incluyen estado muestran `[REDACTADO:token]`.
 - La CLI debe seguir operando aunque el daemon no exista.
 
 ## 8. Data Model Impact

@@ -25,7 +25,7 @@ builds:
     flags:
       - -trimpath
     ldflags:
-      - -s -w -X github.com/fgpaz/mi-lsp/internal/cli.buildVersion=v{{ .Version }} -X github.com/fgpaz/mi-lsp/internal/cli.buildRevision={{ .FullCommit }}
+      - -s -w -X github.com/fgpaz/mi-lsp/internal/model.BuildVersion=v{{ .Version }} -X github.com/fgpaz/mi-lsp/internal/model.BuildRevision={{ .FullCommit }}
 
 archives:
   - id: bundled

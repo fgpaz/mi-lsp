@@ -40,6 +40,7 @@ Provides runtime dashboards, access logs, and workspace status.`,
 			if err != nil {
 				return daemon.BuildStatusError()
 			}
+			response = redactDaemonStateOutput(response)
 			response = output.ApplyEnvelopeLimits(response, opts)
 			return state.printEnvelope(response, opts)
 		},

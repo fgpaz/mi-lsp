@@ -254,6 +254,7 @@ cases:
 | TC-GPH-016A | positivo | `TestObserveGoGraphSharesExportImporterIdentity`: imports de libreria estandar mantienen identidad coherente y el batch limpio permanece completo y stageable |
 | TC-GPH-016B | negativo | `TestObserveGoGraphLocalTargetsAreUnsupported`: declaraciones locales no representadas se registran como omission `unsupported_symbol_kind`; no crean unresolved ni alteran completeness/ReadyForStaging |
 | TC-GPH-016C | positivo | `TestObserveGoGraphTopLevelEmbeddedFieldIsStageable`: un campo embebido declarado por AST se materializa como endpoint `field` con evidencia y `contains`; la observación conserva `complete` y pasa `ReadyForStaging`, mientras type-load, parseo, cancelación y endpoints realmente ausentes siguen `partial` y fail-closed |
+| TC-GPH-016D | positivo | `TestObserveGoGraphIgnoresTestOnlyPackages`: un directorio incluido por `go list` solo por `XTestGoFiles` no vuelve parcial el grafo ni impide publicar declaraciones del módulo |
 | TC-GPH-017 | negativo | tsserver ausente/experimental produce omission; texto no crea edge semantica |
 | TC-GPH-018 | negativo | Pyright ausente/experimental y extractor lexical producen candidatos/unresolved, no compiler facts |
 | TC-GPH-019 | negativo | ambiguous, stale o endpoint missing produce GraphUnresolved; validacion confirma cero dangling edges |

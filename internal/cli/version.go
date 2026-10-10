@@ -16,13 +16,6 @@ import (
 	"github.com/fgpaz/mi-lsp/internal/worker"
 )
 
-// These values are populated by GoReleaser for published builds. Local builds
-// continue to report the version and VCS data from Go build info.
-var (
-	buildVersion  string
-	buildRevision string
-)
-
 func newVersionCommand(state *rootState) *cobra.Command {
 	return &cobra.Command{
 		Use:   "version",
@@ -119,16 +112,7 @@ func buildRootVersionInfo(toolRoot string) model.VersionInfo {
 }
 
 func releaseMetadata(version, revision string) (string, string) {
-	if buildVersion != "" {
-		version = buildVersion
-	}
-	if version == "" {
-		version = "unknown"
-	}
-	if buildRevision != "" {
-		revision = buildRevision
-	}
-	return version, revision
+	return model.ReleaseMetadata(version, revision)
 }
 
 func rootVersionString(info model.VersionInfo) string {

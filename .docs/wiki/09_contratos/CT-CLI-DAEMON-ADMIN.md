@@ -7,6 +7,7 @@ status: implemented
 implements:
   - internal/cli/admin.go
   - internal/cli/daemon.go
+  - internal/cli/daemon_output.go
   - internal/daemon/admin.go
   - internal/daemon/export.go
   - internal/daemon/log_tail.go
@@ -16,6 +17,7 @@ implements:
   - internal/service/autoindex.go
   - internal/telemetry/access_diagnostics.go
 tests:
+  - internal/cli/daemon_output_test.go
   - internal/daemon/export_test.go
   - internal/daemon/log_tail_test.go
   - internal/output/formatter_test.go
@@ -193,6 +195,11 @@ defaults:
   wal_checkpoint_interval_sec: 1800
 note: "max_inflight raised from 16 to 48; max_workers raised from 3 to 6 for sustained concurrent ops"
 ```
+
+### Estado público del daemon
+
+- `daemon status`, `daemon restart`, `daemon start` y `admin status` nunca exponen el valor de `admin_token`; muestran `[REDACTADO:token]` cuando hay un token.
+- El daemon conserva el token real en memoria/estado persistido para autenticación; la redacción aplica únicamente a la salida CLI.
 
 ### `index` + indexacion async
 

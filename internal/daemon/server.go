@@ -791,17 +791,14 @@ func daemonRetentionDays() int {
 	return days
 }
 
-// buildVersionString retrieves the version from build info (same source as CLI).
-// Falls back to "unknown" if build info is not available.
+// buildVersionString uses the release version injected for the CLI, falling
+// back to Go build info for local builds.
 func buildVersionString() string {
-	info, ok := debug.ReadBuildInfo()
-	if !ok {
-		return "unknown"
+	version := ""
+	if info, ok := debug.ReadBuildInfo(); ok {
+		version = info.Main.Version
 	}
-	version := info.Main.Version
-	if version == "" {
-		version = "unknown"
-	}
+	version, _ = model.ReleaseMetadata(version, "")
 	return version
 }
 
