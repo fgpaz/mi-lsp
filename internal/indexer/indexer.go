@@ -133,6 +133,15 @@ func indexWorkspaceWithGraphProgress(ctx context.Context, root string, clean boo
 				warnings = append(warnings, "graph observation produced no stageable complete batch; publishing catalog with graph stale")
 			}
 		}
+		if !publishGraph && !explicitlyNonGraphProject(projectFile) {
+			freshness, freshnessErr := store.GraphFreshness(ctx, db, "")
+			if freshnessErr != nil {
+				return freshnessErr
+			}
+			if prior != nil || freshness.State == model.GraphFreshnessStale || freshness.State == model.GraphFreshnessInvalid {
+				return &model.GraphObservationError{Code: "graph_repair_incomplete", Field: "graph_generation", Message: "full index could not publish a fresh graph generation for the existing graph state"}
+			}
+		}
 		var jobGraph *store.IndexJobGraphPublication
 		if publishGraph {
 			if err := reportProgress(ctx, progress, Progress{Stage: "graph.activate", Files: len(files), Symbols: len(symbols), Docs: len(docs), Force: true}); err != nil {

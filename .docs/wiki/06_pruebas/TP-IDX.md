@@ -62,3 +62,5 @@ evidence:
 | TC-IDX-023 | positivo | RF-IDX-001 | `TestExtractPython_EmotionalRubricFixtureDoesNotHang`: fixture Python que antes colgaba se indexa lexicalmente |
 | TC-IDX-024 | positivo | RF-IDX-001 | `TestExtractGoSymbols`: el extractor Go cataloga funciones, metodos y tipos para self-dogfood del repo `mi-lsp` |
 | TC-IDX-025 | positivo | RF-IDX-001 | `TestWalkWorkspaceIgnoresNestedMiLspState` + `TestHardIgnoreMatcherKeepsMiLspIgnoredAfterNegatedReinclude`: `.mi-lsp/**` se trata como hard ignore operacional incluso anidado y aunque haya re-include negado |
+| TC-IDX-026 | positivo | RF-IDX-001 | `TestIncrementalIndexRepairsStaleGraphWithDocumentationGraph`: sin batch semántico completo, el reindex incremental publica un grafo documental fresco contra el catálogo activo |
+| TC-IDX-027 | negativo | RF-IDX-001 | `TestIncrementalIndexReturnsTypedErrorWhenStaleGraphCannotBeRebuilt`: sin identidad publicable, incremental y full reindex devuelven `graph_repair_incomplete` en vez de éxito vacío |

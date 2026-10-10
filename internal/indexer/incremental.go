@@ -399,8 +399,33 @@ func incrementalIndexWithGraphProgressAndChanges(ctx context.Context, workspaceR
 			}
 			return Result{}, fmt.Errorf("incremental graph observation failed: %w", err)
 		}
+	}
+
+	if graphRepair && hasDocChanges && !skipGraphObservation && !explicitlyNonGraphProject(projectFile) {
+		return Result{}, &model.GraphObservationError{Code: "graph_repair_incomplete", Field: "graph_generation", Message: "document changes require a full index pass before graph freshness can be restored"}
+	}
+
+	var graphRequest GraphAssemblyRequest
+	publishGraph := false
+	if observeGraph {
+		var identityWarning string
+		graphRequest, publishGraph, identityWarning = documentationGraphRequest(ctx, workspaceRoot, projectFile, graphBatches, docs, docEdges, docMentions, time.Now().UTC())
+		if identityWarning != "" {
+			graphWarnings = appendIfMissing(graphWarnings, identityWarning)
+		}
 		if len(graphBatches) == 0 && !explicitlyNonGraphProject(projectFile) {
-			graphWarnings = append(graphWarnings, "graph observation produced no stageable complete batch; publishing catalog with graph stale")
+			if publishGraph {
+				graphWarnings = append(graphWarnings, "graph observation produced no stageable complete batch; publishing documentation graph")
+			} else {
+				graphWarnings = append(graphWarnings, "graph observation produced no stageable complete batch; graph remains stale")
+			}
+		}
+		if !publishGraph && !explicitlyNonGraphProject(projectFile) {
+			message := "incremental graph repair could not publish a fresh graph generation"
+			if identityWarning != "" {
+				message = identityWarning
+			}
+			return Result{}, &model.GraphObservationError{Code: "graph_repair_incomplete", Field: "graph_generation", Message: message}
 		}
 	}
 
@@ -596,7 +621,7 @@ func incrementalIndexWithGraphProgressAndChanges(ctx context.Context, workspaceR
 			processedDocs = len(parsedReplacements)
 		}
 
-		if observeGraph && len(graphBatches) != 0 {
+		if observeGraph && publishGraph {
 			prior, ok, priorErr := store.ActiveGraphGeneration(ctx, db)
 			if priorErr != nil {
 				return priorErr
@@ -608,7 +633,7 @@ func incrementalIndexWithGraphProgressAndChanges(ctx context.Context, workspaceR
 			if err := reportProgress(ctx, progress, Progress{Stage: "graph.activate", Files: processedFiles, Symbols: len(allSymbols), Docs: len(docs), Force: true}); err != nil {
 				return err
 			}
-			request := GraphAssemblyRequest{Batches: graphBatches, Docs: docs, DocEdges: docEdges, DocMentions: docMentions, CreatedAt: time.Now().UTC()}
+			request := graphRequest
 			bundle, assembleErr := AssembleGraphObservationBatches(request)
 			if assembleErr != nil {
 				return fmt.Errorf("incremental graph staging failed: %w", assembleErr)

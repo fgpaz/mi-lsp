@@ -90,6 +90,7 @@ evidence:
   - .docs/wiki/06_pruebas/TP-GPH.md
   - internal/indexer/graph_staging.go
   - internal/indexer/graph_staging_test.go
+  - internal/indexer/incremental_graph_repair_test.go
   - internal/model/graph_observation.go
   - internal/service/graph_observer.go
   - worker-dotnet/MiLsp.Worker/RoslynService.cs
@@ -195,6 +196,18 @@ cases:
     when: mi-lsp nav git-frontier consulta la frontera pública
     then: campos sin evidencia permanecen null o unavailable, coherence/freshness no simulan PASS y unavailable/generation_reasons llevan códigos tipados; no se derivan IDs ni digests de timestamps, paths o valores por defecto
     evidence: internal/cli/git_frontier.go
+  - id: TC-GPH-079
+    type: positivo
+    given: catálogo sin cambios, grafo stale, Markdown canónico e identidad de repositorio, sin batch semántico completo
+    when: el reindex incremental repara el grafo
+    then: publica un grafo documental válido y graph freshness queda current contra la generación de catálogo activa
+    evidence: internal/indexer/incremental.go; internal/indexer/incremental_graph_repair_test.go
+  - id: TC-GPH-080
+    type: negativo
+    given: grafo stale y ningún batch completo ni identidad para publicar el fallback documental
+    when: el reindex incremental intenta repararlo
+    then: devuelve GraphObservationError con code=graph_repair_incomplete; no termina como éxito sin cambios
+    evidence: internal/indexer/incremental.go; internal/indexer/incremental_graph_repair_test.go
 ```
 
 ## TP-GPH-001 - Identidad, NodeKey y cross-RID
@@ -227,6 +240,8 @@ cases:
 | TC-GPH-013 | negativo | mismo generation ID con digest/counts distintos bloquea como corrupcion |
 | TC-GPH-014 | negativo | query-time migration o repair implicito falla el test de solo lectura |
 | TC-GPH-014A | positivo | `index --docs-only` publica GraphGeneration documental cuando hay markdown canonico en wiki/ o bibliotecas/ sin batches de compilador |
+| TC-GPH-079 | positivo | reindex incremental publica un grafo documental fresco cuando el catálogo no cambia, el grafo está stale y falta un batch semántico completo |
+| TC-GPH-080 | negativo | reindex incremental devuelve `graph_repair_incomplete` cuando no hay batch completo ni identidad para reparar el grafo stale |
 
 ## TP-GPH-003 - Edges, adapters e incrementalidad
 
