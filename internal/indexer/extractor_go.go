@@ -275,7 +275,7 @@ type goGraphBuilder struct {
 	sourceDomain       []byte
 }
 
-const goGraphExtractorVersion = "go-compiler-observation-v2"
+const goGraphExtractorVersion = "go-compiler-observation-v3"
 
 func goGraphError(code, field, message string) error {
 	return &model.GraphObservationError{Code: code, Field: field, Message: message}
@@ -351,6 +351,12 @@ func ObserveGoGraph(ctx context.Context, req GoGraphObservationRequest) (model.G
 			builder.exports[p.ImportPath] = p.Export
 		}
 		if p.ImportPath == "" || p.Module == nil || p.Module.Path != modulePath || !goGraphResolvedInside(moduleRoot, moduleRootReal, p.Dir) || goGraphSkippedPath(p.Dir) {
+			continue
+		}
+		// `go list ./...` includes test-only directories that have XTestGoFiles
+		// but no buildable package sources. They contribute no declarations to
+		// this build, so do not mark an otherwise complete observation partial.
+		if p.Error == nil && len(p.GoFiles) == 0 && len(p.CgoFiles) == 0 {
 			continue
 		}
 		gp := &goGraphPackage{list: p, fset: token.NewFileSet(), posRefs: map[token.Pos]string{}, owned: true}

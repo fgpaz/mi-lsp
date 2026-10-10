@@ -4,10 +4,13 @@ title: Exponer provenance del binario con `mi-lsp version`
 implements:
   - internal/cli/version.go
   - internal/cli/root.go
+  - internal/daemon/server.go
+  - internal/model/build_metadata.go
   - internal/model/types.go
   - internal/output/formatter.go
 tests:
   - internal/cli/version_test.go
+  - internal/daemon/version_test.go
   - internal/output/formatter_test.go
 ---
 
@@ -88,7 +91,7 @@ evidence:
 
 - Si la metadata VCS no existe, la salida estructurada omite esos campos y la salida `text` muestra `unknown` para revision/modified.
 - `version` no resuelve workspace, no toca registry, no consulta daemon y no requiere worker instalado.
-- GoReleaser inyecta `v{{ .Version }}` y `{{ .FullCommit }}` mediante `-X` en `internal/cli.buildVersion` y `internal/cli.buildRevision`; ambas superficies (`mi-lsp --version` y `mi-lsp version`) priorizan esos valores sobre Go build info, que puede decir `(devel)` para builds empaquetados.
+- GoReleaser inyecta `v{{ .Version }}` y `{{ .FullCommit }}` mediante `-X` en `internal/model.BuildVersion` y `internal/model.BuildRevision`. CLI y daemon comparten esos valores; el estado del daemon no queda en `(devel)` cuando el binario empaquetado ya tiene versión.
 - `version` complementa `go version -m <path>`: el primero prueba la superficie CLI activa; el segundo sigue siendo una comprobacion externa util de provenance.
 - `vcs_modified=false` indica que el binario fue construido desde un arbol limpio; no prueba por si solo que mirrors o instalacion local esten sincronizados.
 

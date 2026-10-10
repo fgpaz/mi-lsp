@@ -48,7 +48,7 @@ and tsserver processes, reducing cold-start latency.`,
 			items := []map[string]any{{
 				"started":         started,
 				"already_running": stateBody.AlreadyRunning,
-				"state":           stateBody,
+				"state":           daemonStateForOutput(stateBody),
 			}}
 			envelope := model.Envelope{Ok: true, Backend: "daemon", Items: items}
 			if warning := daemonRuntimeDriftWarning(stateBody); warning != "" {
@@ -76,6 +76,7 @@ and tsserver processes, reducing cold-start latency.`,
 			if err != nil {
 				return daemon.BuildStatusError()
 			}
+			response = redactDaemonStateOutput(response)
 			response = annotateDaemonRuntimeDrift(response)
 			response = output.ApplyEnvelopeLimits(response, opts)
 			return state.printEnvelope(response, opts)
@@ -124,7 +125,7 @@ and tsserver processes, reducing cold-start latency.`,
 				"restarted":       true,
 				"started":         started,
 				"already_running": stateBody.AlreadyRunning,
-				"state":           stateBody,
+				"state":           daemonStateForOutput(stateBody),
 			}}
 			envelope := model.Envelope{Ok: true, Backend: "daemon", Items: items}
 			if warning := daemonRuntimeDriftWarning(stateBody); warning != "" {
@@ -181,6 +182,7 @@ and tsserver processes, reducing cold-start latency.`,
 			if err != nil {
 				return err
 			}
+			response = redactDaemonStateOutput(response)
 			body, err := json.MarshalIndent(response, "", "  ")
 			if err != nil {
 				return err
