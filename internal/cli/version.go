@@ -16,6 +16,13 @@ import (
 	"github.com/fgpaz/mi-lsp/internal/worker"
 )
 
+// These values are populated by GoReleaser for published builds. Local builds
+// continue to report the version and VCS data from Go build info.
+var (
+	buildVersion  string
+	buildRevision string
+)
+
 func newVersionCommand(state *rootState) *cobra.Command {
 	return &cobra.Command{
 		Use:   "version",
@@ -42,9 +49,10 @@ func buildVersionInfo(toolRoot string) model.VersionInfo {
 	cliPath, executableHash := executableSnapshot()
 	info, ok := debug.ReadBuildInfo()
 	if !ok {
+		version, revision := releaseMetadata("", "")
 		return model.VersionInfo{
 			Command:          "mi-lsp",
-			Version:          "unknown",
+			Version:          version,
 			GoVersion:        runtime.Version(),
 			GOOS:             runtime.GOOS,
 			GOARCH:           runtime.GOARCH,
@@ -53,13 +61,11 @@ func buildVersionInfo(toolRoot string) model.VersionInfo {
 			ToolRoot:         toolRoot,
 			CLIPath:          cliPath,
 			ExecutableSHA256: executableHash,
+			VCSRevision:      revision,
 		}
 	}
 
-	version := info.Main.Version
-	if version == "" {
-		version = "unknown"
-	}
+	version, revision := releaseMetadata(info.Main.Version, buildSetting(info, "vcs.revision"))
 
 	return model.VersionInfo{
 		Command:          "mi-lsp",
@@ -73,7 +79,7 @@ func buildVersionInfo(toolRoot string) model.VersionInfo {
 		ToolRoot:         toolRoot,
 		CLIPath:          cliPath,
 		ExecutableSHA256: executableHash,
-		VCSRevision:      buildSetting(info, "vcs.revision"),
+		VCSRevision:      revision,
 		VCSTime:          buildSetting(info, "vcs.time"),
 		VCSModified:      buildSetting(info, "vcs.modified"),
 	}
@@ -82,21 +88,20 @@ func buildVersionInfo(toolRoot string) model.VersionInfo {
 func buildRootVersionInfo(toolRoot string) model.VersionInfo {
 	info, ok := debug.ReadBuildInfo()
 	if !ok {
+		version, revision := releaseMetadata("", "")
 		return model.VersionInfo{
 			Command:         "mi-lsp",
-			Version:         "unknown",
+			Version:         version,
 			GoVersion:       runtime.Version(),
 			GOOS:            runtime.GOOS,
 			GOARCH:          runtime.GOARCH,
 			ProtocolVersion: model.ProtocolVersion,
 			WorkerRID:       worker.ResolveRID(),
 			ToolRoot:        toolRoot,
+			VCSRevision:     revision,
 		}
 	}
-	version := info.Main.Version
-	if version == "" {
-		version = "unknown"
-	}
+	version, revision := releaseMetadata(info.Main.Version, buildSetting(info, "vcs.revision"))
 	return model.VersionInfo{
 		Command:         "mi-lsp",
 		Version:         version,
@@ -107,10 +112,23 @@ func buildRootVersionInfo(toolRoot string) model.VersionInfo {
 		ProtocolVersion: model.ProtocolVersion,
 		WorkerRID:       worker.ResolveRID(),
 		ToolRoot:        toolRoot,
-		VCSRevision:     buildSetting(info, "vcs.revision"),
+		VCSRevision:     revision,
 		VCSTime:         buildSetting(info, "vcs.time"),
 		VCSModified:     buildSetting(info, "vcs.modified"),
 	}
+}
+
+func releaseMetadata(version, revision string) (string, string) {
+	if buildVersion != "" {
+		version = buildVersion
+	}
+	if version == "" {
+		version = "unknown"
+	}
+	if buildRevision != "" {
+		revision = buildRevision
+	}
+	return version, revision
 }
 
 func rootVersionString(info model.VersionInfo) string {

@@ -7,7 +7,7 @@ implements:
   - internal/model/types.go
   - internal/output/formatter.go
 tests:
-  - internal/cli/root_test.go
+  - internal/cli/version_test.go
   - internal/output/formatter_test.go
 ---
 
@@ -73,7 +73,7 @@ evidence:
 | Campo | Tipo | Destino | Efecto observable |
 |---|---|---|---|
 | `command` | string | usuario/skill | identifica el ejecutable |
-| `version` | string | usuario/skill | version de modulo Go o `(devel)` |
+| `version` | string | usuario/skill | version del tag inyectada por GoReleaser; en builds locales, version del modulo Go (puede ser `(devel)`) |
 | `module_path` | string | usuario/skill | modulo que construyo el binario |
 | `go_version` | string | usuario/skill | toolchain Go usada |
 | `goos` / `goarch` | string | usuario/skill | plataforma real del binario |
@@ -88,6 +88,7 @@ evidence:
 
 - Si la metadata VCS no existe, la salida estructurada omite esos campos y la salida `text` muestra `unknown` para revision/modified.
 - `version` no resuelve workspace, no toca registry, no consulta daemon y no requiere worker instalado.
+- GoReleaser inyecta `v{{ .Version }}` y `{{ .FullCommit }}` mediante `-X` en `internal/cli.buildVersion` y `internal/cli.buildRevision`; ambas superficies (`mi-lsp --version` y `mi-lsp version`) priorizan esos valores sobre Go build info, que puede decir `(devel)` para builds empaquetados.
 - `version` complementa `go version -m <path>`: el primero prueba la superficie CLI activa; el segundo sigue siendo una comprobacion externa util de provenance.
 - `vcs_modified=false` indica que el binario fue construido desde un arbol limpio; no prueba por si solo que mirrors o instalacion local esten sincronizados.
 
@@ -106,4 +107,4 @@ evidence:
 - Registro Cobra: `internal/cli/root.go`
 - Modelo: `internal/model/types.go` (`VersionInfo`)
 - Render text: `internal/output/formatter.go`
-- Cobertura de tests: `TestRootCommandExposesVersionCommand`, `TestBuildVersionInfoUsesRuntimeProvenance`, `TestRenderTextVersionInfo`
+- Cobertura de tests: `TestReleaseLdflagsMetadataOverridesGoBuildInfo`, `TestRenderTextVersionInfo`
