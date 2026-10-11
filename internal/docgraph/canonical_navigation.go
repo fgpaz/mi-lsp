@@ -32,6 +32,41 @@ func CanonicalWikiRoots(root string) ([]string, error) {
 	return roots, nil
 }
 
+// IsGovernedWikiDocument accepts only regular documents beneath an already
+// resolved wiki root, while retaining the path and symlink guards used by
+// canonical navigation.
+func IsGovernedWikiDocument(root string, path string, wikiRoots []string) bool {
+	path = strings.ReplaceAll(strings.TrimSpace(path), `\`, "/")
+	if path == "" || isAbsoluteDeclaredPath(path) {
+		return false
+	}
+	path = filepath.ToSlash(filepath.Clean(filepath.FromSlash(path)))
+	target, err := filepath.Abs(filepath.Join(root, filepath.FromSlash(path)))
+	if err != nil {
+		return false
+	}
+	for _, wikiRoot := range wikiRoots {
+		wikiRoot = strings.ReplaceAll(strings.TrimSpace(wikiRoot), `\`, "/")
+		if wikiRoot == "" || isAbsoluteDeclaredPath(wikiRoot) {
+			continue
+		}
+		base, err := filepath.Abs(filepath.Join(root, filepath.FromSlash(wikiRoot)))
+		if err != nil || !pathHasDirPrefix(base, target) || filepath.Clean(base) == filepath.Clean(target) {
+			continue
+		}
+		if safeRouteDocument(root, path, wikiRoots) {
+			return true
+		}
+	}
+	return false
+}
+
+// SafeRouteDocument validates a relative document path against the workspace
+// and the supplied canonical roots without granting access to other siblings.
+func SafeRouteDocument(root string, relative string, canonRoots []string) bool {
+	return safeRouteDocument(root, relative, canonRoots)
+}
+
 // DeclaresDocumentID distinguishes a declared owner from legacy index rows
 // whose ID may have been inferred from a body mention. Legacy aggregates keep
 // their existing route precedence when there is no declared owner.
@@ -191,13 +226,17 @@ func safeRouteDocument(root, relative string, canonRoots []string) bool {
 	if isAbsoluteDeclaredPath(relative) || strings.TrimSpace(relative) == "" {
 		return false
 	}
-	target := filepath.Join(root, filepath.FromSlash(relative))
+	target, err := filepath.Abs(filepath.Join(root, filepath.FromSlash(relative)))
+	if err != nil {
+		return false
+	}
 	bases := []string{root}
 	for _, canonRoot := range canonRoots {
 		bases = append(bases, filepath.Join(root, filepath.FromSlash(canonRoot)))
 	}
 	for _, base := range bases {
-		if !pathHasDirPrefix(base, target) {
+		base, err = filepath.Abs(base)
+		if err != nil || !safeDirectoryRoot(base) || !pathHasDirPrefix(base, target) {
 			continue
 		}
 		rel, err := filepath.Rel(base, target)
@@ -221,4 +260,34 @@ func safeRouteDocument(root, relative string, canonRoots []string) bool {
 		return false
 	}
 	return false
+}
+
+func safeDirectoryRoot(path string) bool {
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return false
+	}
+	volumeRoot := filepath.VolumeName(abs) + string(filepath.Separator)
+	if volumeRoot == "" {
+		volumeRoot = string(filepath.Separator)
+	}
+	current := filepath.Clean(volumeRoot)
+	relative, err := filepath.Rel(current, filepath.Clean(abs))
+	if err != nil || filepath.IsAbs(relative) || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
+		return false
+	}
+	if relative == "." {
+		return true
+	}
+	for _, component := range strings.Split(relative, string(filepath.Separator)) {
+		if component == "" || component == "." || component == ".." {
+			return false
+		}
+		current = filepath.Join(current, component)
+		info, err := os.Lstat(current)
+		if err != nil || info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
+			return false
+		}
+	}
+	return true
 }
