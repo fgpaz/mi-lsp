@@ -549,6 +549,67 @@ implementation:
   - internal/service/wiki_root.go
 ```
 
+## Escenarios Harness con raíces declaradas
+
+```toon
+doc_id: TP-WIKI
+block_id: tp-wiki-harness-declared-root-selection
+kind: test-cases
+source_of_truth: normative
+verify:
+  - "mi-lsp nav wiki validate-harness --workspace <alias> --format toon"
+  - "mi-lsp nav wiki validate-harness --workspace <alias> --ids <id> --format toon"
+  - "mi-lsp nav wiki validate-harness --workspace <alias> --paths <path> --format toon"
+  - "mi-lsp nav wiki validate-harness --workspace <alias> --ids <id> --paths <path> --format toon"
+evidence:
+  - .docs/wiki/06_pruebas/TP-WIKI.md
+surface: nav.wiki.validate-harness
+phase: FINAL_VERIFY
+runner: CLI real sobre workspace descartable propio; nunca sobre un consumidor
+implementation:
+  - internal/service/harness_validate.go
+  - internal/docgraph/canonical_navigation.go
+contracts: [CT-NAV-WIKI, CT-NAV-WIKI-ROOT]
+requirement: RF-WKS-008
+cases:
+  - id: TC-WIKI-071
+    type: positivo
+    disposition: manual_evidence
+    given: "workspace con canon [[canon]] válido root=wiki/ y un DocRecord indexado con contrato Harness bajo wiki/"
+    when: "mi-lsp nav wiki validate-harness --workspace <alias> --format toon"
+    then: "el documento de wiki/ participa en la compilación y no se informa scope vacío por el prefiltro legado .docs/wiki"
+  - id: TC-WIKI-072
+    type: regresion
+    disposition: manual_evidence
+    given: "workspace sin canon externo y contrato Harness indexado bajo .docs/wiki/"
+    when: "validate-harness sin --ids ni --paths"
+    then: "se conserva selección y veredicto legacy de .docs/wiki"
+  - id: TC-WIKI-073
+    type: negativo
+    disposition: manual_evidence
+    given: "canon declarado root=wiki/ y documento indexado con el mismo basename/ID bajo wiki-extra/"
+    when: "validate-harness se acota por --ids o --paths al documento fuera de raíz"
+    then: "el documento no entra al corpus; carpeta parecida o basename no conceden autoridad"
+  - id: TC-WIKI-074
+    type: regresion
+    disposition: manual_evidence
+    given: "dos documentos válidos en raíces gobernadas, uno coincidente por ID y otro por path"
+    when: "validate-harness recibe --ids y --paths juntos"
+    then: "se conserva matching OR; no aparece glob implícito ni flag nuevo"
+  - id: TC-WIKI-075
+    type: regresion
+    disposition: manual_evidence
+    given: "contrato dual y HumanDoc de governance exacto con imports vacíos, junto a una copia no propietaria"
+    when: "validate-harness compila ambos contratos gobernados"
+    then: "dual permanece validable y solo el path exacto del HumanDoc validado recibe la excepción de imports"
+  - id: TC-WIKI-076
+    type: negativo
+    disposition: manual_evidence
+    given: "registro indexado bajo canon declarado que apunta por symlink fuera de la raíz"
+    when: "validate-harness lee candidatos y sus referencias"
+    then: "el path se excluye sin abrir el destino enlazado ni ampliar la autoridad"
+```
+
 Implementación de los oráculos: `internal/docgraph/canonical_navigation_test.go`, `internal/service/canonical_navigation_test.go`, `internal/service/wiki_root_test.go`. La existencia de los tests no acredita ejecución ni instalación; sus resultados corresponden a la FINAL_VERIFY del owner.
 
 ## Regla de mantenimiento

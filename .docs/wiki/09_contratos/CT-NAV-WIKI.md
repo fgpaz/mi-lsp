@@ -54,6 +54,26 @@ mi-lsp nav wiki validate-source --workspace <alias> [--paths <path[,path...]>] [
 
 `nav wiki` es la puerta documental explicita para agentes. `wiki search` usa el docgraph repo-local y el scorer owner-aware para devolver candidatos wiki, mientras `wiki route`, `wiki pack` y `wiki trace` reutilizan la semantica y el shape de `nav route`, `nav pack` y `nav trace`. `wiki map` publica un catálogo compacto de hubs de una wiki de conocimiento (`wiki/` numerada y `bibliotecas/`) sin cuerpos completos y sin fan-out `--all-workspaces`. `wiki-root` (alias `wiki root`) publica la raíz portable; el envelope vive en [[CT-NAV-WIKI-ROOT]]. `wiki validate-harness` compila readiness de contratos `SDD-HARNESS-v1` sobre los docs gobernados. `wiki validate-source` compila readiness de artefactos que declaran `wiki_source_protocol: SDD-WIKI-SOURCE-v1`; los docs no migrados no son bloqueantes. `wiki search` acepta `RS` como layer outcome y `wiki trace` acepta `RS-*`, `RF-*`, `TP-*`, doc IDs tecnicos exactos (`TECH-*`, `DB-*`, `CT-*`) y source IDs exactos; para IDs tecnicos debe preferir el documento cuyo `doc_id` coincide exactamente antes de usar menciones o fallbacks RF. `--all` sigue recorriendo el set RF canonico, y cuando necesita fallback a disco debe priorizar las rutas gobernadas por `00`/`read-model` antes de caer a layouts legacy.
 
+```toon
+block_id: ct-nav-wiki-harness-canon-selection
+kind: validator-contract
+source_of_truth: normative
+verify:
+  - mi-lsp nav wiki validate-harness --workspace <alias> --format toon
+evidence:
+  - .docs/wiki/06_pruebas/TP-WIKI.md
+  - internal/service/harness_validate.go
+  - internal/docgraph/canonical_navigation.go
+selection:
+  roots: "raíces resueltas por la configuración del workspace y `wiki-root`; conservar `.docs/wiki` cuando exista por compatibilidad"
+  admissible_documents: "solo archivos regulares bajo una raíz exacta declarada/resuelta"
+  path_guards: "rechazar escapes y symlinks"
+  authority: "basename, substring o carpeta parecida por sí solos no conceden autoridad"
+  filters: "`--ids` y `--paths` conservan unión OR dentro del conjunto gobernado"
+  references_corpus: "usa las mismas raíces gobernadas"
+  empty_imports_exception: "solo el path exacto del HumanDoc único validado por governance; un documento similar o una copia no hereda esa identidad"
+```
+
 ### Frescura de menciones literales
 
 `doc_mentions` de tipo `doc_id` solo tiene autoridad de búsqueda cuando `workspace_meta.doc_identity_snapshot_version` coincide con la versión vigente del extractor. La publicación full o docs-only respaldada por el extractor actualiza ese marcador dentro de la misma transacción que reemplaza documentos, edges, menciones, bloques, records y bindings; cualquier escritor documental no versionado lo invalida. Si falta o es antigua, la búsqueda confirma cada candidato contra su Markdown canónico (ruta segura dentro del workspace, tamaño acotado y `content_hash` coincidente) usando la misma gramática literal; las fuentes ausentes o stale se informan como no verificadas y no se convierten en hits.

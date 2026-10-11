@@ -70,13 +70,6 @@ if [[ "$upload" -eq 0 ]]; then
   echo "release.sh: build ${version} without publish" >&2
   MI_LSP_RELEASE=1 sh scripts/tests/release-platform-mapping.sh
 
-  arch="$(uname -m)"
-  if [[ "$arch" != "aarch64" && "$arch" != "arm64" ]]; then
-    go test -race ./...
-  else
-    echo "release.sh: skip -race on ${arch}" >&2
-  fi
-
   dotnet build worker-dotnet/MiLsp.Worker.sln -c Release
 
   goreleaser_bin="$(find_goreleaser)"

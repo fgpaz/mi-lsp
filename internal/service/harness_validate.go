@@ -52,7 +52,11 @@ func (a *App) validateHarness(ctx context.Context, request model.CommandRequest)
 		return *blockedEnv, nil
 	}
 
-	registration, _, err := a.resolveWorkspaceWithProjectForNavigation(request)
+	registration, project, err := a.resolveWorkspaceWithProjectForNavigation(request)
+	if err != nil {
+		return model.Envelope{}, err
+	}
+	wikiRoots, err := harnessWikiRoots(registration, project)
 	if err != nil {
 		return model.Envelope{}, err
 	}
@@ -79,7 +83,7 @@ func (a *App) validateHarness(ctx context.Context, request model.CommandRequest)
 		return applyCoachPolicy(attachMemoryPointer(env, memory), request.Context), nil
 	}
 
-	records := filterGovernedWikiDocRecords(query.docs, request.Payload)
+	records := filterGovernedWikiDocRecordsInRoots(registration.Root, query.docs, request.Payload, wikiRoots)
 	if len(records) == 0 {
 		hint := harnessNoScopeMatchHint(request.Payload)
 		result := model.HarnessValidationResult{
@@ -92,10 +96,10 @@ func (a *App) validateHarness(ctx context.Context, request model.CommandRequest)
 		return applyCoachPolicy(attachMemoryPointer(env, memory), request.Context), nil
 	}
 
-	corpusRecords := filterGovernedWikiDocRecords(query.docs, map[string]any{})
+	corpusRecords := filterGovernedWikiDocRecordsInRoots(registration.Root, query.docs, map[string]any{}, wikiRoots)
 	corpusDocs := loadHarnessDocs(registration.Root, corpusRecords)
 	docs := selectHarnessDocs(corpusDocs, records)
-	result := compileHarnessValidation(registration.Root, docs, corpusDocs)
+	result := compileHarnessValidation(registration.Root, docs, corpusDocs, wikiRoots)
 	env := model.Envelope{
 		Ok:        true,
 		Workspace: registration.Name,
@@ -125,6 +129,63 @@ func filterGovernedWikiDocRecords(records []model.DocRecord, payload map[string]
 		}
 	}
 	return preferCanonicalHarnessDocRecords(filtered)
+}
+
+func filterGovernedWikiDocRecordsInRoots(root string, records []model.DocRecord, payload map[string]any, wikiRoots []string) []model.DocRecord {
+	records = filterGovernedWikiRecordsInRoots(root, records, wikiRoots)
+	ids := splitHarnessScopeValues(stringPayload(payload, "ids"))
+	paths := splitHarnessScopeValues(stringPayload(payload, "paths"))
+	if len(ids) == 0 && len(paths) == 0 {
+		return preferCanonicalHarnessDocRecords(records)
+	}
+	filtered := make([]model.DocRecord, 0, len(records))
+	filtered = append(filtered, filterHarnessDocRecordsByIDs(records, ids)...)
+	for _, record := range records {
+		if harnessRecordMatchesPaths(record, paths) {
+			filtered = append(filtered, record)
+		}
+	}
+	return preferCanonicalHarnessDocRecords(filtered)
+}
+
+func harnessWikiRoots(registration model.WorkspaceRegistration, project model.ProjectFile) ([]string, error) {
+	roots, err := docgraph.CanonicalWikiRoots(registration.Root)
+	if err != nil {
+		return nil, err
+	}
+	resolved, err := wikiRootItems(registration, project, "")
+	if err != nil {
+		return nil, err
+	}
+	for _, item := range resolved {
+		roots = append(roots, item.WikiRoot)
+	}
+
+	unique := make([]string, 0, len(roots))
+	seen := make(map[string]struct{}, len(roots))
+	for _, root := range roots {
+		root = filepath.ToSlash(filepath.Clean(filepath.FromSlash(strings.TrimSpace(root))))
+		if root == "" || filepath.IsAbs(root) {
+			continue
+		}
+		if _, ok := seen[root]; ok {
+			continue
+		}
+		seen[root] = struct{}{}
+		unique = append(unique, root)
+	}
+	sort.Strings(unique)
+	return unique, nil
+}
+
+func filterGovernedWikiRecordsInRoots(root string, records []model.DocRecord, wikiRoots []string) []model.DocRecord {
+	filtered := make([]model.DocRecord, 0, len(records))
+	for _, record := range records {
+		if docgraph.IsGovernedWikiDocument(root, record.Path, wikiRoots) {
+			filtered = append(filtered, record)
+		}
+	}
+	return uniqueHarnessDocRecords(filtered)
 }
 
 func filterHarnessDocRecords(records []model.DocRecord, payload map[string]any) []model.DocRecord {
@@ -411,7 +472,7 @@ func candidateHarnessYAMLBlocks(content string) []string {
 	return blocks
 }
 
-func compileHarnessValidation(root string, docs []harnessDoc, corpus []harnessDoc) model.HarnessValidationResult {
+func compileHarnessValidation(root string, docs []harnessDoc, corpus []harnessDoc, wikiRoots []string) model.HarnessValidationResult {
 	result := model.HarnessValidationResult{
 		HarnessProtocol: harnessProtocolV1,
 		IndexFreshness:  "current",
@@ -480,7 +541,7 @@ func compileHarnessValidation(root string, docs []harnessDoc, corpus []harnessDo
 
 		for _, ref := range append(trimmedNonEmpty(contract.Imports), doc.links...) {
 			result.HarnessLinksReviewed++
-			exists, diskOnly := harnessRefStatus(root, docIndex, doc.record.Path, ref)
+			exists, diskOnly := harnessRefStatus(root, docIndex, doc.record.Path, ref, wikiRoots...)
 			if diskOnly {
 				result.IndexFreshness = "stale"
 				result.HarnessWarnings = append(result.HarnessWarnings, docLabel+": index stale; reference exists on disk but is not indexed: "+ref)
@@ -495,7 +556,7 @@ func compileHarnessValidation(root string, docs []harnessDoc, corpus []harnessDo
 				seenRequired[evidence] = struct{}{}
 				result.HarnessEvidenceRequired = append(result.HarnessEvidenceRequired, evidence)
 			}
-			exists, diskOnly := harnessRefStatus(root, docIndex, doc.record.Path, evidence)
+			exists, diskOnly := harnessRefStatus(root, docIndex, doc.record.Path, evidence, wikiRoots...)
 			if diskOnly {
 				result.IndexFreshness = "stale"
 				result.HarnessWarnings = append(result.HarnessWarnings, docLabel+": index stale; evidence exists on disk but is not indexed: "+evidence)
@@ -635,7 +696,11 @@ func harnessRefExists(root string, index map[string]struct{}, fromPath string, r
 	return exists
 }
 
-func harnessRefStatus(root string, index map[string]struct{}, fromPath string, ref string) (exists bool, diskOnly bool) {
+func harnessRefStatus(root string, index map[string]struct{}, fromPath string, ref string, governedWikiRoots ...string) (exists bool, diskOnly bool) {
+	wikiRoots := []string{".docs/wiki"}
+	if len(governedWikiRoots) > 0 {
+		wikiRoots = governedWikiRoots
+	}
 	ref = strings.TrimSpace(ref)
 	if ref == "" || ref == "." || strings.EqualFold(ref, "none") || strings.EqualFold(ref, "n/a") {
 		return true, false
@@ -677,10 +742,13 @@ func harnessRefStatus(root string, index map[string]struct{}, fromPath string, r
 		candidates = append(candidates, filepath.ToSlash(filepath.Join(".docs", "wiki", path)))
 	}
 	for _, candidate := range candidates {
+		if !docgraph.SafeRouteDocument(root, candidate, wikiRoots) {
+			continue
+		}
 		if _, err := os.Stat(filepath.Join(root, filepath.FromSlash(candidate))); err == nil {
 			_, indexed := index[normalizeHarnessRef(candidate)]
 			// Evidence outside the governed wiki is not part of the docs index.
-			return true, isGovernedWikiDocPath(candidate) && !indexed
+			return true, docgraph.IsGovernedWikiDocument(root, candidate, wikiRoots) && !indexed
 		}
 	}
 	return false, false
