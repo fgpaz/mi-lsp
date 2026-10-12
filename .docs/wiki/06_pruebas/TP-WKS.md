@@ -542,3 +542,35 @@ expected:
   status_probe_preserve_unregistered_linked_worktree_physical_root_without_registration_or_index: true
   status_probe_git_failure_preserve_physical_root_without_parent_state_inspection: true
 ```
+
+### TC-WKS-068
+
+```toon
+block_id: TC-WKS-068
+kind: normative
+source_of_truth: normative
+verify:
+  - manual_evidence_pending
+evidence:
+  - internal/workspace/registry.go
+  - internal/cli/git_frontier.go
+case_id: TC-WKS-068
+case_type: positive
+requirement_id: RF-WKS-007
+verification_mode: manual_evidence
+status: pending
+test_bindings: []
+expected:
+  explicit_path_read_only_unregistered_linked_worktree_with_registered_main: preserve_physical_root_without_registration_or_index
+  nav_git_frontier_explicit_physical_path: git_head_from_target_root
+  nav_git_frontier_generations: from_target_existing_store_only_or_typed_missing_never_main_inherited
+  omitted_selector_linked_worktree_with_registered_main: resolve_main_alias_unchanged
+  explicit_alias_main_from_linked_worktree_cwd: resolve_main_alias_unchanged
+  invalid_explicit_path: fail_closed_without_caller_cwd_substitution
+manual_evidence:
+  - fixture: linked worktree físico con main registrado en registry y sin alias del worktree
+  - command: mi-lsp nav git-frontier --workspace <ruta-absoluta-del-linked-worktree> --format json
+  - assert_git_commit: coincide con git -C <ruta> rev-parse HEAD
+  - assert_generations: null o valores del store bajo <ruta>/.mi-lsp; generation_reasons tipados si falta DB; nunca valores del main salvo que el path sea el main
+  - assert_omitted_control: mi-lsp nav git-frontier desde cwd del linked sin --workspace resuelve alias del main cuando está registrado
+```

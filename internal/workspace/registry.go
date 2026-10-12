@@ -649,6 +649,13 @@ func resolveWorkspaceSelection(nameOrPath string, callerCWD string, readOnly boo
 					if preserveLinkedRoot {
 						return linkedWorktreeInspectionResolution(gitRoot), nil
 					}
+					if readOnly {
+						res := linkedWorktreeInspectionResolution(gitRoot)
+						res.Warnings = []string{
+							"explicit path selects an unregistered linked worktree; using physical read-only root resolution without registration or index",
+						}
+						return res, nil
+					}
 					if registration, found := registeredMainWorktree(commonDir, registry); found {
 						return WorkspaceResolution{Registration: registration, Source: ResolutionSourcePath, Warnings: []string{"linked worktree resolved to its registered main repository"}}, nil
 					}
