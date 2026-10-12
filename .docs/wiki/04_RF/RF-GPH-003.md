@@ -183,13 +183,63 @@ candidate_rule:
   provenance: text_candidate
   direct_edge: forbidden
   semantic_relation_from_text: forbidden
-graph_v1: consumed_read_only_subset_only
+graph_v1: consumed_read_only_android_rf_subset_not_universal
+graph_v1_authoring:
+  subset_in_scope:
+    - surfaces_nested_artifact_bindings_read_side_extraction
+    - kind: [code, test, config]
+    - role: behavior_implementation_and_existing_code_role_closed_vocabulary
+    - test_and_config_kind_compat_with_existing_derived_rows
+  subset_gaps_owner_backlog:
+    - CT_schema_contract_roles_unsupported
+    - DB_migration_roles_unsupported
+    - TECH_roles_unsupported
+  accepted_keys: [binding_id, kind, path, surface, binding_lifecycle, symbol, role]
+  projected_fields:
+    path: target_path_when_target_path_absent_agreement_required_when_both_present
+    symbol: target_symbol_when_target_symbol_absent_agreement_required_when_both_present
+  canonical_binding_lifecycle_enum: [active, deprecated]
+  binding_lifecycle_semantics:
+    active: maps_to_doc_lifecycle_when_doc_lifecycle_absent
+    deprecated: maps_to_doc_lifecycle_when_doc_lifecycle_absent
+    invalid_fail_closed: [planned, retired, unknown]
+  legacy_not_graph_v1_binding_lifecycle:
+    binding_status_planned: payload_only_non_navigable_never_edge
+    doc_lifecycle_retired: document_lifecycle_field_only_not_binding_lifecycle
+  code_role_closed_vocabulary:
+    - behavior_implementation
+    - executable_test
+    - handler
+    - orchestration_entrypoint
+    - adapter
+    - selector
+    - implementation
+    - test
+    - config
+    - compiler
+    - supervisor
+    - entrypoint
+  kind_to_derived:
+    code: requires role from code_role_closed_vocabulary; derives relation and target_kind from role and symbol presence
+    test: relation tests and target_kind test
+    config: relation configures and target_kind config
+  not_persisted: [binding_id, surface, kind, path, symbol, binding_lifecycle]
+  store_omission_note: absent binding_id_or_surface in doc_artifact_bindings is honest derived omission not canonical schema extension
+  identity_note: binding_ref remains MILSP-WCB/v1 over doc_path block_id doc_id relation target_path target_symbol target_kind; binding_id is source-only provenance
+precedence:
+  - explicit target_path and path must agree or entry is rejected
+  - explicit target_symbol and symbol must agree or entry is rejected
+  - explicit relation and target_kind must agree with graph_v1 kind and role derivation or entry is rejected
+  - graph_v1 binding_lifecycle outside active_or_deprecated is rejected
+  - unknown role without explicit relation is rejected; explicit relation preserves role without re-deriving relation
 legacy:
   aliases: [implementation_anchors, code_links, test_links, implements, tests]
   normalization: derived_binding_with_authoring_origin_legacy
   authority: advisory
 lifecycle:
-  planned: stored_but_non_navigable
+  planned: stored_but_non_navigable_via_binding_status
+  binding_status_planned: excluded in wiki_code_bindings.bindingNavigable with omission planned_binding_excluded
+  doc_lifecycle_non_active: excluded from navigable exact evidence; deprecated and retired follow retired policy
   retired: history_only_by_default
   explicit_historical: bounded_redirect_when_superseded_by_exists
 invariants:

@@ -269,6 +269,33 @@ cases:
 | TC-GPH-022E | positivo | `TestExtractReferencesSupportsObsidianFormsAndSkipsFences`: wikilinks, embeds, Markdown links, anchors y alias preservan tipo/raw target; externos/fences/self-anchor no crean edges falsos |
 | TC-GPH-022F | positivo | `TestAppendStructuralDocEdgesLinksGobiernoAndReadme`: `doc_hierarchy` enlaza wiki/00-gobierno.md y README de bibliotecas/memorias |
 
+```toon
+doc_id: TP-GPH
+block_id: TP-GPH-003.declared-artifact-bindings-parse
+kind: acceptance-slice
+source_of_truth: this
+status: manual_evidence_pending
+fixture_isolation: testdata/wiki-code-bidirectional
+verification_basis: owner_final_verify_single_wave
+acceptance:
+  - id: TC-GPH-003-AB-parse-graphv1-subset
+    given: bloque TOON Android RF subset con surfaces.* artifact_bindings kind code|test|config role behavior_implementation u otro rol cerrado y GraphV1 path/symbol/binding_lifecycle active|deprecated
+    when: wikisource.ExtractBindings y SourceBindings proyectan filas doc_artifact_bindings
+    then: target_path/target_symbol/relation/target_kind/doc_lifecycle coinciden con RF-GPH-003.declared-binding-provenance; binding_lifecycle canonico solo active|deprecated; planned legacy solo via binding_status en vocabulario derivado; consumidor wiki_code_bindings excluye binding_status planned y doc_lifecycle distinto de active de direct_code
+    evidence: internal/wikisource/parser.go; internal/service/wiki_code_bindings.go; testdata/wiki-code-bidirectional/.docs/wiki/04_RF/RF-DEMO-001.md
+  - id: TC-GPH-003-AB-parse-legacy-planned
+    given: artifact_bindings derivado con binding_status planned sin kind GraphV1
+    when: parseCanonicalArtifactBinding procesa la entrada
+    then: fila derivada con binding_status planned y sin arista navegable; binding_lifecycle planned en entrada GraphV1 kind no aplica
+    evidence: testdata/wiki-code-bidirectional/.docs/wiki/04_RF/RF-DEMO-PLANNED.md; internal/wikisource/parser.go
+  - id: TC-GPH-003-AB-parse-fail-closed
+    given: path vs target_path contradictorios, binding_lifecycle planned|retired|unknown en entrada GraphV1 kind, doc_lifecycle invalido o role desconocido sin relation explicita
+    when: parseCanonicalArtifactBinding procesa la entrada
+    then: la entrada se descarta sin fila derivada inventada
+    evidence: internal/wikisource/parser.go
+manual_evidence: pending_owner_final_verify
+```
+
 ## TP-GPH-004 - Navegacion bounded y determinista
 
 **Cobertura:** RF-GPH-005.
