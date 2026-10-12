@@ -12,6 +12,8 @@ import (
 )
 
 // Locked field/value vocabulary for artifact_bindings objects.
+// GraphV1 authoring keys (binding_id, kind, path, surface, binding_lifecycle, symbol)
+// are accepted at parse time and projected into the legacy derived row shape.
 var canonicalArtifactFields = map[string]struct{}{
 	"doc_path": {}, "block_id": {}, "doc_id": {},
 	"relation": {}, "role": {},
@@ -19,6 +21,14 @@ var canonicalArtifactFields = map[string]struct{}{
 	"authoring_origin": {}, "binding_status": {}, "doc_lifecycle": {}, "superseded_by": {},
 	"ordinal": {}, "start_line": {}, "end_line": {},
 	"source_content_hash": {},
+	"binding_id": {}, "kind": {}, "path": {}, "surface": {}, "binding_lifecycle": {}, "symbol": {},
+	"binding_ref": {},
+}
+
+var graphV1BindingKinds = map[string]struct{}{
+	"code":   {},
+	"test":   {},
+	"config": {},
 }
 
 // Locked relations.
@@ -87,13 +97,13 @@ func validateBindingPath(p string) bool {
 // normalizeRelation maps legacy role/type values to the locked relation vocabulary.
 func normalizeRelation(role string, targetKind string) string {
 	switch strings.ToLower(role) {
-	case "implementation":
+	case "implementation", "behavior_implementation":
 		return model.RelationImplements
-	case "test":
+	case "test", "executable_test":
 		return model.RelationTests
 	case "config":
 		return model.RelationConfigures
-	case "compiler", "supervisor", "entrypoint", "adapter":
+	case "compiler", "supervisor", "entrypoint", "orchestration_entrypoint", "adapter":
 		return model.RelationOperates
 	}
 	// If target_kind is test, default to tests
@@ -104,11 +114,161 @@ func normalizeRelation(role string, targetKind string) string {
 	return model.RelationOperates
 }
 
+// applyGraphV1BindingAliases projects GraphV1 authoring keys into the legacy
+// derived parser vocabulary without mutating the persisted model schema.
+// GraphV1 binding_lifecycle accepts only active|deprecated (shared canonical enum);
+// planned bindings and document retired state use legacy binding_status / doc_lifecycle.
+func applyGraphV1BindingAliases(entry map[string]string) {
+	if strings.TrimSpace(entry["target_path"]) == "" {
+		if p := strings.TrimSpace(entry["path"]); p != "" {
+			entry["target_path"] = p
+		}
+	}
+	if strings.TrimSpace(entry["target_symbol"]) == "" {
+		if s := strings.TrimSpace(entry["symbol"]); s != "" {
+			entry["target_symbol"] = s
+		}
+	}
+	if !graphV1AuthoringEntry(entry) {
+		return
+	}
+	bindingLC := strings.ToLower(strings.TrimSpace(entry["binding_lifecycle"]))
+	switch bindingLC {
+	case "", model.DocLifecycleActive, model.DocLifecycleDeprecated:
+		if bindingLC != "" && strings.TrimSpace(entry["doc_lifecycle"]) == "" {
+			entry["doc_lifecycle"] = bindingLC
+		}
+	}
+}
+
+func bindingAuthoringConflicts(entry map[string]string) bool {
+	if graphV1AuthoringEntry(entry) && !graphV1BindingLifecycleAllowed(entry["binding_lifecycle"]) {
+		return true
+	}
+	targetPath := strings.TrimSpace(entry["target_path"])
+	graphPath := strings.TrimSpace(entry["path"])
+	if targetPath != "" && graphPath != "" && targetPath != graphPath {
+		return true
+	}
+	targetSymbol := strings.TrimSpace(entry["target_symbol"])
+	graphSymbol := strings.TrimSpace(entry["symbol"])
+	if targetSymbol != "" && graphSymbol != "" && targetSymbol != graphSymbol {
+		return true
+	}
+	docLC := strings.ToLower(strings.TrimSpace(entry["doc_lifecycle"]))
+	bindingLC := strings.ToLower(strings.TrimSpace(entry["binding_lifecycle"]))
+	if docLC != "" && bindingLC != "" &&
+		(bindingLC == model.DocLifecycleActive || bindingLC == model.DocLifecycleDeprecated) &&
+		docLC != bindingLC {
+		return true
+	}
+	relation := strings.TrimSpace(entry["relation"])
+	targetKind := strings.TrimSpace(entry["target_kind"])
+	if relation != "" && targetKind != "" && graphV1AuthoringEntry(entry) {
+		derivedRel, derivedKind, ok := deriveGraphV1RelationTargetKind(entry)
+		if ok && (derivedRel != relation || derivedKind != targetKind) {
+			return true
+		}
+	}
+	return false
+}
+
+func validDocLifecycle(lifecycle string) bool {
+	switch strings.ToLower(strings.TrimSpace(lifecycle)) {
+	case "", model.DocLifecycleActive, model.DocLifecycleDeprecated, model.DocLifecycleRetired:
+		return true
+	default:
+		return false
+	}
+}
+
+func validBindingStatus(status string) bool {
+	switch strings.ToLower(strings.TrimSpace(status)) {
+	case "", model.BindingStatusExact, model.BindingStatusPlanned:
+		return true
+	default:
+		return false
+	}
+}
+
+// canonicalBindingRole is the closed vocabulary for roles that may influence relation derivation.
+func canonicalBindingRole(role string) bool {
+	switch strings.ToLower(strings.TrimSpace(role)) {
+	case "implementation", "behavior_implementation",
+		"test", "executable_test",
+		"config",
+		"compiler", "supervisor", "entrypoint", "orchestration_entrypoint", "adapter",
+		"handler", "selector":
+		return true
+	default:
+		return false
+	}
+}
+
+func graphV1AuthoringEntry(entry map[string]string) bool {
+	return strings.TrimSpace(entry["kind"]) != "" || strings.TrimSpace(entry["binding_id"]) != ""
+}
+
+func graphV1BindingLifecycleAllowed(lifecycle string) bool {
+	switch strings.ToLower(strings.TrimSpace(lifecycle)) {
+	case "", model.DocLifecycleActive, model.DocLifecycleDeprecated:
+		return true
+	default:
+		return false
+	}
+}
+
+func deriveGraphV1RelationTargetKind(entry map[string]string) (relation string, targetKind string, ok bool) {
+	bindingKind := strings.ToLower(strings.TrimSpace(entry["kind"]))
+	if bindingKind == "" {
+		return "", "", false
+	}
+	if _, known := graphV1BindingKinds[bindingKind]; !known {
+		return "", "", false
+	}
+	role := strings.TrimSpace(entry["role"])
+	if role == "" && bindingKind == "code" {
+		return "", "", false
+	}
+	targetSymbol := strings.TrimSpace(entry["target_symbol"])
+	switch bindingKind {
+	case "test":
+		targetKind = model.TargetKindTest
+		relation = model.RelationTests
+	case "config":
+		targetKind = model.TargetKindConfig
+		relation = model.RelationConfigures
+	case "code":
+		if role == "" || !canonicalBindingRole(role) {
+			return "", "", false
+		}
+		if targetSymbol != "" {
+			targetKind = model.TargetKindSymbol
+		} else {
+			targetKind = model.TargetKindFile
+		}
+		relation = normalizeRelation(role, targetKind)
+	}
+	if _, valid := validRelations[relation]; !valid {
+		return "", "", false
+	}
+	if _, valid := validTargetKinds[targetKind]; !valid {
+		return "", "", false
+	}
+	return relation, targetKind, true
+}
+
 // parseCanonicalArtifactBinding extracts one artifact_bindings object entry.
 // sourceDocPath is the authoritative doc path (from ParsedDoc.SourcePath).
 // If the author supplies doc_path, it is accepted only when it does not conflict
 // with sourceDocPath; otherwise sourceDocPath is used for the binding's DocPath.
 func parseCanonicalArtifactBinding(entry map[string]string, blockID string, docID string, sourceDocPath string, startLine int, endLine int, contentHash string) *ParsedBinding {
+	entry = cloneBindingEntry(entry)
+	if bindingAuthoringConflicts(entry) {
+		return nil
+	}
+	applyGraphV1BindingAliases(entry)
+
 	// Author-supplied doc_path is optional provenance. SourceDocPath is authoritative.
 	path := sourceDocPath
 	if v, ok := entry["doc_path"]; ok {
@@ -122,23 +282,32 @@ func parseCanonicalArtifactBinding(entry map[string]string, blockID string, docI
 		return nil
 	}
 
-	targetPath, ok := entry["target_path"]
-	if !ok || !validateBindingPath(targetPath) {
+	targetPath := strings.TrimSpace(entry["target_path"])
+	if targetPath == "" || !validateBindingPath(targetPath) {
 		return nil
 	}
 
 	relation := strings.TrimSpace(entry["relation"])
-	if relation == "" {
-		// For code_links, default to operates
-		relation = model.RelationOperates
+	targetKind := strings.TrimSpace(entry["target_kind"])
+	usedGraphV1 := false
+	if relation == "" && targetKind == "" && graphV1AuthoringEntry(entry) {
+		var ok bool
+		relation, targetKind, ok = deriveGraphV1RelationTargetKind(entry)
+		if !ok {
+			return nil
+		}
+		usedGraphV1 = true
+	} else {
+		if relation == "" {
+			// For legacy code_links, default to operates.
+			relation = model.RelationOperates
+		}
+		if targetKind == "" {
+			targetKind = model.TargetKindFile
+		}
 	}
 	if _, valid := validRelations[relation]; !valid {
 		return nil
-	}
-
-	targetKind := strings.TrimSpace(entry["target_kind"])
-	if targetKind == "" {
-		targetKind = model.TargetKindFile
 	}
 	if _, valid := validTargetKinds[targetKind]; !valid {
 		return nil
@@ -148,8 +317,13 @@ func parseCanonicalArtifactBinding(entry map[string]string, blockID string, docI
 	if role == "" {
 		role = entry["type"] // fall back to legacy 'type' field
 	}
-	if role != "" {
-		relation = normalizeRelation(role, targetKind)
+	if role != "" && !usedGraphV1 {
+		if strings.TrimSpace(entry["relation"]) == "" && !canonicalBindingRole(role) {
+			return nil
+		}
+		if strings.TrimSpace(entry["relation"]) == "" {
+			relation = normalizeRelation(role, targetKind)
+		}
 	}
 
 	targetSymbol := strings.TrimSpace(entry["target_symbol"])
@@ -183,12 +357,18 @@ func parseCanonicalArtifactBinding(entry map[string]string, blockID string, docI
 	if docLifecycle == "" {
 		docLifecycle = model.DocLifecycleActive
 	}
+	if !validDocLifecycle(docLifecycle) {
+		return nil
+	}
 	supersededBy := strings.TrimSpace(entry["superseded_by"])
 
 	// Extract binding_status and authoring_origin; default when absent.
 	bindingStatus := strings.TrimSpace(entry["binding_status"])
 	if bindingStatus == "" {
 		bindingStatus = model.BindingStatusExact
+	}
+	if !validBindingStatus(bindingStatus) {
+		return nil
 	}
 	authoringOrigin := strings.TrimSpace(entry["authoring_origin"])
 	if authoringOrigin == "" {
@@ -228,78 +408,65 @@ func parseInt(s string) int {
 	return out
 }
 
-// extractCanonicalArtifactBindings extracts artifact_bindings objects from TOON block content.
-// sourceDocPath is the authoritative path of the source document.
-func extractCanonicalArtifactBindings(content string, blockID string, docID string, sourceDocPath string) []ParsedBinding {
-	bindings := make([]ParsedBinding, 0)
-	contentHash := digest([]byte(content))
+func cloneBindingEntry(entry map[string]string) map[string]string {
+	if entry == nil {
+		return map[string]string{}
+	}
+	out := make(map[string]string, len(entry))
+	for key, value := range entry {
+		out[key] = value
+	}
+	return out
+}
 
-	// Find artifact_bindings: [ ... ] or artifact_bindings: [...]
-	// Also handle top-level artifact_bindings key
-	lines := strings.Split(strings.ReplaceAll(content, "\r", ""), "\n")
-	inArtifactBindings := false
-	currentObjects := []map[string]string{}
+func bindingFieldAllowed(key string) bool {
+	if _, valid := canonicalArtifactFields[key]; valid {
+		return true
+	}
+	return key == "type"
+}
+
+func bindingLineIndent(line string) int {
+	return len(line) - len(strings.TrimLeft(line, " \t"))
+}
+
+// parseArtifactBindingList scans a YAML-style list following artifact_bindings:.
+func parseArtifactBindingList(lines []string, start int, keyIndent int) ([]map[string]string, int) {
+	objects := make([]map[string]string, 0)
 	current := map[string]string{}
-	objectBraceDepth := 0
-
 	flushObject := func() {
 		if len(current) > 0 {
-			currentObjects = append(currentObjects, current)
+			objects = append(objects, current)
 			current = map[string]string{}
 		}
 	}
-
-	for _, line := range lines {
-		trimmed := strings.TrimSpace(line)
-
-		// Detect start of artifact_bindings
-		if !inArtifactBindings {
-			if key, value, ok := splitKeyValue(trimmed); ok {
-				if key == "artifact_bindings" {
-					inArtifactBindings = true
-					// Check if inline array follows
-					if strings.HasPrefix(value, "[") {
-						// parse inline content
-						inner := strings.Trim(value, "[]")
-						// Simple inline parsing: collect key:value pairs until ]
-						partialLines := strings.Split(inner, "}")
-						for _, part := range partialLines {
-							part = strings.TrimSpace(part)
-							if part == "" {
-								continue
-							}
-							if obj, err := parseInlineObject(part + "}"); err == nil {
-								currentObjects = append(currentObjects, obj)
-							}
-						}
-					}
-					continue
-				}
+	objectBraceDepth := 0
+	listStarted := false
+	i := start
+	for ; i < len(lines); i++ {
+		raw := lines[i]
+		if strings.TrimSpace(raw) == "" {
+			continue
+		}
+		indent := bindingLineIndent(raw)
+		if indent <= keyIndent {
+			if key, _, ok := splitKeyValue(strings.TrimSpace(raw)); ok && key != "" {
+				break
 			}
-			// Also check for bare [ starting an array
-			if trimmed == "[" {
-				inArtifactBindings = true
-				continue
-			}
-			continue
 		}
-
-		// We're inside artifact_bindings
-		if trimmed == "]" {
-			// end of array
-			inArtifactBindings = false
-			flushObject()
-			objectBraceDepth = 0
-			continue
-		}
-		if trimmed == "" {
-			continue
-		}
+		trimmed := strings.TrimSpace(raw)
 		if strings.HasPrefix(trimmed, "-") {
-			// new object entry
 			flushObject()
-			trimmed = strings.TrimPrefix(trimmed, "-")
-			trimmed = strings.TrimSpace(trimmed)
+			trimmed = strings.TrimSpace(strings.TrimPrefix(trimmed, "-"))
+			listStarted = true
+		} else if !listStarted && indent > keyIndent {
+			listStarted = true
+		} else if !listStarted {
+			continue
+		}
+		if trimmed == "]" {
+			flushObject()
+			return objects, i + 1
 		}
 		if strings.Contains(trimmed, "{") {
 			objectBraceDepth++
@@ -313,20 +480,55 @@ func extractCanonicalArtifactBindings(content string, blockID string, docID stri
 				continue
 			}
 		}
-		// key: value inside object
 		if key, value, ok := splitKeyValue(trimmed); ok {
-			if _, valid := canonicalArtifactFields[key]; valid {
+			if bindingFieldAllowed(key) {
 				current[key] = value
-			}
-			// Also accept legacy fields for convenience in inline objects
-			if key == "type" {
-				current["type"] = value
 			}
 		}
 	}
 	flushObject()
+	return objects, i
+}
 
-	// Build bindings from collected objects
+// extractCanonicalArtifactBindings extracts artifact_bindings objects from TOON block content.
+// Nested surfaces.*.artifact_bindings and repeated sections are supported.
+// sourceDocPath is the authoritative path of the source document.
+func extractCanonicalArtifactBindings(content string, blockID string, docID string, sourceDocPath string) []ParsedBinding {
+	bindings := make([]ParsedBinding, 0)
+	contentHash := digest([]byte(content))
+	lines := strings.Split(strings.ReplaceAll(content, "\r", ""), "\n")
+	currentObjects := make([]map[string]string, 0)
+
+	for i := 0; i < len(lines); i++ {
+		raw := lines[i]
+		trimmed := strings.TrimSpace(raw)
+		key, value, ok := splitKeyValue(trimmed)
+		if !ok || key != "artifact_bindings" {
+			continue
+		}
+		keyIndent := bindingLineIndent(raw)
+		if value == "[]" {
+			continue
+		}
+		if strings.HasPrefix(value, "[") {
+			inner := strings.Trim(value, "[]")
+			partialLines := strings.Split(inner, "}")
+			for _, part := range partialLines {
+				part = strings.TrimSpace(part)
+				if part == "" {
+					continue
+				}
+				if obj, err := parseInlineObject(part + "}"); err == nil && obj != nil {
+					currentObjects = append(currentObjects, obj)
+				}
+			}
+			continue
+		}
+		sectionObjects, next := parseArtifactBindingList(lines, i+1, keyIndent)
+		currentObjects = append(currentObjects, sectionObjects...)
+		i = next - 1
+	}
+
 	for _, obj := range currentObjects {
 		if binding := parseCanonicalArtifactBinding(obj, blockID, docID, sourceDocPath, 0, 0, contentHash); binding != nil {
 			bindings = append(bindings, *binding)
@@ -352,7 +554,7 @@ func parseInlineObject(raw string) (map[string]string, error) {
 	parts := strings.Split(raw, ",")
 	for _, part := range parts {
 		if key, value, ok := splitKeyValue(strings.TrimSpace(part)); ok {
-			if _, valid := canonicalArtifactFields[key]; valid {
+			if bindingFieldAllowed(key) {
 				result[key] = value
 			}
 		}
