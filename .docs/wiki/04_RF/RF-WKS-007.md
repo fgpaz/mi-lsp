@@ -115,8 +115,9 @@ resolution:
     missing: error
     stale_registration: error
     linked_worktree:
-      main_registered: resolve_main_alias_without_worktree_registration
-      ordinary_read_only_unregistered: resolve_main_alias_when_available
+      main_registered_mutating: resolve_main_alias_without_worktree_registration
+      read_only_unregistered: preserve_physical_root_read_only_without_registration_or_index
+      git_frontier_read_only: preserve_physical_git_and_existing_store_generations_without_main_fallback
       status_probe: preserve_physical_root_read_only_without_registration_or_index
       main_unregistered: explicit_incomplete_invalid_workspace_without_index
   omitted_selector:
@@ -142,7 +143,7 @@ resolution:
 Un selector explícito inválido o stale nunca puede convertirse silenciosamente en el workspace del `caller_cwd`. La resolución omitida conserva la precedencia contextual existente y expone `source` y warnings suficientes para auditoría.
 Los aliases heredados que apunten a la misma raíz física siguen siendo válidos y se conservan; la presentación compacta no los migra, elimina ni redirige. Un alias explícito desconocido o stale sigue fallando sin sustituirse por el workspace del cwd.
 
-Cuando el `caller_cwd` o un path explícito está dentro de un linked worktree, la resolución compara `git dir` y `git common dir` como rutas absolutas, canónicas y normalizadas. Si el root principal está registrado, devuelve ese alias y no crea ni indexa un alias para el linked worktree. Si no lo está, devuelve `explicit_incomplete` con `reason_code=invalid_workspace` y no inicia indexación. `MI_LSP_AUTOREGISTER=force` opta explícitamente por registrar el linked worktree como raíz física independiente.
+Cuando el `caller_cwd` omitido está dentro de un linked worktree, la resolución compara `git dir` y `git common dir` como rutas absolutas, canónicas y normalizadas. Si el root principal está registrado, devuelve ese alias y no crea ni indexa un alias para el linked worktree. Un **path explícito** a un linked worktree no registrado en operaciones read-only conserva la raíz física del target (Git, frontier y generaciones del store existente de ese root) sin auto-registro ni fallback al main. Las operaciones mutantes con path explícito siguen resolviendo al main registrado cuando corresponda. Si el main no está registrado, devuelve `explicit_incomplete` con `reason_code=invalid_workspace` y no inicia indexación. `MI_LSP_AUTOREGISTER=force` opta explícitamente por registrar el linked worktree como raíz física independiente.
 
 ### Auto-registro en la primera consulta
 
@@ -289,6 +290,8 @@ registry_gc:
   stale_selector_diagnostic: capture_before_gc_and_preserve_WKS_SELECTOR_STALE
   diagnostic_snapshot_without_gc: [workspace_doctor, workspace_hygiene_preview, workspace_hygiene_readiness, read_only_resolution]
   ordinary_read_only_git_failure_for_linked_marker: registered_containment_only
+  explicit_path_read_only_linked_worktree: preserve_physical_root_read_only_without_registration_or_index
+  explicit_path_read_only_git_frontier: preserve_physical_git_and_existing_store_generations_without_main_fallback
   status_probe_linked_worktree: preserve_physical_root_read_only_without_registration_or_index
   status_probe_git_failure_for_linked_marker: preserve_physical_root_without_parent_state_inspection
   forbidden_side_effects: [delete_directory, delete_cache, delete_worktree]
