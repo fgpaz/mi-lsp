@@ -20,6 +20,8 @@ var registry = map[string]string{
 	".cts": "typescript",
 	// C#
 	".cs": "csharp",
+	// Kotlin JVM sources only; .kts is not a semantic source.
+	".kt": "kotlin",
 	// Rust
 	".rs": "rust",
 	// Go

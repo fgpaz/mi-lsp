@@ -4,6 +4,8 @@ doc_id: TP-QRY
 
 # TP-QRY
 
+La extensión compiler raw Kotlin v2 de [[TECH-KOTLIN-BACKEND]] conserva `TP-QRY.kotlin-runtime-v0` para queries K1 y agrega el oráculo **pendiente**, no ejecutado, `TP-GPH.kotlin-compiler-export-v1` en [[TP-GPH]]. El fork anuncia su versión real; stock no expone el método. La configuración efectiva solo entra por el exporter opt-in offline; K1 no lo ejecuta ni lo toma como complete. Calls siguen unsupported fuera del batch subset y Graph staging exige complete/stable (raw actual partial/experimental rechazado); ninguna query parcial ni symbols PSI certifican NodeKey/compiler identity. No es un PASS adicional ni una segunda FINAL_VERIFY.
+
 ```yaml
 harness_protocol: SDD-HARNESS-v1
 id: "TP-QRY"
@@ -30,6 +32,47 @@ stop_if:
 evidence:
   - .docs/wiki/06_pruebas/TP-QRY.md
 ```
+
+## Oráculo pendiente Kotlin runtime v0
+
+```toon
+doc_id: TP-QRY
+block_id: TP-QRY.kotlin-runtime-v0
+kind: planned-runtime-oracle
+source_of_truth: RF-QRY-002
+status: pending_goal_root_FINAL_VERIFY
+owner: coord-milsp_Semantic-backends
+imports:
+  - .docs/wiki/04_RF/RF-QRY-002.md
+  - .docs/wiki/07_tech/TECH-KOTLIN-BACKEND.md
+  - .docs/wiki/09_contratos/CT-DAEMON-WORKER.md
+evidence:
+  - internal/worker/kotlin.go
+  - internal/worker/lsp_transport.go
+  - internal/service/semantic_kotlin.go
+executed_in_K1: false
+result: no_PASS_claim
+fixture:
+  project: isolated_Gradle_JVM_explicit_main_module
+  dependencies: cached_local_JAR_and_Java_symbol
+  network: disabled_after_preparation
+  declarations: overloads_homonyms_extension_receiver_distinct_packages
+  negatives: comments_text_homonyms_kts_outside_module
+oracles:
+  - disabled_missing_or_incompatible_runtime_is_unavailable
+  - exact_definition_refs_locations_without_text_facts
+  - PSI_symbols_structural_without_NodeKey_or_RoleCompiler
+  - UTF16_astral_character_and_surrogate_boundary_rejection
+  - didOpen_once_didChange_versions_didClose_eviction
+  - cancel_during_initialize_query_no_late_response_reuse
+  - bounded_framing_queue_and_shutdown
+  - crash_pool_invalidation_subsequent_caller_owned_restart
+  - metadata_change_changes_runtime_key_no_module_mixing
+  - direct_daemon_parity_partial_unavailable_unsupported
+  - stock_fwcd_extension_calls_and_graph_unsupported
+```
+
+Son oráculos planificados para la única FINAL_VERIFY, no tests implementados/ejecutados. Registrar JDK/target/Gradle/classpath real; Java 25 no se presume compatible. K2 agrega identidad, firmas, resolución y config/classpath fingerprints con los gates estrictos de [[RF-GPH-008]]. Lista vacía y classpath backup no son complete.
 
 ## Cobertura objetivo
 

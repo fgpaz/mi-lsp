@@ -32,6 +32,9 @@ func (a *App) contextQuery(ctx context.Context, request model.CommandRequest) (m
 	if strings.TrimSpace(file) == "" {
 		return model.Envelope{}, fmt.Errorf("file is required")
 	}
+	if resolveBackendType(registration, request, "get_context") == "kotlin-language-server" {
+		return a.kotlinSemantic(ctx, registration, project, request, "get_context")
+	}
 	line := intFromAny(request.Payload["line"], 1)
 	item, warnings, err := buildContextSliceItem(registration.Root, project, file, line, request.Context.MaxChars)
 	if err != nil {
@@ -132,6 +135,9 @@ func resolveContextBackendType(request model.CommandRequest) string {
 	}
 	if isGoFile(file) {
 		return "gopls"
+	}
+	if isKotlinFile(file) {
+		return "kotlin-language-server"
 	}
 	if isRustFile(file) {
 		return "rust-analyzer"

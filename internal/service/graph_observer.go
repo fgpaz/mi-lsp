@@ -6,12 +6,21 @@ import (
 	"path/filepath"
 	"strings"
 
+	"encoding/json"
 	"github.com/fgpaz/mi-lsp/internal/indexer"
 	"github.com/fgpaz/mi-lsp/internal/model"
+	"github.com/fgpaz/mi-lsp/internal/worker"
 )
 
 func (a *App) graphObserver() indexer.GraphObserver {
 	return func(ctx context.Context, request indexer.GraphObservationRequest) (model.GraphObservationBatch, error) {
+		backend := request.Backend
+		if backend == "" {
+			backend = "roslyn"
+		}
+		if backend != "roslyn" && backend != worker.KotlinBackend {
+			return model.GraphObservationBatch{}, sanitizedGraphObserverError("GPH_BACKEND_CAPABILITY_UNSUPPORTED")
+		}
 		payload := map[string]any{
 			"repository_identity": request.RepositoryIdentity,
 			"project_or_module":   request.ProjectOrModule,
@@ -21,7 +30,7 @@ func (a *App) graphObserver() indexer.GraphObserver {
 			Method:          "graph_observe",
 			Workspace:       request.WorkspaceRoot,
 			WorkspaceName:   filepath.Base(request.WorkspaceRoot),
-			BackendType:     "roslyn",
+			BackendType:     backend,
 			RepoID:          request.RepoID,
 			RepoName:        request.RepoName,
 			RepoRoot:        request.RepoRoot,
@@ -37,8 +46,18 @@ func (a *App) graphObserver() indexer.GraphObserver {
 		if !response.Ok {
 			return model.GraphObservationBatch{}, sanitizedGraphObserverError(response.ErrorCode)
 		}
-		if strings.TrimSpace(response.Backend) != "roslyn" {
+		if strings.TrimSpace(response.Backend) != backend {
 			return model.GraphObservationBatch{}, &model.GraphObservationError{Code: "GPH_BACKEND_MISMATCH", Field: "backend", Message: "unexpected graph backend"}
+		}
+		if backend == worker.KotlinBackend {
+			if len(response.Items) != 1 || response.Items[0]["compiler_observation"] == nil {
+				return model.GraphObservationBatch{}, sanitizedGraphObserverError("GPH_BACKEND_EMPTY")
+			}
+			raw, err := json.Marshal(response.Items[0]["compiler_observation"])
+			if err != nil {
+				return model.GraphObservationBatch{}, sanitizedGraphObserverError("GPH_BACKEND_PROVENANCE_MISSING")
+			}
+			return indexer.AdaptKotlinCompilerObservation(ctx, request, raw)
 		}
 		if response.Observation == nil {
 			return model.GraphObservationBatch{}, &model.GraphObservationError{Code: "GPH_BACKEND_EMPTY", Field: "observation", Message: "graph observation was empty"}

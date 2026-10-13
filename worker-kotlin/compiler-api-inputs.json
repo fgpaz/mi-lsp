@@ -1,0 +1,10 @@
+{
+  "compiler_version": "2.1.0",
+  "upstream_commit": "5dd9cea66ee526f0251c9b1d2543229202622f6b",
+  "source_tag": "v2.1.0",
+  "files": {
+    "artifacts/kotlin-compiler-api-source/DescriptorRenderer.kt": "783178a20351232e7afcc1db3437e95c5280ac56d8c1cfd7729321bfd09e5011",
+    "artifacts/kotlin-compiler-api-source/tag-v2.1.0.json": "4d56663943488958223fd31afc8b7dc043c0148a47cca4a23dcd1ca59d1b868b",
+    "worker-kotlin/licenses/Kotlin-compiler-2.1.0-LICENSE.txt": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
+  }
+}

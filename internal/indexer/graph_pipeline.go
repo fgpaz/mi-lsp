@@ -79,6 +79,51 @@ func ObserveGraph(ctx context.Context, root string, project model.ProjectFile, o
 		}
 	}
 
+	if explicitSelection != nil && explicitSelection.Backend == "kotlin-language-server" {
+		selected := *explicitSelection
+		identity, err := workspace.ResolveRepositoryIdentity(ctx, root, project.Repos)
+		if err != nil {
+			return nil, nil, nil, &model.GraphObservationError{Code: "GPH_IDENTITY_UNAVAILABLE", Field: "repository_identity", Message: "repository identity could not be resolved"}
+		}
+		if options.RoslynObserver == nil {
+			return nil, nil, nil, &model.GraphObservationError{Code: "GPH_BACKEND_UNAVAILABLE", Field: "backend", Message: "external graph observer is not configured"}
+		}
+		module, err := filepath.Rel(selected.RepoRoot, filepath.Join(root, filepath.FromSlash(selected.Entrypoint.Path)))
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		batch, observeErr := options.RoslynObserver(ctx, GraphObservationRequest{
+			WorkspaceRoot: root, WorkspaceIdentity: identity, RepositoryIdentity: identity,
+			RepoID: selected.Repo.ID, RepoName: selected.Repo.Name, RepoRoot: selected.RepoRoot,
+			EntrypointID: selected.Entrypoint.ID, EntrypointPath: selected.Entrypoint.Path,
+			ProjectOrModule: filepath.ToSlash(module), EntrypointKind: selected.Entrypoint.Kind, Backend: selected.Backend,
+		})
+		if observeErr != nil {
+			return nil, nil, nil, observeErr
+		}
+		if batch.Backend != selected.Backend || batch.RepositoryIdentity != identity || batch.WorkspaceIdentity != identity {
+			return nil, nil, nil, &model.GraphObservationError{Code: "GPH_BACKEND_MISMATCH", Field: "backend", Message: "Kotlin observer returned mismatched identity/backend"}
+		}
+		if err := batch.ValidateCanonical(); err != nil {
+			return nil, nil, nil, err
+		}
+		if err := rebaseGraphObservationBatch(&batch, selected.Repo.Root); err != nil {
+			return nil, nil, nil, err
+		}
+		if err := model.SealGraphObservationBatch(&batch); err != nil {
+			return nil, nil, nil, err
+		}
+		warnings := []string{"Kotlin calls unsupported; graph domain is named main-jvm declarations and local compiler references only"}
+		if err := batch.ReadyForStaging(); err != nil {
+			if batch.Completeness != model.GraphCompletenessPartial {
+				return nil, nil, warnings, err
+			}
+			warnings = append(warnings, "explicit_incomplete: Kotlin partial observation not staged: "+graphObservationBatchDiagnostics(batch))
+			return nil, append(batch.Omissions, graphOmissionForRepo(selected.Backend, "declarations", "backend_partial", "satisfy_rf_gph_008_promotion_oracles", selected.Repo)), warnings, nil
+		}
+		return []model.GraphObservationBatch{batch}, nil, warnings, nil
+	}
+
 	goRepos := graphGoRepos(root, project, targets)
 	csharpTargets := make([]graphObservationTarget, 0)
 	csharpDeclared := false
@@ -231,9 +276,9 @@ func ObserveGraph(ctx context.Context, root string, project model.ProjectFile, o
 	}
 
 	for _, repo := range project.Repos {
-		for _, language := range []string{"typescript", "python"} {
+		for _, language := range []string{"typescript", "python", "kotlin"} {
 			if hasLanguage(repo, language) {
-				backend := map[string]string{"typescript": "tsserver", "python": "pyright"}[language]
+				backend := map[string]string{"typescript": "tsserver", "python": "pyright", "kotlin": "kotlin-language-server"}[language]
 				omissions = append(omissions, graphOmissionForRepo(backend, "declarations", "backend_gated", "enable_semantic_backend", repo))
 				warnings = append(warnings, "graph backend gated for "+language+"; no semantic claims were emitted")
 			}
@@ -365,7 +410,7 @@ func resolveGraphExplicitSelection(root string, project model.ProjectFile, selec
 			}
 		}
 		if !safe {
-			return graphExplicitSelection{}, &model.GraphObservationError{Code: "GPH_ENTRYPOINT_NOT_FOUND", Field: "entrypoint", Message: "explicit entrypoint was not found; select a declared entrypoint or an existing safe repository-relative Go/C# path"}
+			return graphExplicitSelection{}, &model.GraphObservationError{Code: "GPH_ENTRYPOINT_NOT_FOUND", Field: "entrypoint", Message: "explicit entrypoint was not found; select a declared entrypoint or an existing safe repository-relative Go/C#/Gradle module path"}
 		}
 		repo, repoFound := workspace.FindRepoByFile(project, root, workspacePath)
 		if !repoFound {
@@ -391,7 +436,10 @@ func resolveGraphExplicitSelection(root string, project model.ProjectFile, selec
 	}
 	backend := graphEntrypointBackend(entrypoint)
 	if backend == "" {
-		return graphExplicitSelection{}, &model.GraphObservationError{Code: "GPH_ENTRYPOINT_UNSUPPORTED", Field: "entrypoint", Message: "explicit entrypoint is not a supported Go module or C# project; explicit solutions are unavailable"}
+		return graphExplicitSelection{}, &model.GraphObservationError{Code: "GPH_ENTRYPOINT_UNSUPPORTED", Field: "entrypoint", Message: "explicit entrypoint is not a supported Go module, C# project or experimental Kotlin Gradle module; explicit solutions are unavailable"}
+	}
+	if backend == "kotlin-language-server" && !hasLanguage(repo, "kotlin") {
+		return graphExplicitSelection{}, &model.GraphObservationError{Code: "GPH_ENTRYPOINT_LANGUAGE_MISMATCH", Field: "entrypoint", Message: "explicit Gradle entrypoint belongs to a repository without Kotlin support"}
 	}
 	if backend == "go" && !hasLanguage(repo, "go") {
 		return graphExplicitSelection{}, &model.GraphObservationError{Code: "GPH_ENTRYPOINT_LANGUAGE_MISMATCH", Field: "entrypoint", Message: "explicit Go entrypoint belongs to a repository without Go support"}
@@ -469,7 +517,8 @@ func graphSafeExplicitPath(root, configured string) (string, bool) {
 		return "", false
 	}
 	ext := strings.ToLower(filepath.Ext(clean))
-	if ext != ".csproj" && ext != ".sln" && strings.ToLower(filepath.Base(clean)) != "go.mod" {
+	base := filepath.Base(clean)
+	if ext != ".csproj" && ext != ".sln" && strings.ToLower(base) != "go.mod" && base != "build.gradle" && base != "build.gradle.kts" {
 		return "", false
 	}
 	return filepath.ToSlash(clean), true
@@ -477,6 +526,10 @@ func graphSafeExplicitPath(root, configured string) (string, bool) {
 
 func graphEntrypointBackend(entrypoint model.WorkspaceEntrypoint) string {
 	path := filepath.ToSlash(strings.TrimSpace(entrypoint.Path))
+	base := filepath.Base(filepath.FromSlash(path))
+	if base == "build.gradle" || base == "build.gradle.kts" {
+		return "kotlin-language-server"
+	}
 	if strings.EqualFold(filepath.Base(filepath.FromSlash(path)), "go.mod") {
 		if entrypoint.Kind != model.EntrypointKindProject {
 			return ""

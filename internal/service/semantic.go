@@ -27,6 +27,9 @@ func (a *App) semantic(ctx context.Context, request model.CommandRequest, method
 
 func (a *App) semanticCore(ctx context.Context, registration model.WorkspaceRegistration, project model.ProjectFile, request model.CommandRequest, method string) (model.Envelope, error) {
 	backendType := resolveBackendType(registration, request, method)
+	if backendType == "kotlin-language-server" {
+		return a.kotlinSemantic(ctx, registration, project, request, method)
+	}
 	started := time.Now()
 
 	target, targetEnvelope, err := a.resolveSemanticTarget(ctx, registration, project, request, method, backendType)
@@ -319,6 +322,9 @@ func resolveBackendType(registration model.WorkspaceRegistration, request model.
 	if explicit != "" {
 		return explicit
 	}
+	if file, _ := request.Payload["file"].(string); isKotlinFile(file) {
+		return "kotlin-language-server"
+	}
 	if method == "get_deps" {
 		return "roslyn"
 	}
@@ -451,6 +457,11 @@ func isGoFile(path string) bool {
 func isRustFile(path string) bool {
 	lang, ok := language.ForPath(path)
 	return ok && lang == "rust"
+}
+
+func isKotlinFile(path string) bool {
+	lang, ok := language.ForPath(path)
+	return ok && lang == "kotlin"
 }
 
 func isOptionalSemanticBackend(backendType string) bool {

@@ -1,0 +1,76 @@
+--- a/server/src/main/kotlin/org/javacs/kt/Main.kt
++++ b/server/src/main/kotlin/org/javacs/kt/Main.kt
+@@ -9,6 +9,9 @@
+ import org.javacs.kt.util.tcpConnectToClient
+ 
+ class Args {
++    @Parameter(names = ["--miLspCompilerOnly"])
++    var miLspCompilerOnly: Boolean = false
++
+     /*
+      * The language server can currently be launched in three modes:
+      *  - Stdio, in which case no argument should be specified (used by default)
+@@ -39,10 +42,11 @@
+         tcpStartServer(it)
+     } ?: Pair(System.`in`, System.out)
+ 
+-    val server = KotlinLanguageServer()
++    val server: org.eclipse.lsp4j.services.LanguageServer =
++        if (args.miLspCompilerOnly) MiLspCompilerServer() else KotlinLanguageServer()
+     val threads = Executors.newSingleThreadExecutor { Thread(it, "client") }
+     val launcher = LSPLauncher.createServerLauncher(server, ExitingInputStream(inStream), outStream, threads) { it }
+ 
+-    server.connect(launcher.remoteProxy)
++    (server as org.eclipse.lsp4j.services.LanguageClientAware).connect(launcher.remoteProxy)
+     launcher.startListening()
+ }
+--- a/server/src/main/kotlin/org/javacs/kt/compiler/Compiler.kt
++++ b/server/src/main/kotlin/org/javacs/kt/compiler/Compiler.kt
+@@ -89,7 +89,9 @@
+ private class CompilationEnvironment(
+     javaSourcePath: Set<Path>,
+     classPath: Set<Path>,
+-    scriptsConfig: ScriptsConfiguration
++    scriptsConfig: ScriptsConfiguration,
++    miLspModuleName: String? = null,
++    miLspJdkHome: File? = null
+ ) : Closeable {
+     private val disposable = Disposer.newDisposable()
+ 
+@@ -113,18 +115,19 @@
+                     langFeatures
+                 )
+ 
+-                put(CommonConfigurationKeys.MODULE_NAME, JvmProtoBufUtil.DEFAULT_MODULE_NAME)
++                put(CommonConfigurationKeys.MODULE_NAME, miLspModuleName ?: JvmProtoBufUtil.DEFAULT_MODULE_NAME)
+                 put(CommonConfigurationKeys.LANGUAGE_VERSION_SETTINGS, languageVersionSettings)
+                 put(CLIConfigurationKeys.MESSAGE_COLLECTOR_KEY, LoggingMessageCollector)
+                 add(ComponentRegistrar.PLUGIN_COMPONENT_REGISTRARS, ScriptingCompilerConfigurationComponentRegistrar())
+                 put(JVMConfigurationKeys.USE_PSI_CLASS_FILES_READING, true)
+ 
+                 // configure jvm runtime classpaths
++                val jdkHome = miLspJdkHome ?: File(System.getProperty("java.home"))
++                put(JVMConfigurationKeys.JDK_HOME, jdkHome)
+                 configureJdkClasspathRoots()
+ 
+                 // Kotlin 1.8.20 requires us to specify the JDK home, otherwise java.* classes won't resolve
+                 // See https://github.com/JetBrains/kotlin-compiler-server/pull/626
+-                val jdkHome = File(System.getProperty("java.home"))
+                 put(JVMConfigurationKeys.JDK_HOME, jdkHome)
+ 
+                 addJvmClasspathRoots(classPath.map { it.toFile() })
+@@ -463,11 +466,13 @@
+     scriptsConfig: ScriptsConfiguration,
+     private val codegenConfig: CodegenConfiguration,
+     private val outputDirectory: File,
++    miLspModuleName: String? = null,
++    miLspJdkHome: File? = null,
+ ) : Closeable {
+     private var closed = false
+     private val localFileSystem: VirtualFileSystem
+ 
+-    private val defaultCompileEnvironment = CompilationEnvironment(javaSourcePath, classPath, scriptsConfig)
++    private val defaultCompileEnvironment = CompilationEnvironment(javaSourcePath, classPath, scriptsConfig, miLspModuleName, miLspJdkHome)
+     private val buildScriptCompileEnvironment = buildScriptClassPath
+         .takeIf { it.isNotEmpty() && scriptsConfig.enabled && scriptsConfig.buildScriptsEnabled }
+         ?.let { CompilationEnvironment(emptySet(), it, scriptsConfig) }

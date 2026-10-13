@@ -21,9 +21,13 @@ import (
 
 // LSPConfig configures a generic LSP backend.
 type LSPConfig struct {
-	ServerCmd   string
-	ServerArgs  []string
-	InitOptions map[string]any
+	ServerCmd               string
+	ServerArgs              []string
+	InitOptions             map[string]any
+	Backend                 string
+	StrictCapabilities      bool
+	RequireExplicitPosition bool
+	ExpectedServerVersion   string
 }
 
 // LSPClient implements RuntimeClient via a standard LSP server.
@@ -32,7 +36,11 @@ type LSPClient struct {
 	workspace          model.WorkspaceRegistration
 	cmd                *exec.Cmd
 	stdin              io.WriteCloser
-	stdout             *bufio.Reader
+	stdout             *bufio.Reader // In-memory protocol injection; live processes use transport.
+	transportMu        sync.Mutex
+	transport          *lspTransport
+	requestCtx         context.Context
+	capabilities       map[string]json.RawMessage
 	mu                 sync.Mutex
 	seqID              int
 	started            bool
@@ -65,6 +73,8 @@ var rustAnalyzerWarmupBackoff = []time.Duration{
 type openedDocument struct {
 	modTime time.Time
 	size    int64
+	version int
+	content string
 }
 
 // NewLSPClient creates a new generic LSP client.
@@ -103,11 +113,34 @@ type lspNotification struct {
 
 // Start spawns the LSP server and performs the initialize/initialized handshake.
 func (c *LSPClient) Start() error {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.startContext(ctx)
+}
+
+func (c *LSPClient) startContext(ctx context.Context) error {
+	c.requestCtx = ctx
+	if c.transport != nil && !c.transport.alive() {
+		c.started = false
+		c.openDocs = nil
+		c.openOrder = nil
+		c.semanticWarmupDone = false
+	}
 	if c.started {
 		return nil
 	}
 	cmd := exec.Command(c.config.ServerCmd, c.config.ServerArgs...)
 	processutil.ConfigureNonInteractiveCommand(cmd)
+	configureOwnedLSP(cmd)
+	cmd.Dir = c.workspace.Root
+	if c.config.Backend == KotlinBackend {
+		cmd.Env = append(os.Environ(), "GRADLE_OPTS="+os.Getenv("GRADLE_OPTS")+" -Dorg.gradle.daemon=false")
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		return err
@@ -122,13 +155,16 @@ func (c *LSPClient) Start() error {
 	}
 	c.cmd = cmd
 	c.stdin = stdin
-	c.stdout = bufio.NewReaderSize(stdout, 64*1024)
+	c.transportMu.Lock()
+	c.transport = newLSPTransport(cmd, stdin, stdout)
+	c.transportMu.Unlock()
 
 	// Send initialize request
 	rootURI := buildFileURI(c.workspace.Root)
 	initParams := map[string]any{
-		"processId": nil,
-		"rootUri":   rootURI,
+		"processId":        nil,
+		"rootUri":          rootURI,
+		"workspaceFolders": []map[string]any{{"uri": rootURI, "name": c.workspace.Name}},
 		"capabilities": map[string]any{
 			"textDocument": map[string]any{
 				"hover": map[string]any{
@@ -144,15 +180,30 @@ func (c *LSPClient) Start() error {
 		initParams["initializationOptions"] = c.config.InitOptions
 	}
 
-	_, err = c.sendRequest("initialize", initParams)
+	result, err := c.sendRequest("initialize", initParams)
 	if err != nil {
-		_ = cmd.Process.Kill()
+		c.transport.stop()
 		return fmt.Errorf("LSP initialize failed: %w", err)
 	}
 
+	var initialized struct {
+		Capabilities map[string]json.RawMessage `json:"capabilities"`
+		ServerInfo   struct {
+			Version string `json:"version"`
+		} `json:"serverInfo"`
+	}
+	if err := json.Unmarshal(result, &initialized); err != nil {
+		c.transport.stop()
+		return err
+	}
+	if c.config.ExpectedServerVersion != "" && initialized.ServerInfo.Version != c.config.ExpectedServerVersion {
+		c.transport.stop()
+		return errors.New("unavailable: incompatible LSP server version")
+	}
+	c.capabilities = initialized.Capabilities
 	// Send initialized notification
 	if err := c.sendNotification("initialized", map[string]any{}); err != nil {
-		_ = cmd.Process.Kill()
+		c.transport.stop()
 		return fmt.Errorf("LSP initialized notification failed: %w", err)
 	}
 
@@ -162,10 +213,17 @@ func (c *LSPClient) Start() error {
 
 // Call dispatches a mi-lsp request to the LSP server.
 func (c *LSPClient) Call(ctx context.Context, request model.WorkerRequest) (model.WorkerResponse, error) {
-	c.mu.Lock()
+	for !c.mu.TryLock() {
+		select {
+		case <-ctx.Done():
+			return model.WorkerResponse{}, ctx.Err()
+		case <-time.After(5 * time.Millisecond):
+		}
+	}
 	defer c.mu.Unlock()
+	c.requestCtx = ctx
 
-	if err := c.Start(); err != nil {
+	if err := c.startContext(ctx); err != nil {
 		return model.WorkerResponse{}, err
 	}
 
@@ -174,6 +232,10 @@ func (c *LSPClient) Call(ctx context.Context, request model.WorkerRequest) (mode
 		return c.findReferences(ctx, request)
 	case "get_context":
 		return c.getContext(ctx, request)
+	case "find_definition":
+		return c.definition(ctx, request)
+	case "document_symbols":
+		return c.documentSymbols(ctx, request)
 	default:
 		return model.WorkerResponse{}, fmt.Errorf("LSP backend does not support method %q", request.Method)
 	}
@@ -181,30 +243,46 @@ func (c *LSPClient) Call(ctx context.Context, request model.WorkerRequest) (mode
 
 // Close shuts down the LSP server.
 func (c *LSPClient) Close() error {
-	if c.cmd == nil || c.cmd.Process == nil {
-		return nil
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	for !c.mu.TryLock() {
+		select {
+		case <-ctx.Done():
+			c.transportMu.Lock()
+			if c.transport != nil {
+				c.transport.stop()
+			}
+			c.transportMu.Unlock()
+			return ctx.Err()
+		case <-time.After(5 * time.Millisecond):
+		}
 	}
-	if c.started {
-		// Try graceful shutdown
-		_, _ = c.sendRequest("shutdown", nil)
-		_ = c.sendNotification("exit", nil)
+	defer c.mu.Unlock()
+	c.requestCtx = ctx
+	if c.transport != nil {
+		if c.started && c.transport.alive() {
+			for file := range c.openDocs {
+				_ = c.sendNotification("textDocument/didClose", map[string]any{"textDocument": map[string]any{"uri": buildFileURI(file)}})
+			}
+			_, _ = c.sendRequest("shutdown", nil)
+			_ = c.sendNotification("exit", nil)
+		}
+		c.transport.stop()
 	}
-	_ = c.stdin.Close()
-	err := c.cmd.Process.Kill()
-	_, _ = c.cmd.Process.Wait()
-	c.cmd = nil
-	c.stdin = nil
-	c.stdout = nil
 	c.started = false
-	return err
+	c.openDocs = nil
+	c.openOrder = nil
+	return nil
 }
 
 // PID returns the LSP server process ID.
 func (c *LSPClient) PID() int {
-	if c.cmd == nil || c.cmd.Process == nil {
+	c.transportMu.Lock()
+	defer c.transportMu.Unlock()
+	if c.transport == nil || !c.transport.alive() {
 		return 0
 	}
-	return c.cmd.Process.Pid
+	return c.transport.cmd.Process.Pid
 }
 
 func (c *LSPClient) findReferences(ctx context.Context, request model.WorkerRequest) (model.WorkerResponse, error) {
@@ -232,12 +310,15 @@ func (c *LSPClient) findReferences(ctx context.Context, request model.WorkerRequ
 	if result != nil {
 		if err := json.Unmarshal(result, &locations); err != nil {
 			// Try null result
-			locations = nil
+			return model.WorkerResponse{}, fmt.Errorf("invalid LSP references response: %w", err)
 		}
 	}
 
 	items := make([]map[string]any, 0, len(locations))
 	for _, loc := range locations {
+		if !strings.HasPrefix(loc.URI, "file://") {
+			return model.WorkerResponse{}, errors.New("unsupported_operation: non-file reference URI")
+		}
 		items = append(items, map[string]any{
 			"name":   symbol,
 			"file":   filepath.Clean(uriToPath(loc.URI)),
@@ -307,8 +388,28 @@ func (c *LSPClient) resolveLocation(request model.WorkerRequest) (string, int, i
 	}
 	lineValue := intFromPayload(request.Payload, "line", 1)
 	symbol, _ := request.Payload["symbol"].(string)
+	if c.config.RequireExplicitPosition {
+		if !strings.EqualFold(filepath.Ext(absoluteFile), ".kt") {
+			return "", 0, 0, "", errors.New("unsupported_operation: Kotlin scripts are excluded")
+		}
+		if _, ok := request.Payload["line"]; !ok {
+			return "", 0, 0, "", errors.New("explicit line is required")
+		}
+		if _, ok := request.Payload["column"]; !ok {
+			return "", 0, 0, "", errors.New("explicit UTF-16 column is required")
+		}
+		column := intFromPayload(request.Payload, "column", 0)
+		if lineValue < 1 || column < 1 {
+			return "", 0, 0, "", errors.New("invalid UTF-16 position")
+		}
+		if err := validateUTF16Position(absoluteFile, lineValue, column); err != nil {
+			return "", 0, 0, "", err
+		}
+		return filepath.Clean(absoluteFile), lineValue, column, symbol, nil
+	}
 	lineValue, offset := inferLineAndOffset(absoluteFile, lineValue, symbol)
-	return absoluteFile, lineValue, offset, symbol, nil
+	offset, err := utf16ColumnForByteOffset(absoluteFile, lineValue, offset)
+	return absoluteFile, lineValue, offset, symbol, err
 }
 
 func (c *LSPClient) openDocument(filePath string) error {
@@ -323,13 +424,23 @@ func (c *LSPClient) openDocument(filePath string) error {
 		c.openDocs = map[string]openedDocument{}
 	}
 	key := filepath.Clean(filePath)
-	if cached, ok := c.openDocs[key]; ok && cached.size == info.Size() && cached.modTime.Equal(info.ModTime()) {
-		c.touchOpenDocument(key)
-		return nil
-	}
-	content, err := os.ReadFile(filePath)
+	content, err := readKotlinMetadata(filePath)
 	if err != nil {
 		return fmt.Errorf("cannot read file for didOpen: %w", err)
+	}
+	if cached, ok := c.openDocs[key]; ok {
+		if cached.content == string(content) {
+			c.touchOpenDocument(key)
+			return nil
+		}
+		version := cached.version + 1
+		params := map[string]any{"textDocument": map[string]any{"uri": buildFileURI(filePath), "version": version}, "contentChanges": []map[string]any{{"text": string(content)}}}
+		if err := c.sendNotification("textDocument/didChange", params); err != nil {
+			return err
+		}
+		c.openDocs[key] = openedDocument{modTime: info.ModTime(), size: info.Size(), version: version, content: string(content)}
+		c.touchOpenDocument(key)
+		return nil
 	}
 	params := map[string]any{
 		"textDocument": map[string]any{
@@ -342,7 +453,7 @@ func (c *LSPClient) openDocument(filePath string) error {
 	if err := c.sendNotification("textDocument/didOpen", params); err != nil {
 		return err
 	}
-	c.openDocs[key] = openedDocument{modTime: info.ModTime(), size: info.Size()}
+	c.openDocs[key] = openedDocument{modTime: info.ModTime(), size: info.Size(), version: 1, content: string(content)}
 	c.touchOpenDocument(key)
 	c.evictOpenDocuments()
 	return nil
@@ -363,6 +474,7 @@ func (c *LSPClient) evictOpenDocuments() {
 	for len(c.openOrder) > maxLSPOpenDocuments {
 		victim := c.openOrder[0]
 		c.openOrder = append([]string(nil), c.openOrder[1:]...)
+		_ = c.sendNotification("textDocument/didClose", map[string]any{"textDocument": map[string]any{"uri": buildFileURI(victim)}})
 		delete(c.openDocs, victim)
 	}
 }
@@ -383,12 +495,17 @@ func languageIDForPath(path string) string {
 		return "go"
 	case ".rs":
 		return "rust"
+	case ".kt":
+		return "kotlin"
 	default:
 		return "plaintext"
 	}
 }
 
 func (c *LSPClient) backendName() string {
+	if c.config.Backend != "" {
+		return c.config.Backend
+	}
 	base := filepath.Base(c.config.ServerCmd)
 	if idx := strings.LastIndex(base, "."); idx > 0 {
 		base = base[:idx]
@@ -397,6 +514,13 @@ func (c *LSPClient) backendName() string {
 }
 
 func (c *LSPClient) sendSemanticRequest(method string, params any) (json.RawMessage, error) {
+	if c.config.StrictCapabilities {
+		capability := map[string]string{"textDocument/references": "referencesProvider", "textDocument/definition": "definitionProvider", "textDocument/hover": "hoverProvider", "textDocument/documentSymbol": "documentSymbolProvider"}[method]
+		value := bytes.TrimSpace(c.capabilities[capability])
+		if capability == "" || len(value) == 0 || bytes.Equal(value, []byte("false")) || bytes.Equal(value, []byte("null")) {
+			return nil, fmt.Errorf("unsupported_operation: %s not advertised", method)
+		}
+	}
 	result, err := c.sendRequest(method, params)
 	if c.semanticWarmupDone || c.backendName() != "rust-analyzer" {
 		return result, err
@@ -406,7 +530,11 @@ func (c *LSPClient) sendSemanticRequest(method string, params any) (json.RawMess
 		if err != nil || !emptyLSPQueryResult(method, result) {
 			return result, err
 		}
-		time.Sleep(delay)
+		select {
+		case <-c.requestCtx.Done():
+			return nil, c.requestCtx.Err()
+		case <-time.After(delay):
+		}
 		result, err = c.sendRequest(method, params)
 	}
 	return result, err
@@ -430,59 +558,68 @@ func emptyLSPQueryResult(method string, result json.RawMessage) bool {
 }
 
 func (c *LSPClient) sendRequest(method string, params any) (json.RawMessage, error) {
+	ctx := c.requestCtx
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	for attempt := 0; ; attempt++ {
 		c.seqID++
-		req := lspRequest{
-			JSONRPC: "2.0",
-			ID:      c.seqID,
-			Method:  method,
-			Params:  params,
+		var result json.RawMessage
+		var err error
+		if c.transport != nil {
+			result, err = c.transport.request(ctx, c.seqID, method, params)
+		} else {
+			if c.stdin == nil || c.stdout == nil {
+				return nil, errors.New("LSP transport unavailable")
+			}
+			err = writeLSPMessage(c.stdin, lspRequest{JSONRPC: "2.0", ID: c.seqID, Method: method, Params: params})
+			if err == nil {
+				result, err = c.readResponse(c.seqID)
+			}
 		}
-		if err := writeLSPMessage(c.stdin, req); err != nil {
-			return nil, err
-		}
-		result, err := c.readResponse(c.seqID)
 		if !errors.Is(err, lspContentModified) || attempt >= len(lspContentModifiedRetryBackoff) {
 			return result, err
 		}
-		time.Sleep(lspContentModifiedRetryBackoff[attempt])
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(lspContentModifiedRetryBackoff[attempt]):
+		}
 	}
 }
-
 func (c *LSPClient) sendNotification(method string, params any) error {
-	notif := lspNotification{
-		JSONRPC: "2.0",
-		Method:  method,
-		Params:  params,
+	ctx := c.requestCtx
+	if ctx == nil {
+		ctx = context.Background()
 	}
-	return writeLSPMessage(c.stdin, notif)
+	if c.transport == nil {
+		return errors.New("LSP transport unavailable")
+	}
+	return c.transport.write(ctx, lspNotification{JSONRPC: "2.0", Method: method, Params: params})
 }
 
+// readResponse retains the bounded in-memory protocol seam. Runtime I/O is
+// always owned by lspTransport and obeys the original request context.
 func (c *LSPClient) readResponse(id int) (json.RawMessage, error) {
 	for {
 		raw, err := readLSPMessage(c.stdout)
 		if err != nil {
 			return nil, err
 		}
-		var resp lspResponse
-		if err := json.Unmarshal(raw, &resp); err != nil {
-			continue
-		}
-		// Skip notifications (no ID)
-		if resp.ID == 0 && resp.Method != "" {
-			continue
-		}
-		if resp.ID != id {
-			continue
-		}
-		if resp.Error != nil {
-			err := fmt.Errorf("LSP error %d: %s", resp.Error.Code, resp.Error.Message)
-			if resp.Error.Code == -32801 {
-				return nil, fmt.Errorf("%w: %s", lspContentModified, err)
-			}
+		var response lspResponse
+		if err = json.Unmarshal(raw, &response); err != nil {
 			return nil, err
 		}
-		return resp.Result, nil
+		if response.ID != id {
+			continue
+		}
+		if response.Error != nil {
+			if response.Error.Code == -32801 {
+				return nil, lspContentModified
+			}
+			return nil, errors.New("LSP request failed")
+		}
+		return response.Result, nil
 	}
 }
 

@@ -1088,6 +1088,8 @@ type WorkerRequest struct {
 }
 
 type WorkerResponse struct {
+	Partial     bool                   `json:"partial,omitempty"`
+	Reason      string                 `json:"reason,omitempty"`
 	Ok          bool                   `json:"ok"`
 	Backend     string                 `json:"backend,omitempty"`
 	Items       []map[string]any       `json:"items,omitempty"`
