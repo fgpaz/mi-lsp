@@ -482,9 +482,9 @@ func IndexWorkspaceDocsWithSourcesWithProgressPriorWithBindings(ctx context.Cont
 	}); err != nil {
 		return nil, nil, nil, nil, nil, nil, warnings, err
 	}
-	if skipped > 0 {
-		warnings = append(warnings, fmt.Sprintf("docs_skip_reparse parsed=%d skipped=%d", parsed, skipped))
-	}
+	// Keep the existing public summary even when no prior rows were reused.
+	// Both counters come from successful path results, not from the clean flag.
+	warnings = append(warnings, fmt.Sprintf("docs_skip_reparse parsed=%d skipped=%d", parsed, skipped))
 
 	edges = resolveDocEdges(docs, edges, profile.EffectiveWikiMapRoots())
 	edges = appendStructuralDocEdges(docs, edges)

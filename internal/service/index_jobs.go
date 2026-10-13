@@ -296,7 +296,7 @@ func (a *App) runIndexJob(ctx context.Context, registration model.WorkspaceRegis
 		}
 		switch job.Mode {
 		case store.IndexModeDocs:
-			result, err = indexer.IndexWorkspaceDocsOnlyWithProgressForJob(ctx, registration.Root, job.GenerationID, jobID, jobFence, progress.report)
+			result, err = indexer.IndexWorkspaceDocsOnlyWithProgressForJob(ctx, registration.Root, job.Clean, job.GenerationID, jobID, jobFence, progress.report)
 		case store.IndexModeCatalog:
 			result, err = indexer.IndexWorkspaceCatalogOnlyWithProgressForJob(ctx, registration.Root, job.Clean, job.GenerationID, jobID, jobFence, progress.report)
 		default:

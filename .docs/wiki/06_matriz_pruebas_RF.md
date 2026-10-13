@@ -29,7 +29,7 @@ evidence:
 
 ## Cobertura vigente
 
-La tabla es un índice humano derivado; para RF-WKS-007, el binding normativo de RF, FL, TP y casos reside en el bloque TOON `RF-WKS-007-MATRIX`, y las definiciones de cada caso nuevo residen únicamente en los bloques TOON de `TP-WKS`.
+La tabla es un índice humano derivado; para RF-WKS-007, el binding normativo de RF, FL, TP y casos reside en el bloque TOON `RF-WKS-007-MATRIX`, y las definiciones de cada caso nuevo residen únicamente en los bloques TOON de `TP-WKS`. La aceptación manual `TC-IDX-028` se define únicamente en su bloque TOON de `TP-IDX`; su inclusión aquí no acredita ejecución ni cierre.
 
 | RF | FL origen | TP | Casos positivos minimos | Casos negativos minimos | Estado |
 |---|---|---|---|---|---|
@@ -43,7 +43,7 @@ La tabla es un índice humano derivado; para RF-WKS-007, el binding normativo de
 | RF-WKS-008 | FL-BOOT-01 | TP-WKS | TC-WKS-038, TC-WKS-039, TC-WKS-040 | TC-WKS-041, TC-WKS-042, TC-WKS-043 | implemented |
 | RF-WKS-009 | FL-BOOT-01 | TP-WKS | TC-WKS-044, TC-WKS-045, TC-WKS-046 | TC-WKS-047 | implemented |
 | RF-IDX-001 | FL-IDX-01 | TP-IDX | TC-IDX-001, TC-IDX-002, TC-IDX-004, TC-IDX-005, TC-IDX-012, TC-IDX-020, TC-IDX-022, TC-IDX-023, TC-IDX-025, TC-IDX-026, TC-QRY-172, TC-QRY-173, TC-QRY-174 | TC-IDX-003, TC-IDX-006, TC-IDX-021, TC-IDX-027, TC-QRY-191, TC-WKS-063 | ready |
-| RF-IDX-002 | FL-IDX-01 | TP-IDX | TC-IDX-007, TC-IDX-008, TC-IDX-013 | TC-IDX-009 | ready |
+| RF-IDX-002 | FL-IDX-01 | TP-IDX | TC-IDX-007, TC-IDX-008, TC-IDX-013, TC-IDX-028 | TC-IDX-009 | ready; TC-IDX-028: manual_evidence_pending |
 | RF-IDX-003 | FL-IDX-01 | TP-IDX | TC-IDX-010 | TC-IDX-011 | ready |
 | RF-QRY-001 | FL-QRY-01 | TP-QRY | TC-QRY-001, TC-QRY-002, TC-QRY-042, TC-QRY-045, TC-QRY-106, TC-QRY-108, TC-QRY-109, TC-QRY-147, TC-QRY-148, TC-QRY-151, TC-QRY-162, TC-QRY-163, TC-QRY-164, TC-QRY-167, TC-QRY-168, TC-QRY-170, TC-QRY-171, TC-QRY-172, TC-QRY-182, TC-QRY-183, TC-QRY-184, TC-QRY-187, TC-QRY-214 | TC-QRY-003, TC-QRY-176, TC-QRY-149, TC-QRY-150, TC-QRY-152 | ready |
 | RF-QRY-002 | FL-QRY-01 | TP-QRY | TC-QRY-004, TC-QRY-005, TC-QRY-007, TC-QRY-008, TC-QRY-012, TC-QRY-013, TC-QRY-035, TC-QRY-036, TC-QRY-037, TC-QRY-047A, TC-QRY-108, TC-QRY-162, TC-QRY-163, TC-QRY-164, TC-QRY-165, TC-QRY-166, TC-QRY-167, TC-QRY-169, TC-QRY-170, TC-QRY-171, TC-QRY-172, TC-QRY-175, TC-QRY-177, TC-QRY-178, TC-QRY-182, TC-QRY-185, TC-QRY-186, TC-QRY-188 | TC-QRY-006, TC-QRY-176, TC-QRY-038 | ready |

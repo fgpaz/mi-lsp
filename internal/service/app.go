@@ -1429,7 +1429,7 @@ func (a *App) indexWorkspace(ctx context.Context, request model.CommandRequest) 
 	var envelope model.Envelope
 	err = store.WithWorkspaceIndexLock(registration.Root, "index.run", func() error {
 		if docsOnly {
-			result, err := indexer.IndexWorkspaceDocsOnly(ctx, registration.Root)
+			result, err := indexer.IndexWorkspaceDocsOnlyWithClean(ctx, registration.Root, clean)
 			if err != nil {
 				return err
 			}
