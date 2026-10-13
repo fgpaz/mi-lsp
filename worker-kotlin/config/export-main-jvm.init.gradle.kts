@@ -12,6 +12,7 @@ import java.nio.file.Path
 import java.nio.file.Paths
 import java.nio.file.StandardCopyOption
 import java.security.MessageDigest
+import java.util.stream.Collectors
 
 // Loaded only by export-main-jvm.sh. Absent opt-in registers nothing and does not resolve.
 val miLspExportOptIn = System.getenv("MI_LSP_KOTLIN_EXPORT_MAIN_JVM") == "1" &&
@@ -46,7 +47,8 @@ fun miLspCaptureMainJvm(project: org.gradle.api.Project, want: Path) {
     val root = project.projectDir.toPath().toRealPath()
     if (root != want) block("module_mismatch", root.toString())
     if (project.gradle.includedBuilds.isNotEmpty()) block("included_build_unrepresentable", "included builds")
-    val settingsDir = project.gradle.settings.settingsDir.toPath().toRealPath()
+    val settingsFile = project.gradle.startParameter.settingsFile
+    val settingsDir = (settingsFile?.parentFile ?: project.rootProject.layout.projectDirectory.asFile).toPath().toRealPath()
     if (settingsDir != root) block("parent_settings_unrepresentable", settingsDir.toString())
     if (!project.pluginManager.hasPlugin("org.jetbrains.kotlin.jvm")) block("kotlin_jvm_plugin_missing", "org.jetbrains.kotlin.jvm")
     if (project.pluginManager.hasPlugin("com.android.application") || project.pluginManager.hasPlugin("com.android.library") || project.pluginManager.hasPlugin("org.jetbrains.kotlin.multiplatform")) {
@@ -96,14 +98,14 @@ fun miLspCaptureMainJvm(project: org.gradle.api.Project, want: Path) {
             val path = file.toPath().toRealPath()
             when {
                 path.toString().endsWith(".kts") -> block("scripts_unrepresentable", path.toString())
-                path.toString().endsWith(".kt") || path.toString().endsWith(".java") -> model += path
+                path.toString().endsWith(".kt") || path.toString().endsWith(".java") -> model.add(path)
                 else -> block("source_unrepresentable", path.toString())
             }
         }
         val diskRoot = root.resolve("src/main")
         if (!Files.isDirectory(diskRoot)) block("src_main_missing", diskRoot.toString()) else {
             val disk = Files.walk(diskRoot).use { stream ->
-                stream.filter { Files.isRegularFile(it) }.map { it.toRealPath() }.toList()
+                stream.filter { Files.isRegularFile(it) }.map { it.toRealPath() }.collect(Collectors.toList())
                     .filter { it.toString().endsWith(".kt") || it.toString().endsWith(".java") || it.toString().endsWith(".kts") }
             }
             if (disk.any { it.toString().endsWith(".kts") }) block("scripts_unrepresentable", "src/main")

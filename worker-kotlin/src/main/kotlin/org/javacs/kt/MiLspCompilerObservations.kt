@@ -25,8 +25,16 @@ class MiLspCompilerServer : LanguageServer, LanguageClientAware {
     private val observations = MiLspCompilerObservationService()
     @JsonDelegate fun getMiLspCompilerObservations(): MiLspCompilerObservations = observations
     override fun connect(client: LanguageClient) {}
-    override fun getTextDocumentService(): TextDocumentService = object : TextDocumentService {}
-    override fun getWorkspaceService(): WorkspaceService = object : WorkspaceService {}
+    override fun getTextDocumentService(): TextDocumentService = object : TextDocumentService {
+        override fun didOpen(params: DidOpenTextDocumentParams) {}
+        override fun didChange(params: DidChangeTextDocumentParams) {}
+        override fun didClose(params: DidCloseTextDocumentParams) {}
+        override fun didSave(params: DidSaveTextDocumentParams) {}
+    }
+    override fun getWorkspaceService(): WorkspaceService = object : WorkspaceService {
+        override fun didChangeConfiguration(params: DidChangeConfigurationParams) {}
+        override fun didChangeWatchedFiles(params: DidChangeWatchedFilesParams) {}
+    }
     override fun getNotebookDocumentService(): NotebookDocumentService? = null
     override fun initialize(params: InitializeParams): CompletableFuture<InitializeResult> {
         val options = Gson().toJsonTree(params.initializationOptions)
@@ -172,7 +180,7 @@ class MiLspCompilerObservationService : MiLspCompilerObservations {
         require(receipt.compiler_version == "2.1.0" && receipt.server_version == "1.3.13+mi-lsp.obs2" && receipt.server_version_binding == "contract_pin_not_runtime_proof")
         require(receipt.configuration_sha256 == sha(configBytes))
         require(receipt.exporter_sha256 == "97fd0a079a12cb921c21404de8415fcdbc7915168fb7d1940836fbbc3579b1b3")
-        require(receipt.init_script_sha256 == "2d46c87c31f8c7e5c94064f46d29e6b44ef0b95d46aebe807a50213f896f7bb5")
+        require(receipt.init_script_sha256 == "ebccdf78fdbf0d56668b924d88452e89215763b761cefdb08964facabf5ed3a5")
         require(Files.size(Paths.get(receipt.exporter_path)) <= 2L shl 20 && Files.size(Paths.get(receipt.init_script_path)) <= 2L shl 20)
         require(sha(Files.readAllBytes(Paths.get(receipt.exporter_path))) == receipt.exporter_sha256)
         require(sha(Files.readAllBytes(Paths.get(receipt.init_script_path))) == receipt.init_script_sha256)
