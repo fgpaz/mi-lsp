@@ -170,6 +170,45 @@ host_doors:
   authority: CLI
 ```
 
+### Reparación manual puntual de `[project].name`
+
+Este bloque define exclusivamente el procedimiento manual de [[RF-WKS-001]]; no agrega una API ni un comando público. `workspace add --no-index` evita indexación, pero reconstruye/serializa configuración y hace upsert del registro: no es una reparación conservadora de un valor.
+
+```toon
+block_id: CT-CLI-DAEMON-ADMIN.project-name-manual-v1
+kind: normative
+source_of_truth: normative
+owner: "Owner de configuración del target confirmado"
+scope: "Solo el valor TOML name dentro de [project] en <raíz-física>/.mi-lsp/project.toml"
+preconditions:
+  - "Owner confirma raíz física absoluta, archivo concreto y target correcto; distinguir main de cada worktree"
+  - "Confirmar CLI/revisión en uso y contrato aplicable; no extrapolar una revisión de fuente a otro ejecutable o target"
+  - "Confirmar por lectura del registro que el alias deseado existe y apunta exactamente a esa raíz física, no solo al mismo Git common dir"
+  - "Si el alias falta o apunta a otra raíz, no editar ni reasignarlo"
+  - "El archivo existente es TOML válido y el único desajuste a reparar es el valor name de [project]"
+  - "Owner asegura ausencia de writer concurrente; no intervenir WIP ajeno ni cerrar sesiones para obtener exclusividad"
+procedure:
+  1: "Conservar original privadamente, incluidos bytes y permisos; registrar privadamente valor original, valor deseado y raíz confirmada"
+  2: "Releer antes de editar; si difiere del original o no puede asegurarse exclusividad, detenerse sin sobrescribir"
+  3: "Editar únicamente el valor TOML de name bajo [project], con representación/escapes válidos del alias deseado; no reemplazar otras claves name"
+  4: "Preservar todos los bytes fuera de ese valor: comentarios, espaciado, finales de línea, topología y otros settings; mantener permisos"
+  5: "Si la herramienta reserializa el archivo o no garantiza ese alcance puntual, no usarla: declarar gap específico con owner"
+  6: "Relectura normal readonly con raíz absoluta explícita confirma raíz/alias resultantes y conservación del resto; no registrar, indexar ni arrancar daemon para comprobar"
+rollback:
+  allowed: "Solo sin cambios concurrentes desde la edición, tras releer el archivo y confirmar el valor recién escrito y el resto esperado"
+  action: "Reponer únicamente el valor original de name en [project], preservando el resto de bytes y permisos actuales"
+  concurrent_change: "No sobrescribir; dejar gap de conciliación con owner para reparación puntual sobre la versión vigente"
+  forbidden: "Nunca restaurar el backup completo encima de una configuración reciente ni tratarlo como rollback transaccional automático"
+forbidden_actions:
+  - "Cambiar registry, last_workspace u otros defaults, topología, raíz física, índice o graph"
+  - "Usar init, workspace add/upsert, index/reindex, reset o restart como workaround"
+  - "Inventar rename/config set público, DDL, automatización o garantías de atomicidad"
+acceptance_boundary:
+  permitted: "Comprobación posterior por lectura normal readonly de la raíz/alias concretos y del cambio de un único valor"
+  not_implied: "No es qPASS, matriz nueva, probe, job, validator ni evidencia de reparación de catálogo/generaciones/null"
+  failed_precondition: "No ejecutar receta; informar condición incumplida, owner y salida manual específica"
+```
+
 ### Workspace mismatch guard
 
 Cuando un comando workspace-aware recibe `--workspace <alias>` y el `caller_cwd` esta dentro de otro workspace registrado:
