@@ -21,7 +21,7 @@ var canonicalArtifactFields = map[string]struct{}{
 	"authoring_origin": {}, "binding_status": {}, "doc_lifecycle": {}, "superseded_by": {},
 	"ordinal": {}, "start_line": {}, "end_line": {},
 	"source_content_hash": {},
-	"binding_id": {}, "kind": {}, "path": {}, "surface": {}, "binding_lifecycle": {}, "symbol": {},
+	"binding_id":          {}, "kind": {}, "path": {}, "surface": {}, "binding_lifecycle": {}, "symbol": {},
 	"binding_ref": {},
 }
 
@@ -49,6 +49,13 @@ var validTargetKinds = map[string]struct{}{
 
 // ParsedBinding is an intermediate representation for binding artifacts.
 type ParsedBinding struct {
+	Path              string
+	Symbol            string
+	BindingID         string
+	Surface           string
+	Kind              string
+	BindingLifecycle  string
+	DocumentLifecycle string
 	DocPath           string
 	BlockID           string
 	DocID             string
@@ -71,6 +78,10 @@ type ParsedBinding struct {
 func validateBindingPath(p string) bool {
 	p = strings.TrimSpace(p)
 	if p == "" {
+		return false
+	}
+	p = strings.ReplaceAll(p, "\\", "/")
+	if filepath.IsAbs(p) || strings.Contains(p, ":") {
 		return false
 	}
 	if strings.Contains(p, "\x00") {
@@ -736,6 +747,9 @@ func legacyBindingKeyValues(content string, key string) []string {
 // ExtractBindings parses canonical and legacy binding declarations from a document.
 // Returns all parsed bindings in deterministic order.
 func ExtractBindings(parsed ParsedDoc) []ParsedBinding {
+	if parsed.GraphProtocol != "" {
+		return extractGraphDocumentBindings(parsed)
+	}
 	allBindings := make([]ParsedBinding, 0)
 	sourceDocPath := parsed.SourcePath
 	if sourceDocPath == "" {
@@ -765,7 +779,8 @@ func SourceBindings(parsed ParsedDoc, indexedAt int64) []model.DocArtifactBindin
 	parsedBindings := ExtractBindings(parsed)
 	bindings := make([]model.DocArtifactBinding, 0, len(parsedBindings))
 
-	for i, pb := range parsedBindings {
+	seenRefs := map[string]int{}
+	for _, pb := range parsedBindings {
 		binding := model.DocArtifactBinding{
 			DocPath:           pb.DocPath,
 			BlockID:           pb.BlockID,
@@ -795,8 +810,15 @@ func SourceBindings(parsed ParsedDoc, indexedAt int64) []model.DocArtifactBindin
 			pb.TargetSymbol,
 			pb.TargetKind,
 		)
-		// Override ordinal for ordering
-		binding.Ordinal = i + 1
+		// Aggregate equivalent declarations without changing MILSP-WCB/v1.
+		if previous, exists := seenRefs[binding.BindingRef]; exists {
+			if binding.DocLifecycle != model.DocLifecycleActive {
+				bindings[previous].DocLifecycle = binding.DocLifecycle
+			}
+			continue
+		}
+		seenRefs[binding.BindingRef] = len(bindings)
+		binding.Ordinal = len(bindings) + 1
 		bindings = append(bindings, binding)
 	}
 
@@ -851,17 +873,23 @@ type ParsedDoc struct {
 	DocPath string
 	// Header preserves the original declaration-level source text so binding
 	// extraction does not reconstruct it from block bodies.
-	Header          string
-	DeclaresSource  bool
-	SourceProtocol  string
-	DocID           string
-	HarnessProtocol string
-	Audience        string
-	Imports         []string
-	Exports         []string
-	Blocks          []ParsedBlock
-	Records         []ParsedRecord
-	Mentions        []model.DocMention
+	Header            string
+	GraphProtocol     string
+	DocumentKind      string
+	DocumentLifecycle string
+	CanonicalBindings []ParsedBinding
+	BindingOmissions  []string
+	graphBindingIDs   map[string]int
+	DeclaresSource    bool
+	SourceProtocol    string
+	DocID             string
+	HarnessProtocol   string
+	Audience          string
+	Imports           []string
+	Exports           []string
+	Blocks            []ParsedBlock
+	Records           []ParsedRecord
+	Mentions          []model.DocMention
 	// SourcePath is the original path supplied to Parse(), used as the
 	// authoritative DocPath for bindings when the author does not supply one.
 	SourcePath string
@@ -893,11 +921,14 @@ type ParsedRecord struct {
 func Parse(docPath string, content string, indexedAt int64) ParsedDoc {
 	canonicalPath := filepath.ToSlash(docPath)
 	parsed := ParsedDoc{DocPath: canonicalPath, SourcePath: canonicalPath}
-	if !DeclaresSource(content) {
+	parseGraphDocument(&parsed, content)
+	if !DeclaresSource(content) && parsed.GraphProtocol == "" {
 		return parsed
 	}
 	header := sourceHeader(content)
-	parsed.Header = header
+	if parsed.GraphProtocol == "" {
+		parsed.Header = header
+	}
 	// Canonical source envelopes may live in a leading TOON block. Include
 	// those bounded declarations for source metadata, while retaining the
 	// original header for declaration-level legacy binding extraction.
@@ -906,11 +937,13 @@ func Parse(docPath string, content string, indexedAt int64) ParsedDoc {
 			header += "\n" + block
 		}
 	}
-	parsed.DeclaresSource = true
+	parsed.DeclaresSource = DeclaresSource(content)
 	parsed.SourceProtocol = firstNonEmpty(firstKeyValue(header, "wiki_source_protocol"), firstKeyValue(header, "source_protocol"))
-	parsed.DocID = firstNonEmpty(firstKeyValue(header, "doc_id"), firstKeyValue(header, "id"))
-	if _, declared, ambiguous := metadataIdentity(header); declared && ambiguous {
-		parsed.DocID = ""
+	if parsed.GraphProtocol == "" {
+		parsed.DocID = firstNonEmpty(firstKeyValue(header, "doc_id"), firstKeyValue(header, "id"))
+		if _, declared, ambiguous := metadataIdentity(header); declared && ambiguous {
+			parsed.DocID = ""
+		}
 	}
 	parsed.HarnessProtocol = firstKeyValue(header, "harness_protocol")
 	parsed.Audience = firstKeyValue(header, "audience")
@@ -1250,7 +1283,7 @@ func leadingIdentityBlocks(content string) []string {
 }
 
 func supportedMetadataProtocol(content string) bool {
-	return hasHarnessProtocol(content) || hasSourceProtocol(content)
+	return hasHarnessProtocol(content) || hasSourceProtocol(content) || flatGraphValue(content, "wiki_graph_protocol") != ""
 }
 
 func hasHarnessProtocol(content string) bool {
@@ -1348,7 +1381,6 @@ func sameDeclaredValue(values []string) bool {
 	}
 	return true
 }
-
 
 // DeclaredDocID returns an owner declaration from an actual leading metadata
 // region only. It intentionally does not scan arbitrary body text, where

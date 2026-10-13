@@ -570,6 +570,11 @@ func parseDocContent(
 	}
 
 	mentions := append(docMentions, sourceDoc.Mentions...)
+	// Existing mention plumbing exposes source rejection/omission diagnostics;
+	// no canonical declaration collection is persisted by this bridge.
+	for _, omission := range sourceDoc.BindingOmissions {
+		mentions = append(mentions, model.DocMention{DocPath: relPath, MentionType: "binding_omission", MentionValue: omission})
+	}
 	sourceBlocks := wikisource.SourceBlocks(sourceDoc, now)
 	sourceRecords := wikisource.SourceRecords(sourceDoc, now)
 	bindings := wikisource.SourceBindings(sourceDoc, now)

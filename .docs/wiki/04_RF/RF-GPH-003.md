@@ -183,55 +183,59 @@ candidate_rule:
   provenance: text_candidate
   direct_edge: forbidden
   semantic_relation_from_text: forbidden
-graph_v1: consumed_read_only_android_rf_subset_not_universal
+graph_v1: strict_canonical_source_reader_universal
 graph_v1_authoring:
-  subset_in_scope:
-    - surfaces_nested_artifact_bindings_read_side_extraction
-    - kind: [code, test, config]
-    - role: behavior_implementation_and_existing_code_role_closed_vocabulary
-    - test_and_config_kind_compat_with_existing_derived_rows
-  subset_gaps_owner_backlog:
-    - CT_schema_contract_roles_unsupported
-    - DB_migration_roles_unsupported
-    - TECH_roles_unsupported
-  accepted_keys: [binding_id, kind, path, surface, binding_lifecycle, symbol, role]
-  projected_fields:
-    path: target_path_when_target_path_absent_agreement_required_when_both_present
-    symbol: target_symbol_when_target_symbol_absent_agreement_required_when_both_present
-  canonical_binding_lifecycle_enum: [active, deprecated]
-  binding_lifecycle_semantics:
-    active: maps_to_doc_lifecycle_when_doc_lifecycle_absent
-    deprecated: maps_to_doc_lifecycle_when_doc_lifecycle_absent
-    invalid_fail_closed: [planned, retired, unknown]
-  legacy_not_graph_v1_binding_lifecycle:
-    binding_status_planned: payload_only_non_navigable_never_edge
-    doc_lifecycle_retired: document_lifecycle_field_only_not_binding_lifecycle
-  code_role_closed_vocabulary:
-    - behavior_implementation
-    - executable_test
-    - handler
-    - orchestration_entrypoint
-    - adapter
-    - selector
-    - implementation
-    - test
-    - config
-    - compiler
-    - supervisor
-    - entrypoint
-  kind_to_derived:
-    code: requires role from code_role_closed_vocabulary; derives relation and target_kind from role and symbol presence
-    test: relation tests and target_kind test
-    config: relation configures and target_kind config
-  not_persisted: [binding_id, surface, kind, path, symbol, binding_lifecycle]
-  store_omission_note: absent binding_id_or_surface in doc_artifact_bindings is honest derived omission not canonical schema extension
-  identity_note: binding_ref remains MILSP-WCB/v1 over doc_path block_id doc_id relation target_path target_symbol target_kind; binding_id is source-only provenance
+  authority: shared_SDD-WIKI-GRAPH-v1
+  adoption: explicit_wiki_graph_protocol_SDD-WIKI-GRAPH-v1_in_document_definition
+  required_document_metadata: [doc_id, kind, document_lifecycle]
+  document_owner: flat_definition_kind_never_block_kind_or_folder
+  source_locations: [document_root_header_frontmatter, toon_root, surfaces_nested_repeated_inline]
+  toon_bracket_lists: en bloques TOON, el cierre de corchete delimita la lista explícita; objetos multilínea entre llaves no requieren sangría ni comas YAML
+  object_fields_required: [binding_id, kind, role, path, surface, binding_lifecycle]
+  object_fields_optional: [symbol]
+  other_object_fields: rejected_with_binding_omission
+  kinds: [code, test, schema, migration, contract, config, ui]
+  roles: [behavior_implementation, orchestration_entrypoint, executable_test, handler, adapter, contract_schema, db_schema, db_migration, shared_component, infrastructure, runtime_config]
+  surfaces: [frontend, backend, shared, integration, data, operations]
+  binding_lifecycle: [active, deprecated]
+  document_lifecycle: [active, deprecated, retired]
+  ownership_minimum:
+    RF: [behavior_implementation]
+    TP: [executable_test]
+    CT: [handler, adapter, contract_schema]
+    DB: [db_schema, db_migration]
+    TECH: [shared_component, infrastructure, runtime_config]
+    TECH-DS: [shared_component, infrastructure, runtime_config]
+    FL: [orchestration_entrypoint]
+    other_document_kinds: no_direct_binding
+  ownership_note: validar role por owner; no inferir una matriz exhaustiva de pares kind_role de ejemplos
+  source_metadata: [binding_id, kind, surface, binding_lifecycle, document_lifecycle]
+  lifecycle_axes: independent_document_active_with_binding_deprecated_is_legal
+  legacy_projection_lifecycle: document_lifecycle_unless_active_binding_deprecated_then_deprecated
+  aggregate_policy: non_active_either_axis_excludes_bridge; equivalent_WCB_rows_deduplicated_conservatively
+  duplicate_binding_id: all_ambiguous_declarations_rejected_document_wide
+  response_and_planned_payload: not_declarations
+  source_ranges: object_exact_range_not_claimed_currently_zero
+  not_persisted: [binding_id, surface, kind, binding_lifecycle, document_lifecycle_separate]
+  omissions: binding_omission_mentions_via_existing_docgraph_producer
+  collection_status: explicit_incomplete_canonical_source_collection_not_persisted_owned_by_Unit_B
+  identity_note: binding_ref_remains_MILSP-WCB/v1_unchanged_no_new_ID_or_schema
+derived_association_mapping:
+  code_and_ui:
+    behavior_implementation: implements
+    executable_test: tests
+    other_permitted_roles: operates
+    target_kind: symbol_when_symbol_present_otherwise_file
+  test: tests_test
+  config: configures_config
+  schema_migration_contract: operates_file
+  semantics: documentary_bridge_associations_not_compiler_edges_or_new_GraphV1_relations
 precedence:
-  - explicit target_path and path must agree or entry is rejected
-  - explicit target_symbol and symbol must agree or entry is rejected
-  - explicit relation and target_kind must agree with graph_v1 kind and role derivation or entry is rejected
-  - graph_v1 binding_lifecycle outside active_or_deprecated is rejected
-  - unknown role without explicit relation is rejected; explicit relation preserves role without re-deriving relation
+  - adopted_GraphV1_is_strict_no_legacy_fields_inside_canonical_objects
+  - legacy_not_adopted_is_advisory_preserves_existing_aliases_defaults_and_conflicts
+  - no_target_path_authoring_workaround_required
+  - path_and_symbol_safety_required_before_projection
+  - default_provenance_and_resolution_consumers_remain_unchanged
 legacy:
   aliases: [implementation_anchors, code_links, test_links, implements, tests]
   normalization: derived_binding_with_authoring_origin_legacy
@@ -247,9 +251,12 @@ invariants:
   candidates_never_become_direct_edges: true
   source_digest_and_binding_ref_are_stable: true
   query_writes: forbidden
+verification_status: manual_evidence_pending
 verify:
-  - "FINAL_VERIFY e1835ee: go test ./... PASS (28 paquetes)"
-  - "wiki-code-bridge-runner/v1: status PASS; inventory=37; stable_digest_runs=30"
+  - parent_single_FINAL_VERIFY_after_implementation_complete
+historical_verification_not_reexecuted:
+  - "FINAL_VERIFY e1835ee: go test ./... PASS (28 paquetes); no valida esta ampliación"
+  - "wiki-code-bridge-runner/v1: status PASS; inventory=37; stable_digest_runs=30; histórica"
 evidence:
   - internal/wikisource/parser.go
   - internal/model/wiki_code_binding.go

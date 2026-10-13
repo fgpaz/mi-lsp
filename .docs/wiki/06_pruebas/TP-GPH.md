@@ -278,21 +278,36 @@ status: manual_evidence_pending
 fixture_isolation: testdata/wiki-code-bidirectional
 verification_basis: owner_final_verify_single_wave
 acceptance:
-  - id: TC-GPH-003-AB-parse-graphv1-subset
-    given: bloque TOON Android RF subset con surfaces.* artifact_bindings kind code|test|config role behavior_implementation u otro rol cerrado y GraphV1 path/symbol/binding_lifecycle active|deprecated
-    when: wikisource.ExtractBindings y SourceBindings proyectan filas doc_artifact_bindings
-    then: target_path/target_symbol/relation/target_kind/doc_lifecycle coinciden con RF-GPH-003.declared-binding-provenance; binding_lifecycle canonico solo active|deprecated; planned legacy solo via binding_status en vocabulario derivado; consumidor wiki_code_bindings excluye binding_status planned y doc_lifecycle distinto de active de direct_code
-    evidence: internal/wikisource/parser.go; internal/service/wiki_code_bindings.go; testdata/wiki-code-bidirectional/.docs/wiki/04_RF/RF-DEMO-001.md
-  - id: TC-GPH-003-AB-parse-legacy-planned
-    given: artifact_bindings derivado con binding_status planned sin kind GraphV1
-    when: parseCanonicalArtifactBinding procesa la entrada
-    then: fila derivada con binding_status planned y sin arista navegable; binding_lifecycle planned en entrada GraphV1 kind no aplica
-    evidence: testdata/wiki-code-bidirectional/.docs/wiki/04_RF/RF-DEMO-PLANNED.md; internal/wikisource/parser.go
-  - id: TC-GPH-003-AB-parse-fail-closed
-    given: path vs target_path contradictorios, binding_lifecycle planned|retired|unknown en entrada GraphV1 kind, doc_lifecycle invalido o role desconocido sin relation explicita
-    when: parseCanonicalArtifactBinding procesa la entrada
-    then: la entrada se descarta sin fila derivada inventada
-    evidence: internal/wikisource/parser.go
+  - id: TC-GPH-003-AB-canonical-source
+    given: definición GraphV1 RF|TP|CT|DB|TECH|TECH-DS|FL con kind documental plano, doc_id y document_lifecycle; declaraciones raíz/frontmatter/TOON/surfaces, repetidas y arrays inline
+    when: parent ejecuta fixture manual aislada en su única FINAL_VERIFY
+    then: cada binding válido conserva binding_id/kind/surface y ambos lifecycle en ParsedDoc.CanonicalBindings/ExtractBindings; SourceBindings aplica RF-GPH-003 sin exigir target_path ni alterar WCB/v1
+    evidence: pending
+  - id: TC-GPH-003-AB-toon-braces
+    given: RF-BRACES con definición GraphV1 RF active y bloque TOON artifact_bindings abierto por corchete, objeto multilínea entre llaves y cierre de corchete; llaves y campos sin sangría ni comas YAML
+    when: parent realiza recheck1 sobre la fixture y el oracle RF-BRACES preservados de FINAL_VERIFY1
+    then: una asociación declarada para src/worker.go; sin invalid_artifact_bindings_list por corte de sangría; se mantienen validaciones required/enums/ownership/path y exclusión de payload/projections
+    evidence: pending_owner_recheck1
+  - id: TC-GPH-003-AB-ownership-and-enums
+    given: siete kinds, once roles y seis surfaces; pares válidos según enums y ownership, incluidos schema/migration/contract y ui; owners RS|UJ|UI-RFC|HANDOFF o FL con behavior
+    when: parent compara tabla oracle escrita antes de ejecutar
+    then: mappings de asociación correctos; owner prohibido, enums inválidos, obligatorios vacíos, campos extra, claves duplicadas, path inseguro o symbol multiline producen binding_omission sin promoción
+    evidence: pending
+  - id: TC-GPH-003-AB-lifecycle-and-identity
+    given: doc active y binding deprecated; doc deprecated o retired y binding active; dos binding_ids distintos proyectados al mismo WCB; IDs repetidos
+    when: parent compara declaraciones fuente separadas y agregado legacy
+    then: ejes independientes legales; bridge excluido si cualquiera no active; declaraciones equivalentes conservadas en parseo y una fila agregada sin UNIQUE collision; IDs ambiguos rechazados todos; cambiar ID/surface no cambia WCB/v1
+    evidence: pending
+  - id: TC-GPH-003-AB-legacy-and-payload
+    given: documento no adoptado con aliases implementation_anchors/code_links/test_links e histórico artifact_bindings derivado planned; campos hermanos owner/status; payload response/planned/projection
+    when: parent verifica lectura legacy y default consumidor existentes
+    then: legacy conserva precedencias, defaults, conflictos y planned no navegable, sin required canónicos; hermanos no invalidan objetos; response/planned no crea asociaciones; ninguna heurística promueve documento a strict GraphV1
+    evidence: pending
+  - id: TC-GPH-003-AB-bridge-omissions
+    given: archivo ausente, catálogo ausente o símbolo no resuelto y colección fuente no persistida
+    when: parent verifica forward/reverse existentes
+    then: provenance y resolution separados, file-only u omission honesta sin compiler fact; binding_omission informa explicit_incomplete de colección; B/C/K no se declaran completos
+    evidence: pending
 manual_evidence: pending_owner_final_verify
 ```
 
