@@ -17,6 +17,9 @@ func main() {
 			}
 			cli.WriteProcessFailure(out, err)
 		}
+		if code, ok := cli.IsExitCodeError(err); ok {
+			os.Exit(code)
+		}
 		os.Exit(1)
 	}
 }

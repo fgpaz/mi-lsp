@@ -48,6 +48,32 @@ wiki_source_table_exception: true
 
 La tabla de casos `TC-WKS-001..047` se conserva como índice humano histórico; los casos nuevos `TC-WKS-048..060` tienen autoridad únicamente en sus bloques TOON normativos, sin duplicarse en esa tabla.
 
+## Reparación fuente doctor/versión — 2026-10-13
+
+No cambia la tabla histórica ni agrega bindings de tests ficticios. Las condiciones siguientes son obligaciones de fuente, no resultados de una campaña nueva:
+
+```toon
+block_id: tp-wks-doctor-version-source-repair
+kind: source-repair-limit
+contracts: [CT-CLI-DAEMON-ADMIN, CT-Q-V1]
+requirements: [RF-WKS-006]
+status: explicit_incomplete
+budget: exhausted_FINAL1_audit1_recheck1
+original_doctor_result: FAIL_double_JSON
+remaining_LSP_03_04_05_06: NOT_RUN
+source_obligations:
+  doctor_failed_checks: one_envelope_and_nonzero_exit
+  formats: [text, json, toon]
+  unprinted_errors: normal_outer_handler
+  release_version: exact_without_v_binary_and_dynamic_provider
+  candidate_generator: same_release_version_for_provider_and_tool_card
+runtime_schema_windows_conformance: not_claimed
+owner: coord-herramientas_coord-mi-lsp
+expires_at: 2026-10-18T23:00:00Z
+```
+
+Los planes y comandos históricos de este documento no autorizan ejecuciones adicionales para LSPstd. Publicar fuente acotada no convierte el FAIL retenido en PASS.
+
 ## Cobertura objetivo
 
 - RF-WKS-001
