@@ -35,6 +35,7 @@ type IndexJob struct {
 	WorkspaceRoot      string `json:"workspace_root"`
 	Mode               string `json:"mode"`
 	EntrypointSelector string `json:"entrypoint,omitempty"`
+	GoOffline          bool   `json:"go_offline"`
 	Clean              bool   `json:"clean,omitempty"`
 	Status             string `json:"status"`
 	Phase              string `json:"phase,omitempty"`
@@ -70,6 +71,17 @@ type ActiveIndexJobError struct {
 
 func (e *ActiveIndexJobError) Error() string {
 	return fmt.Sprintf("index job already active: %s (%s)", e.Job.JobID, e.Job.Status)
+}
+
+// IndexJobPolicyMismatchError rejects deduplication across Go observation policies.
+// Job is the persisted active job, never a projection of the requested policy.
+type IndexJobPolicyMismatchError struct {
+	Job                IndexJob
+	RequestedGoOffline bool
+}
+
+func (e *IndexJobPolicyMismatchError) Error() string {
+	return fmt.Sprintf("index job policy mismatch: job_id=%s active_go_offline=%t requested_go_offline=%t; retry manually after the active job is terminal", e.Job.JobID, e.Job.GoOffline, e.RequestedGoOffline)
 }
 
 var (
@@ -226,6 +238,14 @@ func indexJobSelectColumns(db *sql.DB) (string, error) {
 	if !hasEntrypointColumn {
 		entrypointSelector = "'' AS entrypoint_selector"
 	}
+	hasOfflineColumn, err := tableHasColumn(db, "index_jobs", "go_offline")
+	if err != nil {
+		return "", err
+	}
+	goOffline := "go_offline"
+	if !hasOfflineColumn {
+		goOffline = "0 AS go_offline"
+	}
 	hasCancelColumn, err := tableHasColumn(db, "index_jobs", "requested_cancel")
 	if err != nil {
 		return "", err
@@ -234,9 +254,9 @@ func indexJobSelectColumns(db *sql.DB) (string, error) {
 	if !hasCancelColumn {
 		requestedCancel = "0 AS requested_cancel"
 	}
-	return fmt.Sprintf(`job_id, generation_id, workspace_name, workspace_root, mode, %s, clean, status, phase, pid, %s, COALESCE(error, ''),
+	return fmt.Sprintf(`job_id, generation_id, workspace_name, workspace_root, mode, %s, %s, clean, status, phase, pid, %s, COALESCE(error, ''),
 	       COALESCE(current_stage, ''), COALESCE(current_path, ''), files_total,
-	       files, symbols, docs, created_at, COALESCE(started_at, ''), COALESCE(finished_at, ''), updated_at`, entrypointSelector, requestedCancel), nil
+	       files, symbols, docs, created_at, COALESCE(started_at, ''), COALESCE(finished_at, ''), updated_at`, entrypointSelector, goOffline, requestedCancel), nil
 }
 
 func loadIndexJobOwnership(ctx context.Context, tx *sql.Tx, workspaceRoot string) (indexJobOwnership, error) {
@@ -358,17 +378,24 @@ func CreateIndexJob(ctx context.Context, db *sql.DB, workspaceName string, works
 }
 
 func CreateIndexJobWithEntrypoint(ctx context.Context, db *sql.DB, workspaceName string, workspaceRoot string, mode string, clean bool, entrypointSelector string) (IndexJob, error) {
-	return createIndexJob(ctx, db, workspaceName, workspaceRoot, mode, clean, entrypointSelector, true)
+	return CreateIndexJobWithGoOffline(ctx, db, workspaceName, workspaceRoot, mode, clean, entrypointSelector, false)
+}
+
+func CreateIndexJobWithGoOffline(ctx context.Context, db *sql.DB, workspaceName, workspaceRoot, mode string, clean bool, entrypointSelector string, goOffline bool) (IndexJob, error) {
+	return createIndexJob(ctx, db, workspaceName, workspaceRoot, mode, clean, entrypointSelector, true, goOffline)
 }
 
 func CreateIndexJobUnchecked(ctx context.Context, db *sql.DB, workspaceName string, workspaceRoot string, mode string, clean bool) (IndexJob, error) {
 	return createIndexJob(ctx, db, workspaceName, workspaceRoot, mode, clean, "", false)
 }
 
-func createIndexJob(ctx context.Context, db *sql.DB, workspaceName string, workspaceRoot string, mode string, clean bool, entrypointSelector string, checkActive bool) (IndexJob, error) {
+func createIndexJob(ctx context.Context, db *sql.DB, workspaceName string, workspaceRoot string, mode string, clean bool, entrypointSelector string, checkActive bool, offline ...bool) (IndexJob, error) {
 	_ = checkActive // reservation and job creation are always guarded atomically
 	normalizedMode, err := NormalizeIndexMode(mode)
 	if err != nil {
+		return IndexJob{}, err
+	}
+	if err := ensureColumn(db, "index_jobs", "go_offline", "INTEGER NOT NULL DEFAULT 0"); err != nil {
 		return IndexJob{}, err
 	}
 	if err := ensureIndexJobOwnershipSchema(db); err != nil {
@@ -383,6 +410,7 @@ func createIndexJob(ctx context.Context, db *sql.DB, workspaceName string, works
 		WorkspaceRoot:      workspaceRoot,
 		Mode:               normalizedMode,
 		EntrypointSelector: strings.TrimSpace(entrypointSelector),
+		GoOffline:          len(offline) > 0 && offline[0],
 		Clean:              clean,
 		Status:             IndexJobQueued,
 		Phase:              "queued",
@@ -397,13 +425,17 @@ func createIndexJob(ctx context.Context, db *sql.DB, workspaceName string, works
 	defer func() { _ = tx.Rollback() }()
 
 	if _, err := tx.ExecContext(ctx, `
-		INSERT INTO index_jobs(job_id, generation_id, workspace_name, workspace_root, mode, entrypoint_selector, clean, status, phase, created_at, updated_at)
-		VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-	`, job.JobID, job.GenerationID, job.WorkspaceName, job.WorkspaceRoot, job.Mode, job.EntrypointSelector, boolToInt(job.Clean), job.Status, job.Phase, job.CreatedAt, job.UpdatedAt); err != nil {
+		INSERT INTO index_jobs(job_id, generation_id, workspace_name, workspace_root, mode, entrypoint_selector, go_offline, clean, status, phase, created_at, updated_at)
+		VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`, job.JobID, job.GenerationID, job.WorkspaceName, job.WorkspaceRoot, job.Mode, job.EntrypointSelector, boolToInt(job.GoOffline), boolToInt(job.Clean), job.Status, job.Phase, job.CreatedAt, job.UpdatedAt); err != nil {
 		return IndexJob{}, err
 	}
 
 	if err := reserveIndexJobTx(ctx, tx, job); err != nil {
+		var activeErr *ActiveIndexJobError
+		if errors.As(err, &activeErr) && activeErr.Job.GoOffline != job.GoOffline {
+			return IndexJob{}, &IndexJobPolicyMismatchError{Job: activeErr.Job, RequestedGoOffline: job.GoOffline}
+		}
 		return IndexJob{}, err
 	}
 	if _, err := tx.ExecContext(ctx, `
@@ -533,7 +565,7 @@ func reserveIndexJobTx(ctx context.Context, tx *sql.Tx, job IndexJob) error {
 
 func loadIndexJobTx(ctx context.Context, tx *sql.Tx, jobID string) (IndexJob, error) {
 	return scanIndexJobRow(tx.QueryRowContext(ctx, `
-		SELECT job_id, generation_id, workspace_name, workspace_root, mode, COALESCE(entrypoint_selector, ''), clean, status, phase, pid, requested_cancel, COALESCE(error, ''),
+		SELECT job_id, generation_id, workspace_name, workspace_root, mode, COALESCE(entrypoint_selector, ''), go_offline, clean, status, phase, pid, requested_cancel, COALESCE(error, ''),
 		       COALESCE(current_stage, ''), COALESCE(current_path, ''), files_total,
 		       files, symbols, docs, created_at, COALESCE(started_at, ''), COALESCE(finished_at, ''), updated_at
 		FROM index_jobs WHERE job_id = ?
@@ -542,7 +574,7 @@ func loadIndexJobTx(ctx context.Context, tx *sql.Tx, jobID string) (IndexJob, er
 
 func loadActiveIndexJobTx(ctx context.Context, tx *sql.Tx, workspaceRoot string, excludeJobID string) (IndexJob, error) {
 	return scanIndexJobRow(tx.QueryRowContext(ctx, `
-		SELECT job_id, generation_id, workspace_name, workspace_root, mode, COALESCE(entrypoint_selector, ''), clean, status, phase, pid, requested_cancel, COALESCE(error, ''),
+		SELECT job_id, generation_id, workspace_name, workspace_root, mode, COALESCE(entrypoint_selector, ''), go_offline, clean, status, phase, pid, requested_cancel, COALESCE(error, ''),
 		       COALESCE(current_stage, ''), COALESCE(current_path, ''), files_total,
 		       files, symbols, docs, created_at, COALESCE(started_at, ''), COALESCE(finished_at, ''), updated_at
 		FROM index_jobs
@@ -1309,7 +1341,7 @@ type indexJobScanner interface {
 
 func scanIndexJob(scanner indexJobScanner) (IndexJob, error) {
 	var requested int
-	var clean int
+	var clean, offline int
 	var job IndexJob
 	if err := scanner.Scan(
 		&job.JobID,
@@ -1318,6 +1350,7 @@ func scanIndexJob(scanner indexJobScanner) (IndexJob, error) {
 		&job.WorkspaceRoot,
 		&job.Mode,
 		&job.EntrypointSelector,
+		&offline,
 		&clean,
 		&job.Status,
 		&job.Phase,
@@ -1337,6 +1370,7 @@ func scanIndexJob(scanner indexJobScanner) (IndexJob, error) {
 	); err != nil {
 		return IndexJob{}, err
 	}
+	job.GoOffline = offline != 0
 	job.Clean = clean != 0
 	job.RequestedCancel = requested != 0
 	return job, nil

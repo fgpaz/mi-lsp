@@ -175,6 +175,27 @@ flowchart LR
 - Aun con `read_model=default`, un workspace inicializado con docs minimas utiles bajo `.docs/wiki/07_*.md`, `.docs/wiki/08_*.md` o `.docs/wiki/09_*.md` debe poder resolver una respuesta docs-first razonable sin requerir `read-model.toml` custom.
 - La UI de gobernanza es unica, local a loopback y debe abrirse enfocando workspace, sin duplicar instancias.
 - C# profundo se resuelve con Roslyn; TS/JS, Python, Go y Rust tienen backends semanticos opcionales (`tsserver`, `pyright`, `gopls`, `rust-analyzer`) con fallback catalog/text.
+```toon
+doc_id: 07_baseline_tecnica
+block_id: 07_baseline_tecnica-GO-OFFLINE
+kind: normative
+source_of_truth: normative
+contract_ref: CT-CLI-DAEMON-ADMIN-GO-OFFLINE
+requirement_ref: RF-IDX-001-GO-OFFLINE
+scope: "Resumen subordinado a [[CT-CLI-DAEMON-ADMIN]] y [[RF-IDX-001]]; aceptación y límites en [[TP-IDX]] / TC-IDX-029"
+policy: "Opt-in --go-offline en index/index start, default false; payload y job durable; wrapper direct wait, start direct wait y detached con recarga durable"
+daemon_route: "CLI index-daemon unsupported/noapplicable actual; App/server comparten dispatch interno, no paridad pública; graph query daemon no acredita observador"
+go_environment: "GOTOOLCHAIN local, GOPROXY/GOSUMDB off, GOVCS *:off, GOFLAGS con un espacio (cero flags), GOWORK off, -buildvcs=false -mod=readonly; -modfile privado de go.mod/go.sum, metadata del usuario intacta"
+limits: "Exports y caché/compilación local permitidos; sin importador ambiental ni retry online. No sandbox CC/cgo personalizado ni garantía de embeddings, noGo o gopls"
+missing: "Sin metadata utilizable: GPH_GO_OFFLINE_UNAVAILABLE; metadata parcial puede dar diagnóstico genérico/type_check_error/external_target, motivo offline específico no universal; precisión explicit_incomplete, sin facts completos por AST"
+verification_basis: "FINAL_VERIFY1 FAIL histórico; RECHECK1 PASS policy / PARTIAL global; rechazo simétrico, dedupe y retry terminal comprobados; stdlib bwrap aislada succeeded, no cero syscall ni red normal fuera de namespace ni salud global"
+status: explicit_incomplete
+owner: coord-milsp
+disclosure_due: antes de publicación acotada
+followup_due: 2026-10-20
+budget: "Agotado FINAL_VERIFY1/audit1/RECHECK1; sin recheck2; precisión/evidencia futura requiere objetivo separado"
+readiness_debt: "Deuda preexistente sin migración global ni PASS Harness/wiki-source/P6/Graph"
+```
 - Go se detecta e indexa con un extractor AST nativo para que `mi-lsp` pueda navegar su propio codigo Go desde el catalogo repo-local, aun sin `gopls`; cuando `gopls` existe, `nav context` y `nav refs` pueden enriquecer la respuesta via LSP.
 - La observación Go acepta `DefaultEntrypoint` como selector repo-local (`go.mod`, `runtime/go.mod`) o como ID de `WorkspaceEntrypoint`: para un ID exige resolver la coincidencia exacta de repo y entrypoint declarados, rebasa la ruta workspace-relative al root del repo seleccionado y vuelve a validar que el resultado sea un `go.mod` repo-local, seguro y regular. En ae-kernel, el repo seleccionado `runtime` puede usar `default_entrypoint=runtime::runtime-go-mod` y termina observando `go.mod` relativo a ese repo. Solo cuando no hay selector el fallback es determinista a `go.mod` en la raíz; cualquier ID desconocido o malformado, selector explícito ausente, no regular, symlink o inseguro falla cerrado, produce omisión Go y no activa fallback. `go.work` no es compatible con la extracción de grafo y se rechaza; en topología `container`, se ignora el selector anidado y se usa la raíz del workspace con ese mismo fallback; elegir el módulo Go no reduce el catálogo general, por lo que el TypeScript y la documentación del root siguen indexándose.
 - Python se indexa con un extractor lexical acotado por lineas para mantener el catalogo repo-local cancelable; semantica profunda opcional via `pyright-langserver` cuando exista.

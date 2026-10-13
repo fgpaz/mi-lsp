@@ -5,6 +5,9 @@ implements:
   - internal/cli/index.go
   - internal/service/index_jobs.go
   - internal/indexer/indexer.go
+  - internal/indexer/graph_pipeline.go
+  - internal/indexer/extractor_go.go
+  - internal/store/schema.go
   - internal/indexer/incremental.go
   - internal/store/index_jobs.go
   - internal/store/index_publish.go
@@ -133,6 +136,39 @@ evidence:
 - Cuarentena: si `index.db` está corrupta, el write-side del índice la renombra a `index.db.corrupt-<unixts>` junto con sus `-wal` y `-shm`, crea una base nueva y reconstruye; conserva como máximo las 2 cuarentenas más recientes y solo opera dentro de `<root>/.mi-lsp/`. Un fallo al marcar el job como fallido se registra aunque el contexto haya vencido.
 - Concurrencia: solo la corrupción real (`malformed`, `not a database` y similares) justifica la cuarentena; una tabla faltante se repara con `EnsureSchema`. El rename se serializa con `<root>/.mi-lsp/quarantine.lock` (creación exclusiva, caduca a 30 s) y se vuelve a sondear la base dentro del lock; un proceso sin lock nunca renombra. Errores transitorios de apertura o un job ya activo no escriben el marcador de backoff. Una `index.db` ausente, de 0 bytes o sin tablas se informa como `index_not_ready`, no como `index_schema_broken`.
 
+### 6.2 Observación Go local explícita (RF-IDX-001-GO-OFFLINE)
+
+La autoridad normativa de este slice está en el bloque siguiente; su evidencia manual está en [[TP-IDX]] / TC-IDX-029.
+
+```toon
+doc_id: RF-IDX-001
+block_id: RF-IDX-001-GO-OFFLINE
+kind: normative
+source_of_truth: normative
+contract_id: CT-CLI-DAEMON-ADMIN-GO-OFFLINE
+opt_in: "--go-offline en index e index start; ausente conserva defaults, go_offline durable booleano"
+public_routes: "wrapper direct wait, start direct wait y start detached con recarga durable en run-job"
+daemon_route: "CLI index-daemon unsupported/noapplicable actual; App/server comparten dispatch interno, no paridad pública ni routing nuevo"
+compatibility: "q-v1, init, autoindex y consultas gopls intactos; sin configurar el entorno del usuario"
+process_environment: "El proceso Go recibe `GOTOOLCHAIN=local`, `GOPROXY=off`, `GOSUMDB=off`, `GOVCS=*:off`, `GOFLAGS` con un espacio (cero flags; anula también el valor persistido por `go env -w`) y `GOWORK=off`. Se conservan el resto del entorno y los caches locales existentes. Se ignoran todos los GOFLAGS heredados/configurados (incluidos tags, overlays, toolexec y modfile); los tags de la petición interna explícita siguen vigentes."
+local_metadata: "`go list -buildvcs=false -deps -export -compiled -json -e -mod=readonly` puede compilar localmente y escribir cache de compilación, pero no descargar toolchain/módulos ni contactar sumdb o VCS. El módulo seleccionado se observa fuera de modo workspace para evitar escrituras de `go.work.sum`; reemplazos disponibles únicamente por `go.work` no se incorporan. No escribe `go.mod`, `go.sum` ni `go.work`: usa copias temporales propias de `go.mod`/`go.sum` mediante `-modfile` (readonly por sí solo no impide nuevas sumas). Esas copias se descartan al terminar; los reemplazos relativos conservan la base del módulo seleccionado."
+importer: "El importador consume solo exports obtenidos con esa política y paquetes locales tipados; no usa el importador gc ambiental que podría lanzar otro Go. Falta de exports/dependencias implica parcialidad, nunca facts de compilador sustituidos por regex/AST."
+missing_metadata: "Sin metadata utilizable: GPH_GO_OFFLINE_UNAVAILABLE y mensaje sanitizado. Con metadata parcial, algunos faltantes quedan en diagnóstico genérico/index_failed, type_check_error o external_target; go_offline_metadata_unavailable no es universal. Precisión específica offline explicit_incomplete, sin retry online, instalación, bootstrap ni facts completos falsos."
+public_status: "El job expone `go_offline`; la observación efectiva agrega warning `go_offline=true` y fingerprint de configuración distinto. Se mantienen las capabilities de declaraciones/contains/imports/references/calls y su degradación real, sin una capability inventada de completitud offline."
+scope: "Full offline fuerza recomposición en vez de aceptar el no-op incremental de una generación creada con otro modo. Docs/catalog y backends no Go no cambian: el flag no promete ausencia de red de embeddings u otros backends, ni sandbox de compiladores externos/cgo personalizados."
+deduplication: "La deduplicación compara el `go_offline` solicitado con el persistido del job activo. Si difieren, rechaza con `ok=false` y `error.code=index_job_policy_mismatch`, mostrando job_id, active_go_offline y requested_go_offline sin secretos. El rechazo es simétrico (online→offline y offline→online), también en docs/catalog aunque no ejecuten Go: la política durable no equivale a una observación efectiva. No transforma ni cancela el job, no crea otro runner ni reintenta automáticamente; el caller puede reintentar manualmente después de su estado terminal. Si la política coincide, conserva la deduplicación existente y los defaults de los demás parámetros; no añade rechazo por mode/clean/entrypoint."
+verification_basis: "FINAL_VERIFY1 FAIL histórico; RECHECK1 PASS policy / PARTIAL global; audit1 Changes requested, reparación editorial sin aceptación global"
+evidence_scope: "Rechazo simétrico, dedupe coincidente, aislamiento durable y retry manual terminal comprobados; stdlib succeeded en bwrap con namespace distinto, solo lo y sin rutas"
+evidence_limits: "No cero intentos de syscall, ejecución normal fuera de namespace, salud global ni precisión/capabilities externas completas"
+status: explicit_incomplete
+owner: coord-milsp
+disclosure_due: antes de publicación acotada
+followup_due: 2026-10-20
+followup_authority: "Precisión y evidencia futura solo con objetivo separado; sin renovar presupuesto de este objetivo"
+budget: "FINAL_VERIFY1/audit1/RECHECK1 agotado; sin recheck2 ni verificador pendiente"
+preexisting_debt: "Harness anidado preexistente no migrado; sin PASS de Harness/wiki-source/P6/Graph ni guard global de push"
+```
+
 ## 7. Data Model Impact
 
 - `WorkspaceRepo`
@@ -148,6 +184,7 @@ evidence:
 
 ## 8. Test Traceability
 
+- Manual con evidencia acotada: `TP-IDX / TC-IDX-029` (RF-IDX-001-GO-OFFLINE); FINAL_VERIFY1 FAIL histórico, RECHECK1 PASS policy / PARTIAL global, sin aceptación completa.
 - Positivo: `TP-IDX / TC-IDX-001`
 - Positivo: `TP-IDX / TC-IDX-012`
 - Positivo: `TP-IDX / TC-IDX-025`
