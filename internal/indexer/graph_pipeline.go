@@ -34,6 +34,7 @@ type GraphObserver func(context.Context, GraphObservationRequest) (model.GraphOb
 type GraphIndexOptions struct {
 	RoslynObserver     GraphObserver
 	EntrypointSelector string
+	GoOffline          bool
 }
 
 type graphObservationTarget struct {
@@ -170,7 +171,10 @@ func ObserveGraph(ctx context.Context, root string, project model.ProjectFile, o
 			if project.Project.Kind != model.WorkspaceKindContainer || explicitSelection != nil {
 				requestRoot = goRepos[0].root
 			}
-			batch, observeErr := ObserveGoGraph(ctx, GoGraphObservationRequest{Root: requestRoot, RepositoryIdentity: identity, ProjectOrModule: module})
+			if options.GoOffline {
+				warnings = append(warnings, "go_offline=true; Go observation uses local toolchain/cache, readonly module metadata and no workspace mode; inherited GOFLAGS ignored")
+			}
+			batch, observeErr := ObserveGoGraph(ctx, GoGraphObservationRequest{Root: requestRoot, RepositoryIdentity: identity, ProjectOrModule: module, GoOffline: options.GoOffline})
 			if observeErr != nil {
 				return nil, omissions, warnings, fmt.Errorf("go graph observation failed: %w", observeErr)
 			}

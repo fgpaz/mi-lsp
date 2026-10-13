@@ -64,7 +64,68 @@ evidence:
 | TC-IDX-025 | positivo | RF-IDX-001 | `TestWalkWorkspaceIgnoresNestedMiLspState` + `TestHardIgnoreMatcherKeepsMiLspIgnoredAfterNegatedReinclude`: `.mi-lsp/**` se trata como hard ignore operacional incluso anidado y aunque haya re-include negado |
 | TC-IDX-026 | positivo | RF-IDX-001 | `TestIncrementalIndexRepairsStaleGraphWithDocumentationGraph`: sin batch semántico completo, el reindex incremental publica un grafo documental fresco contra el catálogo activo |
 | TC-IDX-027 | negativo | RF-IDX-001 | `TestIncrementalIndexReturnsTypedErrorWhenStaleGraphCannotBeRebuilt`: sin identidad publicable, incremental y full reindex devuelven `graph_repair_incomplete` en vez de éxito vacío |
+| TC-IDX-029 | manual | RF-IDX-001 | Go offline por CLI direct/wait/detached; daemon CLI no aplicable. FINAL_VERIFY1 FAIL histórico; RECHECK1 PASS policy / PARTIAL global, límites en bloque TC-IDX-029 |
 | TC-IDX-028 | positivo | RF-IDX-002 | aceptación manual por CLI pública; definición normativa en el bloque `TC-IDX-028` |
+
+### TC-IDX-029 — Go offline por job
+
+```toon
+doc_id: TP-IDX
+block_id: TC-IDX-029
+kind: normative
+source_of_truth: normative
+requirement_id: RF-IDX-001
+observable_contract: RF-IDX-001-GO-OFFLINE
+case_id: TC-IDX-029
+verification_mode: manual_evidence
+status: explicit_incomplete
+manual_evidence_owner: coord-milsp
+manual_evidence_due: disclosure antes de publicación acotada
+followup_due: 2026-10-20
+followup_authority: precisión/evidencia futura con objetivo separado, sin renovación del presupuesto
+fixture_isolation: fixture temporal propio del verifier, fuera de worktrees B/C/K; no creado en BUILD
+fixture:
+  stdlib: módulo Go válido con uso de stdlib y repository_identity publicable
+  cached: dependencia y exports disponibles en cache local propia del fixture
+  missing: dependencia no disponible en cache local propia
+  toolchain_missing: go.mod que requiere versión superior al toolchain local disponible
+  adversarial_env: GOTOOLCHAIN auto, proxy/sumdb online y GOFLAGS ambiental y persistido con -mod=mod y -toolexec; GOENV propio del fixture, sin mutar config global ni ejecutarlos fuera de la corrida offline
+  metadata: go.mod, go.sum y go.work/go.work.sum presentes o ausentes; hashes/existencia antes y después
+expected:
+  stdlib_cached: observación compiler-backed con capabilities reales; no afirmar completitud solo por succeeded
+  missing_dependency: GPH_GO_OFFLINE_UNAVAILABLE si no hay metadata utilizable; metadata parcial puede dar diagnóstico genérico/index_failed, type_check_error o external_target; motivo offline específico no universal, precisión explicit_incomplete; sin retry online ni facts completos
+  missing_local_toolchain: error tipado o parcialidad honesta; ninguna descarga ni bootstrap
+  network_scope: stdlib succeeded en bwrap, namespace distinto, solo lo y sin rutas; egress-deny del caso aislado, no cero intentos de syscall ni comportamiento sin namespace ni salud global
+  user_files_intact: hashes y existencia de go.mod/go.sum/go.work/go.work.sum sin cambios
+  local_compile: export y cache de compilación local permitidos; no módulos/toolchains nuevos descargados
+  importer: solo exports observados y tipos locales; faltante no activa importer.Default ambiental
+  mode: payload y status go_offline=true; warning de observación y fingerprint distinguen offline
+  policy_mismatch: pedido offline con job activo online y caso simétrico devuelven ok=false y error.code=index_job_policy_mismatch; job_id y políticas reales visibles, sin modificar/cancelar activo ni crear runner/generación/ownership adicional
+  matching_policy: política coincidente conserva deduplicación previa y job_id; defaults restantes intactos
+  public_routes: wrapper direct wait, start direct wait y detached con recarga durable
+  daemon_route: CLI index-daemon unsupported/noapplicable actual; dispatch interno App/server compartido no acredita paridad; graph query daemon no prueba observador
+  defaults: sin flag conserva comportamiento previo; docs/catalog no invocan Go; embeddings y noGo fuera de la garantía
+historical_final_verify_plan:
+  - preparar fixtures y caches propios únicamente en FINAL_VERIFY; no instalar toolchains para resolver negativos
+  - capturar hashes/existencia de metadata y lista de módulos/toolchains de cache antes de la corrida
+  - ejecutar mi-lsp index <root-absoluto> --go-offline --no-daemon --format json bajo monitor de salida de red
+  - repetir con mi-lsp index start <root-absoluto> --go-offline --wait --no-daemon --format json
+  - repetir start sin --wait; consultar index status del job hasta terminal y conservar go_offline del job
+  - expectativa histórica daemon no aplicable a CLI index actual; no ejecutada ni pendiente; consulta graph daemon no acredita runner
+  - contrastar las variantes stdlib/cache/missing/toolchain_missing con iguales inputs e identidad en fixtures separados
+  - contrastar metadata y cache antes/después y capacidades/omisiones; faltante de monitor o ruta daemon queda explicit_incomplete
+  - comprobar docs-only y catalog sin ejecución Go; comparar defaults sin flag solo en fixture de verificación controlado
+historical_recheck1_plan_consumed:
+  - después del freeze IMPLEMENTATION_COMPLETE, único recheck1 del parent en fixture propio docs-only con job activo controlado; probar ambos sentidos de mismatch y dedupe coincidente
+  - observar rechazo CLI no exitoso, job_id y políticas; contrastar activo y cantidad de jobs/generaciones/fence antes y después sin cancelarlo ni relanzarlo por rechazo
+  - reintento manual solo después de terminal; sin repetir wave offline ni inferir red/daemon no observados
+verification_basis: FINAL_VERIFY1 FAIL histórico intacto; RECHECK1 PASS policy / PARTIAL global; audit1 Changes requested, canon reparado sin aceptación global
+consumed_evidence: rechazo simétrico, dedupe coincidente, snapshots durables sin mutación y retry manual terminal comprobados; stdlib aislada succeeded
+uncovered: precisión offline específica missing, capacidades/precisión externas completas y red normal/cero syscall; daemon CLI no aplicable
+budget: FINAL_VERIFY1/audit1/RECHECK1 agotado; sin recheck2 ni verificador pendiente
+readiness_debt: no PASS de Harness/wiki-source/P6/Graph afirmado; deuda preexistente fuera de esta normalización
+execution_note: planes históricos conservados como contexto de evidencia consumida, no instrucciones de nueva ejecución; reparación solo editorial, sin corridas ni aceptación completa
+```
 
 ### TC-IDX-028
 
