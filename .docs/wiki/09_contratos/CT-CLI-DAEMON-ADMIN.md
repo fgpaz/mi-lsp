@@ -321,6 +321,26 @@ Reglas de formato:
 - Cuando la sanitizacion cambia al menos un string, `warnings` debe agregar una unica entrada `toon output sanitized unsafe control characters`.
 - `--format compact`/JSON mantiene su comportamiento compatible existente y no debe depender de la sanitizacion TOON.
 
+### `doctor`: salida única y error ya emitido
+
+`doctor` de salud (distinto de `workspace doctor`) emite el envelope `backend=doctor` mediante el formatter común. Si los checks fallan, conserva `ok=false`, checks y resumen, y retorna el sentinel `envelopePrintedError` por valor: coincide con el `errors.As` existente de `IsEnvelopePrintedError`. El handler externo en `cmd/mi-lsp/main.go` no vuelve a emitir `WriteProcessFailure` para ese error; preserva el exit code envuelto, distinto de cero. Los errores anteriores a la emisión y los fallos de impresión no llevan sentinel y siguen por el handler de errores normal.
+
+```toon
+block_id: cli-doctor-single-emission
+kind: output-contract
+formats: [text, json, toon]
+formatter: common_unchanged
+failed_checks:
+  envelope_count: 1
+  exit_code: report_exit_code_nonzero
+  second_items_null_document: forbidden
+error_matching: errors.As_with_Unwrap
+scope: source_only
+runtime_status: explicit_incomplete
+```
+
+La reparación no modifica los checks, el acceso al daemon ni afirma el contrato read-only completo del candidato. El FAIL histórico y LSP-03/04/05/06 NOT_RUN permanecen intactos; presupuesto FINAL_VERIFY/audit/recheck agotado.
+
 ### `version`
 
 Input:
