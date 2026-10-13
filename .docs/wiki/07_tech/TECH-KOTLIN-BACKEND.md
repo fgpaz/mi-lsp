@@ -124,7 +124,7 @@ Licencia del proyecto upstream: MIT (`LICENSE.txt`); conservar su aviso al distr
 
 ## K2 — extensión fuente compiler-backed y admisión cerrada
 
-El código fuente está en `worker-kotlin/`: servicio Kotlin, patch mínimo sobre el pin, script de build **explícito** offline, hashes de fuentes consultadas, licencia MIT fwcd íntegra e inventario transitivo original. No se ha construido, instalado ni ejecutado; no se atribuye MIT universal. [[TP-GPH]] contiene el oráculo futuro, sin PASS.
+El código fuente está en `worker-kotlin/`: servicio Kotlin, patch mínimo sobre el pin, script de build **explícito** offline, hashes de fuentes consultadas, licencia MIT fwcd íntegra e inventario transitivo original. La línea preview documental `52964ee` alinea pin init/exporter en Go y Kotlin (**SOURCE-ONLY**); recheck1 histórico compiló fork y exportó recibo K08 en sandbox pero no observó `compilerObservations/v2` ni PASS de grafo. No se atribuye MIT universal ni admisión runtime. [[TP-GPH]] contiene el oráculo futuro, sin PASS.
 
 ```toon
 doc_id: TECH-KOTLIN-BACKEND
@@ -168,7 +168,7 @@ compiler:
   authority: gradle-compileClasspath-resolvedArtifacts/v1
   exporter: worker-kotlin/config/export-main-jvm.sh
   exporter_sha256: 97fd0a079a12cb921c21404de8415fcdbc7915168fb7d1940836fbbc3579b1b3
-  init_script_sha256: 2d46c87c31f8c7e5c94064f46d29e6b44ef0b95d46aebe807a50213f896f7bb5
+  init_script_sha256: ebccdf78fdbf0d56668b924d88452e89215763b761cefdb08964facabf5ed3a5
   capture: explicit_opt_in_offline_no_bootstrap
   classpath: resolvedArtifacts_hashed_JARs_no_backup_or_stdlib_only
   response_completeness: partial_until_promotion_oracles

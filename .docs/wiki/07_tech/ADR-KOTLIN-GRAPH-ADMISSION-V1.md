@@ -21,6 +21,8 @@ kinds: [type, function, method, property]
 capabilities: [declarations, references]
 calls: unsupported_outside_batch
 conformance: explicit_incomplete
+preview_source_commit: 52964ee49c0f37c752ffe7cbca50e0b54331741a
+preview_scope: source_only_no_runtime_admission
 pending_owner: coord-milsp
 pending_due: 2026-10-17
 ```
@@ -28,6 +30,8 @@ pending_due: 2026-10-17
 ## Decisión y alcance
 
 El parent coord-milsp asignó al writer responsabilidad de Graph-Kernel y Semantic-backends para esta extensión reversible, apoyada en RF-GPH-001 «otro registrado» y RF-GPH-008. Sustituye únicamente el guardrail local K2 y su proyección WIP. No es un ADR global aprobado por Gabriel, ni una aprobación de conformance ni una sesión Graph-Kernel inventada. La matriz habilita claims exact compiler experimentales, no promociona el producto.
+
+**Selección de fuente (delegada, no admisión):** la línea de fuente publicada para preview documental en `52964ee` es SOURCE-ONLY: alinea estáticamente el pin Go `KotlinInitScriptSHA256` con `export-main-jvm.init.gradle.kts` y con el `require` del fork Kotlin; no certifica compilación posterior a `3524274`, ni observación `kotlin/miLsp/compilerObservations/v2`, ni aislamiento global de procesos. Elegir commit/rama de autoría Kotlin permanece owner **coord-milsp** frente a preview wiki vs admisión runtime Graph; este ADR no concede waiver ni `accepted` de producto.
 
 Dominio: módulo Gradle explícito, main-jvm, declaraciones Kotlin nombradas representables y referencias compiler con ambos endpoints locales representables. Java puede resolver tipos pero no aporta nodos; typealias/locales/anónimos/constructores/accessors/sintetizados/externos se omiten. Calls no se extrae: worker, pipeline y wiki lo dicen; no se añade capability u omission calls al batch subset. No se afirma grafo íntegro del proyecto. Java usa el root convencional src/main/java (otros roots Java fallan explícitamente); parámetros de constructor no se exportan como propiedades. `status` solo informa metadata configurada/no verificada y calls unsupported, sin initialize ni claims de stageability.
 
@@ -52,3 +56,5 @@ Los lectores previos rechazan honestamente el nuevo enum. La primera release que
 ## Verificación posterior
 
 Siete fuentes manuales bajo `testdata/kotlin-graph-main-v1/`; no runner nuevo, fixtures ejecutadas ni unit tests. Parent decide unión y única FINAL_VERIFY con JDK11/Gradle8.10/compiler2.1.0/pin fwcd acreditados, audit de otra familia y recheck. Java25/caches distintas no sustituyen pins. Este ADR no consume esos gates ni declara PASS.
+
+**Evidencia histórica consumida (1/1/1, sin reset):** FINAL_VERIFY1 en `2c2e1f3` FAIL (fork/export no observados); audit1 BLOCKED sobre inventario 56 paths; recheck1 scoped midió build fork **0** y export K08 **certified** con `init_sha256=ebccdf78…`, pero `graph_observe` FAIL (`entrypoint escapes selected repo`) y los seis oráculos RF-GPH-008 quedaron **NOTRUN**; Windows cross-RID **NOTRUN** (`unsupported`). `KotlinPromotionAllowed` sigue **false** en fuente. La reparación `3524274` anterior a la línea preview no fue compilada en audit; el pin en `52964ee` no sustituye PASS ni admisión stageable.

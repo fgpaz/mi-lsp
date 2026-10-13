@@ -19,8 +19,8 @@ status: manual_evidence_pending
 owner: coord-milsp
 decision_due: 2026-10-17
 imports: [RF-GPH-008, TECH-KOTLIN-BACKEND, TECH-GRAPH-NATIVE, CT-DAEMON-WORKER, TP-QRY]
-evidence: pending_owner_FINAL_VERIFY_no_execution_in_BUILD
-verification_basis: one_goal_root_FINAL_VERIFY_after_all_code_and_wiki_idle
+evidence: FV1_FAIL_audit1_BLOCKED_recheck1_FAIL_graph_observe_pin529_SOURCE_ONLY
+verification_basis: counters_FV_audit_recheck_1_1_1_exhausted_no_retry_in_this_lane
 fixture: testdata/kotlin-graph-main-v1_sources_only_sandbox_local_JAR_network_disabled
 bindings: [testdata/kotlin-graph-main-v1/README.md, internal/indexer/extractor_kotlin.go, internal/model/graph_observation.go]
 raw_contract: v2_obs2
@@ -69,7 +69,7 @@ cases:
     then: hashes launcher/patch/source/JARs y versiones fijadas; MIT fwcd conservada; inventario real de transitivas cotejado sin asumir licencia universal; compiler-only no ejecuta SQL/Gradle/indexación
 ```
 
-Estos casos son planes manuales, no unit tests nuevos ni evidencia ejecutada. Las siete fuentes fixture existen en `testdata/kotlin-graph-main-v1/`, sin runner nuevo ni ejecución. K08 es el plan del exporter; no se corrió en BUILD. Comparar NodeKey/cross-RID tras relocation/range shift/parameter rename/config drift, overloads/receivers y módulos separados; corroborar cada denominador y omission. Aunque el recibo certifique la configuración, publicar exige los seis oráculos de RF-GPH-008, ausentes. Una lista vacía, cero diagnostics o initialize exitoso no es PASS. Parent conserva un único contador FINAL_VERIFY/auditoría/recheck.
+Estos casos son planes manuales, no unit tests nuevos ni evidencia ejecutada. Las siete fuentes fixture existen en `testdata/kotlin-graph-main-v1/`, sin runner nuevo ni ejecución en BUILD de esta ola wiki. **Recheck1 histórico (consumido):** TC-GPH-K08 export observó `certified:true` y `init_script_sha256=ebccdf78…` en sandbox; la cadena Go→`compilerObservations/v2` no observó payload y `graph_observe` terminó FAIL antes de los oráculos RF-GPH-008 (todos **NOTRUN**). Commit preview `52964ee` alinea pin Go↔init en fuente **sin** verificación runtime en esta lane. Comparar NodeKey/cross-RID tras relocation/range shift/parameter rename/config drift, overloads/receivers y módulos separados; corroborar cada denominador y omission. Aunque el recibo certifique la configuración, publicar exige los seis oráculos de RF-GPH-008, ausentes. Una lista vacía, cero diagnostics o initialize exitoso no es PASS. Contadores FINAL_VERIFY/auditoría/recheck del objetivo Kotlin: **1/1/1 agotados**; owner **coord-milsp** para fixture in-repo o repair acotado posterior.
 
 
 ```yaml
