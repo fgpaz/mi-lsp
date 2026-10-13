@@ -1,3 +1,11 @@
+---
+wiki_graph_protocol: SDD-WIKI-GRAPH-v1
+document_lifecycle: active
+doc_id: TP-GPH
+kind: TP
+imports: [RF-GPH-003, RF-GPH-007]
+---
+
 # TP-GPH
 
 ```yaml
@@ -5,7 +13,7 @@ harness_protocol: SDD-HARNESS-v1
 source_protocol: SDD-WIKI-SOURCE-v1
 doc_id: "TP-GPH"
 id: "TP-GPH"
-kind: "support-doc"
+kind: "TP"
 audience: "llm-first"
 imports:
   - '[[00_gobierno_documental]]'
@@ -64,6 +72,79 @@ stop_if:
 evidence:
   - .docs/wiki/06_pruebas/TP-GPH.md
 ```
+
+## Aceptación pendiente de la colección fuente (B/C)
+
+Los escenarios normativos no cambian ni crean tests ejecutables ficticios. El estado editorial de la evidencia consumida reside en el bloque TOON siguiente; no altera la fase del parent. Las evidencias históricas de A no se reejecutan ni validan este slice.
+
+```toon
+doc_id: TP-GPH
+block_id: TP-GPH.canonical-source-store-acceptance
+kind: manual-acceptance-contract
+source_of_truth: normative
+status: manual_evidence_pending
+owner: coord-milsp
+due: 2026-10-15
+imports: [RF-GPH-003, RF-GPH-007, DB-DOC-INDEX, CT-NAV-WIKI]
+fixture: nueva_aislada_B_C_con_oráculos_fuente_y_WCB_separados
+verification_wave: single_recheck1_four_bounded_cases_after_repair_freeze_no_second_FINAL_VERIFY
+execution_evidence: FINAL_VERIFY1_PARTIAL_audit1_Changes_requested_preserved_repair_unique_RECHECK1_H1_H2_PASS_scoped_overall_PARTIAL
+publication_scope: parent_authorized_H1_H2_scoped_not_full_B_C
+H1_evidence: retired_absent_path_doc_ID_binding_ID_normal_excluded_empty_real_unsafe_blocked
+H2_evidence: exact_one_row_late_source_budget_no_primary_authority_direct_tests_supporting
+incremental_evidence: explicit_incomplete_Git_AM_not_consumed_processed_0_no_changes_no_owner_transition_no_PRODUCT_FAIL
+q_evidence: valid_pipeline_same_corpus_DB_one_governance_item_parity_only
+q_uncovered: [multi_item_sort, cursor_resume, native_digest, source_variation]
+legacy_source_owner_ranges: partial_visible_zero_ranges_not_exact
+global_readiness: Graph_Harness_fullwiki_conformance_not_accredited
+memory_atomicity_TC_IDX_028: not_accredited_snapshot_docs_catalog_are_not_memory_ID
+memory_debt: owner_coord_milsp_due_before_full_acceptance_or_next_memory_sensitive_change
+remaining_evidence: explicit_incomplete_coord_milsp_due_2026_10_15
+evidence_receipt: artifacts/milsp-graphv1-store-history-recheck1-evidence-20261013.json
+records:
+  - id: TC-GPH-SRC-001
+    type: manual-acceptance
+    rf: RF-GPH-003
+    scenario: dos_IDs_o_superficies_distintos_con_un_solo_WCB
+    expected: dos_declaraciones_un_agregado_kind_symbol_fuente_preservados_incluso_schema_contract_migration
+    status: manual_evidence_pending
+  - id: TC-GPH-SRC-002
+    type: manual-acceptance
+    rf: RF-GPH-003
+    scenario: ID_duplicado_document_wide_objeto_inválido_y_legacy
+    expected: ninguna_declaración_ambigua_omissions_preservadas_legacy_advisory_sin_ID_surface_inventados
+    status: manual_evidence_pending
+  - id: TC-GPH-SRC-003
+    type: manual-acceptance
+    rf: RF-GPH-003
+    scenario: full_docs_only_incremental_snapshot_RAM_publicación_cancelada_y_owner_excluido_vivo
+    expected: docs_fuente_bridge_marker_coherentes_owners_ajenos_idénticos_rollback_conserva_snapshot_previo_RAM_sin_publicar
+    status: manual_evidence_pending
+  - id: TC-GPH-SRC-004
+    type: manual-acceptance
+    rf: RF-GPH-003
+    scenario: nav_trace_binding_sources_con_y_sin_historical_binding_deprecated_document_active_document_deprecated_retired_terminal_y_sucesor_incluye_retired_publicado_ausente_disco_por_path_doc_ID_binding_ID_y_owner_realmente_vacío
+    expected: lifecycles_independientes_historia_solo_explícita_inventario_retired_conservado_normal_excluido_empty_real_preservado_sin_primary_authority_direct_code_tests_supporting_target_histórico_no_evaluado_sucesor_declarado_separado_no_resurrección_no_versionado_de_ediciones
+    status: manual_evidence_pending
+  - id: TC-GPH-SRC-005
+    type: manual-acceptance
+    rf: RF-GPH-003
+    scenario: DB_anterior_sin_tablas_owner_no_publicado_empty_parsed_DOC_ID_y_doc_path_AND_binding_id_ID_global_en_varios_owners_y_límite_200_incluye_truncación_tardía_outputbudget_tras_selección_activa
+    expected: explicit_incomplete_sin_DDL_backfill_bridge_disponible_empty_disponible_candidatos_sorted_bounded_truncation_sin_winner_primary_authority_direct_tests_supporting
+    status: manual_evidence_pending
+  - id: TC-GPH-SRC-006
+    type: manual-acceptance
+    rf: RF-GPH-007
+    scenario: consumidor_C_histórico_explícito_y_normal_direct_daemon
+    expected: metadata_histórica_separada_sin_direct_code_ni_ranking_activos_q_v1_sort_digest_defaults_sin_delta_digest_fuente_separado_sin_cursor_rangos_desconocidos_no_exactos
+    status: manual_evidence_pending
+verify: [parent_single_recheck1_H1_H2_incremental_real_q_v1_válido_other_gaps_explicit_incomplete]
+evidence: [.docs/wiki/04_RF/RF-GPH-003.md, .docs/wiki/08_db/DB-DOC-INDEX.md, .docs/wiki/09_contratos/CT-NAV-WIKI.md]
+```
+
+La entrada pública real es `nav trace` o `nav wiki trace` con `--binding-sources`, documento ID posicional o `--doc <path>` y `--binding-id <ID>` opcional; `--historical` es la única habilitación de metadata fuente inactiva. Se inspecciona `wiki_code_context.binding_sources`, no se ejecuta un comando nuevo. TC-GPH-SRC-003 cubre mapa RAM ausente vs disponible vacío, tombstones owner/bloque, read/parse/concurrent-change y comparación contra lifecycle persistido cuando falta artifact-state. TC-GPH-SRC-005 exige AND exacto, candidatos bounded ante colisión y ninguna evidencia activa al truncar. El bloque TOON anterior registra el único recheck1 consumido y sus límites; los casos completos siguen manual_evidence_pending. No se habilita otra wave, audit/recheck2 ni conformance por esta alineación editorial.
+
+El oráculo debe comparar los siete campos de cada objeto con su fuente y comprobar por separado la asociación WCB, incluidos cambios de bloque sin cambio de `(doc_path,binding_id)`. Debe cubrir owner vivo excluido, retiro sin bindings y colisión de ID entre documentos. Los rangos 0/0 permanecen desconocidos. Ni un lookup exitoso ni la asociación a un target actual otorgan conformance o evidencia compiler histórica.
 
 ## Contrato comun de prueba
 

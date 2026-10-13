@@ -537,7 +537,7 @@ func incrementalIndexWithGraphProgressAndChanges(ctx context.Context, workspaceR
 				change.Blocks = parsedBlocks
 				change.Records = parsedRecords
 				change.Bindings = parsedBindings
-				change.State.Lifecycle = lifecycleFromBindings(parsedBindings, change.State.Lifecycle)
+				change.State.Lifecycle = lifecycleFromSource(parsedDoc, parsedBindings, change.State.Lifecycle)
 				parsedReplacements = append(parsedReplacements, change)
 			}
 
@@ -895,13 +895,9 @@ func legacyIncrementalIndexWithGraphProgress(ctx context.Context, workspaceRoot,
 					if c.Action != "replace" {
 						continue
 					}
-					absPath := filepath.Join(workspaceRoot, filepath.FromSlash(c.Path))
-					content, err := os.ReadFile(absPath)
-					if err != nil {
-						graphWarnings = append(graphWarnings, fmt.Sprintf("doc parse failed for %s: %v", c.Path, err))
-						c.Doc = nil
-						continue
-					}
+					// Parse the same stable bytes that produced the artifact state.
+					// A second read could pair the source collection with an old hash.
+					content := c.Content
 					parsedDoc, parsedEdges, parsedMentions, parsedBlocks, parsedRecords, parsedBindings, warn, parseErr := docgraph.ParseSingleDoc(workspaceRoot, c.Path, content, profile)
 					if warn != "" {
 						graphWarnings = append(graphWarnings, "doc_parse: "+warn)
@@ -916,6 +912,9 @@ func legacyIncrementalIndexWithGraphProgress(ctx context.Context, workspaceRoot,
 					c.Blocks = parsedBlocks
 					c.Records = parsedRecords
 					c.Bindings = parsedBindings
+					if c.State != nil {
+						c.State.Lifecycle = lifecycleFromSource(parsedDoc, parsedBindings, c.State.Lifecycle)
+					}
 				}
 
 				validDocChanges := make([]store.IncrementalDocChange, 0, len(docChanges))

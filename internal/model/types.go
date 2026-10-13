@@ -499,16 +499,19 @@ type FileRecord struct {
 }
 
 type DocRecord struct {
-	Path        string `json:"path"`
-	Title       string `json:"title,omitempty"`
-	DocID       string `json:"doc_id,omitempty"`
-	Layer       string `json:"layer,omitempty"`
-	Family      string `json:"family,omitempty"`
-	Snippet     string `json:"snippet,omitempty"`
-	SearchText  string `json:"search_text,omitempty"`
-	ContentHash string `json:"content_hash,omitempty"`
-	IndexedAt   int64  `json:"indexed_at,omitempty"`
-	IsSnapshot  bool   `json:"is_snapshot,omitempty"`
+	// BindingSources is internal producer/snapshot transport, not an automatic
+	// expansion of public document results or q-v1 payloads.
+	BindingSources *DocBindingSourceCollection `json:"-"`
+	Path           string                      `json:"path"`
+	Title          string                      `json:"title,omitempty"`
+	DocID          string                      `json:"doc_id,omitempty"`
+	Layer          string                      `json:"layer,omitempty"`
+	Family         string                      `json:"family,omitempty"`
+	Snippet        string                      `json:"snippet,omitempty"`
+	SearchText     string                      `json:"search_text,omitempty"`
+	ContentHash    string                      `json:"content_hash,omitempty"`
+	IndexedAt      int64                       `json:"indexed_at,omitempty"`
+	IsSnapshot     bool                        `json:"is_snapshot,omitempty"`
 }
 
 type WikiLookupStatus struct {

@@ -24,7 +24,11 @@ const (
 )
 
 func (a *App) trace(ctx context.Context, request model.CommandRequest) (model.Envelope, error) {
+	includeSources, _ := request.Payload["binding_sources"].(bool)
 	allWorkspaces, _ := request.Payload["all_workspaces"].(bool)
+	if includeSources {
+		return a.traceBindingSources(ctx, request)
+	}
 	if allWorkspaces {
 		return a.traceAllWorkspaces(ctx, request)
 	}

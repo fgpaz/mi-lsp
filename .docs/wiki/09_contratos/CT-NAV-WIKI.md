@@ -1,9 +1,17 @@
+---
+wiki_graph_protocol: SDD-WIKI-GRAPH-v1
+document_lifecycle: active
+doc_id: CT-NAV-WIKI
+kind: CT
+imports: [RF-WIKI-001, RF-GPH-003]
+---
+
 # CT-NAV-WIKI
 
 ```yaml
 harness_protocol: SDD-HARNESS-v1
 id: "CT-NAV-WIKI"
-kind: "wiki-doc"
+kind: "CT"
 audience: "llm-first"
 imports:
   - '[[RF-WIKI-001]]'
@@ -90,7 +98,7 @@ block_id: ct-nav-wiki-document-snapshot-boundary
 kind: atomicity-boundary
 source_of_truth: this
 marker: workspace_meta.doc_identity_snapshot_version
-atomic_document_families: [doc_records, doc_edges, doc_mentions, doc_source_blocks, doc_source_records, doc_artifact_bindings, fts, reentry_memory]
+atomic_document_families: [doc_records, doc_edges, doc_mentions, doc_source_blocks, doc_source_records, doc_artifact_bindings, doc_binding_sources, doc_binding_source_documents, fts, reentry_memory]
 foreground_graph_activation: separate_or_stale_allowed
 fenced_job_graph_activation: same_transaction_when_explicit_graph_publication_is_supplied
 not_guaranteed: [docs_and_graph_single_transaction_for_all_paths, installed_index, live_refresh, embeddings]
@@ -101,6 +109,140 @@ evidence:
   - internal/indexer/indexer.go
   - internal/indexer/indexer_test.go
 ```
+
+### Boundary interno de la colección fuente
+
+```toon
+doc_id: CT-NAV-WIKI
+block_id: CT-NAV-WIKI.source-collection-producer-boundary
+kind: internal-producer-contract
+source_of_truth: normative
+status: authored
+verification_status: PARTIAL_scoped
+verification_basis: FINAL_VERIFY1_PARTIAL_audit1_Changes_requested_H1_H2_repair_unique_RECHECK1_H1_H2_PASS_scoped_overall_PARTIAL
+publication_scope: parent_authorized_H1_H2_scoped_not_full_B_C
+incremental_evidence: explicit_incomplete_Git_AM_not_consumed_processed_0_no_changes_no_owner_transition_no_PRODUCT_FAIL
+q_evidence: valid_pipeline_same_corpus_DB_one_governance_item_parity_only
+q_uncovered: [multi_item_sort, cursor_resume, native_digest, source_variation]
+global_readiness: Graph_Harness_fullwiki_conformance_not_accredited
+remaining_evidence: explicit_incomplete_coord_milsp_due_2026_10_15
+source_schema: MILSP-DBS/v1
+source_lookup: ReadDocBindingSources(ctx,db,docPath,bindingID,limit)
+source_result: DocBindingSourceCollection
+availability: separate_from_resolution_and_truncation
+source_object: GraphV1ArtifactBinding_exact_seven_fields_symbol_optional
+identity: [doc_path, binding_id]
+internal_transport: [DocRecord.BindingSources, WikiCodeOverlay.SourceCollections]
+public_DocRecord_JSON: unchanged
+legacy_WCB_identity: unchanged
+source_query_transaction: read_only
+missing_table_or_unpublished_owner: explicit_incomplete_bridge_still_available
+query_DDL_backfill_reparse: forbidden
+producer_reparse: explicit_future_publication_from_original_source_only
+RAM:
+  collection: owner_complete_current_body
+  masked_owners_or_blocks: existing_overlay_tombstones
+  persisted_base: caller_read_only_lookup_when_no_RAM_replacement
+  parse_or_read_failure: omission_no_source_replacement
+  retired_reactivation: explicit_incomplete
+selector_external: nav_trace_binding_sources_opt_in_defined_below
+history_projection: explicit_historical_only_never_implicit_active_evidence
+artifact_bindings:
+  - {binding_id: CT-NAV-WIKI-source-reader, kind: code, role: adapter, path: internal/store/queries_doc_binding_sources.go, symbol: ReadDocBindingSources, surface: backend, binding_lifecycle: active}
+verify: [parent_single_FINAL_VERIFY_after_B_and_C_writers_idle]
+evidence: [internal/model/doc_binding_source.go, internal/store/queries_doc_binding_sources.go, internal/store/doc_snapshot.go, internal/livecontext/overlay.go]
+```
+
+La colección transporta declaraciones, no un veredicto de resolución, compiler evidence ni conformance. La disponibilidad de la colección no reemplaza la frescura por dominio ni vuelve atómica una activación Graph foreground separada. La consulta interna conserva declaraciones inactivas para el consumidor histórico explícito; no amplía los defaults normales. La extensión opt-in del handler existente se define a continuación.
+
+### Consulta exacta e historia opt-in de declaraciones
+
+```toon
+doc_id: CT-NAV-WIKI
+block_id: CT-NAV-WIKI.canonical-source-query
+kind: additive-navigation-contract
+source_of_truth: normative
+status: authored
+verification_status: PARTIAL_scoped
+owner: coord-milsp
+due: 2026-10-15
+commands: [nav.trace, nav.wiki.trace]
+actual_dispatch_for_both_CLI_spellings: nav.trace
+flags: [--binding-sources, --doc, --binding-id, --historical]
+request_payload:
+  binding_sources: true_required_for_source_lookup
+  rf: optional_exact_document_ID_positional
+  doc: optional_exact_repo_relative_document_path
+  binding_id: optional_exact_binding_ID
+  historical: false_by_default_explicit_true_only
+selector: at_least_document_ID_OR_document_path_OR_binding_ID
+combination: exact_AND_when_multiple_selectors_present
+excluded_options: [--all, --all-workspaces, --summary, cursor]
+source_response: wiki_code_context.binding_sources
+response_fields: [version, availability, reason, resolution, omission, document_lifecycle, historical, candidates, declarations, truncated, determinism_digest]
+source_wrapper: [doc_path, doc_id, block_id, document_lifecycle, provenance, binding_ref, source_content_hash, start_line, end_line]
+source_binding_object: [binding_id, kind, role, path, surface, binding_lifecycle, symbol_optional]
+derived_declaration_fields: [resolution, omission, excluded_from_active, superseded_by_optional]
+axes:
+  availability: [available, explicit_incomplete]
+  resolution: [resolved, unresolved, ambiguous, stale]
+  provenance: declared_outside_binding_object
+limits:
+  source_items: request_max_items_default_50_maximum_200
+  candidates: sorted_bounded_by_same_limit
+  owner_discovery: maximum_200
+  output: half_request_token_budget_for_source_rows_and_candidates
+  cursor: no_source_cursor_narrow_exact_selectors
+ambiguity: multiple_exact_owners_returns_ambiguous_candidates_no_score_winner
+truncation: incomplete_no_primary_authority_direct_tests_supporting_or_unique_winner_including_late_source_and_bridge_output_budgets
+lifecycle:
+  normal_source_view: active_document_AND_active_binding_only
+  historical_source_view: explicit_historical_includes_deprecated_and_retired
+  history_in_active_evidence: forbidden
+  terminal_retired: consultable_without_successor_even_zero_bindings
+  retired_disk_absent: explicit_history_returns_published_inventory_by_path_doc_ID_and_binding_ID_normal_remains_excluded
+  successor: declared_WCB_superseded_by_if_available_separate_from_binding_object
+  target_resolution_of_history: not_evaluated_no_compiler_fact
+RAM:
+  replacement: complete_owner_collection_in_normalized_scope
+  absent_map_entry: preserve_base_except_explicit_owner_or_block_tombstones
+  disk_absent_exception: only_explicit_history_available_persisted_retired_owner_other_masks_and_fail_closed_checks_unchanged
+  available_empty: replaces_owner_with_zero_declarations
+  read_parse_concurrent_change: explicit_incomplete_no_declarations_for_failed_owner
+  retired_reactivation_or_ID_reuse: compare_persisted_source_lifecycle_fail_closed
+  old_DB_or_unpublished_base: explicit_incomplete_even_if_RAM_rows_known
+  publication: forbidden
+compatibility:
+  opt_in_only: true
+  legacy_trace_and_redirect: unchanged_without_flag
+  ordinary_q_v1_sort_digest_cursor_ranking: unchanged
+  source_digest: independent_of_v1_bridge_digest_and_cursor
+  authority_primary: no_historical_or_ambiguous_primary
+  WCB_aggregation: unchanged_many_sources_to_one_evidence
+  planned: legacy_payload_only_unchanged
+artifact_bindings:
+  - {binding_id: CT-NAV-WIKI-source-trace-handler, kind: code, role: handler, path: internal/service/wiki_code_sources.go, symbol: traceBindingSources, surface: backend, binding_lifecycle: active}
+  - {binding_id: CT-NAV-WIKI-source-trace-cli, kind: code, role: adapter, path: internal/cli/trace_sources.go, surface: backend, binding_lifecycle: active}
+verification_basis: FINAL_VERIFY1_PARTIAL_audit1_Changes_requested_H1_H2_repair_unique_RECHECK1_H1_H2_PASS_scoped_overall_PARTIAL
+publication_scope: parent_authorized_H1_H2_scoped_not_full_B_C
+incremental_evidence: explicit_incomplete_Git_AM_not_consumed_processed_0_no_changes_no_owner_transition_no_PRODUCT_FAIL
+q_evidence: valid_pipeline_same_corpus_DB_one_governance_item_parity_only
+q_uncovered: [multi_item_sort, cursor_resume, native_digest, source_variation]
+global_readiness: Graph_Harness_fullwiki_conformance_not_accredited
+remaining_evidence: explicit_incomplete_coord_milsp_due_2026_10_15
+verify: [parent_single_recheck1_four_bounded_cases_after_repair_freeze]
+evidence: [internal/service/wiki_code_sources.go, internal/service/trace.go, internal/service/app.go, internal/cli/nav.go, internal/model/wiki_code_source_projection.go, .docs/wiki/06_pruebas/TP-GPH.md]
+```
+
+Ejemplos de nombres implementados (no ejecución ni evidencia):
+
+```text
+mi-lsp nav trace RF-GPH-003 --binding-sources --binding-id RF-GPH-003-code --workspace <alias> --format json
+mi-lsp nav wiki trace --binding-sources --doc .docs/wiki/04_RF/RF-GPH-003.md --workspace <alias> --format json
+mi-lsp nav trace --binding-sources --binding-id <ID-exacto> --historical --workspace <alias> --format json
+```
+
+El modo opt-in usa el mismo handler/envelope, pero reemplaza el trace heurístico por lookup exacto: `items` queda vacío y la proyección está en `wiki_code_context`. Un documento activo unívoco y completo puede aportar evidencia por los WCB existentes, una vez por asociación, sin convertir cada ID/surface en otra evidencia. `resolved` del selector no implica que todos los targets hayan resuelto. Las declaraciones históricas no verifican targets actuales ni entran en `primary_doc`, `authority_chain`, `direct_code`, `tests` o ranking. Sucesión ausente no se inventa. DB vieja y fallos de owner siguen incompletos; se permite describir filas RAM conocidas sin atribuirles publicación.
 
 ## Integración aditiva del puente wiki ↔ código
 

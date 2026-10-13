@@ -70,6 +70,15 @@ func docsSnapshotUnchanged(ctx context.Context, db *sql.DB, docs []model.DocReco
 	if err != nil {
 		return false, err
 	}
+	tx, err := db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
+	if err != nil {
+		return false, err
+	}
+	if err := hydrateDocBindingSourcesTx(ctx, tx, existingDocs); err != nil {
+		_ = tx.Rollback()
+		return false, err
+	}
+	_ = tx.Rollback()
 	existingEdges, err := ListDocEdges(ctx, db)
 	if err != nil {
 		return false, err
@@ -120,7 +129,12 @@ func normalizedDocRecords(rows []model.DocRecord) []string {
 	keys := make([]string, 0, len(rows))
 	for _, row := range rows {
 		row.IndexedAt = 0
-		keys = append(keys, snapshotRowKey(row))
+		// BindingSources is excluded from public DocRecord JSON, but MUST
+		// participate in producer no-op detection, including parsed-empty state.
+		keys = append(keys, snapshotRowKey(struct {
+			Doc     model.DocRecord
+			Sources *model.DocBindingSourceCollection
+		}{row, row.BindingSources}))
 	}
 	sort.Strings(keys)
 	return keys
@@ -185,8 +199,30 @@ func replaceDocsWithSourcesTx(ctx context.Context, tx *sql.Tx, docs []model.DocR
 	if err := invalidateDocIdentitySnapshotTx(ctx, tx); err != nil {
 		return err
 	}
-	for _, table := range []string{"doc_artifact_bindings", "doc_source_records", "doc_source_blocks", "doc_mentions", "doc_edges", "doc_records"} {
-		if _, err := tx.ExecContext(ctx, "DELETE FROM "+table); err != nil {
+	retained, err := retainedRetiredDocOwnersTx(ctx, tx, docs)
+	if err != nil {
+		return err
+	}
+	for _, doc := range docs {
+		if err := guardRetiredSourceReplacementTx(ctx, tx, doc); err != nil {
+			return err
+		}
+	}
+	for _, ownerTable := range incrementalDocOwnerTables {
+		if ownerTable.table == "doc_artifact_states" {
+			continue
+		}
+		query := "DELETE FROM " + ownerTable.table
+		args := make([]any, 0, len(retained))
+		if len(retained) > 0 {
+			placeholders := make([]string, len(retained))
+			for i, path := range retained {
+				placeholders[i] = "?"
+				args = append(args, path)
+			}
+			query += " WHERE " + ownerTable.owner + " NOT IN (" + strings.Join(placeholders, ",") + ")"
+		}
+		if _, err := tx.ExecContext(ctx, query, args...); err != nil {
 			return err
 		}
 	}
@@ -202,6 +238,9 @@ func replaceDocsWithSourcesTx(ctx context.Context, tx *sql.Tx, docs []model.DocR
 		defer stmt.Close()
 		for _, doc := range docs {
 			if _, err := stmt.ExecContext(ctx, doc.Path, doc.Title, doc.DocID, doc.Layer, doc.Family, doc.Snippet, doc.SearchText, doc.ContentHash, doc.IndexedAt, doc.IsSnapshot); err != nil {
+				return err
+			}
+			if err := insertDocBindingSourcesTx(ctx, tx, doc); err != nil {
 				return err
 			}
 		}
@@ -287,7 +326,11 @@ func replaceDocsWithSourcesTx(ctx context.Context, tx *sql.Tx, docs []model.DocR
 		}
 	}
 
-	if err := UpsertWorkspaceMeta(ctx, tx, "doc_count", strconv.Itoa(len(docs))); err != nil {
+	var docCount int
+	if err := tx.QueryRowContext(ctx, `SELECT count(*) FROM doc_records`).Scan(&docCount); err != nil {
+		return err
+	}
+	if err := UpsertWorkspaceMeta(ctx, tx, "doc_count", strconv.Itoa(docCount)); err != nil {
 		return err
 	}
 	return nil

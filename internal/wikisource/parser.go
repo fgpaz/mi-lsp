@@ -854,6 +854,32 @@ func SourceBindings(parsed ParsedDoc, indexedAt int64) []model.DocArtifactBindin
 	return bindings
 }
 
+// SourceBindingDeclarations converts only already validated GraphV1 source
+// declarations. It never reconstructs identity from the aggregated WCB rows.
+func SourceBindingDeclarations(parsed ParsedDoc) model.DocBindingSourceCollection {
+	collection := model.DocBindingSourceCollection{
+		Version: model.DocBindingSourceVersion, Availability: model.DocBindingSourceAvailable,
+		DocumentLifecycle: parsed.DocumentLifecycle,
+		Declarations:      make([]model.DocBindingSource, 0, len(parsed.CanonicalBindings)),
+	}
+	for _, pb := range parsed.CanonicalBindings {
+		collection.Declarations = append(collection.Declarations, model.DocBindingSource{
+			DocPath: pb.DocPath, DocID: pb.DocID, BlockID: pb.BlockID,
+			DocumentLifecycle: pb.DocumentLifecycle, Provenance: "declared",
+			Binding: model.GraphV1ArtifactBinding{
+				BindingID: pb.BindingID, Kind: pb.Kind, Role: pb.Role, Path: pb.Path,
+				Surface: pb.Surface, BindingLifecycle: pb.BindingLifecycle, Symbol: pb.Symbol,
+			},
+			BindingRef:        model.WikiCodeBindingRef(docPathFromRecord(pb.DocPath, pb.DocID), pb.BlockID, pb.DocID, pb.Relation, pb.TargetPath, pb.TargetSymbol, pb.TargetKind),
+			SourceContentHash: pb.SourceContentHash, StartLine: pb.StartLine, EndLine: pb.EndLine,
+		})
+	}
+	sort.Slice(collection.Declarations, func(i, j int) bool {
+		return collection.Declarations[i].Binding.BindingID < collection.Declarations[j].Binding.BindingID
+	})
+	return collection
+}
+
 // docPathFromRecord returns the canonical path key used in binding identity.
 func docPathFromRecord(docPath string, docID string) string {
 	if docPath != "" {
