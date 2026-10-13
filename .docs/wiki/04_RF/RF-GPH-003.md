@@ -1,4 +1,9 @@
 ---
+wiki_graph_protocol: SDD-WIKI-GRAPH-v1
+document_lifecycle: active
+doc_id: RF-GPH-003
+kind: RF
+imports: [FL-GPH-01, RF-GPH-001, RF-GPH-002]
 id: RF-GPH-003
 title: Persistir aristas tipadas con evidencia y unresolved explicito
 status: planned
@@ -11,7 +16,7 @@ tests:
 ```yaml
 harness_protocol: SDD-HARNESS-v1
 id: "RF-GPH-003"
-kind: "support-doc"
+kind: "RF"
 audience: "llm-first"
 imports:
   - '[[00_gobierno_documental]]'
@@ -216,9 +221,16 @@ graph_v1_authoring:
   duplicate_binding_id: all_ambiguous_declarations_rejected_document_wide
   response_and_planned_payload: not_declarations
   source_ranges: object_exact_range_not_claimed_currently_zero
-  not_persisted: [binding_id, surface, kind, binding_lifecycle, document_lifecycle_separate]
-  omissions: binding_omission_mentions_via_existing_docgraph_producer
-  collection_status: explicit_incomplete_canonical_source_collection_not_persisted_owned_by_Unit_B
+  persisted_source_collection: doc_binding_sources
+  source_availability_owners: doc_binding_source_documents
+  source_identity: [doc_path, binding_id]
+  independent_source_axes: [document_lifecycle, binding_lifecycle]
+  omissions: parser_diagnostics_preserved_except_transport_omission_in_collection_carrying_docgraph
+  collection_status: PARTIAL_scoped_unique_RECHECK1_H1_H2_PASS_not_full_B_C
+  public_source_lookup: nav_trace_or_wiki_trace_with_binding_sources_flag
+  public_selectors: document_ID_or_doc_path_AND_optional_binding_ID_or_naked_binding_ID
+  public_history: historical_flag_only_separate_from_active_evidence
+  query_projection: wiki_code_context.binding_sources
   identity_note: binding_ref_remains_MILSP-WCB/v1_unchanged_no_new_ID_or_schema
 derived_association_mapping:
   code_and_ui:
@@ -245,7 +257,8 @@ lifecycle:
   binding_status_planned: excluded in wiki_code_bindings.bindingNavigable with omission planned_binding_excluded
   doc_lifecycle_non_active: excluded from navigable exact evidence; deprecated and retired follow retired policy
   retired: history_only_by_default
-  explicit_historical: bounded_redirect_when_superseded_by_exists
+  explicit_historical: legacy_bounded_redirect_preserved_plus_opt_in_source_metadata_including_terminal_retired
+  source_history: explicit_historical_flag_required_never_active_direct_evidence
 invariants:
   exact_binding_precedes_graph_lsp_and_lexical
   candidates_never_become_direct_edges: true
@@ -264,6 +277,60 @@ evidence:
   - internal/store/schema.go
   - .docs/wiki/06_pruebas/TP-GPH.md
 ```
+
+## Colección fuente GraphV1 (autoría B)
+
+El objeto canónico no es la fila agregada WCB: dos declaraciones con IDs o superficies diferentes pueden asociarse al mismo `binding_ref`. Se conservan `kind` y `symbol` originales incluso si la asociación `schema`, `migration` o `contract` deriva a un archivo sin símbolo. No se agregan aristas Graph ni se modifica `MILSP-WCB/v1` o `q-v1`.
+
+```toon
+doc_id: RF-GPH-003
+block_id: RF-GPH-003.canonical-source-collection
+kind: source-collection-contract
+source_of_truth: normative
+status: authored
+verification_status: PARTIAL_scoped
+verification_basis: FINAL_VERIFY1_PARTIAL_audit1_Changes_requested_H1_H2_repair_unique_RECHECK1_H1_H2_PASS_scoped_overall_PARTIAL
+publication_scope: parent_authorized_H1_H2_scoped_not_full_B_C
+incremental_evidence: explicit_incomplete_Git_AM_not_consumed_processed_0_no_changes_no_owner_transition_no_PRODUCT_FAIL
+q_evidence: valid_pipeline_same_corpus_DB_one_governance_item_parity_only
+q_uncovered: [multi_item_sort, cursor_resume, native_digest, source_variation]
+global_readiness: Graph_Harness_fullwiki_conformance_not_accredited
+remaining_evidence: explicit_incomplete_coord_milsp_due_2026_10_15
+legacy_source_owner_ranges: partial_visible_zero_ranges_not_exact
+source_object:
+  required: [binding_id, kind, role, path, surface, binding_lifecycle]
+  optional: [symbol]
+  extras: forbidden
+wrapper:
+  identity: [doc_path, binding_id]
+  owner: doc_path
+  authority: doc_id
+  location: block_id
+  provenance: declared
+  document_lifecycle: independent_of_binding_lifecycle
+  observed_only: [source_content_hash, start_line, end_line]
+  resolution: derived_at_query_time_not_persisted
+bridge:
+  association: optional_many_declarations_to_one_WCB
+  identity: unchanged_MILSP-WCB/v1
+  legacy: advisory_only_no_invented_binding_ID_or_surface
+publication:
+  producer: DocRecord.BindingSources_internal_transport
+  paths: [full, docs_only, incremental, snapshot_read, request_RAM]
+  parsed_empty: available_collection_with_zero_declarations
+  duplicate_ID: reject_all_ambiguous_objects_keep_omissions
+  inactive: preserve_source_declarations_no_active_evidence_promotion
+  old_database: explicit_incomplete_without_DDL_or_backfill
+  reparse: explicit_future_producer_operation_only_never_from_WCB
+acceptance_refs: [TC-GPH-SRC-001, TC-GPH-SRC-002, TC-GPH-SRC-003, TC-GPH-SRC-004, TC-GPH-SRC-005, TC-GPH-SRC-006]
+artifact_bindings:
+  - {binding_id: RF-GPH-003-source-producer, kind: code, role: behavior_implementation, path: internal/docgraph/docgraph.go, symbol: parseDocContent, surface: backend, binding_lifecycle: active}
+  - {binding_id: RF-GPH-003-source-conversion, kind: code, role: behavior_implementation, path: internal/wikisource/parser.go, symbol: SourceBindingDeclarations, surface: backend, binding_lifecycle: active}
+verify: [parent_single_FINAL_VERIFY_after_B_and_C_writers_idle]
+evidence: [internal/model/doc_binding_source.go, internal/wikisource/parser.go, internal/docgraph/docgraph.go, internal/store/queries_doc_binding_sources.go, .docs/wiki/06_pruebas/TP-GPH.md]
+```
+
+La advertencia de A permanece en el parser sin persistencia. Docgraph la descarta únicamente al transportar la colección completa; las declaraciones rechazadas mantienen sus omissions. Un snapshot anterior conserva `explicit_incomplete` aunque el bridge exista: su contenido perdido no se reconstruye. Una operación explícita posterior del productor (por ejemplo, índice limpio) puede volver a parsear las fuentes; esta autoría no ejecuta esa operación ni una migración instalada. Las referencias históricas y sus selectores externos corresponden a C; guardar declaraciones inactivas no las convierte en `direct_code`, ranking o conformance activos.
 
 ## Relaciones documentales explícitas
 

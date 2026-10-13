@@ -194,6 +194,7 @@ type GoGraphObservationRequest struct {
 	Root               string
 	RepositoryIdentity string
 	ProjectOrModule    string
+	GoOffline          bool
 	BuildTags          []string
 	GOOS               string
 	GOARCH             string
@@ -269,6 +270,7 @@ type goGraphBuilder struct {
 	evidenceKeys       map[string]bool
 	exports            map[string]string
 	partial            bool
+	goOffline          bool
 	importCache        map[string]*types.Package
 	initOrdinals       map[string]int
 	typeErrorPositions map[string][]token.Pos
@@ -315,9 +317,13 @@ func ObserveGoGraph(ctx context.Context, req GoGraphObservationRequest) (model.G
 	} else if sumErr != nil {
 		sumDigestBytes = []byte("<go.sum unavailable>")
 	}
-	configDigest := goGraphConfigDigest(modBytes, sumDigestBytes, modulePath, project, nil, tags, goos, goarch, os.Getenv("CGO_ENABLED"), os.Getenv("GOFLAGS"))
+	effectiveFlags := os.Getenv("GOFLAGS")
+	if req.GoOffline {
+		effectiveFlags = "go-offline-v1:readonly"
+	}
+	configDigest := goGraphConfigDigest(modBytes, sumDigestBytes, modulePath, project, nil, tags, goos, goarch, os.Getenv("CGO_ENABLED"), effectiveFlags)
 	builder := &goGraphBuilder{
-		root: root, moduleRoot: moduleRoot, modulePath: modulePath,
+		root: root, moduleRoot: moduleRoot, modulePath: modulePath, goOffline: req.GoOffline,
 		packages: map[string]*goGraphPackage{}, local: map[string]*goGraphPackage{}, objectRefs: map[types.Object]string{}, embeddedFields: map[*ast.Field]struct{}{}, embeddedFieldBases: map[ast.Node]struct{}{},
 		nodes: map[string]model.GraphObservationNode{}, edges: map[string]model.GraphObservationEdge{}, edgeDigests: map[string]model.GraphDigest{}, omissions: map[string]model.GraphObservationOmission{},
 		unresolved: map[string]model.GraphObservationUnresolved{}, evidenceOrd: map[string]int{}, evidenceKeys: map[string]bool{}, exports: map[string]string{}, importCache: map[string]*types.Package{}, initOrdinals: map[string]int{}, typeErrorPositions: map[string][]token.Pos{},
@@ -333,7 +339,7 @@ func ObserveGoGraph(ctx context.Context, req GoGraphObservationRequest) (model.G
 		builder.batch.SourceFingerprint = builder.sourceFingerprint()
 		return builder.finish()
 	}
-	listed, listErr := goGraphList(ctx, moduleRoot, tags, goos, goarch)
+	listed, listErr := goGraphList(ctx, moduleRoot, tags, goos, goarch, req.GoOffline)
 	if listErr != nil {
 		builder.partial = true
 		if errors.Is(listErr, context.Canceled) || errors.Is(listErr, context.DeadlineExceeded) {
@@ -342,9 +348,16 @@ func ObserveGoGraph(ctx context.Context, req GoGraphObservationRequest) (model.G
 			return builder.finish()
 		}
 		if len(listed) == 0 {
+			if req.GoOffline {
+				return empty, goGraphError("GPH_GO_OFFLINE_UNAVAILABLE", "go_list", "local Go toolchain, dependency cache or readonly module metadata unavailable; prepare locally before retrying")
+			}
 			return empty, goGraphError("GPH_GO_LIST_UNAVAILABLE", "go_list", "go list could not produce package metadata")
 		}
-		builder.addPartialOmissions(project, "listing_error")
+		reason := "listing_error"
+		if req.GoOffline {
+			reason = "go_offline_metadata_unavailable"
+		}
+		builder.addPartialOmissions(project, reason)
 	}
 	for _, p := range listed {
 		if p.ImportPath != "" && p.Export != "" {
@@ -391,6 +404,9 @@ func ObserveGoGraph(ctx context.Context, req GoGraphObservationRequest) (model.G
 		builder.packages[p.ImportPath], builder.local[p.ImportPath] = gp, gp
 		if p.Error != nil {
 			reason := "listing_error"
+			if req.GoOffline {
+				reason = "go_offline_metadata_unavailable"
+			}
 			if strings.Contains(strings.ToLower(p.Error.Err), "cgo") {
 				reason = "cgo_list_error"
 			}
@@ -420,7 +436,7 @@ func ObserveGoGraph(ctx context.Context, req GoGraphObservationRequest) (model.G
 	}
 	sort.Strings(importPaths)
 	importPaths = uniqueStrings(importPaths)
-	builder.batch.ConfigFingerprint = goGraphConfigDigest(modBytes, sumDigestBytes, modulePath, project, importPaths, tags, goos, goarch, os.Getenv("CGO_ENABLED"), os.Getenv("GOFLAGS"))
+	builder.batch.ConfigFingerprint = goGraphConfigDigest(modBytes, sumDigestBytes, modulePath, project, importPaths, tags, goos, goarch, os.Getenv("CGO_ENABLED"), effectiveFlags)
 	builder.batch.SourceFingerprint = builder.sourceFingerprint()
 	builder.extractDeclarations()
 	builder.extractImportsAndContains()
@@ -665,8 +681,12 @@ func goGraphListArgs(tags []string) []string {
 	return append(args, "./...")
 }
 
-func goGraphListEnv(goos, goarch string) []string {
+func goGraphListEnv(goos, goarch string, offline ...bool) []string {
+	localOnly := len(offline) > 0 && offline[0]
 	replaced := []string{"GOPROXY=", "GOSUMDB=", "GOTOOLCHAIN=", "GOOS=", "GOARCH="}
+	if localOnly {
+		replaced = append(replaced, "GOFLAGS=", "GOVCS=", "GOWORK=")
+	}
 	env := make([]string, 0, len(os.Environ())+5)
 	for _, value := range os.Environ() {
 		skip := false
@@ -680,14 +700,45 @@ func goGraphListEnv(goos, goarch string) []string {
 			env = append(env, value)
 		}
 	}
+	if localOnly {
+		// Clear inherited/persisted flags, including -mod=mod, -modfile,
+		// -overlay and custom -toolexec. A space is a nonempty environment
+		// override of persisted GOFLAGS, parsed by Go as zero flags; an empty
+		// value could fall through to go env -w configuration.
+		// Build tags use the explicit request.
+		return append(env, "GOPROXY=off", "GOSUMDB=off", "GOTOOLCHAIN=local", "GOVCS=*:off", "GOFLAGS= ", "GOWORK=off", "GOOS="+goos, "GOARCH="+goarch)
+	}
 	return append(env, "GOPROXY=off", "GOSUMDB=sum.golang.org", "GOTOOLCHAIN=auto", "GOOS="+goos, "GOARCH="+goarch)
 }
 
-func goGraphList(ctx context.Context, dir string, tags []string, goos, goarch string) ([]goListPackage, error) {
+func goGraphList(ctx context.Context, dir string, tags []string, goos, goarch string, offline ...bool) ([]goListPackage, error) {
 	args := goGraphListArgs(tags)
+	if len(offline) > 0 && offline[0] {
+		// -mod=readonly protects go.mod, but Go may still add go.sum entries.
+		// Redirect both files to operation-local copies; replacements remain
+		// relative to cmd.Dir, and GOWORK=off protects workspace metadata.
+		scratch, err := os.MkdirTemp("", "mi-lsp-go-offline-")
+		if err != nil {
+			return nil, err
+		}
+		defer os.RemoveAll(scratch)
+		for _, name := range []string{"go.mod", "go.sum"} {
+			data, err := os.ReadFile(filepath.Join(dir, name))
+			if name == "go.sum" && os.IsNotExist(err) {
+				continue
+			}
+			if err != nil {
+				return nil, err
+			}
+			if err := os.WriteFile(filepath.Join(scratch, name), data, 0o600); err != nil {
+				return nil, err
+			}
+		}
+		args = append([]string{"list", "-modfile=" + filepath.Join(scratch, "go.mod")}, args[1:]...)
+	}
 	cmd := exec.CommandContext(ctx, "go", args...)
 	cmd.Dir = dir
-	cmd.Env = goGraphListEnv(goos, goarch)
+	cmd.Env = goGraphListEnv(goos, goarch, offline...)
 	cmd.WaitDelay = 250 * time.Millisecond
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
@@ -1282,7 +1333,11 @@ func (b *goGraphBuilder) typeCheckAll(ctx context.Context) {
 		return os.Open(exportPath)
 	}
 	exportImporter := importer.ForCompiler(token.NewFileSet(), "gc", lookup)
-	fallbackImporter := importer.Default()
+	var fallbackImporter types.Importer
+	if !b.goOffline {
+		// The default gc importer may invoke go list with ambient environment.
+		fallbackImporter = importer.Default()
+	}
 	var check func(string)
 	check = func(path string) {
 		if checked[path] || checking[path] {
@@ -1372,7 +1427,13 @@ func (i goGraphImporter) Import(path string) (*types.Package, error) {
 		pkg, err = i.export.Import(path)
 	}
 	if pkg == nil && err == nil {
-		pkg, err = i.fallback.Import(path)
+		if i.fallback != nil {
+			pkg, err = i.fallback.Import(path)
+		} else if path == "unsafe" {
+			pkg = types.Unsafe
+		} else {
+			err = fmt.Errorf("local export metadata unavailable for %s", path)
+		}
 	}
 	if err == nil && pkg != nil && i.cache != nil {
 		i.cache[path] = pkg

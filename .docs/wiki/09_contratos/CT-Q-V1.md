@@ -75,6 +75,8 @@ El comando `mi-lsp provider-manifest` (alias explícito `--format json`; JSON po
 
 El contrato fijo es `format: mi-mcp-provider/v1`, `namespace: milsp`, `contracts.q: q-v1`, `auth: none`, y una operación `q` de efecto `read`. La invocación usa `mi-lsp` con `--format json --client-name mi-mcp --no-auto-register` antes del subcomando. `input_schema` requiere `pipeline` y permite únicamente `pipeline`, `workspace`, `budget`, `max_bytes`, `timeout_ms`, `session_id`, `page`, `fresh` y `dedupe`; los campos opcionales corresponden a opciones de q-v1 disponibles en CLI (workspace puede ser global). `signal` no forma parte del schema porque se procesa en el host y no es argv. La salida referencia este contrato como q-v1.
 
+Para releases nuevos, `.goreleaser.yaml` inyecta `{{ .Version }}` sin prefijo `v`: el valor del binario y el `provider_version` dinámico deben coincidir exactamente. Los templates históricos no se actualizan con versiones futuras inventadas. Main no contiene generador de metadata ni tool-card; si se integra el generador del candidato, debe recibir esa misma `{{ .Version }}` para `provider_version` y `tool-card.version`, sin cambiar `min_provider_version` ni el contrato q-v1. Esta regla de fuente no acredita ejecución ni conformidad de schema.
+
 El archivo publicado `integrations/mi-mcp/provider-manifest.json` mantiene el mismo objeto salvo `provider_version`, fijado en `0.10.1` para esa distribución. El test compara ambos tras normalizar ese campo y descubre las flags desde Cobra para que una divergencia del CLI falle.
 
 ## 3. Identidad y revisión de ítems

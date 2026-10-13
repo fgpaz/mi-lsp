@@ -72,11 +72,11 @@ La tabla es un índice humano derivado; para RF-WKS-007, el binding normativo de
 | RF-QRY-025 | FL-QRY-01 | TP-QRY | TC-QRY-205, TC-QRY-206, TC-QRY-208 | TC-QRY-207 | implemented; verification pendiente |
 | RF-GPH-001 | FL-GPH-01 | TP-GPH / TP-GPH-001 | TC-GPH-001, TC-GPH-002, TC-GPH-003 | TC-GPH-004, TC-GPH-005, TC-GPH-006 | planned |
 | RF-GPH-002 | FL-GPH-01 | TP-GPH / TP-GPH-002 | TC-GPH-007, TC-GPH-008, TC-GPH-010, TC-GPH-011, TC-GPH-012, TC-GPH-079 | TC-GPH-009, TC-GPH-013, TC-GPH-014, TC-GPH-080 | planned |
-| RF-GPH-003 | FL-GPH-01 | TP-GPH / TP-GPH-003 | TC-GPH-015, TC-GPH-016 | TC-GPH-017, TC-GPH-018, TC-GPH-019 | planned |
+| RF-GPH-003 | FL-GPH-01 | TP-GPH / TP-GPH-003 | TC-GPH-015, TC-GPH-016, TC-GPH-SRC-001, TC-GPH-SRC-003, TC-GPH-SRC-004 | TC-GPH-017, TC-GPH-018, TC-GPH-019, TC-GPH-SRC-002, TC-GPH-SRC-005 | planned; colección fuente: PARTIAL scoped, aceptación completa manual_evidence_pending (TP-GPH.canonical-source-store-acceptance) |
 | RF-GPH-004 | FL-GPH-01 | TP-GPH / TP-GPH-003 | TC-GPH-020, TC-GPH-021 | TC-GPH-022 | planned |
 | RF-GPH-005 | FL-GPH-02 | TP-GPH / TP-GPH-004 / TP-GPH-008 | TC-GPH-023, TC-GPH-024, TC-GPH-025, TC-GPH-026, TC-GPH-027, TC-GPH-030, TC-GPH-059, TC-GPH-060, TC-GPH-061, TC-GPH-067 | TC-GPH-028, TC-GPH-029, TC-GPH-062, TC-GPH-063 | planned |
 | RF-GPH-006 | FL-GPH-02 | TP-GPH / TP-GPH-005 / TP-GPH-008 | TC-GPH-031, TC-GPH-031A, TC-GPH-032, TC-GPH-033, TC-GPH-035, TC-GPH-064, TC-GPH-065 | TC-GPH-031B, TC-GPH-031C, TC-GPH-034, TC-GPH-063 | planned |
-| RF-GPH-007 | FL-GPH-02 | TP-GPH / TP-GPH-005 / TP-GPH-008 | TC-GPH-036, TC-GPH-038, TC-GPH-064, TC-GPH-065 | TC-GPH-037, TC-GPH-076 | planned |
+| RF-GPH-007 | FL-GPH-02 | TP-GPH / TP-GPH-005 / TP-GPH-008 | TC-GPH-036, TC-GPH-038, TC-GPH-064, TC-GPH-065, TC-GPH-SRC-004, TC-GPH-SRC-006 | TC-GPH-037, TC-GPH-076, TC-GPH-SRC-005 | planned; consulta exacta/historia opt-in B/C: PARTIAL scoped H1/H2 único RECHECK1, aceptación completa manual_evidence_pending (TP-GPH.canonical-source-store-acceptance) |
 | RF-GPH-008 | FL-GPH-01 | TP-GPH / TP-GPH-003 / TP-GPH.kotlin-compiler-export-v1 | TC-GPH-015, TC-GPH-016, TC-GPH-K01, TC-GPH-K07 | TC-GPH-017, TC-GPH-018, TC-GPH-022, TC-GPH-K02..K06 | planned; Kotlin admisión aditiva experimental parcial, manual_evidence_pending |
 | RF-GPH-009 | FL-GPH-02 | TP-GPH / TP-GPH-006 | TC-GPH-039, TC-GPH-041 | TC-GPH-040, TC-GPH-042 | planned |
 | RF-GPH-010 | FL-GPH-03 | TP-GPH / TP-GPH-006 | TC-GPH-043, TC-GPH-047 | TC-GPH-044, TC-GPH-045, TC-GPH-046 | planned |

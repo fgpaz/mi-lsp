@@ -13,6 +13,12 @@ implements:
   - internal/daemon/log_tail.go
   - internal/daemon/state_store.go
   - internal/output/formatter.go
+  - internal/cli/index.go
+  - internal/service/index_jobs.go
+  - internal/store/index_jobs.go
+  - internal/store/schema.go
+  - internal/indexer/graph_pipeline.go
+  - internal/indexer/extractor_go.go
   - internal/service/app.go
   - internal/service/autoindex.go
   - internal/telemetry/access_diagnostics.go
@@ -245,8 +251,8 @@ note: "max_inflight raised from 16 to 48; max_workers raised from 3 to 6 for sus
 Input:
 
 ```text
-mi-lsp index [path] [--workspace <alias>] [--clean] [--docs-only] [--entrypoint <id|repo-relative-path>]
-mi-lsp index start [path] [--workspace <alias>] [--mode full|docs|catalog] [--clean] [--wait] [--entrypoint <id|repo-relative-path>]
+mi-lsp index [path] [--workspace <alias>] [--clean] [--docs-only] [--entrypoint <id|repo-relative-path>] [--go-offline]
+mi-lsp index start [path] [--workspace <alias>] [--mode full|docs|catalog] [--clean] [--wait] [--entrypoint <id|repo-relative-path>] [--go-offline]
 mi-lsp index status [job-id] [--workspace <alias>]
 mi-lsp index cancel <job-id> [--workspace <alias>] [--force]
 
@@ -259,6 +265,32 @@ Reglas:
 - `index [path]` es wrapper de compatibilidad que ejecuta `index start --mode full --wait`; con `--docs-only`, ejecuta `--mode docs --wait`.
 - `index start` crea un registro durable en `index_jobs` sin consultar primero jobs activos; sin `--wait` lanza un proceso detached y retorna el `job_id`; con `--wait` bloquea hasta que la indexacion complete. Si hay competencia, el runner queda serializado por `.mi-lsp/index.lock` y el resultado se inspecciona con `index status`.
 - `--entrypoint` selecciona un ID declarado o una ruta relativa segura del repositorio a la entrada solicitada en modo `full`. Go acepta `go.mod` y dirige la observación al backend `go`; C# acepta proyectos `.csproj` declarados o rutas seguras compatibles y dirige la observación a Roslyn; las soluciones `.sln` explícitas fallan cerrado porque no existe un helper de membresía autoritativo. No aplica a `docs`/`catalog`. Sin el flag se conservan exactamente los defaults actuales y no se infiere un módulo Go. El selector se persiste con el job y se rechazan rutas absolutas, traversal, symlinks, `go.work`, tipos no compatibles o repositorios no coincidentes.
+La política offline y su envelope se definen exclusivamente en este bloque; aceptación acotada en [[TP-IDX]] / TC-IDX-029.
+
+```toon
+doc_id: CT-CLI-DAEMON-ADMIN
+block_id: CT-CLI-DAEMON-ADMIN-GO-OFFLINE
+kind: normative
+source_of_truth: normative
+requirement_id: RF-IDX-001
+observable_contract: RF-IDX-001-GO-OFFLINE
+public_routes: "index wrapper direct wait; index start direct wait o detached; run-job recarga go_offline durable"
+daemon_route: "CLI index-daemon unsupported/noapplicable actual; dispatch App/server interno compartido no establece paridad ni habilita routing"
+durable_policy: "`--go-offline` es opt-in (false por default) en `index` y `index start`: payload `go_offline` booleano y columna durable `index_jobs.go_offline` (legacy=0). `index run-job` carga esa columna; no necesita reenviar un flag ni compartir el entorno del cliente. La proyección pública del job/status incluye `go_offline` sin valores privados."
+process_and_metadata: "Toda invocación Go del observador usa GOTOOLCHAIN local, GOPROXY/GOSUMDB off, GOVCS *:off, GOFLAGS con un espacio (cero flags, override no vacío del valor persistido), GOWORK off y `-buildvcs=false -mod=readonly`. Ignora GOFLAGS heredados/configurados y observa el módulo sin `go.work` (evita modificar su sum); el resto del entorno y caches locales se preserva. `-modfile` apunta a copias temporales propias de go.mod/go.sum, porque readonly por sí solo no impide agregar sumas; los archivos del usuario quedan intactos. No modifica configuración global ni instala nada. El importador ambiental se deshabilita en ese modo."
+completeness: "Full offline recompone el candidato incluso sin cambios de catálogo; fingerprint distingue la política y warning `go_offline=true` registra la observación efectiva. Capabilities existentes conservan estado real: compilación/export local permitidos, metadata ausente devuelve `GPH_GO_OFFLINE_UNAVAILABLE`, metadata parcial puede producir diagnóstico genérico/index_failed, type_check_error o external_target; go_offline_metadata_unavailable no es universal y la precisión offline específica queda explicit_incomplete. Nunca retry online ni facts de compilador por fallback textual."
+scope_and_mismatch: "Docs/catalog no ejecutan ese observador y no se alteran; el flag no bloquea embeddings, otros backends ni consultas gopls, ni es un sandbox de red para un CC/cgo externo personalizado. La deduplicación compara el `go_offline` persistido del activo con el solicitado: si difieren en cualquiera de los dos sentidos, devuelve `ok=false`, `error.kind=validation`, `error.code=index_job_policy_mismatch`, `error.stage=index.start` y el job público real en items, con job_id y ambas políticas en el mensaje. No altera/cancela el activo, no crea otro runner ni hace retry automático; next_hint apunta a status y el reintento es manual después de terminal. Con política coincidente se conserva la deduplicación previa (sin nuevas restricciones de mode/clean/entrypoint). Contrato funcional y aceptación: [[RF-IDX-001]] / RF-IDX-001-GO-OFFLINE y [[TP-IDX]] / TC-IDX-029."
+verification_basis: "FINAL_VERIFY1 FAIL histórico; RECHECK1 PASS policy / PARTIAL global; audit1 Changes requested, reparación editorial no equivale a accepted/complete"
+evidence_scope: "Rechazo simétrico, dedupe coincidente, snapshots durables sin mutación y retry terminal comprobados; stdlib bwrap succeeded, namespace distinto, solo lo y sin rutas"
+evidence_limits: "No cero syscall, ejecución normal fuera de namespace, salud global ni capacidades/precisión externas completas; graph query daemon no prueba observador"
+owner: coord-milsp
+disclosure_due: antes de publicación acotada
+followup_due: 2026-10-20
+followup_authority: "Precisión/evidencia futura con objetivo separado, sin renovación de este presupuesto"
+budget: "FINAL_VERIFY1/audit1/RECHECK1 agotado; sin recheck2 ni verificador pendiente"
+readiness_debt: "Sin migración global ni PASS Harness/wiki-source/P6/Graph; deuda preexistente preservada"
+```
+
 - `index status` consulta el ultimo job del workspace si no se pasa `job-id`.
 - `index status.phase` conserva `indexing` durante el trabajo pesado y solo pasa a `publishing` en el cierre/publicacion final.
 - `index status` expone progreso vivo en `current_stage`, `current_path`, `files_total`, `files`, `symbols`, `docs` y `updated_at`; esos campos deben refrescarse durante catalogo/docs/embeddings antes de publicar. En embeddings, `current_stage=embeddings` y `current_path` incluye `N/M chunks embedded`.
@@ -320,6 +352,26 @@ Reglas de formato:
 - La sanitizacion TOON reemplaza controles no imprimibles, excepto tab/newline/carriage-return, por escapes ASCII visibles (`\u0000`, `\u001f`, etc.).
 - Cuando la sanitizacion cambia al menos un string, `warnings` debe agregar una unica entrada `toon output sanitized unsafe control characters`.
 - `--format compact`/JSON mantiene su comportamiento compatible existente y no debe depender de la sanitizacion TOON.
+
+### `doctor`: salida única y error ya emitido
+
+`doctor` de salud (distinto de `workspace doctor`) emite el envelope `backend=doctor` mediante el formatter común. Si los checks fallan, conserva `ok=false`, checks y resumen, y retorna el sentinel `envelopePrintedError` por valor: coincide con el `errors.As` existente de `IsEnvelopePrintedError`. El handler externo en `cmd/mi-lsp/main.go` no vuelve a emitir `WriteProcessFailure` para ese error; preserva el exit code envuelto, distinto de cero. Los errores anteriores a la emisión y los fallos de impresión no llevan sentinel y siguen por el handler de errores normal.
+
+```toon
+block_id: cli-doctor-single-emission
+kind: output-contract
+formats: [text, json, toon]
+formatter: common_unchanged
+failed_checks:
+  envelope_count: 1
+  exit_code: report_exit_code_nonzero
+  second_items_null_document: forbidden
+error_matching: errors.As_with_Unwrap
+scope: source_only
+runtime_status: explicit_incomplete
+```
+
+La reparación no modifica los checks, el acceso al daemon ni afirma el contrato read-only completo del candidato. El FAIL histórico y LSP-03/04/05/06 NOT_RUN permanecen intactos; presupuesto FINAL_VERIFY/audit/recheck agotado.
 
 ### `version`
 

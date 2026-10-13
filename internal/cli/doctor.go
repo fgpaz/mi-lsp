@@ -72,7 +72,7 @@ Checks include:
 
 			// Exit with the appropriate code
 			if report.ExitCode != 0 {
-				return &envelopePrintedError{err: ErrExitCode(report.ExitCode)}
+				return envelopePrintedError{err: ErrExitCode(report.ExitCode)}
 			}
 
 			return nil
@@ -110,8 +110,9 @@ func IsExitCodeError(err error) (int, bool) {
 }
 
 func extractExitCode(err error) int {
-	// Try to cast to exitCodeError
-	if e, ok := err.(exitCodeError); ok {
+	// Preserve the exit code through the already-emitted sentinel and wrapping.
+	var e exitCodeError
+	if errors.As(err, &e) {
 		return e.code
 	}
 	return 0

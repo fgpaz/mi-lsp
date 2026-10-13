@@ -14,11 +14,11 @@ const (
 	OverlayModeRAMOnly = "ram_only"
 	OverlayModeRequest = "request_scoped"
 
-	OverlayStatusCurrent           = "current"
-	OverlayStatusOverlay           = "overlay"
-	OverlayStatusStale             = "stale"
-	OverlayStatusUnknown           = "unknown"
-	OverlayStatusConcurrentChange  = "concurrent_change"
+	OverlayStatusCurrent                  = "current"
+	OverlayStatusOverlay                  = "overlay"
+	OverlayStatusStale                    = "stale"
+	OverlayStatusUnknown                  = "unknown"
+	OverlayStatusConcurrentChange         = "concurrent_change"
 	WikiCodeOverlayStatusCurrent          = OverlayStatusCurrent
 	WikiCodeOverlayStatusOverlay          = OverlayStatusOverlay
 	WikiCodeOverlayStatusStale            = OverlayStatusStale
@@ -148,15 +148,15 @@ type WikiCodeOmission struct {
 type WikiCodeOverlayOmission = WikiCodeOmission
 
 const (
-	OmissionUnsafeTarget       = "unsafe_target"
-	OmissionConcurrentChange  = "concurrent_change"
-	OmissionReadFailed         = "read_failed"
-	OmissionExcludedAlive      = "excluded_alive"
-	OmissionUnknownDocument    = "unknown_document"
-	OmissionDatabaseUnavailable = "database_unavailable"
+	OmissionUnsafeTarget         = "unsafe_target"
+	OmissionConcurrentChange     = "concurrent_change"
+	OmissionReadFailed           = "read_failed"
+	OmissionExcludedAlive        = "excluded_alive"
+	OmissionUnknownDocument      = "unknown_document"
+	OmissionDatabaseUnavailable  = "database_unavailable"
 	OmissionAuthorityUnavailable = "authority_unavailable"
-	OmissionParseFailed        = "parse_failed"
-	OmissionInvalidScope       = "invalid_scope"
+	OmissionParseFailed          = "parse_failed"
+	OmissionInvalidScope         = "invalid_scope"
 )
 
 // WikiCodeScopeKind identifies the bounded reconciliation direction.
@@ -187,7 +187,7 @@ type WikiCodeBlockScope struct {
 // digest. Exact wiki scopes may select docs by path/id/block; reverse scopes
 // select a repo-relative target path and optional symbol.
 type WikiCodeScope struct {
-	Kind         WikiCodeScopeKind   `json:"kind"`
+	Kind         WikiCodeScopeKind    `json:"kind"`
 	DocIDs       []string             `json:"doc_ids,omitempty"`
 	DocPaths     []string             `json:"doc_paths,omitempty"`
 	Blocks       []WikiCodeBlockScope `json:"blocks,omitempty"`
@@ -199,17 +199,20 @@ type WikiCodeScope struct {
 // generation. Additions and tombstones live only in RAM; no field represents a
 // write intent or a durable publication operation.
 type WikiCodeOverlay struct {
-	BaseGeneration string                `json:"base_generation"`
-	Mode           string                `json:"mode"`
-	Status         string                `json:"status"`
-	Scope          WikiCodeScope         `json:"scope"`
-	Freshness      WikiCodeFreshness     `json:"freshness"`
-	ChangedInputs  []WikiCodeChangedInput `json:"changed_inputs,omitempty"`
-	Additions      []DocArtifactBinding  `json:"additions,omitempty"`
-	Tombstones     []BindingTombstone    `json:"tombstones,omitempty"`
-	Omissions      []WikiCodeOmission    `json:"omissions,omitempty"`
-	Digest         string                `json:"digest"`
-	Cost           WikiCodeOverlayCost   `json:"cost,omitempty"`
+	// Internal owner-complete source replacements from bounded RAM parsing.
+	// Existing tombstones also mask these owners/blocks. Kept off legacy wire.
+	SourceCollections map[string]DocBindingSourceCollection `json:"-"`
+	BaseGeneration    string                                `json:"base_generation"`
+	Mode              string                                `json:"mode"`
+	Status            string                                `json:"status"`
+	Scope             WikiCodeScope                         `json:"scope"`
+	Freshness         WikiCodeFreshness                     `json:"freshness"`
+	ChangedInputs     []WikiCodeChangedInput                `json:"changed_inputs,omitempty"`
+	Additions         []DocArtifactBinding                  `json:"additions,omitempty"`
+	Tombstones        []BindingTombstone                    `json:"tombstones,omitempty"`
+	Omissions         []WikiCodeOmission                    `json:"omissions,omitempty"`
+	Digest            string                                `json:"digest"`
+	Cost              WikiCodeOverlayCost                   `json:"cost,omitempty"`
 }
 
 // WikiCodeOverlayCostCounters is retained as a readable alias for adapters

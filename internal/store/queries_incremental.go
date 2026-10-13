@@ -133,6 +133,8 @@ type docOwnerTable struct {
 }
 
 var incrementalDocOwnerTables = []docOwnerTable{
+	{table: "doc_binding_sources", owner: "doc_path"},
+	{table: "doc_binding_source_documents", owner: "doc_path"},
 	{table: "doc_artifact_bindings", owner: "doc_path"},
 	{table: "doc_source_records", owner: "doc_path"},
 	{table: "doc_source_blocks", owner: "doc_path"},
@@ -288,7 +290,7 @@ func insertDocReplaceTx(ctx context.Context, tx *sql.Tx, change IncrementalDocCh
 			return err
 		}
 	}
-	return nil
+	return insertDocBindingSourcesTx(ctx, tx, *change.Doc)
 }
 
 func deleteDocDeleteTx(ctx context.Context, tx *sql.Tx, docPath string) error {
@@ -395,10 +397,17 @@ func docPathHasRetiredLifecycleTx(ctx context.Context, tx *sql.Tx, path string) 
 	if err != nil {
 		return false, err
 	}
-	if ok {
-		return state.Lifecycle == model.DocLifecycleRetired, nil
+	if ok && state.Lifecycle == model.DocLifecycleRetired {
+		return true, nil
 	}
 	var exists int
+	err = tx.QueryRowContext(ctx, `SELECT 1 FROM doc_binding_source_documents WHERE doc_path=? AND document_lifecycle=? LIMIT 1`, path, model.DocLifecycleRetired).Scan(&exists)
+	if err == nil {
+		return true, nil
+	}
+	if !errors.Is(err, sql.ErrNoRows) {
+		return false, err
+	}
 	err = tx.QueryRowContext(ctx, `SELECT 1 FROM doc_artifact_bindings WHERE doc_path=? AND doc_lifecycle=? LIMIT 1`, path, model.DocLifecycleRetired).Scan(&exists)
 	if errors.Is(err, sql.ErrNoRows) {
 		return false, nil
@@ -449,6 +458,9 @@ func applyIncrementalDocChangesTx(ctx context.Context, tx *sql.Tx, changes []Inc
 		}
 		switch change.Action {
 		case "replace":
+			if err := guardRetiredSourceReplacementTx(ctx, tx, *change.Doc); err != nil {
+				return false, err
+			}
 			if err := deleteDocOwnedRowsTx(ctx, tx, change.Path); err != nil {
 				return false, err
 			}

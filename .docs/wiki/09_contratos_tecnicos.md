@@ -57,6 +57,27 @@ El detalle por frontera vive en `09_contratos/`; contratos `accepted-design` no 
 - La instalacion publica vive fuera del contrato runtime: `scripts/install/install.ps1|sh` instala/actualiza la CLI desde GitHub `releases/latest`, y `scripts/install/install-agent.ps1|sh` agrega la skill via `npx skills add`.
 - Los instaladores publicos deben mapear solo RIDs publicados (`win-x64`, `win-arm64`, `linux-x64`, `linux-arm64`), verificar `mi-lsp_<version>_checksums.txt` antes de extraer y preservar `workers/<rid>/` junto al binario. En Windows el artefacto publicado es `mi-lsp.exe`; un shim `.cmd` no es el producto.
 - El daemon comparte estado entre clientes pero no redefine la CLI publica.
+```toon
+doc_id: 09_contratos_tecnicos
+block_id: 09_contratos_tecnicos-GO-OFFLINE
+kind: normative
+source_of_truth: normative
+contract_ref: CT-CLI-DAEMON-ADMIN-GO-OFFLINE
+requirement_ref: RF-IDX-001-GO-OFFLINE
+scope: "Resumen subordinado a [[CT-CLI-DAEMON-ADMIN]] y [[RF-IDX-001]]; aceptación y límites en [[TP-IDX]] / TC-IDX-029"
+policy: "Opt-in --go-offline en index/index start, default false; payload y job durable; wrapper direct wait, start direct wait y detached con recarga durable"
+daemon_route: "CLI index-daemon unsupported/noapplicable actual; App/server comparten dispatch interno, no paridad pública; graph query daemon no acredita observador"
+go_environment: "GOTOOLCHAIN local, GOPROXY/GOSUMDB off, GOVCS *:off, GOFLAGS con un espacio (cero flags), GOWORK off, -buildvcs=false -mod=readonly; -modfile privado de go.mod/go.sum, metadata del usuario intacta"
+limits: "Exports y caché/compilación local permitidos; sin importador ambiental ni retry online. No sandbox CC/cgo personalizado ni garantía de embeddings, noGo o gopls"
+missing: "Sin metadata utilizable: GPH_GO_OFFLINE_UNAVAILABLE; metadata parcial puede dar diagnóstico genérico/type_check_error/external_target, motivo offline específico no universal; precisión explicit_incomplete, sin facts completos por AST"
+verification_basis: "FINAL_VERIFY1 FAIL histórico; RECHECK1 PASS policy / PARTIAL global; rechazo simétrico, dedupe y retry terminal comprobados; stdlib bwrap aislada succeeded, no cero syscall ni red normal fuera de namespace ni salud global"
+status: explicit_incomplete
+owner: coord-milsp
+disclosure_due: antes de publicación acotada
+followup_due: 2026-10-20
+budget: "Agotado FINAL_VERIFY1/audit1/RECHECK1; sin recheck2; precisión/evidencia futura requiere objetivo separado"
+readiness_debt: "Deuda preexistente sin migración global ni PASS Harness/wiki-source/P6/Graph"
+```
 - `daemon start` mantiene `start.guard` persistente y nunca lo elimina; bajo su lock OS exclusivo (`LockFileEx` en Windows, `flock` en Unix) serializa crear, inspeccionar, recuperar y `Close` de `start.lock`. `start.lock` conserva `O_CREATE|O_EXCL`, se rellena con metadata versionada `pid+nonce` y el descriptor se cierra después de sincronizarla. Solo se recupera un owner muerto; owner vivo o metadata desconocida se preservan, los errores son fail-closed, un lock legacy vacío solo se recupera después de 5 minutos y `Close` elimina únicamente bajo guard cuando coinciden `pid+nonce`. PID válido: `1..math.MaxInt32`; en Windows, `ACCESS_DENIED` y cualquier error ambiguo cuentan como owner vivo, y solo `ERROR_INVALID_PARAMETER` prueba inexistencia.
 - La UI/admin es una vista local del daemon; no es API publica remota.
 - El protocolo daemon-worker es interno, versionado y con envelope estable.

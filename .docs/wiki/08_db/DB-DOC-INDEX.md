@@ -1,13 +1,21 @@
+---
+wiki_graph_protocol: SDD-WIKI-GRAPH-v1
+document_lifecycle: active
+doc_id: DB-DOC-INDEX
+kind: DB
+imports: [RF-GPH-003, 05_modelo_datos]
+---
+
 # DB-DOC-INDEX
 
 ```yaml
 harness_protocol: SDD-HARNESS-v1
 id: "DB-DOC-INDEX"
-kind: "support-doc"
+kind: "DB"
 audience: "llm-first"
 imports:
   - '[[00_gobierno_documental]]'
-  - '[[DB-DOC-INDEX]]'
+  - '[[RF-GPH-003]]'
 exports:
   - 'DB-DOC-INDEX'
 agent_must_read:
@@ -158,7 +166,7 @@ doc_artifact_states:
   indexes: [lifecycle]
 ownership:
   rows_replaced_or_deleted_by: explicit_repo_relative_doc_path
-  tables: [doc_artifact_bindings, doc_artifact_states, doc_source_records, doc_source_blocks, doc_mentions, doc_edges, doc_records]
+  tables: [doc_binding_sources, doc_binding_source_documents, doc_artifact_bindings, doc_artifact_states, doc_source_records, doc_source_blocks, doc_mentions, doc_edges, doc_records]
 generation_domains:
   docs: active_docs_generation_id
   memory: active_memory_generation_id
@@ -202,10 +210,83 @@ evidence:
   - .docs/wiki/06_pruebas/TP-GPH.md
 ```
 
+## Colección fuente independiente del agregado WCB
+
+```toon
+doc_id: DB-DOC-INDEX
+block_id: DB-DOC-INDEX.canonical-binding-sources
+kind: physical-source-collection-contract
+source_of_truth: normative
+status: authored
+verification_status: PARTIAL_scoped
+verification_basis: FINAL_VERIFY1_PARTIAL_audit1_Changes_requested_H1_H2_repair_unique_RECHECK1_H1_H2_PASS_scoped_overall_PARTIAL
+publication_scope: parent_authorized_H1_H2_scoped_not_full_B_C
+incremental_evidence: explicit_incomplete_Git_AM_not_consumed_processed_0_no_changes_no_owner_transition_no_PRODUCT_FAIL
+q_evidence: valid_pipeline_same_corpus_DB_one_governance_item_parity_only
+q_uncovered: [multi_item_sort, cursor_resume, native_digest, source_variation]
+global_readiness: Graph_Harness_fullwiki_conformance_not_accredited
+remaining_evidence: explicit_incomplete_coord_milsp_due_2026_10_15
+legacy_source_owner_ranges: partial_visible_zero_ranges_not_exact
+memory_atomicity_TC_IDX_028: not_accredited_snapshot_docs_catalog_are_not_memory_ID
+memory_debt: owner_coord_milsp_due_before_full_acceptance_or_next_memory_sensitive_change
+schema: MILSP-DBS/v1
+doc_binding_sources:
+  owner_column: doc_path
+  primary_key: [doc_path, binding_id]
+  source_fields: [binding_id, kind, role, path, surface, binding_lifecycle, symbol]
+  wrapper_fields: [doc_id, block_id, document_lifecycle, provenance, binding_ref, source_content_hash, start_line, end_line]
+  provenance: declared
+  resolution_column: absent
+  bridge_ref: optional_many_to_one_not_identity
+  binding_lifecycle: [active, deprecated]
+  document_lifecycle: [active, deprecated, retired]
+  unknown_object_ranges: zero_not_exact
+  index: [binding_id, doc_path]
+doc_binding_source_documents:
+  primary_key: doc_path
+  fields: [collection_version, document_lifecycle]
+  purpose: parsed_empty_availability_and_binding_free_document_lifecycle
+  published_version: MILSP-DBS/v1
+ownership:
+  full: replace_snapshot_preserving_omitted_retired_owners
+  excluded_alive: retained_by_docgraph_prior_snapshot_with_warning
+  incremental: explicit_owner_replacement_all_families_in_one_transaction
+  shrink_guard: both_source_tables_in_unrelated_owner_fingerprint
+  retired: preserve_on_delete_reject_reactivation
+  changed_editions: replacement_not_event_sourcing
+availability:
+  states: [available, explicit_incomplete]
+  empty_parsed_owner: available_zero_declarations
+  old_table_absent: explicit_incomplete_canonical_source_collection_not_persisted
+  owner_not_published: explicit_incomplete_source_owner_not_published
+  global_ID_partial_corpus: explicit_incomplete_source_owners_not_published
+reader:
+  function: ReadDocBindingSources
+  selectors: doc_path_AND_binding_id_when_both_present
+  mandatory_selector: doc_path_OR_binding_id
+  limits: default_100_maximum_200_plus_one_truncation_detection
+  order: [doc_path, binding_id]
+  all_lifecycles: preserved_for_explicit_consumer_selection
+  ambiguous_ID: multiple_owners_no_winner
+  transaction: read_only
+  DDL_backfill_repair: forbidden
+transport:
+  document: DocRecord.BindingSources_internal_not_public_JSON
+  snapshot: same_read_transaction_as_docs_bridge_and_identity_marker
+  RAM: WikiCodeOverlay.SourceCollections_internal_owner_replacements
+  no_op_detection: includes_complete_source_collection_and_availability
+artifact_bindings:
+  - {binding_id: DB-DOC-INDEX-source-schema, kind: schema, role: db_schema, path: internal/store/schema.go, symbol: docBindingSourcesDDL, surface: data, binding_lifecycle: active}
+verify: [parent_single_FINAL_VERIFY_after_implementation_complete]
+evidence: [internal/store/schema.go, internal/store/queries_doc_binding_sources.go, internal/store/queries_docs.go, internal/store/queries_incremental.go, internal/store/doc_snapshot.go]
+```
+
+El DDL es evolución aditiva del código del productor; no acredita ni ejecuta migración runtime. Un lector de DB anterior no llama a `EnsureSchema`, no inventa IDs y no rellena desde WCB. La ausencia de colección no afecta la disponibilidad del bridge. `ReadCurrentDocSnapshot` conserva su firma y adjunta la colección/omission en cada `DocRecord`; un marker de identidad vigente no garantiza por sí solo que el owner fuente haya sido publicado. La reutilización de bytes idénticos puede seguir preservando esa omission hasta una operación explícita que vuelva a parsear. No hay un nuevo puntero graph ni una promesa de atomicidad universal docs+Graph.
+
 ## Estrategia de refresco
 
 - `ReplaceDocs()` reemplaza el snapshot documental completo en una sola transacción y preserva compatibilidad llamando a la variante sin source rows.
-- `ReplaceDocsWithSources()` reemplaza `doc_records`, `doc_edges`, `doc_mentions`, `doc_source_blocks`, `doc_source_records` y `doc_artifact_bindings` en una sola transacción.
+- `ReplaceDocsWithSources()` reemplaza las familias documentales, el bridge y ambas tablas fuente en una sola transacción. Conserva owners retirados omitidos; el productor conserva owners vivos excluidos del scan. Un caller legacy sin `BindingSources` no declara una colección vacía válida.
 - `ReplaceWorkspaceDocs()` reemplaza el snapshot documental, source rows, bindings y `memory_snapshot_json` en una sola transacción; actualiza `active_docs_generation_id` y `active_memory_generation_id` cuando hay job/generación.
 - `index --docs-only` y `index start --mode docs` ejecutan esa publicación sin modificar el catálogo de código.
 - `ReplaceWorkspaceIndex()` publica catálogo, docs y memoria juntos para evitar estados mixtos tras un crash o cancelación.
@@ -220,6 +301,6 @@ evidence:
 
 ## No objetivos
 
-- versionado historico de docs
+- versionado temporal de cada edición de docs; preservar declaraciones deprecated/retired no es event-sourcing
 - embeddings o vectores
 - store remoto compartido

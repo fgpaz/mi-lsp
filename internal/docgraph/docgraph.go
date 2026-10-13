@@ -486,6 +486,35 @@ func IndexWorkspaceDocsWithSourcesWithProgressPriorWithBindings(ctx context.Cont
 	// Both counters come from successful path results, not from the clean flag.
 	warnings = append(warnings, fmt.Sprintf("docs_skip_reparse parsed=%d skipped=%d", parsed, skipped))
 
+	// Missing from today's candidate scan is not proof of deletion. Retain
+	// alive-but-excluded/read-failed owners and terminal retired history.
+	if prior != nil {
+		included := make(map[string]bool, len(docs))
+		for _, doc := range docs {
+			included[doc.Path] = true
+		}
+		for path, doc := range prior.Docs {
+			if included[path] {
+				continue
+			}
+			retired := doc.BindingSources != nil && doc.BindingSources.DocumentLifecycle == model.DocLifecycleRetired
+			for _, binding := range prior.Bindings[path] {
+				retired = retired || binding.DocLifecycle == model.DocLifecycleRetired
+			}
+			_, statErr := os.Lstat(filepath.Join(root, filepath.FromSlash(path)))
+			if !retired && os.IsNotExist(statErr) {
+				continue
+			}
+			docs = append(docs, doc)
+			edges = append(edges, prior.Edges[path]...)
+			mentions = append(mentions, prior.Mentions[path]...)
+			sourceBlocks = append(sourceBlocks, prior.Blocks[path]...)
+			sourceRecords = append(sourceRecords, prior.Records[path]...)
+			bindings = append(bindings, prior.Bindings[path]...)
+			warnings = append(warnings, "docs_owner_retained:"+path)
+		}
+	}
+
 	edges = resolveDocEdges(docs, edges, profile.EffectiveWikiMapRoots())
 	edges = appendStructuralDocEdges(docs, edges)
 
@@ -570,9 +599,14 @@ func parseDocContent(
 	}
 
 	mentions := append(docMentions, sourceDoc.Mentions...)
-	// Existing mention plumbing exposes source rejection/omission diagnostics;
-	// no canonical declaration collection is persisted by this bridge.
+	collection := wikisource.SourceBindingDeclarations(sourceDoc)
+	doc.BindingSources = &collection
+	// Only this collection-carrying producer discharges A's transport omission.
+	// Parser-only callers still receive it; rejection diagnostics stay intact.
 	for _, omission := range sourceDoc.BindingOmissions {
+		if omission == "explicit_incomplete:canonical_source_collection_not_persisted" {
+			continue
+		}
 		mentions = append(mentions, model.DocMention{DocPath: relPath, MentionType: "binding_omission", MentionValue: omission})
 	}
 	sourceBlocks := wikisource.SourceBlocks(sourceDoc, now)
