@@ -426,6 +426,16 @@ func buildDocChanges(root string, paths []string, parserVersion, configHash stri
 	return changes
 }
 
+func lifecycleFromSource(doc model.DocRecord, bindings []model.DocArtifactBinding, fallback string) string {
+	if doc.BindingSources != nil && doc.BindingSources.Availability == model.DocBindingSourceAvailable {
+		switch doc.BindingSources.DocumentLifecycle {
+		case model.DocLifecycleActive, model.DocLifecycleDeprecated, model.DocLifecycleRetired:
+			return doc.BindingSources.DocumentLifecycle
+		}
+	}
+	return lifecycleFromBindings(bindings, fallback)
+}
+
 func lifecycleFromBindings(bindings []model.DocArtifactBinding, fallback string) string {
 	lifecycle := fallback
 	if lifecycle == "" {

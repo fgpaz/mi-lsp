@@ -14,36 +14,37 @@ import (
 // document and its explicitly resolved graph evidence. It intentionally has no
 // log or raw-artifact fields.
 type WikiCodeContext struct {
-	PrimaryDoc        DocRecord                 `json:"primary_doc"`
-	AuthorityChain    []WikiCodeAuthorityEntry  `json:"authority_chain"`
-	CodeEvidence      []WikiCodeEvidence        `json:"code_evidence"`
-	GraphPaths        []WikiCodeGraphPath       `json:"graph_paths"`
-	Drift             []WikiCodeDrift           `json:"drift"`
-	Omissions         []WikiCodeContextOmission `json:"omissions"`
+	BindingSources *WikiCodeSourceProjection `json:"binding_sources,omitempty"`
+	PrimaryDoc     DocRecord                 `json:"primary_doc"`
+	AuthorityChain []WikiCodeAuthorityEntry  `json:"authority_chain"`
+	CodeEvidence   []WikiCodeEvidence        `json:"code_evidence"`
+	GraphPaths     []WikiCodeGraphPath       `json:"graph_paths"`
+	Drift          []WikiCodeDrift           `json:"drift"`
+	Omissions      []WikiCodeContextOmission `json:"omissions"`
 	// DirectCode and Tests are populated by the shared bidirectional resolver.
 	// They remain separate from CodeEvidence, which is the compatibility field
 	// used by the original docs-first projection.
-	DirectCode      []WikiCodeEvidence        `json:"direct_code,omitempty"`
-	Tests           []WikiCodeEvidence        `json:"tests,omitempty"`
-	SupportingCode  []WikiCodeEvidence        `json:"supporting_code,omitempty"`
-	Candidates      []WikiCodeEvidence        `json:"candidates,omitempty"`
-	WikiContext     []WikiCodeWikiContextItem `json:"wiki_context,omitempty"`
-	Direction       string                     `json:"direction,omitempty"`
-	Freshness       WikiCodeFreshness          `json:"freshness"`
-	OverlayDigest   string                     `json:"overlay_digest,omitempty"`
-	Cost            WikiCodeResolveCost        `json:"cost,omitempty"`
-	Classification  string                     `json:"classification,omitempty"`
-	Classifications []string                   `json:"classifications,omitempty"`
-	NextQueries     []string                   `json:"next_queries,omitempty"`
-	NextCursor      string                     `json:"next_cursor,omitempty"`
-	Continuation    *WikiCodeContextContinuation `json:"continuation,omitempty"`
-	DocGenerationID   string                   `json:"doc_generation_id,omitempty"`
-	CodeGenerationID  string                   `json:"code_generation_id,omitempty"`
-	Provenance        WikiCodeProvenance        `json:"provenance"`
-	TokenBudget       int                       `json:"token_budget"`
-	TokenUsed         int                       `json:"token_used"`
-	Truncated         bool                      `json:"truncated"`
-	DeterminismDigest string                    `json:"determinism_digest"`
+	DirectCode        []WikiCodeEvidence           `json:"direct_code,omitempty"`
+	Tests             []WikiCodeEvidence           `json:"tests,omitempty"`
+	SupportingCode    []WikiCodeEvidence           `json:"supporting_code,omitempty"`
+	Candidates        []WikiCodeEvidence           `json:"candidates,omitempty"`
+	WikiContext       []WikiCodeWikiContextItem    `json:"wiki_context,omitempty"`
+	Direction         string                       `json:"direction,omitempty"`
+	Freshness         WikiCodeFreshness            `json:"freshness"`
+	OverlayDigest     string                       `json:"overlay_digest,omitempty"`
+	Cost              WikiCodeResolveCost          `json:"cost,omitempty"`
+	Classification    string                       `json:"classification,omitempty"`
+	Classifications   []string                     `json:"classifications,omitempty"`
+	NextQueries       []string                     `json:"next_queries,omitempty"`
+	NextCursor        string                       `json:"next_cursor,omitempty"`
+	Continuation      *WikiCodeContextContinuation `json:"continuation,omitempty"`
+	DocGenerationID   string                       `json:"doc_generation_id,omitempty"`
+	CodeGenerationID  string                       `json:"code_generation_id,omitempty"`
+	Provenance        WikiCodeProvenance           `json:"provenance"`
+	TokenBudget       int                          `json:"token_budget"`
+	TokenUsed         int                          `json:"token_used"`
+	Truncated         bool                         `json:"truncated"`
+	DeterminismDigest string                       `json:"determinism_digest"`
 }
 
 type WikiCodeAuthorityEntry struct {
@@ -64,27 +65,27 @@ type WikiCodeEvidence struct {
 	EvidenceRefs []string `json:"evidence_refs,omitempty"`
 	// The following fields are additive bridge metadata. The original graph
 	// projection above remains valid when these fields are empty.
-	Origin            string `json:"origin,omitempty"`
-	AuthoringOrigin   string `json:"authoring_origin,omitempty"`
-	ObservedOrigin    string `json:"observed_origin,omitempty"`
-	Status            string `json:"status,omitempty"`
-	ResolutionStatus  string `json:"resolution_status,omitempty"`
-	DocID             string `json:"doc_id,omitempty"`
-	DocPath           string `json:"doc_path,omitempty"`
-	BlockID           string `json:"block_id,omitempty"`
-	Relation          string `json:"relation,omitempty"`
-	Role              string `json:"role,omitempty"`
-	BindingRef        string `json:"binding_ref,omitempty"`
-	TargetKind        string `json:"target_kind,omitempty"`
-	StartLine         int    `json:"start_line,omitempty"`
-	EndLine           int    `json:"end_line,omitempty"`
+	Origin           string `json:"origin,omitempty"`
+	AuthoringOrigin  string `json:"authoring_origin,omitempty"`
+	ObservedOrigin   string `json:"observed_origin,omitempty"`
+	Status           string `json:"status,omitempty"`
+	ResolutionStatus string `json:"resolution_status,omitempty"`
+	DocID            string `json:"doc_id,omitempty"`
+	DocPath          string `json:"doc_path,omitempty"`
+	BlockID          string `json:"block_id,omitempty"`
+	Relation         string `json:"relation,omitempty"`
+	Role             string `json:"role,omitempty"`
+	BindingRef       string `json:"binding_ref,omitempty"`
+	TargetKind       string `json:"target_kind,omitempty"`
+	StartLine        int    `json:"start_line,omitempty"`
+	EndLine          int    `json:"end_line,omitempty"`
 	// Source* aliases match the bridge contract while Start/EndLine preserve
 	// the existing range vocabulary.
-	SourceDoc         string `json:"source_doc,omitempty"`
-	SourceBlock       string `json:"source_block,omitempty"`
-	SourceLine        int    `json:"source_line,omitempty"`
-	TargetHash        string `json:"target_hash,omitempty"`
-	Classification    string `json:"classification,omitempty"`
+	SourceDoc      string `json:"source_doc,omitempty"`
+	SourceBlock    string `json:"source_block,omitempty"`
+	SourceLine     int    `json:"source_line,omitempty"`
+	TargetHash     string `json:"target_hash,omitempty"`
+	Classification string `json:"classification,omitempty"`
 }
 
 type WikiCodeGraphPath struct {
@@ -121,20 +122,20 @@ type WikiCodeContextOmission struct {
 // are documentary links already present in the doc graph; they are not
 // inferred from code or lexical similarity.
 type WikiCodeWikiContextItem struct {
-	DocID        string                     `json:"doc_id,omitempty"`
-	Path         string                     `json:"path"`
-	BlockID      string                     `json:"block_id,omitempty"`
-	Relation     string                     `json:"relation,omitempty"`
-	Role         string                     `json:"role,omitempty"`
-	BindingRef   string                     `json:"binding_ref,omitempty"`
-	Status       string                     `json:"status,omitempty"`
-	SupersededBy string                     `json:"superseded_by,omitempty"`
-	StartLine    int                        `json:"start_line,omitempty"`
-	EndLine      int                        `json:"end_line,omitempty"`
-	Origin         string                     `json:"origin,omitempty"`
+	DocID           string                    `json:"doc_id,omitempty"`
+	Path            string                    `json:"path"`
+	BlockID         string                    `json:"block_id,omitempty"`
+	Relation        string                    `json:"relation,omitempty"`
+	Role            string                    `json:"role,omitempty"`
+	BindingRef      string                    `json:"binding_ref,omitempty"`
+	Status          string                    `json:"status,omitempty"`
+	SupersededBy    string                    `json:"superseded_by,omitempty"`
+	StartLine       int                       `json:"start_line,omitempty"`
+	EndLine         int                       `json:"end_line,omitempty"`
+	Origin          string                    `json:"origin,omitempty"`
 	AuthoringOrigin string                    `json:"authoring_origin,omitempty"`
-	Classification string                     `json:"classification,omitempty"`
-	Parents      []WikiCodeWikiContextItem  `json:"parents,omitempty"`
+	Classification  string                    `json:"classification,omitempty"`
+	Parents         []WikiCodeWikiContextItem `json:"parents,omitempty"`
 }
 
 // Compatibility aliases keep the bridge item discoverable to callers that use
@@ -175,17 +176,17 @@ const (
 // Resolution statuses are intentionally closed. They describe resolution
 // state only; they are not an AE verdict.
 const (
-	WikiCodeStatusResolvedSymbol   = "resolved_symbol"
-	WikiCodeStatusResolvedFile     = "resolved_file"
-	WikiCodeStatusMissingPath      = "missing_path"
-	WikiCodeStatusMissingSymbol    = "missing_symbol"
-	WikiCodeStatusAmbiguousSymbol  = "ambiguous_symbol"
+	WikiCodeStatusResolvedSymbol     = "resolved_symbol"
+	WikiCodeStatusResolvedFile       = "resolved_file"
+	WikiCodeStatusMissingPath        = "missing_path"
+	WikiCodeStatusMissingSymbol      = "missing_symbol"
+	WikiCodeStatusAmbiguousSymbol    = "ambiguous_symbol"
 	WikiCodeStatusCatalogUnavailable = "catalog_unavailable"
-	WikiCodeStatusGraphUnavailable = "graph_unavailable"
-	WikiCodeStatusGraphStale       = "graph_stale"
-	WikiCodeStatusUnsafeTarget     = "unsafe_target"
-	WikiCodeStatusConcurrentChange = "concurrent_change"
-	WikiCodeStatusSelfEdgeRejected = "self_edge_rejected"
+	WikiCodeStatusGraphUnavailable   = "graph_unavailable"
+	WikiCodeStatusGraphStale         = "graph_stale"
+	WikiCodeStatusUnsafeTarget       = "unsafe_target"
+	WikiCodeStatusConcurrentChange   = "concurrent_change"
+	WikiCodeStatusSelfEdgeRejected   = "self_edge_rejected"
 )
 
 // Closed AE classification labels exposed as data for downstream consumers.
@@ -230,6 +231,9 @@ func NewWikiCodeContextError(code, message string) error {
 func WikiCodeContextDigest(c WikiCodeContext) string {
 	copyContext := cloneWikiCodeContext(c)
 	SortWikiCodeContext(&copyContext)
+	// The opt-in source projection has its own digest; v1 bridge/cursor framing
+	// remains unchanged, including for callers requesting source metadata.
+	copyContext.BindingSources = nil
 	copyContext.TokenBudget = 0
 	copyContext.TokenUsed = 0
 	copyContext.Truncated = false

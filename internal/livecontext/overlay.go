@@ -1166,13 +1166,24 @@ func processManifestDoc(ctx context.Context, root string, entry manifestEntry, s
 		overlay.ChangedInputs[len(overlay.ChangedInputs)-1].Classification = DocChangeNew
 	}
 	profile := state.profile
-	_, _, _, _, _, bindings, warning, parseErr := docgraph.ParseSingleDoc(root, entry.Path, content, profile)
+	parsedDoc, _, _, _, _, bindings, warning, parseErr := docgraph.ParseSingleDoc(root, entry.Path, content, profile)
 	if parseErr != nil || warning != "" {
 		overlay.Cost.FilesParsed++
 		appendOmission(overlay, model.WikiCodeOmission{Code: model.OmissionParseFailed, Path: entry.Path, Reason: "document parser rejected the current body"})
 		return nil
 	}
 	overlay.Cost.FilesParsed++
+	if parsedDoc.BindingSources != nil {
+		if overlay.SourceCollections == nil {
+			overlay.SourceCollections = make(map[string]model.DocBindingSourceCollection)
+		}
+		collection := *parsedDoc.BindingSources
+		if hasPrior && prior.Lifecycle == model.DocLifecycleRetired && collection.DocumentLifecycle != model.DocLifecycleRetired {
+			collection.Availability = model.DocBindingSourceIncomplete
+			collection.Reason = "retired_source_reactivation_rejected"
+		}
+		overlay.SourceCollections[entry.Path] = collection
+	}
 	for _, binding := range bindings {
 		if blockFilter != nil {
 			if _, ok := blockFilter[binding.BlockID]; !ok {

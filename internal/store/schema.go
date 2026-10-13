@@ -163,6 +163,36 @@ CREATE TABLE IF NOT EXISTS doc_artifact_bindings (
 );
 `
 
+// Source declarations are separate from the MILSP-WCB/v1 aggregate. Owners
+// record parsed-empty availability as well as lifecycle for binding-free docs.
+const docBindingSourcesDDL = `
+CREATE TABLE IF NOT EXISTS doc_binding_source_documents (
+    doc_path TEXT PRIMARY KEY,
+    collection_version TEXT NOT NULL,
+    document_lifecycle TEXT NOT NULL DEFAULT ''
+);
+CREATE TABLE IF NOT EXISTS doc_binding_sources (
+    doc_path TEXT NOT NULL,
+    binding_id TEXT NOT NULL,
+    doc_id TEXT NOT NULL,
+    block_id TEXT NOT NULL DEFAULT '',
+    kind TEXT NOT NULL,
+    role TEXT NOT NULL,
+    path TEXT NOT NULL,
+    surface TEXT NOT NULL,
+    binding_lifecycle TEXT NOT NULL CHECK(binding_lifecycle IN ('active','deprecated')),
+    symbol TEXT NOT NULL DEFAULT '',
+    document_lifecycle TEXT NOT NULL CHECK(document_lifecycle IN ('active','deprecated','retired')),
+    provenance TEXT NOT NULL CHECK(provenance='declared'),
+    binding_ref TEXT NOT NULL DEFAULT '',
+    source_content_hash TEXT NOT NULL DEFAULT '',
+    start_line INTEGER NOT NULL DEFAULT 0,
+    end_line INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY(doc_path, binding_id)
+);
+CREATE INDEX IF NOT EXISTS idx_doc_binding_sources_id ON doc_binding_sources(binding_id, doc_path);
+`
+
 const metaDDL = `
 CREATE TABLE IF NOT EXISTS workspace_meta (
     key TEXT PRIMARY KEY,
@@ -275,7 +305,7 @@ func EnsureSchema(db *sql.DB) error {
 	if err := graphSchemaPreflight(db); err != nil {
 		return err
 	}
-	statements := []string{reposDDL, entrypointsDDL, symbolsDDL, filesDDL, docsDDL, docsFtsDDL, docEdgesDDL, docMentionsDDL, docSourceBlocksDDL, docSourceRecordsDDL, docArtifactBindingsDDL, docArtifactStatesDDL, metaDDL, indexJobsDDL, indexGenerationsDDL, wikiChunkEmbeddingsDDL, utilityEventsDDL}
+	statements := []string{reposDDL, entrypointsDDL, symbolsDDL, filesDDL, docsDDL, docsFtsDDL, docEdgesDDL, docMentionsDDL, docSourceBlocksDDL, docSourceRecordsDDL, docArtifactBindingsDDL, docBindingSourcesDDL, docArtifactStatesDDL, metaDDL, indexJobsDDL, indexGenerationsDDL, wikiChunkEmbeddingsDDL, utilityEventsDDL}
 	for _, stmt := range statements {
 		if _, err := db.Exec(stmt); err != nil {
 			return err

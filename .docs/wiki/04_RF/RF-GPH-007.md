@@ -1,4 +1,9 @@
 ---
+wiki_graph_protocol: SDD-WIKI-GRAPH-v1
+document_lifecycle: active
+doc_id: RF-GPH-007
+kind: RF
+imports: [FL-GPH-02, RF-GPH-005, RF-GPH-006, RF-QRY-010, RF-QRY-012, RF-QRY-016]
 id: RF-GPH-007
 title: Integrar evidencia wiki-codigo sin invertir autoridad
 status: partial
@@ -11,7 +16,7 @@ tests:
 ```yaml
 harness_protocol: SDD-HARNESS-v1
 id: "RF-GPH-007"
-kind: "support-doc"
+kind: "RF"
 audience: "llm-first"
 imports:
   - '[[00_gobierno_documental]]'
@@ -210,6 +215,51 @@ evidence:
   - internal/cli/git_frontier_test.go
   - .docs/wiki/06_pruebas/TP-GPH.md
 ```
+
+## Consulta fuente e historia explícita (B/C, autoría pendiente de verificación)
+
+```toon
+doc_id: RF-GPH-007
+block_id: RF-GPH-007.canonical-source-history
+kind: requirement
+source_of_truth: normative
+status: authored
+verification_status: PARTIAL_scoped
+owner: coord-milsp
+due: 2026-10-15
+contract: CT-NAV-WIKI.canonical-source-query
+opt_in: nav_trace_or_wiki_trace_with_binding_sources
+selectors: exact_document_ID_or_path_AND_optional_binding_ID_or_naked_binding_ID
+selection_resolution: separate_from_source_availability_and_target_resolution
+ambiguity: sorted_bounded_owner_candidates_no_score_promotion
+source_identity: [doc_path, binding_id]
+association_not_identity: binding_ref
+normal_source_view: active_document_AND_active_binding
+history: explicit_historical_flag_only
+inactive_declarations: never_primary_authority_direct_code_tests_supporting_code
+terminal_retired: queryable_without_successor
+retired_disk_absent: explicit_history_preserves_published_declarations_by_path_doc_ID_binding_ID_normal_excluded_true_empty_stays_empty
+partial_selection: no_primary_authority_direct_tests_supporting_including_late_output_budget
+successor: separate_declared_superseded_by_when_bridge_provides_it
+history_target_resolution: unresolved_with_historical_target_not_evaluated
+no_temporal_edit_versioning: true
+RAM: owner_complete_replacement_scoped_tombstones_fail_closed_against_persisted_retired_lifecycle
+old_DB: explicit_incomplete_no_reader_DDL_backfill_or_reconstruction_from_WCB
+compatibility: ordinary_defaults_ranking_q_v1_sort_digest_cursor_and_legacy_redirect_unchanged
+artifact_bindings:
+  - {binding_id: RF-GPH-007-source-history, kind: code, role: behavior_implementation, path: internal/service/wiki_code_sources.go, symbol: resolveSourceContext, surface: backend, binding_lifecycle: active}
+verification_basis: FINAL_VERIFY1_PARTIAL_audit1_Changes_requested_H1_H2_repair_unique_RECHECK1_H1_H2_PASS_scoped_overall_PARTIAL
+publication_scope: parent_authorized_H1_H2_scoped_not_full_B_C
+incremental_evidence: explicit_incomplete_Git_AM_not_consumed_processed_0_no_changes_no_owner_transition_no_PRODUCT_FAIL
+q_evidence: valid_pipeline_same_corpus_DB_one_governance_item_parity_only
+q_uncovered: [multi_item_sort, cursor_resume, native_digest, source_variation]
+global_readiness: Graph_Harness_fullwiki_conformance_not_accredited
+remaining_evidence: explicit_incomplete_coord_milsp_due_2026_10_15
+verify: [TC-GPH-SRC-004, TC-GPH-SRC-005, TC-GPH-SRC-006]
+evidence: [internal/service/wiki_code_sources.go, internal/model/wiki_code_source_projection.go, .docs/wiki/09_contratos/CT-NAV-WIKI.md, .docs/wiki/06_pruebas/TP-GPH.md]
+```
+
+La consulta opt-in no redefine el trace legacy: requiere `--binding-sources`; `--historical` agrega declaraciones deprecated/retired sin promoverlas a evidencia activa. Un ID exacto en varios owners produce ambigüedad, no el owner mejor rankeado. Dos declaraciones que comparten WCB se conservan como dos fuentes y una asociación de evidencia. El objeto canónico conserva sus seis campos obligatorios y `symbol` opcional; los ejes derivados viven fuera de él. El digest fuente es separado del digest v1 del puente y no agrega stages a q ni operaciones/grants al provider. Ninguna declaración equivale a conformance.
 
 ## 11. Frontera pública de Git y generaciones
 

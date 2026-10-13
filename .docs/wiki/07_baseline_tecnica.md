@@ -65,10 +65,13 @@ El detalle operativo y de subsistemas vive en `07_tech/`; `accepted-design` no e
 | Intent planner | Subsistema Go | Harness routing | `nav intent` y `nav explain-change`; routing local, preview bounded, expansiones ejecutables y fallbacks tipados |
 | Semantic recall / embeddings backend | Subsistema Go | Query/runtime | semantic wiki recall via embeddings |
 | Store repo-local | SQLite | Workspace owner | Catalogo de codigo, indice documental y metadata del repo |
+| Colección fuente GraphV1 (autoría B/C) | Store + resolver/CLI existentes | Docgraph/Store/Service | `MILSP-DBS/v1` separado de WCB; consulta exacta `nav trace --binding-sources`, historia con `--historical`; PARTIAL scoped, único RECHECK1 H1/H2 acotado |
 | Index job runner | CLI + SQLite repo-local | Workspace owner | Jobs de indexacion `queued/running/published`, generacion de indice y cancelacion cooperativa |
 | Store global daemon | SQLite + state file | Runtime supervision | Estado global del daemon y telemetria local |
 | Cross-platform detach | Modulos Go | Runtime supervision | `server_windows.go` para named pipes, `server_unix.go` para unix sockets |
 | Git integration | Subsistema Go | Query/indexing | Soporte incremental git-aware para re-indexing de archivos modificados |
+
+La ampliación fuente/historia no crea servicio, comando ni operación del provider. [[CT-NAV-WIKI]] define flags y envelope exactos, [[DB-DOC-INDEX]] conserva ownership físico y el bloque `TP-GPH.canonical-source-store-acceptance` de [[TP-GPH]] registra la secuencia FINAL_VERIFY1 PARTIAL → audit1 Changes requested H1/H2 → repair → único RECHECK1 PASS acotado H1/H2, con B/C PARTIAL. La publicación autorizada por el parent es solo scoped; no acredita Graph/Harness/fullwiki/conformance ni cierre global. La paridad q es mínima (un item governance), no sort multi-item/cursor/digest nativo/variación fuente; incremental sin transición (Git AM no consumido, processed0/no changes) sigue explicit_incomplete, no fallo de producto inferido. Legacy source/owner/rangos siguen partial_visible; cero no es rango exacto. Fuentes deprecated/retired nunca son evidencia activa; DB anterior sigue explicit_incomplete sin migración del lector y el overlay solo vive en RAM. Los uncovered B/C y source-memory conservan owner coord-milsp, due 2026-10-15. La atomicidad memoria TC-IDX-028 no está acreditada: snapshot/docs/catalog no son memoria ID; deuda owner coord-milsp, vencimiento antes de aceptación completa o siguiente cambio memory-sensitive. La basis runtime permanece congelada; este estado editorial no agrega verificación ni aceptación.
 
 ## Dependencias externas
 

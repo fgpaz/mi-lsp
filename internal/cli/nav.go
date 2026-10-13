@@ -626,6 +626,7 @@ Dry-run is the default. File writes require both --apply and
 
 	var traceAll bool
 	var traceSummary bool
+	var traceSources traceSourceOptions
 	traceCommand := &cobra.Command{
 		Use:   "trace [DOC-ID]",
 		Short: "Trace spec-to-code links for RS/RF/TP docs",
@@ -645,7 +646,10 @@ Use --all for the RF set only, --summary for tabular view.`,
 			if traceSummary {
 				payload["summary"] = true
 			}
-			if len(args) == 0 && !traceAll {
+			if err := traceSources.apply(payload); err != nil {
+				return err
+			}
+			if len(args) == 0 && !traceAll && !traceSources.enabled {
 				return fmt.Errorf("DOC-ID required or use --all")
 			}
 			return state.executeOperation(cmd, "nav.trace", payload, true)
@@ -653,6 +657,7 @@ Use --all for the RF set only, --summary for tabular view.`,
 	}
 	traceCommand.Flags().BoolVar(&traceAll, "all", false, "Trace all RFs (RF-only)")
 	traceCommand.Flags().BoolVar(&traceSummary, "summary", false, "Summary table format (with --all)")
+	traceSources.flags(traceCommand)
 
 	var intentTop int
 	var intentRepo string
@@ -1029,6 +1034,7 @@ pack for a reading pack, and trace for RS/RF/TP evidence links.`,
 	var traceAll bool
 	var traceSummary bool
 	var traceAllWorkspaces bool
+	var traceSources traceSourceOptions
 	traceCommand := &cobra.Command{
 		Use:   "trace <DOC-ID|--all>",
 		Short: "Trace wiki RS/RF/TP docs to evidence links",
@@ -1046,7 +1052,10 @@ pack for a reading pack, and trace for RS/RF/TP evidence links.`,
 			if traceAllWorkspaces {
 				payload["all_workspaces"] = true
 			}
-			if len(args) == 0 && !traceAll && !traceAllWorkspaces {
+			if err := traceSources.apply(payload); err != nil {
+				return err
+			}
+			if len(args) == 0 && !traceAll && !traceAllWorkspaces && !traceSources.enabled {
 				return fmt.Errorf("DOC-ID required or use --all or --all-workspaces")
 			}
 			return state.executeOperation(cmd, "nav.trace", payload, true)
@@ -1055,6 +1064,7 @@ pack for a reading pack, and trace for RS/RF/TP evidence links.`,
 	traceCommand.Flags().BoolVar(&traceAll, "all", false, "Trace all RFs (RF-only)")
 	traceCommand.Flags().BoolVar(&traceSummary, "summary", false, "Summary table format (with --all)")
 	traceCommand.Flags().BoolVar(&traceAllWorkspaces, "all-workspaces", false, "Trace across all registered workspaces")
+	traceSources.flags(traceCommand)
 
 	var validateHarnessIDs string
 	var validateHarnessPaths string

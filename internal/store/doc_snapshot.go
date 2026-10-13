@@ -30,6 +30,9 @@ func ReadCurrentDocSnapshot(ctx context.Context, db *sql.DB) (docs []model.DocRe
 	if docs, err = readDocRecordsTx(ctx, tx); err != nil {
 		return nil, nil, nil, nil, nil, nil, false, err
 	}
+	if err = hydrateDocBindingSourcesTx(ctx, tx, docs); err != nil {
+		return nil, nil, nil, nil, nil, nil, false, err
+	}
 	if edges, err = readDocEdgesTx(ctx, tx); err != nil {
 		return nil, nil, nil, nil, nil, nil, false, err
 	}

@@ -33,20 +33,25 @@ const (
 // wiki/code resolver. DB is expected to be a read-only handle when supplied;
 // the resolver never executes a write or a schema migration.
 type WikiCodeResolveRequest struct {
-	Direction      string
-	WorkspaceRoot  string
-	DB             *sql.DB
-	ReadOnlyDB     *sql.DB
-	DocSelectors   []string
-	DocIDs         []string
-	DocPaths       []string
-	BlockIDs       []string
-	TargetPath     string
-	TargetSymbol   string
-	CurrentBlockID string
-	Limit          int
-	TokenBudget    int
-	Cursor         string
+	// Opt-in source lookup; never inferred from ordinary bridge selectors.
+	IncludeBindingSources bool
+	SourceDocID           string
+	SourceDocPath         string
+	BindingID             string
+	Direction             string
+	WorkspaceRoot         string
+	DB                    *sql.DB
+	ReadOnlyDB            *sql.DB
+	DocSelectors          []string
+	DocIDs                []string
+	DocPaths              []string
+	BlockIDs              []string
+	TargetPath            string
+	TargetSymbol          string
+	CurrentBlockID        string
+	Limit                 int
+	TokenBudget           int
+	Cursor                string
 
 	// ExplicitHistorical is required to expose a retired declaration as a
 	// bounded superseded_by redirect. AllowRetired is retained as an explicit
@@ -190,6 +195,9 @@ func resolveWikiCodeContext(ctx context.Context, req WikiCodeResolveRequest, ove
 	}
 	if resolver.docsByID == nil {
 		resolver.docsByID = make(map[string][]model.DocRecord)
+	}
+	if req.IncludeBindingSources {
+		return resolver.resolveSourceContext(ctx, overlay)
 	}
 	if err := resolver.validateDocumentIDs(); err != nil {
 		return model.WikiCodeContext{}, err

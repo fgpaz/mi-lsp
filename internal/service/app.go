@@ -326,28 +326,37 @@ func (a *App) buildLiveWikiCodeContextForRequest(ctx context.Context, request mo
 		}
 	}
 
+	includeSources, _ := request.Payload["binding_sources"].(bool)
+	historical, _ := request.Payload["historical"].(bool)
 	resolveRequest := WikiCodeResolveRequest{
-		Direction:         liveWikiCodeDirection(scope),
-		WorkspaceRoot:     registration.Root,
-		DB:                db,
-		DocSelectors:      appendLiveWikiSelectors(scope),
-		DocIDs:            append([]string(nil), scope.DocIDs...),
-		DocPaths:          append([]string(nil), scope.DocPaths...),
-		TargetPath:        scope.TargetPath,
-		TargetSymbol:      scope.TargetSymbol,
-		Limit:             request.Context.MaxItems,
-		TokenBudget:       request.Context.TokenBudget,
-		Cursor:            stringPayload(request.Payload, "cursor"),
-		GraphSnapshot:     graphSnapshot,
-		GraphFreshness:    graphFreshness,
-		GraphFreshnessPtr: nil,
+		IncludeBindingSources: includeSources,
+		SourceDocID:           stringPayload(request.Payload, "rf"),
+		SourceDocPath:         stringPayload(request.Payload, "doc"),
+		BindingID:             stringPayload(request.Payload, "binding_id"),
+		ExplicitHistorical:    historical,
+		Direction:             liveWikiCodeDirection(scope),
+		WorkspaceRoot:         registration.Root,
+		DB:                    db,
+		DocSelectors:          appendLiveWikiSelectors(scope),
+		DocIDs:                append([]string(nil), scope.DocIDs...),
+		DocPaths:              append([]string(nil), scope.DocPaths...),
+		TargetPath:            scope.TargetPath,
+		TargetSymbol:          scope.TargetSymbol,
+		Limit:                 request.Context.MaxItems,
+		TokenBudget:           request.Context.TokenBudget,
+		Cursor:                stringPayload(request.Payload, "cursor"),
+		GraphSnapshot:         graphSnapshot,
+		GraphFreshness:        graphFreshness,
+		GraphFreshnessPtr:     nil,
 	}
 	result, err := ResolveWikiCodeContext(ctx, registration.Root, db, resolveRequest, overlay)
 	if err != nil {
 		return model.WikiCodeContext{}, err
 	}
-	ensureLivePrimaryDocument(&result, scope, overlay)
-	appendLiveGovernanceAuthority(ctx, db, &result)
+	if !includeSources {
+		ensureLivePrimaryDocument(&result, scope, overlay)
+		appendLiveGovernanceAuthority(ctx, db, &result)
+	}
 	// CodeEvidence is the original additive compatibility lane. The shared
 	// resolver's typed lanes remain authoritative, but existing consumers still
 	// expect direct/tests evidence in this field.
@@ -497,6 +506,9 @@ func appendLiveWikiSelectors(scope livecontext.WikiCodeScope) []string {
 
 func (a *App) enrichLiveWikiCodeContext(ctx context.Context, request model.CommandRequest, env model.Envelope) model.Envelope {
 	if !env.Ok || env.Backend == "governance" || !liveWikiCodeOperation(request.Operation) {
+		return env
+	}
+	if includeSources, _ := request.Payload["binding_sources"].(bool); includeSources && env.WikiCodeContext != nil {
 		return env
 	}
 	// prepare builds the bridge from the already-executed route/pack results;
