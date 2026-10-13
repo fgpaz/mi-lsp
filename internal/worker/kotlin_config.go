@@ -20,7 +20,7 @@ const KotlinConfigResolver = "configurations.compileClasspath.resolvedArtifacts"
 const KotlinConfigServerBinding = "contract_pin_not_runtime_proof"
 const KotlinConfigClasspathScope = "project-effective"
 const KotlinExporterSHA256 = "97fd0a079a12cb921c21404de8415fcdbc7915168fb7d1940836fbbc3579b1b3"
-const KotlinInitScriptSHA256 = "2d46c87c31f8c7e5c94064f46d29e6b44ef0b95d46aebe807a50213f896f7bb5"
+const KotlinInitScriptSHA256 = "ebccdf78fdbf0d56668b924d88452e89215763b761cefdb08964facabf5ed3a5"
 
 // KotlinPromotionOracleGaps are the RF-GPH-008 oracles still absent. This list
 // is not an env switch and does not grant stable/complete.
