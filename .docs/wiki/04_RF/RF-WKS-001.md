@@ -93,6 +93,35 @@ evidence:
 - Solo si el selector Go repo-local está vacío se conserva el fallback determinista al `go.mod` del root. Un root que solo contiene `go.work` no selecciona módulo ni intenta extracción de grafo; no se hace descubrimiento recursivo arbitrario para sustituir ese fallback, y el contenido raíz no relacionado conserva su ownership de catálogo.
 - Si el alias ya existe, el comportamiento es `upsert`.
 - `workspace doctor` puede derivar estado `health` y `next_actions` desde el registro existente para diagnostico humano/agente; no modifica `WorkspaceRegistration`, no elige alias por el usuario y no borra worktrees.
+### Reparación manual mínima del nombre local
+
+La reparación puntual no es un alta ni un rename del registro. El procedimiento único está en [[CT-CLI-DAEMON-ADMIN]], bloque `CT-CLI-DAEMON-ADMIN.project-name-manual-v1`.
+
+```toon
+block_id: RF-WKS-001.project-name-manual-v1
+kind: normative
+source_of_truth: normative
+operation: "Edición manual por el owner de name dentro de [project]"
+procedure_ref: CT-CLI-DAEMON-ADMIN.project-name-manual-v1
+preconditions:
+  - "Owner confirma raíz física absoluta y target concreto; main y worktree no son intercambiables"
+  - "CLI/revisión y contrato aplicables confirmados; alias deseado ya registrado para exactamente esa raíz"
+  - "Sin colisión de alias, writers concurrentes ni edición de WIP ajeno"
+effect:
+  field: "<raíz>/.mi-lsp/project.toml: [project].name"
+  same_root_alias_precedence: "project.name coincidente; basename coincidente; last_workspace de esa raíz; orden lexicográfico"
+  single_alias: "Se selecciona el único alias de la raíz, independientemente de project.name"
+invariants:
+  - "Nombre mostrado y raíz física son identidades distintas; un selector explícito puede normalizar su etiqueta al alias canónico de la misma raíz"
+  - "Cambiar name no registra aliases, no mueve raíz/main/índice y no genera graph"
+  - "No modifica registry, defaults, topología, comentarios ni otros settings"
+  - "No repara catálogo missing, generaciones ni valores null"
+selector_boundary:
+  unregistered_worktree: "Ruta absoluta explícita en resolución readonly según contrato v0.12.5; conserva la raíz sin registrar ni indexar"
+  omitted_or_cwd: "Conserva resolución anterior CWD/Git y fallback last_workspace; no extrapolar la garantía de ruta explícita"
+missing_precondition: "No editar; declarar gap específico y owner, sin inventar comando de rename/config ni receta alternativa"
+```
+
 ## 8. Data Model Impact
 
 - `WorkspaceRegistration`
