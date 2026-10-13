@@ -91,6 +91,38 @@ evidence:
 - `index start --mode full` puede usar incremental si no hay `--clean`; si no publica generacion full, marca la generacion candidata como `skipped` y conserva los punteros activos previos.
 - `index start --mode catalog` recompone solo catalogo y publica `active_catalog_generation_id`.
 - `index start --mode docs` recompone solo docs + memoria y publica `active_docs_generation_id` / `active_memory_generation_id`.
+- En `mode docs`, el skip-reparse por `content_hash` aplica solo cuando el job no trae `--clean`; con `--clean` se reparsea todo el contenido documental del alcance sin reutilizar filas previas por hash, manteniendo la publicacion atomica y sin borrar el canon en disco.
+
+### Contrato observable del reparse documental
+
+```toon
+block_id: RF-IDX-002-DOCS-OBSERVABLE
+kind: normative
+source_of_truth: normative
+requirement_id: RF-IDX-002
+resumen_publico:
+  campo: warnings
+  formato: docs_skip_reparse parsed=<entero> skipped=<entero>
+  disponibilidad: toda lectura documental completada, incluso con skipped=0 o sin documentos
+  parsed: cantidad de rutas con parse exitoso en esta lectura
+  skipped: cantidad de rutas reutilizadas del snapshot previo por hash e identidad coincidentes
+  exclusiones: errores de lectura o parse y rutas sin documento no incrementan ninguno; conservan sus advertencias
+  alcance: resumen existente de docgraph, también visible en otros modos que lo consumen; no es un contador de símbolos ni bloques
+  salida_docs: index start --mode docs --wait e index --docs-only devuelven el resumen en warnings
+  no_persistencia: index status expone el job, no conserva este resumen terminal; guardar la salida de la ejecución que espera
+  clean: omite el snapshot previo; los contadores nunca se deducen del flag ni de docs=N
+punteros_publicos:
+  nav_git_frontier: generations.catalog y generations.docs leen los punteros activos de catálogo y docs; generations.graph es una identidad distinta
+  ausencia: valor null con generation_reasons cuando no está disponible; no equivale a publicación
+  index_status: generation_id identifica la generación candidata del job; succeeded no es lectura independiente del puntero activo
+  wiki_code_context: doc_generation_id y provenance.docs_generation cuando la superficie documental devuelve este contexto; code_generation_id identifica grafo, no catálogo
+  workspace_status_full: doc_count, docs_index_ready, index_symbols e index_ready; memory y memory_pointer pueden aparecer, sin ID de generación de memoria
+limite_memoria:
+  contrato_interno: el publisher activa active_docs_generation_id y active_memory_generation_id en la misma transacción documental y conserva active_catalog_generation_id
+  no_observable: active_memory_generation_id no está expuesto por estas superficies; memory_pointer es un puntero de reentrada, no de generación
+  aceptacion: comprobar publicación docs y preservación del catálogo en cada corrida mediante nav git-frontier y navegación del mismo símbolo; no declarar acreditado el puntero interno de memoria
+  pendiente: evidencia independiente de generación de memoria, dueño parent_final_verify, vencimiento antes del cierre del objetivo docs-clean-reparse-20261013
+```
 
 ## 8. Data Model Impact
 
@@ -128,6 +160,7 @@ Scenario: Forzar full index por cambios documentales
 
 - Positivo: `TP-IDX / TC-IDX-007`
 - Positivo: `TP-IDX / TC-IDX-008`
+- Manual pendiente: `TP-IDX / TC-IDX-028` (contadores y punteros públicos; memoria interna no acreditada)
 - Positivo: `TP-IDX / TC-IDX-009`
 
 ## 11. No Ambiguities Left
