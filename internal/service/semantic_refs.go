@@ -122,6 +122,15 @@ func refsSemanticTimeout(ctx context.Context) time.Duration {
 // callSemanticWorker calls the semantic backend; find_refs gets a deadline.
 // On expiry it just stops waiting (a daemon-owned worker keeps warming up).
 func (a *App) callSemanticWorker(ctx context.Context, registration model.WorkspaceRegistration, request model.WorkerRequest, method string) (model.WorkerResponse, error) {
+	if request.BackendType == "kotlin-language-server" {
+		timeout := 30 * time.Second
+		if method == "find_refs" {
+			timeout = refsSemanticTimeout(ctx)
+		}
+		callCtx, cancel := context.WithTimeout(ctx, timeout)
+		defer cancel()
+		return a.Semantic.Call(callCtx, registration, request)
+	}
 	if method != "find_refs" {
 		return a.Semantic.Call(ctx, registration, request)
 	}
@@ -176,6 +185,9 @@ var identifierPattern = regexp.MustCompile(`^\w+$`)
 // search, and every item carries its origin and (when the catalog knows it) caller.
 func (a *App) findRefs(ctx context.Context, registration model.WorkspaceRegistration, project model.ProjectFile, request model.CommandRequest) (model.Envelope, error) {
 	started := time.Now()
+	if resolveBackendType(registration, request, "find_refs") == "kotlin-language-server" {
+		return a.kotlinSemantic(ctx, registration, project, request, "find_refs")
+	}
 	symbol, _ := request.Payload["symbol"].(string)
 	symbol = strings.TrimSpace(symbol)
 	contextLines := clampRefsContext(intFromAny(request.Payload["context"], 0))
@@ -190,6 +202,12 @@ func (a *App) findRefs(ctx context.Context, registration model.WorkspaceRegistra
 		}
 	}
 
+	// A newly inferred Kotlin anchor is not an explicit caller location.
+	if resolveBackendType(registration, request, "find_refs") == "kotlin-language-server" {
+		request.Payload = clonePayload(request.Payload)
+		delete(request.Payload, "file")
+		return a.kotlinSemantic(ctx, registration, project, request, "find_refs")
+	}
 	env, err := a.semanticCore(ctx, registration, project, request, "find_refs")
 	switch {
 	case err != nil:
@@ -480,6 +498,8 @@ func backendForSourcePath(path string) (string, bool) {
 
 func backendForLanguage(lang string) (string, bool) {
 	switch strings.ToLower(lang) {
+	case "kotlin":
+		return "kotlin-language-server", true
 	case "go":
 		return "gopls", true
 	case "rust":

@@ -160,6 +160,14 @@ func (m *Manager) Call(ctx context.Context, workspace model.WorkspaceRegistratio
 
 	response, err := managed.client.Call(callCtx, request)
 	m.updateStatus(managed)
+	if err != nil && request.BackendType == worker.KotlinBackend {
+		m.mu.Lock()
+		if m.runtimes[rk] == managed {
+			delete(m.runtimes, rk)
+		}
+		m.mu.Unlock()
+		_ = managed.client.Close()
+	}
 
 	// Cache deterministic solution-load failures to avoid repeated long timeouts
 	if err != nil && isDeterministicSolutionFailure(err) {
@@ -457,7 +465,10 @@ func (m *Manager) getOrCreate(workspace model.WorkspaceRegistration, request mod
 		},
 	}
 
-	if starter, ok := client.(interface{ Start() error }); ok {
+	// LSP initialize belongs to Call(ctx), not pool allocation under a lock.
+	_, genericLSP := client.(*worker.LSPClient)
+	_, kotlinLSP := client.(*worker.KotlinClient)
+	if starter, ok := client.(interface{ Start() error }); ok && !genericLSP && !kotlinLSP {
 		if err := starter.Start(); err != nil {
 			return nil, err
 		}
@@ -582,6 +593,13 @@ func runtimeKey(workspace model.WorkspaceRegistration, request model.WorkerReque
 		entrypoint = filepath.Base(strings.TrimSpace(workspace.Root))
 	}
 	workspaceScope := canonicalRuntimeRootKey(workspace.Root)
+	if request.BackendType == worker.KotlinBackend {
+		config, err := worker.KotlinRuntimeConfiguration(workspace, request)
+		if err != nil {
+			return worker.KotlinBackend + "::" + workspaceScope + "::unavailable::" + request.EntrypointPath
+		}
+		return worker.KotlinBackend + "::" + canonicalRuntimeRootKey(config.ModuleRoot) + "::" + config.Entrypoint + "::" + config.Fingerprint
+	}
 	return normalizeBackendType(request.BackendType) + "::" + workspaceScope + "::" + entrypoint
 }
 

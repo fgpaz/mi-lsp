@@ -41,7 +41,7 @@ El detalle operativo y de subsistemas vive en `07_tech/`; `accepted-design` no e
 | Shortcut `init` | Surface CLI | Core runtime | Detectar, registrar e indexar rapido el workspace actual |
 | AXI selective discovery mode | Overlay CLI | CLI surface | Home content-first, TOON default y disclosure preview/full solo en superficies donde reduce round-trips |
 | Daemon global | Proceso Go opcional | Runtime supervision | Compartir warm state entre terminales/agentes |
-| Runtime pool | Subsistema daemon | Runtime supervision | Mantener un runtime vivo por `(workspace, backend)` |
+| Runtime pool | Subsistema daemon | Runtime supervision | Runtime por raíz/backend/entrypoint; Kotlin agrega fingerprint de configuración |
 | Worker Roslyn | Proceso .NET hijo | C# semantic backend | Semantica profunda C# |
 | Governance resolver | Subsistema Go | Query/runtime | Validar `00_gobierno_documental.md`, compilar perfil efectivo y proyectar `read-model.toml` |
 | Docgraph/read-model | Subsistema Go | Query/runtime | Rankear wiki, clasificar preguntas, compilar source blocks `SDD-WIKI-SOURCE-v1` y conectar docs con codigo |
@@ -59,6 +59,7 @@ El detalle operativo y de subsistemas vive en `07_tech/`; `accepted-design` no e
 | Rust indexer | Subsistema Go | Discovery backend | Indexacion lexical acotada de declaraciones Rust en catalogo repo-local |
 | Rust semantic backend | Runtime opcional | Rust semantic backend | Semantica LSP via `rust-analyzer` cuando exista |
 | Pyright semantic backend | Runtime opcional | Python semantic backend | Semantica Python via `pyright-langserver` |
+| Kotlin semantic backend | Runtime opcional experimental | Semantic backends | fwcd 1.3.13 gated; consultas parciales, sin graph/calls hasta K2 |
 | Governance UI | HTTP loopback local | Runtime supervision | Estado, accesos, memoria y diagnostico |
 | File watcher (fsnotify) | Subsistema daemon | Pre-fetch | Re-indexa archivos modificados en background |
 | Agent acceleration CLI | Subsistema Go | Compound commands | `multi-read`, `batch`, `related`, `workspace-map`, `search --include-content`, `nav ask`, `nav pack`, `nav edit-plan`, `nav evidence inventory` |
@@ -72,6 +73,14 @@ El detalle operativo y de subsistemas vive en `07_tech/`; `accepted-design` no e
 | Git integration | Subsistema Go | Query/indexing | Soporte incremental git-aware para re-indexing de archivos modificados |
 
 La ampliación fuente/historia no crea servicio, comando ni operación del provider. [[CT-NAV-WIKI]] define flags y envelope exactos, [[DB-DOC-INDEX]] conserva ownership físico y el bloque `TP-GPH.canonical-source-store-acceptance` de [[TP-GPH]] registra la secuencia FINAL_VERIFY1 PARTIAL → audit1 Changes requested H1/H2 → repair → único RECHECK1 PASS acotado H1/H2, con B/C PARTIAL. La publicación autorizada por el parent es solo scoped; no acredita Graph/Harness/fullwiki/conformance ni cierre global. La paridad q es mínima (un item governance), no sort multi-item/cursor/digest nativo/variación fuente; incremental sin transición (Git AM no consumido, processed0/no changes) sigue explicit_incomplete, no fallo de producto inferido. Legacy source/owner/rangos siguen partial_visible; cero no es rango exacto. Fuentes deprecated/retired nunca son evidencia activa; DB anterior sigue explicit_incomplete sin migración del lector y el overlay solo vive en RAM. Los uncovered B/C y source-memory conservan owner coord-milsp, due 2026-10-15. La atomicidad memoria TC-IDX-028 no está acreditada: snapshot/docs/catalog no son memoria ID; deuda owner coord-milsp, vencimiento antes de aceptación completa o siguiente cambio memory-sensitive. La basis runtime permanece congelada; este estado editorial no agrega verificación ni aceptación.
+
+## Kotlin JVM experimental (K1)
+
+[[TECH-KOTLIN-BACKEND]] y [[CT-DAEMON-WORKER]] fijan fwcd 1.3.13/compiler dependency 2.1.0, opt-in `MI_LSP_KOTLIN_ENABLE=1` + `MI_LSP_KOTLIN_LANGUAGE_SERVER_PATH` absoluto con manifest local, sin auto-download ni warmup. Initialize puede ejecutar Gradle/scripts y acceder a red: **no es readonly**. Discovery solo lee metadata; `.kt` tiene routing real, `.kts` scripts queda excluido.
+
+El módulo requiere entrypoint explícito `gradle-module`, sin reemplazar defaults de otros backends. El pool agrega fingerprint de runtime/JAVA_HOME/build/settings/wrapper. No certifica classpath efectivo ni Java 25. Unix tiene grupo hijo propio; Kotlin Windows permanece unavailable hasta Job Objects. K1 ofrece hover/references/definition y symbols PSI estructurales, siempre parciales. No produce calls/currentgraph compiler identity ni NodeKey desde nombres/ranges. K2/Semantic-backends aporta descriptors/config/resolution para Graph-Kernel; Store no cambia y Kotlin no se promueve a stable.
+
+**Preview fuente `52964ee` (no admisión):** Kotlin permanece **default-disabled** hasta `MI_LSP_KOTLIN_ENABLE=1` (`internal/worker/kotlin.go:57-58`); sin opt-in, el runtime no arranca aunque exista launcher. `KotlinPromotionAllowed` devuelve siempre **false** en esta revisión (`internal/worker/kotlin_config.go:55-81`, clave terminal `promotion_not_granted_this_revision`). Pins estáticos en `kotlin_config.go:22-23` (`KotlinInitScriptSHA256=ebccdf78…`, `KotlinExporterSHA256=97fd0a0…`) concuerdan con `MiLspCompilerObservations.kt:182-186` en lectura de fuente; guard **estático** en fuente, sin PASS runtime ni admisión. No prueban handshake Go↔fork ni grafo. Semántica compiler/Graph sigue **explicit_incomplete** tras FV1 FAIL, audit1 BLOCKED y recheck1 FAIL en `graph_observe`; contadores verificación **1/1/1** consumidos. Owner **coord-milsp**: integración SOURCE y seguimiento explícito de deuda semántica; no repair acotado ni presupuesto de validación nuevo.
 
 ## Dependencias externas
 

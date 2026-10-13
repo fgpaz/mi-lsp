@@ -641,6 +641,37 @@ implementation_paths:
   files: [internal/model/graph.go, internal/model/graph_observation.go, internal/indexer/graph_pipeline.go, internal/indexer/extractor_go.go, internal/indexer/graph_staging.go, internal/store/schema.go, internal/store/graph.go, internal/store/graph_recovery.go, internal/store/graph_query.go, internal/store/graph_impact.go, internal/service/graph_observer.go, internal/service/graph_query.go, internal/service/graph_impact.go, internal/service/wiki_code_context.go, internal/milx/host.go, internal/milx/pack.go]
 ```
 
+## Kotlin compiler raw v2 — admisión aditiva reversible
+
+```toon
+doc_id: TECH-GRAPH-NATIVE
+block_id: TECH-GRAPH-NATIVE.kotlin-source-boundary
+kind: observation-contract
+source_of_truth: TECH-KOTLIN-BACKEND
+status: experimental_unverified_explicit_incomplete
+owner: Semantic-backends
+imports: [RF-GPH-008, CT-DAEMON-WORKER, TECH-KOTLIN-BACKEND, TP-GPH]
+evidence: [worker-kotlin/upstream.patch, internal/indexer/extractor_kotlin.go, internal/service/graph_observer.go, internal/indexer/graph_pipeline.go]
+verify:
+  - .docs/wiki/06_pruebas/TP-GPH.md::TP-GPH.kotlin-compiler-export-v1
+source: fwcd_1.3.13_fork_1.3.13+mi-lsp.obs2_compiler_2.1.0
+selection: safe_explicit_Gradle_module_only_no_default_replacement
+export: BindingContext_and_ModuleDescriptor_raw_descriptors_signatures_receivers_resolution
+calls: unsupported
+configuration: explicit_main_jvm_hashed_sources_JARs_build_inputs_and_actual_JDK_target
+stock_initialize: not_compiler_extension
+compiler_only_initialize: before_DB_setup_Gradle_and_indexing
+batch: canonical_unsealed_Kotlin_subset_partial_experimental
+gate: ReadyForStaging_strict_complete_stable_coverage_digest
+pipeline: ValidateCanonical_rebase_seal_Ready_then_existing_staging
+locks: [NodeKey_v1_unchanged, exact_Kotlin_registry_only, ReadyForStaging_strict, Store_unchanged]
+decision: ADR-KOTLIN-GRAPH-ADMISSION-V1
+admission_owner: coord-milsp_and_Graph-Kernel
+decision_due: 2026-10-17
+```
+
+La decisión del parent coord-milsp, [[ADR-KOTLIN-GRAPH-ADMISSION-V1]], sustituye específicamente `no_new_Graph_enums` de K2 por el registro exacto Kotlin. No cierra Graph-K. El recibo del exporter pineado acredita la configuración efectiva o el loader rechaza; conformance y los seis oráculos de promoción siguen explicit_incomplete. Raw v2 conserva partial/experimental; no stringflip, no NodeKey desde PSI ni aliases C#/Go. Calls unsupported se informa fuera del batch; este solo declara declarations/references. La secuencia estricta existente conserva la generación previa y no publica parciales.
+
 ## Sync y documentos relacionados
 
 - Modelo funcional: `[[05_modelo_datos]]`, `[[RF-GPH-001]]` a `[[RF-GPH-011]]`, `[[TP-GPH]]`.

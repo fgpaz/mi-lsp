@@ -71,6 +71,7 @@ El adapter no escribe SQLite, no publica generations y no decide autoridad wiki.
 | Go / parser + types/gopls | declarations, contains, imports; calls/references solo con `go/types` o gopls resuelto | runtime/dataflow | AST-only se marca `extracted`, no compiler fact |
 | TypeScript / tsserver | ninguna relation stable hasta fixture y lifecycle PASS | declarations/references/calls/extends/implements | backend opcional; ausencia es omission |
 | Python / Pyright | ninguna relation stable hasta fixture y lifecycle PASS | declarations/references/calls/imports | extractor lexical solo cataloga candidatos |
+| Kotlin / fork fwcd compiler 2.1.0 | ninguna hasta conformance | declarations/references exact compiler en batch experimental parcial | registro aditivo Kotlin; calls unsupported; ReadyForStaging estricto |
 
 Agregar o promover una capability exige actualizar esta matriz, fixtures, backend version range y gate de release. TS/Python no bloquean el slice C#/Go si se reportan explicitamente como gated.
 
@@ -106,6 +107,14 @@ Adapters deben ser cancelables por owner/batch, tener timeout, health y version 
 | `GPH_BACKEND_PARTIAL_BATCH` | cancel/crash/timeout | descartar batch |
 | `GPH_BACKEND_PROVENANCE_MISSING` | version/source/claim incompleto | reject observation |
 | `GPH_BACKEND_NONDETERMINISTIC` | digest difiere | FAIL de madurez |
+
+## Kotlin: exportación fuente v2 y admisión aditiva sin promoción
+
+[[TECH-KOTLIN-BACKEND]] fija el pin stock y el fork honesto `1.3.13+mi-lsp.obs2`, método `kotlin/miLsp/compilerObservations/v2`, capability `miLspCompilerObservationsV2`. `worker-kotlin/` aporta fuente/patch/build explícito/licencias. El descriptor main JVM resuelto es una afirmación externa conservadora; se usan JARs/fuentes/JDK/target exactos y fingerprints, no backup ni PSI/text como hechos. Referencias raw solo desde `REFERENCE_TARGET`; calls siguen unsupported sin resolved-call export. Módulos, firmas/sobrecargas/receivers y evidence quedan separados.
+
+[[ADR-KOTLIN-GRAPH-ADMISSION-V1]] documenta la decisión delegada de coord-milsp: registrar exactamente backend `kotlin-language-server`, lenguaje `kotlin`, resolución `kotlin/binding-context`, kinds type/function/method/property y references con endpoints locales representables. Sustituye solo el guardrail local K2, no Store/DDL/NodeKey-v1 ni los gates de promoción. El adapter entrega batch canónico sin sello. Completeness de dominio sale de la cobertura real de declarations/references y del recibo de configuración certificable; lo no representable se cuenta y queda partial. Calls unsupported permanece visible y fuera del batch. ValidateCanonical→rebase→seal→ReadyForStaging no se relaja.
+
+Gate de promoción, conservador, en `KotlinPromotionAllowed`: no consulta env, permiso ni etiqueta. Esta revisión devuelve false aunque la evidencia venga llena (`promotion_not_granted_this_revision`). Oráculos que faltan antes de publicar, exactos: `oracle_identity_fixture`, `oracle_relation_precision_recall`, `oracle_determinism_30_reruns`, `oracle_incremental_vs_clean`, `oracle_cross_rid`, `oracle_conformance_final_verify`. Tras recheck1 consumido permanecen **NOTRUN** (cadena cortada en `graph_observe`); pin init `ebccdf78…` en `52964ee` es concordancia estática Go/Kotlin, no oráculo cumplido. Contadores FV/audit/recheck del objetivo: **1/1/1 agotados**. Owner coord-milsp, 2026-10-17. Unix experimental, Windows unavailable hasta Job Objects; ningún PASS ni admisión stageable.
 
 ## 8. Aceptacion y trazabilidad
 

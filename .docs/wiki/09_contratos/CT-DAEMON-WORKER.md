@@ -37,7 +37,7 @@ Define el contrato interno entre core/daemon y los backends semanticos, con foco
 
 ## Boundary and owner
 
-- Boundary: daemon/core -> worker Roslyn, runtime `tsserver`, `pyright-langserver` o `gopls`
+- Boundary: daemon/core -> worker Roslyn, runtime `tsserver`, `pyright-langserver`, `gopls`, `rust-analyzer` o Kotlin experimental `kotlin-language-server`
 - Owner logico: Semantic backends
 - Scope: framing, envelopes, lifecycle, payloads derivados y bootstrap de runtimes
 
@@ -252,3 +252,84 @@ Un PID válido está en `1..math.MaxInt32`. Un owner vivo, una metadata desconoc
 - [TECH-TS-BACKEND.md](../07_tech/TECH-TS-BACKEND.md)
 - [TECH-DEPENDENCY-HARDENING.md](../07_tech/TECH-DEPENDENCY-HARDENING.md)
 - [CT-CLI-DAEMON-ADMIN.md](CT-CLI-DAEMON-ADMIN.md)
+
+## Kotlin experimental y transporte LSP
+
+[[TECH-KOTLIN-BACKEND]] fija el contrato v0 del backend opcional `kotlin-language-server`: pin fwcd 1.3.13/compiler 2.1.0, opt-in que autoriza initialize/Gradle, módulo explícito, manifest local y handshake de versión. No descarga, instala ni calienta automáticamente. Kotlin Windows permanece unavailable hasta tener Job Objects; Unix es dueño de su grupo hijo.
+
+`get_context`, `find_refs`, `find_definition` y `document_symbols` usan los providers **realmente anunciados** en initialize. Definition/symbols son interfaz worker, no nuevos comandos CLI. Las respuestas Kotlin K1 son parciales sin certificado de classpath/JDK; symbols PSI son estructura extracted, no RoleCompiler ni NodeKey. Calls siguen unsupported: K2 no exporta resolved calls. Raw v2 agrega inventario compiler y mapping Kotlin aditivo; el batch actual partial/experimental no es stageable. Calls unsupported permanece visible fuera del batch; ver [[ADR-KOTLIN-GRAPH-ADMISSION-V1]].
+
+```toon
+doc_id: CT-DAEMON-WORKER
+block_id: CT-DAEMON-WORKER.kotlin-lsp-v0
+kind: lifecycle-contract
+source_of_truth: TECH-KOTLIN-BACKEND
+status: experimental_unverified
+imports:
+  - .docs/wiki/07_tech/TECH-KOTLIN-BACKEND.md
+  - .docs/wiki/04_RF/RF-QRY-002.md
+evidence:
+  - internal/worker/lsp_transport.go
+  - internal/worker/lsp_process_unix.go
+  - internal/worker/lsp_client.go
+  - internal/daemon/lifecycle.go
+verify:
+  - .docs/wiki/06_pruebas/TP-QRY.md::TP-QRY.kotlin-runtime-v0
+framing: JSON_RPC_2_Content_Length
+bounds: {headers_bytes: 8192, body_bytes: 8388608, response_queue: 16}
+context: original_request_initialize_query_write_read_and_backoff
+cancel: cancelRequest_by_ID_then_invalidate_process_generation
+shutdown_budget: 1s
+documents: didOpen_once_didChange_increasing_versions_didClose_on_eviction_and_close
+position_encoding: utf-16
+pool_key: backend_absolute_module_root_explicit_entrypoint_config_fingerprint
+restart: subsequent_caller_only_no_blind_retry
+unsupported: no_textual_semantic_fallback
+roslyn_framing: unchanged_length_prefix
+```
+
+La asignación del pool ya no ejecuta initialize LSP bajo el mutex del manager: lo hace `Call(ctx)`. El lector pertenece a una generación del proceso y no retiene el mutex de Close. Gopls/Pyright/Rust conservan el bridge y las inferencias legacy de ancla, convirtiendo sus byte offsets a UTF-16; Kotlin exige posiciones explícitas. Requests del servidor no soportadas se rechazan, nunca autorizan mutaciones.
+
+### Fork Kotlin compiler-only v1
+
+```toon
+doc_id: CT-DAEMON-WORKER
+block_id: CT-DAEMON-WORKER.kotlin-compiler-export-v1
+kind: worker-contract
+source_of_truth: TECH-KOTLIN-BACKEND
+status: experimental_unverified
+owner: Semantic-backends
+imports: [TECH-KOTLIN-BACKEND, RF-GPH-008, TECH-GRAPH-NATIVE, TP-GPH]
+evidence: [worker-kotlin/upstream.patch, worker-kotlin/build.sh, internal/worker/kotlin_observation.go, internal/indexer/extractor_kotlin.go]
+verify:
+  - .docs/wiki/06_pruebas/TP-GPH.md::TP-GPH.kotlin-compiler-export-v1
+framing: existing_LSP_JSON_RPC_Content_Length
+initialize_option: miLspCompilerOnly_true
+serverInfo_version: 1.3.13+mi-lsp.obs2
+extension_version: mi-lsp-compiler-observations/v2
+method: kotlin/miLsp/compilerObservations/v2
+capability: experimental.miLspCompilerObservationsV2_true
+params: [module_root, configuration_path, configuration_sha256]
+configuration_path: selected_absolute_module/.mi-lsp/kotlin-main-v1.json
+authority_receipt: selected_absolute_module/.mi-lsp/kotlin-main-v1.authority.json
+authority: gradle-compileClasspath-resolvedArtifacts/v1
+exporter: MI_LSP_KOTLIN_EXPORT_MAIN_JVM=1_bash_worker-kotlin/config/export-main-jvm.sh
+capture: explicit_offline_no_daemon_no_bootstrap_not_run_in_BUILD
+invalidation: source_build_JAR_JDK_config_exporter_digest
+promotion: KotlinPromotionAllowed_false_until_six_RF-GPH-008_oracles
+result_schema: raw_export_v2_not_Graph_schema
+worker_method: graph_observe
+envelope: items[0].compiler_observation
+partial: always_true
+calls: unsupported
+stock_server: fails_closed_no_extension
+pool: existing_owner_with_compiler_only_mode_and_resolved_configuration_fingerprint
+cancel_deadline_crash: discard_entire_export_and_invalidate_generation
+worker_SQL_generation_publication: forbidden
+adapter_gate: canonical_unsealed_subset_then_strict_ReadyForStaging
+distribution: explicit_build_only_manifest_launcher_source_patch_and_file_hashes_licenses
+```
+
+El flag `--miLspCompilerOnly` del mismo launcher selecciona `MiLspCompilerServer` en su JVM, sin construir los servicios stock DB/Gradle/index. Initialize exige `miLspCompilerOnly=true` y anuncia únicamente esa capability; no hace setup DB, resolver Gradle ni indexación stock. La extensión crea un compilador aislado en el **mismo JVM** por request, usa classpath/source/module/JDK/target explícitos y exporta los slices BindingContext reales, sin backup. Conserva lifecycle, ownership y reader K1; no abre otro subprocess ni cachea resultados. Las consultas K1 no compiler-only conservan sus límites previos. Stock no finge exponer el método; Windows sigue unavailable. Build/install/version/licencias y la resolución externa del descriptor son dependencias propuestas, no acreditadas por este documento.
+
+El adapter raw v2 rechaza provenance incompleta, descriptor sin recibo del exporter pineado, backup classpath y stdlib-only. Conserva partial/experimental y produce batch canónico sin sello. El core valida→rebasa→sella→Ready; devuelve backend_partial con `satisfy_rf_gph_008_promotion_oracles` sin publicar. Calls unsupported queda visible en status. Una respuesta vacía, cancelada, de otro módulo o con cero diagnostics no se convierte en batch listo.

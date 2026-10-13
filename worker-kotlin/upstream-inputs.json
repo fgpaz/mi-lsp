@@ -1,0 +1,23 @@
+{
+  "upstream_commit": "f532bcc9c6578f5a35009a8b5f281f93d4d131ba",
+  "files": {
+    "LICENSE.txt": "1690b72b5a2beb330c98c0715929bf789cb8d91670c29ff2e4abcdae84329136",
+    "build.gradle.kts": "447d00bd24336515a8d26959ced73c517c9b4db0acf196090f0f0de335c1c1d7",
+    "buildSrc/src/main/kotlin/kotlin-language-server.distribution-conventions.gradle.kts": "700ec06fe501532829e1005a1d5bd83c22c2445876b9610463f9d60eb2d6a766",
+    "buildSrc/src/main/kotlin/kotlin-language-server.kotlin-conventions.gradle.kts": "528567f4060d870841f42beb8c7e005d9aa798ff13b1d7f872fc77e8f53b95f6",
+    "gradle/libs.versions.toml": "d5e3a24656022c46c4b50e3a8198c3e4a48af6f3a23aace5017a0c858f76550b",
+    "gradle/wrapper/gradle-wrapper.properties": "2caec011a749b18ab9a7dea68bf7639a179a3b8316b0e35655d0a62a1d7390fd",
+    "gradle.properties": "d889db8d4fedc54d27487ddb733961f461ed718ac8686dcc11159c3a77c9bfcf",
+    "server/build.gradle.kts": "401b79261479565bade35cdbd8693f13d768708a3f7b9c6dc9dfc7464bbb0489",
+    "server/src/main/dist/licenseReport.html": "2bc89a2c22956d0256cb4c4c5b278aa8fe2bf748fb31a5d2f1900246e8a73b89",
+    "server/src/main/kotlin/org/javacs/kt/CompiledFile.kt": "c7e53e01e898b610c78768bb45a572e8329f0ab0e7e3f140f0ba7976c64c7b15",
+    "server/src/main/kotlin/org/javacs/kt/CompilerClassPath.kt": "6db2d9a63ddf5ba5749b18037ca766a7b153cadd6c5791d1056682058c55ccfc",
+    "server/src/main/kotlin/org/javacs/kt/Configuration.kt": "6e4cfe271b1462e39cde47d2cb421b821169812f54a71bec8eb272d00a55d59c",
+    "server/src/main/kotlin/org/javacs/kt/KotlinLanguageServer.kt": "33c7960be876b7091d3a1d2821b502b5c8aba0f1c0efdd8cea20e13c1e0f0975",
+    "server/src/main/kotlin/org/javacs/kt/Main.kt": "3c00a690f69294b4b231556f7c61ad1aa069662036d6f023faf567ac6bf63b74",
+    "server/src/main/kotlin/org/javacs/kt/SourcePath.kt": "efba851364ddb425b0da9de4b5a0803db8d32cdcbcea322ad3d77cea8f191447",
+    "server/src/main/kotlin/org/javacs/kt/compiler/Compiler.kt": "0ad7ddd4776436cd415fa5c5d250fe8d7634c850ce2c44d52118a98ba537870a",
+    "shared/src/main/kotlin/org/javacs/kt/ScriptsConfiguration.kt": "9db18e071ab078089978c99ff057a46a182f6bfd4e67306efe1a79075fc0339e",
+    "shared/src/main/kotlin/org/javacs/kt/database/DatabaseService.kt": "0163b543ecf13bc73422c72bf28279dd9d27bb897435572310195e2f39587103"
+  }
+}

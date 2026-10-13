@@ -8,6 +8,70 @@ imports: [RF-GPH-003, RF-GPH-007]
 
 # TP-GPH
 
+## Kotlin — oráculo futuro de la extensión fuente
+
+```toon
+doc_id: TP-GPH
+block_id: TP-GPH.kotlin-compiler-export-v1
+kind: acceptance-slice
+source_of_truth: this
+status: manual_evidence_pending
+owner: coord-milsp
+decision_due: 2026-10-17
+imports: [RF-GPH-008, TECH-KOTLIN-BACKEND, TECH-GRAPH-NATIVE, CT-DAEMON-WORKER, TP-QRY]
+evidence: FV1_FAIL_audit1_BLOCKED_recheck1_FAIL_graph_observe_pin529_SOURCE_ONLY
+verification_basis: counters_FV_audit_recheck_1_1_1_exhausted_no_retry_in_this_lane
+fixture: testdata/kotlin-graph-main-v1_sources_only_sandbox_local_JAR_network_disabled
+bindings: [testdata/kotlin-graph-main-v1/README.md, internal/indexer/extractor_kotlin.go, internal/model/graph_observation.go]
+raw_contract: v2_obs2
+admission: ADR-KOTLIN-GRAPH-ADMISSION-V1
+build_command: bash_worker-kotlin/build.sh_pinned_local_checkout_new_absolute_output
+cases:
+  - id: TC-GPH-K01
+    type: positivo
+    given: fork fwcd pin con descriptor main JVM completo y hashes reales
+    when: se construye y consulta el método anunciado compiler-only
+    then: handshake fork honesto; BindingContext y ModuleDescriptor exportan overloads, receivers y módulos correctos; ninguna fuente PSI/text-only se etiqueta compiler
+  - id: TC-GPH-K02
+    type: negativo
+    given: stock fwcd, capability ausente o manifest/hash/version de fork falso
+    when: se pide compiler export
+    then: rechazo tipado; ningún batch ni fallback textual
+  - id: TC-GPH-K03
+    type: negativo
+    given: homónimos/comentarios, FQN igual en otro módulo, descriptor fallback/incomplete/stdlib-only no acreditado
+    when: se consulta references y admisión Graph
+    then: solo REFERENCE_TARGET resuelto; módulos aislados; configuración no certificada no acredita complete; sin NodeKey ni calls fake
+  - id: TC-GPH-K04
+    type: negativo
+    given: cambio de sources/JAR/build/config, error compiler, cancel durante initialize/export o crash
+    when: se termina o vence el request
+    then: se invalida todo export; no respuesta tardía ni partialbatch ready; siguiente caller crea runtime propio
+  - id: TC-GPH-K05
+    type: negativo
+    given: raw v2 partial experimental con registro Kotlin exacto y sin recibo del exporter pineado, o con backup/stdlib-only/cero diagnostics
+    when: adapter emite NodeKey-v1 y batch canónico sin sello; core valida rebasa sella y exige Ready
+    then: backend_partial sin publicación; promotion_oracle_missing visible; generación previa intacta; stable/complete no se forjan
+  - id: TC-GPH-K08
+    type: positivo
+    given: módulo fixture copiado a sandbox, red off, Gradle 8.10 y JDK 11 ya presentes, sin wrapper
+    when: MI_LSP_KOTLIN_EXPORT_MAIN_JVM=1 bash worker-kotlin/config/export-main-jvm.sh /sandbox/modulo
+    then: recibo certified ata JDK release, jvmTarget, sources, compileClasspath resolvedArtifacts y build inputs; no se versiona; no arranca el language server
+  - id: TC-GPH-K06
+    type: negativo
+    given: calls o scripts/AGP/variantes/K2 universal, CRLF o Windows sin Job Objects
+    when: se solicita soporte fuera del dominio raw v2
+    then: unsupported/unavailable explícito sin full-platform PASS; no resolved-call export inventado
+  - id: TC-GPH-K07
+    type: positivo
+    given: distribución futura construida con Gradle 8.10/JDK 11 y caches offline
+    when: owner inspecciona artefacto, licencias y source provenance
+    then: hashes launcher/patch/source/JARs y versiones fijadas; MIT fwcd conservada; inventario real de transitivas cotejado sin asumir licencia universal; compiler-only no ejecuta SQL/Gradle/indexación
+```
+
+Estos casos son planes manuales, no unit tests nuevos ni evidencia ejecutada. Las siete fuentes fixture existen en `testdata/kotlin-graph-main-v1/`, sin runner nuevo ni ejecución en BUILD de esta ola wiki. Los casos TC-GPH-K01–K08 **no están acreditados íntegramente** como PASS del plan: en recheck1 histórico (consumido) solo TC-GPH-K08 observó exporter **certified** en sandbox (`init_script_sha256=ebccdf78…`); no afirmar PASS completo del caso ni de la serie. La cadena Go→`compilerObservations/v2` no observó payload y `graph_observe` terminó FAIL antes de los oráculos RF-GPH-008 (todos **NOTRUN**). Commit preview `52964ee` alinea pin Go↔init en fuente **sin** verificación runtime en esta lane. Los seis oráculos de RF-GPH-008 son exigidos para **admisión de grafo** y promoción; el bloqueo semántico actual no debe confundirse con la publicación de línea SOURCE (preview documental, default-disabled). Comparar NodeKey/cross-RID tras relocation/range shift/parameter rename/config drift, overloads/receivers y módulos separados; corroborar cada denominador y omission. Aunque el recibo certifique la configuración, publicar exige esos oráculos, ausentes. Una lista vacía, cero diagnostics o initialize exitoso no es PASS. Contadores FINAL_VERIFY/auditoría/recheck del objetivo Kotlin: **1/1/1 agotados**; owner **coord-milsp**: integración de fuente experimental solo según juicio **11539** y seguimiento de deuda semántica **sin nuevo presupuesto** (no reparar fixture, relajar guard ni correr QA).
+
+
 ```yaml
 harness_protocol: SDD-HARNESS-v1
 source_protocol: SDD-WIKI-SOURCE-v1

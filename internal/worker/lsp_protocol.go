@@ -19,6 +19,9 @@ func writeLSPMessage(writer io.Writer, msg interface{}) error {
 	if err != nil {
 		return err
 	}
+	if len(body) > 8<<20 {
+		return errors.New("LSP message exceeds 8 MiB")
+	}
 	header := fmt.Sprintf("Content-Length: %d\r\n\r\n", len(body))
 	if _, err := writer.Write([]byte(header)); err != nil {
 		return err
@@ -30,8 +33,15 @@ func writeLSPMessage(writer io.Writer, msg interface{}) error {
 // readLSPMessage reads a JSON-RPC message from a Content-Length-framed stream.
 func readLSPMessage(reader *bufio.Reader) (json.RawMessage, error) {
 	contentLength := 0
+	headerBytes := 0
+	seenLength := false
 	for {
-		line, err := reader.ReadString('\n')
+		fragment, err := reader.ReadSlice('\n')
+		line := string(fragment)
+		headerBytes += len(fragment)
+		if headerBytes > 8192 {
+			return nil, errors.New("LSP headers exceed limit")
+		}
 		if err != nil {
 			return nil, err
 		}
@@ -40,6 +50,10 @@ func readLSPMessage(reader *bufio.Reader) (json.RawMessage, error) {
 			break
 		}
 		if strings.HasPrefix(strings.ToLower(line), "content-length:") {
+			if seenLength {
+				return nil, errors.New("duplicate Content-Length")
+			}
+			seenLength = true
 			value := strings.TrimSpace(line[len("Content-Length:"):])
 			contentLength, err = strconv.Atoi(value)
 			if err != nil {
@@ -47,7 +61,7 @@ func readLSPMessage(reader *bufio.Reader) (json.RawMessage, error) {
 			}
 		}
 	}
-	if contentLength <= 0 {
+	if contentLength <= 0 || contentLength > 8<<20 {
 		return nil, errors.New("LSP message has invalid content length")
 	}
 	body := make([]byte, contentLength)
@@ -61,9 +75,9 @@ func readLSPMessage(reader *bufio.Reader) (json.RawMessage, error) {
 func buildFileURI(absPath string) string {
 	absPath = filepath.ToSlash(absPath)
 	if runtime.GOOS == "windows" && len(absPath) >= 2 && absPath[1] == ':' {
-		return "file:///" + absPath
+		absPath = "/" + absPath
 	}
-	return "file://" + absPath
+	return (&url.URL{Scheme: "file", Path: absPath}).String()
 }
 
 // uriToPath converts a file:// URI back to a local absolute path, decoding

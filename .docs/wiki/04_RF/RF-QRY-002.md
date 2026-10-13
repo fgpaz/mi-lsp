@@ -101,6 +101,39 @@ evidence:
 | `process_spawn_failed` | runtime o herramienta externa no arranca por error de proceso | `fork/exec`, `failed to start`, imagen invalida | preservar fallback posible y registrar `backend_runtime` |
 | `lsp_unavailable` / `lsp_error` | el backend semantico de `nav.refs` falta o falla | binario ausente (`executable file not found`, `node is required`) o error del backend | no es error terminal: `ok=true`, fallback de texto por limites de palabra, `degraded=true`, `reason=lsp_unavailable` o `lsp_error`, `fallback_used=text` |
 
+## Kotlin experimental: excepción al fallback general
+
+```toon
+doc_id: RF-QRY-002
+block_id: RF-QRY-002.kotlin-runtime-v0
+kind: routing-contract
+source_of_truth: this
+status: experimental_unverified
+imports:
+  - .docs/wiki/07_tech/TECH-KOTLIN-BACKEND.md
+  - .docs/wiki/09_contratos/CT-DAEMON-WORKER.md
+evidence:
+  - internal/service/semantic_kotlin.go
+  - internal/service/context.go
+  - internal/service/semantic_refs.go
+  - internal/cli/nav.go
+verify:
+  - .docs/wiki/06_pruebas/TP-QRY.md::TP-QRY.kotlin-runtime-v0
+routing:
+  kt: kotlin-language-server
+  kts: excluded
+  module: explicit_declared_build_gradle_entrypoint
+  position: explicit_file_line_and_1_based_UTF16_column
+  unavailable: ok_false_reason_unavailable_no_text_substitution
+  unsupported: ok_false_reason_unsupported_operation
+  valid_LSP_answer: ok_true_partial_true_reason_explicit_incomplete
+  empty_answer: partial_not_proof_of_completeness
+  symbol_name_anchoring: forbidden
+  compiler_calls_and_currentgraph: unsupported_in_K1
+```
+
+Esta excepción prevalece sobre el fallback general de `nav.refs` y el enriquecimiento slice-first: Kotlin no agrega callers de catálogo ni prueba un vacío con búsqueda textual. El caller puede pedir búsqueda textual **separada**, nunca presentada como semántica. `nav refs --column` y `nav context --column` reciben UTF-16 explícito; no se inventa posición por nombre. Definition/document_symbols son interfaz worker, no cambian `nav.find`/`nav.symbols`. Falta de classpath/JDK observado mantiene K1 parcial incluso con initialize exitoso. Config y autorización Gradle en [[TECH-KOTLIN-BACKEND]].
+
 ## 5. Special Cases and Variants
 
 - Daemon caido: no es error fatal si el modo directo puede responder.

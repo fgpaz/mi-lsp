@@ -165,13 +165,13 @@ func stableCode(s string) bool {
 	return true
 }
 func observationBackend(s string) bool {
-	return s == "roslyn" || s == "go" || s == "tsserver" || s == "pyright"
+	return s == "roslyn" || s == "go" || s == "tsserver" || s == "pyright" || s == "kotlin-language-server"
 }
 func observationState(s string) bool {
 	return s == GraphObservationStatusStable || s == GraphObservationStatusExperimental || s == GraphObservationStatusGated || s == GraphObservationStatusUnsupported || s == GraphObservationStatusUnavailable
 }
 func observationResolution(s string) bool {
-	return s == "roslyn" || s == "go/ast" || s == "go/types" || s == "gopls" || s == "tsserver" || s == "pyright" || s == "lexical" || s == "unresolved"
+	return s == "kotlin/binding-context" || s == "roslyn" || s == "go/ast" || s == "go/types" || s == "gopls" || s == "tsserver" || s == "pyright" || s == "lexical" || s == "unresolved"
 }
 func observationClaim(s string) bool {
 	return s == GraphRecordExact || s == GraphRecordExtracted || s == GraphRecordInferred
@@ -387,6 +387,9 @@ func nodeAllowed(b, cap, claim, res string, state string) bool {
 	if cap != "declarations" {
 		return false
 	}
+	if b == "kotlin-language-server" {
+		return (state == GraphObservationStatusStable || state == GraphObservationStatusExperimental) && claim == GraphRecordExact && res == "kotlin/binding-context"
+	}
 	if b == "roslyn" {
 		return state == "stable" && claim == GraphRecordExact && res == "roslyn"
 	}
@@ -397,6 +400,9 @@ func nodeAllowed(b, cap, claim, res string, state string) bool {
 }
 
 func stableCapabilityAllowed(backend, capability string) bool {
+	if backend == "kotlin-language-server" {
+		return capability == "declarations" || capability == "references"
+	}
 	if backend == "roslyn" {
 		return capability == "declarations" || capability == "contains" || capability == "references" || capability == "calls" || capability == "implements" || capability == "extends"
 	}
@@ -406,6 +412,9 @@ func stableCapabilityAllowed(backend, capability string) bool {
 	return false
 }
 func edgeAllowed(b, rel, claim, res, state string) bool {
+	if b == "kotlin-language-server" {
+		return (state == GraphObservationStatusStable || state == GraphObservationStatusExperimental) && rel == "references" && claim == GraphRecordExact && res == "kotlin/binding-context"
+	}
 	if state != "stable" {
 		return false
 	}
@@ -445,7 +454,7 @@ func (b *GraphObservationBatch) validateCore() error {
 			return e
 		}
 		k, e := NewNodeKey(n.Key)
-		if e != nil || !reflect.DeepEqual(k, n.Key) || n.Key.RepositoryIdentity != b.RepositoryIdentity || n.Key.BackendType != b.Backend || n.Key.ProjectOrModule != b.ProjectOrModule || !obsBounded(n.DisplayName) || !observationNonzero(n.SourceDigest) || !observationClaim(n.ClaimStatus) || !observationResolution(n.Resolution) {
+		if e != nil || !reflect.DeepEqual(k, n.Key) || n.Key.RepositoryIdentity != b.RepositoryIdentity || n.Key.BackendType != b.Backend || n.Key.ProjectOrModule != b.ProjectOrModule || (b.Backend == "kotlin-language-server" && (n.Key.Language != "kotlin" || (n.Key.SymbolKind != "type" && n.Key.SymbolKind != "function" && n.Key.SymbolKind != "method" && n.Key.SymbolKind != "property"))) || !obsBounded(n.DisplayName) || !observationNonzero(n.SourceDigest) || !observationClaim(n.ClaimStatus) || !observationResolution(n.Resolution) {
 			return observationErr("GPH_OBS_NODE_INVALID", "nodes", "node violates canonical batch or matrix")
 		}
 		nodes[n.Ref] = n
@@ -668,6 +677,22 @@ func (b *GraphObservationBatch) Validate() error {
 	}
 	return nil
 }
+
+// PrepareGraphObservationBatch canonicalizes adapter output without granting a
+// seal or stageability. The core still validates, rebases, seals and checks Ready.
+func PrepareGraphObservationBatch(b *GraphObservationBatch) error {
+	if b == nil {
+		return ErrGraphObservationInvalid
+	}
+	if b.Digest != (GraphDigest{}) {
+		return ErrGraphObservationInvalid
+	}
+	if err := b.canonicalize(); err != nil {
+		return err
+	}
+	return b.ValidateCanonical()
+}
+
 func SealGraphObservationBatch(b *GraphObservationBatch) error {
 	if b == nil {
 		return ErrGraphObservationInvalid
@@ -692,7 +717,7 @@ func (b *GraphObservationBatch) ReadyForStaging() error {
 	if e := b.Validate(); e != nil {
 		return e
 	}
-	if b.Completeness != GraphCompletenessComplete || (b.Backend != "roslyn" && b.Backend != "go") {
+	if b.Completeness != GraphCompletenessComplete || (b.Backend != "roslyn" && b.Backend != "go" && b.Backend != "kotlin-language-server") {
 		return fmt.Errorf("%w: incomplete or unsupported backend", ErrGraphObservationNotStageable)
 	}
 	for _, c := range b.Capabilities {

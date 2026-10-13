@@ -93,6 +93,7 @@ context retrieval, dependency analysis, and service exploration.`,
 
 	var refsFile string
 	var refsLine int
+	var refsColumn int
 	var refsRepo string
 	var refsEntrypoint string
 	var refsSolution string
@@ -119,11 +120,15 @@ context retrieval, dependency analysis, and service exploration.`,
 			if refsLine > 0 {
 				payload["line"] = refsLine
 			}
+			if refsColumn > 0 {
+				payload["column"] = refsColumn
+			}
 			return state.executeOperation(cmd, "nav.refs", payload, true)
 		},
 	}
 	refsCommand.Flags().StringVar(&refsFile, "file", "", "Anchor file for backends that resolve references by position")
 	refsCommand.Flags().IntVar(&refsLine, "line", 0, "Anchor line for backends that resolve references by position")
+	refsCommand.Flags().IntVar(&refsColumn, "column", 0, "Explicit 1-based UTF-16 column (required for Kotlin)")
 	refsCommand.Flags().IntVar(&refsContext, "context", 0, "Lines of context (0-5) before and after each reference")
 	attachSemanticSelectorFlags(refsCommand, &refsRepo, &refsEntrypoint, &refsSolution, &refsProject)
 
@@ -339,6 +344,7 @@ Use --include-code-discovery to add code-based discovery hints.`,
 	searchCommand.Flags().BoolVar(&allWorkspacesSearch, "all-workspaces", false, "Search across all registered workspaces")
 	attachCatalogRepoFlag(searchCommand, &searchRepo)
 
+	var contextColumn int
 	var contextRepo string
 	var contextEntrypoint string
 	var contextSolution string
@@ -354,9 +360,13 @@ Use --include-code-discovery to add code-based discovery hints.`,
 			payload := semanticPayload(contextRepo, contextEntrypoint, contextSolution, contextProject)
 			payload["file"] = file
 			payload["line"] = lineNumber
+			if contextColumn > 0 {
+				payload["column"] = contextColumn
+			}
 			return state.executeOperation(cmd, "nav.context", payload, true)
 		},
 	}
+	contextCommand.Flags().IntVar(&contextColumn, "column", 0, "Explicit 1-based UTF-16 column (required for Kotlin)")
 	attachSemanticSelectorFlags(contextCommand, &contextRepo, &contextEntrypoint, &contextSolution, &contextProject)
 
 	var depsRepo string

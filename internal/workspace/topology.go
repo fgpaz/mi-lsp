@@ -449,6 +449,7 @@ func detectRepo(workspaceRoot string, repoRoot string) (repoDetection, error) {
 	languages := map[string]struct{}{}
 	solutions := make([]string, 0)
 	projects := make([]string, 0)
+	gradleModules := make([]string, 0)
 	goModules := make([]string, 0)
 	rustManifests := make([]string, 0)
 	cargoRootManifest := false
@@ -490,6 +491,8 @@ func detectRepo(workspaceRoot string, repoRoot string) (repoDetection, error) {
 		case ".csproj":
 			projects = append(projects, relPath)
 			languages["csharp"] = struct{}{}
+		case ".kt":
+			languages["kotlin"] = struct{}{}
 		case ".go":
 			languages["go"] = struct{}{}
 		case ".ts", ".tsx", ".js", ".jsx":
@@ -500,6 +503,10 @@ func detectRepo(workspaceRoot string, repoRoot string) (repoDetection, error) {
 			languages["rust"] = struct{}{}
 		}
 		switch strings.ToLower(entry.Name()) {
+		case "build.gradle", "build.gradle.kts":
+			gradleModules = append(gradleModules, relPath)
+		case "settings.gradle", "settings.gradle.kts", "gradlew", "gradle-wrapper.properties":
+			// Metadata marker only; never execute Gradle during discovery.
 		case "go.mod", "go.work":
 			languages["go"] = struct{}{}
 			goModules = append(goModules, relPath)
@@ -531,6 +538,10 @@ func detectRepo(workspaceRoot string, repoRoot string) (repoDetection, error) {
 	}
 	entrypoints := buildEntrypoints(repoID, relRoot, solutions, projects)
 	defaultEntrypoint := defaultEntrypointID(entrypoints)
+	slices.Sort(gradleModules)
+	for _, path := range gradleModules {
+		entrypoints = append(entrypoints, model.WorkspaceEntrypoint{ID: makeEntrypointID(repoID, path), RepoID: repoID, Path: path, Kind: "gradle-module"})
+	}
 	return repoDetection{
 		repo: model.WorkspaceRepo{
 			ID:                repoID,
