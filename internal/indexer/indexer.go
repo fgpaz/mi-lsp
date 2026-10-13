@@ -301,23 +301,27 @@ func buildCatalog(ctx context.Context, root string, progress ProgressFunc) (mode
 }
 
 func IndexWorkspaceDocsOnly(ctx context.Context, root string) (Result, error) {
-	return IndexWorkspaceDocsOnlyWithGeneration(ctx, root, "")
+	return IndexWorkspaceDocsOnlyWithClean(ctx, root, false)
 }
 
-func IndexWorkspaceDocsOnlyWithGeneration(ctx context.Context, root string, generationID string) (Result, error) {
-	return IndexWorkspaceDocsOnlyWithProgress(ctx, root, generationID, nil)
+func IndexWorkspaceDocsOnlyWithClean(ctx context.Context, root string, clean bool) (Result, error) {
+	return IndexWorkspaceDocsOnlyWithGeneration(ctx, root, clean, "")
 }
 
-func IndexWorkspaceDocsOnlyWithProgress(ctx context.Context, root string, generationID string, progress ProgressFunc) (Result, error) {
-	return indexWorkspaceDocsOnlyWithProgress(ctx, root, generationID, progress, nil)
+func IndexWorkspaceDocsOnlyWithGeneration(ctx context.Context, root string, clean bool, generationID string) (Result, error) {
+	return IndexWorkspaceDocsOnlyWithProgress(ctx, root, clean, generationID, nil)
+}
+
+func IndexWorkspaceDocsOnlyWithProgress(ctx context.Context, root string, clean bool, generationID string, progress ProgressFunc) (Result, error) {
+	return indexWorkspaceDocsOnlyWithProgress(ctx, root, clean, generationID, progress, nil)
 }
 
 // IndexWorkspaceDocsOnlyWithProgressForJob is the owner-bound docs publisher.
-func IndexWorkspaceDocsOnlyWithProgressForJob(ctx context.Context, root string, generationID, jobID string, fence store.IndexJobFence, progress ProgressFunc) (Result, error) {
-	return indexWorkspaceDocsOnlyWithProgress(ctx, root, generationID, progress, &IndexJobPublication{JobID: jobID, Fence: fence})
+func IndexWorkspaceDocsOnlyWithProgressForJob(ctx context.Context, root string, clean bool, generationID, jobID string, fence store.IndexJobFence, progress ProgressFunc) (Result, error) {
+	return indexWorkspaceDocsOnlyWithProgress(ctx, root, clean, generationID, progress, &IndexJobPublication{JobID: jobID, Fence: fence})
 }
 
-func indexWorkspaceDocsOnlyWithProgress(ctx context.Context, root string, generationID string, progress ProgressFunc, publication *IndexJobPublication) (Result, error) {
+func indexWorkspaceDocsOnlyWithProgress(ctx context.Context, root string, clean bool, generationID string, progress ProgressFunc, publication *IndexJobPublication) (Result, error) {
 	started := time.Now()
 	if err := reportProgress(ctx, progress, Progress{Stage: "docs.detect", Force: true}); err != nil {
 		return Result{}, err
@@ -335,9 +339,12 @@ func indexWorkspaceDocsOnlyWithProgress(ctx context.Context, root string, genera
 		return Result{}, err
 	}
 
-	priorDocs, err := loadPriorDocSnapshot(ctx, root)
-	if err != nil {
-		return Result{}, err
+	var priorDocs *docgraph.PriorDocSnapshot
+	if !clean {
+		priorDocs, err = loadPriorDocSnapshot(ctx, root)
+		if err != nil {
+			return Result{}, err
+		}
 	}
 	docs, docEdges, docMentions, sourceBlocks, sourceRecords, bindings, warnings, err := docgraph.IndexWorkspaceDocsWithSourcesWithProgressPriorWithBindings(ctx, root, matcher, func(ctx context.Context, progressValue docgraph.Progress) error {
 		return reportProgress(ctx, progress, Progress{
@@ -422,6 +429,9 @@ func indexWorkspaceDocsOnlyWithProgress(ctx context.Context, root string, genera
 		return Result{}, err
 	}
 
+	if clean {
+		warnings = appendIfMissing(warnings, "clean=true")
+	}
 	warnings = appendIfMissing(warnings, "docs_only=true")
 	result := Result{
 		Warnings: warnings,

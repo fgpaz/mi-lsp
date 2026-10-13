@@ -64,3 +64,48 @@ evidence:
 | TC-IDX-025 | positivo | RF-IDX-001 | `TestWalkWorkspaceIgnoresNestedMiLspState` + `TestHardIgnoreMatcherKeepsMiLspIgnoredAfterNegatedReinclude`: `.mi-lsp/**` se trata como hard ignore operacional incluso anidado y aunque haya re-include negado |
 | TC-IDX-026 | positivo | RF-IDX-001 | `TestIncrementalIndexRepairsStaleGraphWithDocumentationGraph`: sin batch semántico completo, el reindex incremental publica un grafo documental fresco contra el catálogo activo |
 | TC-IDX-027 | negativo | RF-IDX-001 | `TestIncrementalIndexReturnsTypedErrorWhenStaleGraphCannotBeRebuilt`: sin identidad publicable, incremental y full reindex devuelven `graph_repair_incomplete` en vez de éxito vacío |
+| TC-IDX-028 | positivo | RF-IDX-002 | aceptación manual por CLI pública; definición normativa en el bloque `TC-IDX-028` |
+
+### TC-IDX-028
+
+```toon
+block_id: TC-IDX-028
+kind: normative
+source_of_truth: normative
+requirement_id: RF-IDX-002
+case_id: TC-IDX-028
+case_type: positive
+verification_mode: manual_evidence
+status: manual_evidence_pending
+verification_basis: FINAL_VERIFY1 parcial preservada; único recheck1 del parent después de IMPLEMENTATION_COMPLETE
+observable_contract: RF-IDX-002-DOCS-OBSERVABLE
+fixture_isolation: fixture temporal propio del parent, fuera de Android y de este worktree; no creado durante BUILD
+fixture:
+  contenido: archivo Go con símbolo reconocible y N documentos markdown elegibles (N>0), sin errores de lectura ni cambios entre las corridas documentales
+  preparacion: registrar únicamente el fixture propio mediante CLI pública y publicar su catálogo con index start --mode catalog; no sembrar filas mediante SQL
+  referencia: capturar generations.catalog de nav git-frontier y el símbolo visible por nav find antes de la primera indexación documental
+expected:
+  primera_indexacion_docs: sin snapshot documental previo, parsed=N skipped=0
+  incremental_docs_without_clean: mismo contenido y snapshot previo publicado; docs_skip_reparse parsed=0 skipped=N
+  docs_mode_clean_job: mismo contenido con --clean; clean=true y docs_skip_reparse parsed=N skipped=0, sin excepción por hash previo
+  wrapper_docs_only_clean: mismo contenido con --docs-only --clean; mismo oráculo parsed=N skipped=0
+  catalog_generation_preserved: generations.catalog de nav git-frontier permanece igual después de cada publicación documental y el mismo símbolo de código sigue visible por nav find
+  docs_generation_published: generations.docs de nav git-frontier coincide con generation_id del job succeeded después de cada corrida documental, incluido el wrapper
+  missing_pointer: null o generation_reasons no acreditan la generación esperada; conservar explicit_incomplete
+  internal_memory_contract: active_memory_generation_id se activa atómicamente con docs según el publisher; no es observable en estas superficies y permanece sin evidencia pública
+  memory_evidence_limit: memory o memory_pointer de workspace status no sustituyen un ID de generación; no declarar aceptación completa de TC-IDX-028 ni PASS por resolver solo contadores y docs
+  forbidden_oracles: sin SQL ni APIs internas, sin fixture Android, sin tests ficticios ni automatización propuesta
+manual_plan:
+  - paso: usar el fixture propio preservado por FINAL_VERIFY1 si sigue disponible; el parent decide preparación aislada si falta; no tocar evidencia previa
+  - paso: ejecutar mi-lsp index start --mode catalog --wait --no-daemon --workspace <fixture> --format json; guardar nav git-frontier y nav find del símbolo como referencia de catálogo y código
+  - paso: ejecutar mi-lsp index start --mode docs --wait --no-daemon --workspace <fixture> --format json; guardar parsed=N skipped=0 y publicación exitosa
+  - paso: repetir el comando documental anterior sin modificar contenido; guardar parsed=0 skipped=N
+  - paso: ejecutar mi-lsp index start --mode docs --clean --wait --no-daemon --workspace <fixture> --format json; guardar parsed=N skipped=0
+  - paso: ejecutar mi-lsp index --docs-only --clean --no-daemon --workspace <fixture> --format json; guardar parsed=N skipped=0; el wrapper espera implícitamente y no admite --wait
+  - paso: tras cada corrida documental, guardar mi-lsp nav git-frontier --no-daemon --workspace <fixture> --format json y nav find del mismo símbolo; comparar generations.docs con el job y generations.catalog con la referencia inicial
+  - evidencia_pendiente: guardar warnings de cada comando que espera, index status y workspace status --full como contexto; no consultas SQLite ni APIs internas
+  - evidencia_no_observable: generación interna de memoria; registrar limitación separada sin inferirla de succeeded, snapshot_built_at o memory_pointer
+execution_note: FINAL_VERIFY1 parcial ya consumida; BUILD solo ajusta autoría code y wiki, sin corridas nuevas ni reescritura del packet; recheck1 reservado al verifier del parent
+manual_evidence_owner: parent_final_verify
+manual_evidence_due: FINAL_VERIFY del objetivo docs-clean-reparse-20261013, antes del cierre
+```
