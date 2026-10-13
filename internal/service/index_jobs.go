@@ -47,6 +47,7 @@ func (a *App) indexStart(ctx context.Context, request model.CommandRequest) (mod
 	}
 	wait, _ := request.Payload["wait"].(bool)
 	clean, _ := request.Payload["clean"].(bool)
+	goOffline, _ := request.Payload["go_offline"].(bool)
 	entrypointSelector := strings.TrimSpace(stringPayload(request.Payload, "entrypoint"))
 	if err := validateIndexEntrypointMode(mode, entrypointSelector); err != nil {
 		return model.Envelope{}, err
@@ -58,8 +59,27 @@ func (a *App) indexStart(ctx context.Context, request model.CommandRequest) (mod
 	}
 	defer db.Close()
 
-	job, err := store.CreateIndexJobWithEntrypoint(ctx, db, registration.Name, registration.Root, mode, clean, entrypointSelector)
+	job, err := store.CreateIndexJobWithGoOffline(ctx, db, registration.Name, registration.Root, mode, clean, entrypointSelector, goOffline)
 	if err != nil {
+		var mismatchErr *store.IndexJobPolicyMismatchError
+		if errors.As(err, &mismatchErr) {
+			statusCommand := "mi-lsp index status " + mismatchErr.Job.JobID
+			return model.Envelope{
+				Ok:        false,
+				Workspace: registration.Name,
+				Backend:   "index-job",
+				Mode:      mismatchErr.Job.Mode,
+				Items:     []store.IndexJob{store.ControlPlaneIndexJob(mismatchErr.Job)},
+				Error: &model.EnvelopeError{
+					Kind:    "validation",
+					Code:    "index_job_policy_mismatch",
+					Message: mismatchErr.Error(),
+					Stage:   "index.start",
+				},
+				Hint:     "retry index.start manually after the active job is terminal; the existing job was not changed",
+				NextHint: &statusCommand,
+			}, nil
+		}
 		if activeErr, ok := err.(*store.ActiveIndexJobError); ok {
 			return activeIndexJobEnvelope(registration, store.ControlPlaneIndexJob(activeErr.Job)), nil
 		}
@@ -300,12 +320,12 @@ func (a *App) runIndexJob(ctx context.Context, registration model.WorkspaceRegis
 		case store.IndexModeCatalog:
 			result, err = indexer.IndexWorkspaceCatalogOnlyWithProgressForJob(ctx, registration.Root, job.Clean, job.GenerationID, jobID, jobFence, progress.report)
 		default:
-			graphOptions := indexer.GraphIndexOptions{RoslynObserver: a.graphObserver(), EntrypointSelector: job.EntrypointSelector}
+			graphOptions := indexer.GraphIndexOptions{RoslynObserver: a.graphObserver(), EntrypointSelector: job.EntrypointSelector, GoOffline: job.GoOffline}
 			hasExistingCatalog := false
 			if stats, statsErr := store.WorkspaceStats(ctx, db); statsErr == nil {
 				hasExistingCatalog = stats.Files > 0 || stats.Symbols > 0
 			}
-			if !job.Clean && job.EntrypointSelector == "" && hasExistingCatalog {
+			if !job.Clean && !job.GoOffline && job.EntrypointSelector == "" && hasExistingCatalog {
 				result, err = indexer.IncrementalIndexWithGraphProgressForJob(ctx, registration.Root, job.GenerationID, jobID, jobFence, progress.report, graphOptions)
 				if err != nil && (errors.Is(err, store.ErrStaleIndexJobOwner) || errors.Is(err, errIndexJobCanceled)) {
 					return err

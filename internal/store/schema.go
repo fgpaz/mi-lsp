@@ -208,6 +208,7 @@ CREATE TABLE IF NOT EXISTS index_jobs (
     workspace_root TEXT NOT NULL,
     mode TEXT NOT NULL,
     entrypoint_selector TEXT NOT NULL DEFAULT '',
+    go_offline INTEGER NOT NULL DEFAULT 0,
     clean INTEGER NOT NULL DEFAULT 0,
     status TEXT NOT NULL,
     phase TEXT NOT NULL DEFAULT '',
@@ -351,6 +352,9 @@ END`,
 		return err
 	}
 	if err := ensureColumn(db, "doc_mentions", "source_block", "TEXT"); err != nil {
+		return err
+	}
+	if err := ensureColumn(db, "index_jobs", "go_offline", "INTEGER NOT NULL DEFAULT 0"); err != nil {
 		return err
 	}
 	if err := ensureColumn(db, "index_jobs", "entrypoint_selector", "TEXT NOT NULL DEFAULT ''"); err != nil {
