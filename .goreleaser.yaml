@@ -7,6 +7,7 @@ env:
 
 before:
   hooks:
+    - go run ./scripts/release/metadata -version {{ .Version }} -commit {{ .FullCommit }} -build-time {{ .Date }}
     - pwsh -NoProfile -File ./scripts/release/build-workers.ps1 -OutDir ./.goreleaser/workers -Clean
 
 builds:
@@ -25,7 +26,7 @@ builds:
     flags:
       - -trimpath
     ldflags:
-      - -s -w -X github.com/fgpaz/mi-lsp/internal/model.BuildVersion={{ .Version }} -X github.com/fgpaz/mi-lsp/internal/model.BuildRevision={{ .FullCommit }}
+      - -s -w -X github.com/fgpaz/mi-lsp/internal/model.BuildVersion={{ .Version }} -X github.com/fgpaz/mi-lsp/internal/model.BuildRevision={{ .FullCommit }} -X github.com/fgpaz/mi-lsp/internal/model.BuildTime={{ .Date }}
 
 archives:
   - id: bundled
@@ -44,6 +45,10 @@ archives:
       - LICENSE
       - README.md
       - CHANGELOG.md
+      - src: ".goreleaser/metadata/*.json"
+        dst: integrations/mi-mcp
+      - src: .docs/wiki/09_contratos/CT-Q-V1.md
+        dst: .docs/wiki/09_contratos
       - src: TROUBLESHOOTING.md
         dst: docs
       - src: "scripts/install/**/*"
