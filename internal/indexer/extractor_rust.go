@@ -13,7 +13,7 @@ var (
 	rustValuePattern    = regexp.MustCompile(`^\s*(pub(\([^)]*\))?\s+)?(const|static(\s+mut)?)\s+([A-Za-z_][A-Za-z0-9_]*)\b`)
 	rustModulePattern   = regexp.MustCompile(`^\s*(pub(\([^)]*\))?\s+)?mod\s+([A-Za-z_][A-Za-z0-9_]*)\b`)
 	rustMacroPattern    = regexp.MustCompile(`^\s*macro_rules!\s+([A-Za-z_][A-Za-z0-9_]*)\b`)
-	rustImplPattern     = regexp.MustCompile(`^\s*impl\b(.*?)\{`)
+	rustImplPattern     = regexp.MustCompile(`^\s*impl\b(.*)$`)
 	rustImplTypePattern = regexp.MustCompile(`([A-Za-z_][A-Za-z0-9_]*)\s*(<|$)`)
 )
 
@@ -31,6 +31,7 @@ func extractRust(repo model.WorkspaceRepo, relPath, hash string, content []byte)
 	items := make([]model.SymbolRecord, 0)
 	scopes := make([]rustScope, 0, 8)
 	depth := 0
+	pendingImpl := ""
 
 	for idx, line := range lines {
 		lineNumber := idx + 1
@@ -39,11 +40,20 @@ func extractRust(repo model.WorkspaceRepo, relPath, hash string, content []byte)
 			scopes = scopes[:len(scopes)-1]
 		}
 		if trimmed != "" && !strings.HasPrefix(trimmed, "//") && !strings.HasPrefix(trimmed, "*") && !strings.HasPrefix(trimmed, "#") {
-			if match := rustImplPattern.FindStringSubmatch(line); len(match) == 2 && rustBraceDelta(line) > 0 {
-				parent := rustImplName(match[1])
-				depth += rustBraceDelta(line)
-				scopes = append(scopes, rustScope{name: parent, kind: "impl", depth: depth})
-				continue
+			if strings.HasPrefix(trimmed, "impl") {
+				if match := rustImplPattern.FindStringSubmatch(line); len(match) == 2 {
+					header := strings.TrimSpace(match[1])
+					if before, _, found := strings.Cut(header, "{"); found {
+						if parent := rustImplName(strings.TrimSpace(before)); parent != "" && rustBraceDelta(line) > 0 {
+							depth += rustBraceDelta(line)
+							scopes = append(scopes, rustScope{name: parent, kind: "impl", depth: depth})
+							pendingImpl = ""
+							continue
+						}
+					} else if !strings.HasSuffix(trimmed, ";") {
+						pendingImpl = rustImplName(header)
+					}
+				}
 			}
 
 			name, kind, visibility := "", "", ""
@@ -99,7 +109,14 @@ func extractRust(repo model.WorkspaceRepo, relPath, hash string, content []byte)
 				}
 			}
 		}
-		depth += rustBraceDelta(line)
+		lineDelta := rustBraceDelta(line)
+		if pendingImpl != "" && strings.Contains(line, "{") && lineDelta > 0 {
+			depth += lineDelta
+			scopes = append(scopes, rustScope{name: pendingImpl, kind: "impl", depth: depth})
+			pendingImpl = ""
+			continue
+		}
+		depth += lineDelta
 	}
 	return items
 }
