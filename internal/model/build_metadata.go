@@ -5,6 +5,7 @@ package model
 var (
 	BuildVersion  string
 	BuildRevision string
+	BuildTime     string // UTC build timestamp; never inferred from vcs.time
 )
 
 // ReleaseMetadata overlays injected release metadata on Go build metadata.

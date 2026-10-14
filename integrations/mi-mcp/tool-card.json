@@ -1,0 +1,33 @@
+{
+  "schema": "bots-herramientas-ficha/v0",
+  "id": "mi-lsp.semantic-navigation",
+  "problem": "Encontrar código y documentación canónica con lecturas acotadas, sin confundir workspaces.",
+  "owner": "coord-herramientas",
+  "tenant": "Gabriel",
+  "layer": "herramientas",
+  "state": "candidata",
+  "binary": "mi-lsp",
+  "alias": "mi lsp",
+  "version": "unknown",
+  "provenance": {
+    "commit": "unknown",
+    "build_time": "unknown",
+    "source": "https://github.com/fgpaz/mi-lsp",
+    "status": "explicit_incomplete"
+  },
+  "capabilities": [
+    {"name": "q", "contract": "q-v1", "precondition": "Workspace correcto, índice disponible y proveedor compatible registrado por el host; auth legacy none", "effect": "read", "role": "developer-or-agent"},
+    {"name": "version", "contract": "legacy model.Envelope with model.VersionInfo; CT-Q-V1 section 2.1", "precondition": "Binario disponible; conserva envelope legacy y auth none", "effect": "read", "role": "operator"},
+    {"name": "doctor", "contract": "legacy model.Envelope with service.DoctorCheck; CT-Q-V1 section 2.1", "precondition": "Estado local accesible; sin diagnóstico daemon por defecto; conserva auth none", "effect": "read", "role": "operator"}
+  ],
+  "dependencies": ["mi-lsp executable", "workspace index for catalog queries", "mi-cli for dispatcher alias (external)", "mi-mcp for gateway binding (external)", "semantic workers and daemon (optional)"],
+  "wiki": ".docs/wiki/09_contratos/CT-Q-V1.md",
+  "review_due": "2026-10-18T23:00:00Z",
+  "metrics": {"usage": null, "errors": null, "status": "unknown"},
+  "discovery": {
+    "status": "explicit_incomplete",
+    "reason": "Declared milsp.q adapter is not deployed evidence; generic discovery not implemented. Release generator stamps exact build metadata; alias and binding require independent recheck.",
+    "owner": "coord-herramientas",
+    "due": "2026-10-18T23:00:00Z"
+  }
+}
