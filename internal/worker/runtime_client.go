@@ -27,7 +27,7 @@ func NewRuntimeClient(repoRoot string, workspace model.WorkspaceRegistration, re
 	case KotlinBackend:
 		return NewKotlinClient(workspace, request)
 	case "rust-analyzer":
-		return NewRustAnalyzerClient(runtimeWorkspaceForRequest(workspace, request))
+		return NewRustAnalyzerClient(runtimeWorkspaceForRequest(workspace, request), request)
 	default:
 		return nil, ErrUnsupportedBackend(backendType)
 	}
