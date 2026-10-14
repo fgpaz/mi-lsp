@@ -131,6 +131,15 @@ func (a *App) callSemanticWorker(ctx context.Context, registration model.Workspa
 		defer cancel()
 		return a.Semantic.Call(callCtx, registration, request)
 	}
+	if request.BackendType == "rust-analyzer" && method == "find_refs" {
+		timeout := refsSemanticTimeout(ctx)
+		if timeout < 30*time.Second {
+			timeout = 30 * time.Second
+		}
+		callCtx, cancel := context.WithTimeout(ctx, timeout)
+		defer cancel()
+		return a.Semantic.Call(callCtx, registration, request)
+	}
 	if method != "find_refs" {
 		return a.Semantic.Call(ctx, registration, request)
 	}

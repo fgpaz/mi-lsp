@@ -68,6 +68,8 @@ var rustAnalyzerWarmupBackoff = []time.Duration{
 	250 * time.Millisecond,
 	500 * time.Millisecond,
 	1000 * time.Millisecond,
+	2000 * time.Millisecond,
+	4000 * time.Millisecond,
 }
 
 type openedDocument struct {
@@ -526,13 +528,17 @@ func (c *LSPClient) sendSemanticRequest(method string, params any) (json.RawMess
 		return result, err
 	}
 	c.semanticWarmupDone = true
+	warmupCtx := c.requestCtx
+	if warmupCtx == nil {
+		warmupCtx = context.Background()
+	}
 	for _, delay := range rustAnalyzerWarmupBackoff {
 		if err != nil || !emptyLSPQueryResult(method, result) {
 			return result, err
 		}
 		select {
-		case <-c.requestCtx.Done():
-			return nil, c.requestCtx.Err()
+		case <-warmupCtx.Done():
+			return nil, warmupCtx.Err()
 		case <-time.After(delay):
 		}
 		result, err = c.sendRequest(method, params)

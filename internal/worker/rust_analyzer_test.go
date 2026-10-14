@@ -32,6 +32,26 @@ func TestRustAnalyzerDiscoveryUsesOverride(t *testing.T) {
 	}
 }
 
+func TestRustLinkedCargoManifestFromEntrypoint(t *testing.T) {
+	root := t.TempDir()
+	manifest := filepath.Join(root, "rust", "crate", "Cargo.toml")
+	if err := os.MkdirAll(filepath.Dir(manifest), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(manifest, []byte("[package]\nname=\"x\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	workspace := model.WorkspaceRegistration{Root: root}
+	request := model.WorkerRequest{
+		EntrypointPath: "rust/crate/Cargo.toml",
+		Payload:        map[string]any{"file": "rust/crate/src/lib.rs"},
+	}
+	linked := rustLinkedCargoManifests(workspace, request)
+	if len(linked) != 1 || linked[0] != manifest {
+		t.Fatalf("linked = %#v, want %q", linked, manifest)
+	}
+}
+
 func TestLanguageIDForRustFile(t *testing.T) {
 	if got := languageIDForPath("src/lib.rs"); got != "rust" {
 		t.Fatalf("languageIDForPath(.rs) = %q, want rust", got)

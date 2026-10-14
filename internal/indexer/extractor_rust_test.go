@@ -2,6 +2,7 @@ package indexer
 
 import (
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/fgpaz/mi-lsp/internal/model"
@@ -56,5 +57,31 @@ macro_rules! make_service { () => {} }
 	}
 	if got["Runner"].Kind != "trait" || got["run"].Parent != "Runner" {
 		t.Errorf("trait symbols = %#v / %#v", got["Runner"], got["run"])
+	}
+}
+
+func TestExtractRustImplMethodsUseReceiverType(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "router.rs")
+	content := []byte(`pub struct Router;
+
+impl<S> Router<S>
+where
+    S: Clone,
+{
+    pub fn route(&self) {}
+}
+`)
+	repo := model.WorkspaceRepo{ID: "main", Name: "fixture"}
+	symbols, _ := ExtractCatalog(root, repo, path, content)
+	got := make(map[string]model.SymbolRecord, len(symbols))
+	for _, symbol := range symbols {
+		got[symbol.Name] = symbol
+	}
+	if got["route"].Kind != "method" || got["route"].Parent != "Router" {
+		t.Fatalf("route = %#v, want method with parent Router", got["route"])
+	}
+	if !strings.Contains(got["route"].QualifiedName, "Router.route") {
+		t.Fatalf("qualified name = %q, want Router.route", got["route"].QualifiedName)
 	}
 }
