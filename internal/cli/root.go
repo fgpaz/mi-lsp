@@ -176,6 +176,7 @@ func NewRootCommand() *cobra.Command {
 		newVersionCommand(state),
 		newQCommand(state),
 		newProviderManifestCommand(state),
+		newSchemaCommand(state),
 		newProbeCommand(state),
 		newDoctorCommand(state),
 		newSkillsCommand(state),
