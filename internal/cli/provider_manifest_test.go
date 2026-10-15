@@ -59,8 +59,8 @@ func TestProviderManifestCommandPrintsContractAndRealQFlags(t *testing.T) {
 		t.Errorf("invocation.fixed_args must include --no-auto-register, got %v", fixedArgs)
 	}
 	operations, ok := actual["operations"].([]any)
-	if !ok || len(operations) != 1 {
-		t.Fatalf("operations = %v, want one q operation", actual["operations"])
+	if !ok || len(operations) != 5 {
+		t.Fatalf("operations = %v, want q plus version, schema, --help and --version", actual["operations"])
 	}
 	operation, _ := operations[0].(map[string]any)
 	if operation["name"] != "q" || operation["effect"] != "read" {

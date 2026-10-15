@@ -4,7 +4,11 @@
   "provider_version": "0.10.1",
   "min_provider_version": "0.10.0",
   "contracts": {
-    "q": "q-v1"
+    "--help": "mi-lsp-help/v0",
+    "--version": "mi-lsp-version-flag/v0",
+    "q": "q-v1",
+    "schema": "mi-lsp-schema/v0",
+    "version": "mi-lsp-version/v0"
   },
   "auth": "none",
   "invocation": {
@@ -68,6 +72,50 @@
       "output": {
         "contract_version": "q-v1",
         "ref": "mi-lsp .docs/wiki/09_contratos/CT-Q-V1.md"
+      }
+    },
+    {
+      "name": "version",
+      "effect": "read",
+      "contract": "mi-lsp-version/v0",
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {},
+        "required": []
+      }
+    },
+    {
+      "name": "schema",
+      "effect": "read",
+      "contract": "mi-lsp-schema/v0",
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {},
+        "required": []
+      }
+    },
+    {
+      "name": "--help",
+      "effect": "read",
+      "contract": "mi-lsp-help/v0",
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {},
+        "required": []
+      }
+    },
+    {
+      "name": "--version",
+      "effect": "read",
+      "contract": "mi-lsp-version-flag/v0",
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {},
+        "required": []
       }
     }
   ]

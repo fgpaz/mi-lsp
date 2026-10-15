@@ -32,7 +32,7 @@ type providerOperation struct {
 	Effect      string         `json:"effect"`
 	Contract    string         `json:"contract"`
 	InputSchema map[string]any `json:"input_schema"`
-	Output      map[string]any `json:"output"`
+	Output      map[string]any `json:"output,omitempty"`
 }
 
 func newProviderManifestCommand(state *rootState) *cobra.Command {
@@ -65,8 +65,14 @@ func newProviderManifest(version string) providerManifest {
 		Namespace:          "milsp",
 		ProviderVersion:    version,
 		MinProviderVersion: minProviderVersion,
-		Contracts:          map[string]string{"q": "q-v1"},
-		Auth:               "none",
+		Contracts: map[string]string{
+			"q":         "q-v1",
+			"version":   "mi-lsp-version/v0",
+			"schema":    "mi-lsp-schema/v0",
+			"--help":    "mi-lsp-help/v0",
+			"--version": "mi-lsp-version-flag/v0",
+		},
+		Auth: "none",
 		Invocation: providerInvocation{
 			Kind:      "cli",
 			Command:   "mi-lsp",
@@ -96,6 +102,25 @@ func newProviderManifest(version string) providerManifest {
 				"contract_version": "q-v1",
 				"ref":              "mi-lsp .docs/wiki/09_contratos/CT-Q-V1.md",
 			},
-		}},
+		},
+			managementOperation("version", "mi-lsp-version/v0"),
+			managementOperation("schema", "mi-lsp-schema/v0"),
+			managementOperation("--help", "mi-lsp-help/v0"),
+			managementOperation("--version", "mi-lsp-version-flag/v0"),
+		},
+	}
+}
+
+func managementOperation(name, contract string) providerOperation {
+	return providerOperation{
+		Name:     name,
+		Effect:   "read",
+		Contract: contract,
+		InputSchema: map[string]any{
+			"type":                 "object",
+			"additionalProperties": false,
+			"properties":           map[string]any{},
+			"required":             []string{},
+		},
 	}
 }
