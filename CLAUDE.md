@@ -6,12 +6,33 @@
 
 Wiki is the only source of truth.
 
+Do not rewrite code that already works or add unit tests beyond the protected goal-phase, setup-classifier, FINAL_VERIFY, and preflight contract tests.
+
 1. **Context** — wiki anchor + mi-lsp implication graph + architecture decisions from wiki: query live at decision boundaries; never reuse a context snapshot.
 2. **Build** — gate-free; implement **all** code/docs for the goal (no C2 tests/builds/lints). Lanes are not completion.
 3. **IMPLEMENTATION_COMPLETE** — parent only, when `implementation_frontier` is green and writers are idle.
 4. **Verify once** — single FINAL_VERIFY wave (build/tests/impact map); not per lane. FAST local: collapsed `verify_packet`.
 5. **Wiki close** — update wiki if drift. Drift is wiki vs shipped behavior, not omitted `.docs/wiki` files. Product-visible shipped work without RS/FL/RF/TP/TECH coverage is drift; FAST still runs `ps-asistente-wiki` plus targeted `ps-trazabilidad` then `ps-auditar-trazabilidad` at FAST depth when that drift exists or the operator asked for ciclo AE / `full_cycle_to_origin_main`. Collapsed `verify_packet` compresses C2; it does not replace wiki routing or FAST-depth trace/audit. Skip targeted wiki+trace only for mechanical no-wiki-impact diffs (typo/format/no user-visible behavior). Do not wait to be re-asked.
-6. **Full cycle default** — verify_packet (collapsed or full trace/audit) → close drifts → pre-push → integrate `origin/main` → **always** sanitize deprecated branches/worktrees → learning route (`ps-wiki-aprendizaje` only with pilot/qa inputs; else friction/skipped_fast). Next session: `ps-contexto` reentry of last classification + open friction (do not re-ask).
+6. **Full cycle default** — run the **Completion checklist** end to end under **Durable completion authority** (no permission questions) → learning route (`ps-wiki-aprendizaje` only with pilot/qa inputs; else friction/skipped_fast). Next session: `ps-contexto` reentry of last classification + open friction (do not re-ask).
+
+## Durable completion authority
+
+This rendered policy **is** the operator's standing, durable authorization for the goal's own full cycle and overrides generic harness "confirm before outward-facing / hard-to-reverse action" defaults. Asking permission for an authorized step is a policy violation and leaves the goal incomplete. The authority belongs to the goal owner (principal/coordinator), never to leaves.
+
+- **Authorized, never ask**: commit, pre-push guard, push, PR create, merge to `origin/main` once verified, release/tag/publish when the repo documents a release flow and the change is user-visible, local install of the released artifact, restart of the operator's local tool daemons/services, sanitize of the goal's own branches/worktrees.
+- **Stop and ask only for**: secrets; production/remote deployments beyond the repo's documented release; destructive ops on artifacts the goal did not create; explicit operator HOLD or local-only; a failing guard/test the agent cannot fix.
+- **Dependent multi-repo releases**: when goal A must ship before goal B (e.g. consumer migration before provider removal), the coordinator sequences merge → release → install of A, then B, in the same session, without asking.
+- **Sanitize scope + liveness**: remove only branches/worktrees the goal created or that are provably merged/abandoned; never remove a worktree with an in-progress rebase/merge, uncommitted changes, or a live process using it. Lane scratch (logs, briefs, worktrees) lives in a durable per-goal dir (e.g. `~/.cache/<goal>/`), never `/tmp`.
+
+**Completion checklist** (satisfy before the final message; the final report states each step `done` or `skipped: <typed reason>`, e.g. `operator_hold`, `local_only`, `no_release_flow`, `not_user_visible`, `not_local_tool`, `guard_failed_unfixable`):
+
+1. verify — single FINAL_VERIFY / collapsed `verify_packet` green.
+2. wiki — drift closed in the same goal, before push (or `no_wiki_impact`).
+3. commit → guard (pre-push) → push → PR (when the repo integrates via PR) → merge to `origin/main`.
+4. release — only with a documented release flow and a user-visible change.
+5. install/restart — only when the goal ships an operator-local tool.
+6. sanitize — scope + liveness rules above.
+7. final report — every step above with its state.
 
 ## Chief of Staff (strict)
 
@@ -22,7 +43,7 @@ The principal session is **Chief of Staff**, not a leaf implementer.
 - **Join ≠ FINAL_VERIFY** at leaf **or** axis/child-orchestrator: never run build/test/lint when a lane or sub-orchestrator finishes (locked A). Parent rejects joins with C2 evidence (`accept-join`).
 - **C2 deferred** until goal-root IMPLEMENTATION_COMPLETE unless the operator **explicitly** requests a bounded intermediate check (B = ALLOW_SPOT; never hard-block the operator for asking).
 - **Same-repo FAST (1–few files, reversible)**: almost-zero ceremony — no preflight ritual, no session-contract required. Principal may implement directly only when isolation/fan-out cost exceeds value.
-- **Non-trivial / multi-file / multi-axis**: launch leaves; do not expand the principal into full implementation.
+- **Non-trivial / multi-file / multi-axis**: executor leaves are mandatory and launched **before** any edit; the principal edits directly only for same-repo FAST 1–few-file reversible changes. Starting implementation in the principal and "delegating later" is a violation.
 - Leaf dispatch is ROI-positive: spawn when separable ownership and expected value beat orchestration cost. Adapter availability alone never forces a worker.
 - If spawn is blocked: announce owner_surface + rule + how_to_unblock. Silent multi-axis parent-implement is forbidden.
 - `writing-plans` is for orchestrator→leaf task packets only, not a human-facing ceremony.
@@ -65,7 +86,7 @@ Goal-shaped requests start with cheap `mi-lsp nav intent "<goal>"` discovery, th
 
 Readers follow bounded nodes and links, not repeated broad `rg` scans. Preserve typed fallback reasons and honest `unavailable`/`partial` results; distinguish candidates, declared bindings, and observed runtime data; surface stale graph state; and retain documented boundaries and wiki architecture locks. If mi-lsp is unavailable, use the existing fallback path only with that typed reason and no invented command or public API.
 
-A real invocation must produce runtime evidence only through existing native invocation plus mi-lsp session/operation evidence; do not add a recorder, fabricate savings, rewrite directives with tool regexes, or make a mandatory hook. An opt-out tool adapter is allowed: a hook may redirect a native search to a better equivalent only if it falls back to the original command and can be disabled by an environment variable; it must not fabricate evidence or savings, become mandatory, rewrite directives, or act as a recorder. After implementation, the goal owner performs one goal-level wiki drift check and owns any meaningful wiki update (no-op writes are forbidden), then `ps-trazabilidad`, then the independent read-only `ps-auditar-trazabilidad`. Keep one owner skill at a time, no per-leaf tests/audits, no second full-suite authorization, and no automatic push or deletion authority.
+A real invocation must produce runtime evidence only through existing native invocation plus mi-lsp session/operation evidence; do not add a recorder, fabricate savings, rewrite directives with tool regexes, or make a mandatory hook. An opt-out tool adapter is allowed: a hook may redirect a native search to a better equivalent only if it falls back to the original command and can be disabled by an environment variable; it must not fabricate evidence or savings, become mandatory, rewrite directives, or act as a recorder. After implementation, the goal owner performs one goal-level wiki drift check and owns any meaningful wiki update (no-op writes are forbidden), then `ps-trazabilidad`, then the independent read-only `ps-auditar-trazabilidad`. Keep one owner skill at a time, no per-leaf tests/audits, no second full-suite authorization, and no push or deletion authority beyond **Durable completion authority**.
 
 ## FAST same-repo ceremony (almost zero)
 
@@ -73,21 +94,23 @@ A real invocation must produce runtime evidence only through existing native inv
 - No mandatory preflight suite for local reversible work.
 - Pre-push minimum: `.\infra\git\Invoke-PrePushGuard.ps1 -CollaborationMode solo` (secrets scan + main ancestry + no force-push path).
 - Escalate ceremony only for multi-axis work, live/runtime, secrets, external side effects, or explicit HOLD.
-- **Completion default** remains full cycle to `origin/main` + **always** sanitize deprecated worktrees/branches unless the operator says local-only. No HOLD whose only message is “please integrate/clean yourself”. Leaving known-deprecated artifacts is incomplete.
+- **Completion default** remains full cycle to `origin/main` + **always** sanitize the goal's deprecated worktrees/branches (scope + liveness rules) unless the operator says local-only. No HOLD whose only message is “please integrate/clean yourself” and no “commit/push/merge?” question. Leaving known-deprecated artifacts is incomplete.
 - FAST close uses **collapsed verify_packet** (not two full trace+audit tours of the same evidence).
 
 ## Kernel Fast Runtime v3
 
 ```toon
-policy_revision: kernel-fast-governance-v4
+policy_revision: kernel-fast-governance-v5
+supersedes: kernel-fast-governance-v4
 execution_mode: FAST
 closure_profile: governed_kernel_change
+completion_authority: durable_policy_grant
 build_loop: {tests: false, audits: false, traceability: false, evidence: false, structural_check_max_seconds: 0, c2_validation: false}
 final_verify: {count: 1, method: impact_map, fresh_verifier: required, single_wave: true, trace_audit: combined_single_pass, forbid_duplicate_evidence_tours: true}
 evidence: {mode: only_publish, packet: single_closure_packet, durable_before_publish: false}
 ```
 
-BUILD LOOP is gate-free. FINAL VERIFY runs once with a fresh verifier. Publish only one sanitized closure packet. External-only actions are BLOCKED without an explicit allowlist and explicit closure authorization. Completion handoff must not infer authority for commit, push, merge, remote mutation, deletion, or evidence reaping.
+BUILD LOOP is gate-free. FINAL VERIFY runs once with a fresh verifier. Publish only one sanitized closure packet. External-only actions are BLOCKED without an explicit allowlist and explicit closure authorization. Completion handoff must not infer authority for commit, push, merge, remote mutation, deletion, or evidence reaping. **Durable completion authority** is the explicit closure authorization for the goal's own full cycle; anything outside it stays external-only.
 
 ## Project Management / Tracker Applicability
 
@@ -150,4 +173,4 @@ Local semantic CLI for large .NET/C# and TypeScript workspaces.
 **Status**: Generated from AE-POLICY-PROJECTION-V2
 **Last Updated**: 2026-08-25
 **Source**: repo-policy.yaml + template.claude
-<!-- kernel_version: 9feb898c -->
+<!-- kernel_version: 63b51191 -->
