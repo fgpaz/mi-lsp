@@ -1,0 +1,15 @@
+# Copy [embeddings] into workspace .mi-lsp/project.toml (gitignored).
+# Load secrets on the consumer node only: mkey run micro-proxy prod --redact -- mi-lsp …
+# Native ref BIFROST_VK_MI_LSP → Bifrost profile mi-lsp-canary (Gemma 768). No values in git.
+
+[embeddings]
+enabled = true
+provider = "openai"
+base_url = "http://100.108.60.107:4010/bifrost/v1"
+model = "embeddinggemma2-768"
+dim = 768
+api_key_env = "BIFROST_VK_MI_LSP"
+batch_size = 16
+timeout_ms = 30000
+encoding_format = "float"
+user_agent = "mi-lsp-bifrost-embeddings/1.0"
