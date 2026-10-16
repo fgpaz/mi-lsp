@@ -33,7 +33,7 @@ func GraphFreshness(ctx context.Context, db *sql.DB, requestedGeneration string)
 	if !ok {
 		return model.ClassifyGraphFreshness(runtimeState, "", requestedGeneration, true), nil
 	}
-	generation, err := ValidateGraphGeneration(ctx, db, active)
+	generation, err := validateActiveGraphGenerationHeader(ctx, db, active)
 	if err != nil || generation.Status != model.GraphGenerationActive {
 		freshness := model.ClassifyGraphFreshness(runtimeState, active.String(), requestedGeneration, false)
 		if err == nil {

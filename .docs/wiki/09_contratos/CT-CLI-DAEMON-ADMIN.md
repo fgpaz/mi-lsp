@@ -80,7 +80,6 @@ Comandos canonicos:
 
 - `workspace add|scan|list|warm|status|remove|doctor|hygiene|prune|which`
 - `nav symbols|find|refs|overview|outline|service|search|context|deps|ask|pack|prepare|batch|related|workspace-map|diff-context|affected|trace|intent|suggest`
-- `mcp` (puerta stdio opcional; la decision de arquitectura vive en [[TECH-MCP-ADAPTER]] y no se reabre aqui)
 - `index [path] [--clean] [--docs-only] [--entrypoint <id|repo-relative-path>]`
 - `index start|status|cancel` (`start` admite `--entrypoint <id|repo-relative-path>`)
 - `info`
@@ -147,7 +146,6 @@ authority: CLI
 protocol: mi-lsp-v1.1
 decision: TECH-MCP-ADAPTER
 commands:
-  mcp: "adaptador stdio opcional sobre comandos ya existentes; no indexa ni reemplaza a la CLI"
   workspace_which: "solo lectura; workspace resuelto y ruta del ejecutable en uso; no muta el registry"
   nav_suggest: "sugerencia acotada; --event user_prompt [--prompt] o --event post_tool --tool --consecutive; salida mi-lsp nav … o JSON command separado de hint/suggested_command; no reemplaza nav intent"
 binary_override:
@@ -234,11 +232,11 @@ defaults:
   watch_mode: "lazy"
   max_watched_roots: 8
   max_inflight: 48 (env MI_LSP_DAEMON_MAX_INFLIGHT)
-  max_workers: 6 (env MI_LSP_DAEMON_MAX_WORKERS)
+  max_workers: 8 (env MI_LSP_DAEMON_MAX_WORKERS; entero positivo; flag --max-workers 0 = env u 8)
   max_runtime_memory_mb: 1024 (env MI_LSP_DAEMON_MAX_RUNTIME_MEMORY_MB)
   soft_memory_threshold_mb: 500
   wal_checkpoint_interval_sec: 1800
-note: "max_inflight raised from 16 to 48; max_workers raised from 3 to 6 for sustained concurrent ops"
+note: "max_inflight raised from 16 to 48; max_workers raised from 3 to 8 (one shared default for start, serve, restart, auto-start and manager fallback) so concurrent C#/Go/Python/TS/Rust/Kotlin projects do not thrash expensive runtimes via LRU"
 ```
 
 ### Estado público del daemon

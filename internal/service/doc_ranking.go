@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/fgpaz/mi-lsp/internal/docgraph"
 	"github.com/fgpaz/mi-lsp/internal/model"
@@ -432,26 +434,56 @@ func hasAnyTerm(normalizedQuestion string, terms ...string) bool {
 	return false
 }
 
+// rankingASCII maps each ASCII byte to its normalized form: 0 for separators
+// and whitespace, the lowercase byte otherwise.
+var rankingASCII = func() (table [utf8.RuneSelf]byte) {
+	for b := 0; b < utf8.RuneSelf; b++ {
+		table[b] = byte(b)
+		if 'A' <= b && b <= 'Z' {
+			table[b] = byte(b) + 'a' - 'A'
+		}
+	}
+	for _, b := range []byte(" \t\n\v\f\r_-/\\.:,;?!()") {
+		table[b] = 0
+	}
+	return table
+}()
+
+// normalizeRankingText lowercases value, turns ranking separators into spaces
+// and collapses whitespace runs, in a single pass. It runs for every document
+// on every ranked query, so it avoids building a replacer per call.
 func normalizeRankingText(value string) string {
-	value = strings.ToLower(value)
-	replacer := strings.NewReplacer(
-		"\r", " ",
-		"\n", " ",
-		"_", " ",
-		"-", " ",
-		"/", " ",
-		"\\", " ",
-		".", " ",
-		":", " ",
-		",", " ",
-		";", " ",
-		"?", " ",
-		"!", " ",
-		"(", " ",
-		")", " ",
-	)
-	value = replacer.Replace(value)
-	return strings.Join(strings.Fields(value), " ")
+	out := make([]byte, 0, len(value))
+	pendingSpace := false
+	for i := 0; i < len(value); {
+		c := value[i]
+		if c < utf8.RuneSelf {
+			i++
+			mapped := rankingASCII[c]
+			if mapped == 0 {
+				pendingSpace = len(out) > 0
+				continue
+			}
+			if pendingSpace {
+				out = append(out, ' ')
+				pendingSpace = false
+			}
+			out = append(out, mapped)
+			continue
+		}
+		r, size := utf8.DecodeRuneInString(value[i:])
+		i += size
+		if unicode.IsSpace(r) {
+			pendingSpace = len(out) > 0
+			continue
+		}
+		if pendingSpace {
+			out = append(out, ' ')
+			pendingSpace = false
+		}
+		out = utf8.AppendRune(out, unicode.ToLower(r))
+	}
+	return string(out)
 }
 
 func dedupeStrings(items []string) []string {

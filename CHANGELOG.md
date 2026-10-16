@@ -7,6 +7,10 @@ and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2
 
 ## [Unreleased]
 
+### Removed
+
+- Removed the `mi-lsp mcp` stdio door (`internal/mcp`, the `mcp` command, and the Pi/Cursor/Grok/Claude Code/Codex MCP registrations). Use mi-mcp / sandinas-mcp, which run the `mi-lsp` CLI per tool call. The CLI remains the authority.
+
 ## [0.12.1] - 2026-10-09
 
 ### Fixed

@@ -1,6 +1,6 @@
 ---
 doc_id: RF-QRY-023
-title: Componer consultas q-v1 por CLI, daemon y MCP Go con recetas versionadas
+title: Componer consultas q-v1 por CLI, daemon y proveedor mi-mcp con recetas versionadas
 layer: RF
 status: implemented
 source_schema: SDD-WIKI-SOURCE-v1
@@ -29,7 +29,7 @@ agent_may_edit:
 agent_must_not_edit:
   - .docs/wiki/_mi-lsp/read-model.toml
 verify:
-  - go test ./internal/query ./internal/cli ./internal/mcp ./internal/daemon
+  - go test ./internal/query ./internal/cli ./internal/daemon
   - mi-lsp nav wiki validate-harness --workspace mi-lsp --format toon
   - mi-lsp nav wiki validate-source --workspace mi-lsp --ids RF-QRY-023 --format toon
 stop_if:
@@ -41,7 +41,7 @@ evidence:
   - .docs/wiki/06_pruebas/TP-QRY.md
 ---
 
-# RF-QRY-023 — Componer consultas q-v1 por CLI, daemon y MCP Go con recetas versionadas
+# RF-QRY-023 — Componer consultas q-v1 por CLI, daemon y proveedor mi-mcp con recetas versionadas
 
 ## Resultado requerido
 
@@ -60,7 +60,7 @@ evidence:
   - internal/service/primitives_q_test.go
 ```
 
-Ofrecer una sola gramática de pipelines semánticas `q-v1` mediante CLI, daemon y herramienta MCP Go `milsp`. La frontera del proveedor, envelope, errores, paginación y bytes es normativa en [[CT-Q-V1]]. El sandbox y `execute` pertenecen a mi-mcp; mi-lsp es proveedor y expone `milsp.q(...)` por su manifiesto de proveedor.
+Ofrecer una sola gramática de pipelines semánticas `q-v1` mediante CLI y daemon. La herramienta MCP Go `milsp` fue retirada el 2026-10-15 junto con la puerta MCP; el proveedor mi-mcp consume el mismo contrato por su manifiesto. La frontera del proveedor, envelope, errores, paginación y bytes es normativa en [[CT-Q-V1]]. El sandbox y `execute` pertenecen a mi-mcp; mi-lsp es proveedor y expone `milsp.q(...)` por su manifiesto de proveedor.
 
 ## Gramática y ejecución
 
@@ -68,9 +68,9 @@ Ofrecer una sola gramática de pipelines semánticas `q-v1` mediante CLI, daemon
 
 El cursor es opaco y autenticado, ligado a consulta canónica, workspace, generación del índice y posición; dura 10 minutos. Consulta/scope incorrectos se rechazan; los códigos para inválido, vencido o snapshot cambiado son los fijados por CT-Q-V1. El tamaño total nunca supera `max_bytes`; se recortan ítems completos y un único texto sobredimensionado lleva `truncated_item:true` o se omite con `max_bytes_item_exceeded`.
 
-## Superficie MCP
+## Superficie MCP (retirada 2026-10-15)
 
-`tools/list` antepone `milsp` al catálogo existente de trece `nav_*`. La descripción incluye gramática y ejemplos; el schema publica `q`, `contract_version`, `workspace`, `budget`, `max_bytes`, `timeout_ms`, `session_id`, `page`, `fresh` y `dedupe`. La tool devuelve el envelope completo del contrato. Los trece `nav_*` mantienen compatibilidad mientras los consumidores migran; no se edita mi-mcp desde esta entrega.
+[RETIRADO] `tools/list` antepone `milsp` al catálogo existente de trece `nav_*`. La descripción incluye gramática y ejemplos; el schema publica `q`, `contract_version`, `workspace`, `budget`, `max_bytes`, `timeout_ms`, `session_id`, `page`, `fresh` y `dedupe`. La tool devuelve el envelope completo del contrato. Los trece `nav_*` mantienen compatibilidad mientras los consumidores migran; no se edita mi-mcp desde esta entrega.
 
 ## Recetas
 
@@ -83,7 +83,7 @@ Los ejemplos de uso se limitan a las tres recetas canónicas de [[CT-Q-V1]]. Los
 - Gramática quoted, opciones, pipelines de máximo ocho etapas, errores de sintaxis con posición de carácter, expectativa y ejemplo canónico, y `describe` hasta 600 tokens.
 - Las tres recetas canónicas de [[CT-Q-V1]] pasan por el parser en pruebas Go; q no crea workspaces ni reindexa al resolver o consultar.
 - CLI agrega exactamente el subcomando `q`; daemon atiende la operación, registra límites y usa el mismo executor que fallback directo.
-- `milsp` es la primera herramienta MCP, su schema valida opciones q-v1 y las trece herramientas previas siguen listadas.
+- [RETIRADO] `milsp` es la primera herramienta MCP, su schema valida opciones q-v1 y las trece herramientas previas siguen listadas.
 - Cursor completo: firma inválida, expiración >10 minutos y cambio de generation se distinguen; orden estable `(path,line,id)`.
 - Bytes medidos sobre el envelope serializado; ítems completos; clipping UTF-8 y marcador/razón tipados.
 - Recetas iniciales y los trece alias se resuelven de forma determinista; cada pipeline fuente está versionada en `internal/query/recipes/*.q`.

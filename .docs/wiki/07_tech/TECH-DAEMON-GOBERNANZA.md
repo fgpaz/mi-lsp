@@ -73,7 +73,7 @@ Define el modelo canonico del daemon global, su governance UI workspace-first y 
   - `rust-analyzer`
 - El warm de un workspace es por lenguaje detectado (`roslyn` para C#, `tsserver`, `pyright`, `gopls` para Go y `rust-analyzer` para Rust) y ya no calienta Roslyn por defecto en repos sin C#.
 - Politica por defecto:
-  - `max_workers = 6` (era 3)
+  - `max_workers = 8` (era 3; constante única `defaultMaxWorkers`, override con env `MI_LSP_DAEMON_MAX_WORKERS` entero positivo; el flag `--max-workers` en 0 significa env u 8). Motivo: proyectos C#, Go, Python, TS, Rust y Kotlin concurrentes comparten un daemon y con 3 el LRU descartaba runtimes caros (Roslyn) en cada alternancia. El auto-start, `daemon restart` y el fallback del manager usan el mismo valor
   - `idle_timeout = 30m`
   - `watch_mode = lazy`
   - `max_watched_roots = 8`
@@ -83,7 +83,8 @@ Define el modelo canonico del daemon global, su governance UI workspace-first y 
 ```toon
 block_id: TECH-DAEMON-GOBERNANZA.topology-defaults-v2
 description: "Daemon topology defaults updated for max concurrency"
-max_workers: 6
+max_workers: 8
+max_workers_env: "MI_LSP_DAEMON_MAX_WORKERS"
 max_inflight: 48
 max_runtime_memory_mb: 1024
 soft_memory_threshold_mb: 500
@@ -114,6 +115,9 @@ result_cache:
 - `EnsureDaemon` debe usar el mismo lock global y health recheck que `daemon start`; el estado persistido no basta si el pipe/socket no responde.
 - El watcher no arranca recursivamente sobre todos los aliases por default: `lazy` activa por root canonico, `eager` es opt-in y `off` deshabilita watchers.
 - Los watchers se deduplican por `workspace_root` canonico y se acotan por LRU con `max_watched_roots`; worktrees con roots distintos se observan por separado.
+- Todo worker lanzado (Roslyn, cliente LSP generico, tsserver) queda ligado al daemon: en Linux se crea con `Pdeathsig=SIGKILL`, de modo que un daemon caido o terminado a la fuerza no deja language servers huerfanos. En otros SO no cambia: el cierre ocurre por shutdown ordenado o reaping por `idle_timeout`.
+- El registry global decodificado se cachea por path en proceso (invalidado por mtime+size y por `SaveRegistry`); cada llamador recibe una copia del mapa, asi una mutacion local no corrompe el cache.
+- Ranking documental: la normalizacion de texto es de una sola pasada (misma salida) y el contexto wiki-codigo vivo y la autoridad de gobernanza reutilizan el cache de `doc_records` por generacion en lugar de recargarlos varias veces por consulta.
 - Requests pesadas daemon-aware se acotan con `max_inflight`; saturacion devuelve `daemon/backpressure_busy`.
 - Result cache LRU (256 entradas, TTL 10 min): cachea read-only ops (nav.ask/search/pack/governance/route) keyed por sha256(workspace_root + generacion(mtime index.db) + op + payload canonico sin session_id). Sin error-caching. Disable con `MI_LSP_DAEMON_RESULT_CACHE=0`. Stats en `system.status.result_cache: {hits, misses, entries}`. Los logs HIT/MISS son diagnostico opt-in con `MI_LSP_DAEMON_RESULT_CACHE_DEBUG`; no forman parte del hot path normal.
 - Ranking owner-aware aplica `canonical_ceiling`: un owner canónico positivo no puede quedar debajo de ruido FTS de README genérico.

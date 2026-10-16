@@ -27,11 +27,11 @@ evidence:
   - .docs/wiki/01_alcance_funcional.md
 ```
 
-`mi-lsp` es una CLI semántica local para proyectos y repos heterogéneos, orientada a agentes y desarrolladores que necesitan navegar código con alta confiabilidad y bajo consumo de tokens. Ofrece semántica profunda C# con Roslyn, catálogos locales para TypeScript/JavaScript y Python, y catalogación AST nativa para Go con enriquecimiento opcional vía `gopls`. El CLI puede operar solo o como proceso MCP local sobre stdio; ambos caminos usan las mismas operaciones y el mismo workspace local.
+`mi-lsp` es una CLI semántica local para proyectos y repos heterogéneos, orientada a agentes y desarrolladores que necesitan navegar código con alta confiabilidad y bajo consumo de tokens. Ofrece semántica profunda C# con Roslyn, catálogos locales para TypeScript/JavaScript y Python, y catalogación AST nativa para Go con enriquecimiento opcional vía `gopls`. El CLI es la única superficie de navegación. La puerta MCP local `mi-lsp mcp` fue retirada el 2026-10-15; `mi-mcp` invoca el CLI por llamada.
 
 El exito del producto en v1.3 se mide por estos resultados:
 - la CLI siempre responde aunque el daemon no este activo;
-- el mismo servicio de navegación está disponible mediante CLI y un servidor MCP local sobre stdio, sin requerir un proceso MCP persistente;
+- el servicio de navegación se consume por la CLI; las llamadas MCP llegan vía `mi-mcp`, que ejecuta el CLI por cada llamada, sin proceso MCP persistente;
 - el primer uso puede resolverse con `mi-lsp init` sin onboarding largo;
 - `nav wiki` ofrece una entrada documental explicita para agentes que buscan RF/FL/TP/CT/TECH/DB, y `nav wiki map` un catálogo compacto de hubs de wikis de conocimiento (`wiki/` y `bibliotecas/`);
 - `nav ask` responde preguntas de intencion usando wiki + evidencia de codigo;
@@ -42,12 +42,12 @@ El exito del producto en v1.3 se mide por estos resultados:
 - las superficies calientes de navegacion pueden devolver guidance tiny (`continuation`) y memoria de reentrada (`memory_pointer`) para ayudar a un harness a seguir explorando sin gastar muchos tokens;
 - `nav intent` agrega un modo hibrido `docs|code|mixed` (`mixed` cuando la pregunta trae señales de codigo: matches de codigo fuertes primero, luego docs): las consultas capability-like deben devolver docs canonicos owner-aware y las consultas symbol-like deben seguir devolviendo matches de catalogo/codigo;
 - las consultas semanticas C# entregan contexto util y compacto en repos grandes;
-- clientes compatibles con MCP pueden llamar las mismas operaciones de navegación por un proceso local stdio, con workspace visible y resultados estructurados;
+- clientes MCP acceden a las mismas operaciones de navegación mediante `mi-mcp`, que invoca el CLI, con workspace visible y resultados estructurados (la puerta `mi-lsp mcp` está retirada);
 - la salida es estable, breve y apta para skills/LLMs sin arrastrar blobs innecesarios.
 
 # 2. Propuesta de valor
 
-- Ofrece una CLI directa con daemon opcional y una puerta local MCP sobre stdio para clientes que usan ese protocolo.
+- Ofrece una CLI directa con daemon opcional. La integración con clientes MCP pasa por `mi-mcp`, que invoca el CLI; la puerta local `mi-lsp mcp` está retirada.
 - Mantiene una puerta de entrada corta para onboarding: `init -> nav ask`.
 - Agrega un reading pack canonico (`nav pack`) para reducir round-trips al estudiar la wiki en orden spec-driven.
 - Agrega `nav wiki` para hacer obvia la exploracion documental y guiar a pack/trace/multi-read/ask.
@@ -107,7 +107,7 @@ flowchart TD
 
 # 5. Areas funcionales de alto nivel
 
-- Gestion de workspaces: alta, inicializacion corta, descubrimiento, aliases, estado y warmup. `workspace which` resuelve el alias o root y el ejecutable en uso sin mutar el registry. Ver [[RF-WKS-009]]. `nav suggest` sugiere un comando `nav` que la CLI ya expone. Ver [[RF-QRY-020]]. El servidor MCP local expone las operaciones de navegación existentes por stdio; ver [[RF-QRY-021]].
+- Gestion de workspaces: alta, inicializacion corta, descubrimiento, aliases, estado y warmup. `workspace which` resuelve el alias o root y el ejecutable en uso sin mutar el registry. Ver [[RF-WKS-009]]. `nav suggest` sugiere un comando `nav` que la CLI ya expone. Ver [[RF-QRY-020]]. La puerta MCP local que las exponía por stdio fue retirada; ver [[RF-QRY-021]] (retirado).
 - Navegacion y discovery: simbolos, referencias, outline, overview, contexto, dependencias, exploracion `nav wiki`, preguntas docs-first, reading packs canonicos, busqueda por intencion y resumen de servicios. En workspaces `container`, `find/search/intent` pueden acotar por `--repo` sin perder el modo directo. Federacion wiki: `nav wiki-root` resuelve raíces `[[canon]]` externas o el default `.docs/wiki`; `--all-workspaces` recorre wikis de multiples espacios en una sola máquina con fan-out controlado. Ver [[FL-WIKI-01]] y [[RF-WKS-008]].
 - Indexacion repo-local: catalogo liviano de simbolos, archivos, metadatos del workspace y grafo documental; el grafo nativo se genera y publica con [[FL-GPH-01]].
 - El grafo nativo agrega consultas para consultar, explicar e impactar. Ver [[FL-GPH-02]].
@@ -115,12 +115,12 @@ flowchart TD
 - Enrutamiento semantico: Roslyn para semantica profunda C#; tree-sitter/ripgrep para TS/Next y texto; Pyright para Python cuando este disponible; extractor AST nativo para Go con enriquecimiento `gopls` opcional; fallback catalog/text visible cuando la semantica profunda no esta disponible.
 - Formateo de salida: envelopes JSON compactos, truncacion determinista y warnings explicitos.
 - Operacion runtime: daemon opcional, worker install explicito y fallback cuando faltan dependencias.
-- Puerta local opcional: `mi-lsp mcp` expone la misma CLI por stdio. No es un segundo producto. Ver [[TECH-MCP-ADAPTER]]. Cada puerta de host bajo `integrations/` es opcional.
+- Puerta MCP: retirada el 2026-10-15. `mi-lsp mcp` ya no existe; `mi-mcp` invoca el CLI por llamada. Histórico en [[TECH-MCP-ADAPTER]].
 
 # 6. Fuera de alcance / Evolucion futura
 
 - Edicion y refactor semantico seguro.
-- MCP remoto/HTTP o un servidor MCP persistente de terceros, dashboard web o GUI remota. La puerta local opcional `mi-lsp mcp` no es ese servidor.
+- MCP remoto/HTTP o un servidor MCP persistente de terceros, dashboard web o GUI remota. `mi-mcp` es un producto externo que invoca el CLI; no es un servidor MCP de mi-lsp.
 - Semantica TypeScript profunda equivalente a C# mediante `tsserver`.
 - Soporte activo para lenguajes fuera de C#/TS/Python/Go en v1.
 - Persistencia semantica completa de referencias y jerarquias C# en SQLite.

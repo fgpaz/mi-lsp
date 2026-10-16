@@ -7,7 +7,7 @@
 
 Agents and developers repeat the same costly loop: grep, open a whole file, skim it, and grep again without knowing what is canonical. `mi-lsp` replaces that with a repo-local index that finds relevant code, reads exact file ranges, and follows canonical documentation. It works from the terminal, through Claude Code/Codex skills, or through the optional local stdio MCP door; the CLI remains the authority and does not require a long-running server.
 
-**Who it's for:** developers navigating an unfamiliar or large repository, and coding agents that need reliable, bounded, token-cheap navigation instead of a heavyweight always-on MCP server.
+**Who it's for:** developers navigating an unfamiliar or large repository, and coding agents that need reliable, bounded, token-cheap navigation instead of a heavyweight always-on server.
 
 [Quickstart](#quickstart-in-5-minutes) · [Core concepts](#core-concepts) · [Which command do I use?](#which-command-do-i-use) · [Releases](https://github.com/fgpaz/mi-lsp/releases)
 
@@ -46,7 +46,7 @@ For very large workspaces, indexing can smart-sync degrade to the background on 
 **3. Ask for what you actually want, in plain language.** `nav intent` is the goal-shaped entry point — it classifies your question and routes to code or to canonical docs automatically:
 
 ```powershell
-mi-lsp nav intent "how does the mcp door work" --workspace myapp --format toon
+mi-lsp nav intent "how does the daemon start" --workspace myapp --format toon
 ```
 
 A real run against this repository returns a bounded preview with the matching docs, a score, and — critically — a `next_queries` list telling you exactly what to run next instead of leaving you to guess:
@@ -112,11 +112,10 @@ When output is consumed by an agent (for example, when stdout is not a terminal 
 The CLI is the authority — every door below is a thin, optional layer over the same `nav` commands, and none of them add their own cache, index, or background worker.
 
 - **Agent skill.** Installing the skill (via `install-agent`) gives Claude Code and Codex a `mi-lsp` skill describing the command surface; see [`skills/mi-lsp/SKILL.md`](skills/mi-lsp/SKILL.md) and the longer [quickstart reference](skills/mi-lsp/references/quickstart.md).
-- **`mi-lsp mcp` (optional).** A stdio JSON-RPC 2.0 door (`mi-lsp mcp --help`) that execs the same binary and exposes 13 `nav_*` tools (`nav_intent`, `nav_route`, `nav_pack`, `nav_wiki`, `nav_search`, `nav_find`, `nav_refs`, `nav_related`, `nav_flow_slice`, `nav_change_pack`, `nav_affected`, `nav_multi_read`, `nav_overview`). It holds no cache and opens no index of its own; if it fails, run `mi-lsp` directly and get the same result. See the [MCP door decision](.docs/wiki/07_tech/TECH-MCP-ADAPTER.md).
+- **No MCP door.** The local stdio `mi-lsp mcp` door was removed (2026-10-15). Agents call the CLI directly; hosts that need MCP go through mi-mcp / sandinas-mcp, which run the `mi-lsp` CLI per tool call. See the [retired MCP adapter note](.docs/wiki/07_tech/TECH-MCP-ADAPTER.md).
 - **Per-host integrations under [`integrations/`](integrations/)** (each optional, none required):
-  - **Claude Code** ([`integrations/claude-code`](integrations/claude-code)) — a plugin with the `mi-lsp mcp` server plus advisory `UserPromptSubmit`/`PostToolUse` hooks that call `mi-lsp nav suggest`. Hooks fail open: a missing binary, timeout, or bad JSON just means no suggestion, never a blocked turn.
-  - **Pi** ([`integrations/pi`](integrations/pi)), **Codex** ([`integrations/codex`](integrations/codex)), **Cursor** ([`integrations/cursor`](integrations/cursor)) — MCP server registration only (`command: mi-lsp`, `args: ["mcp"]`).
-  - **Grok** ([`integrations/grok`](integrations/grok)) — a validated plugin with an MCP entry; install with `grok plugin install integrations/grok --trust`.
+  - **Claude Code** ([`integrations/claude-code`](integrations/claude-code)) — a plugin with advisory `UserPromptSubmit`/`PostToolUse` hooks that call `mi-lsp nav suggest`. Hooks fail open: a missing binary, timeout, or bad JSON just means no suggestion, never a blocked turn.
+  - **Codex** ([`integrations/codex`](integrations/codex)) — a `config.toml` snippet that sets `MI_LSP_CLIENT_NAME`; no server registration.
 - **`MI_LSP_BIN`.** When set, it must point at the real executable — `mi-lsp.exe` on Windows, `mi-lsp` elsewhere. A `.cmd`/`.bat` shim is not the product and is not a valid override; hosts that `spawn` without a shell (including the Claude Code hooks) cannot execute a shim at all.
 
 ## Performance and footprint
@@ -125,7 +124,6 @@ Measured on 2026-09-24 against this repository; see [`.docs/wiki/07_tech/TECH-MC
 
 | Surface | Measured | Caveat |
 |---|---|---|
-| `mi-lsp mcp` working set | ~13.7 MiB RSS after `initialize` + `tools/list` (no `tools/call`, no index opened) | Budget target is ≤20 MB/session; a `tools/call` can still buffer up to 4 MB stdout / 4 MB stderr in the child, which was not measured here. |
 | Warm `nav overview` (daemon already warm) | p50 ≈ 232 ms, p95 ≈ 374 ms, over 20 timed calls | **Not strictly comparable** to an older baseline (p50 ≈ 4.7 s) from a different client binary against the same long-running daemon; the payload size of that baseline was never archived, so the comparison is directional at best. |
 
 These are workflow numbers on one sample, not a universal benchmark — results depend on your repository, query, and daemon warm-state.
@@ -135,7 +133,7 @@ These are workflow numbers on one sample, not a universal benchmark — results 
 - **`daemon status` warns the executable is stale** (its hash doesn't match this CLI build). Run `mi-lsp daemon restart` before trusting daemon-backed results; direct/cheap reads keep working regardless.
 - **A large first index returns a `job_id`.** Use `mi-lsp init --background` to return immediately, then poll with `mi-lsp index status <job-id>` before querying that workspace.
 - **"workspace not found" / ambiguous workspace.** Run `mi-lsp workspace which --format toon` to see the resolved alias, root, and executable without mutating anything; `mi-lsp workspace list --group-by-root --format toon` and `mi-lsp workspace doctor --format toon` diagnose duplicate roots and stale paths.
-- **Windows `.cmd` shim.** If `mi-lsp` on `PATH` resolves to a `.cmd`/`.bat` shim instead of the real `mi-lsp.exe`, host doors that `spawn` without a shell (MCP integrations, Claude Code hooks) will fail to launch it. Point `MI_LSP_BIN`, or the host's `command` field, at the real executable.
+- **Windows `.cmd` shim.** If `mi-lsp` on `PATH` resolves to a `.cmd`/`.bat` shim instead of the real `mi-lsp.exe`, host doors that `spawn` without a shell (Claude Code hooks) will fail to launch it. Point `MI_LSP_BIN`, or the host's `command` field, at the real executable.
 
 More detail: [`TROUBLESHOOTING.md`](TROUBLESHOOTING.md).
 
@@ -145,7 +143,7 @@ More detail: [`TROUBLESHOOTING.md`](TROUBLESHOOTING.md).
 - [Quickstart reference](skills/mi-lsp/references/quickstart.md)
 - [Compound command recipes](skills/mi-lsp/references/compound-commands.md)
 - [Host integrations](integrations/)
-- [MCP door decision](.docs/wiki/07_tech/TECH-MCP-ADAPTER.md)
+- [Retired MCP door note](.docs/wiki/07_tech/TECH-MCP-ADAPTER.md)
 - [Functional scope](.docs/wiki/01_alcance_funcional.md)
 - [Technical baseline](.docs/wiki/07_baseline_tecnica.md)
 - [CLI and protocol contracts](.docs/wiki/09_contratos_tecnicos.md)
@@ -160,8 +158,7 @@ Public release bundles cover Windows (`win-x64`, `win-arm64`), Linux (`linux-x64
 
 - C# gets the deepest semantics, through a bundled Roslyn worker. TypeScript/JavaScript and Python use local catalogs with optional `tsserver`/`pyright-langserver` enrichment. Go uses a native AST catalog with optional `gopls` enrichment; Rust uses a lexical catalog with optional `rust-analyzer` references/context. These backends do not claim Roslyn-level semantics.
 - No semantic editing or automated refactoring, no remote or multi-host daemon sharing, no authenticated remote governance UI.
-- No remote or HTTP MCP transport; `mi-lsp mcp` is a local stdio process.
-- `mi-lsp mcp` and every door under `integrations/` are optional; the CLI is never a second product waiting behind them.
+- Every door under `integrations/` is optional; the CLI is never a second product waiting behind them.
 
 ## License
 

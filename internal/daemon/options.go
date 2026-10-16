@@ -14,7 +14,26 @@ const (
 
 	defaultMaxWatchedRoots = 8
 	defaultMaxInflight     = 48
+	// defaultMaxWorkers covers one runtime per supported backend (Roslyn,
+	// gopls, pyright, tsserver, rust-analyzer, Kotlin) plus headroom for a
+	// second project of the same language, so concurrent multi-language work
+	// does not thrash expensive runtimes through LRU eviction.
+	defaultMaxWorkers = 8
 )
+
+// DefaultMaxWorkers returns MI_LSP_DAEMON_MAX_WORKERS when it is a positive
+// integer, or defaultMaxWorkers otherwise.
+func DefaultMaxWorkers() int {
+	return envInt("MI_LSP_DAEMON_MAX_WORKERS", defaultMaxWorkers)
+}
+
+// normalizeMaxWorkers maps unset or invalid values to DefaultMaxWorkers.
+func normalizeMaxWorkers(maxWorkers int) int {
+	if maxWorkers <= 0 {
+		return DefaultMaxWorkers()
+	}
+	return maxWorkers
+}
 
 type StartOptions struct {
 	WatchMode       string

@@ -52,7 +52,7 @@ evidence:
 |---|---|---|---|---|---|
 | `command` | enum | si | CLI | `start`, `status`, `stop` | RF-DAE-001 |
 | `idle_timeout` | duracion | no | CLI/config | si se informa, debe ser positiva | RF-DAE-001 |
-| `max_workers` | entero | no | CLI/config | si se informa, debe ser positivo | RF-DAE-001 |
+| `max_workers` | entero | no | CLI/config | si se informa, debe ser positivo; sin valor (0) rige `MI_LSP_DAEMON_MAX_WORKERS` o el default 8 | RF-DAE-001 |
 
 ## 4. Process Steps (Happy Path)
 

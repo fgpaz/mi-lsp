@@ -8,7 +8,7 @@
     {
       "name": "mi-lsp",
       "source": "./integrations/claude-code",
-      "description": "Servidor MCP nativo mi-lsp mcp y hooks advisory (UserPromptSubmit, PostToolUse) que fallan abiertos.",
+      "description": "Hooks advisory (UserPromptSubmit, PostToolUse) que fallan abiertos.",
       "version": "0.1.0",
       "license": "MIT"
     }
