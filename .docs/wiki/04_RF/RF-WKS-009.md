@@ -45,7 +45,7 @@ evidence:
 |---|---|
 | ID | RF-WKS-009 |
 | Titulo | Resolver workspace y ejecutable en uso con `workspace which` |
-| Actores | Usuario, Skill, Agente, CLI/Core, Puerta MCP |
+| Actores | Usuario, Skill, Agente, CLI/Core, Puerta MCP (retirada 2026-10-15) |
 | Prioridad | media |
 | Severidad | media |
 | FL origen | FL-BOOT-01 |
@@ -92,7 +92,7 @@ evidence:
 - Un path Windows con backslash simple (por ejemplo `C:\repos\mios\mis-plugins-cc`) se conserva literal en la salida JSON; no pasa por `strconv.Unquote` ni por un ensamblado `fmt` que interprete `\r`/`\p` como escapes.
 - Cuando varios aliases comparten el mismo root, se aplica el mismo desempate que usa el resto del registry (`last_workspace` primero, luego orden alfabetico case-insensitive del alias).
 - El diagnostico amplio de salud del registry sigue siendo `workspace doctor`; `which` no reemplaza ese reporte.
-- La puerta `mi-lsp mcp` no reinterpreta este comando: expone la misma resolucion de solo lectura via `nav_*`/`workspace which` como uno mas de los comandos que ya delega.
+- [RETIRADO 2026-10-15] La puerta `mi-lsp mcp` no reinterpreta este comando: expone la misma resolucion de solo lectura via `nav_*`/`workspace which` como uno mas de los comandos que ya delega.
 
 ## 7. Data Model Impact
 

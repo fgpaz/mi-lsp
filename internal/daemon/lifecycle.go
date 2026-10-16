@@ -107,9 +107,7 @@ func NewManager(repoRoot string, maxWorkers int, idleTimeout time.Duration) *Man
 }
 
 func NewManagerWithOptions(repoRoot string, maxWorkers int, idleTimeout time.Duration, options StartOptions) *Manager {
-	if maxWorkers <= 0 {
-		maxWorkers = 3
-	}
+	maxWorkers = normalizeMaxWorkers(maxWorkers)
 	if idleTimeout <= 0 {
 		idleTimeout = 30 * time.Minute
 	}

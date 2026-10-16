@@ -51,7 +51,7 @@ Su objetivo es mejorar el primer paso del agente sin alterar la semantica base d
 
 1. AXI vive en el borde del CLI y viaja al core como `QueryOptions{AXI, Full}`.
 2. El daemon/core nunca ve `classic`; la CLI resuelve primero el modo efectivo y envia solo `QueryOptions{AXI, Full}`.
-3. Para una sesión interactiva humana, AXI usa TOON por default en las superficies cubiertas cuando no se especifica `--format`. Para consumidores agente (stdout no TTY, `MI_LSP_CLIENT_NAME` configurado o MCP), el dispatch implícito usa formato `agent`.
+3. Para una sesión interactiva humana, AXI usa TOON por default en las superficies cubiertas cuando no se especifica `--format`. Para consumidores agente (stdout no TTY, `MI_LSP_CLIENT_NAME` configurado o un nombre de cliente que contiene `mcp`), el dispatch implícito usa formato `agent`.
 4. `nav search` y `nav intent` arrancan con una first page mas estrecha cuando el usuario no fijo `--max-items`. `nav.search` ejecuta el scan en paralelo y limita la selección con orden estable por ruta y línea, evitando ordenar el conjunto completo de coincidencias. `nav.find` refresca sólo los archivos candidatos dentro del presupuesto de 250 ms (máximo 32 archivos, 4 MiB cada uno y 16 MiB agregados); si publica cambios, repite la consulta y, ante error/deadline, conserva el snapshot disponible con warning. `nav.route` y `nav.intent` pueden refrescar hasta cinco candidatos Markdown en 500 ms; sólo una publicación confirmada causa recarga y un único reranking, y ante fallo/deadline mantienen la respuesta en memoria con warning. El lector extrae bytes bajo writer lock cancelable; hashes de dialecto no reconocido preservan las filas legacy. Estos refresh síncronos no ejecutan Roslyn ni dejan escrituras en segundo plano.
 5. `nav ask` usa una allowlist corta de intents de orientacion y blockers conservadores de implementacion para decidir si entra en AXI por default.
 6. Las respuestas preview-first deben anunciar expansion via `next_hint` hacia `--full` solo cuando la preview realmente recorta la first page o la evidencia inicial.
@@ -61,11 +61,11 @@ Su objetivo es mejorar el primer paso del agente sin alterar la semantica base d
 10. Cuando AXI está en modo efectivo para un consumidor humano y no se pasó `--format` explícito, el formato por defecto es `toon`. En consumidores agente aplica el formato `agent`; cualquier `--format` explícito siempre gana.
 11. `--axi=false` permite anular explicitamente el default AXI de una superficie cuando el usuario quiere salida clasica sin escribir `--classic`.
 
-## Consumidores agente y MCP local
+## Consumidores agente y puerta MCP (retirada)
 
-El CLI selecciona `agent` por defecto cuando stdout no es TTY, `MI_LSP_CLIENT_NAME` está configurado o el cliente identifica MCP. La respuesta compacta comienza con el workspace y limita `find`, `search` y `multi-read` a cinco resultados. `search` presenta filas breves de archivo, línea y fragmento; en éxito se omiten bloques de coach/gobernanza y continuaciones automáticas. `--verbose` amplía el detalle; un `--format` explícito conserva su contrato.
+El CLI selecciona `agent` por defecto cuando stdout no es TTY, `MI_LSP_CLIENT_NAME` está configurado o el cliente se identifica con un nombre que contiene `mcp`. La respuesta compacta comienza con el workspace y limita `find`, `search` y `multi-read` a cinco resultados. `search` presenta filas breves de archivo, línea y fragmento; en éxito se omiten bloques de coach/gobernanza y continuaciones automáticas. `--verbose` amplía el detalle; un `--format` explícito conserva su contrato.
 
-`mi-lsp mcp` sirve JSON-RPC/NDJSON sobre stdin/stdout como proceso local. El servidor publica las operaciones `nav_*` mediante `tools/list` y las ejecuta dentro del proceso con el mismo servicio de la CLI. Para una llamada de herramienta, `structuredContent` contiene el envelope JSON completo y `content[0].text` lleva la vista compacta con el workspace primero; la bandera de formato de CLI no cambia ese contrato. Los logs se emiten fuera de stdout para preservar el framing.
+[RETIRADO 2026-10-15] `mi-lsp mcp` sirve JSON-RPC/NDJSON sobre stdin/stdout como proceso local. El servidor publica las operaciones `nav_*` mediante `tools/list` y las ejecuta dentro del proceso con el mismo servicio de la CLI. Para una llamada de herramienta, `structuredContent` contiene el envelope JSON completo y `content[0].text` lleva la vista compacta con el workspace primero; la bandera de formato de CLI no cambia ese contrato. Los logs se emiten fuera de stdout para preservar el framing.
 
 ## Stage signal en discovery lane
 

@@ -63,10 +63,10 @@ Estado: congelado; cualquier cambio incompatible requiere `q-v2`. Este contrato 
 
 ## 1. Frontera y superficies
 
-mi-lsp es el motor local de consultas y adapta la misma ejecución al daemon, CLI y MCP Go. El sandbox y `execute` son propiedad de mi-mcp; mi-lsp es proveedor y expone `milsp.q(...)` por su manifiesto de proveedor. Este contrato no agrega ni modifica código de mi-mcp. La consulta es de solo lectura: no indexa, registra workspaces, escribe archivos ni usa red. Se preservan las herramientas `nav_*` existentes.
+mi-lsp es el motor local de consultas y adapta la misma ejecución al daemon y a la CLI; la herramienta MCP Go `milsp` fue retirada el 2026-10-15. El sandbox y `execute` son propiedad de mi-mcp; mi-lsp es proveedor y expone `milsp.q(...)` por su manifiesto de proveedor. Este contrato no agrega ni modifica código de mi-mcp. La consulta es de solo lectura: no indexa, registra workspaces, escribe archivos ni usa red. [RETIRADO] Se preservaban las herramientas `nav_*` existentes.
 
 - CLI: `mi-lsp q "<pipeline>" [--workspace <alias|ruta>] [--format json|compact|toon]`.
-- MCP Go: una herramienta `milsp` con `q`, `workspace`, `budget`, `max_bytes`, `timeout_ms`, `session_id`, `page` y `fresh` opcionales; `contract_version: "q-v1"` siempre está presente en el envelope y en `tools/list`.
+- [RETIRADO 2026-10-15] MCP Go: una herramienta `milsp` con `q`, `workspace`, `budget`, `max_bytes`, `timeout_ms`, `session_id`, `page` y `fresh` opcionales; `contract_version: "q-v1"` siempre está presente en el envelope y en `tools/list`.
 - Helper del host: `milsp.q(pipeline, {workspace, budget, max_bytes, timeout_ms, session_id, page, fresh, signal})` devuelve el envelope q-v1. El host es responsable de propagar su cancelación a `signal`.
 
 ## 2. Manifiesto de proveedor mi-mcp
@@ -128,7 +128,7 @@ Los únicos `error.code` terminales q-v1 son `timeout`, `cancelled`, `cursor_inv
 
 ## 6. Bytes, paginación y snapshot
 
-`max_bytes` (MCP/helper) se mide sobre el envelope JSON UTF-8 completo serializado, incluidos metadatos, etapas, errores y continuación; no solo sobre `items`. Default 262144 bytes, mínimo admitido 1024. La respuesta jamás supera el límite.
+`max_bytes` (helper; la vía MCP retirada no aplica) se mide sobre el envelope JSON UTF-8 completo serializado, incluidos metadatos, etapas, errores y continuación; no solo sobre `items`. Default 262144 bytes, mínimo admitido 1024. La respuesta jamás supera el límite.
 
 El cursor es opaco, autenticado con HMAC y ligado a consulta canónica, workspace_id, generación del índice, orden y posición. TTL: 10 minutos. Alteración o firma incorrecta produce `cursor_invalid`; cursor vencido `cursor_expired`; generación distinta `snapshot_changed`. `page` solo continúa la misma consulta y snapshot. Sin cursor, el primer resultado es página 1.
 
@@ -136,7 +136,7 @@ Si el envelope proyectado supera `max_bytes`, se quitan ítems completos del fin
 
 ## 7. Sesiones y caché
 
-`session_id` explícito identifica el estado; MCP genera uno por proceso solo cuando el caller no lo proporciona. `session_mark` es monotónico por sesión. Se guardan por sesión (LRU máximo 200, idle 30 min) las identidades/revisiones de ítems entregados con texto. `read` repetido puede devolver `{id,rev,seen:true}` sin texto; `fresh` fuerza texto. `changed since=<mark>` lista identidades vistas cuyo contenido cambió, con revisión actual.
+`session_id` explícito identifica el estado; [RETIRADO 2026-10-15] MCP genera uno por proceso solo cuando el caller no lo proporciona. `session_mark` es monotónico por sesión. Se guardan por sesión (LRU máximo 200, idle 30 min) las identidades/revisiones de ítems entregados con texto. `read` repetido puede devolver `{id,rev,seen:true}` sin texto; `fresh` fuerza texto. `changed since=<mark>` lista identidades vistas cuyo contenido cambió, con revisión actual.
 
 La caché/dedupe es opt-in (`dedupe=true`); por defecto nunca altera contenido, orden, estado de sesión ni respuesta. Si se activa, su clave contiene session_id, generación y etapa canónica. Cancelación no deja un resultado parcial cacheado.
 

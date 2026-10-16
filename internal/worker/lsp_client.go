@@ -136,6 +136,7 @@ func (c *LSPClient) startContext(ctx context.Context) error {
 	cmd := exec.Command(c.config.ServerCmd, c.config.ServerArgs...)
 	processutil.ConfigureNonInteractiveCommand(cmd)
 	configureOwnedLSP(cmd)
+	bindWorkerLifetime(cmd)
 	cmd.Dir = c.workspace.Root
 	if c.config.Backend == KotlinBackend {
 		cmd.Env = append(os.Environ(), "GRADLE_OPTS="+os.Getenv("GRADLE_OPTS")+" -Dorg.gradle.daemon=false")

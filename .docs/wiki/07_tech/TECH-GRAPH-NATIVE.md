@@ -502,6 +502,8 @@ sqlite:
 
 El runtime actual ya expone la infraestructura de analisis como enriquecimiento acotado. La freshness es un gate de autoridad: solo `current` permite claims exactos; `lagging`, `stale`, `invalid` y `unknown` deben producir omision o degradacion visible. El rank es determinista y advisory; no reemplaza identidad, evidencia ni autoridad wiki.
 
+La consulta de freshness por request (`store.GraphFreshness`) valida solo el encabezado de la generación activa: identidad derivada (`generation_id` recalculado desde el `content_digest` almacenado), fingerprints presentes y conteos de filas (nodos, aristas, evidencia, unresolved). No re-lee ni re-hashea el grafo completo en cada query, porque las filas publicadas son inmutables y el digest de contenido ya se verificó al activar. La validación estricta no se debilita: sigue obligatoria en activación, reemplazo (`prior_validation_on_replacement`), recovery, read snapshots y en `ValidateGraphGeneration` explícito. Un encabezado o conteo inconsistente clasifica como `unavailable`/`invalid`, nunca como `current`.
+
 ```toon
 doc_id: TECH-GRAPH-NATIVE
 block_id: TECH-GRAPH-NATIVE.analysis
@@ -521,6 +523,8 @@ profile: exact-extracted-only
 freshness:
   states: [current, lagging, stale, invalid, unknown]
   exact_claims_allowed_only: current
+  per_query_check: header_identity_fingerprints_and_row_counts
+  strict_validation_retained_on: [activation, replacement, recovery, read_snapshot, explicit_ValidateGraphGeneration]
 rank:
   score: 0.45*authority + 0.25*impact + 0.20*centrality + 0.10*boundary
   authority_sources: [exact, extracted]

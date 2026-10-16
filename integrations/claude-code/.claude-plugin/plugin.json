@@ -1,7 +1,7 @@
 {
   "name": "mi-lsp",
   "version": "0.1.0",
-  "description": "Servidor MCP nativo (mi-lsp mcp) y hooks advisory que fallan abiertos.",
+  "description": "Hooks advisory que fallan abiertos para navegar con el CLI mi-lsp.",
   "author": {
     "name": "Gabriel Paz"
   },

@@ -1,6 +1,6 @@
 # Instalación — Claude Code
 
-Este directorio es un plugin de Claude Code. El servidor MCP nativo arranca con el comando `mi-lsp` y los argumentos `["mcp"]` (`.mcp.json`). Los hooks `UserPromptSubmit` y `PostToolUse` son solo advisory y fallan abiertos: un timeout, un binario ausente, JSON inválido o una excepción terminan con código 0 y `{"continue": true}`. No bloquean el turno ni la tool que ya corrió.
+Este directorio es un plugin de Claude Code. El plugin no registra servidor MCP (la puerta `mi-lsp mcp` fue retirada; para herramientas vía MCP usá mi-mcp / sandinas-mcp). Los hooks `UserPromptSubmit` y `PostToolUse` son solo advisory y fallan abiertos: un timeout, un binario ausente, JSON inválido o una excepción terminan con código 0 y `{"continue": true}`. No bloquean el turno ni la tool que ya corrió.
 
 ## Binario
 
@@ -11,7 +11,7 @@ Los hooks resuelven el ejecutable así:
 
 `MI_LSP_BIN` tiene que apuntar al `.exe` real, por ejemplo `C:\tools\mi-lsp.exe`. No lo apuntes a un shim `.cmd` o `.bat`. El hook hace `spawn` con un arreglo de argumentos y `shell: false`, y Windows no puede ejecutar un `.cmd` de esa forma. Si el binario no existe, el hook sigue sin sugerencia.
 
-Definí `MI_LSP_BIN` en el entorno que lanza Claude Code. No hace falta repetirlo dentro de `.mcp.json`: ahí el host ya ejecuta `mi-lsp` con `mcp`.
+Definí `MI_LSP_BIN` en el entorno que lanza Claude Code.
 
 ## Qué hacen los hooks
 

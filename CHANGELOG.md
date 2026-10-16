@@ -7,6 +7,21 @@ and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2
 
 ## [Unreleased]
 
+## [0.12.14] - 2026-10-16
+
+### Changed
+
+- Daemon `max_workers` defaults to 8 (env `MI_LSP_DAEMON_MAX_WORKERS`); fixes auto-start hardcoding 3 and `daemon restart` passing 0.
+- Faster navigation: per-process registry cache, header-only graph freshness check (strict validation kept on activation/recovery/snapshots), single-pass ranking text normalization, and shared per-generation doc-record cache. `nav intent` median 141→93 ms, `nav route` 207→147 ms.
+
+### Fixed
+
+- Linux workers get `Pdeathsig=SIGKILL`, so language servers never outlive a crashed or killed daemon.
+
+### Removed
+
+- Removed the `mi-lsp mcp` stdio door (`internal/mcp`, the `mcp` command, and the Pi/Cursor/Grok/Claude Code/Codex MCP registrations). Use mi-mcp / sandinas-mcp, which run the `mi-lsp` CLI per tool call. The CLI remains the authority.
+
 ## [0.12.1] - 2026-10-09
 
 ### Fixed

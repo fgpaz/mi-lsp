@@ -355,7 +355,7 @@ func (a *App) buildLiveWikiCodeContextForRequest(ctx context.Context, request mo
 	}
 	if !includeSources {
 		ensureLivePrimaryDocument(&result, scope, overlay)
-		appendLiveGovernanceAuthority(ctx, db, &result)
+		appendLiveGovernanceAuthority(ctx, db, registration.Root, &result)
 	}
 	// CodeEvidence is the original additive compatibility lane. The shared
 	// resolver's typed lanes remain authoritative, but existing consumers still
@@ -391,11 +391,11 @@ func liveOverlayWasTruncated(overlay model.WikiCodeOverlay) bool {
 	return false
 }
 
-func appendLiveGovernanceAuthority(ctx context.Context, db *sql.DB, result *model.WikiCodeContext) {
+func appendLiveGovernanceAuthority(ctx context.Context, db *sql.DB, root string, result *model.WikiCodeContext) {
 	if db == nil || result == nil || result.PrimaryDoc.Path == "" {
 		return
 	}
-	docs, err := store.ListDocRecords(ctx, db)
+	docs, err := loadDocRecordsCached(ctx, db, root, docsGeneration(ctx, db))
 	if err != nil {
 		return
 	}

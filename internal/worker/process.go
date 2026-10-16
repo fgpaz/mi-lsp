@@ -73,6 +73,7 @@ func (c *Client) startSpec(index int) error {
 	cmd := exec.Command(spec.Command, spec.Args...)
 	cmd.Dir = spec.WorkDir
 	processutil.ConfigureNonInteractiveCommand(cmd)
+	bindWorkerLifetime(cmd)
 
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr

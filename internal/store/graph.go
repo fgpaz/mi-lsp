@@ -539,6 +539,38 @@ func ValidateGraphGeneration(ctx context.Context, db *sql.DB, id model.GraphDige
 	return validateGraphGenerationConn(ctx, db, id)
 }
 
+// validateActiveGraphGenerationHeader is the per-query freshness check. The
+// generation already passed strict validation (content digest stream) when it
+// was activated, and published rows are immutable, so freshness only re-checks
+// the header identity and row counts instead of re-hashing the whole graph.
+// Activation, recovery and read snapshots keep the strict validation.
+func validateActiveGraphGenerationHeader(ctx context.Context, q graphConn, id model.GraphDigest) (model.GraphGeneration, error) {
+	g, e := loadGeneration(ctx, q, id)
+	if e != nil {
+		return g, e
+	}
+	if g.SourceFingerprint == (model.GraphDigest{}) || g.ConfigFingerprint == (model.GraphDigest{}) || g.BackendManifestDigest == (model.GraphDigest{}) {
+		return g, fmt.Errorf("%w: fingerprints", model.ErrGraphGenerationCorrupt)
+	}
+	expectedID := model.DeriveGenerationID(g.SchemaVersion, g.WorkspaceIdentity, g.SourceFingerprint, g.ConfigFingerprint, g.BackendManifestDigest, g.ContentDigest)
+	if expectedID != g.GenerationID {
+		return g, fmt.Errorf("%w: generation_id", model.ErrGraphGenerationCorrupt)
+	}
+	var n, e1, ev, u int
+	for _, x := range []struct {
+		q string
+		p *int
+	}{{"SELECT COUNT(*) FROM graph_nodes WHERE generation_id=?", &n}, {"SELECT COUNT(*) FROM graph_edges WHERE generation_id=?", &e1}, {"SELECT COUNT(*) FROM graph_evidence WHERE generation_id=?", &ev}, {"SELECT COUNT(*) FROM graph_unresolved WHERE generation_id=?", &u}} {
+		if e = q.QueryRowContext(ctx, x.q, digestArg(id)).Scan(x.p); e != nil {
+			return g, e
+		}
+	}
+	if n != g.NodeCount || e1 != g.EdgeCount || ev != g.EvidenceCount || u != g.UnresolvedCount {
+		return g, fmt.Errorf("%w: counts", model.ErrGraphGenerationInvalid)
+	}
+	return g, nil
+}
+
 type GraphReadSnapshot struct {
 	tx         *sql.Tx
 	generation model.GraphGeneration

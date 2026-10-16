@@ -1,6 +1,0 @@
-{
-  "mi-lsp": {
-    "command": "mi-lsp",
-    "args": ["mcp"]
-  }
-}

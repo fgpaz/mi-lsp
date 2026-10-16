@@ -5,7 +5,7 @@ description: Use when a folder-based agent should navigate code with the mi-lsp 
 
 # mi-lsp
 
-Use this skill when you want local semantic navigation with the `mi-lsp` CLI. The CLI is the authority. `mi-lsp mcp` and each host door under `integrations/` are optional; do not require them, and do not treat a host door as a second router.
+Use this skill when you want local semantic navigation with the `mi-lsp` CLI. The CLI is the authority. Each host door under `integrations/` is optional; there is no `mi-lsp mcp` door (removed 2026-10-15; mi-mcp / sandinas-mcp run this CLI per call); do not require them, and do not treat a host door as a second router.
 If the skill is installed but the binary is missing, bootstrap the CLI first instead of abandoning the flow.
 
 For an explicitly authorized isolated graph QA run (not a routine query), follow [R6 — Authorized isolated graph QA](references/recipes.md#r6--authorized-isolated-graph-qa). Keep its setup at the start of authorized verification; it is not a hidden build/C2 preflight.
@@ -212,9 +212,8 @@ A parse error names the character position, what was expected, and one canonical
 
 ## Output formats
 
-When stdout is not a terminal, `MI_LSP_CLIENT_NAME` is set, or the client name identifies MCP, navigation uses the compact `agent` format by default. The response starts with the selected `workspace`; `find`, `search`, and `multi-read` return at most five results in this implicit mode. On success, coach/governance blocks and automatic continuations are omitted. Use `--verbose` to request more detail. An explicit `--format` always wins and preserves the selected format's response shape, including JSON used by scripts.
+When stdout is not a terminal, `MI_LSP_CLIENT_NAME` is set, or the client name identifies mi-mcp, navigation uses the compact `agent` format by default. The response starts with the selected `workspace`; `find`, `search`, and `multi-read` return at most five results in this implicit mode. On success, coach/governance blocks and automatic continuations are omitted. Use `--verbose` to request more detail. An explicit `--format` always wins and preserves the selected format's response shape, including JSON used by scripts.
 
-For clients that speak MCP, launch the optional local server with `mi-lsp mcp [--workspace <alias|path>]`. It reads JSON-RPC/NDJSON from stdin and writes protocol messages only to stdout. Each tool call returns the complete JSON envelope in `structuredContent` and compact agent text in `content[0].text`; when no workspace is supplied, resolution starts from the server process's current directory.
 
 | Format | Flag | Typical size | When to use |
 |--------|------|-------------|-------------|
@@ -357,7 +356,7 @@ The CLI is the authority. Run `mi-lsp` through the host shell tool:
 - Claude Code: shell/Bash tool
 - Other skill-based agents: the local terminal/shell tool they already expose
 
-`mi-lsp mcp` is an optional stdio door over the same commands. Host doors in [integrations/](../../integrations/) are optional. If a door is missing or fails, keep using the CLI. Do not invent a second command surface.
+Host doors in [integrations/](../../integrations/) are optional. If a door is missing or fails, keep using the CLI. Do not invent a second command surface.
 
 `MI_LSP_BIN`, when set, must point at the real executable (`mi-lsp.exe` on Windows). A `.cmd` or `.bat` shim is not a valid override and is not the Windows release artifact.
 

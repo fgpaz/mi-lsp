@@ -14,8 +14,6 @@ func CanonicalHarnessClient(clientName string) (family string, ok bool) {
 		return "", false
 	case "root", "builtin_child":
 		return "agent", true
-	case "mi-lsp-mcp":
-		return "mi-lsp-mcp", true
 	}
 	for _, family := range []string{
 		"claude-code",

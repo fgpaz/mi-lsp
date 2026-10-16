@@ -1,23 +1,16 @@
 # Instalación — Codex
 
-Agregá el servidor MCP stdio `mi-lsp` en `~/.codex/config.toml`, o en `.codex/config.toml` del proyecto si el repo está marcado como confiable. El bloque es `[mcp_servers.mi-lsp]`.
+Codex usa el CLI `mi-lsp` directo desde el shell. No hay servidor MCP: la puerta `mi-lsp mcp` fue retirada (decisión 2026-10-15).
+
+Para que la telemetría local identifique a Codex, agregá el bloque de `integrations/codex/config.toml.snippet` en `~/.codex/config.toml`, o en `.codex/config.toml` del proyecto si el repo está marcado como confiable:
 
 ```toml
-[mcp_servers.mi-lsp]
-command = "mi-lsp"
-args = ["mcp"]
+[shell_environment_policy]
+set = { MI_LSP_CLIENT_NAME = "codex" }
 ```
-
-El mismo texto está en `integrations/codex/config.toml.snippet`.
 
 ## Binario
 
-`command` es el ejecutable que Codex lanza. En Windows, si el nombre `mi-lsp` del `PATH` es un shim `.cmd` o `.bat`, reemplazalo por la ruta del `.exe` real, por ejemplo `C:\\tools\\mi-lsp.exe`. `MI_LSP_BIN` no cambia este `command`: tiene que apuntar al `.exe` solo cuando un hook de Claude Code invoca `nav suggest`.
+`mi-lsp` tiene que estar en el `PATH`. En Windows, si resuelve a un shim `.cmd` o `.bat`, usá la ruta del `.exe` real. `MI_LSP_BIN` solo aplica a los hooks de Claude Code que invocan `nav suggest`.
 
-También podés registrarlo con la CLI:
-
-```bash
-codex mcp add mi-lsp -- mi-lsp mcp
-```
-
-No hace falta red ni una clave. Si el binario no está, Codex no carga el servidor; el resto de la sesión sigue.
+No hace falta red ni una clave.

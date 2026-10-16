@@ -11,6 +11,7 @@ import (
 	"runtime"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/BurntSushi/toml"
@@ -241,12 +242,33 @@ func LoadRegistryReadOnly() (model.RegistryFile, error) {
 	return loadRegistryAt(path)
 }
 
+// registryCache keeps the last decoded registry per path. A single command
+// loads the registry from many call sites, and the daemon loads it on every
+// request; the file is only re-decoded when its mtime or size changes.
+var registryCache = struct {
+	sync.Mutex
+	entries map[string]registryCacheEntry
+}{entries: map[string]registryCacheEntry{}}
+
+type registryCacheEntry struct {
+	modTime  time.Time
+	size     int64
+	registry model.RegistryFile
+}
+
 func loadRegistryAt(path string) (model.RegistryFile, error) {
 	registry := model.RegistryFile{Workspaces: map[string]model.WorkspaceRegistration{}}
-	if _, err := os.Stat(path); errors.Is(err, os.ErrNotExist) {
+	info, err := os.Stat(path)
+	if errors.Is(err, os.ErrNotExist) {
 		return registry, nil
 	} else if err != nil {
 		return registry, err
+	}
+	registryCache.Lock()
+	entry, ok := registryCache.entries[path]
+	registryCache.Unlock()
+	if ok && entry.modTime.Equal(info.ModTime()) && entry.size == info.Size() {
+		return cloneRegistry(entry.registry), nil
 	}
 	if _, err := toml.DecodeFile(path, &registry); err != nil {
 		return registry, err
@@ -258,7 +280,29 @@ func loadRegistryAt(path string) (model.RegistryFile, error) {
 		ws.Name = name
 		registry.Workspaces[name] = ws
 	}
+	registryCache.Lock()
+	registryCache.entries[path] = registryCacheEntry{modTime: info.ModTime(), size: info.Size(), registry: cloneRegistry(registry)}
+	registryCache.Unlock()
 	return registry, nil
+}
+
+func invalidateRegistryCache(path string) {
+	registryCache.Lock()
+	delete(registryCache.entries, path)
+	registryCache.Unlock()
+}
+
+// cloneRegistry copies the workspace map so callers can mutate their copy
+// without corrupting the cached value.
+func cloneRegistry(registry model.RegistryFile) model.RegistryFile {
+	clone := registry
+	clone.Workspaces = make(map[string]model.WorkspaceRegistration, len(registry.Workspaces))
+	for name, ws := range registry.Workspaces {
+		ws.Languages = append([]string(nil), ws.Languages...)
+		ws.CanonLinks = append([]model.WorkspaceCanonLink(nil), ws.CanonLinks...)
+		clone.Workspaces[name] = ws
+	}
+	return clone
 }
 
 func SaveRegistry(registry model.RegistryFile) error {
@@ -269,6 +313,7 @@ func SaveRegistry(registry model.RegistryFile) error {
 	if err != nil {
 		return err
 	}
+	defer invalidateRegistryCache(path)
 	mode := os.FileMode(0o600)
 	if info, statErr := os.Stat(path); statErr == nil {
 		mode = info.Mode().Perm()

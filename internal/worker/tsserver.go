@@ -90,6 +90,7 @@ func (c *TsserverClient) Start() error {
 	}
 	cmd := exec.Command("node", c.tsserverJS, "--useSingleInferredProjectPerProjectRoot", "true")
 	processutil.ConfigureNonInteractiveCommand(cmd)
+	bindWorkerLifetime(cmd)
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		return err

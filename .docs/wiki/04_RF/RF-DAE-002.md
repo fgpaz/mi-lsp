@@ -89,7 +89,7 @@ evidence:
 4. La telemetria local preserva la ruta efectiva (`direct`, `daemon`, `direct_fallback`) y el presupuesto pedido por el cliente para diferenciar fallas de seleccion vs. fallas de truncacion.
 5. La Admin UI expone el estado actual, KPIs, accesos recientes y tabs por workspace via loopback, sin perder la agrupacion canonica por `workspace_root`.
 6. Si el usuario ejecuta `warm workspace` desde la UI, se invoca `POST /api/workspaces/{workspace}/warm` sin reiniciar el daemon.
-7. Si se exceden `max_workers` o `idle_timeout`, el daemon aplica eviction LRU.
+7. Si se exceden `max_workers` (default 8) o `idle_timeout`, el daemon aplica eviction LRU. En Linux los workers mueren con el daemon (`Pdeathsig=SIGKILL`), sin dejar language servers huerfanos.
 8. `admin export --format toon` y `admin export --summary --format toon` serializan telemetria local en formato agent-readable sin cambiar el origen canonico (`daemon.db`).
 9. Cuando una query degrada de backend por falla runtime, la telemetria guarda solo metadata causal sanitizada (`requested_backend`, `result_backend`, `backend_fallback_taken`, `fallback_from`, `fallback_to`, `runtime_error_code`).
 10. `admin export --summary --attribution` conserva `manual-cli` y el cliente vacío en `unknown`; la operación `bench` se atribuye a `test`, nunca a `work`. Los fallos q se tipan por etapa (`q_parse_failed`, `q_execute_failed`, `q_workspace_failed`, `q_projection_failed`) y el fallback de `nav.find` distingue índice ausente, ilegible y roto (`nav_find_index_absent`, `nav_find_index_unreadable`, `nav_find_index_broken`). Solo se persisten códigos y etapas sanitizados, nunca consultas crudas.

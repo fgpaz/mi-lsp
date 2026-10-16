@@ -1,7 +1,7 @@
 # Benchmark de navegación de mi-lsp
 
 Este benchmark reproduce las consultas observadas en `laneG-report.md` y añade
-una muestra de arranque frío del servidor MCP nativo. Cada ejecución conserva
+consultas de arranque frío. Cada ejecución conserva
 las muestras individuales y calcula mediana, p95 nearest-rank y máximo; no
 selecciona la mejor muestra. El protocolo sigue el requisito de 30 repeticiones
 de `TP-GPH` y la salida por muestra de Victory Lab.
@@ -29,16 +29,8 @@ sistema operativo ni promete un estado de daemon vacío. También se repiten las
 consultas find/search/multi-read/affected con selector por cwd, alias y ruta
 absoluta para registrar la identidad de workspace observada.
 
-La medición MCP inicia un proceso nuevo por muestra y cronometra desde antes del
-spawn hasta la respuesta a `tools/call` `nav_search`, incluyendo `initialize`,
-la notificación `initialized`, el intercambio JSON-RPC y el arranque del
-proceso. Cada muestra tiene timeout firme. El caso usa el workspace indicado y
-la búsqueda `ErrGraphRepositoryInvalid`.
-
-Los agregados incluyen solo procesos CLI con exit code 0 y respuestas MCP que
-completaron `initialize` y `tools/call`. Fallos y timeouts quedan en las
-muestras crudas; si MCP no existe en ese binario, el artefacto declara
-`status: unavailable` y deja las estadísticas sin muestras válidas.
+Los agregados incluyen solo procesos CLI con exit code 0. Fallos y timeouts
+quedan en las muestras crudas.
 
 El JSON de salida usa el contrato `milsp-navigation-benchmark/v1`, incluye
 revisión Git, SHA-256 del binario, Python/OS/arquitectura, cwd, workspace,

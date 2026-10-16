@@ -121,7 +121,7 @@ sequenceDiagram
 - Riesgo: daemon como punto unico de falla.
 - Mitigacion: bypass automatico y contrato CLI independiente.
 - Riesgo: demasiados runtimes vivos.
-- Mitigacion: `max_workers`, LRU e `idle_timeout`.
+- Mitigacion: `max_workers` (default 8), LRU e `idle_timeout`; en Linux los workers se atan al daemon con `Pdeathsig=SIGKILL`.
 - Riesgo: demasiados watchers o aliases duplicados consumen handles/RAM.
 - Mitigacion: `watch_mode=lazy` por defecto, dedupe por root canonico y cap LRU con `max_watched_roots`.
 - Riesgo: concurrencia de agentes satura el daemon.

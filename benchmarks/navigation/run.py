@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Reproducible subprocess benchmark for mi-lsp CLI and native MCP startup."""
+"""Reproducible subprocess benchmark for mi-lsp CLI startup."""
 
 from __future__ import annotations
 
@@ -9,13 +9,11 @@ import hashlib
 import json
 import os
 import platform
-import queue
 import re
 import signal
 import statistics
 import subprocess
 import sys
-import threading
 import time
 from pathlib import Path
 from typing import Any
@@ -35,7 +33,6 @@ CONSISTENCY_CASES = (
     "multi_read_graph_model",
     "affected_graph_model",
 )
-MCP_PROTOCOL_VERSION = "2024-11-05"
 WORKSPACE_PATTERN = re.compile(r"(?m)^workspace\s*[:=]\s*(.+?)\s*$", re.IGNORECASE)
 
 
@@ -153,122 +150,6 @@ def run_cli(
     return record
 
 
-class LineReader:
-    """Drain child stdout without blocking writes or losing partial lines."""
-
-    def __init__(self, stream: Any) -> None:
-        self.lines: queue.Queue[bytes | None] = queue.Queue()
-        self.bytes_read = 0
-        self.thread = threading.Thread(target=self._read, args=(stream,), daemon=True)
-        self.thread.start()
-
-    def _read(self, stream: Any) -> None:
-        try:
-            while True:
-                line = stream.readline()
-                if not line:
-                    break
-                self.bytes_read += len(line)
-                self.lines.put(line)
-        finally:
-            self.lines.put(None)
-
-    def response(self, request_id: int, deadline: float) -> dict[str, Any]:
-        while True:
-            remaining = deadline - time.monotonic()
-            if remaining <= 0:
-                raise TimeoutError("MCP response deadline exceeded")
-            try:
-                line = self.lines.get(timeout=remaining)
-            except queue.Empty as exc:
-                raise TimeoutError("MCP response deadline exceeded") from exc
-            if line is None:
-                raise EOFError("MCP server closed stdout before response")
-            try:
-                message = json.loads(line)
-            except (UnicodeDecodeError, json.JSONDecodeError):
-                continue
-            if isinstance(message, dict) and message.get("id") == request_id:
-                return message
-
-
-def write_rpc(process: subprocess.Popen[bytes], message: dict[str, Any]) -> None:
-    if process.stdin is None:
-        raise BrokenPipeError("MCP stdin is unavailable")
-    process.stdin.write((json.dumps(message, separators=(",", ":")) + "\n").encode())
-    process.stdin.flush()
-
-
-def run_mcp(
-    binary: Path, cwd: Path, environment: dict[str, str], workspace: str,
-    pattern: str, timeout: float,
-) -> dict[str, Any]:
-    started = time.perf_counter_ns()
-    process: subprocess.Popen[bytes] | None = None
-    timed_out = False
-    result: dict[str, Any] = {"initialized": False, "tool_response": False}
-    stderr_chunks: list[bytes] = []
-    try:
-        process = subprocess.Popen(
-            [str(binary), "mcp", "--workspace", workspace], cwd=cwd, env=environment,
-            stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-            start_new_session=(os.name != "nt"),
-            creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0,
-        )
-        assert process.stdout is not None
-        reader = LineReader(process.stdout)
-        if process.stderr is not None:
-            def drain_stderr() -> None:
-                while True:
-                    chunk = process.stderr.read(4096)
-                    if not chunk:
-                        break
-                    stderr_chunks.append(chunk)
-            threading.Thread(target=drain_stderr, daemon=True).start()
-        deadline = time.monotonic() + timeout
-        write_rpc(process, {
-            "jsonrpc": "2.0", "id": 1, "method": "initialize",
-            "params": {
-                "protocolVersion": MCP_PROTOCOL_VERSION,
-                "capabilities": {},
-                "clientInfo": {"name": "mi-lsp-navigation-benchmark", "version": "1"},
-            },
-        })
-        initialized = reader.response(1, deadline)
-        result["initialized"] = "result" in initialized and "error" not in initialized
-        write_rpc(process, {"jsonrpc": "2.0", "method": "notifications/initialized"})
-        write_rpc(process, {
-            "jsonrpc": "2.0", "id": 2, "method": "tools/call",
-            "params": {"name": "nav_search", "arguments": {"pattern": pattern, "workspace": workspace}},
-        })
-        response = reader.response(2, deadline)
-        result["tool_response"] = "result" in response and "error" not in response
-        if "error" in response:
-            result["protocol_error"] = str(response["error"])[:1000]
-        elif isinstance(response.get("result"), dict):
-            result["is_error"] = response["result"].get("isError")
-            result["content_blocks"] = len(response["result"].get("content", []))
-    except TimeoutError as exc:
-        timed_out = True
-        result["error"] = str(exc)
-    except (OSError, EOFError, BrokenPipeError, AssertionError) as exc:
-        result["error"] = str(exc)[:1000]
-    finally:
-        if process is not None:
-            terminate_process(process)
-    stderr = b"".join(stderr_chunks)[:65536]
-    elapsed = (time.perf_counter_ns() - started) / 1_000_000
-    result.update({
-        "elapsed_ms": elapsed,
-        "timed_out": timed_out,
-        "exit_code_after_cleanup": process.returncode if process is not None else None,
-        "stdout_bytes": reader.bytes_read if "reader" in locals() else 0,
-        "stderr_bytes_captured": len(stderr),
-        "stderr_excerpt": stderr.decode("utf-8", errors="replace")[:1000] or None,
-    })
-    return result
-
-
 def command_for(name: str, workspace_selector: str | None, explicit_json: bool = False) -> list[str]:
     argv = list(CLI_CASES[name])
     if workspace_selector is not None:
@@ -283,7 +164,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--binary", default="mi-lsp", help="mi-lsp executable")
     parser.add_argument("--workspace", required=True, help="workspace alias or absolute path")
     parser.add_argument("--cwd", default=".", help="working directory used for child processes")
-    parser.add_argument("--samples", type=int, default=30, help="warm and MCP repetitions (default: 30)")
+    parser.add_argument("--samples", type=int, default=30, help="warm repetitions (default: 30)")
     parser.add_argument("--timeout", type=float, default=120.0, help="firm timeout in seconds per child")
     parser.add_argument("--output", required=True, help="JSON result path")
     args = parser.parse_args(argv)
@@ -371,19 +252,6 @@ def main(argv: list[str] | None = None) -> int:
     json_probe["contract_probe"] = "stdout JSON validity and root type recorded"
     print("completed explicit JSON contract probe", file=sys.stderr, flush=True)
 
-    mcp_samples = []
-    for repetition in range(1, args.samples + 1):
-        mcp_samples.append({
-            "repetition": repetition,
-            **run_mcp(binary, cwd, environment, args.workspace, "ErrGraphRepositoryInvalid", args.timeout),
-        })
-    successful_mcp = [
-        sample for sample in mcp_samples
-        if sample["initialized"] and sample["tool_response"] and not sample["timed_out"]
-    ]
-    mcp_times = [sample["elapsed_ms"] for sample in successful_mcp]
-    print(f"completed MCP case ({len(mcp_samples)} samples)", file=sys.stderr, flush=True)
-
     artifact = {
         "schema": "milsp-navigation-benchmark/v1",
         "conditions": {
@@ -394,7 +262,7 @@ def main(argv: list[str] | None = None) -> int:
             "cwd": str(cwd), "workspace_argument": args.workspace,
             "client_name": environment["MI_LSP_CLIENT_NAME"],
             "session_id": environment["MI_LSP_SESSION_ID"],
-            "samples_per_warm_and_mcp_case": args.samples,
+            "samples_per_warm_case": args.samples,
             "timeout_seconds_per_process": args.timeout,
             "clock": "perf_counter_ns; elapsed includes child spawn and complete response",
         },
@@ -402,13 +270,6 @@ def main(argv: list[str] | None = None) -> int:
         "cli": commands,
         "workspace_consistency": consistency,
         "explicit_json_probe": json_probe,
-        "mcp_cold_initialize_and_nav_search": {
-            "tool": "nav_search", "pattern": "ErrGraphRepositoryInvalid",
-            "status": "available" if successful_mcp else "unavailable",
-            "successful_samples": len(successful_mcp),
-            "failed_samples": len(mcp_samples) - len(successful_mcp),
-            "summary": summary(mcp_times), "samples": mcp_samples,
-        },
     }
     output = Path(args.output).expanduser()
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -417,7 +278,6 @@ def main(argv: list[str] | None = None) -> int:
         "schema": artifact["schema"], "output": str(output.resolve()),
         "git_revision": artifact["conditions"]["git_revision"],
         "binary_sha256": artifact["conditions"]["binary_sha256"],
-        "mcp_cold": artifact["mcp_cold_initialize_and_nav_search"]["summary"],
     }, ensure_ascii=False, sort_keys=True))
     return 0
 

@@ -18,7 +18,7 @@ func daemonServeInvocation(executable string, maxWorkers int, idleTimeout time.D
 	options = NormalizeStartOptions(options)
 	args := []string{
 		"daemon", "serve",
-		"--max-workers", strconvItoa(maxWorkers),
+		"--max-workers", strconvItoa(normalizeMaxWorkers(maxWorkers)),
 		"--idle-timeout", idleTimeout.String(),
 		"--watch-mode", options.WatchMode,
 		"--max-watched-roots", strconvItoa(options.MaxWatchedRoots),

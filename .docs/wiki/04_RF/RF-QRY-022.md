@@ -57,7 +57,7 @@ La API q reutiliza `sym`, `edges`, `read`, `text` y `docs`, más las fuentes `id
 
 ## Memoria de sesión
 
-Cada solicitud lleva `session_id` explícito. MCP genera una identidad estable por proceso cuando el caller no la aporta. La memoria en proceso es LRU, máximo 200 sesiones, expira tras 30 minutos idle y conserva solo IDs/revisiones, nunca texto ni consultas. `read` puede omitir texto ya entregado para el mismo ID/revisión (`seen:true`); `fresh` lo vuelve a incluir. `session_mark` es monotónico. `changed since=<mark>` compara el snapshot entregado con la resolución actual y devuelve revisiones cambiadas, sin registrar ni indexar.
+Cada solicitud lleva `session_id` explícito. [RETIRADO 2026-10-15] MCP genera una identidad estable por proceso cuando el caller no la aporta. La memoria en proceso es LRU, máximo 200 sesiones, expira tras 30 minutos idle y conserva solo IDs/revisiones, nunca texto ni consultas. `read` puede omitir texto ya entregado para el mismo ID/revisión (`seen:true`); `fresh` lo vuelve a incluir. `session_mark` es monotónico. `changed since=<mark>` compara el snapshot entregado con la resolución actual y devuelve revisiones cambiadas, sin registrar ni indexar.
 
 La caché/dedupe es opt-in. Sin `dedupe=true`, repetir una consulta conserva sus resultados y orden. Cancelación no publica texto ni resultados parciales en memoria como si fueran una lectura completa.
 

@@ -297,10 +297,12 @@ func (r *wikiCodeResolver) loadDocs(ctx context.Context) {
 	if r.db == nil {
 		return
 	}
-	docs, err := store.ListDocRecords(ctx, r.db)
+	cached, err := loadDocRecordsCached(ctx, r.db, r.root, docsGeneration(ctx, r.db))
 	if err != nil {
 		return
 	}
+	// The cached slice is shared across queries; sort a private copy.
+	docs := append([]model.DocRecord(nil), cached...)
 	r.docsLoaded = true
 	sort.SliceStable(docs, func(i, j int) bool {
 		left := []string{normalizeWikiPath(docs[i].Path), strings.ToUpper(strings.TrimSpace(docs[i].DocID))}
