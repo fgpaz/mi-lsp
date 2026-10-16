@@ -173,4 +173,4 @@ Local semantic CLI for large .NET/C# and TypeScript workspaces.
 **Status**: Generated from AE-POLICY-PROJECTION-V2
 **Last Updated**: 2026-08-25
 **Source**: repo-policy.yaml + template.claude
-<!-- kernel_version: 63b51191 -->
+<!-- kernel_version: 47c843a3 -->
