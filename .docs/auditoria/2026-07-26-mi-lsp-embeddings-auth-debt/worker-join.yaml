@@ -39,7 +39,7 @@ release:
   checksums_published: true
 readback:
   windows_arm64:
-    installed_binary: C:/Users/fgpaz/bin/mi-lsp.exe
+    installed_binary: %USERPROFILE%/bin/mi-lsp.exe
     version: v0.5.20
     sha256: e777cffe6bceeee3779f6c6d85a1e89ac2d23c74714eac1fd6ac18ad080c2490
     vcs_revision: 3c2bf79b6c9e53928f04b3382d0b0612ee022553
@@ -47,23 +47,23 @@ readback:
     protocol: mi-lsp-v1.1
     worker_compatible: true
     selected_worker_source: bundle
-    selected_worker: C:/Users/fgpaz/bin/workers/win-arm64/MiLsp.Worker.exe
+    selected_worker: %USERPROFILE%/bin/workers/win-arm64/MiLsp.Worker.exe
   wsl_linux_arm64:
     installed_paths:
-      - /home/fgpaz/.local/bin/mi-lsp
-      - /home/fgpaz/bin/mi-lsp
+      - $HOME/.local/bin/mi-lsp
+      - $HOME/bin/mi-lsp
     sha256: b576b3f015fca36cf57ad28e7a03b7b10d742318a0ede5c85a38ad002f863e2c
     version: v0.5.20
     vcs_revision: 3c2bf79b6c9e53928f04b3382d0b0612ee022553
     vcs_modified: false
-    worker_path: /home/fgpaz/.mi-lsp/workers/linux-arm64/MiLsp.Worker
+    worker_path: $HOME/.mi-lsp/workers/linux-arm64/MiLsp.Worker
     selected_source: installed
     selected_compatible: true
     protocol: mi-lsp-v1.1
     dotnet_required: false
 skill_distribution:
-  source: C:/Users/fgpaz/.agents/skills/mi-lsp
-  mirror: C:/repos/buho/assets/skills/mi-lsp
+  source: %USERPROFILE%/.agents/skills/mi-lsp
+  mirror: <repos>/buho/assets/skills/mi-lsp
   files_each: 9
   recursive_parity: true
   differences: none
