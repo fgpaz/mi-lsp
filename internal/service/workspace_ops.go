@@ -639,6 +639,10 @@ func (a *App) workspaceStatus(ctx context.Context, request model.CommandRequest)
 	item["governance_index_sync_details"] = governance.IndexSyncDetails
 	item["governance_blocked"] = governance.Blocked
 	item["governance_summary"] = governance.Summary
+	item["repo_kind"] = governance.RepoKind
+	if governance.WikiLayers != nil {
+		item["wiki_layers"] = governance.WikiLayers
+	}
 	item["ae_canon"] = governance.AECanon
 
 	// Embeddings status

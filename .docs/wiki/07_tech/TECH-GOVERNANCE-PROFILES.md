@@ -60,6 +60,13 @@ Detallar el modelo tecnico de gobernanza profile-aware de `mi-lsp`.
 - `nav ask` y `nav pack` bloquean cuando la gobernanza no es valida
 - Si la proyeccion cambia, el workspace debe reindexarse antes de continuar con consultas docs-first
 
+## Capas de producto (D-086, solo aviso)
+
+- `mi-lsp` lee `.docs/ae/repo-policy.yaml` (`repo.kind`, `exceptions`) con ids alineados al setup AE: `scope`, `outcome`, `architecture`, `flow`, `requirement`, `test_plan`, `technical`.
+- Para `repo.kind: product`, `nav governance` y `workspace status` incluyen `wiki_layers` (schema `ae-wiki-layers-doctor/v1`) y avisos `wiki_layer_gap:<id>` cuando falta contenido real o solo hay esqueleto `<!-- ae-skeleton: pending -->`.
+- `repo.kind` ausente agrega `repo_kind_undeclared`; `kernel` y `docs` no exigen capas de producto.
+- Las excepciones registradas (`capa`, `motivo`, `autorizo`, `fecha`) cubren una capa sin bloquear navegación ni `nav ask`/`nav pack`.
+
 ## Validación del Kernel v2
 
 - El canon universal se resuelve desde `<kernel_home>/canon`; no se duplica en el repositorio.
