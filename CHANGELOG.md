@@ -9,6 +9,8 @@ and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2
 
 ### Added
 
+- WIKI-CONTRACT-v1 (advisory, never blocks): `nav wiki validate-contract`, on-demand views `nav wiki index <kind>` and `nav wiki matrix` (RF x TP by acceptance criterion), legacy path alias table, `00_governance.md` as canonical governance with traits, `ui_roots` and `layer_exceptions`; repo-policy `exceptions:` read as compatibility alias with a move warning; `DESIGN.md`/`PRODUCT.md` recognized at repo root under `has_ui`.
+
 - Provider manifest v2 now declares catalog metadata, schemas and explicit CLI mappings for q, nav.intent and nav.multi-read; Unix socket transport serves those same operations, with CLI spawn retained as fallback.
 - Optional user embeddings configuration at `$XDG_CONFIG_HOME/mi-lsp/config.toml`, ordered OpenAI-compatible endpoints, local credential references/commands, `mi-lsp config doctor`, and CLI overrides for skill indexing. Embeddings remain best-effort with lexical fallback.
 - User configuration and privacy guidance in `docs/configuracion.md`.

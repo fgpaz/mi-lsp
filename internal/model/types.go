@@ -798,10 +798,38 @@ type AECanonStatus struct {
 }
 
 type WikiLayerExceptionView struct {
-	Capa     string `json:"capa"`
+	Layer    string `json:"layer,omitempty"`
+	Capa     string `json:"capa,omitempty"`
 	Motivo   string `json:"motivo,omitempty"`
+	Reason   string `json:"reason,omitempty"`
 	Autorizo string `json:"autorizo,omitempty"`
+	AuthorizedBy string `json:"authorized_by,omitempty"`
 	Fecha    string `json:"fecha,omitempty"`
+	Date     string `json:"date,omitempty"`
+}
+
+type WikiContractTraitView struct {
+	Name    string   `json:"name"`
+	Reason  string   `json:"reason,omitempty"`
+	UIRoots []string `json:"ui_roots,omitempty"`
+}
+
+type WikiContractValidationResult struct {
+	WikiContract           string                         `json:"wiki_contract"`
+	ContractReadiness      string                         `json:"contract_readiness"`
+	ContractVerdict        string                         `json:"contract_verdict"`
+	ContractWarnings       []string                       `json:"contract_warnings,omitempty"`
+	ContractsReviewed      int                            `json:"contracts_reviewed"`
+	LinksReviewed          int                            `json:"links_reviewed"`
+	Documents              []WikiContractDocumentFinding  `json:"documents,omitempty"`
+}
+
+type WikiContractDocumentFinding struct {
+	Path     string   `json:"path"`
+	DocID    string   `json:"id,omitempty"`
+	Kind     string   `json:"kind,omitempty"`
+	Status   string   `json:"status,omitempty"`
+	Warnings []string `json:"warnings,omitempty"`
 }
 
 type WikiLayerEntry struct {
@@ -825,6 +853,9 @@ type GovernanceStatus struct {
 	HumanDoc             string                      `json:"human_doc,omitempty"`
 	ProjectionDoc        string                      `json:"projection_doc,omitempty"`
 	RepoKind             string                      `json:"repo_kind,omitempty"`
+	WikiContract         string                      `json:"wiki_contract,omitempty"`
+	Traits               []WikiContractTraitView     `json:"traits,omitempty"`
+	UIRoots              []string                    `json:"ui_roots,omitempty"`
 	WikiLayers           *WikiLayersDoctor           `json:"wiki_layers,omitempty"`
 	Profile              string                      `json:"profile,omitempty"`
 	Extends              string                      `json:"extends,omitempty"`

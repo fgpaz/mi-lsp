@@ -1058,6 +1058,17 @@ func Parse(docPath string, content string, indexedAt int64) ParsedDoc {
 		_ = indexedAt
 		_ = idx
 	}
+	contract := ParseContractMetadata(content)
+	if strings.TrimSpace(contract.ID) != "" && strings.TrimSpace(parsed.DocID) == "" {
+		parsed.DocID = contract.ID
+	}
+	if contract.LegacyTOON && contract.WikiContract == "" {
+		parsed.Mentions = append(parsed.Mentions, model.DocMention{
+			DocPath:      parsed.DocPath,
+			MentionType:  "contract_advisory",
+			MentionValue: "legacy_toon_advisory: prefer Spanish H2 sections and WIKI-CONTRACT-v1 links.*",
+		})
+	}
 	return parsed
 }
 

@@ -1098,6 +1098,28 @@ pack for a reading pack, and trace for RS/RF/TP evidence links.`,
 	validateHarnessCommand.Flags().StringVar(&validateHarnessIDs, "ids", "", "Comma-separated doc IDs/titles/basenames to validate")
 	validateHarnessCommand.Flags().StringVar(&validateHarnessPaths, "paths", "", "Comma-separated doc paths or basenames to validate")
 
+	var validateContractIDs string
+	var validateContractPaths string
+	validateContractCommand := &cobra.Command{
+		Use:   "validate-contract",
+		Short: "Validate WIKI-CONTRACT-v1 headers and typed links in governed wiki docs",
+		Example: `  mi-lsp nav wiki validate-contract --workspace mi-lsp --format toon
+  mi-lsp nav wiki validate-contract --workspace mi-lsp --ids RF-WIKI-001
+  mi-lsp nav wiki validate-contract --workspace mi-lsp --paths .docs/wiki/04_RF/RF-WIKI-001.md`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			payload := map[string]any{}
+			if strings.TrimSpace(validateContractIDs) != "" {
+				payload["ids"] = validateContractIDs
+			}
+			if strings.TrimSpace(validateContractPaths) != "" {
+				payload["paths"] = validateContractPaths
+			}
+			return state.executeOperation(cmd, "nav.wiki.validate-contract", payload, true)
+		},
+	}
+	validateContractCommand.Flags().StringVar(&validateContractIDs, "ids", "", "Comma-separated doc IDs/titles/basenames to validate")
+	validateContractCommand.Flags().StringVar(&validateContractPaths, "paths", "", "Comma-separated doc paths or basenames to validate")
+
 	var validateSourceIDs string
 	var validateSourcePaths string
 	validateSourceCommand := &cobra.Command{
@@ -1151,6 +1173,31 @@ Use --with-layer-counts to include per-layer documentation counts (RS, FL, RF, T
 	inventoryCommand.Flags().BoolVar(&invWithLayerCounts, "with-layer-counts", false, "Include doc counts per layer (RS, FL, RF, TP, TECH, DB, CT)")
 	inventoryCommand.Flags().StringVar(&invWorkspace, "workspace", "", "Limit to a single workspace alias (only valid when --all-workspaces=false)")
 
+	indexCommand := &cobra.Command{
+		Use:   "index <kind>",
+		Short: "On-demand index of wiki documents for a WIKI-CONTRACT-v1 kind",
+		Long: `List id, title, status, and path for one contract kind (requirement, test, flow, ...).
+Legacy folder layouts and short aliases (RF, TP, FL, RS) are accepted via the path alias table.`,
+		Example: `  mi-lsp nav wiki index requirement --workspace mi-lsp --format toon
+  mi-lsp nav wiki index RF --workspace mi-lsp --format toon
+  mi-lsp nav wiki index test --workspace mi-lsp --format json`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return state.executeOperation(cmd, "nav.wiki.index", map[string]any{"kind": args[0]}, true)
+		},
+	}
+
+	matrixCommand := &cobra.Command{
+		Use:   "matrix",
+		Short: "On-demand RF x TP matrix by acceptance criterion",
+		Long: `Build RF x TP coverage from links.verifies and TP case lines citing Criterio N.
+Reports covered and uncovered criteria and TPs without RF. Findings are warnings only.`,
+		Example: `  mi-lsp nav wiki matrix --workspace mi-lsp --format toon`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return state.executeOperation(cmd, "nav.wiki.matrix", map[string]any{}, true)
+		},
+	}
+
 	mapCommand := &cobra.Command{
 		Use:   "map",
 		Short: "Compact hub catalog for a knowledge wiki (persona/proyectos/sistema/materia)",
@@ -1175,7 +1222,7 @@ Use --with-layer-counts to include per-layer documentation counts (RS, FL, RF, T
 	}
 	rootCommand.Flags().StringVar(&wikiRootRole, "role", "", "Filter [[canon]] by role: producto, ecosistema, or gobierno_local")
 
-	command.AddCommand(searchCommand, routeCommand, packCommand, traceCommand, validateHarnessCommand, validateSourceCommand, inventoryCommand, mapCommand, rootCommand)
+	command.AddCommand(searchCommand, routeCommand, packCommand, traceCommand, validateHarnessCommand, validateContractCommand, validateSourceCommand, inventoryCommand, indexCommand, matrixCommand, mapCommand, rootCommand)
 	return command
 }
 

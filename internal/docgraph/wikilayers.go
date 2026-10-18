@@ -20,11 +20,15 @@ const defaultWikiRoot = ".docs/wiki"
 
 var wikiLayerDatePattern = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}$`)
 
-var productWikiLayers = []struct {
-	id     string
-	label  string
-	detect func(basename string, parentSegments []string) bool
-}{
+type wikiLayerSpec struct {
+	id       string
+	label    string
+	trait    string // empty = core layer
+	detect   func(basename string, parentSegments []string) bool
+	rootFile string // repo-root file (has_ui)
+}
+
+var productWikiLayers = []wikiLayerSpec{
 	{id: "scope", label: "Alcance", detect: func(basename string, _ []string) bool {
 		return regexp.MustCompile(`(?i)alcance|scope`).MatchString(basename)
 	}},
@@ -52,6 +56,36 @@ var productWikiLayers = []struct {
 		}
 		return regexp.MustCompile(`(?i)^TECH-.*\.md$`).MatchString(basename)
 	}},
+	{id: "data_model", label: "Modelo de datos", trait: "stores_data", detect: func(basename string, parentSegments []string) bool {
+		if regexp.MustCompile(`(?i)^data-model\.md$`).MatchString(basename) {
+			return true
+		}
+		return regexp.MustCompile(`(?i)^DM-.*\.md$`).MatchString(basename)
+	}},
+	{id: "database", label: "Base de datos (DB)", trait: "stores_data", detect: func(basename string, _ []string) bool {
+		return regexp.MustCompile(`(?i)^DB-.*\.md$`).MatchString(basename)
+	}},
+	{id: "contract", label: "Contratos (CT)", trait: "exposes_api", detect: func(basename string, _ []string) bool {
+		return regexp.MustCompile(`(?i)^CT-.*\.md$`).MatchString(basename)
+	}},
+	{id: "journey", label: "Journeys (UJ)", trait: "has_ui", detect: func(basename string, parentSegments []string) bool {
+		for _, segment := range parentSegments {
+			if regexp.MustCompile(`(?i)^10_?ux`).MatchString(segment) {
+				return regexp.MustCompile(`(?i)^UJ-.*\.md$`).MatchString(basename)
+			}
+		}
+		return regexp.MustCompile(`(?i)^UJ-.*\.md$`).MatchString(basename)
+	}},
+	{id: "ux_module", label: "Módulos UX (UXM)", trait: "has_ui", detect: func(basename string, parentSegments []string) bool {
+		for _, segment := range parentSegments {
+			if regexp.MustCompile(`(?i)^10_?ux`).MatchString(segment) {
+				return regexp.MustCompile(`(?i)^UXM-.*\.md$`).MatchString(basename)
+			}
+		}
+		return regexp.MustCompile(`(?i)^UXM-.*\.md$`).MatchString(basename)
+	}},
+	{id: "design_md", label: "DESIGN.md", trait: "has_ui", rootFile: "DESIGN.md"},
+	{id: "product_md", label: "PRODUCT.md", trait: "has_ui", rootFile: "PRODUCT.md"},
 }
 
 var repoKinds = map[string]struct{}{
@@ -70,6 +104,7 @@ func enrichWikiProductLayers(root string, status *model.GovernanceStatus) {
 	if status == nil {
 		return
 	}
+	attachWikiContractGovernance(root, status)
 	report, warnings := wikiLayersDoctor(root)
 	if report != nil {
 		status.RepoKind = report.RepoKind
@@ -91,8 +126,16 @@ func wikiLayersDoctor(root string) (*model.WikiLayersDoctor, []string) {
 		return nil, []string{"wiki_layers: repo-policy.yaml is not valid YAML"}
 	}
 	kind := validateWikiRepoKind(policy)
-	exceptions, exceptionWarnings := validateWikiExceptions(policy["exceptions"])
-	warnings := append([]string{}, exceptionWarnings...)
+	policyExceptions, policyExceptionWarnings := validateWikiExceptions(policy["exceptions"])
+	warnings := append([]string{}, policyExceptionWarnings...)
+	govParsed, govWarnings := LoadWikiContractGovernance(root)
+	warnings = append(warnings, govWarnings...)
+	exceptions := govParsedLayerExceptions(govParsed)
+	if len(exceptions) == 0 {
+		exceptions = policyExceptions
+	} else if len(policyExceptions) > 0 {
+		warnings = append(warnings, wikiExceptionsLegacyLocation)
+	}
 	if kind == "" {
 		warnings = append(warnings, "repo_kind_undeclared")
 	}
@@ -109,9 +152,9 @@ func wikiLayersDoctor(root string) (*model.WikiLayersDoctor, []string) {
 	report.LayersRequired = true
 	excepted := map[string]struct{}{}
 	for _, item := range exceptions {
-		excepted[item.Capa] = struct{}{}
+		excepted[exceptionLayerID(item)] = struct{}{}
 	}
-	layers, missing := detectProductWikiLayers(root, report.WikiRoot, excepted)
+	layers, missing := detectProductWikiLayers(root, report.WikiRoot, excepted, govParsed)
 	report.Layers = layers
 	report.Missing = missing
 	for _, layerID := range missing {
@@ -177,10 +220,14 @@ func validateWikiExceptions(raw any) ([]model.WikiLayerExceptionView, []string) 
 			continue
 		}
 		out = append(out, model.WikiLayerExceptionView{
-			Capa:     capa,
-			Motivo:   motivo,
-			Autorizo: autorizo,
-			Fecha:    fecha,
+			Layer:        capa,
+			Capa:         capa,
+			Reason:       motivo,
+			Motivo:       motivo,
+			AuthorizedBy: autorizo,
+			Autorizo:     autorizo,
+			Date:         fecha,
+			Fecha:        fecha,
 		})
 	}
 	return out, warnings
@@ -188,22 +235,55 @@ func validateWikiExceptions(raw any) ([]model.WikiLayerExceptionView, []string) 
 
 func wikiExceptionString(record map[string]any, primary, alternate string) string {
 	for _, key := range []string{primary, alternate} {
-		if value, ok := record[key].(string); ok {
-			value = strings.TrimSpace(value)
-			if value != "" {
-				return value
-			}
+		if value := yamlScalarString(record[key]); value != "" {
+			return value
 		}
 	}
 	return ""
 }
 
-func productLayerIDSet() map[string]struct{} {
+func yamlScalarString(value any) string {
+	switch typed := value.(type) {
+	case string:
+		return strings.TrimSpace(typed)
+	case time.Time:
+		return typed.Format("2006-01-02")
+	default:
+		return ""
+	}
+}
+
+func wikiProductLayerIDSet() map[string]struct{} {
 	set := map[string]struct{}{}
 	for _, layer := range productWikiLayers {
 		set[layer.id] = struct{}{}
 	}
 	return set
+}
+
+func productLayerIDSet() map[string]struct{} {
+	return wikiProductLayerIDSet()
+}
+
+func govParsedLayerExceptions(parsed *WikiContractGovernance) []model.WikiLayerExceptionView {
+	if parsed == nil || len(parsed.LayerExceptions) == 0 {
+		return nil
+	}
+	return append([]model.WikiLayerExceptionView{}, parsed.LayerExceptions...)
+}
+
+func activeWikiLayersForTraits(parsed *WikiContractGovernance) []wikiLayerSpec {
+	layers := make([]wikiLayerSpec, 0, len(productWikiLayers))
+	for _, layer := range productWikiLayers {
+		if layer.trait == "" {
+			layers = append(layers, layer)
+			continue
+		}
+		if parsed != nil && parsed.TraitEnabled(layer.trait) {
+			layers = append(layers, layer)
+		}
+	}
+	return layers
 }
 
 func resolveWikiRootFromPolicy(policy map[string]any) string {
@@ -228,18 +308,26 @@ func resolveWikiRootFromPolicy(policy map[string]any) string {
 	return defaultWikiRoot
 }
 
-func detectProductWikiLayers(root, wikiRoot string, excepted map[string]struct{}) ([]model.WikiLayerEntry, []string) {
+func detectProductWikiLayers(root, wikiRoot string, excepted map[string]struct{}, gov *WikiContractGovernance) ([]model.WikiLayerEntry, []string) {
 	wikiRootAbs := filepath.Join(root, filepath.FromSlash(wikiRoot))
 	files := listWikiMarkdownFiles(wikiRootAbs)
-	layers := make([]model.WikiLayerEntry, 0, len(productWikiLayers))
+	layerSpecs := activeWikiLayersForTraits(gov)
+	layers := make([]model.WikiLayerEntry, 0, len(layerSpecs))
 	var missing []string
-	for _, layer := range productWikiLayers {
+	for _, layer := range layerSpecs {
 		var matches []string
-		for _, rel := range files {
-			basename := filepath.Base(rel)
-			parentSegments := strings.Split(filepath.ToSlash(filepath.Dir(rel)), "/")
-			if layer.detect(basename, parentSegments) {
-				matches = append(matches, filepath.ToSlash(filepath.Join(wikiRoot, rel)))
+		if layer.rootFile != "" {
+			rel := layer.rootFile
+			if pathExists(filepath.Join(root, rel)) {
+				matches = []string{rel}
+			}
+		} else if layer.detect != nil {
+			for _, rel := range files {
+				basename := filepath.Base(rel)
+				parentSegments := strings.Split(filepath.ToSlash(filepath.Dir(rel)), "/")
+				if layer.detect(basename, parentSegments) {
+					matches = append(matches, filepath.ToSlash(filepath.Join(wikiRoot, rel)))
+				}
 			}
 		}
 		sort.Strings(matches)

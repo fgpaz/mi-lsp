@@ -38,6 +38,7 @@ Detallar el modelo tecnico de gobernanza profile-aware de `mi-lsp`.
 - `.docs/wiki/_mi-lsp/read-model.toml` es una proyeccion versionada, obligatoria y auto-sincronizable.
 - El perfil visible se compila internamente a `base + overlays`.
 - Si la gobernanza esta ambigua, invalida o stale, el workspace queda bloqueado para superficies docs-first.
+- Durante la transicion a `WIKI-CONTRACT-v1`, `mi-lsp nav wiki validate-contract` revisa encabezados y `links.*` del contrato; emite solo advertencias (no bloquea ni sale con codigo distinto de cero). Convive con `validate-harness` hasta el corte.
 
 ## Perfiles visibles
 

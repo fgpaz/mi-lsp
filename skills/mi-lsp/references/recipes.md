@@ -34,6 +34,23 @@ direct/no-daemon read. If a root or lookup is unavailable, preserve its
 absence as proof. Inventory metadata recommends a read; it does not replace
 the canonical artifact or authorize a write.
 
+### R4b — On-demand wiki index and RF×TP matrix
+
+Hand-written `index.md` files and on-disk `matrix.md` generators are
+deprecated. Build views at read time:
+
+```powershell
+mi-lsp nav wiki index <kind> --workspace <alias> --format toon
+mi-lsp nav wiki matrix --workspace <alias> --format toon
+```
+
+`<kind>` accepts WIKI-CONTRACT-v1 names (`requirement`, `test`, `flow`, …) and
+legacy aliases (`RF`, `TP`, `FL`, `RS`). The index lists `id`, `title`,
+`status`, and `path`, and may warn with `legacy_path: rename …` when the repo
+still uses Spanish or pre-v1 folders. The matrix derives RF×TP coverage from
+`links.verifies` (or legacy TP imports) and TP case lines that cite
+`Criterio N`; uncovered criteria and TPs without RF are warnings only.
+
 ### R4 — Governance validation chain
 
 Run the governance check before the two named wiki validators, in this order:
@@ -41,6 +58,7 @@ Run the governance check before the two named wiki validators, in this order:
 ```powershell
 mi-lsp nav governance
 mi-lsp nav wiki validate-harness
+mi-lsp nav wiki validate-contract
 mi-lsp nav wiki validate-source
 ```
 
@@ -52,6 +70,10 @@ returned `index_sync_details`. The harness result is
 `harness_contracts_reviewed`, `harness_links_reviewed`,
 `harness_evidence_required`, `harness_evidence_found`,
 `harness_docs_missing_contract`, and `harness_docs_unknown_audience`. The
+contract result is `WikiContractValidationResult`: `wiki_contract`,
+`contract_readiness`, `contract_verdict`, `contract_warnings`,
+`contracts_reviewed`, `links_reviewed`, and optional per-document `documents`
+entries. Findings are advisory warnings only (no non-zero exit). The
 source result is `WikiSourceValidationResult`: `wiki_source_protocol`,
 `index_freshness`, `governance_sync`, `wiki_source_readiness`,
 `wiki_source_verdict`, `wiki_source_blockers`, `wiki_source_warnings`,

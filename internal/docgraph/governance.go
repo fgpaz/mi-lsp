@@ -94,7 +94,8 @@ const (
 	kernelV2CanonicalRepoPolicyPath = ".docs/ae/repo-policy.yaml"
 	defaultGovernanceRelPath        = ".docs/wiki/00_gobierno_documental.md"
 	defaultProjectionRelPath        = ".docs/wiki/_mi-lsp/read-model.toml"
-	canonGovernanceFileName         = "00_gobierno_documental.md"
+	canonGovernanceFileName         = "00_governance.md"
+	legacyGovernanceFileName        = "00_gobierno_documental.md"
 )
 
 var wellKnownGovernanceRelPaths = []string{
@@ -146,6 +147,12 @@ func resolveGovernanceDoc(root string) (string, string, model.DocsReadProfile, s
 }
 
 func discoverGovernanceDisplayPath(root string, canons []workspace.ResolvedCanon, canonErr error) string {
+	if pathExists(filepath.Join(root, filepath.FromSlash(canonGovernanceV1RelPath))) {
+		return canonGovernanceV1RelPath
+	}
+	if pathExists(filepath.Join(root, filepath.FromSlash(legacyGovernanceRelPath))) {
+		return legacyGovernanceRelPath
+	}
 	if pathExists(filepath.Join(root, filepath.FromSlash(defaultGovernanceRelPath))) {
 		return defaultGovernanceRelPath
 	}
@@ -185,13 +192,16 @@ func canonGovernanceRelPath(canons []workspace.ResolvedCanon) string {
 	paths := make([]string, 0, len(preferred))
 	seen := map[string]struct{}{}
 	for _, canon := range preferred {
-		rel := strings.TrimSuffix(filepath.ToSlash(strings.TrimSpace(canon.DeclaredRoot)), "/") + "/" + canonGovernanceFileName
-		key := strings.ToLower(rel)
-		if _, ok := seen[key]; ok {
-			continue
+		base := strings.TrimSuffix(filepath.ToSlash(strings.TrimSpace(canon.DeclaredRoot)), "/")
+		for _, fileName := range []string{canonGovernanceFileName, legacyGovernanceFileName} {
+			rel := base + "/" + fileName
+			key := strings.ToLower(rel)
+			if _, ok := seen[key]; ok {
+				continue
+			}
+			seen[key] = struct{}{}
+			paths = append(paths, rel)
 		}
-		seen[key] = struct{}{}
-		paths = append(paths, rel)
 	}
 	if len(paths) == 1 {
 		return paths[0]
@@ -347,8 +357,8 @@ func pathExists(path string) bool {
 
 func invalidGovernanceSourceIssue(humanDoc string) string {
 	listed := strings.TrimPrefix(humanDoc, "INVALID:")
-	if strings.Contains(listed, ", ") && strings.Contains(listed, canonGovernanceFileName) {
-		return "multiple 00_gobierno_documental.md candidates found: " + listed + "; keep a single governance document or set governance.source_doc to one relative path that is in-workspace or inside a declared [[canon]] root"
+	if strings.Contains(listed, ", ") && (strings.Contains(listed, canonGovernanceFileName) || strings.Contains(listed, legacyGovernanceFileName)) {
+		return "multiple governance document candidates found: " + listed + "; keep a single governance document or set governance.source_doc to one relative path that is in-workspace or inside a declared [[canon]] root"
 	}
 	return "invalid governance source_doc; it must be a relative path, in-workspace or inside a declared [[canon]] root, and not absolute"
 }
