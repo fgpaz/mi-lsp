@@ -41,6 +41,7 @@ Run the governance check before the two named wiki validators, in this order:
 ```powershell
 mi-lsp nav governance
 mi-lsp nav wiki validate-harness
+mi-lsp nav wiki validate-contract
 mi-lsp nav wiki validate-source
 ```
 
@@ -52,6 +53,10 @@ returned `index_sync_details`. The harness result is
 `harness_contracts_reviewed`, `harness_links_reviewed`,
 `harness_evidence_required`, `harness_evidence_found`,
 `harness_docs_missing_contract`, and `harness_docs_unknown_audience`. The
+contract result is `WikiContractValidationResult`: `wiki_contract`,
+`contract_readiness`, `contract_verdict`, `contract_warnings`,
+`contracts_reviewed`, `links_reviewed`, and optional per-document `documents`
+entries. Findings are advisory warnings only (no non-zero exit). The
 source result is `WikiSourceValidationResult`: `wiki_source_protocol`,
 `index_freshness`, `governance_sync`, `wiki_source_readiness`,
 `wiki_source_verdict`, `wiki_source_blockers`, `wiki_source_warnings`,

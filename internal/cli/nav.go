@@ -1098,6 +1098,28 @@ pack for a reading pack, and trace for RS/RF/TP evidence links.`,
 	validateHarnessCommand.Flags().StringVar(&validateHarnessIDs, "ids", "", "Comma-separated doc IDs/titles/basenames to validate")
 	validateHarnessCommand.Flags().StringVar(&validateHarnessPaths, "paths", "", "Comma-separated doc paths or basenames to validate")
 
+	var validateContractIDs string
+	var validateContractPaths string
+	validateContractCommand := &cobra.Command{
+		Use:   "validate-contract",
+		Short: "Validate WIKI-CONTRACT-v1 headers and typed links in governed wiki docs",
+		Example: `  mi-lsp nav wiki validate-contract --workspace mi-lsp --format toon
+  mi-lsp nav wiki validate-contract --workspace mi-lsp --ids RF-WIKI-001
+  mi-lsp nav wiki validate-contract --workspace mi-lsp --paths .docs/wiki/04_RF/RF-WIKI-001.md`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			payload := map[string]any{}
+			if strings.TrimSpace(validateContractIDs) != "" {
+				payload["ids"] = validateContractIDs
+			}
+			if strings.TrimSpace(validateContractPaths) != "" {
+				payload["paths"] = validateContractPaths
+			}
+			return state.executeOperation(cmd, "nav.wiki.validate-contract", payload, true)
+		},
+	}
+	validateContractCommand.Flags().StringVar(&validateContractIDs, "ids", "", "Comma-separated doc IDs/titles/basenames to validate")
+	validateContractCommand.Flags().StringVar(&validateContractPaths, "paths", "", "Comma-separated doc paths or basenames to validate")
+
 	var validateSourceIDs string
 	var validateSourcePaths string
 	validateSourceCommand := &cobra.Command{
@@ -1175,7 +1197,7 @@ Use --with-layer-counts to include per-layer documentation counts (RS, FL, RF, T
 	}
 	rootCommand.Flags().StringVar(&wikiRootRole, "role", "", "Filter [[canon]] by role: producto, ecosistema, or gobierno_local")
 
-	command.AddCommand(searchCommand, routeCommand, packCommand, traceCommand, validateHarnessCommand, validateSourceCommand, inventoryCommand, mapCommand, rootCommand)
+	command.AddCommand(searchCommand, routeCommand, packCommand, traceCommand, validateHarnessCommand, validateContractCommand, validateSourceCommand, inventoryCommand, mapCommand, rootCommand)
 	return command
 }
 
