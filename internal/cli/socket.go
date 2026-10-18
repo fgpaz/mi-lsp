@@ -306,6 +306,52 @@ func cliSocketArguments(request cliSocketRequest) ([]string, error) {
 		}
 		args = append(args, "--", input.Pipeline)
 		return args, nil
+	case "intent":
+		var input struct {
+			Question  string  `json:"question"`
+			Workspace *string `json:"workspace"`
+			Top       *int    `json:"top"`
+			Offset    *int    `json:"offset"`
+			Repo      *string `json:"repo"`
+		}
+		if err := decodeSocketInput(request.Input, &input); err != nil || strings.TrimSpace(input.Question) == "" {
+			return nil, fmt.Errorf("invalid intent input")
+		}
+		args := append([]string{}, base...)
+		args = append(args, "nav", "intent", input.Question)
+		if input.Workspace != nil {
+			args = append(args, "--workspace", *input.Workspace, "--allow-cross-workspace")
+		}
+		if input.Top != nil {
+			args = append(args, "--top", fmt.Sprint(*input.Top))
+		}
+		if input.Offset != nil {
+			args = append(args, "--offset", fmt.Sprint(*input.Offset))
+		}
+		if input.Repo != nil {
+			args = append(args, "--repo", *input.Repo)
+		}
+		return args, nil
+	case "multi-read":
+		var input struct {
+			Ranges    []string `json:"ranges"`
+			Workspace *string  `json:"workspace"`
+		}
+		if err := decodeSocketInput(request.Input, &input); err != nil || len(input.Ranges) == 0 {
+			return nil, fmt.Errorf("invalid multi-read input")
+		}
+		args := append([]string{}, base...)
+		args = append(args, "nav", "multi-read")
+		for _, rg := range input.Ranges {
+			if strings.HasPrefix(rg, "-") || strings.ContainsAny(rg, " \\t\\n\\r") {
+				return nil, fmt.Errorf("invalid file range")
+			}
+			args = append(args, rg)
+		}
+		if input.Workspace != nil {
+			args = append(args, "--workspace", *input.Workspace, "--allow-cross-workspace")
+		}
+		return args, nil
 	case "version", "schema":
 		if err := requireEmptySocketInput(request.Input); err != nil {
 			return nil, err

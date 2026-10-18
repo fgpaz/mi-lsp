@@ -76,9 +76,24 @@ func TestProviderManifestCommandPrintsContractAndRealQFlags(t *testing.T) {
 			t.Errorf("invocation.socket.%s = %v, want %v", key, socket[key], expected)
 		}
 	}
+	if actual["binary"] != "mi-lsp" || actual["description"] == "" || len(actual["tags"].([]any)) == 0 {
+		t.Fatalf("v2 manifest is missing required catalog fields: %v", actual)
+	}
 	operations, ok := actual["operations"].([]any)
-	if !ok || len(operations) != 5 {
-		t.Fatalf("operations = %v, want q plus version, schema, --help and --version", actual["operations"])
+	if !ok || len(operations) != 7 {
+		t.Fatalf("operations = %v, want q, intent, multi-read and management operations", actual["operations"])
+	}
+	for _, required := range []string{"q", "intent", "multi-read"} {
+		found := false
+		for _, item := range operations {
+			op, _ := item.(map[string]any)
+			if op["name"] == required && op["description"] != "" && op["output_schema"] != nil {
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("manifest operation %q is missing required v2 fields", required)
+		}
 	}
 	operation, _ := operations[0].(map[string]any)
 	if operation["name"] != "q" || operation["effect"] != "read" {

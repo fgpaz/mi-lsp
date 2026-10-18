@@ -1,11 +1,21 @@
 {
   "format": "mi-mcp-provider/v2",
   "namespace": "milsp",
-  "provider_version": "0.10.1",
+  "binary": "mi-lsp",
+  "provider_version": "(devel)",
+  "description": "Semantic code navigation and query operations",
+  "tags": [
+    "code",
+    "navigation",
+    "semantic search",
+    "workspace"
+  ],
   "min_provider_version": "0.10.0",
   "contracts": {
     "--help": "mi-lsp-help/v0",
     "--version": "mi-lsp-version-flag/v0",
+    "intent": "mi-lsp-nav-intent/v0",
+    "multi-read": "mi-lsp-nav-multi-read/v0",
     "q": "q-v1",
     "schema": "mi-lsp-schema/v0",
     "version": "mi-lsp-version/v0"
@@ -21,6 +31,85 @@
       "mi-mcp",
       "--no-auto-register"
     ],
+    "input_mapping": {
+      "operation": {
+        "source": "subcommand"
+      },
+      "operations": {
+        "intent": {
+          "offset": {
+            "flag": "--offset",
+            "source": "option"
+          },
+          "question": {
+            "position": 0,
+            "source": "argument"
+          },
+          "repo": {
+            "flag": "--repo",
+            "source": "option"
+          },
+          "top": {
+            "flag": "--top",
+            "source": "option"
+          },
+          "workspace": {
+            "flag": "--workspace",
+            "source": "option"
+          }
+        },
+        "multi-read": {
+          "ranges": {
+            "multiple": true,
+            "position": 0,
+            "source": "argument"
+          },
+          "workspace": {
+            "flag": "--workspace",
+            "source": "option"
+          }
+        },
+        "q": {
+          "budget": {
+            "flag": "--budget",
+            "source": "option"
+          },
+          "dedupe": {
+            "flag": "--dedupe",
+            "source": "option"
+          },
+          "fresh": {
+            "flag": "--fresh",
+            "source": "option"
+          },
+          "max_bytes": {
+            "flag": "--max-bytes",
+            "source": "option"
+          },
+          "page": {
+            "flag": "--page",
+            "source": "option"
+          },
+          "pipeline": {
+            "position": 0,
+            "source": "argument"
+          },
+          "session_id": {
+            "flag": "--session-id",
+            "source": "option"
+          },
+          "timeout_ms": {
+            "flag": "--timeout-ms",
+            "source": "option"
+          },
+          "workspace": {
+            "flag": "--workspace",
+            "source": "option"
+          }
+        }
+      }
+    },
+    "output": "json",
     "socket": {
       "transport": "unix",
       "path_env": "XDG_RUNTIME_DIR",
@@ -35,97 +124,191 @@
   "operations": [
     {
       "name": "q",
+      "description": "Run a typed mi-lsp query pipeline",
       "effect": "read",
       "contract": "q-v1",
       "input_schema": {
-        "type": "object",
-        "required": [
-          "pipeline"
-        ],
         "additionalProperties": false,
         "properties": {
-          "pipeline": {
-            "type": "string",
-            "minLength": 1
-          },
-          "workspace": {
-            "type": "string"
-          },
           "budget": {
-            "type": "integer",
+            "maximum": 12000,
             "minimum": 1,
-            "maximum": 12000
+            "type": "integer"
           },
-          "max_bytes": {
-            "type": "integer",
-            "minimum": 1024
-          },
-          "timeout_ms": {
-            "type": "integer",
-            "minimum": 1,
-            "maximum": 30000
-          },
-          "session_id": {
-            "type": "string"
-          },
-          "page": {
-            "type": "string"
+          "dedupe": {
+            "type": "boolean"
           },
           "fresh": {
             "type": "boolean"
           },
-          "dedupe": {
-            "type": "boolean"
+          "max_bytes": {
+            "minimum": 1024,
+            "type": "integer"
+          },
+          "page": {
+            "minLength": 0,
+            "type": "string"
+          },
+          "pipeline": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "session_id": {
+            "minLength": 0,
+            "type": "string"
+          },
+          "timeout_ms": {
+            "maximum": 30000,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "workspace": {
+            "minLength": 0,
+            "type": "string"
           }
-        }
+        },
+        "required": [
+          "pipeline"
+        ],
+        "type": "object"
       },
-      "output": {
-        "contract_version": "q-v1",
-        "ref": "mi-lsp .docs/wiki/09_contratos/CT-Q-V1.md"
+      "output_schema": {
+        "description": "Response governed by q-v1",
+        "type": "object"
+      }
+    },
+    {
+      "name": "intent",
+      "description": "Resolve a navigation intent",
+      "effect": "read",
+      "contract": "mi-lsp-nav-intent/v0",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "offset": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "question": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "repo": {
+            "minLength": 0,
+            "type": "string"
+          },
+          "top": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "workspace": {
+            "minLength": 0,
+            "type": "string"
+          }
+        },
+        "required": [
+          "question"
+        ],
+        "type": "object"
+      },
+      "output_schema": {
+        "description": "Response governed by mi-lsp-nav-intent/v0",
+        "type": "object"
+      }
+    },
+    {
+      "name": "multi-read",
+      "description": "Read the requested source ranges",
+      "effect": "read",
+      "contract": "mi-lsp-nav-multi-read/v0",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "ranges": {
+            "items": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "minItems": 1,
+            "type": "array"
+          },
+          "workspace": {
+            "minLength": 0,
+            "type": "string"
+          }
+        },
+        "required": [
+          "ranges"
+        ],
+        "type": "object"
+      },
+      "output_schema": {
+        "description": "Response governed by mi-lsp-nav-multi-read/v0",
+        "type": "object"
       }
     },
     {
       "name": "version",
+      "description": "Read mi-lsp provider metadata",
       "effect": "read",
       "contract": "mi-lsp-version/v0",
       "input_schema": {
-        "type": "object",
         "additionalProperties": false,
         "properties": {},
-        "required": []
+        "required": [],
+        "type": "object"
+      },
+      "output_schema": {
+        "description": "Response governed by mi-lsp-version/v0",
+        "type": "object"
       }
     },
     {
       "name": "schema",
+      "description": "Read mi-lsp provider metadata",
       "effect": "read",
       "contract": "mi-lsp-schema/v0",
       "input_schema": {
-        "type": "object",
         "additionalProperties": false,
         "properties": {},
-        "required": []
+        "required": [],
+        "type": "object"
+      },
+      "output_schema": {
+        "description": "Response governed by mi-lsp-schema/v0",
+        "type": "object"
       }
     },
     {
       "name": "--help",
+      "description": "Read mi-lsp provider metadata",
       "effect": "read",
       "contract": "mi-lsp-help/v0",
       "input_schema": {
-        "type": "object",
         "additionalProperties": false,
         "properties": {},
-        "required": []
+        "required": [],
+        "type": "object"
+      },
+      "output_schema": {
+        "description": "Response governed by mi-lsp-help/v0",
+        "type": "object"
       }
     },
     {
       "name": "--version",
+      "description": "Read mi-lsp provider metadata",
       "effect": "read",
       "contract": "mi-lsp-version-flag/v0",
       "input_schema": {
-        "type": "object",
         "additionalProperties": false,
         "properties": {},
-        "required": []
+        "required": [],
+        "type": "object"
+      },
+      "output_schema": {
+        "description": "Response governed by mi-lsp-version-flag/v0",
+        "type": "object"
       }
     }
   ]
