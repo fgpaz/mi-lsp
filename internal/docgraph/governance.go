@@ -372,6 +372,12 @@ func isKnowledgeWikiProjection(profile model.DocsReadProfile, source string) boo
 }
 
 func InspectGovernance(root string, autoSync bool) model.GovernanceStatus {
+	status := inspectGovernanceCore(root, autoSync)
+	enrichWikiProductLayers(root, &status)
+	return status
+}
+
+func inspectGovernanceCore(root string, autoSync bool) model.GovernanceStatus {
 	docPath, humanDoc, projectionProfile, projectionSource := resolveGovernanceDoc(root)
 	canons := tryResolvedCanons(root)
 	status := model.GovernanceStatus{

@@ -797,9 +797,35 @@ type AECanonStatus struct {
 	Reason          string   `json:"reason,omitempty"`
 }
 
+type WikiLayerExceptionView struct {
+	Capa     string `json:"capa"`
+	Motivo   string `json:"motivo,omitempty"`
+	Autorizo string `json:"autorizo,omitempty"`
+	Fecha    string `json:"fecha,omitempty"`
+}
+
+type WikiLayerEntry struct {
+	ID     string   `json:"id"`
+	Label  string   `json:"label,omitempty"`
+	Status string   `json:"status"`
+	Paths  []string `json:"paths,omitempty"`
+}
+
+type WikiLayersDoctor struct {
+	Schema         string                   `json:"schema,omitempty"`
+	RepoKind       string                   `json:"repo_kind,omitempty"`
+	WikiRoot       string                   `json:"wiki_root,omitempty"`
+	LayersRequired bool                     `json:"layers_required,omitempty"`
+	Layers         []WikiLayerEntry         `json:"layers,omitempty"`
+	Missing        []string                 `json:"missing,omitempty"`
+	Exceptions     []WikiLayerExceptionView `json:"exceptions,omitempty"`
+}
+
 type GovernanceStatus struct {
 	HumanDoc             string                      `json:"human_doc,omitempty"`
 	ProjectionDoc        string                      `json:"projection_doc,omitempty"`
+	RepoKind             string                      `json:"repo_kind,omitempty"`
+	WikiLayers           *WikiLayersDoctor           `json:"wiki_layers,omitempty"`
 	Profile              string                      `json:"profile,omitempty"`
 	Extends              string                      `json:"extends,omitempty"`
 	EffectiveBase        string                      `json:"effective_base,omitempty"`
