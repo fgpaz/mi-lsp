@@ -1,5 +1,5 @@
 {
-  "format": "mi-mcp-provider/v1",
+  "format": "mi-mcp-provider/v2",
   "namespace": "milsp",
   "provider_version": "0.10.1",
   "min_provider_version": "0.10.0",
@@ -20,7 +20,17 @@
       "--client-name",
       "mi-mcp",
       "--no-auto-register"
-    ]
+    ],
+    "socket": {
+      "transport": "unix",
+      "path_env": "XDG_RUNTIME_DIR",
+      "filename": "mi-lsp.sock",
+      "mode": "0600",
+      "framing": "jsonl",
+      "max_request_bytes": 1048576,
+      "fallback": "connection_failure_only",
+      "retry_after_response": false
+    }
   },
   "operations": [
     {

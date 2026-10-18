@@ -9,6 +9,7 @@ and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2
 
 ### Added
 
+- Optional provider-manifest v2 Unix socket transport via `mi-lsp serve --socket`, owner-only at `$XDG_RUNTIME_DIR/mi-lsp.sock`; CLI spawn remains supported.
 - Optional user embeddings configuration at `$XDG_CONFIG_HOME/mi-lsp/config.toml`, ordered OpenAI-compatible endpoints, local credential references/commands, `mi-lsp config doctor`, and CLI overrides for skill indexing. Embeddings remain best-effort with lexical fallback.
 - User configuration and privacy guidance in `docs/configuracion.md`.
 

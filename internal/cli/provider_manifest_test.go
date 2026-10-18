@@ -32,7 +32,7 @@ func TestProviderManifestCommandPrintsContractAndRealQFlags(t *testing.T) {
 		t.Fatalf("command output is not clean JSON: %v\n%s", err, stdout.String())
 	}
 	for key, expected := range map[string]any{
-		"format":               "mi-mcp-provider/v1",
+		"format":               "mi-mcp-provider/v2",
 		"namespace":            "milsp",
 		"min_provider_version": "0.10.0",
 		"auth":                 "none",
@@ -57,6 +57,24 @@ func TestProviderManifestCommandPrintsContractAndRealQFlags(t *testing.T) {
 	fixedArgs, _ := invocation["fixed_args"].([]any)
 	if !containsJSONValue(fixedArgs, "--no-auto-register") {
 		t.Errorf("invocation.fixed_args must include --no-auto-register, got %v", fixedArgs)
+	}
+	socket, ok := invocation["socket"].(map[string]any)
+	if !ok {
+		t.Fatalf("invocation.socket missing or malformed: %v", invocation["socket"])
+	}
+	for key, expected := range map[string]any{
+		"transport":            "unix",
+		"path_env":             "XDG_RUNTIME_DIR",
+		"filename":             "mi-lsp.sock",
+		"mode":                 "0600",
+		"framing":              "jsonl",
+		"max_request_bytes":    float64(cliSocketMaxRequest),
+		"fallback":             "connection_failure_only",
+		"retry_after_response": false,
+	} {
+		if socket[key] != expected {
+			t.Errorf("invocation.socket.%s = %v, want %v", key, socket[key], expected)
+		}
 	}
 	operations, ok := actual["operations"].([]any)
 	if !ok || len(operations) != 5 {

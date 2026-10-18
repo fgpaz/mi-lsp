@@ -22,9 +22,21 @@ type providerManifest struct {
 }
 
 type providerInvocation struct {
-	Kind      string   `json:"kind"`
-	Command   string   `json:"command"`
-	FixedArgs []string `json:"fixed_args"`
+	Kind      string         `json:"kind"`
+	Command   string         `json:"command"`
+	FixedArgs []string       `json:"fixed_args"`
+	Socket    providerSocket `json:"socket"`
+}
+
+type providerSocket struct {
+	Transport          string `json:"transport"`
+	PathEnv            string `json:"path_env"`
+	Filename           string `json:"filename"`
+	Mode               string `json:"mode"`
+	Framing            string `json:"framing"`
+	MaxRequestBytes    int    `json:"max_request_bytes"`
+	Fallback           string `json:"fallback"`
+	RetryAfterResponse bool   `json:"retry_after_response"`
 }
 
 type providerOperation struct {
@@ -61,7 +73,7 @@ func newProviderManifestCommand(state *rootState) *cobra.Command {
 
 func newProviderManifest(version string) providerManifest {
 	return providerManifest{
-		Format:             "mi-mcp-provider/v1",
+		Format:             "mi-mcp-provider/v2",
 		Namespace:          "milsp",
 		ProviderVersion:    version,
 		MinProviderVersion: minProviderVersion,
@@ -77,6 +89,16 @@ func newProviderManifest(version string) providerManifest {
 			Kind:      "cli",
 			Command:   "mi-lsp",
 			FixedArgs: []string{"--format", "json", "--client-name", "mi-mcp", "--no-auto-register"},
+			Socket: providerSocket{
+				Transport:          "unix",
+				PathEnv:            "XDG_RUNTIME_DIR",
+				Filename:           "mi-lsp.sock",
+				Mode:               "0600",
+				Framing:            "jsonl",
+				MaxRequestBytes:    cliSocketMaxRequest,
+				Fallback:           "connection_failure_only",
+				RetryAfterResponse: false,
+			},
 		},
 		Operations: []providerOperation{{
 			Name:     "q",
