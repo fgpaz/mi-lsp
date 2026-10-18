@@ -13,6 +13,7 @@ exports:
 agent_must_read:
   - .docs/wiki/00_gobierno_documental.md
   - .docs/wiki/09_contratos_tecnicos.md
+  - docs/configuracion.md
 agent_may_edit:
   - .docs/wiki/09_contratos_tecnicos.md
 agent_must_not_edit:
@@ -135,6 +136,10 @@ El cliente envia payload OpenAI-compatible con `encoding_format = "float"`, head
 `api_key_env` vacio o compuesto solo por whitespace significa explicitamente endpoint OpenAI-compatible sin autenticacion; no se aplica una variable de entorno por default. Cuando contiene un nombre, el valor resuelto ausente, vacio o whitespace produce `SEM_API_KEY_MISSING` antes de cualquier I/O de red. Un valor presente se envia como `Authorization: Bearer <valor>`.
 Los mensajes publicos de error y warning son sanitizados y no incluyen el nombre de `api_key_env` ni su valor, salvo identificadores publicos canonicos como `SEM_API_KEY_MISSING`. El caller degrada de forma segura a `mi-lsp nav wiki search` con warning cuando la autenticacion, el proveedor o la configuracion no permiten recall semantico; no existe modelo local oculto.
 Sin configuracion activa, `nav recall` devuelve hint visible y no llama al proveedor.
+
+Además de `.mi-lsp/project.toml`, la CLI admite configuración personal en `$XDG_CONFIG_HOME/mi-lsp/config.toml` (por defecto `~/.config/mi-lsp/config.toml`). Define proveedores `openai-compatible` con `base_urls` ordenadas, `model`, `dimensions` y credencial por `api_key_env` o `api_key_command`; los complementos se declaran por nombre y comando/socket. Los valores de entorno `MI_LSP_EMBEDDINGS_*` conservan compatibilidad y prevalecen sobre la configuración de usuario. Fallos al cargar o contactar embeddings degradan a búsqueda léxica; no deben impedir la navegación. `mi-lsp config doctor` valida la configuración sin ejecutar el comando de credenciales ni revelar valores.
+
+La configuración de usuario, hosts privados, rutas absolutas, nombres de máquina y reportes locales no se versionan. Consultar [configuración y privacidad](../../docs/configuracion.md) para el formato y los límites.
 
 `[recall.rerank_extension]` puede reordenar candidatos mediante comando local externo. El comando recibe stdin JSON versionado `mi-lsp-rerank-extension-v1` y devuelve stdout JSON con `indices` o `results[].index`; no se ejecuta via shell, no guarda payloads y cualquier falla preserva el orden semantico original con warning sanitizado.
 

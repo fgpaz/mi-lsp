@@ -7,6 +7,11 @@ and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2
 
 ## [Unreleased]
 
+### Added
+
+- Optional user embeddings configuration at `$XDG_CONFIG_HOME/mi-lsp/config.toml`, ordered OpenAI-compatible endpoints, local credential references/commands, `mi-lsp config doctor`, and CLI overrides for skill indexing. Embeddings remain best-effort with lexical fallback.
+- User configuration and privacy guidance in `docs/configuracion.md`.
+
 ## [0.12.14] - 2026-10-16
 
 ### Changed

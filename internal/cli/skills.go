@@ -34,26 +34,34 @@ Commands operate directly against the skills root and catalog JSON
 
 func newSkillsIndexCommand(state *rootState) *cobra.Command {
 	var (
-		skillsRoot                                 string
-		catalogPath                                string
-		seedPath                                   string
-		withEmbeddings                             bool
-		preparationOutput, workspace, evidenceRoot string
-		scope                                      []string
+		skillsRoot                                                                   string
+		catalogPath                                                                  string
+		seedPath                                                                     string
+		withEmbeddings                                                               bool
+		embeddingBaseURL, embeddingModel, embeddingAPIKeyEnv, embeddingAPIKeyCommand string
+		preparationOutput, workspace, evidenceRoot                                   string
+		scope                                                                        []string
 	)
 	cmd := &cobra.Command{
 		Use:   "index",
 		Short: "Scan skills root and write catalog.json",
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if embeddingAPIKeyEnv != "" && embeddingAPIKeyCommand != "" {
+				return fmt.Errorf("choose --embedding-api-key-env or --embedding-api-key-command")
+			}
 			started := time.Now()
 			ctx, cancel := context.WithTimeout(cmd.Context(), 2*time.Minute)
 			defer cancel()
 
 			cat, path, err := skills.IndexAndSave(ctx, skills.IndexOptions{
-				SkillsRoot:     skillsRoot,
-				CatalogPath:    catalogPath,
-				SeedPath:       seedPath,
-				WithEmbeddings: withEmbeddings,
+				SkillsRoot:             skillsRoot,
+				CatalogPath:            catalogPath,
+				SeedPath:               seedPath,
+				WithEmbeddings:         withEmbeddings,
+				EmbeddingBaseURL:       embeddingBaseURL,
+				EmbeddingModel:         embeddingModel,
+				EmbeddingAPIKeyEnv:     embeddingAPIKeyEnv,
+				EmbeddingAPIKeyCommand: embeddingAPIKeyCommand,
 			})
 			opts := state.queryOptions(cmd, "skills.index", nil)
 			if err != nil {
@@ -122,6 +130,10 @@ func newSkillsIndexCommand(state *rootState) *cobra.Command {
 	cmd.Flags().StringVar(&catalogPath, "catalog", "", "Catalog JSON path (default: $HOME/.mi-lsp/skills/catalog.json or MI_LSP_SKILLS_CATALOG)")
 	cmd.Flags().StringVar(&seedPath, "seed", "", "Optional seed CSV path (default: embedded seed)")
 	cmd.Flags().BoolVar(&withEmbeddings, "with-embeddings", false, "Best-effort embedding of indexed skill text")
+	cmd.Flags().StringVar(&embeddingBaseURL, "embedding-base-url", "", "Override embeddings base URL for this command")
+	cmd.Flags().StringVar(&embeddingModel, "embedding-model", "", "Override embeddings model for this command")
+	cmd.Flags().StringVar(&embeddingAPIKeyEnv, "embedding-api-key-env", "", "Environment variable containing the embeddings key")
+	cmd.Flags().StringVar(&embeddingAPIKeyCommand, "embedding-api-key-command", "", "Local command that prints the embeddings key (never logged)")
 	cmd.Flags().StringVar(&preparationOutput, "preparation-output", "", "Optional portable preparation receipt path")
 	cmd.Flags().StringVar(&workspace, "workspace", "", "Workspace metadata for preparation receipt")
 	cmd.Flags().StringVar(&evidenceRoot, "evidence-root", "", "Evidence root metadata for preparation receipt")

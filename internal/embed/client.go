@@ -15,8 +15,10 @@ import (
 type Config struct {
 	Provider       string
 	BaseURL        string
+	BaseURLs       []string
 	Model          string
 	APIKeyEnv      string
+	APIKey         string
 	Dim            int
 	BatchSize      int
 	TimeoutMS      int
@@ -107,7 +109,7 @@ func (c *Client) Embed(ctx context.Context, texts []string) ([][]float32, error)
 // embedBatch sends a single batch to the endpoint and returns the embeddings.
 func (c *Client) embedBatch(ctx context.Context, batch []string) ([][]float32, error) {
 	apiKeyEnv := strings.TrimSpace(c.cfg.APIKeyEnv)
-	var apiKey string
+	apiKey := c.cfg.APIKey
 	if apiKeyEnv != "" {
 		apiKey = os.Getenv(apiKeyEnv)
 		if strings.TrimSpace(apiKey) == "" {
@@ -126,10 +128,31 @@ func (c *Client) embedBatch(ctx context.Context, batch []string) ([][]float32, e
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	url := strings.TrimRight(c.cfg.BaseURL, "/") + "/embeddings"
+	baseURLs := append([]string(nil), c.cfg.BaseURLs...)
+	if len(baseURLs) == 0 && strings.TrimSpace(c.cfg.BaseURL) != "" {
+		baseURLs = []string{c.cfg.BaseURL}
+	}
+	if len(baseURLs) == 0 {
+		return nil, fmt.Errorf("embeddings base URL is not configured")
+	}
+	var lastErr error
+	for _, baseURL := range baseURLs {
+		result, retry, err := c.embedAt(ctx, strings.TrimRight(baseURL, "/")+"/embeddings", body, apiKeyEnv, apiKey, batch)
+		if err == nil {
+			return result, nil
+		}
+		lastErr = err
+		if !retry {
+			return nil, err
+		}
+	}
+	return nil, lastErr
+}
+
+func (c *Client) embedAt(ctx context.Context, url string, body []byte, apiKeyEnv, apiKey string, batch []string) ([][]float32, bool, error) {
 	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(body))
 	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
+		return nil, false, fmt.Errorf("failed to create request: %w", err)
 	}
 
 	req.Header.Set("Content-Type", "application/json")
@@ -137,38 +160,38 @@ func (c *Client) embedBatch(ctx context.Context, batch []string) ([][]float32, e
 	req.Header.Set("User-Agent", c.cfg.UserAgent)
 
 	// Set Authorization only when APIKeyEnv names a non-empty environment value.
-	if apiKeyEnv != "" {
+	if apiKeyEnv != "" || apiKey != "" {
 		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", apiKey))
 	}
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("request failed: %w", err)
+		return nil, true, fmt.Errorf("request failed: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("embeddings endpoint returned status %d", resp.StatusCode)
+		return nil, resp.StatusCode >= 500, fmt.Errorf("embeddings endpoint returned status %d", resp.StatusCode)
 	}
 
 	var respPayload responsePayload
 	if err := json.NewDecoder(resp.Body).Decode(&respPayload); err != nil {
-		return nil, fmt.Errorf("failed to decode response: %w", err)
+		return nil, false, fmt.Errorf("failed to decode response: %w", err)
 	}
 
 	if len(respPayload.Data) < len(batch) {
-		return nil, fmt.Errorf("response has %d embeddings but expected %d", len(respPayload.Data), len(batch))
+		return nil, false, fmt.Errorf("response has %d embeddings but expected %d", len(respPayload.Data), len(batch))
 	}
 
 	result := make([][]float32, len(batch))
 	for i := range batch {
 		if c.cfg.Dim > 0 && len(respPayload.Data[i].Embedding) != c.cfg.Dim {
-			return nil, fmt.Errorf("embedding %d has dimension %d but expected %d", i, len(respPayload.Data[i].Embedding), c.cfg.Dim)
+			return nil, false, fmt.Errorf("embedding %d has dimension %d but expected %d", i, len(respPayload.Data[i].Embedding), c.cfg.Dim)
 		}
 		result[i] = respPayload.Data[i].Embedding
 	}
 
-	return result, nil
+	return result, false, nil
 }
 
 // EmbedOne is a convenience method that embeds a single text.

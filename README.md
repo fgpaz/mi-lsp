@@ -139,6 +139,7 @@ More detail: [`TROUBLESHOOTING.md`](TROUBLESHOOTING.md).
 
 ## Learn more
 
+- [User configuration, providers, complements, and privacy](docs/configuracion.md)
 - [Agent skill and command guide](skills/mi-lsp/SKILL.md)
 - [Quickstart reference](skills/mi-lsp/references/quickstart.md)
 - [Compound command recipes](skills/mi-lsp/references/compound-commands.md)

@@ -145,10 +145,14 @@ type ScanResult struct {
 
 // IndexOptions controls catalog indexing.
 type IndexOptions struct {
-	SkillsRoot     string
-	CatalogPath    string
-	SeedPath       string // optional external seed; empty uses embedded
-	WithEmbeddings bool
+	SkillsRoot             string
+	CatalogPath            string
+	SeedPath               string // optional external seed; empty uses embedded
+	WithEmbeddings         bool
+	EmbeddingBaseURL       string
+	EmbeddingModel         string
+	EmbeddingAPIKeyEnv     string
+	EmbeddingAPIKeyCommand string
 }
 
 // SearchOptions filters and ranks skills.

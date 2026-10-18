@@ -107,7 +107,7 @@ func catalogHasEmbeddings(cat *Catalog) bool {
 }
 
 func tryQueryEmbed(ctx context.Context, query string) ([]float32, string) {
-	client, warning := bestEffortEmbedClient()
+	client, warning := bestEffortEmbedClient(IndexOptions{})
 	if client == nil {
 		if warning == "" {
 			warning = "embeddings_unavailable"

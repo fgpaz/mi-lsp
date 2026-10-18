@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/fgpaz/mi-lsp/internal/embed"
+	"github.com/fgpaz/mi-lsp/internal/userconfig"
 )
 
 // DefaultCatalogPath returns $HOME/.mi-lsp/skills/catalog.json.
@@ -149,7 +150,7 @@ func BuildCatalog(ctx context.Context, opts IndexOptions) (*Catalog, error) {
 	sort.Slice(recs, func(i, j int) bool { return recs[i].ID < recs[j].ID })
 
 	if opts.WithEmbeddings {
-		embWarnings := attachEmbeddings(ctx, recs)
+		embWarnings := attachEmbeddings(ctx, recs, opts)
 		warnings = append(warnings, embWarnings...)
 		// write back embeddings into slice (attachEmbeddings mutates)
 	}
@@ -212,8 +213,8 @@ func audienceMatches(skillAudience, filter string) bool {
 	return skillAudience == filter
 }
 
-func attachEmbeddings(ctx context.Context, recs []SkillRecord) []string {
-	client, warning := bestEffortEmbedClient()
+func attachEmbeddings(ctx context.Context, recs []SkillRecord, opts IndexOptions) []string {
+	client, warning := bestEffortEmbedClient(opts)
 	if client == nil {
 		if warning != "" {
 			return []string{warning}
@@ -259,7 +260,12 @@ func embeddingText(r SkillRecord) string {
 	return strings.Join(parts, "\n")
 }
 
-func bestEffortEmbedClient() (*embed.Client, string) {
+func bestEffortEmbedClient(opts IndexOptions) (*embed.Client, string) {
+	cfg, err := userconfig.Load()
+	if err != nil {
+		return nil, "embeddings_unavailable: invalid user configuration"
+	}
+	provider, configured := cfg.ActiveProvider()
 	apiKeyEnv := ""
 	for _, env := range []string{"MI_LSP_EMBEDDINGS_API_KEY", "OPENAI_API_KEY"} {
 		if strings.TrimSpace(os.Getenv(env)) != "" {
@@ -267,25 +273,60 @@ func bestEffortEmbedClient() (*embed.Client, string) {
 			break
 		}
 	}
-	if apiKeyEnv == "" {
-		return nil, "embeddings_unavailable: no API key in MI_LSP_EMBEDDINGS_API_KEY or OPENAI_API_KEY"
+	if apiKeyEnv == "" && !configured && strings.TrimSpace(opts.EmbeddingAPIKeyEnv) == "" && strings.TrimSpace(opts.EmbeddingAPIKeyCommand) == "" {
+		return nil, "embeddings_unavailable: no configured provider or API key"
 	}
-	baseURL := strings.TrimSpace(os.Getenv("MI_LSP_EMBEDDINGS_BASE_URL"))
-	if baseURL == "" {
-		baseURL = "https://api.openai.com/v1"
+	baseURLs := []string(nil)
+	model := ""
+	dim := 0
+	apiKey := ""
+	if configured {
+		if err := provider.Validate(); err != nil {
+			return nil, "embeddings_unavailable: invalid configured provider"
+		}
+		baseURLs = provider.BaseURLs
+		model = provider.Model
+		dim = provider.Dimensions
+		if apiKeyEnv == "" && provider.APIKeyEnv != "" {
+			apiKeyEnv = provider.APIKeyEnv
+		}
+		if apiKeyEnv == "" && provider.APIKeyCommand != "" {
+			apiKey, err = provider.APIKey()
+			if err != nil {
+				return nil, "embeddings_unavailable: configured key command failed"
+			}
+		}
 	}
-	model := strings.TrimSpace(os.Getenv("MI_LSP_EMBEDDINGS_MODEL"))
+	if env := strings.TrimSpace(os.Getenv("MI_LSP_EMBEDDINGS_BASE_URL")); env != "" {
+		baseURLs = []string{env}
+	}
+	if env := strings.TrimSpace(os.Getenv("MI_LSP_EMBEDDINGS_MODEL")); env != "" {
+		model = env
+	}
+	if value := strings.TrimSpace(opts.EmbeddingAPIKeyEnv); value != "" {
+		apiKeyEnv, apiKey = value, ""
+	}
+	if value := strings.TrimSpace(opts.EmbeddingAPIKeyCommand); value != "" {
+		provider.APIKeyCommand = value
+		apiKeyEnv = ""
+		apiKey, err = provider.APIKey()
+		if err != nil {
+			return nil, "embeddings_unavailable: configured key command failed"
+		}
+	}
+	if value := strings.TrimSpace(opts.EmbeddingBaseURL); value != "" {
+		baseURLs = []string{value}
+	}
+	if value := strings.TrimSpace(opts.EmbeddingModel); value != "" {
+		model = value
+	}
+	if len(baseURLs) == 0 {
+		baseURLs = []string{"https://api.openai.com/v1"}
+	}
 	if model == "" {
 		model = "text-embedding-3-small"
 	}
-	return embed.New(embed.Config{
-		Provider:  "openai-compatible",
-		BaseURL:   baseURL,
-		Model:     model,
-		APIKeyEnv: apiKeyEnv,
-		TimeoutMS: 30000,
-		BatchSize: 32,
-	}), ""
+	return embed.New(embed.Config{Provider: "openai-compatible", BaseURLs: baseURLs, Model: model, APIKeyEnv: apiKeyEnv, APIKey: apiKey, Dim: dim, TimeoutMS: 30000, BatchSize: 32}), ""
 }
 
 func uniqueStrings(in []string) []string {
