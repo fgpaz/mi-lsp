@@ -12,11 +12,7 @@ import (
 )
 
 func (a *App) wikiIndex(ctx context.Context, request model.CommandRequest) (model.Envelope, error) {
-	if blockedEnv, err := a.governanceGateEnvelope(ctx, request, "nav.wiki.index"); err != nil {
-		return model.Envelope{}, err
-	} else if blockedEnv != nil {
-		return *blockedEnv, nil
-	}
+	// WIKI-CONTRACT-v1 views and checks are advisory: never gated by governance.
 	kind, _ := request.Payload["kind"].(string)
 	kind = strings.TrimSpace(kind)
 	if kind == "" {
@@ -51,11 +47,7 @@ func (a *App) wikiIndex(ctx context.Context, request model.CommandRequest) (mode
 }
 
 func (a *App) wikiMatrix(ctx context.Context, request model.CommandRequest) (model.Envelope, error) {
-	if blockedEnv, err := a.governanceGateEnvelope(ctx, request, "nav.wiki.matrix"); err != nil {
-		return model.Envelope{}, err
-	} else if blockedEnv != nil {
-		return *blockedEnv, nil
-	}
+	// WIKI-CONTRACT-v1 views and checks are advisory: never gated by governance.
 	registration, project, err := a.resolveWorkspaceWithProjectForNavigation(request)
 	if err != nil {
 		return model.Envelope{}, err

@@ -49,11 +49,7 @@ type wikiContractHeader struct {
 }
 
 func (a *App) validateWikiContract(ctx context.Context, request model.CommandRequest) (model.Envelope, error) {
-	if blockedEnv, err := a.governanceGateEnvelope(ctx, request, "nav.wiki.validate-contract"); err != nil {
-		return model.Envelope{}, err
-	} else if blockedEnv != nil {
-		return *blockedEnv, nil
-	}
+	// WIKI-CONTRACT-v1 views and checks are advisory: never gated by governance.
 
 	registration, project, err := a.resolveWorkspaceWithProjectForNavigation(request)
 	if err != nil {
