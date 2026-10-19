@@ -205,7 +205,7 @@ func domainBoost(s SkillRecord, terms []string, qLower string) float64 {
 	}
 	// Wiki / docs routers
 	if hasAny(terms, "wiki", "documentation", "docs", "canon", "trazabilidad") {
-		if s.ID == "ps-asistente-wiki" || s.ID == "ps-trazabilidad" || s.ID == "ps-auditar-trazabilidad" {
+		if s.ID == "ae-wiki-close" || s.ID == "ae-trace" || s.ID == "ae-audit" {
 			boost += 1.5
 		}
 	}

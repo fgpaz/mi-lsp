@@ -7,6 +7,10 @@ and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2
 
 ## [Unreleased]
 
+### Changed
+
+- Skill catalog, parent routing, wiki search boosts, and scan fixture use the final `wiki-*` and `ae-*` names without legacy aliases; retired UX specification skills consolidate into `wiki-ux`.
+
 ### Added
 
 - WIKI-CONTRACT-v1 (advisory, never blocks): `nav wiki validate-contract`, on-demand views `nav wiki index <kind>` and `nav wiki matrix` (RF x TP by acceptance criterion), legacy path alias table, `00_governance.md` as canonical governance with traits, `ui_roots` and `layer_exceptions`; repo-policy `exceptions:` read as compatibility alias with a move warning; `DESIGN.md`/`PRODUCT.md` recognized at repo root under `has_ui`.
