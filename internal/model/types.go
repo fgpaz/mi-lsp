@@ -821,6 +821,8 @@ type WikiContractValidationResult struct {
 	ContractWarnings       []string                       `json:"contract_warnings,omitempty"`
 	ContractsReviewed      int                            `json:"contracts_reviewed"`
 	LinksReviewed          int                            `json:"links_reviewed"`
+	TargetsMissing         int                            `json:"targets_missing"`
+	SectionsMissing        int                            `json:"sections_missing"`
 	Documents              []WikiContractDocumentFinding  `json:"documents,omitempty"`
 }
 

@@ -61,6 +61,28 @@ func TestDeriveInverseEdges(t *testing.T) {
 	}
 }
 
+func TestContractBodySectionWarnings(t *testing.T) {
+	warnings := ContractBodySectionWarnings("RF-X", "requirement", `---
+id: RF-X
+---
+## Propósito
+ok
+`)
+	if len(warnings) < 4 {
+		t.Fatalf("expected section_missing warnings, got %v", warnings)
+	}
+}
+
+func TestBuildContractWikiIDIndexDataModel(t *testing.T) {
+	index := BuildContractWikiIDIndex([]ContractDocBody{{
+		Path:    ".docs/wiki/05_requirements/data-model.md",
+		Content: "---\nwiki_contract: WIKI-CONTRACT-v1\nid: DM-ROOT\nkind: data_model\n---\n",
+	}})
+	if index.LookupKind("data-model") != "data_model" {
+		t.Fatalf("data-model alias: %+v", index)
+	}
+}
+
 func TestParseAcceptanceCriteriaAndCases(t *testing.T) {
 	criteria := ParseAcceptanceCriteria(fixtureRF)
 	if len(criteria) != 2 || criteria[1] == "" {

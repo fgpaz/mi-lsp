@@ -12,6 +12,7 @@ import (
 
 	"github.com/fgpaz/mi-lsp/internal/docgraph"
 	"github.com/fgpaz/mi-lsp/internal/model"
+	"github.com/fgpaz/mi-lsp/internal/wikisource"
 )
 
 const wikiContractProtocol = docgraph.WikiContractProtocolV1
@@ -20,7 +21,7 @@ var wikiContractForbiddenKeys = []string{
 	"bounds", "imports", "exports", "planned", "doc_id", "harness_protocol",
 	"wiki_source_protocol", "wiki_graph_protocol", "harness_protocol",
 	"agent_must_read", "agent_may_edit", "agent_must_not_edit", "verify", "stop_if", "evidence",
-	"audience", "business_anchor",
+	"audience", "business_anchor", "block_id", "source_of_truth",
 }
 
 var wikiContractKinds = map[string]struct{}{
@@ -110,10 +111,11 @@ func compileWikiContractValidation(root string, records []model.DocRecord, gov *
 		ContractReadiness: "ready",
 		ContractVerdict:   "PASS",
 	}
+	docBodies := make([]wikisource.ContractDocBody, 0, len(records))
+	bodyByPath := make(map[string]string, len(records))
 	for _, record := range records {
 		path := filepath.Join(root, filepath.FromSlash(record.Path))
 		rawBody, err := os.ReadFile(path)
-		body := string(rawBody)
 		docLabel := harnessDocLabel(record)
 		if err != nil {
 			warning := docLabel + ": unreadable markdown"
@@ -121,6 +123,34 @@ func compileWikiContractValidation(root string, records []model.DocRecord, gov *
 			result.Documents = append(result.Documents, model.WikiContractDocumentFinding{
 				Path: record.Path, Warnings: []string{warning},
 			})
+			continue
+		}
+		body := string(rawBody)
+		bodyByPath[record.Path] = body
+		docBodies = append(docBodies, wikisource.ContractDocBody{Path: record.Path, Content: body})
+	}
+	wikiIndex := wikisource.BuildContractWikiIDIndex(docBodies)
+	for _, record := range records {
+		if strings.TrimSpace(record.DocID) == "" {
+			continue
+		}
+		kind := docgraph.WikiContractKindForPath(record.Path, "")
+		wikisource.RegisterContractWikiID(wikiIndex, record.DocID, kind)
+	}
+
+	for _, record := range records {
+		body, ok := bodyByPath[record.Path]
+		if !ok {
+			continue
+		}
+		docLabel := harnessDocLabel(record)
+		if strings.EqualFold(filepath.Base(record.Path), "00_retirements.md") {
+			warnings := validateWikiContractRetirements(root, record.Path, body, wikiIndex)
+			result.ContractsReviewed++
+			if len(warnings) > 0 {
+				result.Documents = append(result.Documents, model.WikiContractDocumentFinding{Path: record.Path, Kind: "governance", Warnings: warnings})
+				result.ContractWarnings = append(result.ContractWarnings, warnings...)
+			}
 			continue
 		}
 		header, rawKeys, parseWarnings := parseWikiContractHeader(body)
@@ -145,11 +175,38 @@ func compileWikiContractValidation(root string, records []model.DocRecord, gov *
 		finding.Kind = header.Kind
 		finding.Status = header.Status
 		docWarnings := validateWikiContractHeader(docLabel, header, rawKeys, gov)
+		if strings.Contains(strings.ToLower(body), "```toon") {
+			docWarnings = append(docWarnings, docLabel+": forbidden normative toon fence")
+		}
+		switch strings.ToLower(filepath.Base(record.Path)) {
+		case "03_architecture.md":
+			if header.Kind != "architecture" || !strings.HasPrefix(header.ID, "ARCH-") {
+				docWarnings = append(docWarnings, docLabel+": expected kind architecture and ARCH-prefixed id")
+			}
+		case "07_technical.md":
+			if header.Kind != "technical" || !strings.HasPrefix(header.ID, "TECH-") {
+				docWarnings = append(docWarnings, docLabel+": expected kind technical and TECH-prefixed id")
+			}
+		}
+		srcID := header.ID
+		if srcID == "" {
+			srcID = docLabel
+		}
+		linkWarnings, linksReviewed, targetsMissing := validateWikiContractLinkDepth(root, srcID, header.Links, wikiIndex)
+		docWarnings = append(docWarnings, linkWarnings...)
+		sectionWarnings := wikisource.ContractBodySectionWarnings(header.ID, header.Kind, body)
+		for _, warning := range sectionWarnings {
+			if strings.HasPrefix(warning, "section_missing:") {
+				result.SectionsMissing++
+			}
+			docWarnings = append(docWarnings, warning)
+		}
+		result.LinksReviewed += linksReviewed
+		result.TargetsMissing += targetsMissing
 		for _, warning := range docWarnings {
 			finding.Warnings = append(finding.Warnings, warning)
 			result.ContractWarnings = append(result.ContractWarnings, warning)
 		}
-		result.LinksReviewed += countWikiContractLinks(header.Links)
 		if len(finding.Warnings) > 0 {
 			result.Documents = append(result.Documents, finding)
 		}
@@ -160,6 +217,92 @@ func compileWikiContractValidation(root string, records []model.DocRecord, gov *
 	}
 	sort.Strings(result.ContractWarnings)
 	return result
+}
+
+func validateWikiContractLinkDepth(root, srcID string, links map[string]any, index wikisource.ContractWikiIDIndex) (warnings []string, linksReviewed, targetsMissing int) {
+	if links == nil {
+		return nil, 0, 0
+	}
+	srcID = strings.TrimSpace(srcID)
+	for linkType, raw := range links {
+		switch linkType {
+		case "code":
+			for _, path := range wikiContractCodePaths(raw) {
+				linksReviewed++
+				if wikisource.InferContractKindFromDocID(path) != "" && !strings.ContainsAny(path, "/\\.") || strings.HasPrefix(strings.ToLower(strings.TrimSpace(path)), "criterio ") {
+					warnings = append(warnings, fmt.Sprintf("link_code_invalid_path:%s:%s", srcID, path))
+					continue
+				}
+				rel := filepath.FromSlash(strings.TrimSpace(path))
+				if rel == "" {
+					continue
+				}
+				abs := filepath.Join(root, rel)
+				if _, err := os.Stat(abs); err != nil {
+					warnings = append(warnings, fmt.Sprintf("link_code_path_missing:%s:%s", srcID, strings.TrimSpace(path)))
+				}
+			}
+			continue
+		}
+		if _, ok := wikiContractLinkTypes[linkType]; !ok {
+			continue
+		}
+		for _, target := range wikiContractStringLinkTargets(raw) {
+			linksReviewed++
+			target = strings.TrimSpace(target)
+			if target == "" {
+				continue
+			}
+			targetKind := index.LookupKind(target)
+			if targetKind == "" {
+				warnings = append(warnings, fmt.Sprintf("link_target_missing:%s->%s->%s", srcID, linkType, target))
+				targetsMissing++
+				continue
+			}
+			if wikisource.ContractLinkTargetKindMismatch(linkType, target, targetKind) {
+				warnings = append(warnings, fmt.Sprintf("link_target_kind_mismatch:%s->%s->%s", srcID, linkType, target))
+			}
+		}
+	}
+	return warnings, linksReviewed, targetsMissing
+}
+
+func wikiContractStringLinkTargets(raw any) []string {
+	switch typed := raw.(type) {
+	case []any:
+		out := make([]string, 0, len(typed))
+		for _, item := range typed {
+			if v, ok := item.(string); ok {
+				out = append(out, v)
+			}
+		}
+		return out
+	case string:
+		if strings.TrimSpace(typed) == "" {
+			return nil
+		}
+		return []string{typed}
+	default:
+		return nil
+	}
+}
+
+func wikiContractCodePaths(raw any) []string {
+	items, ok := raw.([]any)
+	if !ok {
+		return nil
+	}
+	out := make([]string, 0, len(items))
+	for _, item := range items {
+		m, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		if path, ok := m["path"].(string); ok {
+			out = append(out, path)
+		}
+	}
+	return out
 }
 
 func parseWikiContractHeader(content string) (*wikiContractHeader, map[string]struct{}, []string) {
@@ -201,7 +344,7 @@ func firstYAMLHeaderBlock(content string) string {
 
 func validateWikiContractHeader(docLabel string, header *wikiContractHeader, rawKeys map[string]struct{}, gov *docgraph.WikiContractGovernance) []string {
 	var warnings []string
-	if header.ID == "" {
+	if header.ID == "" && header.Kind != "governance" && header.Kind != "scope" {
 		warnings = append(warnings, docLabel+": missing id")
 	}
 	if header.Kind == "" {

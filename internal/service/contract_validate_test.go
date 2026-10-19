@@ -83,3 +83,107 @@ title: "Flow"
 		t.Fatalf("expected ADVISORY verdict, got %s", result.ContractVerdict)
 	}
 }
+
+func TestCompileWikiContractValidationLinkTargetsAndSections(t *testing.T) {
+	root := t.TempDir()
+	rsPath := ".docs/wiki/02_outcomes/RS-FIX-01.md"
+	flPath := ".docs/wiki/04_flows/FL-FIX-01.md"
+	rfPath := ".docs/wiki/05_requirements/RF-FIX-01.md"
+	writeContractTestWikiFile(t, root, rsPath, `---
+wiki_contract: WIKI-CONTRACT-v1
+id: RS-FIX-01
+kind: outcome
+status: active
+title: "Outcome"
+---
+## Resultado observable
+x
+## Beneficiario
+x
+## Criterios de éxito
+x
+## Fuera de alcance del RS
+x
+`)
+	writeContractTestWikiFile(t, root, flPath, `---
+wiki_contract: WIKI-CONTRACT-v1
+id: FL-FIX-01
+kind: flow
+status: active
+title: "Flow"
+links:
+  fulfills: [RS-FIX-01]
+  implements: [RS-FIX-01]
+---
+## Objetivo
+x
+## Alcance
+x
+## Actores
+x
+## Pre/postcondiciones
+x
+## Secuencia
+x
+## Restricciones ADR
+x
+`)
+	writeContractTestWikiFile(t, root, rfPath, `---
+wiki_contract: WIKI-CONTRACT-v1
+id: RF-FIX-01
+kind: requirement
+status: active
+title: "Requirement"
+links:
+  implements: [FL-MISSING-99]
+  code:
+    - path: missing/file.go
+      role: behavior
+---
+## Propósito
+x
+## Comportamiento ordenado
+x
+## Superficies
+x
+## Entradas/salidas tipadas
+x
+## Errores
+x
+## Criterios de aceptación
+sin numerar
+`)
+	records := []model.DocRecord{
+		{Path: rsPath, DocID: "RS-FIX-01"},
+		{Path: flPath, DocID: "FL-FIX-01"},
+		{Path: rfPath, DocID: "RF-FIX-01"},
+	}
+	result := compileWikiContractValidation(root, records, nil)
+	if result.TargetsMissing < 1 {
+		t.Fatalf("expected targets_missing, got %d warnings=%v", result.TargetsMissing, result.ContractWarnings)
+	}
+	if result.LinksReviewed < 3 {
+		t.Fatalf("expected links reviewed, got %d", result.LinksReviewed)
+	}
+	foundMissing := false
+	foundMismatch := false
+	foundCode := false
+	foundAcceptance := false
+	for _, w := range result.ContractWarnings {
+		if strings.Contains(w, "link_target_missing:RF-FIX-01->implements->FL-MISSING-99") {
+			foundMissing = true
+		}
+		if strings.Contains(w, "link_target_kind_mismatch:FL-FIX-01->implements->RS-FIX-01") {
+			foundMismatch = true
+		}
+		if strings.Contains(w, "link_code_path_missing:RF-FIX-01:missing/file.go") {
+			foundCode = true
+		}
+		if strings.Contains(w, "acceptance_criteria_unnumbered") {
+			foundAcceptance = true
+		}
+	}
+	if !foundMissing || !foundMismatch || !foundCode || !foundAcceptance {
+		t.Fatalf("expected depth warnings, got %v", result.ContractWarnings)
+	}
+}
