@@ -8,12 +8,18 @@ Wiki is the only source of truth.
 
 Do not rewrite code that already works or add unit tests beyond the protected goal-phase, setup-classifier, FINAL_VERIFY, and preflight contract tests.
 
-1. **Context** — wiki anchor + mi-lsp implication graph + architecture decisions from wiki: query live at decision boundaries; never reuse a context snapshot.
-2. **Build** — gate-free; implement **all** code/docs for the goal (no C2 tests/builds/lints). Lanes are not completion.
+1. **Context** — **ae-context** at goal start: wiki anchor, architecture decisions, bounded mi-lsp slice (`mi-lsp nav intent "<goal>"` then exact `continuation.next` / `expansions[].command`). When `has_ui` and the slice touches `ui_roots`, read `PRODUCT.md`, `DESIGN.md`, and bounded UJ/UXM; run **impeccable context** once.
+2. **Build** — gate-free; implement all goal code/docs (no per-lane C2). Lanes are not completion.
 3. **IMPLEMENTATION_COMPLETE** — parent only, when `implementation_frontier` is green and writers are idle.
-4. **Verify once** — single FINAL_VERIFY wave (build/tests/impact map); not per lane. FAST local: collapsed `verify_packet`.
-5. **Wiki close** — update wiki if drift. Drift is wiki vs shipped behavior, not omitted `.docs/wiki` files. Product-visible shipped work without RS/FL/RF/TP/TECH coverage is drift; FAST still runs `ps-asistente-wiki` plus targeted `ps-trazabilidad` then `ps-auditar-trazabilidad` at FAST depth when that drift exists or the operator asked for ciclo AE / `full_cycle_to_origin_main`. Collapsed `verify_packet` compresses C2; it does not replace wiki routing or FAST-depth trace/audit. Skip targeted wiki+trace only for mechanical no-wiki-impact diffs (typo/format/no user-visible behavior). Do not wait to be re-asked.
-6. **Full cycle default** — run the **Completion checklist** end to end under **Durable completion authority** (no permission questions) → learning route (`ps-wiki-aprendizaje` only with pilot/qa inputs; else friction/skipped_fast). Next session: `ps-contexto` reentry of last classification + open friction (do not re-ask).
+4. **Verify once** — single FINAL_VERIFY; FAST uses collapsed `verify_packet`. When `has_ui` and the diff touches `ui_roots`, run **impeccable audit** once on changed surfaces.
+5. **Wiki close** — close drift under WIKI-CONTRACT-v1 paths (`01_scope.md`, `02_outcomes/`, `03_architecture.md`, `04_flows/`, `05_requirements/`, `06_tests/`, `07_technical/`, `10_ux/` when `has_ui`). **ae-wiki-close** in BUILDING when behavior changed; **ae-trace** → **ae-audit** when needed. Skip mechanical no-wiki-impact diffs. **Readiness** = RS `draft`→`active`. **Conformidad** = AE closure packet, not wiki.
+6. **Full cycle** — run the **Completion checklist** under **Durable completion authority** → **ps-wiki-aprendizaje** or `skipped_fast`. Next session: **ae-context** reentry.
+
+## Repo kind and product wiki (D-086)
+
+Declared `repo.kind`: **undeclared**
+
+Declare `repo.kind` (`product`, `kernel`, or `docs`) in repo-policy.yaml; the setup doctor reports missing kind and product layers when applicable.
 
 ## Durable completion authority
 
@@ -42,23 +48,23 @@ The principal session is **Chief of Staff**, not a leaf implementer.
 - **Leaves do**: read, edit within bounded scope; report `lane_implementation_done` with paths only; **no** C2 validation, no phase change, no subdelegation, push, deploy, or final closure.
 - **Join ≠ FINAL_VERIFY** at leaf **or** axis/child-orchestrator: never run build/test/lint when a lane or sub-orchestrator finishes (locked A). Parent rejects joins with C2 evidence (`accept-join`).
 - **C2 deferred** until goal-root IMPLEMENTATION_COMPLETE unless the operator **explicitly** requests a bounded intermediate check (B = ALLOW_SPOT; never hard-block the operator for asking).
-- **Same-repo FAST (1–few files, reversible)**: almost-zero ceremony — no preflight ritual, no session-contract required. Principal may implement directly only when isolation/fan-out cost exceeds value.
+- **Same-repo FAST (1–few files, reversible)**: almost-zero ceremony. Principal may implement directly only when isolation/fan-out cost exceeds value.
 - **Non-trivial / multi-file / multi-axis**: executor leaves are mandatory and launched **before** any edit; the principal edits directly only for same-repo FAST 1–few-file reversible changes. Starting implementation in the principal and "delegating later" is a violation.
 - Leaf dispatch is ROI-positive: spawn when separable ownership and expected value beat orchestration cost. Adapter availability alone never forces a worker.
 - If spawn is blocked: announce owner_surface + rule + how_to_unblock. Silent multi-axis parent-implement is forbidden.
 - `$writing-plans` is for orchestrator→leaf task packets only, not a human-facing ceremony.
 - **Operator-facing language**: answer what the operator asked first, in their language and words; name lanes by what they do ("the lane fixing compaction"), never by pane/lane/test codes alone; orchestration detail (screens, statuses, watchers, retries) only on request. A lane — herdr, another session or an in-harness subagent — is reported as goal, stage and result.
 
-## Context rules (ps-contexto)
+## Context rules (ae-context)
 
 - **Flujos** = mi-lsp implication graph around the task (`nav flow-slice`, `change-pack`, `related`, `neighbors`, `affected`, `explain-change`) — not wiki `FL-*` alone.
 - Load **architecture decisions** from the wiki; never re-decide or forget locks already documented.
-- Route-first mi-lsp: prefer `nav batch` + `nav multi-read`; depth `policy` for kernel/skill-only (skip product/UX/negocio gates).
+- Route-first mi-lsp: prefer `nav batch`, `nav multi-read`, `nav wiki`, `nav route`, `nav search`.
 - Session SoT: goal intent + selectors/scope locks + locked decisions + goal-phase. Graph topology/bindings/readiness are queried live at boundaries, never stored as session SoT.
 
 ## Native context entry and four mi-lsp modes
 
-For every real work task, enter through the native `ps-contexto` and `mi-lsp` skills and actually invoke the tool; skill availability or a text mention is not tool-use evidence. The native harness owns invocation, lifecycle, and monitoring. `ps-contexto` obtains the minimum useful cheap bounded live context (wiki anchor and decisions, scope locks, and a small implication slice), then supplies exact follow-up queries for implementation. Greetings, status chat, and repeated literal getters do not restart a full workflow; no full-wiki/status/governance preflight is required for every task.
+For every real work task, enter through the native `ae-context` and `mi-lsp` skills and actually invoke the tool; skill availability or a text mention is not tool-use evidence. The native harness owns invocation, lifecycle, and monitoring. `ae-context` obtains the minimum useful cheap bounded live context (wiki anchor and decisions, scope locks, and a small implication slice), then supplies exact follow-up queries for implementation. Greetings, status chat, and repeated literal getters do not restart a full workflow; no full-wiki/status/governance preflight is required for every task.
 
 Preferred commands only:
 - **Goal-shaped navigation** starts with `mi-lsp nav intent "<goal>"`.
@@ -86,12 +92,11 @@ Goal-shaped requests start with cheap `mi-lsp nav intent "<goal>"` discovery, th
 
 Readers follow bounded nodes and links, not repeated broad `rg` scans. Preserve typed fallback reasons and honest `unavailable`/`partial` results; distinguish candidates, declared bindings, and observed runtime data; surface stale graph state; and retain documented boundaries and wiki architecture locks. If mi-lsp is unavailable, use the existing fallback path only with that typed reason and no invented command or public API.
 
-A real invocation must produce runtime evidence only through existing native invocation plus mi-lsp session/operation evidence; do not add a recorder, fabricate savings, rewrite directives with tool regexes, or make a mandatory hook. An opt-out tool adapter is allowed: a hook may redirect a native search to a better equivalent only if it falls back to the original command and can be disabled by an environment variable; it must not fabricate evidence or savings, become mandatory, rewrite directives, or act as a recorder. After implementation, the goal owner performs one goal-level wiki drift check and owns any meaningful wiki update (no-op writes are forbidden), then `ps-trazabilidad`, then the independent read-only `ps-auditar-trazabilidad`. Keep one owner skill at a time, no per-leaf tests/audits, no second full-suite authorization, and no push or deletion authority beyond **Durable completion authority**.
+A real invocation must produce runtime evidence only through existing native invocation plus mi-lsp session/operation evidence; do not add a recorder, fabricate savings, rewrite directives with tool regexes, or make a mandatory hook. An opt-out tool adapter is allowed: a hook may redirect a native search to a better equivalent only if it falls back to the original command and can be disabled by an environment variable; it must not fabricate evidence or savings, become mandatory, rewrite directives, or act as a recorder. After implementation, the goal owner performs one goal-level wiki drift check and owns any meaningful wiki update (no-op writes are forbidden), then `ae-trace`, then the independent read-only `ae-audit`. Keep one owner skill at a time, no per-leaf tests/audits, no second full-suite authorization, and no push or deletion authority beyond **Durable completion authority**.
 
 ## FAST same-repo ceremony (almost zero)
 
-- No mandatory session-contract for same-repo FAST.
-- No mandatory preflight suite for local reversible work.
+- Almost-zero ceremony for same-repo FAST (1–few reversible files).
 - Pre-push minimum: `.\infra\git\Invoke-PrePushGuard.ps1 -CollaborationMode solo` (secrets scan + main ancestry + no force-push path).
 - Escalate ceremony only for multi-axis work, live/runtime, secrets, external side effects, or explicit HOLD.
 - **Completion default** remains full cycle to `origin/main` + **always** sanitize the goal's deprecated worktrees/branches (scope + liveness rules) unless the operator says local-only. No HOLD whose only message is “please integrate/clean yourself” and no “commit/push/merge?” question. Leaving known-deprecated artifacts is incomplete.
@@ -136,6 +141,8 @@ Keep `AGENTS.md`, `CLAUDE.md`, and project-local skills in English. All other pr
 
 **private network precondition**: before `deployment-cli` or `remote-cli`, confirm private access to the target environment (ask the user if not already confirmed).
 
+**Browser priority**: use mi-browser through mi-mcp as the primary browser. If a page requires login, first check other registered nodes for an existing session before asking the user. Use agent-browser or chrome-devtools-axi only as fallbacks, and try both before Claude in Chrome. Keep ClaudeInChromeDefaultEnabled disabled when the user's assistant policy has disabled it; never re-enable it as a fallback.
+
 
 ## Repository-Specific Contract
 
@@ -173,4 +180,4 @@ Local semantic CLI for large .NET/C# and TypeScript workspaces.
 **Status**: Generated from AE-POLICY-PROJECTION-V2
 **Last Updated**: 2026-08-25
 **Source**: repo-policy.yaml + template.agents
-<!-- kernel_version: 6802e4e8 -->
+<!-- kernel_version: b7d5a7a4 -->
