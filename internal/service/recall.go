@@ -37,7 +37,9 @@ func resolveWikiEmbeddingConfig(project *model.EmbeddingsBlock) (embed.Config, b
 	if provider, ok := user.ActiveProvider(); ok {
 		cfg = embed.Config{Provider: provider.Type, BaseURLs: append([]string(nil), provider.BaseURLs...), Model: provider.Model, Dim: provider.Dimensions}
 		cfg.APIKeyEnv = provider.APIKeyEnv
-		if provider.APIKeyCommand != "" {
+		if provider.APIKeyCommand != "" &&
+			strings.TrimSpace(os.Getenv("MI_LSP_EMBEDDINGS_API_KEY")) == "" &&
+			strings.TrimSpace(os.Getenv("OPENAI_API_KEY")) == "" {
 			cfg.APIKey, err = provider.APIKey()
 			if err != nil {
 				return embed.Config{}, false, err
