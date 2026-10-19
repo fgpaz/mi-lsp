@@ -38,6 +38,7 @@ repo:
     - ".docs/wiki is the canonical repository documentation authority."
     - ".docs/auditoria/<session>/ stores durable sanitized evidence."
     - ".docs/raw/ remains non-canonical local input."
+    - "Web tasks use mi-browser (via mi-mcp/CLI) before Claude in Chrome, which stays off by default; on a login wall, try other nodes with `mi-browser navegadores` before asking Gabriel (persona:mi-browser-primero-y-nodo-con-sesion-20261019)."
 
 language:
   policy_lang: English
