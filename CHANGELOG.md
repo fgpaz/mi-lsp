@@ -7,12 +7,15 @@ and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2
 
 ## [Unreleased]
 
+## [0.13.4] - 2026-10-19
+
 ### Changed
 
 - Skill catalog, parent routing, wiki search boosts, and scan fixture use the final `wiki-*` and `ae-*` names without legacy aliases; retired UX specification skills consolidate into `wiki-ux`.
 
 ### Added
 
+- Semantic wiki indexing and recall now consume the user-level embeddings provider, honoring environment overrides and legacy project configuration; index batches remain serialized and carry low gateway priority.
 - WIKI-CONTRACT-v1 (advisory, never blocks): `nav wiki validate-contract`, on-demand views `nav wiki index <kind>` and `nav wiki matrix` (RF x TP by acceptance criterion), legacy path alias table, `00_governance.md` as canonical governance with traits, `ui_roots` and `layer_exceptions`; repo-policy `exceptions:` read as compatibility alias with a move warning; `DESIGN.md`/`PRODUCT.md` recognized at repo root under `has_ui`.
 
 - Provider manifest v2 now declares catalog metadata, schemas and explicit CLI mappings for q, nav.intent and nav.multi-read; Unix socket transport serves those same operations, with CLI spawn retained as fallback.

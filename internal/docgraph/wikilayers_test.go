@@ -52,6 +52,29 @@ func TestWikiLayersDoctorProductGaps(t *testing.T) {
 	}
 }
 
+func TestWikiLayersDoctorBrowserProductFixtureNoGaps(t *testing.T) {
+	root := t.TempDir()
+	writeRepoPolicy(t, root, "product")
+	for _, path := range []string{
+		".docs/wiki/01_scope.md",
+		".docs/wiki/02_outcomes/RS-001.md",
+		".docs/wiki/03_architecture.md",
+		".docs/wiki/04_flows/FL-001.md",
+		".docs/wiki/05_requirements/RF-001.md",
+		".docs/wiki/06_tests/TP-001.md",
+		".docs/wiki/07_tech/TECH-001.md",
+	} {
+		writeWikiFile(t, root, path, "# Fixture\n\nContenido real.\n")
+	}
+	report, warnings := wikiLayersDoctor(root)
+	if report == nil || len(report.Missing) != 0 {
+		t.Fatalf("browser-like product fixture has missing layers: %+v", report)
+	}
+	if containsWarningPrefix(warnings, "wiki_layer_gap:") {
+		t.Fatalf("unexpected layer warning for complete browser fixture: %v", warnings)
+	}
+}
+
 func TestWikiLayersDoctorDocsRepoNoGaps(t *testing.T) {
 	root := t.TempDir()
 	writeRepoPolicy(t, root, "docs")

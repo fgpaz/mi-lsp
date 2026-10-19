@@ -17,9 +17,51 @@ import (
 	"github.com/fgpaz/mi-lsp/internal/model"
 	"github.com/fgpaz/mi-lsp/internal/rerank"
 	"github.com/fgpaz/mi-lsp/internal/store"
+	"github.com/fgpaz/mi-lsp/internal/userconfig"
 	"github.com/fgpaz/mi-lsp/internal/wikichunk"
 	"github.com/fgpaz/mi-lsp/internal/workspace"
 )
+
+func resolveWikiEmbeddingConfig(project *model.EmbeddingsBlock) (embed.Config, bool, error) {
+	cfg := embed.Config{}
+	if project != nil {
+		cfg = embed.Config{Provider: project.Provider, BaseURL: project.BaseURL, Model: project.Model, APIKeyEnv: project.APIKeyEnv, Dim: project.Dim, BatchSize: project.BatchSize, TimeoutMS: project.TimeoutMS, EncodingFormat: project.EncodingFormat, UserAgent: project.UserAgent}
+	}
+	user, err := userconfig.Load()
+	if err != nil {
+		return embed.Config{}, false, err
+	}
+	if err := user.Validate(); err != nil {
+		return embed.Config{}, false, err
+	}
+	if provider, ok := user.ActiveProvider(); ok {
+		cfg = embed.Config{Provider: provider.Type, BaseURLs: append([]string(nil), provider.BaseURLs...), Model: provider.Model, Dim: provider.Dimensions}
+		cfg.APIKeyEnv = provider.APIKeyEnv
+		if provider.APIKeyCommand != "" {
+			cfg.APIKey, err = provider.APIKey()
+			if err != nil {
+				return embed.Config{}, false, err
+			}
+		}
+	}
+	for _, name := range []string{"MI_LSP_EMBEDDINGS_BASE_URL", "MI_LSP_EMBEDDINGS_MODEL"} {
+		if value := strings.TrimSpace(os.Getenv(name)); value != "" {
+			if name == "MI_LSP_EMBEDDINGS_BASE_URL" {
+				cfg.BaseURLs, cfg.BaseURL = []string{value}, ""
+			} else {
+				cfg.Model = value
+			}
+		}
+	}
+	for _, name := range []string{"MI_LSP_EMBEDDINGS_API_KEY", "OPENAI_API_KEY"} {
+		if strings.TrimSpace(os.Getenv(name)) != "" {
+			cfg.APIKeyEnv, cfg.APIKey = name, ""
+			break
+		}
+	}
+	active := strings.TrimSpace(cfg.Model) != "" && (len(cfg.BaseURLs) > 0 || strings.TrimSpace(cfg.BaseURL) != "")
+	return cfg, active, nil
+}
 
 type wikiEmbeddingPlan struct {
 	docPaths []string
@@ -80,9 +122,11 @@ func (a *App) embedWorkspaceWiki(ctx context.Context, root string, progress func
 		return warnings, nil
 	}
 
-	// Check if embeddings are active and configured.
-	if !project.Embeddings.Active() {
-		// No-op: embeddings not configured
+	cfg, active, configErr := resolveWikiEmbeddingConfig(project.Embeddings)
+	if configErr != nil {
+		return []string{"embeddings unavailable: invalid user configuration"}, nil
+	}
+	if !active {
 		return nil, nil
 	}
 
@@ -108,18 +152,6 @@ func (a *App) embedWorkspaceWiki(ctx context.Context, root string, progress func
 		return warnings, nil
 	}
 
-	// Build embeddings client
-	cfg := embed.Config{
-		Provider:       project.Embeddings.Provider,
-		BaseURL:        project.Embeddings.BaseURL,
-		Model:          project.Embeddings.Model,
-		APIKeyEnv:      project.Embeddings.APIKeyEnv,
-		Dim:            project.Embeddings.Dim,
-		BatchSize:      project.Embeddings.BatchSize,
-		TimeoutMS:      project.Embeddings.TimeoutMS,
-		EncodingFormat: project.Embeddings.EncodingFormat,
-		UserAgent:      project.Embeddings.UserAgent,
-	}
 	client := embed.New(cfg)
 
 	plan, planWarnings := buildWikiEmbeddingPlan(ctx, root, docs, existingEmbeddings, cfg)
@@ -350,10 +382,10 @@ func (a *App) recall(ctx context.Context, request model.CommandRequest) (model.E
 	mapMode, _ := request.Payload["map"].(bool)
 	intent := normalizeRecallIntent(stringPayload(request.Payload, "intent"))
 
-	// Check if embeddings are active and configured.
-	if !project.Embeddings.Active() {
+	cfg, active, configErr := resolveWikiEmbeddingConfig(project.Embeddings)
+	if configErr != nil || !active {
 		// Return hint without calling embeddings
-		hint := "embeddings not configured; configure [embeddings] section in .mi-lsp/project.toml or use 'mi-lsp nav wiki search' for lexical search"
+		hint := "embeddings not configured; configure [embeddings] in user config or .mi-lsp/project.toml, or use 'mi-lsp nav wiki search' for lexical search"
 		return model.Envelope{
 			Ok:        true,
 			Workspace: registration.Name,
@@ -370,18 +402,6 @@ func (a *App) recall(ctx context.Context, request model.CommandRequest) (model.E
 	}
 	defer db.Close()
 
-	// Build embeddings client
-	cfg := embed.Config{
-		Provider:       project.Embeddings.Provider,
-		BaseURL:        project.Embeddings.BaseURL,
-		Model:          project.Embeddings.Model,
-		APIKeyEnv:      project.Embeddings.APIKeyEnv,
-		Dim:            project.Embeddings.Dim,
-		BatchSize:      project.Embeddings.BatchSize,
-		TimeoutMS:      project.Embeddings.TimeoutMS,
-		EncodingFormat: project.Embeddings.EncodingFormat,
-		UserAgent:      project.Embeddings.UserAgent,
-	}
 	client := embed.New(cfg)
 
 	// Try to embed the query
