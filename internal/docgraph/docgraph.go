@@ -319,6 +319,10 @@ func IndexWorkspaceDocsWithSourcesWithProgressPriorWithBindings(ctx context.Cont
 	if err != nil {
 		return nil, nil, nil, nil, nil, nil, warnings, err
 	}
+	kernelCandidates, kernelWarnings := collectKernelV2CanonDocCandidates(root, profile)
+	warnings = append(warnings, kernelWarnings...)
+	kernelCandidates = excludeExistingDocSources(candidates, kernelCandidates)
+	candidates = mergeDocCandidates(candidates, kernelCandidates)
 	canonCandidates, canonWarnings, canonErr := collectCanonDocCandidates(ctx, root, profile)
 	warnings = append(warnings, canonWarnings...)
 	if canonErr != nil {
@@ -816,6 +820,40 @@ func collectDocCandidates(ctx context.Context, root string, profile model.DocsRe
 	return items, nil
 }
 
+// collectKernelV2CanonDocCandidates adds only the five validated kernel modules
+// for a caller that explicitly declares the kernel_v2 canon mode. The logical
+// path is caller-scoped; path remains the guarded absolute host path used to read.
+func collectKernelV2CanonDocCandidates(root string, profile model.DocsReadProfile) ([]docCandidate, []string) {
+	config := profile.Governance.AECanon
+	if !strings.EqualFold(strings.TrimSpace(config.Mode), "kernel_v2") {
+		return nil, nil
+	}
+	status := inspectConfiguredAECanon(root, config, profile.Governance.Hierarchy, "read_model")
+	if status.Status != "valid" {
+		return nil, nil
+	}
+	kernelHome, err := resolveAEKernelHome()
+	if err != nil {
+		return nil, []string{"docs-only skipped kernel_v2 canon sources: kernel home is unavailable"}
+	}
+	items := make([]docCandidate, 0, len(requiredKernelV2CanonModules))
+	for index, module := range requiredKernelV2CanonModules {
+		absPath, err := safeRegularFileWithin(kernelHome, filepath.Join("canon", module))
+		if err != nil {
+			return nil, []string{"docs-only skipped kernel_v2 canon sources: a validated module could not be resolved safely"}
+		}
+		logicalPath := "ae_kernel_v2/canon/" + filepath.Base(module)
+		items = append(items, docCandidate{
+			path:         absPath,
+			relativePath: logicalPath,
+			family:       "generic",
+			layer:        DetectLayerForPath(profile, logicalPath),
+			priority:     len(profile.Families) + 20 + index,
+		})
+	}
+	return items, nil
+}
+
 func collectCanonDocCandidates(ctx context.Context, root string, profile model.DocsReadProfile) ([]docCandidate, []string, error) {
 	project, err := workspace.LoadProjectFile(root)
 	if err != nil {
@@ -895,6 +933,29 @@ func walkCanonMarkdown(ctx context.Context, workspaceRoot string, canon workspac
 		return nil
 	})
 	return items, err
+}
+
+func excludeExistingDocSources(existing, extra []docCandidate) []docCandidate {
+	paths := make(map[string]struct{}, len(existing))
+	for _, candidate := range existing {
+		abs, err := filepath.Abs(candidate.path)
+		if err == nil {
+			paths[filepath.Clean(abs)] = struct{}{}
+		}
+	}
+	filtered := extra[:0]
+	for _, candidate := range extra {
+		abs, err := filepath.Abs(candidate.path)
+		if err != nil {
+			continue
+		}
+		if _, exists := paths[filepath.Clean(abs)]; exists {
+			continue
+		}
+		paths[filepath.Clean(abs)] = struct{}{}
+		filtered = append(filtered, candidate)
+	}
+	return filtered
 }
 
 func mergeDocCandidates(existing, extra []docCandidate) []docCandidate {
