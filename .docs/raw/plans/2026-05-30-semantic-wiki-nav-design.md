@@ -117,7 +117,7 @@ BLOB encoding: `dim` × float32 little-endian (`encoding/binary`). Decode + cosi
 2. Integration: index a fixture wiki with a fake embeddings server ⇒ `nav recall` returns the right section; ES-query→EN-note multilingual assertion via a deterministic fake that maps known synonyms.
 3. Profile: index+recall a knowledge-wiki fixture WITHOUT `00_gobierno_documental.md` ⇒ not blocked.
 4. Non-regression: full `go test ./...` green.
-5. Smoke (manual/network): real tesla bge-m3 via `mkey run teslita <env> -- mi-lsp nav recall "..."`.
+5. Smoke (manual/network): real tesla bge-m3 via `mkey run laptop-host.example.invalid <env> -- mi-lsp nav recall "..."`.
 
 ## Docs sync (after implementation)
 

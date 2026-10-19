@@ -40,7 +40,7 @@ Branch: `feature/workspace-execution-review`
 - Nuevo `workspace list --group-by-root`.
 - Nuevo `workspace doctor` no mutante.
 - Smoke release con estados `skipped` separados de `failed` y resumen de roots duplicados.
-- Sin mutacion de `C:\Users\fgpaz\.mi-lsp\registry.toml`.
+- Sin mutacion de `C:\Users\<user>\.mi-lsp\registry.toml`.
 
 ## Cadena SDD
 
@@ -61,13 +61,13 @@ Branch: `feature/workspace-execution-review`
 - `.\mi-lsp.exe workspace doctor --format json`: PASS; diagnostico no mutante.
 - `pwsh -NoProfile -ExecutionPolicy Bypass -File scripts\release\regression-smoke.ps1 -Cli .\mi-lsp.exe -OutDir artifacts\release-regression-worktree`: PASS, `failed_workspaces=0`.
 - Reporte smoke: `artifacts/release-regression-worktree\20260430-173535\report.md` con `unique_roots=24`, `duplicate_roots=9`, `skipped_workspaces=1`.
-- `pwsh -NoProfile -ExecutionPolicy Bypass -File scripts\release\regression-smoke.ps1 -Cli C:\Users\fgpaz\bin\mi-lsp.exe -OutDir artifacts\release-regression-installed`: PASS, `failed_workspaces=0`.
+- `pwsh -NoProfile -ExecutionPolicy Bypass -File scripts\release\regression-smoke.ps1 -Cli C:\Users\<user>\bin\mi-lsp.exe -OutDir artifacts\release-regression-installed`: PASS, `failed_workspaces=0`.
 - Reporte smoke instalado: `artifacts/release-regression-installed\20260430-185645\report.md` con `unique_roots=24`, `duplicate_roots=9`, `skipped_workspaces=1`.
-- `C:\Users\fgpaz\bin\mi-lsp.exe workspace list --group-by-root --format json`: PASS.
-- `C:\Users\fgpaz\bin\mi-lsp.exe workspace doctor --format json`: PASS, `current_executable=C:\Users\fgpaz\bin\mi-lsp.exe`, `path_first=C:\Users\fgpaz\bin\mi-lsp.exe`.
-- `C:\Users\fgpaz\bin\mi-lsp.exe worker status --format toon`: PASS, `selected_compatible=true`, `protocol_version=mi-lsp-v1.1`.
-- `cmd /c fc /B C:\Users\fgpaz\.agents\skills\mi-lsp\SKILL.md C:\repos\buho\assets\skills\mi-lsp\SKILL.md`: PASS, sin diferencias.
-- `go version -m C:\Users\fgpaz\bin\mi-lsp.exe`: PASS, `GOARCH=arm64`, `GOOS=windows`.
+- `C:\Users\<user>\bin\mi-lsp.exe workspace list --group-by-root --format json`: PASS.
+- `C:\Users\<user>\bin\mi-lsp.exe workspace doctor --format json`: PASS, `current_executable=C:\Users\<user>\bin\mi-lsp.exe`, `path_first=C:\Users\<user>\bin\mi-lsp.exe`.
+- `C:\Users\<user>\bin\mi-lsp.exe worker status --format toon`: PASS, `selected_compatible=true`, `protocol_version=mi-lsp-v1.1`.
+- `cmd /c fc /B C:\Users\<user>\.agents\skills\mi-lsp\SKILL.md C:\repos\buho\assets\skills\mi-lsp\SKILL.md`: PASS, sin diferencias.
+- `go version -m C:\Users\<user>\bin\mi-lsp.exe`: PASS, `GOARCH=arm64`, `GOOS=windows`.
 - `go version -m C:\repos\buho\assets\skills\mi-lsp\bin\mi-lsp-win-x64.exe`: PASS, `GOARCH=amd64`, `GOOS=windows`.
 - `go version -m C:\repos\buho\assets\skills\mi-lsp\bin\mi-lsp-linux-x64`: PASS, `GOARCH=amd64`, `GOOS=linux`.
 - `git diff --check`: sin whitespace errors; solo warnings esperados de conversion LF/CRLF.
@@ -90,11 +90,11 @@ Branch: `feature/workspace-execution-review`
 | High | PASS | No hay drift conocido entre runtime identity y canon tecnico actualizado. | Codigo en `internal/daemon/lifecycle.go`, `internal/telemetry/runtime_key.go`; docs 07/08/09 sincronizados. |
 | High | PASS | No se colapsan entrypoints distintos en una misma runtime. | `internal/daemon/lifecycle_runtime_key_test.go`. |
 | High | PASS | `workspace doctor` y `--group-by-root` son no mutantes. | `internal/service/app_test.go`; no se edito registry global. |
-| Medium | PASS | Provenance de binario revisada para evitar shadowing accidental. | `where.exe mi-lsp` mostro binario local del worktree antes de `C:\Users\fgpaz\bin\mi-lsp.exe`; comandos de smoke usaron `.\mi-lsp.exe`. |
+| Medium | PASS | Provenance de binario revisada para evitar shadowing accidental. | `where.exe mi-lsp` mostro binario local del worktree antes de `C:\Users\<user>\bin\mi-lsp.exe`; comandos de smoke usaron `.\mi-lsp.exe`. |
 | Medium | PASS | Binario global y mirror de skills/binarios refrescados. | Global `win-arm64`; mirror `win-x64` y `linux-x64`; skill global y mirror con byte parity. |
 | Medium | FOLLOW-UP | `nav trace RF-WKS-002` queda en `status=partial` aunque no reporta drift. | El tracer no enlazo explicitamente la evidencia de implementacion agregada en el RF; no bloquea tests ni smoke, pero conviene endurecer el tracer o convencion de links antes de push amplio. |
 | Low | N/A | Board/GitHub sync. | No se tocaron issues/cards. |
-| Low | N/A | Shared skill mirror sync. | No se editaron skills bajo `C:\Users\fgpaz\.agents\skills`. |
+| Low | N/A | Shared skill mirror sync. | No se editaron skills bajo `C:\Users\<user>\.agents\skills`. |
 
 ## Veredicto
 

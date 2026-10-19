@@ -1,7 +1,7 @@
 [CmdletBinding(SupportsShouldProcess = $true)]
 param(
     [string]$MirrorRoot = 'C:\repos\buho\assets\skills',
-    [string]$AgentsRoot = 'C:\Users\fgpaz\.agents\skills',
+    [string]$AgentsRoot = 'C:\Users\<user>\.agents\skills',
     [ValidateSet('Compare', 'SyncAgentsToMirror', 'SyncMirrorToAgents')]
     [string]$Mode = 'Compare',
     [string[]]$Skill,

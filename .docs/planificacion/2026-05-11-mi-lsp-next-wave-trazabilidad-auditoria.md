@@ -44,15 +44,15 @@ Workspace: `C:\repos\mios\mi-lsp`
 | Superficie | Resultado |
 |---|---|
 | `skills/mi-lsp/*` | Actualizado con `nav context <file>:<line>`, `gopls`, `go-package` y `executable_sha256` |
-| `C:\Users\fgpaz\.agents\skills\mi-lsp` | Sincronizado desde `skills/mi-lsp`; `fc /B SKILL.md` PASS |
+| `C:\Users\<user>\.agents\skills\mi-lsp` | Sincronizado desde `skills/mi-lsp`; `fc /B SKILL.md` PASS |
 | `C:\repos\buho\assets\skills\mi-lsp` | Sincronizado desde `skills/mi-lsp`; `fc /B SKILL.md` PASS |
 | `pwsh -NoProfile -Command "& { ./scripts/release/build-dist.ps1 -Rids @('win-arm64','win-x64','linux-x64') -Clean }"` | PASS |
-| `pwsh -NoProfile -File scripts/release/install-local.ps1 -Rid win-arm64 -InstallDir C:\Users\fgpaz\bin -OutDir .\dist -SkipBuild` | PASS |
-| `C:\Users\fgpaz\bin\mi-lsp.exe daemon restart --format toon` | PASS, daemon corre desde `C:\Users\fgpaz\bin\mi-lsp.exe` con `executable_sha256=3628bc536b7af29946b2e46633d1cde78dc65ff9a76e00d486d1d0903e98d78f` |
-| `C:\Users\fgpaz\bin\mi-lsp.exe nav context internal/service/context.go:42 --workspace mi-lsp --format toon --max-chars 1200` | PASS posterior con `backend: gopls` tras instalar `gopls v0.21.1` en `C:\Users\fgpaz\bin\gopls.exe` |
-| `C:\Users\fgpaz\bin\mi-lsp.exe worker status --format toon` | PASS, `selected_source=installed`, `selected_compatible=true`, `protocol_version=mi-lsp-v1.1` |
-| `go version -m C:\Users\fgpaz\bin\mi-lsp.exe` | PASS, `GOOS=windows`, `GOARCH=arm64`, `vcs.revision=b63b17493e54eee7fea41553360a7defc9dbda86`, `vcs.modified=true` |
-| `go version -m C:\Users\fgpaz\.agents\skills\mi-lsp\bin\mi-lsp-win-x64.exe` | PASS, `GOOS=windows`, `GOARCH=amd64`, misma revision dirty |
+| `pwsh -NoProfile -File scripts/release/install-local.ps1 -Rid win-arm64 -InstallDir C:\Users\<user>\bin -OutDir .\dist -SkipBuild` | PASS |
+| `C:\Users\<user>\bin\mi-lsp.exe daemon restart --format toon` | PASS, daemon corre desde `C:\Users\<user>\bin\mi-lsp.exe` con `executable_sha256=3628bc536b7af29946b2e46633d1cde78dc65ff9a76e00d486d1d0903e98d78f` |
+| `C:\Users\<user>\bin\mi-lsp.exe nav context internal/service/context.go:42 --workspace mi-lsp --format toon --max-chars 1200` | PASS posterior con `backend: gopls` tras instalar `gopls v0.21.1` en `C:\Users\<user>\bin\gopls.exe` |
+| `C:\Users\<user>\bin\mi-lsp.exe worker status --format toon` | PASS, `selected_source=installed`, `selected_compatible=true`, `protocol_version=mi-lsp-v1.1` |
+| `go version -m C:\Users\<user>\bin\mi-lsp.exe` | PASS, `GOOS=windows`, `GOARCH=arm64`, `vcs.revision=b63b17493e54eee7fea41553360a7defc9dbda86`, `vcs.modified=true` |
+| `go version -m C:\Users\<user>\.agents\skills\mi-lsp\bin\mi-lsp-win-x64.exe` | PASS, `GOOS=windows`, `GOARCH=amd64`, misma revision dirty |
 | `go version -m C:\repos\buho\assets\skills\mi-lsp\bin\mi-lsp-win-x64.exe` | PASS, `GOOS=windows`, `GOARCH=amd64`, misma revision dirty |
 | `go version -m C:\repos\buho\assets\skills\mi-lsp\bin\mi-lsp-linux-x64` | PASS, `GOOS=linux`, `GOARCH=amd64`, misma revision dirty |
 

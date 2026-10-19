@@ -51,13 +51,13 @@ secret_scan: clean
 
 # Hermes Wiki Global Navigation — Wave 1 Implementation Plan
 
-**Goal:** Hermes (agente del usuario en teslita + tesla-desktop) navega wikis de los proyectos registrados en `~/.mi-lsp/registry.toml` con un solo comando global por máquina, y une resultados cross-máquina vía SSH/Tailscale sin que `mi-lsp` aprenda transporte de red.
+**Goal:** Hermes (agente del usuario en laptop-host.example.invalid + desktop-host.example.invalid) navega wikis de los proyectos registrados en `~/.mi-lsp/registry.toml` con un solo comando global por máquina, y une resultados cross-máquina vía SSH/Tailscale sin que `mi-lsp` aprenda transporte de red.
 
 **Architecture:** Extender los cinco subcomandos `nav wiki *` (`search`, `route`, `trace`, `pack` existentes; `inventory` nuevo) con el flag `--all-workspaces`, replicando el patrón `AllWorkspaces` con `semaphore=4` que ya vive en `internal/service/ask.go`. El envelope TOON gana un campo `workspace:<alias>` por item y un `host:""` opcional que Hermes setea al mergear cross-máquina. mi-lsp permanece CLI puro: no aprende SSH, no aprende hosts, no expone MCP/HTTP.
 
 **Tech Stack:** Go (`internal/cli/nav.go`, `internal/nav/`, `internal/service/`), Markdown SDD (`.docs/wiki/`), PowerShell (`scripts/release/`, wrapper Hermes-side).
 
-**Context Source:** mi-lsp profile = `ordered_wiki + spec_backend` (no hay capa `02_resultados/RS-*`). Wikis canónicas en 50+ workspaces (`workspace list`). `nav find/search/ask` ya implementan `--all-workspaces` con semaphore=4 y devuelven items con `workspace:<alias>`. `nav wiki search/route/trace/pack` existen pero **no** soportan `--all-workspaces`. `nav wiki inventory` no existe. `CT-NAV-WIKI.md` ya documenta los wiki subcomandos sin el flag. Decisiones de marco lockeadas en `C:\Users\fgpaz\.claude\plans\pensemos-una-idea-para-synthetic-boot.md` (sesión de brainstorming aprobada por el usuario).
+**Context Source:** mi-lsp profile = `ordered_wiki + spec_backend` (no hay capa `02_resultados/RS-*`). Wikis canónicas en 50+ workspaces (`workspace list`). `nav find/search/ask` ya implementan `--all-workspaces` con semaphore=4 y devuelven items con `workspace:<alias>`. `nav wiki search/route/trace/pack` existen pero **no** soportan `--all-workspaces`. `nav wiki inventory` no existe. `CT-NAV-WIKI.md` ya documenta los wiki subcomandos sin el flag. Decisiones de marco lockeadas en `C:\Users\<user>\.claude\plans\pensemos-una-idea-para-synthetic-boot.md` (sesión de brainstorming aprobada por el usuario).
 
 **Runtime:** CC
 
@@ -117,7 +117,7 @@ goals:
       - "Output TOON de las cinco invocaciones --all-workspaces (search, route, trace, pack, inventory)"
       - "go test report"
       - "regression-smoke.ps1 output"
-      - "Captura E2E manual (Wave 5) ejecutada desde teslita contra tesla-desktop"
+      - "Captura E2E manual (Wave 5) ejecutada desde laptop-host.example.invalid contra desktop-host.example.invalid"
     stop_if:
       - "El helper AllWorkspaces se ha movido o cambiado de signatura desde el último audit"
       - "Más del 20% de workspaces tienen governance_blocked=true (sample contaminado)"
@@ -229,7 +229,7 @@ graph TD
 **Procedure:**
 
 ```powershell
-# Desde teslita (la máquina actual):
+# Desde laptop-host.example.invalid (la máquina actual):
 mi-lsp workspace status mi-lsp --format toon
 mi-lsp nav governance --workspace mi-lsp --format toon
 
@@ -239,17 +239,17 @@ mi-lsp nav wiki inventory --all-workspaces --format toon | Set-Content evidence-
 # (b) Search local con --all-workspaces
 mi-lsp nav wiki search "governance" --all-workspaces --format toon | Set-Content evidence-wave5/search-local.toon
 
-# (c) Cross-host via Tailscale SSH (tesla-desktop debe estar encendida)
-tailscale ssh tesla-desktop -- mi-lsp nav wiki inventory --all-workspaces --format toon | Set-Content evidence-wave5/inventory-remote.toon
+# (c) Cross-host via Tailscale SSH (desktop-host.example.invalid debe estar encendida)
+tailscale ssh desktop-host.example.invalid -- mi-lsp nav wiki inventory --all-workspaces --format toon | Set-Content evidence-wave5/inventory-remote.toon
 
 # (d) Wrapper Hermes-side (T16) corre local + ssh y mergea
 pwsh ~/.hermes/global-search.ps1 "governance" | Set-Content evidence-wave5/hermes-merged.toon
 
-# Apagar tesla-desktop y repetir (d) para confirmar fallo no-fatal
-# El envelope debe incluir hosts_failed[] con tesla-desktop y reason: timeout
+# Apagar desktop-host.example.invalid y repetir (d) para confirmar fallo no-fatal
+# El envelope debe incluir hosts_failed[] con desktop-host.example.invalid y reason: timeout
 ```
 
-**Done when:** los cuatro archivos de evidencia existen; en `hermes-merged.toon` los items tienen `host` distinto (local + tesla-desktop) cuando ambas máquinas están encendidas; con tesla-desktop apagada, el wrapper devuelve resultados locales más `hosts_failed[]`.
+**Done when:** los cuatro archivos de evidencia existen; en `hermes-merged.toon` los items tienen `host` distinto (local + desktop-host.example.invalid) cuando ambas máquinas están encendidas; con desktop-host.example.invalid apagada, el wrapper devuelve resultados locales más `hosts_failed[]`.
 
 **Stop if:** Tailscale SSH no conecta (problema fuera del scope del plan; documentar y diferir).
 
@@ -285,7 +285,7 @@ gh pr create --title "feat(wiki): global cross-workspace navigation for Hermes" 
 - [ ] go build ./... exit 0
 - [ ] go test ./internal/cli/... ./internal/service/... ./internal/nav/... PASS
 - [ ] scripts/release/regression-smoke.ps1 PASS
-- [ ] E2E manual desde teslita: inventory local + cross-host vía Tailscale (evidencia en `.docs/raw/plans/2026-05-11-hermes-wiki-global-nav/evidence-wave5/`)
+- [ ] E2E manual desde laptop-host.example.invalid: inventory local + cross-host vía Tailscale (evidencia en `.docs/raw/plans/2026-05-11-hermes-wiki-global-nav/evidence-wave5/`)
 - [ ] ps-trazabilidad y ps-auditar-trazabilidad sin gaps
 
 Anchors: FL-WIKI-01, RF-WIKI-001..005, TP-WIKI, TECH-WIKI-FANOUT, CT-NAV-WIKI

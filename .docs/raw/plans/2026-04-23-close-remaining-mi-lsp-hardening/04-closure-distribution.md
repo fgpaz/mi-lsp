@@ -10,12 +10,12 @@
 
 - `go test ./...`
 - `git diff --check`
-- `C:\Users\fgpaz\bin\mi-lsp.exe index cancel --help`
-- `C:\Users\fgpaz\bin\mi-lsp.exe --workspace multi-tedi index status --format toon`
-- `C:\Users\fgpaz\bin\mi-lsp.exe --workspace gastos nav trace RF-GAS-10 --format json`
-- `C:\Users\fgpaz\bin\mi-lsp.exe nav wiki trace RF-QRY-016 --workspace mi-lsp --format toon`
-- `C:\Users\fgpaz\bin\mi-lsp.exe nav wiki search "RF IDX" --workspace mi-lsp --format toon`
-- `C:\Users\fgpaz\bin\mi-lsp.exe --workspace interbancarizacion_coelsa nav ask "Which RF, FL, CT, TECH, DB and TP docs are most relevant for a full wiki-to-code parity audit across all microservices?" --format json`
+- `C:\Users\<user>\bin\mi-lsp.exe index cancel --help`
+- `C:\Users\<user>\bin\mi-lsp.exe --workspace multi-tedi index status --format toon`
+- `C:\Users\<user>\bin\mi-lsp.exe --workspace gastos nav trace RF-GAS-10 --format json`
+- `C:\Users\<user>\bin\mi-lsp.exe nav wiki trace RF-QRY-016 --workspace mi-lsp --format toon`
+- `C:\Users\<user>\bin\mi-lsp.exe nav wiki search "RF IDX" --workspace mi-lsp --format toon`
+- `C:\Users\<user>\bin\mi-lsp.exe --workspace interbancarizacion_coelsa nav ask "Which RF, FL, CT, TECH, DB and TP docs are most relevant for a full wiki-to-code parity audit across all microservices?" --format json`
 - WSL same `nav ask` proof with:
   - `~/.local/bin/mi-lsp`
   - `~/bin/mi-lsp`

@@ -57,7 +57,7 @@ Disposition: `pr-open` por regla del repo; no push directo a `main`.
 - Limpieza segura de registry/worktrees: `workspace prune --stale` con dry-run por default y apply explicito, registry-only.
 - Memoria de reentrada: `workspace status --full` refresca snapshots stale cuando `auto_sync` esta habilitado y la gobernanza no esta bloqueada.
 - Self-dogfood Go: deteccion de topologia Go, extractor AST Go, indexacion de `.go`, `workspace-map` con paquetes Go y `nav service` con `profile=go-package`.
-- Binario instalado y daemon reiniciado: `C:\Users\fgpaz\bin\mi-lsp.exe`, daemon run `69`.
+- Binario instalado y daemon reiniciado: `C:\Users\<user>\bin\mi-lsp.exe`, daemon run `69`.
 
 ## Cadena SDD revisada
 
@@ -70,7 +70,7 @@ Disposition: `pr-open` por regla del repo; no push directo a `main`.
 ## Evidencia
 
 - `go test ./...`: PASS en todos los paquetes.
-- `go build -o C:\Users\fgpaz\bin\mi-lsp.exe ./cmd/mi-lsp`: PASS.
+- `go build -o C:\Users\<user>\bin\mi-lsp.exe ./cmd/mi-lsp`: PASS.
 - `mi-lsp workspace prune --stale --dry-run --format toon`: antes del apply encontro `candidates[25]`; despues del apply `candidates[0]`.
 - `mi-lsp workspace prune --stale --apply --format toon`: PASS, `removed_count: 25`, `skipped[0]`, warning `no files or git worktrees were deleted`.
 - `git worktree prune --dry-run -v` y `git worktree prune -v`: PASS idempotente, sin metadata stale que reportar.
@@ -114,8 +114,8 @@ Disposition: `pr-open` por regla del repo; no push directo a `main`.
 - Drift spec-vs-code: no encontrado en el scope auditado.
 - Harness: PASS.
 - Wiki Source: PASS.
-- Source/mirror skills: no aplica; no se editaron skills bajo `C:\Users\fgpaz\.agents\skills`.
-- Binarios: actualizado `C:\Users\fgpaz\bin\mi-lsp.exe` y reiniciado daemon para evitar runtime viejo.
+- Source/mirror skills: no aplica; no se editaron skills bajo `C:\Users\<user>\.agents\skills`.
+- Binarios: actualizado `C:\Users\<user>\bin\mi-lsp.exe` y reiniciado daemon para evitar runtime viejo.
 - Pre-push: requiere PR flow; no push directo a `main`.
 
 ## No-drift snapshot

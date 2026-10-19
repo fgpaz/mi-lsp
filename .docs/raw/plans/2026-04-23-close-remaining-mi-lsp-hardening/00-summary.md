@@ -11,7 +11,7 @@ Mantener sin reabrir:
 
 - gobernanza `spec_backend` sana
 - branch/PR policy: una rama, un PR, sin push directo a `main`
-- guardrail de binarios: todos los smokes de Windows con `C:\Users\fgpaz\bin\mi-lsp.exe` desde cwd neutral; todos los smokes de WSL con ruta explicita
+- guardrail de binarios: todos los smokes de Windows con `C:\Users\<user>\bin\mi-lsp.exe` desde cwd neutral; todos los smokes de WSL con ruta explicita
 - `RF-GAS-09/10` como evidencia externa de fallback, no como canon nuevo de `mi-lsp`
 - dirty set permitido: los 18 paths congelados del plan mas esta plan tree y el artefacto final de trazabilidad/auditoria
 
