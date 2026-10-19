@@ -38,6 +38,33 @@ type APIKeyMissingError struct{}
 
 func (*APIKeyMissingError) Error() string { return "SEM_API_KEY_MISSING" }
 
+// QueryError describes an embedding failure without retaining provider text,
+// request data, URLs, headers, or credentials.
+type QueryError struct {
+	Class      string `json:"class"`
+	Subphase   string `json:"subphase"`
+	Operation  string `json:"operation"`
+	HTTPStatus int    `json:"http_status,omitempty"`
+	Code       string `json:"code"`
+}
+
+func (e *QueryError) Error() string { return e.Code }
+
+func queryOperation(priority string) string {
+	switch priority {
+	case "alta":
+		return "embed_query"
+	case "baja":
+		return "embed_index"
+	default:
+		return "embed"
+	}
+}
+
+func queryError(priority, class, subphase, code string, status int) *QueryError {
+	return &QueryError{Class: class, Subphase: subphase, Operation: queryOperation(priority), HTTPStatus: status, Code: code}
+}
+
 // New creates a new embeddings client with the given config.
 // Defaults: BatchSize=32 (if ≤0), TimeoutMS=30000 (if ≤0).
 func New(cfg Config) *Client {
@@ -146,7 +173,7 @@ func (c *Client) embedBatch(ctx context.Context, batch []string, priority string
 
 	body, err := json.Marshal(payload)
 	if err != nil {
-		return nil, fmt.Errorf("failed to marshal request: %w", err)
+		return nil, queryError(priority, "request", "encode", "SEM_EMBED_REQUEST_INVALID", 0)
 	}
 
 	baseURLs := append([]string(nil), c.cfg.BaseURLs...)
@@ -154,7 +181,7 @@ func (c *Client) embedBatch(ctx context.Context, batch []string, priority string
 		baseURLs = []string{c.cfg.BaseURL}
 	}
 	if len(baseURLs) == 0 {
-		return nil, fmt.Errorf("embeddings base URL is not configured")
+		return nil, queryError(priority, "configuration", "resolve_endpoint", "SEM_EMBED_ENDPOINT_UNCONFIGURED", 0)
 	}
 	var lastErr error
 	for _, baseURL := range baseURLs {
@@ -173,7 +200,7 @@ func (c *Client) embedBatch(ctx context.Context, batch []string, priority string
 func (c *Client) embedAt(ctx context.Context, url string, body []byte, apiKeyEnv, apiKey string, batch []string, priority string) ([][]float32, bool, error) {
 	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(body))
 	if err != nil {
-		return nil, false, fmt.Errorf("failed to create request: %w", err)
+		return nil, false, queryError(priority, "request", "prepare", "SEM_EMBED_REQUEST_INVALID", 0)
 	}
 
 	req.Header.Set("Content-Type", "application/json")
@@ -190,27 +217,27 @@ func (c *Client) embedAt(ctx context.Context, url string, body []byte, apiKeyEnv
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return nil, true, fmt.Errorf("request failed: %w", err)
+		return nil, true, queryError(priority, "transport", "send", "SEM_EMBED_TRANSPORT_FAILED", 0)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, resp.StatusCode >= 500, fmt.Errorf("embeddings endpoint returned status %d", resp.StatusCode)
+		return nil, resp.StatusCode >= 500, queryError(priority, "http", "response", "SEM_EMBED_HTTP_ERROR", resp.StatusCode)
 	}
 
 	var respPayload responsePayload
 	if err := json.NewDecoder(resp.Body).Decode(&respPayload); err != nil {
-		return nil, false, fmt.Errorf("failed to decode response: %w", err)
+		return nil, false, queryError(priority, "response", "decode", "SEM_EMBED_RESPONSE_INVALID", resp.StatusCode)
 	}
 
 	if len(respPayload.Data) < len(batch) {
-		return nil, false, fmt.Errorf("response has %d embeddings but expected %d", len(respPayload.Data), len(batch))
+		return nil, false, queryError(priority, "response", "shape", "SEM_EMBED_RESPONSE_INCOMPLETE", resp.StatusCode)
 	}
 
 	result := make([][]float32, len(batch))
 	for i := range batch {
 		if c.cfg.Dim > 0 && len(respPayload.Data[i].Embedding) != c.cfg.Dim {
-			return nil, false, fmt.Errorf("embedding %d has dimension %d but expected %d", i, len(respPayload.Data[i].Embedding), c.cfg.Dim)
+			return nil, false, queryError(priority, "response", "shape", "SEM_EMBED_DIMENSION_MISMATCH", resp.StatusCode)
 		}
 		result[i] = respPayload.Data[i].Embedding
 	}

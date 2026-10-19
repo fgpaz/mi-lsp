@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -430,23 +431,28 @@ func (a *App) recall(ctx context.Context, request model.CommandRequest) (model.E
 			})
 		}
 
-		warnings := []string{"embeddings unavailable; served lexical results"}
-		hint := "embeddings endpoint offline; results are from lexical search. Fix embeddings config to enable semantic search or use 'mi-lsp nav wiki search'."
+		const code = "SEM_EMBED_QUERY_FAILED"
+		hint := "embedding query failed; results are from lexical search. See error fields for the sanitized failure type."
 		envelope := model.Envelope{
 			Ok:        true,
 			Workspace: registration.Name,
 			Backend:   "recall+lexical",
 			Items:     results,
-			Warnings:  warnings,
+			Warnings:  []string{"embeddings unavailable; served lexical results"},
 			Hint:      hint,
 			Stats:     model.Stats{Files: len(results)},
 		}
+		failure := &embed.QueryError{Class: "unknown", Subphase: "unknown", Operation: "embed_query", Code: code}
+		var typed *embed.QueryError
+		if errors.As(err, &typed) {
+			failure = typed
+		}
 		var missingKey *embed.APIKeyMissingError
 		if errors.As(err, &missingKey) {
-			const code = "SEM_API_KEY_MISSING"
-			envelope.Error = &model.EnvelopeError{Kind: "embeddings", Code: code, Message: "embeddings unavailable; served lexical results"}
-			envelope.Warnings = append(envelope.Warnings, "code="+code)
+			failure = &embed.QueryError{Class: "configuration", Subphase: "credential_lookup", Operation: "embed_query", Code: "SEM_API_KEY_MISSING"}
 		}
+		detail, _ := json.Marshal(failure)
+		envelope.Error = &model.EnvelopeError{Kind: "embeddings", Code: failure.Code, Message: "embedding query failed; served lexical results", Stage: "embed_query", Detail: string(detail)}
 		return envelope, nil
 	}
 
