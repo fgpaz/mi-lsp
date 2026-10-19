@@ -671,6 +671,8 @@ type DocSourceRecord struct {
 }
 
 type DocsReadProfile struct {
+	ProjectionSource string             `toml:"projection_source,omitempty"`
+	AgentSurfaces    []DocsAgentSurface `toml:"agent_surface,omitempty"`
 	Version     int                    `toml:"version"`
 	Families    []DocsReadFamily       `toml:"family"`
 	GenericDocs DocsGenericFallback    `toml:"generic_docs"`
@@ -678,6 +680,13 @@ type DocsReadProfile struct {
 	OwnerHints  []DocsOwnerHint        `toml:"owner_hint"`
 	Governance  DocsGovernanceProfile  `toml:"governance"`
 	WikiMap     *WikiMapConfig         `toml:"wiki_map,omitempty"`
+}
+
+// DocsAgentSurface is a projected, per-kind agent read/edit surface.
+type DocsAgentSurface struct {
+	Kind      string   `toml:"kind"`
+	ReadGlobs []string `toml:"read_globs"`
+	EditGlobs []string `toml:"edit_globs"`
 }
 
 // WikiMapConfig declares the knowledge-wiki hub catalog configuration.
@@ -821,6 +830,8 @@ type WikiContractValidationResult struct {
 	ContractWarnings       []string                       `json:"contract_warnings,omitempty"`
 	ContractsReviewed      int                            `json:"contracts_reviewed"`
 	LinksReviewed          int                            `json:"links_reviewed"`
+	TargetsMissing         int                            `json:"targets_missing"`
+	SectionsMissing        int                            `json:"sections_missing"`
 	Documents              []WikiContractDocumentFinding  `json:"documents,omitempty"`
 }
 

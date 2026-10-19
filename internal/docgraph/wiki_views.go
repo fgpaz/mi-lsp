@@ -10,11 +10,11 @@ import (
 
 // WikiIndexEntry is one row from nav wiki index.
 type WikiIndexEntry struct {
-	ID           string `json:"id"`
-	Title        string `json:"title"`
-	Status       string `json:"status,omitempty"`
-	Path         string `json:"path"`
-	Kind         string `json:"kind"`
+	ID            string `json:"id"`
+	Title         string `json:"title"`
+	Status        string `json:"status,omitempty"`
+	Path          string `json:"path"`
+	Kind          string `json:"kind"`
 	LegacyWarning string `json:"legacy_warning,omitempty"`
 }
 
@@ -28,11 +28,12 @@ type WikiIndexResult struct {
 
 // WikiMatrixCriterionCoverage links one RF criterion to TP cases.
 type WikiMatrixCriterionCoverage struct {
-	RFID        string                    `json:"rf_id"`
-	Criterion   int                       `json:"criterion"`
-	Text        string                    `json:"text,omitempty"`
-	Covered     bool                      `json:"covered"`
-	TestCases   []WikiMatrixTestCaseRef   `json:"test_cases,omitempty"`
+	RFID           string                  `json:"rf_id"`
+	Criterion      int                     `json:"criterion"`
+	Text           string                  `json:"text,omitempty"`
+	Covered        bool                    `json:"covered"`
+	CoverageStatus string                  `json:"coverage_status"`
+	TestCases      []WikiMatrixTestCaseRef `json:"test_cases,omitempty"`
 }
 
 type WikiMatrixTestCaseRef struct {
@@ -44,13 +45,14 @@ type WikiMatrixTestCaseRef struct {
 
 // WikiMatrixResult is the RF x TP matrix by acceptance criterion.
 type WikiMatrixResult struct {
-	Schema              string                        `json:"schema"`
-	RFsReviewed         int                           `json:"rfs_reviewed"`
-	TPsReviewed         int                           `json:"tps_reviewed"`
-	Criteria            []WikiMatrixCriterionCoverage `json:"criteria"`
-	UncoveredCriteria   []WikiMatrixCriterionCoverage `json:"uncovered_criteria,omitempty"`
-	TPsWithoutRF        []string                      `json:"tps_without_rf,omitempty"`
-	Warnings            []string                      `json:"warnings,omitempty"`
+	Schema            string                        `json:"schema"`
+	Verdict           string                        `json:"verdict"`
+	RFsReviewed       int                           `json:"rfs_reviewed"`
+	TPsReviewed       int                           `json:"tps_reviewed"`
+	Criteria          []WikiMatrixCriterionCoverage `json:"criteria"`
+	UncoveredCriteria []WikiMatrixCriterionCoverage `json:"uncovered_criteria,omitempty"`
+	TPsWithoutRF      []string                      `json:"tps_without_rf,omitempty"`
+	Warnings          []string                      `json:"warnings,omitempty"`
 }
 
 // WikiViewDoc is minimal input for index/matrix builders.
@@ -115,9 +117,10 @@ func BuildWikiIndex(docs []WikiViewDoc, requestedKind string) WikiIndexResult {
 // BuildWikiMatrix computes RF x TP coverage from verifies links and case lines.
 func BuildWikiMatrix(docs []WikiViewDoc) WikiMatrixResult {
 	result := WikiMatrixResult{
-		Schema:     "wiki-matrix/v1",
-		Criteria:   []WikiMatrixCriterionCoverage{},
-		Warnings:   []string{},
+		Schema:   "wiki-matrix/v1",
+		Verdict:  "PASS",
+		Criteria: []WikiMatrixCriterionCoverage{},
+		Warnings: []string{},
 	}
 	rfDocs := map[string]WikiViewDoc{}
 	tpDocs := map[string]WikiViewDoc{}
@@ -141,6 +144,7 @@ func BuildWikiMatrix(docs []WikiViewDoc) WikiMatrixResult {
 	result.TPsReviewed = len(tpDocs)
 
 	coverage := map[string]map[int][]WikiMatrixTestCaseRef{}
+	parseUncertain := map[string]bool{}
 	for tpID, doc := range tpDocs {
 		meta := wikisource.ParseContractMetadata(doc.Content)
 		rfTargets := meta.Links.Verifies
@@ -152,14 +156,20 @@ func BuildWikiMatrix(docs []WikiViewDoc) WikiMatrixResult {
 			result.Warnings = appendUniqueString(result.Warnings, "tp_without_rf:"+tpID)
 			continue
 		}
-		cases := wikisource.ParseTestPlanCases(doc.Content)
-		if len(cases) == 0 {
-			result.Warnings = appendUniqueString(result.Warnings, "tp_without_cases:"+tpID)
+		cases, parseWarnings := wikisource.ParseTestPlanCasesWithWarnings(doc.Content)
+		for _, warning := range parseWarnings {
+			result.Warnings = appendUniqueString(result.Warnings, "parser_warning:"+tpID+":"+warning)
 		}
 		for _, rfID := range rfTargets {
 			rfKey := strings.ToUpper(strings.TrimSpace(rfID))
 			if rfKey == "" {
 				continue
+			}
+			if len(parseWarnings) > 0 {
+				parseUncertain[rfKey] = true
+			}
+			if _, exists := rfDocs[rfKey]; !exists {
+				result.Warnings = appendUniqueString(result.Warnings, "rf_target_missing:"+tpID+":"+rfKey)
 			}
 			if coverage[rfKey] == nil {
 				coverage[rfKey] = map[int][]WikiMatrixTestCaseRef{}
@@ -180,7 +190,7 @@ func BuildWikiMatrix(docs []WikiViewDoc) WikiMatrixResult {
 	for rfID, doc := range rfDocs {
 		criteria := wikisource.ParseAcceptanceCriteria(doc.Content)
 		if len(criteria) == 0 {
-			result.Warnings = appendUniqueString(result.Warnings, "rf_missing_acceptance_criteria:"+rfID)
+			result.Warnings = appendUniqueString(result.Warnings, "parser_warning:rf_missing_acceptance_criteria:"+rfID)
 			continue
 		}
 		nums := make([]int, 0, len(criteria))
@@ -197,10 +207,16 @@ func BuildWikiMatrix(docs []WikiViewDoc) WikiMatrixResult {
 				Covered:   len(tests) > 0,
 				TestCases: tests,
 			}
-			allCriteria = append(allCriteria, row)
+			row.CoverageStatus = "covered"
 			if !row.Covered {
-				result.UncoveredCriteria = append(result.UncoveredCriteria, row)
+				row.CoverageStatus = "gap"
+				if parseUncertain[rfID] {
+					row.CoverageStatus = "parser_warning"
+				} else {
+					result.UncoveredCriteria = append(result.UncoveredCriteria, row)
+				}
 			}
+			allCriteria = append(allCriteria, row)
 		}
 	}
 	sort.Slice(allCriteria, func(i, j int) bool {
@@ -214,6 +230,17 @@ func BuildWikiMatrix(docs []WikiViewDoc) WikiMatrixResult {
 	if len(result.UncoveredCriteria) > 0 {
 		result.Warnings = appendUniqueString(result.Warnings, "uncovered_acceptance_criteria:"+itoa(len(result.UncoveredCriteria)))
 	}
+	if len(result.Warnings) > 0 {
+		result.Verdict = "ADVISORY"
+	}
+	sort.Strings(result.Warnings)
+	sort.Slice(result.UncoveredCriteria, func(i, j int) bool {
+		a, b := result.UncoveredCriteria[i], result.UncoveredCriteria[j]
+		if a.RFID != b.RFID {
+			return a.RFID < b.RFID
+		}
+		return a.Criterion < b.Criterion
+	})
 	return result
 }
 

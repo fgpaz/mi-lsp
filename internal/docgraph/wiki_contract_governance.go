@@ -95,11 +95,7 @@ func LoadWikiContractGovernance(root string) (*WikiContractGovernance, []string)
 	if err != nil {
 		return nil, pathWarnings
 	}
-	block, err := extractGovernanceYAMLBlock(content)
-	if err != nil {
-		return nil, pathWarnings
-	}
-	parsed, parseWarnings := ParseWikiContractGovernanceYAML(block)
+	parsed, parseWarnings := parseWikiContractGovernanceDocument(content)
 	warnings := append(pathWarnings, parseWarnings...)
 	if parsed == nil {
 		return nil, warnings
@@ -194,6 +190,10 @@ func parseWikiContractLayerExceptions(raw any) ([]model.WikiLayerExceptionView, 
 		return nil, []string{"wiki_contract_governance: layer_exceptions must be a list"}
 	}
 	validLayerIDs := wikiProductLayerIDSet()
+	// Contract kinds also name exception layers; legacy doctor IDs remain valid.
+	for _, kind := range []string{"governance", "decision", "test", "business", "ui"} {
+		validLayerIDs[kind] = struct{}{}
+	}
 	out := make([]model.WikiLayerExceptionView, 0, len(items))
 	var warnings []string
 	for _, item := range items {
