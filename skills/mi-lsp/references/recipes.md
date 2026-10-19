@@ -9,6 +9,18 @@ router or recipe abstraction. Keep the returned envelope, warnings, omissions,
 and canonical lane visible. Use the smallest bounded expansion that answers the
 intent, and treat the canonical wiki as the final authority.
 
+### WIKI-CONTRACT-v1 read-model projection
+
+`00_governance.md` with `wiki_contract: WIKI-CONTRACT-v1` projects
+`<wiki>/_mi-lsp/read-model.toml` from core kinds, enabled traits and
+`layer_exceptions`, without legacy profile/hierarchy declarations. The marker is
+`projection_source = "wiki-contract-v1/traits"`; each `[[agent_surface]]` declares
+`kind`, `read_globs` and `edit_globs`. `has_ui` includes repo-root `DESIGN.md`,
+`PRODUCT.md` and safe `ui_roots`. Existing family and governance fields remain
+available. Auto-sync keeps the projection current; drift or an unwritable output
+is advisory and never blocks v1 governance. Legacy governance keeps its existing
+projection behavior.
+
 ### R2 — Evidence reentry
 
 Use this before loading a large prompt, transcript, log, or screenshot. Start

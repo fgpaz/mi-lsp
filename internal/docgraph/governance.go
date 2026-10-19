@@ -421,6 +421,11 @@ func inspectGovernanceCore(root string, autoSync bool) model.GovernanceStatus {
 		return status
 	}
 
+	if parsed, warnings := parseWikiContractGovernanceDocument(content); parsed != nil {
+		status.Warnings = append(status.Warnings, warnings...)
+		return inspectWikiContractProjection(root, status, parsed, autoSync)
+	}
+
 	if isKnowledgeWikiProjection(projectionProfile, projectionSource) {
 		if safe, ok := safeProjectionOutput(root, projectionProfile.Governance.Projection.Output, canons); ok {
 			status.ProjectionDoc = safe
