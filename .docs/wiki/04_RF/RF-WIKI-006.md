@@ -146,7 +146,7 @@ stop_if:
   - map_classifies_sdd_dot_docs_wiki_as_hub=true
 evidence:
   - internal/service/wiki_map.go
-  - internal/service/wiki_map_test.go
+  - internal/service/wiki_map.go
   - internal/cli/nav.go
   - .docs/wiki/06_pruebas/TP-WIKI.md
 ```

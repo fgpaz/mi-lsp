@@ -395,7 +395,7 @@ semantics: |
   La admisión de relevancia es exclusiva de search y no cambia route, ask o pack:
   una query con forma de identificador conserva únicamente el DocRecord cuyo doc_id
   coincide de forma completa, declaraciones source exactas y referencias que contienen
-  el identificador completo con límites de identidad (incluye [[ID]], enlaces ID.md y
+  el identificador completo con límites de identidad (incluye `RF-X-1`, enlaces con sufijo `.md` y
   puntuación de frase como `RF-X-1.` o `RF-X-1,`, pero bloquea RF-X-1 frente a
   RF-X-1-EXTRA, RF-X-1_EXTRA, RF-X-1.extra, RF-X-1.md.EXTRA o RF X 1).
   La igualdad exacta de un DocRecord.DocID declarado activa este modo aun para IDs
@@ -725,11 +725,11 @@ RF-QRY-016, RF-WIKI-001, RF-WIKI-002, RF-WIKI-003, RF-WIKI-004, RF-WIKI-005, RF-
 Las listas Markdown pueden declarar relaciones documentales sin frontmatter:
 
 ```markdown
-- related: [[RF-DG-DECISION]]
-- depends: [decisión](decision.md)
-- supports: [[decision.md]]
-- contradicts: [[alternativa.md]]
-- supersedes: [[historia.md]]
+- related: [[RF-GPH-001]]
+- depends: [decisión](../04_RF/RF-GPH-002.md)
+- supports: [[RF-GPH-002]]
+- contradicts: [[RF-GPH-003]]
+- supersedes: [[RF-GPH-004]]
 ```
 
 `nav.neighbors` reutiliza la generación publicada y acepta como selector un `doc_id` o una ruta (`.docs/wiki/...`, `wiki/...` o `bibliotecas/...`). `--edge doc_related` (y las otras cuatro relaciones) filtra la consulta. Cada item conserva `relation`, `status`, `owner_path` (destino) y `doc_id` cuando existe; los targets faltantes o ambiguos aparecen como omisiones, nunca como inferencias. La consulta respeta `--depth`, `--limit`, `--token-budget` y `--cursor`; ciclos quedan acotados por el presupuesto. Si el catálogo está stale, el contrato conserva el fallback textual de `nav wiki search`.

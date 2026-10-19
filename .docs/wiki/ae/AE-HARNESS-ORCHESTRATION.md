@@ -149,7 +149,7 @@ verify:
   - mi-lsp nav wiki validate-source --workspace <alias> --format toon
 evidence:
   - .docs/wiki/ae/AE-HARNESS-ORCHESTRATION.md
-  - .docs/auditoria/<YYYY-MM-DD>-<task-slug>/orchestrator-registry.yaml
+  - .docs/wiki/ae/AE-HARNESS-ORCHESTRATION.md
 ```
 
 ## Adapter Rule

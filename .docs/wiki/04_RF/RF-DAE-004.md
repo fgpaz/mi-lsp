@@ -5,7 +5,7 @@ implements:
   - internal/daemon/lifecycle.go
   - internal/daemon/file_watcher.go
 tests:
-  - internal/daemon/file_watcher_test.go
+  - internal/daemon/file_watcher.go
 ---
 
 ```yaml

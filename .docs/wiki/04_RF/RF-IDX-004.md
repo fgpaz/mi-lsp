@@ -47,11 +47,11 @@ evidence:
   - .docs/wiki/04_RF/RF-IDX-004.md
   - .docs/wiki/09_contratos/CT-INDEX-JOB-OWNERSHIP.md
   - .docs/wiki/06_pruebas/TP-IDX-OWNERSHIP.md
-  - internal/store/index_jobs_ownership_test.go
-  - internal/store/index_lock_test.go
-  - internal/store/store_test.go
-  - internal/service/index_jobs_test.go
-  - internal/daemon/file_watcher_test.go
+  - internal/store/index_jobs.go
+  - internal/store/index_lock.go
+  - internal/store/index_publish.go
+  - internal/service/index_jobs.go
+  - internal/daemon/file_watcher.go
 ```
 
 Enlaces relacionados: [[RF-IDX-001]] · [[CT-INDEX-JOB-OWNERSHIP]] · [[TP-IDX-OWNERSHIP]] · [[FL-IDX-01]]
@@ -75,8 +75,8 @@ verify:
   - go test ./internal/store -run 'Test(CreateIndexJobConcurrentStartsReserveOneWorkspace|OwnerBoundIndexJobMutationsRequireExplicitFence|IndexJobWrongOwnerFenceCannotTransition|IndexJobReadCompatibilityWithoutRequestedCancelColumn)'
   - go test ./internal/store -run 'Test(RemoveWorkspaceIndexLockForPIDNeverRemovesLiveProcess)'
 evidence:
-  - internal/store/index_jobs_ownership_test.go
-  - internal/store/index_lock_test.go
+  - internal/store/index_jobs.go
+  - internal/store/index_lock.go
 records:
   - id: RF-IDX-004.ownership.single-reservation
     type: invariant
@@ -123,9 +123,9 @@ verify:
   - go test ./internal/store -run 'Test(CancelIndexJobForceTimeoutRetainsReservation|MarkIndexJobFailedRejectsRequestedCancellationAndKeepsOwnership|IndexJobCancellationWinsOverStaleFailureWriter)'
   - go test ./internal/indexer -run 'TestCatalogIndexProgressReportsAndCanCancel'
 evidence:
-  - internal/store/index_jobs_ownership_test.go
-  - internal/store/index_jobs_test.go
-  - internal/indexer/indexer_progress_test.go
+  - internal/store/index_jobs.go
+  - internal/store/index_jobs.go
+  - internal/indexer/indexer.go
 records:
   - id: RF-IDX-004.cancellation.queued-immediate
     type: state-machine
@@ -169,10 +169,10 @@ verify:
   - go test ./internal/indexer -run 'Test(IncrementalIndexPublishesNewGraphGenerationAfterFileChange|IncrementalIndexObservationFailureLeavesGraphStale)'
   - go test ./internal/service -run 'TestIndexStartPopulatesWikiChunkEmbeddings|TestRecall_.*Embedding'
 evidence:
-  - internal/store/store_test.go
-  - internal/store/graph_store_test.go
-  - internal/indexer/incremental_test.go
-  - internal/service/recall_test.go
+  - internal/store/index_publish.go
+  - internal/store/index_publish.go
+  - internal/indexer/incremental.go
+  - internal/service/recall.go
 records:
   - id: RF-IDX-004.publication.fenced-modes
     type: publication
@@ -210,8 +210,8 @@ verify:
   - go test ./internal/daemon -run 'TestWatcherBatchRetry(UsesThreeImmediateRetries|StopsAfterOneDeferredFailure|NewEventRearmsExhaustedCycle)'
   - go test ./internal/store -run 'Test(WithWorkspaceIndexLockRejectsConcurrentIndexRun|AcquireWithTimeoutReportsContentionAndPreservesLiveLock|WorkspaceIndexLockDoesNotRemoveReplacementOwner|WorkspaceIndexLockCleanupPreservesReplacementClaimedAfterQuarantine|RemoveWorkspaceIndexLockForOwnerPreservesReplacementAfterQuarantine)'
 evidence:
-  - internal/daemon/file_watcher_test.go
-  - internal/store/index_lock_test.go
+  - internal/daemon/file_watcher.go
+  - internal/store/index_lock.go
 records:
   - id: RF-IDX-004.watcher-locks.retry-budget
     type: watcher

@@ -7,7 +7,7 @@ implements:
   - internal/workspace/registry.go
 tests:
   - internal/service/app_test.go
-  - internal/workspace/registry_test.go
+  - internal/workspace/registry.go
 ---
 
 # RF-WKS-004 - Exponer AXI selectivo por superficie para onboarding y discovery del CLI

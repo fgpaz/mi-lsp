@@ -72,4 +72,20 @@ evidence:
 
 ## Compatibilidad y trazabilidad (retirado en su parte MCP)
 
-[RETIRADO] El transporte MCP expone operaciones existentes y no altera su semántica. Vigente para la CLI: los formatos explícitos y los consumidores JSON de scripts mantienen compatibilidad. `TP-QRY` cubre handshake, inventario de herramientas, respuesta compacta/estructurada, resolución de workspace, limpieza de stdout, latencia fría y el argumento `context` de `nav_refs` (TC-QRY-177).
+[RETIRADO] El transporte MCP expone operaciones existentes y no altera su semántica. Vigente para la CLI: los formatos explícitos y los consumidores JSON de scripts mantienen compatibilidad. `TP-QRY` conserva la cobertura histórica del transporte; esos casos no afirman que el servidor MCP siga disponible.
+
+```toon
+block_id: rf-qry-021-retired-history
+kind: normative-requirement
+source_of_truth: this
+status: retired
+verify:
+  - mi-lsp nav wiki validate-source --workspace <alias> --ids RF-QRY-021 --format toon
+evidence:
+  - .docs/wiki/04_RF/RF-QRY-021.md
+  - .docs/wiki/06_pruebas/TP-QRY.md
+retirement:
+  date: 2026-10-15
+  replacement: mi-mcp invokes the mi-lsp CLI per tool call
+  active_behavior_claims: none
+```

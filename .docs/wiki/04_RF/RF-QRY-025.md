@@ -73,6 +73,14 @@ sensibilidad:
   empty: cadena vacía si no hay marca, el archivo no se lee o el rango no tiene archivo
   filter: mi-lsp no descarta ni reordena por esta marca; el filtro es de mi-mcp
 cases: [TC-QRY-205, TC-QRY-206, TC-QRY-207, TC-QRY-208]
+verify:
+  - mi-lsp nav wiki validate-source --workspace <alias> --ids RF-QRY-025 --format toon
+  - go build ./cmd/mi-lsp ./internal/service
+evidence:
+  - .docs/wiki/04_RF/RF-QRY-025.md
+  - .docs/wiki/09_contratos/CT-Q-V1.md
+  - .docs/wiki/09_contratos/CT-NAV-INTENT.md
+  - internal/service/ask.go
 ```
 
 `q`, `nav intent` y `nav multi-read` publican `generation_id` con el snapshot de la generación ya publicada (`last_index`, `active_catalog`, `active_docs`, `active_memory`). Sirve para cachear: dos lecturas de la misma generación devuelven el mismo valor. Si otra ruta ya puso `generation_id`, se conserva.

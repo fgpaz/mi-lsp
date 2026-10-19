@@ -75,3 +75,24 @@ Las primitivas no mutan índice, workspace registry ni archivos; no usan red. Un
 - `changed since` re-resuelve el snapshot; sesión limitada/idle expira sin crecimiento ilimitado.
 - Presupuesto y fan-out se aplican por pipeline/etapa; cancelación y deadline son cooperativos end-to-end.
 - Casos: TP-QRY-194 a TP-QRY-196.
+
+```toon
+block_id: rf-qry-022-q-v1-primitives
+kind: normative-requirement
+source_of_truth: this
+status: implemented
+verify:
+  - go test ./internal/query ./internal/service
+  - mi-lsp nav wiki validate-source --workspace <alias> --ids RF-QRY-022 --format toon
+evidence:
+  - .docs/wiki/09_contratos/CT-Q-V1.md
+  - .docs/wiki/06_pruebas/TP-QRY.md
+  - internal/query/parser_test.go
+  - internal/service/primitives_q_test.go
+acceptance:
+  identity_and_revision_are_separate: true
+  query_is_workspace_scoped: true
+  projection_is_bounded_and_cursor_uses_snapshot: true
+  session_memory_is_opt_in_and_text_free: true
+  operations_are_read_only: true
+```

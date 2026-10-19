@@ -71,6 +71,13 @@ stop_gates:
   - El error al abrir o consultar daemon.db se informa; no se presenta como cero actividad.
   - --days <= 0 se rechaza sin consulta.
   - Los agregados no contienen valores de consulta ni paths.
-durable_evidence:
+verify:
+  - go build ./cmd/mi-lsp ./internal/cli ./internal/daemon
+  - mi-lsp nav wiki validate-source --workspace <alias> --ids RF-DAE-005 --format toon
+evidence:
+  - .docs/wiki/04_RF/RF-DAE-005.md
   - .docs/wiki/06_pruebas/TP-DAE.md
+  - internal/cli/stats.go
+  - internal/daemon/export.go
+  - internal/daemon/state_store.go
 ```

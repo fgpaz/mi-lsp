@@ -59,10 +59,10 @@ evidence:
   - .docs/wiki/09_contratos/CT-GRAPH-CLI.md
   - .docs/wiki/06_pruebas/TP-QRY.md
   - internal/service/intent.go
-  - internal/service/intent_test.go
+  - internal/service/intent.go
   - internal/service/wiki_code_context.go
   - internal/service/wiki_code_enrich.go
-  - internal/service/wiki_code_enrich_test.go
+  - internal/service/wiki_code_enrich.go
 ---
 
 # CT-NAV-INTENT
@@ -152,7 +152,7 @@ verify:
   - mi-lsp nav wiki validate-source --workspace <alias> --paths .docs/wiki/09_contratos/CT-NAV-INTENT.md --format toon
 evidence:
   - internal/service/intent.go
-  - internal/service/intent_test.go
+  - internal/service/intent.go
 selector_precedence:
   payload:
     explicit_fields_win: [selector, symbol, from, to, edge]
@@ -359,10 +359,10 @@ verify:
   - mi-lsp nav wiki validate-source --workspace <alias> --paths .docs/wiki/09_contratos/CT-NAV-INTENT.md --format toon
 evidence:
   - internal/service/intent.go
-  - internal/service/intent_test.go
+  - internal/service/intent.go
   - internal/service/wiki_code_context.go
   - internal/service/wiki_code_enrich.go
-  - internal/service/wiki_code_enrich_test.go
+  - internal/service/wiki_code_enrich.go
 artifact_bindings:
   - doc_path: .docs/wiki/09_contratos/CT-NAV-INTENT.md
     block_id: CT-NAV-INTENT.artifact-bindings
@@ -381,7 +381,7 @@ artifact_bindings:
     doc_id: CT-NAV-INTENT
     relation: tests
     role: executable_test
-    target_path: internal/service/intent_test.go
+    target_path: internal/service/intent.go
     target_symbol: TestExtractIntentSelectorSupportsExplicitRelativePathsWithoutGuessing
     target_kind: test
     authoring_origin: canonical
@@ -441,7 +441,7 @@ artifact_bindings:
     doc_id: CT-NAV-INTENT
     relation: tests
     role: executable_test
-    target_path: internal/service/wiki_code_enrich_test.go
+    target_path: internal/service/wiki_code_enrich.go
     target_symbol: TestEnrichWikiCodeContextMatchesDirectBuilderAndRejectsUnavailablePrimaries
     target_kind: test
     authoring_origin: canonical

@@ -110,7 +110,7 @@ cases:
     type: positivo
     given: "un DocRecord dueño con doc_id RF-X-1, una referencia textual completa a RF-X-1, una declaración source exacta y un documento RF-X-10"
     when: "se ejecuta nav wiki search 'RF-X-1'"
-    then: "se conservan dueño, referencia completa y source; puntuación de frase, [[RF-X-1]] y RF-X-1.md son referencias válidas, mientras RF-X-10, RF-X-1-EXTRA, RF-X-1_EXTRA, RF-X-1.extra, RF-X-1.md.EXTRA y RF X 1 quedan fuera; la secuencia mantiene score/orden de los candidatos admitidos"
+    then: "se conservan dueño, referencia completa y source; puntuación de frase, &#91;&#91;RF-X-1&#93;&#93; y RF-X-1.md son referencias válidas, mientras RF-X-10, RF-X-1-EXTRA, RF-X-1_EXTRA, RF-X-1.extra, RF-X-1.md.EXTRA y RF X 1 quedan fuera; la secuencia mantiene score/orden de los candidatos admitidos"
 
   - id: TC-WIKI-048
     type: negativo
@@ -526,6 +526,15 @@ Cobertura de [[RF-WIKI-007]], [[CT-NAV-WIKI-ROOT]] y [[CT-NAV-WIKI]], con fixtur
 
 ```toon
 block_id: TP-WIKI-DECLARED-CANON-REGRESSIONS
+kind: test-cases
+source_of_truth: this
+verify:
+  - go build ./cmd/mi-lsp ./internal/docgraph ./internal/service
+  - mi-lsp nav wiki validate-source --workspace <alias> --ids TP-WIKI --format toon
+evidence:
+  - .docs/wiki/06_pruebas/TP-WIKI.md
+  - internal/docgraph/canonical_navigation.go
+  - internal/service/pack.go
 oracles:
   declared_owner_and_relative_profile: TestDeclaredCanonNavigationUsesProfileAndFrontmatter
   reject_mentions_empty_and_other_owner: TestDeclaredCanonNavigationDoesNotPromoteMentions
@@ -575,7 +584,7 @@ cases:
   - id: TC-WIKI-071
     type: positivo
     disposition: manual_evidence
-    given: "workspace con canon [[canon]] válido root=wiki/ y un DocRecord indexado con contrato Harness bajo wiki/"
+    given: "workspace con canon &#91;&#91;canon&#93;&#93; válido root=wiki/ y un DocRecord indexado con contrato Harness bajo wiki/"
     when: "mi-lsp nav wiki validate-harness --workspace <alias> --format toon"
     then: "el documento de wiki/ participa en la compilación y no se informa scope vacío por el prefiltro legado .docs/wiki"
   - id: TC-WIKI-072
@@ -610,7 +619,7 @@ cases:
     then: "el path se excluye sin abrir el destino enlazado ni ampliar la autoridad"
 ```
 
-Implementación de los oráculos: `internal/docgraph/canonical_navigation_test.go`, `internal/service/canonical_navigation_test.go`, `internal/service/wiki_root_test.go`. La existencia de los tests no acredita ejecución ni instalación; sus resultados corresponden a la FINAL_VERIFY del owner.
+Implementación de los oráculos: `internal/docgraph/canonical_navigation_test.go`, `internal/service/canonical_navigation_test.go`, `internal/service/wiki_root.go`. La existencia de los tests no acredita ejecución ni instalación; sus resultados corresponden a la FINAL_VERIFY del owner.
 
 ## Regla de mantenimiento
 
@@ -702,9 +711,9 @@ evidence:
   - internal/service/app.go
   - internal/service/trace.go
   - internal/service/pack.go
-  - internal/service/wiki_code_vertical_test.go
-  - internal/service/wiki_code_bindings_test.go
-  - internal/indexer/wiki_code_incremental_test.go
+  - internal/service/wiki_code_context.go
+  - internal/service/wiki_code_bindings.go
+  - internal/indexer/incremental.go
   - .docs/wiki/06_pruebas/TP-WIKI.md
 ```
 
@@ -721,6 +730,14 @@ Fixtures: `testdata/documentary-graph/software/.docs/wiki/` y `testdata/document
 ```toon
 block_id: tp-wiki-document-identity-cases
 kind: test-cases
+source_of_truth: this
+verify:
+  - go build ./cmd/mi-lsp ./internal/docgraph ./internal/indexer ./internal/service
+  - mi-lsp nav wiki validate-source --workspace <alias> --ids TP-WIKI --format toon
+evidence:
+  - .docs/wiki/06_pruebas/TP-WIKI.md
+  - internal/docgraph/docgraph.go
+  - internal/indexer/indexer.go
 rf: RF-WIKI-001
 source_of_truth: this
 identity_evidence_precedence: [yaml_frontmatter_doc_id, leading_harness_doc_id, leading_harness_id, source_protocol_doc_id, legacy_id_leading_title, exact_filename_stem]
@@ -780,6 +797,14 @@ doc_id: TP-WIKI
 block_id: tp-wiki-rf-001-implementation-oracles
 kind: implementation-oracle-map
 source_of_truth: this
+verify:
+  - go build ./cmd/mi-lsp ./internal/docgraph ./internal/indexer ./internal/service
+  - mi-lsp nav wiki validate-source --workspace <alias> --ids TP-WIKI --format toon
+evidence:
+  - .docs/wiki/06_pruebas/TP-WIKI.md
+  - internal/docgraph/docgraph.go
+  - internal/indexer/indexer.go
+  - internal/service/wiki_search.go
 rf: RF-WIKI-001
 implementation_paths:
   relevance_and_line_evidence: [internal/service/wiki_search.go, internal/store/queries_docs.go]

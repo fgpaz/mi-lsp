@@ -7,6 +7,33 @@ status: experimental
 
 # TECH-KOTLIN-BACKEND
 
+```yaml
+harness_protocol: SDD-HARNESS-v1
+id: TECH-KOTLIN-BACKEND
+kind: support-doc
+audience: llm-first
+imports:
+  - '[[00_gobierno_documental]]'
+  - '[[CT-DAEMON-WORKER]]'
+  - '[[TECH-GRAPH-NATIVE]]'
+exports:
+  - TECH-KOTLIN-BACKEND
+agent_must_read:
+  - .docs/wiki/07_tech/TECH-KOTLIN-BACKEND.md
+  - .docs/wiki/09_contratos/CT-DAEMON-WORKER.md
+agent_may_edit:
+  - .docs/wiki/07_tech/TECH-KOTLIN-BACKEND.md
+agent_must_not_edit:
+  - .docs/wiki/_mi-lsp/read-model.toml
+verify:
+  - mi-lsp nav wiki validate-harness --workspace <alias> --paths .docs/wiki/07_tech/TECH-KOTLIN-BACKEND.md --format toon
+stop_if:
+  - harness_verdict=BLOCKED
+evidence:
+  - .docs/wiki/07_tech/TECH-KOTLIN-BACKEND.md
+  - .docs/wiki/06_pruebas/TP-QRY.md
+```
+
 K1 implementa el puente stdio hacia **fwcd/kotlin-language-server 1.3.13**, no un compilador embebido ni un grafo construido desde texto. Es una autoría sin verificación: runtime, JDK y fixture no están acreditados. Kotlin permanece `explicit_incomplete`; no se modifica el orden stable de [[RF-GPH-008]].
 
 ```toon

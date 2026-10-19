@@ -1,5 +1,31 @@
 # ADR-KOTLIN-GRAPH-ADMISSION-V1 — admisión Kotlin aditiva
 
+```yaml
+harness_protocol: SDD-HARNESS-v1
+id: ADR-KOTLIN-GRAPH-ADMISSION-V1
+kind: support-doc
+audience: llm-first
+imports:
+  - '[[00_gobierno_documental]]'
+  - '[[TECH-KOTLIN-BACKEND]]'
+  - '[[TECH-GRAPH-NATIVE]]'
+exports:
+  - ADR-KOTLIN-GRAPH-ADMISSION-V1
+agent_must_read:
+  - .docs/wiki/07_tech/ADR-KOTLIN-GRAPH-ADMISSION-V1.md
+  - .docs/wiki/07_tech/TECH-KOTLIN-BACKEND.md
+agent_may_edit:
+  - .docs/wiki/07_tech/ADR-KOTLIN-GRAPH-ADMISSION-V1.md
+agent_must_not_edit:
+  - .docs/wiki/_mi-lsp/read-model.toml
+verify:
+  - mi-lsp nav wiki validate-harness --workspace <alias> --paths .docs/wiki/07_tech/ADR-KOTLIN-GRAPH-ADMISSION-V1.md --format toon
+stop_if:
+  - harness_verdict=BLOCKED
+evidence:
+  - .docs/wiki/07_tech/ADR-KOTLIN-GRAPH-ADMISSION-V1.md
+```
+
 ```toon
 doc_id: ADR-KOTLIN-GRAPH-ADMISSION-V1
 block_id: ADR-KOTLIN-GRAPH-ADMISSION-V1.decision

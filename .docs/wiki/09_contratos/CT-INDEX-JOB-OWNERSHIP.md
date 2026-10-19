@@ -33,11 +33,11 @@ agent_may_edit:
   - internal/indexer/indexer.go
   - internal/service/index_jobs.go
   - internal/daemon/file_watcher.go
-  - internal/store/index_jobs_ownership_test.go
-  - internal/store/index_jobs_test.go
-  - internal/store/index_lock_test.go
-  - internal/daemon/file_watcher_test.go
-  - internal/service/index_jobs_test.go
+  - internal/store/index_jobs.go
+  - internal/store/index_jobs.go
+  - internal/store/index_lock.go
+  - internal/daemon/file_watcher.go
+  - internal/service/index_jobs.go
   - .docs/wiki/09_contratos/CT-INDEX-JOB-OWNERSHIP.md
   - .docs/wiki/04_RF/RF-IDX-004.md
   - .docs/wiki/06_pruebas/TP-IDX-OWNERSHIP.md
@@ -61,17 +61,17 @@ evidence:
   - internal/store/index_jobs.go
   - internal/store/queries_incremental.go
   - internal/store/index_publish.go
-  - internal/store/index_jobs_ownership_test.go
-  - internal/store/index_jobs_test.go
+  - internal/store/index_jobs.go
+  - internal/store/index_jobs.go
   - internal/store/index_lock.go
-  - internal/store/index_lock_test.go
+  - internal/store/index_lock.go
   - internal/indexer/incremental.go
   - internal/indexer/indexer.go
-  - internal/indexer/incremental_test.go
+  - internal/indexer/incremental.go
   - internal/service/index_jobs.go
-  - internal/service/index_jobs_test.go
+  - internal/service/index_jobs.go
   - internal/daemon/file_watcher.go
-  - internal/daemon/file_watcher_test.go
+  - internal/daemon/file_watcher.go
 ```
 
 Enlaces relacionados: [[RF-IDX-004]] · [[TP-IDX-OWNERSHIP]] · [[RF-IDX-001]] · [[FL-IDX-01]]
@@ -94,7 +94,7 @@ verify:
   - go test ./internal/store -run 'Test(CreateIndexJobConcurrentStartsReserveOneWorkspace|IndexJobStaleFenceCannotWinAfterTerminalRelease|OwnerBoundIndexJobMutationsRequireExplicitFence|IndexJobWrongOwnerFenceCannotTransition)'
 evidence:
   - internal/store/index_jobs.go
-  - internal/store/index_jobs_ownership_test.go
+  - internal/store/index_jobs.go
 records:
   - id: CT-IDX-OWNERSHIP-RESERVE-001
     type: operation
@@ -135,9 +135,9 @@ verify:
   - go test ./internal/store -run 'Test(CancelIndexJobForceTimeoutRetainsReservation|MarkIndexJobFailedRejectsRequestedCancellationAndKeepsOwnership|IndexJobCancellationWinsOverStaleFailureWriter|CancelIndexJobForceTerminatesProcessAndMarksCanceled)'
   - go test ./internal/indexer -run 'TestCatalogIndexProgressReportsAndCanCancel'
 evidence:
-  - internal/store/index_jobs_ownership_test.go
-  - internal/store/index_jobs_test.go
-  - internal/indexer/indexer_progress_test.go
+  - internal/store/index_jobs.go
+  - internal/store/index_jobs.go
+  - internal/indexer/indexer.go
 records:
   - id: CT-IDX-CONTROL-PLANE-001
     type: operation
@@ -190,12 +190,12 @@ verify:
   - go test ./internal/indexer -run 'Test(FullIndexPublishesLocalGoGraph|IncrementalIndexPublishesNewGraphGenerationAfterFileChange|IncrementalIndexObservationFailureLeavesGraphStale)'
   - go test ./internal/service -run 'TestIndexStartNoChangeGraphRepairPreservesCatalogBinding|TestIndexStartPopulatesWikiChunkEmbeddings|TestRecall_.*Embedding'
 evidence:
-  - internal/store/store_test.go
-  - internal/store/graph_store_test.go
-  - internal/indexer/graph_pipeline_test.go
-  - internal/indexer/incremental_test.go
-  - internal/service/index_jobs_test.go
-  - internal/service/recall_test.go
+  - internal/store/index_publish.go
+  - internal/store/index_publish.go
+  - internal/indexer/graph_pipeline.go
+  - internal/indexer/incremental.go
+  - internal/service/index_jobs.go
+  - internal/service/recall.go
 records:
   - id: CT-IDX-PUBLISH-001
     type: mode
@@ -242,9 +242,9 @@ verify:
   - go test ./internal/store -run 'Test(WithWorkspaceIndexLockRejectsConcurrentIndexRun|WithWorkspaceIndexLockRemovesStaleLock|AcquireWithTimeoutReportsContentionAndPreservesLiveLock|WorkspaceIndexLockDoesNotRemoveReplacementOwner|WorkspaceIndexLockCleanupPreservesReplacementClaimedAfterQuarantine|RemoveWorkspaceIndexLockForOwnerPreservesReplacementAfterQuarantine|RemoveWorkspaceIndexLockForPIDNeverRemovesLiveProcess)'
 evidence:
   - internal/daemon/file_watcher.go
-  - internal/daemon/file_watcher_test.go
+  - internal/daemon/file_watcher.go
   - internal/store/index_lock.go
-  - internal/store/index_lock_test.go
+  - internal/store/index_lock.go
 records:
   - id: CT-IDX-WATCHER-001
     type: interprocess-barrier

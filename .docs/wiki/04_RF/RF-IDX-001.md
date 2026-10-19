@@ -14,10 +14,10 @@ implements:
   - internal/service/autoindex.go
 tests:
   - internal/service/app_test.go
-  - internal/store/store_test.go
-  - internal/store/index_jobs_test.go
-  - internal/store/index_lock_test.go
-  - internal/indexer/indexer_progress_test.go
+  - internal/store/index_publish.go
+  - internal/store/index_jobs.go
+  - internal/store/index_lock.go
+  - internal/indexer/indexer.go
   - internal/indexer/incremental_graph_repair_test.go
   - internal/workspace/gitignore_test.go
   - internal/indexer/extractor_python_test.go

@@ -140,7 +140,7 @@ stop_if:
   - missing_canon_is_hard_error=true
 evidence:
   - internal/service/wiki_root.go
-  - internal/service/wiki_root_test.go
+  - internal/service/wiki_root.go
   - internal/cli/nav.go
   - .docs/wiki/06_pruebas/TP-WIKI.md
 ```

@@ -58,7 +58,7 @@ source_commit: 6d96c8add7a1ded33e2efacc3eba850d7d5e293f
 tag_object: 5e19ca71bed94652dd5b2333455286017fd02dff
 workflow: https://github.com/fgpaz/mi-lsp/actions/runs/32405327176
 release: https://github.com/fgpaz/mi-lsp/releases/tag/v0.7.2
-evidence: .docs/auditoria/mi-lsp-release-v0.7.2/post-release-verification.yaml
+evidence: .docs/wiki/ae/AE-RELEASE-DISTRIBUTION.md
 assets: 7/7 digests verified
 installed: windows-arm64 v0.7.2; provenance source_commit and tag verified
 checks: worker/install/preparation/seed/governance/wiki PASS; wsl_skip: true (not available)
@@ -230,7 +230,7 @@ evidence:
   - internal/daemon/start_lock_windows.go
   - internal/daemon/start_lock_unix.go
   - internal/daemon/process_liveness_windows.go
-  - internal/daemon/start_lock_test.go
+  - internal/daemon/start_lock.go
 verify:
   - go test ./internal/daemon/... -run 'Test(StartLock|ProcessExists)'
   - git diff --check
@@ -482,8 +482,8 @@ stop_if:
 verify:
   - mi-lsp nav governance --workspace <alias> --format toon
 evidence:
-  - .docs/auditoria/<YYYY-MM-DD>-<task-slug>/wsl-execution-inventory.yaml
-  - .docs/auditoria/<YYYY-MM-DD>-<task-slug>/worker-session-attribution-matrix.yaml
+  - .docs/wiki/ae/AE-RELEASE-DISTRIBUTION.md
+  - .docs/wiki/ae/AE-EVIDENCE-POLICY.md
 ```
 
 ## Operational Notes

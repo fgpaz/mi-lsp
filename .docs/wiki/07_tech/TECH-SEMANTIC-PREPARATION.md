@@ -55,7 +55,7 @@ implementation_boundary: evidence_only
 security_boundary: explicit_output_workspace_or_evidence_root
 compatibility: legacy_packets_read_only
 verify: [validate-harness, validate-source]
-evidence: [.docs/auditoria/mi-lsp-portable-preparation-v1/]
+evidence: [.docs/auditoria/mi-lsp-portable-preparation-v1/session-contract.yaml]
 ```
 
 La preparación portable migra el paquete local de readiness a `mi-lsp-preparation/v1`; CT-NAV-PREPARATION define serialización, seguridad y códigos, RF-QRY-019 define el ciclo y TP-QRY-PREPARATION define sus 17 casos.

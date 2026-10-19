@@ -343,7 +343,7 @@ evidence:
   - internal/cli/git_frontier.go
   - internal/cli/git_frontier_test.go
   - internal/workspace/registry.go
-  - .docs/wiki/04_RF/RF-WKS-007.md::RF-WKS-007-B03
+  - .docs/wiki/04_RF/RF-WKS-007.md
 ```
 
 `unavailable` nunca equivale a éxito: los consumidores comparan solo datos observados y fallan cerrado si el digest, una generación o la frescura requerida no está disponible. Los oráculos y casos negativos están en [[TP-GPH]].
@@ -609,7 +609,7 @@ failures:
   MILX-timeout-crash-malformed: terminate-extension-preserve-core
 rollback:
   unit: atomic-wave-commit-plus-immutable-prior-generation
-  evidence: preserve-sanitized-reason-and-gate-result
+  evidence_class: preserve-sanitized-reason-and-gate-result
 ```
 
 ## Implementacion por slices

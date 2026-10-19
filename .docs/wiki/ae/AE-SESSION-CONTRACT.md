@@ -139,7 +139,7 @@ verify:
   - ./scripts/ae/pre-push-guard.ps1 -SessionContract <path> -AllowDirty
 evidence:
   - .docs/wiki/ae/AE-SESSION-CONTRACT.md
-  - .docs/auditoria/<YYYY-MM-DD>-<task-slug>/session-contract.yaml
+  - .docs/wiki/ae/AE-SESSION-CONTRACT.md
 ```
 
 ## Session Rule
@@ -169,5 +169,5 @@ stop_if:
 verify:
   - mi-lsp nav evidence inventory "<task>" --workspace <alias> --format toon
 evidence:
-  - .docs/auditoria/<YYYY-MM-DD>-<task-slug>/evidence-index.yaml
+  - .docs/wiki/ae/AE-SESSION-CONTRACT.md
 ```

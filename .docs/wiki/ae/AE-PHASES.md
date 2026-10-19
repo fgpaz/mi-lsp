@@ -148,7 +148,7 @@ verify:
   - mi-lsp nav wiki validate-source --workspace <alias> --format toon
 evidence:
   - .docs/wiki/ae/AE-PHASES.md
-  - .docs/auditoria/<YYYY-MM-DD>-<task-slug>/audit-verdict.yaml
+  - .docs/wiki/ae/AE-PHASES.md
 ```
 
 The PR flow is the integration mechanism, not a human approval gate. When the green closure gates pass, the agent completes the merge itself (guarded, admin merge when branch protection requires the review that `ps-auditar-trazabilidad` already provides). A `BLOCKED` audit, a follow-up that needs a human decision, a required waiver, or an explicit user request to review are the only reasons to leave the PR open instead of integrating.

@@ -38,7 +38,7 @@ evidence:
   - .docs/wiki/04_RF/RF-WKS-007.md
   - .docs/wiki/06_matriz_pruebas_RF.md
   - .docs/wiki/06_pruebas/TP-WKS.md
-  - internal/service/auto_register_test.go
+  - internal/service/auto_register.go
   - internal/workspace/autoregister_test.go
 ---
 
@@ -55,6 +55,13 @@ No cambia la tabla histórica ni agrega bindings de tests ficticios. Las condici
 ```toon
 block_id: tp-wks-doctor-version-source-repair
 kind: source-repair-limit
+source_of_truth: this
+verify:
+  - mi-lsp nav wiki validate-source --workspace <alias> --ids TP-WKS --format toon
+evidence:
+  - .docs/wiki/06_pruebas/TP-WKS.md
+  - internal/cli/root.go
+  - internal/cli/version.go
 contracts: [CT-CLI-DAEMON-ADMIN, CT-Q-V1]
 requirements: [RF-WKS-006]
 status: explicit_incomplete
@@ -154,12 +161,12 @@ source_of_truth: normative
 verify:
   - go test -count=1 ./internal/service -run '^TestExecuteAutoRegisterSkipsIndexWithoutCommits$'
 evidence:
-  - internal/service/auto_register_test.go
+  - internal/service/auto_register.go
 case_id: TC-WKS-048
 case_type: positive
 requirement_id: RF-WKS-007
 test_bindings:
-  - file: internal/service/auto_register_test.go
+  - file: internal/service/auto_register.go
     test: TestExecuteAutoRegisterSkipsIndexWithoutCommits
 expected:
   auto_register_warning: auto_register_index_skipped
@@ -176,12 +183,12 @@ source_of_truth: normative
 verify:
   - go test -count=1 ./internal/service -run '^TestExecuteAutoRegisterOptOut$'
 evidence:
-  - internal/service/auto_register_test.go
+  - internal/service/auto_register.go
 case_id: TC-WKS-049
 case_type: positive
 requirement_id: RF-WKS-007
 test_bindings:
-  - file: internal/service/auto_register_test.go
+  - file: internal/service/auto_register.go
     test: TestExecuteAutoRegisterOptOut
 coverage_scope:
   covered_inputs: [request.Context.NoAutoRegister, MI_LSP_NO_AUTO_REGISTER=1]
@@ -200,12 +207,12 @@ source_of_truth: normative
 verify:
   - go test -count=1 ./internal/service -run '^TestExecuteAutoRegistersOnFirstQuery$'
 evidence:
-  - internal/service/auto_register_test.go
+  - internal/service/auto_register.go
 case_id: TC-WKS-050
 case_type: positive
 requirement_id: RF-WKS-007
 test_bindings:
-  - file: internal/service/auto_register_test.go
+  - file: internal/service/auto_register.go
     test: TestExecuteAutoRegistersOnFirstQuery
 expected:
   first_query_registers: true
@@ -246,12 +253,12 @@ source_of_truth: normative
 verify:
   - go test -count=1 ./internal/service -run '^TestExecuteAutoRegisterConcurrentQueriesIndexOnce$'
 evidence:
-  - internal/service/auto_register_test.go
+  - internal/service/auto_register.go
 case_id: TC-WKS-052
 case_type: positive
 requirement_id: RF-WKS-007
 test_bindings:
-  - file: internal/service/auto_register_test.go
+  - file: internal/service/auto_register.go
     test: TestExecuteAutoRegisterConcurrentQueriesIndexOnce
 expected:
   concurrent_queries_same_root: one_registration
@@ -269,14 +276,14 @@ verify:
   - go test -count=1 ./internal/service -run '^TestExecuteRetriesPartialAutoRegistrationAndStartsIndex$'
 evidence:
   - internal/workspace/autoregister_test.go
-  - internal/service/auto_register_test.go
+  - internal/service/auto_register.go
 case_id: TC-WKS-053
 case_type: positive
 requirement_id: RF-WKS-007
 test_bindings:
   - file: internal/workspace/autoregister_test.go
     test: TestAutoRegisterRetriesAfterProjectCreationFailure
-  - file: internal/service/auto_register_test.go
+  - file: internal/service/auto_register.go
     test: TestExecuteRetriesPartialAutoRegistrationAndStartsIndex
 expected:
   failed_project_creation_leaves_partial_registration: false
@@ -293,12 +300,12 @@ source_of_truth: normative
 verify:
   - go test -count=1 ./internal/service -run '^TestExecuteAutoRegisterFailureDoesNotBlockNavMultiRead$'
 evidence:
-  - internal/service/auto_register_test.go
+  - internal/service/auto_register.go
 case_id: TC-WKS-054
 case_type: positive
 requirement_id: RF-WKS-007
 test_bindings:
-  - file: internal/service/auto_register_test.go
+  - file: internal/service/auto_register.go
     test: TestExecuteAutoRegisterFailureDoesNotBlockNavMultiRead
 expected:
   nav_multi_read_completes: true
@@ -382,7 +389,7 @@ verify:
 evidence:
   - internal/workspace/autoregister_test.go
   - internal/workspace/registry.go
-  - internal/workspace/registry_test.go
+  - internal/workspace/registry.go
 case_id: TC-WKS-058
 case_type: positive
 requirement_id: RF-WKS-007
@@ -391,7 +398,7 @@ test_bindings:
     test: TestAutoRegisterKeepsExistingProjectToml
   - file: internal/workspace/autoregister_test.go
     test: TestAutoRegisterFirstQueryInUnregisteredGitRepo
-  - file: internal/workspace/registry_test.go
+  - file: internal/workspace/registry.go
     test: TestSaveRegistryPreservesRestrictivePermissions
 expected:
   existing_project_toml_overwritten: false
@@ -455,7 +462,7 @@ verify:
   - go test -count=1 ./internal/service -run '^TestExecuteLinkedWorktreeWithoutRegisteredMainDoesNotIndex$'
 evidence:
   - internal/workspace/autoregister_test.go
-  - internal/service/auto_register_test.go
+  - internal/service/auto_register.go
 case_id: TC-WKS-064
 case_type: positive_and_negative
 requirement_id: RF-WKS-007
@@ -464,7 +471,7 @@ test_bindings:
     test: TestAutoRegisterLinkedWorktreeUsesRegisteredMainRoot
   - file: internal/workspace/autoregister_test.go
     test: TestAutoRegisterLinkedWorktreeWithoutRegisteredMainFailsClosed
-  - file: internal/service/auto_register_test.go
+  - file: internal/service/auto_register.go
     test: TestExecuteLinkedWorktreeWithoutRegisteredMainDoesNotIndex
 expected:
   registered_main: resolve_without_worktree_registration
@@ -483,8 +490,8 @@ verify:
   - go test -count=1 ./internal/service -run '^TestExecuteAutoRegisterForceOverrideIsReported$'
 evidence:
   - internal/workspace/autoregister_test.go
-  - internal/workspace/registry_test.go
-  - internal/service/auto_register_test.go
+  - internal/workspace/registry.go
+  - internal/service/auto_register.go
 case_id: TC-WKS-065
 case_type: positive_and_negative
 requirement_id: RF-WKS-007
@@ -493,11 +500,11 @@ test_bindings:
     test: TestAutoRegisterForceBypassesDefaultScope
   - file: internal/workspace/autoregister_test.go
     test: TestAutoRegisterTempRootIsDeniedEvenWhenHomeContainsRepo
-  - file: internal/workspace/registry_test.go
+  - file: internal/workspace/registry.go
     test: TestGarbageCollectRegistryRetainsRootsWithAmbiguousErrors
-  - file: internal/workspace/registry_test.go
+  - file: internal/workspace/registry.go
     test: TestPruneStaleWorkspacesDryRunAndApply
-  - file: internal/service/auto_register_test.go
+  - file: internal/service/auto_register.go
     test: TestExecuteAutoRegisterForceOverrideIsReported
 expected:
   outside_HOME_default_registration: false
@@ -518,12 +525,12 @@ verify:
   - go test -count=1 ./internal/cli -run '^TestWorkspacePruneDefaultsToSafeStalePreview$'
 evidence:
   - internal/cli/workspace.go
-  - internal/cli/workspace_test.go
+  - internal/cli/workspace.go
 case_id: TC-WKS-066
 case_type: positive
 requirement_id: RF-WKS-007
 test_bindings:
-  - file: internal/cli/workspace_test.go
+  - file: internal/cli/workspace.go
     test: TestWorkspacePruneDefaultsToSafeStalePreview
 expected:
   command_without_flags: accepted
@@ -542,21 +549,21 @@ verify:
   - go test -count=1 ./internal/workspace ./internal/service -run 'TestListWorkspacesGarbageCollectsMissingRoots|TestResolveWorkspaceSelectionRejectsStaleLastWorkspace|TestProbeNestedGitWorktreeDoesNotReadLexicalParentState|TestExecuteWorkspaceStatusUnregisteredNestedGitWorktreeKeepsPhysicalRoot'
 evidence:
   - internal/workspace/registry.go
-  - internal/workspace/registry_test.go
+  - internal/workspace/registry.go
   - internal/service/workspace_ops.go
 case_id: TC-WKS-067
 case_type: positive
 requirement_id: RF-WKS-007
 test_bindings:
-  - file: internal/workspace/registry_test.go
+  - file: internal/workspace/registry.go
     test: TestListWorkspacesGarbageCollectsMissingRoots
-  - file: internal/workspace/registry_test.go
+  - file: internal/workspace/registry.go
     test: TestResolveWorkspaceSelectionRejectsStaleLastWorkspace
-  - file: internal/service/probe_test.go
+  - file: internal/service/probe.go
     test: TestProbeNestedGitWorktreeDoesNotReadLexicalParentState
-  - file: internal/service/workspace_resolution_test.go
+  - file: internal/service/workspace_ops.go
     test: TestExecuteWorkspaceStatusUnregisteredNestedGitWorktreeKeepsPhysicalRoot
-  - file: internal/service/workspace_resolution_test.go
+  - file: internal/service/workspace_ops.go
     test: TestExecuteWorkspaceStatusExplicitDotUsesGitAwareCallerRoot
 expected:
   public_list_gc_persisted: true

@@ -62,7 +62,7 @@ required_sequence:
   - evidence_policy
   - ps-trazabilidad
   - ps-auditar-trazabilidad_when_risky
-session_contract_path: .docs/auditoria/<YYYY-MM-DD>-<task-slug>/session-contract.yaml
+session_contract_path: .docs/wiki/ae/AE-SESSION-CONTRACT.md
 required_session_fields:
   - ae_contract
   - mi_lsp_preflight
@@ -85,7 +85,7 @@ verify:
   - closure evidence is durable under .docs/auditoria
 evidence:
   - .docs/wiki/ae/AE-HARNESS-MANIFEST.md
-  - .docs/auditoria/<YYYY-MM-DD>-<task-slug>/session-contract.yaml
+  - .docs/wiki/ae/AE-SESSION-CONTRACT.md
 stop_if:
   - ae-programa gateway was skipped for non-trivial work
   - session contract is missing for mutating or non-trivial work

@@ -6,8 +6,8 @@ implements:
   - internal/service/workspace_ops.go
   - internal/workspace/registry.go
 tests:
-  - internal/service/workspace_resolution_test.go
-  - internal/workspace/registry_test.go
+  - internal/service/workspace_ops.go
+  - internal/workspace/registry.go
 ---
 
 # RF-WKS-005 - Aplicar gate de gobernanza al inicio de toda tarea

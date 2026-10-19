@@ -109,7 +109,7 @@ evidence:
   - .docs/wiki/03_FL.md
   - .docs/wiki/04_RF/RF-WKS-007.md
   - .docs/wiki/06_pruebas/TP-WKS.md
-  - internal/service/auto_register_test.go
+  - internal/service/auto_register.go
   - internal/workspace/autoregister_test.go
 requirement_id: RF-WKS-007
 flow_id: FL-BOOT-01

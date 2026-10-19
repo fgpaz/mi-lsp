@@ -209,7 +209,7 @@ evidence:
   - internal/livecontext/overlay.go
   - internal/service/wiki_code_bindings.go
   - internal/service/app.go
-  - internal/service/wiki_code_vertical_test.go
+  - internal/service/wiki_code_context.go
   - internal/cli/git_frontier.go
   - internal/cli/nav.go
   - internal/cli/git_frontier_test.go

@@ -256,17 +256,17 @@ evidence:
   - .docs/wiki/06_pruebas/TP-WKS.md
   - internal/cli/root.go
   - internal/cli/workspace.go
-  - internal/cli/workspace_test.go
+  - internal/cli/workspace.go
   - internal/service/auto_register.go
-  - internal/service/auto_register_test.go
+  - internal/service/auto_register.go
   - internal/service/probe.go
-  - internal/service/probe_test.go
+  - internal/service/probe.go
   - internal/service/workspace_ops.go
-  - internal/service/workspace_resolution_test.go
+  - internal/service/workspace_ops.go
   - internal/workspace/autoregister.go
   - internal/workspace/autoregister_test.go
   - internal/workspace/registry.go
-  - internal/workspace/registry_test.go
+  - internal/workspace/registry.go
 operations_requiring_workspace: [nav.*, index.*, info, workspace.status]
 selector:
   omitted: caller_cwd

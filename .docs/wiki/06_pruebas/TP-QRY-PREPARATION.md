@@ -77,87 +77,87 @@ cases:
     name: "parent-child neutral"
     oracle: resultado tipado y alcance seguro; reparación solo cuando corresponda
     stop_if: evidencia ausente, autorización implícita o escape de raíz
-    evidence: packet + verify envelope + sanitized audit manifest
+    evidence_requirement: packet + verify envelope + sanitized audit manifest
   - id: TC-QRY-PREPARATION-02
     name: "cwd identity"
     oracle: resultado tipado y alcance seguro; reparación solo cuando corresponda
     stop_if: evidencia ausente, autorización implícita o escape de raíz
-    evidence: packet + verify envelope + sanitized audit manifest
+    evidence_requirement: packet + verify envelope + sanitized audit manifest
   - id: TC-QRY-PREPARATION-03
     name: "workspace mismatch"
     oracle: resultado tipado y alcance seguro; reparación solo cuando corresponda
     stop_if: evidencia ausente, autorización implícita o escape de raíz
-    evidence: packet + verify envelope + sanitized audit manifest
+    evidence_requirement: packet + verify envelope + sanitized audit manifest
   - id: TC-QRY-PREPARATION-04
     name: "task mismatch"
     oracle: resultado tipado y alcance seguro; reparación solo cuando corresponda
     stop_if: evidencia ausente, autorización implícita o escape de raíz
-    evidence: packet + verify envelope + sanitized audit manifest
+    evidence_requirement: packet + verify envelope + sanitized audit manifest
   - id: TC-QRY-PREPARATION-05
     name: "expiry"
     oracle: resultado tipado y alcance seguro; reparación solo cuando corresponda
     stop_if: evidencia ausente, autorización implícita o escape de raíz
-    evidence: packet + verify envelope + sanitized audit manifest
+    evidence_requirement: packet + verify envelope + sanitized audit manifest
   - id: TC-QRY-PREPARATION-06
     name: "governance drift"
     oracle: resultado tipado y alcance seguro; reparación solo cuando corresponda
     stop_if: evidencia ausente, autorización implícita o escape de raíz
-    evidence: packet + verify envelope + sanitized audit manifest
+    evidence_requirement: packet + verify envelope + sanitized audit manifest
   - id: TC-QRY-PREPARATION-07
     name: "index drift"
     oracle: resultado tipado y alcance seguro; reparación solo cuando corresponda
     stop_if: evidencia ausente, autorización implícita o escape de raíz
-    evidence: packet + verify envelope + sanitized audit manifest
+    evidence_requirement: packet + verify envelope + sanitized audit manifest
   - id: TC-QRY-PREPARATION-08
     name: "plan drift"
     oracle: resultado tipado y alcance seguro; reparación solo cuando corresponda
     stop_if: evidencia ausente, autorización implícita o escape de raíz
-    evidence: packet + verify envelope + sanitized audit manifest
+    evidence_requirement: packet + verify envelope + sanitized audit manifest
   - id: TC-QRY-PREPARATION-09
     name: "allowlist expansion"
     oracle: resultado tipado y alcance seguro; reparación solo cuando corresponda
     stop_if: evidencia ausente, autorización implícita o escape de raíz
-    evidence: packet + verify envelope + sanitized audit manifest
+    evidence_requirement: packet + verify envelope + sanitized audit manifest
   - id: TC-QRY-PREPARATION-10
     name: "traversal"
     oracle: resultado tipado y alcance seguro; reparación solo cuando corresponda
     stop_if: evidencia ausente, autorización implícita o escape de raíz
-    evidence: packet + verify envelope + sanitized audit manifest
+    evidence_requirement: packet + verify envelope + sanitized audit manifest
   - id: TC-QRY-PREPARATION-11
     name: "symlink/junction"
     oracle: resultado tipado y alcance seguro; reparación solo cuando corresponda
     stop_if: evidencia ausente, autorización implícita o escape de raíz
-    evidence: packet + verify envelope + sanitized audit manifest
+    evidence_requirement: packet + verify envelope + sanitized audit manifest
   - id: TC-QRY-PREPARATION-12
     name: "evidence root"
     oracle: resultado tipado y alcance seguro; reparación solo cuando corresponda
     stop_if: evidencia ausente, autorización implícita o escape de raíz
-    evidence: packet + verify envelope + sanitized audit manifest
+    evidence_requirement: packet + verify envelope + sanitized audit manifest
   - id: TC-QRY-PREPARATION-13
     name: "tamper"
     oracle: resultado tipado y alcance seguro; reparación solo cuando corresponda
     stop_if: evidencia ausente, autorización implícita o escape de raíz
-    evidence: packet + verify envelope + sanitized audit manifest
+    evidence_requirement: packet + verify envelope + sanitized audit manifest
   - id: TC-QRY-PREPARATION-14
     name: "legacy"
     oracle: resultado tipado y alcance seguro; reparación solo cuando corresponda
     stop_if: evidencia ausente, autorización implícita o escape de raíz
-    evidence: packet + verify envelope + sanitized audit manifest
+    evidence_requirement: packet + verify envelope + sanitized audit manifest
   - id: TC-QRY-PREPARATION-15
     name: "seed failure reparable no auth"
     oracle: resultado tipado y alcance seguro; reparación solo cuando corresponda
     stop_if: evidencia ausente, autorización implícita o escape de raíz
-    evidence: packet + verify envelope + sanitized audit manifest
+    evidence_requirement: packet + verify envelope + sanitized audit manifest
   - id: TC-QRY-PREPARATION-16
     name: "isolated --skills-root/--catalog"
     oracle: resultado tipado y alcance seguro; reparación solo cuando corresponda
     stop_if: evidencia ausente, autorización implícita o escape de raíz
-    evidence: packet + verify envelope + sanitized audit manifest
+    evidence_requirement: packet + verify envelope + sanitized audit manifest
   - id: TC-QRY-PREPARATION-17
     name: "index/search same catalog"
     oracle: resultado tipado y alcance seguro; reparación solo cuando corresponda
     stop_if: evidencia ausente, autorización implícita o escape de raíz
-    evidence: packet + verify envelope + sanitized audit manifest
+    evidence_requirement: packet + verify envelope + sanitized audit manifest
 source_of_truth: this
 verify: [validate-harness, validate-source]
 evidence: [.docs/auditoria/mi-lsp-portable-preparation-v1/session-contract.yaml, .docs/auditoria/mi-lsp-portable-preparation-v1/current-handoff.md]

@@ -36,8 +36,8 @@ La base vigente distingue workspaces `single` de workspaces `container`, persist
 
 | Entidad | Tipo | Owner | Persistencia | Descripcion |
 |---|---|---|---|---|
-| WorkspaceRegistration | Operativa | Core runtime | `~/.mi-lsp/registry.toml` | Alias, root, languages, `kind`, `CanonLinks` (`[[canon_link]]` alias+role vía `workspace link`) y compatibilidad legacy |
-| ProjectConfig | Operativa | Workspace owner | `<repo>/.mi-lsp/project.toml` | Nombre local, ignores, `repos`, `entrypoints`, defaults, `[[canon]]` (`id`, `root`, `role`, `mode`), `[canon_policy]` (`escape_max`), `[embeddings]` (`provider`, `base_url`, `model`, `dim`, `api_key_env`, `profile`, `batch_size`, `timeout_ms`, `encoding_format`, `user_agent`) y `[recall.rerank_extension]` (`enabled`, `command`, `args`, `timeout_ms`, `candidate_count`, `top_n`, `max_snippet_chars`); alias semantico de `ProjectFile` en codigo Go |
+| WorkspaceRegistration | Operativa | Core runtime | `~/.mi-lsp/registry.toml` | Alias, root, languages, `kind`, `CanonLinks` (`&#91;&#91;canon_link&#93;&#93;` alias+role vía `workspace link`) y compatibilidad legacy |
+| ProjectConfig | Operativa | Workspace owner | `<repo>/.mi-lsp/project.toml` | Nombre local, ignores, `repos`, `entrypoints`, defaults, `&#91;&#91;canon&#93;&#93;` (`id`, `root`, `role`, `mode`), `[canon_policy]` (`escape_max`), `[embeddings]` (`provider`, `base_url`, `model`, `dim`, `api_key_env`, `profile`, `batch_size`, `timeout_ms`, `encoding_format`, `user_agent`) y `[recall.rerank_extension]` (`enabled`, `command`, `args`, `timeout_ms`, `candidate_count`, `top_n`, `max_snippet_chars`); alias semantico de `ProjectFile` en codigo Go |
 | WorkspaceRepo | Operativa derivada | Core runtime | `<repo>/.mi-lsp/project.toml` | Repo hijo reconocido dentro de un workspace `container` |
 | WorkspaceEntrypoint | Operativa derivada | Core runtime | `<repo>/.mi-lsp/project.toml` | `.sln` o `.csproj` semanticamente enrutable |
 | SymbolRecord | Derivada | Indexer | `<repo>/.mi-lsp/index.db` | Declaracion liviana con `repo_id` y `repo` |
@@ -85,7 +85,7 @@ La base vigente distingue workspaces `single` de workspaces `container`, persist
 ## Relaciones y ownership
 
 - Un `WorkspaceRegistration` referencia un workspace `single` o `container` y puede guardar `CanonLinks` hacia otro alias registrado.
-- Un `ProjectConfig` puede contener muchos `WorkspaceRepo`, muchos `WorkspaceEntrypoint` y cero o más `[[canon]]` con `[canon_policy]`.
+- Un `ProjectConfig` puede contener muchos `WorkspaceRepo`, muchos `WorkspaceEntrypoint` y cero o más `&#91;&#91;canon&#93;&#93;` con `[canon_policy]`.
 - Un `ProjectConfig` puede declarar `[embeddings]`; `api_key_env` nombra una variable de entorno, no guarda secretos.
 - Un `ProjectConfig` puede declarar `[recall.rerank_extension]` como hook local externo; no guarda payloads, respuestas de proveedor ni secretos.
 - Cada `FileRecord` y `SymbolRecord` pertenece a un `repo_id`.

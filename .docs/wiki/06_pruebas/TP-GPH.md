@@ -234,7 +234,7 @@ imports:
 evidence:
   - .docs/wiki/06_pruebas/TP-GPH.md
   - internal/indexer/graph_staging.go
-  - internal/indexer/graph_staging_test.go
+  - internal/indexer/graph_staging.go
   - internal/indexer/incremental_graph_repair_test.go
   - internal/model/graph_observation.go
   - internal/service/graph_observer.go
@@ -292,25 +292,25 @@ cases:
     given: un endpoint elegible está realmente ausente
     when: el ensamblado del grafo materializa registros unresolved
     then: "GraphUnresolved se ordena y deduplica por key antes de asignar IDs y CrossRID; source_document, source_block, target_kind y target_value son contexto nullable, acotado y sanitizado cuando se expone, no cambian UnresolvedKey/CrossRID, pero una modificación solo de provenance debe cambiar los digests de contenido/facts y los fingerprints de source/config/backend/generation."
-    evidence: internal/indexer/graph_staging.go; internal/model/graph.go; internal/store/graph_query.go; internal/store/graph_store_test.go
+    evidence: internal/indexer/graph_staging.go; internal/model/graph.go; internal/store/graph_query.go; internal/store/index_publish.go
   - id: TC-GPH-072
     type: negativo
     given: candidatos documentales contienen whitespace, backslashes o duplicados, o una mención trae un ID TP-*
     when: se construyen los candidatos, menciones y diagnósticos GraphUnresolved
     then: "trim, normalización a slash, deduplicación y orden léxico ocurren antes de los límites de 64 elementos y 4096 bytes; una mención TP-* se resuelve por coincidencia exacta de DocRecord.doc_id: un único target publica nodo/edge y el SourceBlock de la mención resuelta se normaliza antes de entrar al digest de claim y al mention portion del digest de facts; cambiar solo ese SourceBlock cambia content/facts y los fingerprints source/config/backend/generation, mientras whitespace y orden de entrada canónicos permanecen estables; un target faltante o duplicado queda GraphUnresolved con reason_code=missing_doc_target|ambiguous_doc_target, target_kind=document, target_value solicitado y candidatos bounded. La persistencia conserva source_block en reemplazos full e incremental y el round-trip de GraphUnresolved mantiene valores presentes y NULL."
-    evidence: internal/indexer/graph_staging.go; internal/indexer/graph_staging_test.go; internal/store/graph_store_test.go
+    evidence: internal/indexer/graph_staging.go; internal/indexer/graph_staging.go; internal/store/index_publish.go
   - id: TC-GPH-073
     type: positivo
     given: paths wiki/10-chiamo.md y bibliotecas/memorias/ficha.md
     when: isCanonicalGraphDoc
     then: ambos son canonicos; .docs/raw y src/main.go no lo son
-    evidence: internal/indexer/indexer_progress_test.go
+    evidence: internal/indexer/indexer.go
   - id: TC-GPH-074
     type: positivo
     given: docs-only con Markdown canónico, identidad explícita o un único origin y sin batches de compilador
     when: documentationGraphRequest
     then: publishGraph=true y se ensambla generation documental; sin identidad publicable, docs continúa y devuelve warning sanitizado
-    evidence: internal/indexer/indexer.go; internal/indexer/indexer_progress_test.go
+    evidence: internal/indexer/indexer.go; internal/indexer/indexer.go
   - id: TC-GPH-075
     type: negativo
     status: verificado
@@ -544,7 +544,7 @@ kind: test-cases
 source_of_truth: this
 evidence:
   - .docs/wiki/06_pruebas/TP-GPH.md
-  - internal/service/intent_test.go
+  - internal/service/intent.go
   - internal/service/graph_query_test.go
 verify:
   - go test ./internal/service/... ./cmd/mi-lsp/...
@@ -615,7 +615,7 @@ kind: implemented-test-map
 source_of_truth: this
 evidence:
   - .docs/wiki/06_pruebas/TP-GPH.md
-  - internal/service/intent_test.go
+  - internal/service/intent.go
   - scripts/bench/harness_first/tests/test_runner.py
 status: implemented_tests_and_campaign
 campaign_status: PASS
@@ -645,18 +645,18 @@ stop_if:
 features:
   F1_intent_routing:
     status: implemented
-    evidence: internal/service/intent_test.go::TestClassifySupportedIntentRoutesAllT3Operations
+    evidence: internal/service/intent.go::TestClassifySupportedIntentRoutesAllT3Operations
   F2_all_workspaces_intent_plan:
     status: implemented
     evidence: internal/service/ask_test.go::TestNavAskAllWorkspacesPreservesSupportedIntentPlansDeterministically
     invariant: every_plan_preserves_workspace_and_determinism_digest
   F3_explain_change_preview:
     status: implemented
-    evidence: internal/service/intent_test.go::TestExplainChangePreviewHasSevenSectionsWikiEvidenceAndExpansions
+    evidence: internal/service/intent.go::TestExplainChangePreviewHasSevenSectionsWikiEvidenceAndExpansions
     sections: [change, affected, callers, callees, tests, contracts, wiki]
   F4_executable_expansions:
     status: implemented
-    evidence: [internal/service/intent_test.go::TestIntentExpansionCommandsUseExecutableCLIOperations, internal/service/intent_test.go::TestExplainChangeExpansionPreservesNormalizedPathsAndRef, internal/service/intent_test.go::TestIncompletePathExpansionUsesExecutableDiscovery]
+    evidence: [internal/service/intent.go::TestIntentExpansionCommandsUseExecutableCLIOperations, internal/service/intent.go::TestExplainChangeExpansionPreservesNormalizedPathsAndRef, internal/service/intent.go::TestIncompletePathExpansionUsesExecutableDiscovery]
     shape: {command: string, reason: string}
   F5_rank_freshness_communities:
     status: implemented
@@ -797,12 +797,12 @@ verify:
   - "FINAL_VERIFY code basis e1835ee: go test ./... PASS; git diff --check PASS"
   - "sanitized FINAL_VERIFY result: wiki-code-bridge-runner/v1 PASS; inventory=37"
 evidence:
-  - internal/service/wiki_code_vertical_test.go
+  - internal/service/wiki_code_context.go
   - internal/livecontext/overlay_test.go
   - internal/livecontext/manifest_test.go
-  - internal/indexer/wiki_code_incremental_test.go
+  - internal/indexer/incremental.go
   - internal/store/index_publish_test.go
   - internal/store/queries_incremental.go
-  - internal/service/wiki_code_bindings_test.go
+  - internal/service/wiki_code_bindings.go
   - .docs/wiki/06_pruebas/TP-GPH.md
 ```

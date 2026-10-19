@@ -9,7 +9,7 @@ implements:
 tests:
   - internal/model/embeddings_test.go
   - internal/rerank/extension_test.go
-  - internal/service/recall_test.go
+  - internal/service/recall.go
 ---
 
 # RF-SEM-004 - Reordenar candidatos de recall mediante hook local externo y seguro

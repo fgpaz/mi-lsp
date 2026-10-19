@@ -7,7 +7,7 @@ implements:
   - internal/workspace/registry.go
 tests:
   - internal/service/app_test.go
-  - internal/service/workspace_resolution_test.go
+  - internal/service/workspace_ops.go
 ---
 
 ```yaml

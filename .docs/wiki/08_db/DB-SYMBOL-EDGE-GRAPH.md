@@ -433,6 +433,7 @@ imports: [ADR-KOTLIN-GRAPH-ADMISSION-V1, RF-GPH-008, TECH-KOTLIN-BACKEND]
 bindings: [internal/model/graph.go, internal/model/graph_observation.go, internal/indexer/extractor_kotlin.go]
 status: experimental_unverified_explicit_incomplete
 verify: [.docs/wiki/06_pruebas/TP-GPH.md::TP-GPH.kotlin-compiler-export-v1]
+evidence: [.docs/wiki/08_db/DB-SYMBOL-EDGE-GRAPH.md, .docs/wiki/06_pruebas/TP-GPH.md]
 ```
 
 [[ADR-KOTLIN-GRAPH-ADMISSION-V1]] registra exactamente `kotlin-language-server` / `kotlin` / `kotlin/binding-context` para declarations nombradas y references compiler locales main-jvm. Decisión delegada coord-milsp, no promoción ni aprobación humana/global inferida. NodeKey-v1/framing/tablas/ReadyForStaging intactos; sin DDL/querybackfill/migración en query. Lectores viejos rechazan el enum nuevo; mínimo lector con SHA/versión de primera release todavía pendiente. Rollback conserva prior generation y binario compatible. Raw partial/experimental actual no publica; autoridad Gradle y conformance pendientes coord-milsp, 2026-10-17.

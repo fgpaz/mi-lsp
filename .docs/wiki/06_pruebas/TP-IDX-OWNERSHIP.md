@@ -72,15 +72,15 @@ evidence:
   - .docs/wiki/06_pruebas/TP-IDX-OWNERSHIP.md
   - .docs/wiki/04_RF/RF-IDX-004.md
   - .docs/wiki/09_contratos/CT-INDEX-JOB-OWNERSHIP.md
-  - internal/store/index_jobs_ownership_test.go
-  - internal/store/index_jobs_test.go
-  - internal/store/index_lock_test.go
-  - internal/store/store_test.go
-  - internal/indexer/indexer_progress_test.go
-  - internal/indexer/incremental_test.go
-  - internal/daemon/file_watcher_test.go
-  - internal/service/recall_test.go
-  - internal/service/index_jobs_test.go
+  - internal/store/index_jobs.go
+  - internal/store/index_jobs.go
+  - internal/store/index_lock.go
+  - internal/store/index_publish.go
+  - internal/indexer/indexer.go
+  - internal/indexer/incremental.go
+  - internal/daemon/file_watcher.go
+  - internal/service/recall.go
+  - internal/service/index_jobs.go
 ```
 
 Enlaces relacionados: [[RF-IDX-004]] · [[CT-INDEX-JOB-OWNERSHIP]] · [[TP-IDX]] · [[FL-IDX-01]]
@@ -104,9 +104,9 @@ verify:
   - go test -v -count=1 -p 1 ./internal/service -run '^TestRunIndexJob(HonorsCooperativeCancelDuringProgress|ReconcilesPublicationWinsDuringCancel)$'
   - go test -v -count=1 -p 1 ./internal/store -run '^TestIndexJobRead(LoadersPreserveCancelRequestedAfterStaleFailureCAS|PropagatesMarkFailedDatabaseError|PropagatesReloadErrorAfterStaleCASRace)$'
 evidence:
-  - internal/store/index_jobs_test.go
-  - internal/store/index_jobs_ownership_test.go
-  - internal/indexer/indexer_progress_test.go
+  - internal/store/index_jobs.go
+  - internal/store/index_jobs.go
+  - internal/indexer/indexer.go
 records:
   - id: TC-IDX-OWNERSHIP-001
     type: liveness
@@ -167,9 +167,9 @@ exports:
 verify:
   - go test -v -count=1 -p 1 ./internal/store -run '^Test(LegacyPID0ModernSemantics|LegacyPID0Compatibility|IndexJobReadCompatibilityWithoutRequestedCancelColumn|ConcurrentLegacyOwnershipMigration|RemoveWorkspaceIndexLockForPIDNeverRemovesLiveProcess|Open_MigratesLegacyRepoColumns)$'
 evidence:
-  - internal/store/index_lock_test.go
-  - internal/store/store_test.go
-  - internal/store/index_jobs_ownership_test.go
+  - internal/store/index_lock.go
+  - internal/store/index_publish.go
+  - internal/store/index_jobs.go
 records:
   - id: TC-IDX-OWNERSHIP-006
     type: process-safety
@@ -217,13 +217,13 @@ verify:
   - go test -v -count=1 -p 1 ./internal/indexer -run '^Test(FullIndexPublishesLocalGoGraph|IncrementalIndexPublishesNewGraphGenerationAfterFileChange|IncrementalIndexObservationFailureLeavesGraphStale)$'
   - go test -v -count=1 -p 1 ./internal/service -run '^Test(EmbeddingFailureAfterPublicationLeavesSucceededGeneration|EmbeddingIndexPersistsSuccessfulBatchesAndResumes|Recall_BilingualEStoEN|Recall_EmbeddingsImplicitlyActiveWithoutEnabled)$'
 evidence:
-  - internal/store/index_jobs_ownership_test.go
-  - internal/store/store_test.go
-  - internal/store/graph_store_test.go
-  - internal/indexer/graph_pipeline_test.go
-  - internal/indexer/incremental_test.go
-  - internal/service/recall_test.go
-  - internal/service/index_jobs_test.go
+  - internal/store/index_jobs.go
+  - internal/store/index_publish.go
+  - internal/store/index_publish.go
+  - internal/indexer/graph_pipeline.go
+  - internal/indexer/incremental.go
+  - internal/service/recall.go
+  - internal/service/index_jobs.go
 records:
   - id: TC-IDX-OWNERSHIP-009
     type: publication
@@ -280,9 +280,9 @@ verify:
   - go test -v -count=1 -p 1 ./internal/store -run '^TestForegroundIncrementalPublicationUpdatesFilesAndSymbolsTogether$'
   - go test -v -count=1 -p 1 ./internal/daemon -run '^TestWatcherForegroundIncrementalUpdatesFilesAndSymbolsTogether$'
 evidence:
-  - internal/daemon/file_watcher_test.go
-  - internal/store/index_lock_test.go
-  - internal/store/index_jobs_ownership_test.go
+  - internal/daemon/file_watcher.go
+  - internal/store/index_lock.go
+  - internal/store/index_jobs.go
 records:
   - id: TC-IDX-OWNERSHIP-013
     type: watcher

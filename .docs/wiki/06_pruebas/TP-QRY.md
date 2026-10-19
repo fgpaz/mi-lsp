@@ -376,12 +376,12 @@ queries:
   progressive_explain_change_preview:
     case: TC-QRY-141
     status: implemented
-    evidence: internal/service/intent_test.go::TestExplainChangePreviewHasSevenSectionsWikiEvidenceAndExpansions
+    evidence: internal/service/intent.go::TestExplainChangePreviewHasSevenSectionsWikiEvidenceAndExpansions
     oracle: [change, affected, callers, callees, tests, contracts, wiki]
   expansion_integrity:
     case: TC-QRY-142
     status: implemented
-    evidence: [internal/service/intent_test.go::TestExplainChangeExpansionPreservesNormalizedPathsAndRef, internal/service/intent_test.go::TestIncompletePathExpansionUsesExecutableDiscovery]
+    evidence: [internal/service/intent.go::TestExplainChangeExpansionPreservesNormalizedPathsAndRef, internal/service/intent.go::TestIncompletePathExpansionUsesExecutableDiscovery]
     oracle: command_and_reason_in_same_object
   graph_freshness_and_rank:
     case: TC-QRY-143
@@ -500,8 +500,8 @@ evidence:
   - internal/service/related.go
   - internal/service/prepare.go
   - internal/service/change_pack.go
-  - internal/service/wiki_code_vertical_test.go
-  - internal/indexer/wiki_code_incremental_test.go
+  - internal/service/wiki_code_context.go
+  - internal/indexer/incremental.go
   - .docs/wiki/06_pruebas/TP-QRY.md
 ```
 

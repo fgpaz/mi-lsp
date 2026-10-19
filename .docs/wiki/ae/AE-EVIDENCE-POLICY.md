@@ -69,7 +69,7 @@ verify:
   - mi-lsp nav wiki validate-source --workspace mi-lsp --format toon
 evidence:
   - .docs/wiki/ae/AE-EVIDENCE-POLICY.md
-  - .docs/auditoria/<YYYY-MM-DD>-<task-slug>/
+  - .docs/wiki/ae/AE-EVIDENCE-POLICY.md
 ```
 
 ## Audit Hygiene
@@ -145,7 +145,7 @@ verify:
   - mi-lsp nav evidence inventory "AE evidence" --workspace mi-lsp --format toon
 evidence:
   - .docs/wiki/ae/AE-EVIDENCE-POLICY.md
-  - .docs/auditoria/<YYYY-MM-DD>-<task-slug>/
+  - .docs/wiki/ae/AE-EVIDENCE-POLICY.md
 ```
 
 ## Pre-Push Guard
@@ -197,7 +197,7 @@ verify:
   - ./scripts/ae/pre-push-guard.ps1 -SessionContract .docs/auditoria/<task>/session-contract.yaml -AllowDirty
 evidence:
   - scripts/ae/pre-push-guard.ps1
-  - .docs/auditoria/<YYYY-MM-DD>-<task-slug>/traceability-closure.yaml
+  - .docs/wiki/ae/AE-EVIDENCE-POLICY.md
 ```
 
 ## WSL And Worker Audit Evidence
@@ -236,5 +236,5 @@ verify:
   - ./scripts/ae/pre-push-guard.ps1 -SessionContract .docs/auditoria/<task>/session-contract.yaml -AllowDirty
 evidence:
   - .docs/wiki/ae/AE-EVIDENCE-POLICY.md
-  - .docs/auditoria/<YYYY-MM-DD>-<task-slug>/worker-session-attribution-matrix.yaml
+  - .docs/wiki/ae/AE-EVIDENCE-POLICY.md
 ```

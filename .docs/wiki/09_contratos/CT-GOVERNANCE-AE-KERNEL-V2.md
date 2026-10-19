@@ -37,7 +37,6 @@ stop_if:
   - harness_verdict=BLOCKED
 evidence:
   - .docs/wiki/00_gobierno_documental.md
-  - .docs/wiki/_mi-lsp/read-model.toml
   - .docs/ae/repo-policy.yaml
   - .docs/auditoria/2026-07-13-ae-kernel-v2-integration/traceability-closure.yaml
 ```
@@ -79,7 +78,6 @@ stop_if:
   - ae_canon.repo_policy != .docs/ae/repo-policy.yaml
 evidence:
   - .docs/wiki/00_gobierno_documental.md
-  - .docs/wiki/_mi-lsp/read-model.toml
 ```
 
 `imports` sigue siendo un campo requerido para contratos `SDD-HARNESS-v1` y `SDD-WIKI-SOURCE-v1`. La única excepción admite `imports: []` en el documento de gobernanza que el estado de gobernanza identifica sin ambigüedad y valida (`governance_source_is_unique_and_validated`), cuando la ruta del contrato coincide exactamente con esa fuente. Todo contrato que no sea esa raíz y declare imports vacíos permanece bloqueado; la compuerta general continúa siendo fail-closed.
@@ -159,7 +157,7 @@ stop_if:
   - unsafe_external_source
 evidence:
   - internal/docgraph/governance.go
-  - internal/service/governance_test.go
+  - internal/service/governance.go
 ```
 
 ## Projection and closure
@@ -193,6 +191,6 @@ stop_if:
   - setup_verdict != PASS
 evidence:
   - .docs/auditoria/2026-07-13-ae-kernel-v2-integration/traceability-closure.yaml
-  - .docs/auditoria/2026-07-16-ae-setup-close/session-contract.yaml
-  - .docs/auditoria/2026-07-16-ae-setup-close/traceability-closure.yaml
+  - .docs/auditoria/2026-07-13-ae-kernel-v2-integration/session-contract.yaml
+  - .docs/auditoria/2026-07-13-ae-kernel-v2-integration/traceability-closure.yaml
 ```
