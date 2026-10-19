@@ -87,6 +87,7 @@ func (a *App) validateWikiContract(ctx context.Context, request model.CommandReq
 			ContractWarnings:  []string{hint},
 		}
 		env := model.Envelope{Ok: true, Workspace: registration.Name, Backend: "wiki.contract", Items: []model.WikiContractValidationResult{result}, Warnings: warnings, Hint: hint}
+		attachWikiContractV11Details(registration.Root, records, &env)
 		return applyCoachPolicy(attachMemoryPointer(env, memory), request.Context), nil
 	}
 
@@ -102,6 +103,7 @@ func (a *App) validateWikiContract(ctx context.Context, request model.CommandReq
 	if len(result.ContractWarnings) > 0 {
 		env.Hint = "repair WIKI-CONTRACT-v1 findings before relying on wiki link navigation"
 	}
+	attachWikiContractV11Details(registration.Root, records, &env)
 	return applyCoachPolicy(attachMemoryPointer(env, memory), request.Context), nil
 }
 

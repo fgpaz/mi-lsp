@@ -7,6 +7,14 @@ and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2
 
 ## [Unreleased]
 
+## [0.14.0] - 2026-10-19
+
+### Added
+
+- `nav wiki graph` and provider operation `wiki_graph` expose the existing graph generation as a wiki+code projection, including typed links, coverage matrix, unresolved candidates, optional non-canonical roadmap metadata, and on-demand Mermaid.
+- `wiki_validate_contract` adds language-aware WIKI-CONTRACT checks and nonblocking diagram advisories while preserving the legacy validation result and counters.
+- `00_governance.md` is the canonical language source, with the documented legacy filename as compatibility fallback.
+
 ## [0.13.4] - 2026-10-19
 
 ### Changed

@@ -1114,7 +1114,7 @@ pack for a reading pack, and trace for RS/RF/TP evidence links.`,
 			if strings.TrimSpace(validateContractPaths) != "" {
 				payload["paths"] = validateContractPaths
 			}
-			return state.executeOperation(cmd, "nav.wiki.validate-contract", payload, true)
+			return state.executeOperation(cmd, "nav.wiki.validate-contract", payload, false)
 		},
 	}
 	validateContractCommand.Flags().StringVar(&validateContractIDs, "ids", "", "Comma-separated doc IDs/titles/basenames to validate")
@@ -1222,7 +1222,77 @@ Reports covered and uncovered criteria and TPs without RF. Findings are warnings
 	}
 	rootCommand.Flags().StringVar(&wikiRootRole, "role", "", "Filter [[canon]] by role: producto, ecosistema, or gobierno_local")
 
-	command.AddCommand(searchCommand, routeCommand, packCommand, traceCommand, validateHarnessCommand, validateContractCommand, validateSourceCommand, inventoryCommand, indexCommand, matrixCommand, mapCommand, rootCommand)
+	command.AddCommand(searchCommand, routeCommand, packCommand, traceCommand, validateHarnessCommand, validateContractCommand, validateSourceCommand, inventoryCommand, indexCommand, matrixCommand, mapCommand, rootCommand, newNavWikiGraphCommand(state))
+	return command
+}
+
+func newNavWikiGraphCommand(state *rootState) *cobra.Command {
+	var mode, from, to, ref, relations, direction, cursor, render string
+	var depth, limit int
+	command := &cobra.Command{
+		Use:   "graph [changed-path ...]",
+		Short: "Query the unified wiki and code graph",
+		Long:  "Query one graph generation for wiki relationships, code links, coverage, impact, and derived Mermaid output.",
+		Args:  cobra.ArbitraryArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			query := map[string]any{"mode": mode}
+			if from != "" {
+				query["from"] = from
+			}
+			if to != "" {
+				query["to"] = to
+			}
+			if ref != "" {
+				query["ref"] = ref
+			}
+			if len(args) > 0 {
+				paths := make([]any, len(args))
+				for i, path := range args {
+					paths[i] = path
+				}
+				query["changed_paths"] = paths
+			}
+			if relations != "" {
+				values := make([]any, 0)
+				for _, relation := range strings.Split(relations, ",") {
+					if relation = strings.TrimSpace(relation); relation != "" {
+						values = append(values, relation)
+					}
+				}
+				if len(values) > 0 {
+					query["relations"] = values
+				}
+			}
+			payload := map[string]any{"query": query}
+			if direction != "" {
+				payload["direction"] = direction
+			}
+			if depth > 0 {
+				payload["depth"] = depth
+			}
+			if limit > 0 {
+				payload["limit"] = limit
+			}
+			if cursor != "" {
+				payload["cursor"] = cursor
+			}
+			if render != "" {
+				payload["render"] = render
+			}
+			return state.executeOperation(cmd, "nav.wiki.graph", payload, false)
+		},
+	}
+	command.Flags().StringVar(&mode, "mode", "", "Graph query mode: neighbors, path, explain, affected, change-pack, or matrix")
+	command.Flags().StringVar(&from, "from", "", "Source selector for path queries")
+	command.Flags().StringVar(&to, "to", "", "Destination selector for path queries")
+	command.Flags().StringVar(&ref, "ref", "", "Git ref for change-pack queries")
+	command.Flags().StringVar(&relations, "relations", "", "Comma-separated graph relations to include")
+	command.Flags().StringVar(&direction, "direction", "", "Traversal direction")
+	command.Flags().IntVar(&depth, "depth", 0, "Maximum graph traversal depth")
+	command.Flags().IntVar(&limit, "limit", 0, "Maximum graph results")
+	command.Flags().StringVar(&cursor, "cursor", "", "Opaque continuation cursor")
+	command.Flags().StringVar(&render, "render", "", "Optional derived rendering: mermaid")
+	_ = command.MarkFlagRequired("mode")
 	return command
 }
 

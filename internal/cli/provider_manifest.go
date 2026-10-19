@@ -25,12 +25,12 @@ type providerManifest struct {
 }
 
 type providerInvocation struct {
-	Kind         string         `json:"kind"`
-	Command      string         `json:"command"`
-	FixedArgs    []string       `json:"fixed_args"`
-	InputMapping map[string]any `json:"input_mapping"`
-	Output       string         `json:"output"`
-	Socket       providerSocket `json:"socket,omitempty"`
+	Kind         string          `json:"kind"`
+	Command      string          `json:"command"`
+	FixedArgs    []string        `json:"fixed_args"`
+	InputMapping map[string]any  `json:"input_mapping"`
+	Output       string          `json:"output"`
+	Socket       *providerSocket `json:"socket,omitempty"`
 }
 
 type providerSocket struct {
@@ -45,12 +45,13 @@ type providerSocket struct {
 }
 
 type providerOperation struct {
-	Name         string         `json:"name"`
-	Description  string         `json:"description"`
-	Effect       string         `json:"effect"`
-	Contract     string         `json:"contract"`
-	InputSchema  map[string]any `json:"input_schema"`
-	OutputSchema map[string]any `json:"output_schema"`
+	Name         string              `json:"name"`
+	Description  string              `json:"description"`
+	Effect       string              `json:"effect"`
+	Contract     string              `json:"contract"`
+	InputSchema  map[string]any      `json:"input_schema"`
+	OutputSchema map[string]any      `json:"output_schema"`
+	Invocation   *providerInvocation `json:"invocation,omitempty"`
 }
 
 func newProviderManifestCommand(state *rootState) *cobra.Command {
@@ -80,6 +81,7 @@ func newProviderManifestCommand(state *rootState) *cobra.Command {
 func newProviderManifest(version string) providerManifest {
 	contracts := map[string]string{
 		"q": "q-v1", "intent": "mi-lsp-nav-intent/v0", "multi-read": "mi-lsp-nav-multi-read/v0",
+		"wiki_graph": "wiki-graph/v1", "wiki_validate_contract": "wiki-contract/v1",
 		"version": "mi-lsp-version/v0", "schema": "mi-lsp-schema/v0", "--help": "mi-lsp-help/v0", "--version": "mi-lsp-version-flag/v0",
 	}
 	return providerManifest{
@@ -96,7 +98,7 @@ func newProviderManifest(version string) providerManifest {
 					"multi-read": map[string]any{"ranges": map[string]any{"source": "argument", "position": 0, "multiple": true}, "workspace": optionMapping("--workspace")},
 				},
 			}, Output: "json",
-			Socket: providerSocket{Transport: "unix", PathEnv: "XDG_RUNTIME_DIR", Filename: cliSocketName, Mode: "0600", Framing: "jsonl", MaxRequestBytes: cliSocketMaxRequest, Fallback: "connection_failure_only", RetryAfterResponse: false},
+			Socket: &providerSocket{Transport: "unix", PathEnv: "XDG_RUNTIME_DIR", Filename: cliSocketName, Mode: "0600", Framing: "jsonl", MaxRequestBytes: cliSocketMaxRequest, Fallback: "connection_failure_only", RetryAfterResponse: false},
 		},
 		Operations: []providerOperation{
 			{Name: "q", Description: "Run a typed mi-lsp query pipeline", Effect: "read", Contract: "q-v1", InputSchema: qInputSchema(), OutputSchema: responseSchema("q-v1")},
@@ -106,6 +108,8 @@ func newProviderManifest(version string) providerManifest {
 			{Name: "multi-read", Description: "Read the requested source ranges", Effect: "read", Contract: contracts["multi-read"], InputSchema: objectSchema([]string{"ranges"}, map[string]any{
 				"ranges": map[string]any{"type": "array", "minItems": 1, "items": stringSchema(1)}, "workspace": stringSchema(0),
 			}), OutputSchema: responseSchema(contracts["multi-read"])},
+			{Name: "wiki_graph", Description: "Query the unified wiki and code graph", Effect: "read", Contract: contracts["wiki_graph"], InputSchema: wikiGraphInputSchema(), OutputSchema: responseSchema(contracts["wiki_graph"]), Invocation: wikiGraphInvocation()},
+			{Name: "wiki_validate_contract", Description: "Validate WIKI-CONTRACT-v1 and its language-aware checks", Effect: "read", Contract: contracts["wiki_validate_contract"], InputSchema: wikiValidateContractInputSchema(), OutputSchema: responseSchema(contracts["wiki_validate_contract"]), Invocation: wikiValidateContractInvocation()},
 			managementOperation("version", contracts["version"]), managementOperation("schema", contracts["schema"]),
 			managementOperation("--help", contracts["--help"]), managementOperation("--version", contracts["--version"]),
 		},
@@ -126,6 +130,52 @@ func qInputSchema() map[string]any {
 		"max_bytes": integerSchema(1024, 0), "timeout_ms": integerSchema(1, 30000), "session_id": stringSchema(0),
 		"page": stringSchema(0), "fresh": map[string]any{"type": "boolean"}, "dedupe": map[string]any{"type": "boolean"},
 	})
+}
+
+func wikiGraphInputSchema() map[string]any {
+	return objectSchema([]string{"workspace", "mode"}, map[string]any{
+		"workspace": stringSchema(1),
+		"mode":      map[string]any{"type": "string", "enum": []string{"neighbors", "path", "explain", "affected", "change-pack", "matrix"}},
+		"from":      stringSchema(0), "to": stringSchema(0), "ref": stringSchema(0),
+		"changed_paths": map[string]any{"type": "array", "minItems": 1, "items": stringSchema(1)},
+		"relations":     stringSchema(0),
+		"direction":     map[string]any{"type": "string", "enum": []string{"in", "out", "both"}},
+		"depth":         integerSchema(0, 0), "limit": integerSchema(1, 500), "cursor": stringSchema(0),
+		"render": map[string]any{"type": "string", "enum": []string{"mermaid"}},
+	})
+}
+
+func wikiGraphInvocation() *providerInvocation {
+	return &providerInvocation{
+		Kind: "cli", Command: "mi-lsp",
+		FixedArgs: []string{"--format", "json", "--client-name", "mi-mcp", "--no-auto-register", "--no-daemon", "--allow-cross-workspace", "nav", "wiki", "graph"},
+		InputMapping: map[string]any{"fields": map[string]any{
+			"workspace": optionMapping("--workspace"), "mode": optionMapping("--mode"),
+			"from": optionMapping("--from"), "to": optionMapping("--to"), "ref": optionMapping("--ref"),
+			"changed_paths": map[string]any{"source": "argument", "position": 0, "repeat": true},
+			"relations":     optionMapping("--relations"), "direction": optionMapping("--direction"),
+			"depth": optionMapping("--depth"), "limit": optionMapping("--limit"),
+			"cursor": optionMapping("--cursor"), "render": optionMapping("--render"),
+		}},
+		Output: "json",
+	}
+}
+
+func wikiValidateContractInputSchema() map[string]any {
+	return objectSchema([]string{"workspace"}, map[string]any{
+		"workspace": stringSchema(1), "ids": stringSchema(0), "paths": stringSchema(0),
+	})
+}
+
+func wikiValidateContractInvocation() *providerInvocation {
+	return &providerInvocation{
+		Kind: "cli", Command: "mi-lsp",
+		FixedArgs: []string{"--format", "json", "--client-name", "mi-mcp", "--no-auto-register", "--no-daemon", "--allow-cross-workspace", "nav", "wiki", "validate-contract"},
+		InputMapping: map[string]any{"fields": map[string]any{
+			"workspace": optionMapping("--workspace"), "ids": optionMapping("--ids"), "paths": optionMapping("--paths"),
+		}},
+		Output: "json",
+	}
 }
 
 func objectSchema(required []string, properties map[string]any) map[string]any {

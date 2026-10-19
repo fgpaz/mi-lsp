@@ -913,6 +913,7 @@ type ParsedDoc struct {
 	Audience          string
 	Imports           []string
 	Exports           []string
+	WikiLinks         []WikiLink
 	Blocks            []ParsedBlock
 	Records           []ParsedRecord
 	Mentions          []model.DocMention
@@ -947,6 +948,7 @@ type ParsedRecord struct {
 func Parse(docPath string, content string, indexedAt int64) ParsedDoc {
 	canonicalPath := filepath.ToSlash(docPath)
 	parsed := ParsedDoc{DocPath: canonicalPath, SourcePath: canonicalPath}
+	parsed.WikiLinks = parseWikiContractLinks(content)
 	parseGraphDocument(&parsed, content)
 	if !DeclaresSource(content) && parsed.GraphProtocol == "" {
 		return parsed

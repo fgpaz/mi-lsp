@@ -390,7 +390,8 @@ func IndexWorkspaceDocsWithSourcesWithProgressPriorWithBindings(ctx context.Cont
 						if !identityDeclared {
 							currentID = legacyDocumentID(candidate.relativePath, extractTitle(content))
 						}
-						if currentID == prev.DocID {
+						wikiLinks := wikisource.WikiContractLinks(string(content))
+						if currentID == prev.DocID && wikiContractLinksCached(candidate.relativePath, wikiLinks, prior.Edges[candidate.relativePath], prior.Docs, profile.EffectiveWikiMapRoots()) {
 							doc := prev
 							doc.Path = candidate.relativePath
 							doc.Layer = candidate.layer
@@ -530,6 +531,57 @@ func IndexWorkspaceDocsWithSourcesWithProgressPriorWithBindings(ctx context.Cont
 	return docs, edges, mentions, sourceBlocks, sourceRecords, bindings, warnings, nil
 }
 
+func wikiContractLinksCached(docPath string, links []wikisource.WikiLink, priorEdges []model.DocEdge, priorDocs map[string]model.DocRecord, roots []string) bool {
+	if len(links) == 0 {
+		return true
+	}
+	docs := make([]model.DocRecord, 0, len(priorDocs))
+	for _, doc := range priorDocs {
+		docs = append(docs, doc)
+	}
+	pathIndex := newDocResolutionIndex(docs)
+	for _, link := range links {
+		found := false
+		for _, edge := range priorEdges {
+			if edge.Kind != link.Relation || strings.TrimSpace(edge.Label) != strings.TrimSpace(link.Symbol) || (link.Relation == "code" && edge.UnresolvedReason != "") {
+				continue
+			}
+			if link.DocID != "" {
+				if edge.ToDocID == link.DocID {
+					found = true
+					break
+				}
+				if doc, ok := priorDocs[edge.ToPath]; ok && doc.DocID == link.DocID {
+					found = true
+					break
+				}
+			}
+			if link.Path != "" {
+				target := normalizeDocCandidate(edge.ToPath)
+				if target == normalizeDocCandidate(link.Path) {
+					found = true
+					break
+				}
+				if link.Relation != "code" {
+					for _, candidate := range pathIndex.resolvePath(docPath, link.Path, roots) {
+						if target == candidate {
+							found = true
+							break
+						}
+					}
+					if found {
+						break
+					}
+				}
+			}
+		}
+		if !found {
+			return false
+		}
+	}
+	return true
+}
+
 // ParseSingleDoc parses a single markdown document and returns its complete
 // doc artifact model. It shares the exact same parsing logic as the full-index
 // parser, accepting the workspace root, repo-relative path, and pre-loaded
@@ -586,6 +638,9 @@ func parseDocContent(
 
 	docMentions, docEdges := extractReferences(root, relPath, string(content))
 	sourceDoc := wikisource.Parse(relPath, string(content), now)
+	for _, link := range sourceDoc.WikiLinks {
+		docEdges = append(docEdges, model.DocEdge{FromPath: relPath, ToPath: link.Path, ToDocID: link.DocID, Kind: link.Relation, Label: link.Symbol})
+	}
 	if strings.TrimSpace(sourceDoc.DocID) != "" && !identityDeclared {
 		doc.DocID = sourceDoc.DocID
 	}
@@ -1218,6 +1273,10 @@ func resolveDocEdges(docs []model.DocRecord, edges []model.DocEdge, roots []stri
 	for _, edge := range edges {
 		edge.Candidates = nil
 		edge.UnresolvedReason = ""
+		if edge.Kind == "code" {
+			resolved = append(resolved, edge)
+			continue
+		}
 		var candidates []string
 		if edge.ToDocID != "" {
 			candidates = uniqueSortedDocPaths(index.docIDs[edge.ToDocID])
@@ -1310,7 +1369,7 @@ func (index docResolutionIndex) resolvePath(fromPath, rawTarget string, roots []
 
 func semanticDocumentRelation(kind string) bool {
 	switch kind {
-	case "doc_related", "doc_depends", "doc_supports", "doc_contradicts", "doc_supersedes":
+	case "fulfills", "implements", "verifies", "affects", "supports", "materializes", "supersedes", "experiences", "stages", "maps", "grounds_in", "doc_related", "doc_depends", "doc_supports", "doc_contradicts", "doc_supersedes":
 		return true
 	default:
 		return false

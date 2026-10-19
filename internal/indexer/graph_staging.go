@@ -709,6 +709,70 @@ func assembleGraphBundle(input graphAssemblyInput) (model.GraphBundle, error) {
 		if !ok {
 			continue
 		}
+		if edge.Kind == "code" {
+			targetPath := filepath.ToSlash(strings.TrimSpace(edge.ToPath))
+			targetValue := targetPath
+			if edge.Label != "" {
+				targetValue += ":" + strings.TrimSpace(edge.Label)
+			}
+			var fileCandidates, symbolCandidates []model.GraphDigest
+			for _, key := range nodeRefsByOwner[targetPath] {
+				identity := nodesByKey[key].identity
+				if identity.SymbolKind == "file" {
+					fileCandidates = append(fileCandidates, key)
+					continue
+				}
+				if edge.Label != "" && (identity.SemanticIdentity == strings.TrimSpace(edge.Label) || nodesByKey[key].node.DisplayName == strings.TrimSpace(edge.Label)) {
+					symbolCandidates = append(symbolCandidates, key)
+				}
+			}
+			if len(fileCandidates) != 1 {
+				if len(fileCandidates) == 0 && edge.Label != "" && len(symbolCandidates) == 1 {
+					// The current catalog stores symbol nodes with their owner path,
+					// but not a separate file node. Link the declared symbol without
+					// fabricating a file node or edge.
+					addDocEdge(fmt.Sprintf("doc-code-symbol:%d", index), from, symbolCandidates[0], edge.FromPath, "code", model.GraphRecordExact, docSources[edge.FromPath], graphDocClaimDigest("code", edge.FromPath, targetPath, edge.Label, docSources[edge.FromPath]))
+					continue
+				}
+				reason := "missing_code_target"
+				if len(fileCandidates) > 1 {
+					reason = "ambiguous_code_target"
+				}
+				candidateNames := make([]string, 0, len(fileCandidates))
+				for _, key := range fileCandidates {
+					identity := nodesByKey[key].identity
+					candidateNames = append(candidateNames, identity.OwnerPath)
+				}
+				candidate, err := graphDocUnresolved(fmt.Sprintf("doc-code-file:%d", index), edge.FromPath, "code", targetPath, reason, boundedDocCandidates(candidateNames), docSources[edge.FromPath], "wiki-contract")
+				if err != nil {
+					return model.GraphBundle{}, err
+				}
+				docUnresolved = append(docUnresolved, candidate)
+				continue
+			}
+			addDocEdge(fmt.Sprintf("doc-code-file:%d", index), from, fileCandidates[0], edge.FromPath, "code", model.GraphRecordExact, docSources[edge.FromPath], graphDocClaimDigest("code", edge.FromPath, targetPath, "file", docSources[edge.FromPath]))
+			if edge.Label != "" {
+				if len(symbolCandidates) != 1 {
+					reason := "missing_code_target"
+					if len(symbolCandidates) > 1 {
+						reason = "ambiguous_code_target"
+					}
+					candidateNames := make([]string, 0, len(symbolCandidates))
+					for _, key := range symbolCandidates {
+						identity := nodesByKey[key].identity
+						candidateNames = append(candidateNames, identity.OwnerPath+":"+identity.SemanticIdentity)
+					}
+					candidate, err := graphDocUnresolved(fmt.Sprintf("doc-code-symbol:%d", index), edge.FromPath, "code_symbol", targetValue, reason, boundedDocCandidates(candidateNames), docSources[edge.FromPath], "wiki-contract")
+					if err != nil {
+						return model.GraphBundle{}, err
+					}
+					docUnresolved = append(docUnresolved, candidate)
+				} else {
+					addDocEdge(fmt.Sprintf("doc-code-symbol:%d", index), from, symbolCandidates[0], edge.FromPath, "code", model.GraphRecordExact, docSources[edge.FromPath], graphDocClaimDigest("code", edge.FromPath, targetPath, edge.Label, docSources[edge.FromPath]))
+				}
+			}
+			continue
+		}
 		var targetPath string
 		if edge.ToPath != "" {
 			if _, exists := docKeys[edge.ToPath]; exists {
@@ -749,7 +813,7 @@ func assembleGraphBundle(input graphAssemblyInput) (model.GraphBundle, error) {
 		}
 		to := docKeys[targetPath]
 		relation := edge.Kind
-		if relation != "doc_wikilink" && relation != "doc_embed" && relation != "doc_markdown_link" && relation != "doc_id" && relation != "doc_hierarchy" && relation != "doc_related" && relation != "doc_depends" && relation != "doc_supports" && relation != "doc_contradicts" && relation != "doc_supersedes" {
+		if relation != "doc_wikilink" && relation != "doc_embed" && relation != "doc_markdown_link" && relation != "doc_id" && relation != "doc_hierarchy" && relation != "doc_related" && relation != "doc_depends" && relation != "doc_supports" && relation != "doc_contradicts" && relation != "doc_supersedes" && relation != "fulfills" && relation != "implements" && relation != "verifies" && relation != "affects" && relation != "supports" && relation != "materializes" && relation != "supersedes" && relation != "experiences" && relation != "stages" && relation != "maps" && relation != "grounds_in" {
 			relation = "doc_mentions"
 		}
 		addDocEdge(fmt.Sprintf("doc-edge:%d", index), from, to, edge.FromPath, relation, model.GraphRecordExact, docSources[edge.FromPath], graphDocClaimDigest(edge.Kind, edge.FromPath, targetPath, edge.Label, docSources[edge.FromPath]))

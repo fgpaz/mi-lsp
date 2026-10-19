@@ -26,6 +26,17 @@ var graphImpactRelations = map[string]GraphImpactRelation{
 	"consumes":          {Relation: "consumes", Direction: "in", ClaimStatuses: []string{GraphRecordExact, GraphRecordExtracted, GraphRecordInferred}, Cost: 1, Transitive: false},
 	"reads":             {Relation: "reads", Direction: "in", ClaimStatuses: []string{GraphRecordExact, GraphRecordExtracted, GraphRecordInferred}, Cost: 1, Transitive: false},
 	"writes":            {Relation: "writes", Direction: "in", ClaimStatuses: []string{GraphRecordExact, GraphRecordExtracted, GraphRecordInferred}, Cost: 1, Transitive: false},
+	"fulfills":          {Relation: "fulfills", Direction: "in", ClaimStatuses: []string{GraphRecordExact, GraphRecordExtracted, GraphRecordInferred}, Cost: 1, Transitive: true},
+	"verifies":          {Relation: "verifies", Direction: "in", ClaimStatuses: []string{GraphRecordExact, GraphRecordExtracted, GraphRecordInferred}, Cost: 1, Transitive: true},
+	"affects":           {Relation: "affects", Direction: "in", ClaimStatuses: []string{GraphRecordExact, GraphRecordExtracted, GraphRecordInferred}, Cost: 1, Transitive: true},
+	"supports":          {Relation: "supports", Direction: "in", ClaimStatuses: []string{GraphRecordExact, GraphRecordExtracted, GraphRecordInferred}, Cost: 1, Transitive: true},
+	"materializes":      {Relation: "materializes", Direction: "in", ClaimStatuses: []string{GraphRecordExact, GraphRecordExtracted, GraphRecordInferred}, Cost: 1, Transitive: true},
+	"supersedes":        {Relation: "supersedes", Direction: "in", ClaimStatuses: []string{GraphRecordExact, GraphRecordExtracted, GraphRecordInferred}, Cost: 1, Transitive: true},
+	"experiences":       {Relation: "experiences", Direction: "in", ClaimStatuses: []string{GraphRecordExact, GraphRecordExtracted, GraphRecordInferred}, Cost: 1, Transitive: true},
+	"stages":            {Relation: "stages", Direction: "in", ClaimStatuses: []string{GraphRecordExact, GraphRecordExtracted, GraphRecordInferred}, Cost: 1, Transitive: true},
+	"maps":              {Relation: "maps", Direction: "in", ClaimStatuses: []string{GraphRecordExact, GraphRecordExtracted, GraphRecordInferred}, Cost: 1, Transitive: true},
+	"grounds_in":        {Relation: "grounds_in", Direction: "in", ClaimStatuses: []string{GraphRecordExact, GraphRecordExtracted, GraphRecordInferred}, Cost: 1, Transitive: true},
+	"code":              {Relation: "code", Direction: "in", ClaimStatuses: []string{GraphRecordExact, GraphRecordExtracted, GraphRecordInferred}, Cost: 1, Transitive: true},
 	"doc_mentions":      {Relation: "doc_mentions", Direction: "in", ClaimStatuses: []string{GraphRecordExact, GraphRecordExtracted, GraphRecordInferred}, Cost: 1, Transitive: false},
 	"doc_wikilink":      {Relation: "doc_wikilink", Direction: "in", ClaimStatuses: []string{GraphRecordExact}, Cost: 1, Transitive: false},
 	"doc_embed":         {Relation: "doc_embed", Direction: "in", ClaimStatuses: []string{GraphRecordExact}, Cost: 1, Transitive: false},
@@ -53,7 +64,7 @@ func GraphImpactRelationSemantics(relation string) (GraphImpactRelation, bool) {
 }
 
 func graphDocumentRelation(relation string) bool {
-	return relation == "doc_mentions" || relation == "doc_wikilink" || relation == "doc_embed" || relation == "doc_markdown_link" || relation == "doc_id" || relation == "doc_hierarchy" || relation == "doc_related" || relation == "doc_depends" || relation == "doc_supports" || relation == "doc_contradicts" || relation == "doc_supersedes"
+	return relation == "fulfills" || relation == "verifies" || relation == "affects" || relation == "supports" || relation == "materializes" || relation == "supersedes" || relation == "experiences" || relation == "stages" || relation == "maps" || relation == "grounds_in" || relation == "code" || relation == "doc_mentions" || relation == "doc_wikilink" || relation == "doc_embed" || relation == "doc_markdown_link" || relation == "doc_id" || relation == "doc_hierarchy" || relation == "doc_related" || relation == "doc_depends" || relation == "doc_supports" || relation == "doc_contradicts" || relation == "doc_supersedes"
 }
 
 func GraphImpactRelations() []GraphImpactRelation {

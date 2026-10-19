@@ -18,7 +18,9 @@
     "multi-read": "mi-lsp-nav-multi-read/v0",
     "q": "q-v1",
     "schema": "mi-lsp-schema/v0",
-    "version": "mi-lsp-version/v0"
+    "version": "mi-lsp-version/v0",
+    "wiki_graph": "wiki-graph/v1",
+    "wiki_validate_contract": "wiki-contract/v1"
   },
   "auth": "none",
   "invocation": {
@@ -245,6 +247,226 @@
       "output_schema": {
         "description": "Response governed by mi-lsp-nav-multi-read/v0",
         "type": "object"
+      }
+    },
+    {
+      "name": "wiki_graph",
+      "description": "Query the unified wiki and code graph",
+      "effect": "read",
+      "contract": "wiki-graph/v1",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "changed_paths": {
+            "items": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "minItems": 1,
+            "type": "array"
+          },
+          "cursor": {
+            "minLength": 0,
+            "type": "string"
+          },
+          "depth": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "direction": {
+            "enum": [
+              "in",
+              "out",
+              "both"
+            ],
+            "type": "string"
+          },
+          "from": {
+            "minLength": 0,
+            "type": "string"
+          },
+          "limit": {
+            "maximum": 500,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "mode": {
+            "enum": [
+              "neighbors",
+              "path",
+              "explain",
+              "affected",
+              "change-pack",
+              "matrix"
+            ],
+            "type": "string"
+          },
+          "ref": {
+            "minLength": 0,
+            "type": "string"
+          },
+          "relations": {
+            "minLength": 0,
+            "type": "string"
+          },
+          "render": {
+            "enum": [
+              "mermaid"
+            ],
+            "type": "string"
+          },
+          "to": {
+            "minLength": 0,
+            "type": "string"
+          },
+          "workspace": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "workspace",
+          "mode"
+        ],
+        "type": "object"
+      },
+      "output_schema": {
+        "description": "Response governed by wiki-graph/v1",
+        "type": "object"
+      },
+      "invocation": {
+        "kind": "cli",
+        "command": "mi-lsp",
+        "fixed_args": [
+          "--format",
+          "json",
+          "--client-name",
+          "mi-mcp",
+          "--no-auto-register",
+          "--no-daemon",
+          "--allow-cross-workspace",
+          "nav",
+          "wiki",
+          "graph"
+        ],
+        "input_mapping": {
+          "fields": {
+            "changed_paths": {
+              "position": 0,
+              "repeat": true,
+              "source": "argument"
+            },
+            "cursor": {
+              "flag": "--cursor",
+              "source": "option"
+            },
+            "depth": {
+              "flag": "--depth",
+              "source": "option"
+            },
+            "direction": {
+              "flag": "--direction",
+              "source": "option"
+            },
+            "from": {
+              "flag": "--from",
+              "source": "option"
+            },
+            "limit": {
+              "flag": "--limit",
+              "source": "option"
+            },
+            "mode": {
+              "flag": "--mode",
+              "source": "option"
+            },
+            "ref": {
+              "flag": "--ref",
+              "source": "option"
+            },
+            "relations": {
+              "flag": "--relations",
+              "source": "option"
+            },
+            "render": {
+              "flag": "--render",
+              "source": "option"
+            },
+            "to": {
+              "flag": "--to",
+              "source": "option"
+            },
+            "workspace": {
+              "flag": "--workspace",
+              "source": "option"
+            }
+          }
+        },
+        "output": "json"
+      }
+    },
+    {
+      "name": "wiki_validate_contract",
+      "description": "Validate WIKI-CONTRACT-v1 and its language-aware checks",
+      "effect": "read",
+      "contract": "wiki-contract/v1",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "ids": {
+            "minLength": 0,
+            "type": "string"
+          },
+          "paths": {
+            "minLength": 0,
+            "type": "string"
+          },
+          "workspace": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "workspace"
+        ],
+        "type": "object"
+      },
+      "output_schema": {
+        "description": "Response governed by wiki-contract/v1",
+        "type": "object"
+      },
+      "invocation": {
+        "kind": "cli",
+        "command": "mi-lsp",
+        "fixed_args": [
+          "--format",
+          "json",
+          "--client-name",
+          "mi-mcp",
+          "--no-auto-register",
+          "--no-daemon",
+          "--allow-cross-workspace",
+          "nav",
+          "wiki",
+          "validate-contract"
+        ],
+        "input_mapping": {
+          "fields": {
+            "ids": {
+              "flag": "--ids",
+              "source": "option"
+            },
+            "paths": {
+              "flag": "--paths",
+              "source": "option"
+            },
+            "workspace": {
+              "flag": "--workspace",
+              "source": "option"
+            }
+          }
+        },
+        "output": "json"
       }
     },
     {
