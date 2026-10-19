@@ -737,3 +737,9 @@ Las listas Markdown pueden declarar relaciones documentales sin frontmatter:
 Flujo recomendado: `nav wiki search "concepto"` → `nav neighbors RF-DG-DECISION --edge doc_related` → `nav multi-read .docs/wiki/04_RF/RF-GPH-003.md ...`.
 
 Contrato de escritura para futuras skills: declarar `doc_id`, `summary` y `status`; escribir relaciones explícitas en listas; actualizar antes de crear otro documento con el mismo ID; `supersedes` preserva el historial y no lo oculta.
+
+## Roadmap local complementario
+
+`nav wiki graph --mode roadmap [--render mermaid]` lee opcionalmente `.docs/roadmap/roadmap.md`, fuera de la wiki canónica. La tabla usa claves estructurales inglesas `id`, `rs`, `horizon`, `status` y opcional `depends_on` (IDs separados por coma) y `title`; el texto libre sigue `language` de `00_gobierno`. Horizontes válidos: `short`, `medium`, `long`; estados: `todo`, `doing`, `done`, `blocked`. La respuesta tipada incluye entradas no canónicas, nodos roadmap vinculados a RS existentes, dependencias derivadas y `roadmap_warnings` con códigos/mensajes/bloqueo tipados (siempre no bloqueantes). Referencias RS inexistentes, dependencias desconocidas, ciclos y campos inválidos producen avisos no bloqueantes.
+
+El Mermaid se deriva solo para la respuesta solicitada: organiza ítems por horizonte y colorea estado; no es Gantt ni se escribe al disco. Roadmap no cambia active/readiness, trazabilidad ni cierre del canon wiki.

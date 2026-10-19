@@ -123,6 +123,39 @@ func (a *App) wikiGraph(ctx context.Context, request model.CommandRequest) (mode
 			}
 		}
 
+	case "roadmap":
+		language := ResolveWikiContractLanguageAtRoot(registration.Root)
+		envelope.Language = &language
+		generation, found, graphErr := store.ActiveGraphGeneration(ctx, db)
+		if graphErr == nil && found && generation != (model.GraphDigest{}) {
+			generationID := generation.String()
+			envelope.GenerationID = generationID
+			freshness, freshnessErr := store.GraphFreshness(ctx, db, generationID)
+			if freshnessErr == nil {
+				envelope.GraphFreshness = &freshness
+			} else {
+				graphErr = freshnessErr
+			}
+		}
+		if graphErr != nil || !found || generation == (model.GraphDigest{}) {
+			reason := "graph_generation_unavailable"
+			if graphErr != nil {
+				reason = sanitizeIntentError(graphErr)
+			}
+			envelope.GraphFreshness = &model.GraphFreshness{State: model.GraphFreshnessUnknown, ReasonCode: reason}
+			warning := model.WikiRoadmapWarning{Code: "roadmap_graph_unavailable", Message: "roadmap_graph_unavailable:" + reason, Blocking: false}
+			envelope.RoadmapWarnings = append(envelope.RoadmapWarnings, warning)
+			envelope.Warnings = appendStringIfMissing(envelope.Warnings, warning.Message)
+		}
+		if err := applyWikiRoadmapGraph(ctx, db, registration.Root, &envelope); err != nil {
+			return model.Envelope{}, store.SanitizeGraphQueryError(err)
+		}
+		if render == "mermaid" {
+			if mermaid := wikiRoadmapMermaid(envelope.GenerationID, envelope.Nodes, envelope.Edges); mermaid != nil {
+				envelope.Mermaid = mermaid
+			}
+		}
+
 	case "matrix":
 		language := ResolveWikiContractLanguageAtRoot(registration.Root)
 		envelope.Language = &language
@@ -166,11 +199,13 @@ func (a *App) wikiGraph(ctx context.Context, request model.CommandRequest) (mode
 		}
 
 	default:
-		return model.Envelope{}, &model.GraphQueryError{Code: "GPH_QUERY_SELECTOR_INVALID", Field: "mode", Message: "mode must be neighbors, path, explain, affected, change-pack, or matrix"}
+		return model.Envelope{}, &model.GraphQueryError{Code: "GPH_QUERY_SELECTOR_INVALID", Field: "mode", Message: "mode must be neighbors, path, explain, affected, change-pack, matrix, or roadmap"}
 	}
 
-	applyWikiRoadmapMetadata(registration.Root, &envelope)
-	if render != "" {
+	if mode != "roadmap" {
+		applyWikiRoadmapMetadata(registration.Root, &envelope)
+	}
+	if render != "" && mode != "roadmap" {
 		if render != "mermaid" {
 			return model.Envelope{}, &model.GraphQueryError{Code: "GPH_QUERY_BUDGET_INVALID", Field: "render", Message: "render must be mermaid"}
 		}
@@ -251,7 +286,7 @@ func wikiGraphPayload(request model.CommandRequest) (string, map[string]any, str
 	}
 	mode := strings.ToLower(strings.TrimSpace(stringPayload(query, "mode")))
 	switch mode {
-	case "neighbors", "path", "explain", "affected", "change-pack", "matrix":
+	case "neighbors", "path", "explain", "affected", "change-pack", "matrix", "roadmap":
 	default:
 		return "", nil, "", &model.GraphQueryError{Code: "GPH_QUERY_SELECTOR_INVALID", Field: "query.mode", Message: "query.mode is unsupported"}
 	}
@@ -626,22 +661,142 @@ func findDocRecordByPath(records []model.DocRecord, path string) (model.DocRecor
 
 func applyWikiRoadmapMetadata(root string, envelope *model.Envelope) {
 	parsed := loadWikiRoadmapMetadata(root)
-	if len(parsed.ByRS) > 0 {
-		keys := make([]string, 0, len(parsed.ByRS))
-		for key := range parsed.ByRS {
-			keys = append(keys, key)
-		}
-		sort.Strings(keys)
-		entries := make([]model.WikiGraphRoadmapEntry, 0, len(keys))
-		for _, key := range keys {
-			metadata := parsed.ByRS[key]
-			entries = append(entries, model.WikiGraphRoadmapEntry{RSID: metadata.RS, Horizon: metadata.Horizon, Status: metadata.State})
-		}
+	entries := make([]model.WikiGraphRoadmapEntry, 0, len(parsed.Entries))
+	for _, metadata := range parsed.Entries {
+		entries = append(entries, model.WikiGraphRoadmapEntry{ID: metadata.ID, RSID: metadata.RS, Horizon: metadata.Horizon, Status: metadata.Status, Title: metadata.Title, DependsOn: metadata.DependsOn})
+	}
+	if len(entries) > 0 {
 		envelope.Roadmap = &model.WikiGraphRoadmap{Canonical: false, Entries: entries}
 	}
+	envelope.RoadmapWarnings = append(envelope.RoadmapWarnings, parsed.Warnings...)
 	for _, warning := range parsed.Warnings {
 		envelope.Warnings = appendStringIfMissing(envelope.Warnings, warning.Message)
 	}
+}
+
+// applyWikiRoadmapGraph derives a temporary projection: each roadmap item links
+// to its existing RS, while dependency edges connect roadmap items.
+func applyWikiRoadmapGraph(ctx context.Context, db *sql.DB, root string, envelope *model.Envelope) error {
+	parsed := loadWikiRoadmapMetadata(root)
+	envelope.RoadmapWarnings = append(envelope.RoadmapWarnings, parsed.Warnings...)
+	for _, warning := range parsed.Warnings {
+		envelope.Warnings = appendStringIfMissing(envelope.Warnings, warning.Message)
+	}
+	rsNodes := map[string]string{}
+	for _, node := range envelope.Nodes {
+		if node.DocID != "" {
+			rsNodes[strings.ToUpper(node.DocID)] = node.ID
+		}
+	}
+	existingNodeIDs := map[string]bool{}
+	for _, node := range envelope.Nodes {
+		existingNodeIDs[node.ID] = true
+	}
+	if envelope.GenerationID != "" {
+		snapshot, err := store.BeginGraphQuerySnapshot(ctx, db, envelope.GenerationID)
+		if err != nil {
+			return err
+		}
+		defer snapshot.Close()
+		for _, item := range parsed.Entries {
+			resolved, _, resolveErr := snapshot.ResolveGraphSelector(ctx, item.RS)
+			if resolveErr != nil || len(resolved) != 1 {
+				continue
+			}
+			node := resolveWikiGraphNode(ctx, snapshot, resolved[0].CrossRID)
+			if node.ID != "" && strings.EqualFold(node.DocID, item.RS) {
+				rsNodes[strings.ToUpper(item.RS)] = node.ID
+				if !existingNodeIDs[node.ID] {
+					envelope.Nodes = append(envelope.Nodes, node)
+					existingNodeIDs[node.ID] = true
+				}
+			}
+		}
+	}
+	entries := make([]model.WikiGraphRoadmapEntry, 0, len(parsed.Entries))
+	for _, item := range parsed.Entries {
+		entries = append(entries, model.WikiGraphRoadmapEntry{ID: item.ID, RSID: item.RS, Horizon: item.Horizon, Status: item.Status, Title: item.Title, DependsOn: item.DependsOn})
+	}
+	envelope.Roadmap = &model.WikiGraphRoadmap{Canonical: false, Entries: entries}
+	known := map[string]bool{}
+	for _, item := range parsed.Entries {
+		known[item.ID] = true
+	}
+	for _, item := range parsed.Entries {
+		if rsNodes[strings.ToUpper(item.RS)] == "" && envelope.GraphFreshness != nil && envelope.GraphFreshness.State == model.GraphFreshnessCurrent {
+			message := "roadmap_rs_missing:" + item.RS
+			envelope.Warnings = appendStringIfMissing(envelope.Warnings, message)
+			envelope.RoadmapWarnings = append(envelope.RoadmapWarnings, model.WikiRoadmapWarning{Code: "roadmap_rs_missing", Message: message, Blocking: false})
+		}
+		id := "roadmap:" + item.ID
+		envelope.Nodes = append(envelope.Nodes, model.WikiGraphNode{ID: id, Kind: "roadmap", DocID: item.ID, Path: model.WikiRoadmapSource, Horizon: item.Horizon, Status: item.Status, Title: item.Title})
+		if rsID := rsNodes[strings.ToUpper(item.RS)]; rsID != "" {
+			envelope.Edges = append(envelope.Edges, model.WikiGraphEdge{ID: "roadmap-rs:" + item.ID, From: id, Relation: "roadmap_for", To: rsID, Provenance: "derived"})
+		}
+	}
+	for _, item := range parsed.Entries {
+		for _, dep := range item.DependsOn {
+			if !known[dep] {
+				continue
+			}
+			envelope.Edges = append(envelope.Edges, model.WikiGraphEdge{ID: "roadmap-dep:" + dep + ":" + item.ID, From: "roadmap:" + dep, Relation: "depends_on", To: "roadmap:" + item.ID, Provenance: "derived"})
+		}
+	}
+	return nil
+}
+
+func wikiRoadmapMermaid(generationID string, nodes []model.WikiGraphNode, edges []model.WikiGraphEdge) *model.WikiGraphMermaid {
+	roadmap := map[string]model.WikiGraphNode{}
+	for _, node := range nodes {
+		if node.Kind == "roadmap" {
+			roadmap[node.ID] = node
+		}
+	}
+	if len(roadmap) == 0 {
+		return nil
+	}
+	ids := make([]string, 0, len(roadmap))
+	for id := range roadmap {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	aliases := map[string]string{}
+	for i, id := range ids {
+		aliases[id] = fmt.Sprintf("r%d", i+1)
+	}
+	var b strings.Builder
+	b.WriteString("flowchart LR\n")
+	for _, horizon := range []string{"short", "medium", "long"} {
+		b.WriteString(fmt.Sprintf("  subgraph %s[\"%s\"]\n", horizon, horizon))
+		for _, id := range ids {
+			node := roadmap[id]
+			if node.Horizon != horizon {
+				continue
+			}
+			label := firstNonEmpty(node.Title, node.DocID)
+			label = strings.NewReplacer("\"", "'", "\n", " ", "\r", " ").Replace(label)
+			status := node.Status
+			if status != "todo" && status != "doing" && status != "done" && status != "blocked" {
+				status = "todo"
+			}
+			b.WriteString(fmt.Sprintf("    %s[\"%s\"]:::status_%s\n", aliases[id], label, status))
+		}
+		b.WriteString("  end\n")
+	}
+	b.WriteString("  classDef status_todo fill:#e5e7eb,stroke:#6b7280,color:#111827\n  classDef status_doing fill:#dbeafe,stroke:#2563eb,color:#1e3a8a\n  classDef status_done fill:#dcfce7,stroke:#16a34a,color:#14532d\n  classDef status_blocked fill:#fee2e2,stroke:#dc2626,color:#7f1d1d\n")
+	edgeIDs := []string{}
+	for _, edge := range edges {
+		if edge.Relation != "depends_on" {
+			continue
+		}
+		from, fok := aliases[edge.From]
+		to, tok := aliases[edge.To]
+		if fok && tok {
+			b.WriteString(fmt.Sprintf("  %s --> %s\n", from, to))
+			edgeIDs = append(edgeIDs, edge.ID)
+		}
+	}
+	return &model.WikiGraphMermaid{Format: "mermaid", Source: b.String(), GenerationID: generationID, NodeIDs: ids, EdgeIDs: edgeIDs}
 }
 
 func wikiGraphMermaid(generationID string, nodes []model.WikiGraphNode, edges []model.WikiGraphEdge) *model.WikiGraphMermaid {

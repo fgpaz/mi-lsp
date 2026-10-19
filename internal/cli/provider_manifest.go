@@ -135,7 +135,7 @@ func qInputSchema() map[string]any {
 func wikiGraphInputSchema() map[string]any {
 	return objectSchema([]string{"workspace", "mode"}, map[string]any{
 		"workspace": stringSchema(1),
-		"mode":      map[string]any{"type": "string", "enum": []string{"neighbors", "path", "explain", "affected", "change-pack", "matrix"}},
+		"mode":      map[string]any{"type": "string", "enum": []string{"neighbors", "path", "explain", "affected", "change-pack", "matrix", "roadmap"}},
 		"from":      stringSchema(0), "to": stringSchema(0), "ref": stringSchema(0),
 		"changed_paths": map[string]any{"type": "array", "minItems": 1, "items": stringSchema(1)},
 		"relations":     stringSchema(0),

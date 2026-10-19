@@ -1282,7 +1282,7 @@ func newNavWikiGraphCommand(state *rootState) *cobra.Command {
 			return state.executeOperation(cmd, "nav.wiki.graph", payload, false)
 		},
 	}
-	command.Flags().StringVar(&mode, "mode", "", "Graph query mode: neighbors, path, explain, affected, change-pack, or matrix")
+	command.Flags().StringVar(&mode, "mode", "", "Graph query mode: neighbors, path, explain, affected, change-pack, matrix, or roadmap")
 	command.Flags().StringVar(&from, "from", "", "Source selector for path queries")
 	command.Flags().StringVar(&to, "to", "", "Destination selector for path queries")
 	command.Flags().StringVar(&ref, "ref", "", "Git ref for change-pack queries")

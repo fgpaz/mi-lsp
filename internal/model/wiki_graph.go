@@ -3,11 +3,14 @@ package model
 // WikiGraphNode is the stable public projection of a node in the unified
 // wiki-and-code graph.
 type WikiGraphNode struct {
-	ID     string `json:"id"`
-	Kind   string `json:"kind"`
-	DocID  string `json:"doc_id,omitempty"`
-	Path   string `json:"path,omitempty"`
-	Symbol string `json:"symbol,omitempty"`
+	ID      string `json:"id"`
+	Kind    string `json:"kind"`
+	DocID   string `json:"doc_id,omitempty"`
+	Path    string `json:"path,omitempty"`
+	Symbol  string `json:"symbol,omitempty"`
+	Horizon string `json:"horizon,omitempty"`
+	Status  string `json:"status,omitempty"`
+	Title   string `json:"title,omitempty"`
 }
 
 // WikiGraphEdge projects one persisted graph edge. Provenance is one of
@@ -49,9 +52,12 @@ type WikiGraphMermaid struct {
 }
 
 type WikiGraphRoadmapEntry struct {
-	RSID    string `json:"rs_id"`
-	Horizon string `json:"horizon,omitempty"`
-	Status  string `json:"status,omitempty"`
+	ID        string   `json:"id"`
+	RSID      string   `json:"rs_id"`
+	Horizon   string   `json:"horizon"`
+	Status    string   `json:"status"`
+	Title     string   `json:"title,omitempty"`
+	DependsOn []string `json:"depends_on,omitempty"`
 }
 
 type WikiGraphRoadmap struct {

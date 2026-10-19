@@ -685,3 +685,7 @@ La decisión del parent coord-milsp, [[ADR-KOTLIN-GRAPH-ADMISSION-V1]], sustituy
 - Release: `[[AE-RELEASE-DISTRIBUTION]]`.
 
 Cambiar ownership, pipeline, authority, backend maturity o degradacion visible exige sincronizar RF/TP. Cambiar tablas/migracion exige sincronizar `08`; cambiar comando/envelope/protocolo exige sincronizar `09`.
+
+### Roadmap local derivado
+
+`.docs/roadmap/roadmap.md` es una fuente local opcional, no canónica y fuera del árbol de wiki. El lector `internal/model/wiki_roadmap.go` interpreta campos estructurales ingleses (`id`, `rs`, `horizon`, `status`, `depends_on`) y conserva el texto libre; el servicio deriva, solo a demanda, nodos de roadmap, enlaces hacia RS existentes y relaciones `depends_on`. RS desconocidos, ciclos, dependencias desconocidas y valores inválidos se exponen como avisos no bloqueantes. `nav wiki graph --mode roadmap --render mermaid` produce una vista efímera por short/medium/long y estado, nunca un Gantt ni archivo persistido. Esta proyección no participa en gates de readiness, trazabilidad o cierre.

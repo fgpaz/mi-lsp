@@ -297,7 +297,8 @@
               "explain",
               "affected",
               "change-pack",
-              "matrix"
+              "matrix",
+              "roadmap"
             ],
             "type": "string"
           },

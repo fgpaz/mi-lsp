@@ -243,6 +243,7 @@ type Envelope struct {
 	Edges              []WikiGraphEdge               `json:"edges,omitempty"`
 	Matrix             []WikiGraphMatrixRow          `json:"matrix,omitempty"`
 	Roadmap            *WikiGraphRoadmap             `json:"roadmap,omitempty"`
+	RoadmapWarnings    []WikiRoadmapWarning          `json:"roadmap_warnings,omitempty"`
 	Mermaid            *WikiGraphMermaid             `json:"mermaid,omitempty"`
 	Unresolved         []WikiGraphUnresolved         `json:"unresolved,omitempty"`
 	Budget             *QBudget                      `json:"budget,omitempty"`
@@ -681,15 +682,15 @@ type DocSourceRecord struct {
 }
 
 type DocsReadProfile struct {
-	ProjectionSource string             `toml:"projection_source,omitempty"`
-	AgentSurfaces    []DocsAgentSurface `toml:"agent_surface,omitempty"`
-	Version     int                    `toml:"version"`
-	Families    []DocsReadFamily       `toml:"family"`
-	GenericDocs DocsGenericFallback    `toml:"generic_docs"`
-	ReadingPack DocsReadingPackProfile `toml:"reading_pack"`
-	OwnerHints  []DocsOwnerHint        `toml:"owner_hint"`
-	Governance  DocsGovernanceProfile  `toml:"governance"`
-	WikiMap     *WikiMapConfig         `toml:"wiki_map,omitempty"`
+	ProjectionSource string                 `toml:"projection_source,omitempty"`
+	AgentSurfaces    []DocsAgentSurface     `toml:"agent_surface,omitempty"`
+	Version          int                    `toml:"version"`
+	Families         []DocsReadFamily       `toml:"family"`
+	GenericDocs      DocsGenericFallback    `toml:"generic_docs"`
+	ReadingPack      DocsReadingPackProfile `toml:"reading_pack"`
+	OwnerHints       []DocsOwnerHint        `toml:"owner_hint"`
+	Governance       DocsGovernanceProfile  `toml:"governance"`
+	WikiMap          *WikiMapConfig         `toml:"wiki_map,omitempty"`
 }
 
 // DocsAgentSurface is a projected, per-kind agent read/edit surface.
@@ -817,14 +818,14 @@ type AECanonStatus struct {
 }
 
 type WikiLayerExceptionView struct {
-	Layer    string `json:"layer,omitempty"`
-	Capa     string `json:"capa,omitempty"`
-	Motivo   string `json:"motivo,omitempty"`
-	Reason   string `json:"reason,omitempty"`
-	Autorizo string `json:"autorizo,omitempty"`
+	Layer        string `json:"layer,omitempty"`
+	Capa         string `json:"capa,omitempty"`
+	Motivo       string `json:"motivo,omitempty"`
+	Reason       string `json:"reason,omitempty"`
+	Autorizo     string `json:"autorizo,omitempty"`
 	AuthorizedBy string `json:"authorized_by,omitempty"`
-	Fecha    string `json:"fecha,omitempty"`
-	Date     string `json:"date,omitempty"`
+	Fecha        string `json:"fecha,omitempty"`
+	Date         string `json:"date,omitempty"`
 }
 
 type WikiContractTraitView struct {
@@ -834,15 +835,15 @@ type WikiContractTraitView struct {
 }
 
 type WikiContractValidationResult struct {
-	WikiContract           string                         `json:"wiki_contract"`
-	ContractReadiness      string                         `json:"contract_readiness"`
-	ContractVerdict        string                         `json:"contract_verdict"`
-	ContractWarnings       []string                       `json:"contract_warnings,omitempty"`
-	ContractsReviewed      int                            `json:"contracts_reviewed"`
-	LinksReviewed          int                            `json:"links_reviewed"`
-	TargetsMissing         int                            `json:"targets_missing"`
-	SectionsMissing        int                            `json:"sections_missing"`
-	Documents              []WikiContractDocumentFinding  `json:"documents,omitempty"`
+	WikiContract      string                        `json:"wiki_contract"`
+	ContractReadiness string                        `json:"contract_readiness"`
+	ContractVerdict   string                        `json:"contract_verdict"`
+	ContractWarnings  []string                      `json:"contract_warnings,omitempty"`
+	ContractsReviewed int                           `json:"contracts_reviewed"`
+	LinksReviewed     int                           `json:"links_reviewed"`
+	TargetsMissing    int                           `json:"targets_missing"`
+	SectionsMissing   int                           `json:"sections_missing"`
+	Documents         []WikiContractDocumentFinding `json:"documents,omitempty"`
 }
 
 type WikiContractDocumentFinding struct {

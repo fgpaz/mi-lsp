@@ -5,7 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.14.1] - 2026-10-19
+
+### Added
+
+- A typed `nav wiki graph --mode roadmap` projection reads the optional non-canonical local roadmap, links roadmap items to existing RS nodes, and derives a three-horizon Mermaid view on request; validation advisories never gate wiki readiness or closure.
 
 ## [0.14.0] - 2026-10-19
 

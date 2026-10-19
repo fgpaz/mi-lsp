@@ -2,23 +2,24 @@ package model
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 )
 
-// WikiRoadmapSource is the optional, non-canonical backup location from the v1.1 brief.
+// WikiRoadmapSource is the optional, non-canonical local roadmap.
 const WikiRoadmapSource = ".docs/roadmap/roadmap.md"
 
-// WikiRoadmapMetadata is display-only RS metadata; it never represents a graph edge.
 type WikiRoadmapMetadata struct {
-	ID        string `json:"id,omitempty"`
-	RS        string `json:"rs"`
-	Horizon   string `json:"horizon,omitempty"`
-	State     string `json:"state,omitempty"`
-	Canonical bool   `json:"canonical"`
-	Source    string `json:"source"`
+	ID        string   `json:"id"`
+	RS        string   `json:"rs"`
+	Horizon   string   `json:"horizon"`
+	Status    string   `json:"status"`
+	Title     string   `json:"title,omitempty"`
+	DependsOn []string `json:"depends_on,omitempty"`
+	Canonical bool     `json:"canonical"`
+	Source    string   `json:"source"`
 }
 
-// WikiRoadmapWarning is a typed non-blocking note about an optional roadmap source.
 type WikiRoadmapWarning struct {
 	Code     string `json:"code"`
 	Line     int    `json:"line,omitempty"`
@@ -26,61 +27,51 @@ type WikiRoadmapWarning struct {
 	Blocking bool   `json:"blocking"`
 }
 
-// WikiRoadmapParseResult maps RS identifiers to non-canonical metadata.
 type WikiRoadmapParseResult struct {
 	Source    string                         `json:"source"`
 	Canonical bool                           `json:"canonical"`
+	Entries   []WikiRoadmapMetadata          `json:"entries"`
 	ByRS      map[string]WikiRoadmapMetadata `json:"by_rs"`
 	Warnings  []WikiRoadmapWarning           `json:"warnings,omitempty"`
 }
 
-// ParseWikiRoadmapMarkdown reads the minimal v0 table format:
-// | id | RS | horizon/horizonte | state/estado |.
-// The format mirrors the four fields specified by wiki-model v1.1; no links are emitted.
+// ParseWikiRoadmapMarkdown parses a non-canonical Markdown table with English
+// structural headers: id, rs, horizon, status, and optional depends_on/title.
 func ParseWikiRoadmapMarkdown(content string) WikiRoadmapParseResult {
-	result := WikiRoadmapParseResult{
-		Source: WikiRoadmapSource, Canonical: false,
-		ByRS:     make(map[string]WikiRoadmapMetadata),
-		Warnings: []WikiRoadmapWarning{},
-	}
+	result := WikiRoadmapParseResult{Source: WikiRoadmapSource, Canonical: false, Entries: []WikiRoadmapMetadata{}, ByRS: map[string]WikiRoadmapMetadata{}, Warnings: []WikiRoadmapWarning{}}
 	lines := strings.Split(strings.ReplaceAll(content, "\r", ""), "\n")
-	headerLine := -1
-	columns := map[string]int{}
+	columns, header := map[string]int{}, -1
 	for i, line := range lines {
 		cells, ok := splitWikiRoadmapTableRow(line)
 		if !ok {
 			continue
 		}
-		found := make(map[string]int)
-		for column, cell := range cells {
+		found := map[string]int{}
+		for col, cell := range cells {
 			switch normalizeWikiRoadmapHeader(cell) {
-			case "id":
-				found["id"] = column
-			case "rs":
-				found["rs"] = column
-			case "horizon", "horizonte":
-				found["horizon"] = column
-			case "state", "estado":
-				found["state"] = column
+			case "id", "rs", "horizon", "status", "depends_on", "title":
+				found[normalizeWikiRoadmapHeader(cell)] = col
 			}
 		}
-		if len(found) == 4 {
-			headerLine, columns = i, found
-			break
+		if _, id := found["id"]; id {
+			if _, rs := found["rs"]; rs {
+				if _, h := found["horizon"]; h {
+					if _, s := found["status"]; s {
+						columns, header = found, i
+						break
+					}
+				}
+			}
 		}
 	}
-	if headerLine < 0 {
+	if header < 0 {
 		if strings.TrimSpace(content) != "" {
-			result.Warnings = append(result.Warnings, WikiRoadmapWarning{
-				Code: "roadmap_table_missing", Message: "roadmap_table_missing: expected columns id, RS, horizon, state", Blocking: false,
-			})
+			result.Warnings = append(result.Warnings, wikiRoadmapWarning("roadmap_table_missing", 0, "expected columns id, rs, horizon, status"))
 		}
 		return result
 	}
-
-	seen := make(map[string]bool)
-	ambiguous := make(map[string]bool)
-	for i := headerLine + 1; i < len(lines); i++ {
+	seenIDs, seenRS := map[string]bool{}, map[string]bool{}
+	for i := header + 1; i < len(lines); i++ {
 		cells, ok := splitWikiRoadmapTableRow(lines[i])
 		if !ok {
 			if strings.TrimSpace(lines[i]) == "" {
@@ -91,50 +82,117 @@ func ParseWikiRoadmapMarkdown(content string) WikiRoadmapParseResult {
 		if wikiRoadmapSeparatorRow(cells) {
 			continue
 		}
-		maxColumn := columns["id"]
-		for _, column := range columns {
-			if column > maxColumn {
-				maxColumn = column
+		max := 0
+		for _, col := range columns {
+			if col > max {
+				max = col
 			}
 		}
-		if len(cells) <= maxColumn {
-			result.Warnings = append(result.Warnings, wikiRoadmapWarning("roadmap_row_incomplete", i+1, "roadmap row is missing one or more declared columns"))
+		if len(cells) <= max {
+			result.Warnings = append(result.Warnings, wikiRoadmapWarning("roadmap_row_incomplete", i+1, "roadmap row is missing a declared column"))
 			continue
 		}
-		id := strings.TrimSpace(cells[columns["id"]])
-		rs := strings.ToUpper(strings.TrimSpace(cells[columns["rs"]]))
-		horizon := strings.TrimSpace(cells[columns["horizon"]])
-		state := strings.TrimSpace(cells[columns["state"]])
+		cell := func(name string) string {
+			col, ok := columns[name]
+			if !ok || col >= len(cells) {
+				return ""
+			}
+			return strings.TrimSpace(cells[col])
+		}
+		id, rs := cell("id"), strings.ToUpper(cell("rs"))
+		horizon, status := strings.ToLower(cell("horizon")), strings.ToLower(cell("status"))
 		if id == "" {
 			result.Warnings = append(result.Warnings, wikiRoadmapWarning("roadmap_id_missing", i+1, "roadmap row is missing id"))
 			continue
 		}
 		if !validWikiRoadmapRS(rs) {
-			result.Warnings = append(result.Warnings, wikiRoadmapWarning("roadmap_rs_invalid", i+1, "roadmap row RS must use the RS- identifier prefix"))
+			result.Warnings = append(result.Warnings, wikiRoadmapWarning("roadmap_rs_invalid", i+1, "rs must use the RS- identifier prefix"))
 			continue
 		}
-		if horizon == "" {
-			result.Warnings = append(result.Warnings, wikiRoadmapWarning("roadmap_horizon_missing", i+1, "roadmap row is missing horizon"))
+		if horizon != "short" && horizon != "medium" && horizon != "long" {
+			result.Warnings = append(result.Warnings, wikiRoadmapWarning("roadmap_horizon_invalid", i+1, "horizon must be short, medium, or long"))
 		}
-		if state == "" {
-			result.Warnings = append(result.Warnings, wikiRoadmapWarning("roadmap_state_missing", i+1, "roadmap row is missing state"))
+		if status != "todo" && status != "doing" && status != "done" && status != "blocked" {
+			result.Warnings = append(result.Warnings, wikiRoadmapWarning("roadmap_status_invalid", i+1, "status must be todo, doing, done, or blocked"))
 		}
-		if seen[rs] {
-			delete(result.ByRS, rs)
-			ambiguous[rs] = true
-			result.Warnings = append(result.Warnings, wikiRoadmapWarning("roadmap_rs_duplicate", i+1, fmt.Sprintf("roadmap has more than one row for %s; metadata omitted as ambiguous", rs)))
+		if seenIDs[id] {
+			result.Warnings = append(result.Warnings, wikiRoadmapWarning("roadmap_id_duplicate", i+1, "roadmap item id is duplicated"))
 			continue
 		}
-		if ambiguous[rs] {
-			continue
+		if seenRS[rs] {
+			result.Warnings = append(result.Warnings, wikiRoadmapWarning("roadmap_rs_duplicate", i+1, fmt.Sprintf("more than one roadmap item references %s", rs)))
 		}
-		seen[rs] = true
-		result.ByRS[rs] = WikiRoadmapMetadata{
-			ID: id, RS: rs, Horizon: horizon, State: state,
-			Canonical: false, Source: WikiRoadmapSource,
+		seenIDs[id], seenRS[rs] = true, true
+		deps := []string{}
+		for _, dep := range strings.Split(cell("depends_on"), ",") {
+			dep = strings.TrimSpace(dep)
+			if dep != "" {
+				deps = append(deps, dep)
+			}
+		}
+		sort.Strings(deps)
+		entry := WikiRoadmapMetadata{ID: id, RS: rs, Horizon: horizon, Status: status, Title: cell("title"), DependsOn: deps, Canonical: false, Source: WikiRoadmapSource}
+		result.Entries = append(result.Entries, entry)
+		if !seenRS[rs] || len(result.ByRS[rs].RS) == 0 {
+			result.ByRS[rs] = entry
 		}
 	}
+	for _, e := range result.Entries {
+		for _, dep := range e.DependsOn {
+			if !seenIDs[dep] {
+				result.Warnings = append(result.Warnings, wikiRoadmapWarning("roadmap_dependency_unknown", 0, fmt.Sprintf("roadmap item %s depends on unknown item %s", e.ID, dep)))
+			}
+		}
+	}
+	if cycle := wikiRoadmapCycle(result.Entries); len(cycle) > 0 {
+		result.Warnings = append(result.Warnings, wikiRoadmapWarning("roadmap_dependency_cycle", 0, "roadmap dependency cycle: "+strings.Join(cycle, " -> ")))
+	}
 	return result
+}
+
+func wikiRoadmapCycle(entries []WikiRoadmapMetadata) []string {
+	deps := map[string][]string{}
+	for _, e := range entries {
+		deps[e.ID] = e.DependsOn
+	}
+	state, stack := map[string]int{}, []string{}
+	var cycle []string
+	var visit func(string) bool
+	visit = func(id string) bool {
+		if state[id] == 1 {
+			for i, item := range stack {
+				if item == id {
+					cycle = append(append([]string{}, stack[i:]...), id)
+					return true
+				}
+			}
+			return true
+		}
+		if state[id] == 2 {
+			return false
+		}
+		state[id] = 1
+		stack = append(stack, id)
+		for _, dep := range deps[id] {
+			if _, ok := deps[dep]; ok && visit(dep) {
+				return true
+			}
+		}
+		stack = stack[:len(stack)-1]
+		state[id] = 2
+		return false
+	}
+	ids := make([]string, 0, len(deps))
+	for id := range deps {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	for _, id := range ids {
+		if visit(id) {
+			return cycle
+		}
+	}
+	return nil
 }
 
 func splitWikiRoadmapTableRow(line string) ([]string, bool) {
@@ -146,18 +204,15 @@ func splitWikiRoadmapTableRow(line string) ([]string, bool) {
 	trimmed = strings.TrimSuffix(trimmed, "|")
 	parts := strings.Split(trimmed, "|")
 	cells := make([]string, len(parts))
-	for i, part := range parts {
-		cells[i] = strings.TrimSpace(strings.Trim(part, " `"))
+	for i, p := range parts {
+		cells[i] = strings.TrimSpace(strings.Trim(p, " `"))
 	}
 	return cells, len(cells) > 1
 }
-
 func normalizeWikiRoadmapHeader(value string) string {
 	value = strings.ToLower(strings.TrimSpace(strings.Trim(value, "*`_ ")))
-	value = strings.NewReplacer("á", "a", "é", "e", "í", "i", "ó", "o", "ú", "u", "ü", "u", "ñ", "n").Replace(value)
-	return value
+	return strings.ReplaceAll(value, "-", "_")
 }
-
 func wikiRoadmapSeparatorRow(cells []string) bool {
 	for _, cell := range cells {
 		cell = strings.TrimSpace(cell)
@@ -172,7 +227,6 @@ func wikiRoadmapSeparatorRow(cells []string) bool {
 	}
 	return true
 }
-
 func validWikiRoadmapRS(value string) bool {
 	if !strings.HasPrefix(value, "RS-") || len(value) < 4 {
 		return false
@@ -185,7 +239,6 @@ func validWikiRoadmapRS(value string) bool {
 	}
 	return true
 }
-
 func wikiRoadmapWarning(code string, line int, message string) WikiRoadmapWarning {
 	return WikiRoadmapWarning{Code: code, Line: line, Message: message, Blocking: false}
 }
