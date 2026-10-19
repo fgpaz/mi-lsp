@@ -51,7 +51,7 @@ archives:
         dst: .docs/wiki/09_contratos
       - src: TROUBLESHOOTING.md
         dst: docs
-      - src: "scripts/install/**/*"
+      - src: "scripts/install/*"
         dst: scripts/install
       # All platform workers are bundled in every archive; the runtime selects
       # workers/<rid> by ResolveRID(). (GoReleaser v2 does not template files.src/dst,
