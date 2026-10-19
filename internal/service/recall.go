@@ -174,7 +174,7 @@ func (a *App) embedWorkspaceWiki(ctx context.Context, root string, progress func
 			return nil
 		}
 		currentPath := textPlans[len(textPlans)-1].DocPath
-		vectors, err := client.Embed(ctx, texts)
+		vectors, err := client.EmbedIndex(ctx, texts)
 		if err != nil {
 			if ctxErr := ctx.Err(); ctxErr != nil {
 				return embeddingPhaseError(ctxErr, completed, total)
