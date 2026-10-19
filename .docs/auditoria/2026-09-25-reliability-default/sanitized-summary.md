@@ -6,4 +6,4 @@ El CLI humano `manual-cli` sigue con warning si `--workspace` apunta a otro root
 
 Verificación fresca en `f78f1ec`: `go test ./...` exit 0 y `go build -o bin/mi-lsp.exe ./cmd/mi-lsp` exit 0. Verificador distinto del autor del corte.
 
-El daemon compartido pid 43908 sigue en la imagen `v0.9.0`. No se reinició. El exe nuevo está en `C:\Users\fgpaz\bin\mi-lsp.exe`.
+El daemon compartido pid 43908 sigue en la imagen `v0.9.0`. No se reinició. El exe nuevo está en `C:\Users\<user>\bin\mi-lsp.exe`.

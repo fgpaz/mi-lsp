@@ -12,7 +12,7 @@
 
 ## Current Evidence Baseline
 
-Telemetry source: `C:\Users\fgpaz\.mi-lsp\daemon\daemon.db`, read-only snapshot from 2026-05-08.
+Telemetry source: `C:\Users\<user>\.mi-lsp\daemon\daemon.db`, read-only snapshot from 2026-05-08.
 
 Key signals:
 

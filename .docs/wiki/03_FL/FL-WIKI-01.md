@@ -112,7 +112,7 @@ sequenceDiagram
 | `--all-workspaces` sin soporte en subcomando | error claro dirigiendo a CT-NAV-WIKI para feature matrix |
 | Presupuesto agotado en fan-out | los primeros N resultados dentro del budget se retornan truncados con `truncated=true` + `next_hint` |
 | Fan-out paralelo saturado (semaphore=4) | cola FIFO respeta límite, no hay stall; slower workspaces simplemente aparecen después en reordenamiento |
-| Hermes setea `host:` en remote execution | item entra con `workspace:` + `host: tesla-desktop` indicando origen, diferenciable de local `host:""` |
+| Hermes setea `host:` en remote execution | item entra con `workspace:` + `host: desktop-host.example.invalid` indicando origen, diferenciable de local `host:""` |
 | Merge cross-máquina en Hermes falla | Hermes ve `hosts_failed[]` y decide si reintenta o expone al usuario |
 
 ## 8. Architecture slice
@@ -184,7 +184,7 @@ block_id: fl-wiki-01-actors
 ACTORS
 
 - Agente/Usuario: dispara comando 'mi-lsp nav wiki <subcomando> --all-workspaces'
-  desde cualquier máquina (teslita, tesla-desktop, etc).
+  desde cualquier máquina (laptop-host.example.invalid, desktop-host.example.invalid, etc).
 
 - Hermes (wrapper PowerShell): consume envelope local, invoca SSH a hosts remotos
   via Tailscale, mergea resultados con host label. Vive fuera mi-lsp.

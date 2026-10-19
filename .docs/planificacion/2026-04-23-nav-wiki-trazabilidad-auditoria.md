@@ -53,8 +53,8 @@ Non-blocking residuals:
 Commands:
 
 ```powershell
-C:\Users\fgpaz\bin\mi-lsp.exe workspace status mi-lsp --format toon
-C:\Users\fgpaz\bin\mi-lsp.exe nav governance --workspace mi-lsp --format toon
+C:\Users\<user>\bin\mi-lsp.exe workspace status mi-lsp --format toon
+C:\Users\<user>\bin\mi-lsp.exe nav governance --workspace mi-lsp --format toon
 ```
 
 Observed:
@@ -81,7 +81,7 @@ Governance-first backend chain reviewed:
 Trace command:
 
 ```powershell
-C:\Users\fgpaz\bin\mi-lsp.exe nav wiki trace RF-QRY-016 --workspace mi-lsp --format toon
+C:\Users\<user>\bin\mi-lsp.exe nav wiki trace RF-QRY-016 --workspace mi-lsp --format toon
 ```
 
 Observed:
@@ -128,22 +128,22 @@ Observed:
 
 ## Runtime And Distribution Evidence
 
-Installed runtime was checked from `C:\Users\fgpaz` with absolute paths to avoid repo-root shadowing.
+Installed runtime was checked from `C:\Users\<user>` with absolute paths to avoid repo-root shadowing.
 
 Commands:
 
 ```powershell
-C:\Users\fgpaz\bin\mi-lsp.exe worker status --format toon
-C:\Users\fgpaz\bin\mi-lsp.exe nav wiki search "RF IDX" --workspace mi-lsp --format toon
-go version -m C:\Users\fgpaz\bin\mi-lsp.exe
+C:\Users\<user>\bin\mi-lsp.exe worker status --format toon
+C:\Users\<user>\bin\mi-lsp.exe nav wiki search "RF IDX" --workspace mi-lsp --format toon
+go version -m C:\Users\<user>\bin\mi-lsp.exe
 go version -m C:\repos\buho\assets\skills\mi-lsp\bin\mi-lsp-win-x64.exe
 go version -m dist\linux-arm64\mi-lsp
 ```
 
 Observed:
 
-- installed CLI path: `C:\Users\fgpaz\bin\mi-lsp.exe`
-- selected worker: `C:\Users\fgpaz\.mi-lsp\workers\win-arm64\MiLsp.Worker.exe`
+- installed CLI path: `C:\Users\<user>\bin\mi-lsp.exe`
+- selected worker: `C:\Users\<user>\.mi-lsp\workers\win-arm64\MiLsp.Worker.exe`
 - selected worker compatible: `true`
 - protocol version: `mi-lsp-v1.1`
 - global binary: `GOOS=windows`, `GOARCH=arm64`
@@ -155,7 +155,7 @@ Observed:
 
 Shared skill comparisons returned no differences for:
 
-- repo `skills/mi-lsp/SKILL.md` vs global `C:\Users\fgpaz\.agents\skills\mi-lsp\SKILL.md`
+- repo `skills/mi-lsp/SKILL.md` vs global `C:\Users\<user>\.agents\skills\mi-lsp\SKILL.md`
 - repo `skills/mi-lsp/SKILL.md` vs Buho mirror `C:\repos\buho\assets\skills\mi-lsp\SKILL.md`
 - global `ps-contexto` vs Buho mirror `ps-contexto`
 - global `ps-asistente-wiki` vs Buho mirror `ps-asistente-wiki`

@@ -12,9 +12,9 @@ hosts:
     transport: local
     # mi_lsp_bin: mi-lsp           # opcional; default = "mi-lsp" en PATH
 
-  - name: tesla-desktop
+  - name: desktop-host.example.invalid
     transport: tailscale-ssh
-    ssh_target: tesla-desktop      # nombre Tailscale del peer
+    ssh_target: desktop-host.example.invalid      # nombre Tailscale del peer
     # mi_lsp_bin: mi-lsp           # opcional; override si en la otra máquina vive en otro path
 
 defaults:

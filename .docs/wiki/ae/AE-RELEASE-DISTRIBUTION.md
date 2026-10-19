@@ -124,7 +124,7 @@ applies_when:
   - global daemon-routing flags (`--no-daemon`, `--no-auto-daemon`) or daemon request deadline semantics change
 required_targets:
   local_current_machine:
-    windows_arm64: C:/Users/fgpaz/bin/mi-lsp.exe
+    windows_arm64: C:/Users/<user>/bin/mi-lsp.exe
     wsl_linux:
       detection: "wsl sh -lc 'whoami; printf %s \"$HOME\"; uname -m'"
       install_paths:
@@ -144,8 +144,8 @@ required_targets:
     - scripts/install/install-agent.sh
   optional_skill_mirror:
     roots:
-      - C:/Users/fgpaz/.agents/skills/mi-lsp
-      - C:/repos/buho/assets/skills/mi-lsp
+      - C:/Users/<user>/.agents/skills/mi-lsp
+      - C:/repos/<mirror-repo>/assets/skills/mi-lsp
     files:
       - bin/mi-lsp-win-x64.exe
       - bin/mi-lsp-linux-x64

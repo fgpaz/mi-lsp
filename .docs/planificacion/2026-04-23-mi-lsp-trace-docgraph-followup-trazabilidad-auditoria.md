@@ -105,17 +105,17 @@ de fallback legacy solo cuando corresponde.
   - agrega una receta de descubrimiento canonico/trazabilidad
 - sincronizacion verificada en las tres superficies:
   - repo actual: `C:\repos\mios\mi-lsp\skills\mi-lsp`
-  - source compartido local: `C:\Users\fgpaz\.agents\skills\mi-lsp`
+  - source compartido local: `C:\Users\<user>\.agents\skills\mi-lsp`
   - mirror: `C:\repos\buho\assets\skills\mi-lsp`
 
 ## Verificacion
 
 ### Gobernanza
 
-- `C:\Users\fgpaz\bin\mi-lsp.exe workspace status mi-lsp --format toon`: PASS
+- `C:\Users\<user>\bin\mi-lsp.exe workspace status mi-lsp --format toon`: PASS
   - `governance_blocked=false`
   - `governance_sync=in_sync`
-- `C:\Users\fgpaz\bin\mi-lsp.exe nav governance --workspace mi-lsp --format toon`: PASS
+- `C:\Users\<user>\bin\mi-lsp.exe nav governance --workspace mi-lsp --format toon`: PASS
 
 ### Tests
 
@@ -136,30 +136,30 @@ de fallback legacy solo cuando corresponde.
 ### Refresh de binario instalado
 
 - se reconstruyo `dist\win-arm64\mi-lsp.exe`
-- se reemplazo `C:\Users\fgpaz\bin\mi-lsp.exe`
+- se reemplazo `C:\Users\<user>\bin\mi-lsp.exe`
 - se reinicio el daemon
-- `go version -m C:\Users\fgpaz\bin\mi-lsp.exe`: PASS
+- `go version -m C:\Users\<user>\bin\mi-lsp.exe`: PASS
   - `GOARCH=arm64`
   - `vcs.revision=bb6ac9c72da9d80527eadbdd9878597d3d18b2d3`
   - `vcs.modified=true`
-- `C:\Users\fgpaz\bin\mi-lsp.exe worker status --format toon`: PASS
+- `C:\Users\<user>\bin\mi-lsp.exe worker status --format toon`: PASS
 
 ### Repro desde binario instalado
 
-- `C:\Users\fgpaz\bin\mi-lsp.exe workspace status multi-tedi --format json --full`: PASS
+- `C:\Users\<user>\bin\mi-lsp.exe workspace status multi-tedi --format json --full`: PASS
   - `docs_index_ready=true`
   - `index_ready=false`
   - warning visible:
     `code catalog is empty while documentation is ready; docs-only recovery rebuilt governed docs and memory_pointer, but nav.find/nav.symbols/semantic code features still need 'mi-lsp index --workspace multi-tedi'`
-- `C:\Users\fgpaz\bin\mi-lsp.exe --workspace multi-tedi nav trace RF-GAS-10 --format toon`: PASS
-- `C:\Users\fgpaz\bin\mi-lsp.exe --workspace multi-tedi nav trace TP-GAS-23 --format toon`: PASS
-- `C:\Users\fgpaz\bin\mi-lsp.exe --workspace multi-tedi nav search RF-GAS-10 --include-content --format toon`: PASS
-- `C:\Users\fgpaz\bin\mi-lsp.exe --workspace multi-tedi nav search TP-GAS-23 --include-content --format toon`: PASS
+- `C:\Users\<user>\bin\mi-lsp.exe --workspace multi-tedi nav trace RF-GAS-10 --format toon`: PASS
+- `C:\Users\<user>\bin\mi-lsp.exe --workspace multi-tedi nav trace TP-GAS-23 --format toon`: PASS
+- `C:\Users\<user>\bin\mi-lsp.exe --workspace multi-tedi nav search RF-GAS-10 --include-content --format toon`: PASS
+- `C:\Users\<user>\bin\mi-lsp.exe --workspace multi-tedi nav search TP-GAS-23 --include-content --format toon`: PASS
 
 ### Skill / mirror sync
 
 - hash identico de `SKILL.md` entre:
-  - `C:\Users\fgpaz\.agents\skills\mi-lsp\SKILL.md`
+  - `C:\Users\<user>\.agents\skills\mi-lsp\SKILL.md`
   - `C:\repos\mios\mi-lsp\skills\mi-lsp\SKILL.md`
   - `C:\repos\buho\assets\skills\mi-lsp\SKILL.md`
 - hash identico de `references/quickstart.md` entre las tres superficies: PASS

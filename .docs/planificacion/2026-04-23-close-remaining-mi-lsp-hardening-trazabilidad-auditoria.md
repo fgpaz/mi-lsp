@@ -42,7 +42,7 @@ Guardrails respetados durante la ejecucion:
 - worktree limitado al dirty set congelado de 18 paths mas:
   - `.docs/raw/plans/2026-04-23-close-remaining-mi-lsp-hardening/*`
   - este artefacto de cierre
-- smokes de Windows usando `C:\Users\fgpaz\bin\mi-lsp.exe` desde cwd neutral
+- smokes de Windows usando `C:\Users\<user>\bin\mi-lsp.exe` desde cwd neutral
 - smokes de WSL usando rutas explicitas
 - sin inventar canon `RF-GAS-09/10` dentro de `mi-lsp`
 
@@ -113,19 +113,19 @@ Guardrails respetados durante la ejecucion:
 
 ### CLI / runtime checks
 
-- `C:\Users\fgpaz\bin\mi-lsp.exe index cancel --help`: PASS
+- `C:\Users\<user>\bin\mi-lsp.exe index cancel --help`: PASS
   - muestra `--force`
-- `C:\Users\fgpaz\bin\mi-lsp.exe --workspace multi-tedi index status --format toon`: PASS
+- `C:\Users\<user>\bin\mi-lsp.exe --workspace multi-tedi index status --format toon`: PASS
   - ultimo job `docs`, `status=succeeded`, `phase=done`
-- `C:\Users\fgpaz\bin\mi-lsp.exe nav wiki trace RF-QRY-016 --workspace mi-lsp --format toon`: PASS
+- `C:\Users\<user>\bin\mi-lsp.exe nav wiki trace RF-QRY-016 --workspace mi-lsp --format toon`: PASS
   - `status=implemented`
   - links explicitos y tests verificados
-- `C:\Users\fgpaz\bin\mi-lsp.exe nav wiki search "RF IDX" --workspace mi-lsp --format toon`: PASS
+- `C:\Users\<user>\bin\mi-lsp.exe nav wiki search "RF IDX" --workspace mi-lsp --format toon`: PASS
   - top results permanecen bajo `.docs/wiki/*`
 
 ### External fallback proof
 
-- `C:\Users\fgpaz\bin\mi-lsp.exe --workspace gastos nav trace RF-GAS-10 --format json`: WARN esperado
+- `C:\Users\<user>\bin\mi-lsp.exe --workspace gastos nav trace RF-GAS-10 --format json`: WARN esperado
   - respuesta `ok=true` con warning `RF "RF-GAS-10" not found in doc index`
   - verificacion filesystem en `C:\repos\mios\gastos\.docs`: `NO_MATCHES`
   - conclusion: no habia canon externo presente para resolver en ese workspace; no se invento canon nuevo
@@ -133,19 +133,19 @@ Guardrails respetados durante la ejecucion:
 ### Docs-first reranking proof
 
 - Windows
-  - `C:\Users\fgpaz\bin\mi-lsp.exe --workspace interbancarizacion_coelsa nav ask "...wiki-to-code parity audit..." --format json`: PASS
+  - `C:\Users\<user>\bin\mi-lsp.exe --workspace interbancarizacion_coelsa nav ask "...wiki-to-code parity audit..." --format json`: PASS
   - `primary_doc=.docs/wiki/07_tech/TECH-CONFIG.md`
   - el primer `doc_evidence` tambien queda bajo `.docs/wiki/*`
 - WSL
-  - `/home/fgpaz/.local/bin/mi-lsp --workspace interbancarizacion_coelsa nav ask "...wiki-to-code parity audit..." --format json`: PASS
-  - `/home/fgpaz/bin/mi-lsp --workspace interbancarizacion_coelsa nav ask "...wiki-to-code parity audit..." --format json`: PASS
+  - `~/.local/bin/mi-lsp --workspace interbancarizacion_coelsa nav ask "...wiki-to-code parity audit..." --format json`: PASS
+  - `~/bin/mi-lsp --workspace interbancarizacion_coelsa nav ask "...wiki-to-code parity audit..." --format json`: PASS
   - una corrida paralela inicial devolvio `disk I/O error (4618)` desde `~/.local/bin`; el rerun aislado paso, por lo que se clasifica como contencion transitoria y no como regression deterministica
 
 ## Distribucion baseline verificada
 
 ### Windows
 
-- `C:\Users\fgpaz\bin\mi-lsp.exe`
+- `C:\Users\<user>\bin\mi-lsp.exe`
   - revision `335388d8c767c882e686d04a1b71231876a68e11`
 - `C:\repos\mios\mi-lsp\mi-lsp.exe`
   - revision `888baa181baafcd22ee94eaa5a417127ea24bf4c`
@@ -155,11 +155,11 @@ Guardrails respetados durante la ejecucion:
 
 ### WSL
 
-- `/home/fgpaz/.local/bin/mi-lsp`
+- `~/.local/bin/mi-lsp`
   - revision `335388d8c767c882e686d04a1b71231876a68e11`
-- `/home/fgpaz/bin/mi-lsp`
+- `~/bin/mi-lsp`
   - revision `335388d8c767c882e686d04a1b71231876a68e11`
-- `/home/fgpaz/go/bin/mi-lsp`
+- `~/go/bin/mi-lsp`
   - revision `97433cf59020948139b6407dd97e8e19863fd64d`
   - stale
 

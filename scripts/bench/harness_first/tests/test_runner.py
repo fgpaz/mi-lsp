@@ -833,7 +833,7 @@ class RunnerContractTests(unittest.TestCase):
 
     def test_projection_redacts_path_sensitive_phi_but_keeps_technical_symbols(self):
         value = {
-            "C:/Users/Alice/notes.txt": "private path",
+            "C:~/notes.txt": "private path",
             "patient_name": "Alice Example",
             "diagnosis": "rare condition",
             "MRN": "MRN-123456",
@@ -842,7 +842,7 @@ class RunnerContractTests(unittest.TestCase):
             "name": "BuildIntentPlan",
         }
         rendered = json.dumps(sanitize(value))
-        self.assertNotIn("C:/Users/Alice/notes.txt", rendered)
+        self.assertNotIn("C:~/notes.txt", rendered)
         self.assertNotIn("Alice Example", rendered)
         self.assertNotIn("rare condition", rendered)
         self.assertNotIn("MRN-123456", rendered)

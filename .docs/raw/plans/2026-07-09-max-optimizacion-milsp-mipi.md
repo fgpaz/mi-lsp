@@ -9,7 +9,7 @@ allowed_paths:
   - C:/repos/mios/mi-lsp/internal/**
   - C:/repos/mios/mi-lsp/.docs/**
   - C:/repos/mios/mi-pi/.docs/**
-  - C:/Users/fgpaz/.agents/skills/ae-worker-pi/**
+  - C:~/.agents/skills/ae-worker-pi/**
   - C:/repos/buho/assets/skills/ae-worker-pi/**
 forbidden_paths: ["**/.env", "**/secrets/**", "C:/repos/mios/mi-pi/.pi/settings.json"]
 verify: ["node --check", "npm run mi-pi:check", "go build ./...", "go test ./internal/..."]

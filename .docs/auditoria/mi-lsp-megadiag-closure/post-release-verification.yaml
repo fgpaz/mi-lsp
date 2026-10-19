@@ -49,7 +49,7 @@ archive_guard: PASS
 archive: mi-lsp_0.6.1_win-arm64.zip
 archive_extracted: PASS
 cli:
-  path: C:\Users\fgpaz\bin\mi-lsp.exe
+  path: C:\Users\<user>\bin\mi-lsp.exe
   sha256: 579f516d279df812644f1fe11925cb25a9b6c41af84d1fd6b1101ba3e8fc2ff7
   version: v0.6.1
   vcs_revision: 19ebf536301b49f8a50414c67e6fdaf9c80696ad

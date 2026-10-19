@@ -21,7 +21,7 @@ worker install could not find a bundled worker and no source project was availab
 
 ## Cause observed
 
-On a teslita Linux x64 install from GitHub release `v0.2.0`, the `linux-x64` release tarball contained a templated worker directory instead of the concrete RID path:
+On a laptop-host.example.invalid Linux x64 install from GitHub release `v0.2.0`, the `linux-x64` release tarball contained a templated worker directory instead of the concrete RID path:
 
 ```text
 workers/{{ if eq .Os "windows" }}win{{ else }}{{ .Os }}{{ end }}-{{ if eq .Arch "amd64" }}x64{{ else }}{{ .Arch }}{{ end }}/...
@@ -63,10 +63,10 @@ Use this when the release CLI is installed but no compatible bundled/installed w
 
 ```bash
 set -euo pipefail
-export HOME=/home/fgpaz
-INSTALL=/home/fgpaz/.local/opt/mi-lsp
-SRC=/home/fgpaz/repos/mios/mi-lsp
-mkdir -p /home/fgpaz/repos/mios /home/fgpaz/.dotnet
+export HOME=~
+INSTALL=~/.local/opt/mi-lsp
+SRC=~/repos/mios/mi-lsp
+mkdir -p ~/repos/mios ~/.dotnet
 
 if [ ! -d "$SRC/.git" ]; then
   git clone https://github.com/fgpaz/mi-lsp.git "$SRC"
@@ -75,12 +75,12 @@ else
 fi
 git -C "$SRC" checkout v0.2.0
 
-if [ ! -x /home/fgpaz/.dotnet/dotnet ]; then
+if [ ! -x ~/.dotnet/dotnet ]; then
   curl -fsSL https://dot.net/v1/dotnet-install.sh -o /tmp/dotnet-install.sh
-  bash /tmp/dotnet-install.sh --channel 10.0 --install-dir /home/fgpaz/.dotnet --no-path
+  bash /tmp/dotnet-install.sh --channel 10.0 --install-dir ~/.dotnet --no-path
 fi
-export DOTNET_ROOT=/home/fgpaz/.dotnet
-export PATH=/home/fgpaz/.dotnet:/usr/local/go/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+export DOTNET_ROOT=~/.dotnet
+export PATH=~/.dotnet:/usr/local/go/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
 rm -rf /tmp/mi-lsp-worker-linux-x64
 mkdir -p /tmp/mi-lsp-worker-linux-x64
@@ -104,7 +104,7 @@ Expected success fields:
 bundled_compatible: true
 selected_compatible: true
 selected_source: bundle
-selected_path: /home/fgpaz/.local/opt/mi-lsp/workers/linux-x64/MiLsp.Worker
+selected_path: ~/.local/opt/mi-lsp/workers/linux-x64/MiLsp.Worker
 protocol_version: mi-lsp-v1.1
 ```
 

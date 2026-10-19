@@ -27,7 +27,7 @@ secret_scan: clean
 
 ## Locked Decisions
 - Path: `.docs/raw/plans/2026-05-11-hermes-wiki-global-nav/hosts.yaml.example` (companion folder; NO `~/.hermes/`).
-- Dos hosts: `local`, `tesla-desktop`.
+- Dos hosts: `local`, `desktop-host.example.invalid`.
 - Defaults: `timeout_seconds: 5`, `semaphore_hosts: 2`.
 - Documentar cómo override `mi_lsp_bin` por host.
 
@@ -45,7 +45,7 @@ complexity: low
 done_when:
   - "hosts.yaml.example existe"
   - "el YAML parsea sin error (validar con ConvertFrom-Yaml o yq)"
-  - "incluye al menos hosts: local + tesla-desktop + defaults timeout/semaphore"
+  - "incluye al menos hosts: local + desktop-host.example.invalid + defaults timeout/semaphore"
 evidence_expected:
   - "Output de ConvertFrom-Yaml -Input (Get-Content ... -Raw) o yq eval . hosts.yaml.example"
 stop_if:
@@ -97,9 +97,9 @@ hosts:
     transport: local
     # mi_lsp_bin: mi-lsp        # opcional; default = "mi-lsp" en PATH
 
-  - name: tesla-desktop
+  - name: desktop-host.example.invalid
     transport: tailscale-ssh
-    ssh_target: tesla-desktop   # nombre Tailscale del peer
+    ssh_target: desktop-host.example.invalid   # nombre Tailscale del peer
     # mi_lsp_bin: mi-lsp        # opcional; override si en la otra máquina vive en otro path
 
 defaults:

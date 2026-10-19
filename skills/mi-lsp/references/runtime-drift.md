@@ -36,7 +36,7 @@ label each observation by its stage:
   those wrappers: 272 top-level packages, plus 5 hidden `.system` packages,
   7 `generico-setup/assets` templates, and 70 category packages.
 - `356` is the **dated 2026-08-26 runtime snapshot** at
-  `/home/tesla/.mi-lsp/skills/catalog.json`; it is not a physical filesystem
+  `~/.mi-lsp/skills/catalog.json`; it is not a physical filesystem
   count.
 
 These are different stages, domains, and timestamps, so the observations are

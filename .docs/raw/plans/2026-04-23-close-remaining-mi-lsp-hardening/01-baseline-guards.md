@@ -36,16 +36,16 @@ workspace: mi-lsp
 
 ## Binary resolution evidence
 
-### `where.exe mi-lsp` from `C:\Users\fgpaz`
+### `where.exe mi-lsp` from `C:\Users\<user>`
 
 ```text
-C:\Users\fgpaz\bin\mi-lsp.exe
+C:\Users\<user>\bin\mi-lsp.exe
 ```
 
 ### Windows binaries: `go version -m`
 
 ```text
-=== C:\Users\fgpaz\bin\mi-lsp.exe
+=== C:\Users\<user>\bin\mi-lsp.exe
 revision=335388d8c767c882e686d04a1b71231876a68e11
 GOARCH=arm64
 modified=true
@@ -64,26 +64,26 @@ modified=true
 ### WSL binaries: `go version -m`
 
 ```text
-=== /home/fgpaz/.local/bin/mi-lsp
+=== ~/.local/bin/mi-lsp
 revision=335388d8c767c882e686d04a1b71231876a68e11
 GOARCH=arm64
 GOOS=linux
 modified=true
 
-=== /home/fgpaz/bin/mi-lsp
+=== ~/bin/mi-lsp
 revision=335388d8c767c882e686d04a1b71231876a68e11
 GOARCH=arm64
 GOOS=linux
 modified=true
 
-=== /home/fgpaz/go/bin/mi-lsp
+=== ~/go/bin/mi-lsp
 revision=97433cf59020948139b6407dd97e8e19863fd64d
 GOARCH=arm64
 GOOS=linux
 modified=true
 ```
 
-`/home/fgpaz/go/bin/mi-lsp` is stale relative to the frozen repo baseline and should be treated as such unless refreshed explicitly post-merge.
+`~/go/bin/mi-lsp` is stale relative to the frozen repo baseline and should be treated as such unless refreshed explicitly post-merge.
 
 ## GitHub evidence
 
@@ -101,6 +101,6 @@ Stop execution if any of the following becomes true:
 
 ## Smoke guardrails
 
-- Windows smokes: always call `C:\Users\fgpaz\bin\mi-lsp.exe` from neutral cwd
+- Windows smokes: always call `C:\Users\<user>\bin\mi-lsp.exe` from neutral cwd
 - WSL smokes: always call explicit binary paths
 - Until post-merge refresh, never use repo-root `.\mi-lsp.exe` for validation

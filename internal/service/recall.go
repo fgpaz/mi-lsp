@@ -174,7 +174,7 @@ func (a *App) embedWorkspaceWiki(ctx context.Context, root string, progress func
 			return nil
 		}
 		currentPath := textPlans[len(textPlans)-1].DocPath
-		vectors, err := client.Embed(ctx, texts)
+		vectors, err := client.EmbedIndex(ctx, texts)
 		if err != nil {
 			if ctxErr := ctx.Err(); ctxErr != nil {
 				return embeddingPhaseError(ctxErr, completed, total)
@@ -385,7 +385,7 @@ func (a *App) recall(ctx context.Context, request model.CommandRequest) (model.E
 	client := embed.New(cfg)
 
 	// Try to embed the query
-	queryVector, err := client.EmbedOne(ctx, recallQueryText(query, intent))
+	queryVector, err := client.EmbedQuery(ctx, recallQueryText(query, intent))
 	if err != nil {
 		// Fall back to lexical search
 		items, searchErr := searchPatternHelper(ctx, registration.Root, project, query, false, askLimit(request.Context.MaxItems, 10, 10))

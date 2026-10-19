@@ -338,7 +338,7 @@ Hardening of the v0.5.1-v0.5.3 follow-up code, found by a parallel adversarial c
 
 ### Fixed
 
-- AE release binary refresh now autodetects the active WSL user and home directory instead of assuming `/home/fgpaz`, so local WSL installs work on machines whose distro user differs from the Windows username.
+- AE release binary refresh now autodetects the active WSL user and home directory instead of assuming `~`, so local WSL installs work on machines whose distro user differs from the Windows username.
 
 ## [0.2.0] - 2026-03-31
 

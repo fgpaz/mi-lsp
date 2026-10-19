@@ -84,6 +84,27 @@ type responsePayload struct {
 // Returns an error if the response has fewer embeddings than inputs,
 // or if the HTTP request/response fails.
 func (c *Client) Embed(ctx context.Context, texts []string) ([][]float32, error) {
+	return c.embed(ctx, texts, "")
+}
+
+// EmbedIndex batches index embeddings at low gateway priority.
+func (c *Client) EmbedIndex(ctx context.Context, texts []string) ([][]float32, error) {
+	return c.embed(ctx, texts, "baja")
+}
+
+// EmbedQuery embeds an interactive search query at high gateway priority.
+func (c *Client) EmbedQuery(ctx context.Context, text string) ([]float32, error) {
+	embeddings, err := c.embed(ctx, []string{text}, "alta")
+	if err != nil {
+		return nil, err
+	}
+	if len(embeddings) == 0 {
+		return []float32{}, nil
+	}
+	return embeddings[0], nil
+}
+
+func (c *Client) embed(ctx context.Context, texts []string, priority string) ([][]float32, error) {
 	if len(texts) == 0 {
 		return [][]float32{}, nil
 	}
@@ -95,7 +116,7 @@ func (c *Client) Embed(ctx context.Context, texts []string) ([][]float32, error)
 		end := min(i+c.cfg.BatchSize, len(texts))
 		batch := texts[i:end]
 
-		embeddings, err := c.embedBatch(ctx, batch)
+		embeddings, err := c.embedBatch(ctx, batch, priority)
 		if err != nil {
 			return nil, err
 		}
@@ -107,7 +128,7 @@ func (c *Client) Embed(ctx context.Context, texts []string) ([][]float32, error)
 }
 
 // embedBatch sends a single batch to the endpoint and returns the embeddings.
-func (c *Client) embedBatch(ctx context.Context, batch []string) ([][]float32, error) {
+func (c *Client) embedBatch(ctx context.Context, batch []string, priority string) ([][]float32, error) {
 	apiKeyEnv := strings.TrimSpace(c.cfg.APIKeyEnv)
 	apiKey := c.cfg.APIKey
 	if apiKeyEnv != "" {
@@ -137,7 +158,7 @@ func (c *Client) embedBatch(ctx context.Context, batch []string) ([][]float32, e
 	}
 	var lastErr error
 	for _, baseURL := range baseURLs {
-		result, retry, err := c.embedAt(ctx, strings.TrimRight(baseURL, "/")+"/embeddings", body, apiKeyEnv, apiKey, batch)
+		result, retry, err := c.embedAt(ctx, strings.TrimRight(baseURL, "/")+"/embeddings", body, apiKeyEnv, apiKey, batch, priority)
 		if err == nil {
 			return result, nil
 		}
@@ -149,7 +170,7 @@ func (c *Client) embedBatch(ctx context.Context, batch []string) ([][]float32, e
 	return nil, lastErr
 }
 
-func (c *Client) embedAt(ctx context.Context, url string, body []byte, apiKeyEnv, apiKey string, batch []string) ([][]float32, bool, error) {
+func (c *Client) embedAt(ctx context.Context, url string, body []byte, apiKeyEnv, apiKey string, batch []string, priority string) ([][]float32, bool, error) {
 	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(body))
 	if err != nil {
 		return nil, false, fmt.Errorf("failed to create request: %w", err)
@@ -158,6 +179,9 @@ func (c *Client) embedAt(ctx context.Context, url string, body []byte, apiKeyEnv
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("User-Agent", c.cfg.UserAgent)
+	if priority != "" {
+		req.Header.Set("X-Micro-Proxy-Priority", priority)
+	}
 
 	// Set Authorization only when APIKeyEnv names a non-empty environment value.
 	if apiKeyEnv != "" || apiKey != "" {
@@ -196,7 +220,7 @@ func (c *Client) embedAt(ctx context.Context, url string, body []byte, apiKeyEnv
 
 // EmbedOne is a convenience method that embeds a single text.
 func (c *Client) EmbedOne(ctx context.Context, text string) ([]float32, error) {
-	embeddings, err := c.Embed(ctx, []string{text})
+	embeddings, err := c.embed(ctx, []string{text}, "")
 	if err != nil {
 		return nil, err
 	}

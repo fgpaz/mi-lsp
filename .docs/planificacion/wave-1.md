@@ -33,7 +33,7 @@ evidence:
 
 **Tech Stack:** Go 1.22+, SQLite (WAL mode), Cobra CLI, fsnotify daemon
 
-**Context Source:** Brainstorming 2026-04-07. Plan aprobado en `/home/fgpaz/.claude/plans/mellow-finding-reef.md`. Archivos verificados con line numbers exactos.
+**Context Source:** Brainstorming 2026-04-07. Plan aprobado en `~/.claude/plans/mellow-finding-reef.md`. Archivos verificados con line numbers exactos.
 
 **Runtime:** CC
 

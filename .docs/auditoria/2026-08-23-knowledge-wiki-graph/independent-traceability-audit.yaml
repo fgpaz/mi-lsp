@@ -39,7 +39,7 @@ harness_contract:
   exports:
     - .docs/auditoria/2026-08-23-knowledge-wiki-graph/independent-traceability-audit.yaml
   agent_must_read:
-    - /Users/jazmin/.agents/claude-skills/ps-auditar-trazabilidad/SKILL.md
+    - ~/.agents/claude-skills/ps-auditar-trazabilidad/SKILL.md
     - .docs/auditoria/2026-08-23-knowledge-wiki-graph/session-contract.yaml
     - .docs/auditoria/2026-08-23-knowledge-wiki-graph/traceability-closure.yaml
   agent_may_edit:
@@ -75,9 +75,9 @@ harness_contract:
 
 target_repository_preflight:
   verdict: PASS
-  source_repository: /Users/jazmin/repos/mi-lsp
-  target_repository: /Users/jazmin/repos/mi-lsp
-  worktree_path: /Users/jazmin/repos/mi-lsp
+  source_repository: ~/repos/mi-lsp
+  target_repository: ~/repos/mi-lsp
+  worktree_path: ~/repos/mi-lsp
   worktree_count: 1
   unknown_writer: false
   revalidation_key: 2026-08-23-knowledge-wiki-graph
@@ -103,7 +103,7 @@ locks_reviewed:
   - this_skill_does_not_mutate_git
 
 scope_audited:
-  worktree: /Users/jazmin/repos/mi-lsp
+  worktree: ~/repos/mi-lsp
   branch: main
   intended_branch: main
   head_sha: f8ec5abaaa8398c82d18017fce4a3bee8e13fe67
@@ -202,7 +202,7 @@ independent_progressive_scope:
   horizon_verdict: PASS
 
 d_tedi_017_lock:
-  source: /Users/jazmin/repos/tedi-desktop/.docs/wiki/91_decision_log.md
+  source: ~/repos/tedi-desktop/.docs/wiki/91_decision_log.md
   status: locked
   claims_verified:
     mi_lsp_owns_compiled_knowledge_wiki_graph: PASS
@@ -318,7 +318,7 @@ verification:
   hash_recompute: PASS
   wiki_map_live: PASS
   governance_live: BLOCKED_PREEXISTING
-  installed_cli: /Users/jazmin/.local/bin/mi-lsp
+  installed_cli: ~/.local/bin/mi-lsp
   installed_version: v0.7.3-0.20260820190540-f8ec5abaaa83+dirty
   targeted_test_commands:
     - go test ./internal/cli -count=1 -run TestNavWikiMap

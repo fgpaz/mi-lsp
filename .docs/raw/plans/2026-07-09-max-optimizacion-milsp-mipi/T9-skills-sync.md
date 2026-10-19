@@ -2,7 +2,7 @@
 
 ## Shared Context
 **Goal:** Que la skill canónica enseñe el scheduler global de máquina y el cache tier-2, y que el mirror quede idéntico.
-**Stack:** Markdown. Skill: `C:/Users/fgpaz/.agents/skills/ae-worker-pi/SKILL.md`; mirror: `C:/repos/buho/assets/skills/ae-worker-pi/SKILL.md`.
+**Stack:** Markdown. Skill: `C:~/.agents/skills/ae-worker-pi/SKILL.md`; mirror: `C:/repos/buho/assets/skills/ae-worker-pi/SKILL.md`.
 **Architecture:** Regla de repo: si se toca una skill bajo `~/.agents/skills`, el mirror en buho se actualiza en la misma tarea. La skill hoy dice "Maximo 3 lanes paralelas por round" (límite por terminal).
 
 ## Locked Decisions
@@ -25,7 +25,7 @@ goal_id: G3
 github_issues: []
 expected_outcome: "Cualquier harness que cargue ae-worker-pi opera con scheduler global y cache compartido"
 files:
-  - modify: C:/Users/fgpaz/.agents/skills/ae-worker-pi/SKILL.md
+  - modify: C:~/.agents/skills/ae-worker-pi/SKILL.md
   - modify: C:/repos/buho/assets/skills/ae-worker-pi/SKILL.md
 complexity: low
 done_when:
@@ -38,7 +38,7 @@ stop_if:
 ```
 
 ## Reference
-`C:/Users/fgpaz/.agents/skills/ae-worker-pi/SKILL.md` líneas 70-143 (secciones a tocar). Antes de editar, verificar sha256 actual de ambos == `4784ef0701bb6c9325482a94ca6e37ae41e873291ab5d7e986da9d49a0d4825c`.
+`C:~/.agents/skills/ae-worker-pi/SKILL.md` líneas 70-143 (secciones a tocar). Antes de editar, verificar sha256 actual de ambos == `4784ef0701bb6c9325482a94ca6e37ae41e873291ab5d7e986da9d49a0d4825c`.
 
 ## Prompt
 Ediciones quirúrgicas de prosa según Locked Decisions, en español con la misma voz del documento. Verificá primero que skill y mirror son idénticos (sha256 citado); si no, STOP. Aplicá las 3 ediciones en la skill canónica, copiá al mirror, verificá hashes.

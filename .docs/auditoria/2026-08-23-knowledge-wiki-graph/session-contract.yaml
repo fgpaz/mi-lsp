@@ -6,7 +6,7 @@ base_ref: origin/main
 base_sha: f8ec5abaaa8398c82d18017fce4a3bee8e13fe67
 branch: main
 intended_branch: main
-worktree_path: /Users/jazmin/repos/mi-lsp
+worktree_path: ~/repos/mi-lsp
 mode: FAST
 tracker:
   mode: none
@@ -142,8 +142,8 @@ no_push_deploy_release_in_current_turn: true
 language: es
 mi_lsp_preflight:
   alias: mi-lsp
-  root: /Users/jazmin/repos/mi-lsp
-  cli_path: /Users/jazmin/.local/bin/mi-lsp
+  root: ~/repos/mi-lsp
+  cli_path: ~/.local/bin/mi-lsp
   governance_blocked: true
   docs_ready: true
   doc_count: 155

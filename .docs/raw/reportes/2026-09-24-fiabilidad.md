@@ -4,7 +4,7 @@ Rama `feat/reliability-default`. No hubo push, tag, release ni reinicio del daem
 
 ## client_name de mi-pi
 
-El alias `mi-pi` resuelve al clon `C:\Users\fgpaz\.pi\agent\git\github.com\fgpaz\mi-pi`. Cuando el selector fue la ruta `C:\repos\mios\mi-pi`, el daemon igual usó ese clon.
+El alias `mi-pi` resuelve al clon `C:\Users\<user>\.pi\agent\git\github.com\fgpaz\mi-pi`. Cuando el selector fue la ruta `C:\repos\mios\mi-pi`, el daemon igual usó ese clon.
 
 Esas filas no llegaron como `claude-code` ni `codex`. Llegaron así:
 
@@ -21,7 +21,7 @@ La normalización cubre `root`, `builtin_child`, `mi-lsp-mcp`, el prefijo de fam
 
 ## Humo
 
-Daemon compartido, sin reinicio: pid 43908, `v0.9.0`, arranque 2026-09-24 21:12, ejecutable `C:\Users\fgpaz\bin\mi-lsp.exe`. El rechazo nuevo no está en ese proceso. El humo de rechazo usó `bin/mi-lsp.exe --no-daemon`.
+Daemon compartido, sin reinicio: pid 43908, `v0.9.0`, arranque 2026-09-24 21:12, ejecutable `C:\Users\<user>\bin\mi-lsp.exe`. El rechazo nuevo no está en ese proceso. El humo de rechazo usó `bin/mi-lsp.exe --no-daemon`.
 
 CLI, cwd `C:\repos\mios\mi-pi`, `workspace status --workspace mi-pi`:
 

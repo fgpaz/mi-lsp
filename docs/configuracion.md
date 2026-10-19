@@ -23,7 +23,7 @@ Only `openai-compatible` providers are supported. `base_urls` are tried in order
 
 For embedding settings, explicit command options take precedence when available, followed by `MI_LSP_EMBEDDINGS_BASE_URL`, `MI_LSP_EMBEDDINGS_MODEL`, and `MI_LSP_EMBEDDINGS_API_KEY` (with legacy `OPENAI_API_KEY` support), then this file. If embeddings are unavailable, semantic embedding enrichment is skipped and lexical behavior remains available.
 
-Run `mi-lsp config doctor` to validate the file. It does not invoke `api_key_command`. Complementos are declarations only; mi-lsp does not execute them as part of configuration validation.
+Run `mi-lsp config setup` to create a private, minimal config file if one does not exist; it never overwrites an existing file and does not invent provider endpoints or credentials. Add provider settings only when embeddings are wanted. Run `mi-lsp config doctor` to validate the file and report missing provider fields; without a provider, keyword-only behavior remains available. Doctor does not invoke `api_key_command`. Complementos are declarations only; mi-lsp does not execute them as part of configuration validation.
 
 ## Privacy
 

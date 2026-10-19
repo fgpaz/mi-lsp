@@ -79,8 +79,8 @@ projection_update_required_when:
   - subagent_or_worker_rules_change
   - pre_push_or_traceability_gates_change
 shared_skill_mirror_rule:
-  source_root: C:/Users/fgpaz/.agents/skills
-  mirror_root: C:/repos/buho/assets/skills
+  source_root: C:/Users/<user>/.agents/skills
+  mirror_root: C:/repos/<mirror-repo>/assets/skills
   byte_identical_required: true
 stop_if:
   - AGENTS_or_CLAUDE_changes_without_AE_source_update

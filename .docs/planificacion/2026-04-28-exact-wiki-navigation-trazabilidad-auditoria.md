@@ -211,12 +211,12 @@ Observed:
 Commands run:
 
 ```powershell
-Copy-Item -LiteralPath .\mi-lsp.exe -Destination C:\Users\fgpaz\bin\mi-lsp.exe -Force
-go version -m C:\Users\fgpaz\bin\mi-lsp.exe
-C:\Users\fgpaz\bin\mi-lsp.exe nav wiki pack "RF-QRY-016" --workspace mi-lsp --format toon --full
-C:\Users\fgpaz\bin\mi-lsp.exe nav wiki validate-source --workspace mi-lsp --format toon
-C:\Users\fgpaz\bin\mi-lsp.exe daemon start
-C:\Users\fgpaz\bin\mi-lsp.exe worker status --format toon
+Copy-Item -LiteralPath .\mi-lsp.exe -Destination C:\Users\<user>\bin\mi-lsp.exe -Force
+go version -m C:\Users\<user>\bin\mi-lsp.exe
+C:\Users\<user>\bin\mi-lsp.exe nav wiki pack "RF-QRY-016" --workspace mi-lsp --format toon --full
+C:\Users\<user>\bin\mi-lsp.exe nav wiki validate-source --workspace mi-lsp --format toon
+C:\Users\<user>\bin\mi-lsp.exe daemon start
+C:\Users\<user>\bin\mi-lsp.exe worker status --format toon
 ```
 
 Observed:
@@ -257,7 +257,7 @@ Checks completed:
 - Traceability evidence exists in this durable `.docs/planificacion` file
 - Board/card: waived because no active board config was found
 - Shared skills: `ps-pre-push` touched and mirror-checked
-- Shared skill source: `C:\Users\fgpaz\.agents\skills\ps-pre-push\SKILL.md`
+- Shared skill source: `C:\Users\<user>\.agents\skills\ps-pre-push\SKILL.md`
 - Shared skill mirror: `C:\repos\buho\assets\skills\ps-pre-push\SKILL.md`
 - Shared skill mirror check: `in_sync=true`
 - Shared skill SHA256: `24CA05581CD9597C35343C18F85C2161AC60873FE7DF2146DCD8F6AD3AD12B3E`

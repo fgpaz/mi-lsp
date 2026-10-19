@@ -5,7 +5,7 @@
 [embeddings]
 enabled = true
 provider = "openai"
-base_url = "http://100.108.60.107:4010/bifrost/v1"
+base_url = "http://bifrost.example.invalid:4010/bifrost/v1"
 model = "embeddinggemma2-768"
 dim = 768
 api_key_env = "BIFROST_VK_MI_LSP"
