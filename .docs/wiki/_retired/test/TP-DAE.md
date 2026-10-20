@@ -1,0 +1,99 @@
+# TP-DAE
+
+```yaml
+harness_protocol: SDD-HARNESS-v1
+id: "TP-DAE"
+kind: "support-doc"
+audience: "llm-first"
+imports:
+  - '[[00_gobierno_documental]]'
+  - '[[TP-DAE]]'
+exports:
+  - 'TP-DAE'
+agent_must_read:
+  - .docs/wiki/00_gobierno_documental.md
+  - .docs/wiki/06_pruebas/TP-DAE.md
+agent_may_edit:
+  - .docs/wiki/06_pruebas/TP-DAE.md
+agent_must_not_edit:
+  - .docs/wiki/_mi-lsp/read-model.toml
+verify:
+  - mi-lsp nav governance --workspace mi-lsp --format toon
+  - mi-lsp nav wiki validate-harness --workspace mi-lsp --format toon
+stop_if:
+  - governance_blocked=true
+  - harness_verdict=BLOCKED
+evidence:
+  - .docs/wiki/06_pruebas/TP-DAE.md
+```
+
+## Cobertura objetivo
+
+- RF-DAE-001
+- RF-DAE-002
+- RF-DAE-003
+- RF-DAE-004
+
+## Casos
+
+| Caso | Tipo | RF | Descripcion |
+|---|---|---|---|
+| TC-DAE-001 | positivo | RF-DAE-001 | inicia daemon global y persiste `state.json` consistente |
+| TC-DAE-002 | positivo | RF-DAE-001 | `daemon start` reutiliza instancia saludable existente |
+| TC-DAE-003 | negativo | RF-DAE-001 | reporta fallo de boot o stop sin dejar estado inconsistente |
+| TC-DAE-004 | positivo | RF-DAE-002 | comparte runtime entre clientes locales del mismo usuario |
+| TC-DAE-005 | positivo | RF-DAE-002 | expone `admin_url` y status enriquecido de runtimes/accesos |
+| TC-DAE-006 | negativo | RF-DAE-002 | degrada con warning si falla telemetria, warm o status admin |
+| TC-DAE-007 | positivo | RF-DAE-002 | deep-link por query params enfoca workspace/panel correcto |
+| TC-DAE-008 | positivo | RF-DAE-002 | `POST /api/workspaces/{workspace}/warm` materializa runtimes sin reiniciar daemon |
+| TC-DAE-009 | positivo | RF-DAE-002 | `GET /api/logs?tail=n` devuelve tail del log local o warning no fatal |
+| TC-DAE-010 | positivo | RF-DAE-003 | semantic query auto-inicia daemon en background |
+| TC-DAE-011 | positivo | RF-DAE-003 | --no-auto-daemon previene auto-start |
+| TC-DAE-012 | negativo | RF-DAE-003 | auto-start timeout → fallback a direct mode |
+| TC-DAE-013 | positivo | RF-DAE-004 | file watcher detecta cambio .cs y re-indexa |
+| TC-DAE-014 | positivo | RF-DAE-004 | file watcher respeta debounce 500ms |
+| TC-DAE-015 | positivo | RF-DAE-004 | file watcher ignora archivos en node_modules |
+| TC-DAE-016 | positivo | RF-DAE-002 | `worker status` servido por daemon conserva el contrato canonico del core y expone `active_workers` dentro del item diagnostico |
+| TC-DAE-017 | positivo | RF-DAE-004 | watcher lazy deduplica aliases del mismo root y respeta `max_watched_roots` con eviction LRU |
+| TC-DAE-018 | positivo | RF-DAE-002, RF-DAE-004 | `daemon status` y `/api/status` exponen `daemon_process` y `watchers` |
+| TC-DAE-018A | positivo | RF-DAE-002 | `TestDaemonStaleWarningWhenMetadataMissing` / `TestDaemonStaleWarningWhenExecutableHashDiffers` / `TestDaemonStaleWarningIgnoresDifferentPathForSameExecutableHash` / `TestDaemonStaleWarningWhenExecutableMTimeDiffers`: `daemon status` advierte cuando el daemon no reporta metadata de ejecutable o parece correr una build anterior al CLI, priorizando hash para no marcar stale por paths temporales equivalentes |
+| TC-DAE-019 | negativo | RF-DAE-002 | saturacion de requests daemon-aware devuelve `daemon/backpressure_busy` tipado sin bloquear `system.status` |
+| TC-DAE-020 | positivo | RF-DAE-002 | `daemon perf-smoke --callers 16` valida una instancia alcanzable y presupuestos de memoria/handles |
+| TC-DAE-021 | positivo | RF-DAE-002 | aliases distintos con mismo root/backend/entrypoint comparten `runtime_key` canonico |
+| TC-DAE-022 | positivo | RF-DAE-002 | entrypoints distintos del mismo root generan runtimes separados |
+| TC-DAE-023 | positivo | RF-DAE-002 | release smoke separa skipped de failed y reporta `unique_root_count`, `duplicate_root_count`, `aliases_per_root` |
+| TC-DAE-024 | negativo | RF-DAE-002 | `daemon perf-smoke` devuelve `ok=false` tipado si working set, private bytes o handles superan el umbral configurado |
+| TC-DAE-025 | positivo | RF-DAE-002 | `admin export --format toon` y `admin export --summary --format toon` serializan telemetria agent-readable sin payloads crudos |
+| TC-DAE-026 | positivo | RF-DAE-002 | `admin export --summary` agrega `recommendations` y usage-doctor actions derivadas de telemetria sanitizada sin cambiar raw events ni exponer payloads |
+| TC-DAE-027 | positivo | RF-DAE-005 | `mi-lsp stats --by-client --days 7 --format json` agrupa llamadas e informa éxito, p50/p90 de latencia y bytes, y fallback sin contenido de consultas |
+| TC-DAE-028 | negativo | RF-DAE-005 | `--days 0` se rechaza; fallo de almacenamiento/consulta no se representa falsamente como actividad cero |
+| TC-DAE-029 | positivo | RF-DAE-002 | `TestClientCohortTreatsBenchAsTestAndManualCLIAsUnknown` y `TestSummaryAttributionDoesNotCountBenchOrManualCLIAsWork`: `bench` queda en `test`, `manual-cli`/cliente vacío en `unknown`, y ninguno suma a `work` |
+| TC-DAE-030 | positivo | RF-DAE-002 | `TestEnrichAccessEventAssignsTypedQFailureCodes`, `TestEnrichAccessEventTypesNavFindCatalogFallback` y `TestCatalogTelemetryErrorCodeDistinguishesCatalogStates`: q se tipa por etapa y `nav.find` distingue índice ausente/ilegible/roto sin persistir consulta cruda |
+
+```toon
+block_id: tp-dae-stats-cases
+kind: planned-test-map
+source_of_truth: RF-DAE-005
+status: planned_not_executed
+campaign_status: NOT_RUN
+imports:
+  - .docs/wiki/04_RF/RF-DAE-005.md
+cases:
+  by_client_aggregates:
+    id: TC-DAE-027
+    status: planned
+    oracle: [calls_and_ok_pct, p50_p90_latency, p50_p90_bytes, fallback_pct, no_query_content]
+  invalid_days_and_storage_failure:
+    id: TC-DAE-028
+    status: planned
+    oracle: [nonpositive_days_rejected, storage_error_not_reported_as_empty_usage]
+verify:
+  - authorized FINAL_VERIFY runs bounded stats aggregation tests
+stop_if:
+  - stats_exposes_query_or_file_content
+  - storage_failure_is_presented_as_zero_activity
+evidence:
+  - internal/cli/stats.go
+  - internal/daemon/state_store.go
+  - .docs/wiki/06_pruebas/TP-DAE.md
+```

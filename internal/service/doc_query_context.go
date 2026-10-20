@@ -434,7 +434,7 @@ func tier1AnchorIsGovernanceOwned(root string, profile model.DocsReadProfile, an
 		declared = true
 	}
 	// Tier1's documented fallback anchors.
-	if strings.EqualFold(normalized, ".docs/wiki/00_gobierno_documental.md") || strings.EqualFold(normalized, "readme.md") {
+	if strings.EqualFold(normalized, ".docs/wiki/00_governance.md") || strings.EqualFold(normalized, "readme.md") {
 		declared = true
 	}
 	if !declared {

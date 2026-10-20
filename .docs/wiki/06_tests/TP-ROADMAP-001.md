@@ -11,7 +11,7 @@ links:
 ## Alcance
 Comportamiento retrospectivo publicado en 9372f01 y disponible en v0.14.4. Casos manuales reproducibles con CLI real, fixture aislado fuera del repo/wiki de producto y output JSON. No se añaden unit tests ni se reejecuta la suite completa. Evidencia de ejecución en trace.json del cierre; este plan describe la receta, no inventa PASS históricos.
 
-## Casos
+## Casos (cada caso cita el número del criterio RF, con disposición y evidencia esperada)
 - Criterio 1 — disposición: manual; evidencia: ayuda de nav wiki graph, manifiesto de proveedor y respuesta JSON con roadmap.canonical=false.
 - Criterio 2 — disposición: manual; evidencia: fixture con tabla id/rs/horizon/status/depends_on/title y respuesta JSON que conserva texto libre y entradas.
 - Criterio 3 — disposición: manual; evidencia: nav wiki graph --mode roadmap --render mermaid sobre fixture aislado; source contiene tres subgraph, cuatro classDef y flechas; no se crea archivo Mermaid.

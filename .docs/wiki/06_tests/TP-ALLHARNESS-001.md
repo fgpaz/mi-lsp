@@ -1,7 +1,7 @@
 ---
 wiki_contract: WIKI-CONTRACT-v1
 id: TP-ALLHARNESS-001
-kind: test_plan
+kind: test
 status: draft
 source_type: operator_decision
 links:
@@ -10,12 +10,14 @@ links:
 
 # TP-ALLHARNESS-001 — mi-lsp para todos los harness
 
-## Verificación padre, no por lane
+## Alcance
 Verifica [[RF-ALLHARNESS-001]] criterios 1–6.
 
 Fuente: pedido explícito de Gabriel `home/ideas/mi-lsp-para-todos-los-harness.md`, 2026-10-20; persona:herramientas-pocas-enganchables-20261020. Tipo de fuente: decisión del operador; no evidencia runtime.
 
 Estado: plan de aceptación, **sin evidencia de ejecución en BUILDING**.
+
+## Casos
 
 - FINAL_VERIFY: invocar `lsp.diagnostics` y `fs.find` en execute de pi y Claude Code en cada host objetivo. Comprobar target real, respuesta y errores; listar herramientas/plugin instalado no demuestra ejecución.
 - Después de editar fixture con error conocido: diagnóstico debe encontrarlo o reportar backend/degradación explícita, nunca falso limpio.

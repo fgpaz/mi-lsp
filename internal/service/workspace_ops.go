@@ -857,7 +857,7 @@ func callerWorkspaceRoot(callerCWD string) (string, bool) {
 func workspaceStatusRootMarker(root string) bool {
 	markers := []string{
 		workspace.ProjectConfigPath(root),
-		filepath.Join(root, ".docs", "wiki", "00_gobierno_documental.md"),
+		filepath.Join(root, ".docs", "wiki", "00_governance.md"),
 		filepath.Join(root, ".git"),
 	}
 	for _, marker := range markers {

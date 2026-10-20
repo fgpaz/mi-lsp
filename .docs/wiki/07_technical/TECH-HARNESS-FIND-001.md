@@ -15,7 +15,7 @@ links:
       role: behavior
 ---
 
-## API y límites de propiedad
+## Resumen
 `newFindFilesCommand(state *rootState) *cobra.Command` es el constructor de la lane. La superficie raíz registra ese comando y publica su manifiesto; no se cambia `root.go`, `nav.go` ni `provider_manifest.go` desde esta implementación.
 
 Servicio: `service.NewFileFinder() *FileFinder`; método `(*FileFinder).FindFiles(context.Context, root, query string, FindFilesOptions) (model.FindFilesResult, error)`. Opciones: `Top int`, `MaxBytes int`, `Literal bool`, `Refresh bool`. `FileFinder.CacheDir` permite desactivar la caché con cadena vacía o aislarla en fixtures. El constructor CLI no pasa por `App.Execute`, daemon ni refresh semántico. La configuración de usuario se conserva fuera del repo.
@@ -45,6 +45,11 @@ Un max-heap conserva como máximo `top` coincidencias, con orden determinista. E
 Respuesta `find-files/v1`: `schema`, `items:[{path,rank,reason}]`, `matched`, `truncated`, `truncation_reason?`, `next_hint?`, `budget:{top,max_bytes}`, `listing:{backend,cached,age_ms,max_age_ms}`. Los motivos de truncamiento son `top` y `budget_bytes`; si ambos limitan, prima `budget_bytes`. Los motivos de ranking son `basename_exact`, `basename_prefix`, `segment`, `substring` y `glob`.
 
 Error CLI: `{error:{code,message}}` y estado no cero. Códigos: `invalid_budget`, `invalid_pattern`, `invalid_workspace`, `cancelled`, `listing_timeout`, `file_listing_unavailable`, `file_listing_failed`, `unsupported_format`, `find_files_failed`. No se devuelve stderr ni argv privado. El único formato de esta superficie es JSON, aun cuando el formato global implícito sea compact/agent. Un formato no JSON explícito se rechaza.
+
+## Mapa de componentes
+- `newFindFilesCommand(state *rootState)` registra la superficie; `service.NewFileFinder()` y `(*FileFinder).FindFiles(...)` ejecutan la búsqueda.
+- La enumeración prioriza Git y conserva las alternativas rg/fd; la caché JSON vive fuera del repositorio.
+- `internal/cli/find_files.go`, `internal/service/find_files.go` e `internal/model/find_files.go` son los componentes declarados en `links.code`.
 
 ## Enlaces de integración
 RF fuente: [[RF-HARNESS-FIND-001]]. El FL común debe declarar `fulfills` hacia el RS común y el RF declarar `implements` hacia ese FL, una vez conocidos los IDs por el dueño de surface. [[TP-HARNESS-FIND-001]] contiene la receta de la FINAL_VERIFY del padre; no se ejecuta por lane.

@@ -1,0 +1,434 @@
+---
+wiki_contract: WIKI-CONTRACT-v1
+id: CT-TECHNICAL-BASELINE
+kind: contract
+status: active
+title: 09. Contratos tecnicos
+links:
+  supports:
+  - RF-IDX-001
+  - RF-QRY-001
+  - RF-QRY-002
+  - RF-WKS-007
+---
+
+## Consumidor
+
+CLI, agentes y consumidores locales de las operaciones descritas; no se amplía la autoridad del consumidor.
+
+### Propósito y alcance
+
+Este documento resume la superficie de contratos técnicos de `mi-lsp`: CLI publica, canal CLI-daemon-admin, workers y target graph-native/MILX-v1.
+Su foco es compatibilidad, ownership y postura comun de errores/versionado.
+El detalle por frontera vive en `07_technical/contracts/`; contratos `accepted-design` no afirman comandos implementados.
+
+### Boundaries y ownership
+
+- La CLI publica es la frontera estable para humanos, skills y wrappers. La puerta `mi-lsp mcp` fue retirada el 2026-10-15: `mi-mcp` invoca esa misma CLI por llamada de herramienta. Las puertas de host en `integrations/` son opcionales. El histórico vive en [[TECH-MCP-ADAPTER]] y el inventario de comandos en [[CT-CLI-DAEMON-ADMIN]]. El protocolo sigue siendo `mi-lsp-v1.1`.
+- AXI es parte de la CLI publica como overlay selectivo por superficie: no todo comando entra en AXI por default.
+- El repo publica una skill curada en `skills/mi-lsp/` para herramientas compatibles con skills; esa skill documenta buenas practicas de uso, pero no redefine la semántica del CLI.
+- La instalación publica vive fuera del contrato runtime: `scripts/install/install.ps1|sh` instala/actualiza la CLI desde GitHub `releases/latest`, y `scripts/install/install-agent.ps1|sh` agrega la skill via `npx skills add`.
+- Los instaladores publicos deben mapear solo RIDs publicados (`win-x64`, `win-arm64`, `linux-x64`, `linux-arm64`), verificar `mi-lsp_<version>_checksums.txt` antes de extraer y preservar `workers/<rid>/` junto al binario. En Windows el artefacto publicado es `mi-lsp.exe`; un shim `.cmd` no es el producto.
+- El daemon comparte estado entre clientes pero no redefine la CLI publica.
+- **Marcador estable**: 09_contratos_tecnicos-GO-OFFLINE
+- **contract_ref**: CT-CLI-DAEMON-ADMIN-GO-OFFLINE
+- **requirement_ref**: RF-IDX-001-GO-OFFLINE
+- **scope**: Resumen subordinado a [[CT-CLI-DAEMON-ADMIN]] y [[RF-IDX-001]]; aceptación y límites en [[TP-IDX]] / TC-IDX-029
+- **policy**: Opt-in --go-offline en index/index start, default false; payload y job durable; wrapper direct wait, start direct wait y detached con recarga durable
+- **daemon_route**: CLI index-daemon unsupported/noapplicable actual; App/server comparten dispatch interno, no paridad pública; graph query daemon no acredita observador
+- **go_environment**: GOTOOLCHAIN local, GOPROXY/GOSUMDB off, GOVCS *:off, GOFLAGS con un espacio (cero flags), GOWORK off, -buildvcs=false -mod=readonly; -modfile privado de go.mod/go.sum, metadata del usuario intacta
+- **limits**: Exports y caché/compilación local permitidos; sin importador ambiental ni retry online. No sandbox CC/cgo personalizado ni garantía de embeddings, noGo o gopls
+- **missing**: Sin metadata utilizable: GPH_GO_OFFLINE_UNAVAILABLE; metadata parcial puede dar diagnóstico genérico/type_check_error/external_target, motivo offline específico no universal; precisión explicit_incomplete, sin facts completos por AST
+- **verification_basis**: FINAL_VERIFY1 FAIL histórico; RECHECK1 PASS policy / PARTIAL global; rechazo simétrico, dedupe y retry terminal comprobados; stdlib bwrap aislada succeeded, no cero syscall ni red normal fuera de namespace ni salud global
+- **Estado del comportamiento**: explicit_incomplete
+- **owner**: coord-milsp
+- **disclosure_due**: antes de publicación acotada
+- **followup_due**: 2026-10-20
+- **budget**: Agotado FINAL_VERIFY1/audit1/RECHECK1; sin recheck2; precisión/evidencia futura requiere objetivo separado
+- **readiness_debt**: Deuda preexistente sin migración global ni PASS Harness/wiki-source/P6/Graph
+- `daemon start` mantiene `start.guard` persistente y nunca lo elimina; bajo su lock OS exclusivo (`LockFileEx` en Windows, `flock` en Unix) serializa crear, inspeccionar, recuperar y `Close` de `start.lock`. `start.lock` conserva `O_CREATE|O_EXCL`, se rellena con metadata versionada `pid+nonce` y el descriptor se cierra después de sincronizarla. Solo se recupera un owner muerto; owner vivo o metadata desconocida se preservan, los errores son fail-closed, un lock legacy vacío solo se recupera después de 5 minutos y `Close` elimina únicamente bajo guard cuando coinciden `pid+nonce`. PID válido: `1..math.MaxInt32`; en Windows, `ACCESS_DENIED` y cualquier error ambiguo cuentan como owner vivo, y solo `ERROR_INVALID_PARAMETER` prueba inexistencia.
+- La UI/admin es una vista local del daemon; no es API publica remota.
+- El protocolo daemon-worker es interno, versionado y con envelope estable.
+- Cada contrato debe exponer `warnings`, fallas accionables y degradacion clara cuando aplique.
+- `worker status` forma parte de la CLI publica y debe exponer `tool_root`, `tool_root_kind`, `cli_path`, `protocol_version`, origen del worker seleccionado y compatibilidad de candidatos.
+- `version` forma parte de la CLI publica y debe exponer provenance del ejecutable (`version`, `module_path`, `go_version`, `goos`, `goarch`, `protocol_version`, `worker_rid`, `tool_root`, `cli_path`, `executable_sha256`, `vcs_revision`, `vcs_time`, `vcs_modified`) sin depender de workspace, daemon ni workers vivos.
+- `version` + `worker status` son los probes publicos de instalación; `worker install` repara bundles movidos o worker global stale cuando corresponde.
+- `workspace status` forma parte de la CLI publica y debe exponer `docs_read_model`, `doc_count`, `docs_index_ready`, `governance_profile`, `governance_sync`, `governance_index_sync`, `governance_index_sync_details` y `governance_blocked`; en `--full` puede expandir el digest repo-local de memoria de reentrada.
+- En AXI efectivo, `workspace status`, `nav search`, `nav wiki search`, `nav wiki validate-harness`, `nav wiki validate-source`, `nav intent`, `nav route`, `nav wiki route`, `nav pack` y `nav wiki pack` pertenecen a la superficie preview/full por default; `nav ask` solo lo hace para preguntas de orientacion y `nav workspace-map` solo cuando se fuerza AXI.
+- `init` pertenece a la CLI publica como shortcut de onboarding; no reemplaza `workspace add`, pero reutiliza su semántica base.
+- `nav ask` pertenece a la CLI publica y usa un contrato docs-first explainable, no un blob opaco ni una respuesta puramente textual.
+- `nav pack` pertenece a la CLI publica y usa un contrato de reading pack canónico, no una respuesta textual libre.
+- `nav wiki` pertenece a la CLI publica como superficie documental explícita para agentes; `search` devuelve candidatos wiki, `route|pack|trace` reutilizan las superficies canónicas existentes, `inventory` lista wikis, `map` publica un catálogo compacto de hubs de conocimiento, `wiki-root` (alias `nav wiki root`) publica la raíz portable, `validate-harness` compila readiness de contratos `SDD-HARNESS-v1` y `validate-source` compila readiness de artefactos `SDD-WIKI-SOURCE-v1`.
+- `nav affected` pertenece a la CLI publica como selector conservador de impacto git-aware; no reemplaza `nav diff-context` ni declara completitud semántica fuerte.
+- `nav edit-plan` pertenece a la CLI publica como superficie agent-first para convertir packets declarativos en diffs deterministas; dry-run es default y apply queda experimental con doble opt-in. Acepta `edit-plan-v1` textual y `edit-plan-v2` multi-lenguaje; en esta baseline el backend AST implementado es solo Go.
+- `nav governance` pertenece a la CLI publica y devuelve el estado efectivo de gobernanza del workspace.
+- `nav service` pertenece a la CLI publica y usa un contrato evidence-first, no uno de scoring.
+- `nav context` pertenece a la CLI publica y su salida visible es slice-first; el backend profundo solo enriquece el mismo item.
+- Para archivos Go, el catálogo AST nativo conserva navegacion basica sin `gopls`; cuando `gopls` existe, `nav context` y `nav refs` pueden enriquecer el resultado, sin prometer paridad con la semántica profunda C# de Roslyn. `gopls` se localiza con `MI_LSP_GOPLS_PATH`, `PATH`, `GOBIN`, `GOPATH/bin`, `~/go/bin` y `bin/` o `.bin/` del workspace.
+- `nav intent` pertenece a la CLI publica y expone `mode=docs|code|mixed`: en `docs` usa routing documental owner-aware; en `code` conserva el ranking BM25 sobre `search_text`; en `mixed` (la pregunta trae señales de código) lista primero los matches de código fuertes, luego los documentos. Cada item lleva `result_kind=code|doc` y `origin=catalog|wiki`; `kind` conserva el tipo de símbolo. En workspaces `container`, `--repo` acota solo `mode=code`. Para intenciones soportadas el routing es automático, mi-lsp es obligatorio primero y no existe opt-out.
+- `nav explain-change` pertenece a la CLI publica y devuelve siete secciones estables: `change`, `affected`, `callers`, `callees`, `tests`, `contracts` y `wiki`. La preview es bounded; `expansions[]` siempre identifica `command` y `reason` cuando hay una continuación ejecutable. `--full` solicita expansión, pero puede conservar `mode=preview` si no hay evidencia adicional.
+- `skills` pertenece a la CLI publica como superficie de catálogo y plan de agent skills locales (`index|list|search|plan`); opera en modo directo (`preferDaemon=false`), no amplía `nav prepare` y no redefine la skill curada del repo en `skills/mi-lsp/`. Detalle en la seccion [skills (catalog + plan)](#skills-catalog--plan).
+- El target graph CLI agrega `neighbors`, `callers`, `callees`, `path`, `explain`, `graph stats` y `graph validate`; enriquece `affected`, `diff-context`, `related` y `workspace-map` de forma aditiva. La ayuda actual distingue estos comandos directos de `nav graph stats|validate`.
+- La ausencia de generation/backend graph produce fallback tipado, omisiones y warnings visibles; no habilita presentar heurística como paridad graph-native. Un timeout sin diagnóstico tipado es blocker y no autoriza sustitución silenciosa por herramientas textuales.
+- Toda respuesta graph-native fija `generation_id`, conserva status/evidence/omissions y usa ordering/budgets deterministas. Daemon y direct mode deben ser semanticamente equivalentes.
+- El worker Roslyn ordena los `nodes` por `Ref` y entrega un `GraphObservationBatch` canónico no sellado; el core ejecuta `ValidateCanonical`, `SealGraphObservationBatch` y `ReadyForStaging` antes de aceptar staging.
+- Los símbolos locales, lambda, anonymous y synthesized/implicit no elegibles se expresan como omissions tipadas; solo endpoints elegibles realmente faltantes generan `GraphUnresolved`.
+- `GraphUnresolved` se ordena y deduplica por `key` antes de asignar IDs. Sus candidatos se trim, normalizan a slash, deduplican, ordenan y limitan a 64 elementos/4096 bytes; el contexto `source_document`, `source_block`, `target_kind` y `target_value` es nullable, acotado y no altera `UnresolvedKey` ni `CrossRID`.
+- El contexto diagnóstico de `GraphUnresolved` queda fuera de `UnresolvedKey`/`CrossRID`, pero participa, con framing determinista y orden estable, en los digests de contenido y facts y en los fingerprints de source/config/backend que gobiernan el `generation_id`.
+- `MILX-v1` es un contrato stdio local aislado, no MCP. No admite graph/wiki write, network, secrets o process spawn en v1. No es la puerta `mi-lsp mcp`.
+- Federation lista member generations y unavailable members; un global snapshot es derivativo y nunca cambia stores miembros ni autoridad wiki.
+
+## Operaciones
+
+Se conservan requests, envelopes, campos, límites y semántica detallados a continuación.
+
+### Inventario de contratos
+
+- **Familia**: CLI publica; **Boundary**: Usuario/agente -> `mi-lsp`; **Owner logico**: CLI surface; **Canal**: args/stdout/stderr
+- **Familia**: AXI discovery mode; **Boundary**: Usuario/agente -> `mi-lsp`; **Owner logico**: CLI surface; **Canal**: args/stdout/stderr
+- **Familia**: Control daemon; **Boundary**: CLI -> daemon; **Owner logico**: Runtime supervision; **Canal**: named pipe / unix socket
+- **Familia**: Governance admin; **Boundary**: Browser/CLI -> daemon; **Owner logico**: Runtime supervision; **Canal**: HTTP loopback
+- **Familia**: Worker protocol; **Boundary**: Daemon/core -> worker Roslyn; **Owner logico**: Semantic backends; **Canal**: stdio JSON length-prefixed
+- **Familia**: TS semantic bridge; **Boundary**: Daemon/core -> `tsserver`; **Owner logico**: TS semantic backend; **Canal**: `tsserver` Content-Length protocol
+- **Familia**: Pyright LSP bridge; **Boundary**: Daemon/core -> `pyright-langserver`; **Owner logico**: Python semantic backend; **Canal**: LSP JSON-RPC 2.0 Content-Length protocol
+- **Familia**: Go catalog + LSP opcional; **Boundary**: Core -> extractor AST / `gopls`; **Owner logico**: Go navigation backend; **Canal**: índice repo-local / LSP JSON-RPC 2.0
+- **Familia**: Graph CLI (target); **Boundary**: Usuario/agente -> Graph Query; **Owner logico**: CLI/Core; **Canal**: args + envelope generation-aware
+- **Familia**: MILX-v1 (target); **Boundary**: Core -> extension process; **Owner logico**: Extensions runtime; **Canal**: stdio uint32-length + canonical JSON
+- **Familia**: Global graph view (target); **Boundary**: Core -> member `index.db`; **Owner logico**: Core runtime; **Canal**: local read-only federation por cross-RID
+
+### Configuración de embeddings
+
+`[embeddings]` en `.mi-lsp/project.toml` habilita busqueda semántica cuando incluye `base_url` + `model`.
+`enabled` es opcional: omitido equivale a activo y `enabled = false` es el kill switch explicito.
+El contrato operacional usa providers OpenAI-compatible y no incluye clientes privados en core.
+
+```toml
+[embeddings]
+
+### enabled = false  # opcional; apaga semantic recall sin borrar la config
+provider = "openai"
+base_url = "https://embeddings.example.local/v1"
+model = "text-embedding-model"
+dim = 1536
+api_key_env = "MI_LSP_EMBEDDINGS_API_KEY"
+profile = "knowledge-wiki"  # o "spec-driven"
+batch_size = 32
+timeout_ms = 30000
+encoding_format = "float"
+user_agent = "mi-lsp-embeddings/1.0"
+```
+
+El cliente envia payload OpenAI-compatible con `encoding_format = "float"`, header `Accept: application/json`, `User-Agent` configurable y validación estricta de dimensión contra `dim`.
+`api_key_env` vacio o compuesto solo por whitespace significa explicitamente endpoint OpenAI-compatible sin autenticacion; no se aplica una variable de entorno por default. Cuando contiene un nombre, el valor resuelto ausente, vacio o whitespace produce `SEM_API_KEY_MISSING` antes de cualquier I/O de red. Un valor presente se envia como `Authorization: Bearer <valor>`.
+Los mensajes publicos de error y warning son sanitizados y no incluyen el nombre de `api_key_env` ni su valor, salvo identificadores publicos canónicos como `SEM_API_KEY_MISSING`. El caller degrada de forma segura a `mi-lsp nav wiki search` con warning cuando la autenticacion, el proveedor o la configuración no permiten recall semántico; no existe modelo local oculto.
+Sin configuración activa, `nav recall` devuelve hint visible y no llama al proveedor.
+
+Además de `.mi-lsp/project.toml`, la CLI admite configuración personal en `$XDG_CONFIG_HOME/mi-lsp/config.toml` (por defecto `~/.config/mi-lsp/config.toml`). Define proveedores `openai-compatible` con `base_urls` ordenadas, `model`, `dimensions` y credencial por `api_key_env` o `api_key_command`; los complementos se declaran por nombre y comando/socket. Los valores de entorno `MI_LSP_EMBEDDINGS_*` conservan compatibilidad y prevalecen sobre la configuración de usuario. Fallos al cargar o contactar embeddings degradan a búsqueda léxica; no deben impedir la navegación. `mi-lsp config doctor` valida la configuración sin ejecutar el comando de credenciales ni revelar valores.
+
+La configuración de usuario, hosts privados, rutas absolutas, nombres de máquina y reportes locales no se versionan. Consultar [configuración y privacidad](../../../../docs/configuracion.md) para el formato y los límites.
+
+`[recall.rerank_extension]` puede reordenar candidatos mediante comando local externo. El comando recibe stdin JSON versionado `mi-lsp-rerank-extension-v1` y devuelve stdout JSON con `indices` o `results[].index`; no se ejecuta via shell, no guarda payloads y cualquier falla preserva el orden semántico original con warning sanitizado.
+
+### skills (catalog + plan)
+
+Superficie CLI para indexar, listar, buscar y planificar agent skills locales sin montar el corpus completo en cada turno. Implementacion: `internal/skills` + `internal/cli/skills.go`.
+
+#### Comandos
+
+```text
+mi-lsp skills index  [--skills-root] [--catalog] [--seed] [--with-embeddings]
+mi-lsp skills list   [--family] [--tier] [--audience] [--catalog]
+mi-lsp skills search <query> [--audience parent|leaf] [--family] [--top-k] [--catalog]
+mi-lsp skills plan   --role parent|leaf --task "..." [--token-budget] [--max-skills] [--catalog] [--skills-root]
+```
+
+- Operación directa: no requiere daemon.
+- Skills root default: `$HOME/.agents/skills`.
+- Catálogo default: `$HOME/.mi-lsp/skills/catalog.json` (override `MI_LSP_SKILLS_CATALOG`).
+- Envelopes con `backend: skills` en formatos publicos (`json|toon|yaml|compact`).
+
+#### Schemas
+
+- **Artefacto**: Catálogo persistido; **Schema**: `mi-lsp-skill-catalog/v1`
+- **Artefacto**: Plan de selección; **Schema**: `mi-lsp-skill-plan/v1`
+
+El catálogo clasifica skills por `family`, `tier` (`parent_router|tool_infra|core|optional|bundle`), `audience` (`parent|leaf|both`) y allowlist `critical`. El plan expone `always`, `routers`, `selected`, `bundles_optional`, `deny_families` y `why_not_cheaper`.
+
+#### Retrieval hibrido
+
+La busqueda es **lexical-first** y siempre funciona sin proveedor de embeddings. Si el catálogo se indexo con `--with-embeddings` y hay vectores disponibles, el score combina lexical + cosine opcional; si embeddings no estan o fallan, se degrada a lexical con warning (`embeddings_unavailable` en plan), sin hard-fail ni modelo local oculto.
+
+#### Reglas parent vs leaf
+
+`skills plan --role parent` puede incluir routers (`tier=parent_router`, `audience=parent`) y skills de orquestacion; `skills plan --role leaf` y `search --audience leaf` excluyen routers parent. El plan mantiene `mi-lsp` en `always` cuando existe, fuerza intents mínimos (`db-cli`, `mi-key-cli` cuando el task lo senala) y deniega por defecto familias ruidosas (`ceo`, `research`, `comms`) salvo senal explícita en el task. Bundles no se cargan por default: entran solo si el task lo senala o quedan en `bundles_optional`.
+
+#### Evidencia
+
+Diseño y verificacion de la superficie: `.docs/auditoria/2026-07-25-mi-lsp-skill-catalog/` (`design-lock.md`, `summary.md`, taxonomia seed). Código de referencia: `internal/skills/`, `internal/cli/skills.go`.
+
+### Contrato Harness-first de routing y graph advisory
+
+- **Marcador estable**: ct-technical-harness-first-routing
+- **Comprobación prevista**:
+  - go run ./cmd/mi-lsp nav --help
+  - go run ./cmd/mi-lsp nav explain-change --help
+  - go run ./cmd/mi-lsp nav wiki validate-source --workspace <alias> --paths <path> --format toon
+  - go run ./cmd/mi-lsp nav wiki validate-source --workspace <alias> --ids <doc-id> --format toon
+- **Condiciones de rechazo**:
+  - governance_blocked=true
+  - timeout_without_typed_diagnostic=true
+  - exact_graph_claim_when_freshness!=current
+- **routing**:
+  - **entrypoint**: mi-lsp
+  - **policy**: automatic_mi_lsp_first_no_opt_out
+  - **terminal_fallbacks**:
+    - unsupported_operation
+    - unavailable_binary
+    - invalid_workspace
+    - explicit_incomplete
+- **explain_change**:
+  - **sections**:
+    - change
+    - affected
+    - callers
+    - callees
+    - tests
+    - contracts
+    - wiki
+  - **response**: preview_bounded_with_expansions
+- **wiki_validation**:
+  - **selectors**:
+    - paths
+    - ids
+  - **no_match**: scope=no_match
+- **telemetry**:
+  - **sanitized_metadata_only**: true
+
+Interpretación: el contrato define la superficie observable y las reglas de degradación. No afirma que todas las generations o backends graph estén disponibles en cada workspace.
+
+La lista de documentos se obtiene con `mi-lsp nav wiki index <kind>`; no se mantiene un índice manual.
+
+### Operaciones adicionales
+
+- `init [path] [--name alias] [--no-index]`: detecta, registra e indexa el workspace actual o el path pedido; `--no-index` registra sin bloquear.
+- `doctor [--workspace <alias>]`: comando unificado de diagnóstico; sin args inspecciona workspace actual; reporta aliases duplicados, worktrees, paths stale, colisiones de casing, shadowing de binario y health de daemon/workers.
+- `nav recall <query> [--intent formula|evidence|route|explore|learning]`: busqueda semántica sobre wiki; ungated; responde `RecallResult[]` con `intent`, score, snippet y rango de líneas; si embeddings no disponibles, el fallback canónico es `nav wiki search`
+- `mi-lsp [--classic] [--axi] [--full]`: por default devuelve home content-first; `--classic` restaura help generica
+- `workspace.link <alias> --role producto|ecosistema|gobierno_local`: persiste `CanonLinks` hacia un alias registrado; no escribe roots de canon `read-only`
+- `workspace.remove`: elimina un workspace registrado de `registry.toml`
+- `workspace doctor`: alias del comando `doctor` raiz; diagnostica workspace actual.
+- `workspace hygiene [--apply-safe]`: diagnostica higiene agent-first del registry con `backend=registry-hygiene`; por default no muta y con `--apply-safe` solo remueve aliases stale/defaults invalidos mediante la logica segura existente. No borra directorios, worktrees, índices, ramas ni procesos. Aliases vivos con gobernanza bloqueada, `docs_ready=false`, `doc_count=0` o documento de gobernanza faltante se exponen como `workspace_readiness_issues` y solo se reparan con acciones manuales explícitas como `workspace remove <alias>`.
+- `workspace prune [--stale] [--dry-run|--apply]`: lista o remueve aliases del registry cuyo root definitivamente no existe; el comando sin flags equivale a `--stale --dry-run`, `--stale` se conserva como flag compatible, y `--apply` persiste solo la limpieza del registry. Roots vacíos, errores de permiso y otros errores de I/O se conservan como skipped; no borra directorios, worktrees ni cachés.
+- `admin export`: exporta telemetria de `access_events` desde `daemon.db`; raw soporta `--format json|csv|compact|toon` y con `--summary` agrega sobre toda la ventana filtrada salvo que `--limit` se haya seteado explicitamente
+- `admin export` filtra raw por `--operation`, `--session-id`, `--client-name`, `--route`, `--query-format`, `--truncated`, `--pattern-mode`, `--routing-outcome`, `--failure-stage` y `--hint-code`
+- `admin export --summary` agrega breakdowns opcionales `--by-route`, `--by-client`, `--by-hint`, `--by-failure-stage`, ademas de los histogramas/percentiles existentes
+- `admin export --summary` sin `--limit` explícito debe preservar semántica de ventana completa usando agregacion streaming; con `--limit` explícito puede resumir solo los eventos consultados.
+- `admin export --summary` puede incluir `recommendations` con usage-doctor actions derivadas de telemetria agregada; las recomendaciones son aditivas y deben basarse solo en contadores, hints, failure stages, truncation rates, latencias y breakdowns sanitizados. Cuando detecta stale registry, workspace resolution failures, repo selector invalid o search timeout debe sugerir comandos concretos, incluyendo `workspace hygiene` para higiene de aliases.
+- el export raw de `access_events` preserva metadata operativa mínima del request (`route`, `format`, `token_budget`, `max_items`, `max_chars`, `compress`) y diagnósticos causales sanitizados (`warning_count`, `pattern_mode`, `routing_outcome`, `failure_stage`, `hint_code`, `truncation_reason`, `decision_json`) para diferenciar uso directo, daemonizado, routing errors, backend runtime failures y truncación; `decision_json` puede agregar solo metadata derivada como `doc_ranker`, `intent_mode`, `requested_backend`, `result_backend`, `backend_fallback_taken`, `fallback_from`, `fallback_to`, `runtime_error_code`, `planner_path`, `planner_outcome`, `safe_degrade_reason` y `guardrail_trigger`, nunca texto libre, query, argv, payloads ni contenido de archivos; en operaciones daemonizadas normales debe existir una sola fila canónica por request
+- `index [path] [--clean] [--docs-only]`: wrapper compatible que espera a completar (con `--wait` implicito); indexa código + docs, o solo docs cuando `--docs-only` esta presente
+- `index start [path] [--mode full|docs|catalog] [--clean] [--wait]`: crea un job de indexación; sin `--wait` lanza proceso detached y devuelve `job_id`; con `--wait` bloquea hasta completar
+- `index status [job-id]`: inspecciona el ultimo job o el job indicado; expone progreso vivo durante indexación
+- `index cancel <job-id> [--force]`: solicita cancelacion cooperativa; con `--force` termina el proceso vivo del job cuando existe y limpia el lock matching cuando el PID ya no esta vivo
+- `workspace.add [--wait]`: agrega workspace sin indexar por default; `--wait` bloquea hasta que indexación async complete; `--no-index` omite indexación
+- `nav route <task>`: resuelve el documento canónico de anclaje y un mini reading pack con mínimos tokens; si la tarea trae un `RF-*` embebido en un doc agregado, Tier 1 ancla el contenedor canónico; `--include-code-discovery` agrega discovery de código; `--full` expande canonical lane y discovery
+- `nav wiki search <query>`: busca en el docgraph gobernado con filtros `--layer RS,RF,FL,TP,CT,TECH,DB`, paginacion `--top/--offset` y contenido opcional `--include-content`; la superficie textual directa `nav search` debe incluir docs gobernados y artefactos repo-locales ocultos cuando el repo use directorios hidden, sin entrar en caches/dependencias generadas cubiertas por `DefaultIgnorePatterns`
+- `nav wiki route|pack|trace`: aliases documentales para agentes que reutilizan `nav route`, `nav pack` y `nav trace`
+- `nav wiki map`: catálogo compacto de hubs de una wiki de conocimiento (`persona`, `proyectos`, `sistema`, `materia`) sobre `wiki/` y `bibliotecas/`; single-workspace; recorta por `--token-budget`/`MaxItems`; no emite cuerpos completos
+- `nav wiki validate-harness`: valida contratos `SDD-HARNESS-v1` en docs gobernados, resuelve referencias contra todo el docgraph gobernado para evitar falsos links rotos en imports globales y emite `PASS|WARN|BLOCKED` sin crear un parser documental paralelo
+- `nav ask <question>`: responde usando wiki + evidencia de código y fallback generico/textual cuando haga falta; normaliza meta-terminos SDD en preguntas de anclas y puede emitir `coach.trigger=anchor_drift`; `--all-workspaces` habilita fan-out cross-workspace para el mismo contrato explainable
+- `nav pack <task>`: construye un reading pack canónico con preview/full y anchors opcionales `--rf`, `--fl`, `--doc`
+- `nav search <pattern>`: si `--regex` lleva un patron inválido, el runtime puede reintentar como literal y devolver warning explícito en vez de error duro; si el patron literal parece identificador de código, debe emitir guidance agent-first hacia `nav find --exact`/`nav related`, rankear fuentes antes que docs/tests/backups/generados y acotar el sobre-muestreo en AXI preview; si `rg` falla por permisos/arranque, debe caer a Go search con warning `backend_runtime/<code>`; si usa `rg --hidden`, debe conservar visibilidad de `.docs` y aplicar globs de exclusion para `.git`, caches, dependencias y build outputs por defecto; si agota el presupuesto textual interactivo (5s por workspace) con parciales seguros, conserva `ok=true`, emite warning `search_timeout`, `next_hint` y `coach.trigger=search_timeout`; si `--include-content` encuentra un path indexado que ya no existe, debe conservar el match y emitir stale-index warning accionable hacia reindex.
+- `workspace status [--full] [--no-auto-sync]`: muestra `workspace_root`, `workspace_source`, estado de gobernanza/index y detalles de stale index con timestamps comparados; en `--full`, el digest repo-local de memoria (`recent_canonical_changes`, `handoff`, `best_reentry`, `stale`); si la memoria esta stale, `auto_sync` esta habilitado y la gobernanza no esta bloqueada, puede ejecutar refresh docs-only y devolver warning visible; `--no-auto-sync` conserva la consulta read-only y reporta `governance_sync=stale` sin escribir `read-model.toml` ni refrescar memoria; si `docs_index_ready=true` pero `index_ready=false`, debe explicitar que el corpus docs-only quedo util pero el catálogo de código sigue ausente
+- `workspace list --group-by-root`: agrupa aliases por root exacto con `root`, `alias_count`, `aliases`, `canonical_alias`, `selection_reason`, `kind` y warnings; `workspace list` sin flag sigue alias-preserving.
+- `workspace doctor`: diagnóstico no mutante de aliases con root compartido, worktrees con mismo `git common dir`, paths stale, readiness documental/gobernanza de aliases vivos, colisiones case-insensitive en el tree Git, shadowing de binario, metadata del binario activo y binarios visibles (`revision`, `goos`, `goarch`, `modified`), drift de revision contra el binario activo, `health`, `next_actions` y sugerencias de comandos. Cuando detecta colisiones de casing debe exponer `git_case_collisions` y una acción `fix_git_case_collisions` sin modificar registry, worktrees ni el repo afectado.
+- cuando `--workspace` se omite, `nav ask`, `nav pack`, `nav governance`, `workspace status` y las queries directas equivalentes resuelven primero contra `caller_cwd`; si no hay match, pueden usar `last_workspace` con warning visible. Si `--workspace <alias>` esta presente y el `caller_cwd` cae dentro de otro workspace registrado, callers humanos preservan compatibilidad con warning accionable; callers agente/harness rechazan el mismatch con `error.code=workspace_cross_workspace_refused` y `hint_code=workspace_cross_workspace_refused`, salvo override global `--allow-cross-workspace`. El override debe conservar warning visible para auditoria.
+- `nav governance`: diagnostica perfil efectivo, sync, stale index con timestamps comparados y pasos de reparación de gobernanza
+- `nav service`: resume evidencia observable de un servicio en un único summary estructurado; si el catálogo del path es Go, devuelve `profile=go-package`, no ejecuta scans .NET de endpoints/event bus y puede detectar rutas Go (`net/http`, chi/gin/fiber-style), Cobra y workers.
+- `nav context`: acepta `nav context <file> <line>` y `nav context <file>:<line>`; devuelve `slice_text` y metadatos opcionales de catálogo o backend semántico para la línea pedida; ante fallas runtime de worker/proceso conserva `slice_text`, degrada a catalog/text cuando sea posible y emite warning `backend_runtime/<code>`
+- `nav refs <symbol> [--file F --line N] [--context 0-5]`: referencias por el backend del lenguaje del símbolo (catálogo, luego primer hit de texto, luego lenguajes registrados; Roslyn solo para C#; ancla de definición inyectada para `gopls`/`tsserver`). Ante error del backend o resultado vacío, cae a texto con límites de palabra y devuelve `degraded=true` con `reason` (`lsp_unavailable`, `lsp_error`, `semantic_empty_text_hits`, `language_unsupported` o `no_matches`). Items con `origin` y, cuando el catálogo lo conoce, `caller {name, kind, line}`; `--context N` agrega N líneas antes y después. La herramienta `nav_refs` de la puerta MCP retirada aceptaba `context`; ese argumento deja de tener superficie vigente (retirado, ver [[TECH-MCP-ADAPTER]]).
+- `nav.find|intent|symbols|overview`: lecturas SQL-backed repo-locales; aceptan `--offset` para pedir la pagina siguiente sin cambiar el envelope base. En workspaces `container`, `find/intent` aceptan `--repo` y el offset se aplica después del filtro de repo. `nav.find` sin catálogo publicado, ilegible o con esquema roto responde `ok=true` desde texto (`backend=text`, `degraded=true`, `reason=index_not_ready|index_schema_broken`, items `origin=text`) y lanza un único reindex completo en segundo plano (`MI_LSP_AUTOINDEX=0` lo desactiva; `MI_LSP_AUTOINDEX_TIMEOUT`, default `10m`; `GOMAXPROCS=2` y `nice 19`; backoff de 10 min tras fallo vía `<root>/.mi-lsp/autoindex.last`; nunca escribe el registry). Un `index.db` corrupto se pone en cuarentena como `index.db.corrupt-<ts>` y se conservan como máximo 2.
+- `nav.search|outline|multi-read`: lecturas directas repo-locales sin contrato `--offset`; `search` sigue siendo text/rg-backed y puede exponer hints de refinamiento, pero no cursor SQL. Cada item de `nav search` trae `origin=text` y `col`; en formato agent implícito el tope por defecto es 20 items (AXI conserva 5) y el renderer muestra snippets de 160 runas centrados en la coincidencia, agrupa hits consecutivos del mismo archivo y, si `degraded=true`, anota `backend`, `reason` y `fallback_used` en el encabezado.
+- `worker install`: instala o refresca el worker por RID desde un bundle adjunto o, en desarrollo, desde `worker-dotnet/`
+- `worker status`: diagnostica el estado de candidatos `bundle`, `installed` y `dev-local`, e identifica el `cli_path` y `protocol_version` visibles para detectar binarios stale o inesperados en `PATH`
+- `version`: muestra provenance del ejecutable local; por default usa salida `text` legible y con `--format compact|json|toon|yaml` emite envelope estructurado `backend=version`
+- `scripts/install/install.ps1|sh`: instaladores publicos CLI-only; detectan RID, descargan latest release, verifican checksum, reemplazan binario/worker bundle y ejecutan probes
+- `scripts/install/install-agent.ps1|sh`: instaladores publicos agent-first; ejecutan el instalador CLI y luego `npx skills add fgpaz/mi-lsp --skill mi-lsp -g -a codex -a claude-code -y`
+- `scripts/release/ae-release-binaries.ps1`: comando mantenido de release-distribution; construye todos los RIDs por default, instala el RID del host, refresca WSL cuando esta disponible, copia mirrors x64 opcionales y solo publica cuando `-Publish -Tag <tag>` pasa las precondiciones de árbol limpio y tag en `HEAD`
+- `nav multi-read`: lee N rangos de archivo en una sola invocacion, reduce round-trips de agentes AI
+- `nav search --include-content`: extiende search con contenido inline; modo hibrido (symbol body si indexado, +-N líneas fallback)
+- `nav batch`: meta-comando que acepta N operaciones heterogeneas via stdin JSON, ejecución paralela por defecto
+- `nav related`: devuelve vecindario de un símbolo (definicion, callers, implementors, tests); el contenido expandido queda reservado para `--full`
+- `nav workspace-map`: mapa de alto nivel del workspace; el modo base es summary-first y `--full` habilita scans profundos de endpoints, eventos y dependencias. Para Go, expone paquetes `cmd/*`, `internal/*` y `pkg/*` como servicios `go-package` derivados del catalogo.
+- `nav diff-context [ref] --include-content`: contexto semántico de símbolos cambiados en un git diff, con analisis de impacto
+- `nav affected [paths...] [--from-git-diff] [--changed-ref <ref>] [--stdin] [--include-tests] [--include-docs] [--quiet] [--test-command <cmd>]`: selecciona impacto conservador; el target graph-native agrega generation, direct/transitive mode, evidence path y confidence class sin romper campos existentes
+- Target `nav neighbors|callers|callees <selector>`: traversal bounded sobre generation publicada
+- Target `nav path <from> <to>` y `nav explain <selector-or-edge>`: shortest path estable y evidence chain
+- Target `nav graph stats|validate`: counts/validacion read-only; validate no repara ni migra
+- Target `--all-workspaces` graph: federa solo workspaces registrados/autorizados y expone member generations/omissions
+- `nav edit-plan --stdin|--packet <file> [--strict] [--include-content] [--apply --experimental-apply]`: superficie agent-first de diff/apply experimental para `edit-plan-v1` textual y `edit-plan-v2` Go AST, con denylist de paths, hashes esperados y git limpio obligatorio para escritura.
+- `nav trace <DOC-ID>`: acepta IDs `RS-*`, `RF-*` y `TP-*`; para `RS-*` resuelve docs outcome gobernados o fallbacks embebidos (`.docs/wiki/02_resultados_soluciones_usuario.md`, `.docs/wiki/02_resultados/*.md`) y devuelve `doc_id`, `layer=RS`, `stage=outcome` sin `rf`; si un `RF-*` no existe como `doc_records.doc_id` primario, puede resolverlo por `doc_mentions(doc_id)` dentro de un documento RF agregado y devolver `RF=<RF-ID>` en el resultado visible; los docs TP del layer `06` que mencionan ese `RF-*` cuentan como evidencia documental de cobertura y deben evitar falsos `missing` después de `index --docs-only`; si el doc index todavía no publico ese ID, el fallback a disco debe recorrer primero las rutas documentales gobernadas por `00`/`read-model` y solo después los layouts legacy conocidos (`.docs/wiki/04_RF*.md`, `.docs/wiki/RF/*.md`, `.docs/wiki/RF.md`, equivalentes TP); para `TP-*` puede resolver el caso dentro de docs agregados `06_tests/*.md` y usar el título del caso embebido; `--all` sigue siendo RF-only hasta que el contrato declare otro universo; los marcadores file-only verifican contra el catálogo de símbolos o contra existencia de archivo en el workspace cuando el lenguaje no esta indexado semanticamente; `confidence`, `confidence_reason` y `status_reason` son campos opcionales aditivos para explicar el veredicto.
+- `nav ask --all-workspaces` / `nav search --all-workspaces` / `nav find --all-workspaces`: fan-out paralelo cross-workspace; los aliases cuyo root ya no existe se omiten con warning agregado y sugerencia hacia `workspace hygiene --format toon`.
+- `--no-daemon` global flag: fuerza ejecución directa local; no conecta ni inicia el daemon
+- `--no-auto-daemon` global flag: solo desactiva el auto-start; una operación daemon-aware puede conectar a un daemon existente y hacer fallback directo si no esta disponible
+- Los intentos daemon-aware usan `ExecuteWithDialTimeout`: el timeout corto limita exclusivamente el dial; write, read, procesamiento y cancelacion obedecen el contexto original de la request
+- `--no-auto-register` global flag (o `MI_LSP_NO_AUTO_REGISTER=1`): desactiva el registro automático de la raiz git del cwd/ruta pedida en la primera consulta; ver RF-WKS-007.
+- Auto-registro predeterminado: solo registra repos elegibles dentro de `$HOME`, nunca una raíz canónica dentro de `/tmp` (aunque `$HOME` esté allí) ni una ruta exterior alcanzada por symlink. Para linked worktrees compara `git dir` y `git common dir` absolutos/canónicos; reusa el alias del principal si está registrado y, si no, responde `explicit_incomplete`/`invalid_workspace` sin indexar. `MI_LSP_AUTOREGISTER=force` es el override explícito de scope/worktree y debe emitirse como warning observable; no permite registrar `$HOME`, filesystem root ni rutas fuera de Git. El GC en list/resolución y el prune manual solo remueven roots definitivamente inexistentes; el log del GC expone contadores agregados, nunca paths.
+- `--allow-cross-workspace` global flag: permite que callers agente/harness ejecuten intencionalmente un `--workspace <alias>` que apunta fuera del `caller_cwd`; desde 2026-10-03 solo hace falta para escrituras (`index.run|start|cancel|run-job`, `workspace.link`, `nav.prepare`, `prepare.create|refresh`); las lecturas proceden con warning que nombra ambos roots. Cada uso del override en una escritura agrega una línea a `~/.mi-lsp/overrides.log`; el reindex en segundo plano que dispararía una lectura cross-workspace cuenta como escritura (`operation: index.autoindex`) y sin override se omite.
+- `daemon perf-smoke`: valida presupuesto de daemon y callers paralelos; falla el envelope si supera working set, private bytes o handles configurados
+- `--axi` global flag / `MI_LSP_AXI=1`: fuerzan overlay AXI en superficies soportadas
+- `--classic` global flag: restaura modo clasico en superficies AXI-default y prevalece sobre el env
+- `--full` global flag: expande surfaces AXI efectivas sin cambiar routing ni semántica base
+- `workspace add --no-index`: agrega workspace sin indexar
+- `workspace link <alias> --role producto|ecosistema|gobierno_local`: asocia el workspace actual con un alias de canon ya registrado; `nav wiki-root` y `nav governance` usan el link sin `--allow-cross-workspace`
+- `--compress` global flag: compresion agresiva de output
+
+### Envelope `nav ask`
+
+```json
+{
+  "ok": true,
+  "backend": "ask",
+  "workspace": "alias",
+  "items": [
+    {
+      "summary": "...",
+      "primary_doc": {"path": ".docs/wiki/07_technical.md"},
+      "doc_evidence": [],
+      "code_evidence": [],
+      "why": [],
+      "next_queries": []
+    }
+  ],
+  "warnings": ["read_model=project"],
+  "coach": {
+    "trigger": "text_fallback",
+    "message": "This answer relied on textual fallback instead of strong indexed evidence.",
+    "confidence": "low",
+    "actions": [
+      {
+        "kind": "refine",
+        "label": "Inspect supporting code",
+        "command": "mi-lsp nav search \"daemon\" --workspace mi-lsp --include-content"
+      }
+    ]
+  },
+  "continuation": {
+    "reason": "follow_doc",
+    "next": {
+      "op": "nav.search",
+      "query": "daemon",
+      "doc_id": "TECH-DAEMON-GOBERNANZA"
+    }
+  },
+  "memory_pointer": {
+    "doc_id": "CT-NAV-ASK",
+    "why": "Contrato tecnico actualizado recientemente para guidance query-level.",
+    "reentry_op": "workspace.status",
+    "handoff": "continuation-v1",
+    "stale": false
+  },
+  "stats": {"files": 2},
+  "truncated": false
+}
+```
+
+### Disparadores de cambio
+Actualizar `09` y/o `CT-*` cuando cambie cualquiera de estos puntos:
+
+- surface publica de comandos o flags globales
+- overlay AXI (`--axi`, `--classic`, `MI_LSP_AXI=1`, `--full`) y semántica de preview/full
+- handshake/version del daemon
+- envelope JSON de salida
+- politica de sanitizacion y compatibilidad por formato (`compact|json|text|toon|yaml`)
+- endpoints/admin URL o payloads de gobernanza
+- protocolo con Roslyn worker, catálogo Go AST nativo o bridges opcionales con `tsserver`, `pyright` o `gopls`
+- politica de bootstrap, instalación o compatibilidad del worker por RID
+- contrato explainable de `nav ask` o shortcut publico `init`
+- embeddings backends, profiles, configuración, API key env, contrato recall
+- comandos/selectores/budgets/envelopes graph-native, federation, MILX framing/manifest/capabilities o no-MCP/no-network
+
+- [CT-NAV-PREPARATION.md](CT-NAV-PREPARATION.md) - ciclo portable de preparación, verificación y refresh de evidencia
+
+## Errores
+
+Se mantienen las razones, warnings, rechazos y fallbacks explícitos de cada operación.
+
+### Versionado, auth y errores
+
+- El proyecto usa compatibilidad best-effort intra-version; cambios incompatibles deben reflejar `protocol_version`.
+- La governance UI es solo local (`127.0.0.1`) y no incorpora auth en esta fase; la ventana temporal visible se negocia via `window=recent|7d|30d|90d`.
+- Las respuestas del CLI deben seguir envelope estable y explicitar `backend`, `truncated`, `warnings`, `stats` y `hint` (omitempty, presente cuando `items=[]` o daemon no disponible).
+- Las fallas deben usar envelope estructurado `ok=false`: conservar `backend`, `warnings`, `stats`, `truncated=false` cuando aplique, y exponer `error {kind, code, message, stage?, retryable?, hint?}` sin texto libre no tipado como única evidencia.
+- El safe-degrade planner es parte del contrato de precision: debe elegir la superficie más barata que preserve autoridad (`route|wiki search|pack preview` antes de lecturas o semántica profunda), degradar con warning/hint tipado, y registrar solo metadatos sanitizados (`planner_path`, `planner_outcome`, `safe_degrade_reason`, `guardrail_trigger`) dentro de `decision_json`.
+- El contexto interno de la request puede incluir `caller_cwd`; si el usuario omite `--workspace`, la resolución observable sigue `selector explicito > caller_cwd > last_workspace`.
+- `nav.find`, `nav.search` y `nav.intent` con `--repo` deben aceptar resolución smart cuando el selector humano tiene un match único y, si no, devolver candidatos concretos en `items` + `next_hint`.
+- `nav ask`, `nav route` y `nav pack` aceptan `--repo` solo por compatibilidad guiada; el flag se ignora para routing documental y el envelope debe incluir warning/hint hacia `nav wiki`.
+- En AXI, las respuestas preview-first pueden anunciar expansion via `next_hint` hacia `--full` sin cambiar el envelope base.
+- El envelope estable puede agregar `coach` como bloque opcional, query-level y machine-readable; es aditivo y no reemplaza `warnings`, `hint`, `next_hint` ni `next_queries`.
+- El envelope estable puede agregar `continuation` como bloque opcional, tiny y machine-readable; su `next` y `alternate` usan campos estructurados (`op`, `query`, `repo`, `path`, `symbol`, `doc_id`, `full`) y no comandos raw.
+- El envelope estable puede agregar `memory_pointer` como bloque opcional, wiki-anchored y de muy bajo costo, para señalar cambios canónicos recientes, mejor reentry y estado `stale`.
+- El envelope estable puede agregar `mode` cuando la superficie necesita distinguir variantes estables sin cambiar `backend` (por ejemplo `nav.intent docs|code|mixed`).
+- Contrato `primitives-v2` (aditivo, sin romper consumidores previos): el envelope puede agregar `degraded` (bool, omitido si es `false`), `reason` y `fallback_used` (`catalog|text`), y cada item puede agregar `origin` (`semantic|catalog|text|wiki`). `reason` pertenece a un catálogo versionado: `index_not_ready`, `index_schema_broken`, `lsp_unavailable`, `lsp_error`, `semantic_empty_text_hits`, `language_unsupported`, `no_matches`; los consumidores mapean valores desconocidos a `unknown`. `reason` no reemplaza ni se mezcla con `error.reason_code`, que conserva su allowlist cerrada y los diagnósticos `kind/code/stage/hint_code/detail`. `next_hint` es solo para mostrar; la paginación usa `continuation`. Una superficie con fallback no devuelve un vacío falso: o responde con coincidencias de la vía alternativa marcadas `degraded=true`, o devuelve `items=[]` con `reason=no_matches` verificado. Detalle en [[RF-QRY-001]] y [[RF-QRY-002]].
+- Los errores de bootstrap deben ser accionables: por ejemplo `Run: mi-lsp worker install`.
+- Los contratos internos no deben transportar ASTs ni blobs completos salvo comando futuro explicito.
+- Graph envelopes agregan `operation`, `generation_id`, `graph_schema_version`, `omissions` y `determinism_digest`; `omissions[]` puede exponer contexto documental opcional (`source_document`, `source_block`, `target_kind`, `target_value`), nullable en persistencia y acotado a 4096 bytes; la serialización sanea la ruta de `source_document` (omitiendo valores absolutos o con traversal) y limpia/limita el texto de los demás campos (omitiendo controles). Cursors se ligan a generation/query/ordering.
+- MILX frames usan `uint32` big-endian + JSON canónico UTF-8, max 1 MiB por frame y 16 MiB por ejecución; operaciones v1 son `describe|prepare|execute|cancel|health|shutdown`.
+- Error codes `GPH_*` son tipados y sanitizados. Truncation, member unavailable y omission no se presentan como completitud ni se esconden en texto libre; los diagnósticos documentales conservan `missing_doc_target` o `ambiguous_doc_target` como `reason_code` tipado.
+- `nav ask` debe devolver una estructura explainable con `summary`, `primary_doc`, `doc_evidence`, `code_evidence`, `why` y `next_queries`.
+- `nav search` y `nav ask` pueden agregar `coach.trigger` en casos balanceados (`repo_selector_invalid`, `regex_auto_healed`, `no_matches_refinable`, `preview_trimmed`, `text_fallback`, `low_confidence`, `scope_narrowing_available`, `symbol_query_detected`, `search_timeout`).
+- `nav search`, `nav ask`, `nav pack`, `nav route`, `nav.related`, `nav.service` y `nav workspace-map` pueden agregar `continuation.reason` (`recent_change`, `narrow_scope`, `follow_doc`, `expand_preview`, `low_evidence`, `handoff_reentry`) cuando existe un siguiente paso mejor que repetir la misma consulta.
+- `nav pack` debe devolver una estructura estable con `task`, `family`, `mode`, `primary_doc`, `docs`, `why` y `next_queries`.
+- `nav wiki search` debe devolver `WikiSearchResult` con `doc_id`, `path`, `title`, `layer`, `family`, `stage`, `score`, `why`, `snippet/content` y `next_queries`; `RS-*` y las rutas `02_resultados*` pertenecen a `layer=RS`, `stage=outcome`.
+- `nav wiki validate-harness` debe devolver `HarnessValidationResult` con `harness_protocol`, `harness_readiness`, `harness_verdict`, blockers/warnings, conteos de contratos/links revisados, evidencia requerida/encontrada y docs sin contrato/audience.
+- `nav wiki validate-source` debe devolver `WikiSourceValidationResult` con `wiki_source_protocol`, `wiki_source_readiness`, `wiki_source_verdict`, blockers/warnings, conteos de artefactos/bloques/records/tablas revisados, `navigation_readiness` y `navigation_blockers`. Acepta `--paths` y `--ids`; un scope inexistente devuelve `ok=true` con `wiki_source_verdict=BLOCKED`, `navigation_readiness=blocked` y `scope=no_match`.
+- La telemetría de intent y utility solo conserva metadata derivada y sanitizada: `planner_version`, `operation`, `selector_kind`, `candidate_count`, `section_count`, `fallback` y `omission_count`. No puede transportar query, prompt, argv, payload, contenido, snippets, secretos ni errores raw.
+- `nav trace <DOC-ID>` debe clasificar explícitamente `RS|RF|TP`: `RS-*` devuelve `doc_id`, `layer=RS`, `stage=outcome` sin poblar el campo legacy `rf`; `RF-*` conserva evidencia spec-to-code y `TP-*` conserva evidencia de cobertura documental. En el grafo documental, una mención `TP-*` usa coincidencia exacta de `DocRecord.doc_id`: si hay un único target se publica nodo/edge; si falta o está duplicado, se conserva `GraphUnresolved` tipado con `reason_code=missing_doc_target|ambiguous_doc_target`, `target_kind=document`, `target_value` solicitado y candidatos bounded, sin elegir un candidato arbitrario.
+- `nav trace <DOC-ID>` también puede resolver `block_id` o `record_id` fuente exacto desde `doc_source_blocks`/`doc_source_records` y devolver evidencia `wiki-source`.
+- `TraceResult` puede agregar campos aditivos `confidence`, `confidence_reason` y `status_reason` para explicar cobertura parcial, ausencia real o evidencia fuerte sin cambiar `status`, `doc_id`, `layer`, `stage` ni el campo legacy `rf`.
+- `nav affected` debe devolver items estables con `kind`, `path`, `reason`, `confidence`, `suggested_command` y `evidence`; cuando usa heuristicas debe emitir warning explícito y no afirmar ausencia total de impacto más alla de los inputs revisados.
+- `nav edit-plan` debe devolver `backend=edit-plan`, `mode=dry_run|applied` e `items[0]` con `patch_packet`, `diff`, `files_changed`, `operations`, `evidence`, `guardrails` y `apply_status`; si trunca diff/evidencia debe setear `truncated=true` y `next_hint`. En `edit-plan-v2`, C#, TypeScript y Python con operaciones AST deben fallar con `language_not_supported` accionable hasta que existan backends especificos.
+- `nav governance` debe devolver una estructura estable con perfil, base efectiva, overlays, sync, blockers, `index_sync_details` con timestamps comparados y siguientes pasos.
+- `nav service` puede usar `backend=catalog`, `backend=text` o `backend=catalog+text`.
+
+## Compatibilidad
+
+La migración cambia el contrato documental, no el protocolo runtime ni sus versiones. Los esquemas legacy que la herramienta consume continúan como compatibilidad de entrada, no como formato de autoría de esta wiki.
+
+### Compatibilidad y migración
+
+- La presencia o ausencia del daemon no debe cambiar la semántica visible de los comandos.
+- `daemon start` acepta `--watch-mode off|lazy|eager`, `--max-watched-roots` y `--max-inflight`; el hidden `daemon serve` recibe los mismos valores.
+- `MI_LSP_WATCH_MODE`, `MI_LSP_WATCH_MAX_ROOTS` y `MI_LSP_DAEMON_MAX_INFLIGHT` son overrides runtime equivalentes cuando el flag no se pasa.
+- Si `--workspace` se omite y el runtime cae a `last_workspace` o resuelve una ambigüedad de aliases sobre el mismo root, el contrato visible debe incluir warning explícito con el alias elegido.
+- `MI_LSP_AXI=1` habilita AXI a nivel sesion; `--classic` prevalece sobre defaults/env y `--axi` fuerza AXI en superficies soportadas.
+- `--axi=false` explícito anula el default AXI de la superficie actual; equivalente a `--classic` para esa invocacion.
+- `--axi` y `--classic` juntos deben fallar antes de ejecutar la operacion.
+- `worker status` debe conservar el mismo payload visible con y sin daemon; el daemon no puede reemplazar `items` por `RuntimeSnapshot`/`WorkerStatus` crudos.
+- `nav.find`, `nav.search`, `nav.intent`, `nav.symbols`, `nav.outline`, `nav.overview`, `nav.multi-read`, `nav.affected`, `nav.edit-plan`, `nav.evidence.inventory` y `nav.workspace-map` summary-first pertenecen a la superficie publica directa: no deben esperar daemon ni cambiar de comportamiento por su health.
+- `nav.wiki.search`, `nav.wiki.route`, `nav.wiki.pack`, `nav.wiki.trace`, `nav.wiki.inventory`, `nav.wiki.map`, `nav.wiki-root`, `nav.wiki.validate-harness` y `nav.wiki.validate-source` pertenecen a la superficie publica directa y no deben esperar daemon.
+- `nav.ask` también pertenece al hot path directo por default; la presencia del daemon no debe ser requisito para una primera respuesta docs-first util.
+- `index` puede degradar a full rebuild aun sin cambios git detectados cuando el runtime observa que `doc_records` no contiene docs canónicos pese a que la wiki existe en disco; el contrato visible no debe quedar en `no changes detected` en ese caso.
+- `index --docs-only` es un modo publico de recuperacion: reconstruye el corpus documental y la memoria de reentrada sin reemplazar el catálogo de código; si hay markdown canónico en `wiki/`, `bibliotecas/` o roots `&#91;&#91;canon&#93;&#93;` declarados, también puede publicar una `GraphGeneration` documental. Un root de canon inválido se omite con warning; el walker no escribe esas raíces.
+- `index [path]` es wrapper compatible de `index start --mode full --wait`; `--docs-only` equivale a `index start --mode docs --wait`.
+- `index start [path] --mode full|docs|catalog` crea un job durable. Por default retorna sin esperar; con `--wait` bloquea hasta completar.
+- `index status [job-id]` devuelve el ultimo job del workspace o el job pedido; mientras un job largo corre, `updated_at`, `current_stage`, `current_path`, `files_total` y los contadores deben reflejar progreso vivo.
+- `index cancel <job-id> [--force]` solicita cancelacion cooperativa y, con `--force`, puede terminar el PID vivo del job; la variante force también debe remover el `index.lock` si pertenece al PID cancelado y ya no esta vivo.
+- Los envelopes de jobs usan `backend=index-job`, `mode=<full|docs|catalog>` e `items[0]` con `job_id`, `generation_id`, `status`, `phase`, `current_stage`, `current_path`, `files_total`, `pid`, contadores, timestamps y `error` cuando existe; `phase=indexing` cubre el trabajo pesado y `phase=publishing` queda reservado para el cierre/publicacion final.
+- La politica comun de subprocessos no interactivos debe evitar UI extra; en Windows aplica `HideWindow + CREATE_NO_WINDOW`, y los procesos background del daemon agregan `DETACHED_PROCESS`.
+- La resolución de bootstrap del worker usa el ejecutable/distribucion activa o, en desarrollo, el repo `mi-lsp`; nunca el `cwd` arbitrario del workspace consultado.
+- La distribucion publica canónica es un bundle por RID que incluye `mi-lsp(.exe)` y `workers/<rid>/`; una build desde source no redefine ese contrato de bootstrap.
+- Los scripts publicos de install/update deben consumir esa misma distribucion canónica; `install.sh` detecta macOS como archive RID `darwin-*` y mapea el worker runtime a `osx-*`, preservando compatibilidad con ambos aliases en `--rid`.
+- El readback de release usa RIDs logicos `osx-arm64|osx-x64` y assets de archive `darwin-arm64|darwin-x64`; al validar el archive conserva el worker bajo `workers/osx-*` y no lo renombra a `workers/darwin-*`.
+- La distribucion operativa AE debe producir y verificar `win-arm64`, `win-x64`, `linux-arm64`, `linux-x64`, `osx-arm64` y `osx-x64`; `scripts/release/ae-release-binaries.ps1` es el entrypoint mantenido para refrescar installs locales/WSL, mirrors x64 opcionales y publicar por tag limpio cuando se pasa `-Publish`.
+- La dependencia `System.Security.Cryptography.Xml` del worker queda fijada en `10.0.10`; la auditoria de paquetes vulnerables y cualquier `NU1903` son gates de release, no resultados implícitos.
+- Las queries Roslyn deben resolver candidatos en orden `bundle -> installed -> dev-local` por presencia de archivos; el probe `status` queda reservado para `worker status` y diagnóstico explicito.
+- Si el primer candidato Roslyn falla por bootstrap al arrancar, el caller puede reintentar una sola vez con el siguiente candidato determinista antes de devolver error accionable.
+- Si `tsserver` no existe, el sistema debe degradar a catalog/text con warning explicito.
+- Si `tsserver`, `pyright` o `gopls` estan en cooldown por fallas recientes de bootstrap, el contrato visible puede degradar directamente a catalog/text con warning explicito.
+- Si `pyright-langserver` o `gopls` no existen, el sistema debe degradar a catalog/text con warning explicito.
+- Si `nav context` se ejecuta sobre un archivo no semántico, el sistema debe responder con `backend=text` sin pasar por workers.
+- Si `nav context` encuentra una falla de bootstrap Roslyn o de arranque de proceso/worker y el archivo existe, el sistema debe preservar `slice_text`, degradar a catalog/text cuando aplique y agregar warning accionable `backend_runtime/<code>` o el código bootstrap correspondiente.
+- El protocolo CLI-daemon debe rechazar versiones incompatibles tempranamente.
+- Graph query nunca migra/escribe `index.db`; graph stale/invalid bloquea el backend nativo y cualquier fallback legacy queda visible, no equivalente.
+- MILX protocol/capability/digest se valida antes de entregar datos. Timeout/crash/malformed output afecta solo la extension y exige cleanup verificable.
+- Ninguna superficie graph-native o MILX puede depender de MCP, HTTP, red implicita o store externo.

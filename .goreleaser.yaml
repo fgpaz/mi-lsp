@@ -47,8 +47,8 @@ archives:
       - CHANGELOG.md
       - src: ".goreleaser/metadata/*.json"
         dst: integrations/mi-mcp
-      - src: .docs/wiki/09_contratos/CT-Q-V1.md
-        dst: .docs/wiki/09_contratos
+      - src: .docs/wiki/07_technical/contracts/CT-Q-V1.md
+        dst: .docs/wiki/07_technical/contracts
       - src: TROUBLESHOOTING.md
         dst: docs
       - src: "scripts/install/*"

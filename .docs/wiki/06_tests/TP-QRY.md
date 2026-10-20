@@ -1,0 +1,831 @@
+---
+wiki_contract: WIKI-CONTRACT-v1
+id: TP-QRY
+kind: test
+status: active
+title: TP-QRY
+links:
+  verifies:
+  - RF-GPH-006
+  - RF-GPH-008
+  - RF-IDX-001
+  - RF-QRY-001
+  - RF-QRY-002
+  - RF-QRY-003
+  - RF-QRY-004
+  - RF-QRY-005
+  - RF-QRY-006
+  - RF-QRY-007
+  - RF-QRY-008
+  - RF-QRY-009
+  - RF-QRY-010
+  - RF-QRY-011
+  - RF-QRY-012
+  - RF-QRY-013
+  - RF-QRY-014
+  - RF-QRY-015
+  - RF-QRY-016
+  - RF-QRY-017
+  - RF-QRY-018
+  - RF-QRY-019
+  - RF-QRY-020
+  - RF-QRY-022
+  - RF-QRY-023
+  - RF-QRY-024
+  - RF-QRY-025
+---
+
+## Alcance
+
+RF-GPH-006, RF-GPH-008, RF-IDX-001, RF-QRY-001, RF-QRY-002, RF-QRY-003, RF-QRY-004, RF-QRY-005, RF-QRY-006, RF-QRY-007, RF-QRY-008, RF-QRY-009, RF-QRY-010, RF-QRY-011, RF-QRY-012, RF-QRY-013, RF-QRY-014, RF-QRY-015, RF-QRY-016, RF-QRY-017, RF-QRY-018, RF-QRY-019, RF-QRY-020, RF-QRY-022, RF-QRY-023, RF-QRY-024, RF-QRY-025. Se conserva el inventario de escenarios, límites, disposiciones y evidencia histórica, sin reejecución.
+
+## Casos
+
+La extensión compiler raw Kotlin v2 de [[TECH-KOTLIN-BACKEND]] conserva `TP-QRY.kotlin-runtime-v0` para queries K1 y agrega el oráculo **pendiente**, no ejecutado, `TP-GPH.kotlin-compiler-export-v1` en [[TP-GPH]]. El fork anuncia su versión real; stock no expone el método. La configuración efectiva solo entra por el exporter opt-in offline; K1 no lo ejecuta ni lo toma como complete. Calls siguen unsupported fuera del batch subset y Graph staging exige complete/stable (raw actual partial/experimental rechazado); ninguna query parcial ni symbols PSI certifican NodeKey/compiler identity. No es un PASS adicional ni una segunda FINAL_VERIFY.
+
+
+
+### Oráculo pendiente Kotlin runtime v0
+
+- **Marcador estable**: TP-QRY.kotlin-runtime-v0
+- **Estado del comportamiento**: pending_goal_root_FINAL_VERIFY
+- **owner**: coord-milsp_Semantic-backends
+- **Evidencia referenciada**:
+  - internal/worker/kotlin.go
+  - internal/worker/lsp_transport.go
+  - internal/service/semantic_kotlin.go
+- **executed_in_K1**: false
+- **result**: no_PASS_claim
+- **fixture**:
+  - **project**: isolated_Gradle_JVM_explicit_main_module
+  - **dependencies**: cached_local_JAR_and_Java_symbol
+  - **network**: disabled_after_preparation
+  - **declarations**: overloads_homonyms_extension_receiver_distinct_packages
+  - **Casos negativos**: comments_text_homonyms_kts_outside_module
+- **oracles**:
+  - disabled_missing_or_incompatible_runtime_is_unavailable
+  - exact_definition_refs_locations_without_text_facts
+  - PSI_symbols_structural_without_NodeKey_or_RoleCompiler
+  - UTF16_astral_character_and_surrogate_boundary_rejection
+  - didOpen_once_didChange_versions_didClose_eviction
+  - cancel_during_initialize_query_no_late_response_reuse
+  - bounded_framing_queue_and_shutdown
+  - crash_pool_invalidation_subsequent_caller_owned_restart
+  - metadata_change_changes_runtime_key_no_module_mixing
+  - direct_daemon_parity_partial_unavailable_unsupported
+  - stock_fwcd_extension_calls_and_graph_unsupported
+
+Son oráculos planificados para la única FINAL_VERIFY, no tests implementados/ejecutados. Registrar JDK/target/Gradle/classpath real; Java 25 no se presume compatible. K2 agrega identidad, firmas, resolución y config/classpath fingerprints con los gates estrictos de [[RF-GPH-008]]. Lista vacía y classpath backup no son complete.
+
+### Cobertura objetivo
+
+- RF-QRY-001
+- RF-QRY-002
+- RF-QRY-003
+- RF-QRY-004
+- RF-QRY-005
+- RF-QRY-006
+- RF-QRY-007
+- RF-QRY-008
+- RF-QRY-009
+- RF-QRY-010
+- RF-QRY-011
+- RF-QRY-012
+- RF-QRY-013
+- RF-QRY-014
+- RF-QRY-015
+- RF-QRY-016
+- RF-QRY-017
+- RF-QRY-020
+- RF-QRY-021
+- RF-QRY-022
+- RF-QRY-023
+- RF-QRY-024
+- RF-QRY-025
+
+
+### Escenarios
+- **Caso**: TC-QRY-001; **Tipo**: positivo; **RF**: RF-QRY-001; **Descripción**: emite envelope estable con campos obligatorios
+  - RF-QRY-001 — Criterio 1. Disposición: manual_evidence_pending. Evidencia esperada: emite envelope estable con campos obligatorios. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-002; **Tipo**: positivo; **RF**: RF-QRY-001; **Descripción**: trunca de forma determinista con `next_hint`
+  - RF-QRY-001 — Criterio 2. Disposición: manual_evidence_pending. Evidencia esperada: trunca de forma determinista con `next_hint`. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-003; **Tipo**: negativo; **RF**: RF-QRY-001; **Descripción**: rechaza presupuestos invalidos
+  - RF-QRY-001 — Criterio 3. Disposición: manual_evidence_pending. Evidencia esperada: rechaza presupuestos invalidos. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-004; **Tipo**: positivo; **RF**: RF-QRY-002; **Descripción**: usa daemon saludable cuando esta disponible para queries semánticas o compuestas
+  - RF-QRY-002 — Criterio 4. Disposición: manual_evidence_pending. Evidencia esperada: usa daemon saludable cuando esta disponible para queries semánticas o compuestas. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-005; **Tipo**: positivo; **RF**: RF-QRY-002; **Descripción**: hace fallback directo si el daemon no responde para una query daemon-aware
+  - RF-QRY-002 — Criterio 6. Disposición: manual_evidence_pending. Evidencia esperada: hace fallback directo si el daemon no responde para una query daemon-aware. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-006; **Tipo**: negativo; **RF**: RF-QRY-002; **Descripción**: falla cuando no existe backend ejecutable
+  - RF-QRY-002 — Criterio 5. Disposición: manual_evidence_pending. Evidencia esperada: falla cuando no existe backend ejecutable. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-007; **Tipo**: positivo; **RF**: RF-QRY-002; **Descripción**: enruta `nav refs` sobre `.py` a pyright si esta disponible
+  - RF-QRY-002 — Criterio 4. Disposición: manual_evidence_pending. Evidencia esperada: enruta `nav refs` sobre `.py` a pyright si esta disponible. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-008; **Tipo**: positivo; **RF**: RF-QRY-002; **Descripción**: degrada a catalog/text con warning si pyright no esta instalado
+  - RF-QRY-002 — Criterio 4. Disposición: manual_evidence_pending. Evidencia esperada: degrada a catalog/text con warning si pyright no esta instalado. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-008A; **Tipo**: positivo; **RF**: RF-QRY-002; **Descripción**: `TestNavContext_GoFileUsesGoplsBackend`: `nav context` sobre `.go` pide backend `gopls` y conserva `slice_text` enriquecido
+  - RF-QRY-002 — Criterio 5. Disposición: manual_evidence_pending. Evidencia esperada: `TestNavContext_GoFileUsesGoplsBackend`: `nav context` sobre `.go` pide backend `gopls` y conserva `slice_text` enriquecido. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-008B; **Tipo**: positivo; **RF**: RF-QRY-002; **Descripción**: `TestNavContext_GoplsUnavailableFallsBackToSlice`: si `gopls` falta, `nav context` degrada a catalog/text con warning accionable
+  - RF-QRY-002 — Criterio 6. Disposición: manual_evidence_pending. Evidencia esperada: `TestNavContext_GoplsUnavailableFallsBackToSlice`: si `gopls` falta, `nav context` degrada a catalog/text con warning accionable. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-009; **Tipo**: positivo; **RF**: RF-QRY-003; **Descripción**: resume endpoints, consumers, publishers, entidades e infraestructura de un servicio con evidencia estructurada
+  - RF-QRY-003 — Criterio 1. Disposición: manual_evidence_pending. Evidencia esperada: resume endpoints, consumers, publishers, entidades e infraestructura de un servicio con evidencia estructurada. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-009A; **Tipo**: positivo; **RF**: RF-QRY-003; **Descripción**: `TestNavServiceGoPackageUsesCatalogProfile`: `nav service` perfila paquetes Go como `go-package` y evita falsos endpoints .NET desde fixtures o strings
+  - RF-QRY-003 — Criterio 4. Disposición: manual_evidence_pending. Evidencia esperada: `TestNavServiceGoPackageUsesCatalogProfile`: `nav service` perfila paquetes Go como `go-package` y evita falsos endpoints .NET desde fixtures o strings. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-009B; **Tipo**: positivo; **RF**: RF-QRY-003; **Descripción**: `TestNavServiceGoPackageDetectsGoHTTPAndCLIInfra`: `nav service` detecta endpoints Go reales, `http.ListenAndServe` y Cobra sin contar rutas dentro de raw strings
+  - RF-QRY-003 — Criterio 4. Disposición: manual_evidence_pending. Evidencia esperada: `TestNavServiceGoPackageDetectsGoHTTPAndCLIInfra`: `nav service` detecta endpoints Go reales, `http.ListenAndServe` y Cobra sin contar rutas dentro de raw strings. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-010; **Tipo**: positivo; **RF**: RF-QRY-003; **Descripción**: oculta placeholders de arquetipo por default y los incluye con `--include-archetype`
+  - RF-QRY-003 — Criterio 2. Disposición: manual_evidence_pending. Evidencia esperada: oculta placeholders de arquetipo por default y los incluye con `--include-archetype`. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-011; **Tipo**: negativo; **RF**: RF-QRY-003; **Descripción**: devuelve warning accionable si no hay catálogo util o no se encuentra evidencia suficiente bajo el path
+  - RF-QRY-003 — Criterio 3. Disposición: manual_evidence_pending. Evidencia esperada: devuelve warning accionable si no hay catálogo util o no se encuentra evidencia suficiente bajo el path. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-012; **Tipo**: positivo; **RF**: RF-QRY-002; **Descripción**: `nav context` sobre `ts/tsx` devuelve `slice_text` y warning si `tsserver` no esta disponible
+  - RF-QRY-002 — Criterio 4. Disposición: manual_evidence_pending. Evidencia esperada: `nav context` sobre `ts/tsx` devuelve `slice_text` y warning si `tsserver` no esta disponible. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-013; **Tipo**: positivo; **RF**: RF-QRY-002; **Descripción**: `nav search` sin matches devuelve `ok=true` e insinua `--regex` cuando el patron parece regex
+  - RF-QRY-002 — Criterio 5. Disposición: manual_evidence_pending. Evidencia esperada: `nav search` sin matches devuelve `ok=true` e insinua `--regex` cuando el patron parece regex. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-013J; **Tipo**: positivo; **RF**: RF-QRY-002; **Descripción**: En consumo agente (cliente configurado, cliente cuyo nombre contiene `mcp` o stdout no TTY), `nav find/search/multi-read` elige respuesta compacta con workspace primero y límite de resultados; `--verbose` amplía y `--format` explícito conserva contrato
+  - RF-QRY-002 — Criterio 3. Disposición: manual_evidence_pending. Evidencia esperada: En consumo agente (cliente configurado, cliente cuyo nombre contiene `mcp` o stdout no TTY), `nav find/search/multi-read` elige respuesta compacta con workspace primero y límite de resultados; `--verbose` amplía y `--format` explícito conserva contrato. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-013B; **Tipo**: positivo; **RF**: RF-QRY-002; **Descripción**: `nav search` incluye docs gobernados y artefactos repo-locales ocultos aun cuando el repo use directorios hidden, para que un `index --docs-only` deje visibles IDs `RF-*` y `TP-*` en la superficie textual directa
+  - RF-QRY-002 — Criterio 6. Disposición: manual_evidence_pending. Evidencia esperada: `nav search` incluye docs gobernados y artefactos repo-locales ocultos aun cuando el repo use directorios hidden, para que un `index --docs-only` deje visibles IDs `RF-*` y `TP-*` en la superficie textual directa. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-013C; **Tipo**: positivo; **RF**: RF-QRY-002, RF-QRY-016; **Descripción**: `nav search` literal symbol-like emite `coach.trigger=symbol_query_detected` con acciones `nav find --exact` y `nav related`
+  - RF-QRY-002 — Criterio 3; RF-QRY-016 — Criterio 14. Disposición: manual_evidence_pending. Evidencia esperada: `nav search` literal symbol-like emite `coach.trigger=symbol_query_detected` con acciones `nav find --exact` y `nav related`. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-013D; **Tipo**: positivo; **RF**: RF-QRY-002, RF-QRY-016; **Descripción**: `nav search` symbol-like ordena declaraciones/implementaciones fuente antes que docs, tests, backups y generados
+  - RF-QRY-002 — Criterio 3; RF-QRY-016 — Criterio 14. Disposición: manual_evidence_pending. Evidencia esperada: `nav search` symbol-like ordena declaraciones/implementaciones fuente antes que docs, tests, backups y generados. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-013E; **Tipo**: positivo; **RF**: RF-QRY-002; **Descripción**: `nav context` sobre C# conserva `slice_text` y degrada a catalog/text con warning `backend_runtime/process_spawn_access_denied` si Roslyn no arranca
+  - RF-QRY-002 — Criterio 6. Disposición: manual_evidence_pending. Evidencia esperada: `nav context` sobre C# conserva `slice_text` y degrada a catalog/text con warning `backend_runtime/process_spawn_access_denied` si Roslyn no arranca. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-013F; **Tipo**: positivo; **RF**: RF-QRY-002; **Descripción**: `nav search` cae a Go search con warning tipado si `rg` falla por permisos o arranque de proceso
+  - RF-QRY-002 — Criterio 3. Disposición: manual_evidence_pending. Evidencia esperada: `nav search` cae a Go search con warning tipado si `rg` falla por permisos o arranque de proceso. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-013H; **Tipo**: positivo; **RF**: RF-QRY-002; **Descripción**: `nav search` con `rg --hidden` preserva `.docs` pero excluye caches/dependencias generadas (`.git`, `.next`, `.turbo`, `node_modules`, `bin/obj`, venvs, worktrees temporales) para evitar latencia espuria
+  - RF-QRY-002 — Criterio 3. Disposición: manual_evidence_pending. Evidencia esperada: `nav search` con `rg --hidden` preserva `.docs` pero excluye caches/dependencias generadas (`.git`, `.next`, `.turbo`, `node_modules`, `bin/obj`, venvs, worktrees temporales) para evitar latencia espuria. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-013K; **Tipo**: positivo; **RF**: RF-QRY-002; **Descripción**: `nav.search` procesa archivos en paralelo y la selección acotada mantiene los primeros resultados por ruta y línea en orden determinista
+  - RF-QRY-002 — Criterio 3. Disposición: manual_evidence_pending. Evidencia esperada: `nav.search` procesa archivos en paralelo y la selección acotada mantiene los primeros resultados por ruta y línea en orden determinista. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-013L; **Tipo**: positivo/negativo; **RF**: RF-QRY-002; **Descripción**: `nav.find` limita refresh de candidatos a 32 archivos, 4 MiB por archivo y 16 MiB totales bajo 250 ms; tras publicar cambios repite la consulta y ante error sirve el snapshot publicado con advertencia
+  - RF-QRY-002 — Criterio 3. Disposición: manual_evidence_pending. Evidencia esperada: `nav.find` limita refresh de candidatos a 32 archivos, 4 MiB por archivo y 16 MiB totales bajo 250 ms; tras publicar cambios repite la consulta y ante error sirve el snapshot publicado con advertencia. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-013M; **Tipo**: positivo/negativo; **RF**: RF-QRY-002, RF-QRY-011; **Descripción**: `nav.route`/`nav.intent` refrescan hasta cinco candidatos Markdown bajo 500 ms; sólo tras commit recargan y vuelven a puntuar una vez, y ante fallo conservan resultado en memoria con warning
+  - RF-QRY-002 — Criterio 3; RF-QRY-011 — Criterio 10. Disposición: manual_evidence_pending. Evidencia esperada: `nav.route`/`nav.intent` refrescan hasta cinco candidatos Markdown bajo 500 ms; sólo tras commit recargan y vuelven a puntuar una vez, y ante fallo conservan resultado en memoria con warning. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-013N; **Tipo**: concurrencia/compatibilidad; **RF**: RF-QRY-002; **Descripción**: la lectura/extracción ocurre bajo writer lock cancelable; una petición que esperó el lock usa bytes actuales y un hash dialecto desconocido preserva la fila legacy
+  - RF-QRY-002 — Criterio 1. Disposición: manual_evidence_pending. Evidencia esperada: la lectura/extracción ocurre bajo writer lock cancelable; una petición que esperó el lock usa bytes actuales y un hash dialecto desconocido preserva la fila legacy. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-013O; **Tipo**: positivo/negativo; **RF**: RF-QRY-002, RF-GPH-006; **Descripción**: `nav.find` reconcilia un archivo ausente sólo para el path/fila consultados, repite la consulta tras el tombstone y deja stale el grafo sin generar evidencia graph-native
+  - RF-GPH-006 — Criterio 1; RF-QRY-002 — Criterio 3. Disposición: manual_evidence_pending. Evidencia esperada: `nav.find` reconcilia un archivo ausente sólo para el path/fila consultados, repite la consulta tras el tombstone y deja stale el grafo sin generar evidencia graph-native. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-013I; **Tipo**: positivo; **RF**: RF-QRY-002, RF-QRY-016; **Descripción**: `nav search` symbol-like en AXI preview acota el sobre-muestreo usado para ranking, manteniendo `--full`/clasico con el límite amplio
+  - RF-QRY-002 — Criterio 3; RF-QRY-016 — Criterio 14. Disposición: manual_evidence_pending. Evidencia esperada: `nav search` symbol-like en AXI preview acota el sobre-muestreo usado para ranking, manteniendo `--full`/clasico con el límite amplio. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-013G; **Tipo**: positivo; **RF**: RF-QRY-002; **Descripción**: `TestParseContextTargetAcceptsFileLineShorthand`: `nav context` acepta `file.go:123` y devuelve guidance corregida si la línea es inválida
+  - RF-QRY-002 — Criterio 5. Disposición: manual_evidence_pending. Evidencia esperada: `TestParseContextTargetAcceptsFileLineShorthand`: `nav context` acepta `file.go:123` y devuelve guidance corregida si la línea es inválida. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-013A; **Tipo**: positivo; **RF**: RF-QRY-001; **Descripción**: `nav.search` agrega `coach.trigger=no_matches_refinable` cuando la query no matchea pero tiene rerun accionable
+  - RF-QRY-001 — Criterio 1. Disposición: manual_evidence_pending. Evidencia esperada: `nav.search` agrega `coach.trigger=no_matches_refinable` cuando la query no matchea pero tiene rerun accionable. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-014; **Tipo**: positivo; **RF**: RF-QRY-004; **Descripción**: lee multiples rangos en una sola invocacion con truncación por presupuesto
+  - RF-QRY-004 — Criterio 1. Disposición: manual_evidence_pending. Evidencia esperada: lee multiples rangos en una sola invocacion con truncación por presupuesto. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-014A; **Tipo**: positivo/negativo; **RF**: RF-QRY-002, RF-QRY-004; **Descripción**: `nav.multi-read` inspecciona sólo sus paths explícitos en modo de solo lectura, respeta WAL y refresca catálogo/`doc_records` bajo límite de 250 ms; ante error/deadline previo al commit, sirve el snapshot publicado y advierte sin escritura de fondo
+  - RF-QRY-002 — Criterio 3; RF-QRY-004 — Criterio 1. Disposición: manual_evidence_pending. Evidencia esperada: `nav.multi-read` inspecciona sólo sus paths explícitos en modo de solo lectura, respeta WAL y refresca catálogo/`doc_records` bajo límite de 250 ms; ante error/deadline previo al commit, sirve el snapshot publicado y advierte sin escritura de fondo. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-156; **Tipo**: positivo; **RF**: RF-QRY-021; **Descripción**: [RETIRADO 2026-10-15] `mi-lsp mcp` inicializa JSON-RPC/NDJSON por stdio, acepta ping y termina limpio al llegar EOF
+  - RF-GPH-006 — Criterio 1; RF-GPH-008 — Criterio 1; RF-IDX-001 — Criterio 1; RF-QRY-001 — Criterio 8; RF-QRY-002 — Criterio 1; RF-QRY-003 — Criterio 1; RF-QRY-004 — Criterio 1; RF-QRY-005 — Criterio 3; RF-QRY-006 — Criterio 1; RF-QRY-007 — Criterio 1; RF-QRY-008 — Criterio 3; RF-QRY-009 — Criterio 1; RF-QRY-010 — Criterio 1; RF-QRY-011 — Criterio 1; RF-QRY-012 — Criterio 1; RF-QRY-013 — Criterio 1; RF-QRY-014 — Criterio 1; RF-QRY-015 — Criterio 1; RF-QRY-016 — Criterio 1; RF-QRY-017 — Criterio 1; RF-QRY-018 — Criterio 3; RF-QRY-019 — Criterio 1; RF-QRY-020 — Criterio 3; RF-QRY-022 — Criterio 1; RF-QRY-023 — Criterio 4; RF-QRY-024 — Criterio 8; RF-QRY-025 — Criterio 1. Disposición: manual_evidence_pending. Evidencia esperada: [RETIRADO 2026-10-15] `mi-lsp mcp` inicializa JSON-RPC/NDJSON por stdio, acepta ping y termina limpio al llegar EOF. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-157; **Tipo**: positivo; **RF**: RF-QRY-021; **Descripción**: [RETIRADO 2026-10-15] `tools/list` publica las 13 operaciones de navegación con schemas compatibles con las operaciones CLI
+  - RF-GPH-006 — Criterio 1; RF-GPH-008 — Criterio 1; RF-IDX-001 — Criterio 8; RF-QRY-001 — Criterio 1; RF-QRY-002 — Criterio 1; RF-QRY-003 — Criterio 1; RF-QRY-004 — Criterio 1; RF-QRY-005 — Criterio 1; RF-QRY-006 — Criterio 1; RF-QRY-007 — Criterio 1; RF-QRY-008 — Criterio 1; RF-QRY-009 — Criterio 1; RF-QRY-010 — Criterio 1; RF-QRY-011 — Criterio 10; RF-QRY-012 — Criterio 1; RF-QRY-013 — Criterio 1; RF-QRY-014 — Criterio 1; RF-QRY-015 — Criterio 1; RF-QRY-016 — Criterio 11; RF-QRY-017 — Criterio 1; RF-QRY-018 — Criterio 8; RF-QRY-019 — Criterio 1; RF-QRY-020 — Criterio 1; RF-QRY-022 — Criterio 1; RF-QRY-023 — Criterio 4; RF-QRY-024 — Criterio 1; RF-QRY-025 — Criterio 1. Disposición: manual_evidence_pending. Evidencia esperada: [RETIRADO 2026-10-15] `tools/list` publica las 13 operaciones de navegación con schemas compatibles con las operaciones CLI. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-158; **Tipo**: positivo; **RF**: RF-QRY-021; **Descripción**: [RETIRADO 2026-10-15] `tools/call nav_search` entrega envelope JSON en `structuredContent` y vista compacta con workspace primero en `content[0].text`; el formato CLI explícito no altera el contrato
+  - RF-GPH-006 — Criterio 1; RF-GPH-008 — Criterio 1; RF-IDX-001 — Criterio 1; RF-QRY-001 — Criterio 1; RF-QRY-002 — Criterio 1; RF-QRY-003 — Criterio 3; RF-QRY-004 — Criterio 2; RF-QRY-005 — Criterio 3; RF-QRY-006 — Criterio 1; RF-QRY-007 — Criterio 3; RF-QRY-008 — Criterio 2; RF-QRY-009 — Criterio 2; RF-QRY-010 — Criterio 1; RF-QRY-011 — Criterio 9; RF-QRY-012 — Criterio 2; RF-QRY-013 — Criterio 5; RF-QRY-014 — Criterio 5; RF-QRY-015 — Criterio 1; RF-QRY-016 — Criterio 1; RF-QRY-017 — Criterio 1; RF-QRY-018 — Criterio 1; RF-QRY-019 — Criterio 2; RF-QRY-020 — Criterio 4; RF-QRY-022 — Criterio 1; RF-QRY-023 — Criterio 6; RF-QRY-024 — Criterio 8; RF-QRY-025 — Criterio 2. Disposición: manual_evidence_pending. Evidencia esperada: [RETIRADO 2026-10-15] `tools/call nav_search` entrega envelope JSON en `structuredContent` y vista compacta con workspace primero en `content[0].text`; el formato CLI explícito no altera el contrato. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-159; **Tipo**: negativo; **RF**: RF-QRY-021; **Descripción**: [RETIRADO 2026-10-15] workspace inválido permanece fail-closed y entrega la sugerencia exacta para registrarlo o escanear cwd
+  - RF-GPH-006 — Criterio 1; RF-GPH-008 — Criterio 1; RF-IDX-001 — Criterio 1; RF-QRY-001 — Criterio 6; RF-QRY-002 — Criterio 1; RF-QRY-003 — Criterio 3; RF-QRY-004 — Criterio 2; RF-QRY-005 — Criterio 1; RF-QRY-006 — Criterio 1; RF-QRY-007 — Criterio 3; RF-QRY-008 — Criterio 1; RF-QRY-009 — Criterio 2; RF-QRY-010 — Criterio 1; RF-QRY-011 — Criterio 2; RF-QRY-012 — Criterio 2; RF-QRY-013 — Criterio 5; RF-QRY-014 — Criterio 1; RF-QRY-015 — Criterio 1; RF-QRY-016 — Criterio 1; RF-QRY-017 — Criterio 1; RF-QRY-018 — Criterio 1; RF-QRY-019 — Criterio 3; RF-QRY-020 — Criterio 4; RF-QRY-022 — Criterio 1; RF-QRY-023 — Criterio 4; RF-QRY-024 — Criterio 7; RF-QRY-025 — Criterio 2. Disposición: manual_evidence_pending. Evidencia esperada: [RETIRADO 2026-10-15] workspace inválido permanece fail-closed y entrega la sugerencia exacta para registrarlo o escanear cwd. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-160; **Tipo**: negativo; **RF**: RF-QRY-021; **Descripción**: [RETIRADO 2026-10-15] framing contiene sólo mensajes de protocolo en stdout; logs quedan en stderr y línea sobre 8 MiB se rechaza
+  - RF-GPH-006 — Criterio 1; RF-GPH-008 — Criterio 1; RF-IDX-001 — Criterio 2; RF-QRY-001 — Criterio 4; RF-QRY-002 — Criterio 1; RF-QRY-003 — Criterio 1; RF-QRY-004 — Criterio 1; RF-QRY-005 — Criterio 1; RF-QRY-006 — Criterio 1; RF-QRY-007 — Criterio 1; RF-QRY-008 — Criterio 1; RF-QRY-009 — Criterio 1; RF-QRY-010 — Criterio 1; RF-QRY-011 — Criterio 6; RF-QRY-012 — Criterio 1; RF-QRY-013 — Criterio 1; RF-QRY-014 — Criterio 1; RF-QRY-015 — Criterio 1; RF-QRY-016 — Criterio 1; RF-QRY-017 — Criterio 7; RF-QRY-018 — Criterio 10; RF-QRY-019 — Criterio 1; RF-QRY-020 — Criterio 1; RF-QRY-022 — Criterio 1; RF-QRY-023 — Criterio 6; RF-QRY-024 — Criterio 3; RF-QRY-025 — Criterio 1. Disposición: manual_evidence_pending. Evidencia esperada: [RETIRADO 2026-10-15] framing contiene sólo mensajes de protocolo en stdout; logs quedan en stderr y línea sobre 8 MiB se rechaza. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-161; **Tipo**: comparativo; **RF**: RF-QRY-021; **Descripción**: [RETIRADO 2026-10-15] primera llamada fría `nav_search` se mide de forma reproducible; target <5 s, no declarar PASS sin datos del checkout actual
+  - RF-GPH-006 — Criterio 1; RF-GPH-008 — Criterio 1; RF-IDX-001 — Criterio 1; RF-QRY-001 — Criterio 2; RF-QRY-002 — Criterio 2; RF-QRY-003 — Criterio 1; RF-QRY-004 — Criterio 1; RF-QRY-005 — Criterio 1; RF-QRY-006 — Criterio 1; RF-QRY-007 — Criterio 1; RF-QRY-008 — Criterio 1; RF-QRY-009 — Criterio 1; RF-QRY-010 — Criterio 2; RF-QRY-011 — Criterio 6; RF-QRY-012 — Criterio 1; RF-QRY-013 — Criterio 1; RF-QRY-014 — Criterio 1; RF-QRY-015 — Criterio 1; RF-QRY-016 — Criterio 1; RF-QRY-017 — Criterio 1; RF-QRY-018 — Criterio 3; RF-QRY-019 — Criterio 1; RF-QRY-020 — Criterio 1; RF-QRY-022 — Criterio 1; RF-QRY-023 — Criterio 4; RF-QRY-024 — Criterio 1; RF-QRY-025 — Criterio 2. Disposición: manual_evidence_pending. Evidencia esperada: [RETIRADO 2026-10-15] primera llamada fría `nav_search` se mide de forma reproducible; target <5 s, no declarar PASS sin datos del checkout actual. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-162; **Tipo**: negativo; **RF**: RF-QRY-001, RF-QRY-002; **Descripción**: `nav.find` sobre un path existente aún no registrado y sin catálogo publicado, con `--allow-cross-workspace`, devuelve `Error.Kind=workspace`, `Code=workspace_resolution_failed`, `Stage=workspace_resolution`, `HintCode=workspace_resolution_failed`, `ReasonCode=invalid_workspace` y `Detail`/`NextHint` exactos para `workspace add` e indexación; no informa cero coincidencias
+  - RF-QRY-001 — Criterio 8; RF-QRY-002 — Criterio 1. Disposición: manual_evidence_pending. Evidencia esperada: `nav.find` sobre un path existente aún no registrado y sin catálogo publicado, con `--allow-cross-workspace`, devuelve `Error.Kind=workspace`, `Code=workspace_resolution_failed`, `Stage=workspace_resolution`, `HintCode=workspace_resolution_failed`, `ReasonCode=invalid_workspace` y `Detail`/`NextHint` exactos para `workspace add` e indexación; no informa cero coincidencias. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-163; **Tipo**: positivo; **RF**: RF-QRY-001, RF-QRY-002; **Descripción**: `TestFind_RegisteredWorkspaceWithoutIndexServesTextAndDegrades` + `TestFind_RegisteredWorkspaceWithUnpublishedDatabaseServesText`: esquema sin metadata de catálogo o con metadata parcial (sin pointer activo ni par completo `indexed_at` + `total_files`) ya no es error terminal; `nav.find` responde `ok=true`, `backend=text`, `degraded=true`, `reason=index_not_ready`, `fallback_used=text`, items `origin=text` y warning `catalog unavailable (index_not_ready); served from text`; no infiere readiness de conteos de filas
+  - RF-QRY-001 — Criterio 7; RF-QRY-002 — Criterio 7. Disposición: manual_evidence_pending. Evidencia esperada: `TestFind_RegisteredWorkspaceWithoutIndexServesTextAndDegrades` + `TestFind_RegisteredWorkspaceWithUnpublishedDatabaseServesText`: esquema sin metadata de catálogo o con metadata parcial (sin pointer activo ni par completo `indexed_at` + `total_files`) ya no es error terminal; `nav.find` responde `ok=true`, `backend=text`, `degraded=true`, `reason=index_not_ready`, `fallback_used=text`, items `origin=text` y warning `catalog unavailable (index_not_ready); served from text`; no infiere readiness de conteos de filas. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-164; **Tipo**: positivo; **RF**: RF-QRY-001, RF-QRY-002; **Descripción**: `nav.find` sobre publicación válida de `ReplaceCatalog` con `total_files=0` y sin el símbolo consultado informa cero coincidencias como resultado válido, distinto de índice ausente/incompleto
+  - RF-QRY-001 — Criterio 8; RF-QRY-002 — Criterio 3. Disposición: manual_evidence_pending. Evidencia esperada: `nav.find` sobre publicación válida de `ReplaceCatalog` con `total_files=0` y sin el símbolo consultado informa cero coincidencias como resultado válido, distinto de índice ausente/incompleto. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-165; **Tipo**: positivo; **RF**: RF-QRY-002; **Descripción**: `nav.search` textual encuentra un símbolo en un archivo de workspace no registrado y sin índice, con ruta y línea
+  - RF-QRY-002 — Criterio 1. Disposición: manual_evidence_pending. Evidencia esperada: `nav.search` textual encuentra un símbolo en un archivo de workspace no registrado y sin índice, con ruta y línea. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-166; **Tipo**: positivo; **RF**: RF-QRY-002; **Descripción**: `nav.find` con catálogo publicado y símbolo presente devuelve el match real, incluso para un root transitorio todavía no registrado cuando `--allow-cross-workspace` está activo
+  - RF-QRY-002 — Criterio 1. Disposición: manual_evidence_pending. Evidencia esperada: `nav.find` con catálogo publicado y símbolo presente devuelve el match real, incluso para un root transitorio todavía no registrado cuando `--allow-cross-workspace` está activo. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-167; **Tipo**: positivo/negativo; **RF**: RF-QRY-001, RF-QRY-002; **Descripción**: `nav.find` conserva el refresh read-your-writes y la política previa de warnings stale al servir snapshots publicados; no amplía detección stale en cero coincidencias sin señal confiable
+  - RF-QRY-001 — Criterio 1; RF-QRY-002 — Criterio 3. Disposición: manual_evidence_pending. Evidencia esperada: `nav.find` conserva el refresh read-your-writes y la política previa de warnings stale al servir snapshots publicados; no amplía detección stale en cero coincidencias sin señal confiable. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-168; **Tipo**: compatibilidad; **RF**: RF-QRY-001, RF-QRY-021; **Descripción**: Un Go `error` nulo no borra el envelope con `ok=false` y error `workspace_resolution_failed` (único fallo terminal de `nav.find` sin catálogo); la CLI JSON sale con código distinto de cero y conserva el envelope, mientras [RETIRADO 2026-10-15] MCP mantiene `structuredContent` y renderiza error más `next`
+  - RF-QRY-001 — Criterio 6. Disposición: manual_evidence_pending. Evidencia esperada: Un Go `error` nulo no borra el envelope con `ok=false` y error `workspace_resolution_failed` (único fallo terminal de `nav.find` sin catálogo); la CLI JSON sale con código distinto de cero y conserva el envelope, mientras [RETIRADO 2026-10-15] MCP mantiene `structuredContent` y renderiza error más `next`. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-169; **Tipo**: positivo; **RF**: RF-QRY-002, RF-QRY-021; **Descripción**: desde 2026-10-03 una lectura `nav.*` con mismatch de workspace procede sin `--allow-cross-workspace` y emite el warning de mismatch con ambos roots; las escrituras mantienen el fail-closed (ver TC-WKS-061/062)
+  - RF-QRY-002 — Criterio 1. Disposición: manual_evidence_pending. Evidencia esperada: desde 2026-10-03 una lectura `nav.*` con mismatch de workspace procede sin `--allow-cross-workspace` y emite el warning de mismatch con ambos roots; las escrituras mantienen el fail-closed (ver TC-WKS-061/062). No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-170; **Tipo**: positivo; **RF**: RF-QRY-001, RF-QRY-002; **Descripción**: si el estado de base de datos del workspace no puede abrirse/leerse, `nav.find` no devuelve `workspace_db_open_failed` ni cero coincidencias sin marcar: responde desde texto con `degraded=true` y `reason=index_not_ready` (o `index_schema_broken` si la base está corrupta)
+  - RF-QRY-001 — Criterio 7; RF-QRY-002 — Criterio 5. Disposición: manual_evidence_pending. Evidencia esperada: si el estado de base de datos del workspace no puede abrirse/leerse, `nav.find` no devuelve `workspace_db_open_failed` ni cero coincidencias sin marcar: responde desde texto con `degraded=true` y `reason=index_not_ready` (o `index_schema_broken` si la base está corrupta). No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-171; **Tipo**: positivo; **RF**: RF-QRY-001, RF-QRY-002; **Descripción**: `TestFind_RegisteredWorkspaceWithoutIndexAndNoTextHitsIsEmptySuccess`: sin catálogo y sin coincidencias de texto, `nav.find` devuelve `ok=true`, `items=[]`, `degraded=true` y `reason=no_matches`; el vacío no se presenta como verificado por el índice
+  - RF-QRY-001 — Criterio 8; RF-QRY-002 — Criterio 7. Disposición: manual_evidence_pending. Evidencia esperada: `TestFind_RegisteredWorkspaceWithoutIndexAndNoTextHitsIsEmptySuccess`: sin catálogo y sin coincidencias de texto, `nav.find` devuelve `ok=true`, `items=[]`, `degraded=true` y `reason=no_matches`; el vacío no se presenta como verificado por el índice. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-172; **Tipo**: positivo; **RF**: RF-QRY-001, RF-QRY-002, RF-IDX-001; **Descripción**: `TestFind_SchemaBrokenCatalogServesTextAndStartsReindex` + `TestClassifyCatalogUnavailable`: catálogo con esquema roto o base ilegible clasifica `index_schema_broken` (corrupción) o `index_not_ready` (resto), sirve texto con `degraded=true` y lanza un único reindex completo en segundo plano
+  - RF-IDX-001 — Criterio 8; RF-QRY-001 — Criterio 7; RF-QRY-002 — Criterio 7. Disposición: manual_evidence_pending. Evidencia esperada: `TestFind_SchemaBrokenCatalogServesTextAndStartsReindex` + `TestClassifyCatalogUnavailable`: catálogo con esquema roto o base ilegible clasifica `index_schema_broken` (corrupción) o `index_not_ready` (resto), sirve texto con `degraded=true` y lanza un único reindex completo en segundo plano. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-173; **Tipo**: positivo/negativo; **RF**: RF-IDX-001; **Descripción**: `TestAutoIndexEnabledHonorsOverride` + `TestAutoIndexTimeoutEnv` + `TestAutoIndexRateLimitMarker` + `TestTriggerAutoIndexDedupesAndRateLimits`: `MI_LSP_AUTOINDEX=0` desactiva el job, `MI_LSP_AUTOINDEX_TIMEOUT` (default 10m, inválido usa default) acota el job, un job activo deduplica el lanzamiento, y tras un fallo `autoindex.last` impone 10 min de backoff; el job nunca escribe el registry
+  - RF-IDX-001 — Criterio 4. Disposición: manual_evidence_pending. Evidencia esperada: `TestAutoIndexEnabledHonorsOverride` + `TestAutoIndexTimeoutEnv` + `TestAutoIndexRateLimitMarker` + `TestTriggerAutoIndexDedupesAndRateLimits`: `MI_LSP_AUTOINDEX=0` desactiva el job, `MI_LSP_AUTOINDEX_TIMEOUT` (default 10m, inválido usa default) acota el job, un job activo deduplica el lanzamiento, y tras un fallo `autoindex.last` impone 10 min de backoff; el job nunca escribe el registry. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-174; **Tipo**: positivo; **RF**: RF-IDX-001; **Descripción**: `TestQuarantineWorkspaceDBKeepsTwoNewest` + `TestOpenWorkspaceDBForIndexQuarantinesCorruptDB`: un `index.db` corrupto se renombra a `index.db.corrupt-<ts>` (con `-wal`/`-shm`), se crea una base nueva y se conservan como máximo 2 cuarentenas
+  - RF-IDX-001 — Criterio 3. Disposición: manual_evidence_pending. Evidencia esperada: `TestQuarantineWorkspaceDBKeepsTwoNewest` + `TestOpenWorkspaceDBForIndexQuarantinesCorruptDB`: un `index.db` corrupto se renombra a `index.db.corrupt-<ts>` (con `-wal`/`-shm`), se crea una base nueva y se conservan como máximo 2 cuarentenas. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-175; **Tipo**: positivo; **RF**: RF-QRY-002; **Descripción**: `TestResolveBackendTypeFindRefsBySymbolLanguage` + `TestFindRefsUsesCatalogLanguageAndAnchor` + `TestFindRefsRoslynWithoutEntrypointFallsBackToText`: `nav.refs` elige backend por el lenguaje del símbolo (definición del catálogo, primer hit de texto, lenguajes registrados), Roslyn solo para C#, e inyecta el ancla de definición para gopls/tsserver
+  - RF-QRY-002 — Criterio 7. Disposición: manual_evidence_pending. Evidencia esperada: `TestResolveBackendTypeFindRefsBySymbolLanguage` + `TestFindRefsUsesCatalogLanguageAndAnchor` + `TestFindRefsRoslynWithoutEntrypointFallsBackToText`: `nav.refs` elige backend por el lenguaje del símbolo (definición del catálogo, primer hit de texto, lenguajes registrados), Roslyn solo para C#, e inyecta el ancla de definición para gopls/tsserver. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-176; **Tipo**: negativo; **RF**: RF-QRY-001, RF-QRY-002; **Descripción**: `TestFindRefsEmptySemanticFallsBackToText` + `TestFindRefsTextFallbackIsWordBounded` + `TestFindRefsEmptySemanticAndTextIsNoMatches` + `TestFindRefsRoslynErrorFallsBackToText` + `TestFindRefsMissingBinaryIsLSPUnavailable` + `TestFindRefsNonCodeFileIsLanguageUnsupported` + `TestSemanticFailureReason`: error o vacío del backend cae a texto con límites de palabra y razón tipificada (`semantic_empty_text_hits`, `lsp_error`, `lsp_unavailable`, `language_unsupported`, `no_matches`); nunca falso vacío
+  - RF-QRY-001 — Criterio 7; RF-QRY-002 — Criterio 5. Disposición: manual_evidence_pending. Evidencia esperada: `TestFindRefsEmptySemanticFallsBackToText` + `TestFindRefsTextFallbackIsWordBounded` + `TestFindRefsEmptySemanticAndTextIsNoMatches` + `TestFindRefsRoslynErrorFallsBackToText` + `TestFindRefsMissingBinaryIsLSPUnavailable` + `TestFindRefsNonCodeFileIsLanguageUnsupported` + `TestSemanticFailureReason`: error o vacío del backend cae a texto con límites de palabra y razón tipificada (`semantic_empty_text_hits`, `lsp_error`, `lsp_unavailable`, `language_unsupported`, `no_matches`); nunca falso vacío. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-177; **Tipo**: positivo; **RF**: RF-QRY-002, RF-QRY-021; **Descripción**: `TestFindRefsContextLines` + `TestInnermostSymbolPicksSmallestContainingRange`: `nav refs --context N` (0 a 5) agrega N líneas por referencia y cada item lleva `origin` y `caller {name, kind, line}`; [RETIRADO 2026-10-15] `nav_refs` MCP acepta `context` (el mapeo del argumento MCP se verifica por inspección de `internal/mcp/tools.go`, sin test automatizado dedicado aún)
+  - RF-QRY-002 — Criterio 1. Disposición: manual_evidence_pending. Evidencia esperada: `TestFindRefsContextLines` + `TestInnermostSymbolPicksSmallestContainingRange`: `nav refs --context N` (0 a 5) agrega N líneas por referencia y cada item lleva `origin` y `caller {name, kind, line}`; [RETIRADO 2026-10-15] `nav_refs` MCP acepta `context` (el mapeo del argumento MCP se verifica por inspección de `internal/mcp/tools.go`, sin test automatizado dedicado aún). No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-178; **Tipo**: positivo; **RF**: RF-QRY-002; **Descripción**: `TestFindGoplsBinaryLookupOrder` + `TestNewGoplsClientWithoutBinaryFailsGracefully`: `gopls` se localiza por `MI_LSP_GOPLS_PATH`, `PATH`, `GOBIN`, `GOPATH/bin`, `~/go/bin` y `bin/`/`.bin/` del workspace; sin binario falla de forma controlada (`lsp_unavailable` en `nav.refs`)
+  - RF-QRY-002 — Criterio 1. Disposición: manual_evidence_pending. Evidencia esperada: `TestFindGoplsBinaryLookupOrder` + `TestNewGoplsClientWithoutBinaryFailsGracefully`: `gopls` se localiza por `MI_LSP_GOPLS_PATH`, `PATH`, `GOBIN`, `GOPATH/bin`, `~/go/bin` y `bin/`/`.bin/` del workspace; sin binario falla de forma controlada (`lsp_unavailable` en `nav.refs`). No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-179; **Tipo**: positivo; **RF**: RF-QRY-011; **Descripción**: `TestIntentMixedPutsStrongCodeBeforeDocs`: una pregunta con señales de código y coincidencia de catálogo devuelve `mode=mixed` con matches de código fuertes primero, luego documentos; items con `result_kind=code|doc`, `kind` con el tipo de símbolo y `origin=catalog|wiki`
+  - RF-QRY-011 — Criterio 3. Disposición: manual_evidence_pending. Evidencia esperada: `TestIntentMixedPutsStrongCodeBeforeDocs`: una pregunta con señales de código y coincidencia de catálogo devuelve `mode=mixed` con matches de código fuertes primero, luego documentos; items con `result_kind=code|doc`, `kind` con el tipo de símbolo y `origin=catalog|wiki`. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-180; **Tipo**: negativo; **RF**: RF-QRY-011; **Descripción**: `TestIntentDocsQuestionWithoutCodeSignalsStaysDocs` + `TestIntentMixWithCodeWithoutCatalogReturnsDocsUntouched`: sin señales de código o sin catálogo la respuesta `mode=docs` queda intacta
+  - RF-QRY-011 — Criterio 7. Disposición: manual_evidence_pending. Evidencia esperada: `TestIntentDocsQuestionWithoutCodeSignalsStaysDocs` + `TestIntentMixWithCodeWithoutCatalogReturnsDocsUntouched`: sin señales de código o sin catálogo la respuesta `mode=docs` queda intacta. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-181; **Tipo**: positivo; **RF**: RF-QRY-011; **Descripción**: `TestIntentCodeTokensDropStopwordsAndSplitIdentifiers` + `TestHasIntentCodeSignals` + `TestIsStrongIntentCodeMatch`: tokenización de lenguaje natural con stopwords en inglés/español, separación camelCase/snake_case y stem liviano; detección de señales de código; criterio de match fuerte
+  - RF-QRY-011 — Criterio 3. Disposición: manual_evidence_pending. Evidencia esperada: `TestIntentCodeTokensDropStopwordsAndSplitIdentifiers` + `TestHasIntentCodeSignals` + `TestIsStrongIntentCodeMatch`: tokenización de lenguaje natural con stopwords en inglés/español, separación camelCase/snake_case y stem liviano; detección de señales de código; criterio de match fuerte. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-182; **Tipo**: positivo; **RF**: RF-QRY-001, RF-QRY-002; **Descripción**: `TestSearchMatchColumnLiteralAndRegex` + `TestSearchFallbackItemsCarryTextOriginAndColumn`: cada item de `nav.search` (rg y fallback Go) trae `origin=text` y `col` (base 1, en runas) de la primera coincidencia
+  - RF-QRY-001 — Criterio 7; RF-QRY-002 — Criterio 6. Disposición: manual_evidence_pending. Evidencia esperada: `TestSearchMatchColumnLiteralAndRegex` + `TestSearchFallbackItemsCarryTextOriginAndColumn`: cada item de `nav.search` (rg y fallback Go) trae `origin=text` y `col` (base 1, en runas) de la primera coincidencia. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-183; **Tipo**: positivo; **RF**: RF-QRY-001; **Descripción**: `TestWindowAgentTextCentersOnMatch` + `TestWindowAgentTextShortAndUnknownColumn` + `TestRenderAgentGroupsConsecutiveHitsByFile` + `TestRenderAgentGroupedIsCheaperThanRgLines` + `TestRenderAgentHandlesJSONNumbersAndWindowsLongHits`: el renderer agent usa snippet de 160 runas centrado en la coincidencia, agrupa hits consecutivos por archivo y es más barato que las líneas de rg; con `degraded=true` el encabezado muestra backend, razón y fallback
+  - RF-QRY-001 — Criterio 7. Disposición: manual_evidence_pending. Evidencia esperada: `TestWindowAgentTextCentersOnMatch` + `TestWindowAgentTextShortAndUnknownColumn` + `TestRenderAgentGroupsConsecutiveHitsByFile` + `TestRenderAgentGroupedIsCheaperThanRgLines` + `TestRenderAgentHandlesJSONNumbersAndWindowsLongHits`: el renderer agent usa snippet de 160 runas centrado en la coincidencia, agrupa hits consecutivos por archivo y es más barato que las líneas de rg; con `degraded=true` el encabezado muestra backend, razón y fallback. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-184; **Tipo**: positivo; **RF**: RF-QRY-001; **Descripción**: `TestEffectiveMaxItems_ImplicitAgentSearchDefaultsTo20` + `TestEffectiveMaxItems_ExplicitMaxItemsWinsOverImplicitSearchCap`: `nav.search` en formato agent implícito usa tope 20 por defecto; `--max-items` explícito gana y AXI conserva 5
+  - RF-QRY-001 — Criterio 1. Disposición: manual_evidence_pending. Evidencia esperada: `TestEffectiveMaxItems_ImplicitAgentSearchDefaultsTo20` + `TestEffectiveMaxItems_ExplicitMaxItemsWinsOverImplicitSearchCap`: `nav.search` en formato agent implícito usa tope 20 por defecto; `--max-items` explícito gana y AXI conserva 5. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-185; **Tipo**: positivo; **RF**: RF-QRY-002; **Descripción**: warm del daemon por lenguaje: `backendsForWorkspace` agrega `gopls` para Go y no calienta Roslyn por defecto en repos sin C# (verificado por inspección de `internal/daemon/lifecycle.go`; sin test automatizado dedicado aún)
+  - RF-QRY-002 — Criterio 5. Disposición: manual_evidence_pending. Evidencia esperada: warm del daemon por lenguaje: `backendsForWorkspace` agrega `gopls` para Go y no calienta Roslyn por defecto en repos sin C# (verificado por inspección de `internal/daemon/lifecycle.go`; sin test automatizado dedicado aún). No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-186; **Tipo**: comparativo; **RF**: RF-QRY-002, RF-QRY-011; **Descripción**: `benchmarks/rg-parity/bench.py` + `cases.json` (44 casos: definition, refs, literal, intent sobre repos Go, TypeScript y C#) compara `mi-lsp` con `rg` en precisión, recall, bytes, latencia, falsos vacíos y errores; la evidencia sanitizada baseline/final vive en `.docs/auditoria/milsp-robustez-20261002/benchmark/`; no se declara PASS sin datos del checkout actual
+  - RF-QRY-002 — Criterio 3; RF-QRY-011 — Criterio 7. Disposición: manual_evidence_pending. Evidencia esperada: `benchmarks/rg-parity/bench.py` + `cases.json` (44 casos: definition, refs, literal, intent sobre repos Go, TypeScript y C#) compara `mi-lsp` con `rg` en precisión, recall, bytes, latencia, falsos vacíos y errores; la evidencia sanitizada baseline/final vive en `.docs/auditoria/milsp-robustez-20261002/benchmark/`; no se declara PASS sin datos del checkout actual. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-187; **Tipo**: positivo; **RF**: RF-QRY-001; **Descripción**: `TestFind_TextFallbackReturnsOnlyDeclarations` + `TestTextDeclarationMatcherKindsAndExact`: sin catálogo, `nav.find` devuelve por texto solo las líneas que declaran el símbolo (kind inferido, `--exact` respetado), con `origin=text` y `degraded=true`
+  - RF-QRY-001 — Criterio 7. Disposición: manual_evidence_pending. Evidencia esperada: `TestFind_TextFallbackReturnsOnlyDeclarations` + `TestTextDeclarationMatcherKindsAndExact`: sin catálogo, `nav.find` devuelve por texto solo las líneas que declaran el símbolo (kind inferido, `--exact` respetado), con `origin=text` y `degraded=true`. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-188; **Tipo**: positivo; **RF**: RF-QRY-002; **Descripción**: `TestFindRefsSemanticTimeoutFallsBackToTextAndCoolsDown` + `TestRefsSemanticTimeoutConfiguration` + `TestFindRefsTextFallbackRanksCodeOfSymbolLanguage` + `TestRankRefsTextHitsFallsBackToOtherLanguageCode`: el backend de `nav.refs` respeta `MI_LSP_REFS_TIMEOUT` (8 s por defecto), al agotarlo responde texto con `reason=lsp_error` y enfría el backend; el texto prioriza código del lenguaje del símbolo y después otro código
+  - RF-QRY-002 — Criterio 5. Disposición: manual_evidence_pending. Evidencia esperada: `TestFindRefsSemanticTimeoutFallsBackToTextAndCoolsDown` + `TestRefsSemanticTimeoutConfiguration` + `TestFindRefsTextFallbackRanksCodeOfSymbolLanguage` + `TestRankRefsTextHitsFallsBackToOtherLanguageCode`: el backend de `nav.refs` respeta `MI_LSP_REFS_TIMEOUT` (8 s por defecto), al agotarlo responde texto con `reason=lsp_error` y enfría el backend; el texto prioriza código del lenguaje del símbolo y después otro código. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-189; **Tipo**: positivo; **RF**: RF-QRY-011; **Descripción**: `TestIntentFileLevelRankingPrefersRareTermCoverageOverCommonTermRepetition` + `TestIntentFileLevelRankingFindsRegistryGarbageCollection` + `TestIntentFileLevelRankingExactSymbolNameWins` + `TestIntentFileLevelRankingPrefersFileNamedAfterTheQuestion`: `nav.intent` en modo `mixed` rankea código por archivo (IDF, peso por nombre de archivo/ruta/símbolo, cobertura de tokens)
+  - RF-QRY-011 — Criterio 3. Disposición: manual_evidence_pending. Evidencia esperada: `TestIntentFileLevelRankingPrefersRareTermCoverageOverCommonTermRepetition` + `TestIntentFileLevelRankingFindsRegistryGarbageCollection` + `TestIntentFileLevelRankingExactSymbolNameWins` + `TestIntentFileLevelRankingPrefersFileNamedAfterTheQuestion`: `nav.intent` en modo `mixed` rankea código por archivo (IDF, peso por nombre de archivo/ruta/símbolo, cobertura de tokens). No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-190; **Tipo**: negativo; **RF**: RF-QRY-011; **Descripción**: `TestIntentMixWithCodeMarksDegradedWhenCatalogUnavailableForCodeQuestion` + `TestIntentCatalogUnavailableClassifiesSchemaAndSkipsNonCodeQuestions` + `TestIntentCodeQuestionWithUnpublishedCatalogIsDegradedNotSilent` + `TestIntentCodeQuestionWithMissingDatabaseIsOkAndDegraded`: `nav intent` con pregunta de código y catálogo no publicado, ausente o roto responde `ok=true`, docs, `degraded=true` y reason clasificado; sin señales de código no marca
+  - RF-QRY-011 — Criterio 3. Disposición: manual_evidence_pending. Evidencia esperada: `TestIntentMixWithCodeMarksDegradedWhenCatalogUnavailableForCodeQuestion` + `TestIntentCatalogUnavailableClassifiesSchemaAndSkipsNonCodeQuestions` + `TestIntentCodeQuestionWithUnpublishedCatalogIsDegradedNotSilent` + `TestIntentCodeQuestionWithMissingDatabaseIsOkAndDegraded`: `nav intent` con pregunta de código y catálogo no publicado, ausente o roto responde `ok=true`, docs, `degraded=true` y reason clasificado; sin señales de código no marca. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-191; **Tipo**: negativo; **RF**: RF-IDX-001; **Descripción**: `TestClassifyCatalogUnavailableUsesRootForEmptyDB` + `TestCatalogHasNoTables` + `TestQuarantineLockIsExclusiveAndExpires` + `TestOpenWorkspaceDBForIndexDoesNotRenameWhenLockHeld` + `TestConcurrentColdStartNeverQuarantinesFreshDB` + `TestQuarantinePruneGroupsSetsByTimestamp`: base vacía = `index_not_ready`; cuarentena serializada por lock, nunca sobre una base fresca; poda por juegos
+  - RF-IDX-001 — Criterio 2. Disposición: manual_evidence_pending. Evidencia esperada: `TestClassifyCatalogUnavailableUsesRootForEmptyDB` + `TestCatalogHasNoTables` + `TestQuarantineLockIsExclusiveAndExpires` + `TestOpenWorkspaceDBForIndexDoesNotRenameWhenLockHeld` + `TestConcurrentColdStartNeverQuarantinesFreshDB` + `TestQuarantinePruneGroupsSetsByTimestamp`: base vacía = `index_not_ready`; cuarentena serializada por lock, nunca sobre una base fresca; poda por juegos. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-192; **Tipo**: positivo/negativo; **RF**: RF-QRY-002; **Descripción**: `TestFindRefsTSWarmupReturnsDegradedTextFallback` + `TestTSRefsWarmupSurvivesRequestAndEnablesSemanticRetry`: en cold start la primera respuesta puede usar texto solo con `degraded=true`, `fallback_used=text` y `origin=text`; cancelar la petición no cancela el warm-up desacoplado y una consulta posterior devuelve backend/`origin=semantic` cuando este ya está listo. El protocolo asimétrico se cubre con `TestWriteTSServerRequestUsesJSONLines`, `TestWriteTSServerRequestRejectsShortWrite`, `TestReadTSFrameParsesContentLengthFramedOutput`, `TestReadTSFrameParsesCaseInsensitiveContentLength` y `TestReadTSFrameRejectsMissingContentLength`. Las pruebas con fake verifican estados y el framing, no miden rendimiento del runtime real; el objetivo <2 s requiere ejecutar el benchmark con Node y `typescript/lib/tsserver.js` disponibles y no se considera PASS por rapidez del fallback textual.\n; **Detalle**: TC-QRY-193; **Detalle**: positivo/negativo; **Detalle**: RF-QRY-002; **Detalle**: `benchmarks/rg-parity/bench_ts_cold_refs.py`: en un `HOME` aislado, informa `first_latency_under_2s`, `warmup_success` y `semantic_quality` por separado, con dos consultas en la misma App/daemon. Un fallback textual inicial solo cuenta para latencia si está tipado (`fallback_used=text`, reason presente, items `origin=text`); no cuenta como warm-up ni calidad. La aceptación global exige warm-up posterior con backend `tsserver`, `degraded` ausente o `false` según `primitives-v2` ([[RF-QRY-001]]), items solo semánticos y todas las referencias esperadas reales del oráculo presentes; un valor `null` no equivale a `false`.
+  - RF-QRY-001 — Criterio 7; RF-QRY-002 — Criterio 7. Disposición: manual_evidence_pending. Evidencia esperada: `TestFindRefsTSWarmupReturnsDegradedTextFallback` + `TestTSRefsWarmupSurvivesRequestAndEnablesSemanticRetry`: en cold start la primera respuesta puede usar texto solo con `degraded=true`, `fallback_used=text` y `origin=text`; cancelar la petición no cancela el warm-up desacoplado y una consulta posterior devuelve backend/`origin=semantic` cuando este ya está listo. El protocolo asimétrico se cubre con `TestWriteTSServerRequestUsesJSONLines`, `TestWriteTSServerRequestRejectsShortWrite`, `TestReadTSFrameParsesContentLengthFramedOutput`, `TestReadTSFrameParsesCaseInsensitiveContentLength` y `TestReadTSFrameRejectsMissingContentLength`. Las pruebas con fake verifican estados y el framing, no miden rendimiento del runtime real; el objetivo <2 s requiere ejecutar el benchmark con Node y `typescript/lib/tsserver.js` disponibles y no se considera PASS por rapidez del fallback textual.\n; **Detalle**: TC-QRY-193; **Detalle**: positivo/negativo; **Detalle**: RF-QRY-002; **Detalle**: `benchmarks/rg-parity/bench_ts_cold_refs.py`: en un `HOME` aislado, informa `first_latency_under_2s`, `warmup_success` y `semantic_quality` por separado, con dos consultas en la misma App/daemon. Un fallback textual inicial solo cuenta para latencia si está tipado (`fallback_used=text`, reason presente, items `origin=text`); no cuenta como warm-up ni calidad. La aceptación global exige warm-up posterior con backend `tsserver`, `degraded` ausente o `false` según `primitives-v2` ([[RF-QRY-001]]), items solo semánticos y todas las referencias esperadas reales del oráculo presentes; un valor `null` no equivale a `false`.. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-194; **Tipo**: positivo; **RF**: RF-QRY-022; **Descripción**: IDs q-v1 incluyen workspace_id/kind/path, separan rev SHA-256 completa, escapan segmentos RFC 3986 y permanecen estables al cambiar contenido; el rev cambia y stale se informa
+  - RF-QRY-022 — Criterio 1. Disposición: manual_evidence_pending. Evidencia esperada: IDs q-v1 incluyen workspace_id/kind/path, separan rev SHA-256 completa, escapan segmentos RFC 3986 y permanecen estables al cambiar contenido; el rev cambia y stale se informa. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-195; **Tipo**: positivo/negativo; **RF**: RF-QRY-022; **Descripción**: resolver un id legacy dentro del workspace produce identidad q-v1 `stale:true`; id sin match produce `missing:true`; un workspace_id distinto falla cerrado
+  - RF-QRY-022 — Criterio 2. Disposición: manual_evidence_pending. Evidencia esperada: resolver un id legacy dentro del workspace produce identidad q-v1 `stale:true`; id sin match produce `missing:true`; un workspace_id distinto falla cerrado. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-196; **Tipo**: positivo/negativo; **RF**: RF-QRY-022; **Descripción**: `read` memoriza ID/rev por sesión sin texto crudo; repetición da `seen:true`, `fresh` retorna texto, `changed since` compara snapshot y LRU/idle limita estado
+  - RF-QRY-022 — Criterio 4. Disposición: manual_evidence_pending. Evidencia esperada: `read` memoriza ID/rev por sesión sin texto crudo; repetición da `seen:true`, `fresh` retorna texto, `changed since` compara snapshot y LRU/idle limita estado. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-197; **Tipo**: positivo/negativo; **RF**: RF-QRY-023; **Descripción**: parser q acepta quoting, opciones globales y máximo ocho etapas; sintaxis/verbos no soportados producen `stage_failed` con posición de carácter, expectativa y ejemplo canónico
+  - RF-QRY-023 — Criterio 1. Disposición: manual_evidence_pending. Evidencia esperada: parser q acepta quoting, opciones globales y máximo ocho etapas; sintaxis/verbos no soportados producen `stage_failed` con posición de carácter, expectativa y ejemplo canónico. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-198; **Tipo**: positivo/negativo; **RF**: RF-QRY-022, RF-QRY-023; **Descripción**: timeout/cancelación end-to-end, prioridad cancelled > timeout > stage_failed, partial preservable, cursor HMAC/TTL/generation, y max_bytes medido sobre envelope completo con clipping UTF-8
+  - RF-QRY-022 — Criterio 5; RF-QRY-023 — Criterio 6. Disposición: manual_evidence_pending. Evidencia esperada: timeout/cancelación end-to-end, prioridad cancelled > timeout > stage_failed, partial preservable, cursor HMAC/TTL/generation, y max_bytes medido sobre envelope completo con clipping UTF-8. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-199; **Tipo**: positivo/compatibilidad; **RF**: RF-QRY-023; **Descripción**: [RETIRADO 2026-10-15] en su parte MCP: CLI `mi-lsp q`, dispatch daemon/directo y MCP Go `milsp` comparten contract_version q-v1; `milsp` precede el catálogo y los 13 `nav_*` permanecen disponibles
+  - RF-QRY-023 — Criterio 4. Disposición: manual_evidence_pending. Evidencia esperada: [RETIRADO 2026-10-15] en su parte MCP: CLI `mi-lsp q`, dispatch daemon/directo y MCP Go `milsp` comparten contract_version q-v1; `milsp` precede el catálogo y los 13 `nav_*` permanecen disponibles. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-200; **Tipo**: positivo/compatibilidad; **RF**: RF-QRY-023; **Descripción**: recetas iniciales y 13 alias nav tienen expansión q-v1 versionada, entradas válidas y errores tipados para nombres/argumentos inválidos
+  - RF-QRY-023 — Criterio 7. Disposición: manual_evidence_pending. Evidencia esperada: recetas iniciales y 13 alias nav tienen expansión q-v1 versionada, entradas válidas y errores tipados para nombres/argumentos inválidos. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-204; **Tipo**: positivo/compatibilidad; **RF**: RF-QRY-023; **Descripción**: `TestProviderManifestCommandPrintsContractAndRealQFlags`: `provider-manifest --format json` emite el contrato mínimo, verifica que el schema refleja flags Cobra reales de `q` y coincide con el manifiesto integrado salvo `provider_version`; no arranca daemon ni requiere red
+  - RF-QRY-023 — Criterio 4. Disposición: manual_evidence_pending. Evidencia esperada: `TestProviderManifestCommandPrintsContractAndRealQFlags`: `provider-manifest --format json` emite el contrato mínimo, verifica que el schema refleja flags Cobra reales de `q` y coincide con el manifiesto integrado salvo `provider_version`; no arranca daemon ni requiere red. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-201; **Tipo**: positivo; **RF**: RF-QRY-024; **Descripción**: `mi-lsp grep --rg-compat` preserva exactamente stdout y exit code del proceso rg para matches, ausencia de matches y error de argumentos
+  - RF-QRY-024 — Criterio 7. Disposición: manual_evidence_pending. Evidencia esperada: `mi-lsp grep --rg-compat` preserva exactamente stdout y exit code del proceso rg para matches, ausencia de matches y error de argumentos. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-202; **Tipo**: positivo; **RF**: RF-QRY-024; **Descripción**: `mi-lsp grep` anota solo coincidencias de código indexado en modo agente; sin índice o registro mantiene la salida rg pura y stderr nombra el alias probable o los comandos explícitos para registrar/indexar
+  - RF-QRY-024 — Criterio 4. Disposición: manual_evidence_pending. Evidencia esperada: `mi-lsp grep` anota solo coincidencias de código indexado en modo agente; sin índice o registro mantiene la salida rg pura y stderr nombra el alias probable o los comandos explícitos para registrar/indexar. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-203; **Tipo**: negativo; **RF**: RF-QRY-024; **Descripción**: timeout o error de anotación no modifica ni suprime salida de rg, y la telemetría no guarda patrón ni texto encontrado
+  - RF-QRY-024 — Criterio 9. Disposición: manual_evidence_pending. Evidencia esperada: timeout o error de anotación no modifica ni suprime salida de rg, y la telemetría no guarda patrón ni texto encontrado. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-205; **Tipo**: positivo; **RF**: RF-QRY-025; **Descripción**: `q`, `nav intent` y `nav multi-read` publican el mismo `generation_id` del snapshot publicado (`last_index`, `active_catalog`, `active_docs`, `active_memory`)
+  - RF-QRY-025 — Criterio 1. Disposición: manual_evidence_pending. Evidencia esperada: `q`, `nav intent` y `nav multi-read` publican el mismo `generation_id` del snapshot publicado (`last_index`, `active_catalog`, `active_docs`, `active_memory`). No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-206; **Tipo**: positivo; **RF**: RF-QRY-025; **Descripción**: `nav intent` con un id `D-<dígitos>` presente en `wiki/90-mapa-ids.md` lee ese rango antes de buscar y marca `origin=decision-map`
+  - RF-QRY-025 — Criterio 2. Disposición: manual_evidence_pending. Evidencia esperada: `nav intent` con un id `D-<dígitos>` presente en `wiki/90-mapa-ids.md` lee ese rango antes de buscar y marca `origin=decision-map`. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-207; **Tipo**: negativo; **RF**: RF-QRY-025; **Descripción**: sin mapa, con mapa ilegible o con un id que no está en la tabla, `nav intent` sigue el camino ordinario
+  - RF-QRY-025 — Criterio 2. Disposición: manual_evidence_pending. Evidencia esperada: sin mapa, con mapa ilegible o con un id que no está en la tabla, `nav intent` sigue el camino ordinario. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-208; **Tipo**: positivo; **RF**: RF-QRY-025; **Descripción**: cada resultado trae `sensibilidad` del frontmatter y queda vacía si no hay marca; mi-lsp no descarta ítems por esa marca
+  - RF-QRY-025 — Criterio 3. Disposición: manual_evidence_pending. Evidencia esperada: cada resultado trae `sensibilidad` del frontmatter y queda vacía si no hay marca; mi-lsp no descarta ítems por esa marca. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-209; **Tipo**: positivo; **RF**: RF-QRY-011; **Descripción**: `TestKineticPromoverLinksActionCaseAndDecision` y `TestKineticDecisionQuestionStaysDocs`: en un proyecto cinético `nav intent` queda en `mode=docs` y enlaza acción, caso y decisión
+  - RF-QRY-011 — Criterio 2. Disposición: manual_evidence_pending. Evidencia esperada: `TestKineticPromoverLinksActionCaseAndDecision` y `TestKineticDecisionQuestionStaysDocs`: en un proyecto cinético `nav intent` queda en `mode=docs` y enlaza acción, caso y decisión. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-210; **Tipo**: negativo; **RF**: RF-QRY-011; **Descripción**: `TestKineticUnknownActionMarksCatalogDrift` y `TestKineticDetectsWikiWithoutProductManifest`: una acción fuera del catálogo marca `wiki_close` `drift`; `go.mod` deja de ser cinético
+  - RF-QRY-011 — Criterio 6. Disposición: manual_evidence_pending. Evidencia esperada: `TestKineticUnknownActionMarksCatalogDrift` y `TestKineticDetectsWikiWithoutProductManifest`: una acción fuera del catálogo marca `wiki_close` `drift`; `go.mod` deja de ser cinético. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-211; **Tipo**: positivo/negativo; **RF**: RF-QRY-023; **Descripción**: `TestParseCanonicalUsageRecipes` y `TestExecuteQCanonicalUsageRecipes` validan y ejecutan literalmente las tres recetas de CT-Q-V1; `TestParseErrorsExplainPositionExpectationAndCanonicalExample` verifica posición, expectativa y ejemplo correcto; los alias inequívocos de `caller`, `callee`, `context=N` y `max-bytes=N` se normalizan
+  - RF-QRY-023 — Criterio 1. Disposición: manual_evidence_pending. Evidencia esperada: `TestParseCanonicalUsageRecipes` y `TestExecuteQCanonicalUsageRecipes` validan y ejecutan literalmente las tres recetas de CT-Q-V1; `TestParseErrorsExplainPositionExpectationAndCanonicalExample` verifica posición, expectativa y ejemplo correcto; los alias inequívocos de `caller`, `callee`, `context=N` y `max-bytes=N` se normalizan. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-212; **Tipo**: negativo; **RF**: RF-QRY-023; **Descripción**: `TestExecuteQUnresolvedAliasSuggestsWorkspaceFromCallerCWD`, `TestExecuteQMissingCatalogNamesExplicitIndexCommandWithoutCreatingIt` y `TestExecuteQUnregisteredPathSuggestsAddWithoutRegistering`: q propone alias/registro/índice según el caso y no crea ni reindexa estado
+  - RF-QRY-023 — Criterio 2. Disposición: manual_evidence_pending. Evidencia esperada: `TestExecuteQUnresolvedAliasSuggestsWorkspaceFromCallerCWD`, `TestExecuteQMissingCatalogNamesExplicitIndexCommandWithoutCreatingIt` y `TestExecuteQUnregisteredPathSuggestsAddWithoutRegistering`: q propone alias/registro/índice según el caso y no crea ni reindexa estado. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-213; **Tipo**: negativo; **RF**: RF-QRY-024; **Descripción**: `TestResolveCatalogTargetUsesRegisteredAliasWithoutIndex` y `TestResolveCatalogTargetSuggestsExplicitRegistrationWhenUnscoped`: grep identifica alias por path/cwd o propone add `--no-index` e index explícitos, sin mutar registry ni crear índice
+  - RF-QRY-024 — Criterio 5. Disposición: manual_evidence_pending. Evidencia esperada: `TestResolveCatalogTargetUsesRegisteredAliasWithoutIndex` y `TestResolveCatalogTargetSuggestsExplicitRegistrationWhenUnscoped`: grep identifica alias por path/cwd o propone add `--no-index` e index explícitos, sin mutar registry ni crear índice. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-214; **Tipo**: positivo; **RF**: RF-QRY-001; **Descripción**: `TestTOONContinuationIsFirstAndNextIsExecutable` y `TestTOONQContinuationIncludesPageCursorInCommand`: TOON antepone la continuación y entrega un comando ejecutable de una línea; JSON conserva el destino estructurado
+  - RF-QRY-001 — Criterio 8. Disposición: manual_evidence_pending. Evidencia esperada: `TestTOONContinuationIsFirstAndNextIsExecutable` y `TestTOONQContinuationIncludesPageCursorInCommand`: TOON antepone la continuación y entrega un comando ejecutable de una línea; JSON conserva el destino estructurado. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-015; **Tipo**: positivo; **RF**: RF-QRY-004; **Descripción**: incluye números de línea en contenido leido
+  - RF-QRY-004 — Criterio 1. Disposición: manual_evidence_pending. Evidencia esperada: incluye números de línea en contenido leido. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-016; **Tipo**: negativo; **RF**: RF-QRY-004; **Descripción**: rechaza path traversal (`../../../etc/passwd`)
+  - RF-QRY-004 — Criterio 2. Disposición: manual_evidence_pending. Evidencia esperada: rechaza path traversal (`../../../etc/passwd`). No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-017; **Tipo**: positivo; **RF**: RF-QRY-005; **Descripción**: ejecuta batch con operaciones paralelas y retorna todos los resultados
+  - RF-QRY-005 — Criterio 1. Disposición: manual_evidence_pending. Evidencia esperada: ejecuta batch con operaciones paralelas y retorna todos los resultados. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-018; **Tipo**: positivo; **RF**: RF-QRY-005; **Descripción**: continua si una operación batch falla, devuelve resultados parciales
+  - RF-QRY-005 — Criterio 2. Disposición: manual_evidence_pending. Evidencia esperada: continua si una operación batch falla, devuelve resultados parciales. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-019; **Tipo**: negativo; **RF**: RF-QRY-005; **Descripción**: rechaza stdin > 10MB
+  - RF-QRY-005 — Criterio 3. Disposición: manual_evidence_pending. Evidencia esperada: rechaza stdin > 10MB. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-020; **Tipo**: positivo; **RF**: RF-QRY-006; **Descripción**: devuelve vecindario semántico con definicion, callers, implementors, tests
+  - RF-QRY-006 — Criterio 1. Disposición: manual_evidence_pending. Evidencia esperada: devuelve vecindario semántico con definicion, callers, implementors, tests. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-021; **Tipo**: positivo; **RF**: RF-QRY-006; **Descripción**: degrada a sintactico con warning si backend semántico no disponible
+  - RF-QRY-006 — Criterio 2. Disposición: manual_evidence_pending. Evidencia esperada: degrada a sintactico con warning si backend semántico no disponible. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-022; **Tipo**: negativo; **RF**: RF-QRY-006; **Descripción**: rechaza símbolo no encontrado con sugerencia de busqueda
+  - RF-QRY-006 — Criterio 3. Disposición: manual_evidence_pending. Evidencia esperada: rechaza símbolo no encontrado con sugerencia de busqueda. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-023; **Tipo**: positivo; **RF**: RF-QRY-007; **Descripción**: genera mapa de workspace con servicios, endpoints, eventos, dependencias
+  - RF-QRY-007 — Criterio 1. Disposición: manual_evidence_pending. Evidencia esperada: genera mapa de workspace con servicios, endpoints, eventos, dependencias. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-024; **Tipo**: positivo; **RF**: RF-QRY-007; **Descripción**: devuelve mapa parcial con warning si catálogo incompleto
+  - RF-QRY-007 — Criterio 2. Disposición: manual_evidence_pending. Evidencia esperada: devuelve mapa parcial con warning si catálogo incompleto. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-025; **Tipo**: negativo; **RF**: RF-QRY-007; **Descripción**: rechaza workspace inválido
+  - RF-QRY-007 — Criterio 3. Disposición: manual_evidence_pending. Evidencia esperada: rechaza workspace inválido. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-026; **Tipo**: positivo; **RF**: RF-QRY-008; **Descripción**: devuelve archivos cambiados y símbolos afectados en diff
+  - RF-QRY-008 — Criterio 1. Disposición: manual_evidence_pending. Evidencia esperada: devuelve archivos cambiados y símbolos afectados en diff. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-027; **Tipo**: positivo; **RF**: RF-QRY-008; **Descripción**: incluye contenido modificado con --include-content
+  - RF-QRY-008 — Criterio 2. Disposición: manual_evidence_pending. Evidencia esperada: incluye contenido modificado con --include-content. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-028; **Tipo**: negativo; **RF**: RF-QRY-008; **Descripción**: warning si no hay cambios o git no disponible
+  - RF-QRY-008 — Criterio 3. Disposición: manual_evidence_pending. Evidencia esperada: warning si no hay cambios o git no disponible. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-029; **Tipo**: positivo; **RF**: RF-QRY-009; **Descripción**: busca símbolos en todos los workspaces con --all-workspaces
+  - RF-QRY-009 — Criterio 2. Disposición: manual_evidence_pending. Evidencia esperada: busca símbolos en todos los workspaces con --all-workspaces. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-030; **Tipo**: positivo; **RF**: RF-QRY-009; **Descripción**: degrade si algunos workspaces fallan, devuelve resultados parciales
+  - RF-QRY-009 — Criterio 3. Disposición: manual_evidence_pending. Evidencia esperada: degrade si algunos workspaces fallan, devuelve resultados parciales. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-031; **Tipo**: negativo; **RF**: RF-QRY-009; **Descripción**: rechaza cross-workspace sin --all-workspaces flag
+  - RF-QRY-009 — Criterio 2. Disposición: manual_evidence_pending. Evidencia esperada: rechaza cross-workspace sin --all-workspaces flag. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-032; **Tipo**: positivo; **RF**: RF-QRY-010; **Descripción**: `nav ask` prioriza el documento canónico correcto y devuelve evidencia de código
+  - RF-QRY-010 — Criterio 1. Disposición: manual_evidence_pending. Evidencia esperada: `nav ask` prioriza el documento canónico correcto y devuelve evidencia de código. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-033; **Tipo**: positivo; **RF**: RF-QRY-010; **Descripción**: `nav ask` usa `.docs/wiki/_mi-lsp/read-model.toml` cuando existe
+  - RF-QRY-010 — Criterio 1. Disposición: manual_evidence_pending. Evidencia esperada: `nav ask` usa `.docs/wiki/_mi-lsp/read-model.toml` cuando existe. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-034; **Tipo**: negativo; **RF**: RF-QRY-010; **Descripción**: `nav ask` degrada a fallback generico o textual cuando falta corpus fuerte
+  - RF-QRY-010 — Criterio 1. Disposición: manual_evidence_pending. Evidencia esperada: `nav ask` degrada a fallback generico o textual cuando falta corpus fuerte. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-034A; **Tipo**: positivo; **RF**: RF-QRY-010; **Descripción**: `nav ask` fallback textual emite `coach.trigger=text_fallback` con `confidence=low`
+  - RF-QRY-010 — Criterio 2. Disposición: manual_evidence_pending. Evidencia esperada: `nav ask` fallback textual emite `coach.trigger=text_fallback` con `confidence=low`. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-035; **Tipo**: positivo; **RF**: RF-QRY-002; **Descripción**: `nav find` responde por catálogo aunque el daemon este caido o detenido
+  - RF-QRY-002 — Criterio 5. Disposición: manual_evidence_pending. Evidencia esperada: `nav find` responde por catálogo aunque el daemon este caido o detenido. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-035A; **Tipo**: positivo; **RF**: RF-QRY-002; **Descripción**: `TestNoDaemonFlagIsPersistent` y `TestNoDaemonForcesRelatedToLocalAppWithoutTouchingDaemon`: `--no-daemon` fuerza direct mode y no conecta ni inicia daemon
+  - RF-QRY-002 — Criterio 5. Disposición: manual_evidence_pending. Evidencia esperada: `TestNoDaemonFlagIsPersistent` y `TestNoDaemonForcesRelatedToLocalAppWithoutTouchingDaemon`: `--no-daemon` fuerza direct mode y no conecta ni inicia daemon. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-035B; **Tipo**: positivo; **RF**: RF-QRY-002; **Descripción**: `TestDaemonDialTimeoutFallsBackWithOriginalContext`: el timeout corto acota el intento de dial, pero el fallback local conserva el contexto original de la operación
+  - RF-QRY-002 — Criterio 6. Disposición: manual_evidence_pending. Evidencia esperada: `TestDaemonDialTimeoutFallsBackWithOriginalContext`: el timeout corto acota el intento de dial, pero el fallback local conserva el contexto original de la operación. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-035C; **Tipo**: positivo; **RF**: RF-QRY-002; **Descripción**: `TestClientExecuteWithDialTimeoutKeepsOriginalContextAfterDial` y `TestClientExecuteCancellationClosesBlockedRead`: después del dial, write/read/procesamiento obedecen el contexto original y cancelarlo cierra la lectura pendiente
+  - RF-QRY-002 — Criterio 3. Disposición: manual_evidence_pending. Evidencia esperada: `TestClientExecuteWithDialTimeoutKeepsOriginalContextAfterDial` y `TestClientExecuteCancellationClosesBlockedRead`: después del dial, write/read/procesamiento obedecen el contexto original y cancelarlo cierra la lectura pendiente. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-036; **Tipo**: positivo; **RF**: RF-QRY-002; **Descripción**: `nav search`, `nav.symbols`, `nav.outline`, `nav.overview` y `nav.multi-read` no auto-inician daemon y mantienen salida estable
+  - RF-QRY-002 — Criterio 3. Disposición: manual_evidence_pending. Evidencia esperada: `nav search`, `nav.symbols`, `nav.outline`, `nav.overview` y `nav.multi-read` no auto-inician daemon y mantienen salida estable. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-037; **Tipo**: positivo; **RF**: RF-QRY-002; **Descripción**: `nav find` y `nav search` aceptan `--repo` en workspaces `container` y acotan resultados sin depender del daemon
+  - RF-QRY-002 — Criterio 3. Disposición: manual_evidence_pending. Evidencia esperada: `nav find` y `nav search` aceptan `--repo` en workspaces `container` y acotan resultados sin depender del daemon. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-038; **Tipo**: negativo; **RF**: RF-QRY-002; **Descripción**: `nav find/search/intent --repo` desconocido devuelve `backend=router`, candidatos y `next_hint`
+  - RF-QRY-002 — Criterio 5. Disposición: manual_evidence_pending. Evidencia esperada: `nav find/search/intent --repo` desconocido devuelve `backend=router`, candidatos y `next_hint`. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-039; **Tipo**: positivo; **RF**: RF-QRY-010; **Descripción**: `nav ask` emite `next_queries` con `--repo` cuando la evidencia apunta a un repo único del workspace `container`
+  - RF-QRY-010 — Criterio 2. Disposición: manual_evidence_pending. Evidencia esperada: `nav ask` emite `next_queries` con `--repo` cuando la evidencia apunta a un repo único del workspace `container`. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-040; **Tipo**: positivo; **RF**: RF-QRY-011; **Descripción**: `nav intent --repo` acota candidatos al repo seleccionado y conserva output compacto
+  - RF-QRY-011 — Criterio 4. Disposición: manual_evidence_pending. Evidencia esperada: `nav intent --repo` acota candidatos al repo seleccionado y conserva output compacto. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-041; **Tipo**: negativo; **RF**: RF-QRY-011; **Descripción**: `nav intent` rechaza pregunta vacia con error explícito
+  - RF-QRY-011 — Criterio 1. Disposición: manual_evidence_pending. Evidencia esperada: `nav intent` rechaza pregunta vacia con error explícito. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-042; **Tipo**: positivo; **RF**: RF-QRY-001; **Descripción**: `nav search` usa TOON por default en superficie AXI-default y agrega guidance de expansion con `--full`
+  - RF-QRY-001 — Criterio 5. Disposición: manual_evidence_pending. Evidencia esperada: `nav search` usa TOON por default en superficie AXI-default y agrega guidance de expansion con `--full`. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-043; **Tipo**: positivo; **RF**: RF-QRY-010; **Descripción**: `nav ask` en pregunta de orientacion condensa evidencia inicial y evita `--axi` redundante en `next_queries`
+  - RF-QRY-010 — Criterio 2. Disposición: manual_evidence_pending. Evidencia esperada: `nav ask` en pregunta de orientacion condensa evidencia inicial y evita `--axi` redundante en `next_queries`. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-043A; **Tipo**: positivo; **RF**: RF-QRY-010; **Descripción**: `nav ask` en AXI preview con evidencia condensada puede emitir `coach.trigger=preview_trimmed` con una sola acción
+  - RF-QRY-010 — Criterio 2. Disposición: manual_evidence_pending. Evidencia esperada: `nav ask` en AXI preview con evidencia condensada puede emitir `coach.trigger=preview_trimmed` con una sola acción. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-044; **Tipo**: positivo; **RF**: RF-QRY-011; **Descripción**: `nav intent` mantiene ranking base pero expone `next_hint` para `--full` por default
+  - RF-QRY-011 — Criterio 8. Disposición: manual_evidence_pending. Evidencia esperada: `nav intent` mantiene ranking base pero expone `next_hint` para `--full` por default. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-045; **Tipo**: positivo; **RF**: RF-QRY-011; **Descripción**: `nav intent --classic` restaura la salida clasica y mantiene envelope estable
+  - RF-QRY-011 — Criterio 7. Disposición: manual_evidence_pending. Evidencia esperada: `nav intent --classic` restaura la salida clasica y mantiene envelope estable. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-046; **Tipo**: positivo; **RF**: RF-QRY-010; **Descripción**: `nav ask` con pregunta de implementacion queda clasico por default salvo `--axi`
+  - RF-QRY-010 — Criterio 2. Disposición: manual_evidence_pending. Evidencia esperada: `nav ask` con pregunta de implementacion queda clasico por default salvo `--axi`. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-047; **Tipo**: positivo; **RF**: RF-QRY-007; **Descripción**: `nav workspace-map` sigue clasico por default y solo anuncia preview/full cuando se fuerza `--axi`
+  - RF-QRY-007 — Criterio 3. Disposición: manual_evidence_pending. Evidencia esperada: `nav workspace-map` sigue clasico por default y solo anuncia preview/full cuando se fuerza `--axi`. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-047A; **Tipo**: positivo; **RF**: RF-QRY-002, RF-QRY-007; **Descripción**: `nav workspace-map` no auto-inicia ni enruta por daemon en el modo summary-first por default
+  - RF-QRY-002 — Criterio 5; RF-QRY-007 — Criterio 3. Disposición: manual_evidence_pending. Evidencia esperada: `nav workspace-map` no auto-inicia ni enruta por daemon en el modo summary-first por default. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-047B; **Tipo**: positivo; **RF**: RF-QRY-007; **Descripción**: `TestWorkspaceMapGoPackageServices`: `nav workspace-map` expone paquetes Go `cmd/*`, `internal/*` y `pkg/*` como servicios `go-package` desde el catálogo
+  - RF-QRY-007 — Criterio 1. Disposición: manual_evidence_pending. Evidencia esperada: `TestWorkspaceMapGoPackageServices`: `nav workspace-map` expone paquetes Go `cmd/*`, `internal/*` y `pkg/*` como servicios `go-package` desde el catálogo. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-048; **Tipo**: positivo; **RF**: RF-QRY-012; **Descripción**: `nav pack` construye un reading pack funcional en orden canónico desde tarea libre
+  - RF-QRY-012 — Criterio 4. Disposición: manual_evidence_pending. Evidencia esperada: `nav pack` construye un reading pack funcional en orden canónico desde tarea libre. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-049; **Tipo**: positivo; **RF**: RF-QRY-012; **Descripción**: `nav pack --full` expande slices legibles del mismo pack sin cambiar el backend
+  - RF-QRY-012 — Criterio 6. Disposición: manual_evidence_pending. Evidencia esperada: `nav pack --full` expande slices legibles del mismo pack sin cambiar el backend. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-050; **Tipo**: negativo; **RF**: RF-QRY-012; **Descripción**: `nav pack` devuelve warning accionable cuando la wiki canónica existe pero el índice documental esta vacio o stale
+  - RF-QRY-012 — Criterio 7. Disposición: manual_evidence_pending. Evidencia esperada: `nav pack` devuelve warning accionable cuando la wiki canónica existe pero el índice documental esta vacio o stale. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-051; **Tipo**: positivo; **RF**: RF-QRY-013; **Descripción**: `nav governance` devuelve perfil efectivo, overlays, sync y siguientes pasos
+  - RF-QRY-013 — Criterio 3. Disposición: manual_evidence_pending. Evidencia esperada: `nav governance` devuelve perfil efectivo, overlays, sync y siguientes pasos. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-052; **Tipo**: negativo; **RF**: RF-QRY-013; **Descripción**: `nav ask` y `nav pack` bloquean y devuelven estado de gobernanza cuando `00` falta o el índice esta stale
+  - RF-QRY-013 — Criterio 5. Disposición: manual_evidence_pending. Evidencia esperada: `nav ask` y `nav pack` bloquean y devuelven estado de gobernanza cuando `00` falta o el índice esta stale. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-053; **Tipo**: negativo; **RF**: RF-QRY-014; **Descripción**: `TestNavRouteRequiresTask`: `nav route` sin argumento de tarea devuelve error explícito (`QRY_ROUTE_TASK_REQUIRED`)
+  - RF-QRY-014 — Criterio 5. Disposición: manual_evidence_pending. Evidencia esperada: `TestNavRouteRequiresTask`: `nav route` sin argumento de tarea devuelve error explícito (`QRY_ROUTE_TASK_REQUIRED`). No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-054; **Tipo**: positivo; **RF**: RF-QRY-014; **Descripción**: `TestNavRouteReturnsCanonicalDocFromGovernance`: `nav route <task>` resuelve `anchor_doc` desde governance/read-model (Tier 1) cuando el índice no esta disponible
+  - RF-QRY-014 — Criterio 1. Disposición: manual_evidence_pending. Evidencia esperada: `TestNavRouteReturnsCanonicalDocFromGovernance`: `nav route <task>` resuelve `anchor_doc` desde governance/read-model (Tier 1) cuando el índice no esta disponible. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-055; **Tipo**: positivo; **RF**: RF-QRY-014; **Descripción**: `TestNavRoutePreviewModeByDefault`: sin flags, el modo es `preview` y `discovery` puede estar ausente
+  - RF-QRY-014 — Criterio 4. Disposición: manual_evidence_pending. Evidencia esperada: `TestNavRoutePreviewModeByDefault`: sin flags, el modo es `preview` y `discovery` puede estar ausente. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-056; **Tipo**: positivo; **RF**: RF-QRY-014; **Descripción**: `TestNavRouteFullModeActivatesWithFlag`: `--full` expande canonical lane y activa discovery
+  - RF-QRY-014 — Criterio 3. Disposición: manual_evidence_pending. Evidencia esperada: `TestNavRouteFullModeActivatesWithFlag`: `--full` expande canonical lane y activa discovery. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-057; **Tipo**: positivo; **RF**: RF-QRY-015; **Descripción**: `TestNavRouteUsesTaskFallbackFromQuestion`: el route core extrae familia desde la pregunta cuando no hay anchor explícito
+  - RF-QRY-015 — Criterio 2. Disposición: manual_evidence_pending. Evidencia esperada: `TestNavRouteUsesTaskFallbackFromQuestion`: el route core extrae familia desde la pregunta cuando no hay anchor explícito. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-058; **Tipo**: positivo; **RF**: RF-QRY-012; **Descripción**: `TestNavPackNextQueriesArePopulated`: `nav pack` popula `next_queries` con al menos un elemento que empieza con `mi-lsp`
+  - RF-QRY-012 — Criterio 1. Disposición: manual_evidence_pending. Evidencia esperada: `TestNavPackNextQueriesArePopulated`: `nav pack` popula `next_queries` con al menos un elemento que empieza con `mi-lsp`. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-059; **Tipo**: positivo; **RF**: RF-QRY-012; **Descripción**: `TestNavPackExplicitRFAnchorWinsOverRouteCore`: anchor `--rf` explícito en payload sobreescribe el anchor del route core y determina `primary_doc`
+  - RF-QRY-012 — Criterio 3. Disposición: manual_evidence_pending. Evidencia esperada: `TestNavPackExplicitRFAnchorWinsOverRouteCore`: anchor `--rf` explícito en payload sobreescribe el anchor del route core y determina `primary_doc`. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-060; **Tipo**: positivo; **RF**: RF-QRY-014; **Descripción**: `TestNavRouteAnchorDocHasAnchorStage`: `AnchorDoc.Stage == "anchor"` en Tier 1 y Tier 2 (Wave 3b stage signal)
+  - RF-QRY-014 — Criterio 1. Disposición: manual_evidence_pending. Evidencia esperada: `TestNavRouteAnchorDocHasAnchorStage`: `AnchorDoc.Stage == "anchor"` en Tier 1 y Tier 2 (Wave 3b stage signal). No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-061; **Tipo**: positivo; **RF**: RF-QRY-014; **Descripción**: `TestNavRoutePreviewPackHasPreviewStage`: cada doc del `PreviewPack` lleva campo `Stage` no vacio
+  - RF-QRY-014 — Criterio 1. Disposición: manual_evidence_pending. Evidencia esperada: `TestNavRoutePreviewPackHasPreviewStage`: cada doc del `PreviewPack` lleva campo `Stage` no vacio. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-062; **Tipo**: positivo; **RF**: RF-QRY-014; **Descripción**: `TestNavRouteDiscoveryDocsHaveDiscoveryStage`: cuando `discovery.docs` existe, cada doc tiene `Stage == "discovery"`
+  - RF-QRY-014 — Criterio 4. Disposición: manual_evidence_pending. Evidencia esperada: `TestNavRouteDiscoveryDocsHaveDiscoveryStage`: cuando `discovery.docs` existe, cada doc tiene `Stage == "discovery"`. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-063; **Tipo**: positivo; **RF**: RF-QRY-014, RF-QRY-015; **Descripción**: queries naturales sobre capabilities nuevas (`continuation`, `memory_pointer`) priorizan docs owner-aware del slice y no `README` cuando existe match canónico positivo
+  - RF-QRY-014 — Criterio 4; RF-QRY-015 — Criterio 2. Disposición: manual_evidence_pending. Evidencia esperada: queries naturales sobre capabilities nuevas (`continuation`, `memory_pointer`) priorizan docs owner-aware del slice y no `README` cuando existe match canónico positivo. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-063A; **Tipo**: positivo; **RF**: RF-QRY-010, RF-QRY-011, RF-QRY-014, RF-QRY-015; **Descripción**: superficies docs-first (`nav ask`, `nav route`, `nav pack`, `nav intent`) orientadas a auditoria/wiki-to-code parity priorizan `.docs/wiki/*` y no dejan que `.docs/raw/*` gane el documento primario cuando existe match canónico positivo
+  - RF-QRY-010 — Criterio 1; RF-QRY-011 — Criterio 7; RF-QRY-014 — Criterio 5; RF-QRY-015 — Criterio 2. Disposición: manual_evidence_pending. Evidencia esperada: superficies docs-first (`nav ask`, `nav route`, `nav pack`, `nav intent`) orientadas a auditoria/wiki-to-code parity priorizan `.docs/wiki/*` y no dejan que `.docs/raw/*` gane el documento primario cuando existe match canónico positivo. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-064; **Tipo**: positivo; **RF**: RF-QRY-011; **Descripción**: `nav intent` clasifica `mode=docs` para consultas capability-like y devuelve items documentales con `doc_path/doc_id/title/family/layer/score/evidence/next_queries`
+  - RF-QRY-011 — Criterio 7. Disposición: manual_evidence_pending. Evidencia esperada: `nav intent` clasifica `mode=docs` para consultas capability-like y devuelve items documentales con `doc_path/doc_id/title/family/layer/score/evidence/next_queries`. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-065; **Tipo**: positivo; **RF**: RF-QRY-011; **Descripción**: `nav intent` clasifica `mode=code` para consultas symbol-like y conserva ranking BM25 de catálogo
+  - RF-QRY-011 — Criterio 6. Disposición: manual_evidence_pending. Evidencia esperada: `nav intent` clasifica `mode=code` para consultas symbol-like y conserva ranking BM25 de catálogo. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-066; **Tipo**: positivo; **RF**: RF-QRY-014, RF-QRY-015; **Descripción**: `MI_LSP_DOC_RANKING=legacy` deja un override diagnóstico reversible y no persiste hints/queries crudas en telemetria
+  - RF-QRY-014 — Criterio 1; RF-QRY-015 — Criterio 1. Disposición: manual_evidence_pending. Evidencia esperada: `MI_LSP_DOC_RANKING=legacy` deja un override diagnóstico reversible y no persiste hints/queries crudas en telemetria. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-067; **Tipo**: positivo; **RF**: RF-QRY-010, RF-QRY-012; **Descripción**: `continuation`, `memory_pointer` y `memory_pointer.stale` siguen visibles en las superficies docs-first después del reranking owner-aware
+  - RF-QRY-010 — Criterio 1; RF-QRY-012 — Criterio 4. Disposición: manual_evidence_pending. Evidencia esperada: `continuation`, `memory_pointer` y `memory_pointer.stale` siguen visibles en las superficies docs-first después del reranking owner-aware. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-068; **Tipo**: positivo; **RF**: RF-QRY-014; **Descripción**: `TestNavRouteExplicitEmbeddedRFUsesContainingRFDocWhenDocsIndexEmpty`: `nav route RF-*` ancla el documento RF agregado aunque el índice documental este vacio
+  - RF-QRY-014 — Criterio 5. Disposición: manual_evidence_pending. Evidencia esperada: `TestNavRouteExplicitEmbeddedRFUsesContainingRFDocWhenDocsIndexEmpty`: `nav route RF-*` ancla el documento RF agregado aunque el índice documental este vacio. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-069; **Tipo**: positivo; **RF**: RF-QRY-013; **Descripción**: `TestNavTraceFindsRFEmbeddedInAggregateDoc`: `nav trace RF-*` resuelve IDs mencionados dentro de documentos agregados via `doc_mentions`
+  - RF-QRY-013 — Criterio 3. Disposición: manual_evidence_pending. Evidencia esperada: `TestNavTraceFindsRFEmbeddedInAggregateDoc`: `nav trace RF-*` resuelve IDs mencionados dentro de documentos agregados via `doc_mentions`. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-070; **Tipo**: positivo; **RF**: RF-QRY-014; **Descripción**: `TestNavRoutePreservesExplicitEmbeddedRFWhenDocsIndexExists`: Tier 2 no reemplaza el RF explícito por el índice general `05_requirements/`
+  - RF-QRY-014 — Criterio 1. Disposición: manual_evidence_pending. Evidencia esperada: `TestNavRoutePreservesExplicitEmbeddedRFWhenDocsIndexExists`: Tier 2 no reemplaza el RF explícito por el índice general `05_requirements/`. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-071; **Tipo**: positivo; **RF**: RF-QRY-013; **Descripción**: `TestNavTracePrefersAggregateRFDocOverRFIndexDoc`: `nav trace` prioriza el doc bajo `05_requirements/` sobre el índice general cuando ambos mencionan el RF
+  - RF-QRY-013 — Criterio 5. Disposición: manual_evidence_pending. Evidencia esperada: `TestNavTracePrefersAggregateRFDocOverRFIndexDoc`: `nav trace` prioriza el doc bajo `05_requirements/` sobre el índice general cuando ambos mencionan el RF. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-071A; **Tipo**: positivo; **RF**: RF-QRY-013; **Descripción**: `nav trace RF-*` hace fallback a `.docs/wiki/04_RF*.md` cuando el RF existe en disco pero todavía no figura en `doc_records`/`doc_mentions`
+  - RF-QRY-013 — Criterio 4. Disposición: manual_evidence_pending. Evidencia esperada: `nav trace RF-*` hace fallback a `.docs/wiki/04_RF*.md` cuando el RF existe en disco pero todavía no figura en `doc_records`/`doc_mentions`. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-071B; **Tipo**: positivo; **RF**: RF-QRY-013; **Descripción**: `nav trace RF-*` hace fallback al layout legacy `.docs/wiki/RF/*.md` cuando el RF existe en disco pero el índice documental aun no lo publico
+  - RF-QRY-013 — Criterio 4. Disposición: manual_evidence_pending. Evidencia esperada: `nav trace RF-*` hace fallback al layout legacy `.docs/wiki/RF/*.md` cuando el RF existe en disco pero el índice documental aun no lo publico. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-071C; **Tipo**: positivo; **RF**: RF-QRY-013; **Descripción**: `nav trace RF-*` hace fallback al índice root legacy `.docs/wiki/RF.md` cuando el RF existe en disco pero el índice documental aun no lo publico
+  - RF-QRY-013 — Criterio 4. Disposición: manual_evidence_pending. Evidencia esperada: `nav trace RF-*` hace fallback al índice root legacy `.docs/wiki/RF.md` cuando el RF existe en disco pero el índice documental aun no lo publico. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-071D; **Tipo**: positivo; **RF**: RF-QRY-013; **Descripción**: `nav trace RF-*` usa docs TP del layer `06` como evidencia documental de cobertura y no devuelve `missing` cuando existe un caso de prueba canónico que referencia el RF
+  - RF-QRY-013 — Criterio 4. Disposición: manual_evidence_pending. Evidencia esperada: `nav trace RF-*` usa docs TP del layer `06` como evidencia documental de cobertura y no devuelve `missing` cuando existe un caso de prueba canónico que referencia el RF. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-071E; **Tipo**: positivo; **RF**: RF-QRY-013; **Descripción**: `nav trace TP-*` resuelve el título embebido del caso en `06_tests/*.md` y devuelve al menos `partial` cuando el caso canónico existe en el docgraph
+  - RF-QRY-013 — Criterio 3. Disposición: manual_evidence_pending. Evidencia esperada: `nav trace TP-*` resuelve el título embebido del caso en `06_tests/*.md` y devuelve al menos `partial` cuando el caso canónico existe en el docgraph. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-071F; **Tipo**: positivo; **RF**: RF-QRY-013; **Descripción**: `nav trace RF-*` puede hacer fallback a disco usando las rutas documentales definidas por `read-model` aunque el corpus no viva bajo `.docs/wiki/*`
+  - RF-QRY-013 — Criterio 4. Disposición: manual_evidence_pending. Evidencia esperada: `nav trace RF-*` puede hacer fallback a disco usando las rutas documentales definidas por `read-model` aunque el corpus no viva bajo `.docs/wiki/*`. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-072; **Tipo**: negativo; **RF**: RF-QRY-014; **Descripción**: `TestNavRouteDoesNotAttachMissingExplicitRFToGovernanceFallback`: un `RF-*` inexistente no se pega como `doc_id` al fallback de gobernanza
+  - RF-QRY-014 — Criterio 2. Disposición: manual_evidence_pending. Evidencia esperada: `TestNavRouteDoesNotAttachMissingExplicitRFToGovernanceFallback`: un `RF-*` inexistente no se pega como `doc_id` al fallback de gobernanza. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-073; **Tipo**: positivo; **RF**: RF-QRY-016; **Descripción**: `TestNavWikiSearchReturnsLayerFilteredDocs`: `nav wiki search` devuelve candidatos filtrados por capa con `next_queries` hacia pack/trace/multi-read
+  - RF-QRY-016 — Criterio 5. Disposición: manual_evidence_pending. Evidencia esperada: `TestNavWikiSearchReturnsLayerFilteredDocs`: `nav wiki search` devuelve candidatos filtrados por capa con `next_queries` hacia pack/trace/multi-read. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-074; **Tipo**: negativo; **RF**: RF-QRY-016; **Descripción**: `TestNavWikiSearchDocIndexEmptyReturnsDiagnostic`: docgraph vacio devuelve diagnóstico accionable de `index --docs-only`
+  - RF-QRY-016 — Criterio 3. Disposición: manual_evidence_pending. Evidencia esperada: `TestNavWikiSearchDocIndexEmptyReturnsDiagnostic`: docgraph vacio devuelve diagnóstico accionable de `index --docs-only`. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-075; **Tipo**: negativo; **RF**: RF-QRY-016; **Descripción**: `TestNavWikiSearchBlocksWhenGovernanceBlocked`: governance bloqueada corta `nav wiki search`
+  - RF-QRY-016 — Criterio 1. Disposición: manual_evidence_pending. Evidencia esperada: `TestNavWikiSearchBlocksWhenGovernanceBlocked`: governance bloqueada corta `nav wiki search`. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-076; **Tipo**: positivo; **RF**: RF-QRY-016; **Descripción**: `TestNavAskRoutePackRepoCompatWarnings`: `nav ask|route|pack --repo docs` no falla y orienta a `nav wiki`
+  - RF-QRY-016 — Criterio 5. Disposición: manual_evidence_pending. Evidencia esperada: `TestNavAskRoutePackRepoCompatWarnings`: `nav ask|route|pack --repo docs` no falla y orienta a `nav wiki`. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-077; **Tipo**: positivo; **RF**: RF-QRY-016; **Descripción**: `TestIndexWorkspaceDocsExtractsWikiSourceBlocksAndRecords`: docgraph extrae `doc_source_blocks`, `doc_source_records` y menciones compatibles desde fences `toon` declarados con `SDD-WIKI-SOURCE-v1`
+  - RF-QRY-016 — Criterio 11. Disposición: manual_evidence_pending. Evidencia esperada: `TestIndexWorkspaceDocsExtractsWikiSourceBlocksAndRecords`: docgraph extrae `doc_source_blocks`, `doc_source_records` y menciones compatibles desde fences `toon` declarados con `SDD-WIKI-SOURCE-v1`. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-078; **Tipo**: positivo; **RF**: RF-QRY-016; **Descripción**: `TestReplaceDocsWithSources_RoundTrip`: SQLite persiste y resuelve source blocks/source records junto con `doc_records`
+  - RF-QRY-016 — Criterio 10. Disposición: manual_evidence_pending. Evidencia esperada: `TestReplaceDocsWithSources_RoundTrip`: SQLite persiste y resuelve source blocks/source records junto con `doc_records`. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-078A; **Tipo**: positivo; **RF**: RF-QRY-016; **Descripción**: `TestWithSQLiteReadRetryRetriesLockedErrors`: lecturas documentales reintentan locks SQLite breves y no reintentan errores permanentes
+  - RF-QRY-016 — Criterio 1. Disposición: manual_evidence_pending. Evidencia esperada: `TestWithSQLiteReadRetryRetriesLockedErrors`: lecturas documentales reintentan locks SQLite breves y no reintentan errores permanentes. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-079; **Tipo**: positivo; **RF**: RF-QRY-016; **Descripción**: `TestValidateSourceValidArtifact`: `nav wiki validate-source` devuelve `PASS` para artefacto fuente valido
+  - RF-QRY-016 — Criterio 10. Disposición: manual_evidence_pending. Evidencia esperada: `TestValidateSourceValidArtifact`: `nav wiki validate-source` devuelve `PASS` para artefacto fuente valido. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-080; **Tipo**: negativo; **RF**: RF-QRY-016; **Descripción**: `TestValidateSourceMissingBlockIDBlocks`: `validate-source` bloquea fences `toon` normativos sin `block_id`
+  - RF-QRY-016 — Criterio 11. Disposición: manual_evidence_pending. Evidencia esperada: `TestValidateSourceMissingBlockIDBlocks`: `validate-source` bloquea fences `toon` normativos sin `block_id`. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-081; **Tipo**: negativo; **RF**: RF-QRY-016; **Descripción**: `TestValidateSourceNormativeTableWithoutExceptionBlocks`: `validate-source` bloquea tablas Markdown normativas sin excepcion
+  - RF-QRY-016 — Criterio 10. Disposición: manual_evidence_pending. Evidencia esperada: `TestValidateSourceNormativeTableWithoutExceptionBlocks`: `validate-source` bloquea tablas Markdown normativas sin excepcion. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-082; **Tipo**: positivo; **RF**: RF-QRY-016; **Descripción**: `TestNavWikiSearchFindsExactSourceRecordID`: `nav wiki search` resuelve `record_id` fuente exacto antes del ranking textual y expone `lookup_status` con `record_id`, `block_id`, totales y `match_kind`
+  - RF-QRY-016 — Criterio 12. Disposición: manual_evidence_pending. Evidencia esperada: `TestNavWikiSearchFindsExactSourceRecordID`: `nav wiki search` resuelve `record_id` fuente exacto antes del ranking textual y expone `lookup_status` con `record_id`, `block_id`, totales y `match_kind`. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-083; **Tipo**: positivo; **RF**: RF-QRY-016; **Descripción**: `TestNavTraceFindsSourceBlockID`: `nav trace` devuelve evidencia `wiki-source` para source IDs exactos y conserva `lookup_status.match_kind=canonical_indexed_id`
+  - RF-QRY-016 — Criterio 5. Disposición: manual_evidence_pending. Evidencia esperada: `TestNavTraceFindsSourceBlockID`: `nav trace` devuelve evidencia `wiki-source` para source IDs exactos y conserva `lookup_status.match_kind=canonical_indexed_id`. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-084; **Tipo**: positivo; **RF**: RF-QRY-016; **Descripción**: `TestDefaultProfileIndexesOutcomeDocsAsRS`: el perfil embebido reconoce `.docs/wiki/02_resultados_soluciones_usuario.md` y `.docs/wiki/02_resultados/*.md` como `layer=RS`, `stage=outcome`
+  - RF-QRY-016 — Criterio 7. Disposición: manual_evidence_pending. Evidencia esperada: `TestDefaultProfileIndexesOutcomeDocsAsRS`: el perfil embebido reconoce `.docs/wiki/02_resultados_soluciones_usuario.md` y `.docs/wiki/02_resultados/*.md` como `layer=RS`, `stage=outcome`. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-085; **Tipo**: positivo; **RF**: RF-QRY-016; **Descripción**: `TestGovernanceProjectionDerivesFunctionalStageOrder`: `reading_pack.functional_stage_order` deriva `outcome` desde `governance.hierarchy[*].pack_stage` entre `scope` y `architecture`
+  - RF-QRY-016 — Criterio 7. Disposición: manual_evidence_pending. Evidencia esperada: `TestGovernanceProjectionDerivesFunctionalStageOrder`: `reading_pack.functional_stage_order` deriva `outcome` desde `governance.hierarchy[*].pack_stage` entre `scope` y `architecture`. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-086; **Tipo**: negativo; **RF**: RF-QRY-016; **Descripción**: `TestValidateSourceMissingDocIDBlocks`: `validate-source` bloquea artefactos fuente declarados sin `doc_id`
+  - RF-QRY-016 — Criterio 10. Disposición: manual_evidence_pending. Evidencia esperada: `TestValidateSourceMissingDocIDBlocks`: `validate-source` bloquea artefactos fuente declarados sin `doc_id`. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-087; **Tipo**: negativo; **RF**: RF-QRY-016; **Descripción**: `TestValidateSourceMissingKindAndSourceOfTruthBlocks`: `validate-source` bloquea bloques fuente sin `kind` o `source_of_truth`
+  - RF-QRY-016 — Criterio 10. Disposición: manual_evidence_pending. Evidencia esperada: `TestValidateSourceMissingKindAndSourceOfTruthBlocks`: `validate-source` bloquea bloques fuente sin `kind` o `source_of_truth`. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-088; **Tipo**: negativo; **RF**: RF-QRY-016; **Descripción**: `TestValidateSourceRecordWithoutIDBlocks`: `validate-source` bloquea records referenciables sin `id`
+  - RF-QRY-016 — Criterio 10. Disposición: manual_evidence_pending. Evidencia esperada: `TestValidateSourceRecordWithoutIDBlocks`: `validate-source` bloquea records referenciables sin `id`. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-089; **Tipo**: negativo; **RF**: RF-QRY-016; **Descripción**: `TestValidateSourceBrokenImportAndExportBlocks`: `validate-source` bloquea imports rotos y exports no indexados
+  - RF-QRY-016 — Criterio 10. Disposición: manual_evidence_pending. Evidencia esperada: `TestValidateSourceBrokenImportAndExportBlocks`: `validate-source` bloquea imports rotos y exports no indexados. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-090; **Tipo**: positivo; **RF**: RF-QRY-016; **Descripción**: `TestRenderStructuredFormats_PreserveWikiSourceFields`: los formatos `compact`, `toon` y `yaml` preservan campos agregados de `WikiSourceValidationResult`
+  - RF-QRY-016 — Criterio 11. Disposición: manual_evidence_pending. Evidencia esperada: `TestRenderStructuredFormats_PreserveWikiSourceFields`: los formatos `compact`, `toon` y `yaml` preservan campos agregados de `WikiSourceValidationResult`. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-091; **Tipo**: positivo; **RF**: RF-QRY-016; **Descripción**: `TestValidateSourceTableExceptionWithToonSourcePasses`: una excepcion explícita de tabla con fuente `toon` equivalente no bloquea
+  - RF-QRY-016 — Criterio 11. Disposición: manual_evidence_pending. Evidencia esperada: `TestValidateSourceTableExceptionWithToonSourcePasses`: una excepcion explícita de tabla con fuente `toon` equivalente no bloquea. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-092; **Tipo**: negativo; **RF**: RF-QRY-016; **Descripción**: `TestValidateHarnessMissingContractBlocks`: docs gobernados sin contrato `SDD-HARNESS-v1` devuelven `BLOCKED` y `harness_docs_missing_contract`
+  - RF-QRY-016 — Criterio 9. Disposición: manual_evidence_pending. Evidencia esperada: `TestValidateHarnessMissingContractBlocks`: docs gobernados sin contrato `SDD-HARNESS-v1` devuelven `BLOCKED` y `harness_docs_missing_contract`. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-093; **Tipo**: negativo; **RF**: RF-QRY-016; **Descripción**: `TestValidateHarnessBrokenObsidianImportBlocks`: imports o links Obsidian links Obsidian de ejemplo rotos bloquean readiness
+  - RF-QRY-016 — Criterio 9. Disposición: manual_evidence_pending. Evidencia esperada: `TestValidateHarnessBrokenObsidianImportBlocks`: imports o links Obsidian links Obsidian de ejemplo rotos bloquean readiness. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-094; **Tipo**: negativo; **RF**: RF-QRY-016; **Descripción**: `TestValidateHarnessEditAllowDenyConflictBlocks`: conflictos `agent_may_edit` vs `agent_must_not_edit` bloquean readiness
+  - RF-QRY-016 — Criterio 9. Disposición: manual_evidence_pending. Evidencia esperada: `TestValidateHarnessEditAllowDenyConflictBlocks`: conflictos `agent_may_edit` vs `agent_must_not_edit` bloquean readiness. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-095; **Tipo**: positivo; **RF**: RF-QRY-016; **Descripción**: `TestValidateHarnessHumanAndDualContractsMaySkipStrictRuntimeGates`: contratos `human` y `dual` pueden omitir gates estrictos como warning no bloqueante
+  - RF-QRY-016 — Criterio 6. Disposición: manual_evidence_pending. Evidencia esperada: `TestValidateHarnessHumanAndDualContractsMaySkipStrictRuntimeGates`: contratos `human` y `dual` pueden omitir gates estrictos como warning no bloqueante. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-096; **Tipo**: positivo; **RF**: RF-QRY-016; **Descripción**: `TestValidateSourceUnmigratedDocsIgnored`: documentos no migrados a `SDD-WIKI-SOURCE-v1` no bloquean `validate-source`
+  - RF-QRY-016 — Criterio 10. Disposición: manual_evidence_pending. Evidencia esperada: `TestValidateSourceUnmigratedDocsIgnored`: documentos no migrados a `SDD-WIKI-SOURCE-v1` no bloquean `validate-source`. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-097; **Tipo**: positivo; **RF**: RF-QRY-016; **Descripción**: `TestValidateHarnessValidLLMFirstContract`: `nav wiki validate-harness` devuelve `PASS` para contrato `llm-first` completo con evidencia existente
+  - RF-QRY-016 — Criterio 8. Disposición: manual_evidence_pending. Evidencia esperada: `TestValidateHarnessValidLLMFirstContract`: `nav wiki validate-harness` devuelve `PASS` para contrato `llm-first` completo con evidencia existente. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-098; **Tipo**: negativo; **RF**: RF-QRY-016; **Descripción**: `TestValidateHarnessUnknownAudienceBlocksAndToonExposesFields`: audience desconocida bloquea y los campos Harness son visibles en TOON
+  - RF-QRY-016 — Criterio 9. Disposición: manual_evidence_pending. Evidencia esperada: `TestValidateHarnessUnknownAudienceBlocksAndToonExposesFields`: audience desconocida bloquea y los campos Harness son visibles en TOON. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-099; **Tipo**: positivo; **RF**: RF-QRY-016; **Descripción**: `TestNavWikiSearchAcceptsRSLayer`: `nav wiki search --layer RS` devuelve docs outcome sin warnings de capa desconocida
+  - RF-QRY-016 — Criterio 7. Disposición: manual_evidence_pending. Evidencia esperada: `TestNavWikiSearchAcceptsRSLayer`: `nav wiki search --layer RS` devuelve docs outcome sin warnings de capa desconocida. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-100; **Tipo**: positivo; **RF**: RF-QRY-014, RF-QRY-016; **Descripción**: `TestNavRouteExplicitRSUsesOutcomeDoc`: `nav route RS-*` ancla el documento RS/outcome gobernado antes de usar heuristicas legacy
+  - RF-QRY-014 — Criterio 5; RF-QRY-016 — Criterio 2. Disposición: manual_evidence_pending. Evidencia esperada: `TestNavRouteExplicitRSUsesOutcomeDoc`: `nav route RS-*` ancla el documento RS/outcome gobernado antes de usar heuristicas legacy. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-101; **Tipo**: positivo; **RF**: RF-QRY-012, RF-QRY-016; **Descripción**: `TestNavPackIncludesOutcomeStage`: `nav pack` incluye la etapa `outcome` en el pack funcional cuando el read-model la declara
+  - RF-QRY-012 — Criterio 2; RF-QRY-016 — Criterio 5. Disposición: manual_evidence_pending. Evidencia esperada: `TestNavPackIncludesOutcomeStage`: `nav pack` incluye la etapa `outcome` en el pack funcional cuando el read-model la declara. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-102; **Tipo**: positivo; **RF**: RF-QRY-013, RF-QRY-016; **Descripción**: `TestNavTraceRSTraceUsesDocIDLayerStageWithoutRF`: `nav trace RS-*` devuelve `doc_id`, `layer=RS`, `stage=outcome` y no rellena el campo legacy `rf`
+  - RF-QRY-013 — Criterio 6; RF-QRY-016 — Criterio 7. Disposición: manual_evidence_pending. Evidencia esperada: `TestNavTraceRSTraceUsesDocIDLayerStageWithoutRF`: `nav trace RS-*` devuelve `doc_id`, `layer=RS`, `stage=outcome` y no rellena el campo legacy `rf`. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-103; **Tipo**: positivo; **RF**: RF-QRY-016; **Descripción**: `scripts/release/regression-smoke.ps1`: recorre aliases registrados con `workspace status --no-auto-sync`, `nav wiki search`, `nav wiki pack`, `nav wiki trace` cuando hay ID trazable, registra latencia por operación y compara metadata Windows/WSL (`revision`, `rid`, path) sin mutar repos smokeados
+  - RF-QRY-016 — Criterio 5. Disposición: manual_evidence_pending. Evidencia esperada: `scripts/release/regression-smoke.ps1`: recorre aliases registrados con `workspace status --no-auto-sync`, `nav wiki search`, `nav wiki pack`, `nav wiki trace` cuando hay ID trazable, registra latencia por operación y compara metadata Windows/WSL (`revision`, `rid`, path) sin mutar repos smokeados. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-104; **Tipo**: positivo; **RF**: RF-QRY-016; **Descripción**: `nav wiki search RF-QRY-016 --include-content` expone evidencia de línea (`line_start`/`line_end` o rango equivalente) consistente con el markdown canónico
+  - RF-QRY-016 — Criterio 1. Disposición: manual_evidence_pending. Evidencia esperada: `nav wiki search RF-QRY-016 --include-content` expone evidencia de línea (`line_start`/`line_end` o rango equivalente) consistente con el markdown canónico. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-105; **Tipo**: positivo; **RF**: RF-QRY-012, RF-QRY-016; **Descripción**: `nav wiki pack --rf RF-QRY-016` conserva el anchor como `primary_doc` aunque existan README/docs genericos con mayor recencia
+  - RF-QRY-012 — Criterio 1; RF-QRY-016 — Criterio 5. Disposición: manual_evidence_pending. Evidencia esperada: `nav wiki pack --rf RF-QRY-016` conserva el anchor como `primary_doc` aunque existan README/docs genericos con mayor recencia. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-106; **Tipo**: positivo; **RF**: RF-QRY-001; **Descripción**: `TestRenderTOONEscapesUnsafeControlCharacters`: TOON escapa controles no imprimibles como `\u0000`, no emite NUL crudo y agrega warning único de sanitizacion
+  - RF-QRY-001 — Criterio 4. Disposición: manual_evidence_pending. Evidencia esperada: `TestRenderTOONEscapesUnsafeControlCharacters`: TOON escapa controles no imprimibles como `\u0000`, no emite NUL crudo y agrega warning único de sanitizacion. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-107; **Tipo**: positivo; **RF**: RF-QRY-010; **Descripción**: `TestBuildAskCodeEvidenceSkipsOperationalAndBinaryPaths` + `TestSearchPatternFallbackIgnoresNestedMiLspState`: `nav ask`/fallback textual descartan `.mi-lsp/**`, `.db`, `.sqlite`, `.docs/raw/**`, `.docs/auditoria/**`, matrices/indices wiki y otros sidecars antes de emitir `code_evidence`
+  - RF-QRY-010 — Criterio 1. Disposición: manual_evidence_pending. Evidencia esperada: `TestBuildAskCodeEvidenceSkipsOperationalAndBinaryPaths` + `TestSearchPatternFallbackIgnoresNestedMiLspState`: `nav ask`/fallback textual descartan `.mi-lsp/**`, `.db`, `.sqlite`, `.docs/raw/**`, `.docs/auditoria/**`, matrices/indices wiki y otros sidecars antes de emitir `code_evidence`. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-108; **Tipo**: positivo; **RF**: RF-QRY-001, RF-QRY-002; **Descripción**: `nav search` que agota timeout, incluido el presupuesto interactivo configurado de busqueda textual, devuelve `ok=true` con resultados parciales seguros, warning `search_timeout`, `next_hint` de narrowing y `coach.trigger=search_timeout`
+  - RF-QRY-001 — Criterio 2; RF-QRY-002 — Criterio 5. Disposición: manual_evidence_pending. Evidencia esperada: `nav search` que agota timeout, incluido el presupuesto interactivo configurado de busqueda textual, devuelve `ok=true` con resultados parciales seguros, warning `search_timeout`, `next_hint` de narrowing y `coach.trigger=search_timeout`. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-109; **Tipo**: positivo; **RF**: RF-QRY-001; **Descripción**: `mi-lsp version --format compact|json|toon|yaml` conserva envelope estable con `backend=version`, `items[0]` estructurado y sin dependencia de workspace/daemon
+  - RF-QRY-001 — Criterio 1. Disposición: manual_evidence_pending. Evidencia esperada: `mi-lsp version --format compact|json|toon|yaml` conserva envelope estable con `backend=version`, `items[0]` estructurado y sin dependencia de workspace/daemon. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-110; **Tipo**: positivo; **RF**: RF-QRY-017; **Descripción**: `nav affected` con paths explícitos o stdin emite items estables `kind`, `path`, `reason`, `confidence`, `suggested_command` y `evidence` sin depender del daemon
+  - RF-QRY-017 — Criterio 8. Disposición: manual_evidence_pending. Evidencia esperada: `nav affected` con paths explícitos o stdin emite items estables `kind`, `path`, `reason`, `confidence`, `suggested_command` y `evidence` sin depender del daemon. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-111; **Tipo**: positivo; **RF**: RF-QRY-017; **Descripción**: `nav affected --from-git-diff` descubre cambios staged, unstaged y untracked desde el workspace git y preserva `change_type` en evidencia
+  - RF-QRY-017 — Criterio 9. Disposición: manual_evidence_pending. Evidencia esperada: `nav affected --from-git-diff` descubre cambios staged, unstaged y untracked desde el workspace git y preserva `change_type` en evidencia. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-112; **Tipo**: positivo; **RF**: RF-QRY-017; **Descripción**: `nav affected --include-tests` sugiere comandos de prueba conservadores por familia de path y respeta `--test-command` como override explícito
+  - RF-QRY-017 — Criterio 4. Disposición: manual_evidence_pending. Evidencia esperada: `nav affected --include-tests` sugiere comandos de prueba conservadores por familia de path y respeta `--test-command` como override explícito. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-113; **Tipo**: positivo; **RF**: RF-QRY-017; **Descripción**: `nav affected --include-docs` mapea cambios en CLI, store, service, daemon, worker y wiki hacia docs canónicos de RF, TP, CT, DB o TECH
+  - RF-QRY-017 — Criterio 8. Disposición: manual_evidence_pending. Evidencia esperada: `nav affected --include-docs` mapea cambios en CLI, store, service, daemon, worker y wiki hacia docs canónicos de RF, TP, CT, DB o TECH. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-114; **Tipo**: negativo; **RF**: RF-QRY-017; **Descripción**: `nav affected --from-git-diff --quiet` sin cambios devuelve `ok=true`, `items=[]` y warning de no afectados sin hint ruidoso
+  - RF-QRY-017 — Criterio 9. Disposición: manual_evidence_pending. Evidencia esperada: `nav affected --from-git-diff --quiet` sin cambios devuelve `ok=true`, `items=[]` y warning de no afectados sin hint ruidoso. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-115; **Tipo**: negativo; **RF**: RF-QRY-017; **Descripción**: `nav affected` siempre declara warning de heuristica/confidence y no afirma impacto completo hasta existir grafo persistido
+  - RF-QRY-017 — Criterio 2. Disposición: manual_evidence_pending. Evidencia esperada: `nav affected` siempre declara warning de heuristica/confidence y no afirma impacto completo hasta existir grafo persistido. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-116; **Tipo**: positivo; **RF**: RF-QRY-017; **Descripción**: `nav affected` ignora sidecars operativos `.mi-lsp/**`, `.docs/raw/**`, `.docs/auditoria/**` y `.git/**` al seleccionar impacto
+  - RF-QRY-017 — Criterio 1. Disposición: manual_evidence_pending. Evidencia esperada: `nav affected` ignora sidecars operativos `.mi-lsp/**`, `.docs/raw/**`, `.docs/auditoria/**` y `.git/**` al seleccionar impacto. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-117; **Tipo**: positivo; **RF**: RF-QRY-010; **Descripción**: `TestQueryRankingTaskNormalizesSDDAnchorMetaTerms` + `TestNavAskNormalizesAnchorIntentAndWarnsOnRawDrift`: `nav ask` trata `RS/RF/FL/CT/TECH` como intención de capa en preguntas de anclas, conserva terminos de dominio y emite `coach.trigger=anchor_drift` con continuacion a `nav.pack` cuando aplica
+  - RF-QRY-010 — Criterio 2. Disposición: manual_evidence_pending. Evidencia esperada: `TestQueryRankingTaskNormalizesSDDAnchorMetaTerms` + `TestNavAskNormalizesAnchorIntentAndWarnsOnRawDrift`: `nav ask` trata `RS/RF/FL/CT/TECH` como intención de capa en preguntas de anclas, conserva terminos de dominio y emite `coach.trigger=anchor_drift` con continuacion a `nav.pack` cuando aplica. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-118; **Tipo**: positivo; **RF**: RF-QRY-018; **Descripción**: `TestEditPlanDryRunDoesNotWrite`: `nav edit-plan` genera diff determinista con `backend=edit-plan`, `mode=dry_run` y no escribe archivos
+  - RF-QRY-018 — Criterio 10. Disposición: manual_evidence_pending. Evidencia esperada: `TestEditPlanDryRunDoesNotWrite`: `nav edit-plan` genera diff determinista con `backend=edit-plan`, `mode=dry_run` y no escribe archivos. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-119; **Tipo**: positivo; **RF**: RF-QRY-018; **Descripción**: `TestEditPlanApplyWritesOnlyWithExperimentalGate`: apply exitoso requiere `--apply --experimental-apply`, git limpio y hashes esperados
+  - RF-QRY-018 — Criterio 3. Disposición: manual_evidence_pending. Evidencia esperada: `TestEditPlanApplyWritesOnlyWithExperimentalGate`: apply exitoso requiere `--apply --experimental-apply`, git limpio y hashes esperados. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-120; **Tipo**: positivo; **RF**: RF-QRY-018; **Descripción**: `TestNavCommandExposesEditPlanFlags`: CLI expone `--stdin`, `--packet`, `--strict`, `--include-content`, `--apply` y `--experimental-apply`
+  - RF-QRY-018 — Criterio 2. Disposición: manual_evidence_pending. Evidencia esperada: `TestNavCommandExposesEditPlanFlags`: CLI expone `--stdin`, `--packet`, `--strict`, `--include-content`, `--apply` y `--experimental-apply`. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-121; **Tipo**: negativo; **RF**: RF-QRY-018; **Descripción**: `TestEditPlanApplyRequiresCleanGit`: apply se bloquea cuando el workspace git esta dirty
+  - RF-QRY-018 — Criterio 2. Disposición: manual_evidence_pending. Evidencia esperada: `TestEditPlanApplyRequiresCleanGit`: apply se bloquea cuando el workspace git esta dirty. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-122; **Tipo**: negativo; **RF**: RF-QRY-018; **Descripción**: `TestEditPlanRejectsUnsafePackets/hash mismatch`: packet con `expected_hash` inválido se rechaza
+  - RF-QRY-018 — Criterio 1. Disposición: manual_evidence_pending. Evidencia esperada: `TestEditPlanRejectsUnsafePackets/hash mismatch`: packet con `expected_hash` inválido se rechaza. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-123; **Tipo**: negativo; **RF**: RF-QRY-018; **Descripción**: `TestEditPlanRejectsUnsafePackets/path traversal/read model/binary`: paths fuera del workspace, `read-model.toml` y binarios se bloquean
+  - RF-QRY-018 — Criterio 4. Disposición: manual_evidence_pending. Evidencia esperada: `TestEditPlanRejectsUnsafePackets/path traversal/read model/binary`: paths fuera del workspace, `read-model.toml` y binarios se bloquean. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-124; **Tipo**: negativo; **RF**: RF-QRY-018; **Descripción**: `TestEditPlanRejectsUnsafePackets/regex needs limit`: `replace_regex_limited` sin `max_replacements` se rechaza
+  - RF-QRY-018 — Criterio 6. Disposición: manual_evidence_pending. Evidencia esperada: `TestEditPlanRejectsUnsafePackets/regex needs limit`: `replace_regex_limited` sin `max_replacements` se rechaza. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-125; **Tipo**: negativo; **RF**: RF-QRY-018; **Descripción**: `TestEditPlanRejectsUnsafePackets/overlapping range ops`: operaciones solapadas sobre el mismo target range se rechazan
+  - RF-QRY-018 — Criterio 10. Disposición: manual_evidence_pending. Evidencia esperada: `TestEditPlanRejectsUnsafePackets/overlapping range ops`: operaciones solapadas sobre el mismo target range se rechazan. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-126; **Tipo**: positivo; **RF**: RF-QRY-018; **Descripción**: `TestEditPlanV2GoASTOperationsDryRunDoesNotWrite`: `edit-plan-v2` aplica en memoria operaciones Go AST (`replace_go_function`, `replace_go_function_body`, `insert_go_function_after`, `ensure_go_import`, `remove_go_import`) y no escribe en dry-run
+  - RF-QRY-018 — Criterio 8. Disposición: manual_evidence_pending. Evidencia esperada: `TestEditPlanV2GoASTOperationsDryRunDoesNotWrite`: `edit-plan-v2` aplica en memoria operaciones Go AST (`replace_go_function`, `replace_go_function_body`, `insert_go_function_after`, `ensure_go_import`, `remove_go_import`) y no escribe en dry-run. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-127; **Tipo**: positivo; **RF**: RF-QRY-018; **Descripción**: `TestEditPlanV2GoASTApplyWritesExpectedFile`: apply v2 Go requiere doble opt-in, git limpio y hashes esperados, y escribe solo el archivo target
+  - RF-QRY-018 — Criterio 3. Disposición: manual_evidence_pending. Evidencia esperada: `TestEditPlanV2GoASTApplyWritesExpectedFile`: apply v2 Go requiere doble opt-in, git limpio y hashes esperados, y escribe solo el archivo target. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-128; **Tipo**: positivo; **RF**: RF-QRY-018; **Descripción**: `TestEditPlanV1TextualCompatibilityForNonGoFixtures`: `edit-plan-v1` textual sigue funcionando sobre fixtures C#, TypeScript y Python
+  - RF-QRY-018 — Criterio 10. Disposición: manual_evidence_pending. Evidencia esperada: `TestEditPlanV1TextualCompatibilityForNonGoFixtures`: `edit-plan-v1` textual sigue funcionando sobre fixtures C#, TypeScript y Python. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-129; **Tipo**: negativo; **RF**: RF-QRY-018; **Descripción**: `TestEditPlanV2RejectsUnsupportedLanguages`: operaciones AST v2 en C#, TypeScript y Python devuelven `language_not_supported` accionable
+  - RF-QRY-018 — Criterio 9. Disposición: manual_evidence_pending. Evidencia esperada: `TestEditPlanV2RejectsUnsupportedLanguages`: operaciones AST v2 en C#, TypeScript y Python devuelven `language_not_supported` accionable. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-130; **Tipo**: negativo; **RF**: RF-QRY-018; **Descripción**: `TestEditPlanV2RejectsMissingAmbiguousAndInvalidGo`: Go AST rechaza símbolo ausente, símbolo ambiguo y código Go inválido
+  - RF-QRY-018 — Criterio 1. Disposición: manual_evidence_pending. Evidencia esperada: `TestEditPlanV2RejectsMissingAmbiguousAndInvalidGo`: Go AST rechaza símbolo ausente, símbolo ambiguo y código Go inválido. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-131; **Tipo**: negativo; **RF**: RF-QRY-018; **Descripción**: `TestEditPlanV2ApplyRequiresCleanGit`: apply v2 Go se bloquea cuando el workspace git esta dirty
+  - RF-QRY-018 — Criterio 2. Disposición: manual_evidence_pending. Evidencia esperada: `TestEditPlanV2ApplyRequiresCleanGit`: apply v2 Go se bloquea cuando el workspace git esta dirty. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-132; **Tipo**: negativo; **RF**: RF-QRY-018; **Descripción**: `TestEditPlanRejectsUnsafePackets`: los guardrails heredados de hashes, paths inseguros, binarios y read-model también aplican a packets v2
+  - RF-QRY-018 — Criterio 4. Disposición: manual_evidence_pending. Evidencia esperada: `TestEditPlanRejectsUnsafePackets`: los guardrails heredados de hashes, paths inseguros, binarios y read-model también aplican a packets v2. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-133; **Tipo**: positivo; **RF**: RF-QRY-018; **Descripción**: `go test ./internal/model ./internal/service ./internal/cli ./internal/indexer`: contrato v1/v2 compila y preserva dispatch directo sin daemon
+  - RF-QRY-018 — Criterio 4. Disposición: manual_evidence_pending. Evidencia esperada: `go test ./internal/model ./internal/service ./internal/cli ./internal/indexer`: contrato v1/v2 compila y preserva dispatch directo sin daemon. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-134; **Tipo**: positivo; **RF**: RF-QRY-018; **Descripción**: Dogfood temporal: `nav edit-plan --packet` dry-run y apply experimental sobre fixture Go real generan diff/aplican y luego pasan `go test ./...`
+  - RF-QRY-018 — Criterio 2. Disposición: manual_evidence_pending. Evidencia esperada: Dogfood temporal: `nav edit-plan --packet` dry-run y apply experimental sobre fixture Go real generan diff/aplican y luego pasan `go test ./...`. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-135; **Tipo**: positivo; **RF**: RF-QRY-019; **Descripción**: `TestEvidenceInventoryPrefersManifestVerdictAndCountsHeavyArtifacts`: `nav evidence inventory` devuelve `backend=evidence.inventory`, ruta recomendada `manifest_verdict`, perfiles `CL1_EXACT/EL1_MANIFEST_VERDICT` y anchor canónico wiki
+  - RF-QRY-019 — Criterio 1. Disposición: manual_evidence_pending. Evidencia esperada: `TestEvidenceInventoryPrefersManifestVerdictAndCountsHeavyArtifacts`: `nav evidence inventory` devuelve `backend=evidence.inventory`, ruta recomendada `manifest_verdict`, perfiles `CL1_EXACT/EL1_MANIFEST_VERDICT` y anchor canónico wiki. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-136; **Tipo**: positivo; **RF**: RF-QRY-019; **Descripción**: `TestEvidenceInventoryPrefersManifestVerdictAndCountsHeavyArtifacts`: fixture `.docs/auditoria/**` prioriza `manifest.yaml`, `verdict.md`, `issues.yaml` y cuenta `turns`, `logs`, `screenshots` como metadata-only
+  - RF-QRY-019 — Criterio 1. Disposición: manual_evidence_pending. Evidencia esperada: `TestEvidenceInventoryPrefersManifestVerdictAndCountsHeavyArtifacts`: fixture `.docs/auditoria/**` prioriza `manifest.yaml`, `verdict.md`, `issues.yaml` y cuenta `turns`, `logs`, `screenshots` como metadata-only. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-137; **Tipo**: positivo; **RF**: RF-QRY-019; **Descripción**: `TestNavCommandExposesEvidenceInventory` y `TestShouldUseDaemonPolicy/evidence inventory bypasses daemon`: CLI expone `nav evidence inventory` y preserva ejecución directa sin daemon
+  - RF-QRY-019 — Criterio 1. Disposición: manual_evidence_pending. Evidencia esperada: `TestNavCommandExposesEvidenceInventory` y `TestShouldUseDaemonPolicy/evidence inventory bypasses daemon`: CLI expone `nav evidence inventory` y preserva ejecución directa sin daemon. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-138; **Tipo**: negativo; **RF**: RF-QRY-019; **Descripción**: `TestEvidenceInventoryPrefersManifestVerdictAndCountsHeavyArtifacts`: prompts/logs/transcripts con secretos o PHI de fixture no aparecen en JSON ni TOON
+  - RF-QRY-019 — Criterio 1. Disposición: manual_evidence_pending. Evidencia esperada: `TestEvidenceInventoryPrefersManifestVerdictAndCountsHeavyArtifacts`: prompts/logs/transcripts con secretos o PHI de fixture no aparecen en JSON ni TOON. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-139; **Tipo**: positivo; **RF**: RF-QRY-019; **Descripción**: `go test ./internal/cli ./internal/service ./internal/output ./internal/reentry`: el contrato compila con render TOON `tokens_est` y sin regresion de reentry/output
+  - RF-QRY-019 — Criterio 2. Disposición: manual_evidence_pending. Evidencia esperada: `go test ./internal/cli ./internal/service ./internal/output ./internal/reentry`: el contrato compila con render TOON `tokens_est` y sin regresion de reentry/output. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-147; **Tipo**: positivo; **RF**: RF-QRY-001; **Descripción**: `TestEnsureFallbackReasonMapsTerminalFailures` + `TestEnsureFallbackReasonKeepsAllowedCodeAndSanitizesDetail`: fallos terminales externos mapean a un `reason_code` de la allowlist cerrada y conservan `detail` sanitizado en un campo separado
+  - RF-QRY-001 — Criterio 6. Disposición: manual_evidence_pending. Evidencia esperada: `TestEnsureFallbackReasonMapsTerminalFailures` + `TestEnsureFallbackReasonKeepsAllowedCodeAndSanitizesDetail`: fallos terminales externos mapean a un `reason_code` de la allowlist cerrada y conservan `detail` sanitizado en un campo separado. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-148; **Tipo**: positivo; **RF**: RF-QRY-001; **Descripción**: `TestWriteProcessFailureKeepsHumanLineAndTrailer` y `TestWriteProcessFailureJSONEnvelope`: sin `--format json` conserva la línea humana y un trailer; con `--format json` emite un único envelope `ok:false` y `error.reason_code`
+  - RF-QRY-001 — Criterio 6. Disposición: manual_evidence_pending. Evidencia esperada: `TestWriteProcessFailureKeepsHumanLineAndTrailer` y `TestWriteProcessFailureJSONEnvelope`: sin `--format json` conserva la línea humana y un trailer; con `--format json` emite un único envelope `ok:false` y `error.reason_code`. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-149; **Tipo**: negativo; **RF**: RF-QRY-001; **Descripción**: `TestEnsureFallbackReasonReplacesUnknownCodeAndBoundsDetail`: un `reason_code` fuera de la allowlist se reemplaza por la clasificación derivada y el `detail` se acota a 300 caracteres
+  - RF-QRY-001 — Criterio 6. Disposición: manual_evidence_pending. Evidencia esperada: `TestEnsureFallbackReasonReplacesUnknownCodeAndBoundsDetail`: un `reason_code` fuera de la allowlist se reemplaza por la clasificación derivada y el `detail` se acota a 300 caracteres. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-150; **Tipo**: negativo; **RF**: RF-QRY-001; **Descripción**: `TestWriteProcessFailureDetailDoesNotEchoSecrets` + `TestEnsureFallbackReasonIgnoresSuccessAndPreservesWindowsPath`: el `detail` nunca hace eco de tokens/secrets/argv crudos y un envelope exitoso no se toca
+  - RF-QRY-001 — Criterio 4. Disposición: manual_evidence_pending. Evidencia esperada: `TestWriteProcessFailureDetailDoesNotEchoSecrets` + `TestEnsureFallbackReasonIgnoresSuccessAndPreservesWindowsPath`: el `detail` nunca hace eco de tokens/secrets/argv crudos y un envelope exitoso no se toca. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-151; **Tipo**: positivo; **RF**: RF-QRY-001; **Descripción**: `TestCapRenderedTextKeepsContinuationAndWindowsPath` + `TestCapRenderedJSONKeepsContinuationAndWindowsPath`: `--max-chars` recorta preservando `continuation.next` intacto y los backslashes de paths Windows
+  - RF-QRY-001 — Criterio 1. Disposición: manual_evidence_pending. Evidencia esperada: `TestCapRenderedTextKeepsContinuationAndWindowsPath` + `TestCapRenderedJSONKeepsContinuationAndWindowsPath`: `--max-chars` recorta preservando `continuation.next` intacto y los backslashes de paths Windows. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-152; **Tipo**: negativo; **RF**: RF-QRY-001; **Descripción**: `TestCapRenderedKeepsContinuationWhenItExceedsBudget`: si el bloque de `continuation` por si solo excede `--max-chars`, se conserva completo en vez de cortarlo a medias
+  - RF-QRY-001 — Criterio 2. Disposición: manual_evidence_pending. Evidencia esperada: `TestCapRenderedKeepsContinuationWhenItExceedsBudget`: si el bloque de `continuation` por si solo excede `--max-chars`, se conserva completo en vez de cortarlo a medias. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-153; **Tipo**: positivo; **RF**: RF-QRY-020; **Descripción**: `TestSuggestNav`: Read/Grep/Glob con selector de símbolo mapean a un item `nav multi-read|search|find` con `argv`/`reason` separados y preservan backslashes Windows; Glob de path y tools desconocidas devuelven `items=[]` sin error
+  - RF-QRY-020 — Criterio 1. Disposición: manual_evidence_pending. Evidencia esperada: `TestSuggestNav`: Read/Grep/Glob con selector de símbolo mapean a un item `nav multi-read|search|find` con `argv`/`reason` separados y preservan backslashes Windows; Glob de path y tools desconocidas devuelven `items=[]` sin error. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-154; **Tipo**: positivo; **RF**: RF-QRY-020; **Descripción**: `TestNavSuggestCommandEnvelope`: el comando expone `--tool`/`--args`, ejecuta local sin pasar por el dispatch de daemon y devuelve envelope estable `ok=true`
+  - RF-QRY-020 — Criterio 3. Disposición: manual_evidence_pending. Evidencia esperada: `TestNavSuggestCommandEnvelope`: el comando expone `--tool`/`--args`, ejecuta local sin pasar por el dispatch de daemon y devuelve envelope estable `ok=true`. No acredita una ejecución de esta migración.
+- **Caso**: TC-QRY-155; **Tipo**: negativo; **RF**: RF-QRY-020; **Descripción**: `TestSuggestNav/invalid_json`: `--args` con JSON inválido devuelve error explícito en vez de degradar en silencio
+  - RF-QRY-020 — Criterio 4. Disposición: manual_evidence_pending. Evidencia esperada: `TestSuggestNav/invalid_json`: `--args` con JSON inválido devuelve error explícito en vez de degradar en silencio. No acredita una ejecución de esta migración.
+
+### TP-QRY Harness-first: planes, preview y telemetría
+  - RF-GPH-006 — Criterio 1; RF-GPH-008 — Criterio 1; RF-IDX-001 — Criterio 7; RF-QRY-001 — Criterio 8; RF-QRY-002 — Criterio 4; RF-QRY-003 — Criterio 4; RF-QRY-004 — Criterio 1; RF-QRY-005 — Criterio 1; RF-QRY-006 — Criterio 1; RF-QRY-007 — Criterio 1; RF-QRY-008 — Criterio 1; RF-QRY-009 — Criterio 3; RF-QRY-010 — Criterio 1; RF-QRY-011 — Criterio 2; RF-QRY-012 — Criterio 5; RF-QRY-013 — Criterio 4; RF-QRY-014 — Criterio 1; RF-QRY-015 — Criterio 1; RF-QRY-016 — Criterio 5; RF-QRY-017 — Criterio 4; RF-QRY-018 — Criterio 4; RF-QRY-019 — Criterio 3; RF-QRY-020 — Criterio 1; RF-QRY-022 — Criterio 1; RF-QRY-023 — Criterio 2; RF-QRY-024 — Criterio 8; RF-QRY-025 — Criterio 2. Disposición: manual_evidence_pending. Evidencia esperada: el resultado, snapshot y oráculo definidos en este caso; conservar cualquier omisión o estado pendiente. No acredita una ejecución de esta migración.
+
+- **Marcador estable**: tp-qry-harness-first
+- **Estado del comportamiento**: implemented_tests_not_campaign
+- **campaign_status**: NOT_RUN
+- **Evidencia referenciada**:
+  - .docs/wiki/06_tests/TP-QRY.md
+  - internal/service/ask_test.go
+  - scripts/bench/harness_first/tests/test_runner.py
+- **Comprobación prevista**:
+  - go test ./internal/service/... ./internal/telemetry/...
+  - python -m unittest discover -s scripts/bench/harness_first/tests -p "test_*.py"
+- **queries**:
+  - **all_workspaces_intent_plan**:
+    - **case**: TC-QRY-140
+    - **Estado del comportamiento**: implemented
+    - **Evidencia referenciada**: internal/service/ask_test.go::TestNavAskAllWorkspacesPreservesSupportedIntentPlansDeterministically
+    - **Oráculo**: []IntentPlan_with_workspace_and_stable_digest
+  - **progressive_explain_change_preview**:
+    - **case**: TC-QRY-141
+    - **Estado del comportamiento**: implemented
+    - **Evidencia referenciada**: internal/service/intent.go::TestExplainChangePreviewHasSevenSectionsWikiEvidenceAndExpansions
+    - **Oráculo**: [change, affected, callers, callees, tests, contracts, wiki]
+  - **expansion_integrity**:
+    - **case**: TC-QRY-142
+    - **Estado del comportamiento**: implemented
+    - **Evidencia referenciada**: [internal/service/intent.go::TestExplainChangeExpansionPreservesNormalizedPathsAndRef, internal/service/intent.go::TestIncompletePathExpansionUsesExecutableDiscovery]
+    - **Oráculo**: command_and_reason_in_same_object
+  - **graph_freshness_and_rank**:
+    - **case**: TC-QRY-143
+    - **Estado del comportamiento**: implemented
+    - **Evidencia referenciada**: scripts/bench/harness_first/tests/test_runner.py::test_freshness_required_passes_only_with_evidence
+    - **Oráculo**: only_current_freshness_with_rank_can_pass
+  - **telemetry_sanitization**:
+    - **case**: TC-QRY-144
+    - **Estado del comportamiento**: implemented
+    - **Evidencia referenciada**: internal/telemetry/access_events_test.go::TestEnrichAccessEventRedactsRawTelemetryInputs
+    - **Oráculo**: no_query_prompt_argv_payload_snippet_raw_path_or_raw_error
+  - **sqlite_write_serialization**:
+    - **case**: TC-QRY-145
+    - **Estado del comportamiento**: implemented
+    - **Evidencia referenciada**: internal/store/db.go
+    - **Oráculo**: write_handles_MaxOpenConns_1
+  - **benchmark_contract**:
+    - **case**: TC-QRY-146
+    - **Estado del comportamiento**: implemented_contract_only
+    - **Evidencia referenciada**: [scripts/bench/harness_first/tests/test_runner.py, docs/benchmarks/HARNESS_FIRST_CAMPAIGN.json]
+    - **Oráculo**: [single_run, no_retry, rss_fail_closed, provenance_fail_closed]
+
+Los casos TC-QRY-140 a TC-QRY-146 son cobertura implementada del contrato y sus pruebas; no son resultados de campaña. `campaign_status=NOT_RUN` hasta ejecutar el runner autorizado.
+
+### TP-QRY-T10 - Cierre ejecutado de integración wiki ↔ código
+  - RF-GPH-006 — Criterio 2; RF-GPH-008 — Criterio 2; RF-IDX-001 — Criterio 7; RF-QRY-001 — Criterio 2; RF-QRY-002 — Criterio 7; RF-QRY-003 — Criterio 4; RF-QRY-004 — Criterio 2; RF-QRY-005 — Criterio 2; RF-QRY-006 — Criterio 1; RF-QRY-007 — Criterio 1; RF-QRY-008 — Criterio 3; RF-QRY-009 — Criterio 3; RF-QRY-010 — Criterio 1; RF-QRY-011 — Criterio 2; RF-QRY-012 — Criterio 1; RF-QRY-013 — Criterio 4; RF-QRY-014 — Criterio 4; RF-QRY-015 — Criterio 3; RF-QRY-016 — Criterio 5; RF-QRY-017 — Criterio 8; RF-QRY-018 — Criterio 3; RF-QRY-019 — Criterio 4; RF-QRY-020 — Criterio 3; RF-QRY-022 — Criterio 1; RF-QRY-023 — Criterio 5; RF-QRY-024 — Criterio 2; RF-QRY-025 — Criterio 2. Disposición: manual_evidence_pending. Evidencia esperada: el resultado, snapshot y oráculo definidos en este caso; conservar cualquier omisión o estado pendiente. No acredita una ejecución de esta migración.
+
+- **Marcador estable**: TP-QRY.t10-live-wiki-code-surfaces
+- **Estado del comportamiento**: implemented_and_executed
+- **verification_basis**:
+  - **code_commit**: e1835ee
+  - **governance**: PASS_in_sync_valid
+  - **go_test_all**: PASS
+  - **go_test_packages**: 28
+  - **git_diff_check**: PASS
+  - **binary_sha256**: 2f7d94cd1eec05b0055184cc05452725831e5b65404c4a095b7bc01717c36a1a
+- **bridge_campaign**:
+  - **schema**: wiki-code-bridge-runner/v1
+  - **Estado del comportamiento**: PASS
+  - **case_inventory_count**: 37
+  - **stable_digest_runs**: 30
+  - **stable_digest**: 0f32b7e85bb0bcbd727424321e0a272c27e6a94aca6c11c78bd12541bd9255a2
+- **surfaces**:
+  - **nav.trace_and_nav.wiki.trace**:
+    - **Estado del comportamiento**: PASS
+    - **Comportamiento**: additive_path_bearing_wiki_code_context
+  - **nav.pack_and_nav.wiki.pack**:
+    - **Estado del comportamiento**: PASS
+    - **Comportamiento**: additive_primary_doc_and_binding_context
+  - **nav.related**:
+    - **Estado del comportamiento**: PASS
+    - **Comportamiento**: additive_reverse_wiki_context_for_exact_definition
+  - **nav.neighbors**:
+    - **Estado del comportamiento**: PASS
+    - **Comportamiento**: additive_bounded_mixed_context
+  - **nav.prepare**:
+    - **Estado del comportamiento**: PASS
+    - **Comportamiento**: reuses_existing_pack_anchor_without_second_route_pack
+  - **nav.change-pack**:
+    - **Estado del comportamiento**: PASS
+    - **Comportamiento**: additive_classification_and_next_queries
+- **path_bearing_records**:
+  - **binding**:
+    - doc_path
+    - target_path
+    - target_symbol
+    - block_id
+    - binding_ref
+  - **direct_code**:
+    - path
+    - symbol
+    - doc_id
+    - doc_path
+    - source_doc
+    - source_block
+    - source_line
+  - **reverse_wiki**:
+    - doc_id
+    - path
+    - block_id
+    - relation
+    - role
+    - binding_ref
+  - **control**:
+    - direction
+    - freshness
+    - omissions
+    - continuation
+    - truncated
+- **Aceptación**:
+  - **edit_add_remove_delete_overlay**: PASS
+  - **stale_graph_direct_binding**: PASS
+  - **modern_js_extensions**: PASS
+  - **zero_query_writes**: PASS
+  - **direct_daemon_parity**: PASS
+  - **deterministic_30_runs**: PASS
+  - **planned_and_retired_policy**: PASS
+  - **raw_audit_exclusion**: PASS
+  - **exact_and_reverse_precision_recall**: PASS
+- **cost**:
+  - **bindings_examined**: 3
+  - **bytes_read**: 3047
+  - **catalog_queries**: 5
+  - **files_checked**: 3
+  - **files_hashed**: 4
+  - **files_parsed**: 1
+  - **metadata_checked**: 1
+  - **output_token_estimate**: 210
+  - **semantic_backend_calls**: 0
+- **latency_ms**:
+  - **warm_direct_binding_lookup_p95**:
+    - **value**: 80
+    - **target**: 100
+    - **Estado del comportamiento**: PASS
+  - **warm_mixed_neighbors_p95**:
+    - **value**: 69
+    - **target**: 1000
+    - **Estado del comportamiento**: PASS
+  - **dirty_single_file_overlay_p95**:
+    - **value**: 75
+    - **target**: 250
+    - **Estado del comportamiento**: PASS
+  - **cold_direct_lookup**: 85.657
+  - **cold_reverse_lookup**: 79.018
+  - **warm_reverse_lookup_p95**: 83
+- **compatibility**:
+  - **existing_harness_first_campaign**: NOT_RUN
+  - **no_new_public_command**: true
+  - **query_writes**: forbidden
+  - **graph_v1**: consumed_read_only_subset_only
+- **verification_semantics**:
+  - **sanitized_runner_metrics_are_evidence**: true
+  - **raw_prompt_plan_and_host_paths_are_not_authority**: true
+  - **full_workspace_validators**: PASS_after_canonical_drift_repair
+  - **full_workspace_harness**: PASS_124_contracts_858_links_0_blockers
+  - **full_workspace_source**: PASS_31_artifacts_71_records_0_blockers
+- **Comprobación prevista**:
+  - FINAL_VERIFY code basis e1835ee: go test ./... PASS; git diff --check PASS
+  - sanitized FINAL_VERIFY result: wiki-code-bridge-runner/v1 PASS; inventory=37
+- **Evidencia referenciada**:
+  - internal/service/app.go
+  - internal/service/trace.go
+  - internal/service/pack.go
+  - internal/service/related.go
+  - internal/service/prepare.go
+  - internal/service/change_pack.go
+  - internal/service/wiki_code_context.go
+  - internal/indexer/incremental.go
+  - .docs/wiki/06_tests/TP-QRY.md
+
+- **Marcador estable**: tp-qry-grep-v1-cases
+- **Estado del comportamiento**: planned_not_executed
+- **campaign_status**: NOT_RUN
+- **Casos**:
+  - **rg_compat_exact_output**:
+    - **id**: TC-QRY-201
+  - RF-QRY-024 — Criterio 1. Disposición: manual_evidence_pending. Evidencia esperada: el resultado, snapshot y oráculo definidos en este caso; conservar cualquier omisión o estado pendiente. No acredita una ejecución de esta migración.
+    - **Estado del comportamiento**: planned
+    - **Oráculo**:
+      - stdout_byte_equal_to_rg
+      - exit_code_equal_to_rg
+  - **indexed_match_annotation**:
+    - **id**: TC-QRY-202
+  - RF-QRY-024 — Criterio 1. Disposición: manual_evidence_pending. Evidencia esperada: el resultado, snapshot y oráculo definidos en este caso; conservar cualquier omisión o estado pendiente. No acredita una ejecución de esta migración.
+    - **Estado del comportamiento**: planned
+    - **Oráculo**:
+      - only_match_lines_annotated
+      - rg_selection_and_order_preserved
+      - no_index_raw_fallback
+  - **annotation_failure_and_privacy**:
+    - **id**: TC-QRY-203
+  - RF-QRY-024 — Criterio 9. Disposición: manual_evidence_pending. Evidencia esperada: el resultado, snapshot y oráculo definidos en este caso; conservar cualquier omisión o estado pendiente. No acredita una ejecución de esta migración.
+    - **Estado del comportamiento**: planned
+    - **Oráculo**:
+      - rg_output_and_exit_code_preserved
+      - no_pattern_or_match_text_in_telemetry
+- **Comprobación prevista**:
+  - authorized FINAL_VERIFY runs bounded grep contract tests and rg parity cases
+- **Condiciones de rechazo**:
+  - grep stdout_or_exit_code_differs_under_rg_compat
+  - telemetry_contains_pattern_or_match_content
+- **Evidencia referenciada**:
+  - internal/grepx/
+  - internal/cli/grep.go
+  - .docs/wiki/06_tests/TP-QRY.md
+
+- **Marcador estable**: tp-qry-025-published-snapshot
+- **Estado del comportamiento**: planned_not_executed
+- **campaign_status**: NOT_RUN
+- **Casos**:
+  - **shared_generation**:
+    - **id**: TC-QRY-205
+  - RF-QRY-025 — Criterio 1. Disposición: manual_evidence_pending. Evidencia esperada: el resultado, snapshot y oráculo definidos en este caso; conservar cualquier omisión o estado pendiente. No acredita una ejecución de esta migración.
+    - **Estado del comportamiento**: planned
+  - **decision_map_hit**:
+    - **id**: TC-QRY-206
+  - RF-QRY-025 — Criterio 1. Disposición: manual_evidence_pending. Evidencia esperada: el resultado, snapshot y oráculo definidos en este caso; conservar cualquier omisión o estado pendiente. No acredita una ejecución de esta migración.
+    - **Estado del comportamiento**: planned
+  - **decision_map_miss**:
+    - **id**: TC-QRY-207
+  - RF-QRY-025 — Criterio 1. Disposición: manual_evidence_pending. Evidencia esperada: el resultado, snapshot y oráculo definidos en este caso; conservar cualquier omisión o estado pendiente. No acredita una ejecución de esta migración.
+    - **Estado del comportamiento**: planned
+  - **sensibilidad_passthrough**:
+    - **id**: TC-QRY-208
+  - RF-QRY-025 — Criterio 1. Disposición: manual_evidence_pending. Evidencia esperada: el resultado, snapshot y oráculo definidos en este caso; conservar cualquier omisión o estado pendiente. No acredita una ejecución de esta migración.
+    - **Estado del comportamiento**: planned
+- **Comprobación prevista**:
+  - q, nav intent y nav multi-read comparten generation_id de la generación publicada
+- **Condiciones de rechazo**:
+  - mi-lsp filtra resultados por sensibilidad
+- **Evidencia referenciada**:
+  - .docs/wiki/06_tests/TP-QRY.md
+  - .docs/wiki/05_requirements/RF-QRY-025.md

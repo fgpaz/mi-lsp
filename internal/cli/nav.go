@@ -1084,7 +1084,7 @@ pack for a reading pack, and trace for RS/RF/TP evidence links.`,
 		Short: "Validate SDD-HARNESS-v1 contracts in governed wiki docs",
 		Example: `  mi-lsp nav wiki validate-harness --workspace mi-lsp --format toon
   mi-lsp nav wiki validate-harness --workspace multi-tedi --ids RS-TEDI-HOGAR-01,RF-GAS-12
-  mi-lsp nav wiki validate-harness --workspace multi-tedi --paths .docs/wiki/02_resultados/RS-TEDI-HOGAR-01.md`,
+  mi-lsp nav wiki validate-harness --workspace multi-tedi --paths .docs/wiki/02_outcomes/RS-TEDI-HOGAR-01.md`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			payload := map[string]any{}
 			if strings.TrimSpace(validateHarnessIDs) != "" {
@@ -1106,7 +1106,7 @@ pack for a reading pack, and trace for RS/RF/TP evidence links.`,
 		Short: "Validate WIKI-CONTRACT-v1 headers and typed links in governed wiki docs",
 		Example: `  mi-lsp nav wiki validate-contract --workspace mi-lsp --format toon
   mi-lsp nav wiki validate-contract --workspace mi-lsp --ids RF-WIKI-001
-  mi-lsp nav wiki validate-contract --workspace mi-lsp --paths .docs/wiki/04_RF/RF-WIKI-001.md`,
+  mi-lsp nav wiki validate-contract --workspace mi-lsp --paths .docs/wiki/05_requirements/RF-WIKI-001.md`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			payload := map[string]any{}
 			if strings.TrimSpace(validateContractIDs) != "" {

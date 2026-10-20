@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 
 	"github.com/fgpaz/mi-lsp/internal/docgraph"
@@ -64,11 +65,7 @@ func (a *App) trace(ctx context.Context, request model.CommandRequest) (model.En
 				}
 				header, _, _ := parseWikiContractHeader(string(body))
 				if header != nil && header.WikiContract == wikiContractProtocol {
-					child := request
-					child.Payload = map[string]any{"query": map[string]any{
-						"mode": "neighbors", "selector": record.DocID, "direction": "both", "depth": 2,
-					}}
-					return a.wikiGraph(ctx, child)
+					return a.traceGraphAlias(ctx, request, record.DocID)
 				}
 			}
 		}
@@ -87,6 +84,16 @@ func (a *App) trace(ctx context.Context, request model.CommandRequest) (model.En
 				Hint:      status.Reason,
 			}, nil
 		}
+		// A migrated wiki document may have no legacy implements/test markers.
+		// In that case the persisted graph is the authoritative trace surface;
+		// use it instead of returning a silent incomplete legacy result.
+		if result.Status == "found_but_trace_incomplete" && db != nil {
+			if graph, graphErr := a.traceGraphAlias(ctx, request, docID); graphErr != nil {
+				return model.Envelope{}, graphErr
+			} else if graphEnvelopeHasEvidence(graph) {
+				return graph, nil
+			}
+		}
 		result.LookupStatus = traceLookupStatus(ctx, db, registration.Name, docID, result)
 		return model.Envelope{Ok: true, Workspace: registration.Name, Backend: "trace", Items: []model.TraceResult{*result}}, nil
 	}
@@ -103,6 +110,30 @@ func (a *App) trace(ctx context.Context, request model.CommandRequest) (model.En
 	}
 
 	return model.Envelope{}, fmt.Errorf("rf ID required or use --all")
+}
+
+func (a *App) traceGraphAlias(ctx context.Context, request model.CommandRequest, docID string) (model.Envelope, error) {
+	child := request
+	child.Operation = "nav.wiki.graph"
+	child.Payload = map[string]any{"query": map[string]any{
+		"mode": "neighbors", "selector": docID, "direction": "both", "depth": 2,
+	}}
+	return a.wikiGraph(ctx, child)
+}
+
+func graphEnvelopeHasEvidence(envelope model.Envelope) bool {
+	if envelope.Items != nil {
+		value := reflect.ValueOf(envelope.Items)
+		switch value.Kind() {
+		case reflect.Array, reflect.Map, reflect.Slice, reflect.String:
+			if value.Len() > 0 {
+				return true
+			}
+		default:
+			return true
+		}
+	}
+	return len(envelope.Nodes) > 0 || len(envelope.Edges) > 0
 }
 
 func (a *App) traceRF(ctx context.Context, root string, db *sql.DB, rfID string) (*model.TraceResult, error) {
@@ -294,12 +325,23 @@ func resolveTraceRFDoc(ctx context.Context, root string, db *sql.DB, traceID str
 
 	var doc *model.DocRecord
 	for i := range rfDocs {
-		if !isSpecificRFDocPath(rfDocs[i].Path) {
+		if !isCanonicalRFDocPath(rfDocs[i].Path) {
 			continue
 		}
 		if strings.EqualFold(rfDocs[i].DocID, traceID) {
 			doc = &rfDocs[i]
 			break
+		}
+	}
+	if doc == nil {
+		for i := range rfDocs {
+			if !isSpecificRFDocPath(rfDocs[i].Path) || isCanonicalRFDocPath(rfDocs[i].Path) {
+				continue
+			}
+			if strings.EqualFold(rfDocs[i].DocID, traceID) {
+				doc = &rfDocs[i]
+				break
+			}
 		}
 	}
 	if doc == nil {
@@ -315,7 +357,7 @@ func resolveTraceRFDoc(ctx context.Context, root string, db *sql.DB, traceID str
 	}
 	if doc == nil {
 		for i := range mentioningDocs {
-			if isSpecificRFDocPath(mentioningDocs[i].Path) {
+			if isCanonicalRFDocPath(mentioningDocs[i].Path) {
 				doc = &mentioningDocs[i]
 				break
 			}
@@ -323,7 +365,15 @@ func resolveTraceRFDoc(ctx context.Context, root string, db *sql.DB, traceID str
 	}
 	if doc == nil {
 		for i := range mentioningDocs {
-			if mentioningDocs[i].Layer == "04" && !isRFIndexPath(mentioningDocs[i].Path) {
+			if isSpecificRFDocPath(mentioningDocs[i].Path) && !isCanonicalRFDocPath(mentioningDocs[i].Path) {
+				doc = &mentioningDocs[i]
+				break
+			}
+		}
+	}
+	if doc == nil {
+		for i := range mentioningDocs {
+			if (mentioningDocs[i].Layer == "04" || mentioningDocs[i].Layer == "05") && !isRFIndexPath(mentioningDocs[i].Path) {
 				doc = &mentioningDocs[i]
 				break
 			}
@@ -351,9 +401,17 @@ func resolveTraceRFDoc(ctx context.Context, root string, db *sql.DB, traceID str
 func resolveTraceTPDoc(root string, traceID string, mentioningDocs []model.DocRecord) *model.DocRecord {
 	var doc *model.DocRecord
 	for i := range mentioningDocs {
-		if isSpecificTPDocPath(mentioningDocs[i].Path) {
+		if isCanonicalTPDocPath(mentioningDocs[i].Path) {
 			doc = &mentioningDocs[i]
 			break
+		}
+	}
+	if doc == nil {
+		for i := range mentioningDocs {
+			if isSpecificTPDocPath(mentioningDocs[i].Path) && !isCanonicalTPDocPath(mentioningDocs[i].Path) {
+				doc = &mentioningDocs[i]
+				break
+			}
 		}
 	}
 	if doc == nil {
@@ -383,9 +441,17 @@ func resolveTraceTPDoc(root string, traceID string, mentioningDocs []model.DocRe
 func resolveTraceRSDoc(root string, traceID string, mentioningDocs []model.DocRecord) *model.DocRecord {
 	var doc *model.DocRecord
 	for i := range mentioningDocs {
-		if isSpecificRSDocPath(mentioningDocs[i].Path) {
+		if isCanonicalRSDocPath(mentioningDocs[i].Path) {
 			doc = &mentioningDocs[i]
 			break
+		}
+	}
+	if doc == nil {
+		for i := range mentioningDocs {
+			if isSpecificRSDocPath(mentioningDocs[i].Path) && !isCanonicalRSDocPath(mentioningDocs[i].Path) {
+				doc = &mentioningDocs[i]
+				break
+			}
 		}
 	}
 	if doc == nil {
@@ -428,6 +494,16 @@ func traceRFDocFromDisk(root string, rfID string) (model.DocRecord, bool) {
 	indexPathV2 := filepath.Join(root, ".docs", "wiki", "05_RF.md")
 	if _, err := os.Stat(indexPathV2); err == nil {
 		candidates = appendUniqueTraceCandidate(candidates, filepath.ToSlash(filepath.Clean(".docs/wiki/05_RF.md")))
+	}
+	rfDirV1 := filepath.Join(root, ".docs", "wiki", "05_requirements")
+	entriesV1, err := os.ReadDir(rfDirV1)
+	if err == nil {
+		for _, entry := range entriesV1 {
+			if entry.IsDir() || !strings.HasSuffix(strings.ToLower(entry.Name()), ".md") {
+				continue
+			}
+			candidates = appendUniqueTraceCandidate(candidates, filepath.ToSlash(filepath.Join(".docs", "wiki", "05_requirements", entry.Name())))
+		}
 	}
 	rfDir := filepath.Join(root, ".docs", "wiki", "04_RF")
 	entries, err := os.ReadDir(rfDir)
@@ -478,6 +554,9 @@ func traceRFDocFromDisk(root string, rfID string) (model.DocRecord, bool) {
 		if isSpecificRFDocPath(relativePath) {
 			score += 10
 		}
+		if isCanonicalRFDocPath(relativePath) {
+			score += 10
+		}
 		if !isRFIndexPath(relativePath) {
 			score += 5
 		}
@@ -511,6 +590,16 @@ func traceTPDocFromDisk(root string, traceID string) (model.DocRecord, bool) {
 	indexPathV2 := filepath.Join(root, ".docs", "wiki", "07_matriz_pruebas_RF.md")
 	if _, err := os.Stat(indexPathV2); err == nil {
 		candidates = appendUniqueTraceCandidate(candidates, filepath.ToSlash(filepath.Clean(".docs/wiki/07_matriz_pruebas_RF.md")))
+	}
+	tpDirV1 := filepath.Join(root, ".docs", "wiki", "06_tests")
+	entriesV1, err := os.ReadDir(tpDirV1)
+	if err == nil {
+		for _, entry := range entriesV1 {
+			if entry.IsDir() || !strings.HasSuffix(strings.ToLower(entry.Name()), ".md") {
+				continue
+			}
+			candidates = appendUniqueTraceCandidate(candidates, filepath.ToSlash(filepath.Join(".docs", "wiki", "06_tests", entry.Name())))
+		}
 	}
 	tpDir := filepath.Join(root, ".docs", "wiki", "06_pruebas")
 	entries, err := os.ReadDir(tpDir)
@@ -561,6 +650,9 @@ func traceTPDocFromDisk(root string, traceID string) (model.DocRecord, bool) {
 		if isSpecificTPDocPath(relativePath) {
 			score += 10
 		}
+		if isCanonicalTPDocPath(relativePath) {
+			score += 10
+		}
 		if !isTPIndexPath(relativePath) {
 			score += 5
 		}
@@ -591,6 +683,16 @@ func traceRSDocFromDisk(root string, traceID string) (model.DocRecord, bool) {
 	if _, err := os.Stat(indexPath); err == nil {
 		candidates = appendUniqueTraceCandidate(candidates, filepath.ToSlash(filepath.Clean(".docs/wiki/02_resultados_soluciones_usuario.md")))
 	}
+	rsDirV1 := filepath.Join(root, ".docs", "wiki", "02_outcomes")
+	entriesV1, err := os.ReadDir(rsDirV1)
+	if err == nil {
+		for _, entry := range entriesV1 {
+			if entry.IsDir() || !strings.HasSuffix(strings.ToLower(entry.Name()), ".md") {
+				continue
+			}
+			candidates = appendUniqueTraceCandidate(candidates, filepath.ToSlash(filepath.Join(".docs", "wiki", "02_outcomes", entry.Name())))
+		}
+	}
 	rsDir := filepath.Join(root, ".docs", "wiki", "02_resultados")
 	entries, err := os.ReadDir(rsDir)
 	if err == nil {
@@ -614,6 +716,9 @@ func traceRSDocFromDisk(root string, traceID string) (model.DocRecord, bool) {
 		}
 		score := 1
 		if isSpecificRSDocPath(relativePath) {
+			score += 10
+		}
+		if isCanonicalRSDocPath(relativePath) {
 			score += 10
 		}
 		if !isRSIndexPath(relativePath) {
@@ -697,9 +802,14 @@ func (a *App) traceSummary(workspaceName string, results []model.TraceResult) mo
 	return model.Envelope{Ok: true, Workspace: workspaceName, Backend: "trace", Items: items, Stats: model.Stats{Files: len(results)}}
 }
 
+func isCanonicalRFDocPath(path string) bool {
+	return strings.Contains(filepath.ToSlash(path), "/05_requirements/")
+}
+
 func isSpecificRFDocPath(path string) bool {
 	normalized := filepath.ToSlash(path)
-	return strings.Contains(normalized, "/04_RF/") ||
+	return isCanonicalRFDocPath(normalized) ||
+		strings.Contains(normalized, "/04_RF/") ||
 		strings.Contains(normalized, "/05_RF/") ||
 		strings.Contains(normalized, "/RF/")
 }
@@ -714,16 +824,25 @@ func isRFIndexPath(path string) bool {
 		strings.HasSuffix(normalized, "/RF.md")
 }
 
+func isCanonicalTPDocPath(path string) bool {
+	return strings.Contains(filepath.ToSlash(path), "/06_tests/")
+}
+
 func isSpecificTPDocPath(path string) bool {
 	normalized := filepath.ToSlash(path)
-	return strings.Contains(normalized, "/06_pruebas/") ||
+	return isCanonicalTPDocPath(normalized) ||
+		strings.Contains(normalized, "/06_pruebas/") ||
 		strings.Contains(normalized, "/07_pruebas/") ||
 		strings.Contains(normalized, "/TP/")
 }
 
+func isCanonicalRSDocPath(path string) bool {
+	return strings.Contains(filepath.ToSlash(path), "/02_outcomes/")
+}
+
 func isSpecificRSDocPath(path string) bool {
 	normalized := filepath.ToSlash(path)
-	return strings.Contains(normalized, "/02_resultados/")
+	return isCanonicalRSDocPath(normalized) || strings.Contains(normalized, "/02_resultados/")
 }
 
 func isRSIndexPath(path string) bool {

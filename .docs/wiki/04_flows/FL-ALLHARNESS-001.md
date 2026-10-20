@@ -10,10 +10,21 @@ links:
 
 # FL-ALLHARNESS-001 — mi-lsp para todos los harness
 
-## Flujo
+## Objetivo
+Cumple [[RS-ALLHARNESS-001]].
+
 Fuente: pedido explícito de Gabriel `home/ideas/mi-lsp-para-todos-los-harness.md`, 2026-10-20; persona:herramientas-pocas-enganchables-20261020. Tipo de fuente: decisión del operador; no evidencia runtime.
 
-Cumple [[RS-ALLHARNESS-001]].
+## Alcance
+El flujo cubre la carga de la misma skill, el uso de intent u operaciones literales, la proyección de aliases aprobados, los diagnostics posteriores a edición y la conservación de resultados parciales, presupuestos y errores tipados.
+
+## Actores
+Los participantes del flujo son el Modelo, `mi-mcp execute` y `mi-lsp`, tal como se representan en la secuencia existente.
+
+## Pre/postcondiciones
+La precondición es que el harness cargue la skill y descubra el subconjunto de `mi-lsp models`; el resultado conserva evidencia acotada u omisiones y permite solicitar diagnostics después de editar.
+
+## Secuencia
 
 1. El harness carga la misma skill y descubre el subconjunto de `mi-lsp models`.
 2. Un objetivo usa intent; una operación literal usa lectura, búsqueda o referencias directamente.
@@ -33,6 +44,9 @@ sequenceDiagram
  G->>C: nav diagnostics
  C-->>M: diagnósticos o degradación tipada
 ```
+
+## Restricciones ADR
+No se declaran restricciones ADR adicionales en la decisión fuente.
 
 [[RF-ALLHARNESS-001]] · [[CT-ALLHARNESS-001]]
 

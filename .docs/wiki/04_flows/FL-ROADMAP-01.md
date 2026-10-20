@@ -40,4 +40,4 @@ sequenceDiagram
 ```
 
 ## Restricciones ADR
-Se preservan el CLI local, la autoridad de la wiki y la degradación explícita descritos en 02_arquitectura y TECH-GRAPH-NATIVE. Roadmap nunca cambia readiness ni constituye un gate.
+Se preservan el CLI local, la autoridad de la wiki y la degradación explícita descritos en ARCH-MILSP (`03_architecture.md`) y TECH-GRAPH-NATIVE. Roadmap nunca cambia readiness ni constituye un gate.

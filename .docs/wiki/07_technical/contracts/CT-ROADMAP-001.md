@@ -27,4 +27,4 @@ Personas y agentes que invocan `mi-lsp nav wiki graph --mode roadmap` o la opera
 Archivo ausente: proyección vacía. Lectura o campos inválidos: códigos `roadmap_*` con `blocking=false`. `roadmap_rs_missing` solo con grafo current. `roadmap_graph_unavailable` si no hay generación. Un workspace inaccesible o un render distinto de mermaid puede fallar la operación.
 
 ## Compatibilidad
-Publicado en v0.14.1 y presente en el binario v0.14.4. Este contrato no migra CT-NAV-WIKI ni declara sus listas Markdown como `links.supports`.
+Publicado en v0.14.1 y presente en el binario v0.14.4. CT-NAV-WIKI describe la superficie unificada y remite a este contrato complementario. Las listas Markdown legacy son compatibilidad y no sustituyen `links.supports`; el enlace a RF-ROADMAP-001 se declara en el header de cada contrato.

@@ -14,8 +14,8 @@ import (
 
 const (
 	defaultWikiRootPath          = ".docs/wiki"
-	defaultGovernanceDocPath     = ".docs/wiki/00_gobierno_documental.md"
-	canonGovernanceFile          = "00_gobierno_documental.md"
+	defaultGovernanceDocPath     = ".docs/wiki/00_governance.md"
+	canonGovernanceFile          = "00_governance.md"
 	wikiRootResolvedDefault      = "default"
 	wikiRootResolvedCanon        = "canon."
 	wikiRootResolvedRegistryLink = "registry.link"

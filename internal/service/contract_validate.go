@@ -74,6 +74,7 @@ func (a *App) validateWikiContract(ctx context.Context, request model.CommandReq
 	gov, govWarnings := docgraph.LoadWikiContractGovernance(registration.Root)
 	warnings = append(warnings, govWarnings...)
 
+	corpusRecords := filterGovernedWikiRecordsInRoots(registration.Root, query.docs, wikiRoots)
 	records := filterGovernedWikiDocRecordsInRoots(registration.Root, query.docs, request.Payload, wikiRoots)
 	if len(records) == 0 {
 		hint := harnessNoScopeMatchHint(request.Payload)
@@ -91,7 +92,7 @@ func (a *App) validateWikiContract(ctx context.Context, request model.CommandReq
 		return applyCoachPolicy(attachMemoryPointer(env, memory), request.Context), nil
 	}
 
-	result := compileWikiContractValidation(registration.Root, records, gov)
+	result := compileWikiContractValidationWithIndexRecords(registration.Root, records, corpusRecords, gov)
 	env := model.Envelope{
 		Ok:        true,
 		Workspace: registration.Name,
@@ -108,13 +109,34 @@ func (a *App) validateWikiContract(ctx context.Context, request model.CommandReq
 }
 
 func compileWikiContractValidation(root string, records []model.DocRecord, gov *docgraph.WikiContractGovernance) model.WikiContractValidationResult {
+	return compileWikiContractValidationWithIndexRecords(root, records, records, gov)
+}
+
+func compileWikiContractValidationWithIndexRecords(root string, records, indexRecords []model.DocRecord, gov *docgraph.WikiContractGovernance) model.WikiContractValidationResult {
 	language := ResolveWikiContractLanguageAtRoot(root)
 	result := model.WikiContractValidationResult{
 		WikiContract:      wikiContractProtocol,
 		ContractReadiness: "ready",
 		ContractVerdict:   "PASS",
 	}
-	docBodies := make([]wikisource.ContractDocBody, 0, len(records))
+	indexBodies := make([]wikisource.ContractDocBody, 0, len(indexRecords))
+	for _, record := range indexRecords {
+		path := filepath.Join(root, filepath.FromSlash(record.Path))
+		rawBody, err := os.ReadFile(path)
+		if err != nil {
+			continue
+		}
+		indexBodies = append(indexBodies, wikisource.ContractDocBody{Path: record.Path, Content: string(rawBody)})
+	}
+	wikiIndex := wikisource.BuildContractWikiIDIndex(indexBodies)
+	for _, record := range indexRecords {
+		if strings.TrimSpace(record.DocID) == "" {
+			continue
+		}
+		kind := docgraph.WikiContractKindForPath(record.Path, "")
+		wikisource.RegisterContractWikiID(wikiIndex, record.DocID, kind)
+	}
+
 	bodyByPath := make(map[string]string, len(records))
 	for _, record := range records {
 		path := filepath.Join(root, filepath.FromSlash(record.Path))
@@ -128,17 +150,7 @@ func compileWikiContractValidation(root string, records []model.DocRecord, gov *
 			})
 			continue
 		}
-		body := string(rawBody)
-		bodyByPath[record.Path] = body
-		docBodies = append(docBodies, wikisource.ContractDocBody{Path: record.Path, Content: body})
-	}
-	wikiIndex := wikisource.BuildContractWikiIDIndex(docBodies)
-	for _, record := range records {
-		if strings.TrimSpace(record.DocID) == "" {
-			continue
-		}
-		kind := docgraph.WikiContractKindForPath(record.Path, "")
-		wikisource.RegisterContractWikiID(wikiIndex, record.DocID, kind)
+		bodyByPath[record.Path] = string(rawBody)
 	}
 
 	for _, record := range records {

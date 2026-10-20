@@ -1,0 +1,162 @@
+---
+doc_id: TECH-DOC-ROUTER
+---
+
+# TECH-DOC-ROUTER
+
+```yaml
+harness_protocol: SDD-HARNESS-v1
+id: "TECH-DOC-ROUTER"
+kind: "support-doc"
+audience: "llm-first"
+imports:
+  - '[[00_gobierno_documental]]'
+  - '[[TECH-DOC-ROUTER]]'
+exports:
+  - 'TECH-DOC-ROUTER'
+agent_must_read:
+  - .docs/wiki/00_gobierno_documental.md
+  - .docs/wiki/07_tech/TECH-DOC-ROUTER.md
+agent_may_edit:
+  - .docs/wiki/07_tech/TECH-DOC-ROUTER.md
+agent_must_not_edit:
+  - .docs/wiki/_mi-lsp/read-model.toml
+verify:
+  - mi-lsp nav governance --workspace mi-lsp --format toon
+  - mi-lsp nav wiki validate-harness --workspace mi-lsp --format toon
+stop_if:
+  - governance_blocked=true
+  - harness_verdict=BLOCKED
+evidence:
+  - .docs/wiki/07_tech/TECH-DOC-ROUTER.md
+```
+
+## Proposito
+
+Describe el diseno tecnico del motor de routing de documentos de bajo token para `mi-lsp`. Este router alimenta `nav route`, `nav ask` y `nav pack` desde una unica fuente de verdad canonica.
+
+## Arquitectura de dos tiers
+
+### Tier 1 - Resolucion canonica sin indice
+
+Tier 1 puede producir `anchor_doc + mini_pack_preview` sin requerir un indice de docs completo.
+
+**Fuentes de Tier 1** (en orden de prioridad):
+1. `governance/read-model.toml`: perfil efectivo, familia por defecto, jerarquia de capas
+2. Doc ID explicito en la tarea (`RF-*`, `FL-*`, etc.) resuelto contra docs canonicos del filesystem
+3. Filesystem de docs raiz: verifica que los docs existan fisicamente antes de anclar
+4. Doc de gobernanza (`00_gobierno_documental.md`) como fallback seguro
+5. Solo como ultimo recurso si no hay wiki: `README.md`
+
+**Flujo**:
+```
+question/task -> MatchFamily(profile) -> containingDocForExplicitID(root, profile, doc_id?)
+                                       -> canonicalAnchorForFamily(family, profile, root)
+                                       -> buildTier1PreviewPack(family, profile, root)
+                                       -> RouteCanonicalLane{authoritative: true}
+```
+
+### Tier 2 - Enriquecimiento con indice
+
+Tier 2 enriquece la canonical lane con el indice de docs indexado.
+
+**Fuentes de Tier 2**:
+1. FTS5 BM25 sobre `doc_records`
+2. `rankDocs(question, family, docs, ftsScores, profile, recentChanges)` owner-aware
+3. `doc_edges` para traversal de evidencia
+
+**Flujo**:
+```
+profile -> ListDocRecords -> FTSSearchDocs -> rankDocs -> enrich RouteCanonicalLane
+                          -> buildDiscoveryAdvisory (advisory-only, docs-only by default)
+```
+
+## Separacion de lanes
+
+| Lane | Autoridad | Fuente | Puede sobreescribir la otra |
+|---|---|---|---|
+| canonical | Autoritativa | governance + index | No aplica |
+| discovery | Advisory-only | indice de docs / text search | Nunca |
+
+**Regla de peso**: la canonical lane tiene al menos el doble del peso/prioridad de la discovery lane en cualquier ranking combinado.
+
+## Fail-closed semantics
+
+- Si Tier 1 no puede confiar en el routing canonico, devuelve `authoritative=false` con discovery advisory
+- Nunca cae silenciosamente a `README.md` cuando governance y docs wiki existen
+- Si governance esta bloqueada, toda la operacion se bloquea antes de hacer routing
+
+## Tipos canonicos
+
+```go
+type RouteDoc struct {
+    Path   string
+    Title  string
+    DocID  string
+    Layer  string
+    Family string
+    Stage  string
+    Why    string
+}
+
+type RouteCanonicalLane struct {
+    AnchorDoc     RouteDoc
+    PreviewPack   []RouteDoc  // max 2-3 docs
+    Family        string
+    Authoritative bool
+}
+
+type RouteDiscoveryLane struct {
+    Source   string     // "indexed_docs" | "text_search"
+    Docs     []RouteDoc // advisory summary
+    Advisory string
+}
+
+type RouteResult struct {
+    Task      string
+    Mode      string              // "preview" | "full"
+    Canonical RouteCanonicalLane
+    Discovery *RouteDiscoveryLane // omitempty, advisory only
+    Why       []string
+}
+```
+
+## Integracion con ask y pack
+
+`nav ask` llama al route core para obtener `anchor_doc`, luego agrega `CodeEvidence` sobre el resultado.
+`nav pack` llama al route core para obtener el `primary_doc`, luego construye el reading pack completo.
+`nav route` llama al route core directamente y devuelve el `RouteResult` al usuario.
+`nav.intent` reutiliza la misma logica documental cuando clasifica la query como `mode=docs`.
+
+## Superficies AXI
+
+`nav route` es AXI-default preview-first. `--full` expande canonical lane y discovery. Code discovery solo con `--full` o `--include-code-discovery`.
+
+## Archivos de implementacion
+
+- `internal/model/types.go`: tipos `RouteResult`, `RouteCanonicalLane`, `RouteDiscoveryLane`, `RouteDoc`
+- `internal/docgraph/route.go`: `Tier1CanonicalRoute`, `canonicalAnchorForFamily`, helpers de filesystem
+- `internal/service/route.go`: `resolveCanonicalRoute`, `route()` handler, `buildDiscoveryAdvisory`
+- `internal/service/ask.go`: fallback Tier 1 cuando el indice esta vacio
+- `internal/service/pack.go`: fallback Tier 1 cuando el indice esta vacio o stale
+- `internal/service/app.go`: dispatch `nav.route`
+- `internal/cli/nav.go`: comando `nav route` (`routeCommand`)
+- `internal/cli/axi_mode.go`: `nav.route` en `supportsAXISurface` y `defaultAXIForOperation`; `buildWorkspaceAXINextSteps` incluye `nav route` antes de `nav ask`
+
+## Notas de implementacion
+
+- El router esta implementado y en produccion desde Wave 2.
+- El scorer owner-aware queda `default-on`; `MI_LSP_DOC_RANKING=legacy` existe solo como override temporal de diagnostico.
+- `Tier1CanonicalRoute` en `internal/docgraph/route.go` omite entradas de tipo glob pattern en el read-model; solo verifica paths concretos contra el filesystem antes de anclar.
+- Cuando la tarea trae un RF concreto y el archivo canonico es agregado bajo `04_RF/`, `Tier1CanonicalRoute` devuelve ese path como `anchor_doc` y conserva el `doc_id` pedido.
+- `shouldUseDaemon` en el router de dispatch excluye `nav.route` — es liviano y no requiere daemon caliente.
+- El fallback a `README.md` esta bloqueado cuando governance y wiki existen; solo aplica en repos sin `.docs/wiki`.
+
+## RF asociados
+
+- RF-QRY-014: comando publico `nav route`
+- RF-QRY-015: reutilizacion interna desde ask/pack
+
+## CT asociado
+
+CT-NAV-ROUTE

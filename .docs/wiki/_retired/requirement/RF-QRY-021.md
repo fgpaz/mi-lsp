@@ -1,0 +1,57 @@
+---
+wiki_contract: WIKI-CONTRACT-v1
+id: RF-QRY-021
+kind: requirement
+status: retired
+title: RF-QRY-021 - Exponer navegación local por el protocolo MCP (retirado)
+---
+
+## Detalle conservado
+
+### RF-QRY-021 - Exponer navegación local por el protocolo MCP (retirado)
+
+> **RETIRADO (2026-10-15).** La puerta `mi-lsp mcp` fue eliminada por decisión del operador. `mi-mcp` ejecuta el CLI `mi-lsp` por cada llamada de herramienta. Las líneas marcadas con `[RETIRADO]` ya no son requisitos vigentes; se conservan como histórico. Ver [[TECH-MCP-ADAPTER]].
+
+### Resultado requerido (retirado)
+
+[RETIRADO] Permitir que un cliente MCP local invoque las operaciones de navegación de `mi-lsp` mediante una puerta nativa, stateless y opcional. La puerta ejecuta el binario CLI para cada llamada, no mantiene índice ni caché propios, y conserva a la CLI como autoridad de navegación y resolución de workspace.
+
+### Interfaz y transporte (retirado)
+
+- [RETIRADO] Comando: `mi-lsp mcp [--workspace <alias|ruta>]`.
+- [RETIRADO] Transporte: JSON-RPC delimitado por líneas NDJSON sobre stdin/stdout. stdout contiene exclusivamente mensajes del protocolo; logs y diagnósticos van a stderr.
+- [RETIRADO] El proceso soporta `initialize`, la notificación `notifications/initialized`, `ping`, `tools/list` y `tools/call`. EOF cierra el proceso de forma limpia.
+- [RETIRADO] El parsing de una línea está limitado a 8 MiB. No se agrega un timeout propio del servidor a cada solicitud; la operación usa el contexto de la consulta.
+- [RETIRADO] Una solicitud con JSON/JSON-RPC inválido recibe un error de protocolo estructurado y no debe cerrar el proceso para las solicitudes válidas posteriores.
+- [RETIRADO] `tools/list` publica estas trece herramientas: `nav_intent`, `nav_route`, `nav_pack`, `nav_wiki`, `nav_search`, `nav_find`, `nav_refs`, `nav_related`, `nav_flow_slice`, `nav_change_pack`, `nav_affected`, `nav_multi_read` y `nav_overview`.
+- [RETIRADO] `nav_refs` acepta `symbol`, `file`, `repo`, `entrypoint`, `project`, `solution` y `context` (entero 0 a 5: líneas de contexto antes y después de cada referencia, equivalente a `nav refs --context`). Su envelope conserva los campos aditivos `degraded`, `reason`, `fallback_used` e `items[].origin`; una referencia nunca vuelve como falso vacío sino con el fallback de texto tipificado ([[RF-QRY-002]]).
+- [RETIRADO] Las llamadas ejecutan el binario CLI y devuelven su envelope; la puerta no mantiene un proceso de consulta stateful entre llamadas. Los esquemas publicados describen los argumentos admitidos por cada operación y no duplican una implementación alternativa de navegación.
+
+### Workspace y salida (retirado)
+
+- [RETIRADO] `--workspace` acepta alias o ruta. Si el selector se omite tanto en el comando como en la llamada a herramienta, el proceso usa su `CallerCWD`; la regla de resolución fail-closed sigue vigente.
+- [RETIRADO] La respuesta de una llamada incluye `structuredContent` con el envelope JSON completo (`Format=json`) y `content[0].text` con la forma compacta de agente, que empieza con `workspace=<selección>`.
+- [RETIRADO] `content[0].text` prioriza resultados breves (en búsqueda, archivo, línea y fragmento); la respuesta exitosa no agrega coach/gobernanza ni continuación automática. Los errores y omisiones accionables se conservan.
+- [RETIRADO] `--format` de la CLI no cambia el contrato de salida de `tools/call`. La selección de formato y el texto legible por agente pertenecen a la respuesta de herramienta.
+- [RETIRADO] Un workspace inválido devuelve un hint accionable, por ejemplo `mi-lsp workspace add '<path>' --name '<alias>' --no-index`; si no hay CWD disponible, la continuación indica `mi-lsp workspace scan`.
+
+### Límites de aceptación (retirado)
+
+[RETIRADO] El proceso MCP es local y opcional; no abre un listener HTTP, no realiza llamadas de red y no requiere daemon. El objetivo de aceptación para una primera llamada fría a `nav_search` es menos de 5 s medidos desde el mismo checkout, host y condiciones reproducibles. Ese umbral requiere evidencia medida y no se considera satisfecho por definir este requisito.
+
+### Compatibilidad y trazabilidad (retirado en su parte MCP)
+
+[RETIRADO] El transporte MCP expone operaciones existentes y no altera su semántica. Vigente para la CLI: los formatos explícitos y los consumidores JSON de scripts mantienen compatibilidad. `TP-QRY` conserva la cobertura histórica del transporte; esos casos no afirman que el servidor MCP siga disponible.
+
+- **Marcador estable**: rf-qry-021-retired-history
+- **Clase**: normative-requirement
+- **Estado del comportamiento**: retired
+- **Comprobación prevista**:
+  - mi-lsp nav wiki validate-source --workspace <alias> --ids RF-QRY-021 --format toon
+- **Evidencia referenciada**:
+  - .docs/wiki/_retired/requirement/RF-QRY-021.md
+  - .docs/wiki/06_tests/TP-QRY.md
+- **retirement**:
+  - **date**: 2026-10-15
+  - **replacement**: mi-mcp invokes the mi-lsp CLI per tool call
+  - **active_behavior_claims**: none

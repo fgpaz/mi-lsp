@@ -131,7 +131,7 @@ mi-lsp nav trace --all --workspace <alias> --format toon
 ```
 
 - Use to check which code implements a specific RF requirement
-- Reads `implements:` and `tests:` from YAML frontmatter in `04_RF/*.md` docs
+- Reads `implements:` and `tests:` from YAML frontmatter in `05_requirements/*.md` docs
 - Falls back to heuristic keyword matching when no explicit markers exist
 - `--all --summary` gives a quick compliance overview across all RFs
 
@@ -139,9 +139,9 @@ mi-lsp nav trace --all --workspace <alias> --format toon
 
 ```powershell
 mi-lsp nav wiki validate-harness --workspace <alias> --ids CT-NAV-INTENT --format toon
-mi-lsp nav wiki validate-harness --workspace <alias> --paths .docs/wiki/09_contratos/CT-NAV-INTENT.md --format toon
+mi-lsp nav wiki validate-harness --workspace <alias> --paths .docs/wiki/07_technical/contracts/CT-NAV-INTENT.md --format toon
 mi-lsp nav wiki validate-source --workspace <alias> --ids CT-NAV-INTENT --format toon
-mi-lsp nav wiki validate-source --workspace <alias> --paths .docs/wiki/09_contratos/CT-NAV-INTENT.md --format toon
+mi-lsp nav wiki validate-source --workspace <alias> --paths .docs/wiki/07_technical/contracts/CT-NAV-INTENT.md --format toon
 ```
 
 `validate-harness` is scoped to SDD-HARNESS-v1 contracts; `validate-source` is scoped to SDD-WIKI-SOURCE-v1 source blocks. Each accepts comma-separated `--ids` or `--paths`. Use the two named wiki validator subcommands; do not infer a combined validator surface.

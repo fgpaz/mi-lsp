@@ -1,0 +1,11 @@
+# accepted residual historical risk
+# Date: 2026-10-20
+# No purge/rewrite/force-push.
+# Only these pre-existing fingerprints are suppressed; any new finding remains blocking.
+47f577daff7ce1ac30ab4d52d3ee25eaa066e88e:scripts/bench/harness_first/tests/test_runner.py:jwt:329
+47f577daff7ce1ac30ab4d52d3ee25eaa066e88e:scripts/bench/harness_first/tests/test_runner.py:slack-bot-token:324
+eeed7a4779d7d6352c5fe8e314bdaf0d2cff3f99:.docs/raw/plans/2026-07-18-milsp-graph-native-roadmap.md:generic-api-key:134
+49343ebaa497d19e18e8fd3015e031ce41050117:.docs/auditoria/2026-07-09-wave5-full-optimization/release/daemon-restart.toon:generic-api-key:7
+91efabed76d0155ff6dddb63878671e22e587c40:.docs/auditoria/2026-07-09-max-optimizacion-milsp-mipi/wave4-concurrency-smoke/daemon-status-after.toon:generic-api-key:21
+91efabed76d0155ff6dddb63878671e22e587c40:.docs/auditoria/2026-07-09-max-optimizacion-milsp-mipi/wave4-daemon-status-after.toon:generic-api-key:123
+91efabed76d0155ff6dddb63878671e22e587c40:.docs/auditoria/2026-07-09-max-optimizacion-milsp-mipi/wave4-daemon-status-before.toon:generic-api-key:120

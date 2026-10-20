@@ -55,8 +55,8 @@ A real run against this repository returns a bounded preview with the matching d
 backend: intent
 items[5]:
   - doc_id: RF-GPH-010
-    doc_path: .docs/wiki/04_RF/RF-GPH-010.md
-    next_queries[2]: mi-lsp nav search RF-GPH-010 --include-content --workspace myapp,"mi-lsp nav multi-read .docs/wiki/04_RF/RF-GPH-010.md:1-120 --workspace myapp"
+    doc_path: .docs/wiki/05_requirements/RF-GPH-010.md
+    next_queries[2]: mi-lsp nav search RF-GPH-010 --include-content --workspace myapp,"mi-lsp nav multi-read .docs/wiki/05_requirements/RF-GPH-010.md:1-120 --workspace myapp"
     score: 108
     title: RF-GPH-010 - ...
 mode: docs
@@ -112,7 +112,7 @@ When output is consumed by an agent (for example, when stdout is not a terminal 
 The CLI is the authority — every door below is a thin, optional layer over the same `nav` commands, and none of them add their own cache, index, or background worker.
 
 - **Agent skill.** Installing the skill (via `install-agent`) gives Claude Code and Codex a `mi-lsp` skill describing the command surface; see [`skills/mi-lsp/SKILL.md`](skills/mi-lsp/SKILL.md) and the longer [quickstart reference](skills/mi-lsp/references/quickstart.md).
-- **No MCP door.** The local stdio `mi-lsp mcp` door was removed (2026-10-15). Agents call the CLI directly; hosts that need MCP go through mi-mcp / sandinas-mcp, which run the `mi-lsp` CLI per tool call. See the [retired MCP adapter note](.docs/wiki/07_tech/TECH-MCP-ADAPTER.md).
+- **No MCP door.** The local stdio `mi-lsp mcp` door was removed (2026-10-15). Agents call the CLI directly; hosts that need MCP go through mi-mcp / sandinas-mcp, which run the `mi-lsp` CLI per tool call. See the [retired MCP adapter note](.docs/wiki/_retired/technical/TECH-MCP-ADAPTER.md).
 - **Per-host integrations under [`integrations/`](integrations/)** (each optional, none required):
   - **Claude Code** ([`integrations/claude-code`](integrations/claude-code)) — a plugin with advisory `UserPromptSubmit`/`PostToolUse` hooks that call `mi-lsp nav suggest`. Hooks fail open: a missing binary, timeout, or bad JSON just means no suggestion, never a blocked turn.
   - **Codex** ([`integrations/codex`](integrations/codex)) — a `config.toml` snippet that sets `MI_LSP_CLIENT_NAME`; no server registration.
@@ -120,7 +120,7 @@ The CLI is the authority — every door below is a thin, optional layer over the
 
 ## Performance and footprint
 
-Measured on 2026-09-24 against this repository; see [`.docs/wiki/07_tech/TECH-MCP-ADAPTER.md`](.docs/wiki/07_tech/TECH-MCP-ADAPTER.md) for the full note and caveats.
+Measured on 2026-09-24 against this repository; see [`.docs/wiki/_retired/technical/TECH-MCP-ADAPTER.md`](.docs/wiki/_retired/technical/TECH-MCP-ADAPTER.md) for the full note and caveats.
 
 | Surface | Measured | Caveat |
 |---|---|---|
@@ -144,10 +144,10 @@ More detail: [`TROUBLESHOOTING.md`](TROUBLESHOOTING.md).
 - [Quickstart reference](skills/mi-lsp/references/quickstart.md)
 - [Compound command recipes](skills/mi-lsp/references/compound-commands.md)
 - [Host integrations](integrations/)
-- [Retired MCP door note](.docs/wiki/07_tech/TECH-MCP-ADAPTER.md)
-- [Functional scope](.docs/wiki/01_alcance_funcional.md)
-- [Technical baseline](.docs/wiki/07_baseline_tecnica.md)
-- [CLI and protocol contracts](.docs/wiki/09_contratos_tecnicos.md)
+- [Retired MCP door note](.docs/wiki/_retired/technical/TECH-MCP-ADAPTER.md)
+- [Functional scope](.docs/wiki/01_scope.md)
+- [Technical baseline](.docs/wiki/07_technical.md)
+- [CLI and protocol contracts](.docs/wiki/07_technical/contracts/CT-TECHNICAL-BASELINE.md)
 - [Release distribution](.docs/wiki/ae/AE-RELEASE-DISTRIBUTION.md)
 - [Troubleshooting](TROUBLESHOOTING.md)
 - [Contributing](CONTRIBUTING.md)
@@ -171,11 +171,11 @@ id: README
 kind: public-entrypoint
 audience: public-human
 imports:
-  - .docs/wiki/01_alcance_funcional.md
-  - .docs/wiki/07_baseline_tecnica.md
-  - .docs/wiki/09_contratos_tecnicos.md
+  - .docs/wiki/01_scope.md
+  - .docs/wiki/07_technical.md
+  - .docs/wiki/07_technical/contracts/CT-TECHNICAL-BASELINE.md
   - .docs/wiki/ae/AE-RELEASE-DISTRIBUTION.md
-  - .docs/wiki/07_tech/TECH-MCP-ADAPTER.md
+  - .docs/wiki/_retired/technical/TECH-MCP-ADAPTER.md
 exports:
   - public onboarding narrative
   - public install commands

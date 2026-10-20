@@ -1,0 +1,97 @@
+# FL-BOOT-01
+
+```yaml
+harness_protocol: SDD-HARNESS-v1
+id: "FL-BOOT-01"
+kind: "support-doc"
+audience: "llm-first"
+imports:
+  - '[[00_gobierno_documental]]'
+  - '[[FL-BOOT-01]]'
+  - '[[RF-WKS-008]]'
+  - '[[RF-WKS-009]]'
+exports:
+  - 'FL-BOOT-01'
+agent_must_read:
+  - .docs/wiki/00_gobierno_documental.md
+  - .docs/wiki/03_FL/FL-BOOT-01.md
+agent_may_edit:
+  - .docs/wiki/03_FL/FL-BOOT-01.md
+agent_must_not_edit:
+  - .docs/wiki/_mi-lsp/read-model.toml
+verify:
+  - mi-lsp nav governance --workspace mi-lsp --format toon
+  - mi-lsp nav wiki validate-harness --workspace mi-lsp --format toon
+stop_if:
+  - governance_blocked=true
+  - harness_verdict=BLOCKED
+evidence:
+  - .docs/wiki/03_FL/FL-BOOT-01.md
+```
+
+## 1. Goal
+
+Registrar o inicializar un workspace `single` o `container` y dejar lista su topologia repo-local para indexacion, `nav ask` y consultas posteriores. Tambien cubre el home content-first del root command, la guia preview-first de onboarding/discovery cuando la superficie entra en AXI efectivo por default o por override explicito, y la comprobacion local de provenance del binario con `mi-lsp version`.
+
+## 2. Scope in/out
+
+- In: deteccion de root, alias opcional, clasificacion `single|container`, deteccion de repos hijos y `entrypoints`, creacion de `.mi-lsp/`, persistencia de `project.toml` incluyendo `[[RF-WKS-008|canon]]` y `[canon_policy]`, alta en registry global minimo, `workspace link <alias> --role` para asociar un workspace de canon, `init` como happy path corto, resolucion centralizada del modo efectivo AXI/classic via defaults por superficie + `--axi` + `--classic` + `MI_LSP_AXI=1`, home content-first cuando se invoca `mi-lsp` sin subcomando salvo `--classic`, comando `version` sin workspace para provenance del ejecutable, `workspace which` como resolucion de solo lectura del workspace efectivo y el ejecutable en uso sin mutar el registry, y la precedencia `workspace explicito > workspace por caller_cwd > last_workspace`.
+- Out: descarga automatica de worker y setup remoto.
+
+## 3. Main sequence
+
+```mermaid
+sequenceDiagram
+    participant U as Usuario/Skill
+    participant CLI as CLI
+    participant C as Core
+    participant R as Registry
+
+    U->>CLI: mi-lsp [--classic|--axi] | workspace add|init <path>
+    alt root sin subcomando en superficie AXI efectiva
+        CLI->>C: resuelve workspace actual/default
+        CLI-->>U: home content-first + next_steps
+    else version
+        CLI->>CLI: lee build info + runtime + hash ejecutable
+        CLI-->>U: provenance local sin workspace/daemon
+    else add/init
+        CLI->>C: detect workspace layout
+        C->>C: clasifica single|container
+        C->>C: detecta repos y entrypoints validos
+        C->>C: crea .mi-lsp/project.toml
+        C->>R: registra alias, root y kind
+        C->>C: indexa por defecto salvo --no-index
+        C-->>CLI: estado listo + next_steps
+    end
+```
+
+## 4. Alternative/error path
+
+| Caso | Resultado |
+|---|---|
+| Path invalido | error explicito sin side effects |
+| No se detecta stack compatible | warning + rechazo |
+| Layout ambiguo | se persiste la topologia minima y se exponen defaults claros |
+| Multiples aliases registrados para el mismo root | la seleccion automatica prioriza `project.name`, luego basename del root y deja warning visible |
+| Paths auxiliares (`.worktrees/`, ignores) | se omiten del bootstrap |
+| Entrypoints bajo `.docs/` o `template(s)` | permanecen visibles en topologia, pero no deben quedar como default semantico si existe una opcion real del repo |
+| Indexacion falla | registro exitoso con warning no fatal |
+| AXI sin workspace resoluble | el home content-first cae a sugerencias de `init`, `workspace scan` y `workspace list` sin mutar estado |
+
+## 5. Data touchpoints
+
+- Repo-local: `.mi-lsp/project.toml`
+- Repo-local opcional: `.docs/wiki/_mi-lsp/read-model.toml`
+- Global: `~/.mi-lsp/registry.toml`
+- Estados: `detected`, `registered`, `single|container`
+
+## 6. Candidate RF references
+
+- RF-WKS-001 registrar workspace por path y alias, incluyendo topologia `single|container`
+- RF-WKS-002 indexar automaticamente al registrar un workspace nuevo
+- RF-WKS-003 inicializar el workspace actual y dejarlo listo para `nav ask`
+- RF-WKS-004 exponer AXI selectivo por superficie para onboarding y discovery del CLI
+- RF-WKS-005 aplicar gate de gobernanza al inicio de toda tarea
+- RF-WKS-006 exponer provenance del binario con `mi-lsp version`
+- RF-WKS-008 declarar raíces de wiki externas con `[[RF-WKS-008|canon]]` y `workspace link --role`
+- RF-WKS-009 resolver workspace y ejecutable en uso con `workspace which` (solo lectura)

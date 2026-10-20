@@ -40,7 +40,7 @@ Entrada: workspace, mode=roadmap y render opcional mermaid. Tabla: id, rs, horiz
 ## Errores
 Archivo ausente: proyección vacía. Lectura inválida: roadmap_unreadable no bloqueante. Tabla, campos, IDs, duplicados, dependencias y ciclos generan códigos roadmap_* no bloqueantes. Un RS ausente se avisa como roadmap_rs_missing solo con grafo current; falta de generación produce roadmap_graph_unavailable. Un workspace/base inaccesible o render inválido puede fallar la operación: no se promete que todo error operativo sea fail-open.
 
-## Criterios de aceptación
+## Criterios de aceptación (numerados)
 1. CLI y proveedor admiten roadmap y la respuesta identifica las entradas como no canónicas.
 2. Lee columnas inglesas, conserva title libre y proyecta estados, horizontes y depends_on.
 3. Render Mermaid agrupa short, medium y long, colorea los cuatro estados y deriva flechas de dependencia; sin Gantt ni archivo persistido.

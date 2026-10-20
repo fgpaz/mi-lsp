@@ -13,10 +13,10 @@ links:
     - path: internal/output/diagnostics_test.go
 ---
 
-## Estado de ejecución
+## Alcance
 TESTING_DEFERRED_UNTIL_IMPLEMENTATION_COMPLETE. Esta lane agrega casos/fixtures, pero no los ejecuta ni afirma aceptación. La única FINAL_VERIFY es del padre.
 
-## Casos de contrato para el padre
+## Casos
 - CLI: un archivo o `--changed` exclusivamente; `--base` requiere cambios; `--max-files` y offset acotados; payload exacto para `nav.diagnostics`.
 - Git: staged, unstaged, eliminación, untracked con espacios/salto de línea, gitignore y base de merge; refs parecidas a flags no pasan como argumentos de proceso.
 - Routing: un diff Go+TS genera ambos backends, con errores primero aunque el backend de warnings termine antes. Sin backend: `partial`, omisión tipada y nunca lista limpia.

@@ -14,6 +14,15 @@
 /.docs/*
 !/.docs/wiki/
 !/.docs/wiki/**
+# Immutable source snapshots for the WIKI-CONTRACT-v1 path retirement registry.
+!/.docs/history/
+/.docs/history/*
+!/.docs/history/wiki-v0/
+!/.docs/history/wiki-v0/**
+# Non-canonical, single-file roadmap fallback.
+!/.docs/roadmap/
+/.docs/roadmap/*
+!/.docs/roadmap/roadmap.md
 !/.docs/planificacion/
 !/.docs/planificacion/**
 !/.docs/ae/

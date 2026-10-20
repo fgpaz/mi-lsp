@@ -2298,3 +2298,52 @@ func TestSemanticTsserverCooldownSkipsRepeatedFailedStarts(t *testing.T) {
 		t.Fatalf("expected cooldown warning, got %v", env.Warnings)
 	}
 }
+
+func TestGraphPathNeighborsBothKeepsBothOrientations(t *testing.T) {
+	edge := model.GraphEdgeRecord{FromNodeID: 10, ToNodeID: 20}
+	transitions := graphPathNeighbors(edge, []int{10, 20}, "both")
+	if len(transitions) != 2 {
+		t.Fatalf("both-direction transitions = %d, want 2", len(transitions))
+	}
+	if transitions[0] != (graphPathTransition{neighbor: 20, parent: 10}) {
+		t.Fatalf("first transition = %+v", transitions[0])
+	}
+	if transitions[1] != (graphPathTransition{neighbor: 10, parent: 20}) {
+		t.Fatalf("second transition = %+v", transitions[1])
+	}
+}
+
+func TestCopyWikiGraphEnvelopePreservesItems(t *testing.T) {
+	items := []any{model.GraphQueryItem{Kind: "edge", Relation: "implements"}}
+	src := model.Envelope{Items: items}
+	var dst model.Envelope
+	copyWikiGraphEnvelope(&dst, src)
+	copied, ok := dst.Items.([]any)
+	if !ok {
+		t.Fatalf("copied items type = %T, want []any", dst.Items)
+	}
+	if len(copied) != 1 {
+		t.Fatalf("copied items = %d, want 1", len(copied))
+	}
+	if got, ok := copied[0].(model.GraphQueryItem); !ok || got.Relation != "implements" {
+		t.Fatalf("copied item = %#v", copied[0])
+	}
+}
+
+func TestGraphEnvelopeHasEvidenceRejectsEmptyItems(t *testing.T) {
+	if graphEnvelopeHasEvidence(model.Envelope{Items: []any{}}) {
+		t.Fatal("empty graph envelope must not count as evidence")
+	}
+	if graphEnvelopeHasEvidence(model.Envelope{Items: []model.GraphQueryItem{}}) {
+		t.Fatal("empty typed items must not count as evidence")
+	}
+	if !graphEnvelopeHasEvidence(model.Envelope{Items: []model.GraphQueryItem{{Kind: "edge"}}}) {
+		t.Fatal("non-empty typed items must count as evidence")
+	}
+	if !graphEnvelopeHasEvidence(model.Envelope{Items: map[string]any{"kind": "edge"}}) {
+		t.Fatal("non-empty untyped items must count as evidence")
+	}
+	if !graphEnvelopeHasEvidence(model.Envelope{Nodes: []model.WikiGraphNode{{ID: "RF-GPH-007"}}}) {
+		t.Fatal("graph nodes must count as evidence")
+	}
+}

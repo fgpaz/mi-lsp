@@ -21,8 +21,11 @@ El harness consulta errores y advertencias del backend semántico sin lanzar una
 ## Superficies
 `mi-lsp nav diagnostics <archivo>` o `mi-lsp nav diagnostics --changed [--base <ref>]`. La integración de `lsp.diagnostics` pertenece a surface; el servicio expone `nav.diagnostics` y el constructor es `newDiagnosticsCommand(state *rootState) *cobra.Command`.
 
-## Entradas y salidas
+## Entradas/salidas tipadas
 Un archivo relativo al workspace o absoluto dentro de él, o cambios Git en ese worktree. Flags locales: `--changed`, `--base`, `--max-files` (32 por defecto, 1–64), `--offset` (0 por defecto). Se conservan los presupuestos globales. JSON `diagnostics/v1`: `items` con `path`, `line`, `column`, `severity`, `message`, `source`/`code` opcionales, coordenadas UTF-16 desde uno. El bloque `diagnostics` cuenta hallazgos antes de recortar la salida y archivos efectivamente consultados.
+
+## Comportamiento ordenado
+La consulta selecciona la superficie semántica y conserva presupuestos, degradación y omisiones tipadas antes de interpretar el resultado.
 
 ## Criterios de aceptación
 1. Selecciona gopls, tsserver, Roslyn, Pyright o rust-analyzer con el routing normal por extensión. No usa catálogo/texto como reemplazo de diagnósticos.

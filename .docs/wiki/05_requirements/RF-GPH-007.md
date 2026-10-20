@@ -1,0 +1,318 @@
+---
+wiki_contract: WIKI-CONTRACT-v1
+id: RF-GPH-007
+kind: requirement
+status: active
+title: RF-GPH-007 - Integrar evidencia wiki-codigo sin invertir autoridad
+links:
+  implements:
+  - FL-GPH-02
+  code:
+  - path: internal/cli/git_frontier.go
+    role: behavior
+  - path: internal/cli/nav.go
+    role: behavior
+  - path: internal/livecontext/overlay.go
+    role: behavior
+  - path: internal/model/wiki_code_context.go
+    role: behavior
+  - path: internal/model/wiki_code_source_projection.go
+    role: behavior
+  - path: internal/service/app.go
+    role: behavior
+  - path: internal/service/wiki_code_bindings.go
+    role: behavior
+  - path: internal/service/wiki_code_context.go
+    role: behavior
+  - path: internal/service/wiki_code_enrich.go
+    role: behavior
+  - path: internal/service/wiki_code_sources.go
+    role: behavior
+  - path: internal/docgraph/route.go
+    role: behavior
+    symbol: Tier1CanonicalRoute
+  - path: internal/service/prepare.go
+    role: behavior
+  - path: internal/service/trace.go
+    role: behavior
+  - path: internal/service/wiki_root.go
+    role: behavior
+  - path: internal/service/workspace_ops.go
+    role: behavior
+---
+
+## Propósito
+
+RF-GPH-007 - Integrar evidencia wiki-codigo sin invertir autoridad
+
+## Comportamiento ordenado
+
+### 1. Resultado requerido
+
+Usar el grafo para mejorar `nav ask`, `route`, `pack`, `context`, `affected`, `diff-context` y `workspace-map`, preservando la jerarquia documental: `00` gobierna; alcance/arquitectura/FL/RF/TP y canon técnico explican decisiones; código y runtime aportan evidencia de implementacion o drift.
+
+### 2. Modelo de enlace
+
+- Documentos canónicos son `GraphNode(kind=document)` con NodeKey basado en repository identity + owner path + doc ID estable.
+- Wikilinks, embeds, links Markdown, doc IDs y jerarquía conservan relaciones distintas: `doc_wikilink`, `doc_embed`, `doc_markdown_link`, `doc_id` y `doc_hierarchy`.
+- La resolución documental es corpus-aware y aplica una ruta de ID canónico exacto antes de cualquier candidato débil: un `doc_id` canónico exacto —incluidos los IDs `TP-*`— se consulta primero en el índice documental y una coincidencia única resuelve directamente a `GraphNode(kind=document)`. Solo después, y para selectores que no son IDs canónicos, se consideran path exacto, relativo al documento, relativo a roots de conocimiento, basename único y texto acotado; exact-case precede case-fold.
+- Anchors y alias se preservan como `doc_anchor` y `doc_alias`; un self-anchor no crea self-edge.
+- Un `doc_id` canónico faltante queda `missing_doc_target`; un ID duplicado o ambiguo queda `ambiguous_doc_target`. Ambos permanecen como unresolved tipado, con candidatos sorted y bounded (vacíos cuando falta el ID); nunca se elige el último ni se promueve por score.
+- `doc_mentions` enlaza documento a path/símbolo/comando de código cuando existe anchor explícito resoluble.
+- Relaciones de código pueden verificar una promesa, pero no cambiar estado, prioridad o significado de un documento.
+
+### 3. Orden de autoridad en respuestas
+
+1. bloqueo/reparacion de gobernanza;
+2. documento canónico primario y cadena requerida;
+3. documentos de detalle permitidos por read model;
+4. evidencia compiler/AST del código;
+5. heuristicas/inferencias claramente separadas;
+6. omissions, unresolved y siguientes consultas.
+
+Si canon y código discrepan, el resultado es `drift_detected` con ambas evidencias y owner sugerido. El código no reemplaza el texto canónico y la query nunca edita wiki, projection o source.
+
+### 5. Context optimizer
+
+El selector de contexto usa budgets y produce un reading pack ordenado por autoridad, cobertura marginal y costo de tokens. Debe explicar por que incluyo/omitio cada item, deduplicar evidencia repetida y conservar siempre el documento primario, reglas de gobierno aplicables y unresolved relevantes. La optimizacion no puede descartar una precondicion canónica para mejorar tokens.
+
+### 7. Invariantes
+
+- Cero inversiones de autoridad wiki en fixtures negativos.
+- La respuesta docs-only y la enriquecida comparten la misma autoridad primaria.
+- Un cambio de ranking no altera IDs o evidencia.
+- La consulta del snapshot grafo es read-only y daemon-optional. `nav.affected` inspecciona solo los paths explícitos y puede refrescar catálogo/`doc_records` antes del graph read (límite de 1 s), pero no reconstruye la generation graph-native. Si el graph read no puede respaldar impacto por stale, entrega como máximo heurísticas `confidence=0`, omite claims graph-native y muestra en el warning `mi-lsp index --workspace "<alias>"`; un timeout/fallo antes del commit conserva la evidencia publicada y se declara como limitación.
+- Paths `.docs/raw` y `.docs/auditoria` no se promueven a canon por conectividad.
+- Imports externos, incluyendo Graphify, son advisory y no autoridad.
+
+### 10. Puente bidireccional wiki ↔ código (slice implementado)
+
+- **Marcador estable**: RF-GPH-007.live-bidirectional-bridge
+- **Estado del comportamiento**: implemented_slice
+- **scope**:
+  - nav.trace
+  - nav.wiki.trace
+  - nav.pack
+  - nav.wiki.pack
+  - nav.related
+  - nav.neighbors
+  - nav.prepare
+  - nav.change-pack
+- **semantics**:
+  - **direction**:
+    - wiki_to_code
+    - code_to_wiki
+  - **freshness**: bounded_fresh
+  - **read_your_writes**: true
+  - **query_only**: true
+- **document_resolution**:
+  - **canonical_document_id**:
+    - **exact**: true
+    - **includes**:
+      - TP-*
+    - **target**: document_node
+    - **precedence**: first
+  - **weaker_candidates**:
+    - exact_path
+    - document_relative_path
+    - knowledge_root_path
+    - unique_basename
+    - bounded_text
+  - **unresolved**:
+    - **missing_id**: missing_doc_target
+    - **duplicate_or_ambiguous_id**: ambiguous_doc_target
+    - **candidates**: sorted_bounded
+    - **score_promotion**: forbidden
+  - **preserve_tp_ids**: true
+- **result_lanes**:
+  - **direct_code**:
+    - **source**: exact_active_declared_binding
+    - **statuses**:
+      - resolved_symbol
+      - resolved_file
+    - **authority**: wiki_declaration_plus_current_target
+  - **tests**:
+    - **source**: exact_binding_with_relation_tests_or_target_kind_test
+    - **separate_from**: direct_code
+  - **supporting_code**:
+    - **source**: graph_observed
+    - **relations**:
+      - imports
+      - calls
+      - references
+      - tests
+    - **gate**: graph_freshness_current
+    - **never_promoted_to**: direct_code
+  - **candidates**:
+    - **source**: bounded_lexical_lookup
+    - **Estado del comportamiento**: candidate_only
+    - **never_promoted_to**: direct_code
+- **reverse**:
+  - **match**: exact_target_path_then_optional_symbol
+  - **output**:
+    - doc_id
+    - path
+    - block_id
+    - relation
+    - role
+    - binding_ref
+    - linked_documentary_parents
+  - **parent_source**: existing_doc_edges_only
+- **authority**:
+  - **wiki**: authoritative
+  - **sqlite_bindings**: derived_read_model
+  - **graph_and_catalog**: derived_evidence
+  - **cache**: derived_only
+  - **primary_doc**: preserved_when_graph_enrichment_is_added
+- **lifecycle**:
+  - **planned**: nonnavigable_by_default
+  - **retired**: excluded_by_default
+  - **historical**: explicit_id_or_path_returns_bounded_superseded_by_redirect
+  - **raw_and_audit**: excluded_from_canonical_authority
+- **freshness_domains**:
+  - docs_manifest
+  - bindings
+  - catalog
+  - graph
+  - authority
+- **stale_graph**:
+  - **direct_code_and_tests**: preserved
+  - **supporting_code**: omitted_with_typed_graph_stale
+- **overlay**:
+  - **storage**: ram_only
+  - **digest**: explicit_and_deterministic
+  - **watcher**: acceleration_only
+- **graph_v1**: consumed_read_only_subset_only
+- **compatibility**:
+  - **existing_fields**: preserved
+  - **direct_daemon**: same_canonical_items_order_omissions_and_digest
+  - **no_new_public_command**: true
+  - **query_writes**: forbidden
+- **Comprobación prevista**:
+  - FINAL_VERIFY e1835ee: go test ./... PASS (28 paquetes)
+  - wiki-code-bridge-runner/v1: PASS; direct/reverse precision and recall PASS
+- **Evidencia referenciada**:
+  - internal/model/wiki_code_context.go
+  - internal/livecontext/overlay.go
+  - internal/service/wiki_code_bindings.go
+  - internal/service/app.go
+  - internal/service/wiki_code_context.go
+  - internal/cli/git_frontier.go
+  - internal/cli/nav.go
+  - internal/cli/git_frontier_test.go
+  - .docs/wiki/06_tests/TP-GPH.md
+
+### Consulta fuente e historia explícita (B/C, autoría pendiente de verificación)
+
+- **Marcador estable**: RF-GPH-007.canonical-source-history
+- **Estado del comportamiento**: authored
+- **verification_status**: PARTIAL_scoped
+- **owner**: coord-milsp
+- **due**: 2026-10-15
+- **contract**: CT-NAV-WIKI.canonical-source-query
+- **opt_in**: nav_trace_or_wiki_trace_with_binding_sources
+- **selectors**: exact_document_ID_or_path_AND_optional_binding_ID_or_naked_binding_ID
+- **selection_resolution**: separate_from_source_availability_and_target_resolution
+- **ambiguity**: sorted_bounded_owner_candidates_no_score_promotion
+- **source_identity**:
+  - doc_path
+  - binding_id
+- **association_not_identity**: binding_ref
+- **normal_source_view**: active_document_AND_active_binding
+- **history**: explicit_historical_flag_only
+- **inactive_declarations**: never_primary_authority_direct_code_tests_supporting_code
+- **terminal_retired**: queryable_without_successor
+- **retired_disk_absent**: explicit_history_preserves_published_declarations_by_path_doc_ID_binding_ID_normal_excluded_true_empty_stays_empty
+- **partial_selection**: no_primary_authority_direct_tests_supporting_including_late_output_budget
+- **successor**: separate_declared_superseded_by_when_bridge_provides_it
+- **history_target_resolution**: unresolved_with_historical_target_not_evaluated
+- **no_temporal_edit_versioning**: true
+- **RAM**: owner_complete_replacement_scoped_tombstones_fail_closed_against_persisted_retired_lifecycle
+- **old_DB**: explicit_incomplete_no_reader_DDL_backfill_or_reconstruction_from_WCB
+- **compatibility**: ordinary_defaults_ranking_q_v1_sort_digest_cursor_and_legacy_redirect_unchanged
+- **artifact_bindings**:
+  - **binding_id**: RF-GPH-007-source-history
+  - **Clase**: code
+  - **role**: behavior_implementation
+  - **path**: internal/service/wiki_code_sources.go
+  - **symbol**: resolveSourceContext
+  - **surface**: backend
+  - **binding_lifecycle**: active
+- **verification_basis**: FINAL_VERIFY1_PARTIAL_audit1_Changes_requested_H1_H2_repair_unique_RECHECK1_H1_H2_PASS_scoped_overall_PARTIAL
+- **publication_scope**: parent_authorized_H1_H2_scoped_not_full_B_C
+- **incremental_evidence**: explicit_incomplete_Git_AM_not_consumed_processed_0_no_changes_no_owner_transition_no_PRODUCT_FAIL
+- **q_evidence**: valid_pipeline_same_corpus_DB_one_governance_item_parity_only
+- **q_uncovered**:
+  - multi_item_sort
+  - cursor_resume
+  - native_digest
+  - source_variation
+- **global_readiness**: Graph_Harness_fullwiki_conformance_not_accredited
+- **remaining_evidence**: explicit_incomplete_coord_milsp_due_2026_10_15
+- **Comprobación prevista**:
+  - TC-GPH-SRC-004
+  - TC-GPH-SRC-005
+  - TC-GPH-SRC-006
+- **Evidencia referenciada**:
+  - internal/service/wiki_code_sources.go
+  - internal/model/wiki_code_source_projection.go
+  - .docs/wiki/07_technical/contracts/CT-NAV-WIKI.md
+  - .docs/wiki/06_tests/TP-GPH.md
+
+La consulta opt-in no redefine el trace legacy: requiere `--binding-sources`; `--historical` agrega declaraciones deprecated/retired sin promoverlas a evidencia activa. Un ID exacto en varios owners produce ambigüedad, no el owner mejor rankeado. Dos declaraciones que comparten WCB se conservan como dos fuentes y una asociación de evidencia. El objeto canónico conserva sus seis campos obligatorios y `symbol` opcional; los ejes derivados viven fuera de él. El digest fuente es separado del digest v1 del puente y no agrega stages a q ni operaciones/grants al provider. Ninguna declaración equivale a conformance.
+
+### 11. Frontera pública de Git y generaciones
+
+`mi-lsp nav git-frontier [--base <ref>] --workspace <alias> --format json` devuelve un único objeto estable de lectura, sin refrescar ni crear el índice:
+
+- `git_commit` y `git_base` son hashes resueltos; `git_frontier` es SHA-256 del protocolo `mi-lsp-git-frontier-v1`, que incorpora base, HEAD, diff comprometido desde el merge-base, diff tracked del working tree y archivos untracked no ignorados ordenados por ruta normalizada.
+- `generations` contiene `docs`, `catalog` y `graph` como ID publicado o `null`; jamás deriva IDs de timestamps, contadores o estado runtime.
+- `coherence` es `coherent` solo si docs y catálogo están publicados y el grafo está current; en caso contrario es `degraded`. `incompatible` se reserva para evidencia explícitamente inválida.
+- `graph_freshness` es `current`, `stale` o `unavailable`, derivado del runtime state y de la generación publicada. Los campos ausentes se explican en `generation_reasons` o `unavailable` mediante códigos tipados. Si falta Git, la base o la DB, la salida conserva `null` y declara el motivo; no inventa una frontera ni una generación.
+- La lectura de generaciones es read-only. El comando no reindexa, no reconstruye el grafo ni altera datos de workspace.
+
+Este objeto da a consumidores como `ps-contexto` y `live-graph-vs-diff.mjs` los valores actuales que deben compararse con su observación; un valor unavailable no satisface la evidencia requerida para un PASS. La cobertura de determinismo, componentes del digest y estados unavailable se especifica en [[TP-GPH]] (TC-GPH-077 y TC-GPH-078).
+
+## Superficies
+
+- backend
+
+## Entradas/salidas tipadas
+
+### 6. Salida
+
+`WikiCodeContext` incluye `primary_doc`, `authority_chain`, `code_evidence`, `graph_paths`, `drift`, `omissions`, generation IDs de doc/code, provenance, token budget/used, truncated y determinism digest. Cada graph path enlaza refs de evidencia; no embebe raw logs.
+
+## Errores
+
+### 4. Comportamiento fail-closed
+
+- `governance_blocked=true`, proyección stale, attribution manual/invalida o source harness BLOCKED detienen la respuesta graph-enriched normal y retornan diagnostico/reparacion.
+- Si el índice documental esta stale respecto de `00`/read-model, no se sirve un pack generico como equivalente.
+- Si el grafo de código está ausente/stale, la respuesta docs-first sigue disponible y declara omission de evidencia de código.
+- Sin `repository_identity` explícita ni exactamente un `origin`, el índice documental continúa pero omite la publicación del grafo con warning sanitizado y accionable; nunca deriva identidad del path local.
+- Si una relacion wiki-code es ambiguous, se muestran candidatos bounded sin elegir uno.
+
+### 8. Errores tipados
+
+- **Código**: `GPH_WIKI_GOVERNANCE_BLOCKED`; **Causa**: gobierno invalido/stale; **Respuesta**: diagnóstico y repair route
+- **Código**: `GPH_WIKI_PRIMARY_NOT_FOUND`; **Causa**: no se resuelve doc primario; **Respuesta**: BLOCKED, no fallback equivalente
+- **Código**: `GPH_WIKI_CODE_AMBIGUOUS`; **Causa**: mention con multiples targets; **Respuesta**: unresolved + candidatos
+- **Código**: `GPH_WIKI_CODE_DRIFT`; **Causa**: canon y evidencia difieren; **Respuesta**: drift, no override
+- **Código**: `GPH_WIKI_GRAPH_STALE`; **Causa**: generation doc/code incompatible; **Respuesta**: docs-first + omission
+- **Código**: `GPH_WIKI_BUDGET_EXCEEDED`; **Causa**: pack supera budget mínimo canónico; **Respuesta**: truncated/BLOCKED explícito
+
+## Criterios de aceptación (numerados)
+
+1. Fixtures de autoridad normal, gobernanza bloqueada, projection stale, code stale, drift y mention ambiguous.
+2. Oraculo determinista que falla ante cualquier inversion de autoridad.
+3. Mismo primary doc con y sin graph enrichment; menor token count solo si conserva cadena obligatoria.
+4. Precision/recall de links wiki-code y 30 repeticiones de determinismo/token budget.
+
+### 9. Aceptacion y trazabilidad
+
+- Fixtures de autoridad normal, gobernanza bloqueada, projection stale, code stale, drift y mention ambiguous.
+- Oraculo determinista que falla ante cualquier inversion de autoridad.
+- Mismo primary doc con y sin graph enrichment; menor token count solo si conserva cadena obligatoria.
+- Precision/recall de links wiki-code y 30 repeticiones de determinismo/token budget.
+- `TP-GPH / TP-GPH-005 / TC-GPH-036..038`.

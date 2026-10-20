@@ -13,10 +13,10 @@ links:
       role: test
 ---
 
-## Estado
+## Alcance
 Casos y fixtures escritos, no ejecutados durante BUILDING. El padre ejecuta la única FINAL_VERIFY tras integrar el constructor. Esta receta no acredita PASS ni evidencia de rendimiento medida.
 
-## Receta de comportamiento real
+## Casos
 Usar un repositorio Git temporal, fuera del checkout del producto, sin depender de fd. Crear `.gitignore` con `ignored/`, `*.tmp`, `!keep.tmp` y `*.log`; en `src/.gitignore`, `!kept.log`, `local*.go` y `!localkeep.go`. Crear archivos correspondientes, un `tracked.tmp` añadido con `git add -f -- tracked.tmp`, nombres con espacios, `café.go` y `-draft.go`.
 
 - CA 1: crear `config`, `src/config`, `config-more`, `configdir/other` y `myconfig`; consultar `config`. Verificar ese orden y motivos/rangos. Dos ejecuciones sin cambios conservan el orden, no necesariamente la edad de caché.

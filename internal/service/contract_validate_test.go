@@ -187,3 +187,64 @@ sin numerar
 		t.Fatalf("expected depth warnings, got %v", result.ContractWarnings)
 	}
 }
+
+func TestCompileWikiContractValidationIndexesUnselectedCanonicalTargets(t *testing.T) {
+	root := t.TempDir()
+	sourcePath := ".docs/wiki/04_flows/FL-SELECTED-01.md"
+	targetPath := ".docs/wiki/02_outcomes/RS-UNSELECTED-01.md"
+	writeContractTestWikiFile(t, root, sourcePath, `---
+wiki_contract: WIKI-CONTRACT-v1
+id: FL-SELECTED-01
+kind: flow
+status: active
+title: "Selected flow"
+links:
+  fulfills: [RS-UNSELECTED-01]
+---
+## Objetivo
+x
+## Alcance
+x
+## Actores
+x
+## Pre/postcondiciones
+x
+## Secuencia
+x
+## Restricciones ADR
+x
+`)
+	writeContractTestWikiFile(t, root, targetPath, `---
+wiki_contract: WIKI-CONTRACT-v1
+id: RS-UNSELECTED-01
+kind: outcome
+status: active
+title: "Unselected outcome"
+---
+## Resultado observable
+x
+## Beneficiario
+x
+## Criterios de éxito
+x
+## Fuera de alcance del RS
+x
+`)
+	allRecords := []model.DocRecord{
+		{Path: sourcePath, DocID: "FL-SELECTED-01"},
+		{Path: targetPath, DocID: "RS-UNSELECTED-01"},
+	}
+	selectedRecords := allRecords[:1]
+	result := compileWikiContractValidationWithIndexRecords(root, selectedRecords, allRecords, nil)
+	if result.ContractsReviewed != 1 {
+		t.Fatalf("expected only selected source reviewed, got %d", result.ContractsReviewed)
+	}
+	if result.TargetsMissing != 0 {
+		t.Fatalf("expected selected source to resolve unselected canonical target, got %d warnings=%v", result.TargetsMissing, result.ContractWarnings)
+	}
+	for _, warning := range result.ContractWarnings {
+		if strings.Contains(warning, "link_target_missing") {
+			t.Fatalf("unexpected missing target warning: %v", result.ContractWarnings)
+		}
+	}
+}
