@@ -936,7 +936,12 @@ func (s *rootState) printPreparedEnvelope(envelope model.Envelope, opts model.Qu
 	if err != nil {
 		return err
 	}
-	rendered = output.CapRendered(rendered, opts.MaxChars)
+	// Diagnostics budgets are applied to the envelope upstream. Even when the
+	// minimum envelope or pretty JSON exceeds the budget, preserve valid JSON
+	// and its incompleteness metadata rather than cutting serialized bytes.
+	if envelope.ContractVersion != "diagnostics/v1" || !strings.EqualFold(format, "json") {
+		rendered = output.CapRendered(rendered, opts.MaxChars)
+	}
 	writeStarted := time.Now()
 	_, err = fmt.Fprintln(os.Stdout, string(rendered))
 	traceCLITiming("output.write", time.Since(writeStarted), s.verbose)
