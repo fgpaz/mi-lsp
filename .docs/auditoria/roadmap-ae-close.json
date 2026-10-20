@@ -1,0 +1,142 @@
+{
+  "schema": "mi-lsp-roadmap-ae-closure/v1",
+  "closure_type": "retrospective",
+  "objective_commit": "9372f01f890e5a2bb023892efa502dd24d7f2880",
+  "objective_release": "v0.14.1",
+  "verification_commit": "15dd089110f4749ef29b5e9f5f6841588fbb3da3",
+  "verification_binary": "v0.14.4",
+  "branch_disposition": "integrate-main",
+  "implementation_inventory": [
+    ".docs/wiki/02_outcomes/RS-ROADMAP-001.md",
+    ".docs/wiki/04_flows/FL-ROADMAP-01.md",
+    ".docs/wiki/05_requirements/RF-ROADMAP-001.md",
+    ".docs/wiki/06_tests/TP-ROADMAP-001.md",
+    ".docs/wiki/07_tech/TECH-GRAPH-NATIVE.md",
+    ".docs/wiki/07_technical/TECH-ROADMAP-001.md",
+    ".docs/wiki/07_technical/contracts/CT-ROADMAP-001.md",
+    ".docs/wiki/09_contratos/CT-NAV-WIKI.md",
+    "CHANGELOG.md",
+    "integrations/mi-mcp/provider-manifest.json",
+    "internal/cli/nav.go",
+    "internal/cli/provider_manifest.go",
+    "internal/model/types.go",
+    "internal/model/wiki_graph.go",
+    "internal/model/wiki_roadmap.go",
+    "internal/service/wiki_graph.go",
+    "internal/service/wiki_roadmap.go"
+  ],
+  "administrative_closure_artifact": ".docs/auditoria/roadmap-ae-close.json",
+  "traceability": {
+    "schema": "ae-trace-close/v1",
+    "verdict": "PASS",
+    "sha256": "d8db4f40687137ea5b1529c6496c0aeb199cb723b7338eaddd0ce6fb7b759bca",
+    "product_paths_accounted": 8,
+    "chain": [
+      "TP-ROADMAP-001 verifies RF-ROADMAP-001",
+      "RF-ROADMAP-001 implements FL-ROADMAP-01",
+      "FL-ROADMAP-01 fulfills RS-ROADMAP-001",
+      "TECH-ROADMAP-001 supports RF-ROADMAP-001",
+      "CT-ROADMAP-001 supports RF-ROADMAP-001"
+    ],
+    "criteria_planned": 6,
+    "criteria_dispositions": 6
+  },
+  "independent_audit": {
+    "initial_verdict": "FAIL",
+    "initial_findings": [
+      "AUD-001: prose did not declare typed supports edges",
+      "AUD-002: missing persistent current-graph evidence",
+      "AUD-003: verification commit transcription error"
+    ],
+    "recheck_verdict": "PASS",
+    "recheck_severity": "none",
+    "push_ready": true,
+    "packet_sha256": "7e3e595299f271a12446dd1cbb3438a667eee67d1dc7082399c9ce8bdbda7f87"
+  },
+  "runtime_evidence": {
+    "contract_version": "wiki-graph/v1",
+    "ok": true,
+    "mode": "roadmap",
+    "generation_id": "cc91accef267c8b26512d6a2ed30eb41e0c7f3a9547283bb8b9633720d94a3c3",
+    "graph_freshness": {
+      "state": "current",
+      "generation_id": "cc91accef267c8b26512d6a2ed30eb41e0c7f3a9547283bb8b9633720d94a3c3",
+      "observed_generation_id": "cc91accef267c8b26512d6a2ed30eb41e0c7f3a9547283bb8b9633720d94a3c3",
+      "reason_code": "generation_matches_active"
+    },
+    "doc_generation_id": "idxgen-886964b38ed871f0",
+    "roadmap": {
+      "canonical": false,
+      "entries": [
+        {
+          "id": "item-exist",
+          "rs_id": "RS-FIXTURE-EXIST-001",
+          "horizon": "short",
+          "status": "doing",
+          "title": "Existe"
+        },
+        {
+          "id": "item-miss",
+          "rs_id": "RS-FIXTURE-MISSING-001",
+          "horizon": "medium",
+          "status": "todo",
+          "title": "Falta",
+          "depends_on": [
+            "item-exist"
+          ]
+        }
+      ]
+    },
+    "roadmap_warnings": [
+      {
+        "code": "roadmap_rs_missing",
+        "message": "roadmap_rs_missing:RS-FIXTURE-MISSING-001",
+        "blocking": false
+      }
+    ],
+    "edges": [
+      {
+        "id": "roadmap-rs:item-exist",
+        "from": "roadmap:item-exist",
+        "relation": "roadmap_for",
+        "to": "milsp:gph-node:v1:16a475b4132cf6fbacfed0f6cb095ab8073ce2154aa023d2f4ef3b1a5ca1752c",
+        "provenance": "derived"
+      },
+      {
+        "id": "roadmap-dep:item-exist:item-miss",
+        "from": "roadmap:item-exist",
+        "relation": "depends_on",
+        "to": "roadmap:item-miss",
+        "provenance": "derived"
+      }
+    ],
+    "mermaid": {
+      "format": "mermaid",
+      "source": "flowchart LR\n  subgraph short[\"short\"]\n    r1[\"Existe\"]:::status_doing\n  end\n  subgraph medium[\"medium\"]\n    r2[\"Falta\"]:::status_todo\n  end\n  subgraph long[\"long\"]\n  end\n  classDef status_todo fill:#e5e7eb,stroke:#6b7280,color:#111827\n  classDef status_doing fill:#dbeafe,stroke:#2563eb,color:#1e3a8a\n  classDef status_done fill:#dcfce7,stroke:#16a34a,color:#14532d\n  classDef status_blocked fill:#fee2e2,stroke:#dc2626,color:#7f1d1d\n  r1 --> r2\n",
+      "generation_id": "cc91accef267c8b26512d6a2ed30eb41e0c7f3a9547283bb8b9633720d94a3c3",
+      "node_ids": [
+        "roadmap:item-exist",
+        "roadmap:item-miss"
+      ],
+      "edge_ids": [
+        "roadmap-dep:item-exist:item-miss"
+      ]
+    }
+  },
+  "synthetic_fixture": {
+    "roadmap": {
+      "content": "# Roadmap fixture\n\n| id | rs | horizon | status | title | depends_on |\n| --- | --- | --- | --- | --- | --- |\n| item-exist | RS-FIXTURE-EXIST-001 | short | doing | Existe | |\n| item-miss | RS-FIXTURE-MISSING-001 | medium | todo | Falta | item-exist |\n",
+      "sha256": "8a189b2bd501b610c0ae4af60adcf4b976a7384039c7f4861ad5433bddea79c0"
+    },
+    "existing_rs": {
+      "content": "---\nwiki_contract: WIKI-CONTRACT-v1\nid: RS-FIXTURE-EXIST-001\nkind: outcome\nstatus: active\ntitle: \"RS de fixture para grafo current\"\n---\n\n## Resultado observable\nExiste en el índice documental del fixture.\n\n## Beneficiario\nComprobación acotada.\n\n## Criterios de éxito\n- El grafo current resuelve este id.\n\n## Fuera de alcance del RS\nNo es un resultado de producto.\n",
+      "sha256": "e655d96f7df5ed347ca381fdca4309b2305e8ed87980cba658a4592e1b0163b9"
+    }
+  },
+  "verification_scope": "Real released CLI against isolated native docs-only indexed fixture; not a full production/code graph. Existing RS has derived roadmap_for; missing RS has no invented edge and warning blocking=false. Mermaid copied explicitly as evidence, not persisted by product. No historical phase/verification chronology is inferred. Other TP cases have planned coverage, not a new execution claim.",
+  "learning_route": "ae-learn: initial closure lacked trace/audit and declared prose as typed edges; require source links and persistent runtime evidence before claiming closed. No extra feature or hook added.",
+  "roadmap_close": {
+    "status": "not_applicable",
+    "reason": "No identified tracker card was supplied for this retrospective closure."
+  }
+}

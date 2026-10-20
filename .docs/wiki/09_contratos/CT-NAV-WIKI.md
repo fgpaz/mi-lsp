@@ -740,6 +740,8 @@ Contrato de escritura para futuras skills: declarar `doc_id`, `summary` y `statu
 
 ## Roadmap local complementario
 
+Este archivo legacy no declara `links.supports`. La prosa de este apartado no es una arista. Los `supports` hacia RF-ROADMAP-001 viven solo en TECH-ROADMAP-001 y CT-ROADMAP-001. No se migran las listas Markdown de este contrato.
+
 `nav wiki graph --mode roadmap [--render mermaid]` lee opcionalmente `.docs/roadmap/roadmap.md`, fuera de la wiki canónica. La tabla usa claves estructurales inglesas `id`, `rs`, `horizon`, `status` y opcional `depends_on` (IDs separados por coma) y `title`; el texto libre sigue `language` de `00_gobierno`. Horizontes válidos: `short`, `medium`, `long`; estados: `todo`, `doing`, `done`, `blocked`. La respuesta tipada incluye entradas no canónicas, nodos roadmap vinculados a RS existentes, dependencias derivadas y `roadmap_warnings` con códigos/mensajes/bloqueo tipados (siempre no bloqueantes). Referencias RS inexistentes, dependencias desconocidas, ciclos y campos inválidos producen avisos no bloqueantes.
 
 El Mermaid se deriva solo para la respuesta solicitada: organiza ítems por horizonte y colorea estado; no es Gantt ni se escribe al disco. Roadmap no cambia active/readiness, trazabilidad ni cierre del canon wiki.

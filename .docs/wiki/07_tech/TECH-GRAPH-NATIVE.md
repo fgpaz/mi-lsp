@@ -688,4 +688,6 @@ Cambiar ownership, pipeline, authority, backend maturity o degradacion visible e
 
 ### Roadmap local derivado
 
+Este archivo legacy no declara `links.supports` ni ningún enlace tipado v1. La prosa de este apartado no es una arista. Los `supports` hacia RF-ROADMAP-001 viven solo en TECH-ROADMAP-001 y CT-ROADMAP-001. El comportamiento retrospectivo también está en RS-ROADMAP-001, FL-ROADMAP-01, RF-ROADMAP-001 y TP-ROADMAP-001. No se migra el resto de este documento.
+
 `.docs/roadmap/roadmap.md` es una fuente local opcional, no canónica y fuera del árbol de wiki. El lector `internal/model/wiki_roadmap.go` interpreta campos estructurales ingleses (`id`, `rs`, `horizon`, `status`, `depends_on`) y conserva el texto libre; el servicio deriva, solo a demanda, nodos de roadmap, enlaces hacia RS existentes y relaciones `depends_on`. RS desconocidos, ciclos, dependencias desconocidas y valores inválidos se exponen como avisos no bloqueantes. `nav wiki graph --mode roadmap --render mermaid` produce una vista efímera por short/medium/long y estado, nunca un Gantt ni archivo persistido. Esta proyección no participa en gates de readiness, trazabilidad o cierre.
