@@ -117,6 +117,16 @@ flowchart LR
     D --> GD[~/.mi-lsp/daemon state + db]
 ```
 
+## Uso desde Code Mode y mi-mcp
+
+El camino recomendado para agentes es objetivo → `nav intent` → continuación exacta → evidencia acotada. Las operaciones literales siguen directas. Code Mode procesa y filtra la respuesta antes de devolverla al modelo; usa JSON si la interpreta como datos y TOON si el modelo la lee directamente. El workspace se explicita cuando hace falta seleccionar la raíz sin ambigüedad.
+
+`mi-mcp` descubre y ejecuta las operaciones publicadas (`herramientas.buscar` → `herramientas.describe` → `herramientas.llamar`); no agrega otro router ni cambia la autoridad de la CLI. Fuera de mi-mcp se conserva el mismo contrato. Los ejemplos de uso normal no añaden `--no-auto-register`, `--no-auto-daemon`, `--no-daemon` ni un backend forzado. Son controles de diagnóstico explícito, no una condición para leer sin modificar el código del proyecto.
+
+Esto no elimina restricciones del proveedor: el manifiesto publicado actualmente fija `--no-auto-register`, y el consumidor no debe quitar sus `fixed_args`. El arranque interno autorizado de la CLI no equivale a autorizar instalaciones, `init`/`index` explícitos o reinicios. Quitar flags restrictivas tampoco demuestra que el índice esté listo. Ante `index_not_ready`, un fallback al README es orientación parcial, no evidencia del grafo. Al filtrar, conservar workspace/autoridad, advertencias, omisiones, degradación, truncamiento y próximos comandos.
+
+La guía operativa está en [SKILL.md](../../skills/mi-lsp/SKILL.md#small-contract-for-code-mode-and-mi-mcp) y [quickstart](../../skills/mi-lsp/references/quickstart.md#ordinary-queries-one-entry-then-exact-next-steps). Este ajuste documental conserva compatibilidad: no elimina flags, no cambia defaults de runtime ni habilita nuevas mutaciones.
+
 ## Decisiones e invariantes
 
 - Existe un unico daemon por usuario/host; no un daemon por workspace.

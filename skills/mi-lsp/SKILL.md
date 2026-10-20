@@ -6,12 +6,21 @@ description: Use when a folder-based agent should navigate code with the mi-lsp 
 # mi-lsp
 
 Use this skill when you want local semantic navigation with the `mi-lsp` CLI. The CLI is the authority. Each host door under `integrations/` is optional; there is no `mi-lsp mcp` door (removed 2026-10-15; mi-mcp / sandinas-mcp run this CLI per call); do not require them, and do not treat a host door as a second router.
-If the skill is installed but the binary is missing, bootstrap the CLI first instead of abandoning the flow.
+For ordinary agent queries, use the small Code Mode contract below. Installation and explicit workspace setup are separate operations, not a preflight to repeat before each read.
 
 For an explicitly authorized isolated graph QA run (not a routine query), follow [R6 — Authorized isolated graph QA](references/recipes.md#r6--authorized-isolated-graph-qa). Keep its setup at the start of authorized verification; it is not a hidden build/C2 preflight.
 
-If `mi-lsp` is missing from `PATH`, use the one-command bootstrap in the `Install bootstrap` section before using `rg`, `Grep`, `Glob`, or broad file reads.
-The intended first path is: install or verify CLI -> `mi-lsp init . --name <alias>` -> `nav intent` for every supported goal-shaped request, then the emitted bounded operation; use `nav ask` / `nav pack` / `nav search --include-content` only when the intent lane does not apply.
+## Small contract for Code Mode and mi-mcp
+
+- Start a goal with `mi-lsp nav intent "<goal>"`; literal operations stay direct. Reuse the resolved workspace; specify `--workspace <alias>` when needed to select it unambiguously.
+- In Code Mode, use `--format json` when the script parses the CLI response. For a result read directly by the model, prefer `--format toon`. Do not stack output/profile flags or budgets without a concrete need.
+- Through mi-mcp, discover the current operation with `herramientas.buscar`, inspect `herramientas.describe`, then invoke `herramientas.llamar` with its exact schema. The gateway owns the published argument mapping; do not invent helpers, argv fields, or a second router. The same CLI contract applies outside mi-mcp.
+- Do not add `--no-auto-register`, `--no-auto-daemon`, `--no-daemon`, or force `--backend` to make an ordinary read supposedly safer. These are explicit diagnostic/operational controls, not the normal query recipe. Preserve restrictions imposed by the provider manifest or operator: a caller must not strip `fixed_args`. The currently published provider includes `--no-auto-register`; this guide does not remove it or promise automatic setup through that door.
+- Let the CLI manage its authorized internal lifecycle. A read does not authorize an installer, an explicit `init`/`index`, or a daemon restart. Diagnose missing setup separately; removing restrictions alone does not prove the index is ready.
+- Follow exact emitted continuations before widening a query. Batch known ranges with `multi-read`. Only parallelize independent operations within the host's documented capacity; keep per-call failures visible.
+- Filter data inside Code Mode, not by dumping raw responses. Preserve workspace/authority, partial or degraded state, warnings/omissions, truncation, and executable next steps. `index_not_ready` plus README fallback is orientation, not successful semantic navigation.
+
+If the CLI is unavailable, report `reason_code: unavailable_binary` with a bounded detail. Use `Install bootstrap` only for separately authorized installation; do not turn every query into install -> init -> index.
 
 Prefer the AXI-default surfaces for onboarding and discovery: `mi-lsp`, `init`, `workspace status`, `nav wiki inventory`, `nav wiki search`, `nav route`, `nav search`, and `nav intent`.
 Use `nav wiki search` when the task is clearly about project docs, RS/RF/FL/TP/CT/TECH/DB, outcomes, contracts, tests, or traceability.

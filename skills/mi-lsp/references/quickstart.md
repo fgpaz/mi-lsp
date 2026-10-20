@@ -4,7 +4,7 @@ Use this when `SKILL.md` is not enough and you need a slightly longer decision g
 
 ## If `mi-lsp` is missing
 
-If the skill is installed but the command is missing, install the CLI before doing anything else:
+If the skill is installed but the command is missing, report `unavailable_binary`. For a separately authorized installation:
 
 1. Download the matching release bundle from `https://github.com/fgpaz/mi-lsp/releases`.
 2. Extract it into a stable directory and keep `workers/<rid>/` next to `mi-lsp(.exe)`.
@@ -22,6 +22,8 @@ Windows bundles for `win-x64` and `win-arm64` contain `mi-lsp.exe`. A `.cmd` shi
 
 ## First-use bootstrap
 
+Only for explicitly authorized workspace setup; ordinary queries reuse existing setup.
+
 ```powershell
 mi-lsp workspace list
 mi-lsp
@@ -32,21 +34,30 @@ mi-lsp workspace status <alias>
 If the repo already exists in the registry, reuse that alias instead of creating a new one.
 If `mi-lsp workspace list` fails because the command is missing, return to the install steps above. Leave the `mi-lsp` lane only for a visible `unsupported_operation`, `unavailable_binary`, `invalid_workspace`, or `explicit_incomplete` reason; never fall back silently.
 
-## Preferred command order
+## Ordinary queries: one entry, then exact next steps
 
-For every supported goal-shaped request, start the query with `nav intent`; routing is automatic and has no opt-out. Bootstrap or `workspace status` may precede it when the CLI/workspace needs onboarding.
+Setup above is for explicitly authorized first use, not a per-query preflight.
 
-1. `mi-lsp` or `workspace status` when you need the first onboarding/discovery pass
-2. `nav wiki search` when you need RF/FL/TP/CT/TECH/DB docs or traceability anchors; `nav wiki map` when you need the compact knowledge-wiki hub catalog
-3. `nav route` when you need the cheapest canonical orientation (no index needed, governance-first)
-4. `nav ask` when you need richer orientation, ownership, or docs-first evidence synthesis
-5. `nav recall --intent formula|evidence|route|explore|learning` when embeddings are configured and you need semantic wiki candidates
-6. `nav search --include-content` when you need literal implementation evidence
-7. `nav workspace-map --axi` when you need structure across repos or services
-8. `nav related` when you need one symbol's neighborhood in one call
-9. `nav service` when you need evidence-first understanding of a backend area
-10. `nav intent` when you know what the code does but not the symbol name
-11. `nav multi-read` or `nav batch` when you already know the targets
+1. For a goal, run `mi-lsp nav intent "<goal>"`. A literal requested operation stays direct.
+2. Follow the emitted `continuation.next`, `expansions[].command`, or executable `next_queries` exactly.
+3. When ranges are known, read them together with `nav multi-read`; do not reload the whole file.
+4. Report partial/degraded results and missing evidence honestly. A README fallback cannot establish callers, impact, or a semantic graph.
+
+Use only the workspace selector and output format the caller actually needs:
+
+```powershell
+# Code Mode parses JSON; replace the example workspace with the resolved alias.
+mi-lsp nav intent "how does the daemon start" --workspace myapp --format json
+# Read the exact ranges returned by that query, not invented paths.
+```
+
+For model-readable output, choose `--format toon` instead. Do not add `--profile`, `--classic`, `--axi`, output budgets, or backend overrides by habit. Use additional controls only for a specific requirement or an emitted continuation.
+
+In mi-mcp Code Mode, use `herramientas.buscar` -> `herramientas.describe` -> `herramientas.llamar`; discover operation names and argument schemas rather than copying a static helper catalog. The provider owns CLI mapping and JSON output. Do not append arbitrary flags or remove its fixed restrictions. Direct Code Mode execution follows the same navigation and failure contract.
+
+`--no-auto-register`, `--no-auto-daemon`, and `--no-daemon` are explicit diagnostics, not caller-added defaults. A provider may impose a restriction: the current manifest fixes `--no-auto-register`. Missing setup through that door must be diagnosed separately, not bypassed by the caller. The CLI may manage its authorized internal lifecycle; explicit installation, indexing, and daemon control still need their own authorization.
+
+Process the response inside Code Mode and return only needed evidence plus workspace/authority, warnings/omissions, incomplete state, truncation and next commands. Preserve each call's failure when batching independent reads; do not parallelize dependent continuations.
 
 ## Canonical wiki-first loop
 
