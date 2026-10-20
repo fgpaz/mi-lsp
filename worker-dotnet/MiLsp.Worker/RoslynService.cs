@@ -29,6 +29,7 @@ public sealed class RoslynService
 
             return request.Method switch
             {
+                "diagnostics" => await DiagnosticsAsync(request, cancellationToken),
                 "find_symbol" => await FindSymbolsAsync(request, cancellationToken),
                 "find_refs" => await FindReferencesAsync(request, cancellationToken),
                 "get_overview" => await GetOverviewAsync(request, cancellationToken),
@@ -95,6 +96,48 @@ public sealed class RoslynService
             }
         };
         return new WorkerResponse(true, "roslyn", items, Stats: new WorkerStats(Files: 1, Ms: elapsedMs));
+    }
+
+    private async Task<WorkerResponse> DiagnosticsAsync(WorkerRequest request, CancellationToken cancellationToken)
+    {
+        var file = NormalizePath(request.Workspace, request.Payload.GetString("file") ?? throw new InvalidOperationException("file required"));
+        var relative = Path.GetRelativePath(Path.GetFullPath(request.Workspace), file);
+        if (Path.IsPathRooted(relative) || relative == ".." || relative.StartsWith(".." + Path.DirectorySeparatorChar))
+            return new WorkerResponse(false, "roslyn", Error: "Source outside workspace", ErrorCode: "invalid_path");
+        if (!File.Exists(file))
+            return new WorkerResponse(false, "roslyn", Error: "Source no longer exists", ErrorCode: "file_missing");
+        for (var current = new FileInfo(file) as FileSystemInfo; current is not null; current = current is FileInfo source ? source.Directory : (current as DirectoryInfo)?.Parent)
+        {
+            if ((current.Attributes & FileAttributes.ReparsePoint) != 0)
+                return new WorkerResponse(false, "roslyn", Error: "Linked source paths are excluded", ErrorCode: "invalid_path");
+            if (string.Equals(current.FullName, Path.GetFullPath(request.Workspace), OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal)) break;
+        }
+        if (new FileInfo(file).Length > 2 * 1024 * 1024)
+            return new WorkerResponse(false, "roslyn", Error: "Source exceeds diagnostic work limit", ErrorCode: "work_limit");
+        var solution = await LoadSolutionAsync(request, cancellationToken).ConfigureAwait(false);
+        var ids = solution.GetDocumentIdsWithFilePath(file);
+        if (ids.Length == 0)
+            return new WorkerResponse(false, "roslyn", Error: "Source is not in the selected project", ErrorCode: "unavailable");
+        var items = new List<Dictionary<string, object?>>();
+        foreach (var id in ids)
+        {
+            var document = solution.GetDocument(id)!;
+            var semantic = await document.GetSemanticModelAsync(cancellationToken).ConfigureAwait(false);
+            if (semantic is null)
+                return new WorkerResponse(false, "roslyn", items, Error: "Semantic model unavailable", ErrorCode: "unavailable");
+            foreach (var diagnostic in semantic.GetDiagnostics(cancellationToken: cancellationToken))
+            {
+                if (!diagnostic.Location.IsInSource) continue;
+                var start = diagnostic.Location.GetLineSpan().StartLinePosition;
+                items.Add(new Dictionary<string, object?> {
+                    ["path"] = file, ["line"] = start.Line + 1, ["column"] = start.Character + 1,
+                    ["severity"] = diagnostic.Severity switch { DiagnosticSeverity.Error => "error", DiagnosticSeverity.Warning => "warning", DiagnosticSeverity.Hidden => "hint", _ => "information" },
+                    ["message"] = diagnostic.GetMessage(System.Globalization.CultureInfo.InvariantCulture),
+                    ["source"] = "roslyn", ["code"] = diagnostic.Id
+                });
+            }
+        }
+        return new WorkerResponse(true, "roslyn", items, Warnings: ["Compiler semantic diagnostics only; external analyzers are not executed"], Stats: new WorkerStats(Files: 1, Symbols: items.Count));
     }
 
     private async Task<WorkerResponse> FindSymbolsAsync(WorkerRequest request, CancellationToken cancellationToken)

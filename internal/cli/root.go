@@ -176,6 +176,8 @@ func NewRootCommand() *cobra.Command {
 		newVersionCommand(state),
 		newQCommand(state),
 		newProviderManifestCommand(state),
+		newModelSurfaceCommand(),
+		newFindFilesCommand(state),
 		newConfigCommand(),
 		newSchemaCommand(state),
 		newProbeCommand(state),
@@ -267,8 +269,8 @@ func (s *rootState) executeOperation(cmd *cobra.Command, operation string, paylo
 		}
 		if err != nil {
 			daemonFailed = true
-		} else if shouldFallbackNavPrepareForUnknownOperation(request.Operation, envelope) {
-			// Additive preparation remains usable while an older shared daemon is still running.
+		} else if shouldFallbackNavPrepareForUnknownOperation(request.Operation, envelope) || shouldFallbackNavDiagnostics(request.Operation, envelope) {
+			// Additive operations remain usable while an older shared daemon is still running.
 			daemonFailed = true
 			err = nil
 		} else {
@@ -295,7 +297,11 @@ func (s *rootState) executeOperation(cmd *cobra.Command, operation string, paylo
 			envelope.Warnings = append(envelope.Warnings, refreshWarning)
 		}
 		if err == nil && daemonFailed && envelope.Hint == "" {
-			envelope.Hint = "daemon_unavailable; served from local text index"
+			if request.Operation == "nav.diagnostics" {
+				envelope.Hint = "daemon_unavailable; served by local semantic backends"
+			} else {
+				envelope.Hint = "daemon_unavailable; served from local text index"
+			}
 		}
 		if daemonFailed {
 			route = "direct_fallback"
@@ -391,6 +397,17 @@ func (s *rootState) executeGraphOperation(cmd *cobra.Command, operation string, 
 
 func shouldFallbackNavPrepareForUnknownOperation(operation string, envelope model.Envelope) bool {
 	return operation == "nav.prepare" && !envelope.Ok && envelope.Error != nil && envelope.Error.Code == "nav_generic" && strings.Contains(strings.ToLower(envelope.Error.Message), "unknown operation")
+}
+
+func shouldFallbackNavDiagnostics(operation string, envelope model.Envelope) bool {
+	if operation != "nav.diagnostics" {
+		return false
+	}
+	if envelope.Ok {
+		// An older daemon's help/no-op is not a diagnostics response.
+		return envelope.ContractVersion != "diagnostics/v1" || envelope.Diagnostics == nil
+	}
+	return envelope.Error != nil && envelope.Error.Code == "nav_generic" && strings.Contains(strings.ToLower(envelope.Error.Message), "unknown operation")
 }
 
 func (s *rootState) ensureTelemetry() *CLITelemetry {
@@ -755,7 +772,7 @@ func shouldUseDaemon(operation string, requested bool) bool {
 // shouldAutoStartDaemon returns true for heavy operations that benefit from warm runtimes.
 func shouldAutoStartDaemon(operation string) bool {
 	switch operation {
-	case "nav.refs", "nav.context", "nav.deps", "nav.related", "nav.service", "nav.diff-context", "nav.batch":
+	case "nav.refs", "nav.context", "nav.deps", "nav.related", "nav.service", "nav.diff-context", "nav.batch", "nav.diagnostics":
 		return true
 	case "nav.workspace-map":
 		return false

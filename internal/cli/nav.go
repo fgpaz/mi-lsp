@@ -805,6 +805,7 @@ with their reason and preserve the same graph generation when available.`,
 	graphCommands := newGraphQueryCommands(state)
 	command.AddCommand(gitFrontierCommand, symbolsCommand, findCommand, refsCommand, overviewCommand, outlineCommand, askCommand, recallCommand, packCommand, routeCommand, wikiCommand, evidenceCommand, governanceCommand, wikiRootCommand, serviceCommand, searchCommand, contextCommand, depsCommand, multiReadCommand, batchCommand, relatedCommand, workspaceMapCommand, diffContextCommand, affectedCommand, flowSliceCommand, changePackCommand, prepareCommand, editPlanCommand, traceCommand, intentCommand, explainChangeCommand, newNavSuggestCommand(state))
 	command.AddCommand(graphCommands...)
+	command.AddCommand(newDiagnosticsCommand(state))
 	return command
 }
 

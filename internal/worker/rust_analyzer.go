@@ -15,9 +15,15 @@ func NewRustAnalyzerClient(workspace model.WorkspaceRegistration, request model.
 	if err != nil {
 		return nil, err
 	}
-	config := LSPConfig{ServerCmd: binary, Backend: "rust-analyzer"}
+	config := LSPConfig{ServerCmd: binary, Backend: "rust-analyzer", InitOptions: map[string]any{}}
 	if linked := rustLinkedCargoManifests(workspace, request); len(linked) > 0 {
-		config.InitOptions = map[string]any{"linkedProjects": linked}
+		config.InitOptions["linkedProjects"] = linked
+	}
+	if request.Method == "diagnostics" {
+		// Diagnostics use native analyzer reports, never cargo check/build.
+		config.InitOptions["checkOnSave"] = false
+		config.InitOptions["cargo"] = map[string]any{"buildScripts": map[string]any{"enable": false}}
+		config.InitOptions["procMacro"] = map[string]any{"enable": false}
 	}
 	return NewLSPClient(config, workspace), nil
 }

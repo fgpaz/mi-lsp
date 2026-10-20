@@ -23,6 +23,7 @@ func NewPyrightClient(workspace model.WorkspaceRegistration) (*LSPClient, error)
 		return nil, err
 	}
 	config := LSPConfig{
+		Backend:    "pyright",
 		ServerCmd:  binary,
 		ServerArgs: []string{"--stdio"},
 		InitOptions: map[string]any{

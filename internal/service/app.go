@@ -103,6 +103,8 @@ func (a *App) Execute(ctx context.Context, request model.CommandRequest) (model.
 		envelope, err = a.indexWorkspace(ctx, request)
 	case "info":
 		envelope, err = a.info(ctx, request.Context.Workspace)
+	case "nav.diagnostics":
+		envelope, err = a.diagnostics(ctx, request)
 	case "nav.symbols":
 		envelope, err = a.symbols(ctx, request)
 	case "nav.find":
@@ -201,7 +203,9 @@ func (a *App) Execute(ctx context.Context, request model.CommandRequest) (model.
 		return model.Envelope{}, err
 	}
 	enrichmentStarted := time.Now()
-	if liveWikiCodeOperation(request.Operation) {
+	if request.Operation == "nav.diagnostics" {
+		// Live diagnostics never consult or refresh a catalog/wiki index.
+	} else if liveWikiCodeOperation(request.Operation) {
 		envelope = a.enrichLiveWikiCodeContext(ctx, request, envelope)
 	} else {
 		envelope = a.enrichWikiCodeContext(ctx, request, envelope)
@@ -1271,7 +1275,7 @@ func (a *App) normalizeWorkspaceRequest(ctx context.Context, request model.Comma
 	// Status is a read-only inspection and must resolve the original caller cwd
 	// in workspaceStatus, before ordinary navigation can collapse a linked tree
 	// to its registered main repository.
-	if request.Operation == "workspace.status" {
+	if request.Operation == "workspace.status" || request.Operation == "nav.diagnostics" {
 		return request, nil, nil
 	}
 	if !operationRequiresWorkspaceResolution(request) {

@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/fgpaz/mi-lsp/internal/model"
 	"github.com/fgpaz/mi-lsp/internal/processutil"
@@ -110,14 +111,39 @@ func (c *TsserverClient) Start() error {
 }
 
 func (c *TsserverClient) Call(ctx context.Context, request model.WorkerRequest) (model.WorkerResponse, error) {
-	c.mu.Lock()
+	for !c.mu.TryLock() {
+		select {
+		case <-ctx.Done():
+			return model.WorkerResponse{}, ctx.Err()
+		case <-time.After(5 * time.Millisecond):
+		}
+	}
 	defer c.mu.Unlock()
 
 	if err := c.Start(); err != nil {
 		return model.WorkerResponse{}, err
 	}
 
+	// Interrupt blocking protocol reads/writes on the same request deadline.
+	cmd, in, out := c.cmd, c.stdin, c.stdout
+	interrupted := make(chan struct{})
+	stop := context.AfterFunc(ctx, func() {
+		_ = in.Close()
+		_ = out.Close()
+		if cmd.Process != nil {
+			_ = cmd.Process.Kill()
+		}
+		close(interrupted)
+	})
+	defer func() {
+		if !stop() {
+			<-interrupted
+			_ = c.Close()
+		}
+	}()
 	switch request.Method {
+	case "diagnostics":
+		return c.diagnostics(ctx, request)
 	case "find_refs":
 		return c.findReferences(ctx, request)
 	case "get_context":
@@ -299,7 +325,7 @@ func readTSFrame(reader *bufio.Reader) (tsserverEnvelope, error) {
 			}
 		}
 	}
-	if contentLength <= 0 {
+	if contentLength <= 0 || contentLength > 8<<20 {
 		return tsserverEnvelope{}, errors.New("tsserver returned invalid content length")
 	}
 	body := make([]byte, contentLength)
@@ -335,7 +361,9 @@ func findTsserverPath(workspaceRoot string) (string, error) {
 }
 
 func globalNpmRoot() (string, error) {
-	command := exec.Command("npm", "root", "-g")
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	command := exec.CommandContext(ctx, "npm", "root", "-g")
 	processutil.ConfigureNonInteractiveCommand(command)
 	output, err := command.Output()
 	if err != nil {

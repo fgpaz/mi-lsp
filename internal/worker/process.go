@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/fgpaz/mi-lsp/internal/model"
 	"github.com/fgpaz/mi-lsp/internal/processutil"
@@ -103,7 +104,13 @@ func (c *Client) startSpec(index int) error {
 }
 
 func (c *Client) Call(ctx context.Context, request model.WorkerRequest) (model.WorkerResponse, error) {
-	c.mu.Lock()
+	for !c.mu.TryLock() {
+		select {
+		case <-ctx.Done():
+			return model.WorkerResponse{}, ctx.Err()
+		case <-time.After(5 * time.Millisecond):
+		}
+	}
 	defer c.mu.Unlock()
 
 	for attempt := 0; attempt < 2; attempt++ {
@@ -133,9 +140,10 @@ func (c *Client) callOnce(ctx context.Context, request model.WorkerRequest) (mod
 
 	responseChannel := make(chan model.WorkerResponse, 1)
 	errorChannel := make(chan error, 1)
+	stdout := c.stdout
 	go func() {
 		var response model.WorkerResponse
-		if err := ReadFrame(c.stdout, &response); err != nil {
+		if err := ReadFrame(stdout, &response); err != nil {
 			errorChannel <- err
 			return
 		}
@@ -144,6 +152,8 @@ func (c *Client) callOnce(ctx context.Context, request model.WorkerRequest) (mod
 
 	select {
 	case <-ctx.Done():
+		// A late frame must not satisfy a subsequent pooled diagnostic request.
+		_ = c.closeProcess()
 		return model.WorkerResponse{}, ctx.Err()
 	case err := <-errorChannel:
 		return model.WorkerResponse{}, err

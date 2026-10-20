@@ -10,7 +10,15 @@ import (
 	"github.com/fgpaz/mi-lsp/internal/model"
 )
 
-func ApplyEnvelopeLimits(env model.Envelope, opts model.QueryOptions) model.Envelope {
+func ApplyEnvelopeLimits(env model.Envelope, opts model.QueryOptions) (result model.Envelope) {
+	defer func() {
+		if result.Diagnostics != nil {
+			items := reflect.ValueOf(result.Items)
+			if items.IsValid() && items.Kind() == reflect.Slice {
+				result.Diagnostics.Returned = items.Len()
+			}
+		}
+	}()
 	paginated := false
 	omittedItems := 0
 

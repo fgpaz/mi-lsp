@@ -44,7 +44,13 @@ type providerSocket struct {
 	RetryAfterResponse bool   `json:"retry_after_response"`
 }
 
+type providerModelAlias struct {
+	Namespace string `json:"namespace"`
+	Name      string `json:"name"`
+}
+
 type providerOperation struct {
+	ModelAlias   *providerModelAlias `json:"model_alias,omitempty"`
 	Name         string              `json:"name"`
 	Description  string              `json:"description"`
 	Effect       string              `json:"effect"`
@@ -84,7 +90,7 @@ func newProviderManifest(version string) providerManifest {
 		"wiki_graph": "wiki-graph/v1", "wiki_validate_contract": "wiki-contract/v1",
 		"version": "mi-lsp-version/v0", "schema": "mi-lsp-schema/v0", "--help": "mi-lsp-help/v0", "--version": "mi-lsp-version-flag/v0",
 	}
-	return providerManifest{
+	manifest := providerManifest{
 		Format: "mi-mcp-provider/v2", Namespace: "milsp", Binary: "mi-lsp", ProviderVersion: version,
 		Description: "Semantic code navigation and query operations", Tags: []string{"code", "navigation", "semantic search", "workspace"},
 		MinProviderVersion: minProviderVersion, Contracts: contracts, Auth: "none",
@@ -114,6 +120,64 @@ func newProviderManifest(version string) providerManifest {
 			managementOperation("--help", contracts["--help"]), managementOperation("--version", contracts["--version"]),
 		},
 	}
+	// One source for both the executable aliases and their CLI/catalog description.
+	for i := range manifest.Operations {
+		op := &manifest.Operations[i]
+		switch op.Name {
+		case "intent":
+			op.ModelAlias = &providerModelAlias{Namespace: "lsp", Name: "intent"}
+			op.Invocation = navigationInvocation([]string{"nav", "intent"}, map[string]any{"question": argumentMapping(0), "top": optionMapping("--top"), "offset": optionMapping("--offset"), "repo": optionMapping("--repo")})
+		case "multi-read":
+			op.ModelAlias = &providerModelAlias{Namespace: "lsp", Name: "read"}
+			op.Invocation = navigationInvocation([]string{"nav", "multi-read"}, map[string]any{"ranges": map[string]any{"source": "argument", "position": 0, "repeat": true}})
+		}
+		if op.ModelAlias != nil {
+			addNavigationBudget(op)
+		}
+	}
+	manifest.Operations = append(manifest.Operations,
+		modelNavigationOperation("search", "lsp", "search", "Search text; bounded matches, optional content", []string{"nav", "search"}, "pattern", map[string]any{"include_content": map[string]any{"type": "boolean"}}, map[string]any{"include_content": optionMapping("--include-content")}),
+		modelNavigationOperation("refs", "lsp", "refs", "Find symbol references; optional file/line anchor", []string{"nav", "refs"}, "symbol", map[string]any{"file": stringSchema(0), "line": integerSchema(1, 0), "column": integerSchema(1, 0)}, map[string]any{"file": optionMapping("--file"), "line": optionMapping("--line"), "column": optionMapping("--column")}),
+	)
+	diagnostics := modelNavigationOperation("diagnostics", "lsp", "diagnostics", "Errors/warnings after editing a file or changed files; partial is not clean", []string{"nav", "diagnostics"}, "", map[string]any{"file": stringSchema(1), "changed": map[string]any{"type": "boolean"}, "base": stringSchema(1), "max_files": integerSchema(1, 64), "offset": integerSchema(0, 0)}, map[string]any{"file": argumentMapping(0), "changed": optionMapping("--changed"), "base": optionMapping("--base"), "max_files": optionMapping("--max-files"), "offset": optionMapping("--offset")})
+	diagnostics.Contract = "diagnostics/v1"
+	diagnostics.OutputSchema = responseSchema(diagnostics.Contract)
+	manifest.Operations = append(manifest.Operations, diagnostics)
+	find := modelNavigationOperation("find-files", "fs", "find", "Find filenames/globs respecting ignore rules; no index", []string{"find-files"}, "pattern", map[string]any{"top": integerSchema(1, 1000), "budget_bytes": integerSchema(512, 1048576), "literal": map[string]any{"type": "boolean"}, "refresh": map[string]any{"type": "boolean"}}, map[string]any{"top": optionMapping("--top"), "budget_bytes": optionMapping("--budget-bytes"), "literal": optionMapping("--literal"), "refresh": optionMapping("--refresh")})
+	find.Contract = "find-files/v1"
+	find.OutputSchema = responseSchema(find.Contract)
+	manifest.Operations = append(manifest.Operations, find)
+	for _, op := range manifest.Operations {
+		manifest.Contracts[op.Name] = op.Contract
+	}
+	return manifest
+}
+
+func navigationInvocation(argv []string, fields map[string]any) *providerInvocation {
+	fields["workspace"] = optionMapping("--workspace")
+	return &providerInvocation{Kind: "cli", Command: "mi-lsp", FixedArgs: append([]string{"--format", "json", "--client-name", "mi-mcp", "--no-auto-register", "--token-budget", "2000", "--max-items", "20"}, argv...), InputMapping: map[string]any{"fields": fields}, Output: "json"}
+}
+
+func addNavigationBudget(op *providerOperation) {
+	properties := op.InputSchema["properties"].(map[string]any)
+	fields := op.Invocation.InputMapping["fields"].(map[string]any)
+	for key, flag := range map[string]string{"max_items": "--max-items", "token_budget": "--token-budget"} {
+		properties[key] = integerSchema(1, 0)
+		fields[key] = optionMapping(flag)
+	}
+}
+
+func modelNavigationOperation(name, namespace, alias, description string, argv []string, positional string, properties, fields map[string]any) providerOperation {
+	properties["workspace"] = stringSchema(0)
+	required := []string{}
+	if positional != "" {
+		properties[positional] = stringSchema(1)
+		fields[positional] = argumentMapping(0)
+		required = append(required, positional)
+	}
+	op := providerOperation{Name: name, ModelAlias: &providerModelAlias{Namespace: namespace, Name: alias}, Description: description, Effect: "read", Contract: "mi-lsp-" + name + "/v0", InputSchema: objectSchema(required, properties), OutputSchema: responseSchema("mi-lsp-" + name + "/v0"), Invocation: navigationInvocation(argv, fields)}
+	addNavigationBudget(&op)
+	return op
 }
 
 func argumentMapping(position int) map[string]any {

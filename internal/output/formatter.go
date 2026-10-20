@@ -25,7 +25,9 @@ func ApplyProfile(env model.Envelope) model.Envelope {
 		env.MemoryPointer = nil
 		// Keep continuation (executable) but drop free-form hints.
 		env.Hint = ""
-		env.NextHint = nil
+		if env.Diagnostics == nil {
+			env.NextHint = nil
+		}
 		if len(env.Warnings) > 3 {
 			env.Warnings = env.Warnings[:3]
 		}
@@ -48,8 +50,14 @@ func Render(env model.Envelope, format string, compress bool) ([]byte, error) {
 	case "json":
 		return json.MarshalIndent(env, "", "  ")
 	case "text":
+		if env.Diagnostics != nil {
+			return []byte(renderDiagnostics(env)), nil
+		}
 		return []byte(renderText(env)), nil
 	case "agent":
+		if env.Diagnostics != nil {
+			return []byte(renderDiagnostics(env)), nil
+		}
 		return []byte(renderAgent(env)), nil
 	case "toon":
 		compact := env

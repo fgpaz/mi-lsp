@@ -590,7 +590,7 @@ func isGraphQueryOperation(operation string) bool {
 
 func (s *Server) isBackpressureLimited(request model.CommandRequest) bool {
 	switch request.Operation {
-	case "q", "nav.refs", "nav.context", "nav.deps", "nav.related", "nav.service", "nav.diff-context", "nav.batch", "nav.search", "nav.find", "nav.neighbors", "nav.callers", "nav.callees", "nav.path", "nav.explain", "nav.graph.stats", "nav.graph.status", "nav.graph.rank", "nav.graph.validate", "nav.intent", "nav.flow-slice", "nav.change-pack", "workspace.warm":
+	case "q", "nav.refs", "nav.context", "nav.deps", "nav.related", "nav.service", "nav.diff-context", "nav.batch", "nav.search", "nav.find", "nav.neighbors", "nav.callers", "nav.callees", "nav.path", "nav.explain", "nav.graph.stats", "nav.graph.status", "nav.graph.rank", "nav.graph.validate", "nav.intent", "nav.flow-slice", "nav.change-pack", "nav.diagnostics", "workspace.warm":
 		return true
 	case "nav.workspace-map":
 		return request.Context.Full

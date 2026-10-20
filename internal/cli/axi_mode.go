@@ -81,7 +81,7 @@ func (s *rootState) resolveAXIDecision(cmd *cobra.Command, operation string, pay
 
 func supportsAXISurface(operation string) bool {
 	switch operation {
-	case "root.home", "workspace.init", "workspace.status", "nav.ask", "nav.pack", "nav.wiki.pack", "nav.route", "nav.wiki.route", "nav.workspace-map", "nav.search", "nav.wiki.search", "nav.wiki.validate-harness", "nav.wiki.validate-contract", "nav.wiki.validate-source", "nav.wiki.index", "nav.wiki.matrix", "nav.intent":
+	case "root.home", "workspace.init", "workspace.status", "nav.ask", "nav.pack", "nav.wiki.pack", "nav.route", "nav.wiki.route", "nav.workspace-map", "nav.search", "nav.wiki.search", "nav.wiki.validate-harness", "nav.wiki.validate-contract", "nav.wiki.validate-source", "nav.wiki.index", "nav.wiki.matrix", "nav.intent", "nav.diagnostics":
 		return true
 	default:
 		return false

@@ -173,9 +173,11 @@ func (c *LSPClient) startContext(ctx context.Context) error {
 				"hover": map[string]any{
 					"contentFormat": []string{"plaintext"},
 				},
-				"references":  map[string]any{},
-				"definition":  map[string]any{},
-				"declaration": map[string]any{},
+				"references":         map[string]any{},
+				"definition":         map[string]any{},
+				"declaration":        map[string]any{},
+				"diagnostic":         map[string]any{"dynamicRegistration": false},
+				"publishDiagnostics": map[string]any{"versionSupport": true},
 			},
 		},
 	}
@@ -231,6 +233,8 @@ func (c *LSPClient) Call(ctx context.Context, request model.WorkerRequest) (mode
 	}
 
 	switch request.Method {
+	case "diagnostics":
+		return c.diagnostics(ctx, request)
 	case "find_refs":
 		return c.findReferences(ctx, request)
 	case "get_context":

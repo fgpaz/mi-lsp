@@ -1,0 +1,157 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "diagnostics/v1",
+  "type": "object",
+  "required": [
+    "contract_version",
+    "ok",
+    "items",
+    "diagnostics",
+    "truncated"
+  ],
+  "properties": {
+    "contract_version": {
+      "const": "diagnostics/v1"
+    },
+    "ok": {
+      "type": "boolean"
+    },
+    "partial": {
+      "type": "boolean"
+    },
+    "degraded": {
+      "type": "boolean"
+    },
+    "truncated": {
+      "type": "boolean"
+    },
+    "next_hint": {
+      "type": "string"
+    },
+    "items": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/diagnostic"
+      }
+    },
+    "diagnostics": {
+      "type": "object",
+      "required": [
+        "errors",
+        "warnings",
+        "information",
+        "hints",
+        "files_requested",
+        "files_checked",
+        "returned",
+        "backends"
+      ],
+      "properties": {
+        "errors": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "warnings": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "information": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "hints": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "files_requested": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "files_checked": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "returned": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "backends": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      }
+    },
+    "omissions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "error_code",
+          "reason"
+        ],
+        "properties": {
+          "path": {
+            "type": "string"
+          },
+          "error_code": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "diagnostic": {
+      "type": "object",
+      "required": [
+        "path",
+        "line",
+        "column",
+        "severity",
+        "message"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "line": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "column": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "severity": {
+          "enum": [
+            "error",
+            "warning",
+            "information",
+            "hint"
+          ]
+        },
+        "message": {
+          "type": "string",
+          "minLength": 1
+        },
+        "source": {
+          "type": "string"
+        },
+        "code": {
+          "type": [
+            "string",
+            "number"
+          ]
+        }
+      }
+    }
+  }
+}

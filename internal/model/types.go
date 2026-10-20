@@ -207,6 +207,7 @@ type EnvelopeMetrics struct {
 }
 
 type Envelope struct {
+	Diagnostics        *DiagnosticsSummary           `json:"diagnostics,omitempty"`
 	ContractVersion    string                        `json:"contract_version,omitempty"`
 	Partial            bool                          `json:"partial,omitempty"`
 	Ok                 bool                          `json:"ok"`

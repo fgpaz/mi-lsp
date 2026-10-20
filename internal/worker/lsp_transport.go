@@ -14,17 +14,20 @@ import (
 // One reader owns framing for a process generation. Notifications never fill the
 // response queue; unmatched (including cancelled) response IDs are discarded.
 type lspTransport struct {
-	cmd       *exec.Cmd
-	in        io.WriteCloser
-	out       io.ReadCloser
-	responses chan lspResponse
-	done      chan struct{}
-	writeMu   sync.Mutex
-	stopOnce  sync.Once
+	cmd            *exec.Cmd
+	in             io.WriteCloser
+	out            io.ReadCloser
+	responses      chan lspResponse
+	done           chan struct{}
+	writeMu        sync.Mutex
+	stopOnce       sync.Once
+	diagnosticMu   sync.Mutex
+	diagnostics    map[string]publishedDiagnostics
+	diagnosticWake chan struct{}
 }
 
 func newLSPTransport(cmd *exec.Cmd, in io.WriteCloser, out io.ReadCloser) *lspTransport {
-	t := &lspTransport{cmd: cmd, in: in, out: out, responses: make(chan lspResponse, 16), done: make(chan struct{})}
+	t := &lspTransport{cmd: cmd, in: in, out: out, responses: make(chan lspResponse, 16), done: make(chan struct{}), diagnostics: make(map[string]publishedDiagnostics), diagnosticWake: make(chan struct{}, 1)}
 	go func() {
 		defer close(t.done)
 		defer t.stop()
@@ -42,6 +45,9 @@ func newLSPTransport(cmd *exec.Cmd, in io.WriteCloser, out io.ReadCloser) *lspTr
 				return
 			}
 			if envelope.Method != "" {
+				if envelope.Method == "textDocument/publishDiagnostics" {
+					t.acceptDiagnostics(raw)
+				}
 				if len(envelope.ID) > 0 && string(envelope.ID) != "null" { // No server-initiated mutations/configuration are silently accepted.
 					reply := map[string]any{"jsonrpc": "2.0", "id": envelope.ID, "error": map[string]any{"code": -32601, "message": "unsupported client request"}}
 					ctx, cancel := context.WithTimeout(context.Background(), time.Second)

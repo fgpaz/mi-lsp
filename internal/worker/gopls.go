@@ -16,6 +16,7 @@ func NewGoplsClient(workspace model.WorkspaceRegistration) (*LSPClient, error) {
 		return nil, err
 	}
 	config := LSPConfig{
+		Backend:    "gopls",
 		ServerCmd:  binary,
 		ServerArgs: []string{},
 	}
