@@ -67,8 +67,10 @@ func (a *App) wikiMatrix(ctx context.Context, request model.CommandRequest) (mod
 		hint := fmt.Sprintf("documentation index is empty; rerun 'mi-lsp index --workspace %s --docs-only' before wiki matrix", registration.Name)
 		warnings = append(warnings, hint)
 	}
-	viewDocs := loadWikiViewDocs(registration.Root, filterGovernedWikiDocRecordsInRoots(registration.Root, query.docs, map[string]any{}, wikiRoots))
-	result := docgraph.BuildWikiMatrix(viewDocs)
+	records := filterGovernedWikiDocRecordsInRoots(registration.Root, query.docs, map[string]any{}, wikiRoots)
+	viewDocs := loadWikiViewDocs(registration.Root, records)
+	language := ResolveWikiContractLanguageAtRoot(registration.Root)
+	result := docgraph.BuildWikiMatrixForLanguage(viewDocs, language.Language)
 	warnings = append(warnings, result.Warnings...)
 	env := model.Envelope{
 		Ok:        true,
@@ -77,6 +79,7 @@ func (a *App) wikiMatrix(ctx context.Context, request model.CommandRequest) (mod
 		Items:     []any{result},
 		Warnings:  warnings,
 	}
+	attachWikiContractV11Details(registration.Root, records, &env)
 	return applyCoachPolicy(attachMemoryPointer(env, memory), request.Context), nil
 }
 

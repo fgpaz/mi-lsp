@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.14.5] - 2026-10-20
+
+### Corregido
+
+- `trace` de documentos WIKI-CONTRACT-v1 consulta la generación wiki+código; se conserva el recorrido legacy para documentos no migrados.
+- `wiki matrix` y el resultado previo de `validate-contract` respetan `language: es|en`, sin cobertura traducida ante idioma inválido.
+- Los links `code` de archivo se resuelven desde paths observados aunque el backend solo aporte símbolos; un link documental `implements` no se presenta como binding de código fallido.
+
 ## [0.14.4] - 2026-10-19
 
 ### Fixed

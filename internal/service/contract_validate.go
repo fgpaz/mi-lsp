@@ -108,6 +108,7 @@ func (a *App) validateWikiContract(ctx context.Context, request model.CommandReq
 }
 
 func compileWikiContractValidation(root string, records []model.DocRecord, gov *docgraph.WikiContractGovernance) model.WikiContractValidationResult {
+	language := ResolveWikiContractLanguageAtRoot(root)
 	result := model.WikiContractValidationResult{
 		WikiContract:      wikiContractProtocol,
 		ContractReadiness: "ready",
@@ -196,12 +197,11 @@ func compileWikiContractValidation(root string, records []model.DocRecord, gov *
 		}
 		linkWarnings, linksReviewed, targetsMissing := validateWikiContractLinkDepth(root, srcID, header.Links, wikiIndex)
 		docWarnings = append(docWarnings, linkWarnings...)
-		sectionWarnings := wikisource.ContractBodySectionWarnings(header.ID, header.Kind, body)
-		for _, warning := range sectionWarnings {
-			if strings.HasPrefix(warning, "section_missing:") {
+		for _, finding := range model.ValidateWikiContractSections(header.ID, header.Kind, body, language.Language) {
+			if finding.Code == "section_missing" {
 				result.SectionsMissing++
 			}
-			docWarnings = append(docWarnings, warning)
+			docWarnings = append(docWarnings, finding.Message)
 		}
 		result.LinksReviewed += linksReviewed
 		result.TargetsMissing += targetsMissing

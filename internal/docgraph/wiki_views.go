@@ -5,6 +5,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/fgpaz/mi-lsp/internal/model"
 	"github.com/fgpaz/mi-lsp/internal/wikisource"
 )
 
@@ -116,6 +117,12 @@ func BuildWikiIndex(docs []WikiViewDoc, requestedKind string) WikiIndexResult {
 
 // BuildWikiMatrix computes RF x TP coverage from verifies links and case lines.
 func BuildWikiMatrix(docs []WikiViewDoc) WikiMatrixResult {
+	return BuildWikiMatrixForLanguage(docs, model.WikiContractLanguageES)
+}
+
+// BuildWikiMatrixForLanguage uses the governance-selected sections and case vocabulary.
+// An invalid language is not silently treated as Spanish.
+func BuildWikiMatrixForLanguage(docs []WikiViewDoc, language model.WikiContractLanguage) WikiMatrixResult {
 	result := WikiMatrixResult{
 		Schema:   "wiki-matrix/v1",
 		Verdict:  "PASS",
@@ -156,9 +163,10 @@ func BuildWikiMatrix(docs []WikiViewDoc) WikiMatrixResult {
 			result.Warnings = appendUniqueString(result.Warnings, "tp_without_rf:"+tpID)
 			continue
 		}
-		cases, parseWarnings := wikisource.ParseTestPlanCasesWithWarnings(doc.Content)
+		cases, parseWarnings := model.ParseWikiContractTestCases(doc.Content, language)
+		parseWarnings = append(parseWarnings, model.ValidateWikiContractSections(tpID, "test", doc.Content, language)...)
 		for _, warning := range parseWarnings {
-			result.Warnings = appendUniqueString(result.Warnings, "parser_warning:"+tpID+":"+warning)
+			result.Warnings = appendUniqueString(result.Warnings, "parser_warning:"+tpID+":"+warning.Message)
 		}
 		for _, rfID := range rfTargets {
 			rfKey := strings.ToUpper(strings.TrimSpace(rfID))
@@ -175,7 +183,7 @@ func BuildWikiMatrix(docs []WikiViewDoc) WikiMatrixResult {
 				coverage[rfKey] = map[int][]WikiMatrixTestCaseRef{}
 			}
 			for _, tc := range cases {
-				coverage[rfKey][tc.Criterion] = append(coverage[rfKey][tc.Criterion], WikiMatrixTestCaseRef{
+				coverage[rfKey][tc.Number] = append(coverage[rfKey][tc.Number], WikiMatrixTestCaseRef{
 					TPID:        tpID,
 					Line:        tc.Line,
 					Disposition: tc.Disposition,
@@ -188,7 +196,13 @@ func BuildWikiMatrix(docs []WikiViewDoc) WikiMatrixResult {
 
 	allCriteria := make([]WikiMatrixCriterionCoverage, 0)
 	for rfID, doc := range rfDocs {
-		criteria := wikisource.ParseAcceptanceCriteria(doc.Content)
+		criteria := map[int]string{}
+		for _, criterion := range model.ParseWikiContractAcceptanceCriteria(doc.Content, language) {
+			criteria[criterion.Number] = criterion.Text
+		}
+		for _, finding := range model.ValidateWikiContractSections(rfID, "requirement", doc.Content, language) {
+			result.Warnings = appendUniqueString(result.Warnings, "parser_warning:"+rfID+":"+finding.Message)
+		}
 		if len(criteria) == 0 {
 			result.Warnings = appendUniqueString(result.Warnings, "parser_warning:rf_missing_acceptance_criteria:"+rfID)
 			continue

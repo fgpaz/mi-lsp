@@ -1,0 +1,235 @@
+{
+  "schema": "mi-lsp-wiki-v11-ae-close/v1",
+  "closure_type": "retrospective_acceptance_with_targeted_repairs",
+  "original_implementation": "155804c6e82542d3e6c1975f49c610e24ffa39c1",
+  "original_release": "v0.14.0",
+  "verification_base": "dac86cfc69be41f866c0142b88e62d965759fefa",
+  "target_release": "v0.14.5",
+  "branch_disposition": "integrate-main",
+  "final_implementation_inventory": [
+    {
+      "path": ".docs/planificacion/2026-10-19-mi-lsp-wiki-v1-1-design.md",
+      "classification": "historical_design",
+      "sha256": "dee1ffd3d12b2ae28a817056b87f1446e1cc502e0549de810d787446f903506b"
+    },
+    {
+      "path": ".docs/wiki/00_gobierno_documental.md",
+      "classification": "canon",
+      "sha256": "c0b095fbdddcb69c7cc8b10b2278c78bacbe2a82a4701c06e232ec471dee7c3a"
+    },
+    {
+      "path": ".docs/wiki/02_outcomes/RS-WIKI-001.md",
+      "classification": "canon",
+      "sha256": "b712cd15915bf31a6981b0143961bf15565f73f68c354991045d928d0df32ded"
+    },
+    {
+      "path": ".docs/wiki/04_flows/FL-WGRAPH-001.md",
+      "classification": "canon",
+      "sha256": "058e4e8f6223df7937072735ea4544ae84c9242921c4b1ca2deaac06d6180400"
+    },
+    {
+      "path": ".docs/wiki/05_requirements/RF-WGRAPH-001.md",
+      "classification": "canon",
+      "sha256": "e10f27cb99eada3f662e988b403cd369d9c032d4c345fd6eae556c0e0353999a"
+    },
+    {
+      "path": ".docs/wiki/05_requirements/RF-WGRAPH-002.md",
+      "classification": "canon",
+      "sha256": "7f019180889a76d5098eaa006266b23bdc51d46dd66f26b69a51822b17bdbfb6"
+    },
+    {
+      "path": ".docs/wiki/06_tests/TP-WIKI-001.md",
+      "classification": "canon",
+      "sha256": "3e48e262514973dfd0117d94fc305c5e729257772fcfb9d92b6555a4b468acdc"
+    },
+    {
+      "path": ".docs/wiki/06_tests/TP-WIKI-002.md",
+      "classification": "canon",
+      "sha256": "3c7a89531453be52ffff269be2e366587c6c8805ef7cd31639be244a6a5a8fd2"
+    },
+    {
+      "path": ".docs/wiki/07_technical/TECH-WIKI-001.md",
+      "classification": "canon",
+      "sha256": "3484fa7c468bd24ff486756055a0a8c91965b12831e3490f85e8ff5a6a1a4f2a"
+    },
+    {
+      "path": ".docs/wiki/07_technical/contracts/CT-WIKI-001.md",
+      "classification": "canon",
+      "sha256": "67fd762f72bae76377984541f69af62663479015c0bc06c447733a97a9cfba97"
+    },
+    {
+      "path": "CHANGELOG.md",
+      "classification": "release_notes",
+      "sha256": "198e775b2d17470d9b660f1e5633d0ec3521d37de55c0f7a7c07bb26317da001"
+    },
+    {
+      "path": "integrations/mi-mcp/provider-manifest.json",
+      "classification": "provider_contract",
+      "sha256": "8bcbbf781c35ac0f7b69cea79228823c54299758d8af31ca1721dd173b7095fd"
+    },
+    {
+      "path": "internal/cli/nav.go",
+      "classification": "behavior",
+      "sha256": "1c0e560607cc536d099f5e0b69e5565747f23fe147ca6b2ec3c96171c2812fdd"
+    },
+    {
+      "path": "internal/cli/provider_manifest.go",
+      "classification": "behavior",
+      "sha256": "b48f52986b524f8071e8e95df27804797ee49eb232ea483f5a9d1325d0514245"
+    },
+    {
+      "path": "internal/cli/provider_manifest_test.go",
+      "classification": "existing_test_contract",
+      "sha256": "75ccf14e3ed50d419651a2e3c973d3cc0f235259cd8789be6a9fd441c7602c39"
+    },
+    {
+      "path": "internal/docgraph/docgraph.go",
+      "classification": "behavior",
+      "sha256": "ba0f339cbebfd93209d08227d10e9fcc172a07129bacde981e65cfefa44df5ec"
+    },
+    {
+      "path": "internal/docgraph/wiki_views.go",
+      "classification": "behavior",
+      "sha256": "49dcd39715b879d1833e4a25a2a4f27d032c9bda403a0970b643cdbb4d7a2e74"
+    },
+    {
+      "path": "internal/indexer/graph_staging.go",
+      "classification": "behavior",
+      "sha256": "a6c066627679c64ec185c449b782b9624a4d828c933cccf50e711ad1e4058b8a"
+    },
+    {
+      "path": "internal/model/graph.go",
+      "classification": "behavior",
+      "sha256": "4ccba7be789be7f382c4b2a631358e986980bece2dfc58d57a121474783b3adc"
+    },
+    {
+      "path": "internal/model/graph_impact.go",
+      "classification": "behavior",
+      "sha256": "1555ac17814c43f646544bfa50a3785d0049cd703defacb7f6609e4a40a3c3ad"
+    },
+    {
+      "path": "internal/model/types.go",
+      "classification": "behavior",
+      "sha256": "7a2c54ae7cba62c18462bf1904258891bcf4e5b1446fe783ca74b6cdadb0e3c3"
+    },
+    {
+      "path": "internal/model/wiki_contract.go",
+      "classification": "behavior",
+      "sha256": "9958a378ebb378705bd273b8fe81c3291811673d507563f9ebb201319beec4ae"
+    },
+    {
+      "path": "internal/model/wiki_graph.go",
+      "classification": "behavior",
+      "sha256": "ed7907053f480dbcfdf596af3fb4b5321a10597c229d45e7ac91e029cd855356"
+    },
+    {
+      "path": "internal/model/wiki_roadmap.go",
+      "classification": "behavior",
+      "sha256": "b9c18a72890ab7ffc6384ab139f943bd156a10aed3d3dec760fd1fb81c17b3a9"
+    },
+    {
+      "path": "internal/service/app.go",
+      "classification": "behavior",
+      "sha256": "5d5b938b1cbc979c96298e79f458c55fc2cf6d1b639ddcc26f93c0186d917292"
+    },
+    {
+      "path": "internal/service/contract_validate.go",
+      "classification": "behavior",
+      "sha256": "687236b45e20f82c81f03f20f4d372a3c0afc76bccd674fd3ac8957fba4b53fa"
+    },
+    {
+      "path": "internal/service/trace.go",
+      "classification": "behavior",
+      "sha256": "63c87f575a007397096eafd81d5938edddf06cad992f44084501e02219ea2354"
+    },
+    {
+      "path": "internal/service/wiki_contract_validate.go",
+      "classification": "behavior",
+      "sha256": "534a8ddc6257befa003aa592617425161534235c3c002eec9857baf05a3d0d5c"
+    },
+    {
+      "path": "internal/service/wiki_graph.go",
+      "classification": "behavior",
+      "sha256": "d44a1a8d8fab2d79e76b29e1047e073150963f6b97da4d046dd25c4c8136c781"
+    },
+    {
+      "path": "internal/service/wiki_roadmap.go",
+      "classification": "behavior",
+      "sha256": "0b83637408d060a9f8fd755db1c497481b8fc1e09046bde7ecbaea2cf09aa196"
+    },
+    {
+      "path": "internal/service/wiki_views.go",
+      "classification": "behavior",
+      "sha256": "682773887f78b6138ebcb6cbf12b6419f920fff178bbc977f1ea73fec8c4508c"
+    },
+    {
+      "path": "internal/wikisource/parser.go",
+      "classification": "behavior",
+      "sha256": "5280ea9a6f88192796bf0f16e02b25ab3a41d9be69eb46b4852ba3b82dbf710b"
+    },
+    {
+      "path": "internal/wikisource/wiki_contract.go",
+      "classification": "behavior",
+      "sha256": "ad4052b827f19846a9e268166129f38453fee3dd0fba6462deefb2ed6ec58ea0"
+    }
+  ],
+  "traceability": {
+    "schema": "ae-trace-close/v1",
+    "verdict": "PASS",
+    "packet_sha256": "832c491d96bcefb71dbc71c1de8487aa7086d9b08934af7642467e84a9be52ac",
+    "unique_paths": 33,
+    "links": "Source-declared typed links, exact targets in native parser with both legacy and v1 layouts present. New FL/RF IDs are WGRAPH to avoid legacy collisions.",
+    "criteria_affected_by_R1": 7,
+    "source_typed_links_affected_by_R1": 8
+  },
+  "independent_audit": {
+    "initial_verdict": "FAIL",
+    "major_finding": "New FL/RF IDs collided with active legacy documents; initial canon-only collector omitted those sources.",
+    "repair": "Unique IDs, all references updated, full-corpus native parser retained both layouts and real read-model configuration; legacy documents unchanged.",
+    "recheck_verdict": "PASS",
+    "severity": "minor",
+    "push_ready": true,
+    "packet_sha256": "d792126e0eac1e067a1de1881a5ef6cab590a22afb82cc08005dae14d78db4fa"
+  },
+  "acceptance": {
+    "A": "Native shared generational wiki+code graph, all typed relationships, derived inverses, path/file/symbol bindings.",
+    "B": "neighbors/path/explain/trace/affected/change-pack exercised; actual incremental change updates generation and does not trigger indexing on reads.",
+    "C": "Ephemeral Mermaid, valid cursor pagination and provider-manifest operation mappings. Gateway process itself was not changed.",
+    "D": "es/en section and Criterion/Criterio checks including wrong language, missing declaration and invalid declaration.",
+    "E": "Missing C4/context/container and FL sequence diagrams produce nonblocking advisories; pre-existing link validation retained.",
+    "F": "Noncanonical roadmap metadata adjacent to RS; earlier roadmap closure reused only within its demonstrated scope."
+  },
+  "runtime_evidence": {
+    "candidate_binary_sha256": "111195daa73d27e35dcef6abded7f862690c95d09e5c65d48bc452dec662fe35",
+    "artifact_assertions": 115,
+    "failed_assertions": 0,
+    "scope": "Isolated native combined-graph pilots in Spanish and English; real corpus document parser additionally used for ID/link coverage. Not a claim of global clean governance or production combined-graph freshness.",
+    "native_parser_documents": 193,
+    "full_corpus_files": 978,
+    "native_document_job": "succeeded; original client later terminated while waiting on auxiliary HTTP, not reported as exit 0",
+    "command_receipts": 160,
+    "repeated_builds_or_suites_in_audit": false
+  },
+  "release_metadata_adjustments": [
+    "CHANGELOG Unreleased heading assigned v0.14.5 after frozen audit; no behavior change.",
+    "This administrative closure packet is generated after the audit and does not alter product code."
+  ],
+  "explicit_incomplete": [
+    {
+      "item": "Existing O(L*N) document binding index reconstruction, no latency measurement",
+      "owner": "coord-mi-lsp",
+      "review": "next scoped performance investigation; not a gate for this release"
+    },
+    {
+      "item": "Three external AE canonical/legacy duplicate IDs and unrelated global legacy advisories",
+      "owner": "wiki-governance/coord-mi-lsp",
+      "review": "existing governance migration scope, not repaired by new wiki feature"
+    },
+    {
+      "item": "Auxiliary HTTP wait after successful document job",
+      "owner": "coord-mi-lsp",
+      "review": "existing indexing-client diagnostic scope"
+    }
+  ],
+  "learning_route": "ae-learn: do not claim closure from release alone; check native discovery against both layouts, freeze trace and obtain independent acceptance. No hooks or additional gates added."
+}

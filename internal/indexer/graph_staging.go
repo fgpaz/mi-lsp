@@ -628,6 +628,41 @@ func assembleGraphBundle(input graphAssemblyInput) (model.GraphBundle, error) {
 			nodeRefs[graphScopedRef{batch: batchIndex, ref: observed.Ref}] = key
 		}
 	}
+	// Some backends publish symbols with a verified owner path but no file node.
+	// Materialize only code-link targets backed by those observations, never a
+	// path asserted solely by a wiki document. Keep module/backend identity so
+	// ambiguous observations remain ambiguous rather than being guessed.
+	codePaths := make(map[string]bool)
+	for _, edge := range input.docEdges {
+		if edge.Kind == "code" {
+			codePaths[filepath.ToSlash(strings.TrimSpace(edge.ToPath))] = true
+		}
+	}
+	fileNodes := make(map[model.GraphDigest]graphNodeCandidate)
+	for _, candidate := range nodesByKey {
+		identity := candidate.identity
+		if identity.BackendType == "docgraph" || identity.SymbolKind == "file" || !codePaths[identity.OwnerPath] {
+			continue
+		}
+		identity.SymbolKind = "file"
+		identity.SemanticIdentity = identity.OwnerPath
+		key, err := identity.Hash()
+		if err != nil {
+			return model.GraphBundle{}, err
+		}
+		file := graphNodeCandidate{key: key, identity: identity, node: model.GraphObservationNode{
+			Key: identity, DisplayName: identity.OwnerPath, SourceDigest: candidate.node.SourceDigest,
+			ClaimStatus: model.GraphRecordExtracted, Resolution: "observed-owner-path",
+		}}
+		if previous, ok := fileNodes[key]; !ok || graphDigestLess(file.node.SourceDigest, previous.node.SourceDigest) {
+			fileNodes[key] = file
+		}
+	}
+	for key, file := range fileNodes {
+		if _, exists := nodesByKey[key]; !exists {
+			nodesByKey[key] = file
+		}
+	}
 	for key, candidate := range nodesByKey {
 		if candidate.identity.BackendType == "docgraph" {
 			continue
@@ -727,13 +762,6 @@ func assembleGraphBundle(input graphAssemblyInput) (model.GraphBundle, error) {
 				}
 			}
 			if len(fileCandidates) != 1 {
-				if len(fileCandidates) == 0 && edge.Label != "" && len(symbolCandidates) == 1 {
-					// The current catalog stores symbol nodes with their owner path,
-					// but not a separate file node. Link the declared symbol without
-					// fabricating a file node or edge.
-					addDocEdge(fmt.Sprintf("doc-code-symbol:%d", index), from, symbolCandidates[0], edge.FromPath, "code", model.GraphRecordExact, docSources[edge.FromPath], graphDocClaimDigest("code", edge.FromPath, targetPath, edge.Label, docSources[edge.FromPath]))
-					continue
-				}
 				reason := "missing_code_target"
 				if len(fileCandidates) > 1 {
 					reason = "ambiguous_code_target"
@@ -825,6 +853,11 @@ func assembleGraphBundle(input graphAssemblyInput) (model.GraphBundle, error) {
 		}
 		kind := strings.ToLower(strings.TrimSpace(mention.MentionType))
 		value := strings.TrimSpace(mention.MentionValue)
+		// Legacy frontmatter extraction also sees nested links.implements.
+		// A known document target is not a failed code binding.
+		if kind == "implements" && len(docIDs[value]) > 0 {
+			continue
+		}
 		if isCanonicalGraphTPID(value) {
 			paths := docIDs[value]
 			if len(paths) == 1 {
@@ -849,7 +882,14 @@ func assembleGraphBundle(input graphAssemblyInput) (model.GraphBundle, error) {
 		var candidateNames []string
 		switch kind {
 		case "file_path", "implements", "test_file":
-			candidates = append(candidates, nodeRefsByOwner[value]...)
+			for _, key := range nodeRefsByOwner[value] {
+				if nodesByKey[key].identity.SymbolKind == "file" {
+					candidates = append(candidates, key)
+				}
+			}
+			if len(candidates) == 0 {
+				candidates = append(candidates, nodeRefsByOwner[value]...)
+			}
 			candidateNames = append(candidateNames, value)
 		case "semantic_identity", "typed_semantic_identity":
 			candidates = append(candidates, nodeRefsBySemantic[value]...)

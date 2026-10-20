@@ -16,6 +16,7 @@ Si este documento no esta perfectamente claro, la implementacion spec-driven deb
 
 ```yaml
 version: 1
+language: es
 profile: spec_backend
 overlays:
   - spec_core

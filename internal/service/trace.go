@@ -47,6 +47,31 @@ func (a *App) trace(ctx context.Context, request model.CommandRequest) (model.En
 	summary, _ := request.Payload["summary"].(bool)
 
 	if docID != "" {
+		// Contract-v1 trace is an alias over the persisted wiki+code generation.
+		// Keep the legacy trace result for documents that have not migrated.
+		if db != nil {
+			records, listErr := store.ListDocRecords(ctx, db)
+			if listErr != nil {
+				return model.Envelope{}, listErr
+			}
+			for _, record := range records {
+				if !strings.EqualFold(record.DocID, docID) {
+					continue
+				}
+				body, readErr := os.ReadFile(filepath.Join(registration.Root, filepath.FromSlash(record.Path)))
+				if readErr != nil {
+					return model.Envelope{}, readErr
+				}
+				header, _, _ := parseWikiContractHeader(string(body))
+				if header != nil && header.WikiContract == wikiContractProtocol {
+					child := request
+					child.Payload = map[string]any{"query": map[string]any{
+						"mode": "neighbors", "selector": record.DocID, "direction": "both", "depth": 2,
+					}}
+					return a.wikiGraph(ctx, child)
+				}
+			}
+		}
 		result, err := a.traceRF(ctx, registration.Root, db, docID)
 		if err != nil {
 			return model.Envelope{}, err
