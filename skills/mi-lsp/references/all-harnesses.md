@@ -25,6 +25,12 @@ Skill canónica: `skills/mi-lsp/SKILL.md` y sus referencias. El instalador publi
 
 No ejecutar estos pasos desde BUILD ni tocar caches/perfiles de usuarios allí. El padre aplica el procedimiento por host y usuario objetivo, en paralelo cuando no comparten escrituras. Una sesión viva no se mata para actualizar; recarga plugin o siguiente sesión.
 
+## Workspace y backend TypeScript en runtime
+
+En Code Mode, el consumidor debe propagar explícitamente el workspace real resuelto (alias o raíz física) mediante el campo `workspace` ya publicado. El cwd del subproceso provider puede ser temporal; el `last_workspace` global no identifica el proyecto del llamador. Esto no vuelve obligatorio el campo en el schema ni cambia los defaults de la CLI local directa; tampoco requiere auto-resolver, registro/indexación, cambios de scopes ni hooks. Scope ausente/inválido o diagnostics parcial/no disponible no significa cero errores. La invocación nativa de Pi devolvió TS2322 al recibir `workspace` explícito, según la evidencia runtime aportada por el padre.
+
+Solo donde se use el backend TypeScript se necesita una distribución compatible con `node_modules/typescript/lib/tsserver.js` (`internal/worker/tsserver.go`, `findTsserverPath`/`CanUseTsserver`). La distribución oficial `typescript@7.0.2` es solo compilador (`bin/tsc`, sin servidor JS); la clásica `typescript@6.0.3` incluye `bin/tsc`, `bin/tsserver` y `lib/tsserver.js`, y permitió obtener TS2322 real en la ejecución del padre. Ejemplo compatible: `npm install -g typescript@6.0.3`. También sirve una distribución local compatible; TypeScript no es un toolchain global obligatorio para todos los hosts o proyectos.
+
 ## Smoke exacto de execute para el padre
 
 ```js

@@ -23,4 +23,12 @@ Los aliases se añaden sin sustituir métodos existentes. `fs.find` extiende el 
 
 Invocaciones v2 por operación usan `invocation.input_mapping.fields` existente (argument/option/repeat), no otro mini-lenguaje. El seam H3 inspeccionado rechaza argumentos con guion inicial y no demuestra soporte de delimitador final en fixed_args. Por eso el provider no añade `--`: patrones ordinarios conservan el mapping vigente; nombres con guion usan CLI directa `find-files -- '-draft'`. Necesidad genérica de delimitación pendiente de C165, sin implementación paralela por surface. No agregar otro schema ni excepciones de dominio.
 
+## Workspace explícito en Code Mode
+
+El consumidor propaga el workspace real resuelto (alias o raíz física) por el campo `workspace` ya publicado. El cwd del subproceso provider puede ser temporal y el `last_workspace` global no identifica el proyecto del llamador. Se conserva el schema opcional y los defaults de la CLI local directa: no se añade auto-resolver, registro/indexación, cambio de scopes ni hooks. Scope ausente/inválido o diagnostics parcial/no disponible no equivale a cero errores. Según la evidencia runtime aportada por el padre, Pi nativo devolvió TS2322 con `workspace` explícito; esta aclaración conserva los permisos y efectos de solo lectura.
+
+## Distribución compatible para el backend TypeScript
+
+`internal/worker/tsserver.go` (`findTsserverPath`/`CanUseTsserver`) requiere una distribución con `node_modules/typescript/lib/tsserver.js`. La oficial `typescript@7.0.2` es solo compilador (`bin/tsc`, sin servidor JS). La clásica `typescript@6.0.3` contiene `bin/tsc`, `bin/tsserver` y `lib/tsserver.js`; instalada normalmente, permitió obtener TS2322 real según la evidencia del padre. Ejemplo compatible: `npm install -g typescript@6.0.3`. Una distribución local compatible también sirve. Este requisito aplica solo al uso del backend TypeScript, no impone TypeScript ni una instalación global a cada host o proyecto.
+
 [[TECH-ALLHARNESS-001]] · [[TP-ALLHARNESS-001]]
