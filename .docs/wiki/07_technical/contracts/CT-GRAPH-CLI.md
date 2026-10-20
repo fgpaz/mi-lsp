@@ -1,0 +1,743 @@
+---
+wiki_contract: WIKI-CONTRACT-v1
+id: CT-GRAPH-CLI
+kind: contract
+status: active
+title: CT-GRAPH-CLI
+links:
+  supports:
+  - RF-GPH-002
+  - RF-GPH-003
+  - RF-GPH-005
+  - RF-GPH-006
+  - RF-GPH-007
+  - RF-GPH-009
+  - RF-GPH-011
+---
+
+## Consumidor
+
+CLI, agentes y consumidores locales de las operaciones descritas; no se amplía la autoridad del consumidor.
+
+### Frontera
+Contrato de CLI para consultar generations publicadas y enrutar intenciones graph-native. La CLI es publica; daemon, SQLite y adapters son internos. La superficie de comandos esta implementada en el runtime actual; la disponibilidad de una generation o backend graph concreto puede degradar de forma visible y no convierte heuristica en equivalencia exacta.
+
+Antes de leer el grafo, `nav.affected` inspecciona solo los paths explícitos en modo de solo lectura, respetando WAL, y compara hashes. Con límite de 1 s, un cambio refresca catálogo y `doc_records` sincrónicamente, mediante publicación transaccional; no ejecuta extractores graph/Roslyn ni crea escrituras de fondo. El commit comprueba el contexto y omite `PRAGMA optimize` bajo deadline. Si falla o vence antes del commit, la consulta conserva el snapshot disponible y advierte. Si el commit termina, el refresh se considera exitoso aunque el deadline venza después. Si el graph read está stale, `nav.affected` no eleva heurísticas a impacto graph-native: las devuelve con `confidence=0`, sin generation/evidence graph, y emite el comando `mi-lsp index --workspace "<alias>"`; un seed que siga sin resolver permanece como omission tipada.
+
+## Operaciones
+
+Se conservan requests, envelopes, campos, límites y semántica detallados a continuación.
+
+Volver a [07_technical/contracts/CT-TECHNICAL-BASELINE.md](CT-TECHNICAL-BASELINE.md).
+
+### Comandos v1
+
+- **Marcador estable**: CT-GRAPH-CLI.commands
+- **Comprobación prevista**:
+  - mi-lsp nav wiki validate-source --workspace mi-lsp --format toon
+- **Evidencia referenciada**:
+  - .docs/wiki/07_technical/contracts/CT-GRAPH-CLI.md
+  - .docs/wiki/06_tests/TP-GPH.md
+- **commands**:
+  - **nav.neighbors**:
+    - **shape**: mi-lsp nav neighbors <selector> [common-graph-flags]
+    - **semantics**: bounded-neighborhood
+  - **nav.callers**:
+    - **shape**: mi-lsp nav callers <selector> [common-graph-flags]
+    - **edge**: calls-inbound
+  - **nav.callees**:
+    - **shape**: mi-lsp nav callees <selector> [common-graph-flags]
+    - **edge**: calls-outbound
+  - **nav.path**:
+    - **shape**: mi-lsp nav path <from-selector> <to-selector> [common-graph-flags]
+    - **semantics**: shortest-edge-count-with-stable-tiebreak
+  - **nav.explain**:
+    - **shape**: mi-lsp nav explain <selector-or-edge-cross-rid> [common-graph-flags]
+    - **semantics**: evidence-chain
+  - **nav.graph.stats**:
+    - **shape**: mi-lsp nav graph stats [--generation <id>] [--all-workspaces]
+  - **nav.graph.validate**:
+    - **shape**: mi-lsp nav graph validate [--generation <id>]
+    - **writes**: forbidden
+  - **nav.affected**:
+    - **compatibility**: existing-command-enriched-additively
+    - **graph_flags**:
+      - --generation
+      - --mode-direct-or-transitive
+      - --depth
+      - --limit
+      - --token-budget
+  - **nav.diff-context**:
+    - **compatibility**: existing-command-enriched-additively
+  - **nav.related**:
+    - **compatibility**: existing-shape-preserved-graph-native-backend-visible
+  - **nav.workspace-map**:
+    - **compatibility**: existing-shape-preserved-graph-summary-additive
+  - **nav.intent**:
+    - **shape**: mi-lsp nav intent <question> [common-graph-flags]
+    - **semantics**: automatic-intent-first; supported graph intents have no opt-out
+  - **nav.explain-change**:
+    - **shape**: mi-lsp nav explain-change [question] [--path <path> ...] [--ref <git-ref>] [common-graph-flags]
+    - **Estado del comportamiento**: implemented
+    - **sections**:
+      - change
+      - affected
+      - callers
+      - callees
+      - tests
+      - contracts
+      - wiki
+    - **preview**: bounded-seven-section-with-executable-expansions
+    - **full**: expansion-request; may remain preview when no additional evidence is available
+  - **nav.flow-slice**:
+    - **shape**: mi-lsp nav flow-slice [--from <sel>] [--to <sel>] [--selector <sel>] [--limit N]
+    - **Estado del comportamiento**: implemented
+    - **semantics**: one-shot-harness-flow-packet
+    - **includes**:
+      - path
+      - callers
+      - callees
+      - neighbors
+      - read_first
+      - hub_risk
+      - batch_continuation
+  - **nav.change-pack**:
+    - **shape**: mi-lsp nav change-pack [ref] [--path <path> ...] [--limit N]
+    - **Estado del comportamiento**: implemented
+    - **semantics**: one-shot-harness-diff-impact-packet
+    - **includes**:
+      - changed_paths
+      - changed_symbols
+      - affected_ranked
+      - hub_risk
+      - community_overlap
+      - read_first
+      - batch_continuation
+  - **output.profiles**:
+    - human
+    - agent
+    - harness-micro
+
+### Routing de intención y explain-change
+
+- **Marcador estable**: CT-GRAPH-CLI.intent-routing
+- **Evidencia referenciada**:
+  - .docs/wiki/06_tests/TP-GPH.md
+  - .docs/wiki/07_technical/contracts/CT-GRAPH-CLI.md
+- **Comprobación prevista**:
+  - go run ./cmd/mi-lsp nav intent --help
+  - go run ./cmd/mi-lsp nav explain-change --help
+  - go run ./cmd/mi-lsp nav explain-change --path internal/service/intent.go --workspace <alias> --format toon
+  - go run ./cmd/mi-lsp nav wiki validate-source --workspace <alias> --ids CT-GRAPH-CLI --format toon
+- **intent_routing**:
+  - **policy**: automatic_mi_lsp_first_no_opt_out
+  - **supported**:
+    - callers
+    - callees
+    - affected-change
+    - path-between
+    - explain-edge
+    - neighborhood
+    - explain-change
+  - **seven_sections**:
+    - change
+    - affected
+    - callers
+    - callees
+    - tests
+    - contracts
+    - wiki
+  - **required_plan_fields**:
+    - intent
+    - operation
+    - arguments
+    - confidence
+    - freshness
+    - preview
+    - omissions
+    - fallbacks
+    - expansions
+    - telemetry
+  - **expansion_fields**:
+    - command
+    - reason
+  - **terminal_fallbacks**:
+    - **allowlist**:
+      - unsupported_operation
+      - unavailable_binary
+      - invalid_workspace
+      - explicit_incomplete
+    - **fields**:
+      - reason_code
+      - detail
+    - **detail**: sanitized_bounded_separate_from_reason_code
+  - **internal_degradation**: omission_only
+  - **timeout_without_diagnostic**: blocked
+  - **selector_ambiguity**: candidates_without_auto_selection
+  - **wiki**: must_read_governance_and_contracts_before_may_read_specs_or_tests
+
+`nav graph stats` y `nav graph validate` son comandos read-only reales; `nav neighbors`, `nav callers`, `nav callees`, `nav path` y `nav explain` también tienen wiring CLI real. La consulta puede devolver `GPH_QUERY_BACKEND_UNAVAILABLE` o fallback explícito si no existe una generation publicada; eso es disponibilidad runtime, no ausencia del comando.
+
+- **Marcador estable**: CT-GRAPH-CLI.docs-only-generation-availability
+- **Estado del comportamiento**: implemented
+- **docs_only_index**:
+  - **may_publish_documentation_generation**: true
+  - **requires_canonical_markdown**: true
+  - **canonical_roots**:
+    - wiki/
+    - bibliotecas/
+    - .docs/wiki/
+    - docs/
+  - **does_not_replace_code_catalog**: true
+- **neighbors**:
+  - **knowledge_wiki**: wikilinks_and_hierarchy_when_generation_published
+- **Comprobación prevista**:
+  - go test ./internal/indexer -count=1 -run 'TestCanonicalGraphDocAcceptsKnowledgeWikiPaths'
+- **Evidencia referenciada**:
+  - internal/indexer/indexer.go
+  - .docs/wiki/07_technical/TECH-GRAPH-NATIVE.md
+
+### Selector y flags comunes
+
+- **Marcador estable**: CT-GRAPH-CLI.inputs
+- **Comprobación prevista**:
+  - mi-lsp nav wiki validate-source --workspace mi-lsp --format toon
+- **Evidencia referenciada**:
+  - .docs/wiki/07_technical/contracts/CT-GRAPH-CLI.md
+  - .docs/wiki/06_tests/TP-GPH.md
+- **selector_precedence**:
+  - NodeKey-lowercase-hex
+  - cross-RID
+  - exact-symbol-or-document-id
+  - scoped-name
+- **ambiguity**: return-bounded-candidates-never-auto-pick
+- **flags**:
+  - **generation**:
+    - **default**: active-fixed-at-request-start
+    - **allowed**: published-generation-only
+  - **depth**:
+    - **default**: 1
+    - **max**: 6
+    - **path_max**: 12
+  - **limit**:
+    - **default**: 50
+    - **max**: 500
+  - **token_budget**:
+    - **default**: 4000
+    - **max**: 20000
+  - **direction**:
+    - **values**:
+      - in
+      - out
+      - both
+  - **edge**:
+    - **repeatable**: true
+    - **values**: registered-relation-types
+  - **cursor**:
+    - **binding**:
+      - generation
+      - operation
+      - selectors
+      - filters
+      - ordering
+  - **all_workspaces**:
+    - **default**: false
+    - **authority**: per-workspace-governance
+- **invalid_budget**: reject-before-store-read
+
+`--format compact|json|text|toon|yaml`, `--compress`, workspace/repo selectors y flags globales conservan su contrato existente. No se agrega modo MCP ni HTTP.
+
+### Selección de daemon y ciclo de request
+
+- **Marcador estable**: CT-GRAPH-CLI.execution-routing
+- **Evidencia referenciada**:
+  - .docs/wiki/07_technical/contracts/CT-GRAPH-CLI.md
+  - .docs/wiki/07_technical/contracts/CT-DAEMON-WORKER.md
+- **Comprobación prevista**:
+  - go test ./internal/cli/... ./internal/daemon/...
+- **routing**:
+  - **no_daemon**:
+    - **flag**: --no-daemon
+    - **semantics**: force_direct_local_execution
+    - **connects_to_daemon**: false
+    - **starts_daemon**: false
+  - **no_auto_daemon**:
+    - **flag**: --no-auto-daemon
+    - **semantics**: suppress_auto_start_only
+    - **existing_daemon_connection**: allowed
+    - **unavailable_daemon**: direct_fallback
+  - **daemon_attempt_timeout**:
+    - **helper**: ExecuteWithDialTimeout
+    - **scope**: dial_only
+    - **write_read_processing_context**: original_request_context
+  - **cancellation**:
+    - **connection_close_hook**: original_request_context
+    - **write_read_processing**: obey_original_request_context
+
+`--no-daemon` es una orden de ejecución directa: no intenta conectar al daemon y tampoco lo inicia. `--no-auto-daemon` solo evita el auto-start; una operación daemon-aware aun puede conectar a un daemon ya existente y, si no esta disponible, degradar a direct mode. El timeout corto de intento se aplica unicamente al dial mediante `ExecuteWithDialTimeout`; después de conectar, write, read, procesamiento y cancelacion siguen gobernados por el contexto original de la request.
+
+### Envelope v1
+
+- **Marcador estable**: CT-GRAPH-CLI.envelope
+- **Comprobación prevista**:
+  - mi-lsp nav wiki validate-source --workspace mi-lsp --format toon
+- **Evidencia referenciada**:
+  - .docs/wiki/07_technical/contracts/CT-GRAPH-CLI.md
+  - .docs/wiki/06_tests/TP-GPH.md
+- **envelope**:
+  - **inherited_required**:
+    - ok
+    - backend
+    - workspace
+    - items
+    - warnings
+    - stats
+    - truncated
+  - **graph_required_when-executed**:
+    - operation
+    - generation_id
+    - graph_schema_version
+    - determinism_digest
+    - omissions
+  - **backend_values**:
+    - sqlite-direct
+    - daemon/sqlite
+    - graph-native+heuristic
+    - legacy-heuristic
+- **item**:
+  - **common**:
+    - kind
+    - cross_rid
+    - display
+    - status
+    - distance
+    - evidence_refs
+  - **node**:
+    - node_key
+    - symbol_kind
+    - owner_path
+  - **edge**:
+    - edge_cross_rid
+    - from_cross_rid
+    - to_cross_rid
+    - relation
+    - confidence_class
+  - **impact**:
+    - path
+    - reason
+    - evidence_path
+    - trigger_path
+    - change_type
+- **stats**:
+  - visited
+  - frontier
+  - returned
+  - depth_reached
+  - token_units
+  - unresolved
+  - elapsed_ms-nondeterministic-not-in-digest
+- **continuation**:
+  - **required_when**: truncated
+  - **cursor**: opaque-generation-bound
+
+Ordering canónico: distance, confidence class (`exact`, `extracted`, `inferred`, `heuristic`), relation, display casefold + original, NodeKey/edge key y evidence digest. Timings, host path y daemon runtime metadata quedan fuera del determinism digest.
+
+### Envelope aditivo del puente wiki ↔ código
+
+- **Marcador estable**: CT-GRAPH-CLI.live-wiki-code-envelope
+- **Estado del comportamiento**: implemented_slice
+- **applies_to**:
+  - nav.trace
+  - nav.wiki.trace
+  - nav.pack
+  - nav.wiki.pack
+  - nav.related
+  - nav.neighbors
+  - nav.prepare
+  - nav.change-pack
+- **existing_shape**: preserved
+- **additive_fields**:
+  - **context**:
+    - wiki_code_context
+    - direction
+    - overlay_digest
+    - doc_generation_id
+    - code_generation_id
+    - determinism_digest
+  - **evidence_classes**:
+    - direct_code
+    - tests
+    - supporting_code
+    - candidates
+    - wiki_context
+    - graph_paths
+  - **Estado del comportamiento**:
+    - resolved_symbol
+    - resolved_file
+    - missing_path
+    - missing_symbol
+    - ambiguous_symbol
+    - graph_stale
+    - graph_unavailable
+    - unsafe_target
+    - concurrent_change
+  - **provenance**:
+    - origin
+    - authoring_origin
+    - observed_origin
+    - source_doc
+    - source_block
+    - source_line
+    - binding_ref
+    - evidence_refs
+  - **freshness**:
+    - **domains**:
+      - docs_manifest
+      - bindings
+      - catalog
+      - graph
+      - authority
+    - **values**:
+      - current
+      - overlay
+      - stale
+      - unknown
+      - concurrent_change
+  - **omissions**:
+    - code
+    - source
+    - reason
+    - candidates
+    - owner
+  - **continuation**:
+    - truncated
+    - next_cursor
+    - direction
+    - cursor
+    - remaining
+  - **classification**:
+    - classification
+    - classifications
+  - **cost**:
+    - bindings_examined
+    - files_checked
+    - files_hashed
+    - files_parsed
+    - metadata_checked
+    - unchanged_reused
+    - bytes_read
+    - symbols_checked
+    - catalog_queries
+    - graph_nodes_visited
+    - graph_edges_visited
+- **path_bearing_records**:
+  - **paths**: repository_relative_only
+  - **binding_identity**:
+    - doc_path
+    - target_path
+    - target_symbol
+    - block_id
+  - **reverse_identity**:
+    - doc_id
+    - path
+    - block_id
+    - binding_ref
+- **classification_values**:
+  - direct_sdd_binding
+  - supporting_code
+  - shared_technical_binding
+  - generated_or_vendor
+  - mechanical_no_sdd_impact
+  - unmapped_changed_code
+- **semantics**:
+  - **direct_code**: exact_active_declared_binding
+  - **tests**: separate_lane_never_direct_code
+  - **supporting_code**: graph_observed_only_when_graph_current
+  - **candidates**: bounded_text_only_never_direct_edge
+  - **omissions**: typed_and_visible
+  - **continuation**: required_when_bridge_result_is_truncated
+- **parity**:
+  - **direct_daemon**: same_canonical_items_order_status_provenance_freshness_omissions_and_digest
+  - **daemon_unavailable**: direct_fallback_with_explicit_warning
+- **query**:
+  - **sqlite_reads**: pinned_snapshot
+  - **writes**: forbidden
+  - **migrations**: forbidden
+  - **repair**: forbidden
+  - **publication**: forbidden
+- **compatibility**:
+  - **no_new_public_command**: true
+  - **graph_v1**: consumed_read_only_subset
+  - **wiki_authority**: unchanged
+- **Comprobación prevista**:
+  - FINAL_VERIFY e1835ee: go test ./... PASS (28 paquetes)
+  - wiki-code-bridge-runner/v1: direct-daemon parity PASS; no_query_writes PASS
+- **Evidencia referenciada**:
+  - internal/model/wiki_code_context.go
+  - internal/model/types.go
+  - internal/service/app.go
+  - internal/service/wiki_code_bindings.go
+  - internal/service/wiki_code_context.go
+  - .docs/wiki/06_tests/TP-GPH.md
+
+### Canonicalizacion de GraphUnresolved y candidatos
+
+- **Marcador estable**: CT-GRAPH-CLI.unresolved-canonicalization
+- **Evidencia referenciada**:
+  - .docs/wiki/07_technical/contracts/CT-GRAPH-CLI.md
+  - .docs/wiki/07_technical/TECH-GRAPH-NATIVE.md
+  - internal/indexer/graph_staging.go
+  - internal/indexer/graph_staging.go
+- **Comprobación prevista**:
+  - go test ./internal/indexer/... ./internal/model/...
+- **Condiciones de rechazo**:
+  - unresolved_ids_before_key_order=true
+  - candidate_bounds_exceeded=true
+  - candidate_path_not_normalized=true
+- **unresolved**:
+  - **sort_key**: key
+  - **dedupe_key**: key
+  - **ids_assigned**: after_sort_and_dedupe
+- **candidates**:
+  - **operations**:
+    - trim
+    - slash_normalize
+    - dedupe
+    - sort
+  - **slash_normalize**: filepath.ToSlash
+  - **max_items**: 64
+  - **max_bytes**: 4096
+- **semantics**:
+  - **omission**: typed_non_eligible_or_external_case
+  - **unresolved**: eligible_endpoint_really_missing_only
+
+El contrato hace reproducible el orden y evita que el orden de llegada altere IDs o `CrossRID`. El límite de candidatos aplica después de trim, normalización, deduplicación y orden lexicográfico.
+
+### Precondiciones de publicación graph-native
+
+- **Marcador estable**: CT-GRAPH-CLI.graph-publication-input
+- **Evidencia referenciada**:
+  - internal/workspace/repository_identity.go
+  - internal/indexer/graph_pipeline.go
+  - internal/indexer/indexer.go
+- **Comprobación prevista**:
+  - go test ./internal/workspace/... ./internal/indexer/...
+- **identity**:
+  - **precedence**:
+    - explicit-coherent
+    - local-vcs-origin
+    - fail-closed
+  - **workspace_equals_repository**: true
+  - **network**: forbidden
+- **container**:
+  - **go**: one-root-observation
+  - **csharp**: one-batch-per-declared-csproj
+  - **solution_batches**: forbidden
+  - **ts_python**: omission-backend-gated-no-claims
+- **paths**:
+  - **project_or_module**: repo-relative
+  - **entrypoint_path**: workspace-relative
+  - **repo_root**: logical-repo-root
+  - **rebase**: before-core-seal
+- **publication**:
+  - **zero_eligible_batch**: error-unless-explicit-GraphNotApplicable
+  - **partial_roslyn_project**: processed-as-backend_partial-omission; never-published
+  - **generation_id**: excludes-created_at
+
+La ausencia o invalidez del origin local no permite actualizar la generation activa ni inventar una identidad desde alias, basename o path. Un workspace con backend elegible que no produzca batches es error; solo un proyecto explicitamente no graph puede devolver `GraphNotApplicable`.
+
+### Rank, cache, utility y comportamiento bounded
+
+- **Marcador estable**: CT-GRAPH-CLI.analysis-runtime
+- **Evidencia referenciada**:
+  - .docs/wiki/07_technical/contracts/CT-GRAPH-CLI.md
+  - .docs/wiki/06_tests/TP-GPH.md
+- **Comprobación prevista**:
+  - go test ./internal/model/... ./internal/service/... ./internal/store/...
+  - mi-lsp nav graph stats --workspace <alias> --format toon
+  - mi-lsp nav graph validate --workspace <alias> --format toon
+- **Condiciones de rechazo**:
+  - graph_claim_without_freshness_current=true
+  - truncated_analysis_persisted=true
+  - generation_mismatch_accepted=true
+- **rank**:
+  - **algorithm**: bounded-deterministic-v1
+  - **version**: 1
+  - **profile**: exact-extracted-only
+  - **score**: 0.45*authority + 0.25*impact + 0.20*centrality + 0.10*boundary
+  - **utility**: last_tie_break_only
+  - **community**: deterministic_connected_components_v1
+  - **community_id**: sha256_sorted_node_keys
+- **freshness**:
+  - **states**:
+    - current
+    - lagging
+    - stale
+    - invalid
+    - unknown
+  - **exact_claims_allowed_only**: current
+- **generation**:
+  - **fixed**: request_start
+  - **cache_must_match**:
+    - generation
+    - algorithm
+    - version
+    - profile
+    - parameter_digest
+    - authority_digest
+    - result_digest
+- **bounds**:
+  - **max_nodes**: 10000
+  - **max_edges**: 50000
+  - **max_bytes**: 65536
+  - **query**:
+    - depth
+    - path_depth
+    - result_limit
+    - token_budget
+- **cache**:
+  - **operation**: rank
+  - **persist_status**: complete_only
+  - **truncated_results**: never_persist
+  - **miss_on**:
+    - generation
+    - analysis_key
+    - algorithm
+    - version
+    - profile
+    - parameter_digest
+    - authority_digest
+    - result_digest
+    - byte_limit
+- **utility**:
+  - **signals**:
+    - continuation_followed
+    - feedback_positive
+    - feedback_negative
+    - result_selected
+  - **max_events_per_candidate**: 4096
+  - **max_events_per_scope_intent_operation**: 4096
+  - **retention_days**: 30
+  - **candidate_identity**: node_key_only
+- **snapshot**:
+  - **reads**: bounded_storage_backed
+  - **full_graph_in_memory**: forbidden
+  - **transitive_closures_persisted**: forbidden
+  - **query_time_migration**: forbidden
+- **sqlite**:
+  - **write_max_open_conns**: 1
+  - **read_only_pool**:
+    - **max_open_conns**: 8
+    - **max_idle_conns**: 4
+- **parity**:
+  - **direct_daemon**: same_items_order_errors_omissions
+
+### Ejemplo compacto
+
+```json
+{
+  "ok": true,
+  "backend": "sqlite-direct",
+  "workspace": "mi-lsp",
+  "operation": "nav.callers",
+  "generation_id": "<sha256-hex>",
+  "graph_schema_version": 1,
+  "items": [
+    {
+      "kind": "edge",
+      "edge_cross_rid": "milsp:gph-edge:v1:<hex>",
+      "from_cross_rid": "milsp:gph-node:v1:<hex>",
+      "to_cross_rid": "milsp:gph-node:v1:<hex>",
+      "relation": "calls",
+      "status": "exact",
+      "evidence_refs": ["milsp:gph-evidence:v1:<hex>"]
+    }
+  ],
+  "warnings": [],
+  "omissions": [],
+  "stats": {"visited": 2, "returned": 1, "token_units": 42},
+  "truncated": false,
+  "determinism_digest": "sha256:<hex>"
+}
+```
+
+### Sync
+
+RF owners: `[[RF-GPH-005]]`, `[[RF-GPH-006]]`, `[[RF-GPH-007]]`, `[[RF-GPH-009]]`, `[[RF-GPH-011]]`. Tests: `[[TP-GPH]]`. Runtime: `[[TECH-GRAPH-NATIVE]]`. Store: `[[DB-SYMBOL-EDGE-GRAPH]]`.
+
+### Relaciones documentales explícitas
+
+Además de `doc_wikilink`, `doc_embed`, `doc_markdown_link`, `doc_id` y `doc_hierarchy`, la generación acepta exactamente `doc_related`, `doc_depends`, `doc_supports`, `doc_contradicts` y `doc_supersedes`. Se extraen de listas Markdown (`- related: [[RF-GPH-002]]` o `- depends: [RF-GPH-003](../../05_requirements/RF-GPH-003.md)`), no de YAML frontmatter. No se crean relaciones por similitud ni por embeddings.
+
+Ejemplo: `mi-lsp nav neighbors RF-DG-DECISION --edge doc_related --depth 2 --format toon`. También es válido `mi-lsp nav neighbors .docs/wiki/05_requirements/RF-GPH-003.md --edge doc_depends`. El payload muestra la relación, el status y el destino (`owner_path` y `doc_id` cuando existe); `--direction in|out|both`, cursor y budgets siguen siendo los del comando común. `nav.path` y `nav.explain` operan sobre las mismas aristas. Un destino ausente o con `doc_id` duplicado se reporta como unresolved y no se selecciona automáticamente.
+
+## Errores
+
+Se mantienen las razones, warnings, rechazos y fallbacks explícitos de cada operación.
+
+### Errores
+
+- **Marcador estable**: CT-GRAPH-CLI.errors
+- **Comprobación prevista**:
+  - mi-lsp nav wiki validate-source --workspace mi-lsp --format toon
+- **Evidencia referenciada**:
+  - .docs/wiki/07_technical/contracts/CT-GRAPH-CLI.md
+  - .docs/wiki/06_tests/TP-GPH.md
+- **Errores**:
+  - **GPH_QUERY_GENERATION_NOT_FOUND**: generation-missing-invalid-or-cleaned
+  - **GPH_QUERY_SELECTOR_NOT_FOUND**: empty-result-with-hint
+  - **GPH_QUERY_SELECTOR_AMBIGUOUS**: candidates-and-refinement-required
+  - **GPH_QUERY_BUDGET_INVALID**: reject-before-read
+  - **GPH_QUERY_CURSOR_STALE**: restart-query
+  - **GPH_QUERY_GRAPH_INVALID**: graph-native-blocked
+  - **GPH_QUERY_BACKEND_UNAVAILABLE**: actionable-store-error
+  - **GPH_IMPACT_SEED_UNRESOLVED**: omission-or-visible-legacy-fallback
+  - **GPH_IMPACT_BASELINE_REGRESSION**: quality-gate-fail
+  - **GPH_WIKI_GOVERNANCE_BLOCKED**: diagnosis-and-repair-only
+  - **GPH_WIKI_CODE_DRIFT**: report-both-sides-no-override
+  - **GPH_GLOBAL_MEMBER_UNAVAILABLE**: partial-result-with-member-omission
+  - **GPH_GLOBAL_CROSS_RID_CONFLICT**: reject-cross-edge
+- **shape**:
+  - **ok**: false
+  - **error_fields**:
+    - kind
+    - code
+    - message
+    - stage
+    - retryable
+    - hint
+  - **raw_backend_log**: forbidden
+
+Empty result, truncation y unavailable member no son automáticamente process failure. El envelope debe diferenciar success parcial, error de input, graph invalid y fallback legacy.
+
+## Compatibilidad
+
+La migración cambia el contrato documental, no el protocolo runtime ni sus versiones. Los esquemas legacy que la herramienta consume continúan como compatibilidad de entrada, no como formato de autoría de esta wiki.
+
+### Compatibilidad y degradacion
+
+- **Marcador estable**: CT-GRAPH-CLI.compatibility
+- **Comprobación prevista**:
+  - mi-lsp nav wiki validate-source --workspace mi-lsp --format toon
+- **Evidencia referenciada**:
+  - .docs/wiki/07_technical/contracts/CT-GRAPH-CLI.md
+  - .docs/wiki/06_tests/TP-GPH.md
+- **rules**:
+  - **direct-daemon**: same-canonical-items-order-errors-and-omissions
+  - **no-daemon**: direct-only-without-daemon-connect-or-start
+  - **no-auto-daemon**: suppress-start-but-existing-daemon-connect-remains-allowed
+  - **daemon-dial-timeout**: dial-only; original-request-context-after-connect
+  - **daemon-unavailable**: direct-mode
+  - **graph-not-yet-built**: existing-command-may-use-legacy-with-explicit-backend-warning
+  - **graph-stale-or-invalid**: no-silent-legacy-equivalence
+  - **existing-fields**: preserved
+  - **new-fields**: additive
+  - **query-time-schema-migration**: forbidden
+  - **graph-store-write**: forbidden
+  - **wiki-authority**: unchanged
+  - **MCP**: forbidden
+  - **implicit-network**: forbidden
+- **federation**:
+  - **member-generations**: required-in-envelope
+  - **unavailable-members**: explicit
+  - **scope**: registered-and-caller-authorized-only

@@ -208,13 +208,13 @@ func pathMatchesDocPrefix(path string, prefix string) bool {
 	normalized := filepath.ToSlash(strings.ToLower(strings.TrimSpace(path)))
 	switch prefix {
 	case "RS":
-		return strings.Contains(normalized, "02_resultados") || strings.Contains(normalized, "/rs")
+		return strings.Contains(normalized, "02_outcomes") || strings.Contains(normalized, "02_resultados") || strings.Contains(normalized, "/rs")
 	case "RF":
-		return strings.Contains(normalized, "04_rf") || strings.Contains(normalized, "/rf")
+		return strings.Contains(normalized, "05_requirements") || strings.Contains(normalized, "04_rf") || strings.Contains(normalized, "/rf")
 	case "TP":
-		return strings.Contains(normalized, "06_pruebas") || strings.Contains(normalized, "/tp")
+		return strings.Contains(normalized, "06_tests") || strings.Contains(normalized, "06_pruebas") || strings.Contains(normalized, "/tp")
 	case "FL":
-		return strings.Contains(normalized, "03_fl") || strings.Contains(normalized, "/fl")
+		return strings.Contains(normalized, "04_flows") || strings.Contains(normalized, "03_fl") || strings.Contains(normalized, "/fl")
 	case "AE":
 		return strings.Contains(normalized, "/ae/") || strings.Contains(normalized, "ae-")
 	default:
@@ -226,13 +226,13 @@ func isSpecificDocPatternForPrefix(path string, prefix string) bool {
 	normalized := filepath.ToSlash(strings.ToLower(strings.TrimSpace(path)))
 	switch prefix {
 	case "RS":
-		return strings.Contains(normalized, "/02_resultados/")
+		return strings.Contains(normalized, "/02_outcomes/") || strings.Contains(normalized, "/02_resultados/")
 	case "RF":
-		return strings.Contains(normalized, "/04_rf/") || strings.Contains(normalized, "/rf/")
+		return strings.Contains(normalized, "/05_requirements/") || strings.Contains(normalized, "/04_rf/") || strings.Contains(normalized, "/rf/")
 	case "TP":
-		return strings.Contains(normalized, "/06_pruebas/") || strings.Contains(normalized, "/tp/")
+		return strings.Contains(normalized, "/06_tests/") || strings.Contains(normalized, "/06_pruebas/") || strings.Contains(normalized, "/tp/")
 	case "FL":
-		return strings.Contains(normalized, "/03_fl/") || strings.Contains(normalized, "/fl/")
+		return strings.Contains(normalized, "/04_flows/") || strings.Contains(normalized, "/03_fl/") || strings.Contains(normalized, "/fl/")
 	case "AE":
 		return strings.Contains(normalized, "/ae/")
 	default:
@@ -243,15 +243,15 @@ func isSpecificDocPatternForPrefix(path string, prefix string) bool {
 func fallbackExplicitDocSearchPaths(docID string) []string {
 	switch docIDPrefix(docID) {
 	case "RS":
-		return []string{".docs/wiki/02_resultados/*.md", ".docs/wiki/02_resultados_soluciones_usuario.md"}
+		return []string{".docs/wiki/02_outcomes/RS-*.md"}
 	case "RF":
-		return []string{".docs/wiki/04_RF/*.md", ".docs/wiki/04_RF.md"}
+		return []string{".docs/wiki/05_requirements/RF-*.md"}
 	case "TP":
-		return []string{".docs/wiki/06_pruebas/*.md", ".docs/wiki/06_matriz_pruebas_RF.md"}
+		return []string{".docs/wiki/06_tests/TP-*.md"}
 	case "FL":
-		return []string{".docs/wiki/03_FL/*.md", ".docs/wiki/03_FL.md"}
+		return []string{".docs/wiki/04_flows/FL-*.md"}
 	case "AE":
-		return []string{".docs/wiki/ae/*.md"}
+		return []string{".docs/wiki/00_governance.md", ".docs/wiki/07_technical/contracts/CT-*.md"}
 	default:
 		return nil
 	}
@@ -366,27 +366,27 @@ func buildTier1PreviewPack(family string, profile model.DocsReadProfile, root st
 func canonicalPathsForStage(stage string) []string {
 	switch stage {
 	case "governance":
-		return []string{".docs/wiki/00_gobierno_documental.md"}
+		return []string{".docs/wiki/00_governance.md"}
 	case "scope":
-		return []string{".docs/wiki/01_alcance_funcional.md"}
+		return []string{".docs/wiki/01_scope.md"}
 	case "outcome":
-		return []string{".docs/wiki/02_resultados_soluciones_usuario.md", ".docs/wiki/02_resultados/"}
+		return []string{".docs/wiki/02_outcomes/RS-*.md"}
 	case "architecture":
-		return []string{".docs/wiki/02_arquitectura.md"}
+		return []string{".docs/wiki/03_architecture.md", ".docs/wiki/03_architecture/ADR-*.md"}
 	case "flow":
-		return []string{".docs/wiki/03_FL.md"}
+		return []string{".docs/wiki/04_flows/FL-*.md"}
 	case "requirements":
-		return []string{".docs/wiki/04_RF.md"}
+		return []string{".docs/wiki/05_requirements/RF-*.md"}
 	case "data":
-		return []string{".docs/wiki/05_modelo_datos.md"}
+		return []string{".docs/wiki/05_requirements/data-model.md"}
 	case "tests":
-		return []string{".docs/wiki/06_matriz_pruebas_RF.md"}
+		return []string{".docs/wiki/06_tests/TP-*.md"}
 	case "technical_baseline":
-		return []string{".docs/wiki/07_baseline_tecnica.md"}
+		return []string{".docs/wiki/07_technical.md", ".docs/wiki/07_technical/TECH-*.md"}
 	case "physical_data":
-		return []string{".docs/wiki/08_modelo_fisico_datos.md"}
+		return []string{".docs/wiki/07_technical/db/DB-*.md"}
 	case "contracts":
-		return []string{".docs/wiki/09_contratos_tecnicos.md"}
+		return []string{".docs/wiki/07_technical/contracts/CT-*.md"}
 	}
 	return nil
 }

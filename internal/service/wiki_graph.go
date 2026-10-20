@@ -353,6 +353,7 @@ func copyWikiGraphEnvelope(dst *model.Envelope, src model.Envelope) {
 	dst.DeterminismDigest = src.DeterminismDigest
 	dst.GraphFreshness = src.GraphFreshness
 	dst.Truncated = src.Truncated
+	dst.Items = src.Items
 	dst.Continuation = src.Continuation
 	dst.Stats = src.Stats
 	dst.Hint = src.Hint

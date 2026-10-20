@@ -6,7 +6,7 @@ This file is a compact path projection. It does not replace the universal AE ker
 
 - Universal AE authority: `<kernel_home>/canon/`.
 - Repository AE policy authority: `.docs/ae/repo-policy.yaml`.
-- Product and governance authority: `.docs/wiki/00_gobierno_documental.md` and the governed wiki layers below.
+- Product and governance authority: `.docs/wiki/00_governance.md` and the governed wiki layers below.
 - Executable governance projection: `.docs/wiki/_mi-lsp/read-model.toml`.
 - `.docs/wiki/ae/**` is compatibility history only. It is not current AE authority and must not supply active workflow instructions.
 - `AGENTS.md`, `CLAUDE.md`, and `PATHS.md` are generated or projected policy surfaces; repair their source authority and regenerate rather than hand-editing generated policy twins.
@@ -15,23 +15,27 @@ This file is a compact path projection. It does not replace the universal AE ker
 
 - Canon mode: `kernel_v2`.
 - Required repository policy: `.docs/ae/repo-policy.yaml`.
-- Required anchor: `.docs/wiki/09_contratos/CT-GOVERNANCE-AE-KERNEL-V2.md`.
+- Required anchor: `.docs/wiki/07_technical/contracts/CT-GOVERNANCE-AE-KERNEL-V2.md`.
 - Canon validation is fail-closed for missing or mismatched modules, absolute paths, parent traversal, and symlinked roots, components, or files.
 - Canon reads must resolve beneath `<kernel_home>/canon/`; repository-specific slots must resolve beneath this repository's `.docs/ae/repo-policy.yaml`.
 
 ## Repository map
 
-- Governance: `.docs/wiki/00_gobierno_documental.md`
-- Scope: `.docs/wiki/01_alcance_funcional.md`
-- Architecture: `.docs/wiki/02_arquitectura.md`
-- Flows: `.docs/wiki/03_FL.md`, `.docs/wiki/03_FL/`
-- Requirements: `.docs/wiki/04_RF.md`, `.docs/wiki/04_RF/`
-- Data model: `.docs/wiki/05_modelo_datos.md`
-- Test matrix and plans: `.docs/wiki/06_matriz_pruebas_RF.md`, `.docs/wiki/06_pruebas/`
-- Technical baseline: `.docs/wiki/07_baseline_tecnica.md`, `.docs/wiki/07_tech/`
-- Physical data model: `.docs/wiki/08_modelo_fisico_datos.md`, `.docs/wiki/08_db/`
-- Contracts: `.docs/wiki/09_contratos_tecnicos.md`, `.docs/wiki/09_contratos/`
+- Governance and body language (`language: es`): `.docs/wiki/00_governance.md`
+- Scope: `.docs/wiki/01_scope.md`
+- Outcomes: `.docs/wiki/02_outcomes/`
+- Architecture and ADR: `.docs/wiki/03_architecture.md` (Mermaid C4 context and containers), `.docs/wiki/03_architecture/`
+- Flows: `.docs/wiki/04_flows/` (sequence Mermaid in each FL's Secuencia section)
+- Requirements: `.docs/wiki/05_requirements/`
+- Data model: `.docs/wiki/05_requirements/data-model.md`
+- Test plans: `.docs/wiki/06_tests/`; RF×TP matrix: `mi-lsp nav wiki matrix` (on demand)
+- Technical baseline: `.docs/wiki/07_technical.md`, `.docs/wiki/07_technical/`
+- Physical data model: `.docs/wiki/07_technical/db/DB-PHYSICAL-MODEL.md`, `.docs/wiki/07_technical/db/`
+- Contracts: `.docs/wiki/07_technical/contracts/`
+- UI journeys and modules: `.docs/wiki/10_ux/`; visual and scope projections: `DESIGN.md`, `PRODUCT.md`
+- Terminal path registry: `.docs/wiki/00_retirements.md`; source snapshots: `.docs/history/wiki-v0/` (historical only)
 - Repository AE policy: `.docs/ae/repo-policy.yaml`
+- Non-canonical roadmap fallback: `.docs/roadmap/roadmap.md`; thin RS-backed items, not a wiki layer or normative index
 - Durable audit evidence: `.docs/auditoria/2026-07-13-ae-kernel-v2-integration/**` for this integration scope only
 
 ## Operational evidence

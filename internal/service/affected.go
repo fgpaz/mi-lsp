@@ -586,29 +586,34 @@ func affectedDocSuggestions(path string, workspaceName string) []AffectedItem {
 		items = append(items, item)
 	}
 	switch {
-	case strings.HasPrefix(path, ".docs/wiki/04_RF/"):
-		add(doc(".docs/wiki/04_RF.md", "RF index may need catalog sync for changed RF doc", 0.85, traceCommand))
-		add(doc(".docs/wiki/06_matriz_pruebas_RF.md", "RF change may need test matrix sync", 0.8, validateCommand))
-		add(doc(".docs/wiki/06_pruebas/TP-QRY.md", "query RF change may need TP-QRY coverage sync", 0.8, validateCommand))
-	case strings.HasPrefix(path, ".docs/wiki/06_"):
-		add(doc(".docs/wiki/06_matriz_pruebas_RF.md", "test-plan change may need matrix sync", 0.8, validateCommand))
+	case strings.HasPrefix(path, ".docs/wiki/05_requirements/") || strings.HasPrefix(path, ".docs/wiki/04_RF/"):
+		add(doc(".docs/wiki/05_requirements/", "RF index layer may need catalog sync for changed RF doc", 0.85, traceCommand))
+		add(doc(".docs/wiki/06_tests/TP-QRY.md", "RF change may need TP-QRY coverage sync", 0.8, validateCommand))
+	case strings.HasPrefix(path, ".docs/wiki/06_tests/") || strings.HasPrefix(path, ".docs/wiki/06_pruebas/"):
+		add(doc(".docs/wiki/06_tests/", "test-plan layer may need matrix sync", 0.8, validateCommand))
 	case isWikiPath(path):
 		add(doc(path, "changed canonical wiki path should be validated", 1.0, validateCommand))
+	case strings.HasPrefix(path, "internal/docgraph/"):
+		add(doc(".docs/wiki/05_requirements/RF-GPH-007.md", "graph navigation implementation changed; graph impact requirement should be reviewed", 0.85, validateCommand))
+		add(doc(".docs/wiki/06_tests/TP-GPH.md", "graph implementation changed; graph test-plan coverage should be reviewed", 0.85, validateCommand))
+		add(doc(".docs/wiki/06_tests/TP-WIKI.md", "documentary graph behavior changed; wiki test-plan coverage should be reviewed", 0.8, validateCommand))
+		add(doc(".docs/wiki/07_technical/TECH-GRAPH-NATIVE.md", "graph-native implementation boundary changed; technical baseline should be reviewed", 0.85, validateCommand))
+		add(doc(".docs/wiki/07_technical/TECH-DOCUMENTARY-GOVERNANCE.md", "documentary governance graph boundary changed; technical baseline should be reviewed", 0.8, validateCommand))
 	case strings.HasPrefix(path, "internal/cli/"):
-		add(doc(".docs/wiki/09_contratos_tecnicos.md", "CLI surface changed; root technical contract should be reviewed", 0.85, validateCommand))
-		add(doc(".docs/wiki/09_contratos/CT-CLI-DAEMON-ADMIN.md", "CLI command/envelope boundary changed", 0.85, validateCommand))
+		add(doc(".docs/wiki/07_technical.md", "CLI surface changed; technical baseline should be reviewed", 0.85, validateCommand))
+		add(doc(".docs/wiki/07_technical/contracts/CT-CLI-DAEMON-ADMIN.md", "CLI command/envelope boundary changed", 0.85, validateCommand))
 	case strings.HasPrefix(path, "internal/store/"):
-		add(doc(".docs/wiki/08_modelo_fisico_datos.md", "store/catalog persistence changed; physical model should be reviewed", 0.85, validateCommand))
-		add(doc(".docs/wiki/08_db/DB-SYMBOL-EDGE-GRAPH.md", "symbol graph persistence proposal may be affected by store changes", 0.65, validateCommand))
+		add(doc(".docs/wiki/07_technical/db/", "store/catalog persistence changed; physical data layer should be reviewed", 0.85, validateCommand))
+		add(doc(".docs/wiki/07_technical/db/DB-SYMBOL-EDGE-GRAPH.md", "symbol graph persistence proposal may be affected by store changes", 0.65, validateCommand))
 	case strings.HasPrefix(path, "internal/daemon/"):
-		add(doc(".docs/wiki/07_baseline_tecnica.md", "daemon runtime behavior changed; technical baseline should be reviewed", 0.8, validateCommand))
-		add(doc(".docs/wiki/07_tech/TECH-DAEMON-GOBERNANZA.md", "daemon/governance detail may need sync", 0.7, validateCommand))
+		add(doc(".docs/wiki/07_technical.md", "daemon runtime behavior changed; technical baseline should be reviewed", 0.8, validateCommand))
+		add(doc(".docs/wiki/07_technical/TECH-DAEMON-GOBERNANZA.md", "daemon/governance detail may need sync", 0.7, validateCommand))
 	case strings.HasPrefix(path, "worker-dotnet/"):
-		add(doc(".docs/wiki/09_contratos/CT-DAEMON-WORKER.md", "worker protocol/runtime boundary changed", 0.85, validateCommand))
+		add(doc(".docs/wiki/07_technical/contracts/CT-DAEMON-WORKER.md", "worker protocol/runtime boundary changed", 0.85, validateCommand))
 	case strings.HasPrefix(path, "internal/service/"):
-		add(doc(".docs/wiki/04_RF/RF-QRY-017.md", "query service behavior changed; RF-QRY-017 should be reviewed for affected selector scope", 0.75, traceCommand))
-		add(doc(".docs/wiki/06_pruebas/TP-QRY.md", "query service behavior changed; TP-QRY tests may need sync", 0.75, validateCommand))
-		add(doc(".docs/wiki/09_contratos_tecnicos.md", "nav service output/envelope changed; technical contracts should be reviewed", 0.75, validateCommand))
+		add(doc(".docs/wiki/05_requirements/RF-QRY-017.md", "query service behavior changed; RF-QRY-017 should be reviewed for affected selector scope", 0.75, traceCommand))
+		add(doc(".docs/wiki/06_tests/TP-QRY.md", "query service behavior changed; TP-QRY tests may need sync", 0.75, validateCommand))
+		add(doc(".docs/wiki/07_technical/contracts/CT-NAV-WIKI.md", "nav service output/envelope changed; technical contracts should be reviewed", 0.75, validateCommand))
 	}
 	return items
 }

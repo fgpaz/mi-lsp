@@ -1,0 +1,197 @@
+---
+doc_id: TECH-DAEMON-GOBERNANZA
+title: Daemon, gobernanza local y runtime compartido
+layer: TECH
+family: DAEMON
+status: implemented
+implements:
+  - internal/cli/daemon.go
+  - internal/daemon/admin.go
+  - internal/daemon/export.go
+  - internal/daemon/log_tail.go
+  - internal/daemon/state_store.go
+tests:
+  - internal/daemon/export_test.go
+  - internal/daemon/log_tail_test.go
+---
+
+# TECH-DAEMON-GOBERNANZA
+
+```yaml
+harness_protocol: SDD-HARNESS-v1
+id: "TECH-DAEMON-GOBERNANZA"
+kind: "support-doc"
+audience: "llm-first"
+imports:
+  - '[[00_gobierno_documental]]'
+  - '[[TECH-DAEMON-GOBERNANZA]]'
+exports:
+  - 'TECH-DAEMON-GOBERNANZA'
+agent_must_read:
+  - .docs/wiki/00_gobierno_documental.md
+  - .docs/wiki/07_tech/TECH-DAEMON-GOBERNANZA.md
+agent_may_edit:
+  - .docs/wiki/07_tech/TECH-DAEMON-GOBERNANZA.md
+agent_must_not_edit:
+  - .docs/wiki/_mi-lsp/read-model.toml
+verify:
+  - mi-lsp nav governance --workspace mi-lsp --format toon
+  - mi-lsp nav wiki validate-harness --workspace mi-lsp --format toon
+stop_if:
+  - governance_blocked=true
+  - harness_verdict=BLOCKED
+evidence:
+  - .docs/wiki/07_tech/TECH-DAEMON-GOBERNANZA.md
+```
+
+Volver a [07_baseline_tecnica.md](../07_baseline_tecnica.md).
+
+## Summary
+
+Define el modelo canonico del daemon global, su governance UI workspace-first y la gestion compartida de runtimes calientes entre multiples clientes locales.
+
+## Owner and scope
+
+- Owner logico: Runtime supervision
+- Scope: daemon global, runtime pool, health, governance UI, acceso concurrente local, warm seguro y logs locales
+- Non-goals: auth remota, cluster multi-host, observabilidad externa, acciones destructivas desde la UI
+
+## Runtime o subsistema
+
+### Topologia canonica
+
+- Un daemon por usuario/host.
+- Un runtime vivo por `(workspace_root, backend_type, entrypoint_id)`.
+- Aliases duplicados del mismo `workspace_root` pueden compartir runtime si backend y entrypoint coinciden.
+- Worktrees distintos del mismo repositorio no comparten runtime porque su `workspace_root` fisico es distinto aunque compartan `git common dir`.
+- El auto-registro identifica un linked worktree comparando rutas absolutas, canónicas y normalizadas de `git dir` y `git common dir`. Por defecto resuelve el workspace principal si ya está registrado, sin registrar ni indexar la raíz física del linked worktree; si no existe esa entrada, responde `explicit_incomplete` (`reason_code=invalid_workspace`) sin indexar. `MI_LSP_AUTOREGISTER=force` registra el linked worktree como root físico separado y deja un warning explícito. Fuera del auto-registro, la resolución read-only con **path explícito** hacia un linked worktree no registrado fija `workspace_root` en la raíz física de ese path para pools y runtime, sin registrar ni indexar esa raíz; selector **omitido**, **alias** explícito o path explícito en modo **mutante** conservan la conducta vigente (alias del main registrado cuando corresponda, sin nuevo registro ni índice).
+- Pools separados por backend:
+  - `roslyn`
+  - `tsserver`
+  - `pyright`
+  - `gopls`
+  - `rust-analyzer`
+- El warm de un workspace es por lenguaje detectado (`roslyn` para C#, `tsserver`, `pyright`, `gopls` para Go y `rust-analyzer` para Rust) y ya no calienta Roslyn por defecto en repos sin C#.
+- Politica por defecto:
+  - `max_workers = 8` (era 3; constante única `defaultMaxWorkers`, override con env `MI_LSP_DAEMON_MAX_WORKERS` entero positivo; el flag `--max-workers` en 0 significa env u 8). Motivo: proyectos C#, Go, Python, TS, Rust y Kotlin concurrentes comparten un daemon y con 3 el LRU descartaba runtimes caros (Roslyn) en cada alternancia. El auto-start, `daemon restart` y el fallback del manager usan el mismo valor
+  - `idle_timeout = 30m`
+  - `watch_mode = lazy`
+  - `max_watched_roots = 8`
+  - `max_inflight = 48` (era 16; env `MI_LSP_DAEMON_MAX_INFLIGHT`)
+  - eviction `LRU`
+
+```toon
+block_id: TECH-DAEMON-GOBERNANZA.topology-defaults-v2
+description: "Daemon topology defaults updated for max concurrency"
+max_workers: 8
+max_workers_env: "MI_LSP_DAEMON_MAX_WORKERS"
+max_inflight: 48
+max_runtime_memory_mb: 1024
+soft_memory_threshold_mb: 500
+wal_checkpoint_interval_sec: 1800
+result_cache:
+  enabled: true
+  max_entries: 256
+  ttl_minutes: 10
+  cacheable_ops: ["nav.ask", "nav.search", "nav.pack", "nav.governance", "nav.route"]
+  disable_env: "MI_LSP_DAEMON_RESULT_CACHE=0"
+  key_derivation: "sha256(workspace_root + generation(mtime index.db) + op + canonical_payload_json)"
+```
+
+### Acceso compartido y caching
+
+- El daemon vive fuera de la terminal que lo lanza.
+- Claude Code, Codex y subagentes deben poder conectarse al mismo daemon bajo el mismo usuario.
+- No todo `nav` debe pasar por el daemon: las lecturas baratas de catalogo/texto se resuelven directo en la CLI y reservan el daemon para queries semanticas o compuestas.
+- `nav.ask`, `nav.search`, `nav.pack` son daemon-elegibles cuando el daemon vive (sin auto-start forzado; fallback a directo intacto).
+- Cuando el daemon atiende diagnosticos administrativos como `worker status`, debe delegar al contrato canonico del core y no reinterpretar el payload como una lista cruda de runtimes.
+- Cada request debe incluir cuando esta disponible:
+  - `client_name`
+  - `session_id`
+- `daemon start` debe:
+  - chequear health primero
+  - devolver metadatos de la instancia existente si ya corre
+  - crear nueva instancia solo bajo lock global
+- `EnsureDaemon` debe usar el mismo lock global y health recheck que `daemon start`; el estado persistido no basta si el pipe/socket no responde.
+- El watcher no arranca recursivamente sobre todos los aliases por default: `lazy` activa por root canonico, `eager` es opt-in y `off` deshabilita watchers.
+- Los watchers se deduplican por `workspace_root` canonico y se acotan por LRU con `max_watched_roots`; worktrees con roots distintos se observan por separado.
+- Todo worker lanzado (Roslyn, cliente LSP generico, tsserver) queda ligado al daemon: en Linux se crea con `Pdeathsig=SIGKILL`, de modo que un daemon caido o terminado a la fuerza no deja language servers huerfanos. En otros SO no cambia: el cierre ocurre por shutdown ordenado o reaping por `idle_timeout`.
+- El registry global decodificado se cachea por path en proceso (invalidado por mtime+size y por `SaveRegistry`); cada llamador recibe una copia del mapa, asi una mutacion local no corrompe el cache.
+- Ranking documental: la normalizacion de texto es de una sola pasada (misma salida) y el contexto wiki-codigo vivo y la autoridad de gobernanza reutilizan el cache de `doc_records` por generacion en lugar de recargarlos varias veces por consulta.
+- Requests pesadas daemon-aware se acotan con `max_inflight`; saturacion devuelve `daemon/backpressure_busy`.
+- Result cache LRU (256 entradas, TTL 10 min): cachea read-only ops (nav.ask/search/pack/governance/route) keyed por sha256(workspace_root + generacion(mtime index.db) + op + payload canonico sin session_id). Sin error-caching. Disable con `MI_LSP_DAEMON_RESULT_CACHE=0`. Stats en `system.status.result_cache: {hits, misses, entries}`. Los logs HIT/MISS son diagnostico opt-in con `MI_LSP_DAEMON_RESULT_CACHE_DEBUG`; no forman parte del hot path normal.
+- Ranking owner-aware aplica `canonical_ceiling`: un owner canónico positivo no puede quedar debajo de ruido FTS de README genérico.
+- Workspace hygiene conserva aliases con root vacío como casos ambiguos; la recolección automática y `workspace prune --stale` solo remueven aliases cuando la raíz está definitivamente inexistente. Permisos y otros errores de I/O se reportan de forma sanitizada y no se borran directorios, cachés ni worktrees.
+- SQLite conserva un handle de escritura serializado (`MaxOpenConns=1`) y separa consultas en un pool read-only acotado (8 open/4 idle). Cada conexion de lectura recibe `_pragma=query_only(ON)` y `_pragma=foreign_keys(ON)` desde el DSN modernc antes de entrar al pool.
+- Presupuesto SLO local: `daemon perf-smoke` valida callers paralelos contra working set, private bytes y handles; cualquier excedente debe devolver envelope `ok=false` tipado y dejar warning accionable, no un pass degradado.
+
+### Governance UI
+
+- Expuesta solo en `127.0.0.1:<port>`.
+- Instancia unica global.
+- `admin open --workspace <alias>` y `daemon open --workspace <alias>` deben abrir la misma UI enfocando el workspace por query params.
+- Deep-link canonico:
+  - `/?workspace=<alias>&panel=<overview|activity|logs|metrics>&window=<recent|7d|30d|90d>&backend=<type>`
+- Vistas minimas:
+  - estado del daemon
+  - KPIs operativos
+  - tabs por workspace
+  - runtimes activos y memoria por backend
+  - access events recientes por cliente/sesion con corte temporal explicito y drawer con `workspace_root`, `workspace_input`, `error_kind` y `error_code`
+  - drawer de detalle
+  - tail de logs locales
+  - panel metrics: p50/p95 por operacion, error rate y truncation rate con ventana configurable
+- Acciones seguras soportadas:
+  - `refresh`
+  - `warm workspace`
+  - `open logs`
+  - `copy CLI command`
+
+## Endpoints admin locales
+
+- `GET /`
+- `GET /api/status?window=<recent|7d|30d|90d>`
+- `GET /api/workspaces?window=<recent|7d|30d|90d>`
+- `GET /api/workspaces/{workspace}?window=<recent|7d|30d|90d>`
+- `POST /api/workspaces/{workspace}/warm` (requiere admin token pre-compartido en header `X-Mi-Lsp-Token` + validacion Host/Origin)
+- `GET /api/accesses?window=<recent|7d|30d|90d>`
+- `GET /api/logs?tail=<n>`
+- `GET /api/metrics?window=<recent|7d|30d|90d>` — computa p50/p95, error rate y truncation rate por operacion/workspace/cliente desde `access_events`; mantiene compatibilidad legacy con `days=<n>`
+- `mi-lsp admin export --summary` reutiliza la misma ventana y agrega breakdowns opcionales por route/client/hint/failure-stage; raw y summary soportan `--format toon` para revision agent-friendly, el summary sin `--limit` debe agregarse en streaming desde `daemon.db`, y el raw export prioriza CLI antes que UI para debugging operativo y es la primera superficie donde deben aparecer los campos causales nuevos.
+- `GET /api/status` tambien expone `daemon_process` y `watchers`, equivalentes a `daemon status`, para validar presupuestos de agentes sin inspeccion externa.
+- admin token es un valor pre-compartido guardado en `~/.mi-lsp/daemon/state.json` y requerido solo para endpoints mutantes; se comunica al usuario via `daemon status` o `admin open`.
+- Host/Origin validation previene CSRF/DNS-rebinding local: endpoints mutantes rechazan requests cuyo header `Host` o `Origin` no apunten a `127.0.0.1:<puerto>` del daemon.
+
+## Dependencias e interacciones
+
+- CLI publica
+- named pipe en Windows / unix socket en Linux
+- `~/.mi-lsp/daemon/state.json`
+- `~/.mi-lsp/daemon/daemon.db`
+- `{repoRoot}/.mi-lsp/daemon.log`
+- worker Roslyn
+- `tsserver` opcional
+
+## Failure modes y notas operativas
+
+| Riesgo | Sintoma | Mitigacion canonica |
+|---|---|---|
+| Doble daemon | dos `start` simultaneos | lock + health recheck |
+| Auto-start concurrente | N agentes arrancan N procesos | `EnsureDaemon` comparte lock y no confia en state sin health |
+| Explosion de handles por watchers | aliases duplicados o registry grande | `watch_mode=lazy`, dedupe por root canonico, cap LRU |
+| Saturacion de requests | latencia/memoria crecen sin limite | backpressure `daemon/backpressure_busy` y env `MI_LSP_DAEMON_MAX_INFLIGHT` |
+| Socket/pipe huerfano | connect falla pero state existe | purge + restart controlado |
+| RAM excesiva | demasiados runtimes vivos | `max_workers` + LRU eviction |
+| SLO de memoria/proceso excedido | `perf-smoke` supera working set/private bytes/handles | envelope `ok=false` tipado + ajustar `max_workers`, watchers o backpressure |
+| UI duplicada | cada cliente abre una vista separada | admin URL unica + deep link por query |
+| Cliente antiguo | errores sutiles de protocolo | handshake con version explicita |
+| Warm fallido | runtime no queda disponible | warning visible + logs locales |
+| Tail ruidoso al apagar | lineas benignas de socket/pipe cerrado mas bloque `Usage` | filtro de ruido benigno en `daemon logs` y `/api/logs` sin ocultar lineas no benignas |
+| `tsserver` frio roto | cada request vuelve a intentar bootstrap y falla | cooldown corto + degradacion sticky a catalog/text |
+| Worker/proceso bloqueado por permisos | `nav context` o `nav search` devuelve warning `backend_runtime/process_spawn_access_denied` | fallback slice/catalog/text o Go search + evidencia exportable via `admin export --format toon` |
+
+## Related docs
+
+- [DB-STATE-Y-TELEMETRIA.md](../08_db/DB-STATE-Y-TELEMETRIA.md)
+- [CT-CLI-DAEMON-ADMIN.md](../09_contratos/CT-CLI-DAEMON-ADMIN.md)
+- [CT-DAEMON-WORKER.md](../09_contratos/CT-DAEMON-WORKER.md)

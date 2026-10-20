@@ -53,6 +53,7 @@ func (a *App) changePack(ctx context.Context, request model.CommandRequest) (mod
 	if limit > 30 {
 		limit = 30
 	}
+	explicitPaths := affectedPathsFromPayload(request.Payload["paths"])
 
 	warnings := []string{"change-pack is a harness packet; graph impact remains advisory when generation is missing"}
 	packet := ChangePackPacket{Ref: ref}
@@ -71,7 +72,9 @@ func (a *App) changePack(ctx context.Context, request model.CommandRequest) (mod
 	} else if results, ok := diffEnv.Items.([]DiffContextResult); ok && len(results) > 0 {
 		diff = &results[0]
 		packet.ChangedFiles = diff.ChangedFiles
-		packet.ChangedPaths = append([]string{}, diff.ChangedPaths...)
+		if len(explicitPaths) == 0 {
+			packet.ChangedPaths = append([]string{}, diff.ChangedPaths...)
+		}
 		if len(diff.ChangedSymbols) > limit {
 			packet.ChangedSymbols = append([]DiffSymbol{}, diff.ChangedSymbols[:limit]...)
 		} else {
@@ -89,10 +92,9 @@ func (a *App) changePack(ctx context.Context, request model.CommandRequest) (mod
 		}
 	}
 
-	// Explicit paths override / complement.
-	explicitPaths := affectedPathsFromPayload(request.Payload["paths"])
+	// Explicit paths are authoritative when supplied; otherwise keep diff discovery.
 	if len(explicitPaths) > 0 {
-		packet.ChangedPaths = normalizeAffectedPaths(append(packet.ChangedPaths, explicitPaths...))
+		packet.ChangedPaths = changePackInputPaths(packet.ChangedPaths, explicitPaths)
 		packet.ChangedFiles = len(packet.ChangedPaths)
 	}
 
@@ -200,6 +202,13 @@ func (a *App) changePack(ctx context.Context, request model.CommandRequest) (mod
 		env.Hint = packet.HubRisk.Warning
 	}
 	return applyCoachPolicy(env, request.Context), nil
+}
+
+func changePackInputPaths(diffPaths, explicitPaths []string) []string {
+	if len(explicitPaths) > 0 {
+		return normalizeAffectedPaths(explicitPaths)
+	}
+	return normalizeAffectedPaths(diffPaths)
 }
 
 func buildChangePackReads(packet ChangePackPacket, hubPaths map[string]bool, limit int) []FlowSliceRead {

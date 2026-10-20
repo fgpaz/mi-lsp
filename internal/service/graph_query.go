@@ -452,30 +452,32 @@ func graphPath(ctx context.Context, s *store.GraphQuerySnapshot, q model.GraphQu
 		sortPathEdges(ctx, s, edges)
 		next := []int{}
 		for _, edge := range edges {
-			neighbor, parentNode, ok := graphPathNeighbor(edge, frontier, q.Direction)
-			if !ok || neighbor == start.NodeID {
-				continue
+			for _, transition := range graphPathNeighbors(edge, frontier, q.Direction) {
+				neighbor, parentNode := transition.neighbor, transition.parent
+				if neighbor == start.NodeID {
+					continue
+				}
+				parentKey, ok := pathKeys[parentNode]
+				if !ok {
+					continue
+				}
+				node, nodeErr := sNode(s, ctx, neighbor)
+				if nodeErr != nil {
+					return model.Envelope{}, store.SanitizeGraphQueryError(nodeErr)
+				}
+				candidateKey := graphPathStepKey(parentKey, edge, node)
+				oldDistance, seen := visited[neighbor]
+				if seen && oldDistance < depth {
+					continue
+				}
+				if seen && oldDistance == depth && pathKeys[neighbor] <= candidateKey {
+					continue
+				}
+				visited[neighbor] = depth
+				pathKeys[neighbor] = candidateKey
+				parents[neighbor] = parent{node: parentNode, next: neighbor, edge: edge, distance: depth, pathKey: candidateKey}
+				next = append(next, neighbor)
 			}
-			parentKey, ok := pathKeys[parentNode]
-			if !ok {
-				continue
-			}
-			node, nodeErr := sNode(s, ctx, neighbor)
-			if nodeErr != nil {
-				return model.Envelope{}, store.SanitizeGraphQueryError(nodeErr)
-			}
-			candidateKey := graphPathStepKey(parentKey, edge, node)
-			oldDistance, seen := visited[neighbor]
-			if seen && oldDistance < depth {
-				continue
-			}
-			if seen && oldDistance == depth && pathKeys[neighbor] <= candidateKey {
-				continue
-			}
-			visited[neighbor] = depth
-			pathKeys[neighbor] = candidateKey
-			parents[neighbor] = parent{node: parentNode, next: neighbor, edge: edge, distance: depth, pathKey: candidateKey}
-			next = append(next, neighbor)
 		}
 		frontier = uniqueInts(next)
 		if distance, ok := visited[target.NodeID]; ok && distance == depth {
@@ -520,27 +522,33 @@ func graphPath(ctx context.Context, s *store.GraphQuerySnapshot, q model.GraphQu
 	return env, nil
 }
 
-func graphPathNeighbor(edge model.GraphEdgeRecord, frontier []int, direction string) (neighbor, parent int, ok bool) {
+type graphPathTransition struct {
+	neighbor int
+	parent   int
+}
+
+func graphPathNeighbors(edge model.GraphEdgeRecord, frontier []int, direction string) []graphPathTransition {
 	fromFrontier := containsInt(frontier, edge.FromNodeID)
 	toFrontier := containsInt(frontier, edge.ToNodeID)
+	transitions := make([]graphPathTransition, 0, 2)
 	switch direction {
 	case "out":
 		if fromFrontier {
-			return edge.ToNodeID, edge.FromNodeID, true
+			transitions = append(transitions, graphPathTransition{neighbor: edge.ToNodeID, parent: edge.FromNodeID})
 		}
 	case "in":
 		if toFrontier {
-			return edge.FromNodeID, edge.ToNodeID, true
+			transitions = append(transitions, graphPathTransition{neighbor: edge.FromNodeID, parent: edge.ToNodeID})
 		}
 	case "both":
 		if fromFrontier {
-			return edge.ToNodeID, edge.FromNodeID, true
+			transitions = append(transitions, graphPathTransition{neighbor: edge.ToNodeID, parent: edge.FromNodeID})
 		}
 		if toFrontier {
-			return edge.FromNodeID, edge.ToNodeID, true
+			transitions = append(transitions, graphPathTransition{neighbor: edge.FromNodeID, parent: edge.ToNodeID})
 		}
 	}
-	return 0, 0, false
+	return transitions
 }
 
 func graphPathStepKey(previous string, edge model.GraphEdgeRecord, node model.GraphNodeRecord) string {

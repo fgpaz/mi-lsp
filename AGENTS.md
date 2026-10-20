@@ -1,6 +1,6 @@
 # AGENTS.md — mi-lsp Agentic Engineering Policy
 
-> **Authority**: Architecture + AE-KERNEL-V2.md. **Language**: English. L0 operating policy for mi-lsp.
+> **Authority**: Outcomes + AE-KERNEL-V2.md. **Language**: English. L0 operating policy for mi-lsp.
 
 ## North Star Cycle
 
@@ -17,9 +17,13 @@ Do not rewrite code that already works or add unit tests beyond the protected go
 
 ## Repo kind and product wiki (D-086)
 
-Declared `repo.kind`: **undeclared**
+Declared `repo.kind`: **product**
 
-Declare `repo.kind` (`product`, `kernel`, or `docs`) in repo-policy.yaml; the setup doctor reports missing kind and product layers when applicable.
+- Start with **ae-context**; route to **ae-wiki-close** when wiki scope is missing.
+- Wiki lives under WIKI-CONTRACT-v1 English paths; traits and `layer_exceptions` only in `.docs/wiki/00_governance.md`.
+- **ae-close** computes `wiki_impact` from the diff (v1 paths + legacy aliases); drift is report-only and never blocks integration.
+- **Readiness** = RS `draft`→`active`. **Conformidad** = AE closure packet, not wiki.
+- **ae-setup** doctor + scaffold for missing product layers.
 
 ## Durable completion authority
 
@@ -141,8 +145,6 @@ Keep `AGENTS.md`, `CLAUDE.md`, and project-local skills in English. All other pr
 
 **private network precondition**: before `deployment-cli` or `remote-cli`, confirm private access to the target environment (ask the user if not already confirmed).
 
-**Browser priority**: use mi-browser through mi-mcp as the primary browser. If a page requires login, first check other registered nodes for an existing session before asking the user. Use agent-browser or chrome-devtools-axi only as fallbacks, and try both before Claude in Chrome. Keep ClaudeInChromeDefaultEnabled disabled when the user's assistant policy has disabled it; never re-enable it as a fallback.
-
 
 ## Repository-Specific Contract
 
@@ -172,8 +174,7 @@ Local semantic CLI for large .NET/C# and TypeScript workspaces.
 
 ### QA Canon Paths
 
-  - .docs/wiki/06_matriz_pruebas_RF.md
-  - .docs/wiki/06_pruebas/
+  - .docs/wiki/06_tests/
 
 ---
 
@@ -181,4 +182,4 @@ Local semantic CLI for large .NET/C# and TypeScript workspaces.
 **Status**: Generated from AE-POLICY-PROJECTION-V2
 **Last Updated**: 2026-08-25
 **Source**: repo-policy.yaml + template.agents
-<!-- kernel_version: b7d5a7a4 -->
+<!-- kernel_version: 5e8cfea0 -->

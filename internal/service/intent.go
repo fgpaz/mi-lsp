@@ -1623,7 +1623,7 @@ func buildIntentWikiPlan(changedPaths []string, workspaceName string) model.Inte
 	result := model.IntentWikiPlan{MustRead: []model.IntentWikiRead{}, MayRead: []model.IntentWikiRead{}}
 	evidence := append([]string(nil), changedPaths...)
 	if len(evidence) > 0 {
-		result.MustRead = append(result.MustRead, model.IntentWikiRead{Path: ".docs/wiki/00_gobierno_documental.md", Layer: "00", Reason: "governance context is mandatory before interpreting change impact", EvidencePaths: evidence})
+		result.MustRead = append(result.MustRead, model.IntentWikiRead{Path: ".docs/wiki/00_governance.md", Layer: "00", Reason: "governance context is mandatory before interpreting change impact", EvidencePaths: evidence})
 	}
 	seenMust, seenMay := map[string]bool{}, map[string]bool{}
 	if len(result.MustRead) > 0 {
@@ -1632,7 +1632,7 @@ func buildIntentWikiPlan(changedPaths []string, workspaceName string) model.Inte
 	for _, path := range changedPaths {
 		for _, suggestion := range affectedDocSuggestions(path, workspaceName) {
 			read := model.IntentWikiRead{Path: suggestion.Path, Reason: suggestion.Reason, EvidencePaths: []string{path}}
-			if strings.HasPrefix(suggestion.Path, ".docs/wiki/09_") || strings.Contains(suggestion.Path, "/09_contratos/") || strings.Contains(filepath.Base(suggestion.Path), "CT-") {
+			if strings.HasPrefix(suggestion.Path, ".docs/wiki/07_technical/contracts/") || strings.HasPrefix(suggestion.Path, ".docs/wiki/09_") || strings.Contains(suggestion.Path, "/09_contratos/") || strings.Contains(filepath.Base(suggestion.Path), "CT-") {
 				if !seenMust[read.Path] {
 					result.MustRead = append(result.MustRead, read)
 					seenMust[read.Path] = true
@@ -1644,7 +1644,7 @@ func buildIntentWikiPlan(changedPaths []string, workspaceName string) model.Inte
 		}
 	}
 	if len(result.MayRead) == 0 && len(changedPaths) > 0 {
-		result.MayRead = append(result.MayRead, model.IntentWikiRead{Path: ".docs/wiki/06_matriz_pruebas_RF.md", Layer: "06", Reason: "test-matrix review is optional unless the change alters a requirement boundary", EvidencePaths: evidence})
+		result.MayRead = append(result.MayRead, model.IntentWikiRead{Path: ".docs/wiki/06_tests/TP-QRY.md", Layer: "06", Reason: "test-matrix review is optional unless the change alters a requirement boundary", EvidencePaths: evidence})
 	}
 	return result
 }

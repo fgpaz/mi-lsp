@@ -166,7 +166,7 @@ func authorityEntry(doc model.DocRecord, role string) model.WikiCodeAuthorityEnt
 
 func governanceDoc(docs []model.DocRecord) (model.DocRecord, bool) {
 	for _, doc := range docs {
-		if doc.Path == ".docs/wiki/00_gobierno_documental.md" && model.CanonicalWikiAuthority(doc.Path) && !doc.IsSnapshot {
+		if doc.Path == ".docs/wiki/00_governance.md" && model.CanonicalWikiAuthority(doc.Path) && !doc.IsSnapshot {
 			return doc, true
 		}
 	}

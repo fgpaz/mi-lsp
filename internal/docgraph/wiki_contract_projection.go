@@ -1,6 +1,7 @@
 package docgraph
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"path"
@@ -8,13 +9,28 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/BurntSushi/toml"
 	"github.com/fgpaz/mi-lsp/internal/model"
+	"gopkg.in/yaml.v3"
 )
 
 // Accept machine YAML as well as the fenced representation used by legacy docs.
 func parseWikiContractGovernanceDocument(content []byte) (*WikiContractGovernance, []string) {
+	block := wikiContractProjectionYAML(content)
+	// v1.1 refines the projection, not the graph/runtime protocol.
+	var raw map[string]any
+	if yaml.Unmarshal([]byte(block), &raw) == nil && stringMapString(raw, "wiki_contract") == "WIKI-CONTRACT-v1.1" {
+		raw["wiki_contract"] = WikiContractProtocolV1
+		if normalized, err := yaml.Marshal(raw); err == nil {
+			block = string(normalized)
+		}
+	}
+	return ParseWikiContractGovernanceYAML(block)
+}
+
+func wikiContractProjectionYAML(content []byte) string {
 	if block, err := extractGovernanceYAMLBlock(content); err == nil {
-		return ParseWikiContractGovernanceYAML(block)
+		return block
 	}
 	text := strings.TrimSpace(string(content))
 	if strings.HasPrefix(text, "---\n") || strings.HasPrefix(text, "---\r\n") {
@@ -23,7 +39,7 @@ func parseWikiContractGovernanceDocument(content []byte) (*WikiContractGovernanc
 			text = text[:end]
 		}
 	}
-	return ParseWikiContractGovernanceYAML(text)
+	return text
 }
 
 func buildWikiContractReadProfile(g *WikiContractGovernance, sourceDoc string) model.DocsReadProfile {
@@ -56,7 +72,7 @@ func buildWikiContractReadProfile(g *WikiContractGovernance, sourceDoc string) m
 	for _, exception := range g.LayerExceptions {
 		excepted[exceptionLayerID(exception)] = true
 	}
-	source := model.GovernanceSource{Version: 1, Profile: "product", Projection: model.GovernanceProjection{
+	source := model.GovernanceSource{Version: 1, Projection: model.GovernanceProjection{
 		Output: path.Join(wikiRoot, "_mi-lsp/read-model.toml"), Format: "toml", AutoSync: true, Versioned: true,
 	}}
 	var surfaces []model.DocsAgentSurface
@@ -91,7 +107,25 @@ func buildWikiContractReadProfile(g *WikiContractGovernance, sourceDoc string) m
 			ID: spec.kind, Layer: spec.kind, Family: spec.family, PackStage: spec.kind, Paths: globs,
 		})
 	}
-	profile := buildDocsReadProfileFromGovernance(source, resolvedGovernanceProfile{Base: "product"}, sourceDoc)
+	profile := buildDocsReadProfileFromGovernance(source, resolvedGovernanceProfile{}, sourceDoc)
+	// Hierarchy is only an internal compatibility input to family construction.
+	// Contract authority is traits + kinds, never the legacy profile hierarchy.
+	profile.Governance.Hierarchy = nil
+	profile.ReadingPack.TechnicalStageOrder = []string{"governance", "scope", "architecture"}
+	profile.ReadingPack.UXStageOrder = []string{"governance", "scope", "architecture"}
+	for _, spec := range specs {
+		for _, surface := range surfaces {
+			if surface.Kind != spec.kind {
+				continue
+			}
+			if spec.family == "technical" {
+				profile.ReadingPack.TechnicalStageOrder = append(profile.ReadingPack.TechnicalStageOrder, spec.kind)
+			}
+			if spec.family == "ux" {
+				profile.ReadingPack.UXStageOrder = append(profile.ReadingPack.UXStageOrder, spec.kind)
+			}
+		}
+	}
 	// Broad fallback roots would reintroduce layers removed by traits/exceptions.
 	profile.GenericDocs.Paths = []string{"README.md", "README*.md"}
 	profile.ProjectionSource = "wiki-contract-v1/traits"
@@ -99,11 +133,76 @@ func buildWikiContractReadProfile(g *WikiContractGovernance, sourceDoc string) m
 	return profile
 }
 
+// encodeWikiContractProjection is deliberately local to the contract projection:
+// the legacy runtime profile remains a compatibility read view, not authority.
+func encodeWikiContractProjection(profile model.DocsReadProfile, g *WikiContractGovernance, content []byte) ([]byte, error) {
+	var metadata struct {
+		Language      string                  `yaml:"language"`
+		ModelRevision string                  `yaml:"model_revision"`
+		AECanon       model.GovernanceAECanon `yaml:"ae_canon"`
+	}
+	if err := yaml.Unmarshal([]byte(wikiContractProjectionYAML(content)), &metadata); err != nil {
+		return nil, err
+	}
+	language := strings.TrimSpace(metadata.Language)
+	if language != "es" && language != "en" {
+		return nil, fmt.Errorf("wiki contract projection requires language es|en, got %q", language)
+	}
+	modelRevision := strings.TrimSpace(metadata.ModelRevision)
+	if modelRevision == "" {
+		modelRevision = "1.1"
+	}
+	profile.Governance.Profile = ""
+	profile.Governance.EffectiveBase = ""
+	profile.Governance.EffectiveOverlays = nil
+	profile.Governance.Hierarchy = nil
+	profile.Governance.AECanon = metadata.AECanon
+	base, err := encodeDocsReadProfile(profile)
+	if err != nil {
+		return nil, err
+	}
+	type trait struct {
+		Reason  string   `toml:"reason"`
+		UIRoots []string `toml:"ui_roots,omitempty"`
+	}
+	type exception struct {
+		Layer        string `toml:"layer"`
+		Reason       string `toml:"reason"`
+		AuthorizedBy string `toml:"authorized_by"`
+		Date         string `toml:"date"`
+	}
+	tail := struct {
+		Traits     map[string]trait `toml:"traits"`
+		Exceptions []exception      `toml:"layer_exceptions,omitempty"`
+	}{Traits: make(map[string]trait)}
+	for name, value := range g.Traits {
+		roots, _ := model.SafeRoots(value.UIRoots)
+		sort.Strings(roots)
+		tail.Traits[name] = trait{Reason: value.Reason, UIRoots: dedupeStrings(roots)}
+	}
+	for _, value := range g.LayerExceptions {
+		tail.Exceptions = append(tail.Exceptions, exception{
+			Layer: exceptionLayerID(value), Reason: value.Reason,
+			AuthorizedBy: value.AuthorizedBy, Date: value.Date,
+		})
+	}
+	var buf bytes.Buffer
+	fmt.Fprintf(&buf, "read_model_contract = %q\nmodel_revision = %q\nlanguage = %q\n", "WIKI-CONTRACT-v1.1", modelRevision, language)
+	if len(tail.Exceptions) == 0 {
+		buf.WriteString("layer_exceptions = []\n")
+	}
+	buf.Write(base)
+	if err := toml.NewEncoder(&buf).Encode(tail); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
+}
+
 func inspectWikiContractProjection(root string, status model.GovernanceStatus, g *WikiContractGovernance, autoSync bool) model.GovernanceStatus {
 	profile := buildWikiContractReadProfile(g, status.HumanDoc)
 	status.ProjectionDoc = profile.Governance.Projection.Output
-	status.Profile = profile.Governance.Profile
-	status.EffectiveBase = profile.Governance.EffectiveBase
+	status.Profile = ""
+	status.EffectiveBase = ""
 	status.WikiContract = g.WikiContract
 	status.Sync = "stale"
 	status.IndexSync, status.IndexSyncDetails = inspectIndexSync(root)
@@ -111,7 +210,11 @@ func inspectWikiContractProjection(root string, status model.GovernanceStatus, g
 		status.Issues = append(status.Issues, "workspace index is stale relative to governance sources; rerun mi-lsp index")
 		status.Blocked = true
 	}
-	rendered, err := encodeDocsReadProfile(profile)
+	content, err := os.ReadFile(absFromDeclared(root, status.HumanDoc))
+	var rendered []byte
+	if err == nil {
+		rendered, err = encodeWikiContractProjection(profile, g, content)
+	}
 	if err != nil {
 		status.Warnings = append(status.Warnings, fmt.Sprintf("read-model projection render failed: %v", err))
 	} else if safe, ok := safeProjectionOutput(root, status.ProjectionDoc, tryResolvedCanons(root)); !ok {

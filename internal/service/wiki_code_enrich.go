@@ -20,7 +20,7 @@ const (
 var wikiCodeEnrichedOperations = map[string]bool{
 	"nav.ask": true, "nav.route": true, "nav.wiki.route": true,
 	"nav.pack": true, "nav.wiki.pack": true, "nav.context": true,
-	"nav.affected": true, "nav.diff-context": true, "nav.workspace-map": true,
+	"nav.diff-context": true, "nav.workspace-map": true,
 }
 
 // enrichWikiCodeContext adds the query-only docs/code projection without changing
@@ -44,7 +44,7 @@ func (a *App) enrichWikiCodeContext(ctx context.Context, request model.CommandRe
 
 	path := extractWikiPrimaryPath(request.Operation, env.Items)
 	if path == "" && request.Operation == "nav.workspace-map" {
-		path = ".docs/wiki/02_arquitectura.md"
+		path = ".docs/wiki/03_architecture.md"
 	}
 	if path == "" {
 		return env

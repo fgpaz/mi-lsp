@@ -12,15 +12,15 @@ import (
 )
 
 const (
-	WikiContractProtocolV1          = "WIKI-CONTRACT-v1"
-	wikiContractProtocolV1          = WikiContractProtocolV1
-	canonGovernanceV1RelPath        = ".docs/wiki/00_governance.md"
-	legacyGovernanceRelPath         = ".docs/wiki/00_gobierno_documental.md"
-	canonRetirementsRelPath         = ".docs/wiki/00_retirements.md"
-	legacyRetirementsRelPath        = ".docs/wiki/00_registro_retiros.md"
-	legacyGovernanceFilenameWarning = "governance_legacy_filename: prefer 00_governance.md over 00_gobierno_documental.md"
+	WikiContractProtocolV1           = "WIKI-CONTRACT-v1"
+	wikiContractProtocolV1           = WikiContractProtocolV1
+	canonGovernanceV1RelPath         = ".docs/wiki/00_governance.md"
+	legacyGovernanceRelPath          = ".docs/wiki/00_gobierno_documental.md"
+	canonRetirementsRelPath          = ".docs/wiki/00_retirements.md"
+	legacyRetirementsRelPath         = ".docs/wiki/00_registro_retiros.md"
+	legacyGovernanceFilenameWarning  = "governance_legacy_filename: prefer 00_governance.md over 00_gobierno_documental.md"
 	legacyRetirementsFilenameWarning = "retirements_legacy_filename: prefer 00_retirements.md over 00_registro_retiros.md"
-	wikiExceptionsLegacyLocation    = "wiki_exceptions_legacy_location: move exceptions to 00_governance.md layer_exceptions"
+	wikiExceptionsLegacyLocation     = "wiki_exceptions_legacy_location: move exceptions to 00_governance.md layer_exceptions"
 )
 
 var wikiContractTraitNames = map[string]struct{}{
@@ -33,6 +33,7 @@ var wikiContractTraitNames = map[string]struct{}{
 // WikiContractGovernance holds parsed WIKI-CONTRACT-v1 machine YAML from governance.
 type WikiContractGovernance struct {
 	WikiContract    string
+	ModelRevision   string
 	Version         int
 	Traits          map[string]model.WikiContractTraitView
 	LayerExceptions []model.WikiLayerExceptionView
@@ -127,11 +128,16 @@ func ParseWikiContractGovernanceYAML(block string) (*WikiContractGovernance, []s
 			version = int(v)
 		}
 	}
+	modelRevision := strings.TrimSpace(stringMapString(raw, "model_revision"))
+	if modelRevision == "" {
+		modelRevision = "1.1"
+	}
 	traits, traitWarnings := parseWikiContractTraits(raw["traits"])
 	exceptions, exceptionWarnings := parseWikiContractLayerExceptions(raw["layer_exceptions"])
 	warnings := append(traitWarnings, exceptionWarnings...)
 	return &WikiContractGovernance{
 		WikiContract:    wikiContractProtocolV1,
+		ModelRevision:   modelRevision,
 		Version:         version,
 		Traits:          traits,
 		LayerExceptions: exceptions,

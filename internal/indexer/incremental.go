@@ -1153,7 +1153,10 @@ func IsAuthorityConfigPath(path string) bool {
 		return true
 	}
 	switch base {
-	case "00_gobierno_documental.md", "07_baseline_tecnica.md", ".gitignore", ".gitattributes", ".gitmodules", ".milspignore":
+	case "00_governance.md", "07_technical.md", ".gitignore", ".gitattributes", ".gitmodules", ".milspignore":
+		return true
+	case "00_gobierno_documental.md":
+		// Keep change detection for v0/legacy workspaces while governance reads migrate.
 		return true
 	case "project.toml":
 		return strings.HasPrefix(normalized, ".mi-lsp/")
@@ -1273,12 +1276,14 @@ func docIndexNeedsRecovery(ctx context.Context, workspaceRoot string) (bool, err
 
 func canonicalDocsExistOnDisk(workspaceRoot string) bool {
 	for _, relativePath := range []string{
-		".docs/wiki/00_gobierno_documental.md",
+		".docs/wiki/00_governance.md",
+		".docs/wiki/00_retirements.md",
 		".docs/wiki/_mi-lsp/read-model.toml",
-		".docs/wiki/03_FL.md",
-		".docs/wiki/04_RF.md",
-		".docs/wiki/07_baseline_tecnica.md",
-		".docs/wiki/09_contratos_tecnicos.md",
+		".docs/wiki/01_scope.md",
+		".docs/wiki/03_architecture.md",
+		".docs/wiki/05_requirements/data-model.md",
+		".docs/wiki/06_tests/TP-QRY.md",
+		".docs/wiki/07_technical.md",
 	} {
 		if _, err := os.Stat(filepath.Join(workspaceRoot, filepath.FromSlash(relativePath))); err == nil {
 			return true

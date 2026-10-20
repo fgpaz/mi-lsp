@@ -15,8 +15,20 @@ links:
       role: behavior
 ---
 
-## Propósito y superficie
-`mi-lsp find-files <nombre|glob>` busca nombres sin leer contenido, iniciar workers, registrar workspaces ni exigir índice semántico. El límite por defecto es el directorio actual; `--workspace` selecciona un directorio o alias registrado. El integrador de la superficie enlaza este RF desde el FL común; no se inventan IDs RS/FL aquí.
+## Propósito
+`mi-lsp find-files <nombre|glob>` busca nombres sin leer contenido, iniciar workers, registrar workspaces ni exigir índice semántico. El integrador de la superficie enlaza este RF desde el FL común; no se inventan IDs RS/FL aquí.
+
+## Comportamiento ordenado
+La operación aplica el ranking, glob, enumeración nativa, límites y validaciones descritos en los criterios de aceptación, sin convertir una lista incompleta en una promesa exhaustiva.
+
+## Superficies
+El límite por defecto es el directorio actual; `--workspace` selecciona un directorio o alias registrado. La superficie devuelve únicamente nombres de archivos, no contenido.
+
+## Entradas/salidas tipadas
+La entrada es `<nombre|glob>` con `--literal`, `--top` y `--budget-bytes` opcionales. `*`, `?` y clases `[]` activan glob; con `/`, glob de ruta relativa; `**` consume cero o más directorios. La salida es JSON `find-files/v1` estable, sin contenido ni rutas absolutas, con `items`, `matched`, `truncated`, `budget`, `listing` y pistas condicionales.
+
+## Errores
+Los códigos tipados son `invalid_budget`, `invalid_pattern`, `invalid_workspace`, `cancelled`, `listing_timeout`, `file_listing_unavailable`, `file_listing_failed`, `unsupported_format` y `find_files_failed`. Un formato no JSON explícito se rechaza.
 
 ## Criterios de aceptación
 1. Texto simple: búsqueda sin distinción de mayúsculas por basename y ruta relativa; orden exacto de basename, prefijo de basename, segmento/prefijo de segmento y subcadena restante. Empates: menos separadores, menos bytes y orden lexical de ruta. Los rangos JSON son 0, 1, 2 y 3.

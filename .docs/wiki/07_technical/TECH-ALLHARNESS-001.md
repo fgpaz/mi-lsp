@@ -10,7 +10,7 @@ links:
 
 # TECH-ALLHARNESS-001 — mi-lsp para todos los harness
 
-## Implementación
+## Resumen
 Soporta [[RF-ALLHARNESS-001]]. Fuente: pedido explícito de Gabriel `home/ideas/mi-lsp-para-todos-los-harness.md`, 2026-10-20; persona:herramientas-pocas-enganchables-20261020. Tipo de fuente: decisión del operador; no evidencia runtime.
 
 - Fuente: `internal/cli/provider_manifest.go`; snapshot distribuido: `integrations/mi-mcp/provider-manifest.json`. Regenerar snapshot con binario de la misma revisión: `mi-lsp provider-manifest > integrations/mi-mcp/provider-manifest.json`.
@@ -19,6 +19,11 @@ Soporta [[RF-ALLHARNESS-001]]. Fuente: pedido explícito de Gabriel `home/ideas/
 - Consumidor tras-edit: jefe-harness-web integra y acredita el adaptador automático. La skill solicita diagnostics, pero una llamada manual no demuestra enganche automático. H1Yoga binding39 de C165 es una frontera distinta del smoke de este objetivo.
 - Skill canónica: `skills/mi-lsp/SKILL.md`. Distribución y configuración: `skills/mi-lsp/references/all-harnesses.md`.
 - Implementaciones diagnostics/find entregadas por sus dueños; registrar constructors solo al integrar sus archivos. No asumir backends disponibles por instalar plugin.
+
+## Mapa de componentes
+- `internal/cli/provider_manifest.go` y `integrations/mi-mcp/provider-manifest.json`: manifiesto y snapshot distribuido.
+- `mi-lsp models`, C165/H3, el consumidor tras-edit y `skills/mi-lsp/SKILL.md`: proyección, integración y distribución de la skill.
+- Las implementaciones diagnostics/find pertenecen a sus dueños y se integran por sus archivos.
 
 [[CT-ALLHARNESS-001]] · [[TP-ALLHARNESS-001]]
 

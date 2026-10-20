@@ -1,0 +1,128 @@
+# 1. Objetivo del producto
+
+```yaml
+harness_protocol: SDD-HARNESS-v1
+id: "01_alcance_funcional"
+kind: "support-doc"
+audience: "dual"
+imports:
+  - '[[00_gobierno_documental]]'
+  - '.docs/wiki/01_alcance_funcional.md'
+exports:
+  - '01_alcance_funcional'
+agent_must_read:
+  - .docs/wiki/00_gobierno_documental.md
+  - .docs/wiki/01_alcance_funcional.md
+agent_may_edit:
+  - .docs/wiki/01_alcance_funcional.md
+agent_must_not_edit:
+  - .docs/wiki/_mi-lsp/read-model.toml
+verify:
+  - mi-lsp nav governance --workspace mi-lsp --format toon
+  - mi-lsp nav wiki validate-harness --workspace mi-lsp --format toon
+stop_if:
+  - governance_blocked=true
+  - harness_verdict=BLOCKED
+evidence:
+  - .docs/wiki/01_alcance_funcional.md
+```
+
+`mi-lsp` es una CLI semántica local para proyectos y repos heterogéneos, orientada a agentes y desarrolladores que necesitan navegar código con alta confiabilidad y bajo consumo de tokens. Ofrece semántica profunda C# con Roslyn, catálogos locales para TypeScript/JavaScript y Python, y catalogación AST nativa para Go con enriquecimiento opcional vía `gopls`. El CLI es la única superficie de navegación. La puerta MCP local `mi-lsp mcp` fue retirada el 2026-10-15; `mi-mcp` invoca el CLI por llamada.
+
+El exito del producto en v1.3 se mide por estos resultados:
+- la CLI siempre responde aunque el daemon no este activo;
+- el servicio de navegación se consume por la CLI; las llamadas MCP llegan vía `mi-mcp`, que ejecuta el CLI por cada llamada, sin proceso MCP persistente;
+- el primer uso puede resolverse con `mi-lsp init` sin onboarding largo;
+- `nav wiki` ofrece una entrada documental explicita para agentes que buscan RF/FL/TP/CT/TECH/DB, y `nav wiki map` un catálogo compacto de hubs de wikis de conocimiento (`wiki/` y `bibliotecas/`);
+- `nav ask` responde preguntas de intencion usando wiki + evidencia de codigo;
+- `nav pack` entrega el orden de lectura canonico para una tarea con preview/full;
+- el grafo nativo publica una topologia estable y compiler-first con `GraphGeneration` y `NodeKey` reproducibles; `index --docs-only` tambien puede publicar un grafo documental de markdown canonico en `wiki/` y `bibliotecas/`;
+- las consultas de grafo permiten consultar, explicar e inspeccionar impacto sin convertir el indice en un editor;
+- las extensiones `MILX-v1` se ejecutan aisladas y no pueden degradar la confiabilidad del core;
+- las superficies calientes de navegacion pueden devolver guidance tiny (`continuation`) y memoria de reentrada (`memory_pointer`) para ayudar a un harness a seguir explorando sin gastar muchos tokens;
+- `nav intent` agrega un modo hibrido `docs|code|mixed` (`mixed` cuando la pregunta trae señales de codigo: matches de codigo fuertes primero, luego docs): las consultas capability-like deben devolver docs canonicos owner-aware y las consultas symbol-like deben seguir devolviendo matches de catalogo/codigo;
+- las consultas semanticas C# entregan contexto util y compacto en repos grandes;
+- clientes MCP acceden a las mismas operaciones de navegación mediante `mi-mcp`, que invoca el CLI, con workspace visible y resultados estructurados (la puerta `mi-lsp mcp` está retirada);
+- la salida es estable, breve y apta para skills/LLMs sin arrastrar blobs innecesarios.
+
+# 2. Propuesta de valor
+
+- Ofrece una CLI directa con daemon opcional. La integración con clientes MCP pasa por `mi-mcp`, que invoca el CLI; la puerta local `mi-lsp mcp` está retirada.
+- Mantiene una puerta de entrada corta para onboarding: `init -> nav ask`.
+- Agrega un reading pack canonico (`nav pack`) para reducir round-trips al estudiar la wiki en orden spec-driven.
+- Agrega `nav wiki` para hacer obvia la exploracion documental y guiar a pack/trace/multi-read/ask.
+- Usa primero la documentacion canonica del repo cuando existe `.docs/wiki`, en vez de obligar al usuario a adivinar comandos o rutas.
+- Conecta wiki y codigo sin convertir el indice local en una base semantica pesada.
+- Opera bien en workspaces independientes y multiples repos abiertos al mismo tiempo.
+- Cuando el usuario omite `--workspace`, prioriza el workspace registrado que contiene el `cwd` real del caller antes de caer al `last_workspace` global.
+- `nav.search` debe tolerar patrones "regex-like" copiados tal cual y reintentar como literal cuando el regex es invalido.
+- `nav.ask` debe resolver una primera respuesta util por camino directo, sin depender del daemon como hot path por default.
+- `workspace list` y `nav workspace-map` deben arrancar en modo summary-first y reservar scans pesados para expansiones explicitas.
+- Devuelve envelopes JSON compactos, deterministas y orientados a presupuesto de tokens.
+- Resume la superficie observable de un servicio (`nav service`) sin colapsar en un score fuerte de completitud.
+- Mantiene el estado operativo dentro del repo y solo usa un registro global minimo para aliases.
+
+# 3. Mapa de capacidades
+
+```mermaid
+flowchart TD
+    A[mi-lsp CLI] --> B[Workspace y aliases]
+    A --> C[Navegacion semantica]
+    A --> D[Indexacion local]
+    A --> E[Daemon opcional]
+
+    B --> B1[init corto para primer uso]
+
+    C --> C1[C# profundo con Roslyn]
+    C --> C2[TS/Next basico]
+    C --> C3[Busqueda textual]
+    C --> C4[Python basico con Pyright opcional]
+    C --> C5[Service exploration evidence-first]
+    C --> C6[nav ask docs-first]
+    C --> C7[nav pack canonico]
+    C --> C8[nav wiki documental]
+    C --> C9[Federacion wiki cross-workspace]
+    C --> C10[Go AST nativo + gopls opcional]
+    C --> C11[Graph query: consultar, explicar, impactar]
+    C --> C12[Extensiones MILX-v1 aisladas]
+
+    D --> D1[Catalogo de simbolos]
+    D --> D2[Metadatos de archivos]
+    D --> D3[Grafo documental wiki-aware]
+    D --> D4[Presupuesto de salida]
+    D --> D5[Grafo nativo: nodos, aristas y generaciones]
+
+    E --> E1[Worker pool por workspace]
+    E --> E2[Fallback directo]
+```
+
+# 4. Actores
+
+- Desarrollador: ejecuta la CLI manualmente para explorar, entender y diagnosticar codigo.
+- Skill/Agente LLM: consume `mi-lsp` como herramienta CLI con salida compacta y confiable.
+- Maintainer de wiki: define la estructura canonica en `.docs/wiki` y, cuando hace falta, el `read-model` del proyecto.
+- Worker .NET: resuelve semantica profunda C# y responde datos derivados.
+- Daemon opcional: mantiene workers calientes por workspace y reduce latencia warm.
+- Workspace local: fuente de verdad del indice repo-local, configuracion y archivos de codigo.
+
+# 5. Areas funcionales de alto nivel
+
+- Gestion de workspaces: alta, inicializacion corta, descubrimiento, aliases, estado y warmup. `workspace which` resuelve el alias o root y el ejecutable en uso sin mutar el registry. Ver [[RF-WKS-009]]. `nav suggest` sugiere un comando `nav` que la CLI ya expone. Ver [[RF-QRY-020]]. La puerta MCP local que las exponía por stdio fue retirada; ver [[RF-QRY-021]] (retirado).
+- Navegacion y discovery: simbolos, referencias, outline, overview, contexto, dependencias, exploracion `nav wiki`, preguntas docs-first, reading packs canonicos, busqueda por intencion y resumen de servicios. En workspaces `container`, `find/search/intent` pueden acotar por `--repo` sin perder el modo directo. Federacion wiki: `nav wiki-root` resuelve raíces `&#91;&#91;canon&#93;&#93;` externas o el default `.docs/wiki`; `--all-workspaces` recorre wikis de multiples espacios en una sola máquina con fan-out controlado. Ver [[FL-WIKI-01]] y [[RF-WKS-008]].
+- Indexacion repo-local: catalogo liviano de simbolos, archivos, metadatos del workspace y grafo documental; el grafo nativo se genera y publica con [[FL-GPH-01]].
+- El grafo nativo agrega consultas para consultar, explicar e impactar. Ver [[FL-GPH-02]].
+- Extensibilidad aislada: ejecucion de extensiones `MILX-v1` con limites de proceso, permisos y salida. Ver [[FL-GPH-03]].
+- Enrutamiento semantico: Roslyn para semantica profunda C#; tree-sitter/ripgrep para TS/Next y texto; Pyright para Python cuando este disponible; extractor AST nativo para Go con enriquecimiento `gopls` opcional; fallback catalog/text visible cuando la semantica profunda no esta disponible.
+- Formateo de salida: envelopes JSON compactos, truncacion determinista y warnings explicitos.
+- Operacion runtime: daemon opcional, worker install explicito y fallback cuando faltan dependencias.
+- Puerta MCP: retirada el 2026-10-15. `mi-lsp mcp` ya no existe; `mi-mcp` invoca el CLI por llamada. Histórico en [[TECH-MCP-ADAPTER]].
+
+# 6. Fuera de alcance / Evolucion futura
+
+- Edicion y refactor semantico seguro.
+- MCP remoto/HTTP o un servidor MCP persistente de terceros, dashboard web o GUI remota. `mi-mcp` es un producto externo que invoca el CLI; no es un servidor MCP de mi-lsp.
+- Semantica TypeScript profunda equivalente a C# mediante `tsserver`.
+- Soporte activo para lenguajes fuera de C#/TS/Python/Go en v1.
+- Persistencia semantica completa de referencias y jerarquias C# en SQLite.
+- Embeddings, reranking externo o servicios remotos para `nav ask`.
+- Mutacion del grafo desde extensiones; `MILX-v1` queda limitado a ejecucion aislada y resultados declarativos en este corte.

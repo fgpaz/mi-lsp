@@ -183,31 +183,26 @@ func DefaultProfile() model.DocsReadProfile {
 				Name:           "functional",
 				IntentKeywords: []string{"scope", "outcome", "result", "resultado", "solucion", "solution", "flow", "feature", "behavior", "rs", "rf", "fl", "test", "workflow", "journey"},
 				Paths: []string{
-					".docs/wiki/00_gobierno_documental.md",
-					".docs/wiki/01_*.md",
-					".docs/wiki/02_resultados_soluciones_usuario.md",
-					".docs/wiki/02_resultados/*.md",
-					".docs/wiki/02_*.md",
-					".docs/wiki/03_FL.md",
-					".docs/wiki/03_FL/*.md",
-					".docs/wiki/04_RF.md",
-					".docs/wiki/04_RF/*.md",
-					".docs/wiki/05_*.md",
-					".docs/wiki/06_*.md",
-					".docs/wiki/06_pruebas/*.md",
+					".docs/wiki/00_governance.md",
+					".docs/wiki/00_retirements.md",
+					".docs/wiki/01_scope.md",
+					".docs/wiki/02_outcomes/RS-*.md",
+					".docs/wiki/03_architecture.md",
+					".docs/wiki/03_architecture/ADR-*.md",
+					".docs/wiki/04_flows/FL-*.md",
+					".docs/wiki/05_requirements/RF-*.md",
+					".docs/wiki/05_requirements/data-model.md",
+					".docs/wiki/06_tests/TP-*.md",
 				},
 			},
 			{
 				Name:           "technical",
 				IntentKeywords: []string{"technical", "daemon", "worker", "runtime", "backend", "contract", "protocol", "search", "context", "refs", "service", "index", "routing", "ae", "agent engineering", "release", "distribution", "binary", "install"},
 				Paths: []string{
-					".docs/wiki/07_*.md",
-					".docs/wiki/07_tech/*.md",
-					".docs/wiki/08_*.md",
-					".docs/wiki/08_db/*.md",
-					".docs/wiki/09_*.md",
-					".docs/wiki/09_contratos/*.md",
-					".docs/wiki/ae/*.md",
+					".docs/wiki/07_technical.md",
+					".docs/wiki/07_technical/TECH-*.md",
+					".docs/wiki/07_technical/db/DB-*.md",
+					".docs/wiki/07_technical/contracts/CT-*.md",
 				},
 			},
 			{
@@ -640,7 +635,15 @@ func parseDocContent(
 		IsSnapshot:  isSnapshotPath(relPath),
 	}
 
-	docMentions, docEdges := extractReferences(root, relPath, string(content))
+	wikiContract := wikisource.ParseContractMetadata(string(content)).WikiContract == wikisource.WikiContractV1
+	referenceContent := string(content)
+	if wikiContract {
+		// WIKI-CONTRACT links are already projected below. Mask their YAML
+		// envelope before legacy reference extraction so nested links.code values
+		// cannot be reinterpreted as implements/file mentions.
+		referenceContent = maskWikiContractFrontMatter(referenceContent)
+	}
+	docMentions, docEdges := extractReferences(root, relPath, referenceContent)
 	sourceDoc := wikisource.Parse(relPath, string(content), now)
 	for _, link := range sourceDoc.WikiLinks {
 		docEdges = append(docEdges, model.DocEdge{FromPath: relPath, ToPath: link.Path, ToDocID: link.DocID, Kind: link.Relation, Label: link.Symbol})
@@ -671,17 +674,19 @@ func parseDocContent(
 	sourceBlocks := wikisource.SourceBlocks(sourceDoc, now)
 	sourceRecords := wikisource.SourceRecords(sourceDoc, now)
 	bindings := wikisource.SourceBindings(sourceDoc, now)
-	if fm := extractFrontMatter(content); fm != nil {
-		for _, impl := range fm.Implements {
-			impl = strings.TrimSpace(impl)
-			if impl != "" {
-				mentions = append(mentions, model.DocMention{DocPath: relPath, MentionType: "implements", MentionValue: impl, SourceBlock: "frontmatter"})
+	if !wikiContract {
+		if fm := extractFrontMatter(content); fm != nil {
+			for _, impl := range fm.Implements {
+				impl = strings.TrimSpace(impl)
+				if impl != "" {
+					mentions = append(mentions, model.DocMention{DocPath: relPath, MentionType: "implements", MentionValue: impl, SourceBlock: "frontmatter"})
+				}
 			}
-		}
-		for _, test := range fm.Tests {
-			test = strings.TrimSpace(test)
-			if test != "" {
-				mentions = append(mentions, model.DocMention{DocPath: relPath, MentionType: "test_file", MentionValue: test, SourceBlock: "frontmatter"})
+			for _, test := range fm.Tests {
+				test = strings.TrimSpace(test)
+				if test != "" {
+					mentions = append(mentions, model.DocMention{DocPath: relPath, MentionType: "test_file", MentionValue: test, SourceBlock: "frontmatter"})
+				}
 			}
 		}
 	}
@@ -1041,6 +1046,27 @@ func expandPattern(ctx context.Context, root string, pattern string, matcher *wo
 	}
 	visit(absPath)
 	return nil
+}
+
+// maskWikiContractFrontMatter preserves byte offsets while hiding the
+// canonical links envelope from legacy Markdown/reference extraction.
+func maskWikiContractFrontMatter(content string) string {
+	leading := len(content) - len(strings.TrimLeft(content, " \t\r\n"+string([]byte{0xEF, 0xBB, 0xBF})))
+	if leading >= len(content) || !strings.HasPrefix(content[leading:], "---") {
+		return content
+	}
+	endRel := strings.Index(content[leading+3:], "\n---")
+	if endRel < 0 {
+		return content
+	}
+	end := leading + 3 + endRel + len("\n---")
+	masked := []byte(content)
+	for i := leading; i < end; i++ {
+		if masked[i] != '\n' && masked[i] != '\r' {
+			masked[i] = ' '
+		}
+	}
+	return string(masked)
 }
 
 func extractReferences(root string, docPath string, content string) ([]model.DocMention, []model.DocEdge) {
@@ -1604,25 +1630,26 @@ func detectLayer(path string) string {
 	lowerBase := strings.ToLower(base)
 	if strings.HasPrefix(strings.ToUpper(base), "RS-") ||
 		lowerBase == "02_resultados_soluciones_usuario.md" ||
-		strings.Contains(lower, "/02_resultados/") {
+		strings.Contains(lower, "/02_resultados/") ||
+		strings.Contains(lower, "/02_outcomes/") {
 		return "RS"
 	}
 	if len(base) >= 2 && base[0] >= '0' && base[0] <= '9' && base[1] >= '0' && base[1] <= '9' {
 		return base[:2]
 	}
 	switch {
-	case strings.Contains(path, "/03_FL/"):
-		return "03"
-	case strings.Contains(path, "/04_RF/"):
+	case strings.Contains(path, "/04_flows/") || strings.Contains(path, "/03_FL/"):
 		return "04"
-	case strings.Contains(path, "/06_pruebas/"):
+	case strings.Contains(path, "/05_requirements/") || strings.Contains(path, "/04_RF/"):
+		return "05"
+	case strings.Contains(path, "/06_tests/") || strings.Contains(path, "/06_pruebas/"):
 		return "06"
-	case strings.Contains(path, "/07_tech/"):
+	case strings.Contains(path, "/07_technical/") || strings.Contains(path, "/07_tech/"):
 		return "07"
-	case strings.Contains(path, "/08_db/"):
-		return "08"
-	case strings.Contains(path, "/09_contratos/"):
-		return "09"
+	case strings.Contains(path, "/07_technical/db/") || strings.Contains(path, "/08_db/"):
+		return "07"
+	case strings.Contains(path, "/07_technical/contracts/") || strings.Contains(path, "/09_contratos/"):
+		return "07"
 	case strings.Contains(path, "/ae/"):
 		return "AE"
 	default:

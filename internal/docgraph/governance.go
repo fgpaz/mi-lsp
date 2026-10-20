@@ -92,7 +92,7 @@ const (
 	kernelV2AuthorityVersion        = 1
 	kernelV2AuthorityAllowlist      = "v1"
 	kernelV2CanonicalRepoPolicyPath = ".docs/ae/repo-policy.yaml"
-	defaultGovernanceRelPath        = ".docs/wiki/00_gobierno_documental.md"
+	defaultGovernanceRelPath        = canonGovernanceV1RelPath
 	defaultProjectionRelPath        = ".docs/wiki/_mi-lsp/read-model.toml"
 	canonGovernanceFileName         = "00_governance.md"
 	legacyGovernanceFileName        = "00_gobierno_documental.md"
@@ -153,10 +153,6 @@ func discoverGovernanceDisplayPath(root string, canons []workspace.ResolvedCanon
 	if pathExists(filepath.Join(root, filepath.FromSlash(legacyGovernanceRelPath))) {
 		return legacyGovernanceRelPath
 	}
-	if pathExists(filepath.Join(root, filepath.FromSlash(defaultGovernanceRelPath))) {
-		return defaultGovernanceRelPath
-	}
-
 	found := make([]string, 0, len(wellKnownGovernanceRelPaths))
 	for _, rel := range wellKnownGovernanceRelPaths {
 		if pathExists(filepath.Join(root, filepath.FromSlash(rel))) {
@@ -193,15 +189,20 @@ func canonGovernanceRelPath(canons []workspace.ResolvedCanon) string {
 	seen := map[string]struct{}{}
 	for _, canon := range preferred {
 		base := strings.TrimSuffix(filepath.ToSlash(strings.TrimSpace(canon.DeclaredRoot)), "/")
-		for _, fileName := range []string{canonGovernanceFileName, legacyGovernanceFileName} {
-			rel := base + "/" + fileName
-			key := strings.ToLower(rel)
-			if _, ok := seen[key]; ok {
-				continue
-			}
-			seen[key] = struct{}{}
-			paths = append(paths, rel)
+		fileName := canonGovernanceFileName
+		// A v0/legacy canon remains readable only when its canonical file is absent.
+		// New workspaces always resolve and emit the WIKI-CONTRACT-v1 filename.
+		if !pathExists(filepath.Join(canon.AbsRoot, filepath.FromSlash(canonGovernanceFileName))) &&
+			pathExists(filepath.Join(canon.AbsRoot, filepath.FromSlash(legacyGovernanceFileName))) {
+			fileName = legacyGovernanceFileName
 		}
+		rel := base + "/" + fileName
+		key := strings.ToLower(rel)
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		paths = append(paths, rel)
 	}
 	if len(paths) == 1 {
 		return paths[0]
@@ -453,7 +454,7 @@ func inspectGovernanceCore(root string, autoSync bool) model.GovernanceStatus {
 		status.Issues = []string{fmt.Sprintf("invalid governance YAML: %v", err)}
 		status.Blocked = true
 		status.NextSteps = governanceRepairStepsFor(status.HumanDoc, status.ProjectionDoc)
-		status.Summary = "Governance is blocked because the YAML source inside 00_gobierno_documental.md is invalid."
+		status.Summary = fmt.Sprintf("Governance is blocked because the YAML source inside %s is invalid.", status.HumanDoc)
 		return status
 	}
 	if source.Version == 0 {
@@ -541,10 +542,10 @@ func inspectGovernanceCore(root string, autoSync bool) model.GovernanceStatus {
 			return status
 		}
 		status.Sync = "auto_synced"
-		status.Warnings = append(status.Warnings, "read-model.toml auto-synced from 00_gobierno_documental.md")
+		status.Warnings = append(status.Warnings, fmt.Sprintf("read-model.toml auto-synced from %s", status.HumanDoc))
 	default:
 		status.Sync = "stale"
-		status.Issues = append(status.Issues, "read-model.toml is out of sync with 00_gobierno_documental.md")
+		status.Issues = append(status.Issues, fmt.Sprintf("read-model.toml is out of sync with %s", status.HumanDoc))
 	}
 
 	status.IndexSync, status.IndexSyncDetails = inspectIndexSync(root)

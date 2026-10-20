@@ -12,7 +12,12 @@ import (
 )
 
 func TestWikiContractProjectionTraits(t *testing.T) {
-	g, warnings := ParseWikiContractGovernanceYAML(`wiki_contract: WIKI-CONTRACT-v1
+	content := []byte(`wiki_contract: WIKI-CONTRACT-v1
+language: es
+ae_canon:
+  mode: kernel_v2
+  source: <kernel_home>/canon
+  repo_policy: .docs/ae/repo-policy.yaml
 traits:
   stores_data: SQLite
   exposes_api: CLI
@@ -21,17 +26,39 @@ traits:
     reason: Panel
     ui_roots: [web/, extension/ui/, web/, ../outside/]
 `)
+	g, warnings := parseWikiContractGovernanceDocument(content)
 	if g == nil || len(warnings) != 0 {
 		t.Fatalf("parse: %v %v", g, warnings)
 	}
 	profile := buildWikiContractReadProfile(g, canonGovernanceV1RelPath)
-	rendered, err := encodeDocsReadProfile(profile)
+	rendered, err := encodeWikiContractProjection(profile, g, content)
 	if err != nil {
 		t.Fatal(err)
 	}
-	again, err := encodeDocsReadProfile(buildWikiContractReadProfile(g, canonGovernanceV1RelPath))
+	again, err := encodeWikiContractProjection(buildWikiContractReadProfile(g, canonGovernanceV1RelPath), g, content)
 	if err != nil || string(rendered) != string(again) {
 		t.Fatal("projection is not deterministic")
+	}
+	var metadata map[string]any
+	if _, err := toml.Decode(string(rendered), &metadata); err != nil {
+		t.Fatal(err)
+	}
+	if metadata["language"] != "es" || metadata["read_model_contract"] != "WIKI-CONTRACT-v1.1" || metadata["model_revision"] != "1.1" {
+		t.Fatalf("metadata: %+v", metadata)
+	}
+	governance := metadata["governance"].(map[string]any)
+	for _, key := range []string{"profile", "effective_base", "overlays", "effective_overlays", "hierarchy"} {
+		if _, exists := governance[key]; exists {
+			t.Errorf("legacy authority emitted: %s", key)
+		}
+	}
+	traits := metadata["traits"].(map[string]any)
+	ui := traits["has_ui"].(map[string]any)
+	if ui["reason"] != "Panel" || !reflect.DeepEqual(ui["ui_roots"], []any{"extension/ui/", "web/"}) {
+		t.Fatalf("trait metadata: %+v", ui)
+	}
+	if governance["ae_canon"].(map[string]any)["mode"] != "kernel_v2" {
+		t.Fatal("kernel candidate source lost")
 	}
 	var decoded model.DocsReadProfile
 	if _, err := toml.Decode(string(rendered), &decoded); err != nil {
@@ -96,7 +123,7 @@ func TestWikiContractProjectionExceptionsAndCore(t *testing.T) {
 
 func TestWikiContractProjectionAdvisorySync(t *testing.T) {
 	root := t.TempDir()
-	writeGovernanceYAML(t, root, canonGovernanceV1RelPath, "wiki_contract: WIKI-CONTRACT-v1\nversion: 1\n")
+	writeGovernanceYAML(t, root, canonGovernanceV1RelPath, "wiki_contract: WIKI-CONTRACT-v1\nversion: 1\nlanguage: en\n")
 	status := InspectGovernance(root, false)
 	if status.Blocked || status.Sync != "stale" || len(status.Warnings) == 0 || len(status.Issues) != 0 {
 		t.Fatalf("drift blocked: %+v", status)
@@ -123,6 +150,81 @@ func TestWikiContractProjectionAdvisorySync(t *testing.T) {
 	status = InspectGovernance(root, true)
 	if status.Blocked || status.Sync != "stale" || len(status.Warnings) == 0 {
 		t.Fatalf("write failure blocked: %+v", status)
+	}
+}
+
+func TestWikiContractProjectionVersionAndExceptions(t *testing.T) {
+	content := []byte(`wiki_contract: WIKI-CONTRACT-v1.1
+language: en
+traits:
+  stores_data: SQLite
+layer_exceptions:
+  - layer: database
+    reason: No physical schema
+    authorized_by: Gabriel
+    date: 2026-10-18
+`)
+	g, warnings := parseWikiContractGovernanceDocument(content)
+	if g == nil || len(warnings) != 0 {
+		t.Fatalf("parse: %v %v", g, warnings)
+	}
+	profile := buildWikiContractReadProfile(g, "wiki/00_governance.md")
+	rendered, err := encodeWikiContractProjection(profile, g, content)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var decoded struct {
+		Language   string `toml:"language"`
+		Exceptions []struct {
+			Layer        string `toml:"layer"`
+			Reason       string `toml:"reason"`
+			AuthorizedBy string `toml:"authorized_by"`
+			Date         string `toml:"date"`
+		} `toml:"layer_exceptions"`
+	}
+	if _, err := toml.Decode(string(rendered), &decoded); err != nil {
+		t.Fatal(err)
+	}
+	if decoded.Language != "en" || len(decoded.Exceptions) != 1 {
+		t.Fatalf("metadata: %+v", decoded)
+	}
+	exception := decoded.Exceptions[0]
+	if exception.Layer != "database" || exception.Reason != "No physical schema" || exception.AuthorizedBy != "Gabriel" || exception.Date != "2026-10-18" {
+		t.Fatalf("exception: %+v", exception)
+	}
+	for _, surface := range profile.AgentSurfaces {
+		if surface.Kind == "database" {
+			t.Fatal("excepted database surface emitted")
+		}
+	}
+	if strings.Contains(string(rendered), "10_ux/") || strings.Contains(string(rendered), "20_business/") {
+		t.Fatal("disabled trait invented a layer")
+	}
+	if _, err := encodeWikiContractProjection(profile, g, []byte("language: fr\n")); err == nil {
+		t.Fatal("unsupported language accepted")
+	}
+}
+
+func TestWikiContractProjectionRepositoryParity(t *testing.T) {
+	root := filepath.Join("..", "..")
+	content, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(canonGovernanceV1RelPath)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	g, warnings := parseWikiContractGovernanceDocument(content)
+	if g == nil || len(warnings) != 0 {
+		t.Fatalf("parse: %v %v", g, warnings)
+	}
+	rendered, err := encodeWikiContractProjection(buildWikiContractReadProfile(g, canonGovernanceV1RelPath), g, content)
+	if err != nil {
+		t.Fatal(err)
+	}
+	current, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(defaultProjectionRelPath)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if normalizedText(current) != normalizedText(rendered) {
+		t.Fatal("versioned read-model differs from inspection/autoSync rendering")
 	}
 }
 

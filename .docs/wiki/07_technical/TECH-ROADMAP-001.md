@@ -18,5 +18,7 @@ links:
 ## Resumen
 El servicio lee `.docs/roadmap/roadmap.md` fuera de la wiki y deriva nodos, enlaces `roadmap_for` hacia RS existentes y dependencias. El documento no es canónico (`canonical=false`) y no participa en readiness ni gates. Un RS ausente se avisa como `roadmap_rs_missing` solo si la generación del grafo está current.
 
+La tabla del respaldo usa `id`, `rs`, `horizon`, `status`, `title` y `depends_on`; los dos últimos son opcionales. Horizontes `short|medium|long`; estados `todo|doing|done|blocked`. Los IDs de dependencia se separan con comas. Mermaid agrupa por horizonte y estado solo para la respuesta; no se escribe al disco.
+
 ## Mapa de componentes
 `internal/model/wiki_roadmap.go` interpreta la tabla. `internal/service/wiki_roadmap.go` la carga desde el workspace. `internal/service/wiki_graph.go` proyecta entradas, avisos y el Mermaid efímero por horizonte. El enlace `supports` hacia RF-ROADMAP-001 está declarado en este header; la prosa de TECH-GRAPH-NATIVE no lo sustituye.

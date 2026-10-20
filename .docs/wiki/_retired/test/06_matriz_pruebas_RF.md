@@ -1,0 +1,126 @@
+# 6. Matriz de pruebas RF
+
+```yaml
+harness_protocol: SDD-HARNESS-v1
+id: "06_matriz_pruebas_RF"
+kind: "support-doc"
+audience: "dual"
+imports:
+  - '[[00_gobierno_documental]]'
+  - '.docs/wiki/06_matriz_pruebas_RF.md'
+exports:
+  - '06_matriz_pruebas_RF'
+agent_must_read:
+  - .docs/wiki/00_gobierno_documental.md
+  - .docs/wiki/06_matriz_pruebas_RF.md
+agent_may_edit:
+  - .docs/wiki/06_matriz_pruebas_RF.md
+agent_must_not_edit:
+  - .docs/wiki/_mi-lsp/read-model.toml
+verify:
+  - mi-lsp nav governance --workspace mi-lsp --format toon
+  - mi-lsp nav wiki validate-harness --workspace mi-lsp --format toon
+stop_if:
+  - governance_blocked=true
+  - harness_verdict=BLOCKED
+evidence:
+  - .docs/wiki/06_matriz_pruebas_RF.md
+```
+
+## Cobertura vigente
+
+La tabla es un índice humano derivado; para RF-WKS-007, el binding normativo de RF, FL, TP y casos reside en el bloque TOON `RF-WKS-007-MATRIX`, y las definiciones de cada caso nuevo residen únicamente en los bloques TOON de `TP-WKS`. La aceptación manual `TC-IDX-028` se define únicamente en su bloque TOON de `TP-IDX`; su inclusión aquí no acredita ejecución ni cierre.
+
+| RF | FL origen | TP | Casos positivos minimos | Casos negativos minimos | Estado |
+|---|---|---|---|---|---|
+| RF-WKS-001 | FL-BOOT-01 | TP-WKS | TC-WKS-001, TC-WKS-002, TC-WKS-004, TC-WKS-005, TC-WKS-026 | TC-WKS-003 | ready |
+| RF-WKS-002 | FL-BOOT-01 | TP-WKS | TC-WKS-006, TC-WKS-007, TC-WKS-017, TC-WKS-018, TC-WKS-019, TC-WKS-026 | TC-WKS-008 | implemented |
+| RF-WKS-003 | FL-BOOT-01 | TP-WKS | TC-WKS-009 | TC-WKS-010 | ready |
+| RF-WKS-004 | FL-BOOT-01 | TP-WKS | TC-WKS-011, TC-WKS-012, TC-WKS-016, TC-WKS-017, TC-WKS-018, TC-WKS-021, TC-WKS-022, TC-WKS-031, TC-WKS-032, TC-WKS-034 | TC-WKS-013 | implemented |
+| RF-WKS-005 | FL-BOOT-01 | TP-WKS | TC-WKS-014, TC-WKS-019, TC-WKS-020, TC-WKS-035, TC-WKS-036, TC-WKS-062 | TC-WKS-015, TC-WKS-061, TC-WKS-063 | implemented |
+| RF-WKS-006 | FL-BOOT-01 | TP-WKS | TC-WKS-027, TC-WKS-028 | - | implemented |
+| RF-WKS-007 | FL-BOOT-01 | TP-WKS | TC-WKS-048, TC-WKS-049, TC-WKS-050, TC-WKS-051, TC-WKS-052, TC-WKS-053, TC-WKS-054, TC-WKS-056, TC-WKS-058, TC-WKS-059 | TC-WKS-055, TC-WKS-057, TC-WKS-060 | implemented |
+| RF-WKS-008 | FL-BOOT-01 | TP-WKS | TC-WKS-038, TC-WKS-039, TC-WKS-040 | TC-WKS-041, TC-WKS-042, TC-WKS-043 | implemented |
+| RF-WKS-009 | FL-BOOT-01 | TP-WKS | TC-WKS-044, TC-WKS-045, TC-WKS-046 | TC-WKS-047 | implemented |
+| RF-IDX-001 | FL-IDX-01 | TP-IDX | TC-IDX-001, TC-IDX-002, TC-IDX-004, TC-IDX-005, TC-IDX-012, TC-IDX-020, TC-IDX-022, TC-IDX-023, TC-IDX-025, TC-IDX-026, TC-QRY-172, TC-QRY-173, TC-QRY-174 | TC-IDX-003, TC-IDX-006, TC-IDX-021, TC-IDX-027, TC-QRY-191, TC-WKS-063 | ready |
+| RF-IDX-002 | FL-IDX-01 | TP-IDX | TC-IDX-007, TC-IDX-008, TC-IDX-013, TC-IDX-028 | TC-IDX-009 | ready; TC-IDX-028: manual_evidence_pending |
+| RF-IDX-003 | FL-IDX-01 | TP-IDX | TC-IDX-010 | TC-IDX-011 | ready |
+| RF-QRY-001 | FL-QRY-01 | TP-QRY | TC-QRY-001, TC-QRY-002, TC-QRY-042, TC-QRY-045, TC-QRY-106, TC-QRY-108, TC-QRY-109, TC-QRY-147, TC-QRY-148, TC-QRY-151, TC-QRY-162, TC-QRY-163, TC-QRY-164, TC-QRY-167, TC-QRY-168, TC-QRY-170, TC-QRY-171, TC-QRY-172, TC-QRY-182, TC-QRY-183, TC-QRY-184, TC-QRY-187, TC-QRY-214 | TC-QRY-003, TC-QRY-176, TC-QRY-149, TC-QRY-150, TC-QRY-152 | ready |
+| RF-QRY-002 | FL-QRY-01 | TP-QRY | TC-QRY-004, TC-QRY-005, TC-QRY-007, TC-QRY-008, TC-QRY-012, TC-QRY-013, TC-QRY-035, TC-QRY-036, TC-QRY-037, TC-QRY-047A, TC-QRY-108, TC-QRY-162, TC-QRY-163, TC-QRY-164, TC-QRY-165, TC-QRY-166, TC-QRY-167, TC-QRY-169, TC-QRY-170, TC-QRY-171, TC-QRY-172, TC-QRY-175, TC-QRY-177, TC-QRY-178, TC-QRY-182, TC-QRY-185, TC-QRY-186, TC-QRY-188 | TC-QRY-006, TC-QRY-176, TC-QRY-038 | ready |
+| RF-QRY-003 | FL-QRY-01 | TP-QRY | TC-QRY-009, TC-QRY-010 | TC-QRY-011 | ready |
+| RF-QRY-004 | FL-QRY-01 | TP-QRY | TC-QRY-014, TC-QRY-015 | TC-QRY-016 | ready |
+| RF-QRY-005 | FL-QRY-01 | TP-QRY | TC-QRY-017, TC-QRY-018 | TC-QRY-019 | ready |
+| RF-QRY-006 | FL-QRY-01 | TP-QRY | TC-QRY-020, TC-QRY-021 | TC-QRY-022 | ready |
+| RF-QRY-007 | FL-QRY-01 | TP-QRY | TC-QRY-023, TC-QRY-024, TC-QRY-047, TC-QRY-047A | TC-QRY-025 | ready |
+| RF-QRY-008 | FL-QRY-01 | TP-QRY | TC-QRY-026, TC-QRY-027 | TC-QRY-028 | ready |
+| RF-QRY-009 | FL-QRY-01 | TP-QRY | TC-QRY-029, TC-QRY-030 | TC-QRY-031 | ready |
+| RF-QRY-010 | FL-QRY-01 | TP-QRY | TC-QRY-032, TC-QRY-033, TC-QRY-039, TC-QRY-043, TC-QRY-046, TC-QRY-107 | TC-QRY-034 | ready |
+| RF-QRY-011 | FL-QRY-01 | TP-QRY | TC-QRY-040, TC-QRY-044, TC-QRY-045, TC-QRY-179, TC-QRY-181, TC-QRY-186, TC-QRY-189 | TC-QRY-041, TC-QRY-180, TC-QRY-190 | ready |
+| RF-QRY-012 | FL-QRY-01 | TP-QRY | TC-QRY-048, TC-QRY-049, TC-QRY-058, TC-QRY-059 | TC-QRY-050 | implemented |
+| RF-QRY-013 | FL-QRY-01 | TP-QRY | TC-QRY-051 | TC-QRY-052 | ready |
+| RF-QRY-014 | FL-QRY-01 | TP-QRY | TC-QRY-054, TC-QRY-055, TC-QRY-056, TC-QRY-060, TC-QRY-061, TC-QRY-062 | TC-QRY-053 | implemented |
+| RF-QRY-015 | FL-QRY-01 | TP-QRY | TC-QRY-057 | - | implemented |
+| RF-QRY-016 | FL-QRY-01 | TP-QRY | TC-QRY-073, TC-QRY-076, TC-QRY-077, TC-QRY-078, TC-QRY-079, TC-QRY-082, TC-QRY-083, TC-QRY-084, TC-QRY-085, TC-QRY-090, TC-QRY-091, TC-QRY-095, TC-QRY-096, TC-QRY-097, TC-QRY-099, TC-QRY-100, TC-QRY-101, TC-QRY-102, TC-QRY-103 | TC-QRY-074, TC-QRY-075, TC-QRY-080, TC-QRY-081, TC-QRY-086, TC-QRY-087, TC-QRY-088, TC-QRY-089, TC-QRY-092, TC-QRY-093, TC-QRY-094, TC-QRY-098 | implemented |
+| RF-QRY-017 | FL-QRY-01 | TP-QRY | TC-QRY-110, TC-QRY-111, TC-QRY-112, TC-QRY-113, TC-QRY-116 | TC-QRY-114, TC-QRY-115 | implemented |
+| RF-QRY-018 | FL-QRY-01 | TP-QRY | TC-QRY-118, TC-QRY-119, TC-QRY-120, TC-QRY-126, TC-QRY-127, TC-QRY-128, TC-QRY-133, TC-QRY-134 | TC-QRY-121, TC-QRY-122, TC-QRY-123, TC-QRY-124, TC-QRY-125, TC-QRY-129, TC-QRY-130, TC-QRY-131, TC-QRY-132 | implemented |
+| RF-QRY-019 | FL-QRY-01 | TP-QRY | TC-QRY-135, TC-QRY-136, TC-QRY-137, TC-QRY-139 | TC-QRY-138 | implemented |
+| RF-QRY-020 | FL-QRY-01 | TP-QRY | TC-QRY-153, TC-QRY-154 | TC-QRY-155 | implemented |
+| RF-QRY-021 | FL-QRY-01 | TP-QRY | TC-QRY-156, TC-QRY-157, TC-QRY-158, TC-QRY-177 | TC-QRY-159, TC-QRY-160 | implemented / performance target pending TC-QRY-161 |
+| RF-QRY-022 | FL-QRY-01 | TP-QRY | TC-QRY-194 | TC-QRY-195, TC-QRY-196, TC-QRY-198 | implemented; verification pendiente |
+| RF-QRY-023 | FL-QRY-01 | TP-QRY | TC-QRY-199, TC-QRY-200, TC-QRY-204 | TC-QRY-197, TC-QRY-198 | implemented; verification pendiente |
+| RF-QRY-024 | FL-QRY-01 | TP-QRY | TC-QRY-201, TC-QRY-202 | TC-QRY-203 | implemented; verification pendiente |
+| RF-QRY-025 | FL-QRY-01 | TP-QRY | TC-QRY-205, TC-QRY-206, TC-QRY-208 | TC-QRY-207 | implemented; verification pendiente |
+| RF-GPH-001 | FL-GPH-01 | TP-GPH / TP-GPH-001 | TC-GPH-001, TC-GPH-002, TC-GPH-003 | TC-GPH-004, TC-GPH-005, TC-GPH-006 | planned |
+| RF-GPH-002 | FL-GPH-01 | TP-GPH / TP-GPH-002 | TC-GPH-007, TC-GPH-008, TC-GPH-010, TC-GPH-011, TC-GPH-012, TC-GPH-079 | TC-GPH-009, TC-GPH-013, TC-GPH-014, TC-GPH-080 | planned |
+| RF-GPH-003 | FL-GPH-01 | TP-GPH / TP-GPH-003 | TC-GPH-015, TC-GPH-016, TC-GPH-SRC-001, TC-GPH-SRC-003, TC-GPH-SRC-004 | TC-GPH-017, TC-GPH-018, TC-GPH-019, TC-GPH-SRC-002, TC-GPH-SRC-005 | planned; colección fuente: PARTIAL scoped, aceptación completa manual_evidence_pending (TP-GPH.canonical-source-store-acceptance) |
+| RF-GPH-004 | FL-GPH-01 | TP-GPH / TP-GPH-003 | TC-GPH-020, TC-GPH-021 | TC-GPH-022 | planned |
+| RF-GPH-005 | FL-GPH-02 | TP-GPH / TP-GPH-004 / TP-GPH-008 | TC-GPH-023, TC-GPH-024, TC-GPH-025, TC-GPH-026, TC-GPH-027, TC-GPH-030, TC-GPH-059, TC-GPH-060, TC-GPH-061, TC-GPH-067 | TC-GPH-028, TC-GPH-029, TC-GPH-062, TC-GPH-063 | planned |
+| RF-GPH-006 | FL-GPH-02 | TP-GPH / TP-GPH-005 / TP-GPH-008 | TC-GPH-031, TC-GPH-031A, TC-GPH-032, TC-GPH-033, TC-GPH-035, TC-GPH-064, TC-GPH-065 | TC-GPH-031B, TC-GPH-031C, TC-GPH-034, TC-GPH-063 | planned |
+| RF-GPH-007 | FL-GPH-02 | TP-GPH / TP-GPH-005 / TP-GPH-008 | TC-GPH-036, TC-GPH-038, TC-GPH-064, TC-GPH-065, TC-GPH-SRC-004, TC-GPH-SRC-006 | TC-GPH-037, TC-GPH-076, TC-GPH-SRC-005 | planned; consulta exacta/historia opt-in B/C: PARTIAL scoped H1/H2 único RECHECK1, aceptación completa manual_evidence_pending (TP-GPH.canonical-source-store-acceptance) |
+| RF-GPH-008 | FL-GPH-01 | TP-GPH / TP-GPH-003 / TP-GPH.kotlin-compiler-export-v1 | TC-GPH-015, TC-GPH-016, TC-GPH-K01, TC-GPH-K07 | TC-GPH-017, TC-GPH-018, TC-GPH-022, TC-GPH-K02..K06 | planned; Kotlin admisión aditiva experimental parcial, manual_evidence_pending |
+| RF-GPH-009 | FL-GPH-02 | TP-GPH / TP-GPH-006 | TC-GPH-039, TC-GPH-041 | TC-GPH-040, TC-GPH-042 | planned |
+| RF-GPH-010 | FL-GPH-03 | TP-GPH / TP-GPH-006 | TC-GPH-043, TC-GPH-047 | TC-GPH-044, TC-GPH-045, TC-GPH-046 | planned |
+| RF-GPH-011 | FL-GPH-02, FL-GPH-03 | TP-GPH / TP-GPH-005..008 | TC-GPH-038, TC-GPH-048, TC-GPH-049, TC-GPH-050, TC-GPH-051, TC-GPH-052, TC-GPH-053, TC-GPH-054, TC-GPH-055, TC-GPH-056, TC-GPH-064, TC-GPH-066 | TC-GPH-057, TC-GPH-058, TC-GPH-065 | planned |
+| RF-CS-001 | FL-CS-01 | TP-CS | TC-CS-001, TC-CS-002, TC-CS-004, TC-CS-005 | TC-CS-003 | ready |
+| RF-DAE-001 | FL-DAE-01 | TP-DAE | TC-DAE-001, TC-DAE-002 | TC-DAE-003 | ready |
+| RF-DAE-002 | FL-DAE-01 | TP-DAE | TC-DAE-004, TC-DAE-005, TC-DAE-007, TC-DAE-008, TC-DAE-009, TC-DAE-018, TC-DAE-020, TC-DAE-026, TC-DAE-029, TC-DAE-030 | TC-DAE-006, TC-DAE-019 | ready |
+| RF-DAE-003 | FL-DAE-01 | TP-DAE | TC-DAE-010, TC-DAE-011 | TC-DAE-012 | ready |
+| RF-DAE-004 | FL-DAE-01 | TP-DAE | TC-DAE-013, TC-DAE-014, TC-DAE-017, TC-DAE-018 | TC-DAE-015 | ready |
+| RF-DAE-005 | FL-DAE-01 | TP-DAE | TC-DAE-027 | TC-DAE-028 | implemented; verification pendiente |
+| RF-WIKI-001 | FL-WIKI-01 | TP-WIKI | TC-WIKI-001, TC-WIKI-002, TC-WIKI-021, TC-WIKI-023, TC-WIKI-027, TC-WIKI-044, TC-WIKI-045, TC-WIKI-046, TC-WIKI-047, TC-WIKI-049, TC-WIKI-050, TC-WIKI-051, TC-WIKI-052, TC-WIKI-054, TC-WIKI-056, TC-WIKI-057, TC-WIKI-060, TC-WIKI-061, TC-WIKI-062, TC-WIKI-063, TC-WIKI-064, TC-WIKI-065, TC-WIKI-067, TC-WIKI-069 | TC-WIKI-004, TC-WIKI-025, TC-WIKI-048, TC-WIKI-053, TC-WIKI-055, TC-WIKI-058, TC-WIKI-059, TC-WIKI-066, TC-WIKI-068, TC-WIKI-070 | implemented |
+| RF-WIKI-002 | FL-WIKI-01 | TP-WIKI | TC-WIKI-005, TC-WIKI-006, TC-WIKI-007, TC-WIKI-008 | - | ready |
+| RF-WIKI-003 | FL-WIKI-01 | TP-WIKI | TC-WIKI-009, TC-WIKI-011, TC-WIKI-021, TC-WIKI-027 | TC-WIKI-010, TC-WIKI-012, TC-WIKI-028 | ready |
+| RF-WIKI-004 | FL-WIKI-01 | TP-WIKI | TC-WIKI-013, TC-WIKI-014, TC-WIKI-015, TC-WIKI-016 | - | ready |
+| RF-WIKI-005 | FL-WIKI-01 | TP-WIKI | TC-WIKI-017, TC-WIKI-019, TC-WIKI-020, TC-WIKI-022, TC-WIKI-024 | TC-WIKI-018, TC-WIKI-026 | ready |
+| RF-WIKI-006 | FL-WIKI-01 | TP-WIKI | TC-WIKI-029, TC-WIKI-030, TC-WIKI-031, TC-WIKI-032 | TC-WIKI-033 | implemented |
+| RF-WIKI-007 | FL-WIKI-01 | TP-WIKI | TC-WIKI-034, TC-WIKI-035, TC-WIKI-036 | TC-WIKI-037 | implemented |
+| RF-SEM-001 | FL-SEM-01 | TP-SEM | TC-SEM-001, TC-SEM-002 | TC-SEM-003 | ready |
+| RF-SEM-002 | FL-SEM-01 | TP-SEM | TC-SEM-004, TC-SEM-005 | TC-SEM-006 | ready |
+| RF-SEM-003 | FL-SEM-01 | TP-SEM | TC-SEM-007, TC-SEM-008 | TC-SEM-009 | ready |
+| RF-SEM-004 | FL-SEM-01 | TP-SEM | TC-SEM-010, TC-SEM-011 | TC-SEM-012, TC-SEM-013, TC-SEM-014 | ready |
+
+```toon
+block_id: RF-WKS-007-MATRIX
+kind: normative
+source_of_truth: normative
+verify:
+  - go test -count=1 ./internal/service ./internal/workspace
+evidence:
+  - .docs/wiki/03_FL.md
+  - .docs/wiki/04_RF/RF-WKS-007.md
+  - .docs/wiki/06_pruebas/TP-WKS.md
+  - internal/service/auto_register.go
+  - internal/workspace/autoregister_test.go
+requirement_id: RF-WKS-007
+flow_id: FL-BOOT-01
+test_plan_id: TP-WKS
+positive_case_ids: [TC-WKS-048, TC-WKS-049, TC-WKS-050, TC-WKS-051, TC-WKS-052, TC-WKS-053, TC-WKS-054, TC-WKS-056, TC-WKS-058, TC-WKS-059]
+negative_case_ids: [TC-WKS-055, TC-WKS-057, TC-WKS-060]
+```
+
+## Regla de mantenimiento
+
+- Ningun RF se considera cerrado si no tiene al menos un caso positivo y uno negativo trazado a un `TP-*`.
+- Los smoke tests manuales del repo deben seguir esta matriz aunque todavia no exista automatizacion completa.
+
+| RF-QRY-019 | FL-QRY-01 | TP-QRY-PREPARATION | TC-QRY-PREPARATION-01..17 (17/17 PASS; TP11 Windows junction PASS) | — | implemented_and_verified / automated |

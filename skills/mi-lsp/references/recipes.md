@@ -293,9 +293,9 @@ mi-lsp nav wiki pack "indexing docs" --workspace <alias> --rf RF-IDX-001 --forma
 mi-lsp nav wiki trace RF-QRY-003 --workspace <alias> --format toon
 mi-lsp nav wiki trace --all --summary --workspace <alias> --format toon
 mi-lsp nav wiki validate-harness --workspace <alias> --ids CT-NAV-INTENT --format toon
-mi-lsp nav wiki validate-harness --workspace <alias> --paths .docs/wiki/09_contratos/CT-NAV-INTENT.md --format toon
+mi-lsp nav wiki validate-harness --workspace <alias> --paths .docs/wiki/07_technical/contracts/CT-NAV-INTENT.md --format toon
 mi-lsp nav wiki validate-source --workspace <alias> --ids CT-NAV-INTENT --format toon
-mi-lsp nav wiki validate-source --workspace <alias> --paths .docs/wiki/09_contratos/CT-NAV-INTENT.md --format toon
+mi-lsp nav wiki validate-source --workspace <alias> --paths .docs/wiki/07_technical/contracts/CT-NAV-INTENT.md --format toon
 ```
 
 `nav wiki search` accepts `--layer RS,RF,FL,TP,CT,TECH,DB`. `validate-harness` validates SDD-HARNESS-v1 contracts and `validate-source` validates SDD-WIKI-SOURCE-v1 source blocks; both accept comma-separated `--ids` or `--paths`. Use the two named wiki validator subcommands; do not infer a combined validator surface.

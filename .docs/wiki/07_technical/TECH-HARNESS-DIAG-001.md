@@ -19,7 +19,7 @@ links:
     - path: internal/output/diagnostics.go
 ---
 
-## Frontera
+## Resumen
 `newDiagnosticsCommand(*rootState)` → `nav.diagnostics` → routing semántico habitual → worker `Method="diagnostics"`. No añade método público de filesystem arbitrario, contenido del documento ni argv suministrables por el consumidor. El servicio omite enriquecimiento wiki/catálogo e indexación para esta operación. `Workspace` se resuelve read-only; los worktrees se distinguen por raíz física y solo se corrige el alias al comprobar igualdad de `git-common-dir`.
 
 ## Payload para surface/provider
@@ -47,6 +47,11 @@ links:
 El transporte LSP mantiene solo la URI solicitada; didChange avanza versión incluso con mismos bytes. Las publicaciones de versión distinta no satisfacen una consulta. No hay barrera de finalización para push: aunque tenga versión, devuelve `partial`. Los timeouts de tsserver cierran los pipes/proceso; Roslyn invalida el proceso para que un frame tardío no satisfaga otra consulta.
 
 Errores primero antes de aplicar max-items/token-budget/max-chars. Si el propio metadata excede un presupuesto minúsculo, el envelope mínimo sigue marcando truncamiento y recomienda aumentarlo; no promete caber en menos bytes que su esquema obligatorio. Texto/agent muestran conteos y hallazgos principales; formatos estructurados conservan el esquema.
+
+## Mapa de componentes
+- `newDiagnosticsCommand(*rootState)` → `nav.diagnostics` → routing semántico → worker `Method="diagnostics"`.
+- Los backends gopls, Pyright, rust-analyzer, tsserver y Roslyn alimentan el bridge LSP; `internal/output/diagnostics.go` proyecta la salida.
+- Los archivos y constructores concretos permanecen enumerados en los `links.code` de este documento.
 
 ## Integración y evidencia
 Surface registra el constructor en nav.go, publica `lsp.diagnostics`, clasifica la operación para daemon/AXI y conserva budgets/omisiones. Esta lane no modifica nav.go/root.go/provider_manifest.go. La suite y el smoke real quedan para [[TP-HARNESS-DIAG-001]] dentro de la FINAL_VERIFY del padre; ningún backend se declara observado en runtime por agregar su bridge.

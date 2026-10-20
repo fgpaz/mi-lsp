@@ -194,7 +194,7 @@ func PreparationGovernanceDigest(root string) string { return preparationGoverna
 
 func preparationGovernanceDigest(root string) string {
 	paths := []string{
-		filepath.Join(root, ".docs", "wiki", "00_gobierno_documental.md"),
+		filepath.Join(root, ".docs", "wiki", "00_governance.md"),
 		filepath.Join(root, ".docs", "wiki", "_mi-lsp", "read-model.toml"),
 	}
 	h := sha256.New()
