@@ -1,0 +1,429 @@
+{
+  "schema": "milsp-all-harness-measurement/v1",
+  "design": "N=1 per model per phase; descriptive, no causal savings or billing claim; direct authorized Pi, no gateway; frozen runner/prompt/guard/fixtures",
+  "transport_scope": "Pi benchmark uses no MCP/skills/context files; real native SDK acceptance is separate",
+  "after_measured_source": "50e0cfc5b306f542002710503196f3d1df11d47f",
+  "published_source": "f04b108cf1b7778cab1cbfbfc2741931c2a622d4",
+  "post_measurement_change": "diagnostics post-render structured budget guard; benchmark not rerun",
+  "status_integrity": "all four retain harness_error: collector omitted one unclassified stderr entry; exit0 and observed HTTP200 do not relabel it PASS",
+  "rows": [
+    {
+      "schema": "harness-measurement/v1",
+      "phase": "baseline",
+      "model_requested": "opencode-go/minimax-m3.1-flash-free",
+      "model_version": "alias_only; provider does not publish immutable revision here",
+      "harness": "1.3.0",
+      "repo_head": "4494e7cdf9934ae293d0231454f7d401f25d1d92",
+      "integrated_sha": null,
+      "binary_sha256": "9c59d5f36c4512af5b99ed48732ec831097299095386d3eecdea56df1ebefd14",
+      "prompt_sha256": "55fc10db9cf2c38cb85fe9af1bde5a8de60f04f8c3a46d00fbcf6cf926cc9e97",
+      "guard_sha256": "60170947ec388df361f7a72cdec7684d17aa6af9ab140af8226b0fba6981024b",
+      "runner_sha256": "657dbf4b195d2629d30239e8432fea8c65e89a4014c04fa7dc46efd9462d88db",
+      "fixture_sha256": {
+        "src/greeter.go": "2b779bf8d3134828b038b5ddfe44b23aecbf24a3d400e08e13a921754c840889",
+        "src/handler.go": "bb1c69bc40068791efbf11fbbddbcf7bb1beff48c0c8cfadbcd9d45829d5ac77",
+        "src/legacy_greeter.go": "34896c101f30c4816070b5425f42887e2aa2a455a0e1e033bb43557be4dcf77a"
+      },
+      "limits": {
+        "turns": 12,
+        "max_output_per_request": 2048,
+        "wall_seconds": 240,
+        "observed_total_tokens_stop_threshold": 100000,
+        "provider_retries": false
+      },
+      "started_utc": "2026-10-20T18:13:47Z",
+      "status": "harness_error",
+      "exit_code": 0,
+      "seconds": 31.46,
+      "usage": {
+        "input": {
+          "value": 8609,
+          "source": "pi.message_end.message.usage",
+          "reason": null
+        },
+        "output": {
+          "value": 1631,
+          "source": "pi.message_end.message.usage",
+          "reason": null
+        },
+        "cacheRead": {
+          "value": 28672,
+          "source": "pi.message_end.message.usage",
+          "reason": null
+        },
+        "cacheWrite": {
+          "value": 0,
+          "source": "pi.message_end.message.usage",
+          "reason": null
+        },
+        "totalTokens": {
+          "value": 38912,
+          "source": "pi.message_end.message.usage",
+          "reason": null
+        }
+      },
+      "model_observed": [
+        "opencode-go/minimax-m3.1-flash-free"
+      ],
+      "assistant_responses": 11,
+      "request_payloads": 11,
+      "http_statuses": [
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200
+      ],
+      "api_attempts_note": "request_payloads is observed pre-provider hook count, not a claim about hidden transport retries",
+      "tool_calls": 11,
+      "tool_errors": 1,
+      "explicit_files_read_count": 3,
+      "implicit_backend_reads": "unknown: gopls/mi-lsp do not report full file-I/O inventory",
+      "provider_errors": [],
+      "harness_errors": [
+        {
+          "http_status": null,
+          "category": "provider_or_harness_error",
+          "body": "omitted_by_redaction_policy"
+        }
+      ],
+      "oracle": {
+        "tasks": {
+          "locate": true,
+          "edit": true,
+          "semantic": true
+        },
+        "successes": 3,
+        "total": 3,
+        "detected_before_test": 1,
+        "seeded_semantic_errors": 1,
+        "edit_before_diagnostics": true,
+        "tests_executed": 0,
+        "diagnostic_commands": [
+          "mi-lsp find-files '*greet*' --format json",
+          "rg --files src -g *greet*",
+          "mi-lsp nav diagnostics src/handler.go --format json --no-daemon",
+          "gopls check src/handler.go",
+          "gopls check src/handler.go"
+        ]
+      }
+    },
+    {
+      "schema": "harness-measurement/v1",
+      "phase": "baseline",
+      "model_requested": "opencode-go/longcat-2.5-preview-free",
+      "model_version": "alias_only; provider does not publish immutable revision here",
+      "harness": "1.3.0",
+      "repo_head": "4494e7cdf9934ae293d0231454f7d401f25d1d92",
+      "integrated_sha": null,
+      "binary_sha256": "9c59d5f36c4512af5b99ed48732ec831097299095386d3eecdea56df1ebefd14",
+      "prompt_sha256": "55fc10db9cf2c38cb85fe9af1bde5a8de60f04f8c3a46d00fbcf6cf926cc9e97",
+      "guard_sha256": "60170947ec388df361f7a72cdec7684d17aa6af9ab140af8226b0fba6981024b",
+      "runner_sha256": "657dbf4b195d2629d30239e8432fea8c65e89a4014c04fa7dc46efd9462d88db",
+      "fixture_sha256": {
+        "src/greeter.go": "2b779bf8d3134828b038b5ddfe44b23aecbf24a3d400e08e13a921754c840889",
+        "src/handler.go": "bb1c69bc40068791efbf11fbbddbcf7bb1beff48c0c8cfadbcd9d45829d5ac77",
+        "src/legacy_greeter.go": "34896c101f30c4816070b5425f42887e2aa2a455a0e1e033bb43557be4dcf77a"
+      },
+      "limits": {
+        "turns": 12,
+        "max_output_per_request": 2048,
+        "wall_seconds": 240,
+        "observed_total_tokens_stop_threshold": 100000,
+        "provider_retries": false
+      },
+      "started_utc": "2026-10-20T18:13:47Z",
+      "status": "harness_error",
+      "exit_code": 0,
+      "seconds": 49.658,
+      "usage": {
+        "input": {
+          "value": 5681,
+          "source": "pi.message_end.message.usage",
+          "reason": null
+        },
+        "output": {
+          "value": 827,
+          "source": "pi.message_end.message.usage",
+          "reason": null
+        },
+        "cacheRead": {
+          "value": 21504,
+          "source": "pi.message_end.message.usage",
+          "reason": null
+        },
+        "cacheWrite": {
+          "value": 0,
+          "source": "pi.message_end.message.usage",
+          "reason": null
+        },
+        "totalTokens": {
+          "value": 28012,
+          "source": "pi.message_end.message.usage",
+          "reason": null
+        }
+      },
+      "model_observed": [
+        "opencode-go/longcat-2.5-preview-free"
+      ],
+      "assistant_responses": 10,
+      "request_payloads": 10,
+      "http_statuses": [
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200
+      ],
+      "api_attempts_note": "request_payloads is observed pre-provider hook count, not a claim about hidden transport retries",
+      "tool_calls": 10,
+      "tool_errors": 1,
+      "explicit_files_read_count": 3,
+      "implicit_backend_reads": "unknown: gopls/mi-lsp do not report full file-I/O inventory",
+      "provider_errors": [],
+      "harness_errors": [
+        {
+          "http_status": null,
+          "category": "provider_or_harness_error",
+          "body": "omitted_by_redaction_policy"
+        }
+      ],
+      "oracle": {
+        "tasks": {
+          "locate": true,
+          "edit": true,
+          "semantic": true
+        },
+        "successes": 3,
+        "total": 3,
+        "detected_before_test": 1,
+        "seeded_semantic_errors": 1,
+        "edit_before_diagnostics": true,
+        "tests_executed": 0,
+        "diagnostic_commands": [
+          "mi-lsp find-files '*greet*' --format json",
+          "rg --files src -g *greet*",
+          "mi-lsp nav diagnostics src/handler.go --format json --no-daemon",
+          "gopls check src/handler.go",
+          "gopls check src/handler.go"
+        ]
+      }
+    },
+    {
+      "schema": "harness-measurement/v1",
+      "phase": "after",
+      "model_requested": "opencode-go/minimax-m3.1-flash-free",
+      "model_version": "alias_only; provider does not publish immutable revision here",
+      "harness": "1.3.0",
+      "repo_head": "4494e7cdf9934ae293d0231454f7d401f25d1d92",
+      "integrated_sha": "50e0cfc5b306f542002710503196f3d1df11d47f",
+      "binary_sha256": "4780cafe902d92dc6ccdf115b78c3af73e79d1da0f3d7e2ecddc71865247584c",
+      "prompt_sha256": "55fc10db9cf2c38cb85fe9af1bde5a8de60f04f8c3a46d00fbcf6cf926cc9e97",
+      "guard_sha256": "60170947ec388df361f7a72cdec7684d17aa6af9ab140af8226b0fba6981024b",
+      "runner_sha256": "657dbf4b195d2629d30239e8432fea8c65e89a4014c04fa7dc46efd9462d88db",
+      "fixture_sha256": {
+        "src/greeter.go": "2b779bf8d3134828b038b5ddfe44b23aecbf24a3d400e08e13a921754c840889",
+        "src/handler.go": "bb1c69bc40068791efbf11fbbddbcf7bb1beff48c0c8cfadbcd9d45829d5ac77",
+        "src/legacy_greeter.go": "34896c101f30c4816070b5425f42887e2aa2a455a0e1e033bb43557be4dcf77a"
+      },
+      "limits": {
+        "turns": 12,
+        "max_output_per_request": 2048,
+        "wall_seconds": 240,
+        "observed_total_tokens_stop_threshold": 100000,
+        "provider_retries": false
+      },
+      "started_utc": "2026-10-20T18:47:58Z",
+      "status": "harness_error",
+      "exit_code": 0,
+      "seconds": 23.601,
+      "usage": {
+        "input": {
+          "value": 6823,
+          "source": "pi.message_end.message.usage",
+          "reason": null
+        },
+        "output": {
+          "value": 978,
+          "source": "pi.message_end.message.usage",
+          "reason": null
+        },
+        "cacheRead": {
+          "value": 16896,
+          "source": "pi.message_end.message.usage",
+          "reason": null
+        },
+        "cacheWrite": {
+          "value": 0,
+          "source": "pi.message_end.message.usage",
+          "reason": null
+        },
+        "totalTokens": {
+          "value": 24697,
+          "source": "pi.message_end.message.usage",
+          "reason": null
+        }
+      },
+      "model_observed": [
+        "opencode-go/minimax-m3.1-flash-free"
+      ],
+      "assistant_responses": 8,
+      "request_payloads": 8,
+      "http_statuses": [
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200
+      ],
+      "api_attempts_note": "request_payloads is observed pre-provider hook count, not a claim about hidden transport retries",
+      "tool_calls": 11,
+      "tool_errors": 0,
+      "explicit_files_read_count": 3,
+      "implicit_backend_reads": "unknown: gopls/mi-lsp do not report full file-I/O inventory",
+      "provider_errors": [],
+      "harness_errors": [
+        {
+          "http_status": null,
+          "category": "provider_or_harness_error",
+          "body": "omitted_by_redaction_policy"
+        }
+      ],
+      "oracle": {
+        "tasks": {
+          "locate": true,
+          "edit": true,
+          "semantic": true
+        },
+        "successes": 3,
+        "total": 3,
+        "detected_before_test": 1,
+        "seeded_semantic_errors": 1,
+        "edit_before_diagnostics": true,
+        "tests_executed": 0,
+        "diagnostic_commands": [
+          "mi-lsp find-files '*greet*' --format json",
+          "rg --files src -g *greet*",
+          "mi-lsp nav diagnostics src/handler.go --format json --no-daemon",
+          "mi-lsp nav diagnostics src/handler.go --format json --no-daemon"
+        ]
+      }
+    },
+    {
+      "schema": "harness-measurement/v1",
+      "phase": "after",
+      "model_requested": "opencode-go/longcat-2.5-preview-free",
+      "model_version": "alias_only; provider does not publish immutable revision here",
+      "harness": "1.3.0",
+      "repo_head": "4494e7cdf9934ae293d0231454f7d401f25d1d92",
+      "integrated_sha": "50e0cfc5b306f542002710503196f3d1df11d47f",
+      "binary_sha256": "4780cafe902d92dc6ccdf115b78c3af73e79d1da0f3d7e2ecddc71865247584c",
+      "prompt_sha256": "55fc10db9cf2c38cb85fe9af1bde5a8de60f04f8c3a46d00fbcf6cf926cc9e97",
+      "guard_sha256": "60170947ec388df361f7a72cdec7684d17aa6af9ab140af8226b0fba6981024b",
+      "runner_sha256": "657dbf4b195d2629d30239e8432fea8c65e89a4014c04fa7dc46efd9462d88db",
+      "fixture_sha256": {
+        "src/greeter.go": "2b779bf8d3134828b038b5ddfe44b23aecbf24a3d400e08e13a921754c840889",
+        "src/handler.go": "bb1c69bc40068791efbf11fbbddbcf7bb1beff48c0c8cfadbcd9d45829d5ac77",
+        "src/legacy_greeter.go": "34896c101f30c4816070b5425f42887e2aa2a455a0e1e033bb43557be4dcf77a"
+      },
+      "limits": {
+        "turns": 12,
+        "max_output_per_request": 2048,
+        "wall_seconds": 240,
+        "observed_total_tokens_stop_threshold": 100000,
+        "provider_retries": false
+      },
+      "started_utc": "2026-10-20T18:47:58Z",
+      "status": "harness_error",
+      "exit_code": 0,
+      "seconds": 44.802,
+      "usage": {
+        "input": {
+          "value": 5048,
+          "source": "pi.message_end.message.usage",
+          "reason": null
+        },
+        "output": {
+          "value": 471,
+          "source": "pi.message_end.message.usage",
+          "reason": null
+        },
+        "cacheRead": {
+          "value": 13824,
+          "source": "pi.message_end.message.usage",
+          "reason": null
+        },
+        "cacheWrite": {
+          "value": 0,
+          "source": "pi.message_end.message.usage",
+          "reason": null
+        },
+        "totalTokens": {
+          "value": 19343,
+          "source": "pi.message_end.message.usage",
+          "reason": null
+        }
+      },
+      "model_observed": [
+        "opencode-go/longcat-2.5-preview-free"
+      ],
+      "assistant_responses": 8,
+      "request_payloads": 8,
+      "http_statuses": [
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200
+      ],
+      "api_attempts_note": "request_payloads is observed pre-provider hook count, not a claim about hidden transport retries",
+      "tool_calls": 8,
+      "tool_errors": 0,
+      "explicit_files_read_count": 3,
+      "implicit_backend_reads": "unknown: gopls/mi-lsp do not report full file-I/O inventory",
+      "provider_errors": [],
+      "harness_errors": [
+        {
+          "http_status": null,
+          "category": "provider_or_harness_error",
+          "body": "omitted_by_redaction_policy"
+        }
+      ],
+      "oracle": {
+        "tasks": {
+          "locate": true,
+          "edit": true,
+          "semantic": true
+        },
+        "successes": 3,
+        "total": 3,
+        "detected_before_test": 1,
+        "seeded_semantic_errors": 1,
+        "edit_before_diagnostics": true,
+        "tests_executed": 0,
+        "diagnostic_commands": [
+          "mi-lsp find-files '*greet*' --format json",
+          "mi-lsp nav diagnostics src/handler.go --format json --no-daemon",
+          "mi-lsp nav diagnostics src/handler.go --format json --no-daemon"
+        ]
+      }
+    }
+  ]
+}

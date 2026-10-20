@@ -1,0 +1,230 @@
+{
+  "schema": "milsp-all-harness-acceptance/v1",
+  "captured_utc": "2026-10-20T21:54:54.329172+00:00",
+  "goal_status": "explicit_incomplete",
+  "goal_owner": "milsp-all-harness-20261020",
+  "published_source": "f04b108cf1b7778cab1cbfbfc2741931c2a622d4",
+  "release": {
+    "tag": "v0.15.0",
+    "published_assets": 7,
+    "url": "https://github.com/fgpaz/mi-lsp/releases/tag/v0.15.0"
+  },
+  "source_review": {
+    "independent_source_review_ok": true,
+    "publication_blockers": 0,
+    "scope": "source only; not native runtime acceptance"
+  },
+  "provider": {
+    "namespace": "milsp",
+    "registry_id": "lsp",
+    "operations": 13,
+    "model_aliases": 6,
+    "manifest_sha256": "7ad70d627ba6ed83f576bff14104e268a5abacf2735fd77fc205ca170c3d3b2e",
+    "authority": "published provider manifest; no consumer name map"
+  },
+  "shared_skill": {
+    "installed_by": "normal shared skills installer",
+    "sha256": "2fc0acc9678ac10130f1f5ee46ed17b270fcbba2944345b1c652beb284310e34",
+    "matches_published_source": true,
+    "new_hooks_or_clients": false
+  },
+  "installations": [
+    {
+      "target": "linux-primary",
+      "version": "0.15.0",
+      "cli_sha256": "81fb39e3c8a1ddfbb80353b7167ed50270185d1b6bb9e3e1ca7c7ae47ccdebdb",
+      "worker_installed_compatible": true,
+      "canonical_pin_after_install": true,
+      "gateway_loaded_version": "0.3.135"
+    },
+    {
+      "target": "windows-arm64",
+      "version": "0.15.0",
+      "cli_sha256": "b35f825158fc53aa672d226d6e72839022379ccdaff9f8d1f3ee0e82c3f3c7af",
+      "worker_installed_compatible": true,
+      "canonical_pin_after_install": true,
+      "gateway_loaded_version_last_observed": "0.3.132",
+      "runtime_admission": "pending MCP owner activation"
+    },
+    {
+      "target": "linux-vps",
+      "version": "0.15.0",
+      "cli_sha256": "81fb39e3c8a1ddfbb80353b7167ed50270185d1b6bb9e3e1ca7c7ae47ccdebdb",
+      "normal_installer_exit": 0,
+      "worker_selected_compatible": true,
+      "worker_home_matches_install_user": true,
+      "package_sha256": "a51da16fb541e2f584d37f9cf07c85e79b6d2138e4335985186b28da396fab2f",
+      "gateway_pin_activation": "MCP owner; no runtime claim"
+    },
+    {
+      "target": "linux-secondary",
+      "status": "installed_after_failed_cancellation; activation_incomplete",
+      "prior_version": "0.12.3",
+      "reason": "Local completed job log proves CLI15 and compatible bundled/user worker plus MCP134 installed despite SIGTERM cancellation. Cancellation acknowledgement was not proof of stopped deployment. No further node operations or rollback.",
+      "writes": 0,
+      "owner": "Gabriel for remaining manual MCP136/pin/activation; producer records and retains actual installed state",
+      "new_authentication_keys_grants_or_services": false,
+      "stop": "Attempted SIGTERM during download did not abort the whole deployment. Earlier no-writes/retained12.3 claim superseded by completed local receipt.",
+      "existing_version_retained": "0.15.0",
+      "version": "0.15.0",
+      "cli_sha256": "81fb39e3c8a1ddfbb80353b7167ed50270185d1b6bb9e3e1ca7c7ae47ccdebdb",
+      "source": "f04b108cf1b7778cab1cbfbfc2741931c2a622d4",
+      "worker_compatible": true,
+      "mcp_cli_version": "0.3.134",
+      "mcp_cli_sha256": "c41495a61a10b410ff5d0c27a312de30c96571fd1328d6859cabd07fd69c32bd",
+      "mcp_service_restart": false,
+      "mcp_runtime_loaded": "not_claimed",
+      "pin_step": "public-helper download failed HTTP404; pin not proven"
+    }
+  ],
+  "native_matrix": [
+    {
+      "target": "linux-primary",
+      "harness": "pi",
+      "status": "verified",
+      "outer_native_tool": "codemode",
+      "native_gateway_tool": "tools.mcp__mi_mcp__execute",
+      "operations": [
+        "lsp.diagnostics",
+        "fs.find"
+      ],
+      "workspace_explicit": true,
+      "diagnostics": {
+        "contract": "diagnostics/v1",
+        "ok": true,
+        "errors": 1,
+        "files_requested": 1,
+        "files_checked": 1,
+        "backend_counts": {
+          "tsserver": 1
+        },
+        "observed_code": 2322,
+        "path": "sample.ts",
+        "backend_reported_ms": 1434,
+        "truncated": false
+      },
+      "find": {
+        "schema": "find-files/v1",
+        "path": "sample.ts",
+        "matched": 1,
+        "listing_backend": "git",
+        "truncated": false
+      },
+      "capture_sha256": "bf11cf4b869d366fc5b0c56d7fc234260d86eca0503f94c34d328ede8761e5b7",
+      "caller_or_role_overrides_submitted": false,
+      "server_caller_role_observed": null,
+      "raw_capture_and_exact_js": "retained locally; private paths not published"
+    },
+    {
+      "target": "linux-primary",
+      "harness": "claude-code",
+      "status": "pending",
+      "owner": "existing Claude Code assistant, routed by coordinator",
+      "case": "changed union of staged sample.ts, unstaged other.ts, untracked fresh.ts; invalid ignored.ts excluded",
+      "expected_scope": "three current files checked, zero errors; not whole-project clean",
+      "forbidden_substitutions": [
+        "CLI parity",
+        "Pi result",
+        "fake caller identity"
+      ]
+    },
+    {
+      "target": "windows-arm64",
+      "harness": "pi",
+      "status": "explicit_incomplete",
+      "owner": "MCP node owner and existing runtime verifier",
+      "reason": "native gateway reached; metadata discovery forbidden before any product/backend operation",
+      "backend_calls": 0
+    },
+    {
+      "target": "windows-arm64",
+      "harness": "claude-code",
+      "status": "explicit_incomplete",
+      "owner": "MCP node owner and existing runtime verifier",
+      "reason": "native gateway reached; metadata discovery forbidden before any product/backend operation",
+      "backend_calls": 0
+    }
+  ],
+  "retained_setup_failures": [
+    {
+      "stage": "native server not registered",
+      "product_calls": 0,
+      "resolution": "existing Pi mcp add configuration, no new adapter"
+    },
+    {
+      "stage": "canonical provider namespace not admitted by host profile",
+      "product_calls": 0,
+      "resolution": "MCP owner added only existing finite readonly milsp namespace; normal busy=0 activation; Gabriel authorization already decided"
+    },
+    {
+      "stage": "CLI returned explicit_incomplete before TypeScript checker could start",
+      "provider_command_calls": 1,
+      "typescript_checker_requests": 0,
+      "telemetry_event_id": 54910,
+      "output_bytes": 577,
+      "resolution": "TypeScript7.0.2 lacks required lib/tsserver.js; normal compatible TypeScript6.0.3 installation supplies it",
+      "repair_capture_sha256": "47d7791299b4db19dab45351984d666648b1967ad0f8350ca0407ece79a6745b"
+    }
+  ],
+  "prerequisite": {
+    "required": "a real TypeScript server distribution containing lib/tsserver.js",
+    "observed_compatible": "typescript@6.0.3",
+    "compiler_only_not_sufficient": "typescript@7.0.2",
+    "source": "internal/worker/tsserver.go findTsserverPath and CanUseTsserver",
+    "optional_backend_absence_is_not_clean": true
+  },
+  "measurement": {
+    "path": "all-harness-measurement-20261020.json",
+    "all_four_harness_error_statuses_retained": true,
+    "benchmark_repeated_after_renderer_fix": false
+  },
+  "automatic_after_edit": {
+    "status": "not established by these manual calls",
+    "owner": "harness adapter front"
+  },
+  "review_alarm": {
+    "after_seconds": 43.278,
+    "basis": "twice the maximum measured native Pi job duration, 21.639s; other measured job16.874s",
+    "action": "review pending owner/transport at next delivery, never convert silence to PASS"
+  },
+  "privacy": {
+    "raw_prompts_transcripts_private_hosts_credentials": "not published",
+    "raw_runtime_captures": "local only, hashes above"
+  },
+  "non_primary_install_policy": {
+    "id": "persona:instalaciones-solo-en-tesla-otros-nodos-gabriel-20261019",
+    "home_commit": "3c98eb76d31a95231379251b91b3bfcf0283325e",
+    "rule": "Bots install only on the primary node; Gabriel installs on other nodes. Prepare immutable artifacts and exact command. Already installed versions remain, no rollback.",
+    "newer_explicit_install_override_observed": false
+  },
+  "published_asset_binary_bindings": [
+    {
+      "rid": "linux-x64",
+      "asset": "mi-lsp_0.15.0_linux-x64.tar.gz",
+      "asset_sha256": "a51da16fb541e2f584d37f9cf07c85e79b6d2138e4335985186b28da396fab2f",
+      "contained_cli_sha256": "81fb39e3c8a1ddfbb80353b7167ed50270185d1b6bb9e3e1ca7c7ae47ccdebdb",
+      "matches_installed_cli": true,
+      "source": "f04b108cf1b7778cab1cbfbfc2741931c2a622d4",
+      "verification_type": "C0 local published-asset byte binding, no runtime/model/backend call"
+    },
+    {
+      "rid": "win-arm64",
+      "asset": "mi-lsp_0.15.0_win-arm64.zip",
+      "asset_sha256": "c342946f27f1c79f411a36a6e7049ee186534c28678c1681d3bf9e31bc9cb673",
+      "contained_cli_sha256": "b35f825158fc53aa672d226d6e72839022379ccdaff9f8d1f3ee0e82c3f3c7af",
+      "matches_installed_cli": true,
+      "source": "f04b108cf1b7778cab1cbfbfc2741931c2a622d4",
+      "verification_type": "C0 local published-asset byte binding, no runtime/model/backend call"
+    }
+  ],
+  "cancellation_incident": {
+    "status": "confirmed_from_original_local_job_log",
+    "original_attempt_preserved": true,
+    "failure": "SIGTERM issued to owned installer children was incorrectly treated as deployment stopped. Parent job continued and installed CLI/worker/MCP.",
+    "evidence_sha256": "933c87c661be46bb3f56a6cb158b86b48691f9b893a2d6dfc19064bec2a11b4f",
+    "remote_followup_probes": 0,
+    "further_bot_node_writes": false,
+    "rollback": false,
+    "remaining_owner": "Gabriel per canonical non-primary installation policy"
+  }
+}

@@ -1,0 +1,43 @@
+{
+  "schema": "milsp-all-harness-audit/v1",
+  "goal": "MILSP-TODOS-LOS-HARNESS",
+  "verdict": "explicit_incomplete",
+  "closure_severity": "major",
+  "published_source": "f04b108cf1b7778cab1cbfbfc2741931c2a622d4",
+  "published_release": "v0.15.0",
+  "source_review_ok": true,
+  "code_publication_blockers": 0,
+  "scope": "Independent source review/recheck, exact-scope outcome audit, then one C1 documentation/data addendum. No second comprehensive audit or benchmark campaign.",
+  "independent_c1_findings": {
+    "changed_paths_classified_exactly_once": 71,
+    "missing_extra_duplicates_unclassified": 0,
+    "common_requirement_criteria_disposed": 6,
+    "documentation_review": "Two existing files, 14 added lines: explicit workspace and compatible TypeScript server; no new source blocker.",
+    "remaining": "Native matrix, post-fix diagnostics, four-harness skill usage and coexistence remain incomplete. Source approval is not global runtime approval."
+  },
+  "parent_c1_supplement": {
+    "peer_requirement_criteria_disposed": 13,
+    "status": "Every peer criterion now points to implementation and observed or explicitly unobserved evidence; no per-criterion runtime PASS inferred. Added after the independent addendum without another C2 campaign or broad audit.",
+    "asset_binding": "Published Linux-x64 and Windows-arm64 archives contain the exact SHA256 CLI observed installed; local byte inspection only."
+  },
+  "boundaries": [
+    "One verified native Pi/Linux cell does not prove the three other host/harness cells.",
+    "Manual semantic smoke is not automatic after-edit callback evidence.",
+    "Caller/role evidence unavailable from the actual response is not inferred or forged.",
+    "All four measurement captures retain harness_error; N=1 descriptive data, no causal/billing claim or repair rerun.",
+    "Readonly admission is already authorized; non-primary installation is separately reserved to Gabriel by canonical policy. Already installed versions remain, no rollback.",
+    "Earlier transport and prerequisite failures are retained; existing-key private IPv6 transport succeeded, and the remaining secondary installation is now manual-policy pending."
+  ],
+  "remaining_owners": {
+    "original_native_cc_case": "Existing actual Claude Code consumer, using its own identity and currently exposed native execute; no new Claude executor or fabricated clientInfo",
+    "automatic_after_edit": "Harness adapter owner, separate original N3 case",
+    "non_primary_installation": "Gabriel, with immutable artifacts and exact commands supplied by producer/MCP owners",
+    "four_harness_loaded_usage_and_fs_coexistence": "Harness distribution/runtime and generic MCP owners"
+  },
+  "claim": "Source, main and release delivered. Goal remains active with explicit_incomplete acceptance; no global PASS or closure claim.",
+  "post_addendum_fact_correction": {
+    "secondary_node": "CLI15/compatible worker and MCP134 installed after cancellation attempt; local receipt overrides earlier retained12.3/no-write claim. Pin-helper HTTP404; runtime/activation unproven.",
+    "independent_review_boundary": "New factual supplement after independent C1 addendum, not a new audit or PASS. Source approval unchanged.",
+    "further_action": "No further bot writes/rollback; manual MCP/pin/activation owner Gabriel."
+  }
+}

@@ -1,0 +1,815 @@
+{
+  "schema": "milsp-all-harness-trace/v1",
+  "goal": "MILSP-TODOS-LOS-HARNESS",
+  "source_request_commit": "9d0b62ba9a9988a5a1fe1e73e63d49005abb66a0",
+  "published_source": "f04b108cf1b7778cab1cbfbfc2741931c2a622d4",
+  "status": "explicit_incomplete",
+  "chain": [
+    {
+      "id": "RS-ALLHARNESS-001",
+      "path": "../wiki/02_outcomes/RS-ALLHARNESS-001.md",
+      "kind": "outcome"
+    },
+    {
+      "id": "FL-ALLHARNESS-001",
+      "path": "../wiki/04_flows/FL-ALLHARNESS-001.md",
+      "kind": "flow"
+    },
+    {
+      "id": "RF-ALLHARNESS-001",
+      "path": "../wiki/05_requirements/RF-ALLHARNESS-001.md",
+      "kind": "requirement"
+    },
+    {
+      "id": "TP-ALLHARNESS-001",
+      "path": "../wiki/06_tests/TP-ALLHARNESS-001.md",
+      "kind": "verification"
+    },
+    {
+      "id": "CT-ALLHARNESS-001",
+      "path": "../wiki/07_technical/contracts/CT-ALLHARNESS-001.md",
+      "kind": "contract"
+    },
+    {
+      "id": "TECH-ALLHARNESS-001",
+      "path": "../wiki/07_technical/TECH-ALLHARNESS-001.md",
+      "kind": "technical"
+    }
+  ],
+  "evidence": [
+    {
+      "claim": "few attachable operations, one provider authority",
+      "source": "provider-manifest/v2, models, shared skill",
+      "observed": "13 operations, six model aliases, manifest SHA7ad70d62...",
+      "status": "source reviewed and released"
+    },
+    {
+      "claim": "structured diagnostics stay parseable under impossible output budgets",
+      "source": "internal/cli/root.go diagnostics/v1 cap guard",
+      "observed": "source recheck approves all structured formats; targeted JSON128 request emitted valid931-byte unavailable/truncated envelope with omissions",
+      "status": "verified within source verification wave"
+    },
+    {
+      "claim": "Git-aware ranked and bounded file finder",
+      "source": "service file finder and new CLI",
+      "observed": "integrated fixture checks including ignore/negation, dash filename, output budget, outside symlink; real native Pi Git sample.ts hit",
+      "status": "verified; native four-cell matrix remains partial"
+    },
+    {
+      "claim": "real TypeScript diagnostics through native MCP SDK",
+      "source": "all-harness-acceptance-20261020.json",
+      "observed": "native Pi actual TS2322, tsserver1/1, plus fs.find; CC changed and Windows native cases pending",
+      "status": "explicit_incomplete",
+      "owner": "runtime verifier and MCP node owner"
+    },
+    {
+      "claim": "descriptive measurement with preserved failures",
+      "source": "all-harness-measurement-20261020.json",
+      "observed": "N=1 per phase/model; all four retain harness_error; no causal or billing claim, no post-fix rerun",
+      "status": "delivered with explicit limitations"
+    },
+    {
+      "claim": "normal portable release and installs",
+      "source": "v0.15.0 published assets and acceptance installation table",
+      "observed": "Four CLI/compatible worker installs recorded. Secondary Linux CLI15 and MCP134 installed despite the attempted cancellation, proven by completed local job log. Existing-key IPv6 transport resolved; final pin-helper download failed HTTP404. No service restart/native activation proof. Earlier retained12.3/no-write claim superseded, no rollback or further bot node operation.",
+      "status": "explicit_incomplete; cancellation incident recorded, manual MCP/pin/activation pending",
+      "owner": "Gabriel installs non-primary nodes; producer and MCP owners prepare immutable artifacts and exact commands"
+    }
+  ],
+  "closure_boundary": "Source approved, main pushed, release published and installed are distinct from native SDK acceptance, caller-role evidence and automatic after-edit. No global goal PASS is claimed.",
+  "verification_reuse": "one FINAL_VERIFY wave; retained setup failures and focused prerequisite repair, no repeated benchmark or broad suite",
+  "next": "Pending original native cases and four-harness skill/coexistence evidence remain explicit_incomplete. Non-primary installation is manual by canonical policy, not a missing readonly permission. Independent exact-scope audit and one C1 addendum already received.",
+  "changed_path_inventory": {
+    "base": "4494e7cdf9934ae293d0231454f7d401f25d1d92",
+    "head": "f04b108cf1b7778cab1cbfbfc2741931c2a622d4",
+    "expected": 71,
+    "observed": 71,
+    "duplicates": 0,
+    "unclassified": 0,
+    "counts": {
+      "canonical_documentation": 12,
+      "measurement_support": 7,
+      "provider_projection": 2,
+      "cli_and_model_surface": 7,
+      "verification_support": 20,
+      "daemon_dispatch": 1,
+      "typed_contract": 3,
+      "output_contract": 3,
+      "service_behavior": 4,
+      "semantic_backend": 9,
+      "provider_snapshot_tool": 1,
+      "shared_skill": 2
+    },
+    "rows": [
+      {
+        "path": ".docs/wiki/02_outcomes/RS-ALLHARNESS-001.md",
+        "classification": "canonical_documentation",
+        "disposition": "intentional_goal_change",
+        "requirement": "RF-ALLHARNESS-001",
+        "purpose": "Typed outcome/flow/requirement/test-plan/technical links for the requested harness, diagnostics and finder scope"
+      },
+      {
+        "path": ".docs/wiki/04_flows/FL-ALLHARNESS-001.md",
+        "classification": "canonical_documentation",
+        "disposition": "intentional_goal_change",
+        "requirement": "RF-ALLHARNESS-001",
+        "purpose": "Typed outcome/flow/requirement/test-plan/technical links for the requested harness, diagnostics and finder scope"
+      },
+      {
+        "path": ".docs/wiki/05_requirements/RF-ALLHARNESS-001.md",
+        "classification": "canonical_documentation",
+        "disposition": "intentional_goal_change",
+        "requirement": "RF-ALLHARNESS-001",
+        "purpose": "Typed outcome/flow/requirement/test-plan/technical links for the requested harness, diagnostics and finder scope"
+      },
+      {
+        "path": ".docs/wiki/05_requirements/RF-HARNESS-DIAG-001.md",
+        "classification": "canonical_documentation",
+        "disposition": "intentional_goal_change",
+        "requirement": "RF-ALLHARNESS-001",
+        "purpose": "Typed outcome/flow/requirement/test-plan/technical links for the requested harness, diagnostics and finder scope"
+      },
+      {
+        "path": ".docs/wiki/05_requirements/RF-HARNESS-FIND-001.md",
+        "classification": "canonical_documentation",
+        "disposition": "intentional_goal_change",
+        "requirement": "RF-ALLHARNESS-001",
+        "purpose": "Typed outcome/flow/requirement/test-plan/technical links for the requested harness, diagnostics and finder scope"
+      },
+      {
+        "path": ".docs/wiki/06_tests/TP-ALLHARNESS-001.md",
+        "classification": "canonical_documentation",
+        "disposition": "intentional_goal_change",
+        "requirement": "RF-ALLHARNESS-001",
+        "purpose": "Typed outcome/flow/requirement/test-plan/technical links for the requested harness, diagnostics and finder scope"
+      },
+      {
+        "path": ".docs/wiki/06_tests/TP-HARNESS-DIAG-001.md",
+        "classification": "canonical_documentation",
+        "disposition": "intentional_goal_change",
+        "requirement": "RF-ALLHARNESS-001",
+        "purpose": "Typed outcome/flow/requirement/test-plan/technical links for the requested harness, diagnostics and finder scope"
+      },
+      {
+        "path": ".docs/wiki/06_tests/TP-HARNESS-FIND-001.md",
+        "classification": "canonical_documentation",
+        "disposition": "intentional_goal_change",
+        "requirement": "RF-ALLHARNESS-001",
+        "purpose": "Typed outcome/flow/requirement/test-plan/technical links for the requested harness, diagnostics and finder scope"
+      },
+      {
+        "path": ".docs/wiki/07_technical/TECH-ALLHARNESS-001.md",
+        "classification": "canonical_documentation",
+        "disposition": "intentional_goal_change",
+        "requirement": "RF-ALLHARNESS-001",
+        "purpose": "Typed outcome/flow/requirement/test-plan/technical links for the requested harness, diagnostics and finder scope"
+      },
+      {
+        "path": ".docs/wiki/07_technical/TECH-HARNESS-DIAG-001.md",
+        "classification": "canonical_documentation",
+        "disposition": "intentional_goal_change",
+        "requirement": "RF-ALLHARNESS-001",
+        "purpose": "Typed outcome/flow/requirement/test-plan/technical links for the requested harness, diagnostics and finder scope"
+      },
+      {
+        "path": ".docs/wiki/07_technical/TECH-HARNESS-FIND-001.md",
+        "classification": "canonical_documentation",
+        "disposition": "intentional_goal_change",
+        "requirement": "RF-ALLHARNESS-001",
+        "purpose": "Typed outcome/flow/requirement/test-plan/technical links for the requested harness, diagnostics and finder scope"
+      },
+      {
+        "path": ".docs/wiki/07_technical/contracts/CT-ALLHARNESS-001.md",
+        "classification": "canonical_documentation",
+        "disposition": "intentional_goal_change",
+        "requirement": "RF-ALLHARNESS-001",
+        "purpose": "Typed outcome/flow/requirement/test-plan/technical links for the requested harness, diagnostics and finder scope"
+      },
+      {
+        "path": "benchmarks/harness-measurement/guard.ts",
+        "classification": "measurement_support",
+        "disposition": "intentional_goal_change",
+        "requirement": "RF-ALLHARNESS-001",
+        "purpose": "Frozen bounded measurement runner, guard, fixture, protocol and report; no rerun after renderer repair"
+      },
+      {
+        "path": "benchmarks/harness-measurement/prompt.md",
+        "classification": "measurement_support",
+        "disposition": "intentional_goal_change",
+        "requirement": "RF-ALLHARNESS-001",
+        "purpose": "Frozen bounded measurement runner, guard, fixture, protocol and report; no rerun after renderer repair"
+      },
+      {
+        "path": "benchmarks/harness-measurement/report.py",
+        "classification": "measurement_support",
+        "disposition": "intentional_goal_change",
+        "requirement": "RF-ALLHARNESS-001",
+        "purpose": "Frozen bounded measurement runner, guard, fixture, protocol and report; no rerun after renderer repair"
+      },
+      {
+        "path": "benchmarks/harness-measurement/run.py",
+        "classification": "measurement_support",
+        "disposition": "intentional_goal_change",
+        "requirement": "RF-ALLHARNESS-001",
+        "purpose": "Frozen bounded measurement runner, guard, fixture, protocol and report; no rerun after renderer repair"
+      },
+      {
+        "path": "benchmarks/harness-measurement/seed/greeter.go",
+        "classification": "measurement_support",
+        "disposition": "intentional_goal_change",
+        "requirement": "RF-ALLHARNESS-001",
+        "purpose": "Frozen bounded measurement runner, guard, fixture, protocol and report; no rerun after renderer repair"
+      },
+      {
+        "path": "docs/benchmarks/HARNESS_MEASUREMENT.md",
+        "classification": "measurement_support",
+        "disposition": "intentional_goal_change",
+        "requirement": "RF-ALLHARNESS-001",
+        "purpose": "Frozen bounded measurement runner, guard, fixture, protocol and report; no rerun after renderer repair"
+      },
+      {
+        "path": "integrations/mi-mcp/ALLHARNESS.md",
+        "classification": "provider_projection",
+        "disposition": "intentional_goal_change",
+        "requirement": "RF-ALLHARNESS-001",
+        "purpose": "Published provider snapshot and generic consumer contract, not a second operation map"
+      },
+      {
+        "path": "integrations/mi-mcp/provider-manifest.json",
+        "classification": "provider_projection",
+        "disposition": "intentional_goal_change",
+        "requirement": "RF-ALLHARNESS-001",
+        "purpose": "Published provider snapshot and generic consumer contract, not a second operation map"
+      },
+      {
+        "path": "internal/cli/axi_mode.go",
+        "classification": "cli_and_model_surface",
+        "disposition": "intentional_goal_change",
+        "requirement": "RF-ALLHARNESS-001",
+        "purpose": "Six small model operations, complete advanced CLI, provider schema/argv, budget-safe rendering"
+      },
+      {
+        "path": "internal/cli/find_files.go",
+        "classification": "cli_and_model_surface",
+        "disposition": "intentional_goal_change",
+        "requirement": "RF-ALLHARNESS-001",
+        "purpose": "Six small model operations, complete advanced CLI, provider schema/argv, budget-safe rendering"
+      },
+      {
+        "path": "internal/cli/find_files_test.go",
+        "classification": "verification_support",
+        "disposition": "intentional_goal_change",
+        "requirement": "RF-ALLHARNESS-001",
+        "purpose": "Committed regression contracts and diagnostic/finder fixtures; not used as an additional unit-test gate"
+      },
+      {
+        "path": "internal/cli/model_surface.go",
+        "classification": "cli_and_model_surface",
+        "disposition": "intentional_goal_change",
+        "requirement": "RF-ALLHARNESS-001",
+        "purpose": "Six small model operations, complete advanced CLI, provider schema/argv, budget-safe rendering"
+      },
+      {
+        "path": "internal/cli/nav.go",
+        "classification": "cli_and_model_surface",
+        "disposition": "intentional_goal_change",
+        "requirement": "RF-ALLHARNESS-001",
+        "purpose": "Six small model operations, complete advanced CLI, provider schema/argv, budget-safe rendering"
+      },
+      {
+        "path": "internal/cli/nav_diagnostics.go",
+        "classification": "cli_and_model_surface",
+        "disposition": "intentional_goal_change",
+        "requirement": "RF-ALLHARNESS-001",
+        "purpose": "Six small model operations, complete advanced CLI, provider schema/argv, budget-safe rendering"
+      },
+      {
+        "path": "internal/cli/nav_diagnostics_test.go",
+        "classification": "verification_support",
+        "disposition": "intentional_goal_change",
+        "requirement": "RF-ALLHARNESS-001",
+        "purpose": "Committed regression contracts and diagnostic/finder fixtures; not used as an additional unit-test gate"
+      },
+      {
+        "path": "internal/cli/provider_manifest.go",
+        "classification": "cli_and_model_surface",
+        "disposition": "intentional_goal_change",
+        "requirement": "RF-ALLHARNESS-001",
+        "purpose": "Six small model operations, complete advanced CLI, provider schema/argv, budget-safe rendering"
+      },
+      {
+        "path": "internal/cli/root.go",
+        "classification": "cli_and_model_surface",
+        "disposition": "intentional_goal_change",
+        "requirement": "RF-ALLHARNESS-001",
+        "purpose": "Six small model operations, complete advanced CLI, provider schema/argv, budget-safe rendering"
+      },
+      {
+        "path": "internal/daemon/server.go",
+        "classification": "daemon_dispatch",
+        "disposition": "intentional_goal_change",
+        "requirement": "RF-ALLHARNESS-001",
+        "purpose": "Dispatch additive operations through the existing daemon without hiding typed errors"
+      },
+      {
+        "path": "internal/model/diagnostics.go",
+        "classification": "typed_contract",
+        "disposition": "intentional_goal_change",
+        "requirement": "RF-ALLHARNESS-001",
+        "purpose": "Diagnostic and finder DTOs plus operation contract"
+      },
+      {
+        "path": "internal/model/find_files.go",
+        "classification": "typed_contract",
+        "disposition": "intentional_goal_change",
+        "requirement": "RF-ALLHARNESS-001",
+        "purpose": "Diagnostic and finder DTOs plus operation contract"
+      },
+      {
+        "path": "internal/model/types.go",
+        "classification": "typed_contract",
+        "disposition": "intentional_goal_change",
+        "requirement": "RF-ALLHARNESS-001",
+        "purpose": "Diagnostic and finder DTOs plus operation contract"
+      },
+      {
+        "path": "internal/output/diagnostics.go",
+        "classification": "output_contract",
+        "disposition": "intentional_goal_change",
+        "requirement": "RF-ALLHARNESS-001",
+        "purpose": "Structured diagnostics formatting and honest truncation/omission metadata"
+      },
+      {
+        "path": "internal/output/diagnostics_test.go",
+        "classification": "verification_support",
+        "disposition": "intentional_goal_change",
+        "requirement": "RF-ALLHARNESS-001",
+        "purpose": "Committed regression contracts and diagnostic/finder fixtures; not used as an additional unit-test gate"
+      },
+      {
+        "path": "internal/output/formatter.go",
+        "classification": "output_contract",
+        "disposition": "intentional_goal_change",
+        "requirement": "RF-ALLHARNESS-001",
+        "purpose": "Structured diagnostics formatting and honest truncation/omission metadata"
+      },
+      {
+        "path": "internal/output/truncator.go",
+        "classification": "output_contract",
+        "disposition": "intentional_goal_change",
+        "requirement": "RF-ALLHARNESS-001",
+        "purpose": "Structured diagnostics formatting and honest truncation/omission metadata"
+      },
+      {
+        "path": "internal/service/app.go",
+        "classification": "service_behavior",
+        "disposition": "intentional_goal_change",
+        "requirement": "RF-ALLHARNESS-001",
+        "purpose": "File/changed diagnostics selection and budgets or Git-aware file finder integration"
+      },
+      {
+        "path": "internal/service/diagnostics.go",
+        "classification": "service_behavior",
+        "disposition": "intentional_goal_change",
+        "requirement": "RF-ALLHARNESS-001",
+        "purpose": "File/changed diagnostics selection and budgets or Git-aware file finder integration"
+      },
+      {
+        "path": "internal/service/diagnostics_budget.go",
+        "classification": "service_behavior",
+        "disposition": "intentional_goal_change",
+        "requirement": "RF-ALLHARNESS-001",
+        "purpose": "File/changed diagnostics selection and budgets or Git-aware file finder integration"
+      },
+      {
+        "path": "internal/service/diagnostics_test.go",
+        "classification": "verification_support",
+        "disposition": "intentional_goal_change",
+        "requirement": "RF-ALLHARNESS-001",
+        "purpose": "Committed regression contracts and diagnostic/finder fixtures; not used as an additional unit-test gate"
+      },
+      {
+        "path": "internal/service/diagnostics_worktree_test.go",
+        "classification": "verification_support",
+        "disposition": "intentional_goal_change",
+        "requirement": "RF-ALLHARNESS-001",
+        "purpose": "Committed regression contracts and diagnostic/finder fixtures; not used as an additional unit-test gate"
+      },
+      {
+        "path": "internal/service/find_files.go",
+        "classification": "service_behavior",
+        "disposition": "intentional_goal_change",
+        "requirement": "RF-ALLHARNESS-001",
+        "purpose": "File/changed diagnostics selection and budgets or Git-aware file finder integration"
+      },
+      {
+        "path": "internal/service/find_files_test.go",
+        "classification": "verification_support",
+        "disposition": "intentional_goal_change",
+        "requirement": "RF-ALLHARNESS-001",
+        "purpose": "Committed regression contracts and diagnostic/finder fixtures; not used as an additional unit-test gate"
+      },
+      {
+        "path": "internal/worker/diagnostics.go",
+        "classification": "semantic_backend",
+        "disposition": "intentional_goal_change",
+        "requirement": "RF-ALLHARNESS-001",
+        "purpose": "Real backend diagnostics and safe partial/unavailable transport/session behavior"
+      },
+      {
+        "path": "internal/worker/diagnostics_partial_test.go",
+        "classification": "verification_support",
+        "disposition": "intentional_goal_change",
+        "requirement": "RF-ALLHARNESS-001",
+        "purpose": "Committed regression contracts and diagnostic/finder fixtures; not used as an additional unit-test gate"
+      },
+      {
+        "path": "internal/worker/diagnostics_test.go",
+        "classification": "verification_support",
+        "disposition": "intentional_goal_change",
+        "requirement": "RF-ALLHARNESS-001",
+        "purpose": "Committed regression contracts and diagnostic/finder fixtures; not used as an additional unit-test gate"
+      },
+      {
+        "path": "internal/worker/gopls.go",
+        "classification": "semantic_backend",
+        "disposition": "intentional_goal_change",
+        "requirement": "RF-ALLHARNESS-001",
+        "purpose": "Real backend diagnostics and safe partial/unavailable transport/session behavior"
+      },
+      {
+        "path": "internal/worker/lsp_client.go",
+        "classification": "semantic_backend",
+        "disposition": "intentional_goal_change",
+        "requirement": "RF-ALLHARNESS-001",
+        "purpose": "Real backend diagnostics and safe partial/unavailable transport/session behavior"
+      },
+      {
+        "path": "internal/worker/lsp_transport.go",
+        "classification": "semantic_backend",
+        "disposition": "intentional_goal_change",
+        "requirement": "RF-ALLHARNESS-001",
+        "purpose": "Real backend diagnostics and safe partial/unavailable transport/session behavior"
+      },
+      {
+        "path": "internal/worker/process.go",
+        "classification": "semantic_backend",
+        "disposition": "intentional_goal_change",
+        "requirement": "RF-ALLHARNESS-001",
+        "purpose": "Real backend diagnostics and safe partial/unavailable transport/session behavior"
+      },
+      {
+        "path": "internal/worker/pyright.go",
+        "classification": "semantic_backend",
+        "disposition": "intentional_goal_change",
+        "requirement": "RF-ALLHARNESS-001",
+        "purpose": "Real backend diagnostics and safe partial/unavailable transport/session behavior"
+      },
+      {
+        "path": "internal/worker/rust_analyzer.go",
+        "classification": "semantic_backend",
+        "disposition": "intentional_goal_change",
+        "requirement": "RF-ALLHARNESS-001",
+        "purpose": "Real backend diagnostics and safe partial/unavailable transport/session behavior"
+      },
+      {
+        "path": "internal/worker/tsserver.go",
+        "classification": "semantic_backend",
+        "disposition": "intentional_goal_change",
+        "requirement": "RF-ALLHARNESS-001",
+        "purpose": "Real backend diagnostics and safe partial/unavailable transport/session behavior"
+      },
+      {
+        "path": "measurement-contract.md",
+        "classification": "measurement_support",
+        "disposition": "intentional_goal_change",
+        "requirement": "RF-ALLHARNESS-001",
+        "purpose": "Frozen bounded measurement runner, guard, fixture, protocol and report; no rerun after renderer repair"
+      },
+      {
+        "path": "scripts/provider-snapshot.sh",
+        "classification": "provider_snapshot_tool",
+        "disposition": "intentional_goal_change",
+        "requirement": "RF-ALLHARNESS-001",
+        "purpose": "Regenerate the existing published descriptor snapshot"
+      },
+      {
+        "path": "skills/mi-lsp/SKILL.md",
+        "classification": "shared_skill",
+        "disposition": "intentional_goal_change",
+        "requirement": "RF-ALLHARNESS-001",
+        "purpose": "One small shared skill and existing distribution reference"
+      },
+      {
+        "path": "skills/mi-lsp/references/all-harnesses.md",
+        "classification": "shared_skill",
+        "disposition": "intentional_goal_change",
+        "requirement": "RF-ALLHARNESS-001",
+        "purpose": "One small shared skill and existing distribution reference"
+      },
+      {
+        "path": "testdata/diagnostics/README.md",
+        "classification": "verification_support",
+        "disposition": "intentional_goal_change",
+        "requirement": "RF-ALLHARNESS-001",
+        "purpose": "Committed regression contracts and diagnostic/finder fixtures; not used as an additional unit-test gate"
+      },
+      {
+        "path": "testdata/diagnostics/go/bad.go",
+        "classification": "verification_support",
+        "disposition": "intentional_goal_change",
+        "requirement": "RF-ALLHARNESS-001",
+        "purpose": "Committed regression contracts and diagnostic/finder fixtures; not used as an additional unit-test gate"
+      },
+      {
+        "path": "testdata/diagnostics/go/go.mod",
+        "classification": "verification_support",
+        "disposition": "intentional_goal_change",
+        "requirement": "RF-ALLHARNESS-001",
+        "purpose": "Committed regression contracts and diagnostic/finder fixtures; not used as an additional unit-test gate"
+      },
+      {
+        "path": "testdata/diagnostics/python/bad.py",
+        "classification": "verification_support",
+        "disposition": "intentional_goal_change",
+        "requirement": "RF-ALLHARNESS-001",
+        "purpose": "Committed regression contracts and diagnostic/finder fixtures; not used as an additional unit-test gate"
+      },
+      {
+        "path": "testdata/diagnostics/python/pyrightconfig.json",
+        "classification": "verification_support",
+        "disposition": "intentional_goal_change",
+        "requirement": "RF-ALLHARNESS-001",
+        "purpose": "Committed regression contracts and diagnostic/finder fixtures; not used as an additional unit-test gate"
+      },
+      {
+        "path": "testdata/diagnostics/roslyn/Broken.cs",
+        "classification": "verification_support",
+        "disposition": "intentional_goal_change",
+        "requirement": "RF-ALLHARNESS-001",
+        "purpose": "Committed regression contracts and diagnostic/finder fixtures; not used as an additional unit-test gate"
+      },
+      {
+        "path": "testdata/diagnostics/roslyn/Diagnostics.csproj",
+        "classification": "verification_support",
+        "disposition": "intentional_goal_change",
+        "requirement": "RF-ALLHARNESS-001",
+        "purpose": "Committed regression contracts and diagnostic/finder fixtures; not used as an additional unit-test gate"
+      },
+      {
+        "path": "testdata/diagnostics/rust/Cargo.toml",
+        "classification": "verification_support",
+        "disposition": "intentional_goal_change",
+        "requirement": "RF-ALLHARNESS-001",
+        "purpose": "Committed regression contracts and diagnostic/finder fixtures; not used as an additional unit-test gate"
+      },
+      {
+        "path": "testdata/diagnostics/rust/src/main.rs",
+        "classification": "verification_support",
+        "disposition": "intentional_goal_change",
+        "requirement": "RF-ALLHARNESS-001",
+        "purpose": "Committed regression contracts and diagnostic/finder fixtures; not used as an additional unit-test gate"
+      },
+      {
+        "path": "testdata/diagnostics/schema.json",
+        "classification": "verification_support",
+        "disposition": "intentional_goal_change",
+        "requirement": "RF-ALLHARNESS-001",
+        "purpose": "Committed regression contracts and diagnostic/finder fixtures; not used as an additional unit-test gate"
+      },
+      {
+        "path": "testdata/diagnostics/typescript/bad.ts",
+        "classification": "verification_support",
+        "disposition": "intentional_goal_change",
+        "requirement": "RF-ALLHARNESS-001",
+        "purpose": "Committed regression contracts and diagnostic/finder fixtures; not used as an additional unit-test gate"
+      },
+      {
+        "path": "testdata/diagnostics/typescript/tsconfig.json",
+        "classification": "verification_support",
+        "disposition": "intentional_goal_change",
+        "requirement": "RF-ALLHARNESS-001",
+        "purpose": "Committed regression contracts and diagnostic/finder fixtures; not used as an additional unit-test gate"
+      },
+      {
+        "path": "worker-dotnet/MiLsp.Worker/RoslynService.cs",
+        "classification": "semantic_backend",
+        "disposition": "intentional_goal_change",
+        "requirement": "RF-ALLHARNESS-001",
+        "purpose": "Real Roslyn diagnostic adapter"
+      }
+    ]
+  },
+  "criterion_dispositions": [
+    {
+      "criterion": 1,
+      "source": "verified: models six operations and short shared skill",
+      "runtime": "partial: diagnostics and find through actual native Pi; no blanket six-operation runtime claim"
+    },
+    {
+      "criterion": 2,
+      "source": "verified: published provider v2 is sole schema/argv authority",
+      "runtime": "verified for two actual model aliases; generic consumer source owned by MCP front"
+    },
+    {
+      "criterion": 3,
+      "source": "legacy advanced operations remain in provider/help",
+      "runtime": "explicit_incomplete: native fs.read/glob coexistence and legacy call parity not observed in this goal",
+      "owner": "MCP consumer and runtime verifier"
+    },
+    {
+      "criterion": 4,
+      "source": "shared skill instructs diagnostics after editing, no new hooks; unavailable is never clean",
+      "runtime": "partial: actual seeded TS2322; original post-fix changed result pending",
+      "owner": "existing native Claude Code assistant; harness adapter owns automatic callback"
+    },
+    {
+      "criterion": 5,
+      "source": "host configuration only; aliases do not add roles/grants",
+      "runtime": "owner-scoped finite readonly admission and real Pi accepted; server caller role not exposed, not inferred"
+    },
+    {
+      "criterion": 6,
+      "source": "one canonical skill with normal existing distribution",
+      "runtime": "explicit_incomplete: shared pool installed and used in Pi; four-harness loaded-and-used evidence not complete",
+      "owner": "harness distribution/runtime front"
+    }
+  ],
+  "c1_followup": {
+    "documentation_commit": "dfd47d968dc1397271f547652f96eb4d4ec480e4",
+    "scope": "two existing documentation files only: explicit workspace and compatible TypeScript server; no API/schema/permission/code change",
+    "verification": "C1 diff review, no additional C2 campaign"
+  },
+  "peer_criterion_dispositions": [
+    {
+      "requirement": "RF-HARNESS-DIAG-001",
+      "criterion": 1,
+      "subject": "backend routing",
+      "source_paths": [
+        "internal/worker/diagnostics.go",
+        "internal/worker/tsserver.go"
+      ],
+      "source_evidence": "Independent source approval of published f04; cited implementation/contract support is not a per-criterion runtime PASS",
+      "runtime_evidence": "Native Pi real TS2322/tsserver 1/1; other language backends not runtime-observed here",
+      "disposition": "partial_observed_or_source_only; no full-goal PASS",
+      "owner": "mi-lsp parent/runtime verifier"
+    },
+    {
+      "requirement": "RF-HARNESS-DIAG-001",
+      "criterion": 2,
+      "subject": "changed current worktree union",
+      "source_paths": [
+        "internal/service/diagnostics.go",
+        "internal/service/diagnostics_worktree_test.go"
+      ],
+      "source_evidence": "Independent source approval of published f04; cited implementation/contract support is not a per-criterion runtime PASS",
+      "runtime_evidence": "Original staged/unstaged/untracked post-fix native CC case pending; no zero/stale PASS",
+      "disposition": "partial_observed_or_source_only; no full-goal PASS",
+      "owner": "mi-lsp parent/runtime verifier"
+    },
+    {
+      "requirement": "RF-HARNESS-DIAG-001",
+      "criterion": 3,
+      "subject": "workspace and physical root safety",
+      "source_paths": [
+        "internal/service/diagnostics.go"
+      ],
+      "source_evidence": "Independent source approval of published f04; cited implementation/contract support is not a per-criterion runtime PASS",
+      "runtime_evidence": "Explicit valid physical workspace observed; cross-root/symlink/link-worktree runtime matrix not complete",
+      "disposition": "partial_observed_or_source_only; no full-goal PASS",
+      "owner": "mi-lsp parent/runtime verifier"
+    },
+    {
+      "requirement": "RF-HARNESS-DIAG-001",
+      "criterion": 4,
+      "subject": "bounded work and scheduling",
+      "source_paths": [
+        "internal/service/diagnostics.go",
+        "internal/service/diagnostics_budget.go",
+        "internal/worker/diagnostics.go"
+      ],
+      "source_evidence": "Independent source approval of published f04; cited implementation/contract support is not a per-criterion runtime PASS",
+      "runtime_evidence": "One file checked in 1434ms; stress and independent-backend scheduling not inferred from this sample",
+      "disposition": "partial_observed_or_source_only; no full-goal PASS",
+      "owner": "mi-lsp parent/runtime verifier"
+    },
+    {
+      "requirement": "RF-HARNESS-DIAG-001",
+      "criterion": 5,
+      "subject": "priority, totals and omissions",
+      "source_paths": [
+        "internal/output/diagnostics.go",
+        "internal/service/diagnostics_budget.go"
+      ],
+      "source_evidence": "Independent source approval of published f04; cited implementation/contract support is not a per-criterion runtime PASS",
+      "runtime_evidence": "Real TS error total and prior unavailable/truncated envelope observed; complete priority combinations not runtime-measured",
+      "disposition": "partial_observed_or_source_only; no full-goal PASS",
+      "owner": "mi-lsp parent/runtime verifier"
+    },
+    {
+      "requirement": "RF-HARNESS-DIAG-001",
+      "criterion": 6,
+      "subject": "completion barriers and restricted backend effects",
+      "source_paths": [
+        "internal/worker/tsserver.go",
+        "internal/worker/lsp_client.go",
+        "internal/worker/rust_analyzer.go",
+        "worker-dotnet/MiLsp.Worker/RoslynService.cs"
+      ],
+      "source_evidence": "Independent source approval of published f04; cited implementation/contract support is not a per-criterion runtime PASS",
+      "runtime_evidence": "Real synchronous TypeScript report observed; other backend barriers/effects remain source-reviewed, not all runtime-proven",
+      "disposition": "partial_observed_or_source_only; no full-goal PASS",
+      "owner": "mi-lsp parent/runtime verifier"
+    },
+    {
+      "requirement": "RF-HARNESS-FIND-001",
+      "criterion": 1,
+      "subject": "ranking and ties",
+      "source_paths": [
+        "internal/service/find_files.go"
+      ],
+      "source_evidence": "Independent source approval of published f04; cited implementation/contract support is not a per-criterion runtime PASS",
+      "runtime_evidence": "Bounded Git fixture and actual native sample match; exhaustive ranks/ties not native-proven",
+      "disposition": "partial_observed_or_source_only; no full-goal PASS",
+      "owner": "mi-lsp parent/runtime verifier"
+    },
+    {
+      "requirement": "RF-HARNESS-FIND-001",
+      "criterion": 2,
+      "subject": "glob/literal semantics",
+      "source_paths": [
+        "internal/service/find_files.go",
+        "internal/cli/find_files.go"
+      ],
+      "source_evidence": "Independent source approval of published f04; cited implementation/contract support is not a per-criterion runtime PASS",
+      "runtime_evidence": "Actual native *sample* glob returned one expected file; all glob/literal forms not native-observed",
+      "disposition": "partial_observed_or_source_only; no full-goal PASS",
+      "owner": "mi-lsp parent/runtime verifier"
+    },
+    {
+      "requirement": "RF-HARNESS-FIND-001",
+      "criterion": 3,
+      "subject": "native Git ignore and exact listing",
+      "source_paths": [
+        "internal/service/find_files.go"
+      ],
+      "source_evidence": "Independent source approval of published f04; cited implementation/contract support is not a per-criterion runtime PASS",
+      "runtime_evidence": "Integrated fixture checked ignore/negation; native result identifies Git; fallback backend matrix not complete",
+      "disposition": "partial_observed_or_source_only; no full-goal PASS",
+      "owner": "mi-lsp parent/runtime verifier"
+    },
+    {
+      "requirement": "RF-HARNESS-FIND-001",
+      "criterion": 4,
+      "subject": "regular files, safe paths and argv",
+      "source_paths": [
+        "internal/service/find_files.go",
+        "internal/cli/find_files.go"
+      ],
+      "source_evidence": "Independent source approval of published f04; cited implementation/contract support is not a per-criterion runtime PASS",
+      "runtime_evidence": "Integrated fixture checked outside symlink and CLI dash name; native SDK dash argument parity not claimed",
+      "disposition": "partial_observed_or_source_only; no full-goal PASS",
+      "owner": "mi-lsp parent/runtime verifier"
+    },
+    {
+      "requirement": "RF-HARNESS-FIND-001",
+      "criterion": 5,
+      "subject": "complete JSON budgets",
+      "source_paths": [
+        "internal/cli/find_files.go",
+        "internal/output/formatter.go"
+      ],
+      "source_evidence": "Independent source approval of published f04; cited implementation/contract support is not a per-criterion runtime PASS",
+      "runtime_evidence": "Integrated bounded fixture passed and actual native JSON untruncated; all budget combinations not native-measured",
+      "disposition": "partial_observed_or_source_only; no full-goal PASS",
+      "owner": "mi-lsp parent/runtime verifier"
+    },
+    {
+      "requirement": "RF-HARNESS-FIND-001",
+      "criterion": 6,
+      "subject": "cache TTL, refresh and revalidation",
+      "source_paths": [
+        "internal/service/find_files.go"
+      ],
+      "source_evidence": "Independent source approval of published f04; cited implementation/contract support is not a per-criterion runtime PASS",
+      "runtime_evidence": "Implementation/source review only for complete TTL/refresh/revalidation criterion; not independently runtime-proven here",
+      "disposition": "partial_observed_or_source_only; no full-goal PASS",
+      "owner": "mi-lsp parent/runtime verifier"
+    },
+    {
+      "requirement": "RF-HARNESS-FIND-001",
+      "criterion": 7,
+      "subject": "stable typed result and honest counts",
+      "source_paths": [
+        "internal/model/find_files.go",
+        "internal/cli/find_files.go"
+      ],
+      "source_evidence": "Independent source approval of published f04; cited implementation/contract support is not a per-criterion runtime PASS",
+      "runtime_evidence": "Native Git result matched1 and complete typed envelope observed; every failure branch not native-proven",
+      "disposition": "partial_observed_or_source_only; no full-goal PASS",
+      "owner": "mi-lsp parent/runtime verifier"
+    }
+  ],
+  "peer_matrix_review_boundary": "Parent C1 data supplement after independent addendum: all 13 peer criteria explicitly disposed. No repeated C2 campaign or broad audit; remaining unobserved behavior retains owner and incomplete status.",
+  "c1_fact_correction": "Independent C1 addendum predates receipt of completed secondary install. Its retained12.3/no-write description is superseded by original local job log. Source/doc review unaffected. No new remote probe, audit campaign or semantic/model query."
+}
