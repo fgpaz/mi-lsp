@@ -199,99 +199,12 @@ validate_worker_manifest() {
   manifest="$1"
   worker_root="$2"
   worker_rid="$3"
-  manifest_parser=""
-  for parser_candidate in python3 python; do
-    if command -v "$parser_candidate" >/dev/null 2>&1 && "$parser_candidate" -c 'import sys; raise SystemExit(0 if sys.version_info[0] == 3 else 1)' >/dev/null 2>&1; then
-      manifest_parser="$(command -v "$parser_candidate")"
-      break
-    fi
-  done
-  [ -n "$manifest_parser" ] || { echo "Python 3 is required to parse worker manifests; refusing installation." >&2; return 1; }
   [ -f "$manifest" ] || { echo "Worker manifest not found: $manifest" >&2; return 1; }
   [ -d "$worker_root" ] || { echo "Worker root is not a directory: $worker_root" >&2; return 1; }
   assert_confined_tree "$worker_root" || return 1
-  "$manifest_parser" - "$manifest" "$worker_root" "$worker_rid" <<'PY'
-import hashlib
-import json
-import os
-import re
-import sys
-
-manifest_path, worker_root, expected_rid = sys.argv[1:]
-def fail(message):
-    raise SystemExit(message)
-
-try:
-    with open(manifest_path, 'r', encoding='utf-8') as handle:
-        document = json.load(handle)
-except (OSError, UnicodeError, json.JSONDecodeError) as exc:
-    fail('Worker manifest is not valid UTF-8 JSON: %s' % exc)
-if not isinstance(document, dict):
-    fail('Worker manifest root must be a JSON object.')
-if document.get('schema') != 'mi-lsp-worker-manifest/v1':
-    fail('Worker manifest schema is invalid.')
-if document.get('rid') != expected_rid:
-    fail('Worker manifest RID does not match the selected worker RID.')
-if document.get('protocol') != 'mi-lsp-v1.1':
-    fail('Worker manifest protocol is invalid.')
-entries = document.get('files')
-file_count = document.get('file_count')
-if not isinstance(file_count, int) or isinstance(file_count, bool) or file_count < 1:
-    fail('Worker manifest file_count must be a positive integer.')
-if not isinstance(entries, list) or file_count != len(entries):
-    fail('Worker manifest file_count does not match files.')
-
-root = os.path.abspath(worker_root)
-expected = {}
-for entry in entries:
-    if not isinstance(entry, dict):
-        fail('Worker manifest contains a non-object file entry.')
-    path = entry.get('path')
-    size = entry.get('size')
-    digest = entry.get('sha256')
-    if not isinstance(path, str) or not path or '\\' in path or path.startswith('/') or re.match(r'^[A-Za-z]:', path):
-        fail('Worker manifest contains an unsafe file path.')
-    parts = path.split('/')
-    if any(part in ('', '.', '..') for part in parts) or path == 'worker-manifest.json':
-        fail('Worker manifest contains an unsafe file path.')
-    candidate = os.path.abspath(os.path.join(root, *parts))
-    if os.path.commonpath((root, candidate)) != root:
-        fail('Worker manifest file escaped its worker root.')
-    if not isinstance(size, int) or isinstance(size, bool) or size < 0:
-        fail('Worker manifest file size is invalid.')
-    if not isinstance(digest, str) or not re.fullmatch(r'[0-9a-fA-F]{64}', digest):
-        fail('Worker manifest file hash is invalid.')
-    if path in expected:
-        fail('Worker manifest contains duplicate file paths.')
-    if not os.path.isfile(candidate) or os.path.islink(candidate):
-        fail('Worker manifest references a missing or linked file: %s' % path)
-    actual_size = os.path.getsize(candidate)
-    if actual_size != size:
-        fail('Worker manifest file size mismatch: %s' % path)
-    digest_actual = hashlib.sha256()
-    with open(candidate, 'rb') as handle:
-        for chunk in iter(lambda: handle.read(1024 * 1024), b''):
-            digest_actual.update(chunk)
-    if digest_actual.hexdigest().lower() != digest.lower():
-        fail('Worker manifest file hash mismatch: %s' % path)
-    expected[path] = candidate
-
-actual = {}
-for dirpath, dirnames, filenames in os.walk(root, topdown=True, followlinks=False):
-    for dirname in list(dirnames):
-        full = os.path.join(dirpath, dirname)
-        if os.path.islink(full):
-            fail('Worker root contains a linked directory.')
-    for filename in filenames:
-        full = os.path.join(dirpath, filename)
-        if os.path.islink(full):
-            fail('Worker root contains a linked file.')
-        relative = os.path.relpath(full, root).replace(os.sep, '/')
-        if relative != 'worker-manifest.json':
-            actual[relative] = full
-if set(actual) != set(expected):
-    fail('Worker manifest file list does not match the extracted worker bundle.')
-PY
+  require_cmd node
+  script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+  node "$script_dir/validate-worker-manifest.js" "$manifest" "$worker_root" "$worker_rid"
 }
 
 download() {

@@ -1,0 +1,6 @@
+[
+  {"name":"local default","project":{"schema":"sandinas-project/v2","wiki":{"mode":"local","canon_root":".docs/wiki","ae_root":".docs/ae","governance_file":".docs/wiki/00_governance.md"}}},
+  {"name":"path alternate","project":{"schema":"sandinas-project/v2","wiki":{"mode":"path","canon_root":"docs/wiki","ae_root":"docs/ae","governance_file":"docs/wiki/governance.md"}}},
+  {"name":"external repo","project":{"schema":"sandinas-project/v2","wiki":{"mode":"repo","canon_root":"cache/wiki","ae_root":"cache/wiki/ae","governance_file":"cache/wiki/governance.md","external":{"repository":"org/wiki","ref":null,"subpath":null,"writable":false}}}},
+  {"name":"legacy","legacy":{"governance":"Ingenieria/00_gobierno_documental.md","behavior":"discover without moving legacy content"}}
+]
