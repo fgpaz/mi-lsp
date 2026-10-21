@@ -46,15 +46,26 @@ type harnessDoc struct {
 }
 
 func (a *App) validateHarness(ctx context.Context, request model.CommandRequest) (model.Envelope, error) {
-	if blockedEnv, err := a.governanceGateEnvelope(ctx, request, "nav.wiki.validate-harness"); err != nil {
-		return model.Envelope{}, err
-	} else if blockedEnv != nil {
-		return *blockedEnv, nil
-	}
-
 	registration, project, err := a.resolveWorkspaceWithProjectForNavigation(request)
 	if err != nil {
 		return model.Envelope{}, err
+	}
+	setupSource := docgraph.ResolveSetupWikiSource(registration.Root)
+	if setupSource.Configured && setupSource.State != "resolved" {
+		reason := setupSource.ReasonCode
+		if reason == "" {
+			reason = "setup_wiki_source_unavailable"
+		}
+		hint := "Setup wiki source unavailable: " + reason
+		result := model.HarnessValidationResult{HarnessProtocol: harnessProtocolV1, HarnessReadiness: "blocked", HarnessVerdict: "BLOCKED", HarnessBlockers: []string{hint}}
+		return model.Envelope{Ok: true, Workspace: registration.Name, Backend: "harness", Items: []model.HarnessValidationResult{result}, Warnings: []string{"setup_wiki_source_pending:" + reason}, Hint: hint}, nil
+	}
+	if !setupSource.Configured {
+		if blockedEnv, err := a.governanceGateEnvelope(ctx, request, "nav.wiki.validate-harness"); err != nil {
+			return model.Envelope{}, err
+		} else if blockedEnv != nil {
+			return *blockedEnv, nil
+		}
 	}
 	wikiRoots, err := harnessWikiRoots(registration, project)
 	if err != nil {
@@ -141,11 +152,32 @@ func filterGovernedWikiDocRecordsInRoots(root string, records []model.DocRecord,
 	filtered := make([]model.DocRecord, 0, len(records))
 	filtered = append(filtered, filterHarnessDocRecordsByIDs(records, ids)...)
 	for _, record := range records {
-		if harnessRecordMatchesPaths(record, paths) {
+		if harnessRecordMatchesPathsInRoots(root, record, paths, wikiRoots) {
 			filtered = append(filtered, record)
 		}
 	}
 	return preferCanonicalHarnessDocRecords(filtered)
+}
+
+func harnessRecordMatchesPathsInRoots(root string, record model.DocRecord, paths []string, wikiRoots []string) bool {
+	if harnessRecordMatchesPaths(record, paths) {
+		return true
+	}
+	documentPath := docgraph.ResolveDocumentPath(root, record.Path)
+	for _, wikiRoot := range wikiRoots {
+		rootPath := docgraph.ResolveDocumentPath(root, wikiRoot)
+		relative, err := filepath.Rel(rootPath, documentPath)
+		if err != nil || filepath.IsAbs(relative) || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
+			continue
+		}
+		relative = normalizeHarnessScopePath(filepath.ToSlash(relative))
+		for _, requested := range paths {
+			if relative == normalizeHarnessScopePath(requested) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func harnessWikiRoots(registration model.WorkspaceRegistration, project model.ProjectFile) ([]string, error) {
@@ -165,7 +197,7 @@ func harnessWikiRoots(registration model.WorkspaceRegistration, project model.Pr
 	seen := make(map[string]struct{}, len(roots))
 	for _, root := range roots {
 		root = filepath.ToSlash(filepath.Clean(filepath.FromSlash(strings.TrimSpace(root))))
-		if root == "" || filepath.IsAbs(root) {
+		if root == "" || root == "." {
 			continue
 		}
 		if _, ok := seen[root]; ok {
@@ -421,7 +453,7 @@ func loadHarnessDocs(root string, records []model.DocRecord) []harnessDoc {
 			continue
 		}
 		seen[key] = struct{}{}
-		path := filepath.Join(root, filepath.FromSlash(filepath.ToSlash(record.Path)))
+		path := docgraph.ResolveDocumentPath(root, record.Path)
 		body, err := os.ReadFile(path)
 		if err != nil {
 			docs = append(docs, harnessDoc{record: record})
@@ -736,16 +768,24 @@ func harnessRefStatus(root string, index map[string]struct{}, fromPath string, r
 		path += ".md"
 	}
 	candidates := []string{path}
-	if !strings.Contains(path, "/") {
-		candidates = append(candidates, filepath.ToSlash(filepath.Join(".docs", "wiki", path)))
-	} else if !strings.HasPrefix(path, "../") && !strings.HasPrefix(path, ".docs/wiki/") {
-		candidates = append(candidates, filepath.ToSlash(filepath.Join(".docs", "wiki", path)))
+	pathHasRoot := false
+	for _, wikiRoot := range wikiRoots {
+		rootPrefix := strings.TrimSuffix(filepath.ToSlash(strings.TrimSpace(wikiRoot)), "/") + "/"
+		if rootPrefix != "/" && strings.HasPrefix(strings.ToLower(path), strings.ToLower(rootPrefix)) {
+			pathHasRoot = true
+			break
+		}
+	}
+	if !pathHasRoot && !strings.HasPrefix(path, "../") && !filepath.IsAbs(filepath.FromSlash(path)) {
+		for _, wikiRoot := range wikiRoots {
+			candidates = append(candidates, filepath.ToSlash(filepath.Join(filepath.FromSlash(wikiRoot), filepath.FromSlash(path))))
+		}
 	}
 	for _, candidate := range candidates {
 		if !docgraph.SafeRouteDocument(root, candidate, wikiRoots) {
 			continue
 		}
-		if _, err := os.Stat(filepath.Join(root, filepath.FromSlash(candidate))); err == nil {
+		if _, err := os.Stat(docgraph.ResolveDocumentPath(root, candidate)); err == nil {
 			_, indexed := index[normalizeHarnessRef(candidate)]
 			// Evidence outside the governed wiki is not part of the docs index.
 			return true, docgraph.IsGovernedWikiDocument(root, candidate, wikiRoots) && !indexed

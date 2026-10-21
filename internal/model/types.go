@@ -79,13 +79,16 @@ type WikiInventoryItem struct {
 	Layers            map[string]int `json:"layers,omitempty"`
 }
 
-// WikiRootResolution is one portable wiki-root item from nav.wiki-root.
+// WikiRootResolution is one resolved wiki-root item from nav.wiki-root. Setup's
+// machine-local source may require an absolute path when it is on another volume.
 type WikiRootResolution struct {
 	WikiRoot      string `json:"wiki_root"`
 	Role          string `json:"role,omitempty"`
 	Workspace     string `json:"workspace,omitempty"`
 	GovernanceDoc string `json:"governance_doc"`
 	ResolvedFrom  string `json:"resolved_from"`
+	State         string `json:"state,omitempty"`
+	ReasonCode    string `json:"reason_code,omitempty"`
 	ID            string `json:"id,omitempty"`
 }
 

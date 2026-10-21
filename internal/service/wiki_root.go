@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"os"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -37,7 +38,9 @@ func (a *App) wikiRoot(_ context.Context, request model.CommandRequest) (model.E
 	}
 	warnings := []string{}
 	for _, item := range items {
-		if item.GovernanceDoc == "" {
+		if item.State == "pending" {
+			warnings = append(warnings, fmt.Sprintf("wiki_source_pending:%s", item.ReasonCode))
+		} else if item.GovernanceDoc == "" {
 			warnings = append(warnings, fmt.Sprintf("governance source unresolved for canon %q; no document path asserted", item.ID))
 		}
 	}
@@ -51,6 +54,10 @@ func (a *App) wikiRoot(_ context.Context, request model.CommandRequest) (model.E
 }
 
 func wikiRootItems(registration model.WorkspaceRegistration, project model.ProjectFile, role string) ([]model.WikiRootResolution, error) {
+	setupSource := docgraph.ResolveSetupWikiSource(registration.Root)
+	if setupSource.Configured {
+		return []model.WikiRootResolution{setupWikiRootItem(registration, setupSource)}, nil
+	}
 	if len(project.Canons) > 0 {
 		return wikiRootItemsFromCanons(registration, project, role)
 	}
@@ -58,6 +65,28 @@ func wikiRootItems(registration model.WorkspaceRegistration, project model.Proje
 		return wikiRootItemsFromCanonLinks(registration, role)
 	}
 	return []model.WikiRootResolution{defaultWikiRootItem(registration.Name)}, nil
+}
+
+func setupWikiRootItem(registration model.WorkspaceRegistration, source docgraph.SetupWikiSource) model.WikiRootResolution {
+	resolvedFrom := "setup"
+	if source.Source != "" {
+		resolvedFrom += "." + source.Source
+	}
+	item := model.WikiRootResolution{
+		Workspace:    registration.Name,
+		ResolvedFrom: resolvedFrom,
+		State:        source.State,
+		ReasonCode:   source.ReasonCode,
+	}
+	if source.State != "resolved" || source.Root == "" {
+		return item
+	}
+	item.WikiRoot = docgraph.WorkspacePathForSource(registration.Root, source.Root)
+	governance := filepath.Join(source.Root, canonGovernanceFile)
+	if info, err := os.Lstat(governance); err == nil && info.Mode().IsRegular() && info.Mode()&os.ModeSymlink == 0 {
+		item.GovernanceDoc = docgraph.WorkspacePathForSource(registration.Root, governance)
+	}
+	return item
 }
 
 func wikiRootItemsFromCanons(registration model.WorkspaceRegistration, project model.ProjectFile, role string) ([]model.WikiRootResolution, error) {

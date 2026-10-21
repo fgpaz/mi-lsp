@@ -11,9 +11,17 @@ import (
 	"github.com/fgpaz/mi-lsp/internal/wikisource"
 )
 
-// CanonicalWikiRoots returns workspace-relative roots without introducing a
-// new authority or discovering arbitrary sibling directories.
+// CanonicalWikiRoots returns roots from declared canons or the local Setup
+// source; it never discovers arbitrary sibling directories. A Setup root is
+// workspace-relative when possible and absolute only across filesystem volumes.
 func CanonicalWikiRoots(root string) ([]string, error) {
+	setupSource := ResolveSetupWikiSource(root)
+	if setupSource.Configured {
+		if setupSource.State != "resolved" || setupSource.Root == "" {
+			return nil, nil
+		}
+		return []string{WorkspacePathForSource(root, setupSource.Root)}, nil
+	}
 	canons, err := loadProjectCanons(root)
 	if err != nil {
 		return nil, err
@@ -37,20 +45,19 @@ func CanonicalWikiRoots(root string) ([]string, error) {
 // canonical navigation.
 func IsGovernedWikiDocument(root string, path string, wikiRoots []string) bool {
 	path = strings.ReplaceAll(strings.TrimSpace(path), `\`, "/")
-	if path == "" || isAbsoluteDeclaredPath(path) {
+	if path == "" {
 		return false
 	}
-	path = filepath.ToSlash(filepath.Clean(filepath.FromSlash(path)))
-	target, err := filepath.Abs(filepath.Join(root, filepath.FromSlash(path)))
+	target, err := filepath.Abs(ResolveDocumentPath(root, path))
 	if err != nil {
 		return false
 	}
 	for _, wikiRoot := range wikiRoots {
 		wikiRoot = strings.ReplaceAll(strings.TrimSpace(wikiRoot), `\`, "/")
-		if wikiRoot == "" || isAbsoluteDeclaredPath(wikiRoot) {
+		if wikiRoot == "" {
 			continue
 		}
-		base, err := filepath.Abs(filepath.Join(root, filepath.FromSlash(wikiRoot)))
+		base, err := filepath.Abs(ResolveDocumentPath(root, wikiRoot))
 		if err != nil || !pathHasDirPrefix(base, target) || filepath.Clean(base) == filepath.Clean(target) {
 			continue
 		}
@@ -75,7 +82,7 @@ func DeclaresDocumentID(root, path, id string) bool {
 	if err != nil || !safeRouteDocument(root, path, roots) {
 		return false
 	}
-	content, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(path)))
+	content, err := os.ReadFile(ResolveDocumentPath(root, path))
 	if err != nil {
 		return false
 	}
@@ -223,16 +230,23 @@ func ResolvedCanonGovernanceDocument(root, canonRoot string) (string, error) {
 // Check each component beneath an authorized root; a symlink must not turn a
 // declared read-only document path into access to another authority.
 func safeRouteDocument(root, relative string, canonRoots []string) bool {
-	if isAbsoluteDeclaredPath(relative) || strings.TrimSpace(relative) == "" {
+	if strings.TrimSpace(relative) == "" {
 		return false
 	}
-	target, err := filepath.Abs(filepath.Join(root, filepath.FromSlash(relative)))
+	absoluteDocument := isAbsoluteDeclaredPath(relative)
+	target, err := filepath.Abs(ResolveDocumentPath(root, relative))
 	if err != nil {
 		return false
 	}
-	bases := []string{root}
+	bases := []string{}
+	if !absoluteDocument {
+		bases = append(bases, root)
+	}
 	for _, canonRoot := range canonRoots {
-		bases = append(bases, filepath.Join(root, filepath.FromSlash(canonRoot)))
+		if absoluteDocument && !isAbsoluteDeclaredPath(canonRoot) {
+			continue
+		}
+		bases = append(bases, ResolveDocumentPath(root, canonRoot))
 	}
 	for _, base := range bases {
 		base, err = filepath.Abs(base)

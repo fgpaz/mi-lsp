@@ -324,6 +324,13 @@ func IndexWorkspaceDocsWithSourcesWithProgressPriorWithBindings(ctx context.Cont
 		return nil, nil, nil, nil, nil, nil, warnings, canonErr
 	}
 	candidates = mergeDocCandidates(candidates, canonCandidates)
+	setupCandidates, setupWarnings, setupErr := collectSetupWikiDocCandidates(ctx, root, profile)
+	warnings = append(warnings, setupWarnings...)
+	if setupErr != nil {
+		return nil, nil, nil, nil, nil, nil, warnings, setupErr
+	}
+	setupCandidates = excludeExistingDocSources(candidates, setupCandidates)
+	candidates = mergeDocCandidates(candidates, setupCandidates)
 	if err := reportProgress(ctx, progress, Progress{
 		Stage:      "docs.collect",
 		Path:       fmt.Sprintf("elapsed_ms=%d", time.Since(collectStarted).Milliseconds()),
@@ -897,6 +904,62 @@ func collectCanonDocCandidates(ctx context.Context, root string, profile model.D
 		}
 	}
 	return items, warnings, nil
+}
+
+func collectSetupWikiDocCandidates(ctx context.Context, workspaceRoot string, profile model.DocsReadProfile) ([]docCandidate, []string, error) {
+	source := ResolveSetupWikiSource(workspaceRoot)
+	if !source.Configured {
+		return nil, nil, nil
+	}
+	if source.State != "resolved" || source.Root == "" {
+		reason := source.ReasonCode
+		if reason == "" {
+			reason = "setup_wiki_source_unavailable"
+		}
+		return nil, []string{"setup_wiki_docs_skipped:" + reason}, nil
+	}
+	items := make([]docCandidate, 0)
+	err := filepath.WalkDir(source.Root, func(path string, entry os.DirEntry, walkErr error) error {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if walkErr != nil {
+			return walkErr
+		}
+		if entry.Type()&os.ModeSymlink != 0 {
+			if entry.IsDir() {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if entry.IsDir() {
+			if entry.Name() == ".git" {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		switch strings.ToLower(filepath.Ext(entry.Name())) {
+		case ".md", ".mdown", ".markdown":
+		default:
+			return nil
+		}
+		logicalPath := WorkspacePathForSource(workspaceRoot, path)
+		items = append(items, docCandidate{
+			path:         path,
+			relativePath: logicalPath,
+			family:       "generic",
+			layer:        DetectLayerForPath(profile, logicalPath),
+			priority:     len(profile.Families) + 30,
+		})
+		return nil
+	})
+	if err != nil {
+		if ctx.Err() != nil {
+			return nil, nil, ctx.Err()
+		}
+		return nil, []string{"setup_wiki_docs_skipped:setup_wiki_walk_failed"}, nil
+	}
+	return items, nil, nil
 }
 
 func walkCanonMarkdown(ctx context.Context, workspaceRoot string, canon workspace.ResolvedCanon, profile model.DocsReadProfile) ([]docCandidate, error) {
