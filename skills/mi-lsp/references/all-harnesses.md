@@ -33,11 +33,17 @@ Solo donde se use el backend TypeScript se necesita una distribución compatible
 
 ## Smoke exacto de execute para el padre
 
+El cuerpo de `execute` en mi-mcp es el cuerpo de una función async: lo que devuelve es el resultado. Ese sandbox no define `console`, así que `console.log(...)` corta la llamada con `script_error` «console is not defined» (observado en mi-mcp 0.3.139) y no imprime nada. El smoke entrega un único `return` estructurado:
+
 ```js
-console.log(await lsp.diagnostics({workspace: "project", file: "src/main.go", max_items: 10}));
-console.log(await fs.find({workspace: "project", pattern: "*.go", top: 5, budget_bytes: 2048}));
-console.log(typeof fs.read, typeof fs.glob); // helpers previos deben coexistir
+const diagnostics = await lsp.diagnostics({workspace: "project", file: "src/main.go", max_items: 10});
+const files = await fs.find({workspace: "project", pattern: "*.go", top: 5, budget_bytes: 2048});
+return {diagnostics, files, helpers: {read: typeof fs.read, glob: typeof fs.glob}}; // helpers previos deben coexistir
 ```
+
+Un solo resultado → `return await lsp.diagnostics({...});`. Varios resultados independientes → un único `return` con objeto o array coherente, sin pérdida; si pueden ir en paralelo, `Promise.all` (o `Promise.allSettled` cuando un fallo no debe borrar el resto) y el resultado sigue siendo ese `return`.
+
+Compatibilidad por backend y versión, no corte universal: el contrato de `return` está acreditado para el sandbox `execute` de mi-mcp en 0.3.139 (source `core/sandbox/child.go` y `core/sandbox/scriptapi.go` de fgpaz/mi-mcp; evidencia de runtime: `script_error` «console is not defined»). Para otra versión u otro backend, verificar el contrato vigente antes de asumirlo. Un cuerpo `execute` que imprime con `console.log` queda legacy para ese backend: etiquetarlo, no borrarlo, y no generalizarlo a otras superficies. La herramienta `codemode` del harness es otra superficie y sí expone `console.log`, `text()` y `return` de nivel superior según su propio contrato; `console.log` también es válido en Node. El smoke lo ejecuta el padre en su host: esta corrección documental no lo corre ni lo sustituye.
 
 Cambiar workspace/path por fixture real del host. Diagnostics requiere exactamente file o changed:true; base solo con changed. Registrar respuestas/errores, versión, host, harness, backend, truncamiento y presupuesto. Ausencia de backend, forbidden o alias ausente es evidencia de fallo/degradación, nunca PASS. La medición antes/después minimax/longcat y el smoke manual execute de ambos hosts pertenecen al padre. Caso TS: backend2322 → corregir → 0 sin stale. El tras-edit automático lo acredita jefe-harness-web con su adaptador, no las llamadas manuales. H1Yoga binding39 es otro pendiente de C165, no evidencia ni bloqueo implícito de nuestro smoke.
 

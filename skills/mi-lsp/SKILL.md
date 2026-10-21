@@ -31,13 +31,44 @@ Metadata alone or an older gateway (CLI129) does not make them executable:
 ```js
 const files = await fs.find({pattern: "*.go", workspace: "project", max_items: 10});
 const context = await lsp.intent({question: "where is request routing?", workspace: "project"});
-console.log({files, context});
+return {files, context};
 ```
 
 ```js
-console.log(await lsp.read({ranges: ["src/router.go:20-80"], workspace: "project"}));
-console.log(await lsp.diagnostics({file: "src/router.go", workspace: "project"}));
+const read = await lsp.read({ranges: ["src/router.go:20-80"], workspace: "project"});
+const diagnostics = await lsp.diagnostics({file: "src/router.go", workspace: "project"});
+return {read, diagnostics};
 ```
+
+### `execute` body: the returned value is the result
+
+- The body of a mi-mcp `execute` call is an async function body and **what it
+  returns is the result**. One result → `return await lsp.intent({...});`.
+  Several results → one single `return` carrying an object or array, so no
+  result is dropped.
+- The mi-mcp sandbox does not define `console`: a `console.log(...)` inside that
+  body ends the call with `script_error` ("console is not defined") and prints
+  nothing. Observed on mi-mcp 0.3.139; the durable rule comes from the sandbox
+  source in fgpaz/mi-mcp (`core/sandbox/child.go`, `core/sandbox/scriptapi.go`):
+  the exported value of the body is the delivered result, and `text()`/`json()`
+  stay available as the published payload channel. A body that only declares
+  variables and never returns delivers an empty result.
+- Independent calls may run concurrently (`Promise.all`, or `Promise.allSettled`
+  when one failure must not discard the others); the results still travel in that
+  one structured `return`.
+- **This is not the harness `codemode` tool.** That other surface has its own
+  contract, where `console.log`, `text(value)` and a top-level `return` are
+  valid. `console.log` is also valid in Node, for example in the `.mjs` scripts
+  of this repo. Read every example against the backend that runs it; nothing
+  here replaces `console` globally.
+- **Compatibility is per backend and version, not a universal cut.** The `return`
+  contract above is credited for the mi-mcp `execute` sandbox as observed on
+  0.3.139. For another version or another backend, check the current contract
+  before assuming it.
+- **Legacy examples.** An `execute` body that prints with `console.log` (for
+  example `console.log(await lsp.read({...}))`) is outdated for that backend
+  only: label it legacy instead of deleting it, and never generalize it to
+  another surface.
 
 After each edit, invoke diagnostics for edited files (or `changed: true` for a
 batch), inspect errors and repair relevant ones before requesting parent tests.
