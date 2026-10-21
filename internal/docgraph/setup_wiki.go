@@ -229,3 +229,40 @@ func ResolveDocumentPath(workspaceRoot, documentPath string) string {
 	}
 	return filepath.Clean(filepath.Join(workspaceRoot, filepath.FromSlash(documentPath)))
 }
+
+func setupWikiGovernanceDocument(workspaceRoot string, source SetupWikiSource) (path, displayPath, sourceKind, reasonCode string) {
+	if source.State != "resolved" || strings.TrimSpace(source.Root) == "" {
+		return "", "", "", firstNonEmptySetupReason(source.ReasonCode, "setup_wiki_source_unavailable")
+	}
+	for _, candidate := range []struct {
+		name       string
+		sourceKind string
+	}{
+		{name: canonGovernanceFileName, sourceKind: "setup"},
+		{name: legacyGovernanceFileName, sourceKind: "setup_legacy"},
+	} {
+		path := filepath.Join(source.Root, candidate.name)
+		info, err := os.Lstat(path)
+		if errors.Is(err, os.ErrNotExist) {
+			continue
+		}
+		if err != nil {
+			return "", "", "", "setup_governance_source_unreadable"
+		}
+		if !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 {
+			return "", "", "", "setup_governance_source_unsafe"
+		}
+		return filepath.Clean(path), WorkspacePathForSource(workspaceRoot, path), candidate.sourceKind, ""
+	}
+	path = filepath.Join(source.Root, canonGovernanceFileName)
+	return filepath.Clean(path), WorkspacePathForSource(workspaceRoot, path), "setup", ""
+}
+
+func firstNonEmptySetupReason(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return strings.TrimSpace(value)
+		}
+	}
+	return "setup_wiki_source_unavailable"
+}

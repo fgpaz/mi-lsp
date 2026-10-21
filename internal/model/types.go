@@ -893,6 +893,8 @@ type GovernanceStatus struct {
 	BlockingRules        []string                    `json:"blocking_rules,omitempty"`
 	NumberingRecommended bool                        `json:"numbering_recommended,omitempty"`
 	Sync                 string                      `json:"sync,omitempty"`
+	State                string                      `json:"state,omitempty"`
+	ReasonCode           string                      `json:"reason_code,omitempty"`
 	IndexSync            string                      `json:"index_sync,omitempty"`
 	IndexSyncDetails     *GovernanceIndexSyncDetails `json:"index_sync_details,omitempty"`
 	AECanon              AECanonStatus               `json:"ae_canon,omitempty"`

@@ -36,12 +36,10 @@ func (a *App) validateSource(ctx context.Context, request model.CommandRequest) 
 		result := model.WikiSourceValidationResult{WikiSourceProtocol: wikiSourceProtocolV1, WikiSourceReadiness: "blocked", WikiSourceVerdict: "BLOCKED", WikiSourceBlockers: []string{hint}, NavigationReadiness: "blocked", NavigationBlockers: []string{hint}}
 		return model.Envelope{Ok: true, Workspace: registration.Name, Backend: "wiki.source", Items: []model.WikiSourceValidationResult{result}, Warnings: []string{"setup_wiki_source_pending:" + reason}, Hint: hint}, nil
 	}
-	if !setupSource.Configured {
-		if blockedEnv, err := a.governanceGateEnvelope(ctx, request, "nav.wiki.validate-source"); err != nil {
-			return model.Envelope{}, err
-		} else if blockedEnv != nil {
-			return *blockedEnv, nil
-		}
+	if blockedEnv, err := a.governanceGateEnvelope(ctx, request, "nav.wiki.validate-source"); err != nil {
+		return model.Envelope{}, err
+	} else if blockedEnv != nil {
+		return *blockedEnv, nil
 	}
 	wikiRoots, err := harnessWikiRoots(registration, project)
 	if err != nil {

@@ -407,7 +407,7 @@ func (a *App) enrichWorkspaceReadiness(ctx context.Context, report workspace.Wor
 		if governance.Blocked {
 			reasons = append(reasons, "governance_blocked")
 		}
-		if governance.HumanDoc == "" || !fileExists(filepath.Join(registration.Root, governance.HumanDoc)) {
+		if governance.HumanDoc == "" || !fileExists(docgraph.ResolveDocumentPath(registration.Root, governance.HumanDoc)) {
 			reasons = append(reasons, "governance_doc_missing")
 		}
 		if docCount == 0 {

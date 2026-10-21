@@ -60,12 +60,10 @@ func (a *App) validateHarness(ctx context.Context, request model.CommandRequest)
 		result := model.HarnessValidationResult{HarnessProtocol: harnessProtocolV1, HarnessReadiness: "blocked", HarnessVerdict: "BLOCKED", HarnessBlockers: []string{hint}}
 		return model.Envelope{Ok: true, Workspace: registration.Name, Backend: "harness", Items: []model.HarnessValidationResult{result}, Warnings: []string{"setup_wiki_source_pending:" + reason}, Hint: hint}, nil
 	}
-	if !setupSource.Configured {
-		if blockedEnv, err := a.governanceGateEnvelope(ctx, request, "nav.wiki.validate-harness"); err != nil {
-			return model.Envelope{}, err
-		} else if blockedEnv != nil {
-			return *blockedEnv, nil
-		}
+	if blockedEnv, err := a.governanceGateEnvelope(ctx, request, "nav.wiki.validate-harness"); err != nil {
+		return model.Envelope{}, err
+	} else if blockedEnv != nil {
+		return *blockedEnv, nil
 	}
 	wikiRoots, err := harnessWikiRoots(registration, project)
 	if err != nil {
