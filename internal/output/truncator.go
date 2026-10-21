@@ -109,6 +109,9 @@ func CapRendered(rendered []byte, maxChars int) []byte {
 	}
 	block := rendered[start:end]
 	marker := []byte(fmt.Sprintf("...[truncated %d chars; continuation preserved]...", len(rendered)-maxChars))
+	if len(block)+len(marker) >= maxChars {
+		return prefixWithin(rendered, maxChars)
+	}
 	budget := maxChars - len(marker) - len(block)
 	head := prefixWithin(rendered[:start], budget)
 	out := make([]byte, 0, len(head)+len(marker)+len(block))

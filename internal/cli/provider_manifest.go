@@ -107,7 +107,7 @@ func newProviderManifest(version string) providerManifest {
 			Socket: &providerSocket{Transport: "unix", PathEnv: "XDG_RUNTIME_DIR", Filename: cliSocketName, Mode: "0600", Framing: "jsonl", MaxRequestBytes: cliSocketMaxRequest, Fallback: "connection_failure_only", RetryAfterResponse: false},
 		},
 		Operations: []providerOperation{
-			{Name: "q", Description: "Run a typed mi-lsp query pipeline", Effect: "read", Contract: "q-v1", InputSchema: qInputSchema(), OutputSchema: responseSchema("q-v1")},
+			{Name: "q", Description: "Run a typed mi-lsp query pipeline", Effect: "read", Contract: "q-v1", InputSchema: qInputSchema(), OutputSchema: responseSchema("q-v1"), Invocation: qInvocation()},
 			{Name: "intent", Description: "Resolve a navigation intent", Effect: "read", Contract: contracts["intent"], InputSchema: objectSchema([]string{"question"}, map[string]any{
 				"question": stringSchema(1), "workspace": stringSchema(0), "top": integerSchema(1, 0), "offset": integerSchema(0, 0), "repo": stringSchema(0),
 			}), OutputSchema: responseSchema(contracts["intent"])},
@@ -151,6 +151,12 @@ func newProviderManifest(version string) providerManifest {
 		manifest.Contracts[op.Name] = op.Contract
 	}
 	return manifest
+}
+
+func qInvocation() *providerInvocation {
+	return &providerInvocation{Kind: "cli", Command: "mi-lsp", FixedArgs: []string{"--format", "json", "--client-name", "mi-mcp", "--no-auto-register", "q"}, InputMapping: map[string]any{"fields": map[string]any{
+		"pipeline": argumentMapping(0), "workspace": optionMapping("--workspace"), "budget": optionMapping("--budget"), "max_bytes": optionMapping("--max-bytes"), "timeout_ms": optionMapping("--timeout-ms"), "session_id": optionMapping("--session-id"), "page": optionMapping("--page"), "fresh": optionMapping("--fresh"), "dedupe": optionMapping("--dedupe"),
+	}}, Output: "json"}
 }
 
 func navigationInvocation(argv []string, fields map[string]any) *providerInvocation {

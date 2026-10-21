@@ -33,6 +33,11 @@ func wikiContractProjectionYAML(content []byte) string {
 		return block
 	}
 	text := strings.TrimSpace(string(content))
+	if start := strings.Index(text, "{"); start >= 0 {
+		if end := jsonObjectEnd(text, start); end > start {
+			return text[start:end]
+		}
+	}
 	if strings.HasPrefix(text, "---\n") || strings.HasPrefix(text, "---\r\n") {
 		text = strings.TrimSpace(text[3:])
 		if end := strings.Index("\n"+text, "\n---"); end >= 0 {
@@ -40,6 +45,41 @@ func wikiContractProjectionYAML(content []byte) string {
 		}
 	}
 	return text
+}
+
+func jsonObjectEnd(text string, start int) int {
+	depth, quoted, escaped := 0, false, false
+	for i := start; i < len(text); i++ {
+		c := text[i]
+		if quoted {
+			if escaped {
+				escaped = false
+				continue
+			}
+			if c == '\\' {
+				escaped = true
+				continue
+			}
+			if c == '"' {
+				quoted = false
+			}
+			continue
+		}
+		if c == '"' {
+			quoted = true
+			continue
+		}
+		if c == '{' {
+			depth++
+		}
+		if c == '}' {
+			depth--
+			if depth == 0 {
+				return i + 1
+			}
+		}
+	}
+	return -1
 }
 
 func buildWikiContractReadProfile(g *WikiContractGovernance, sourceDoc string) model.DocsReadProfile {

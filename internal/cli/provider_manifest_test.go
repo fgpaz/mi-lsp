@@ -80,7 +80,7 @@ func TestProviderManifestCommandPrintsContractAndRealQFlags(t *testing.T) {
 		t.Fatalf("v2 manifest is missing required catalog fields: %v", actual)
 	}
 	operations, ok := actual["operations"].([]any)
-	if !ok || len(operations) != 9 {
+	if !ok || len(operations) != 13 {
 		t.Fatalf("operations = %v, want q, intent, multi-read, wiki graph/contracts, and management operations", actual["operations"])
 	}
 	for _, required := range []string{"q", "intent", "multi-read", "wiki_graph", "wiki_validate_contract"} {
@@ -98,6 +98,19 @@ func TestProviderManifestCommandPrintsContractAndRealQFlags(t *testing.T) {
 	operation, _ := operations[0].(map[string]any)
 	if operation["name"] != "q" || operation["effect"] != "read" {
 		t.Fatalf("operation name/effect = %v/%v, want q/read", operation["name"], operation["effect"])
+	}
+	qInvocation, ok := operation["invocation"].(map[string]any)
+	if !ok || qInvocation["command"] != "mi-lsp" {
+		t.Fatalf("q v2 invocation missing: %v", operation["invocation"])
+	}
+	qArgs, _ := qInvocation["fixed_args"].([]any)
+	if !containsJSONValue(qArgs, "q") {
+		t.Errorf("q invocation fixed_args must include q, got %v", qArgs)
+	}
+	qMapping, _ := qInvocation["input_mapping"].(map[string]any)
+	qFields, _ := qMapping["fields"].(map[string]any)
+	if qFields["pipeline"] == nil {
+		t.Errorf("q invocation must map pipeline argv, got %v", qFields)
 	}
 	schema, ok := operation["input_schema"].(map[string]any)
 	if !ok {

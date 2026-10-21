@@ -11,6 +11,28 @@ import (
 	"github.com/fgpaz/mi-lsp/internal/model"
 )
 
+func TestWikiContractProjectionReadsJSONGovernanceBlock(t *testing.T) {
+	content := []byte("Governance contract:\n```json\n" + `{"wiki_contract":"WIKI-CONTRACT-v1.1","language":"en","ae_canon":{"mode":"kernel_v2","source":"<kernel_home>/canon","repo_policy":".docs/ae/repo-policy.yaml"},"traits":{}}` + "\n```\n")
+	block := wikiContractProjectionYAML(content)
+	if !strings.HasPrefix(strings.TrimSpace(block), "{") {
+		t.Fatalf("JSON block not extracted: %q", block)
+	}
+	g, warnings := parseWikiContractGovernanceDocument(content)
+	if g == nil || len(warnings) != 0 {
+		t.Fatalf("JSON governance parse: %+v warnings=%v", g, warnings)
+	}
+	if g.WikiContract != WikiContractProtocolV1 {
+		t.Fatalf("contract version lost: %q", g.WikiContract)
+	}
+	projected, err := encodeWikiContractProjection(buildWikiContractReadProfile(g, canonGovernanceV1RelPath), g, content)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(projected), `mode = "kernel_v2"`) {
+		t.Fatalf("ae_canon lost from projection: %s", projected)
+	}
+}
+
 func TestWikiContractProjectionTraits(t *testing.T) {
 	content := []byte(`wiki_contract: WIKI-CONTRACT-v1
 language: es

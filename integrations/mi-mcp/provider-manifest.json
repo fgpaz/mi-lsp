@@ -14,17 +14,17 @@
   "contracts": {
     "--help": "mi-lsp-help/v0",
     "--version": "mi-lsp-version-flag/v0",
+    "diagnostics": "diagnostics/v1",
+    "find-files": "find-files/v1",
     "intent": "mi-lsp-nav-intent/v0",
     "multi-read": "mi-lsp-nav-multi-read/v0",
     "q": "q-v1",
+    "refs": "mi-lsp-refs/v0",
     "schema": "mi-lsp-schema/v0",
+    "search": "mi-lsp-search/v0",
     "version": "mi-lsp-version/v0",
     "wiki_graph": "wiki-graph/v1",
-    "wiki_validate_contract": "wiki-contract/v1",
-    "search": "mi-lsp-search/v0",
-    "refs": "mi-lsp-refs/v0",
-    "diagnostics": "diagnostics/v1",
-    "find-files": "find-files/v1"
+    "wiki_validate_contract": "wiki-contract/v1"
   },
   "auth": "none",
   "invocation": {
@@ -181,9 +181,66 @@
       "output_schema": {
         "description": "Response governed by q-v1",
         "type": "object"
+      },
+      "invocation": {
+        "kind": "cli",
+        "command": "mi-lsp",
+        "fixed_args": [
+          "--format",
+          "json",
+          "--client-name",
+          "mi-mcp",
+          "--no-auto-register",
+          "q"
+        ],
+        "input_mapping": {
+          "fields": {
+            "budget": {
+              "flag": "--budget",
+              "source": "option"
+            },
+            "dedupe": {
+              "flag": "--dedupe",
+              "source": "option"
+            },
+            "fresh": {
+              "flag": "--fresh",
+              "source": "option"
+            },
+            "max_bytes": {
+              "flag": "--max-bytes",
+              "source": "option"
+            },
+            "page": {
+              "flag": "--page",
+              "source": "option"
+            },
+            "pipeline": {
+              "position": 0,
+              "source": "argument"
+            },
+            "session_id": {
+              "flag": "--session-id",
+              "source": "option"
+            },
+            "timeout_ms": {
+              "flag": "--timeout-ms",
+              "source": "option"
+            },
+            "workspace": {
+              "flag": "--workspace",
+              "source": "option"
+            }
+          }
+        },
+        "output": "json"
       }
     },
     {
+      "model_alias": {
+        "namespace": "lsp",
+        "name": "intent"
+      },
       "name": "intent",
       "description": "Resolve a navigation intent",
       "effect": "read",
@@ -191,6 +248,10 @@
       "input_schema": {
         "additionalProperties": false,
         "properties": {
+          "max_items": {
+            "minimum": 1,
+            "type": "integer"
+          },
           "offset": {
             "minimum": 0,
             "type": "integer"
@@ -203,6 +264,10 @@
             "minLength": 0,
             "type": "string"
           },
+          "token_budget": {
+            "minimum": 1,
+            "type": "integer"
+          },
           "top": {
             "minimum": 1,
             "type": "integer"
@@ -210,14 +275,6 @@
           "workspace": {
             "minLength": 0,
             "type": "string"
-          },
-          "max_items": {
-            "type": "integer",
-            "minimum": 1
-          },
-          "token_budget": {
-            "type": "integer",
-            "minimum": 1
           }
         },
         "required": [
@@ -228,10 +285,6 @@
       "output_schema": {
         "description": "Response governed by mi-lsp-nav-intent/v0",
         "type": "object"
-      },
-      "model_alias": {
-        "namespace": "lsp",
-        "name": "intent"
       },
       "invocation": {
         "kind": "cli",
@@ -251,33 +304,33 @@
         ],
         "input_mapping": {
           "fields": {
-            "question": {
-              "source": "argument",
-              "position": 0
-            },
-            "top": {
-              "source": "option",
-              "flag": "--top"
+            "max_items": {
+              "flag": "--max-items",
+              "source": "option"
             },
             "offset": {
-              "source": "option",
-              "flag": "--offset"
+              "flag": "--offset",
+              "source": "option"
+            },
+            "question": {
+              "position": 0,
+              "source": "argument"
             },
             "repo": {
-              "source": "option",
-              "flag": "--repo"
-            },
-            "workspace": {
-              "source": "option",
-              "flag": "--workspace"
-            },
-            "max_items": {
-              "source": "option",
-              "flag": "--max-items"
+              "flag": "--repo",
+              "source": "option"
             },
             "token_budget": {
-              "source": "option",
-              "flag": "--token-budget"
+              "flag": "--token-budget",
+              "source": "option"
+            },
+            "top": {
+              "flag": "--top",
+              "source": "option"
+            },
+            "workspace": {
+              "flag": "--workspace",
+              "source": "option"
             }
           }
         },
@@ -285,6 +338,10 @@
       }
     },
     {
+      "model_alias": {
+        "namespace": "lsp",
+        "name": "read"
+      },
       "name": "multi-read",
       "description": "Read the requested source ranges",
       "effect": "read",
@@ -292,6 +349,10 @@
       "input_schema": {
         "additionalProperties": false,
         "properties": {
+          "max_items": {
+            "minimum": 1,
+            "type": "integer"
+          },
           "ranges": {
             "items": {
               "minLength": 1,
@@ -300,17 +361,13 @@
             "minItems": 1,
             "type": "array"
           },
+          "token_budget": {
+            "minimum": 1,
+            "type": "integer"
+          },
           "workspace": {
             "minLength": 0,
             "type": "string"
-          },
-          "max_items": {
-            "type": "integer",
-            "minimum": 1
-          },
-          "token_budget": {
-            "type": "integer",
-            "minimum": 1
           }
         },
         "required": [
@@ -321,10 +378,6 @@
       "output_schema": {
         "description": "Response governed by mi-lsp-nav-multi-read/v0",
         "type": "object"
-      },
-      "model_alias": {
-        "namespace": "lsp",
-        "name": "read"
       },
       "invocation": {
         "kind": "cli",
@@ -344,22 +397,22 @@
         ],
         "input_mapping": {
           "fields": {
-            "ranges": {
-              "source": "argument",
-              "position": 0,
-              "repeat": true
-            },
-            "workspace": {
-              "source": "option",
-              "flag": "--workspace"
-            },
             "max_items": {
-              "source": "option",
-              "flag": "--max-items"
+              "flag": "--max-items",
+              "source": "option"
+            },
+            "ranges": {
+              "position": 0,
+              "repeat": true,
+              "source": "argument"
             },
             "token_budget": {
-              "source": "option",
-              "flag": "--token-budget"
+              "flag": "--token-budget",
+              "source": "option"
+            },
+            "workspace": {
+              "flag": "--workspace",
+              "source": "option"
             }
           }
         },
@@ -652,45 +705,45 @@
       }
     },
     {
-      "name": "search",
       "model_alias": {
         "namespace": "lsp",
         "name": "search"
       },
+      "name": "search",
       "description": "Search text; bounded matches, optional content",
       "effect": "read",
       "contract": "mi-lsp-search/v0",
       "input_schema": {
-        "type": "object",
-        "required": [
-          "pattern"
-        ],
         "additionalProperties": false,
         "properties": {
           "include_content": {
             "type": "boolean"
           },
-          "workspace": {
-            "type": "string",
-            "minLength": 0
-          },
           "max_items": {
-            "type": "integer",
-            "minimum": 1
-          },
-          "token_budget": {
-            "type": "integer",
-            "minimum": 1
+            "minimum": 1,
+            "type": "integer"
           },
           "pattern": {
-            "type": "string",
-            "minLength": 1
+            "minLength": 1,
+            "type": "string"
+          },
+          "token_budget": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "workspace": {
+            "minLength": 0,
+            "type": "string"
           }
-        }
+        },
+        "required": [
+          "pattern"
+        ],
+        "type": "object"
       },
       "output_schema": {
-        "type": "object",
-        "description": "Response governed by mi-lsp-search/v0"
+        "description": "Response governed by mi-lsp-search/v0",
+        "type": "object"
       },
       "invocation": {
         "kind": "cli",
@@ -711,24 +764,24 @@
         "input_mapping": {
           "fields": {
             "include_content": {
-              "source": "option",
-              "flag": "--include-content"
-            },
-            "pattern": {
-              "source": "argument",
-              "position": 0
-            },
-            "workspace": {
-              "source": "option",
-              "flag": "--workspace"
+              "flag": "--include-content",
+              "source": "option"
             },
             "max_items": {
-              "source": "option",
-              "flag": "--max-items"
+              "flag": "--max-items",
+              "source": "option"
+            },
+            "pattern": {
+              "position": 0,
+              "source": "argument"
             },
             "token_budget": {
-              "source": "option",
-              "flag": "--token-budget"
+              "flag": "--token-budget",
+              "source": "option"
+            },
+            "workspace": {
+              "flag": "--workspace",
+              "source": "option"
             }
           }
         },
@@ -736,54 +789,54 @@
       }
     },
     {
-      "name": "refs",
       "model_alias": {
         "namespace": "lsp",
         "name": "refs"
       },
+      "name": "refs",
       "description": "Find symbol references; optional file/line anchor",
       "effect": "read",
       "contract": "mi-lsp-refs/v0",
       "input_schema": {
-        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "column": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "file": {
+            "minLength": 0,
+            "type": "string"
+          },
+          "line": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "max_items": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "symbol": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "token_budget": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "workspace": {
+            "minLength": 0,
+            "type": "string"
+          }
+        },
         "required": [
           "symbol"
         ],
-        "additionalProperties": false,
-        "properties": {
-          "file": {
-            "type": "string",
-            "minLength": 0
-          },
-          "line": {
-            "type": "integer",
-            "minimum": 1
-          },
-          "column": {
-            "type": "integer",
-            "minimum": 1
-          },
-          "workspace": {
-            "type": "string",
-            "minLength": 0
-          },
-          "max_items": {
-            "type": "integer",
-            "minimum": 1
-          },
-          "token_budget": {
-            "type": "integer",
-            "minimum": 1
-          },
-          "symbol": {
-            "type": "string",
-            "minLength": 1
-          }
-        }
+        "type": "object"
       },
       "output_schema": {
-        "type": "object",
-        "description": "Response governed by mi-lsp-refs/v0"
+        "description": "Response governed by mi-lsp-refs/v0",
+        "type": "object"
       },
       "invocation": {
         "kind": "cli",
@@ -803,33 +856,33 @@
         ],
         "input_mapping": {
           "fields": {
+            "column": {
+              "flag": "--column",
+              "source": "option"
+            },
             "file": {
-              "source": "option",
-              "flag": "--file"
+              "flag": "--file",
+              "source": "option"
             },
             "line": {
-              "source": "option",
-              "flag": "--line"
-            },
-            "column": {
-              "source": "option",
-              "flag": "--column"
-            },
-            "symbol": {
-              "source": "argument",
-              "position": 0
-            },
-            "workspace": {
-              "source": "option",
-              "flag": "--workspace"
+              "flag": "--line",
+              "source": "option"
             },
             "max_items": {
-              "source": "option",
-              "flag": "--max-items"
+              "flag": "--max-items",
+              "source": "option"
+            },
+            "symbol": {
+              "position": 0,
+              "source": "argument"
             },
             "token_budget": {
-              "source": "option",
-              "flag": "--token-budget"
+              "flag": "--token-budget",
+              "source": "option"
+            },
+            "workspace": {
+              "flag": "--workspace",
+              "source": "option"
             }
           }
         },
@@ -837,56 +890,56 @@
       }
     },
     {
-      "name": "diagnostics",
       "model_alias": {
         "namespace": "lsp",
         "name": "diagnostics"
       },
+      "name": "diagnostics",
       "description": "Errors/warnings after editing a file or changed files; partial is not clean",
       "effect": "read",
       "contract": "diagnostics/v1",
       "input_schema": {
-        "type": "object",
-        "required": [],
         "additionalProperties": false,
         "properties": {
-          "file": {
-            "type": "string",
-            "minLength": 1
+          "base": {
+            "minLength": 1,
+            "type": "string"
           },
           "changed": {
             "type": "boolean"
           },
-          "base": {
-            "type": "string",
-            "minLength": 1
+          "file": {
+            "minLength": 1,
+            "type": "string"
           },
           "max_files": {
-            "type": "integer",
+            "maximum": 64,
             "minimum": 1,
-            "maximum": 64
-          },
-          "offset": {
-            "type": "integer",
-            "minimum": 0
-          },
-          "workspace": {
-            "type": "string",
-            "minLength": 0
+            "type": "integer"
           },
           "max_items": {
-            "type": "integer",
-            "minimum": 1
+            "minimum": 1,
+            "type": "integer"
+          },
+          "offset": {
+            "minimum": 0,
+            "type": "integer"
           },
           "token_budget": {
-            "type": "integer",
-            "minimum": 1
+            "minimum": 1,
+            "type": "integer"
+          },
+          "workspace": {
+            "minLength": 0,
+            "type": "string"
           }
-        }
+        },
+        "required": [],
+        "type": "object"
       },
       "output_schema": {
-        "type": "object",
-        "description": "Response governed by diagnostics/v1"
+        "description": "Response governed by diagnostics/v1",
+        "type": "object"
       },
       "invocation": {
         "kind": "cli",
@@ -906,37 +959,37 @@
         ],
         "input_mapping": {
           "fields": {
-            "file": {
-              "source": "argument",
-              "position": 0
+            "base": {
+              "flag": "--base",
+              "source": "option"
             },
             "changed": {
-              "source": "option",
-              "flag": "--changed"
+              "flag": "--changed",
+              "source": "option"
             },
-            "base": {
-              "source": "option",
-              "flag": "--base"
+            "file": {
+              "position": 0,
+              "source": "argument"
             },
             "max_files": {
-              "source": "option",
-              "flag": "--max-files"
-            },
-            "offset": {
-              "source": "option",
-              "flag": "--offset"
-            },
-            "workspace": {
-              "source": "option",
-              "flag": "--workspace"
+              "flag": "--max-files",
+              "source": "option"
             },
             "max_items": {
-              "source": "option",
-              "flag": "--max-items"
+              "flag": "--max-items",
+              "source": "option"
+            },
+            "offset": {
+              "flag": "--offset",
+              "source": "option"
             },
             "token_budget": {
-              "source": "option",
-              "flag": "--token-budget"
+              "flag": "--token-budget",
+              "source": "option"
+            },
+            "workspace": {
+              "flag": "--workspace",
+              "source": "option"
             }
           }
         },
@@ -944,58 +997,58 @@
       }
     },
     {
-      "name": "find-files",
       "model_alias": {
         "namespace": "fs",
         "name": "find"
       },
+      "name": "find-files",
       "description": "Find filenames/globs respecting ignore rules; no index",
       "effect": "read",
       "contract": "find-files/v1",
       "input_schema": {
-        "type": "object",
-        "required": [
-          "pattern"
-        ],
         "additionalProperties": false,
         "properties": {
-          "top": {
-            "type": "integer",
-            "minimum": 1,
-            "maximum": 1000
-          },
           "budget_bytes": {
-            "type": "integer",
+            "maximum": 1048576,
             "minimum": 512,
-            "maximum": 1048576
+            "type": "integer"
           },
           "literal": {
             "type": "boolean"
           },
+          "max_items": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "pattern": {
+            "minLength": 1,
+            "type": "string"
+          },
           "refresh": {
             "type": "boolean"
           },
-          "workspace": {
-            "type": "string",
-            "minLength": 0
-          },
-          "max_items": {
-            "type": "integer",
-            "minimum": 1
-          },
           "token_budget": {
-            "type": "integer",
-            "minimum": 1
+            "minimum": 1,
+            "type": "integer"
           },
-          "pattern": {
-            "type": "string",
-            "minLength": 1
+          "top": {
+            "maximum": 1000,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "workspace": {
+            "minLength": 0,
+            "type": "string"
           }
-        }
+        },
+        "required": [
+          "pattern"
+        ],
+        "type": "object"
       },
       "output_schema": {
-        "type": "object",
-        "description": "Response governed by find-files/v1"
+        "description": "Response governed by find-files/v1",
+        "type": "object"
       },
       "invocation": {
         "kind": "cli",
@@ -1014,37 +1067,37 @@
         ],
         "input_mapping": {
           "fields": {
-            "top": {
-              "source": "option",
-              "flag": "--top"
-            },
             "budget_bytes": {
-              "source": "option",
-              "flag": "--budget-bytes"
+              "flag": "--budget-bytes",
+              "source": "option"
             },
             "literal": {
-              "source": "option",
-              "flag": "--literal"
-            },
-            "refresh": {
-              "source": "option",
-              "flag": "--refresh"
-            },
-            "pattern": {
-              "source": "argument",
-              "position": 0
-            },
-            "workspace": {
-              "source": "option",
-              "flag": "--workspace"
+              "flag": "--literal",
+              "source": "option"
             },
             "max_items": {
-              "source": "option",
-              "flag": "--max-items"
+              "flag": "--max-items",
+              "source": "option"
+            },
+            "pattern": {
+              "position": 0,
+              "source": "argument"
+            },
+            "refresh": {
+              "flag": "--refresh",
+              "source": "option"
             },
             "token_budget": {
-              "source": "option",
-              "flag": "--token-budget"
+              "flag": "--token-budget",
+              "source": "option"
+            },
+            "top": {
+              "flag": "--top",
+              "source": "option"
+            },
+            "workspace": {
+              "flag": "--workspace",
+              "source": "option"
             }
           }
         },

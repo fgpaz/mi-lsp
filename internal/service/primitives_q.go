@@ -81,6 +81,10 @@ func (a *App) ExecuteQ(ctx context.Context, request model.CommandRequest, sessio
 	}
 	qctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
+	var autoRegisterWarnings []string
+	if !request.Context.NoAutoRegister && strings.TrimSpace(request.Context.CallerCWD) != "" {
+		autoRegisterWarnings = a.autoRegisterWorkspace(qctx, request)
+	}
 	request.Context.NoAutoRegister = true
 	request.Context.NoIndexRefresh = true
 	resolution, err := workspace.ResolveWorkspaceSelectionReadOnly(request.Context.Workspace, request.Context.CallerCWD)
@@ -237,6 +241,15 @@ func (a *App) ExecuteQ(ctx context.Context, request model.CommandRequest, sessio
 	}
 	env := model.Envelope{ContractVersion: "q-v1", Operation: "q", Ok: true, Workspace: registration.Name, Backend: "q", Items: rows, Stages: stages, Budget: &model.QBudget{Requested: budget, Used: (used + 3) / 4}, SessionMark: mark, Truncated: truncated, GenerationID: generation}
 	env.FallbackUsed = fallbackUsed
+	if len(autoRegisterWarnings) > 0 {
+		env.Warnings = append(env.Warnings, autoRegisterWarnings...)
+		for _, warning := range autoRegisterWarnings {
+			if strings.Contains(warning, "auto_register_index:") {
+				env.FallbackUsed = "index_pending"
+				break
+			}
+		}
+	}
 	if firstFailure != "" {
 		env.Partial = len(rows) > 0
 		env.Ok = env.Partial
