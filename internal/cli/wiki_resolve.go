@@ -83,13 +83,20 @@ func resolveWiki(root string) wikiResolution {
 		result.Notes = append(result.Notes, "governance_parse_failed: "+err.Error())
 		return result
 	}
+	project := mapValue(doc, "project")
 	wiki := mapValue(doc, "wiki")
+	if len(wiki) == 0 {
+		wiki = mapValue(project, "wiki")
+	}
 	if len(wiki) == 0 {
 		wiki = mapValue(doc, "wiki_resolution")
 	}
 	rootValue := firstString(wiki, "canon_root", "wiki_root", "root")
 	if rootValue == "" {
-		rootValue = firstString(doc, "wiki_root")
+		rootValue = firstString(doc, "wiki_root", "canon_root")
+	}
+	if rootValue == "" {
+		rootValue = firstString(project, "wiki_root", "canon_root")
 	}
 	if rootValue == "" {
 		rootValue = ".docs/wiki"
@@ -98,6 +105,9 @@ func resolveWiki(root string) wikiResolution {
 	result.CanonRoot = resolvePath(abs, rootValue)
 	result.AERoot = resolvePath(abs, firstString(wiki, "ae_root", "ae_canon_root"))
 	result.GovernanceFile = governance
+	if configured := firstString(wiki, "governance_file"); configured != "" {
+		result.GovernanceFile = resolvePath(abs, configured)
+	}
 	result.Mode = firstString(wiki, "mode")
 	if result.Mode == "" {
 		result.Mode = firstString(doc, "mode")

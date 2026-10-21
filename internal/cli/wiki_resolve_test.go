@@ -12,7 +12,7 @@ func TestResolveWikiSupportsJSONAndLegacyWikiRoot(t *testing.T) {
 		t.Fatal(err)
 	}
 	gov := filepath.Join(root, ".docs/wiki/00_governance.md")
-	if err := os.WriteFile(gov, []byte("{"+`"schema":"sandinas-project/v2","wiki":{"mode":"repo","canon_root":".docs/wiki","ae_root":".docs/ae","governance_file":".docs/wiki/00_governance.md","external":{"repository":"org/wiki"}}`+"}"), 0600); err != nil {
+	if err := os.WriteFile(gov, []byte("{"+`"project":{"schema":"sandinas-project/v2","wiki":{"mode":"repo","canon_root":".docs/wiki","ae_root":".docs/ae","governance_file":".docs/wiki/00_governance.md","external":{"repository":"org/wiki"}}}`+"}"), 0600); err != nil {
 		t.Fatal(err)
 	}
 	got := resolveWiki(root)
