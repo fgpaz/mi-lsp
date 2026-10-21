@@ -4,7 +4,7 @@ param(
     [string]$Rid = '',
     [string]$InstallDir = (Join-Path $HOME 'bin'),
     [string]$GitHubToken = $env:GITHUB_TOKEN,
-    [string]$SkillRepo = 'fgpaz/mi-lsp',
+    [string]$SkillRepo = 'fgpaz/claude-skills',
     [string]$Skill = 'mi-lsp',
     [string[]]$Agent = @('codex', 'claude-code'),
     [switch]$DryRun,

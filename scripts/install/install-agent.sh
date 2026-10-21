@@ -4,7 +4,7 @@ set -eu
 REPO="${MI_LSP_REPO:-fgpaz/mi-lsp}"
 RID="${MI_LSP_RID:-}"
 INSTALL_DIR="${MI_LSP_INSTALL_DIR:-$HOME/.local/bin}"
-SKILL_REPO="${MI_LSP_SKILL_REPO:-fgpaz/mi-lsp}"
+SKILL_REPO="${MI_LSP_SKILL_REPO:-fgpaz/claude-skills}"
 SKILL_NAME="${MI_LSP_SKILL_NAME:-mi-lsp}"
 AGENTS="${MI_LSP_AGENTS:-codex claude-code}"
 DRY_RUN=0

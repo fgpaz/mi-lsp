@@ -6,6 +6,13 @@ description: Navigate code/docs, find files and check diagnostics after editing.
 # mi-lsp
 
 One binary, one provider manifest, one skill. No harness-specific hooks required.
+
+**Producto y distribución:** `fgpaz/mi-lsp` mantiene la CLI, su contrato y estas
+referencias de producto. La distribución común de skills para los asistentes es
+`fgpaz/claude-skills` (`mi-lsp/`), no una segunda instalación desde este repo.
+Los instaladores `install-agent.sh` y `install-agent.ps1` usan ese origen común
+por defecto; el origen del binario sigue siendo `fgpaz/mi-lsp`. Actualizar la skill
+por su instalador normal y recargar skills, sin editar cachés ni reiniciar sesiones.
 Use `mi-lsp models` for the small executable surface; `mi-lsp nav --help` and
 `mi-lsp provider-manifest` retain the full advanced catalog and legacy APIs.
 
@@ -29,14 +36,18 @@ published H3 consumer supporting `model_alias`, not arbitrary host tool names.
 Metadata alone or an older gateway (CLI129) does not make them executable:
 
 ```js
-const files = await fs.find({pattern: "*.go", workspace: "project", max_items: 10});
-const context = await lsp.intent({question: "where is request routing?", workspace: "project"});
+const [files, context] = await Promise.all([
+  fs.find({pattern: "*.go", workspace: "project", max_items: 10}),
+  lsp.intent({question: "where is request routing?", workspace: "project"}),
+]);
 return {files, context};
 ```
 
 ```js
-const read = await lsp.read({ranges: ["src/router.go:20-80"], workspace: "project"});
-const diagnostics = await lsp.diagnostics({file: "src/router.go", workspace: "project"});
+const [read, diagnostics] = await Promise.all([
+  lsp.read({ranges: ["src/router.go:20-80"], workspace: "project"}),
+  lsp.diagnostics({file: "src/router.go", workspace: "project"}),
+]);
 return {read, diagnostics};
 ```
 
