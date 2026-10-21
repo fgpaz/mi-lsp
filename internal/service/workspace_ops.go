@@ -611,6 +611,31 @@ func nonNilStrings(items []string) []string {
 	return items
 }
 
+func workspaceTypedStates(item map[string]any) map[string]map[string]string {
+	boolValue := func(key string) bool { value, _ := item[key].(bool); return value }
+	indexState, indexAction := "index_pending", "mi-lsp index --workspace <workspace>"
+	if boolValue("index_ready") {
+		indexState, indexAction = "ready", "none"
+	}
+	wikiState, wikiAction := "missing", "mi-lsp index --workspace <workspace> --docs-only"
+	if boolValue("docs_ready") {
+		wikiState, wikiAction = "ready", "none"
+	} else if boolValue("docs_index_ready") {
+		wikiState = "index_pending"
+	}
+	policyState, policyAction := "ready", "none"
+	if boolValue("governance_blocked") {
+		policyState, policyAction = "blocked", "mi-lsp workspace status <workspace>"
+	}
+	return map[string]map[string]string{
+		"runtime":   {"state": "unknown", "action": "mi-lsp daemon status"},
+		"workspace": {"state": "registered", "action": "none"},
+		"index":     {"state": indexState, "action": indexAction},
+		"wiki":      {"state": wikiState, "action": wikiAction},
+		"policy":    {"state": policyState, "action": policyAction},
+	}
+}
+
 func (a *App) workspaceStatus(ctx context.Context, request model.CommandRequest) (model.Envelope, error) {
 	opts := request.Context
 	registration, project, selector, source, resolutionWarnings, resolutionHint, err := a.resolveWorkspaceStatusTarget(request)
@@ -669,6 +694,7 @@ func (a *App) workspaceStatus(ctx context.Context, request model.CommandRequest)
 		item["docs_ready"] = false
 		item["docs_index_ready"] = false
 		item["doc_count"] = 0
+		item["states"] = workspaceTypedStates(item)
 		warnings := append([]string{}, resolutionWarnings...)
 		warnings = append(warnings, memoryWarnings...)
 		warnings = append(warnings, "workspace has no index yet")
@@ -721,6 +747,7 @@ func (a *App) workspaceStatus(ctx context.Context, request model.CommandRequest)
 	if docsIndexReady && !item["index_ready"].(bool) {
 		warnings = appendStringIfMissing(warnings, fmt.Sprintf("code catalog is empty while documentation is ready; docs-only recovery rebuilt governed docs and memory_pointer, but nav.find/nav.symbols/semantic code features still need 'mi-lsp index --workspace %s'", registration.Name))
 	}
+	item["states"] = workspaceTypedStates(item)
 	envelope := model.Envelope{Ok: true, Workspace: registration.Name, Backend: "sqlite", Items: []any{applyWorkspaceStatusAXIView(item, selector, opts)}, Stats: stats, Warnings: warnings, Hint: resolutionHint}
 	envelope = attachMemoryPointer(envelope, memory)
 	envelope.Continuation = buildStatusContinuation(opts, memory)
