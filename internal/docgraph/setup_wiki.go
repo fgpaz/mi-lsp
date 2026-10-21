@@ -76,7 +76,10 @@ func ResolveSetupWikiSource(projectRoot string) SetupWikiSource {
 		projectName = filepath.Base(root)
 	}
 
-	checkout := configuredWikiCheckout(root, localPaths)
+	checkout, checkoutReason := configuredWikiCheckout(root, localPaths)
+	if checkoutReason != "" {
+		return pending(source, checkoutReason, "")
+	}
 	var wikiRoot string
 	if source == "repo_folder" {
 		if setupPath, present := wiki["setup_path"]; present && setupPath != nil {
@@ -165,22 +168,39 @@ func setupString(values map[string]any, key string) (string, bool) {
 	return strings.TrimSpace(text), true
 }
 
-func configuredWikiCheckout(root string, paths map[string]any) string {
-	value, ok := paths["wiki_checkout"]
-	if !ok {
-		return ""
+func configuredWikiCheckout(root string, paths map[string]any) (string, string) {
+	value, present := paths["wiki_checkout"]
+	if !present {
+		return "", ""
 	}
-	if values, ok := value.([]any); ok {
-		if len(values) == 0 {
-			return ""
+	invalid := func() (string, string) { return "", "wiki_checkout_invalid" }
+	var path string
+	switch typed := value.(type) {
+	case string:
+		path = strings.TrimSpace(typed)
+	case []any:
+		if len(typed) == 0 {
+			return invalid()
 		}
-		value = values[0]
+		for i, item := range typed {
+			candidate, ok := item.(string)
+			if !ok || strings.TrimSpace(candidate) == "" {
+				return invalid()
+			}
+			if i == 0 {
+				path = strings.TrimSpace(candidate)
+			}
+		}
+	default:
+		return invalid()
 	}
-	path, ok := value.(string)
-	if !ok || strings.TrimSpace(path) == "" || strings.TrimSpace(path) == "." || strings.TrimSpace(path) == "./" {
-		return ""
+	if path == "" {
+		return invalid()
 	}
-	return resolveSetupPath(root, path)
+	if path == "." || path == "./" {
+		return "", ""
+	}
+	return resolveSetupPath(root, path), ""
 }
 
 func resolveSetupPath(root, value string) string {

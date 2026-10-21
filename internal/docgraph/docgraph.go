@@ -785,11 +785,10 @@ func collectDocCandidates(ctx context.Context, root string, profile model.DocsRe
 		if err != nil || info.IsDir() {
 			return
 		}
-		rel, err := filepath.Rel(root, absPath)
-		if err != nil {
+		rel := WorkspacePathForSource(root, absPath)
+		if rel == "" {
 			return
 		}
-		rel = filepath.ToSlash(rel)
 		candidate := docCandidate{
 			path:         absPath,
 			relativePath: rel,
@@ -1058,7 +1057,7 @@ func expandPattern(ctx context.Context, root string, pattern string, matcher *wo
 		return nil
 	}
 	if strings.HasSuffix(trimmed, "/") {
-		dir := filepath.Join(root, filepath.FromSlash(strings.TrimSuffix(trimmed, "/")))
+		dir := ResolveDocumentPath(root, strings.TrimSuffix(trimmed, "/"))
 		if info, err := os.Stat(dir); err == nil && info.IsDir() {
 			return filepath.WalkDir(dir, func(path string, entry os.DirEntry, walkErr error) error {
 				if err := ctx.Err(); err != nil {
@@ -1085,7 +1084,7 @@ func expandPattern(ctx context.Context, root string, pattern string, matcher *wo
 		return nil
 	}
 	if strings.ContainsAny(trimmed, "*?[") {
-		matches, err := filepath.Glob(filepath.Join(root, filepath.FromSlash(trimmed)))
+		matches, err := filepath.Glob(ResolveDocumentPath(root, trimmed))
 		if err != nil {
 			return err
 		}
@@ -1103,7 +1102,7 @@ func expandPattern(ctx context.Context, root string, pattern string, matcher *wo
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	absPath := filepath.Join(root, filepath.FromSlash(trimmed))
+	absPath := ResolveDocumentPath(root, trimmed)
 	if matcher != nil && matcher.ShouldIgnore(root, absPath) {
 		return nil
 	}

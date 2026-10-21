@@ -304,7 +304,7 @@ func relativeFromWorkspace(root, declared string) (string, string, error) {
 }
 
 func absFromDeclared(root, declared string) string {
-	return filepath.Join(root, filepath.FromSlash(strings.TrimSpace(declared)))
+	return ResolveDocumentPath(root, declared)
 }
 
 func pathEscapesWorkspace(rel string) bool {

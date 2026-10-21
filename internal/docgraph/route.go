@@ -44,7 +44,7 @@ func Tier1CanonicalRoute(question string, profile model.DocsReadProfile, root st
 	if explicitAnchorID != "" {
 		anchorDoc.DocID = explicitAnchorID
 	}
-	if title := embeddedDocTitle(filepath.Join(root, filepath.FromSlash(anchorPath)), explicitAnchorID); title != "" {
+	if title := embeddedDocTitle(ResolveDocumentPath(root, anchorPath), explicitAnchorID); title != "" {
 		anchorDoc.Title = title
 	}
 	// Fill layer from path prefix
@@ -86,11 +86,10 @@ func containingDocForExplicitID(root string, profile model.DocsReadProfile, docI
 	legacy := ""
 	for _, pattern := range searchPaths {
 		_ = expandPattern(context.Background(), root, pattern, nil, func(absPath string) {
-			rel, err := filepath.Rel(root, absPath)
-			if err != nil {
+			rel := WorkspacePathForSource(root, absPath)
+			if rel == "" {
 				return
 			}
-			rel = filepath.ToSlash(rel)
 			if visited[rel] {
 				return
 			}
@@ -339,7 +338,7 @@ func buildTier1PreviewPack(family string, profile model.DocsReadProfile, root st
 			if _, exists := seen[path]; exists {
 				continue
 			}
-			absPath := filepath.Join(root, filepath.FromSlash(path))
+			absPath := ResolveDocumentPath(root, path)
 			if safeRouteDocument(root, path, roots) {
 				doc := model.RouteDoc{
 					Path:   path,

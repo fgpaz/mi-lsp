@@ -697,7 +697,7 @@ func hasIndexedCanonicalDocs(docs []model.DocRecord, workspaceRoots ...string) b
 }
 
 func packTargets(root string, doc model.DocRecord, task string) ([]model.PackTarget, []string) {
-	absPath := filepath.Join(root, filepath.FromSlash(doc.Path))
+	absPath := docgraph.ResolveDocumentPath(root, doc.Path)
 	file, err := os.Open(absPath)
 	if err != nil {
 		return []model.PackTarget{{Heading: doc.Title, Line: 1, Reason: "title"}}, []string{fmt.Sprintf("targets unavailable for %s", doc.Path)}
@@ -741,7 +741,7 @@ func packSlice(root string, doc model.DocRecord, targets []model.PackTarget) (st
 		startLine = targets[0].Line
 	}
 	endLine := startLine + 12
-	content, lineCount, err := readFileLineRange(filepath.Join(root, filepath.FromSlash(doc.Path)), startLine, endLine)
+	content, lineCount, err := readFileLineRange(docgraph.ResolveDocumentPath(root, doc.Path), startLine, endLine)
 	if err != nil {
 		return "", 0, 0, err
 	}

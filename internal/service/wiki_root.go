@@ -82,9 +82,11 @@ func setupWikiRootItem(registration model.WorkspaceRegistration, source docgraph
 		return item
 	}
 	item.WikiRoot = docgraph.WorkspacePathForSource(registration.Root, source.Root)
-	governance := filepath.Join(source.Root, canonGovernanceFile)
-	if info, err := os.Lstat(governance); err == nil && info.Mode().IsRegular() && info.Mode()&os.ModeSymlink == 0 {
-		item.GovernanceDoc = docgraph.WorkspacePathForSource(registration.Root, governance)
+	governance := docgraph.GovernanceSourceDocPath(registration.Root)
+	if governance != "" {
+		if info, err := os.Lstat(governance); err == nil && info.Mode().IsRegular() && info.Mode()&os.ModeSymlink == 0 {
+			item.GovernanceDoc = docgraph.WorkspacePathForSource(registration.Root, governance)
+		}
 	}
 	return item
 }
