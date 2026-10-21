@@ -1223,7 +1223,7 @@ Reports covered and uncovered criteria and TPs without RF. Findings are warnings
 	}
 	rootCommand.Flags().StringVar(&wikiRootRole, "role", "", "Filter [[canon]] by role: producto, ecosistema, or gobierno_local")
 
-	command.AddCommand(searchCommand, routeCommand, packCommand, traceCommand, validateHarnessCommand, validateContractCommand, validateSourceCommand, inventoryCommand, indexCommand, matrixCommand, mapCommand, rootCommand, newNavWikiGraphCommand(state))
+	command.AddCommand(searchCommand, routeCommand, packCommand, traceCommand, validateHarnessCommand, validateContractCommand, validateSourceCommand, inventoryCommand, indexCommand, matrixCommand, mapCommand, rootCommand, newNavWikiGraphCommand(state), newWikiResolveCommand())
 	return command
 }
 
