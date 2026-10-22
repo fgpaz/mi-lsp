@@ -75,7 +75,7 @@ Persistencia SQLite:
 
 #### Configuración
 
-En `.mi-lsp/project.toml`:
+La configuración del workspace se declara en `.mi-lsp/project.toml`:
 
 ```toml
 [embeddings]
@@ -94,7 +94,11 @@ encoding_format = "float"
 user_agent = "mi-lsp-embeddings/1.0"
 ```
 
-La key se inyecta por environment variable o `mkey run`; el valor nunca se imprime ni se guarda en docs, logs o evidencia.
+La credencial se resuelve localmente por el nombre de variable configurado o mediante `mkey run`; el valor nunca se imprime ni se guarda en docs, logs o evidencia.
+
+La configuración personal opcional del nodo está en `$XDG_CONFIG_HOME/mi-lsp/config.toml`; si `XDG_CONFIG_HOME` no está definido, se usa `~/.config/mi-lsp/config.toml` bajo el home del usuario que ejecuta la CLI. No se guarda en el repositorio. Admite proveedores `openai-compatible` con `base_urls` ordenadas, `model`, `dimensions` y credencial por `api_key_env` o `api_key_command`, además de declaraciones de complementos. Los valores existentes `MI_LSP_EMBEDDINGS_*` conservan precedencia sobre esta configuración; la precedencia completa y la compatibilidad con `[embeddings]` legado del workspace están descritas en `docs/configuracion.md`. Ninguna configuración personal introduce endpoint, modelo o credencial predeterminados; si no hay proveedor activo, el comportamiento sigue siendo léxico.
+
+Los ejemplos publicados usan dominios y paths genéricos, no rutas absolutas, hosts privados, nombres de máquina ni valores de secretos de un nodo. El endpoint de embeddings depende de la configuración explícita del consumidor; el contrato de gateway y su transporte no forman parte de esta configuración personal.
 
 Rerank externo opcional en `.mi-lsp/project.toml`:
 
