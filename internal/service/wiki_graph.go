@@ -237,7 +237,7 @@ func attachWikiContractV11Details(root string, records []model.DocRecord, envelo
 		if strings.TrimSpace(record.Path) == "" {
 			continue
 		}
-		body, readErr := os.ReadFile(filepath.Join(root, filepath.FromSlash(record.Path)))
+		body, readErr := os.ReadFile(docgraph.ResolveDocumentPath(root, record.Path))
 		if readErr != nil {
 			finding := model.WikiContractFinding{
 				Code: "document_unreadable", DocID: record.DocID, Source: record.Path,

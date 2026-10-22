@@ -35,6 +35,8 @@ curl -fsSL https://raw.githubusercontent.com/fgpaz/mi-lsp/main/scripts/install/i
 
 The installer picks the right bundle for `win-x64`, `win-arm64`, `linux-x64`, `linux-arm64`, `darwin-x64`, or `darwin-arm64`, verifies its SHA256 checksum, and keeps the bundled worker beside the CLI.
 
+For maintainers installing a build from a checkout, use `pwsh ./scripts/release/install-local.ps1 -Rid win-arm64` on Windows ARM64, or `sh ./scripts/release/install-local.sh --rid linux-arm64` / `--rid osx-arm64` on the matching Linux/macOS host. These local installers build and install the CLI plus its worker bundle; they are separate from the public download installers. `scripts/release.sh X.Y.Z` builds the six release bundles under `dist/` without publishing or installing them. Its `--upload` mode publishes only when tag `vX.Y.Z` already points at `HEAD`.
+
 **2. Initialize your repo.** This detects the workspace, registers an alias, and starts indexing.
 
 ```powershell
@@ -155,7 +157,7 @@ More detail: [`TROUBLESHOOTING.md`](TROUBLESHOOTING.md).
 
 ## Compatibility and limits
 
-Public release bundles cover Windows (`win-x64`, `win-arm64`), Linux (`linux-x64`, `linux-arm64`), and macOS (`darwin-x64`, `darwin-arm64`). Source builds are documented in [CONTRIBUTING.md](CONTRIBUTING.md).
+Public release bundles cover Windows (`win-x64`, `win-arm64`), Linux (`linux-x64`, `linux-arm64`), and macOS (`darwin-x64`, `darwin-arm64`). Source builds are documented in [CONTRIBUTING.md](CONTRIBUTING.md). The commands above describe the repository's supported release/install targets; they do not claim a runtime smoke on every RID for each change.
 
 - C# gets the deepest semantics, through a bundled Roslyn worker. TypeScript/JavaScript and Python use local catalogs with optional `tsserver`/`pyright-langserver` enrichment. Go uses a native AST catalog with optional `gopls` enrichment; Rust uses a lexical catalog with optional `rust-analyzer` references/context. These backends do not claim Roslyn-level semantics.
 - No semantic editing or automated refactoring, no remote or multi-host daemon sharing, no authenticated remote governance UI.

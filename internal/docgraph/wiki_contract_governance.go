@@ -83,6 +83,27 @@ func discoverRetirementsRelPath(root string) (rel string, warnings []string) {
 }
 
 func LoadWikiContractGovernance(root string) (*WikiContractGovernance, []string) {
+	setupSource := ResolveSetupWikiSource(root)
+	if setupSource.Configured {
+		if setupSource.State != "resolved" {
+			reason := firstNonEmptySetupReason(setupSource.ReasonCode, "setup_wiki_source_unavailable")
+			return nil, []string{"setup_wiki_source_pending:" + reason}
+		}
+		path, _, sourceKind, reason := setupWikiGovernanceDocument(root, setupSource)
+		if reason != "" {
+			return nil, []string{reason}
+		}
+		warnings := []string{}
+		if sourceKind == "setup_legacy" {
+			warnings = append(warnings, legacyGovernanceFilenameWarning)
+		}
+		content, err := os.ReadFile(path)
+		if err != nil {
+			return nil, warnings
+		}
+		parsed, parseWarnings := parseWikiContractGovernanceDocument(content)
+		return parsed, append(warnings, parseWarnings...)
+	}
 	rel, pathWarnings := discoverGovernanceRelPath(root)
 	if rel == "" {
 		_, humanDoc, _, _ := resolveGovernanceDoc(root)
@@ -245,11 +266,14 @@ func attachWikiContractGovernance(root string, status *model.GovernanceStatus) {
 	if status == nil {
 		return
 	}
-	if rel, warnings := discoverGovernanceRelPath(root); rel == legacyGovernanceRelPath {
-		status.Warnings = append(status.Warnings, warnings...)
-	}
-	if _, warnings := discoverRetirementsRelPath(root); len(warnings) > 0 {
-		status.Warnings = append(status.Warnings, warnings...)
+	setupSource := ResolveSetupWikiSource(root)
+	if !setupSource.Configured {
+		if rel, warnings := discoverGovernanceRelPath(root); rel == legacyGovernanceRelPath {
+			status.Warnings = append(status.Warnings, warnings...)
+		}
+		if _, warnings := discoverRetirementsRelPath(root); len(warnings) > 0 {
+			status.Warnings = append(status.Warnings, warnings...)
+		}
 	}
 	parsed, warnings := LoadWikiContractGovernance(root)
 	if len(warnings) > 0 {

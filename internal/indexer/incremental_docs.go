@@ -148,7 +148,7 @@ func ReconcileDocs(ctx context.Context, root string) (*ReconcileDocsResult, erro
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
-		absPath := filepath.Join(root, filepath.FromSlash(path))
+		absPath := docgraph.ResolveDocumentPath(root, path)
 		if store.IsDiskAbsent(absPath) {
 			result.Deleted = append(result.Deleted, path)
 		} else {
@@ -215,6 +215,40 @@ func collectCanonicalDocFiles(ctx context.Context, root string, profile model.Do
 	for _, pattern := range profile.GenericDocs.Paths {
 		if err := visitDocProfilePattern(ctx, root, pattern, matcher, visit); err != nil {
 			return nil, nil, err
+		}
+	}
+	setupSource := docgraph.ResolveSetupWikiSource(root)
+	if setupSource.Configured && setupSource.State == "resolved" {
+		walkErr := filepath.WalkDir(setupSource.Root, func(path string, entry os.DirEntry, walkErr error) error {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+			if walkErr != nil {
+				return walkErr
+			}
+			if entry.Type()&os.ModeSymlink != 0 {
+				if entry.IsDir() {
+					return filepath.SkipDir
+				}
+				return nil
+			}
+			if entry.IsDir() {
+				if entry.Name() == ".git" {
+					return filepath.SkipDir
+				}
+				return nil
+			}
+			if isMarkdownPath(path) {
+				rel := docgraph.WorkspacePathForSource(root, path)
+				seen[rel] = canonicalDocFile{path: path, relativePath: rel}
+			}
+			return nil
+		})
+		if walkErr != nil {
+			if ctx.Err() != nil {
+				return nil, nil, ctx.Err()
+			}
+			return nil, nil, fmt.Errorf("scan Setup wiki source: %w", walkErr)
 		}
 	}
 	files := make([]canonicalDocFile, 0, len(seen))
@@ -471,7 +505,7 @@ func buildDocChangesContext(ctx context.Context, root string, paths []string, pa
 		if err := ctx.Err(); err != nil {
 			return changes, append(warnings, err.Error())
 		}
-		absPath := filepath.Join(root, filepath.FromSlash(path))
+		absPath := docgraph.ResolveDocumentPath(root, path)
 		content, stamp, err := readStableDocument(ctx, absPath)
 		if err != nil {
 			warnings = append(warnings, fmt.Sprintf("doc read failed for %s: %v", path, err))

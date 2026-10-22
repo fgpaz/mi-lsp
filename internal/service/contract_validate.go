@@ -56,6 +56,16 @@ func (a *App) validateWikiContract(ctx context.Context, request model.CommandReq
 	if err != nil {
 		return model.Envelope{}, err
 	}
+	setupSource := docgraph.ResolveSetupWikiSource(registration.Root)
+	if setupSource.Configured && setupSource.State != "resolved" {
+		reason := setupSource.ReasonCode
+		if reason == "" {
+			reason = "setup_wiki_source_unavailable"
+		}
+		hint := "Setup wiki source unavailable: " + reason
+		result := model.WikiContractValidationResult{ContractReadiness: "advisory", ContractVerdict: "ADVISORY", ContractWarnings: []string{hint}}
+		return model.Envelope{Ok: true, Workspace: registration.Name, Backend: "wiki.contract", Items: []model.WikiContractValidationResult{result}, Warnings: []string{"setup_wiki_source_pending:" + reason}, Hint: hint}, nil
+	}
 	wikiRoots, err := harnessWikiRoots(registration, project)
 	if err != nil {
 		return model.Envelope{}, err
@@ -121,7 +131,7 @@ func compileWikiContractValidationWithIndexRecords(root string, records, indexRe
 	}
 	indexBodies := make([]wikisource.ContractDocBody, 0, len(indexRecords))
 	for _, record := range indexRecords {
-		path := filepath.Join(root, filepath.FromSlash(record.Path))
+		path := docgraph.ResolveDocumentPath(root, record.Path)
 		rawBody, err := os.ReadFile(path)
 		if err != nil {
 			continue
@@ -139,7 +149,7 @@ func compileWikiContractValidationWithIndexRecords(root string, records, indexRe
 
 	bodyByPath := make(map[string]string, len(records))
 	for _, record := range records {
-		path := filepath.Join(root, filepath.FromSlash(record.Path))
+		path := docgraph.ResolveDocumentPath(root, record.Path)
 		rawBody, err := os.ReadFile(path)
 		docLabel := harnessDocLabel(record)
 		if err != nil {

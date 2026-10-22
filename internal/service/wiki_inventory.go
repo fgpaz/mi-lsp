@@ -201,8 +201,16 @@ func buildInventoryItem(ctx context.Context, ws model.WorkspaceRegistration, wit
 	return item, nil
 }
 
-// detectWikiRoot checks if .docs/wiki exists in the workspace root.
+// detectWikiRoot returns the configured Setup source when present; otherwise it
+// preserves the legacy .docs/wiki discovery.
 func detectWikiRoot(wsRoot string) string {
+	setupSource := docgraph.ResolveSetupWikiSource(wsRoot)
+	if setupSource.Configured {
+		if setupSource.State == "resolved" {
+			return setupSource.Root
+		}
+		return ""
+	}
 	wikiPath := filepath.Join(wsRoot, ".docs", "wiki")
 	if _, err := os.Stat(wikiPath); err == nil {
 		return wikiPath

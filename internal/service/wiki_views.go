@@ -95,7 +95,7 @@ func loadWikiViewDocs(root string, records []model.DocRecord) []docgraph.WikiVie
 			continue
 		}
 		seen[key] = struct{}{}
-		path := filepath.Join(root, filepath.FromSlash(record.Path))
+		path := docgraph.ResolveDocumentPath(root, record.Path)
 		body, err := os.ReadFile(path)
 		content := ""
 		if err == nil {

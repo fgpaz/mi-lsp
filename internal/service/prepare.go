@@ -197,8 +197,19 @@ func preparationGovernanceDigest(root string) string {
 		filepath.Join(root, ".docs", "wiki", "00_governance.md"),
 		filepath.Join(root, ".docs", "wiki", "_mi-lsp", "read-model.toml"),
 	}
+	setupSource := docgraph.ResolveSetupWikiSource(root)
+	if setupSource.Configured {
+		paths = []string{
+			docgraph.GovernanceSourceDocPath(root),
+			filepath.Join(root, ".docs", "wiki", "_mi-lsp", "read-model.toml"),
+		}
+	}
 	h := sha256.New()
 	readFiles := 0
+	if setupSource.Configured {
+		h.Write([]byte("setup_source_state=" + setupSource.State + "\x00reason=" + setupSource.ReasonCode + "\x00"))
+		readFiles++
+	}
 	for _, path := range paths {
 		data, err := os.ReadFile(path)
 		if err != nil {

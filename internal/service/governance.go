@@ -52,6 +52,9 @@ func governanceHint(alias string, status model.GovernanceStatus) string {
 func governanceInspectTarget(registration model.WorkspaceRegistration, project model.ProjectFile) (string, bool, []string) {
 	inspectRoot := registration.Root
 	autoSync := true
+	if docgraph.ResolveSetupWikiSource(registration.Root).Configured {
+		return inspectRoot, autoSync, nil
+	}
 	if len(project.Canons) > 0 {
 		return inspectRoot, true, nil
 	}
@@ -96,13 +99,18 @@ func (a *App) governanceGateEnvelope(ctx context.Context, request model.CommandR
 	}
 	warnings := append([]string{}, status.Warnings...)
 	warnings = append(warnings, status.Issues...)
+	hint := fmt.Sprintf("%s is blocked by governance; only diagnosis and repair should continue", operation)
+	if status.State == "pending" {
+		warnings = append(warnings, "setup_wiki_source_pending:"+status.ReasonCode)
+		hint = fmt.Sprintf("%s is pending because Setup wiki source is unavailable: %s", operation, status.ReasonCode)
+	}
 	env := model.Envelope{
 		Ok:        true,
 		Workspace: registration.Name,
 		Backend:   "governance",
 		Items:     []model.GovernanceStatus{status},
 		Warnings:  warnings,
-		Hint:      fmt.Sprintf("%s is blocked by governance; only diagnosis and repair should continue", operation),
+		Hint:      hint,
 	}
 	return &env, nil
 }

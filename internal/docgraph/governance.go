@@ -131,6 +131,18 @@ func GovernanceDocPath(root string) string {
 func resolveGovernanceDoc(root string) (string, string, model.DocsReadProfile, string) {
 	profile, source, _ := LoadProfile(root)
 	profile.Governance.SourceDoc = routeProfilePath(root, profile.Governance.SourceDoc)
+	setupSource := ResolveSetupWikiSource(root)
+	if setupSource.Configured {
+		if setupSource.State != "resolved" {
+			reason := firstNonEmptySetupReason(setupSource.ReasonCode, "setup_wiki_source_unavailable")
+			return "", "INVALID:setup_wiki_source_pending:" + reason, profile, "setup"
+		}
+		docPath, humanDoc, sourceKind, reason := setupWikiGovernanceDocument(root, setupSource)
+		if reason != "" {
+			return "", "INVALID:" + reason, profile, sourceKind
+		}
+		return docPath, humanDoc, profile, sourceKind
+	}
 	canons, canonErr := loadProjectCanons(root)
 	displayPath := discoverGovernanceDisplayPath(root, canons, canonErr)
 	if source == "project" && strings.TrimSpace(profile.Governance.SourceDoc) != "" {
@@ -292,7 +304,7 @@ func relativeFromWorkspace(root, declared string) (string, string, error) {
 }
 
 func absFromDeclared(root, declared string) string {
-	return filepath.Join(root, filepath.FromSlash(strings.TrimSpace(declared)))
+	return ResolveDocumentPath(root, declared)
 }
 
 func pathEscapesWorkspace(rel string) bool {
@@ -383,9 +395,34 @@ func isKnowledgeWikiProjection(profile model.DocsReadProfile, source string) boo
 }
 
 func InspectGovernance(root string, autoSync bool) model.GovernanceStatus {
+	setupSource := ResolveSetupWikiSource(root)
+	if setupSource.Configured && setupSource.State != "resolved" {
+		reason := firstNonEmptySetupReason(setupSource.ReasonCode, "setup_wiki_source_unavailable")
+		return model.GovernanceStatus{
+			State:      "pending",
+			ReasonCode: reason,
+			Sync:       "pending",
+			Blocked:    true,
+			Issues:     []string{"Setup wiki source unavailable: " + reason},
+			Summary:    "Governance is pending because the configured Setup wiki source is unavailable; the legacy wiki is not used.",
+		}
+	}
 	status := inspectGovernanceCore(root, autoSync)
+	if setupSource.Configured {
+		status.State = "resolved"
+	}
 	enrichWikiProductLayers(root, &status)
 	return status
+}
+
+// GovernanceSourceDocPath returns the selected governance document path without
+// falling back from an explicit Setup source to the legacy workspace wiki.
+func GovernanceSourceDocPath(root string) string {
+	path, humanDoc, _, _ := resolveGovernanceDoc(root)
+	if path == "" || strings.HasPrefix(humanDoc, "INVALID:") {
+		return ""
+	}
+	return filepath.Clean(path)
 }
 
 func inspectGovernanceCore(root string, autoSync bool) model.GovernanceStatus {
@@ -424,6 +461,9 @@ func inspectGovernanceCore(root string, autoSync bool) model.GovernanceStatus {
 
 	if parsed, warnings := parseWikiContractGovernanceDocument(content); parsed != nil {
 		status.Warnings = append(status.Warnings, warnings...)
+		if projectionSource == "setup_legacy" {
+			status.Warnings = append(status.Warnings, legacyGovernanceFilenameWarning)
+		}
 		return inspectWikiContractProjection(root, status, parsed, autoSync)
 	}
 

@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/fgpaz/mi-lsp/internal/docgraph"
 	"github.com/fgpaz/mi-lsp/internal/model"
 	"github.com/fgpaz/mi-lsp/internal/store"
 	"github.com/fgpaz/mi-lsp/internal/wikisource"
@@ -21,13 +22,26 @@ type sourceDoc struct {
 }
 
 func (a *App) validateSource(ctx context.Context, request model.CommandRequest) (model.Envelope, error) {
+	registration, project, err := a.resolveWorkspaceWithProjectForNavigation(request)
+	if err != nil {
+		return model.Envelope{}, err
+	}
+	setupSource := docgraph.ResolveSetupWikiSource(registration.Root)
+	if setupSource.Configured && setupSource.State != "resolved" {
+		reason := setupSource.ReasonCode
+		if reason == "" {
+			reason = "setup_wiki_source_unavailable"
+		}
+		hint := "Setup wiki source unavailable: " + reason
+		result := model.WikiSourceValidationResult{WikiSourceProtocol: wikiSourceProtocolV1, WikiSourceReadiness: "blocked", WikiSourceVerdict: "BLOCKED", WikiSourceBlockers: []string{hint}, NavigationReadiness: "blocked", NavigationBlockers: []string{hint}}
+		return model.Envelope{Ok: true, Workspace: registration.Name, Backend: "wiki.source", Items: []model.WikiSourceValidationResult{result}, Warnings: []string{"setup_wiki_source_pending:" + reason}, Hint: hint}, nil
+	}
 	if blockedEnv, err := a.governanceGateEnvelope(ctx, request, "nav.wiki.validate-source"); err != nil {
 		return model.Envelope{}, err
 	} else if blockedEnv != nil {
 		return *blockedEnv, nil
 	}
-
-	registration, _, err := a.resolveWorkspaceWithProjectForNavigation(request)
+	wikiRoots, err := harnessWikiRoots(registration, project)
 	if err != nil {
 		return model.Envelope{}, err
 	}
@@ -72,8 +86,8 @@ func (a *App) validateSource(ctx context.Context, request model.CommandRequest) 
 		return applyCoachPolicy(attachMemoryPointer(env, memory), request.Context), nil
 	}
 
-	allWikiDocs := filterGovernedWikiDocRecords(query.docs, map[string]any{})
-	scopedDocs := filterGovernedWikiDocRecords(query.docs, request.Payload)
+	allWikiDocs := filterGovernedWikiDocRecordsInRoots(registration.Root, query.docs, map[string]any{}, wikiRoots)
+	scopedDocs := filterGovernedWikiDocRecordsInRoots(registration.Root, query.docs, request.Payload, wikiRoots)
 	if wikiSourceScopeRequested(request.Payload) && len(scopedDocs) == 0 {
 		hint := wikiSourceScopeHint(request.Payload)
 		result := model.WikiSourceValidationResult{
@@ -117,7 +131,7 @@ func (a *App) validateSource(ctx context.Context, request model.CommandRequest) 
 	reportedRecords := filterSourceRecordsByDocs(records, docs)
 	corpusBlocks := filterSourceBlocksByDocRecords(blocks, allWikiDocs)
 	corpusRecords := filterSourceRecordsByDocRecords(records, allWikiDocs)
-	result := compileSourceValidationWithCorpus(registration.Root, docs, allWikiDocs, reportedBlocks, reportedRecords, corpusBlocks, corpusRecords)
+	result := compileSourceValidationWithCorpus(registration.Root, docs, allWikiDocs, reportedBlocks, reportedRecords, corpusBlocks, corpusRecords, wikiRoots)
 	env := model.Envelope{
 		Ok:        true,
 		Workspace: registration.Name,
@@ -138,7 +152,7 @@ func loadSourceDocs(root string, records []model.DocRecord) []sourceDoc {
 		if record.Path == "" {
 			continue
 		}
-		body, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(filepath.ToSlash(record.Path))))
+		body, err := os.ReadFile(docgraph.ResolveDocumentPath(root, record.Path))
 		if err != nil {
 			continue
 		}
@@ -246,7 +260,11 @@ func docRecordPathSet(docs []model.DocRecord) map[string]struct{} {
 	return allowed
 }
 
-func compileSourceValidationWithCorpus(root string, docs []sourceDoc, allDocs []model.DocRecord, indexedBlocks []model.DocSourceBlock, indexedRecords []model.DocSourceRecord, corpusBlocks []model.DocSourceBlock, corpusRecords []model.DocSourceRecord) model.WikiSourceValidationResult {
+func compileSourceValidationWithCorpus(root string, docs []sourceDoc, allDocs []model.DocRecord, indexedBlocks []model.DocSourceBlock, indexedRecords []model.DocSourceRecord, corpusBlocks []model.DocSourceBlock, corpusRecords []model.DocSourceRecord, configuredWikiRoots ...[]string) model.WikiSourceValidationResult {
+	wikiRoots := []string{".docs/wiki"}
+	if len(configuredWikiRoots) > 0 {
+		wikiRoots = configuredWikiRoots[0]
+	}
 	result := model.WikiSourceValidationResult{
 		WikiSourceProtocol:          wikiSourceProtocolV1,
 		IndexFreshness:              "current",
@@ -318,7 +336,7 @@ func compileSourceValidationWithCorpus(root string, docs []sourceDoc, allDocs []
 			addDocBlocker("missing exports")
 		}
 		for _, ref := range parsed.Imports {
-			exists, diskOnly := harnessRefStatus(root, docIndex, doc.record.Path, ref)
+			exists, diskOnly := harnessRefStatus(root, docIndex, doc.record.Path, ref, wikiRoots...)
 			if diskOnly {
 				result.IndexFreshness = "stale"
 				result.WikiSourceWarnings = append(result.WikiSourceWarnings, label+": index stale; reference exists on disk but is not indexed: "+ref)
@@ -363,7 +381,7 @@ func compileSourceValidationWithCorpus(root string, docs []sourceDoc, allDocs []
 				blockBlockers = append(blockBlockers, "block missing evidence")
 			}
 			for _, ref := range block.Imports {
-				exists, diskOnly := harnessRefStatus(root, docIndex, doc.record.Path, ref)
+				exists, diskOnly := harnessRefStatus(root, docIndex, doc.record.Path, ref, wikiRoots...)
 				if diskOnly {
 					result.IndexFreshness = "stale"
 					result.WikiSourceWarnings = append(result.WikiSourceWarnings, label+": index stale; reference exists on disk but is not indexed: "+ref)
@@ -373,7 +391,7 @@ func compileSourceValidationWithCorpus(root string, docs []sourceDoc, allDocs []
 				}
 			}
 			for _, evidence := range block.Evidence {
-				exists, diskOnly := harnessRefStatus(root, docIndex, doc.record.Path, evidence)
+				exists, diskOnly := harnessRefStatus(root, docIndex, doc.record.Path, evidence, wikiRoots...)
 				if diskOnly {
 					result.IndexFreshness = "stale"
 					result.WikiSourceWarnings = append(result.WikiSourceWarnings, label+": index stale; evidence exists on disk but is not indexed: "+evidence)

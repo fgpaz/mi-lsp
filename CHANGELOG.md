@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.15.2] - 2026-10-21
+
+### Corregido
+
+- Las rutas de wiki Setup absolutas en otros volúmenes se conservan al leer, rutear, empaquetar, proyectar gobernanza y trazar documentos.
+- Un `paths.wiki_checkout` declarado inválido queda `pending/wiki_checkout_invalid`; `nav wiki root` informa también la gobernanza legacy seleccionada.
+
 ## [0.14.5] - 2026-10-20
 
 ### Corregido

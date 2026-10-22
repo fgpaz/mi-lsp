@@ -59,7 +59,7 @@ func (a *App) trace(ctx context.Context, request model.CommandRequest) (model.En
 				if !strings.EqualFold(record.DocID, docID) {
 					continue
 				}
-				body, readErr := os.ReadFile(filepath.Join(registration.Root, filepath.FromSlash(record.Path)))
+				body, readErr := os.ReadFile(docgraph.ResolveDocumentPath(registration.Root, record.Path))
 				if readErr != nil {
 					return model.Envelope{}, readErr
 				}
@@ -542,7 +542,7 @@ func traceRFDocFromDisk(root string, rfID string) (model.DocRecord, bool) {
 	best := model.DocRecord{}
 	bestScore := -1
 	for _, relativePath := range candidates {
-		absolutePath := filepath.Join(root, filepath.FromSlash(relativePath))
+		absolutePath := docgraph.ResolveDocumentPath(root, relativePath)
 		content, err := os.ReadFile(absolutePath)
 		if err != nil {
 			continue
@@ -638,7 +638,7 @@ func traceTPDocFromDisk(root string, traceID string) (model.DocRecord, bool) {
 	best := model.DocRecord{}
 	bestScore := -1
 	for _, relativePath := range candidates {
-		absolutePath := filepath.Join(root, filepath.FromSlash(relativePath))
+		absolutePath := docgraph.ResolveDocumentPath(root, relativePath)
 		content, err := os.ReadFile(absolutePath)
 		if err != nil {
 			continue
@@ -706,7 +706,7 @@ func traceRSDocFromDisk(root string, traceID string) (model.DocRecord, bool) {
 	best := model.DocRecord{}
 	bestScore := -1
 	for _, relativePath := range candidates {
-		absolutePath := filepath.Join(root, filepath.FromSlash(relativePath))
+		absolutePath := docgraph.ResolveDocumentPath(root, relativePath)
 		content, err := os.ReadFile(absolutePath)
 		if err != nil {
 			continue
@@ -926,7 +926,7 @@ func embeddedDocIDTitle(root string, relativePath string, docID string) string {
 	if root == "" || relativePath == "" || docID == "" {
 		return ""
 	}
-	content, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(relativePath)))
+	content, err := os.ReadFile(docgraph.ResolveDocumentPath(root, relativePath))
 	if err != nil {
 		return ""
 	}
@@ -1100,7 +1100,7 @@ func traceExpandPattern(root string, pattern string) []string {
 		return nil
 	}
 	if strings.HasSuffix(trimmed, "/") {
-		dir := filepath.Join(root, filepath.FromSlash(strings.TrimSuffix(trimmed, "/")))
+		dir := docgraph.ResolveDocumentPath(root, strings.TrimSuffix(trimmed, "/"))
 		entries, err := os.ReadDir(dir)
 		if err != nil {
 			return nil
@@ -1115,7 +1115,7 @@ func traceExpandPattern(root string, pattern string) []string {
 		return results
 	}
 	if strings.ContainsAny(trimmed, "*?[") {
-		matches, err := filepath.Glob(filepath.Join(root, filepath.FromSlash(trimmed)))
+		matches, err := filepath.Glob(docgraph.ResolveDocumentPath(root, trimmed))
 		if err != nil {
 			return nil
 		}
@@ -1125,15 +1125,11 @@ func traceExpandPattern(root string, pattern string) []string {
 			if err != nil || info.IsDir() {
 				continue
 			}
-			rel, err := filepath.Rel(root, match)
-			if err != nil {
-				continue
-			}
-			results = append(results, filepath.ToSlash(rel))
+			results = append(results, docgraph.WorkspacePathForSource(root, match))
 		}
 		return results
 	}
-	if info, err := os.Stat(filepath.Join(root, filepath.FromSlash(trimmed))); err == nil && !info.IsDir() {
+	if info, err := os.Stat(docgraph.ResolveDocumentPath(root, trimmed)); err == nil && !info.IsDir() {
 		return []string{trimmed}
 	}
 	return nil
