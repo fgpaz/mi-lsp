@@ -3,7 +3,7 @@
   "id": "mi-lsp.semantic-navigation",
   "problem": "Encontrar código y documentación canónica con lecturas acotadas, sin confundir workspaces.",
   "owner": "coord-herramientas",
-  "tenant": "Gabriel",
+  "tenant": "local",
   "layer": "herramientas",
   "state": "candidata",
   "binary": "mi-lsp",

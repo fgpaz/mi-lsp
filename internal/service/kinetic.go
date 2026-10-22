@@ -420,11 +420,7 @@ func kineticCasesDir(request model.CommandRequest) string {
 	if env := strings.TrimSpace(os.Getenv("MI_LSP_CASOS")); env != "" {
 		return env
 	}
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return ""
-	}
-	return filepath.Join(home, "repos", "mios", "home", "casos")
+	return ""
 }
 
 func readKineticCases(dir string) []kineticCase {

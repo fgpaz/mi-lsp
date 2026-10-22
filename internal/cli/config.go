@@ -11,40 +11,10 @@ import (
 
 func newConfigCommand() *cobra.Command {
 	configCmd := &cobra.Command{Use: "config", Short: "Inspect user configuration"}
+	configCmd.AddCommand(newConfigSetupCommand())
 	configCmd.AddCommand(&cobra.Command{
-		Use:   "setup",
-		Short: "Create a local configuration file without changing existing settings",
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			path, err := userconfig.Path()
-			if err != nil {
-				return err
-			}
-			if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-				return fmt.Errorf("create config directory: %w", err)
-			}
-			f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
-			if err != nil {
-				if os.IsExist(err) {
-					fmt.Fprintf(cmd.OutOrStdout(), "config: already exists; unchanged (%s)\n", path)
-					return nil
-				}
-				return fmt.Errorf("create config file: %w", err)
-			}
-			if _, err := fmt.Fprintln(f, "# Optional mi-lsp settings. Add an embeddings provider only when needed."); err != nil {
-				f.Close()
-				os.Remove(path)
-				return fmt.Errorf("write config file: %w", err)
-			}
-			if err := f.Close(); err != nil {
-				os.Remove(path)
-				return fmt.Errorf("close config file: %w", err)
-			}
-			fmt.Fprintf(cmd.OutOrStdout(), "config: created (%s)\n", path)
-			return nil
-		},
-	})
-	configCmd.AddCommand(&cobra.Command{
-		Use: "doctor", Short: "Validate the user configuration without revealing credentials",
+		Use:   "doctor",
+		Short: "Validate the user configuration without revealing credentials",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			path, err := userconfig.Path()
 			if err != nil {
@@ -81,4 +51,39 @@ func newConfigCommand() *cobra.Command {
 		},
 	})
 	return configCmd
+}
+
+func newConfigSetupCommand() *cobra.Command {
+	return &cobra.Command{
+		Use:   "setup",
+		Short: "Create a local configuration file without changing existing settings",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			path, err := userconfig.Path()
+			if err != nil {
+				return err
+			}
+			if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+				return fmt.Errorf("create config directory: %w", err)
+			}
+			f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+			if err != nil {
+				if os.IsExist(err) {
+					fmt.Fprintf(cmd.OutOrStdout(), "config: already exists; unchanged (%s)\n", path)
+					return nil
+				}
+				return fmt.Errorf("create config file: %w", err)
+			}
+			if _, err := fmt.Fprintln(f, "# Optional mi-lsp settings. Add an embeddings provider only when needed."); err != nil {
+				f.Close()
+				os.Remove(path)
+				return fmt.Errorf("write config file: %w", err)
+			}
+			if err := f.Close(); err != nil {
+				os.Remove(path)
+				return fmt.Errorf("close config file: %w", err)
+			}
+			fmt.Fprintf(cmd.OutOrStdout(), "config: created (%s)\n", path)
+			return nil
+		},
+	}
 }

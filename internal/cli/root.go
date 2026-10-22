@@ -179,6 +179,7 @@ func NewRootCommand() *cobra.Command {
 		newModelSurfaceCommand(),
 		newFindFilesCommand(state),
 		newConfigCommand(),
+		newConfigSetupCommand(),
 		newSchemaCommand(state),
 		newProbeCommand(state),
 		newDoctorCommand(state),
