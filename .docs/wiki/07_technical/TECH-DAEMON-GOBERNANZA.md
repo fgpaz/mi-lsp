@@ -81,6 +81,16 @@ Volver a [07_technical.md](../07_technical.md).
   - **disable_env**: MI_LSP_DAEMON_RESULT_CACHE=0
   - **key_derivation**: sha256(workspace_root + generation(mtime index.db) + op + canonical_payload_json)
 
+#### Hito 6 de §11bis: molde elástico común (pendiente)
+
+Este hito adopta el contrato `CT-CLI-DAEMON-V1` y la biblioteca Go común que mantiene su responsable. El alcance aprobado es una instancia del daemon por nodo; procesos de arranque y procesos hijos sin ventanas, también en Windows; y ayudantes cuyo mínimo sea el número de coordinadores vivos del nodo (piso 1), con crecimiento bajo demanda hasta coordinadores × 3 o el límite de la máquina. El tratamiento exacto de límites queda en el contrato publicado: esta nota no fija valores por defecto de CPU/RAM ni redefine su política.
+
+El molde compartido debe cubrir fila/cola, error `ocupado`, tope por llamador, reciclado y salud. Las CLI internas usan la identidad del nodo y no piden credenciales a Gabriel. Esta preparación documental no expone valores de secretos en conversaciones, evidencias ni logs ni modifica permisos. Esto es el criterio de aceptación del hito, no una descripción de comportamiento ya implementado.
+
+Estado de esta revisión: preparación documental. La fuente del contrato y la biblioteca no está disponible en este checkout ni identificada por un módulo, versión, source SHA o API en sus manifiestos. La integración de fila, `ocupado`, límites por llamador, reciclado y salud depende de conocer ese contrato; no se inventan imports ni APIs. El código actual ya expone seams locales de singleton/health/lock y arranque detached, además del `Manager` y su capacidad/LRU; su reutilización o adaptación queda para la implementación. El criterio de ayudantes dinámicos y la identidad de nodo siguen pendientes de especificación de integración en el contrato, no se consideran satisfechos por esos seams existentes.
+
+Referencias observadas para preparar la adopción: `internal/cli/daemon.go::newDaemonCommand`, `internal/daemon/server.go::SpawnBackgroundWithOptions` y `tryAcquireInflight`, `internal/daemon/lifecycle.go::NewManagerWithOptions`, `WorkerCapacity`, `getOrCreate` y `evictLeastRecentlyUsed`, `internal/daemon/server_windows.go::daemonServeCommand`, e `internal/processutil/command_windows.go::ConfigureDetachedCommand`. El detalle contractual que publique el responsable será la autoridad para cerrar esta dependencia.
+
 #### Acceso compartido y caching
 
 - El daemon vive fuera de la terminal que lo lanza.
