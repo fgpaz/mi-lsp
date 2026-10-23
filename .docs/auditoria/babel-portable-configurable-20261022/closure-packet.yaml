@@ -1,0 +1,85 @@
+schema: ae-fast-closure/v4
+goal: portable-configurable
+branch_disposition: integrate-main
+status: verified_pending_publication
+implementation:
+  base_sha: 11ee1577953a4724a2de889ee67078f89d671595
+  verified_scope_sha: d9f694bad5d5ccf30024ee383c1c8e1e54917a64
+  integrated_sha: 92aedd3619153d2b087db16f0496d96bf05fc90a
+  upstream_sha: 5ff501e1d91f898e14f5e7f45e026412ba030220
+  integration: upstream_disjoint_paths_merged_without_conflicts
+  own_scope_blob_identity: 7_of_7_unchanged
+changed_paths:
+  - .docs/wiki/07_technical/TECH-SEMANTIC-RECALL.md
+  - .docs/wiki/07_technical/contracts/CT-NAV-INTENT.md
+  - docs/configuracion.md
+  - integrations/mi-mcp/tool-card.json
+  - internal/cli/config.go
+  - internal/cli/root.go
+  - internal/service/kinetic.go
+publication_evidence:
+  path: .docs/auditoria/babel-portable-configurable-20261022/closure-packet.yaml
+  classification: sanitized_non_product_closure_evidence
+verification:
+  final_verify_waves: 1
+  builds: 1
+  combined_trace_audit_passes: 1
+  rechecks: 1
+  unit_suites: 0
+  source_changes_during_verification: 0
+  binary_sha256: eb3978cf725233f75d02e30d3a109d0e39e9a10cabf1dd823c23f49b3ea9a532
+  binary_basis: verified_scope_sha
+  release_binary: pending_normal_release_build
+  outcomes:
+    user_config:
+      verdict: PASS
+      evidence: HOME/XDG y registro aislados en un repositorio fixture independiente.
+      observed_precedence: environment_then_user_config_then_legacy_project
+      provider_selection_flags: not_exposed_by_published_cli
+      keyword_only_fallback: observed
+      lexical_results: 3_of_3
+      lexical_ms: [56, 41, 36]
+    setup_doctor:
+      verdict: PASS
+      evidence: setup y config setup comparten comportamiento; archivo 0600; no sobrescritura.
+      credential_command: configured_but_not_executed_by_doctor
+    portable_defaults:
+      verdict: PASS
+      evidence: Casos solo por selección explícita o entorno; sin ruta personal implícita; tenant genérico.
+      preserved_material: historical_evidence_synthetic_fixtures_and_attribution
+    gateway_embeddings:
+      verdict: PASS
+      consumer: mi_lsp_index_start_docs
+      real_gateway_operations: 1
+      stored_chunks: 1
+      model: embeddinggemma2-768
+      dimensions: 768
+      priority: baja
+      priority_evidence: Same EmbedIndex path observed sending priority header against the isolated fixture.
+      http_status: successful_response_accepted_and_persisted_numeric_status_not_exposed
+      elapsed_seconds: 23.38
+      job_seconds: 22.594
+      credentials: resolved_by_reference_in_consumer_process_never_published
+      route: existing_local_gateway_without_remote_fallback
+      limitation: No claim about a separate newly deployed gateway or equivalence with another embedding model.
+    wiki:
+      verdict: PASS
+      evidence: TECH/CT y documentación de configuración explican selección, precedencia, setup y límites.
+trace_audit:
+  combined_pass: true
+  initial_findings: [H1-runtime, H4-gateway]
+  initial_verdict: incomplete_runtime_evidence
+  recheck_resolution: Both findings resolved by new behavioral evidence without source changes or another audit.
+  accounted_product_paths: 7
+  publication_packet: classified_separately_as_non_product_evidence
+conformance:
+  verdict: PASS
+  open_product_findings: []
+  scope: portable_configuration_and_existing_gateway_consumer
+completion:
+  commit: pending_publication_packet_commit
+  guard: pending
+  origin_main: pending
+  release: pending
+  installation: pending
+  cleanup: completed_executors_closed_state_and_evidence_preserved
