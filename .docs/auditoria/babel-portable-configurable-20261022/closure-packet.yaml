@@ -1,7 +1,7 @@
 schema: ae-fast-closure/v4
 goal: portable-configurable
 branch_disposition: integrate-main
-status: verified_pending_publication
+status: released_installed_observed_with_operations_review_open
 implementation:
   base_sha: 11ee1577953a4724a2de889ee67078f89d671595
   verified_scope_sha: d9f694bad5d5ccf30024ee383c1c8e1e54917a64
@@ -29,7 +29,7 @@ verification:
   source_changes_during_verification: 0
   binary_sha256: eb3978cf725233f75d02e30d3a109d0e39e9a10cabf1dd823c23f49b3ea9a532
   binary_basis: verified_scope_sha
-  release_binary: pending_normal_release_build
+  release_binary: v0.15.3_tag_04533191457253ec1abc5d2df67da40b9e028f5e
   outcomes:
     user_config:
       verdict: PASS
@@ -77,9 +77,75 @@ conformance:
   open_product_findings: []
   scope: portable_configuration_and_existing_gateway_consumer
 completion:
-  commit: pending_publication_packet_commit
-  guard: pending
-  origin_main: pending
-  release: pending
-  installation: pending
-  cleanup: completed_executors_closed_state_and_evidence_preserved
+  commit: implementation_0453319_and_final_packet
+  guard: implementation_approved_fast_forward_safe_zero_secret_matches
+  origin_main: implementation_0453319_published
+  release: v0.15.3_seven_assets_published
+  installation: three_nodes_installed_with_typed_evidence_limits
+  cleanup: nine_own_executors_closed_worktrees_and_chats_sanitized
+  retained_live_scope: current_coordinator_worktree_and_session
+  wiki: drift_closed_in_implementation
+  final_packet_wiki_impact: none_non_product_evidence_only
+installation_observations:
+  source_revision: 04533191457253ec1abc5d2df67da40b9e028f5e
+  release_url: https://github.com/fgpaz/mi-lsp/releases/tag/v0.15.3
+  checksums_verified: true
+  external_cli_and_worker_backups_retained: true
+  global_legacy_workers: deliberately_not_refreshed
+  linux_x64_primary:
+    version: 0.15.3
+    cli_sha256: 7f2de3ba154a0d20c53748b2598848586e3de2a2427c9df3f12f115b283999d1
+    selected_worker: compatible_local_bundle_from_neutral_working_directory
+    installation_exit: 0
+    query_exit: 0
+    query_ok: true
+    backend: text
+    result_count: 1
+    cli_ms: 60
+    wall_ms: 69.41
+    daemon_version_observed: 0.15.3
+  linux_x64_secondary:
+    version: 0.15.3
+    cli_sha256: 7f2de3ba154a0d20c53748b2598848586e3de2a2427c9df3f12f115b283999d1
+    installation_exit: 0
+    worker_manifest_files_verified: 326
+    worker_hash_mismatches: 0
+    doctor_exit: 0
+    query_exit: 0
+    query_ok: true
+    backend: text
+    result_count: 1
+    cli_ms: 46
+    wall_ms: 54.12
+    discarded_prior_attempts: 2
+    prior_attempts_disposition: verified_rollback_no_usable_result_or_latency_retained
+    evidence_origin: new_query_not_recovered_observation
+  windows_arm64:
+    version: 0.15.3
+    cli_sha256: 55e8249725818f71ac6c6d734fa02ae5cb702dad21ba2a4d5843d8b1e3ddd4e8
+    installation_exit: 0
+    installation_ms: 2032
+    local_bundle_files_match_release: true
+    effective_worker: previous_global_compatible_worker_preserved
+    daemon_state_observed: stopped
+    query_ok_observed: true
+    backend_observed: text
+    result_count_observed: 3
+    cli_ms_observed: 183
+    query_exit: null
+    query_exit_evidence: not_captured
+    query_capture_limit: JSON truncado por max_chars; se conserva observación visible, no un exit supuesto.
+operations_conformance:
+  status: explicit_incomplete
+  finding: La aceptación del segundo nodo Linux usó una consulta nueva, no la recuperación de evidencia anterior solicitada.
+  retained_prior_query_result_and_latency: not_available_in_inspected_failure_records
+  executor_read_of_updated_restriction: not_accredited
+  operation_vs_instruction_delivery_chronology: not_accredited
+  local_evidence_copy_timestamp_utc: 2026-10-23T01:02:02Z
+  timestamp_limit: La hora de copia local no acredita la hora exacta de la consulta remota.
+  owner: deployment_coordination
+  review_alarm: next_existing_operations_review_loop_tick
+  disposition: Mantener el resultado técnico observado y la desviación abiertos por separado; no afirmar conformidad operativa limpia.
+  constraints: No repetir consultas, instalaciones, inferencias, auditorías ni barridos de historial para corregir el registro.
+  product_source_change_required: false
+  extra_final_verify_or_audit_performed: false
