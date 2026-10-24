@@ -5,7 +5,7 @@ go 1.24.4
 require (
 	github.com/BurntSushi/toml v1.5.0
 	github.com/Microsoft/go-winio v0.6.2
-	github.com/fgpaz/bots-herramientas/mold/daemon v0.0.0-20261024013343-17638c6a03ca
+	github.com/fgpaz/bots-herramientas/mold/daemon v0.0.0-20261024021848-b0d1d19b04f0
 	github.com/fsnotify/fsnotify v1.9.0
 	github.com/spf13/cobra v1.9.1
 	github.com/toon-format/toon-go v0.0.0-20251202084852-7ca0e27c4e8c

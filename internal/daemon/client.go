@@ -38,7 +38,7 @@ func (c *Client) ExecuteWithDialTimeout(ctx context.Context, request model.Comma
 
 func (c *Client) execute(ctx context.Context, request model.CommandRequest, dialTimeout time.Duration) (model.Envelope, error) {
 	if c == nil || c.nodeScoped {
-		response, used, err := executeNodeScoped(ctx, request)
+		response, used, err := executeNodeScoped(ctx, request, dialTimeout)
 		if used {
 			return response, err
 		}
@@ -84,14 +84,18 @@ func (c *Client) execute(ctx context.Context, request model.CommandRequest, dial
 // executeNodeScoped uses the public node-scoped transport before the legacy
 // per-profile endpoint. A successful dial commits the request to this route:
 // after any write attempt, errors are returned as envelopes and never replayed.
-// The published Dial API has no context-aware dial; cancellation during that
-// local dial remains unsupported until the provider publishes DialContext.
-func executeNodeScoped(ctx context.Context, request model.CommandRequest) (model.Envelope, bool, error) {
+func executeNodeScoped(ctx context.Context, request model.CommandRequest, dialTimeout time.Duration) (model.Envelope, bool, error) {
 	node, err := readBabelNode(ctx)
 	if err != nil {
-		return model.Envelope{}, false, nil
+		return model.Envelope{}, true, err
 	}
-	conn, err := elasticdaemon.Dial("mi-lsp-" + node)
+	dialCtx := ctx
+	dialCancel := func() {}
+	if dialTimeout > 0 {
+		dialCtx, dialCancel = context.WithTimeout(ctx, dialTimeout)
+	}
+	conn, err := elasticdaemon.DialContext(dialCtx, "mi-lsp-"+node)
+	dialCancel()
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return model.Envelope{}, false, nil
@@ -152,7 +156,7 @@ func EnsureDaemon(repoRoot string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
 	defer cancel()
 	statusRequest := model.CommandRequest{ProtocolVersion: model.ProtocolVersion, Operation: "system.status", Context: model.QueryOptions{ClientName: "mi-lsp-daemon-probe"}}
-	if _, used, err := executeNodeScoped(ctx, statusRequest); used {
+	if _, used, err := executeNodeScoped(ctx, statusRequest, 0); used {
 		return err
 	} else if err != nil {
 		return err
