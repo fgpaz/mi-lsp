@@ -13,6 +13,8 @@ github.com/fgpaz/bots-herramientas/mold/daemon v0.0.0-20261024013343-17638c6a03c
 github.com/fgpaz/bots-herramientas/mold/daemon v0.0.0-20261024013343-17638c6a03ca/go.mod h1:hhRwDxXdP+rzYGaDbSkmpzhTC23E7ajJXdUqFsC/Flc=
 github.com/fgpaz/bots-herramientas/mold/daemon v0.0.0-20261024021848-b0d1d19b04f0 h1:wtYIRwyAwjPnNbXY/uiQHZPNFu4Btmx1eZlcidS9ckc=
 github.com/fgpaz/bots-herramientas/mold/daemon v0.0.0-20261024021848-b0d1d19b04f0/go.mod h1:hhRwDxXdP+rzYGaDbSkmpzhTC23E7ajJXdUqFsC/Flc=
+github.com/fgpaz/bots-herramientas/mold/daemon v0.0.0-20261024031724-180917c1073f h1:OpK3SAAi+A+l9OsCjphqOU+9GtmFRJmijGINiHdIrUo=
+github.com/fgpaz/bots-herramientas/mold/daemon v0.0.0-20261024031724-180917c1073f/go.mod h1:hhRwDxXdP+rzYGaDbSkmpzhTC23E7ajJXdUqFsC/Flc=
 github.com/fsnotify/fsnotify v1.9.0 h1:2Ml+OJNzbYCTzsxtv8vKSFD9PbJjmhYF14k/jKC7S9k=
 github.com/fsnotify/fsnotify v1.9.0/go.mod h1:8jBTzvmWwFyi3Pb8djgCCO5IBqzKJ/Jwo8TRcHyHii0=
 github.com/google/pprof v0.0.0-20250317173921-a4b03ec1a45e h1:ijClszYn+mADRFY17kjQEVQ1XRhq2/JR1M3sGqeJoxs=
