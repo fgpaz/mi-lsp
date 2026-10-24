@@ -18,7 +18,7 @@ CLI, agentes y consumidores locales de las operaciones descritas; no se amplía 
 - Boundary: usuario/agente/browser local -> CLI/daemon
 - Owner logico: CLI surface + Runtime supervision
 - Scope: comandos, flags globales, requests a daemon y endpoints admin locales
-- El pool compartido del nodo usa `bots-herramientas/mold/daemon` y el nombre `mi-lsp-<nodo>`; el listener y los requests legacy permanecen compatibles. El cliente debe resolver/usar este endpoint común antes de crear o usar un listener por perfil, y conservar cancelación y envelope. La integración vigente aquí arranca el pool común desde el daemon host; no se declara cubierto el descubrimiento común por todos los clientes.
+- El pool compartido del nodo usa `bots-herramientas/mold/daemon` y el nombre `mi-lsp-<nodo>`; el listener y los requests legacy permanecen compatibles. El cliente intenta el endpoint común antes del legacy; solo vuelve al legacy si falta el lock común antes de enviar. Respuestas y errores después de conectar no se reenvían. La cancelación cierra la conexión; el servidor la observa para `q`, no para todas las operaciones. La API publicada carece de dial contextual y la cancelación durante `Dial` no está soportada.
 
 ## Operaciones
 

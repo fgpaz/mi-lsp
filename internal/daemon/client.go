@@ -1,20 +1,27 @@
 package daemon
 
 import (
+	"bufio"
 	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
 	"net"
+	"os"
 	"time"
 
+	elasticdaemon "github.com/fgpaz/bots-herramientas/mold/daemon"
 	"github.com/fgpaz/mi-lsp/internal/model"
 	"github.com/fgpaz/mi-lsp/internal/worker"
 )
 
 type Client struct {
-	dial func(context.Context) (net.Conn, error)
+	dial       func(context.Context) (net.Conn, error)
+	nodeScoped bool
 }
 
 func NewClient() *Client {
-	return &Client{dial: dialDaemon}
+	return &Client{dial: dialDaemon, nodeScoped: true}
 }
 
 func (c *Client) Execute(ctx context.Context, request model.CommandRequest) (model.Envelope, error) {
@@ -30,6 +37,15 @@ func (c *Client) ExecuteWithDialTimeout(ctx context.Context, request model.Comma
 }
 
 func (c *Client) execute(ctx context.Context, request model.CommandRequest, dialTimeout time.Duration) (model.Envelope, error) {
+	if c == nil || c.nodeScoped {
+		response, used, err := executeNodeScoped(ctx, request)
+		if used {
+			return response, err
+		}
+		if err != nil {
+			return model.Envelope{}, err
+		}
+	}
 	dial := dialDaemon
 	if c != nil && c.dial != nil {
 		dial = c.dial
@@ -65,6 +81,68 @@ func (c *Client) execute(ctx context.Context, request model.CommandRequest, dial
 	return response, nil
 }
 
+// executeNodeScoped uses the public node-scoped transport before the legacy
+// per-profile endpoint. A successful dial commits the request to this route:
+// after any write attempt, errors are returned as envelopes and never replayed.
+// The published Dial API has no context-aware dial; cancellation during that
+// local dial remains unsupported until the provider publishes DialContext.
+func executeNodeScoped(ctx context.Context, request model.CommandRequest) (model.Envelope, bool, error) {
+	node, err := readBabelNode(ctx)
+	if err != nil {
+		return model.Envelope{}, false, nil
+	}
+	conn, err := elasticdaemon.Dial("mi-lsp-" + node)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return model.Envelope{}, false, nil
+		}
+		return model.Envelope{}, false, err
+	}
+	defer conn.Close()
+	stopCancel := context.AfterFunc(ctx, func() { _ = conn.Close() })
+	defer stopCancel()
+	input, err := json.Marshal(request)
+	if err != nil {
+		return daemonErrorEnvelope(request, err, "daemon"), true, nil
+	}
+	wireRequest := elasticdaemon.Request{
+		Op: "mi-lsp.command", Caller: elasticCaller(request.Context.ClientName, request.Context.SessionID), Input: input,
+	}
+	if err := json.NewEncoder(conn).Encode(wireRequest); err != nil {
+		return daemonErrorEnvelope(request, requestContextError(ctx, err), "daemon"), true, nil
+	}
+	var wireResponse elasticdaemon.Response
+	if err := json.NewDecoder(bufio.NewReader(conn)).Decode(&wireResponse); err != nil {
+		return daemonErrorEnvelope(request, requestContextError(ctx, err), "daemon"), true, nil
+	}
+	if !wireResponse.OK {
+		return nodeTransportErrorEnvelope(request, wireResponse), true, nil
+	}
+	data, err := json.Marshal(wireResponse.Data)
+	if err != nil {
+		return daemonErrorEnvelope(request, fmt.Errorf("decode shared daemon response: %w", err), "daemon"), true, nil
+	}
+	var response model.Envelope
+	if err := json.Unmarshal(data, &response); err != nil {
+		return daemonErrorEnvelope(request, fmt.Errorf("decode shared daemon envelope: %w", err), "daemon"), true, nil
+	}
+	return response, true, nil
+}
+
+func requestContextError(ctx context.Context, err error) error {
+	if ctxErr := ctx.Err(); ctxErr != nil {
+		return ctxErr
+	}
+	return err
+}
+
+func nodeTransportErrorEnvelope(request model.CommandRequest, response elasticdaemon.Response) model.Envelope {
+	if response.ReasonCode == "ocupado" {
+		return elasticBusyEnvelope(request)
+	}
+	return daemonErrorEnvelope(request, fmt.Errorf("shared daemon %s: %v", response.ReasonCode, response.Detail), "daemon")
+}
+
 // EnsureDaemon attempts to start the daemon if it's not already running.
 // It performs a quick health check (1s timeout) and spawns a new daemon if needed.
 // Returns nil if the daemon is ready, or an error if startup failed or timed out.
@@ -73,6 +151,12 @@ func EnsureDaemon(repoRoot string) error {
 	// Quick health check with 1s timeout
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
 	defer cancel()
+	statusRequest := model.CommandRequest{ProtocolVersion: model.ProtocolVersion, Operation: "system.status", Context: model.QueryOptions{ClientName: "mi-lsp-daemon-probe"}}
+	if _, used, err := executeNodeScoped(ctx, statusRequest); used {
+		return err
+	} else if err != nil {
+		return err
+	}
 	if _, err := probeDaemon(ctx); err == nil {
 		return nil
 	}
