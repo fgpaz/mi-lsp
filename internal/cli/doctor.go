@@ -154,6 +154,14 @@ func getDoctorDaemonInfo(ctx context.Context) (string, int, *model.DaemonPoolSta
 					}
 				}
 			}
+			if rawSizing, ok := item["coordinator_sizing"]; ok {
+				if encoded, marshalErr := json.Marshal(rawSizing); marshalErr == nil {
+					var sizing model.CoordinatorSizingStatus
+					if json.Unmarshal(encoded, &sizing) == nil && daemonPool != nil {
+						daemonPool.CoordinatorSizing = &sizing
+					}
+				}
+			}
 			if state, ok := item["state"].(map[string]any); ok {
 				// Extract version
 				if v, ok := state["version"].(string); ok {

@@ -7,6 +7,8 @@ github.com/dustin/go-humanize v1.0.1 h1:GzkhY7T5VNhEkwH0PVJgjz+fX1rhBrR7pRT3mDkp
 github.com/dustin/go-humanize v1.0.1/go.mod h1:Mu1zIs6XwVuF/gI1OepvI0qD18qycQx+mFykh5fBlto=
 github.com/fgpaz/bots-herramientas/mold/daemon v0.0.0-20261024002600-6ec36b8e70b1 h1:G/F9v/EJ1yIb+8tw/Y1i+36MaiAs51sT5mbyDSLpIZo=
 github.com/fgpaz/bots-herramientas/mold/daemon v0.0.0-20261024002600-6ec36b8e70b1/go.mod h1:hhRwDxXdP+rzYGaDbSkmpzhTC23E7ajJXdUqFsC/Flc=
+github.com/fgpaz/bots-herramientas/mold/daemon v0.0.0-20261024010816-12c1498927fa h1:dI3qybdu5v3/2Vc1AbWIaSAVwFYnB2jX7bHck9F+tOk=
+github.com/fgpaz/bots-herramientas/mold/daemon v0.0.0-20261024010816-12c1498927fa/go.mod h1:hhRwDxXdP+rzYGaDbSkmpzhTC23E7ajJXdUqFsC/Flc=
 github.com/fsnotify/fsnotify v1.9.0 h1:2Ml+OJNzbYCTzsxtv8vKSFD9PbJjmhYF14k/jKC7S9k=
 github.com/fsnotify/fsnotify v1.9.0/go.mod h1:8jBTzvmWwFyi3Pb8djgCCO5IBqzKJ/Jwo8TRcHyHii0=
 github.com/google/pprof v0.0.0-20250317173921-a4b03ec1a45e h1:ijClszYn+mADRFY17kjQEVQ1XRhq2/JR1M3sGqeJoxs=

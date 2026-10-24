@@ -209,14 +209,26 @@ type EnvelopeMetrics struct {
 	WorkersAtCapacity  bool  `json:"workers_at_capacity,omitempty"`
 }
 
+type CoordinatorSizingStatus struct {
+	SourceState         string     `json:"source_state"`
+	RequestedMinimum    int        `json:"requested_minimum"`
+	RequestedMaximum    int        `json:"requested_maximum"`
+	LastSuccessfulCount int        `json:"last_successful_count"`
+	LastSuccessAt       time.Time  `json:"last_success_at"`
+	LastErrorCode       string     `json:"last_error_code,omitempty"`
+	LastErrorDetail     string     `json:"last_error_detail,omitempty"`
+	LastErrorAt         *time.Time `json:"last_error_at,omitempty"`
+}
+
 type DaemonPoolStats struct {
-	Ready         bool   `json:"listo"`
-	Alive         bool   `json:"vivo"`
-	Helpers       int    `json:"ayudantes"`
-	Queue         int    `json:"fila"`
-	QueueCapacity int    `json:"capacidad_fila"`
-	BusyRejects   uint64 `json:"rechazos_ocupado"`
-	MemoryBytes   uint64 `json:"memoria_bytes"`
+	Ready             bool                     `json:"listo"`
+	Alive             bool                     `json:"vivo"`
+	Helpers           int                      `json:"ayudantes"`
+	Queue             int                      `json:"fila"`
+	QueueCapacity     int                      `json:"capacidad_fila"`
+	BusyRejects       uint64                   `json:"rechazos_ocupado"`
+	MemoryBytes       uint64                   `json:"memoria_bytes"`
+	CoordinatorSizing *CoordinatorSizingStatus `json:"coordinator_sizing,omitempty"`
 }
 
 type Envelope struct {

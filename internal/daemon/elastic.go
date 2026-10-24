@@ -27,16 +27,16 @@ func (s *Server) startElasticPool() error {
 	source := elasticdaemon.DefaultCoordinatorSource(node)
 	sizing, err := elasticdaemon.CoordinatorSizing(ctx, node, source, 0)
 	if err != nil {
-		return fmt.Errorf("read live coordinator census for node %q: %w", node, err)
+		return fmt.Errorf("coordinator_source_unavailable: read live coordinator census for node %q: %w", node, err)
 	}
 
 	pool, err := elasticdaemon.Start(elasticdaemon.Config{
 		Name:       "mi-lsp-" + node,
 		MinWorkers: sizing.Minimum,
 		MaxWorkers: sizing.Maximum,
-		// The existing mi-lsp daemon process owns idle shutdown and its configured
-		// timeout. The common server must not close its Submit queue independently.
-		AlwaysOn: true,
+		// The common server resets idle from accepted/completed submissions. Its
+		// orderly Close is bridged to the host through Server.Wait.
+		AlwaysOn: false,
 		Handler:  s.handleElasticOperation,
 	})
 	if err != nil {
@@ -45,6 +45,14 @@ func (s *Server) startElasticPool() error {
 	s.elastic = pool
 	s.elasticNode = node
 	s.coordinatorCount = sizing.Count
+	s.coordinatorSource = source
+	s.coordinatorSizing = model.CoordinatorSizingStatus{
+		SourceState:         "current",
+		RequestedMinimum:    sizing.Minimum,
+		RequestedMaximum:    sizing.Maximum,
+		LastSuccessfulCount: sizing.Count,
+		LastSuccessAt:       time.Now().UTC(),
+	}
 	return nil
 }
 
@@ -61,6 +69,69 @@ func (s *Server) watchElasticLifecycle() {
 			s.Shutdown()
 		}
 	}()
+}
+
+func (s *Server) startCoordinatorSizingRefresh() {
+	if s.elastic == nil || s.coordinatorSource == nil {
+		return
+	}
+	go func() {
+		ticker := time.NewTicker(time.Minute)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-s.elasticCtx.Done():
+				return
+			case <-ticker.C:
+				s.refreshCoordinatorSizing()
+			}
+		}
+	}()
+}
+
+func (s *Server) refreshCoordinatorSizing() {
+	if s.elasticCtx.Err() != nil {
+		return
+	}
+	ctx, cancel := context.WithTimeout(s.elasticCtx, 10*time.Second)
+	sizing, err := elasticdaemon.CoordinatorSizing(ctx, s.elasticNode, s.coordinatorSource, 0)
+	cancel()
+	if err != nil {
+		if s.elasticCtx.Err() == nil {
+			s.coordinatorSizingMu.Lock()
+			errorAt := time.Now().UTC()
+			s.coordinatorSizing.SourceState = "stale"
+			s.coordinatorSizing.LastErrorCode = "coordinator_source_unavailable"
+			s.coordinatorSizing.LastErrorDetail = "Falló la actualización del censo; se mantienen los límites válidos anteriores."
+			s.coordinatorSizing.LastErrorAt = &errorAt
+			s.coordinatorSizingMu.Unlock()
+		}
+		return
+	}
+
+	s.coordinatorSizingMu.Lock()
+	s.elasticLimitsMu.Lock()
+	if s.shutdownStarted.Load() || s.elastic == nil || !s.elastic.Stats().Ready {
+		s.elasticLimitsMu.Unlock()
+		s.coordinatorSizingMu.Unlock()
+		return
+	}
+	s.elastic.SetLimits(sizing.Minimum, sizing.Maximum)
+	s.coordinatorSizing = model.CoordinatorSizingStatus{
+		SourceState:         "current",
+		RequestedMinimum:    sizing.Minimum,
+		RequestedMaximum:    sizing.Maximum,
+		LastSuccessfulCount: sizing.Count,
+		LastSuccessAt:       time.Now().UTC(),
+	}
+	s.elasticLimitsMu.Unlock()
+	s.coordinatorSizingMu.Unlock()
+}
+
+func (s *Server) coordinatorSizingSnapshot() model.CoordinatorSizingStatus {
+	s.coordinatorSizingMu.RLock()
+	defer s.coordinatorSizingMu.RUnlock()
+	return s.coordinatorSizing
 }
 
 func readBabelNode(ctx context.Context) (string, error) {

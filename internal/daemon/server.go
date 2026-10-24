@@ -26,25 +26,29 @@ import (
 )
 
 type Server struct {
-	listener         net.Listener
-	app              *service.App
-	manager          *Manager
-	telemetry        *TelemetryStore
-	admin            *AdminServer
-	state            model.DaemonState
-	options          StartOptions
-	inflight         chan struct{}
-	stopped          chan struct{}
-	stopOnce         sync.Once
-	shutdownStarted  atomic.Bool
-	resultCache      *resultCache
-	qSessions        *service.SessionState
-	elastic          *elasticdaemon.Server
-	elasticNode      string
-	coordinatorCount int
-	elasticCtx       context.Context
-	elasticCancel    context.CancelFunc
-	elasticReady     chan struct{}
+	listener            net.Listener
+	app                 *service.App
+	manager             *Manager
+	telemetry           *TelemetryStore
+	admin               *AdminServer
+	state               model.DaemonState
+	options             StartOptions
+	inflight            chan struct{}
+	stopped             chan struct{}
+	stopOnce            sync.Once
+	shutdownStarted     atomic.Bool
+	elasticLimitsMu     sync.Mutex
+	coordinatorSizingMu sync.RWMutex
+	coordinatorSource   elasticdaemon.CoordinatorSource
+	coordinatorSizing   model.CoordinatorSizingStatus
+	resultCache         *resultCache
+	qSessions           *service.SessionState
+	elastic             *elasticdaemon.Server
+	elasticNode         string
+	coordinatorCount    int
+	elasticCtx          context.Context
+	elasticCancel       context.CancelFunc
+	elasticReady        chan struct{}
 }
 
 // generateAdminToken creates a random 32-byte hex token for admin authentication.
@@ -171,6 +175,7 @@ func NewServerWithOptions(repoRoot string, maxWorkers int, idleTimeout time.Dura
 		server.startFileWatchers()
 	}
 	server.watchElasticLifecycle()
+	server.startCoordinatorSizingRefresh()
 
 	return server, nil
 }
@@ -227,7 +232,9 @@ func (s *Server) Shutdown() {
 		_ = s.listener.Close()
 		_ = s.admin.Shutdown()
 		if s.elastic != nil {
+			s.elasticLimitsMu.Lock()
 			_ = s.elastic.Close()
+			s.elasticLimitsMu.Unlock()
 		}
 		s.manager.Shutdown()
 		_ = s.telemetry.Close()
@@ -335,6 +342,7 @@ func (s *Server) handleRequestContext(ctx context.Context, request model.Command
 				"elastic_pool":               s.elastic.Stats(),
 				"coordinator_node":           s.elasticNode,
 				"coordinator_count_at_start": s.coordinatorCount,
+				"coordinator_sizing":         s.coordinatorSizingSnapshot(),
 			}},
 		}, nil
 	case "system.stop":
