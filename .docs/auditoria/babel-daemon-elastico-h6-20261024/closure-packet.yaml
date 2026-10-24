@@ -1,0 +1,151 @@
+schema: ae-fast-closure/v4
+goal: elastic-daemon-h6
+branch_disposition: integrate-main
+status: published_side_by_side_explicit_incomplete
+overall_verdict: explicit_incomplete
+bounded_verdict: PASS_ACOTADO_CENSO_DOCS
+implementation:
+  integrated_source_sha: 111208f6a01b35a14f54bd0ab1863c2ed9754be7
+  sdk_source_sha: 180917c1073f3bb3528eeb40f7cf9af214c87228
+  sdk_module: github.com/fgpaz/bots-herramientas/mold/daemon
+  sdk_go_version: v0.0.0-20261024031724-180917c1073f
+  sdk_root_release: v0.1.14
+  contract: CT-CLI-DAEMON-V1
+  behavior: Daemon común por nodo, límites compartidos, contexto de q, estadísticas reales y censo vivo/ocupado explícito.
+  preserved: Identidad pública, caller, envelopes, cancelación y endpoint legacy por perfil.
+  fallback: Solo ausencia acreditada antes del envío; no redispatch por error ambiguo después del envío.
+  no_parallel_consumer_pool_or_permission_protocol: true
+publication_evidence:
+  path: .docs/auditoria/babel-daemon-elastico-h6-20261024/closure-packet.yaml
+  classification: sanitized_non_product_closure_evidence
+verification:
+  final_verify_waves: 1
+  final_verify_source: 25bb7d28286c132d5f378b6ac84dd049ed55e339
+  final_verify_verdict: PARTIAL
+  combined_trace_audit_passes: 1
+  rechecks: 1
+  recheck_source: 111208f6a01b35a14f54bd0ab1863c2ed9754be7
+  recheck_verdict: PASS_ACOTADO_CENSO_DOCS
+  additional_waves: 0
+  controlled_sdk_cases: {passed: 9, total: 9, proves_live_census: false}
+  previous_linux_build_exit: UNKNOWN
+  new_linux_build_exit: 0
+  old_build_receipt_rewritten: false
+  observed_runtime_scope: Host propio, lock entre dos HOME del mismo usuario, status/doctor y salida idle.
+  controlled_not_end_to_end: Cola acotada, fair-share y EOF/contexto observados con fixtures del SDK.
+  crossbuild_not_native_runtime: [windows_amd64, darwin_arm64]
+  final_verify_report_sha256: c350c2eac9f4b461b3e9aed749f60106d8c33c595f9337034964efde6431ce3f
+  recheck_report_sha256: c45e2aca12857b4b1cd79999966426d46384f322314b14f63d435aa51973f111
+  recheck_json_sha256: feb69de69ff5d4b20b06e68fd264a592c59b5bfa7f8407581af018b6b34f928b
+  recorded_deviation: Un diff-check accidental en adopción, no repetido ni presentado como verificación.
+other_family_judgment:
+  scope: Inferencias del paquete; no nueva auditoría, lectura de código ni runtime.
+  declared_model: claude-opus-5-5
+  declared_family: Anthropic
+  independently_verified_model_or_effort: false
+  conclusions: Separación scoped/global correcta; fixtures no acreditan censo vivo; conservar EIC sin otra FV.
+  counterexample: Una fuente sin rol coordinador produce conteo0 y mínimo1 aunque las fixtures sigan verdes.
+  grants_authority: false
+release:
+  tag: v0.15.4
+  source_sha: 111208f6a01b35a14f54bd0ab1863c2ed9754be7
+  url: https://github.com/fgpaz/mi-lsp/releases/tag/v0.15.4
+  published_at: '2026-10-24T04:02:07Z'
+  is_draft: false
+  uploaded_assets: 7
+  documented_script_build_exit: 0
+  documented_script_upload_exit: 0
+  notes_explicit_incomplete: true
+  checksum_file_sha256: f6dac98cbf7e17a97638d7be941350d1f9ff4cc68979219e5a248798d9288544
+  linux_x64_bundle_sha256: ca55ee0b5d2e20c8baaa53bc4ba0ea47f6175a64cc8febe0bf6d97b61d8f9a11
+  windows_arm64_bundle_sha256: de893be935d1e79ccbe2b548258e84cc809364d5cd8428c0d6f256853db27dfb
+installations:
+  mode: Bundles completos en directorios versionados permanentes separados; CLI y workers juntos.
+  active_executable_and_worker_files_changed: false
+  live_daemons_or_clients_stopped: false
+  default_and_path: Conservados en 0.15.3; no se afirma migración de consumidores.
+  installer_scripts_with_stop_executed: false
+  original_receipts: Tres NO_INSTALADO antes de decidir el camino preservador; no se reescribieron.
+  execution_owner: Mesa
+  delivery_owner: Coordinador de mi-lsp
+  Tesla:
+    installed: side_by_side
+    rid: linux-x64
+    version: 0.15.4
+    revision: 111208f6a01b35a14f54bd0ab1863c2ed9754be7
+    cli_sha256: ba756c3866659606236aca1e4281ae54427c8a8fe73fe3865145062e53c42e6e
+    version_exit: 0
+    version_ms: 10
+    selected_worker: legacy_0.15.3
+    serving_daemon: legacy_0.15.3
+    normal_query: {operation: nav_intent, exit: 0, seconds: 2.38, scope: mixed_not_H6_pool}
+    receipt_sha256: de078fb71f3cb16fcc0fa354b75a9fc8d74a7796ac2027b88bb556f998508b3b
+  Lenovo:
+    installed: side_by_side
+    rid: linux-x64
+    version: 0.15.4
+    revision: 111208f6a01b35a14f54bd0ab1863c2ed9754be7
+    cli_sha256: ba756c3866659606236aca1e4281ae54427c8a8fe73fe3865145062e53c42e6e
+    version_exit: 0
+    version_ms: 180
+    selected_worker: new_bundle_compatible
+    worker_status_exit: 0
+    daemon_status: not_running_explicit_incomplete
+    normal_query: explicit_incomplete_receipt_not_observed_by_deadline
+    receipt_sha256: 443e02d2133b19aee6a018267845aaf942bed0b736d285bc6b27c04d5334e1c8
+  Yoga:
+    installed: side_by_side
+    rid: win-arm64
+    version: 0.15.4
+    revision: 111208f6a01b35a14f54bd0ab1863c2ed9754be7
+    cli_sha256: 2b38cc2dfdf1f85a876246a1f2d245f4d0cc29c1e726a9c13eedd11605a251da
+    version_exit: 0
+    version_ms: 200
+    selected_worker: new_bundle_compatible
+    worker_status_exit: 0
+    worker_status_ms: 591
+    old_daemon_preserved: true
+    new_cli_daemon_status: {exit: 1, ms: 109, result: not_running_explicit_incomplete}
+    normal_query: explicit_incomplete_receipt_not_observed_by_deadline
+    receipt_sha256: fcbf80b99d00387e3aa059f3677a55070f245579c4b0b9b4bbdff2005177ae50
+explicit_incomplete:
+  - id: coordinator_role_in_source
+    owner: botsd_herdr
+    impact_owner: mi_lsp_coordinator
+    condition: El rol coordinador y nodo deben estar explícitos en botsd msg sesiones; no se infieren del nombre ni UUID.
+  - id: consumer_default_cutover
+    owner: mi_lsp_coordinator_and_Mesa
+    condition: Default y procesos actuales permanecen en 0.15.3; nueva ruta explícita instalada no equivale a cutover.
+    status: operator_hold_no_cutover_no_restart
+    review_trigger: Instrucción posterior que levante ese HOLD; no permiso inferido de esta publicación.
+  - id: two_original_normal_queries
+    owner: Mesa
+    impact_owner: mi_lsp_coordinator
+    hosts: [Lenovo, Yoga]
+    original_review_at: '2026-10-24T05:13:00Z'
+    subsequent_deadline: '2026-10-24T06:32:00Z'
+    reviewed_at: '2026-10-24T06:44:01Z'
+    disposition: Ambos plazos vencidos; no se recibieron las dos consultas normales, no se inventa fallo de producto ni medida.
+    next_step: Mesa entrega los resultados del pedido pendiente o causa y salida concreta, sin repetir consultas ya hechas ni cortar daemons.
+    next_review_at: '2026-10-24T06:50:00Z'
+    review_is_not_permission_to_restart_or_schedule_start: true
+    condition: Versión, worker status y daemon status no sustituyen una consulta real; no repetir la consulta de Tesla.
+  - id: remaining_runtime_evidence
+    owner: mi_lsp_coordinator
+    scope: Censo vivo y causalidad antigua sin rawrows; cross-user; slow-q/no-redispatch ambiguo E2E; stale/recovery/recycle/shrink/máximo; pool nativo Windows y runtime macOS; leak probe específico.
+    review_trigger: Uso normal del consumidor, sin abrir otra FV/auditoría/recheck de este objetivo.
+cleanup:
+  actors_closed_and_archived: 8
+  executor_worktrees_remaining: 0
+  detached_release_worktree_remaining: 0
+  conditions: Clean, integrado, sin cwd/fd; sin force ni interrupción de procesos ajenos.
+  release_assets_and_receipts_durable: true
+  unrelated_untracked_material: preserved
+wiki:
+  behavior_drift: closed_in_TECH_DAEMON_GOBERNANZA
+  this_packet_impact: no_wiki_impact_evidence_only
+prior_scope:
+  h1_h5: remain_closed_without_retests
+  release: v0.15.3
+  yoga_EIC1: Preservado, sin requery especial.
+  lenovo_historical_hold: Preservado, sin convertirlo retroactivamente en PASS.
