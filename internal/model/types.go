@@ -209,7 +209,18 @@ type EnvelopeMetrics struct {
 	WorkersAtCapacity  bool  `json:"workers_at_capacity,omitempty"`
 }
 
+type DaemonPoolStats struct {
+	Ready         bool   `json:"listo"`
+	Alive         bool   `json:"vivo"`
+	Helpers       int    `json:"ayudantes"`
+	Queue         int    `json:"fila"`
+	QueueCapacity int    `json:"capacidad_fila"`
+	BusyRejects   uint64 `json:"rechazos_ocupado"`
+	MemoryBytes   uint64 `json:"memoria_bytes"`
+}
+
 type Envelope struct {
+	DaemonPool         *DaemonPoolStats              `json:"daemon_pool,omitempty"`
 	Diagnostics        *DiagnosticsSummary           `json:"diagnostics,omitempty"`
 	ContractVersion    string                        `json:"contract_version,omitempty"`
 	Partial            bool                          `json:"partial,omitempty"`

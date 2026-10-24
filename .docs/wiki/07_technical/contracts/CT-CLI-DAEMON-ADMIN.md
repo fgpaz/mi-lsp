@@ -301,7 +301,7 @@ Reglas de formato:
 
 #### `doctor`: salida única y error ya emitido
 
-`doctor` de salud (distinto de `workspace doctor`) emite el envelope `backend=doctor` mediante el formatter común. Si los checks fallan, conserva `ok=false`, checks y resumen, y retorna el sentinel `envelopePrintedError` por valor: coincide con el `errors.As` existente de `IsEnvelopePrintedError`. El handler externo en `cmd/mi-lsp/main.go` no vuelve a emitir `WriteProcessFailure` para ese error; preserva el exit code envuelto, distinto de cero. Los errores anteriores a la emisión y los fallos de impresión no llevan sentinel y siguen por el handler de errores normal.
+`doctor` de salud (distinto de `workspace doctor`) emite el envelope `backend=doctor` mediante el formatter común. Cuando el daemon responde, agrega `daemon_pool` con las estadísticas del pool compartido (`listo`, `vivo`, `ayudantes`, `fila`, `capacidad_fila`, `rechazos_ocupado`, `memoria_bytes`), derivadas de la misma respuesta `system.status`; si el daemon no está disponible, omite ese campo. No sustituye el estado por métricas del pool Roslyn/workspace. Si los checks fallan, conserva `ok=false`, checks y resumen, y retorna el sentinel `envelopePrintedError` por valor: coincide con el `errors.As` existente de `IsEnvelopePrintedError`. El handler externo en `cmd/mi-lsp/main.go` no vuelve a emitir `WriteProcessFailure` para ese error; preserva el exit code envuelto, distinto de cero. Los errores anteriores a la emisión y los fallos de impresión no llevan sentinel y siguen por el handler de errores normal.
 
 - **Marcador estable**: cli-doctor-single-emission
 - **formats**:
@@ -715,7 +715,8 @@ Se mantienen las razones, warnings, rechazos y fallbacks explícitos de cada ope
 ### Payload, error y compatibilidad
 
 - `daemon start` debe devolver la instancia existente si ya corre.
-- `daemon status` debe exponer `state`, `daemon_process`, `watchers`, `active_runtimes` y `recent_accesses`.
+- `daemon status` debe exponer `state`, `daemon_process`, `watchers`, `active_runtimes`, `recent_accesses` y `elastic_pool` con métricas observadas del servidor común. También puede exponer `coordinator_node` y `coordinator_count_at_start` como identidad/censo observado al iniciar; no son un censo dinámico.
+- `doctor` agrega `daemon_pool` cuando el daemon responde, con los mismos siete campos de `elastic_pool`; la ausencia del daemon deja el campo omitido, no en cero.
 - `state` debe incluir metadata del ejecutable del daemon (`executable_path`, `executable_size`, `executable_mtime`, `executable_sha256`) cuando el daemon corre una build actual; si falta o si el hash/tamano/mtime prueban que difiere del CLI que invoca `daemon status`, el CLI debe emitir warning accionable con `mi-lsp daemon restart`. El hash tiene prioridad para evitar falsos positivos cuando `go run` usa paths temporales distintos para el mismo contenido.
 - Si una operación daemon-aware excede `max_inflight`, devuelve envelope `ok=false`, item con `error_kind=daemon`, `error_code=backpressure_busy`, y warning `daemon/backpressure_busy`.
 - Ese mismo caso debe mapear `error.kind=daemon`, `error.code=backpressure_busy`, `error.stage=backend`, `error.retryable=true` y persistir `failure_stage=backend` en telemetria.

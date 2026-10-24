@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"runtime/debug"
@@ -37,7 +38,7 @@ Checks include:
 
 			// Populate daemon info if available
 			opts := &service.RunDoctorOptions{}
-			daemonVersion, watchedDirs, daemonState, daemonErrorKind, daemonErr := getDoctorDaemonInfo(ctx)
+			daemonVersion, watchedDirs, daemonPool, daemonState, daemonErrorKind, daemonErr := getDoctorDaemonInfo(ctx)
 			opts.DaemonVersion = daemonVersion
 			opts.DaemonWatchedDirs = watchedDirs
 			opts.DaemonState = daemonState
@@ -53,9 +54,10 @@ Checks include:
 
 			// Convert DoctorReport to Envelope format
 			envelope := model.Envelope{
-				Ok:      report.ExitCode == 0,
-				Backend: "doctor",
-				Items:   report.Checks,
+				Ok:         report.ExitCode == 0,
+				Backend:    "doctor",
+				Items:      report.Checks,
+				DaemonPool: daemonPool,
 				Stats: model.Stats{
 					Ms: 0, // Would be filled in by the caller if needed
 				},
@@ -119,7 +121,7 @@ func extractExitCode(err error) int {
 }
 
 // getDoctorDaemonInfo tries to fetch daemon version and watched dirs.
-func getDoctorDaemonInfo(ctx context.Context) (string, int, service.DaemonState, service.DaemonErrorKind, error) {
+func getDoctorDaemonInfo(ctx context.Context) (string, int, *model.DaemonPoolStats, service.DaemonState, service.DaemonErrorKind, error) {
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 
@@ -132,17 +134,26 @@ func getDoctorDaemonInfo(ctx context.Context) (string, int, service.DaemonState,
 	})
 	if err != nil {
 		if isDaemonUnavailable(err) {
-			return "", 0, service.DaemonStateStopped, service.DaemonErrorUnavailable, err
+			return "", 0, nil, service.DaemonStateStopped, service.DaemonErrorUnavailable, err
 		}
-		return "", 0, service.DaemonStateUnknown, service.DaemonErrorCommunication, err
+		return "", 0, nil, service.DaemonStateUnknown, service.DaemonErrorCommunication, err
 	}
 
 	var version string
 	var watchedDirs int
+	var daemonPool *model.DaemonPoolStats
 
 	// Try to extract version and watcher stats from response
 	if items, ok := response.Items.([]any); ok && len(items) > 0 {
 		if item, ok := items[0].(map[string]any); ok {
+			if rawStats, ok := item["elastic_pool"]; ok {
+				if encoded, marshalErr := json.Marshal(rawStats); marshalErr == nil {
+					var stats model.DaemonPoolStats
+					if json.Unmarshal(encoded, &stats) == nil {
+						daemonPool = &stats
+					}
+				}
+			}
 			if state, ok := item["state"].(map[string]any); ok {
 				// Extract version
 				if v, ok := state["version"].(string); ok {
@@ -158,7 +169,7 @@ func getDoctorDaemonInfo(ctx context.Context) (string, int, service.DaemonState,
 		}
 	}
 
-	return version, watchedDirs, service.DaemonStateRunning, service.DaemonErrorNone, nil
+	return version, watchedDirs, daemonPool, service.DaemonStateRunning, service.DaemonErrorNone, nil
 }
 
 // getCLIVersionForComparison returns the CLI version for comparison with daemon.

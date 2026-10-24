@@ -15,6 +15,7 @@ import (
 	"sync"
 	"time"
 
+	elasticdaemon "github.com/fgpaz/bots-herramientas/mold/daemon"
 	"github.com/fgpaz/mi-lsp/internal/indexer"
 	"github.com/fgpaz/mi-lsp/internal/model"
 	"github.com/fgpaz/mi-lsp/internal/service"
@@ -24,18 +25,24 @@ import (
 )
 
 type Server struct {
-	listener    net.Listener
-	app         *service.App
-	manager     *Manager
-	telemetry   *TelemetryStore
-	admin       *AdminServer
-	state       model.DaemonState
-	options     StartOptions
-	inflight    chan struct{}
-	stopped     chan struct{}
-	stopOnce    sync.Once
-	resultCache *resultCache
-	qSessions   *service.SessionState
+	listener         net.Listener
+	app              *service.App
+	manager          *Manager
+	telemetry        *TelemetryStore
+	admin            *AdminServer
+	state            model.DaemonState
+	options          StartOptions
+	inflight         chan struct{}
+	stopped          chan struct{}
+	stopOnce         sync.Once
+	resultCache      *resultCache
+	qSessions        *service.SessionState
+	elastic          *elasticdaemon.Server
+	elasticNode      string
+	coordinatorCount int
+	elasticCtx       context.Context
+	elasticCancel    context.CancelFunc
+	elasticReady     chan struct{}
 }
 
 // generateAdminToken creates a random 32-byte hex token for admin authentication.
@@ -65,15 +72,19 @@ func NewServerWithOptions(repoRoot string, maxWorkers int, idleTimeout time.Dura
 		return nil, err
 	}
 	manager := NewManagerWithOptions(repoRoot, maxWorkers, idleTimeout, options)
+	elasticCtx, elasticCancel := context.WithCancel(context.Background())
 	server := &Server{
-		listener:    listener,
-		manager:     manager,
-		telemetry:   telemetry,
-		options:     options,
-		inflight:    make(chan struct{}, options.MaxInflight),
-		stopped:     make(chan struct{}),
-		resultCache: newResultCache(),
-		qSessions:   newQSessionState(),
+		listener:      listener,
+		manager:       manager,
+		telemetry:     telemetry,
+		options:       options,
+		inflight:      make(chan struct{}, options.MaxInflight),
+		stopped:       make(chan struct{}),
+		resultCache:   newResultCache(),
+		qSessions:     newQSessionState(),
+		elasticCtx:    elasticCtx,
+		elasticCancel: elasticCancel,
+		elasticReady:  make(chan struct{}),
 		state: model.DaemonState{
 			PID:             os.Getpid(),
 			Endpoint:        defaultEndpoint(),
@@ -95,6 +106,8 @@ func NewServerWithOptions(repoRoot string, maxWorkers int, idleTimeout time.Dura
 	if err != nil {
 		_ = listener.Close()
 		_ = telemetry.Close()
+		manager.Shutdown()
+		elasticCancel()
 		return nil, err
 	}
 	server.state.AdminToken = adminToken
@@ -104,14 +117,27 @@ func NewServerWithOptions(repoRoot string, maxWorkers int, idleTimeout time.Dura
 	if err != nil {
 		_ = listener.Close()
 		_ = telemetry.Close()
+		manager.Shutdown()
+		elasticCancel()
 		return nil, err
 	}
 	server.admin = admin
 	server.state.AdminURL = admin.URL()
-	runID, err := telemetry.StartRun(server.state)
-	if err != nil {
+	if err := server.startElasticPool(); err != nil {
+		elasticCancel()
 		_ = listener.Close()
 		_ = admin.Shutdown()
+		manager.Shutdown()
+		_ = telemetry.Close()
+		return nil, err
+	}
+	runID, err := telemetry.StartRun(server.state)
+	if err != nil {
+		elasticCancel()
+		_ = listener.Close()
+		_ = admin.Shutdown()
+		_ = server.elastic.Close()
+		manager.Shutdown()
 		_ = telemetry.Close()
 		return nil, err
 	}
@@ -129,11 +155,15 @@ func NewServerWithOptions(repoRoot string, maxWorkers int, idleTimeout time.Dura
 	}()
 
 	if err := saveDaemonState(server.state); err != nil {
+		elasticCancel()
 		_ = listener.Close()
 		_ = admin.Shutdown()
+		_ = server.elastic.Close()
+		manager.Shutdown()
 		_ = telemetry.Close()
 		return nil, err
 	}
+	close(server.elasticReady)
 
 	if options.WatchMode == WatchModeEager {
 		server.startFileWatchers()
@@ -186,11 +216,15 @@ func (s *Server) Serve(ctx context.Context) error {
 func (s *Server) Shutdown() {
 	s.stopOnce.Do(func() {
 		close(s.stopped)
+		s.elasticCancel()
 		s.syncRuntimeSnapshots()
 		_ = clearDaemonState()
 		_ = s.telemetry.StopRun(s.state.RunID, time.Now())
 		_ = s.listener.Close()
 		_ = s.admin.Shutdown()
+		if s.elastic != nil {
+			_ = s.elastic.Close()
+		}
 		s.manager.Shutdown()
 		_ = s.telemetry.Close()
 	})
@@ -212,10 +246,6 @@ func (s *Server) handleConnectionContext(ctx context.Context, conn net.Conn) {
 		return
 	}
 	started := time.Now()
-	workersInUse, workerSlots := 0, 0
-	if s.manager != nil {
-		workersInUse, workerSlots = s.manager.WorkerCapacity()
-	}
 	if s.isBackpressureLimited(request) && !s.tryAcquireInflight() {
 		response := s.backpressureEnvelope(request)
 		s.recordAccess(request, response, nil, time.Since(started))
@@ -237,21 +267,7 @@ func (s *Server) handleConnectionContext(ctx context.Context, conn net.Conn) {
 			}
 		}()
 	}
-	response, err := s.handleRequestContext(requestCtx, request)
-	if err != nil {
-		response = daemonErrorEnvelope(request, err, "daemon")
-	}
-	elapsed := time.Since(started)
-	if response.Ok && workerSlots > 0 && workersInUse >= workerSlots {
-		if response.Metrics == nil {
-			response.Metrics = &model.EnvelopeMetrics{}
-		}
-		response.Metrics.WorkersInUse = workersInUse
-		response.Metrics.WorkerSlots = workerSlots
-		response.Metrics.WorkersAtCapacity = true
-		response.Warnings = append(response.Warnings, fmt.Sprintf("workers_at_capacity: in_use=%d max=%d latency_ms=%d", workersInUse, workerSlots, elapsed.Milliseconds()))
-	}
-	s.recordAccess(request, response, err, elapsed)
+	response := s.submitElastic(requestCtx, request)
 	_ = worker.WriteFrame(conn, response)
 }
 
@@ -312,6 +328,9 @@ func (s *Server) handleRequestContext(ctx context.Context, request model.Command
 					"entries":  entries,
 					"hit_rate": hitRate,
 				},
+				"elastic_pool":               s.elastic.Stats(),
+				"coordinator_node":           s.elasticNode,
+				"coordinator_count_at_start": s.coordinatorCount,
 			}},
 		}, nil
 	case "system.stop":
