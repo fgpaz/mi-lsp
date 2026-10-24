@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	elasticdaemon "github.com/fgpaz/bots-herramientas/mold/daemon"
@@ -35,6 +36,7 @@ type Server struct {
 	inflight         chan struct{}
 	stopped          chan struct{}
 	stopOnce         sync.Once
+	shutdownStarted  atomic.Bool
 	resultCache      *resultCache
 	qSessions        *service.SessionState
 	elastic          *elasticdaemon.Server
@@ -168,6 +170,7 @@ func NewServerWithOptions(repoRoot string, maxWorkers int, idleTimeout time.Dura
 	if options.WatchMode == WatchModeEager {
 		server.startFileWatchers()
 	}
+	server.watchElasticLifecycle()
 
 	return server, nil
 }
@@ -215,6 +218,7 @@ func (s *Server) Serve(ctx context.Context) error {
 
 func (s *Server) Shutdown() {
 	s.stopOnce.Do(func() {
+		s.shutdownStarted.Store(true)
 		close(s.stopped)
 		s.elasticCancel()
 		s.syncRuntimeSnapshots()

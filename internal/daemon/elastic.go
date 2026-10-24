@@ -11,6 +11,7 @@ import (
 
 	elasticdaemon "github.com/fgpaz/bots-herramientas/mold/daemon"
 	"github.com/fgpaz/mi-lsp/internal/model"
+	"github.com/fgpaz/mi-lsp/internal/processutil"
 )
 
 const elasticCommandOperation = "mi-lsp.command"
@@ -47,8 +48,25 @@ func (s *Server) startElasticPool() error {
 	return nil
 }
 
+func (s *Server) watchElasticLifecycle() {
+	pool := s.elastic
+	if pool == nil {
+		return
+	}
+	go func() {
+		pool.Wait()
+		// The host also closes the pool during Shutdown. Mark that path before
+		// Close so the waiter cannot recursively enter the same stopOnce.
+		if !s.shutdownStarted.Load() {
+			s.Shutdown()
+		}
+	}()
+}
+
 func readBabelNode(ctx context.Context) (string, error) {
-	output, err := exec.CommandContext(ctx, "botsd", "identidad").Output()
+	cmd := exec.CommandContext(ctx, "botsd", "identidad")
+	processutil.ConfigureNonInteractiveCommand(cmd)
+	output, err := cmd.Output()
 	if err != nil {
 		return "", fmt.Errorf("read public Babel node identity with botsd identidad: %w", err)
 	}
