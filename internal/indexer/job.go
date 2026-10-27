@@ -30,12 +30,38 @@ type IndexJobState struct {
 
 // jobRegistry tracks background indexing jobs.
 type jobRegistry struct {
-	mu   sync.RWMutex
-	jobs map[string]IndexJobState
+	mu     sync.RWMutex
+	jobs   map[string]IndexJobState
+	paused bool
 }
 
 var jobs = &jobRegistry{
 	jobs: make(map[string]IndexJobState),
+}
+
+// launchBackgroundIndex is a private seam; production always runs the job asynchronously.
+var launchBackgroundIndex = func(run func()) { go run() }
+
+// TryPauseBackgroundJobs excludes new background jobs only when the registry is known idle.
+// The returned resume is idempotent and cannot release a later pause.
+func TryPauseBackgroundJobs() (func(), bool) {
+	registry := jobs
+	if registry == nil {
+		return nil, false
+	}
+	registry.mu.Lock()
+	defer registry.mu.Unlock()
+	if registry.jobs == nil || registry.paused {
+		return nil, false
+	}
+	for _, job := range registry.jobs {
+		if !job.Done {
+			return nil, false
+		}
+	}
+	registry.paused = true
+	var once sync.Once
+	return func() { once.Do(func() { registry.mu.Lock(); registry.paused = false; registry.mu.Unlock() }) }, true
 }
 
 // newJobID generates a unique job ID based on root and current timestamp.
@@ -154,21 +180,36 @@ func SmartSyncTimeout() time.Duration {
 //
 // Lock acquisition is handled by the caller (workspace_ops) with timeout and degradation.
 func StartBackgroundIndex(ctx context.Context, root string, clean bool, mode IndexMode) (string, error) {
+	registry := jobs
+	if registry == nil {
+		return "", fmt.Errorf("background indexing unavailable")
+	}
+	registry.mu.Lock()
+	if registry.jobs == nil || registry.paused {
+		registry.mu.Unlock()
+		return "", fmt.Errorf("background indexing unavailable")
+	}
 	jobID := newJobID(root)
-	jobs.set(jobID, IndexJobState{
-		JobID: jobID,
-		Phase: "queued",
-		Done:  false,
-	})
+	if _, exists := registry.jobs[jobID]; exists {
+		base := jobID
+		for suffix := 1; ; suffix++ {
+			jobID = fmt.Sprintf("%s-%d", base, suffix)
+			if _, exists = registry.jobs[jobID]; !exists {
+				break
+			}
+		}
+	}
+	registry.jobs[jobID] = IndexJobState{JobID: jobID, Phase: "queued"}
+	registry.mu.Unlock()
 
-	// Spawn background goroutine
-	go func() {
+	// The queued state is visible before launch and remains active until finish.
+	launchBackgroundIndex(func() {
 		// Create a context with timeout for the entire indexing operation
 		ic, cancel := context.WithTimeout(context.WithoutCancel(ctx), indexTimeout())
 		defer cancel()
 
 		// Update phase to "running"
-		jobs.set(jobID, IndexJobState{
+		registry.set(jobID, IndexJobState{
 			JobID: jobID,
 			Phase: "running",
 			Done:  false,
@@ -188,8 +229,8 @@ func StartBackgroundIndex(ctx context.Context, root string, clean bool, mode Ind
 		})
 
 		// Mark job as finished
-		jobs.finish(jobID, err)
-	}()
+		registry.finish(jobID, err)
+	})
 
 	return jobID, nil
 }
