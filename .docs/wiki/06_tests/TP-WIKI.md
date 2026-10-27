@@ -500,8 +500,8 @@ RF-WIKI-001, RF-WIKI-002, RF-WIKI-003, RF-WIKI-004, RF-WIKI-005, RF-WIKI-006, RF
 
 ### Clasificación de schema Setup
 
-- **Oráculos**: `TestSetupWikiSchemaAbsentUsesGovernanceSourceDoc`, `TestSetupWikiSchemaPresentFailsClosed` y `TestSetupWikiSchemaSupportedAndUnreadable` en `internal/docgraph/setup_wiki_schema_test.go`.
-- Sin clave `schema`, aun con `canon_roots`, no se configura Setup y se resuelve el `source_doc` declarado; schema presente inválido queda pendiente, v1/v2 conservan su selección y YAML ilegible sigue siendo error tipado.
+- **Oráculos**: `TestSetupWikiSchemaAbsentUsesGovernanceSourceDoc`, `TestSetupWikiSchemaAbsentWithLegacyGovernanceFile`, `TestSetupWikiSchemaPresentFailsClosed` y `TestSetupWikiSchemaSupportedAndUnreadable` en `internal/docgraph/setup_wiki_schema_test.go`.
+- Sin clave `schema`, aun con `canon_roots` o `governance_file` legacy, no se configura Setup y se resuelve el `source_doc` declarado; schema presente inválido queda pendiente, v1/v2 conservan su selección y YAML ilegible sigue siendo error tipado.
 - La ejecución corresponde a FINAL_VERIFY; esta descripción no acredita ejecución.
 
 ### Regresiones de roots declarados y propietarios documentales

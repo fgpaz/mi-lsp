@@ -32,6 +32,21 @@ func TestSetupWikiSchemaAbsentUsesGovernanceSourceDoc(t *testing.T) {
 	}
 }
 
+func TestSetupWikiSchemaAbsentWithLegacyGovernanceFile(t *testing.T) {
+	root := t.TempDir()
+	writeSchemaFixture(t, root, ".sandinas/project.yaml", "wiki:\n  canon_roots:\n    - role: gobierno_local\n      path: .docs/wiki\n  governance_file: .docs/wiki/legacy-governance.md\n")
+	writeSchemaFixture(t, root, ".docs/wiki/_mi-lsp/read-model.toml", "version = 1\n[governance]\nsource_doc = '.docs/wiki/current-governance.md'\n")
+	writeSchemaFixture(t, root, ".docs/wiki/current-governance.md", "# Governance\n")
+	writeSchemaFixture(t, root, ".docs/wiki/legacy-governance.md", "# Legacy\n")
+	if got := ResolveSetupWikiSource(root); got.Configured {
+		t.Errorf("schema-free legacy governance_file must not configure Setup: %+v", got)
+	}
+	got, err := ResolvedGovernanceDocument(root)
+	if err != nil || got != ".docs/wiki/current-governance.md" {
+		t.Fatalf("source_doc = %q, err = %v", got, err)
+	}
+}
+
 func TestSetupWikiSchemaPresentFailsClosed(t *testing.T) {
 	for _, tc := range []struct{ name, yaml string }{
 		{"unknown", "schema: sandinas-project/v99\n"},
