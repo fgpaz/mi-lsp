@@ -18,6 +18,7 @@ Desarrolladores, agentes y operadores locales del daemon.
 
 - Init y el registro conservan la topología single/container y las raíces de canon.
 - Los workers se instalan explícitamente; no se descargan durante una consulta.
+- La CLI portable se mantiene mediante un único updater runtime, con estado verificable, pin explícito y respeto del trabajo vivo; ver [[FL-UPD-001]] y [[RF-UPD-001]].
 - Fallback, carga de runtime, estado y errores siguen visibles y accionables.
 - Probe no crea DB, WAL/SHM, registry ni telemetría.
 - La consola muestra workspaces, runtimes, accesos y logs del daemon actual; el warm no crea otra instancia.

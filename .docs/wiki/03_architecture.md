@@ -119,6 +119,7 @@ flowchart LR
 ### Responsabilidades por módulo
 
 - **Módulo**: CLI; **Responsabilidad**: Parseo de comandos, flags globales, selectors semánticos y shortcut `init`. Autoridad única de navegacion.
+- **Módulo**: Self-update runtime; **Responsabilidad**: Un único motor para CLI/daemon y todos los consumidores, con caché/lock en home, estado por ejecutable, checksum y promoción/readback/rollback. No instala workers durante consultas; el reciclado del daemon requiere barrera idle real. Ver [[TECH-RUNTIME-UPDATE]] y [[FL-UPD-001]].
 - **Módulo**: Puerta MCP; **Responsabilidad**: Retirada (2026-10-15). `mi-lsp mcp` ya no existe; `mi-mcp` invoca el CLI por llamada de herramienta. Ver [[TECH-MCP-ADAPTER]].
 - **Módulo**: Daemon global Go; **Responsabilidad**: Routing, health, telemetry, governance UI y sharing entre clientes
 - **Módulo**: Governance UI; **Responsabilidad**: Consola workspace-first con visibilidad de `kind`, repos y entrypoints
