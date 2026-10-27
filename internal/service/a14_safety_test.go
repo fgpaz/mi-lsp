@@ -94,6 +94,27 @@ func TestA14SafetyNoneDoesNotHideMalformedInventory(t *testing.T) {
 	}
 }
 
+func TestA14SafetyEmptyInventoryDoesNotHideOtherBlocks(t *testing.T) {
+	root := t.TempDir()
+	path := ".docs/wiki/00_retirements.md"
+	valid := "```yaml\nentries: []\n```\n"
+	for name, extra := range map[string]string{
+		"unknown_yaml":            "```yaml\nunknown_inventory: []\n```\n",
+		"tilde_yaml":              "~~~yaml\nentries: [\n~~~\n",
+		"indented_yaml":           "    entries: [\n",
+		"mid_body_frontmatter":    "---\nentries: [\n---\n",
+		"multiple_yaml_documents": "```yaml\nentries: []\n---\nentries: [\n```\n",
+	} {
+		t.Run(name, func(t *testing.T) {
+			writeContractTestWikiFile(t, root, path, valid+extra)
+			got := compileWikiContractValidation(root, []model.DocRecord{{Path: path}}, nil)
+			if got.ContractVerdict == "PASS" {
+				t.Fatalf("a valid block concealed unvalidated inventory: %+v", got)
+			}
+		})
+	}
+}
+
 func TestA14SafetyRetirementMultilineReason(t *testing.T) {
 	root := t.TempDir()
 	path := ".docs/wiki/00_retirements.md"
