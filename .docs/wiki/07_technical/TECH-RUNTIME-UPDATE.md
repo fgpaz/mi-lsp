@@ -5,7 +5,7 @@ kind: technical
 status: active
 title: Runtime-owned updater y contrato update-status/v1
 links:
-  implements:
+  supports:
   - RF-UPD-001
   code:
   - path: internal/selfupdate/engine.go
