@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.16.0] - 2026-10-27
+
+### Añadido
+
+- Autoactualización propiedad del runtime: metadata oficial de GitHub limitada por home a 24 horas y promoción de la CLI por instalación, incluido `%USERPROFILE%/bin` y `~/.local/bin`; pin y opt-out explícitos.
+- `update --check --format json` consulta de sólo lectura con contrato común `update-status/v1`: `installed` refleja el disco y un `updated` conserva `previous` como versión anterior.
+- Descarga con SHA exacto, extracción acotada del layout oficial, staging, backup verificado, readback y rollback honesto; no instala workers como efecto de consultas.
+- Reciclado idle del daemon sin cortar requests, respuestas HTTP, jobs, callbacks de watchers ni contextos vivos; limpieza del estado viejo antes de lanzar el nuevo proceso desconectado.
+
+Las versiones publicadas anteriormente sin updater requieren una primera adopción manual. La instalación en disco no implica reinicio de daemons compartidos ni atribuye causas de antivirus sin evidencia.
+
 ## [0.15.6] - 2026-10-27
 
 ### Corregido

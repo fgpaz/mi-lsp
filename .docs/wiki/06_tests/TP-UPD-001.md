@@ -75,7 +75,17 @@ RF-UPD-001 criterios 1–8, sin convertir fuentes de pruebas en afirmación de e
 7. Criterio 7: requests incompletos y escritura de respuesta, HTTP, background, sesiones/contextos y gate de Accept, shutdown/state antes de spawn. Disposición: manual_evidence_pending. RED124 conductual demuestra retornos prematuros de Stop y cierre HTTP irreversible antes de commit. Fixes integrados, sin green todavía; la unión de Serve con el spawn comprometido sigue en BUILD. Helpers aislados no acreditan E2E.
 8. Criterio 8: Windows y VPS Linux reales desde bootstrap identificado hacia destino público. Disposición: manual_evidence_pending. Originales 0.15.6/0.15.4 no contienen updater; sólo preflight VPS readonly completado, ningún E2E aún. Bootstrap real nuevo-source 0.15.6+a15bootstrap no se presenta como binario público original.
 
-## Evidencia
+## FINAL_VERIFY observada (base de código ab3e6cb)
+
+- Suite Windows completa: A15-suite-comparison.json, exactamente cinco fallos baseline reproducidos y cero nuevos; **no green global**. El primer fallo adicional de snapshot se conservó en A15-suite-first-comparison.json y no se aceptó como baseline. El fix exclusivo de fixture usa metadata fresca por handle después de leer hashes; 30 repeticiones de lock/check pasan sin quitar comprobaciones de mode, size, mtime o hash.
+- Windows real: TestDetachedIndexJobSurvivesParentExit pasó tras salida del padre; la suite cubre los diez campos, límites, checksum, rollback, caché/política, fábrica real y barreras de admisión/joins. No es evidencia nativa macOS.
+- Linux ARM64 real WSL: A15-native-linux-results.json, paquetes selfupdate/daemon/service ejecutados y PASS. El intento anterior falló antes de ejecutar tests por quoting del driver y quedó preservado. **No es VPS Lenovo**.
+- Controller Windows real local: fixture a15-owned-t0pjcmti; PID67412 respondió el RPC completo después de promoción en disco manteniendo una trama parcial abierta. Check conservó hash/mtime/size del estado; luego salió el viejo y PID63312 adoptó 0.16.0 conservando opciones. Promoción/recibo fueron controlados por fixture local: **NO acredita descarga automática pública**. Bootstrap 0.15.6+a15bootstrap es fuente nueva ab3e6cb, no binario antiguo publicado. El primer intento se abortó por CRLF del helper, sin PASS ficticio ni corte de procesos ajenos.
+- Corpus reales readonly botsd/Desktop/Traditore: A15-*-readonly-proof.json acredita hash/mtime/size intactos y perfil sin escrituras; resultados conservan ADVISORY/links reales, no PASS inventado. SQLite original nunca abierto, sólo copias privadas con WAL.
+
+Criterios1–7 conservan los oráculos anteriores y ahora estas evidencias automatizadas; la demostración de fuente pública y readbacks finales del criterio8 sigue **manual_evidence_pending**, autorizada como comprobación posterior a publicación. Esta sección no adelanta ese cierre ni reemplaza el audit independiente.
+
+## Evidencia histórica de RED (no repetir)
 
 Bitácora externa del encargo A15 y A-evidence/A15-review-red-results.json: fuente9c543c0, compile RED por dos seams ausentes. Overlay sólo omitió esas dos funciones de tests para observar conductas existentes; producción sin modificación. Compilación linux/arm64 y ejecución real WSL registraron los rojos, no son ejecución VPS ni macOS. Rojos iniciales117/118 precedieron producción. FINAL_VERIFY y certificación/release siguen pendientes.
 

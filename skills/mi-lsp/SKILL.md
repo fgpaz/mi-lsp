@@ -94,6 +94,34 @@ Follow exact emitted `continuation.next` / `expansions[].command` before widenin
 advanced CLI operations remain executable directly. A literal requested operation
 stays direct. Lexical candidates are not semantic evidence.
 
+## Runtime update (0.16+)
+
+The runtime owns updates; consumers must not implement another downloader.
+Normal release commands schedule a hidden, detached check. Official GitHub
+metadata is cached per home for 24 hours; application is per executable path.
+User-bin installations (`%USERPROFILE%/bin`, `~/.local/bin`) are not implicit pins.
+
+- `mi-lsp update --check --format json`: existing status plus real disk readback;
+  no network, writes, locks or staging. Missing/invalid status is a normal error.
+- `mi-lsp update`: explicit application with checksum, staging and readback.
+- `MI_LSP_AUTO_UPDATE=0` opts out; `MI_LSP_CHANNEL=pinned` explicitly pins.
+  A `~/.mi-lsp/update/pin.json` with schema `mi-lsp-update-pin/v1` and
+  `pinned: true` also pins. Do not create pins merely because an installation is
+  outside a development checkout.
+
+JSON has exactly `schema`, `tool`, `installed`, `latest`, `last_check`,
+`last_result`, `code`, `previous`, `channel`, `auto`; schema is `update-status/v1`.
+`installed` is ALWAYS the actual version read from disk. With `updated`, it equals
+`latest`, and `previous` is the old version: notify once, **from previous to
+installed**, deduplicating by `last_check`. Do not notify for network, lock or busy
+deferrals, invent codes, or attribute antivirus without concrete evidence.
+
+A live daemon may retain its old image while preserving work; disk installation
+is not daemon adoption. Recycle occurs only behind a real idle barrier. Never stop
+a foreign/shared daemon to obtain idle. Original older releases without an
+updater require a truthful first manual adoption; new MCP sessions adopt the new
+executable without interrupting existing sessions.
+
 ## Honest recovery
 
 If an alias is absent, inspect `herramientas.describe({cli:"lsp", comando:"diagnostics"})`
