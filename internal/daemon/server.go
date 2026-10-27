@@ -121,7 +121,7 @@ func NewServerWithOptions(repoRoot string, maxWorkers int, idleTimeout time.Dura
 	server.state.AdminToken = adminToken
 
 	server.app = service.New(repoRoot, manager)
-	admin, err := NewAdminServer(manager, telemetry, server.app, func() model.DaemonState { return server.state }, adminToken)
+	admin, err := newAdminServer(manager, telemetry, server.app, func() model.DaemonState { return server.state }, adminToken, server.updateGate)
 	if err != nil {
 		_ = listener.Close()
 		_ = telemetry.Close()

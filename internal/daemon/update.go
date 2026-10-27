@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"context"
+	"net/http"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -85,6 +86,25 @@ func (s *Server) runUpdateSchedule(ctx context.Context) {
 			_, _ = selfupdate.MaybeStartAutomatic(cfg, false)
 		}
 	}
+}
+
+func updateAdminHandler(gate *updateAdmissionGate, next http.Handler) http.Handler {
+	if gate == nil {
+		return next
+	}
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		finish, ok := gate.Begin("admin-http")
+		if !ok {
+			http.Error(w, "daemon temporarily unavailable", http.StatusServiceUnavailable)
+			return
+		}
+		defer finish()
+		next.ServeHTTP(w, r)
+	})
+}
+
+func (s *Server) updateResourcesIdle(now time.Time) bool {
+	return s != nil && s.manager.UpdateIdleSnapshot() && !s.qSessions.HasLiveSessions(now)
 }
 
 // Admission tracks all activities registered by the daemon. An idle barrier
