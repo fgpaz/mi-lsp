@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.15.5] - 2026-10-27
+
+### Corregido
+
+- Un `.sandinas/project.yaml` sin clave `schema` no se interpreta como contrato Setup; la wiki conserva su resolución publicada por `governance.source_doc`. Un schema presente inválido o desconocido sigue fallando de forma cerrada.
+- La evidencia TOML/JSON/YAML existente dentro de la wiki ya no produce un falso índice `stale` en `validate-harness`; Markdown gobernado sin indexar sigue detectándose.
+- El daemon local no requiere `botsd`; el modo compartido sólo se habilita con `MI_LSP_ELASTIC=1`. Los componentes opcionales ausentes del doctor se informan como omitidos.
+
+### Añadido
+
+- `workspace status --no-entrypoints` conserva los conteos sin desplegar el catálogo de entrypoints.
+- Primer corte de worker .NET framework-dependent con host `dotnet`, selección explícita de modo y fallback self-contained. La sustitución del worker usa staging verificado, backup/rollback y bloqueo de escritor.
+- `repair` planifica sin cambios por defecto y exige `--apply`; publica localización, recibos, detección de remoción sin atribuir causalidad de antivirus y enfriamiento de reintentos. El provider de mi-mcp expone `doctor` y `repair`.
+- Recursos de versión reproducibles para binarios Windows; no implican firma ni garantía de aceptación antivirus.
+
 ## [0.15.2] - 2026-10-21
 
 ### Corregido
