@@ -506,7 +506,16 @@ func InstallWorkerMode(toolRoot string, rid string, mode string) (installedPath 
 
 // publishWorkerDistribution verifica una copia hermana antes de sustituir el
 // destino. Si el rollback falla conserva el backup y devuelve una ruta no vacía.
-func publishWorkerDistribution(sourceDir, targetDir, binaryName string) (string, error) {
+func publishWorkerDistribution(sourceDir, targetDir, binaryName string) (installedPath string, err error) {
+	err = runtimeinfo.WithFileLock(targetDir, func() error {
+		var publishErr error
+		installedPath, publishErr = publishWorkerDistributionLocked(sourceDir, targetDir, binaryName)
+		return publishErr
+	})
+	return installedPath, err
+}
+
+func publishWorkerDistributionLocked(sourceDir, targetDir, binaryName string) (string, error) {
 	parent := filepath.Dir(targetDir)
 	stage, err := os.MkdirTemp(parent, ".worker-stage-")
 	if err != nil {
