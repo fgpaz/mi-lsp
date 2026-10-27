@@ -6,6 +6,7 @@ import (
 	"runtime"
 	"testing"
 
+	"github.com/fgpaz/mi-lsp/internal/model"
 	"github.com/fgpaz/mi-lsp/internal/workspace"
 )
 
@@ -118,6 +119,69 @@ func TestRegisterPreservesUnknownRegistryFields(t *testing.T) {
 	after, err := os.ReadFile(path)
 	if err != nil || string(after) != string(original) {
 		t.Fatal("registro modificado")
+	}
+}
+
+func TestIndexLeavesUnrelatedStaleAliasUntouched(t *testing.T) {
+	isolateHome(t)
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte("module example.invalid/demo\n\ngo 1.24\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "main.go"), []byte("package main\nfunc main() {}\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := workspace.RegisterWorkspace("elegido", model.WorkspaceRegistration{Root: root}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := workspace.RegisterWorkspace("ajeno", model.WorkspaceRegistration{Root: filepath.Join(t.TempDir(), "ausente")}); err != nil {
+		t.Fatal(err)
+	}
+	path, err := workspace.RegistryPathReadOnly()
+	if err != nil {
+		t.Fatal(err)
+	}
+	before, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := Apply("index", "elegido", t.TempDir(), "")
+	if err != nil || !result.Changed {
+		t.Fatalf("indexación: %+v %v", result, err)
+	}
+	after, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(before) != string(after) {
+		t.Fatal("se modificó el registro ajeno")
+	}
+	registry, err := workspace.LoadRegistryReadOnly()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := registry.Workspaces["ajeno"]; !ok {
+		t.Fatal("alias ajeno eliminado")
+	}
+}
+
+func TestCatalogInspectionRejectsWAL(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, ".mi-lsp")
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "index.db"), []byte("fixture"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "index.db-wal"), []byte("wal"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if ready, err := catalogReadyReadOnly(root); err == nil || ready {
+		t.Fatalf("WAL no debe producir estado limpio: %v %v", ready, err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "index.db-shm")); !os.IsNotExist(err) {
+		t.Fatalf("se creó SHM: %v", err)
 	}
 }
 

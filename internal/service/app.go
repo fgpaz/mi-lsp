@@ -28,11 +28,12 @@ type SemanticCaller interface {
 }
 
 type App struct {
-	RepoRoot        string
-	Semantic        SemanticCaller
-	Config          Config
-	backendCooldown sync.Map
-	tsRefsWarmups   sync.Map
+	RepoRoot                    string
+	Semantic                    SemanticCaller
+	Config                      Config
+	ReadOnlyWorkspaceResolution bool
+	backendCooldown             sync.Map
+	tsRefsWarmups               sync.Map
 }
 
 type semanticTarget struct {
@@ -50,6 +51,13 @@ func New(repoRoot string, semantic SemanticCaller) *App {
 }
 
 func (a *App) ResolveWorkspace(nameOrPath string) (model.WorkspaceRegistration, error) {
+	if a.ReadOnlyWorkspaceResolution {
+		resolution, err := workspace.ResolveWorkspaceSelectionReadOnlyPhysical(nameOrPath, "")
+		if err != nil {
+			return model.WorkspaceRegistration{}, err
+		}
+		return resolution.Registration, nil
+	}
 	return workspace.ResolveWorkspace(nameOrPath)
 }
 

@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 )
 
@@ -140,6 +141,33 @@ func TestSelfContainedInstallKeepsApphost(t *testing.T) {
 	}
 	if path != status.Installed.Path || status.Installed.Mode != "self-contained" || status.Selected.Host != "apphost" || specs[0].CandidatePath != status.Selected.Path {
 		t.Fatalf("path=%s status=%+v first=%+v", path, status, specs[0])
+	}
+}
+
+func TestInstallDoesNotRecordIncompatibleWorker(t *testing.T) {
+	home, root := t.TempDir(), t.TempDir()
+	if runtime.GOOS == "windows" {
+		t.Setenv("USERPROFILE", home)
+	} else {
+		t.Setenv("HOME", home)
+	}
+	oldHome, oldProbe := userHomeDirFn, probeWorkerBinaryFn
+	t.Cleanup(func() { userHomeDirFn, probeWorkerBinaryFn = oldHome, oldProbe })
+	userHomeDirFn = func() (string, error) { return home, nil }
+	probeWorkerBinaryFn = func(string) workerProbeResult { return workerProbeResult{Err: errors.New("incompatible")} }
+	dir := filepath.Join(root, "workers", ResolveRID())
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, workerBinaryName()), []byte("fixture"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	path, err := InstallWorkerMode(root, ResolveRID(), "self-contained")
+	if err == nil || path == "" {
+		t.Fatalf("instalación debe fallar tras handshake: %q %v", path, err)
+	}
+	if _, err := os.Stat(filepath.Join(home, ".mi-lsp", "repair", "installations.json")); !os.IsNotExist(err) {
+		t.Fatalf("recibo inesperado: %v", err)
 	}
 }
 
