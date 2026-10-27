@@ -10,9 +10,11 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/fgpaz/mi-lsp/internal/processutil"
 	"github.com/fgpaz/mi-lsp/internal/runtimeinfo"
 )
 
@@ -189,6 +191,78 @@ func TestApplyLockAcrossProcesses(t *testing.T) {
 	}
 }
 
+// startAutomaticChild is the private scheduler injection point; the real factory
+// must produce the very command passed here, not an unused test-only helper.
+func TestMaybeStartAutomaticChildFactory(t *testing.T) {
+	t.Setenv("MI_LSP_CHANNEL", "")
+	t.Setenv("MI_LSP_AUTO_UPDATE", "")
+	t.Setenv("MI_LSP_UPDATE_CHILD", "")
+	s := &fixtureSource{release: Release{Version: "0.16.0"}}
+	c := fixtureConfig(t, s)
+	original := startAutomaticChild
+	defer func() { startAutomaticChild = original }()
+	var received *exec.Cmd
+	calls := 0
+	startAutomaticChild = func(cmd *exec.Cmd) error { calls++; received = cmd; return nil }
+	started, err := MaybeStartAutomatic(c, false)
+	if err != nil || !started || calls != 1 {
+		t.Fatalf("started=%v calls=%d err=%v", started, calls, err)
+	}
+	if received == nil || received.Path != c.ExecutablePath || !reflect.DeepEqual(received.Args, []string{c.ExecutablePath, "update"}) {
+		t.Fatalf("command=%+v", received)
+	}
+	marker := false
+	for _, v := range received.Env {
+		if v == "MI_LSP_UPDATE_CHILD=1" {
+			marker = true
+		}
+		if strings.HasPrefix(v, "MI_LSP_UPDATE_CHILD=") && v != "MI_LSP_UPDATE_CHILD=1" {
+			t.Fatalf("conflicting marker %q", v)
+		}
+	}
+	if !marker {
+		t.Fatal("missing child marker")
+	}
+	if received.Stdin != nil || received.Stdout != nil || received.Stderr != nil {
+		t.Fatal("child must have disconnected streams")
+	}
+	expected := processutil.Command(c.ExecutablePath, "update")
+	processutil.ConfigureDetachedCommand(expected)
+	if !reflect.DeepEqual(received.SysProcAttr, expected.SysProcAttr) {
+		t.Fatalf("detached attributes=%+v want=%+v", received.SysProcAttr, expected.SysProcAttr)
+	}
+	if s.calls != 0 || s.downloads != 0 {
+		t.Fatal("scheduling contacted source")
+	}
+}
+func TestMaybeStartAutomaticSkipsDaemonAndFreshCache(t *testing.T) {
+	t.Setenv("MI_LSP_CHANNEL", "")
+	t.Setenv("MI_LSP_AUTO_UPDATE", "")
+	t.Setenv("MI_LSP_UPDATE_CHILD", "")
+	s := &fixtureSource{release: Release{Version: "0.16.0"}}
+	c := fixtureConfig(t, s)
+	original := startAutomaticChild
+	defer func() { startAutomaticChild = original }()
+	calls := 0
+	startAutomaticChild = func(*exec.Cmd) error { calls++; return nil }
+	started, err := MaybeStartAutomatic(c, true)
+	if err != nil || started || calls != 0 {
+		t.Fatalf("daemon started=%v calls=%d err=%v", started, calls, err)
+	}
+	if _, err = New(c).Apply(context.Background(), false); err != nil {
+		t.Fatal(err)
+	}
+	sourceCalls := s.calls
+	started, err = MaybeStartAutomatic(c, false)
+	if err != nil || started || calls != 0 || s.calls != sourceCalls {
+		t.Fatalf("fresh cache started=%v starts=%d source=%d err=%v", started, calls, s.calls, err)
+	}
+	c.Now = func() time.Time { return time.Date(2026, 10, 28, 19, 0, 1, 0, time.UTC) }
+	started, err = MaybeStartAutomatic(c, false)
+	if err != nil || !started || calls != 1 || s.calls != sourceCalls {
+		t.Fatalf("expired cache started=%v starts=%d source=%d err=%v", started, calls, s.calls, err)
+	}
+}
 func TestSeparateInstallationsSameHome(t *testing.T) {
 	s := &fixtureSource{err: errors.New("offline")}
 	a := fixtureConfig(t, s)

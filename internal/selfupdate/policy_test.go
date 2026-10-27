@@ -27,6 +27,9 @@ func (s *releaseFixture) Download(_ context.Context, a Asset, dst string) error 
 	if !ok {
 		return fmt.Errorf("fixture missing asset")
 	}
+	if (strings.HasSuffix(a.Name, ".zip") || strings.HasSuffix(a.Name, ".tar.gz")) && filepath.Base(dst) != a.Name {
+		return fmt.Errorf("archive staging must preserve canonical asset basename")
+	}
 	return os.WriteFile(dst, b, 0600)
 }
 func archiveFixture(t *testing.T, content []byte) (string, []byte) {
@@ -43,7 +46,7 @@ func archiveFixture(t *testing.T, content []byte) (string, []byte) {
 	var b bytes.Buffer
 	if runtime.GOOS == "windows" {
 		w := zip.NewWriter(&b)
-		f, e := w.Create("mi-lsp.exe")
+		f, e := w.Create(base + "/mi-lsp.exe")
 		if e != nil {
 			t.Fatal(e)
 		}
@@ -57,7 +60,7 @@ func archiveFixture(t *testing.T, content []byte) (string, []byte) {
 	}
 	gz := gzip.NewWriter(&b)
 	w := tar.NewWriter(gz)
-	if e := w.WriteHeader(&tar.Header{Name: "mi-lsp", Mode: 0755, Size: int64(len(content))}); e != nil {
+	if e := w.WriteHeader(&tar.Header{Name: base + "/mi-lsp", Mode: 0755, Size: int64(len(content))}); e != nil {
 		t.Fatal(e)
 	}
 	if _, e := w.Write(content); e != nil {
