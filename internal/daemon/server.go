@@ -206,7 +206,22 @@ func (s *Server) startFileWatchers() {
 }
 
 func (s *Server) Serve(ctx context.Context) error {
-	go s.runUpdateSchedule(ctx)
+	return s.serveWithUpdateSchedule(ctx, s.runUpdateSchedule)
+}
+
+func (s *Server) serveWithUpdateSchedule(ctx context.Context, schedule func(context.Context)) error {
+	updateCtx, cancelUpdate := context.WithCancel(ctx)
+	updateDone := make(chan struct{})
+	go func() {
+		defer close(updateDone)
+		schedule(updateCtx)
+	}()
+	// Closing ingress during committed shutdown must not let main exit before
+	// the controller launches the replacement. Cancel also handles Accept errors.
+	defer func() {
+		cancelUpdate()
+		<-updateDone
+	}()
 	for {
 		conn, err := s.listener.Accept()
 		if err != nil {

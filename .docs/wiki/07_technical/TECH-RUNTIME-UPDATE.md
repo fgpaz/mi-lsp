@@ -40,6 +40,22 @@ links:
     role: behavior
   - path: internal/daemon/server.go
     role: behavior
+  - path: internal/daemon/update_controller.go
+    role: behavior
+  - path: internal/daemon/update_listener.go
+    role: behavior
+  - path: internal/daemon/update_retention.go
+    role: behavior
+  - path: internal/daemon/admin.go
+    role: behavior
+  - path: internal/daemon/file_watcher.go
+    role: behavior
+  - path: internal/daemon/lifecycle.go
+    role: behavior
+  - path: internal/indexer/job.go
+    role: behavior
+  - path: internal/service/primitives_session.go
+    role: behavior
 ---
 
 ## Decisión y autoridad
@@ -72,7 +88,7 @@ Códigos: UPDATE_NETWORK_UNAVAILABLE, UPDATE_NO_RELEASE, UPDATE_CHECKSUM_MISMATC
 
 ## Daemon y consumidores
 
-El daemon viejo sigue ejecutando su imagen hasta reposo comprobado. La barrera debe cubrir Accept, respuesta completa, HTTP, background y contextos/sesiones; desconocido significa diferir. Cleanup/shutdown del estado viejo precede al spawn nuevo. Un daemon antiguo o de otra instalación no puede suprimir para siempre el autorun de esta CLI.
+El daemon viejo sigue ejecutando su imagen hasta reposo comprobado. La barrera debe cubrir Accept, respuesta completa, HTTP, background y contextos/sesiones; desconocido significa diferir. Cleanup/shutdown del estado viejo precede al spawn nuevo. La admisión de jobs in-process se cierra bajo el mismo mutex que registra su lanzamiento; Stop de watchers cancela timers pendientes y espera callbacks admitidos. HTTP queda pausado pero reversible hasta el compromiso; cerrar el servidor durante preparación no es rollback. Retención y reaper se cancelan y se unen antes de cerrar telemetry. Un daemon antiguo o de otra instalación no puede suprimir para siempre el autorun de esta CLI.
 
 El hijo usa processutil de A14: oculto/desconectado, sin heredar streams y con marcador antirrecursión. MCP stdio adopta el nuevo ejecutable al abrir una nueva sesión. El primer bootstrap de versiones publicadas sin updater es explícitamente manual; no se les atribuye retroactivamente esta capacidad.
 
