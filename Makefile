@@ -1,4 +1,11 @@
-.PHONY: build test lint clean dist install-local install-local-osx-x64 build-linux-arm64 build-win-arm64 build-linux-x64 build-win-x64 build-osx-arm64 build-osx-x64 build-all worker-win-arm64 worker-linux-arm64 worker-win-x64 worker-linux-x64 worker-osx-arm64 worker-osx-x64 worker-all
+.PHONY: build test lint clean dist install-local install-local-osx-x64 build-linux-arm64 build-win-arm64 build-linux-x64 build-win-x64 build-osx-arm64 build-osx-x64 build-all windows-resources worker-win-arm64 worker-linux-arm64 worker-win-x64 worker-linux-x64 worker-osx-arm64 worker-osx-x64 worker-all
+
+# Four numeric PE version components; override explicitly for local builds.
+WINDOWS_FILE_VERSION ?= 0.0.0.0
+WINDOWS_RESOURCE_GENERATOR := github.com/tc-hib/go-winres@v0.3.3
+
+windows-resources:
+	go run $(WINDOWS_RESOURCE_GENERATOR) make --in cmd/mi-lsp/winres.json --out cmd/mi-lsp/rsrc --arch amd64,arm64 --file-version "$(WINDOWS_FILE_VERSION)" --product-version "$(WINDOWS_FILE_VERSION)"
 
 build:
 	go build -ldflags="-s -w" -o bin/mi-lsp ./cmd/mi-lsp
@@ -31,13 +38,13 @@ install-local-osx-x64:
 build-linux-arm64:
 	GOOS=linux GOARCH=arm64 go build -ldflags="-s -w" -o bin/mi-lsp-linux-arm64 ./cmd/mi-lsp
 
-build-win-arm64:
+build-win-arm64: windows-resources
 	GOOS=windows GOARCH=arm64 go build -ldflags="-s -w" -o bin/mi-lsp-win-arm64.exe ./cmd/mi-lsp
 
 build-linux-x64:
 	GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o bin/mi-lsp-linux-x64 ./cmd/mi-lsp
 
-build-win-x64:
+build-win-x64: windows-resources
 	GOOS=windows GOARCH=amd64 go build -ldflags="-s -w" -o bin/mi-lsp-win-x64.exe ./cmd/mi-lsp
 
 build-osx-arm64:
