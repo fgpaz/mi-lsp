@@ -55,8 +55,8 @@ func TestA14SafetyGovernanceSymlink(t *testing.T) {
 func TestA14SafetyGovernanceAbsentAndLegacy(t *testing.T) {
 	t.Run("absent", func(t *testing.T) {
 		root := t.TempDir()
-		if got := ResolveWikiContractLanguageAtRoot(root); got.Declared || got.Valid {
-			t.Errorf("absent governance must not declare a valid language: %+v", got)
+		if got := ResolveWikiContractLanguageAtRoot(root); got.Declared || !got.Valid || got.Language != model.WikiContractLanguageES || len(got.Warnings) == 0 {
+			t.Errorf("absent default preserves undeclared Spanish advisory, not authority: %+v", got)
 		}
 		if got, _ := docgraph.LoadWikiContractGovernance(root); got != nil {
 			t.Errorf("absent governance loaded: %+v", got)
