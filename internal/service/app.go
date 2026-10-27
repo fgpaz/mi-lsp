@@ -2032,7 +2032,11 @@ func appendSearchDiagnosticsWarnings(warnings []string, diagnostics *searchPatte
 
 func (a *App) installWorker(request model.CommandRequest) (model.Envelope, error) {
 	rid, _ := request.Payload["rid"].(string)
-	path, err := worker.InstallWorker(a.RepoRoot, rid)
+	mode, _ := request.Payload["mode"].(string)
+	if mode == "" {
+		mode = "auto"
+	}
+	path, err := worker.InstallWorkerMode(a.RepoRoot, rid, mode)
 	if err != nil {
 		return model.Envelope{}, err
 	}
