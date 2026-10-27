@@ -34,6 +34,7 @@ type Server struct {
 	state               model.DaemonState
 	options             StartOptions
 	inflight            chan struct{}
+	updateGate          *updateAdmissionGate
 	stopped             chan struct{}
 	stopOnce            sync.Once
 	shutdownStarted     atomic.Bool
@@ -85,6 +86,7 @@ func NewServerWithOptions(repoRoot string, maxWorkers int, idleTimeout time.Dura
 		telemetry:     telemetry,
 		options:       options,
 		inflight:      make(chan struct{}, options.MaxInflight),
+		updateGate:    newUpdateAdmissionGate(),
 		stopped:       make(chan struct{}),
 		resultCache:   newResultCache(),
 		qSessions:     newQSessionState(),
@@ -252,6 +254,14 @@ func (s *Server) handleConnection(conn net.Conn) {
 }
 
 func (s *Server) handleConnectionContext(ctx context.Context, conn net.Conn) {
+	if s.updateGate != nil {
+		finish, ok := s.updateGate.Begin("accepted-connection")
+		if !ok {
+			_ = conn.Close()
+			return
+		}
+		defer finish()
+	}
 	if ctx == nil {
 		ctx = context.Background()
 	}
