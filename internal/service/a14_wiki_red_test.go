@@ -33,7 +33,8 @@ func TestA14RetirementsEntries(t *testing.T) {
 		{"incomplete", "```yaml\nentries:\n  - id: RF-OLD-01\n```\n", false},
 		{"invalid_yaml", "```yaml\nentries: [\n```\n", false},
 		{"empty", "", false},
-		{"ambiguous", "```yaml\nentries: []\n```\n", false},
+		{"explicit_empty_entries", "```yaml\nentries: []\n```\n", true},
+		{"ambiguous", "No hay novedades.\n", false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			writeContractTestWikiFile(t, root, path, tc.body)
