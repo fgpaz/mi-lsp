@@ -25,8 +25,29 @@ func validateWikiContractRetirements(root, docPath, body string, index wikisourc
 	lines := strings.Split(plain, "\n")
 	var prose []string
 	proseNone := false
-	for _, line := range lines {
-		line = strings.TrimSpace(line)
+	fence := ""
+	frontmatter := len(lines) > 0 && strings.TrimSpace(lines[0]) == "---"
+	for i, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if frontmatter {
+			if i > 0 && trimmed == "---" {
+				frontmatter = false
+			}
+			continue
+		}
+		if strings.HasPrefix(trimmed, "```") || strings.HasPrefix(trimmed, "~~~") {
+			marker := trimmed[:3]
+			if fence == "" {
+				fence = marker
+			} else if fence == marker {
+				fence = ""
+			}
+			continue
+		}
+		if fence != "" || strings.HasPrefix(line, " ") || strings.HasPrefix(line, "\t") {
+			continue
+		}
+		line = trimmed
 		if line != "" && !strings.HasPrefix(line, "#") {
 			prose = append(prose, line)
 			if line == "no hay retiros registrados." || line == "no hay retiros registrados. este registro no modifica ni retira identificadores existentes." {

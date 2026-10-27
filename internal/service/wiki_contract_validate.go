@@ -27,31 +27,11 @@ func ResolveWikiContractLanguageAtRoot(root string) model.WikiContractLanguageRe
 			result.Warnings = append(result.Warnings, model.WikiContractFinding{Code: "governance_legacy_filename", Expected: wikiContractGovernancePath, Message: "governance_legacy_filename: prefer 00_governance.md over 00_gobierno_documental.md"})
 		}
 		return result
+	} else if os.IsNotExist(err) {
+		return model.ResolveWikiContractLanguage("", "")
+	} else {
+		return wikiGovernanceReadFailure("", err)
 	}
-	canonical := filepath.Join(root, filepath.FromSlash(wikiContractGovernancePath))
-	content, err := os.ReadFile(canonical)
-	if err == nil {
-		return model.ResolveWikiContractLanguage(wikiContractGovernancePath, string(content))
-	}
-	if !os.IsNotExist(err) {
-		return wikiGovernanceReadFailure(wikiContractGovernancePath, err)
-	}
-
-	legacy := filepath.Join(root, filepath.FromSlash(wikiContractGovernanceLegacyPath))
-	content, err = os.ReadFile(legacy)
-	if err == nil {
-		result := model.ResolveWikiContractLanguage(wikiContractGovernanceLegacyPath, string(content))
-		result.Warnings = append(result.Warnings, model.WikiContractFinding{
-			Code: "governance_legacy_filename", Expected: wikiContractGovernancePath,
-			Message:  "governance_legacy_filename: prefer 00_governance.md over 00_gobierno_documental.md",
-			Blocking: false,
-		})
-		return result
-	}
-	if !os.IsNotExist(err) {
-		return wikiGovernanceReadFailure(wikiContractGovernanceLegacyPath, err)
-	}
-	return model.ResolveWikiContractLanguage("", "")
 }
 
 func wikiGovernanceReadFailure(source string, err error) model.WikiContractLanguageResult {

@@ -175,6 +175,21 @@ func ResolvedGovernanceDocument(root string) (string, error) {
 	if abs == "" || strings.HasPrefix(display, "INVALID:") {
 		return "", fmt.Errorf("governance source is invalid or ambiguous")
 	}
+	// Only an implicit missing default is an advisory absence. Inspect existing
+	// ancestors as well, so a dangling or redirected symlink is not absence.
+	if source != "setup" && strings.TrimSpace(profile.Governance.SourceDoc) == "" && display == defaultGovernanceRelPath {
+		current := root
+		for _, component := range strings.Split(filepath.FromSlash(display), string(filepath.Separator)) {
+			current = filepath.Join(current, component)
+			info, err := os.Lstat(current)
+			if os.IsNotExist(err) {
+				return "", os.ErrNotExist
+			}
+			if err != nil || info.Mode()&os.ModeSymlink != 0 {
+				return "", fmt.Errorf("governance source is unavailable or unsafe")
+			}
+		}
+	}
 	roots, err := CanonicalWikiRoots(root)
 	if err != nil || !safeRouteDocument(root, display, roots) {
 		return "", fmt.Errorf("governance source is unavailable or unsafe")

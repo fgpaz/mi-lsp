@@ -104,17 +104,18 @@ func LoadWikiContractGovernance(root string) (*WikiContractGovernance, []string)
 		parsed, parseWarnings := parseWikiContractGovernanceDocument(content)
 		return parsed, append(warnings, parseWarnings...)
 	}
-	rel, pathWarnings := discoverGovernanceRelPath(root)
-	if resolved, err := ResolvedGovernanceDocument(root); err == nil {
-		rel = resolved
-		pathWarnings = nil
-		if filepath.Base(rel) == "00_gobierno_documental.md" {
-			pathWarnings = append(pathWarnings, legacyGovernanceFilenameWarning)
+	rel, err := ResolvedGovernanceDocument(root)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
 		}
-	} else if rel == "" {
-		return nil, pathWarnings
+		return nil, []string{"wiki_contract_governance: " + err.Error()}
 	}
-	docPath := filepath.Join(root, filepath.FromSlash(rel))
+	var pathWarnings []string
+	if filepath.Base(rel) == "00_gobierno_documental.md" {
+		pathWarnings = append(pathWarnings, legacyGovernanceFilenameWarning)
+	}
+	docPath := ResolveDocumentPath(root, rel)
 	content, err := os.ReadFile(docPath)
 	if err != nil {
 		return nil, pathWarnings
