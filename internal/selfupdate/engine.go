@@ -124,46 +124,52 @@ func (u *Updater) applyLocked(ctx context.Context, automatic bool, reason string
 	now := c.Now().UTC()
 	var cache updateCache
 	cacheErr := readJSON(cachePath(c), &cache)
-	if automatic && cacheErr == nil && !cache.LastCheck.IsZero() && now.Sub(cache.LastCheck) < 24*time.Hour {
-		if prior.LastResult != "" {
-			*s = prior
-			actual, e := c.Readback(ctx, c.ExecutablePath)
-			if e != nil {
-				return errors.New("readback failed")
-			}
-			if s.LastResult == "updated" && actual != s.Latest {
-				return errors.New("readback mismatch")
-			}
-			s.Installed = actual
-			return nil
-		}
+	fresh := automatic && cacheErr == nil && !cache.LastCheck.IsZero() && now.Sub(cache.LastCheck) < 24*time.Hour
+	var release Release
+	if fresh {
 		s.LastCheck = &cache.LastCheck
 		if cache.Error != "" {
+			if cache.Error != "UPDATE_NETWORK_UNAVAILABLE" && cache.Error != "UPDATE_NO_RELEASE" {
+				return errors.New("invalid cache error")
+			}
+			if prior.LastCheck != nil && prior.LastCheck.Equal(cache.LastCheck) && prior.Installed == s.Installed && prior.LastResult == "failed" && prior.Code != nil && *prior.Code == cache.Error {
+				return nilStatus(s, prior)
+			}
 			return u.finishFailure(s, cache.Error)
 		}
-		return errors.New("no state for installation")
-	}
-	cache = updateCache{LastCheck: now, Error: "UPDATE_NETWORK_UNAVAILABLE"}
-	if e := saveCache(c, cache); e != nil {
-		return e
-	}
-	release, e := c.Source.Latest(ctx)
-	if e != nil {
-		code := "UPDATE_NETWORK_UNAVAILABLE"
-		if errors.Is(e, errNoRelease) {
-			code = "UPDATE_NO_RELEASE"
+		release = cache.Release
+		if prior.LastCheck != nil && prior.LastCheck.Equal(cache.LastCheck) && prior.Latest == release.Version && prior.Installed == s.Installed {
+			if _, err := compareVersions(release.Version, release.Version); err != nil {
+				return errors.New("invalid cached release")
+			}
+			return nilStatus(s, prior)
 		}
-		cache.Error = code
-		_ = saveCache(c, cache)
+	} else {
+		cache = updateCache{LastCheck: now, Error: "UPDATE_NETWORK_UNAVAILABLE"}
+		if err := saveCache(c, cache); err != nil {
+			return err
+		}
+		var err error
+		release, err = c.Source.Latest(ctx)
+		if err != nil {
+			code := "UPDATE_NETWORK_UNAVAILABLE"
+			if errors.Is(err, errNoRelease) {
+				code = "UPDATE_NO_RELEASE"
+			}
+			cache.Error = code
+			if err := saveCache(c, cache); err != nil {
+				return err
+			}
+			s.LastCheck = &now
+			return u.finishFailure(s, code)
+		}
+		cache.Release = release
+		cache.Error = ""
+		if err := saveCache(c, cache); err != nil {
+			return err
+		}
 		s.LastCheck = &now
-		return u.finishFailure(s, code)
 	}
-	cache.Release = release
-	cache.Error = ""
-	if e = saveCache(c, cache); e != nil {
-		return e
-	}
-	s.LastCheck = &now
 	s.Latest = release.Version
 	cmp, e := compareVersions(release.Version, s.Installed)
 	if e != nil {
@@ -192,6 +198,9 @@ func (u *Updater) applyLocked(ctx context.Context, automatic bool, reason string
 	checks, ok := findAsset(release.Assets, checksName)
 	if !ok {
 		return u.finishFailure(s, "UPDATE_NO_RELEASE")
+	}
+	if !validReleaseAsset(archive, archiveName, maxAsset) || !validReleaseAsset(checks, checksName, maxMetadata) {
+		return errors.New("invalid release asset")
 	}
 	if e = os.MkdirAll(updateDir(c.HomeDir), 0700); e != nil {
 		return u.finishFailure(s, "UPDATE_PERMISSION_DENIED")
@@ -246,6 +255,26 @@ func (u *Updater) applyLocked(ctx context.Context, automatic bool, reason string
 	s.Previous = &old
 	s.LastResult = "updated"
 	return saveStatus(c, *s)
+}
+
+// Preserve the installation's own result only for the same metadata check and disk.
+func nilStatus(dst *Status, prior Status) error {
+	channel, auto := dst.Channel, dst.Auto
+	*dst = prior
+	dst.Channel, dst.Auto = channel, auto
+	return nil
+}
+func validReleaseAsset(a Asset, name string, limit int64) bool {
+	if a.Name != name || a.Size < 0 || a.Size > limit || !allowedURL(a.URL, true) {
+		return false
+	}
+	const prefix = "https://github.com/fgpaz/mi-lsp/releases/download/"
+	if !strings.HasPrefix(a.URL, prefix) {
+		return false
+	}
+	rest := strings.TrimPrefix(a.URL, prefix)
+	parts := strings.Split(rest, "/")
+	return len(parts) == 2 && parts[0] != "" && parts[1] == name
 }
 func (u *Updater) finishFailure(s *Status, code string) error {
 	if !allowedCodes[code] {

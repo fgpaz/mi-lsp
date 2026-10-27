@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -49,9 +50,17 @@ func statePath(c Config) (string, error) {
 	return filepath.Join(updateDir(c.HomeDir), "state", fmt.Sprintf("%x.json", h)), nil
 }
 func cachePath(c Config) string { return filepath.Join(updateDir(c.HomeDir), "cache.json") }
+
+var openStateJSON = func(path string) (io.ReadCloser, error) { return os.Open(path) }
+
 func readJSON(path string, v any) error {
-	b, e := os.ReadFile(path)
-	if e != nil || len(b) > 2<<20 {
+	f, err := openStateJSON(path)
+	if err != nil {
+		return errors.New("state unavailable")
+	}
+	defer f.Close()
+	b, err := io.ReadAll(io.LimitReader(f, (2<<20)+1))
+	if err != nil || len(b) > 2<<20 {
 		return errors.New("state unavailable")
 	}
 	if json.Unmarshal(b, v) != nil {
