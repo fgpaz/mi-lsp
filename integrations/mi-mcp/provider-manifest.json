@@ -15,11 +15,13 @@
     "--help": "mi-lsp-help/v0",
     "--version": "mi-lsp-version-flag/v0",
     "diagnostics": "diagnostics/v1",
+    "doctor": "mi-lsp-doctor/v0",
     "find-files": "find-files/v1",
     "intent": "mi-lsp-nav-intent/v0",
     "multi-read": "mi-lsp-nav-multi-read/v0",
     "q": "q-v1",
     "refs": "mi-lsp-refs/v0",
+    "repair": "mi-lsp-repair/v1",
     "schema": "mi-lsp-schema/v0",
     "search": "mi-lsp-search/v0",
     "version": "mi-lsp-version/v0",
@@ -629,6 +631,237 @@
             },
             "paths": {
               "flag": "--paths",
+              "source": "option"
+            },
+            "workspace": {
+              "flag": "--workspace",
+              "source": "option"
+            }
+          }
+        },
+        "output": "json"
+      }
+    },
+    {
+      "name": "doctor",
+      "description": "Inspect local runtime health",
+      "effect": "read",
+      "contract": "mi-lsp-doctor/v0",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "output_schema": {
+        "description": "Response governed by mi-lsp-doctor/v0",
+        "type": "object"
+      },
+      "invocation": {
+        "kind": "cli",
+        "command": "mi-lsp",
+        "fixed_args": [
+          "--format",
+          "json",
+          "--client-name",
+          "mi-mcp",
+          "--no-auto-register",
+          "doctor"
+        ],
+        "input_mapping": {
+          "fields": {}
+        },
+        "output": "json"
+      }
+    },
+    {
+      "name": "repair",
+      "description": "Plan or explicitly apply local repairs",
+      "effect": "write",
+      "contract": "mi-lsp-repair/v1",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "apply": {
+            "default": false,
+            "type": "boolean"
+          },
+          "reindex": {
+            "default": false,
+            "type": "boolean"
+          },
+          "worker": {
+            "default": false,
+            "type": "boolean"
+          },
+          "worker_mode": {
+            "default": "auto",
+            "enum": [
+              "auto",
+              "framework-dependent",
+              "self-contained"
+            ],
+            "type": "string"
+          },
+          "workspace": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "output_schema": {
+        "properties": {
+          "actions": {
+            "items": {
+              "properties": {
+                "detail": {
+                  "type": "string"
+                },
+                "id": {
+                  "enum": [
+                    "runtime",
+                    "config",
+                    "workspace",
+                    "index",
+                    "worker"
+                  ],
+                  "type": "string"
+                },
+                "lastAttemptAt": {
+                  "format": "date-time",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "nextAction": {
+                  "type": "string"
+                },
+                "reasonCode": {
+                  "type": "string"
+                },
+                "retryAfter": {
+                  "format": "date-time",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "retryable": {
+                  "type": "boolean"
+                },
+                "status": {
+                  "enum": [
+                    "pass",
+                    "skip",
+                    "planned",
+                    "repaired",
+                    "blocked",
+                    "failed"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "status",
+                "reasonCode",
+                "detail",
+                "retryable",
+                "nextAction",
+                "lastAttemptAt",
+                "retryAfter"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "changed": {
+            "type": "boolean"
+          },
+          "mode": {
+            "enum": [
+              "plan",
+              "apply"
+            ],
+            "type": "string"
+          },
+          "ok": {
+            "type": "boolean"
+          },
+          "reasonCodes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "runtime": {
+            "properties": {
+              "executablePath": {
+                "type": "string"
+              },
+              "managedExecutablePath": {
+                "type": "string"
+              },
+              "managedRoot": {
+                "type": "string"
+              },
+              "receiptPath": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "executablePath",
+              "managedRoot",
+              "managedExecutablePath",
+              "receiptPath"
+            ],
+            "type": "object"
+          },
+          "schema": {
+            "const": "mi-lsp-repair/v1"
+          }
+        },
+        "required": [
+          "schema",
+          "ok",
+          "mode",
+          "runtime",
+          "actions",
+          "reasonCodes",
+          "changed"
+        ],
+        "type": "object"
+      },
+      "invocation": {
+        "kind": "cli",
+        "command": "mi-lsp",
+        "fixed_args": [
+          "--format",
+          "json",
+          "--client-name",
+          "mi-mcp",
+          "--no-auto-register",
+          "repair"
+        ],
+        "input_mapping": {
+          "fields": {
+            "apply": {
+              "flag": "--apply",
+              "source": "option"
+            },
+            "reindex": {
+              "flag": "--reindex",
+              "source": "option"
+            },
+            "worker": {
+              "flag": "--worker",
+              "source": "option"
+            },
+            "worker_mode": {
+              "flag": "--worker-mode",
               "source": "option"
             },
             "workspace": {
