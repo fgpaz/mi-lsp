@@ -75,6 +75,25 @@ func TestA14SafetyGovernanceAbsentAndLegacy(t *testing.T) {
 	})
 }
 
+func TestA14SafetyNoneDoesNotHideMalformedInventory(t *testing.T) {
+	root := t.TempDir()
+	path := ".docs/wiki/00_retirements.md"
+	for name, body := range map[string]string{
+		"tilde_malformed": "No hay retiros registrados.\n\n~~~yaml\nentries: [\n~~~\n",
+		"frontmatter_malformed": "---\nentries: [\n---\nNo hay retiros registrados.\n",
+		"unknown_machine_block": "No hay retiros registrados.\n\n```yaml\nunknown_inventory: []\n```\n",
+		"indented_machine_block": "No hay retiros registrados.\n\n    entries: [\n",
+	} {
+		t.Run(name, func(t *testing.T) {
+			writeContractTestWikiFile(t, root, path, body)
+			got := compileWikiContractValidation(root, []model.DocRecord{{Path: path}}, nil)
+			if got.ContractVerdict == "PASS" {
+				t.Fatalf("explicit none concealed unvalidated inventory: %+v", got)
+			}
+		})
+	}
+}
+
 func TestA14SafetyRetirementMultilineReason(t *testing.T) {
 	root := t.TempDir()
 	path := ".docs/wiki/00_retirements.md"
