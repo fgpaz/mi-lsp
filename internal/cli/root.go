@@ -183,6 +183,7 @@ func NewRootCommand() *cobra.Command {
 		newSchemaCommand(state),
 		newProbeCommand(state),
 		newDoctorCommand(state),
+		newRepairCommand(state),
 		newSkillsCommand(state),
 		newSeedCommand(state),
 		newGrepCommand(state),

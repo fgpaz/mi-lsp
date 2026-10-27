@@ -13,19 +13,22 @@ import (
 	"strings"
 	"time"
 
+	"github.com/fgpaz/mi-lsp/internal/runtimeinfo"
 	"github.com/fgpaz/mi-lsp/internal/workspace"
 )
 
 // DoctorCheck represents a single diagnostic check result.
 type DoctorCheck struct {
-	ID        string `json:"id"`
-	Severity  string `json:"severity"` // P1, P2, P3, or "ok"
-	OK        bool   `json:"ok"`
-	Detail    string `json:"detail"`
-	Status    string `json:"status"`
-	Reason    string `json:"reason"`
-	Required  bool   `json:"required"`
-	Available bool   `json:"available"`
+	ID         string                `json:"id"`
+	Severity   string                `json:"severity"` // P1, P2, P3, or "ok"
+	OK         bool                  `json:"ok"`
+	Detail     string                `json:"detail"`
+	Status     string                `json:"status"`
+	Reason     string                `json:"reason"`
+	Required   bool                  `json:"required"`
+	Available  bool                  `json:"available"`
+	Runtime    *runtimeinfo.Location `json:"runtime,omitempty"`
+	ReasonCode string                `json:"reasonCode,omitempty"`
 }
 
 // DoctorReport is the collection of all doctor checks.
@@ -77,6 +80,7 @@ func RunDoctor(ctx context.Context, opts *RunDoctorOptions) (DoctorReport, error
 	// Run all checks
 	checks := []func(context.Context, *RunDoctorOptions) DoctorCheck{
 		checkDaemonConnectivity,
+		checkRuntimeLocation,
 		checkStaleAliases,
 		checkDaemonVersion,
 		checkDBSize,
@@ -168,6 +172,31 @@ func doctorStatus(check DoctorCheck) (string, string) {
 		return "pass", ""
 	}
 	return "fail", "check_failed"
+}
+
+func checkRuntimeLocation(ctx context.Context, opts *RunDoctorOptions) DoctorCheck {
+	loc := runtimeinfo.Locate()
+	check := DoctorCheck{ID: "runtime-location", Severity: "P2", OK: true, Available: true, Runtime: &loc, ReasonCode: "OK", Detail: "Ubicación del runtime disponible."}
+	removed, err := runtimeinfo.Removed()
+	if err != nil {
+		check.OK = false
+		check.ReasonCode = "REPAIR_FAILED"
+		check.Detail = "No se pueden leer los recibos de instalación."
+		return check
+	}
+	for _, receipt := range removed {
+		if receipt.Component == "runtime" {
+			check.OK = false
+			check.ReasonCode = "RUNTIME_REMOVED"
+			check.Detail = "Falta un runtime registrado previamente; revisar seguridad y restauración autorizada."
+			return check
+		}
+	}
+	if !strings.EqualFold(filepath.Clean(loc.ExecutablePath), filepath.Clean(loc.ManagedExecutablePath)) {
+		check.ReasonCode = "RUNTIME_UNMANAGED"
+		check.Detail = "Runtime fuera de la ubicación gestionada."
+	}
+	return check
 }
 
 func checkDaemonConnectivity(ctx context.Context, opts *RunDoctorOptions) DoctorCheck {
