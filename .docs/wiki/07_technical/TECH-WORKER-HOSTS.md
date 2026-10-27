@@ -1,0 +1,9 @@
+# Semantic worker hosts
+
+`mi-lsp worker install --mode auto` prefers a compatible framework-dependent Roslyn DLL, hosted by `dotnet`; it falls back to the existing self-contained distribution. `--mode framework-dependent` requires a working DLL and runtime (or source, SDK and runtime) and fails rather than falling back. `--mode self-contained` selects the existing distribution or publishes it from source. `--rid` overrides the target RID. Framework-dependent publish uses `--self-contained false -p:UseAppHost=false`. A bundled DLL and runtimeconfig can be used without an SDK; the protocol probe verifies the actual host/runtime before selection. Cross-RID installs cannot be verified by executing an incompatible architecture locally.
+
+`mi-lsp worker status --format json` exposes additive `selected.mode`, `selected.host` and `selected.capabilities` for a selected bundle or installation. `framework-dependent` uses `dotnet`; `self-contained` uses an apphost. Status reports selection, not a guarantee that an already-running daemon has restarted with it. Restart the daemon using normal lifecycle procedures after changing the worker.
+
+TypeScript already resolves `node_modules/typescript/lib/tsserver.js` from the workspace and ancestors first, then global npm TypeScript, and runs it with `node`. No package is installed by this command.
+
+For isolated verification, start a fresh process with a temporary HOME/USERPROFILE and appropriate config location, add the dotnet directory to that process PATH, run `mi-lsp worker install --mode framework-dependent` and `mi-lsp worker status --format json`, then verify semantic queries in a disposable workspace. Do not change global environment settings. Builds, publish and verification are the coordinator's responsibility.
