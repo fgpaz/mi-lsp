@@ -5,13 +5,11 @@ import (
 	"context"
 	"encoding/json"
 	"os"
-	"os/exec"
-	"reflect"
-	"strings"
 	"testing"
 	"time"
 
 	"github.com/fgpaz/mi-lsp/internal/selfupdate"
+	"github.com/spf13/cobra"
 )
 
 // Private integration seams: updateCheck is injected into the root's update
@@ -23,16 +21,16 @@ func TestUpdateCheckJSONReadOnly(t *testing.T) {
 			home := t.TempDir()
 			t.Setenv("HOME", home)
 			t.Setenv("USERPROFILE", home)
-			code := "NETWORK_UNAVAILABLE"
+			code := "UPDATE_NETWORK_UNAVAILABLE"
 			if result == "deferred" {
-				code = "IN_USE"
+				code = "UPDATE_IN_USE_DEFERRED"
 			}
 			now := time.Date(2026, 10, 27, 12, 0, 0, 0, time.UTC)
 			calls := 0
 			root := NewRootCommand()
 			setUpdateCheckForTest(root, func(context.Context) (selfupdate.Status, error) {
 				calls++
-				return selfupdate.Status{Schema: "update-status/v1", Tool: "mi-lsp", Installed: "0.16.0", Latest: "0.16.1", LastCheck: &now, LastResult: result, Code: &code, Channel: "stable", Auto: true}, nil
+				return selfupdate.Status{Schema: "update-status/v1", Tool: "mi-lsp", Installed: "0.16.0", Latest: "0.16.1", LastCheck: &now, LastResult: result, Code: &code, Channel: "latest", Auto: true}, nil
 			})
 			var out bytes.Buffer
 			root.SetOut(&out)
@@ -94,30 +92,61 @@ func TestAutomaticUpdateExcludedCommandsAndDevelopmentBuilds(t *testing.T) {
 	}
 }
 
-func TestAutomaticChildCommandIsDetachedAndSilent(t *testing.T) {
+// Exercise the actual root pre-run. The injected start only queues a child;
+// a blocked child/network simulation must not delay the command itself.
+func TestRootAutomaticUpdateHookDoesNotWaitForChild(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("USERPROFILE", home)
-	cmd := newAutomaticUpdateChildCommand("fixture-executable")
-	if cmd.Path != "fixture-executable" || !reflect.DeepEqual(cmd.Args, []string{"fixture-executable", "update"}) {
-		t.Fatalf("child command: %q %q", cmd.Path, cmd.Args)
+	root := NewRootCommand()
+	root.AddCommand(&cobra.Command{Use: "fixture-normal", RunE: func(*cobra.Command, []string) error { return nil }})
+	childRelease := make(chan struct{})
+	defer close(childRelease)
+	started := make(chan struct{}, 1)
+	setUpdateAutomaticStartForTest(root, "0.16.0", func() error {
+		started <- struct{}{}
+		go func() { <-childRelease }()
+		return nil
+	})
+	root.SetArgs([]string{"fixture-normal"})
+	done := make(chan error, 1)
+	go func() { done <- root.Execute() }()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("root waited for automatic child")
 	}
-	if cmd.Stdout != nil || cmd.Stderr != nil || cmd.Stdin != nil {
-		t.Fatal("child inherited streams")
-	}
-	if !containsUpdateEnv(cmd, "MI_LSP_UPDATE_CHILD=1") {
-		t.Fatal("missing child recursion marker")
-	}
-	if !isDetachedUpdateCommand(cmd) {
-		t.Fatal("child must use detached/no-window process configuration")
+	select {
+	case <-started:
+	default:
+		t.Fatal("normal command did not invoke automatic hook")
 	}
 }
 
-func containsUpdateEnv(cmd *exec.Cmd, entry string) bool {
-	for _, v := range cmd.Env {
-		if strings.EqualFold(v, entry) {
-			return true
-		}
+func TestRootAutomaticUpdateHookExclusions(t *testing.T) {
+	for _, args := range [][]string{{"update", "--check"}, {"update"}, {"doctor"}, {"probe"}, {"repair"}, {"help"}} {
+		t.Run(args[0], func(t *testing.T) {
+			home := t.TempDir()
+			t.Setenv("HOME", home)
+			t.Setenv("USERPROFILE", home)
+			root := NewRootCommand()
+			calls := 0
+			setUpdateAutomaticStartForTest(root, "0.16.0", func() error { calls++; return nil })
+			root.SetOut(&bytes.Buffer{})
+			root.SetErr(&bytes.Buffer{})
+			cmd, _, err := root.Find(args)
+			if err == nil && cmd != root {
+				cmd.Run = nil
+				cmd.RunE = func(*cobra.Command, []string) error { return nil }
+			}
+			root.SetArgs(args)
+			_ = root.Execute()
+			if calls != 0 {
+				t.Fatalf("excluded command %v started automatic update", args)
+			}
+		})
 	}
-	return false
 }

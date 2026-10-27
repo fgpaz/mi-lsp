@@ -3,8 +3,14 @@ package daemon
 import (
 	"context"
 	"errors"
+	"net"
 	"reflect"
+	"sync"
 	"testing"
+	"time"
+
+	"github.com/fgpaz/mi-lsp/internal/model"
+	"github.com/fgpaz/mi-lsp/internal/worker"
 )
 
 // These private seams model admission at the actual ingress and lifecycle
@@ -29,6 +35,71 @@ func TestUpdateIdleGateTracksEveryOwnedActivity(t *testing.T) {
 			release()
 		})
 	}
+}
+
+type updateObservedConn struct {
+	net.Conn
+	readStarted  chan struct{}
+	writeStarted chan struct{}
+	readOnce     sync.Once
+	writeOnce    sync.Once
+}
+
+func (c *updateObservedConn) Read(p []byte) (int, error) {
+	c.readOnce.Do(func() { close(c.readStarted) })
+	return c.Conn.Read(p)
+}
+
+func (c *updateObservedConn) Write(p []byte) (int, error) {
+	c.writeOnce.Do(func() { close(c.writeStarted) })
+	return c.Conn.Write(p)
+}
+
+func TestUpdateRealConnectionBusyBeforeReadAndThroughResponse(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	gate := newUpdateAdmissionGate()
+	server := &Server{updateGate: gate, inflight: make(chan struct{}, 1)}
+	serverSide, client := net.Pipe()
+	defer client.Close()
+	observed := &updateObservedConn{Conn: serverSide, readStarted: make(chan struct{}), writeStarted: make(chan struct{})}
+	done := make(chan struct{})
+	go func() { server.handleConnectionContext(context.Background(), observed); close(done) }()
+	wait := func(ch <-chan struct{}, what string) {
+		t.Helper()
+		select {
+		case <-ch:
+		case <-time.After(2 * time.Second):
+			t.Fatalf("timeout waiting for %s", what)
+		}
+	}
+	wait(observed.readStarted, "read")
+	if len(server.inflight) != 0 {
+		t.Fatal("fixture unexpectedly has inflight work")
+	}
+	if release, idle := gate.TryIdleBarrier(); idle {
+		release()
+		t.Fatal("accepted connection before ReadFrame was considered idle")
+	}
+	if err := worker.WriteFrame(client, model.CommandRequest{Operation: "fixture", ProtocolVersion: "invalid"}); err != nil {
+		t.Fatal(err)
+	}
+	wait(observed.writeStarted, "response write")
+	if release, idle := gate.TryIdleBarrier(); idle {
+		release()
+		t.Fatal("blocked response write was considered idle")
+	}
+	var response model.Envelope
+	if err := worker.ReadFrame(client, &response); err != nil {
+		t.Fatal(err)
+	}
+	wait(done, "connection completion")
+	release, idle := gate.TryIdleBarrier()
+	if !idle {
+		t.Fatal("completed connection still busy")
+	}
+	release()
 }
 
 func TestUpdateBarrierAdmissionIsAtomic(t *testing.T) {
