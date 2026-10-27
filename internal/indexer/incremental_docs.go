@@ -190,12 +190,12 @@ func collectCanonicalDocFiles(ctx context.Context, root string, profile model.Do
 		}
 		if matcher != nil && matcher.ShouldIgnore(root, path) {
 			rel, relErr := filepath.Rel(root, path)
-			if relErr == nil && isMarkdownPath(path) {
+			if relErr == nil && IsMarkdownPath(path) {
 				excluded[filepath.ToSlash(rel)] = struct{}{}
 			}
 			return
 		}
-		if !isMarkdownPath(path) {
+		if !IsMarkdownPath(path) {
 			return
 		}
 		rel, err := filepath.Rel(root, path)
@@ -238,7 +238,7 @@ func collectCanonicalDocFiles(ctx context.Context, root string, profile model.Do
 				}
 				return nil
 			}
-			if isMarkdownPath(path) {
+			if IsMarkdownPath(path) {
 				rel := docgraph.WorkspacePathForSource(root, path)
 				seen[rel] = canonicalDocFile{path: path, relativePath: rel}
 			}
@@ -340,7 +340,8 @@ func walkCanonicalDocDir(ctx context.Context, root, dir string, matcher *workspa
 	})
 }
 
-func isMarkdownPath(path string) bool {
+// IsMarkdownPath reports whether a path has an extension supported by the docs indexer.
+func IsMarkdownPath(path string) bool {
 	switch strings.ToLower(filepath.Ext(path)) {
 	case ".md", ".mdown", ".markdown":
 		return true

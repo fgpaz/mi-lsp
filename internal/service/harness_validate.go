@@ -12,6 +12,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/fgpaz/mi-lsp/internal/docgraph"
+	"github.com/fgpaz/mi-lsp/internal/indexer"
 	"github.com/fgpaz/mi-lsp/internal/model"
 )
 
@@ -785,8 +786,8 @@ func harnessRefStatus(root string, index map[string]struct{}, fromPath string, r
 		}
 		if _, err := os.Stat(docgraph.ResolveDocumentPath(root, candidate)); err == nil {
 			_, indexed := index[normalizeHarnessRef(candidate)]
-			// Evidence outside the governed wiki is not part of the docs index.
-			return true, docgraph.IsGovernedWikiDocument(root, candidate, wikiRoots) && !indexed
+			// Only indexable Markdown in the governed wiki belongs in the docs index.
+			return true, indexer.IsMarkdownPath(candidate) && docgraph.IsGovernedWikiDocument(root, candidate, wikiRoots) && !indexed
 		}
 	}
 	return false, false
