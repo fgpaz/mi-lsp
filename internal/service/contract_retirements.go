@@ -243,11 +243,13 @@ func retirementHasUnparsedStructure(body string) bool {
 		}
 		if strings.HasPrefix(line, " ") || strings.HasPrefix(line, "\t") ||
 			strings.HasPrefix(text, "```") || strings.HasPrefix(text, "~~~") ||
-			text == "---" || text == "..." || strings.HasPrefix(text, "- ") ||
+			text == "---" || text == "..." ||
 			strings.HasPrefix(text, "{") || strings.HasPrefix(text, "[") {
 			return true
 		}
-		if key, _, ok := strings.Cut(text, ":"); ok {
+		// Markdown bullets are prose unless they actually contain a YAML key.
+		candidate := strings.TrimSpace(strings.TrimPrefix(text, "- "))
+		if key, _, ok := strings.Cut(candidate, ":"); ok {
 			key = strings.TrimSpace(key)
 			mapping := key != ""
 			for _, char := range key {
