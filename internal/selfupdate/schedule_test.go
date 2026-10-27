@@ -22,40 +22,60 @@ import (
 func snapshotHome(t *testing.T, root string, lockedEmptyFile ...string) map[string]string {
 	t.Helper()
 	result := map[string]string{}
+	var paths []string
+	digests := map[string][32]byte{}
 	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, e error) error {
 		if e != nil {
 			return e
 		}
-		info, e := d.Info()
-		if e != nil {
-			return e
-		}
-		rel, e := filepath.Rel(root, path)
-		if e != nil {
-			return e
-		}
-		v := fmt.Sprintf("%v:%d:%d", info.Mode(), info.Size(), info.ModTime().UnixNano())
+		paths = append(paths, path)
 		if !d.IsDir() {
 			var b []byte
 			if len(lockedEmptyFile) == 1 && filepath.Clean(path) == filepath.Clean(lockedEmptyFile[0]) {
 				// Windows byte-range locks deny ReadFile even for this empty OS
 				// lock. Size zero proves its empty hash without weakening snapshots.
-				if info.Size() != 0 {
-					return fmt.Errorf("OS lock is not empty")
-				}
+				// Verify zero size using fresh metadata below.
 			} else {
 				b, e = os.ReadFile(path)
 				if e != nil {
 					return e
 				}
 			}
-			v += fmt.Sprintf(":%x", sha256.Sum256(b))
+			digests[path] = sha256.Sum256(b)
 		}
-		result[rel] = v
 		return nil
 	})
 	if err != nil {
 		t.Fatal(err)
+	}
+	// NTFS directory enumeration can contain stale duplicate timestamps.
+	// Read file contents first, then take fresh handle-backed metadata for every
+	// path. Preserve ALL mode/size/mtime/hash assertions, including directories.
+	for _, path := range paths {
+		f, err := os.Open(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		info, statErr := f.Stat()
+		closeErr := f.Close()
+		if statErr != nil {
+			t.Fatal(statErr)
+		}
+		if closeErr != nil {
+			t.Fatal(closeErr)
+		}
+		if len(lockedEmptyFile) == 1 && filepath.Clean(path) == filepath.Clean(lockedEmptyFile[0]) && info.Size() != 0 {
+			t.Fatal("OS lock is not empty")
+		}
+		rel, err := filepath.Rel(root, path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		v := fmt.Sprintf("%v:%d:%d", info.Mode(), info.Size(), info.ModTime().UnixNano())
+		if !info.IsDir() {
+			v += fmt.Sprintf(":%x", digests[path])
+		}
+		result[rel] = v
 	}
 	return result
 }
@@ -189,7 +209,7 @@ func TestApplyLockAcrossProcesses(t *testing.T) {
 		t.Fatalf("status=%+v calls=%d", st, s.calls)
 	}
 	if after := snapshotHome(t, c.HomeDir, updateLockPath(c.HomeDir)+".lock"); !reflect.DeepEqual(before, after) {
-		t.Fatal("lock competitor wrote state")
+		t.Fatalf("lock competitor wrote state: before=%v after=%v", before, after)
 	}
 	if err = os.WriteFile(release, []byte("release"), 0600); err != nil {
 		t.Fatal(err)
