@@ -498,6 +498,12 @@ RF-WIKI-001, RF-WIKI-002, RF-WIKI-003, RF-WIKI-004, RF-WIKI-005, RF-WIKI-006, RF
   - **Cuando**: nav wiki-root --role ecosistema
   - **Entonces**: error fail-closed; no inventa default silencioso para ese role
 
+### Clasificación de schema Setup
+
+- **Oráculos**: `TestSetupWikiSchemaAbsentUsesGovernanceSourceDoc`, `TestSetupWikiSchemaPresentFailsClosed` y `TestSetupWikiSchemaSupportedAndUnreadable` en `internal/docgraph/setup_wiki_schema_test.go`.
+- Sin clave `schema`, aun con `canon_roots`, no se configura Setup y se resuelve el `source_doc` declarado; schema presente inválido queda pendiente, v1/v2 conservan su selección y YAML ilegible sigue siendo error tipado.
+- La ejecución corresponde a FINAL_VERIFY; esta descripción no acredita ejecución.
+
 ### Regresiones de roots declarados y propietarios documentales
 
 Cobertura de [[RF-WIKI-007]], [[CT-NAV-WIKI-ROOT]] y [[CT-NAV-WIKI]], con fixtures sintéticos; no se usa corpus de consumidores ni servicios vivos.

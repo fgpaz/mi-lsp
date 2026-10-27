@@ -64,6 +64,7 @@ RF-WIKI-007 - Resolver la raíz de wiki con `nav wiki-root`
   - sin contrato Setup: [[RF-WKS-008|canon]] del proyecto
   - sin contrato Setup ni canons del proyecto: CanonLinks del registro
   - default legacy `.docs/wiki` solo cuando no existe contrato Setup
+- **clasificación_setup**: `.sandinas/project.yaml` legible sin clave `schema` no configura Setup, aunque contenga `wiki.canon_roots`; se aplica el camino publicado sin Setup y `governance.source_doc` validado. Una clave `schema` presente desconocida, vacía, nula o no textual produce `setup_schema_unsupported`; YAML ilegible produce `setup_contract_unreadable`.
 - **fuente_setup_ausente**: item con `state=pending`, `reason_code` tipado y sin `wiki_root`; nunca volver a `.docs/wiki`, registrar otro workspace ni declarar PASS de validación.
 - **fuera_de_alcance**:
   - fan-out --all-workspaces
