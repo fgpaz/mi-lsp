@@ -80,10 +80,10 @@ func TestProviderManifestCommandPrintsContractAndRealQFlags(t *testing.T) {
 		t.Fatalf("v2 manifest is missing required catalog fields: %v", actual)
 	}
 	operations, ok := actual["operations"].([]any)
-	if !ok || len(operations) != 13 {
+	if !ok || len(operations) != 15 {
 		t.Fatalf("operations = %v, want q, intent, multi-read, wiki graph/contracts, and management operations", actual["operations"])
 	}
-	for _, required := range []string{"q", "intent", "multi-read", "wiki_graph", "wiki_validate_contract"} {
+	for _, required := range []string{"q", "intent", "multi-read", "wiki_graph", "wiki_validate_contract", "doctor", "repair"} {
 		found := false
 		for _, item := range operations {
 			op, _ := item.(map[string]any)
@@ -163,6 +163,77 @@ func TestProviderManifestCommandPrintsContractAndRealQFlags(t *testing.T) {
 	checkedIn["provider_version"] = actual["provider_version"]
 	if !reflect.DeepEqual(actual, checkedIn) {
 		t.Errorf("checked-in manifest differs from command output (after normalizing provider_version)\ncommand: %#v\nfile: %#v", actual, checkedIn)
+	}
+}
+
+func TestProviderMaintenanceOperations(t *testing.T) {
+	manifest := newProviderManifest("test")
+	operations := map[string]providerOperation{}
+	for _, op := range manifest.Operations {
+		operations[op.Name] = op
+	}
+	for _, tc := range []struct{ name, effect, contract string }{
+		{"doctor", "read", "mi-lsp-doctor/v0"},
+		{"repair", "write", "mi-lsp-repair/v1"},
+	} {
+		op, ok := operations[tc.name]
+		if !ok || op.Effect != tc.effect || op.Contract != tc.contract || manifest.Contracts[tc.name] != tc.contract {
+			t.Fatalf("operation %s: %+v", tc.name, op)
+		}
+		inv := op.Invocation
+		want := []string{"--format", "json", "--client-name", "mi-mcp", "--no-auto-register", tc.name}
+		if inv == nil || inv.Kind != "cli" || inv.Command != "mi-lsp" || inv.Output != "json" || inv.Socket != nil || !reflect.DeepEqual(inv.FixedArgs, want) {
+			t.Fatalf("%s invocation: %+v", tc.name, inv)
+		}
+	}
+	doctor := operations["doctor"]
+	if len(doctor.InputSchema["properties"].(map[string]any)) != 0 || len(doctor.Invocation.InputMapping["fields"].(map[string]any)) != 0 {
+		t.Fatal("doctor must not advertise extra flags")
+	}
+	repair := operations["repair"]
+	props := repair.InputSchema["properties"].(map[string]any)
+	fields := repair.Invocation.InputMapping["fields"].(map[string]any)
+	flags := map[string]string{"workspace": "workspace", "apply": "apply", "reindex": "reindex", "worker": "worker", "worker_mode": "worker-mode"}
+	if len(props) != len(flags) || len(fields) != len(flags) {
+		t.Fatal("repair input mapping differs from schema")
+	}
+	cmd, _, err := NewRootCommand().Find([]string{"repair"})
+	if err != nil || cmd == nil || cmd.Name() != "repair" {
+		t.Fatalf("repair command not registered: %v", err)
+	}
+	for field, name := range flags {
+		mapping := fields[field].(map[string]any)
+		if mapping["source"] != "option" || mapping["flag"] != "--"+name {
+			t.Errorf("mapping %s: %v", field, mapping)
+		}
+		flag := cmd.Flags().Lookup(name)
+		if flag == nil {
+			flag = cmd.InheritedFlags().Lookup(name)
+		}
+		if flag == nil {
+			t.Errorf("missing CLI flag --%s", name)
+			continue
+		}
+		if field == "apply" || field == "reindex" || field == "worker" {
+			schema := props[field].(map[string]any)
+			if schema["type"] != "boolean" || schema["default"] != false || flag.Value.Type() != "bool" || flag.DefValue != "false" {
+				t.Errorf("unsafe boolean %s: %v %s", field, schema, flag.DefValue)
+			}
+		}
+	}
+	mode := props["worker_mode"].(map[string]any)
+	if mode["default"] != "auto" || !reflect.DeepEqual(mode["enum"], []string{"auto", "framework-dependent", "self-contained"}) {
+		t.Fatalf("worker_mode: %v", mode)
+	}
+	output := repair.OutputSchema
+	properties := output["properties"].(map[string]any)
+	if output["type"] != "object" || properties["schema"].(map[string]any)["const"] != "mi-lsp-repair/v1" || !reflect.DeepEqual(output["required"], []string{"schema", "ok", "mode", "runtime", "actions", "reasonCodes", "changed"}) {
+		t.Fatalf("repair output schema: %v", output)
+	}
+	for _, name := range []string{"actions", "reasonCodes"} {
+		if properties[name].(map[string]any)["type"] != "array" {
+			t.Errorf("%s must be an array", name)
+		}
 	}
 }
 

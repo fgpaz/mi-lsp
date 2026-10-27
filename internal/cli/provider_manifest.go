@@ -116,6 +116,10 @@ func newProviderManifest(version string) providerManifest {
 			}), OutputSchema: responseSchema(contracts["multi-read"])},
 			{Name: "wiki_graph", Description: "Query the unified wiki and code graph", Effect: "read", Contract: contracts["wiki_graph"], InputSchema: wikiGraphInputSchema(), OutputSchema: responseSchema(contracts["wiki_graph"]), Invocation: wikiGraphInvocation()},
 			{Name: "wiki_validate_contract", Description: "Validate WIKI-CONTRACT-v1 and its language-aware checks", Effect: "read", Contract: contracts["wiki_validate_contract"], InputSchema: wikiValidateContractInputSchema(), OutputSchema: responseSchema(contracts["wiki_validate_contract"]), Invocation: wikiValidateContractInvocation()},
+			{Name: "doctor", Description: "Inspect local runtime health", Effect: "read", Contract: "mi-lsp-doctor/v0", InputSchema: objectSchema([]string{}, map[string]any{}), OutputSchema: responseSchema("mi-lsp-doctor/v0"), Invocation: maintenanceInvocation("doctor", map[string]any{})},
+			{Name: "repair", Description: "Plan or explicitly apply local repairs", Effect: "write", Contract: "mi-lsp-repair/v1", InputSchema: repairInputSchema(), OutputSchema: repairOutputSchema(), Invocation: maintenanceInvocation("repair", map[string]any{
+				"workspace": optionMapping("--workspace"), "apply": optionMapping("--apply"), "reindex": optionMapping("--reindex"), "worker": optionMapping("--worker"), "worker_mode": optionMapping("--worker-mode"),
+			})},
 			managementOperation("version", contracts["version"]), managementOperation("schema", contracts["schema"]),
 			managementOperation("--help", contracts["--help"]), managementOperation("--version", contracts["--version"]),
 		},
@@ -151,6 +155,36 @@ func newProviderManifest(version string) providerManifest {
 		manifest.Contracts[op.Name] = op.Contract
 	}
 	return manifest
+}
+
+func maintenanceInvocation(command string, fields map[string]any) *providerInvocation {
+	return &providerInvocation{Kind: "cli", Command: "mi-lsp", FixedArgs: []string{"--format", "json", "--client-name", "mi-mcp", "--no-auto-register", command}, InputMapping: map[string]any{"fields": fields}, Output: "json"}
+}
+
+func repairInputSchema() map[string]any {
+	return objectSchema([]string{}, map[string]any{
+		"workspace":   stringSchema(1),
+		"apply":       map[string]any{"type": "boolean", "default": false},
+		"reindex":     map[string]any{"type": "boolean", "default": false},
+		"worker":      map[string]any{"type": "boolean", "default": false},
+		"worker_mode": map[string]any{"type": "string", "enum": []string{"auto", "framework-dependent", "self-contained"}, "default": "auto"},
+	})
+}
+
+func repairOutputSchema() map[string]any {
+	stringField := map[string]any{"type": "string"}
+	timestamp := map[string]any{"type": []string{"string", "null"}, "format": "date-time"}
+	return map[string]any{"type": "object", "required": []string{"schema", "ok", "mode", "runtime", "actions", "reasonCodes", "changed"}, "properties": map[string]any{
+		"schema": map[string]any{"const": "mi-lsp-repair/v1"}, "ok": map[string]any{"type": "boolean"}, "changed": map[string]any{"type": "boolean"},
+		"mode":    map[string]any{"type": "string", "enum": []string{"plan", "apply"}},
+		"runtime": map[string]any{"type": "object", "required": []string{"executablePath", "managedRoot", "managedExecutablePath", "receiptPath"}, "properties": map[string]any{"executablePath": stringField, "managedRoot": stringField, "managedExecutablePath": stringField, "receiptPath": stringField}},
+		"actions": map[string]any{"type": "array", "items": map[string]any{"type": "object", "required": []string{"id", "status", "reasonCode", "detail", "retryable", "nextAction", "lastAttemptAt", "retryAfter"}, "properties": map[string]any{
+			"id":         map[string]any{"type": "string", "enum": []string{"runtime", "config", "workspace", "index", "worker"}},
+			"status":     map[string]any{"type": "string", "enum": []string{"pass", "skip", "planned", "repaired", "blocked", "failed"}},
+			"reasonCode": stringField, "detail": stringField, "retryable": map[string]any{"type": "boolean"}, "nextAction": stringField, "lastAttemptAt": timestamp, "retryAfter": timestamp,
+		}}},
+		"reasonCodes": map[string]any{"type": "array", "items": stringField},
+	}}
 }
 
 func qInvocation() *providerInvocation {
