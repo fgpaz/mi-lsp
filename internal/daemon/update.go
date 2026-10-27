@@ -62,8 +62,7 @@ func updateReleaseCompatible(version string) bool {
 }
 
 // runUpdateSchedule never performs network work on the serving goroutine.
-// Until all long-lived contexts and background work are observable, it does
-// not restart the process: an unknown idle state is always treated as busy.
+// Source scheduling is hourly; disk change detection is independent and fast.
 func (s *Server) runUpdateSchedule(ctx context.Context) {
 	version := s.state.Version
 	if version == "" || version == "dev" || version == "unknown" || strings.Contains(version, "devel") || os.Getenv("MI_LSP_UPDATE_CHILD") == "1" {
@@ -76,6 +75,8 @@ func (s *Server) runUpdateSchedule(ctx context.Context) {
 	_, _ = selfupdate.MaybeStartAutomatic(cfg, false)
 	ticker := time.NewTicker(time.Hour)
 	defer ticker.Stop()
+	controller := time.NewTicker(time.Second)
+	defer controller.Stop()
 	for {
 		select {
 		case <-ctx.Done():
@@ -84,6 +85,8 @@ func (s *Server) runUpdateSchedule(ctx context.Context) {
 			return
 		case <-ticker.C:
 			_, _ = selfupdate.MaybeStartAutomatic(cfg, false)
+		case <-controller.C:
+			s.maybeRestartUpdated(ctx, cfg)
 		}
 	}
 }
@@ -104,7 +107,7 @@ func updateAdminHandler(gate *updateAdmissionGate, next http.Handler) http.Handl
 }
 
 func (s *Server) updateResourcesIdle(now time.Time) bool {
-	return s != nil && s.manager.UpdateIdleSnapshot() && !s.qSessions.HasLiveSessions(now)
+	return s != nil && s.manager != nil && s.qSessions != nil && s.manager.UpdateIdleSnapshot() && !s.qSessions.HasLiveSessions(now)
 }
 
 // Admission tracks all activities registered by the daemon. An idle barrier
@@ -144,6 +147,7 @@ type updateRestartInvocation struct {
 	Env        []string
 	Endpoint   string
 	HomeDir    string
+	Cwd        string
 }
 type updateRestartOps struct {
 	CleanupOld func() error
