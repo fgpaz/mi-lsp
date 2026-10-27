@@ -27,6 +27,14 @@ func TestMain(m *testing.M) {
 		}
 		fmt.Print(`{"ok":true,"backend":"version","items":[{"version":"0.15.6"}]}`)
 		os.Exit(0)
+	case "hold-check":
+		fmt.Fprintln(os.Stdout, "ready")
+		var b [1]byte
+		if _, err := os.Stdin.Read(b[:]); err == nil {
+			fmt.Fprintln(os.Stdout, "alive")
+		}
+		_, _ = os.Stdin.Read(b[:])
+		os.Exit(0)
 	case "hold":
 		fmt.Fprintln(os.Stdout, "ready")
 		var b [1]byte
