@@ -2,6 +2,7 @@ package worker
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -32,11 +33,14 @@ type LaunchSpec struct {
 }
 
 type WorkerCandidateStatus struct {
-	Source          string `json:"source,omitempty"`
-	Path            string `json:"path,omitempty"`
-	ProtocolVersion string `json:"protocol_version,omitempty"`
-	Compatible      bool   `json:"compatible,omitempty"`
-	Error           string `json:"error,omitempty"`
+	Source          string   `json:"source,omitempty"`
+	Path            string   `json:"path,omitempty"`
+	ProtocolVersion string   `json:"protocol_version,omitempty"`
+	Compatible      bool     `json:"compatible,omitempty"`
+	Error           string   `json:"error,omitempty"`
+	Mode            string   `json:"mode,omitempty"`
+	Host            string   `json:"host,omitempty"`
+	Capabilities    []string `json:"capabilities,omitempty"`
 }
 
 type WorkerRuntimeInfo struct {
@@ -227,14 +231,18 @@ func InspectWorkerRuntime(toolRoot string, rid string) WorkerRuntimeInfo {
 		InstallHint:  "Run `mi-lsp worker install` to refresh the bundled/global worker.",
 	}
 
-	bundledPath, bundledErr := FindBundledWorkerBinaryForRID(toolRoot, rid)
+	bundledPath, bundledErr := findPreferredCandidate(bundledWorkerDirs(toolRoot, rid))
 	if bundledErr != nil {
 		info.Bundled = WorkerCandidateStatus{Source: "bundle", Error: bundledErr.Error()}
 	} else {
 		info.Bundled = inspectBinaryCandidate("bundle", bundledPath)
 	}
 
-	installedPath, installedErr := FindInstalledWorkerBinaryForRID(rid)
+	installedDir, installedErr := InstalledWorkerDirForRID(rid)
+	installedPath := ""
+	if installedErr == nil {
+		installedPath, installedErr = findPreferredCandidate([]string{installedDir})
+	}
 	if installedErr != nil {
 		info.Installed = WorkerCandidateStatus{Source: "installed", Error: installedErr.Error()}
 	} else {
@@ -245,10 +253,14 @@ func InspectWorkerRuntime(toolRoot string, rid string) WorkerRuntimeInfo {
 	if devErr != nil {
 		info.DevLocal = WorkerCandidateStatus{Source: "dev-local", Error: devErr.Error()}
 	} else {
-		info.DevLocal = WorkerCandidateStatus{Source: "dev-local", Path: devPath, Compatible: devSpec.Command != ""}
+		info.DevLocal = WorkerCandidateStatus{Source: "dev-local", Path: devPath, Compatible: devSpec.Command != "", Mode: "dev-local", Host: "dotnet", Capabilities: []string{"roslyn"}}
 	}
 
 	switch {
+	case info.Bundled.Compatible && info.Bundled.Mode == "framework-dependent":
+		info.Selected = info.Bundled
+	case info.Installed.Compatible && info.Installed.Mode == "framework-dependent":
+		info.Selected = info.Installed
 	case info.Bundled.Compatible:
 		info.Selected = info.Bundled
 	case info.Installed.Compatible:
@@ -281,6 +293,8 @@ func inspectBinaryCandidate(source string, path string) WorkerCandidateStatus {
 		ProtocolVersion: result.ProtocolVersion,
 		Compatible:      result.Compatible,
 	}
+	status.Mode, status.Host = candidateMode(path)
+	status.Capabilities = []string{"roslyn"}
 	if result.Err != nil {
 		status.Error = result.Err.Error()
 	}
@@ -296,22 +310,25 @@ func ResolveLaunchSpecs(toolRoot string) ([]LaunchSpec, error) {
 	specs := make([]LaunchSpec, 0, 3)
 	reasons := make([]string, 0, 3)
 
-	if bundledPath, err := FindBundledWorkerBinaryForRID(toolRoot, rid); err == nil {
+	if bundledPath, err := findPreferredCandidate(bundledWorkerDirs(toolRoot, rid)); err == nil {
 		specs = append(specs, LaunchSpec{
 			Source:        "bundle",
 			CandidatePath: bundledPath,
-			Command:       bundledPath,
+			Command:       candidateCommand(bundledPath),
+			Args:          candidateArgs(bundledPath),
 			WorkDir:       toolRoot,
 		})
 	} else {
 		reasons = append(reasons, "bundle: "+err.Error())
 	}
 
-	if installedPath, err := FindInstalledWorkerBinaryForRID(rid); err == nil {
+	installedDir, _ := InstalledWorkerDirForRID(rid)
+	if installedPath, err := findPreferredCandidate([]string{installedDir}); err == nil {
 		specs = append(specs, LaunchSpec{
 			Source:        "installed",
 			CandidatePath: installedPath,
-			Command:       installedPath,
+			Command:       candidateCommand(installedPath),
+			Args:          candidateArgs(installedPath),
 			WorkDir:       toolRoot,
 		})
 	} else {
@@ -329,6 +346,17 @@ func ResolveLaunchSpecs(toolRoot string) ([]LaunchSpec, error) {
 		reasons = append(reasons, "dev-local: "+err.Error())
 	}
 
+	// Use the same preference as status, including skipping incompatible apphosts
+	// ahead of a compatible installed or dev-local candidate.
+	selected := InspectWorkerRuntime(toolRoot, rid).Selected
+	for i := range specs {
+		if specs[i].Source == selected.Source && specs[i].CandidatePath == selected.Path {
+			spec := specs[i]
+			copy(specs[1:i+1], specs[0:i])
+			specs[0] = spec
+			break
+		}
+	}
 	if len(specs) > 0 {
 		return specs, nil
 	}
@@ -369,6 +397,10 @@ func resolveDevLocalLaunchSpec(toolRoot string) (LaunchSpec, string, error) {
 }
 
 func InstallWorker(toolRoot string, rid string) (string, error) {
+	return InstallWorkerMode(toolRoot, rid, "auto")
+}
+
+func InstallWorkerMode(toolRoot string, rid string, mode string) (string, error) {
 	if rid == "" {
 		rid = ResolveRID()
 	}
@@ -376,12 +408,52 @@ func InstallWorker(toolRoot string, rid string) (string, error) {
 		toolRoot, _ = ResolveToolRoot(".")
 	}
 
+	if mode != "auto" && mode != "framework-dependent" && mode != "self-contained" {
+		return "", fmt.Errorf("invalid worker mode %q", mode)
+	}
 	targetDir, err := InstalledWorkerDirForRID(rid)
 	if err != nil {
 		return "", err
 	}
-
-	if bundledPath, bundleErr := FindBundledWorkerBinaryForRID(toolRoot, rid); bundleErr == nil {
+	if mode != "self-contained" {
+		for _, dir := range bundledWorkerDirs(toolRoot, rid) {
+			dll := filepath.Join(dir, "MiLsp.Worker.dll")
+			if frameworkCandidateCompatible(dll) {
+				if err := copyWorkerDistribution(dir, targetDir); err != nil {
+					return "", err
+				}
+				return filepath.Join(targetDir, "MiLsp.Worker.dll"), nil
+			}
+		}
+		project := filepath.Join(toolRoot, "worker-dotnet", "MiLsp.Worker", "MiLsp.Worker.csproj")
+		if HasDotnet() {
+			if _, err := os.Stat(project); err == nil {
+				tmp, err := os.MkdirTemp("", "mi-lsp-worker-")
+				if err != nil {
+					return "", err
+				}
+				defer os.RemoveAll(tmp)
+				cmd := exec.Command("dotnet", "publish", project, "-c", "Release", "-r", rid, "--self-contained", "false", "-p:UseAppHost=false", "-o", tmp)
+				cmd.Dir = toolRoot
+				processutil.ConfigureNonInteractiveCommand(cmd)
+				output, publishErr := cmd.CombinedOutput()
+				dll := filepath.Join(tmp, "MiLsp.Worker.dll")
+				if publishErr == nil && frameworkCandidateCompatible(dll) {
+					if err := copyWorkerDistribution(tmp, targetDir); err != nil {
+						return "", err
+					}
+					return filepath.Join(targetDir, "MiLsp.Worker.dll"), nil
+				}
+				if mode == "framework-dependent" {
+					return "", fmt.Errorf("framework-dependent worker unavailable: publish=%v output=%s or incompatible runtime", publishErr, output)
+				}
+			}
+		}
+		if mode == "framework-dependent" {
+			return "", errors.New("framework-dependent worker requires a compatible dotnet runtime and bundled DLL or source SDK")
+		}
+	}
+	if bundledPath, bundleErr := FindBundledWorkerBinaryForRID(toolRoot, rid); bundleErr == nil && !runtimeConfigIsFrameworkDependent(filepath.Join(filepath.Dir(bundledPath), "MiLsp.Worker.runtimeconfig.json")) {
 		if err := copyWorkerDistribution(filepath.Dir(bundledPath), targetDir); err != nil {
 			return "", err
 		}
@@ -393,6 +465,11 @@ func InstallWorker(toolRoot string, rid string) (string, error) {
 	if HasDotnet() {
 		projectPath := filepath.Join(toolRoot, "worker-dotnet", "MiLsp.Worker", "MiLsp.Worker.csproj")
 		if _, statErr := os.Stat(projectPath); statErr == nil {
+			tmp, err := os.MkdirTemp("", "mi-lsp-worker-")
+			if err != nil {
+				return "", err
+			}
+			defer os.RemoveAll(tmp)
 			command := exec.Command(
 				"dotnet",
 				"publish",
@@ -400,7 +477,7 @@ func InstallWorker(toolRoot string, rid string) (string, error) {
 				"-c", "Release",
 				"-r", rid,
 				"--self-contained", "true",
-				"-o", targetDir,
+				"-o", tmp,
 			)
 			command.Dir = toolRoot
 			processutil.ConfigureNonInteractiveCommand(command)
@@ -408,9 +485,15 @@ func InstallWorker(toolRoot string, rid string) (string, error) {
 			if err != nil {
 				return "", fmt.Errorf("dotnet publish failed: %w: %s", err, string(output))
 			}
+			if _, err := os.Stat(filepath.Join(tmp, workerBinaryName())); err != nil {
+				return "", err
+			}
+			if err := copyWorkerDistribution(tmp, targetDir); err != nil {
+				return "", err
+			}
 		}
 	}
-	if binaryPath, err := FindInstalledWorkerBinaryForRID(rid); err == nil {
+	if binaryPath, err := FindInstalledWorkerBinaryForRID(rid); err == nil && !runtimeConfigIsFrameworkDependent(filepath.Join(filepath.Dir(binaryPath), "MiLsp.Worker.runtimeconfig.json")) {
 		return binaryPath, nil
 	}
 	return "", errors.New("worker install could not find a bundled worker and no source project was available; run from a mi-lsp distribution with workers/<rid> or publish the worker from source")
@@ -451,6 +534,95 @@ func copyWorkerDistribution(sourceDir string, targetDir string) error {
 	return nil
 }
 
+func candidateMode(path string) (string, string) {
+	if strings.HasSuffix(strings.ToLower(path), ".dll") {
+		return "framework-dependent", "dotnet"
+	}
+	if runtimeConfigIsFrameworkDependent(filepath.Join(filepath.Dir(path), "MiLsp.Worker.runtimeconfig.json")) {
+		return "framework-dependent", "apphost"
+	}
+	return "self-contained", "apphost"
+}
+
+func candidateCommand(path string) string {
+	if strings.HasSuffix(strings.ToLower(path), ".dll") {
+		return "dotnet"
+	}
+	return path
+}
+
+func candidateArgs(path string) []string {
+	if strings.HasSuffix(strings.ToLower(path), ".dll") {
+		return []string{path}
+	}
+	return nil
+}
+
+func frameworkCandidateCompatible(path string) bool {
+	if !HasDotnet() {
+		return false
+	}
+	if _, err := os.Stat(path); err != nil {
+		return false
+	}
+	if !runtimeConfigIsFrameworkDependent(filepath.Join(filepath.Dir(path), "MiLsp.Worker.runtimeconfig.json")) {
+		return false
+	}
+	return probeWorkerBinaryFn(path).Compatible
+}
+
+// A self-contained runtimeconfig uses includedFrameworks, not shared frameworks.
+// Runtime compatibility itself is verified by the protocol probe, not inferred here.
+func runtimeConfigIsFrameworkDependent(path string) bool {
+	body, err := os.ReadFile(path)
+	if err != nil {
+		return false
+	}
+	type framework struct {
+		Name    string `json:"name"`
+		Version string `json:"version"`
+	}
+	var config struct {
+		RuntimeOptions struct {
+			Framework          *framework      `json:"framework"`
+			Frameworks         []framework     `json:"frameworks"`
+			IncludedFrameworks json.RawMessage `json:"includedFrameworks"`
+		} `json:"runtimeOptions"`
+	}
+	if json.Unmarshal(body, &config) != nil || config.RuntimeOptions.IncludedFrameworks != nil {
+		return false
+	}
+	frameworks := config.RuntimeOptions.Frameworks
+	if config.RuntimeOptions.Framework != nil {
+		frameworks = append(frameworks, *config.RuntimeOptions.Framework)
+	}
+	if len(frameworks) == 0 {
+		return false
+	}
+	for _, f := range frameworks {
+		if strings.TrimSpace(f.Name) == "" || strings.TrimSpace(f.Version) == "" {
+			return false
+		}
+	}
+	return true
+}
+
+func findPreferredCandidate(dirs []string) (string, error) {
+	for _, dir := range dirs {
+		dll := filepath.Join(dir, "MiLsp.Worker.dll")
+		if frameworkCandidateCompatible(dll) {
+			return dll, nil
+		}
+	}
+	for _, dir := range dirs {
+		path := filepath.Join(dir, workerBinaryName())
+		if _, err := os.Stat(path); err == nil {
+			return path, nil
+		}
+	}
+	return "", errors.New("worker binary not found")
+}
+
 func probeWorkerBinary(path string) workerProbeResult {
 	info, err := os.Stat(path)
 	if err != nil {
@@ -469,7 +641,7 @@ func probeWorkerBinary(path string) workerProbeResult {
 }
 
 func probeWorkerBinaryOnce(path string) workerProbeResult {
-	command := exec.Command(path)
+	command := exec.Command(candidateCommand(path), candidateArgs(path)...)
 	command.Dir = filepath.Dir(path)
 	processutil.ConfigureNonInteractiveCommand(command)
 	var stderr bytes.Buffer
@@ -507,7 +679,8 @@ func probeWorkerBinaryOnce(path string) workerProbeResult {
 	responseCh := make(chan probeResponse, 1)
 	go func() {
 		var response model.WorkerResponse
-		responseCh <- probeResponse{response: response, err: ReadFrame(stdout, &response)}
+		err := ReadFrame(stdout, &response)
+		responseCh <- probeResponse{response: response, err: err}
 	}()
 
 	select {

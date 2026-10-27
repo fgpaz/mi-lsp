@@ -646,7 +646,9 @@ func (a *App) workspaceStatus(ctx context.Context, request model.CommandRequest)
 	item["workspace_root"] = registration.Root
 	item["workspace_source"] = source
 	item["repos"] = project.Repos
-	item["entrypoints"] = project.Entrypoints
+	if noEntrypoints, _ := request.Payload["no_entrypoints"].(bool); !noEntrypoints {
+		item["entrypoints"] = project.Entrypoints
+	}
 	item["docs_read_model"] = workspaceProfileHint(registration.Root)
 	autoSync := true
 	if value, ok := request.Payload["auto_sync"].(bool); ok {

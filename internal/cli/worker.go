@@ -19,15 +19,16 @@ func newWorkerCommand(state *rootState) *cobra.Command {
 context, and dependency analysis. Includes install and status.`,
 	}
 
-	var rid string
+	var rid, mode string
 	installCommand := &cobra.Command{
 		Use:   "install",
-		Short: "Install a self-contained worker for the current RID",
+		Short: "Install a worker for the current RID",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return state.executeOperation(cmd, "worker.install", map[string]any{"rid": rid}, false)
+			return state.executeOperation(cmd, "worker.install", map[string]any{"rid": rid, "mode": mode}, false)
 		},
 	}
 	installCommand.Flags().StringVar(&rid, "rid", "", "Runtime identifier override")
+	installCommand.Flags().StringVar(&mode, "mode", "auto", "Worker mode: auto, framework-dependent, or self-contained")
 
 	statusCommand := &cobra.Command{
 		Use:   "status",
