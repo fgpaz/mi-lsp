@@ -13,6 +13,7 @@ import (
 	"strings"
 	"syscall"
 	"testing"
+	"time"
 
 	"github.com/fgpaz/mi-lsp/internal/processutil"
 )
@@ -48,7 +49,7 @@ func TestReadInstalledChildMarkerAndVersionEnvelope(t *testing.T) {
 }
 
 func TestTransactionZipDeclaredBomb(t *testing.T) {
-	// Central-directory uncompressed size is deliberately >4 GiB; no large allocation.
+	// Central-directory uncompressed size is 4 GiB minus two bytes; no large allocation.
 	var b bytes.Buffer
 	w := zip.NewWriter(&b)
 	f, err := w.Create(cliName())
@@ -67,7 +68,7 @@ func TestTransactionZipDeclaredBomb(t *testing.T) {
 	if i < 0 {
 		t.Fatal("missing central directory")
 	}
-	// A conservative >4 GiB declaration is enough to exceed any reasonable CLI extraction cap.
+	// The declaration exceeds the bounded CLI extraction cap.
 	binary.LittleEndian.PutUint32(raw[i+24:i+28], 0xfffffffe)
 	archive := filepath.Join(t.TempDir(), "bomb.zip")
 	if err = os.WriteFile(archive, raw, 0600); err != nil {
@@ -84,17 +85,22 @@ func TestTransactionZipDeclaredBomb(t *testing.T) {
 func TestTransactionInjectedPromotionErrors(t *testing.T) {
 	// transactionOps is an approved private seam; nil hooks use the real OS operation.
 	for _, tc := range []struct {
-		name  string
-		fault error
-		code  string
+		name     string
+		fault    error
+		code     string
+		platform string
 	}{
-		{"permission", os.ErrPermission, "UPDATE_PERMISSION_DENIED"},
-		{"in-use", syscall.Errno(32), "UPDATE_IN_USE_DEFERRED"},
-		{"virus", syscall.Errno(225), "UPDATE_QUARANTINED"},
-		{"virus-deleted", syscall.Errno(226), "UPDATE_QUARANTINED"},
-		{"policy-block", syscall.Errno(1260), "UPDATE_QUARANTINED"},
+		{"permission", os.ErrPermission, "UPDATE_PERMISSION_DENIED", "all"},
+		{"in-use-windows", syscall.Errno(32), "UPDATE_IN_USE_DEFERRED", "windows"},
+		{"in-use-linux", syscall.Errno(26), "UPDATE_IN_USE_DEFERRED", "linux"},
+		{"virus", syscall.Errno(225), "UPDATE_QUARANTINED", "windows"},
+		{"virus-deleted", syscall.Errno(226), "UPDATE_QUARANTINED", "windows"},
+		{"policy-block", syscall.Errno(1260), "UPDATE_QUARANTINED", "windows"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			if tc.platform != "all" && runtime.GOOS != tc.platform {
+				t.Skip("platform-specific OS error")
+			}
 			target := transactionTarget(t)
 			archive := transactionArchive(t, "zip", []archiveEntry{{name: cliName(), body: "new-image", mode: 0755}})
 			tx := transactionFor(t, target, archive)
@@ -245,11 +251,32 @@ func TestTransactionWindowsRunningImageRenameAndRollback(t *testing.T) {
 	if err = cmd.Start(); err != nil {
 		t.Fatal(err)
 	}
-	defer func() { _ = stdin.Close(); _ = cmd.Wait() }()
-	var ready [6]byte
-	n, err := stdout.Read(ready[:])
-	if err != nil || !strings.HasPrefix(string(ready[:n]), "ready") {
-		t.Fatalf("helper ready=%q err=%v", ready[:n], err)
+	defer func() {
+		_ = stdin.Close()
+		done := make(chan error, 1)
+		go func() { done <- cmd.Wait() }()
+		select {
+		case <-done:
+		case <-time.After(10 * time.Second):
+			t.Error("helper exit timeout")
+		}
+	}()
+	ready := make(chan error, 1)
+	go func() {
+		var b [6]byte
+		n, e := stdout.Read(b[:])
+		if e == nil && !strings.HasPrefix(string(b[:n]), "ready") {
+			e = fmt.Errorf("unexpected helper response %q", b[:n])
+		}
+		ready <- e
+	}()
+	select {
+	case err := <-ready:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("helper readiness timeout")
 	}
 	archive := transactionArchive(t, "zip", []archiveEntry{{name: "mi-lsp.exe", body: "new-image", mode: 0755}})
 	tx := transactionFor(t, target, archive)
