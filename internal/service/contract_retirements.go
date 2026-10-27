@@ -20,7 +20,28 @@ func validateWikiContractRetirements(root, docPath, body string, index wikisourc
 	}
 	var rows []any
 	found := false
+	explicitEmpty := false
+	plain := strings.TrimSpace(strings.ToLower(strings.ReplaceAll(body, "\r", "")))
+	lines := strings.Split(plain, "\n")
+	var prose []string
+	proseNone := false
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line != "" && !strings.HasPrefix(line, "#") {
+			prose = append(prose, line)
+			if line == "no hay retiros registrados." || line == "no hay retiros registrados. este registro no modifica ni retira identificadores existentes." {
+				proseNone = true
+			}
+		}
+	}
+	if len(prose) == 1 && proseNone {
+		found = true
+		explicitEmpty = true
+	}
 	for _, block := range blocks {
+		if explicitEmpty && len(prose) == 1 && !strings.Contains(body, "```") {
+			continue
+		}
 		var raw any
 		if err := yaml.Unmarshal([]byte(block), &raw); err != nil {
 			warn("retirements invalid YAML: " + err.Error())
@@ -36,21 +57,34 @@ func validateWikiContractRetirements(root, docPath, body string, index wikisourc
 					warn("forbidden key " + key)
 				}
 			}
-			if inventory, exists := value["retirements"]; exists {
-				if entries, ok := inventory.([]any); ok {
-					rows = append(rows, entries...)
-					found = true
-				} else {
-					warn("retirements must be a list")
+			inventoryFound := false
+			for _, key := range []string{"retirements", "entries"} {
+				if inventory, exists := value[key]; exists {
+					inventoryFound = true
+					if entries, ok := inventory.([]any); ok {
+						rows = append(rows, entries...)
+						found = true
+						if len(entries) == 0 {
+							explicitEmpty = true
+						}
+					} else {
+						warn(key + " must be a list")
+					}
 				}
-			} else if _, exists := value["old_path"]; exists {
-				rows = append(rows, value)
-				found = true
+			}
+			if !inventoryFound {
+				if _, exists := value["old_path"]; exists {
+					rows = append(rows, value)
+					found = true
+				}
 			}
 		}
 	}
 	if !found {
 		warn("parser_warning: no retirement rows parsed")
+	}
+	if (explicitEmpty || proseNone) && len(rows) > 0 {
+		warn("contradictory empty retirement inventory and rows")
 	}
 	allowed := map[string]bool{"id": true, "old_path": true, "archived_path": true, "superseded_by": true, "terminal": true, "reason": true}
 	for n, entry := range rows {

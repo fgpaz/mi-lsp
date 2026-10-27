@@ -372,15 +372,15 @@ func wikiLanguageFinding(code, source, message string) WikiContractFinding {
 
 func wikiGovernanceYAML(content string) (block string, found, fenced bool) {
 	content = strings.TrimPrefix(strings.ReplaceAll(content, "\r", ""), "\ufeff")
-	if match := wikiGovernanceFencePattern.FindStringSubmatch(content); len(match) > 1 {
-		return strings.TrimSpace(match[1]), true, true
-	}
 	trimmed := strings.TrimSpace(content)
 	if strings.HasPrefix(trimmed, "---\n") {
 		rest := trimmed[4:]
 		if end := strings.Index(rest, "\n---"); end >= 0 {
 			return strings.TrimSpace(rest[:end]), true, true
 		}
+	}
+	if match := wikiGovernanceFencePattern.FindStringSubmatch(content); len(match) > 1 {
+		return strings.TrimSpace(match[1]), true, true
 	}
 	if trimmed == "" {
 		return "", false, false

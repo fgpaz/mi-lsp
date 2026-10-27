@@ -13,6 +13,7 @@ import (
 func a14CustomWiki(t *testing.T) (string, string) {
 	t.Helper()
 	root, name := setupTestWorkspace(t)
+	t.Chdir(root)
 	writeContractTestWikiFile(t, root, ".docs/wiki/_mi-lsp/read-model.toml", "version = 1\n[governance]\nsource_doc = 'wiki/00_governance.md'\n")
 	writeContractTestWikiFile(t, root, "wiki/00_governance.md", "---\nwiki_contract: WIKI-CONTRACT-v1\nversion: 1\nlanguage: es\n---\n# Gobernanza\n\n```yaml\ntraits: {}\n```\n")
 	writeContractTestWikiFile(t, root, "wiki/02_outcomes/RS-FIX-01.md", "---\nwiki_contract: WIKI-CONTRACT-v1\nid: RS-FIX-01\nkind: outcome\nstatus: active\ntitle: Resultado\n---\n## Resultado observable\nx\n## Beneficiario\nx\n## Criterios de éxito\nx\n## Fuera de alcance del RS\nx\n")

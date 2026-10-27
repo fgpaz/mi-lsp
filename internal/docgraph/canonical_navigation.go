@@ -37,6 +37,15 @@ func CanonicalWikiRoots(root string) ([]string, error) {
 		}
 		roots = append(roots, filepath.ToSlash(rel))
 	}
+	// A validated projection may bind the workspace governance to a different
+	// wiki root even when no Setup or canon is declared.
+	_, display, profile, source := resolveGovernanceDoc(root)
+	if source == "project" && strings.TrimSpace(profile.Governance.SourceDoc) != "" && !strings.HasPrefix(display, "INVALID:") {
+		base := filepath.ToSlash(filepath.Dir(filepath.FromSlash(display)))
+		if base != "." && safeRouteDocument(root, display, []string{base}) {
+			roots = append(roots, base)
+		}
+	}
 	return roots, nil
 }
 

@@ -145,6 +145,9 @@ func wikiLayersDoctor(root string) (*model.WikiLayersDoctor, []string) {
 		WikiRoot:   resolveWikiRootFromPolicy(policy),
 		Exceptions: exceptions,
 	}
+	if source, err := ResolvedGovernanceDocument(root); err == nil {
+		report.WikiRoot = filepath.ToSlash(filepath.Dir(filepath.FromSlash(source)))
+	}
 	if kind != "product" {
 		report.LayersRequired = false
 		return report, warnings

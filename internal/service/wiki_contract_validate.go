@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/fgpaz/mi-lsp/internal/docgraph"
 	"github.com/fgpaz/mi-lsp/internal/model"
 )
 
@@ -16,6 +17,17 @@ const (
 // ResolveWikiContractLanguageAtRoot selects canonical governance first and only reads the
 // legacy filename when the canonical source is absent. Parsing remains pure in model.
 func ResolveWikiContractLanguageAtRoot(root string) model.WikiContractLanguageResult {
+	if source, err := docgraph.ResolvedGovernanceDocument(root); err == nil {
+		content, err := os.ReadFile(docgraph.ResolveDocumentPath(root, source))
+		if err != nil {
+			return wikiGovernanceReadFailure(source, err)
+		}
+		result := model.ResolveWikiContractLanguage(source, string(content))
+		if filepath.Base(source) == "00_gobierno_documental.md" {
+			result.Warnings = append(result.Warnings, model.WikiContractFinding{Code: "governance_legacy_filename", Expected: wikiContractGovernancePath, Message: "governance_legacy_filename: prefer 00_governance.md over 00_gobierno_documental.md"})
+		}
+		return result
+	}
 	canonical := filepath.Join(root, filepath.FromSlash(wikiContractGovernancePath))
 	content, err := os.ReadFile(canonical)
 	if err == nil {
