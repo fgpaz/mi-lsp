@@ -13,6 +13,7 @@ import (
 
 	"github.com/fgpaz/mi-lsp/internal/model"
 	"github.com/fgpaz/mi-lsp/internal/output"
+	"github.com/fgpaz/mi-lsp/internal/runtimeinfo"
 	"github.com/fgpaz/mi-lsp/internal/worker"
 )
 
@@ -44,6 +45,8 @@ func buildVersionInfo(toolRoot string) model.VersionInfo {
 	if !ok {
 		version, revision := releaseMetadata("", "")
 		return model.VersionInfo{
+			Runtime:          runtimeinfo.Locate(),
+			Capabilities:     []string{"repair-v1"},
 			Command:          "mi-lsp",
 			Version:          version,
 			GoVersion:        runtime.Version(),
@@ -61,6 +64,8 @@ func buildVersionInfo(toolRoot string) model.VersionInfo {
 	version, revision := releaseMetadata(info.Main.Version, buildSetting(info, "vcs.revision"))
 
 	return model.VersionInfo{
+		Runtime:          runtimeinfo.Locate(),
+		Capabilities:     []string{"repair-v1"},
 		Command:          "mi-lsp",
 		Version:          version,
 		ModulePath:       info.Main.Path,
