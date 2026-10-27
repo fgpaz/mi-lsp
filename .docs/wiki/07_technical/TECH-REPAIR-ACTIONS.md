@@ -1,0 +1,9 @@
+# Acciones locales de reparación
+
+El motor de reparación invoca `actions.Inspect` para planificar y `actions.Apply` para intentar cambios autorizados. La inspección no crea registro, directorios ni índice. El índice se consulta en modo SQLite inmutable; si hay WAL con contenido, se informa que no se puede verificar en vez de usar una lectura potencialmente obsoleta o crear archivos auxiliares. El worker opcional sólo se inspecciona cuando el motor lo solicita; se verifica mediante el protocolo, sin shell.
+
+La configuración pública ausente puede crearse como registro vacío bajo el bloqueo del registro. Un registro ilegible o inválido no se sobrescribe. Para un workspace se requiere alias registrado o ruta explícita existente: el registro de una ruta usa detección local y modifica el registro bajo bloqueo, conservando otros alias y sin reemplazar `project.toml`. Si el nombre detectado ya corresponde a otro workspace se requiere resolución manual.
+
+La indexación usa el servicio de jobs existente en modo síncrono y offline para Go; después comprueba el catálogo publicado. Un job activo no se considera éxito. Como el servicio existente realiza limpieza automática del registro y recuperación de corrupción, la acción rechaza anticipadamente entradas obsoletas y un índice ilegible; una modificación concurrente posterior a esas comprobaciones sigue siendo un riesgo del servicio y requiere revisión en la integración. El worker se instala mediante `InstallWorkerMode`, registra un recibo y verifica el artefacto instalado con un handshake.
+
+Los errores entregados por estas acciones son mensajes sanitizados, sin salida de procesos ni contenido de configuración. Los tiempos de espera, antirrecurrencia, protección por recibos de remoción y decisión de cuándo llamar a cada acción corresponden al motor de reparación.
