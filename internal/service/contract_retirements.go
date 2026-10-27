@@ -68,7 +68,7 @@ func validateWikiContractRetirements(root, docPath, body string, index wikisourc
 		found = true
 		explicitEmpty = true
 	}
-	for _, block := range blocks {
+	for blockIndex, block := range blocks {
 		if explicitEmpty && len(prose) == 1 && !structured {
 			continue
 		}
@@ -81,6 +81,13 @@ func validateWikiContractRetirements(root, docPath, body string, index wikisourc
 		var trailing any
 		if err := decoder.Decode(&trailing); err != io.EOF {
 			warn("retirements YAML block must contain exactly one complete document")
+			continue
+		}
+		if blockIndex == 0 && strings.HasPrefix(strings.TrimSpace(body), "---") && retirementDocumentMetadata(raw) {
+			if proseNone && len(prose) == 1 && !retirementHasUnparsedStructure(body) {
+				found = true
+				explicitEmpty = true
+			}
 			continue
 		}
 		switch value := raw.(type) {
@@ -198,6 +205,23 @@ func validateWikiContractRetirements(root, docPath, body string, index wikisourc
 		warn("forbidden normative toon fence")
 	}
 	return warnings
+}
+
+// A WIKI-CONTRACT-v1 governance frontmatter describes this registry document;
+// it is not an additional inventory. Unknown shapes still go through validation.
+func retirementDocumentMetadata(raw any) bool {
+	header, ok := raw.(map[string]any)
+	if !ok || header["wiki_contract"] != "WIKI-CONTRACT-v1" || header["kind"] != "governance" {
+		return false
+	}
+	for key := range header {
+		switch key {
+		case "wiki_contract", "id", "kind", "status", "title", "version", "language", "model_revision":
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 // Every machine-looking block must be accounted for, even if another block
