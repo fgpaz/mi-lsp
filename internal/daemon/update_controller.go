@@ -116,11 +116,17 @@ func (s *Server) maybeRestartUpdated(ctx context.Context, cfg selfupdate.Config)
 			}
 			pauseCtx, cancel := context.WithTimeout(ctx, time.Second)
 			defer cancel()
-			err := prepareAdminForUpdate(pauseCtx, s.admin.updateListener.Pause, func() error {
-				return s.admin.server.Shutdown(context.Background())
-			}, s.admin.updateListener.Resume)
+			err := prepareAdminForUpdate(pauseCtx, s.admin.updateListener.Pause, nil, s.admin.updateListener.Resume)
 			if err != nil {
 				return err
+			}
+			if err := ctx.Err(); err != nil {
+				_ = s.admin.updateListener.Resume()
+				return err
+			}
+			if s.shutdownStarted.Load() || s.elastic != nil || !s.updateResourcesIdle(time.Now()) {
+				_ = s.admin.updateListener.Resume()
+				return errors.New("daemon no longer idle")
 			}
 			resume = false
 			s.Shutdown()
