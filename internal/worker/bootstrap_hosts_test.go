@@ -116,6 +116,11 @@ func TestSelectionMatchesLaunchSpecs(t *testing.T) {
 
 func TestSelfContainedInstallKeepsApphost(t *testing.T) {
 	root, home := t.TempDir(), t.TempDir()
+	if runtime.GOOS == "windows" {
+		t.Setenv("USERPROFILE", home)
+	} else {
+		t.Setenv("HOME", home)
+	}
 	oldHome, oldLook, oldProbe := userHomeDirFn, lookPathFn, probeWorkerBinaryFn
 	t.Cleanup(func() { userHomeDirFn, lookPathFn, probeWorkerBinaryFn = oldHome, oldLook, oldProbe })
 	userHomeDirFn = func() (string, error) { return home, nil }
@@ -163,11 +168,73 @@ func TestInstallDoesNotRecordIncompatibleWorker(t *testing.T) {
 		t.Fatal(err)
 	}
 	path, err := InstallWorkerMode(root, ResolveRID(), "self-contained")
-	if err == nil || path == "" {
-		t.Fatalf("instalación debe fallar tras handshake: %q %v", path, err)
+	if err == nil || path != "" {
+		t.Fatalf("verificación previa debe fallar sin publicar: %q %v", path, err)
 	}
 	if _, err := os.Stat(filepath.Join(home, ".mi-lsp", "repair", "installations.json")); !os.IsNotExist(err) {
 		t.Fatalf("recibo inesperado: %v", err)
+	}
+}
+
+func TestPublishWorkerPreservesPriorInstallation(t *testing.T) {
+	for _, scenario := range []string{"copy", "probe", "promotion", "rollback"} {
+		t.Run(scenario, func(t *testing.T) {
+			parent := t.TempDir()
+			source, target := filepath.Join(parent, "source"), filepath.Join(parent, "installed")
+			for _, dir := range []string{source, target} {
+				if err := os.MkdirAll(dir, 0755); err != nil {
+					t.Fatal(err)
+				}
+			}
+			name := workerBinaryName()
+			if err := os.WriteFile(filepath.Join(source, name), []byte("nuevo"), 0600); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(target, name), []byte("anterior"), 0600); err != nil {
+				t.Fatal(err)
+			}
+			oldCopy, oldProbe, oldRename := copyDistributionFn, probeWorkerBinaryFn, renameDistributionFn
+			t.Cleanup(func() { copyDistributionFn, probeWorkerBinaryFn, renameDistributionFn = oldCopy, oldProbe, oldRename })
+			probeWorkerBinaryFn = func(string) workerProbeResult { return workerProbeResult{Compatible: scenario != "probe"} }
+			if scenario == "copy" {
+				copyDistributionFn = func(string, string) error { return errors.New("copy failed") }
+			}
+			if scenario == "promotion" || scenario == "rollback" {
+				calls := 0
+				renameDistributionFn = func(from, to string) error {
+					calls++
+					if calls == 2 || (scenario == "rollback" && calls == 3) {
+						return errors.New("rename failed")
+					}
+					return os.Rename(from, to)
+				}
+			}
+			path, err := publishWorkerDistribution(source, target, name)
+			if err == nil {
+				t.Fatal("se esperaba error")
+			}
+			if scenario == "rollback" {
+				if path == "" {
+					t.Fatal("mutación parcial debe devolver ruta")
+				}
+				backups, err := filepath.Glob(filepath.Join(parent, ".worker-backup-*", "previous", name))
+				if err != nil || len(backups) != 1 {
+					t.Fatalf("backup no conservado: %v %v", backups, err)
+				}
+				body, err := os.ReadFile(backups[0])
+				if err != nil || string(body) != "anterior" {
+					t.Fatalf("backup: %q %v", body, err)
+				}
+			} else {
+				if path != "" {
+					t.Fatalf("fallo sin mutación devolvió ruta: %q", path)
+				}
+				body, err := os.ReadFile(filepath.Join(target, name))
+				if err != nil || string(body) != "anterior" {
+					t.Fatalf("instalación anterior: %q %v", body, err)
+				}
+			}
+		})
 	}
 }
 

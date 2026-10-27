@@ -19,10 +19,12 @@ import (
 )
 
 var (
-	lookPathFn          = exec.LookPath
-	executablePathFn    = os.Executable
-	userHomeDirFn       = os.UserHomeDir
-	probeWorkerBinaryFn = probeWorkerBinary
+	lookPathFn           = exec.LookPath
+	executablePathFn     = os.Executable
+	userHomeDirFn        = os.UserHomeDir
+	probeWorkerBinaryFn  = probeWorkerBinary
+	copyDistributionFn   = copyWorkerDistribution
+	renameDistributionFn = os.Rename
 )
 
 type LaunchSpec struct {
@@ -404,12 +406,6 @@ func InstallWorker(toolRoot string, rid string) (string, error) {
 func InstallWorkerMode(toolRoot string, rid string, mode string) (installedPath string, installErr error) {
 	defer func() {
 		if installErr == nil {
-			// El recibo acredita el artefacto instalado, no sólo el bundle de origen.
-			workerProbeCache.Delete(installedPath)
-			if !probeWorkerBinaryFn(installedPath).Compatible {
-				installErr = errors.New("installed worker did not pass protocol verification")
-				return
-			}
 			absPath, err := filepath.Abs(installedPath)
 			if err == nil {
 				err = runtimeinfo.Record("worker", absPath)
@@ -437,10 +433,7 @@ func InstallWorkerMode(toolRoot string, rid string, mode string) (installedPath 
 		for _, dir := range bundledWorkerDirs(toolRoot, rid) {
 			dll := filepath.Join(dir, "MiLsp.Worker.dll")
 			if frameworkCandidateCompatible(dll) {
-				if err := copyWorkerDistribution(dir, targetDir); err != nil {
-					return "", err
-				}
-				return filepath.Join(targetDir, "MiLsp.Worker.dll"), nil
+				return publishWorkerDistribution(dir, targetDir, "MiLsp.Worker.dll")
 			}
 		}
 		project := filepath.Join(toolRoot, "worker-dotnet", "MiLsp.Worker", "MiLsp.Worker.csproj")
@@ -457,10 +450,7 @@ func InstallWorkerMode(toolRoot string, rid string, mode string) (installedPath 
 				output, publishErr := cmd.CombinedOutput()
 				dll := filepath.Join(tmp, "MiLsp.Worker.dll")
 				if publishErr == nil && frameworkCandidateCompatible(dll) {
-					if err := copyWorkerDistribution(tmp, targetDir); err != nil {
-						return "", err
-					}
-					return filepath.Join(targetDir, "MiLsp.Worker.dll"), nil
+					return publishWorkerDistribution(tmp, targetDir, "MiLsp.Worker.dll")
 				}
 				if mode == "framework-dependent" {
 					return "", fmt.Errorf("framework-dependent worker unavailable: publish=%v output=%s or incompatible runtime", publishErr, output)
@@ -472,12 +462,7 @@ func InstallWorkerMode(toolRoot string, rid string, mode string) (installedPath 
 		}
 	}
 	if bundledPath, bundleErr := FindBundledWorkerBinaryForRID(toolRoot, rid); bundleErr == nil && !runtimeConfigIsFrameworkDependent(filepath.Join(filepath.Dir(bundledPath), "MiLsp.Worker.runtimeconfig.json")) {
-		if err := copyWorkerDistribution(filepath.Dir(bundledPath), targetDir); err != nil {
-			return "", err
-		}
-		if binaryPath, err := FindInstalledWorkerBinaryForRID(rid); err == nil {
-			return binaryPath, nil
-		}
+		return publishWorkerDistribution(filepath.Dir(bundledPath), targetDir, workerBinaryName())
 	}
 
 	if HasDotnet() {
@@ -506,21 +491,69 @@ func InstallWorkerMode(toolRoot string, rid string, mode string) (installedPath 
 			if _, err := os.Stat(filepath.Join(tmp, workerBinaryName())); err != nil {
 				return "", err
 			}
-			if err := copyWorkerDistribution(tmp, targetDir); err != nil {
-				return "", err
-			}
+			return publishWorkerDistribution(tmp, targetDir, workerBinaryName())
 		}
 	}
 	if binaryPath, err := FindInstalledWorkerBinaryForRID(rid); err == nil && !runtimeConfigIsFrameworkDependent(filepath.Join(filepath.Dir(binaryPath), "MiLsp.Worker.runtimeconfig.json")) {
+		workerProbeCache.Delete(binaryPath)
+		if !probeWorkerBinaryFn(binaryPath).Compatible {
+			return "", errors.New("installed worker did not pass protocol verification")
+		}
 		return binaryPath, nil
 	}
 	return "", errors.New("worker install could not find a bundled worker and no source project was available; run from a mi-lsp distribution with workers/<rid> or publish the worker from source")
 }
 
-func copyWorkerDistribution(sourceDir string, targetDir string) error {
-	if err := os.RemoveAll(targetDir); err != nil {
-		return err
+// publishWorkerDistribution verifica una copia hermana antes de sustituir el
+// destino. Si el rollback falla conserva el backup y devuelve una ruta no vacía.
+func publishWorkerDistribution(sourceDir, targetDir, binaryName string) (string, error) {
+	parent := filepath.Dir(targetDir)
+	stage, err := os.MkdirTemp(parent, ".worker-stage-")
+	if err != nil {
+		return "", err
 	}
+	defer os.RemoveAll(stage)
+	if err := copyDistributionFn(sourceDir, stage); err != nil {
+		return "", fmt.Errorf("worker staging failed: %w", err)
+	}
+	candidate := filepath.Join(stage, binaryName)
+	workerProbeCache.Delete(candidate)
+	if !probeWorkerBinaryFn(candidate).Compatible {
+		return "", errors.New("staged worker did not pass protocol verification")
+	}
+	backup, err := os.MkdirTemp(parent, ".worker-backup-")
+	if err != nil {
+		return "", err
+	}
+	keepBackup := false
+	defer func() {
+		if !keepBackup {
+			_ = os.RemoveAll(backup)
+		}
+	}()
+	previous := filepath.Join(backup, "previous")
+	hadPrevious := false
+	if _, err := os.Lstat(targetDir); err == nil {
+		if err := renameDistributionFn(targetDir, previous); err != nil {
+			return "", fmt.Errorf("worker backup failed: %w", err)
+		}
+		hadPrevious = true
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return "", err
+	}
+	if err := renameDistributionFn(stage, targetDir); err != nil {
+		if hadPrevious {
+			if rollbackErr := renameDistributionFn(previous, targetDir); rollbackErr != nil {
+				keepBackup = true
+				return filepath.Join(targetDir, binaryName), fmt.Errorf("worker promotion failed: %v; rollback failed: %w; previous worker retained at %s", err, rollbackErr, previous)
+			}
+		}
+		return "", fmt.Errorf("worker promotion failed: %w", err)
+	}
+	return filepath.Join(targetDir, binaryName), nil
+}
+
+func copyWorkerDistribution(sourceDir string, targetDir string) error {
 	if err := os.MkdirAll(targetDir, 0o755); err != nil {
 		return err
 	}
