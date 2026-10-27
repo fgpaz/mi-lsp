@@ -33,6 +33,8 @@ links:
 
 `diagnostics` contiene `errors`, `warnings`, `information`, `hints`, `files_requested`, `files_checked`, `returned`, `backends` (archivos por backend). Totales antes del recorte; si se alcanza el límite de 256 paths, `files_requested` es el número descubierto retenido, no un total inventado del repo. `ok` expresa transporte/consulta, no ausencia de errores. `partial`/`degraded` y omisiones impiden interpretar una lista vacía como limpia. `truncated` y `next_hint` describen trabajo/salida omitidos. Offset vuelve a consultar un snapshot nuevo: no promete cursor estable entre ediciones.
 
+Si ningún archivo pudo consultarse, el envelope incluye `error.code`, `error.reason_code`, `error.message` y `error.detail` con la causa de las omisiones (por ejemplo `unsupported_operation`: lenguaje sin backend). No se devuelve solo `explicit_incomplete`. Causas heterogéneas se conservan por archivo en `omissions`; un snapshot push sigue siendo parcial y nunca acredita limpieza.
+
 ## Backends implementados
 - **gopls:** `textDocument/diagnostic` si anuncia `diagnosticProvider`; en versiones push, `publishDiagnostics` tras didOpen/didChange. Push siempre parcial por falta de barrera de finalización.
 - **Pyright:** mismo bridge LSP; normalmente push. Publicación sin versión añade razón de frescura no verificable. Silencio → timeout/unavailable, nunca éxito limpio.

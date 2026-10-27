@@ -107,8 +107,13 @@ func TestDiagnosticsUnavailableNeverClean(t *testing.T) {
 		return model.WorkerResponse{}, errors.New("backend absent")
 	}}
 	env, e := New(root, fake).Execute(context.Background(), model.CommandRequest{Operation: "nav.diagnostics", Context: model.QueryOptions{Workspace: alias}, Payload: map[string]any{"file": "a.go"}})
-	if e != nil || env.Ok || !env.Partial || len(env.Omissions) != 1 || env.Omissions[0].ErrorCode != "unavailable" {
+	if e != nil || env.Ok || !env.Partial || len(env.Omissions) != 1 || env.Omissions[0].ErrorCode != "unavailable" || env.Error == nil || env.Error.Detail == "" || env.Error.Code != "unavailable" {
 		t.Fatalf("env=%+v err=%v", env, e)
+	}
+	writeWorkspaceFile(t, root, "README.md", "# Docs\n")
+	env, e = New(root, fake).Execute(context.Background(), model.CommandRequest{Operation: "nav.diagnostics", Context: model.QueryOptions{Workspace: alias}, Payload: map[string]any{"file": "README.md"}})
+	if e != nil || env.Ok || env.Error == nil || env.Error.ReasonCode != "unsupported_operation" || env.Error.Detail != "language has no diagnostic backend" {
+		t.Fatalf("unsupported source lost cause: env=%+v err=%v", env, e)
 	}
 }
 func TestDiagnosticsCallerDeadline(t *testing.T) {

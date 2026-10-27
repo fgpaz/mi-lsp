@@ -304,6 +304,20 @@ func (a *App) diagnostics(ctx context.Context, request model.CommandRequest) (mo
 	}
 	if summary.FilesRequested > 0 && summary.FilesChecked == 0 {
 		env.Ok = false
+		// No checked source is a failed query, with an actionable typed cause.
+		// A generic partial flag alone loses the reason at the CLI/MCP boundary.
+		code, detail := "unavailable", "no semantic source could be checked"
+		if len(env.Omissions) > 0 {
+			code, detail = env.Omissions[0].ErrorCode, env.Omissions[0].Reason
+			for _, omission := range env.Omissions[1:] {
+				if omission.ErrorCode != code {
+					code, detail = "unavailable", "multiple diagnostic failures; inspect omissions for each source"
+					break
+				}
+			}
+		}
+		env.Reason = code
+		env.Error = &model.EnvelopeError{Kind: "diagnostics", Code: code, ReasonCode: code, Message: detail, Detail: detail}
 	}
 	return boundDiagnostics(env, request.Context), nil
 }
