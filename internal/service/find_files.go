@@ -10,6 +10,8 @@ import (
 	"io"
 	"os"
 	"os/exec"
+
+	"github.com/fgpaz/mi-lsp/internal/processutil"
 	"path"
 	"path/filepath"
 	"sort"
@@ -393,7 +395,7 @@ func nativeFindFiles(ctx context.Context, root string) (string, []byte, error) {
 	// .gitignore semantics (plus info/exclude and global excludes). Tracked files
 	// remain discoverable even if later ignored, just as with git ls-files.
 	if git, err := exec.LookPath("git"); err == nil {
-		probe := exec.CommandContext(ctx, git, "rev-parse", "--is-inside-work-tree")
+		probe := processutil.CommandContext(ctx, git, "rev-parse", "--is-inside-work-tree")
 		probe.Dir = root
 		out := &findFilesLimitedBuffer{limit: 128}
 		probe.Stdout = out
@@ -419,7 +421,7 @@ func nativeFindFiles(ctx context.Context, root string) (string, []byte, error) {
 }
 
 func runFindFilesListing(ctx context.Context, root, exe string, args ...string) ([]byte, error) {
-	cmd := exec.CommandContext(ctx, exe, args...)
+	cmd := processutil.CommandContext(ctx, exe, args...)
 	cmd.Dir = root
 	out := &findFilesLimitedBuffer{limit: findFilesMaxListingBytes}
 	cmd.Stdout = out

@@ -133,7 +133,7 @@ func (c *LSPClient) startContext(ctx context.Context) error {
 	if c.started {
 		return nil
 	}
-	cmd := exec.Command(c.config.ServerCmd, c.config.ServerArgs...)
+	cmd := processutil.Command(c.config.ServerCmd, c.config.ServerArgs...)
 	processutil.ConfigureNonInteractiveCommand(cmd)
 	configureOwnedLSP(cmd)
 	bindWorkerLifetime(cmd)

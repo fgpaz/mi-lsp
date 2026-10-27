@@ -29,7 +29,7 @@ var (
 	rgPath     string
 	rgResolved bool
 	rgOnce     sync.Once
-	rgCommand  = exec.CommandContext
+	rgCommand  = processutil.CommandContext
 )
 
 func resolveRgBinary() string {

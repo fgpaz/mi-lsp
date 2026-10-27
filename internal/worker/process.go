@@ -71,7 +71,7 @@ func (c *Client) Start() error {
 
 func (c *Client) startSpec(index int) error {
 	spec := c.specs[index]
-	cmd := exec.Command(spec.Command, spec.Args...)
+	cmd := processutil.Command(spec.Command, spec.Args...)
 	cmd.Dir = spec.WorkDir
 	processutil.ConfigureNonInteractiveCommand(cmd)
 	bindWorkerLifetime(cmd)

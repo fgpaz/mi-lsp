@@ -12,6 +12,8 @@ import (
 	"io"
 	"os"
 	"os/exec"
+
+	"github.com/fgpaz/mi-lsp/internal/processutil"
 	"path/filepath"
 	"strings"
 	"time"
@@ -128,7 +130,7 @@ func exitCode(err error) int {
 // runRaw gives rg the real stdin/stdout/stderr file descriptors, so output and
 // exit status are exactly rg's.
 func runRaw(ctx context.Context, rgPath string, opts Options) Result {
-	cmd := exec.CommandContext(ctx, rgPath, opts.Args...)
+	cmd := processutil.CommandContext(ctx, rgPath, opts.Args...)
 	cmd.Stdin = opts.Stdin
 	cmd.Stdout = opts.Stdout
 	cmd.Stderr = opts.Stderr
@@ -173,7 +175,7 @@ func searchStart(info argInfo, cwd string) string {
 // user's flags would have produced, and annotates match lines. Any failure in
 // the annotation layer degrades to unannotated lines; rg's status is final.
 func runAnnotated(ctx context.Context, rgPath string, opts Options, info argInfo) Result {
-	cmd := exec.CommandContext(ctx, rgPath, injectFlags(opts.Args, info.terminator)...)
+	cmd := processutil.CommandContext(ctx, rgPath, injectFlags(opts.Args, info.terminator)...)
 	cmd.Stdin = opts.Stdin
 	cmd.Stderr = opts.Stderr
 	cmd.Dir = opts.Cwd

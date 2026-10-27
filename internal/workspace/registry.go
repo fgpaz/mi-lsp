@@ -4,9 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/fgpaz/mi-lsp/internal/processutil"
 	"log"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"runtime"
 	"sort"
@@ -1055,7 +1055,7 @@ func workspaceDoctorNextActions(report WorkspaceDoctorReport) []WorkspaceDoctorA
 func gitTreeCaseCollisions(root string) [][]string {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
-	command := exec.CommandContext(ctx, "git", "-C", root, "ls-tree", "-r", "HEAD", "--name-only")
+	command := processutil.CommandContext(ctx, "git", "-C", root, "ls-tree", "-r", "HEAD", "--name-only")
 	output, err := command.Output()
 	if err != nil {
 		return nil
@@ -1460,7 +1460,7 @@ func gitTopLevel(root string) (string, bool) {
 	if ctxRoot == "" {
 		return "", false
 	}
-	command := exec.Command("git", "-C", ctxRoot, "rev-parse", "--show-toplevel")
+	command := processutil.Command("git", "-C", ctxRoot, "rev-parse", "--show-toplevel")
 	output, err := command.Output()
 	if err != nil {
 		return "", false
@@ -1619,7 +1619,7 @@ func gitCommonDir(root string) (string, bool) {
 	if ctxRoot == "" {
 		return "", false
 	}
-	command := exec.Command("git", "-C", ctxRoot, "rev-parse", "--git-common-dir")
+	command := processutil.Command("git", "-C", ctxRoot, "rev-parse", "--git-common-dir")
 	output, err := command.Output()
 	if err != nil {
 		return "", false
@@ -1699,7 +1699,7 @@ func applyBinaryMetadata(item *BinaryCandidate) {
 	if item == nil || strings.TrimSpace(item.Path) == "" {
 		return
 	}
-	output, err := exec.Command("go", "version", "-m", item.Path).CombinedOutput()
+	output, err := processutil.Command("go", "version", "-m", item.Path).CombinedOutput()
 	if err != nil {
 		detail := strings.TrimSpace(string(output))
 		if detail == "" {

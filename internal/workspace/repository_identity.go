@@ -3,7 +3,7 @@ package workspace
 import (
 	"context"
 	"errors"
-	"os/exec"
+	"github.com/fgpaz/mi-lsp/internal/processutil"
 	"strings"
 
 	"github.com/fgpaz/mi-lsp/internal/model"
@@ -68,7 +68,7 @@ func ResolveRepositoryIdentity(ctx context.Context, workspaceRoot string, repos 
 }
 
 func localGitCommand(ctx context.Context, args ...string) (string, error) {
-	output, err := exec.CommandContext(ctx, "git", args...).Output()
+	output, err := processutil.CommandContext(ctx, "git", args...).Output()
 	if err != nil {
 		return "", err
 	}

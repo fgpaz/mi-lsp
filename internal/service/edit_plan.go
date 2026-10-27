@@ -8,9 +8,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/fgpaz/mi-lsp/internal/processutil"
 	"io"
 	"os"
-	"os/exec"
 	pathpkg "path"
 	"path/filepath"
 	"regexp"
@@ -786,7 +786,7 @@ func countChangedEditPlanFiles(fileStates map[string]*editPlanFileState) int {
 }
 
 func requireEvidenceOnlyDirtyGitWorkspace(ctx context.Context, root string, targets map[string]editPlanResolvedTarget) error {
-	cmd := exec.CommandContext(ctx, "git", "-C", root, "status", "--porcelain=v1", "--untracked-files=all")
+	cmd := processutil.CommandContext(ctx, "git", "-C", root, "status", "--porcelain=v1", "--untracked-files=all")
 	output, err := cmd.Output()
 	if err != nil {
 		return fmt.Errorf("evidence-only dirty apply could not inspect git status: %w", err)
@@ -820,7 +820,7 @@ func requireEvidenceOnlyDirtyGitWorkspace(ctx context.Context, root string, targ
 }
 
 func requireCleanGitWorkspace(ctx context.Context, root string) error {
-	cmd := exec.CommandContext(ctx, "git", "-C", root, "status", "--porcelain")
+	cmd := processutil.CommandContext(ctx, "git", "-C", root, "status", "--porcelain")
 	output, err := cmd.Output()
 	if err != nil {
 		return fmt.Errorf("apply requires a clean git workspace: %w", err)

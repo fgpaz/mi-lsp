@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -445,7 +444,7 @@ func (b *diagnosticsGitBuffer) Write(p []byte) (int, error) {
 	return b.Buffer.Write(p)
 }
 func diagnosticsGit(ctx context.Context, root string, args ...string) ([]byte, error) {
-	cmd := exec.CommandContext(ctx, "git", append([]string{"--no-optional-locks", "-c", "core.fsmonitor=false"}, args...)...)
+	cmd := processutil.CommandContext(ctx, "git", append([]string{"--no-optional-locks", "-c", "core.fsmonitor=false"}, args...)...)
 	processutil.ConfigureNonInteractiveCommand(cmd)
 	cmd.Dir = root
 	// Ambient git overrides may not redirect diagnostics into another checkout.

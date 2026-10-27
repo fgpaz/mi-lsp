@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/fgpaz/mi-lsp/internal/processutil"
 	"go/ast"
 	"go/importer"
 	"go/parser"
@@ -13,7 +14,6 @@ import (
 	"go/types"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"runtime"
 	"sort"
@@ -736,7 +736,7 @@ func goGraphList(ctx context.Context, dir string, tags []string, goos, goarch st
 		}
 		args = append([]string{"list", "-modfile=" + filepath.Join(scratch, "go.mod")}, args[1:]...)
 	}
-	cmd := exec.CommandContext(ctx, "go", args...)
+	cmd := processutil.CommandContext(ctx, "go", args...)
 	cmd.Dir = dir
 	cmd.Env = goGraphListEnv(goos, goarch, offline...)
 	cmd.WaitDelay = 250 * time.Millisecond

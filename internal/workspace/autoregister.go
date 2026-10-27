@@ -4,8 +4,8 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"github.com/fgpaz/mi-lsp/internal/processutil"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -181,7 +181,7 @@ func linkedWorktree(root string) (bool, string, bool) {
 	}
 	gitPath := func(args ...string) (string, bool) {
 		commandArgs := append([]string{"-C", root, "rev-parse"}, args...)
-		out, err := exec.Command("git", commandArgs...).Output()
+		out, err := processutil.Command("git", commandArgs...).Output()
 		if err != nil {
 			return "", false
 		}
@@ -336,5 +336,5 @@ func saveAutoRegisterProjectFile(root string, project model.ProjectFile) error {
 }
 
 func gitHasHead(root string) bool {
-	return exec.Command("git", "-C", root, "rev-parse", "--verify", "--quiet", "HEAD").Run() == nil
+	return processutil.Command("git", "-C", root, "rev-parse", "--verify", "--quiet", "HEAD").Run() == nil
 }

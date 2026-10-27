@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -439,7 +438,7 @@ func parseLineNum(s string) int {
 }
 
 func runGitCommand(ctx context.Context, workspaceRoot string, args ...string) ([]byte, error) {
-	cmd := exec.CommandContext(ctx, "git", args...)
+	cmd := processutil.CommandContext(ctx, "git", args...)
 	processutil.ConfigureNonInteractiveCommand(cmd)
 	cmd.Dir = workspaceRoot
 	return cmd.Output()

@@ -105,7 +105,7 @@ func gitChangedFiles(ctx context.Context, workspaceRoot string) (changed []strin
 	if gitBin == "" {
 		return []string{}, []string{}
 	}
-	cmd := exec.CommandContext(ctx, gitBin, "status", "--porcelain")
+	cmd := processutil.CommandContext(ctx, gitBin, "status", "--porcelain")
 	processutil.ConfigureNonInteractiveCommand(cmd)
 	cmd.Dir = workspaceRoot
 	output, err := cmd.Output()

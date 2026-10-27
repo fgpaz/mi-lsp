@@ -5,3 +5,9 @@ Los targets `make build-win-x64` y `make build-win-arm64` generan primero recurs
 Ejemplo: `make build-win-x64 WINDOWS_FILE_VERSION=1.2.3.4` o `make build-win-arm64 WINDOWS_FILE_VERSION=1.2.3.4`. Usar cuatro componentes numéricos compatibles con versiones PE. Si se omite la variable, la versión de desarrollo es `0.0.0.0`. CompanyName es `mi-lsp contributors` y ProductName es `mi-lsp`. `make windows-resources WINDOWS_FILE_VERSION=1.2.3.4` genera los recursos sin construir el ejecutable.
 
 Un `go build` directo no genera recursos: solo los incluye si ya existen en el directorio del paquete, por lo que puede incluir una versión previamente generada y obsoleta. Usar los targets anteriores para regenerarlos. Esta integración no cambia la publicación ni los scripts de distribución. Los metadatos no son firma de código y no garantizan que Defender deje de marcar el ejecutable.
+
+## Procesos no interactivos
+
+Los procesos de producción se crean con `processutil.Command` o `processutil.CommandContext`, con la misma firma y cancelación que `os/exec`. En Windows configuran `HideWindow` y `CREATE_NO_WINDOW`; en Unix no agregan atributos. `ConfigureDetachedCommand` conserva atributos existentes y agrega la configuración de proceso separado correspondiente a la plataforma. La apertura de URL del administrador es la única excepción de interfaz, limitada a `openURL`.
+
+El guard AST de `internal/processutil` controla las referencias a los constructores de `os/exec`, incluso alias y valores de función. El probe Windows ejecuta un padre detached propio, comprueba `GetConsoleWindow` del padre y de un hijo consola y ejecuta git configurado. No mide directamente la ventana de git ni demuestra por sí solo ausencia de flashes en todos los procesos.

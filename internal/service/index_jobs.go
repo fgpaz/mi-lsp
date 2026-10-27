@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -517,7 +516,7 @@ func startDetachedIndexJobProcessWithEnv(registration model.WorkspaceRegistratio
 	}
 	defer logFile.Close()
 
-	cmd := exec.CommandContext(context.Background(), executable, "--workspace", selector, "--format", "json", "index", "run-job", jobID)
+	cmd := processutil.CommandContext(context.Background(), executable, "--workspace", selector, "--format", "json", "index", "run-job", jobID)
 	if neutralCWD := detachedIndexJobCWD(); neutralCWD != "" {
 		cmd.Dir = neutralCWD
 	}

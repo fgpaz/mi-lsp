@@ -7,10 +7,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/fgpaz/mi-lsp/internal/processutil"
 	"io"
 	"net"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -393,7 +393,7 @@ func runCLISocketOperation(ctx context.Context, args []string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	command := exec.CommandContext(ctx, binary, args...)
+	command := processutil.CommandContext(ctx, binary, args...)
 	var stdout bytes.Buffer
 	command.Stdout = &stdout
 	command.Stderr = io.Discard

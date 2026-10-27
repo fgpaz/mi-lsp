@@ -9,6 +9,8 @@ import (
 	"io"
 	"math"
 	"os/exec"
+
+	"github.com/fgpaz/mi-lsp/internal/processutil"
 	"strings"
 	"time"
 )
@@ -110,7 +112,7 @@ func Execute(ctx context.Context, cfg Config, query string, candidates []Candida
 	runCtx, cancel := context.WithTimeout(ctx, time.Duration(cfg.TimeoutMS)*time.Millisecond)
 	defer cancel()
 
-	cmd := exec.CommandContext(runCtx, cfg.Command, cfg.Args...)
+	cmd := processutil.CommandContext(runCtx, cfg.Command, cfg.Args...)
 	cmd.Stdin = bytes.NewReader(body)
 	var stdout bytes.Buffer
 	cmd.Stdout = &stdout

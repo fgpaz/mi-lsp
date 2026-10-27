@@ -58,7 +58,7 @@ func daemonServeCommand(repoRoot string, maxWorkers int, idleTimeout time.Durati
 		return nil, err
 	}
 	commandName, args := daemonServeInvocation(executable, maxWorkers, idleTimeout, options)
-	command := exec.Command(commandName, args...)
+	command := processutil.Command(commandName, args...)
 	processutil.ConfigureDetachedCommand(command)
 	command.Dir = repoRoot
 	logDir := filepath.Join(repoRoot, ".mi-lsp")

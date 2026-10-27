@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"os/exec"
 	"strings"
 	"time"
 
@@ -138,7 +137,7 @@ func (s *Server) coordinatorSizingSnapshot() model.CoordinatorSizingStatus {
 }
 
 func readBabelNode(ctx context.Context) (string, error) {
-	cmd := exec.CommandContext(ctx, "botsd", "identidad")
+	cmd := processutil.CommandContext(ctx, "botsd", "identidad")
 	processutil.ConfigureNonInteractiveCommand(cmd)
 	output, err := cmd.Output()
 	if err != nil {

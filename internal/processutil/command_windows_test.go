@@ -12,8 +12,11 @@ import (
 )
 
 func TestWindowsConfigurationPreservesFlags(t *testing.T) {
-	cmd := exec.Command("git", "--version")
-	cmd.SysProcAttr = &syscall.SysProcAttr{CreationFlags: 0x00000200}
+	cmd := Command("git", "--version")
+	if cmd.SysProcAttr == nil || !cmd.SysProcAttr.HideWindow || cmd.SysProcAttr.CreationFlags&createNoWindow == 0 {
+		t.Fatalf("constructor attributes: %+v", cmd.SysProcAttr)
+	}
+	cmd.SysProcAttr.CreationFlags |= 0x00000200
 	ConfigureNonInteractiveCommand(cmd)
 	if !cmd.SysProcAttr.HideWindow || cmd.SysProcAttr.CreationFlags&createNoWindow == 0 || cmd.SysProcAttr.CreationFlags&0x00000200 == 0 {
 		t.Fatalf("noninteractive attributes: %+v", cmd.SysProcAttr)
@@ -40,14 +43,12 @@ func TestWindowsDetachedConsoleProbe(t *testing.T) {
 		if hwnd, _, _ := get.Call(); hwnd != 0 {
 			t.Fatalf("detached parent has console window: %#x", hwnd)
 		}
-		child := exec.Command(os.Args[0], "-test.run=^TestWindowsDetachedConsoleProbe$")
+		child := CommandContext(t.Context(), os.Args[0], "-test.run=^TestWindowsDetachedConsoleProbe$")
 		child.Env = append(os.Environ(), "MILSP_A14_PROBE=child")
-		ConfigureNonInteractiveCommand(child)
 		if out, err := child.CombinedOutput(); err != nil {
 			t.Fatalf("child: %v: %s", err, out)
 		}
-		git := exec.Command("git", "--version")
-		ConfigureNonInteractiveCommand(git)
+		git := Command("git", "--version")
 		if out, err := git.CombinedOutput(); err != nil || !strings.Contains(string(out), "git version") {
 			t.Fatalf("git: %v: %s", err, out)
 		}
@@ -62,7 +63,7 @@ func TestWindowsDetachedConsoleProbe(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer out.Close()
-	parent := exec.Command(os.Args[0], "-test.run=^TestWindowsDetachedConsoleProbe$")
+	parent := Command(os.Args[0], "-test.run=^TestWindowsDetachedConsoleProbe$")
 	parent.Env = append(os.Environ(), "MILSP_A14_PROBE=parent")
 	parent.Stdout, parent.Stderr = out, out
 	ConfigureDetachedCommand(parent)

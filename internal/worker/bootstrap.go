@@ -444,7 +444,7 @@ func InstallWorkerMode(toolRoot string, rid string, mode string) (installedPath 
 					return "", err
 				}
 				defer os.RemoveAll(tmp)
-				cmd := exec.Command("dotnet", "publish", project, "-c", "Release", "-r", rid, "--self-contained", "false", "-p:UseAppHost=false", "-o", tmp)
+				cmd := processutil.Command("dotnet", "publish", project, "-c", "Release", "-r", rid, "--self-contained", "false", "-p:UseAppHost=false", "-o", tmp)
 				cmd.Dir = toolRoot
 				processutil.ConfigureNonInteractiveCommand(cmd)
 				output, publishErr := cmd.CombinedOutput()
@@ -473,7 +473,7 @@ func InstallWorkerMode(toolRoot string, rid string, mode string) (installedPath 
 				return "", err
 			}
 			defer os.RemoveAll(tmp)
-			command := exec.Command(
+			command := processutil.Command(
 				"dotnet",
 				"publish",
 				projectPath,
@@ -701,7 +701,7 @@ func probeWorkerBinary(path string) workerProbeResult {
 }
 
 func probeWorkerBinaryOnce(path string) workerProbeResult {
-	command := exec.Command(candidateCommand(path), candidateArgs(path)...)
+	command := processutil.Command(candidateCommand(path), candidateArgs(path)...)
 	command.Dir = filepath.Dir(path)
 	processutil.ConfigureNonInteractiveCommand(command)
 	var stderr bytes.Buffer

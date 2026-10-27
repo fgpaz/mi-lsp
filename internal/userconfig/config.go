@@ -2,8 +2,8 @@ package userconfig
 
 import (
 	"fmt"
+	"github.com/fgpaz/mi-lsp/internal/processutil"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -95,7 +95,7 @@ func (p Provider) APIKey() (string, error) {
 		if len(parts) == 0 {
 			return "", fmt.Errorf("api_key_command is empty")
 		}
-		out, err := exec.Command(parts[0], parts[1:]...).Output()
+		out, err := processutil.Command(parts[0], parts[1:]...).Output()
 		if err != nil {
 			return "", fmt.Errorf("api_key_command failed")
 		}

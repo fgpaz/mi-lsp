@@ -4,8 +4,8 @@ package daemon
 
 import (
 	"bufio"
+	"github.com/fgpaz/mi-lsp/internal/processutil"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -25,7 +25,7 @@ func processStats(pid int) model.DaemonProcessStats {
 	if stat, ok := linuxProcessStats(pid); ok {
 		return stat
 	}
-	command := exec.Command("ps", "-o", "rss=", "-p", strconv.Itoa(pid))
+	command := processutil.Command("ps", "-o", "rss=", "-p", strconv.Itoa(pid))
 	output, err := command.Output()
 	if err != nil {
 		return stats

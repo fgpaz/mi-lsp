@@ -6,6 +6,8 @@ import (
 	"io"
 	"os"
 	"os/exec"
+
+	"github.com/fgpaz/mi-lsp/internal/processutil"
 	"sync"
 )
 
@@ -36,7 +38,7 @@ type managedProcess struct {
 }
 
 func startManagedProcess(ctx context.Context, executable string, args []string, dir string, env []string) (*managedProcess, error) {
-	cmd := exec.CommandContext(ctx, executable, args...)
+	cmd := processutil.CommandContext(ctx, executable, args...)
 	cmd.Dir = dir
 	cmd.Env = env
 	configureProcess(cmd)

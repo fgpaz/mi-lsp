@@ -89,7 +89,7 @@ func (c *TsserverClient) Start() error {
 	if _, err := exec.LookPath("node"); err != nil {
 		return errors.New("node is required for tsserver backend")
 	}
-	cmd := exec.Command("node", c.tsserverJS, "--useSingleInferredProjectPerProjectRoot", "true")
+	cmd := processutil.Command("node", c.tsserverJS, "--useSingleInferredProjectPerProjectRoot", "true")
 	processutil.ConfigureNonInteractiveCommand(cmd)
 	bindWorkerLifetime(cmd)
 	stdin, err := cmd.StdinPipe()
@@ -363,7 +363,7 @@ func findTsserverPath(workspaceRoot string) (string, error) {
 func globalNpmRoot() (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
-	command := exec.CommandContext(ctx, "npm", "root", "-g")
+	command := processutil.CommandContext(ctx, "npm", "root", "-g")
 	processutil.ConfigureNonInteractiveCommand(command)
 	output, err := command.Output()
 	if err != nil {

@@ -5,8 +5,8 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"github.com/fgpaz/mi-lsp/internal/processutil"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -214,7 +214,7 @@ func gitOutput(ctx context.Context, root string, args ...string) (string, error)
 }
 
 func gitOutputBytes(ctx context.Context, root string, args ...string) ([]byte, error) {
-	cmd := exec.CommandContext(ctx, "git", append([]string{"-C", root}, args...)...)
+	cmd := processutil.CommandContext(ctx, "git", append([]string{"-C", root}, args...)...)
 	data, err := cmd.Output()
 	if err != nil {
 		return nil, err

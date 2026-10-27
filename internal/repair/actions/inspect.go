@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -142,7 +141,7 @@ func probeWorker(path string) bool {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, command, args...)
+	cmd := processutil.CommandContext(ctx, command, args...)
 	cmd.Dir = filepath.Dir(path)
 	processutil.ConfigureNonInteractiveCommand(cmd)
 	in, err := cmd.StdinPipe()
