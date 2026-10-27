@@ -15,6 +15,7 @@ import (
 
 	"github.com/fgpaz/mi-lsp/internal/model"
 	"github.com/fgpaz/mi-lsp/internal/processutil"
+	"github.com/fgpaz/mi-lsp/internal/runtimeinfo"
 )
 
 var (
@@ -400,7 +401,18 @@ func InstallWorker(toolRoot string, rid string) (string, error) {
 	return InstallWorkerMode(toolRoot, rid, "auto")
 }
 
-func InstallWorkerMode(toolRoot string, rid string, mode string) (string, error) {
+func InstallWorkerMode(toolRoot string, rid string, mode string) (installedPath string, installErr error) {
+	defer func() {
+		if installErr == nil {
+			absPath, err := filepath.Abs(installedPath)
+			if err == nil {
+				err = runtimeinfo.Record("worker", absPath)
+			}
+			if err != nil {
+				installErr = fmt.Errorf("worker installed but receipt could not be recorded: %w", err)
+			}
+		}
+	}()
 	if rid == "" {
 		rid = ResolveRID()
 	}
