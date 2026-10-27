@@ -32,8 +32,8 @@ type watcherTimerFactory func(time.Duration, func()) watcherTimer
 type watchDomain string
 
 const (
-	watchDomainCode             watchDomain = "code"
-	watchDomainDocs             watchDomain = "docs"
+	watchDomainCode            watchDomain = "code"
+	watchDomainDocs            watchDomain = "docs"
 	watchDomainAuthorityConfig watchDomain = "authority_config"
 )
 
@@ -59,6 +59,7 @@ type FileWatcher struct {
 	stopCh            chan struct{}
 	stopOnce          sync.Once
 	wg                sync.WaitGroup
+	callbackWG        sync.WaitGroup
 	verbose           bool
 	watchedDirs       int
 	batchTimer        watcherTimer
@@ -120,43 +121,63 @@ func NewFileWatcher(registration model.WorkspaceRegistration, debounceDur time.D
 
 // Start begins watching the workspace for file changes.
 func (fw *FileWatcher) Start(ctx context.Context) error {
-	// Add workspace root for watching
-	err := fw.addWatchRecursive(fw.workspaceRoot)
-	if err != nil {
+	// Admission and Add share Stop's mutex: Wait can never race a new Add.
+	fw.mu.Lock()
+	if fw.isStoppedLocked() {
+		fw.mu.Unlock()
+		return errors.New("watcher stopped")
+	}
+	fw.wg.Add(1)
+	fw.mu.Unlock()
+
+	if err := fw.addWatchRecursive(fw.workspaceRoot); err != nil {
+		fw.wg.Done()
 		return err
 	}
-
-	fw.wg.Add(1)
 	go fw.watchLoop(ctx)
 	return nil
 }
 
 // Stop closes the watcher and stops the watch loop.
 func (fw *FileWatcher) Stop() {
+	// Concurrent callers join the same whole shutdown, not only stopCh closure.
 	fw.stopOnce.Do(func() {
+		fw.mu.Lock()
 		close(fw.stopCh)
+		for filePath, timer := range fw.debounce {
+			timer.Stop()
+			delete(fw.debounce, filePath)
+		}
+		if fw.batchTimer != nil {
+			fw.batchTimer.Stop()
+			fw.batchTimer = nil
+		}
+		fw.mu.Unlock()
+
+		// Never hold mu while callbacks and watchLoop finish: both use it.
+		fw.wg.Wait()
+		fw.callbackWG.Wait()
+		fw.mu.Lock()
+		fw.pendingBatch = make(map[string]struct{})
+		fw.pendingOps = make(map[string]fsnotify.Op)
+		fw.batchRetry = make(map[string]int)
+		fw.mu.Unlock()
+		_ = fw.watcher.Close()
 	})
+}
 
-	// Cancel all pending debounce timers and batch timer
+// A timer may already have been dispatched when Stop cancels it. Admission is
+// serialized with Stop, so no callback can Add after the wait has begun.
+func (fw *FileWatcher) runTimerCallback(fn func()) {
 	fw.mu.Lock()
-	for filePath, timer := range fw.debounce {
-		timer.Stop()
-		delete(fw.debounce, filePath)
+	if fw.isStoppedLocked() {
+		fw.mu.Unlock()
+		return
 	}
-	if fw.batchTimer != nil {
-		fw.batchTimer.Stop()
-		fw.batchTimer = nil
-	}
-	fw.pendingBatch = make(map[string]struct{})
-	fw.pendingOps = make(map[string]fsnotify.Op)
-	fw.batchRetry = make(map[string]int)
+	fw.callbackWG.Add(1)
 	fw.mu.Unlock()
-
-	// Wait for watchLoop to exit
-	fw.wg.Wait()
-
-	// Close watcher last
-	_ = fw.watcher.Close()
+	defer fw.callbackWG.Done()
+	fn()
 }
 
 func (fw *FileWatcher) watchLoop(ctx context.Context) {
@@ -222,6 +243,9 @@ func (fw *FileWatcher) scheduleReindex(filePath string) {
 	}
 	fw.mu.Lock()
 	defer fw.mu.Unlock()
+	if fw.isStoppedLocked() {
+		return
+	}
 
 	if timer, exists := fw.debounce[filePath]; exists {
 		timer.Stop()
@@ -229,10 +253,16 @@ func (fw *FileWatcher) scheduleReindex(filePath string) {
 	}
 
 	fw.debounce[filePath] = time.AfterFunc(fw.debounceDur, func() {
-		fw.mu.Lock()
-		delete(fw.debounce, filePath)
-		fw.mu.Unlock()
-		fw.reindexFile(filePath)
+		fw.runTimerCallback(func() {
+			fw.mu.Lock()
+			delete(fw.debounce, filePath)
+			fw.mu.Unlock()
+			if fw.reindexFileFn != nil {
+				_ = fw.reindexFileFn(filePath)
+			} else {
+				_ = fw.reindexFile(filePath)
+			}
+		})
 	})
 }
 
@@ -255,6 +285,9 @@ func (fw *FileWatcher) scheduleBatchEvent(event fsnotify.Event) {
 
 	fw.mu.Lock()
 	defer fw.mu.Unlock()
+	if fw.isStoppedLocked() {
+		return
+	}
 	if fw.pendingBatch == nil {
 		fw.pendingBatch = make(map[string]struct{})
 	}
@@ -285,10 +318,11 @@ func (fw *FileWatcher) scheduleBatchEvent(event fsnotify.Event) {
 }
 
 func (fw *FileWatcher) newBatchTimer(delay time.Duration) watcherTimer {
+	callback := func() { fw.runTimerCallback(fw.flushBatch) }
 	if fw.batchTimerFactory != nil {
-		return fw.batchTimerFactory(delay, fw.flushBatch)
+		return fw.batchTimerFactory(delay, callback)
 	}
-	return time.AfterFunc(delay, fw.flushBatch)
+	return time.AfterFunc(delay, callback)
 }
 
 func (fw *FileWatcher) flushBatch() {
