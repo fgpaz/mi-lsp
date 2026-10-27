@@ -39,6 +39,9 @@ func ResolveSetupWikiSource(projectRoot string) SetupWikiSource {
 	if err != nil {
 		return pending("", "setup_contract_unreadable", "")
 	}
+	if _, present := shared["schema"]; !present {
+		return SetupWikiSource{}
+	}
 	schema, _ := setupString(shared, "schema")
 	if schema != "sandinas-project/v1" && schema != "sandinas-project/v2" {
 		return pending("", "setup_schema_unsupported", "")

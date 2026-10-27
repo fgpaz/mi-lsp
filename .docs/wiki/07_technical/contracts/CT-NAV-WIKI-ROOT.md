@@ -68,6 +68,7 @@ Se conservan requests, envelopes, campos, límites y semántica detallados a con
 ### Reglas
 
 - El comando publica raíces portables para que skills y agentes no hardcodeen `.docs/wiki`.
+- `.sandinas/project.yaml` legible sin clave `schema` no es Setup, incluso con `wiki.canon_roots`: se usa la resolución publicada sin Setup, incluido `governance.source_doc` validado. Una clave presente inválida o desconocida mantiene `pending` con `setup_schema_unsupported`; YAML ilegible mantiene `setup_contract_unreadable`. Setup v1/v2 conserva su precedencia y no permite fallback cuando está pendiente.
 - Sin `[[RF-WKS-008|canon]]` ni `CanonLinks`, `wiki_root=.docs/wiki` y `resolved_from=default`; no es error. El literal histórico de `governance_doc` es el de `defaultGovernanceDocPath` conservado en RF-WIKI-007, no el nombre nuevo deducido por la migración.
 - Con `[[RF-WKS-008|canon]]`, `resolved_from=canon.<id>` y `wiki_root` es el `root` declarado (ejemplo: `../wiki-repo/Ingenieria`). `governance_doc` usa el `source_doc` validado y existente del read-model aplicable, sin imponer un basename. Los paths de un read-model propio del canon se resuelven respecto de ese canon; se conserva la precedencia de la proyección local.
 - Si una raíz declarada no tiene una fuente de gobierno resoluble, el item conserva su raíz/rol/ID, devuelve `governance_doc=""` y el envelope incluye un warning. No se afirma que exista un archivo sintetizado. Las raíces inválidas siguen fallando de forma cerrada; no se modifican autoridad, canon ni proyección.
