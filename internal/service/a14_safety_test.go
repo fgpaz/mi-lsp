@@ -102,6 +102,7 @@ func TestA14SafetyEmptyInventoryDoesNotHideOtherBlocks(t *testing.T) {
 		"unknown_yaml":            "```yaml\nunknown_inventory: []\n```\n",
 		"tilde_yaml":              "~~~yaml\nentries: [\n~~~\n",
 		"indented_yaml":           "    entries: [\n",
+		"bare_yaml_row":           "- id: OMITTED\n",
 		"mid_body_frontmatter":    "---\nentries: [\n---\n",
 		"multiple_yaml_documents": "```yaml\nentries: []\n---\nentries: [\n```\n",
 	} {
@@ -124,6 +125,7 @@ func TestA14SafetyRetirementDocumentMetadata(t *testing.T) {
 		pass                    bool
 	}{
 		{"entries", metadata, "```yaml\nentries: []\n```\n", true},
+		{"entries_with_explanatory_bullet", metadata, "Nota de lectura.\n\n- El registro conserva historia.\n\n```yaml\nentries: []\n```\n", true},
 		{"none", metadata, "No hay retiros registrados.\n", true},
 		{"unknown_metadata", strings.Replace(metadata, "WIKI-CONTRACT-v1", "WIKI-CONTRACT-v99", 1), "No hay retiros registrados.\n", false},
 	} {
