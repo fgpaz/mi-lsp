@@ -26,7 +26,7 @@ func TestUpdateCheckWithoutStateDoesNotInventStatusOrWriteHome(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	root.SetOut(&stdout)
 	root.SetErr(&stderr)
-	root.SetArgs([]string{"update", "check", "--format", "json"})
+	root.SetArgs([]string{"update", "--check", "--format", "json"})
 	err := root.Execute()
 	if err == nil {
 		t.Fatal("check without readable state must return an error, not a fabricated status")
