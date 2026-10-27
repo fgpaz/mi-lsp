@@ -9,6 +9,7 @@ and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2
 
 ### Corregido
 
+- El worker actualiza `System.Security.Cryptography.Xml` y su dependencia PKCS efectiva a `10.0.14` para cerrar los advisories detectados por la auditoría de release, sin supresiones.
 - Un `.sandinas/project.yaml` sin clave `schema` no se interpreta como contrato Setup; la wiki conserva su resolución publicada por `governance.source_doc`. Un schema presente inválido o desconocido sigue fallando de forma cerrada.
 - La evidencia TOML/JSON/YAML existente dentro de la wiki ya no produce un falso índice `stale` en `validate-harness`; Markdown gobernado sin indexar sigue detectándose.
 - El daemon local no requiere `botsd`; el modo compartido sólo se habilita con `MI_LSP_ELASTIC=1`. Los componentes opcionales ausentes del doctor se informan como omitidos.

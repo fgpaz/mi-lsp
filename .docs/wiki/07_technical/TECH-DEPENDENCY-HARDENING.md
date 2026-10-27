@@ -67,8 +67,8 @@ Volver a [07_technical.md](../07_technical.md).
    - `Microsoft.Build.Utilities.Core`
    en `17.14.28`
 4. Declarar `ExcludeAssets="runtime"` en esas referencias para respetar la carga via `Microsoft.Build.Locator`.
-5. Para `GHSA-37gx-xxp4-5rgx` y `GHSA-w3x6-4m5h-cxqf`, fijar `System.Security.Cryptography.Xml` en la version parcheada `10.0.10` para la línea .NET 10.
-6. La referencia efectiva del proyecto queda fijada en `10.0.10` y la auditoria vulnerable es gate de release.
+5. El pin previo `10.0.10` resolvía los advisories originales, pero la auditoría de release volvió a detectar vulnerabilidades altas en XML y PKCS. No se distribuye ese resultado.
+6. La referencia efectiva `System.Security.Cryptography.Xml` queda fijada en `10.0.14`, cuyo grafo requiere `System.Security.Cryptography.Pkcs` `10.0.14`; la auditoría vulnerable sigue siendo gate de release.
 7. La auditoria de vulnerabilidades del worker es un gate: un advisory vulnerable o un build con `NU1903` no se promociona como listo.
 8. No se registra resultado de auditoria ni estado de release sin ejecutar el comando correspondiente y conservar evidencia sanitizada.
 
@@ -85,7 +85,7 @@ Volver a [07_technical.md](../07_technical.md).
   - audit_evidence_missing=true
 - **package**:
   - **name**: System.Security.Cryptography.Xml
-  - **pinned_version**: 10.0.10
+  - **pinned_version**: 10.0.14
 - **audit**:
   - **vulnerable_scan**: release_blocking
   - **build_warning_NU1903**: release_blocking
@@ -113,7 +113,7 @@ Volver a [07_technical.md](../07_technical.md).
 > `wiki_source_table_exception: true`. La siguiente tabla es una comparacion humana de sintomas y mitigaciones; el gate normativo de vulnerabilidades vive en `TECH-DEPENDENCY-HARDENING.vulnerability-gate`.
 
 - **Riesgo**: Advisory persistente; **Sintoma**: `dotnet build` emite `NU1903`; **Mitigacion canonica**: pin directo Microsoft.Build* en version corregida
-- **Riesgo**: Advisory transitorio en `System.Security.Cryptography.Xml`; **Sintoma**: restore/build alerta `GHSA-37gx-xxp4-5rgx` o `GHSA-w3x6-4m5h-cxqf`; **Mitigacion canonica**: pin directo a `System.Security.Cryptography.Xml` `10.0.10` o version superior parcheada
+- **Riesgo**: Advisory transitorio en `System.Security.Cryptography.Xml`; **Sintoma**: restore/build alerta `GHSA-37gx-xxp4-5rgx` o `GHSA-w3x6-4m5h-cxqf`; **Mitigacion canonica**: pin directo a `System.Security.Cryptography.Xml` `10.0.14` o versión superior parcheada, con PKCS transitivo auditado
 - **Riesgo**: Incompatibilidad Roslyn/MSBuild; **Sintoma**: fallas al cargar workspace; **Mitigacion canonica**: subir versions en bloque controlado
 - **Riesgo**: Error de MSBuildLocator; **Sintoma**: assemblies MSBuild copiados al output; **Mitigacion canonica**: `ExcludeAssets="runtime"`
 - **Riesgo**: “Solucion” por suppression; **Sintoma**: build verde pero inseguro; **Mitigacion canonica**: prohibido por politica

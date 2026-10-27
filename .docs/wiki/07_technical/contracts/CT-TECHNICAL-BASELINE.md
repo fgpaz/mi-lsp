@@ -420,7 +420,7 @@ La migración cambia el contrato documental, no el protocolo runtime ni sus vers
 - Los scripts publicos de install/update deben consumir esa misma distribucion canónica; `install.sh` detecta macOS como archive RID `darwin-*` y mapea el worker runtime a `osx-*`, preservando compatibilidad con ambos aliases en `--rid`.
 - El readback de release usa RIDs logicos `osx-arm64|osx-x64` y assets de archive `darwin-arm64|darwin-x64`; al validar el archive conserva el worker bajo `workers/osx-*` y no lo renombra a `workers/darwin-*`.
 - La distribucion operativa AE debe producir y verificar `win-arm64`, `win-x64`, `linux-arm64`, `linux-x64`, `osx-arm64` y `osx-x64`; `scripts/release/ae-release-binaries.ps1` es el entrypoint mantenido para refrescar installs locales/WSL, mirrors x64 opcionales y publicar por tag limpio cuando se pasa `-Publish`.
-- La dependencia `System.Security.Cryptography.Xml` del worker queda fijada en `10.0.10`; la auditoria de paquetes vulnerables y cualquier `NU1903` son gates de release, no resultados implícitos.
+- La dependencia `System.Security.Cryptography.Xml` del worker queda fijada en `10.0.14`; la auditoria de paquetes vulnerables y cualquier `NU1903` son gates de release, no resultados implícitos.
 - Las queries Roslyn deben resolver candidatos en orden `bundle -> installed -> dev-local` por presencia de archivos; el probe `status` queda reservado para `worker status` y diagnóstico explicito.
 - Si el primer candidato Roslyn falla por bootstrap al arrancar, el caller puede reintentar una sola vez con el siguiente candidato determinista antes de devolver error accionable.
 - Si `tsserver` no existe, el sistema debe degradar a catalog/text con warning explicito.
