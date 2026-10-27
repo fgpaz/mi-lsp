@@ -111,6 +111,7 @@ By default this command previews candidates. Use --apply to remove only aliases 
 	}
 
 	var statusNoAutoSync bool
+	var statusNoEntrypoints bool
 	statusCommand := &cobra.Command{
 		Use:   "status [workspace]",
 		Short: "Show workspace registration and index status",
@@ -122,10 +123,14 @@ By default this command previews candidates. Use --apply to remove only aliases 
 			if statusNoAutoSync {
 				payload["auto_sync"] = false
 			}
+			if statusNoEntrypoints {
+				payload["no_entrypoints"] = true
+			}
 			return state.executeOperation(cmd, "workspace.status", payload, false)
 		},
 	}
 	statusCommand.Flags().BoolVar(&statusNoAutoSync, "no-auto-sync", false, "Do not write read-model.toml while checking governance status")
+	statusCommand.Flags().BoolVar(&statusNoEntrypoints, "no-entrypoints", false, "Omit the entrypoint list while retaining its count")
 
 	removeCommand := &cobra.Command{
 		Use:   "remove <name>",
