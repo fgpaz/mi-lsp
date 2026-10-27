@@ -32,7 +32,10 @@ type TransactionResult struct {
 	Installed, Previous, Code string
 	Changed                   bool
 }
-type transactionOps struct{ rename func(string, string) error }
+type transactionOps struct {
+	rename       func(string, string) error
+	beforeBackup func() error
+}
 
 const (
 	txMaxArchive  = 512 << 20
@@ -107,7 +110,7 @@ func applyTransaction(ctx context.Context, tx Transaction, ops transactionOps) (
 		ops.rename = os.Rename
 	}
 	if tx.ExecutablePath == "" || !txSemver.MatchString(tx.TargetVersion) {
-		return fail("UPDATE_READBACK_FAILED_ROLLED_BACK")
+		return fail("")
 	}
 	info, e := os.Lstat(tx.ExecutablePath)
 	if e != nil {
@@ -116,9 +119,16 @@ func applyTransaction(ctx context.Context, tx Transaction, ops transactionOps) (
 	if !info.Mode().IsRegular() {
 		return fail("UPDATE_PERMISSION_DENIED")
 	}
+	oldHash, e := txFileHash(tx.ExecutablePath)
+	if e != nil {
+		return fail(txErrorCode(e))
+	}
 	oldVersion, e := tx.Readback(ctx, tx.ExecutablePath)
 	if e != nil || !txSemver.MatchString(oldVersion) {
-		return fail("UPDATE_READBACK_FAILED_ROLLED_BACK")
+		return fail("")
+	}
+	if current, e := txFileHash(tx.ExecutablePath); e != nil || current != oldHash {
+		return fail("")
 	}
 	result.Installed = oldVersion
 	archive, e := os.Open(tx.ArchivePath)
@@ -131,7 +141,8 @@ func applyTransaction(ctx context.Context, tx Transaction, ops transactionOps) (
 		return fail("UPDATE_CHECKSUM_MISMATCH")
 	}
 	h := sha256.New()
-	if _, e = io.Copy(h, archive); e != nil {
+	n, e := io.Copy(h, io.LimitReader(archive, txMaxArchive+1))
+	if e != nil || n > txMaxArchive || n != ai.Size() {
 		return fail("UPDATE_CHECKSUM_MISMATCH")
 	}
 	expected, e := hex.DecodeString(tx.ExpectedArchiveSHA256)
@@ -162,9 +173,27 @@ func applyTransaction(ctx context.Context, tx Transaction, ops transactionOps) (
 	if e != nil {
 		return fail(txErrorCode(e))
 	}
-	oldHash, e := txFileHash(tx.ExecutablePath)
+	stageHash, e := txFileHash(stageName)
 	if e != nil {
 		return fail(txErrorCode(e))
+	}
+	refreshInstalled := func() {
+		result.Installed = ""
+		if v, err := tx.Readback(ctx, tx.ExecutablePath); err == nil && txSemver.MatchString(v) {
+			result.Installed = v
+		}
+	}
+	if ops.beforeBackup != nil {
+		if e = ops.beforeBackup(); e != nil {
+			refreshInstalled()
+			return fail("")
+		}
+	}
+	currentInfo, e := os.Lstat(tx.ExecutablePath)
+	currentHash, hashErr := txFileHash(tx.ExecutablePath)
+	if e != nil || hashErr != nil || !currentInfo.Mode().IsRegular() || !os.SameFile(info, currentInfo) || currentHash != oldHash {
+		refreshInstalled()
+		return fail("")
 	}
 	backup := tx.ExecutablePath + ".old"
 	marker := backup + ".update-owner"
@@ -193,8 +222,47 @@ func applyTransaction(ctx context.Context, tx Transaction, ops transactionOps) (
 		_ = os.Remove(marker)
 		return fail(txErrorCode(e))
 	}
-	// Rollback replaces the target atomically on Unix and uses a no-overwrite restore on Windows.
+	// The backup must still be the original image before any promotion.
+	backupInfo, e := os.Lstat(backup)
+	backupHash, hashErr := txFileHash(backup)
+	if e != nil || hashErr != nil || !backupInfo.Mode().IsRegular() || !os.SameFile(info, backupInfo) || backupHash != oldHash {
+		refreshInstalled()
+		return fail("")
+	}
+	if runtime.GOOS == "windows" {
+		if _, e := os.Lstat(tx.ExecutablePath); !os.IsNotExist(e) {
+			refreshInstalled()
+			return fail("")
+		}
+	} else {
+		currentInfo, e := os.Lstat(tx.ExecutablePath)
+		currentHash, hashErr := txFileHash(tx.ExecutablePath)
+		if e != nil || hashErr != nil || !currentInfo.Mode().IsRegular() || !os.SameFile(info, currentInfo) || currentHash != oldHash {
+			refreshInstalled()
+			return fail("")
+		}
+	}
+	// Restore only the unchanged owned backup; never overwrite an externally replaced image.
 	restore := func() error {
+		bi, e := os.Lstat(backup)
+		if e != nil || !bi.Mode().IsRegular() || !os.SameFile(info, bi) {
+			return errors.New("backup identity changed")
+		}
+		bh, e := txFileHash(backup)
+		if e != nil || bh != oldHash {
+			return errors.New("backup content changed")
+		}
+		if current, e := os.Lstat(tx.ExecutablePath); e == nil {
+			if !current.Mode().IsRegular() {
+				return errors.New("target identity changed")
+			}
+			hash, e := txFileHash(tx.ExecutablePath)
+			if e != nil || hash != stageHash {
+				return errors.New("target content changed")
+			}
+		} else if !os.IsNotExist(e) {
+			return errors.New("target unavailable")
+		}
 		if runtime.GOOS == "windows" {
 			if e := os.Remove(tx.ExecutablePath); e != nil && !os.IsNotExist(e) {
 				return e
@@ -206,7 +274,8 @@ func applyTransaction(ctx context.Context, tx Transaction, ops transactionOps) (
 		code := txErrorCode(e)
 		if runtime.GOOS == "windows" {
 			if restore() != nil {
-				return fail(code)
+				refreshInstalled()
+				return fail("")
 			}
 		} else {
 			_ = os.Remove(backup)
@@ -228,14 +297,13 @@ func applyTransaction(ctx context.Context, tx Transaction, ops transactionOps) (
 			code = "UPDATE_QUARANTINED"
 		}
 		if restore() != nil {
-			result.Installed = ""
-			return fail(code)
+			refreshInstalled()
+			return fail("")
 		}
 		_ = os.Remove(marker)
-		if actual, e := tx.Readback(ctx, tx.ExecutablePath); e == nil {
-			result.Installed = actual
-		} else {
-			result.Installed = ""
+		refreshInstalled()
+		if result.Installed != oldVersion {
+			return fail("")
 		}
 		return fail(code)
 	}
@@ -262,7 +330,7 @@ func txErrorCode(err error) string {
 			return "UPDATE_IN_USE_DEFERRED"
 		}
 	}
-	return "UPDATE_READBACK_FAILED_ROLLED_BACK"
+	return ""
 }
 
 type txOwner struct {
@@ -292,8 +360,11 @@ func txFileHash(p string) (string, error) {
 	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
-// CleanupOld removes only an unchanged, owned backup when the platform proves it is not live.
+// CleanupOld removes only a verified owned backup outside updater child processes.
 func CleanupOld(executable string) error {
+	if os.Getenv("MI_LSP_UPDATE_CHILD") == "1" {
+		return errors.New("backup cleanup deferred")
+	}
 	backup := executable + ".old"
 	marker := backup + ".update-owner"
 	raw, e := os.ReadFile(marker)
