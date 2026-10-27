@@ -14,7 +14,16 @@ import (
 	"github.com/fgpaz/mi-lsp/internal/processutil"
 )
 
-func officialWrapper() string { return "mi-lsp_0.16.0_" + runtime.GOOS + "-" + runtime.GOARCH }
+func officialWrapper() string {
+	osName, arch := runtime.GOOS, runtime.GOARCH
+	if osName == "windows" {
+		osName = "win"
+	}
+	if arch == "amd64" {
+		arch = "x64"
+	}
+	return "mi-lsp_0.16.0_" + osName + "-" + arch
+}
 
 func TestTransactionOfficialWrappedArchive(t *testing.T) {
 	for _, format := range []string{"zip", "tar.gz"} {
@@ -37,7 +46,7 @@ func TestTransactionRejectsWrongOrAmbiguousWrapper(t *testing.T) {
 			entries []archiveEntry
 		}{
 			{"unknown-wrapper", []archiveEntry{{name: "unknown/" + cliName(), body: "new-image", mode: 0755}}},
-			{"wrong-version-wrapper", []archiveEntry{{name: "mi-lsp_9.9.9_" + runtime.GOOS + "-" + runtime.GOARCH + "/" + cliName(), body: "new-image", mode: 0755}}},
+			{"wrong-version-wrapper", []archiveEntry{{name: "mi-lsp_9.9.9_" + officialWrapper()[len("mi-lsp_0.16.0_"):] + "/" + cliName(), body: "new-image", mode: 0755}}},
 			{"root-and-wrapped", []archiveEntry{{name: cliName(), body: "root", mode: 0755}, {name: officialWrapper() + "/" + cliName(), body: "wrapped", mode: 0755}}},
 		} {
 			t.Run(format+"/"+tc.name, func(t *testing.T) {
