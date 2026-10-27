@@ -2,6 +2,7 @@ package service
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -17,6 +18,8 @@ func validateWikiContractRetirements(root, docPath, body string, index wikisourc
 	blocks := candidateHarnessYAMLBlocks(body)
 	if len(blocks) == 0 {
 		blocks = []string{body}
+	} else if retirementHasUnparsedStructure(body) {
+		warn("retirements unparsed structured content outside YAML inventory blocks")
 	}
 	var rows []any
 	found := false
@@ -70,8 +73,14 @@ func validateWikiContractRetirements(root, docPath, body string, index wikisourc
 			continue
 		}
 		var raw any
-		if err := yaml.Unmarshal([]byte(block), &raw); err != nil {
+		decoder := yaml.NewDecoder(strings.NewReader(block))
+		if err := decoder.Decode(&raw); err != nil {
 			warn("retirements invalid YAML: " + err.Error())
+			continue
+		}
+		var trailing any
+		if err := decoder.Decode(&trailing); err != io.EOF {
+			warn("retirements YAML block must contain exactly one complete document")
 			continue
 		}
 		switch value := raw.(type) {
@@ -103,8 +112,12 @@ func validateWikiContractRetirements(root, docPath, body string, index wikisourc
 				if _, exists := value["old_path"]; exists {
 					rows = append(rows, value)
 					found = true
+				} else {
+					warn("retirements YAML block has no recognized inventory")
 				}
 			}
+		default:
+			warn("retirements YAML block must be an inventory mapping or list")
 		}
 	}
 	if !found {
@@ -185,6 +198,47 @@ func validateWikiContractRetirements(root, docPath, body string, index wikisourc
 		warn("forbidden normative toon fence")
 	}
 	return warnings
+}
+
+// Every machine-looking block must be accounted for, even if another block
+// already supplied a valid inventory. Prose/headings are not parsed as rows.
+func retirementHasUnparsedStructure(body string) bool {
+	remaining := body
+	trimmed := strings.TrimSpace(body)
+	if strings.HasPrefix(trimmed, "---") {
+		rest := trimmed[3:]
+		if end := strings.Index(rest, "\n---"); end >= 0 {
+			remaining = rest[end+4:]
+		}
+	}
+	remaining = fencedYAMLBlockPattern.ReplaceAllString(remaining, "")
+	for _, line := range strings.Split(strings.ReplaceAll(remaining, "\r", ""), "\n") {
+		text := strings.TrimSpace(line)
+		if text == "" || strings.HasPrefix(text, "#") {
+			continue
+		}
+		if strings.HasPrefix(line, " ") || strings.HasPrefix(line, "\t") ||
+			strings.HasPrefix(text, "```") || strings.HasPrefix(text, "~~~") ||
+			text == "---" || text == "..." || strings.HasPrefix(text, "- ") ||
+			strings.HasPrefix(text, "{") || strings.HasPrefix(text, "[") {
+			return true
+		}
+		if key, _, ok := strings.Cut(text, ":"); ok {
+			key = strings.TrimSpace(key)
+			mapping := key != ""
+			for _, char := range key {
+				if !((char >= 'a' && char <= 'z') || (char >= 'A' && char <= 'Z') ||
+					(char >= '0' && char <= '9') || char == '_' || char == '-') {
+					mapping = false
+					break
+				}
+			}
+			if mapping {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // Accept repo-relative paths and wiki-relative inventory paths, never outside root.
