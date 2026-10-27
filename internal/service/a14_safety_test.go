@@ -115,6 +115,28 @@ func TestA14SafetyEmptyInventoryDoesNotHideOtherBlocks(t *testing.T) {
 	}
 }
 
+func TestA14SafetyRetirementDocumentMetadata(t *testing.T) {
+	root := t.TempDir()
+	path := ".docs/wiki/00_retirements.md"
+	metadata := "---\nwiki_contract: WIKI-CONTRACT-v1\nid: retirement-registry\nkind: governance\nstatus: active\ntitle: Registro de retiros\n---\n# Registro de retiros\n\n"
+	for _, tc := range []struct {
+		name, prefix, inventory string
+		pass                    bool
+	}{
+		{"entries", metadata, "```yaml\nentries: []\n```\n", true},
+		{"none", metadata, "No hay retiros registrados.\n", true},
+		{"unknown_metadata", strings.Replace(metadata, "WIKI-CONTRACT-v1", "WIKI-CONTRACT-v99", 1), "No hay retiros registrados.\n", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			writeContractTestWikiFile(t, root, path, tc.prefix+tc.inventory)
+			got := compileWikiContractValidation(root, []model.DocRecord{{Path: path}}, nil)
+			if (got.ContractVerdict == "PASS") != tc.pass {
+				t.Fatalf("document metadata is not an inventory block: %+v", got)
+			}
+		})
+	}
+}
+
 func TestA14SafetyRetirementMultilineReason(t *testing.T) {
 	root := t.TempDir()
 	path := ".docs/wiki/00_retirements.md"
