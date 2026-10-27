@@ -97,6 +97,7 @@ func NewRootCommand() *cobra.Command {
 		axi:         axiEnabled,
 	}
 
+	hooks := &updateHooks{version: buildRootVersionInfo(repoRoot).Version}
 	root := &cobra.Command{
 		Use:           "mi-lsp",
 		Short:         "Semantic CLI for multi-workspace .NET and TS repositories",
@@ -137,9 +138,11 @@ func NewRootCommand() *cobra.Command {
 			if state.usesImplicitAgentFormat(cmd) {
 				state.format = "agent"
 			}
+			startAutomaticUpdate(cmd, hooks)
 			return nil
 		},
 	}
+	root.SetContext(context.WithValue(context.Background(), updateHookKey{}, hooks))
 
 	root.PersistentFlags().StringVar(&state.workspace, "workspace", "", "Workspace alias or path")
 	root.PersistentFlags().StringVar(&state.format, "format", "compact", "Output format: agent|compact|json|text|toon|yaml")
@@ -162,6 +165,7 @@ func NewRootCommand() *cobra.Command {
 	root.PersistentFlags().BoolVar(&state.noAutoRegister, "no-auto-register", false, "Do not register the git root of the cwd or requested path as a workspace on first query (also MI_LSP_NO_AUTO_REGISTER=1)")
 
 	root.AddCommand(
+		newUpdateCommand(state, hooks),
 		newInitCommand(state),
 		newWorkspaceCommand(state),
 		newRegistryCommand(state),
