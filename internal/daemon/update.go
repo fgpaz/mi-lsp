@@ -190,7 +190,12 @@ func tryPauseUpdateResources(gate *updateAdmissionGate, pauseJobs func() (func()
 	return func() { releaseGate(); releaseJobs() }
 }
 
-func prepareAdminForUpdate(ctx context.Context, pause func(context.Context) (bool, error), shutdown func() error, resume func() error) error {
+// The third argument is retained for the existing private test seam; closing
+// HTTP is irreversible and must happen only inside the committed Shutdown.
+func prepareAdminForUpdate(ctx context.Context, pause func(context.Context) (bool, error), _ func() error, resume func() error) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	idle, err := pause(ctx)
 	if err != nil || !idle {
 		_ = resume()
@@ -199,7 +204,7 @@ func prepareAdminForUpdate(ctx context.Context, pause func(context.Context) (boo
 		}
 		return errors.New("admin busy")
 	}
-	if err := shutdown(); err != nil {
+	if err := ctx.Err(); err != nil {
 		_ = resume()
 		return err
 	}
