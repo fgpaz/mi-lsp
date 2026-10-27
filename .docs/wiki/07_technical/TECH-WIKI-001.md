@@ -14,6 +14,10 @@ links:
     - path: internal/service/wiki_contract_validate.go
     - path: internal/docgraph/wiki_views.go
     - path: internal/service/wiki_views.go
+    - path: internal/docgraph/canonical_navigation.go
+    - path: internal/docgraph/wiki_contract_governance.go
+    - path: internal/docgraph/wikilayers.go
+    - path: internal/service/contract_retirements.go
 ---
 
 ## Resumen
