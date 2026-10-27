@@ -8,6 +8,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/fgpaz/mi-lsp/internal/daemon"
 	"github.com/fgpaz/mi-lsp/internal/selfupdate"
 	"github.com/spf13/cobra"
 )
@@ -60,9 +61,9 @@ func startAutomaticUpdate(cmd *cobra.Command, hooks *updateHooks) {
 	if err != nil {
 		return
 	}
-	// Conservatively do not assume a daemon is compatible merely because one
-	// exists: older and other-installation daemons cannot own this updater.
-	_, _ = selfupdate.MaybeStartAutomatic(config, false)
+	_ = selfupdate.CleanupOld(config.ExecutablePath)
+	available := daemon.CompatibleUpdateOwner(cmd.Context(), config.ExecutablePath)
+	_, _ = selfupdate.MaybeStartAutomatic(config, available)
 }
 
 func newUpdateCommand(state *rootState, hooks *updateHooks) *cobra.Command {

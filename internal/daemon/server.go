@@ -209,6 +209,7 @@ func (s *Server) startFileWatchers() {
 }
 
 func (s *Server) Serve(ctx context.Context) error {
+	go s.runUpdateSchedule(ctx)
 	for {
 		conn, err := s.listener.Accept()
 		if err != nil {
