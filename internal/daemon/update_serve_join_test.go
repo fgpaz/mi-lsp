@@ -67,13 +67,21 @@ func TestServeJoinsCommittedUpdateBeforeReturning(t *testing.T) {
 	}
 }
 
+type updateFatalAcceptListener struct {
+	net.Listener
+	err error
+}
+
+func (l updateFatalAcceptListener) Accept() (net.Conn, error) { return nil, l.err }
+
 func TestServeAcceptFailureCancelsAndJoinsScheduler(t *testing.T) {
 	inner, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
-	inner.Close()
-	s := &Server{listener: inner, stopped: make(chan struct{})}
+	defer inner.Close()
+	fatal := errors.New("fixture fatal accept error")
+	s := &Server{listener: updateFatalAcceptListener{Listener: inner, err: fatal}, stopped: make(chan struct{})}
 	cancelled := make(chan struct{})
 	done := make(chan error, 1)
 	go func() {
@@ -81,7 +89,7 @@ func TestServeAcceptFailureCancelsAndJoinsScheduler(t *testing.T) {
 	}()
 	select {
 	case err := <-done:
-		if !errors.Is(err, net.ErrClosed) {
+		if !errors.Is(err, fatal) {
 			t.Fatalf("accept error lost: %v", err)
 		}
 	case <-time.After(time.Second):

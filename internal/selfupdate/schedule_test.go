@@ -19,7 +19,7 @@ import (
 	"github.com/fgpaz/mi-lsp/internal/runtimeinfo"
 )
 
-func snapshotHome(t *testing.T, root string) map[string]string {
+func snapshotHome(t *testing.T, root string, lockedEmptyFile ...string) map[string]string {
 	t.Helper()
 	result := map[string]string{}
 	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, e error) error {
@@ -36,9 +36,18 @@ func snapshotHome(t *testing.T, root string) map[string]string {
 		}
 		v := fmt.Sprintf("%v:%d:%d", info.Mode(), info.Size(), info.ModTime().UnixNano())
 		if !d.IsDir() {
-			b, e := os.ReadFile(path)
-			if e != nil {
-				return e
+			var b []byte
+			if len(lockedEmptyFile) == 1 && filepath.Clean(path) == filepath.Clean(lockedEmptyFile[0]) {
+				// Windows byte-range locks deny ReadFile even for this empty OS
+				// lock. Size zero proves its empty hash without weakening snapshots.
+				if info.Size() != 0 {
+					return fmt.Errorf("OS lock is not empty")
+				}
+			} else {
+				b, e = os.ReadFile(path)
+				if e != nil {
+					return e
+				}
 			}
 			v += fmt.Sprintf(":%x", sha256.Sum256(b))
 		}
@@ -174,12 +183,12 @@ func TestApplyLockAcrossProcesses(t *testing.T) {
 		case <-ticker.C:
 		}
 	}
-	before := snapshotHome(t, c.HomeDir)
+	before := snapshotHome(t, c.HomeDir, updateLockPath(c.HomeDir)+".lock")
 	st, _ := New(c).Apply(context.Background(), false)
 	if st.LastResult != "deferred" || st.Code == nil || *st.Code != "UPDATE_LOCKED" || s.calls != 0 {
 		t.Fatalf("status=%+v calls=%d", st, s.calls)
 	}
-	if after := snapshotHome(t, c.HomeDir); !reflect.DeepEqual(before, after) {
+	if after := snapshotHome(t, c.HomeDir, updateLockPath(c.HomeDir)+".lock"); !reflect.DeepEqual(before, after) {
 		t.Fatal("lock competitor wrote state")
 	}
 	if err = os.WriteFile(release, []byte("release"), 0600); err != nil {
