@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/fgpaz/mi-lsp/internal/indexer"
 	"github.com/fgpaz/mi-lsp/internal/model"
 	"github.com/fgpaz/mi-lsp/internal/processutil"
 	"github.com/fgpaz/mi-lsp/internal/selfupdate"
@@ -60,7 +61,7 @@ func updateCandidateVerified(running model.DaemonState, status selfupdate.Status
 // maybeRestartUpdated checks file metadata first, then cached state and actual
 // disk readback. An unobservable activity or a busy listener always defers.
 func (s *Server) maybeRestartUpdated(ctx context.Context, cfg selfupdate.Config) {
-	if s.updateGate == nil || s.manager == nil || s.qSessions == nil || s.elastic != nil || s.updateBackgroundUnknown.Load() {
+	if s.updateGate == nil || s.manager == nil || s.qSessions == nil || s.elastic != nil {
 		return
 	}
 	info, err := os.Stat(cfg.ExecutablePath)
@@ -94,12 +95,12 @@ func (s *Server) maybeRestartUpdated(ctx context.Context, cfg selfupdate.Config)
 			_ = listener.Resume()
 		}
 	}()
-	release, ok := s.updateGate.TryIdleBarrier()
-	if !ok {
+	release := tryPauseUpdateResources(s.updateGate, indexer.TryPauseBackgroundJobs)
+	if release == nil {
 		return
 	}
 	defer release()
-	if s.elastic != nil || s.updateBackgroundUnknown.Load() || !s.updateResourcesIdle(time.Now()) {
+	if s.elastic != nil || !s.updateResourcesIdle(time.Now()) {
 		return
 	}
 	cwd, err := os.Getwd()
@@ -110,12 +111,16 @@ func (s *Server) maybeRestartUpdated(ctx context.Context, cfg selfupdate.Config)
 	ops := updateRestartOps{
 		CleanupOld: func() error { _, err := os.Stat(invocation.Executable); return err },
 		Shutdown: func() error {
-			drainCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			if s.admin == nil || s.admin.updateListener == nil || s.admin.server == nil {
+				return errors.New("admin state unknown")
+			}
+			pauseCtx, cancel := context.WithTimeout(ctx, time.Second)
 			defer cancel()
-			if s.admin != nil && s.admin.server != nil {
-				if err := s.admin.server.Shutdown(drainCtx); err != nil {
-					return errors.New("admin drain failed")
-				}
+			err := prepareAdminForUpdate(pauseCtx, s.admin.updateListener.Pause, func() error {
+				return s.admin.server.Shutdown(context.Background())
+			}, s.admin.updateListener.Resume)
+			if err != nil {
+				return err
 			}
 			resume = false
 			s.Shutdown()
@@ -131,6 +136,8 @@ func (s *Server) maybeRestartUpdated(ctx context.Context, cfg selfupdate.Config)
 			return cmd.Process.Release()
 		},
 	}
+	// Retry a detached launch after a failed spawn; no foreign process is touched.
+	ops.Recover = ops.Spawn
 	_ = restartUpdatedDaemon(ctx, invocation, ops)
 }
 

@@ -26,31 +26,31 @@ import (
 )
 
 type Server struct {
-	listener                net.Listener
-	app                     *service.App
-	manager                 *Manager
-	telemetry               *TelemetryStore
-	admin                   *AdminServer
-	state                   model.DaemonState
-	options                 StartOptions
-	inflight                chan struct{}
-	updateGate              *updateAdmissionGate
-	stopped                 chan struct{}
-	stopOnce                sync.Once
-	shutdownStarted         atomic.Bool
-	updateBackgroundUnknown atomic.Bool
-	elasticLimitsMu         sync.Mutex
-	coordinatorSizingMu     sync.RWMutex
-	coordinatorSource       elasticdaemon.CoordinatorSource
-	coordinatorSizing       model.CoordinatorSizingStatus
-	resultCache             *resultCache
-	qSessions               *service.SessionState
-	elastic                 *elasticdaemon.Server
-	elasticNode             string
-	coordinatorCount        int
-	elasticCtx              context.Context
-	elasticCancel           context.CancelFunc
-	elasticReady            chan struct{}
+	listener            net.Listener
+	app                 *service.App
+	manager             *Manager
+	telemetry           *TelemetryStore
+	admin               *AdminServer
+	state               model.DaemonState
+	options             StartOptions
+	inflight            chan struct{}
+	updateGate          *updateAdmissionGate
+	updateRetention     *updateRetention
+	stopped             chan struct{}
+	stopOnce            sync.Once
+	shutdownStarted     atomic.Bool
+	elasticLimitsMu     sync.Mutex
+	coordinatorSizingMu sync.RWMutex
+	coordinatorSource   elasticdaemon.CoordinatorSource
+	coordinatorSizing   model.CoordinatorSizingStatus
+	resultCache         *resultCache
+	qSessions           *service.SessionState
+	elastic             *elasticdaemon.Server
+	elasticNode         string
+	coordinatorCount    int
+	elasticCtx          context.Context
+	elasticCancel       context.CancelFunc
+	elasticReady        chan struct{}
 }
 
 // generateAdminToken creates a random 32-byte hex token for admin authentication.
@@ -160,24 +160,10 @@ func NewServerWithOptions(repoRoot string, maxWorkers int, idleTimeout time.Dura
 	// Start retention ticker to periodically purge old telemetry.
 	retDays := daemonRetentionDays()
 	maxBytes := int64(50 * 1024 * 1024) // 50MB
-	go func() {
-		ticker := time.NewTicker(6 * time.Hour)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-server.stopped:
-				return
-			case <-ticker.C:
-				finish, ok := server.updateGate.Begin("telemetry-retention")
-				if ok {
-					_, _, _ = telemetry.PurgeAndVacuum(retDays, maxBytes)
-					finish()
-				}
-			}
-		}
-	}()
+	server.updateRetention = newUpdateRetention(server.updateGate, func() { _, _, _ = telemetry.PurgeAndVacuum(retDays, maxBytes) })
 
 	if err := saveDaemonState(server.state); err != nil {
+		server.updateRetention.stopAndWait()
 		elasticCancel()
 		_ = listener.Close()
 		_ = admin.Shutdown()
@@ -245,6 +231,9 @@ func (s *Server) Shutdown() {
 	s.stopOnce.Do(func() {
 		s.shutdownStarted.Store(true)
 		close(s.stopped)
+		if s.updateRetention != nil {
+			s.updateRetention.stopAndWait()
+		}
 		s.elasticCancel()
 		s.syncRuntimeSnapshots()
 		_ = clearDaemonState()
@@ -397,9 +386,6 @@ func (s *Server) handleRequestContext(ctx context.Context, request model.Command
 		// Extract workspace root from payload and queue async job.
 		if path, ok := request.Payload["path"].(string); ok && path != "" {
 			// Normalize path and start background index
-			// Index work can outlive this request; until it exposes completion,
-			// its lifetime is unknown and restart must remain deferred.
-			s.updateBackgroundUnknown.Store(true)
 			jobID := startWorkspaceBackgroundIndex(ctx, path)
 			// Store job ID in context for later retrieval if needed
 			if jobID != "" {

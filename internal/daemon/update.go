@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -153,6 +154,7 @@ type updateRestartOps struct {
 	CleanupOld func() error
 	Shutdown   func() error
 	Spawn      func(updateRestartInvocation) error
+	Recover    func(updateRestartInvocation) error
 }
 
 func restartUpdatedDaemon(ctx context.Context, invocation updateRestartInvocation, ops updateRestartOps) error {
@@ -168,5 +170,38 @@ func restartUpdatedDaemon(ctx context.Context, invocation updateRestartInvocatio
 	if err := ops.Shutdown(); err != nil {
 		return err
 	}
-	return ops.Spawn(invocation)
+	err := ops.Spawn(invocation)
+	if err != nil && ops.Recover != nil {
+		_ = ops.Recover(invocation)
+	}
+	return err
+}
+
+func tryPauseUpdateResources(gate *updateAdmissionGate, pauseJobs func() (func(), bool)) func() {
+	releaseJobs, ok := pauseJobs()
+	if !ok {
+		return nil
+	}
+	releaseGate, ok := gate.TryIdleBarrier()
+	if !ok {
+		releaseJobs()
+		return nil
+	}
+	return func() { releaseGate(); releaseJobs() }
+}
+
+func prepareAdminForUpdate(ctx context.Context, pause func(context.Context) (bool, error), shutdown func() error, resume func() error) error {
+	idle, err := pause(ctx)
+	if err != nil || !idle {
+		_ = resume()
+		if err != nil {
+			return err
+		}
+		return errors.New("admin busy")
+	}
+	if err := shutdown(); err != nil {
+		_ = resume()
+		return err
+	}
+	return nil
 }
