@@ -153,7 +153,7 @@ func finalizeDoctorCheck(check DoctorCheck) DoctorCheck {
 	}
 	// Availability is explicit for checks that can be unavailable; all other
 	// checks are available unless their constructor says otherwise.
-	if !check.Available && check.ID != "daemon-connectivity" && check.ID != "daemon-version-drift" && check.ID != "daemon-db-size" {
+	if !check.Available && check.ID != "daemon-connectivity" && check.ID != "daemon-version-drift" && check.ID != "daemon-db-size" && check.ID != "watched-dirs-handle-limit" && check.ID != "truncation-rate" {
 		check.Available = true
 	}
 	check.Status, check.Reason = doctorStatus(check)
@@ -162,7 +162,7 @@ func finalizeDoctorCheck(check DoctorCheck) DoctorCheck {
 
 func doctorStatus(check DoctorCheck) (string, string) {
 	if !check.Available && check.OK {
-		return "degraded", "unavailable"
+		return "skip", "unavailable"
 	}
 	if check.OK {
 		return "pass", ""
@@ -335,10 +335,11 @@ func checkWatchedDirs(ctx context.Context, opts *RunDoctorOptions) DoctorCheck {
 	// If no daemon status, report as skipped
 	if watchedDirs <= 0 {
 		return DoctorCheck{
-			ID:       id,
-			Severity: "P2",
-			OK:       true,
-			Detail:   "Daemon not running (skipped; handles only matter if daemon is active)",
+			ID:        id,
+			Severity:  "P2",
+			OK:        true,
+			Available: false,
+			Detail:    "No watched directories reported (handle check skipped)",
 		}
 	}
 
@@ -430,10 +431,11 @@ func checkTruncationRate(ctx context.Context, opts *RunDoctorOptions) DoctorChec
 	// For now, we mark it as skipped unless we can reliably read it.
 
 	return DoctorCheck{
-		ID:       id,
-		Severity: "P2",
-		OK:       true,
-		Detail:   "Truncation rate check skipped (requires telemetry access; monitor via daemon status)",
+		ID:        id,
+		Severity:  "P2",
+		OK:        true,
+		Available: false,
+		Detail:    "Truncation rate check skipped (requires telemetry access; monitor via daemon status)",
 	}
 }
 

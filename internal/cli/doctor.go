@@ -62,7 +62,7 @@ Checks include:
 					Ms: 0, // Would be filled in by the caller if needed
 				},
 			}
-			if report.Summary != "" {
+			if report.ExitCode != 0 {
 				envelope.Warnings = append(envelope.Warnings, report.Summary)
 			}
 
@@ -146,7 +146,7 @@ func getDoctorDaemonInfo(ctx context.Context) (string, int, *model.DaemonPoolSta
 	// Try to extract version and watcher stats from response
 	if items, ok := response.Items.([]any); ok && len(items) > 0 {
 		if item, ok := items[0].(map[string]any); ok {
-			if rawStats, ok := item["elastic_pool"]; ok {
+			if rawStats, ok := item["elastic_pool"]; ok && rawStats != nil {
 				if encoded, marshalErr := json.Marshal(rawStats); marshalErr == nil {
 					var stats model.DaemonPoolStats
 					if json.Unmarshal(encoded, &stats) == nil {

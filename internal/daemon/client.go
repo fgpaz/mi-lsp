@@ -37,7 +37,7 @@ func (c *Client) ExecuteWithDialTimeout(ctx context.Context, request model.Comma
 }
 
 func (c *Client) execute(ctx context.Context, request model.CommandRequest, dialTimeout time.Duration) (model.Envelope, error) {
-	if c == nil || c.nodeScoped {
+	if elasticEnabled() && (c == nil || c.nodeScoped) {
 		response, used, err := executeNodeScoped(ctx, request, dialTimeout)
 		if used {
 			return response, err
@@ -156,10 +156,12 @@ func EnsureDaemon(repoRoot string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
 	defer cancel()
 	statusRequest := model.CommandRequest{ProtocolVersion: model.ProtocolVersion, Operation: "system.status", Context: model.QueryOptions{ClientName: "mi-lsp-daemon-probe"}}
-	if _, used, err := executeNodeScoped(ctx, statusRequest, 0); used {
-		return err
-	} else if err != nil {
-		return err
+	if elasticEnabled() {
+		if _, used, err := executeNodeScoped(ctx, statusRequest, 0); used {
+			return err
+		} else if err != nil {
+			return err
+		}
 	}
 	if _, err := probeDaemon(ctx); err == nil {
 		return nil
