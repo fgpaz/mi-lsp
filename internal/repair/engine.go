@@ -8,11 +8,13 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
 	"github.com/fgpaz/mi-lsp/internal/repair/actions"
 	"github.com/fgpaz/mi-lsp/internal/runtimeinfo"
+	"github.com/fgpaz/mi-lsp/internal/worker"
 	"github.com/fgpaz/mi-lsp/internal/workspace"
 )
 
@@ -87,39 +89,84 @@ func loadState(path string) (stateFile, error) {
 	}
 	seen := map[string]bool{}
 	for _, a := range s.Attempts {
-		key := a.ID + "\x00" + a.Target
-		if a.ID == "" || !filepath.IsAbs(a.Target) || a.LastAttemptAt.IsZero() || (a.Result != "pending" && a.Result != "failed" && a.Result != "success") || seen[key] {
+		_, offset := a.LastAttemptAt.Zone()
+		if !validKind(a.ID) || !filepath.IsAbs(a.Target) || strings.ContainsRune(a.Target, 0) || a.LastAttemptAt.IsZero() || offset != 0 || a.LastAttemptAt.After(time.Now().UTC().Add(5*time.Minute)) || (a.Result != "pending" && a.Result != "failed" && a.Result != "success") {
 			return s, errors.New("invalid repair state")
+		}
+		target, err := canonicalTarget(a.Target)
+		if err != nil {
+			return s, errors.New("invalid repair state target")
+		}
+		key := a.ID + "\x00" + target
+		if seen[key] {
+			return s, errors.New("duplicate repair state target")
 		}
 		seen[key] = true
 	}
 	return s, nil
 }
+func validKind(kind string) bool {
+	switch kind {
+	case "config", "workspace", "index", "worker":
+		return true
+	}
+	return false
+}
+
+// canonicalTarget is read-only. Existing symlinks are resolved; on Windows
+// comparison keys are case-insensitive, including for previously stored paths.
+func canonicalTarget(path string) (string, error) {
+	if strings.TrimSpace(path) == "" || strings.ContainsRune(path, 0) {
+		return "", errors.New("invalid target")
+	}
+	path, err := filepath.Abs(path)
+	if err != nil {
+		return "", err
+	}
+	path = filepath.Clean(path)
+	if resolved, err := filepath.EvalSymlinks(path); err == nil {
+		path = filepath.Clean(resolved)
+	}
+	if runtime.GOOS == "windows" {
+		path = strings.ToLower(path)
+	}
+	return path, nil
+}
 func findAttempt(s stateFile, id, target string) *attempt {
+	key, err := canonicalTarget(target)
+	if err != nil {
+		return nil
+	}
 	for i := range s.Attempts {
-		if s.Attempts[i].ID == id && s.Attempts[i].Target == target {
+		stored, err := canonicalTarget(s.Attempts[i].Target)
+		if err == nil && s.Attempts[i].ID == id && stored == key {
 			return &s.Attempts[i]
 		}
 	}
 	return nil
 }
-func targetPath(kind, selector string, loc runtimeinfo.Location) string {
-	if kind == "workspace" || kind == "index" {
+func targetPath(kind, selector string) (string, error) {
+	switch kind {
+	case "workspace", "index":
 		if resolution, err := workspace.ResolveWorkspaceSelectionReadOnly(selector, ""); err == nil && resolution.Registration.Root != "" {
 			selector = resolution.Registration.Root
 		}
-		p, err := filepath.Abs(selector)
-		if err == nil {
-			return filepath.Clean(p)
+		return canonicalTarget(selector)
+	case "worker":
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return "", err
 		}
+		return canonicalTarget(filepath.Join(home, ".mi-lsp", "workers", worker.ResolveRID()))
+	case "config":
+		path, err := workspace.RegistryPathReadOnly()
+		if err != nil {
+			return "", err
+		}
+		return canonicalTarget(path)
+	default:
+		return "", errors.New("invalid action")
 	}
-	if kind == "worker" {
-		return filepath.Clean(loc.ManagedRoot)
-	}
-	if path, err := workspace.RegistryPathReadOnly(); err == nil {
-		return filepath.Clean(path)
-	}
-	return filepath.Clean(filepath.Dir(loc.ReceiptPath))
 }
 func makeAction(id, status, code, detail, next string) Action {
 	return Action{ID: id, Status: status, ReasonCode: code, Detail: detail, NextAction: next}
@@ -240,7 +287,11 @@ func Run(o Options) Report {
 		if a.ReasonCode == "" {
 			a.ReasonCode = "REPAIR_FAILED"
 		}
-		target := targetPath(kind, o.Workspace, loc)
+		target, targetErr := targetPath(kind, o.Workspace)
+		if targetErr != nil {
+			r.add(makeAction(kind, "blocked", "REPAIR_STATE_INVALID", "No se pudo normalizar el destino de la acción.", "Revisar el destino antes de reintentar."))
+			continue
+		}
 		if previous := findAttempt(state, kind, target); previous != nil {
 			t := previous.LastAttemptAt.UTC()
 			a.LastAttemptAt = &t
@@ -268,6 +319,18 @@ func Run(o Options) Report {
 
 func applyAction(path, kind, target string, o Options, a Action) (Action, actions.Result) {
 	var result actions.Result
+	if !validKind(kind) || !filepath.IsAbs(target) {
+		a.Status = "blocked"
+		a.ReasonCode = "REPAIR_STATE_INVALID"
+		return a, result
+	}
+	var targetErr error
+	target, targetErr = canonicalTarget(target)
+	if targetErr != nil {
+		a.Status = "blocked"
+		a.ReasonCode = "REPAIR_STATE_INVALID"
+		return a, result
+	}
 	err := runtimeinfo.WithFileLock(path, func() error {
 		s, err := loadState(path)
 		if err != nil {
