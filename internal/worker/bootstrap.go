@@ -2,6 +2,7 @@ package worker
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -345,8 +346,16 @@ func ResolveLaunchSpecs(toolRoot string) ([]LaunchSpec, error) {
 		reasons = append(reasons, "dev-local: "+err.Error())
 	}
 
-	if len(specs) > 1 && strings.HasSuffix(strings.ToLower(specs[1].CandidatePath), ".dll") && !strings.HasSuffix(strings.ToLower(specs[0].CandidatePath), ".dll") {
-		specs[0], specs[1] = specs[1], specs[0]
+	// Use the same preference as status, including skipping incompatible apphosts
+	// ahead of a compatible installed or dev-local candidate.
+	selected := InspectWorkerRuntime(toolRoot, rid).Selected
+	for i := range specs {
+		if specs[i].Source == selected.Source && specs[i].CandidatePath == selected.Path {
+			spec := specs[i]
+			copy(specs[1:i+1], specs[0:i])
+			specs[0] = spec
+			break
+		}
 	}
 	if len(specs) > 0 {
 		return specs, nil
@@ -444,7 +453,7 @@ func InstallWorkerMode(toolRoot string, rid string, mode string) (string, error)
 			return "", errors.New("framework-dependent worker requires a compatible dotnet runtime and bundled DLL or source SDK")
 		}
 	}
-	if bundledPath, bundleErr := FindBundledWorkerBinaryForRID(toolRoot, rid); bundleErr == nil {
+	if bundledPath, bundleErr := FindBundledWorkerBinaryForRID(toolRoot, rid); bundleErr == nil && !runtimeConfigIsFrameworkDependent(filepath.Join(filepath.Dir(bundledPath), "MiLsp.Worker.runtimeconfig.json")) {
 		if err := copyWorkerDistribution(filepath.Dir(bundledPath), targetDir); err != nil {
 			return "", err
 		}
@@ -484,7 +493,7 @@ func InstallWorkerMode(toolRoot string, rid string, mode string) (string, error)
 			}
 		}
 	}
-	if binaryPath, err := FindInstalledWorkerBinaryForRID(rid); err == nil {
+	if binaryPath, err := FindInstalledWorkerBinaryForRID(rid); err == nil && !runtimeConfigIsFrameworkDependent(filepath.Join(filepath.Dir(binaryPath), "MiLsp.Worker.runtimeconfig.json")) {
 		return binaryPath, nil
 	}
 	return "", errors.New("worker install could not find a bundled worker and no source project was available; run from a mi-lsp distribution with workers/<rid> or publish the worker from source")
@@ -529,6 +538,9 @@ func candidateMode(path string) (string, string) {
 	if strings.HasSuffix(strings.ToLower(path), ".dll") {
 		return "framework-dependent", "dotnet"
 	}
+	if runtimeConfigIsFrameworkDependent(filepath.Join(filepath.Dir(path), "MiLsp.Worker.runtimeconfig.json")) {
+		return "framework-dependent", "apphost"
+	}
 	return "self-contained", "apphost"
 }
 
@@ -553,10 +565,46 @@ func frameworkCandidateCompatible(path string) bool {
 	if _, err := os.Stat(path); err != nil {
 		return false
 	}
-	if _, err := os.Stat(filepath.Join(filepath.Dir(path), "MiLsp.Worker.runtimeconfig.json")); err != nil {
+	if !runtimeConfigIsFrameworkDependent(filepath.Join(filepath.Dir(path), "MiLsp.Worker.runtimeconfig.json")) {
 		return false
 	}
 	return probeWorkerBinaryFn(path).Compatible
+}
+
+// A self-contained runtimeconfig uses includedFrameworks, not shared frameworks.
+// Runtime compatibility itself is verified by the protocol probe, not inferred here.
+func runtimeConfigIsFrameworkDependent(path string) bool {
+	body, err := os.ReadFile(path)
+	if err != nil {
+		return false
+	}
+	type framework struct {
+		Name    string `json:"name"`
+		Version string `json:"version"`
+	}
+	var config struct {
+		RuntimeOptions struct {
+			Framework          *framework      `json:"framework"`
+			Frameworks         []framework     `json:"frameworks"`
+			IncludedFrameworks json.RawMessage `json:"includedFrameworks"`
+		} `json:"runtimeOptions"`
+	}
+	if json.Unmarshal(body, &config) != nil || config.RuntimeOptions.IncludedFrameworks != nil {
+		return false
+	}
+	frameworks := config.RuntimeOptions.Frameworks
+	if config.RuntimeOptions.Framework != nil {
+		frameworks = append(frameworks, *config.RuntimeOptions.Framework)
+	}
+	if len(frameworks) == 0 {
+		return false
+	}
+	for _, f := range frameworks {
+		if strings.TrimSpace(f.Name) == "" || strings.TrimSpace(f.Version) == "" {
+			return false
+		}
+	}
+	return true
 }
 
 func findPreferredCandidate(dirs []string) (string, error) {
@@ -631,7 +679,8 @@ func probeWorkerBinaryOnce(path string) workerProbeResult {
 	responseCh := make(chan probeResponse, 1)
 	go func() {
 		var response model.WorkerResponse
-		responseCh <- probeResponse{response: response, err: ReadFrame(stdout, &response)}
+		err := ReadFrame(stdout, &response)
+		responseCh <- probeResponse{response: response, err: err}
 	}()
 
 	select {
