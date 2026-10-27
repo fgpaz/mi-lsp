@@ -277,17 +277,6 @@ func index(target, toolRoot string) (Result, error) {
 	if err != nil || !registered {
 		return failure("WORKSPACE_REQUIRED", "El workspace debe estar registrado antes de indexar.", "Registrar el workspace seleccionado.", err)
 	}
-	// El resolver de servicio hace GC del registro. No invocarlo si eliminaría entradas obsoletas.
-	registry, _, err := inspectRegistry()
-	if err != nil {
-		return failure("CONFIG_INVALID", "Registro ilegible.", "Revisar el registro.", err)
-	}
-	for _, item := range registry.Workspaces {
-		info, e := os.Stat(item.Root)
-		if e != nil || !info.IsDir() {
-			return failure("REPAIR_FAILED", "Hay entradas de registro no disponibles; se evita modificar entradas ajenas.", "Revisar manualmente el registro.", e)
-		}
-	}
 	// La recuperación automática del servicio puede mover/borrar índices corruptos;
 	// no invocarla cuando el índice preexistente no se puede leer.
 	dbPath := store.WorkspaceDBPath(reg.Root)
@@ -298,9 +287,13 @@ func index(target, toolRoot string) (Result, error) {
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return failure("REPAIR_FAILED", "No se puede inspeccionar el índice.", "Revisar el acceso al índice.", err)
 	}
-	req := model.CommandRequest{ProtocolVersion: model.ProtocolVersion, Operation: "index.start", Context: model.QueryOptions{Workspace: reg.Name}, Payload: map[string]any{"path": reg.Name, "mode": "full", "wait": true, "clean": false, "go_offline": true}}
+	// Evitar la normalización ordinaria, que puede registrar o hacer GC antes de
+	// llegar al resolver por instancia. La selección ya fue validada arriba.
+	req := model.CommandRequest{ProtocolVersion: model.ProtocolVersion, Operation: "index.start", Context: model.QueryOptions{Workspace: reg.Name, NoIndexRefresh: true}, Payload: map[string]any{"path": reg.Name, "mode": "full", "wait": true, "clean": false, "go_offline": true}}
 	before, _ := os.Stat(dbPath)
-	envelope, err := service.New(toolRoot, nil).Execute(context.Background(), req)
+	app := service.New(toolRoot, nil)
+	app.ReadOnlyWorkspaceResolution = true
+	envelope, err := app.Execute(context.Background(), req)
 	if err != nil || !envelope.Ok {
 		r, e := failure("REPAIR_FAILED", "No se pudo completar la indexación.", "Revisar el índice y reintentar manualmente.", err)
 		after, _ := os.Stat(dbPath)

@@ -404,6 +404,12 @@ func InstallWorker(toolRoot string, rid string) (string, error) {
 func InstallWorkerMode(toolRoot string, rid string, mode string) (installedPath string, installErr error) {
 	defer func() {
 		if installErr == nil {
+			// El recibo acredita el artefacto instalado, no sólo el bundle de origen.
+			workerProbeCache.Delete(installedPath)
+			if !probeWorkerBinaryFn(installedPath).Compatible {
+				installErr = errors.New("installed worker did not pass protocol verification")
+				return
+			}
 			absPath, err := filepath.Abs(installedPath)
 			if err == nil {
 				err = runtimeinfo.Record("worker", absPath)
