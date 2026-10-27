@@ -9,6 +9,7 @@ import (
 	"github.com/fgpaz/mi-lsp/internal/daemon"
 	"github.com/fgpaz/mi-lsp/internal/model"
 	"github.com/fgpaz/mi-lsp/internal/output"
+	"github.com/fgpaz/mi-lsp/internal/worker"
 )
 
 func newWorkerCommand(state *rootState) *cobra.Command {
@@ -19,15 +20,24 @@ func newWorkerCommand(state *rootState) *cobra.Command {
 context, and dependency analysis. Includes install and status.`,
 	}
 
-	var rid string
+	var rid, mode string
 	installCommand := &cobra.Command{
 		Use:   "install",
-		Short: "Install a self-contained worker for the current RID",
+		Short: "Install a worker for the current RID",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return state.executeOperation(cmd, "worker.install", map[string]any{"rid": rid}, false)
+			path, err := worker.InstallWorkerMode(state.repoRoot, rid, mode)
+			if err != nil {
+				return err
+			}
+			if rid == "" {
+				rid = worker.ResolveRID()
+			}
+			opts := state.queryOptions(cmd, "worker.install", nil)
+			return state.printEnvelope(model.Envelope{Ok: true, Backend: "worker-install", Items: []map[string]any{{"path": path, "rid": rid}}}, opts)
 		},
 	}
 	installCommand.Flags().StringVar(&rid, "rid", "", "Runtime identifier override")
+	installCommand.Flags().StringVar(&mode, "mode", "auto", "Worker mode: auto, framework-dependent, or self-contained")
 
 	statusCommand := &cobra.Command{
 		Use:   "status",
