@@ -147,7 +147,7 @@ func RunDoctor(ctx context.Context, opts *RunDoctorOptions) (DoctorReport, error
 var doctorRequired = map[string]bool{
 	"stale-aliases": true, "daemon-version-drift": false, "daemon-db-size": false,
 	"watched-dirs-handle-limit": false, "binary-dirty": true, "governance-blocked": true,
-	"truncation-rate": false, "daemon-connectivity": false,
+	"truncation-rate": false, "daemon-connectivity": false, "runtime-location": true,
 }
 
 func finalizeDoctorCheck(check DoctorCheck) DoctorCheck {
