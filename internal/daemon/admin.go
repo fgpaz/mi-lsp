@@ -48,6 +48,10 @@ type workspaceSummary struct {
 }
 
 func NewAdminServer(manager *Manager, store *TelemetryStore, app *service.App, stateFn func() model.DaemonState, adminToken string) (*AdminServer, error) {
+	return newAdminServer(manager, store, app, stateFn, adminToken, nil)
+}
+
+func newAdminServer(manager *Manager, store *TelemetryStore, app *service.App, stateFn func() model.DaemonState, adminToken string, gate *updateAdmissionGate) (*AdminServer, error) {
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		return nil, err
@@ -61,7 +65,7 @@ func NewAdminServer(manager *Manager, store *TelemetryStore, app *service.App, s
 	mux.HandleFunc("/api/accesses", admin.handleAccesses)
 	mux.HandleFunc("/api/logs", admin.handleLogs)
 	mux.HandleFunc("/api/metrics", admin.handleMetrics)
-	admin.server = &http.Server{Handler: mux}
+	admin.server = &http.Server{Handler: updateAdminHandler(gate, mux)}
 	go func() { _ = admin.server.Serve(listener) }()
 	return admin, nil
 }

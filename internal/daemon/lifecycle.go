@@ -102,6 +102,17 @@ type Manager struct {
 	reapCount        int
 }
 
+// UpdateIdleSnapshot is conservative: existing runtimes or watchers can own
+// activity outside request accounting. An uninitialized manager is unknown.
+func (m *Manager) UpdateIdleSnapshot() bool {
+	if m == nil {
+		return false
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.runtimes != nil && m.watchers != nil && len(m.runtimes) == 0 && len(m.watchers) == 0
+}
+
 func NewManager(repoRoot string, maxWorkers int, idleTimeout time.Duration) *Manager {
 	return NewManagerWithOptions(repoRoot, maxWorkers, idleTimeout, DefaultStartOptions())
 }

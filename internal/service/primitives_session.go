@@ -34,6 +34,22 @@ type SessionState struct {
 }
 
 func NewSessionState() *SessionState { return &SessionState{entries: map[string]*sessionEntry{}} }
+
+// HasLiveSessions reports whether restart would discard live or uncertain state.
+// It does not expire or mutate entries; future and zero timestamps are unknown.
+func (s *SessionState) HasLiveSessions(now time.Time) bool {
+	if s == nil {
+		return false
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, entry := range s.entries {
+		if entry == nil || entry.touched.IsZero() || entry.touched.After(now) || now.Sub(entry.touched) <= sessionIdle {
+			return true
+		}
+	}
+	return false
+}
 func (s *SessionState) entry(session string, now time.Time) *sessionEntry {
 	if s.entries == nil {
 		s.entries = map[string]*sessionEntry{}
