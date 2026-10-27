@@ -129,20 +129,24 @@ func NewServerWithOptions(repoRoot string, maxWorkers int, idleTimeout time.Dura
 	}
 	server.admin = admin
 	server.state.AdminURL = admin.URL()
-	if err := server.startElasticPool(); err != nil {
-		elasticCancel()
-		_ = listener.Close()
-		_ = admin.Shutdown()
-		manager.Shutdown()
-		_ = telemetry.Close()
-		return nil, err
+	if elasticEnabled() {
+		if err := server.startElasticPool(); err != nil {
+			elasticCancel()
+			_ = listener.Close()
+			_ = admin.Shutdown()
+			manager.Shutdown()
+			_ = telemetry.Close()
+			return nil, err
+		}
 	}
 	runID, err := telemetry.StartRun(server.state)
 	if err != nil {
 		elasticCancel()
 		_ = listener.Close()
 		_ = admin.Shutdown()
-		_ = server.elastic.Close()
+		if server.elastic != nil {
+			_ = server.elastic.Close()
+		}
 		manager.Shutdown()
 		_ = telemetry.Close()
 		return nil, err
@@ -164,7 +168,9 @@ func NewServerWithOptions(repoRoot string, maxWorkers int, idleTimeout time.Dura
 		elasticCancel()
 		_ = listener.Close()
 		_ = admin.Shutdown()
-		_ = server.elastic.Close()
+		if server.elastic != nil {
+			_ = server.elastic.Close()
+		}
 		manager.Shutdown()
 		_ = telemetry.Close()
 		return nil, err
@@ -278,7 +284,17 @@ func (s *Server) handleConnectionContext(ctx context.Context, conn net.Conn) {
 			}
 		}()
 	}
-	response := s.submitElastic(requestCtx, request)
+	var response model.Envelope
+	if s.elastic != nil {
+		response = s.submitElastic(requestCtx, request)
+	} else {
+		var err error
+		response, err = s.handleRequestContext(requestCtx, request)
+		if err != nil {
+			response = daemonErrorEnvelope(request, err, "daemon")
+		}
+		s.recordAccess(request, response, err, time.Since(started))
+	}
 	_ = worker.WriteFrame(conn, response)
 }
 
@@ -324,6 +340,10 @@ func (s *Server) handleRequestContext(ctx context.Context, request model.Command
 		if total > 0 {
 			hitRate = float64(hits) / float64(total)
 		}
+		var poolStats any
+		if s.elastic != nil {
+			poolStats = s.elastic.Stats()
+		}
 		return model.Envelope{
 			Ok:      true,
 			Backend: "daemon",
@@ -339,7 +359,7 @@ func (s *Server) handleRequestContext(ctx context.Context, request model.Command
 					"entries":  entries,
 					"hit_rate": hitRate,
 				},
-				"elastic_pool":               s.elastic.Stats(),
+				"elastic_pool":               poolStats,
 				"coordinator_node":           s.elasticNode,
 				"coordinator_count_at_start": s.coordinatorCount,
 				"coordinator_sizing":         s.coordinatorSizingSnapshot(),
@@ -506,6 +526,14 @@ func SpawnBackground(repoRoot string, maxWorkers int, idleTimeout time.Duration)
 }
 
 func SpawnBackgroundWithOptions(repoRoot string, maxWorkers int, idleTimeout time.Duration, options StartOptions) (model.DaemonState, bool, error) {
+	if elasticEnabled() {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		_, err := readBabelNode(ctx)
+		cancel()
+		if err != nil {
+			return model.DaemonState{}, false, err
+		}
+	}
 	options = NormalizeStartOptions(options)
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
