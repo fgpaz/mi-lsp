@@ -50,7 +50,7 @@ func MaybeStartAutomatic(c Config, daemonAvailable bool) (bool, error) {
 		// A global metadata check does not mean this installation consumed it.
 		// Do not execute the binary here: the child performs the real readback.
 		prior, err := ReadCached(c)
-		if err == nil && prior.LastCheck != nil && prior.LastCheck.Equal(cache.LastCheck) {
+		if err == nil && prior.LastResult != "deferred" && prior.LastCheck != nil && prior.LastCheck.Equal(cache.LastCheck) {
 			if cache.Error != "" && prior.LastResult == "failed" && prior.Code != nil && *prior.Code == cache.Error {
 				return false, nil
 			}

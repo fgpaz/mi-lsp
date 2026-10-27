@@ -22,10 +22,12 @@ C4Context
     System_Ext(gateway, "mi-mcp", "Invoca la CLI por cada llamada de herramienta")
     System(milsp, "mi-lsp", "Navegación semántica y documental local; daemon opcional")
     System_Ext(workspace, "Workspace y canon", "Código y Markdown; canon local o raíces externas declaradas")
+    System_Ext(releases, "GitHub Releases oficial", "Metadata y paquetes mi-lsp verificados por SHA-256")
     Rel(developer, milsp, "Ejecuta consultas y diagnóstico", "CLI local")
     Rel(agent, milsp, "Solicita navegación y contexto", "CLI local")
     Rel(gateway, milsp, "Invoca el ejecutable por llamada", "CLI local")
     Rel(milsp, workspace, "Lee fuentes y documentación", "Archivos")
+    Rel(milsp, releases, "Updater runtime consulta y descarga en segundo plano", "HTTPS acotado")
 ```
 
 ## Contenedores (C4)
@@ -42,6 +44,7 @@ C4Container
     Person(developer, "Desarrollador", "CLI y consola operativa local")
     System_Ext(clients, "Agentes, skills y mi-mcp", "Consumidores de la CLI")
     System_Ext(sources, "Fuentes y canon del workspace", "Código y Markdown, con raíces declaradas")
+    System_Ext(releases, "GitHub Releases oficial", "fgpaz/mi-lsp: latest, checksums y assets por RID")
     System_Boundary(milsp, "mi-lsp") {
         Container(cli, "CLI y core directo", "Go", "Comandos, routing, docgraph, catálogo, grafo y salida compacta")
         Container(daemon, "Daemon compartido y consola", "Go y UI loopback", "Core compartido, runtime pool, gobernanza y telemetría")
@@ -65,6 +68,7 @@ C4Container
     Rel(cli, roslyn, "Ejecuta semántica en modo directo cuando corresponde", "stdio length-prefixed")
     Rel(daemon, optional, "Mantiene runtimes opcionales", "LSP")
     Rel(cli, extension, "Ejecuta la extensión sobre un snapshot publicado", "Protocolo MILX-v1")
+    Rel(cli, releases, "Hijo updater verifica checksum y promueve sólo CLI", "HTTPS acotado")
 ```
 
 El C4 resume los límites ya descritos; no cambia los contratos de routing, seguridad, estado ni publicación. Si un diagrama difiere del texto, manda el texto.

@@ -138,7 +138,7 @@ func (u *Updater) applyLocked(ctx context.Context, automatic bool, reason string
 			return u.finishFailure(s, cache.Error)
 		}
 		release = cache.Release
-		if prior.LastCheck != nil && prior.LastCheck.Equal(cache.LastCheck) && prior.Latest == release.Version && prior.Installed == s.Installed {
+		if prior.LastResult != "deferred" && prior.LastCheck != nil && prior.LastCheck.Equal(cache.LastCheck) && prior.Latest == release.Version && prior.Installed == s.Installed {
 			if _, err := compareVersions(release.Version, release.Version); err != nil {
 				return errors.New("invalid cached release")
 			}
