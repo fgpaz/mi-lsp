@@ -33,7 +33,10 @@ const maxMetadata = 2 << 20
 const maxAsset = 512 << 20
 const latestURL = "https://api.github.com/repos/fgpaz/mi-lsp/releases/latest"
 
-type githubSource struct{ client *http.Client }
+type githubSource struct {
+	client         *http.Client
+	downloadClient *http.Client
+}
 
 func allowedURL(raw string, initial bool) bool {
 	u, e := url.Parse(raw)
@@ -51,6 +54,7 @@ func allowedURL(raw string, initial bool) bool {
 	return false
 }
 func newGitHubSource(client *http.Client) Source {
+	defaultTimeout := client == nil || client.Timeout == 0
 	if client == nil {
 		client = &http.Client{Timeout: 30 * time.Second}
 	}
@@ -64,9 +68,16 @@ func newGitHubSource(client *http.Client) Source {
 		}
 		return nil
 	}
-	return &githubSource{client: &copyClient}
+	downloadClient := copyClient
+	if defaultTimeout {
+		downloadClient.Timeout = 3 * time.Minute
+	}
+	return &githubSource{client: &copyClient, downloadClient: &downloadClient}
 }
 func (s *githubSource) get(ctx context.Context, raw string) (*http.Response, error) {
+	return s.getUsing(ctx, raw, s.client)
+}
+func (s *githubSource) getUsing(ctx context.Context, raw string, client *http.Client) (*http.Response, error) {
 	if !allowedURL(raw, true) {
 		return nil, errors.New("invalid release URL")
 	}
@@ -75,7 +86,7 @@ func (s *githubSource) get(ctx context.Context, raw string) (*http.Response, err
 		return nil, errors.New("invalid release URL")
 	}
 	req.Header.Set("Accept", "application/vnd.github+json")
-	res, e := s.client.Do(req)
+	res, e := client.Do(req)
 	if e != nil {
 		return nil, errNetwork
 	}
@@ -127,7 +138,7 @@ func (s *githubSource) Download(ctx context.Context, a Asset, dst string) error 
 	if a.Size < 0 || a.Size > maxAsset || !allowedURL(a.URL, true) || !strings.HasPrefix(a.URL, "https://github.com/fgpaz/mi-lsp/releases/download/") {
 		return errors.New("invalid asset")
 	}
-	r, e := s.get(ctx, a.URL)
+	r, e := s.getUsing(ctx, a.URL, s.downloadClient)
 	if e != nil {
 		return e
 	}

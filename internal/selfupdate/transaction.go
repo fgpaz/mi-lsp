@@ -40,7 +40,7 @@ type transactionOps struct {
 const (
 	txMaxArchive  = 512 << 20
 	txMaxEntry    = 256 << 20
-	txMaxExpanded = 512 << 20
+	txMaxExpanded = 2 << 30
 )
 
 var txSemver = regexp.MustCompile(`^v?(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$`)
