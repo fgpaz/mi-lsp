@@ -21,12 +21,15 @@ func validateWikiContractRetirements(root, docPath, body string, index wikisourc
 	var rows []any
 	found := false
 	explicitEmpty := false
-	plain := strings.TrimSpace(strings.ToLower(strings.ReplaceAll(body, "\r", "")))
+	plain := strings.ToLower(strings.ReplaceAll(body, "\r", ""))
 	lines := strings.Split(plain, "\n")
 	var prose []string
 	proseNone := false
 	fence := ""
 	frontmatter := len(lines) > 0 && strings.TrimSpace(lines[0]) == "---"
+	// Only pure prose declares an empty inventory without machine parsing.
+	// A none sentence must never conceal malformed or unrecognized YAML.
+	structured := frontmatter || strings.Contains(body, "```") || strings.Contains(body, "~~~")
 	for i, line := range lines {
 		trimmed := strings.TrimSpace(line)
 		if frontmatter {
@@ -44,6 +47,9 @@ func validateWikiContractRetirements(root, docPath, body string, index wikisourc
 			}
 			continue
 		}
+		if trimmed != "" && (strings.HasPrefix(line, " ") || strings.HasPrefix(line, "\t")) {
+			structured = true
+		}
 		if fence != "" || strings.HasPrefix(line, " ") || strings.HasPrefix(line, "\t") {
 			continue
 		}
@@ -55,12 +61,12 @@ func validateWikiContractRetirements(root, docPath, body string, index wikisourc
 			}
 		}
 	}
-	if len(prose) == 1 && proseNone {
+	if len(prose) == 1 && proseNone && !structured {
 		found = true
 		explicitEmpty = true
 	}
 	for _, block := range blocks {
-		if explicitEmpty && len(prose) == 1 && !strings.Contains(body, "```") {
+		if explicitEmpty && len(prose) == 1 && !structured {
 			continue
 		}
 		var raw any

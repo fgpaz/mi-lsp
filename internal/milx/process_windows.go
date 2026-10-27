@@ -5,10 +5,10 @@ package milx
 import (
 	"errors"
 	"os/exec"
-
-	"github.com/fgpaz/mi-lsp/internal/processutil"
 	"strconv"
 	"syscall"
+
+	"github.com/fgpaz/mi-lsp/internal/processutil"
 )
 
 func configureProcess(cmd *exec.Cmd) {

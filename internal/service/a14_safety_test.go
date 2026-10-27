@@ -79,9 +79,9 @@ func TestA14SafetyNoneDoesNotHideMalformedInventory(t *testing.T) {
 	root := t.TempDir()
 	path := ".docs/wiki/00_retirements.md"
 	for name, body := range map[string]string{
-		"tilde_malformed": "No hay retiros registrados.\n\n~~~yaml\nentries: [\n~~~\n",
-		"frontmatter_malformed": "---\nentries: [\n---\nNo hay retiros registrados.\n",
-		"unknown_machine_block": "No hay retiros registrados.\n\n```yaml\nunknown_inventory: []\n```\n",
+		"tilde_malformed":        "No hay retiros registrados.\n\n~~~yaml\nentries: [\n~~~\n",
+		"frontmatter_malformed":  "---\nentries: [\n---\nNo hay retiros registrados.\n",
+		"unknown_machine_block":  "No hay retiros registrados.\n\n```yaml\nunknown_inventory: []\n```\n",
 		"indented_machine_block": "No hay retiros registrados.\n\n    entries: [\n",
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -100,7 +100,10 @@ func TestA14SafetyRetirementMultilineReason(t *testing.T) {
 	archived := ".docs/wiki/_retired/requirement/RF-OLD-01.md"
 	writeContractTestWikiFile(t, root, archived, "# Archivo\n")
 	row := "```yaml\nentries:\n  - id: RF-OLD-01\n    old_path: .docs/wiki/05_requirements/RF-OLD-01.md\n    archived_path: " + archived + "\n    terminal: true\n    reason: |\n      No hay retiros registrados.\n```\n"
-	for _, tc := range []struct{ name, prefix string; pass bool }{
+	for _, tc := range []struct {
+		name, prefix string
+		pass         bool
+	}{
 		{"reason_only", "", true},
 		{"real_contradiction", "No hay retiros registrados.\n\n", false},
 	} {

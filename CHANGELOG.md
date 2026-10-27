@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.15.6] - 2026-10-27
+
+### Corregido
+
+- Los procesos no interactivos usan constructores centralizados que aplican `HideWindow` y `CREATE_NO_WINDOW` en Windows, preservan los flags detached/grupos y mantienen la semántica Unix. Un guard AST detecta constructores raw fuera de las excepciones explícitas.
+- `validate-contract`, doctor e idioma siguen la raíz de la gobernanza publicada, incluida `wiki/`; el frontmatter tiene prioridad frente a fences YAML posteriores.
+- El inventario de retiros acepta `entries`, YAML legacy y ausencia explícita documentada sin ocultar evidencia inválida, incompleta o contradictoria ni convertir scopes vacíos en PASS.
+
 ## [0.15.5] - 2026-10-27
 
 ### Corregido
