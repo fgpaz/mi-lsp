@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"os/exec"
 	"strings"
 	"time"
@@ -15,6 +16,8 @@ import (
 )
 
 const elasticCommandOperation = "mi-lsp.command"
+
+func elasticEnabled() bool { return os.Getenv("MI_LSP_ELASTIC") == "1" }
 
 func (s *Server) startElasticPool() error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -139,7 +142,7 @@ func readBabelNode(ctx context.Context) (string, error) {
 	processutil.ConfigureNonInteractiveCommand(cmd)
 	output, err := cmd.Output()
 	if err != nil {
-		return "", fmt.Errorf("read public Babel node identity with botsd identidad: %w", err)
+		return "", fmt.Errorf("MI_LSP_ELASTIC=1 requires botsd on PATH and a configured node identity (botsd identidad): %w", err)
 	}
 	var identity struct {
 		Node string `json:"nodo"`
