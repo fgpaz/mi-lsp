@@ -67,10 +67,10 @@ func statePath() (string, error) {
 	return filepath.Join(home, ".mi-lsp", "repair", "state.json"), nil
 }
 func loadState(path string) (stateFile, error) {
-	s := stateFile{Schema: stateSchema, Attempts: []attempt{}}
+	var s stateFile
 	b, err := os.ReadFile(path)
 	if errors.Is(err, os.ErrNotExist) {
-		return s, nil
+		return stateFile{Schema: stateSchema, Attempts: []attempt{}}, nil
 	}
 	if err != nil {
 		return s, err
