@@ -70,7 +70,7 @@ func transactionArchive(t *testing.T, format string, entries []archiveEntry) str
 			t.Fatal(err)
 		}
 	}
-	path := filepath.Join(t.TempDir(), "mi-lsp_0.16.0_"+runtime.GOOS+"-"+runtime.GOARCH+"."+format)
+	path := filepath.Join(t.TempDir(), officialWrapper()+"."+format)
 	if err := os.WriteFile(path, b.Bytes(), 0600); err != nil {
 		t.Fatal(err)
 	}
