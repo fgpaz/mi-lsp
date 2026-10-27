@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"context"
 	"encoding/json"
 	"math"
 	"net"
@@ -11,6 +12,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/fgpaz/mi-lsp/internal/model"
@@ -20,13 +22,16 @@ import (
 )
 
 type AdminServer struct {
-	listener   net.Listener
-	server     *http.Server
-	manager    *Manager
-	store      *TelemetryStore
-	app        *service.App
-	stateFn    func() model.DaemonState
-	adminToken string
+	listener       net.Listener
+	server         *http.Server
+	manager        *Manager
+	store          *TelemetryStore
+	app            *service.App
+	stateFn        func() model.DaemonState
+	adminToken     string
+	updateListener *updateListener
+	acceptedMu     sync.Mutex
+	acceptedNotify chan struct{}
 }
 
 type dashboardMetrics struct {
@@ -56,7 +61,9 @@ func newAdminServer(manager *Manager, store *TelemetryStore, app *service.App, s
 	if err != nil {
 		return nil, err
 	}
-	admin := &AdminServer{listener: listener, manager: manager, store: store, app: app, stateFn: stateFn, adminToken: adminToken}
+	address := listener.Addr().String()
+	tracked := newUpdateListener(listener, func() (net.Listener, error) { return net.Listen("tcp", address) })
+	admin := &AdminServer{listener: tracked, updateListener: tracked, acceptedNotify: make(chan struct{}), manager: manager, store: store, app: app, stateFn: stateFn, adminToken: adminToken}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", admin.handleIndex)
 	mux.HandleFunc("/api/status", admin.handleStatus)
@@ -65,9 +72,28 @@ func newAdminServer(manager *Manager, store *TelemetryStore, app *service.App, s
 	mux.HandleFunc("/api/accesses", admin.handleAccesses)
 	mux.HandleFunc("/api/logs", admin.handleLogs)
 	mux.HandleFunc("/api/metrics", admin.handleMetrics)
-	admin.server = &http.Server{Handler: updateAdminHandler(gate, mux)}
-	go func() { _ = admin.server.Serve(listener) }()
+	admin.server = &http.Server{Handler: updateAdminHandler(gate, mux), IdleTimeout: 30 * time.Second, ConnState: func(_ net.Conn, state http.ConnState) {
+		if state == http.StateNew {
+			admin.acceptedMu.Lock()
+			select {
+			case <-admin.acceptedNotify:
+			default:
+				close(admin.acceptedNotify)
+			}
+			admin.acceptedMu.Unlock()
+		}
+	}}
+	go func() { _ = admin.server.Serve(tracked) }()
 	return admin, nil
+}
+
+func (a *AdminServer) waitUpdateConnectionForTest(ctx context.Context) error {
+	select {
+	case <-a.acceptedNotify:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
 
 func (a *AdminServer) URL() string {

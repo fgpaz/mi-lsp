@@ -83,23 +83,27 @@ type managedRuntime struct {
 }
 
 type Manager struct {
-	repoRoot         string
-	maxWorkers       int
-	idleTimeout      time.Duration
-	callTimeout      time.Duration
-	softMemoryThresh uint64
-	options          StartOptions
-	mu               sync.Mutex
-	runtimes         map[string]*managedRuntime
-	stopCh           chan struct{}
-	watchers         map[string]*FileWatcher
-	watcherRoots     []string
-	skippedWatchers  int
-	watcherCtx       context.Context
-	watcherCancel    context.CancelFunc
-	failureCache     *failureCache
-	telemetryStore   *TelemetryStore
-	reapCount        int
+	repoRoot           string
+	maxWorkers         int
+	idleTimeout        time.Duration
+	callTimeout        time.Duration
+	softMemoryThresh   uint64
+	options            StartOptions
+	mu                 sync.Mutex
+	runtimes           map[string]*managedRuntime
+	stopCh             chan struct{}
+	watchers           map[string]*FileWatcher
+	watcherRoots       []string
+	skippedWatchers    int
+	watcherCtx         context.Context
+	watcherCancel      context.CancelFunc
+	failureCache       *failureCache
+	telemetryStore     *TelemetryStore
+	reapCount          int
+	reapDone           chan struct{}
+	reapRequest        chan struct{}
+	reapHook           func()
+	watcherTransitions int
 }
 
 // UpdateIdleSnapshot is conservative: existing runtimes or watchers can own
@@ -110,7 +114,7 @@ func (m *Manager) UpdateIdleSnapshot() bool {
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	return m.runtimes != nil && m.watchers != nil && len(m.runtimes) == 0 && len(m.watchers) == 0
+	return m.runtimes != nil && m.watchers != nil && len(m.runtimes) == 0 && len(m.watchers) == 0 && m.watcherTransitions == 0
 }
 
 func NewManager(repoRoot string, maxWorkers int, idleTimeout time.Duration) *Manager {
@@ -138,6 +142,7 @@ func NewManagerWithOptions(repoRoot string, maxWorkers int, idleTimeout time.Dur
 		options:          options,
 		runtimes:         map[string]*managedRuntime{},
 		stopCh:           make(chan struct{}),
+		reapDone:         make(chan struct{}),
 		watchers:         map[string]*FileWatcher{},
 		watcherCtx:       watcherCtx,
 		watcherCancel:    watcherCancel,
@@ -231,6 +236,9 @@ func (m *Manager) SetTelemetryStore(ts *TelemetryStore) {
 
 func (m *Manager) Shutdown() {
 	close(m.stopCh)
+	if m.reapDone != nil {
+		<-m.reapDone
+	}
 	m.watcherCancel()
 	m.StopWatchers()
 	m.mu.Lock()
@@ -239,6 +247,19 @@ func (m *Manager) Shutdown() {
 		_ = managed.client.Close()
 		delete(m.runtimes, key)
 	}
+}
+
+func (m *Manager) beginUpdateWatcherTransition() func() {
+	m.mu.Lock()
+	m.watcherTransitions++
+	m.mu.Unlock()
+	var once sync.Once
+	return func() { once.Do(m.endUpdateWatcherTransition) }
+}
+func (m *Manager) endUpdateWatcherTransition() {
+	m.mu.Lock()
+	m.watcherTransitions--
+	m.mu.Unlock()
 }
 
 // StartFileWatchers initializes and starts file watchers for registered workspaces.
@@ -269,7 +290,9 @@ func (m *Manager) EnsureFileWatcher(registration model.WorkspaceRegistration) {
 	if len(m.watchers) >= m.options.MaxWatchedRoots {
 		m.evictWatcherLocked()
 	}
+	m.watcherTransitions++
 	m.mu.Unlock()
+	defer m.endUpdateWatcherTransition()
 
 	fw, err := NewFileWatcher(registration, 500*time.Millisecond)
 	if err != nil {
@@ -311,7 +334,9 @@ func (m *Manager) StopWatchers() {
 	}
 	m.watchers = map[string]*FileWatcher{}
 	m.watcherRoots = nil
+	m.watcherTransitions++
 	m.mu.Unlock()
+	defer m.endUpdateWatcherTransition()
 
 	for _, fw := range watchers {
 		fw.Stop()
@@ -355,17 +380,23 @@ func (m *Manager) evictWatcherLocked() {
 	if victim := m.watchers[victimKey]; victim != nil {
 		delete(m.watchers, victimKey)
 		m.skippedWatchers++
-		go victim.Stop()
+		m.watcherTransitions++
+		go func() { defer m.endUpdateWatcherTransition(); victim.Stop() }()
 	}
 }
 
 func (m *Manager) reapLoop() {
+	defer close(m.reapDone)
 	ticker := time.NewTicker(1 * time.Minute)
 	defer ticker.Stop()
 	for {
 		select {
 		case <-m.stopCh:
 			return
+		case <-m.reapRequest:
+			if m.reapHook != nil {
+				m.reapHook()
+			}
 		case <-ticker.C:
 			m.reapIdle()
 			m.checkpointWALIfNeeded()

@@ -107,6 +107,13 @@ func TestUpdateRetentionStopJoinsActivePurge(t *testing.T) {
 	}
 }
 
+func newUpdateManagerWithReapForTest(hook func()) *Manager {
+	m := &Manager{stopCh: make(chan struct{}), reapDone: make(chan struct{}), reapRequest: make(chan struct{}, 1), reapHook: hook, watcherCancel: func() {}, watchers: map[string]*FileWatcher{}, runtimes: map[string]*managedRuntime{}}
+	go m.reapLoop()
+	return m
+}
+func (m *Manager) triggerReapForTest() { m.reapRequest <- struct{}{} }
+
 func TestUpdateManagerShutdownJoinsReapBeforeReturning(t *testing.T) {
 	entered, release := make(chan struct{}), make(chan struct{})
 	m := newUpdateManagerWithReapForTest(func() { close(entered); <-release })
