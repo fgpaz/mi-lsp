@@ -5,12 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.16.3] - 2026-10-28
+
+### Añadido
+
+- `nav wiki trace <DOC-ID>#<ANCLA>` acepta un ancla como foco: resuelve el H3 declarado (`anchor_focus` con archivo y línea) y, en la traza del documento, agrega `anchor_refs` con quién cita ese ancla y las citas que salen del documento. Ancla inexistente: warning `anchor_missing` y la traza del documento se devuelve igual. No agrega tipos de link al grafo.
+
 ## [0.16.2] - 2026-10-28
 
 ### Añadido
 
 - Anclas `<DOC-ID>#<ANCLA>` en la wiki: `P<n>` bajo `Secuencia` en FL, `E<n>` bajo `Errores` en RF y `UXD-NN`/`UXQ-NN` en UXM (`ux_module`), declaradas como prefijo de H3 con ` · `. `validate-contract` resuelve cada cita contra el H3 declarado, expone `anchor_refs` con archivo y línea de destino, y avisa `anchor_missing` o `anchor_duplicate` sin bloquear. Documentos sin anclas siguen válidos y citas a documentos no indexados siguen silenciosas.
-- `nav wiki trace <DOC-ID>#<ANCLA>` acepta un ancla como foco: resuelve el H3 declarado (`anchor_focus` con archivo y línea) y, en la traza del documento, agrega `anchor_refs` con quién cita ese ancla y las citas que salen del documento. Ancla inexistente: warning `anchor_missing` y la traza del documento se devuelve igual. No agrega tipos de link al grafo.
 
 ### Corregido
 
