@@ -628,6 +628,7 @@ func SpawnBackgroundWithOptions(repoRoot string, maxWorkers int, idleTimeout tim
 		state, probeErr := probeDaemon(ctx)
 		cancel()
 		if probeErr == nil {
+			rememberLegacyHealth()
 			return state, true, nil
 		}
 		time.Sleep(200 * time.Millisecond)

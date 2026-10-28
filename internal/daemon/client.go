@@ -155,15 +155,12 @@ func EnsureDaemon(repoRoot string) error {
 	// Quick health check with 1s timeout
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
 	defer cancel()
-	statusRequest := model.CommandRequest{ProtocolVersion: model.ProtocolVersion, Operation: "system.status", Context: model.QueryOptions{ClientName: "mi-lsp-daemon-probe"}}
 	if elasticEnabled() {
-		if _, used, err := executeNodeScoped(ctx, statusRequest, 0); used {
-			return err
-		} else if err != nil {
+		if used, err := ensureElasticHealth(ctx); used || err != nil {
 			return err
 		}
 	}
-	if _, err := probeDaemon(ctx); err == nil {
+	if err := ensureLegacyHealth(ctx); err == nil {
 		return nil
 	}
 
