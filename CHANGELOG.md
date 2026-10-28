@@ -11,6 +11,10 @@ and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2
 
 - `nav wiki trace <DOC-ID>#<ANCLA>` acepta un ancla como foco: resuelve el H3 declarado (`anchor_focus` con archivo y línea) y, en la traza del documento, agrega `anchor_refs` con quién cita ese ancla y las citas que salen del documento. Ancla inexistente: warning `anchor_missing` y la traza del documento se devuelve igual. No agrega tipos de link al grafo.
 
+### Corregido
+
+- `install.sh` deja de acumular directorios `mi-lsp-install.XXXXXX` de ~950 MB en `${TMPDIR:-/tmp}`: el trap de limpieza sobrevive a la activación con rollback, las señales `HUP`/`INT`/`TERM` terminan la instalación (antes reanudaban tras limpiar) y, al arrancar, se barren los restos propios de más de una hora (`MI_LSP_INSTALL_STALE_TMP_MINUTES`, por omisión 60). Una instalación exitosa, una fallida y una abortada no dejan directorios temporales.
+
 ## [0.16.2] - 2026-10-28
 
 ### Añadido

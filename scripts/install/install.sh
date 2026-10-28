@@ -98,6 +98,55 @@ retry() {
   done
 }
 
+# Temporary extraction root lifecycle.
+# A real install extracts roughly 950 MB under ${TMPDIR:-/tmp}/mi-lsp-install.XXXXXX.
+# That root is removed on EXIT (success or failure) and on HUP/INT/TERM, and any
+# leftover of a previous run older than MI_LSP_INSTALL_STALE_TMP_MINUTES
+# (default 60) is swept before a new root is created.
+install_tmp_root() {
+  printf '%s\n' "${TMPDIR:-/tmp}"
+}
+
+sweep_stale_install_dirs() {
+  sweep_root="$(install_tmp_root)"
+  [ -d "$sweep_root" ] || return 0
+  case "${MI_LSP_INSTALL_STALE_TMP_MINUTES:-60}" in
+    ''|*[!0-9]*) return 0 ;;
+  esac
+  find "$sweep_root" -maxdepth 1 -mmin +"${MI_LSP_INSTALL_STALE_TMP_MINUTES:-60}" \
+    \( -name 'mi-lsp-install.*' -o -name 'mi-lsp-identities.*' \) -print 2>/dev/null \
+    | while IFS= read -r sweep_path; do
+        case "$sweep_path" in
+          "$sweep_root"/mi-lsp-install.*|"$sweep_root"/mi-lsp-identities.*) rm -rf "$sweep_path" 2>/dev/null || true ;;
+        esac
+      done
+  return 0
+}
+
+cleanup_install_tmp() {
+  [ -n "${tmp:-}" ] || return 0
+  case "$tmp" in
+    */mi-lsp-install.*) rm -rf "$tmp" 2>/dev/null || true ;;
+  esac
+  tmp=""
+}
+
+# A signal must terminate the script so the EXIT trap performs the cleanup;
+# a bare cleanup trap would resume the install after the signal.
+install_signal_traps() {
+  trap 'exit 129' HUP
+  trap 'exit 130' INT
+  trap 'exit 143' TERM
+}
+
+# ERR is not POSIX: enable it only where supported (bash/ksh). On POSIX shells
+# `set -e` already routes failures through the EXIT trap.
+enable_err_trap() {
+  if ( trap ':' ERR ) 2>/dev/null; then
+    trap 'cleanup_install_tmp' ERR
+  fi
+}
+
 canonical_existing_path() {
   path="$1"
   [ -e "$path" ] || [ -L "$path" ] || return 1
@@ -298,17 +347,17 @@ if [ "$DRY_RUN" -eq 1 ]; then
   exit 0
 fi
 
-tmp="$(mktemp -d "${TMPDIR:-/tmp}/mi-lsp-install.XXXXXX")" || {
+sweep_stale_install_dirs
+tmp="$(mktemp -d "$(install_tmp_root)/mi-lsp-install.XXXXXX")" || {
   echo "Could not create an atomic temporary extraction root." >&2
   exit 1
 }
+trap cleanup_install_tmp EXIT
+install_signal_traps
+enable_err_trap
 [ ! -L "$tmp" ] || { echo "Temporary extraction root is a symlink or reparse point: $tmp" >&2; exit 1; }
 tmp_physical="$(canonical_existing_path "$tmp")" || { echo "Could not resolve temporary extraction root: $tmp" >&2; exit 1; }
 assert_lexically_under "$tmp" "$tmp/extract"
-cleanup() {
-  rm -rf "$tmp"
-}
-trap cleanup EXIT INT TERM
 
 download "$base_url/$archive" "$tmp/$archive"
 download "$base_url/$checksums" "$tmp/$checksums"
@@ -361,8 +410,8 @@ backup_root="$install_root/.mi-lsp-backup.$$"
 mkdir "$backup_root"
 old_cli=0; old_worker=0; activated=1
 safe_remove() { p="$1"; case "$p" in "$install_root"/*) ;; *) return 1 ;; esac; if [ -d "$p" ] && [ ! -L "$p" ]; then find "$p" -depth -type f -delete; find "$p" -depth -type d -delete; else rm -f "$p"; fi; }
-rollback() { status=$?; [ "$activated" -eq 1 ] && { [ ! -e "$target" ] || safe_remove "$target"; [ ! -e "$target_worker" ] || safe_remove "$target_worker"; [ "$old_cli" -eq 1 ] && mv "$backup_root/mi-lsp" "$target"; [ "$old_worker" -eq 1 ] && mv "$backup_root/worker" "$target_worker"; }; rmdir "$backup_root" 2>/dev/null || true; return "$status"; }
-trap rollback EXIT INT TERM
+rollback() { status=$?; [ "$activated" -eq 1 ] && { [ ! -e "$target" ] || safe_remove "$target"; [ ! -e "$target_worker" ] || safe_remove "$target_worker"; [ "$old_cli" -eq 1 ] && mv "$backup_root/mi-lsp" "$target"; [ "$old_worker" -eq 1 ] && mv "$backup_root/worker" "$target_worker"; }; rmdir "$backup_root" 2>/dev/null || true; cleanup_install_tmp; return "$status"; }
+trap rollback EXIT
 if [ -x "$target" ]; then "$target" daemon stop --format compact >/dev/null 2>&1 || true; fi
 if [ -e "$target" ]; then mv "$target" "$backup_root/mi-lsp"; old_cli=1; fi
 if [ -e "$target_worker" ]; then mv "$target_worker" "$backup_root/worker"; old_worker=1; fi
@@ -386,5 +435,6 @@ safe_remove "$backup_root/mi-lsp" 2>/dev/null || true
 safe_remove "$backup_root/worker" 2>/dev/null || true
 rmdir "$backup_root"
 activated=0
-trap - EXIT INT TERM
+trap - EXIT HUP INT TERM
+cleanup_install_tmp
 echo "mi-lsp $tag installed at $target"
