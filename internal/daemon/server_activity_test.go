@@ -19,7 +19,10 @@ func TestServerIdleExpiryIgnoresStatusProbeAndOpenConnection(t *testing.T) {
 	t.Setenv("USERNAME", fmt.Sprintf("aorph-probe-%d", os.Getpid()))
 	options := DefaultStartOptions()
 	options.WatchMode = WatchModeOff
-	const idleTimeout = 100 * time.Millisecond
+	// Status collects telemetry and, on Windows, enumerates system threads via
+	// Toolhelp. Allow that native work and pipe scheduling time to complete;
+	// the old 100ms window could expire before even one reply was observed.
+	const idleTimeout = 3 * time.Second
 	server, err := NewServerWithOptions(t.TempDir(), 1, idleTimeout, options)
 	if err != nil {
 		t.Fatalf("construct private server: %v", err)
@@ -39,31 +42,61 @@ func TestServerIdleExpiryIgnoresStatusProbeAndOpenConnection(t *testing.T) {
 
 	probeCtx, cancelProbes := context.WithCancel(ctx)
 	probeDone := make(chan struct{})
-	probeResponses := make(chan time.Time, 64)
+	type probeResult struct {
+		at time.Time
+		stage, category string
+		duration time.Duration
+	}
+	probeResults := make(chan probeResult, 256)
 	go func() {
 		defer close(probeDone)
-		ticker := time.NewTicker(15 * time.Millisecond)
+		ticker := time.NewTicker(100 * time.Millisecond)
 		defer ticker.Stop()
 		for {
 			select {
 			case <-ticker.C:
-				boundedCtx, cancel := context.WithTimeout(probeCtx, 250*time.Millisecond)
-				conn, dialErr := dialDaemon(boundedCtx)
-				if dialErr == nil {
-					_ = conn.SetDeadline(time.Now().Add(250 * time.Millisecond))
+				started := time.Now()
+				boundedCtx, cancel := context.WithTimeout(probeCtx, 2*time.Second)
+				result := probeResult{stage: "dial"}
+				conn, probeErr := dialDaemon(boundedCtx)
+				if probeErr == nil {
 					stopClose := context.AfterFunc(boundedCtx, func() { _ = conn.Close() })
-					request := model.CommandRequest{ProtocolVersion: model.ProtocolVersion, Operation: "system.status"}
-					if worker.WriteFrame(conn, request) == nil {
+					result.stage = "deadline"
+					probeErr = conn.SetDeadline(started.Add(2 * time.Second))
+					if probeErr == nil {
+						result.stage = "write"
+						request := model.CommandRequest{ProtocolVersion: model.ProtocolVersion, Operation: "system.status"}
+						probeErr = worker.WriteFrame(conn, request)
+					}
+					if probeErr == nil {
+						result.stage = "read"
 						var response model.Envelope
-						if worker.ReadFrame(conn, &response) == nil {
-							select {
-							case probeResponses <- time.Now():
-							default:
+						probeErr = worker.ReadFrame(conn, &response)
+						if probeErr == nil {
+							result.stage = "response"
+							if response.Ok && response.Backend == "daemon" {
+								result.category = "ok"
+							} else {
+								result.category = "invalid"
 							}
 						}
 					}
 					stopClose()
 					_ = conn.Close()
+				}
+				if probeErr != nil {
+					result.category = "other"
+					if boundedCtx.Err() != nil {
+						result.category = "context"
+					} else if e, ok := probeErr.(net.Error); ok && e.Timeout() {
+						result.category = "timeout"
+					}
+				}
+				result.at = time.Now()
+				result.duration = result.at.Sub(started)
+				select {
+				case probeResults <- result:
+				default:
 				}
 				cancel()
 			case <-probeCtx.Done():
@@ -80,25 +113,33 @@ func TestServerIdleExpiryIgnoresStatusProbeAndOpenConnection(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Serve returned an error at idle expiry: %v", err)
 		}
-	case <-time.After(time.Second):
+	case <-time.After(10 * time.Second):
 		server.Shutdown()
-		t.Fatal("status probes or a distinct idle open connection renewed the daemon lifetime")
+		t.Error("daemon did not terminate within the bounded idle observation")
 	}
 	cancelProbes()
 	<-probeDone
 	var firstProbe, lastProbe time.Time
 	count := 0
+	stages := make(map[string]int)
+	var maxDuration time.Duration
 	for {
 		select {
-		case at := <-probeResponses:
-			if count == 0 {
-				firstProbe = at
+		case result := <-probeResults:
+			stages[result.stage+"/"+result.category]++
+			if result.duration > maxDuration {
+				maxDuration = result.duration
 			}
-			lastProbe = at
-			count++
+			if result.category == "ok" {
+				if count == 0 {
+					firstProbe = result.at
+				}
+				lastProbe = result.at
+				count++
+			}
 		default:
 			if count < 4 || lastProbe.Sub(firstProbe) < idleTimeout/2 {
-				t.Fatalf("status probes did not continuously span idle window: count=%d span=%s", count, lastProbe.Sub(firstProbe))
+				t.Fatalf("invalid status probe fixture: count=%d span=%s max_duration=%s stages=%v", count, lastProbe.Sub(firstProbe), maxDuration, stages)
 			}
 			return
 		}
