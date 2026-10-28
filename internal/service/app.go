@@ -1861,7 +1861,12 @@ func (a *App) search(ctx context.Context, request model.CommandRequest) (model.E
 	searchDiagnostics := &searchPatternDiagnostics{}
 	searchCtx, searchCancel := withSearchTimeout(ctx, a.Config.SearchTimeout)
 	defer searchCancel()
-	items, err := searchPatternScopedWithDiagnostics(searchCtx, registration.Root, searchRoot, project, pattern, useRegex, searchLimit, searchDiagnostics)
+	var items []map[string]any
+	var linkedWorktree bool
+	items, linkedWorktree, err = searchWorktreeOverlay(searchCtx, registration.Root, searchRoot, project, pattern, useRegex, searchLimit, searchDiagnostics)
+	if err == nil && !linkedWorktree {
+		items, err = searchPatternScopedWithDiagnostics(searchCtx, registration.Root, searchRoot, project, pattern, useRegex, searchLimit, searchDiagnostics)
+	}
 	warnings := []string{}
 	regexAutoHealed := false
 	if err != nil {

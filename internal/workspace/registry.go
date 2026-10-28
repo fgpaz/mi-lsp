@@ -709,7 +709,7 @@ func resolveWorkspaceSelection(nameOrPath string, callerCWD string, readOnly boo
 					// An unregistered linked tree is a physical read-only overlay,
 					// never an alias to the main checkout or a new full index.
 					res := linkedWorktreeInspectionResolution(gitRoot)
-					res.Warnings = []string{"explicit linked worktree resolved to its physical root; no aliasing or full index was created"}
+					res.Warnings = []string{"worktree_overlay_index_explicit_incomplete: explicit linked worktree resolved to its physical root; semantic base-index plus delta overlay is not implemented"}
 					return res, nil
 				}
 			}
@@ -1194,7 +1194,7 @@ func linkedWorktreeInspectionResolution(root string) WorkspaceResolution {
 		},
 		Source:    ResolutionSourceGitTopLevel,
 		Synthetic: true,
-		Warnings:  []string{"workspace omitted; linked worktree is not registered; using synthetic read-only root resolution"},
+		Warnings:  []string{"worktree_overlay_index_explicit_incomplete: linked worktree is kept at its physical root; semantic base-index plus delta overlay is not implemented"},
 	}
 }
 
@@ -1211,7 +1211,7 @@ func resolveWorkspaceFromGitTopLevel(callerCWD string, registry model.RegistryFi
 		// common-dir's main checkout would leak content from a different branch.
 		resolution := linkedWorktreeInspectionResolution(gitRoot)
 		if registration, found := registeredMainWorktree(commonDir, registry); found {
-			resolution.Warnings = append(resolution.Warnings, fmt.Sprintf("linked worktree shares git common-dir with registered base %q; serving the physical worktree overlay without aliasing its content", registration.Name))
+			resolution.Warnings = append(resolution.Warnings, fmt.Sprintf("linked worktree shares git common-dir with registered base %q; physical text overlay is used; semantic base-index plus delta overlay remains explicit_incomplete", registration.Name))
 		}
 		return resolution, true
 	}
