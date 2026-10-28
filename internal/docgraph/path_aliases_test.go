@@ -6,6 +6,8 @@ func TestNormalizeWikiKindAliases(t *testing.T) {
 	cases := map[string]string{
 		"RF": "requirement", "tp": "test", "FL": "flow", "RS": "outcome",
 		"test-plan": "test", "requisitos": "requirement",
+		"module_map": "ux_module", "uxm": "ux_module", "ux_module": "ux_module",
+		"uj": "journey", "journey": "journey",
 	}
 	for input, want := range cases {
 		got, ok := NormalizeWikiKind(input)

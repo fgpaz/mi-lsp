@@ -146,6 +146,7 @@ func compileWikiContractValidationWithIndexRecords(root string, records, indexRe
 		kind := docgraph.WikiContractKindForPath(record.Path, "")
 		wikisource.RegisterContractWikiID(wikiIndex, record.DocID, kind)
 	}
+	anchorTargets := buildWikiAnchorTargets(indexRecords, indexBodies, language.Language)
 
 	bodyByPath := make(map[string]string, len(records))
 	for _, record := range records {
@@ -225,6 +226,13 @@ func compileWikiContractValidationWithIndexRecords(root string, records, indexRe
 			}
 			docWarnings = append(docWarnings, finding.Message)
 		}
+		_, anchorFindings := model.DeclaredWikiAnchors(srcID, body, anchorKindFor(header.Kind, record.Path), language.Language)
+		for _, finding := range anchorFindings {
+			docWarnings = append(docWarnings, finding.Message)
+		}
+		refs, refWarnings := resolveWikiAnchorRefs(record.Path, srcID, body, anchorTargets)
+		result.AnchorRefs = append(result.AnchorRefs, refs...)
+		docWarnings = append(docWarnings, refWarnings...)
 		result.LinksReviewed += linksReviewed
 		result.TargetsMissing += targetsMissing
 		for _, warning := range docWarnings {
@@ -240,7 +248,97 @@ func compileWikiContractValidationWithIndexRecords(root string, records, indexRe
 		result.ContractVerdict = "ADVISORY"
 	}
 	sort.Strings(result.ContractWarnings)
+	sort.Slice(result.AnchorRefs, func(i, j int) bool {
+		a, b := result.AnchorRefs[i], result.AnchorRefs[j]
+		if a.SourcePath != b.SourcePath {
+			return a.SourcePath < b.SourcePath
+		}
+		if a.SourceLine != b.SourceLine {
+			return a.SourceLine < b.SourceLine
+		}
+		return a.Ref < b.Ref
+	})
 	return result
+}
+
+// wikiAnchorTarget is an indexed document with its declared H3 anchors, so a citation can name file:line.
+type wikiAnchorTarget struct {
+	path    string
+	anchors map[string]int
+}
+
+// buildWikiAnchorTargets declares anchors for every indexed document, not only the selected ones, so a
+// selected source can cite a target outside the selection. When two documents claim one ID, the first
+// in index order wins, which keeps the result deterministic.
+func buildWikiAnchorTargets(indexRecords []model.DocRecord, indexBodies []wikisource.ContractDocBody, language model.WikiContractLanguage) map[string]wikiAnchorTarget {
+	contents := make(map[string]string, len(indexBodies))
+	for _, body := range indexBodies {
+		contents[body.Path] = body.Content
+	}
+	targets := make(map[string]wikiAnchorTarget)
+	for _, record := range indexRecords {
+		content, ok := contents[record.Path]
+		if !ok {
+			continue
+		}
+		meta := wikisource.ParseContractMetadata(content)
+		id := strings.ToUpper(strings.TrimSpace(firstNonEmpty(meta.ID, record.DocID)))
+		if id == "" {
+			continue
+		}
+		if _, exists := targets[id]; exists {
+			continue
+		}
+		anchors, _ := model.DeclaredWikiAnchors(id, content, anchorKindFor(meta.Kind, record.Path), language)
+		targets[id] = wikiAnchorTarget{path: record.Path, anchors: anchors}
+	}
+	return targets
+}
+
+// resolveWikiAnchorRefs checks each `<DOC-ID>#<ANCLA>` citation in a reviewed source against the anchors
+// of its target. A citation to a document that is not indexed stays silent, the same treatment broken
+// prose IDs have always had; only an existing document without that anchor is drift.
+func resolveWikiAnchorRefs(sourcePath, srcID, body string, targets map[string]wikiAnchorTarget) ([]model.WikiAnchorRef, []string) {
+	refs := make([]model.WikiAnchorRef, 0)
+	warnings := make([]string, 0)
+	seen := map[string]struct{}{}
+	for _, citation := range model.ParseWikiAnchorCitations(body) {
+		target, ok := targets[citation.DocID]
+		if !ok {
+			continue
+		}
+		ref := model.WikiAnchorRef{
+			Ref:        citation.DocID + "#" + citation.Anchor,
+			SourcePath: sourcePath,
+			SourceLine: citation.Line,
+			TargetPath: target.path,
+		}
+		if line, declared := target.anchors[citation.Anchor]; declared {
+			ref.TargetLine = line
+			ref.Status = model.WikiAnchorStatusResolved
+		} else {
+			ref.Status = model.WikiAnchorStatusMissing
+			warning := fmt.Sprintf("anchor_missing:%s->%s", srcID, ref.Ref)
+			if _, dup := seen[warning]; !dup {
+				seen[warning] = struct{}{}
+				warnings = append(warnings, warning)
+			}
+		}
+		refs = append(refs, ref)
+	}
+	return refs, warnings
+}
+
+// anchorKindFor returns the kind that governs anchor rules. A declared kind wins even when the path
+// classifier has no alias for it (ux_module); the path is only consulted when nothing is declared.
+func anchorKindFor(declared, path string) string {
+	if kind := strings.ToLower(strings.TrimSpace(declared)); kind != "" {
+		if normalized, ok := docgraph.NormalizeWikiKind(kind); ok {
+			return normalized
+		}
+		return kind
+	}
+	return docgraph.WikiContractKindForPath(path, "")
 }
 
 func validateWikiContractLinkDepth(root, srcID string, links map[string]any, index wikisource.ContractWikiIDIndex) (warnings []string, linksReviewed, targetsMissing int) {
@@ -366,6 +464,15 @@ func firstYAMLHeaderBlock(content string) string {
 	return blocks[0]
 }
 
+// wikiContractCanonicalKind maps the kind spelling used by WIKI-CONTRACT-v1 onto the name this
+// package validates. UXM documents declare module_map, which is the ux_module kind.
+func wikiContractCanonicalKind(kind string) string {
+	if kind == "module_map" {
+		return docgraph.WikiKindUXModule
+	}
+	return kind
+}
+
 func validateWikiContractHeader(docLabel string, header *wikiContractHeader, rawKeys map[string]struct{}, gov *docgraph.WikiContractGovernance) []string {
 	var warnings []string
 	if header.ID == "" && header.Kind != "governance" && header.Kind != "scope" {
@@ -373,7 +480,7 @@ func validateWikiContractHeader(docLabel string, header *wikiContractHeader, raw
 	}
 	if header.Kind == "" {
 		warnings = append(warnings, docLabel+": missing kind")
-	} else if _, ok := wikiContractKinds[header.Kind]; !ok {
+	} else if _, ok := wikiContractKinds[wikiContractCanonicalKind(header.Kind)]; !ok {
 		warnings = append(warnings, docLabel+": unknown kind "+header.Kind)
 	}
 	if header.Status == "" {
@@ -400,7 +507,7 @@ func validateWikiContractHeader(docLabel string, header *wikiContractHeader, raw
 
 func validateWikiContractRequiredLinks(docLabel string, header *wikiContractHeader, gov *docgraph.WikiContractGovernance) []string {
 	var warnings []string
-	kind := header.Kind
+	kind := wikiContractCanonicalKind(header.Kind)
 	links := header.Links
 	requireLink := func(linkType string) {
 		if !wikiContractLinkNonEmpty(links, linkType) {
