@@ -84,7 +84,13 @@ if [[ "$upload" -eq 0 ]]; then
   "$goreleaser_bin" release --clean --skip=publish
   # Binary-format artifacts retain their build path; materialize the named
   # upload files from GoReleaser's manifest without guessing build directories.
-  python3 scripts/release/materialize-host.py "$version"
+  # Windows environments commonly provide python, not the python3 Store alias.
+  python_bin="${PYTHON:-python}"
+  if ! command -v "$python_bin" >/dev/null 2>&1; then
+    echo "Python executable not found: $python_bin (set PYTHON to an existing executable)" >&2
+    exit 1
+  fi
+  "$python_bin" scripts/release/materialize-host.py "$version"
 
   missing=0
   for name in "${expected_names[@]}"; do
