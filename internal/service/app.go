@@ -1284,7 +1284,7 @@ func (a *App) normalizeWorkspaceRequest(ctx context.Context, request model.Comma
 	// Status is a read-only inspection and must resolve the original caller cwd
 	// in workspaceStatus, before ordinary navigation can collapse a linked tree
 	// to its registered main repository.
-	if request.Operation == "workspace.status" || request.Operation == "nav.diagnostics" {
+	if request.Operation == "workspace.status" || request.Operation == "nav.diagnostics" || request.Operation == "nav.multi-read" {
 		return request, nil, nil
 	}
 	if !operationRequiresWorkspaceResolution(request) {

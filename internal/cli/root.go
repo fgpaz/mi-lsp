@@ -356,7 +356,7 @@ func (s *rootState) refreshMultiReadPaths(ctx context.Context, request model.Com
 		return false, nil
 	}
 	workspaceStarted := time.Now()
-	resolution, err := workspace.ResolveWorkspaceSelectionReadOnly(request.Context.Workspace, request.Context.CallerCWD)
+	resolution, err := workspace.ResolveReadRoot(request.Context.Workspace, request.Context.CallerCWD)
 	traceCLITiming("workspace.resolve", time.Since(workspaceStarted), s.verbose)
 	if err != nil {
 		return false, nil
