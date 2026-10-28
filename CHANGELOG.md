@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.16.2]
+
+### Corregido
+
+- Mitigación de daemons duplicados: ante un dueño publicado vivo o indeterminado, el nuevo arranque termina antes de listener/SQLite y antes de otro fork. Una reserva de vida separada protege constructores cooperantes del mismo almacenamiento, aunque sus endpoints difieran.
+- El rechazo conserva el estado ajeno y muestra PID/endpoint sin matar procesos ni ampliar permisos. No detiene duplicados legacy existentes ni cierra por sí solo la causa del CPU, idle o WAL; los consumidores deben actualizarse y el supervisor realizar la recarga.
+
 ## [0.16.1]
 
 ### Añadido

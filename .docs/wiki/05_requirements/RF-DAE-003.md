@@ -12,6 +12,8 @@ links:
     role: behavior
   - path: internal/daemon/server.go
     role: behavior
+  - path: internal/daemon/instance_owner.go
+    role: behavior
 ---
 
 ## Propósito

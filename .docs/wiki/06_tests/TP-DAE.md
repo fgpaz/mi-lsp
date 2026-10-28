@@ -11,6 +11,11 @@ links:
   - RF-DAE-003
   - RF-DAE-004
   - RF-DAE-005
+  code:
+  - path: internal/daemon/newserver_owner_mitigation_test.go
+    role: test
+  - path: internal/daemon/instance_owner_lifetime_test.go
+    role: test
 ---
 
 ## Alcance
@@ -21,7 +26,7 @@ RF-DAE-001, RF-DAE-002, RF-DAE-003, RF-DAE-004, RF-DAE-005. Se conserva el inven
 
 ### Mitigación de dueño huérfano — campaña nueva, no cierre global de CPU/WAL
 - **TC-DAE-031**, RF-DAE-003 criterio4: `TestNewServerWithOptionsRejectsUnreachableLiveLegacyOwner`. Perfil y estado propios temporales, PID propio vivo y endpoint no alcanzable; exige error de dueño antes de crear SQLite y preservación del estado. RED observado contra source6ac45b7: el constructor devolvió servidor. GREEN observado en campaña parent sobre source3cdd8e29f656137e25d9dd15da117ae1ea96ee65; esta evidencia no prueba otra sesión S4U real.
-- **TC-DAE-032**, RF-DAE-003 criterio4: validar rechazo pre-fork en `SpawnBackgroundWithOptions`, sin confundir error IPC con muerte. Acceso denegado debe conservar liveness indeterminada. Verificación prevista sobre fixtures propios y seams de liveness, sin procesos ajenos ni cambios ACL.
+- **TC-DAE-032**, RF-DAE-003 criterio4: validar rechazo pre-fork en `SpawnBackgroundWithOptions`, sin confundir error IPC con muerte. Acceso denegado debe conservar liveness indeterminada. Verificación nativa observada sobre candidata Windows ARM64 sourcea6773efdd6cd8862954d1edce03875ce65509bd7: `daemon serve` y `daemon start` rechazan en 104/75 ms el PID propio vivo, sin crear DB ni alterar state. No se abren procesos ajenos ni se cambian ACL. Acceso denegado queda cubierto por las pruebas existentes de `processExists` del mismo pase dirigido; no se acredita una sesión S4U real.
 - **TC-DAE-033**, RF-DAE-003 criterio5: dos constructores del mismo directorio con endpoints diferentes, reserva retenida hasta cierre de DB y liberada en error; limpieza idempotente sin remover reserva ajena. GREEN observado en `TestInstanceLeaseDifferentEndpointsSameDatabase` y `TestInstanceLeaseReleasedOnConstructorFailure`, source3cdd8e29f656137e25d9dd15da117ae1ea96ee65. Incluye rechazo acotado, cierre repetido y reutilización del almacenamiento propio tras cierre/fallo.
 - La campaña Go conserva cinco fallas baseline y cero nuevas aceptadas. El primer launcher contaminó los tests con dos flags de updater deshabilitado; se preservó ese fallo y se reejecutaron únicamente los dos paquetes afectados, ambos verdes con los flags retirados. No se declara suite globalmente verde.
 - La campaña no acredita eliminación de duplicados legacy, raíz del CPU, expiración de servidor, límite de WAL ni adopción por mi-mcp-http. Esos resultados conservan gates propios del bug completo.
