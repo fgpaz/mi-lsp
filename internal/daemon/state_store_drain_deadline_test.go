@@ -68,6 +68,7 @@ func TestCloseBoundsInflightPersistence(t *testing.T) {
 		}
 		<-closeResult
 		s.wg.Wait()
+		if err := s.WaitClosed(context.Background()); err != nil { t.Errorf("cleanup close owner: %v", err) }
 		_ = db.Close()
 	}()
 	if err := s.RecordAccess(0, model.AccessEvent{SessionID: "gate", Operation: "inflight", OccurredAt: time.Now()}); err != nil { t.Fatal(err) }
