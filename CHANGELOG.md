@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Documentación
+
+- Contrato objetivo y gates OPEN para idle, drenaje, cancelación, lease de solo lectura, WAL y supervivencia del servicio bajo el supervisor. La documentación no acredita implementación integrada, aceptación CPU ni publicación de la consulta de lease; v0.16.2 permanece inmutable.
+
 ## [0.16.2]
 
 ### Corregido

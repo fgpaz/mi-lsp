@@ -31,6 +31,18 @@ RF-DAE-001, RF-DAE-002, RF-DAE-003, RF-DAE-004, RF-DAE-005. Se conserva el inven
 - La campaña Go conserva cinco fallas baseline y cero nuevas aceptadas. El primer launcher contaminó los tests con dos flags de updater deshabilitado; se preservó ese fallo y se reejecutaron únicamente los dos paquetes afectados, ambos verdes con los flags retirados. No se declara suite globalmente verde.
 - La campaña no acredita eliminación de duplicados legacy, raíz del CPU, expiración de servidor, límite de WAL ni adopción por mi-mcp-http. Esos resultados conservan gates propios del bug completo.
 
+### Matriz de aceptación del arreglo completo — OPEN
+
+Los siguientes son oráculos requeridos, no marcas PASS de esta unidad. Usar perfiles y bases temporales privadas; el coordinador ejecuta C2 e integración.
+
+- **Idle y drenaje:** reloj corto real; trabajo semántico y job admitido sobreviven más de una ventana y, al terminar, reciben otra completa. Probes periódicos, sockets ociosos, workers cacheados y watchers sin trabajo no impiden expiración. Cierre concurrente y deadline: resultado incompleto mientras DB/lease/fence siguen poseídos; liberar trabajo o barrera permite finalizar sin segunda llamada, con cada closure una vez y nueva adquisición posterior. Verificar cancelación y join del scheduler y fence conjunto A15.
+- **Cancelación:** peer/timeout cancela handler semántico y no semántico sin cancelar servicio; deadline y cancelación legítimos del servidor siguen vigentes. Confirmar entrada al fake SemanticCaller antes de interpretar cualquier RED de CPU.
+- **Lease:** ausencia no crea archivos, DB ni proceso; dueño vivo, muerto, AccessDenied, legacy, inválido, PID discordante y doble lectura cambiante producen estados separados; salida JSON plana sin secretos, sin IPC, autospawn, autoupdate ni lock mutante. No inferir exclusión OS de vida completa.
+- **WAL:** checkpoint de tres columnas; escrituras tranquilas y lector fijado con busy/espera acotados; evento mayor a 1 MiB y admisión sobre 16 MiB se rechazan de modo observable; preservar busy_timeout y descartar conexión en estado desconocido; drenaje de 2 s, fallas y contadores veraces. No exigir ni afirmar techo físico exacto. Integrar health/runtime y probar el conjunto.
+- **B22 Windows real:** mismo lease antes y después de cancelar o vencer `wait_tree`, servicio responde y conserva identidad; stop explícito o idle lo detiene. Verificar límites Job reales y kill-tree del comando con los 30 asserts intactos. Flags solos no constituyen evidencia.
+
+**Evidencia y gates:** v0.16.2/source652 es mitigación publicada y auditada únicamente de duplicación cooperativa. Idle RED BG16 y lease RED BG18 son válidos. Lease 17e tiene 9/9 GREEN dirigidos, no publicación ni desbloqueo B22. WAL d844 tiene 9/9 GREEN dirigidos BG25, sin prueba de todos los errores inyectados ni techo físico. CPU 5199 BG23 conserva ambos tests `FIXTURE_INVALID`; la fixture corregida ce743 en BG27 sí alcanzó el fake: control de cancelación del servidor PASS y EOF no-q FAIL esperado, RED conductual válido de cancelación, no causa histórica de CPU establecida. Runtime e6d9 superó revisión de fuente C1 de wake/cancel y conserva C2 dirigido e integrado como gate. Permanecen OPEN prueba integrada, OS lifetime lock, B22 y aceptación CPU; no se atribuye causalidad a nueve horas de CPU ni se declara suite global GREEN.
+
 ### Cobertura objetivo
 
 - RF-DAE-001

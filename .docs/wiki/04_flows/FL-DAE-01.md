@@ -94,6 +94,14 @@ sequenceDiagram
 
 La secuencia contractual es el único diagrama de `## Secuencia`, derivado de los pasos vigentes de este flujo.
 
+### Flujo objetivo de servicio y drenaje — OPEN
+
+1. El servicio inicia su reloj idle y admite trabajo semántico o jobs reales; solo ese trabajo lo mantiene activo. Probes, conexiones o recursos cacheados no lo renuevan.
+2. Al finalizar cada trabajo admitido comienza una ventana idle fresca. La cancelación del peer termina su request, no el servicio ni sus demás trabajos.
+3. Ante idle o stop, un único dueño cierra admisiones y drena handlers, jobs y recursos; mantiene DB, lease y fence hasta el join efectivo. Un deadline del llamador devuelve incompleto mientras el dueño continúa autónomamente. La actualización conserva su fence conjunto y cancelación más join del scheduler A15.
+4. El supervisor consulta el lease sin efectos laterales; `wait_tree` cancela solo el árbol del comando. La independencia del servicio frente al Job Windows y los 30 asserts B22 requieren prueba real, aún OPEN; flags de creación no son prueba.
+5. El almacén admite o rechaza telemetría según el umbral WAL, con checkpoint y espera bounded; errores y busy se informan, sin prometer techo físico de disco. Integración de health y prueba de extremo a extremo siguen OPEN.
+
 ### 7. Alternativas y errores
 - **Caso**: Daemon no inicia; **Resultado**: la CLI sigue usable sin el
 - **Caso**: Segundo `daemon start`; **Resultado**: devuelve la instancia ya viva si responde; si el dueño vive o no puede confirmarse muerto pero su endpoint es inaccesible, devuelve diagnóstico y no crea otro daemon.
