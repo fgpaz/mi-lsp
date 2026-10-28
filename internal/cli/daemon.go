@@ -74,7 +74,7 @@ and tsserver processes, reducing cold-start latency.`,
 			opts := state.queryOptions(cmd, "system.status", nil)
 			response, err := daemon.NewClient().Execute(ctx, model.CommandRequest{ProtocolVersion: model.ProtocolVersion, Operation: "system.status", Context: opts})
 			if err != nil {
-				return daemon.BuildStatusError()
+				return daemon.ClassifyDaemonStatusError(err)
 			}
 			response = redactDaemonStateOutput(response)
 			response = annotateDaemonRuntimeDrift(response)
