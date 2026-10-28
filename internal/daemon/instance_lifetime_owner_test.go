@@ -163,6 +163,7 @@ func privateLifetimeTestHome(t *testing.T) string {
 	if runtime.GOOS == "windows" {
 		home = t.TempDir()
 	} else {
+		t.Setenv("TMPDIR", "/tmp")
 		var err error
 		home, err = os.MkdirTemp("", "a-")
 		if err != nil { t.Fatal(err) }
