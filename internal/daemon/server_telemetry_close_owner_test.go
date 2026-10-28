@@ -14,6 +14,10 @@ import (
 	"github.com/fgpaz/mi-lsp/internal/model"
 )
 
+type injectedMetadataError struct{}
+
+func (injectedMetadataError) Error() string { return "injected StopRun error" }
+
 // Controlled driver ownership, not a native SQLite or Windows lifetime proof.
 func TestServerShutdownCancelsHeldTelemetryBeforeMetadataAndJoins(t *testing.T) {
 	home := t.TempDir()
@@ -102,8 +106,11 @@ func TestServerShutdownCancelsHeldTelemetryBeforeMetadataAndJoins(t *testing.T) 
 	case <-time.After(5 * time.Second):
 		t.Fatal("shutdown did not join after driver release")
 	}
-	if server.shutdownErr == nil {
-		t.Error("canceled metadata was reported as successful cleanup")
+	if got := store.WALHealth().FailedWrites; got != 1 {
+		t.Errorf("canceled held write not counted exactly once: %d", got)
+	}
+	if err := store.WaitClosed(context.Background()); err != nil {
+		t.Errorf("physical close: %v", err)
 	}
 	select {
 	case <-fenceReleased:
@@ -113,4 +120,38 @@ func TestServerShutdownCancelsHeldTelemetryBeforeMetadataAndJoins(t *testing.T) 
 	if _, err := os.Stat(leasePath); !errors.Is(err, os.ErrNotExist) {
 		t.Errorf("lease not cleaned: %v", err)
 	}
+}
+
+func TestServerShutdownReportsStopRunExecErrorAndCloses(t *testing.T) {
+	home := t.TempDir()
+	if runtime.GOOS != "windows" {
+		var err error
+		home, err = os.MkdirTemp("/tmp", "aorph-")
+		if err != nil { t.Fatal(err) }
+		t.Cleanup(func() { _ = os.RemoveAll(home) })
+	}
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	injected := &injectedMetadataError{}
+	gate := &drainConnector{path: filepath.Join(home, "metadata.db"), stopRunErr: injected}
+	db := sql.OpenDB(gate)
+	db.SetMaxOpenConns(1)
+	store := &TelemetryStore{db: db, writeQueue: make(chan telemetryWriteRequest, 8), done: make(chan struct{}), walMaxBytes: telemetryWALMaxBytes}
+	if err := store.configureConnection(); err != nil { t.Fatal(err) }
+	if err := store.initSchema(); err != nil { t.Fatal(err) }
+	runID, err := store.StartRun(model.DaemonState{PID: os.Getpid(), StartedAt: time.Now()})
+	if err != nil || runID == 0 { t.Fatalf("start run: %d %v", runID, err) }
+	leasePath := filepath.Join(home, "owner.lock")
+	lease, err := acquireStartLockAt(leasePath, time.Second, time.Now, processExists)
+	if err != nil { t.Fatal(err) }
+	store.wg.Add(1)
+	go store.asyncWriteWorker()
+	server := &Server{telemetry: store, state: model.DaemonState{RunID: runID}, instanceLease: lease}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := server.ShutdownContext(ctx); !errors.Is(err, injected) {
+		t.Errorf("shutdown did not report StopRun error: %v", err)
+	}
+	if err := store.WaitClosed(context.Background()); err != nil { t.Errorf("physical close: %v", err) }
+	if _, err := os.Stat(leasePath); !errors.Is(err, os.ErrNotExist) { t.Errorf("lease not cleaned: %v", err) }
 }

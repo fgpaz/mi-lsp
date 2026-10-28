@@ -23,6 +23,7 @@ type drainConnector struct {
 	entered  chan struct{}
 	release  chan struct{}
 	canceled chan struct{}
+	stopRunErr error
 	once     sync.Once
 }
 
@@ -56,6 +57,9 @@ func (c *drainConn) QueryContext(ctx context.Context, query string, args []drive
 	return c.Conn.(driver.QueryerContext).QueryContext(ctx, query, args)
 }
 func (c *drainConn) ExecContext(ctx context.Context, query string, args []driver.NamedValue) (driver.Result, error) {
+	if c.gate.stopRunErr != nil && strings.Contains(query, "UPDATE daemon_runs SET stopped_at") {
+		return nil, c.gate.stopRunErr
+	}
 	return c.Conn.(driver.ExecerContext).ExecContext(ctx, query, args)
 }
 
