@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/fgpaz/mi-lsp/internal/model"
@@ -61,4 +62,37 @@ func TestOrphanRecordAccessRejectsAfterClose(t *testing.T) {
 	if err := s.Close(); err != nil { t.Fatal(err) }
 	if err := s.RecordAccess(1, model.AccessEvent{}); err == nil { t.Fatal("write after close must be rejected") }
 	if !s.WALHealth().Closed { t.Fatal("closed state must remain visible") }
+}
+
+func TestOrphanCloseUnstartedStoreIsSafe(t *testing.T) {
+	s, _, _ := orphanTelemetryStore(t)
+	if s.done != nil { t.Fatal("fixture should not start a worker") }
+	if err := s.Close(); err != nil { t.Fatal(err) }
+}
+
+func TestOrphanCloseConcurrentIsIdempotent(t *testing.T) {
+	s, _, _ := orphanTelemetryStore(t)
+	var wg sync.WaitGroup
+	for i := 0; i < 8; i++ {
+		wg.Add(1)
+		go func() { defer wg.Done(); if err := s.Close(); err != nil { t.Errorf("Close: %v", err) } }()
+	}
+	wg.Wait()
+}
+
+func TestOrphanOversizedEventRejectedWithPinnedReader(t *testing.T) {
+	s, _, path := orphanTelemetryStore(t)
+	reader, err := sql.Open("sqlite", path)
+	if err != nil { t.Fatal(err) }
+	defer reader.Close()
+	tx, err := reader.Begin()
+	if err != nil { t.Fatal(err) }
+	defer tx.Rollback()
+	var count int
+	if err := tx.QueryRow(`SELECT count(*) FROM access_events`).Scan(&count); err != nil { t.Fatal(err) }
+	event := model.AccessEvent{Operation: "oversized", Error: strings.Repeat("x", telemetryMaxEventBytes+1)}
+	if err := s.RecordAccess(1, event); err == nil { t.Fatal("oversized payload must be rejected before queue admission") }
+	h := s.WALHealth()
+	if h.RejectedWrites != 1 || h.LastFailure != "event_too_large" { t.Fatalf("unexpected admission health: %+v", h) }
+	if len(s.writeQueue) != 0 { t.Fatal("oversized event entered the queue") }
 }
