@@ -6,6 +6,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/fgpaz/mi-lsp/internal/model"
 	"github.com/fgpaz/mi-lsp/internal/processutil"
 )
 
@@ -39,6 +40,23 @@ func TryResolveWorktreeOverlay(root string) (WorktreeOverlay, bool, error) {
 
 // ResolveWorktreeOverlay returns the committed, staged, unstaged, and
 // untracked path delta for a linked worktree without registering or indexing it.
+// RegisteredWorktreeBase returns the registered main checkout for this common-dir.
+func RegisteredWorktreeBase(overlay WorktreeOverlay) (model.WorkspaceRegistration, bool, error) {
+	_, commonDir, valid := linkedWorktree(overlay.Root)
+	if !valid {
+		return model.WorkspaceRegistration{}, false, fmt.Errorf("cannot resolve worktree common-dir: %s", overlay.Root)
+	}
+	registry, err := LoadRegistryReadOnly()
+	if err != nil {
+		return model.WorkspaceRegistration{}, false, err
+	}
+	registration, found := registeredMainWorktree(commonDir, registry)
+	if !found || !sameFilePath(registration.Root, overlay.BaseRoot) {
+		return model.WorkspaceRegistration{}, false, nil
+	}
+	return registration, true, nil
+}
+
 func ResolveWorktreeOverlay(root string) (WorktreeOverlay, error) {
 	physicalRoot, ok := gitTopLevel(root)
 	if !ok {

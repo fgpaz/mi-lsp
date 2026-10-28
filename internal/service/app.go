@@ -1651,7 +1651,7 @@ func (a *App) info(ctx context.Context, name string) (model.Envelope, error) {
 }
 
 func (a *App) symbols(ctx context.Context, request model.CommandRequest) (model.Envelope, error) {
-	registration, _, err := a.resolveWorkspaceWithProjectForNavigation(request)
+	registration, project, err := a.resolveWorkspaceWithProjectForNavigation(request)
 	if err != nil {
 		return model.Envelope{}, err
 	}
@@ -1663,12 +1663,73 @@ func (a *App) symbols(ctx context.Context, request model.CommandRequest) (model.
 	if err != nil {
 		return model.Envelope{}, err
 	}
-	db, err := openWorkspaceDB(registration, "nav.symbols", true) // readOnly
+	offset := intFromAny(request.Payload["offset"], 0)
+	overlay, linkedOverlay, overlayErr := workspace.TryResolveWorktreeOverlay(registration.Root)
+	if overlayErr != nil {
+		return model.Envelope{}, overlayErr
+	}
+	indexRegistration := registration
+	baseIndexAvailable := false
+	if linkedOverlay {
+		baseRegistration, found, baseErr := workspace.RegisteredWorktreeBase(overlay)
+		if baseErr != nil {
+			return model.Envelope{}, baseErr
+		}
+		if found {
+			indexRegistration, baseIndexAvailable = baseRegistration, true
+		}
+		if baseIndexAvailable && worktreeOverlayContains(overlay.Changed, relativeFile) {
+			absPath := filepath.Join(registration.Root, filepath.FromSlash(relativeFile))
+			rootReal, rootErr := filepath.EvalSymlinks(registration.Root)
+			fileReal, fileErr := filepath.EvalSymlinks(absPath)
+			if rootErr != nil {
+				return model.Envelope{}, rootErr
+			}
+			if fileErr != nil {
+				return model.Envelope{}, fileErr
+			}
+			relReal, relErr := filepath.Rel(rootReal, fileReal)
+			if relErr != nil || relReal == ".." || strings.HasPrefix(relReal, ".."+string(filepath.Separator)) || filepath.IsAbs(relReal) {
+				return model.Envelope{}, errors.New("file path escapes linked worktree root")
+			}
+			info, statErr := os.Stat(fileReal)
+			if statErr != nil {
+				return model.Envelope{}, statErr
+			}
+			if !info.Mode().IsRegular() || info.Size() > 4*1024*1024 {
+				return model.Envelope{}, errors.New("worktree overlay file exceeds the automatic symbol extraction budget")
+			}
+			content, readErr := os.ReadFile(fileReal)
+			if readErr != nil {
+				return model.Envelope{}, readErr
+			}
+			fileRepo := model.WorkspaceRepo{ID: registration.Name, Name: registration.Name}
+			if found, ok := workspace.FindRepoByFile(project, registration.Root, absPath); ok {
+				fileRepo = found
+			}
+			items, _ := indexer.ExtractCatalog(registration.Root, fileRepo, absPath, content)
+			if offset >= len(items) {
+				items = []model.SymbolRecord{}
+			} else {
+				items = items[offset:]
+			}
+			if request.Context.MaxItems > 0 && len(items) > request.Context.MaxItems {
+				items = items[:request.Context.MaxItems]
+			}
+			for i := range items {
+				items[i].Workspace = registration.Name
+			}
+			return model.Envelope{Ok: true, Workspace: registration.Name, Backend: "catalog", Items: items, Stats: model.Stats{Symbols: len(items)}, Warnings: []string{"worktree_overlay_index: extracted the requested changed file from the physical worktree"}}, nil
+		}
+		if baseIndexAvailable && worktreeOverlayContains(overlay.Deleted, relativeFile) {
+			return model.Envelope{Ok: true, Workspace: registration.Name, Backend: "catalog", Items: []model.SymbolRecord{}, Stats: model.Stats{}}, nil
+		}
+	}
+	db, err := openWorkspaceDB(indexRegistration, "nav.symbols", true) // readOnly; clean linked files may read the registered common-dir base index
 	if err != nil {
 		return model.Envelope{}, err
 	}
 	defer db.Close()
-	offset := intFromAny(request.Payload["offset"], 0)
 	items, err := store.SymbolsByFile(ctx, db, relativeFile, request.Context.MaxItems, offset)
 	if err != nil {
 		return model.Envelope{}, err
@@ -1691,12 +1752,36 @@ func (a *App) find(ctx context.Context, request model.CommandRequest) (model.Env
 	}
 	pattern, _ := request.Payload["pattern"].(string)
 	patternSelector := shellQuoteArg(pattern)
-	catalogReady, stateErr := store.WorkspaceCatalogReady(ctx, registration.Root)
+	overlay, linkedOverlay, overlayErr := workspace.TryResolveWorktreeOverlay(registration.Root)
+	if overlayErr != nil {
+		return model.Envelope{}, overlayErr
+	}
+	indexRegistration := registration
+	baseIndexAvailable := false
+	if linkedOverlay {
+		baseRegistration, found, baseErr := workspace.RegisteredWorktreeBase(overlay)
+		if baseErr != nil {
+			return model.Envelope{}, baseErr
+		}
+		if found {
+			indexRegistration, baseIndexAvailable = baseRegistration, true
+		}
+	}
+	catalogReady, stateErr := store.WorkspaceCatalogReady(ctx, indexRegistration.Root)
 	if stateErr != nil {
-		code := catalogTelemetryErrorCode(stateErr, registration.Root, catalogReady)
-		return a.findTextFallback(ctx, registration, project, request, pattern, classifyCatalogUnavailable(stateErr), code), nil
+		code := catalogTelemetryErrorCode(stateErr, indexRegistration.Root, catalogReady)
+		fallback := a.findTextFallback(ctx, registration, project, request, pattern, classifyCatalogUnavailable(stateErr), code)
+		if linkedOverlay {
+			fallback.Warnings = append(fallback.Warnings, "worktree_overlay_index_explicit_incomplete: registered base catalog could not be read; using physical text fallback")
+		}
+		return fallback, nil
 	}
 	if !catalogReady {
+		if linkedOverlay {
+			fallback := a.findTextFallback(ctx, registration, project, request, pattern, model.ReasonIndexNotReady, catalogTelemetryErrorCode(nil, indexRegistration.Root, false))
+			fallback.Warnings = append(fallback.Warnings, "worktree_overlay_index_explicit_incomplete: no registered base catalog; using physical text fallback without full worktree indexing")
+			return fallback, nil
+		}
 		if !workspaceAliasRegistered(registration.Name) {
 			addCommand := "mi-lsp workspace add " + shellQuoteArg(registration.Root)
 			findCommand := "mi-lsp nav find " + patternSelector + " --workspace " + shellQuoteArg(registration.Root)
@@ -1727,7 +1812,7 @@ func (a *App) find(ctx context.Context, request model.CommandRequest) (model.Env
 	if scopeEnvelope != nil {
 		return *scopeEnvelope, nil
 	}
-	db, err := openWorkspaceDB(registration, "nav.find", true) // readOnly
+	db, err := openWorkspaceDB(indexRegistration, "nav.find", true) // readOnly; linked worktrees reuse only the registered common-dir base index
 	if err != nil {
 		return a.findTextFallback(ctx, registration, project, request, pattern, classifyCatalogUnavailable(err), catalogTelemetryErrorCode(err, registration.Root, true)), nil
 	}
@@ -1738,6 +1823,13 @@ func (a *App) find(ctx context.Context, request model.CommandRequest) (model.Env
 		sqlOffset = 0
 	}
 	query := func(db *sql.DB) ([]model.SymbolRecord, error) {
+		if linkedOverlay && baseIndexAvailable {
+			limit := request.Context.MaxItems
+			if limit <= 0 {
+				limit = 50
+			}
+			return findSymbolsWithWorktreeOverlay(ctx, db, registration, project, overlay, pattern, kind, exact, limit, offset, scopedRepo)
+		}
 		items, err := store.FindSymbols(ctx, db, pattern, kind, exact, queryLimit, sqlOffset)
 		if err != nil {
 			return nil, err
@@ -1764,7 +1856,10 @@ func (a *App) find(ctx context.Context, request model.CommandRequest) (model.Env
 		return a.findTextFallback(ctx, registration, project, request, pattern, model.ReasonIndexNotReady, catalogTelemetryErrorCode(closeErr, registration.Root, true)), nil
 	}
 	warnings := append([]string(nil), scopeWarnings...)
-	if len(items) > 0 && !request.Context.NoIndexRefresh {
+	if linkedOverlay && baseIndexAvailable {
+		warnings = append(warnings, "worktree_overlay_index: shared common-dir base catalog with physical changed/deleted path overlay")
+	}
+	if len(items) > 0 && !request.Context.NoIndexRefresh && !linkedOverlay {
 		paths := make([]string, 0, len(items))
 		for _, item := range items {
 			paths = append(paths, item.FilePath)
@@ -1773,7 +1868,7 @@ func (a *App) find(ctx context.Context, request model.CommandRequest) (model.Env
 		if refreshErr != nil {
 			warnings = appendStringIfMissing(warnings, "query catalog refresh unavailable; using the currently published snapshot: "+sanitizeIntentError(refreshErr))
 		} else if refreshed {
-			db, err = openWorkspaceDB(registration, "nav.find", true)
+			db, err = openWorkspaceDB(indexRegistration, "nav.find", true)
 			if err != nil {
 				warnings = appendStringIfMissing(warnings, "query catalog refreshed but could not reopen the published snapshot: "+sanitizeIntentError(err)+"; telemetry_code="+catalogTelemetryErrorCode(err, registration.Root, true))
 			} else {
