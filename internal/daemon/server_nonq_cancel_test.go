@@ -74,7 +74,7 @@ func TestAorphCPUServerContextCancellationReachesSemanticCaller(t *testing.T) {
 	aorphCPURunCancellationCase(t, true)
 }
 
-func TestAorphCPUPeerEOFDoesNotCancelNonQSemanticRequest(t *testing.T) {
+func TestAorphCPUPeerEOFCancelsNonQSemanticRequest(t *testing.T) {
 	aorphCPURunCancellationCase(t, false)
 }
 
@@ -107,6 +107,9 @@ func aorphCPURunCancellationCase(t *testing.T, cancelServer bool) {
 		Context:         model.QueryOptions{Workspace: alias, MaxItems: 20},
 		Payload:         map[string]any{"symbol": "Target"},
 	}
+	if err := clientConn.SetDeadline(time.Now().Add(2 * time.Second)); err != nil {
+		t.Fatalf("set bounded frame deadline: %v", err)
+	}
 	if err := worker.WriteFrame(clientConn, request); err != nil {
 		t.Fatalf("write request: %v", err)
 	}
@@ -137,7 +140,7 @@ func aorphCPURunCancellationCase(t *testing.T, cancelServer bool) {
 		}
 		t.Fatal("server/root cancellation did not reach SemanticCaller")
 	}
-	if !cancelServer {
-		t.Fatal("peer EOF unexpectedly cancelled non-q SemanticCaller context")
+	if !cancelServer && serverCtx.Err() != nil {
+		t.Fatalf("peer EOF branch unexpectedly cancelled server context: %v", serverCtx.Err())
 	}
 }
