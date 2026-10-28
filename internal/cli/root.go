@@ -164,6 +164,7 @@ func NewRootCommand() *cobra.Command {
 
 	root.PersistentFlags().BoolVar(&state.noAutoRegister, "no-auto-register", false, "Do not register the git root of the cwd or requested path as a workspace on first query (also MI_LSP_NO_AUTO_REGISTER=1)")
 
+	root.AddCommand(lightRegisterCommand())
 	root.AddCommand(
 		newUpdateCommand(state, hooks),
 		newInitCommand(state),
@@ -304,6 +305,11 @@ func (s *rootState) executeOperation(cmd *cobra.Command, operation string, paylo
 			route = "direct_fallback"
 		} else {
 			route = "direct"
+		}
+	}
+	if err == nil && envelope.Ok && operation == "nav.multi-read" && !opts.NoAutoRegister {
+		if warning := scheduleLightRegistration(opts.Workspace, opts.CallerCWD); warning != "" {
+			envelope.Warnings = append(envelope.Warnings, warning)
 		}
 	}
 	latency := time.Since(started)
