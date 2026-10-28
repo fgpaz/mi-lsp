@@ -97,6 +97,8 @@ type Manager struct {
 	skippedWatchers    int
 	watcherCtx         context.Context
 	watcherCancel      context.CancelFunc
+	watcherBeginWork   func() bool
+	watcherEndWork     func()
 	failureCache       *failureCache
 	telemetryStore     *TelemetryStore
 	reapCount          int
@@ -301,6 +303,8 @@ func (m *Manager) EnsureFileWatcher(registration model.WorkspaceRegistration) {
 		}
 		return
 	}
+	fw.beginWork = m.watcherBeginWork
+	fw.endWork = m.watcherEndWork
 	if err := fw.Start(m.watcherCtx); err != nil {
 		fw.Stop()
 		if os.Getenv("MI_LSP_VERBOSE") != "" {

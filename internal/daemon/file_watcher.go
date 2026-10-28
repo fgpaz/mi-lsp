@@ -71,6 +71,8 @@ type FileWatcher struct {
 	lostEvents        bool
 	reindexFileFn     func(string) error
 	reindexBatchFn    func([]watcherEvent) error
+	beginWork         func() bool
+	endWork           func()
 }
 
 const (
@@ -350,6 +352,16 @@ func (fw *FileWatcher) flushBatch() {
 			op = fsnotify.Write
 		}
 		events = append(events, watcherEvent{path: filePath, op: op})
+	}
+
+	if len(events) == 0 {
+		return
+	}
+	if fw.beginWork != nil {
+		if !fw.beginWork() {
+			return
+		}
+		defer fw.endWork()
 	}
 
 	// Production watchers route a coalesced batch once per domain. Test and
