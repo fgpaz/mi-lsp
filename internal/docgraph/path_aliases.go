@@ -19,6 +19,8 @@ const (
 	WikiKindTechnical   = "technical"
 	WikiKindDatabase    = "database"
 	WikiKindContract    = "contract"
+	WikiKindJourney     = "journey"
+	WikiKindUXModule    = "ux_module"
 )
 
 // legacyPathRules map legacy wiki path hints to v1 kind and canonical path prefix.
@@ -91,6 +93,8 @@ var wikiKindAliases = map[string]string{
 	"technical": WikiKindTechnical, "tech": WikiKindTechnical, "tecnico": WikiKindTechnical, "técnico": WikiKindTechnical,
 	"database": WikiKindDatabase, "db": WikiKindDatabase,
 	"contract": WikiKindContract, "ct": WikiKindContract, "contrato": WikiKindContract, "contratos": WikiKindContract,
+	"journey": WikiKindJourney, "uj": WikiKindJourney,
+	"ux_module": WikiKindUXModule, "module_map": WikiKindUXModule, "uxm": WikiKindUXModule,
 }
 
 // NormalizeWikiKind maps CLI or legacy kind tokens to a v1 kind name.
