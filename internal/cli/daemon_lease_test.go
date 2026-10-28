@@ -39,7 +39,10 @@ func executeLeaseQueryWithBudget(t *testing.T, maxChars int) (map[string]any, []
 	defer func() { os.Stdout = oldStdout }()
 	state := &rootState{repoRoot: t.TempDir(), format: "json", formatExplicit: true, maxChars: maxChars}
 	command := newDaemonCommand(state)
-	command.SetArgs([]string{"lease"})
+	// Match real root flag plumbing: effectiveFormat checks Changed("format"),
+	// not the cached formatExplicit field, before implicit agent/AXI defaults.
+	command.PersistentFlags().StringVar(&state.format, "format", "json", "Output format")
+	command.SetArgs([]string{"lease", "--format", "json"})
 	command.SetOut(capture)
 	command.SetErr(io.Discard)
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
