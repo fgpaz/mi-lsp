@@ -45,6 +45,7 @@ type Server struct {
 	coordinatorSizing   model.CoordinatorSizingStatus
 	resultCache         *resultCache
 	qSessions           *service.SessionState
+	instanceLease       *startLock
 	elastic             *elasticdaemon.Server
 	elasticNode         string
 	coordinatorCount    int
@@ -70,6 +71,23 @@ func NewServerWithOptions(repoRoot string, maxWorkers int, idleTimeout time.Dura
 	ApplyDaemonMemoryPolicy()
 	options = NormalizeStartOptions(options)
 	maxWorkers = normalizeMaxWorkers(maxWorkers)
+	leasePath, err := daemonInstanceLockPath()
+	if err != nil {
+		return nil, err
+	}
+	lease, err := acquireStartLockAt(leasePath, 250*time.Millisecond, time.Now, processExists)
+	if err != nil {
+		return nil, fmt.Errorf("daemon instance owner lease unavailable: %w", err)
+	}
+	leaseTransferred := false
+	defer func() {
+		if !leaseTransferred {
+			_ = lease.Close()
+		}
+	}()
+	if err := rejectExistingDaemonOwner(); err != nil {
+		return nil, err
+	}
 	listener, err := listenDaemon()
 	if err != nil {
 		return nil, err
@@ -92,6 +110,7 @@ func NewServerWithOptions(repoRoot string, maxWorkers int, idleTimeout time.Dura
 		stopped:       make(chan struct{}),
 		resultCache:   newResultCache(),
 		qSessions:     newQSessionState(),
+		instanceLease: lease,
 		elasticCtx:    elasticCtx,
 		elasticCancel: elasticCancel,
 		elasticReady:  make(chan struct{}),
@@ -174,6 +193,7 @@ func NewServerWithOptions(repoRoot string, maxWorkers int, idleTimeout time.Dura
 		_ = telemetry.Close()
 		return nil, err
 	}
+	leaseTransferred = true
 	close(server.elasticReady)
 
 	if options.WatchMode == WatchModeEager {
@@ -262,6 +282,9 @@ func (s *Server) Shutdown() {
 		}
 		s.manager.Shutdown()
 		_ = s.telemetry.Close()
+		if s.instanceLease != nil {
+			_ = s.instanceLease.Close()
+		}
 	})
 }
 
@@ -579,6 +602,9 @@ func SpawnBackgroundWithOptions(repoRoot string, maxWorkers int, idleTimeout tim
 	if state, err := probeDaemon(ctx); err == nil {
 		state.AlreadyRunning = true
 		return state, false, nil
+	}
+	if err := rejectExistingDaemonOwner(); err != nil {
+		return model.DaemonState{}, false, err
 	}
 
 	command, err := daemonServeCommand(repoRoot, maxWorkers, idleTimeout, options)
