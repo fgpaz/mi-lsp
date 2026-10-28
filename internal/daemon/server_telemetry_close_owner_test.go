@@ -127,7 +127,9 @@ func TestServerShutdownReportsStopRunExecErrorAndCloses(t *testing.T) {
 	if runtime.GOOS != "windows" {
 		var err error
 		home, err = os.MkdirTemp("/tmp", "aorph-")
-		if err != nil { t.Fatal(err) }
+		if err != nil {
+			t.Fatal(err)
+		}
 		t.Cleanup(func() { _ = os.RemoveAll(home) })
 	}
 	t.Setenv("HOME", home)
@@ -137,13 +139,21 @@ func TestServerShutdownReportsStopRunExecErrorAndCloses(t *testing.T) {
 	db := sql.OpenDB(gate)
 	db.SetMaxOpenConns(1)
 	store := &TelemetryStore{db: db, writeQueue: make(chan telemetryWriteRequest, 8), done: make(chan struct{}), walMaxBytes: telemetryWALMaxBytes}
-	if err := store.configureConnection(); err != nil { t.Fatal(err) }
-	if err := store.initSchema(); err != nil { t.Fatal(err) }
+	if err := store.configureConnection(); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.initSchema(); err != nil {
+		t.Fatal(err)
+	}
 	runID, err := store.StartRun(model.DaemonState{PID: os.Getpid(), StartedAt: time.Now()})
-	if err != nil || runID == 0 { t.Fatalf("start run: %d %v", runID, err) }
+	if err != nil || runID == 0 {
+		t.Fatalf("start run: %d %v", runID, err)
+	}
 	leasePath := filepath.Join(home, "owner.lock")
 	lease, err := acquireStartLockAt(leasePath, time.Second, time.Now, processExists)
-	if err != nil { t.Fatal(err) }
+	if err != nil {
+		t.Fatal(err)
+	}
 	store.wg.Add(1)
 	go store.asyncWriteWorker()
 	server := &Server{telemetry: store, state: model.DaemonState{RunID: runID}, instanceLease: lease}
@@ -152,6 +162,10 @@ func TestServerShutdownReportsStopRunExecErrorAndCloses(t *testing.T) {
 	if err := server.ShutdownContext(ctx); !errors.Is(err, injected) {
 		t.Errorf("shutdown did not report StopRun error: %v", err)
 	}
-	if err := store.WaitClosed(context.Background()); err != nil { t.Errorf("physical close: %v", err) }
-	if _, err := os.Stat(leasePath); !errors.Is(err, os.ErrNotExist) { t.Errorf("lease not cleaned: %v", err) }
+	if err := store.WaitClosed(context.Background()); err != nil {
+		t.Errorf("physical close: %v", err)
+	}
+	if _, err := os.Stat(leasePath); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("lease not cleaned: %v", err)
+	}
 }

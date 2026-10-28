@@ -19,12 +19,12 @@ import (
 // SQLite latency or a physical WAL size cap. Cancellation is observed, but the
 // driver call retains ownership until the test explicitly releases it.
 type drainConnector struct {
-	path     string
-	entered  chan struct{}
-	release  chan struct{}
-	canceled chan struct{}
+	path       string
+	entered    chan struct{}
+	release    chan struct{}
+	canceled   chan struct{}
 	stopRunErr error
-	once     sync.Once
+	once       sync.Once
 }
 
 func (c *drainConnector) Connect(context.Context) (driver.Conn, error) {
