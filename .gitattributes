@@ -1,1 +1,3 @@
 scripts/release/windows-resources.sh text eol=lf
+scripts/release.sh text eol=lf
+scripts/tests/release-platform-mapping.sh text eol=lf
