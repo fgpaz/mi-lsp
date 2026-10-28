@@ -22,6 +22,17 @@ links:
 
 RF-DAE-001, RF-DAE-002, RF-DAE-003, RF-DAE-004, RF-DAE-005. Se conserva el inventario de escenarios, límites, disposiciones y evidencia histórica, sin reejecución.
 
+## Trazabilidad del candidato integrado 327e — OPEN
+
+Los nombres siguientes existen en fuente; esta edición documental no los ejecutó ni acredita su aceptación:
+
+- Vida y cierre: `TestServerServeWaitsForOwnedShutdown`, `TestDaemonServeShapeRetainsOwnerPastCallerGrace`, `TestServerShutdownContextRetainsFenceAndLeaseUntilRetry`, `TestServerShutdownCancelsHeldTelemetryBeforeMetadataAndJoins`, `TestCloseBoundsInflightPersistence`.
+- Idle real: `TestServerIdleExpiryIgnoresStatusProbeAndOpenConnection`, `TestServerIdleWorkCompletionRestartsIdleWindow`, `TestWatcherBatchKeepsServerAlivePastIdle`, `TestWatcherBatchCompletionGetsFreshIdleWindow`, `TestAsyncJobCompletionRenewsIdle`.
+- WAL: `TestWALAdmissionMeasurementDeadlineIsNotLimitOrBusy`, `TestCheckpointSuccessPreservesAdmissionFailureHistory`, `TestWALAdmissionMeasurementPathIsNotBusy`, `TestSystemStatusTelemetryWAL`.
+- Lease de lectura: `TestReadLeaseSnapshotAbsentIsNonCreating`, `TestReadLeaseSnapshotStaleAndUnknownOwner`, `TestDaemonLeaseQueryPublishedOwnerWithoutIPC`, `TestDaemonLeaseQueryDoesNotStartAutomaticUpdate`.
+
+El C2 combinado del padre BG53 terminó con 39 PASS y un FAIL en `TestDaemonServeShapeRetainsOwnerPastCallerGrace`, por `context canceled` en cleanup después de 5,65 s; no es 40 GREEN. La cancelación del contexto propio de 2 s precede la finalización del fence de actualización sano de más de 5 s. No se atribuye a compilación ni fixture. La aceptación de implementación y las demás puertas en `TECH-LOCAL-DAEMON` permanecen OPEN; una posible reparación del contexto de metadata pertenece a una tarea de producción separada.
+
 ## Casos
 
 ### Mitigación de dueño huérfano — campaña nueva, no cierre global de CPU/WAL
