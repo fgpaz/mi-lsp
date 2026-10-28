@@ -60,7 +60,7 @@ RF-DAE-003 - Auto-iniciar daemon en la primera consulta semántica
   - auto-start en background + fallback
   - 3s timeout por defecto
   - --no-auto-daemon deshabilita completamente
-- TODO explicit = 0
+- El contrato adicional del arreglo completo mantiene los gates OPEN indicados abajo; la mitigación publicada no los cierra.
 - Fuera de alcance:
   - auto-start remoto
   - cluster mode
@@ -103,6 +103,14 @@ CLI `mi-lsp`, con operaciones y selectores detallados en el comportamiento del r
 3. Saltar auto-start con flag: Dado --no-auto-daemon presente Cuando intento semántica query Entonces no intento auto-start Y procedo directo o error
 4. Dueño vivo o indeterminado inaccesible: no se crea otro proceso daemon, listener ni DB; se conserva el estado y se devuelve diagnóstico de dueño, sin señalizar procesos ni ampliar permisos.
 5. Dos constructores del mismo almacenamiento: sólo uno mantiene la reserva de vida; el otro termina de forma acotada, aunque use otro endpoint. Tras cierre de DB o fallo del constructor propio, la reserva propia se libera.
+
+### Contrato adicional del arreglo completo — OPEN
+
+6. Solo el trabajo semántico real y los jobs asíncronos admitidos prolongan la vida del servicio. Status, health, probes periódicos, sockets abiertos y la mera presencia de workers cacheados o watchers no renuevan idle. El trabajo admitido termina y recibe una ventana idle nueva desde su finalización; un lote de watcher que realiza trabajo cuenta como trabajo.
+7. El cierre tiene un único dueño: detiene admisiones, drena y conserva DB, lease y fence hasta que realmente terminan los recursos poseídos. Un deadline del llamador informa cierre incompleto, no libera prematuramente; el progreso continúa sin requerir una segunda llamada manual y cada cierre poseído se libera exactamente una vez. Preservar el fence conjunto de actualización y la cancelación y join del scheduler A15.
+8. Cancelación o deadline del peer cancela su request, no el servicio; se preservan también los deadlines y cancelaciones legítimos del servidor. El daemon es servicio independiente del árbol/job del comando. B22 requiere prueba real Windows de supervivencia al cancelar `wait_tree`, sin debilitar kill-tree ni sus 30 asserts; flags DETACHED/BREAKAWAY por sí solos no prueban independencia.
+9. La consulta de lease de solo lectura descrita en TECH-LOCAL-DAEMON distingue incertidumbre de ausencia y no concede autoridad de stop. La exclusión OS de vida completa y la integración B22 permanecen OPEN.
+10. Telemetría WAL aplica admisión acotada y reporta rechazo, busy, deadlines y fallas honestamente; 16 MiB es umbral de admisión, no techo físico. Cableado de health/runtime y prueba integrada permanecen OPEN. No se afirma causa ni aceptación global CPU.
 
 ### 9. Escenarios de aceptación (Gherkin)
 ```gherkin
