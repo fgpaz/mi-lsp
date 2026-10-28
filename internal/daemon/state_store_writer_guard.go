@@ -92,4 +92,3 @@ func wrapTelemetryLeaseRelease(err error) error {
 	}
 	return fmt.Errorf("release telemetry writer lease: %w", err)
 }
-

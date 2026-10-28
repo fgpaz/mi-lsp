@@ -28,21 +28,33 @@ func TestTelemetryWriterGuardTwoStoresCancelOwnedCallbackAndRecover(t *testing.T
 	path := filepath.Join(t.TempDir(), "shared.db")
 	first := openWriterGuardTestStore(t, path, path)
 	second := openWriterGuardTestStore(t, path, path)
-	if _, err := first.db.Exec("PRAGMA journal_mode=WAL"); err != nil { t.Fatal(err) }
-	if _, err := first.db.Exec(`CREATE TABLE guarded(value INTEGER NOT NULL)`); err != nil { t.Fatal(err) }
+	if _, err := first.db.Exec("PRAGMA journal_mode=WAL"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := first.db.Exec(`CREATE TABLE guarded(value INTEGER NOT NULL)`); err != nil {
+		t.Fatal(err)
+	}
 
 	entered := make(chan struct{})
 	finish := make(chan struct{})
 	firstDone := make(chan error, 1)
 	finishOnce := make(chan struct{})
-	closeFinish := func() { select { case <-finishOnce: default: close(finishOnce); close(finish) } }
+	closeFinish := func() {
+		select {
+		case <-finishOnce:
+		default:
+			close(finishOnce)
+			close(finish)
+		}
+	}
 	joined := false
 	defer func() {
 		closeFinish()
 		if !joined {
 			select {
 			case <-firstDone:
-			case <-time.After(3 * time.Second): t.Error("first writer callback goroutine did not join")
+			case <-time.After(3 * time.Second):
+				t.Error("first writer callback goroutine did not join")
 			}
 		}
 	}()
@@ -93,10 +105,16 @@ func TestTelemetryWriterGuardTwoStoresCancelOwnedCallbackAndRecover(t *testing.T
 	if err := second.withTelemetryWriterLeaseContext(context.Background(), func(ctx context.Context) error {
 		_, err := second.db.ExecContext(ctx, `INSERT INTO guarded(value) VALUES (3)`)
 		return err
-	}); err != nil { t.Fatalf("second store recovery write: %v", err) }
+	}); err != nil {
+		t.Fatalf("second store recovery write: %v", err)
+	}
 	var count int
-	if err := second.db.QueryRow(`SELECT count(*) FROM guarded`).Scan(&count); err != nil { t.Fatal(err) }
-	if count != 1 { t.Fatalf("persisted rows = %d, want recovery write only", count) }
+	if err := second.db.QueryRow(`SELECT count(*) FROM guarded`).Scan(&count); err != nil {
+		t.Fatal(err)
+	}
+	if count != 1 {
+		t.Fatalf("persisted rows = %d, want recovery write only", count)
+	}
 }
 
 func TestTelemetryWriterGuardDatabaseSymlinkAliasSharesGuard(t *testing.T) {
@@ -104,7 +122,9 @@ func TestTelemetryWriterGuardDatabaseSymlinkAliasSharesGuard(t *testing.T) {
 	target := filepath.Join(dir, "target.db")
 	alias := filepath.Join(dir, "alias.db")
 	owner := openWriterGuardTestStore(t, target, target)
-	if _, err := owner.db.Exec(`CREATE TABLE guarded(value INTEGER NOT NULL)`); err != nil { t.Fatal(err) }
+	if _, err := owner.db.Exec(`CREATE TABLE guarded(value INTEGER NOT NULL)`); err != nil {
+		t.Fatal(err)
+	}
 	if err := os.Symlink(target, alias); err != nil {
 		t.Skipf("filesystem does not permit symlink fixture: %v", err)
 	}
@@ -113,12 +133,23 @@ func TestTelemetryWriterGuardDatabaseSymlinkAliasSharesGuard(t *testing.T) {
 	finish := make(chan struct{})
 	ownerDone := make(chan error, 1)
 	finishOnce := make(chan struct{})
-	closeFinish := func() { select { case <-finishOnce: default: close(finishOnce); close(finish) } }
+	closeFinish := func() {
+		select {
+		case <-finishOnce:
+		default:
+			close(finishOnce)
+			close(finish)
+		}
+	}
 	joined := false
 	defer func() {
 		closeFinish()
 		if !joined {
-			select { case <-ownerDone: case <-time.After(3 * time.Second): t.Error("symlink owner callback did not join") }
+			select {
+			case <-ownerDone:
+			case <-time.After(3 * time.Second):
+				t.Error("symlink owner callback did not join")
+			}
 		}
 	}()
 	go func() {
@@ -145,15 +176,24 @@ func TestTelemetryWriterGuardDatabaseSymlinkAliasSharesGuard(t *testing.T) {
 		t.Fatalf("symlink alias did not contend on target guard: err=%v callback=%v", err, called)
 	}
 	closeFinish()
-	if err := <-ownerDone; err != nil { joined = true; t.Fatalf("owner callback: %v", err) }
+	if err := <-ownerDone; err != nil {
+		joined = true
+		t.Fatalf("owner callback: %v", err)
+	}
 	joined = true
 	if err := contender.withTelemetryWriterLeaseContext(context.Background(), func(ctx context.Context) error {
 		_, err := contender.db.ExecContext(ctx, `INSERT INTO guarded(value) VALUES (2)`)
 		return err
-	}); err != nil { t.Fatalf("alias recovery write: %v", err) }
+	}); err != nil {
+		t.Fatalf("alias recovery write: %v", err)
+	}
 	var count int
-	if err := owner.db.QueryRow(`SELECT count(*) FROM guarded`).Scan(&count); err != nil { t.Fatal(err) }
-	if count != 2 { t.Fatalf("rows through aliased DB = %d, want 2", count) }
+	if err := owner.db.QueryRow(`SELECT count(*) FROM guarded`).Scan(&count); err != nil {
+		t.Fatal(err)
+	}
+	if count != 2 {
+		t.Fatalf("rows through aliased DB = %d, want 2", count)
+	}
 }
 
 func TestTelemetryWriterGuardAllowsMissingRegularDatabasePath(t *testing.T) {
@@ -191,7 +231,7 @@ func TestTelemetryWriterGuardRejectsDanglingDatabaseSymlink(t *testing.T) {
 }
 
 func TestTelemetryWriterGuardRejectsInMemoryURIAndAmbiguousWhitespace(t *testing.T) {
-	cases := []struct { name, dsn, path string }{
+	cases := []struct{ name, dsn, path string }{
 		{name: "explicit memory", dsn: ":memory:", path: ":memory:"},
 		{name: "memory URI", dsn: "file:guard-b1-memory?mode=memory&cache=shared", path: "file:guard-b1-memory?mode=memory&cache=shared"},
 		{name: "surrounding whitespace", dsn: "file:whitespace.db", path: "  " + filepath.Join(t.TempDir(), "whitespace.db") + " "},
@@ -201,8 +241,12 @@ func TestTelemetryWriterGuardRejectsInMemoryURIAndAmbiguousWhitespace(t *testing
 			store := openWriterGuardTestStore(t, tc.dsn, tc.path)
 			called := false
 			err := store.withTelemetryWriterLeaseContext(context.Background(), func(context.Context) error { called = true; return nil })
-			if err == nil || called { t.Fatalf("invalid DB identity accepted: err=%v callback=%v", err, called) }
-			if strings.Contains(err.Error(), "release telemetry writer lease") { t.Fatalf("unexpected lease acquired for invalid identity: %v", err) }
+			if err == nil || called {
+				t.Fatalf("invalid DB identity accepted: err=%v callback=%v", err, called)
+			}
+			if strings.Contains(err.Error(), "release telemetry writer lease") {
+				t.Fatalf("unexpected lease acquired for invalid identity: %v", err)
+			}
 		})
 	}
 	unknown := openWriterGuardTestStore(t, ":memory:", "")

@@ -166,7 +166,9 @@ func privateLifetimeTestHome(t *testing.T) string {
 		t.Setenv("TMPDIR", "/tmp")
 		var err error
 		home, err = os.MkdirTemp("", "a-")
-		if err != nil { t.Fatal(err) }
+		if err != nil {
+			t.Fatal(err)
+		}
 		t.Cleanup(func() { _ = os.RemoveAll(home) })
 		t.Setenv("TMPDIR", home)
 	}
