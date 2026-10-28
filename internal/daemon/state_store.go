@@ -15,7 +15,7 @@ import (
 	"sync"
 	"time"
 
-	_ "modernc.org/sqlite"
+	"modernc.org/sqlite"
 
 	"github.com/fgpaz/mi-lsp/internal/model"
 	"github.com/fgpaz/mi-lsp/internal/telemetry"
@@ -116,12 +116,20 @@ type telemetryWriteRequest struct {
 	isDirect bool // true if recording directly without runID
 }
 
+var (
+	errTelemetryWALLimit = errors.New("telemetry WAL limit reached")
+	errTelemetryCheckpointBusy = errors.New("wal_checkpoint busy")
+)
+
 type WALHealth struct {
 	WALBytes             int64  `json:"wal_bytes"`
 	WALBytesKnown        bool   `json:"wal_bytes_known"`
 	WALMaxBytes          int64  `json:"wal_max_bytes"`
 	CheckpointBusy       bool   `json:"checkpoint_busy"`
 	LastFailure          string `json:"last_failure,omitempty"`
+	LastWriteFailure     string `json:"last_write_failure,omitempty"`
+	CheckpointFailure    string `json:"checkpoint_failure,omitempty"`
+	WALSizeFailure       string `json:"wal_size_failure,omitempty"`
 	RejectedWrites       uint64 `json:"rejected_writes"`
 	FailedWrites         uint64 `json:"failed_writes"`
 	Closed               bool   `json:"closed"`
@@ -326,7 +334,7 @@ func (s *TelemetryStore) persistQueued(req telemetryWriteRequest) {
 	s.admissionMu.Lock()
 	defer s.admissionMu.Unlock()
 	if err := s.admitWAL(); err != nil {
-		s.failWriteReason("wal_limit_after_admission")
+		s.failWriteReason(walAdmissionReason(err))
 		return
 	}
 	if err := s.recordAccessDirectInternal(req.runID, req.event, req.isDirect); err != nil { s.failWrite() }
@@ -442,7 +450,7 @@ func (s *TelemetryStore) Checkpoint() error {
 		}
 	} else if busy != 0 {
 		busyResult = true
-		checkpointErr = fmt.Errorf("wal_checkpoint busy (log=%d checkpointed=%d)", logFrames, checkpointed)
+		checkpointErr = fmt.Errorf("%w (log=%d checkpointed=%d)", errTelemetryCheckpointBusy, logFrames, checkpointed)
 		s.setFailure("busy", true)
 	} else {
 		s.setFailure("", false)
@@ -463,8 +471,10 @@ func (s *TelemetryStore) Checkpoint() error {
 
 func (s *TelemetryStore) setFailure(code string, busy bool) {
 	s.stateMu.Lock(); defer s.stateMu.Unlock()
-	s.health.LastFailure = code
+	s.health.CheckpointFailure = code
 	s.health.CheckpointBusy = busy
+	s.health.LastFailure = s.health.LastWriteFailure
+	if s.health.LastFailure == "" { s.health.LastFailure = code }
 }
 
 func (s *TelemetryStore) walSize() (int64, error) {
@@ -489,7 +499,7 @@ func (s *TelemetryStore) admitWAL() error {
 		if err := s.Checkpoint(); err != nil { return err }
 		size, err = s.walSize()
 		if err != nil { return err }
-		if size+reserved >= maxBytes { return errors.New("telemetry WAL limit reached") }
+		if size+reserved >= maxBytes { return errTelemetryWALLimit }
 	}
 	return nil
 }
@@ -502,12 +512,18 @@ func (s *TelemetryStore) WALHealth() WALHealth {
 	if !h.Closed {
 		size, err := s.walSize()
 		s.stateMu.Lock()
+		h = s.health
 		h.Closed = s.closed
+		h.WALBytes = 0
+		h.WALBytesKnown = false
 		if err == nil && !h.Closed {
 			h.WALBytes = size
 			h.WALBytesKnown = true
 			s.health.WALBytes = size; s.health.WALBytesKnown = true
-		} else if !h.Closed { h.LastFailure = "wal_size_unavailable" }
+		} else if !h.Closed {
+			h.WALSizeFailure = "wal_size_unavailable"
+			if h.LastFailure == "" { h.LastFailure = h.WALSizeFailure }
+		}
 		s.stateMu.Unlock()
 	}
 	h.WALMaxBytes = s.walMaxBytes
@@ -763,9 +779,28 @@ func (s *TelemetryStore) RecordAccess(runID int64, event model.AccessEvent) erro
 	}
 }
 
+// Metadata PathError text may contain sqlite_busy in the filename; only an
+// actual SQLite driver code (or the checkpoint sentinel) establishes BUSY.
+func isTelemetrySQLiteBusyCode(err error) bool {
+	var sqliteErr *sqlite.Error
+	if !errors.As(err, &sqliteErr) { return false }
+	code := sqliteErr.Code() & 0xff
+	return code == 5 || code == 6 // SQLITE_BUSY / SQLITE_LOCKED, including extended codes.
+}
+
 func walAdmissionReason(err error) string {
-	if err != nil && (isTelemetrySQLiteLocked(err) || strings.Contains(strings.ToLower(err.Error()), "checkpoint busy")) { return "busy" }
-	return "wal_limit"
+	switch {
+	case errors.Is(err, context.DeadlineExceeded):
+		return "deadline"
+	case errors.Is(err, context.Canceled):
+		return "canceled"
+	case errors.Is(err, errTelemetryWALLimit):
+		return "wal_limit"
+	case errors.Is(err, errTelemetryCheckpointBusy), isTelemetrySQLiteBusyCode(err):
+		return "busy"
+	default:
+		return "wal_admission_error"
+	}
 }
 
 func checkTelemetryEventSize(event model.AccessEvent) error {
@@ -777,12 +812,12 @@ func checkTelemetryEventSize(event model.AccessEvent) error {
 
 func (s *TelemetryStore) reject(code string) {
 	s.stateMu.Lock(); defer s.stateMu.Unlock()
-	s.health.RejectedWrites++; s.health.LastFailure = code
+	s.health.RejectedWrites++; s.health.LastWriteFailure = code; s.health.LastFailure = code
 }
 func (s *TelemetryStore) failWrite() { s.failWriteReason("write_error") }
 func (s *TelemetryStore) failWriteReason(code string) {
 	s.stateMu.Lock(); defer s.stateMu.Unlock()
-	s.health.FailedWrites++; s.health.LastFailure = code
+	s.health.FailedWrites++; s.health.LastWriteFailure = code; s.health.LastFailure = code
 }
 
 func (s *TelemetryStore) RecentAccesses(limit int) ([]model.AccessEvent, error) {
