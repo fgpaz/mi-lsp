@@ -25,7 +25,7 @@ func (s *TelemetryStore) withTelemetryWriterLeaseContext(ctx context.Context, fn
 	if fn == nil {
 		return errors.New("telemetry writer callback is nil")
 	}
-	dbPath := strings.TrimSpace(s.dbPath)
+	dbPath := s.dbPath
 	if dbPath == "" {
 		var name string
 		if err := s.db.QueryRowContext(ctx, "PRAGMA database_list").Scan(new(int), &name, &dbPath); err != nil {
@@ -35,25 +35,42 @@ func (s *TelemetryStore) withTelemetryWriterLeaseContext(ctx context.Context, fn
 			return errors.New("telemetry database main path unavailable")
 		}
 	}
-	if dbPath == "" || strings.HasPrefix(dbPath, "file:") || strings.Contains(dbPath, "?mode=memory") {
+	if dbPath == "" || dbPath == ":memory:" || strings.HasPrefix(dbPath, "file:") || strings.Contains(strings.ToLower(dbPath), "mode=memory") {
 		return errors.New("telemetry database path is not a filesystem path")
+	}
+	if dbPath != strings.TrimSpace(dbPath) {
+		return errors.New("telemetry database path has ambiguous surrounding whitespace")
 	}
 	absolute, err := filepath.Abs(dbPath)
 	if err != nil {
 		return fmt.Errorf("resolve telemetry database absolute path: %w", err)
 	}
-	parent, err := filepath.EvalSymlinks(filepath.Dir(absolute))
-	if err != nil {
-		return fmt.Errorf("resolve telemetry database parent: %w", err)
-	}
-	info, err := os.Stat(parent)
-	if err != nil || !info.IsDir() {
-		if err == nil {
-			err = errors.New("database parent is not a directory")
+	canonicalDBPath, err := filepath.EvalSymlinks(absolute)
+	if err == nil {
+		info, statErr := os.Stat(canonicalDBPath)
+		if statErr != nil {
+			return fmt.Errorf("validate telemetry database file: %w", statErr)
 		}
-		return fmt.Errorf("validate telemetry database parent: %w", err)
+		if !info.Mode().IsRegular() {
+			return errors.New("telemetry database is not a regular file")
+		}
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("resolve telemetry database file: %w", err)
+	} else {
+		parent, parentErr := filepath.EvalSymlinks(filepath.Dir(absolute))
+		if parentErr != nil {
+			return fmt.Errorf("resolve telemetry database parent: %w", parentErr)
+		}
+		info, statErr := os.Stat(parent)
+		if statErr != nil || !info.IsDir() {
+			if statErr == nil {
+				statErr = errors.New("database parent is not a directory")
+			}
+			return fmt.Errorf("validate telemetry database parent: %w", statErr)
+		}
+		canonicalDBPath = filepath.Join(parent, filepath.Base(absolute))
 	}
-	guard := filepath.Join(parent, filepath.Base(absolute)+".writer.guard")
+	guard := canonicalDBPath + ".writer.guard"
 	lease, err := runtimeinfo.AcquireFileLeaseContext(ctx, guard)
 	if err != nil {
 		return fmt.Errorf("acquire telemetry writer lease: %w", err)
