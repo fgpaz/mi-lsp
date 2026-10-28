@@ -275,6 +275,15 @@ func (s *Server) serveWithUpdateSchedule(ctx context.Context, schedule func(cont
 	defer func() {
 		cancelUpdate()
 		<-updateDone
+		// Only join an owner that actually started; unexpected Accept errors
+		// without shutdown must remain returnable. The scheduler must be joined
+		// first so its transferred fence and replacement launch can complete.
+		s.shutdownMu.Lock()
+		started, done := s.shutdownOwnerStarted, s.shutdownDone
+		s.shutdownMu.Unlock()
+		if started {
+			<-done
+		}
 	}()
 	for {
 		conn, err := s.listener.Accept()
