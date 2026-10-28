@@ -7,6 +7,7 @@ env:
 
 before:
   hooks:
+    - sh ./scripts/release/windows-resources.sh {{ .Version }}
     - go run ./scripts/release/metadata -version {{ .Version }} -commit {{ .FullCommit }} -build-time {{ .Date }}
     - pwsh -NoProfile -File ./scripts/release/build-workers.ps1 -OutDir ./.goreleaser/workers -Clean
 
@@ -25,10 +26,25 @@ builds:
       - arm64
     flags:
       - -trimpath
+      - -buildvcs=true
     ldflags:
       - -s -w -X github.com/fgpaz/mi-lsp/internal/model.BuildVersion={{ .Version }} -X github.com/fgpaz/mi-lsp/internal/model.BuildRevision={{ .FullCommit }} -X github.com/fgpaz/mi-lsp/internal/model.BuildTime={{ .Date }}
 
+  - id: host
+    binary: mi-lsp-host
+    main: ./cmd/mi-lsp-host
+    goos: [windows]
+    goarch: [amd64, arm64]
+    flags: [-trimpath, -buildvcs=true]
+    ldflags:
+      - -s -w -H=windowsgui -X github.com/fgpaz/mi-lsp/internal/model.BuildVersion={{ .Version }} -X github.com/fgpaz/mi-lsp/internal/model.BuildRevision={{ .FullCommit }} -X github.com/fgpaz/mi-lsp/internal/model.BuildTime={{ .Date }}
+
 archives:
+  - id: host-binaries
+    ids: [host]
+    formats: [binary]
+    # GoReleaser 2.13.1 appends binary.Ext() for binary archives.
+    name_template: 'mi-lsp-host_{{ .Version }}_win-{{ if eq .Arch "amd64" }}x64{{ else }}{{ .Arch }}{{ end }}'
   - id: bundled
     ids:
       - cli

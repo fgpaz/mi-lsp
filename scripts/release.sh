@@ -64,9 +64,15 @@ expected_names=(
   "mi-lsp_${version}_linux-x64.tar.gz"
   "mi-lsp_${version}_win-arm64.zip"
   "mi-lsp_${version}_win-x64.zip"
+  "mi-lsp-host_${version}_win-arm64.exe"
+  "mi-lsp-host_${version}_win-x64.exe"
 )
 
 if [[ "$upload" -eq 0 ]]; then
+  if [[ -n "$(git status --porcelain)" ]]; then
+    echo "refusing build: source worktree is dirty" >&2
+    exit 1
+  fi
   echo "release.sh: build ${version} without publish" >&2
   MI_LSP_RELEASE=1 sh scripts/tests/release-platform-mapping.sh
 
@@ -76,6 +82,9 @@ if [[ "$upload" -eq 0 ]]; then
   # Reuse the tag name the workflow would see. Do not create a tag.
   export GORELEASER_CURRENT_TAG="v${version}"
   "$goreleaser_bin" release --clean --skip=publish
+  # Binary-format artifacts retain their build path; materialize the named
+  # upload files from GoReleaser's manifest without guessing build directories.
+  python3 scripts/release/materialize-host.py "$version"
 
   missing=0
   for name in "${expected_names[@]}"; do
@@ -115,9 +124,21 @@ for name in "${expected_names[@]}"; do
   files+=("dist/${name}")
 done
 
+# Never mutate an existing release, including a partial prior attempt. A failed
+# create must be inspected remotely before any deliberate recovery.
 if gh release view "$tag" >/dev/null 2>&1; then
-  gh release upload "$tag" --clobber "${files[@]}"
-else
-  gh release create "$tag" --verify-tag --title "mi-lsp ${tag}" "${files[@]}"
+  echo "refusing upload: release ${tag} exists; inspect assets and recover manually" >&2
+  exit 1
 fi
+# Distinguish absence from an authentication/network error; gh reports 404 via API.
+if ! gh api "repos/{owner}/{repo}/releases/tags/${tag}" >/dev/null 2>dist/release-preflight-error.txt; then
+  if ! grep -q 'HTTP 404' dist/release-preflight-error.txt; then
+    echo 'release preflight failed; inspect dist/release-preflight-error.txt' >&2
+    exit 1
+  fi
+else
+  echo "refusing upload: release ${tag} exists" >&2
+  exit 1
+fi
+gh release create "$tag" --verify-tag --title "mi-lsp ${tag}" "${files[@]}"
 echo "release.sh: uploaded ${#files[@]} assets to ${tag}" >&2

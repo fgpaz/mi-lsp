@@ -7,6 +7,8 @@
 *.exe
 /cmd/mi-lsp/rsrc_windows_amd64.syso
 /cmd/mi-lsp/rsrc_windows_arm64.syso
+/cmd/mi-lsp-host/rsrc_windows_amd64.syso
+/cmd/mi-lsp-host/rsrc_windows_arm64.syso
 
 /worker-dotnet/**/bin/
 /worker-dotnet/**/obj/
