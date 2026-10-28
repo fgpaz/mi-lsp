@@ -22,6 +22,11 @@ func daemonInstanceLifeGuardPath() (string, error) {
 // began during construction before NewServer returns and its leases are released.
 func (s *Server) cleanupFailedConstruction(cause error) error {
 	cleanupErr := cause
+	if s.telemetry != nil {
+		// Start cancellation/drain before joining resources. Close itself remains
+		// bounded; the constructor has no context and waits for the true join.
+		s.telemetry.startDrainDeadline()
+	}
 	if s.updateRetention != nil {
 		s.updateRetention.stopAndWait()
 	}
@@ -43,11 +48,9 @@ func (s *Server) cleanupFailedConstruction(cause error) error {
 		s.manager.Shutdown()
 	}
 	if s.telemetry != nil {
-		if err := s.telemetry.Close(); err != nil {
-			cleanupErr = errors.Join(cleanupErr, err)
-		}
-		// Close's public wait is bounded; the constructor owner must not return
-		// until the underlying worker and database driver have really joined.
+		// Ignore Close's bounded caller wait; WaitClosed is the final physical
+		// result and preserves genuine driver-close errors.
+		_ = s.telemetry.Close()
 		if err := s.telemetry.WaitClosed(context.Background()); err != nil {
 			cleanupErr = errors.Join(cleanupErr, err)
 		}

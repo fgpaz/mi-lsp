@@ -504,7 +504,9 @@ func (s *Server) runShutdownOwner() {
 	if s.telemetry != nil {
 		// Close bounds its caller, not physical ownership. Always join the close
 		// owner; even a driver close error is reportable only after it returned.
-		cleanupErr = errors.Join(cleanupErr, s.telemetry.Close())
+		// Close initiates the physical close but its result is only a bounded
+		// caller wait. The unbounded owner join below is the authoritative result.
+		_ = s.telemetry.Close()
 		cleanupErr = errors.Join(cleanupErr, s.telemetry.WaitClosed(context.Background()))
 	}
 	cleanupErr = errors.Join(cleanupErr, clearOwnedDaemonState(s.state))

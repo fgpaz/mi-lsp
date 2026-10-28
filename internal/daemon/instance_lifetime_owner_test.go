@@ -18,64 +18,143 @@ import (
 )
 
 func TestShutdownReleasesFenceAndBothLeasesOnlyAfterDatabaseJoin(t *testing.T) {
-	repoRoot := t.TempDir()
 	home := privateLifetimeTestHome(t)
-	gate := &drainConnector{path: filepath.Join(home, "shutdown.db"), entered: make(chan struct{}), release: make(chan struct{}), canceled: make(chan struct{})}
+	gate := &drainConnector{
+		path: filepath.Join(home, "shutdown.db"), entered: make(chan struct{}),
+		release: make(chan struct{}), canceled: make(chan struct{}),
+	}
 	db := sql.OpenDB(gate)
 	db.SetMaxOpenConns(1)
 	db.SetMaxIdleConns(1)
-	store := &TelemetryStore{db: db, writeQueue: make(chan telemetryWriteRequest, 8), done: make(chan struct{}), walMaxBytes: telemetryWALMaxBytes}
-	if err := store.configureConnection(); err != nil { t.Fatal(err) }
-	if err := store.initSchema(); err != nil { t.Fatal(err) }
-	runID, err := store.StartRun(model.DaemonState{PID: os.Getpid(), StartedAt: time.Now()})
-	if err != nil { t.Fatal(err) }
+	store := &TelemetryStore{
+		db: db, writeQueue: make(chan telemetryWriteRequest, 8),
+		done: make(chan struct{}), walMaxBytes: telemetryWALMaxBytes,
+	}
+	if err := store.configureConnection(); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.initSchema(); err != nil {
+		t.Fatal(err)
+	}
 	store.wg.Add(1)
 	go store.asyncWriteWorker()
 	lifePath, err := daemonInstanceLifeGuardPath()
-	if err != nil { t.Fatal(err) }
+	if err != nil {
+		t.Fatal(err)
+	}
 	lifeLease, err := runtimeinfo.AcquireFileLeaseContext(context.Background(), lifePath)
-	if err != nil { t.Fatal(err) }
+	if err != nil {
+		t.Fatal(err)
+	}
 	coopPath, err := daemonInstanceLockPath()
-	if err != nil { t.Fatal(err) }
+	if err != nil {
+		_ = lifeLease.Release()
+		t.Fatal(err)
+	}
 	coopLease, err := acquireStartLockAt(coopPath, time.Second, time.Now, processExists)
-	if err != nil { _ = lifeLease.Release(); t.Fatal(err) }
-	manager := NewManager(repoRoot, 1, time.Minute)
-	server := &Server{telemetry: store, manager: manager, instanceLease: coopLease, osInstanceLease: lifeLease, state: model.DaemonState{RunID: runID}, shutdownDone: make(chan struct{}), shutdownRetry: make(chan struct{}, 1)}
+	if err != nil {
+		_ = lifeLease.Release()
+		t.Fatal(err)
+	}
+	server := &Server{
+		telemetry: store, instanceLease: coopLease, osInstanceLease: lifeLease,
+		shutdownDone: make(chan struct{}), shutdownRetry: make(chan struct{}, 1),
+	}
 	var fenceOnce sync.Once
 	fenceReleased := make(chan struct{})
 	fence := func() { fenceOnce.Do(func() { close(fenceReleased) }) }
 	shutdownStarted := false
 	defer func() {
-		select { case <-gate.release: default: close(gate.release) }
+		select {
+		case <-gate.release:
+		default:
+			close(gate.release)
+		}
 		if !shutdownStarted {
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
-			if err := server.shutdownWithFence(ctx, fence, true); err != nil && !errors.Is(err, ErrShutdownIncomplete) { t.Errorf("cleanup shutdown: %v", err) }
+			if err := server.shutdownWithFence(ctx, fence, true); err != nil && !errors.Is(err, ErrShutdownIncomplete) {
+				t.Errorf("cleanup shutdown: %v", err)
+			}
 		}
-		select { case <-server.shutdownDone: case <-time.After(5*time.Second): t.Error("shutdown owner did not join during cleanup") }
+		select {
+		case <-server.shutdownDone:
+		case <-time.After(5 * time.Second):
+			t.Error("shutdown owner did not join during cleanup")
+		}
 	}()
-	if err := store.RecordAccess(runID, model.AccessEvent{SessionID: "shutdown", Operation: "held", OccurredAt: time.Now()}); err != nil { t.Fatal(err) }
-	select { case <-gate.entered: case <-time.After(time.Second): t.Fatal("DB operation did not enter controlled driver") }
+	if err := store.RecordAccess(0, model.AccessEvent{SessionID: "shutdown", Operation: "held", OccurredAt: time.Now()}); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-gate.entered:
+	case <-time.After(time.Second):
+		t.Fatal("DB operation did not enter controlled driver")
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 	shutdownStarted = true
 	err = server.shutdownWithFence(ctx, fence, true)
 	cancel()
-	if !errors.Is(err, ErrShutdownIncomplete) { t.Fatalf("bounded caller result: %v", err) }
-	select { case <-gate.canceled: case <-time.After(telemetryCloseDrainTimeout + time.Second): t.Fatal("DB operation did not observe cancellation") }
-	select { case <-fenceReleased: t.Fatal("shutdown fence released before DB join"); default: }
+	if !errors.Is(err, ErrShutdownIncomplete) {
+		t.Fatalf("bounded caller result: %v", err)
+	}
+	select {
+	case <-gate.canceled:
+	case <-time.After(telemetryCloseDrainTimeout + time.Second):
+		t.Fatal("DB operation did not observe cancellation")
+	}
+	// Hold beyond the 2s Close caller wait. The owner must wait for the later
+	// physical result, not retain the transient timeout as shutdownErr.
+	closeWaitElapsed := time.NewTimer(telemetryCloseDrainTimeout + 250*time.Millisecond)
+	select {
+	case <-server.shutdownDone:
+		closeWaitElapsed.Stop()
+		t.Fatal("shutdown completed before the DB driver barrier was released")
+	case <-closeWaitElapsed.C:
+	}
+	select {
+	case <-fenceReleased:
+		t.Fatal("shutdown fence released before DB join")
+	default:
+	}
 	lifeCtx, lifeCancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
-	if contender, acquireErr := runtimeinfo.AcquireFileLeaseContext(lifeCtx, lifePath); acquireErr == nil { _ = contender.Release(); lifeCancel(); t.Fatal("OS lease released before DB join") }
+	if contender, acquireErr := runtimeinfo.AcquireFileLeaseContext(lifeCtx, lifePath); acquireErr == nil {
+		_ = contender.Release()
+		lifeCancel()
+		t.Fatal("OS lease released before DB join")
+	}
 	lifeCancel()
-	if contender, acquireErr := acquireStartLockAt(coopPath, 100*time.Millisecond, time.Now, processExists); acquireErr == nil { _ = contender.Close(); t.Fatal("cooperative lease released before DB join") }
+	if contender, acquireErr := acquireStartLockAt(coopPath, 100*time.Millisecond, time.Now, processExists); acquireErr == nil {
+		_ = contender.Close()
+		t.Fatal("cooperative lease released before DB join")
+	}
 	close(gate.release)
-	select { case <-server.shutdownDone: case <-time.After(5*time.Second): t.Fatal("shutdown did not join after DB release") }
-	select { case <-fenceReleased: default: t.Fatal("shutdown fence not released after DB join") }
+	select {
+	case <-server.shutdownDone:
+	case <-time.After(5 * time.Second):
+		t.Fatal("shutdown did not join after DB release")
+	}
+	server.shutdownMu.Lock()
+	shutdownErr := server.shutdownErr
+	server.shutdownMu.Unlock()
+	if shutdownErr != nil {
+		t.Fatalf("transient bounded close wait polluted final shutdown result: %v", shutdownErr)
+	}
+	select {
+	case <-fenceReleased:
+	default:
+		t.Fatal("shutdown fence not released after DB join")
+	}
 	lifeCtx, lifeCancel = context.WithTimeout(context.Background(), time.Second)
 	contender, err := runtimeinfo.AcquireFileLeaseContext(lifeCtx, lifePath)
 	lifeCancel()
-	if err != nil { t.Fatalf("OS lease unavailable after join: %v", err) }
+	if err != nil {
+		t.Fatalf("OS lease unavailable after join: %v", err)
+	}
 	_ = contender.Release()
-	if _, err := os.Stat(coopPath); !errors.Is(err, os.ErrNotExist) { t.Fatalf("cooperative lease remains after join: %v", err) }
+	if _, err := os.Stat(coopPath); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("cooperative lease remains after join: %v", err)
+	}
 }
 
 func privateLifetimeTestHome(t *testing.T) string {
@@ -178,9 +257,18 @@ func runConstructorFailureLifetimeOracle(t *testing.T, failurePoint string) {
 	case <-time.After(telemetryCloseDrainTimeout + 2*time.Second):
 		t.Fatal("constructor cleanup did not cancel the controlled DB operation")
 	}
+	// Keep the real driver call beyond Close's caller wait. The constructor
+	// must remain the physical owner without preserving that transient timeout.
+	boundedWaitElapsed := time.NewTimer(telemetryCloseDrainTimeout + 250*time.Millisecond)
 	select {
 	case err := <-result:
+		boundedWaitElapsed.Stop()
 		t.Fatalf("constructor returned before actual DB driver join: %v", err)
+	case <-boundedWaitElapsed.C:
+	}
+	select {
+	case err := <-result:
+		t.Fatalf("constructor returned while the driver barrier remained held: %v", err)
 	default:
 	}
 
@@ -210,8 +298,8 @@ func runConstructorFailureLifetimeOracle(t *testing.T, failurePoint string) {
 	select {
 	case err := <-result:
 		joined = true
-		if err == nil || !strings.Contains(err.Error(), "injected") {
-			t.Fatalf("constructor did not return its injected failure: %v", err)
+		if err == nil || !strings.Contains(err.Error(), "injected") || errors.Is(err, context.DeadlineExceeded) {
+			t.Fatalf("constructor did not preserve only its actual failure: %v", err)
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("constructor did not return after the actual DB driver joined")
