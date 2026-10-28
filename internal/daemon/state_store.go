@@ -801,19 +801,27 @@ func (s *TelemetryStore) initSchema() error {
 }
 
 func (s *TelemetryStore) StartRun(state model.DaemonState) (int64, error) {
-	result, err := s.db.ExecContext(s.ownedWriteContext(),
-		`INSERT INTO daemon_runs(pid, endpoint, admin_url, repo_root, protocol_version, started_at) VALUES (?, ?, ?, ?, ?, ?)`,
-		state.PID,
-		state.Endpoint,
-		state.AdminURL,
-		state.RepoRoot,
-		state.ProtocolVersion,
-		state.StartedAt.Unix(),
-	)
+	var runID int64
+	err := s.withTelemetryMutationContext(s.ownedWriteContext(), func(ctx context.Context) error {
+		result, err := s.db.ExecContext(ctx,
+			`INSERT INTO daemon_runs(pid, endpoint, admin_url, repo_root, protocol_version, started_at) VALUES (?, ?, ?, ?, ?, ?)`,
+			state.PID,
+			state.Endpoint,
+			state.AdminURL,
+			state.RepoRoot,
+			state.ProtocolVersion,
+			state.StartedAt.Unix(),
+		)
+		if err != nil {
+			return err
+		}
+		runID, err = result.LastInsertId()
+		return err
+	})
 	if err != nil {
 		return 0, err
 	}
-	return result.LastInsertId()
+	return runID, nil
 }
 
 func (s *TelemetryStore) StopRun(runID int64, stoppedAt time.Time) error {
@@ -824,8 +832,10 @@ func (s *TelemetryStore) stopRunContext(ctx context.Context, runID int64, stoppe
 	if runID == 0 {
 		return nil
 	}
-	_, err := s.db.ExecContext(ctx, `UPDATE daemon_runs SET stopped_at = ? WHERE id = ?`, stoppedAt.Unix(), runID)
-	return err
+	return s.withTelemetryMutationContext(ctx, func(ownedCtx context.Context) error {
+		_, err := s.db.ExecContext(ownedCtx, `UPDATE daemon_runs SET stopped_at = ? WHERE id = ?`, stoppedAt.Unix(), runID)
+		return err
+	})
 }
 
 func (s *TelemetryStore) ReplaceRuntimeSnapshots(runID int64, statuses []model.WorkerStatus) error {
@@ -836,42 +846,55 @@ func (s *TelemetryStore) replaceRuntimeSnapshotsContext(ctx context.Context, run
 	if runID == 0 {
 		return nil
 	}
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = tx.Rollback() }()
-
-	if _, err := tx.ExecContext(ctx, `DELETE FROM runtime_snapshots WHERE daemon_run_id = ?`, runID); err != nil {
-		return err
-	}
-	stmt, err := tx.PrepareContext(ctx, `INSERT INTO runtime_snapshots(runtime_key, daemon_run_id, workspace_root, workspace_name, repo_name, repo_root, backend_type, entrypoint_id, entrypoint_path, entrypoint_type, pid, memory_bytes, started_at, last_used_at, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-	if err != nil {
-		return err
-	}
-	defer stmt.Close()
-	for _, status := range statuses {
-		if _, err := stmt.ExecContext(ctx,
-			status.RuntimeKey,
-			runID,
-			status.WorkspaceRoot,
-			status.Workspace,
-			status.RepoName,
-			status.RepoRoot,
-			status.BackendType,
-			status.EntrypointID,
-			status.EntrypointPath,
-			status.EntrypointType,
-			status.PID,
-			status.MemoryBytes,
-			status.StartedAt.Unix(),
-			status.LastUsedAt.Unix(),
-			"active",
-		); err != nil {
+	return s.withTelemetryMutationContext(ctx, func(ownedCtx context.Context) error {
+		tx, err := s.db.BeginTx(ownedCtx, nil)
+		if err != nil {
 			return err
 		}
-	}
-	return tx.Commit()
+		committed := false
+		defer func() {
+			if !committed {
+				_ = tx.Rollback()
+			}
+		}()
+
+		if _, err := tx.ExecContext(ownedCtx, `DELETE FROM runtime_snapshots WHERE daemon_run_id = ?`, runID); err != nil {
+			return err
+		}
+		stmt, err := tx.PrepareContext(ownedCtx, `INSERT INTO runtime_snapshots(runtime_key, daemon_run_id, workspace_root, workspace_name, repo_name, repo_root, backend_type, entrypoint_id, entrypoint_path, entrypoint_type, pid, memory_bytes, started_at, last_used_at, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+		if err != nil {
+			return err
+		}
+		for _, status := range statuses {
+			if _, err := stmt.ExecContext(ownedCtx,
+				status.RuntimeKey,
+				runID,
+				status.WorkspaceRoot,
+				status.Workspace,
+				status.RepoName,
+				status.RepoRoot,
+				status.BackendType,
+				status.EntrypointID,
+				status.EntrypointPath,
+				status.EntrypointType,
+				status.PID,
+				status.MemoryBytes,
+				status.StartedAt.Unix(),
+				status.LastUsedAt.Unix(),
+				"active",
+			); err != nil {
+				return errors.Join(err, stmt.Close())
+			}
+		}
+		if err := stmt.Close(); err != nil {
+			return err
+		}
+		if err := tx.Commit(); err != nil {
+			return err
+		}
+		committed = true
+		return nil
+	})
 }
 
 // NextSeq returns the next sequence number for the given session_id.
