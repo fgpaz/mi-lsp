@@ -192,6 +192,7 @@ func NewRootCommand() *cobra.Command {
 		newSeedCommand(state),
 		newGrepCommand(state),
 		newStatsCommand(),
+		newNativeEventCommand(),
 		newUsageReportCommand(),
 	)
 	return root
