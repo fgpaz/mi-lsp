@@ -846,15 +846,24 @@ func (s *TelemetryStore) replaceRuntimeSnapshotsContext(ctx context.Context, run
 	if runID == 0 {
 		return nil
 	}
-	return s.withTelemetryMutationContext(ctx, func(ownedCtx context.Context) error {
-		tx, err := s.db.BeginTx(ownedCtx, nil)
+	return s.withTelemetryMutationContext(ctx, func(ownedCtx context.Context) (retErr error) {
+		// The transaction lifetime is deliberately detached from cancellation so
+		// database/sql's awaitDone goroutine cannot race physical rollback against
+		// release of the cross-process writer lease. Every SQL operation still
+		// uses ownedCtx; rollback/commit and connection return finish synchronously.
+		conn, err := s.db.Conn(ownedCtx)
 		if err != nil {
 			return err
 		}
-		committed := false
+		defer func() { retErr = errors.Join(retErr, conn.Close()) }()
+		tx, err := conn.BeginTx(context.WithoutCancel(ownedCtx), nil)
+		if err != nil {
+			return err
+		}
+		txFinished := false
 		defer func() {
-			if !committed {
-				_ = tx.Rollback()
+			if !txFinished {
+				retErr = errors.Join(retErr, tx.Rollback())
 			}
 		}()
 
@@ -889,11 +898,12 @@ func (s *TelemetryStore) replaceRuntimeSnapshotsContext(ctx context.Context, run
 		if err := stmt.Close(); err != nil {
 			return err
 		}
-		if err := tx.Commit(); err != nil {
+		if err := ownedCtx.Err(); err != nil {
 			return err
 		}
-		committed = true
-		return nil
+		commitErr := tx.Commit()
+		txFinished = true // Commit returns only after its driver operation has returned.
+		return commitErr
 	})
 }
 
