@@ -23,7 +23,7 @@ Desarrolladores, agentes y operadores locales del daemon.
 - Probe no crea DB, WAL/SHM, registry ni telemetría.
 - La consola muestra workspaces, runtimes, accesos y logs del daemon actual; el warm no crea otra instancia.
 - La telemetría contiene agregados sanitizados, no patrones, contenido, tokens ni secretos.
-- El host Windows candidato separa transporte y resultado de ejecución y espera el árbol completo; su admisión y ausencia de ventanas requieren evidencia de [[RF-HOST-001]], [[FL-HOST-001]] y [[TP-HOST-001]]. No es aún una capacidad publicada.
+- El host Windows separa transporte y resultado de ejecución y espera el árbol completo; la admisión del consumidor y la ausencia de ventanas requieren evidencia de [[RF-HOST-001]], [[FL-HOST-001]] y [[TP-HOST-001]].
 
 ## Fuera de alcance del RS
 

@@ -6,7 +6,7 @@ status: draft
 title: Host Windows sin ventana y protocolo execsafe-host/v1
 ---
 
-Esta es la especificación candidata del productor, no un sello de conformidad ni capacidad publicada. [[RF-HOST-001]] define requisitos, [[FL-HOST-001]] el flujo y [[TP-HOST-001]] los oráculos aún pendientes. El candidato B comparte framing, no necesariamente política de ciclo de vida; no se infiere que ya esté conectado o admitido.
+Esta especificación describe el contrato del productor, no certifica conformidad ni admisión de un consumidor. [[RF-HOST-001]] define requisitos, [[FL-HOST-001]] el flujo y [[TP-HOST-001]] los oráculos. El consumidor B comparte framing, no necesariamente política de ciclo de vida; su conexión y admisión requieren evidencia independiente.
 
 ## Invocación, control y streams
 
@@ -26,8 +26,8 @@ Se crea JobObject privado y se establece `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE` an
 
 En salida normal, root exit por sí solo no basta: esperar `activeProcesses == 0`, cerrar recursos propios y luego escribir el resultado. Un hard kill del host cierra el último handle del job y Windows termina el árbol asociado. Esto no preserva daemons descendientes como la política NormalDaemon del candidato B. No garantiza neutralizar una GUI creada deliberadamente por el payload, exfiltración ni evasión con privilegios. No se mata por PID ni se actúa sobre procesos ajenos.
 
-## Versionado y release candidata
+## Versionado y distribución
 
 `mi-lsp-host.exe --version --format json` devuelve `tool`, `version`, `revision`, `abi`, `arch`, `job_policy`; el runtime usa `internal/model.BuildVersion` y `BuildRevision` y release también enlaza `BuildTime`. La fuente VCS limpia y su revisión verificable son obligatorias, no inferidas del nombre. Recursos PE se generan desde fresh clone mediante go-winres v0.3.3 antes de compilar, con versión numérica de release; el JSON fuente y el Makefile usan `0.0.0.0` como default local, pero el hook oficial lo reemplaza por `major.minor.patch.0`. Los `.syso` no se commitean. `BuildTime` se enlaza desde la fecha de GoReleaser; no aparece en el JSON de versión del host y no sustituye la revisión VCS.
 
-La propuesta 0.16.1, aún no publicada, agrega `mi-lsp-host_VERSION_win-x64.exe` y `mi-lsp-host_VERSION_win-arm64.exe` a la misma release oficial: 6 archives CLI/worker, 2 host y 1 checksum = 9 assets. Ambos host requieren PE GUI subsystem 2, arquitectura, versión, VCS y SHA verificados; la CLI principal sigue CUI. El checksum debe incluir ambos hosts. Falta de asset o evidencia bloquea, sin fallback CLI/CUI, PATH o ejecutable adyacente. El tag y hashes reales sólo se sellan después de publicación y readback; la configuración fuente no prueba su existencia. La UI actual del daemon y sus raíces no cambian.
+La distribución incluye `mi-lsp-host_VERSION_win-x64.exe` y `mi-lsp-host_VERSION_win-arm64.exe` en la misma release oficial: 6 archives CLI/worker, 2 host y 1 checksum = 9 assets. Ambos host requieren PE GUI subsystem 2, arquitectura, versión, VCS y SHA verificados; la CLI principal sigue CUI. El checksum debe incluir ambos hosts. Falta de asset o evidencia bloquea, sin fallback CLI/CUI, PATH o ejecutable adyacente. El tag público, revisión de fuente, hashes y readback deben verificarse para la release concreta; la configuración fuente no prueba su existencia. La UI actual del daemon y sus raíces no cambian.

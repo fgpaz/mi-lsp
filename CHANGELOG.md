@@ -5,12 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased] — candidata 0.16.1
+## [0.16.1]
 
 ### Añadido
 
-- Fuente candidata de `mi-lsp-host` Windows x64/arm64 con protocolo `execsafe-host/v1`, streams transparentes y resultado tipado separado del status de transporte. Job privado con kill-on-close y espera del árbol entero; no promete conservar daemons descendientes.
-- Configuración de dos assets host PE GUI y checksum en la misma release, manteniendo CLI CUI y seis bundles existentes. Release, procedencia, medición nativa sin ventana y readback público pendientes; no implica publicación ni conformidad.
+- `mi-lsp-host` Windows x64/arm64 con protocolo `execsafe-host/v1`, streams transparentes y resultado tipado separado del status de transporte. Job privado con kill-on-close y espera del árbol entero; no conserva daemons descendientes por omisión.
+- Dos assets host PE GUI y checksum en la misma release, manteniendo CLI CUI y seis bundles existentes.
 
 ## [0.16.0] - 2026-10-27
 

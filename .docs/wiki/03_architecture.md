@@ -51,16 +51,16 @@ C4Container
         Container(roslyn, "Worker Roslyn", ".NET / Roslyn", "Semántica profunda C# por entrypoint")
         Container(optional, "Backends de lenguaje opcionales", "tsserver, Pyright y gopls", "Enriquecimiento cuando el backend está disponible")
         Container(extension, "Host y extensión MILX-v1", "Procesos aislados", "Snapshot publicado, capabilities y salida declarativa")
-        Container(winhost, "Host Windows candidato", "Go / PE GUI", "Productor execsafe-host/v1; job privado y streams sin framing")
+        Container(winhost, "Host Windows", "Go / PE GUI", "Productor execsafe-host/v1; job privado y streams sin framing")
         ContainerDb(index, "Índice repo-local", "SQLite", "Catálogo, documentos y generaciones de grafo derivados")
         ContainerDb(state, "Estado y telemetría del daemon", "JSON, SQLite y logs", "Estado global del usuario y log repo-local")
         ContainerDb(config, "Registro y configuración", "TOML", "Aliases globales y topología repo-local")
     }
     Rel(developer, cli, "Ejecuta comandos", "CLI local")
     Rel(clients, cli, "Invoca el ejecutable", "CLI local")
-    Rel(clients, winhost, "Puede invocar tras admisión y verificación", "execsafe-host/v1; pendiente")
+    Rel(clients, winhost, "Puede invocar tras admisión y verificación", "execsafe-host/v1")
     Rel(winhost, cli, "Puede ejecutar CLI u otro payload absoluto como guest", "Handles stdio y job Windows")
-    Rel(winhost, releases, "Se distribuye como dos assets candidatos", "SHA-256 y procedencia")
+    Rel(winhost, releases, "Se distribuye como dos assets", "SHA-256 y procedencia")
     Rel(developer, daemon, "Consulta la consola y acciones seguras", "HTTP loopback")
     Rel(cli, sources, "Lee fuentes y canon", "Archivos")
     Rel(cli, config, "Resuelve workspace y configuración; registra durante bootstrap", "Archivos")
@@ -75,7 +75,7 @@ C4Container
     Rel(cli, releases, "Hijo updater verifica checksum y promueve sólo CLI", "HTTPS acotado")
 ```
 
-El host Windows es un productor separado, no un reemplazo de CLI ni del host MILX; la relación consumidor y assets es candidata, todavía no publicada o admitida. El guest puede ser otra aplicación absoluta, no necesariamente la CLI. Ver [[TECH-WINDOWS-HOST]] y [[RF-HOST-001]]; UI y raíces del daemon no cambian. El C4 resume los límites ya descritos; no cambia los contratos de routing, seguridad, estado ni publicación. Si un diagrama difiere del texto, manda el texto.
+El host Windows es un productor separado, no un reemplazo de CLI ni del host MILX; la distribución exige tag público, source, checksum y readback verificables, y la admisión de cada consumidor es independiente. El guest puede ser otra aplicación absoluta, no necesariamente la CLI. Ver [[TECH-WINDOWS-HOST]] y [[RF-HOST-001]]; UI y raíces del daemon no cambian. El C4 resume los límites ya descritos; no cambia los contratos de routing, seguridad, estado ni publicación. Si un diagrama difiere del texto, manda el texto.
 
 ### Vista del sistema
 
