@@ -874,6 +874,7 @@ type WikiContractValidationResult struct {
 	LinksReviewed     int                           `json:"links_reviewed"`
 	TargetsMissing    int                           `json:"targets_missing"`
 	SectionsMissing   int                           `json:"sections_missing"`
+	AnchorRefs        []WikiAnchorRef               `json:"anchor_refs,omitempty"`
 	Documents         []WikiContractDocumentFinding `json:"documents,omitempty"`
 }
 
