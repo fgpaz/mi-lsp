@@ -16,6 +16,10 @@ links:
     role: behavior
 ---
 
+## Alcance del candidato integrado
+
+El contrato implementado en `327e1620bee14512884c773bbfae7f3c73405dbc`, sus límites de lease, cierre e idle y las puertas OPEN están descritos en [TECH-LOCAL-DAEMON](../07_technical/TECH-LOCAL-DAEMON.md) y [TP-DAE](../06_tests/TP-DAE.md). No implica adopción en main ni release ni aceptación del arreglo completo.
+
 ## Propósito
 
 RF-DAE-003 - Auto-iniciar daemon en la primera consulta semántica
