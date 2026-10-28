@@ -286,13 +286,6 @@ func (s *rootState) executeOperation(cmd *cobra.Command, operation string, paylo
 		traceCLITiming("daemon.execute", time.Since(routeStarted), s.verbose)
 	}
 	if !useDaemon || daemonFailed {
-		refreshWarning := ""
-		if !daemonFailed && request.Operation == "nav.multi-read" {
-			_, refreshErr := s.refreshMultiReadPaths(ctx, request)
-			if refreshErr != nil {
-				refreshWarning = "query index refresh deferred: " + refreshErr.Error()
-			}
-		}
 		serviceStarted := time.Now()
 		if s.appExecute != nil {
 			envelope, err = s.appExecute(ctx, request)
@@ -300,9 +293,6 @@ func (s *rootState) executeOperation(cmd *cobra.Command, operation string, paylo
 			envelope, err = s.app.Execute(ctx, request)
 		}
 		traceCLITiming("service.execute", time.Since(serviceStarted), s.verbose)
-		if refreshWarning != "" {
-			envelope.Warnings = append(envelope.Warnings, refreshWarning)
-		}
 		if err == nil && daemonFailed && envelope.Hint == "" {
 			if request.Operation == "nav.diagnostics" {
 				envelope.Hint = "daemon_unavailable; served by local semantic backends"
