@@ -28,6 +28,7 @@ const (
 	telemetryCheckpointInterval  = time.Minute
 	telemetryCloseDrainTimeout  = 2 * time.Second
 	telemetryCheckpointTimeout  = 250 * time.Millisecond
+	telemetryCheckpointBusyWait = 25 * time.Millisecond
 )
 
 func daemonRootDir() (string, error) {
@@ -402,9 +403,30 @@ func (s *TelemetryStore) Checkpoint() error {
 	if s == nil || s.db == nil { return nil }
 	ctx, cancel := context.WithTimeout(context.Background(), telemetryCheckpointTimeout)
 	defer cancel()
+	conn, err := s.db.Conn(ctx)
+	if err != nil {
+		if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+			s.setFailure("checkpoint_timeout", false)
+		} else {
+			s.setFailure("checkpoint_error", false)
+		}
+		return fmt.Errorf("wal_checkpoint connection: %w", err)
+	}
+	defer conn.Close()
+	// Keep the busy-handler wait well below the overall context budget. Otherwise
+	// SQLite's 250ms wait can consume the entire deadline and hide its BUSY result.
+	if _, err := conn.ExecContext(ctx, fmt.Sprintf("PRAGMA busy_timeout=%d", telemetryCheckpointBusyWait.Milliseconds())); err != nil {
+		s.setFailure("checkpoint_error", false)
+		return fmt.Errorf("wal_checkpoint busy_timeout: %w", err)
+	}
+	defer func() {
+		if _, restoreErr := conn.ExecContext(context.Background(), "PRAGMA busy_timeout=250"); restoreErr != nil {
+			s.setFailure("checkpoint_error", false)
+		}
+	}()
 	var busy, logFrames, checkpointed int
-	if err := s.db.QueryRowContext(ctx, "PRAGMA wal_checkpoint(TRUNCATE)").Scan(&busy, &logFrames, &checkpointed); err != nil {
-		if isTelemetrySQLiteLocked(err) { s.setFailure("busy", true) } else { s.setFailure("checkpoint_error", false) }
+	if err := conn.QueryRowContext(ctx, "PRAGMA wal_checkpoint(TRUNCATE)").Scan(&busy, &logFrames, &checkpointed); err != nil {
+		if isTelemetrySQLiteLocked(err) { s.setFailure("busy", true) } else if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) { s.setFailure("checkpoint_timeout", false) } else { s.setFailure("checkpoint_error", false) }
 		return fmt.Errorf("wal_checkpoint: %w", err)
 	}
 	if busy != 0 {
